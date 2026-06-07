@@ -23,12 +23,12 @@ const axisFlag = (deg: number) => {
 
 export default function SystematicRead({ m, read }: Props) {
   const steps = [
-    { n: 1, label: 'Rate', value: `${m.rateBpm} bpm`, sub: rateFlag(m.rateBpm) },
-    { n: 2, label: 'Rhythm', value: read?.rhythm ?? '—', sub: '' },
-    { n: 3, label: 'Axis', value: `${m.axisDeg > 0 ? '+' : ''}${m.axisDeg}°`, sub: axisFlag(m.axisDeg) },
-    { n: 4, label: 'Intervals', value: `PR ${m.prMs ?? '—'} · QRS ${m.qrsMs} · QTc ${m.qtcMs} ms`, sub: '' },
-    { n: 5, label: 'Morphology', value: read?.morphology ?? '—', sub: '' },
-    { n: 6, label: 'Ischemia', value: read?.ischemia ?? '—', sub: '' },
+    { n: 1, label: 'Rate', value: `${m.rateBpm} bpm`, sub: rateFlag(m.rateBpm), hint: 'Bedside: 300 ÷ big boxes between beats (300·150·100·75·60·50)' },
+    { n: 2, label: 'Rhythm', value: read?.rhythm ?? '—', sub: '', hint: '' },
+    { n: 3, label: 'Axis', value: `${m.axisDeg > 0 ? '+' : ''}${m.axisDeg}°`, sub: axisFlag(m.axisDeg), hint: 'Quick check: I and aVF both upright → normal axis' },
+    { n: 4, label: 'Intervals', value: `PR ${m.prMs ?? '—'} · QRS ${m.qrsMs} · QTc ${m.qtcMs} ms`, sub: '', hint: 'Normal: PR 120–200 · QRS <120 · QTc <440–460' },
+    { n: 5, label: 'Morphology', value: read?.morphology ?? '—', sub: '', hint: '' },
+    { n: 6, label: 'Ischemia', value: read?.ischemia ?? '—', sub: '', hint: '' },
   ]
   return (
     <div className="sysread">
@@ -43,6 +43,7 @@ export default function SystematicRead({ m, read }: Props) {
                 {s.value}
                 {s.sub && <span className="sysread-sub"> · {s.sub}</span>}
               </span>
+              {s.hint && <span className="sysread-hint">{s.hint}</span>}
             </div>
           </li>
         ))}

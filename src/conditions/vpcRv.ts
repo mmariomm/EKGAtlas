@@ -60,9 +60,9 @@ export const vpcRv: Condition = {
     { segment: 'P', title: 'Hidden P* + pause', detail: 'The on-time sinus P lands in the VPC’s refractory period (buried in the T) → full compensatory pause.' },
   ],
   read: {
-    rhythm: 'Sinus with a ventricular premature complex + full compensatory pause',
-    morphology: 'Early broad QRS, no preceding P, T discordant to the QRS',
-    ischemia: 'N/A for the ectopic beat — read the underlying sinus rhythm',
+    rhythm: 'Sinus with a ventricular premature complex (VPC) + full compensatory pause',
+    morphology: 'Underlying sinus QRS is narrow (the readout measures it); the VPC itself is early & broad — no preceding P, T discordant',
+    ischemia: 'N/A for the ectopic beat — assess the underlying sinus beats',
   },
   clinical: 'Isolated VPCs are usually benign. Worry if frequent, multifocal, or R-on-T — check electrolytes (K⁺/Mg²⁺) and ischemia, especially if new or symptomatic.',
   buildStrip: () => ({

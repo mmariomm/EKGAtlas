@@ -97,7 +97,7 @@ export const simStemiAnterior: Condition = {
     { segment: 'QRS', title: 'Conduction intact', detail: 'No block — the QRS is normal; the abnormality is the ST injury vector.' },
   ],
   clinical: 'Anterior STEMI → emergent reperfusion (cath lab / lytics). Time is muscle. Check reciprocal ST depression inferiorly (II/III/aVF).',
-  buildStrip: () => tile({ pace: 'SA', ischemic: ['LV_ant', 'LV_apex'] }),
+  buildStrip: () => tile({ pace: 'SA', ischemic: ['LV_ant', 'LV_apex'], injuryDir: [0.3, -0.25, 0.95], injuryMag: 0.72 }),
 }
 
 export const SIM_CONDITIONS: Condition[] = [simNsr, simRbbb, simLbbb, simStemiAnterior]

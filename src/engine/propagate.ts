@@ -20,8 +20,13 @@ export interface TissueState {
   blockedEdges?: string[]
   /** Ablated/scarred regions: electrically silent + conduction barriers. */
   scar?: string[]
-  /** Ischemic/injured regions: produce an ST injury vector. */
+  /** Ischemic/injured regions: produce an ST injury vector + glow red. */
   ischemic?: string[]
+  /** Direction the ST injury vector points (toward the injured epicardium).
+   *  Drives which leads show ST elevation and which show reciprocal depression. */
+  injuryDir?: Vec3
+  /** Injury current magnitude (mV-equivalent). */
+  injuryMag?: number
 }
 
 const NODES: NodeId[] = ['SA', 'AV', 'HIS', 'RBB', 'LBB', 'LAF', 'LPF']
@@ -162,14 +167,20 @@ export const simulateBeat = (
       })
     }
 
-    // ischemic injury → sustained ST vector pointing toward the injured wall
-    if (ischemic.has(r.id)) {
-      const injuryDir: Vec3 = normalize(r.pos)
-      sources.push({
-        dir: injuryDir, mag: 0.5, center: ventMax + 70, width: 46, segment: 'ST',
-        glow: { structures: [r.structure], kind: 'injury', start: ventMax + 20, end: ventMax + 130, note: 'injury current' },
-      })
-    }
+  }
+
+  // Ischemic injury → ONE sustained ST vector toward the injured epicardium.
+  // Leads facing it show ST elevation; opposite leads show reciprocal depression.
+  if (ischemic.size > 0) {
+    const ids = [...ischemic].filter((id) => REGION_BY_ID[id])
+    const dir = state.injuryDir ?? normalize(
+      ids.reduce<Vec3>((a, id) => [a[0] + REGION_BY_ID[id].pos[0], a[1] + REGION_BY_ID[id].pos[1], a[2] + REGION_BY_ID[id].pos[2]], [0, 0, 0]),
+    )
+    const structures = [...new Set(ids.map((id) => REGION_BY_ID[id].structure))]
+    sources.push({
+      dir, mag: state.injuryMag ?? 0.6, center: ventMax + 72, width: 48, segment: 'ST',
+      glow: { structures, kind: 'injury', start: ventMax + 20, end: ventMax + 145, note: 'injury current' },
+    })
   }
 
   // conduction-system glow (SA fires at pacing; nodes light as reached)

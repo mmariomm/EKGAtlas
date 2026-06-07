@@ -64,3 +64,11 @@
 .sysread-sub {
   color: var(--text-dim);
 }
+
+.sysread-hint {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-style: italic;
+  margin-top: 1px;
+}

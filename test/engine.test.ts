@@ -104,8 +104,10 @@ check('sim-LBBB: V1 net negative', net('sim-lbbb', 'V1') < 0)
 {
   const s = stripOf('sim-stemi-ant')
   const sig = buildSignals(s)
+  console.log(`\nSTEMI ST: V2 ${netST(s, sig, 'V2').toFixed(1)}  V3 ${netST(s, sig, 'V3').toFixed(1)}  II ${netST(s, sig, 'II').toFixed(1)}  III ${netST(s, sig, 'III').toFixed(1)}  aVF ${netST(s, sig, 'aVF').toFixed(1)}`)
   check('sim-STEMI: ST↑ in V2', netST(s, sig, 'V2') > 0.5)
   check('sim-STEMI: ST↑ in V3', netST(s, sig, 'V3') > 0.5)
+  check('sim-STEMI: reciprocal ST↓ inferiorly (III)', netST(s, sig, 'III') < 0)
 }
 
 console.log(failures ? `\n${failures} CHECK(S) FAILED` : '\nALL CHECKS PASSED ✓')
