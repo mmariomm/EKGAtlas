@@ -100,6 +100,7 @@ export type ConditionCategory =
   | 'Ischemia & infarction'
   | 'Electrolyte & toxic'
   | 'High-risk syncope'
+  | 'Simulated'
 
 /** A line in the explain panel that maps a waveform segment to its mechanism. */
 export interface SegmentNote {

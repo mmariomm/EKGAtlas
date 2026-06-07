@@ -1,0 +1,82 @@
+/**
+ * The anatomical heart model the propagation solver runs on.
+ *
+ *   - a conduction graph (SA → AV → His → bundle branches → fascicle exits),
+ *     each edge with a conduction delay;
+ *   - a set of myocardial regions, each seeded by a conduction exit (fast) and
+ *     linked to neighbours for slow cell-to-cell spread, with a dipole direction,
+ *     mass, and action-potential duration.
+ *
+ * Given a tissue state (pacing site, blocked edges, scar, ischemia), the solver
+ * computes when each region activates → emits the Phase-A Source/Wire model. So
+ * blocks/ectopy/ischemia EMERGE from geometry rather than being hand-authored.
+ *
+ * Region directions/masses are distributed so the normal sum reproduces the
+ * tuned curated QRS; positions are stored for a future torso lead-field upgrade.
+ */
+import { Vec3 } from './vectorMath'
+import { StructureId } from './types'
+
+export type NodeId = 'SA' | 'AV' | 'HIS' | 'RBB' | 'LBB' | 'LAF' | 'LPF'
+
+export interface ConductionEdge {
+  from: NodeId
+  to: NodeId
+  /** Conduction delay along this edge, ms. */
+  delay: number
+  /** Whether crossing this edge lights the `to` structure as a "wire". */
+  wire: boolean
+}
+
+export interface Region {
+  id: string
+  structure: StructureId
+  pos: Vec3
+  /** Depolarization dipole direction (endocardium → epicardium / propagation). */
+  dir: Vec3
+  mass: number
+  /** Action-potential duration, ms (governs when this region repolarizes). */
+  apd: number
+  /** Conduction exit that ignites this region quickly (if reachable). */
+  seededBy: NodeId
+  /** ms from the seed exit to ignition. */
+  coupling: number
+  /** Cell-to-cell links (slow path used when the fast seed is unavailable). */
+  neighbors: { id: string; delay: number }[]
+}
+
+/** SA fires at the pacing time; other nodes are reached by traversing edges. */
+export const CONDUCTION_EDGES: ConductionEdge[] = [
+  { from: 'SA', to: 'AV', delay: 50, wire: false }, // internodal (atria depolarize off SA directly)
+  { from: 'AV', to: 'HIS', delay: 90, wire: true }, // the AV nodal delay
+  { from: 'HIS', to: 'RBB', delay: 18, wire: true },
+  { from: 'HIS', to: 'LBB', delay: 8, wire: true },
+  { from: 'LBB', to: 'LAF', delay: 8, wire: true },
+  { from: 'LBB', to: 'LPF', delay: 8, wire: true },
+]
+
+/**
+ * Myocardial regions. Ventricular dirs/masses are a distributed version of the
+ * curated QRS lobes (septal q + dominant LV + small RV); APDs carry a gradient
+ * (later-activated regions recover earlier) so the normal T comes out concordant
+ * and BBB T-discordance can emerge from the abnormal activation order.
+ */
+export const REGIONS: Region[] = [
+  // --- atria (seeded straight off SA) ---
+  { id: 'RA', structure: 'RA', pos: [-0.4, -0.3, 0.3], dir: [0.35, 0.75, 0.5], mass: 0.09, apd: 160, seededBy: 'SA', coupling: 12, neighbors: [{ id: 'LA', delay: 30 }] },
+  { id: 'LA', structure: 'LA', pos: [0.4, -0.3, -0.2], dir: [0.55, 0.62, -0.3], mass: 0.08, apd: 160, seededBy: 'SA', coupling: 42, neighbors: [{ id: 'RA', delay: 30 }] },
+
+  // --- septum (left side first → L-to-R; gives the septal q) ---
+  { id: 'SEPTUM', structure: 'SEPTUM', pos: [0.0, 0.1, 0.2], dir: [-0.35, 0.1, 0.65], mass: 0.16, apd: 300, seededBy: 'LAF', coupling: 2, neighbors: [{ id: 'LV_apex', delay: 42 }, { id: 'RV_apex', delay: 44 }] },
+
+  // --- left ventricle (dominant; ~1.5 total mass) ---
+  { id: 'LV_apex', structure: 'LV', pos: [0.4, 0.6, -0.1], dir: [0.7, 0.55, -0.15], mass: 0.5, apd: 250, seededBy: 'LAF', coupling: 10, neighbors: [{ id: 'SEPTUM', delay: 42 }, { id: 'LV_antlat', delay: 38 }, { id: 'LV_infpost', delay: 38 }] },
+  { id: 'LV_antlat', structure: 'LV', pos: [0.8, 0.2, -0.25], dir: [0.92, 0.32, -0.3], mass: 0.5, apd: 240, seededBy: 'LAF', coupling: 18, neighbors: [{ id: 'LV_apex', delay: 38 }] },
+  { id: 'LV_infpost', structure: 'LV', pos: [0.6, 0.5, -0.5], dir: [0.72, 0.5, -0.4], mass: 0.5, apd: 246, seededBy: 'LPF', coupling: 18, neighbors: [{ id: 'LV_apex', delay: 38 }] },
+
+  // --- right ventricle (small; rightward-anterior terminal-ish) ---
+  { id: 'RV_apex', structure: 'RV', pos: [-0.4, 0.6, 0.3], dir: [-0.1, 0.45, 0.35], mass: 0.16, apd: 220, seededBy: 'RBB', coupling: 10, neighbors: [{ id: 'SEPTUM', delay: 44 }, { id: 'RV_free', delay: 38 }] },
+  { id: 'RV_free', structure: 'RV', pos: [-0.8, 0.2, 0.4], dir: [-0.5, -0.1, 0.55], mass: 0.18, apd: 210, seededBy: 'RBB', coupling: 18, neighbors: [{ id: 'RV_apex', delay: 38 }] },
+]
+
+export const REGION_BY_ID: Record<string, Region> = Object.fromEntries(REGIONS.map((r) => [r.id, r]))
