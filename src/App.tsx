@@ -15,6 +15,7 @@ import PhaseChips from './components/PhaseChips'
 import LeadSelector from './components/LeadSelector'
 import PlaybackControls from './components/PlaybackControls'
 import ExplainPanel from './components/ExplainPanel'
+import LeadSpace3D from './components/LeadSpace3D'
 import './App.css'
 
 interface Selection {
@@ -47,6 +48,7 @@ const parseInitial = () => {
     leads,
     tFraction: hasT ? clamp(tn, 0, 1) : null,
     sel: isSegmentId(selParam) ? selParam : null,
+    view: (p.get('view') === '3d' ? 'leads3d' : 'atlas') as 'atlas' | 'leads3d',
   }
 }
 
@@ -68,6 +70,7 @@ export default function App() {
     : initial.tFraction ?? 0
   const autoplay = !initialRegion && initial.tFraction == null
 
+  const [view, setView] = useState<'atlas' | 'leads3d'>(initial.view)
   const [leads, setLeads] = useState<LeadId[]>(initial.leads)
   const [selection, setSelection] = useState<Selection | null>(
     initialRegion ? { id: initialRegion.id, beatOnset: repOnset } : null,
@@ -139,11 +142,16 @@ export default function App() {
             </svg>
             <span className="brand-name">EKG&nbsp;Atlas</span>
           </div>
+          <div className="view-toggle" role="group" aria-label="View">
+            <button className={view === 'atlas' ? 'vt-active' : ''} onClick={() => setView('atlas')}>Atlas</button>
+            <button className={view === 'leads3d' ? 'vt-active' : ''} onClick={() => setView('leads3d')}>3D</button>
+          </div>
           <ConditionPicker current={condition} onSelect={onSelectCondition} />
         </div>
       </header>
 
       <main className="stage">
+        {view === 'atlas' ? (
         <div className="stage-inner">
           <div className="cond-head">
             <h1 className="cond-title">{condition.name}</h1>
@@ -172,6 +180,15 @@ export default function App() {
             Educational model — waveforms are synthesized for teaching, not for clinical diagnosis.
           </div>
         </div>
+        ) : (
+          <div className="stage3d">
+            <div className="cond-head">
+              <h1 className="cond-title">{condition.name}</h1>
+            </div>
+            <PhaseNarration strip={strip} clock={clock} />
+            <LeadSpace3D signals={signals} strip={strip} clock={clock} />
+          </div>
+        )}
       </main>
 
       <footer className="footer">

@@ -33,6 +33,47 @@
   flex: none;
 }
 
+.view-toggle {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+}
+
+.view-toggle button {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-dim);
+  transition: background 150ms var(--ease), color 150ms var(--ease);
+}
+
+.view-toggle button:hover {
+  color: var(--text);
+}
+
+.view-toggle .vt-active {
+  background: var(--accent-soft);
+  color: #dbe7ff;
+}
+
+.stage3d {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 10px 14px;
+  gap: 4px;
+}
+
+.stage3d .cond-head {
+  padding: 2px 2px 0;
+}
+
 .brand-name {
   font-size: 15px;
   font-weight: 700;
