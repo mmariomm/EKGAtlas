@@ -24,25 +24,44 @@ export const hyperkalemia: Condition = {
   name: 'Hyperkalemia',
   shortName: 'Hyperkalemia',
   category: 'Electrolyte & toxic',
-  tagline: 'Tall, peaked, narrow T waves — the first warning of a rising potassium.',
-  criteria: ['Tall, peaked, symmetric T waves', 'Flattened / absent P waves', 'Widening QRS (advanced)', 'Sine wave → arrest (severe)'],
-  story: 'Rising K⁺ → membrane changes → peaked T → flat P → wide QRS → sine wave',
+  tagline: 'Tall, peaked, narrow T waves — the ECG is your fastest bedside potassium meter.',
+  criteria: [
+    'Tall, narrow-based, symmetric (“tented”) T waves — earliest',
+    'P-wave flattening → loss of P waves',
+    'PR prolongation, then QRS widening',
+    'Sine wave (QRS–T merge) → VF / asystole (severe)',
+  ],
+  story: 'Rising K⁺ → peaked T → flat P → wide QRS → sine wave → arrest',
   description:
-    'Potassium controls the resting membrane potential, so a rising K⁺ rewrites repolarization ' +
-    'first: the T wave becomes tall, narrow-based, and symmetric — "peaked". As K⁺ climbs further ' +
-    'the atria fall silent (P flattens), then conduction slows and the QRS widens; at the extreme ' +
-    'the QRS and T merge into a sine wave that precedes arrest. The peaked T is your early, ' +
-    'easy-to-miss warning.',
+    'Potassium sets the resting membrane potential, so a rising K⁺ rewrites the ECG in a predictable ' +
+    'order. First repolarization speeds up — tall, narrow, symmetric “tented” T waves with a short QT. ' +
+    'Then the depolarized resting state inactivates sodium channels: the atria fall silent (the P ' +
+    'flattens and vanishes), and conduction slows so the PR lengthens and the QRS widens. At the extreme ' +
+    'the QRS and T fuse into a sine wave that heralds VF or asystole. Severity is driven by the ECG, not ' +
+    'the absolute number.',
   segmentNotes: [
-    { segment: 'P', title: 'Flattening P', detail: 'Atrial myocytes are depolarized toward threshold and stop generating a normal P.' },
-    { segment: 'QRS', title: 'Widening QRS', detail: 'Slowed conduction broadens the QRS as K⁺ rises — a danger sign.' },
-    { segment: 'T', title: 'Peaked T wave', detail: 'Faster, more complete repolarization makes the T tall, narrow, and symmetric.' },
+    { segment: 'T', title: 'Peaked T wave', detail: 'Increased K⁺ conductance speeds phase-3 repolarization → a tall, NARROW-based, symmetric T and a short QT. The earliest sign.' },
+    { segment: 'P', title: 'Flattening / loss of P', detail: 'Atrial muscle is depolarized toward threshold and stops generating a P — conduction can continue SA→AV silently (“sinoventricular”).' },
+    { segment: 'QRS', title: 'Widening QRS', detail: 'The depolarized rest inactivates Na channels → a slow phase-0 upstroke → a broad QRS. A danger sign heading toward the sine wave.' },
   ],
   read: {
-    rhythm: 'Sinus, but P waves flatten as K⁺ rises',
-    morphology: 'Tall, narrow-based, symmetric (“peaked/tented”) T waves; flat P; QRS widens with higher K⁺',
+    rhythm: 'Sinus, but P waves flatten and disappear as K⁺ rises (sinoventricular conduction)',
+    morphology: 'Tall, narrow-based, symmetric (“peaked/tented”) T waves; flat/absent P; QRS widens with higher K⁺',
     ischemia: 'Metabolic, not ischemic — but immediately life-threatening',
   },
+  mechanism: [
+    { cause: 'Serum K⁺ rises, raising (making less negative) the resting membrane potential', effect: 'The whole myocardium sits closer to threshold, partially depolarized' },
+    { cause: 'Higher K⁺ conductance speeds terminal (phase-3) repolarization', effect: 'Tall, narrow, symmetric peaked T waves with a short QT — the earliest change' },
+    { cause: 'The depolarized resting potential inactivates sodium channels → slow phase-0 upstroke', effect: 'Conduction slows: the PR prolongs, the QRS widens, and the atria stop generating a P' },
+    { cause: 'At very high K⁺ conduction nearly fails altogether', effect: 'The QRS and T merge into a sine wave → VF / asystole' },
+  ],
   clinical: 'Check K⁺ now. Peaked Ts → IV calcium to stabilize the membrane, then shift K⁺ (insulin+glucose, albuterol) and remove it. Untreated → QRS widens to a sine wave → arrest.',
+  pearls: [
+    'Peaked T’s you could “prick your finger on”: tall, NARROW base, symmetric — versus the broad-based hyperacute / de Winter T.',
+    'Treat the ECG, not the number: any widening, bradycardia, or sine wave → IV CALCIUM now. It stabilizes the membrane in minutes (it does not lower K⁺).',
+    'Then shift (insulin + glucose, albuterol) and remove (dialysis, K⁺ binders). Calcium only buys the time.',
+    'A wide, bizarre, slow QRS with no clear P waves in a dialysis / renal / crush patient = hyperkalemia until proven otherwise — treat empirically.',
+    'A normal ECG does NOT exclude dangerous hyperkalemia (poor sensitivity) — but an abnormal one is an emergency. HyperK can also mimic Brugada or a STEMI.',
+  ],
   buildStrip: () => repeatBeat(hyperKBeat),
 }

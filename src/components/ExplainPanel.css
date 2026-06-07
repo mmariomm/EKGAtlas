@@ -142,3 +142,110 @@
   color: var(--text);
   margin-top: 2px;
 }
+
+/* --- sections within the explainer body --- */
+.explain-section {
+  margin-top: 20px;
+}
+
+.explain-h {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+}
+
+/* --- mechanism: a connected cause → effect chain --- */
+.mech-chain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+
+.mech-chain::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 11px;
+  bottom: 13px;
+  width: 2px;
+  background: var(--border);
+}
+
+.mech-step {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding-bottom: 15px;
+}
+
+.mech-step:last-child {
+  padding-bottom: 0;
+}
+
+.mech-num {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--text-hi);
+  background: var(--panel-strong);
+  border: 1.5px solid var(--border-strong);
+  position: relative;
+  z-index: 1;
+}
+
+.mech-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 1px;
+}
+
+.mech-cause {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-hi);
+  line-height: 1.5;
+}
+
+.mech-effect {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.mech-arrow {
+  color: var(--tone-ventricle);
+  font-weight: 800;
+  margin-right: 6px;
+}
+
+/* --- attending pearls --- */
+.pearls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.pearl {
+  font-size: 13.5px;
+  line-height: 1.56;
+  color: var(--text);
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--tone-repol);
+  border-radius: 9px;
+  padding: 9px 12px 9px 13px;
+}

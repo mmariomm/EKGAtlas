@@ -109,6 +109,18 @@ export interface SegmentNote {
   detail: string
 }
 
+/**
+ * One link in the causal chain from pathophysiology to waveform — the
+ * "whiteboard" an attending draws: this happens in the tissue (cause), so the
+ * tracing does this (effect).
+ */
+export interface MechanismStep {
+  /** What happens in the myocardium / conduction system. */
+  cause: string
+  /** The electrical / ECG consequence that follows from it. */
+  effect: string
+}
+
 export interface Condition {
   id: string
   name: string
@@ -123,6 +135,10 @@ export interface Condition {
   clinical: string
   /** Findings for the systematic read (the steps not derivable from measurements). */
   read?: { rhythm: string; morphology: string; ischemia: string }
+  /** The whiteboard: an ordered cause→effect chain from mechanism to waveform. */
+  mechanism?: MechanismStep[]
+  /** Attending pearls — fast recognition cues, classic traps, and don't-miss points. */
+  pearls?: string[]
   /** Hidden from the picker (e.g. solver-validation duplicates); still deep-linkable. */
   hidden?: boolean
   /** Conduction branches drawn as blocked/greyed in the heart diagram. */

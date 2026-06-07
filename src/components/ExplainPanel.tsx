@@ -62,28 +62,60 @@ export default function ExplainPanel({ condition, meanAxis, selected, onSelect }
       {open && (
         <div className="explain-body">
           <p className="explain-desc">{condition.description}</p>
-          <ul className="explain-notes">
-            {condition.segmentNotes.map((n, i) => {
-              const active = selected === n.segment
-              return (
-                <li key={i}>
-                  <button
-                    type="button"
-                    className={`note${active ? ' note-active' : ''}`}
-                    onClick={() => onSelect?.(n.segment)}
-                  >
-                    <span className="note-tag" style={{ background: SEG_TONE[n.segment], color: '#06101e' }}>
-                      {n.segment}
-                    </span>
-                    <div>
-                      <div className="note-title">{n.title}</div>
-                      <div className="note-detail">{n.detail}</div>
+
+          {condition.mechanism && condition.mechanism.length > 0 && (
+            <section className="explain-section">
+              <h4 className="explain-h">Mechanism — cause → waveform</h4>
+              <ol className="mech-chain">
+                {condition.mechanism.map((m, i) => (
+                  <li key={i} className="mech-step">
+                    <span className="mech-num">{i + 1}</span>
+                    <div className="mech-text">
+                      <span className="mech-cause">{m.cause}</span>
+                      <span className="mech-effect"><span className="mech-arrow">→</span>{m.effect}</span>
                     </div>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+
+          <section className="explain-section">
+            <h4 className="explain-h">On the tracing — segment by segment</h4>
+            <ul className="explain-notes">
+              {condition.segmentNotes.map((n, i) => {
+                const active = selected === n.segment
+                return (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      className={`note${active ? ' note-active' : ''}`}
+                      onClick={() => onSelect?.(n.segment)}
+                    >
+                      <span className="note-tag" style={{ background: SEG_TONE[n.segment], color: '#06101e' }}>
+                        {n.segment}
+                      </span>
+                      <div>
+                        <div className="note-title">{n.title}</div>
+                        <div className="note-detail">{n.detail}</div>
+                      </div>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+
+          {condition.pearls && condition.pearls.length > 0 && (
+            <section className="explain-section">
+              <h4 className="explain-h">Attending pearls</h4>
+              <ul className="pearls">
+                {condition.pearls.map((p, i) => (
+                  <li key={i} className="pearl">{p}</li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
       )}
     </div>

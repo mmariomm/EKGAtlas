@@ -22,24 +22,46 @@ export const brugada: Condition = {
   name: 'Brugada (type 1)',
   shortName: 'Brugada',
   category: 'High-risk syncope',
-  tagline: 'Coved “shark-fin” ST elevation in V1–V2 — a channelopathy, not ischemia.',
-  criteria: ['Coved ST elevation ≥2 mm in V1–V2', 'Followed by a negative (inverted) T', 'RBBB-like appearance', 'Often unmasked by fever / Na-channel blockers'],
-  story: 'A sodium-channel disease that mimics a right-precordial injury pattern',
+  tagline: 'Coved “shark-fin” ST elevation into an inverted T in V1–V2 — a sodium channel, not a coronary.',
+  criteria: [
+    'Coved ST elevation ≥2 mm in ≥1 of V1–V2',
+    'ST descends into a NEGATIVE (inverted) T',
+    'Type 1 is diagnostic; type 2 (“saddleback”) only suggestive',
+    'High right-precordial leads (2nd–3rd ICS) raise sensitivity',
+    'Unmasked by fever / Na-channel blockers',
+  ],
+  story: 'A loss-of-function sodium channelopathy that mimics a right-precordial injury pattern',
   description:
-    'A sodium-channelopathy, not ischemia: V1–V2 show a coved (downsloping, "shark-fin") ST ' +
-    'elevation that descends into an inverted T. The pattern can come and go and is classically ' +
-    'unmasked by fever or sodium-channel-blocking drugs. It matters because it carries a real risk ' +
-    'of polymorphic VT and sudden cardiac death.',
+    'Brugada is a sodium-channelopathy (often SCN5A), not ischemia. Reduced sodium current lets the ' +
+    'right-ventricular epicardium lose its action-potential dome while the endocardium keeps it, ' +
+    'creating a voltage gradient across the RV that projects onto V1–V2 as a coved (downsloping, ' +
+    '“shark-fin”) ST elevation descending into an inverted T — the diagnostic type-1 pattern. The same ' +
+    'dispersion of repolarization enables phase-2 reentry, which is why it carries a real risk of ' +
+    'polymorphic VT and sudden death. It is classically unmasked by fever or sodium-channel-blocking drugs.',
   segmentNotes: [
-    { segment: 'ST', title: 'Coved STE V1–V2', detail: 'Downsloping ST elevation ≥2 mm — the type-1 (diagnostic) Brugada morphology.' },
-    { segment: 'T', title: 'Inverted T', detail: 'The coved ST descends into a negative T in V1–V2.' },
+    { segment: 'ST', title: 'Coved STE V1–V2', detail: 'Downsloping ST elevation ≥2 mm — the type-1 (diagnostic) morphology. A “saddleback” shape is type 2 and only suggestive.' },
+    { segment: 'T', title: 'Inverted T', detail: 'The coved ST descends straight into a negative T in V1–V2 — one flowing “shark-fin,” not a separate STE then upright T.' },
+    { segment: 'QRS', title: 'RBBB-like, but not true RBBB', detail: 'An rSr′-like terminal in V1 can mimic RBBB, but the lateral leads lack the wide slurred S of a real RBBB.' },
   ],
   read: {
     rhythm: 'Sinus',
-    morphology: 'Coved ST elevation ≥2 mm with an inverted T in V1–V2 (type 1)',
+    morphology: 'Coved ST elevation ≥2 mm descending into an inverted T in V1–V2 (type 1)',
     ischemia: 'Not ischemia — a Na-channel channelopathy',
   },
+  mechanism: [
+    { cause: 'Reduced cardiac sodium current (e.g. SCN5A loss of function)', effect: 'A weakened phase-0 upstroke, worst where the transient-outward K⁺ current (Ito) is strong — the RV epicardium' },
+    { cause: 'The RV epicardium loses its action-potential dome while the endocardium keeps it', effect: 'A transmural repolarization voltage gradient across the RV outflow tract' },
+    { cause: 'That gradient projects onto the right precordial leads', effect: 'Coved ST elevation flowing into an inverted T in V1–V2 (type 1)' },
+    { cause: 'The same repolarization heterogeneity permits phase-2 reentry', effect: 'Polymorphic VT / VF → syncope or sudden cardiac death' },
+  ],
   clinical: 'Type 1 Brugada + syncope / VT / family history of sudden death → high SCD risk: cardiology/EP, consider ICD. Avoid fever and Na-channel blockers, which unmask/worsen it.',
+  pearls: [
+    'It is a channel, not a coronary: coved STE in V1–V2 in a young, structurally-normal heart, often with syncope or a family history of sudden death.',
+    'Fever unmasks it — a type-1 pattern can appear during a febrile illness. Treat the fever aggressively and recheck when afebrile.',
+    'Move V1–V2 UP to the 2nd–3rd intercostal space to increase sensitivity (the RV outflow tract sits high).',
+    'Risk = pattern + symptoms: type-1 with prior arrest / syncope / VT / family Hx of SCD → EP referral, consider ICD.',
+    'Avoid the triggers (brugadadrugs.org): class I antiarrhythmics, many psychotropics, cocaine. Exclude phenocopies — hyperkalemia, RV ischemia, PE — first.',
+  ],
   buildStrip: () => repeatBeat(brugadaBeat),
 }
 
@@ -69,24 +91,47 @@ export const wpw: Condition = {
   name: 'WPW (pre-excitation)',
   shortName: 'WPW',
   category: 'High-risk syncope',
-  tagline: 'Short PR + delta wave — an accessory pathway that bypasses the AV node.',
-  criteria: ['Short PR < 120 ms', 'Delta wave (slurred QRS upstroke)', 'Wide QRS', 'Secondary ST/T changes'],
+  tagline: 'Short PR + delta wave — an accessory pathway that skips the AV node and can kill in AF.',
+  criteria: [
+    'Short PR < 120 ms',
+    'Delta wave (slurred QRS upstroke)',
+    'Wide QRS (a fusion beat)',
+    'Secondary ST/T changes',
+    'WPW syndrome = this pattern PLUS arrhythmia',
+  ],
   story: 'An accessory pathway pre-excites the ventricle before the AV-node impulse arrives',
   description:
-    'An accessory pathway (bypass tract) connects atria to ventricles outside the AV node, so part ' +
-    'of the ventricle is "pre-excited" before the normal, AV-delayed impulse arrives. That gives the ' +
-    'short PR and the delta wave (a slurred QRS upstroke) fusing into a wide QRS. The danger is ' +
-    'arrhythmia: re-entrant tachycardia, and — if atrial fibrillation occurs — very rapid conduction ' +
-    'down the pathway that can degenerate into VF.',
+    'An accessory pathway (bundle of Kent) connects atrium to ventricle outside the AV node. Because it ' +
+    'has no decremental delay, the atrial impulse reaches the ventricle EARLY (short PR) and starts ' +
+    'depolarizing working myocardium cell-to-cell — a slurred upstroke, the delta wave. The normal ' +
+    'AV-node impulse then arrives and activates the rest of the ventricle through the His-Purkinje ' +
+    'system, so the QRS is a FUSION of both. The real danger is rhythm: re-entrant tachycardia, and — in ' +
+    'atrial fibrillation — unchecked rapid conduction down the pathway that can degenerate into VF.',
   segmentNotes: [
-    { segment: 'PR', title: 'Short PR', detail: 'The accessory pathway skips the AV delay, so the PR is < 120 ms.' },
-    { segment: 'QRS', title: 'Delta wave', detail: 'Slow initial cell-to-cell spread from the pre-excited region slurs the QRS upstroke.' },
+    { segment: 'PR', title: 'Short PR', detail: 'The pathway bypasses the AV node’s delay, so the ventricle is activated early → PR < 120 ms.' },
+    { segment: 'QRS', title: 'Delta wave', detail: 'The pre-excited region starts in working muscle (not Purkinje), so the initial spread is slow → a slurred QRS upstroke.' },
+    { segment: 'QRS', title: 'Fusion QRS', detail: 'Pathway-driven and AV-node-driven activation fuse; how wide the QRS is depends on how much of the ventricle is pre-excited.' },
+    { segment: 'T', title: 'Secondary ST/T changes', detail: 'Abnormal depolarization order forces repolarization changes (not ischemia); negative delta waves can also mimic Q waves.' },
   ],
   read: {
     rhythm: 'Sinus with ventricular pre-excitation via an accessory pathway',
-    morphology: 'Short PR (<120 ms), delta wave (slurred QRS upstroke), wide QRS',
-    ischemia: 'Secondary ST/T changes (not ischemia)',
+    morphology: 'Short PR (<120 ms), delta wave (slurred QRS upstroke), wide fusion QRS',
+    ischemia: 'Secondary ST/T changes (and pseudo-infarct Q waves) — not ischemia',
   },
+  mechanism: [
+    { cause: 'An accessory pathway (bundle of Kent) bridges atrium to ventricle outside the AV node', effect: 'A second, faster route into the ventricle with no protective delay' },
+    { cause: 'The atrial impulse races down the pathway with no AV-node delay', effect: 'The ventricle is pre-excited early → a short PR interval' },
+    { cause: 'It enters working myocardium and spreads cell-to-cell at first', effect: 'A slurred initial QRS upstroke — the delta wave' },
+    { cause: 'The AV-node impulse then activates the rest via His-Purkinje', effect: 'A fusion QRS (wide) with secondary ST/T changes' },
+    { cause: 'Two routes form a circuit; in atrial fibrillation the pathway conducts unchecked', effect: 'Re-entrant AVRT, and pre-excited AF — fast, broad, irregular — that can degenerate to VF' },
+  ],
   clinical: 'WPW (short PR + delta). Risk of AVRT and, in atrial fibrillation, dangerously rapid conduction down the accessory pathway. AVOID AV-nodal blockers (adenosine/verapamil/diltiazem/digoxin) in WPW + AF — use procainamide. Refer for EP study / ablation.',
+  pearls: [
+    'WPW = the pattern. WPW SYNDROME = pattern + arrhythmia. Resting triad: short PR, delta wave, wide QRS.',
+    'The killer is AF with pre-excitation: irregular + broad + very fast (often >200). AV-nodal blockers are CONTRAINDICATED.',
+    'Avoid “ABCD” in pre-excited AF — Adenosine, Beta-blockers, Calcium-channel blockers, Digoxin push more current down the pathway. Use procainamide (or ibutilide); cardiovert if unstable.',
+    'The delta-wave / QRS axis can localize the pathway and can mimic infarction (pseudo-Q waves).',
+    'Intermittent pre-excitation, or loss of the delta wave with exercise, suggests a lower-risk pathway. Definitive cure = EP study + catheter ablation.',
+  ],
   buildStrip: () => repeatBeat(wpwBeat),
 }
