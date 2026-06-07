@@ -75,8 +75,8 @@ export const REGIONS: Region[] = [
   { id: 'LV_infpost', structure: 'LV', pos: [0.6, 0.5, -0.5], dir: [0.72, 0.5, -0.4], mass: 0.5, apd: 246, seededBy: 'LPF', coupling: 18, neighbors: [{ id: 'LV_apex', delay: 38 }] },
 
   // --- right ventricle (small; rightward-anterior terminal-ish) ---
-  { id: 'RV_apex', structure: 'RV', pos: [-0.4, 0.6, 0.3], dir: [-0.1, 0.45, 0.35], mass: 0.16, apd: 220, seededBy: 'RBB', coupling: 10, neighbors: [{ id: 'SEPTUM', delay: 44 }, { id: 'RV_free', delay: 38 }] },
-  { id: 'RV_free', structure: 'RV', pos: [-0.8, 0.2, 0.4], dir: [-0.5, -0.1, 0.55], mass: 0.18, apd: 210, seededBy: 'RBB', coupling: 18, neighbors: [{ id: 'RV_apex', delay: 38 }] },
+  { id: 'RV_apex', structure: 'RV', pos: [-0.4, 0.6, 0.3], dir: [-0.1, 0.45, 0.35], mass: 0.2, apd: 220, seededBy: 'RBB', coupling: 10, neighbors: [{ id: 'SEPTUM', delay: 44 }, { id: 'RV_free', delay: 38 }] },
+  { id: 'RV_free', structure: 'RV', pos: [-0.8, 0.2, 0.4], dir: [-0.5, -0.1, 0.55], mass: 0.3, apd: 210, seededBy: 'RBB', coupling: 18, neighbors: [{ id: 'RV_apex', delay: 38 }] },
 ]
 
 export const REGION_BY_ID: Record<string, Region> = Object.fromEntries(REGIONS.map((r) => [r.id, r]))

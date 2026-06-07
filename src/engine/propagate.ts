@@ -52,33 +52,44 @@ const solveNodes = (state: TissueState): Map<NodeId, number> => {
   return dist
 }
 
+/** Activation result for a region: time + where the wavefront entered from. */
+interface RegionHit {
+  t: number
+  /** Neighbour position the wave arrived from (cell-to-cell), or null if Purkinje-seeded. */
+  viaPos: Vec3 | null
+}
+
 /** Activation times for the myocardial regions (fast seed OR slow cell-to-cell). */
-const solveRegions = (state: TissueState, nodeT: Map<NodeId, number>): Map<string, number> => {
+const solveRegions = (state: TissueState, nodeT: Map<NodeId, number>): Map<string, RegionHit> => {
   const scar = new Set(state.scar ?? [])
-  const dist = new Map<string, number>()
+  const dist = new Map<string, RegionHit>()
   const pace = state.pace ?? 'SA'
 
   for (const r of REGIONS) {
     if (scar.has(r.id)) continue
     if (!isNode(pace) && r.id === pace) {
-      dist.set(r.id, 0) // ectopic origin
+      dist.set(r.id, { t: 0, viaPos: null }) // ectopic origin
     } else if (nodeT.has(r.seededBy)) {
-      dist.set(r.id, (nodeT.get(r.seededBy) as number) + r.coupling)
+      dist.set(r.id, { t: (nodeT.get(r.seededBy) as number) + r.coupling, viaPos: null })
     }
   }
 
-  // Dijkstra over regions for the slow cell-to-cell paths.
+  // Dijkstra over regions for the slow cell-to-cell paths. Track which neighbour
+  // the wavefront came from, so the dipole can point along the propagation
+  // direction — this is what makes the LBBB septal-q loss and the RBBB R' emerge.
   const settled = new Set<string>()
   for (;;) {
     let cur: string | null = null
     let best = Infinity
-    for (const [id, d] of dist) if (!settled.has(id) && d < best) { best = d; cur = id }
+    for (const [id, h] of dist) if (!settled.has(id) && h.t < best) { best = h.t; cur = id }
     if (cur == null) break
     settled.add(cur)
+    const curPos = REGION_BY_ID[cur].pos
     for (const nb of REGION_BY_ID[cur].neighbors) {
       if (scar.has(nb.id)) continue
       const cand = best + nb.delay
-      if (dist.get(nb.id) == null || cand < (dist.get(nb.id) as number)) dist.set(nb.id, cand)
+      const ex = dist.get(nb.id)
+      if (!ex || cand < ex.t) dist.set(nb.id, { t: cand, viaPos: curPos })
     }
   }
   return dist
@@ -111,24 +122,30 @@ export const simulateBeat = (
   let aSum = 0
   let aMass = 0
   for (const r of REGIONS) {
-    const t = regionT.get(r.id)
-    if (t == null || r.structure === 'RA' || r.structure === 'LA') continue
-    ventMax = Math.max(ventMax, t)
-    aSum += t * r.mass
+    const h = regionT.get(r.id)
+    if (h == null || r.structure === 'RA' || r.structure === 'LA') continue
+    ventMax = Math.max(ventMax, h.t)
+    aSum += h.t * r.mass
     aMass += r.mass
   }
   const meanA = aMass > 0 ? aSum / aMass : 0
 
   for (const r of REGIONS) {
-    const t = regionT.get(r.id)
-    if (t == null || scar.has(r.id)) continue
+    const hit = regionT.get(r.id)
+    if (hit == null || scar.has(r.id)) continue
+    const t = hit.t
+    // Dipole points along the propagation direction when reached cell-to-cell
+    // (abnormal), else its intrinsic endo→epi direction (Purkinje-seeded, normal).
+    const dir: Vec3 = hit.viaPos
+      ? normalize([r.pos[0] - hit.viaPos[0], r.pos[1] - hit.viaPos[1], r.pos[2] - hit.viaPos[2]])
+      : r.dir
     const isAtrial = r.structure === 'RA' || r.structure === 'LA'
     const segment = isAtrial ? 'P' : 'QRS'
     const kind = isAtrial ? 'atria' : 'ventricle'
 
     // depolarization
     sources.push({
-      dir: r.dir, mag: r.mass, center: t, width: 10, segment,
+      dir, mag: r.mass, center: t, width: 10, segment,
       glow: { structures: [r.structure], kind, start: t - 6, end: t + 52 },
     })
 
@@ -137,16 +154,16 @@ export const simulateBeat = (
       const repolMag = r.mass * (T_PRIMARY - T_SECONDARY * ((t - meanA) / T_DYSSYNC))
       const rc = t + T_APD
       sources.push({
-        dir: r.dir, mag: repolMag, center: rc, width: 60, segment: 'T',
+        dir, mag: repolMag, center: rc, width: 60, segment: 'T',
         glow: { structures: [r.structure], kind: 'repol', start: rc - 48, end: rc + 48 },
       })
     }
 
     // ischemic injury → sustained ST vector pointing toward the injured wall
     if (ischemic.has(r.id)) {
-      const dir: Vec3 = normalize(r.pos)
+      const injuryDir: Vec3 = normalize(r.pos)
       sources.push({
-        dir, mag: 0.5, center: ventMax + 70, width: 46, segment: 'ST',
+        dir: injuryDir, mag: 0.5, center: ventMax + 70, width: 46, segment: 'ST',
         glow: { structures: [r.structure], kind: 'injury', start: ventMax + 20, end: ventMax + 130, note: 'injury current' },
       })
     }
