@@ -68,4 +68,24 @@ export const simLbbb: Condition = {
   buildStrip: () => tile({ pace: 'SA', blockedEdges: ['HIS>LBB'] }),
 }
 
-export const SIM_CONDITIONS: Condition[] = [simNsr, simRbbb, simLbbb]
+export const simStemiAnterior: Condition = {
+  id: 'sim-stemi-ant',
+  name: 'Simulated — Anterior STEMI',
+  shortName: 'Sim · Anterior STEMI',
+  category: 'Simulated',
+  tagline: 'Same engine, anterior LV ischemic — ST elevation emerges in V2–V4.',
+  criteria: ['Solver-generated', 'Ischemic: anterior LV', 'Injury current → ST'],
+  story: 'Anterior wall injury → ST vector points anterior → STE in V2–V4',
+  description:
+    'The anterior LV regions are flagged ischemic. Their injury current produces a sustained ' +
+    'ST vector pointing toward the anterior chest, so the facing leads (V2–V4) show ST ' +
+    'elevation with reciprocal depression inferiorly — emerging from the tissue state, not authored. ' +
+    '(Localization is coarse at this region resolution.)',
+  segmentNotes: [
+    { segment: 'ST', title: 'ST elevation (V2–V4)', detail: 'Injury current flows toward the anterior wall during the ST segment → elevation in the leads that face it.' },
+    { segment: 'QRS', title: 'Conduction intact', detail: 'No block — the QRS is normal; the abnormality is the ST injury vector.' },
+  ],
+  buildStrip: () => tile({ pace: 'SA', ischemic: ['LV_ant', 'LV_apex'] }),
+}
+
+export const SIM_CONDITIONS: Condition[] = [simNsr, simRbbb, simLbbb, simStemiAnterior]
