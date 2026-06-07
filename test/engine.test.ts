@@ -45,6 +45,32 @@ const netST = (strip: Strip, sig: SignalSet, id: LeadId): number => {
   return s * sig.dt
 }
 
+/** Net signed area of a lead over the T window. */
+const netT = (strip: Strip, sig: SignalSet, id: LeadId): number => {
+  const t = phaseRegions(strip).find((r) => r.id === 'T')
+  if (!t) return 0
+  const base = representativeOnset(strip)
+  let s = 0
+  for (let i = 0; i < sig.n; i++) {
+    const tt = i * sig.dt - base
+    if (tt >= t.relStart && tt <= t.relEnd) s += sig.leads[id][i]
+  }
+  return s * sig.dt
+}
+
+/** Peak (most positive) amplitude of a lead over the T window — captures "peaked" T. */
+const peakT = (strip: Strip, sig: SignalSet, id: LeadId): number => {
+  const t = phaseRegions(strip).find((r) => r.id === 'T')
+  if (!t) return 0
+  const base = representativeOnset(strip)
+  let m = -Infinity
+  for (let i = 0; i < sig.n; i++) {
+    const tt = i * sig.dt - base
+    if (tt >= t.relStart && tt <= t.relEnd) m = Math.max(m, sig.leads[id][i])
+  }
+  return m === -Infinity ? 0 : m
+}
+
 const byId: Record<string, () => Strip> = {}
 for (const c of CONDITIONS) byId[c.id] = c.buildStrip
 const stripOf = (id: string) => byId[id]()
@@ -108,6 +134,55 @@ check('sim-LBBB: V1 net negative', net('sim-lbbb', 'V1') < 0)
   check('sim-STEMI: ST↑ in V2', netST(s, sig, 'V2') > 0.5)
   check('sim-STEMI: ST↑ in V3', netST(s, sig, 'V3') > 0.5)
   check('sim-STEMI: reciprocal ST↓ inferiorly (III)', netST(s, sig, 'III') < 0)
+}
+
+// --- hard catalog ---
+const sigOf = (id: string) => { const s = stripOf(id); return { s, g: buildSignals(s) } }
+
+console.log('\n=== Hard catalog key features ===')
+{
+  const { s, g } = sigOf('hyperkalemia')
+  const nsrStrip = stripOf('nsr')
+  const peakHyperK = peakT(s, g, 'II')
+  const peakNsr = peakT(nsrStrip, buildSignals(nsrStrip), 'II')
+  console.log(`hyperK   peakT(II) ${peakHyperK.toFixed(2)} vs NSR ${peakNsr.toFixed(2)}  QTc ${M('hyperkalemia').qtcMs}`)
+  check('hyperK: peaked (tall) T in II', peakHyperK > peakNsr * 1.5)
+}
+{
+  const { s, g } = sigOf('sgarbossa')
+  console.log(`sgarb    QRS(V6) ${net('sgarbossa', 'V6').toFixed(1)}  ST(V6) ${netST(s, g, 'V6').toFixed(1)}  QRS ${M('sgarbossa').qrsMs}ms`)
+  check('Sgarbossa: wide QRS (LBBB)', M('sgarbossa').qrsMs >= 120)
+  check('Sgarbossa: concordant STE in V6 (QRS+ & ST+)', net('sgarbossa', 'V6') > 0 && netST(s, g, 'V6') > 0)
+}
+{
+  const { s, g } = sigOf('de-winter')
+  console.log(`deWinter ST(V2) ${netST(s, g, 'V2').toFixed(1)}  T(V2) ${netT(s, g, 'V2').toFixed(1)}`)
+  check('de Winter: ST↓ in V2', netST(s, g, 'V2') < 0)
+  check('de Winter: tall upright T in V2', netT(s, g, 'V2') > 0)
+}
+{
+  const { s, g } = sigOf('wellens')
+  console.log(`wellens  T(V2) ${netT(s, g, 'V2').toFixed(1)}  T(V3) ${netT(s, g, 'V3').toFixed(1)}  T(V6) ${netT(s, g, 'V6').toFixed(1)}`)
+  check('Wellens: T inversion in V2', netT(s, g, 'V2') < 0)
+  check('Wellens: T upright in V6 (localized)', netT(s, g, 'V6') > 0)
+}
+{
+  const { s, g } = sigOf('posterior-mi')
+  console.log(`postMI   QRS(V1) ${net('posterior-mi', 'V1').toFixed(1)}  ST(V1) ${netST(s, g, 'V1').toFixed(1)}`)
+  check('Posterior MI: tall R in V1 (net +)', net('posterior-mi', 'V1') > 0)
+  check('Posterior MI: ST↓ in V1', netST(s, g, 'V1') < 0)
+}
+{
+  const { s, g } = sigOf('brugada')
+  console.log(`brugada  ST(V1) ${netST(s, g, 'V1').toFixed(1)}  T(V1) ${netT(s, g, 'V1').toFixed(1)}`)
+  check('Brugada: STE in V1', netST(s, g, 'V1') > 0)
+  check('Brugada: T inversion in V1', netT(s, g, 'V1') < 0)
+}
+{
+  const mw = M('wpw')
+  console.log(`wpw      PR ${mw.prMs}  QRS ${mw.qrsMs}`)
+  check('WPW: short PR (<120)', (mw.prMs ?? 999) < 120)
+  check('WPW: wide QRS (≥110)', mw.qrsMs >= 110)
 }
 
 console.log(failures ? `\n${failures} CHECK(S) FAILED` : '\nALL CHECKS PASSED ✓')

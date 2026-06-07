@@ -3,10 +3,19 @@ import { nsr } from './nsr'
 import { rbbb } from './rbbb'
 import { lbbb } from './lbbb'
 import { vpcRv } from './vpcRv'
+import { hyperkalemia } from './electrolyte'
+import { sgarbossa, deWinter, wellens, posteriorMI } from './ischemia'
+import { brugada, wpw } from './syncope'
 import { SIM_CONDITIONS } from './simulated'
 
 /** The catalog, in display order. */
-export const CONDITIONS: Condition[] = [nsr, rbbb, lbbb, vpcRv, ...SIM_CONDITIONS]
+export const CONDITIONS: Condition[] = [
+  nsr, rbbb, lbbb, vpcRv,
+  sgarbossa, deWinter, wellens, posteriorMI,
+  hyperkalemia,
+  brugada, wpw,
+  ...SIM_CONDITIONS,
+]
 
 export const CONDITION_BY_ID: Record<string, Condition> = Object.fromEntries(
   CONDITIONS.map((c) => [c.id, c]),

@@ -53,3 +53,9 @@ export const tileSinus = (count: number, rr = RR_DEFAULT) => {
   for (let i = 0; i < count; i++) beats.push(sinusBeat(i * rr))
   return { beats, durationMs: count * rr }
 }
+
+/** Tile any beat-builder `count` times at interval `rr`. */
+export const repeatBeat = (make: (onset: number) => Beat, count = 3, rr = RR_DEFAULT) => ({
+  beats: Array.from({ length: count }, (_, i) => make(i * rr)),
+  durationMs: count * rr,
+})
