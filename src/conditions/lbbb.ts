@@ -50,6 +50,7 @@ export const lbbb: Condition = {
     { segment: 'QRS', title: 'Deep QS in V1', detail: 'That whole leftward-posterior vector points away from V1 → a deep negative complex.' },
     { segment: 'ST', title: 'Discordant ST/T', detail: 'Abnormal depolarization forces repolarization opposite the QRS — the rule LBBB usually obeys.' },
   ],
+  clinical: 'New LBBB + ischemic symptoms → treat as a STEMI-equivalent: activate the cath lab. Use Sgarbossa criteria to read a STEMI hiding inside LBBB.',
   blockedBranches: ['LBB', 'LAF', 'LPF'],
   buildStrip: () => ({
     beats: [lbbbBeat(0), lbbbBeat(RR_DEFAULT), lbbbBeat(RR_DEFAULT * 2)],

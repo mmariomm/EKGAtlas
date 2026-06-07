@@ -31,6 +31,7 @@ export const simNsr: Condition = {
     'conduction graph (AV delay, His, both bundle branches) and seeds the ventricular ' +
     'regions, which depolarize fast via Purkinje. The narrow QRS and normal axis EMERGE.',
   segmentNotes: SIM_NOTES,
+  clinical: 'Solver-generated normal — the baseline the abnormal presets are built from.',
   buildStrip: () => tile({ pace: 'SA' }),
 }
 
@@ -48,6 +49,7 @@ export const simRbbb: Condition = {
     'from the septum — the wide, late rightward terminal forces of RBBB emerge on their own.',
   segmentNotes: SIM_NOTES,
   blockedBranches: ['RBB'],
+  clinical: 'RBBB pattern from cutting the right bundle. Read ST segments normally; seek a cause if new and symptomatic.',
   buildStrip: () => tile({ pace: 'SA', blockedEdges: ['HIS>RBB'] }),
 }
 
@@ -65,6 +67,7 @@ export const simLbbb: Condition = {
     'the broad, sustained leftward QRS of LBBB emerges from the geometry.',
   segmentNotes: SIM_NOTES,
   blockedBranches: ['LBB', 'LAF', 'LPF'],
+  clinical: 'LBBB pattern from cutting the left bundle. New + chest pain → STEMI-equivalent; apply Sgarbossa.',
   buildStrip: () => tile({ pace: 'SA', blockedEdges: ['HIS>LBB'] }),
 }
 
@@ -85,6 +88,7 @@ export const simStemiAnterior: Condition = {
     { segment: 'ST', title: 'ST elevation (V2–V4)', detail: 'Injury current flows toward the anterior wall during the ST segment → elevation in the leads that face it.' },
     { segment: 'QRS', title: 'Conduction intact', detail: 'No block — the QRS is normal; the abnormality is the ST injury vector.' },
   ],
+  clinical: 'Anterior STEMI → emergent reperfusion (cath lab / lytics). Time is muscle. Check reciprocal ST depression inferiorly (II/III/aVF).',
   buildStrip: () => tile({ pace: 'SA', ischemic: ['LV_ant', 'LV_apex'] }),
 }
 

@@ -1,0 +1,35 @@
+.clinical {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 13px 15px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, rgba(255, 93, 108, 0.1), rgba(255, 93, 108, 0.04));
+  border: 1px solid rgba(255, 93, 108, 0.28);
+  border-left: 3px solid var(--tone-injury);
+}
+
+.clinical-icon {
+  flex: none;
+  color: var(--tone-injury);
+  margin-top: 1px;
+}
+
+.clinical-body {
+  min-width: 0;
+}
+
+.clinical-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ff8c97;
+  margin-bottom: 2px;
+}
+
+.clinical-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-hi);
+}

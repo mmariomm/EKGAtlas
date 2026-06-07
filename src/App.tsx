@@ -18,6 +18,8 @@ import PlaybackControls from './components/PlaybackControls'
 import ExplainPanel from './components/ExplainPanel'
 import LeadSpace3D from './components/LeadSpace3D'
 import MachineReadout from './components/MachineReadout'
+import ClinicalNote from './components/ClinicalNote'
+import TerritoryLegend from './components/TerritoryLegend'
 import './App.css'
 
 interface Selection {
@@ -161,6 +163,8 @@ export default function App() {
             <p className="cond-tagline">{condition.tagline}</p>
           </div>
 
+          <ClinicalNote text={condition.clinical} />
+
           <section className="card heart-card">
             <PhaseNarration strip={strip} clock={clock} />
             <HeartDiagram strip={strip} condition={condition} clock={clock} onSelectZone={selectById} />
@@ -173,6 +177,7 @@ export default function App() {
               <LeadSelector leads={leads} onChange={setLeads} />
               <PhaseChips regions={regions} selected={selection?.id ?? null} onSelect={selectById} onClear={clearSelection} />
             </div>
+            <TerritoryLegend />
             <TraceCanvas signals={signals} strip={strip} clock={clock} leads={leads} highlight={highlight} onTapTime={selectAtTime} />
           </section>
 

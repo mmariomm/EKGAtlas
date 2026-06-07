@@ -47,6 +47,7 @@ export const rbbb: Condition = {
     { segment: 'QRS', title: 'Slurred S in I / V6', detail: 'That same late rightward vector points AWAY from the lateral leads → a wide terminal S.' },
     { segment: 'T', title: 'Discordant T (V1–V3)', detail: 'Abnormal depolarization order forces repolarization to run backwards → T opposite the R′.' },
   ],
+  clinical: 'Isolated RBBB is often benign; new RBBB with chest pain can accompany ACS or PE. Unlike LBBB, RBBB does NOT obscure a STEMI — read the ST segments normally.',
   blockedBranches: ['RBB'],
   buildStrip: () => ({
     beats: [rbbbBeat(0), rbbbBeat(RR_DEFAULT), rbbbBeat(RR_DEFAULT * 2)],

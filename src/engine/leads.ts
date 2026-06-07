@@ -51,3 +51,32 @@ export const LEAD_REGION: Record<LeadId, string> = {
   V1: 'Septal', V2: 'Septal', V3: 'Anterior',
   V4: 'Anterior', V5: 'Lateral', V6: 'Lateral',
 }
+
+/** Which myocardial wall each lead faces — the basis for ischemia localization. */
+export type Territory = 'septal' | 'anterior' | 'lateral' | 'inferior' | 'cavity'
+
+export const LEAD_TERRITORY: Record<LeadId, Territory> = {
+  I: 'lateral', II: 'inferior', III: 'inferior',
+  aVR: 'cavity', aVL: 'lateral', aVF: 'inferior',
+  V1: 'septal', V2: 'septal', V3: 'anterior',
+  V4: 'anterior', V5: 'lateral', V6: 'lateral',
+}
+
+export const TERRITORY_COLOR: Record<Territory, string> = {
+  septal: '#7f9cd6',
+  anterior: '#e8954a',
+  lateral: '#46c9a3',
+  inferior: '#d98ab0',
+  cavity: '#6b7689',
+}
+
+export const TERRITORY_LABEL: Record<Territory, string> = {
+  septal: 'Septal',
+  anterior: 'Anterior',
+  lateral: 'Lateral',
+  inferior: 'Inferior',
+  cavity: 'Cavity (aVR)',
+}
+
+/** The four walls students should learn (aVR/cavity excluded from the legend). */
+export const WALL_TERRITORIES: Territory[] = ['septal', 'anterior', 'lateral', 'inferior']

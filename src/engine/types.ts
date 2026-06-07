@@ -119,6 +119,8 @@ export interface Condition {
   story: string
   description: string
   segmentNotes: SegmentNote[]
+  /** The ED bottom line — what it means and what to DO. */
+  clinical: string
   /** Conduction branches drawn as blocked/greyed in the heart diagram. */
   blockedBranches?: StructureId[]
   buildStrip: () => Strip

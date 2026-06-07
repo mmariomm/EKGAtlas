@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef } from 'react'
 import { CardiacClock } from '../hooks/useCardiacClock'
-import { LeadId } from '../engine/leads'
+import { LeadId, LEAD_TERRITORY, TERRITORY_COLOR } from '../engine/leads'
 import { PhaseTone, Strip } from '../engine/types'
 import { SignalSet, samplePhase } from '../engine/synthesize'
 import { clamp } from '../engine/vectorMath'
@@ -142,13 +142,15 @@ export default function TraceCanvas({ signals, strip, clock, leads, highlight, o
       ctx.stroke()
 
       // lead label chip
-      ctx.fillStyle = 'rgba(13,17,25,0.7)'
-      ctx.fillRect(8, top + 8, 34, 18)
+      ctx.fillStyle = 'rgba(13,17,25,0.8)'
+      ctx.fillRect(8, top + 8, 38, 18)
+      ctx.fillStyle = TERRITORY_COLOR[LEAD_TERRITORY[id]] // wall the lead faces
+      ctx.fillRect(8, top + 8, 3, 18)
       ctx.fillStyle = '#cdd8ec'
       ctx.font = '600 12px -apple-system, system-ui, sans-serif'
       ctx.textBaseline = 'middle'
       ctx.textAlign = 'left'
-      ctx.fillText(id, 14, top + 17)
+      ctx.fillText(id, 16, top + 17)
     })
 
     // ---- beat labels on the top lane ----
