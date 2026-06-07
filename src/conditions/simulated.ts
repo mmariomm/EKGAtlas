@@ -96,7 +96,21 @@ export const simStemiAnterior: Condition = {
     { segment: 'ST', title: 'ST elevation (V2–V4)', detail: 'Injury current flows toward the anterior wall during the ST segment → elevation in the leads that face it.' },
     { segment: 'QRS', title: 'Conduction intact', detail: 'No block — the QRS is normal; the abnormality is the ST injury vector.' },
   ],
+  mechanism: [
+    { cause: 'The LAD occludes and the anterior LV wall becomes acutely, transmurally injured', effect: 'A region of muscle that cannot depolarize or repolarize normally' },
+    { cause: 'Injured muscle stays relatively depolarized during the ST period', effect: 'An injury-current ST vector that points TOWARD the anterior wall' },
+    { cause: 'The leads facing that wall (V2–V4) see the vector head-on', effect: 'ST elevation in the anterior precordial leads' },
+    { cause: 'The inferior leads (II/III/aVF) sit opposite and see it going away', effect: 'Reciprocal ST depression' },
+    { cause: 'As anterior myocytes die, their depolarizing forces are lost', effect: 'Q waves develop and the T inverts (the later evolution)' },
+  ],
   clinical: 'Anterior STEMI → emergent reperfusion (cath lab / lytics). Time is muscle. Check reciprocal ST depression inferiorly (II/III/aVF).',
+  pearls: [
+    'Anterior STE (V1–V4) = LAD; if I/aVL are involved with inferior reciprocal change, suspect a PROXIMAL LAD.',
+    'Hyperacute T waves (broad and tall) are the earliest sign — they precede frank ST elevation. Catch it before the Q waves form.',
+    'Reciprocal inferior ST depression strongly supports a true STEMI over a mimic.',
+    'STEMI mimics to exclude: benign early repolarization, LVH, LBBB, pericarditis, Brugada — evolution and reciprocal changes distinguish them.',
+    'Time is muscle — emergent reperfusion (door-to-balloon).',
+  ],
   buildStrip: () => tile({ pace: 'SA', ischemic: ['LV_ant', 'LV_apex'], injuryDir: [0.3, -0.25, 0.95], injuryMag: 0.72 }),
 }
 

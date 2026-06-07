@@ -64,7 +64,21 @@ export const vpcRv: Condition = {
     morphology: 'Underlying sinus QRS is narrow (the readout measures it); the VPC itself is early & broad — no preceding P, T discordant',
     ischemia: 'N/A for the ectopic beat — assess the underlying sinus beats',
   },
+  mechanism: [
+    { cause: 'An irritable focus in the RV free wall fires before the next sinus beat is due', effect: 'An early beat with NO preceding P wave' },
+    { cause: 'It starts in working muscle, not the His-Purkinje highway, so it spreads slowly cell-to-cell from RV to LV', effect: 'A broad, bizarre QRS' },
+    { cause: 'RV origin means the LV is activated last', effect: 'An LBBB-like shape with a down-left vector → tall and broad in lead II' },
+    { cause: 'Abnormal depolarization reverses the repolarization sequence', effect: 'A T wave discordant with (opposite) the QRS' },
+    { cause: 'The SA node is never reset and keeps its rhythm; the on-time sinus P lands while the ventricle is refractory (the hidden “P*”)', effect: 'A full compensatory pause before the next conducted beat' },
+  ],
   clinical: 'Isolated VPCs are usually benign. Worry if frequent, multifocal, or R-on-T — check electrolytes (K⁺/Mg²⁺) and ischemia, especially if new or symptomatic.',
+  pearls: [
+    'The signature: early + broad QRS + NO preceding P + discordant T, then a full compensatory pause.',
+    'Morphology localizes the focus: LBBB-like = RV origin; RBBB-like = LV origin. An inferior axis (tall II/III/aVF) suggests the outflow tract (often benign RVOT PVCs).',
+    '≥3 in a row is non-sustained VT — not “just PVCs.”',
+    'R-on-T (a PVC landing on the previous T wave) can trigger VT/VF.',
+    'Benign in a normal heart; worry with high burden (→ cardiomyopathy), multiform PVCs, or structural disease — check K⁺/Mg²⁺.',
+  ],
   buildStrip: () => ({
     beats: [sinusBeat(0, 'Beat 1'), sinusBeat(RR_DEFAULT, 'Beat 2'), vpcBeat(VPC_ONSET), ghostPBeat(GHOST_P_ONSET), sinusBeat(RESUME_ONSET)],
     durationMs: STRIP_MS,

@@ -55,7 +55,20 @@ export const lbbb: Condition = {
     morphology: 'Wide QRS; broad/notched R in I & V6; deep QS in V1; absent septal q',
     ischemia: 'Discordant ST/T is the rule here — use Sgarbossa to unmask a true STEMI',
   },
+  mechanism: [
+    { cause: 'The left bundle is blocked, so the septum is depolarized the WRONG way — right-to-left', effect: 'The normal septal q disappears from I/V5–6' },
+    { cause: 'The RV fires early via the intact right bundle, but the dominant LV is reached late and slowly, muscle-to-muscle across the septum', effect: 'A slow, sustained leftward wavefront fills the whole second half of the QRS' },
+    { cause: 'That late LV vector points left and posterior', effect: 'A broad, often-notched monophasic R in I/V5–6 and a deep QS in V1' },
+    { cause: 'Depolarization is so abnormal that repolarization is dragged the opposite way', effect: 'Discordant ST/T (the rule of appropriate discordance) — which is what hides ischemia' },
+  ],
   clinical: 'New LBBB + ischemic symptoms → treat as a STEMI-equivalent: activate the cath lab. Use Sgarbossa criteria to read a STEMI hiding inside LBBB.',
+  pearls: [
+    'Broad notched (“M-shaped”) R in I/V5–6, deep QS in V1, NO septal q laterally, QRS ≥120 ms.',
+    'LBBB is almost always pathologic (structural disease); RBBB can be a normal variant.',
+    'LBBB hides ischemia, old infarct and LVH — when symptomatic, use Sgarbossa/Smith to read a STEMI inside it.',
+    '“New LBBB = STEMI” is retired — correlate with symptoms and Sgarbossa, not the LBBB alone.',
+    'The discordant ST/T is EXPECTED here — don’t miscall appropriate discordance as ischemia.',
+  ],
   blockedBranches: ['LBB', 'LAF', 'LPF'],
   buildStrip: () => ({
     beats: [lbbbBeat(0), lbbbBeat(RR_DEFAULT), lbbbBeat(RR_DEFAULT * 2)],

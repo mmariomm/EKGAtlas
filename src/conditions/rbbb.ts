@@ -52,7 +52,19 @@ export const rbbb: Condition = {
     morphology: "Wide QRS; rSR' (“rabbit ears”) in V1; slurred S in I and V6",
     ischemia: 'Secondary T inversion in V1–V3 is expected — not ischemia',
   },
+  mechanism: [
+    { cause: 'The right bundle is blocked, but the left bundle is intact, so the septum and LV depolarize on time', effect: 'The first half of the QRS looks normal' },
+    { cause: 'The RV can no longer be reached via its Purkinje highway', effect: 'It is activated late, muscle-to-muscle from the left across the septum — slowly' },
+    { cause: 'That late, unopposed wavefront points rightward and anterior', effect: "The terminal R' in V1 (the second rabbit ear) and a wide slurred S in I and V6" },
+    { cause: 'The abnormal activation order forces repolarization to run backward over the RV', effect: 'Secondary T inversion in V1–V3, discordant with the R′' },
+  ],
   clinical: 'Isolated RBBB is often benign; new RBBB with chest pain can accompany ACS or PE. Unlike LBBB, RBBB does NOT obscure a STEMI — read the ST segments normally.',
+  pearls: [
+    "rSR' (“rabbit ears”) in V1 with QRS ≥120 ms (110–120 = incomplete). The diagnosis lives in the TERMINAL forces.",
+    'Unlike LBBB, RBBB does NOT hide a STEMI — read the ST segments normally (just expect discordant T in V1–V3).',
+    'New RBBB with chest pain is a red flag: proximal LAD occlusion or a large PE (acute RV strain) can both cause it.',
+    'Concordant ST/T changes, or T inversion extending past V3, are no longer “just the RBBB” — look for ischemia.',
+  ],
   blockedBranches: ['RBB'],
   buildStrip: () => ({
     beats: [rbbbBeat(0), rbbbBeat(RR_DEFAULT), rbbbBeat(RR_DEFAULT * 2)],
