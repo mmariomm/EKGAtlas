@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CONDITION_BY_ID, DEFAULT_CONDITION_ID } from './conditions'
 import { beatAt, buildSignals, meanQrsAxisDeg } from './engine/synthesize'
+import { measure } from './engine/measure'
 import { ALL_LEADS, LeadId, LIMB_LEADS } from './engine/leads'
 import { clamp } from './engine/vectorMath'
 import {
@@ -16,6 +17,7 @@ import LeadSelector from './components/LeadSelector'
 import PlaybackControls from './components/PlaybackControls'
 import ExplainPanel from './components/ExplainPanel'
 import LeadSpace3D from './components/LeadSpace3D'
+import MachineReadout from './components/MachineReadout'
 import './App.css'
 
 interface Selection {
@@ -60,6 +62,7 @@ export default function App() {
   const strip = useMemo(() => condition.buildStrip(), [conditionId, condition])
   const signals = useMemo(() => buildSignals(strip), [strip])
   const meanAxis = useMemo(() => meanQrsAxisDeg(strip), [strip])
+  const measurements = useMemo(() => measure(strip), [strip])
   const regions = useMemo(() => phaseRegions(strip), [strip])
   const repOnset = useMemo(() => representativeOnset(strip), [strip])
 
@@ -165,6 +168,7 @@ export default function App() {
           </section>
 
           <section className="card trace-card">
+            <MachineReadout m={measurements} />
             <div className="trace-controls">
               <LeadSelector leads={leads} onChange={setLeads} />
               <PhaseChips regions={regions} selected={selection?.id ?? null} onSelect={selectById} onClear={clearSelection} />

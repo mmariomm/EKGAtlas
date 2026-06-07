@@ -102,7 +102,7 @@ const solveRegions = (state: TissueState, nodeT: Map<NodeId, number>): Map<strin
 const T_PRIMARY = 0.34
 const T_SECONDARY = 0.95
 const T_DYSSYNC = 55 // ms scale over which "lateness" matters
-const T_APD = 250 // ms from activation to the T peak
+const T_APD = 185 // ms from activation to the T peak (keeps QT in a realistic range)
 
 /** Run the simulation and emit one Beat (relative to `onset`). */
 export const simulateBeat = (
@@ -134,11 +134,14 @@ export const simulateBeat = (
     const hit = regionT.get(r.id)
     if (hit == null || scar.has(r.id)) continue
     const t = hit.t
-    // Dipole points along the propagation direction when reached cell-to-cell
-    // (abnormal), else its intrinsic endo→epi direction (Purkinje-seeded, normal).
-    const dir: Vec3 = hit.viaPos
-      ? normalize([r.pos[0] - hit.viaPos[0], r.pos[1] - hit.viaPos[1], r.pos[2] - hit.viaPos[2]])
-      : r.dir
+    // Each wall's intrinsic (endo→epi) direction carries the bulk vector — correct
+    // axis and BBB morphology (and the late intrinsic RV still gives the RBBB R').
+    // The septum is the exception: activated retrograde from the RV side it
+    // depolarizes right→left, flipping the septal q (the LBBB hallmark).
+    let dir: Vec3 = r.dir
+    if (r.id === 'SEPTUM' && hit.viaPos && hit.viaPos[0] < r.pos[0]) {
+      dir = [-r.dir[0], r.dir[1], -r.dir[2]]
+    }
     const isAtrial = r.structure === 'RA' || r.structure === 'LA'
     const segment = isAtrial ? 'P' : 'QRS'
     const kind = isAtrial ? 'atria' : 'ventricle'

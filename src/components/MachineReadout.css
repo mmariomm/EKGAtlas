@@ -1,0 +1,65 @@
+.readout {
+  display: flex;
+  gap: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mr-cell {
+  flex: 1 1 0;
+  min-width: 72px;
+  padding: 9px 12px;
+  border-left: 1px solid var(--border);
+  text-align: left;
+}
+
+.mr-cell:first-child {
+  border-left: none;
+}
+
+.mr-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.mr-value {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text-hi);
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.mr-unit {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-left: 3px;
+}
+
+.mr-flag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* severity */
+.mr-warn .mr-value {
+  color: var(--tone-av);
+}
+.mr-warn .mr-flag {
+  color: var(--tone-av);
+}
+.mr-crit .mr-value {
+  color: var(--tone-injury);
+}
+.mr-crit .mr-flag {
+  color: var(--tone-injury);
+}
