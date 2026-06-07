@@ -27,6 +27,11 @@ export const nsr: Condition = {
     { segment: 'QRS', title: 'QRS complex', detail: 'Simultaneous ventricular depolarization via both bundle branches → narrow (<120 ms). Septal q, tall LV-driven R.' },
     { segment: 'T', title: 'T wave', detail: 'Repolarization, concordant with the QRS — upright wherever the R is dominant.' },
   ],
+  read: {
+    rhythm: 'Sinus — an upright P before every QRS, regular',
+    morphology: 'Narrow QRS, normal R-wave progression, no pathologic Q waves',
+    ischemia: 'None — ST isoelectric, T concordant with the QRS',
+  },
   clinical: 'Normal — no action. This is your reference: read every abnormal tracing as a deviation from it.',
   buildStrip: () => tileSinus(3),
 }

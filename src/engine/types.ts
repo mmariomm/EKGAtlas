@@ -121,6 +121,10 @@ export interface Condition {
   segmentNotes: SegmentNote[]
   /** The ED bottom line — what it means and what to DO. */
   clinical: string
+  /** Findings for the systematic read (the steps not derivable from measurements). */
+  read?: { rhythm: string; morphology: string; ischemia: string }
+  /** Hidden from the picker (e.g. solver-validation duplicates); still deep-linkable. */
+  hidden?: boolean
   /** Conduction branches drawn as blocked/greyed in the heart diagram. */
   blockedBranches?: StructureId[]
   buildStrip: () => Strip

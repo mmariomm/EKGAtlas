@@ -26,7 +26,7 @@ export const CATEGORY_ORDER: ConditionCategory[] = [
 export const conditionsByCategory = (): { category: ConditionCategory; items: Condition[] }[] =>
   CATEGORY_ORDER.map((category) => ({
     category,
-    items: CONDITIONS.filter((c) => c.category === category),
+    items: CONDITIONS.filter((c) => c.category === category && !c.hidden),
   })).filter((g) => g.items.length > 0)
 
 export const DEFAULT_CONDITION_ID = nsr.id

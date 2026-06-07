@@ -59,6 +59,11 @@ export const vpcRv: Condition = {
     { segment: 'T', title: 'Discordant T', detail: 'Abnormal depolarization order reverses repolarization → the T points opposite the QRS.' },
     { segment: 'P', title: 'Hidden P* + pause', detail: 'The on-time sinus P lands in the VPC’s refractory period (buried in the T) → full compensatory pause.' },
   ],
+  read: {
+    rhythm: 'Sinus with a ventricular premature complex + full compensatory pause',
+    morphology: 'Early broad QRS, no preceding P, T discordant to the QRS',
+    ischemia: 'N/A for the ectopic beat — read the underlying sinus rhythm',
+  },
   clinical: 'Isolated VPCs are usually benign. Worry if frequent, multifocal, or R-on-T — check electrolytes (K⁺/Mg²⁺) and ischemia, especially if new or symptomatic.',
   buildStrip: () => ({
     beats: [sinusBeat(0, 'Beat 1'), sinusBeat(RR_DEFAULT, 'Beat 2'), vpcBeat(VPC_ONSET), ghostPBeat(GHOST_P_ONSET), sinusBeat(RESUME_ONSET)],

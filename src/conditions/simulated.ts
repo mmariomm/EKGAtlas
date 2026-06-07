@@ -32,6 +32,7 @@ export const simNsr: Condition = {
     'regions, which depolarize fast via Purkinje. The narrow QRS and normal axis EMERGE.',
   segmentNotes: SIM_NOTES,
   clinical: 'Solver-generated normal — the baseline the abnormal presets are built from.',
+  hidden: true,
   buildStrip: () => tile({ pace: 'SA' }),
 }
 
@@ -50,6 +51,7 @@ export const simRbbb: Condition = {
   segmentNotes: SIM_NOTES,
   blockedBranches: ['RBB'],
   clinical: 'RBBB pattern from cutting the right bundle. Read ST segments normally; seek a cause if new and symptomatic.',
+  hidden: true,
   buildStrip: () => tile({ pace: 'SA', blockedEdges: ['HIS>RBB'] }),
 }
 
@@ -68,17 +70,23 @@ export const simLbbb: Condition = {
   segmentNotes: SIM_NOTES,
   blockedBranches: ['LBB', 'LAF', 'LPF'],
   clinical: 'LBBB pattern from cutting the left bundle. New + chest pain → STEMI-equivalent; apply Sgarbossa.',
+  hidden: true,
   buildStrip: () => tile({ pace: 'SA', blockedEdges: ['HIS>LBB'] }),
 }
 
 export const simStemiAnterior: Condition = {
   id: 'sim-stemi-ant',
-  name: 'Simulated — Anterior STEMI',
-  shortName: 'Sim · Anterior STEMI',
-  category: 'Simulated',
-  tagline: 'Same engine, anterior LV ischemic — ST elevation emerges in V2–V4.',
-  criteria: ['Solver-generated', 'Ischemic: anterior LV', 'Injury current → ST'],
+  name: 'Anterior STEMI',
+  shortName: 'Anterior STEMI',
+  category: 'Ischemia & infarction',
+  tagline: 'ST elevation in V2–V4 from acute anterior-wall injury — a can’t-miss.',
+  criteria: ['ST elevation in V2–V4', 'Reciprocal ST↓ inferiorly', 'Injury current → ST vector toward the wall'],
   story: 'Anterior wall injury → ST vector points anterior → STE in V2–V4',
+  read: {
+    rhythm: 'Sinus',
+    morphology: 'Normal QRS width and R-wave progression',
+    ischemia: 'ST elevation V2–V4 (anterior); look for reciprocal ST↓ in II/III/aVF',
+  },
   description:
     'The anterior LV regions are flagged ischemic. Their injury current produces a sustained ' +
     'ST vector pointing toward the anterior chest, so the facing leads (V2–V4) show ST ' +

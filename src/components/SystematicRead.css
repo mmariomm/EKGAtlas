@@ -1,0 +1,66 @@
+.sysread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sysread-head {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.sysread-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.sysread-step {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+}
+
+.sysread-num {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  margin-top: 1px;
+}
+
+.sysread-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sysread-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.sysread-value {
+  font-size: 14px;
+  color: var(--text-hi);
+  line-height: 1.45;
+}
+
+.sysread-sub {
+  color: var(--text-dim);
+}

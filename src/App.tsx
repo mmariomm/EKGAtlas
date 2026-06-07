@@ -20,6 +20,7 @@ import LeadSpace3D from './components/LeadSpace3D'
 import MachineReadout from './components/MachineReadout'
 import ClinicalNote from './components/ClinicalNote'
 import TerritoryLegend from './components/TerritoryLegend'
+import SystematicRead from './components/SystematicRead'
 import './App.css'
 
 interface Selection {
@@ -179,6 +180,10 @@ export default function App() {
             </div>
             <TerritoryLegend />
             <TraceCanvas signals={signals} strip={strip} clock={clock} leads={leads} highlight={highlight} onTapTime={selectAtTime} />
+          </section>
+
+          <section className="card">
+            <SystematicRead m={measurements} read={condition.read} />
           </section>
 
           <section className="card">

@@ -44,7 +44,7 @@ export default function ConditionPicker({ current, onSelect }: Props) {
 
   const groups = useMemo(() => conditionsByCategory(), [])
   const q = query.trim().toLowerCase()
-  const filtered = q ? CONDITIONS.filter((c) => matches(c, q)) : null
+  const filtered = q ? CONDITIONS.filter((c) => !c.hidden && matches(c, q)) : null
 
   const choose = (id: string) => {
     onSelect(id)
