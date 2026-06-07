@@ -4,10 +4,10 @@
  * the heart structures active during it, and its phase tone. Selecting a phase
  * seeks the shared clock into that window, so the heart and trace both reflect it.
  *
- * Time bounds are derived from the first beat's authored conduction events, so a
- * wide LBBB QRS or a different PR all come out correct without hand-tuning.
+ * Bounds are derived from the actual dipole sources (their center ± extent), so
+ * they stay aligned with the waveform — a wide LBBB QRS comes out wide automatically.
  */
-import { PhaseTone, StructureId, Strip } from './types'
+import { PhaseTone, SegmentTag, StructureId, Strip } from './types'
 
 export type SegmentId = 'P' | 'PR' | 'QRS' | 'ST' | 'T'
 
@@ -39,38 +39,38 @@ export interface PhaseRegion {
 export const isSegmentId = (s: string | null | undefined): s is SegmentId =>
   s === 'P' || s === 'PR' || s === 'QRS' || s === 'ST' || s === 'T'
 
-/** The representative beat: the first one carrying a full P-QRS-T (else beat 0). */
+/** The representative beat: the first carrying both a P and a real QRS (else beat 0). */
 const representativeBeat = (strip: Strip) =>
   strip.beats.find(
-    (b) =>
-      b.events.some((e) => e.kind === 'atria') &&
-      b.events.some((e) => e.kind === 'ventricle'),
+    (b) => b.sources.some((s) => s.segment === 'P') && b.sources.some((s) => s.segment === 'QRS' && s.mag > 0),
   ) ?? strip.beats[0]
 
 export const phaseRegions = (strip: Strip): PhaseRegion[] => {
   const beat = representativeBeat(strip)
-  const ev = beat.events
-  const span = (pred: (k: PhaseTone, s: StructureId) => boolean) => {
-    const es = ev.filter((e) => pred(e.kind, e.structure))
-    if (!es.length) return null
-    return { s: Math.min(...es.map((e) => e.start)), e: Math.max(...es.map((e) => e.end)) }
+  const ext = (seg: SegmentTag) => {
+    const ss = beat.sources.filter((s) => s.segment === seg && s.mag > 0)
+    if (!ss.length) return null
+    return {
+      s: Math.min(...ss.map((s) => s.center - 1.7 * s.width)),
+      e: Math.max(...ss.map((s) => s.center + 1.7 * s.width)),
+    }
   }
-  const atria = span((k, s) => k === 'atria' || s === 'SA')
-  const vent = span((k) => k === 'ventricle' || k === 'injury')
-  const repol = span((k) => k === 'repol')
+  const P = ext('P')
+  const QRS = ext('QRS')
+  const T = ext('T')
 
   const out: PhaseRegion[] = []
-  const push = (id: SegmentId, s: number | null, e: number | null) => {
+  const push = (id: SegmentId, s: number | null | undefined, e: number | null | undefined) => {
     if (s == null || e == null || e <= s) return
     const m = PHASE_META[id]
     out.push({ id, label: m.label, tone: m.tone, structures: m.structures, relStart: s, relEnd: e, mid: (s + e) / 2 })
   }
 
-  if (atria) push('P', atria.s, atria.e)
-  if (atria && vent) push('PR', atria.e, vent.s) // the isoelectric AV-delay segment
-  if (vent) push('QRS', vent.s, vent.e)
-  if (vent && repol) push('ST', vent.e, repol.s)
-  if (repol) push('T', repol.s, repol.e)
+  if (P) push('P', P.s, P.e)
+  if (P && QRS) push('PR', P.e, QRS.s)
+  if (QRS) push('QRS', QRS.s, QRS.e)
+  if (QRS && T) push('ST', QRS.e, T.s)
+  if (T) push('T', T.s, T.e)
   return out
 }
 

@@ -1,14 +1,21 @@
 /**
- * The data model. A Condition produces a Strip (a timeline of Beats). Each Beat
- * carries two synchronized descriptions of the same electrical event:
+ * The data model — ONE source of truth.
  *
- *   1. `lobes`  — Gaussian "pushes" of the dipole vector. Summed over time they
- *                 ARE the heart vector V(t); projected onto a lead they ARE that
- *                 lead's waveform. This is what the trace and the vector arrow read.
+ * A Condition produces a Strip (a timeline of Beats). Each Beat is described by:
  *
- *   2. `events` — which conduction structures light up, and when. This is what
- *                 the heart diagram animates. Authored alongside the lobes so the
- *                 glow and the waveform always tell the same story.
+ *   sources — pieces of myocardium that depolarize. Each carries BOTH its dipole
+ *             contribution (which sums into the heart vector V(t) and, projected
+ *             onto a lead, into that lead's waveform) AND the diagram glow it
+ *             produces. Because the trace and the heart animation are derived from
+ *             the SAME sources, they can never be discordant.
+ *
+ *   wires   — the conduction system (SA, AV, His, bundle branches). These are
+ *             glow-only timing markers; they carry negligible surface voltage but
+ *             show the impulse racing toward the muscle.
+ *
+ * In Phase A these timings are authored per condition. In Phase B a propagation
+ * solver will compute them from a conduction graph + tissue state (ablations,
+ * blocks), at which point conditions become presets of the simulator.
  */
 import { Vec3 } from './vectorMath'
 
@@ -17,42 +24,54 @@ export type StructureId =
   | 'SA' | 'RA' | 'LA' | 'AV' | 'HIS'
   | 'RBB' | 'LBB' | 'LAF' | 'LPF'
   | 'SEPTUM' | 'RV' | 'LV'
-  | 'FOCUS' // a generic ectopic focus, positioned per-beat
+  | 'FOCUS'
 
 /** Phase tone — drives the shared cross-modal color binding (heart ↔ trace). */
 export type PhaseTone = 'sa' | 'atria' | 'av' | 'ventricle' | 'repol' | 'injury' | 'rest'
 
-/** A single Gaussian contribution to the dipole vector over the cardiac cycle. */
-export interface ActivationLobe {
-  /** Direction the dipole points during this push (need not be unit length). */
-  dir: Vec3
-  /** Peak magnitude in mV-equivalent units. */
-  mag: number
-  /** Time of the peak, in ms relative to the beat's onset. */
-  center: number
-  /** Std-dev (ms). Small = sharp (QRS); large = broad (P, T, injury current). */
-  width: number
-  /** Tag for axis/segment math and click-to-explain (e.g. 'QRS', 'T', 'ST'). */
-  segment?: 'P' | 'QRS' | 'ST' | 'T'
-}
+export type SegmentTag = 'P' | 'QRS' | 'ST' | 'T'
 
-/** One structure lighting up over a time window, for the heart animation. */
-export interface ConductionEvent {
-  structure: StructureId
-  /** ms relative to beat onset. */
-  start: number
-  /** ms relative to beat onset. */
-  end: number
+/** How a source lights the heart diagram (a derived view of the same event). */
+export interface SourceGlow {
+  /** Which structures this source illuminates (a wavefront may sweep several). */
+  structures: StructureId[]
   kind: PhaseTone
-  /** Optional narration shown while this event leads (overrides the default). */
+  /** Glow/sweep window in ms relative to the beat onset. */
+  start: number
+  end: number
+  /** Optional narration shown while this source leads the phase. */
   note?: string
 }
 
-/** A position for an ectopic focus marker, in heart-diagram normalized coords. */
+/**
+ * A depolarizing (or repolarizing/injury) piece of tissue: one Gaussian "push"
+ * of the dipole, plus the glow it casts.
+ */
+export interface Source {
+  /** Dipole direction (need not be unit length). */
+  dir: Vec3
+  /** Peak magnitude in mV-equivalent units. 0 = glow-only. */
+  mag: number
+  /** Time of the peak, ms relative to beat onset (the activation time). */
+  center: number
+  /** Std-dev (ms): small = sharp (QRS), large = broad (P, T, injury). */
+  width: number
+  segment: SegmentTag
+  glow?: SourceGlow
+}
+
+/** A conduction-system element lighting up — glow only, no surface voltage. */
+export interface WirePulse {
+  structure: StructureId
+  start: number
+  end: number
+  kind: PhaseTone
+  note?: string
+}
+
+/** Position for an ectopic focus marker, in heart-diagram normalized coords. */
 export interface FocusSpec {
-  /** 0..1 across the heart diagram width. */
   x: number
-  /** 0..1 down the heart diagram height. */
   y: number
   label: string
 }
@@ -60,8 +79,8 @@ export interface FocusSpec {
 export interface Beat {
   /** Absolute start time of this beat within the strip, in ms. */
   onset: number
-  lobes: ActivationLobe[]
-  events: ConductionEvent[]
+  sources: Source[]
+  wires: WirePulse[]
   /** Short label drawn above the beat on the trace (e.g. 'VPC', 'Beat 1'). */
   label?: string
   /** If this beat originates from an ectopic focus, where to draw it. */
@@ -92,21 +111,14 @@ export interface SegmentNote {
 export interface Condition {
   id: string
   name: string
-  /** Compact label for the picker list. */
   shortName: string
   category: ConditionCategory
-  /** One-line hook shown under the title. */
   tagline: string
-  /** Diagnostic criteria chips. */
   criteria: string[]
-  /** The sequence caption, e.g. "NSR → NSR → VPC → pause → NSR". */
   story: string
-  /** Longer "why it looks like this" prose for the explain panel. */
   description: string
-  /** Mechanism notes keyed to waveform segments. */
   segmentNotes: SegmentNote[]
   /** Conduction branches drawn as blocked/greyed in the heart diagram. */
   blockedBranches?: StructureId[]
-  /** Build the loopable strip. */
   buildStrip: () => Strip
 }
