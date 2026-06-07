@@ -1,40 +1,33 @@
 /**
- * 3D Leads view. The whole point of the ECG made spatial: the heart + its live
- * vector sit in the centre, and the 12 leads float at their true viewing
- * directions around it — limb leads in the frontal ring, precordials in the
- * transverse ring. Each lead is a little EKG panel showing its own complex; as
- * the cardiac vector sweeps, each lead GLOWS by how strongly the vector projects
- * onto it (gold toward the lead = positive deflection, blue away = negative) —
- * which is literally that lead's waveform value at that instant.
+ * 3D Leads view — the ECG projection made spatial.
  *
- * Hand-rolled 3D (no dependency): rotate world points by yaw/pitch, weak
- * perspective, depth-sort + depth-fade. Drag to rotate. Reuses the engine.
+ * A prominent heart with its live vector sits in the centre; the 12 leads float
+ * at their true viewing directions, each a readable panel showing ONE beat. As
+ * the vector sweeps, every lead glows by how strongly the vector projects onto it
+ * — gold toward (positive deflection), blue away (negative) — i.e. that lead's
+ * own waveform value. Hand-rolled 3D (no deps): rotate, weak perspective,
+ * depth-sort + depth-fade. Drag to rotate.
  */
 import { useEffect, useRef } from 'react'
 import { CardiacClock } from '../hooks/useCardiacClock'
-import { ALL_LEADS, LEAD_AXES, LEAD_REGION, LeadId, LIMB_LEADS } from '../engine/leads'
+import { ALL_LEADS, LEAD_AXES, LeadId } from '../engine/leads'
 import { Strip } from '../engine/types'
 import { SignalSet, sampleVector, samplePhase } from '../engine/synthesize'
 import { clamp, Vec3 } from '../engine/vectorMath'
 import { PHASE_COLORS } from '../theme'
 import './LeadSpace3D.css'
 
-const CAM_D = 4.6
-const R_LEAD = 1.4
-const VEC_SCALE = 0.92
+const CAM_D = 5.2
+const R_LEAD = 1.06
+const VEC_SCALE = 0.9
 const POS = '#ffc24b' // vector toward a lead → positive deflection
 const NEG = '#5ab0ff' // vector away → negative deflection
+const PANEL_W = 104
+const PANEL_H = 62
 
-interface Projected {
-  sx: number
-  sy: number
-  depth: number
-  persp: number
-}
+interface Projected { sx: number; sy: number; depth: number; persp: number }
 
-const project = (
-  p: Vec3, yaw: number, pitch: number, cx: number, cy: number, scale: number,
-): Projected => {
+const project = (p: Vec3, yaw: number, pitch: number, cx: number, cy: number, scale: number): Projected => {
   const cyaw = Math.cos(yaw)
   const syaw = Math.sin(yaw)
   const x = p[0] * cyaw + p[2] * syaw
@@ -59,177 +52,32 @@ export default function LeadSpace3D({ signals, strip, clock }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 })
   const yawRef = useRef(-0.5)
-  const pitchRef = useRef(-0.32)
+  const pitchRef = useRef(-0.3)
 
-  // Precompute a downsampled mini-trace (x in 0..1, y in mV) per lead.
-  const miniRef = useRef<Record<LeadId, { x: number; y: number }[]>>({} as never)
+  // One representative beat per lead (x 0..1 across the beat, y in mV) + the beat length.
+  const repRef = useRef<Record<LeadId, { x: number; y: number }[]>>({} as never)
+  const beatMsRef = useRef(800)
   useEffect(() => {
-    const step = Math.max(1, Math.floor(signals.n / 240))
+    const beatMs = strip.beats.length >= 2 ? strip.beats[1].onset - strip.beats[0].onset : strip.durationMs
+    beatMsRef.current = beatMs
+    const n = Math.max(2, Math.round(beatMs / signals.dt))
+    const step = Math.max(1, Math.floor(n / 160))
     const out = {} as Record<LeadId, { x: number; y: number }[]>
     for (const id of ALL_LEADS) {
       const arr = signals.leads[id]
       const pts: { x: number; y: number }[] = []
-      for (let i = 0; i < signals.n; i += step) pts.push({ x: i / (signals.n - 1), y: arr[i] })
+      for (let i = 0; i <= n; i += step) pts.push({ x: i / n, y: arr[Math.min(arr.length - 1, i)] })
       out[id] = pts
     }
-    miniRef.current = out
-  }, [signals])
+    repRef.current = out
+  }, [signals, strip])
 
-  const render = (t: number) => {
-    const cv = canvasRef.current
-    const { w, h, dpr } = sizeRef.current
-    if (!cv || w === 0) return
-    const ctx = cv.getContext('2d')
-    if (!ctx) return
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, w, h)
-
-    const cx = w / 2
-    const cy = h / 2
-    const scale = Math.min(w, h) * 0.27
-    const yaw = yawRef.current
-    const pitch = pitchRef.current
-    const P = (p: Vec3) => project(p, yaw, pitch, cx, cy, scale)
-
-    const v = sampleVector(strip, t)
-    const tone = PHASE_COLORS[samplePhase(strip, t).tone]
-    const idx = clamp(Math.round(t / signals.dt), 0, signals.n - 1)
-
-    // --- guide rings (frontal: z=0; transverse: y=0) ---
-    const ring = (axis: 'frontal' | 'transverse') => {
-      ctx.beginPath()
-      for (let i = 0; i <= 64; i++) {
-        const a = (i / 64) * Math.PI * 2
-        const p: Vec3 = axis === 'frontal'
-          ? [Math.cos(a) * R_LEAD, Math.sin(a) * R_LEAD, 0]
-          : [Math.cos(a) * R_LEAD, 0, Math.sin(a) * R_LEAD]
-        const pr = P(p)
-        if (i === 0) ctx.moveTo(pr.sx, pr.sy)
-        else ctx.lineTo(pr.sx, pr.sy)
-      }
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)'
-      ctx.lineWidth = 1
-      ctx.stroke()
-    }
-    ring('frontal')
-    ring('transverse')
-
-    // --- assemble drawables (leads) with depth ---
-    const leads = ALL_LEADS.map((id) => {
-      const axis = LEAD_AXES[id]
-      const pos: Vec3 = [axis[0] * R_LEAD, axis[1] * R_LEAD, axis[2] * R_LEAD]
-      const pr = P(pos)
-      const val = signals.leads[id][idx]
-      return { id, pr, val, isLimb: (LIMB_LEADS as string[]).includes(id) }
-    })
-    leads.sort((a, b) => a.pr.depth - b.pr.depth)
-
-    const drawHeartAndVector = () => {
-      const o = P([0, 0, 0])
-      // heart glyph
-      ctx.beginPath()
-      ctx.arc(o.sx, o.sy, 13 * o.persp, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255,120,120,0.12)'
-      ctx.fill()
-      ctx.strokeStyle = 'rgba(255,150,150,0.5)'
-      ctx.lineWidth = 1.4
-      ctx.stroke()
-      // vector arrow (3D)
-      const tip = P([v[0] * VEC_SCALE, v[1] * VEC_SCALE, v[2] * VEC_SCALE])
-      ctx.save()
-      ctx.strokeStyle = tone.core
-      ctx.fillStyle = tone.core
-      ctx.shadowColor = tone.glow
-      ctx.shadowBlur = 12
-      ctx.lineWidth = 3
-      ctx.lineCap = 'round'
-      ctx.beginPath()
-      ctx.moveTo(o.sx, o.sy)
-      ctx.lineTo(tip.sx, tip.sy)
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.arc(tip.sx, tip.sy, 4, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.restore()
-    }
-
-    const drawLead = (L: typeof leads[number]) => {
-      const { pr, id, val } = L
-      const fade = clamp((pr.depth + 1.6) / 3.2, 0.35, 1) // nearer = brighter
-      const pw = 66 * pr.persp
-      const ph = 40 * pr.persp
-      const x0 = pr.sx - pw / 2
-      const y0 = pr.sy - ph / 2
-
-      // glow ring ∝ |projection| (= this lead's current deflection)
-      const mag = clamp(Math.abs(val) / 1.4, 0, 1)
-      const glowColor = val >= 0 ? POS : NEG
-      if (mag > 0.04) {
-        ctx.save()
-        ctx.shadowColor = glowColor
-        ctx.shadowBlur = 18 * mag
-        ctx.strokeStyle = glowColor
-        ctx.globalAlpha = (0.35 + 0.65 * mag) * fade
-        ctx.lineWidth = 2
-        roundRect(ctx, x0, y0, pw, ph, 7 * pr.persp)
-        ctx.stroke()
-        ctx.restore()
-      }
-
-      // panel
-      ctx.globalAlpha = fade
-      ctx.fillStyle = 'rgba(10,14,21,0.82)'
-      roundRect(ctx, x0, y0, pw, ph, 7 * pr.persp)
-      ctx.fill()
-      ctx.strokeStyle = 'rgba(255,255,255,0.12)'
-      ctx.lineWidth = 1
-      roundRect(ctx, x0, y0, pw, ph, 7 * pr.persp)
-      ctx.stroke()
-
-      // mini-trace
-      const pts = miniRef.current[id]
-      if (pts) {
-        const padX = 5 * pr.persp
-        const traceW = pw - padX * 2
-        const midY = y0 + ph * 0.6
-        const mvScale = (ph * 0.42) / 1.6
-        ctx.beginPath()
-        for (let i = 0; i < pts.length; i++) {
-          const px = x0 + padX + pts[i].x * traceW
-          const py = clamp(midY - pts[i].y * mvScale, y0 + 2, y0 + ph - 2)
-          if (i === 0) ctx.moveTo(px, py)
-          else ctx.lineTo(px, py)
-        }
-        ctx.strokeStyle = `rgba(234,242,255,${0.9 * fade})`
-        ctx.lineWidth = 1.1
-        ctx.lineJoin = 'round'
-        ctx.stroke()
-        // playhead dot
-        const fx = x0 + padX + (t / signals.durationMs) * traceW
-        const fy = clamp(midY - val * mvScale, y0 + 2, y0 + ph - 2)
-        ctx.beginPath()
-        ctx.arc(fx, fy, 2.4 * pr.persp, 0, Math.PI * 2)
-        ctx.fillStyle = glowColor
-        ctx.fill()
-      }
-
-      // label
-      ctx.globalAlpha = fade
-      ctx.fillStyle = '#cdd8ec'
-      ctx.font = `${Math.round(12 * pr.persp)}px -apple-system, system-ui, sans-serif`
-      ctx.textAlign = 'left'
-      ctx.textBaseline = 'alphabetic'
-      ctx.fillText(id, x0 + 5 * pr.persp, y0 + 12 * pr.persp)
-      ctx.globalAlpha = 1
-    }
-
-    // draw back leads → heart/vector → front leads
-    let drewCenter = false
-    for (const L of leads) {
-      if (!drewCenter && L.pr.depth >= 0) { drawHeartAndVector(); drewCenter = true }
-      drawLead(L)
-    }
-    if (!drewCenter) drawHeartAndVector()
+  const heartPath = (ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) => {
+    ctx.beginPath()
+    ctx.moveTo(cx, cy + 0.55 * s)
+    ctx.bezierCurveTo(cx - 0.98 * s, cy - 0.05 * s, cx - 0.52 * s, cy - 0.78 * s, cx, cy - 0.22 * s)
+    ctx.bezierCurveTo(cx + 0.52 * s, cy - 0.78 * s, cx + 0.98 * s, cy - 0.05 * s, cx, cy + 0.55 * s)
+    ctx.closePath()
   }
 
   const roundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
@@ -243,7 +91,185 @@ export default function LeadSpace3D({ signals, strip, clock }: Props) {
     ctx.closePath()
   }
 
-  // size tracking
+  const render = (t: number) => {
+    const cv = canvasRef.current
+    const { w, h, dpr } = sizeRef.current
+    if (!cv || w === 0) return
+    const ctx = cv.getContext('2d')
+    if (!ctx) return
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+
+    const cx = w / 2
+    const cy = h / 2
+    const scale = Math.min(w, h) * 0.32
+    const yaw = yawRef.current
+    const pitch = pitchRef.current
+    const P = (p: Vec3) => project(p, yaw, pitch, cx, cy, scale)
+
+    // Everything keyed to the phase within one representative beat.
+    const beatMs = beatMsRef.current
+    const phase = (((t % beatMs) + beatMs) % beatMs) / beatMs
+    const vt = phase * beatMs
+    const v = sampleVector(strip, vt)
+    const tone = PHASE_COLORS[samplePhase(strip, vt).tone]
+    const valOf = (id: LeadId) => {
+      const pts = repRef.current[id]
+      if (!pts) return 0
+      return pts[clamp(Math.round(phase * (pts.length - 1)), 0, pts.length - 1)].y
+    }
+
+    // --- guide rings ---
+    const ring = (kind: 'frontal' | 'transverse') => {
+      ctx.beginPath()
+      for (let i = 0; i <= 72; i++) {
+        const a = (i / 72) * Math.PI * 2
+        const p: Vec3 = kind === 'frontal'
+          ? [Math.cos(a) * R_LEAD, Math.sin(a) * R_LEAD, 0]
+          : [Math.cos(a) * R_LEAD, 0, Math.sin(a) * R_LEAD]
+        const pr = P(p)
+        if (i === 0) ctx.moveTo(pr.sx, pr.sy)
+        else ctx.lineTo(pr.sx, pr.sy)
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)'
+      ctx.lineWidth = 1
+      ctx.stroke()
+    }
+    ring('frontal')
+    ring('transverse')
+
+    const leads = ALL_LEADS.map((id) => {
+      const axis = LEAD_AXES[id]
+      const pr = P([axis[0] * R_LEAD, axis[1] * R_LEAD, axis[2] * R_LEAD])
+      return { id, pr, val: valOf(id) }
+    })
+    leads.sort((a, b) => a.pr.depth - b.pr.depth)
+
+    const drawHeart = () => {
+      const o = P([0, 0, 0])
+      const s = 64 * o.persp
+      ctx.save()
+      const grad = ctx.createRadialGradient(o.sx, o.sy - s * 0.1, s * 0.1, o.sx, o.sy, s * 0.9)
+      grad.addColorStop(0, 'rgba(255,120,120,0.5)')
+      grad.addColorStop(0.6, 'rgba(220,70,80,0.28)')
+      grad.addColorStop(1, 'rgba(150,40,55,0.05)')
+      ctx.shadowColor = 'rgba(255,90,100,0.5)'
+      ctx.shadowBlur = 26
+      heartPath(ctx, o.sx, o.sy, s)
+      ctx.fillStyle = grad
+      ctx.fill()
+      ctx.shadowBlur = 0
+      ctx.strokeStyle = 'rgba(255,150,160,0.55)'
+      ctx.lineWidth = 1.5
+      heartPath(ctx, o.sx, o.sy, s)
+      ctx.stroke()
+      ctx.restore()
+
+      // vector arrow (3D), over the heart
+      const tip = P([v[0] * VEC_SCALE, v[1] * VEC_SCALE, v[2] * VEC_SCALE])
+      const ang = Math.atan2(tip.sy - o.sy, tip.sx - o.sx)
+      const hs = 12
+      ctx.save()
+      ctx.strokeStyle = tone.core
+      ctx.fillStyle = tone.core
+      ctx.shadowColor = tone.glow
+      ctx.shadowBlur = 14
+      ctx.lineWidth = 3.4
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(o.sx, o.sy)
+      ctx.lineTo(tip.sx, tip.sy)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(tip.sx, tip.sy)
+      ctx.lineTo(tip.sx - hs * Math.cos(ang - 0.42), tip.sy - hs * Math.sin(ang - 0.42))
+      ctx.lineTo(tip.sx - hs * Math.cos(ang + 0.42), tip.sy - hs * Math.sin(ang + 0.42))
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
+    }
+
+    const drawLead = (L: { id: LeadId; pr: Projected; val: number }) => {
+      const { pr, id, val } = L
+      const fade = clamp((pr.depth + 1.5) / 3, 0.42, 1)
+      const pw = PANEL_W * pr.persp
+      const ph = PANEL_H * pr.persp
+      const x0 = pr.sx - pw / 2
+      const y0 = pr.sy - ph / 2
+      const mag = clamp(Math.abs(val) / 1.4, 0, 1)
+      const glowColor = val >= 0 ? POS : NEG
+      const r = 9 * pr.persp
+
+      // glow ring ∝ |projection|
+      if (mag > 0.03) {
+        ctx.save()
+        ctx.shadowColor = glowColor
+        ctx.shadowBlur = 22 * mag
+        ctx.strokeStyle = glowColor
+        ctx.globalAlpha = (0.4 + 0.6 * mag) * fade
+        ctx.lineWidth = 2
+        roundRect(ctx, x0, y0, pw, ph, r)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // panel
+      ctx.globalAlpha = fade
+      ctx.fillStyle = 'rgba(11,15,23,0.9)'
+      roundRect(ctx, x0, y0, pw, ph, r)
+      ctx.fill()
+      ctx.strokeStyle = `rgba(255,255,255,${0.14 * fade})`
+      ctx.lineWidth = 1
+      roundRect(ctx, x0, y0, pw, ph, r)
+      ctx.stroke()
+
+      // one-beat trace
+      const pts = repRef.current[id]
+      if (pts) {
+        const padX = 7 * pr.persp
+        const traceW = pw - padX * 2
+        const baseY = y0 + ph * 0.64
+        const mvScale = (ph * 0.4) / 1.5
+        ctx.beginPath()
+        for (let i = 0; i < pts.length; i++) {
+          const px = x0 + padX + pts[i].x * traceW
+          const py = clamp(baseY - pts[i].y * mvScale, y0 + 3, y0 + ph - 3)
+          if (i === 0) ctx.moveTo(px, py)
+          else ctx.lineTo(px, py)
+        }
+        ctx.strokeStyle = `rgba(234,242,255,${0.92 * fade})`
+        ctx.lineWidth = 1.5 * pr.persp
+        ctx.lineJoin = 'round'
+        ctx.lineCap = 'round'
+        ctx.stroke()
+        // playhead dot
+        const fx = x0 + padX + phase * traceW
+        const fy = clamp(baseY - val * mvScale, y0 + 3, y0 + ph - 3)
+        ctx.beginPath()
+        ctx.arc(fx, fy, 2.6 * pr.persp, 0, Math.PI * 2)
+        ctx.fillStyle = glowColor
+        ctx.fill()
+      }
+
+      // label
+      ctx.globalAlpha = fade
+      ctx.fillStyle = '#dbe7ff'
+      ctx.font = `700 ${Math.round(13 * pr.persp)}px -apple-system, system-ui, sans-serif`
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      ctx.fillText(id, x0 + 7 * pr.persp, y0 + 5 * pr.persp)
+      ctx.globalAlpha = 1
+    }
+
+    let drewCenter = false
+    for (const L of leads) {
+      if (!drewCenter && L.pr.depth >= 0) { drawHeart(); drewCenter = true }
+      drawLead(L)
+    }
+    if (!drewCenter) drawHeart()
+  }
+
+  // size
   useEffect(() => {
     const wrap = wrapRef.current
     if (!wrap) return
@@ -263,7 +289,6 @@ export default function LeadSpace3D({ signals, strip, clock }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // per-frame
   useEffect(() => clock.subscribe(render), [clock, signals, strip]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // drag to rotate
@@ -273,12 +298,7 @@ export default function LeadSpace3D({ signals, strip, clock }: Props) {
     let dragging = false
     let lastX = 0
     let lastY = 0
-    const down = (e: PointerEvent) => {
-      dragging = true
-      lastX = e.clientX
-      lastY = e.clientY
-      cv.setPointerCapture(e.pointerId)
-    }
+    const down = (e: PointerEvent) => { dragging = true; lastX = e.clientX; lastY = e.clientY; cv.setPointerCapture(e.pointerId) }
     const move = (e: PointerEvent) => {
       if (!dragging) return
       yawRef.current += (e.clientX - lastX) * 0.01
@@ -300,13 +320,10 @@ export default function LeadSpace3D({ signals, strip, clock }: Props) {
     }
   }, [clock])
 
-  // unused import guard (LEAD_REGION reserved for future tooltips)
-  void LEAD_REGION
-
   return (
     <div className="space3d" ref={wrapRef}>
       <canvas ref={canvasRef} className="space3d-canvas" />
-      <div className="space3d-hint">drag to rotate · gold = vector toward lead (+), blue = away (−)</div>
+      <div className="space3d-hint">drag to rotate · gold = vector toward lead (+) · blue = away (−)</div>
     </div>
   )
 }
