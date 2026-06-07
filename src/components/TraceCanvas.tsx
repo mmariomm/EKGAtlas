@@ -11,7 +11,7 @@
 import { useEffect, useRef } from 'react'
 import { CardiacClock } from '../hooks/useCardiacClock'
 import { LeadId } from '../engine/leads'
-import { Strip } from '../engine/types'
+import { PhaseTone, Strip } from '../engine/types'
 import { SignalSet, samplePhase } from '../engine/synthesize'
 import { clamp } from '../engine/vectorMath'
 import { GRID, PHASE_COLORS, TRACE_INK } from '../theme'
@@ -34,19 +34,29 @@ const laneLayoutFor = (count: number): LaneLayout => {
   return { laneH, pxPerMV }
 }
 
+export interface TraceHighlight {
+  t0: number
+  t1: number
+  tone: PhaseTone
+}
+
 interface Props {
   signals: SignalSet
   strip: Strip
   clock: CardiacClock
   leads: LeadId[]
+  highlight?: TraceHighlight | null
+  /** Called when the user taps (vs drags) the trace, with the tapped time in ms. */
+  onTapTime?: (t: number) => void
 }
 
-export default function TraceCanvas({ signals, strip, clock, leads }: Props) {
+export default function TraceCanvas({ signals, strip, clock, leads, highlight, onTapTime }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const staticRef = useRef<HTMLCanvasElement | null>(null)
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 })
   const layoutRef = useRef<LaneLayout>(laneLayoutFor(leads.length))
+  const highlightRef = useRef<TraceHighlight | null>(highlight ?? null)
 
   // Redraw the static layer whenever inputs or size change.
   const drawStatic = () => {
@@ -177,6 +187,26 @@ export default function TraceCanvas({ signals, strip, clock, leads }: Props) {
     const n = signals.n
     const dt = signals.dt
 
+    // selected-phase highlight band (drawn under the playhead + comet)
+    const hl = highlightRef.current
+    if (hl) {
+      const bx0 = (hl.t0 / signals.durationMs) * w
+      const bx1 = (hl.t1 / signals.durationMs) * w
+      const hc = PHASE_COLORS[hl.tone]
+      ctx.save()
+      ctx.globalAlpha = 0.14
+      ctx.fillStyle = hc.core
+      ctx.fillRect(bx0, 0, bx1 - bx0, h)
+      ctx.globalAlpha = 0.5
+      ctx.strokeStyle = hc.core
+      ctx.lineWidth = 1.4
+      ctx.beginPath()
+      ctx.moveTo(bx0, 0); ctx.lineTo(bx0, h)
+      ctx.moveTo(bx1, 0); ctx.lineTo(bx1, h)
+      ctx.stroke()
+      ctx.restore()
+    }
+
     // playhead
     ctx.strokeStyle = 'rgba(234,242,255,0.28)'
     ctx.lineWidth = 1.5
@@ -269,30 +299,47 @@ export default function TraceCanvas({ signals, strip, clock, leads }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clock, signals, strip, leads])
 
-  // drag-to-scrub
+  // redraw when the highlight band changes (also covers the paused case)
+  useEffect(() => {
+    highlightRef.current = highlight ?? null
+    drawFrame(clock.getTime())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlight])
+
+  // drag to scrub; tap to select the phase at that point
   useEffect(() => {
     const cv = canvasRef.current
     if (!cv) return
     let dragging = false
     let resume = false
+    let moved = false
+    let startX = 0
     const toFraction = (clientX: number) => {
       const rect = cv.getBoundingClientRect()
       return clamp((clientX - rect.left) / rect.width, 0, 1)
     }
     const down = (e: PointerEvent) => {
       dragging = true
+      moved = false
+      startX = e.clientX
       resume = clock.isPlaying
       clock.pause()
       cv.setPointerCapture(e.pointerId)
       clock.seekFraction(toFraction(e.clientX))
     }
     const move = (e: PointerEvent) => {
-      if (dragging) clock.seekFraction(toFraction(e.clientX))
+      if (!dragging) return
+      if (Math.abs(e.clientX - startX) > 6) moved = true
+      clock.seekFraction(toFraction(e.clientX))
     }
-    const up = () => {
+    const up = (e: PointerEvent) => {
       if (!dragging) return
       dragging = false
-      if (resume) clock.play()
+      if (!moved && onTapTime) {
+        onTapTime(toFraction(e.clientX) * signals.durationMs) // select; stays paused
+      } else if (resume) {
+        clock.play()
+      }
     }
     cv.addEventListener('pointerdown', down)
     cv.addEventListener('pointermove', move)
@@ -304,7 +351,7 @@ export default function TraceCanvas({ signals, strip, clock, leads }: Props) {
       cv.removeEventListener('pointerup', up)
       cv.removeEventListener('pointercancel', up)
     }
-  }, [clock])
+  }, [clock, onTapTime, signals.durationMs])
 
   const tall = leads.length > 6
   return (

@@ -99,6 +99,23 @@
   display: flex;
   gap: 11px;
   align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 8px;
+  cursor: pointer;
+  transition: background 150ms var(--ease), border-color 150ms var(--ease);
+}
+
+.note:hover {
+  background: var(--panel-strong);
+}
+
+.note-active {
+  background: var(--panel-strong);
+  border-color: var(--border-strong);
 }
 
 .note-tag {

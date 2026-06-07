@@ -3,8 +3,9 @@
  * axis readout, and a collapsible mechanism explainer with per-segment notes
  * (each tagged in the segment's phase color).
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Condition, SegmentNote } from '../engine/types'
+import { SegmentId } from '../engine/phases'
 import './ExplainPanel.css'
 
 const SEG_TONE: Record<SegmentNote['segment'], string> = {
@@ -25,10 +26,17 @@ const axisLabel = (deg: number) => {
 interface Props {
   condition: Condition
   meanAxis: number
+  selected?: SegmentId | null
+  onSelect?: (id: SegmentId) => void
 }
 
-export default function ExplainPanel({ condition, meanAxis }: Props) {
+export default function ExplainPanel({ condition, meanAxis, selected, onSelect }: Props) {
   const [open, setOpen] = useState(false)
+
+  // Open the panel when a segment is selected, so its note is visible.
+  useEffect(() => {
+    if (selected) setOpen(true)
+  }, [selected])
 
   return (
     <div className="explain">
@@ -55,17 +63,26 @@ export default function ExplainPanel({ condition, meanAxis }: Props) {
         <div className="explain-body">
           <p className="explain-desc">{condition.description}</p>
           <ul className="explain-notes">
-            {condition.segmentNotes.map((n, i) => (
-              <li key={i} className="note">
-                <span className="note-tag" style={{ background: SEG_TONE[n.segment], color: '#06101e' }}>
-                  {n.segment}
-                </span>
-                <div>
-                  <div className="note-title">{n.title}</div>
-                  <div className="note-detail">{n.detail}</div>
-                </div>
-              </li>
-            ))}
+            {condition.segmentNotes.map((n, i) => {
+              const active = selected === n.segment
+              return (
+                <li key={i}>
+                  <button
+                    type="button"
+                    className={`note${active ? ' note-active' : ''}`}
+                    onClick={() => onSelect?.(n.segment)}
+                  >
+                    <span className="note-tag" style={{ background: SEG_TONE[n.segment], color: '#06101e' }}>
+                      {n.segment}
+                    </span>
+                    <div>
+                      <div className="note-title">{n.title}</div>
+                      <div className="note-detail">{n.detail}</div>
+                    </div>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}

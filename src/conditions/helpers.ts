@@ -29,7 +29,7 @@ export const atrialEvents = (): ConductionEvent[] => [
 // --- Normal His–Purkinje + ventricular depolarization (narrow QRS) ------------
 export const normalQrsLobes = (): ActivationLobe[] => [
   { dir: [-0.35, 0.1, 0.65], mag: 0.16, center: 166, width: 8, segment: 'QRS' }, // septal q (L→R)
-  { dir: [0.85, 0.45, -0.25], mag: 1.5, center: 190, width: 13, segment: 'QRS' }, // main R (LV)
+  { dir: [0.8, 0.52, -0.22], mag: 1.5, center: 190, width: 13, segment: 'QRS' }, // main R (LV) → mean axis ~+38°
   { dir: [-0.5, -0.2, -0.5], mag: 0.2, center: 216, width: 11, segment: 'QRS' }, // terminal S (basal)
 ]
 

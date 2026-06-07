@@ -14,6 +14,8 @@ const lbbbBeat = (onset: number): Beat => ({
     { dir: [0.5, 0.25, 0.1], mag: 0.2, center: 172, width: 12, segment: 'QRS' }, // reversed septum (no q in V6/I)
     { dir: [0.92, 0.4, -0.35], mag: 1.15, center: 205, width: 18, segment: 'QRS' }, // broad LV body
     { dir: [0.96, 0.32, -0.5], mag: 1.05, center: 242, width: 20, segment: 'QRS' }, // late notch → deep S in V1
+    // Discordant ST: elevation in V1–V3, depression in I/V5–V6 (the rule LBBB obeys; basis of Sgarbossa).
+    { dir: [-0.5, -0.3, 0.32], mag: 0.2, center: 305, width: 30, segment: 'ST' },
     { dir: [-0.55, -0.35, 0.35], mag: 0.5, center: 378, width: 60, segment: 'T' }, // discordant T
   ],
   events: [

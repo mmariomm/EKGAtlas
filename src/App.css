@@ -112,6 +112,12 @@
   gap: 12px;
 }
 
+.trace-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .disclaimer {
   text-align: center;
   font-size: 11.5px;

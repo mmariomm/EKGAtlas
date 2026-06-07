@@ -1,5 +1,5 @@
 import { Beat, Condition } from '../engine/types'
-import { atrialEvents, atrialLobes, normalTLobe, RR_DEFAULT } from './helpers'
+import { atrialEvents, atrialLobes, RR_DEFAULT } from './helpers'
 
 /**
  * Right bundle branch block. The LV and septum depolarize normally and on time;
@@ -14,7 +14,8 @@ const rbbbBeat = (onset: number): Beat => ({
     { dir: [-0.35, 0.1, 0.65], mag: 0.16, center: 166, width: 8, segment: 'QRS' }, // septal q (intact LBB)
     { dir: [0.8, 0.45, -0.2], mag: 1.35, center: 190, width: 13, segment: 'QRS' }, // main R (LV, on time)
     { dir: [-0.62, -0.05, 0.82], mag: 0.62, center: 246, width: 21, segment: 'QRS' }, // late RV → R' / terminal S
-    normalTLobe(),
+    // Discordant T: inverted in V1–V3 (secondary to the late rightward-anterior forces), upright laterally.
+    { dir: [0.45, 0.45, -0.28], mag: 0.34, center: 360, width: 52, segment: 'T' },
   ],
   events: [
     ...atrialEvents(),

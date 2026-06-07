@@ -22,6 +22,7 @@ import {
   beatAt, sampleActivation, samplePhase, sampleVector,
 } from '../engine/synthesize'
 import { clamp, frontalAngleDeg, frontalMagnitude, smoothstep } from '../engine/vectorMath'
+import { SegmentId } from '../engine/phases'
 import { PHASE_COLORS, STRUCTURE } from '../theme'
 import './HeartDiagram.css'
 
@@ -77,9 +78,11 @@ interface Props {
   strip: Strip
   condition: Condition
   clock: CardiacClock
+  /** Tap a heart region to highlight its waveform segment. */
+  onSelectZone?: (id: SegmentId) => void
 }
 
-export default function HeartDiagram({ strip, condition, clock }: Props) {
+export default function HeartDiagram({ strip, condition, clock, onSelectZone }: Props) {
   const chamberG = useRef<Record<string, SVGGElement | null>>({})
   const chamberStops = useRef<Record<string, (SVGStopElement | null)[]>>({})
   const lineG = useRef<Partial<Record<StructureId, SVGGElement | null>>>({})
@@ -354,6 +357,31 @@ export default function HeartDiagram({ strip, condition, clock }: Props) {
 
         <text ref={axisText} x={W - 14} y={H - 14} textAnchor="end" className="hd-axis mono">—</text>
         <text x={W - 14} y={H - 28} textAnchor="end" className="hd-axis-cap">VECTOR</text>
+
+        {/* ---------- TAP ZONES (click-to-explain) ---------- */}
+        {onSelectZone && (
+          <g className="hd-zones">
+            <rect
+              x={ATRIA.x} y={ATRIA.y} width={ATRIA.w} height={ATRIA.h} rx={ATRIA.rx}
+              fill="transparent" style={{ cursor: 'pointer', pointerEvents: 'all' }}
+              onClick={() => onSelectZone('P')}
+            >
+              <title>Highlight the P wave (atrial depolarization)</title>
+            </rect>
+            <path
+              d={VENT_PATH} fill="transparent" style={{ cursor: 'pointer', pointerEvents: 'all' }}
+              onClick={() => onSelectZone('QRS')}
+            >
+              <title>Highlight the QRS (ventricular depolarization)</title>
+            </path>
+            <circle
+              cx={170} cy={134} r={22} fill="transparent" style={{ cursor: 'pointer', pointerEvents: 'all' }}
+              onClick={() => onSelectZone('PR')}
+            >
+              <title>Highlight the PR segment (AV node delay)</title>
+            </circle>
+          </g>
+        )}
       </svg>
     </div>
   )

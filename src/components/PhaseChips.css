@@ -1,0 +1,46 @@
+.phasechips {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.phasechips-cap {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.phasechips-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pchip {
+  min-height: 32px;
+  min-width: 42px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: background 150ms var(--ease), border-color 150ms var(--ease),
+    transform 120ms var(--ease);
+}
+
+.pchip:hover {
+  border-color: var(--border-strong);
+}
+
+.pchip:active {
+  transform: scale(0.95);
+}
+
+.pchip-active {
+  /* border/colour/background set inline from the phase tone */
+}
