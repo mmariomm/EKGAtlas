@@ -84,7 +84,14 @@ const solveRegions = (state: TissueState, nodeT: Map<NodeId, number>): Map<strin
   return dist
 }
 
-const REPOL_FRACTION = 0.3 // T-wave magnitude relative to depolarization (simplified, concordant)
+// Faithful-ish T wave: a PRIMARY (concordant) component plus a SECONDARY component
+// that grows with how late a region activates relative to the ventricular mean.
+// Synchronous activation → every region stays positive → concordant T. BBB/ectopy
+// (dyssynchronous) → late regions flip negative → discordant T emerges on its own.
+const T_PRIMARY = 0.34
+const T_SECONDARY = 0.95
+const T_DYSSYNC = 55 // ms scale over which "lateness" matters
+const T_APD = 250 // ms from activation to the T peak
 
 /** Run the simulation and emit one Beat (relative to `onset`). */
 export const simulateBeat = (
@@ -98,12 +105,19 @@ export const simulateBeat = (
   const ischemic = new Set(state.ischemic ?? [])
   const sources: Source[] = []
 
-  // Window of ventricular activation, for placing the ST/injury phase.
+  // Ventricular activation window + mass-weighted mean (drives ST placement + the
+  // secondary T component).
   let ventMax = 0
+  let aSum = 0
+  let aMass = 0
   for (const r of REGIONS) {
     const t = regionT.get(r.id)
-    if (t != null && r.structure !== 'RA' && r.structure !== 'LA') ventMax = Math.max(ventMax, t)
+    if (t == null || r.structure === 'RA' || r.structure === 'LA') continue
+    ventMax = Math.max(ventMax, t)
+    aSum += t * r.mass
+    aMass += r.mass
   }
+  const meanA = aMass > 0 ? aSum / aMass : 0
 
   for (const r of REGIONS) {
     const t = regionT.get(r.id)
@@ -118,11 +132,13 @@ export const simulateBeat = (
       glow: { structures: [r.structure], kind, start: t - 6, end: t + 52 },
     })
 
-    // repolarization (simplified concordant T)
+    // repolarization: primary (concordant) + secondary (discordant if late)
     if (!isAtrial) {
+      const repolMag = r.mass * (T_PRIMARY - T_SECONDARY * ((t - meanA) / T_DYSSYNC))
+      const rc = t + T_APD
       sources.push({
-        dir: r.dir, mag: r.mass * REPOL_FRACTION, center: t + r.apd, width: 58, segment: 'T',
-        glow: { structures: [r.structure], kind: 'repol', start: t + r.apd - 45, end: t + r.apd + 45 },
+        dir: r.dir, mag: repolMag, center: rc, width: 60, segment: 'T',
+        glow: { structures: [r.structure], kind: 'repol', start: rc - 48, end: rc + 48 },
       })
     }
 
