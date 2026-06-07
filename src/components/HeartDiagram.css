@@ -1,0 +1,77 @@
+.heart {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.heart svg {
+  width: 100%;
+  max-width: 312px;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+/* glow groups: opacity + color are driven imperatively per frame */
+.hd-glow {
+  opacity: 0;
+  transition: opacity 60ms linear;
+  will-change: opacity;
+}
+
+/* chamber wavefronts: gradient radius + opacity driven per frame */
+.hd-chamber {
+  opacity: 0;
+  transition: opacity 70ms linear;
+  will-change: opacity;
+}
+
+/* vectorcardiogram trail — luminous, constant colour so it reads over the chambers */
+.hd-trail {
+  fill: none;
+  stroke: #dce6ff;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.62;
+}
+
+/* purkinje seed flashes */
+.hd-seeds circle {
+  transition: opacity 50ms linear;
+}
+
+.hd-arrow {
+  transition: opacity 120ms var(--ease);
+  will-change: opacity;
+}
+
+.hd-label text {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.hd-focus {
+  transition: opacity 90ms linear;
+}
+
+.hd-focus-label {
+  fill: #ff9b7d;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.hd-axis {
+  fill: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.hd-axis-cap {
+  fill: var(--text-dim);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}

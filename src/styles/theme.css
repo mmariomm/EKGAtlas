@@ -1,0 +1,97 @@
+/* ------------------------------------------------------------------ *
+ * Global theme — clinical paper on dark. Mobile-first.
+ * ------------------------------------------------------------------ */
+:root {
+  --bg: #070a0f;
+  --bg-elev: #0c1119;
+  --panel: rgba(255, 255, 255, 0.025);
+  --panel-strong: rgba(255, 255, 255, 0.05);
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.13);
+
+  --text-hi: #eaf1fb;
+  --text: #b3bfd2;
+  --text-dim: #6b7689;
+
+  --accent: #6ea8ff;
+  --accent-soft: rgba(110, 168, 255, 0.16);
+
+  --tone-atria: #38bdf8;
+  --tone-av: #f5b942;
+  --tone-ventricle: #ffc24b;
+  --tone-repol: #b794ff;
+  --tone-injury: #ff5d6c;
+
+  --radius: 16px;
+  --radius-sm: 11px;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* Honour notches on mobile. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(120% 80% at 50% -10%, #0e1726 0%, var(--bg) 55%) fixed;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.mono {
+  font-family: 'SF Mono', ui-monospace, 'Roboto Mono', Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Respect reduced-motion: the loop still works via the scrubber. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}

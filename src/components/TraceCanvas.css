@@ -1,0 +1,22 @@
+.trace-wrap {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(8, 11, 17, 0.6), rgba(6, 9, 14, 0.6));
+  border: 1px solid var(--border);
+}
+
+/* When showing many leads on a small screen, let them scroll vertically. */
+.trace-scroll {
+  max-height: min(58vh, 560px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.trace-canvas {
+  display: block;
+  width: 100%;
+  touch-action: pan-y; /* allow vertical scroll; horizontal drag scrubs */
+  cursor: ew-resize;
+}

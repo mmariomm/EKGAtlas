@@ -1,0 +1,127 @@
+.explain {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.explain-criteria {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.crit-chip {
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text);
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+
+.explain-axis {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.axis-cap {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.axis-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-hi);
+}
+
+.axis-tag {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.explain-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  color: var(--text-hi);
+  font-size: 14.5px;
+  font-weight: 600;
+  transition: border-color 150ms var(--ease);
+}
+
+.explain-toggle:hover {
+  border-color: var(--border-strong);
+}
+
+.explain-chev {
+  color: var(--text-dim);
+  transition: transform 200ms var(--ease);
+}
+
+.explain-chev.open {
+  transform: rotate(180deg);
+}
+
+.explain-body {
+  animation: fade-in 200ms var(--ease);
+  padding: 2px 2px 4px;
+}
+
+.explain-desc {
+  font-size: 14.5px;
+  line-height: 1.62;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+
+.explain-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.note {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+}
+
+.note-tag {
+  flex: none;
+  min-width: 38px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 3px 7px;
+  border-radius: 7px;
+  margin-top: 1px;
+}
+
+.note-title {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-hi);
+}
+
+.note-detail {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+  margin-top: 2px;
+}
