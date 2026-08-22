@@ -60,18 +60,25 @@ esami (anche cambiando risorsa automaticamente). **STOP** (o tasto `Esc`) interr
 
 ## Stampa etichette e lista esami
 
-Dopo la **Conferma** (manuale o automatica) si apre da solo il wizard di stampa, in sequenza:
+Dopo la **Conferma** (manuale o automatica) si apre da solo il wizard di stampa, in sequenza,
+raggruppando per stampante:
 
-1. **Etichette provette** — il PDF dell'icona col codice a barre
+1. **Tutte le etichette provette** — i PDF dell'icona col codice a barre
    (`RcsStampaEtichetteLISHMIMU.do`), con la finestra di stampa già aperta → **etichettatrice**;
-2. premi **"Stampata — avanti"** → **Lista esami** — il PDF di "Stampa Richiesta"
-   (`jasperservlet`, URL sempre letto dalla pagina perché `BRANCA` cambia per richiesta) →
-   **stampante normale**.
+2. poi **tutte le liste esami** — i PDF di "Stampa Richiesta" (`jasperservlet`, URL sempre letto
+   dalla pagina perché `BRANCA` cambia per riga) → **stampante normale**;
+3. per la **radiologia**, la riga ha l'icona stampante "Stampa Prenotazione Esterna": il wizard
+   stampa quel PDF → **stampante normale**.
+
+**Righe multiple**: quando gli esami di una richiesta appartengono a laboratori diversi (POC +
+Urgenze, ecc.) il LIS la divide in **più righe** — stessa `RICHIESTA_ID`, `RICHIESTA_PROG` 1, 2… —
+ognuna col suo PDF etichette e il suo foglio. Il wizard le stampa **tutte** ("Etichette — riga 1",
+"Etichette — riga 2", poi le liste), mai solo l'ultima.
 
 Se sulla pagina post-conferma i link non ci sono, il wizard aspetta e parte **al ritorno sulla
 pagina del paziente**. Dalla pagina paziente puoi anche **ristampare qualsiasi richiesta**
-(sezione "Stampa" del pannello). Ogni passo ha: Riapri stampa · Salta · Apri in una scheda ·
-Annulla (Esc).
+(sezione "Stampa" del pannello, che mostra cosa contiene ogni riga: "2× etichette + 2× liste",
+"prenotazione", ecc.). Ogni passo ha: Riapri stampa · Salta · Apri in una scheda · Annulla (Esc).
 
 **Perché c'è ancora la finestra di stampa?** Un sito web su Windows non può scegliere la
 stampante né stampare in silenzio: `chrome.printing` esiste solo su ChromeOS e `--kiosk-printing`
@@ -169,7 +176,7 @@ ps-app/
 ├── userscript/          ← stesso motore in formato Tampermonkey (generato)
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
-└── test/                ← simulatore SA4PSO + 21 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 23 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -178,7 +185,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 21 scenari e2e contro il simulatore (73 verifiche)
+npm test           # 23 scenari e2e contro il simulatore (85 verifiche)
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
@@ -190,9 +197,12 @@ ambiguità), **cambio episodio a metà run** (zero invii sul paziente sbagliato)
 pre-compilato non sovrascritto, aggiunte dalla pagina esami con cambio risorsa, rifiuto live di
 esami di risorsa sbagliata (CTA disabilitato con motivo), quesito mancante (CTA disabilitato,
 si riattiva scrivendo), apprendimento radiologia end-to-end, STOP, e la stampa: wizard manuale
-con sequenza etichette→lista e download singoli, auto-apertura sulla pagina post-conferma,
-attesa-e-ripartenza al ritorno sulla pagina paziente, wrapper HTML seguito fino al PDF, conferma
-manuale nativa che arma la stampa. Il simulatore fallisce
+con sequenza etichette→lista e download singoli, **richiesta divisa su due laboratori → 4 PDF
+(PROG 1 e 2, tutte le righe, BRANCA passato intatto dal DOM)**, **prenotazione radiologica**,
+auto-apertura sulla pagina post-conferma, attesa-e-ripartenza al ritorno sulla pagina paziente,
+wrapper HTML seguito fino al PDF, conferma manuale nativa che arma la stampa. In più il bundle
+compilato è stato eseguito contro la **vera pagina paziente salvata**: ogni tipo di riga reale
+(lab, radiologia, consulenza/ECG) produce il piano di stampa atteso. Il simulatore fallisce
 apposta se `Cancel` viaggia insieme a `Update` (regressioni del serializzatore) e le fixture
 sono **anonimizzate**: nessun dato di pazienti reali in questo repo.
 

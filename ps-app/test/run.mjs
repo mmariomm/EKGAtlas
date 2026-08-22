@@ -401,6 +401,67 @@ async function scenarioPrintManual(browser) {
   await context.close();
 }
 
+async function scenarioPrintMultiLab(browser) {
+  const scen = "print-multi-lab";
+  // POC + URGENZE in one richiesta → the LIS splits it into two rows
+  // (RICHIESTA_PROG 1 and 2): ALL four PDFs must be printed, labels first.
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await $panel(page, "#q").fill("febbre di origine sconosciuta");
+  await $panel(page, '.chip[title*="TROPONINA"]').click();      // POC
+  await $panel(page, '.chip[title*="PROCALCITONINA"]').click(); // URGENZE
+  await $panel(page, "#goconfirm").click();
+  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 30000 });
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+
+  const heads = [];
+  for (let k = 0; k < 4; k++) {
+    heads.push(await $wiz(page, ".pwhd").innerText());
+    await $wiz(page, "#pwnext").click();
+    await page.waitForTimeout(350);
+  }
+  check(scen, /Stampa 1 di 4 — Etichette provette — riga 1/.test(heads[0]) && /etichettatrice/.test(heads[0]),
+    `job 1: etichette riga 1 → etichettatrice (got: ${heads[0].split("\n")[0]})`);
+  check(scen, /Stampa 2 di 4 — Etichette provette — riga 2/.test(heads[1]),
+    `job 2: etichette riga 2 (got: ${heads[1].split("\n")[0]})`);
+  check(scen, /Stampa 3 di 4 — Lista esami — riga 1/.test(heads[2]) && /stampante normale/.test(heads[2]),
+    `job 3: lista riga 1 → stampante normale (got: ${heads[2].split("\n")[0]})`);
+  check(scen, /Stampa 4 di 4 — Lista esami — riga 2/.test(heads[3]),
+    `job 4: lista riga 2 (got: ${heads[3].split("\n")[0]})`);
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "wizard chiuso dopo tutte e 4 le stampe");
+
+  const et = mock.state.requests.filter((q) => q.url.includes("RcsStampaEtichetteLISHMIMU.do"));
+  check(scen, et.length === 2 && new Set(et.map((q) => q.params.RICHIESTA_PROG)).size === 2,
+    `due PDF etichette, PROG distinti (got ${et.map((q) => q.params.RICHIESTA_PROG)})`);
+  const li = mock.state.requests.filter((q) => q.url.includes("REPORT=RcsRichiesta&"));
+  check(scen, li.length === 2 && new Set(li.map((q) => q.params.RISORSA_ID)).size === 2,
+    `due PDF lista, risorse distinte (got ${li.map((q) => q.params.RISORSA_ID)})`);
+  check(scen, new Set(li.map((q) => q.params.BRANCA)).size === 2,
+    `BRANCA passato tale e quale dal DOM, mai costruito (got ${li.map((q) => q.params.BRANCA)})`);
+  await context.close();
+}
+
+async function scenarioPrintRadio(browser) {
+  const scen = "print-radio";
+  const mock = createMock({ seedConfirmedRadio: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  const rowTxt = await page.locator('#psassist-host [data-print="699998"]').first().innerText();
+  check(scen, /prenotazione/i.test(rowTxt), `riga radiologia etichettata "prenotazione" (got: ${rowTxt.trim().slice(0, 60)})`);
+  await page.locator('#psassist-host [data-print="699998"]').first().click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  const head = await $wiz(page, ".pwhd").innerText();
+  check(scen, /Stampa 1 di 1 — Prenotazione esterna/.test(head) && /stampante normale/.test(head),
+    `RX: un solo PDF prenotazione → stampante normale (got: ${head.split("\n")[0]})`);
+  await page.waitForTimeout(400);
+  check(scen, hits(mock, "REPORT=PsoRichiestaAccertamentiRadiografici") === 1, "PDF prenotazione radiologica scaricato");
+  await $wiz(page, "#pwnext").click();
+  await page.waitForTimeout(300);
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "wizard chiuso");
+  await context.close();
+}
+
 async function scenarioPrintAutoOnLabels(browser) {
   const scen = "print-auto-labels";
   const mock = createMock({});
@@ -505,6 +566,8 @@ const scenarios = [
   ["missing quesito refused", scenarioMissingQuesito],
   ["radiology learning loop", scenarioRadiologyLearning],
   ["print wizard manual", scenarioPrintManual],
+  ["print multi-lab rows (PROG split)", scenarioPrintMultiLab],
+  ["print radiology prenotazione", scenarioPrintRadio],
   ["print auto on labels page", scenarioPrintAutoOnLabels],
   ["print auto on patient return", scenarioPrintAutoOnReturn],
   ["print etichette html wrapper", scenarioPrintWrapper],

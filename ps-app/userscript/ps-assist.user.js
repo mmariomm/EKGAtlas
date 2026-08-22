@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PS Assist — richieste Pronto Soccorso (SA4PSO)
 // @namespace    psassist.multimedica
-// @version      1.1.0
+// @version      1.2.0
 // @description  Crea richieste lab/radiologia, aggiunge gli esami scelti verificando ogni inserimento nel carrello. Conferma sempre come click reale sulla pagina.
 // @match        https://smarthealth.multimedica.it/sa4pso/*
 // @run-at       document-idle
@@ -76,7 +76,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "1.1.0";
+  const VERSION = "1.2.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -325,29 +325,54 @@
   //   "Stampa Prenotazione Esterna" → jasperservlet, radiology bookings
   // BRANCA varies per richiesta, so these URLs are always READ from the DOM,
   // never constructed.
+  // A richiesta whose exams span more than one laboratory is split by the
+  // LIS into MULTIPLE rows — same RICHIESTA_ID, different RICHIESTA_PROG —
+  // each with its own label PDF and its own exam-list PDF. ALL of them must
+  // be printed, so rows are grouped per (RICHIESTA_ID, RICHIESTA_PROG) and
+  // never collapsed.
   function printModel(doc, baseUrl) {
-    const map = {}; // richiestaId -> {etichette, lista, prenotazione}
+    const map = {}; // richiestaId -> { prog -> {prog, etichette, lista, prenotazione} }
     const sel = 'a[title="Stampa Etichette"], a[title="Stampa Richiesta"], a[title="Stampa Prenotazione Esterna"]';
     for (const a of doc.querySelectorAll(sel)) {
       const href = absUrl(a, "href", baseUrl);
       const rid = param(href, "RICHIESTA_ID");
       if (!rid) continue;
-      const entry = (map[rid] = map[rid] || {});
+      const prog = param(href, "RICHIESTA_PROG") || "1";
+      const rows = (map[rid] = map[rid] || {});
+      const row = (rows[prog] = rows[prog] || { prog });
       const t = a.getAttribute("title");
-      if (t === "Stampa Etichette") entry.etichette = href;
-      else if (t === "Stampa Richiesta") entry.lista = href;
-      else entry.prenotazione = href;
+      if (t === "Stampa Etichette") row.etichette = href;
+      else if (t === "Stampa Richiesta") row.lista = href;
+      else row.prenotazione = href;
     }
     return map;
   }
+  function printRowsFor(map, rid) {
+    return Object.values(map[rid] || {}).sort((a, b) => Number(a.prog) - Number(b.prog));
+  }
+  // Jobs grouped by printer to minimise switching: every label PDF first
+  // (etichettatrice), then every exam-list sheet, then radiology bookings.
   function printJobsFor(map, rid) {
-    const e = map[rid];
-    if (!e) return [];
+    const rows = printRowsFor(map, rid);
+    const multi = rows.length > 1;
+    const tag = (r) => (multi ? ` — riga ${r.prog}` : "");
     const jobs = [];
-    if (e.etichette) jobs.push({ name: "Etichette provette", printer: "etichettatrice", url: e.etichette });
-    if (e.lista) jobs.push({ name: "Lista esami", printer: "stampante normale", url: e.lista });
-    else if (e.prenotazione) jobs.push({ name: "Prenotazione esterna", printer: "stampante normale", url: e.prenotazione });
-    return jobs;
+    for (const r of rows) if (r.etichette) jobs.push({ name: `Etichette provette${tag(r)}`, printer: "etichettatrice", url: r.etichette });
+    for (const r of rows) if (r.lista) jobs.push({ name: `Lista esami${tag(r)}`, printer: "stampante normale", url: r.lista });
+    for (const r of rows) if (r.prenotazione) jobs.push({ name: `Prenotazione esterna${tag(r)}`, printer: "stampante normale", url: r.prenotazione });
+    const seen = new Set();
+    return jobs.filter((j) => !seen.has(j.url) && seen.add(j.url));
+  }
+  // Compact description of what a richiesta will print, e.g. "2× etichette + 2× liste".
+  function printLabelFor(map, rid) {
+    const rows = printRowsFor(map, rid);
+    const count = (k) => rows.filter((r) => r[k]).length;
+    const parts = [];
+    const put = (n, sing, plur) => { if (n === 1) parts.push(sing); else if (n > 1) parts.push(`${n}× ${plur}`); };
+    put(count("etichette"), "etichette", "etichette");
+    put(count("lista"), "lista esami", "liste esami");
+    put(count("prenotazione"), "prenotazione", "prenotazioni");
+    return parts.join(" + ");
   }
 
   // Fetch a PDF with the same origin/timeout guards as fetchDoc. If the URL
@@ -1173,14 +1198,7 @@
       if (!rids.length) return "";
       const receipt = freshReceipt(null);
       const hot = receipt && map[receipt.richiestaId] ? receipt.richiestaId : null;
-      const rowLabel = (rid) => {
-        const e = map[rid];
-        const parts = [];
-        if (e.etichette) parts.push("etichette");
-        if (e.lista) parts.push("lista esami");
-        else if (e.prenotazione) parts.push("prenotazione");
-        return parts.join(" + ");
-      };
+      const rowLabel = (rid) => printLabelFor(map, rid);
       const rows = rids.slice(0, 5).map((rid) => `
         <button class="btn ghost" data-print="${esc(rid)}" style="text-align:left;font-weight:500;padding:9px 12px">
           🖨 Richiesta ${esc(rid)} <small style="color:#5B6B7A">· ${esc(rowLabel(rid))}</small>

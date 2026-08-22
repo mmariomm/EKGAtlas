@@ -152,6 +152,11 @@ export function createMock(opts = {}) {
     state.allocated[rid] = { tipo: "lab", risorse: LAB_RES };
     state.richieste[rid] = { quesito: "seed", urgenza: "2", cart: new Map([["320", RES.POC]]), confirmed: true };
   }
+  if (opts.seedConfirmedRadio) {
+    const rid = 699998;
+    state.allocated[rid] = { tipo: "radio", risorse: RADIO_RES };
+    state.richieste[rid] = { quesito: "seed rx", urgenza: "2", cart: new Map([["401", RES.RX]]), confirmed: true };
+  }
 
   const EP0 = state.episodeId;
   // After swapEpisodeAfter handled requests, every page renders as ANOTHER
@@ -175,17 +180,32 @@ export function createMock(opts = {}) {
       ${FOOT}`;
   }
 
-  // Per-richiesta print links, exactly as audited on the real patient page:
-  // barcode icon → RcsStampaEtichetteLISHMIMU.do (relative), exam list →
-  // /jasperserverSAN/jasperservlet (root-relative, BRANCA varies per row).
-  function printRow(rid) {
-    return `
-      <a title="Stampa Richiesta" href="/jasperserverSAN/jasperservlet?PROJECT=sa4rcs&REPORT=RcsRichiesta&CONN=jdbc/sa4web&RICHIESTA_ID=${rid}&RICHIESTA_PROG=1&BRANCA=0&RISORSA_ID=00660001P&REPARTO=001PS"><img alt="lista"></a>
-      <a title="Stampa Etichette" href="RcsStampaEtichetteLISHMIMU.do?RICHIESTA_ID=${rid}&RICHIESTA_PROG=1"><img alt="etichette"></a>`;
+  // Per-richiesta print rows, exactly as audited on the real patient page.
+  // The LIS splits a multi-laboratory richiesta into one row per resource:
+  // same RICHIESTA_ID, RICHIESTA_PROG 1..n, each row with its own barcode
+  // link (relative .do) and its own exam-list link (root-relative
+  // jasperservlet, BRANCA varying per row). Radiology richieste get a single
+  // "Stampa Prenotazione Esterna" row instead; consulenze only the list.
+  function rowsFor(rid) {
+    const alloc = state.allocated[rid];
+    const r = state.richieste[rid];
+    if (!alloc || !r) return [];
+    if (alloc.tipo === "radio") {
+      return [`<a title="Stampa Prenotazione Esterna" href="/jasperserverSAN/jasperservlet?PROJECT=sa4pso&REPORT=PsoRichiestaAccertamentiRadiografici&CONN=jdbc/sa4web&&RICHIESTA_ID=${rid}&RICHIESTA_PROG=1&BRANCA=69&REPARTO=001PS&EPISODIO_ID=${EP()}&STAMPA_ID=18&RISORSA_ID=00010001P"><img alt="prenotazione"></a>`];
+    }
+    const resList = [...new Set([...r.cart.values()])];
+    if (!resList.length) resList.push(alloc.risorse[0]);
+    return resList.map((res, i) => {
+      const prog = i + 1;
+      const branca = prog === 1 ? 68 : 0; // opaque server value: clients must pass it through
+      return `<a title="Stampa Richiesta" href="/jasperserverSAN/jasperservlet?PROJECT=sa4rcs&REPORT=RcsRichiesta&CONN=jdbc/sa4web&RICHIESTA_ID=${rid}&RICHIESTA_PROG=${prog}&BRANCA=${branca}&RISORSA_ID=${res}&REPARTO=001PS"><img alt="lista"></a>
+        <a title="Stampa Etichette" href="RcsStampaEtichetteLISHMIMU.do?RICHIESTA_ID=${rid}&RICHIESTA_PROG=${prog}"><img alt="etichette"></a>`;
+    });
   }
   function printRows() {
     return Object.keys(state.richieste)
-      .map((rid) => `<tr><td>Richiesta ${rid}</td><td>${printRow(rid)}</td></tr>`).join("\n");
+      .map((rid) => rowsFor(rid).map((row) => `<tr><td>Richiesta ${rid}</td><td>${row}</td></tr>`).join("\n"))
+      .join("\n");
   }
 
   function creaPage(params) {
@@ -268,7 +288,7 @@ export function createMock(opts = {}) {
 
   const loginPage = () => `${HEAD}<form name="Login" method="post" action="login.do"><input name="username"><input type="password" name="password"><input type="submit" value="Accedi"></form>${FOOT}`;
   const labelsPage = (rid) => `${HEAD}<h1>Stampa etichette LIS</h1><p>richiesta ${rid} confermata</p>
-      ${opts.labelsBare ? "" : printRow(rid)}
+      ${opts.labelsBare ? "" : rowsFor(rid).join("\n")}
       <a href="menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${EP()}">Chiudi</a>${FOOT}`;
   const notFound = (msg) => `${HEAD}<h1>Pagina non prevista dal mock</h1><p>${esc(msg)}</p>${FOOT}`;
 
