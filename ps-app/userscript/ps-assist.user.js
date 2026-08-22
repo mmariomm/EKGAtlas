@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PS Assist — richieste Pronto Soccorso (SA4PSO)
 // @namespace    psassist.multimedica
-// @version      1.3.0
+// @version      1.4.0
 // @description  Crea richieste lab/radiologia, aggiunge gli esami scelti verificando ogni inserimento nel carrello. Conferma sempre come click reale sulla pagina.
 // @match        https://smarthealth.multimedica.it/sa4pso/*
 // @run-at       document-idle
@@ -76,7 +76,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "1.3.0";
+  const VERSION = "1.4.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -410,9 +410,69 @@
     return out;
   }
 
-  // Fetch a PDF with the same origin/timeout guards as fetchDoc. If the URL
-  // answers with an HTML wrapper instead (some .do print endpoints do), follow
-  // the single PDF-looking reference inside it, once.
+  // Some viewer endpoints (labels, referti) are HTML pages whose own script
+  // fetches the PDF and shows it as a blob: URL (field-observed: the tab ends
+  // at blob:…). Harvest that blob without knowing the script's internals:
+  // replay the viewer's HTML in a hidden SANDBOXED iframe (allow-scripts +
+  // allow-same-origin, but NO top navigation — an old-school framebuster
+  // can't hijack the tab) with a prelude that hands us the Blob the moment
+  // the viewer calls URL.createObjectURL — before any navigation, so it
+  // works identically with or without a PDF viewer available.
+  let harvestSeq = 0;
+  function harvestBlobPdf(url, { html, baseUrl, signal, timeoutMs = 15000 } = {}) {
+    return new Promise((resolve, reject) => {
+      const cb = `__psassistHarvest${++harvestSeq}`;
+      const iframe = document.createElement("iframe");
+      iframe.setAttribute("sandbox", "allow-scripts allow-same-origin");
+      iframe.style.cssText = "position:fixed;width:2px;height:2px;left:-9999px;top:-9999px;visibility:hidden";
+      let done = false;
+      const finish = (fn, v) => {
+        if (done) return;
+        done = true;
+        clearTimeout(tt); clearInterval(iv);
+        window.removeEventListener("message", onMsg);
+        signal?.removeEventListener("abort", onAbort);
+        iframe.remove();
+        fn(v);
+      };
+      const onAbort = () => finish(reject, new DOMException("Aborted", "AbortError"));
+      signal?.addEventListener("abort", onAbort, { once: true });
+      const tt = setTimeout(() => finish(reject, new StopError("Il visualizzatore non ha prodotto un PDF in tempo", "Usa «Apri in una scheda» e stampa/leggi dalla finestra nativa.")), timeoutMs);
+      // postMessage crosses the MV3 isolated-world boundary (a direct
+      // parent[fn] call from the iframe's page world would not), and Blobs
+      // survive the structured clone.
+      const onMsg = (e) => {
+        const d = e.data;
+        if (d && d.__psassist === cb && d.blob instanceof Blob && d.blob.size) finish(resolve, { blob: d.blob, url });
+      };
+      window.addEventListener("message", onMsg);
+      document.documentElement.appendChild(iframe);
+      const prelude = `<script>(function () {
+        var mk = window.URL.createObjectURL.bind(window.URL);
+        window.URL.createObjectURL = function (b) {
+          try { if (b instanceof Blob) parent.postMessage({ __psassist: ${JSON.stringify(cb)}, blob: b }, "*"); } catch (e) {}
+          return mk(b);
+        };
+      })();<\/script>`;
+      const idoc = iframe.contentDocument;
+      idoc.open();
+      idoc.write(prelude + `<base href="${esc(baseUrl || url)}">` + html);
+      idoc.close();
+      // Belt: viewers that skip createObjectURL and just embed a blob/pdf.
+      const iv = setInterval(() => {
+        try {
+          const el = iframe.contentWindow?.document?.querySelector('embed[src^="blob:"], iframe[src^="blob:"], object[data^="blob:"]');
+          const b = el && (el.getAttribute("src") || el.getAttribute("data"));
+          if (b) fetch(b).then((r) => r.blob()).then((blob) => finish(resolve, { blob, url })).catch(() => {});
+        } catch { /* transiently inaccessible */ }
+      }, 200);
+    });
+  }
+
+  // Fetch a PDF with the same origin/timeout guards as fetchDoc. Fallback
+  // chain for HTML answers: an explicit PDF reference in the markup → URL-ish
+  // strings found in its scripts → the blob harvester above (real viewers
+  // that build the PDF client-side, as observed in the field).
   async function fetchPdf(url, { signal, hop = 0 } = {}) {
     const target = new URL(url, location.href);
     if (target.origin !== location.origin) {
@@ -443,13 +503,31 @@
       const doc = new DOMParser().parseFromString(text, "text/html");
       if (classify(doc) === "login") throw new StopError("Sessione scaduta", "Fai l'accesso a SA4PSO e riprova la stampa.");
       const base = res.url || target.href;
+      // 1. explicit PDF reference in the markup
       const cand =
         doc.querySelector('iframe[src], embed[src], object[data]')?.getAttribute("src") ||
         doc.querySelector('object[data]')?.getAttribute("data") ||
         doc.querySelector('a[href*="jasperservlet"], a[href$=".pdf" i]')?.getAttribute("href") ||
         (/url\s*=\s*([^"'>\s]+)/i.exec(doc.querySelector('meta[http-equiv="refresh" i]')?.getAttribute("content") || "") || [])[1] ||
         (/window\.open\(\s*['"]([^'"]+)['"]/.exec(text) || [])[1];
-      if (cand) return fetchPdf(new URL(cand, base).href, { signal, hop: 1 });
+      if (cand) {
+        try { return await fetchPdf(new URL(cand, base).href, { signal, hop: 1 }); } catch { /* keep falling back */ }
+      }
+      // 2. a blob-building viewer? replay it and harvest the Blob directly
+      if (/createObjectURL/.test(text)) {
+        return await harvestBlobPdf(target.href, { html: text, baseUrl: base, signal });
+      }
+      // 3. URL-ish strings inside the page scripts
+      const seen = new Set();
+      for (const m of text.matchAll(/['"]([^'"<>\s]{8,300}?(?:pdf|jasper|referto|etichett|report|viewer|stream|download)[^'"<>\s]*)['"]/gi)) {
+        const s = m[1];
+        if (/^(data:|blob:|javascript:)/i.test(s) || seen.has(s)) continue;
+        seen.add(s);
+        if (seen.size > 3) break;
+        try { return await fetchPdf(new URL(s, base).href, { signal, hop: 1 }); } catch { /* next */ }
+      }
+      // 4. last resort: replay anyway and hope the viewer produces a blob
+      return await harvestBlobPdf(target.href, { html: text, baseUrl: base, signal });
     }
     throw new StopError("Il server non ha restituito un PDF", "Usa il bottone «Apri in una scheda» e stampa dalla pagina nativa.");
   }

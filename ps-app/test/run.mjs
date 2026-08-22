@@ -32,18 +32,22 @@ async function newPage(browser, mock) {
   await context.route("https://smarthealth.multimedica.it/**", async (route) => {
     const req = route.request();
     let out = mock.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });
-    // Playwright can't fulfill 302s for fetch() subresources, so the harness
-    // follows redirects itself (the engine never depends on response.url).
+    // Playwright drops fulfilled redirects out of interception (they'd hit
+    // the real network), so the harness follows them itself for every
+    // request; tests therefore wait on page CONTENT, never on the URL.
     let hops = 0;
     while (out.status === 302 && hops++ < 5) {
       out = mock.handle({ method: "GET", url: new URL(out.headers.location, req.url()).href });
     }
     await route.fulfill({ status: out.status, headers: out.headers, body: out.body });
   });
-  // Fail on any request that tries to leave the hospital origin.
+  // Fail on any request that tries to leave the hospital origin
+  // (blob:https://smarthealth… IS the hospital origin).
   context.on("request", (r) => {
     const u = r.url();
-    if (!u.startsWith("https://smarthealth.multimedica.it/") && !u.startsWith("data:") && !u.startsWith("about:")) {
+    if (!u.startsWith("https://smarthealth.multimedica.it/") &&
+        !u.startsWith("blob:https://smarthealth.multimedica.it/") &&
+        !u.startsWith("data:") && !u.startsWith("about:")) {
       failures++; results.push(`  ✗ [net] request left the origin: ${u}`);
     }
   });
@@ -151,8 +155,8 @@ async function scenarioAutoConfirm(browser) {
   await $panel(page, '.chip[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
   await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 20000 });
-  // countdown banner appears, then the native Conferma is clicked
-  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 15000 });
+  // countdown, native Conferma click, then (field-observed) back to the patient page
+  await page.waitForSelector('a[title="Richieste Laboratorio"]', { timeout: 15000 });
   const rid = Object.keys(mock.state.richieste)[0];
   check(scen, mock.state.richieste[rid].confirmed === true, "richiesta confermata dopo il countdown");
   const confirmPost = mock.state.requests.find((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni"));
@@ -309,12 +313,13 @@ async function scenarioExamPageManual(browser) {
   const r = Object.values(mock.state.richieste)[0];
   check(scen, r.cart.has("320") && r.cart.has("159"), `carrello con POC+URGENZE (got ${[...r.cart.keys()]})`);
   check(scen, r.cart.get("159") === RES.URGENZE, "PCT aggiunta sulla risorsa giusta (URGENZE)");
-  // MANUAL native Conferma must also arm the print handoff
+  // MANUAL native Conferma must also arm the print handoff (server then
+  // redirects to the patient page, where the wizard fires)
   await page.click('form[name="Prestazioni"] input[name="Update"]');
-  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 20000 });
+  await page.waitForSelector('a[title="Richieste Laboratorio"]', { timeout: 20000 });
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   const wh = await page.locator("#psassist-print .pwhd").innerText();
-  check(scen, /Etichette provette/.test(wh), "conferma manuale → wizard di stampa automatico");
+  check(scen, /Etichette provette/.test(wh), "conferma manuale → wizard di stampa automatico sulla pagina paziente");
   await context.close();
 }
 
@@ -412,8 +417,8 @@ async function scenarioPrintMultiLab(browser) {
   await $panel(page, '.chip[title*="TROPONINA"]').click();      // POC
   await $panel(page, '.chip[title*="PROCALCITONINA"]').click(); // URGENZE
   await $panel(page, "#goconfirm").click();
-  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 30000 });
-  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  // confirm → patient page; the wizard is the signal
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 });
 
   const heads = [];
   for (let k = 0; k < 4; k++) {
@@ -462,18 +467,21 @@ async function scenarioPrintRadio(browser) {
   await context.close();
 }
 
-async function scenarioPrintAutoOnLabels(browser) {
-  const scen = "print-auto-labels";
+async function scenarioPrintAutoOnPatient(browser) {
+  const scen = "print-auto-patient";
+  // field-observed default: Conferma redirects to the PATIENT page, whose
+  // audited print rows are where the wizard fires
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.chip[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
-  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 25000 }); // countdown → native confirm
+  // countdown → confirm → back on the patient page (content-based wait)
+  await page.waitForSelector('a[title="Richieste Laboratorio"]', { timeout: 30000 });
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   const head = await $wiz(page, ".pwhd").innerText();
-  check(scen, /Etichette provette/.test(head), "wizard si apre da solo sulla pagina etichette");
+  check(scen, /Etichette provette/.test(head), "wizard si apre da solo al ritorno sulla pagina paziente");
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
   check(scen, (await page.locator("#psassist-print").count()) === 0, "Esc chiude il wizard");
@@ -483,17 +491,33 @@ async function scenarioPrintAutoOnLabels(browser) {
   await context.close();
 }
 
-async function scenarioPrintAutoOnReturn(browser) {
-  const scen = "print-auto-return";
-  // the post-confirm page has NO print links here: the handoff must wait and
-  // fire when the doctor gets back to the patient page
-  const mock = createMock({ labelsBare: true });
+async function scenarioPrintAutoInterstitial(browser) {
+  const scen = "print-auto-interstitial";
+  // deployment variant with an intermediate label page CARRYING the links:
+  // the wizard must fire right there (panel-less page)
+  const mock = createMock({ labelsInterstitial: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.chip[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
-  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 25000 });
+  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 30000 });
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  check(scen, /Etichette provette/.test(await $wiz(page, ".pwhd").innerText()), "wizard parte sulla pagina intermedia con i link");
+  await context.close();
+}
+
+async function scenarioPrintAutoOnReturn(browser) {
+  const scen = "print-auto-return";
+  // interstitial WITHOUT links: the handoff must wait and fire when the
+  // doctor gets back to the patient page
+  const mock = createMock({ labelsInterstitial: true, labelsBare: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await $panel(page, "#q").fill("dolore toracico");
+  await $panel(page, '.chip[title*="TROPONINA"]').click();
+  await $panel(page, "#goconfirm").click();
+  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 30000 });
   await page.waitForTimeout(1800);
   check(scen, (await page.locator("#psassist-print").count()) === 0, "nessun wizard dove mancano i link");
   await page.goto(mock.patientUrl);
@@ -505,6 +529,36 @@ async function scenarioPrintAutoOnReturn(browser) {
   check(scen, hits(mock, "RcsStampaEtichetteLISHMIMU.do") === 1 && hits(mock, "REPORT=RcsRichiesta&") === 1,
     "al ritorno sulla pagina paziente stampa entrambi i PDF una volta");
   check(scen, (await page.locator("#psassist-print").count()) === 0, "sequenza completata e chiusa");
+  await context.close();
+}
+
+async function scenarioBlobViewers(browser) {
+  const scen = "blob-viewers";
+  // field-observed: labels and referti endpoints are HTML viewers whose own
+  // script builds the PDF and navigates to blob:… — the sandboxed harvester
+  // must capture them (the mock viewer even tries to framebust the tab)
+  const mock = createMock({ seedConfirmed: true, blobViewers: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.locator("#psassist-host label.preload").click();
+  await page.waitForSelector("#psassist-host .preload.done", { timeout: 30000 });
+  const streams = mock.state.requests.filter((q) => q.url.includes("refertostream"));
+  check(scen, streams.length === 3 && new Set(streams.map((q) => q.params.REFERTO_ID)).size === 3,
+    `harvester raccoglie i 3 PDF dei viewer blob (got ${streams.length})`);
+  check(scen, /PsoEpisodioClinicoAmbulatorio/.test(page.url()), "il framebuster del viewer NON ha dirottato la pagina (sandbox regge)");
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup", { timeout: 8000 }),
+    page.locator("#psassist-host .rrow").first().click(),
+  ]);
+  check(scen, popup.url().startsWith("blob:"), "referto raccolto si apre all'istante");
+  // labels through the same viewer mechanism, via the print wizard
+  await page.locator('#psassist-host [data-print="699999"]').first().click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  await page.waitForFunction(() => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= 1, { timeout: 25000 });
+  check(scen, mock.state.requests.filter((q) => q.url.includes("REPORT=RcsEtichetteLIS")).length >= 1,
+    "wizard etichette: PDF interno del viewer raggiunto");
+  await $wiz(page, "#pwexit").click();
   await context.close();
 }
 
@@ -611,9 +665,11 @@ const scenarios = [
   ["print wizard manual", scenarioPrintManual],
   ["print multi-lab rows (PROG split)", scenarioPrintMultiLab],
   ["print radiology prenotazione", scenarioPrintRadio],
-  ["print auto on labels page", scenarioPrintAutoOnLabels],
-  ["print auto on patient return", scenarioPrintAutoOnReturn],
+  ["print auto on patient page (default)", scenarioPrintAutoOnPatient],
+  ["print auto on interstitial page", scenarioPrintAutoInterstitial],
+  ["print auto waits for patient return", scenarioPrintAutoOnReturn],
   ["print etichette html wrapper", scenarioPrintWrapper],
+  ["blob viewers harvested (referti + etichette)", scenarioBlobViewers],
   ["referti preload on command", scenarioRefertiPreload],
   ["referti native fallback", scenarioRefertiNativeFallback],
   ["stop button", scenarioStopButton],

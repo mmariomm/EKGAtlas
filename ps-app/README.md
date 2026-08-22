@@ -94,8 +94,10 @@ Urgenze, ecc.) il LIS la divide in **più righe** — stessa `RICHIESTA_ID`, `RI
 ognuna col suo PDF etichette e il suo foglio. Il wizard le stampa **tutte** ("Etichette — riga 1",
 "Etichette — riga 2", poi le liste), mai solo l'ultima.
 
-Se sulla pagina post-conferma i link non ci sono, il wizard aspetta e parte **al ritorno sulla
-pagina del paziente**. Dalla pagina paziente puoi anche **ristampare qualsiasi richiesta**
+Sul campo, dopo la Conferma il gestionale **torna alla pagina del paziente**: è lì che il wizard
+parte da solo (e se un'installazione mostrasse una pagina intermedia, parte lì se ha i link,
+altrimenti aspetta il ritorno sul paziente). Dalla pagina paziente puoi anche **ristampare
+qualsiasi richiesta**
 (sezione "Stampa" del pannello, che mostra cosa contiene ogni riga: "2× etichette + 2× liste",
 "prenotazione", ecc.). Ogni passo ha: Riapri stampa · Salta · Apri in una scheda · Annulla (Esc).
 
@@ -110,6 +112,10 @@ avanzamento visibile): da quel momento ogni click apre il referto **all'istante*
 - Nessun referto viene scaricato **prima** della spunta: il comando è tuo.
 - I PDF restano solo **nella memoria della pagina** (spariscono cambiando pagina — alla
   prossima visita rispunta la casella).
+- Gli endpoint di etichette e referti sul campo sono **pagine-viewer** che costruiscono il PDF
+  via script (l'indirizzo diventa `blob:`): il motore le riproduce in un iframe **sandbox**
+  invisibile (un eventuale frame-buster non può dirottare la scheda) e cattura il Blob nel
+  momento esatto in cui il viewer lo crea — funziona qualunque cosa faccia lo script interno.
 - Un referto che non si carica resta cliccabile: si apre dal server come sempre.
 - I link-archivio ("elenco documenti" ecc.) non c'entrano coi referti e vengono ignorati.
 
@@ -214,7 +220,7 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-└── test/                ← simulatore SA4PSO + 25 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 26 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -223,7 +229,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 25 scenari e2e contro il simulatore (93 verifiche)
+npm test           # 26 scenari e2e contro il simulatore (98 verifiche)
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

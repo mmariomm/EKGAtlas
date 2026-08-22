@@ -333,16 +333,34 @@ export function createMock(opts = {}) {
 
     // ---- print endpoints (audited paths) ----
     const pdf = () => ({ status: 200, headers: { "content-type": "application/pdf" }, body: TINY_PDF });
+    // blobViewers: field-observed behavior — the endpoint is an HTML viewer
+    // whose SCRIPT builds the PDF blob and navigates to it (address becomes
+    // blob:…). URLs are assembled dynamically so naive scraping can't find
+    // them, and a framebuster proves the client sandbox holds.
+    const blobViewer = (innerPath, query) => respond(`${HEAD}
+      <script>
+        try { if (top !== self) top.location.href = 'about:blank'; } catch (e) {}
+        var a = '${innerPath.slice(0, 8)}' + '${innerPath.slice(8)}';
+        fetch(a + '${query}').then(function (r) { return r.blob(); }).then(function (b) {
+          location.replace(URL.createObjectURL(new Blob([b], { type: 'application/pdf' })));
+        });
+      <\/script>caricamento referto...${FOOT}`);
     if (u.pathname.endsWith("RcsStampaEtichetteLISHMIMU.do")) {
+      if (opts.blobViewers) return blobViewer("/jasperserverSAN/jasperservlet", `?PROJECT=sa4rcs&REPORT=RcsEtichetteLIS&RICHIESTA_ID=${params.get("RICHIESTA_ID")}&RICHIESTA_PROG=${params.get("RICHIESTA_PROG")}`);
       if (opts.etichetteWrapper) {
-        // some installations answer with an HTML wrapper that links the PDF
+        // installations that answer with a plain HTML wrapper linking the PDF
         return respond(`${HEAD}<p>Etichette pronte</p><a href="/jasperserverSAN/jasperservlet?PROJECT=sa4rcs&REPORT=RcsEtichetteLIS&RICHIESTA_ID=${params.get("RICHIESTA_ID")}">Apri PDF</a>${FOOT}`);
       }
       return pdf();
     }
     if (u.pathname.includes("/jasperserverSAN/jasperservlet")) return pdf();
+    if (u.pathname.includes("/sa4/restrict2/refertostream")) {
+      return params.get("REFERTO_ID") ? pdf() : respond(notFound("stream senza REFERTO_ID"), 404);
+    }
     if (u.pathname.includes("/sa4/restrict2/Sa4ViewerExtRedirect.do")) {
-      return params.get("REFERTO_ID") ? pdf() : respond(`${HEAD}<h1>Archivio documenti</h1>${FOOT}`);
+      if (!params.get("REFERTO_ID")) return respond(`${HEAD}<h1>Archivio documenti</h1>${FOOT}`);
+      if (opts.blobViewers) return blobViewer("/sa4/restrict2/refertostream", `?REFERTO_ID=${params.get("REFERTO_ID")}`);
+      return pdf();
     }
 
     if (!u.pathname.endsWith("menuPsoEpisodio.do")) return respond(notFound(u.pathname), 404);
@@ -372,7 +390,11 @@ export function createMock(opts = {}) {
       if ("Cancel" in f || "Cancel1" in f) return respond(notFound("Cancel co-inviato con Update: bug del serializzatore"));
       if (f.MVPG !== "RcsStampaEtichetteLIS") return respond(notFound("MVPG nascosto mancante"));
       r.confirmed = true;
-      return respond(labelsPage(rid));
+      // Field-observed default: after Conferma the server goes back to the
+      // PATIENT page. labelsInterstitial simulates a deployment with an
+      // intermediate label page instead.
+      if (opts.labelsInterstitial) return respond(labelsPage(rid));
+      return pageOrRedirect(patientPage(), `${ORIGIN}${PATH}?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${EP()}`);
     }
 
     if (params.get("Insert") === "Inserisci" && mvpg === "RcsRichiestaCarrelloAggiungi") {
