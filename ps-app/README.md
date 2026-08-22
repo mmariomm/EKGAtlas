@@ -26,7 +26,8 @@ passaggio in più che qui non serve).
 3. Attiva **Modalità sviluppatore** (interruttore in alto a destra).
 4. Premi **Carica estensione non pacchettizzata** e seleziona la cartella `ps-app/extension`.
 5. Apri SA4PSO: il pannello blu **PS Assist** appare in alto a destra sulle pagine di paziente,
-   Nuova Richiesta ed esami.
+   Nuova Richiesta ed esami. Si **trascina** dove vuoi dall'intestazione (la posizione viene
+   ricordata; doppio click sull'intestazione per riportarlo in alto a destra).
 
 **Aggiornamenti**: sostituisci la cartella e premi ⟳ sull'estensione in `chrome://extensions`.
 
@@ -57,8 +58,11 @@ passaggio in più che qui non serve).
 
 **Dalla pagina del paziente** (flusso principale):
 1. Scrivi il **quesito diagnostico** (o tocca un suggerimento; gli ultimi usati restano in cima).
-2. Tocca i **profili rapidi** (Base PS, Epatico, Coagulazione), i **PANNELLI POC** nativi
-   dell'ospedale, gli **esami singoli**, o cerca in **Tutti gli esami**.
+2. Tocca i **profili rapidi** (Base PS, Epatico, Coagulazione), gli **esami singoli**
+   (aggiornati: Troponina ultrasensibile al posto della vecchia Troponina I POC), o cerca in
+   **Tutti gli esami**. Gli esami scelti restano sempre in vista nella **barra in alto**
+   (testo compatto per laboratorio: "POC: … · Urgenze: …"); passandoci sopra compare la ✕ per
+   toglierli. Lo scroll resta dov'è mentre selezioni.
 3. Premi:
    - **Crea richiesta e aggiungi N esami** → fa tutto e ti lascia sulla pagina esami per rivedere
      e premere Conferma tu; **oppure**
@@ -220,7 +224,7 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-└── test/                ← simulatore SA4PSO + 26 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 27 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -229,7 +233,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 26 scenari e2e contro il simulatore (98 verifiche)
+npm test           # 27 scenari e2e contro il simulatore (107 verifiche)
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

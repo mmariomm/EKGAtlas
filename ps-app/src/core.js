@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "1.4.0";
+  const VERSION = "1.5.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -99,9 +99,9 @@
     { name: "Epatico",       items: [[RES.URGENZE, "16"], [RES.URGENZE, "228"], [RES.URGENZE, "53"], [RES.URGENZE, "167"], [RES.URGENZE, "34"]] }, // bili reflex, GPT, GOT, GGT, lipasi
     { name: "Coagulazione",  items: [[RES.URGENZE, "181"], [RES.URGENZE, "54"], [RES.URGENZE, "258"]] }, // PT, PTT, fibrinogeno
   ];
-  const SINGLES = [ // one-tap single exams (chips)
+  const SINGLES = [ // one-tap single exams (compact text rows)
     [RES.POC, "320"], [RES.POC, "3"], [RES.POC, "166"], [RES.POC, "176"],
-    [RES.POC, "266"], [RES.POC, "101"], [RES.POC, "222"], [RES.POC, "30"],
+    [RES.POC, "101"], [RES.POC, "324"], [RES.POC, "30"],
     [RES.URGENZE, "159"], [RES.URGENZE, "297"], [RES.URGENZE, "317"],
   ];
   // If EGA arteriosa is selected, the venosa is dropped automatically.
@@ -890,16 +890,27 @@
     .pill:hover { background: #094a8c; }
     .pill .badge { background: #fff; color: #0B5CAD; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 800; }
     .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #7FD1A8; animation: psaPulse 1.2s ease-in-out infinite; }
-    .card { width: 360px; max-height: min(88vh, 780px); overflow: auto; background: #fff; border: 1px solid #D9E2EC;
+    .card { width: 460px; max-width: 96vw; max-height: min(92vh, 900px); overflow: auto; background: #fff; border: 1px solid #D9E2EC;
             border-radius: 14px; box-shadow: 0 10px 32px rgba(9,42,74,.22); font-size: 13px; line-height: 1.45; }
     .hd { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #0B5CAD; color: #fff;
-          border-radius: 13px 13px 0 0; position: sticky; top: 0; z-index: 3; }
+          border-radius: 13px 13px 0 0; position: sticky; top: 0; z-index: 3; cursor: move; user-select: none; touch-action: none; }
     .hd b { font-size: 13.5px; letter-spacing: .2px; }
     .hd .sub { margin-left: auto; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
     .iconbtn { background: transparent; border: 0; color: #fff; cursor: pointer; font-size: 15px; line-height: 1; padding: 4px 6px; border-radius: 6px; }
     .iconbtn:hover { background: rgba(255,255,255,.18); }
     .pbar { height: 3px; background: #E3E8EF; position: sticky; top: 42px; z-index: 3; }
     .pbar i { display: block; height: 100%; background: #0B5CAD; transition: width .25s ease; }
+    /* compact, always-visible selection strip (plain text, not pills) */
+    .selbar { position: sticky; top: 42px; z-index: 2; background: #F8FBFE; border-bottom: 1px solid #D9E2EC;
+              padding: 7px 12px; font-size: 12px; line-height: 1.8; color: #16232E; box-shadow: 0 6px 10px -8px rgba(9,42,74,.18); }
+    .selbar .selgrp { color: #0B5CAD; font-weight: 800; }
+    .selbar .selcount { float: right; color: #5B6B7A; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; }
+    .selitem { display: inline; white-space: nowrap; border-radius: 4px; padding: 1px 2px; }
+    .selitem:hover { background: #EAF2FA; }
+    .selitem .selx { display: none; border: 0; background: #B3261E; color: #fff; border-radius: 999px;
+                     width: 15px; height: 15px; line-height: 13px; font-size: 10px; cursor: pointer; padding: 0;
+                     vertical-align: 1px; margin-left: 2px; }
+    .selitem:hover .selx { display: inline-block; }
     .bd { padding: 12px; }
     .sec { margin-bottom: 14px; }
     .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #5B6B7A; margin-bottom: 6px; }
@@ -953,7 +964,7 @@
     .banner.err { background: #FBEBEA; color: #7c1a14; border: 1px solid #E9BAB6; }
     .banner.ok { background: #EDF7F0; color: #124F31; border: 1px solid #BCE0C9; }
     .banner.warn { background: #FFF7E6; color: #7a4b03; border: 1px solid #E5C588; }
-    .list { border: 1px solid #D9E2EC; border-radius: 10px; max-height: 200px; overflow: auto; margin-top: 6px; }
+    .list { border: 1px solid #D9E2EC; border-radius: 10px; max-height: 320px; overflow: auto; margin-top: 6px; }
     .list label { display: flex; gap: 8px; padding: 9px 10px; font-size: 12px; cursor: pointer; align-items: baseline; border-bottom: 1px solid #EEF2F6; }
     .list label:hover { background: #F4F8FB; }
     .list input[type="checkbox"] { accent-color: #0B5CAD; }
@@ -973,7 +984,7 @@
     .preload input { accent-color: #0B5CAD; width: 15px; height: 15px; }
     .preload.busy { color: #5B6B7A; background: #F4F8FB; border-color: #C4D0DC; cursor: progress; }
     .preload.done { color: #124F31; background: #EDF7F0; border-color: #BCE0C9; cursor: default; }
-    .rlist { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow: auto; }
+    .rlist { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
     .rrow { display: flex; align-items: center; gap: 8px; border: 1px solid #E3E8EF; background: #fff; border-radius: 8px;
             padding: 7px 9px; font-size: 12px; cursor: pointer; text-align: left; width: 100%; color: #16232E; }
     .rrow:hover { border-color: #0B5CAD; background: #F4F8FB; }
@@ -1031,6 +1042,17 @@
       this.referti = [];                // patient page: result rows, newest first
       this.refertiCache = new Map();    // REFERTO_ID -> {status, blobUrl}
       this.preload = "idle";            // 'idle' | 'running' | 'done'
+      this.pos = store.get("pos", null); // user-dragged panel position {left, top}
+      this.runPatient = null;           // patient name PINNED when a run starts
+      // The header must always show the patient this page belongs to: follow
+      // any <title> change (the EHR sets it to the patient name).
+      const titleEl = document.querySelector("title");
+      if (titleEl) {
+        this._titleObs = new MutationObserver(() => {
+          if (this.runState !== "running") this.render();
+        });
+        this._titleObs.observe(titleEl, { childList: true, characterData: true, subtree: true });
+      }
       this._unload = (e) => { e.preventDefault(); e.returnValue = ""; };
       this._esc = (e) => { if (e.key === "Escape" && this.runState === "running") this.stop(); };
       window.addEventListener("keydown", this._esc, true);
@@ -1113,7 +1135,10 @@
       this.message = null;
       tabStore.set("receipt.v1", null);
       cancelPendingConfirm?.("nuova operazione avviata"); // never run while a confirm is armed
-      const plan = { quesito: (this._q || "").trim(), items, episodeId, ...base };
+      // Pin the patient this run belongs to: the running/result views show
+      // THIS name, never whatever the page title becomes later.
+      this.runPatient = (document.title || "").trim();
+      const plan = { quesito: (this._q || "").trim(), items, episodeId, patientName: this.runPatient, ...base };
       if (plan.quesito) rememberQuesito(plan.quesito);
       runPlan(plan, this); // fire and forget; the engine drives the UI via callbacks
     }
@@ -1152,9 +1177,28 @@
     }
 
     // =============================================================== VIEWS
+    // Compact always-visible selection strip: plain text grouped by resource
+    // ("POC: EMOGAS, EMOCROMO · URGENZE: PCT"), an ✕ appears on hover.
+    selbarHtml() {
+      if (!this.selected.size) return "";
+      const byRes = {};
+      for (const i of this.selected.values()) (byRes[i.res] = byRes[i.res] || []).push(i);
+      const groups = Object.entries(byRes).map(([r, arr]) => {
+        const items = arr.map((i) =>
+          `<span class="selitem" title="${esc(i.label)}">${esc(shortLabel(i.label))}<button class="selx" data-unsel="${esc(this.key(i.res, i.code))}" title="Rimuovi" aria-label="Rimuovi ${esc(shortLabel(i.label))}">✕</button></span>`
+        ).join(", ");
+        return `<span class="selgrp">${esc((RES_SHORT[r] || r).toUpperCase())}:</span> ${items}`;
+      });
+      return `<div class="selbar"><span class="selcount">${this.selected.size} SELEZIONATI</span>${groups.join(" &nbsp;·&nbsp; ")}</div>`;
+    }
+
     render() {
       const patientName = (document.title || "").trim();
       const ep = findEpisodeId(document, location.href);
+      // keep every scroll position across re-renders (chip toggles must not
+      // bounce the panel back to the top)
+      const keepScroll = [".card", ".list", ".rlist"].map((s) => [s, this.root.querySelector(s)?.scrollTop || 0]);
+
       let body;
       if (this.runState === "running") body = this.viewRunning();
       else if (this.runState) body = this.viewResult();
@@ -1169,25 +1213,38 @@
           ? `${LOGO} ${esc(APP)} <span class="badge">${this.selected.size}</span>`
           : `${LOGO} ${esc(APP)}`;
 
+      // user-dragged position (clamped to the current viewport), else top-right
+      let posStyle = "";
+      if (this.pos && Number.isFinite(this.pos.left) && Number.isFinite(this.pos.top)) {
+        const left = Math.max(0, Math.min(window.innerWidth - 80, this.pos.left));
+        const top = Math.max(0, Math.min(window.innerHeight - 48, this.pos.top));
+        posStyle = `left:${left}px;top:${top}px;right:auto;`;
+      }
+
       this.root.innerHTML = `
         <style>${COLORS}</style>
-        <div class="wrap">
+        <div class="wrap" style="${posStyle}">
           ${this.collapsed ? `
-            <button class="pill" id="expand" title="${esc(APP)}">${pillInner}</button>
+            <button class="pill" id="expand" title="${esc(APP)} — trascina per spostare">${pillInner}</button>
           ` : `
             <div class="card" role="dialog" aria-label="${esc(APP)}">
-              <div class="hd">
+              <div class="hd" id="draghd" title="Trascina per spostare · doppio click per riportare in alto a destra">
                 ${LOGO}<b>${esc(APP)}</b>
                 <span class="sub" title="${esc(patientName)} — episodio ${esc(ep || "?")}">${esc(patientName)}${ep ? " · " + esc(ep) : ""}</span>
                 <button class="iconbtn" id="collapse" title="Riduci">—</button>
               </div>
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
+              ${!this.runState ? this.selbarHtml() : ""}
               <div class="bd">${body}</div>
               <div class="foot"><span>${esc(APP)} ${VERSION}</span><span>nessun dato lascia l'ospedale</span></div>
             </div>
           `}
         </div>`;
       this.bind();
+      for (const [sel, top] of keepScroll) {
+        const el = this.root.querySelector(sel);
+        if (el && top) el.scrollTop = top;
+      }
     }
 
     viewIdle(patientName, ep) {
@@ -1242,15 +1299,6 @@
           </div>`;
       }
 
-      // Hospital's own POC panels lead — they are the ward's muscle memory.
-      const pocPanels = Object.entries(cat[RES.POC]?.items || {})
-        .filter(([, l]) => /^PANNELLO/i.test(l))
-        .sort(([, a], [, b]) => a.localeCompare(b))
-        .map(([c, l]) => {
-          const on = this.isSel(RES.POC, c);
-          const short = l.replace(/^PANNELLO\s*/i, "P").replace(/\s*\(.*\)$/, "");
-          return `<button class="chip ${on ? "on" : ""}" data-res="${RES.POC}" data-code="${esc(c)}" title="${esc(l)}">${esc(short)}</button>`;
-        }).join("");
       const presetHtml = PRESETS.map((p, i) => {
         const ok = p.items.every(([r, c]) => cat[r]?.items?.[c]);
         if (!ok) return "";
@@ -1262,15 +1310,6 @@
         const l = examLabel(r, c);
         return `<button class="chip ${on ? "on" : ""}" data-res="${r}" data-code="${esc(c)}" title="${esc(l)} — ${esc(RES_SHORT[r] || r)}">${esc(shortLabel(l))}</button>`;
       }).join("");
-
-      // Selected tray, grouped by resource so a lab/radio split is visible
-      // before it becomes an error.
-      const byRes = {};
-      for (const i of this.selected.values()) (byRes[i.res] = byRes[i.res] || []).push(i);
-      const tray = Object.entries(byRes).map(([r, arr]) => `
-        <div class="trayhdr">${esc((RES_SHORT[r] || r).toUpperCase())} · ${arr.length}</div>
-        ${arr.map((i) => `<span class="t">${esc(shortLabel(i.label))}<button class="x" data-unsel="${esc(this.key(i.res, i.code))}" title="Rimuovi" aria-label="Rimuovi ${esc(shortLabel(i.label))}">✕</button></span>`).join("")}
-      `).join("") || `<span class="empty">Nessun esame selezionato</span>`;
 
       const n = this.selected.size;
       const nTxt = n === 0 ? "esami" : n === 1 ? "1 esame" : `${n} esami`;
@@ -1287,15 +1326,10 @@
         ${quesitoSec}
         ${cartSec}
         <div class="sec">
-          ${pocPanels ? `<div class="lbl">Pannelli POC</div><div class="chips">${pocPanels}</div>` : ""}
-          ${presetHtml ? `<div class="lbl" style="margin-top:${pocPanels ? "10px" : "0"}">Profili rapidi</div><div class="chips">${presetHtml}</div>` : ""}
+          ${presetHtml ? `<div class="lbl">Profili rapidi</div><div class="chips">${presetHtml}</div>` : ""}
           <div class="lbl" style="margin-top:10px">Esami singoli</div>
           <div class="chips">${singles}</div>
           ${this.viewBrowse(cat)}
-        </div>
-        <div class="sec">
-          <div class="lbl">Selezionati (${n})</div>
-          <div class="tray">${tray}</div>
         </div>
         ${this.viewPrint()}
         ${this.viewReferti()}
@@ -1430,6 +1464,7 @@
           <span>${esc(s.label)}</span><small>${esc(s.note || "")}</small>
         </div>`).join("");
       return `
+        ${this.runPatient ? `<div class="idline" style="margin-top:0">Operazione per <b>${esc(this.runPatient)}</b></div>` : ""}
         <div class="sec"><div class="lbl">In corso — passo ${Math.min(doneN + 1, total)} di ${total}</div><div class="steps">${stepHtml}</div></div>
         <details class="reg" open><summary>Registro</summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
@@ -1452,6 +1487,7 @@
         </div>`).join("");
       const listUrl = this.runData?.finishedListUrl || this.runData?.lastListUrl;
       return `
+        ${this.runPatient ? `<div class="idline" style="margin-top:0">Operazione per <b>${esc(this.runPatient)}</b></div>` : ""}
         <div class="banner ${cls}">${head ? `<b>${esc(head)}</b>` : ""}${esc(bodyTxt || "")}</div>
         <div class="sec"><div class="steps">${steps}</div></div>
         <details class="reg" open><summary>Registro</summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
@@ -1462,10 +1498,54 @@
       `;
     }
 
+    // Drag to move (header or collapsed pill); a real click on the pill still
+    // expands it, and double-click on the header resets to the default corner.
+    attachDrag(el) {
+      el.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0 || e.target.closest(".iconbtn")) return;
+        const wrap = this.root.querySelector(".wrap");
+        const r = wrap.getBoundingClientRect();
+        const sx = e.clientX, sy = e.clientY, ox = r.left, oy = r.top;
+        let moved = false;
+        const mm = (ev) => {
+          if (!moved && Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 5) return;
+          moved = true;
+          this.pos = {
+            left: Math.max(0, Math.min(window.innerWidth - 80, ox + ev.clientX - sx)),
+            top: Math.max(0, Math.min(window.innerHeight - 48, oy + ev.clientY - sy)),
+          };
+          wrap.style.left = this.pos.left + "px";
+          wrap.style.top = this.pos.top + "px";
+          wrap.style.right = "auto";
+        };
+        const up = () => {
+          window.removeEventListener("pointermove", mm, true);
+          window.removeEventListener("pointerup", up, true);
+          if (moved) {
+            store.set("pos", this.pos);
+            this._justDragged = true;
+            setTimeout(() => { this._justDragged = false; }, 0);
+          }
+        };
+        window.addEventListener("pointermove", mm, true);
+        window.addEventListener("pointerup", up, true);
+      });
+    }
+
     bind() {
       const $ = (s) => this.root.querySelector(s);
-      $("#expand")?.addEventListener("click", () => { this.collapsed = false; store.set("collapsed", false); this.render(); });
+      $("#expand")?.addEventListener("click", () => {
+        if (this._justDragged) return; // it was a drag, not a click
+        this.collapsed = false; store.set("collapsed", false); this.render();
+      });
       $("#collapse")?.addEventListener("click", () => { this.collapsed = true; store.set("collapsed", true); this.render(); });
+      const hd = $("#draghd");
+      if (hd) {
+        this.attachDrag(hd);
+        hd.addEventListener("dblclick", () => { this.pos = null; store.set("pos", null); this.render(); });
+      }
+      const pill = $("#expand");
+      if (pill) this.attachDrag(pill);
       $("#stopbtn")?.addEventListener("click", () => this.stop());
       $("#reset")?.addEventListener("click", () => { this.runState = null; this.runData = null; this.message = null; this.render(); });
       $("#openlist")?.addEventListener("click", () => {

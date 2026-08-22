@@ -578,6 +578,67 @@ async function scenarioPrintWrapper(browser) {
   await context.close();
 }
 
+async function scenarioUiErgonomics(browser) {
+  const scen = "ui-ergonomics";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+
+  // sticky compact selection bar: grouped plain text + count
+  await $panel(page, '.chip.preset:has-text("Epatico")').click();
+  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
+  const bar = await $panel(page, ".selbar").innerText();
+  check(scen, /POC:/.test(bar) && /URGENZE:/.test(bar) && /6 SELEZIONATI/.test(bar),
+    `selbar compatta con gruppi e conteggio (got: ${bar.replace(/\s+/g, " ").slice(0, 80)})`);
+  check(scen, (await $panel(page, ".selbar .chip").count()) === 0, "selbar è testo, non pill");
+
+  // hover ✕ removes one exam
+  await $panel(page, ".selbar .selitem").first().hover();
+  await $panel(page, ".selbar .selx").first().click();
+  check(scen, /5 SELEZIONATI/.test(await $panel(page, ".selbar").innerText()), "✕ al passaggio rimuove il singolo esame");
+
+  // selecting must NOT bounce the scroll back to the top
+  await page.evaluate(() => {
+    const card = document.getElementById("psassist-host").shadowRoot.querySelector(".card");
+    card.scrollTop = 180;
+  });
+  await $panel(page, '.chip[title*="GLUCOSIO"]').click();
+  const st = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".card").scrollTop);
+  check(scen, st > 100, `lo scroll resta dov'era dopo la selezione (got ${st})`);
+
+  // drag the header → position saved and restored after reload
+  const hd = $panel(page, "#draghd");
+  const box = await hd.boundingBox();
+  await page.mouse.move(box.x + 60, box.y + 15);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 300, box.y + 200, { steps: 5 });
+  await page.mouse.up();
+  const pos1 = await page.evaluate(() => {
+    const w = document.getElementById("psassist-host").shadowRoot.querySelector(".wrap");
+    return { left: w.style.left, top: w.style.top };
+  });
+  check(scen, pos1.left !== "" && pos1.top !== "", `pannello trascinato (got ${pos1.left},${pos1.top})`);
+  await page.reload();
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  const pos2 = await page.evaluate(() => {
+    const w = document.getElementById("psassist-host").shadowRoot.querySelector(".wrap");
+    return { left: w.style.left, top: w.style.top };
+  });
+  check(scen, pos2.left === pos1.left && pos2.top === pos1.top, `posizione ricordata dopo reload (got ${pos2.left},${pos2.top})`);
+  // double-click header → back to default corner
+  await $panel(page, "#draghd").dblclick();
+  const pos3 = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".wrap").style.left);
+  check(scen, pos3 === "", "doppio click riporta in alto a destra");
+
+  // no PANNELLO chips anymore; no PCR / old tropo singles; new tropo present
+  const chipTxt = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".chip")].map((c) => c.textContent).join("|"));
+  check(scen, !/PANNELLO|P1 - |P2 - /.test(chipTxt), "chips PANNELLO rimossi");
+  check(scen, !/PCR POC/.test(chipTxt) && !/TROPONINA I POC/.test(chipTxt) && /TROPONINA ULTRASENSIBILE/.test(chipTxt),
+    "singoli aggiornati: via PCR e vecchia tropo, dentro la ultrasensibile");
+  await context.close();
+}
+
 async function scenarioRefertiPreload(browser) {
   const scen = "referti-preload";
   const mock = createMock({});
@@ -670,6 +731,7 @@ const scenarios = [
   ["print auto waits for patient return", scenarioPrintAutoOnReturn],
   ["print etichette html wrapper", scenarioPrintWrapper],
   ["blob viewers harvested (referti + etichette)", scenarioBlobViewers],
+  ["ui ergonomics (selbar/drag/scroll)", scenarioUiErgonomics],
   ["referti preload on command", scenarioRefertiPreload],
   ["referti native fallback", scenarioRefertiNativeFallback],
   ["stop button", scenarioStopButton],
