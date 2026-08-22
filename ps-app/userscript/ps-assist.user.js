@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PS Assist — richieste Pronto Soccorso (SA4PSO)
 // @namespace    psassist.multimedica
-// @version      1.0.0
+// @version      1.1.0
 // @description  Crea richieste lab/radiologia, aggiunge gli esami scelti verificando ogni inserimento nel carrello. Conferma sempre come click reale sulla pagina.
 // @match        https://smarthealth.multimedica.it/sa4pso/*
 // @run-at       document-idle
@@ -76,7 +76,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "1.0.0";
+  const VERSION = "1.1.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -85,6 +85,7 @@
   const VERIFY_WAIT_MS = 1200;   // pause before each verify re-read
   const CONFIRM_SECONDS = 5;     // countdown before the native Conferma click
   const CONFIRM_FLAG_TTL = 120e3;// ms an auto-confirm handoff stays valid
+  const PRINT_FLAG_TTL = 180e3;  // ms a post-confirm print handoff stays valid
 
   // Resources ("Risorsa" dropdown values) — verified in the saved pages.
   const RES = {
@@ -314,6 +315,83 @@
       labUrl: link("Richieste Laboratorio"),
       radioUrl: link("Richieste Radiologia"),
     };
+  }
+
+  // ------------------------------------------------------------- PRINT MODEL
+  // The patient page (and possibly the post-confirm page) lists, per
+  // richiesta, the print links audited from the real pages:
+  //   "Stampa Etichette"  → RcsStampaEtichetteLISHMIMU.do?RICHIESTA_ID=…  (barcode icon → label PDF)
+  //   "Stampa Richiesta"  → /jasperserverSAN/jasperservlet?REPORT=RcsRichiesta&RICHIESTA_ID=…&BRANCA=…
+  //   "Stampa Prenotazione Esterna" → jasperservlet, radiology bookings
+  // BRANCA varies per richiesta, so these URLs are always READ from the DOM,
+  // never constructed.
+  function printModel(doc, baseUrl) {
+    const map = {}; // richiestaId -> {etichette, lista, prenotazione}
+    const sel = 'a[title="Stampa Etichette"], a[title="Stampa Richiesta"], a[title="Stampa Prenotazione Esterna"]';
+    for (const a of doc.querySelectorAll(sel)) {
+      const href = absUrl(a, "href", baseUrl);
+      const rid = param(href, "RICHIESTA_ID");
+      if (!rid) continue;
+      const entry = (map[rid] = map[rid] || {});
+      const t = a.getAttribute("title");
+      if (t === "Stampa Etichette") entry.etichette = href;
+      else if (t === "Stampa Richiesta") entry.lista = href;
+      else entry.prenotazione = href;
+    }
+    return map;
+  }
+  function printJobsFor(map, rid) {
+    const e = map[rid];
+    if (!e) return [];
+    const jobs = [];
+    if (e.etichette) jobs.push({ name: "Etichette provette", printer: "etichettatrice", url: e.etichette });
+    if (e.lista) jobs.push({ name: "Lista esami", printer: "stampante normale", url: e.lista });
+    else if (e.prenotazione) jobs.push({ name: "Prenotazione esterna", printer: "stampante normale", url: e.prenotazione });
+    return jobs;
+  }
+
+  // Fetch a PDF with the same origin/timeout guards as fetchDoc. If the URL
+  // answers with an HTML wrapper instead (some .do print endpoints do), follow
+  // the single PDF-looking reference inside it, once.
+  async function fetchPdf(url, { signal, hop = 0 } = {}) {
+    const target = new URL(url, location.href);
+    if (target.origin !== location.origin) {
+      throw new StopError("Richiesta fuori dall'ospedale bloccata", `destinazione inattesa: ${target.origin}`);
+    }
+    const ctl = new AbortController();
+    const tid = setTimeout(() => ctl.abort(new DOMException("Timeout", "TimeoutError")), TIMEOUT_MS);
+    const onAbort = () => ctl.abort(new DOMException("Aborted", "AbortError"));
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    let res;
+    try {
+      res = await fetch(target.href, { signal: ctl.signal, credentials: "same-origin", cache: "no-store", redirect: "follow" });
+    } finally {
+      clearTimeout(tid);
+      if (signal) signal.removeEventListener("abort", onAbort);
+    }
+    if (new URL(res.url || target.href).origin !== location.origin) {
+      throw new StopError("Risposta fuori dall'ospedale bloccata", `destinazione inattesa: ${res.url}`);
+    }
+    if (!res.ok) throw new StopError(`Il server ha risposto HTTP ${res.status}`, res.statusText || "");
+    const ctype = (res.headers.get("content-type") || "").toLowerCase();
+    if (ctype.includes("pdf") || ctype.includes("octet-stream")) {
+      return { blob: await res.blob(), url: res.url || target.href };
+    }
+    if (ctype.includes("html") && hop === 0) {
+      const buf = await res.arrayBuffer();
+      const text = new TextDecoder("windows-1252").decode(buf);
+      const doc = new DOMParser().parseFromString(text, "text/html");
+      if (classify(doc) === "login") throw new StopError("Sessione scaduta", "Fai l'accesso a SA4PSO e riprova la stampa.");
+      const base = res.url || target.href;
+      const cand =
+        doc.querySelector('iframe[src], embed[src], object[data]')?.getAttribute("src") ||
+        doc.querySelector('object[data]')?.getAttribute("data") ||
+        doc.querySelector('a[href*="jasperservlet"], a[href$=".pdf" i]')?.getAttribute("href") ||
+        (/url\s*=\s*([^"'>\s]+)/i.exec(doc.querySelector('meta[http-equiv="refresh" i]')?.getAttribute("content") || "") || [])[1] ||
+        (/window\.open\(\s*['"]([^'"]+)['"]/.exec(text) || [])[1];
+      if (cand) return fetchPdf(new URL(cand, base).href, { signal, hop: 1 });
+    }
+    throw new StopError("Il server non ha restituito un PDF", "Usa il bottone «Apri in una scheda» e stampa dalla pagina nativa.");
   }
 
   // Exam page: everything the engine needs from a rendered list.
@@ -1072,6 +1150,7 @@
           <div class="lbl">Selezionati (${n})</div>
           <div class="tray">${tray}</div>
         </div>
+        ${this.viewPrint()}
         <details class="reg"><summary>Registro</summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
           ${typeof this.message === "string" && this.message ? `<div class="banner warn">${esc(this.message)}</div>` : ""}
@@ -1083,6 +1162,36 @@
           ${radioHint}
         </div>
       `;
+    }
+
+    // Patient page: reprint any richiesta's PDFs (labels → label printer,
+    // exam list → normal printer) through the sequential wizard.
+    viewPrint() {
+      if (this.pageType !== "patient") return "";
+      const map = printModel(document, location.href);
+      const rids = Object.keys(map).sort((a, b) => Number(b) - Number(a));
+      if (!rids.length) return "";
+      const receipt = freshReceipt(null);
+      const hot = receipt && map[receipt.richiestaId] ? receipt.richiestaId : null;
+      const rowLabel = (rid) => {
+        const e = map[rid];
+        const parts = [];
+        if (e.etichette) parts.push("etichette");
+        if (e.lista) parts.push("lista esami");
+        else if (e.prenotazione) parts.push("prenotazione");
+        return parts.join(" + ");
+      };
+      const rows = rids.slice(0, 5).map((rid) => `
+        <button class="btn ghost" data-print="${esc(rid)}" style="text-align:left;font-weight:500;padding:9px 12px">
+          🖨 Richiesta ${esc(rid)} <small style="color:#5B6B7A">· ${esc(rowLabel(rid))}</small>
+        </button>`).join("");
+      return `
+        <div class="sec">
+          <div class="lbl">Stampa</div>
+          ${hot ? `<button class="btn primary" data-print="${esc(hot)}">🖨 Stampa ${esc(rowLabel(hot))} — ultima richiesta</button>` : ""}
+          ${rows}
+          <div class="hint">Prima le etichette (etichettatrice), poi la lista (stampante normale), in sequenza.</div>
+        </div>`;
     }
 
     viewBrowse(cat) {
@@ -1173,6 +1282,11 @@
 
       $("#go")?.addEventListener("click", () => this.launch(false));
       $("#goconfirm")?.addEventListener("click", () => this.launch(true));
+      this.root.querySelectorAll("[data-print]").forEach((b) => b.addEventListener("click", () => {
+        const rid = b.getAttribute("data-print");
+        const jobs = printJobsFor(printModel(document, location.href), rid);
+        if (jobs.length) openPrintWizard(jobs, { title: `Richiesta ${rid}.` });
+      }));
     }
 
     // Patch only the commit zone while the doctor types (a full re-render
@@ -1322,20 +1436,176 @@
     }, 1000);
   }
 
+  // ============================================================ PRINT WIZARD
+  // Sequential printing of the richiesta PDFs: labels first (label printer),
+  // then the exam list (normal printer). True silent printing with per-job
+  // printer selection is not possible from a web page on Windows, so this is
+  // the most automatic legal flow: each PDF opens in an overlay with the
+  // print dialog already triggered; "Stampata — avanti" moves to the next.
+  // Chrome's dialog remembers recent destinations, so switching printer is
+  // one click.
+  let wizardOpen = false;
+
+  function openPrintWizard(jobs, { title = "", onClose } = {}) {
+    if (wizardOpen || !jobs.length) return;
+    wizardOpen = true;
+
+    const wrap = document.createElement("div");
+    wrap.id = "psassist-print";
+    const root = wrap.attachShadow({ mode: "open" });
+    document.documentElement.appendChild(wrap);
+
+    let i = 0;
+    let attempts = 0;
+    let blobUrl = null;
+    let timer = null;
+
+    const CSS = `${COLORS}
+      .back { position: fixed; inset: 0; background: rgba(9,42,74,.45); z-index: 2147483646; }
+      .pw { position: fixed; top: 4vh; left: 50%; transform: translateX(-50%); z-index: 2147483647;
+            width: min(720px, 94vw); background: #fff; border-radius: 16px; overflow: hidden;
+            box-shadow: 0 18px 48px rgba(9,42,74,.4); font-size: 13.5px; color: #16232E;
+            display: flex; flex-direction: column; max-height: 92vh; }
+      .pwhd { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: #0B5CAD; color: #fff; }
+      .pwhd b { font-size: 14.5px; }
+      .pwhd .dest { margin-left: auto; background: #FFF7E6; color: #8a4b03; border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 12.5px; }
+      .pwbody { flex: 1; min-height: 320px; background: #E8EEF4; }
+      .pwbody iframe { width: 100%; height: 56vh; border: 0; display: block; background: #fff; }
+      .pwmsg { padding: 40px 20px; text-align: center; color: #5B6B7A; }
+      .pwft { padding: 12px 16px; display: flex; gap: 8px; align-items: center; border-top: 1px solid #E3E8EF; flex-wrap: wrap; }
+      .pwbtn { border: 0; border-radius: 10px; padding: 11px 16px; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+      .pwbtn.next { background: #177245; color: #fff; }
+      .pwbtn.next:hover { background: #125c37; }
+      .pwbtn.re { background: #0B5CAD; color: #fff; }
+      .pwbtn.re:hover { background: #094a8c; }
+      .pwbtn.ghost { background: #F4F8FB; color: #16232E; border: 1px solid #C4D0DC; }
+      .pwbtn.exit { background: transparent; color: #B3261E; border: 1px solid #E9BAB6; margin-left: auto; }
+      .pwhint { width: 100%; font-size: 11.5px; color: #5B6B7A; }
+      .pwerr { margin: 12px 16px 0; background: #FBEBEA; border: 1px solid #E9BAB6; color: #7c1a14; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
+    `;
+
+    const cleanup = () => {
+      wizardOpen = false;
+      clearTimeout(timer);
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      window.removeEventListener("keydown", onKey, true);
+      wrap.remove();
+      onClose?.();
+    };
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); cleanup(); } };
+    window.addEventListener("keydown", onKey, true);
+
+    const tryPrint = () => {
+      attempts++;
+      wrap.dataset.printAttempts = String(attempts);
+      const f = root.querySelector("iframe");
+      try { f?.contentWindow?.print(); } catch { /* fallback: the re-open button */ }
+    };
+
+    const render = (err) => {
+      const job = jobs[i];
+      root.innerHTML = `<style>${CSS}</style>
+        <div class="back"></div>
+        <div class="pw" role="dialog" aria-label="Stampa documenti">
+          <div class="pwhd">
+            <b>Stampa ${i + 1} di ${jobs.length} — ${esc(job.name)}</b>
+            <span class="dest">→ ${esc(job.printer)}</span>
+          </div>
+          ${err ? `<div class="pwerr">${esc(err)}</div>` : ""}
+          <div class="pwbody"><div class="pwmsg">Carico il PDF…</div></div>
+          <div class="pwft">
+            <button class="pwbtn re" id="pwre">🖨 Riapri stampa</button>
+            <button class="pwbtn next" id="pwnext">✓ Stampata — ${i + 1 < jobs.length ? "avanti" : "fatto"}</button>
+            <button class="pwbtn ghost" id="pwskip">Salta</button>
+            <button class="pwbtn ghost" id="pwtab">Apri in una scheda</button>
+            <button class="pwbtn exit" id="pwexit">Annulla (Esc)</button>
+            <div class="pwhint">${esc(title)} La finestra di stampa propone l'ultima stampante usata: scegli <b style="display:inline">${esc(job.printer)}</b> la prima volta, poi resta tra le recenti.</div>
+          </div>
+        </div>`;
+      root.querySelector("#pwre").onclick = tryPrint;
+      root.querySelector("#pwnext").onclick = advance;
+      root.querySelector("#pwskip").onclick = advance;
+      root.querySelector("#pwexit").onclick = cleanup;
+      root.querySelector("#pwtab").onclick = () => window.open(job.url, "_blank");
+    };
+
+    const advance = () => {
+      clearTimeout(timer);
+      if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
+      i++;
+      if (i >= jobs.length) return cleanup();
+      load();
+    };
+
+    const load = async () => {
+      render();
+      try {
+        const { blob } = await fetchPdf(jobs[i].url, {});
+        blobUrl = URL.createObjectURL(blob);
+        const body = root.querySelector(".pwbody");
+        body.innerHTML = `<iframe title="Anteprima PDF"></iframe>`;
+        const f = body.querySelector("iframe");
+        let printed = false;
+        const once = () => { if (!printed) { printed = true; tryPrint(); } };
+        f.addEventListener("load", () => setTimeout(once, 350));
+        timer = setTimeout(once, 1500); // headless/viewer-less fallback
+        f.src = blobUrl;
+      } catch (e) {
+        const msg = e instanceof StopError ? `${e.head}${e.body ? " — " + e.body : ""}` : `Errore: ${e?.message || e}`;
+        render(msg);
+        root.querySelector(".pwbody").innerHTML = `<div class="pwmsg">PDF non caricato. Usa «Apri in una scheda» per stampare dalla pagina nativa.</div>`;
+      }
+    };
+
+    load();
+  }
+
+  // Post-confirm print handoff: armed when the native Conferma button is
+  // clicked (both by the doctor and by the auto-confirm countdown), consumed
+  // by the first subsequent page that lists this richiesta's print links —
+  // the post-confirm page if it has them, otherwise the patient page.
+  function armPrintOnConfirm(model, episodeId) {
+    if (!model.form || !model.richiestaId) return;
+    const arm = () => tabStore.set("print.v1", { richiestaId: model.richiestaId, episodeId, ts: Date.now() });
+    for (const name of ["Update", "Update1"]) {
+      const b = model.form.elements.namedItem(name);
+      if (b && (b.type || "").toLowerCase() === "submit") b.addEventListener("click", arm, true);
+    }
+  }
+
+  function maybeAutoPrint() {
+    const flag = tabStore.get("print.v1", null);
+    if (!flag) return false;
+    if (Date.now() - (flag.ts || 0) > PRINT_FLAG_TTL) { tabStore.set("print.v1", null); return false; }
+    const jobs = printJobsFor(printModel(document, location.href), flag.richiestaId);
+    if (!jobs.length) return false; // this page doesn't list the richiesta yet — keep waiting
+    tabStore.set("print.v1", null);
+    openPrintWizard(jobs, { title: "Richiesta appena confermata." });
+    return true;
+  }
+
   // ==================================================================== BOOT
   function boot() {
     if (document.getElementById("psassist-host")) return;
     const pageType = classify(document);
-    if (pageType === "other" || pageType === "login") return;
+    if (pageType === "login") return;
+    if (pageType === "other") {
+      // e.g. the post-confirm label page: no panel, but a pending print
+      // handoff starts here when the page lists the richiesta's print links.
+      maybeAutoPrint();
+      return;
+    }
     const panel = new Panel(pageType);
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       panel.render();
+      maybeAutoPrint();
     }
     if (pageType === "exam") {
       const model = examModel(document, location.href);
       learnFrom(model);
       panel.render(); // pick up anything just learned
+      armPrintOnConfirm(model, findEpisodeId(document, location.href)); // native Conferma → print handoff
       maybeAutoConfirm(panel);
     }
     if (pageType === "crea") {

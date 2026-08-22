@@ -117,6 +117,16 @@ export function decodeFormBody(raw) {
   return out;
 }
 
+// A tiny but structurally valid PDF (one blank page), served for the print
+// endpoints. Content is irrelevant to the client; the magic bytes and the
+// application/pdf content type are what the wizard checks.
+export const TINY_PDF = Buffer.from(
+  "%PDF-1.4\n" +
+  "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n" +
+  "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
+  "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 100]>>endobj\n" +
+  "trailer<</Root 1 0 R>>\n%%EOF\n", "latin1");
+
 // ------------------------------------------------------------------ pages
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const HEAD = `<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><title>ROSSI MARIO</title></head><body>`;
@@ -134,6 +144,14 @@ export function createMock(opts = {}) {
     directRender: !!opts.directRender,         // no PRG redirects
     episodeId: opts.episodeId || "999001",
   };
+
+  // Optionally pre-seed an already-confirmed richiesta so the patient page
+  // carries its print links from the start (manual-reprint scenarios).
+  if (opts.seedConfirmed) {
+    const rid = 699999;
+    state.allocated[rid] = { tipo: "lab", risorse: LAB_RES };
+    state.richieste[rid] = { quesito: "seed", urgenza: "2", cart: new Map([["320", RES.POC]]), confirmed: true };
+  }
 
   const EP0 = state.episodeId;
   // After swapEpisodeAfter handled requests, every page renders as ANOTHER
@@ -153,7 +171,21 @@ export function createMock(opts = {}) {
       </form>
       ${mk("lab", "Richieste Laboratorio")} ${mk("radio", "Richieste Radiologia")}
       <a title="Richieste Consulenza" href="menuPsoEpisodio.do?MVPG=PsoRichiestaCreaRcs&EPISODIO_ID=${EP()}&REPARTO=001PS&STRUTTURA=1&toPage=PsoRichiestaPrestazioniRicercaErogatore&returnPage=PsoEpisodio">Consulenze</a>
+      <table>${printRows()}</table>
       ${FOOT}`;
+  }
+
+  // Per-richiesta print links, exactly as audited on the real patient page:
+  // barcode icon → RcsStampaEtichetteLISHMIMU.do (relative), exam list →
+  // /jasperserverSAN/jasperservlet (root-relative, BRANCA varies per row).
+  function printRow(rid) {
+    return `
+      <a title="Stampa Richiesta" href="/jasperserverSAN/jasperservlet?PROJECT=sa4rcs&REPORT=RcsRichiesta&CONN=jdbc/sa4web&RICHIESTA_ID=${rid}&RICHIESTA_PROG=1&BRANCA=0&RISORSA_ID=00660001P&REPARTO=001PS"><img alt="lista"></a>
+      <a title="Stampa Etichette" href="RcsStampaEtichetteLISHMIMU.do?RICHIESTA_ID=${rid}&RICHIESTA_PROG=1"><img alt="etichette"></a>`;
+  }
+  function printRows() {
+    return Object.keys(state.richieste)
+      .map((rid) => `<tr><td>Richiesta ${rid}</td><td>${printRow(rid)}</td></tr>`).join("\n");
   }
 
   function creaPage(params) {
@@ -235,7 +267,9 @@ export function createMock(opts = {}) {
   }
 
   const loginPage = () => `${HEAD}<form name="Login" method="post" action="login.do"><input name="username"><input type="password" name="password"><input type="submit" value="Accedi"></form>${FOOT}`;
-  const labelsPage = (rid) => `${HEAD}<h1>Stampa etichette LIS</h1><p>richiesta ${rid} confermata</p>${FOOT}`;
+  const labelsPage = (rid) => `${HEAD}<h1>Stampa etichette LIS</h1><p>richiesta ${rid} confermata</p>
+      ${opts.labelsBare ? "" : printRow(rid)}
+      <a href="menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${EP()}">Chiudi</a>${FOOT}`;
   const notFound = (msg) => `${HEAD}<h1>Pagina non prevista dal mock</h1><p>${esc(msg)}</p>${FOOT}`;
 
   // -------------------------------------------------------------- handler
@@ -256,6 +290,18 @@ export function createMock(opts = {}) {
     const pageOrRedirect = (html, loc) => (state.directRender ? respond(html) : redirect(loc));
 
     if (state.requests.length > state.expireAfter) return respond(loginPage());
+
+    // ---- print endpoints (audited paths) ----
+    const pdf = () => ({ status: 200, headers: { "content-type": "application/pdf" }, body: TINY_PDF });
+    if (u.pathname.endsWith("RcsStampaEtichetteLISHMIMU.do")) {
+      if (opts.etichetteWrapper) {
+        // some installations answer with an HTML wrapper that links the PDF
+        return respond(`${HEAD}<p>Etichette pronte</p><a href="/jasperserverSAN/jasperservlet?PROJECT=sa4rcs&REPORT=RcsEtichetteLIS&RICHIESTA_ID=${params.get("RICHIESTA_ID")}">Apri PDF</a>${FOOT}`);
+      }
+      return pdf();
+    }
+    if (u.pathname.includes("/jasperserverSAN/jasperservlet")) return pdf();
+
     if (!u.pathname.endsWith("menuPsoEpisodio.do")) return respond(notFound(u.pathname), 404);
 
     const mvpg = params.get("MVPG") || "";

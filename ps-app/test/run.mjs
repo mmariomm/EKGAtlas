@@ -309,6 +309,12 @@ async function scenarioExamPageManual(browser) {
   const r = Object.values(mock.state.richieste)[0];
   check(scen, r.cart.has("320") && r.cart.has("159"), `carrello con POC+URGENZE (got ${[...r.cart.keys()]})`);
   check(scen, r.cart.get("159") === RES.URGENZE, "PCT aggiunta sulla risorsa giusta (URGENZE)");
+  // MANUAL native Conferma must also arm the print handoff
+  await page.click('form[name="Prestazioni"] input[name="Update"]');
+  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 20000 });
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  const wh = await page.locator("#psassist-print .pwhd").innerText();
+  check(scen, /Etichette provette/.test(wh), "conferma manuale → wizard di stampa automatico");
   await context.close();
 }
 
@@ -369,6 +375,94 @@ async function scenarioRadiologyLearning(browser) {
   await context.close();
 }
 
+const $wiz = (page, sel) => page.locator(`#psassist-print ${sel}`);
+const hits = (mock, substr) => mock.state.requests.filter((q) => q.url.includes(substr)).length;
+
+async function scenarioPrintManual(browser) {
+  const scen = "print-manual";
+  const mock = createMock({ seedConfirmed: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.locator('#psassist-host [data-print="699999"]').first().click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  let head = await $wiz(page, ".pwhd").innerText();
+  check(scen, /Stampa 1 di 2 — Etichette provette/.test(head) && /etichettatrice/.test(head), `job 1 = etichette → etichettatrice (got: ${head.slice(0, 70)})`);
+  await page.waitForTimeout(1800); // fallback print attempt fires even without a PDF viewer
+  check(scen, Number(await page.locator("#psassist-print").getAttribute("data-print-attempts")) >= 1, "print dialog richiesto automaticamente");
+  check(scen, hits(mock, "RcsStampaEtichetteLISHMIMU.do") === 1, "PDF etichette scaricato una volta");
+  await $wiz(page, "#pwnext").click();
+  head = await $wiz(page, ".pwhd").innerText();
+  check(scen, /Stampa 2 di 2 — Lista esami/.test(head) && /stampante normale/.test(head), `job 2 = lista → stampante normale (got: ${head.slice(0, 70)})`);
+  await page.waitForTimeout(400);
+  check(scen, hits(mock, "REPORT=RcsRichiesta&") === 1, "PDF lista esami scaricato una volta");
+  await $wiz(page, "#pwnext").click();
+  await page.waitForTimeout(300);
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "wizard chiuso a fine sequenza");
+  await context.close();
+}
+
+async function scenarioPrintAutoOnLabels(browser) {
+  const scen = "print-auto-labels";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await $panel(page, "#q").fill("dolore toracico");
+  await $panel(page, '.chip[title*="TROPONINA"]').click();
+  await $panel(page, "#goconfirm").click();
+  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 25000 }); // countdown → native confirm
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  const head = await $wiz(page, ".pwhd").innerText();
+  check(scen, /Etichette provette/.test(head), "wizard si apre da solo sulla pagina etichette");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "Esc chiude il wizard");
+  await page.reload();
+  await page.waitForTimeout(1800);
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "flag consumato: al reload non riparte");
+  await context.close();
+}
+
+async function scenarioPrintAutoOnReturn(browser) {
+  const scen = "print-auto-return";
+  // the post-confirm page has NO print links here: the handoff must wait and
+  // fire when the doctor gets back to the patient page
+  const mock = createMock({ labelsBare: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await $panel(page, "#q").fill("dolore toracico");
+  await $panel(page, '.chip[title*="TROPONINA"]').click();
+  await $panel(page, "#goconfirm").click();
+  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 25000 });
+  await page.waitForTimeout(1800);
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "nessun wizard dove mancano i link");
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  await $wiz(page, "#pwnext").click(); // etichette stampate
+  await page.waitForTimeout(400);
+  await $wiz(page, "#pwnext").click(); // lista stampata
+  await page.waitForTimeout(300);
+  check(scen, hits(mock, "RcsStampaEtichetteLISHMIMU.do") === 1 && hits(mock, "REPORT=RcsRichiesta&") === 1,
+    "al ritorno sulla pagina paziente stampa entrambi i PDF una volta");
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "sequenza completata e chiusa");
+  await context.close();
+}
+
+async function scenarioPrintWrapper(browser) {
+  const scen = "print-wrapper";
+  const mock = createMock({ seedConfirmed: true, etichetteWrapper: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.locator('#psassist-host [data-print="699999"]').first().click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  await page.waitForTimeout(800);
+  check(scen, hits(mock, "REPORT=RcsEtichetteLIS") === 1, "wrapper HTML seguito fino al PDF etichette");
+  await $wiz(page, "#pwnext").click();
+  await page.waitForTimeout(400);
+  check(scen, hits(mock, "REPORT=RcsRichiesta&") === 1, "poi il PDF della lista");
+  await $wiz(page, "#pwexit").click();
+  await context.close();
+}
+
 async function scenarioStopButton(browser) {
   const scen = "stop";
   const mock = createMock({ lagRenders: { 320: 99 } }); // verify loop gives time to press stop
@@ -410,6 +504,10 @@ const scenarios = [
   ["wrong resource refused", scenarioWrongResourceRefused],
   ["missing quesito refused", scenarioMissingQuesito],
   ["radiology learning loop", scenarioRadiologyLearning],
+  ["print wizard manual", scenarioPrintManual],
+  ["print auto on labels page", scenarioPrintAutoOnLabels],
+  ["print auto on patient return", scenarioPrintAutoOnReturn],
+  ["print etichette html wrapper", scenarioPrintWrapper],
   ["stop button", scenarioStopButton],
 ];
 

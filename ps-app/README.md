@@ -8,8 +8,9 @@ sola pagina, verificando ogni passaggio prima del successivo.
 > **In sintesi per il medico**: dalla pagina del paziente scrivi il quesito, tocchi i profili
 > (o i PANNELLI POC nativi), premi un bottone. La richiesta viene creata, gli esami aggiunti e
 > verificati uno a uno nel carrello, e atterri sulla pagina esami reale per premere **Conferma**
-> (o lasci che la prema lui dopo un conto alla rovescia annullabile — la stampa etichette parte
-> normalmente perché la conferma è sempre un click vero sulla pagina).
+> (o lasci che la prema lui dopo un conto alla rovescia annullabile). Dopo la conferma parte da
+> solo il **wizard di stampa**: PDF etichette con la finestra di stampa già aperta
+> (etichettatrice), poi PDF lista esami (stampante normale).
 
 ---
 
@@ -57,6 +58,31 @@ esami (anche cambiando risorsa automaticamente). **STOP** (o tasto `Esc`) interr
 
 ---
 
+## Stampa etichette e lista esami
+
+Dopo la **Conferma** (manuale o automatica) si apre da solo il wizard di stampa, in sequenza:
+
+1. **Etichette provette** — il PDF dell'icona col codice a barre
+   (`RcsStampaEtichetteLISHMIMU.do`), con la finestra di stampa già aperta → **etichettatrice**;
+2. premi **"Stampata — avanti"** → **Lista esami** — il PDF di "Stampa Richiesta"
+   (`jasperservlet`, URL sempre letto dalla pagina perché `BRANCA` cambia per richiesta) →
+   **stampante normale**.
+
+Se sulla pagina post-conferma i link non ci sono, il wizard aspetta e parte **al ritorno sulla
+pagina del paziente**. Dalla pagina paziente puoi anche **ristampare qualsiasi richiesta**
+(sezione "Stampa" del pannello). Ogni passo ha: Riapri stampa · Salta · Apri in una scheda ·
+Annulla (Esc).
+
+**Perché c'è ancora la finestra di stampa?** Un sito web su Windows non può scegliere la
+stampante né stampare in silenzio: `chrome.printing` esiste solo su ChromeOS e `--kiosk-printing`
+stampa tutto sulla predefinita (inutile con due stampanti). Il wizard è il massimo consentito:
+dialogo già aperto e sequenza automatica — Chrome ricorda le stampanti recenti, quindi la scelta
+è un click (la prima volta seleziona l'etichettatrice per le etichette, poi resta tra le
+recenti). Se un giorno l'IT abilitasse il kiosk-printing su una postazione monostampante, il
+wizard funzionerebbe senza dialoghi.
+
+---
+
 ## Perché è robusto (regole di sicurezza nel codice)
 
 1. **Mai doppi ordini**: l'URL di inserimento di un esame viene richiesto **al massimo una volta**.
@@ -82,6 +108,8 @@ esami (anche cambiando risorsa automaticamente). **STOP** (o tasto `Esc`) interr
    (ricevuta e conferma automatica) vivono nella singola scheda (sessionStorage).
 10. Codifica **windows-1252 identica byte per byte** a quella del browser (verificato contro
     Chromium reale, accenti e simboli inclusi).
+11. **Stampe solo dai link della pagina**: gli URL dei PDF non vengono mai costruiti a mano
+    (`BRANCA` varia per richiesta) e passano gli stessi controlli di origine di tutto il resto.
 
 ---
 
@@ -102,8 +130,10 @@ prima fase usa **solo** "Crea richiesta e aggiungi" — mai il bottone con confe
 3. **Verifica il nome, non il conteggio.** Sulla pagina esami leggi la riga nel carrello: il
    **nome** deve corrispondere esattamente al chip scelto. (Il motore fa già questo controllo da
    solo prima di ogni invio e si ferma se un codice ha cambiato nome.)
-4. **Conferma manuale nativa.** Premi tu Conferma e completa la stampa etichette come sempre;
-   controlla che le etichette riportino il paziente giusto.
+4. **Conferma manuale nativa.** Premi tu Conferma: si apre il wizard di stampa — verifica che il
+   PDF etichette sia della **richiesta giusta** e che le etichette riportino il **paziente
+   giusto**, scegli l'etichettatrice, poi "Stampata — avanti" e stampa la lista sulla stampante
+   normale. (Il wizard si può sempre chiudere con Esc e rifare dalla sezione "Stampa".)
 5. **Controllo incrociato in EHR.** Riapri l'episodio: esattamente UNA richiesta nuova, 1 esame,
    quesito/medico/urgenza corretti, nessuna bozza doppia.
 6. **Run multiplo con cambio risorsa.** Profilo con POC + Urgenze (es. Base PS + Epatico):
@@ -139,7 +169,7 @@ ps-app/
 ├── userscript/          ← stesso motore in formato Tampermonkey (generato)
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
-└── test/                ← simulatore SA4PSO + 17 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 21 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -148,7 +178,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 17 scenari e2e contro il simulatore (58 verifiche)
+npm test           # 21 scenari e2e contro il simulatore (73 verifiche)
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
@@ -159,7 +189,10 @@ dal server (hard-stop con **un solo** invio e step successivi mai partiti), **co
 ambiguità), **cambio episodio a metà run** (zero invii sul paziente sbagliato), quesito
 pre-compilato non sovrascritto, aggiunte dalla pagina esami con cambio risorsa, rifiuto live di
 esami di risorsa sbagliata (CTA disabilitato con motivo), quesito mancante (CTA disabilitato,
-si riattiva scrivendo), apprendimento radiologia end-to-end, STOP. Il simulatore fallisce
+si riattiva scrivendo), apprendimento radiologia end-to-end, STOP, e la stampa: wizard manuale
+con sequenza etichette→lista e download singoli, auto-apertura sulla pagina post-conferma,
+attesa-e-ripartenza al ritorno sulla pagina paziente, wrapper HTML seguito fino al PDF, conferma
+manuale nativa che arma la stampa. Il simulatore fallisce
 apposta se `Cancel` viaggia insieme a `Update` (regressioni del serializzatore) e le fixture
 sono **anonimizzate**: nessun dato di pazienti reali in questo repo.
 
