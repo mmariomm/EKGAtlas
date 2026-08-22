@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PS Assist — richieste Pronto Soccorso (SA4PSO)
 // @namespace    psassist.multimedica
-// @version      1.6.0
+// @version      1.7.0
 // @description  Crea richieste lab/radiologia, aggiunge gli esami scelti verificando ogni inserimento nel carrello. Conferma sempre come click reale sulla pagina.
 // @match        https://smarthealth.multimedica.it/sa4pso/*
 // @run-at       document-idle
@@ -76,7 +76,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "1.6.0";
+  const VERSION = "1.7.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -410,20 +410,35 @@
     return out;
   }
 
-  // Some viewer endpoints (labels, referti) are HTML pages whose own script
-  // fetches the PDF and shows it as a blob: URL (field-observed: the tab ends
-  // at blob:…). Harvest that blob without knowing the script's internals:
-  // replay the viewer's HTML in a hidden SANDBOXED iframe (allow-scripts +
-  // allow-same-origin, but NO top navigation — an old-school framebuster
-  // can't hijack the tab) with a prelude that hands us the Blob the moment
-  // the viewer calls URL.createObjectURL — before any navigation, so it
-  // works identically with or without a PDF viewer available.
+  const isPdfBlob = (b) => b instanceof Blob && b.size > 4 &&
+    (b.type.includes("pdf") || b.type === "" || b.type.includes("octet"));
+
+  // Raised when an endpoint is a client-side VIEWER we can't safely turn into
+  // a Blob (see note below). Carries the URL so the caller opens it natively.
+  class ViewerError extends StopError {
+    constructor(url) { super("È un visualizzatore, non un PDF diretto"); this.viewerUrl = url; }
+  }
+
+  // WHY WE DON'T HARVEST THE VIEWER'S BLOB
+  // --------------------------------------
+  // SA4PSO's label/referto endpoints are HTML pages whose own script builds
+  // the PDF and navigates the tab to a blob: URL. Capturing that Blob from a
+  // hidden iframe is not safely possible against an unknown viewer:
+  //   - a SANDBOXED iframe that navigates to blob: becomes an OPAQUE origin →
+  //     we can't read its location or fetch its Blob (verified);
+  //   - a NON-sandboxed iframe can read it, but a framebusting viewer would
+  //     navigate the doctor's whole tab away (verified — unacceptable).
+  // So we only handle PDFs we can get SAFELY: a direct application/pdf
+  // response, or a viewer that builds the Blob INLINE in its first document
+  // (caught by a short sandboxed replay, which never navigates). Anything else
+  // is opened natively in a new tab — exactly the manual fallback the doctor
+  // asked for. This never hangs and never hijacks the page.
   let harvestSeq = 0;
-  function harvestBlobPdf(url, { html, baseUrl, signal, timeoutMs = 15000 } = {}) {
+  function harvestInlinePdf(url, { html, baseUrl, signal, timeoutMs = 3000 } = {}) {
     return new Promise((resolve, reject) => {
-      const cb = `__psassistHarvest${++harvestSeq}`;
+      const cb = `__psaH${++harvestSeq}`;
       const iframe = document.createElement("iframe");
-      iframe.setAttribute("sandbox", "allow-scripts allow-same-origin");
+      iframe.setAttribute("sandbox", "allow-scripts allow-same-origin"); // no top-nav: framebusters are inert
       iframe.style.cssText = "position:fixed;width:2px;height:2px;left:-9999px;top:-9999px;visibility:hidden";
       let done = false;
       const finish = (fn, v) => {
@@ -437,42 +452,32 @@
       };
       const onAbort = () => finish(reject, new DOMException("Aborted", "AbortError"));
       signal?.addEventListener("abort", onAbort, { once: true });
-      const tt = setTimeout(() => finish(reject, new StopError("Il visualizzatore non ha prodotto un PDF in tempo", "Usa «Apri in una scheda» e stampa/leggi dalla finestra nativa.")), timeoutMs);
-      // postMessage crosses the MV3 isolated-world boundary (a direct
-      // parent[fn] call from the iframe's page world would not), and Blobs
-      // survive the structured clone.
+      const tt = setTimeout(() => finish(reject, new ViewerError(url)), timeoutMs);
       const onMsg = (e) => {
         const d = e.data;
-        if (d && d.__psassist === cb && d.blob instanceof Blob && d.blob.size) finish(resolve, { blob: d.blob, url });
+        if (d && d.__psassist === cb && isPdfBlob(d.blob)) finish(resolve, { blob: d.blob, url });
       };
       window.addEventListener("message", onMsg);
       document.documentElement.appendChild(iframe);
-      const prelude = `<script>(function () {
-        var mk = window.URL.createObjectURL.bind(window.URL);
-        window.URL.createObjectURL = function (b) {
-          try { if (b instanceof Blob) parent.postMessage({ __psassist: ${JSON.stringify(cb)}, blob: b }, "*"); } catch (e) {}
-          return mk(b);
-        };
-      })();<\/script>`;
+      // Hook createObjectURL BEFORE the replayed markup runs; postMessage
+      // crosses the MV3 isolated world and Blobs survive the structured clone.
+      const prelude = `<script>(function(){var m=window.URL.createObjectURL.bind(window.URL);function h(b){try{if(b instanceof Blob)parent.postMessage({__psassist:${JSON.stringify(cb)},blob:b},"*")}catch(e){}}window.URL.createObjectURL=function(b){h(b);return m(b)};if(window.webkitURL&&window.webkitURL.createObjectURL){var wm=window.webkitURL.createObjectURL.bind(window.webkitURL);window.webkitURL.createObjectURL=function(b){h(b);return wm(b)}}})();<\/script>`;
       const idoc = iframe.contentDocument;
       idoc.open();
-      idoc.write(prelude + `<base href="${esc(baseUrl || url)}">` + html);
+      idoc.write(prelude + `<base href="${esc(baseUrl || url)}">` + (html || ""));
       idoc.close();
-      // Belt: viewers that skip createObjectURL and just embed a blob/pdf.
       const iv = setInterval(() => {
         try {
-          const el = iframe.contentWindow?.document?.querySelector('embed[src^="blob:"], iframe[src^="blob:"], object[data^="blob:"]');
+          const el = iframe.contentWindow?.document?.querySelector('embed[src^="blob:"],iframe[src^="blob:"],object[data^="blob:"]');
           const b = el && (el.getAttribute("src") || el.getAttribute("data"));
-          if (b) fetch(b).then((r) => r.blob()).then((blob) => finish(resolve, { blob, url })).catch(() => {});
+          if (b) fetch(b).then((r) => r.blob()).then((blob) => { if (isPdfBlob(blob)) finish(resolve, { blob, url }); }).catch(() => {});
         } catch { /* transiently inaccessible */ }
-      }, 200);
+      }, 150);
     });
   }
 
-  // Fetch a PDF with the same origin/timeout guards as fetchDoc. Fallback
-  // chain for HTML answers: an explicit PDF reference in the markup → URL-ish
-  // strings found in its scripts → the blob harvester above (real viewers
-  // that build the PDF client-side, as observed in the field).
+  // Get a PDF SAFELY, or throw ViewerError(url) so the caller opens it in a
+  // tab. Same origin/timeout guards as fetchDoc.
   async function fetchPdf(url, { signal, hop = 0 } = {}) {
     const target = new URL(url, location.href);
     if (target.origin !== location.origin) {
@@ -510,26 +515,15 @@
         doc.querySelector('a[href*="jasperservlet"], a[href$=".pdf" i]')?.getAttribute("href") ||
         (/url\s*=\s*([^"'>\s]+)/i.exec(doc.querySelector('meta[http-equiv="refresh" i]')?.getAttribute("content") || "") || [])[1] ||
         (/window\.open\(\s*['"]([^'"]+)['"]/.exec(text) || [])[1];
-      if (cand) {
-        try { return await fetchPdf(new URL(cand, base).href, { signal, hop: 1 }); } catch { /* keep falling back */ }
+      if (cand && !/^(javascript:|#)/i.test(cand)) {
+        try { return await fetchPdf(new URL(cand, base).href, { signal, hop: 1 }); }
+        catch (e) { if (e?.name === "AbortError") throw e; /* keep falling back */ }
       }
-      // 2. a blob-building viewer? replay it and harvest the Blob directly
-      if (/createObjectURL/.test(text)) {
-        return await harvestBlobPdf(target.href, { html: text, baseUrl: base, signal });
-      }
-      // 3. URL-ish strings inside the page scripts
-      const seen = new Set();
-      for (const m of text.matchAll(/['"]([^'"<>\s]{8,300}?(?:pdf|jasper|referto|etichett|report|viewer|stream|download)[^'"<>\s]*)['"]/gi)) {
-        const s = m[1];
-        if (/^(data:|blob:|javascript:)/i.test(s) || seen.has(s)) continue;
-        seen.add(s);
-        if (seen.size > 3) break;
-        try { return await fetchPdf(new URL(s, base).href, { signal, hop: 1 }); } catch { /* next */ }
-      }
-      // 4. last resort: replay anyway and hope the viewer produces a blob
-      return await harvestBlobPdf(target.href, { html: text, baseUrl: base, signal });
+      // 2. inline blob-builder viewer? short, SANDBOXED replay (never navigates,
+      //    framebusters inert). Otherwise it's a viewer we open natively.
+      return await harvestInlinePdf(target.href, { html: text, baseUrl: base, signal });
     }
-    throw new StopError("Il server non ha restituito un PDF", "Usa il bottone «Apri in una scheda» e stampa dalla pagina nativa.");
+    throw new ViewerError(target.href);
   }
 
   // Exam page: everything the engine needs from a rendered list.
@@ -992,19 +986,10 @@
     .browserow:hover { border-color: #0B5CAD; }
     .commit { position: sticky; bottom: -1px; margin: 0 -12px -12px; padding: 10px 12px 12px; background: #fff;
               border-top: 1px solid #EEF2F6; box-shadow: 0 -10px 14px -12px rgba(9,42,74,.25); }
-    .preload { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: .4px;
-               color: #0B5CAD; background: #EAF2FA; border: 1px solid #9DBFDE; border-radius: 10px; padding: 9px 11px;
-               cursor: pointer; margin-bottom: 7px; }
-    .preload input { accent-color: #0B5CAD; width: 15px; height: 15px; }
-    .preload.busy { color: #5B6B7A; background: #F4F8FB; border-color: #C4D0DC; cursor: progress; }
-    .preload.done { color: #124F31; background: #EDF7F0; border-color: #BCE0C9; cursor: default; }
     .rlist { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
     .rrow { display: flex; align-items: center; gap: 8px; border: 1px solid #E3E8EF; background: #fff; border-radius: 8px;
             padding: 7px 9px; font-size: 12px; cursor: pointer; text-align: left; width: 100%; color: #16232E; }
     .rrow:hover { border-color: #0B5CAD; background: #F4F8FB; }
-    .rdot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: #C4D0DC; }
-    .rdot.ok { background: #177245; } .rdot.err { background: #B3261E; }
-    .rdot.busy { background: #E5A83B; animation: psaPulse 1s infinite; }
     .rwhen { flex: 0 0 auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: #35506B; font-variant-numeric: tabular-nums; }
     .rsys { flex: 0 0 auto; font-size: 9.5px; font-weight: 800; letter-spacing: .5px; color: #5B6B7A; background: #F4F8FB;
             border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
@@ -1055,12 +1040,9 @@
       this.filter = "";
       this.pickRes = null;
       this.referti = [];                // patient page: result rows, newest first
-      this.refertiCache = new Map();    // REFERTO_ID -> {status, blobUrl}
-      this.preload = "idle";            // 'idle' | 'running' | 'done'
       this.pos = store.get("pos", null); // user-dragged panel position {left, top}
       this.runPatient = null;           // patient name PINNED when a run starts
       this.episodeId = findEpisodeId(document, location.href);
-      this.preloadWanted = false;
       // The header must always show the patient this page belongs to: follow
       // any <title> change (the EHR sets it to the patient name).
       const titleEl = document.querySelector("title");
@@ -1079,7 +1061,7 @@
     // ---- cross-page continuity -------------------------------------------
     // The EHR reloads the page at every click (that's the app, not us). To
     // make the panel FEEL persistent, its working state — quesito, selected
-    // exams, open sections, referti-preload wish — is saved per (tab,
+    // exams, open sections — is saved per (tab,
     // episode) and restored on the next page of the SAME patient. A page of
     // another episode restores nothing.
     uiKey() { return this.episodeId ? `ui.${this.episodeId}` : null; }
@@ -1092,7 +1074,6 @@
         browseOpen: !!this.browseOpen,
         pickRes: this.pickRes,
         filter: this.filter || "",
-        preloadWanted: !!this.preloadWanted,
         ts: Date.now(),
       });
     }
@@ -1106,7 +1087,6 @@
       this.browseOpen = !!s.browseOpen;
       this.pickRes = s.pickRes || null;
       this.filter = s.filter || "";
-      this.preloadWanted = !!s.preloadWanted;
     }
     clearOrderUi() { // after a successful run the order is placed: start clean
       this._q = "";
@@ -1434,71 +1414,28 @@
     }
 
     // Patient page: the patient's result PDFs (esiti), newest first. Nothing
-    // is fetched until the doctor explicitly ticks PRECARICA REFERTI; after
-    // the preload every click opens its PDF instantly from memory.
     viewReferti() {
       if (this.pageType !== "patient" || !this.referti.length) return "";
-      const okN = [...this.refertiCache.values()].filter((c) => c.status === "ok").length;
-      const errN = [...this.refertiCache.values()].filter((c) => c.status === "err").length;
-      const control = this.preload === "idle"
-        ? `<label class="preload"><input type="checkbox" id="preloadref"> PRECARICA REFERTI (${this.referti.length})</label>`
-        : this.preload === "running"
-          ? `<label class="preload busy"><input type="checkbox" checked disabled> Carico… ${okN + errN}/${this.referti.length}</label>`
-          : `<label class="preload done"><input type="checkbox" checked disabled> ✓ ${okN} referti pronti${errN ? ` · ${errN} non caricati` : ""}</label>`;
-      const dot = (r) => {
-        const c = this.refertiCache.get(r.id);
-        if (!c) return `<span class="rdot"></span>`;
-        if (c.status === "ok") return `<span class="rdot ok"></span>`;
-        if (c.status === "err") return `<span class="rdot err" title="non caricato: si apre dal server"></span>`;
-        return `<span class="rdot busy"></span>`;
-      };
+      // Sorted by date/time, newest first. A click opens the referto natively
+      // in a new tab (same as the page's own icon) — reliable on any viewer.
+      // In-memory preload was removed: SA4PSO's PDF viewer can't be turned
+      // into a saved Blob safely (see the note above fetchPdf).
       const rows = this.referti.map((r) => `
-        <button class="rrow" data-ref="${esc(r.id)}" title="${esc(r.label)}">
-          ${dot(r)}<span class="rwhen">${esc(r.when)}</span><span class="rsys">${esc(r.sistema)}</span>
+        <button class="rrow" data-ref="${esc(r.id)}" title="${esc(r.label)} — apri in una scheda">
+          <span class="rwhen">${esc(r.when)}</span><span class="rsys">${esc(r.sistema)}</span>
           <span class="rlab">${esc(shortLabel(r.label))}</span>
         </button>`).join("");
       return `
         <div class="sec">
-          <div class="lbl">Referti (${this.referti.length})</div>
-          ${control}
+          <div class="lbl">Referti (${this.referti.length}) — dal più recente</div>
           <div class="rlist">${rows}</div>
-          <div class="hint">${this.preload === "done" ? "Click su un referto: il PDF si apre all'istante." : "Senza precarica, il click apre il referto dal server come sempre."}</div>
+          <div class="hint">Click su un referto: si apre in una nuova scheda.</div>
         </div>`;
-    }
-
-    startRefertiPreload() {
-      if (this.preload !== "idle") return;
-      this.preload = "running";
-      this.preloadWanted = true; // remembered per tab+episode: auto-runs on the next pages of this patient
-      this.persistUi();
-      this.render();
-      const queue = [...this.referti];
-      const worker = async () => {
-        for (;;) {
-          const r = queue.shift();
-          if (!r) return;
-          this.refertiCache.set(r.id, { status: "loading" });
-          this.render();
-          try {
-            const { blob } = await fetchPdf(r.url, {});
-            this.refertiCache.set(r.id, { status: "ok", blobUrl: URL.createObjectURL(blob) });
-          } catch (e) {
-            this.refertiCache.set(r.id, { status: "err" });
-            this.log(`${now()}  referto non precaricato (${shortLabel(r.label)}): ${e?.head || e?.message || e}`);
-          }
-          this.render();
-        }
-      };
-      // two gentle parallel workers, then done
-      Promise.all([worker(), worker()]).then(() => { this.preload = "done"; this.render(); });
     }
 
     openReferto(id) {
       const r = this.referti.find((x) => x.id === id);
-      if (!r) return;
-      const c = this.refertiCache.get(id);
-      if (c?.status === "ok" && c.blobUrl) window.open(c.blobUrl, "_blank");
-      else window.open(r.url, "_blank"); // native behavior, like the page's own icon
+      if (r) window.open(r.url, "_blank"); // native viewer, like the page's own icon
     }
 
     viewBrowse(cat) {
@@ -1648,7 +1585,6 @@
         const jobs = printJobsFor(printModel(document, location.href), rid);
         if (jobs.length) openPrintWizard(jobs, { title: `Richiesta ${rid}.` });
       }));
-      $("#preloadref")?.addEventListener("change", (e) => { if (e.target.checked) this.startRefertiPreload(); });
       this.root.querySelectorAll("[data-ref]").forEach((b) => b.addEventListener("click", () => this.openReferto(b.getAttribute("data-ref"))));
     }
 
@@ -1865,8 +1801,9 @@
       try { f?.contentWindow?.print(); } catch { /* fallback: the re-open button */ }
     };
 
-    const render = (err) => {
+    const render = (err, viewer) => {
       const job = jobs[i];
+      const nextLbl = `✓ Stampata — ${i + 1 < jobs.length ? "avanti" : "fatto"}`;
       root.innerHTML = `<style>${CSS}</style>
         <div class="back"></div>
         <div class="pw" role="dialog" aria-label="Stampa documenti">
@@ -1877,19 +1814,23 @@
           ${err ? `<div class="pwerr">${esc(err)}</div>` : ""}
           <div class="pwbody"><div class="pwmsg">Carico il PDF…</div></div>
           <div class="pwft">
-            <button class="pwbtn re" id="pwre">🖨 Riapri stampa</button>
-            <button class="pwbtn next" id="pwnext">✓ Stampata — ${i + 1 < jobs.length ? "avanti" : "fatto"}</button>
+            ${viewer
+              ? `<button class="pwbtn re" id="pwtab">↗ Apri ${esc(job.name)} (poi Ctrl+P → ${esc(job.printer)})</button>`
+              : `<button class="pwbtn re" id="pwre">🖨 Riapri stampa</button>`}
+            <button class="pwbtn next" id="pwnext">${nextLbl}</button>
             <button class="pwbtn ghost" id="pwskip">Salta</button>
-            <button class="pwbtn ghost" id="pwtab">Apri in una scheda</button>
+            ${viewer ? "" : `<button class="pwbtn ghost" id="pwtab">Apri in una scheda</button>`}
             <button class="pwbtn exit" id="pwexit">Annulla (Esc)</button>
-            <div class="pwhint">${esc(title)} La finestra di stampa propone l'ultima stampante usata: scegli <b style="display:inline">${esc(job.printer)}</b> la prima volta, poi resta tra le recenti.</div>
+            <div class="pwhint">${viewer
+              ? `Questo documento si apre in una nuova scheda: premi Ctrl+P e scegli <b style="display:inline">${esc(job.printer)}</b>.`
+              : `${esc(title)} La finestra di stampa propone l'ultima stampante usata: scegli <b style="display:inline">${esc(job.printer)}</b> la prima volta, poi resta tra le recenti.`}</div>
           </div>
         </div>`;
-      root.querySelector("#pwre").onclick = tryPrint;
+      root.querySelector("#pwre")?.addEventListener("click", tryPrint);
       root.querySelector("#pwnext").onclick = advance;
       root.querySelector("#pwskip").onclick = advance;
       root.querySelector("#pwexit").onclick = cleanup;
-      root.querySelector("#pwtab").onclick = () => window.open(job.url, "_blank");
+      root.querySelector("#pwtab").onclick = () => window.open(job.url, "_blank"); // user-activated → not popup-blocked
     };
 
     const advance = () => {
@@ -1914,9 +1855,15 @@
         timer = setTimeout(once, 1500); // headless/viewer-less fallback
         f.src = blobUrl;
       } catch (e) {
-        const msg = e instanceof StopError ? `${e.head}${e.body ? " — " + e.body : ""}` : `Errore: ${e?.message || e}`;
-        render(msg);
-        root.querySelector(".pwbody").innerHTML = `<div class="pwmsg">PDF non caricato. Usa «Apri in una scheda» per stampare dalla pagina nativa.</div>`;
+        if (e?.name === "AbortError") return;
+        // This endpoint is a viewer we can't safely turn into a Blob. Don't
+        // auto-open (a popup after the async fetch is blocked for lack of user
+        // activation) — offer a big button the doctor clicks, which carries
+        // activation and always opens the tab. The sequence still advances.
+        const job = jobs[i];
+        render("Anteprima non catturabile per questo documento (è un visualizzatore).", true);
+        root.querySelector(".pwbody").innerHTML =
+          `<div class="pwmsg">Premi <b>↗ Apri ${esc(job.name)}</b> qui sotto, poi <b>Ctrl+P → ${esc(job.printer)}</b>,<br>torna qui e premi «Stampata — avanti».</div>`;
       }
     };
 
@@ -1965,8 +1912,6 @@
       panel.referti = refertiModel(document, location.href);
       panel.render();
       maybeAutoPrint();
-      // the doctor already asked for the referti of THIS patient in THIS tab
-      if (panel.preloadWanted && panel.referti.length) panel.startRefertiPreload();
     } else {
       panel.render();
     }

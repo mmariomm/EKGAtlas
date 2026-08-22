@@ -338,6 +338,11 @@ export function createMock(opts = {}) {
     // whose SCRIPT builds the PDF blob and navigates to it (address becomes
     // blob:…). URLs are assembled dynamically so naive scraping can't find
     // them, and a framebuster proves the client sandbox holds.
+    // blobViewers: an HTML viewer whose INLINE script builds the PDF blob
+    // (caught by the app's short sandboxed replay). hardViewer: a viewer whose
+    // script needs the REAL URL's query (location.search) to build the PDF —
+    // it can't be replayed off-URL, modelling the field case where capture
+    // fails and the app must fall back to opening the viewer in a tab.
     const blobViewer = (innerPath, query) => respond(`${HEAD}
       <script>
         try { if (top !== self) top.location.href = 'about:blank'; } catch (e) {}
@@ -346,7 +351,20 @@ export function createMock(opts = {}) {
           location.replace(URL.createObjectURL(new Blob([b], { type: 'application/pdf' })));
         });
       <\/script>caricamento referto...${FOOT}`);
+    const hardViewer = (innerPath) => respond(`${HEAD}
+      <script>
+        try { if (top !== self) top.location.href = 'about:blank'; } catch (e) {}
+        // only builds the PDF when running at its OWN url (marker present) —
+        // a replay in the host page's context can't reproduce that, modelling
+        // the field viewer whose script needs its real URL.
+        if (/Sa4ViewerExtRedirect|EtichetteLISHMIMU/i.test(location.href)) {
+          fetch('${innerPath}' + location.search).then(function (r) { return r.blob(); }).then(function (b) {
+            location.replace(URL.createObjectURL(new Blob([b], { type: 'application/pdf' })));
+          });
+        }
+      <\/script>caricamento…${FOOT}`);
     if (u.pathname.endsWith("RcsStampaEtichetteLISHMIMU.do")) {
+      if (opts.hardViewer) return hardViewer("/jasperserverSAN/jasperservlet");
       if (opts.blobViewers) return blobViewer("/jasperserverSAN/jasperservlet", `?PROJECT=sa4rcs&REPORT=RcsEtichetteLIS&RICHIESTA_ID=${params.get("RICHIESTA_ID")}&RICHIESTA_PROG=${params.get("RICHIESTA_PROG")}`);
       if (opts.etichetteWrapper) {
         // installations that answer with a plain HTML wrapper linking the PDF

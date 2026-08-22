@@ -532,32 +532,49 @@ async function scenarioPrintAutoOnReturn(browser) {
   await context.close();
 }
 
-async function scenarioBlobViewers(browser) {
-  const scen = "blob-viewers";
-  // field-observed: labels and referti endpoints are HTML viewers whose own
-  // script builds the PDF and navigates to blob:… — the sandboxed harvester
-  // must capture them (the mock viewer even tries to framebust the tab)
+async function scenarioPrintInlineViewer(browser) {
+  const scen = "print-inline-viewer";
+  // an etichette endpoint that builds the PDF INLINE → the short sandboxed
+  // replay captures it and prints it in-panel (framebuster stays inert)
   const mock = createMock({ seedConfirmed: true, blobViewers: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
-  await page.locator("#psassist-host label.preload").click();
-  await page.waitForSelector("#psassist-host .preload.done", { timeout: 30000 });
-  const streams = mock.state.requests.filter((q) => q.url.includes("refertostream"));
-  check(scen, streams.length === 3 && new Set(streams.map((q) => q.params.REFERTO_ID)).size === 3,
-    `harvester raccoglie i 3 PDF dei viewer blob (got ${streams.length})`);
-  check(scen, /PsoEpisodioClinicoAmbulatorio/.test(page.url()), "il framebuster del viewer NON ha dirottato la pagina (sandbox regge)");
-  const [popup] = await Promise.all([
-    page.waitForEvent("popup", { timeout: 8000 }),
-    page.locator("#psassist-host .rrow").first().click(),
-  ]);
-  check(scen, popup.url().startsWith("blob:"), "referto raccolto si apre all'istante");
-  // labels through the same viewer mechanism, via the print wizard
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   await page.waitForFunction(() => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= 1, { timeout: 25000 });
   check(scen, mock.state.requests.filter((q) => q.url.includes("REPORT=RcsEtichetteLIS")).length >= 1,
-    "wizard etichette: PDF interno del viewer raggiunto");
+    "viewer inline: PDF interno raggiunto e stampato in-pannello");
+  check(scen, /PsoEpisodioClinicoAmbulatorio/.test(page.url()), "il framebuster del viewer NON ha dirottato la pagina");
+  await $wiz(page, "#pwexit").click();
+  await context.close();
+}
+
+async function scenarioPrintHardViewer(browser) {
+  const scen = "print-hard-viewer";
+  // a viewer that can't be replayed off its real URL → the wizard must fall
+  // back to opening it in a new tab (Ctrl+P), never hang, never hijack
+  const mock = createMock({ seedConfirmed: true, hardViewer: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.locator('#psassist-host [data-print="699999"]').first().click();
+  // harvest fails (viewer can't be replayed off-URL) → the fallback state (pwerr) appears
+  await page.waitForSelector("#psassist-print .pwerr", { timeout: 15000 });
+  const hint = await $wiz(page, ".pwhint").innerText().catch(() => "");
+  check(scen, /Ctrl\+P/.test(hint) && /etichettatrice/.test(hint), `guida chiara al ripiego manuale (got: ${hint.slice(0, 70)})`);
+  check(scen, /PsoEpisodioClinicoAmbulatorio/.test(page.url()), "la pagina paziente NON è stata dirottata dal framebuster");
+  // clicking the button (user activation) opens the viewer tab — not popup-blocked
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup", { timeout: 8000 }),
+    $wiz(page, "#pwtab").click(),
+  ]);
+  check(scen, popup.url().includes("RcsStampaEtichetteLISHMIMU.do"), `il bottone apre le etichette in una scheda (got …${popup.url().slice(-40)})`);
+  // sequence still advances to the exam-list job
+  await $wiz(page, "#pwnext").click();
+  await page.waitForTimeout(400);
+  const head = await $wiz(page, ".pwhd").innerText();
+  check(scen, /Lista esami/.test(head), "la sequenza prosegue col foglio esami");
   await $wiz(page, "#pwexit").click();
   await context.close();
 }
@@ -675,8 +692,8 @@ async function scenarioContinuity(browser) {
   await context.close();
 }
 
-async function scenarioRefertiPreload(browser) {
-  const scen = "referti-preload";
+async function scenarioReferti(browser) {
+  const scen = "referti";
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
@@ -686,35 +703,15 @@ async function scenarioRefertiPreload(browser) {
   check(scen, rows.length === 3, `3 referti listati, il link-archivio senza REFERTO_ID è ignorato (got ${rows.length})`);
   check(scen, /22\/08 07:45/.test(rows[0]) && /EMOGASANALISI/.test(rows[0]), `ordinati per data/ora: primo = il più recente (got: ${rows[0]?.slice(0, 50)})`);
   check(scen, /21\/08 22:10/.test(rows[2] || ""), `ultimo = il più vecchio (got: ${rows[2]?.slice(0, 40)})`);
-  check(scen, hits(mock, "Sa4ViewerExtRedirect") === 0, "NESSUN download prima del comando PRECARICA");
+  check(scen, hits(mock, "Sa4ViewerExtRedirect") === 0, "nessun download automatico: si scarica solo se apri un referto");
 
-  await page.locator("#psassist-host label.preload").click(); // toggles the checkbox; the handler re-renders immediately
-  await page.waitForSelector("#psassist-host .preload.done", { timeout: 15000 });
-  const viewerHits = mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect"));
-  check(scen, viewerHits.length === 3 && new Set(viewerHits.map((q) => q.params.REFERTO_ID)).size === 3,
-    `precarica scarica i 3 PDF una volta ciascuno (got ${viewerHits.length})`);
-
-  const [popup] = await Promise.all([
-    page.waitForEvent("popup", { timeout: 8000 }),
-    page.locator("#psassist-host .rrow").first().click(),
-  ]);
-  check(scen, popup.url().startsWith("blob:"), `click → PDF istantaneo dalla memoria (got ${popup.url().slice(0, 30)}…)`);
-  check(scen, hits(mock, "Sa4ViewerExtRedirect") === 3, "nessuna nuova richiesta al server all'apertura");
-  await context.close();
-}
-
-async function scenarioRefertiNativeFallback(browser) {
-  const scen = "referti-native";
-  const mock = createMock({});
-  const { context, page } = await newPage(browser, mock);
-  await page.goto(mock.patientUrl);
-  await page.waitForSelector("#psassist-host", { state: "attached" });
+  // click opens the referto natively in a new tab (reliable on any viewer)
   const [popup] = await Promise.all([
     page.waitForEvent("popup", { timeout: 8000 }),
     page.locator("#psassist-host .rrow").first().click(),
   ]);
   check(scen, popup.url().includes("Sa4ViewerExtRedirect") && popup.url().includes("bbbb2222"),
-    `senza precarica il click apre il referto dal server, come l'icona nativa (got ${popup.url().slice(-60)})`);
+    `click apre il referto dal server (il più recente), come l'icona nativa (got …${popup.url().slice(-40)})`);
   await context.close();
 }
 
@@ -766,11 +763,11 @@ const scenarios = [
   ["print auto on interstitial page", scenarioPrintAutoInterstitial],
   ["print auto waits for patient return", scenarioPrintAutoOnReturn],
   ["print etichette html wrapper", scenarioPrintWrapper],
-  ["blob viewers harvested (referti + etichette)", scenarioBlobViewers],
+  ["print inline viewer captured", scenarioPrintInlineViewer],
+  ["print hard viewer → tab fallback", scenarioPrintHardViewer],
   ["ui ergonomics (selbar/drag/scroll)", scenarioUiErgonomics],
   ["continuity + panel confirm button", scenarioContinuity],
-  ["referti preload on command", scenarioRefertiPreload],
-  ["referti native fallback", scenarioRefertiNativeFallback],
+  ["referti list + native open", scenarioReferti],
   ["stop button", scenarioStopButton],
 ];
 

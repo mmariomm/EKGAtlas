@@ -31,16 +31,14 @@ passaggio in più che qui non serve).
 
 **Perché "si aggiorna" a ogni pagina?** Il gestionale è un'app anni 2000: OGNI click ricarica
 l'intera pagina — nessuna estensione può impedirlo. Il pannello però **si ricostruisce identico**:
-quesito, esami selezionati, sezioni aperte, posizione e la precarica referti tornano come li hai
-lasciati (per lo stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
+quesito, esami selezionati, sezioni aperte e posizione tornano come li hai lasciati (per lo
+stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
 
 **Aggiornare a una nuova versione**: sostituisci i file nella STESSA cartella dell'estensione e
 premi **"⟳ ricarica estensione"** nel piè di pagina del pannello (o ⟳ in `chrome://extensions`).
 Un'estensione non pacchettizzata non può scaricarsi gli aggiornamenti da sola, e PS Assist non
 contatterà mai server esterni per controllare le versioni — sarebbe contro la regola «nessun dato
 lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica, fatto.
-
-**Aggiornamenti**: sostituisci la cartella e premi ⟳ sull'estensione in `chrome://extensions`.
 
 ### E se non posso? (PC bloccato dall'IT, niente admin)
 
@@ -116,23 +114,18 @@ qualsiasi richiesta**
 (sezione "Stampa" del pannello, che mostra cosa contiene ogni riga: "2× etichette + 2× liste",
 "prenotazione", ecc.). Ogni passo ha: Riapri stampa · Salta · Apri in una scheda · Annulla (Esc).
 
-## Referti in un click (precarica)
+## Referti (apertura rapida)
 
 Sulla pagina del paziente il pannello elenca i **referti** (l'icona-foglio prima del nome
 dell'esame: laboratorio, radiologia e visite — HL7LIS/RIS/AMB), **ordinati per data e ora**, i
-più recenti in alto. Di norma un click apre il referto dal server come l'icona nativa. Se spunti
-**PRECARICA REFERTI**, il pannello scarica tutti i PDF in memoria (due alla volta, con
-avanzamento visibile): da quel momento ogni click apre il referto **all'istante**, senza attese.
+più recenti in alto. Un click apre il referto in una nuova scheda, come l'icona nativa.
 
-- Nessun referto viene scaricato **prima** della spunta: il comando è tuo.
-- I PDF restano solo **nella memoria della pagina** (spariscono cambiando pagina — alla
-  prossima visita rispunta la casella).
-- Gli endpoint di etichette e referti sul campo sono **pagine-viewer** che costruiscono il PDF
-  via script (l'indirizzo diventa `blob:`): il motore le riproduce in un iframe **sandbox**
-  invisibile (un eventuale frame-buster non può dirottare la scheda) e cattura il Blob nel
-  momento esatto in cui il viewer lo crea — funziona qualunque cosa faccia lo script interno.
-- Un referto che non si carica resta cliccabile: si apre dal server come sempre.
-- I link-archivio ("elenco documenti" ecc.) non c'entrano coi referti e vengono ignorati.
+> Nota tecnica: la *precarica in memoria* è stata rimossa. I visualizzatori PDF di SA4PSO
+> costruiscono il file via script e lo mostrano a un indirizzo `blob:`; catturarne il contenuto
+> da un iframe nascosto non è fattibile in sicurezza (in sandbox l'origine diventa "opaca" e non
+> è leggibile; senza sandbox un eventuale *frame-buster* del visualizzatore dirotterebbe l'intera
+> scheda). Quindi il referto si apre nativamente — affidabile su qualunque visualizzatore. Se mi
+> mandi una pagina-visualizzatore salvata, posso valutare una precarica mirata a quel formato.
 
 ---
 
@@ -173,8 +166,8 @@ wizard funzionerebbe senza dialoghi.
     Chromium reale, accenti e simboli inclusi).
 11. **Stampe solo dai link della pagina**: gli URL dei PDF non vengono mai costruiti a mano
     (`BRANCA` varia per richiesta) e passano gli stessi controlli di origine di tutto il resto.
-12. **Referti scaricati solo su comando esplicito** (spunta PRECARICA), tenuti solo nella
-    memoria della pagina corrente, mai su disco né altrove.
+12. **Referti aperti solo su click**, nativamente in una nuova scheda; nessun download
+    automatico e nessuna copia tenuta dall'estensione.
 
 ---
 
@@ -244,7 +237,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 28 scenari e2e contro il simulatore (113 verifiche)
+npm test           # 28 scenari e2e contro il simulatore (112 verifiche)
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
