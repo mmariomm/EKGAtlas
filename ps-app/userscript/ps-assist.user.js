@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PS Assist — richieste Pronto Soccorso (SA4PSO)
 // @namespace    psassist.multimedica
-// @version      1.5.0
+// @version      1.6.0
 // @description  Crea richieste lab/radiologia, aggiunge gli esami scelti verificando ogni inserimento nel carrello. Conferma sempre come click reale sulla pagina.
 // @match        https://smarthealth.multimedica.it/sa4pso/*
 // @run-at       document-idle
@@ -76,7 +76,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "1.5.0";
+  const VERSION = "1.6.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -948,6 +948,9 @@
     .tray .empty { color: #8296A9; font-size: 12px; align-self: center; }
     .btn { display: block; width: 100%; border: 0; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; }
     .btn + .btn { margin-top: 7px; }
+    .btnrow { display: flex; gap: 7px; }
+    .btnrow .btn { flex: 1 1 auto; padding: 11px 8px; font-size: 13px; margin: 0; white-space: nowrap; }
+    .btnrow .btn.confirm { flex: 0 0 auto; }
     .btn.primary { background: #0B5CAD; color: #fff; }
     .btn.primary:hover { background: #094a8c; }
     .btn.confirm { background: #FFF7E6; color: #8a4b03; border: 1px solid #E5C588; }
@@ -1007,6 +1010,7 @@
             border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
     .rlab { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .foot { padding: 8px 12px 10px; border-top: 1px solid #EEF2F6; display: flex; justify-content: space-between; align-items: center; color: #5B6B7A; font-size: 11px; }
+    .footlink { border: 0; background: transparent; color: #0B5CAD; font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
     select.res { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 7px 8px; font-size: 12.5px; background: #fff; }
     @keyframes psaSpin { to { transform: rotate(360deg); } }
     @keyframes psaPulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
@@ -1055,6 +1059,8 @@
       this.preload = "idle";            // 'idle' | 'running' | 'done'
       this.pos = store.get("pos", null); // user-dragged panel position {left, top}
       this.runPatient = null;           // patient name PINNED when a run starts
+      this.episodeId = findEpisodeId(document, location.href);
+      this.preloadWanted = false;
       // The header must always show the patient this page belongs to: follow
       // any <title> change (the EHR sets it to the patient name).
       const titleEl = document.querySelector("title");
@@ -1070,6 +1076,44 @@
       this.render();
     }
 
+    // ---- cross-page continuity -------------------------------------------
+    // The EHR reloads the page at every click (that's the app, not us). To
+    // make the panel FEEL persistent, its working state — quesito, selected
+    // exams, open sections, referti-preload wish — is saved per (tab,
+    // episode) and restored on the next page of the SAME patient. A page of
+    // another episode restores nothing.
+    uiKey() { return this.episodeId ? `ui.${this.episodeId}` : null; }
+    persistUi() {
+      const k = this.uiKey();
+      if (!k) return;
+      tabStore.set(k, {
+        q: this._q || "",
+        sel: [...this.selected.values()].map((i) => [i.res, i.code, i.label]),
+        browseOpen: !!this.browseOpen,
+        pickRes: this.pickRes,
+        filter: this.filter || "",
+        preloadWanted: !!this.preloadWanted,
+        ts: Date.now(),
+      });
+    }
+    restoreUi() {
+      const k = this.uiKey();
+      if (!k) return;
+      const s = tabStore.get(k, null);
+      if (!s || Date.now() - (s.ts || 0) > 6 * 3600e3) return;
+      this._q = s.q || "";
+      this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label }]));
+      this.browseOpen = !!s.browseOpen;
+      this.pickRes = s.pickRes || null;
+      this.filter = s.filter || "";
+      this.preloadWanted = !!s.preloadWanted;
+    }
+    clearOrderUi() { // after a successful run the order is placed: start clean
+      this._q = "";
+      this.selected.clear();
+      this.persistUi();
+    }
+
     // ---- selection ----
     key(res, code) { return `${res}:${code}`; }
     isSel(res, code) { return this.selected.has(this.key(res, code)); }
@@ -1077,6 +1121,7 @@
       const k = this.key(res, code);
       if (this.selected.has(k)) this.selected.delete(k);
       else this.selected.set(k, { res, code, label: examLabel(res, code) });
+      this.persistUi();
       this.render();
     }
     togglePreset(p) {
@@ -1086,6 +1131,7 @@
         if (allOn) this.selected.delete(k);
         else this.selected.set(k, { res: r, code: c, label: examLabel(r, c) });
       }
+      this.persistUi();
       this.render();
     }
 
@@ -1106,6 +1152,7 @@
     renderRun(state) { this.runData = state; this.render(); }
     finished(state, plan) {
       window.removeEventListener("beforeunload", this._unload);
+      this.clearOrderUi(); // the order is placed: next page starts clean
       this.runState = "done"; this.runData = state;
       const n = state.added.length;
       this.message = {
@@ -1247,7 +1294,11 @@
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
               <div class="bd">${body}</div>
-              <div class="foot"><span>${esc(APP)} ${VERSION}</span><span>nessun dato lascia l'ospedale</span></div>
+              <div class="foot">
+                <span>${esc(APP)} ${VERSION}${(typeof chrome !== "undefined" && chrome.runtime?.id)
+                  ? ` · <button id="extreload" class="footlink" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">⟳ ricarica estensione</button>` : ""}</span>
+                <span>nessun dato lascia l'ospedale</span>
+              </div>
             </div>
           `}
         </div>`;
@@ -1280,9 +1331,9 @@
             .map(([r, arr]) => `${arr.length} in ${RES_SHORT[r] || r}${r === live.res ? " (questa pagina)" : ""}`);
           receiptSec = `
             <div class="banner ok"><b>✓ ${n === 1 ? "1 esame" : n + " esami"} nel carrello, ${n === 1 ? "verificato" : "tutti verificati"}</b>
-              ${esc(parts.join(" · "))}${receipt.quesitoKept ? "<br>Quesito del triage mantenuto." : ""}<br>
-              Rivedi e premi <b style="display:inline">Conferma</b> per stampare le etichette.
-            </div>`;
+              ${esc(parts.join(" · "))}${receipt.quesitoKept ? "<br>Quesito del triage mantenuto." : ""}
+            </div>
+            ${live.confirmButton ? `<button class="btn confirm" id="confirmnow" style="margin-bottom:12px">✓ CONFERMA ora → stampa etichette</button>` : ""}`;
         }
       }
 
@@ -1324,8 +1375,8 @@
 
       const n = this.selected.size;
       const nTxt = n === 0 ? "esami" : n === 1 ? "1 esame" : `${n} esami`;
-      const goLabel = this.pageType === "exam" ? `Aggiungi ${nTxt}` : `Crea richiesta e aggiungi ${nTxt}`;
-      const confirmLabel = this.pageType === "exam" ? `Aggiungi ${n || ""} e conferma (etichette)`.replace("  ", " ") : `Crea, aggiungi e conferma (etichette)`;
+      const goLabel = this.pageType === "exam" ? `Aggiungi ${nTxt}` : `Crea e aggiungi ${nTxt}`;
+      const confirmLabel = `+ Conferma 🖨`;
 
       const problems = this.computeProblems();
       const radioKnown = RADIO_SET.some((r) => Object.keys(cat[r]?.items || {}).length);
@@ -1349,9 +1400,11 @@
           ${typeof this.message === "string" && this.message ? `<div class="banner warn">${esc(this.message)}</div>` : ""}
           <div class="idline">Richiesta per <b>${esc(patientName)}</b>${ep ? ` · episodio <b>${esc(ep)}</b>` : ""}</div>
           <div id="problems">${problems.go[0] ? `<div class="problem">${esc(problems.go[0])}</div>` : ""}</div>
-          <button class="btn primary" id="go" ${n && !problems.go.length ? "" : "disabled"}>${esc(goLabel)}</button>
-          <button class="btn confirm" id="goconfirm" ${n && !problems.confirm.length ? "" : "disabled"}>${esc(confirmLabel)}</button>
-          <div class="hint">Ogni esame è verificato nel carrello prima del successivo: nessun doppio ordine. La conferma parte sulla pagina reale dopo ${CONFIRM_SECONDS} secondi — annullabile con Esc.</div>
+          <div class="btnrow">
+            <button class="btn primary" id="go" ${n && !problems.go.length ? "" : "disabled"}>${esc(goLabel)}</button>
+            <button class="btn confirm" id="goconfirm" title="Come il bottone a sinistra, e in più preme Conferma per te (conto alla rovescia annullabile con Esc) e avvia la stampa guidata" ${n && !problems.confirm.length ? "" : "disabled"}>${esc(confirmLabel)}</button>
+          </div>
+          <div class="hint">Ogni esame verificato nel carrello · conferma annullabile (Esc) · poi stampa guidata.</div>
           ${radioHint}
         </div>
       `;
@@ -1416,6 +1469,8 @@
     startRefertiPreload() {
       if (this.preload !== "idle") return;
       this.preload = "running";
+      this.preloadWanted = true; // remembered per tab+episode: auto-runs on the next pages of this patient
+      this.persistUi();
       this.render();
       const queue = [...this.referti];
       const worker = async () => {
@@ -1564,19 +1619,27 @@
         if (u) location.href = u;
       });
 
+      $("#confirmnow")?.addEventListener("click", () => {
+        // native click → server confirm → print handoff (armed at boot)
+        const live = examModel(document, location.href);
+        live.confirmButton?.click();
+      });
+      $("#extreload")?.addEventListener("click", () => {
+        try { chrome.runtime.sendMessage("psassist-reload"); } catch { /* not the extension build */ }
+      });
       const qEl = $("#q");
-      qEl?.addEventListener("input", () => { this._q = qEl.value; this.refreshCommit(); });
+      qEl?.addEventListener("input", () => { this._q = qEl.value; this.persistUi(); this.refreshCommit(); });
       this.root.querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () => {
-        qEl.value = b.getAttribute("data-q"); this._q = qEl.value; this.refreshCommit(); qEl.focus();
+        qEl.value = b.getAttribute("data-q"); this._q = qEl.value; this.persistUi(); this.refreshCommit(); qEl.focus();
       }));
       this.root.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => this.togglePreset(PRESETS[+b.getAttribute("data-preset")])));
       this.root.querySelectorAll(".chip[data-code]").forEach((b) => b.addEventListener("click", () => this.toggle(b.getAttribute("data-res"), b.getAttribute("data-code"))));
       this.root.querySelectorAll(".list input[data-code]").forEach((c) => c.addEventListener("change", () => { this.browseOpen = true; this.toggle(c.getAttribute("data-res"), c.getAttribute("data-code")); }));
-      this.root.querySelectorAll("[data-unsel]").forEach((b) => b.addEventListener("click", () => { this.selected.delete(b.getAttribute("data-unsel")); this.render(); }));
-      $("#pickres")?.addEventListener("change", (e) => { this.pickRes = e.target.value; this.browseOpen = true; this.render(); });
+      this.root.querySelectorAll("[data-unsel]").forEach((b) => b.addEventListener("click", () => { this.selected.delete(b.getAttribute("data-unsel")); this.persistUi(); this.render(); }));
+      $("#pickres")?.addEventListener("change", (e) => { this.pickRes = e.target.value; this.browseOpen = true; this.persistUi(); this.render(); });
       const f = $("#filter");
-      f?.addEventListener("input", () => { this.filter = f.value; this.browseOpen = true; this.render(); const nf = this.root.querySelector("#filter"); nf?.focus(); nf?.setSelectionRange(nf.value.length, nf.value.length); });
-      $("#browse")?.addEventListener("toggle", (e) => { this.browseOpen = e.target.open; });
+      f?.addEventListener("input", () => { this.filter = f.value; this.browseOpen = true; this.persistUi(); this.render(); const nf = this.root.querySelector("#filter"); nf?.focus(); nf?.setSelectionRange(nf.value.length, nf.value.length); });
+      $("#browse")?.addEventListener("toggle", (e) => { this.browseOpen = e.target.open; this.persistUi(); });
 
       $("#go")?.addEventListener("click", () => this.launch(false));
       $("#goconfirm")?.addEventListener("click", () => this.launch(true));
@@ -1896,11 +1959,16 @@
       return;
     }
     const panel = new Panel(pageType);
+    panel.restoreUi(); // same tab + same episode → quesito/selezione/sezioni tornano come prima
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       panel.referti = refertiModel(document, location.href);
       panel.render();
       maybeAutoPrint();
+      // the doctor already asked for the referti of THIS patient in THIS tab
+      if (panel.preloadWanted && panel.referti.length) panel.startRefertiPreload();
+    } else {
+      panel.render();
     }
     if (pageType === "exam") {
       const model = examModel(document, location.href);

@@ -631,11 +631,47 @@ async function scenarioUiErgonomics(browser) {
   const pos3 = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".wrap").style.left);
   check(scen, pos3 === "", "doppio click riporta in alto a destra");
 
+  // the two CTAs share one row
+  check(scen, (await $panel(page, ".btnrow #go").count()) === 1 && (await $panel(page, ".btnrow #goconfirm").count()) === 1,
+    "CTA su una sola riga");
+
   // no PANNELLO chips anymore; no PCR / old tropo singles; new tropo present
   const chipTxt = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".chip")].map((c) => c.textContent).join("|"));
   check(scen, !/PANNELLO|P1 - |P2 - /.test(chipTxt), "chips PANNELLO rimossi");
   check(scen, !/PCR POC/.test(chipTxt) && !/TROPONINA I POC/.test(chipTxt) && /TROPONINA ULTRASENSIBILE/.test(chipTxt),
     "singoli aggiornati: via PCR e vecchia tropo, dentro la ultrasensibile");
+  await context.close();
+}
+
+async function scenarioContinuity(browser) {
+  const scen = "continuity";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+
+  // build up state, then reload: the EHR refreshes pages all the time and
+  // the panel must come back exactly as it was
+  await $panel(page, "#q").fill("dolore toracico irradiato");
+  await $panel(page, '.chip[title*="TROPONINA"]').click();
+  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
+  await page.reload();
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  check(scen, (await $panel(page, "#q").inputValue()) === "dolore toracico irradiato", "quesito ripristinato dopo il refresh");
+  check(scen, /2 SELEZIONATI/.test(await $panel(page, ".selbar").innerText()), "selezione ripristinata dopo il refresh");
+
+  // run WITHOUT auto-confirm → land with the receipt → the panel's own
+  // CONFERMA button presses the native one → wizard on the patient page
+  await $panel(page, "#go").click();
+  await page.waitForSelector("#psassist-host #confirmnow", { timeout: 30000 });
+  check(scen, (await page.locator("#psassist-host .selbar").count()) === 0, "dopo l'ordine la selezione riparte pulita");
+  await $panel(page, "#confirmnow").click();
+  await page.waitForSelector('a[title="Richieste Laboratorio"]', { timeout: 20000 });
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.richieste[rid].confirmed === true, "CONFERMA dal pannello = click nativo, richiesta confermata");
+  check(scen, /Etichette provette/.test(await page.locator("#psassist-print .pwhd").innerText()),
+    "e la stampa guidata parte da sola");
   await context.close();
 }
 
@@ -732,6 +768,7 @@ const scenarios = [
   ["print etichette html wrapper", scenarioPrintWrapper],
   ["blob viewers harvested (referti + etichette)", scenarioBlobViewers],
   ["ui ergonomics (selbar/drag/scroll)", scenarioUiErgonomics],
+  ["continuity + panel confirm button", scenarioContinuity],
   ["referti preload on command", scenarioRefertiPreload],
   ["referti native fallback", scenarioRefertiNativeFallback],
   ["stop button", scenarioStopButton],

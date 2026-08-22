@@ -29,6 +29,17 @@ passaggio in più che qui non serve).
    Nuova Richiesta ed esami. Si **trascina** dove vuoi dall'intestazione (la posizione viene
    ricordata; doppio click sull'intestazione per riportarlo in alto a destra).
 
+**Perché "si aggiorna" a ogni pagina?** Il gestionale è un'app anni 2000: OGNI click ricarica
+l'intera pagina — nessuna estensione può impedirlo. Il pannello però **si ricostruisce identico**:
+quesito, esami selezionati, sezioni aperte, posizione e la precarica referti tornano come li hai
+lasciati (per lo stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
+
+**Aggiornare a una nuova versione**: sostituisci i file nella STESSA cartella dell'estensione e
+premi **"⟳ ricarica estensione"** nel piè di pagina del pannello (o ⟳ in `chrome://extensions`).
+Un'estensione non pacchettizzata non può scaricarsi gli aggiornamenti da sola, e PS Assist non
+contatterà mai server esterni per controllare le versioni — sarebbe contro la regola «nessun dato
+lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica, fatto.
+
 **Aggiornamenti**: sostituisci la cartella e premi ⟳ sull'estensione in `chrome://extensions`.
 
 ### E se non posso? (PC bloccato dall'IT, niente admin)
@@ -63,11 +74,11 @@ passaggio in più che qui non serve).
    **Tutti gli esami**. Gli esami scelti restano sempre in vista nella **barra in alto**
    (testo compatto per laboratorio: "POC: … · Urgenze: …"); passandoci sopra compare la ✕ per
    toglierli. Lo scroll resta dov'è mentre selezioni.
-3. Premi:
-   - **Crea richiesta e aggiungi N esami** → fa tutto e ti lascia sulla pagina esami per rivedere
-     e premere Conferma tu; **oppure**
-   - **…e CONFERMA al termine** → come sopra, ma dopo l'atterraggio parte un conto alla rovescia
-     di 5 s (annullabile) e la Conferma viene premuta per te → si apre la stampa etichette.
+3. Premi (i due bottoni stanno su una riga):
+   - **Crea e aggiungi N esami** → fa tutto e ti lascia sulla pagina esami con la ricevuta verde
+     e il bottone **«✓ CONFERMA ora → stampa etichette»**: un click e conferma + stampa guidata;
+   - **+ Conferma 🖨** → come sopra ma senza click aggiuntivo: conto alla rovescia di 5 s
+     (annullabile con Esc) e poi conferma e stampa da soli.
 
 **Laboratorio e radiologia** vanno in due richieste separate (come nel gestionale): il pannello te
 lo ricorda se li mescoli.
@@ -224,7 +235,7 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-└── test/                ← simulatore SA4PSO + 27 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 28 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -233,7 +244,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 27 scenari e2e contro il simulatore (107 verifiche)
+npm test           # 28 scenari e2e contro il simulatore (113 verifiche)
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
