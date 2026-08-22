@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "1.9.0";
+  const VERSION = "2.0.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -105,6 +105,7 @@
     [RES.POC, "101"], [RES.POC, "324"], [RES.POC, "30"],
     [RES.URGENZE, "293"], [RES.URGENZE, "34"], [RES.URGENZE, "159"],
     [RES.URGENZE, "297"], [RES.URGENZE, "317"],
+    [RES.RX, "35"], [RES.RX, "36"], [RES.RX, "28"],
   ];
   // Short ward names for the UI only. The catalog label stays the source of
   // truth for the anti-wrong-exam check, so renaming here is always safe.
@@ -124,6 +125,9 @@
     [`${RES.URGENZE}:159`]: "PROCALCITONINA",
     [`${RES.URGENZE}:297`]: "NT PRO-BNP",
     [`${RES.URGENZE}:317`]: "ESAME URINE",
+    [`${RES.RX}:35`]: "RX TORACE",
+    [`${RES.RX}:36`]: "RX TORACE 1 PROIEZ.",
+    [`${RES.RX}:28`]: "RX ADDOME",
   };
   // If EGA arteriosa is selected, the venosa is dropped automatically.
   const EXCLUDE = [{ keep: [RES.POC, "166"], drop: [RES.POC, "3"], note: "EGA arteriosa sostituisce la venosa" }];
@@ -1118,6 +1122,12 @@
     .rrow { display: flex; align-items: center; gap: 8px; border: 1px solid #E3E8EF; background: #fff; border-radius: 8px;
             padding: 7px 9px; font-size: 12px; cursor: pointer; text-align: left; width: 100%; color: #16232E; }
     .rrow:hover { border-color: #0B5CAD; background: #F4F8FB; }
+    .rrow.ready { background: #F6FBF8; border-color: #BCE0C9; }
+    .rdot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #C4D0DC; background: transparent; }
+    .rdot.on { background: #177245; border-color: #177245; }
+    .mini { float: right; border: 1px solid #C4D0DC; background: #fff; color: #0B5CAD; border-radius: 6px;
+            padding: 1px 7px; font-size: 10.5px; font-weight: 700; cursor: pointer; letter-spacing: 0; text-transform: none; }
+    .mini:hover { border-color: #0B5CAD; background: #F4F8FB; }
     .rwhen { flex: 0 0 auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: #35506B; font-variant-numeric: tabular-nums; }
     .rsys { flex: 0 0 auto; font-size: 9.5px; font-weight: 800; letter-spacing: .5px; color: #5B6B7A; background: #F4F8FB;
             border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
@@ -1546,26 +1556,52 @@
     // Patient page: the patient's result PDFs (esiti), newest first. Nothing
     viewReferti() {
       if (this.pageType !== "patient" || !this.referti.length) return "";
-      // Sorted by date/time, newest first. A click opens the referto natively
-      // in a new tab (same as the page's own icon) — reliable on any viewer.
-      // In-memory preload was removed: SA4PSO's PDF viewer can't be turned
-      // into a saved Blob safely (see the note above fetchPdf).
-      const rows = this.referti.map((r) => `
-        <button class="rrow" data-ref="${esc(r.id)}" title="${esc(r.label)} — apri in una scheda">
+      // Reopening is made instant WITHOUT copying anything: each referto gets
+      // its own named browser tab, so a second click just brings that already
+      // loaded tab to the front (the viewer lives on another server, so its
+      // PDF can't be fetched or stored by us — see README).
+      const open = new Set(tabStore.get("refopen", []));
+      const rows = this.referti.map((r) => {
+        const isOpen = open.has(r.id);
+        return `<button class="rrow ${isOpen ? "ready" : ""}" data-ref="${esc(r.id)}" title="${esc(r.label)} — ${isOpen ? "torna alla scheda già aperta" : "apri in una scheda"}">
+          <span class="rdot ${isOpen ? "on" : ""}"></span>
           <span class="rwhen">${esc(r.when)}</span><span class="rsys">${esc(r.sistema)}</span>
           <span class="rlab">${esc(shortLabel(r.label))}</span>
-        </button>`).join("");
+        </button>`;
+      }).join("");
       return `
         <div class="sec">
-          <div class="lbl">Referti (${this.referti.length}) — dal più recente</div>
+          <div class="lbl">Referti (${this.referti.length}) — dal più recente
+            ${open.size ? `<button class="mini" id="refreset" title="Chiude le schede aperte: il prossimo click ricarica dal server">↻ Resetta (${open.size})</button>` : ""}
+          </div>
           <div class="rlist">${rows}</div>
-          <div class="hint">Click su un referto: si apre in una nuova scheda.</div>
+          <div class="hint">● già aperto: il click ci ritorna subito · ○ da aprire</div>
         </div>`;
     }
 
     openReferto(id) {
       const r = this.referti.find((x) => x.id === id);
-      if (r) window.open(r.url, "_blank"); // native viewer, like the page's own icon
+      if (!r) return;
+      const name = "psaRef_" + String(id).replace(/\W/g, "");
+      const w = window.open("", name); // focuses an existing tab, else opens a blank one
+      if (!w) { this.message = "Consenti i popup per aprire i referti in una scheda."; this.render(); return; }
+      let blank = true;
+      try { blank = !w.location.href || w.location.href === "about:blank"; }
+      catch { blank = false; } // cross-origin = the referto is already loaded there
+      if (blank) w.location.href = r.url;
+      try { w.focus(); } catch { /* ignore */ }
+      const open = new Set(tabStore.get("refopen", []));
+      open.add(id);
+      tabStore.set("refopen", [...open]);
+      this.render();
+    }
+
+    resetReferti() {
+      for (const id of tabStore.get("refopen", [])) {
+        try { window.open("", "psaRef_" + String(id).replace(/\W/g, ""))?.close(); } catch { /* ignore */ }
+      }
+      tabStore.set("refopen", []);
+      this.render();
     }
 
     viewBrowse(cat) {
@@ -1716,6 +1752,7 @@
         if (jobs.length) openPrintWizard(jobs, { title: `Richiesta ${rid}.` });
       }));
       this.root.querySelectorAll("[data-ref]").forEach((b) => b.addEventListener("click", () => this.openReferto(b.getAttribute("data-ref"))));
+      $("#refreset")?.addEventListener("click", () => this.resetReferti());
     }
 
     // Patch only the commit zone while the doctor types (a full re-render

@@ -82,9 +82,9 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
 **Laboratorio e radiologia** vanno in due richieste separate (come nel gestionale): il pannello te
 lo ricorda se li mescoli.
 
-**Radiologia**: gli elenchi RX/Eco/RMN/TAC non erano nelle pagine salvate, quindi il pannello li
-**impara da solo** la prima volta che apri una richiesta di radiologia; da quel momento anche la
-radiologia è one-click dalla pagina paziente (es. RX torace).
+**Radiologia**: l'elenco **RX** è incluso (40 esami) e tra i singoli trovi **RX Torace**,
+**RX Torace 1 proiez.** e **RX Addome**; gli elenchi Eco/RMN/TAC il pannello li **impara da solo**
+la prima volta che apri quella richiesta.
 
 **Sulla pagina esami** il pannello mostra ciò che è già nel carrello e permette di aggiungere altri
 esami (anche cambiando risorsa automaticamente). **STOP** (o tasto `Esc`) interrompe subito.
@@ -116,18 +116,23 @@ qualsiasi richiesta**
 (sezione "Stampa" del pannello, che mostra cosa contiene ogni riga: "2× etichette + 2× liste",
 "prenotazione", ecc.). Ogni passo ha: Riapri stampa · Salta · Apri in una scheda · Annulla (Esc).
 
-## Referti (apertura rapida)
+## Referti — riapertura istantanea
 
-Sulla pagina del paziente il pannello elenca i **referti** (l'icona-foglio prima del nome
-dell'esame: laboratorio, radiologia e visite — HL7LIS/RIS/AMB), **ordinati per data e ora**, i
-più recenti in alto. Un click apre il referto in una nuova scheda, come l'icona nativa.
+Il pannello elenca i **referti** del paziente (l'icona-foglio prima del nome dell'esame: LIS,
+RIS, AMB), **ordinati per data e ora**, i più recenti in alto.
 
-> Nota tecnica: la *precarica in memoria* è stata rimossa. I visualizzatori PDF di SA4PSO
-> costruiscono il file via script e lo mostrano a un indirizzo `blob:`; catturarne il contenuto
-> da un iframe nascosto non è fattibile in sicurezza (in sandbox l'origine diventa "opaca" e non
-> è leggibile; senza sandbox un eventuale *frame-buster* del visualizzatore dirotterebbe l'intera
-> scheda). Quindi il referto si apre nativamente — affidabile su qualunque visualizzatore. Se mi
-> mandi una pagina-visualizzatore salvata, posso valutare una precarica mirata a quel formato.
+- Il **primo click** apre il referto in una **scheda dedicata a quel referto** e lo segna con **●**.
+- Il **secondo click** non ricarica niente: ti riporta a quella scheda, già pronta — è questo che
+  rende la riapertura istantanea, anche passando da un paziente all'altro (ogni referto ha la sua
+  scheda, nessuna confusione tra pazienti).
+- **↻ Resetta** chiude le schede aperte e azzera i pallini: il click successivo ricarica dal server.
+- Il pallino resiste ai continui refresh del gestionale.
+
+> Perché non "scarico" i referti in locale: il visualizzatore dei referti **non è su SA4PSO**, gira
+> su un altro server interno (es. `http://10.11.0.151:9080`) e mostra il PDF come `blob:` di
+> quell'origine. Un'estensione che vive su SA4PSO non può leggerlo, e dargli accesso a un secondo
+> server per copiarne i PDF sarebbe molto più invasivo del beneficio. La scheda dedicata dà lo
+> stesso risultato pratico — riapertura immediata — con zero copie di dati clinici.
 
 ---
 
@@ -230,7 +235,7 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-└── test/                ← simulatore SA4PSO + 29 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 31 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -239,7 +244,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 29 scenari e2e contro il simulatore (119 verifiche)
+npm test           # 31 scenari e2e contro il simulatore (132 verifiche)
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

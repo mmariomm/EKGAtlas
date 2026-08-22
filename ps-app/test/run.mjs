@@ -370,7 +370,7 @@ async function scenarioRadiologyLearning(browser) {
   // 2) back on the patient page, RX TORACE is now selectable and one-click works
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("dispnea e dolore toracico");
-  await selectExams(page, [{ res: RES.RX, text: "RX TORACE" }]);
+  await selectExams(page, [{ res: RES.RX, text: "RX TORACE 2 PROIEZIONI" }]); // mock-only: proves learning
   await $panel(page, "#go").click();
   await page.waitForURL(/RISORSA_ID=00120001P/, { timeout: 20000 });
   const rids = Object.keys(mock.state.richieste);
@@ -749,15 +749,57 @@ async function scenarioReferti(browser) {
   check(scen, rows.length === 3, `3 referti listati, il link-archivio senza REFERTO_ID è ignorato (got ${rows.length})`);
   check(scen, /22\/08 07:45/.test(rows[0]) && /EMOGASANALISI/.test(rows[0]), `ordinati per data/ora: primo = il più recente (got: ${rows[0]?.slice(0, 50)})`);
   check(scen, /21\/08 22:10/.test(rows[2] || ""), `ultimo = il più vecchio (got: ${rows[2]?.slice(0, 40)})`);
-  check(scen, hits(mock, "Sa4ViewerExtRedirect") === 0, "nessun download automatico: si scarica solo se apri un referto");
+  check(scen, (await page.locator("#psassist-host .rdot.on").count()) === 0, "all'inizio nessun referto è segnato come aperto");
 
-  // click opens the referto natively in a new tab (reliable on any viewer)
+  // first click opens it in its own named tab
   const [popup] = await Promise.all([
     page.waitForEvent("popup", { timeout: 8000 }),
     page.locator("#psassist-host .rrow").first().click(),
   ]);
   check(scen, popup.url().includes("Sa4ViewerExtRedirect") && popup.url().includes("bbbb2222"),
-    `click apre il referto dal server (il più recente), come l'icona nativa (got …${popup.url().slice(-40)})`);
+    `apre il referto dal server (got …${popup.url().slice(-30)})`);
+  await page.waitForTimeout(200);
+  check(scen, (await page.locator("#psassist-host .rdot.on").count()) === 1, "il referto aperto è marcato ●");
+
+  // the marker survives the EHR's constant page reloads
+  await page.reload();
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  check(scen, (await page.locator("#psassist-host .rdot.on").count()) === 1, "lo stato ● resiste al refresh della pagina");
+
+  // second click reuses the SAME tab (no new popup, no reload of the viewer)
+  const before = context.pages().length;
+  const reqBefore = hits(mock, "bbbb2222");
+  await page.locator("#psassist-host .rrow").first().click();
+  await page.waitForTimeout(700);
+  check(scen, context.pages().length === before, `riclick non apre una nuova scheda (${before} schede)`);
+  check(scen, hits(mock, "bbbb2222") === reqBefore, "riclick non ricarica il referto dal server: è già pronto");
+
+  // reset closes the tabs and clears the state
+  await page.locator("#psassist-host #refreset").click();
+  await page.waitForTimeout(500);
+  check(scen, (await page.locator("#psassist-host .rdot.on").count()) === 0, "Resetta azzera lo stato");
+  check(scen, (await page.locator("#psassist-host #refreset").count()) === 0, "il bottone Resetta sparisce quando non serve");
+  await context.close();
+}
+
+async function scenarioRxSingles(browser) {
+  const scen = "rx-singles";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  const rx = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".opt .nm")]
+    .map((o) => o.textContent).filter((t) => /^RX/.test(t)));
+  check(scen, rx.length === 3, `solo 3 esami RX tra i singoli (got ${rx.length}: ${rx})`);
+  check(scen, rx.some((t) => /RX TORACE$/.test(t)) && rx.some((t) => /1 PROIEZ/.test(t)) && rx.some((t) => /ADDOME/.test(t)),
+    "torace, torace 1 proiezione e addome");
+  // and they really order on a radiology richiesta
+  await $panel(page, "#q").fill("sospetta polmonite");
+  await $panel(page, '.opt[title*="RX TORACE ("]').first().click();
+  await $panel(page, "#go").click();
+  await page.waitForSelector("#psassist-host .banner.ok, #psassist-host .banner.err", { timeout: 30000 });
+  const r = Object.values(mock.state.richieste)[0];
+  check(scen, r && r.cart.has("35"), `RX torace ordinato dalla pagina paziente (cart ${r && [...r.cart.keys()]})`);
   await context.close();
 }
 
@@ -815,7 +857,8 @@ const scenarios = [
   ["print hard viewer → tab fallback", scenarioPrintHardViewer],
   ["ui ergonomics (selbar/drag/scroll)", scenarioUiErgonomics],
   ["continuity + panel confirm button", scenarioContinuity],
-  ["referti list + native open", scenarioReferti],
+  ["referti tabs + reset", scenarioReferti],
+  ["rx singles (torace/addome)", scenarioRxSingles],
   ["stop button", scenarioStopButton],
 ];
 
