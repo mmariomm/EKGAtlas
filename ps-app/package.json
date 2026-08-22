@@ -1,0 +1,21 @@
+{
+  "name": "ps-assist",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node test/run.mjs",
+    "build": "node tools/build.mjs && node tools/icons.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "private": "true",
+  "type": "module",
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}
