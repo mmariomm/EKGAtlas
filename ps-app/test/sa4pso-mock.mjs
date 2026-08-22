@@ -45,6 +45,9 @@ export const CATALOG = {
     222: "TROPONINA I POC (POC2102)",
     324: "TROPONINA ULTRASENSIBILE (POC3001)",
     30: "GLUCOSIO (POC1250)",
+    220: "PT (POC1401)",
+    134: "PTT POC (POC1402)",
+    135: "FIBRINOGENO POC (POC1404)",
     310: "PANNELLO 2 - BASE",
     306: "PANNELLO 3 - CARDIOPALMO",
   },
@@ -55,6 +58,7 @@ export const CATALOG = {
     167: "GAMMA GT (1596)",
     34: "LIPASI (1572)",
     159: "PROCALCITONINA (1690)",
+    293: "PROTEINA C REATTIVA (1102)",
     181: "PT (1401)",
     54: "PTT (1402)",
     258: "FIBRINOGENO (450102)",
@@ -363,7 +367,17 @@ export function createMock(opts = {}) {
           });
         }
       <\/script>caricamento…${FOOT}`);
+    const uploadViewer = (rid, prog) => respond(`${HEAD}
+      <script>
+        try { if (top !== self) top.location.href = 'about:blank'; } catch (e) {}
+        var rep = 'PSOWEB_HL7_2026001' + '${String(rid).slice(-4)}${prog}';
+        location.replace("/UploadDownload/uploaddownloadservlet.rra2?table=DUAL&blobfield=san_report_onthefly.get_pdf(%27" + rep + "%27)&wherecondition=where%201=1&dataSource=jdbc/sa4web&mimetype=application/pdf");
+      <\/script>attendere…${FOOT}`);
+    if (u.pathname.includes("/UploadDownload/uploaddownloadservlet.rra2")) {
+      return (params.get("mimetype") || "").includes("pdf") ? pdf() : respond(notFound("mimetype non pdf"), 404);
+    }
     if (u.pathname.endsWith("RcsStampaEtichetteLISHMIMU.do")) {
+      if (opts.uploadViewer) return uploadViewer(params.get("RICHIESTA_ID"), params.get("RICHIESTA_PROG"));
       if (opts.hardViewer) return hardViewer("/jasperserverSAN/jasperservlet");
       if (opts.blobViewers) return blobViewer("/jasperserverSAN/jasperservlet", `?PROJECT=sa4rcs&REPORT=RcsEtichetteLIS&RICHIESTA_ID=${params.get("RICHIESTA_ID")}&RICHIESTA_PROG=${params.get("RICHIESTA_PROG")}`);
       if (opts.etichetteWrapper) {
@@ -372,7 +386,9 @@ export function createMock(opts = {}) {
       }
       return pdf();
     }
-    if (u.pathname.includes("/jasperserverSAN/jasperservlet")) return pdf();
+    if (u.pathname.includes("/jasperserverSAN/jasperservlet")) {
+      return params.get("REPORT") ? pdf() : respond(notFound("jasperservlet senza REPORT"), 404);
+    }
     if (u.pathname.includes("/sa4/restrict2/refertostream")) {
       return params.get("REFERTO_ID") ? pdf() : respond(notFound("stream senza REFERTO_ID"), 404);
     }

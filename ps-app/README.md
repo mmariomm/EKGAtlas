@@ -67,9 +67,10 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
 
 **Dalla pagina del paziente** (flusso principale):
 1. Scrivi il **quesito diagnostico** (o tocca un suggerimento; gli ultimi usati restano in cima).
-2. Tocca i **profili rapidi** (Base PS, Epatico, Coagulazione), gli **esami singoli**
-   (aggiornati: Troponina ultrasensibile al posto della vecchia Troponina I POC), o cerca in
-   **Tutti gli esami**. Gli esami scelti restano sempre in vista nella **barra in alto**
+2. Tocca i **profili rapidi** (Base PS, Epatico, **Coag POC**, **Coag**) oppure gli **esami
+   singoli**, ora in una **griglia compatta a due colonne raggruppata per laboratorio**
+   (POC / Urgenze) con nomi brevi da reparto — Emocromo POC, Troponina US, PCR, Lipasi… — o
+   cerca in **Tutti gli esami**. Gli esami scelti restano sempre in vista nella **barra in alto**
    (testo compatto per laboratorio: "POC: … · Urgenze: …"); passandoci sopra compare la ✕ per
    toglierli. Lo scroll resta dov'è mentre selezioni.
 3. Premi (i due bottoni stanno su una riga):
@@ -96,7 +97,8 @@ Dopo la **Conferma** (manuale o automatica) si apre da solo il wizard di stampa,
 raggruppando per stampante:
 
 1. **Tutte le etichette provette** — i PDF dell'icona col codice a barre
-   (`RcsStampaEtichetteLISHMIMU.do`), con la finestra di stampa già aperta → **etichettatrice**;
+   (`RcsStampaEtichetteLISHMIMU.do`, che porta al PDF servito da
+   `uploaddownloadservlet.rra2`), con la finestra di stampa già aperta → **etichettatrice**;
 2. poi **tutte le liste esami** — i PDF di "Stampa Richiesta" (`jasperservlet`, URL sempre letto
    dalla pagina perché `BRANCA` cambia per riga) → **stampante normale**;
 3. per la **radiologia**, la riga ha l'icona stampante "Stampa Prenotazione Esterna": il wizard
@@ -228,7 +230,7 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-└── test/                ← simulatore SA4PSO + 28 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 29 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -237,7 +239,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 28 scenari e2e contro il simulatore (112 verifiche)
+npm test           # 29 scenari e2e contro il simulatore (119 verifiche)
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

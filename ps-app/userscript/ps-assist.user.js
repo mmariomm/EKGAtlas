@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PS Assist — richieste Pronto Soccorso (SA4PSO)
 // @namespace    psassist.multimedica
-// @version      1.7.0
+// @version      1.8.0
 // @description  Crea richieste lab/radiologia, aggiunge gli esami scelti verificando ogni inserimento nel carrello. Conferma sempre come click reale sulla pagina.
 // @match        https://smarthealth.multimedica.it/sa4pso/*
 // @run-at       document-idle
@@ -76,7 +76,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "1.7.0";
+  const VERSION = "1.8.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -106,15 +106,36 @@
   // (see ps-app/README.md). A preset is shown only when every code exists in
   // the catalog available on this machine (embedded + learned).
   const PRESETS = [
-    { name: "Base PS",       items: [[RES.POC, "320"], [RES.POC, "3"], [RES.POC, "176"]] },            // emocromo, EGA venosa, creatinina
-    { name: "Epatico",       items: [[RES.URGENZE, "16"], [RES.URGENZE, "228"], [RES.URGENZE, "53"], [RES.URGENZE, "167"], [RES.URGENZE, "34"]] }, // bili reflex, GPT, GOT, GGT, lipasi
-    { name: "Coagulazione",  items: [[RES.URGENZE, "181"], [RES.URGENZE, "54"], [RES.URGENZE, "258"]] }, // PT, PTT, fibrinogeno
+    { name: "Base PS",  items: [[RES.POC, "320"], [RES.POC, "3"], [RES.POC, "176"]] },            // emocromo, EGA venosa, creatinina
+    { name: "Epatico",  items: [[RES.URGENZE, "16"], [RES.URGENZE, "228"], [RES.URGENZE, "53"], [RES.URGENZE, "167"], [RES.URGENZE, "34"]] }, // bili reflex, GPT, GOT, GGT, lipasi
+    { name: "Coag POC", items: [[RES.POC, "220"], [RES.POC, "134"], [RES.POC, "135"]] },          // PT, PTT, fibrinogeno POC
+    { name: "Coag",     items: [[RES.URGENZE, "181"], [RES.URGENZE, "54"], [RES.URGENZE, "258"]] }, // PT, PTT, fibrinogeno urgenze
   ];
-  const SINGLES = [ // one-tap single exams (compact text rows)
+  const SINGLES = [ // one-tap single exams (compact grid, grouped by lab)
     [RES.POC, "320"], [RES.POC, "3"], [RES.POC, "166"], [RES.POC, "176"],
     [RES.POC, "101"], [RES.POC, "324"], [RES.POC, "30"],
-    [RES.URGENZE, "159"], [RES.URGENZE, "297"], [RES.URGENZE, "317"],
+    [RES.URGENZE, "293"], [RES.URGENZE, "34"], [RES.URGENZE, "159"],
+    [RES.URGENZE, "297"], [RES.URGENZE, "317"],
   ];
+  // Short ward names for the UI only. The catalog label stays the source of
+  // truth for the anti-wrong-exam check, so renaming here is always safe.
+  const DISPLAY = {
+    [`${RES.POC}:320`]: "EMOCROMO POC",
+    [`${RES.POC}:3`]:   "EGA VENOSA",
+    [`${RES.POC}:166`]: "EGA ARTERIOSA",
+    [`${RES.POC}:176`]: "CREATININA POC",
+    [`${RES.POC}:101`]: "D-DIMERO POC",
+    [`${RES.POC}:324`]: "TROPONINA US",
+    [`${RES.POC}:30`]:  "GLUCOSIO POC",
+    [`${RES.POC}:220`]: "PT POC",
+    [`${RES.POC}:134`]: "PTT POC",
+    [`${RES.POC}:135`]: "FIBRINOGENO POC",
+    [`${RES.URGENZE}:293`]: "PCR",
+    [`${RES.URGENZE}:34`]:  "LIPASI",
+    [`${RES.URGENZE}:159`]: "PROCALCITONINA",
+    [`${RES.URGENZE}:297`]: "NT PRO-BNP",
+    [`${RES.URGENZE}:317`]: "ESAME URINE",
+  };
   // If EGA arteriosa is selected, the venosa is dropped automatically.
   const EXCLUDE = [{ keep: [RES.POC, "166"], drop: [RES.POC, "3"], note: "EGA arteriosa sostituisce la venosa" }];
 
@@ -410,6 +431,30 @@
     return out;
   }
 
+  // Viewers often navigate (by script) to a DIRECT pdf endpoint, e.g. the
+  // field-observed label URL:
+  //   /UploadDownload/uploaddownloadservlet.rra2?…&mimetype=application/pdf
+  // Those URLs are built inside the page, so we harvest them as text and try
+  // them in order — never constructing one ourselves.
+  const PDF_SMELL = /uploaddownloadservlet|mimetype=application\/pdf|get_pdf|jasperservlet|refertostream|\.pdf(?:[?&"']|$)/i;
+  function pdfCandidates(text) {
+    const out = [], seen = new Set();
+    const push = (raw) => {
+      const u = String(raw || "").trim().replace(/&amp;/gi, "&");
+      if (!u || u.length < 8 || seen.has(u)) return;
+      if (/^(javascript:|#|data:|blob:|mailto:)/i.test(u)) return;
+      // must look like a whole URL, not a fragment of one being concatenated
+      if (!/^(https?:)?\/|^[\w.-]+\.(?:do|rra2|pdf|jsp)\b/i.test(u)) return;
+      if (/[([+=&%]$|%27$/.test(u)) return;
+      if (!PDF_SMELL.test(u)) return;
+      seen.add(u); out.push(u);
+    };
+    for (const re of [/"([^"<>\n\r]{8,1200})"/g, /'([^'<>\n\r]{8,1200})'/g]) {
+      for (const m of text.matchAll(re)) push(m[1]);
+    }
+    return out.slice(0, 4);
+  }
+
   const isPdfBlob = (b) => b instanceof Blob && b.size > 4 &&
     (b.type.includes("pdf") || b.type === "" || b.type.includes("octet"));
 
@@ -434,7 +479,7 @@
   // is opened natively in a new tab — exactly the manual fallback the doctor
   // asked for. This never hangs and never hijacks the page.
   let harvestSeq = 0;
-  function harvestInlinePdf(url, { html, baseUrl, signal, timeoutMs = 3000 } = {}) {
+  function harvestInlinePdf(url, { html, baseUrl, signal, timeoutMs = 6000 } = {}) {
     return new Promise((resolve, reject) => {
       const cb = `__psaH${++harvestSeq}`;
       const iframe = document.createElement("iframe");
@@ -455,23 +500,66 @@
       const tt = setTimeout(() => finish(reject, new ViewerError(url)), timeoutMs);
       const onMsg = (e) => {
         const d = e.data;
-        if (d && d.__psassist === cb && isPdfBlob(d.blob)) finish(resolve, { blob: d.blob, url });
+        if (!d || d.__psassist !== cb) return;
+        if (isPdfBlob(d.blob)) return finish(resolve, { blob: d.blob, url });
+        if (typeof d.nav === "string" && d.nav) {
+          let u;
+          try { u = new URL(d.nav, baseUrl || url); } catch { return; }
+          if (u.origin !== location.origin || u.href === (baseUrl || url)) return; // never leave the hospital
+          fetch(u.href, { credentials: "same-origin", cache: "no-store" })
+            .then((r) => (r.ok ? r.blob() : null))
+            .then((blob) => { if (isPdfBlob(blob)) finish(resolve, { blob, url }); })
+            .catch(() => {});
+        }
       };
       window.addEventListener("message", onMsg);
       document.documentElement.appendChild(iframe);
       // Hook createObjectURL BEFORE the replayed markup runs; postMessage
       // crosses the MV3 isolated world and Blobs survive the structured clone.
-      const prelude = `<script>(function(){var m=window.URL.createObjectURL.bind(window.URL);function h(b){try{if(b instanceof Blob)parent.postMessage({__psassist:${JSON.stringify(cb)},blob:b},"*")}catch(e){}}window.URL.createObjectURL=function(b){h(b);return m(b)};if(window.webkitURL&&window.webkitURL.createObjectURL){var wm=window.webkitURL.createObjectURL.bind(window.webkitURL);window.webkitURL.createObjectURL=function(b){h(b);return wm(b)}}})();<\/script>`;
+      // Prelude + a bounded rewrite of the viewer's own script, so that inside
+      // the replay a navigation INTENT (location.replace/assign/href) is handed
+      // to us as a URL instead of being attempted, and any Blob it builds is
+      // handed over the moment it is created. Both cover viewers that assemble
+      // their pdf URL piece by piece.
+      const CB = JSON.stringify(cb);
+      const prelude = `<script>(function(){
+        function nav(u){ try { parent.postMessage({ __psassist: ${CB}, nav: String(u) }, "*"); } catch (e) {} }
+        window.__psaNav = nav;
+        try { Object.defineProperty(window, "__psaNavHref", { set: nav, get: function(){ return ""; } }); } catch (e) {}
+        function hb(b){ try { if (b instanceof Blob) parent.postMessage({ __psassist: ${CB}, blob: b }, "*"); } catch (e) {} }
+        var m = window.URL.createObjectURL.bind(window.URL);
+        window.URL.createObjectURL = function(b){ hb(b); return m(b); };
+        if (window.webkitURL && window.webkitURL.createObjectURL) {
+          var wm = window.webkitURL.createObjectURL.bind(window.webkitURL);
+          window.webkitURL.createObjectURL = function(b){ hb(b); return wm(b); };
+        }
+      })();<\/script>`;
+      const NAV_PREFIX = "(?:(?:window|self|top|parent|document)\\s*\\.\\s*)?";
+      const patched = String(html || "")
+        .replace(new RegExp(`\\b${NAV_PREFIX}location\\s*\\.\\s*(?:replace|assign)\\s*\\(`, "gi"), "__psaNav(")
+        .replace(new RegExp(`\\b${NAV_PREFIX}location\\s*\\.\\s*href\\s*=(?!=)`, "gi"), "__psaNavHref =")
+        .replace(new RegExp(`\\b(?:window|self|top)\\s*\\.\\s*location\\s*=(?!=)`, "gi"), "__psaNavHref =");
       const idoc = iframe.contentDocument;
       idoc.open();
-      idoc.write(prelude + `<base href="${esc(baseUrl || url)}">` + (html || ""));
+      idoc.write(prelude + `<base href="${esc(baseUrl || url)}">` + patched);
       idoc.close();
+      const grab = (u, opts) => fetch(u, opts).then((r) => (r.ok ? r.blob() : null))
+        .then((blob) => { if (isPdfBlob(blob)) finish(resolve, { blob, url }); }).catch(() => {});
       const iv = setInterval(() => {
         try {
-          const el = iframe.contentWindow?.document?.querySelector('embed[src^="blob:"],iframe[src^="blob:"],object[data^="blob:"]');
+          const w = iframe.contentWindow;
+          // (a) the viewer navigated the frame to its real pdf endpoint —
+          //     same-origin, so readable (a blob: target would be opaque and
+          //     is caught by the createObjectURL hook above instead)
+          const href = w && w.location ? w.location.href : "";
+          if (href && href.startsWith(location.origin)) {
+            return grab(href, { credentials: "same-origin", cache: "no-store" });
+          }
+          // (b) or embedded the pdf inside its own document
+          const el = w?.document?.querySelector('embed[src^="blob:"],iframe[src^="blob:"],object[data^="blob:"]');
           const b = el && (el.getAttribute("src") || el.getAttribute("data"));
-          if (b) fetch(b).then((r) => r.blob()).then((blob) => { if (isPdfBlob(blob)) finish(resolve, { blob, url }); }).catch(() => {});
-        } catch { /* transiently inaccessible */ }
+          if (b) return grab(b);
+        } catch { /* transiently inaccessible (cross-doc or opaque) */ }
       }, 150);
     });
   }
@@ -519,7 +607,12 @@
         try { return await fetchPdf(new URL(cand, base).href, { signal, hop: 1 }); }
         catch (e) { if (e?.name === "AbortError") throw e; /* keep falling back */ }
       }
-      // 2. inline blob-builder viewer? short, SANDBOXED replay (never navigates,
+      // 2. a direct pdf endpoint referenced by the viewer's own script
+      for (const c of pdfCandidates(text)) {
+        try { return await fetchPdf(new URL(c, base).href, { signal, hop: 1 }); }
+        catch (e) { if (e?.name === "AbortError") throw e; /* try the next one */ }
+      }
+      // 3. inline blob-builder viewer? short, SANDBOXED replay (never navigates,
       //    framebusters inert). Otherwise it's a viewer we open natively.
       return await harvestInlinePdf(target.href, { html: text, baseUrl: base, signal });
     }
@@ -577,6 +670,8 @@
     };
   }
 
+  const shortLabel = (l) => String(l).replace(/\s*\([\w./-]*\)\s*$/, "");
+
   // =============================================================== CATALOG
   // Merged view of the embedded (audited) catalog and everything learned
   // from live pages. Learning happens on every parsed list, so radiology
@@ -623,6 +718,8 @@
     return out;
   }
   const examLabel = (res, code) => (fullCatalog()[res]?.items || {})[code] || `esame ${code}`;
+  // UI-facing short name (falls back to the catalog label, trimmed of its code)
+  const displayLabel = (res, code) => DISPLAY[`${res}:${code}`] || shortLabel(examLabel(res, code));
 
   // ================================================================ ENGINE
   // A run is a linear list of steps executed by runPlan(). Each step updates
@@ -688,7 +785,7 @@
     const sOpen = plan.startPage === "patient" ? step("Apro la nuova richiesta") : null;
     const sCrea = plan.startPage !== "exam" ? step("Compilo quesito e creo la richiesta") : null;
     const itemSteps = new Map();
-    for (const it of plan.items) itemSteps.set(it, step(`${it.label}`));
+    for (const it of plan.items) itemSteps.set(it, step(it.display || it.label));
     const sEnd = step(plan.autoConfirm ? "Passo alla pagina esami per la conferma" : "Passo alla pagina esami per la revisione");
     ui.renderRun(state);
 
@@ -752,13 +849,14 @@
       if (offered.size) {
         const wrongRes = plan.items.filter((i) => i.res && !offered.has(i.res));
         if (wrongRes.length) {
-          throw new StopError("Esami non ordinabili in questa richiesta", `${wrongRes.map((i) => `«${i.label}»`).join(", ")}. Nessun esame inviato.`);
+          throw new StopError("Esami non ordinabili in questa richiesta", `${wrongRes.map((i) => `«${i.display || i.label}»`).join(", ")}. Nessun esame inviato.`);
         }
       }
 
       const items = orderItems(plan.items, model.res);
       for (const it of items) {
         const st = itemSteps.get(it);
+        const nm = it.display || it.label; // short name for messages
         running(st);
         await pace(); // pace AFTER marking, so exactly one step is always live
 
@@ -776,13 +874,13 @@
 
         if (model.inCart(it.code)) {
           done(st, "già nel carrello");
-          log(`già presente ✓ ${it.label}`);
+          log(`già presente ✓ ${nm}`);
           state.added.push(it);
           continue;
         }
         const link = model.addLink(it.code);
         if (!link) {
-          throw new StopError(`«${it.label}» non è nell'elenco di ${RES_SHORT[it.res] || it.res}`, "Nessun ordine inviato per questo esame. Interrotto: verifica il carrello e completa a mano.");
+          throw new StopError(`«${nm}» non è nell'elenco di ${RES_SHORT[it.res] || it.res}`, "Nessun ordine inviato per questo esame. Interrotto: verifica il carrello e completa a mano.");
         }
         // Anti wrong-exam guardrail: the LIVE row label must match what the
         // doctor picked. If the hospital ever renumbers a code, every other
@@ -790,18 +888,18 @@
         // (skipped for items carrying only the "esame N" fallback label)
         const norm = (s) => s.replace(/\s+/g, " ").trim().toUpperCase();
         if (!/^esame \d+$/i.test(it.label) && norm(link.label) !== norm(it.label)) {
-          throw new StopError(`Il codice ${it.code} oggi si chiama «${link.label}»`, `Era selezionato come «${it.label}». Nessun ordine inviato: il catalogo va aggiornato (basta riaprire l'elenco una volta).`);
+          throw new StopError(`Il codice ${it.code} oggi si chiama «${link.label}»`, `Era selezionato come «${nm}». Nessun ordine inviato: il catalogo va aggiornato (basta riaprire l'elenco una volta).`);
         }
 
         // ---- the one and only send of this exam -----------------------
         running(st, "invio…");
-        log(`aggiungo → ${it.label}`);
+        log(`aggiungo → ${nm}`);
         ({ doc, url } = await fetchDoc(link.href, { signal }));
-        guardSession(doc, `«${it.label}» potrebbe essere stato aggiunto o no`);
+        guardSession(doc, `«${nm}» potrebbe essere stato aggiunto o no`);
         assertSameEpisode(doc, url, plan.episodeId, "conferma inserimento");
         if (classify(doc) !== "exam") {
           log(`pagina inattesa dopo l'inserimento: "${snippet(doc)}"`);
-          throw new StopError(`«${it.label}» potrebbe essere stato aggiunto o no`, "Il server ha risposto con una pagina inattesa (dettagli nel Registro). NON reinviato: apri il carrello e controlla.");
+          throw new StopError(`«${nm}» potrebbe essere stato aggiunto o no`, "Il server ha risposto con una pagina inattesa (dettagli nel Registro). NON reinviato: apri il carrello e controlla.");
         }
         model = examModel(doc, url);
         learnFrom(model);
@@ -813,7 +911,7 @@
           running(st, `verifica ${attempt}/${VERIFY_RECHECKS}…`);
           await sleep(VERIFY_WAIT_MS, signal);
           ({ doc, url } = await fetchDoc(model.listUrl(it.res || model.res) || state.lastListUrl, { signal }));
-          guardSession(doc, `«${it.label}» potrebbe essere stato aggiunto o no`);
+          guardSession(doc, `«${nm}» potrebbe essere stato aggiunto o no`);
           assertSameEpisode(doc, url, plan.episodeId, "verifica carrello");
           if (classify(doc) !== "exam") {
             log(`pagina inattesa in verifica: "${snippet(doc)}"`);
@@ -824,10 +922,10 @@
           noteList();
         }
         if (!verified) {
-          throw new StopError(`«${it.label}» non risulta nel carrello`, `Verificato ${VERIFY_RECHECKS} volte, NON reinviato: nessun rischio di doppio ordine. Apri il carrello e controlla prima di confermare.`);
+          throw new StopError(`«${nm}» non risulta nel carrello`, `Verificato ${VERIFY_RECHECKS} volte, NON reinviato: nessun rischio di doppio ordine. Apri il carrello e controlla prima di confermare.`);
         }
         done(st, "nel carrello ✓");
-        log(`aggiunto ✓ ${it.label}`);
+        log(`aggiunto ✓ ${nm}`);
         state.added.push(it);
       }
 
@@ -841,7 +939,7 @@
       tabStore.set("receipt.v1", {
         richiestaId: model.richiestaId, episodeId: plan.episodeId, ts: Date.now(),
         quesitoKept: state.quesitoKept || null,
-        items: state.added.map((i) => ({ res: i.res, code: i.code, label: i.label })),
+        items: state.added.map((i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label })),
       });
       if (plan.autoConfirm && state.added.length) {
         tabStore.set("confirm.v1", {
@@ -929,7 +1027,21 @@
     .chip.on::before { content: "✓ "; font-weight: 800; white-space: pre; }
     .chip.q { background: transparent; border-style: dashed; color: #35506B; }
     .chip.q:hover { border-color: #0B5CAD; color: #0B5CAD; }
-    .chip.preset { background: #EAF2FA; border-color: #9DBFDE; font-weight: 600; }
+    .chip.q { padding: 4px 9px; font-size: 11.5px; min-height: 24px; }
+    .chip.preset { background: #EAF2FA; border-color: #9DBFDE; font-weight: 600; padding: 5px 11px; font-size: 11.5px; min-height: 26px; }
+    /* dense two-column exam grid: many exams, little space, still tappable */
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 5px; }
+    .opt { display: flex; align-items: center; gap: 6px; border: 1px solid #E3E8EF; background: #fff; color: #16232E;
+           border-radius: 7px; padding: 5px 7px; font-size: 11.5px; line-height: 1.2; cursor: pointer; text-align: left;
+           min-height: 27px; overflow: hidden; }
+    .opt:hover { border-color: #0B5CAD; background: #F4F8FB; }
+    .opt .box { flex: 0 0 13px; width: 13px; height: 13px; border: 1.5px solid #9DBFDE; border-radius: 3px;
+                display: inline-grid; place-items: center; font-size: 9px; font-weight: 800; color: transparent; }
+    .opt.on { background: #0B5CAD; border-color: #0B5CAD; color: #fff; font-weight: 600; }
+    .opt.on .box { background: #fff; border-color: #fff; color: #0B5CAD; }
+    .opt .nm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .grouphdr { grid-column: 1 / -1; font-size: 9.5px; font-weight: 800; letter-spacing: .6px; color: #5B6B7A;
+                margin: 5px 0 0; text-transform: uppercase; }
     .chip.preset.on { background: #0B5CAD; color: #fff; }
     .chip.cart { background: #EDF7F0; border-color: #BCE0C9; color: #124F31; cursor: default; }
     .chip.ghosted { background: #F4F8FB; border-color: #E3E8EF; color: #5B6B7A; cursor: default; }
@@ -943,8 +1055,9 @@
     .btn { display: block; width: 100%; border: 0; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; }
     .btn + .btn { margin-top: 7px; }
     .btnrow { display: flex; gap: 7px; }
-    .btnrow .btn { flex: 1 1 auto; padding: 11px 8px; font-size: 13px; margin: 0; white-space: nowrap; }
-    .btnrow .btn.confirm { flex: 0 0 auto; }
+    .btnrow .btn { flex: 1 1 auto; min-width: 0; padding: 11px 8px; font-size: 13px; margin: 0;
+                   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .btnrow .btn.confirm { flex: 0 1 auto; }
     .btn.primary { background: #0B5CAD; color: #fff; }
     .btn.primary:hover { background: #094a8c; }
     .btn.confirm { background: #FFF7E6; color: #8a4b03; border: 1px solid #E5C588; }
@@ -1008,7 +1121,6 @@
     <path d="M12 5v14M5 12h14" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>
   </svg>`;
 
-  const shortLabel = (l) => l.replace(/\s*\([\w./-]*\)\s*$/, "");
   const RADIO_SET = [RES.RX, RES.ECO, RES.RMN, RES.TAC];
   function rememberQuesito(q) {
     const list = store.get("quesiti", QUESITI_DEFAULT);
@@ -1083,7 +1195,7 @@
       const s = tabStore.get(k, null);
       if (!s || Date.now() - (s.ts || 0) > 6 * 3600e3) return;
       this._q = s.q || "";
-      this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label }]));
+      this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
       this.browseOpen = !!s.browseOpen;
       this.pickRes = s.pickRes || null;
       this.filter = s.filter || "";
@@ -1100,7 +1212,7 @@
     toggle(res, code) {
       const k = this.key(res, code);
       if (this.selected.has(k)) this.selected.delete(k);
-      else this.selected.set(k, { res, code, label: examLabel(res, code) });
+      else this.selected.set(k, { res, code, label: examLabel(res, code), display: displayLabel(res, code) });
       this.persistUi();
       this.render();
     }
@@ -1109,7 +1221,7 @@
       for (const [r, c] of p.items) {
         const k = this.key(r, c);
         if (allOn) this.selected.delete(k);
-        else this.selected.set(k, { res: r, code: c, label: examLabel(r, c) });
+        else this.selected.set(k, { res: r, code: c, label: examLabel(r, c), display: displayLabel(r, c) });
       }
       this.persistUi();
       this.render();
@@ -1197,7 +1309,7 @@
         const allowed = new Set((param(location.href, "RISORSE") || "").split(",").filter(Boolean));
         if (allowed.size) {
           const wrong = items.filter((i) => i.res && !allowed.has(i.res));
-          if (wrong.length) both(`Non ordinabili in questa richiesta: ${wrong.map((i) => shortLabel(i.label)).join(", ")}.`);
+          if (wrong.length) both(`Non ordinabili in questa richiesta: ${wrong.map((i) => i.display || shortLabel(i.label)).join(", ")}.`);
         }
         const form = document.forms.namedItem("RICHIESTACrea");
         const pageQ = (form?.elements?.namedItem("QUESITO_DIAGNOSTICO")?.value || "").trim();
@@ -1207,7 +1319,7 @@
         const offered = new Set(live.resOptions.map((o) => o.value));
         if (offered.size) {
           const wrong = items.filter((i) => i.res && !offered.has(i.res));
-          if (wrong.length) both(`Non ordinabili in questa richiesta: ${wrong.map((i) => shortLabel(i.label)).join(", ")}.`);
+          if (wrong.length) both(`Non ordinabili in questa richiesta: ${wrong.map((i) => i.display || shortLabel(i.label)).join(", ")}.`);
         }
       }
       if (wantsRadio) problems.confirm.push("Radiologia: in questa prima versione usa la Conferma manuale sulla pagina.");
@@ -1223,7 +1335,7 @@
       for (const i of this.selected.values()) (byRes[i.res] = byRes[i.res] || []).push(i);
       const groups = Object.entries(byRes).map(([r, arr]) => {
         const items = arr.map((i) =>
-          `<span class="selitem" title="${esc(i.label)}">${esc(shortLabel(i.label))}<button class="selx" data-unsel="${esc(this.key(i.res, i.code))}" title="Rimuovi" aria-label="Rimuovi ${esc(shortLabel(i.label))}">✕</button></span>`
+          `<span class="selitem" title="${esc(i.label)}">${esc(i.display || shortLabel(i.label))}<button class="selx" data-unsel="${esc(this.key(i.res, i.code))}" title="Rimuovi" aria-label="Rimuovi ${esc(i.display || shortLabel(i.label))}">✕</button></span>`
         ).join(", ");
         return `<span class="selgrp">${esc((RES_SHORT[r] || r).toUpperCase())}:</span> ${items}`;
       });
@@ -1336,7 +1448,7 @@
             <div class="lbl">Già nel carrello — ${esc(RES_SHORT[live.res] || live.res || "?")} (${inCart.length})</div>
             <div class="chips">
               ${inCart.map((e) => `<span class="chip cart">${esc(shortLabel(e.label))}</span>`).join("") || `<span class="hint">Ancora nessun esame su questa risorsa.</span>`}
-              ${elsewhere.map((i) => `<span class="chip ghosted" title="verificato su ${esc(RES_SHORT[i.res] || i.res)}">${esc(shortLabel(i.label))} · ${esc(RES_SHORT[i.res] || i.res)} ✓</span>`).join("")}
+              ${elsewhere.map((i) => `<span class="chip ghosted" title="verificato su ${esc(RES_SHORT[i.res] || i.res)}">${esc(i.display || shortLabel(i.label))} · ${esc(RES_SHORT[i.res] || i.res)} ✓</span>`).join("")}
             </div>
           </div>`;
       }
@@ -1347,11 +1459,14 @@
         const on = p.items.every(([r, c]) => this.isSel(r, c));
         return `<button class="chip preset ${on ? "on" : ""}" data-preset="${i}">${esc(p.name)}</button>`;
       }).join("");
-      const singles = SINGLES.filter(([r, c]) => cat[r]?.items?.[c]).map(([r, c]) => {
-        const on = this.isSel(r, c);
-        const l = examLabel(r, c);
-        return `<button class="chip ${on ? "on" : ""}" data-res="${r}" data-code="${esc(c)}" title="${esc(l)} — ${esc(RES_SHORT[r] || r)}">${esc(shortLabel(l))}</button>`;
-      }).join("");
+      const byLab = {};
+      for (const [r, c] of SINGLES) if (cat[r]?.items?.[c]) (byLab[r] = byLab[r] || []).push(c);
+      const singles = Object.entries(byLab).map(([r, codes]) => `
+        <div class="grouphdr">${esc(RES_SHORT[r] || r)}</div>
+        ${codes.map((c) => {
+          const on = this.isSel(r, c);
+          return `<button class="opt ${on ? "on" : ""}" data-res="${esc(r)}" data-code="${esc(c)}" title="${esc(examLabel(r, c))} — ${esc(RES_SHORT[r] || r)}"><span class="box">✓</span><span class="nm">${esc(displayLabel(r, c))}</span></button>`;
+        }).join("")}`).join("");
 
       const n = this.selected.size;
       const nTxt = n === 0 ? "esami" : n === 1 ? "1 esame" : `${n} esami`;
@@ -1370,7 +1485,7 @@
         <div class="sec">
           ${presetHtml ? `<div class="lbl">Profili rapidi</div><div class="chips">${presetHtml}</div>` : ""}
           <div class="lbl" style="margin-top:10px">Esami singoli</div>
-          <div class="chips">${singles}</div>
+          <div class="grid">${singles}</div>
           ${this.viewBrowse(cat)}
         </div>
         ${this.viewPrint()}
@@ -1570,7 +1685,7 @@
         qEl.value = b.getAttribute("data-q"); this._q = qEl.value; this.persistUi(); this.refreshCommit(); qEl.focus();
       }));
       this.root.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => this.togglePreset(PRESETS[+b.getAttribute("data-preset")])));
-      this.root.querySelectorAll(".chip[data-code]").forEach((b) => b.addEventListener("click", () => this.toggle(b.getAttribute("data-res"), b.getAttribute("data-code"))));
+      this.root.querySelectorAll(".chip[data-code], .opt[data-code]").forEach((b) => b.addEventListener("click", () => this.toggle(b.getAttribute("data-res"), b.getAttribute("data-code"))));
       this.root.querySelectorAll(".list input[data-code]").forEach((c) => c.addEventListener("change", () => { this.browseOpen = true; this.toggle(c.getAttribute("data-res"), c.getAttribute("data-code")); }));
       this.root.querySelectorAll("[data-unsel]").forEach((b) => b.addEventListener("click", () => { this.selected.delete(b.getAttribute("data-unsel")); this.persistUi(); this.render(); }));
       $("#pickres")?.addEventListener("change", (e) => { this.pickRes = e.target.value; this.browseOpen = true; this.persistUi(); this.render(); });

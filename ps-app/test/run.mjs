@@ -85,7 +85,7 @@ async function scenarioHappyLab(browser, { directRender = false } = {}) {
   await $panel(page, "#q").fill("Sospetta colangite acuta — età ≥80");
   // preset chip: Epatico (5 URGENZE exams) + one POC single via chip
   await $panel(page, '.chip.preset:has-text("Epatico")').click();
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await shot(page, scen + "-idle");
   await $panel(page, "#go").click();
   await shot(page, scen + "-running");
@@ -136,7 +136,7 @@ async function scenarioLabelMismatch(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("controllo");
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, "#go").click();
   await page.waitForSelector("#psassist-host .banner.err", { timeout: 30000 });
   const banner = await $panel(page, ".banner.err").innerText();
@@ -152,7 +152,7 @@ async function scenarioAutoConfirm(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("dolore toracico");
-  await $panel(page, '.chip[title*="TROPONINA"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
   await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 20000 });
   // countdown, native Conferma click, then (field-observed) back to the patient page
@@ -170,7 +170,7 @@ async function scenarioAutoConfirmCancel(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("dolore toracico");
-  await $panel(page, '.chip[title*="TROPONINA"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
   await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 20000 });
   await page.waitForSelector("#cancel", { timeout: 8000 }); // countdown visible
@@ -193,7 +193,7 @@ async function scenarioLagVerify(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("controllo");
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, "#go").click();
   await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 30000 });
   const rid = Object.keys(mock.state.richieste)[0];
@@ -209,8 +209,8 @@ async function scenarioNeverVisible(browser) {
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("controllo");
   // POC exam (lost by the server) runs first; the URGENZE one must never start
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
-  await $panel(page, '.chip[title*="PROCALCITONINA"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(page, "#go").click();
   await page.waitForSelector("#psassist-host .banner.err", { timeout: 30000 });
   const banner = await $panel(page, ".banner.err").innerText();
@@ -231,7 +231,7 @@ async function scenarioEpisodeSwap(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("controllo");
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, "#go").click();
   await page.waitForSelector("#psassist-host .banner.err", { timeout: 30000 });
   const banner = await $panel(page, ".banner.err").innerText();
@@ -248,8 +248,8 @@ async function scenarioExpiryOnInsert(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("controllo");
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
-  await $panel(page, '.chip[title*="PROCALCITONINA"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(page, "#go").click();
   await page.waitForSelector("#psassist-host .banner.err", { timeout: 30000 });
   const banner = await $panel(page, ".banner.err").innerText();
@@ -266,7 +266,7 @@ async function scenarioSessionExpiry(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("controllo");
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, "#go").click();
   await page.waitForSelector("#psassist-host .banner.err", { timeout: 30000 });
   const banner = await $panel(page, ".banner.err").innerText();
@@ -280,7 +280,7 @@ async function scenarioPrefilledQuesito(browser) {
   const { context, page } = await newPage(browser, mock);
   // start from the CREA page like the doctor who already clicked Laboratorio
   await page.goto(`${mock.ORIGIN}${mock.PATH}?MVPG=PsoRichiestaCreaRcs&EPISODIO_ID=999001&ASSISTITO_ID=*TEST00001&STRUTTURA=1&RISORSA_ID=${RES.POC}&RISORSE=${RES.POC},${RES.CENTRAL},${RES.URGENZE}&PADIGLIONE=&toPage=RcsRichiestaPrestazioniRicercaErogatore&returnPage=PsoEpisodio`);
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, "#q").fill("QUESTO NON DEVE VINCERE");
   await $panel(page, "#go").click();
   await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 20000 });
@@ -301,8 +301,8 @@ async function scenarioExamPageManual(browser) {
   await page.waitForSelector('form[name="Prestazioni"]', { timeout: 20000 });
   await page.waitForSelector("#psassist-host", { state: "attached" });
   // now use the panel ON the exam page: one POC chip + one URGENZE chip → resource switch
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
-  await $panel(page, '.chip[title*="PROCALCITONINA"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(page, "#go").click();
   await page.waitForFunction(() => {
     const host = document.getElementById("psassist-host");
@@ -330,7 +330,7 @@ async function scenarioWrongResourceRefused(browser) {
   // radiology crea page + a POC exam selected → refused LIVE, before any click
   await page.goto(`${mock.ORIGIN}${mock.PATH}?MVPG=PsoRichiestaCreaRcs&EPISODIO_ID=999001&ASSISTITO_ID=*TEST00001&STRUTTURA=1&RISORSA_ID=${RES.RX}&RISORSE=${RES.RX},${RES.ECO},${RES.RMN},${RES.TAC}&PADIGLIONE=&toPage=RcsRichiestaPrestazioniRicercaErogatore&returnPage=PsoEpisodio`);
   const before = mock.state.requests.length;
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await page.waitForSelector("#psassist-host .problem", { timeout: 8000 });
   const problem = await $panel(page, ".problem").innerText();
   check(scen, /Non ordinabili/i.test(problem), `avviso live chiaro (got: ${problem.slice(0, 60)})`);
@@ -345,7 +345,7 @@ async function scenarioMissingQuesito(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   const before = mock.state.requests.length;
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   check(scen, await $panel(page, "#go").isDisabled(), "senza quesito il CTA è disabilitato");
   const problem = await $panel(page, ".problem").innerText();
   check(scen, /quesito/i.test(problem), `motivo visibile (got: ${problem.slice(0, 60)})`);
@@ -414,8 +414,8 @@ async function scenarioPrintMultiLab(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("febbre di origine sconosciuta");
-  await $panel(page, '.chip[title*="TROPONINA"]').click();      // POC
-  await $panel(page, '.chip[title*="PROCALCITONINA"]').click(); // URGENZE
+  await $panel(page, '.opt[title*="TROPONINA"]').click();      // POC
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click(); // URGENZE
   await $panel(page, "#goconfirm").click();
   // confirm → patient page; the wizard is the signal
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 });
@@ -475,7 +475,7 @@ async function scenarioPrintAutoOnPatient(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("dolore toracico");
-  await $panel(page, '.chip[title*="TROPONINA"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
   // countdown → confirm → back on the patient page (content-based wait)
   await page.waitForSelector('a[title="Richieste Laboratorio"]', { timeout: 30000 });
@@ -499,7 +499,7 @@ async function scenarioPrintAutoInterstitial(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("dolore toracico");
-  await $panel(page, '.chip[title*="TROPONINA"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
   await page.waitForSelector("text=Stampa etichette LIS", { timeout: 30000 });
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
@@ -515,7 +515,7 @@ async function scenarioPrintAutoOnReturn(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("dolore toracico");
-  await $panel(page, '.chip[title*="TROPONINA"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
   await page.waitForSelector("text=Stampa etichette LIS", { timeout: 30000 });
   await page.waitForTimeout(1800);
@@ -546,6 +546,28 @@ async function scenarioPrintInlineViewer(browser) {
   check(scen, mock.state.requests.filter((q) => q.url.includes("REPORT=RcsEtichetteLIS")).length >= 1,
     "viewer inline: PDF interno raggiunto e stampato in-pannello");
   check(scen, /PsoEpisodioClinicoAmbulatorio/.test(page.url()), "il framebuster del viewer NON ha dirottato la pagina");
+  await $wiz(page, "#pwexit").click();
+  await context.close();
+}
+
+async function scenarioPrintUploadViewer(browser) {
+  const scen = "print-upload-viewer";
+  // field-observed: the label .do navigates (by script) to a direct pdf
+  // endpoint (uploaddownloadservlet…mimetype=application/pdf) — the URL is
+  // harvested from the page and printed in-panel, fully automatic
+  const mock = createMock({ seedConfirmed: true, uploadViewer: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.locator('#psassist-host [data-print="699999"]').first().click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  await page.waitForFunction(() => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= 1, { timeout: 25000 });
+  const dl = mock.state.requests.filter((q) => q.url.includes("uploaddownloadservlet") && (q.params.mimetype || "").includes("pdf"));
+  check(scen, dl.length === 1, `PDF etichette preso una volta dall'endpoint diretto del visualizzatore (got ${dl.length})`);
+  check(scen, /get_pdf\('PSOWEB/.test(decodeURIComponent(dl[0]?.url || "")), "id del report letto dalla pagina, non costruito");
+  const junk = mock.state.requests.filter((q) => q.url.includes("uploaddownloadservlet")).length - dl.length;
+  check(scen, junk === 0, `nessuna richiesta sprecata su frammenti di URL (got ${junk})`);
+  check(scen, (await page.locator("#psassist-print .pwerr").count()) === 0, "nessun ripiego manuale necessario");
   await $wiz(page, "#pwexit").click();
   await context.close();
 }
@@ -604,7 +626,7 @@ async function scenarioUiErgonomics(browser) {
 
   // sticky compact selection bar: grouped plain text + count
   await $panel(page, '.chip.preset:has-text("Epatico")').click();
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   const bar = await $panel(page, ".selbar").innerText();
   check(scen, /POC:/.test(bar) && /URGENZE:/.test(bar) && /6 SELEZIONATI/.test(bar),
     `selbar compatta con gruppi e conteggio (got: ${bar.replace(/\s+/g, " ").slice(0, 80)})`);
@@ -620,7 +642,7 @@ async function scenarioUiErgonomics(browser) {
     const card = document.getElementById("psassist-host").shadowRoot.querySelector(".card");
     card.scrollTop = 180;
   });
-  await $panel(page, '.chip[title*="GLUCOSIO"]').click();
+  await $panel(page, '.opt[title*="GLUCOSIO"]').click();
   const st = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".card").scrollTop);
   check(scen, st > 100, `lo scroll resta dov'era dopo la selezione (got ${st})`);
 
@@ -653,10 +675,15 @@ async function scenarioUiErgonomics(browser) {
     "CTA su una sola riga");
 
   // no PANNELLO chips anymore; no PCR / old tropo singles; new tropo present
-  const chipTxt = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".chip")].map((c) => c.textContent).join("|"));
-  check(scen, !/PANNELLO|P1 - |P2 - /.test(chipTxt), "chips PANNELLO rimossi");
-  check(scen, !/PCR POC/.test(chipTxt) && !/TROPONINA I POC/.test(chipTxt) && /TROPONINA ULTRASENSIBILE/.test(chipTxt),
-    "singoli aggiornati: via PCR e vecchia tropo, dentro la ultrasensibile");
+  const optTxt = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".opt")].map((c) => c.textContent).join("|"));
+  const preTxt = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".chip.preset")].map((c) => c.textContent).join("|"));
+  check(scen, !/PANNELLO|P1 - |P2 - /.test(optTxt + preTxt), "chips PANNELLO rimossi");
+  check(scen, /EMOCROMO POC/.test(optTxt) && !/EMOCROMOCITOMETRICO/.test(optTxt), "emocromo rinominato in EMOCROMO POC");
+  check(scen, /\bPCR\b/.test(optTxt) && /LIPASI/.test(optTxt) && /TROPONINA US/.test(optTxt) && !/TROPONINA I POC/.test(optTxt),
+    "singoli aggiornati: PCR e lipasi presenti, tropo ultrasensibile al posto della vecchia");
+  check(scen, /Coag POC/.test(preTxt) && /Coag/.test(preTxt), "profili rapidi: Coag POC e Coag");
+  const optBox = await $panel(page, ".opt").first().boundingBox();
+  check(scen, optBox.height <= 34, `righe esame compatte (${Math.round(optBox.height)}px)`);
   await context.close();
 }
 
@@ -670,8 +697,8 @@ async function scenarioContinuity(browser) {
   // build up state, then reload: the EHR refreshes pages all the time and
   // the panel must come back exactly as it was
   await $panel(page, "#q").fill("dolore toracico irradiato");
-  await $panel(page, '.chip[title*="TROPONINA"]').click();
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await page.reload();
   await page.waitForSelector("#psassist-host", { state: "attached" });
   check(scen, (await $panel(page, "#q").inputValue()) === "dolore toracico irradiato", "quesito ripristinato dopo il refresh");
@@ -721,8 +748,8 @@ async function scenarioStopButton(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("controllo");
-  await $panel(page, '.chip[title*="EMOCROMOCITOMETRICO"]').click();
-  await $panel(page, '.chip[title*="TROPONINA"]').click();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#go").click();
   await page.waitForSelector("#psassist-host .btn.stop", { timeout: 10000 });
   await $panel(page, ".btn.stop").click();
@@ -764,6 +791,7 @@ const scenarios = [
   ["print auto waits for patient return", scenarioPrintAutoOnReturn],
   ["print etichette html wrapper", scenarioPrintWrapper],
   ["print inline viewer captured", scenarioPrintInlineViewer],
+  ["print upload-servlet viewer (field URL)", scenarioPrintUploadViewer],
   ["print hard viewer → tab fallback", scenarioPrintHardViewer],
   ["ui ergonomics (selbar/drag/scroll)", scenarioUiErgonomics],
   ["continuity + panel confirm button", scenarioContinuity],
