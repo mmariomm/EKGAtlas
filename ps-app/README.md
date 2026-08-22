@@ -6,7 +6,7 @@ semplice e robusto: guida il server con le **stesse identiche richieste dei clic
 sola pagina, verificando ogni passaggio prima del successivo.
 
 > **In sintesi per il medico**: dalla pagina del paziente scrivi il quesito, tocchi i profili
-> (o i PANNELLI POC nativi), premi un bottone. La richiesta viene creata, gli esami aggiunti e
+> e gli esami, premi un bottone. La richiesta viene creata, gli esami aggiunti e
 > verificati uno a uno nel carrello, e atterri sulla pagina esami reale per premere **Conferma**
 > (o lasci che la prema lui dopo un conto alla rovescia annullabile). Dopo la conferma parte da
 > solo il **wizard di stampa**: PDF etichette con la finestra di stampa già aperta
