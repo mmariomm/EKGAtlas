@@ -376,7 +376,21 @@ export function createMock(opts = {}) {
     if (u.pathname.includes("/UploadDownload/uploaddownloadservlet.rra2")) {
       return (params.get("mimetype") || "").includes("pdf") ? pdf() : respond(notFound("mimetype non pdf"), 404);
     }
+    // frameset viewer: the pdf lives in a <frame src>, as old apps do
+    const framesetViewer = (rid, prog) => respond(`<html><head><title>Etichette</title></head>
+      <frameset rows="*"><frame src="/UploadDownload/uploaddownloadservlet.rra2?table=DUAL&amp;blobfield=san_report_onthefly.get_pdf(%27PSOWEB_HL7_2026001${String(rid).slice(-4)}${prog}%27)&amp;wherecondition=where%201=1&amp;dataSource=jdbc/sa4web&amp;mimetype=application/pdf"></frameset></html>`);
+    // id-only viewer: no whole URL and no navigation we can reproduce — only
+    // the report id and the endpoint name appear in the page
+    const idOnlyViewer = (rid, prog) => respond(`${HEAD}
+      <script>
+        var rep = 'PSOWEB_HL7_2026001${String(rid).slice(-4)}${prog}';
+        function show(){ /* uploaddownloadservlet.rra2 · san_report_onthefly.get_pdf */
+          if (!window.__viewerReady) return; buildAndGo(rep);
+        }
+      <\/script>caricamento…${FOOT}`);
     if (u.pathname.endsWith("RcsStampaEtichetteLISHMIMU.do")) {
+      if (opts.framesetViewer) return framesetViewer(params.get("RICHIESTA_ID"), params.get("RICHIESTA_PROG"));
+      if (opts.idOnlyViewer) return idOnlyViewer(params.get("RICHIESTA_ID"), params.get("RICHIESTA_PROG"));
       if (opts.uploadViewer) return uploadViewer(params.get("RICHIESTA_ID"), params.get("RICHIESTA_PROG"));
       if (opts.hardViewer) return hardViewer("/jasperserverSAN/jasperservlet");
       if (opts.blobViewers) return blobViewer("/jasperserverSAN/jasperservlet", `?PROJECT=sa4rcs&REPORT=RcsEtichetteLIS&RICHIESTA_ID=${params.get("RICHIESTA_ID")}&RICHIESTA_PROG=${params.get("RICHIESTA_PROG")}`);

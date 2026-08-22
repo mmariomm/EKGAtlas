@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "1.8.0";
+  const VERSION = "1.9.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -516,6 +516,8 @@
         window.__psaNav = nav;
         try { Object.defineProperty(window, "__psaNavHref", { set: nav, get: function(){ return ""; } }); } catch (e) {}
         function hb(b){ try { if (b instanceof Blob) parent.postMessage({ __psassist: ${CB}, blob: b }, "*"); } catch (e) {} }
+        var wo = window.open;
+        window.open = function(u){ if (u) nav(u); return { closed: false, close: function(){}, focus: function(){}, document: {} }; };
         var m = window.URL.createObjectURL.bind(window.URL);
         window.URL.createObjectURL = function(b){ hb(b); return m(b); };
         if (window.webkitURL && window.webkitURL.createObjectURL) {
@@ -579,31 +581,55 @@
     if (ctype.includes("pdf") || ctype.includes("octet-stream")) {
       return { blob: await res.blob(), url: res.url || target.href };
     }
-    if (ctype.includes("html") && hop === 0) {
+    if (ctype.includes("html") && hop < 2) {
       const buf = await res.arrayBuffer();
       const text = new TextDecoder("windows-1252").decode(buf);
       const doc = new DOMParser().parseFromString(text, "text/html");
       if (classify(doc) === "login") throw new StopError("Sessione scaduta", "Fai l'accesso a SA4PSO e riprova la stampa.");
       const base = res.url || target.href;
-      // 1. explicit PDF reference in the markup
-      const cand =
-        doc.querySelector('iframe[src], embed[src], object[data]')?.getAttribute("src") ||
-        doc.querySelector('object[data]')?.getAttribute("data") ||
-        doc.querySelector('a[href*="jasperservlet"], a[href$=".pdf" i]')?.getAttribute("href") ||
-        (/url\s*=\s*([^"'>\s]+)/i.exec(doc.querySelector('meta[http-equiv="refresh" i]')?.getAttribute("content") || "") || [])[1] ||
-        (/window\.open\(\s*['"]([^'"]+)['"]/.exec(text) || [])[1];
-      if (cand && !/^(javascript:|#)/i.test(cand)) {
-        try { return await fetchPdf(new URL(cand, base).href, { signal, hop: 1 }); }
-        catch (e) { if (e?.name === "AbortError") throw e; /* keep falling back */ }
+      const tried = [];
+      const attempt = async (raw) => {
+        if (!raw || /^(javascript:|#|about:)/i.test(raw)) return null;
+        let u; try { u = new URL(String(raw).replace(/&amp;/gi, "&").trim(), base); } catch { return null; }
+        if (u.origin !== location.origin || u.href === base) return null;
+        if (tried.includes(u.href)) return null;
+        tried.push(u.href);
+        try { return await fetchPdf(u.href, { signal, hop: hop + 1 }); }
+        catch (e) { if (e?.name === "AbortError") throw e; return null; }
+      };
+
+      // 1. explicit references in the markup (old apps still use <frameset>)
+      const domCands = [];
+      for (const el of doc.querySelectorAll('frame[src], iframe[src], embed[src], object[data], a[href], form[action]')) {
+        const v = el.getAttribute("src") || el.getAttribute("data") || el.getAttribute("href") || el.getAttribute("action");
+        const loose = el.tagName === "FRAME" || el.tagName === "IFRAME" || el.tagName === "EMBED" || el.tagName === "OBJECT";
+        if (v && (loose || /jasperservlet|uploaddownload|\.pdf|report|stampa/i.test(v))) domCands.push(v);
       }
-      // 2. a direct pdf endpoint referenced by the viewer's own script
-      for (const c of pdfCandidates(text)) {
-        try { return await fetchPdf(new URL(c, base).href, { signal, hop: 1 }); }
-        catch (e) { if (e?.name === "AbortError") throw e; /* try the next one */ }
+      const meta = doc.querySelector('meta[http-equiv="refresh" i]')?.getAttribute("content") || "";
+      domCands.push((/url\s*=\s*['"]?([^'"\s>]+)/i.exec(meta) || [])[1]);
+      for (const m of text.matchAll(/window\.open\(\s*["']([^"']+)["']/gi)) domCands.push(m[1]);
+      for (const c of domCands) { const r = await attempt(c); if (r) return r; }
+
+      // 2. a whole direct-pdf URL sitting in the viewer's own script
+      for (const c of pdfCandidates(text)) { const r = await attempt(c); if (r) return r; }
+
+      // 3. the report id + the endpoint the page itself names: join what the
+      //    page already contains (the id IS the document identity; a wrong one
+      //    simply 404s and we fall through to opening the viewer natively).
+      const idm = /\b([A-Z][A-Z0-9]*_[A-Z0-9]+_\d{6,})\b/.exec(text);
+      if (idm && /uploaddownloadservlet|get_pdf/i.test(text)) {
+        const r = await attempt(`/UploadDownload/uploaddownloadservlet.rra2?table=DUAL&blobfield=san_report_onthefly.get_pdf(%27${idm[1]}%27)&wherecondition=where%201=1&dataSource=jdbc/sa4web&mimetype=application/pdf`);
+        if (r) return r;
       }
-      // 3. inline blob-builder viewer? short, SANDBOXED replay (never navigates,
-      //    framebusters inert). Otherwise it's a viewer we open natively.
-      return await harvestInlinePdf(target.href, { html: text, baseUrl: base, signal });
+
+      // 4. replay the viewer (sandboxed) and take the URL/Blob it produces
+      try { return await harvestInlinePdf(target.href, { html: text, baseUrl: base, signal }); }
+      catch (e) {
+        if (e?.name === "AbortError") throw e;
+        const err = new ViewerError(target.href);
+        err.diag = `html ${Math.round(text.length / 1024)}KB · ${(text.match(/<script/gi) || []).length} script · ${(text.match(/<frame\b/gi) || []).length} frame · tentati ${tried.length} URL · id ${idm ? "sì" : "no"} · upload ${/uploaddownloadservlet/i.test(text) ? "sì" : "no"}`;
+        throw err;
+      }
     }
     throw new ViewerError(target.href);
   }
@@ -1965,7 +1991,7 @@
         // activation) — offer a big button the doctor clicks, which carries
         // activation and always opens the tab. The sequence still advances.
         const job = jobs[i];
-        render("Anteprima non catturabile per questo documento (è un visualizzatore).", true);
+        render(`Anteprima non catturabile per questo documento (è un visualizzatore).${e?.diag ? " [" + e.diag + "]" : ""}`, true);
         root.querySelector(".pwbody").innerHTML =
           `<div class="pwmsg">Premi <b>↗ Apri ${esc(job.name)}</b> qui sotto, poi <b>Ctrl+P → ${esc(job.printer)}</b>,<br>torna qui e premi «Stampata — avanti».</div>`;
       }

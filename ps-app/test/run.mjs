@@ -572,6 +572,25 @@ async function scenarioPrintUploadViewer(browser) {
   await context.close();
 }
 
+async function scenarioPrintViewerVariants(browser) {
+  for (const [scen, opt, why] of [
+    ["print-frameset-viewer", "framesetViewer", "frameset: PDF preso dal <frame src>"],
+    ["print-idonly-viewer", "idOnlyViewer", "solo id report in pagina: URL ricomposto e PDF preso"],
+  ]) {
+    const mock = createMock({ seedConfirmed: true, [opt]: true });
+    const { context, page } = await newPage(browser, mock);
+    await page.goto(mock.patientUrl);
+    await page.waitForSelector("#psassist-host", { state: "attached" });
+    await page.locator('#psassist-host [data-print="699999"]').first().click();
+    await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+    await page.waitForFunction(() => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= 1, { timeout: 25000 }).catch(() => {});
+    const dl = mock.state.requests.filter((q) => q.url.includes("uploaddownloadservlet") && (q.params.mimetype || "").includes("pdf"));
+    check(scen, dl.length === 1, `${why} (got ${dl.length})`);
+    check(scen, (await page.locator("#psassist-print .pwerr").count()) === 0, "stampa automatica, nessun ripiego manuale");
+    await context.close();
+  }
+}
+
 async function scenarioPrintHardViewer(browser) {
   const scen = "print-hard-viewer";
   // a viewer that can't be replayed off its real URL → the wizard must fall
@@ -792,6 +811,7 @@ const scenarios = [
   ["print etichette html wrapper", scenarioPrintWrapper],
   ["print inline viewer captured", scenarioPrintInlineViewer],
   ["print upload-servlet viewer (field URL)", scenarioPrintUploadViewer],
+  ["print viewer variants (frameset / id-only)", scenarioPrintViewerVariants],
   ["print hard viewer → tab fallback", scenarioPrintHardViewer],
   ["ui ergonomics (selbar/drag/scroll)", scenarioUiErgonomics],
   ["continuity + panel confirm button", scenarioContinuity],
