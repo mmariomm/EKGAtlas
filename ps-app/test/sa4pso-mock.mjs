@@ -177,7 +177,27 @@ export function createMock(opts = {}) {
       ${mk("lab", "Richieste Laboratorio")} ${mk("radio", "Richieste Radiologia")}
       <a title="Richieste Consulenza" href="menuPsoEpisodio.do?MVPG=PsoRichiestaCreaRcs&EPISODIO_ID=${EP()}&REPARTO=001PS&STRUTTURA=1&toPage=PsoRichiestaPrestazioniRicercaErogatore&returnPage=PsoEpisodio">Consulenze</a>
       <table>${printRows()}</table>
+      ${refertiRows()}
       ${FOOT}`;
+  }
+
+  // Result rows (esiti), faithful to the audited structure: sheet icon with
+  // title="REFERTO" + onclick window.open to Sa4ViewerExtRedirect, hidden
+  // DATA_ORD/DESCRIZIONE_TITLE in the same cell. Deliberately OUT of
+  // chronological order in the DOM, plus an archive link without REFERTO_ID
+  // that clients must ignore.
+  function refertiRows() {
+    const mk = (id, sistema, dt, label) => `
+      <tr><td class="AFCDataTD" title="${esc(label)}" valign="top">
+        <a href="menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${EP()}#" title="REFERTO" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*TEST00001&REFERTO_SISTEMA=${sistema}&REFERTO_ID=${id}','${sistema}')"><img alt="referto"></a>
+        ${esc(label)}<input type="hidden" name="TIPO" value="RICH"><input type="hidden" name="DATA_ORD" value="${dt}"><input type="hidden" name="NOMINATIVO" value="OPERATORE PROVA"><input type="hidden" name="DESCRIZIONE_TITLE" value="${esc(label)}">
+      </td></tr>`;
+    return `<table>
+      ${mk("aaaa1111-0000-0000-0000-000000000001", "HL7LIS", "2026-08-21 22:10:00.0", "0-320 EMOCROMOCITOMETRICO URGENTE (POCT1502)")}
+      ${mk("bbbb2222-0000-0000-0000-000000000002", "HL7LIS", "2026-08-22 07:45:00.0", "68-3 EMOGASANALISI VENOSA POC (POC2117)")}
+      ${mk("cccc3333-0000-0000-0000-000000000003", "HL7RIS", "2026-08-22 01:30:00.0", "69-133 TC ENCEFALO (A69846)")}
+    </table>
+    <a title="REFERTO" href="menuPsoEpisodio.do?x#" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*TEST00001&MODALITA=ELENCODOC','ELENCODOC')">Archivio documenti</a>`;
   }
 
   // Per-richiesta print rows, exactly as audited on the real patient page.
@@ -321,6 +341,9 @@ export function createMock(opts = {}) {
       return pdf();
     }
     if (u.pathname.includes("/jasperserverSAN/jasperservlet")) return pdf();
+    if (u.pathname.includes("/sa4/restrict2/Sa4ViewerExtRedirect.do")) {
+      return params.get("REFERTO_ID") ? pdf() : respond(`${HEAD}<h1>Archivio documenti</h1>${FOOT}`);
+    }
 
     if (!u.pathname.endsWith("menuPsoEpisodio.do")) return respond(notFound(u.pathname), 404);
 

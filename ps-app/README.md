@@ -20,17 +20,36 @@ Il modo più semplice nel 2026 è l'**estensione dedicata** (niente Tampermonkey
 gestori di userscript richiedono anche il toggle "Consenti script utente" per estensione — un
 passaggio in più che qui non serve).
 
-1. Scarica questa cartella sul PC (da GitHub: **Code → Download ZIP**, poi estrai; ti serve solo `ps-app/extension`).
+1. Scarica il progetto da https://github.com/mmariomm/EKGAtlas (**Code → Download ZIP**, branch
+   `main`), estrai: ti serve solo `ps-app/extension`.
 2. Apri `chrome://extensions` (o `edge://extensions`).
 3. Attiva **Modalità sviluppatore** (interruttore in alto a destra).
 4. Premi **Carica estensione non pacchettizzata** e seleziona la cartella `ps-app/extension`.
 5. Apri SA4PSO: il pannello blu **PS Assist** appare in alto a destra sulle pagine di paziente,
    Nuova Richiesta ed esami.
 
-*Alternativa*: se sul PC c'è già Tampermonkey/Violentmonkey funzionante, importa
-`ps-app/userscript/ps-assist.user.js` (stesso identico motore).
-
 **Aggiornamenti**: sostituisci la cartella e premi ⟳ sull'estensione in `chrome://extensions`.
+
+### E se non posso? (PC bloccato dall'IT, niente admin)
+
+- La **Modalità sviluppatore NON richiede i permessi di amministratore di Windows**: è
+  un'impostazione del profilo browser, normalmente disponibile a qualunque utente. Se però
+  l'interruttore è grigio o assente, è una **policy aziendale** del browser (si vede in
+  `chrome://policy`, voci tipo `ExtensionSettings` / `ExtensionDeveloperModeSettings`) — e lì
+  nessun trucco locale la scavalca.
+- **Piano B che funziona sempre, zero installazione: il bookmarklet.**
+  1. Apri il file `ps-app/bookmarklet/ps-assist.bookmarklet.txt` e copia **tutto** il contenuto
+     (inizia con `javascript:`).
+  2. Crea un preferito qualsiasi nella barra dei preferiti → tasto destro → **Modifica** →
+     incolla il testo copiato nel campo **URL** → nominalo `PS Assist`.
+  3. Su ogni pagina SA4PSO, **un click sul preferito** fa comparire il pannello. Unica
+     differenza dall'estensione: dopo un cambio pagina (es. dopo la Conferma) va ricliccato —
+     conto alla rovescia e wizard di stampa ripartono al click, perché i passaggi di consegna
+     vivono nella scheda.
+- Se sul PC c'è già **Tampermonkey/Violentmonkey** funzionante: importa
+  `ps-app/userscript/ps-assist.user.js` (stesso identico motore).
+- A regime, la strada pulita è chiedere all'IT di consentire l'estensione (cartella locale o
+  allowlist aziendale).
 
 ---
 
@@ -80,6 +99,22 @@ pagina del paziente**. Dalla pagina paziente puoi anche **ristampare qualsiasi r
 (sezione "Stampa" del pannello, che mostra cosa contiene ogni riga: "2× etichette + 2× liste",
 "prenotazione", ecc.). Ogni passo ha: Riapri stampa · Salta · Apri in una scheda · Annulla (Esc).
 
+## Referti in un click (precarica)
+
+Sulla pagina del paziente il pannello elenca i **referti** (l'icona-foglio prima del nome
+dell'esame: laboratorio, radiologia e visite — HL7LIS/RIS/AMB), **ordinati per data e ora**, i
+più recenti in alto. Di norma un click apre il referto dal server come l'icona nativa. Se spunti
+**PRECARICA REFERTI**, il pannello scarica tutti i PDF in memoria (due alla volta, con
+avanzamento visibile): da quel momento ogni click apre il referto **all'istante**, senza attese.
+
+- Nessun referto viene scaricato **prima** della spunta: il comando è tuo.
+- I PDF restano solo **nella memoria della pagina** (spariscono cambiando pagina — alla
+  prossima visita rispunta la casella).
+- Un referto che non si carica resta cliccabile: si apre dal server come sempre.
+- I link-archivio ("elenco documenti" ecc.) non c'entrano coi referti e vengono ignorati.
+
+---
+
 **Perché c'è ancora la finestra di stampa?** Un sito web su Windows non può scegliere la
 stampante né stampare in silenzio: `chrome.printing` esiste solo su ChromeOS e `--kiosk-printing`
 stampa tutto sulla predefinita (inutile con due stampanti). Il wizard è il massimo consentito:
@@ -117,6 +152,8 @@ wizard funzionerebbe senza dialoghi.
     Chromium reale, accenti e simboli inclusi).
 11. **Stampe solo dai link della pagina**: gli URL dei PDF non vengono mai costruiti a mano
     (`BRANCA` varia per richiesta) e passano gli stessi controlli di origine di tutto il resto.
+12. **Referti scaricati solo su comando esplicito** (spunta PRECARICA), tenuti solo nella
+    memoria della pagina corrente, mai su disco né altrove.
 
 ---
 
@@ -176,7 +213,8 @@ ps-app/
 ├── userscript/          ← stesso motore in formato Tampermonkey (generato)
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
-└── test/                ← simulatore SA4PSO + 23 scenari e2e in Chromium reale
+├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
+└── test/                ← simulatore SA4PSO + 25 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -185,7 +223,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 23 scenari e2e contro il simulatore (85 verifiche)
+npm test           # 25 scenari e2e contro il simulatore (93 verifiche)
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
@@ -200,7 +238,10 @@ si riattiva scrivendo), apprendimento radiologia end-to-end, STOP, e la stampa: 
 con sequenza etichette→lista e download singoli, **richiesta divisa su due laboratori → 4 PDF
 (PROG 1 e 2, tutte le righe, BRANCA passato intatto dal DOM)**, **prenotazione radiologica**,
 auto-apertura sulla pagina post-conferma, attesa-e-ripartenza al ritorno sulla pagina paziente,
-wrapper HTML seguito fino al PDF, conferma manuale nativa che arma la stampa. In più il bundle
+wrapper HTML seguito fino al PDF, conferma manuale nativa che arma la stampa, e i referti:
+**zero download prima della spunta PRECARICA**, 3 PDF scaricati una volta ciascuno, ordinamento
+per data/ora, apertura istantanea da memoria senza nuove richieste, fallback nativo senza
+precarica, link-archivio ignorati. In più il bundle
 compilato è stato eseguito contro la **vera pagina paziente salvata**: ogni tipo di riga reale
 (lab, radiologia, consulenza/ECG) produce il piano di stampa atteso. Il simulatore fallisce
 apposta se `Cancel` viaggia insieme a `Update` (regressioni del serializzatore) e le fixture

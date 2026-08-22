@@ -5,7 +5,7 @@
  *   userscript/ps-assist.user.js  (same core with a Tampermonkey header)
  * Run:  node tools/build.mjs
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,4 +37,12 @@ const header = `// ==UserScript==
 `;
 writeFileSync(join(root, "userscript/ps-assist.user.js"), header + built);
 
-console.log(`built v${version}: extension/content.js (${built.length} bytes), userscript/ps-assist.user.js`);
+// Bookmarklet: the same core as a javascript: URL, for locked-down PCs where
+// neither Developer Mode nor a userscript manager is available. One click on
+// each SA4PSO page injects the panel (handoff flags live in sessionStorage,
+// so auto-confirm and printing keep working after a click on the new page).
+mkdirSync(join(root, "bookmarklet"), { recursive: true });
+const bookmarklet = "javascript:" + encodeURIComponent("void " + built);
+writeFileSync(join(root, "bookmarklet/ps-assist.bookmarklet.txt"), bookmarklet);
+
+console.log(`built v${version}: extension/content.js (${built.length} bytes), userscript/ps-assist.user.js, bookmarklet (${Math.round(bookmarklet.length / 1024)} KB)`);

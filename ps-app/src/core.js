@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "1.2.0";
+  const VERSION = "1.3.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -362,6 +362,41 @@
     put(count("lista"), "lista esami", "liste esami");
     put(count("prenotazione"), "prenotazione", "prenotazioni");
     return parts.join(" + ");
+  }
+
+  // ------------------------------------------------------------ REFERTI MODEL
+  // Result rows on the patient page: the sheet icon before the exam name is
+  // <a title="REFERTO" onclick="window.open('…Sa4ViewerExtRedirect.do?…
+  // REFERTO_SISTEMA=HL7LIS|HL7RIS|HL7AMB&REFERTO_ID=<uuid>')">. The same cell
+  // carries hidden inputs DATA_ORD ("YYYY-MM-DD HH:MM:SS.f") and
+  // DESCRIZIONE_TITLE. Archive links (MODALITA=ELENCODOC/…) have no
+  // REFERTO_ID and are ignored. The same exam can have MORE than one referto
+  // (e.g. a TC with two documents): dedupe by REFERTO_ID only.
+  function refertiModel(doc, baseUrl) {
+    const out = [];
+    const seen = new Set();
+    for (const a of doc.querySelectorAll('a[title="REFERTO"]')) {
+      const m = /window\.open\(\s*['"]([^'"]+)['"]/.exec(a.getAttribute("onclick") || "");
+      if (!m) continue;
+      let url;
+      try { url = new URL(m[1], baseUrl).href; } catch { continue; }
+      const id = param(url, "REFERTO_ID");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const td = a.closest("td");
+      const label = (td?.querySelector('input[name="DESCRIZIONE_TITLE"]')?.value ||
+                     td?.getAttribute("title") || td?.textContent || "referto")
+                    .replace(/\s+/g, " ").trim();
+      const dt = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(td?.querySelector('input[name="DATA_ORD"]')?.value || "");
+      out.push({
+        id, url, label,
+        sistema: (param(url, "REFERTO_SISTEMA") || "").replace(/^HL7/, ""),
+        ts: dt ? Date.UTC(+dt[1], dt[2] - 1, +dt[3], +dt[4], +dt[5]) : 0,
+        when: dt ? `${dt[3]}/${dt[2]} ${dt[4]}:${dt[5]}` : "—",
+      });
+    }
+    out.sort((a, b) => b.ts - a.ts || a.label.localeCompare(b.label));
+    return out;
   }
 
   // Fetch a PDF with the same origin/timeout guards as fetchDoc. If the URL
@@ -854,6 +889,23 @@
     .browserow:hover { border-color: #0B5CAD; }
     .commit { position: sticky; bottom: -1px; margin: 0 -12px -12px; padding: 10px 12px 12px; background: #fff;
               border-top: 1px solid #EEF2F6; box-shadow: 0 -10px 14px -12px rgba(9,42,74,.25); }
+    .preload { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: .4px;
+               color: #0B5CAD; background: #EAF2FA; border: 1px solid #9DBFDE; border-radius: 10px; padding: 9px 11px;
+               cursor: pointer; margin-bottom: 7px; }
+    .preload input { accent-color: #0B5CAD; width: 15px; height: 15px; }
+    .preload.busy { color: #5B6B7A; background: #F4F8FB; border-color: #C4D0DC; cursor: progress; }
+    .preload.done { color: #124F31; background: #EDF7F0; border-color: #BCE0C9; cursor: default; }
+    .rlist { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow: auto; }
+    .rrow { display: flex; align-items: center; gap: 8px; border: 1px solid #E3E8EF; background: #fff; border-radius: 8px;
+            padding: 7px 9px; font-size: 12px; cursor: pointer; text-align: left; width: 100%; color: #16232E; }
+    .rrow:hover { border-color: #0B5CAD; background: #F4F8FB; }
+    .rdot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: #C4D0DC; }
+    .rdot.ok { background: #177245; } .rdot.err { background: #B3261E; }
+    .rdot.busy { background: #E5A83B; animation: psaPulse 1s infinite; }
+    .rwhen { flex: 0 0 auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: #35506B; font-variant-numeric: tabular-nums; }
+    .rsys { flex: 0 0 auto; font-size: 9.5px; font-weight: 800; letter-spacing: .5px; color: #5B6B7A; background: #F4F8FB;
+            border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
+    .rlab { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .foot { padding: 8px 12px 10px; border-top: 1px solid #EEF2F6; display: flex; justify-content: space-between; align-items: center; color: #5B6B7A; font-size: 11px; }
     select.res { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 7px 8px; font-size: 12.5px; background: #fff; }
     @keyframes psaSpin { to { transform: rotate(360deg); } }
@@ -898,6 +950,9 @@
       this.collapsed = store.get("collapsed", false);
       this.filter = "";
       this.pickRes = null;
+      this.referti = [];                // patient page: result rows, newest first
+      this.refertiCache = new Map();    // REFERTO_ID -> {status, blobUrl}
+      this.preload = "idle";            // 'idle' | 'running' | 'done'
       this._unload = (e) => { e.preventDefault(); e.returnValue = ""; };
       this._esc = (e) => { if (e.key === "Escape" && this.runState === "running") this.stop(); };
       window.addEventListener("keydown", this._esc, true);
@@ -1165,6 +1220,7 @@
           <div class="tray">${tray}</div>
         </div>
         ${this.viewPrint()}
+        ${this.viewReferti()}
         <details class="reg"><summary>Registro</summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
           ${typeof this.message === "string" && this.message ? `<div class="banner warn">${esc(this.message)}</div>` : ""}
@@ -1199,6 +1255,72 @@
           ${rows}
           <div class="hint">Prima le etichette (etichettatrice), poi la lista (stampante normale), in sequenza.</div>
         </div>`;
+    }
+
+    // Patient page: the patient's result PDFs (esiti), newest first. Nothing
+    // is fetched until the doctor explicitly ticks PRECARICA REFERTI; after
+    // the preload every click opens its PDF instantly from memory.
+    viewReferti() {
+      if (this.pageType !== "patient" || !this.referti.length) return "";
+      const okN = [...this.refertiCache.values()].filter((c) => c.status === "ok").length;
+      const errN = [...this.refertiCache.values()].filter((c) => c.status === "err").length;
+      const control = this.preload === "idle"
+        ? `<label class="preload"><input type="checkbox" id="preloadref"> PRECARICA REFERTI (${this.referti.length})</label>`
+        : this.preload === "running"
+          ? `<label class="preload busy"><input type="checkbox" checked disabled> Carico… ${okN + errN}/${this.referti.length}</label>`
+          : `<label class="preload done"><input type="checkbox" checked disabled> ✓ ${okN} referti pronti${errN ? ` · ${errN} non caricati` : ""}</label>`;
+      const dot = (r) => {
+        const c = this.refertiCache.get(r.id);
+        if (!c) return `<span class="rdot"></span>`;
+        if (c.status === "ok") return `<span class="rdot ok"></span>`;
+        if (c.status === "err") return `<span class="rdot err" title="non caricato: si apre dal server"></span>`;
+        return `<span class="rdot busy"></span>`;
+      };
+      const rows = this.referti.map((r) => `
+        <button class="rrow" data-ref="${esc(r.id)}" title="${esc(r.label)}">
+          ${dot(r)}<span class="rwhen">${esc(r.when)}</span><span class="rsys">${esc(r.sistema)}</span>
+          <span class="rlab">${esc(shortLabel(r.label))}</span>
+        </button>`).join("");
+      return `
+        <div class="sec">
+          <div class="lbl">Referti (${this.referti.length})</div>
+          ${control}
+          <div class="rlist">${rows}</div>
+          <div class="hint">${this.preload === "done" ? "Click su un referto: il PDF si apre all'istante." : "Senza precarica, il click apre il referto dal server come sempre."}</div>
+        </div>`;
+    }
+
+    startRefertiPreload() {
+      if (this.preload !== "idle") return;
+      this.preload = "running";
+      this.render();
+      const queue = [...this.referti];
+      const worker = async () => {
+        for (;;) {
+          const r = queue.shift();
+          if (!r) return;
+          this.refertiCache.set(r.id, { status: "loading" });
+          this.render();
+          try {
+            const { blob } = await fetchPdf(r.url, {});
+            this.refertiCache.set(r.id, { status: "ok", blobUrl: URL.createObjectURL(blob) });
+          } catch (e) {
+            this.refertiCache.set(r.id, { status: "err" });
+            this.log(`${now()}  referto non precaricato (${shortLabel(r.label)}): ${e?.head || e?.message || e}`);
+          }
+          this.render();
+        }
+      };
+      // two gentle parallel workers, then done
+      Promise.all([worker(), worker()]).then(() => { this.preload = "done"; this.render(); });
+    }
+
+    openReferto(id) {
+      const r = this.referti.find((x) => x.id === id);
+      if (!r) return;
+      const c = this.refertiCache.get(id);
+      if (c?.status === "ok" && c.blobUrl) window.open(c.blobUrl, "_blank");
+      else window.open(r.url, "_blank"); // native behavior, like the page's own icon
     }
 
     viewBrowse(cat) {
@@ -1294,6 +1416,8 @@
         const jobs = printJobsFor(printModel(document, location.href), rid);
         if (jobs.length) openPrintWizard(jobs, { title: `Richiesta ${rid}.` });
       }));
+      $("#preloadref")?.addEventListener("change", (e) => { if (e.target.checked) this.startRefertiPreload(); });
+      this.root.querySelectorAll("[data-ref]").forEach((b) => b.addEventListener("click", () => this.openReferto(b.getAttribute("data-ref"))));
     }
 
     // Patch only the commit zone while the doctor types (a full re-render
@@ -1605,6 +1729,7 @@
     const panel = new Panel(pageType);
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
+      panel.referti = refertiModel(document, location.href);
       panel.render();
       maybeAutoPrint();
     }

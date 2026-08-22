@@ -524,6 +524,49 @@ async function scenarioPrintWrapper(browser) {
   await context.close();
 }
 
+async function scenarioRefertiPreload(browser) {
+  const scen = "referti-preload";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+
+  const rows = await page.locator("#psassist-host .rrow").allInnerTexts();
+  check(scen, rows.length === 3, `3 referti listati, il link-archivio senza REFERTO_ID è ignorato (got ${rows.length})`);
+  check(scen, /22\/08 07:45/.test(rows[0]) && /EMOGASANALISI/.test(rows[0]), `ordinati per data/ora: primo = il più recente (got: ${rows[0]?.slice(0, 50)})`);
+  check(scen, /21\/08 22:10/.test(rows[2] || ""), `ultimo = il più vecchio (got: ${rows[2]?.slice(0, 40)})`);
+  check(scen, hits(mock, "Sa4ViewerExtRedirect") === 0, "NESSUN download prima del comando PRECARICA");
+
+  await page.locator("#psassist-host label.preload").click(); // toggles the checkbox; the handler re-renders immediately
+  await page.waitForSelector("#psassist-host .preload.done", { timeout: 15000 });
+  const viewerHits = mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect"));
+  check(scen, viewerHits.length === 3 && new Set(viewerHits.map((q) => q.params.REFERTO_ID)).size === 3,
+    `precarica scarica i 3 PDF una volta ciascuno (got ${viewerHits.length})`);
+
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup", { timeout: 8000 }),
+    page.locator("#psassist-host .rrow").first().click(),
+  ]);
+  check(scen, popup.url().startsWith("blob:"), `click → PDF istantaneo dalla memoria (got ${popup.url().slice(0, 30)}…)`);
+  check(scen, hits(mock, "Sa4ViewerExtRedirect") === 3, "nessuna nuova richiesta al server all'apertura");
+  await context.close();
+}
+
+async function scenarioRefertiNativeFallback(browser) {
+  const scen = "referti-native";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup", { timeout: 8000 }),
+    page.locator("#psassist-host .rrow").first().click(),
+  ]);
+  check(scen, popup.url().includes("Sa4ViewerExtRedirect") && popup.url().includes("bbbb2222"),
+    `senza precarica il click apre il referto dal server, come l'icona nativa (got ${popup.url().slice(-60)})`);
+  await context.close();
+}
+
 async function scenarioStopButton(browser) {
   const scen = "stop";
   const mock = createMock({ lagRenders: { 320: 99 } }); // verify loop gives time to press stop
@@ -571,6 +614,8 @@ const scenarios = [
   ["print auto on labels page", scenarioPrintAutoOnLabels],
   ["print auto on patient return", scenarioPrintAutoOnReturn],
   ["print etichette html wrapper", scenarioPrintWrapper],
+  ["referti preload on command", scenarioRefertiPreload],
+  ["referti native fallback", scenarioRefertiNativeFallback],
   ["stop button", scenarioStopButton],
 ];
 
