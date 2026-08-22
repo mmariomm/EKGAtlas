@@ -1,1 +1,5 @@
 node_modules/
+
+# keep the published download even though the root .gitignore excludes dist/
+!dist/
+!dist/**
