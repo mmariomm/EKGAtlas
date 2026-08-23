@@ -25,8 +25,10 @@ passaggio in più che qui non serve).
 2. Apri `chrome://extensions` (o `edge://extensions`).
 3. Attiva **Modalità sviluppatore** (interruttore in alto a destra).
 4. Premi **Carica estensione non pacchettizzata** e seleziona la cartella `ps-app/extension`.
-5. Apri SA4PSO: il pannello blu **PS Assist** appare in alto a destra sulle pagine di paziente,
-   Nuova Richiesta ed esami. Si **trascina** dove vuoi dall'intestazione (la posizione viene
+5. Apri SA4PSO: il pannello blu appare in alto a destra sulle pagine di paziente, Nuova
+   Richiesta ed esami, **intestato col nome del paziente** su cui stai lavorando (anche da
+   minimizzato, così sai sempre per chi stai ordinando). Sulla **lista del pronto soccorso**,
+   dove non c'è un paziente aperto, il pannello non mostra alcun esame: lì non si può ordinare. Si **trascina** dove vuoi dall'intestazione (la posizione viene
    ricordata; doppio click sull'intestazione per riportarlo in alto a destra).
 
 **Perché "si aggiorna" a ogni pagina?** Il gestionale è un'app anni 2000: OGNI click ricarica
@@ -245,7 +247,7 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-└── test/                ← simulatore SA4PSO + 32 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 34 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -254,7 +256,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 32 scenari e2e (136 verifiche) + 5 verifiche sull'estensione reale
+npm test           # 34 scenari e2e (144 verifiche) + 5 verifiche sull'estensione reale
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

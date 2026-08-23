@@ -314,6 +314,11 @@ export function createMock(opts = {}) {
       </form>${FOOT}`;
   }
 
+  // the ER worklist: no patient open — classified like a patient page (it has
+  // the same shell form) but with nothing that can be ordered
+  const worklistPage = () => `<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><title>PRONTO SOCCORSO - LISTA</title></head><body>
+      <form name="AmbulatorioPSO" method="post" action="menuPsoEpisodio.do?ccsForm=AmbulatorioPSO:Edit&MVPG=PsoLista"></form>
+      <table><tr><td>ROSSI MARIO</td><td>BIANCHI ANNA</td></tr></table></body></html>`;
   const loginPage = () => `${HEAD}<form name="Login" method="post" action="login.do"><input name="username"><input type="password" name="password"><input type="submit" value="Accedi"></form>${FOOT}`;
   const labelsPage = (rid) => `${HEAD}<h1>Stampa etichette LIS</h1><p>richiesta ${rid} confermata</p>
       ${opts.labelsBare ? "" : rowsFor(rid).join("\n")}
@@ -482,11 +487,12 @@ export function createMock(opts = {}) {
       return respond(html);
     }
 
+    if (mvpg === "PsoLista") return respond(worklistPage());
     if (mvpg === "PsoRichiestaCreaRcs") return respond(creaPage(params));
     if (mvpg === "PsoEpisodioClinicoAmbulatorio" || !mvpg) return respond(patientPage());
 
     return respond(notFound("MVPG " + mvpg), 404);
   }
 
-  return { state, handle, ORIGIN, PATH, patientUrl: `${ORIGIN}${PATH}?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${EP()}` };
+  return { state, handle, ORIGIN, PATH, worklistUrl: `${ORIGIN}${PATH}?MVPG=PsoLista`, patientUrl: `${ORIGIN}${PATH}?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${EP()}` };
 }

@@ -806,6 +806,35 @@ async function scenarioReferti(browser) {
   await context.close();
 }
 
+async function scenarioNoPatientPage(browser) {
+  const scen = "no-patient";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.worklistUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  check(scen, (await page.locator("#psassist-host .opt").count()) === 0, "nessun esame sulla pagina PS senza paziente");
+  check(scen, (await page.locator("#psassist-host .chip.preset").count()) === 0, "nessun profilo rapido");
+  check(scen, (await page.locator("#psassist-host #q, #psassist-host #acq, #psassist-host #go").count()) === 0,
+    "niente quesito, ricerca o bottoni di invio");
+  check(scen, /Apri la scheda di un paziente/.test(await $panel(page, ".bd").innerText()), "spiega cosa fare");
+  check(scen, /PRONTO SOCCORSO/.test(await $panel(page, ".hd .who").innerText()), "intestazione senza nome paziente");
+  await context.close();
+}
+
+async function scenarioPatientTitle(browser) {
+  const scen = "patient-title";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  check(scen, (await $panel(page, ".hd .who").innerText()).trim() === "ROSSI MARIO", "il titolo è il nome del paziente");
+  check(scen, /episodio 999001/.test(await $panel(page, ".hd .sub").innerText()), "l'episodio resta accanto");
+  await $panel(page, "#collapse").click();
+  const pill = await $panel(page, ".pill").innerText();
+  check(scen, /ROSSI MARIO/.test(pill) && !/PS Assist/.test(pill), `anche da minimizzato mostra il paziente (got: ${pill.trim()})`);
+  await context.close();
+}
+
 async function scenarioRxSingles(browser) {
   const scen = "rx-singles";
   const mock = createMock({});
@@ -884,6 +913,8 @@ const scenarios = [
   ["continuity + panel confirm button", scenarioContinuity],
   ["referti tabs + reset", scenarioReferti],
   ["rx singles (torace/addome)", scenarioRxSingles],
+  ["no-patient page has no exams", scenarioNoPatientPage],
+  ["panel titled by patient", scenarioPatientTitle],
   ["stop button", scenarioStopButton],
 ];
 

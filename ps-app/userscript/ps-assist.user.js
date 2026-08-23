@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PS Assist — richieste Pronto Soccorso (SA4PSO)
 // @namespace    psassist.multimedica
-// @version      2.1.0
+// @version      2.2.0
 // @description  Crea richieste lab/radiologia, aggiunge gli esami scelti verificando ogni inserimento nel carrello. Conferma sempre come click reale sulla pagina.
 // @match        https://smarthealth.multimedica.it/sa4pso/*
 // @run-at       document-idle
@@ -76,7 +76,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "2.1.0";
+  const VERSION = "2.2.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1054,6 +1054,8 @@
     .hd { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #0B5CAD; color: #fff;
           border-radius: 13px 13px 0 0; position: sticky; top: 0; z-index: 3; cursor: move; user-select: none; touch-action: none; }
     .hd b { font-size: 13.5px; letter-spacing: .2px; }
+    .hd .who { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 250px; }
+    .pill .who { max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .hd .sub { margin-left: auto; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
     .iconbtn { background: transparent; border: 0; color: #fff; cursor: pointer; font-size: 15px; line-height: 1; padding: 4px 6px; border-radius: 6px; }
     .iconbtn:hover { background: rgba(255,255,255,.18); }
@@ -1427,6 +1429,7 @@
     // ("POC: EMOGAS, EMOCROMO · URGENZE: PCT"), an ✕ appears on hover.
     selbarHtml() {
       if (!this.selected.size) return "";
+      if (this.pageType === "patient" && !(this.entry && (this.entry.labUrl || this.entry.radioUrl))) return "";
       const byRes = {};
       for (const i of this.selected.values()) (byRes[i.res] = byRes[i.res] || []).push(i);
       const groups = Object.entries(byRes).map(([r, arr]) => {
@@ -1453,11 +1456,13 @@
       const running = this.runState === "running";
       const total = this.runData?.steps?.length || 0;
       const doneN = this.runData?.steps?.filter((s) => s.status === "ok").length || 0;
+      // The panel is titled by the PATIENT it is acting on — collapsed too.
+      const who = (running && this.runPatient) || patientName || APP;
       const pillInner = running
-        ? `<span class="dot"></span> ${esc(APP)} <span class="badge">${doneN}/${total}</span>`
+        ? `<span class="dot"></span> <span class="who">${esc(who)}</span> <span class="badge">${doneN}/${total}</span>`
         : this.selected.size
-          ? `${LOGO} ${esc(APP)} <span class="badge">${this.selected.size}</span>`
-          : `${LOGO} ${esc(APP)}`;
+          ? `${LOGO} <span class="who">${esc(who)}</span> <span class="badge">${this.selected.size}</span>`
+          : `${LOGO} <span class="who">${esc(who)}</span>`;
 
       // user-dragged position (clamped to the current viewport), else top-right
       let posStyle = "";
@@ -1471,12 +1476,12 @@
         <style>${COLORS}</style>
         <div class="wrap" style="${posStyle}">
           ${this.collapsed ? `
-            <button class="pill" id="expand" title="${esc(APP)} — trascina per spostare">${pillInner}</button>
+            <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}</button>
           ` : `
             <div class="card" role="dialog" aria-label="${esc(APP)}">
               <div class="hd" id="draghd" title="Trascina per spostare · doppio click per riportare in alto a destra">
-                ${LOGO}<b>${esc(APP)}</b>
-                <span class="sub" title="${esc(patientName)} — episodio ${esc(ep || "?")}">${esc(patientName)}${ep ? " · " + esc(ep) : ""}</span>
+                ${LOGO}<b class="who">${esc(who)}</b>
+                <span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${ep ? "episodio " + esc(ep) : esc(APP)}</span>
                 <button class="iconbtn" id="collapse" title="Riduci">—</button>
               </div>
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
@@ -1499,6 +1504,14 @@
 
     viewIdle(patientName, ep) {
       const cat = fullCatalog();
+      // On the ER worklist (no patient open) nothing can be ordered: show no
+      // exams at all rather than a picker that would dead-end.
+      const canOrder = this.pageType === "exam" || this.pageType === "crea" ||
+        (this.pageType === "patient" && !!(this.entry && (this.entry.labUrl || this.entry.radioUrl)));
+      if (!canOrder) {
+        const extra = `${this.viewPrint()}${this.viewReferti()}`;
+        return `${extra}<div class="hint" style="margin:2px 0 0">Apri la scheda di un paziente per creare richieste.</div>`;
+      }
       const quesiti = store.get("quesiti", QUESITI_DEFAULT).slice(0, 8);
       const canOneClick = this.pageType === "patient" || this.pageType === "crea";
 
