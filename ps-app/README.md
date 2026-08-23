@@ -69,97 +69,43 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
 
 ## Uso quotidiano
 
-**Dalla pagina del paziente** (flusso principale):
-1. Scrivi il **quesito diagnostico** — casella su una riga, con i suggerimenti a fianco;
-   l'ultimo che hai usato resta scritto anche cambiando pagina o paziente.
-2. Tocca i **profili rapidi** (Base PS, Epatico, **Coag POC**, **Coag**) oppure gli **esami
-   singoli**, in una **griglia compatta a due colonne raggruppata per laboratorio** (POC /
-   Urgenze / RX) con nomi brevi da reparto. Per tutto il resto c'è la casella **«altri esami…»**:
-   scrivi due lettere e scegli dal menu a tendina (cerca in tutti i laboratori, con l'etichetta
-   di quale). Gli esami scelti restano in vista nella **barra in alto**, **una riga per
-   laboratorio**; passandoci sopra compare la ✕ per toglierli. Lo scroll resta dov'è.
-3. Premi (i due bottoni stanno su una riga):
-   - **Crea e aggiungi N esami** → fa tutto e ti lascia sulla pagina esami con la ricevuta verde
-     e il bottone **«✓ CONFERMA ora → stampa etichette»**: un click e conferma + stampa guidata;
-   - **+ Conferma 🖨** → come sopra ma senza click aggiuntivo: conto alla rovescia di 5 s
-     (annullabile con Esc) e poi conferma e stampa da soli.
+Il pannello ha tre schermate, con **Richieste | Esiti** sempre in cima e il paziente + episodio
+nell'intestazione (anche da minimizzato).
 
-**Laboratorio e radiologia insieme**: il gestionale vuole due richieste separate, ma tu puoi
-selezionarli insieme — il bottone diventa **«Crea 2 richieste»** e il pannello le costruisce una
-dopo l'altra (stesso quesito), poi ti porta a confermarle entrambe: con la conferma automatica
-fa tutto da solo, altrimenti dopo la prima ti avvisa con **«→ Apri e conferma la richiesta di
-radiologia»**. Alla fine parte **una sola** stampa con tutto (etichette → liste → prenotazione RX).
-Se lasci una richiesta non confermata, il promemoria resta in vista per mezz'ora.
+### Pazienti (‹ in alto a sinistra)
+L'elenco dei pazienti su cui hai lavorato nel turno: quello della pagina aperta è primo e marcato
+**QUI**, gli altri con quando li hai visti. Da ogni scheda scegli **Richieste** o **Esiti**.
+Sceglierne un altro **carica la sua pagina**: il pannello non mostra mai i dati di un paziente
+diverso da quello che hai davanti. Il pannello parte da qui solo dove non si può ordinare (la
+lista del pronto soccorso); sulla scheda di un paziente parte direttamente da **Richieste**.
 
-**Radiologia**: l'elenco **RX** è incluso (40 esami) e tra i singoli trovi **RX Torace**,
-**RX Torace 1 proiez.** e **RX Addome**; gli elenchi Eco/RMN/TAC il pannello li **impara da solo**
-la prima volta che apri quella richiesta.
+### Richieste
+1. **Quesito diagnostico** — casella su una riga, suggerimenti a fianco; l'ultimo resta scritto.
+2. **Profili rapidi** (Base PS, Epatico, Coag POC, Coag) o **esami singoli**, griglia compatta a
+   due colonne per laboratorio (POC / Urgenze / RX). Per tutto il resto: **«altri esami…»** con
+   menu a tendina su tutti i laboratori. I selezionati restano in alto, una riga per laboratorio,
+   con la ✕ al passaggio del mouse.
+3. **Crea e aggiungi N esami** → ricevuta + bottone **✓ CONFERMA → stampa**; oppure
+   **+ Conferma 🖨** che fa tutto da solo (5 s annullabili con Esc).
+   Selezionando laboratorio **e** radiologia il bottone diventa **Crea 2 richieste** e il pannello
+   le costruisce e le porta entrambe a conferma, con **una sola** stampa finale.
+4. **Stampa**: ogni richiesta con data, ora e la lista compatta degli esami.
 
-**Sulla pagina esami** il pannello mostra ciò che è già nel carrello e permette di aggiungere altri
-esami (anche cambiando risorsa automaticamente). **STOP** (o tasto `Esc`) interrompe subito.
+### Esiti
+Un unico elenco in ordine di tempo:
+- **LAB ›** — valori che il pannello sa leggere: si aprono **dentro il pannello**, e sotto la riga
+  c'è un'**anteprima di due righe** con gli **anomali per primi** (rosso, ↑↓). Un tocco apre tutti
+  i valori, con **⧉ Copia** per incollarli nel diario e **↻** per rileggerli mentre il laboratorio
+  completa. I valori vengono precaricati in sottofondo, così l'anteprima c'è già.
+- **LIS/RIS/AMB ↗** — referti già emessi (PDF): si aprono in una scheda; con l'estensione puoi
+  **⬇ Salva referti** e da quel momento si aprono all'istante da locale. **↻ Resetta** svuota.
+- **parziale** accanto a una riga = il laboratorio non ha ancora finito.
 
----
-
-## Stampa etichette e lista esami
-
-Dopo la **Conferma** (manuale o automatica) si apre da solo il wizard di stampa, in sequenza,
-raggruppando per stampante:
-
-1. **Tutte le etichette provette** — i PDF dell'icona col codice a barre
-   (`RcsStampaEtichetteLISHMIMU.do`, che porta al PDF servito da
-   `uploaddownloadservlet.rra2`), con la finestra di stampa già aperta → **etichettatrice**;
-2. poi **tutte le liste esami** — i PDF di "Stampa Richiesta" (`jasperservlet`, URL sempre letto
-   dalla pagina perché `BRANCA` cambia per riga) → **stampante normale**;
-3. per la **radiologia**, la riga ha l'icona stampante "Stampa Prenotazione Esterna": il wizard
-   stampa quel PDF → **stampante normale**.
-
-**Righe multiple**: quando gli esami di una richiesta appartengono a laboratori diversi (POC +
-Urgenze, ecc.) il LIS la divide in **più righe** — stessa `RICHIESTA_ID`, `RICHIESTA_PROG` 1, 2… —
-ognuna col suo PDF etichette e il suo foglio. Il wizard le stampa **tutte** ("Etichette — riga 1",
-"Etichette — riga 2", poi le liste), mai solo l'ultima.
-
-Sul campo, dopo la Conferma il gestionale **torna alla pagina del paziente**: è lì che il wizard
-parte da solo (e se un'installazione mostrasse una pagina intermedia, parte lì se ha i link,
-altrimenti aspetta il ritorno sul paziente). Dalla pagina paziente puoi anche **ristampare
-qualsiasi richiesta**
-(sezione **Stampa**: ogni richiesta è elencata con **data e ora** e, sotto, la **lista compatta
-degli esami** che contiene). Ogni passo ha: Riapri stampa · Salta · Apri in una scheda ·
-Annulla (Esc).
-
-**Laboratorio + radiologia insieme**: se confermi una richiesta di laboratorio e poi una di
-radiologia prima di tornare alla pagina del paziente, la stampa parte **una volta sola** e in
-sequenza: tutte le etichette → tutte le liste → la prenotazione RX.
-
-## Risultati di laboratorio (in attesa di referto)
-
-Finché il laboratorio non ha refertato, la pagina paziente mostra l'icona colorata "Visualizza
-Risultati", che aprirebbe una finestrella. Il pannello legge quella stessa pagina
-(`RcsAccessiRisultatiElenco.do`, HTML sullo stesso server) e ti mostra i **valori direttamente
-dentro il pannello**: click sulla riga → si apre l'elenco esame / valore / range, con i valori
-**fuori range in rosso** e la freccia ↑ ↓. I valori restano in memoria per la scheda: riaprirli è
-istantaneo, e **↻** li rilegge dal server man mano che il laboratorio completa.
-
-## Referti — salvataggio e riapertura istantanea
-
-Il pannello elenca i **referti** (LIS / RIS / AMB) **ordinati per data e ora**, i più recenti in
-alto, con lo stato di ciascuno:
-
-- **● salvato** — il PDF è sul questo computer: il click lo apre **all'istante**, senza toccare
-  il server. Premi **⬇ Salva tutti** per scaricarli.
-- **◍ aperto** — ha già la sua scheda: il click ci ritorna, già caricata.
-- **○ da aprire** — click = si apre come con l'icona nativa.
-- **↻ Resetta** svuota i salvataggi e chiude le schede.
-
-Come funziona il salvataggio (solo **estensione**: userscript e bookmarklet non possono farlo): il
-visualizzatore dei referti **non è su SA4PSO**, gira su un altro host interno e mostra il PDF come
-`blob:` di quell'origine, quindi una pagina di SA4PSO non può leggerlo. È il **service worker**
-dell'estensione a seguire la catena (redirect → pagina del visualizzatore → suo endpoint PDF) e a
-salvare i byte nella memoria dell'estensione, su questa macchina. Se un referto non è salvabile
-resta ○ e il **motivo** compare passandoci sopra col mouse (e nel Registro).
-
-> **Da configurare una volta**: l'host del visualizzatore è dichiarato in
-> `extension/manifest.json` → `host_permissions` (oggi `http://10.11.0.151:9080/*`). Se nella tua
-> sede è un altro indirizzo, cambialo lì e ricarica l'estensione.
+> Perché l'anteprima non compare sotto i referti PDF: referto e prelievo sono due cose diverse per
+> il gestionale (un referto per documento, un accesso per prelievo, senza una chiave comune) e un
+> abbinamento "a occhio" per nome ed ora prima o poi metterebbe i valori di un prelievo sotto il
+> documento di un altro. Meglio due righe distinte e oneste che una fusione plausibile ma
+> sbagliata.
 
 ---
 
@@ -207,8 +153,17 @@ essere amministratori:
     Chromium reale, accenti e simboli inclusi).
 11. **Stampe solo dai link della pagina**: gli URL dei PDF non vengono mai costruiti a mano
     (`BRANCA` varia per richiesta) e passano gli stessi controlli di origine di tutto il resto.
-12. **Referti aperti solo su click**, nativamente in una nuova scheda; nessun download
-    automatico e nessuna copia tenuta dall'estensione.
+12. **Un paziente alla volta**: per ordinare devi essere sulla sua pagina, e ogni dato salvato
+    (valori, referti, registro, code di conferma) è legato al suo episodio — letto sotto un altro
+    episodio semplicemente non esiste.
+13. **Niente contenuto clinico nella memoria del browser**: dei pazienti restano solo nome,
+    episodio e indirizzo della pagina, al massimo 8 e per 12 ore, con **svuota** a mano; la
+    pagina di login cancella tutto (nomi, valori, registro, referti salvati). I PDF salvati
+    scadono dopo 8 ore, massimo 25, e si azzerano alla chiusura del browser.
+
+> **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
+> Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
+> davvero condiviso, non usare **⬇ Salva referti** (i PDF resterebbero su disco fino a 8 ore).
 
 ---
 
@@ -271,7 +226,7 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-└── test/                ← simulatore SA4PSO + 38 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 39 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -280,7 +235,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 38 scenari e2e (166 verifiche) + 5 verifiche sull'estensione reale
+npm test           # 39 scenari e2e (169 verifiche) + 5 verifiche sull'estensione reale
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

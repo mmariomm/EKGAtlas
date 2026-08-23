@@ -35,6 +35,9 @@ await ctx.route("https://smarthealth.multimedica.it/**", route);
 const page = await ctx.newPage();
 await page.goto(mock.patientUrl);
 await page.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+// the saved documents live behind the Esiti tab
+await page.locator('#psassist-host [data-seg="esiti"]').click();
+await page.waitForSelector('#psassist-host [data-esito]', { timeout: 10000 });
 
 const saveBtn = page.locator("#psassist-host #refsave");
 check(await saveBtn.count() === 1, "il bottone «Salva tutti» compare solo nell'estensione");
@@ -49,7 +52,7 @@ check(saved === 3, `3 referti salvati dal service worker (got ${saved})`);
 const before = mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect")).length;
 const [popup] = await Promise.all([
   page.waitForEvent("popup", { timeout: 10000 }),
-  page.locator("#psassist-host .rrow").first().click(),
+  page.locator('#psassist-host [data-esito][data-kind="referto"]').first().click(),
 ]);
 check(popup.url().startsWith("blob:"), `il referto salvato si apre da locale (got ${popup.url().slice(0, 22)}…)`);
 check(mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect")).length === before,

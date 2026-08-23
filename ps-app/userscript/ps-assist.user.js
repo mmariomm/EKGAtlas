@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PS Assist — richieste Pronto Soccorso (SA4PSO)
 // @namespace    psassist.multimedica
-// @version      2.5.0
+// @version      3.0.0
 // @description  Crea richieste lab/radiologia, aggiunge gli esami scelti verificando ogni inserimento nel carrello. Conferma sempre come click reale sulla pagina.
 // @match        https://smarthealth.multimedica.it/sa4pso/*
 // @run-at       document-idle
@@ -76,7 +76,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "2.5.0";
+  const VERSION = "3.0.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -649,6 +649,17 @@
     return rows;
   }
 
+  // One chronological list of everything the lab/radiology returned for this
+  // patient: values we can read (risultati) and reported documents (referti).
+  function esitiModel(doc, baseUrl) {
+    const out = [
+      ...risultatiModel(doc, baseUrl).map((r) => ({ ...r, kind: "valori", label: r.exams.join(", ") })),
+      ...refertiModel(doc, baseUrl).map((r) => ({ ...r, kind: "referto" })),
+    ];
+    out.sort((a, b) => b.ts - a.ts);
+    return out;
+  }
+
   async function fetchPdf(url, { signal, hop = 0 } = {}) {
     const target = new URL(url, location.href);
     if (target.origin !== location.origin) {
@@ -779,6 +790,15 @@
     };
   }
 
+  const agoLabel = (ts) => {
+    const min = Math.max(0, Math.round((Date.now() - (ts || 0)) / 60000));
+    if (min < 1) return "adesso";
+    if (min < 60) return `${min} min fa`;
+    const d = new Date(ts || 0);
+    const today = new Date().toDateString() === d.toDateString();
+    return `${today ? "alle" : "ieri"} ${hhmm(ts)}`;
+  };
+  const hhmm = (ts) => { const d = new Date(ts || 0); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
   const shortLabel = (l) => String(l).replace(/\s*\([\w./-]*\)\s*$/, "");
 
   // =============================================================== CATALOG
@@ -803,6 +823,37 @@
     },
     set(key, value) { try { sessionStorage.setItem(NS + key, JSON.stringify(value)); } catch { /* non-fatal */ } },
   };
+
+  // ------------------------------------------------------- KNOWN PATIENTS
+  // The panel remembers the patients worked on during the shift so it can
+  // offer them on its home screen. Deliberately minimal and short-lived:
+  // name + episode + the page URL, at most 8, forgotten after one shift.
+  // Never any clinical content (no exams, no values, no quesito).
+  const PATIENTS_TTL = 12 * 3600e3;
+  const PATIENTS_MAX = 8;
+
+  function knownPatients() {
+    const list = store.get("patients.v1", []);
+    const fresh = Array.isArray(list) ? list.filter((p) => p && p.ep && Date.now() - (p.ts || 0) < PATIENTS_TTL) : [];
+    return fresh.sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, PATIENTS_MAX);
+  }
+  function rememberPatient(ep, name, url) {
+    if (!ep) return;
+    const list = knownPatients().filter((p) => p.ep !== ep);
+    list.unshift({ ep, name: (name || "").trim().slice(0, 60), url: url || "", ts: Date.now() });
+    store.set("patients.v1", list.slice(0, PATIENTS_MAX));
+  }
+  function forgetPatients() { store.set("patients.v1", []); }
+  // end of shift / another user: drop names and every per-episode leftover
+  function forgetAll() {
+    forgetPatients();
+    try {
+      for (const k of Object.keys(sessionStorage)) {
+        if (k.startsWith(NS) && /(^|\.)(ris|log|refopen|receipt|confirm|queue|print|ui|afterNav)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
+      }
+    } catch { /* blocked storage: nothing to clear */ }
+    try { if (typeof chrome !== "undefined" && chrome.runtime?.id) chrome.runtime.sendMessage({ t: "clearRef" }, () => void chrome.runtime.lastError); } catch { /* not the extension build */ }
+  }
 
   function learnedCatalog() { return store.get("catalog.v1", {}); }
   function learnFrom(model) {
@@ -1125,7 +1176,7 @@
     .sec { margin-bottom: 14px; }
     .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #5B6B7A; margin-bottom: 6px; }
     textarea, input[type="text"], input[type="search"] { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 8px 10px; font-size: 13px; color: #16232E; background: #fff; }
-    textarea:focus-visible, input:focus-visible, .chip:focus-visible, .btn:focus-visible, select.res:focus-visible, summary:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    textarea:focus-visible, input:focus-visible, .chip:focus-visible, .pbtn:focus-visible, .seg button:focus-visible, .btn:focus-visible, select.res:focus-visible, summary:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .chip { display: inline-flex; align-items: center; border: 1px solid #C4D0DC; background: #F4F8FB; color: #16232E; border-radius: 999px;
             padding: 6px 12px; font-size: 12.5px; min-height: 28px; cursor: pointer; }
@@ -1255,7 +1306,36 @@
     .rsys { flex: 0 0 auto; font-size: 9.5px; font-weight: 800; letter-spacing: .5px; color: #5B6B7A; background: #F4F8FB;
             border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
     .rlab { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .rgroup { display: flex; flex-direction: column; }
+    .seg { display: flex; margin: 10px 12px 0; border: 1px solid #C4D0DC; border-radius: 10px; overflow: hidden; background: #F4F8FB; }
+    .seg button { flex: 1 1 50%; border: 0; background: transparent; padding: 9px 8px; min-height: 36px;
+                  font-size: 13px; font-weight: 700; color: #35506B; cursor: pointer; }
+    .seg button + button { border-left: 1px solid #C4D0DC; }
+    .seg button.on { background: #0B5CAD; color: #fff; }
+    .seg button:not(.on):hover { background: #EAF2FA; color: #0B5CAD; }
+    .seg .n { margin-left: 4px; font-weight: 800; opacity: .7; font-variant-numeric: tabular-nums; }
+    .rgo { flex: 0 0 auto; color: #8296A9; font-size: 12px; }
+    .egroup, .rgroup { display: flex; flex-direction: column; }
+    .pcard { border: 1px solid #E3E8EF; border-radius: 10px; padding: 9px 10px; margin-bottom: 7px; background: #fff; }
+    .pcard.now { border-color: #9DBFDE; background: #EAF2FA; }
+    .pname { display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; font-weight: 700; margin-bottom: 2px; }
+    .ptag { flex: 0 0 auto; font-size: 9.5px; font-weight: 800; letter-spacing: .4px; color: #0B5CAD; background: #EAF2FA;
+            border: 1px solid #9DBFDE; border-radius: 999px; padding: 1px 7px; text-transform: uppercase; }
+    .pmeta { font-size: 10.5px; color: #5B6B7A; margin-bottom: 7px; font-variant-numeric: tabular-nums; }
+    .pname .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .pacts { display: flex; gap: 6px; }
+    .pbtn { flex: 1 1 0; border: 1px solid #C4D0DC; background: #fff; color: #16232E; border-radius: 8px;
+            padding: 8px 6px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .pbtn:hover { border-color: #0B5CAD; background: #EAF2FA; color: #0B5CAD; }
+    .pcard.now .pbtn { background: #fff; }
+    .eprev { display: block; width: 100%; text-align: left; border: 1px solid #E3E8EF; border-top: 0;
+             border-radius: 0 0 8px 8px; background: #F8FBFE; color: #5B6B7A; cursor: pointer;
+             font-size: 11px; line-height: 1.45; padding: 5px 9px 6px;
+             display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .eprev:hover { background: #EAF2FA; color: #16232E; }
+    .eprev .pn { color: #8296A9; font-weight: 500; }
+    .eprev .pv { color: #35506B; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .eprev .pv.bad, .eprev .pn.bad { color: #B3261E; font-weight: 800; }
+    .rvals.plain { border: 0; background: transparent; padding: 0; }
     .rvals { border: 1px solid #E3E8EF; border-top: 0; border-radius: 0 0 8px 8px; padding: 4px 8px 6px; background: #F8FBFE; }
     .rval { display: flex; gap: 8px; align-items: baseline; font-size: 11.5px; padding: 2px 0; }
     .rval .rvn { flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #35506B; }
@@ -1302,7 +1382,7 @@
     constructor(pageType) {
       this.pageType = pageType;
       this.selected = new Map(); // "res:code" -> {res, code, label}
-      const saved = tabStore.get("log.v1", null);
+      const saved = tabStore.get("log." + (findEpisodeId(document, location.href) || "x"), null);
       this.logLines = saved && Date.now() - (saved.ts || 0) < 2 * 3600e3 ? saved.lines || [] : [];
       this.runState = null; // null | 'running' | 'done' | 'fail' | 'stopped'
       this.runData = null;
@@ -1316,10 +1396,13 @@
       this.acq = "";           // catalog search text
       this.referti = [];                // patient page: result rows, newest first
       this.risultati = [];              // lab values still being reported
+      this.esiti = [];                  // risultati + referti, newest first
       this.pos = store.get("pos", null); // user-dragged panel position {left, top}
       this.size = store.get("size", null); // user-resized panel {w, h}
       this.runPatient = null;           // patient name PINNED when a run starts
       this.episodeId = findEpisodeId(document, location.href);
+      this.view = null;                 // home | richieste | esiti | valori
+      this.viewId = null;               // which esito is open in 'valori'
       // The header must always show the patient this page belongs to: follow
       // any <title> change (the EHR sets it to the patient name).
       const titleEl = document.querySelector("title");
@@ -1332,7 +1415,6 @@
       this._unload = (e) => { e.preventDefault(); e.returnValue = ""; };
       this._esc = (e) => { if (e.key === "Escape" && this.runState === "running") this.stop(); };
       window.addEventListener("keydown", this._esc, true);
-      this.render();
     }
 
     // ---- cross-page continuity -------------------------------------------
@@ -1342,6 +1424,15 @@
     // episode) and restored on the next page of the SAME patient. A page of
     // another episode restores nothing.
     uiKey() { return this.episodeId ? `ui.${this.episodeId}` : null; }
+    // the view is per (tab, episode) like the rest of the working state
+    refKey() { return "refopen." + (this.episodeId || "x"); }
+    risKey(id) { return `ris.${this.episodeId || "x"}.${id}`; }
+    setView(v, id) { this.view = v; this.viewId = id || null; this.persistUi(); this.render(); }
+    // ordering is the 90% action: land there whenever this page can order.
+    defaultView() {
+      if (this.pageType !== "patient") return "richieste";
+      return this.entry && (this.entry.labUrl || this.entry.radioUrl) ? "richieste" : "home";
+    }
     persistUi() {
       const k = this.uiKey();
       if (!k) return;
@@ -1349,19 +1440,31 @@
         q: this._q || "",
         sel: [...this.selected.values()].map((i) => [i.res, i.code, i.label]),
         acq: this.acq || "",
+        view: this.view === "home" ? "richieste" : this.view,
+        viewId: this.viewId,
         ts: Date.now(),
       });
     }
+    applyAfterNav() {
+      const a = tabStore.get("afterNav.v1", null);
+      if (!a || a.ep !== this.episodeId || Date.now() - (a.ts || 0) > 60e3) return;
+      tabStore.set("afterNav.v1", null);
+      this.view = a.view; this.viewId = null; this.persistUi();
+    }
+
     restoreUi() {
       const k = this.uiKey();
       const s = k ? tabStore.get(k, null) : null;
       if (!s || Date.now() - (s.ts || 0) > 6 * 3600e3) {
         this._q = store.get("lastQ", "") || ""; // keep the last quesito typed
+        this.view = this.view || this.defaultView();
         return;
       }
       this._q = s.q || store.get("lastQ", "") || "";
       this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
       this.acq = s.acq || "";
+      this.view = s.view || this.defaultView();
+      this.viewId = s.viewId || null;
     }
     clearOrderUi() { // after a successful run the order is placed: start clean
       this._q = "";
@@ -1420,7 +1523,7 @@
     log(line) {
       this.logLines.push(line);
       if (this.logLines.length > 200) this.logLines.shift();
-      tabStore.set("log.v1", { ts: Date.now(), lines: this.logLines });
+      tabStore.set("log." + (this.episodeId || "x"), { ts: Date.now(), lines: this.logLines });
       const el = this.root.querySelector(".log");
       if (el) { el.textContent = this.logLines.join("\n"); el.scrollTop = el.scrollHeight; }
     }
@@ -1582,7 +1685,10 @@
       let body;
       if (this.runState === "running") body = this.viewRunning();
       else if (this.runState) body = this.viewResult();
-      else body = this.viewIdle(patientName, ep);
+      else if (this.view === "esiti") body = this.viewEsiti();
+      else if (this.view === "valori") body = this.viewValori();
+      else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
+      else body = this.viewHome(patientName, ep);
 
       const running = this.runState === "running";
       const total = this.runData?.steps?.length || 0;
@@ -1595,6 +1701,13 @@
           ? `${LOGO} <span class="who">${esc(who)}</span> <span class="badge">${this.selected.size}</span>`
           : `${LOGO} <span class="who">${esc(who)}</span>`;
 
+      // whose data is on screen must be answerable at a glance, always:
+      // patient in the title, episode always next to the section name.
+      const inHome = !this.runState && this.view === "home";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori" }[this.view] || "";
+      const sub = inHome ? "ultime 12 ore"
+        : section ? `${section}${ep ? " · " + esc(ep) : ""}`
+        : (ep ? "episodio " + esc(ep) : esc(APP));
       // user-resized size (clamped so it always fits the screen)
       let sizeStyle = "";
       if (this.size && this.size.w) {
@@ -1618,11 +1731,16 @@
           ` : `
             <div class="card" role="dialog" aria-label="${esc(APP)}" style="${sizeStyle}">
               <div class="hd" id="draghd" title="Trascina per spostare · doppio click per riportare in alto a destra">
-                ${LOGO}<b class="who">${esc(who)}</b>
-                <span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${ep ? "episodio " + esc(ep) : esc(APP)}</span>
+                ${section ? `<button class="iconbtn" id="back" title="Tutti i pazienti">‹</button>` : LOGO}<b class="who">${esc(inHome ? "Pazienti" : who)}</b>
+                <span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>
                 <button class="iconbtn" id="collapse" title="Riduci">—</button>
               </div>
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
+              ${!this.runState && this.pageType === "patient" && this.entry && (this.entry.labUrl || this.entry.radioUrl) && this.view !== "home" ? `
+                <div class="seg">
+                  <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
+                  <button class="${this.view === "richieste" ? "" : "on"}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>
+                </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
               <div class="bd">${body}</div>
               <div class="rsz" id="rsz" title="Trascina per ridimensionare · doppio click per la misura originale"></div>
@@ -1641,6 +1759,36 @@
       }
     }
 
+    // HOME — the patients this shift. Picking one of the OTHERS navigates to
+    // their page first: the panel never shows data belonging to a patient
+    // other than the page in front of you.
+    viewHome(patientName, ep) {
+      const list = knownPatients();
+      const here = ep ? list.filter((p) => p.ep === ep) : [];
+      const others = list.filter((p) => p.ep !== ep);
+      const canOrder = !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
+      const card = (p, current) => `
+        <div class="pcard ${current ? "now" : ""}">
+          <div class="pname"><span class="nm">${esc(p.name || "paziente")}</span>${current ? `<span class="ptag">qui</span>` : ""}</div>
+          <div class="pmeta">${current ? `episodio ${esc(p.ep)}` : esc(agoLabel(p.ts))}</div>
+          <div class="pacts">
+            <button class="pbtn" data-go="richieste" data-ep="${esc(p.ep)}">Richieste</button>
+            <button class="pbtn" data-go="esiti" data-ep="${esc(p.ep)}">Esiti</button>
+          </div>
+        </div>`;
+      const cards = [
+        ...here.map((p) => card({ ...p, name: patientName || p.name }, true)),
+        ...(here.length ? [] : ep && canOrder ? [card({ ep, name: patientName, ts: Date.now() }, true)] : []),
+        ...others.map((p) => card(p, false)),
+      ].join("");
+      return `
+        <div class="sec">
+          <div class="lbl">Pazienti${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
+          ${cards || `<div class="hint">Nessun paziente ancora. Apri un paziente: resta qui per il turno.</div>`}
+          ${others.length ? `<div class="hint">Aprire un altro paziente ne carica la pagina.</div>` : ""}
+        </div>`;
+    }
+
     viewIdle(patientName, ep) {
       const cat = fullCatalog();
       // On the ER worklist (no patient open) nothing can be ordered: show no
@@ -1648,7 +1796,7 @@
       const canOrder = this.pageType === "exam" || this.pageType === "crea" ||
         (this.pageType === "patient" && !!(this.entry && (this.entry.labUrl || this.entry.radioUrl)));
       if (!canOrder) {
-        const extra = `${this.viewPrint()}${this.viewRisultati()}${this.viewReferti()}`;
+        const extra = this.viewPrint();
         return `${extra}<div class="hint" style="margin:2px 0 0">Apri un paziente per creare richieste.</div>`;
       }
       const quesiti = store.get("quesiti", QUESITI_DEFAULT).slice(0, 8);
@@ -1738,8 +1886,6 @@
           ${this.viewBrowse(cat)}
         </div>
         ${this.viewPrint()}
-        ${this.viewRisultati()}
-        ${this.viewReferti()}
         <details class="reg"><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
           ${typeof this.message === "string" && this.message ? `<div class="banner warn">${esc(this.message)}</div>` : ""}
@@ -1781,110 +1927,82 @@
 
     // Values are fetched once per accesso and kept for the tab, so reopening
     // is instant; ↻ pulls them again while the lab is still completing.
-    viewRisultati() {
-      if (this.pageType !== "patient" || !this.risultati.length) return "";
-      const rows = this.risultati.map((r) => {
-        const open = this.risOpen === r.id;
-        const cache = tabStore.get("ris." + r.id, null);
-        const body = !open ? "" : cache && cache.rows
-          ? `<div class="rvals">${cache.rows.map((v) => {
-              const oo = outOfRange(v.valore, v.range);
-              return `<div class="rval ${oo ? "bad" : ""}"><span class="rvn">${esc(v.nome)}</span><span class="rvv">${esc(v.valore)}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}</span><span class="rvr">${esc(v.range || "")}${v.um ? " " + esc(v.um) : ""}</span></div>`;
-            }).join("")}</div>`
-          : `<div class="rvals"><div class="rval">${this.risBusy === r.id ? "carico…" : "nessun valore"}</div></div>`;
-        return `<div class="rgroup">
-          <button class="rrow ${open ? "saved" : ""}" data-ris="${esc(r.id)}" title="${esc(r.exams.join(", "))}">
-            <span class="rdot ${cache ? "saved" : ""}"></span>
-            <span class="rwhen">${esc(r.when)}</span>
-            <span class="rlab">${esc(r.exams.join(", "))}</span>
-            <span class="rsys">${open ? "▾" : "▸"}</span>
-          </button>${body}</div>`;
-      }).join("");
-      return `<div class="sec"><div class="lbl">Risultati (${this.risultati.length})
-          ${this.risOpen ? `<button class="mini" id="risreload">↻</button>` : ""}</div>
-        <div class="rlist">${rows}</div></div>`;
-    }
-
-    async openRisultati(id, force) {
-      if (this.risOpen === id && !force) { this.risOpen = null; this.render(); return; }
-      this.risOpen = id;
-      const key = "ris." + id;
-      if (!force && tabStore.get(key, null)) { this.render(); return; }
-      const r = this.risultati.find((x) => x.id === id);
-      if (!r) return;
-      this.risBusy = id;
-      this.render();
-      try {
-        const { doc } = await fetchDoc(r.url, {});
-        tabStore.set(key, { ts: Date.now(), rows: parseRisultati(doc) });
-      } catch (e) {
-        this.log(`${now()}  risultati non letti: ${e?.head || e?.message || e}`);
-      }
-      this.risBusy = null;
-      this.render();
-    }
-
-    viewReferti() {
-      if (this.pageType !== "patient" || !this.referti.length) return "";
-      // Two ways to make re-opening instant:
-      //  • saved: the extension holds the PDF, so it opens from this machine;
-      //  • aperto: it already has its own tab, we just bring it back.
-      const open = new Set(tabStore.get("refopen", []));
+    // ESITI — one chronological list: values we can read, and reported PDFs.
+    // Row = open it (values expand / PDF opens). The 2-line preview under a
+    // saved row is its own target: it opens the full values screen.
+    viewEsiti() {
+      if (!this.esiti.length) return `<div class="hint">Nessun esito per questo paziente.</div>`;
+      const open = new Set(tabStore.get(this.refKey(), []));
       const cached = this.refCache || {};
       const busy = this.refBusy || {};
-      const nSaved = this.referti.filter((r) => cached[r.id]).length;
-      const rows = this.referti.map((r) => {
-        const st = cached[r.id] ? "saved" : busy[r.id] === true ? "busy" : open.has(r.id) ? "open" : "";
-        const why = typeof busy[r.id] === "string" ? busy[r.id] : "";
-        return `<button class="rrow ${st}" data-ref="${esc(r.id)}" title="${esc(r.label)}${why ? " — non salvabile: " + esc(why) : ""}">
-          <span class="rdot ${esc(st)}"></span>
-          <span class="rwhen">${esc(r.when)}</span><span class="rsys">${esc(r.sistema)}</span>
-          <span class="rlab">${esc(shortLabel(r.label))}</span>
-        </button>`;
+      const rows = this.esiti.map((e) => {
+        const vals = e.kind === "valori" ? tabStore.get(this.risKey(e.id), null) : null;
+        const state = e.kind === "valori"
+          ? (vals ? "saved" : busy[e.id] === true ? "busy" : "")
+          : (cached[e.id] ? "saved" : busy[e.id] === true ? "busy" : open.has(e.id) ? "open" : "");
+        const why = typeof busy[e.id] === "string" ? busy[e.id] : "";
+        const preview = vals && vals.rows && vals.rows.length
+          ? `<button class="eprev" data-vals="${esc(e.id)}" title="Vedi tutti i valori">${
+              [...vals.rows]
+                .sort((a, b) => (outOfRange(b.valore, b.range) ? 1 : 0) - (outOfRange(a.valore, a.range) ? 1 : 0))
+                .slice(0, 10)
+                .map((v) => {
+                  const oo = outOfRange(v.valore, v.range);
+                  return `<span class="pn${oo ? " bad" : ""}">${esc(v.nome)}</span> <span class="pv${oo ? " bad" : ""}">${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>`;
+                }).join(" · ")}</button>`
+          : "";
+        return `<div class="egroup">
+          <button class="rrow ${esc(state)}" data-esito="${esc(e.id)}" data-kind="${esc(e.kind)}" title="${esc(e.label)}${why ? " — " + esc(why) : ""}">
+            <span class="rdot ${esc(state)}"></span>
+            <span class="rwhen">${esc(e.when)}</span>
+            <span class="rsys">${esc(e.kind === "valori" ? "LAB" : e.sistema)}</span>
+            <span class="rlab">${esc(shortLabel(e.label))}</span>
+            ${vals && vals.rows && vals.rows.some((v) => /parz/i.test(v.stato || "")) ? `<span class="rsys">parziale</span>` : ""}
+            <span class="rgo">${e.kind === "valori" ? "›" : "↗"}</span>
+          </button>${preview}</div>`;
       }).join("");
-      const canSave = hasExt();
+      const nRef = this.esiti.filter((e) => e.kind === "referto").length;
+      const nSaved = this.esiti.filter((e) => e.kind === "referto" && cached[e.id]).length;
       return `
         <div class="sec">
-          <div class="lbl">Referti (${this.referti.length}) — dal più recente
-            ${canSave && nSaved < this.referti.length ? `<button class="mini" id="refsave">⬇ Salva tutti</button>` : ""}
-            ${(nSaved || open.size) ? `<button class="mini" id="refreset" title="Svuota i salvataggi e chiude le schede">↻ Resetta</button>` : ""}
+          <div class="lbl">Esiti (${this.esiti.length})
+            ${hasExt() && nSaved < nRef ? `<button class="mini" id="refsave">⬇ Salva referti</button>` : ""}
+            ${(nSaved || open.size) ? `<button class="mini" id="refreset">↻ Resetta</button>` : ""}
           </div>
           <div class="rlist">${rows}</div>
-          ${nSaved ? `<div class="hint">${nSaved}/${this.referti.length} salvati</div>` : ""}
         </div>`;
     }
 
     async refreshRefCache() {
-      if (!hasExt() || !this.referti.length) return;
-      const r = await ask({ t: "listRef", ids: this.referti.map((x) => x.id) });
+      if (!hasExt() || !this.esiti.length) return;
+      const r = await ask({ t: "listRef", ep: this.episodeId, ids: this.esiti.filter((e) => e.kind === "referto").map((e) => e.id) });
       if (r && r.ok) { this.refCache = r.cached || {}; this.render(); }
     }
 
     async saveAllReferti() {
       if (!hasExt()) return;
       this.refBusy = this.refBusy || {};
-      const todo = this.referti.filter((r) => !(this.refCache || {})[r.id]);
-      for (const r of todo) { this.refBusy[r.id] = true; }
+      const todo = this.esiti.filter((e) => e.kind === "referto" && !(this.refCache || {})[e.id]);
+      for (const e of todo) this.refBusy[e.id] = true;
       this.render();
-      for (const r of todo) {
-        const res = await ask({ t: "cacheRef", id: r.id, url: r.url });
+      for (const e of todo) {
+        const res = await ask({ t: "cacheRef", id: e.id, url: e.url, ep: this.episodeId });
         if (res && res.ok) {
-          this.refCache = { ...(this.refCache || {}), [r.id]: res.size || 1 };
-          this.refBusy[r.id] = false;
+          this.refCache = { ...(this.refCache || {}), [e.id]: res.size || 1 };
+          this.refBusy[e.id] = false;
         } else {
-          this.refBusy[r.id] = (res && res.why) || "non riuscito";
-          this.log(`${now()}  referto non salvato (${shortLabel(r.label)}): ${this.refBusy[r.id]}`);
+          this.refBusy[e.id] = (res && res.why) || "non riuscito";
+          this.log(`${now()}  referto non salvato (${shortLabel(e.label)}): ${this.refBusy[e.id]}`);
         }
         this.render();
       }
     }
 
     async openReferto(id) {
-      const r = this.referti.find((x) => x.id === id);
+      const r = this.esiti.find((x) => x.id === id);
       if (!r) return;
-      // saved copy → opens immediately, no server round trip
-      if ((this.refCache || {})[id] && hasExt()) {
-        const got = await ask({ t: "getRef", id });
+      if ((this.refCache || {})[id] && hasExt()) {          // saved copy → instant, no server
+        const got = await ask({ t: "getRef", id, ep: this.episodeId });
         if (got && got.ok && got.data) {
           const bin = atob(got.data);
           const arr = new Uint8Array(bin.length);
@@ -1895,32 +2013,128 @@
           return;
         }
       }
-      // otherwise: its own named tab — a second click brings it back loaded
-      const name = "psaRef_" + String(id).replace(/\W/g, "");
+      const name = "psaRef_" + String(id).replace(/\W/g, ""); // else its own tab, reused on re-click
       const w = window.open("", name);
-      if (!w) { this.message = "Consenti i popup per aprire i referti in una scheda."; this.render(); return; }
+      if (!w) { this.message = "Consenti i popup per aprire i referti."; this.render(); return; }
       let blank = true;
       try { blank = !w.location.href || w.location.href === "about:blank"; } catch { blank = false; }
       if (blank) w.location.href = r.url;
       try { w.focus(); } catch { /* ignore */ }
-      const open = new Set(tabStore.get("refopen", []));
+      const open = new Set(tabStore.get(this.refKey(), []));
       open.add(id);
-      tabStore.set("refopen", [...open]);
+      tabStore.set(this.refKey(), [...open]);
       this.render();
     }
 
     async resetReferti() {
-      for (const id of tabStore.get("refopen", [])) {
+      for (const id of tabStore.get(this.refKey(), [])) {
         try { window.open("", "psaRef_" + String(id).replace(/\W/g, ""))?.close(); } catch { /* ignore */ }
       }
-      tabStore.set("refopen", []);
+      tabStore.set(this.refKey(), []);
       if (hasExt()) await ask({ t: "clearRef" });
       this.refCache = {}; this.refBusy = {};
       this.render();
     }
 
-    // One compact search box across the WHOLE catalog: type a few letters and
-    // pick from the dropdown. Replaces the old resource-picker + long list.
+    // Copy the log for reporting. The quesito is the only clinical text that
+    // can end up in it, so it is masked out before leaving the page.
+    async copyLog() {
+      const head = [`PS Assist ${VERSION} · pagina ${this.pageType}`, `${navigator.userAgent}`, `${new Date().toLocaleString("it-IT")}`, ""].join("\n");
+      const text = head + this.logLines.join("\n").replace(/(quesito[^:]*:\s*)"[^"]*"/gi, '$1"…"');
+      let ok = false;
+      try { await navigator.clipboard.writeText(text); ok = true; } catch { /* fallback below */ }
+      if (!ok) {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.cssText = "position:fixed;left:-9999px;top:0";
+        document.body.appendChild(ta);
+        ta.select();
+        try { ok = document.execCommand("copy"); } catch { ok = false; }
+        ta.remove();
+      }
+      const b = this.root.querySelector("#copylog");
+      if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
+    }
+
+    // full values of one accesso, inside the panel
+    viewValori() {
+      const e = this.esiti.find((x) => x.id === this.viewId);
+      const vals = e ? tabStore.get(this.risKey(e.id), null) : null;
+      if (!e) return `<div class="hint">Esito non disponibile.</div>`;
+      const body = vals && vals.rows && vals.rows.length
+        ? vals.rows.map((v) => {
+            const oo = outOfRange(v.valore, v.range);
+            return `<div class="rval ${oo ? "bad" : ""}"><span class="rvn">${esc(v.nome)}</span><span class="rvv">${esc(v.valore)}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}</span><span class="rvr">${esc(v.range || "")}${v.um ? " " + esc(v.um) : ""}</span></div>`;
+          }).join("")
+        : `<div class="rval">${this.risBusy === e.id ? "carico…" : "nessun valore"}</div>`;
+      return `
+        <div class="sec">
+          <div class="lbl">${esc(e.when)} · ${esc(shortLabel(e.label))}
+            <button class="mini" id="copyvals">⧉ Copia</button><button class="mini" id="risreload">↻</button></div>
+          <div class="rvals plain">${body}</div>
+        </div>`;
+    }
+
+    async openEsito(id, kind) {
+      if (kind === "referto") return this.openReferto(id);
+      // values: fetch once, then straight to the full screen
+      const key = this.risKey(id);
+      if (!tabStore.get(key, null)) {
+        const e = this.esiti.find((x) => x.id === id);
+        if (!e) return;
+        this.risBusy = id;
+        this.render();
+        try {
+          const { doc } = await fetchDoc(e.url, {});
+          tabStore.set(key, { ts: Date.now(), rows: parseRisultati(doc) });
+        } catch (err) {
+          this.log(`${now()}  valori non letti: ${err?.head || err?.message || err}`);
+        }
+        this.risBusy = null;
+      }
+      this.setView("valori", id);
+    }
+
+    // Values ready before he asks: the 2-line preview is the point of Esiti.
+    async prefetchValori() {
+      const todo = this.esiti.filter((e) => e.kind === "valori" && !tabStore.get(this.risKey(e.id), null)).slice(0, 6);
+      for (const e of todo) {
+        try {
+          const { doc } = await fetchDoc(e.url, {});
+          tabStore.set(this.risKey(e.id), { ts: Date.now(), rows: parseRisultati(doc) });
+          this.render();
+        } catch { /* stays without preview; opening it will retry */ }
+        await sleep(PACE_MS).catch(() => {});
+      }
+    }
+
+    async copyValori() {
+      const e = this.esiti.find((x) => x.id === this.viewId);
+      const vals = e ? tabStore.get(this.risKey(e.id), null) : null;
+      if (!vals || !vals.rows) return;
+      const text = vals.rows.map((v) => {
+        const oo = outOfRange(v.valore, v.range);
+        return `${v.nome} ${v.valore}${v.um ? " " + v.um : ""}${v.range ? ` (${v.range})` : ""}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}`;
+      }).join("\n");
+      let ok = false;
+      try { await navigator.clipboard.writeText(text); ok = true; } catch { /* below */ }
+      const b = this.root.querySelector("#copyvals");
+      if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
+    }
+
+    async reloadValori() {
+      const e = this.esiti.find((x) => x.id === this.viewId);
+      if (!e) return;
+      this.risBusy = e.id;
+      this.render();
+      try {
+        const { doc } = await fetchDoc(e.url, {});
+        tabStore.set(this.risKey(e.id), { ts: Date.now(), rows: parseRisultati(doc) });
+      } catch (err) { this.log(`${now()}  valori non letti: ${err?.head || err?.message || err}`); }
+      this.risBusy = null;
+      this.render();
+    }
+
     viewBrowse(cat) {
       const q = (this.acq || "").trim().toUpperCase();
       let drop = "";
@@ -2065,6 +2279,17 @@
         if (u) location.href = u;
       });
 
+      $("#back")?.addEventListener("click", () => this.setView(this.view === "valori" ? "esiti" : "home"));
+      this.root.querySelectorAll("[data-seg]").forEach((b) => b.addEventListener("click", () => this.setView(b.getAttribute("data-seg"))));
+      $("#forget")?.addEventListener("click", () => { forgetPatients(); this.render(); });
+      this.root.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => {
+        const ep = b.getAttribute("data-ep"), go = b.getAttribute("data-go");
+        if (ep === this.episodeId) return this.setView(go);
+        const p = knownPatients().find((x) => x.ep === ep);
+        if (!p || !p.url) return;
+        tabStore.set("afterNav.v1", { ep, view: go, ts: Date.now() }); // open there, on their page
+        location.href = p.url;
+      }));
       $("#goqueued")?.addEventListener("click", () => { if (this.pending) goToQueued(this.pending); });
       $("#confirmnow")?.addEventListener("click", () => {
         // native click → server confirm → print handoff (armed at boot)
@@ -2103,9 +2328,13 @@
         const jobs = printJobsFor(printModel(document, location.href), rid);
         if (jobs.length) openPrintWizard(jobs, { panel: this, title: `Richiesta ${rid}.` });
       }));
-      this.root.querySelectorAll("[data-ris]").forEach((b) => b.addEventListener("click", () => this.openRisultati(b.getAttribute("data-ris"))));
-      $("#risreload")?.addEventListener("click", () => this.openRisultati(this.risOpen, true));
-      this.root.querySelectorAll("[data-ref]").forEach((b) => b.addEventListener("click", () => this.openReferto(b.getAttribute("data-ref"))));
+      this.root.querySelectorAll("[data-esito]").forEach((b) => b.addEventListener("click", () =>
+        this.openEsito(b.getAttribute("data-esito"), b.getAttribute("data-kind"))));
+      this.root.querySelectorAll("[data-vals]").forEach((b) => b.addEventListener("click", (e) => {
+        e.stopPropagation(); this.setView("valori", b.getAttribute("data-vals"));
+      }));
+      $("#risreload")?.addEventListener("click", () => this.reloadValori());
+      $("#copyvals")?.addEventListener("click", () => this.copyValori());
       $("#refreset")?.addEventListener("click", () => this.resetReferti());
       $("#refsave")?.addEventListener("click", () => this.saveAllReferti());
       $("#copylog")?.addEventListener("click", (e) => { e.preventDefault(); this.copyLog(); });
@@ -2425,7 +2654,7 @@
     const q = tabStore.get("queue.v1", null);
     if (!q || !q.items || !q.items.length) return null;
     if (Date.now() - (q.ts || 0) > QUEUE_TTL) { tabStore.set("queue.v1", null); return null; }
-    if (q.episodeId && episodeId && q.episodeId !== episodeId) return null;
+    if (!episodeId || (q.episodeId && q.episodeId !== episodeId)) return null; // fail closed
     return { q, next: q.items[0] };
   }
 
@@ -2442,6 +2671,9 @@
   function maybeAutoPrint(panel) {
     const flag = tabStore.get("print.v1", null);
     if (!flag) return false;
+    // never print for an episode other than the page in front of the user
+    const here = findEpisodeId(document, location.href);
+    if (!here || (flag.episodeId && flag.episodeId !== here)) return false;
     if (Date.now() - (flag.ts || 0) > PRINT_FLAG_TTL) { tabStore.set("print.v1", null); return false; }
     const map = printModel(document, location.href);
     const ids = (flag.ids || [flag.richiestaId]).filter((id) => map[id]);
@@ -2463,7 +2695,7 @@
   function boot() {
     if (document.getElementById("psassist-host")) return;
     const pageType = classify(document);
-    if (pageType === "login") return;
+    if (pageType === "login") { forgetAll(); return; }
     if (pageType === "other") {
       // e.g. the post-confirm label page: no panel, but a pending print
       // handoff starts here when the page lists the richiesta's print links.
@@ -2471,15 +2703,25 @@
       return;
     }
     const panel = new Panel(pageType);
-    panel.restoreUi(); // same tab + same episode → quesito/selezione/sezioni tornano come prima
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
-      panel.referti = refertiModel(document, location.href);
-      panel.risultati = risultatiModel(document, location.href);
+      panel.esiti = esitiModel(document, location.href);
+    }
+    panel.restoreUi(); // same tab + same episode → quesito/selezione/vista tornano come prima
+    panel.render();
+    if (pageType === "patient") {
+      // this patient is now one the panel knows (name + episode + page only)
+      // only a page that can actually order is a patient: the ER worklist
+      // classifies the same way but its episode belongs to someone in the list
+      if (panel.entry && (panel.entry.labUrl || panel.entry.radioUrl)) {
+        rememberPatient(panel.episodeId, (document.title || "").trim(), location.href);
+      }
+      panel.applyAfterNav();
       const pending = nextQueued(findEpisodeId(document, location.href));
       panel.pending = pending; // a richiesta of this run still needs confirming
       panel.render();
       panel.refreshRefCache();
+      panel.prefetchValori();
       if (pending) {
         // auto-continue once per richiesta; afterwards it is a button, so an
         // abandoned confirmation can never turn into a navigation loop

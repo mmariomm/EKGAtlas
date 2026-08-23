@@ -71,6 +71,20 @@ const b64 = (buf) => {
 };
 
 const KEY = (id) => "ref:" + id;
+const REF_TTL = 8 * 3600e3;   // a shift: cached documents die with it
+const REF_MAX = 25;           // and never pile up
+
+async function prune() {
+  const all = await chrome.storage.local.get(null);
+  const refs = Object.entries(all).filter(([k]) => k.startsWith("ref:"));
+  const dead = refs.filter(([, v]) => Date.now() - (v.ts || 0) > REF_TTL).map(([k]) => k);
+  const alive = refs.filter(([, v]) => Date.now() - (v.ts || 0) <= REF_TTL)
+    .sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
+  const extra = alive.slice(REF_MAX).map(([k]) => k);
+  if (dead.length || extra.length) await chrome.storage.local.remove([...dead, ...extra]);
+}
+chrome.runtime.onStartup?.addListener(() => chrome.storage.local.get(null).then((all) =>
+  chrome.storage.local.remove(Object.keys(all).filter((k) => k.startsWith("ref:")))));
 
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg === "psassist-reload") { chrome.runtime.reload(); return; }
@@ -81,7 +95,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       .then(async (r) => {
         if (!r.ok) return reply(r);
         const data = b64(r.buf);
-        await chrome.storage.local.set({ [KEY(msg.id)]: { data, ts: Date.now(), size: r.buf.byteLength } });
+        await chrome.storage.local.set({ [KEY(msg.id)]: { data, ts: Date.now(), size: r.buf.byteLength, ep: msg.ep || "" } });
+        await prune();
         reply({ ok: true, size: r.buf.byteLength });
       })
       .catch((e) => reply({ ok: false, why: String(e && e.message || e).slice(0, 60) }));
@@ -89,17 +104,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   }
 
   if (msg.t === "getRef") {
-    chrome.storage.local.get(KEY(msg.id)).then((o) => {
+    chrome.storage.local.get(KEY(msg.id)).then(async (o) => {
       const hit = o[KEY(msg.id)];
-      reply(hit ? { ok: true, data: hit.data } : { ok: false });
+      // a document is only handed back for the episode it was saved under
+      if (!hit || (msg.ep && hit.ep && hit.ep !== msg.ep)) return reply({ ok: false });
+      if (Date.now() - (hit.ts || 0) > REF_TTL) { await chrome.storage.local.remove(KEY(msg.id)); return reply({ ok: false }); }
+      reply({ ok: true, data: hit.data });
     });
     return true;
   }
 
   if (msg.t === "listRef") {
-    chrome.storage.local.get(null).then((all) => {
+    prune().then(() => chrome.storage.local.get(null)).then((all) => {
+      const want = Array.isArray(msg.ids) ? new Set(msg.ids) : null;
       const out = {};
-      for (const k of Object.keys(all)) if (k.startsWith("ref:")) out[k.slice(4)] = all[k].size || 1;
+      for (const k of Object.keys(all)) {
+        if (!k.startsWith("ref:")) continue;
+        const id = k.slice(4), rec = all[k];
+        if (want && !want.has(id)) continue;                    // only what was asked for
+        if (msg.ep && rec.ep && rec.ep !== msg.ep) continue;     // and only this episode
+        out[id] = rec.size || 1;
+      }
       reply({ ok: true, cached: out });
     });
     return true;

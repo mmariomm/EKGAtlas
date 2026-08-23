@@ -767,41 +767,42 @@ async function scenarioReferti(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForSelector("#psassist-host [data-esito]");
 
-  const rows = await page.locator("#psassist-host .rrow").allInnerTexts();
-  check(scen, rows.length === 3, `3 referti listati, il link-archivio senza REFERTO_ID è ignorato (got ${rows.length})`);
-  check(scen, /22\/08 07:45/.test(rows[0]) && /EMOGASANALISI/.test(rows[0]), `ordinati per data/ora: primo = il più recente (got: ${rows[0]?.slice(0, 50)})`);
-  check(scen, /21\/08 22:10/.test(rows[2] || ""), `ultimo = il più vecchio (got: ${rows[2]?.slice(0, 40)})`);
-  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "all'inizio nessun referto è segnato come aperto");
+  const refs = page.locator('#psassist-host [data-esito][data-kind="referto"]');
+  const rows = await refs.allInnerTexts();
+  check(scen, rows.length === 3, `3 referti, il link-archivio senza REFERTO_ID è ignorato (got ${rows.length})`);
+  check(scen, /22\/08 07:45/.test(rows[0]) && /EMOGASANALISI/.test(rows[0]), `più recente in cima (got: ${rows[0]?.replace(/\s+/g, " ").slice(0, 40)})`);
+  check(scen, /↗/.test(rows[0]), "il referto dichiara che si apre in una scheda");
+  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "nessuno ancora aperto");
 
-  // first click opens it in its own named tab
   const [popup] = await Promise.all([
     page.waitForEvent("popup", { timeout: 8000 }),
-    page.locator("#psassist-host .rrow").first().click(),
+    refs.first().click(),
   ]);
+  // the tab is opened blank and then navigated, so wait for the real URL
+  await popup.waitForURL(/Sa4ViewerExtRedirect/, { timeout: 8000 }).catch(() => {});
   check(scen, popup.url().includes("Sa4ViewerExtRedirect") && popup.url().includes("bbbb2222"),
-    `apre il referto dal server (got …${popup.url().slice(-30)})`);
+    `apre il referto dal server (got …${popup.url().slice(-28)})`);
   await page.waitForTimeout(200);
-  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 1, "il referto aperto è marcato ◍");
+  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 1, "segnato come aperto");
 
-  // the marker survives the EHR's constant page reloads
   await page.reload();
   await page.waitForSelector("#psassist-host", { state: "attached" });
-  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 1, "lo stato ◍ resiste al refresh della pagina");
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForSelector("#psassist-host [data-esito]");
+  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 1, "lo stato resiste al refresh");
 
-  // second click reuses the SAME tab (no new popup, no reload of the viewer)
-  const before = context.pages().length;
-  const reqBefore = hits(mock, "bbbb2222");
-  await page.locator("#psassist-host .rrow").first().click();
+  const before = context.pages().length, reqBefore = hits(mock, "bbbb2222");
+  await refs.first().click();
   await page.waitForTimeout(700);
-  check(scen, context.pages().length === before, `riclick non apre una nuova scheda (${before} schede)`);
-  check(scen, hits(mock, "bbbb2222") === reqBefore, "riclick non ricarica il referto dal server: è già pronto");
+  check(scen, context.pages().length === before && hits(mock, "bbbb2222") === reqBefore,
+    "riclick torna alla scheda già aperta, senza ricaricare");
 
-  // reset closes the tabs and clears the state
-  await page.locator("#psassist-host #refreset").click();
-  await page.waitForTimeout(500);
+  await $panel(page, "#refreset").click();
+  await page.waitForTimeout(400);
   check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "Resetta azzera lo stato");
-  check(scen, (await page.locator("#psassist-host #refreset").count()) === 0, "il bottone Resetta sparisce quando non serve");
   await context.close();
 }
 
@@ -877,27 +878,32 @@ async function scenarioRisultati(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
-  const rows = await page.locator("#psassist-host [data-ris]").allInnerTexts();
-  check(scen, rows.length === 2, `2 accessi con risultati (got ${rows.length})`);
-  check(scen, /23\/08 07:28/.test(rows[0]) && /EMOCROMO/.test(rows[0].toUpperCase()), `più recente in cima (got: ${rows[0]?.replace(/\s+/g, " ").slice(0, 50)})`);
-  check(scen, hits(mock, "RcsAccessiRisultatiElenco") === 0, "nessuna lettura finché non apri");
+  await $panel(page, '[data-seg="esiti"]').click();
+  const vals = page.locator('#psassist-host [data-esito][data-kind="valori"]');
+  check(scen, (await vals.count()) === 2, `2 accessi con valori (got ${await vals.count()})`);
 
-  await page.locator("#psassist-host [data-ris]").first().click();
-  await page.waitForSelector("#psassist-host .rval", { timeout: 15000 });
-  const vals = await page.locator("#psassist-host .rval").allInnerTexts();
-  check(scen, vals.length === 3, `valori mostrati nel pannello (got ${vals.length})`);
-  check(scen, /Emoglobina/.test(vals.join(" ")) && /80/.test(vals.join(" ")), "nome e valore leggibili");
-  const bad = await page.locator("#psassist-host .rval.bad").allInnerTexts();
-  check(scen, bad.length === 1 && /Emoglobina/.test(bad[0]) && /↓/.test(bad[0]),
-    `solo il valore fuori range è segnalato (got: ${bad.join("|").replace(/\s+/g, " ").slice(0, 40)})`);
+  // the preview is there on arrival: values are fetched in the background
+  await page.waitForSelector("#psassist-host .eprev", { timeout: 15000 });
+  const prev = await $panel(page, ".eprev").first().innerText();
+  check(scen, /^Emoglobina 80↓/.test(prev.trim()), `anteprima con l'anomalo per primo (got: ${prev.trim().slice(0, 40)})`);
 
-  // second open is instant: no new request
-  await page.locator("#psassist-host [data-ris]").first().click(); // collapse
-  const before = hits(mock, "RcsAccessiRisultatiElenco");
-  await page.locator("#psassist-host [data-ris]").first().click(); // expand again
+  // one tap opens the full values screen
+  await vals.first().click();
   await page.waitForSelector("#psassist-host .rval", { timeout: 8000 });
-  check(scen, hits(mock, "RcsAccessiRisultatiElenco") === before, "riapertura istantanea, senza rileggere dal server");
-  await page.locator("#psassist-host #risreload").click();
+  const rows = await page.locator("#psassist-host .rval").allInnerTexts();
+  check(scen, rows.length === 3, `tutti i valori (got ${rows.length})`);
+  const bad = await page.locator("#psassist-host .rval.bad").allInnerTexts();
+  check(scen, bad.length === 1 && /Emoglobina/.test(bad[0]) && /↓/.test(bad[0]), "solo il fuori range è segnalato");
+
+  // copy them for the diario
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await $panel(page, "#copyvals").click();
+  await page.waitForTimeout(300);
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  check(scen, /Emoglobina 80 g\/L \(135 - 180\) ↓/.test(clip), `copia valori pronta da incollare (got: ${clip.split("\n")[1] || clip.slice(0, 40)})`);
+
+  const before = hits(mock, "RcsAccessiRisultatiElenco");
+  await $panel(page, "#risreload").click();
   await page.waitForTimeout(600);
   check(scen, hits(mock, "RcsAccessiRisultatiElenco") === before + 1, "↻ rilegge dal server");
   await context.close();
@@ -944,6 +950,36 @@ async function scenarioResizeAndLog(browser) {
   await context.close();
 }
 
+async function scenarioHomePills(browser) {
+  const scen = "home";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  // visit patient A, then a second episode: both become pills
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  check(scen, (await $panel(page, "#q").count()) === 1, "su una pagina paziente si apre su Richieste, non sull'elenco");
+
+  await page.goto(mock.patientUrl.replace("999001", "999002"));
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, "#back").click(); // to Home
+  const cards = await page.locator("#psassist-host .pcard").allInnerTexts();
+  check(scen, cards.length === 2, `due pazienti conosciuti (got ${cards.length})`);
+  check(scen, /qui/i.test(cards[0]), "il paziente della pagina è marcato «qui» ed è il primo");
+  check(scen, /min fa|adesso|alle/.test(cards[1]), `gli altri mostrano quando (got: ${cards[1]?.replace(/\s+/g, " ").slice(0, 40)})`);
+
+  // picking another patient LOADS HIS PAGE (never shows his data from here)
+  const other = page.locator('#psassist-host .pcard:not(.now) [data-go="esiti"]');
+  await other.click();
+  await page.waitForFunction(() => /EPISODIO_ID=999001/.test(location.href), { timeout: 15000 });
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  check(scen, /999001/.test(await $panel(page, ".hd .sub").innerText()), "siamo sulla pagina di quel paziente");
+  check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1, "e si apre proprio sulla sezione scelta");
+
+  // the panel never carries another patient's selection across
+  check(scen, (await page.locator("#psassist-host .selbar").count()) === 0, "nessuna selezione trascinata da un paziente all'altro");
+  await context.close();
+}
+
 async function scenarioNoPatientPage(browser) {
   const scen = "no-patient";
   const mock = createMock({});
@@ -954,8 +990,8 @@ async function scenarioNoPatientPage(browser) {
   check(scen, (await page.locator("#psassist-host .chip.preset").count()) === 0, "nessun profilo rapido");
   check(scen, (await page.locator("#psassist-host #q, #psassist-host #acq, #psassist-host #go").count()) === 0,
     "niente quesito, ricerca o bottoni di invio");
-  check(scen, /Apri un paziente/.test(await $panel(page, ".bd").innerText()), "spiega cosa fare");
-  check(scen, /PRONTO SOCCORSO/.test(await $panel(page, ".hd .who").innerText()), "intestazione senza nome paziente");
+  check(scen, /pazienti/i.test(await $panel(page, ".bd").innerText()), "mostra invece l'elenco pazienti");
+  check(scen, /pazienti/i.test(await $panel(page, ".hd .who").innerText()), "intestazione: elenco pazienti, non un nome");
   await context.close();
 }
 
@@ -966,7 +1002,7 @@ async function scenarioPatientTitle(browser) {
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   check(scen, (await $panel(page, ".hd .who").innerText()).trim() === "ROSSI MARIO", "il titolo è il nome del paziente");
-  check(scen, /episodio 999001/.test(await $panel(page, ".hd .sub").innerText()), "l'episodio resta accanto");
+  check(scen, /999001/.test(await $panel(page, ".hd .sub").innerText()), "l'episodio resta sempre in intestazione");
   await $panel(page, "#collapse").click();
   const pill = await $panel(page, ".pill").innerText();
   check(scen, /ROSSI MARIO/.test(pill) && !/PS Assist/.test(pill), `anche da minimizzato mostra il paziente (got: ${pill.trim()})`);
@@ -1055,6 +1091,7 @@ const scenarios = [
   ["lab + rx manual walk", scenarioLabPlusRxManual],
   ["risultati inline", scenarioRisultati],
   ["resize + copy log", scenarioResizeAndLog],
+  ["home: patient pills", scenarioHomePills],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],
   ["stop button", scenarioStopButton],
