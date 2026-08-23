@@ -66,13 +66,14 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
 ## Uso quotidiano
 
 **Dalla pagina del paziente** (flusso principale):
-1. Scrivi il **quesito diagnostico** (o tocca un suggerimento; gli ultimi usati restano in cima).
+1. Scrivi il **quesito diagnostico** — casella su una riga, con i suggerimenti a fianco;
+   l'ultimo che hai usato resta scritto anche cambiando pagina o paziente.
 2. Tocca i **profili rapidi** (Base PS, Epatico, **Coag POC**, **Coag**) oppure gli **esami
-   singoli**, ora in una **griglia compatta a due colonne raggruppata per laboratorio**
-   (POC / Urgenze) con nomi brevi da reparto — Emocromo POC, Troponina US, PCR, Lipasi… — o
-   cerca in **Tutti gli esami**. Gli esami scelti restano sempre in vista nella **barra in alto**
-   (testo compatto per laboratorio: "POC: … · Urgenze: …"); passandoci sopra compare la ✕ per
-   toglierli. Lo scroll resta dov'è mentre selezioni.
+   singoli**, in una **griglia compatta a due colonne raggruppata per laboratorio** (POC /
+   Urgenze / RX) con nomi brevi da reparto. Per tutto il resto c'è la casella **«altri esami…»**:
+   scrivi due lettere e scegli dal menu a tendina (cerca in tutti i laboratori, con l'etichetta
+   di quale). Gli esami scelti restano in vista nella **barra in alto**, **una riga per
+   laboratorio**; passandoci sopra compare la ✕ per toglierli. Lo scroll resta dov'è.
 3. Premi (i due bottoni stanno su una riga):
    - **Crea e aggiungi N esami** → fa tutto e ti lascia sulla pagina esami con la ricevuta verde
      e il bottone **«✓ CONFERMA ora → stampa etichette»**: un click e conferma + stampa guidata;
@@ -113,26 +114,35 @@ Sul campo, dopo la Conferma il gestionale **torna alla pagina del paziente**: è
 parte da solo (e se un'installazione mostrasse una pagina intermedia, parte lì se ha i link,
 altrimenti aspetta il ritorno sul paziente). Dalla pagina paziente puoi anche **ristampare
 qualsiasi richiesta**
-(sezione "Stampa" del pannello, che mostra cosa contiene ogni riga: "2× etichette + 2× liste",
-"prenotazione", ecc.). Ogni passo ha: Riapri stampa · Salta · Apri in una scheda · Annulla (Esc).
+(sezione **Stampa**: ogni richiesta è elencata con **data e ora** e, sotto, la **lista compatta
+degli esami** che contiene). Ogni passo ha: Riapri stampa · Salta · Apri in una scheda ·
+Annulla (Esc).
 
-## Referti — riapertura istantanea
+**Laboratorio + radiologia insieme**: se confermi una richiesta di laboratorio e poi una di
+radiologia prima di tornare alla pagina del paziente, la stampa parte **una volta sola** e in
+sequenza: tutte le etichette → tutte le liste → la prenotazione RX.
 
-Il pannello elenca i **referti** del paziente (l'icona-foglio prima del nome dell'esame: LIS,
-RIS, AMB), **ordinati per data e ora**, i più recenti in alto.
+## Referti — salvataggio e riapertura istantanea
 
-- Il **primo click** apre il referto in una **scheda dedicata a quel referto** e lo segna con **●**.
-- Il **secondo click** non ricarica niente: ti riporta a quella scheda, già pronta — è questo che
-  rende la riapertura istantanea, anche passando da un paziente all'altro (ogni referto ha la sua
-  scheda, nessuna confusione tra pazienti).
-- **↻ Resetta** chiude le schede aperte e azzera i pallini: il click successivo ricarica dal server.
-- Il pallino resiste ai continui refresh del gestionale.
+Il pannello elenca i **referti** (LIS / RIS / AMB) **ordinati per data e ora**, i più recenti in
+alto, con lo stato di ciascuno:
 
-> Perché non "scarico" i referti in locale: il visualizzatore dei referti **non è su SA4PSO**, gira
-> su un altro server interno (es. `http://10.11.0.151:9080`) e mostra il PDF come `blob:` di
-> quell'origine. Un'estensione che vive su SA4PSO non può leggerlo, e dargli accesso a un secondo
-> server per copiarne i PDF sarebbe molto più invasivo del beneficio. La scheda dedicata dà lo
-> stesso risultato pratico — riapertura immediata — con zero copie di dati clinici.
+- **● salvato** — il PDF è sul questo computer: il click lo apre **all'istante**, senza toccare
+  il server. Premi **⬇ Salva tutti** per scaricarli.
+- **◍ aperto** — ha già la sua scheda: il click ci ritorna, già caricata.
+- **○ da aprire** — click = si apre come con l'icona nativa.
+- **↻ Resetta** svuota i salvataggi e chiude le schede.
+
+Come funziona il salvataggio (solo **estensione**: userscript e bookmarklet non possono farlo): il
+visualizzatore dei referti **non è su SA4PSO**, gira su un altro host interno e mostra il PDF come
+`blob:` di quell'origine, quindi una pagina di SA4PSO non può leggerlo. È il **service worker**
+dell'estensione a seguire la catena (redirect → pagina del visualizzatore → suo endpoint PDF) e a
+salvare i byte nella memoria dell'estensione, su questa macchina. Se un referto non è salvabile
+resta ○ e il **motivo** compare passandoci sopra col mouse (e nel Registro).
+
+> **Da configurare una volta**: l'host del visualizzatore è dichiarato in
+> `extension/manifest.json` → `host_permissions` (oggi `http://10.11.0.151:9080/*`). Se nella tua
+> sede è un altro indirizzo, cambialo lì e ricarica l'estensione.
 
 ---
 
@@ -235,7 +245,7 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-└── test/                ← simulatore SA4PSO + 31 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 32 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -244,7 +254,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 31 scenari e2e contro il simulatore (132 verifiche)
+npm test           # 32 scenari e2e (136 verifiche) + 5 verifiche sull'estensione reale
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

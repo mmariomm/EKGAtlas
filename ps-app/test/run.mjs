@@ -60,13 +60,11 @@ async function newPage(browser, mock) {
 const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`); // pierces open shadow DOM
 
 async function selectExams(page, labels) {
-  // open the full-catalog browser and tick by label text
-  await $panel(page, "#browse summary").click();
-  for (const { res, text } of labels) {
-    await $panel(page, "#pickres").selectOption(res);
-    await $panel(page, "#filter").fill(text);
-    await $panel(page, `.list label:has-text("${text}") input`).first().check();
-    await $panel(page, "#filter").fill("");
+  // one-line catalog search + dropdown
+  for (const { text } of labels) {
+    await $panel(page, "#acq").fill(text);
+    await $panel(page, `.acitem:has-text("${text}")`).first().click();
+    await $panel(page, "#acq").fill("");
   }
 }
 
@@ -591,6 +589,32 @@ async function scenarioPrintViewerVariants(browser) {
   }
 }
 
+async function scenarioPrintMergedFlow(browser) {
+  const scen = "print-merged";
+  // lab richiesta + radiology richiesta confirmed before getting back to the
+  // patient page → ONE print flow: all labels first, then lists, then the
+  // radiology booking
+  const mock = createMock({ seedConfirmed: true, seedConfirmedRadio: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.evaluate(() => sessionStorage.setItem("psassist:print.v1",
+    JSON.stringify({ ids: ["699999", "699998"], episodeId: "999001", ts: Date.now() })));
+  await page.reload();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 15000 });
+  const heads = [];
+  for (let k = 0; k < 3; k++) {
+    heads.push((await $wiz(page, ".pwhd").innerText()).split("\n")[0]);
+    await $wiz(page, "#pwnext").click();
+    await page.waitForTimeout(300);
+  }
+  check(scen, /1 di 3 — Etichette/.test(heads[0]), `prima le etichette del laboratorio (got: ${heads[0]})`);
+  check(scen, /2 di 3 — Lista esami/.test(heads[1]), `poi la lista esami (got: ${heads[1]})`);
+  check(scen, /3 di 3 — Prenotazione esterna/.test(heads[2]), `infine la RX, nello stesso flusso (got: ${heads[2]})`);
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "un solo wizard per entrambe le richieste");
+  await context.close();
+}
+
 async function scenarioPrintHardViewer(browser) {
   const scen = "print-hard-viewer";
   // a viewer that can't be replayed off its real URL → the wizard must fall
@@ -749,7 +773,7 @@ async function scenarioReferti(browser) {
   check(scen, rows.length === 3, `3 referti listati, il link-archivio senza REFERTO_ID è ignorato (got ${rows.length})`);
   check(scen, /22\/08 07:45/.test(rows[0]) && /EMOGASANALISI/.test(rows[0]), `ordinati per data/ora: primo = il più recente (got: ${rows[0]?.slice(0, 50)})`);
   check(scen, /21\/08 22:10/.test(rows[2] || ""), `ultimo = il più vecchio (got: ${rows[2]?.slice(0, 40)})`);
-  check(scen, (await page.locator("#psassist-host .rdot.on").count()) === 0, "all'inizio nessun referto è segnato come aperto");
+  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "all'inizio nessun referto è segnato come aperto");
 
   // first click opens it in its own named tab
   const [popup] = await Promise.all([
@@ -759,12 +783,12 @@ async function scenarioReferti(browser) {
   check(scen, popup.url().includes("Sa4ViewerExtRedirect") && popup.url().includes("bbbb2222"),
     `apre il referto dal server (got …${popup.url().slice(-30)})`);
   await page.waitForTimeout(200);
-  check(scen, (await page.locator("#psassist-host .rdot.on").count()) === 1, "il referto aperto è marcato ●");
+  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 1, "il referto aperto è marcato ◍");
 
   // the marker survives the EHR's constant page reloads
   await page.reload();
   await page.waitForSelector("#psassist-host", { state: "attached" });
-  check(scen, (await page.locator("#psassist-host .rdot.on").count()) === 1, "lo stato ● resiste al refresh della pagina");
+  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 1, "lo stato ◍ resiste al refresh della pagina");
 
   // second click reuses the SAME tab (no new popup, no reload of the viewer)
   const before = context.pages().length;
@@ -777,7 +801,7 @@ async function scenarioReferti(browser) {
   // reset closes the tabs and clears the state
   await page.locator("#psassist-host #refreset").click();
   await page.waitForTimeout(500);
-  check(scen, (await page.locator("#psassist-host .rdot.on").count()) === 0, "Resetta azzera lo stato");
+  check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "Resetta azzera lo stato");
   check(scen, (await page.locator("#psassist-host #refreset").count()) === 0, "il bottone Resetta sparisce quando non serve");
   await context.close();
 }
@@ -847,6 +871,7 @@ const scenarios = [
   ["print wizard manual", scenarioPrintManual],
   ["print multi-lab rows (PROG split)", scenarioPrintMultiLab],
   ["print radiology prenotazione", scenarioPrintRadio],
+  ["print merged lab+RX flow", scenarioPrintMergedFlow],
   ["print auto on patient page (default)", scenarioPrintAutoOnPatient],
   ["print auto on interstitial page", scenarioPrintAutoInterstitial],
   ["print auto waits for patient return", scenarioPrintAutoOnReturn],

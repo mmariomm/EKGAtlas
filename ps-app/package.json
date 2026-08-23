@@ -1,12 +1,12 @@
 {
   "name": "ps-assist",
   "version": "1.6.0",
-  "description": "PS Assist — SA4PSO order helper (extension + userscript + bookmarklet)",
+  "description": "PS Assist \u2014 SA4PSO order helper (extension + userscript + bookmarklet)",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "test": "node test/run.mjs",
+    "test": "node test/run.mjs && node test/ext-referti.mjs",
     "build": "node tools/build.mjs && node tools/icons.mjs",
     "dist": "npm run build && node tools/dist.mjs"
   },

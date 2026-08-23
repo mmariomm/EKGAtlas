@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "2.0.0";
+  const VERSION = "2.1.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -345,25 +345,51 @@
   // be printed, so rows are grouped per (RICHIESTA_ID, RICHIESTA_PROG) and
   // never collapsed.
   function printModel(doc, baseUrl) {
-    const map = {}; // richiestaId -> { prog -> {prog, etichette, lista, prenotazione} }
+    const map = {}; // richiestaId -> { prog -> row, _meta }
     const sel = 'a[title="Stampa Etichette"], a[title="Stampa Richiesta"], a[title="Stampa Prenotazione Esterna"]';
     for (const a of doc.querySelectorAll(sel)) {
       const href = absUrl(a, "href", baseUrl);
       const rid = param(href, "RICHIESTA_ID");
       if (!rid) continue;
       const prog = param(href, "RICHIESTA_PROG") || "1";
-      const rows = (map[rid] = map[rid] || {});
+      const rows = (map[rid] = map[rid] || { _meta: { ts: 0, when: "", exams: [] } });
       const row = (rows[prog] = rows[prog] || { prog });
       const t = a.getAttribute("title");
       if (t === "Stampa Etichette") row.etichette = href;
       else if (t === "Stampa Richiesta") row.lista = href;
       else row.prenotazione = href;
+      // the row this print icon lives in also carries when + what was ordered
+      const tr = a.closest("tr");
+      if (tr) {
+        const dt = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(tr.querySelector('input[name="DATA_ORD"]')?.value || "");
+        if (dt) {
+          const ts = Date.UTC(+dt[1], dt[2] - 1, +dt[3], +dt[4], +dt[5]);
+          if (!rows._meta.ts || ts < rows._meta.ts) { rows._meta.ts = ts; rows._meta.when = `${dt[3]}/${dt[2]} ${dt[4]}:${dt[5]}`; }
+        }
+        const desc = tr.querySelector('input[name="DESCRIZIONE_TITLE"]')?.value || "";
+        const nice = shortLabel(desc.replace(/^\d+-\d+\s*/, "")).trim();
+        if (nice && !rows._meta.exams.includes(nice)) rows._meta.exams.push(nice);
+      }
+    }
+    // every OTHER row of the same richiesta adds its exam to the list
+    for (const tr of doc.querySelectorAll("tr")) {
+      const link = tr.querySelector('a[href*="RICHIESTA_ID="], a[onclick*="RICHIESTA_ID="]');
+      if (!link) continue;
+      const raw = link.getAttribute("href") || link.getAttribute("onclick") || "";
+      const rid = (/RICHIESTA_ID=([^&'"]+)/.exec(raw) || [])[1];
+      if (!rid || !map[rid]) continue;
+      const desc = tr.querySelector('input[name="DESCRIZIONE_TITLE"]')?.value || "";
+      const nice = shortLabel(desc.replace(/^\d+-\d+\s*/, "")).trim();
+      if (nice && !map[rid]._meta.exams.includes(nice)) map[rid]._meta.exams.push(nice);
     }
     return map;
   }
+
   function printRowsFor(map, rid) {
-    return Object.values(map[rid] || {}).sort((a, b) => Number(a.prog) - Number(b.prog));
+    return Object.entries(map[rid] || {}).filter(([k]) => k !== "_meta").map(([, v]) => v)
+      .sort((a, b) => Number(a.prog) - Number(b.prog));
   }
+  const printMeta = (map, rid) => (map[rid] && map[rid]._meta) || { ts: 0, when: "", exams: [] };
   // Jobs grouped by printer to minimise switching: every label PDF first
   // (etichettatrice), then every exam-list sheet, then radiology bookings.
   function printJobsFor(map, rid) {
@@ -1026,6 +1052,7 @@
     .selbar { position: sticky; top: 42px; z-index: 2; background: #F8FBFE; border-bottom: 1px solid #D9E2EC;
               padding: 7px 12px; font-size: 12px; line-height: 1.8; color: #16232E; box-shadow: 0 6px 10px -8px rgba(9,42,74,.18); }
     .selbar .selgrp { color: #0B5CAD; font-weight: 800; }
+    .selbar .selrow { display: block; }
     .selbar .selcount { float: right; color: #5B6B7A; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; }
     .selitem { display: inline; white-space: nowrap; border-radius: 4px; padding: 1px 2px; }
     .selitem:hover { background: #EAF2FA; }
@@ -1046,7 +1073,10 @@
     .chip.on::before { content: "✓ "; font-weight: 800; white-space: pre; }
     .chip.q { background: transparent; border-style: dashed; color: #35506B; }
     .chip.q:hover { border-color: #0B5CAD; color: #0B5CAD; }
-    .chip.q { padding: 4px 9px; font-size: 11.5px; min-height: 24px; }
+    .chip.q { padding: 3px 8px; font-size: 11px; min-height: 22px; }
+    .qrow { display: flex; gap: 8px; align-items: flex-start; }
+    .qrow input { flex: 1 1 52%; min-width: 0; }
+    .qchips { flex: 1 1 48%; display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; }
     .chip.preset { background: #EAF2FA; border-color: #9DBFDE; font-weight: 600; padding: 5px 11px; font-size: 11.5px; min-height: 26px; }
     /* dense two-column exam grid: many exams, little space, still tappable */
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 5px; }
@@ -1104,6 +1134,21 @@
     .banner.err { background: #FBEBEA; color: #7c1a14; border: 1px solid #E9BAB6; }
     .banner.ok { background: #EDF7F0; color: #124F31; border: 1px solid #BCE0C9; }
     .banner.warn { background: #FFF7E6; color: #7a4b03; border: 1px solid #E5C588; }
+    .ac { position: relative; margin-top: 8px; }
+    .ac input { width: 100%; }
+    .acdrop { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 5; background: #fff;
+              border: 1px solid #C4D0DC; border-radius: 10px; box-shadow: 0 10px 24px rgba(9,42,74,.18);
+              max-height: 260px; overflow: auto; padding: 4px; }
+    .acitem { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent;
+              border-radius: 6px; padding: 6px 8px; font-size: 12px; cursor: pointer; color: #16232E; }
+    .acitem:hover { background: #EAF2FA; }
+    .acitem.on { color: #177245; font-weight: 600; }
+    .acitem.on::after { content: "✓"; margin-left: auto; }
+    .acnm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .actag { flex: 0 0 auto; margin-left: auto; font-size: 9.5px; font-weight: 800; letter-spacing: .4px; color: #5B6B7A;
+             background: #F4F8FB; border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
+    .acitem.on .actag { margin-left: 0; }
+    .acempty { padding: 8px; font-size: 12px; color: #8296A9; }
     .list { border: 1px solid #D9E2EC; border-radius: 10px; max-height: 320px; overflow: auto; margin-top: 6px; }
     .list label { display: flex; gap: 8px; padding: 9px 10px; font-size: 12px; cursor: pointer; align-items: baseline; border-bottom: 1px solid #EEF2F6; }
     .list label:hover { background: #F4F8FB; }
@@ -1122,9 +1167,19 @@
     .rrow { display: flex; align-items: center; gap: 8px; border: 1px solid #E3E8EF; background: #fff; border-radius: 8px;
             padding: 7px 9px; font-size: 12px; cursor: pointer; text-align: left; width: 100%; color: #16232E; }
     .rrow:hover { border-color: #0B5CAD; background: #F4F8FB; }
-    .rrow.ready { background: #F6FBF8; border-color: #BCE0C9; }
+    .prow { display: flex; flex-direction: column; gap: 1px; align-items: flex-start; width: 100%; text-align: left;
+            border: 1px solid #E3E8EF; background: #fff; border-radius: 8px; padding: 6px 9px; cursor: pointer; color: #16232E; }
+    .prow:hover { border-color: #0B5CAD; background: #F4F8FB; }
+    .prow.hot { border-color: #9DBFDE; background: #EAF2FA; }
+    .pline1 { font-size: 12px; font-variant-numeric: tabular-nums; }
+    .pline1 small { color: #5B6B7A; font-size: 10.5px; }
+    .pline2 { font-size: 10.5px; color: #5B6B7A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
     .rdot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #C4D0DC; background: transparent; }
-    .rdot.on { background: #177245; border-color: #177245; }
+    .rdot.saved { background: #177245; border-color: #177245; }
+    .rdot.open { background: #9DBFDE; border-color: #9DBFDE; }
+    .rdot.busy { background: #E5A83B; border-color: #E5A83B; animation: psaPulse 1s infinite; }
+    .rrow.saved { background: #F6FBF8; border-color: #BCE0C9; }
     .mini { float: right; border: 1px solid #C4D0DC; background: #fff; color: #0B5CAD; border-radius: 6px;
             padding: 1px 7px; font-size: 10.5px; font-weight: 700; cursor: pointer; letter-spacing: 0; text-transform: none; }
     .mini:hover { border-color: #0B5CAD; background: #F4F8FB; }
@@ -1148,10 +1203,17 @@
 
   const RADIO_SET = [RES.RX, RES.ECO, RES.RMN, RES.TAC];
   function rememberQuesito(q) {
+    store.set("lastQ", q);
     const list = store.get("quesiti", QUESITI_DEFAULT);
     const next = [q, ...list.filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 8);
     store.set("quesiti", next);
   }
+  const hasExt = () => { try { return !!(chrome && chrome.runtime && chrome.runtime.id); } catch { return false; } };
+  const ask = (msg) => new Promise((res) => {
+    try { chrome.runtime.sendMessage(msg, (r) => { void chrome.runtime.lastError; res(r || { ok: false }); }); }
+    catch { res({ ok: false }); }
+  });
+
   function freshReceipt(richiestaId) {
     const r = tabStore.get("receipt.v1", null);
     if (!r || !r.items) return null;
@@ -1174,8 +1236,7 @@
       this.root = this.host.attachShadow({ mode: "open" });
       document.documentElement.appendChild(this.host);
       this.collapsed = store.get("collapsed", false);
-      this.filter = "";
-      this.pickRes = null;
+      this.acq = "";           // catalog search text
       this.referti = [];                // patient page: result rows, newest first
       this.pos = store.get("pos", null); // user-dragged panel position {left, top}
       this.runPatient = null;           // patient name PINNED when a run starts
@@ -1208,22 +1269,20 @@
       tabStore.set(k, {
         q: this._q || "",
         sel: [...this.selected.values()].map((i) => [i.res, i.code, i.label]),
-        browseOpen: !!this.browseOpen,
-        pickRes: this.pickRes,
-        filter: this.filter || "",
+        acq: this.acq || "",
         ts: Date.now(),
       });
     }
     restoreUi() {
       const k = this.uiKey();
-      if (!k) return;
-      const s = tabStore.get(k, null);
-      if (!s || Date.now() - (s.ts || 0) > 6 * 3600e3) return;
-      this._q = s.q || "";
+      const s = k ? tabStore.get(k, null) : null;
+      if (!s || Date.now() - (s.ts || 0) > 6 * 3600e3) {
+        this._q = store.get("lastQ", "") || ""; // keep the last quesito typed
+        return;
+      }
+      this._q = s.q || store.get("lastQ", "") || "";
       this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
-      this.browseOpen = !!s.browseOpen;
-      this.pickRes = s.pickRes || null;
-      this.filter = s.filter || "";
+      this.acq = s.acq || "";
     }
     clearOrderUi() { // after a successful run the order is placed: start clean
       this._q = "";
@@ -1235,6 +1294,7 @@
     key(res, code) { return `${res}:${code}`; }
     isSel(res, code) { return this.selected.has(this.key(res, code)); }
     toggle(res, code) {
+      if (this.acq) this.acFocus = true; // stay in the search box
       const k = this.key(res, code);
       if (this.selected.has(k)) this.selected.delete(k);
       else this.selected.set(k, { res, code, label: examLabel(res, code), display: displayLabel(res, code) });
@@ -1364,7 +1424,7 @@
         ).join(", ");
         return `<span class="selgrp">${esc((RES_SHORT[r] || r).toUpperCase())}:</span> ${items}`;
       });
-      return `<div class="selbar"><span class="selcount">${this.selected.size} SELEZIONATI</span>${groups.join(" &nbsp;·&nbsp; ")}</div>`;
+      return `<div class="selbar"><span class="selcount">${this.selected.size} SELEZIONATI</span>${groups.map((g) => `<div class="selrow">${g}</div>`).join("")}</div>`;
     }
 
     render() {
@@ -1457,8 +1517,10 @@
       const quesitoSec = canOneClick ? `
         <div class="sec">
           <div class="lbl">Quesito diagnostico</div>
-          <textarea id="q" rows="2" placeholder="Es. dolore toracico in atto…">${esc(this._q || "")}</textarea>
-          <div class="chips" style="margin-top:6px">${quesiti.map((q) => `<button class="chip q" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
+          <div class="qrow">
+            <input id="q" type="text" placeholder="Es. dolore toracico in atto…" value="${esc(this._q || "")}">
+            <div class="qchips">${quesiti.slice(0, 6).map((q) => `<button class="chip q" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
+          </div>
         </div>` : "";
 
       // On the exam page show what is already in the cart on THIS resource,
@@ -1535,59 +1597,105 @@
     viewPrint() {
       if (this.pageType !== "patient") return "";
       const map = printModel(document, location.href);
-      const rids = Object.keys(map).sort((a, b) => Number(b) - Number(a));
+      const rids = Object.keys(map).sort((a, b) => (printMeta(map, b).ts - printMeta(map, a).ts) || Number(b) - Number(a));
       if (!rids.length) return "";
       const receipt = freshReceipt(null);
       const hot = receipt && map[receipt.richiestaId] ? receipt.richiestaId : null;
-      const rowLabel = (rid) => printLabelFor(map, rid);
-      const rows = rids.slice(0, 5).map((rid) => `
-        <button class="btn ghost" data-print="${esc(rid)}" style="text-align:left;font-weight:500;padding:9px 12px">
-          🖨 Richiesta ${esc(rid)} <small style="color:#5B6B7A">· ${esc(rowLabel(rid))}</small>
-        </button>`).join("");
-      return `
-        <div class="sec">
-          <div class="lbl">Stampa</div>
-          ${hot ? `<button class="btn primary" data-print="${esc(hot)}">🖨 Stampa ${esc(rowLabel(hot))} — ultima richiesta</button>` : ""}
-          ${rows}
-          <div class="hint">Prima le etichette (etichettatrice), poi la lista (stampante normale), in sequenza.</div>
-        </div>`;
-    }
-
-    // Patient page: the patient's result PDFs (esiti), newest first. Nothing
-    viewReferti() {
-      if (this.pageType !== "patient" || !this.referti.length) return "";
-      // Reopening is made instant WITHOUT copying anything: each referto gets
-      // its own named browser tab, so a second click just brings that already
-      // loaded tab to the front (the viewer lives on another server, so its
-      // PDF can't be fetched or stored by us — see README).
-      const open = new Set(tabStore.get("refopen", []));
-      const rows = this.referti.map((r) => {
-        const isOpen = open.has(r.id);
-        return `<button class="rrow ${isOpen ? "ready" : ""}" data-ref="${esc(r.id)}" title="${esc(r.label)} — ${isOpen ? "torna alla scheda già aperta" : "apri in una scheda"}">
-          <span class="rdot ${isOpen ? "on" : ""}"></span>
-          <span class="rwhen">${esc(r.when)}</span><span class="rsys">${esc(r.sistema)}</span>
-          <span class="rlab">${esc(shortLabel(r.label))}</span>
+      const rows = rids.slice(0, 6).map((rid) => {
+        const m = printMeta(map, rid);
+        const exams = m.exams.length ? m.exams.join(", ") : printLabelFor(map, rid);
+        return `<button class="prow ${rid === hot ? "hot" : ""}" data-print="${esc(rid)}" title="Richiesta ${esc(rid)} — ${esc(printLabelFor(map, rid))}">
+          <span class="pline1">🖨 <b>${esc(m.when || "richiesta " + rid)}</b> <small>${esc(printLabelFor(map, rid))}</small></span>
+          <span class="pline2">${esc(exams)}</span>
         </button>`;
       }).join("");
       return `
         <div class="sec">
-          <div class="lbl">Referti (${this.referti.length}) — dal più recente
-            ${open.size ? `<button class="mini" id="refreset" title="Chiude le schede aperte: il prossimo click ricarica dal server">↻ Resetta (${open.size})</button>` : ""}
-          </div>
+          <div class="lbl">Stampa</div>
           <div class="rlist">${rows}</div>
-          <div class="hint">● già aperto: il click ci ritorna subito · ○ da aprire</div>
+          <div class="hint">Prima le etichette (etichettatrice), poi le liste (stampante normale), in sequenza.</div>
         </div>`;
     }
 
-    openReferto(id) {
+    viewReferti() {
+      if (this.pageType !== "patient" || !this.referti.length) return "";
+      // Two ways to make re-opening instant:
+      //  • saved: the extension holds the PDF, so it opens from this machine;
+      //  • aperto: it already has its own tab, we just bring it back.
+      const open = new Set(tabStore.get("refopen", []));
+      const cached = this.refCache || {};
+      const busy = this.refBusy || {};
+      const nSaved = this.referti.filter((r) => cached[r.id]).length;
+      const rows = this.referti.map((r) => {
+        const st = cached[r.id] ? "saved" : busy[r.id] === true ? "busy" : open.has(r.id) ? "open" : "";
+        const why = typeof busy[r.id] === "string" ? busy[r.id] : "";
+        return `<button class="rrow ${st}" data-ref="${esc(r.id)}" title="${esc(r.label)}${why ? " — non salvabile: " + esc(why) : ""}">
+          <span class="rdot ${esc(st)}"></span>
+          <span class="rwhen">${esc(r.when)}</span><span class="rsys">${esc(r.sistema)}</span>
+          <span class="rlab">${esc(shortLabel(r.label))}</span>
+        </button>`;
+      }).join("");
+      const canSave = hasExt();
+      return `
+        <div class="sec">
+          <div class="lbl">Referti (${this.referti.length}) — dal più recente
+            ${canSave && nSaved < this.referti.length ? `<button class="mini" id="refsave">⬇ Salva tutti</button>` : ""}
+            ${(nSaved || open.size) ? `<button class="mini" id="refreset" title="Svuota i salvataggi e chiude le schede">↻ Resetta</button>` : ""}
+          </div>
+          <div class="rlist">${rows}</div>
+          <div class="hint">${canSave
+            ? `● salvato: si apre all'istante · ◍ aperto in una scheda · ○ da aprire${nSaved ? ` — ${nSaved}/${this.referti.length} salvati` : ""}`
+            : "● già aperto: il click ci ritorna subito · ○ da aprire"}</div>
+        </div>`;
+    }
+
+    async refreshRefCache() {
+      if (!hasExt() || !this.referti.length) return;
+      const r = await ask({ t: "listRef", ids: this.referti.map((x) => x.id) });
+      if (r && r.ok) { this.refCache = r.cached || {}; this.render(); }
+    }
+
+    async saveAllReferti() {
+      if (!hasExt()) return;
+      this.refBusy = this.refBusy || {};
+      const todo = this.referti.filter((r) => !(this.refCache || {})[r.id]);
+      for (const r of todo) { this.refBusy[r.id] = true; }
+      this.render();
+      for (const r of todo) {
+        const res = await ask({ t: "cacheRef", id: r.id, url: r.url });
+        if (res && res.ok) {
+          this.refCache = { ...(this.refCache || {}), [r.id]: res.size || 1 };
+          this.refBusy[r.id] = false;
+        } else {
+          this.refBusy[r.id] = (res && res.why) || "non riuscito";
+          this.log(`${now()}  referto non salvato (${shortLabel(r.label)}): ${this.refBusy[r.id]}`);
+        }
+        this.render();
+      }
+    }
+
+    async openReferto(id) {
       const r = this.referti.find((x) => x.id === id);
       if (!r) return;
+      // saved copy → opens immediately, no server round trip
+      if ((this.refCache || {})[id] && hasExt()) {
+        const got = await ask({ t: "getRef", id });
+        if (got && got.ok && got.data) {
+          const bin = atob(got.data);
+          const arr = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+          const url = URL.createObjectURL(new Blob([arr], { type: "application/pdf" }));
+          window.open(url, "_blank");
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          return;
+        }
+      }
+      // otherwise: its own named tab — a second click brings it back loaded
       const name = "psaRef_" + String(id).replace(/\W/g, "");
-      const w = window.open("", name); // focuses an existing tab, else opens a blank one
+      const w = window.open("", name);
       if (!w) { this.message = "Consenti i popup per aprire i referti in una scheda."; this.render(); return; }
       let blank = true;
-      try { blank = !w.location.href || w.location.href === "about:blank"; }
-      catch { blank = false; } // cross-origin = the referto is already loaded there
+      try { blank = !w.location.href || w.location.href === "about:blank"; } catch { blank = false; }
       if (blank) w.location.href = r.url;
       try { w.focus(); } catch { /* ignore */ }
       const open = new Set(tabStore.get("refopen", []));
@@ -1596,31 +1704,35 @@
       this.render();
     }
 
-    resetReferti() {
+    async resetReferti() {
       for (const id of tabStore.get("refopen", [])) {
         try { window.open("", "psaRef_" + String(id).replace(/\W/g, ""))?.close(); } catch { /* ignore */ }
       }
       tabStore.set("refopen", []);
+      if (hasExt()) await ask({ t: "clearRef" });
+      this.refCache = {}; this.refBusy = {};
       this.render();
     }
 
+    // One compact search box across the WHOLE catalog: type a few letters and
+    // pick from the dropdown. Replaces the old resource-picker + long list.
     viewBrowse(cat) {
-      const resList = Object.entries(cat).filter(([, v]) => Object.keys(v.items).length);
-      if (!resList.length) return "";
-      if (!this.pickRes || !cat[this.pickRes]) this.pickRes = resList[0][0];
-      const totalN = resList.reduce((s, [, v]) => s + Object.keys(v.items).length, 0);
-      const items = Object.entries(cat[this.pickRes].items)
-        .sort(([, a], [, b]) => a.localeCompare(b))
-        .filter(([, l]) => !this.filter || l.toUpperCase().includes(this.filter.toUpperCase()));
-      return `
-        <details class="browse" ${this.filter || this.browseOpen ? "open" : ""} id="browse">
-          <summary><div class="browserow"><span>Tutti gli esami (${totalN})</span><span>${this.filter || this.browseOpen ? "▾" : "▸"}</span></div></summary>
-          <select class="res" id="pickres" style="margin-top:8px">${resList.map(([r, v]) => `<option value="${esc(r)}" ${r === this.pickRes ? "selected" : ""}>${esc(v.label || r)}</option>`).join("")}</select>
-          <input type="search" id="filter" placeholder="Cerca esame…" value="${esc(this.filter)}" style="margin-top:6px">
-          <div class="list">
-            ${items.slice(0, 200).map(([c, l]) => `<label><input type="checkbox" data-res="${esc(this.pickRes)}" data-code="${esc(c)}" ${this.isSel(this.pickRes, c) ? "checked" : ""}> ${esc(l)}</label>`).join("") || `<label>Nessun risultato</label>`}
-          </div>
-        </details>`;
+      const q = (this.acq || "").trim().toUpperCase();
+      let drop = "";
+      if (q.length >= 2) {
+        const hits = [];
+        for (const [res, v] of Object.entries(cat)) {
+          for (const [code, label] of Object.entries(v.items || {})) {
+            if (label.toUpperCase().includes(q)) hits.push({ res, code, label });
+          }
+        }
+        hits.sort((a, b) => a.label.toUpperCase().indexOf(q) - b.label.toUpperCase().indexOf(q) || a.label.localeCompare(b.label));
+        drop = `<div class="acdrop">${
+          hits.slice(0, 12).map((h) => `<button class="acitem ${this.isSel(h.res, h.code) ? "on" : ""}" data-res="${esc(h.res)}" data-code="${esc(h.code)}" title="${esc(h.label)}">
+            <span class="acnm">${esc(h.label)}</span><span class="actag">${esc(RES_SHORT[h.res] || h.res)}</span></button>`).join("")
+          || `<div class="acempty">Nessun esame trovato</div>`}</div>`;
+      }
+      return `<div class="ac"><input id="acq" type="search" autocomplete="off" placeholder="altri esami…" value="${esc(this.acq || "")}">${drop}</div>`;
     }
 
     viewRunning() {
@@ -1737,13 +1849,21 @@
       }));
       this.root.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => this.togglePreset(PRESETS[+b.getAttribute("data-preset")])));
       this.root.querySelectorAll(".chip[data-code], .opt[data-code]").forEach((b) => b.addEventListener("click", () => this.toggle(b.getAttribute("data-res"), b.getAttribute("data-code"))));
-      this.root.querySelectorAll(".list input[data-code]").forEach((c) => c.addEventListener("change", () => { this.browseOpen = true; this.toggle(c.getAttribute("data-res"), c.getAttribute("data-code")); }));
+      this.root.querySelectorAll(".acitem[data-code]").forEach((b) => b.addEventListener("click", () => {
+        this.toggle(b.getAttribute("data-res"), b.getAttribute("data-code"));
+      }));
       this.root.querySelectorAll("[data-unsel]").forEach((b) => b.addEventListener("click", () => { this.selected.delete(b.getAttribute("data-unsel")); this.persistUi(); this.render(); }));
-      $("#pickres")?.addEventListener("change", (e) => { this.pickRes = e.target.value; this.browseOpen = true; this.persistUi(); this.render(); });
-      const f = $("#filter");
-      f?.addEventListener("input", () => { this.filter = f.value; this.browseOpen = true; this.persistUi(); this.render(); const nf = this.root.querySelector("#filter"); nf?.focus(); nf?.setSelectionRange(nf.value.length, nf.value.length); });
-      $("#browse")?.addEventListener("toggle", (e) => { this.browseOpen = e.target.open; this.persistUi(); });
-
+      const ac = $("#acq");
+      if (ac) {
+        ac.addEventListener("input", () => { this.acq = ac.value; this.acFocus = true; this.render(); });
+        ac.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            const first = this.root.querySelector(".acitem[data-code]");
+            if (first) { e.preventDefault(); this.toggle(first.getAttribute("data-res"), first.getAttribute("data-code")); }
+          } else if (e.key === "Escape") { e.stopPropagation(); this.acq = ""; this.render(); }
+        });
+        if (this.acFocus) { ac.focus(); ac.setSelectionRange(ac.value.length, ac.value.length); }
+      }
       $("#go")?.addEventListener("click", () => this.launch(false));
       $("#goconfirm")?.addEventListener("click", () => this.launch(true));
       this.root.querySelectorAll("[data-print]").forEach((b) => b.addEventListener("click", () => {
@@ -1753,6 +1873,7 @@
       }));
       this.root.querySelectorAll("[data-ref]").forEach((b) => b.addEventListener("click", () => this.openReferto(b.getAttribute("data-ref"))));
       $("#refreset")?.addEventListener("click", () => this.resetReferti());
+      $("#refsave")?.addEventListener("click", () => this.saveAllReferti());
     }
 
     // Patch only the commit zone while the doctor types (a full re-render
@@ -2043,7 +2164,12 @@
   // the post-confirm page if it has them, otherwise the patient page.
   function armPrintOnConfirm(model, episodeId) {
     if (!model.form || !model.richiestaId) return;
-    const arm = () => tabStore.set("print.v1", { richiestaId: model.richiestaId, episodeId, ts: Date.now() });
+    const arm = () => {
+      const prev = tabStore.get("print.v1", null);
+      const fresh = prev && prev.episodeId === episodeId && Date.now() - (prev.ts || 0) < PRINT_FLAG_TTL ? prev.ids || [] : [];
+      const ids = [...new Set([...fresh, model.richiestaId])]; // lab + radiology land in ONE flow
+      tabStore.set("print.v1", { ids, episodeId, ts: Date.now() });
+    };
     for (const name of ["Update", "Update1"]) {
       const b = model.form.elements.namedItem(name);
       if (b && (b.type || "").toLowerCase() === "submit") b.addEventListener("click", arm, true);
@@ -2054,10 +2180,19 @@
     const flag = tabStore.get("print.v1", null);
     if (!flag) return false;
     if (Date.now() - (flag.ts || 0) > PRINT_FLAG_TTL) { tabStore.set("print.v1", null); return false; }
-    const jobs = printJobsFor(printModel(document, location.href), flag.richiestaId);
-    if (!jobs.length) return false; // this page doesn't list the richiesta yet — keep waiting
+    const map = printModel(document, location.href);
+    const ids = (flag.ids || [flag.richiestaId]).filter((id) => map[id]);
+    if (!ids.length) return false; // this page doesn't list them yet — keep waiting
+    // group by printer ACROSS the confirmed richieste: labels, then lists,
+    // then radiology bookings — one uninterrupted flow
+    const all = ids.map((id) => printJobsFor(map, id));
+    const jobs = [
+      ...all.flatMap((j) => j.filter((x) => x.printer === "etichettatrice")),
+      ...all.flatMap((j) => j.filter((x) => x.printer !== "etichettatrice")),
+    ];
+    if (!jobs.length) return false;
     tabStore.set("print.v1", null);
-    openPrintWizard(jobs, { title: "Richiesta appena confermata." });
+    openPrintWizard(jobs, { title: ids.length > 1 ? `${ids.length} richieste appena confermate.` : "Richiesta appena confermata." });
     return true;
   }
 
@@ -2078,6 +2213,7 @@
       panel.entry = patientModel(document, location.href);
       panel.referti = refertiModel(document, location.href);
       panel.render();
+      panel.refreshRefCache();
       maybeAutoPrint();
     } else {
       panel.render();
