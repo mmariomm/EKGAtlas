@@ -130,6 +130,15 @@ Annulla (Esc).
 radiologia prima di tornare alla pagina del paziente, la stampa parte **una volta sola** e in
 sequenza: tutte le etichette → tutte le liste → la prenotazione RX.
 
+## Risultati di laboratorio (in attesa di referto)
+
+Finché il laboratorio non ha refertato, la pagina paziente mostra l'icona colorata "Visualizza
+Risultati", che aprirebbe una finestrella. Il pannello legge quella stessa pagina
+(`RcsAccessiRisultatiElenco.do`, HTML sullo stesso server) e ti mostra i **valori direttamente
+dentro il pannello**: click sulla riga → si apre l'elenco esame / valore / range, con i valori
+**fuori range in rosso** e la freccia ↑ ↓. I valori restano in memoria per la scheda: riaprirli è
+istantaneo, e **↻** li rilegge dal server man mano che il laboratorio completa.
+
 ## Referti — salvataggio e riapertura istantanea
 
 Il pannello elenca i **referti** (LIS / RIS / AMB) **ordinati per data e ora**, i più recenti in
@@ -154,13 +163,20 @@ resta ○ e il **motivo** compare passandoci sopra col mouse (e nel Registro).
 
 ---
 
-**Perché c'è ancora la finestra di stampa?** Un sito web su Windows non può scegliere la
-stampante né stampare in silenzio: `chrome.printing` esiste solo su ChromeOS e `--kiosk-printing`
-stampa tutto sulla predefinita (inutile con due stampanti). Il wizard è il massimo consentito:
-dialogo già aperto e sequenza automatica — Chrome ricorda le stampanti recenti, quindi la scelta
-è un click (la prima volta seleziona l'etichettatrice per le etichette, poi resta tra le
-recenti). Se un giorno l'IT abilitasse il kiosk-printing su una postazione monostampante, il
-wizard funzionerebbe senza dialoghi.
+**Si può scegliere la stampante da soli?** No: nessuna pagina web può impostare la destinazione
+di stampa — è una barriera del browser, non un permesso mancante. Quello che si può fare senza
+essere amministratori:
+
+- Chrome **ricorda l'ultima stampante usata**, quindi il wizard raggruppa i documenti per
+  destinazione (tutte le etichette, poi tutte le liste): al massimo **due cambi per paziente**,
+  non uno per foglio.
+- **Collegamento con `--kiosk-printing`** (si crea senza admin: tasto destro sull'icona di Chrome
+  → Proprietà → aggiungi `--kiosk-printing --user-data-dir="%LOCALAPPDATA%\\ChromeEtichette"`).
+  Da quella finestra Chrome stampa **senza dialogo** sulla stampante predefinita di Windows di
+  quel profilo. Ha senso solo se quella finestra la usi per le sole etichette — la lista la
+  stamperesti da una finestra normale. Fragile, ma funziona.
+- Se le liste su carta non ti servono, salta il secondo passo del wizard: resta **un solo**
+  dialogo per paziente.
 
 ---
 
@@ -255,7 +271,7 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-└── test/                ← simulatore SA4PSO + 37 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 38 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -264,7 +280,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 37 scenari e2e (160 verifiche) + 5 verifiche sull'estensione reale
+npm test           # 38 scenari e2e (166 verifiche) + 5 verifiche sull'estensione reale
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

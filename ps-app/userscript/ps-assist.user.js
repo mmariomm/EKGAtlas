@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PS Assist — richieste Pronto Soccorso (SA4PSO)
 // @namespace    psassist.multimedica
-// @version      2.4.0
+// @version      2.5.0
 // @description  Crea richieste lab/radiologia, aggiunge gli esami scelti verificando ogni inserimento nel carrello. Conferma sempre come click reale sulla pagina.
 // @match        https://smarthealth.multimedica.it/sa4pso/*
 // @run-at       document-idle
@@ -76,7 +76,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "2.4.0";
+  const VERSION = "2.5.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -324,7 +324,7 @@
   function assertSameEpisode(doc, baseUrl, episodeId, what) {
     const found = findEpisodeIdInDoc(doc) || param(baseUrl, "EPISODIO_ID");
     if (!found) {
-      throw new StopError(`Episodio non identificabile nella pagina "${what}"`, "Interrotto per sicurezza: completa a mano dalla pagina nativa.");
+      throw new StopError(`Episodio non identificabile nella pagina "${what}"`, "Interrotto per sicurezza.");
     }
     if (episodeId && found !== episodeId) {
       throw new StopError(`La pagina "${what}" appartiene a un altro episodio (${found} ≠ ${episodeId})`, "Interrotto per sicurezza.");
@@ -599,6 +599,56 @@
 
   // Get a PDF SAFELY, or throw ViewerError(url) so the caller opens it in a
   // tab. Same origin/timeout guards as fetchDoc.
+  // ------------------------------------------------------- RISULTATI MODEL
+  // While a lab request is still being reported, the patient page shows a
+  // coloured icon that pops up RcsAccessiRisultatiElenco.do — plain HTML on
+  // THIS origin, so the values can be read and shown inside the panel.
+  function risultatiModel(doc, baseUrl) {
+    const out = [], seen = new Set();
+    for (const a of doc.querySelectorAll('a[title="Visualizza Risultati"]')) {
+      const m = /window\.open\(\s*['"]([^'"]+)['"]/.exec(a.getAttribute("onclick") || "");
+      if (!m) continue;
+      let url;
+      try { url = new URL(m[1], baseUrl).href; } catch { continue; }
+      const id = param(url, "RCS_ACCESSO_ID");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const td = a.closest("td"), tr = a.closest("tr");
+      const exams = (td?.getAttribute("title") || "").split(";")
+        .map((x) => shortLabel(x.replace(/^\s*\d+-\d+\s*/, "")).trim()).filter(Boolean);
+      const dt = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(tr?.querySelector('input[name="DATA_ORD"]')?.value || "");
+      out.push({
+        id, url, exams,
+        ts: dt ? Date.UTC(+dt[1], dt[2] - 1, +dt[3], +dt[4], +dt[5]) : 0,
+        when: dt ? `${dt[3]}/${dt[2]} ${dt[4]}:${dt[5]}` : "",
+      });
+    }
+    out.sort((a, b) => b.ts - a.ts);
+    return out;
+  }
+
+  // a value outside its own reference range is worth the eye
+  function outOfRange(value, range) {
+    const v = parseFloat(String(value).replace(",", "."));
+    const m = /^\s*([\d.,]+)\s*-\s*([\d.,]+)\s*$/.exec(range || "");
+    if (!isFinite(v) || !m) return 0;
+    const lo = parseFloat(m[1].replace(",", ".")), hi = parseFloat(m[2].replace(",", "."));
+    if (!isFinite(lo) || !isFinite(hi)) return 0;
+    return v < lo ? -1 : v > hi ? 1 : 0;
+  }
+
+  function parseRisultati(doc) {
+    const rows = [];
+    for (const tr of doc.querySelectorAll("tr")) {
+      const tds = [...tr.querySelectorAll("td.AFCDataTD")];
+      if (tds.length < 5) continue;
+      const [nome, valore, um, range, stato] = tds.map((t) => t.textContent.replace(/\s+/g, " ").trim());
+      if (!nome || !valore) continue;
+      rows.push({ nome, valore, um, range, stato });
+    }
+    return rows;
+  }
+
   async function fetchPdf(url, { signal, hop = 0 } = {}) {
     const target = new URL(url, location.href);
     if (target.origin !== location.origin) {
@@ -826,7 +876,7 @@
     const guardSession = (doc, whatMayHaveHappened) => {
       if (classify(doc) === "login") {
         throw new StopError("Sessione scaduta durante l'operazione",
-          `${whatMayHaveHappened ? whatMayHaveHappened + ". " : ""}Fai l'accesso a SA4PSO e ricontrolla il carrello a video.`);
+          `${whatMayHaveHappened ? whatMayHaveHappened + ". " : ""}Rifai l'accesso e controlla il carrello.`);
       }
     };
     const step = (label) => {
@@ -890,7 +940,7 @@
         assertSameEpisode(doc, url, plan.episodeId, "esami della richiesta");
         if (classify(doc) !== "exam") {
           log(`pagina inattesa dopo Crea: "${snippet(doc)}"`);
-          throw new StopError("Il server non ha aperto la pagina esami dopo la creazione", "Controlla la richiesta a mano (dettagli nel Registro).");
+          throw new StopError("Il server non ha aperto la pagina esami dopo la creazione", "Controlla a mano (vedi Registro).");
         }
         done(sCrea);
         await pace();
@@ -940,7 +990,7 @@
         }
         const link = model.addLink(it.code);
         if (!link) {
-          throw new StopError(`«${nm}» non è nell'elenco di ${RES_SHORT[it.res] || it.res}`, "Nessun ordine inviato per questo esame. Interrotto: verifica il carrello e completa a mano.");
+          throw new StopError(`«${nm}» non è nell'elenco di ${RES_SHORT[it.res] || it.res}`, "Non inviato. Completa a mano.");
         }
         // Anti wrong-exam guardrail: the LIVE row label must match what the
         // doctor picked. If the hospital ever renumbers a code, every other
@@ -948,7 +998,7 @@
         // (skipped for items carrying only the "esame N" fallback label)
         const norm = (s) => s.replace(/\s+/g, " ").trim().toUpperCase();
         if (!/^esame \d+$/i.test(it.label) && norm(link.label) !== norm(it.label)) {
-          throw new StopError(`Il codice ${it.code} oggi si chiama «${link.label}»`, `Era selezionato come «${nm}». Nessun ordine inviato: il catalogo va aggiornato (basta riaprire l'elenco una volta).`);
+          throw new StopError(`Il codice ${it.code} oggi si chiama «${link.label}»`, `Selezionato come «${nm}» — non inviato.`);
         }
 
         // ---- the one and only send of this exam -----------------------
@@ -959,7 +1009,7 @@
         assertSameEpisode(doc, url, plan.episodeId, "conferma inserimento");
         if (classify(doc) !== "exam") {
           log(`pagina inattesa dopo l'inserimento: "${snippet(doc)}"`);
-          throw new StopError(`«${nm}» potrebbe essere stato aggiunto o no`, "Il server ha risposto con una pagina inattesa (dettagli nel Registro). NON reinviato: apri il carrello e controlla.");
+          throw new StopError(`«${nm}» potrebbe essere stato aggiunto o no`, "Pagina inattesa dal server (vedi Registro) — non reinviato.");
         }
         model = examModel(doc, url);
         learnFrom(model);
@@ -982,7 +1032,7 @@
           noteList();
         }
         if (!verified) {
-          throw new StopError(`«${nm}» non risulta nel carrello`, `Verificato ${VERIFY_RECHECKS} volte, NON reinviato: nessun rischio di doppio ordine. Apri il carrello e controlla prima di confermare.`);
+          throw new StopError(`«${nm}» non risulta nel carrello`, `Verificato ${VERIFY_RECHECKS} volte, non reinviato. Apri il carrello.`);
         }
         done(st, "nel carrello ✓");
         log(`aggiunto ✓ ${nm}`);
@@ -1020,19 +1070,13 @@
       }
       if (signal.aborted || err?.name === "AbortError") {
         log("■ interrotto dall'utente");
-        ui.stopped(state, {
-          head: "Interrotto — nessun nuovo invio",
-          body: "L'ultimo esame inviato potrebbe comunque essere nel carrello: controllalo prima di confermare.",
-        });
+        ui.stopped(state, { head: "Interrotto", body: "L'ultimo esame inviato potrebbe essere in carrello: controlla." });
       } else if (err instanceof StopError) {
         log(`⚠ ${err.message}`);
         ui.failed(state, { head: err.head, body: err.body });
       } else {
         log(`⚠ errore imprevisto: ${err?.message || err}`);
-        ui.failed(state, {
-          head: "Errore imprevisto",
-          body: `${err?.message || err}. Nessun reinvio automatico: apri il carrello e controlla prima di confermare.`,
-        });
+        ui.failed(state, { head: "Errore imprevisto", body: `${err?.message || err} — apri il carrello e controlla.` });
       }
       return state;
     }
@@ -1211,6 +1255,14 @@
     .rsys { flex: 0 0 auto; font-size: 9.5px; font-weight: 800; letter-spacing: .5px; color: #5B6B7A; background: #F4F8FB;
             border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
     .rlab { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .rgroup { display: flex; flex-direction: column; }
+    .rvals { border: 1px solid #E3E8EF; border-top: 0; border-radius: 0 0 8px 8px; padding: 4px 8px 6px; background: #F8FBFE; }
+    .rval { display: flex; gap: 8px; align-items: baseline; font-size: 11.5px; padding: 2px 0; }
+    .rval .rvn { flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #35506B; }
+    .rval .rvv { flex: 0 0 auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .rval .rvr { flex: 0 0 auto; font-size: 10px; color: #8296A9; min-width: 74px; text-align: right; }
+    .rval.bad .rvv { color: #B3261E; }
+    .rval.bad .rvn { color: #16232E; font-weight: 600; }
     .foot { padding: 8px 12px 10px; border-top: 1px solid #EEF2F6; display: flex; justify-content: space-between; align-items: center; color: #5B6B7A; font-size: 11px; }
     .footlink { border: 0; background: transparent; color: #0B5CAD; font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
     select.res { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 7px 8px; font-size: 12.5px; background: #fff; }
@@ -1263,6 +1315,7 @@
       this.collapsed = store.get("collapsed", false);
       this.acq = "";           // catalog search text
       this.referti = [];                // patient page: result rows, newest first
+      this.risultati = [];              // lab values still being reported
       this.pos = store.get("pos", null); // user-dragged panel position {left, top}
       this.size = store.get("size", null); // user-resized panel {w, h}
       this.runPatient = null;           // patient name PINNED when a run starts
@@ -1389,10 +1442,8 @@
       this.runState = "done"; this.runData = state;
       const n = state.added.length;
       this.message = {
-        head: `✓ ${n === 1 ? "1 esame verificato" : n + " esami verificati"} nel carrello`,
-        body: (state.quesitoKept ? "Quesito del triage mantenuto. " : "") + (plan.autoConfirm
-          ? "Apro la pagina esami: la conferma parte con un conto alla rovescia annullabile (Esc)."
-          : "Apro la pagina esami: rivedi il carrello e premi Conferma per stampare le etichette."),
+        head: `✓ ${n} ${n === 1 ? "esame" : "esami"} in carrello, ${n === 1 ? "verificato" : "verificati"}`,
+        body: state.quesitoKept ? "Quesito del triage mantenuto." : "",
       };
       this.render();
       if (state.finishedListUrl) setTimeout(() => { location.href = state.finishedListUrl; }, 900);
@@ -1460,12 +1511,7 @@
       this.clearOrderUi();
       this.runState = "done";
       const total = done.reduce((n, d) => n + d.count, 0);
-      this.message = {
-        head: `✓ ${done.length} richieste create, ${total} esami verificati`,
-        body: plan.autoConfirm
-          ? "Le confermo una dopo l'altra, poi parte la stampa di tutto."
-          : "Apro la prima: confermala, poi il pannello ti porta alla seconda.",
-      };
+      this.message = { head: `✓ ${done.length} richieste, ${total} esami verificati`, body: "" };
       // hand the rest of the walk to the pages we are about to land on
       const first = done[0];
       tabStore.set("queue.v1", { episodeId: plan.episodeId, autoConfirm: !!plan.autoConfirm, ts: Date.now(), items: done });
@@ -1583,7 +1629,7 @@
               <div class="foot">
                 <span>${esc(APP)} ${VERSION}${(typeof chrome !== "undefined" && chrome.runtime?.id)
                   ? ` · <button id="extreload" class="footlink" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">⟳ ricarica estensione</button>` : ""}</span>
-                <span>nessun dato lascia l'ospedale</span>
+                <span></span>
               </div>
             </div>
           `}
@@ -1602,8 +1648,8 @@
       const canOrder = this.pageType === "exam" || this.pageType === "crea" ||
         (this.pageType === "patient" && !!(this.entry && (this.entry.labUrl || this.entry.radioUrl)));
       if (!canOrder) {
-        const extra = `${this.viewPrint()}${this.viewReferti()}`;
-        return `${extra}<div class="hint" style="margin:2px 0 0">Apri la scheda di un paziente per creare richieste.</div>`;
+        const extra = `${this.viewPrint()}${this.viewRisultati()}${this.viewReferti()}`;
+        return `${extra}<div class="hint" style="margin:2px 0 0">Apri un paziente per creare richieste.</div>`;
       }
       const quesiti = store.get("quesiti", QUESITI_DEFAULT).slice(0, 8);
       const canOneClick = this.pageType === "patient" || this.pageType === "crea";
@@ -1620,14 +1666,9 @@
           const n = receipt.items.length;
           const byRes = {};
           for (const i of receipt.items) (byRes[i.res] = byRes[i.res] || []).push(i);
-          const parts = Object.entries(byRes)
-            .sort(([a], [b]) => (a === live.res ? -1 : b === live.res ? 1 : 0))
-            .map(([r, arr]) => `${arr.length} in ${RES_SHORT[r] || r}${r === live.res ? " (questa pagina)" : ""}`);
           receiptSec = `
-            <div class="banner ok"><b>✓ ${n === 1 ? "1 esame" : n + " esami"} nel carrello, ${n === 1 ? "verificato" : "tutti verificati"}</b>
-              ${esc(parts.join(" · "))}${receipt.quesitoKept ? "<br>Quesito del triage mantenuto." : ""}
-            </div>
-            ${live.confirmButton ? `<button class="btn confirm" id="confirmnow" style="margin-bottom:12px">✓ CONFERMA ora → stampa etichette</button>` : ""}`;
+            <div class="banner ok"><b>✓ ${n} ${n === 1 ? "esame" : "esami"} in carrello, ${n === 1 ? "verificato" : "verificati"}</b></div>
+            ${live.confirmButton ? `<button class="btn confirm" id="confirmnow" style="margin-bottom:12px">✓ CONFERMA → stampa</button>` : ""}`;
         }
       }
 
@@ -1682,15 +1723,9 @@
       const confirmLabel = `+ Conferma 🖨`;
 
       const problems = this.computeProblems();
-      const radioKnown = RADIO_SET.some((r) => Object.keys(cat[r]?.items || {}).length);
-      const radioHint = (this.pageType === "patient" && !radioKnown && this.entry?.radioUrl)
-        ? `<div class="hint">Radiologia: apri una volta <a href="${esc(this.entry.radioUrl)}">Richieste Radiologia</a> e l'elenco viene imparato per i prossimi accessi.</div>` : "";
 
       const pendingSec = this.pending ? `
-        <div class="banner warn"><b>Manca una conferma</b>
-          La richiesta di ${esc(this.pending.next.kind === "radio" ? "radiologia" : "laboratorio")}
-          (${this.pending.next.count} ${this.pending.next.count === 1 ? "esame" : "esami"}) è pronta ma non ancora confermata.</div>
-        <button class="btn confirm" id="goqueued" style="margin-bottom:12px">→ Apri e conferma la richiesta di ${esc(this.pending.next.kind === "radio" ? "radiologia" : "laboratorio")}</button>` : "";
+        <button class="btn confirm" id="goqueued" style="margin-bottom:12px">→ Conferma ${esc(this.pending.next.kind === "radio" ? "la radiologia" : "il laboratorio")} (${this.pending.next.count})</button>` : "";
       return `
         ${pendingSec}
         ${receiptSec}
@@ -1703,6 +1738,7 @@
           ${this.viewBrowse(cat)}
         </div>
         ${this.viewPrint()}
+        ${this.viewRisultati()}
         ${this.viewReferti()}
         <details class="reg"><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
@@ -1713,8 +1749,7 @@
             <button class="btn primary" id="go" ${n && !problems.go.length ? "" : "disabled"}>${esc(goLabel)}</button>
             <button class="btn confirm" id="goconfirm" title="Come il bottone a sinistra, e in più preme Conferma per te (conto alla rovescia annullabile con Esc) e avvia la stampa guidata" ${n && !problems.confirm.length ? "" : "disabled"}>${esc(confirmLabel)}</button>
           </div>
-          <div class="hint">Ogni esame verificato nel carrello · conferma annullabile (Esc) · poi stampa guidata.</div>
-          ${radioHint}
+          ${problems.go[0] ? "" : `<div class="hint">Verifica esame per esame · conferma annullabile (Esc)</div>`}
         </div>
       `;
     }
@@ -1730,18 +1765,63 @@
       const hot = receipt && map[receipt.richiestaId] ? receipt.richiestaId : null;
       const rows = rids.slice(0, 6).map((rid) => {
         const m = printMeta(map, rid);
-        const exams = m.exams.length ? m.exams.join(", ") : printLabelFor(map, rid);
+        const exams = m.exams.join(", ");
         return `<button class="prow ${rid === hot ? "hot" : ""}" data-print="${esc(rid)}" title="Richiesta ${esc(rid)} — ${esc(printLabelFor(map, rid))}">
           <span class="pline1">🖨 <b>${esc(m.when || "richiesta " + rid)}</b> <small>${esc(printLabelFor(map, rid))}</small></span>
-          <span class="pline2">${esc(exams)}</span>
+          ${exams ? `<span class="pline2">${esc(exams)}</span>` : ""}
         </button>`;
       }).join("");
       return `
         <div class="sec">
           <div class="lbl">Stampa</div>
           <div class="rlist">${rows}</div>
-          <div class="hint">Prima le etichette (etichettatrice), poi le liste (stampante normale), in sequenza.</div>
+
         </div>`;
+    }
+
+    // Values are fetched once per accesso and kept for the tab, so reopening
+    // is instant; ↻ pulls them again while the lab is still completing.
+    viewRisultati() {
+      if (this.pageType !== "patient" || !this.risultati.length) return "";
+      const rows = this.risultati.map((r) => {
+        const open = this.risOpen === r.id;
+        const cache = tabStore.get("ris." + r.id, null);
+        const body = !open ? "" : cache && cache.rows
+          ? `<div class="rvals">${cache.rows.map((v) => {
+              const oo = outOfRange(v.valore, v.range);
+              return `<div class="rval ${oo ? "bad" : ""}"><span class="rvn">${esc(v.nome)}</span><span class="rvv">${esc(v.valore)}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}</span><span class="rvr">${esc(v.range || "")}${v.um ? " " + esc(v.um) : ""}</span></div>`;
+            }).join("")}</div>`
+          : `<div class="rvals"><div class="rval">${this.risBusy === r.id ? "carico…" : "nessun valore"}</div></div>`;
+        return `<div class="rgroup">
+          <button class="rrow ${open ? "saved" : ""}" data-ris="${esc(r.id)}" title="${esc(r.exams.join(", "))}">
+            <span class="rdot ${cache ? "saved" : ""}"></span>
+            <span class="rwhen">${esc(r.when)}</span>
+            <span class="rlab">${esc(r.exams.join(", "))}</span>
+            <span class="rsys">${open ? "▾" : "▸"}</span>
+          </button>${body}</div>`;
+      }).join("");
+      return `<div class="sec"><div class="lbl">Risultati (${this.risultati.length})
+          ${this.risOpen ? `<button class="mini" id="risreload">↻</button>` : ""}</div>
+        <div class="rlist">${rows}</div></div>`;
+    }
+
+    async openRisultati(id, force) {
+      if (this.risOpen === id && !force) { this.risOpen = null; this.render(); return; }
+      this.risOpen = id;
+      const key = "ris." + id;
+      if (!force && tabStore.get(key, null)) { this.render(); return; }
+      const r = this.risultati.find((x) => x.id === id);
+      if (!r) return;
+      this.risBusy = id;
+      this.render();
+      try {
+        const { doc } = await fetchDoc(r.url, {});
+        tabStore.set(key, { ts: Date.now(), rows: parseRisultati(doc) });
+      } catch (e) {
+        this.log(`${now()}  risultati non letti: ${e?.head || e?.message || e}`);
+      }
+      this.risBusy = null;
+      this.render();
     }
 
     viewReferti() {
@@ -1770,9 +1850,7 @@
             ${(nSaved || open.size) ? `<button class="mini" id="refreset" title="Svuota i salvataggi e chiude le schede">↻ Resetta</button>` : ""}
           </div>
           <div class="rlist">${rows}</div>
-          <div class="hint">${canSave
-            ? `● salvato: si apre all'istante · ◍ aperto in una scheda · ○ da aprire${nSaved ? ` — ${nSaved}/${this.referti.length} salvati` : ""}`
-            : "● già aperto: il click ci ritorna subito · ○ da aprire"}</div>
+          ${nSaved ? `<div class="hint">${nSaved}/${this.referti.length} salvati</div>` : ""}
         </div>`;
     }
 
@@ -1877,7 +1955,7 @@
         <details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
           <button class="btn stop" id="stopbtn">INTERROMPI (Esc)</button>
-          <div class="hint">Dopo lo stop non parte nessun nuovo invio.</div>
+  
         </div>
       `;
     }
@@ -2025,6 +2103,8 @@
         const jobs = printJobsFor(printModel(document, location.href), rid);
         if (jobs.length) openPrintWizard(jobs, { panel: this, title: `Richiesta ${rid}.` });
       }));
+      this.root.querySelectorAll("[data-ris]").forEach((b) => b.addEventListener("click", () => this.openRisultati(b.getAttribute("data-ris"))));
+      $("#risreload")?.addEventListener("click", () => this.openRisultati(this.risOpen, true));
       this.root.querySelectorAll("[data-ref]").forEach((b) => b.addEventListener("click", () => this.openReferto(b.getAttribute("data-ref"))));
       $("#refreset")?.addEventListener("click", () => this.resetReferti());
       $("#refsave")?.addEventListener("click", () => this.saveAllReferti());
@@ -2135,9 +2215,8 @@
       <div class="cwrap"><div class="cbox">
         <div class="crow">
           <span class="cd" id="cdn">${n}</span>
-          <span><b>Conferma automatica — ${flag.count} ${flag.count === 1 ? "esame" : "esami"} · ${esc(patientName)}</b><br>
-          <small>Stampa etichette tra <span id="cds">${n}</span> s — qualsiasi click o Esc annulla</small>
-          <div class="clist">${esc(cartPreview.join(" · "))}</div></span>
+          <span><b>Conferma automatica · ${flag.count} ${flag.count === 1 ? "esame" : "esami"} · ${esc(patientName)}</b><br>
+          <small>tra <span id="cds">${n}</span> s — Esc o un click annulla</small></span>
           <button class="cbtn" id="cancel">Annulla (Esc)</button>
         </div>
         <div class="cbar"><i></i></div>
@@ -2155,8 +2234,7 @@
       finished = true;
       cleanup();
       panel?.log(`${now()}  conferma automatica annullata${why ? ` (${why})` : ""}`);
-      root.innerHTML = `<style>${CSS}</style>
-        <div class="cwrap"><div class="toast">Conferma automatica annullata. Rivedi il carrello e premi <b>Conferma</b> quando sei pronto.</div></div>`;
+      root.innerHTML = `<style>${CSS}</style><div class="cwrap"><div class="toast">Conferma annullata.</div></div>`;
       setTimeout(() => wrap.remove(), 5000);
     };
     const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); cancel(); } };
@@ -2270,9 +2348,7 @@
             <button class="pwbtn ghost" id="pwskip">Salta</button>
             ${viewer ? "" : `<button class="pwbtn ghost" id="pwtab">Apri in una scheda</button>`}
             <button class="pwbtn exit" id="pwexit">Annulla (Esc)</button>
-            <div class="pwhint">${viewer
-              ? `Questo documento si apre in una nuova scheda: premi Ctrl+P e scegli <b style="display:inline">${esc(job.printer)}</b>.`
-              : `${esc(title)} La finestra di stampa propone l'ultima stampante usata: scegli <b style="display:inline">${esc(job.printer)}</b> la prima volta, poi resta tra le recenti.`}</div>
+            <div class="pwhint">${viewer ? `Ctrl+P nella nuova scheda → <b style="display:inline">${esc(job.printer)}</b>` : `Scegli <b style="display:inline">${esc(job.printer)}</b> nel dialogo`}</div>
           </div>
         </div>`;
       root.querySelector("#pwre")?.addEventListener("click", tryPrint);
@@ -2399,6 +2475,7 @@
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       panel.referti = refertiModel(document, location.href);
+      panel.risultati = risultatiModel(document, location.href);
       const pending = nextQueued(findEpisodeId(document, location.href));
       panel.pending = pending; // a richiesta of this run still needs confirming
       panel.render();

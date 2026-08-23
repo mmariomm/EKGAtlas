@@ -119,8 +119,7 @@ async function scenarioHappyLab(browser, { directRender = false } = {}) {
   const cartChips = await $panel(page, ".chip.cart").count();
   check(scen, cartChips === 5, `pannello mostra i 5 esami in carrello su questa risorsa (got ${cartChips})`);
   const receipt = await $panel(page, ".banner.ok").innerText().catch(() => "");
-  check(scen, /6 esami nel carrello, tutti verificati/.test(receipt), `ricevuta verde con conteggio pieno (got: ${receipt.slice(0, 60)})`);
-  check(scen, /1 in POC/.test(receipt) && /5 in Urgenze \(questa pagina\)/.test(receipt), "ricevuta spiega la ripartizione per risorsa");
+  check(scen, /6 esami in carrello, verificati/.test(receipt), `ricevuta sintetica (got: ${receipt.trim().slice(0, 50)})`);
   const ghosted = await $panel(page, ".chip.ghosted").count();
   check(scen, ghosted === 1, `l'esame POC fuori pagina è mostrato come verificato altrove (got ${ghosted})`);
   await shot(page, scen + "-landed");
@@ -861,8 +860,7 @@ async function scenarioLabPlusRxManual(browser) {
   await page.waitForSelector("#psassist-host #confirmnow", { timeout: 60000 });
   await $panel(page, "#confirmnow").click(); // confirm the lab one
   await page.waitForSelector("#psassist-host #goqueued", { timeout: 30000 });
-  const banner = await $panel(page, ".banner.warn").innerText();
-  check(scen, /radiologia/.test(banner), `avvisa che manca la radiologia (got: ${banner.replace(/\s+/g, " ").slice(0, 70)})`);
+  check(scen, /radiologia/i.test(await $panel(page, "#goqueued").innerText()), "il bottone dice che manca la radiologia");
   await $panel(page, "#goqueued").click();
   await page.waitForSelector("#psassist-host #confirmnow", { timeout: 30000 });
   await $panel(page, "#confirmnow").click(); // confirm the radiology one
@@ -870,6 +868,38 @@ async function scenarioLabPlusRxManual(browser) {
   const rich = Object.values(mock.state.richieste);
   check(scen, rich.length === 2 && rich.every((r) => r.confirmed), "entrambe le richieste confermate a mano");
   check(scen, (await page.locator("#psassist-host #goqueued").count()) === 0, "l'avviso sparisce quando non manca più nulla");
+  await context.close();
+}
+
+async function scenarioRisultati(browser) {
+  const scen = "risultati";
+  const mock = createMock({ withResults: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  const rows = await page.locator("#psassist-host [data-ris]").allInnerTexts();
+  check(scen, rows.length === 2, `2 accessi con risultati (got ${rows.length})`);
+  check(scen, /23\/08 07:28/.test(rows[0]) && /EMOCROMO/.test(rows[0].toUpperCase()), `più recente in cima (got: ${rows[0]?.replace(/\s+/g, " ").slice(0, 50)})`);
+  check(scen, hits(mock, "RcsAccessiRisultatiElenco") === 0, "nessuna lettura finché non apri");
+
+  await page.locator("#psassist-host [data-ris]").first().click();
+  await page.waitForSelector("#psassist-host .rval", { timeout: 15000 });
+  const vals = await page.locator("#psassist-host .rval").allInnerTexts();
+  check(scen, vals.length === 3, `valori mostrati nel pannello (got ${vals.length})`);
+  check(scen, /Emoglobina/.test(vals.join(" ")) && /80/.test(vals.join(" ")), "nome e valore leggibili");
+  const bad = await page.locator("#psassist-host .rval.bad").allInnerTexts();
+  check(scen, bad.length === 1 && /Emoglobina/.test(bad[0]) && /↓/.test(bad[0]),
+    `solo il valore fuori range è segnalato (got: ${bad.join("|").replace(/\s+/g, " ").slice(0, 40)})`);
+
+  // second open is instant: no new request
+  await page.locator("#psassist-host [data-ris]").first().click(); // collapse
+  const before = hits(mock, "RcsAccessiRisultatiElenco");
+  await page.locator("#psassist-host [data-ris]").first().click(); // expand again
+  await page.waitForSelector("#psassist-host .rval", { timeout: 8000 });
+  check(scen, hits(mock, "RcsAccessiRisultatiElenco") === before, "riapertura istantanea, senza rileggere dal server");
+  await page.locator("#psassist-host #risreload").click();
+  await page.waitForTimeout(600);
+  check(scen, hits(mock, "RcsAccessiRisultatiElenco") === before + 1, "↻ rilegge dal server");
   await context.close();
 }
 
@@ -924,7 +954,7 @@ async function scenarioNoPatientPage(browser) {
   check(scen, (await page.locator("#psassist-host .chip.preset").count()) === 0, "nessun profilo rapido");
   check(scen, (await page.locator("#psassist-host #q, #psassist-host #acq, #psassist-host #go").count()) === 0,
     "niente quesito, ricerca o bottoni di invio");
-  check(scen, /Apri la scheda di un paziente/.test(await $panel(page, ".bd").innerText()), "spiega cosa fare");
+  check(scen, /Apri un paziente/.test(await $panel(page, ".bd").innerText()), "spiega cosa fare");
   check(scen, /PRONTO SOCCORSO/.test(await $panel(page, ".hd .who").innerText()), "intestazione senza nome paziente");
   await context.close();
 }
@@ -1023,6 +1053,7 @@ const scenarios = [
   ["rx singles (torace/addome)", scenarioRxSingles],
   ["lab + rx: two richieste, one flow", scenarioLabPlusRx],
   ["lab + rx manual walk", scenarioLabPlusRxManual],
+  ["risultati inline", scenarioRisultati],
   ["resize + copy log", scenarioResizeAndLog],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],

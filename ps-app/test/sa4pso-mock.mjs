@@ -185,6 +185,7 @@ export function createMock(opts = {}) {
       ${mk("lab", "Richieste Laboratorio")} ${mk("radio", "Richieste Radiologia")}
       <a title="Richieste Consulenza" href="menuPsoEpisodio.do?MVPG=PsoRichiestaCreaRcs&EPISODIO_ID=${EP()}&REPARTO=001PS&STRUTTURA=1&toPage=PsoRichiestaPrestazioniRicercaErogatore&returnPage=PsoEpisodio">Consulenze</a>
       <table>${printRows()}</table>
+      ${risultatiRows()}
       ${refertiRows()}
       ${FOOT}`;
   }
@@ -230,6 +231,27 @@ export function createMock(opts = {}) {
         <a title="Stampa Etichette" href="RcsStampaEtichetteLISHMIMU.do?RICHIESTA_ID=${rid}&RICHIESTA_PROG=${prog}"><img alt="etichette"></a>`;
     });
   }
+  // lab still being reported: the coloured icon opens RcsAccessiRisultatiElenco.do
+  const ACCESSI = [
+    { id: "20260010040701", when: "2026-08-23 07:28:00.0", exams: "0-320 EMOCROMOCITOMETRICO URGENTE (POCT1502)" },
+    { id: "20260010035301", when: "2026-08-22 22:23:00.0", exams: "0-220 PT (POC1401); 0-320 EMOCROMOCITOMETRICO URGENTE (POCT1502)" },
+  ];
+  function risultatiRows() {
+    if (!opts.withResults) return "";
+    return `<table>${ACCESSI.map((a) => `<tr>
+      <td class="AFCDataTD" title="${esc(a.exams)}">
+        <a class="AFCDataLink" href="menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${EP()}#" title="Visualizza Risultati" onclick="window.open('/sa4rcs/restrict/RcsAccessiRisultatiElenco.do?RCS_ACCESSO_ID=${a.id}','*TEST00001','height=500,width=800');"><img alt="risultati"></a>
+        <input type="hidden" name="DATA_ORD" value="${a.when}">
+      </td></tr>`).join("")}</table>`;
+  }
+  const risultatiPage = (id) => `${HEAD}<table>
+      <tr><td class="AFCColumnTD">Esame</td><td class="AFCColumnTD">Valore</td><td class="AFCColumnTD">Unit&agrave; di Misura</td><td class="AFCColumnTD">Range</td><td class="AFCColumnTD">Stato</td><td class="AFCColumnTD">Data</td></tr>
+      <tr><td class="AFCDataTD">Assistito</td><td class="AFCDataTD">ROSSI MARIO</td></tr>
+      <tr><td class="AFCDataTD">Leucociti&nbsp;</td><td class="AFCDataTD">6.4</td><td class="AFCDataTD">x10</td><td class="AFCDataTD">4 - 10</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
+      <tr><td class="AFCDataTD">Emoglobina&nbsp;</td><td class="AFCDataTD">80</td><td class="AFCDataTD">g/L</td><td class="AFCDataTD">135 - 180</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
+      <tr><td class="AFCDataTD">Ematocrito&nbsp;</td><td class="AFCDataTD">44</td><td class="AFCDataTD">%</td><td class="AFCDataTD">40 - 54</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
+    </table>accesso ${esc(id)}${FOOT}`;
+
   function printRows() {
     return Object.keys(state.richieste)
       .map((rid) => rowsFor(rid).map((row) => `<tr><td>Richiesta ${rid}</td><td>${row}</td></tr>`).join("\n"))
@@ -410,6 +432,9 @@ export function createMock(opts = {}) {
     }
     if (u.pathname.includes("/jasperserverSAN/jasperservlet")) {
       return params.get("REPORT") ? pdf() : respond(notFound("jasperservlet senza REPORT"), 404);
+    }
+    if (u.pathname.includes("/sa4rcs/restrict/RcsAccessiRisultatiElenco.do")) {
+      return respond(risultatiPage(params.get("RCS_ACCESSO_ID") || ""));
     }
     if (u.pathname.includes("/sa4/restrict2/refertostream")) {
       return params.get("REFERTO_ID") ? pdf() : respond(notFound("stream senza REFERTO_ID"), 404);
