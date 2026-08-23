@@ -806,6 +806,73 @@ async function scenarioReferti(browser) {
   await context.close();
 }
 
+async function scenarioLabPlusRx(browser) {
+  const scen = "lab+rx";
+  // lab and radiology selected together → two richieste, both confirmed, one print flow
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, "#q").fill("dispnea e dolore toracico");
+  await $panel(page, '.opt[title*="TROPONINA"]').click();   // POC
+  await $panel(page, '.opt[title*="RX TORACE ("]').first().click(); // RX
+  check(scen, /Crea 2 richieste/.test(await $panel(page, "#go").innerText()), "il bottone annuncia due richieste");
+  await $panel(page, "#goconfirm").click();
+
+  // both richieste get built, then each is confirmed in turn
+  await page.waitForFunction(() => {
+    const s = document.querySelectorAll("form[name=Prestazioni]").length;
+    return s === 0; // we end up back on the patient page
+  }, { timeout: 60000 }).catch(() => {});
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 60000 });
+
+  const rich = Object.entries(mock.state.richieste);
+  check(scen, rich.length === 2, `due richieste create (got ${rich.length})`);
+  const lab = rich.find(([, r]) => r.cart.has("324"));
+  const rx = rich.find(([, r]) => r.cart.has("35"));
+  check(scen, !!lab && !!rx, "una di laboratorio (troponina) e una di radiologia (RX torace)");
+  check(scen, lab && lab[1].confirmed && rx && rx[1].confirmed, "entrambe confermate");
+  check(scen, lab && lab[1].quesito === "dispnea e dolore toracico" && rx && rx[1].quesito === "dispnea e dolore toracico",
+    "stesso quesito su entrambe");
+
+  // one single print flow covering both
+  const heads = [];
+  for (let k = 0; k < 3; k++) {
+    heads.push((await $wiz(page, ".pwhd").innerText()).split("\n")[0]);
+    await $wiz(page, "#pwnext").click();
+    await page.waitForTimeout(300);
+  }
+  check(scen, /1 di 3 — Etichette/.test(heads[0]) && /2 di 3 — Lista esami/.test(heads[1]) && /3 di 3 — Prenotazione/.test(heads[2]),
+    `un solo flusso: etichette → lista → RX (got ${heads.join(" | ")})`);
+  await context.close();
+}
+
+async function scenarioLabPlusRxManual(browser) {
+  const scen = "lab+rx-manuale";
+  // same, without auto-confirm: the panel walks the doctor to the second one
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, "#q").fill("trauma");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="RX ADDOME"]').first().click();
+  await $panel(page, "#go").click();
+  await page.waitForSelector("#psassist-host #confirmnow", { timeout: 60000 });
+  await $panel(page, "#confirmnow").click(); // confirm the lab one
+  await page.waitForSelector("#psassist-host #goqueued", { timeout: 30000 });
+  const banner = await $panel(page, ".banner.warn").innerText();
+  check(scen, /radiologia/.test(banner), `avvisa che manca la radiologia (got: ${banner.replace(/\s+/g, " ").slice(0, 70)})`);
+  await $panel(page, "#goqueued").click();
+  await page.waitForSelector("#psassist-host #confirmnow", { timeout: 30000 });
+  await $panel(page, "#confirmnow").click(); // confirm the radiology one
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 });
+  const rich = Object.values(mock.state.richieste);
+  check(scen, rich.length === 2 && rich.every((r) => r.confirmed), "entrambe le richieste confermate a mano");
+  check(scen, (await page.locator("#psassist-host #goqueued").count()) === 0, "l'avviso sparisce quando non manca più nulla");
+  await context.close();
+}
+
 async function scenarioNoPatientPage(browser) {
   const scen = "no-patient";
   const mock = createMock({});
@@ -913,6 +980,8 @@ const scenarios = [
   ["continuity + panel confirm button", scenarioContinuity],
   ["referti tabs + reset", scenarioReferti],
   ["rx singles (torace/addome)", scenarioRxSingles],
+  ["lab + rx: two richieste, one flow", scenarioLabPlusRx],
+  ["lab + rx manual walk", scenarioLabPlusRxManual],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],
   ["stop button", scenarioStopButton],

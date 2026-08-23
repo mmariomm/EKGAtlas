@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "2.2.0";
+  const VERSION = "2.3.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -75,6 +75,7 @@
   const CONFIRM_SECONDS = 5;     // countdown before the native Conferma click
   const CONFIRM_FLAG_TTL = 120e3;// ms an auto-confirm handoff stays valid
   const PRINT_FLAG_TTL = 180e3;  // ms a post-confirm print handoff stays valid
+  const QUEUE_TTL = 30 * 60e3;   // ms a still-unconfirmed richiesta keeps reminding
 
   // Resources ("Risorsa" dropdown values) — verified in the saved pages.
   const RES = {
@@ -806,7 +807,7 @@
       steps: [], added: [], stop: () => ctrl.abort(),
       finishedListUrl: null, lastListUrl: null, richiestaId: null,
     };
-    ui.beginRun(state);
+    ui.beginRun(state, plan);
     const log = (msg) => ui.log(`${now()}  ${msg}`);
     // Any fetched page that is a login page means the session died mid-flow.
     const guardSession = (doc, whatMayHaveHappened) => {
@@ -827,8 +828,9 @@
     plan.items = applyExclusions(plan.items, log);
 
     // Pre-build the visible step list.
-    const sOpen = plan.startPage === "patient" ? step("Apro la nuova richiesta") : null;
-    const sCrea = plan.startPage !== "exam" ? step("Compilo quesito e creo la richiesta") : null;
+    const legTag = plan.legLabel ? ` (${plan.legLabel})` : "";
+    const sOpen = plan.startPage === "patient" ? step("Apro la nuova richiesta" + legTag) : null;
+    const sCrea = plan.startPage !== "exam" ? step("Compilo quesito e creo la richiesta" + legTag) : null;
     const itemSteps = new Map();
     for (const it of plan.items) itemSteps.set(it, step(it.display || it.label));
     const sEnd = step(plan.autoConfirm ? "Passo alla pagina esami per la conferma" : "Passo alla pagina esami per la revisione");
@@ -981,12 +983,12 @@
       state.finishedListUrl = landUrl;
       // Receipt for the landing page: the panel there shows the full,
       // verified accounting (including exams on other resources).
-      tabStore.set("receipt.v1", {
+      if (!plan.hold) tabStore.set("receipt.v1", {
         richiestaId: model.richiestaId, episodeId: plan.episodeId, ts: Date.now(),
         quesitoKept: state.quesitoKept || null,
         items: state.added.map((i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label })),
       });
-      if (plan.autoConfirm && state.added.length) {
+      if (plan.autoConfirm && state.added.length && !plan.hold) {
         tabStore.set("confirm.v1", {
           richiestaId: model.richiestaId, episodeId: plan.episodeId,
           lastCode: last.code, lastLabel: last.label, count: state.added.length, ts: Date.now(),
@@ -1322,7 +1324,9 @@
     }
 
     // ---- engine callbacks ----
-    beginRun(state) {
+    beginRun(state, plan) {
+      // a chained second richiesta keeps the first one's steps on screen
+      if (plan && plan.continuation && this.runData && this.runData.steps) state.steps.unshift(...this.runData.steps);
       this.runState = "running"; this.runData = state; this.stopFn = state.stop;
       if (this.collapsed) { this.collapsed = false; store.set("collapsed", false); }
       window.addEventListener("beforeunload", this._unload); // a run must not die silently
@@ -1330,6 +1334,7 @@
     }
     renderRun(state) { this.runData = state; this.render(); }
     finished(state, plan) {
+      if (plan.hold) { this.runData = state; this.render(); return; } // the chain finishes for us
       window.removeEventListener("beforeunload", this._unload);
       this.clearOrderUi(); // the order is placed: next page starts clean
       this.runState = "done"; this.runData = state;
@@ -1377,7 +1382,50 @@
       this.runPatient = (document.title || "").trim();
       const plan = { quesito: (this._q || "").trim(), items, episodeId, patientName: this.runPatient, ...base };
       if (plan.quesito) rememberQuesito(plan.quesito);
-      runPlan(plan, this); // fire and forget; the engine drives the UI via callbacks
+      if (plan.legs && plan.legs.length > 1) this.runChain(plan);
+      else runPlan(plan, this); // fire and forget; the engine drives the UI via callbacks
+    }
+
+    // Lab and radiology cannot share a richiesta, so when both are selected we
+    // build them one after the other and then walk the doctor through both
+    // confirmations (and one single print flow at the end).
+    async runChain(plan) {
+      const done = [];
+      for (let i = 0; i < plan.legs.length; i++) {
+        const leg = plan.legs[i];
+        const st = await runPlan({
+          ...plan, hold: true, continuation: i > 0,
+          entryUrl: leg.entryUrl, items: leg.items, legLabel: leg.label,
+        }, this);
+        if (this.runState !== "running" || !st || !st.richiestaId) return; // failed/stopped: stop here
+        done.push({
+          rid: st.richiestaId, listUrl: st.finishedListUrl || st.lastListUrl, kind: leg.kind,
+          count: st.added.length,
+          lastCode: st.added.length ? st.added[st.added.length - 1].code : null,
+          lastLabel: st.added.length ? st.added[st.added.length - 1].label : null,
+          added: st.added.map((x) => ({ res: x.res, code: x.code, label: x.label, display: x.display || x.label })),
+        });
+      }
+      if (!done.length) return;
+      window.removeEventListener("beforeunload", this._unload);
+      this.clearOrderUi();
+      this.runState = "done";
+      const total = done.reduce((n, d) => n + d.count, 0);
+      this.message = {
+        head: `✓ ${done.length} richieste create, ${total} esami verificati`,
+        body: plan.autoConfirm
+          ? "Le confermo una dopo l'altra, poi parte la stampa di tutto."
+          : "Apro la prima: confermala, poi il pannello ti porta alla seconda.",
+      };
+      // hand the rest of the walk to the pages we are about to land on
+      const first = done[0];
+      tabStore.set("queue.v1", { episodeId: plan.episodeId, autoConfirm: !!plan.autoConfirm, ts: Date.now(), items: done });
+      tabStore.set("receipt.v1", { richiestaId: first.rid, episodeId: plan.episodeId, ts: Date.now(), items: first.added });
+      if (plan.autoConfirm && first.lastCode) {
+        tabStore.set("confirm.v1", { richiestaId: first.rid, episodeId: plan.episodeId, lastCode: first.lastCode, lastLabel: first.lastLabel, count: first.count, ts: Date.now() });
+      }
+      this.render();
+      if (first.listUrl) setTimeout(() => { location.href = first.listUrl; }, 900);
     }
 
     // ---- live validation (before anything is sent) ----
@@ -1388,7 +1436,6 @@
       const wantsRadio = items.some((i) => RADIO_SET.includes(i.res));
       const wantsLab = items.some((i) => !RADIO_SET.includes(i.res));
       if (this.pageType === "patient") {
-        if (wantsRadio && wantsLab) both("Laboratorio e radiologia vanno in due richieste separate: lancia prima una, poi l'altra.");
         if (items.length && !(this._q || "").trim()) both("Scrivi il quesito diagnostico prima di creare la richiesta.");
         if (wantsRadio && !wantsLab && !this.entry?.radioUrl) both("Link Richieste Radiologia non trovato su questa pagina.");
         if (wantsLab && !this.entry?.labUrl) both("Link Richieste Laboratorio non trovato su questa pagina.");
@@ -1409,7 +1456,7 @@
           if (wrong.length) both(`Non ordinabili in questa richiesta: ${wrong.map((i) => i.display || shortLabel(i.label)).join(", ")}.`);
         }
       }
-      if (wantsRadio) problems.confirm.push("Radiologia: in questa prima versione usa la Conferma manuale sulla pagina.");
+
       return problems;
     }
 
@@ -1570,7 +1617,11 @@
 
       const n = this.selected.size;
       const nTxt = n === 0 ? "esami" : n === 1 ? "1 esame" : `${n} esami`;
-      const goLabel = this.pageType === "exam" ? `Aggiungi ${nTxt}` : `Crea e aggiungi ${nTxt}`;
+      const twoLegs = this.pageType === "patient" &&
+        [...this.selected.values()].some((i) => RADIO_SET.includes(i.res)) &&
+        [...this.selected.values()].some((i) => !RADIO_SET.includes(i.res));
+      const goLabel = this.pageType === "exam" ? `Aggiungi ${nTxt}`
+        : twoLegs ? `Crea 2 richieste · ${nTxt}` : `Crea e aggiungi ${nTxt}`;
       const confirmLabel = `+ Conferma 🖨`;
 
       const problems = this.computeProblems();
@@ -1578,7 +1629,13 @@
       const radioHint = (this.pageType === "patient" && !radioKnown && this.entry?.radioUrl)
         ? `<div class="hint">Radiologia: apri una volta <a href="${esc(this.entry.radioUrl)}">Richieste Radiologia</a> e l'elenco viene imparato per i prossimi accessi.</div>` : "";
 
+      const pendingSec = this.pending ? `
+        <div class="banner warn"><b>Manca una conferma</b>
+          La richiesta di ${esc(this.pending.next.kind === "radio" ? "radiologia" : "laboratorio")}
+          (${this.pending.next.count} ${this.pending.next.count === 1 ? "esame" : "esami"}) è pronta ma non ancora confermata.</div>
+        <button class="btn confirm" id="goqueued" style="margin-bottom:12px">→ Apri e conferma la richiesta di ${esc(this.pending.next.kind === "radio" ? "radiologia" : "laboratorio")}</button>` : "";
       return `
+        ${pendingSec}
         ${receiptSec}
         ${quesitoSec}
         ${cartSec}
@@ -1847,6 +1904,7 @@
         if (u) location.href = u;
       });
 
+      $("#goqueued")?.addEventListener("click", () => { if (this.pending) goToQueued(this.pending); });
       $("#confirmnow")?.addEventListener("click", () => {
         // native click → server confirm → print handoff (armed at boot)
         const live = examModel(document, location.href);
@@ -1912,10 +1970,16 @@
 
       const base = { autoConfirm };
       if (this.pageType === "patient") {
-        const wantsRadio = items.some((i) => RADIO_SET.includes(i.res));
+        const lab = items.filter((i) => !RADIO_SET.includes(i.res));
+        const radio = items.filter((i) => RADIO_SET.includes(i.res));
+        const legs = [];
+        if (lab.length) legs.push({ kind: "lab", label: "laboratorio", items: lab, entryUrl: this.entry?.labUrl });
+        if (radio.length) legs.push({ kind: "radio", label: "radiologia", items: radio, entryUrl: this.entry?.radioUrl });
+        if (legs.some((l) => !l.entryUrl)) { this.message = "Link di apertura richiesta non trovato su questa pagina."; this.render(); return; }
         base.startPage = "patient";
-        base.entryUrl = wantsRadio ? this.entry?.radioUrl : this.entry?.labUrl;
-        if (!base.entryUrl) { this.message = "Link di apertura richiesta non trovato su questa pagina."; this.render(); return; }
+        base.legs = legs;
+        base.entryUrl = legs[0].entryUrl;
+        base.items = legs[0].items;
       } else if (this.pageType === "crea") {
         const form = document.forms.namedItem("RICHIESTACrea");
         if (!form) { this.message = "Form della richiesta non trovato."; this.render(); return; }
@@ -2178,6 +2242,11 @@
   function armPrintOnConfirm(model, episodeId) {
     if (!model.form || !model.richiestaId) return;
     const arm = () => {
+      const q = tabStore.get("queue.v1", null);
+      if (q && q.items) { // this richiesta is done: drop it from the walk
+        const left = q.items.filter((it) => it.rid !== model.richiestaId);
+        tabStore.set("queue.v1", left.length ? { ...q, items: left, ts: Date.now() } : null);
+      }
       const prev = tabStore.get("print.v1", null);
       const fresh = prev && prev.episodeId === episodeId && Date.now() - (prev.ts || 0) < PRINT_FLAG_TTL ? prev.ids || [] : [];
       const ids = [...new Set([...fresh, model.richiestaId])]; // lab + radiology land in ONE flow
@@ -2187,6 +2256,26 @@
       const b = model.form.elements.namedItem(name);
       if (b && (b.type || "").toLowerCase() === "submit") b.addEventListener("click", arm, true);
     }
+  }
+
+  // After confirming one richiesta of a lab+radiology pair, the server drops us
+  // on the patient page: carry on to the one still to confirm.
+  function nextQueued(episodeId) {
+    const q = tabStore.get("queue.v1", null);
+    if (!q || !q.items || !q.items.length) return null;
+    if (Date.now() - (q.ts || 0) > QUEUE_TTL) { tabStore.set("queue.v1", null); return null; }
+    if (q.episodeId && episodeId && q.episodeId !== episodeId) return null;
+    return { q, next: q.items[0] };
+  }
+
+  function goToQueued(entry) {
+    const { q, next } = entry;
+    tabStore.set("receipt.v1", { richiestaId: next.rid, episodeId: q.episodeId, ts: Date.now(), items: next.added || [] });
+    if (q.autoConfirm && next.lastCode) {
+      tabStore.set("confirm.v1", { richiestaId: next.rid, episodeId: q.episodeId, lastCode: next.lastCode, lastLabel: next.lastLabel, count: next.count, ts: Date.now() });
+    }
+    tabStore.set("queue.v1", { ...q, items: q.items.map((it, i) => (i ? it : { ...it, nav: true })), ts: Date.now() });
+    location.href = next.listUrl;
   }
 
   function maybeAutoPrint() {
@@ -2225,9 +2314,17 @@
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       panel.referti = refertiModel(document, location.href);
+      const pending = nextQueued(findEpisodeId(document, location.href));
+      panel.pending = pending; // a richiesta of this run still needs confirming
       panel.render();
       panel.refreshRefCache();
-      maybeAutoPrint();
+      if (pending) {
+        // auto-continue once per richiesta; afterwards it is a button, so an
+        // abandoned confirmation can never turn into a navigation loop
+        if (pending.q.autoConfirm && !pending.next.nav) { goToQueued(pending); return; }
+      } else {
+        maybeAutoPrint(); // nothing left to confirm → print everything at once
+      }
     } else {
       panel.render();
     }

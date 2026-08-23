@@ -28,8 +28,9 @@ passaggio in più che qui non serve).
 5. Apri SA4PSO: il pannello blu appare in alto a destra sulle pagine di paziente, Nuova
    Richiesta ed esami, **intestato col nome del paziente** su cui stai lavorando (anche da
    minimizzato, così sai sempre per chi stai ordinando). Sulla **lista del pronto soccorso**,
-   dove non c'è un paziente aperto, il pannello non mostra alcun esame: lì non si può ordinare. Si **trascina** dove vuoi dall'intestazione (la posizione viene
-   ricordata; doppio click sull'intestazione per riportarlo in alto a destra).
+   dove non c'è un paziente aperto, il pannello non mostra alcun esame: lì non si può ordinare.
+   Si **trascina** dove vuoi dall'intestazione (la posizione viene ricordata; doppio click
+   sull'intestazione per riportarlo in alto a destra).
 
 **Perché "si aggiorna" a ogni pagina?** Il gestionale è un'app anni 2000: OGNI click ricarica
 l'intera pagina — nessuna estensione può impedirlo. Il pannello però **si ricostruisce identico**:
@@ -82,8 +83,12 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
    - **+ Conferma 🖨** → come sopra ma senza click aggiuntivo: conto alla rovescia di 5 s
      (annullabile con Esc) e poi conferma e stampa da soli.
 
-**Laboratorio e radiologia** vanno in due richieste separate (come nel gestionale): il pannello te
-lo ricorda se li mescoli.
+**Laboratorio e radiologia insieme**: il gestionale vuole due richieste separate, ma tu puoi
+selezionarli insieme — il bottone diventa **«Crea 2 richieste»** e il pannello le costruisce una
+dopo l'altra (stesso quesito), poi ti porta a confermarle entrambe: con la conferma automatica
+fa tutto da solo, altrimenti dopo la prima ti avvisa con **«→ Apri e conferma la richiesta di
+radiologia»**. Alla fine parte **una sola** stampa con tutto (etichette → liste → prenotazione RX).
+Se lasci una richiesta non confermata, il promemoria resta in vista per mezz'ora.
 
 **Radiologia**: l'elenco **RX** è incluso (40 esami) e tra i singoli trovi **RX Torace**,
 **RX Torace 1 proiez.** e **RX Addome**; gli elenchi Eco/RMN/TAC il pannello li **impara da solo**
@@ -247,7 +252,7 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-└── test/                ← simulatore SA4PSO + 34 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 36 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -256,7 +261,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 34 scenari e2e (144 verifiche) + 5 verifiche sull'estensione reale
+npm test           # 36 scenari e2e (153 verifiche) + 5 verifiche sull'estensione reale
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
