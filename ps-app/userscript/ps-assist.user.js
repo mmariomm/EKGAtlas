@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PS Assist — richieste Pronto Soccorso (SA4PSO)
 // @namespace    psassist.multimedica
-// @version      2.3.0
+// @version      2.4.0
 // @description  Crea richieste lab/radiologia, aggiunge gli esami scelti verificando ogni inserimento nel carrello. Conferma sempre come click reale sulla pagina.
 // @match        https://smarthealth.multimedica.it/sa4pso/*
 // @run-at       document-idle
@@ -76,7 +76,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "2.3.0";
+  const VERSION = "2.4.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -621,7 +621,7 @@
     if (!res.ok) throw new StopError(`Il server ha risposto HTTP ${res.status}`, res.statusText || "");
     const ctype = (res.headers.get("content-type") || "").toLowerCase();
     if (ctype.includes("pdf") || ctype.includes("octet-stream")) {
-      return { blob: await res.blob(), url: res.url || target.href };
+      return { blob: await res.blob(), url: res.url || target.href, via: hop === 0 ? "diretto" : "" };
     }
     if (ctype.includes("html") && hop < 2) {
       const buf = await res.arrayBuffer();
@@ -630,14 +630,16 @@
       if (classify(doc) === "login") throw new StopError("Sessione scaduta", "Fai l'accesso a SA4PSO e riprova la stampa.");
       const base = res.url || target.href;
       const tried = [];
-      const attempt = async (raw) => {
+      const attempt = async (raw, via) => {
         if (!raw || /^(javascript:|#|about:)/i.test(raw)) return null;
         let u; try { u = new URL(String(raw).replace(/&amp;/gi, "&").trim(), base); } catch { return null; }
         if (u.origin !== location.origin || u.href === base) return null;
         if (tried.includes(u.href)) return null;
         tried.push(u.href);
-        try { return await fetchPdf(u.href, { signal, hop: hop + 1 }); }
-        catch (e) { if (e?.name === "AbortError") throw e; return null; }
+        try {
+          const r = await fetchPdf(u.href, { signal, hop: hop + 1 });
+          return r ? { ...r, via: r.via || via } : r;
+        } catch (e) { if (e?.name === "AbortError") throw e; return null; }
       };
 
       // 1. explicit references in the markup (old apps still use <frameset>)
@@ -650,22 +652,22 @@
       const meta = doc.querySelector('meta[http-equiv="refresh" i]')?.getAttribute("content") || "";
       domCands.push((/url\s*=\s*['"]?([^'"\s>]+)/i.exec(meta) || [])[1]);
       for (const m of text.matchAll(/window\.open\(\s*["']([^"']+)["']/gi)) domCands.push(m[1]);
-      for (const c of domCands) { const r = await attempt(c); if (r) return r; }
+      for (const c of domCands) { const r = await attempt(c, "link nella pagina"); if (r) return r; }
 
       // 2. a whole direct-pdf URL sitting in the viewer's own script
-      for (const c of pdfCandidates(text)) { const r = await attempt(c); if (r) return r; }
+      for (const c of pdfCandidates(text)) { const r = await attempt(c, "URL nello script"); if (r) return r; }
 
       // 3. the report id + the endpoint the page itself names: join what the
       //    page already contains (the id IS the document identity; a wrong one
       //    simply 404s and we fall through to opening the viewer natively).
       const idm = /\b([A-Z][A-Z0-9]*_[A-Z0-9]+_\d{6,})\b/.exec(text);
       if (idm && /uploaddownloadservlet|get_pdf/i.test(text)) {
-        const r = await attempt(`/UploadDownload/uploaddownloadservlet.rra2?table=DUAL&blobfield=san_report_onthefly.get_pdf(%27${idm[1]}%27)&wherecondition=where%201=1&dataSource=jdbc/sa4web&mimetype=application/pdf`);
+        const r = await attempt(`/UploadDownload/uploaddownloadservlet.rra2?table=DUAL&blobfield=san_report_onthefly.get_pdf(%27${idm[1]}%27)&wherecondition=where%201=1&dataSource=jdbc/sa4web&mimetype=application/pdf`, "id report + endpoint");
         if (r) return r;
       }
 
       // 4. replay the viewer (sandboxed) and take the URL/Blob it produces
-      try { return await harvestInlinePdf(target.href, { html: text, baseUrl: base, signal }); }
+      try { return { ...(await harvestInlinePdf(target.href, { html: text, baseUrl: base, signal })), via: "replay del visualizzatore" }; }
       catch (e) {
         if (e?.name === "AbortError") throw e;
         const err = new ViewerError(target.href);
@@ -1176,6 +1178,13 @@
     .browserow { display: flex; align-items: center; justify-content: space-between; border: 1px solid #C4D0DC; border-radius: 10px;
                  padding: 10px; background: #F4F8FB; cursor: pointer; font-size: 12.5px; font-weight: 600; color: #16232E; margin-top: 8px; }
     .browserow:hover { border-color: #0B5CAD; }
+    /* resize grip: bottom-LEFT, because the panel is anchored to the right */
+    .rsz { position: absolute; left: 0; bottom: 0; width: 16px; height: 16px; cursor: nesw-resize; z-index: 4;
+           background: linear-gradient(45deg, transparent 42%, #C4D0DC 42%, #C4D0DC 56%, transparent 56%,
+                                        transparent 66%, #C4D0DC 66%, #C4D0DC 80%, transparent 80%); }
+    .rsz:hover { background: linear-gradient(45deg, transparent 42%, #0B5CAD 42%, #0B5CAD 56%, transparent 56%,
+                                             transparent 66%, #0B5CAD 66%, #0B5CAD 80%, transparent 80%); }
+    .card { position: relative; }
     .commit { position: sticky; bottom: -1px; margin: 0 -12px -12px; padding: 10px 12px 12px; background: #fff;
               border-top: 1px solid #EEF2F6; box-shadow: 0 -10px 14px -12px rgba(9,42,74,.25); }
     .rlist { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
@@ -1241,7 +1250,8 @@
     constructor(pageType) {
       this.pageType = pageType;
       this.selected = new Map(); // "res:code" -> {res, code, label}
-      this.logLines = [];
+      const saved = tabStore.get("log.v1", null);
+      this.logLines = saved && Date.now() - (saved.ts || 0) < 2 * 3600e3 ? saved.lines || [] : [];
       this.runState = null; // null | 'running' | 'done' | 'fail' | 'stopped'
       this.runData = null;
       this.message = null;  // string (inline) or {head, body} (result banner)
@@ -1254,6 +1264,7 @@
       this.acq = "";           // catalog search text
       this.referti = [];                // patient page: result rows, newest first
       this.pos = store.get("pos", null); // user-dragged panel position {left, top}
+      this.size = store.get("size", null); // user-resized panel {w, h}
       this.runPatient = null;           // patient name PINNED when a run starts
       this.episodeId = findEpisodeId(document, location.href);
       // The header must always show the patient this page belongs to: follow
@@ -1327,9 +1338,36 @@
       this.render();
     }
 
+    // Copy the log for reporting. The quesito is the only clinical text that
+    // can end up in it, so it is masked out before leaving the page.
+    async copyLog() {
+      const head = [
+        `PS Assist ${VERSION} · pagina ${this.pageType}`,
+        `${navigator.userAgent}`,
+        `${new Date().toLocaleString("it-IT")}`,
+        "",
+      ].join("\n");
+      const body = this.logLines.join("\n").replace(/(quesito[^:]*:\s*)"[^"]*"/gi, '$1"…"');
+      const text = head + body;
+      let ok = false;
+      try { await navigator.clipboard.writeText(text); ok = true; } catch { /* fallback below */ }
+      if (!ok) {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.cssText = "position:fixed;left:-9999px;top:0";
+        document.body.appendChild(ta);
+        ta.select();
+        try { ok = document.execCommand("copy"); } catch { ok = false; }
+        ta.remove();
+      }
+      const b = this.root.querySelector("#copylog");
+      if (b) { b.textContent = ok ? "✓ copiato" : "copia non riuscita"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
+    }
+
     log(line) {
       this.logLines.push(line);
-      if (this.logLines.length > 120) this.logLines.shift();
+      if (this.logLines.length > 200) this.logLines.shift();
+      tabStore.set("log.v1", { ts: Date.now(), lines: this.logLines });
       const el = this.root.querySelector(".log");
       if (el) { el.textContent = this.logLines.join("\n"); el.scrollTop = el.scrollHeight; }
     }
@@ -1384,7 +1422,7 @@
         this.render();
         return;
       }
-      this.logLines = [];
+      this.log(`${now()}  ── nuova operazione ──`);
       this.message = null;
       tabStore.set("receipt.v1", null);
       cancelPendingConfirm?.("nuova operazione avviata"); // never run while a confirm is armed
@@ -1511,6 +1549,13 @@
           ? `${LOGO} <span class="who">${esc(who)}</span> <span class="badge">${this.selected.size}</span>`
           : `${LOGO} <span class="who">${esc(who)}</span>`;
 
+      // user-resized size (clamped so it always fits the screen)
+      let sizeStyle = "";
+      if (this.size && this.size.w) {
+        const w = Math.max(320, Math.min(window.innerWidth - 20, this.size.w));
+        sizeStyle += `width:${w}px;`;
+        if (this.size.h) sizeStyle += `max-height:${Math.max(240, Math.min(window.innerHeight - 20, this.size.h))}px;`;
+      }
       // user-dragged position (clamped to the current viewport), else top-right
       let posStyle = "";
       if (this.pos && Number.isFinite(this.pos.left) && Number.isFinite(this.pos.top)) {
@@ -1525,7 +1570,7 @@
           ${this.collapsed ? `
             <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}</button>
           ` : `
-            <div class="card" role="dialog" aria-label="${esc(APP)}">
+            <div class="card" role="dialog" aria-label="${esc(APP)}" style="${sizeStyle}">
               <div class="hd" id="draghd" title="Trascina per spostare · doppio click per riportare in alto a destra">
                 ${LOGO}<b class="who">${esc(who)}</b>
                 <span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${ep ? "episodio " + esc(ep) : esc(APP)}</span>
@@ -1534,6 +1579,7 @@
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
               <div class="bd">${body}</div>
+              <div class="rsz" id="rsz" title="Trascina per ridimensionare · doppio click per la misura originale"></div>
               <div class="foot">
                 <span>${esc(APP)} ${VERSION}${(typeof chrome !== "undefined" && chrome.runtime?.id)
                   ? ` · <button id="extreload" class="footlink" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">⟳ ricarica estensione</button>` : ""}</span>
@@ -1658,7 +1704,7 @@
         </div>
         ${this.viewPrint()}
         ${this.viewReferti()}
-        <details class="reg"><summary>Registro</summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
+        <details class="reg"><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
           ${typeof this.message === "string" && this.message ? `<div class="banner warn">${esc(this.message)}</div>` : ""}
           <div class="idline">Richiesta per <b>${esc(patientName)}</b>${ep ? ` · episodio <b>${esc(ep)}</b>` : ""}</div>
@@ -1828,7 +1874,7 @@
       return `
         ${this.runPatient ? `<div class="idline" style="margin-top:0">Operazione per <b>${esc(this.runPatient)}</b></div>` : ""}
         <div class="sec"><div class="lbl">In corso — passo ${Math.min(doneN + 1, total)} di ${total}</div><div class="steps">${stepHtml}</div></div>
-        <details class="reg" open><summary>Registro</summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
+        <details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
           <button class="btn stop" id="stopbtn">INTERROMPI (Esc)</button>
           <div class="hint">Dopo lo stop non parte nessun nuovo invio.</div>
@@ -1852,7 +1898,7 @@
         ${this.runPatient ? `<div class="idline" style="margin-top:0">Operazione per <b>${esc(this.runPatient)}</b></div>` : ""}
         <div class="banner ${cls}">${head ? `<b>${esc(head)}</b>` : ""}${esc(bodyTxt || "")}</div>
         <div class="sec"><div class="steps">${steps}</div></div>
-        <details class="reg" open><summary>Registro</summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
+        <details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
           ${!ok && listUrl ? `<button class="btn primary" id="openlist">Apri il carrello e controlla</button>` : ""}
           <button class="btn ghost" id="reset">Torna al pannello</button>
@@ -1901,6 +1947,32 @@
         this.collapsed = false; store.set("collapsed", false); this.render();
       });
       $("#collapse")?.addEventListener("click", () => { this.collapsed = true; store.set("collapsed", true); this.render(); });
+      const rsz = $("#rsz");
+      if (rsz) {
+        rsz.addEventListener("pointerdown", (e) => {
+          e.preventDefault(); e.stopPropagation();
+          const card = this.root.querySelector(".card");
+          const r = card.getBoundingClientRect();
+          const sx = e.clientX, sy = e.clientY, w0 = r.width, h0 = r.height;
+          const mm = (ev) => {
+            // dragging left widens (the panel grows towards the page), down heightens
+            this.size = {
+              w: Math.max(320, Math.min(window.innerWidth - 20, w0 + (sx - ev.clientX))),
+              h: Math.max(240, Math.min(window.innerHeight - 20, h0 + (ev.clientY - sy))),
+            };
+            card.style.width = this.size.w + "px";
+            card.style.maxHeight = this.size.h + "px";
+          };
+          const up = () => {
+            window.removeEventListener("pointermove", mm, true);
+            window.removeEventListener("pointerup", up, true);
+            store.set("size", this.size);
+          };
+          window.addEventListener("pointermove", mm, true);
+          window.addEventListener("pointerup", up, true);
+        });
+        rsz.addEventListener("dblclick", (e) => { e.stopPropagation(); this.size = null; store.set("size", null); this.render(); });
+      }
       const hd = $("#draghd");
       if (hd) {
         this.attachDrag(hd);
@@ -1951,11 +2023,12 @@
       this.root.querySelectorAll("[data-print]").forEach((b) => b.addEventListener("click", () => {
         const rid = b.getAttribute("data-print");
         const jobs = printJobsFor(printModel(document, location.href), rid);
-        if (jobs.length) openPrintWizard(jobs, { title: `Richiesta ${rid}.` });
+        if (jobs.length) openPrintWizard(jobs, { panel: this, title: `Richiesta ${rid}.` });
       }));
       this.root.querySelectorAll("[data-ref]").forEach((b) => b.addEventListener("click", () => this.openReferto(b.getAttribute("data-ref"))));
       $("#refreset")?.addEventListener("click", () => this.resetReferti());
       $("#refsave")?.addEventListener("click", () => this.saveAllReferti());
+      $("#copylog")?.addEventListener("click", (e) => { e.preventDefault(); this.copyLog(); });
     }
 
     // Patch only the commit zone while the doctor types (a full re-render
@@ -2121,7 +2194,7 @@
   // one click.
   let wizardOpen = false;
 
-  function openPrintWizard(jobs, { title = "", onClose } = {}) {
+  function openPrintWizard(jobs, { title = "", onClose, panel = null } = {}) {
     if (wizardOpen || !jobs.length) return;
     wizardOpen = true;
 
@@ -2220,7 +2293,8 @@
     const load = async () => {
       render();
       try {
-        const { blob } = await fetchPdf(jobs[i].url, {});
+        const { blob, via } = await fetchPdf(jobs[i].url, {});
+        panel?.log(`${now()}  ${jobs[i].name}: PDF ottenuto${via ? " via " + via : ""}`);
         blobUrl = URL.createObjectURL(blob);
         const body = root.querySelector(".pwbody");
         body.innerHTML = `<iframe title="Anteprima PDF"></iframe>`;
@@ -2289,7 +2363,7 @@
     location.href = next.listUrl;
   }
 
-  function maybeAutoPrint() {
+  function maybeAutoPrint(panel) {
     const flag = tabStore.get("print.v1", null);
     if (!flag) return false;
     if (Date.now() - (flag.ts || 0) > PRINT_FLAG_TTL) { tabStore.set("print.v1", null); return false; }
@@ -2305,7 +2379,7 @@
     ];
     if (!jobs.length) return false;
     tabStore.set("print.v1", null);
-    openPrintWizard(jobs, { title: ids.length > 1 ? `${ids.length} richieste appena confermate.` : "Richiesta appena confermata." });
+    openPrintWizard(jobs, { panel, title: ids.length > 1 ? `${ids.length} richieste appena confermate.` : "Richiesta appena confermata." });
     return true;
   }
 
@@ -2317,7 +2391,7 @@
     if (pageType === "other") {
       // e.g. the post-confirm label page: no panel, but a pending print
       // handoff starts here when the page lists the richiesta's print links.
-      maybeAutoPrint();
+      maybeAutoPrint(null);
       return;
     }
     const panel = new Panel(pageType);
@@ -2334,7 +2408,7 @@
         // abandoned confirmation can never turn into a navigation loop
         if (pending.q.autoConfirm && !pending.next.nav) { goToQueued(pending); return; }
       } else {
-        maybeAutoPrint(); // nothing left to confirm → print everything at once
+        maybeAutoPrint(panel); // nothing left to confirm → print everything at once
       }
     } else {
       panel.render();

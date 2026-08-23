@@ -29,8 +29,9 @@ passaggio in più che qui non serve).
    Richiesta ed esami, **intestato col nome del paziente** su cui stai lavorando (anche da
    minimizzato, così sai sempre per chi stai ordinando). Sulla **lista del pronto soccorso**,
    dove non c'è un paziente aperto, il pannello non mostra alcun esame: lì non si può ordinare.
-   Si **trascina** dove vuoi dall'intestazione (la posizione viene ricordata; doppio click
-   sull'intestazione per riportarlo in alto a destra).
+   Si **trascina** dall'intestazione e si **ridimensiona** dall'angolo in basso a sinistra
+   (posizione e misura restano memorizzate; doppio click sull'intestazione o sull'angolo per
+   tornare a com'era).
 
 **Perché "si aggiorna" a ogni pagina?** Il gestionale è un'app anni 2000: OGNI click ricarica
 l'intera pagina — nessuna estensione può impedirlo. Il pannello però **si ricostruisce identico**:
@@ -236,8 +237,10 @@ prima fase usa **solo** "Crea richiesta e aggiungi" — mai il bottone con confe
     a fine turno, scorri le richieste create cercando doppioni o bozze non confermate.
 
 Se un passaggio non torna: il **Registro** (in fondo al pannello) elenca ogni azione con l'orario,
-inclusi i primi 160 caratteri di qualsiasi pagina inattesa del server — è quello da fotografare
-per il debug.
+inclusi i primi 160 caratteri di qualsiasi pagina inattesa del server e **da quale strada è stato
+ottenuto ogni PDF**. Resta scritto anche cambiando pagina (per scheda, 2 ore) e il bottone
+**⧉ Copia** lo mette negli appunti pronto da incollare — **il quesito diagnostico viene omesso**,
+così non escono testi clinici.
 
 ---
 
@@ -252,7 +255,7 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-└── test/                ← simulatore SA4PSO + 36 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 37 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -261,7 +264,7 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 36 scenari e2e (153 verifiche) + 5 verifiche sull'estensione reale
+npm test           # 37 scenari e2e (160 verifiche) + 5 verifiche sull'estensione reale
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

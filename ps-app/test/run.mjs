@@ -873,6 +873,47 @@ async function scenarioLabPlusRxManual(browser) {
   await context.close();
 }
 
+async function scenarioResizeAndLog(browser) {
+  const scen = "resize+log";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+
+  // --- resize from the bottom-left grip ---
+  const w0 = (await $panel(page, ".card").boundingBox()).width;
+  const g = await $panel(page, "#rsz").boundingBox();
+  await page.mouse.move(g.x + 6, g.y + 6);
+  await page.mouse.down();
+  await page.mouse.move(g.x - 120, g.y + 80, { steps: 6 });
+  await page.mouse.up();
+  const w1 = (await $panel(page, ".card").boundingBox()).width;
+  check(scen, w1 > w0 + 80, `trascinando si allarga (${Math.round(w0)} → ${Math.round(w1)} px)`);
+  await page.reload();
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  const w2 = (await $panel(page, ".card").boundingBox()).width;
+  check(scen, Math.abs(w2 - w1) < 3, `la misura resta dopo il refresh (${Math.round(w2)} px)`);
+  await $panel(page, "#rsz").dblclick();
+  const w3 = (await $panel(page, ".card").boundingBox()).width;
+  check(scen, Math.abs(w3 - w0) < 3, "doppio click torna alla misura originale");
+
+  // --- copy the log, with the quesito masked ---
+  await $panel(page, "#q").fill("dolore toracico");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, "#go").click();
+  await page.waitForSelector("#psassist-host #confirmnow", { timeout: 30000 });
+  await $panel(page, ".reg summary").click();
+  await $panel(page, "#copylog").click();
+  await page.waitForTimeout(300);
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  check(scen, /PS Assist \d+\.\d+\.\d+ · pagina/.test(clip), "il registro copiato ha versione e pagina");
+  check(scen, /aggiunto ✓/.test(clip), "contiene le righe del registro");
+  check(scen, !/dolore toracico/.test(clip), "il quesito NON finisce negli appunti");
+  check(scen, /✓ copiato/.test(await $panel(page, "#copylog").innerText()), "il bottone conferma la copia");
+  await context.close();
+}
+
 async function scenarioNoPatientPage(browser) {
   const scen = "no-patient";
   const mock = createMock({});
@@ -982,6 +1023,7 @@ const scenarios = [
   ["rx singles (torace/addome)", scenarioRxSingles],
   ["lab + rx: two richieste, one flow", scenarioLabPlusRx],
   ["lab + rx manual walk", scenarioLabPlusRxManual],
+  ["resize + copy log", scenarioResizeAndLog],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],
   ["stop button", scenarioStopButton],
