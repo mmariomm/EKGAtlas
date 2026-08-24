@@ -1,0 +1,21 @@
+{
+ "nsr": {
+  "primary": "ptbxl-3-nsr",
+  "extras": [
+   "ptbxl-24-nsr"
+  ],
+  "reason": "agent-curated (visual): textbook tall-R lead II for the reference card; 24 = clean-baseline normal-variant extra. Pending human confirmation."
+ },
+ "afib": {
+  "primary": "ptbxl-330-afib",
+  "extras": [],
+  "reason": "agent-curated (visual): unambiguous irregularly-irregular AF, fibrillatory V1 baseline, no confounding labels. Pending human confirmation."
+ },
+ "lbbb": {
+  "primary": "ptbxl-338-lbbb",
+  "extras": [
+   "ptbxl-711-lbbb"
+  ],
+  "reason": "agent-curated (visual): textbook CLBBB \u2014 deep QS V1 with discordant T, notched lateral R. Pending human confirmation."
+ }
+}

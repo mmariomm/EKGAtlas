@@ -1,0 +1,74 @@
+{
+  "assets": {
+    "ptbxl-3-nsr": {
+      "cardId": "nsr",
+      "ecgId": 3,
+      "source": "records500/00000/00003_hr",
+      "age": 37,
+      "sex": "F",
+      "scp": {
+        "NORM": 100,
+        "SR": 0
+      },
+      "beats": 10,
+      "bytes": 189820,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-24-nsr": {
+      "cardId": "nsr",
+      "ecgId": 24,
+      "source": "records500/00000/00024_hr",
+      "age": 41,
+      "sex": "M",
+      "scp": {
+        "NORM": 100,
+        "SR": 0
+      },
+      "beats": 9,
+      "bytes": 201522,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-330-afib": {
+      "cardId": "afib",
+      "ecgId": 330,
+      "source": "records500/00000/00330_hr",
+      "age": 61,
+      "sex": "M",
+      "scp": {
+        "NORM": 50,
+        "AFIB": 0
+      },
+      "beats": 11,
+      "bytes": 194859,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-338-lbbb": {
+      "cardId": "lbbb",
+      "ecgId": 338,
+      "source": "records500/00000/00338_hr",
+      "age": 69,
+      "sex": "F",
+      "scp": {
+        "CLBBB": 100,
+        "SR": 0
+      },
+      "beats": 12,
+      "bytes": 188909,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-711-lbbb": {
+      "cardId": "lbbb",
+      "ecgId": 711,
+      "source": "records500/00000/00711_hr",
+      "age": 77,
+      "sex": "F",
+      "scp": {
+        "CLBBB": 100,
+        "SR": 0
+      },
+      "beats": 12,
+      "bytes": 203780,
+      "convertedAt": "2026-08-24"
+    }
+  }
+}

@@ -7,6 +7,7 @@ const ElectrodeLabScreen = lazy(() => import('./features/electrode-lab/Electrode
 const HyperKScreen = lazy(() => import('./features/hyperk/HyperKScreen'))
 const PackScreen = lazy(() => import('./features/pack/PackScreen'))
 const AboutScreen = lazy(() => import('./features/about/AboutScreen'))
+const DevTraceScreen = lazy(() => import('./features/trace/DevTraceScreen'))
 
 const Loading = () => (
   <div className="screen" style={{ paddingTop: 80, color: 'var(--ink-3)', textAlign: 'center' }}>…</div>
@@ -22,6 +23,7 @@ export default function App() {
       {route.name === 'lab-hyperk' && <HyperKScreen />}
       {route.name === 'pack' && <PackScreen packId={route.packId} key={route.packId} />}
       {route.name === 'about' && <AboutScreen />}
+      {route.name === 'dev-trace' && <DevTraceScreen />}
     </Suspense>
   )
 }
