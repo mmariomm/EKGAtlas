@@ -16,7 +16,7 @@ export const aflutter: Card = {
         { label: 'Atrial flutter', correct: true, tempts: 'Yes — the sawtooth ruler runs under everything. Count the flutter waves.' },
         { label: 'Sinus tachycardia', tempts: 'At 150, every second flutter wave hides inside the T. Sinus tach rarely parks at a fixed 150.' },
         { label: 'SVT (AVNRT)', tempts: 'AVNRT is usually faster (170–220) and truly P-less; flutter’s sawtooth peeks out in II/III/aVF.' },
-        { label: 'Atrial fibrillation', tempts: 'AF is irregular; 2:1 flutter is metronome-regular.' },
+        { label: 'Atrial fibrillation', tempts: 'AF’s baseline is static fuzz — flutter keeps the sawtooth ruler running, even when the block varies.' },
       ],
     },
   },

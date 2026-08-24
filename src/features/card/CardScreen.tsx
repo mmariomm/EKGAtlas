@@ -174,11 +174,17 @@ function CardInner({ cardId }: { cardId: string }) {
         )}
 
         <div className="card-leadrow" role="group" aria-label="Choose leads">
+          <button
+            className={`leadchip ${leads.length === 12 ? 'leadchip-on' : ''}`}
+            onClick={() => setLeads(leads.length === 12 ? [card.mechanism.primaryLead] : [...ALL_LEADS])}
+          >
+            12-lead
+          </button>
           {ALL_LEADS.map((l) => (
             <button
               key={l}
               className={`leadchip ${leads.includes(l) ? 'leadchip-on' : ''}`}
-              onClick={() => setLeads((cur) => (cur.includes(l) ? (cur.length > 1 ? cur.filter((x) => x !== l) : cur) : [...cur.slice(-2), l]))}
+              onClick={() => setLeads((cur) => (cur.length === 12 ? [l] : cur.includes(l) ? (cur.length > 1 ? cur.filter((x) => x !== l) : cur) : [...cur.slice(-2), l]))}
             >
               {l}
             </button>

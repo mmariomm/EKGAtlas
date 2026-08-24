@@ -1,67 +1,63 @@
 # EKG Atlas
 
-An interactive emergency-department EKG atlas. Pick a condition and watch **why**
-its waveform looks the way it does: a schematic heart shows the impulse spreading
-and the **cardiac vector** swinging, while the same vector — projected onto each
-lead — draws the trace, frame-perfectly in sync.
+> The ECG is a shadow; everyone is taught to memorize shadows. This app makes
+> the object casting them visible — and manipulable.
+
+An interactive, mobile-first ECG atlas for clinicians and learners: **real
+recordings** scrub-synced to a **manipulable conduction model**, taught through
+commit-before-reveal cards that close into guideline-cited action. Installable
+PWA, fully offline after first visit, free.
 
 ## Run it
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
-npm run build    # typecheck + production build
+npm run dev        # http://localhost:5173
+npm run check      # typecheck + engine physics tests + content validation
+npm run build      # production build (PWA)
+npm run shots      # 390×844 screenshot walk (visual audit)
+npm run deploy     # Cloudflare (wrangler)
 ```
 
-## The core idea: one vector → everything
+## What's inside
 
-A lead's deflection at any instant is the **dot product of the heart's dipole
-vector with that lead's viewing axis**. That is the real physics of the ECG, and
-it is the spine of this app:
+- **20 pattern cards** — see it (commit your read first) · why (≤3 lines +
+  drawer) · pills · suspect & confirm · guideline moves (rendered only after a
+  named clinician signs the card). Real PTB-XL recordings wherever the data
+  supports the teaching; honest "Modeled" badges where it doesn't.
+- **The Electrode Lab** — drag electrodes on a torso and watch every lead
+  re-derive. Limb-cable swaps run as *exact algebra on real recordings*; chest
+  moves run on the physics engine. Seven misplacement mimics, each with its tell.
+- **The HyperK Module** — a morph labeled "one possible trajectory — NOT a
+  K→ECG dial", a five-patient variance gallery, and the estimate-the-K game.
+  The lesson is variance: the ECG can never rule hyperkalemia out.
+- **Rounds packs** — 60-second card runs with a presenter mode.
 
-- **One moving vector** drives all 12 leads *and* the arrow in the heart — so they
-  can never disagree, and the sync is free.
-- Abnormalities are just a **different vector path**: bundle branch blocks delay
-  and redirect it, fascicular blocks rotate it (axis deviation), injury currents
-  add a sustained ST vector.
+## The truth architecture
 
-### Anatomical frame (`src/engine/vectorMath.ts`)
-`x = patient-left`, `y = inferior`, `z = anterior`. Frontal plane `(x,y)` = the
-limb leads and the clinical axis; transverse plane `(x,z)` = the precordials.
+Every trace declares its provenance (Recorded / Derived / Reconstructed /
+Modeled) in an always-visible badge. Every clinical line carries a citation
+into a versioned guideline registry. Every card carries machine-checked
+numeric assertions that run in CI against **both** the mechanism model and the
+shipped recording — a card that fails does not ship. Therapy content renders
+only after named-reviewer sign-off. See `/about` in the app and
+`docs/rebuild/` for the full contract, plan, and build/audit report.
 
-### How a beat is modeled (`src/engine/types.ts`)
-Each `Beat` carries two synchronized views of the same event:
-1. `lobes` — Gaussian "pushes" of the dipole. Summed over time they **are** V(t);
-   projected onto a lead they **are** that lead's waveform.
-2. `events` — which conduction structures light up, and when (drives the heart glow).
+## The engine (one idea)
 
-`src/engine/synthesize.ts` turns a strip of beats into: per-lead signals
-(`buildSignals`), the live vector (`sampleVector`), structure activation
-(`sampleActivation`), the phase + cross-modal color (`samplePhase`), and the mean
-QRS axis.
+A lead's deflection is the projection of the heart's dipole sources onto that
+electrode's viewpoint — so leads are *derived* from electrode positions
+(Einthoven/Goldberger/Wilson), the electrode drag is lawful physics, and the
+trace and the heart animation can never disagree. A small propagation solver
+makes bundle-branch blocks *emerge* from a blocked conduction graph rather
+than being drawn. The whole engine is ~1,400 lines with zero runtime
+dependencies, calibrated and regression-tested in `test/engine.test.ts`.
 
-## Adding a condition
+Recordings come from **PTB-XL** (PhysioNet), used under CC BY 4.0 — Wagner et
+al., *Scientific Data* 2020. The reproducible curation pipeline lives in
+`tools/recordings/` (every asset traceable to its source record, parser proven
+against per-signal checksums, fiducials auto-delineated, independently
+re-detected, and visually audited).
 
-1. Create `src/conditions/<id>.ts` exporting a `Condition`. Reuse the building
-   blocks in `helpers.ts` (`atrialLobes`, `normalQrsLobes`, `sinusBeat`, …) and
-   override only the ventricular lobes/events that change.
-2. To author morphology, think in vectors: *where does the wavefront point, and
-   when?* e.g. RBBB = a large **late** lobe pointing right-anterior (toward V1).
-3. Register it in `src/conditions/index.ts`.
-
-That's it — all 12 leads, the heart animation, the axis, and the sync come for free.
-
-## Shareable deep links
-`?c=<conditionId>` and `?leads=12 | limb | II,V1,V5` set the initial view; the URL
-stays in sync as you change condition/leads. Add `&t=0..1` to freeze the view at
-that fraction of the loop (paused) — the heart still shows the vector loop, so it
-is a shareable "moment".
-
-## Design pillars
-- **Shared playhead** — one clock; heart and trace read the same instant.
-- **Cross-modal color** — atria=cyan, AV=amber, ventricle=gold, repol=violet, on
-  both the heart and the trace.
-- **Progressive disclosure** — default = 1 lead + plain narration; expand to 12,
-  reveal the axis, slow to 0.1×, open the mechanism panel.
-
-> Educational model — waveforms are synthesized for teaching, not clinical diagnosis.
+> Educational — never a diagnostic device, never a substitute for clinical
+> judgment or local protocol.

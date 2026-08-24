@@ -162,7 +162,7 @@ prMs absent · irregularRR cvMin 0.10.
 - ✅ Atrial flutter, 2:1 conduction — *(correct)*
 - Sinus tachycardia — tempts: "At 150, every second flutter wave hides inside the T. Sinus tach rarely parks at a fixed 150."
 - SVT (AVNRT) — tempts: "AVNRT is usually faster (170–220) and truly P-less; flutter's sawtooth peeks out in II/III/aVF."
-- Atrial fibrillation — tempts: "AF is irregular; 2:1 flutter is metronome-regular."
+- Atrial fibrillation — tempts: "AF’s baseline is static fuzz — flutter keeps the sawtooth ruler running, even when the block varies." *(audited: the anchored recording shows variable block)*
 
 **Recording spec:** PTB-XL; include `rhythmAny: ["AFLT"]`; prefer ventricular
 140–160 (2:1); an extra with higher-grade block (sawtooth obvious) for the reveal.

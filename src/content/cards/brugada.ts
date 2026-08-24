@@ -8,6 +8,7 @@ export const brugada: Card = {
   category: 'High-risk patterns',
   lethal: true,
   tagline: 'A coved wave in V1–V2 that marks a sodium-channel disease — found at 3 a.m., often by accident.',
+  moduleHref: { href: '/lab/electrodes?swap=high-v1v2', label: 'Try it: high V1–V2 placement manufactures pseudo-Brugada — the Electrode Lab shows how' },
   seeIt: {
     traceId: 'brugada-model',
     commit: {
