@@ -9,18 +9,27 @@ import { chromium } from "playwright";
 import { createMock } from "./sa4pso-mock.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { rmSync } from "node:fs";
+import { rmSync, existsSync, statSync } from "node:fs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXT = join(root, "extension");
 const PROFILE = join("/tmp", "psa-ext-" + process.pid);
+
+// this container ships chromium under /opt/pw-browsers but not at the revision
+// the playwright package expects, so point at whatever is actually there
+function chromiumPath() {
+  for (const p of ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"]) {
+    if (existsSync(p) && statSync(p).isFile()) return p;
+  }
+  return undefined;
+}
 let failures = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) failures++; };
 
 const mock = createMock({});
 const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
-  executablePath: process.env.CHROMIUM_PATH || undefined,
+  executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
 });
 const route = async (r) => {
@@ -40,7 +49,7 @@ await page.locator('#psassist-host [data-seg="esiti"]').click();
 await page.waitForSelector('#psassist-host [data-esito]', { timeout: 10000 });
 
 const saveBtn = page.locator("#psassist-host #refsave");
-check(await saveBtn.count() === 1, "il bottone «Salva tutti» compare solo nell'estensione");
+check(await saveBtn.count() === 1, "il bottone «Salva referti» compare solo nell'estensione");
 await saveBtn.click();
 await page.waitForFunction(
   () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length === 3,
