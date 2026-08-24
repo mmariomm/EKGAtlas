@@ -128,11 +128,18 @@ state this on the About page); they are not surface-constrained.
 
 ```
 RA  [-0.95, -1.35, 0.05]   LA  [ 0.95, -1.35, 0.05]
-LL  [ 0.55,  1.55, 0.05]   RL  [-0.55,  1.55, 0.05]
+LL = RL = the inferior pole [0.0, 1.65, 0.05]   (drawn at the hips in the UI)
 V1  [-0.22, -0.10, 0.68]   V2  [ 0.22, -0.10, 0.68]
 V3  [ 0.45,  0.12, 0.63]   V4  [ 0.65,  0.35, 0.53]
 V5  [ 0.85,  0.38, 0.37]   V6  [ 0.98,  0.40, 0.14]
 ```
+
+**M1 deviation, adopted:** the two leg electrodes share ONE effective electrical
+site (the torso's inferior pole). Real legs are near-equipotential because of the
+torso boundary — a boundary an infinite-medium dipole model cannot produce — so
+the equipotential is encoded as a shared site and declared on the About page.
+This makes RL-involving cable swaps exact in the model (matching the recorded
+algebra) instead of merely approximate.
 
 ### 4.2 Sources (`sources.ts`)
 

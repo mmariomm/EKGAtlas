@@ -12,8 +12,10 @@ option's line after "tempts:" is its `tempts` string, verbatim.
 **Measurement definitions used by assertions** (implement once in `test/` helpers):
 - `J` (the J point) = the beat's annotated `qrsOff` (real traces) or the computed
   QRS end (model strips).
-- `stShift(lead)` = mean amplitude over J+20…J+80 ms minus the PR-segment baseline
-  (TP baseline if no P), in mV. 1 mm = 0.1 mV.
+- `stShift(lead)` = mean amplitude over J…J+40 ms minus the PR-segment baseline
+  (TP baseline if no P), in mV. 1 mm = 0.1 mV. (Clinical convention measures ST
+  deviation at the J point; the short window averages noise and keeps the model
+  T's Gaussian foot out of the measurement.)
 - `netQrs(lead)` = signed area over the QRS window (v1 helper).
 - `tPolarity(lead)` = sign of the largest-|amplitude| deflection in the T window.
 - `rsRatio(lead)` = R amplitude / S depth within QRS.
