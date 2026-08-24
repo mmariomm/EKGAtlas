@@ -282,6 +282,13 @@ No reentry circuits · no cell-level ionic models · no torso boundary effects �
 no drug-level PK · no beat-to-beat variability synthesis (variance comes from
 multiple real/reconstructed exemplars, not noise). Say so on the About page.
 
+**Size budget (hard):** the whole of `src/engine/` stays ≤ ~1,500 lines with
+ZERO runtime dependencies. It is a teaching model — one formula, a small graph,
+a warp — and its smallness is a feature. Any growth beyond the budget, any new
+region, or any physics refinement not named in this document requires human
+approval first. "The model could be more realistic" is never, by itself, a
+reason to touch it.
+
 ---
 
 ## 5. The clock (`lib/clock.ts`)

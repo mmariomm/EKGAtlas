@@ -58,7 +58,10 @@ Goal: electrode-derived leads with v1 fidelity preserved. Pure TS; no UI.
    ellipse (|x²/ax² + z²/az² − 1| < 0.05); swaps produce valid montages.
 3. **Forward model** (`synthesize.ts`): φ-per-electrode with `pos` + `R_MIN`,
    lead derivations, `buildSignals(strip, montage)`, `sampleVector`,
-   `sampleActivation`, `samplePhase` (port glow logic unchanged).
+   `sampleActivation`, `samplePhase` (port glow logic unchanged). `pos` support
+   is implemented here (it is one subtraction) but M1 validates single-origin
+   physics only — source positions are exercised and tuned at M4, where the
+   feature that needs them lives. Do not tune `pos` values in M1.
    *Acceptance:* Einthoven `I+III−II` max abs error <1e−9; `aVR+aVL+aVF` <1e−9.
 4. **Calibrate gain G** so solver-NSR R(II) ∈ [0.8, 1.6] mV; re-tune electrode
    positions within ±15% ONLY if needed to restore: rS in V1 · transition V3–V4 ·
