@@ -33,6 +33,7 @@ only ones.)
 ```
 /                         # repo root = the app (unchanged role)
   docs/rebuild/           # this plan
+  docs/audit/             # per-card audit dossiers (03-CONTENT-SYSTEM.md §6b)
   legacy-v1/              # M0 moves current src/ + test/ here; deleted at M7
   ps-app/                 # OFF-LIMITS (other workstream)
   public/
@@ -67,6 +68,7 @@ only ones.)
   tools/
     recordings/           # fetch/convert/verify pipeline (03-CONTENT-SYSTEM.md §5)
     annotator/            # local fiducial annotation page (vite root, not shipped)
+    audit/                # claims ledger + dossier generator (03-CONTENT-SYSTEM.md §6b)
   worker/metrics.ts       # CF Worker beacon endpoint (counts only)
 ```
 

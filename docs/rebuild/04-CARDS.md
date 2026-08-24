@@ -1077,11 +1077,20 @@ approximation."
 ## Review protocol (applies to every card above)
 
 1. Executing agent transcribes → `review.status: 'draft'`.
-2. Human clinician reviews SEE IT options, PILLS, SUSPECT & CONFIRM, GUIDELINE
-   MOVES against the cited registry entries → fixes → sets
+2. **Pre-sign-off audit** (`03-CONTENT-SYSTEM.md` §6b) runs per card: claims
+   ledger extracted, every claim citation-resolved and assertion-covered,
+   dual-source verified, four adversarial roles passed in fresh contexts,
+   dossier written to `docs/audit/<cardId>.md`. MAJOR findings are fixed and
+   re-verified; irreducible disagreements become FLAGs. Only when the dossier
+   reaches eligibility (§6b.5) does the tool set `review.auditPassedAt`.
+3. Human clinician receives the dossier — a one-page claims table with ≤5
+   targeted FLAGs — resolves the flags, spot-checks at will (minutes per card,
+   by design), fixes anything found, and sets
    `review: { status: 'signed', reviewer: 'Name, credentials', signedAt: date }`.
-3. Any later edit to clinical text resets `status` to `draft` (validator compares
-   a content hash stored at signing — implement as `signedHash`).
-4. Release gate (M7): every shipped card signed; every `TODO(REVIEW)` resolved or
-   the card is excluded from the build (excluding a P0 card fails the gate —
-   escalate to the human instead).
+   Signing without `auditPassedAt` is rejected by the validator.
+4. Any later edit to clinical text resets `status` to `draft` AND voids the
+   audit (validator compares a content hash stored at signing — `signedHash` —
+   and the dossier's hash).
+5. Release gate (M7): every shipped card audited + signed; every `TODO(REVIEW)`
+   resolved or the card is excluded from the build (excluding a P0 card fails
+   the gate — escalate to the human instead).

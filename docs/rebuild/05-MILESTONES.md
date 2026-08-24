@@ -126,10 +126,15 @@ Goal: three pilot cards playable end-to-end: `nsr`, `lbbb`, `afib`.
    *Acceptance:* a deliberately-broken fixture card (missing cite, bad provenance,
    4-line why) produces 3 named errors.
 2. **Pilot content**: transcribe `nsr`, `lbbb`, `afib` from `04-CARDS.md` into
-   `content/cards/`; wire `content/index.ts` catalog + categories.
+   `content/cards/`; wire `content/index.ts` catalog + categories. Build
+   `tools/audit/` (claims extractor, coverage checker, dossier generator per
+   `03-CONTENT-SYSTEM.md` §6b) and run the full audit on the three pilots,
+   adversarial roles in fresh contexts.
    *Acceptance:* `check:content` green; card assertions green against their assets
    (`lbbb` trace assertions run on the real CLBBB recording — if any fails, the
-   pick is wrong: re-run shortlist/preview, do NOT loosen the assertion).
+   pick is wrong: re-run shortlist/preview, do NOT loosen the assertion); three
+   dossiers in `docs/audit/` at sign-off eligibility (zero open MAJORs, ≤5 FLAGs
+   each, `auditPassedAt` set).
 3. **Card player** (`features/card/`): pinned TraceView + 5 sections per
    `02-DESIGN.md` §4.2 — commit gate (lock mechanism + name until commit), reveal
    moment, WHY with tappable phase highlight, drawer, pills carousel, cited
@@ -214,7 +219,8 @@ in the milestone report.
    possible; auto-top-score + report otherwise); mechanisms per spec (solver where
    specified, authored ports where specified).
    *Acceptance per card:* `check` green (content + assertions on BOTH model and
-   shipped trace) + 5-section screenshot set reviewed.
+   shipped trace) + 5-section screenshot set reviewed + audit dossier at
+   sign-off eligibility (zero open MAJORs).
 2. **P1 cards**: `paced-v`, `avb-2`, `lvh-strain`, `brugada`.
 3. **Packs + pack player** (`features/pack/`): 3 starter packs, progress chrome,
    presenter mode with watermark, per-item commit.
@@ -237,11 +243,12 @@ in the milestone report.
    `03-CONTENT-SYSTEM.md` §6 in release strictness; fix everything it finds.
 2. **Rendered-output audit**: `npm run shots` over every card section, every lab
    preset, every pack; human reviews the folder; file issues per finding; fix.
-3. **Adversarial content review** (per `03-CONTENT-SYSTEM.md` §6.6): run the four
-   roles (criteria auditor · hostile attending · learner-comprehension ·
-   consistency auditor) over every shipped card + both labs; log verdicts in
-   `docs/rebuild/REPORT.md`; every FAIL fixed or human-overridden by name before
-   the gate.
+3. **Full audit sweep** (per `03-CONTENT-SYSTEM.md` §6b): regenerate every
+   card's claims ledger and dossier; re-run the four adversarial roles (fresh
+   contexts — ideally a different model/session than the one that built the
+   card) over every shipped card + both labs + the About page; cross-card
+   consistency diff over the whole ledger; every MAJOR fixed, every FLAG
+   queued for the reviewer; verdicts logged in `docs/rebuild/REPORT.md`.
 4. **Performance pass**: Lighthouse mobile ≥90 perf; budgets of
    `01-ARCHITECTURE.md` §9 measured and recorded in the report; fix regressions.
 5. **A11y pass**: axe scan clean of criticals; keyboard walk of card + labs;
@@ -257,7 +264,7 @@ in the milestone report.
    - [ ] Provenance badge visible on every trace in every screenshot
    - [ ] Tier report: ≥12 of shipped cards with `recorded`/`derived` primary; every `modeled`/`reconstructed` correctly badged (list them)
    - [ ] Guideline registry: every entry human-verified during this rebuild (`verifiedAt` set at M3 or later; zero stale failures)
-   - [ ] Adversarial content review logged, zero unresolved FAILs
+   - [ ] Audit dossiers for every shipped card at sign-off eligibility: 100% claims cited, 100% threshold claims assertion-covered, ≥95% dual-source verified, zero open MAJORs, every FLAG resolved by the reviewer
    - [ ] License sign-off (human): PTB-XL usage + attribution page approved
    - [ ] Perf budgets met (numbers recorded) · offline walkthrough green · installable on iOS Safari + Android Chrome (tested)
    - [ ] Metrics events arriving; activation query (≥3 manipulations/session) demonstrably computable
@@ -278,6 +285,10 @@ in the milestone report.
   annotation is wrong, or the card's claim doesn't hold on that trace — never
   weaken the assertion to pass. Re-curate or escalate.
 - Any medical wording not found in `04-CARDS.md` → `TODO(REVIEW)`, never invent.
+- Any edit to a card's clinical text voids its audit dossier and signature —
+  regenerate the ledger and re-run the audit before it can be signed again.
+- Audit roles run in fresh contexts, never interleaved with building; a role
+  never audits prose written in its own session.
 - Any dependency beyond the approved list → ask the human first.
 - Every milestone ends with: `npm run check` green · screenshots reviewed ·
   pushed · a short report appended to `docs/rebuild/REPORT.md` (created at M0).

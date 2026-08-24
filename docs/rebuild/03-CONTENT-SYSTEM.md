@@ -103,6 +103,9 @@ export interface Card {
     signedAt?: string              // 'YYYY-MM-DD'
     /** hash of the clinical text at signing; any later edit → status reverts to draft */
     signedHash?: string
+    /** set by tools/audit when the dossier reaches sign-off eligibility (§6b.5);
+     *  REQUIRED before status may be 'signed'; voided when the content hash changes */
+    auditPassedAt?: string
   }
 }
 
@@ -285,24 +288,89 @@ The per-card values live in `04-CARDS.md` (Recording spec block) — transcribe 
    (DOM check); the human eyeballs the folder each milestone (rendered-output
    audit — the death-mode killer).
 5. `check:size` (M6+) — build + assert bundle/asset budgets from `01-ARCHITECTURE.md` §9.
-6. **Adversarial content review** (M7, procedural — the strategy's multi-role AI
-   review): for every shipped card, run a structured review in four roles and
-   record verdicts in `docs/rebuild/REPORT.md`; any FAIL blocks release until
-   fixed or human-overridden by name:
-   - **Criteria auditor** — does every SEE IT/WHY/PILL claim match the cited
-     registry entries and the card's numeric assertions? Any number without a
-     source or an assertion?
-   - **Hostile attending** — what would a skeptical senior clinician attack?
-     (edge cases, overclaims, missing dangers, wrong emphasis)
-   - **Learner-comprehension check** — can a smart intern read each section once
-     and act? Any jargon without definition, any line >2 clauses?
-   - **Consistency auditor** — does this card contradict any other card, lab
-     strip, or the About page? (e.g. two different thresholds for the same sign)
+6. **Per-card audit — the 99% protocol** (§6b): claims ledger + dual-source
+   verification + four-role adversarial review, run PER CARD at authoring time
+   and re-run in full at M7. Its output (the audit dossier) is the precondition
+   for human sign-off.
 
 `npm run check` = 1+2+3 (fast, every commit). `npm run check:release` = 1–5 +
-release-mode strictness; stage 6 is run and logged at M7. CI equivalent: run
-`check` on every push (a plain npm script is fine; no external CI required for
-this plan).
+release-mode strictness; stage 6 runs per card at authoring and as a full sweep
+at M7. CI equivalent: run `check` on every push (a plain npm script is fine; no
+external CI required for this plan).
+
+---
+
+## 6b. The pre-sign-off audit — the 99% protocol
+
+Purpose: by the time a card reaches the human reviewer it is already ~99%
+verified — machine-checked, guideline-cross-checked, adversarially reviewed —
+so the named reviewer's job is minutes per card: read the dossier, spot-check
+the flags, sign. The signature owns the last 1%; the pipeline owns the rest.
+
+### 6b.1 Claims ledger (`tools/audit/extract-claims.ts`)
+
+Auto-extract every clinical sentence of a card (SEE IT options + tempts, WHY,
+whyDrawer, pills, suspectConfirm, guidelineMoves, lab strips it owns) into
+atomic claims with stable ids (`<cardId>#c07`) and a type:
+`threshold` (a number: ms, mm, mV, points, doses) · `fact` (a sign/mechanism
+statement) · `therapy` (a move) · `identification` (a lookalike/discriminator).
+
+### 6b.2 Verification matrix (per claim, recorded in the dossier)
+
+| Check | Rule | Automated? |
+|---|---|---|
+| Citation resolves | claim's line carries ≥1 citeKey; entry exists + verified | yes (`check:content`) |
+| Assertion coverage | every `threshold` claim has a matching numeric assertion running in CI (e.g. "QRS >100 ms → seizure risk" ↔ the tca card's qrsMs assertion) — or a written reason why it is not assertable | yes (coverage script) |
+| Dual-source | claim agrees with a SECOND independent source (a different registry entry, or the primary literature the registry entry names) — verified by the auditor role against the actual source text, with the quote/section recorded | auditor pass |
+| Adversarial survival | zero open MAJOR findings from the four roles (§6b.3) | auditor pass |
+| Cross-card consistency | no other card/lab states a different value for the same sign | yes (ledger diff) + auditor |
+
+Verdicts: `PASS` · `FLAG` (needs the human's eye — recorded with the exact
+question) · `MAJOR` (blocks sign-off eligibility until fixed).
+
+### 6b.3 Four-role adversarial review (independence required)
+
+The roles from the strategy, run as SEPARATE passes with fresh context — the
+auditor sees only the shipped content + the sources, never the builder's
+reasoning (when the builder is an AI agent, use a fresh session or subagent per
+role; a role must not audit prose it just wrote):
+
+- **Criteria auditor** — every claim vs the cited registry entries and the
+  card's assertions; any number without a source or an assertion is a MAJOR.
+- **Hostile attending** — what would a skeptical senior clinician attack?
+  Edge cases, overclaims, missing dangers, wrong emphasis.
+- **Learner-comprehension** — can a smart intern read each section once and
+  act? Jargon without definition, any line >2 clauses.
+- **Consistency auditor** — contradictions across cards, labs, About page.
+
+Findings carry severity (MAJOR / minor / style). Builder fixes; auditor
+re-verifies; disagreement between builder and auditor is never averaged away —
+it becomes a FLAG for the human (the strategy's "disagreement blocks release").
+
+### 6b.4 The dossier (`docs/audit/<cardId>.md`, auto-generated + auditor-filled)
+
+One page per card: claims table (id · text · type · cites · checks · verdict) ·
+open FLAGs with the specific question for the reviewer · adversarial findings
+log with resolutions · assertion-coverage summary · content hash. Regenerated
+whenever clinical text changes (a changed hash voids both the audit and any
+prior signature — same trigger as `signedHash`).
+
+### 6b.5 Sign-off eligibility (validator-enforced)
+
+A card may be `signed` only when its dossier shows: 100% of claims with
+resolving citations · 100% of threshold claims assertion-covered (or reasoned) ·
+0 open MAJORs · ≥95% of claims dual-source `PASS` · every remaining claim
+`FLAG`ged with its question (target ≤5 flags/card). The reviewer resolves the
+flags, spot-checks at will, and signs. Schema hook: `review.auditPassedAt`
+(set by the audit tool) is REQUIRED before `status: 'signed'` is accepted.
+
+### 6b.6 Where the network is needed
+
+Dual-source verification wants the actual guideline/paper text. When the
+executing environment has web access, the auditor role verifies against it and
+records quotes. When it does not: mark those checks `FLAG (source text not
+reachable — verify on sign-off)` rather than pretending — the dossier stays
+honest about what was actually checked.
 
 ---
 
