@@ -109,7 +109,39 @@ Un unico elenco in ordine di tempo:
 
 ---
 
-**Si può scegliere la stampante da soli?** No: nessuna pagina web può impostare la destinazione
+## Stampa etichette e lista esami
+
+Dopo la **Conferma** (manuale o automatica) si apre da solo il wizard di stampa, in sequenza,
+raggruppando per stampante:
+
+1. **Tutte le etichette provette** — i PDF dell'icona col codice a barre
+   (`RcsStampaEtichetteLISHMIMU.do`, che porta al PDF servito da
+   `uploaddownloadservlet.rra2`), con la finestra di stampa già aperta → **etichettatrice**;
+2. poi **tutte le liste esami** — i PDF di "Stampa Richiesta" (`jasperservlet`, URL sempre letto
+   dalla pagina perché `BRANCA` cambia per riga) → **stampante normale**;
+3. per la **radiologia**, la riga ha l'icona stampante "Stampa Prenotazione Esterna": il wizard
+   stampa quel PDF → **stampante normale**.
+
+**Righe multiple**: quando gli esami di una richiesta appartengono a laboratori diversi (POC +
+Urgenze, ecc.) il LIS la divide in **più righe** — stessa `RICHIESTA_ID`, `RICHIESTA_PROG` 1, 2… —
+ognuna col suo PDF etichette e il suo foglio. Il wizard le stampa **tutte** ("Etichette — riga 1",
+"Etichette — riga 2", poi le liste), mai solo l'ultima.
+
+Sul campo, dopo la Conferma il gestionale **torna alla pagina del paziente**: è lì che il wizard
+parte da solo (e se un'installazione mostrasse una pagina intermedia, parte lì se ha i link,
+altrimenti aspetta il ritorno sul paziente). Dalla pagina paziente puoi anche **ristampare
+qualsiasi richiesta**
+(sezione **Stampa**: ogni richiesta è elencata con **data e ora** e, sotto, la **lista compatta
+degli esami** che contiene). Ogni passo ha: Riapri stampa · Salta · Apri in una scheda ·
+Annulla (Esc).
+
+**Laboratorio + radiologia insieme**: se confermi una richiesta di laboratorio e poi una di
+radiologia prima di tornare alla pagina del paziente, la stampa parte **una volta sola** e in
+sequenza: tutte le etichette → tutte le liste → la prenotazione RX.
+
+### Si può scegliere la stampante?
+
+No: nessuna pagina web può impostare la destinazione
 di stampa — è una barriera del browser, non un permesso mancante. Quello che si può fare senza
 essere amministratori:
 
@@ -123,6 +155,25 @@ essere amministratori:
   stamperesti da una finestra normale. Fragile, ma funziona.
 - Se le liste su carta non ti servono, salta il secondo passo del wizard: resta **un solo**
   dialogo per paziente.
+
+---
+
+## Dove finiscono referti e valori
+
+- **Valori** (righe LAB): letti da `RcsAccessiRisultatiElenco.do`, HTML sullo stesso server. Restano
+  in memoria **per la scheda e per quell'episodio**, così riaprirli è istantaneo; **↻** li rilegge
+  man mano che il laboratorio completa. Chiusa la scheda, spariscono.
+- **Referti** (righe LIS/RIS/AMB): il visualizzatore **non è su SA4PSO** — gira su un altro host
+  interno e mostra il PDF come `blob:` di quell'origine, quindi una pagina di SA4PSO non può
+  leggerlo. È il **service worker** dell'estensione a seguire la catena (redirect → visualizzatore
+  → suo endpoint PDF) e a salvare i byte nella memoria dell'estensione, su questa macchina.
+  Solo con l'**estensione**: userscript e bookmarklet non possono farlo. Se un referto non è
+  salvabile resta senza pallino e il **motivo** compare passandoci sopra col mouse (e nel Registro).
+  Scadono in **8 ore**, massimo 25, e si azzerano alla chiusura del browser; **↻ Resetta** subito.
+
+> **Da configurare una volta**: l'host del visualizzatore è dichiarato in
+> `extension/manifest.json` → `host_permissions` (oggi `http://10.11.0.151:9080/*`). Se nella tua
+> sede è un altro indirizzo, cambialo lì e ricarica l'estensione.
 
 ---
 
@@ -209,7 +260,7 @@ prima fase usa **solo** "Crea richiesta e aggiungi" — mai il bottone con confe
 
 Se un passaggio non torna: il **Registro** (in fondo al pannello) elenca ogni azione con l'orario,
 inclusi i primi 160 caratteri di qualsiasi pagina inattesa del server e **da quale strada è stato
-ottenuto ogni PDF**. Resta scritto anche cambiando pagina (per scheda, 2 ore) e il bottone
+ottenuto ogni PDF**. Resta scritto anche cambiando pagina (per scheda e per episodio, 2 ore) e il bottone
 **⧉ Copia** lo mette negli appunti pronto da incollare — **il quesito diagnostico viene omesso**,
 così non escono testi clinici.
 
