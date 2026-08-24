@@ -726,6 +726,10 @@
       }
 
       // 4. replay the viewer (sandboxed) and take the URL/Blob it produces
+      // In the banco di prova the replay is skipped on purpose: it would run a
+      // viewer's own script inside a frame, and the banco's promise is that
+      // nothing on the page can reach the network. The tab fallback covers it.
+      if (DEMO) throw new ViewerError(target.href);
       try { return { ...(await harvestInlinePdf(target.href, { html: text, baseUrl: base, signal })), via: "replay del visualizzatore" }; }
       catch (e) {
         if (e?.name === "AbortError") throw e;

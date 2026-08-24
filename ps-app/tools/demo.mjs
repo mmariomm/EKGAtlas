@@ -10,7 +10,7 @@
  *
  * Run:  node tools/demo.mjs      (npm run demo)
  */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,24 +26,28 @@ const core = read("extension/content.js");
 const version = /const VERSION = "([^"]+)"/.exec(core)?.[1] ?? "0.0.0";
 const built = new Date().toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
-// Node-isms the simulator uses, in ~15 lines of browser equivalent.
-const BUFFER_SHIM = `
-class Buf extends Uint8Array {
-  toString(enc) {
-    let s = "";
-    for (let i = 0; i < this.length; i++) s += String.fromCharCode(this[i]);
-    return (enc === "latin1" || enc === "binary") ? s : new TextDecoder().decode(this);
-  }
+// The saved gestionale, scoped so its 2003 stylesheet cannot reach the
+// harness around it: every rule is prefixed with #sa4-page.
+const scope = (css, sel) => css.replace(/(^|\})([^{}@]+)\{/g, (m, close, selectors) => {
+  const list = selectors.split(",").map((x) => {
+    const t = x.trim();
+    if (!t) return t;
+    return /^(html|body)$/i.test(t) ? sel : `${sel} ${t}`;
+  }).filter(Boolean).join(", ");
+  return `${close}${list}{`;
+});
+
+const esempiDir = join(root, "esempi-gestionale");
+const pagine = {};
+for (const f of readdirSync(esempiDir)) {
+  if (!f.endsWith(".html")) continue;
+  pagine[f.replace(/\.html$/, "")] = readFileSync(join(esempiDir, f), "utf8");
 }
-const Buffer = {
-  from(x) {
-    if (typeof x === "string") { const b = new Buf(x.length); for (let i = 0; i < x.length; i++) b[i] = x.charCodeAt(i) & 0xff; return b; }
-    return Buf.from(x);
-  },
-  alloc(n) { return new Buf(n); },
+const ESEMPI = {
+  pagine,
+  icone: JSON.parse(readFileSync(join(esempiDir, "_icone.json"), "utf8")),
+  css: scope(readFileSync(join(esempiDir, "_stile.css"), "utf8"), "#sa4-page"),
 };
-`;
-const mock = BUFFER_SHIM + read("test/sa4pso-mock.mjs").replace(/^export /gm, "");
 
 // The page itself, without a document shell: hosts that wrap the file in
 // their own <html>/<head>/<body> get exactly this.
@@ -52,19 +56,40 @@ const body = `<meta charset="utf-8">
 <meta name="robots" content="noindex">
 <title>Banco di prova PS Assist</title>
 <style>${read("demo/shell.css")}</style>
-<div id="sa4">
-  <div id="sa4-head"></div>
-  <div class="sa4-sheet"><div id="sa4-page"></div></div>
-</div>
+<div id="sa4-page"></div>
 <noscript><p style="padding:20px">Serve JavaScript: la pagina è un simulatore, non un sito.</p></noscript>
 <script>window.__PSA_BUILD__ = ${JSON.stringify({ version, built })};</script>
-<script type="text/plain" id="psa-mock">${b64(mock)}</script>
+<script type="text/plain" id="psa-esempi">${b64(JSON.stringify(ESEMPI))}</script>
 <script type="text/plain" id="psa-core">${b64(core)}</script>
 <script>${read("demo/shell.js")}</script>
 `;
 
 mkdirSync(join(root, "dist"), { recursive: true });
 writeFileSync(join(root, "dist/demo.artifact.html"), body);
-const html = `<!doctype html>\n<html lang="it">\n<head>\n${body}\n</html>\n`;
+// Offline file: the browser enforces the promise, not just the code. No host
+// is reachable at all — only blob:/data:, which is where the simulated PDFs
+// live — forms cannot submit anywhere, and frames can only show blobs.
+// (Not added to the artifact build: that page already runs under the host's
+// own strict CSP, and a second policy could fight it.)
+const CSP = [
+  "default-src 'none'",
+  "script-src 'unsafe-inline'",
+  "style-src 'unsafe-inline'",
+  "img-src data: blob:",
+  "font-src data:",
+  "frame-src blob:",
+  "connect-src blob: data:",
+  "form-action 'none'",
+  "base-uri 'none'",
+].join("; ");
+const html = `<!doctype html>
+<html lang="it">
+<head>
+<meta http-equiv="Content-Security-Policy" content="${CSP}">
+<link rel="icon" href="data:,">
+${body}
+</html>
+`;
 writeFileSync(join(root, "dist/demo.html"), html);
-console.log(`banco di prova: dist/demo.html + dist/demo.artifact.html (${Math.round(html.length / 1024)} KB) con il pannello v${version}`);
+console.log(`banco di prova: dist/demo.html + dist/demo.artifact.html (${Math.round(html.length / 1024)} KB)`);
+console.log(`  pannello v${version} · ${Object.keys(pagine).length} pagine del gestionale · ${Object.keys(ESEMPI.icone).length} icone`);

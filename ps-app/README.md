@@ -179,33 +179,54 @@ essere amministratori:
 
 ## Banco di prova (provare senza ospedale)
 
-Una pagina sola che contiene **il pannello vero** — la stessa build dell'estensione — sopra un
-pronto soccorso **finto** con tre pazienti inventati. Serve per provare e far crescere l'interfaccia
-da casa, senza accesso al gestionale e senza toccare dati di nessuno.
+Una pagina sola con dentro **le schermate vere del gestionale** e sopra **il
+pannello vero** — la stessa build dell'estensione. Serve per provare e far
+crescere l'interfaccia da casa, senza accesso a SA4PSO.
 
-- **Online**: apri il link del banco di prova (nel messaggio di consegna) da qualsiasi browser.
-- **Offline**: `dist/demo.html` è dentro lo zip — doppio click, funziona anche senza rete.
+- **Online**: il link del banco di prova (nel messaggio di consegna), da qualsiasi browser.
+- **Offline**: `dist/demo.html` è dentro lo zip — doppio click, funziona senza rete.
 
-Funziona come al lavoro: lista PS → apri un assistito → **Richieste** con quesito, profili, esami,
-«Crea e aggiungi», conferma, e **Esiti** con valori dentro il pannello, anteprima a due righe,
-referti, «Salva referti» e pallini verdi. Il tasto **‹** apre i pazienti conosciuti e sceglierne
-un altro carica la sua pagina, esattamente come in reparto.
+### Cosa c'è dentro
 
-Diverso dal vero, di proposito: la stampa mostra il PDF ma **non apre il dialogo** di stampa, i PDF
-sono fogli vuoti (qui conta il flusso), e i referti si aprono in una finta scheda in basso a
-sinistra invece che in una scheda del browser. La barra nera in alto è solo del banco: **Lista PS**,
-**↻ Ricarica**, **⌫ Azzera**, velocità di rete simulata e **?**.
+Le pagine sono quelle salvate dal gestionale — struttura, classi, foglio di
+stile e icone originali — con **tutto il contenuto sostituito da dati
+inventati** (vedi `esempi-gestionale/README.md`: gli originali erano cartelle
+cliniche complete e non stanno in questo repository). Si passa dall'una all'altra
+come nel programma: lista PS → scheda paziente → nuova richiesta → catalogo
+esami → conferma → stampa; e sulla seconda scheda, risultati e referti.
 
-Perché è affidabile come banco: `dist/demo.html` è **generato** da `extension/content.js` (il
-pannello che si installa) e da `test/sa4pso-mock.mjs` (il simulatore su cui girano i test), quindi
-non può divergere da ciò che viene spedito; il guscio aggiunge solo ciò che manca — il browser
-finto — e non riscrive mai il DOM che il pannello legge. Una suite dedicata
-(`node test/demo.mjs`) ripercorre nel banco gli stessi flussi dei test di prodotto.
+### Cosa funziona
 
-> Nessun dato reale: i tre pazienti sono inventati, tutto resta nella pagina e niente esce dal
-> browser. Il pannello, fuori dall'host dell'ospedale, accetta i ganci del banco (navigazione,
-> schede, stampa); **su `smarthealth.multimedica.it` quei ganci non esistono nemmeno**, quindi
-> nulla servito dal gestionale può dirottarlo.
+Il flusso completo dell'ordine: quesito, profili, esami, «Crea e aggiungi» con
+la verifica esame per esame, il carrello che compare **nella pagina vera**, la
+Conferma nativa, il wizard di stampa. E gli **Esiti**: i valori letti dalla
+finestra Risultati vera, l'anteprima a due righe, i referti salvati e riaperti.
+
+Di proposito **non** funziona il resto: gli script del gestionale sono rimossi
+(schede e menu interni non si aprono), le schermate mai salvate mostrano una
+pagina di cortesia invece di un errore, la stampa mostra il PDF ma non apre il
+dialogo, e i PDF sono fogli vuoti.
+
+### Niente esce dalla pagina
+
+Non è una promessa, è una barriera: le richieste allo stesso indirizzo le serve
+il simulatore in memoria, **tutto il resto viene rifiutato** — qualsiasi host,
+XHR, WebSocket, EventSource, beacon — e nel file offline lo impone anche una
+`Content-Security-Policy` che vieta al browser di raggiungere qualunque host.
+La suite conta le richieste di rete di un'intera sessione: **una sola, la pagina
+stessa**.
+
+### Perché non invecchia
+
+`dist/demo.html` è **generato** da `extension/content.js` (il pannello che si
+installa) e da `esempi-gestionale/` (le pagine): `npm run demo` e ogni
+`npm run dist` lo riallineano da soli, e la barra nera stampa quale build stai
+provando. Una suite dedicata (`node test/demo.mjs`) ripercorre nel banco gli
+stessi flussi dei test di prodotto.
+
+> Il pannello, fuori dall'host dell'ospedale, accetta i ganci del banco
+> (navigazione, schede, stampa); **su `smarthealth.multimedica.it` quei ganci non
+> esistono nemmeno**, quindi nulla servito dal gestionale può dirottarlo.
 
 ---
 
@@ -309,8 +330,10 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
+├── esempi-gestionale/   ← pagine vere del gestionale, contenuti inventati (+ come)
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
-├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + simulatore vero
+├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
+├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
 └── test/                ← simulatore SA4PSO + 39 scenari e2e in Chromium reale
 ```
 
@@ -320,8 +343,9 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
+npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 39 scenari e2e + 5 sull'estensione reale + 22 sul banco di prova
+npm test           # 39 scenari e2e + 5 sull'estensione + 24 sul banco + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

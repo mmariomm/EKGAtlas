@@ -1,0 +1,57 @@
+[
+  {
+    "out": "paziente-1",
+    "tipo": "paziente",
+    "nota": "scheda paziente completa (anamnesi, diario, parametri)"
+  },
+  {
+    "out": "crea-laboratorio",
+    "tipo": "crea",
+    "nota": "nuova richiesta di laboratorio"
+  },
+  {
+    "out": "crea-radiologia",
+    "tipo": "crea",
+    "nota": "nuova richiesta di radiologia"
+  },
+  {
+    "out": "esami-centrale",
+    "tipo": "esami",
+    "nota": "carrello + catalogo LABORATORIO ANALISI (146 voci)"
+  },
+  {
+    "out": "esami-urgenze",
+    "tipo": "esami",
+    "nota": "catalogo LABORATORIO URGENZE"
+  },
+  {
+    "out": "esami-poc",
+    "tipo": "esami",
+    "nota": "catalogo LABORATORIO POC"
+  },
+  {
+    "out": "crea-laboratorio-2",
+    "tipo": "crea",
+    "nota": "nuova richiesta, seconda variante"
+  },
+  {
+    "out": "paziente-2",
+    "tipo": "paziente",
+    "nota": "scheda paziente con risultati di laboratorio in corso"
+  },
+  {
+    "out": "risultati-1",
+    "tipo": "risultati",
+    "nota": "valori di un prelievo (finestra Risultati)"
+  },
+  {
+    "out": "risultati-2",
+    "tipo": "risultati",
+    "nota": "valori di un secondo prelievo"
+  },
+  {
+    "out": "esami-rx",
+    "tipo": "esami",
+    "nota": "catalogo RADIOLOGIA - RX"
+  }
+]
