@@ -5,7 +5,7 @@
  */
 import type { LeadId } from '../engine/leads'
 import type { TissueState } from '../engine/propagate'
-import type { Source } from '../engine/sources'
+import type { Source, WirePulse } from '../engine/sources'
 
 /** Provenance tiers — the TRUTH LAW's data shape. */
 export type ProvenanceTier = 'recorded' | 'derived' | 'reconstructed' | 'modeled'
@@ -45,8 +45,10 @@ export interface MechanismSpec {
   kind: 'solver' | 'authored'
   /** kind solver: the tissue state to simulate */
   state?: TissueState & { rrMs?: number; beats?: number }
-  /** kind authored: explicit sources per beat */
-  authoredBeats?: { onsetMs: number; sources: Source[] }[]
+  /** kind authored: explicit sources per beat… */
+  authoredBeats?: { onsetMs: number; sources: Source[]; wires?: WirePulse[] }[]
+  /** …or a named deterministic builder in content/mechanisms.ts */
+  authoredId?: string
   /** REQUIRED when kind === 'authored' */
   authoredReason?: string
   /** ≤5 bullets: what the animation must visibly show (shot-audited) */
@@ -84,7 +86,7 @@ export type CardAssertion =
   | { on: 'model' | 'trace'; check: 'stShift'; lead: LeadId; sign: '+' | '-'; minMv?: number }
   | { on: 'model' | 'trace'; check: 'tPolarity'; lead: LeadId; sign: '+' | '-' }
   | { on: 'model' | 'trace'; check: 'rsRatio'; lead: LeadId; min?: number; max?: number }
-  | { on: 'trace'; check: 'irregularRR'; cvMin: number }
+  | { on: 'model' | 'trace'; check: 'irregularRR'; cvMin: number }
   | { on: 'model' | 'trace'; check: 'custom'; name: string; note: string }
 
 export interface Card {

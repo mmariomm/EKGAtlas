@@ -71,6 +71,58 @@ export const detectQrs = (asset, opts = {}) => {
   return { peaks, env }
 }
 
+/**
+ * The moving-integral envelope smears QRS bounds by ~half its window. Refine
+ * on the actual signal: inside the rough window find the peak multi-lead
+ * slope, then walk out from it until the slope stays below 7% of that peak —
+ * that is where the QRS actually starts and ends.
+ */
+const refineBySlope = (asset, roughOn, roughOff, idx) => {
+  const leads = ['II', 'V2', 'V5'].filter((l) => asset.leads[l])
+  const fs = asset.fs
+  const s0 = Math.max(1, roughOn - idx(20))
+  const s1 = Math.min(asset.leads[leads[0]].length - 1, roughOff + idx(20))
+  const slope = new Float64Array(s1 - s0)
+  for (const name of leads) {
+    const raw = asset.leads[name]
+    for (let i = s0; i < s1; i++) {
+      slope[i - s0] += Math.abs(raw[i] - raw[i - 1]) / asset.unitsPerMv
+    }
+  }
+  // smooth ~8 ms
+  const w = Math.max(1, Math.round(fs * 0.008))
+  const sm = new Float64Array(slope.length)
+  for (let i = 0; i < slope.length; i++) {
+    let acc = 0
+    let n = 0
+    for (let k = -w; k <= w; k++) {
+      const j = i + k
+      if (j >= 0 && j < slope.length) { acc += slope[j]; n++ }
+    }
+    sm[i] = acc / n
+  }
+  let peak = 0
+  let peakI = 0
+  for (let i = 0; i < sm.length; i++) if (sm[i] > peak) { peak = sm[i]; peakI = i }
+  const thr = 0.07 * peak
+  const quiet = Math.round(fs * 0.014) // must stay quiet ~14 ms to count as "out"
+  let on = peakI
+  let run = 0
+  while (on > 0) {
+    if (sm[on] < thr) { run++; if (run >= quiet) break } else run = 0
+    on--
+  }
+  on = Math.min(peakI, on + quiet - 1)
+  let off = peakI
+  run = 0
+  while (off < sm.length - 1) {
+    if (sm[off] < thr) { run++; if (run >= quiet) break } else run = 0
+    off++
+  }
+  off = Math.max(peakI, off - quiet + 1)
+  return [s0 + on, s0 + off]
+}
+
 export const annotate = (asset, opts = {}) => {
   const fs = asset.fs
   const ms = (idx) => (idx / fs) * 1000
@@ -100,6 +152,7 @@ export const annotate = (asset, opts = {}) => {
     if (ms(off - on) > 280) [on, off] = crawl(0.15)
     if (ms(off - on) > 280) continue
     if (ms(off - on) < 40) { on = p - idx(45); off = p + idx(45) }
+    ;[on, off] = refineBySlope(asset, on, off, idx)
 
     const nextOn = k + 1 < peaks.length ? peaks[k + 1] - idx(70) : n - 1
     const base = sig[Math.max(0, on - idx(40))]

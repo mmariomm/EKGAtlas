@@ -98,7 +98,7 @@ const solveRegions = (state: TissueState, nodeT: Map<NodeId, number>): Map<strin
 // T width/timing sharpened vs v1 so the ST segment stays honestly isoelectric
 // (a Gaussian's foot must not masquerade as an ST shift).
 const T_PRIMARY = 0.34
-const T_SECONDARY = 0.95
+const T_SECONDARY = 1.15
 const T_DYSSYNC = 55
 const T_APD = 205
 const T_WIDTH = 45

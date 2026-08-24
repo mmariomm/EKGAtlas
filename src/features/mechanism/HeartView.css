@@ -1,0 +1,63 @@
+.heart {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  touch-action: pan-y;
+  cursor: grab;
+}
+.heart:active { cursor: grabbing; }
+
+.heart svg {
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.hd-glow {
+  opacity: 0;
+  transition: opacity 60ms linear;
+}
+
+.hd-chamber {
+  opacity: 0;
+  transition: opacity 70ms linear;
+}
+
+.hd-trail {
+  fill: none;
+  stroke: #dce6ff;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.62;
+}
+
+.hd-seeds circle { transition: opacity 50ms linear; }
+
+.hd-arrow { transition: opacity 120ms ease-out; }
+
+.hd-label text {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.hd-focus { transition: opacity 90ms linear; }
+
+.hd-focus-label {
+  fill: #ff9b7d;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.hd-axis { fill: var(--ink); font-size: 15px; font-weight: 600; }
+
+.hd-axis-cap {
+  fill: var(--ink-3);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}

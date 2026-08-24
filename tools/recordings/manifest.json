@@ -11,7 +11,7 @@
         "SR": 0
       },
       "beats": 10,
-      "bytes": 189820,
+      "bytes": 189832,
       "convertedAt": "2026-08-24"
     },
     "ptbxl-24-nsr": {
@@ -53,7 +53,7 @@
         "SR": 0
       },
       "beats": 12,
-      "bytes": 188909,
+      "bytes": 188886,
       "convertedAt": "2026-08-24"
     },
     "ptbxl-711-lbbb": {
@@ -67,7 +67,7 @@
         "SR": 0
       },
       "beats": 12,
-      "bytes": 203780,
+      "bytes": 203847,
       "convertedAt": "2026-08-24"
     }
   }

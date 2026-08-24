@@ -30,7 +30,9 @@ export const windowsOf = (strip: Strip): Windows => {
     pStart: P ? base + P.relStart : null,
     qrsStart: base + QRS.relStart,
     qrsEnd: base + QRS.relEnd,
-    tStart: T ? base + T.relStart : null,
+    // A very wide QRS can overlap the earliest T-source tail; the T window
+    // must never reach back into the QRS (it would read the S wave as a "T").
+    tStart: T ? Math.max(base + T.relStart, base + QRS.relEnd + 20) : null,
     tEnd: T ? base + T.relEnd : null,
   }
 }
@@ -140,4 +142,112 @@ export const rrCv = (onsets: number[]): number => {
   const mean = rr.reduce((a, b) => a + b, 0) / rr.length
   const sd = Math.sqrt(rr.reduce((a, b) => a + (b - mean) ** 2, 0) / rr.length)
   return sd / mean
+}
+
+// ---------------------------------------------------------------------------
+// Real-recording (TraceAsset) measurement — same helpers, annotation windows.
+// ---------------------------------------------------------------------------
+
+export interface AssetJson {
+  id: string
+  fs: number
+  unitsPerMv: number
+  durationMs: number
+  leads: Record<string, number[]>
+  annotation: { beats: { pOn?: number; qrsOn: number; qrsOff: number; tEnd?: number }[] }
+}
+
+/** Adapt an asset to the SignalSet shape so every measure above applies. */
+export const assetSignals = (a: AssetJson): SignalSet => {
+  const leads = {} as SignalSet['leads']
+  for (const [name, arr] of Object.entries(a.leads)) {
+    const f = new Float32Array(arr.length)
+    for (let i = 0; i < arr.length; i++) f[i] = arr[i] / a.unitsPerMv
+    leads[name as LeadId] = f
+  }
+  return { dt: 1000 / a.fs, durationMs: a.durationMs, n: a.leads.II?.length ?? 0, leads }
+}
+
+const median = (xs: number[]): number => {
+  const s = [...xs].sort((a, b) => a - b)
+  return s.length ? s[Math.floor(s.length / 2)] : 0
+}
+
+/** Windows for the representative beat (median-QRS-width beat with a P if any). */
+export const assetWindows = (a: AssetJson): Windows => {
+  const beats = a.annotation.beats
+  if (!beats.length) throw new Error(`${a.id}: no annotated beats`)
+  const withP = beats.filter((b) => b.pOn != null && b.tEnd != null)
+  const pool = withP.length ? withP : beats
+  const widths = pool.map((b) => b.qrsOff - b.qrsOn)
+  const med = median(widths)
+  const rep = pool.reduce((best, b) =>
+    Math.abs(b.qrsOff - b.qrsOn - med) < Math.abs(best.qrsOff - best.qrsOn - med) ? b : best,
+  )
+  return {
+    pStart: rep.pOn ?? null,
+    qrsStart: rep.qrsOn,
+    qrsEnd: rep.qrsOff,
+    tStart: rep.qrsOff + 80,
+    tEnd: rep.tEnd ?? rep.qrsOff + 360,
+  }
+}
+
+export interface TraceMeasurements {
+  rateBpm: number
+  qrsMs: number
+  prMs: number | null
+  qtcMs: number | null
+}
+
+export const measureAsset = (a: AssetJson): TraceMeasurements => {
+  const beats = a.annotation.beats
+  const rr = beats.slice(1).map((b, i) => b.qrsOn - beats[i].qrsOn)
+  const rrMed = median(rr)
+  const prVals = beats.filter((b) => b.pOn != null).map((b) => b.qrsOn - (b.pOn as number))
+  const qtVals = beats.filter((b) => b.tEnd != null).map((b) => (b.tEnd as number) - b.qrsOn)
+  const qtMed = qtVals.length ? median(qtVals) : null
+  return {
+    rateBpm: rrMed ? Math.round(60000 / rrMed) : 0,
+    qrsMs: Math.round(median(beats.map((b) => b.qrsOff - b.qrsOn))),
+    prMs: prVals.length >= Math.max(2, beats.length * 0.5) ? Math.round(median(prVals)) : null,
+    qtcMs: qtMed && rrMed ? Math.round(qtMed / Math.sqrt(rrMed / 1000)) : null,
+  }
+}
+
+export const assetRrCv = (a: AssetJson): number =>
+  rrCv(a.annotation.beats.map((b) => b.qrsOn))
+
+/** Mean amplitude of the first 30 ms of the QRS (septal q check). */
+export const initialQrsMean = (sig: SignalSet, lead: LeadId, w: Windows): number => {
+  let s = 0
+  let n = 0
+  for (let i = 0; i < sig.n; i++) {
+    const t = i * sig.dt
+    if (t >= w.qrsStart && t <= w.qrsStart + 30) { s += sig.leads[lead][i]; n++ }
+  }
+  return (n ? s / n : 0) - baselineOf(sig, lead, w)
+}
+
+/** Mean pairwise correlation of pre-QRS windows — high in sinus, low in AF. */
+export const preQrsConsistency = (a: AssetJson, lead: LeadId = 'II'): number => {
+  const sig = assetSignals(a)
+  const samples = sig.leads[lead]
+  if (!samples) return 0
+  const win = Math.round(150 / sig.dt)
+  const gap = Math.round(40 / sig.dt)
+  const segs: Float32Array[] = []
+  for (const b of a.annotation.beats) {
+    const end = Math.round(b.qrsOn / sig.dt) - gap
+    const start = end - win
+    if (start < 0) continue
+    segs.push(samples.slice(start, end))
+  }
+  if (segs.length < 4) return 0
+  let sum = 0
+  let n = 0
+  for (let i = 0; i < segs.length; i++) {
+    for (let j = i + 1; j < segs.length; j++) { sum += correlation(segs[i], segs[j]); n++ }
+  }
+  return n ? sum / n : 0
 }

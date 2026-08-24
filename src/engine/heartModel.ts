@@ -65,8 +65,11 @@ export const REGIONS: Region[] = [
   { id: 'LV_inf', structure: 'LV', pos: [0.45, 0.6, -0.4], dir: [0.4, 0.55, -0.5], mass: 0.35, seededBy: 'LPF', coupling: 34, neighbors: [{ id: 'LV_apex', delay: 36 }, { id: 'LV_lat', delay: 38 }] },
 
   // --- right ventricle (small; anterior-rightward, faces V1) ---
-  { id: 'RV_inf', structure: 'RV', pos: [-0.4, 0.6, 0.1], dir: [-0.25, 0.45, 0.15], mass: 0.14, seededBy: 'RBB', coupling: 12, neighbors: [{ id: 'SEPTUM', delay: 48 }, { id: 'RV_ant', delay: 44 }] },
-  { id: 'RV_ant', structure: 'RV', pos: [-0.75, 0.2, 0.5], dir: [-0.6, -0.05, 0.42], mass: 0.16, seededBy: 'RBB', coupling: 26, neighbors: [{ id: 'RV_inf', delay: 46 }] },
+  // RV→septum spread is fast (26 ms): in LBBB the septal mass fires almost
+  // with the RV free wall — the reason real LBBB has no lateral q. The
+  // septum→RV direction stays slow (48 ms) so RBBB keeps its late R'.
+  { id: 'RV_inf', structure: 'RV', pos: [-0.4, 0.6, 0.1], dir: [-0.25, 0.45, 0.15], mass: 0.14, seededBy: 'RBB', coupling: 12, neighbors: [{ id: 'SEPTUM', delay: 20 }, { id: 'RV_ant', delay: 44 }] },
+  { id: 'RV_ant', structure: 'RV', pos: [-0.75, 0.2, 0.5], dir: [-0.42, -0.05, 0.56], mass: 0.16, seededBy: 'RBB', coupling: 40, neighbors: [{ id: 'RV_inf', delay: 46 }] },
 ]
 
 export const REGION_BY_ID: Record<string, Region> = Object.fromEntries(REGIONS.map((r) => [r.id, r]))
