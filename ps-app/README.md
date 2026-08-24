@@ -162,6 +162,31 @@ essere amministratori:
 
 ---
 
+## Come vengono letti i valori (e cosa fa quando non capisce)
+
+I valori arrivano dall'**HTML** della finestra «Visualizza Risultati», non dal PDF del referto:
+la pagina è una tabella dell'applicazione e si legge riga per riga — esame, valore, unità, range,
+stato, data — prendendo **solo le celle figlie dirette** della riga (l'intestazione del paziente
+sta nella stessa tabella, dentro tabelle annidate, e altrimenti finirebbe tra i risultati). Una
+riga è un risultato se lo dimostra: ha una **data di refertazione**, oppure un **range numerico**,
+oppure uno **stato** di laboratorio. Il resto viene scartato.
+
+Il giudizio «fuori range» capisce i modi in cui i laboratori scrivono i limiti: `13 - 17`,
+`7,35 – 7,45`, `4 - 10 x10^3`, `-2 - +2`, `< 0.5`, `> 60`, `fino a 5`, `inf./sup. a`, e i valori
+con modificatore (`<0.01`, `>1000`) o a parole (`NEGATIVO`, `Assente`). Quando **non** capisce —
+un range che dipende dal sesso, un formato mai visto, due range nella stessa cella — non inventa:
+**non segna nulla** e mostra il valore in nero. È una scelta: meglio un fuori range non evidenziato
+che un rosso che non sappiamo giustificare.
+
+Un esame sconosciuto non sparisce mai: se non ha una sigla nota viene mostrato con la prima parola
+del nome, e il nome completo resta sotto il puntatore.
+
+> Il **PDF del referto** non viene letto: quel PDF disegna il testo un glifo alla volta con un font
+> ridotto, quindi ricavarne «Emoglobina 8.0 g/dL» significherebbe ricostruire parole e colonne dalle
+> coordinate. Gli stessi valori sono già in HTML nella finestra Risultati, ed è da lì che si leggono.
+
+---
+
 ## Dove finiscono referti e valori
 
 - **Valori** (righe LAB): letti da `RcsAccessiRisultatiElenco.do`, HTML sullo stesso server. Restano

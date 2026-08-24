@@ -667,13 +667,43 @@
   }
 
   // a value outside its own reference range is worth the eye
+  // Is this value outside its reference range? Returns -1 / 0 / +1.
+  //
+  // Laboratories write ranges in more ways than one ("4 - 10", "< 0.5",
+  // "fino a 5", "> 60", "-2 - +2", "4 - 10 x10^3"), and values come with
+  // modifiers ("<0.01") or as words ("NEGATIVO"). The rule here is
+  // deliberately one-sided: when a format is not understood — or the range
+  // depends on something we cannot know, like sex — it returns 0 and the
+  // value is shown plain. Never a red mark we cannot justify.
   function outOfRange(value, range) {
-    const v = parseFloat(String(value).replace(",", "."));
-    const m = /^\s*([\d.,]+)\s*-\s*([\d.,]+)\s*$/.exec(range || "");
-    if (!isFinite(v) || !m) return 0;
-    const lo = parseFloat(m[1].replace(",", ".")), hi = parseFloat(m[2].replace(",", "."));
-    if (!isFinite(lo) || !isFinite(hi)) return 0;
-    return v < lo ? -1 : v > hi ? 1 : 0;
+    const num = (s) => {
+      const m = /-?\d+(?:[.,]\d+)?/.exec(String(s));
+      return m ? parseFloat(m[0].replace(",", ".")) : NaN;
+    };
+    const raw = String(range || "").replace(/\s+/g, " ").trim();
+    const vs = String(value).replace(/\s+/g, " ").trim();
+    if (!raw || !vs) return 0;
+    // "M: 13-17 F: 12-16", or two ranges in one cell: which one applies is not
+    // ours to guess
+    if (/\b[MF]\s*[:=]/.test(raw)) return 0;
+    if ((raw.match(/\s[-–]\s/g) || []).length > 1) return 0;
+
+    const v = num(vs);
+    if (!isFinite(v)) return 0;                       // NEGATIVO, Assente, tracce…
+    const vLt = /^[<≤]/.test(vs), vGt = /^[>≥]/.test(vs);
+
+    let lo = NaN, hi = NaN;
+    const due = /^(-?[\d.,]+)\s*[-–]\s*([+-]?[\d.,]+)/.exec(raw);
+    if (due) { lo = num(due[1]); hi = num(due[2]); }
+    else if (/^[<≤]|^inf\.?\s*a\b|^fino a\b|^minore\b/i.test(raw)) hi = num(raw);
+    else if (/^[>≥]|^sup\.?\s*a\b|^maggiore\b|^oltre\b/i.test(raw)) lo = num(raw);
+    else return 0;
+    if (!isFinite(lo) && !isFinite(hi)) return 0;
+    if (isFinite(lo) && isFinite(hi) && lo > hi) return 0;   // unreadable, not a range
+
+    if (isFinite(lo) && (v < lo || (vLt && v <= lo))) return -1;
+    if (isFinite(hi) && (v > hi || (vGt && v >= hi))) return 1;
+    return 0;
   }
 
   function parseRisultati(doc) {
@@ -689,7 +719,13 @@
       // Quesito…): those rows have no date, no range and no state, and would
       // otherwise show up among the values as a nonsense line
       if (/^(assistito|pronto soccorso|quesito|reparto|medico|paziente|data)\b/i.test(nome)) continue;
-      if (!/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(data || "") && !range && !stato) continue;
+      // A result row proves itself: a reporting date, a numeric range, or a
+      // laboratory state. The header block of the same table (name, età, CF,
+      // quesito) has none of the three, whichever way it is nested.
+      const dataOk = /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(data || "");
+      const rangeOk = /\d/.test(range || "") && /[-–<>≤≥]|fino a|inf\.|sup\./i.test(range || "");
+      const statoOk = /^(parziale|definitiv|refertat|eseguit|in corso|validat|preliminar|provvisori)/i.test(stato || "");
+      if (!dataOk && !rangeOk && !statoOk) continue;
       rows.push({ nome, valore, um, range, stato });
     }
     return rows;
