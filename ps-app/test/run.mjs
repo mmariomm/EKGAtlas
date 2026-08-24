@@ -885,7 +885,8 @@ async function scenarioRisultati(browser) {
   // the preview is there on arrival: values are fetched in the background
   await page.waitForSelector("#psassist-host .eprev", { timeout: 15000 });
   const prev = await $panel(page, ".eprev").first().innerText();
-  check(scen, /^Emoglobina 80↓/.test(prev.trim()), `anteprima con l'anomalo per primo (got: ${prev.trim().slice(0, 40)})`);
+  // names are abbreviated the way a doctor reads them: Emoglobina → Hb
+  check(scen, /^Hb 80↓/.test(prev.trim()), `anteprima con l'anomalo per primo, in sigla (got: ${prev.trim().slice(0, 40)})`);
 
   // one tap opens the full values screen
   await vals.first().click();
@@ -893,7 +894,15 @@ async function scenarioRisultati(browser) {
   const rows = await page.locator("#psassist-host .rval").allInnerTexts();
   check(scen, rows.length === 3, `tutti i valori (got ${rows.length})`);
   const bad = await page.locator("#psassist-host .rval.bad").allInnerTexts();
-  check(scen, bad.length === 1 && /Emoglobina/.test(bad[0]) && /↓/.test(bad[0]), "solo il fuori range è segnalato");
+  check(scen, bad.length === 1 && /Hb/.test(bad[0]) && /↓/.test(bad[0]), "solo il fuori range è segnalato");
+  const rosso = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    const row = r.querySelector(".rval.bad");
+    const nome = getComputedStyle(row.querySelector(".rvn")).color;
+    const val = getComputedStyle(row.querySelector(".rvv")).color;
+    return { nome, val };
+  });
+  check(scen, /179, 38, 30/.test(rosso.val) && !/179, 38, 30/.test(rosso.nome), `in rosso c'è solo il valore (${rosso.val} vs ${rosso.nome})`);
 
   // copy them for the diario
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);

@@ -89,7 +89,7 @@ const nEsiti = await $("[data-esito]").count();
 check(nEsiti >= 4, `gli Esiti arrivano dalla pagina vera (${nEsiti} righe)`);
 await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelector(".eprev"), { timeout: 30000 }).catch(() => {});
 const prev = await $(".eprev").first().innerText().catch(() => "");
-check(/Emoglobina|Leucociti/.test(prev), `l'anteprima legge i valori veri della finestra Risultati (${prev.replace(/\s+/g, " ").slice(0, 44)})`);
+check(/\bHb\b|\bGB\b/.test(prev), `l'anteprima legge i valori veri, in sigla (${prev.replace(/\s+/g, " ").slice(0, 44)})`);
 await $('[data-esito][data-kind="valori"]').first().click();
 await page.waitForSelector("#psassist-host .rval", { state: "attached", timeout: 20000 });
 check(await $(".rval").count() >= 8, "la schermata valori elenca tutto l'emocromo");

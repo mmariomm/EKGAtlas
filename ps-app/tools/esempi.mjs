@@ -175,6 +175,10 @@ const ETICHETTE_APP = new Set([
   "Trend", "Triage Ostetrico", "Valutazioni", "Verbale Ambulatoriale", "Visualizza Risultati",
   "ALLERGIE", "ANAMNESI", "ARANCIONE", "AZZURRO", "ESAME_OBIETTIVO", "FARMACI_ASSUNTI", "MALATTIE_PREGRESSE",
   "IMMAGINE", "Accettazione", "Dimissione", "Ambulatorio",
+  // labels of the results window: they are what tells a value row from the
+  // patient header, both on screen and for the panel
+  "Assistito", "Pronto Soccorso", "Quesito", "Risultati Laboratorio", "Chiudi lista",
+  "Esame", "Valore", "Range", "Stato", "Data", "Unità di Misura",
 ]);
 
 // exam rows are catalogue text, not patient data: "0-320 EMOCROMO… (POCT1502)"

@@ -321,6 +321,36 @@
     return param(baseUrl, "EPISODIO_ID") || findEpisodeIdInDoc(doc);
   }
 
+  // Lab names as they are read at a glance. The LIS writes them out in full
+  // ("MCH Cont. Media Hgb"), which is unreadable in a two-line preview: what a
+  // doctor scans is the short form and the number.
+  const SIGLE = [
+    [/^leucociti|^globuli bianchi|^wbc/i, "GB"], [/^emoglobina|^hgb\b|^hb\b/i, "Hb"],
+    [/^ematocrito|^hct/i, "Ht"], [/^piastrine|^plt/i, "PLT"], [/^eritrociti|globuli rossi|^rbc/i, "GR"],
+    [/^mcv|vol\.? glob/i, "MCV"], [/^mchc/i, "MCHC"], [/^mch\b|cont\.? media/i, "MCH"], [/^rdw/i, "RDW"],
+    [/^granulociti|neutrofil/i, "Neu"], [/^linfocit/i, "Lin"], [/^monocit/i, "Mon"],
+    [/^eosinofil/i, "Eos"], [/^basofil/i, "Bas"], [/altre popolazioni/i, "Altre"],
+    [/^creatinin/i, "Cr"], [/^azotemia|^urea/i, "Az"], [/^sodio|^na\b/i, "Na"], [/^potassio|^k\b/i, "K"],
+    [/^cloro|^cl\b/i, "Cl"], [/calcio ioniz/i, "Ca++"], [/^calcio/i, "Ca"], [/^magnesio/i, "Mg"],
+    [/^glucosio|glicemia/i, "Glu"], [/proteina c reattiva|^pcr\b/i, "PCR"], [/procalcitonin/i, "PCT"],
+    [/troponina/i, "Trop"], [/d.?dimero/i, "DD"], [/^inr/i, "INR"], [/^pt\b|protrombin/i, "PT"],
+    [/^ptt|tromboplastin/i, "PTT"], [/fibrinogeno/i, "Fib"], [/bilirubina.*diretta/i, "BilD"],
+    [/bilirubina/i, "Bil"], [/^got\b|^ast\b/i, "AST"], [/^gpt\b|^alt\b/i, "ALT"],
+    [/gamma\s?gt|^ggt/i, "γGT"], [/fosfatasi alc/i, "ALP"], [/^ldh/i, "LDH"],
+    [/^cpk|creatinchinasi|^ck\b/i, "CPK"], [/^lipasi/i, "Lip"], [/^amilasi/i, "Amy"],
+    [/^albumin/i, "Alb"], [/nt.?pro.?bnp/i, "NTproBNP"], [/^bnp/i, "BNP"], [/^ves\b/i, "VES"],
+    [/^ph\b/i, "pH"], [/pco2|pco₂/i, "pCO2"], [/po2\b|po₂/i, "pO2"], [/hco3|bicarbon/i, "HCO3"],
+    [/base excess|^be\b|^eb\b/i, "BE"], [/lattat/i, "Lac"], [/saturaz|^so2/i, "SatO2"],
+    [/carbossiemo|^cohb/i, "COHb"], [/metaemo|^methb/i, "MetHb"], [/^tsh/i, "TSH"],
+    [/emogas/i, "EGA"], [/^ammonio|ammoniem/i, "NH3"], [/^mioglobin/i, "Mb"],
+  ];
+  function sigla(nome) {
+    const n = String(nome || "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    for (const [re, s] of SIGLE) if (re.test(n)) return s;
+    const w = n.split(/[\s(,.]+/).filter(Boolean)[0] || n;   // first word, never a paragraph
+    return w.length > 9 ? w.slice(0, 8) + "." : w;
+  }
+
   // First ~160 chars of visible page text, for the log when a page is unexpected.
   function snippet(doc) {
     return (doc.body?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 160);
@@ -649,10 +679,17 @@
   function parseRisultati(doc) {
     const rows = [];
     for (const tr of doc.querySelectorAll("tr")) {
-      const tds = [...tr.querySelectorAll("td.AFCDataTD")];
+      // DIRECT children only: the patient header of the same table nests its own
+      // tables, and cells picked up from those made a row look like a result
+      const tds = [...tr.querySelectorAll(":scope > td.AFCDataTD")];
       if (tds.length < 5) continue;
-      const [nome, valore, um, range, stato] = tds.map((t) => t.textContent.replace(/\s+/g, " ").trim());
+      const [nome, valore, um, range, stato, data] = tds.map((t) => t.textContent.replace(/\s+/g, " ").trim());
       if (!nome || !valore) continue;
+      // the same table carries the patient header (Assistito, Pronto Soccorso,
+      // Quesito…): those rows have no date, no range and no state, and would
+      // otherwise show up among the values as a nonsense line
+      if (/^(assistito|pronto soccorso|quesito|reparto|medico|paziente|data)\b/i.test(nome)) continue;
+      if (!/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(data || "") && !range && !stato) continue;
       rows.push({ nome, valore, um, range, stato });
     }
     return rows;
@@ -1347,15 +1384,14 @@
     .eprev:hover { background: #EAF2FA; color: #16232E; }
     .eprev .pn { color: #8296A9; font-weight: 500; }
     .eprev .pv { color: #35506B; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .eprev .pv.bad, .eprev .pn.bad { color: #B3261E; font-weight: 800; }
+    .eprev .pv.bad { color: #B3261E; font-weight: 800; }
     .rvals.plain { border: 0; background: transparent; padding: 0; }
     .rvals { border: 1px solid #E3E8EF; border-top: 0; border-radius: 0 0 8px 8px; padding: 4px 8px 6px; background: #F8FBFE; }
     .rval { display: flex; gap: 8px; align-items: baseline; font-size: 11.5px; padding: 2px 0; }
-    .rval .rvn { flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #35506B; }
-    .rval .rvv { flex: 0 0 auto; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .rval .rvr { flex: 0 0 auto; font-size: 10px; color: #8296A9; min-width: 74px; text-align: right; }
-    .rval.bad .rvv { color: #B3261E; }
-    .rval.bad .rvn { color: #16232E; font-weight: 600; }
+    .rval .rvn { flex: 0 0 84px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #8296A9; }
+    .rval .rvv { flex: 0 0 78px; font-weight: 700; font-variant-numeric: tabular-nums; color: #35506B; }
+    .rval .rvr { flex: 1 1 auto; font-size: 10px; color: #A3B2C2; text-align: right; }
+    .rval.bad .rvv { color: #B3261E; font-weight: 800; }
     .foot { padding: 8px 12px 10px; border-top: 1px solid #EEF2F6; display: flex; justify-content: space-between; align-items: center; color: #5B6B7A; font-size: 11px; }
     .footlink { border: 0; background: transparent; color: #0B5CAD; font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
     select.res { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 7px 8px; font-size: 12.5px; background: #fff; }
@@ -1963,7 +1999,7 @@
                 .slice(0, 10)
                 .map((v) => {
                   const oo = outOfRange(v.valore, v.range);
-                  return `<span class="pn${oo ? " bad" : ""}">${esc(v.nome)}</span> <span class="pv${oo ? " bad" : ""}">${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>`;
+                  return `<span class="pn">${esc(sigla(v.nome))}</span> <span class="pv${oo ? " bad" : ""}">${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>`;
                 }).join(" · ")}</button>`
           : "";
         return `<div class="egroup">
@@ -2039,6 +2075,26 @@
       open.add(id);
       tabStore.set(this.refKey(), [...open]);
       this.render();
+      this.keepOne(id);   // opened once → keep it, so the next click is instant
+    }
+
+    // Save the copy of a referto that was just opened. Only that one: nothing
+    // is fetched before it is asked for, and a document already on screen is
+    // not new information.
+    async keepOne(id) {
+      if (!hasExt() || (this.refCache || {})[id]) return;
+      const e = this.esiti.find((x) => x.id === id);
+      if (!e || e.kind !== "referto") return;
+      this.refBusy = { ...(this.refBusy || {}), [id]: true };
+      this.render();
+      const res = await ask({ t: "cacheRef", id, url: e.url, ep: this.episodeId });
+      if (res && res.ok) {
+        this.refCache = { ...(this.refCache || {}), [id]: res.size || 1 };
+        this.refBusy[id] = false;
+      } else {
+        this.refBusy[id] = (res && res.why) || "non riuscito";
+      }
+      this.render();
     }
 
     async resetReferti() {
@@ -2079,7 +2135,7 @@
       const body = vals && vals.rows && vals.rows.length
         ? vals.rows.map((v) => {
             const oo = outOfRange(v.valore, v.range);
-            return `<div class="rval ${oo ? "bad" : ""}"><span class="rvn">${esc(v.nome)}</span><span class="rvv">${esc(v.valore)}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}</span><span class="rvr">${esc(v.range || "")}${v.um ? " " + esc(v.um) : ""}</span></div>`;
+            return `<div class="rval ${oo ? "bad" : ""}" title="${esc(v.nome)}"><span class="rvn">${esc(sigla(v.nome))}</span><span class="rvv">${esc(v.valore)}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}</span><span class="rvr">${esc(v.um || "")}${v.range ? " · " + esc(v.range) : ""}</span></div>`;
           }).join("")
         : `<div class="rval">${this.risBusy === e.id ? "carico…" : "nessun valore"}</div>`;
       return `

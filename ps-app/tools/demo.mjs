@@ -61,6 +61,7 @@ const body = `<meta charset="utf-8">
 <script>window.__PSA_BUILD__ = ${JSON.stringify({ version, built })};</script>
 <script type="text/plain" id="psa-esempi">${b64(JSON.stringify(ESEMPI))}</script>
 <script type="text/plain" id="psa-core">${b64(core)}</script>
+<script>${read("demo/pdf.js")}</script>
 <script>${read("demo/shell.js")}</script>
 `;
 

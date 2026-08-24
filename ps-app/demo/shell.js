@@ -85,6 +85,30 @@
   }
   const icone = (html) => html.replace(/src="icona:([^"]*)"/g, (m, n) => `src="${E.icone[n] || "data:,"}"`);
 
+  // The label of an exam, read from the catalogue page it lives in: the printed
+  // documents show names, not codes.
+  function etichettaEsame(risorsa, code) {
+    const html = pagina(CATALOGHI[risorsa] || "esami-poc");
+    const m = new RegExp(`<a[^>]*PRESTAZIONE=${code}(?:&amp;|&)[^>]*>([\\s\\S]{0,300}?)</a>`, "i").exec(html);
+    const testo = m ? m[1].replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() : "";
+    return testo || `prestazione ${code}`;
+  }
+
+  // referto id → what that document is, taken from the row it sits in
+  let refertiIndice = null;
+  function etichettaReferto(id) {
+    if (!refertiIndice) {
+      refertiIndice = new Map();
+      for (const nome of Object.keys(E.pagine)) {
+        const html = E.pagine[nome];
+        const re = /title="([^"]{3,90})"[\s\S]{0,600}?REFERTO_ID=([\w-]+)/g;
+        let m;
+        while ((m = re.exec(html))) if (!refertiIndice.has(m[2])) refertiIndice.set(m[2], m[1]);
+      }
+    }
+    return refertiIndice.get(id) || "Documento clinico";
+  }
+
   // A saved exam page is static: mark the rows that are in the cart by turning
   // their Insert link into the Delete link the application would render — which
   // is exactly what the panel reads back to verify what it added.
@@ -155,7 +179,7 @@
     status: 200, headers: { "content-type": "text/html; charset=utf-8" },
     body: icone(conTitolo(html, titolo)),
   });
-  const pdf200 = () => ({ status: 200, headers: { "content-type": "application/pdf" }, body: PDF });
+  const pdf200 = (bytes) => ({ status: 200, headers: { "content-type": "application/pdf" }, body: bytes || PDF });
   const vai = (loc) => ({ status: 302, headers: { location: loc }, body: new Uint8Array(0) });
 
   // ------------------------------------------------------------- routing
@@ -166,7 +190,37 @@
     const metodo = (init.method || "GET").toUpperCase();
     const form = new URLSearchParams(typeof init.body === "string" ? init.body : "");
 
-    if (/RcsStampaEtichetteLISHMIMU\.do|jasperservlet|uploaddownloadservlet|refertostream|Sa4ViewerExtRedirect\.do/i.test(path)) return pdf200();
+    // --- the documents the print flow produces, drawn for real
+    if (/RcsStampaEtichetteLISHMIMU\.do/i.test(path)) {
+      const c = carrelli.get(q.get("RICHIESTA_ID") || "");
+      return pdf200(PSA_PDF.etichette({
+        paziente: pazienteCorrente.nome, episodio: pazienteCorrente.ep,
+        richiesta: q.get("RICHIESTA_ID") || "-", esami: c ? [...c.etichette.values()] : [],
+      }));
+    }
+    if (/jasperservlet/i.test(path)) {
+      const c = carrelli.get(q.get("RICHIESTA_ID") || "");
+      const radio = /Radiograf/i.test(q.get("REPORT") || "");
+      return pdf200(PSA_PDF.lista({
+        titolo: radio ? "Prenotazione radiologica" : "Richiesta di laboratorio",
+        paziente: pazienteCorrente.nome, episodio: pazienteCorrente.ep,
+        richiesta: q.get("RICHIESTA_ID") || "-", quesito: (c && c.quesito) || "",
+        esami: c ? [...c.etichette.values()] : [],
+      }));
+    }
+    if (/Sa4ViewerExtRedirect\.do|refertostream|uploaddownloadservlet/i.test(path)) {
+      const id = q.get("REFERTO_ID") || "";
+      const titolo = etichettaReferto(id);
+      return pdf200(PSA_PDF.referto({
+        paziente: pazienteCorrente.nome, episodio: pazienteCorrente.ep, titolo,
+        righe: [
+          "Esito: nella norma per i parametri considerati.",
+          "Nota: documento generato dal banco di prova, contenuto inventato.",
+          "",
+          `Identificativo documento: ${id || "-"}`,
+        ],
+      }));
+    }
     if (/RcsAccessiRisultatiElenco\.do/i.test(path)) {
       const id = q.get("RCS_ACCESSO_ID") || "";
       return html200(pagina(id.endsWith("2") ? "risultati-2" : "risultati-1"), pazienteCorrente.nome);
@@ -183,7 +237,10 @@
       const rid = form.get("RICHIESTA_ID") || String(prossimaRichiesta++);
       const nota = carrelli.get(rid);
       const risorse = (nota && nota.risorse) || (q.get("RISORSE") || "00660001P").split(",");
-      carrelli.set(rid, { risorsa: risorse[0], carrello: new Set(), confermata: false, ep: ep || pazienteCorrente.ep, risorse });
+      carrelli.set(rid, {
+        risorsa: risorse[0], carrello: new Set(), etichette: new Map(), confermata: false,
+        ep: ep || pazienteCorrente.ep, risorse, quesito: form.get("QUESITO_DIAGNOSTICO") || (nota && nota.quesito) || "",
+      });
       return vai(`${BASE}?MVPG=RcsRichiestaPrestazioniRicercaErogatore&RICHIESTA_ID=${rid}&RISORSA_ID=${risorse[0]}`
         + `&RISORSE=${risorse.join("%2C")}&EPISODIO_ID=${ep}&STRUTTURA=1&s_PRESTAZIONE=&returnPage=PsoEpisodio`);
     }
@@ -198,11 +255,12 @@
       const rid = q.get("RICHIESTA_ID") || "";
       const code = q.get("PRESTAZIONE");
       const risorsa = q.get("RISORSA_ID") || "00660001P";
-      const c = carrelli.get(rid) || { risorsa, carrello: new Set(), confermata: false, ep };
+      const c = carrelli.get(rid) || { risorsa, carrello: new Set(), etichette: new Map(), confermata: false, ep };
+      if (!c.etichette) c.etichette = new Map();
       carrelli.set(rid, c);
-      if (q.get("Insert")) c.carrello.add(String(code));
-      else if (code) c.carrello.delete(String(code));
-      else c.carrello.clear();
+      if (q.get("Insert")) { c.carrello.add(String(code)); c.etichette.set(String(code), etichettaEsame(risorsa, code)); }
+      else if (code) { c.carrello.delete(String(code)); c.etichette.delete(String(code)); }
+      else { c.carrello.clear(); c.etichette.clear(); }
       c.risorsa = risorsa;
       return html200(perVisita(applicaCarrello(pagina(CATALOGHI[risorsa] || "esami-poc"), rid), c.ep || ep, rid), pazienteCorrente.nome);
     }
@@ -215,7 +273,7 @@
       const risorse = (q.get("RISORSE") || "00660001P").split(",");
       const radio = risorse.some((r) => RADIO.has(r));
       const rid = String(prossimaRichiesta++);
-      carrelli.set(rid, { risorsa: risorse[0], carrello: new Set(), confermata: false, ep: ep || pazienteCorrente.ep, risorse });
+      carrelli.set(rid, { risorsa: risorse[0], carrello: new Set(), etichette: new Map(), confermata: false, ep: ep || pazienteCorrente.ep, risorse });
       return html200(perVisita(pagina(radio ? "crea-radiologia" : "crea-laboratorio"), ep || pazienteCorrente.ep, rid), pazienteCorrente.nome);
     }
     if (mvpg === "PsoLista" || (!mvpg && !ep)) return html200(listaPS());

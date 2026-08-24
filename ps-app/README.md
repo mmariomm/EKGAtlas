@@ -94,11 +94,15 @@ lista del pronto soccorso); sulla scheda di un paziente parte direttamente da **
 ### Esiti
 Un unico elenco in ordine di tempo:
 - **LAB ›** — valori che il pannello sa leggere: si aprono **dentro il pannello**, e sotto la riga
-  c'è un'**anteprima di due righe** con gli **anomali per primi** (rosso, ↑↓). Un tocco apre tutti
-  i valori, con **⧉ Copia** per incollarli nel diario e **↻** per rileggerli mentre il laboratorio
-  completa. I valori vengono precaricati in sottofondo, così l'anteprima c'è già.
-- **LIS/RIS/AMB ↗** — referti già emessi (PDF): si aprono in una scheda; con l'estensione puoi
-  **⬇ Salva referti** e da quel momento si aprono all'istante da locale. **↻ Resetta** svuota.
+  c'è un'**anteprima di due righe** con gli **anomali per primi**. I nomi sono in **sigla**
+  (`Emoglobina` → `Hb`, `Leucociti` → `GB`, `Piastrine` → `PLT`…) e in rosso c'è **solo il valore**,
+  con ↑ ↓: quello che si scorre è il numero, non il nome. Un tocco apre tutti i valori — sigla,
+  valore, unità e range — con **⧉ Copia** per il diario (lì i nomi tornano per esteso) e **↻** per
+  rileggerli mentre il laboratorio completa. Il nome completo resta sotto il puntatore.
+  I valori vengono precaricati in sottofondo, così l'anteprima c'è già.
+- **LIS/RIS/AMB ↗** — referti già emessi (PDF): si aprono in una scheda e, con l'estensione, il
+  documento che apri **viene tenuto** (pallino verde) — la volta dopo si apre all'istante, senza
+  toccare il server. **⬇ Salva referti** li prende tutti in una volta, **↻ Resetta** svuota.
 - **parziale** accanto a una riga = il laboratorio non ha ancora finito.
 
 > Perché l'anteprima non compare sotto i referti PDF: referto e prelievo sono due cose diverse per
