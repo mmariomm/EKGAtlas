@@ -177,6 +177,38 @@ essere amministratori:
 
 ---
 
+## Banco di prova (provare senza ospedale)
+
+Una pagina sola che contiene **il pannello vero** — la stessa build dell'estensione — sopra un
+pronto soccorso **finto** con tre pazienti inventati. Serve per provare e far crescere l'interfaccia
+da casa, senza accesso al gestionale e senza toccare dati di nessuno.
+
+- **Online**: apri il link del banco di prova (nel messaggio di consegna) da qualsiasi browser.
+- **Offline**: `dist/demo.html` è dentro lo zip — doppio click, funziona anche senza rete.
+
+Funziona come al lavoro: lista PS → apri un assistito → **Richieste** con quesito, profili, esami,
+«Crea e aggiungi», conferma, e **Esiti** con valori dentro il pannello, anteprima a due righe,
+referti, «Salva referti» e pallini verdi. Il tasto **‹** apre i pazienti conosciuti e sceglierne
+un altro carica la sua pagina, esattamente come in reparto.
+
+Diverso dal vero, di proposito: la stampa mostra il PDF ma **non apre il dialogo** di stampa, i PDF
+sono fogli vuoti (qui conta il flusso), e i referti si aprono in una finta scheda in basso a
+sinistra invece che in una scheda del browser. La barra nera in alto è solo del banco: **Lista PS**,
+**↻ Ricarica**, **⌫ Azzera**, velocità di rete simulata e **?**.
+
+Perché è affidabile come banco: `dist/demo.html` è **generato** da `extension/content.js` (il
+pannello che si installa) e da `test/sa4pso-mock.mjs` (il simulatore su cui girano i test), quindi
+non può divergere da ciò che viene spedito; il guscio aggiunge solo ciò che manca — il browser
+finto — e non riscrive mai il DOM che il pannello legge. Una suite dedicata
+(`node test/demo.mjs`) ripercorre nel banco gli stessi flussi dei test di prodotto.
+
+> Nessun dato reale: i tre pazienti sono inventati, tutto resta nella pagina e niente esce dal
+> browser. Il pannello, fuori dall'host dell'ospedale, accetta i ganci del banco (navigazione,
+> schede, stampa); **su `smarthealth.multimedica.it` quei ganci non esistono nemmeno**, quindi
+> nulla servito dal gestionale può dirottarlo.
+
+---
+
 ## Perché è robusto (regole di sicurezza nel codice)
 
 1. **Mai doppi ordini**: l'URL di inserimento di un esame viene richiesto **al massimo una volta**.
@@ -277,6 +309,8 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
+├── demo/                ← guscio del banco di prova (css + il browser finto)
+├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + simulatore vero
 └── test/                ← simulatore SA4PSO + 39 scenari e2e in Chromium reale
 ```
 
@@ -286,7 +320,8 @@ Sviluppo:
 cd ps-app
 npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
-npm test           # 39 scenari e2e (169 verifiche) + 5 verifiche sull'estensione reale
+npm run demo       # rigenera dist/demo.html (il banco di prova)
+npm test           # 39 scenari e2e + 5 sull'estensione reale + 22 sul banco di prova
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

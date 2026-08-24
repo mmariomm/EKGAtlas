@@ -984,6 +984,11 @@ async function scenarioNoPatientPage(browser) {
   const scen = "no-patient";
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
+  // come from that patient's page, where the ordering screen was in use: the
+  // worklist carries HIS episode in the row links and must not inherit it
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host #q", { state: "attached" });
+  await $panel(page, "#q").fill("controllo");
   await page.goto(mock.worklistUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   check(scen, (await page.locator("#psassist-host .opt").count()) === 0, "nessun esame sulla pagina PS senza paziente");

@@ -1,0 +1,196 @@
+/* ------------------------------------------------------------------ *
+ * Banco di prova — two visual worlds, deliberately kept apart:
+ *   .psa-bar   the test harness: near-black + amber, never clinical
+ *   #sa4       the simulated EHR: institutional blue, Verdana, hairlines,
+ *              dense boxy tables — a 2000s Java enterprise app, because the
+ *              panel has to be judged against a realistic host, not a
+ *              beautiful one. Single theme on purpose: the real app has one.
+ * ------------------------------------------------------------------ */
+:root {
+  --ink: #243b4a;
+  --ink-soft: #5b7285;
+  --line: #c3d0d9;
+  --line-soft: #dde5ea;
+  --blue: #1b4e73;
+  --blue-dk: #14395a;
+  --blue-pale: #e8eef3;
+  --ground: #eef1f3;
+  --sheet: #ffffff;
+  --link: #14568c;
+  --harness: #14181c;
+  --amber: #ffb020;
+  --rosso: #c0392b; --arancione: #d97706; --giallo: #c9a400;
+  --verde: #2e7d32; --azzurro: #1e88e5;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font: 13px/1.45 Verdana, "DejaVu Sans", Geneva, sans-serif;
+}
+
+/* ----------------------------------------------------------- harness */
+.psa-bar {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 12px; background: var(--harness); color: #e8edf2;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 12px;
+  border-bottom: 2px solid var(--amber);
+}
+.psa-badge {
+  display: inline-flex; align-items: center; gap: 6px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; font-size: 11px;
+  color: #1a1d21; background: var(--amber); padding: 3px 8px; border-radius: 3px;
+}
+/* the panel parks itself at the top right: keep the harness clear of it */
+@media (min-width: 1100px) { .psa-bar { padding-right: 500px; } }
+.psa-build { color: #8d9ba7; font-variant-numeric: tabular-nums; }
+.psa-url {
+  flex: 1 1 240px; min-width: 0; padding: 4px 9px; border-radius: 4px;
+  background: #1e242a; border: 1px solid #313a42; color: #a9b8c4;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+  font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.psa-bar button, .psa-bar select {
+  font: inherit; color: #e8edf2; background: #232a31; border: 1px solid #39434c;
+  border-radius: 4px; padding: 4px 9px; cursor: pointer;
+}
+.psa-bar button:hover, .psa-bar select:hover { background: #2d3641; }
+.psa-bar button:focus-visible, .psa-bar select:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+.psa-bar label { color: #93a3b0; display: inline-flex; align-items: center; gap: 5px; }
+
+/* --------------------------------------------------------- simulated */
+#sa4 { max-width: 1180px; margin: 0 auto; padding: 0 0 60px; }
+.sa4-top {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  background: linear-gradient(#22607f, var(--blue)); color: #fff; padding: 9px 16px;
+}
+.sa4-top b { font-size: 14px; letter-spacing: .02em; }
+.sa4-top span { font-size: 11px; color: #bcd6e6; }
+.sa4-tabs { display: flex; gap: 1px; background: var(--blue-dk); padding: 0 8px; flex-wrap: wrap; }
+.sa4-tabs i {
+  font-style: normal; font-size: 11px; padding: 6px 12px; color: #cfe0ec;
+  background: #1f5877; border-bottom: 2px solid transparent;
+}
+.sa4-tabs i.on { background: var(--sheet); color: var(--blue); font-weight: 700; border-bottom-color: var(--amber); }
+
+.sa4-pat {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: var(--blue-pale); border-bottom: 1px solid var(--line);
+  padding: 8px 16px;
+}
+.sa4-pat .nm { font-size: 15px; font-weight: 700; letter-spacing: .01em; }
+.sa4-pat .kv { font-size: 11px; color: var(--ink-soft); }
+.sa4-pat .kv b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+.tri {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+  color: #fff; padding: 2px 7px; border-radius: 2px;
+}
+.tri.rosso { background: var(--rosso); } .tri.arancione { background: var(--arancione); }
+.tri.giallo { background: var(--giallo); } .tri.verde { background: var(--verde); }
+.tri.azzurro { background: var(--azzurro); }
+
+.sa4-sheet { background: var(--sheet); border: 1px solid var(--line); border-top: 0; padding: 14px 16px 22px; }
+#sa4-page h2.sechead {
+  margin: 20px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--blue); border-bottom: 1px solid var(--line); padding-bottom: 4px; font-weight: 700;
+}
+#sa4-page h2.sechead:first-child { margin-top: 0; }
+#sa4-page p.hint {
+  margin: 0 0 14px; font-size: 12px; color: var(--ink-soft);
+  background: #f7fafb; border-left: 3px solid var(--line); padding: 8px 10px;
+}
+
+/* the mock's own markup */
+#sa4-page table { border-collapse: collapse; width: 100%; margin: 4px 0; font-size: 12px; }
+#sa4-page td { border: 1px solid var(--line-soft); padding: 4px 7px; vertical-align: top; }
+#sa4-page tr:nth-child(even) td { background: #fafcfd; }
+#sa4-page tr:hover td { background: #f0f6fa; }
+#sa4-page td.AFCColumnTD, #sa4-page .AFCColumnTD {
+  background: var(--blue-pale); font-weight: 700; font-size: 11px;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--blue);
+}
+#sa4-page a { color: var(--link); text-decoration: none; }
+#sa4-page a:hover { text-decoration: underline; }
+#sa4-page a:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+#sa4-page img { display: none; }               /* the mock's alt-only icons */
+#sa4-page a.myButton, #sa4-page a[title^="Richieste"] {
+  display: inline-block; margin: 2px 6px 2px 0; padding: 5px 12px;
+  background: linear-gradient(#fff, #e4ecf2); border: 1px solid var(--line);
+  border-radius: 3px; color: var(--blue); font-weight: 700; font-size: 12px;
+}
+#sa4-page a.myButton:hover, #sa4-page a[title^="Richieste"]:hover { background: #dfe9f0; text-decoration: none; }
+/* icon links: the real app shows small pictograms, the mock only alt text */
+#sa4-page a[title="Stampa Etichette"]::before { content: "🏷"; }
+#sa4-page a[title="Stampa Richiesta"]::before { content: "🖨"; }
+#sa4-page a[title="Stampa Prenotazione Esterna"]::before { content: "📅"; }
+#sa4-page a[title="REFERTO"]::before { content: "📄"; }
+#sa4-page a[title="Visualizza Risultati"]::before { content: "🧪"; }
+#sa4-page a[title]::before { font-size: 14px; line-height: 1; }
+#sa4-page input[type="text"], #sa4-page input:not([type]), #sa4-page select, #sa4-page textarea {
+  font: 12px Verdana, sans-serif; padding: 3px 5px; border: 1px solid var(--line);
+  background: #fff; color: var(--ink); border-radius: 2px; max-width: 100%;
+}
+#sa4-page input[type="submit"] {
+  font: 700 12px Verdana, sans-serif; padding: 4px 14px; cursor: pointer;
+  background: linear-gradient(#fff, #e4ecf2); border: 1px solid var(--line);
+  border-radius: 3px; color: var(--blue);
+}
+#sa4-page input[type="submit"]:hover { background: #dfe9f0; }
+#sa4-page form { margin: 6px 0; }
+#sa4-page h1 { font-size: 15px; color: var(--blue); margin: 0 0 8px; }
+
+/* worklist */
+.wl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.wl th {
+  text-align: left; background: var(--blue-pale); color: var(--blue); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .04em; padding: 6px 8px; border: 1px solid var(--line);
+}
+.wl td { border: 1px solid var(--line-soft); padding: 6px 8px; }
+.wl tr:hover td { background: #f0f6fa; }
+.wl td.n a { font-weight: 700; }
+.wl td.num { font-variant-numeric: tabular-nums; }
+
+/* fake tab (referti / PDF) */
+.psa-tab {
+  /* left side on purpose: a referto opened "in a tab" must stay readable next
+     to the panel, and the panel sits at the top right with the highest z-index
+     the platform allows — so this one is appended after it and matches it. */
+  position: fixed; left: 18px; bottom: 18px; width: min(620px, calc(100vw - 36px));
+  height: min(660px, calc(100vh - 110px)); z-index: 2147483647; background: #fff;
+  border: 1px solid #2a3138; border-radius: 8px; overflow: hidden;
+  box-shadow: 0 18px 44px rgba(12, 22, 30, .38); display: flex; flex-direction: column;
+  font-family: system-ui, sans-serif;
+}
+.psa-tab header {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  background: var(--harness); color: #dbe3ea; font-size: 12px;
+}
+.psa-tab header b { font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.psa-tab header button {
+  font: inherit; background: #232a31; color: #dbe3ea; border: 1px solid #39434c;
+  border-radius: 4px; padding: 2px 8px; cursor: pointer;
+}
+.psa-tab iframe { flex: 1; border: 0; background: #525659; }
+.psa-tab .note { padding: 10px 12px; font-size: 12px; color: var(--ink-soft); }
+
+/* help */
+.psa-help {
+  position: fixed; inset: 0; z-index: 70; display: grid; place-items: center;
+  background: rgba(10, 16, 22, .55); padding: 20px; font-family: system-ui, sans-serif;
+}
+.psa-help > div {
+  background: #fff; border-radius: 10px; padding: 22px 24px; max-width: 620px;
+  max-height: 84vh; overflow: auto; box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+}
+.psa-help h2 { margin: 0 0 4px; font-size: 17px; color: var(--blue); }
+.psa-help p.sub { margin: 0 0 14px; color: var(--ink-soft); font-size: 12px; }
+.psa-help h3 { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--blue); }
+.psa-help ul { margin: 0; padding-left: 18px; font-size: 13px; }
+.psa-help li { margin: 3px 0; }
+.psa-help .close { margin-top: 18px; font: inherit; padding: 7px 16px; border-radius: 5px;
+  border: 1px solid var(--line); background: var(--blue); color: #fff; cursor: pointer; font-weight: 600; }
+@media (prefers-reduced-motion: no-preference) {
+  .psa-tab, .psa-help { animation: psa-in .16s ease-out; }
+  @keyframes psa-in { from { opacity: 0; transform: translateY(6px); } }
+}

@@ -137,10 +137,14 @@ export const TINY_PDF = Buffer.from(
 
 // ------------------------------------------------------------------ pages
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-const HEAD = `<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><title>ROSSI MARIO</title></head><body>`;
+const HEAD0 = `<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><title>ROSSI MARIO</title></head><body>`;
 const FOOT = `</body></html>`;
 
 export function createMock(opts = {}) {
+  // one simulator per patient: the name lands in <title>, which is where the
+  // panel reads it from (opts.name defaults to the single test patient)
+  const NAME = opts.name || "ROSSI MARIO";
+  const HEAD = HEAD0.replace(">ROSSI MARIO<", ">" + esc(NAME) + "<");
   const state = {
     nextRichiestaId: 700001,
     allocated: {},          // richiestaId -> {tipo:'lab'|'radio', risorse:[..]}
@@ -196,6 +200,7 @@ export function createMock(opts = {}) {
   // chronological order in the DOM, plus an archive link without REFERTO_ID
   // that clients must ignore.
   function refertiRows() {
+    if (opts.noReferti) return "";   // a patient with nothing reported yet
     const mk = (id, sistema, dt, label) => `
       <tr><td class="AFCDataTD" title="${esc(label)}" valign="top">
         <a href="menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${EP()}#" title="REFERTO" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*TEST00001&REFERTO_SISTEMA=${sistema}&REFERTO_ID=${id}','${sistema}')"><img alt="referto"></a>
@@ -246,7 +251,7 @@ export function createMock(opts = {}) {
   }
   const risultatiPage = (id) => `${HEAD}<table>
       <tr><td class="AFCColumnTD">Esame</td><td class="AFCColumnTD">Valore</td><td class="AFCColumnTD">Unit&agrave; di Misura</td><td class="AFCColumnTD">Range</td><td class="AFCColumnTD">Stato</td><td class="AFCColumnTD">Data</td></tr>
-      <tr><td class="AFCDataTD">Assistito</td><td class="AFCDataTD">ROSSI MARIO</td></tr>
+      <tr><td class="AFCDataTD">Assistito</td><td class="AFCDataTD">${esc(NAME)}</td></tr>
       <tr><td class="AFCDataTD">Leucociti&nbsp;</td><td class="AFCDataTD">6.4</td><td class="AFCDataTD">x10</td><td class="AFCDataTD">4 - 10</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
       <tr><td class="AFCDataTD">Emoglobina&nbsp;</td><td class="AFCDataTD">80</td><td class="AFCDataTD">g/L</td><td class="AFCDataTD">135 - 180</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
       <tr><td class="AFCDataTD">Ematocrito&nbsp;</td><td class="AFCDataTD">44</td><td class="AFCDataTD">%</td><td class="AFCDataTD">40 - 54</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
@@ -340,7 +345,10 @@ export function createMock(opts = {}) {
   // the same shell form) but with nothing that can be ordered
   const worklistPage = () => `<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><title>PRONTO SOCCORSO - LISTA</title></head><body>
       <form name="AmbulatorioPSO" method="post" action="menuPsoEpisodio.do?ccsForm=AmbulatorioPSO:Edit&MVPG=PsoLista"></form>
-      <table><tr><td>ROSSI MARIO</td><td>BIANCHI ANNA</td></tr></table></body></html>`;
+      <table>
+        <tr><td><a href="menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${EP0}">ROSSI MARIO</a></td></tr>
+        <tr><td><a href="menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=999002">BIANCHI ANNA</a></td></tr>
+      </table></body></html>`;
   const loginPage = () => `${HEAD}<form name="Login" method="post" action="login.do"><input name="username"><input type="password" name="password"><input type="submit" value="Accedi"></form>${FOOT}`;
   const labelsPage = (rid) => `${HEAD}<h1>Stampa etichette LIS</h1><p>richiesta ${rid} confermata</p>
       ${opts.labelsBare ? "" : rowsFor(rid).join("\n")}

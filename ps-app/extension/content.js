@@ -158,6 +158,15 @@
     constructor(head, body = "") { super(body ? `${head} — ${body}` : head); this.head = head; this.body = body; }
   }
 
+  // --- banco di prova (offline) --------------------------------------------
+  // A page that is NOT the hospital may provide these hooks to run the panel
+  // against a simulator (tools/demo.mjs). The host check comes first, so on
+  // the real system the hooks do not exist and nothing served by SA4PSO can
+  // take over navigation, tabs or printing.
+  const DEMO = (location.hostname !== "smarthealth.multimedica.it" && window.__PSA_DEMO__) || null;
+  const nav = (url) => { if (DEMO && DEMO.nav) return DEMO.nav(url); location.href = url; };
+  const openTab = (url, name) => (DEMO && DEMO.open ? DEMO.open(url, name) : window.open(url, name));
+
   function param(url, name) {
     try { return new URL(url, location.href).searchParams.get(name); } catch { return null; }
   }
@@ -1446,13 +1455,15 @@
       const s = k ? tabStore.get(k, null) : null;
       if (!s || Date.now() - (s.ts || 0) > 6 * 3600e3) {
         this._q = store.get("lastQ", "") || ""; // keep the last quesito typed
-        this.view = this.view || this.defaultView();
+        this.view = this.defaultView() === "home" ? "home" : (this.view || this.defaultView());
         return;
       }
       this._q = s.q || store.get("lastQ", "") || "";
       this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
       this.acq = s.acq || "";
-      this.view = s.view || this.defaultView();
+      // the ER worklist reads the episode of whoever is first in the list, so a
+      // stored view must never turn it into an ordering screen for that patient
+      this.view = this.defaultView() === "home" ? "home" : (s.view || "richieste");
       this.viewId = s.viewId || null;
     }
     clearOrderUi() { // after a successful run the order is placed: start clean
@@ -1538,7 +1549,7 @@
         body: state.quesitoKept ? "Quesito del triage mantenuto." : "",
       };
       this.render();
-      if (state.finishedListUrl) setTimeout(() => { location.href = state.finishedListUrl; }, 900);
+      if (state.finishedListUrl) setTimeout(() => nav(state.finishedListUrl), 900);
     }
     failed(state, msg) {
       window.removeEventListener("beforeunload", this._unload);
@@ -1612,7 +1623,7 @@
         tabStore.set("confirm.v1", { richiestaId: first.rid, episodeId: plan.episodeId, lastCode: first.lastCode, lastLabel: first.lastLabel, count: first.count, ts: Date.now() });
       }
       this.render();
-      if (first.listUrl) setTimeout(() => { location.href = first.listUrl; }, 900);
+      if (first.listUrl) setTimeout(() => nav(first.listUrl), 900);
     }
 
     // ---- live validation (before anything is sent) ----
@@ -1997,13 +2008,13 @@
           const arr = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
           const url = URL.createObjectURL(new Blob([arr], { type: "application/pdf" }));
-          window.open(url, "_blank");
+          openTab(url, "_blank");
           setTimeout(() => URL.revokeObjectURL(url), 60000);
           return;
         }
       }
       const name = "psaRef_" + String(id).replace(/\W/g, ""); // else its own tab, reused on re-click
-      const w = window.open("", name);
+      const w = openTab("", name);
       if (!w) { this.message = "Consenti i popup per aprire i referti."; this.render(); return; }
       let blank = true;
       try { blank = !w.location.href || w.location.href === "about:blank"; } catch { blank = false; }
@@ -2017,7 +2028,7 @@
 
     async resetReferti() {
       for (const id of tabStore.get(this.refKey(), [])) {
-        try { window.open("", "psaRef_" + String(id).replace(/\W/g, ""))?.close(); } catch { /* ignore */ }
+        try { openTab("", "psaRef_" + String(id).replace(/\W/g, ""))?.close(); } catch { /* ignore */ }
       }
       tabStore.set(this.refKey(), []);
       if (hasExt()) await ask({ t: "clearRef" });
@@ -2265,7 +2276,7 @@
       $("#reset")?.addEventListener("click", () => { this.runState = null; this.runData = null; this.message = null; this.render(); });
       $("#openlist")?.addEventListener("click", () => {
         const u = this.runData?.finishedListUrl || this.runData?.lastListUrl;
-        if (u) location.href = u;
+        if (u) nav(u);
       });
 
       $("#back")?.addEventListener("click", () => this.setView(this.view === "valori" ? "esiti" : "home"));
@@ -2277,7 +2288,7 @@
         const p = knownPatients().find((x) => x.ep === ep);
         if (!p || !p.url) return;
         tabStore.set("afterNav.v1", { ep, view: go, ts: Date.now() }); // open there, on their page
-        location.href = p.url;
+        nav(p.url);
       }));
       $("#goqueued")?.addEventListener("click", () => { if (this.pending) goToQueued(this.pending); });
       $("#confirmnow")?.addEventListener("click", () => {
@@ -2543,6 +2554,7 @@
       attempts++;
       wrap.dataset.printAttempts = String(attempts);
       const f = root.querySelector("iframe");
+      if (DEMO) return; // banco di prova: PDF shown, no print dialog
       try { f?.contentWindow?.print(); } catch { /* fallback: the re-open button */ }
     };
 
@@ -2573,7 +2585,7 @@
       root.querySelector("#pwnext").onclick = advance;
       root.querySelector("#pwskip").onclick = advance;
       root.querySelector("#pwexit").onclick = cleanup;
-      root.querySelector("#pwtab").onclick = () => window.open(job.url, "_blank"); // user-activated → not popup-blocked
+      root.querySelector("#pwtab").onclick = () => openTab(job.url, "_blank"); // user-activated → not popup-blocked
     };
 
     const advance = () => {
@@ -2654,7 +2666,7 @@
       tabStore.set("confirm.v1", { richiestaId: next.rid, episodeId: q.episodeId, lastCode: next.lastCode, lastLabel: next.lastLabel, count: next.count, ts: Date.now() });
     }
     tabStore.set("queue.v1", { ...q, items: q.items.map((it, i) => (i ? it : { ...it, nav: true })), ts: Date.now() });
-    location.href = next.listUrl;
+    nav(next.listUrl);
   }
 
   function maybeAutoPrint(panel) {
