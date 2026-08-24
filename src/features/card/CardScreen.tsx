@@ -248,6 +248,12 @@ function CardInner({ cardId }: { cardId: string }) {
         )}
       </section>
 
+      {revealed && card.moduleHref && (
+        <a href={card.moduleHref.href} onClick={linkClick(card.moduleHref.href)} className="card-module">
+          {card.moduleHref.label} →
+        </a>
+      )}
+
       {revealed && (
         <>
           {/* ---- 2 · WHY ---- */}

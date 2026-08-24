@@ -69,6 +69,20 @@
       "beats": 12,
       "bytes": 203847,
       "convertedAt": "2026-08-24"
+    },
+    "ptbxl-320-longqt": {
+      "cardId": "longqt",
+      "ecgId": 320,
+      "source": "records500/00000/00320_hr",
+      "age": 79,
+      "sex": "M",
+      "scp": {
+        "LNGQT": 100,
+        "SR": 0
+      },
+      "beats": 9,
+      "bytes": 188124,
+      "convertedAt": "2026-08-24"
     }
   }
 }

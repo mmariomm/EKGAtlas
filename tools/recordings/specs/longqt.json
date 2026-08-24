@@ -1,0 +1,1 @@
+{ "cardId": "longqt", "targetTier": "recorded", "include": { "scpAll": ["LNGQT"] }, "exclude": { "scpAny": ["PACE", "AFIB", "CLBBB", "CRBBB"] } }

@@ -3,8 +3,11 @@ import { Card, CardCategory, Pack } from './schema'
 import { nsr } from './cards/nsr'
 import { afib } from './cards/afib'
 import { lbbb } from './cards/lbbb'
+import { hyperk } from './cards/hyperk'
+import { tca } from './cards/tca'
+import { longqt } from './cards/longqt'
 
-export const CARDS: Card[] = [nsr, afib, lbbb]
+export const CARDS: Card[] = [nsr, afib, lbbb, hyperk, tca, longqt]
 
 export const CARD_BY_ID: Record<string, Card> = Object.fromEntries(CARDS.map((c) => [c.id, c]))
 

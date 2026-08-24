@@ -106,6 +106,8 @@ export interface Card {
   pills: Pill[] // 2–4
   suspectConfirm: CitedLine[] // 1–4
   guidelineMoves: CitedLine[] // 1–3; UI appends the local-protocol close
+  /** optional promoted link to a lab module (e.g. the HyperK module) */
+  moduleHref?: { href: string; label: string }
   mechanism: MechanismSpec
   assertions: CardAssertion[]
   guidelineVerifiedAt: string // 'YYYY-MM'

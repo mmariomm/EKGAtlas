@@ -17,5 +17,10 @@
    "ptbxl-711-lbbb"
   ],
   "reason": "agent-curated (visual): textbook CLBBB \u2014 deep QS V1 with discordant T, notched lateral R. Pending human confirmation."
+ },
+ "longqt": {
+  "primary": "ptbxl-320-longqt",
+  "extras": [],
+  "reason": "agent-curated: pure LNGQT:100 + SR, no confounding labels. Pending human confirmation."
  }
 }

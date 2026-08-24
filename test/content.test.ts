@@ -9,13 +9,14 @@ import { resolve } from 'node:path'
 import { CARDS, CARD_BY_ID, PACKS } from '../src/content/index'
 import { GUIDELINE_BY_KEY, GUIDELINES } from '../src/content/guidelines'
 import { Card, CardAssertion } from '../src/content/schema'
-import { buildMechanismStrip } from '../src/content/mechanisms'
+import { buildMechanismStrip, hyperkStrip, tdpStrip } from '../src/content/mechanisms'
 import { buildSignals, SignalSet } from '../src/engine/synthesize'
+import { tileState } from '../src/engine/propagate'
 import { measure } from '../src/engine/measure'
 import {
   assetRrCv, assetSignals, assetWindows, AssetJson, initialQrsMean, measureAsset,
-  netQrs, preQrsConsistency, rrCv, stShift, tPolarity, terminalQrsMean, tPeak,
-  rsRatio, windowsOf, Windows,
+  netQrs, pMean, preQrsConsistency, rrCv, stShift, tPolarity, terminalQrsMean,
+  tPeak, rsRatio, windowsOf, Windows,
 } from './helpers'
 
 const RELEASE = process.env.RELEASE === '1'
@@ -137,6 +138,12 @@ console.log('=== TODO(REVIEW) scan ===')
 // ---------------------------------------------------------------------------
 console.log('=== Card assertions (encoded diagnostic criteria) ===')
 
+const nsrRef = (() => {
+  const strip = tileState({ pace: 'SA' })
+  const sig = buildSignals(strip)
+  return { strip, sig, w: windowsOf(strip) }
+})()
+
 const CUSTOMS: Record<
   string,
   (ctx: { sig: SignalSet; w: Windows; asset?: AssetJson; strip?: ReturnType<typeof buildMechanismStrip> }) => boolean
@@ -147,6 +154,69 @@ const CUSTOMS: Record<
   noOrganizedP: ({ strip }) =>
     !!strip &&
     strip.beats.every((b) => b.sources.every((s) => s.segment !== 'P' || Math.abs(s.mag) <= 0.05)),
+
+  // HyperK frame (a): tented T — taller AND narrower than the NSR reference.
+  tentedT: () => {
+    const a = hyperkStrip(0.25)
+    const sig = buildSignals(a)
+    const w = windowsOf(a)
+    const tall = tPeak(sig, 'II', w) >= 1.6 * tPeak(nsrRef.sig, 'II', nsrRef.w)
+    const widths = (s: ReturnType<typeof hyperkStrip>) =>
+      Math.max(...s.beats[0].sources.filter((x) => x.segment === 'T').map((x) => x.width))
+    const narrow = widths(a) <= 0.65 * widths(nsrRef.strip)
+    return tall && narrow
+  },
+
+  // HyperK frames (b)–(d): P silence → wide QRS → sine merge.
+  hyperkFrames: () => {
+    const b = buildSignals(hyperkStrip(0.55))
+    const wb = windowsOf(hyperkStrip(0.55))
+    const pGone = Math.abs(pMean(b, 'II', wb)) <= 0.05
+    const c = measure(hyperkStrip(0.78))
+    const wide = c.qrsMs >= 140
+    const d = hyperkStrip(1)
+    const sd = buildSignals(d)
+    const wd = windowsOf(d)
+    // sine merge: the ST region never settles at baseline
+    let off = 0
+    let n = 0
+    const base = 0
+    for (let i = 0; i < sd.n; i++) {
+      const t = i * sd.dt
+      if (wd.tStart != null && t >= wd.qrsEnd && t <= wd.tStart + 60) {
+        n++
+        if (Math.abs(sd.leads.II[i] - base) > 0.08) off++
+      }
+    }
+    const sine = n > 0 && off / n >= 0.7
+    return pGone && wide && sine
+  },
+
+  // TCA: peak of the terminal 40 ms of the QRS in aVR ≥ 0.3 mV (≥3 mm).
+  terminalRaVR: ({ sig, w }) => {
+    let m = -Infinity
+    for (let i = 0; i < sig.n; i++) {
+      const t = i * sig.dt
+      if (t >= w.qrsEnd - 40 && t <= w.qrsEnd) m = Math.max(m, sig.leads.aVR[i])
+    }
+    return m >= 0.3
+  },
+
+  // TdP companion strip: rotating axis ≥180°, run rate 180–260.
+  tdpPolymorphic: () => {
+    const s = tdpStrip()
+    const runStart = s.beats.findIndex((b) => b.label === 'torsades')
+    if (runStart < 0) return false
+    const run = s.beats.slice(runStart, runStart + 8)
+    const angles = run.map((b) => {
+      const q = b.sources.find((x) => x.segment === 'QRS')!
+      return (Math.atan2(q.dir[1], q.dir[0]) * 180) / Math.PI
+    })
+    const span = Math.max(...angles) - Math.min(...angles)
+    const rr = run.slice(1).map((b, i) => b.onset - run[i].onset)
+    const rate = 60000 / (rr.reduce((a, x) => a + x, 0) / rr.length)
+    return span >= 180 && rate >= 180 && rate <= 260
+  },
 }
 
 const runAssertion = (
