@@ -1,0 +1,17 @@
+.lib-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(var(--sp-4) + env(safe-area-inset-top)) 0 var(--sp-4);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-name { font-size: 17px; font-weight: 600; letter-spacing: 0.01em; }
+.lib-about { font-size: var(--fs-meta); color: var(--ink-2); }
+.lib-thesis {
+  color: var(--ink-2);
+  font-size: var(--fs-lede);
+  line-height: 1.5;
+  max-width: 40ch;
+  padding: var(--sp-2) 0 var(--sp-5);
+}
+.lib-placeholder { color: var(--ink-3); font-size: var(--fs-meta); }

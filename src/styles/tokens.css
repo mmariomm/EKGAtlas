@@ -1,0 +1,40 @@
+/* Design tokens — docs/rebuild/02-DESIGN.md §2. Dark, clinical, calm. */
+:root {
+  /* surfaces */
+  --bg: #070a0f;
+  --surface: #0d1219;
+  --surface-2: #131a24;
+  --line: #1f2937;
+  /* ink */
+  --ink: #e8edf4;
+  --ink-2: #9aa7b8;
+  --ink-3: #5c6a7d;
+  /* brand + semantics */
+  --accent: #35d0a5;
+  --accent-ink: #05231a;
+  --danger: #ef5d6f;
+  --warn: #e8b34b;
+  /* cross-modal phase palette (heart glow <-> trace comet <-> chips) */
+  --ph-sa: #7fd8f0;
+  --ph-atria: #4dc3e6;
+  --ph-av: #e8b34b;
+  --ph-vent: #ffd166;
+  --ph-repol: #a78bfa;
+  --ph-injury: #ef5d6f;
+  /* trace */
+  --trace-ink: #dfe7f0;
+  --grid-minor: #121b27;
+  --grid-major: #1c2837;
+  /* paper mode (TraceView-local) */
+  --paper-bg: #fdf6f0;
+  --paper-grid-minor: #f3ddd3;
+  --paper-grid-major: #e8b3a4;
+  --paper-ink: #1a1d24;
+  /* geometry */
+  --r-s: 8px; --r-m: 14px; --r-l: 20px;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
+  --tap-min: 44px;
+  /* type scale */
+  --fs-meta: 13px; --fs-body: 15px; --fs-lede: 17px;
+  --fs-title: 20px; --fs-name: 24px; --fs-hero: 28px;
+}

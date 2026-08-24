@@ -9,7 +9,11 @@
     "build": "tsc --noEmit && vite build",
     "preview": "npm run build && wrangler dev",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx/esm test/engine.test.ts",
+    "check:engine": "node --import tsx/esm test/engine.test.ts",
+    "check:content": "node --import tsx/esm test/content.test.ts",
+    "check": "npm run typecheck && npm run check:engine && npm run check:content",
+    "test": "npm run check",
+    "shots": "node test/shots.mjs",
     "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
@@ -21,9 +25,11 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.62.1",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vite": "^6.0.0",
+    "vite-plugin-pwa": "^0.21.2",
     "wrangler": "^4.98.0"
   }
 }
