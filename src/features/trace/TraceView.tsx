@@ -12,6 +12,7 @@ import { LeadId } from '../../engine/leads'
 import { PhaseTone } from '../../engine/sources'
 import { CardiacClock } from '../../lib/clock'
 import { TraceData } from '../../lib/assets'
+import { metric } from '../../lib/metrics'
 import './TraceView.css'
 
 export interface TraceHighlight {
@@ -287,6 +288,7 @@ export default function TraceView({
     let pinchZoom = 1
 
     const onDown = (e: PointerEvent) => {
+      metric('manipulate')
       canvas.setPointerCapture(e.pointerId)
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
       if (pointers.size === 1) { moved = 0; downAt = performance.now() }

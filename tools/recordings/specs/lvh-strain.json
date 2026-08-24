@@ -1,0 +1,26 @@
+{
+ "include": {
+  "scpAll": [
+   "LVH",
+   "SR"
+  ],
+  "scpAny": [
+   "STD_",
+   "INVT",
+   "NDT"
+  ]
+ },
+ "exclude": {
+  "scpAny": [
+   "AFIB",
+   "PACE",
+   "CLBBB",
+   "CRBBB",
+   "AMI",
+   "IMI",
+   "ASMI"
+  ]
+ },
+ "cardId": "lvh-strain",
+ "targetTier": "recorded"
+}

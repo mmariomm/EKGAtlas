@@ -1,0 +1,25 @@
+{
+ "include": {
+  "scpAny": [
+   "INVT",
+   "ISCAN",
+   "ISCAS"
+  ],
+  "scpAll": [
+   "SR"
+  ]
+ },
+ "exclude": {
+  "scpAny": [
+   "PACE",
+   "CLBBB",
+   "CRBBB",
+   "AFIB",
+   "LVH",
+   "IMI",
+   "AMI"
+  ]
+ },
+ "cardId": "wellens",
+ "targetTier": "recorded"
+}

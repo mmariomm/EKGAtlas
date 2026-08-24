@@ -16,6 +16,7 @@ import { loadTrace, signalsToTraceData, TraceData } from '../../lib/assets'
 import { linkClick } from '../../router'
 import TraceView from '../trace/TraceView'
 import ProvenanceBadge from '../card/ProvenanceBadge'
+import { metric } from '../../lib/metrics'
 import './HyperKScreen.css'
 
 export default function HyperKScreen() {
@@ -61,7 +62,7 @@ export default function HyperKScreen() {
             max={1}
             step={0.01}
             value={x}
-            onChange={(e) => setX(Number(e.target.value))}
+            onChange={(e) => { metric('manipulate'); setX(Number(e.target.value)) }}
             className="hk-slider"
             aria-label="Morph the trajectory: tented T toward sine wave"
           />

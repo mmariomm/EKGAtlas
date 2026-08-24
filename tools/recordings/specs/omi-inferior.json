@@ -1,0 +1,20 @@
+{
+ "include": {
+  "scpAny": [
+   "INJIN",
+   "INJIL"
+  ],
+  "scpAll": [
+   "SR"
+  ]
+ },
+ "exclude": {
+  "scpAny": [
+   "PACE",
+   "CLBBB",
+   "AFIB"
+  ]
+ },
+ "cardId": "omi-inferior",
+ "targetTier": "recorded"
+}

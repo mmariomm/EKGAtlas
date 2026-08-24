@@ -271,3 +271,25 @@
   font-weight: 600;
 }
 .card-module:hover { text-decoration: none; border-color: var(--ph-repol); }
+
+.card-leadrow {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 calc(-1 * var(--sp-4));
+  padding: 0 var(--sp-4);
+}
+.card-leadrow::-webkit-scrollbar { display: none; }
+.leadchip {
+  flex: none;
+  min-width: 42px;
+  min-height: 30px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.leadchip-on { color: var(--ink); border-color: var(--ink-3); background: var(--surface-2); }

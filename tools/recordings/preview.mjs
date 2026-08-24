@@ -16,7 +16,7 @@ const ids = process.argv.slice(2).length
   ? process.argv.slice(2)
   : readdirSync(OUT).filter((f) => f.endsWith('.json')).map((f) => f.replace('.json', ''))
 
-const LEADS = ['II', 'V1', 'V5']
+const LEADS = (process.env.LEADS || 'II,V1,V5').split(',')
 const W = 1200
 const LANE = 150
 

@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CARD_BY_ID } from '../../content'
+import { ALL_LEADS, LeadId } from '../../engine/leads'
 import { GUIDELINE_BY_KEY } from '../../content/guidelines'
 import { buildMechanismStrip } from '../../content/mechanisms'
 import { Card, CitedLine } from '../../content/schema'
@@ -15,6 +16,7 @@ import { samplePhase } from '../../engine/synthesize'
 import { useCardiacClock } from '../../lib/clock'
 import { loadTrace, TraceData } from '../../lib/assets'
 import { linkClick, navigate } from '../../router'
+import { metric } from '../../lib/metrics'
 import TraceView from '../trace/TraceView'
 import HeartView from '../mechanism/HeartView'
 import ProvenanceBadge from './ProvenanceBadge'
@@ -43,6 +45,7 @@ export default function CardScreen({ cardId }: { cardId: string }) {
 function CardInner({ cardId }: { cardId: string }) {
   const card = CARD_BY_ID[cardId]
   const [traceId, setTraceId] = useState(card.seeIt.traceId)
+  const [leads, setLeads] = useState<LeadId[]>([card.mechanism.primaryLead])
   const [data, setData] = useState<TraceData | null>(null)
   const [error, setError] = useState('')
   const [committed, setCommitted] = useState<number | null>(() => {
@@ -79,6 +82,7 @@ function CardInner({ cardId }: { cardId: string }) {
   )
 
   const commit = (i: number) => {
+    metric('commit', card.id)
     setCommitted(i)
     setShowHeart(true)
     try { localStorage.setItem(COMMIT_KEY(card.id), String(i)) } catch { /* private mode */ }
@@ -124,6 +128,7 @@ function CardInner({ cardId }: { cardId: string }) {
   }
 
   const share = async () => {
+    metric('share', card.id)
     const url = window.location.href
     try {
       if (navigator.share) await navigator.share({ title: card.name, url })
@@ -159,7 +164,7 @@ function CardInner({ cardId }: { cardId: string }) {
         {data && (
           <TraceView
             data={data}
-            leads={[card.mechanism.primaryLead]}
+            leads={leads}
             clock={clock}
             toneAt={toneAt}
             highlight={highlight}
@@ -167,6 +172,18 @@ function CardInner({ cardId }: { cardId: string }) {
             badge={<ProvenanceBadge provenance={data.provenance} />}
           />
         )}
+
+        <div className="card-leadrow" role="group" aria-label="Choose leads">
+          {ALL_LEADS.map((l) => (
+            <button
+              key={l}
+              className={`leadchip ${leads.includes(l) ? 'leadchip-on' : ''}`}
+              onClick={() => setLeads((cur) => (cur.includes(l) ? (cur.length > 1 ? cur.filter((x) => x !== l) : cur) : [...cur.slice(-2), l]))}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
 
         {revealed && (
           <div className="card-phasechips" role="group" aria-label="Highlight a phase">

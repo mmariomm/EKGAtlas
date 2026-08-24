@@ -16,6 +16,7 @@ export const verifyAsset = (asset) => {
 
   let prevEnd = -Infinity
   for (const [i, b] of beats.entries()) {
+    if ((b.pOn ?? 0) < 0 || b.qrsOn < 0) problems.push(`beat ${i}: negative fiducial`)
     if (b.pOn != null && !(b.pOn < b.qrsOn)) problems.push(`beat ${i}: pOn ≥ qrsOn`)
     if (!(b.qrsOn < b.qrsOff)) problems.push(`beat ${i}: qrsOn ≥ qrsOff`)
     const w = b.qrsOff - b.qrsOn

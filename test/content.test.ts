@@ -10,6 +10,7 @@ import { CARDS, CARD_BY_ID, PACKS } from '../src/content/index'
 import { GUIDELINE_BY_KEY, GUIDELINES } from '../src/content/guidelines'
 import { Card, CardAssertion } from '../src/content/schema'
 import { buildMechanismStrip, hyperkStrip, tdpStrip } from '../src/content/mechanisms'
+import { buildWarp, modelFiducials } from '../src/engine/sync'
 import { buildSignals, SignalSet } from '../src/engine/synthesize'
 import { tileState } from '../src/engine/propagate'
 import { measure } from '../src/engine/measure'
@@ -202,6 +203,110 @@ const CUSTOMS: Record<
     return m >= 0.3
   },
 
+  // Flutter model: atrial firing ≈300/min with 2:1 conduction.
+  flutterWaves: ({ strip }) => {
+    if (!strip) return false
+    const atrial = strip.beats.filter((b) => b.sources.some((s) => s.segment === 'P' && Math.abs(s.mag) > 0.02))
+    const vent = strip.beats.filter((b) => b.sources.some((s) => s.segment === 'QRS' && Math.abs(s.mag) > 0))
+    if (atrial.length < 8) return false
+    const gaps = atrial.slice(1).map((b, i) => b.onset - atrial[i].onset)
+    const spacing = gaps.every((g) => g >= 190 && g <= 210)
+    return spacing && Math.abs(atrial.length / Math.max(1, vent.length) - 2) < 0.35
+  },
+
+  // VT run: metronome-regular ventricular beats.
+  regularRun: ({ strip }) => {
+    if (!strip) return false
+    const onsets = strip.beats
+      .filter((b) => b.sources.some((s) => s.segment === 'QRS' && Math.abs(s.mag) > 0))
+      .map((b) => b.onset)
+    return rrCv(onsets) < 0.06
+  },
+
+  // Atria and ventricles keep different rates (VT with dissociated Ps).
+  avDissociation: ({ strip }) => {
+    if (!strip) return false
+    const pCount = strip.beats.reduce(
+      (n, b) => n + b.sources.filter((s) => s.segment === 'P' && Math.abs(s.mag) > 0.02).length, 0)
+    const vCount = strip.beats.filter((b) => b.sources.some((s) => s.segment === 'QRS' && Math.abs(s.mag) > 0)).length
+    if (!pCount || !vCount) return false
+    const pRate = (pCount / strip.durationMs) * 60000
+    const vRate = (vCount / strip.durationMs) * 60000
+    return Math.abs(pRate - vRate) / vRate > 0.15
+  },
+
+  // Complete block: atrial 70–80, ventricular 35–45, PRs wander.
+  avb3Dissociation: ({ strip }) => {
+    if (!strip) return false
+    const pCount = strip.beats.reduce(
+      (n, b) => n + b.sources.filter((s) => s.segment === 'P' && Math.abs(s.mag) > 0.02).length, 0)
+    const vBeats = strip.beats.filter((b) => b.sources.some((s) => s.segment === 'QRS' && Math.abs(s.mag) > 0))
+    const pRate = (pCount / strip.durationMs) * 60000
+    const vRate = (vBeats.length / strip.durationMs) * 60000
+    return pRate >= 68 && pRate <= 82 && vRate >= 33 && vRate <= 47
+  },
+
+  // Mobitz II: conducted PRs constant; a P-only (dropped) beat exists.
+  mobitz2Pattern: ({ strip }) => {
+    if (!strip) return false
+    const prs: number[] = []
+    let droppedSeen = false
+    for (const b of strip.beats) {
+      const p = b.sources.find((s) => s.segment === 'P' && Math.abs(s.mag) > 0.02)
+      const q = b.sources.filter((s) => s.segment === 'QRS' && Math.abs(s.mag) > 0)
+      if (p && q.length) prs.push(Math.min(...q.map((s) => s.center)) - p.center)
+      if (p && !q.length) droppedSeen = true
+    }
+    if (!droppedSeen || prs.length < 3) return false
+    return Math.max(...prs) - Math.min(...prs) <= 20
+  },
+
+  // Trace-side dropped beat: the pause of a non-conducted P.
+  droppedBeats: ({ asset }) => {
+    if (!asset) return false
+    const on = asset.annotation.beats.map((b) => b.qrsOn)
+    const rr = on.slice(1).map((t, i) => t - on[i]).sort((a, b) => a - b)
+    if (rr.length < 4) return false
+    const med = rr[Math.floor(rr.length / 2)]
+    return rr[rr.length - 1] >= 1.7 * med
+  },
+
+  terminalRV1: ({ sig, w }) => terminalQrsMean(sig, 'V1', w) > 0.03,
+  terminalSI: ({ sig, w }) => terminalQrsMean(sig, 'I', w) < -0.03,
+  st3gt2: ({ sig, w }) => stShift(sig, 'III', w) > stShift(sig, 'II', w),
+  concordantSTE: ({ sig, w }) => netQrs(sig, 'V5', w) > 0 && stShift(sig, 'V5', w) >= 0.1,
+  preservedR: ({ sig, w }) => {
+    let m = -Infinity
+    for (let i = 0; i < sig.n; i++) {
+      const t = i * sig.dt
+      if (t >= w.qrsStart && t <= w.qrsEnd) m = Math.max(m, sig.leads.V3[i])
+    }
+    return m >= 0.2
+  },
+  tallT: ({ sig, w }) => tPeak(sig, 'V2', w) >= 0.5,
+  sokolow: ({ sig, w }) => {
+    let sV1 = Infinity
+    let rV5 = -Infinity
+    for (let i = 0; i < sig.n; i++) {
+      const t = i * sig.dt
+      if (t >= w.qrsStart && t <= w.qrsEnd) {
+        sV1 = Math.min(sV1, sig.leads.V1[i])
+        rV5 = Math.max(rV5, sig.leads.V5[i])
+      }
+    }
+    return Math.max(0, -sV1) + Math.max(0, rV5) >= 3.5
+  },
+  covedShape: ({ sig, w }) => {
+    // V1 descends monotonically (within small ripple) from J+40 to the T nadir
+    const i0 = Math.round((w.qrsEnd + 40) / sig.dt)
+    let nadirI = i0
+    const iEnd = Math.round((w.tEnd ?? w.qrsEnd + 320) / sig.dt)
+    for (let i = i0; i < Math.min(iEnd, sig.n); i++) if (sig.leads.V1[i] < sig.leads.V1[nadirI]) nadirI = i
+    let maxRise = 0
+    for (let i = i0 + 1; i <= nadirI; i++) maxRise = Math.max(maxRise, sig.leads.V1[i] - sig.leads.V1[i - 1])
+    return nadirI > i0 && sig.leads.V1[nadirI] < 0 && maxRise < 0.06
+  },
+
   // TdP companion strip: rotating axis ≥180°, run rate 180–260.
   tdpPolymorphic: () => {
     const s = tdpStrip()
@@ -285,6 +390,17 @@ const runAssertion = (
 
 for (const c of CARDS) {
   const strip = buildMechanismStrip(c.mechanism)
+  // The sync warp must build without throwing for every shipped asset — a bad
+  // annotation must fail HERE, never in front of a learner.
+  for (const tid of [c.seeIt.traceId, ...(c.seeIt.extraTraceIds ?? [])]) {
+    const a = assets.get(tid)
+    if (!a) continue
+    try {
+      buildWarp(a.annotation, modelFiducials(strip), a.durationMs, strip.durationMs)
+    } catch (e) {
+      fail(`${c.id}: warp build failed for ${tid} — ${String(e)}`)
+    }
+  }
   const modelSig = buildSignals(strip)
   const model = { sig: modelSig, w: windowsOf(strip), m: measure(strip), strip }
   const asset = assets.get(c.seeIt.traceId) ?? null

@@ -6,8 +6,29 @@ import { lbbb } from './cards/lbbb'
 import { hyperk } from './cards/hyperk'
 import { tca } from './cards/tca'
 import { longqt } from './cards/longqt'
+import { aflutter } from './cards/aflutter'
+import { vtMono } from './cards/vtMono'
+import { avb3 } from './cards/avb3'
+import { avb2 } from './cards/avb2'
+import { rbbb } from './cards/rbbb'
+import { omiAnterior } from './cards/omiAnterior'
+import { omiInferior } from './cards/omiInferior'
+import { omiPosterior } from './cards/omiPosterior'
+import { sgarbossa } from './cards/sgarbossa'
+import { wellens } from './cards/wellens'
+import { dewinter } from './cards/dewinter'
+import { pacedV } from './cards/pacedV'
+import { lvhStrain } from './cards/lvhStrain'
+import { brugada } from './cards/brugada'
 
-export const CARDS: Card[] = [nsr, afib, lbbb, hyperk, tca, longqt]
+export const CARDS: Card[] = [
+  nsr,
+  afib, aflutter, vtMono,
+  pacedV, avb2, avb3, rbbb, lbbb,
+  omiAnterior, omiInferior, omiPosterior, sgarbossa, wellens, dewinter,
+  hyperk, tca, longqt,
+  lvhStrain, brugada,
+]
 
 export const CARD_BY_ID: Record<string, Card> = Object.fromEntries(CARDS.map((c) => [c.id, c]))
 
@@ -38,7 +59,33 @@ export const searchCards = (q: string): Card[] => {
 }
 
 export const PACKS: Pack[] = [
-  // Starter packs land at M6 (night-shift, fool-the-machine, systemic-window).
+  {
+    id: 'night-shift',
+    title: 'Night-shift can’t-miss',
+    blurb: 'Five reads that cannot wait for the morning.',
+    items: [
+      { cardId: 'vt-mono' }, { cardId: 'avb-3' }, { cardId: 'hyperk' },
+      { cardId: 'omi-anterior' }, { cardId: 'omi-posterior' },
+    ],
+  },
+  {
+    id: 'fool-the-machine',
+    title: 'Fool-the-machine mimics',
+    blurb: 'Where the computer text and the truth part ways.',
+    items: [
+      { cardId: 'paced-v' }, { cardId: 'lvh-strain' }, { cardId: 'sgarbossa' },
+      { cardId: 'aflutter' },
+      { labHref: '/lab/electrodes?swap=high-v1v2', title: 'V1–V2 too high — the pseudo-Brugada machine' },
+    ],
+  },
+  {
+    id: 'systemic-window',
+    title: 'The systemic window',
+    blurb: 'The trace reads the blood: K⁺, pills, poisons.',
+    items: [
+      { cardId: 'hyperk' }, { cardId: 'tca' }, { cardId: 'longqt' }, { cardId: 'dewinter' },
+    ],
+  },
 ]
 
 export const PACK_BY_ID: Record<string, Pack> = Object.fromEntries(PACKS.map((p) => [p.id, p]))

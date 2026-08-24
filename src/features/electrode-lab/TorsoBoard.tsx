@@ -11,6 +11,7 @@ import {
 } from '../../engine/electrodes'
 import { constrainPrecordial } from '../../engine/torso'
 import { Vec3 } from '../../engine/vec'
+import { metric } from '../../lib/metrics'
 import './TorsoBoard.css'
 
 /** Board state: limb cable → limb slot; chest cable → 3D position. */
@@ -55,6 +56,7 @@ export default function TorsoBoard({ state, onChange, chestLocked, onChestLocked
       onChestLockedTouch?.()
       return
     }
+    metric('manipulate')
     ;(e.target as Element).setPointerCapture(e.pointerId)
     const [x, y] = boardPoint(e)
     setDrag({ cable, x, y })

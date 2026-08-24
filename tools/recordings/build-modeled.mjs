@@ -9,8 +9,8 @@ import { writeFileSync } from 'node:fs'
 import { buildSignals } from '../../src/engine/synthesize.ts'
 import { modelFiducials } from '../../src/engine/sync.ts'
 import { ALL_LEADS } from '../../src/engine/leads.ts'
-import { hyperkStrip, tcaStrip, tdpStrip } from '../../src/content/mechanisms.ts'
-import { simulateBeat } from '../../src/engine/propagate.ts'
+import { avb2Mobitz2Strip, brugadaStrip, dewinterStrip, hyperkStrip, sgarbossaStrip, tcaStrip, tdpStrip, vtStrip, wenckebachStrip } from '../../src/content/mechanisms.ts'
+import { simulateBeat, tileState } from '../../src/engine/propagate.ts'
 
 const OUT = resolve(import.meta.dirname, '../../public/recordings')
 const UNITS = 200
@@ -63,6 +63,13 @@ toAsset('hyperk-var-bradywide', hyperkStrip(0.78), 'Variance synthesis: slow, wi
 toAsset('hyperk-var-brugadoid', brugadoid(), 'Variance synthesis: Brugada-phenocopy ST coving — pending published-case reconstruction')
 toAsset('hyperk-var-sine', hyperkStrip(1), 'Variance synthesis: the sine-wave merge — pending published-case reconstruction')
 toAsset('tca-model', tcaStrip(), 'Synthesized: Na-channel blockade — whole-QRS slowing with the terminal aVR vector')
+toAsset('vt-model', vtStrip(), 'Synthesized: ectopic ventricular focus with AV dissociation and a fusion beat — PTB-XL has no sustained VT to show')
+toAsset('avb2-mobitz2-model', avb2Mobitz2Strip(), 'Synthesized: Mobitz II — fixed PR, then a P dropped without warning (no sinus Mobitz II exists in PTB-XL)')
+toAsset('avb2-wenckebach-model', wenckebachStrip(), 'Synthesized: Wenckebach — the PR stretches beat by beat until one drops')
+toAsset('sgarbossa-model', sgarbossaStrip(), 'Synthesized: LBBB chassis + a concordant lateral injury vector — the Sgarbossa-positive morphology')
+toAsset('dewinter-model', dewinterStrip(), 'Synthesized: upsloping precordial ST depression climbing into giant symmetric Ts')
+toAsset('omi-inferior-model', tileState({ pace: 'SA', ischemic: ['LV_inf'], injuryDir: [0.15, 0.9, -0.3], injuryMag: 0.6 }), 'Synthesized: acute inferior injury — no acute inferior STE exists in reachable PTB-XL records (resting-clinic bias)')
+toAsset('brugada-model', brugadaStrip(), 'Synthesized: RVOT coved ST elevation flowing into an inverted T (type 1 morphology)')
 toAsset('longqt-tdp-model', tdpStrip(), 'Synthesized: short-long-short onset of torsades on a drug-stretched QT')
 
 // A clean solver NSR for reference uses elsewhere (kept for completeness).

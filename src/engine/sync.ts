@@ -20,9 +20,10 @@ export interface TraceAnnotation {
   note?: string
 }
 
-/** Per-beat fiducials of a MODEL strip, absolute ms. */
-export const modelFiducials = (strip: Strip): BeatFiducials[] =>
-  strip.beats.map((beat) => {
+/** Per-beat fiducials of a MODEL strip, absolute ms. Beats without QRS
+ *  sources (a dropped P, a lone flutter wave) contribute no knots. */
+export const modelFiducials = (strip: Strip): BeatFiducials[] => {
+  const out = strip.beats.filter((b) => b.sources.some((s) => s.segment === 'QRS' && Math.abs(s.mag) > 0)).map((beat) => {
     const ext = (seg: SegmentTag, k: number) => {
       const ss = beat.sources.filter((s) => s.segment === seg && Math.abs(s.mag) > 0)
       if (!ss.length) return null
@@ -35,12 +36,33 @@ export const modelFiducials = (strip: Strip): BeatFiducials[] =>
     const QRS = ext('QRS', QRS_K)
     const T = ext('T', T_K)
     return {
-      pOn: P ? beat.onset + P.s : undefined,
+      // a P fiducial is only meaningful when it precedes its QRS (PR concept);
+      // dissociated Ps riding inside a VT complex contribute no knot
+      pOn: P && P.s < (QRS ? QRS.s : Infinity) && P.s > -Infinity ? beat.onset + P.s : undefined,
       qrsOn: beat.onset + (QRS ? QRS.s : 0),
       qrsOff: beat.onset + (QRS ? QRS.e : 0),
       tEnd: T ? beat.onset + T.e : undefined,
     }
   })
+  // Reconcile neighbours (same rule as the recording annotator): at fast rates
+  // a T legitimately runs into the next complex — clamp or drop the fiducials
+  // that would break knot ordering, and never emit a negative time.
+  for (let i = 0; i < out.length; i++) {
+    const b = out[i]
+    if (b.pOn != null && b.pOn < 0) delete b.pOn
+    const next = out[i + 1]
+    if (!next) continue
+    const nextStart = next.pOn ?? next.qrsOn
+    if (b.tEnd != null && b.tEnd >= nextStart - 8) {
+      const clamped = nextStart - 8
+      if (clamped > b.qrsOff + 30) b.tEnd = clamped
+      else delete b.tEnd
+    }
+    const prevEnd = b.tEnd ?? b.qrsOff
+    if (next.pOn != null && next.pOn <= prevEnd + 4) delete next.pOn
+  }
+  return out
+}
 
 export interface TimeWarp {
   /** Real-trace time (ms) → model time (ms). Monotonic. */

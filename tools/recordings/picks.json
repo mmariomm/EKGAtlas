@@ -22,5 +22,85 @@
   "primary": "ptbxl-320-longqt",
   "extras": [],
   "reason": "agent-curated: pure LNGQT:100 + SR, no confounding labels. Pending human confirmation."
+ },
+ "aflutter": {
+  "primary": "ptbxl-23-aflutter",
+  "extras": [],
+  "reason": "agent-curated (visual): classic sawtooth in II, variable 2:1-3:1. Pending human confirmation."
+ },
+ "rbbb": {
+  "primary": "ptbxl-621-rbbb",
+  "extras": [],
+  "reason": "agent-curated: pure CRBBB:100+SR, no fascicular/MI confounders; assertions verify morphology. Pending human confirmation."
+ },
+ "paced-v": {
+  "primary": "ptbxl-1674-paced-v",
+  "extras": [],
+  "reason": "agent-curated: PACE:100 pure. Pending human confirmation."
+ },
+ "avb-2": {
+  "primary": "avb2-mobitz2-model",
+  "extras": [
+   "avb2-wenckebach-model"
+  ],
+  "reason": "REJECTED recorded candidates: all 14 PTB-XL 2AVB records are atrial-tach/flutter with block (verified visually on 3505), not sinus Mobitz - modeled tier with honest badge."
+ },
+ "avb-3": {
+  "primary": "ptbxl-959-avb-3",
+  "extras": [],
+  "reason": "agent-curated (visual): textbook complete block - Ps marching through a 36/min rSr' escape. Pending human confirmation."
+ },
+ "lvh-strain": {
+  "primary": "ptbxl-2989-lvh-strain",
+  "extras": [],
+  "reason": "agent-curated: LVH:100+NDT:100+SR; strain morphology verified by assertions. Pending human confirmation."
+ },
+ "omi-anterior": {
+  "primary": "ptbxl-414-omi-anterior",
+  "extras": [
+   "ptbxl-1199-omi-anterior"
+  ],
+  "reason": "agent-curated (visual): genuine convex STE V2-V3 flowing into T (acute anteroseptal injury). Pending human confirmation."
+ },
+ "omi-inferior": {
+  "primary": "ptbxl-9933-omi-inferior",
+  "extras": [
+   "ptbxl-968-omi-inferior"
+  ],
+  "reason": "agent-curated (visual): inferior injury with visible reciprocal aVL depression. Pending human confirmation."
+ },
+ "omi-posterior": {
+  "primary": "ptbxl-1544-omi-posterior",
+  "extras": [],
+  "reason": "agent-curated (visual): elevated R/S V1-V2 with upright T (mirror pattern); 15059 rejected (rS V1). Pending human confirmation."
+ },
+ "wellens": {
+  "primary": "ptbxl-11682-wellens",
+  "extras": [
+   "ptbxl-18810-wellens"
+  ],
+  "reason": "agent-curated (visual): anterior T inversion with preserved R (type-B-like; shallower than classic - flag for reviewer). Pending human confirmation."
+ },
+ "vt-mono": {
+  "primary": "vt-model",
+  "extras": [],
+  "reason": "modeled tier: PTB-XL resting ECGs contain no sustained VT; reconstruction upgrade path in report."
+ },
+ "sgarbossa": {
+  "primary": "sgarbossa-model",
+  "extras": [
+   "ptbxl-338-lbbb"
+  ],
+  "reason": "modeled tier: no CLBBB+acute-injury record found; plain-LBBB recording as compare extra."
+ },
+ "dewinter": {
+  "primary": "dewinter-model",
+  "extras": [],
+  "reason": "modeled tier: de Winter is not a PTB-XL label; reconstruction upgrade path in report."
+ },
+ "brugada": {
+  "primary": "brugada-model",
+  "extras": [],
+  "reason": "modeled tier: Brugada is not in the PTB-XL label set; reconstruction upgrade path in report."
  }
 }

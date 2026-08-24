@@ -26,13 +26,18 @@ export const windowsOf = (strip: Strip): Windows => {
   const QRS = g('QRS')
   const T = g('T')
   if (!QRS) throw new Error('no QRS region')
+  // The T window must exclude authored ST-segment sources (posterior STD,
+  // coved STE): otherwise tPolarity reads the ST as a "T".
+  const rep = strip.beats.find((b) => b.sources.some((x) => x.segment === 'QRS' && Math.abs(x.mag) > 0)) ?? strip.beats[0]
+  const stSources = rep.sources.filter((x) => x.segment === 'ST' && Math.abs(x.mag) > 0)
+  const stEnd = stSources.length ? Math.max(...stSources.map((x) => x.center + 2.2 * x.width)) : -Infinity
   return {
     pStart: P ? base + P.relStart : null,
     qrsStart: base + QRS.relStart,
     qrsEnd: base + QRS.relEnd,
     // A very wide QRS can overlap the earliest T-source tail; the T window
     // must never reach back into the QRS (it would read the S wave as a "T").
-    tStart: T ? Math.max(base + T.relStart, base + QRS.relEnd + 20) : null,
+    tStart: T ? Math.max(base + T.relStart, base + QRS.relEnd + 20, base + stEnd) : null,
     tEnd: T ? base + T.relEnd : null,
   }
 }

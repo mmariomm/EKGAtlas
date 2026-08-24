@@ -1,0 +1,19 @@
+{
+ "include": {
+  "scpAny": [
+   "PMI"
+  ],
+  "scpAll": [
+   "SR"
+  ]
+ },
+ "exclude": {
+  "scpAny": [
+   "PACE",
+   "CLBBB",
+   "AFIB"
+  ]
+ },
+ "cardId": "omi-posterior",
+ "targetTier": "recorded"
+}
