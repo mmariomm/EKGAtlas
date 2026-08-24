@@ -722,11 +722,28 @@
 
   // One chronological list of everything the lab/radiology returned for this
   // patient: values we can read (risultati) and reported documents (referti).
+  // what a values row needs to exist on its own, without the page
+  const risMeta = (e) => ({ url: e.url, label: e.label || "", exams: e.exams || [], when: e.when || "", ts: e.ts || 0 });
+
   function esitiModel(doc, baseUrl) {
     const out = [
       ...risultatiModel(doc, baseUrl).map((r) => ({ ...r, kind: "valori", label: r.exams.join(", ") })),
       ...refertiModel(doc, baseUrl).map((r) => ({ ...r, kind: "referto" })),
     ];
+    // Once an exam is reported the LIS takes its Risultati window away, and the
+    // values we had already read would vanish with it. They are ours: the draws
+    // read earlier in this tab stay in the list, marked as read before, each
+    // with its own time. They are never attached to a referto — nothing links
+    // the two — they simply keep their place.
+    const ep = findEpisodeId(doc, baseUrl) || "x";
+    const vivi = new Set(out.filter((r) => r.kind === "valori").map((r) => r.id));
+    for (const k of tabStore.keys(`ris.${ep}.`)) {
+      const id = k.slice(`ris.${ep}.`.length);
+      if (!id || vivi.has(id)) continue;
+      const v = tabStore.get(k, null);
+      if (!v || !v.rows || !v.rows.length || !v.meta) continue;
+      out.push({ ...v.meta, id, kind: "valori", storico: true });
+    }
     out.sort((a, b) => b.ts - a.ts);
     return out;
   }
@@ -897,6 +914,11 @@
       catch { return fallback; }
     },
     set(key, value) { try { sessionStorage.setItem(NS + key, JSON.stringify(value)); } catch { /* non-fatal */ } },
+    keys(prefix) {
+      try {
+        return Object.keys(sessionStorage).filter((k) => k.startsWith(NS + prefix)).map((k) => k.slice(NS.length));
+      } catch { return []; }
+    },
   };
 
   // ------------------------------------------------------- KNOWN PATIENTS
@@ -2034,6 +2056,7 @@
             <span class="rsys">${esc(e.kind === "valori" ? "LAB" : e.sistema)}</span>
             <span class="rlab">${esc(shortLabel(e.label))}</span>
             ${vals && vals.rows && vals.rows.some((v) => /parz/i.test(v.stato || "")) ? `<span class="rsys">parziale</span>` : ""}
+            ${e.storico ? `<span class="rsys" title="Il laboratorio ha refertato: la finestra Risultati non c'è più, questi sono i valori già letti">già letti</span>` : ""}
             <span class="rgo">${e.kind === "valori" ? "›" : "↗"}</span>
           </button>${preview}</div>`;
       }).join("");
@@ -2182,7 +2205,7 @@
         this.render();
         try {
           const { doc } = await fetchDoc(e.url, {});
-          tabStore.set(key, { ts: Date.now(), rows: parseRisultati(doc) });
+          tabStore.set(key, { ts: Date.now(), rows: parseRisultati(doc), meta: risMeta(e) });
         } catch (err) {
           this.log(`${now()}  valori non letti: ${err?.head || err?.message || err}`);
         }
@@ -2197,7 +2220,7 @@
       for (const e of todo) {
         try {
           const { doc } = await fetchDoc(e.url, {});
-          tabStore.set(this.risKey(e.id), { ts: Date.now(), rows: parseRisultati(doc) });
+          tabStore.set(this.risKey(e.id), { ts: Date.now(), rows: parseRisultati(doc), meta: risMeta(e) });
           this.render();
         } catch { /* stays without preview; opening it will retry */ }
         await sleep(PACE_MS).catch(() => {});
@@ -2225,8 +2248,11 @@
       this.render();
       try {
         const { doc } = await fetchDoc(e.url, {});
-        tabStore.set(this.risKey(e.id), { ts: Date.now(), rows: parseRisultati(doc) });
-      } catch (err) { this.log(`${now()}  valori non letti: ${err?.head || err?.message || err}`); }
+        const rows = parseRisultati(doc);
+        // a reported draw no longer answers: keep what we already had
+        if (rows.length) tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, meta: risMeta(e) });
+        else this.log(`${now()}  la finestra Risultati non risponde più: tengo i valori già letti`);
+      } catch (err) { this.log(`${now()}  valori non letti (tengo i precedenti): ${err?.head || err?.message || err}`); }
       this.risBusy = null;
       this.render();
     }

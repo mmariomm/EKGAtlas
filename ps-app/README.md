@@ -181,6 +181,12 @@ che un rosso che non sappiamo giustificare.
 Un esame sconosciuto non sparisce mai: se non ha una sigla nota viene mostrato con la prima parola
 del nome, e il nome completo resta sotto il puntatore.
 
+**Quando il laboratorio referta**, il gestionale toglie la finestra Risultati e quei valori
+sparirebbero con lei. I prelievi già letti in quella scheda **restano in elenco**, marcati
+**«già letti»** e con la loro ora: sono ciò che il pannello aveva realmente sotto gli occhi, e non
+vengono mai attaccati a un referto (niente li collega). Il referto in PDF resta lì accanto, come
+sempre.
+
 > Il **PDF del referto** non viene letto: quel PDF disegna il testo un glifo alla volta con un font
 > ridotto, quindi ricavarne «Emoglobina 8.0 g/dL» significherebbe ricostruire parole e colonne dalle
 > coordinate. Gli stessi valori sono già in HTML nella finestra Risultati, ed è da lì che si leggono.

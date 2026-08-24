@@ -989,6 +989,52 @@ async function scenarioHomePills(browser) {
   await context.close();
 }
 
+async function scenarioValoriRefertati(browser) {
+  const scen = "valori-refertati";
+  // Before: the draw is still open, its values can be read.
+  const prima = createMock({ withResults: true });
+  const { context, page } = await newPage(browser, prima);
+  await page.goto(prima.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  // both draws must be read before the laboratory reports, or there is nothing to keep
+  await page.waitForFunction(
+    () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
+    { timeout: 25000 },
+  );
+  const aperti = await page.locator('#psassist-host [data-esito][data-kind="valori"]').count();
+  check(scen, aperti === 2, `i prelievi aperti sono in elenco (got ${aperti})`);
+
+  // After: the laboratory reports and the LIS takes the window away.
+  const dopo = createMock({});                     // stesso episodio, niente icona Risultati
+  await context.unroute("https://smarthealth.multimedica.it/**");
+  await context.route("https://smarthealth.multimedica.it/**", async (route) => {
+    const req = route.request();
+    let out = dopo.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });
+    let hops = 0;
+    while (out.status === 302 && hops++ < 5) out = dopo.handle({ method: "GET", url: new URL(out.headers.location, req.url()).href });
+    await route.fulfill({ status: out.status, headers: out.headers, body: out.body });
+  });
+  await page.goto(dopo.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForSelector("#psassist-host [data-esito]", { timeout: 20000 });
+
+  const righe = await page.locator('#psassist-host [data-esito][data-kind="valori"]').count();
+  check(scen, righe === 2, `i valori già letti restano in elenco (got ${righe})`);
+  check(scen, /già letti/.test(await $panel(page, ".sec").innerText()), "e sono marcati «già letti»");
+  const prev = await $panel(page, ".eprev").first().innerText().catch(() => "");
+  check(scen, /Hb 80/.test(prev), `l'anteprima li mostra ancora (got: ${prev.slice(0, 26)})`);
+
+  // opening one goes straight to the values, without asking the server again
+  const chiamate = dopo.state.requests.length;
+  await page.locator('#psassist-host [data-esito][data-kind="valori"]').first().click();
+  await page.waitForSelector("#psassist-host .rval", { timeout: 8000 });
+  check(scen, (await page.locator("#psassist-host .rval").count()) === 3, "aprendoli ci sono tutti");
+  check(scen, dopo.state.requests.length === chiamate, "senza rileggere dal server");
+  await context.close();
+}
+
 async function scenarioNoPatientPage(browser) {
   const scen = "no-patient";
   const mock = createMock({});
@@ -1104,6 +1150,7 @@ const scenarios = [
   ["lab + rx: two richieste, one flow", scenarioLabPlusRx],
   ["lab + rx manual walk", scenarioLabPlusRxManual],
   ["risultati inline", scenarioRisultati],
+  ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],
   ["no-patient page has no exams", scenarioNoPatientPage],
