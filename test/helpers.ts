@@ -218,6 +218,18 @@ export const measureAsset = (a: AssetJson): TraceMeasurements => {
 export const assetRrCv = (a: AssetJson): number =>
   rrCv(a.annotation.beats.map((b) => b.qrsOn))
 
+/** Mean P-wave amplitude relative to baseline (placement tells). */
+export const pMean = (sig: SignalSet, lead: LeadId, w: Windows): number => {
+  if (w.pStart == null) return 0
+  let s = 0
+  let n = 0
+  for (let i = 0; i < sig.n; i++) {
+    const t = i * sig.dt
+    if (t >= w.pStart && t <= w.qrsStart - 30) { s += sig.leads[lead][i]; n++ }
+  }
+  return (n ? s / n : 0) - baselineOf(sig, lead, w)
+}
+
 /** Mean amplitude of the first 30 ms of the QRS (septal q check). */
 export const initialQrsMean = (sig: SignalSet, lead: LeadId, w: Windows): number => {
   let s = 0

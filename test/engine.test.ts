@@ -13,7 +13,7 @@ import { onTorsoSurface } from '../src/engine/torso'
 import { mirrorStrip } from '../src/engine/sources'
 import { buildWarp, modelFiducials } from '../src/engine/sync'
 import {
-  correlation, netQrs, peakAmplitude, rms, stShift, tPolarity, windowsOf,
+  correlation, initialQrsMean, netQrs, peakAmplitude, pMean, rms, stShift, terminalQrsMean, tPolarity, windowsOf,
 } from './helpers'
 
 let failures = 0
@@ -183,9 +183,19 @@ console.log('=== Chest-electrode physics ===')
   check('dextrocardia (mirrored heart): I inverts', netQrs(mir, 'I', wNsr) < 0 && netQrs(sigNsr, 'I', wNsr) > 0)
   check('dextrocardia: R-progression reverses (V6 net ↓)', netQrs(mir, 'V6', wNsr) < netQrs(sigNsr, 'V6', wNsr))
 
-  // informational only (tuned at M4): high V1–V2 terminal behavior
+  // M4: high V1–V2 placement must move V1's terminal forces toward positivity
+  // (the rSr′ direction) and blunt the initial R — the documented misplacement
+  // signature — and flatten/inverting the P-ward deflection is the tell.
   const high = buildSignals(nsr, PRESETS['high-v1v2']())
-  console.log(`  high V1 terminal-40ms mean: std ${f1((netQrs(sigNsr, 'V1', wNsr)))} → high net ${f1(netQrs(high, 'V1', wNsr))} (tuning lands at M4)`)
+  const termStd = terminalQrsMean(sigNsr, 'V1', wNsr)
+  const termHigh = terminalQrsMean(high, 'V1', wNsr)
+  check('high V1–V2: terminal V1 forces move positive (rSr′ direction)', termHigh > termStd, `${f1(termStd)} → ${f1(termHigh)} mV`)
+  const initStd = initialQrsMean(sigNsr, 'V1', wNsr)
+  const initHigh = initialQrsMean(high, 'V1', wNsr)
+  check('high V1–V2: initial V1 forces blunted (pseudo-septal-infarct direction)', initHigh < initStd, `${f1(initStd)} → ${f1(initHigh)} mV`)
+  const pStd = pMean(sigNsr, 'V1', wNsr)
+  const pHigh = pMean(high, 'V1', wNsr)
+  check('high V1–V2: P in V1 turns negative (the tell)', pHigh < 0 && pHigh < pStd, `${f1(pStd)} → ${f1(pHigh)} mV`)
 }
 
 // ---------------------------------------------------------------------------
