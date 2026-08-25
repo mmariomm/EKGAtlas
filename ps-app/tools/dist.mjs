@@ -19,6 +19,6 @@ rmSync(zip, { force: true });
 // the banco di prova travels with the download: one file, opens offline
 execFileSync("node", ["tools/demo.mjs"], { cwd: root, stdio: "ignore" });
 execFileSync("zip", ["-q", "-r", "dist/ps-assist-latest.zip",
-  "extension", "userscript", "bookmarklet", "README.md", "dist/demo.html"], { cwd: root });
+  "extension", "bookmarklet", "README.md", "dist/demo.html"], { cwd: root });
 writeFileSync(join(root, "dist/VERSION.txt"), version + "\n");
 console.log(`dist refreshed: ps-assist-latest.zip @ v${version}`);

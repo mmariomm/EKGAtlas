@@ -161,25 +161,40 @@ async function scenarioAutoConfirm(browser) {
   await context.close();
 }
 
-async function scenarioAutoConfirmCancel(browser) {
-  const scen = "confirm-cancel";
-  const mock = createMock({});
+async function scenarioAutoConfirmMismatch(browser) {
+  const scen = "confirm-blocked";
+  // an exam is already in the cart from an earlier, abandoned attempt: the
+  // native Conferma would submit MORE than this run added → no auto-confirm
+  const mock = createMock({ preloadCart: { code: "30", res: RES.POC } });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
   await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 20000 });
-  await page.waitForSelector("#cancel", { timeout: 8000 }); // countdown visible
-  await page.keyboard.press("Escape"); // Esc must cancel the countdown
-  await page.waitForTimeout(6500);
+  await page.waitForTimeout(2500);
   const rid = Object.keys(mock.state.richieste)[0];
-  check(scen, mock.state.richieste[rid].confirmed === false, "annulla ferma la conferma automatica");
-  // reload: the flag was consumed, no new countdown
-  await page.reload();
-  await page.waitForTimeout(1500);
-  check(scen, (await page.locator("#cancel").count()) === 0, "dopo reload nessun nuovo countdown (flag consumato)");
-  check(scen, mock.state.richieste[rid].confirmed === false, "ancora non confermata dopo reload");
+  check(scen, mock.state.richieste[rid].confirmed === false, "col carrello diverso dalla ricevuta NON conferma");
+  check(scen, /sospesa/i.test(await $panel(page, ".card").innerText()), "e lo dice: conferma sospesa, decide il medico");
+  await context.close();
+}
+
+async function scenarioConfirmPostFails(browser) {
+  const scen = "confirm-500";
+  // the confirm POST dies on the server: nothing must print for that richiesta
+  const mock = createMock({ confirmFails: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await $panel(page, "#q").fill("dolore toracico");
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
+  await $panel(page, "#goconfirm").click();
+  await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 20000 });
+  await page.waitForTimeout(4000);   // instant confirm fires, server answers 500
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.richieste[rid].confirmed === false, "la richiesta resta non confermata");
+  check(scen, hits(mock, "RcsStampaEtichetteLISHMIMU") === 0 && hits(mock, "jasperservlet") === 0,
+    "nessun PDF stampato per una conferma mai registrata");
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "nessun wizard di stampa");
   await context.close();
 }
 
@@ -680,13 +695,14 @@ async function scenarioUiErgonomics(browser) {
   check(scen, /5 SELEZIONATI/.test(await $panel(page, ".selbar").innerText()), "✕ al passaggio rimuove il singolo esame");
 
   // selecting must NOT bounce the scroll back to the top
-  await page.evaluate(() => {
+  const posPrima = await page.evaluate(() => {
     const card = document.getElementById("psassist-host").shadowRoot.querySelector(".card");
-    card.scrollTop = 180;
+    card.scrollTop = 180;                    // the browser clamps to what fits
+    return card.scrollTop;
   });
   await $panel(page, '.opt[title*="GLUCOSIO"]').click();
   const st = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".card").scrollTop);
-  check(scen, st > 100, `lo scroll resta dov'era dopo la selezione (got ${st})`);
+  check(scen, posPrima > 40 && Math.abs(st - posPrima) <= 2, `lo scroll resta dov'era dopo la selezione (${st} ≈ ${posPrima})`);
 
   // drag the header → position saved and restored after reload
   const hd = $panel(page, "#draghd");
@@ -819,11 +835,15 @@ async function scenarioLabPlusRx(browser) {
   check(scen, /Crea 2 richieste/.test(await $panel(page, "#go").innerText()), "il bottone annuncia due richieste");
   await $panel(page, "#goconfirm").click();
 
-  // both richieste get built, then each is confirmed in turn
+  // the lab richiesta confirms itself; the RADIOLOGY one never does (README,
+  // collaudo 8-9): the panel walks to its exam page and waits for a human
   await page.waitForFunction(() => {
-    const s = document.querySelectorAll("form[name=Prestazioni]").length;
-    return s === 0; // we end up back on the patient page
-  }, { timeout: 60000 }).catch(() => {});
+    const f = document.forms.namedItem("Prestazioni");
+    return !!f && !!document.querySelector('a[href*="Delete=Elimina"][href*="PRESTAZIONE=35"]');
+  }, { timeout: 60000 });
+  await page.waitForTimeout(600);
+  check(scen, (await page.locator("#psassist-confirm").count()) === 0, "nessun conto alla rovescia sulla radiologia");
+  await page.locator('form[name="Prestazioni"] input[name="Update"]').first().click();   // the human confirms the RX
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 60000 });
 
   const rich = Object.entries(mock.state.richieste);
@@ -831,7 +851,7 @@ async function scenarioLabPlusRx(browser) {
   const lab = rich.find(([, r]) => r.cart.has("324"));
   const rx = rich.find(([, r]) => r.cart.has("35"));
   check(scen, !!lab && !!rx, "una di laboratorio (troponina) e una di radiologia (RX torace)");
-  check(scen, lab && lab[1].confirmed && rx && rx[1].confirmed, "entrambe confermate");
+  check(scen, lab && lab[1].confirmed && rx && rx[1].confirmed, "entrambe confermate (lab da sola, RX dal click umano)");
   check(scen, lab && lab[1].quesito === "dispnea e dolore toracico" && rx && rx[1].quesito === "dispnea e dolore toracico",
     "stesso quesito su entrambe");
 
@@ -882,11 +902,19 @@ async function scenarioRisultati(browser) {
   const vals = page.locator('#psassist-host [data-esito][data-kind="valori"]');
   check(scen, (await vals.count()) === 2, `2 accessi con valori (got ${await vals.count()})`);
 
-  // the preview is there on arrival: values are fetched in the background
-  await page.waitForSelector("#psassist-host .eprev", { timeout: 15000 });
+  // previews are there on arrival: BOTH draws are fetched in the background,
+  // and the marks need the older one to compare against
+  await page.waitForFunction(
+    () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
+    { timeout: 25000 },
+  );
   const prev = await $panel(page, ".eprev").first().innerText();
-  // names are abbreviated the way a doctor reads them: Emoglobina → Hb
-  check(scen, /^Hb 80↓/.test(prev.trim()), `anteprima con l'anomalo per primo, in sigla (got: ${prev.trim().slice(0, 40)})`);
+  // names abbreviated, every draw in the SAME order (the newest fixes it),
+  // and a change vs the previous draw carries its mark
+  check(scen, /^GB 6\.4 · Hb 80↓▼/.test(prev.trim()), `anteprima in ordine condiviso, variazione marcata (got: ${prev.trim().slice(0, 44)})`);
+  const prevAll = await $panel(page, ".eprev").allInnerTexts();
+  check(scen, prevAll.length === 2 && prevAll.every((t) => /^GB /.test(t.trim())), "i due prelievi elencano gli esami nello stesso ordine");
+  check(scen, !/▲|▼/.test(prevAll[1]), "il prelievo più vecchio non ha marchi (non ha un precedente)");
 
   // one tap opens the full values screen
   await vals.first().click();
@@ -948,7 +976,11 @@ async function scenarioResizeAndLog(browser) {
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, "#go").click();
   await page.waitForSelector("#psassist-host #confirmnow", { timeout: 30000 });
-  await $panel(page, ".reg summary").click();
+  // the Registro now lives behind the version button, on the Pazienti screen
+  await $panel(page, "#back").click();
+  await page.waitForSelector("#psassist-host #verbtn");
+  await $panel(page, "#verbtn").click();
+  await page.waitForSelector("#psassist-host #copylog");
   await $panel(page, "#copylog").click();
   await page.waitForTimeout(300);
   const clip = await page.evaluate(() => navigator.clipboard.readText());
@@ -977,8 +1009,8 @@ async function scenarioHomePills(browser) {
   check(scen, /min fa|adesso|alle/.test(cards[1]), `gli altri mostrano quando (got: ${cards[1]?.replace(/\s+/g, " ").slice(0, 40)})`);
 
   // picking another patient LOADS HIS PAGE (never shows his data from here)
-  const other = page.locator('#psassist-host .pcard:not(.now) [data-go="esiti"]');
-  await other.click();
+  // the card itself is the button, and it opens the Esiti
+  await page.locator("#psassist-host .pcard:not(.now)").click();
   await page.waitForFunction(() => /EPISODIO_ID=999001/.test(location.href), { timeout: 15000 });
   await page.waitForSelector("#psassist-host", { state: "attached" });
   check(scen, /999001/.test(await $panel(page, ".hd .sub").innerText()), "siamo sulla pagina di quel paziente");
@@ -986,6 +1018,37 @@ async function scenarioHomePills(browser) {
 
   // the panel never carries another patient's selection across
   check(scen, (await page.locator("#psassist-host .selbar").count()) === 0, "nessuna selezione trascinata da un paziente all'altro");
+  await context.close();
+}
+
+async function scenarioAggiornaTutti(browser) {
+  const scen = "aggiorna-tutti";
+  const mock = createMock({ withResults: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForFunction(
+    () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
+    { timeout: 25000 },
+  );
+  const prima = hits(mock, "RcsAccessiRisultatiElenco");
+  // the lab has updated a value since the prefetch
+  mock.state.hbNuova = "92";
+  await $panel(page, "#risall").click();
+  await page.waitForFunction(
+    () => {
+      const r = document.getElementById("psassist-host").shadowRoot;
+      const b = r.querySelector("#risall");
+      return b && !b.disabled;
+    },
+    { timeout: 20000 },
+  );
+  check(scen, hits(mock, "RcsAccessiRisultatiElenco") === prima + 2, "rilegge ogni prelievo aperto, una volta ciascuno");
+  const prev = await $panel(page, ".eprev").first().innerText();
+  check(scen, /Hb 92/.test(prev), `l'anteprima mostra il valore nuovo (got: ${prev.trim().slice(0, 30)})`);
+  const reg = await page.evaluate(() => JSON.parse(sessionStorage.getItem("psassist:log.999001") || "{}").lines?.join("\n") || "");
+  check(scen, /aggiornati 2 prelievi, 1 con valori nuovi/.test(reg), "il Registro dice quanti sono cambiati");
   await context.close();
 }
 
@@ -1119,7 +1182,8 @@ const scenarios = [
   ["happy path (PRG)", (b) => scenarioHappyLab(b)],
   ["happy path (direct render)", (b) => scenarioHappyLab(b, { directRender: true })],
   ["auto-confirm handoff", scenarioAutoConfirm],
-  ["auto-confirm cancel", scenarioAutoConfirmCancel],
+  ["auto-confirm bloccata su carrello diverso", scenarioAutoConfirmMismatch],
+  ["conferma fallita sul server: niente stampa", scenarioConfirmPostFails],
   ["delayed cart visibility", scenarioLagVerify],
   ["lost add → hard stop", scenarioNeverVisible],
   ["renamed code → refuse before send", scenarioLabelMismatch],
@@ -1150,6 +1214,7 @@ const scenarios = [
   ["lab + rx: two richieste, one flow", scenarioLabPlusRx],
   ["lab + rx manual walk", scenarioLabPlusRxManual],
   ["risultati inline", scenarioRisultati],
+  ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],
   ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],

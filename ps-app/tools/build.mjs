@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 /*
  * Build PS Assist: injects the verified catalog into src/core.js and emits
- *   extension/content.js          (MV3 content script)
- *   userscript/ps-assist.user.js  (same core with a Tampermonkey header)
+ *   extension/content.js               (MV3 content script)
+ *   bookmarklet/…bookmarklet.txt       (same core as a javascript: URL)
+ * The userscript vehicle was retired in 3.2: extension (primary) plus
+ * bookmarklet (locked-down PCs) cover every machine with one build less
+ * to test, document and support.
  * Run:  node tools/build.mjs
  */
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -23,20 +26,6 @@ const built = core.replace(PLACEHOLDER, () => JSON.stringify(catalog)); // fn fo
 
 writeFileSync(join(root, "extension/content.js"), built);
 
-const header = `// ==UserScript==
-// @name         PS Assist — richieste Pronto Soccorso (SA4PSO)
-// @namespace    psassist.multimedica
-// @version      ${version}
-// @description  Crea richieste lab/radiologia, aggiunge gli esami scelti verificando ogni inserimento nel carrello. Conferma sempre come click reale sulla pagina.
-// @match        https://smarthealth.multimedica.it/sa4pso/*
-// @run-at       document-idle
-// @noframes
-// @grant        none
-// ==/UserScript==
-
-`;
-writeFileSync(join(root, "userscript/ps-assist.user.js"), header + built);
-
 // Bookmarklet: the same core as a javascript: URL, for locked-down PCs where
 // neither Developer Mode nor a userscript manager is available. One click on
 // each SA4PSO page injects the panel (handoff flags live in sessionStorage,
@@ -45,4 +34,4 @@ mkdirSync(join(root, "bookmarklet"), { recursive: true });
 const bookmarklet = "javascript:" + encodeURIComponent("void " + built);
 writeFileSync(join(root, "bookmarklet/ps-assist.bookmarklet.txt"), bookmarklet);
 
-console.log(`built v${version}: extension/content.js (${built.length} bytes), userscript/ps-assist.user.js, bookmarklet (${Math.round(bookmarklet.length / 1024)} KB)`);
+console.log(`built v${version}: extension/content.js (${built.length} bytes), bookmarklet (${Math.round(bookmarklet.length / 1024)} KB)`);

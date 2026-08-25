@@ -15,6 +15,14 @@
 
 const PDF_SMELL = /uploaddownloadservlet|mimetype=application\/pdf|get_pdf|jasperservlet|refertostream|report|\.pdf(?:[?&"']|$)/i;
 
+// The chain may only walk hosts this extension is FOR (host_permissions):
+// viewer HTML can quote any address, and a harvested vendor link must never
+// be fetched with hospital credentials.
+const ALLOWED_ORIGINS = new Set([
+  "https://smarthealth.multimedica.it",
+  "http://10.11.0.151:9080",
+]);
+
 function candidates(text, baseUrl) {
   const out = [];
   const seen = new Set();
@@ -26,7 +34,11 @@ function candidates(text, baseUrl) {
     if (/[([+=&%]$|%27$/.test(u)) return;
     if (!PDF_SMELL.test(u)) return;
     seen.add(u);
-    try { out.push(new URL(u, baseUrl).href); } catch { /* skip */ }
+    try {
+      const abs = new URL(u, baseUrl);
+      if (!ALLOWED_ORIGINS.has(abs.origin)) return;
+      out.push(abs.href);
+    } catch { /* skip */ }
   };
   // frames, embeds, iframes, forms, links, meta refresh, window.open, plain strings
   for (const re of [
@@ -44,7 +56,18 @@ function candidates(text, baseUrl) {
 }
 
 async function grabPdf(url, hop = 0) {
-  const res = await fetch(url, { credentials: "include", redirect: "follow", cache: "no-store" });
+  if (!ALLOWED_ORIGINS.has(new URL(url).origin)) return { ok: false, why: "fuori dall'ospedale" };
+  // a hung hospital endpoint must fail a row, never hang the whole save
+  const ctl = new AbortController();
+  const tid = setTimeout(() => ctl.abort(), 15000);
+  let res;
+  try {
+    res = await fetch(url, { credentials: "include", redirect: "follow", cache: "no-store", signal: ctl.signal });
+  } catch (e) {
+    clearTimeout(tid);
+    return { ok: false, why: e && e.name === "AbortError" ? "timeout" : String(e && e.message || e).slice(0, 40) };
+  }
+  clearTimeout(tid);
   if (!res.ok) return { ok: false, why: `HTTP ${res.status}` };
   const ctype = (res.headers.get("content-type") || "").toLowerCase();
   if (ctype.includes("pdf") || ctype.includes("octet-stream")) {

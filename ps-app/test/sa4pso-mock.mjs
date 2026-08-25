@@ -249,16 +249,25 @@ export function createMock(opts = {}) {
         <input type="hidden" name="DATA_ORD" value="${a.when}">
       </td></tr>`).join("")}</table>`;
   }
-  const risultatiPage = (id) => `${HEAD}<table>
+  // two draws with the same panel: the older one differs where a change mark
+  // must appear (Hb −16%) and where it must not (GB +5%, Ht 0%)
+  const risultatiPage = (id) => {
+    const vecchio = String(id).endsWith("5301");
+    const [gb, hb] = vecchio ? ["6.1", "95"] : ["6.4", state.hbNuova || "80"];
+    return `${HEAD}<table>
       <tr><td class="AFCColumnTD">Esame</td><td class="AFCColumnTD">Valore</td><td class="AFCColumnTD">Unit&agrave; di Misura</td><td class="AFCColumnTD">Range</td><td class="AFCColumnTD">Stato</td><td class="AFCColumnTD">Data</td></tr>
       <tr><td class="AFCDataTD">Assistito</td><td class="AFCDataTD">${esc(NAME)}</td></tr>
-      <tr><td class="AFCDataTD">Leucociti&nbsp;</td><td class="AFCDataTD">6.4</td><td class="AFCDataTD">x10</td><td class="AFCDataTD">4 - 10</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
-      <tr><td class="AFCDataTD">Emoglobina&nbsp;</td><td class="AFCDataTD">80</td><td class="AFCDataTD">g/L</td><td class="AFCDataTD">135 - 180</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
+      <tr><td class="AFCDataTD">Leucociti&nbsp;</td><td class="AFCDataTD">${gb}</td><td class="AFCDataTD">x10</td><td class="AFCDataTD">4 - 10</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
+      <tr><td class="AFCDataTD">Emoglobina&nbsp;</td><td class="AFCDataTD">${hb}</td><td class="AFCDataTD">g/L</td><td class="AFCDataTD">135 - 180</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
       <tr><td class="AFCDataTD">Ematocrito&nbsp;</td><td class="AFCDataTD">44</td><td class="AFCDataTD">%</td><td class="AFCDataTD">40 - 54</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
     </table>accesso ${esc(id)}${FOOT}`;
+  };
 
   function printRows() {
+    // the real patient page lists print links only for richieste the LIS has
+    // registered: an unconfirmed bozza has no labels to print
     return Object.keys(state.richieste)
+      .filter((rid) => state.richieste[rid].confirmed)
       .map((rid) => rowsFor(rid).map((row) => `<tr><td>Richiesta ${rid}</td><td>${row}</td></tr>`).join("\n"))
       .join("\n");
   }
@@ -466,12 +475,15 @@ export function createMock(opts = {}) {
       if (!("Update" in f)) return respond(notFound("submit Update mancante"));
       if ("Cancel" in f || "Cancel1" in f) return respond(notFound("Cancel co-inviato con Update: bug del serializzatore"));
       if (!(f.QUESITO_DIAGNOSTICO || "").trim()) return respond(creaPage(params)); // server re-renders the form
-      state.richieste[rid] = { quesito: f.QUESITO_DIAGNOSTICO, urgenza: f.URGENZA, modalita: f.MODALITA, medico: f.MEDICO, cart: new Map(), confirmed: false };
+      const cart = new Map();
+      if (opts.preloadCart) cart.set(String(opts.preloadCart.code), opts.preloadCart.res);   // leftover from an earlier attempt
+      state.richieste[rid] = { quesito: f.QUESITO_DIAGNOSTICO, urgenza: f.URGENZA, modalita: f.MODALITA, medico: f.MEDICO, cart, confirmed: false };
       const res0 = alloc.risorse[0];
       return pageOrRedirect(examPage(rid, res0), `${ORIGIN}${PATH}?${listQuery(rid, res0, alloc)}`);
     }
 
     if (method === "POST" && ccs.startsWith("Prestazioni")) {
+      if (opts.confirmFails) return respond(`${HEAD}<h1>Errore interno del server</h1><p>La richiesta non \u00e8 stata elaborata.</p>${FOOT}`, 500);
       const f = rec.form || {};
       const rid = params.get("RICHIESTA_ID");
       const r = state.richieste[rid];
