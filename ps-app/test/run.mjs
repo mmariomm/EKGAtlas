@@ -1052,6 +1052,45 @@ async function scenarioAggiornaTutti(browser) {
   await context.close();
 }
 
+async function scenarioNuoviValori(browser) {
+  const scen = "nuovi-valori";
+  const mock = createMock({ withResults: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForFunction(
+    () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
+    { timeout: 25000 },
+  );
+  check(scen, (await page.locator("#psassist-host .tagn").count()) === 0, "alla prima lettura nulla è «nuovo»");
+
+  // the laboratory completes the panel: one value moves, one analyte appears
+  mock.state.hbNuova = "92";
+  mock.state.extraRow = { nome: "Sodio", valore: "128", um: "mmol/L", range: "136 - 145" };
+  await $panel(page, "#risall").click();
+  await page.waitForFunction(
+    () => { const b = document.getElementById("psassist-host").shadowRoot.querySelector("#risall"); return b && !b.disabled; },
+    { timeout: 20000 },
+  );
+  const pill = await $panel(page, ".tagn").first().innerText();
+  check(scen, /2 nuovi/.test(pill), `la riga chiusa conta le novità (got: ${pill})`);
+  check(scen, (await page.locator("#psassist-host .eprev .pit.nuovo").count()) === 1, "l'esame comparso è evidenziato per intero");
+  check(scen, (await page.locator("#psassist-host .eprev .pv.agg").count()) === 1, "del valore cambiato si evidenzia solo il numero");
+  const tinted = await page.locator("#psassist-host .eprev .pit.nuovo").first().innerText();
+  check(scen, /Na 128/.test(tinted), `il nuovo esame è quello arrivato (got: ${tinted.trim()})`);
+
+  // opening the draw shows the banner; leaving it clears the marks
+  await page.locator('#psassist-host [data-esito][data-kind="valori"]').first().click();
+  await page.waitForSelector("#psassist-host .rval", { timeout: 8000 });
+  check(scen, /2 valori nuovi/.test(await $panel(page, ".newbar").innerText()), "la schermata valori annuncia quanti sono");
+  check(scen, (await page.locator("#psassist-host .rval.nuova").count()) === 2, "e li ancora nelle loro righe, senza riordinare");
+  await $panel(page, "#back").click();
+  await page.waitForSelector("#psassist-host [data-esito]", { timeout: 8000 });
+  check(scen, (await page.locator("#psassist-host .tagn").count()) === 0, "uscendo dai valori i marchi si spengono: sono stati letti");
+  await context.close();
+}
+
 async function scenarioValoriRefertati(browser) {
   const scen = "valori-refertati";
   // Before: the draw is still open, its values can be read.
@@ -1215,6 +1254,7 @@ const scenarios = [
   ["lab + rx manual walk", scenarioLabPlusRxManual],
   ["risultati inline", scenarioRisultati],
   ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],
+  ["valori nuovi e aggiornati dopo il refresh", scenarioNuoviValori],
   ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],
