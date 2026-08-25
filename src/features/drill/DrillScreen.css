@@ -60,3 +60,11 @@
   padding: 12px 22px;
   min-height: var(--tap-min);
 }
+
+.drill-contrast {
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+  border-left: 3px solid var(--danger);
+  padding-left: var(--sp-3);
+}
+.drill-contrast-label { font-weight: 700; color: var(--ink); }

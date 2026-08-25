@@ -580,6 +580,130 @@ export const omiEvolutionStrip = (x: number): Strip => {
   return { beats, durationMs: 3 * RR }
 }
 
+// ---------------------------------------------------------------------------
+// The REPERFUSION arc (Wellens) — the occlusion story's other ending: the
+// artery reopens, the pain stops, and repolarization tells on the stunned
+// wall. ONE POSSIBLE TRAJECTORY, same honesty rules as the occlusion morph.
+// Keyframes: STE (occluded) → reopened, ST settling → biphasic T (type A) →
+// deep symmetric inversion (type B) → pseudonormalization (re-occlusion!).
+// ---------------------------------------------------------------------------
+interface WellensFrame {
+  stMag: number
+  /** late (terminal) T component: negative = inverting tail */
+  tLate: number
+  /** early T component: positive keeps the take-off up (biphasic when tLate<0) */
+  tEarly: number
+  label: string
+}
+const WELLENS_FRAMES: WellensFrame[] = [
+  { stMag: 0.3, tLate: 0.32, tEarly: 0.2, label: 'occluded — ST up, pain ongoing' },
+  { stMag: 0.08, tLate: 0.18, tEarly: 0.22, label: 'reperfused — pain gone, ST settling' },
+  { stMag: 0.02, tLate: -0.3, tEarly: 0.26, label: 'biphasic T (type A) — up, then down' },
+  { stMag: 0, tLate: -0.4, tEarly: -0.1, label: 'deep symmetric inversion (type B)' },
+  { stMag: 0.16, tLate: 0.24, tEarly: 0.18, label: 'pseudonormalization — the artery is RE-CLOSING' },
+]
+
+export const wellensFrame = (x: number): WellensFrame => {
+  const t = Math.min(1, Math.max(0, x)) * (WELLENS_FRAMES.length - 1)
+  const i = Math.min(WELLENS_FRAMES.length - 2, Math.floor(t))
+  const f = t - i
+  const a = WELLENS_FRAMES[i]
+  const b = WELLENS_FRAMES[i + 1]
+  return {
+    stMag: lerp(a.stMag, b.stMag, f),
+    tLate: lerp(a.tLate, b.tLate, f),
+    tEarly: lerp(a.tEarly, b.tEarly, f),
+    label: f < 0.5 ? a.label : b.label,
+  }
+}
+
+/** The Wellens/reperfusion strip at trajectory position x (0..1). */
+export const wellensEvolutionStrip = (x: number): Strip => {
+  const k = wellensFrame(x)
+  const RR = 800
+  const ANT: Vec3 = [0.3, -0.25, 0.95]
+  const beats: Beat[] = []
+  for (let i = 0; i < 3; i++) {
+    const b = solverNsrNoT(i * RR)
+    const sources: Source[] = [...b.sources]
+    if (Math.abs(k.stMag) > 0.02) {
+      sources.push({
+        dir: ANT, mag: k.stMag, center: 290, width: 46, segment: 'ST',
+        pos: [0.19, 0.04, 0.16],
+        glow: { structures: ['LV'], kind: 'injury', start: 240, end: 350 },
+      })
+    }
+    // Two-component T: early lobe (take-off) + late lobe (the tail that flips
+    // first as the stunned wall repolarizes backwards) → biphasic → deep.
+    sources.push({
+      dir: [ANT[0] * 0.7, ANT[1] * 0.7, ANT[2] * 0.8], mag: k.tEarly, center: 352, width: 34,
+      segment: 'T', pos: [0.19, 0.04, 0.16],
+      glow: { structures: ['LV'], kind: 'repol', start: 320, end: 400 },
+    })
+    sources.push({
+      dir: [ANT[0] * 0.6, ANT[1] * 0.6, ANT[2] * 0.85], mag: k.tLate, center: 408, width: 40,
+      segment: 'T', pos: [0.19, 0.04, 0.16],
+      glow: { structures: ['LV'], kind: 'repol', start: 380, end: 470 },
+    })
+    beats.push({ ...b, sources })
+  }
+  return { beats, durationMs: 3 * RR }
+}
+
+// ---------------------------------------------------------------------------
+// AVNRT: the re-entry circuit spins inside the AV node — narrow, fast, rigidly
+// regular, atria captured BACKWARDS (retrograde P buried in/just after QRS).
+// ---------------------------------------------------------------------------
+export const avnrtStrip = (): Strip => {
+  const RR = 385 // ~156/min
+  const beats: Beat[] = []
+  for (let i = 0; i < 6; i++) {
+    const b = ventricularOnlyBeat(i * RR)
+    // Retrograde atrial capture: a small backwards P right at the QRS tail.
+    const lastQrs = Math.max(...b.sources.filter((s) => s.segment === 'QRS').map((s) => s.center))
+    beats.push({
+      ...b,
+      sources: [
+        ...b.sources,
+        { dir: [-0.3, -0.85, -0.1], mag: 0.06, center: lastQrs + 36, width: 14, segment: 'P', pos: [0, -0.15, 0], glow: { structures: ['RA', 'LA'], kind: 'atria', start: lastQrs + 20, end: lastQrs + 58, note: 'atria captured backwards — the hidden retrograde P' } },
+      ],
+      wires: [
+        // the circuit itself: AV node spinning continuously
+        { structure: 'AV', start: -30, end: 40, kind: 'av', note: i === 0 ? 're-entry circuit spinning in the AV node' : undefined },
+        ...b.wires,
+      ],
+      focus: i === 0 ? { x: 0.52, y: 0.38, label: 're-entry circuit' } : undefined,
+    })
+  }
+  return { beats, durationMs: 6 * RR }
+}
+
+// ---------------------------------------------------------------------------
+// Hypokalemia: repolarization stretches and fragments — the T flattens, a U
+// wave rises after it, the ST sags. Modeled morphology (honesty-labeled).
+// ---------------------------------------------------------------------------
+export const hypokStrip = (): Strip => {
+  const RR = 800
+  const beats: Beat[] = []
+  for (let i = 0; i < 3; i++) {
+    const b = simulateBeat({ pace: 'SA' }, i * RR)
+    const tSources = b.sources.filter((s) => s.segment === 'T')
+    const tDir = tSources[0]?.dir ?? [0.6, 0.5, 0.2]
+    const tCenter = tSources[0]?.center ?? 372
+    beats.push({
+      ...b,
+      sources: [
+        ...b.sources.map((s): Source => (s.segment === 'T' ? { ...s, mag: s.mag * 0.4 } : s)),
+        // slight ST sag (scooped take-off)
+        { dir: [-tDir[0] * 0.5, -tDir[1] * 0.5, -tDir[2] * 0.5], mag: 0.07, center: 300, width: 40, segment: 'ST', glow: { structures: ['LV', 'RV'], kind: 'repol', start: 270, end: 340 } },
+        // the U wave: a second, broad repolarization hump after the T
+        { dir: tDir, mag: 0.14, center: tCenter + 150, width: 55, segment: 'T', glow: { structures: ['LV'], kind: 'repol', start: tCenter + 90, end: tCenter + 230, note: 'the U wave — Purkinje/late repolarization unmasked' } },
+      ],
+    })
+  }
+  return { beats, durationMs: 3 * RR }
+}
+
 export const wpwStrip = (): Strip => {
   const RR = 800
   const beats: Beat[] = []
@@ -628,4 +752,6 @@ export const AUTHORED: Record<string, () => Strip> = {
   'lvh-strain': lvhStrip,
   brugada: brugadaStrip,
   wpw: wpwStrip,
+  'svt-avnrt': avnrtStrip,
+  hypok: hypokStrip,
 }

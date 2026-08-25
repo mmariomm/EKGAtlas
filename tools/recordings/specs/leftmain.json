@@ -1,0 +1,1 @@
+{ "cardId": "leftmain", "targetTier": "recorded", "include": { "scpAny": ["INJAS", "INJAL", "INJIN", "INJLA", "INJIL"] }, "exclude": { "scpAny": ["AFIB", "PACE", "CLBBB", "CRBBB"] } }

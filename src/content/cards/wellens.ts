@@ -8,6 +8,7 @@ export const wellens: Card = {
   category: 'Occlusion & ischemia',
   lethal: true,
   tagline: 'The pain is gone, the ECG looks calm — and the LAD is critically narrowed behind both.',
+  moduleHref: { href: '/evolution', label: 'Watch the reperfusion arc: biphasic → deep inversion → pseudonormalization' },
   seeIt: {
     traceId: 'ptbxl-11682-wellens',
     extraTraceIds: ['ptbxl-18810-wellens'],

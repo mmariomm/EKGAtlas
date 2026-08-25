@@ -21,13 +21,16 @@ import { pacedV } from './cards/pacedV'
 import { lvhStrain } from './cards/lvhStrain'
 import { brugada } from './cards/brugada'
 import { wpw } from './cards/wpw'
+import { leftmain } from './cards/leftmain'
+import { svtAvnrt } from './cards/svtAvnrt'
+import { hypok } from './cards/hypok'
 
 export const CARDS: Card[] = [
   nsr,
-  afib, aflutter, vtMono,
+  afib, aflutter, svtAvnrt, vtMono,
   pacedV, avb2, avb3, rbbb, lbbb, wpw,
-  omiAnterior, omiInferior, omiPosterior, sgarbossa, wellens, dewinter,
-  hyperk, tca, longqt,
+  omiAnterior, omiInferior, omiPosterior, sgarbossa, wellens, dewinter, leftmain,
+  hyperk, hypok, tca, longqt,
   lvhStrain, brugada,
 ]
 
@@ -63,10 +66,10 @@ export const PACKS: Pack[] = [
   {
     id: 'night-shift',
     title: 'Night-shift can’t-miss',
-    blurb: 'Five reads that cannot wait for the morning.',
+    blurb: 'The reads that cannot wait for the morning.',
     items: [
       { cardId: 'vt-mono' }, { cardId: 'avb-3' }, { cardId: 'hyperk' },
-      { cardId: 'omi-anterior' }, { cardId: 'omi-posterior' },
+      { cardId: 'omi-anterior' }, { cardId: 'omi-posterior' }, { cardId: 'leftmain' },
     ],
   },
   {

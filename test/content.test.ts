@@ -165,6 +165,28 @@ const CUSTOMS: Record<
   // "No septal q" clinically = no PATHOLOGICAL q (≥0.5 mm counts as one here).
   noSeptalQ: ({ sig, w }) => initialQrsMean(sig, 'V6', w) >= -0.05,
   noConsistentP: ({ asset }) => (asset ? preQrsConsistency(asset) < 0.5 : false),
+  rigidRR: ({ asset }) => (asset ? assetRrCv(asset) < 0.04 : false),
+  uWave: ({ strip }) => {
+    // A second positive repolarization hump after the T in lead II: sample the
+    // model signal between T end and the next beat; require a local max >=0.05 mV.
+    if (!strip) return false
+    const sig = buildSignals(strip)
+    const w = windowsOf(strip)
+    const t0 = w.tEnd ?? w.qrsEnd + 260
+    const t1 = t0 + 240
+    let peak = -Infinity
+    for (let i = 0; i < sig.n; i++) {
+      const t = i * sig.dt
+      if (t >= t0 && t <= t1) peak = Math.max(peak, sig.leads['II'][i])
+    }
+    return peak >= 0.05
+  },
+  flatT: ({ strip }) => {
+    if (!strip) return false
+    const sig = buildSignals(strip)
+    const w = windowsOf(strip)
+    return tPeak(sig, 'II', w) <= 0.55 * tPeak(nsrRef.sig, 'II', nsrRef.w)
+  },
   noOrganizedP: ({ strip }) =>
     !!strip &&
     strip.beats.every((b) => b.sources.every((s) => s.segment !== 'P' || Math.abs(s.mag) <= 0.05)),

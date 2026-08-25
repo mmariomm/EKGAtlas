@@ -109,5 +109,19 @@
    "ptbxl-2145-wpw"
   ],
   "reason": "agent-curated (visual): 5303 = textbook type-A pre-excitation (short PR, obvious delta slur into tall R V1/V5, human-validated WPW:100+SR); 2145 = subtler delta for variance. Pending human confirmation."
+ },
+ "svt-avnrt": {
+  "primary": "ptbxl-2051-svt-avnrt",
+  "extras": [
+   "ptbxl-3134-svt-avnrt"
+  ],
+  "reason": "agent-curated (visual+measured): 2051 = pure PSVT:100, 156/min, QRS 80, no visible Ps (P-less regular narrow); 3134 = 169/min variance extra. Pending human confirmation."
+ },
+ "leftmain": {
+  "primary": "ptbxl-4670-leftmain",
+  "extras": [
+   "ptbxl-2054-leftmain"
+  ],
+  "reason": "agent-curated (measured): swept 24 multi-INJ/ISC candidates for the actual signature; 4670 = aVR +0.09 mV with STD in 8 leads (II,III,aVF,V2-V6); 2054 = aVR +0.13, STD I,II,III,aVF,V6. Candidates with INJ labels but flat aVR were REJECTED (would be false anchors). Pending human confirmation."
  }
 }

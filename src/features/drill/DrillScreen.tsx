@@ -16,14 +16,45 @@ import TraceView from '../trace/TraceView'
 import ProvenanceBadge from '../card/ProvenanceBadge'
 import './DrillScreen.css'
 
-/** 3 distractor card names: same-category first, then lethal confusables. */
+/** Does `label` (a commit-option label) refer to card `c`? Name/alias match. */
+const labelMatchesCard = (label: string, c: (typeof CARDS)[number]): boolean => {
+  const l = label.toLowerCase()
+  const name = c.name.toLowerCase()
+  if (l.includes(name) || name.includes(l)) return true
+  return c.aliases.some((a) => a.length > 2 && (l.includes(a.toLowerCase()) || a.toLowerCase() === l))
+}
+
+/**
+ * The correct card's own curated confusables: other CARDS that appear as
+ * wrong options on its commit question. These carry authored "tempts"
+ * reasoning — the drill reuses both the discrimination and the explanation.
+ */
+const confusablesOf = (correctId: string): string[] => {
+  const correct = CARD_BY_ID[correctId]
+  const wrongLabels = correct.seeIt.commit.options.filter((o) => !o.correct).map((o) => o.label)
+  return CARDS.filter(
+    (c) => c.id !== correctId && wrongLabels.some((l) => labelMatchesCard(l, c)),
+  ).map((c) => c.id)
+}
+
+/** For a missed pick, the correct card's authored line on why that read tempts. */
+export const whyItTempted = (correctId: string, pickedId: string): string | null => {
+  const correct = CARD_BY_ID[correctId]
+  const picked = CARD_BY_ID[pickedId]
+  const opt = correct.seeIt.commit.options.find((o) => !o.correct && labelMatchesCard(o.label, picked))
+  return opt?.tempts ?? null
+}
+
+/** 3 distractors: the card's curated confusables first, then category, then catalog. */
 const pickOptions = (correctId: string): string[] => {
   const correct = CARD_BY_ID[correctId]
-  const rest = CARDS.filter((c) => c.id !== correctId)
+  const confusables = confusablesOf(correctId).sort(() => Math.random() - 0.5).slice(0, 2)
+  const used = new Set([correctId, ...confusables])
+  const rest = CARDS.filter((c) => !used.has(c.id))
   const same = rest.filter((c) => c.category === correct.category)
   const other = rest.filter((c) => c.category !== correct.category)
-  const shuffled = [...same.sort(() => Math.random() - 0.5), ...other.sort(() => Math.random() - 0.5)]
-  const options = [correctId, ...shuffled.slice(0, 3).map((c) => c.id)]
+  const fill = [...same.sort(() => Math.random() - 0.5), ...other.sort(() => Math.random() - 0.5)]
+  const options = [correctId, ...confusables, ...fill.map((c) => c.id)].slice(0, 4)
   return options.sort(() => Math.random() - 0.5)
 }
 
@@ -123,6 +154,12 @@ export default function DrillScreen() {
           ) : (
             <>
               <p className="drill-verdict drill-wrong">✕ You read: {CARD_BY_ID[picked!].name}</p>
+              {(() => {
+                const contrast = whyItTempted(current.cardId, picked!)
+                return contrast
+                  ? <p className="drill-contrast"><span className="drill-contrast-label">Why it tempted:</span> {contrast}</p>
+                  : <p className="drill-contrast"><span className="drill-contrast-label">{CARD_BY_ID[picked!].name}:</span> {CARD_BY_ID[picked!].tagline}</p>
+              })()}
               <p className="drill-verdict drill-right">✓ {card.name}</p>
             </>
           )}

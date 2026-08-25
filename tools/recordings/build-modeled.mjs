@@ -9,7 +9,7 @@ import { writeFileSync } from 'node:fs'
 import { buildSignals } from '../../src/engine/synthesize.ts'
 import { modelFiducials } from '../../src/engine/sync.ts'
 import { ALL_LEADS } from '../../src/engine/leads.ts'
-import { avb2Mobitz2Strip, brugadaStrip, dewinterStrip, hyperkStrip, sgarbossaStrip, tcaStrip, tdpStrip, vtStrip, wenckebachStrip } from '../../src/content/mechanisms.ts'
+import { avb2Mobitz2Strip, brugadaStrip, dewinterStrip, hyperkStrip, hypokStrip, sgarbossaStrip, tcaStrip, tdpStrip, vtStrip, wenckebachStrip } from '../../src/content/mechanisms.ts'
 import { simulateBeat, tileState } from '../../src/engine/propagate.ts'
 
 const OUT = resolve(import.meta.dirname, '../../public/recordings')
@@ -71,6 +71,7 @@ toAsset('dewinter-model', dewinterStrip(), 'Synthesized: upsloping precordial ST
 toAsset('omi-inferior-model', tileState({ pace: 'SA', ischemic: ['LV_inf'], injuryDir: [0.15, 0.9, -0.3], injuryMag: 0.6 }), 'Synthesized: acute inferior injury — no acute inferior STE exists in reachable PTB-XL records (resting-clinic bias)')
 toAsset('brugada-model', brugadaStrip(), 'Synthesized: RVOT coved ST elevation flowing into an inverted T (type 1 morphology)')
 toAsset('longqt-tdp-model', tdpStrip(), 'Synthesized: short-long-short onset of torsades on a drug-stretched QT')
+toAsset('hypok-model', hypokStrip(), 'Synthesized: hypokalaemia morphology — flattened T, ST sag, U wave (long QU)')
 
 // A clean solver NSR for reference uses elsewhere (kept for completeness).
 void simulateBeat
