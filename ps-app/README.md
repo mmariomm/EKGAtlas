@@ -110,6 +110,16 @@ Un unico elenco in ordine di tempo:
 - **↻ Aggiorna** (in cima all'elenco) rilegge in un colpo **tutti** i prelievi ancora aperti, a
   passo lento e uno alla volta, e dice nel Registro quanti hanno valori nuovi: è il collaudo
   manuale del futuro aggiornamento automatico — stessa lettura, ma parte solo quando lo premi tu.
+- **Cosa è cambiato dall'ultima volta che hai guardato**: dopo un aggiornamento la riga chiusa
+  porta una pastiglia azzurra (**«2 nuovi»**) e nell'anteprima la novità è **sfondo azzurro**, non
+  un quarto colore: se è comparso un esame che prima non c'era, si illumina **tutta la coppia**
+  (`Na 128↓`); se è cambiato solo il numero, si illumina **solo il numero** (`Hb 92↓`). Il rosso
+  resta «fuori range», l'ambra ▲▼ resta «cambiato rispetto al prelievo precedente»: tre domande
+  diverse, tre segni diversi. Finché c'è qualcosa di nuovo l'anteprima non taglia più a due righe.
+  Aprendo il prelievo trovi in cima **«N valori nuovi dall'ultima lettura»** e le righe interessate
+  hanno una barretta azzurra a sinistra — **senza mai riordinare**, così le colonne restano
+  confrontabili. I marchi si spengono quando esci dal prelievo (o col bottone **Letto**): a
+  spegnerli è la lettura, mai un timer.
 - **Prelievi confrontabili**: gli esami compaiono **nello stesso ordine in ogni prelievo** (comanda
   il più recente), così le righe si leggono in colonna. Una **variazione significativa** rispetto
   al prelievo precedente è marcata con **▲ ▼** ambra accanto al valore, col precedente nel

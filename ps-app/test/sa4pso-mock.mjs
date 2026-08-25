@@ -260,6 +260,7 @@ export function createMock(opts = {}) {
       <tr><td class="AFCDataTD">Leucociti&nbsp;</td><td class="AFCDataTD">${gb}</td><td class="AFCDataTD">x10</td><td class="AFCDataTD">4 - 10</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
       <tr><td class="AFCDataTD">Emoglobina&nbsp;</td><td class="AFCDataTD">${hb}</td><td class="AFCDataTD">g/L</td><td class="AFCDataTD">135 - 180</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
       <tr><td class="AFCDataTD">Ematocrito&nbsp;</td><td class="AFCDataTD">44</td><td class="AFCDataTD">%</td><td class="AFCDataTD">40 - 54</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
+      ${state.extraRow && !vecchio ? `<tr><td class="AFCDataTD">${esc(state.extraRow.nome)}&nbsp;</td><td class="AFCDataTD">${esc(state.extraRow.valore)}</td><td class="AFCDataTD">${esc(state.extraRow.um || "")}</td><td class="AFCDataTD">${esc(state.extraRow.range || "")}</td><td class="AFCDataTD">definitivo</td><td class="AFCDataTD">23/08/2026 08:10</td></tr>` : ""}
     </table>accesso ${esc(id)}${FOOT}`;
   };
 

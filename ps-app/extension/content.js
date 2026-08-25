@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.2.1";
+  const VERSION = "3.3.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1016,7 +1016,7 @@
     forgetQuesiti();
     try {
       for (const k of Object.keys(sessionStorage)) {
-        if (k.startsWith(NS) && /(^|\.)(ris|log|refopen|receipt|confirm|queue|print|ui|afterNav)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
+        if (k.startsWith(NS) && /(^|\.)(ris|visto|log|refopen|receipt|confirm|queue|print|ui|afterNav)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
       }
     } catch { /* blocked storage: nothing to clear */ }
     try { if (typeof chrome !== "undefined" && chrome.runtime?.id) chrome.runtime.sendMessage({ t: "clearRef" }, () => void chrome.runtime.lastError); } catch { /* not the extension build */ }
@@ -1514,6 +1514,21 @@
     .eprev .pn { color: #8296A9; font-weight: 500; }
     .eprev .pv { color: #35506B; font-weight: 700; font-variant-numeric: tabular-nums; }
     .eprev .pv.bad { color: #B3261E; font-weight: 800; }
+    /* Novelty rides a different channel: a tint behind the pair (a whole new
+       analyte) or behind the number alone (same analyte, new value). Text
+       colour is untouched, so red keeps meaning "out of range" and amber
+       ▲▼ keeps meaning "moved since the previous draw". */
+    .eprev .pit.nuovo, .eprev .pv.agg, .rval .rvv.agg {
+      background: #DCEAF9; border-radius: 3px; padding: 0 3px; box-shadow: inset 0 -2px 0 #0B5CAD; }
+    .eprev.nuovi { -webkit-line-clamp: unset; }   /* nothing new stays hidden behind the clamp */
+    .rval.nuova { border-left: 2px solid #0B5CAD; padding-left: 6px; margin-left: -8px; }
+    .rval .rvn.nuovo { background: #DCEAF9; border-radius: 3px; padding: 0 3px; }
+    .tagn { flex: 0 0 auto; color: #0B5CAD; background: #EAF2FA; border: 1px solid #9DBFDE;
+            border-radius: 999px; padding: 0 7px; font-size: 10px; font-weight: 700; }
+    .newbar { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #0B5CAD;
+              background: #EAF2FA; border: 1px solid #9DBFDE; border-radius: 8px; padding: 5px 9px; margin-bottom: 6px; }
+    .newbar button { margin-left: auto; border: 0; background: transparent; color: #0B5CAD; font: inherit; font-weight: 700; cursor: pointer; }
+    .vhide { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     .rvals.plain { border: 0; background: transparent; padding: 0; }
     .rvals { border: 1px solid #E3E8EF; border-top: 0; border-radius: 0 0 8px 8px; padding: 4px 8px 6px; background: #F8FBFE; }
     .rval { display: flex; gap: 8px; align-items: baseline; font-size: 11.5px; padding: 2px 0; }
@@ -1617,7 +1632,38 @@
     // the view is per (tab, episode) like the rest of the working state
     refKey() { return "refopen." + (this.episodeId || "x"); }
     risKey(id) { return `ris.${this.episodeId || "x"}.${id}`; }
-    setView(v, id) { this.view = v; this.viewId = id || null; this.persistUi(); this.render(); }
+    // what this draw looked like the last time the doctor actually looked at it
+    vistoKey(id) { return `visto.${this.episodeId || "x"}.${id}`; }
+    segnaVisto(id, rows) {
+      const vals = {};
+      for (const r of rows || []) { const k = valKey(r.nome); if (k) vals[k] = String(r.valore); }
+      tabStore.set(this.vistoKey(id), { ts: Date.now(), vals });
+    }
+    // key → "nuovo" (analyte that was not there) | "cambiato" (value moved
+    // since the last look). Empty until there IS a previous look: the first
+    // read of a draw is the baseline, never a wall of marks.
+    novita(id, rows) {
+      const out = new Map();
+      const seen = tabStore.get(this.vistoKey(id), null);
+      if (!seen || !seen.vals) return out;
+      for (const r of rows || []) {
+        const k = valKey(r.nome);
+        if (!k) continue;
+        if (!(k in seen.vals)) out.set(k, "nuovo");
+        else if (seen.vals[k] !== String(r.valore)) out.set(k, "cambiato");
+      }
+      return out;
+    }
+    setView(v, id) {
+      // leaving a draw's values means they have been read: that is when the
+      // "nuovi" marks are cleared, never on the render that has to show them
+      if (this.view === "valori" && this.viewId && !(v === "valori" && id === this.viewId)) this.marcaLetto(this.viewId);
+      this.view = v; this.viewId = id || null; this.persistUi(); this.render();
+    }
+    marcaLetto(id) {
+      const held = tabStore.get(this.risKey(id), null);
+      if (held && held.rows) this.segnaVisto(id, held.rows);
+    }
     // ordering is the 90% action: land there whenever this page can order.
     defaultView() {
       if (this.pageType !== "patient") return "richieste";
@@ -2148,14 +2194,21 @@
           : (cached[e.id] ? "saved" : busy[e.id] === true ? "busy" : typeof busy[e.id] === "string" ? "err" : open.has(e.id) ? "open" : "");
         const why = typeof busy[e.id] === "string" ? busy[e.id] : "";
         const dd = cmp.delta.get(e.id);
+        const nov = vals && vals.rows ? this.novita(e.id, vals.rows) : new Map();
+        const nNuovi = [...nov.values()].filter((x) => x === "nuovo").length;
+        const nAgg = nov.size - nNuovi;
         const preview = vals && vals.rows && vals.rows.length
-          ? `<button class="eprev" data-vals="${esc(e.id)}" title="Vedi tutti i valori">${
+          ? `<button class="eprev${nov.size ? " nuovi" : ""}" data-vals="${esc(e.id)}" title="Vedi tutti i valori">${
               ordinaRighe(vals.rows, cmp.order)
-                .slice(0, 12)
+                .slice(0, nov.size ? 40 : 12)
                 .map((v) => {
                   const oo = outOfRange(v.valore, v.range);
-                  const d = dd && dd.get(valKey(v.nome));
-                  return `<span class="pit"><span class="pn">${esc(sigla(v.nome))}</span> <span class="pv${oo ? " bad" : ""}"${d ? ` title="prima ${esc(d.prevRaw)} (${d.pct > 0 ? "+" : ""}${d.pct}%)"` : ""}>${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>${d ? `<span class="pd">${d.dir}</span>` : ""}</span>`;
+                  const k = valKey(v.nome);
+                  const d = dd && dd.get(k);
+                  const n = nov.get(k);
+                  const tip = [n === "nuovo" ? "nuovo" : n === "cambiato" ? "aggiornato" : "",
+                               d ? `prima ${d.prevRaw} (${d.pct > 0 ? "+" : ""}${d.pct}%)` : ""].filter(Boolean).join(" · ");
+                  return `<span class="pit${n === "nuovo" ? " nuovo" : ""}"><span class="pn">${esc(sigla(v.nome))}</span> <span class="pv${oo ? " bad" : ""}${n === "cambiato" ? " agg" : ""}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>${n ? `<span class="vhide"> ${n === "nuovo" ? "nuovo" : "aggiornato"}</span>` : ""}${d ? `<span class="pd">${d.dir}</span>` : ""}</span>`;
                 }).join(" · ")}</button>`
           : "";
         return `<div class="egroup">
@@ -2167,6 +2220,7 @@
             ${(() => { const nb = vals && vals.rows ? vals.rows.filter((v) => outOfRange(v.valore, v.range) !== 0).length : 0;
                return nb ? `<span class="rnum" title="${nb} valori fuori range">${nb}↑↓</span>` : ""; })()}
             ${vals && vals.rows && vals.rows.some((v) => /parz/i.test(v.stato || "")) ? `<span class="tagp">parziale</span>` : ""}
+            ${nov.size ? `<span class="tagn" title="${nNuovi} ${nNuovi === 1 ? "nuovo" : "nuovi"}${nAgg ? ` · ${nAgg} ${nAgg === 1 ? "aggiornato" : "aggiornati"}` : ""} dall'ultima lettura">${nov.size} ${nov.size === 1 ? "nuovo" : "nuovi"}</span>` : ""}
             ${e.storico ? `<span class="tagl" title="Il laboratorio ha refertato: la finestra Risultati non c'è più, questi sono i valori già letti">già letti</span>` : ""}
             <span class="rgo">${e.kind === "valori" ? "›" : refertoTipo(e) === "altro" ? "Apri referto ↗" : "↗"}</span>
           </button>${preview}</div>`;
@@ -2296,17 +2350,25 @@
       if (!e) return `<div class="hint">Esito non disponibile.</div>`;
       const cmp = confrontaPrelievi(this.prelieviLetti());
       const dd = cmp.delta.get(e?.id);
+      // marks are read from the snapshot taken when this draw was LAST LEFT:
+      // entering must not erase what it is here to show
+      const nov = e && vals && vals.rows ? this.novita(e.id, vals.rows) : new Map();
       const body = vals && vals.rows && vals.rows.length
         ? ordinaRighe(vals.rows, cmp.order).map((v) => {
             const oo = outOfRange(v.valore, v.range);
-            const d = dd && dd.get(valKey(v.nome));
-            return `<div class="rval ${oo ? "bad" : ""}" title="${esc(v.nome)}${d ? ` — prelievo precedente: ${esc(d.prevRaw)} (${d.pct > 0 ? "+" : ""}${d.pct}%)` : ""}"><span class="rvn">${esc(sigla(v.nome))}</span><span class="rvv">${esc(v.valore)}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}${d ? `<span class="pd">${d.dir}</span>` : ""}</span><span class="rvr">${esc(v.um || "")}${v.range ? " · " + esc(v.range) : ""}</span></div>`;
+            const k = valKey(v.nome);
+            const d = dd && dd.get(k);
+            const n = nov.get(k);
+            const tip = [esc(v.nome), n === "nuovo" ? "nuovo dall'ultima lettura" : n === "cambiato" ? "aggiornato dall'ultima lettura" : "",
+                         d ? `prelievo precedente: ${esc(d.prevRaw)} (${d.pct > 0 ? "+" : ""}${d.pct}%)` : ""].filter(Boolean).join(" — ");
+            return `<div class="rval ${oo ? "bad" : ""}${n ? " nuova" : ""}" title="${tip}"><span class="rvn${n === "nuovo" ? " nuovo" : ""}">${esc(sigla(v.nome))}</span><span class="rvv${n === "cambiato" ? " agg" : ""}">${esc(v.valore)}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}${d ? `<span class="pd">${d.dir}</span>` : ""}</span><span class="rvr">${esc(v.um || "")}${v.range ? " · " + esc(v.range) : ""}</span></div>`;
           }).join("")
         : `<div class="rval">${this.risBusy === e.id ? "carico…" : "nessun valore"}</div>`;
       return `
         <div class="sec">
           <div class="lbl">${esc(e.when)} · ${esc(shortLabel(e.label))}
             <button class="mini" id="copyvals">⧉ Copia</button><button class="mini" id="risreload">↻</button></div>
+          ${nov.size ? `<div class="newbar"><span>${nov.size} ${nov.size === 1 ? "valore nuovo" : "valori nuovi"} dall'ultima lettura</span><button id="letto" type="button">Letto</button></div>` : ""}
           <div class="rvals plain">${body}</div>
         </div>`;
     }
@@ -2322,7 +2384,9 @@
         this.render();
         try {
           const { doc } = await fetchDoc(e.url, {});
-          tabStore.set(key, { ts: Date.now(), rows: parseRisultati(doc), meta: risMeta(e) });
+          const rows = parseRisultati(doc);
+          tabStore.set(key, { ts: Date.now(), rows, meta: risMeta(e) });
+          this.segnaVisto(id, rows);     // first read is the baseline
         } catch (err) {
           this.log(`${now()}  valori non letti: ${err?.head || err?.message || err}`);
         }
@@ -2351,7 +2415,9 @@
           const { doc } = await fetchDoc(e.url, {});
           const rows = parseRisultati(doc);
           if (rows.length) {
+            const mai = !tabStore.get(this.vistoKey(e.id), null);
             tabStore.set(key, { ts: Date.now(), rows, meta: risMeta(e) });
+            if (mai) this.segnaVisto(e.id, rows);   // never seen before: this read is its baseline
             if (JSON.stringify(rows) !== prima) cambiati++;
           } else {
             this.log(`${now()}  ${shortLabel(e.label)}: la finestra Risultati non risponde più, tengo i valori già letti`);
@@ -2375,7 +2441,9 @@
       for (const e of todo) {
         try {
           const { doc } = await fetchDoc(e.url, {});
-          tabStore.set(this.risKey(e.id), { ts: Date.now(), rows: parseRisultati(doc), meta: risMeta(e) });
+          const rows = parseRisultati(doc);
+          tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, meta: risMeta(e) });
+          this.segnaVisto(e.id, rows);   // first read is the baseline
           this.render();
         } catch { /* stays without preview; opening it will retry */ }
         await sleep(PACE_MS).catch(() => {});
@@ -2564,6 +2632,7 @@
       $("#forget")?.addEventListener("click", () => { forgetPatients(); this.render(); });
       $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.render(); });
       $("#risall")?.addEventListener("click", () => this.reloadTuttiValori());
+      $("#letto")?.addEventListener("click", () => { if (this.viewId) { this.marcaLetto(this.viewId); this.render(); } });
       this.root.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", (ev) => {
         ev.stopPropagation();   // Richieste sits inside the card, which is itself a [data-go]
         const ep = b.getAttribute("data-ep"), go = b.getAttribute("data-go");
@@ -2945,6 +3014,11 @@
       return;
     }
     const panel = new Panel(pageType);
+    // the EHR navigates on every click: leaving the page with a draw open
+    // counts as reading it, exactly like pressing ‹
+    window.addEventListener("pagehide", () => {
+      try { if (panel.view === "valori" && panel.viewId) panel.marcaLetto(panel.viewId); } catch { /* going away anyway */ }
+    });
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       panel.esiti = esitiModel(document, location.href);

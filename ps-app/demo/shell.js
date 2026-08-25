@@ -68,6 +68,7 @@
   // what this visit has ordered so far: richiesta → { risorsa, carrello, confermata }
   let carrelli = new Map();
   let prossimaRichiesta = 800200;
+  let labCompletato = false;   // the harness switch below flips it
   const pagina = (nome) => E.pagine[nome] || "";
 
   // A saved page belongs to the visit it was captured in. The real server
@@ -223,7 +224,17 @@
     }
     if (/RcsAccessiRisultatiElenco\.do/i.test(path)) {
       const id = q.get("RCS_ACCESSO_ID") || "";
-      return html200(pagina(id.endsWith("2") ? "risultati-2" : "risultati-1"), pazienteCorrente.nome);
+      let html = pagina(id.endsWith("2") ? "risultati-2" : "risultati-1");
+      // "il laboratorio ha completato": one value moves and one analyte
+      // appears, so ↻ Aggiorna has something real to mark
+      if (labCompletato) {
+        html = html.replace(/(Emoglobina[\s\S]{0,200}?class="AFCDataTD"[^>]*>)\s*80\s*</i, "$192<")
+          .replace(/<\/table>/i, `<tr>
+            <td class="AFCDataTD">Sodio&nbsp;</td><td class="AFCDataTD">128</td><td class="AFCDataTD">mmol/L</td>
+            <td class="AFCDataTD">136 - 145</td><td class="AFCDataTD">definitivo</td><td class="AFCDataTD">23/08/2026 08:10</td>
+          </tr></table>`);
+      }
+      return html200(html, pazienteCorrente.nome);
     }
     if (!/menuPsoEpisodio\.do/i.test(path) && path !== "/" && !/\.html?$/i.test(path)) return html200(nonSalvata(u.href));
 
@@ -536,6 +547,7 @@
       <label>rete <select id="psa-net">
         <option value="0">rapida</option><option value="120" selected>reale</option><option value="700">lenta</option>
       </select></label>
+      <button type="button" id="psa-lab" title="Il laboratorio completa il pannello: un valore cambia e un esame compare. Poi premi ↻ Aggiorna negli Esiti.">🧪 Nuovi valori</button>
       <button type="button" id="psa-help" aria-label="Come funziona il banco di prova">?</button>
       <span class="psa-url"></span>`;
     const b = window.__PSA_BUILD__ || {};
@@ -544,10 +556,14 @@
     bar.querySelector("#psa-home").addEventListener("click", () => navigate(BASE + "?MVPG=PsoLista"));
     bar.querySelector("#psa-reload").addEventListener("click", reloadPage);
     bar.querySelector("#psa-help").addEventListener("click", help);
+    bar.querySelector("#psa-lab").addEventListener("click", (e) => {
+      labCompletato = !labCompletato;
+      e.target.textContent = labCompletato ? "🧪 Valori aggiornati ✓" : "🧪 Nuovi valori";
+    });
     bar.querySelector("#psa-net").addEventListener("change", (e) => { latency = Number(e.target.value); });
     bar.querySelector("#psa-wipe").addEventListener("click", () => {
       try { localStorage.clear(); sessionStorage.clear(); } catch (e) { /* private mode */ }
-      refs.clear(); carrelli = new Map();
+      refs.clear(); carrelli = new Map(); labCompletato = false;
       for (const t of [...tabs.values()]) t.close();
       navigate(BASE + "?MVPG=PsoLista");
     });
