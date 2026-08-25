@@ -8,6 +8,7 @@ export const omiAnterior: Card = {
   category: 'Occlusion & ischemia',
   lethal: true,
   tagline: 'The LAD is closing in real time — the earliest tell is a T wave that outgrew its QRS.',
+  moduleHref: { href: '/evolution', label: 'Watch it evolve: hyperacute T → STE → Q waves, on one artery' },
   seeIt: {
     traceId: 'ptbxl-414-omi-anterior',
     extraTraceIds: ['ptbxl-1199-omi-anterior'],
@@ -46,6 +47,11 @@ export const omiAnterior: Card = {
     { text: 'Activate reperfusion: primary PCI — FMC-to-device ≤90 min (≤120 if transferring); lytics if PCI can’t make 120.', cites: ['AHA-ACS-2025'] },
     { text: 'Aspirin now; anticoagulation and P2Y₁₂ per local cath pathway.', cites: ['AHA-ACS-2025'] },
   ],
+  rnMoves: [
+    { text: 'Hyperacute Ts or anterior STE with a story = a minutes-matter emergency: serial ECGs every 10–15 min; troponin confirms but must not delay.', cites: ['AHA-ACS-2025'] },
+    { text: 'Escalate per chest-pain pathway: monitor on, two IVs, pads near, NPO — keep the room moving toward reperfusion.', cites: ['AHA-ACS-2025'] },
+    { text: 'Watch: reciprocal inferior depression clinches it; VF is the arrival rhythm of anterior OMI — stay on the monitor.', cites: ['AHA-ACS-2025'] },
+  ],
   mechanism: {
     kind: 'solver',
     state: { pace: 'SA', ischemic: ['LV_ant', 'LV_apex'], injuryDir: [0.3, -0.25, 0.95], injuryMag: 0.72 },
@@ -64,6 +70,7 @@ export const omiAnterior: Card = {
     { on: 'trace', check: 'stShift', lead: 'V2', sign: '+', minMv: 0.08 },
     { on: 'trace', check: 'stShift', lead: 'V3', sign: '+', minMv: 0.05 },
   ],
+  methodStep: 'st-t',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

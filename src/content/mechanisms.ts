@@ -6,6 +6,7 @@
 import { MechanismSpec } from './schema'
 import { simulateBeat, tileState } from '../engine/propagate'
 import { Beat, Source, Strip, WirePulse } from '../engine/sources'
+import { Vec3 } from '../engine/vec'
 
 /** Solver NSR beat with the atrial (P) sources and SA wire removed. */
 export const ventricularOnlyBeat = (onsetMs: number): Beat => {
@@ -497,6 +498,116 @@ export const brugadaStrip = (): Strip => {
   return { beats, durationMs: 3 * RR }
 }
 
+// ---------------------------------------------------------------------------
+// Anterior OMI over TIME — the occlusion story the single-strip cards can't
+// tell. ONE POSSIBLE TRAJECTORY (honesty-labeled like the hyperK morph): real
+// infarcts evolve at their own pace, and reperfusion can halt or reverse this
+// at any stage. Keyframes: subtle → hyperacute T → STE → Q + peak STE →
+// Q with terminal T inversion.
+// ---------------------------------------------------------------------------
+interface OmiFrame {
+  /** injury (ST) vector magnitude toward the anterior epicardium */
+  stMag: number
+  /** T magnitude and width multipliers (hyperacute = tall AND broad) */
+  tMag: number
+  tWidth: number
+  /** terminal T inversion fraction (0 = upright, 1 = fully inverted) */
+  tInvert: number
+  /** anterior Q wave depth (loss of septal/anterior forces) */
+  qMag: number
+  label: string
+}
+const OMI_FRAMES: OmiFrame[] = [
+  { stMag: 0.01, tMag: 1.0, tWidth: 1.0, tInvert: 0, qMag: 0, label: 'baseline — the artery is closing' },
+  { stMag: 0.05, tMag: 2.3, tWidth: 1.5, tInvert: 0, qMag: 0, label: 'hyperacute T — bulky, out of proportion' },
+  { stMag: 0.22, tMag: 1.9, tWidth: 1.35, tInvert: 0, qMag: 0.05, label: 'ST elevation joins the tall T' },
+  { stMag: 0.38, tMag: 1.5, tWidth: 1.2, tInvert: 0, qMag: 0.22, label: 'peak injury — Q waves begin' },
+  { stMag: 0.18, tMag: 1.0, tWidth: 1.1, tInvert: 0.85, qMag: 0.34, label: 'Q waves with terminal T inversion' },
+]
+
+export const omiFrame = (x: number): OmiFrame => {
+  const t = Math.min(1, Math.max(0, x)) * (OMI_FRAMES.length - 1)
+  const i = Math.min(OMI_FRAMES.length - 2, Math.floor(t))
+  const f = t - i
+  const a = OMI_FRAMES[i]
+  const b = OMI_FRAMES[i + 1]
+  return {
+    stMag: lerp(a.stMag, b.stMag, f),
+    tMag: lerp(a.tMag, b.tMag, f),
+    tWidth: lerp(a.tWidth, b.tWidth, f),
+    tInvert: lerp(a.tInvert, b.tInvert, f),
+    qMag: lerp(a.qMag, b.qMag, f),
+    label: f < 0.5 ? a.label : b.label,
+  }
+}
+
+/** The anterior-OMI evolution strip at trajectory position x (0..1). */
+export const omiEvolutionStrip = (x: number): Strip => {
+  const k = omiFrame(x)
+  const RR = 800
+  const ANT: Vec3 = [0.3, -0.25, 0.95]
+  const beats: Beat[] = []
+  for (let i = 0; i < 3; i++) {
+    const b = solverNsrNoT(i * RR)
+    const sources: Source[] = [...b.sources]
+    if (k.qMag > 0.02) {
+      // Necrotic anterior wall stops contributing: a vector AWAY from the
+      // chest leads early in the QRS — the pathologic Q.
+      sources.push({
+        dir: [-0.25, 0.1, -0.9], mag: k.qMag, center: 150, width: 7, segment: 'QRS',
+        pos: [0.19, 0.04, 0.16],
+        glow: { structures: ['LV'], kind: 'rest', start: 142, end: 165, note: 'anterior forces lost — the Q wave' },
+      })
+    }
+    if (k.stMag > 0.03) {
+      sources.push({
+        dir: ANT, mag: k.stMag, center: 290, width: 46, segment: 'ST',
+        pos: [0.19, 0.04, 0.16],
+        glow: { structures: ['LV'], kind: 'injury', start: 240, end: 350, note: 'injury current — the ST vector' },
+      })
+    }
+    // The T: upright and bulky when hyperacute, inverting once it evolves.
+    const tDir: Vec3 = k.tInvert > 0.5
+      ? [-ANT[0] * 0.6, -ANT[1] * 0.6, -ANT[2] * 0.8]
+      : [ANT[0] * 0.7, ANT[1] * 0.7, ANT[2] * 0.8]
+    sources.push({
+      dir: tDir, mag: 0.18 * k.tMag * (k.tInvert > 0.5 ? 0.85 : 1), center: 372, width: 46 * k.tWidth,
+      segment: 'T', pos: [0.19, 0.04, 0.16],
+      glow: { structures: ['LV'], kind: 'repol', start: 330, end: 450 },
+    })
+    beats.push({ ...b, sources })
+  }
+  return { beats, durationMs: 3 * RR }
+}
+
+export const wpwStrip = (): Strip => {
+  const RR = 800
+  const beats: Beat[] = []
+  for (let i = 0; i < 3; i++) {
+    const b = simulateBeat({ pace: 'SA' }, i * RR)
+    beats.push({
+      ...b,
+      sources: [
+        // The delta wave: the accessory pathway fires the posterolateral LV
+        // base as soon as the atria finish — slow muscle-to-muscle slur,
+        // anterior-dominant dipole (type A: tall R in V1), BEFORE the His
+        // wavefront lands. The rest of the QRS is the normal conduction
+        // catching up: a fusion beat, every beat.
+        { dir: [0.45, 0.35, 0.85], mag: 0.75, center: 118, width: 16, segment: 'QRS', pos: [0.3, 0.12, -0.12], glow: { structures: ['LV'], kind: 'ventricle', start: 92, end: 150, note: 'the pathway pre-excites the LV base — the delta wave' } },
+        // Pre-excited base keeps depolarizing anteriorly through the QRS —
+        // the type-A tall R in V1 the recording shows.
+        { dir: [0.2, 0.15, 0.95], mag: 0.55, center: 168, width: 22, segment: 'QRS', pos: [0.28, 0.1, -0.1] },
+        ...b.sources,
+        // Abnormal depolarization forces abnormal repolarization (discordant).
+        { dir: [-0.3, -0.2, -0.6], mag: 0.28, center: 360, width: 48, segment: 'T', pos: [0.3, 0.12, -0.12], glow: { structures: ['LV'], kind: 'repol', start: 320, end: 440 } },
+      ],
+      label: i === 0 ? 'fusion' : undefined,
+      focus: i === 0 ? { x: 0.68, y: 0.42, label: 'accessory pathway' } : undefined,
+    })
+  }
+  return { beats, durationMs: 3 * RR }
+}
+
 /** Named authored builders (referenced by cards via mechanism.authoredId). */
 export const AUTHORED: Record<string, () => Strip> = {
   afib: buildAfibStrip,
@@ -516,4 +627,5 @@ export const AUTHORED: Record<string, () => Strip> = {
   dewinter: dewinterStrip,
   'lvh-strain': lvhStrip,
   brugada: brugadaStrip,
+  wpw: wpwStrip,
 }

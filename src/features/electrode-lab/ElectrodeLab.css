@@ -94,8 +94,8 @@
 .lab-trace { display: grid; gap: var(--sp-2); }
 .lab-leadpick { display: flex; flex-wrap: wrap; gap: 6px; }
 .lab-lead {
-  min-width: 40px;
-  min-height: 30px;
+  min-width: 44px;
+  min-height: 38px;
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-3);
@@ -106,3 +106,15 @@
 
 .lab-serial { display: grid; gap: var(--sp-2); }
 .lab-serial-label { color: var(--ink-2); font-size: var(--fs-meta); font-weight: 600; padding-top: var(--sp-2); }
+
+/* Board + trace share one screen: the figure is sized so the live trace stays
+   visible while you drag (cause and effect together — the point of the lab). */
+.lab-board { position: relative; }
+.lab-trace {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  padding-bottom: var(--sp-2);
+  z-index: 4;
+}
+.lab-chip-share { color: var(--accent); }

@@ -137,3 +137,56 @@ adds the `derived` tier live.
 Occlusion time-evolution sequences · educator collections · case-of-the-week ·
 caliper tool · app-store wrappers · reconstruction upgrades above · library
 provenance micro-badges · commit-quiz loop instrumentation.
+
+---
+
+## Post-audit revision — 2026-08 (expert-panel pass)
+
+Four independent expert audits (clinical/attending, medical-education,
+product-design, strategy) were run against the shipped app; their findings were
+synthesized and executed in full. What changed:
+
+**Verification posture (replaces the named-signature gate).** The project's
+sign-off law was retired by owner decision: this app carries NO individual
+authorship or clinician signature (a deliberate legal-liability posture).
+Verification is process-based — citations that resolve, machine-checked
+assertions, adversarial review, and a dated guideline check that the validator
+FAILS at >24 months. Every therapy section renders with the stamp "Checked
+against the cited guidelines · <date> — educational reference, not medical
+advice." `tools/sign.mjs` and the `review.status` gate were removed from the
+render path.
+
+**Clinical gaps closed** (attending audit): pre-excited-AF trap + narrow-QRS
+gate on the afib card; a new WPW card (real PTB-XL recordings, ecg_id 5303 +
+2145) as its lethal companion; LVH-hiding-OMI (the deadlier under-call);
+torsades "not amiodarone" trap; insulin→hypoglycemia monitoring and salbutamol
+dose on hyperK; PDE5-inhibitor/nitrate interaction and cautious titrated volume
+on inferior OMI.
+
+**Retention loop** (pedagogy audit): `/drill` — uncued, interleaved retrieval
+across the whole catalog with Leitner spacing (`src/lib/progress.ts`); misses
+resurface, four spaced hits make a card 'solid'. Library shows per-card mastery
+and due counts.
+
+**Transfer** (pedagogy audit): a 7-step reading method (`src/content/method.ts`)
+rendered as furniture on every card, with that card's step lit — 21 exemplars
+now teach one portable procedure.
+
+**Both audiences without dilution** (owner decision): the recognition core is
+shared; only the action layer forks. `rnMoves` (cited, non-prescribing) on
+every card behind an MD·RN toggle in section 5.
+
+**Product craft** (design audit): waveform sparklines on every library row;
+the commit verdict now renders BEFORE the heart; only the trace stays pinned;
+`--ink-3` lifted to AA contrast; tap targets to ≥38–44px; gesture coach-marks;
+a reference "skip" path past the commit gate; lethal-set legend + filter; the
+0.4× speed-cycle bug fixed.
+
+**Depth over breadth** (strategy audit): `/evolution` — anterior OMI across
+time (hyperacute T → STE → Q → T inversion), honesty-labeled as one possible
+trajectory; the Electrode Lab now keeps figure and live trace co-visible and
+is shareable. Positioning moved from "an atlas" to the cannot-miss/OMI trainer.
+
+Deferred (external dependencies, not code): CME accreditation, institutional
+cohort/completion features, and sourcing published cases to upgrade the
+remaining modeled lethal strips to real recordings.

@@ -36,6 +36,7 @@ export const lvhStrain: Card = {
     { kind: 'pearl', text: 'Sokolow–Lyon: S(V1) + R(V5 or V6) ≥35 mm suggests LVH (age >35). Voltage criteria are specific-ish, never sensitive.' },
     { kind: 'trap', text: 'LVH is a leading driver of false cath-lab activations: STE in V1–V3 over deep S waves is expected discordance. Judge ST against the QRS beneath it.' },
     { kind: 'night-eye', text: 'Strain T inversion: asymmetric, down-sloping take-off, in the leads with the biggest Rs. Symmetric inversions in modest-voltage leads → think ischemia instead.', linkCardId: 'wellens' },
+    { kind: 'trap', text: 'The deadlier miss runs the other way: LVH does not immunize against OMI. Concordant STE, STE out of all proportion to the S beneath it, or new ST-T vs an old strain tracing = occlusion until proven otherwise.', linkCardId: 'sgarbossa' },
   ],
   suspectConfirm: [
     { text: 'New dramatic ST-T with hypertension history: find an old ECG — stability is the mimic’s alibi.', cites: ['AHA-ACS-2025'] },
@@ -43,6 +44,10 @@ export const lvhStrain: Card = {
   ],
   guidelineMoves: [
     { text: 'No acute ECG-directed therapy — manage the blood pressure and the actual complaint.', cites: ['AHA-ACS-2025'] },
+  ],
+  rnMoves: [
+    { text: 'Huge voltages with matching down-sloping ST-T is usually chronic — hunt down an old ECG before the room escalates; stability is the alibi.', cites: ['AHA-ACS-2025'] },
+    { text: 'But LVH doesn’t immunize: NEW ST-T changes, or ST pointing with the QRS, on top of LVH — treat as ischemia and escalate.', cites: ['AHA-ACS-2025'] },
   ],
   mechanism: {
     kind: 'authored',
@@ -64,6 +69,7 @@ export const lvhStrain: Card = {
     { on: 'trace', check: 'tPolarity', lead: 'V5', sign: '-' },
     { on: 'trace', check: 'stShift', lead: 'V5', sign: '-' },
   ],
+  methodStep: 'morphology',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

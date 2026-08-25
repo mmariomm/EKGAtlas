@@ -363,8 +363,8 @@ export default function TraceView({
         <div className="traceview-badge">{badge}</div>
         {ghost && ghostLabel && <span className="traceview-ghostlegend">{ghostLabel}</span>}
         <div className="traceview-tools">
-          <button className="traceview-tool" onClick={() => setZoom(zoom === 1 ? 2 : 1)} aria-label="Toggle time zoom">
-            {zoom === 1 ? '25' : '50'}<span className="traceview-tool-unit">mm/s</span>
+          <button className="traceview-tool" onClick={() => setZoom(zoom === 1 ? 2 : 1)} aria-label="Toggle paper speed 25/50 mm/s">
+            <span className="traceview-tool-unit">zoom</span> {zoom === 1 ? '25' : '50'}<span className="traceview-tool-unit">mm/s</span>
           </button>
           <button className="traceview-tool" onClick={togglePaper} aria-label="Toggle paper look">
             {paper ? 'dark' : 'paper'}

@@ -44,6 +44,11 @@ export const tca: Card = {
     { text: 'Sodium bicarbonate boluses (1–2 mEq/kg), repeat to narrow the QRS; benzodiazepines for seizures.', cites: ['AHA-TOX-2023'] },
     { text: 'Avoid class IA/IC (and other Na-blocking) antiarrhythmics; refractory arrest → lipid emulsion per protocol.', cites: ['AHA-TOX-2023'] },
   ],
+  rnMoves: [
+    { text: 'Overdose + altered + tachycardic: get the 12-lead early — QRS >100 ms predicts seizures; a widening trend is deterioration, escalate.', cites: ['AHA-TOX-2023', 'BOEHNERT-1985'] },
+    { text: 'Anticipate sodium-bicarbonate boluses, benzodiazepines for seizures, airway readiness — and question any class I antiarrhythmic order for the ’VT’.', cites: ['AHA-TOX-2023'] },
+    { text: 'Serial ECGs are the drug level you can see — put them on a schedule and chart the QRS width each time.', cites: ['BOEHNERT-1985'] },
+  ],
   mechanism: {
     kind: 'authored',
     authoredId: 'tca',
@@ -62,6 +67,7 @@ export const tca: Card = {
     { on: 'model', check: 'qtcMs', min: 460, max: 620 },
     { on: 'model', check: 'prMs', min: 100, max: 240 },
   ],
+  methodStep: 'intervals',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

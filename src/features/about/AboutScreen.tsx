@@ -33,9 +33,9 @@ export default function AboutScreen() {
         <ul>
           <li>Real recordings come from <b>PTB-XL</b> (PhysioNet), used under CC BY 4.0 — Wagner et&nbsp;al., <i>Scientific Data</i> 2020. Each file is parsed against its own embedded checksums.</li>
           <li>Every card carries <b>machine-checked assertions</b> — encoded diagnostic criteria that run against both the model and the shipped recording on every release. A card that fails does not ship.</li>
-          <li>Every clinical line carries a <b>citation</b> (registry below) and the card carries a guideline-verification date. Stale citations block release.</li>
-          <li>Every therapy section carries a <b>review stamp</b>: the guideline-verification date, plus either the named clinician who signed it or an explicit "not yet clinician-signed" — never silent draft medicine.</li>
+          <li>Every clinical line carries a <b>citation</b> (registry below) and the card carries a <b>dated guideline check</b> — a stale check blocks release. The date is stamped on every therapy section.</li>
           <li>Rendered screens are audited visually before release, and an adversarial review (criteria auditor · hostile attending · learner-comprehension · consistency) runs on every card.</li>
+          <li>This is an <b>anonymous editorial process, not an individual author</b> — no one here is your doctor, and nothing here is medical advice or a doctor–patient relationship. The citations are the authority; check them.</li>
         </ul>
       </section>
 

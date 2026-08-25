@@ -36,6 +36,7 @@ export const longqt: Card = {
     { kind: 'pearl', text: 'Measure, don’t glance: tangent method, longest of II/V5; use Fridericia at fast or slow rates (Bazett over-corrects tachycardia). QTc ≥500 ms = high-risk territory.' },
     { kind: 'trap', text: 'The usual suspects stack: antiemetics, antipsychotics, methadone, macrolides/fluoroquinolones, azoles — plus low K⁺/Mg²⁺ multiplying them.' },
     { kind: 'night-eye', text: 'Runs of polymorphic VT after pauses on the overnight tele = torsades until proven otherwise — check the QT of the beats between runs.' },
+    { kind: 'trap', text: 'Polymorphic VT on a long baseline QT is torsades, NOT generic VT — amiodarone and procainamide prolong QT and feed it. Magnesium, replete K⁺, pace or isoproterenol; defibrillate if sustained.' },
   ],
   suspectConfirm: [
     { text: 'Audit the med list + K⁺/Mg²⁺/Ca²⁺ in every unexplained long QT or syncope.', cites: ['AHA-QT-2020'] },
@@ -44,6 +45,11 @@ export const longqt: Card = {
     { text: 'Stop every QT-prolonging drug; magnesium 2 g IV for torsades — even with a normal level.', cites: ['AHA-QT-2020', 'AHA-ACLS-2020'] },
     { text: 'Replete K⁺ toward high-normal; recurrent pause-dependent runs → overdrive pacing or isoproterenol.', cites: ['AHA-QT-2020'] },
     { text: 'Sustained or degenerating → defibrillation.', cites: ['AHA-ACLS-2020'] },
+  ],
+  rnMoves: [
+    { text: 'Before hanging QT-prolonging drugs (antiemetics, antipsychotics, macrolides, methadone): check the latest QTc — ≥500 ms, confirm with the prescriber first.', cites: ['AHA-QT-2020'] },
+    { text: 'Pause-then-run bursts of polymorphic VT on tele = torsades: magnesium is the call — and flag any amiodarone order for it.', cites: ['AHA-QT-2020', 'AHA-ACLS-2020'] },
+    { text: 'Anticipate K⁺/Mg²⁺ repletion to target; recurrent runs → the pacing/isoproterenol conversation.', cites: ['AHA-QT-2020'] },
   ],
   mechanism: {
     kind: 'authored',
@@ -63,6 +69,7 @@ export const longqt: Card = {
     { on: 'model', check: 'qtcMs', min: 490, max: 560 },
     { on: 'model', check: 'custom', name: 'tdpPolymorphic', note: 'companion TdP strip: QRS axis rotates ≥180° across the run; run rate 180–260' },
   ],
+  methodStep: 'intervals',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

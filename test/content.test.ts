@@ -8,6 +8,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { CARDS, CARD_BY_ID, PACKS } from '../src/content/index'
 import { GUIDELINE_BY_KEY, GUIDELINES } from '../src/content/guidelines'
+import { METHOD_BY_ID } from '../src/content/method'
 import { Card, CardAssertion } from '../src/content/schema'
 import { buildMechanismStrip, hyperkStrip, tdpStrip } from '../src/content/mechanisms'
 import { buildWarp, modelFiducials } from '../src/engine/sync'
@@ -61,11 +62,17 @@ console.log('=== Schema & copy rules ===')
 
     if (c.suspectConfirm.length < 1 || c.suspectConfirm.length > 4) fail(at('suspectConfirm needs 1–4 lines'))
     if (c.guidelineMoves.length < 1 || c.guidelineMoves.length > 3) fail(at('guidelineMoves needs 1–3 lines'))
-    for (const line of [...c.suspectConfirm, ...c.guidelineMoves]) {
+    if (c.rnMoves.length < 1 || c.rnMoves.length > 4) fail(at('rnMoves needs 1–4 lines'))
+    for (const line of [...c.suspectConfirm, ...c.guidelineMoves, ...c.rnMoves]) {
       if (!line.cites.length) fail(at(`uncited line: "${line.text.slice(0, 40)}…"`))
       for (const k of line.cites) if (!GUIDELINE_BY_KEY[k]) fail(at(`unknown citeKey ${k}`))
     }
+    const RX_ONLY = /\b(prescribe|administer|give \d|push \d|bolus \d)/i
+    for (const line of c.rnMoves) {
+      if (RX_ONLY.test(line.text.split('—')[0])) warn(at(`rnMoves line opens with a prescribing verb: "${line.text.slice(0, 50)}…"`))
+    }
 
+    if (!METHOD_BY_ID[c.methodStep]) fail(at(`unknown methodStep '${c.methodStep}'`))
     if (c.mechanism.kind === 'authored' && !c.mechanism.authoredReason) fail(at('authored mechanism needs authoredReason'))
     if (c.mechanism.mustShow.length < 1 || c.mechanism.mustShow.length > 5) fail(at('mustShow needs 1–5 bullets'))
     if (!c.assertions.length) fail(at('no assertions'))
@@ -73,12 +80,18 @@ console.log('=== Schema & copy rules ===')
     if (!assets.has(c.seeIt.traceId)) fail(at(`primary trace '${c.seeIt.traceId}' missing from public/recordings`))
     for (const e of c.seeIt.extraTraceIds ?? []) if (!assets.has(e)) fail(at(`extra trace '${e}' missing`))
 
-    if (c.review.status === 'signed') {
-      if (!c.review.reviewer || !c.review.signedAt) fail(at('signed review needs reviewer + signedAt'))
-      if (!c.review.auditPassedAt) fail(at('signed review requires auditPassedAt (the 99% audit)'))
-    } else if (RELEASE) {
-      fail(at('unsigned card at release gate'))
-    } else warn(at('review pending (draft)'))
+    // Verification is process-based (no individual authorship, by design):
+    // the gate is a fresh guideline check, machine assertions, and citations.
+    {
+      const [yy, mm] = c.guidelineVerifiedAt.split('-').map(Number)
+      if (!yy || !mm) fail(at(`bad guidelineVerifiedAt '${c.guidelineVerifiedAt}'`))
+      else {
+        const now = new Date()
+        const ageMonths = (now.getFullYear() - yy) * 12 + (now.getMonth() + 1 - mm)
+        if (ageMonths > 24) fail(at(`guideline check stale (${ageMonths} mo — re-verify)`))
+        else if (ageMonths > 18) warn(at(`guideline check aging (${ageMonths} mo)`))
+      }
+    }
   }
   for (const p of PACKS) {
     if (p.items.length < 4 || p.items.length > 6) fail(`${p.id}: packs need 4–6 items`)

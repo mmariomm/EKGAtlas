@@ -42,6 +42,10 @@ export const omiPosterior: Card = {
   guidelineMoves: [
     { text: 'Confirmed posterior OMI = reperfusion, same urgency as any STEMI.', cites: ['AHA-ACS-2025'] },
   ],
+  rnMoves: [
+    { text: 'ST depression deepest in V1–V3 is posterior OMI until proven otherwise — request V7–V9; three stickers can change the disposition.', cites: ['AHA-ACS-2025'] },
+    { text: 'Don’t let the ’NSTEMI’ label slow the room — confirmed posterior OMI moves at STEMI speed.', cites: ['AHA-ACS-2025'] },
+  ],
   mechanism: {
     kind: 'authored',
     authoredId: 'omi-posterior',
@@ -63,6 +67,7 @@ export const omiPosterior: Card = {
     { on: 'trace', check: 'rsRatio', lead: 'V2', min: 2 },
     { on: 'trace', check: 'tPolarity', lead: 'V2', sign: '+' },
   ],
+  methodStep: 'st-t',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

@@ -37,7 +37,7 @@ export const omiInferior: Card = {
   ],
   pills: [
     { kind: 'pearl', text: 'STE III > II leans RCA (vs circumflex) — and raises the RV-infarct question. Answer it with V4R.' },
-    { kind: 'trap', text: 'RV infarct + nitroglycerin = crashing preload → hypotension. Fluids first, nitrates withheld.' },
+    { kind: 'trap', text: 'RV infarct + nitroglycerin = crashing preload → hypotension. Same crash after a recent PDE5 inhibitor (sildenafil/tadalafil) — ask before any nitrate, in every chest pain.' },
     { kind: 'night-eye', text: 'Fresh inferior OMI + new AV block is nodal ischemia — often atropine-responsive, usually transient.', linkCardId: 'avb-3' },
     { kind: 'lookalike', text: 'Inferior STE with V1–V3 depression = the posterior wall is in too.', linkCardId: 'omi-posterior' },
   ],
@@ -46,7 +46,12 @@ export const omiInferior: Card = {
   ],
   guidelineMoves: [
     { text: 'Reperfusion now — same clock as any OMI.', cites: ['AHA-ACS-2025'] },
-    { text: 'Hypotension after nitrates or STE in V4R → RV infarct: volume first, avoid further preload reduction.', cites: ['AHA-ACS-2025'] },
+    { text: 'Hypotension after nitrates or STE in V4R → RV infarct: cautious titrated volume (250–500 ml, reassess), avoid further preload reduction.', cites: ['AHA-ACS-2025'] },
+  ],
+  rnMoves: [
+    { text: 'Inferior STE: before ANY nitrate, two questions — RV involved (get V4R)? PDE5 inhibitor in the last 24–48 h? Either answer yes → hold and call.', cites: ['AHA-ACS-2025'] },
+    { text: 'Get V4R and V7–V9 — thirty seconds of stickers that change management; watch for bradycardia and AV block (usually transient).', cites: ['AHA-ACS-2025'] },
+    { text: 'Hypotension after nitro = the preload crash: legs up, escalate, anticipate cautious fluid boluses.', cites: ['AHA-ACS-2025'] },
   ],
   mechanism: {
     kind: 'solver',
@@ -65,6 +70,7 @@ export const omiInferior: Card = {
     { on: 'model', check: 'custom', name: 'st3gt2', note: 'stShift III > stShift II (RCA pattern)' },
     { on: 'trace', check: 'stShift', lead: 'III', sign: '+', minMv: 0.08 },
   ],
+  methodStep: 'st-t',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

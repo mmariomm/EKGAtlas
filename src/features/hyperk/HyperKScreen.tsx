@@ -21,6 +21,9 @@ import './HyperKScreen.css'
 
 export default function HyperKScreen() {
   const [x, setX] = useState(0.25)
+  // Calibration: the module's point is that all five are dangerous — the
+  // learner's own under-call count is the lesson, not the per-tile verdict.
+  const [picks, setPicks] = useState<Record<string, string>>({})
 
   const morphStrip = useMemo(() => hyperkStrip(x), [x])
   const morphData = useMemo(
@@ -80,9 +83,16 @@ export default function HyperKScreen() {
         <p className="hk-sub">Five patients. Commit a potassium for each — then look at the numbers.</p>
         <div className="hk-gallery">
           {GALLERY.map((slot, i) => (
-            <GalleryItem key={slot.traceId} index={i} slot={slot} />
+            <GalleryItem
+              key={slot.traceId}
+              index={i}
+              slot={slot}
+              picked={picks[slot.traceId] ?? null}
+              onPick={(b) => setPicks((p) => ({ ...p, [slot.traceId]: b }))}
+            />
           ))}
         </div>
+        <Calibration picks={picks} />
       </section>
 
       {/* ---- 3 · the close ---- */}
@@ -97,9 +107,29 @@ export default function HyperKScreen() {
   )
 }
 
-function GalleryItem({ index, slot }: { index: number; slot: (typeof GALLERY)[number] }) {
+function Calibration({ picks }: { picks: Record<string, string> }) {
+  const done = GALLERY.filter((s) => picks[s.traceId])
+  if (done.length < GALLERY.length) {
+    return <p className="hk-tally hk-tally-wait">{done.length}/{GALLERY.length} committed — the tally lands when all five are in.</p>
+  }
+  // Every patient in this gallery is genuinely ≥6.5: any lower guess is an under-call.
+  const under = done.filter((s) => picks[s.traceId] !== '≥6.5').length
+  return (
+    <p className="hk-tally">
+      {under === 0
+        ? 'All five called ≥6.5 — correct: every one of these patients is dangerously hyperkalemic, however ordinary the trace looks.'
+        : `You under-called ${under} of ${GALLERY.length}. Every patient here is ≥6.5 — that gap is exactly why the ECG can never rule hyperkalemia out.`}
+    </p>
+  )
+}
+
+function GalleryItem({ index, slot, picked, onPick }: {
+  index: number
+  slot: (typeof GALLERY)[number]
+  picked: string | null
+  onPick: (band: string) => void
+}) {
   const [data, setData] = useState<TraceData | null>(null)
-  const [picked, setPicked] = useState<string | null>(null)
   const clock = useCardiacClock(data?.durationMs ?? 1000, { autoplay: true })
   useEffect(() => { loadTrace(slot.traceId).then(setData).catch(() => {}) }, [slot.traceId])
 
@@ -120,7 +150,7 @@ function GalleryItem({ index, slot }: { index: number; slot: (typeof GALLERY)[nu
         <div className="hk-chips">
           <span className="hk-chiplabel">K⁺?</span>
           {K_BANDS.map((b) => (
-            <button key={b} className="hk-chip num" onClick={() => setPicked(b)}>{b}</button>
+            <button key={b} className="hk-chip num" onClick={() => onPick(b)}>{b}</button>
           ))}
         </div>
       ) : (

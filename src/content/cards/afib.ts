@@ -32,19 +32,25 @@ export const afib: Card = {
     { cause: 'The atria no longer empty by contraction', effect: 'Stasis — the stroke-risk conversation every AF deserves' },
   ],
   pills: [
+    { kind: 'trap', text: 'Irregular + WIDE + very fast (>200, morphology changing beat to beat) = pre-excited AF (WPW). AV-nodal blockers — diltiazem, beta-blockers, digoxin, adenosine — can funnel everything down the pathway → VF. Procainamide or cardiovert.', linkCardId: 'wpw' },
     { kind: 'trap', text: 'A *regular* slow wide rhythm in known AF = the AV node has failed (complete block with escape) — or dig toxicity. Regularized AF is never boring.' },
     { kind: 'night-eye', text: 'March the R waves with calipers or paper edge. If no two intervals match and there are no P waves — AF.' },
-    { kind: 'pearl', text: 'The machine over-calls AF (artifact, PACs) and those calls often go uncorrected. Never confirm AF without seeing the irregularity yourself.' },
-    { kind: 'lookalike', text: 'Organized sawtooth at ~300/min = flutter. If the rate sits at exactly ~150, hunt for it.', linkCardId: 'aflutter' },
+    { kind: 'lookalike', text: 'Organized sawtooth at ~300/min = flutter. If the rate sits at exactly ~150, hunt for it. The machine over-calls AF — see the irregularity yourself.', linkCardId: 'aflutter' },
   ],
   suspectConfirm: [
+    { text: 'Before rate control, confirm the QRS is NARROW — irregular wide tachycardia is pre-excited AF or polymorphic VT until proven otherwise.', cites: ['AHA-ACLS-2020'] },
     { text: 'New AF: electrolytes, TSH, and an echo belong in the workup.', cites: ['AHA-AF-2023'] },
     { text: 'Estimate stroke risk (CHA₂DS₂-VASc) before the rhythm conversation.', cites: ['AHA-AF-2023'] },
   ],
   guidelineMoves: [
     { text: 'Unstable from the rhythm → synchronized cardioversion now.', cites: ['AHA-ACLS-2020'] },
-    { text: 'Stable → rate control (beta-blocker or diltiazem), then the anticoagulation decision.', cites: ['AHA-AF-2023'] },
+    { text: 'Stable + NARROW → rate control (beta-blocker or diltiazem), then the anticoagulation decision.', cites: ['AHA-AF-2023'] },
     { text: 'Onset unclear or >48 h → anticoagulation strategy before elective cardioversion.', cites: ['AHA-AF-2023'] },
+  ],
+  rnMoves: [
+    { text: 'Recognize: irregularly irregular, no Ps. Then the safety check: is the QRS NARROW? Irregular + wide + very fast → call now, and question any AV-nodal blocker.', cites: ['AHA-ACLS-2020'] },
+    { text: 'Escalate for hypotension, chest pain, altered mentation, or symptomatic HR >150 — cardioversion may be next: pads on, IV access, NPO.', cites: ['AHA-ACLS-2020'] },
+    { text: 'Anticipate: rate-control orders and the anticoagulation conversation; new AF also gets electrolytes, TSH, and an echo on the list.', cites: ['AHA-AF-2023'] },
   ],
   mechanism: {
     kind: 'authored',
@@ -65,6 +71,7 @@ export const afib: Card = {
     { on: 'model', check: 'custom', name: 'noOrganizedP', note: 'no organized atrial wave: every P-segment source ≤0.05 mV (fibrillatory noise only)' },
     { on: 'trace', check: 'custom', name: 'noConsistentP', note: 'pre-QRS windows do not repeat a consistent P shape (mean pairwise correlation < 0.5)' },
   ],
+  methodStep: 'rhythm',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

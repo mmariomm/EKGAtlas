@@ -11,7 +11,7 @@ export default defineConfig({
       manifest: {
         name: 'EKG Atlas',
         short_name: 'EKG Atlas',
-        description: 'Real ECG recordings synced to a manipulable conduction model — see why each waveform looks the way it does.',
+        description: 'Catch the cannot-miss ECGs. Real recordings, a manipulable conduction model, and the occlusions the STEMI criteria miss — mechanism first.',
         start_url: '/',
         display: 'standalone',
         orientation: 'portrait',

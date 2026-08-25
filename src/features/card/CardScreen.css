@@ -30,15 +30,45 @@
   padding: 0 var(--sp-2);
 }
 
-/* ---- pinned stage ---- */
+/* ---- pinned stage: ONLY the trace stays pinned; chips scroll away ---- */
 .card-stage {
   position: sticky;
   top: 0;
   z-index: 5;
   background: var(--bg);
   padding-bottom: var(--sp-2);
-  display: grid;
-  gap: var(--sp-2);
+  box-shadow: 0 10px 14px -12px rgba(0, 0, 0, 0.55);
+}
+.card-leadrow { margin-top: var(--sp-2); }
+.card-phasechips { margin-top: var(--sp-2); }
+
+.card-coach {
+  position: absolute;
+  left: var(--sp-2);
+  bottom: calc(var(--sp-2) + 6px);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+  pointer-events: none;
+  animation: coach-fade 9s ease-in forwards;
+}
+.heart-coach {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--ink-2);
+  padding: 4px var(--sp-3) 2px;
+  animation: coach-fade 9s ease-in forwards;
+}
+@keyframes coach-fade {
+  0%, 78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-coach, .heart-coach { animation: none; }
 }
 .card-loading, .card-error {
   height: 190px;
@@ -54,8 +84,8 @@
 
 .card-phasechips { display: flex; gap: var(--sp-1); align-items: center; }
 .phasechip {
-  min-width: 42px;
-  min-height: 32px;
+  min-width: 44px;
+  min-height: 40px;
   padding: 0 10px;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -82,7 +112,7 @@
 .card-extras { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-meta); color: var(--ink-3); }
 .card-extras-label { font-weight: 600; color: var(--ink-2); }
 .extra-chip {
-  width: 32px; height: 32px;
+  width: 38px; height: 38px;
   border-radius: 50%;
   border: 1px solid var(--line);
   color: var(--ink-2);
@@ -134,6 +164,14 @@
 }
 .commit-option:active { border-color: var(--accent); }
 .commit-hint { color: var(--ink-3); font-size: var(--fs-meta); margin-top: var(--sp-3); }
+.commit-skip {
+  color: var(--ink-3);
+  font-size: var(--fs-meta);
+  text-decoration: underline;
+  padding: 4px 2px;
+}
+.commit-skip:hover { color: var(--ink-2); }
+.commit-skipnote { color: var(--ink-3); font-weight: 400; font-size: var(--fs-meta); }
 
 .commit-result { display: grid; gap: var(--sp-2); }
 .commit-verdict { font-weight: 600; }
@@ -179,7 +217,7 @@
   color: var(--ink-2);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 2px 6px;
+  padding: 5px 8px;
   margin-left: 6px;
   vertical-align: 1px;
 }
@@ -191,6 +229,23 @@
 }
 .cite-title { font-weight: 600; font-size: var(--fs-body); }
 .cite-meta { color: var(--ink-2); font-size: 12.5px; margin-top: 4px; }
+
+.role-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.role-toggle button {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  padding: 6px 12px;
+  min-height: 30px;
+}
+.role-toggle button.on { color: var(--accent-ink); background: var(--accent); }
 
 .local-protocol { margin-top: var(--sp-3); font-weight: 600; color: var(--warn); }
 .stamp { margin-top: var(--sp-2); color: var(--ink-3); font-size: 12px; }
@@ -275,8 +330,8 @@
 .card-leadrow::-webkit-scrollbar { display: none; }
 .leadchip {
   flex: none;
-  min-width: 42px;
-  min-height: 30px;
+  min-width: 44px;
+  min-height: 38px;
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-3);

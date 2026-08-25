@@ -63,14 +63,14 @@ a bug, even if the feature "works."
    The release gate fails on any `TODO(REVIEW)`. Do not fill gaps from memory.
 4. **GUIDELINE STAMPS + THE 99% AUDIT.** Every SUSPECT & CONFIRM and GUIDELINE
    MOVES line carries a citation key from the guideline registry (name + year,
-   rendered in the UI), and every card carries `guidelineVerifiedAt`. Before a
-   human ever sees a card, the pre-sign-off audit (`03-CONTENT-SYSTEM.md` §6b)
-   must pass: every claim citation-resolved, every threshold assertion-covered,
-   dual-source verified, four adversarial roles cleared in fresh contexts.
-   Therapy content ships only with `reviewStatus: 'signed'` (a named human
-   reviewer confirming an already-eligible dossier — minutes per card, owning
-   the last 1%). Unsigned cards render the section as "Pending expert sign-off"
-   — they never silently show draft therapy.
+   rendered in the UI), and every card carries `guidelineVerifiedAt`. Before
+   content ships, the audit (`03-CONTENT-SYSTEM.md` §6b) must pass: every claim
+   citation-resolved, every threshold assertion-covered, dual-source verified,
+   four adversarial roles cleared in fresh contexts. Verification is
+   PROCESS-BASED, not individual: no named authorship anywhere (a deliberate
+   legal-posture decision, 2026-08). Therapy sections always render, stamped
+   "Checked against the cited guidelines · <date> — educational reference, not
+   medical advice." A stale check (>24 mo) blocks release.
 5. **EDUCATION, NOT DIAGNOSIS.** No feature accepts or interprets a user's own
    patient ECG. No patient-specific advice, ever (the SaMD line). The disclaimer is
    permanent, and cards close therapy lines with "verify against local protocol."

@@ -44,8 +44,13 @@ export const hyperk: Card = {
   ],
   guidelineMoves: [
     { text: 'ECG changes → IV calcium first (stabilizes the membrane in minutes; lowers nothing).', cites: ['UKKA-K-2023'] },
-    { text: 'Then shift: insulin 10 U + dextrose, plus nebulized salbutamol.', cites: ['UKKA-K-2023'] },
+    { text: 'Then shift: insulin 10 U + dextrose (check glucose first; monitor hourly ×6 — delayed hypoglycemia is the classic iatrogenic harm), plus nebulized salbutamol 10–20 mg.', cites: ['UKKA-K-2023'] },
     { text: 'Then eliminate: dialysis / binders / diuresis — and stop the K⁺ sources.', cites: ['UKKA-K-2023'] },
+  ],
+  rnMoves: [
+    { text: 'Renal patient + wide, bizarre, slow, or P-less rhythm: think K⁺ first — send the stat K⁺/VBG and have calcium AT the bedside before the number returns.', cites: ['UKKA-K-2023'] },
+    { text: 'After insulin/dextrose: glucose before, then hourly ×6 — delayed hypoglycemia is the classic iatrogenic harm; the late checks matter most.', cites: ['UKKA-K-2023'] },
+    { text: 'A normal ECG never rules hyperK out — scary story, normal trace, still send the lab.', cites: ['UKKA-K-2023'] },
   ],
   mechanism: {
     kind: 'authored',
@@ -66,6 +71,7 @@ export const hyperk: Card = {
     { on: 'trace', check: 'qrsMs', min: 80, max: 140 },
     { on: 'trace', check: 'rateBpm', min: 55, max: 90 },
   ],
+  methodStep: 'morphology',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

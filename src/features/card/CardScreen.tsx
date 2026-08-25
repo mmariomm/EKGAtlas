@@ -1,8 +1,10 @@
 /**
  * The card player: pinned real trace (scrub-synced to the mechanism model) +
- * the five-section skeleton — SEE IT (commit-before-reveal), WHY, PILLS,
- * SUSPECT & CONFIRM, GUIDELINE MOVES. Until commit, the diagnosis name and
- * the mechanism stay locked. Therapy renders only when review is signed.
+ * the five-section skeleton — SEE IT (commit-before-reveal), WHY, PEARLS &
+ * TRAPS, SUSPECT & CONFIRM, GUIDELINE MOVES. Until commit (or an explicit
+ * skip), the diagnosis name and the mechanism stay locked. Guideline moves
+ * always render, stamped with the process-verification date — this app is an
+ * educational reference with no individual authorship, by design.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CARD_BY_ID } from '../../content'
@@ -19,10 +21,13 @@ import { linkClick, navigate } from '../../router'
 import { metric } from '../../lib/metrics'
 import TraceView from '../trace/TraceView'
 import HeartView from '../mechanism/HeartView'
+import MethodStrip from './MethodStrip'
 import ProvenanceBadge from './ProvenanceBadge'
 import './CardScreen.css'
 
 const COMMIT_KEY = (id: string) => `commit:${id}`
+/** Sentinel: card opened as reference without committing (no verdict shown). */
+const SKIPPED = -1
 
 type PhaseId = 'P' | 'QRS' | 'ST' | 'T'
 const PHASE_TONES: Record<PhaseId, 'atria' | 'ventricle' | 'injury' | 'repol'> = {
@@ -59,6 +64,40 @@ function CardInner({ cardId }: { cardId: string }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const revealed = committed != null
 
+  // Role: MD sees guideline moves, RN sees recognize/escalate/anticipate/watch.
+  // Only section 5 forks — the recognition core is the same skill for both.
+  const [role, setRole] = useState<'md' | 'rn'>(() => {
+    try { return localStorage.getItem('role') === 'rn' ? 'rn' : 'md' } catch { return 'md' }
+  })
+  const setRoleAndSave = (r: 'md' | 'rn') => {
+    setRole(r)
+    try { localStorage.setItem('role', r) } catch { /* private mode */ }
+  }
+
+  // One-time gesture hints (the scrub/pinch/drag gestures are otherwise invisible).
+  const [coachTrace, setCoachTrace] = useState(() => {
+    try { return !localStorage.getItem('coach:trace') } catch { return false }
+  })
+  const [coachHeart, setCoachHeart] = useState(() => {
+    try { return !localStorage.getItem('coach:heart') } catch { return false }
+  })
+  useEffect(() => {
+    if (!coachTrace) return
+    const t = setTimeout(() => {
+      setCoachTrace(false)
+      try { localStorage.setItem('coach:trace', '1') } catch { /* private mode */ }
+    }, 9000)
+    return () => clearTimeout(t)
+  }, [coachTrace])
+  useEffect(() => {
+    if (!coachHeart || !revealed) return
+    const t = setTimeout(() => {
+      setCoachHeart(false)
+      try { localStorage.setItem('coach:heart', '1') } catch { /* private mode */ }
+    }, 9000)
+    return () => clearTimeout(t)
+  }, [coachHeart, revealed])
+
   useEffect(() => {
     let live = true
     setData(null)
@@ -82,7 +121,7 @@ function CardInner({ cardId }: { cardId: string }) {
   )
 
   const commit = (i: number) => {
-    metric('commit', card.id)
+    if (i !== SKIPPED) metric('commit', card.id)
     setCommitted(i)
     setShowHeart(true)
     try { localStorage.setItem(COMMIT_KEY(card.id), String(i)) } catch { /* private mode */ }
@@ -141,10 +180,10 @@ function CardInner({ cardId }: { cardId: string }) {
   }
   const [toast, setToast] = useState('')
 
-  const speeds = [0.25, 0.5, 1]
+  const speeds = [0.25, 0.4, 0.7, 1]
   const cycleSpeed = () => {
     const cur = speeds.indexOf(clock.speed)
-    clock.setSpeed(speeds[(cur + 1) % speeds.length] ?? 0.5)
+    clock.setSpeed(speeds[(cur + 1) % speeds.length] ?? 0.4)
   }
 
   const extras = card.seeIt.extraTraceIds ?? []
@@ -172,54 +211,47 @@ function CardInner({ cardId }: { cardId: string }) {
             badge={<ProvenanceBadge provenance={data.provenance} />}
           />
         )}
-
-        <div className="card-leadrow" role="group" aria-label="Choose leads">
-          <button
-            className={`leadchip ${leads.length === 12 ? 'leadchip-on' : ''}`}
-            onClick={() => setLeads(leads.length === 12 ? [card.mechanism.primaryLead] : [...ALL_LEADS])}
-          >
-            12-lead
-          </button>
-          {ALL_LEADS.map((l) => (
-            <button
-              key={l}
-              className={`leadchip ${leads.includes(l) ? 'leadchip-on' : ''}`}
-              onClick={() => setLeads((cur) => (cur.length === 12 ? [l] : cur.includes(l) ? (cur.length > 1 ? cur.filter((x) => x !== l) : cur) : [...cur.slice(-2), l]))}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
-
-        {revealed && (
-          <div className="card-phasechips" role="group" aria-label="Highlight a phase">
-            {(['P', 'QRS', 'ST', 'T'] as PhaseId[]).map((p) => (
-              <button
-                key={p}
-                className={`phasechip phasechip-${p} ${phase === p ? 'phasechip-on' : ''}`}
-                onClick={() => tapPhase(p)}
-              >
-                {p}
-              </button>
-            ))}
-            <button className="phasechip phasechip-heart" onClick={() => setShowHeart((s) => !s)}>
-              {showHeart ? 'hide heart' : 'show heart'}
-            </button>
-          </div>
+        {coachTrace && data && (
+          <span className="card-coach">↔ drag to scrub · pinch to zoom</span>
         )}
-
       </div>
 
-      {revealed && showHeart && (
-        <div className="card-heart">
-          <HeartView
-            strip={strip}
-            clock={clock}
-            warp={warp}
-            blockedBranches={card.mechanism.kind === 'solver' ? blockedFromState(card) : undefined}
-          />
+      <div className="card-leadrow" role="group" aria-label="Choose leads">
+        <button
+          className={`leadchip ${leads.length === 12 ? 'leadchip-on' : ''}`}
+          onClick={() => setLeads(leads.length === 12 ? [card.mechanism.primaryLead] : [...ALL_LEADS])}
+        >
+          12-lead
+        </button>
+        {ALL_LEADS.map((l) => (
+          <button
+            key={l}
+            className={`leadchip ${leads.includes(l) ? 'leadchip-on' : ''}`}
+            onClick={() => setLeads((cur) => (cur.length === 12 ? [l] : cur.includes(l) ? (cur.length > 1 ? cur.filter((x) => x !== l) : cur) : [...cur.slice(-2), l]))}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {revealed && (
+        <div className="card-phasechips" role="group" aria-label="Highlight a phase">
+          {(['P', 'QRS', 'ST', 'T'] as PhaseId[]).map((p) => (
+            <button
+              key={p}
+              className={`phasechip phasechip-${p} ${phase === p ? 'phasechip-on' : ''}`}
+              onClick={() => tapPhase(p)}
+            >
+              {p}
+            </button>
+          ))}
+          <button className="phasechip phasechip-heart" onClick={() => setShowHeart((s) => !s)}>
+            {showHeart ? 'hide heart' : 'show heart'}
+          </button>
         </div>
       )}
+
+      <MethodStrip stepId={card.methodStep} />
 
       {revealed && extras.length > 0 && (
         <div className="card-extras">
@@ -237,7 +269,7 @@ function CardInner({ cardId }: { cardId: string }) {
         </div>
       )}
 
-      {/* ---- 1 · SEE IT ---- */}
+      {/* ---- 1 · SEE IT (the verdict lands first — the heart follows it) ---- */}
       <section className="card-section">
         <h2 className="sec-title"><span className="sec-num">1</span> See it</h2>
         {!revealed ? (
@@ -250,11 +282,16 @@ function CardInner({ cardId }: { cardId: string }) {
                 </button>
               ))}
             </div>
-            <p className="commit-hint">Commit a read — then the card opens.</p>
+            <p className="commit-hint">
+              Commit a read — then the card opens.{' '}
+              <button className="commit-skip" onClick={() => commit(SKIPPED)}>skip — open as reference</button>
+            </p>
           </>
         ) : (
           <div className="commit-result">
-            {committed === correctIdx ? (
+            {committed === SKIPPED ? (
+              <p className="commit-verdict">{card.seeIt.commit.options[correctIdx].label} <span className="commit-skipnote">· opened as reference</span></p>
+            ) : committed === correctIdx ? (
               <p className="commit-verdict commit-right">✓ {card.seeIt.commit.options[correctIdx].label}</p>
             ) : (
               <>
@@ -270,6 +307,18 @@ function CardInner({ cardId }: { cardId: string }) {
           </div>
         )}
       </section>
+
+      {revealed && showHeart && (
+        <div className="card-heart">
+          <HeartView
+            strip={strip}
+            clock={clock}
+            warp={warp}
+            blockedBranches={card.mechanism.kind === 'solver' ? blockedFromState(card) : undefined}
+          />
+          {coachHeart && <p className="heart-coach">drag the heart to step through the beat — the trace follows</p>}
+        </div>
+      )}
 
       {revealed && card.moduleHref && (
         <a href={card.moduleHref.href} onClick={linkClick(card.moduleHref.href)} className="card-module">
@@ -324,20 +373,21 @@ function CardInner({ cardId }: { cardId: string }) {
             <CitedLines lines={card.suspectConfirm} />
           </section>
 
-          {/* ---- 5 · GUIDELINE MOVES ---- */}
+          {/* ---- 5 · THE ACTION LAYER (forks by role; everything above is shared) ---- */}
           <section className="card-section">
-            <h2 className="sec-title"><span className="sec-num">5</span> Guideline moves</h2>
-            <CitedLines lines={card.guidelineMoves} />
+            <h2 className="sec-title">
+              <span className="sec-num">5</span>
+              {role === 'rn' ? 'Recognize & respond' : 'Guideline moves'}
+              <span className="role-toggle" role="group" aria-label="Audience">
+                <button className={role === 'md' ? 'on' : ''} onClick={() => setRoleAndSave('md')}>MD</button>
+                <button className={role === 'rn' ? 'on' : ''} onClick={() => setRoleAndSave('rn')}>RN</button>
+              </span>
+            </h2>
+            <CitedLines lines={role === 'rn' ? card.rnMoves : card.guidelineMoves} />
             <p className="local-protocol">Verify against your local protocol.</p>
-            {card.review.status === 'signed' ? (
-              <p className="stamp">
-                Guidelines verified {card.guidelineVerifiedAt} · signed {card.review.signedAt} — {card.review.reviewer}
-              </p>
-            ) : (
-              <p className="stamp stamp-draft">
-                Guidelines verified {card.guidelineVerifiedAt} · not yet clinician-signed
-              </p>
-            )}
+            <p className="stamp">
+              Checked against the cited guidelines · {card.guidelineVerifiedAt} — educational reference, not medical advice
+            </p>
           </section>
 
           <footer className="card-foot">

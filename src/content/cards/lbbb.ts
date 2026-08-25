@@ -43,6 +43,11 @@ export const lbbb: Card = {
   guidelineMoves: [
     { text: 'Chest pain + LBBB → apply Sgarbossa/Smith-modified criteria, not despair.', cites: ['SGARBOSSA-1996', 'SMITH-MSC-2012'] },
   ],
+  rnMoves: [
+    { text: 'New LBBB + chest pain = escalate now — criteria exist (Sgarbossa); never chart ’uninterpretable, LBBB’.', cites: ['AHA-ACS-2025'] },
+    { text: 'ST pointing WITH the QRS anywhere in LBBB is never the block — call it in immediately.', cites: ['SGARBOSSA-1996'] },
+    { text: 'Anticipate: echo and an ischemia workup — new LBBB usually marks real structural disease.', cites: ['AHA-ACS-2025'] },
+  ],
   mechanism: {
     kind: 'solver',
     state: { pace: 'SA', blockedEdges: ['HIS>LBB'] },
@@ -71,6 +76,7 @@ export const lbbb: Card = {
     { on: 'model', check: 'custom', name: 'noSeptalQ', note: 'no initial q in V6: mean of first 30 ms of QRS in V6 ≥ −0.02 mV' },
     { on: 'trace', check: 'custom', name: 'noSeptalQ', note: 'no initial q in V6 on the recording' },
   ],
+  methodStep: 'morphology',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

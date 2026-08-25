@@ -347,6 +347,64 @@
    "beats": 13,
    "bytes": 179129,
    "convertedAt": "2026-08-24"
+  },
+  "ptbxl-2145-wpw": {
+   "cardId": "wpw",
+   "ecgId": 2145,
+   "source": "records500/02000/02145_hr",
+   "age": 55,
+   "sex": "F",
+   "scp": {
+    "WPW": 100
+   },
+   "beats": 12,
+   "bytes": 197672,
+   "convertedAt": "2026-08-25"
+  },
+  "ptbxl-4279-wpw": {
+   "cardId": "wpw",
+   "ecgId": 4279,
+   "source": "records500/04000/04279_hr",
+   "age": 46,
+   "sex": "F",
+   "scp": {
+    "WPW": 50,
+    "LOWT": 0,
+    "STD_": 0,
+    "SR": 0
+   },
+   "beats": 13,
+   "bytes": 199710,
+   "convertedAt": "2026-08-25"
+  },
+  "ptbxl-4825-wpw": {
+   "cardId": "wpw",
+   "ecgId": 4825,
+   "source": "records500/04000/04825_hr",
+   "age": 45,
+   "sex": "M",
+   "scp": {
+    "WPW": 100,
+    "ABQRS": 0,
+    "SR": 0
+   },
+   "beats": 11,
+   "bytes": 202507,
+   "convertedAt": "2026-08-25"
+  },
+  "ptbxl-5303-wpw": {
+   "cardId": "wpw",
+   "ecgId": 5303,
+   "source": "records500/05000/05303_hr",
+   "age": 34,
+   "sex": "M",
+   "scp": {
+    "WPW": 100,
+    "SR": 0
+   },
+   "beats": 11,
+   "bytes": 210596,
+   "convertedAt": "2026-08-25"
   }
  }
 }

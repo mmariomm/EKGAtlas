@@ -45,6 +45,12 @@ export const vtMono: Card = {
     { text: 'Unstable → synchronized cardioversion. Pulseless → defibrillate.', cites: ['AHA-ACLS-2020'] },
     { text: 'Stable → IV procainamide or amiodarone — never verapamil/diltiazem for undifferentiated wide tachycardia.', cites: ['AHA-ACLS-2020', 'ESC-VA-2022'] },
   ],
+  rnMoves: [
+    { text: 'Wide + fast = VT until proven otherwise. Stay at the bedside — check pulse and pressure now; this rhythm changes class in seconds.', cites: ['AHA-ACLS-2020'] },
+    { text: 'Pulseless → code and defibrillate. Pulse but unstable → synchronized cardioversion: pads, suction, sedation drawn, team called.', cites: ['AHA-ACLS-2020'] },
+    { text: 'Anticipate amiodarone or procainamide for stable VT — and question any verapamil/diltiazem order for a wide tachycardia.', cites: ['AHA-ACLS-2020', 'ESC-VA-2022'] },
+    { text: 'After conversion: 12-lead, K⁺/Mg²⁺, troponin — VT has a cause and the workup starts now.', cites: ['AHA-VA-2017'] },
+  ],
   mechanism: {
     kind: 'authored',
     authoredId: 'vt-mono',
@@ -63,6 +69,7 @@ export const vtMono: Card = {
     { on: 'model', check: 'custom', name: 'regularRun', note: 'VT run RR cv < 0.06' },
     { on: 'model', check: 'custom', name: 'avDissociation', note: 'atrial P sources march at a rate different from the ventricular rate' },
   ],
+  methodStep: 'rhythm',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

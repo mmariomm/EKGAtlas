@@ -43,6 +43,10 @@ export const wellens: Card = {
   guidelineMoves: [
     { text: 'Admit, antithrombotic therapy per ACS pathway, early angiography — no stress test.', cites: ['AHA-ACS-2025'] },
   ],
+  rnMoves: [
+    { text: 'Pain gone + deep or biphasic V2–V3 Ts = a warning shot, not reassurance: this patient is admitted, not discharged — and never sent to a treadmill. Speak up.', cites: ['AHA-ACS-2025', 'DEZWAAN-1982'] },
+    { text: 'Watch: those Ts turning UPRIGHT during recurrent pain = the artery re-closing — new ECG and escalate now.', cites: ['AHA-ACS-2025'] },
+  ],
   mechanism: {
     kind: 'authored',
     authoredId: 'wellens',
@@ -64,6 +68,7 @@ export const wellens: Card = {
     { on: 'trace', check: 'qrsMs', min: 60, max: 120 },
     { on: 'trace', check: 'custom', name: 'preservedR', note: 'R amplitude in V3 ≥ 0.2 mV — the infarct has not happened yet' },
   ],
+  methodStep: 'st-t',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

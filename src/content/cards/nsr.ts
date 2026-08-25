@@ -44,6 +44,10 @@ export const nsr: Card = {
   guidelineMoves: [
     { text: 'No finding to treat — treat the patient in front of you.', cites: ['AHA-ACS-2025'] },
   ],
+  rnMoves: [
+    { text: 'Normal is a snapshot, not an alibi — chest pain with a clean first ECG stays on the monitor: repeat ECG in 10–15 min, troponin, escalate on any change.', cites: ['AHA-ACS-2025'] },
+    { text: 'Know the three triage numbers cold: PR 120–200, QRS <120, QTc <460 — anything outside them earns a second look before filing.', cites: ['AHA-ACS-2025'] },
+  ],
   mechanism: {
     kind: 'solver',
     state: { pace: 'SA' },
@@ -72,6 +76,7 @@ export const nsr: Card = {
     { on: 'trace', check: 'netQrs', lead: 'aVR', sign: '-' },
     { on: 'model', check: 'axisDeg', min: -30, max: 90 },
   ],
+  methodStep: 'rate',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

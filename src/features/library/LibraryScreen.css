@@ -2,11 +2,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(var(--sp-4) + env(safe-area-inset-top)) 0 var(--sp-3);
+  padding: calc(var(--sp-4) + env(safe-area-inset-top)) 0 var(--sp-2);
 }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-name { font-size: 17px; font-weight: 600; letter-spacing: 0.01em; }
 .lib-about { font-size: var(--fs-meta); color: var(--ink-2); min-height: var(--tap-min); display: flex; align-items: center; }
+
+.lib-promise {
+  color: var(--ink-2);
+  font-size: var(--fs-meta);
+  padding-bottom: var(--sp-3);
+}
 
 .lib-search {
   width: 100%;
@@ -19,11 +25,27 @@
 }
 .lib-search::placeholder { color: var(--ink-3); }
 
+.lib-drill {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 14%, var(--surface)), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  border-radius: var(--r-m);
+  padding: var(--sp-3) var(--sp-4);
+  color: var(--ink);
+  min-height: 56px;
+}
+.lib-drill:hover { text-decoration: none; border-color: var(--accent); }
+.lib-drill-name { font-size: var(--fs-body); font-weight: 700; letter-spacing: -0.01em; }
+.lib-drill-sub { flex: 1; font-size: 12.5px; color: var(--ink-2); }
+
 .lib-labs {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--sp-2);
-  margin-top: var(--sp-3);
+  margin-top: var(--sp-2);
 }
 .lib-lab {
   display: grid;
@@ -39,12 +61,25 @@
 .lib-lab-name { font-size: var(--fs-body); font-weight: 600; letter-spacing: -0.01em; }
 .lib-lab-sub { font-size: 12px; color: var(--ink-2); }
 
+.lib-setrow { margin-top: var(--sp-3); }
+.lib-setlabel {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 6px;
+}
 .lib-packrow {
   display: flex;
   gap: var(--sp-2);
-  margin-top: var(--sp-2);
   overflow-x: auto;
   scrollbar-width: none;
+  /* right-edge fade signals the row scrolls */
+  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+  padding-right: 28px;
 }
 .lib-packrow::-webkit-scrollbar { display: none; }
 .lib-packchip {
@@ -54,12 +89,28 @@
   color: var(--ink-2);
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 7px 14px;
+  padding: 9px 14px;
   background: var(--surface);
 }
 .lib-packchip:hover { text-decoration: none; color: var(--ink); border-color: var(--ink-3); }
 
-.lib-group { margin-top: var(--sp-5); }
+.lib-legend { margin-top: var(--sp-3); display: flex; }
+.lib-lethalchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 12px;
+  min-height: 34px;
+  background: var(--surface);
+}
+.lib-lethalchip.on { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); }
+
+.lib-group { margin-top: var(--sp-4); }
 .lib-cat {
   font-size: 12px;
   font-weight: 700;
@@ -77,15 +128,36 @@
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
-  padding: 12px var(--sp-4);
+  padding: 10px var(--sp-3) 10px var(--sp-2);
   color: var(--ink);
-  min-height: 56px;
+  min-height: 58px;
 }
 .lib-row:hover { text-decoration: none; border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
-.lib-row-main { flex: 1; display: grid; gap: 2px; }
+.lib-spark {
+  flex: none;
+  width: 74px;
+  height: 34px;
+  color: var(--trace-ink);
+  opacity: 0.85;
+  background:
+    linear-gradient(var(--grid-minor) 1px, transparent 1px) 0 0 / 100% 8.5px,
+    linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px) 0 0 / 9.25px 100%;
+  border-radius: 6px;
+}
+.lib-row-main { flex: 1; display: grid; gap: 2px; min-width: 0; }
 .lib-row-name { font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .lib-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); flex: none; }
 .lib-row-tag { font-size: 12.5px; color: var(--ink-2); }
 .lib-chev { color: var(--ink-3); font-size: 20px; }
+.lib-mastery {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-3);
+}
+.lib-mastery-unseen { opacity: 0.35; }
+.lib-mastery-shaky { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 45%, transparent); }
+.lib-mastery-solid { border-color: var(--accent); background: var(--accent); }
 .lib-empty { color: var(--ink-3); padding: var(--sp-4) 0; }
 .lib-disclaimer { color: var(--ink-3); font-size: 12px; margin-top: var(--sp-6); }

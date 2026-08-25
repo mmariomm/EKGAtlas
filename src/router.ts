@@ -10,6 +10,8 @@ export type Route =
   | { name: 'lab-electrodes' }
   | { name: 'lab-hyperk' }
   | { name: 'pack'; packId: string }
+  | { name: 'drill' }
+  | { name: 'evolution' }
   | { name: 'about' }
   | { name: 'dev-trace' }
 
@@ -32,6 +34,8 @@ export const parseRoute = (pathname: string, search: string): Route => {
   if (seg[0] === 'lab' && seg[1] === 'electrodes') return { name: 'lab-electrodes' }
   if (seg[0] === 'lab' && seg[1] === 'hyperk') return { name: 'lab-hyperk' }
   if (seg[0] === 'p' && seg[1]) return { name: 'pack', packId: seg[1] }
+  if (seg[0] === 'drill') return { name: 'drill' }
+  if (seg[0] === 'evolution') return { name: 'evolution' }
   if (seg[0] === 'about') return { name: 'about' }
   if (seg[0] === 'dev' && seg[1] === 'trace') return { name: 'dev-trace' }
   return { name: 'library' }

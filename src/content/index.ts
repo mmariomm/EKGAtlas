@@ -20,11 +20,12 @@ import { dewinter } from './cards/dewinter'
 import { pacedV } from './cards/pacedV'
 import { lvhStrain } from './cards/lvhStrain'
 import { brugada } from './cards/brugada'
+import { wpw } from './cards/wpw'
 
 export const CARDS: Card[] = [
   nsr,
   afib, aflutter, vtMono,
-  pacedV, avb2, avb3, rbbb, lbbb,
+  pacedV, avb2, avb3, rbbb, lbbb, wpw,
   omiAnterior, omiInferior, omiPosterior, sgarbossa, wellens, dewinter,
   hyperk, tca, longqt,
   lvhStrain, brugada,
@@ -74,7 +75,7 @@ export const PACKS: Pack[] = [
     blurb: 'Where the computer text and the truth part ways.',
     items: [
       { cardId: 'paced-v' }, { cardId: 'lvh-strain' }, { cardId: 'sgarbossa' },
-      { cardId: 'aflutter' },
+      { cardId: 'wpw' }, { cardId: 'aflutter' },
       { labHref: '/lab/electrodes?swap=high-v1v2', title: 'V1–V2 too high — the pseudo-Brugada machine' },
     ],
   },

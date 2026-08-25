@@ -43,6 +43,11 @@ export const pacedV: Card = {
   guidelineMoves: [
     { text: 'Symptomatic non-capture or bradycardia → transcutaneous pacing bridge while the device is interrogated.', cites: ['AHA-BRADY-2018', 'AHA-ACLS-2020'] },
   ],
+  rnMoves: [
+    { text: 'March spike→QRS pairs: a spike with nothing after it is failure to capture — report it, don’t chart it as artifact.', cites: ['AHA-BRADY-2018'] },
+    { text: 'Chest pain in a paced rhythm is never ’uninterpretable’ — concordant ST changes matter; push for a real read (modified Sgarbossa).', cites: ['SMITH-MSC-2012'] },
+    { text: 'Anticipate: magnet at the bedside, device interrogation, transcutaneous pads ready if capture is failing.', cites: ['AHA-BRADY-2018'] },
+  ],
   mechanism: {
     kind: 'authored',
     authoredId: 'paced-v',
@@ -63,6 +68,7 @@ export const pacedV: Card = {
     { on: 'trace', check: 'qrsMs', min: 120, max: 220 },
     { on: 'trace', check: 'rateBpm', min: 50, max: 110 },
   ],
+  methodStep: 'morphology',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

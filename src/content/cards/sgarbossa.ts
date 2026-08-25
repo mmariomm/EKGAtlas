@@ -44,6 +44,10 @@ export const sgarbossa: Card = {
   guidelineMoves: [
     { text: 'Sgarbossa-positive (classic ≥3 pts or Smith-modified) → activate reperfusion.', cites: ['AHA-ACS-2025', 'SMITH-MSC-2012'] },
   ],
+  rnMoves: [
+    { text: 'LBBB or paced rhythm + chest pain: scan for ST pointing WITH the QRS — concordance is never the block; escalate immediately.', cites: ['AHA-ACS-2025'] },
+    { text: 'Anticipate serial ECGs and cath activation if criteria land; keep prior ECGs at hand — new vs old changes everything.', cites: ['AHA-ACS-2025', 'SMITH-MSC-2012'] },
+  ],
   mechanism: {
     kind: 'authored',
     authoredId: 'sgarbossa',
@@ -60,6 +64,7 @@ export const sgarbossa: Card = {
     { on: 'model', check: 'custom', name: 'concordantSTE', note: 'V5: net QRS positive AND stShift ≥ +0.1 mV — concordance, the point of the card' },
     { on: 'model', check: 'netQrs', lead: 'V1', sign: '-' },
   ],
+  methodStep: 'st-t',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

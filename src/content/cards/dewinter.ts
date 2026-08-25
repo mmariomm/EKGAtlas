@@ -42,6 +42,10 @@ export const dewinter: Card = {
   guidelineMoves: [
     { text: 'Immediate reperfusion pathway — as for STEMI.', cites: ['AHA-ACS-2025'] },
   ],
+  rnMoves: [
+    { text: 'Upsloping ST depression + towering Ts across the chest leads with ongoing pain = occlusion equivalent — the room moves at STEMI speed; don’t wait for elevation.', cites: ['DEWINTER-2008', 'AHA-ACS-2025'] },
+    { text: 'Serial ECGs won’t downgrade it — keep the reperfusion conversation moving.', cites: ['AHA-ACS-2025'] },
+  ],
   mechanism: {
     kind: 'authored',
     authoredId: 'dewinter',
@@ -60,6 +64,7 @@ export const dewinter: Card = {
     // The slight aVR elevation of the published pattern is a basal-injury
     // feature beyond this vector set (taught in the pill, not asserted).
   ],
+  methodStep: 'st-t',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

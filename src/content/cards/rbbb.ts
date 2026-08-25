@@ -43,6 +43,11 @@ export const rbbb: Card = {
   guidelineMoves: [
     { text: 'Isolated asymptomatic RBBB needs no treatment — the work is in what caused it.', cites: ['AHA-BRADY-2018'] },
   ],
+  rnMoves: [
+    { text: 'Isolated, asymptomatic RBBB is a finding, not an emergency — NEW RBBB with chest pain, dyspnea, or hypotension is: report it.', cites: ['AHA-BRADY-2018'] },
+    { text: 'RBBB does not hide ischemia — the ST segments still read normally; STE in V1 is never ’just the block’.', cites: ['AHA-BRADY-2018'] },
+    { text: 'New RBBB + dyspnea/hypotension → think PE and escalate for risk stratification.', cites: ['AHA-PE-2026'] },
+  ],
   mechanism: {
     kind: 'solver',
     state: { pace: 'SA', blockedEdges: ['HIS>RBB'] },
@@ -64,6 +69,7 @@ export const rbbb: Card = {
     { on: 'model', check: 'custom', name: 'terminalSI', note: 'terminal 40 ms in lead I negative (the broad S)' },
     { on: 'trace', check: 'tPolarity', lead: 'V1', sign: '-' },
   ],
+  methodStep: 'morphology',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

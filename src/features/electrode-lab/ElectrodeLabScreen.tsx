@@ -17,6 +17,7 @@ import { tileState } from '../../engine/propagate'
 import { useCardiacClock } from '../../lib/clock'
 import { loadTrace, signalsToTraceData, TraceData } from '../../lib/assets'
 import { linkClick } from '../../router'
+import { metric } from '../../lib/metrics'
 import TraceView from '../trace/TraceView'
 import ProvenanceBadge from '../card/ProvenanceBadge'
 import TorsoBoard, { BoardState, standardBoard } from './TorsoBoard'
@@ -83,6 +84,23 @@ export default function ElectrodeLabScreen() {
     setHint(msg)
     if (hintTimer.current) clearTimeout(hintTimer.current)
     hintTimer.current = setTimeout(() => setHint(''), 3200)
+  }
+
+  // Share the current preset as a link — the lab is the app's most shareable
+  // artifact ("I made V2 lie — can you spot why?").
+  const [shared, setShared] = useState('')
+  const share = async () => {
+    metric('share')
+    const url = window.location.href
+    const text = preset ? `${preset.label} — spot what it does to the trace` : 'EKG Atlas — Electrode Lab'
+    try {
+      if (navigator.share) await navigator.share({ title: 'Electrode Lab', text, url })
+      else {
+        await navigator.clipboard.writeText(url)
+        setShared('link copied')
+        setTimeout(() => setShared(''), 2200)
+      }
+    } catch { /* user dismissed */ }
   }
 
   const applyPreset = (p: LabPreset) => {
@@ -217,17 +235,21 @@ export default function ElectrodeLabScreen() {
           </button>
         ))}
         <button className="lab-chip lab-chip-reset" onClick={reset}>Reset</button>
+        <button className="lab-chip lab-chip-share" onClick={share}>Share this setup</button>
       </div>
+      {shared && <p className="lab-hint">{shared}</p>}
 
       {!serialView && (
-        <TorsoBoard
-          state={board}
-          onChange={(b) => { setBoard(b); if (preset && preset.id !== 'serial') setPreset(null) }}
-          chestLocked={mode === 'real'}
-          onChestLockedTouch={() => flashHint('Chest leads can’t be re-derived from a recording — switch to the modeled heart to move these.')}
-          onChestDrag={onChestDrag}
-          standardChest={standardBoard().chest}
-        />
+        <div className="lab-board">
+          <TorsoBoard
+            state={board}
+            onChange={(b) => { setBoard(b); if (preset && preset.id !== 'serial') setPreset(null) }}
+            chestLocked={mode === 'real'}
+            onChestLockedTouch={() => flashHint('Chest leads can’t be re-derived from a recording — switch to the modeled heart to move these.')}
+            onChestDrag={onChestDrag}
+            standardChest={standardBoard().chest}
+          />
+        </div>
       )}
       {hint && <p className="lab-hint">{hint}</p>}
 

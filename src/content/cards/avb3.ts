@@ -45,6 +45,11 @@ export const avb3: Card = {
     { text: 'Symptomatic → atropine trial while pads go on; expect it to fail if the escape is wide (infranodal).', cites: ['AHA-ACLS-2020'] },
     { text: 'Transcutaneous pacing bridge → transvenous pacing; treat the cause in parallel.', cites: ['AHA-BRADY-2018'] },
   ],
+  rnMoves: [
+    { text: 'More Ps than QRSs and no fixed PR = complete block. A ’regular bradycardia at 40’ that ignores its own Ps is never sinus — look twice.', cites: ['AHA-BRADY-2018'] },
+    { text: 'Do not leave the bedside: pads on, atropine drawn (expect it to fail if the QRS is wide), pacing likely.', cites: ['AHA-ACLS-2020'] },
+    { text: 'Anticipate the cause hunt: K⁺, AV-blocking drugs, ischemia — inferior-MI blocks often recover; anterior ones usually don’t.', cites: ['AHA-BRADY-2018', 'AHA-ACS-2025'] },
+  ],
   mechanism: {
     kind: 'authored',
     authoredId: 'avb-3',
@@ -62,6 +67,7 @@ export const avb3: Card = {
     { on: 'model', check: 'qrsMs', min: 60, max: 120 },
     { on: 'trace', check: 'rateBpm', min: 25, max: 55 },
   ],
+  methodStep: 'rhythm',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

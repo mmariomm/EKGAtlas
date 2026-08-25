@@ -44,6 +44,11 @@ export const avb2: Card = {
     { text: 'Mobitz II (or any symptomatic block) → pads on, pacing pathway, cardiology now.', cites: ['AHA-BRADY-2018'] },
     { text: 'Asymptomatic Wenckebach → usually observation and cause-hunting, not hardware.', cites: ['AHA-BRADY-2018'] },
   ],
+  rnMoves: [
+    { text: 'Lengthening PR with grouped beats (Wenckebach) is usually benign; fixed PR with sudden drops (Mobitz II) is not — treat every 2:1 as the dangerous kind until proven otherwise.', cites: ['AHA-BRADY-2018'] },
+    { text: 'Mobitz II on the monitor = call now and pads on — it can fall to complete block without warning.', cites: ['AHA-BRADY-2018'] },
+    { text: 'Anticipate: a long rhythm strip, holding AV-blocking meds, atropine at hand, the pacing pathway.', cites: ['AHA-BRADY-2018'] },
+  ],
   mechanism: {
     kind: 'authored',
     authoredId: 'avb-2',
@@ -60,6 +65,7 @@ export const avb2: Card = {
     { on: 'model', check: 'qrsMs', min: 60, max: 120 },
     { on: 'trace', check: 'custom', name: 'droppedBeats', note: 'max RR ≥ 1.7× median RR (the pause of the dropped beat)' },
   ],
+  methodStep: 'rhythm',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

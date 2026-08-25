@@ -1,0 +1,50 @@
+.method { margin-top: var(--sp-3); }
+.method-bar {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+.method-bar::-webkit-scrollbar { display: none; }
+.method-step {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+.method-step.on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.method-ask {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.method-asklabel { font-weight: 700; color: var(--ink); }
+
+.method-full {
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-3);
+  list-style: none;
+  display: grid;
+  gap: var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  counter-reset: mstep;
+}
+.method-full li { display: grid; gap: 2px; counter-increment: mstep; }
+.method-full li.on .method-name { color: var(--accent); }
+.method-name { font-size: 12.5px; font-weight: 600; }
+.method-name::before { content: counter(mstep) '. '; color: var(--ink-3); }
+.method-how { font-size: 12px; color: var(--ink-2); }

@@ -3,6 +3,8 @@ import { useRoute } from './router'
 import LibraryScreen from './features/library/LibraryScreen'
 import CardScreen from './features/card/CardScreen'
 
+const DrillScreen = lazy(() => import('./features/drill/DrillScreen'))
+const EvolutionScreen = lazy(() => import('./features/evolution/EvolutionScreen'))
 const ElectrodeLabScreen = lazy(() => import('./features/electrode-lab/ElectrodeLabScreen'))
 const HyperKScreen = lazy(() => import('./features/hyperk/HyperKScreen'))
 const PackScreen = lazy(() => import('./features/pack/PackScreen'))
@@ -19,6 +21,8 @@ export default function App() {
     <Suspense fallback={<Loading />}>
       {route.name === 'library' && <LibraryScreen />}
       {route.name === 'card' && <CardScreen cardId={route.cardId} key={route.cardId} />}
+      {route.name === 'drill' && <DrillScreen />}
+      {route.name === 'evolution' && <EvolutionScreen />}
       {route.name === 'lab-electrodes' && <ElectrodeLabScreen />}
       {route.name === 'lab-hyperk' && <HyperKScreen />}
       {route.name === 'pack' && <PackScreen packId={route.packId} key={route.packId} />}

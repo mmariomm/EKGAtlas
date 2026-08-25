@@ -106,9 +106,17 @@ export interface Card {
   pills: Pill[] // 2–4
   suspectConfirm: CitedLine[] // 1–4
   guidelineMoves: CitedLine[] // 1–3; UI appends the local-protocol close
+  /**
+   * Nurse-facing action layer (RN mode swaps ONLY section 5): recognize /
+   * escalate / anticipate / watch — never prescribing. Same citations,
+   * same recognition core; the last mile forks by role. 1–4 lines.
+   */
+  rnMoves: CitedLine[]
   /** optional promoted link to a lab module (e.g. the HyperK module) */
   moduleHref?: { href: string; label: string }
   mechanism: MechanismSpec
+  /** Which step of the reading method (content/method.ts) this card teaches. */
+  methodStep: string
   assertions: CardAssertion[]
   guidelineVerifiedAt: string // 'YYYY-MM'
   review: {

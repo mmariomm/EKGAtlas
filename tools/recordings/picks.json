@@ -102,5 +102,12 @@
   "primary": "brugada-model",
   "extras": [],
   "reason": "modeled tier: Brugada is not in the PTB-XL label set; reconstruction upgrade path in report."
+ },
+ "wpw": {
+  "primary": "ptbxl-5303-wpw",
+  "extras": [
+   "ptbxl-2145-wpw"
+  ],
+  "reason": "agent-curated (visual): 5303 = textbook type-A pre-excitation (short PR, obvious delta slur into tall R V1/V5, human-validated WPW:100+SR); 2145 = subtler delta for variance. Pending human confirmation."
  }
 }

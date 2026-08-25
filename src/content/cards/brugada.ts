@@ -45,6 +45,11 @@ export const brugada: Card = {
   guidelineMoves: [
     { text: 'Symptomatic type 1 → EP referral (ICD discussion); asymptomatic → risk-stratify, avoid provoking drugs, treat fever.', cites: ['ESC-VA-2022'] },
   ],
+  rnMoves: [
+    { text: 'Coved STE in V1–V2 on a routine or fever ECG: don’t file it — flag for review and ask two questions: syncope? family sudden death young?', cites: ['SHANGHAI-2016'] },
+    { text: 'Check electrode height first — V1–V2 placed too high manufactures the pattern in healthy chests.', cites: ['ESC-VA-2022'] },
+    { text: 'Fever unmasks and worsens it: treat the fever aggressively, repeat the ECG after, keep on the monitor.', cites: ['ESC-VA-2022'] },
+  ],
   mechanism: {
     kind: 'authored',
     authoredId: 'brugada',
@@ -62,6 +67,7 @@ export const brugada: Card = {
     { on: 'model', check: 'qrsMs', min: 60, max: 120 },
     { on: 'model', check: 'custom', name: 'covedShape', note: 'V1 descends monotonically from J+40 toward the T nadir (the cove)' },
   ],
+  methodStep: 'st-t',
   guidelineVerifiedAt: '2026-08',
   review: { status: 'draft' },
 }

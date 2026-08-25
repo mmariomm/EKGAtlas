@@ -92,3 +92,20 @@
 }
 .hk-trigger { font-size: var(--fs-lede); font-weight: 600; }
 .hk-moves { font-weight: 600; }
+
+.hk-tally {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-m);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line));
+  font-weight: 600;
+  font-size: var(--fs-body);
+}
+.hk-tally-wait {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink-3);
+  font-weight: 500;
+  font-size: var(--fs-meta);
+}
