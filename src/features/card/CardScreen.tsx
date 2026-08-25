@@ -384,6 +384,12 @@ function CardInner({ cardId }: { cardId: string }) {
               </span>
             </h2>
             <CitedLines lines={role === 'rn' ? card.rnMoves : card.guidelineMoves} />
+            {card.avoid && (
+              <div className="avoid-line">
+                <span className="avoid-chip">avoid</span>
+                <CitedLines lines={[card.avoid]} />
+              </div>
+            )}
             <p className="local-protocol">Verify against your local protocol.</p>
             <p className="stamp">
               Checked against the cited guidelines · {card.guidelineVerifiedAt} — educational reference, not medical advice

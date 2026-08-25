@@ -14,7 +14,7 @@ export const svtAvnrt: Card = {
     commit: {
       prompt: 'Your read?',
       options: [
-        { label: 'SVT (AVNRT)', correct: true, tempts: 'Yes — narrow, rigidly regular, ~150–180, and no P waves in front of anything: the atria are captured backwards.' },
+        { label: 'SVT (AVNRT)', correct: true, tempts: 'Yes — narrow, rigidly regular (~155 here), and no P waves in front of anything: the atria are captured backwards.' },
         { label: 'Sinus tachycardia', tempts: 'Sinus climbs and settles with a cause and keeps its Ps. This started like a switch and shows none.' },
         { label: 'Atrial flutter 2:1', tempts: 'Parked near 150 — always hunt the sawtooth in II/III/aVF. No sawtooth here, and the rate isn’t locked to 150.' },
         { label: 'Ventricular tachycardia', tempts: 'VT is WIDE. Narrow at this rate is coming from above the bundles — the highways are intact.' },
@@ -24,7 +24,7 @@ export const svtAvnrt: Card = {
   why: [
     'Two pathways inside the AV node form a loop — one beat closes it and the loop self-sustains.',
     'Each lap fires ventricles forward AND atria backwards, almost simultaneously.',
-    'So: narrow QRS, metronome-regular, no P in front — at ~150–220/min, started and ended like a switch.',
+    'So: narrow QRS, metronome-regular, no P in front — typically 140–250/min (most 150–220), on/off like a switch.',
   ],
   whyDrawer: [
     { cause: 'The AV node has a slow and a fast pathway (dual physiology)', effect: 'A premature beat can go down one and return up the other — the loop closes' },
@@ -34,7 +34,7 @@ export const svtAvnrt: Card = {
   ],
   pills: [
     { kind: 'pearl', text: 'The tells: abrupt on/off, rigid regularity, no visible Ps (or a tiny pseudo-r′ in V1 / pseudo-S inferiorly — the retrograde P peeking out).' },
-    { kind: 'trap', text: 'The rules change with the QRS: irregular + wide = pre-excited AF — adenosine and every AV-nodal blocker become dangerous. Regular + narrow is the safe zone.', linkCardId: 'wpw' },
+    { kind: 'trap', text: 'Three states: regular + narrow = treatable with node blockers (pads on). Regular + WIDE = VT until proven otherwise — not a node-blocker rhythm. Irregular + wide = pre-excited AF: nothing that blocks the node.', linkCardId: 'wpw' },
     { kind: 'night-eye', text: 'Run a continuous strip DURING adenosine — whatever the tachycardia was, the unmasking (flutter waves, sinus P return) is the diagnosis you keep.' },
     { kind: 'lookalike', text: 'Fixed ~150 that never budges = flutter 2:1 until you prove otherwise.', linkCardId: 'aflutter' },
   ],
@@ -43,13 +43,14 @@ export const svtAvnrt: Card = {
     { text: 'After conversion: repeat the 12-lead in sinus — hunt for a delta wave (pre-excitation changes the future rules).', cites: ['ESC-SVT-2019'] },
   ],
   guidelineMoves: [
-    { text: 'Stable → vagal maneuvers first (modified Valsalva does real work), then adenosine — warn the patient about the pause.', cites: ['ESC-SVT-2019', 'AHA-ACLS-2020'] },
+    { text: 'Stable → modified Valsalva first (43% vs 17% conversion — it does real work), then adenosine 6 mg rapid push + flush, then 12 mg. Start at 3 mg for transplanted heart, dipyridamole/carbamazepine, or central line; avoid in severe asthma.', cites: ['ESC-SVT-2019', 'AHA-ACLS-2020'] },
     { text: 'Unstable from the rhythm → synchronized cardioversion.', cites: ['AHA-ACLS-2020'] },
+    { text: 'Adenosine fails or SVT recurs → IV diltiazem/verapamil or a beta-blocker (regular + narrow only).', cites: ['ESC-SVT-2019'] },
     { text: 'Recurrent episodes → EP referral: slow-pathway ablation is curative in most.', cites: ['ESC-SVT-2019'] },
   ],
   rnMoves: [
-    { text: 'Coach the vagal attempt properly (modified Valsalva: strain, then legs up flat) — done well it converts a real share before any drug.', cites: ['ESC-SVT-2019'] },
-    { text: 'Adenosine prep: largest IV available, rapid push + immediate flush, run a CONTINUOUS strip through it, and warn the patient about the awful sinking pause — it passes in seconds.', cites: ['AHA-ACLS-2020'] },
+    { text: 'Coach the modified Valsalva: sit up, strain hard 15 s (10-ml syringe trick), then flat with legs raised 15 s — done right it converts a real share before any drug.', cites: ['ESC-SVT-2019'] },
+    { text: 'Adenosine prep: most PROXIMAL good line (AC or above), rapid push + 20 ml flush, arm up, CONTINUOUS strip, defib at hand — and ask about asthma and dipyridamole first. Warn about the awful sinking pause; it passes in seconds.', cites: ['AHA-ACLS-2020'] },
     { text: 'The safety check before any node-blocker: is it regular and NARROW? Irregular or wide → stop and escalate.', cites: ['AHA-ACLS-2020'] },
   ],
   mechanism: {

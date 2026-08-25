@@ -14,7 +14,7 @@ export const vtMono: Card = {
       prompt: 'Your read?',
       options: [
         { label: 'Ventricular tachycardia', correct: true, tempts: 'Yes — wide, fast, dissociated Ps marching through, and a fusion beat clinches it.' },
-        { label: 'SVT with aberrancy', tempts: 'Possible — but betting on it kills. Age >35 or any infarct history: VT odds >90%.' },
+        { label: 'SVT with aberrancy', tempts: 'Possible — but betting on it kills. Prior infarct or structural disease: VT odds >95%. Age >35 alone: ~85%.' },
         { label: 'Sinus tach with bundle branch block', tempts: 'Look for the sinus P marching into each QRS — here there is none you can trust.' },
         { label: 'Hyperkalemia', tempts: 'Fair thought — sick, wide and weird belongs to K⁺ too. But look for the tachycardic, uniform, regular march of VT.' },
       ],
@@ -43,12 +43,14 @@ export const vtMono: Card = {
   ],
   guidelineMoves: [
     { text: 'Unstable → synchronized cardioversion. Pulseless → defibrillate.', cites: ['AHA-ACLS-2020'] },
-    { text: 'Stable → IV procainamide or amiodarone — never verapamil/diltiazem for undifferentiated wide tachycardia.', cites: ['AHA-ACLS-2020', 'ESC-VA-2022'] },
+    { text: 'Stable, REGULAR, monomorphic → IV procainamide (fewer adverse events than amiodarone in PROCAMIO) or amiodarone. If it is IRREGULAR, treat as pre-excited AF — no amiodarone there either.', cites: ['AHA-ACLS-2020', 'ESC-VA-2022'] },
+    { text: 'Procainamide guardrails: 20–50 mg/min — stop at hypotension, QRS widening +50%, conversion, or 17 mg/kg total; avoid it in long QT, low EF, or decompensated HF (amiodarone there).', cites: ['AHA-ACLS-2020'] },
   ],
+  avoid: { text: 'Never verapamil or diltiazem for ANY wide tachycardia — in VT that is hypotension and arrest. Irregular + wide → treat as pre-excited AF: no amiodarone either.', cites: ['AHA-ACLS-2020', 'ESC-SVT-2019'] },
   rnMoves: [
     { text: 'Wide + fast = VT until proven otherwise. Stay at the bedside — check pulse and pressure now; this rhythm changes class in seconds.', cites: ['AHA-ACLS-2020'] },
     { text: 'Pulseless → code and defibrillate. Pulse but unstable → synchronized cardioversion: pads, suction, sedation drawn, team called.', cites: ['AHA-ACLS-2020'] },
-    { text: 'Anticipate amiodarone or procainamide for stable VT — and question any verapamil/diltiazem order for a wide tachycardia.', cites: ['AHA-ACLS-2020', 'ESC-VA-2022'] },
+    { text: 'Anticipate procainamide or amiodarone for stable VT — on procainamide watch the BP and QRS: hypotension or QRS widening +50% stops the infusion.', cites: ['AHA-ACLS-2020', 'ESC-VA-2022'] },
     { text: 'After conversion: 12-lead, K⁺/Mg²⁺, troponin — VT has a cause and the workup starts now.', cites: ['AHA-VA-2017'] },
   ],
   mechanism: {

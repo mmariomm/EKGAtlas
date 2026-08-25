@@ -34,7 +34,7 @@ export const omiAnterior: Card = {
     { cause: 'The very first minutes distort repolarization before the ST moves', effect: 'Hyperacute T waves: broad, bulky, out of proportion to their QRS' },
   ],
   pills: [
-    { kind: 'pearl', text: 'Hyperacute T = broad, bulky, area-out-of-proportion to its QRS. Catch the OMI here and you beat the criteria.' },
+    { kind: 'pearl', text: 'Hyperacute T = broad, bulky, area-out-of-proportion to its QRS — it beats the criteria. The criteria themselves (a floor, not a verdict): V2–V3 STE ≥2.5 mm men <40, ≥2 mm men ≥40, ≥1.5 mm women; ≥1 mm in any other two contiguous leads.' },
     { kind: 'trap', text: 'STEMI *criteria* miss a large share of true occlusions. Criteria-negative but story-positive + evolving ECG = serial ECGs every 10–15 min and talk to cath — not discharge.' },
     { kind: 'night-eye', text: 'Reciprocal depression (here: inferior) is the truth serum — mimics rarely produce it.' },
     { kind: 'lookalike', text: 'Precordial ST *depression* sloping up into giant Ts is the same artery, occluded now.', linkCardId: 'dewinter' },
@@ -45,10 +45,11 @@ export const omiAnterior: Card = {
   ],
   guidelineMoves: [
     { text: 'Activate reperfusion: primary PCI — FMC-to-device ≤90 min (≤120 if transferring); lytics if PCI can’t make 120.', cites: ['AHA-ACS-2025'] },
-    { text: 'Aspirin now; anticoagulation and P2Y₁₂ per local cath pathway.', cites: ['AHA-ACS-2025'] },
+    { text: 'Aspirin 162–325 mg CHEWED (not enteric-coated) now; anticoagulation and P2Y₁₂ per local cath pathway.', cites: ['AHA-ACS-2025'] },
   ],
+  avoid: { text: 'Don’t wait for the millimeters when hyperacute Ts and the story are already declaring — criteria-negative is not occlusion-negative, and the wait is necrosis.', cites: ['AHA-ACS-2025'] },
   rnMoves: [
-    { text: 'Hyperacute Ts or anterior STE with a story = a minutes-matter emergency: serial ECGs every 10–15 min; troponin confirms but must not delay.', cites: ['AHA-ACS-2025'] },
+    { text: 'Hyperacute Ts or anterior STE with a story = minutes matter: serial ECGs q10–15 min — get them as a standing order so nobody pages per strip; troponin confirms but must not delay.', cites: ['AHA-ACS-2025'] },
     { text: 'Escalate per chest-pain pathway: monitor on, two IVs, pads near, NPO — keep the room moving toward reperfusion.', cites: ['AHA-ACS-2025'] },
     { text: 'Watch: reciprocal inferior depression clinches it; VF is the arrival rhythm of anterior OMI — stay on the monitor.', cites: ['AHA-ACS-2025'] },
   ],

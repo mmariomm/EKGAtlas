@@ -105,7 +105,14 @@ export interface Card {
   whyDrawer: { cause: string; effect: string }[]
   pills: Pill[] // 2–4
   suspectConfirm: CitedLine[] // 1–4
-  guidelineMoves: CitedLine[] // 1–3; UI appends the local-protocol close
+  guidelineMoves: CitedLine[] // 1–4; UI appends the local-protocol close
+  /**
+   * The countermand — what must NOT be done (the drug that kills this
+   * patient, the reflex that harms). REQUIRED on lethal cards (2026-08
+   * audit: nine of fifteen MAJOR findings were a missing "avoid" line).
+   * Rendered in BOTH role modes — the countermand is role-independent.
+   */
+  avoid?: CitedLine
   /**
    * Nurse-facing action layer (RN mode swaps ONLY section 5): recognize /
    * escalate / anticipate / watch — never prescribing. Same citations,

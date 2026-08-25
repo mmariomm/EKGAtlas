@@ -33,24 +33,25 @@ export const wpw: Card = {
     { cause: 'The pathway also conducts backwards — and fast', effect: 'A re-entry circuit (AVRT) waiting to fire; and in AF, an unguarded highway to the ventricle' },
   ],
   pills: [
-    { kind: 'trap', text: 'AF in WPW: irregular, WIDE, absurdly fast, morphology changing beat to beat. AV-nodal blockers (adenosine, diltiazem, beta-blockers, digoxin) can funnel all of it down the pathway → VF. Procainamide or cardiovert.', linkCardId: 'afib' },
+    { kind: 'trap', text: 'AF in WPW: irregular, WIDE, absurdly fast, morphology changing beat to beat. Adenosine, diltiazem, beta-blockers, digoxin — AND amiodarone, the drug the room reaches for — can funnel all of it down the pathway → VF. Procainamide or cardiovert.', linkCardId: 'afib' },
     { kind: 'pearl', text: 'Delta mimics everything: pseudo-Q inferiorly (fake old MI), tall R V1 (fake posterior MI/RBBB). Before you diagnose infarct on a weird QRS, check the PR.' },
-    { kind: 'night-eye', text: 'Regular narrow SVT in known WPW (orthodromic AVRT) is safe for adenosine. The rule changes the moment it’s irregular or wide — then nothing that blocks the node.' },
+    { kind: 'night-eye', text: 'Three states, three rules. Regular NARROW (orthodromic AVRT): vagal → adenosine, pads on — adenosine triggers AF in 1–15%, and in WPW that AF is the lethal rhythm. Regular WIDE: antidromic AVRT or VT — treat as VT, never a node blocker. Irregular wide: nothing that blocks the node, ever.' },
   ],
   suspectConfirm: [
-    { text: 'Short PR (<120 ms) + delta + QRS >110 ms on a resting ECG = pre-excitation; find prior ECGs and ask about palpitations and syncope.', cites: ['ESC-SVT-2019'] },
-    { text: 'Syncope, or pre-excited AF, or a high-risk occupation → EP study for pathway risk-stratification.', cites: ['ESC-SVT-2019'] },
+    { text: 'Short PR (<120 ms) + delta + QRS ≥120 ms is the classic triad — but pre-excitation can be intermittent or minimal (near-normal PR or QRS). A delta that comes and goes is still WPW.', cites: ['ESC-SVT-2019'] },
+    { text: 'Syncope, pre-excited AF, or a high-risk occupation → EP study; shortest pre-excited RR ≤250 ms during AF marks the dangerous pathway.', cites: ['ESC-SVT-2019'] },
   ],
   guidelineMoves: [
-    { text: 'Orthodromic (narrow) AVRT → vagal maneuvers, then adenosine — standard SVT care.', cites: ['ESC-SVT-2019', 'AHA-ACLS-2020'] },
-    { text: 'Pre-excited AF (irregular + wide) → NO AV-nodal blockers: IV procainamide or ibutilide, or synchronized cardioversion.', cites: ['ESC-SVT-2019'] },
+    { text: 'Orthodromic (narrow) AVRT → vagal, then adenosine — with pads on and a defibrillator at hand: adenosine can precipitate AF, and pre-excited AF is the lethal one.', cites: ['ESC-SVT-2019', 'AHA-ACLS-2020'] },
+    { text: 'Pre-excited AF (irregular + wide) → NO AV-nodal blockers and no amiodarone: IV procainamide; ibutilide only with normal K⁺/Mg²⁺ and 4 h of QT monitoring (3–8% torsades); or synchronized cardioversion.', cites: ['ESC-SVT-2019'] },
     { text: 'Symptomatic WPW → catheter ablation of the pathway (first-line, high cure rate).', cites: ['ESC-SVT-2019'] },
   ],
   rnMoves: [
     { text: 'Short PR + slurred delta on a routine ECG: flag it in the chart — it changes every future SVT/AF treatment this patient gets.', cites: ['ESC-SVT-2019'] },
-    { text: 'Known WPW now irregular + wide + very fast = emergency: question ANY adenosine, diltiazem, beta-blocker, or digoxin order — procainamide or cardioversion instead.', cites: ['ESC-SVT-2019'] },
+    { text: 'Known WPW now irregular + wide + very fast = emergency: question ANY adenosine, diltiazem, beta-blocker, digoxin, or AMIODARONE order — anticipate procainamide or cardioversion instead.', cites: ['ESC-SVT-2019'] },
     { text: 'Anticipate: pads on, EP referral. A regular NARROW SVT in WPW may still get vagal/adenosine — the irregular wide one never does.', cites: ['ESC-SVT-2019', 'AHA-ACLS-2020'] },
   ],
+  avoid: { text: 'In pre-excited AF: no adenosine, diltiazem, verapamil, beta-blockers, digoxin — or amiodarone. Every one can funnel AF down the pathway → VF.', cites: ['ESC-SVT-2019'] },
   mechanism: {
     kind: 'authored',
     authoredId: 'wpw',

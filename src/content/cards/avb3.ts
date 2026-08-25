@@ -42,9 +42,10 @@ export const avb3: Card = {
     { text: 'Acute MI context changes everything — localize it (inferior vs anterior).', cites: ['AHA-ACS-2025'] },
   ],
   guidelineMoves: [
-    { text: 'Symptomatic → atropine trial while pads go on; expect it to fail if the escape is wide (infranodal).', cites: ['AHA-ACLS-2020'] },
+    { text: 'Symptomatic → atropine 1 mg IV q3–5 min (max 3 mg) while pads go on; expect it to fail if the escape is wide (infranodal).', cites: ['AHA-ACLS-2020'] },
     { text: 'Transcutaneous pacing bridge → transvenous pacing; treat the cause in parallel.', cites: ['AHA-BRADY-2018'] },
   ],
+  avoid: { text: 'Hold every AV-nodal blocker (beta-blocker, diltiazem/verapamil, digoxin) while the block stands — and don’t let atropine cycles delay pacing.', cites: ['AHA-BRADY-2018', 'AHA-ACLS-2020'] },
   rnMoves: [
     { text: 'More Ps than QRSs and no fixed PR = complete block. A ’regular bradycardia at 40’ that ignores its own Ps is never sinus — look twice.', cites: ['AHA-BRADY-2018'] },
     { text: 'Do not leave the bedside: pads on, atropine drawn (expect it to fail if the QRS is wide), pacing likely.', cites: ['AHA-ACLS-2020'] },

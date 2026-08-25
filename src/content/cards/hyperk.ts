@@ -34,7 +34,7 @@ export const hyperk: Card = {
   ],
   pills: [
     { kind: 'pearl', text: 'Tented T = you could prick a finger on it: tall, NARROW base, symmetric. HyperK’s opener — versus the broad hyperacute T.' },
-    { kind: 'trap', text: 'Treat the ECG, not the number: any widening, bradycardia, or sine wave → calcium NOW. The lab value can lag the arrest.' },
+    { kind: 'trap', text: 'Treat the ECG, not the number: any widening, bradycardia, or sine wave → calcium NOW. And the tented-T→wide→sine order is a teaching sequence, not a clinical one — patients arrive at any stage or skip stages entirely.' },
     { kind: 'night-eye', text: 'Dialysis, renal failure, crush injury + wide bizarre slow rhythm with missing Ps = K⁺ until proven otherwise — treat empirically.' },
     { kind: 'pearl', text: '⚠ A normal ECG never rules hyperkalemia out — sensitivity is poor. It rules IN, never OUT.' },
   ],
@@ -43,14 +43,17 @@ export const hyperk: Card = {
     { text: 'Rate of rise beats the absolute level — a fast climb is the dangerous climb.', cites: ['UKKA-K-2023'] },
   ],
   guidelineMoves: [
-    { text: 'ECG changes → IV calcium first (stabilizes the membrane in minutes; lowers nothing).', cites: ['UKKA-K-2023'] },
-    { text: 'Then shift: insulin 10 U + dextrose (check glucose first; monitor hourly ×6 — delayed hypoglycemia is the classic iatrogenic harm), plus nebulized salbutamol 10–20 mg.', cites: ['UKKA-K-2023'] },
-    { text: 'Then eliminate: dialysis / binders / diuresis — and stop the K⁺ sources.', cites: ['UKKA-K-2023'] },
+    { text: 'ECG changes → calcium FIRST, dosed right: 30 ml of 10% calcium gluconate over 10 min (three vials — one is the classic underdose), or 10 ml 10% CaCl₂ if peri-arrest. Wears off in 30–60 min; repeat if the ECG hasn’t settled.', cites: ['UKKA-K-2023'] },
+    { text: 'Then shift: insulin 10 U in 25 g glucose; if pre-treatment glucose <7 mmol/L, follow with 10% glucose 50 ml/h ×5 h — that infusion, not vigilance, prevents the classic delayed hypoglycemia. Glucose at 0/30/60/90/120 min then hourly to 6 h. Salbutamol 10–20 mg neb as an add-on, never alone.', cites: ['UKKA-K-2023'] },
+    { text: 'Then eliminate: dialysis, a modern K-binder (SZC or patiromer — not polystyrene sulfonate), diuresis — and stop every K⁺ source.', cites: ['UKKA-K-2023'] },
+    { text: 'Recheck K⁺ at 1, 2, 4, 6 and 24 h — the rebound after the shift wears off is what kills the patient you already treated.', cites: ['UKKA-K-2023'] },
   ],
+  avoid: { text: 'Do not withhold calcium for suspected digoxin toxicity — the “stone heart” is a myth (no dysrhythmias or excess mortality with IV calcium in dig-toxic patients). And never leave the K⁺ running.', cites: ['LEVINE-DIG-2011', 'UKKA-K-2023'] },
   rnMoves: [
-    { text: 'Renal patient + wide, bizarre, slow, or P-less rhythm: think K⁺ first — send the stat K⁺/VBG and have calcium AT the bedside before the number returns.', cites: ['UKKA-K-2023'] },
-    { text: 'After insulin/dextrose: glucose before, then hourly ×6 — delayed hypoglycemia is the classic iatrogenic harm; the late checks matter most.', cites: ['UKKA-K-2023'] },
-    { text: 'A normal ECG never rules hyperK out — scary story, normal trace, still send the lab.', cites: ['UKKA-K-2023'] },
+    { text: 'Renal patient + wide, bizarre, slow, or P-less rhythm: think K⁺ first — stat K⁺/VBG, and THREE vials (30 ml) of 10% calcium gluconate at the bedside before the number returns.', cites: ['UKKA-K-2023'] },
+    { text: 'Stop every K⁺ source you control, now: clamp K-containing fluids/TPN, hold the KCl rider and due K-sparing meds — and say so on the escalation call.', cites: ['UKKA-K-2023'] },
+    { text: 'After insulin/dextrose: glucose at 0, 30, 60, 90, 120 min then hourly to 6 h — the nadir hides early and the harm arrives late; expect a 10% glucose infusion if the starting sugar was low.', cites: ['UKKA-K-2023'] },
+    { text: 'A normal ECG never rules hyperK out (sensitivity ~35–45%) — scary story, normal trace, still send the lab.', cites: ['MONTAGUE-2008'] },
   ],
   mechanism: {
     kind: 'authored',

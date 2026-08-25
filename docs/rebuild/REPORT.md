@@ -190,3 +190,47 @@ is shareable. Positioning moved from "an atlas" to the cannot-miss/OMI trainer.
 Deferred (external dependencies, not code): CME accreditation, institutional
 cohort/completion features, and sourcing published cases to upgrade the
 remaining modeled lethal strips to real recordings.
+
+---
+
+## Second expert-audit round — 2026-08 (content deep-audit, 3 independent auditors)
+
+Three fresh, independent audits ran against the complete 24-card set (both
+role layers): a 25-year CCRN/CEN nurse educator on the RN layer, a
+dual-boarded EM/cardiology attending on the MD layer, and a board-certified
+EM clinical pharmacist on every drug mention. ~45 findings, every one
+source-verified by the auditor and re-verified against primary sources where
+auditors disagreed (the UKKA glucose-monitoring cadence: the 2023 update's
+6-hour schedule with dense early checks won over the older 12-hour claim).
+
+**Structural fix (the root cause):** most MAJOR findings were a missing
+countermand, not a wrong therapy. The schema now carries `avoid: CitedLine`
+— REQUIRED on every lethal card, validator-enforced, rendered as a distinct
+red AVOID block in BOTH role modes. guidelineMoves grew to 1–4 lines so
+doses and their guardrails fit.
+
+**Highest-stakes fixes applied:** amiodarone added to every pre-excited-AF
+prohibition (it was the one reflex drug missing from the ban lists, while
+vt-mono recommended it for "undifferentiated" wide tachycardia); the
+three-state node-blocker rule (narrow-regular / WIDE-regular / wide-
+irregular) now composes identically across afib–wpw–svt-avnrt–vt-mono;
+calcium dosed per the MHRA underdosing alert (30 ml = three vials);
+diltiazem's LVEF<40% Class-3-Harm gate; the full UKKA insulin-glucose
+regimen (25 g, 10% infusion when glucose <7, 0/30/60/90/120-then-hourly);
+ibutilide's torsades guardrails; procainamide's stopping rules; adenosine
+doses, dose-reductions and asthma caution; per-agent PDE5 windows
+(sildenafil 24 h / tadalafil 48 h); digoxin-Fab named; the stone-heart myth
+explicitly countered (Levine 2011, new registry entry); Smith criteria
+corrected to UNWEIGHTED; leftmain's vector mechanism corrected (injury
+current points INTO the cavity — aVR looks into it) plus the over-call trap
+(~10% acute occlusion) and de Winter escape hatch; V2–V3 STE thresholds by
+age/sex; isoproterenol's congenital-LQTS exclusion; hypok flagged lethal
+with repletion rates and the redistribution exception; paced-v's magnet
+teaching corrected (fixes oversensing, never lost capture) + undersensing;
+"stop the K⁺ sources you control" as the nurse-unilateral first move;
+posterior-lead RELABELING; Brugada phenocopies (and "shark fin" removed —
+it names a different, lethal pattern); three new registry entries
+(RAUTAHARJU-2009, DODD-VPR-2021, LEVINE-DIG-2011) and decorative citations
+replaced with substantive ones.
+
+All checks green after the pass (engine + content, avoid-coverage enforced).

@@ -45,8 +45,8 @@ export const rbbb: Card = {
   ],
   rnMoves: [
     { text: 'Isolated, asymptomatic RBBB is a finding, not an emergency — NEW RBBB with chest pain, dyspnea, or hypotension is: report it.', cites: ['AHA-BRADY-2018'] },
-    { text: 'RBBB does not hide ischemia — the ST segments still read normally; STE in V1 is never ’just the block’.', cites: ['AHA-BRADY-2018'] },
-    { text: 'New RBBB + dyspnea/hypotension → think PE and escalate for risk stratification.', cites: ['AHA-PE-2026'] },
+    { text: 'RBBB does not hide ischemia — the ST segments still read normally; STE in V1 is never ’just the block’.', cites: ['AHA-ACS-2025'] },
+    { text: 'New RBBB + dyspnea or hypotension: think PE and escalate now — expect troponin, BNP, and an imaging conversation; don’t sit on it because ’it’s just a block’.', cites: ['AHA-PE-2026'] },
   ],
   mechanism: {
     kind: 'solver',

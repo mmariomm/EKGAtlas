@@ -33,7 +33,7 @@ export const longqt: Card = {
     { cause: 'Reentry spirals with a rotating axis take over', effect: 'Polymorphic VT “twisting around the points” — self-terminating, until it isn’t' },
   ],
   pills: [
-    { kind: 'pearl', text: 'Measure, don’t glance: tangent method, longest of II/V5; use Fridericia at fast or slow rates (Bazett over-corrects tachycardia). QTc ≥500 ms = high-risk territory.' },
+    { kind: 'pearl', text: 'Measure, don’t glance: tangent method, longest of II/V5; Fridericia at fast or slow rates (Bazett over-corrects tachycardia). QTc ≥500 ms = high-risk — and so is a rise of >60 ms from the patient’s own baseline, whatever the absolute number.' },
     { kind: 'trap', text: 'The usual suspects stack: antiemetics, antipsychotics, methadone, macrolides/fluoroquinolones, azoles — plus low K⁺/Mg²⁺ multiplying them.' },
     { kind: 'night-eye', text: 'Runs of polymorphic VT after pauses on the overnight tele = torsades until proven otherwise — check the QT of the beats between runs.' },
     { kind: 'trap', text: 'Polymorphic VT on a long baseline QT is torsades, NOT generic VT — amiodarone and procainamide prolong QT and feed it. Magnesium, replete K⁺, pace or isoproterenol; defibrillate if sustained.' },
@@ -43,12 +43,13 @@ export const longqt: Card = {
   ],
   guidelineMoves: [
     { text: 'Stop every QT-prolonging drug; magnesium 2 g IV for torsades — even with a normal level.', cites: ['AHA-QT-2020', 'AHA-ACLS-2020'] },
-    { text: 'Replete K⁺ toward high-normal; recurrent pause-dependent runs → overdrive pacing or isoproterenol.', cites: ['AHA-QT-2020'] },
+    { text: 'Replete K⁺ toward high-normal; recurrent pause-dependent runs → overdrive pacing, or isoproterenol ONLY when the QT is acquired/drug-induced — in congenital LQTS beta-agonists provoke it (beta-blockade treats it).', cites: ['AHA-QT-2020'] },
     { text: 'Sustained or degenerating → defibrillation.', cites: ['AHA-ACLS-2020'] },
   ],
+  avoid: { text: 'No amiodarone or procainamide for the polymorphic runs — both stretch the QT that caused them. And no isoproterenol if the long QT could be congenital.', cites: ['AHA-QT-2020'] },
   rnMoves: [
     { text: 'Before hanging QT-prolonging drugs (antiemetics, antipsychotics, macrolides, methadone): check the latest QTc — ≥500 ms, confirm with the prescriber first.', cites: ['AHA-QT-2020'] },
-    { text: 'Pause-then-run bursts of polymorphic VT on tele = torsades: magnesium is the call — and flag any amiodarone order for it.', cites: ['AHA-QT-2020', 'AHA-ACLS-2020'] },
+    { text: 'Pause-then-run bursts of polymorphic VT on tele = torsades: magnesium is the ask, flag any amiodarone order — and if it sustains or the pulse is gone, defibrillate per ACLS.', cites: ['AHA-QT-2020', 'AHA-ACLS-2020'] },
     { text: 'Anticipate K⁺/Mg²⁺ repletion to target; recurrent runs → the pacing/isoproterenol conversation.', cites: ['AHA-QT-2020'] },
   ],
   mechanism: {

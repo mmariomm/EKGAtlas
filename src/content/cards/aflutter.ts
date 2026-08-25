@@ -33,7 +33,7 @@ export const aflutter: Card = {
   ],
   pills: [
     { kind: 'trap', text: '“SVT at 150” given AV-nodal blockers and unmasked as flutter — the classic. At 150, actively hunt sawtooth in II, III, aVF, V1.' },
-    { kind: 'pearl', text: 'Vagal maneuvers or adenosine won’t convert flutter — but the transient block *unmasks* the sawtooth. Diagnostic, not therapeutic.' },
+    { kind: 'pearl', text: 'Vagal maneuvers and adenosine rarely convert flutter — but the transient block *unmasks* the sawtooth. Think of them as diagnostic, not therapeutic.' },
     { kind: 'night-eye', text: 'Flip the strip upside down — sawtooth in the inferior leads often jumps out.' },
     { kind: 'lookalike', text: 'Truly no atrial activity and 180+ → think AVNRT.', linkCardId: 'afib' },
   ],

@@ -37,16 +37,16 @@ export const pacedV: Card = {
     { kind: 'night-eye', text: 'Spikes with no QRS after them = failure to capture. Count spike→QRS pairs before admiring the morphology.' },
   ],
   suspectConfirm: [
-    { text: 'Chest pain in a paced rhythm → apply modified Sgarbossa; don’t write “uninterpretable”.', cites: ['SMITH-MSC-2012'] },
+    { text: 'Chest pain in a paced rhythm → apply modified Sgarbossa (validated in paced rhythms); don’t write “uninterpretable”.', cites: ['SMITH-MSC-2012', 'DODD-VPR-2021'] },
     { text: 'Suspected device problem → magnet response and device interrogation.', cites: ['AHA-BRADY-2018'] },
   ],
   guidelineMoves: [
     { text: 'Symptomatic non-capture or bradycardia → transcutaneous pacing bridge while the device is interrogated.', cites: ['AHA-BRADY-2018', 'AHA-ACLS-2020'] },
   ],
   rnMoves: [
-    { text: 'March spike→QRS pairs: a spike with nothing after it is failure to capture — report it, don’t chart it as artifact.', cites: ['AHA-BRADY-2018'] },
-    { text: 'Chest pain in a paced rhythm is never ’uninterpretable’ — concordant ST changes matter; push for a real read (modified Sgarbossa).', cites: ['SMITH-MSC-2012'] },
-    { text: 'Anticipate: magnet at the bedside, device interrogation, transcutaneous pads ready if capture is failing.', cites: ['AHA-BRADY-2018'] },
+    { text: 'March spike→QRS pairs: a spike with nothing after it = failure to capture (in a dependent, slow patient that is a stay-in-the-room emergency); spikes landing inside beats or near Ts = undersensing (R-on-T risk). Report both — never chart as artifact.', cites: ['AHA-BRADY-2018'] },
+    { text: 'Chest pain in a paced rhythm is never ’uninterpretable’ — concordant ST changes matter; push for a real read (modified Sgarbossa).', cites: ['SMITH-MSC-2012', 'DODD-VPR-2021'] },
+    { text: 'Anticipate: pads on and the pacing pathway if capture fails in a slow or symptomatic patient; magnet per protocol — it forces asynchronous pacing (fixes OVERsensing/inhibition), it never fixes lost capture.', cites: ['AHA-BRADY-2018'] },
   ],
   mechanism: {
     kind: 'authored',

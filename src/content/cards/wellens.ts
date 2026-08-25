@@ -39,11 +39,12 @@ export const wellens: Card = {
     { kind: 'night-eye', text: 'Inverted Ts turning UPRIGHT during recurrent pain = pseudo-normalization = the artery re-closing. That’s a deterioration.' },
   ],
   suspectConfirm: [
-    { text: 'Recent angina + V2–V3 T pattern + preserved Rs + near-normal troponin = Wellens; admit and image the LAD.', cites: ['DEZWAAN-1982', 'AHA-ACS-2025'] },
+    { text: 'Recent angina + V2–V3 T pattern + preserved Rs + normal or only mildly raised troponin = Wellens; a frankly positive troponin doesn’t un-diagnose it. Admit and image the LAD.', cites: ['DEZWAAN-1982', 'AHA-ACS-2025'] },
   ],
   guidelineMoves: [
     { text: 'Admit, antithrombotic therapy per ACS pathway, early angiography — no stress test.', cites: ['AHA-ACS-2025'] },
   ],
+  avoid: { text: 'No stress testing of any kind — provoking demand can close the critical LAD the pattern is warning about. Angiography instead.', cites: ['AHA-ACS-2025'] },
   rnMoves: [
     { text: 'Pain gone + deep or biphasic V2–V3 Ts = a warning shot, not reassurance: this patient is admitted, not discharged — and never sent to a treadmill. Speak up.', cites: ['AHA-ACS-2025', 'DEZWAAN-1982'] },
     { text: 'Watch: those Ts turning UPRIGHT during recurrent pain = the artery re-closing — new ECG and escalate now.', cites: ['AHA-ACS-2025'] },

@@ -34,7 +34,7 @@ export const nsr: Card = {
   ],
   pills: [
     { kind: 'pearl', text: 'Rates by grid: 300–150–100–75–60 per large box. Faster than counting, harder to fool.' },
-    { kind: 'night-eye', text: 'Normal intervals: PR 120–200 ms, QRS <120 ms, QTc <460 ms. Three numbers rule out half the catalog.' },
+    { kind: 'night-eye', text: 'Normal intervals: PR 120–200 ms, QRS <120 ms, QTc <450 ms (men) / <460 ms (women). Three numbers rule out half the catalog.' },
     { kind: 'lookalike', text: 'Irregular with P waves = sinus arrhythmia (breathes with the patient), not AF.', linkCardId: 'afib' },
   ],
   suspectConfirm: [
@@ -46,7 +46,7 @@ export const nsr: Card = {
   ],
   rnMoves: [
     { text: 'Normal is a snapshot, not an alibi — chest pain with a clean first ECG stays on the monitor: repeat ECG in 10–15 min, troponin, escalate on any change.', cites: ['AHA-ACS-2025'] },
-    { text: 'Know the three triage numbers cold: PR 120–200, QRS <120, QTc <460 — anything outside them earns a second look before filing.', cites: ['AHA-ACS-2025'] },
+    { text: 'Know the triage numbers cold: PR 120–200 ms, QRS <120 ms, QTc <450/<460 ms (men/women) — anything outside them earns a second look before filing.', cites: ['RAUTAHARJU-2009'] },
   ],
   mechanism: {
     kind: 'solver',

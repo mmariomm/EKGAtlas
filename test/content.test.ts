@@ -61,9 +61,11 @@ console.log('=== Schema & copy rules ===')
     }
 
     if (c.suspectConfirm.length < 1 || c.suspectConfirm.length > 4) fail(at('suspectConfirm needs 1–4 lines'))
-    if (c.guidelineMoves.length < 1 || c.guidelineMoves.length > 3) fail(at('guidelineMoves needs 1–3 lines'))
+    if (c.guidelineMoves.length < 1 || c.guidelineMoves.length > 4) fail(at('guidelineMoves needs 1–4 lines'))
     if (c.rnMoves.length < 1 || c.rnMoves.length > 4) fail(at('rnMoves needs 1–4 lines'))
-    for (const line of [...c.suspectConfirm, ...c.guidelineMoves, ...c.rnMoves]) {
+    // Lethal cards must carry the countermand (2026-08 expert audit).
+    if (c.lethal && !c.avoid) fail(at('lethal card requires an avoid line (the countermand)'))
+    for (const line of [...c.suspectConfirm, ...c.guidelineMoves, ...c.rnMoves, ...(c.avoid ? [c.avoid] : [])]) {
       if (!line.cites.length) fail(at(`uncited line: "${line.text.slice(0, 40)}…"`))
       for (const k of line.cites) if (!GUIDELINE_BY_KEY[k]) fail(at(`unknown citeKey ${k}`))
     }

@@ -34,7 +34,7 @@ export const sgarbossa: Card = {
   ],
   pills: [
     { kind: 'pearl', text: 'Sgarbossa: concordant STE ≥1 mm (5 pts) · concordant STD ≥1 mm in V1–V3 (3 pts) · discordant STE ≥5 mm (2 pts). ≥3 points = treat as occlusion.' },
-    { kind: 'pearl', text: 'Smith modification: discordant STE ≥25% of the preceding S depth (ST/S ≤ −0.25) — replaces the blunt 5 mm rule, much better sensitivity.' },
+    { kind: 'pearl', text: 'Smith modification — UNWEIGHTED, no points: ANY ONE of concordant STE ≥1 mm, concordant STD ≥1 mm in V1–V3, or discordant STE ≥25% of the preceding S (ST/S ≤ −0.25) is positive (~80% sens, ~99% spec). Don’t score it; find one.' },
     { kind: 'trap', text: '“It’s LBBB, can’t read ischemia” is a chart-review classic. You can. You just did.' },
     { kind: 'night-eye', text: 'Same rules for paced rhythms — concordance stays guilty.', linkCardId: 'paced-v' },
   ],
@@ -44,6 +44,7 @@ export const sgarbossa: Card = {
   guidelineMoves: [
     { text: 'Sgarbossa-positive (classic ≥3 pts or Smith-modified) → activate reperfusion.', cites: ['AHA-ACS-2025', 'SMITH-MSC-2012'] },
   ],
+  avoid: { text: 'Don’t put the Smith-modified criteria through the point system — one positive criterion activates. And never average a concordant lead away against the “quiet” ones.', cites: ['SMITH-MSC-2012'] },
   rnMoves: [
     { text: 'LBBB or paced rhythm + chest pain: scan for ST pointing WITH the QRS — concordance is never the block; escalate immediately.', cites: ['AHA-ACS-2025'] },
     { text: 'Anticipate serial ECGs and cath activation if criteria land; keep prior ECGs at hand — new vs old changes everything.', cites: ['AHA-ACS-2025', 'SMITH-MSC-2012'] },

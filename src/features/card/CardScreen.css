@@ -340,3 +340,22 @@
   background: var(--surface);
 }
 .leadchip-on { color: var(--ink); border-color: var(--ink-3); background: var(--surface-2); }
+
+/* the countermand — what must NOT be done (required on lethal cards) */
+.avoid-line {
+  margin-top: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-radius: 0 var(--r-s) var(--r-s) 0;
+}
+.avoid-line .cited-lines { padding-left: 0; list-style: none; }
+.avoid-chip {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--danger);
+  margin-bottom: 4px;
+}

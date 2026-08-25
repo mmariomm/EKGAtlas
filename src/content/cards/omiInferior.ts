@@ -37,7 +37,7 @@ export const omiInferior: Card = {
   ],
   pills: [
     { kind: 'pearl', text: 'STE III > II leans RCA (vs circumflex) — and raises the RV-infarct question. Answer it with V4R.' },
-    { kind: 'trap', text: 'RV infarct + nitroglycerin = crashing preload → hypotension. Same crash after a recent PDE5 inhibitor (sildenafil/tadalafil) — ask before any nitrate, in every chest pain.' },
+    { kind: 'trap', text: 'RV infarct + nitroglycerin = crashing preload → hypotension. Same crash after PDE5 inhibitors: sildenafil/vardenafil within 24 h, tadalafil within 48 h (daily tadalafil = always inside the window). Ask before any nitrate, in every chest pain.' },
     { kind: 'night-eye', text: 'Fresh inferior OMI + new AV block is nodal ischemia — often atropine-responsive, usually transient.', linkCardId: 'avb-3' },
     { kind: 'lookalike', text: 'Inferior STE with V1–V3 depression = the posterior wall is in too.', linkCardId: 'omi-posterior' },
   ],
@@ -48,8 +48,9 @@ export const omiInferior: Card = {
     { text: 'Reperfusion now — same clock as any OMI.', cites: ['AHA-ACS-2025'] },
     { text: 'Hypotension after nitrates or STE in V4R → RV infarct: cautious titrated volume (250–500 ml, reassess), avoid further preload reduction.', cites: ['AHA-ACS-2025'] },
   ],
+  avoid: { text: 'Nitrates with RV involvement, or after sildenafil/vardenafil <24 h or tadalafil <48 h → circulatory collapse. Hold them; treat the preload with cautious volume instead.', cites: ['AHA-ACS-2025'] },
   rnMoves: [
-    { text: 'Inferior STE: before ANY nitrate, two questions — RV involved (get V4R)? PDE5 inhibitor in the last 24–48 h? Either answer yes → hold and call.', cites: ['AHA-ACS-2025'] },
+    { text: 'Inferior STE: before ANY nitrate, two questions — RV involved (get V4R)? PDE5 inhibitor (sildenafil <24 h, tadalafil <48 h — daily tadalafil is always inside)? Either yes → hold and call.', cites: ['AHA-ACS-2025'] },
     { text: 'Get V4R and V7–V9 — thirty seconds of stickers that change management; watch for bradycardia and AV block (usually transient).', cites: ['AHA-ACS-2025'] },
     { text: 'Hypotension after nitro = the preload crash: legs up, escalate, anticipate cautious fluid boluses.', cites: ['AHA-ACS-2025'] },
   ],

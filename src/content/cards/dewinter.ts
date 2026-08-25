@@ -29,12 +29,13 @@ export const dewinter: Card = {
     { cause: 'The proximal LAD occludes acutely', effect: 'The entire anterior wall is jeopardized at once' },
     { cause: 'The injury current runs subendocardial-dominant instead of subepicardial', effect: 'Upsloping J-point depression across V1–V6, often with slight aVR elevation' },
     { cause: 'Acute transmural ischemia distorts repolarization', effect: 'Tall, broad, symmetric “hyperacute” Ts rising straight out of the depression' },
-    { cause: 'The pattern tends to be static, not evolving', effect: 'Waiting for classic elevation is waiting for necrosis' },
+    { cause: 'The pattern often stays put — and when it evolves, it evolves into STEMI', effect: 'Waiting for classic elevation is waiting for necrosis' },
   ],
   pills: [
     { kind: 'pearl', text: 'Recognition = upsloping STD ≥1 mm at the J point in the precordials + tall symmetric Ts + often slight aVR elevation.' },
     { kind: 'trap', text: 'It usually does NOT evolve into classic STE — waiting for elevation is waiting for necrosis.' },
     { kind: 'night-eye', text: 'Ongoing chest pain + this pattern = call the lab like it’s a STEMI, because it is one.' },
+    { kind: 'lookalike', text: 'Depression in MANY leads with aVR up and no giant Ts = diffuse subendocardial ischemia — a different beast with a different clock.', linkCardId: 'leftmain' },
   ],
   suspectConfirm: [
     { text: 'Treat the pattern as an occlusion equivalent; serial ECGs don’t downgrade it.', cites: ['DEWINTER-2008', 'AHA-ACS-2025'] },
@@ -42,6 +43,7 @@ export const dewinter: Card = {
   guidelineMoves: [
     { text: 'Immediate reperfusion pathway — as for STEMI.', cites: ['AHA-ACS-2025'] },
   ],
+  avoid: { text: 'Don’t wait for ST elevation — it usually never comes, and serial ECGs can’t downgrade the pattern. The occlusion is now.', cites: ['DEWINTER-2008', 'AHA-ACS-2025'] },
   rnMoves: [
     { text: 'Upsloping ST depression + towering Ts across the chest leads with ongoing pain = occlusion equivalent — the room moves at STEMI speed; don’t wait for elevation.', cites: ['DEWINTER-2008', 'AHA-ACS-2025'] },
     { text: 'Serial ECGs won’t downgrade it — keep the reperfusion conversation moving.', cites: ['AHA-ACS-2025'] },

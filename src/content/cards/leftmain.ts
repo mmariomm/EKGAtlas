@@ -23,29 +23,30 @@ export const leftmain: Card = {
   },
   why: [
     'The whole LV inner layer runs short — supply (left main/3-vessel) or demand (bleed, hypoxia, tachycardia).',
-    'Injury current points from inner wall outward, everywhere at once — the vectors cancel except one direction.',
+    'The injury current points inward — toward the starved inner layer and the LV cavity — from every wall at once.',
     'The survivor points at the right shoulder: ST depression in ~everything, elevation only in aVR (±V1).',
   ],
   whyDrawer: [
     { cause: 'Global supply–demand mismatch starves the inner layer of the whole LV', effect: 'Circumferential subendocardial injury — no single culprit wall' },
-    { cause: 'Injury vectors from opposite walls cancel each other', effect: 'What remains is the net vector aimed away from the LV cavity — toward aVR' },
+    { cause: 'Injury vectors from opposite walls cancel each other', effect: 'The surviving net vector points into the LV cavity — and aVR is the one lead that looks into it' },
     { cause: 'aVR (and often V1) alone face that survivor vector', effect: 'STE in aVR with widespread ST depression — the inverse of a territorial OMI' },
-    { cause: 'The cause splits supply vs demand', effect: 'Left main/3-vessel disease — or anemia, GI bleed, hypoxia, sustained tachycardia. The treatment differs completely' },
+    { cause: 'The cause splits supply vs demand', effect: 'Left main/3-vessel — or anemia, GI bleed, hypoxia, sepsis, tachycardia, aortic dissection. Before the antithrombotics go in, ask which of those you are about to make worse' },
   ],
   pills: [
-    { kind: 'pearl', text: 'The shape: ST depression ≥1 mm in six or more leads (deepest I, II, V4–V6) + STE in aVR. The more leads and the deeper, the worse the anatomy.' },
+    { kind: 'pearl', text: 'The shape: ST depression ≥1 mm in six or more leads (deepest I, II, V4–V6) with STE in aVR — ≥0.5 mm counts; ≥1 mm is the specific tier (spec ~93%, NPV ~98% for LM/3-vessel). Depth and lead count track the anatomy.' },
     { kind: 'trap', text: 'This is NOT a "posterior-style" mirror to flip, and not a lead problem — and calling it "nonspecific ST changes" on a sick patient is the miss that fills the morgue quietly.' },
-    { kind: 'night-eye', text: 'First question at the bedside: supply or demand? Check the hemoglobin, the sat, the rate, the pressure. Fix demand (bleeding, hypoxia, SVT) and re-record before labeling the coronaries.' },
-    { kind: 'lookalike', text: 'During any fast SVT the same pattern appears from demand alone — reassess after rate control, not during.', linkCardId: 'svt-avnrt' },
+    { kind: 'trap', text: 'The mirror error: this is NOT a STEMI equivalent and not a reflex cath activation — only ~10% have an acute thrombotic occlusion (~60% severe CAD). Urgent, not emergent, unless ischemia is refractory or the patient unstable.' },
+    { kind: 'lookalike', text: 'If the depression is precordial-dominant, UPSLOPING at the J point, and climbs into tall symmetric Ts — that is de Winter, an occlusion NOW. Don’t route it through the supply-vs-demand detour.', linkCardId: 'dewinter' },
   ],
   suspectConfirm: [
     { text: 'Ongoing ischemic symptoms + this pattern → treat as high-risk ACS: serial ECGs, troponin, and an early invasive conversation.', cites: ['AHA-ACS-2025'] },
-    { text: 'Actively hunt the demand causes first: hemoglobin, oxygenation, rate, blood pressure — they change the destination entirely.', cites: ['AHA-ACS-2025'] },
+    { text: 'Hunt demand causes and mimics BEFORE antithrombotics: hemoglobin, oxygenation, rate, pressure — and a dissection thought in pain out of proportion or a pulse deficit. They change the destination and what is safe to give.', cites: ['AHA-ACS-2025'] },
   ],
   guidelineMoves: [
-    { text: 'Refractory ischemia with this pattern → urgent angiography; left main/3-vessel disease often means surgical-team involvement, not just a stent.', cites: ['AHA-ACS-2025'] },
+    { text: 'Refractory ischemia or hemodynamic/electrical instability → immediate invasive strategy (<2 h). Otherwise high-risk NSTE-ACS: angiography within ~24 h. LM/3-vessel disease often means the surgical team, not just a stent.', cites: ['AHA-ACS-2025'] },
     { text: 'Demand-driven (bleed, hypoxia, tachyarrhythmia) → treat the driver; the ECG follows it.', cites: ['AHA-ACS-2025'] },
   ],
+  avoid: { text: 'No reflex STEMI activation on this pattern alone — and no antithrombotics before the dissection-and-bleeding thought: heparin into a dissection or an active GI bleed is the harm the mimics are hiding.', cites: ['AHA-ACS-2025'] },
   rnMoves: [
     { text: 'ST depression in "almost every lead" with aVR up = a sick-coronaries pattern: escalate now, even though no single lead screams STEMI.', cites: ['AHA-ACS-2025'] },
     { text: 'Bring the context to the call: latest hemoglobin, sats, rate, pressure — demand causes (bleeding, hypoxia, SVT) change everything.', cites: ['AHA-ACS-2025'] },

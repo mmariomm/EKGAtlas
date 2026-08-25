@@ -43,7 +43,7 @@ export const lvhStrain: Card = {
     { text: 'Echo settles the hypertrophy; the story and serials settle the ischemia.', cites: ['AHA-ACS-2025'] },
   ],
   guidelineMoves: [
-    { text: 'No acute ECG-directed therapy — manage the blood pressure and the actual complaint.', cites: ['AHA-ACS-2025'] },
+    { text: 'No acute ECG-directed therapy — the ACS question is settled by priors and serials, then manage the pressure and the actual complaint.', cites: ['AHA-ACS-2025'] },
   ],
   rnMoves: [
     { text: 'Huge voltages with matching down-sloping ST-T is usually chronic — hunt down an old ECG before the room escalates; stability is the alibi.', cites: ['AHA-ACS-2025'] },

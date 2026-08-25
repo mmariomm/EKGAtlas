@@ -37,13 +37,14 @@ export const omiPosterior: Card = {
     { kind: 'night-eye', text: 'It rarely travels alone — scan inferior and lateral leads for company.', linkCardId: 'omi-inferior' },
   ],
   suspectConfirm: [
-    { text: 'Posterior leads V7–V9: ≥0.5 mm STE there confirms (1 mm in young men).', cites: ['AHA-ACS-2025'] },
+    { text: 'Entry: horizontal STD ≥0.5 mm maximal in V1–V3 with the R/S rising toward 1 → get V7–V9: STE ≥0.5 mm there confirms (≥1 mm in men <40).', cites: ['AHA-ACS-2025'] },
   ],
   guidelineMoves: [
     { text: 'Confirmed posterior OMI = reperfusion, same urgency as any STEMI.', cites: ['AHA-ACS-2025'] },
   ],
+  avoid: { text: 'Never file it as “NSTEMI, medical management” once the posterior leads confirm — a confirmed posterior OMI takes the reperfusion pathway at STEMI speed.', cites: ['AHA-ACS-2025'] },
   rnMoves: [
-    { text: 'ST depression deepest in V1–V3 is posterior OMI until proven otherwise — request V7–V9; three stickers can change the disposition.', cites: ['AHA-ACS-2025'] },
+    { text: 'ST depression deepest in V1–V3 is posterior OMI until proven otherwise — get V7–V9 and RELABEL the tracing so the next reader isn’t fooled; three stickers change the disposition.', cites: ['AHA-ACS-2025'] },
     { text: 'Don’t let the ’NSTEMI’ label slow the room — confirmed posterior OMI moves at STEMI speed.', cites: ['AHA-ACS-2025'] },
   ],
   mechanism: {

@@ -4,7 +4,7 @@ import { Card } from '../schema'
 export const brugada: Card = {
   id: 'brugada',
   name: 'Brugada pattern (type 1)',
-  aliases: ['Brugada', 'coved', 'shark fin', 'channelopathy', 'syncope'],
+  aliases: ['Brugada', 'coved', 'channelopathy', 'syncope'],
   category: 'High-risk patterns',
   lethal: true,
   tagline: 'A coved wave in V1–V2 that marks a sodium-channel disease — found at 3 a.m., often by accident.',
@@ -29,14 +29,14 @@ export const brugada: Card = {
   whyDrawer: [
     { cause: 'Reduced sodium current (often SCN5A loss of function)', effect: 'A weakened upstroke, worst where Ito is strongest — the RV epicardium' },
     { cause: 'The RVOT epicardium loses its action-potential dome; the endocardium keeps it', effect: 'A transmural voltage gradient across the outflow tract' },
-    { cause: 'V1–V2 sit directly over that gradient', effect: 'Coved (“shark-fin”) ST elevation flowing into an inverted T — type 1' },
+    { cause: 'V1–V2 sit directly over that gradient', effect: 'Coved ST elevation flowing into an inverted T — type 1' },
     { cause: 'The same repolarization dispersion permits phase-2 reentry', effect: 'Polymorphic VT/VF — syncope or sudden death, often in sleep or fever' },
   ],
   pills: [
     { kind: 'pearl', text: 'Type 1 (coved ≥2 mm, V1–V2, standard or high leads) is the only diagnostic shape; saddleback (type 2) is only a reason to look harder.' },
     { kind: 'trap', text: 'Fever unmasks and worsens it — treat fever aggressively and re-record the ECG after.' },
     { kind: 'night-eye', text: 'Incidental type 1 + syncope or family sudden death = do not discharge from triage; EP consult.' },
-    { kind: 'lookalike', text: 'High V1–V2 placement manufactures pseudo-Brugada in healthy patients — check electrode position before the label sticks. Try it in the Electrode Lab.', linkCardId: 'rbbb' },
+    { kind: 'lookalike', text: 'Phenocopies write type 1 too: hyperkalemia, Na-blocker toxicity, fever, hypothermia — and V1–V2 placed too high (check position before the label sticks; try it in the Electrode Lab). Reversible causes first, lifetime label second.', linkCardId: 'hyperk' },
   ],
   suspectConfirm: [
     { text: 'Ask three things: syncope, family sudden death <45, fever with the pattern.', cites: ['SHANGHAI-2016'] },
@@ -45,6 +45,7 @@ export const brugada: Card = {
   guidelineMoves: [
     { text: 'Symptomatic type 1 → EP referral (ICD discussion); asymptomatic → risk-stratify, avoid provoking drugs, treat fever.', cites: ['ESC-VA-2022'] },
   ],
+  avoid: { text: 'Avoid class IA/IC sodium-blockers and untreated fever in known or suspected Brugada — and never file the lifetime label before K⁺ and the drug list have ruled out a phenocopy.', cites: ['ESC-VA-2022'] },
   rnMoves: [
     { text: 'Coved STE in V1–V2 on a routine or fever ECG: don’t file it — flag for review and ask two questions: syncope? family sudden death young?', cites: ['SHANGHAI-2016'] },
     { text: 'Check electrode height first — V1–V2 placed too high manufactures the pattern in healthy chests.', cites: ['ESC-VA-2022'] },

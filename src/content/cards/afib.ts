@@ -32,8 +32,8 @@ export const afib: Card = {
     { cause: 'The atria no longer empty by contraction', effect: 'Stasis — the stroke-risk conversation every AF deserves' },
   ],
   pills: [
-    { kind: 'trap', text: 'Irregular + WIDE + very fast (>200, morphology changing beat to beat) = pre-excited AF (WPW). AV-nodal blockers — diltiazem, beta-blockers, digoxin, adenosine — can funnel everything down the pathway → VF. Procainamide or cardiovert.', linkCardId: 'wpw' },
-    { kind: 'trap', text: 'A *regular* slow wide rhythm in known AF = the AV node has failed (complete block with escape) — or dig toxicity. Regularized AF is never boring.' },
+    { kind: 'trap', text: 'Irregular + WIDE + very fast (>200, morphology changing beat to beat) = pre-excited AF (WPW). Diltiazem, beta-blockers, digoxin, adenosine — AND amiodarone, the reflex drug — funnel it down the pathway → VF. Procainamide or cardiovert.', linkCardId: 'wpw' },
+    { kind: 'trap', text: 'A *regular* slow wide rhythm in known AF = the AV node has failed (complete block with escape) — or dig toxicity: send a level; the antidote exists (digoxin-Fab). Regularized AF is never boring.' },
     { kind: 'night-eye', text: 'March the R waves with calipers or paper edge. If no two intervals match and there are no P waves — AF.' },
     { kind: 'lookalike', text: 'Organized sawtooth at ~300/min = flutter. If the rate sits at exactly ~150, hunt for it. The machine over-calls AF — see the irregularity yourself.', linkCardId: 'aflutter' },
   ],
@@ -44,13 +44,14 @@ export const afib: Card = {
   ],
   guidelineMoves: [
     { text: 'Unstable from the rhythm → synchronized cardioversion now.', cites: ['AHA-ACLS-2020'] },
-    { text: 'Stable + NARROW → rate control (beta-blocker or diltiazem), then the anticoagulation decision.', cites: ['AHA-AF-2023'] },
-    { text: 'Onset unclear or >48 h → anticoagulation strategy before elective cardioversion.', cites: ['AHA-AF-2023'] },
+    { text: 'Stable + NARROW → rate control: beta-blocker, or diltiazem only if LVEF ≥40% — in HFrEF or decompensated HF, IV non-DHP CCBs are Class 3 Harm (amiodarone or digoxin there).', cites: ['AHA-AF-2023'] },
+    { text: 'Cardioversion: ≥3 weeks anticoagulated first (or TEE) — and ≥4 weeks AFTER, even for short-duration AF and a CHA₂DS₂-VASc of 0.', cites: ['AHA-AF-2023'] },
   ],
   rnMoves: [
     { text: 'Recognize: irregularly irregular, no Ps. Then the safety check: is the QRS NARROW? Irregular + wide + very fast → call now, and question any AV-nodal blocker.', cites: ['AHA-ACLS-2020'] },
-    { text: 'Escalate for hypotension, chest pain, altered mentation, or symptomatic HR >150 — cardioversion may be next: pads on, IV access, NPO.', cites: ['AHA-ACLS-2020'] },
-    { text: 'Anticipate: rate-control orders and the anticoagulation conversation; new AF also gets electrolytes, TSH, and an echo on the list.', cites: ['AHA-AF-2023'] },
+    { text: 'Escalate hypotension, chest pain, altered mentation, or symptomatic HR >150. Truly unstable gets shocked without waiting on fasting — pads on, IV access, note last oral intake.', cites: ['AHA-ACLS-2020'] },
+    { text: 'Question IV diltiazem when the chart says low EF or decompensated HF — the AF guideline calls it Class 3 Harm there.', cites: ['AHA-AF-2023'] },
+    { text: 'Anticipate rate control and the anticoagulation talk — and pin down onset time (it steers cardioversion); new AF adds electrolytes, TSH, and an echo.', cites: ['AHA-AF-2023'] },
   ],
   mechanism: {
     kind: 'authored',

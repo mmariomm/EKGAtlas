@@ -41,12 +41,13 @@ export const tca: Card = {
     { text: 'Track the QRS width serially — it is the drug level you can see.', cites: ['BOEHNERT-1985'] },
   ],
   guidelineMoves: [
-    { text: 'Sodium bicarbonate boluses (1–2 mEq/kg), repeat to narrow the QRS; benzodiazepines for seizures.', cites: ['AHA-TOX-2023'] },
-    { text: 'Avoid class IA/IC (and other Na-blocking) antiarrhythmics; refractory arrest → lipid emulsion per protocol.', cites: ['AHA-TOX-2023'] },
+    { text: 'Sodium bicarbonate 1–2 mEq/kg boluses, repeat to narrow the QRS — ceiling pH 7.50–7.55, and recheck K⁺ each round: alkalinization drops it, and the long QT that rides along turns hypoK into torsades fuel.', cites: ['AHA-TOX-2023'] },
+    { text: 'Refractory arrhythmia after bicarb → lidocaine (IB) is the accepted second line; refractory arrest → lipid emulsion per protocol.', cites: ['AHA-TOX-2023'] },
   ],
+  avoid: { text: 'No class IA/IC antiarrhythmics or amiodarone (more Na⁺/K⁺ blockade for a Na-blocked heart) — and no phenytoin for the seizures. Benzodiazepines and bicarbonate are the treatment.', cites: ['AHA-TOX-2023'] },
   rnMoves: [
     { text: 'Overdose + altered + tachycardic: get the 12-lead early — QRS >100 ms predicts seizures; a widening trend is deterioration, escalate.', cites: ['AHA-TOX-2023', 'BOEHNERT-1985'] },
-    { text: 'Anticipate sodium-bicarbonate boluses, benzodiazepines for seizures, airway readiness — and question any class I antiarrhythmic order for the ’VT’.', cites: ['AHA-TOX-2023'] },
+    { text: 'Anticipate sodium-bicarbonate boluses with serial VBG/K⁺ alongside, benzos for seizures, airway readiness — and question any procainamide or flecainide order for the ’VT’ (more Na-blockade).', cites: ['AHA-TOX-2023'] },
     { text: 'Serial ECGs are the drug level you can see — put them on a schedule and chart the QRS width each time.', cites: ['BOEHNERT-1985'] },
   ],
   mechanism: {

@@ -41,13 +41,14 @@ export const avb2: Card = {
     { text: 'Review AV-blocking drugs, K⁺, ischemia; get a long rhythm strip and old ECGs.', cites: ['AHA-BRADY-2018'] },
   ],
   guidelineMoves: [
-    { text: 'Mobitz II (or any symptomatic block) → pads on, pacing pathway, cardiology now.', cites: ['AHA-BRADY-2018'] },
+    { text: 'Mobitz II (or any symptomatic block) → pads on, pacing pathway, cardiology now. Atropine 1 mg works on NODAL block — infranodal it can speed the Ps and worsen the ratio; never let repeat doses delay the pacer.', cites: ['AHA-BRADY-2018', 'AHA-ACLS-2020'] },
     { text: 'Asymptomatic Wenckebach → usually observation and cause-hunting, not hardware.', cites: ['AHA-BRADY-2018'] },
   ],
+  avoid: { text: 'Don’t stack atropine doses while the pads wait — in infranodal block it can worsen the conducted ratio. Pacing is the plan.', cites: ['AHA-BRADY-2018', 'AHA-ACLS-2020'] },
   rnMoves: [
     { text: 'Lengthening PR with grouped beats (Wenckebach) is usually benign; fixed PR with sudden drops (Mobitz II) is not — treat every 2:1 as the dangerous kind until proven otherwise.', cites: ['AHA-BRADY-2018'] },
     { text: 'Mobitz II on the monitor = call now and pads on — it can fall to complete block without warning.', cites: ['AHA-BRADY-2018'] },
-    { text: 'Anticipate: a long rhythm strip, holding AV-blocking meds, atropine at hand, the pacing pathway.', cites: ['AHA-BRADY-2018'] },
+    { text: 'Anticipate: a long rhythm strip, holding AV-blocking meds, atropine drawn (expect little from it here — the block is below the node), the pacing pathway.', cites: ['AHA-BRADY-2018'] },
   ],
   mechanism: {
     kind: 'authored',
