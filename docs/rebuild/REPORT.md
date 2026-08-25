@@ -273,3 +273,24 @@ lethal dot aligned to the first line.
 
 Explicit non-regression list honored: provenance badges, heart↔trace
 scrub, electrode drag mechanics, commit-first copy, paper mode.
+
+### Deferred from this pass (open, deliberately)
+
+1. **A real `.seg` component.** The four segmented controls (MD·RN, lab
+   mode, evolution arcs, paper/dark) were unified at the VALUE level — each
+   one's selected state now uses the same accent tokens — but they remain
+   four separate CSS blocks. The auditor asked for one extracted `.seg`
+   class/component all four consume, so a fifth toggle cannot drift. ~S/M,
+   touches 4 files. Do this the next time a toggle is added.
+
+2. **Lane clipping on extreme amplitudes.** The auditor proposed per-lane
+   amplitude autoscaling (fit each lead's min/max to its lane). REJECTED on
+   honesty grounds: the app's calibration law is that one small grid box is
+   always 0.1 mV, which is what makes the traces measurable (1 mm vs 3 mm of
+   ST elevation is a disposition decision) and comparable between strips.
+   Autoscaling would silently vary gain per lane and per card. Applied
+   instead: 10px canvas edge padding, which removes the observed clipping at
+   normal amplitudes with gain untouched. STILL OPEN: a genuinely huge
+   complex can clip. The correct fix is more LANE HEIGHT for high-dynamic-
+   range strips (or a vertical pinch-zoom), never rescaling — a
+   `laneHeightFor` that inspects the trace's dynamic range is the path.
