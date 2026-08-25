@@ -1,0 +1,19 @@
+{
+ "include": {
+  "scpAll": [
+   "AFLT"
+  ]
+ },
+ "exclude": {
+  "scpAny": [
+   "PACE",
+   "CLBBB",
+   "CRBBB"
+  ]
+ },
+ "annotate": {
+  "suppressP": true
+ },
+ "cardId": "aflutter",
+ "targetTier": "recorded"
+}

@@ -1,0 +1,70 @@
+.drill { padding-bottom: 48px; }
+.drill-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: calc(var(--sp-3) + env(safe-area-inset-top)) 0 var(--sp-3);
+}
+.drill-back {
+  font-size: 26px;
+  line-height: 1;
+  color: var(--ink-2);
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+}
+.drill-head h1 { flex: 1; font-size: var(--fs-title); font-weight: 600; }
+.drill-progress { font-size: var(--fs-meta); color: var(--ink-2); }
+
+.drill-loading {
+  height: 208px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+}
+
+.drill-prompt { font-size: var(--fs-lede); font-weight: 600; margin: var(--sp-4) 0 var(--sp-3); }
+.drill-options { display: grid; gap: var(--sp-2); }
+.drill-option {
+  text-align: left;
+  padding: 14px var(--sp-4);
+  border-radius: var(--r-m);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  transition: border-color 120ms ease-out;
+}
+.drill-option:active { border-color: var(--accent); }
+
+.drill-result { margin-top: var(--sp-4); display: grid; gap: var(--sp-2); }
+.drill-verdict { font-weight: 600; }
+.drill-right { color: var(--accent); }
+.drill-wrong { color: var(--danger); }
+.drill-tempts { color: var(--ink-2); font-size: var(--fs-body); }
+.drill-requeue { color: var(--ink-3); font-size: var(--fs-meta); }
+.drill-actions { display: flex; align-items: center; gap: var(--sp-4); margin-top: var(--sp-2); }
+.drill-open { font-size: var(--fs-meta); color: var(--ink-2); text-decoration: underline; min-height: var(--tap-min); display: inline-flex; align-items: center; }
+.drill-next {
+  margin-left: auto;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-size: var(--fs-body);
+  border-radius: 999px;
+  padding: 12px 22px;
+  min-height: var(--tap-min);
+}
+
+.drill-contrast {
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+  border-left: 3px solid var(--danger);
+  padding-left: var(--sp-3);
+}
+.drill-contrast-label { font-weight: 700; color: var(--ink); }

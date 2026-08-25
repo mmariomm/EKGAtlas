@@ -1,13 +1,10 @@
 /**
- * Phase regions — the bridge for click-to-explain. Each waveform segment
- * (P, PR, QRS, ST, T) is mapped to a time window within the representative beat,
- * the heart structures active during it, and its phase tone. Selecting a phase
- * seeks the shared clock into that window, so the heart and trace both reflect it.
- *
- * Bounds are derived from the actual dipole sources (their center ± extent), so
- * they stay aligned with the waveform — a wide LBBB QRS comes out wide automatically.
+ * Phase regions — the bridge for tap-to-explain. Each waveform segment
+ * (P, PR, QRS, ST, T) maps to a time window within the representative beat,
+ * the structures active during it, and its tone. Bounds derive from the
+ * actual sources, so a wide LBBB QRS comes out wide automatically.
  */
-import { PhaseTone, SegmentTag, StructureId, Strip } from './types'
+import { PhaseTone, SegmentTag, StructureId, Strip } from './sources'
 
 export type SegmentId = 'P' | 'PR' | 'QRS' | 'ST' | 'T'
 
@@ -39,7 +36,6 @@ export interface PhaseRegion {
 export const isSegmentId = (s: string | null | undefined): s is SegmentId =>
   s === 'P' || s === 'PR' || s === 'QRS' || s === 'ST' || s === 'T'
 
-/** The representative beat: the first carrying both a P and a real QRS (else beat 0). */
 const representativeBeat = (strip: Strip) =>
   strip.beats.find(
     (b) => b.sources.some((s) => s.segment === 'P') && b.sources.some((s) => s.segment === 'QRS' && s.mag > 0),
@@ -48,7 +44,7 @@ const representativeBeat = (strip: Strip) =>
 export const phaseRegions = (strip: Strip): PhaseRegion[] => {
   const beat = representativeBeat(strip)
   const ext = (seg: SegmentTag) => {
-    const ss = beat.sources.filter((s) => s.segment === seg && s.mag > 0)
+    const ss = beat.sources.filter((s) => s.segment === seg && Math.abs(s.mag) > 0)
     if (!ss.length) return null
     return {
       s: Math.min(...ss.map((s) => s.center - 1.7 * s.width)),
@@ -74,9 +70,7 @@ export const phaseRegions = (strip: Strip): PhaseRegion[] => {
   return out
 }
 
-/** Which region (if any) a relative time falls inside. */
 export const regionAtRelTime = (regions: PhaseRegion[], relMs: number): PhaseRegion | null =>
   regions.find((r) => relMs >= r.relStart && relMs < r.relEnd) ?? null
 
-/** Absolute onset (ms) of the beat the regions are measured against. */
 export const representativeOnset = (strip: Strip): number => representativeBeat(strip).onset

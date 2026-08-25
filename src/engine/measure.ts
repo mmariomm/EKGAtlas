@@ -1,13 +1,10 @@
 /**
- * Clinical measurements, computed from the model the way a machine prints them
- * at the top of every ECG: heart rate, PR, QRS duration, QT/QTc, and axis.
- *
- * Wave boundaries are derived directly from the dipole sources of the
- * representative beat, with clinically tuned extents (a Gaussian wave is
- * "over" by ~2σ for the sharp P/QRS, ~2.4σ for the broad T), so the intervals
- * land in realistic ranges.
+ * Clinical measurements, computed from the model the way a machine prints
+ * them: rate, PR, QRS duration, QT/QTc, axis. Wave boundaries derive from the
+ * dipole sources of the representative beat with clinically tuned extents
+ * (a Gaussian is "over" by ~2σ for sharp waves, ~2.4σ for the broad T).
  */
-import { SegmentTag, Strip } from './types'
+import { SegmentTag, Strip } from './sources'
 import { meanQrsAxisDeg } from './synthesize'
 
 export interface Measurements {
@@ -16,11 +13,12 @@ export interface Measurements {
   qrsMs: number
   qtMs: number
   qtcMs: number
+  qtcFridericiaMs: number
   axisDeg: number
 }
 
-const QRS_K = 2.0 // σ-multiples to the foot/end of the sharp P and QRS waves
-const T_K = 2.4 //   the broad T returns to baseline a bit later
+export const QRS_K = 2.0
+export const T_K = 2.4
 
 const repBeat = (strip: Strip) =>
   strip.beats.find(
@@ -30,7 +28,7 @@ const repBeat = (strip: Strip) =>
 export const measure = (strip: Strip): Measurements => {
   const beat = repBeat(strip)
   const ext = (seg: SegmentTag, k: number) => {
-    const ss = beat.sources.filter((s) => s.segment === seg && s.mag > 0)
+    const ss = beat.sources.filter((s) => s.segment === seg && Math.abs(s.mag) > 0)
     if (!ss.length) return null
     return {
       s: Math.min(...ss.map((s) => s.center - k * s.width)),
@@ -46,7 +44,9 @@ export const measure = (strip: Strip): Measurements => {
   const prMs = P && QRS ? Math.round(QRS.s - P.s) : null
   const qrsMs = QRS ? Math.round(QRS.e - QRS.s) : 0
   const qtMs = QRS && T ? Math.round(T.e - QRS.s) : 0
-  const qtcMs = qtMs > 0 ? Math.round(qtMs / Math.sqrt(rr / 1000)) : 0
+  const rrSec = rr / 1000
+  const qtcMs = qtMs > 0 ? Math.round(qtMs / Math.sqrt(rrSec)) : 0
+  const qtcFridericiaMs = qtMs > 0 ? Math.round(qtMs / Math.cbrt(rrSec)) : 0
 
-  return { rateBpm, prMs, qrsMs, qtMs, qtcMs, axisDeg: meanQrsAxisDeg(strip) }
+  return { rateBpm, prMs, qrsMs, qtMs, qtcMs, qtcFridericiaMs, axisDeg: meanQrsAxisDeg(strip) }
 }

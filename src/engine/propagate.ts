@@ -1,17 +1,16 @@
 /**
- * The propagation solver. Given a TissueState it computes when every conduction
- * node and myocardial region activates, then emits a Beat in the Phase-A model
- * (Sources + Wires). Block an edge → that branch's territory is reached late via
- * slow cell-to-cell spread (a wide QRS emerges); pace from a region → an ectopic
- * beat; mark a region ischemic → an ST injury vector.
+ * The propagation solver. Given a TissueState it computes when every
+ * conduction node and myocardial region activates, then emits a Beat in the
+ * Source/Wire model. Block an edge → that branch's territory is reached late
+ * via slow cell-to-cell spread (a wide QRS emerges); pace from a region → an
+ * ectopic beat; mark a region ischemic → a sustained ST injury vector.
  *
- * NOTE (honest scope): depolarization/QRS and conduction blocks emerge faithfully
- * here. The T wave uses a simplified concordant recovery model for now; faithful
- * BBB T-discordance + full ischemia tuning are the next refinement.
+ * Honest scope: depolarization/QRS and conduction blocks emerge faithfully.
+ * The T uses a simplified primary + dyssynchrony-secondary recovery model.
  */
-import { CONDUCTION_EDGES, NodeId, REGIONS, REGION_BY_ID } from './heartModel'
-import { Beat, Source, WirePulse } from './types'
-import { normalize, Vec3 } from './vectorMath'
+import { CONDUCTION_EDGES, HEART_SCALE, NodeId, REGIONS, REGION_BY_ID } from './heartModel'
+import { Beat, Source, WirePulse } from './sources'
+import { normalize, scale, Vec3 } from './vec'
 
 export interface TissueState {
   /** Pacing site: a conduction node (default 'SA') or a region id (ectopic). */
@@ -22,8 +21,7 @@ export interface TissueState {
   scar?: string[]
   /** Ischemic/injured regions: produce an ST injury vector + glow red. */
   ischemic?: string[]
-  /** Direction the ST injury vector points (toward the injured epicardium).
-   *  Drives which leads show ST elevation and which show reciprocal depression. */
+  /** Direction the ST injury vector points (toward the injured epicardium). */
   injuryDir?: Vec3
   /** Injury current magnitude (mV-equivalent). */
   injuryMag?: number
@@ -32,14 +30,13 @@ export interface TissueState {
 const NODES: NodeId[] = ['SA', 'AV', 'HIS', 'RBB', 'LBB', 'LAF', 'LPF']
 const isNode = (s: string): s is NodeId => (NODES as string[]).includes(s)
 
-/** Activation times for the conduction nodes from the pacing site (antegrade). */
+/** Activation times for the conduction nodes from the pacing site. */
 const solveNodes = (state: TissueState): Map<NodeId, number> => {
   const dist = new Map<NodeId, number>()
   const pace = state.pace ?? 'SA'
-  if (!isNode(pace)) return dist // ectopic ventricular pacing: no antegrade conduction
+  if (!isNode(pace)) return dist // ectopic pacing: no antegrade conduction
   dist.set(pace, 0)
   const blocked = new Set(state.blockedEdges ?? [])
-  // Small DAG → relax to a fixed point.
   let changed = true
   while (changed) {
     changed = false
@@ -57,14 +54,12 @@ const solveNodes = (state: TissueState): Map<NodeId, number> => {
   return dist
 }
 
-/** Activation result for a region: time + where the wavefront entered from. */
 interface RegionHit {
   t: number
-  /** Neighbour position the wave arrived from (cell-to-cell), or null if Purkinje-seeded. */
+  /** Neighbour position the wave arrived from (cell-to-cell), else null. */
   viaPos: Vec3 | null
 }
 
-/** Activation times for the myocardial regions (fast seed OR slow cell-to-cell). */
 const solveRegions = (state: TissueState, nodeT: Map<NodeId, number>): Map<string, RegionHit> => {
   const scar = new Set(state.scar ?? [])
   const dist = new Map<string, RegionHit>()
@@ -79,9 +74,8 @@ const solveRegions = (state: TissueState, nodeT: Map<NodeId, number>): Map<strin
     }
   }
 
-  // Dijkstra over regions for the slow cell-to-cell paths. Track which neighbour
-  // the wavefront came from, so the dipole can point along the propagation
-  // direction — this is what makes the LBBB septal-q loss and the RBBB R' emerge.
+  // Dijkstra over regions for the slow cell-to-cell paths, tracking the
+  // arriving direction so LBBB septal-q loss and the RBBB R' emerge.
   const settled = new Set<string>()
   for (;;) {
     let cur: string | null = null
@@ -100,16 +94,16 @@ const solveRegions = (state: TissueState, nodeT: Map<NodeId, number>): Map<strin
   return dist
 }
 
-// Faithful-ish T wave: a PRIMARY (concordant) component plus a SECONDARY component
-// that grows with how late a region activates relative to the ventricular mean.
-// Synchronous activation → every region stays positive → concordant T. BBB/ectopy
-// (dyssynchronous) → late regions flip negative → discordant T emerges on its own.
+// Primary (concordant) + secondary (dyssynchrony-driven) recovery components.
+// T width/timing sharpened vs v1 so the ST segment stays honestly isoelectric
+// (a Gaussian's foot must not masquerade as an ST shift).
 const T_PRIMARY = 0.34
-const T_SECONDARY = 0.95
-const T_DYSSYNC = 55 // ms scale over which "lateness" matters
-const T_APD = 185 // ms from activation to the T peak (keeps QT in a realistic range)
+const T_SECONDARY = 1.15
+const T_DYSSYNC = 55
+const T_APD = 205
+const T_WIDTH = 45
 
-/** Run the simulation and emit one Beat (relative to `onset`). */
+/** Run the simulation and emit one Beat (times relative to `onset`). */
 export const simulateBeat = (
   state: TissueState,
   onset: number,
@@ -121,8 +115,6 @@ export const simulateBeat = (
   const ischemic = new Set(state.ischemic ?? [])
   const sources: Source[] = []
 
-  // Ventricular activation window + mass-weighted mean (drives ST placement + the
-  // secondary T component).
   let ventMax = 0
   let aSum = 0
   let aMass = 0
@@ -139,10 +131,8 @@ export const simulateBeat = (
     const hit = regionT.get(r.id)
     if (hit == null || scar.has(r.id)) continue
     const t = hit.t
-    // Each wall's intrinsic (endo→epi) direction carries the bulk vector — correct
-    // axis and BBB morphology (and the late intrinsic RV still gives the RBBB R').
-    // The septum is the exception: activated retrograde from the RV side it
-    // depolarizes right→left, flipping the septal q (the LBBB hallmark).
+    // The septum is activated retrograde (from the RV side) when the wave
+    // arrives cell-to-cell from the right — flipping the septal q (LBBB).
     let dir: Vec3 = r.dir
     if (r.id === 'SEPTUM' && hit.viaPos && hit.viaPos[0] < r.pos[0]) {
       dir = [-r.dir[0], r.dir[1], -r.dir[2]]
@@ -150,40 +140,38 @@ export const simulateBeat = (
     const isAtrial = r.structure === 'RA' || r.structure === 'LA'
     const segment = isAtrial ? 'P' : 'QRS'
     const kind = isAtrial ? 'atria' : 'ventricle'
+    const pos = scale(r.pos, HEART_SCALE)
 
-    // depolarization
     sources.push({
-      dir, mag: r.mass, center: t, width: 10, segment,
+      dir, mag: r.mass, center: t, width: 10, segment, pos,
       glow: { structures: [r.structure], kind, start: t - 6, end: t + 52 },
     })
 
-    // repolarization: primary (concordant) + secondary (discordant if late)
     if (!isAtrial) {
       const repolMag = r.mass * (T_PRIMARY - T_SECONDARY * ((t - meanA) / T_DYSSYNC))
       const rc = t + T_APD
       sources.push({
-        dir, mag: repolMag, center: rc, width: 60, segment: 'T',
+        dir, mag: repolMag, center: rc, width: T_WIDTH, segment: 'T', pos,
         glow: { structures: [r.structure], kind: 'repol', start: rc - 48, end: rc + 48 },
       })
     }
-
   }
 
   // Ischemic injury → ONE sustained ST vector toward the injured epicardium.
-  // Leads facing it show ST elevation; opposite leads show reciprocal depression.
   if (ischemic.size > 0) {
     const ids = [...ischemic].filter((id) => REGION_BY_ID[id])
     const dir = state.injuryDir ?? normalize(
       ids.reduce<Vec3>((a, id) => [a[0] + REGION_BY_ID[id].pos[0], a[1] + REGION_BY_ID[id].pos[1], a[2] + REGION_BY_ID[id].pos[2]], [0, 0, 0]),
     )
+    const centroid = ids.reduce<Vec3>((a, id) => [a[0] + REGION_BY_ID[id].pos[0] / ids.length, a[1] + REGION_BY_ID[id].pos[1] / ids.length, a[2] + REGION_BY_ID[id].pos[2] / ids.length], [0, 0, 0])
     const structures = [...new Set(ids.map((id) => REGION_BY_ID[id].structure))]
     sources.push({
       dir, mag: state.injuryMag ?? 0.6, center: ventMax + 72, width: 48, segment: 'ST',
+      pos: scale(centroid, HEART_SCALE),
       glow: { structures, kind: 'injury', start: ventMax + 20, end: ventMax + 145, note: 'injury current' },
     })
   }
 
-  // conduction-system glow (SA fires at pacing; nodes light as reached)
   const wires: WirePulse[] = []
   if (isNode(state.pace ?? 'SA')) {
     const paceT = nodeT.get((state.pace ?? 'SA') as NodeId) ?? 0
@@ -198,3 +186,9 @@ export const simulateBeat = (
 
   return { onset, sources, wires, label: opts?.label, focus: opts?.focus }
 }
+
+/** Tile a tissue state into a looping strip. */
+export const tileState = (state: TissueState, count = 3, rr = 800) => ({
+  beats: Array.from({ length: count }, (_, i) => simulateBeat(state, i * rr)),
+  durationMs: count * rr,
+})

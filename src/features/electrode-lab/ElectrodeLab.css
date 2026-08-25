@@ -1,0 +1,120 @@
+.lab { padding-bottom: var(--sp-6); }
+
+.lab-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: calc(var(--sp-3) + env(safe-area-inset-top)) 0 var(--sp-2);
+  flex-wrap: wrap;
+}
+.lab-back {
+  font-size: 26px;
+  color: var(--ink-2);
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+}
+.lab-head h1 { font-size: var(--fs-title); font-weight: 600; flex: 1; }
+
+.lab-mode {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px;
+}
+.lab-mode button {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  border-radius: 999px;
+  padding: 7px 12px;
+}
+.lab-mode button.on { background: var(--surface-2); color: var(--ink); }
+
+.lab-lede { color: var(--ink-2); font-size: var(--fs-meta); max-width: 46ch; padding-bottom: var(--sp-3); }
+
+.lab-presets {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-3);
+  scrollbar-width: none;
+  margin: 0 calc(-1 * var(--sp-4));
+  padding-left: var(--sp-4);
+  padding-right: var(--sp-4);
+}
+.lab-presets::-webkit-scrollbar { display: none; }
+.lab-chip {
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 8px 12px;
+  min-height: 34px;
+}
+.lab-chip-on { color: var(--accent); border-color: var(--accent); }
+.lab-chip-dim { opacity: 0.5; }
+.lab-chip-reset { color: var(--ink-3); }
+
+.lab-hint {
+  color: var(--warn);
+  font-size: var(--fs-meta);
+  padding: var(--sp-2) 0;
+}
+
+.lab-teach {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--sp-3) var(--sp-4);
+  display: grid;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  font-size: var(--fs-body);
+}
+.lab-teach b { color: var(--accent); }
+.lab-approx { color: var(--ink-3); font-size: 12px; }
+.lab-cite {
+  justify-self: start;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.lab-compare { justify-self: start; color: var(--accent); font-size: var(--fs-meta); font-weight: 600; }
+
+.lab-trace { display: grid; gap: var(--sp-2); }
+.lab-leadpick { display: flex; flex-wrap: wrap; gap: 6px; }
+.lab-lead {
+  min-width: 44px;
+  min-height: 38px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.lab-lead.on { color: var(--ink); border-color: var(--ink-3); background: var(--surface); }
+
+.lab-serial { display: grid; gap: var(--sp-2); }
+.lab-serial-label { color: var(--ink-2); font-size: var(--fs-meta); font-weight: 600; padding-top: var(--sp-2); }
+
+/* Board + trace share one screen: the figure is sized so the live trace stays
+   visible while you drag (cause and effect together — the point of the lab). */
+.lab-board { position: relative; }
+.lab-trace {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  padding-bottom: var(--sp-2);
+  z-index: 4;
+}
+.lab-chip-share { color: var(--accent); }

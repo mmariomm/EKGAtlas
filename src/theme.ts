@@ -1,17 +1,12 @@
 /**
- * The shared visual language. Phase tones are the linchpin of the "understanding"
- * goal: the SAME color marks a phase in the heart diagram and on the trace, so
- * the eye binds cause (impulse location) to effect (waveform) without reading.
- *
- * Kept as plain JS so both the canvas (TraceCanvas) and SVG (HeartDiagram) read
- * identical values; the CSS mirrors them as custom properties for the chrome.
+ * The shared visual language. Phase tones are the linchpin: the SAME color
+ * marks a phase on the heart and on the trace, so the eye binds cause
+ * (impulse location) to effect (waveform) without reading.
  */
-import { PhaseTone } from './engine/types'
+import { PhaseTone } from './engine/sources'
 
 export interface ToneColor {
-  /** Saturated core color (strokes, fills, the vector arrow). */
   core: string
-  /** Soft halo used for glows / shadows. */
   glow: string
 }
 
@@ -25,17 +20,7 @@ export const PHASE_COLORS: Record<PhaseTone, ToneColor> = {
   rest: { core: '#46536b', glow: 'rgba(70,83,107,0.0)' },
 }
 
-/** The trace ink — luminous, faintly cool, like a high-end monitor. */
-export const TRACE_INK = '#eaf2ff'
-
-/** Clinical ECG paper, inverted onto a dark stage. */
-export const GRID = {
-  minor: 'rgba(255, 86, 102, 0.075)',
-  major: 'rgba(255, 86, 102, 0.16)',
-  baseline: 'rgba(255, 255, 255, 0.12)',
-}
-
-/** Resting (unlit) conduction structures. */
+/** Resting (unlit) conduction structures on the heart figure. */
 export const STRUCTURE = {
   stroke: 'rgba(150, 170, 200, 0.38)',
   strokeStrong: 'rgba(180, 198, 224, 0.6)',
@@ -43,5 +28,3 @@ export const STRUCTURE = {
   blocked: 'rgba(120, 132, 150, 0.22)',
   label: 'rgba(190, 204, 226, 0.72)',
 }
-
-export const phaseColor = (tone: PhaseTone): ToneColor => PHASE_COLORS[tone]

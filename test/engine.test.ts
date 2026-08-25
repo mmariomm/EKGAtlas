@@ -1,189 +1,248 @@
 /**
- * Fast internal test harness (run with `npm test`, via tsx — no browser).
- * Prints a measurements table for every condition and asserts the clinically
- * important properties. This is how morphology/intervals are validated now;
- * Chrome is only for a final visual confirmation.
+ * Engine v2 assertion harness (M1): lead-derivation identities, calibration,
+ * solver morphology regressions (ported from v1), the montage-algebra truth
+ * table on both the model and the recorded-algebra path, mirror (dextro),
+ * and the sync warp. Run: npm run check:engine
  */
-import { CONDITIONS } from '../src/conditions/index'
-import { buildSignals, SignalSet } from '../src/engine/synthesize'
-import { phaseRegions, representativeOnset } from '../src/engine/phases'
+import { buildSignals, meanQrsAxisDeg, R_MIN } from '../src/engine/synthesize'
+import { tileState } from '../src/engine/propagate'
 import { measure } from '../src/engine/measure'
-import { LeadId } from '../src/engine/leads'
-import { Strip } from '../src/engine/types'
+import { ALL_LEADS, applyMontageToRecorded, LeadId } from '../src/engine/leads'
+import { PRESETS, standardMontage, moveCable, V4R, STANDARD_SITES } from '../src/engine/electrodes'
+import { onTorsoSurface } from '../src/engine/torso'
+import { mirrorStrip } from '../src/engine/sources'
+import { buildWarp, modelFiducials } from '../src/engine/sync'
+import {
+  correlation, initialQrsMean, netQrs, peakAmplitude, pMean, rms, stShift, terminalQrsMean, tPolarity, windowsOf,
+} from './helpers'
 
 let failures = 0
-const check = (name: string, ok: boolean) => {
-  console.log(`  ${ok ? '✓' : '✗ FAIL —'} ${name}`)
+const check = (name: string, ok: boolean, detail = '') => {
+  console.log(`  ${ok ? '✓' : '✗ FAIL —'} ${name}${detail ? `  (${detail})` : ''}`)
   if (!ok) failures++
 }
+const f1 = (n: number) => n.toFixed(2)
 
-/** Net signed area of a lead over the QRS window (≈ net deflection: R minus S). */
-const netQRS = (strip: Strip, sig: SignalSet, id: LeadId): number => {
-  const qrs = phaseRegions(strip).find((r) => r.id === 'QRS')
-  if (!qrs) return 0
-  const base = representativeOnset(strip)
-  let s = 0
-  for (let i = 0; i < sig.n; i++) {
-    const t = i * sig.dt - base
-    if (t >= qrs.relStart && t <= qrs.relEnd) s += sig.leads[id][i]
+// --- reference strips (solver states; card mechanisms arrive at M3) ---------
+const nsr = tileState({ pace: 'SA' })
+const rbbb = tileState({ pace: 'SA', blockedEdges: ['HIS>RBB'] })
+const lbbb = tileState({ pace: 'SA', blockedEdges: ['HIS>LBB'] })
+const stemiAnt = tileState({
+  pace: 'SA', ischemic: ['LV_ant', 'LV_apex'], injuryDir: [0.3, -0.25, 0.95], injuryMag: 0.72,
+})
+
+const std = standardMontage()
+const sigNsr = buildSignals(nsr, std)
+const wNsr = windowsOf(nsr)
+
+// ---------------------------------------------------------------------------
+console.log('=== Electrode + torso geometry ===')
+for (const v of ['V1', 'V2', 'V3', 'V4', 'V5', 'V6'] as const) {
+  check(`${v} on torso surface`, onTorsoSurface(STANDARD_SITES[v]))
+}
+
+// ---------------------------------------------------------------------------
+console.log('=== Lead-derivation identities (exact) ===')
+{
+  let einthoven = 0
+  let goldberger = 0
+  for (let i = 0; i < sigNsr.n; i++) {
+    einthoven = Math.max(einthoven, Math.abs(sigNsr.leads.I[i] + sigNsr.leads.III[i] - sigNsr.leads.II[i]))
+    goldberger = Math.max(goldberger, Math.abs(sigNsr.leads.aVR[i] + sigNsr.leads.aVL[i] + sigNsr.leads.aVF[i]))
   }
-  return s * sig.dt
+  check('Einthoven: I + III − II ≈ 0', einthoven < 1e-6, `max ${einthoven.toExponential(1)}`)
+  check('Goldberger: aVR + aVL + aVF ≈ 0', goldberger < 1e-6, `max ${goldberger.toExponential(1)}`)
 }
 
-/** Net signed area over the ST window (for ischemia checks). */
-const netST = (strip: Strip, sig: SignalSet, id: LeadId): number => {
-  const regions = phaseRegions(strip)
-  const qrs = regions.find((r) => r.id === 'QRS')
-  const t = regions.find((r) => r.id === 'T')
-  if (!qrs || !t) return 0
-  const base = representativeOnset(strip)
-  let s = 0
-  for (let i = 0; i < sig.n; i++) {
-    const tt = i * sig.dt - base
-    if (tt > qrs.relEnd && tt < t.relStart) s += sig.leads[id][i]
+// ---------------------------------------------------------------------------
+console.log('=== Calibration + NSR morphology (solver, electrode-derived) ===')
+{
+  const rII = peakAmplitude(sigNsr, 'II')
+  check('R(II) in textbook range 0.8–1.6 mV', rII >= 0.8 && rII <= 1.6, `${f1(rII)} mV`)
+  const m = measure(nsr)
+  check('NSR narrow QRS (<120 ms)', m.qrsMs < 120, `${m.qrsMs} ms`)
+  check('NSR PR 120–200 ms', (m.prMs ?? 0) >= 120 && (m.prMs ?? 0) <= 200, `${m.prMs} ms`)
+  check('NSR QTc 350–460 ms', m.qtcMs >= 350 && m.qtcMs <= 460, `${m.qtcMs} ms`)
+  check('NSR axis −30…+90°', m.axisDeg >= -30 && m.axisDeg <= 90, `${m.axisDeg}°`)
+  check('NSR rS in V1 (net −)', netQrs(sigNsr, 'V1', wNsr) < 0, f1(netQrs(sigNsr, 'V1', wNsr)))
+  check('NSR dominant R in V6 (net +)', netQrs(sigNsr, 'V6', wNsr) > 0, f1(netQrs(sigNsr, 'V6', wNsr)))
+  check('NSR aVR net negative', netQrs(sigNsr, 'aVR', wNsr) < 0)
+  check('NSR upright T in II', tPolarity(sigNsr, 'II', wNsr) > 0)
+  check('NSR ST near-isoelectric everywhere', ALL_LEADS.every((l) => Math.abs(stShift(sigNsr, l, wNsr)) < 0.05))
+  const pV = ['V1', 'V2', 'V3', 'V4', 'V5', 'V6'].map((l) => peakAmplitude(sigNsr, l as LeadId))
+  console.log(`  precordial peaks: ${pV.map(f1).join(' ')} mV  (R_MIN=${R_MIN})`)
+  check('precordial amplitudes sane (<3.0 mV)', pV.every((p) => p < 3.0))
+}
+
+// ---------------------------------------------------------------------------
+console.log('=== Solver regressions (emergent morphology) ===')
+{
+  const mR = measure(rbbb)
+  const mL = measure(lbbb)
+  const sigL = buildSignals(lbbb, std)
+  const wL = windowsOf(lbbb)
+  check('RBBB wide QRS (≥120 ms)', mR.qrsMs >= 120, `${mR.qrsMs} ms`)
+  check('LBBB wide QRS (≥120 ms)', mL.qrsMs >= 120, `${mL.qrsMs} ms`)
+  check('LBBB deep negative V1', netQrs(sigL, 'V1', wL) < 0)
+  check('LBBB dominant positive V6', netQrs(sigL, 'V6', wL) > 0)
+
+  const sigS = buildSignals(stemiAnt, std)
+  const wS = windowsOf(stemiAnt)
+  console.log(`  STEMI ST: V2 ${f1(stShift(sigS, 'V2', wS))}  V3 ${f1(stShift(sigS, 'V3', wS))}  III ${f1(stShift(sigS, 'III', wS))}`)
+  check('anterior STEMI: ST↑ V2 ≥ 0.1 mV', stShift(sigS, 'V2', wS) >= 0.1)
+  check('anterior STEMI: ST↑ V3 ≥ 0.1 mV', stShift(sigS, 'V3', wS) >= 0.1)
+  check('anterior STEMI: reciprocal ST↓ III', stShift(sigS, 'III', wS) < 0)
+}
+
+// ---------------------------------------------------------------------------
+console.log('=== Montage truth table (model swap vs recorded algebra) ===')
+{
+  // The recorded-algebra path re-derives swapped leads from I and II alone.
+  const derived = (preset: keyof typeof PRESETS) =>
+    applyMontageToRecorded(sigNsr.leads, PRESETS[preset]())
+  const model = (preset: keyof typeof PRESETS) => buildSignals(nsr, PRESETS[preset](), 2).leads
+
+  const closeTo = (a: Float32Array, b: Float32Array, tol: number) => {
+    let m = 0
+    for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i] - b[i]))
+    return m <= tol
   }
-  return s * sig.dt
-}
 
-/** Net signed area of a lead over the T window. */
-const netT = (strip: Strip, sig: SignalSet, id: LeadId): number => {
-  const t = phaseRegions(strip).find((r) => r.id === 'T')
-  if (!t) return 0
-  const base = representativeOnset(strip)
-  let s = 0
-  for (let i = 0; i < sig.n; i++) {
-    const tt = i * sig.dt - base
-    if (tt >= t.relStart && tt <= t.relEnd) s += sig.leads[id][i]
+  // RA↔LA: I' = −I exact; II'=III; aVR'↔aVL; aVF unchanged; precordials unchanged.
+  {
+    const d = derived('ra-la')
+    const neg = new Float32Array(sigNsr.leads.I).map((v) => -v)
+    check('RA↔LA: I′ = −I (sample-exact)', closeTo(d.I, neg as Float32Array, 1e-6))
+    check('RA↔LA: II′ = III', closeTo(d.II, sigNsr.leads.III, 1e-6))
+    check('RA↔LA: aVR′ = aVL', closeTo(d.aVR, sigNsr.leads.aVL, 1e-6))
+    check('RA↔LA: aVF unchanged', closeTo(d.aVF, sigNsr.leads.aVF, 1e-6))
+    check('RA↔LA: V4 unchanged (WCT invariant)', closeTo(d.V4, sigNsr.leads.V4, 1e-6))
+    const mM = model('ra-la')
+    check('RA↔LA: model swap matches algebra (I)', closeTo(mM.I, d.I, 1e-4))
+    check('RA↔LA: model swap matches algebra (aVL)', closeTo(mM.aVL, d.aVL, 1e-4))
   }
-  return s * sig.dt
-}
-
-/** Peak (most positive) amplitude of a lead over the T window — captures "peaked" T. */
-const peakT = (strip: Strip, sig: SignalSet, id: LeadId): number => {
-  const t = phaseRegions(strip).find((r) => r.id === 'T')
-  if (!t) return 0
-  const base = representativeOnset(strip)
-  let m = -Infinity
-  for (let i = 0; i < sig.n; i++) {
-    const tt = i * sig.dt - base
-    if (tt >= t.relStart && tt <= t.relEnd) m = Math.max(m, sig.leads[id][i])
+  // LA↔LL: III inverted; I↔II; aVL↔aVF; aVR unchanged.
+  {
+    const d = derived('la-ll')
+    const negIII = new Float32Array(sigNsr.leads.III).map((v) => -v)
+    check('LA↔LL: III′ = −III', closeTo(d.III, negIII as Float32Array, 1e-6))
+    check('LA↔LL: I′ = II', closeTo(d.I, sigNsr.leads.II, 1e-6))
+    check('LA↔LL: aVL′ = aVF', closeTo(d.aVL, sigNsr.leads.aVF, 1e-6))
+    check('LA↔LL: aVR unchanged', closeTo(d.aVR, sigNsr.leads.aVR, 1e-6))
   }
-  return m === -Infinity ? 0 : m
+  // RA↔LL: II inverted; aVR↔aVF.
+  {
+    const d = derived('ra-ll')
+    const negII = new Float32Array(sigNsr.leads.II).map((v) => -v)
+    check('RA↔LL: II′ = −II', closeTo(d.II, negII as Float32Array, 1e-6))
+    check('RA↔LL: aVR′ = aVF', closeTo(d.aVR, sigNsr.leads.aVF, 1e-6))
+    check('RA↔LL: aVL unchanged', closeTo(d.aVL, sigNsr.leads.aVL, 1e-6))
+  }
+  // RA↔RL: lead II collapses (the legs share the inferior pole); I' = −III.
+  {
+    const d = derived('ra-rl')
+    const base = rms(sigNsr.leads.II)
+    check('RA↔RL: lead II ≈ flatline (algebra path)', rms(d.II) < 0.02 * base, `rms ${(rms(d.II) / base * 100).toFixed(2)}% of baseline`)
+    const negIII = new Float32Array(sigNsr.leads.III).map((v) => -v)
+    check('RA↔RL: I′ = −III (algebra path)', closeTo(d.I, negIII as Float32Array, 1e-6))
+    const mM = model('ra-rl')
+    check('RA↔RL: model lead II flatlines too', rms(mM.II) < 0.02 * base, `rms ${(rms(mM.II) / base * 100).toFixed(2)}% of baseline`)
+    check('RA↔RL: model I′ = −III', correlation(mM.I, negIII as Float32Array) > 0.999)
+  }
+  // LA↔RL: lead III collapses; I' ≈ II.
+  {
+    const d = derived('la-rl')
+    const base = rms(sigNsr.leads.III)
+    check('LA↔RL: lead III ≈ flatline (algebra path)', rms(d.III) < 0.02 * base)
+    check('LA↔RL: I′ = II (algebra path)', closeTo(d.I, sigNsr.leads.II, 1e-6))
+  }
+  // Limb rotation: derived and model paths agree on every limb lead.
+  {
+    const d = derived('rotate')
+    const mM = model('rotate')
+    for (const l of ['I', 'II', 'III', 'aVR', 'aVL', 'aVF'] as LeadId[]) {
+      const flat = rms(d[l]) < 0.02 * rms(sigNsr.leads.II)
+      check(
+        `rotation: model≈algebra on ${l}`,
+        flat ? rms(mM[l]) < 0.02 * rms(sigNsr.leads.II) : correlation(mM[l], d[l]) > 0.999,
+        flat ? 'both flat' : '',
+      )
+    }
+  }
 }
 
-const byId: Record<string, () => Strip> = {}
-for (const c of CONDITIONS) byId[c.id] = c.buildStrip
-const stripOf = (id: string) => byId[id]()
-
-console.log('=== Measurements ===')
-for (const c of CONDITIONS) {
-  const strip = c.buildStrip()
-  const sig = buildSignals(strip)
-  const m = measure(strip)
-  const f = (n: number) => n.toFixed(1)
-  console.log(
-    `\n${c.shortName.padEnd(20)} HR ${m.rateBpm}  PR ${m.prMs ?? '—'}  QRS ${m.qrsMs}  QT ${m.qtMs}  QTc ${m.qtcMs}  axis ${m.axisDeg}°`,
-  )
-  console.log(
-    `  nets: V1 ${f(netQRS(strip, sig, 'V1'))}  V3 ${f(netQRS(strip, sig, 'V3'))}  V6 ${f(netQRS(strip, sig, 'V6'))}  I ${f(netQRS(strip, sig, 'I'))}  aVR ${f(netQRS(strip, sig, 'aVR'))}`,
-  )
-}
-
-console.log('\n=== Assertions ===')
-for (const c of CONDITIONS) {
-  const m = measure(c.buildStrip())
-  check(`${c.id}: rate sane`, m.rateBpm >= 30 && m.rateBpm <= 220)
-  check(`${c.id}: QRS dur sane`, m.qrsMs > 40 && m.qrsMs < 240)
-  check(`${c.id}: QTc sane`, m.qtcMs > 250 && m.qtcMs < 700)
-}
-
-const M = (id: string) => measure(stripOf(id))
-const net = (id: string, lead: LeadId) => {
-  const s = stripOf(id)
-  return netQRS(s, buildSignals(s), lead)
-}
-
-// NSR baseline
-check('NSR: narrow QRS (<120)', M('nsr').qrsMs < 120)
-check('NSR: PR normal (120–200)', (M('nsr').prMs ?? 0) >= 120 && (M('nsr').prMs ?? 0) <= 200)
-check('NSR: axis normal (−30..+90)', M('nsr').axisDeg >= -30 && M('nsr').axisDeg <= 90)
-check('NSR: QTc normal (350–460)', M('nsr').qtcMs >= 350 && M('nsr').qtcMs <= 460)
-check('NSR: rS in V1 (net −)', net('nsr', 'V1') < 0)
-check('NSR: dominant R in V6 (net +)', net('nsr', 'V6') > 0)
-check('NSR: aVR net negative', net('nsr', 'aVR') < 0)
-
-// BBBs wide
-check('RBBB: wide QRS (≥120)', M('rbbb').qrsMs >= 120)
-check('LBBB: wide QRS (≥120)', M('lbbb').qrsMs >= 120)
-check('LBBB: deep QS in V1 (net −)', net('lbbb', 'V1') < 0)
-
-// Solver presets
-check('sim-NSR: narrow QRS', M('sim-nsr').qrsMs < 120)
-check('sim-NSR: axis normal', M('sim-nsr').axisDeg >= -30 && M('sim-nsr').axisDeg <= 90)
-check('sim-NSR: rS in V1', net('sim-nsr', 'V1') < 0)
-check('sim-NSR: R in V6', net('sim-nsr', 'V6') > 0)
-check('sim-RBBB: wide QRS', M('sim-rbbb').qrsMs >= 120)
-check('sim-LBBB: wide QRS', M('sim-lbbb').qrsMs >= 120)
-check('sim-LBBB: V1 net negative', net('sim-lbbb', 'V1') < 0)
-
-// Anterior STEMI: ST elevation in anterior leads
+// ---------------------------------------------------------------------------
+console.log('=== Chest-electrode physics ===')
 {
-  const s = stripOf('sim-stemi-ant')
-  const sig = buildSignals(s)
-  console.log(`\nSTEMI ST: V2 ${netST(s, sig, 'V2').toFixed(1)}  V3 ${netST(s, sig, 'V3').toFixed(1)}  II ${netST(s, sig, 'II').toFixed(1)}  III ${netST(s, sig, 'III').toFixed(1)}  aVF ${netST(s, sig, 'aVF').toFixed(1)}`)
-  check('sim-STEMI: ST↑ in V2', netST(s, sig, 'V2') > 0.5)
-  check('sim-STEMI: ST↑ in V3', netST(s, sig, 'V3') > 0.5)
-  check('sim-STEMI: reciprocal ST↓ inferiorly (III)', netST(s, sig, 'III') < 0)
+  const v4r = buildSignals(nsr, moveCable(standardMontage(), 'V4', V4R))
+  const stdNet = netQrs(sigNsr, 'V4', wNsr)
+  const mirNet = netQrs(v4r, 'V4', wNsr)
+  check('V4 → V4R flips net QRS polarity', stdNet > 0 && mirNet < 0, `${f1(stdNet)} → ${f1(mirNet)}`)
+
+  const mir = buildSignals(mirrorStrip(nsr), std)
+  check('dextrocardia (mirrored heart): I inverts', netQrs(mir, 'I', wNsr) < 0 && netQrs(sigNsr, 'I', wNsr) > 0)
+  check('dextrocardia: R-progression reverses (V6 net ↓)', netQrs(mir, 'V6', wNsr) < netQrs(sigNsr, 'V6', wNsr))
+
+  // M4: high V1–V2 placement must move V1's terminal forces toward positivity
+  // (the rSr′ direction) and blunt the initial R — the documented misplacement
+  // signature — and flatten/inverting the P-ward deflection is the tell.
+  const high = buildSignals(nsr, PRESETS['high-v1v2']())
+  const termStd = terminalQrsMean(sigNsr, 'V1', wNsr)
+  const termHigh = terminalQrsMean(high, 'V1', wNsr)
+  check('high V1–V2: terminal V1 forces move positive (rSr′ direction)', termHigh > termStd, `${f1(termStd)} → ${f1(termHigh)} mV`)
+  const initStd = initialQrsMean(sigNsr, 'V1', wNsr)
+  const initHigh = initialQrsMean(high, 'V1', wNsr)
+  check('high V1–V2: initial V1 forces blunted (pseudo-septal-infarct direction)', initHigh < initStd, `${f1(initStd)} → ${f1(initHigh)} mV`)
+  const pStd = pMean(sigNsr, 'V1', wNsr)
+  const pHigh = pMean(high, 'V1', wNsr)
+  check('high V1–V2: P in V1 turns negative (the tell)', pHigh < 0 && pHigh < pStd, `${f1(pStd)} → ${f1(pHigh)} mV`)
 }
 
-// --- hard catalog ---
-const sigOf = (id: string) => { const s = stripOf(id); return { s, g: buildSignals(s) } }
+// ---------------------------------------------------------------------------
+console.log('=== Sync warp ===')
+{
+  const model = modelFiducials(nsr)
+  check('model fiducials exist per beat', model.length === nsr.beats.length && model.every((m) => m.qrsOn < m.qrsOff))
 
-console.log('\n=== Hard catalog key features ===')
-{
-  const { s, g } = sigOf('hyperkalemia')
-  const nsrStrip = stripOf('nsr')
-  const peakHyperK = peakT(s, g, 'II')
-  const peakNsr = peakT(nsrStrip, buildSignals(nsrStrip), 'II')
-  console.log(`hyperK   peakT(II) ${peakHyperK.toFixed(2)} vs NSR ${peakNsr.toFixed(2)}  QTc ${M('hyperkalemia').qtcMs}`)
-  check('hyperK: peaked (tall) T in II', peakHyperK > peakNsr * 1.5)
-}
-{
-  const { s, g } = sigOf('sgarbossa')
-  console.log(`sgarb    QRS(V6) ${net('sgarbossa', 'V6').toFixed(1)}  ST(V6) ${netST(s, g, 'V6').toFixed(1)}  QRS ${M('sgarbossa').qrsMs}ms`)
-  check('Sgarbossa: wide QRS (LBBB)', M('sgarbossa').qrsMs >= 120)
-  check('Sgarbossa: concordant STE in V6 (QRS+ & ST+)', net('sgarbossa', 'V6') > 0 && netST(s, g, 'V6') > 0)
-}
-{
-  const { s, g } = sigOf('de-winter')
-  console.log(`deWinter ST(V2) ${netST(s, g, 'V2').toFixed(1)}  T(V2) ${netT(s, g, 'V2').toFixed(1)}`)
-  check('de Winter: ST↓ in V2', netST(s, g, 'V2') < 0)
-  check('de Winter: tall upright T in V2', netT(s, g, 'V2') > 0)
-}
-{
-  const { s, g } = sigOf('wellens')
-  console.log(`wellens  T(V2) ${netT(s, g, 'V2').toFixed(1)}  T(V3) ${netT(s, g, 'V3').toFixed(1)}  T(V6) ${netT(s, g, 'V6').toFixed(1)}`)
-  check('Wellens: T inversion in V2', netT(s, g, 'V2') < 0)
-  check('Wellens: T upright in V6 (localized)', netT(s, g, 'V6') > 0)
-}
-{
-  const { s, g } = sigOf('posterior-mi')
-  console.log(`postMI   QRS(V1) ${net('posterior-mi', 'V1').toFixed(1)}  ST(V1) ${netST(s, g, 'V1').toFixed(1)}`)
-  check('Posterior MI: tall R in V1 (net +)', net('posterior-mi', 'V1') > 0)
-  check('Posterior MI: ST↓ in V1', netST(s, g, 'V1') < 0)
-}
-{
-  const { s, g } = sigOf('brugada')
-  console.log(`brugada  ST(V1) ${netST(s, g, 'V1').toFixed(1)}  T(V1) ${netT(s, g, 'V1').toFixed(1)}`)
-  check('Brugada: STE in V1', netST(s, g, 'V1') > 0)
-  check('Brugada: T inversion in V1', netT(s, g, 'V1') < 0)
-}
-{
-  const mw = M('wpw')
-  console.log(`wpw      PR ${mw.prMs}  QRS ${mw.qrsMs}`)
-  check('WPW: short PR (<120)', (mw.prMs ?? 999) < 120)
-  check('WPW: wide QRS (≥110)', mw.qrsMs >= 110)
+  // Fabricated "recording": same beats, uniformly 15% slower + offset.
+  const realBeats = model.map((m) => ({
+    pOn: m.pOn == null ? undefined : m.pOn * 1.15 + 40,
+    qrsOn: m.qrsOn * 1.15 + 40,
+    qrsOff: m.qrsOff * 1.15 + 40,
+    tEnd: m.tEnd == null ? undefined : m.tEnd * 1.15 + 40,
+  }))
+  const warp = buildWarp({ beats: realBeats }, model, nsr.durationMs * 1.15 + 80, nsr.durationMs)
+  let maxErr = 0
+  for (let i = 0; i < realBeats.length; i++) {
+    maxErr = Math.max(maxErr, Math.abs(warp(realBeats[i].qrsOn) - model[i].qrsOn))
+    maxErr = Math.max(maxErr, Math.abs(warp(realBeats[i].qrsOff) - model[i].qrsOff))
+  }
+  check('warp hits fiducials (<1 ms)', maxErr < 1, `max ${maxErr.toFixed(3)} ms`)
+  let monotonic = true
+  let prev = -Infinity
+  for (let t = realBeats[0].qrsOn; t < realBeats[realBeats.length - 1].qrsOff; t += 7) {
+    const m = warp(t)
+    if (m < prev) monotonic = false
+    prev = m
+  }
+  check('warp monotonic across the annotated span', monotonic)
+
+  let threw = false
+  try {
+    buildWarp({ beats: [{ qrsOn: 100, qrsOff: 50 }] }, model, 1000, nsr.durationMs)
+  } catch { threw = true }
+  check('out-of-order fiducials throw', threw)
 }
 
-console.log(failures ? `\n${failures} CHECK(S) FAILED` : '\nALL CHECKS PASSED ✓')
+// ---------------------------------------------------------------------------
+const table = [
+  ['NSR', nsr], ['RBBB', rbbb], ['LBBB', lbbb], ['STEMI-ant', stemiAnt],
+] as const
+console.log('\n=== Measurements ===')
+for (const [name, s] of table) {
+  const m = measure(s)
+  console.log(`${name.padEnd(10)} HR ${m.rateBpm}  PR ${m.prMs ?? '—'}  QRS ${m.qrsMs}  QTc ${m.qtcMs}  axis ${m.axisDeg}°  (axisFn ${meanQrsAxisDeg(s)}°)`)
+}
+
+console.log(failures ? `\n${failures} CHECK(S) FAILED` : '\nALL ENGINE CHECKS PASSED ✓')
 process.exit(failures ? 1 : 0)

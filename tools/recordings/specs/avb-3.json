@@ -1,0 +1,9 @@
+{
+ "include": {
+  "scpAll": [
+   "3AVB"
+  ]
+ },
+ "cardId": "avb-3",
+ "targetTier": "recorded"
+}

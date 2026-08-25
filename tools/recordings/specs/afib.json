@@ -1,0 +1,19 @@
+{
+ "cardId": "afib",
+ "targetTier": "recorded",
+ "include": {
+  "scpAll": [
+   "AFIB"
+  ]
+ },
+ "exclude": {
+  "scpAny": [
+   "PACE",
+   "CLBBB",
+   "CRBBB"
+  ]
+ },
+ "annotate": {
+  "suppressP": true
+ }
+}

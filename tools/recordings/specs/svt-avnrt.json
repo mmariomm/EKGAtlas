@@ -1,0 +1,1 @@
+{ "cardId": "svt-avnrt", "targetTier": "recorded", "include": { "scpAll": ["PSVT"] }, "exclude": { "scpAny": ["AFIB", "AFLT", "PACE", "CLBBB", "CRBBB"] }, "annotate": { "suppressP": true } }

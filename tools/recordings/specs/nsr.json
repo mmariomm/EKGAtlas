@@ -1,0 +1,1 @@
+{ "cardId": "nsr", "targetTier": "recorded", "include": { "scpAll": ["NORM", "SR"] }, "age": [30, 79] }

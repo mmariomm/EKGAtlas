@@ -1,0 +1,11 @@
+.heart {
+  width: 100%;
+  touch-action: pan-y;
+  cursor: grab;
+}
+.heart:active { cursor: grabbing; }
+.heart svg, .heart canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}

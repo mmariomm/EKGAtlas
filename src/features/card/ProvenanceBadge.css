@@ -1,0 +1,15 @@
+.provbadge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  color: var(--ink-2);
+}
+.provbadge-recorded { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.provbadge-derived { color: var(--ph-atria); border-color: color-mix(in srgb, var(--ph-atria) 40%, var(--line)); }
+.provbadge-reconstructed { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+.provbadge-modeled { color: var(--ink-2); }

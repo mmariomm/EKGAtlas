@@ -1,0 +1,561 @@
+{
+  "assets": {
+    "ptbxl-3-nsr": {
+      "cardId": "nsr",
+      "ecgId": 3,
+      "source": "records500/00000/00003_hr",
+      "age": 37,
+      "sex": "F",
+      "scp": {
+        "NORM": 100,
+        "SR": 0
+      },
+      "beats": 10,
+      "bytes": 189832,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-24-nsr": {
+      "cardId": "nsr",
+      "ecgId": 24,
+      "source": "records500/00000/00024_hr",
+      "age": 41,
+      "sex": "M",
+      "scp": {
+        "NORM": 100,
+        "SR": 0
+      },
+      "beats": 9,
+      "bytes": 201522,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-330-afib": {
+      "cardId": "afib",
+      "ecgId": 330,
+      "source": "records500/00000/00330_hr",
+      "age": 61,
+      "sex": "M",
+      "scp": {
+        "NORM": 50,
+        "AFIB": 0
+      },
+      "beats": 11,
+      "bytes": 194859,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-338-lbbb": {
+      "cardId": "lbbb",
+      "ecgId": 338,
+      "source": "records500/00000/00338_hr",
+      "age": 69,
+      "sex": "F",
+      "scp": {
+        "CLBBB": 100,
+        "SR": 0
+      },
+      "beats": 12,
+      "bytes": 188886,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-711-lbbb": {
+      "cardId": "lbbb",
+      "ecgId": 711,
+      "source": "records500/00000/00711_hr",
+      "age": 77,
+      "sex": "F",
+      "scp": {
+        "CLBBB": 100,
+        "SR": 0
+      },
+      "beats": 12,
+      "bytes": 203847,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-320-longqt": {
+      "cardId": "longqt",
+      "ecgId": 320,
+      "source": "records500/00000/00320_hr",
+      "age": 79,
+      "sex": "M",
+      "scp": {
+        "LNGQT": 100,
+        "SR": 0
+      },
+      "beats": 9,
+      "bytes": 188124,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-23-aflutter": {
+      "cardId": "aflutter",
+      "ecgId": 23,
+      "source": "records500/00000/00023_hr",
+      "age": 56,
+      "sex": "M",
+      "scp": {
+        "AFLT": 100
+      },
+      "beats": 21,
+      "bytes": 192962,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-621-rbbb": {
+      "cardId": "rbbb",
+      "ecgId": 621,
+      "source": "records500/00000/00621_hr",
+      "age": 70,
+      "sex": "M",
+      "scp": {
+        "CRBBB": 100,
+        "SR": 0
+      },
+      "beats": 9,
+      "bytes": 195269,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-1674-paced-v": {
+      "cardId": "paced-v",
+      "ecgId": 1674,
+      "source": "records500/01000/01674_hr",
+      "age": 78,
+      "sex": "F",
+      "scp": {
+        "PACE": 100
+      },
+      "beats": 11,
+      "bytes": 202646,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-959-avb-3": {
+      "cardId": "avb-3",
+      "ecgId": 959,
+      "source": "records500/00000/00959_hr",
+      "age": 88,
+      "sex": "F",
+      "scp": {
+        "ASMI": 15,
+        "IRBBB": 100,
+        "3AVB": 100,
+        "SR": 0
+      },
+      "beats": 6,
+      "bytes": 177814,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-2989-lvh-strain": {
+      "cardId": "lvh-strain",
+      "ecgId": 2989,
+      "source": "records500/02000/02989_hr",
+      "age": 74,
+      "sex": "F",
+      "scp": {
+        "LVH": 100,
+        "NDT": 100,
+        "SR": 0
+      },
+      "beats": 12,
+      "bytes": 188175,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-414-omi-anterior": {
+      "cardId": "omi-anterior",
+      "ecgId": 414,
+      "source": "records500/00000/00414_hr",
+      "age": 43,
+      "sex": "M",
+      "scp": {
+        "INJAS": 100,
+        "INJAL": 100,
+        "LVH": 50,
+        "VCLVH": 0,
+        "STD_": 0,
+        "SR": 0
+      },
+      "beats": 12,
+      "bytes": 189983,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-1199-omi-anterior": {
+      "cardId": "omi-anterior",
+      "ecgId": 1199,
+      "source": "records500/01000/01199_hr",
+      "age": 66,
+      "sex": "F",
+      "scp": {
+        "INJAS": 100,
+        "INJAL": 100,
+        "LVH": 50,
+        "STD_": 0,
+        "SR": 0
+      },
+      "beats": 9,
+      "bytes": 186433,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-968-omi-inferior": {
+      "cardId": "omi-inferior",
+      "ecgId": 968,
+      "source": "records500/00000/00968_hr",
+      "age": 79,
+      "sex": "M",
+      "scp": {
+        "ASMI": 50,
+        "INJIL": 100,
+        "INVT": 0,
+        "STD_": 0,
+        "SR": 0
+      },
+      "beats": 11,
+      "bytes": 189317,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-9933-omi-inferior": {
+      "cardId": "omi-inferior",
+      "ecgId": 9933,
+      "source": "records500/09000/09933_hr",
+      "age": 61,
+      "sex": "M",
+      "scp": {
+        "LMI": 100,
+        "AMI": 100,
+        "INJIL": 100,
+        "SR": 0
+      },
+      "beats": 9,
+      "bytes": 184787,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-1544-omi-posterior": {
+      "cardId": "omi-posterior",
+      "ecgId": 1544,
+      "source": "records500/01000/01544_hr",
+      "age": 71,
+      "sex": "M",
+      "scp": {
+        "IMI": 80,
+        "PMI": 50,
+        "QWAVE": 0,
+        "SR": 0
+      },
+      "beats": 14,
+      "bytes": 196854,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-11682-wellens": {
+      "cardId": "wellens",
+      "ecgId": 11682,
+      "source": "records500/11000/11682_hr",
+      "age": 76,
+      "sex": "F",
+      "scp": {
+        "ISCAN": 100,
+        "ISCAS": 50,
+        "SR": 0
+      },
+      "beats": 11,
+      "bytes": 188384,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-18810-wellens": {
+      "cardId": "wellens",
+      "ecgId": 18810,
+      "source": "records500/18000/18810_hr",
+      "age": 56,
+      "sex": "F",
+      "scp": {
+        "ISCAN": 50,
+        "ISCAS": 100,
+        "SR": 0
+      },
+      "beats": 11,
+      "bytes": 166372,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-273-lvh-strain": {
+      "cardId": "lvh-strain",
+      "ecgId": 273,
+      "source": "records500/00000/00273_hr",
+      "age": 85,
+      "sex": "F",
+      "scp": {
+        "ISC_": 100,
+        "LVH": 100,
+        "VCLVH": 0,
+        "STD_": 0,
+        "SR": 0
+      },
+      "beats": 16,
+      "bytes": 195067,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-767-lvh-strain": {
+      "cardId": "lvh-strain",
+      "ecgId": 767,
+      "source": "records500/00000/00767_hr",
+      "age": 78,
+      "sex": "F",
+      "scp": {
+        "LVH": 100,
+        "ISC_": 100,
+        "VCLVH": 0,
+        "STD_": 0,
+        "SR": 0
+      },
+      "beats": 9,
+      "bytes": 189999,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-1024-rbbb": {
+      "cardId": "rbbb",
+      "ecgId": 1024,
+      "source": "records500/01000/01024_hr",
+      "age": 23,
+      "sex": "F",
+      "scp": {
+        "CRBBB": 100,
+        "SR": 0
+      },
+      "beats": 12,
+      "bytes": 193405,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-11648-omi-inferior": {
+      "cardId": "omi-inferior",
+      "ecgId": 11648,
+      "source": "records500/11000/11648_hr",
+      "age": 79,
+      "sex": "M",
+      "scp": {
+        "INJAL": 100,
+        "INJIN": 100,
+        "1AVB": 100,
+        "SR": 0
+      },
+      "beats": 12,
+      "bytes": 197495,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-15061-omi-inferior": {
+      "cardId": "omi-inferior",
+      "ecgId": 15061,
+      "source": "records500/15000/15061_hr",
+      "age": 63,
+      "sex": "M",
+      "scp": {
+        "INJAL": 100,
+        "INJIN": 100,
+        "SR": 0
+      },
+      "beats": 13,
+      "bytes": 179129,
+      "convertedAt": "2026-08-24"
+    },
+    "ptbxl-2145-wpw": {
+      "cardId": "wpw",
+      "ecgId": 2145,
+      "source": "records500/02000/02145_hr",
+      "age": 55,
+      "sex": "F",
+      "scp": {
+        "WPW": 100
+      },
+      "beats": 12,
+      "bytes": 197672,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-4279-wpw": {
+      "cardId": "wpw",
+      "ecgId": 4279,
+      "source": "records500/04000/04279_hr",
+      "age": 46,
+      "sex": "F",
+      "scp": {
+        "WPW": 50,
+        "LOWT": 0,
+        "STD_": 0,
+        "SR": 0
+      },
+      "beats": 13,
+      "bytes": 199710,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-4825-wpw": {
+      "cardId": "wpw",
+      "ecgId": 4825,
+      "source": "records500/04000/04825_hr",
+      "age": 45,
+      "sex": "M",
+      "scp": {
+        "WPW": 100,
+        "ABQRS": 0,
+        "SR": 0
+      },
+      "beats": 11,
+      "bytes": 202507,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-5303-wpw": {
+      "cardId": "wpw",
+      "ecgId": 5303,
+      "source": "records500/05000/05303_hr",
+      "age": 34,
+      "sex": "M",
+      "scp": {
+        "WPW": 100,
+        "SR": 0
+      },
+      "beats": 11,
+      "bytes": 210596,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-1299-svt-avnrt": {
+      "cardId": "svt-avnrt",
+      "ecgId": 1299,
+      "source": "records500/01000/01299_hr",
+      "age": 53,
+      "sex": "F",
+      "scp": {
+        "PSVT": 100
+      },
+      "beats": 23,
+      "bytes": 191972,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-2051-svt-avnrt": {
+      "cardId": "svt-avnrt",
+      "ecgId": 2051,
+      "source": "records500/02000/02051_hr",
+      "age": 72,
+      "sex": "F",
+      "scp": {
+        "PSVT": 100
+      },
+      "beats": 25,
+      "bytes": 200339,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-3134-svt-avnrt": {
+      "cardId": "svt-avnrt",
+      "ecgId": 3134,
+      "source": "records500/03000/03134_hr",
+      "age": 55,
+      "sex": "F",
+      "scp": {
+        "PSVT": 100
+      },
+      "beats": 28,
+      "bytes": 193856,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-3789-leftmain": {
+      "cardId": "leftmain",
+      "ecgId": 3789,
+      "source": "records500/03000/03789_hr",
+      "age": 74,
+      "sex": "F",
+      "scp": {
+        "INJAS": 100,
+        "INJLA": 100,
+        "INJIN": 100,
+        "SR": 0
+      },
+      "beats": 13,
+      "bytes": 187806,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-6817-leftmain": {
+      "cardId": "leftmain",
+      "ecgId": 6817,
+      "source": "records500/06000/06817_hr",
+      "age": 80,
+      "sex": "F",
+      "scp": {
+        "INJAS": 100,
+        "INJAL": 100,
+        "INJIN": 100,
+        "SR": 0
+      },
+      "beats": 9,
+      "bytes": 191686,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-6751-leftmain": {
+      "cardId": "leftmain",
+      "ecgId": 6751,
+      "source": "records500/06000/06751_hr",
+      "age": 80,
+      "sex": "F",
+      "scp": {
+        "INJAS": 100,
+        "INJAL": 100,
+        "INJIN": 50,
+        "SR": 0
+      },
+      "beats": 10,
+      "bytes": 183466,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-3484-sgarbossa": {
+      "cardId": "sgarbossa",
+      "ecgId": 3484,
+      "source": "records500/03000/03484_hr",
+      "age": 300,
+      "sex": "F",
+      "scp": {
+        "CLBBB": 100,
+        "ISCAL": 100,
+        "SBRAD": 0
+      },
+      "beats": 9,
+      "bytes": 189026,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-7105-sgarbossa": {
+      "cardId": "sgarbossa",
+      "ecgId": 7105,
+      "source": "records500/07000/07105_hr",
+      "age": 300,
+      "sex": "F",
+      "scp": {
+        "AMI": 50,
+        "ANEUR": 50,
+        "CLBBB": 100,
+        "AFIB": 0
+      },
+      "beats": 14,
+      "bytes": 203482,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-4670-leftmain": {
+      "cardId": "leftmain",
+      "ecgId": 4670,
+      "source": "records500/04000/04670_hr",
+      "age": 65,
+      "sex": "F",
+      "scp": {
+        "INJAS": 100,
+        "ISCAL": 100,
+        "ISCIN": 100
+      },
+      "beats": 14,
+      "bytes": 195489,
+      "convertedAt": "2026-08-25"
+    },
+    "ptbxl-2054-leftmain": {
+      "cardId": "leftmain",
+      "ecgId": 2054,
+      "source": "records500/02000/02054_hr",
+      "age": 74,
+      "sex": "F",
+      "scp": {
+        "INJAS": 100,
+        "INJAL": 100,
+        "LVH": 15,
+        "LOWT": 0,
+        "STD_": 0,
+        "SR": 0
+      },
+      "beats": 15,
+      "bytes": 201078,
+      "convertedAt": "2026-08-25"
+    }
+  }
+}

@@ -1,0 +1,1 @@
+{ "cardId": "lbbb", "targetTier": "recorded", "include": { "scpAll": ["CLBBB", "SR"] }, "exclude": { "scpAny": ["AFIB", "PACE"] } }

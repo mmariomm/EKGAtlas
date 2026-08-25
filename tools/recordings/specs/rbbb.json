@@ -1,0 +1,18 @@
+{
+ "include": {
+  "scpAll": [
+   "CRBBB",
+   "SR"
+  ]
+ },
+ "exclude": {
+  "scpAny": [
+   "AFIB",
+   "PACE",
+   "AMI",
+   "IMI"
+  ]
+ },
+ "cardId": "rbbb",
+ "targetTier": "recorded"
+}

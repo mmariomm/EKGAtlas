@@ -1,20 +1,37 @@
 /**
- * The synthesizer. Everything the UI reads is derived from one place — a beat's
- * `sources` (and glow-only `wires`) — so the trace and the heart animation are
- * guaranteed concordant:
+ * The forward model. Everything the UI reads derives from a beat's `sources`
+ * (and glow-only `wires`), so the trace and the heart animation are guaranteed
+ * concordant:
  *
- *   buildSignals    → calibrated per-lead waveforms (mV)        → TraceCanvas
- *   sampleVector    → the instantaneous heart vector at time t  → arrow + trace playhead
- *   sampleActivation→ which structures glow (level + progress)  → HeartDiagram
- *   samplePhase     → human-readable phase + cross-modal tone   → narration + color
- *   meanQrsAxisDeg  → frontal QRS axis                           → readout
+ *   buildSignals    → per-lead waveforms (mV) via electrode potentials
+ *   sampleVector    → the instantaneous heart vector at time t (the arrow)
+ *   sampleActivation→ which structures glow (level + progress)
+ *   samplePhase     → human-readable phase + cross-modal tone
  *
- * The strip is a seamless loop: every time comparison uses the shortest cyclic
+ * Physics: each source is a point dipole in an infinite homogeneous conductor.
+ * Potential at electrode e:  φ = G · mag · g(t) · (d̂ · r̂) / max(|r|², R_MIN²),
+ * r = electrodeSite − sourcePos. Leads are DERIVED from φ (leads.ts) — so
+ * Einthoven/Goldberger identities hold exactly and electrode moves are lawful.
+ *
+ * The strip is a seamless loop: time comparisons use the shortest cyclic
  * distance, so tails wrap around the boundary with no seam.
  */
-import { LeadId, LEAD_AXES, ALL_LEADS } from './leads'
-import { Strip, StructureId, PhaseTone } from './types'
-import { Vec3, dot, normalize, scale, add, clamp, smoothstep, frontalAngleDeg } from './vectorMath'
+import { ALL_LEADS, LeadId, leadsFromPhi, Phi } from './leads'
+import { CableId, Montage, standardMontage } from './electrodes'
+import { PhaseTone, Strip, StructureId } from './sources'
+import { add, clamp, dot, normalize, scale, smoothstep, sub, Vec3 } from './vec'
+
+/** Distance clamp: keeps a dragged electrode from diving into the singularity
+ *  and keeps the precordial/limb proximity ratio in a teaching-honest range. */
+export const R_MIN = 1.0
+
+/** Global gain, calibrated so the reference NSR strip puts R(II) in the
+ *  textbook range (see test/engine.test.ts calibration check). */
+export const ENGINE_GAIN = 2.9
+
+const ORIGIN: Vec3 = [0, 0, 0]
+
+const CABLES: CableId[] = ['RA', 'LA', 'LL', 'RL', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6']
 
 const cyclicDelta = (t: number, center: number, period: number): number => {
   let d = t - center
@@ -28,7 +45,7 @@ const bell = (t: number, center: number, width: number, period: number): number 
   Math.exp(-0.5 * (cyclicDelta(t, center, period) / width) ** 2)
 
 // ---------------------------------------------------------------------------
-// Per-lead waveform synthesis (from the dipole sources)
+// Per-lead waveform synthesis
 // ---------------------------------------------------------------------------
 
 export interface SignalSet {
@@ -41,42 +58,55 @@ export interface SignalSet {
 interface PreparedSource {
   center: number
   width: number
+  /** Per-lead peak contribution in mV (montage folded in). */
   proj: Record<LeadId, number>
 }
 
-const prepareSources = (strip: Strip, leadIds: LeadId[]): PreparedSource[] => {
+/** φ coefficient of a unit-gaussian source at one electrode site. */
+const phiCoef = (site: Vec3, sPos: Vec3, dHat: Vec3): number => {
+  const r = sub(site, sPos)
+  const d2 = Math.max(r[0] * r[0] + r[1] * r[1] + r[2] * r[2], R_MIN * R_MIN)
+  return dot(dHat, normalize(r)) / d2
+}
+
+const prepareSources = (strip: Strip, montage: Montage): PreparedSource[] => {
   const out: PreparedSource[] = []
   for (const beat of strip.beats) {
     for (const s of beat.sources) {
       if (s.mag === 0) continue
-      const u = normalize(s.dir)
-      const proj = {} as Record<LeadId, number>
-      for (const id of leadIds) proj[id] = s.mag * dot(u, LEAD_AXES[id])
-      out.push({ center: beat.onset + s.center, width: s.width, proj })
+      const dHat = normalize(s.dir)
+      const pos = s.pos ?? ORIGIN
+      const phi = {} as Phi
+      for (const c of CABLES) phi[c] = ENGINE_GAIN * s.mag * phiCoef(montage.site[c], pos, dHat)
+      out.push({ center: beat.onset + s.center, width: s.width, proj: leadsFromPhi(phi) })
     }
   }
   return out
 }
 
-export const buildSignals = (strip: Strip, leadIds: LeadId[] = ALL_LEADS, dt = 2): SignalSet => {
+export const buildSignals = (
+  strip: Strip,
+  montage: Montage = standardMontage(),
+  dt = 2,
+): SignalSet => {
   const n = Math.max(1, Math.round(strip.durationMs / dt))
   const leads = {} as Record<LeadId, Float32Array>
-  for (const id of leadIds) leads[id] = new Float32Array(n)
+  for (const id of ALL_LEADS) leads[id] = new Float32Array(n)
 
-  const sources = prepareSources(strip, leadIds)
+  const sources = prepareSources(strip, montage)
   for (let i = 0; i < n; i++) {
     const t = i * dt
     for (const s of sources) {
       const g = bell(t, s.center, s.width, strip.durationMs)
       if (g < 1e-4) continue
-      for (const id of leadIds) leads[id][i] += s.proj[id] * g
+      for (const id of ALL_LEADS) leads[id][i] += s.proj[id] * g
     }
   }
   return { dt, durationMs: strip.durationMs, n, leads }
 }
 
 // ---------------------------------------------------------------------------
-// Instantaneous heart vector
+// Instantaneous heart vector (independent of electrodes)
 // ---------------------------------------------------------------------------
 
 export const sampleVector = (strip: Strip, t: number): Vec3 => {
@@ -92,8 +122,21 @@ export const sampleVector = (strip: Strip, t: number): Vec3 => {
   return v
 }
 
+/** Mean frontal QRS axis from the first beat carrying real QRS sources. */
+export const meanQrsAxisDeg = (strip: Strip): number => {
+  let net: Vec3 = [0, 0, 0]
+  const beat =
+    strip.beats.find((b) => b.sources.some((s) => s.segment === 'QRS' && s.mag > 0)) ??
+    strip.beats[0]
+  for (const s of beat.sources) {
+    if (s.segment !== 'QRS' || s.mag === 0) continue
+    net = add(net, scale(normalize(s.dir), s.mag))
+  }
+  return Math.round((Math.atan2(net[1], net[0]) * 180) / Math.PI)
+}
+
 // ---------------------------------------------------------------------------
-// Conduction-system + chamber glow (derived from the SAME sources + wires)
+// Structure glow (derived from the SAME sources + wires)
 // ---------------------------------------------------------------------------
 
 export interface Activation {
@@ -125,12 +168,12 @@ const progressAt = (t: number, start: number, end: number, period: number): numb
   return clamp((tA - start) / (end - start), 0, 1)
 }
 
-/** Every (structure, window, tone) glow contribution in the strip. */
 interface GlowSpan {
   structure: StructureId
   start: number
   end: number
   kind: PhaseTone
+  note?: string
 }
 
 const glowSpans = (strip: Strip): GlowSpan[] => {
@@ -139,11 +182,17 @@ const glowSpans = (strip: Strip): GlowSpan[] => {
     for (const s of beat.sources) {
       if (!s.glow) continue
       for (const st of s.glow.structures) {
-        spans.push({ structure: st, start: beat.onset + s.glow.start, end: beat.onset + s.glow.end, kind: s.glow.kind })
+        spans.push({
+          structure: st,
+          start: beat.onset + s.glow.start,
+          end: beat.onset + s.glow.end,
+          kind: s.glow.kind,
+          note: s.glow.note,
+        })
       }
     }
     for (const w of beat.wires) {
-      spans.push({ structure: w.structure, start: beat.onset + w.start, end: beat.onset + w.end, kind: w.kind })
+      spans.push({ structure: w.structure, start: beat.onset + w.start, end: beat.onset + w.end, kind: w.kind, note: w.note })
     }
   }
   return spans
@@ -162,10 +211,6 @@ export const sampleActivation = (strip: Strip, t: number): Map<StructureId, Acti
   }
   return out
 }
-
-// ---------------------------------------------------------------------------
-// Current beat context (label + ectopic focus)
-// ---------------------------------------------------------------------------
 
 export const beatAt = (strip: Strip, t: number) => {
   let current = strip.beats[0]
@@ -197,31 +242,11 @@ const TONE_DEFAULT: Record<PhaseTone, { text: string; sub: string }> = {
   rest: { text: 'Diastole', sub: 'ventricular filling' },
 }
 
-interface PhaseCandidate {
-  start: number
-  end: number
-  kind: PhaseTone
-  note?: string
-}
-
-const phaseCandidates = (strip: Strip): PhaseCandidate[] => {
-  const out: PhaseCandidate[] = []
-  for (const beat of strip.beats) {
-    for (const s of beat.sources) {
-      if (s.glow) out.push({ start: beat.onset + s.glow.start, end: beat.onset + s.glow.end, kind: s.glow.kind, note: s.glow.note })
-    }
-    for (const w of beat.wires) {
-      out.push({ start: beat.onset + w.start, end: beat.onset + w.end, kind: w.kind, note: w.note })
-    }
-  }
-  return out
-}
-
 export const samplePhase = (strip: Strip, t: number): PhaseInfo => {
   const period = strip.durationMs
   let bestRank = -1
   let best: { tone: PhaseTone; note?: string; level: number } | null = null
-  for (const c of phaseCandidates(strip)) {
+  for (const c of glowSpans(strip)) {
     const lvl = pulseAt(t, c.start, c.end, period)
     if (lvl < 0.15) continue
     const rank = TONE_RANK[c.kind]
@@ -233,18 +258,4 @@ export const samplePhase = (strip: Strip, t: number): PhaseInfo => {
   if (!best) return { ...TONE_DEFAULT.rest, tone: 'rest' }
   const def = TONE_DEFAULT[best.tone]
   return { text: best.note ?? def.text, sub: best.note ? def.text : def.sub, tone: best.tone }
-}
-
-// ---------------------------------------------------------------------------
-// Mean frontal QRS axis (from the first beat's QRS sources)
-// ---------------------------------------------------------------------------
-
-export const meanQrsAxisDeg = (strip: Strip): number => {
-  let net: Vec3 = [0, 0, 0]
-  const beat = strip.beats.find((b) => b.sources.some((s) => s.segment === 'QRS' && s.mag > 0)) ?? strip.beats[0]
-  for (const s of beat.sources) {
-    if (s.segment !== 'QRS' || s.mag === 0) continue
-    net = add(net, scale(normalize(s.dir), s.mag))
-  }
-  return Math.round(frontalAngleDeg(net))
 }
