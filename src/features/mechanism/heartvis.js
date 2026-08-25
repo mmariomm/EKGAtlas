@@ -1,6 +1,6 @@
 /**
- * HeartVis v2 — the from-scratch conduction visual, designed by an isolated
- * "fresh eyes" agent against the HeartVis contract (see heartVisState.ts and
+ * HeartVis — the conduction visual, designed by an isolated "fresh eyes"
+ * agent against the HeartVis contract (see heartVisState.ts and
  * docs/heart-v2/). Extracted verbatim from the delivered prototype; the demo
  * driver was left behind — the app drives update() from the shared clock.
  * Side-effect module: importing it defines window.HeartVis.
@@ -507,11 +507,6 @@ function mount(el, opts = {}) {
       style: 'font:600 8px -apple-system,system-ui,sans-serif;letter-spacing:.14em;text-transform:uppercase;'
     }, gUI);
     ink.phaseText.textContent = '';
-    const cap = svgEl('text', {
-      x: 376, y: 425.5, fill: '#46536b', 'fill-opacity': 0.75, 'text-anchor': 'end',
-      style: 'font:600 7px -apple-system,system-ui,sans-serif;letter-spacing:.14em;'
-    }, gUI);
-    cap.textContent = 'FRONTAL PLANE · VCG';
 
     // ectopic focus marker (hidden until fed)
     ink.focus = svgEl('g', { opacity: 0 }, gMain);

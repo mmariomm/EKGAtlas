@@ -1,5 +1,5 @@
 /**
- * The hero demo. Drag electrodes on a torso and watch the trace obey — lawful
+ * Drag electrodes on a torso and watch the trace obey — lawful
  * physics in both modes: the modeled heart (engine v2, any manipulation) or a
  * REAL recording (limb-cable swaps recomputed exactly from leads I and II;
  * chest leads can't be re-derived from a recording, so those pucks lock).
@@ -134,6 +134,15 @@ export default function ElectrodeLabScreen() {
     })
   }, [modelStrip, montage, dextro])
 
+  // Ghost reference: what the SAME heart writes with standard placement —
+  // drawn softly under the displaced trace so the difference is the lesson.
+  const nonStandard = !isStandard(board)
+  const modelGhost = useMemo(() => {
+    if (!nonStandard) return null
+    const sig = buildSignals(modelStrip, boardToMontage(standardBoard()))
+    return signalsToTraceData('lab-model-std', sig, { tier: 'modeled', modelNote: 'standard placement' })
+  }, [nonStandard, modelStrip])
+
   // Real-mode signals: exact limb algebra on the recording.
   const realData = useMemo(() => {
     if (!real) return null
@@ -217,6 +226,7 @@ export default function ElectrodeLabScreen() {
           chestLocked={mode === 'real'}
           onChestLockedTouch={() => flashHint('Chest leads can’t be re-derived from a recording — switch to the modeled heart to move these.')}
           onChestDrag={onChestDrag}
+          standardChest={standardBoard().chest}
         />
       )}
       {hint && <p className="lab-hint">{hint}</p>}
@@ -252,6 +262,8 @@ export default function ElectrodeLabScreen() {
             onTap={clock.toggle}
             badge={<ProvenanceBadge provenance={data.provenance} />}
             laneHeight={64}
+            ghost={nonStandard ? (mode === 'model' ? modelGhost : real) : null}
+            ghostLabel="standard placement"
           />
           <div className="lab-leadpick">
             {ALL_LEADS.map((l) => (

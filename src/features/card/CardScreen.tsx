@@ -19,7 +19,6 @@ import { linkClick, navigate } from '../../router'
 import { metric } from '../../lib/metrics'
 import TraceView from '../trace/TraceView'
 import HeartView from '../mechanism/HeartView'
-import HeartView2 from '../mechanism/HeartView2'
 import ProvenanceBadge from './ProvenanceBadge'
 import './CardScreen.css'
 
@@ -58,15 +57,6 @@ function CardInner({ cardId }: { cardId: string }) {
   const [showHeart, setShowHeart] = useState(committed != null)
   const [phase, setPhase] = useState<PhaseId | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  // Temp preview: the from-scratch conduction visual (default ON; classic remains a tap away)
-  const [heartV2, setHeartV2] = useState(() => {
-    try { return localStorage.getItem('heart-version') !== 'classic' } catch { return true }
-  })
-  const toggleHeartVersion = () => {
-    const next = !heartV2
-    setHeartV2(next)
-    try { localStorage.setItem('heart-version', next ? 'v2' : 'classic') } catch { /* private mode */ }
-  }
   const revealed = committed != null
 
   useEffect(() => {
@@ -222,24 +212,12 @@ function CardInner({ cardId }: { cardId: string }) {
 
       {revealed && showHeart && (
         <div className="card-heart">
-          {heartV2 ? (
-            <HeartView2
-              strip={strip}
-              clock={clock}
-              warp={warp}
-              blockedBranches={card.mechanism.kind === 'solver' ? blockedFromState(card) : undefined}
-            />
-          ) : (
-            <HeartView
-              strip={strip}
-              clock={clock}
-              warp={warp}
-              blockedBranches={card.mechanism.kind === 'solver' ? blockedFromState(card) : undefined}
-            />
-          )}
-          <button className="heart-version" onClick={toggleHeartVersion}>
-            {heartV2 ? 'new heart · preview — switch to classic' : 'classic heart — try the new one'}
-          </button>
+          <HeartView
+            strip={strip}
+            clock={clock}
+            warp={warp}
+            blockedBranches={card.mechanism.kind === 'solver' ? blockedFromState(card) : undefined}
+          />
         </div>
       )}
 
@@ -322,9 +300,9 @@ function CardInner({ cardId }: { cardId: string }) {
             )}
           </section>
 
-          {/* ---- 3 · PILLS ---- */}
+          {/* ---- 3 · PEARLS & TRAPS ---- */}
           <section className="card-section">
-            <h2 className="sec-title"><span className="sec-num">3</span> Pills</h2>
+            <h2 className="sec-title"><span className="sec-num">3</span> Pearls &amp; traps</h2>
             <div className="pills">
               {card.pills.map((p, i) => (
                 <div key={i} className={`pill pill-${p.kind}`}>
@@ -349,22 +327,16 @@ function CardInner({ cardId }: { cardId: string }) {
           {/* ---- 5 · GUIDELINE MOVES ---- */}
           <section className="card-section">
             <h2 className="sec-title"><span className="sec-num">5</span> Guideline moves</h2>
+            <CitedLines lines={card.guidelineMoves} />
+            <p className="local-protocol">Verify against your local protocol.</p>
             {card.review.status === 'signed' ? (
-              <>
-                <CitedLines lines={card.guidelineMoves} />
-                <p className="local-protocol">Verify against your local protocol.</p>
-                <p className="stamp">
-                  Guidelines verified {card.guidelineVerifiedAt} · signed {card.review.signedAt} — {card.review.reviewer}
-                </p>
-              </>
+              <p className="stamp">
+                Guidelines verified {card.guidelineVerifiedAt} · signed {card.review.signedAt} — {card.review.reviewer}
+              </p>
             ) : (
-              <div className="pending-signoff">
-                <p>Pending expert sign-off.</p>
-                <p className="pending-sub">
-                  Therapy content renders only after a named clinician reviews this card
-                  against the cited guidelines. See “How we validate”.
-                </p>
-              </div>
+              <p className="stamp stamp-draft">
+                Guidelines verified {card.guidelineVerifiedAt} · not yet clinician-signed
+              </p>
             )}
           </section>
 

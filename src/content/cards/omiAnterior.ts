@@ -43,7 +43,7 @@ export const omiAnterior: Card = {
     { text: 'Serial ECGs; compare with priors; troponin confirms but must not delay.', cites: ['AHA-ACS-2025'] },
   ],
   guidelineMoves: [
-    { text: 'Activate reperfusion: primary PCI (door-to-balloon ≤90 min; ≤120 if transferring).', cites: ['AHA-ACS-2025'] },
+    { text: 'Activate reperfusion: primary PCI — FMC-to-device ≤90 min (≤120 if transferring); lytics if PCI can’t make 120.', cites: ['AHA-ACS-2025'] },
     { text: 'Aspirin now; anticoagulation and P2Y₁₂ per local cath pathway.', cites: ['AHA-ACS-2025'] },
   ],
   mechanism: {

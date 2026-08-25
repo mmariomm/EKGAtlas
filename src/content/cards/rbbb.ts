@@ -38,7 +38,7 @@ export const rbbb: Card = {
     { kind: 'night-eye', text: 'Expected discordance here is small: T inversion in V1–V2 is the norm; STE in V1 is NOT — investigate it.' },
   ],
   suspectConfirm: [
-    { text: 'New RBBB with dyspnea/hypotension: think RV strain — pulmonary embolism belongs on the list.', cites: ['ESC-VA-2022'] },
+    { text: 'New RBBB with dyspnea/hypotension: think RV strain — pulmonary embolism belongs on the list.', cites: ['AHA-PE-2026'] },
   ],
   guidelineMoves: [
     { text: 'Isolated asymptomatic RBBB needs no treatment — the work is in what caused it.', cites: ['AHA-BRADY-2018'] },

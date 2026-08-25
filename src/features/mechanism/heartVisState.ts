@@ -1,7 +1,6 @@
 /**
- * Adapter: engine state → the HeartVis v2 prototype contract (the from-scratch
- * conduction visual). The contract is deliberately implementation-agnostic so
- * the designed component and the physics stay decoupled.
+ * Adapter: engine state → the HeartVis contract. The contract is deliberately
+ * implementation-agnostic so the visual and the physics stay decoupled.
  */
 import { Strip, StructureId } from '../../engine/sources'
 import { beatAt, sampleActivation, samplePhase, sampleVector } from '../../engine/synthesize'

@@ -34,7 +34,7 @@ export default function AboutScreen() {
           <li>Real recordings come from <b>PTB-XL</b> (PhysioNet), used under CC BY 4.0 — Wagner et&nbsp;al., <i>Scientific Data</i> 2020. Each file is parsed against its own embedded checksums.</li>
           <li>Every card carries <b>machine-checked assertions</b> — encoded diagnostic criteria that run against both the model and the shipped recording on every release. A card that fails does not ship.</li>
           <li>Every clinical line carries a <b>citation</b> (registry below) and the card carries a guideline-verification date. Stale citations block release.</li>
-          <li>Therapy content renders only after a <b>named clinician signs the card</b>. Until then you see "pending expert sign-off" — never silent draft medicine.</li>
+          <li>Every therapy section carries a <b>review stamp</b>: the guideline-verification date, plus either the named clinician who signed it or an explicit "not yet clinician-signed" — never silent draft medicine.</li>
           <li>Rendered screens are audited visually before release, and an adversarial review (criteria auditor · hostile attending · learner-comprehension · consistency) runs on every card.</li>
         </ul>
       </section>

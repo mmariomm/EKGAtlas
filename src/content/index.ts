@@ -80,8 +80,8 @@ export const PACKS: Pack[] = [
   },
   {
     id: 'systemic-window',
-    title: 'The systemic window',
-    blurb: 'The trace reads the blood: K⁺, pills, poisons.',
+    title: 'K⁺, pills & poisons',
+    blurb: 'The trace reads the blood.',
     items: [
       { cardId: 'hyperk' }, { cardId: 'tca' }, { cardId: 'longqt' }, { cardId: 'dewinter' },
     ],

@@ -19,11 +19,6 @@ export default function LibraryScreen() {
         <a href="/about" onClick={linkClick('/about')} className="lib-about">About</a>
       </header>
 
-      <p className="lib-thesis">
-        The ECG is a shadow; everyone is taught to memorize shadows. This app makes
-        the object casting them visible — and manipulable.
-      </p>
-
       <input
         className="lib-search"
         type="search"
@@ -34,24 +29,25 @@ export default function LibraryScreen() {
       />
 
       {!results && (
-        <div className="lib-shelf">
-          <a href="/lab/electrodes" onClick={linkClick('/lab/electrodes')} className="lib-hero">
-            <span className="lib-hero-kicker">The hero demo</span>
-            <span className="lib-hero-name">Electrode Lab</span>
-            <span className="lib-hero-sub">Drag the electrodes. Watch the trace obey.</span>
-          </a>
-          <a href="/lab/hyperk" onClick={linkClick('/lab/hyperk')} className="lib-hero lib-hero-k">
-            <span className="lib-hero-kicker">The systemic window</span>
-            <span className="lib-hero-name">HyperK Module</span>
-            <span className="lib-hero-sub">Five patients, one potassium. Estimate the K.</span>
-          </a>
-          {PACKS.map((p) => (
-            <a key={p.id} href={`/p/${p.id}`} onClick={linkClick(`/p/${p.id}`)} className="lib-pack">
-              <span className="lib-hero-name">{p.title}</span>
-              <span className="lib-hero-sub">{p.blurb}</span>
+        <>
+          <div className="lib-labs">
+            <a href="/lab/electrodes" onClick={linkClick('/lab/electrodes')} className="lib-lab">
+              <span className="lib-lab-name">Electrode Lab</span>
+              <span className="lib-lab-sub">Drag the electrodes — the trace obeys.</span>
             </a>
-          ))}
-        </div>
+            <a href="/lab/hyperk" onClick={linkClick('/lab/hyperk')} className="lib-lab">
+              <span className="lib-lab-name">HyperK Lab</span>
+              <span className="lib-lab-sub">Five patients, one K⁺ — estimate it.</span>
+            </a>
+          </div>
+          <div className="lib-packrow" role="group" aria-label="Packs">
+            {PACKS.map((p) => (
+              <a key={p.id} href={`/p/${p.id}`} onClick={linkClick(`/p/${p.id}`)} className="lib-packchip">
+                {p.title}
+              </a>
+            ))}
+          </div>
+        </>
       )}
 
       {results ? (

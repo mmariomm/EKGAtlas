@@ -1,7 +1,14 @@
 /**
  * The torso: ten electrode pucks over a front-view figure. Chest pucks drag
- * freely (constrained to the torso surface); limb pucks snap between the four
- * limb positions — dropping one on an occupied slot swaps the two cables.
+ * freely on the chest wall; limb pucks snap between the four labeled sockets —
+ * dropping one on an occupied socket swaps the two cables.
+ *
+ * View convention: the chest is drawn "unrolled" — horizontal position is
+ * azimuth-linear (asin of the 3D x), the standard medical-illustration trick
+ * that keeps V4–V6 legible on a front view. 3D positions stay exact; only the
+ * projection is unrolled, and dragging inverts the same mapping (so pucks
+ * follow the finger and wrap around the chest wall, never snapping back).
+ *
  * In real-recording mode chest pucks are locked (chest leads cannot be
  * re-derived from a recording) and say so when touched.
  */
@@ -9,7 +16,7 @@ import { useRef, useState } from 'react'
 import {
   CableId, ChestCable, CHEST_CABLES, LimbCable, LIMB_CABLES,
 } from '../../engine/electrodes'
-import { constrainPrecordial } from '../../engine/torso'
+import { TORSO_AZ } from '../../engine/torso'
 import { Vec3 } from '../../engine/vec'
 import { metric } from '../../lib/metrics'
 import './TorsoBoard.css'
@@ -20,17 +27,44 @@ export interface BoardState {
   chest: Record<ChestCable, Vec3>
 }
 
-/** 3D torso frame → 2D board coords (front view). */
-const SX = (x: number) => 130 + x * 92
-const SY = (y: number) => 158 + y * 92
-const toBoard = (p: Vec3): [number, number] => [SX(p[0]), SY(p[1])]
-const fromBoard = (sx: number, sy: number): Vec3 =>
-  constrainPrecordial([(sx - 130) / 92, (sy - 158) / 92, 0.7])
+const CX = 130
+const CY = 158
+const SCALE = 92
+const HALF_PI = Math.PI / 2
 
-/** Where each limb SLOT is drawn (anatomical; physics uses STANDARD_SITES). */
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+
+/** 3D x → unrolled view x in [-1, 1] (azimuth-linear). */
+const viewX = (x3d: number) => Math.asin(clamp(x3d, -1, 1)) / HALF_PI
+const SX = (x3d: number) => CX + viewX(x3d) * SCALE
+const SY = (y: number) => CY + y * SCALE
+const toBoard = (p: Vec3): [number, number] => [SX(p[0]), SY(p[1])]
+
+/** Inverse: board point → 3D point ON the chest wall at that azimuth. */
+const fromBoard = (sx: number, sy: number): Vec3 => {
+  const az = clamp((sx - CX) / SCALE, -0.995, 0.995) * HALF_PI
+  const y = clamp((sy - CY) / SCALE, -1.6, 1.6)
+  return [Math.sin(az), y, Math.max(0.05, TORSO_AZ * Math.cos(az))]
+}
+
+/** Where each limb SOCKET is drawn (anatomical; physics uses STANDARD_SITES). */
 const LIMB_SLOT_XY: Record<LimbCable, [number, number]> = {
   RA: [34, 40], LA: [226, 40], LL: [182, 306], RL: [78, 306],
 }
+const LIMB_LABEL_DY: Record<LimbCable, number> = { RA: -24, LA: -24, LL: 27, RL: 27 }
+
+/** AHA/AAMI cable colors, desaturated for the dark surface — identity at a glance. */
+const CABLE_HUE: Record<CableId, string> = {
+  RA: '#dfe5f0', LA: '#828da3', RL: '#63b878', LL: '#d96a6a',
+  V1: '#d96a6a', V2: '#d4ad52', V3: '#63b878', V4: '#6a8fd9', V5: '#d9905f', V6: '#a97fd9',
+}
+
+/** Anatomical guide lines (patient left), at the azimuth each line names. */
+const GUIDES: { label: string; x3d: number }[] = [
+  { label: 'MCL', x3d: 0.5 },
+  { label: 'AAL', x3d: 0.78 },
+  { label: 'MAL', x3d: 0.995 },
+]
 
 interface Props {
   state: BoardState
@@ -39,9 +73,13 @@ interface Props {
   chestLocked: boolean
   onChestLockedTouch?: () => void
   onChestDrag?: (cable: ChestCable) => void
+  /** standard chest positions, for ghost rings when a puck is displaced */
+  standardChest: Record<ChestCable, Vec3>
 }
 
-export default function TorsoBoard({ state, onChange, chestLocked, onChestLockedTouch, onChestDrag }: Props) {
+export default function TorsoBoard({
+  state, onChange, chestLocked, onChestLockedTouch, onChestDrag, standardChest,
+}: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [drag, setDrag] = useState<{ cable: CableId; x: number; y: number } | null>(null)
 
@@ -76,7 +114,7 @@ export default function TorsoBoard({ state, onChange, chestLocked, onChestLocked
   const endDrag = () => {
     if (!drag) return
     if ((LIMB_CABLES as string[]).includes(drag.cable)) {
-      // snap to the nearest limb slot; swap with its occupant
+      // snap to the nearest limb socket; swap with its occupant
       let best: LimbCable = 'RA'
       let bestD = Infinity
       for (const slot of LIMB_CABLES) {
@@ -103,6 +141,12 @@ export default function TorsoBoard({ state, onChange, chestLocked, onChestLocked
     return toBoard(state.chest[cable as ChestCable])
   }
 
+  const displacedChest = CHEST_CABLES.filter((c) => {
+    const p = state.chest[c]
+    const s = standardChest[c]
+    return Math.hypot(p[0] - s[0], p[1] - s[1], p[2] - s[2]) > 0.06
+  })
+
   return (
     <svg
       ref={svgRef}
@@ -122,10 +166,41 @@ export default function TorsoBoard({ state, onChange, chestLocked, onChestLocked
         <path d="M76 120 Q130 140 184 120 M72 150 Q130 172 188 150 M74 180 Q130 202 186 180" className="torso-ribs" />
       </g>
 
-      {/* limb slots (empty rings) */}
+      {/* anatomical guide lines (patient left) */}
+      {GUIDES.map((g) => {
+        const gx = SX(g.x3d)
+        return (
+          <g key={g.label} className="torso-guide">
+            <line x1={gx} y1={78} x2={gx} y2={300} />
+            <text x={gx} y={72} textAnchor="middle">{g.label}</text>
+          </g>
+        )
+      })}
+
+      {/* limb sockets, labeled — a swapped cable is a visible mismatch */}
       {LIMB_CABLES.map((slot) => {
         const [sx, sy] = LIMB_SLOT_XY[slot]
-        return <circle key={slot} cx={sx} cy={sy} r={15} className="torso-slot" />
+        return (
+          <g key={slot}>
+            <circle cx={sx} cy={sy} r={16} className="torso-slot" />
+            <text x={sx} y={sy + LIMB_LABEL_DY[slot]} textAnchor="middle" className="torso-slotlabel">
+              {slot}
+            </text>
+          </g>
+        )
+      })}
+
+      {/* ghost rings: where a displaced electrode belongs */}
+      {displacedChest.map((c) => {
+        const [gx, gy] = toBoard(standardChest[c])
+        const [px, py] = puckXY(c)
+        return (
+          <g key={`ghost-${c}`} className="torso-ghost" style={{ color: CABLE_HUE[c] }}>
+            <line x1={gx} y1={gy} x2={px} y2={py} className="torso-ghost-leader" />
+            <circle cx={gx} cy={gy} r={11} />
+            <text x={gx} y={gy + 3} textAnchor="middle">{c}</text>
+          </g>
+        )
       })}
 
       {/* pucks */}
@@ -138,10 +213,12 @@ export default function TorsoBoard({ state, onChange, chestLocked, onChestLocked
           <g
             key={cable}
             transform={`translate(${sx} ${sy})`}
-            className={`puck ${chest ? 'puck-chest' : 'puck-limb'} ${locked ? 'puck-locked' : ''} ${active ? 'puck-active' : ''}`}
+            className={`puck ${locked ? 'puck-locked' : ''} ${active ? 'puck-active' : ''}`}
+            style={{ color: CABLE_HUE[cable] }}
             onPointerDown={startDrag(cable)}
           >
-            <circle r={active ? 15 : chest ? 10.5 : 12.5} className="puck-body" />
+            <circle r={18} className="puck-hit" />
+            <circle r={active ? (chest ? 14.5 : 16) : chest ? 11.5 : 13} className="puck-body" />
             <text y="3.5" textAnchor="middle" className="puck-label">{cable}</text>
           </g>
         )

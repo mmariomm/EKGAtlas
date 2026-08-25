@@ -13,6 +13,7 @@ export const GUIDELINES: GuidelineEntry[] = [
   { citeKey: 'AHA-VA-2017', title: 'AHA/ACC/HRS Ventricular Arrhythmias & SCD Guideline', org: 'AHA/ACC', year: 2017, scope: 'VT management, WCT principles', verifiedAt: '2026-08' },
   { citeKey: 'ESC-VA-2022', title: 'ESC Ventricular Arrhythmias & SCD Guideline', org: 'ESC', year: 2022, scope: 'VT/Brugada diagnostic criteria & management', verifiedAt: '2026-08' },
   { citeKey: 'ESC-SVT-2019', title: 'ESC Supraventricular Tachycardia Guideline', org: 'ESC', year: 2019, scope: 'SVT/WPW management', verifiedAt: '2026-08' },
+  { citeKey: 'AHA-PE-2026', title: 'AHA/ACC Acute Pulmonary Embolism Guideline', org: 'AHA/ACC', year: 2026, scope: 'PE suspicion & risk stratification (RV strain signs incl. new RBBB)', url: 'https://www.ahajournals.org/doi/10.1161/CIR.0000000000001415', verifiedAt: '2026-08' },
   { citeKey: 'AHA-ACLS-2020', title: 'AHA ACLS Guidelines (with 2023 focused update)', org: 'AHA', year: 2020, scope: 'arrest & peri-arrest algorithms', verifiedAt: '2026-08' },
   { citeKey: 'AHA-TOX-2023', title: 'AHA Statement: Cardiac Arrest & Life-Threatening Toxicity from Poisoning', org: 'AHA', year: 2023, scope: 'Na-channel blocker (TCA) & poisoning moves', verifiedAt: '2026-08' },
   { citeKey: 'UKKA-K-2023', title: 'UK Kidney Association Hyperkalaemia Guideline', org: 'UKKA', year: 2023, scope: 'hyperkalaemia treatment sequence', verifiedAt: '2026-08' },

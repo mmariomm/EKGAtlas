@@ -37,13 +37,13 @@ export default function HyperKScreen() {
     <div className="screen hyperk">
       <header className="hk-head">
         <a href="/" onClick={linkClick('/')} className="hk-back" aria-label="Back to library">‹</a>
-        <h1>HyperK Module</h1>
+        <h1>HyperK Lab</h1>
         <a href="/c/hyperk" onClick={linkClick('/c/hyperk')} className="hk-cardlink">the card →</a>
       </header>
 
       {/* ---- 1 · the morph ---- */}
       <section className="hk-sec">
-        <h2>One possible trajectory</h2>
+        <h2>Watch it evolve</h2>
         <p className="hk-morphlabel">{MORPH_LABEL}</p>
         <TraceView
           data={morphData}

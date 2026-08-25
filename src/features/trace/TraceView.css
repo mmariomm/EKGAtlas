@@ -46,3 +46,27 @@
   border-color: #e8cabb;
 }
 .traceview-tool-unit { font-weight: 400; opacity: 0.7; margin-left: 2px; }
+
+.traceview-ghostlegend {
+  position: absolute;
+  left: var(--sp-2);
+  bottom: var(--sp-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+.traceview-ghostlegend::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 0;
+  border-top: 2px solid var(--ink-3);
+  opacity: 0.6;
+  margin-right: 6px;
+  vertical-align: 3px;
+}
+.traceview-paper .traceview-ghostlegend { color: #8a6a5b; background: #fdf6f0d9; border-color: #e8cabb; }

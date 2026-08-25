@@ -8,7 +8,7 @@ export const hyperk: Card = {
   category: 'Systemic window',
   lethal: true,
   tagline: 'The trace is a window on the blood, not just the heart — and K⁺ is the fastest thing it shows.',
-  moduleHref: { href: '/lab/hyperk', label: 'Open the HyperK Module — the variance gallery & estimate-the-K game' },
+  moduleHref: { href: '/lab/hyperk', label: 'HyperK Lab: five patients, one K⁺ — estimate it' },
   seeIt: {
     traceId: 'hyperk-model-moderate',
     commit: {

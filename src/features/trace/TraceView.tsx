@@ -33,6 +33,10 @@ interface Props {
   onTap?: () => void
   /** Lane height in CSS px (default derives from lane count). */
   laneHeight?: number
+  /** Reference strip drawn softly UNDER the ink, same lanes (e.g. standard placement). */
+  ghost?: TraceData | null
+  /** Legend for the ghost (shown bottom-left while a ghost is drawn). */
+  ghostLabel?: string
 }
 
 const MM_PER_SEC = 25
@@ -78,7 +82,7 @@ const phasePalette = (v: (n: string) => string): Record<PhaseTone, string> => ({
 })
 
 export default function TraceView({
-  data, leads, clock, toneAt, highlight, badge, onTap, laneHeight,
+  data, leads, clock, toneAt, highlight, badge, onTap, laneHeight, ghost, ghostLabel,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -141,15 +145,10 @@ export default function TraceView({
     }
 
     const mvPx = MM_PER_MV * pxPerMm
-    ctx.strokeStyle = theme.ink
-    leads.forEach((lead, li) => {
-      const y0 = li * laneH + laneH / 2
-      const samples = data.leads[lead]
-      if (!samples) return
-      ctx.lineWidth = 1.4
+    const inkLane = (samples: Float32Array, durationMs: number, y0: number) => {
       ctx.beginPath()
       const n = samples.length
-      const msPerSample = data.durationMs / n
+      const msPerSample = durationMs / n
       const stride = Math.max(1, Math.floor(1 / (msPerSample * pxPerMs * dpr) / 1.5))
       for (let i = 0; i < n; i += stride) {
         const x = i * msPerSample * pxPerMs
@@ -158,8 +157,25 @@ export default function TraceView({
         else ctx.lineTo(x, y)
       }
       ctx.stroke()
+    }
+    // ghost reference (e.g. standard placement) under the ink, same lanes
+    if (ghost) {
+      ctx.strokeStyle = theme.label
+      ctx.globalAlpha = 0.55
+      ctx.lineWidth = 1.1
+      leads.forEach((lead, li) => {
+        const samples = ghost.leads[lead]
+        if (samples) inkLane(samples, ghost.durationMs, li * laneH + laneH / 2)
+      })
+      ctx.globalAlpha = 1
+    }
+    ctx.strokeStyle = theme.ink
+    ctx.lineWidth = 1.4
+    leads.forEach((lead, li) => {
+      const samples = data.leads[lead]
+      if (samples) inkLane(samples, data.durationMs, li * laneH + laneH / 2)
     })
-  }, [data, leads, geo, height, laneH, paper, size.w])
+  }, [data, ghost, leads, geo, height, laneH, paper, size.w])
 
   // ---- per-frame: blit slice + playhead + comet + highlight
   useEffect(() => {
@@ -345,6 +361,7 @@ export default function TraceView({
       />
       <div className="traceview-overlay">
         <div className="traceview-badge">{badge}</div>
+        {ghost && ghostLabel && <span className="traceview-ghostlegend">{ghostLabel}</span>}
         <div className="traceview-tools">
           <button className="traceview-tool" onClick={() => setZoom(zoom === 1 ? 2 : 1)} aria-label="Toggle time zoom">
             {zoom === 1 ? '25' : '50'}<span className="traceview-tool-unit">mm/s</span>

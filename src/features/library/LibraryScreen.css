@@ -8,14 +8,6 @@
 .brand-name { font-size: 17px; font-weight: 600; letter-spacing: 0.01em; }
 .lib-about { font-size: var(--fs-meta); color: var(--ink-2); min-height: var(--tap-min); display: flex; align-items: center; }
 
-.lib-thesis {
-  color: var(--ink-2);
-  font-size: var(--fs-body);
-  line-height: 1.5;
-  max-width: 42ch;
-  padding-bottom: var(--sp-4);
-}
-
 .lib-search {
   width: 100%;
   background: var(--surface);
@@ -27,36 +19,45 @@
 }
 .lib-search::placeholder { color: var(--ink-3); }
 
-.lib-shelf {
+.lib-labs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--sp-3);
-  margin: var(--sp-4) 0 var(--sp-2);
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
 }
-.lib-hero, .lib-pack {
+.lib-lab {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   align-content: start;
   background: linear-gradient(150deg, var(--surface-2), var(--surface));
   border: 1px solid var(--line);
-  border-radius: var(--r-l);
-  padding: var(--sp-4);
+  border-radius: var(--r-m);
+  padding: var(--sp-3) var(--sp-4);
   color: var(--ink);
-  min-height: 108px;
 }
-.lib-hero:hover, .lib-pack:hover { text-decoration: none; border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-.lib-hero-k { border-color: color-mix(in srgb, var(--ph-repol) 30%, var(--line)); }
-.lib-pack { grid-column: span 2; min-height: 0; }
-.lib-hero-kicker {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--accent);
+.lib-lab:hover { text-decoration: none; border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.lib-lab-name { font-size: var(--fs-body); font-weight: 600; letter-spacing: -0.01em; }
+.lib-lab-sub { font-size: 12px; color: var(--ink-2); }
+
+.lib-packrow {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
-.lib-hero-k .lib-hero-kicker { color: var(--ph-repol); }
-.lib-hero-name { font-size: var(--fs-lede); font-weight: 600; letter-spacing: -0.01em; }
-.lib-hero-sub { font-size: 12.5px; color: var(--ink-2); }
+.lib-packrow::-webkit-scrollbar { display: none; }
+.lib-packchip {
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 14px;
+  background: var(--surface);
+}
+.lib-packchip:hover { text-decoration: none; color: var(--ink); border-color: var(--ink-3); }
 
 .lib-group { margin-top: var(--sp-5); }
 .lib-cat {
