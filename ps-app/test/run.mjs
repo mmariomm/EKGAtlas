@@ -161,25 +161,40 @@ async function scenarioAutoConfirm(browser) {
   await context.close();
 }
 
-async function scenarioAutoConfirmCancel(browser) {
-  const scen = "confirm-cancel";
-  const mock = createMock({});
+async function scenarioAutoConfirmMismatch(browser) {
+  const scen = "confirm-blocked";
+  // an exam is already in the cart from an earlier, abandoned attempt: the
+  // native Conferma would submit MORE than this run added → no auto-confirm
+  const mock = createMock({ preloadCart: { code: "30", res: RES.POC } });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
   await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 20000 });
-  await page.waitForSelector("#cancel", { timeout: 8000 }); // countdown visible
-  await page.keyboard.press("Escape"); // Esc must cancel the countdown
-  await page.waitForTimeout(6500);
+  await page.waitForTimeout(2500);
   const rid = Object.keys(mock.state.richieste)[0];
-  check(scen, mock.state.richieste[rid].confirmed === false, "annulla ferma la conferma automatica");
-  // reload: the flag was consumed, no new countdown
-  await page.reload();
-  await page.waitForTimeout(1500);
-  check(scen, (await page.locator("#cancel").count()) === 0, "dopo reload nessun nuovo countdown (flag consumato)");
-  check(scen, mock.state.richieste[rid].confirmed === false, "ancora non confermata dopo reload");
+  check(scen, mock.state.richieste[rid].confirmed === false, "col carrello diverso dalla ricevuta NON conferma");
+  check(scen, /sospesa/i.test(await $panel(page, ".card").innerText()), "e lo dice: conferma sospesa, decide il medico");
+  await context.close();
+}
+
+async function scenarioConfirmPostFails(browser) {
+  const scen = "confirm-500";
+  // the confirm POST dies on the server: nothing must print for that richiesta
+  const mock = createMock({ confirmFails: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await $panel(page, "#q").fill("dolore toracico");
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
+  await $panel(page, "#goconfirm").click();
+  await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 20000 });
+  await page.waitForTimeout(4000);   // instant confirm fires, server answers 500
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.richieste[rid].confirmed === false, "la richiesta resta non confermata");
+  check(scen, hits(mock, "RcsStampaEtichetteLISHMIMU") === 0 && hits(mock, "jasperservlet") === 0,
+    "nessun PDF stampato per una conferma mai registrata");
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "nessun wizard di stampa");
   await context.close();
 }
 
@@ -961,7 +976,11 @@ async function scenarioResizeAndLog(browser) {
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, "#go").click();
   await page.waitForSelector("#psassist-host #confirmnow", { timeout: 30000 });
-  await $panel(page, ".reg summary").click();
+  // the Registro now lives behind the version button, on the Pazienti screen
+  await $panel(page, "#back").click();
+  await page.waitForSelector("#psassist-host #verbtn");
+  await $panel(page, "#verbtn").click();
+  await page.waitForSelector("#psassist-host #copylog");
   await $panel(page, "#copylog").click();
   await page.waitForTimeout(300);
   const clip = await page.evaluate(() => navigator.clipboard.readText());
@@ -1132,7 +1151,8 @@ const scenarios = [
   ["happy path (PRG)", (b) => scenarioHappyLab(b)],
   ["happy path (direct render)", (b) => scenarioHappyLab(b, { directRender: true })],
   ["auto-confirm handoff", scenarioAutoConfirm],
-  ["auto-confirm cancel", scenarioAutoConfirmCancel],
+  ["auto-confirm bloccata su carrello diverso", scenarioAutoConfirmMismatch],
+  ["conferma fallita sul server: niente stampa", scenarioConfirmPostFails],
   ["delayed cart visibility", scenarioLagVerify],
   ["lost add → hard stop", scenarioNeverVisible],
   ["renamed code → refuse before send", scenarioLabelMismatch],

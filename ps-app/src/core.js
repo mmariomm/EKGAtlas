@@ -65,14 +65,13 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.1.0";
+  const VERSION = "3.2.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
   const PACE_MS = 250;           // gentle pause between consecutive requests
   const VERIFY_RECHECKS = 3;     // list re-reads before declaring an add lost
   const VERIFY_WAIT_MS = 1200;   // pause before each verify re-read
-  const CONFIRM_SECONDS = 5;     // countdown before the native Conferma click
   const CONFIRM_FLAG_TTL = 120e3;// ms an auto-confirm handoff stays valid
   const PRINT_FLAG_TTL = 180e3;  // ms a post-confirm print handoff stays valid
   const QUEUE_TTL = 30 * 60e3;   // ms a still-unconfirmed richiesta keeps reminding
@@ -1470,6 +1469,9 @@
     .rdot.open { background: #9DBFDE; border-color: #9DBFDE; }
     .rdot.busy { background: #E5A83B; border-color: #E5A83B; animation: psaPulse 1s infinite; }
     .rdot.err { background: #B3261E; border-color: #B3261E; }
+    .rnum { flex: 0 0 auto; color: #B3261E; font-weight: 800; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+    .tagp { flex: 0 0 auto; color: #8a4b03; background: #FFF3DB; border-radius: 999px; padding: 1px 7px; font-size: 10px; font-weight: 700; }
+    .tagl { flex: 0 0 auto; color: #5B6B7A; background: #EEF2F6; border-radius: 999px; padding: 1px 7px; font-size: 10px; font-weight: 600; }
     .rrow.saved { background: #F6FBF8; border-color: #BCE0C9; }
     .mini { float: right; border: 1px solid #C4D0DC; background: #fff; color: #0B5CAD; border-radius: 6px;
             padding: 1px 7px; font-size: 10.5px; font-weight: 700; cursor: pointer; letter-spacing: 0; text-transform: none; }
@@ -1508,6 +1510,7 @@
              font-size: 11px; line-height: 1.45; padding: 5px 9px 6px;
              display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .eprev:hover { background: #EAF2FA; color: #16232E; }
+    .eprev .pit { white-space: nowrap; }   /* sigla and value wrap TOGETHER, never apart */
     .eprev .pn { color: #8296A9; font-weight: 500; }
     .eprev .pv { color: #35506B; font-weight: 700; font-variant-numeric: tabular-nums; }
     .eprev .pv.bad { color: #B3261E; font-weight: 800; }
@@ -1770,7 +1773,6 @@
       this.log(`${now()}  ── nuova operazione ──`);
       this.message = null;
       tabStore.set("receipt.v1", null);
-      cancelPendingConfirm?.("nuova operazione avviata"); // never run while a confirm is armed
       // Pin the patient this run belongs to: the running/result views show
       // THIS name, never whatever the page title becomes later.
       this.runPatient = (document.title || "").trim();
@@ -1936,7 +1938,7 @@
               <div class="bd">${body}</div>
               <div class="rsz" id="rsz" title="Trascina per ridimensionare · doppio click per la misura originale"></div>
               ${inHome ? `<div class="foot">
-                <span>${esc(APP)} ${VERSION}${(typeof chrome !== "undefined" && chrome.runtime?.id)
+                <span><button id="verbtn" class="footlink" title="Mostra il Registro delle operazioni">${esc(APP)} ${VERSION}</button>${(typeof chrome !== "undefined" && chrome.runtime?.id)
                   ? ` · <button id="extreload" class="footlink" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">⟳ ricarica estensione</button>` : ""}</span>
                 <span></span>
               </div>` : ""}
@@ -1979,6 +1981,7 @@
           <div class="lbl">Pazienti${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
           ${cards || `<div class="hint">Nessun paziente ancora. Apri un paziente: resta qui per il turno.</div>`}
           ${others.length ? `<div class="hint">Aprire un altro paziente ne carica la pagina.</div>` : ""}
+          ${this.showLog ? `<details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>` : ""}
         </div>`;
     }
 
@@ -2079,7 +2082,7 @@
           ${this.viewBrowse(cat)}
         </div>
         ${this.viewPrint()}
-        <details class="reg"><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
+
         <div class="commit">
           ${typeof this.message === "string" && this.message ? `<div class="banner warn">${esc(this.message)}</div>` : ""}
           <div class="idline">Richiesta per <b>${esc(patientName)}</b>${ep ? ` · episodio <b>${esc(ep)}</b>` : ""}</div>
@@ -2152,7 +2155,7 @@
                 .map((v) => {
                   const oo = outOfRange(v.valore, v.range);
                   const d = dd && dd.get(valKey(v.nome));
-                  return `<span class="pn">${esc(sigla(v.nome))}</span> <span class="pv${oo ? " bad" : ""}"${d ? ` title="prima ${esc(d.prevRaw)} (${d.pct > 0 ? "+" : ""}${d.pct}%)"` : ""}>${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>${d ? `<span class="pd">${d.dir}</span>` : ""}`;
+                  return `<span class="pit"><span class="pn">${esc(sigla(v.nome))}</span> <span class="pv${oo ? " bad" : ""}"${d ? ` title="prima ${esc(d.prevRaw)} (${d.pct > 0 ? "+" : ""}${d.pct}%)"` : ""}>${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>${d ? `<span class="pd">${d.dir}</span>` : ""}</span>`;
                 }).join(" · ")}</button>`
           : "";
         return `<div class="egroup">
@@ -2161,8 +2164,10 @@
             <span class="rwhen">${esc(e.when)}</span>
             <span class="rsys">${esc(e.kind === "valori" ? "LAB" : e.sistema)}</span>
             <span class="rlab">${esc(shortLabel(e.label))}</span>
-            ${vals && vals.rows && vals.rows.some((v) => /parz/i.test(v.stato || "")) ? `<span class="rsys">parziale</span>` : ""}
-            ${e.storico ? `<span class="rsys" title="Il laboratorio ha refertato: la finestra Risultati non c'è più, questi sono i valori già letti">già letti</span>` : ""}
+            ${(() => { const nb = vals && vals.rows ? vals.rows.filter((v) => outOfRange(v.valore, v.range) !== 0).length : 0;
+               return nb ? `<span class="rnum" title="${nb} valori fuori range">${nb}↑↓</span>` : ""; })()}
+            ${vals && vals.rows && vals.rows.some((v) => /parz/i.test(v.stato || "")) ? `<span class="tagp">parziale</span>` : ""}
+            ${e.storico ? `<span class="tagl" title="Il laboratorio ha refertato: la finestra Risultati non c'è più, questi sono i valori già letti">già letti</span>` : ""}
             <span class="rgo">${e.kind === "valori" ? "›" : refertoTipo(e) === "altro" ? "Apri referto ↗" : "↗"}</span>
           </button>${preview}</div>`;
       }).join("");
@@ -2516,6 +2521,7 @@
       $("#back")?.addEventListener("click", () => this.setView(this.view === "valori" ? "esiti" : "home"));
       this.root.querySelectorAll("[data-seg]").forEach((b) => b.addEventListener("click", () => this.setView(b.getAttribute("data-seg"))));
       $("#forget")?.addEventListener("click", () => { forgetPatients(); this.render(); });
+      $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.render(); });
       this.root.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", (ev) => {
         ev.stopPropagation();   // Richieste sits inside the card, which is itself a [data-go]
         const ep = b.getAttribute("data-ep"), go = b.getAttribute("data-go");
@@ -2627,7 +2633,6 @@
   // Written by the engine right before landing on the exam page; consumed
   // here, on the real page, with a countdown any human interaction cancels:
   // Esc, any click on the page, or the tab going hidden.
-  let cancelPendingConfirm = null; // interlock: a new run must cancel an armed countdown
 
   function maybeAutoConfirm(panel) {
     const flag = tabStore.get("confirm.v1", null);
@@ -2666,10 +2671,7 @@
       const estranei = visti.filter((c) => !attesi.has(c));
       if (estranei.length || visti.length !== attesi.size) {
         if (panel) {
-          panel.message = {
-            head: `Conferma automatica sospesa: il carrello non coincide con gli esami appena aggiunti (${visti.length} nel carrello, ${attesi.size} attesi su questa risorsa).`,
-            body: "Controlla il carrello e premi Conferma sulla pagina.",
-          };
+          panel.message = `Conferma automatica sospesa: il carrello ha ${visti.length} esami su questa risorsa, la richiesta ne ha aggiunti ${attesi.size}. Controlla il carrello e premi Conferma sulla pagina.`;
           panel.log(`${now()}  auto-conferma sospesa: carrello ${visti.length} ≠ attesi ${attesi.size}${estranei.length ? ` (estranei: ${estranei.join(", ")})` : ""}`);
           panel.render();
         }
@@ -2677,77 +2679,13 @@
       }
     }
 
-    let n = CONFIRM_SECONDS;
-    let finished = false;
-    const wrap = document.createElement("div");
-    wrap.id = "psassist-confirm";
-    const root = wrap.attachShadow({ mode: "open" });
-    document.documentElement.appendChild(wrap);
-
-    const CSS = `${COLORS}
-      .cwrap { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 2147483647; }
-      .cbox { background: #FFF7E6; border: 2px solid #E5C588; border-radius: 14px; padding: 12px 16px;
-              box-shadow: 0 10px 32px rgba(9,42,74,.25); font-size: 13px; color: #16232E; min-width: 340px; }
-      .crow { display: flex; align-items: center; gap: 14px; }
-      .cd { font-size: 26px; font-weight: 800; color: #8a4b03; font-variant-numeric: tabular-nums; min-width: 30px; text-align: center; }
-      .cbtn { border: 0; border-radius: 10px; padding: 12px 18px; font-weight: 800; cursor: pointer; background: #B3261E; color: #fff; font-size: 13.5px; margin-left: auto; }
-      .cbtn:hover { background: #941e18; }
-      .cbar { height: 4px; background: #F0DFBC; border-radius: 999px; margin-top: 10px; overflow: hidden; }
-      .cbar i { display: block; height: 100%; background: #E5A83B; animation: psaDrain ${CONFIRM_SECONDS}s linear forwards; }
-      .clist { color: #5B6B7A; font-size: 11.5px; margin-top: 4px; }
-      .toast { background: #F4F8FB; border: 1px solid #C4D0DC; border-radius: 12px; padding: 10px 14px; font-size: 12.5px;
-               color: #16232E; box-shadow: 0 10px 32px rgba(9,42,74,.2); }
-    `;
-    root.innerHTML = `<style>${CSS}</style>
-      <div class="cwrap"><div class="cbox">
-        <div class="crow">
-          <span class="cd" id="cdn">${n}</span>
-          <span><b>Conferma automatica · ${flag.count} ${flag.count === 1 ? "esame" : "esami"} · ${esc(patientName)}</b><br>
-          <small>tra <span id="cds">${n}</span> s — Esc o un click annulla</small></span>
-          <button class="cbtn" id="cancel">Annulla (Esc)</button>
-        </div>
-        <div class="clist">${cartPreview.map(esc).join(" · ")}</div>
-        <div class="cbar"><i></i></div>
-      </div></div>`;
-
-    const cleanup = () => {
-      clearInterval(iv);
-      cancelPendingConfirm = null;
-      window.removeEventListener("keydown", onKey, true);
-      document.removeEventListener("pointerdown", onPointer, true);
-      document.removeEventListener("visibilitychange", onVis, true);
-    };
-    const cancel = (why) => {
-      if (finished) return;
-      finished = true;
-      cleanup();
-      panel?.log(`${now()}  conferma automatica annullata${why ? ` (${why})` : ""}`);
-      root.innerHTML = `<style>${CSS}</style><div class="cwrap"><div class="toast">Conferma annullata.</div></div>`;
-      setTimeout(() => wrap.remove(), 5000);
-    };
-    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); cancel(); } };
-    const onPointer = () => cancel();
-    const onVis = () => { if (document.hidden) cancel("pagina non visibile"); };
-    window.addEventListener("keydown", onKey, true);
-    document.addEventListener("pointerdown", onPointer, true);
-    document.addEventListener("visibilitychange", onVis, true);
-    root.querySelector("#cancel").onclick = () => cancel();
-    cancelPendingConfirm = cancel;
-
-    const iv = setInterval(() => {
-      if (finished) return;
-      if (panel && panel.runState === "running") return cancel("operazione in corso");
-      n--;
-      const d = root.querySelector("#cdn"), s = root.querySelector("#cds");
-      if (d) d.textContent = Math.max(n, 0);
-      if (s) s.textContent = Math.max(n, 0);
-      if (n <= 0) {
-        finished = true;
-        cleanup();
-        wrap.remove();
-        model.confirmButton.click(); // native click → server confirm → label print flow
-      }
-    }, 1000);
+    // The doctor already chose "+ Conferma": that click was the decision, and
+    // every gate above has passed (episode, richiesta, last exam present under
+    // its right name, cart identical to the receipt for this resource).
+    // Confirm now — a countdown here was dead time, not safety.
+    panel?.log(`${now()}  conferma automatica: ${flag.count} ${flag.count === 1 ? "esame" : "esami"} · ${cartPreview.join(" · ")} · click nativo su Conferma`);
+    void patientName;
+    model.confirmButton.click(); // native click → server confirm → label print flow
   }
 
   // ============================================================ PRINT WIZARD

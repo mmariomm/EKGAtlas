@@ -1,14 +1,14 @@
 # PS Assist — richieste Pronto Soccorso in un click (SA4PSO)
 
 Ricostruito **da zero** (agosto 2026) dopo un re-audit completo delle pagine reali salvate di SA4PSO.
-Sostituisce il vecchio userscript v0.6 ("un esame per ricaricamento di pagina") con un motore molto più
+Sostituisce il vecchio script v0.6 ("un esame per ricaricamento di pagina") con un motore molto più
 semplice e robusto: guida il server con le **stesse identiche richieste dei click manuali**, tutto da una
 sola pagina, verificando ogni passaggio prima del successivo.
 
 > **In sintesi per il medico**: dalla pagina del paziente scrivi il quesito, tocchi i profili
 > e gli esami, premi un bottone. La richiesta viene creata, gli esami aggiunti e
 > verificati uno a uno nel carrello, e atterri sulla pagina esami reale per premere **Conferma**
-> (o lasci che la prema lui dopo un conto alla rovescia annullabile). Dopo la conferma parte da
+> (o lasci che la prema lui, subito: il tuo click su «+ Conferma» è la decisione). Dopo la conferma parte da
 > solo il **wizard di stampa**: PDF etichette con la finestra di stampa già aperta
 > (etichettatrice), poi PDF lista esami (stampante normale).
 
@@ -58,10 +58,8 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
      incolla il testo copiato nel campo **URL** → nominalo `PS Assist`.
   3. Su ogni pagina SA4PSO, **un click sul preferito** fa comparire il pannello. Unica
      differenza dall'estensione: dopo un cambio pagina (es. dopo la Conferma) va ricliccato —
-     conto alla rovescia e wizard di stampa ripartono al click, perché i passaggi di consegna
-     vivono nella scheda.
-- Se sul PC c'è già **Tampermonkey/Violentmonkey** funzionante: importa
-  `ps-app/userscript/ps-assist.user.js` (stesso identico motore).
+     conferma e wizard di stampa ripartono al click, perché i passaggi di consegna vivono
+     nella scheda.
 - A regime, la strada pulita è chiedere all'IT di consentire l'estensione (cartella locale o
   allowlist aziendale).
 
@@ -92,7 +90,10 @@ lista del pronto soccorso); sulla scheda di un paziente parte direttamente da **
    menu a tendina su tutti i laboratori. I selezionati restano in alto, una riga per laboratorio,
    con la ✕ al passaggio del mouse.
 3. **Crea e aggiungi N esami** → ricevuta + bottone **✓ CONFERMA → stampa**; oppure
-   **+ Conferma 🖨** che fa tutto da solo (5 s annullabili con Esc).
+   **+ Conferma 🖨** che fa tutto da solo e conferma **subito**: il click è la decisione, e la
+   conferma parte solo se ogni controllo passa — episodio, richiesta, nome dell'ultimo esame, e
+   **carrello identico alla ricevuta** (un avanzo di un tentativo precedente la **sospende** e
+   la lascia a te).
    Selezionando laboratorio **e** radiologia il bottone diventa **Crea 2 richieste** e il pannello
    le costruisce e le porta entrambe a conferma, con **una sola** stampa finale.
 4. **Stampa**: ogni richiesta con data, ora e la lista compatta degli esami.
@@ -215,7 +216,7 @@ sempre.
   interno e mostra il PDF come `blob:` di quell'origine, quindi una pagina di SA4PSO non può
   leggerlo. È il **service worker** dell'estensione a seguire la catena (redirect → visualizzatore
   → suo endpoint PDF) e a salvare i byte nella memoria dell'estensione, su questa macchina.
-  Solo con l'**estensione**: userscript e bookmarklet non possono farlo. Se un referto non è
+  Solo con l'**estensione**: il bookmarklet non può farlo. Se un referto non è
   salvabile resta senza pallino e il **motivo** compare passandoci sopra col mouse (e nel Registro).
   Scadono in **8 ore**, massimo 25, e si azzerano alla chiusura del browser; **↻ Resetta** subito.
 
@@ -290,8 +291,9 @@ stessi flussi dei test di prodotto.
    deve coincidere con quello selezionato — se l'ospedale rinumera un codice, il motore si ferma
    e lo dice, invece di ordinare un esame diverso con tutte le spie verdi.
 4. **La Conferma è sempre un click reale** sulla pagina visibile (il flusso di stampa etichette
-   resta quello nativo), è opt-in, con conto alla rovescia che si annulla con Esc, con qualsiasi
-   click, se la scheda va in secondo piano o se avvii un'altra operazione.
+   resta quello nativo), è opt-in e **immediata**: nessun conto alla rovescia, perché il tuo
+   click su «+ Conferma» è già la decisione — ma scatta **solo** se il carrello coincide con la
+   ricevuta di ciò che è stato appena aggiunto; ogni differenza la sospende con un messaggio.
 5. **Il quesito non viene mai sovrascritto**: se il triage l'ha già compilato, resta il suo.
 6. **Sessione scaduta riconosciuta**: se compare la pagina di login, stop con messaggio chiaro
    (che dice anche se l'ultimo esame è in stato ambiguo).
@@ -352,11 +354,10 @@ prima fase usa **solo** "Crea richiesta e aggiungi" — mai il bottone con confe
    "Richieste Radiologia" (apprendimento del catalogo), poi un solo RX torace dal pannello, con
    verifica in radiologia che la richiesta sia arrivata unica e con il quesito giusto.
 9. **Auto-conferma (ultima fase, opzionale; solo laboratorio — la radiologia richiede sempre
-    il tuo click, per codice oltre che per regola).** Primo uso con 1 esame restando davanti allo
-   schermo: la prima volta **annulla apposta** (Esc, un click qualsiasi, o il bottone Annulla)
-   per verificare che si fermi; la seconda lascia scadere il conto alla rovescia e ricontrolla
-   etichette e richiesta. Nota: per la radiologia l'auto-conferma è disattivata in questa
-   versione, di proposito.
+    il tuo click, per codice oltre che per regola).** È **immediata**: primo uso con 1 esame
+    restando davanti allo schermo, e ricontrolla etichette e richiesta appena confermata. Per
+    provare il blocco di sicurezza: lascia un esame nel carrello da un tentativo interrotto e
+    rilancia — la conferma deve **sospendersi** con il messaggio, non partire.
 10. **Regime.** Una scheda per paziente; mai avviare un run e allontanarsi; nella prima settimana,
     a fine turno, scorri le richieste create cercando doppioni o bozze non confermate.
 
@@ -375,8 +376,7 @@ ps-app/
 ├── src/core.js          ← unica fonte: motore + pannello (zero dipendenze)
 ├── src/catalog.json     ← catalogo esami verificato dall'audit (POC/Urgenze/Centrale)
 ├── extension/           ← estensione MV3 pronta da caricare (content.js è generato)
-├── userscript/          ← stesso motore in formato Tampermonkey (generato)
-├── tools/build.mjs      ← genera extension/content.js e userscript/*.user.js
+├── tools/build.mjs      ← genera extension/content.js e il bookmarklet
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
 ├── esempi-gestionale/   ← pagine vere del gestionale, contenuti inventati (+ come)
@@ -391,7 +391,7 @@ Sviluppo:
 ```bash
 cd ps-app
 npm install        # solo playwright, solo per i test
-npm run build      # rigenera extension/content.js + userscript dopo modifiche a src/
+npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
 npm test           # 39 scenari e2e + 5 sull'estensione + 24 sul banco + il cancello privacy

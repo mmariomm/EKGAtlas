@@ -264,7 +264,10 @@ export function createMock(opts = {}) {
   };
 
   function printRows() {
+    // the real patient page lists print links only for richieste the LIS has
+    // registered: an unconfirmed bozza has no labels to print
     return Object.keys(state.richieste)
+      .filter((rid) => state.richieste[rid].confirmed)
       .map((rid) => rowsFor(rid).map((row) => `<tr><td>Richiesta ${rid}</td><td>${row}</td></tr>`).join("\n"))
       .join("\n");
   }
@@ -472,12 +475,15 @@ export function createMock(opts = {}) {
       if (!("Update" in f)) return respond(notFound("submit Update mancante"));
       if ("Cancel" in f || "Cancel1" in f) return respond(notFound("Cancel co-inviato con Update: bug del serializzatore"));
       if (!(f.QUESITO_DIAGNOSTICO || "").trim()) return respond(creaPage(params)); // server re-renders the form
-      state.richieste[rid] = { quesito: f.QUESITO_DIAGNOSTICO, urgenza: f.URGENZA, modalita: f.MODALITA, medico: f.MEDICO, cart: new Map(), confirmed: false };
+      const cart = new Map();
+      if (opts.preloadCart) cart.set(String(opts.preloadCart.code), opts.preloadCart.res);   // leftover from an earlier attempt
+      state.richieste[rid] = { quesito: f.QUESITO_DIAGNOSTICO, urgenza: f.URGENZA, modalita: f.MODALITA, medico: f.MEDICO, cart, confirmed: false };
       const res0 = alloc.risorse[0];
       return pageOrRedirect(examPage(rid, res0), `${ORIGIN}${PATH}?${listQuery(rid, res0, alloc)}`);
     }
 
     if (method === "POST" && ccs.startsWith("Prestazioni")) {
+      if (opts.confirmFails) return respond(`${HEAD}<h1>Errore interno del server</h1><p>La richiesta non \u00e8 stata elaborata.</p>${FOOT}`, 500);
       const f = rec.form || {};
       const rid = params.get("RICHIESTA_ID");
       const r = state.richieste[rid];
