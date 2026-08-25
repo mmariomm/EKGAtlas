@@ -43,8 +43,8 @@ export default function LibraryScreen() {
               {progress.due > 0
                 ? `${progress.due} due for review · ${progress.solid}/${progress.total} solid`
                 : progress.seen === 0
-                  ? 'unknown strips, no labels — commit and find out'
-                  : `${progress.solid}/${progress.total} solid — draw the next unknown`}
+                  ? 'unknown strips, no labels — cannot-miss first'
+                  : `${progress.solid}/${progress.total} solid — cannot-miss first`}
             </span>
             <span className="lib-chev" aria-hidden>›</span>
           </a>

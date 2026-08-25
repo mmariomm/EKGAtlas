@@ -85,19 +85,42 @@ export const progressSummary = (): ProgressSummary => {
 }
 
 /**
- * Pick the next drill card: overdue first (lowest box first — weakest wins),
- * then unseen, then the least-recently-scheduled. Excludes `not` (the one
- * just answered) so consecutive draws differ.
+ * Cannot-miss cards are drawn this many times more often than the rest — the
+ * drill's job is the lethal set first; the others keep circulating, just less.
+ */
+export const LETHAL_WEIGHT = 3
+
+/** Weighted random pick: lethal cards get LETHAL_WEIGHT tickets, others one. */
+const weightedPick = (ids: string[]): string => {
+  const total = ids.reduce((s, id) => s + (CARD_BY_ID[id].lethal ? LETHAL_WEIGHT : 1), 0)
+  let r = Math.random() * total
+  for (const id of ids) {
+    r -= CARD_BY_ID[id].lethal ? LETHAL_WEIGHT : 1
+    if (r <= 0) return id
+  }
+  return ids[ids.length - 1]
+}
+
+/**
+ * Pick the next drill card: overdue first (weakest box first, and a lethal
+ * card wins any tie), then unseen (lethal-weighted), then the
+ * least-recently-scheduled. Excludes `not` (the one just answered) so
+ * consecutive draws differ.
  */
 export const nextDrillCard = (not?: string): string => {
   const drill = loadDrill()
   const now = Date.now()
   const pool = CARDS.map((c) => c.id).filter((id) => id !== not && CARD_BY_ID[id])
+  const lethalFirst = (a: string, b: string) =>
+    Number(CARD_BY_ID[b].lethal) - Number(CARD_BY_ID[a].lethal)
   const overdue = pool.filter((id) => drill[id] && drill[id].due <= now).sort(
-    (a, b) => (drill[a].box - drill[b].box) || (drill[a].due - drill[b].due),
+    (a, b) => (drill[a].box - drill[b].box) || lethalFirst(a, b) || (drill[a].due - drill[b].due),
   )
   if (overdue.length) return overdue[0]
   const unseen = pool.filter((id) => !drill[id])
-  if (unseen.length) return unseen[Math.floor(Math.random() * unseen.length)]
-  return pool.sort((a, b) => (drill[a]?.due ?? 0) - (drill[b]?.due ?? 0))[0] ?? pool[0]
+  if (unseen.length) return weightedPick(unseen)
+  // Everything is seen and nothing is due: keep circulating, lethal-weighted,
+  // biased toward the cards whose review is closest.
+  const soonest = [...pool].sort((a, b) => (drill[a]?.due ?? 0) - (drill[b]?.due ?? 0))
+  return weightedPick(soonest.slice(0, Math.max(5, Math.ceil(soonest.length / 2))))
 }
