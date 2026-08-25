@@ -253,7 +253,7 @@ export function createMock(opts = {}) {
   // must appear (Hb −16%) and where it must not (GB +5%, Ht 0%)
   const risultatiPage = (id) => {
     const vecchio = String(id).endsWith("5301");
-    const [gb, hb] = vecchio ? ["6.1", "95"] : ["6.4", "80"];
+    const [gb, hb] = vecchio ? ["6.1", "95"] : ["6.4", state.hbNuova || "80"];
     return `${HEAD}<table>
       <tr><td class="AFCColumnTD">Esame</td><td class="AFCColumnTD">Valore</td><td class="AFCColumnTD">Unit&agrave; di Misura</td><td class="AFCColumnTD">Range</td><td class="AFCColumnTD">Stato</td><td class="AFCColumnTD">Data</td></tr>
       <tr><td class="AFCDataTD">Assistito</td><td class="AFCDataTD">${esc(NAME)}</td></tr>

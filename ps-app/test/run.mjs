@@ -1021,6 +1021,37 @@ async function scenarioHomePills(browser) {
   await context.close();
 }
 
+async function scenarioAggiornaTutti(browser) {
+  const scen = "aggiorna-tutti";
+  const mock = createMock({ withResults: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForFunction(
+    () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
+    { timeout: 25000 },
+  );
+  const prima = hits(mock, "RcsAccessiRisultatiElenco");
+  // the lab has updated a value since the prefetch
+  mock.state.hbNuova = "92";
+  await $panel(page, "#risall").click();
+  await page.waitForFunction(
+    () => {
+      const r = document.getElementById("psassist-host").shadowRoot;
+      const b = r.querySelector("#risall");
+      return b && !b.disabled;
+    },
+    { timeout: 20000 },
+  );
+  check(scen, hits(mock, "RcsAccessiRisultatiElenco") === prima + 2, "rilegge ogni prelievo aperto, una volta ciascuno");
+  const prev = await $panel(page, ".eprev").first().innerText();
+  check(scen, /Hb 92/.test(prev), `l'anteprima mostra il valore nuovo (got: ${prev.trim().slice(0, 30)})`);
+  const reg = await page.evaluate(() => JSON.parse(sessionStorage.getItem("psassist:log.999001") || "{}").lines?.join("\n") || "");
+  check(scen, /aggiornati 2 prelievi, 1 con valori nuovi/.test(reg), "il Registro dice quanti sono cambiati");
+  await context.close();
+}
+
 async function scenarioValoriRefertati(browser) {
   const scen = "valori-refertati";
   // Before: the draw is still open, its values can be read.
@@ -1183,6 +1214,7 @@ const scenarios = [
   ["lab + rx: two richieste, one flow", scenarioLabPlusRx],
   ["lab + rx manual walk", scenarioLabPlusRxManual],
   ["risultati inline", scenarioRisultati],
+  ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],
   ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],

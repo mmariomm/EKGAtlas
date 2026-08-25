@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.2.0";
+  const VERSION = "3.2.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2173,9 +2173,12 @@
       }).join("");
       const nRef = this.esiti.filter((e) => e.kind === "referto").length;
       const nSaved = this.esiti.filter((e) => e.kind === "referto" && cached[e.id]).length;
+      const nVivi = this.esiti.filter((e) => e.kind === "valori" && !e.storico).length;
+      const ra = this._refreshAll;
       return `
         <div class="sec">
           <div class="lbl">Esiti (${this.esiti.length})
+            ${nVivi ? `<button class="mini" id="risall" ${ra ? "disabled" : ""} title="Rilegge tutti i valori dal server, un prelievo alla volta">${ra ? `↻ ${ra.done}/${ra.total}…` : "↻ Aggiorna"}</button>` : ""}
             ${hasExt() && nSaved < nRef ? `<button class="mini" id="refsave">⬇ Salva referti</button>` : ""}
             ${(nSaved || open.size) ? `<button class="mini" id="refreset">↻ Resetta</button>` : ""}
           </div>
@@ -2326,6 +2329,44 @@
         this.risBusy = null;
       }
       this.setView("valori", id);
+    }
+
+    // One tap re-reads EVERY open draw, paced one request at a time: the manual
+    // rehearsal of a future automatic refresh — same read, same honesty (an
+    // empty or dead page never replaces values already held). Reported draws
+    // (storico) are skipped: their page no longer answers.
+    async reloadTuttiValori() {
+      if (this._refreshAll) return;
+      const targets = this.esiti.filter((e) => e.kind === "valori" && !e.storico);
+      if (!targets.length) return;
+      this._refreshAll = { done: 0, total: targets.length };
+      this.refBusy = this.refBusy || {};
+      for (const e of targets) this.refBusy[e.id] = true;
+      this.render();
+      let cambiati = 0;
+      for (const e of targets) {
+        const key = this.risKey(e.id);
+        const prima = JSON.stringify((tabStore.get(key, null) || {}).rows || []);
+        try {
+          const { doc } = await fetchDoc(e.url, {});
+          const rows = parseRisultati(doc);
+          if (rows.length) {
+            tabStore.set(key, { ts: Date.now(), rows, meta: risMeta(e) });
+            if (JSON.stringify(rows) !== prima) cambiati++;
+          } else {
+            this.log(`${now()}  ${shortLabel(e.label)}: la finestra Risultati non risponde più, tengo i valori già letti`);
+          }
+        } catch (err) {
+          this.log(`${now()}  ${shortLabel(e.label)}: valori non aggiornati (${err?.head || err?.message || err})`);
+        }
+        this.refBusy[e.id] = false;
+        this._refreshAll.done++;
+        this.render();
+        await sleep(PACE_MS).catch(() => {});
+      }
+      this._refreshAll = null;
+      this.log(`${now()}  aggiornati ${targets.length} prelievi${cambiati ? `, ${cambiati} con valori nuovi` : ", nessun valore nuovo"}`);
+      this.render();
     }
 
     // Values ready before he asks: the 2-line preview is the point of Esiti.
@@ -2522,6 +2563,7 @@
       this.root.querySelectorAll("[data-seg]").forEach((b) => b.addEventListener("click", () => this.setView(b.getAttribute("data-seg"))));
       $("#forget")?.addEventListener("click", () => { forgetPatients(); this.render(); });
       $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.render(); });
+      $("#risall")?.addEventListener("click", () => this.reloadTuttiValori());
       this.root.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", (ev) => {
         ev.stopPropagation();   // Richieste sits inside the card, which is itself a [data-go]
         const ep = b.getAttribute("data-ep"), go = b.getAttribute("data-go");

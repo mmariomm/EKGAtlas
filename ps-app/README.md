@@ -107,6 +107,9 @@ Un unico elenco in ordine di tempo:
   valore, unità e range — con **⧉ Copia** per il diario (lì i nomi tornano per esteso) e **↻** per
   rileggerli mentre il laboratorio completa. Il nome completo resta sotto il puntatore.
   I valori vengono precaricati in sottofondo, così l'anteprima c'è già.
+- **↻ Aggiorna** (in cima all'elenco) rilegge in un colpo **tutti** i prelievi ancora aperti, a
+  passo lento e uno alla volta, e dice nel Registro quanti hanno valori nuovi: è il collaudo
+  manuale del futuro aggiornamento automatico — stessa lettura, ma parte solo quando lo premi tu.
 - **Prelievi confrontabili**: gli esami compaiono **nello stesso ordine in ogni prelievo** (comanda
   il più recente), così le righe si leggono in colonna. Una **variazione significativa** rispetto
   al prelievo precedente è marcata con **▲ ▼** ambra accanto al valore, col precedente nel
