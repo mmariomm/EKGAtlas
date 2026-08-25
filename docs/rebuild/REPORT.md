@@ -274,23 +274,34 @@ lethal dot aligned to the first line.
 Explicit non-regression list honored: provenance badges, heart↔trace
 scrub, electrode drag mechanics, commit-first copy, paper mode.
 
-### Deferred from this pass (open, deliberately)
+### Both deferred items — CLOSED (same day)
 
-1. **A real `.seg` component.** The four segmented controls (MD·RN, lab
-   mode, evolution arcs, paper/dark) were unified at the VALUE level — each
-   one's selected state now uses the same accent tokens — but they remain
-   four separate CSS blocks. The auditor asked for one extracted `.seg`
-   class/component all four consume, so a fifth toggle cannot drift. ~S/M,
-   touches 4 files. Do this the next time a toggle is added.
+1. **`.seg` extracted** (`src/styles/base.css`). One definition for every
+   segmented control in the app; the three call sites (MD·RN role, lab signal
+   source, evolution arc) now carry `seg` + a modifier (`seg-sm` inline,
+   `seg-fill` full width) and their feature CSS holds POSITION ONLY, with a
+   comment saying so. A fourth toggle is now a class, not a copy-paste.
+   (Correction to an earlier note: there are three segmented controls, not
+   four — the paper/dark pair is two independent tool buttons.)
 
-2. **Lane clipping on extreme amplitudes.** The auditor proposed per-lane
-   amplitude autoscaling (fit each lead's min/max to its lane). REJECTED on
-   honesty grounds: the app's calibration law is that one small grid box is
-   always 0.1 mV, which is what makes the traces measurable (1 mm vs 3 mm of
-   ST elevation is a disposition decision) and comparable between strips.
-   Autoscaling would silently vary gain per lane and per card. Applied
-   instead: 10px canvas edge padding, which removes the observed clipping at
-   normal amplitudes with gain untouched. STILL OPEN: a genuinely huge
-   complex can clip. The correct fix is more LANE HEIGHT for high-dynamic-
-   range strips (or a vertical pinch-zoom), never rescaling — a
-   `laneHeightFor` that inspects the trace's dynamic range is the path.
+2. **Lane clipping fixed WITHOUT touching gain.** Measurement first: the four
+   named strips all genuinely clipped (LVH V5 needed 326px in a 190px lane;
+   LBBB rec-2 263px; vt-model 189px in 150px; hyperk-var-bradywide 98px in
+   84px). Root cause was not lane height alone — every lane pinned its
+   baseline to the lane's geometric centre, so an asymmetric complex wasted
+   half its lane. Two honest changes, exactly what a paper ECG channel does:
+   - **per-lane framing** — the baseline sits at that lead's own midrange
+     (LVH V5 span 5.09 mV needs 199px centred on itself vs 326px centred on
+     zero), and the ghost overlay shares the main trace's baseline so the
+     comparison stays valid;
+   - **lane growth** as the fallback, computed at zoom 1 so layout is stable
+     while pinch-zooming, capped at 1.7× the requested height.
+   GAIN IS UNTOUCHED: 1 mm is still 0.1 mV, which is what makes these traces
+   measurable. Verified: LVH lane 190→195px, signal at canvas y 17–198 of
+   215; LBBB rec-2 fits unchanged at 190 once re-centred (y 25–185 of 210).
+   Tool chips raised to ~92% opacity so a deep S passing behind them reads as
+   chrome-over-trace rather than a broken waveform.
+
+   Known limit: at 2× pinch-zoom the grid magnifies both axes, so a very tall
+   complex can still exceed its lane. That is a deliberate consequence of a
+   square-grid zoom, not a clipping bug — scrub or zoom back out.

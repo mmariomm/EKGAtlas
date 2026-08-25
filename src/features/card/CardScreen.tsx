@@ -383,7 +383,7 @@ function CardInner({ cardId }: { cardId: string }) {
             <h2 className="sec-title">
               <span className="sec-num">5</span>
               {role === 'rn' ? 'Recognize & respond' : 'Guideline moves'}
-              <span className="role-toggle" role="group" aria-label="Audience">
+              <span className="seg seg-sm role-toggle" role="group" aria-label="Audience">
                 <button className={role === 'md' ? 'on' : ''} onClick={() => setRoleAndSave('md')}>MD</button>
                 <button className={role === 'rn' ? 'on' : ''} onClick={() => setRoleAndSave('rn')}>RN</button>
               </span>

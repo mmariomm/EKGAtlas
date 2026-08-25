@@ -93,7 +93,39 @@ export default function TraceView({
   })
   const [size, setSize] = useState({ w: 0, h: 0 })
 
-  const laneH = laneHeight ?? laneHeightFor(leads.length)
+  /**
+   * Per-lane vertical framing. GAIN IS NEVER TOUCHED — one small box stays
+   * 0.1 mV, which is what makes these traces measurable. Only two honest
+   * things change, exactly as a paper ECG channel does: each lane's baseline
+   * sits at that lead's own midrange (an asymmetric complex no longer wastes
+   * half its lane), and the lane grows if the span still doesn't fit.
+   */
+  const frame = useMemo(() => {
+    const mid = new Map<LeadId, number>()
+    let maxSpan = 0
+    for (const lead of leads) {
+      const samples = data.leads[lead]
+      if (!samples || !samples.length) { mid.set(lead, 0); continue }
+      let lo = Infinity
+      let hi = -Infinity
+      for (let i = 0; i < samples.length; i++) {
+        const v = samples[i]
+        if (v < lo) lo = v
+        if (v > hi) hi = v
+      }
+      mid.set(lead, (lo + hi) / 2)
+      maxSpan = Math.max(maxSpan, hi - lo)
+    }
+    return { mid, maxSpan }
+  }, [data, leads])
+
+  const baseLaneH = laneHeight ?? laneHeightFor(leads.length)
+  // Fit is computed at zoom 1 so the layout stays stable while pinch-zooming.
+  const laneH = useMemo(() => {
+    const pxPerMm1 = (size.w || 360) / (WINDOW_SEC * MM_PER_SEC)
+    const needed = frame.maxSpan * MM_PER_MV * pxPerMm1 + 14
+    return Math.min(Math.max(baseLaneH, Math.ceil(needed)), Math.round(baseLaneH * 1.7))
+  }, [baseLaneH, frame.maxSpan, size.w])
   // Edge breathing room: big deflections in the first/last lane must never
   // crop at the canvas boundary (calibration is untouched — pure padding).
   const PADV = 10
@@ -150,7 +182,9 @@ export default function TraceView({
     }
 
     const mvPx = MM_PER_MV * pxPerMm
-    const yLane = (li: number) => PADV + li * laneH
+    // Lane baseline = geometric centre shifted onto the lead's own midrange.
+    const yLane = (li: number, lead: LeadId) =>
+      PADV + li * laneH + laneH / 2 + (frame.mid.get(lead) ?? 0) * mvPx
     const inkLane = (samples: Float32Array, durationMs: number, y0: number) => {
       ctx.beginPath()
       const n = samples.length
@@ -171,7 +205,9 @@ export default function TraceView({
       ctx.lineWidth = 1.1
       leads.forEach((lead, li) => {
         const samples = ghost.leads[lead]
-        if (samples) inkLane(samples, ghost.durationMs, yLane(li) + laneH / 2)
+        // The ghost shares the main trace's baseline — otherwise the overlay
+        // comparison it exists for would be meaningless.
+        if (samples) inkLane(samples, ghost.durationMs, yLane(li, lead))
       })
       ctx.globalAlpha = 1
     }
@@ -179,9 +215,9 @@ export default function TraceView({
     ctx.lineWidth = 1.4
     leads.forEach((lead, li) => {
       const samples = data.leads[lead]
-      if (samples) inkLane(samples, data.durationMs, yLane(li) + laneH / 2)
+      if (samples) inkLane(samples, data.durationMs, yLane(li, lead))
     })
-  }, [data, ghost, leads, geo, height, laneH, paper, size.w])
+  }, [data, ghost, leads, geo, height, laneH, paper, size.w, frame])
 
   // ---- per-frame: blit slice + playhead + comet + highlight
   useEffect(() => {
@@ -234,7 +270,7 @@ export default function TraceView({
       leads.forEach((lead, li) => {
         const samples = data.leads[lead]
         if (!samples) return
-        const y0 = PADV + li * laneH + laneH / 2
+        const y0 = PADV + li * laneH + laneH / 2 + (frame.mid.get(lead) ?? 0) * mvPx
         const n = samples.length
         const msPerSample = data.durationMs / n
         ctx.strokeStyle = color
@@ -270,7 +306,7 @@ export default function TraceView({
 
       // pinned per-lane chrome: separator, calibration pulse, lead label
       leads.forEach((lead, li) => {
-        const y0 = PADV + li * laneH + laneH / 2
+        const y0 = PADV + li * laneH + laneH / 2 + (frame.mid.get(lead) ?? 0) * geo.pxPerMm * MM_PER_MV
         if (li > 0) {
           ctx.strokeStyle = theme.gridMajor
           ctx.lineWidth = 1
@@ -297,7 +333,7 @@ export default function TraceView({
     }
 
     return clock.subscribe(draw)
-  }, [clock, data, leads, geo, height, laneH, paper, size.w, toneAt, highlight])
+  }, [clock, data, leads, geo, height, laneH, paper, size.w, toneAt, highlight, frame])
 
   // ---- pointer input: drag scrub / tap toggle / pinch zoom
   useEffect(() => {
