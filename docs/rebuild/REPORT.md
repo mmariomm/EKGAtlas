@@ -234,3 +234,63 @@ it names a different, lethal pattern); three new registry entries
 replaced with substantive ones.
 
 All checks green after the pass (engine + content, avoid-coverage enforced).
+
+---
+
+## Design deep-audit — 2026-08 (22-year designer, screenshot-verified findings)
+
+A single world-class design auditor drove the running app end-to-end
+(390×844, every surface and state, all findings from screenshots with
+measured geometry). Verdict: "strong system, unfinished surface" — the
+biggest debt was per-screen sticky/floating chrome colliding as a class.
+All 13 findings applied:
+
+layering — playbar clearance + exit fade (the trust footer was 100%
+occluded, measured); 12-lead stage unstuck (922px sticky in an 844px
+viewport made V5–V6 unreachable); trace footer rebuilt as one flex row
+(lead labels moved to lane top-left; coach hint into normal flow; ghost
+legend and tools share the foot; auto-compact chrome for lanes <90px);
+canvas edge padding so big deflections never crop (calibration untouched).
+
+state visibility — active method/evolution chips self-center
+(scrollIntoView); section-5 heading wraps instead of cropping the RN pill.
+
+loop feedback — drill actions pinned to a stable bottom zone; right-answer
+rise + counter pop (reduced-motion safe); pack runs end in a score summary
+with the missed list linked; pack wrong answers now echo the pick.
+
+one grammar — method strip is a connected stepper (not free pills); phase
+chips gained a "highlight" label; hide-heart moved onto the heart panel;
+lab/evolution/role segmented controls unified; both morph sliders are
+accent-colored with the HyperK legend highlighting live; the HyperK banner
+unstuck; heart phase caption contrast raised.
+
+craft — *asterisk* copy renders as real italics everywhere; open-quote
+sweep across 7 card files; search placeholder trimmed; lab lesson panel
+scrolls into view on preset; share moved to the lab header with a proper
+toast; home mastery upgraded to three Leitner pips with a legend and the
+lethal dot aligned to the first line.
+
+Explicit non-regression list honored: provenance badges, heart↔trace
+scrub, electrode drag mechanics, commit-first copy, paper mode.
+
+### Deferred from this pass (open, deliberately)
+
+1. **A real `.seg` component.** The four segmented controls (MD·RN, lab
+   mode, evolution arcs, paper/dark) were unified at the VALUE level — each
+   one's selected state now uses the same accent tokens — but they remain
+   four separate CSS blocks. The auditor asked for one extracted `.seg`
+   class/component all four consume, so a fifth toggle cannot drift. ~S/M,
+   touches 4 files. Do this the next time a toggle is added.
+
+2. **Lane clipping on extreme amplitudes.** The auditor proposed per-lane
+   amplitude autoscaling (fit each lead's min/max to its lane). REJECTED on
+   honesty grounds: the app's calibration law is that one small grid box is
+   always 0.1 mV, which is what makes the traces measurable (1 mm vs 3 mm of
+   ST elevation is a disposition decision) and comparable between strips.
+   Autoscaling would silently vary gain per lane and per card. Applied
+   instead: 10px canvas edge padding, which removes the observed clipping at
+   normal amplitudes with gain untouched. STILL OPEN: a genuinely huge
+   complex can clip. The correct fix is more LANE HEIGHT for high-dynamic-
+   range strips (or a vertical pinch-zoom), never rescaling — a
+   `laneHeightFor` that inspects the trace's dynamic range is the path.

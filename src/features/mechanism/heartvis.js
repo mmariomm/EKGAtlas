@@ -503,8 +503,8 @@ function mount(el, opts = {}) {
     // phase chip + caption (screen space)
     ink.phaseTick = svgEl('rect', { x: 14, y: 417, width: 3, height: 10, rx: 1, fill: TONES.rest, opacity: 0 }, gUI);
     ink.phaseText = svgEl('text', {
-      x: 23, y: 425.5, fill: '#9aa7b8', 'fill-opacity': 0,
-      style: 'font:600 8px -apple-system,system-ui,sans-serif;letter-spacing:.14em;text-transform:uppercase;'
+      x: 23, y: 425.5, fill: '#c3cddb', 'fill-opacity': 0,
+      style: 'font:600 9px -apple-system,system-ui,sans-serif;letter-spacing:.14em;text-transform:uppercase;'
     }, gUI);
     ink.phaseText.textContent = '';
 

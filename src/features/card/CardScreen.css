@@ -1,4 +1,14 @@
-.cardscreen { padding-bottom: 96px; }
+.cardscreen { padding-bottom: 148px; }
+/* content exits under the playbar through a fade, not a hard edge */
+.cardscreen::after {
+  content: '';
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 84px;
+  background: linear-gradient(transparent, var(--bg) 78%);
+  pointer-events: none;
+  z-index: 9;
+}
 .card-missing { padding-top: 60px; display: grid; gap: var(--sp-3); }
 
 .card-top {
@@ -43,17 +53,11 @@
 .card-phasechips { margin-top: var(--sp-2); }
 
 .card-coach {
-  position: absolute;
-  left: var(--sp-2);
-  bottom: calc(var(--sp-2) + 6px);
+  text-align: center;
   font-size: 11px;
   font-weight: 600;
   color: var(--ink-2);
-  background: color-mix(in srgb, var(--bg) 78%, transparent);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 10px;
-  pointer-events: none;
+  padding: 4px 0 0;
   animation: coach-fade 9s ease-in forwards;
 }
 .heart-coach {
@@ -101,11 +105,32 @@
 .phasechip-heart { margin-left: auto; }
 
 .card-heart {
+  position: relative;
   margin-top: var(--sp-2);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   background: var(--surface);
   padding: var(--sp-2) 0;
+}
+.heart-hide {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 2;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-3);
+  padding: 6px 10px;
+  min-height: 30px;
+}
+.heart-hide:hover { color: var(--ink-2); }
+.phase-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-right: 2px;
 }
 .card-extras { margin-top: var(--sp-2); }
 
@@ -133,10 +158,13 @@
   font-size: var(--fs-title);
   font-weight: 600;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
+  row-gap: 6px;
   margin-bottom: var(--sp-3);
 }
+.role-toggle { flex: none; }
 .sec-num {
   font-size: 12px;
   color: var(--accent);
@@ -359,3 +387,6 @@
   color: var(--danger);
   margin-bottom: 4px;
 }
+
+/* 12-lead is a document, not a pinned stage (a >viewport sticky traps V5-V6) */
+.card-stage-tall { position: static; box-shadow: none; }

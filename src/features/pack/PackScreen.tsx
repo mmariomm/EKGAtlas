@@ -13,6 +13,7 @@ import { samplePhase } from '../../engine/synthesize'
 import { useCardiacClock } from '../../lib/clock'
 import { loadTrace, TraceData } from '../../lib/assets'
 import { linkClick, navigate } from '../../router'
+import { emph } from '../../lib/emph'
 import TraceView from '../trace/TraceView'
 import ProvenanceBadge from '../card/ProvenanceBadge'
 import './PackScreen.css'
@@ -27,6 +28,9 @@ export default function PackScreen({ packId }: { packId: string }) {
     const i = Number(new URLSearchParams(window.location.search).get('i'))
     return Number.isFinite(i) && i > 0 ? Math.min(i, (pack?.items.length ?? 1) - 1) : 0
   })
+  // Session closure: track each card item's outcome; a summary ends the run.
+  const [results, setResults] = useState<{ cardId: string; right: boolean }[]>([])
+  const [done, setDone] = useState(false)
 
   useEffect(() => {
     const url = new URL(window.location.href)
@@ -47,7 +51,43 @@ export default function PackScreen({ packId }: { packId: string }) {
   const item = pack.items[index]
   const next = () => {
     if (index < pack.items.length - 1) setIndex(index + 1)
-    else navigate('/')
+    else setDone(true)
+  }
+  const recordResult = (cardId: string, right: boolean) =>
+    setResults((r) => [...r, { cardId, right }])
+
+  if (done) {
+    const rightCount = results.filter((r) => r.right).length
+    const missed = results.filter((r) => !r.right)
+    return (
+      <div className="screen pack pack-summary">
+        <header className="pack-head">
+          <a href="/" onClick={linkClick('/')} className="pack-back" aria-label="Back to library">‹</a>
+          <div className="pack-title">{pack.title}</div>
+        </header>
+        <div className="pack-score num">{rightCount}/{results.length}</div>
+        <p className="pack-scoreline">
+          {missed.length === 0
+            ? 'Clean sweep — every read landed.'
+            : 'The missed reads come back in the drill until they’re yours:'}
+        </p>
+        {missed.length > 0 && (
+          <ul className="pack-missed">
+            {missed.map((m) => (
+              <li key={m.cardId}>
+                <a href={`/c/${m.cardId}`} onClick={linkClick(`/c/${m.cardId}`)}>
+                  {CARD_BY_ID[m.cardId]?.name ?? m.cardId} →
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="pack-summary-actions">
+          <a href="/drill" onClick={linkClick('/drill')} className="pack-todrill">keep drilling →</a>
+          <button className="pack-next" onClick={() => navigate('/')}>Done</button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -68,6 +108,7 @@ export default function PackScreen({ packId }: { packId: string }) {
           pillIndex={item.pillIndex}
           presenter={presenter}
           onNext={next}
+          onResult={recordResult}
           last={index === pack.items.length - 1}
         />
       ) : (
@@ -86,12 +127,13 @@ export default function PackScreen({ packId }: { packId: string }) {
 }
 
 function PackCardItem({
-  cardId, pillIndex, presenter, onNext, last,
+  cardId, pillIndex, presenter, onNext, onResult, last,
 }: {
   cardId: string
   pillIndex?: number
   presenter: boolean
   onNext: () => void
+  onResult: (cardId: string, right: boolean) => void
   last: boolean
 }) {
   const card = CARD_BY_ID[cardId]
@@ -130,7 +172,11 @@ function PackCardItem({
           <p className="packitem-prompt">{card.seeIt.commit.prompt}</p>
           <div className="packitem-options">
             {card.seeIt.commit.options.map((o, i) => (
-              <button key={i} className="packitem-option" onClick={() => setCommitted(i)}>
+              <button
+                key={i}
+                className="packitem-option"
+                onClick={() => { setCommitted(i); onResult(cardId, i === correctIdx) }}
+              >
                 {o.label}
               </button>
             ))}
@@ -138,6 +184,9 @@ function PackCardItem({
         </>
       ) : (
         <div className="packitem-reveal">
+          {committed !== -1 && committed !== correctIdx && (
+            <p className="packitem-picked">✕ You read: {card.seeIt.commit.options[committed!]?.label}</p>
+          )}
           <p className="packitem-name">
             {committed !== -1 && (
               <span className={committed === correctIdx ? 'pi-right' : 'pi-wrong'}>
@@ -148,7 +197,7 @@ function PackCardItem({
           </p>
           <div className={`packitem-pill pill-${pill.kind}`}>
             <span className="pill-kind">{pill.kind === 'night-eye' ? 'night shift' : pill.kind}</span>
-            <p>{pill.text}</p>
+            <p>{emph(pill.text)}</p>
           </div>
           <a href={`/c/${card.id}`} onClick={linkClick(`/c/${card.id}`)} className="packitem-open">
             open the full card →

@@ -6,7 +6,7 @@
  * possible trajectory: real infarcts move at their own pace, and reperfusion
  * can stop or reverse the first arc at any point.
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { omiEvolutionStrip, omiFrame, wellensEvolutionStrip, wellensFrame } from '../../content/mechanisms'
 import { buildSignals, samplePhase } from '../../engine/synthesize'
 import { useCardiacClock } from '../../lib/clock'
@@ -77,6 +77,10 @@ export default function EvolutionScreen() {
   )
   const clock = useCardiacClock(data.durationMs, { autoplay: true })
   const take = TAKEAWAYS[arc]
+  const activeChipRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    activeChipRef.current?.scrollIntoView({ inline: 'center', block: 'nearest' })
+  }, [x, arc])
 
   return (
     <div className="screen evo">
@@ -133,11 +137,14 @@ export default function EvolutionScreen() {
         />
       </label>
       <div className="evo-stages">
-        {STAGES[arc].map((s) => (
-          <button key={s.label} className={`evo-stagechip ${Math.abs(x - s.x) < 0.13 ? 'on' : ''}`} onClick={() => setX(s.x)}>
-            {s.label}
-          </button>
-        ))}
+        {STAGES[arc].map((s) => {
+          const on = Math.abs(x - s.x) < 0.13
+          return (
+            <button key={s.label} ref={on ? activeChipRef : undefined} className={`evo-stagechip ${on ? 'on' : ''}`} onClick={() => setX(s.x)}>
+              {s.label}
+            </button>
+          )
+        })}
       </div>
 
       <section className="evo-sec">

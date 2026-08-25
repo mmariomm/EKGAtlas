@@ -44,7 +44,7 @@ export const lbbb: Card = {
     { text: 'Chest pain + LBBB → apply Sgarbossa/Smith-modified criteria, not despair.', cites: ['SGARBOSSA-1996', 'SMITH-MSC-2012'] },
   ],
   rnMoves: [
-    { text: 'New LBBB + chest pain = escalate now — criteria exist (Sgarbossa); never chart ’uninterpretable, LBBB’.', cites: ['AHA-ACS-2025'] },
+    { text: 'New LBBB + chest pain = escalate now — criteria exist (Sgarbossa); never chart ‘uninterpretable, LBBB’.', cites: ['AHA-ACS-2025'] },
     { text: 'ST pointing WITH the QRS anywhere in LBBB is never the block — call it in immediately.', cites: ['SGARBOSSA-1996'] },
     { text: 'Anticipate: echo and an ischemia workup — new LBBB usually marks real structural disease.', cites: ['AHA-ACS-2025'] },
   ],

@@ -71,7 +71,9 @@ export default function HyperKScreen() {
           />
         </label>
         <div className="hk-sliderlegend">
-          <span>subtle</span><span>tented T</span><span>P fades</span><span>QRS widens</span><span>sine</span>
+          {['subtle', 'tented T', 'P fades', 'QRS widens', 'sine'].map((label, i) => (
+            <span key={label} className={Math.round(x * 4) === i ? 'on' : ''}>{label}</span>
+          ))}
         </div>
         <p className="hk-sub">{MORPH_SUB}</p>
       </section>

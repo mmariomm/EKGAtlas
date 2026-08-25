@@ -1,13 +1,15 @@
 .method { margin-top: var(--sp-3); }
 .method-bar {
   display: flex;
-  gap: 4px;
+  gap: 0;
   width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
   padding: 2px 0;
+  scroll-padding-inline: 16px;
 }
 .method-bar::-webkit-scrollbar { display: none; }
+/* a connected STEPPER, not free pills — same form must mean same behavior */
 .method-step {
   flex: none;
   font-size: 10.5px;
@@ -16,14 +18,19 @@
   text-transform: uppercase;
   color: var(--ink-3);
   border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 5px 9px;
+  margin-left: -1px;
+  padding: 6px 9px;
   white-space: nowrap;
+  background: var(--surface);
 }
+.method-step:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.method-step:last-child { border-radius: 0 8px 8px 0; }
 .method-step.on {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  position: relative;
+  z-index: 1;
 }
 .method-ask {
   margin-top: 6px;

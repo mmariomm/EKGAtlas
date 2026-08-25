@@ -46,7 +46,7 @@ export const aflutter: Card = {
     { text: 'Recurrent typical flutter → ablation referral (high cure rate).', cites: ['AHA-AF-2023'] },
   ],
   rnMoves: [
-    { text: 'A regular rate parked at ~150 is flutter until proven otherwise — pull II, III, aVF and hunt the sawtooth before charting ’sinus tach’.', cites: ['AHA-AF-2023'] },
+    { text: 'A regular rate parked at ~150 is flutter until proven otherwise — pull II, III, aVF and hunt the sawtooth before charting ‘sinus tach’.', cites: ['AHA-AF-2023'] },
     { text: 'Unstable → escalate; pads on early — flutter converts at low energy.', cites: ['AHA-ACLS-2020'] },
     { text: 'Anticipate: rate control is harder than in AF; same stroke-risk rules — have onset time and prior episodes ready for the team.', cites: ['AHA-AF-2023'] },
   ],

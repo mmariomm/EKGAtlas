@@ -3,19 +3,23 @@
  * card's step lit. It turns a catalog of exemplars into one procedure the
  * learner can run on an unknown strip. Tap to expand the full method.
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { METHOD, METHOD_BY_ID } from '../../content/method'
 import './MethodStrip.css'
 
 export default function MethodStrip({ stepId }: { stepId: string }) {
   const [open, setOpen] = useState(false)
   const active = METHOD_BY_ID[stepId]
+  const activeRef = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ inline: 'center', block: 'nearest' })
+  }, [stepId])
 
   return (
     <div className="method">
       <button className="method-bar" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         {METHOD.map((s) => (
-          <span key={s.id} className={`method-step ${s.id === stepId ? 'on' : ''}`}>{s.short}</span>
+          <span key={s.id} ref={s.id === stepId ? activeRef : undefined} className={`method-step ${s.id === stepId ? 'on' : ''}`}>{s.short}</span>
         ))}
       </button>
       {active && !open && (
