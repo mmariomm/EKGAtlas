@@ -75,7 +75,7 @@ export default function AboutScreen() {
       <section className="about-sec">
         <h2>Found an error?</h2>
         <p>
-          Report it — card name, what's wrong, your source:{' '}
+          Report it — card name, what’s wrong, your source:{' '}
           <a href="https://github.com/mmariomm/EKGAtlas/issues" target="_blank" rel="noreferrer">open an issue</a>.
           Confirmed clinical errors are corrected or the card is pulled within 72 hours;
           fixes credit the reporter.

@@ -66,3 +66,39 @@
 .pack-lab { display: grid; gap: var(--sp-4); padding-top: var(--sp-5); }
 .pack-labtitle { font-size: var(--fs-name); font-weight: 600; }
 .pack-labgo { font-size: var(--fs-lede); font-weight: 600; }
+
+/* session closure: score + missed list (design-audit F5) */
+.pack { min-height: 100dvh; display: flex; flex-direction: column; }
+.packitem { flex: 1; display: flex; flex-direction: column; }
+.packitem-reveal { flex: 1; display: flex; flex-direction: column; gap: var(--sp-2); }
+.packitem-reveal .pack-next { margin-top: auto; align-self: flex-end; }
+.pack-lab { flex: 1; display: flex; flex-direction: column; }
+.pack-lab .pack-next { margin-top: auto; align-self: flex-end; }
+.packitem-picked { color: var(--danger); font-weight: 600; }
+
+.pack-score {
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: var(--sp-5);
+}
+.pack-scoreline { color: var(--ink-2); margin-top: var(--sp-2); }
+.pack-missed { list-style: none; margin: var(--sp-3) 0 0; padding: 0; display: grid; gap: var(--sp-2); }
+.pack-missed a {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: 12px var(--sp-4);
+  color: var(--ink);
+  font-weight: 600;
+}
+.pack-summary-actions {
+  margin-top: auto;
+  padding-top: var(--sp-5);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.pack-todrill { color: var(--ink-2); font-size: var(--fs-meta); text-decoration: underline; }
+.pack-summary-actions .pack-next { margin-left: auto; }

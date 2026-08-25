@@ -1,4 +1,25 @@
-.drill { padding-bottom: 48px; }
+.drill {
+  padding-bottom: 24px;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.drill-result { flex: 1; display: flex; flex-direction: column; }
+@keyframes verdict-rise {
+  0% { opacity: 0; transform: translateY(7px); }
+  60% { opacity: 1; transform: translateY(-2px); }
+  100% { transform: translateY(0); }
+}
+@keyframes progress-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.14); color: var(--accent); }
+  100% { transform: scale(1); }
+}
+.drill-verdict.drill-right { animation: verdict-rise 220ms ease-out; }
+.drill-progress { display: inline-block; animation: progress-pop 340ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .drill-verdict.drill-right, .drill-progress { animation: none; }
+}
 .drill-head {
   display: flex;
   align-items: center;
@@ -48,7 +69,7 @@
 .drill-wrong { color: var(--danger); }
 .drill-tempts { color: var(--ink-2); font-size: var(--fs-body); }
 .drill-requeue { color: var(--ink-3); font-size: var(--fs-meta); }
-.drill-actions { display: flex; align-items: center; gap: var(--sp-4); margin-top: var(--sp-2); }
+.drill-actions { display: flex; align-items: center; gap: var(--sp-4); margin-top: auto; padding-top: var(--sp-4); }
 .drill-open { font-size: var(--fs-meta); color: var(--ink-2); text-decoration: underline; min-height: var(--tap-min); display: inline-flex; align-items: center; }
 .drill-next {
   margin-left: auto;

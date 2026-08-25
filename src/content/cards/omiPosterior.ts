@@ -45,7 +45,7 @@ export const omiPosterior: Card = {
   avoid: { text: 'Never file it as “NSTEMI, medical management” once the posterior leads confirm — a confirmed posterior OMI takes the reperfusion pathway at STEMI speed.', cites: ['AHA-ACS-2025'] },
   rnMoves: [
     { text: 'ST depression deepest in V1–V3 is posterior OMI until proven otherwise — get V7–V9 and RELABEL the tracing so the next reader isn’t fooled; three stickers change the disposition.', cites: ['AHA-ACS-2025'] },
-    { text: 'Don’t let the ’NSTEMI’ label slow the room — confirmed posterior OMI moves at STEMI speed.', cites: ['AHA-ACS-2025'] },
+    { text: 'Don’t let the ‘NSTEMI’ label slow the room — confirmed posterior OMI moves at STEMI speed.', cites: ['AHA-ACS-2025'] },
   ],
   mechanism: {
     kind: 'authored',

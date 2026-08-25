@@ -11,6 +11,7 @@ import { useCardiacClock } from '../../lib/clock'
 import { loadTrace, TraceData } from '../../lib/assets'
 import { nextDrillCard, progressSummary, recordDrillAnswer } from '../../lib/progress'
 import { metric } from '../../lib/metrics'
+import { emph } from '../../lib/emph'
 import { linkClick } from '../../router'
 import TraceView from '../trace/TraceView'
 import ProvenanceBadge from '../card/ProvenanceBadge'
@@ -118,7 +119,7 @@ export default function DrillScreen() {
       <header className="drill-head">
         <a href="/" onClick={linkClick('/')} className="drill-back" aria-label="Back to library">‹</a>
         <h1>Drill</h1>
-        <span className="drill-progress num">
+        <span className="drill-progress num" key={sessionTotal}>
           {sessionTotal > 0 ? `${sessionRight}/${sessionTotal} · ` : ''}{progress.solid}/{progress.total} solid
         </span>
       </header>
@@ -157,13 +158,13 @@ export default function DrillScreen() {
               {(() => {
                 const contrast = whyItTempted(current.cardId, picked!)
                 return contrast
-                  ? <p className="drill-contrast"><span className="drill-contrast-label">Why it tempted:</span> {contrast}</p>
+                  ? <p className="drill-contrast"><span className="drill-contrast-label">Why it tempted:</span> {emph(contrast)}</p>
                   : <p className="drill-contrast"><span className="drill-contrast-label">{CARD_BY_ID[picked!].name}:</span> {CARD_BY_ID[picked!].tagline}</p>
               })()}
               <p className="drill-verdict drill-right">✓ {card.name}</p>
             </>
           )}
-          {correctOption && <p className="drill-tempts">{correctOption.tempts}</p>}
+          {correctOption && <p className="drill-tempts">{emph(correctOption.tempts)}</p>}
           {!right && <p className="drill-requeue">Missed — it comes back until it’s yours.</p>}
           <div className="drill-actions">
             <a href={`/c/${card.id}`} onClick={linkClick(`/c/${card.id}`)} className="drill-open">

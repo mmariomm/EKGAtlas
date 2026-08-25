@@ -103,9 +103,12 @@ export default function ElectrodeLabScreen() {
     } catch { /* user dismissed */ }
   }
 
+  const teachRef = useRef<HTMLDivElement>(null)
   const applyPreset = (p: LabPreset) => {
     setPreset(p)
     setDextro(false)
+    // The lesson must be seen, not discovered by scrolling (design-audit F8).
+    setTimeout(() => teachRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 120)
     const url = new URL(window.location.href)
     url.searchParams.set('swap', p.id)
     window.history.replaceState(null, '', url)
@@ -213,6 +216,7 @@ export default function ElectrodeLabScreen() {
           <button className={mode === 'model' ? 'on' : ''} onClick={() => switchMode('model')}>Modeled heart</button>
           <button className={mode === 'real' ? 'on' : ''} onClick={() => switchMode('real')}>Real recording</button>
         </div>
+        <button className="lab-sharebtn" onClick={share} aria-label="Share this setup">↗</button>
       </header>
 
       <p className="lab-lede">
@@ -235,9 +239,8 @@ export default function ElectrodeLabScreen() {
           </button>
         ))}
         <button className="lab-chip lab-chip-reset" onClick={reset}>Reset</button>
-        <button className="lab-chip lab-chip-share" onClick={share}>Share this setup</button>
       </div>
-      {shared && <p className="lab-hint">{shared}</p>}
+      {shared && <div className="lab-toast">{shared}</div>}
 
       {!serialView && (
         <div className="lab-board">
@@ -254,7 +257,7 @@ export default function ElectrodeLabScreen() {
       {hint && <p className="lab-hint">{hint}</p>}
 
       {preset && (
-        <div className="lab-teach">
+        <div className="lab-teach" ref={teachRef}>
           <p>{preset.text}</p>
           <p><b>The tell:</b> {preset.tell}</p>
           {preset.approxNote && <p className="lab-approx">{preset.approxNote}</p>}

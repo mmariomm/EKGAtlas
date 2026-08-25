@@ -234,3 +234,42 @@ it names a different, lethal pattern); three new registry entries
 replaced with substantive ones.
 
 All checks green after the pass (engine + content, avoid-coverage enforced).
+
+---
+
+## Design deep-audit — 2026-08 (22-year designer, screenshot-verified findings)
+
+A single world-class design auditor drove the running app end-to-end
+(390×844, every surface and state, all findings from screenshots with
+measured geometry). Verdict: "strong system, unfinished surface" — the
+biggest debt was per-screen sticky/floating chrome colliding as a class.
+All 13 findings applied:
+
+layering — playbar clearance + exit fade (the trust footer was 100%
+occluded, measured); 12-lead stage unstuck (922px sticky in an 844px
+viewport made V5–V6 unreachable); trace footer rebuilt as one flex row
+(lead labels moved to lane top-left; coach hint into normal flow; ghost
+legend and tools share the foot; auto-compact chrome for lanes <90px);
+canvas edge padding so big deflections never crop (calibration untouched).
+
+state visibility — active method/evolution chips self-center
+(scrollIntoView); section-5 heading wraps instead of cropping the RN pill.
+
+loop feedback — drill actions pinned to a stable bottom zone; right-answer
+rise + counter pop (reduced-motion safe); pack runs end in a score summary
+with the missed list linked; pack wrong answers now echo the pick.
+
+one grammar — method strip is a connected stepper (not free pills); phase
+chips gained a "highlight" label; hide-heart moved onto the heart panel;
+lab/evolution/role segmented controls unified; both morph sliders are
+accent-colored with the HyperK legend highlighting live; the HyperK banner
+unstuck; heart phase caption contrast raised.
+
+craft — *asterisk* copy renders as real italics everywhere; open-quote
+sweep across 7 card files; search placeholder trimmed; lab lesson panel
+scrolls into view on preset; share moved to the lab header with a proper
+toast; home mastery upgraded to three Leitner pips with a legend and the
+lethal dot aligned to the first line.
+
+Explicit non-regression list honored: provenance badges, heart↔trace
+scrub, electrode drag mechanics, commit-first copy, paper mode.

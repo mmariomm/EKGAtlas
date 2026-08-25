@@ -47,7 +47,7 @@ export const avb3: Card = {
   ],
   avoid: { text: 'Hold every AV-nodal blocker (beta-blocker, diltiazem/verapamil, digoxin) while the block stands — and don’t let atropine cycles delay pacing.', cites: ['AHA-BRADY-2018', 'AHA-ACLS-2020'] },
   rnMoves: [
-    { text: 'More Ps than QRSs and no fixed PR = complete block. A ’regular bradycardia at 40’ that ignores its own Ps is never sinus — look twice.', cites: ['AHA-BRADY-2018'] },
+    { text: 'More Ps than QRSs and no fixed PR = complete block. A ‘regular bradycardia at 40’ that ignores its own Ps is never sinus — look twice.', cites: ['AHA-BRADY-2018'] },
     { text: 'Do not leave the bedside: pads on, atropine drawn (expect it to fail if the QRS is wide), pacing likely.', cites: ['AHA-ACLS-2020'] },
     { text: 'Anticipate the cause hunt: K⁺, AV-blocking drugs, ischemia — inferior-MI blocks often recover; anterior ones usually don’t.', cites: ['AHA-BRADY-2018', 'AHA-ACS-2025'] },
   ],

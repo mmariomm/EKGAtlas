@@ -45,7 +45,7 @@ export const pacedV: Card = {
   ],
   rnMoves: [
     { text: 'March spike→QRS pairs: a spike with nothing after it = failure to capture (in a dependent, slow patient that is a stay-in-the-room emergency); spikes landing inside beats or near Ts = undersensing (R-on-T risk). Report both — never chart as artifact.', cites: ['AHA-BRADY-2018'] },
-    { text: 'Chest pain in a paced rhythm is never ’uninterpretable’ — concordant ST changes matter; push for a real read (modified Sgarbossa).', cites: ['SMITH-MSC-2012', 'DODD-VPR-2021'] },
+    { text: 'Chest pain in a paced rhythm is never ‘uninterpretable’ — concordant ST changes matter; push for a real read (modified Sgarbossa).', cites: ['SMITH-MSC-2012', 'DODD-VPR-2021'] },
     { text: 'Anticipate: pads on and the pacing pathway if capture fails in a slow or symptomatic patient; magnet per protocol — it forces asynchronous pacing (fixes OVERsensing/inhibition), it never fixes lost capture.', cites: ['AHA-BRADY-2018'] },
   ],
   mechanism: {

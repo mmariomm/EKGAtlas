@@ -19,6 +19,7 @@ import { useCardiacClock } from '../../lib/clock'
 import { loadTrace, TraceData } from '../../lib/assets'
 import { linkClick, navigate } from '../../router'
 import { metric } from '../../lib/metrics'
+import { emph } from '../../lib/emph'
 import TraceView from '../trace/TraceView'
 import HeartView from '../mechanism/HeartView'
 import MethodStrip from './MethodStrip'
@@ -197,7 +198,7 @@ function CardInner({ cardId }: { cardId: string }) {
         <button className="card-share" onClick={share} aria-label="Share this card">Share</button>
       </header>
 
-      <div className="card-stage">
+      <div className={`card-stage ${leads.length === 12 ? 'card-stage-tall' : ''}`}>
         {error && <div className="card-error">{error}</div>}
         {!error && !data && <div className="card-loading">loading recording…</div>}
         {data && (
@@ -211,10 +212,10 @@ function CardInner({ cardId }: { cardId: string }) {
             badge={<ProvenanceBadge provenance={data.provenance} />}
           />
         )}
-        {coachTrace && data && (
-          <span className="card-coach">↔ drag to scrub · pinch to zoom</span>
-        )}
       </div>
+      {coachTrace && data && (
+        <p className="card-coach">↔ drag to scrub · pinch to zoom</p>
+      )}
 
       <div className="card-leadrow" role="group" aria-label="Choose leads">
         <button
@@ -236,6 +237,7 @@ function CardInner({ cardId }: { cardId: string }) {
 
       {revealed && (
         <div className="card-phasechips" role="group" aria-label="Highlight a phase">
+          <span className="phase-label">highlight</span>
           {(['P', 'QRS', 'ST', 'T'] as PhaseId[]).map((p) => (
             <button
               key={p}
@@ -245,9 +247,11 @@ function CardInner({ cardId }: { cardId: string }) {
               {p}
             </button>
           ))}
-          <button className="phasechip phasechip-heart" onClick={() => setShowHeart((s) => !s)}>
-            {showHeart ? 'hide heart' : 'show heart'}
-          </button>
+          {!showHeart && (
+            <button className="phasechip phasechip-heart" onClick={() => setShowHeart(true)}>
+              show heart
+            </button>
+          )}
         </div>
       )}
 
@@ -298,11 +302,11 @@ function CardInner({ cardId }: { cardId: string }) {
                 <p className="commit-verdict commit-wrong">
                   ✕ You read: {card.seeIt.commit.options[committed!].label}
                 </p>
-                <p className="commit-tempts">{card.seeIt.commit.options[committed!].tempts}</p>
+                <p className="commit-tempts">{emph(card.seeIt.commit.options[committed!].tempts)}</p>
                 <p className="commit-verdict commit-right">✓ {card.seeIt.commit.options[correctIdx].label}</p>
               </>
             )}
-            <p className="commit-tempts">{card.seeIt.commit.options[correctIdx].tempts}</p>
+            <p className="commit-tempts">{emph(card.seeIt.commit.options[correctIdx].tempts)}</p>
             <button className="commit-again" onClick={recommit}>re-commit</button>
           </div>
         )}
@@ -310,6 +314,7 @@ function CardInner({ cardId }: { cardId: string }) {
 
       {revealed && showHeart && (
         <div className="card-heart">
+          <button className="heart-hide" onClick={() => setShowHeart(false)}>hide</button>
           <HeartView
             strip={strip}
             clock={clock}
@@ -356,7 +361,7 @@ function CardInner({ cardId }: { cardId: string }) {
               {card.pills.map((p, i) => (
                 <div key={i} className={`pill pill-${p.kind}`}>
                   <span className="pill-kind">{p.kind === 'night-eye' ? 'night shift' : p.kind}</span>
-                  <p>{p.text}</p>
+                  <p>{emph(p.text)}</p>
                   {p.linkCardId && CARD_BY_ID[p.linkCardId] && (
                     <a href={`/c/${p.linkCardId}`} onClick={linkClick(`/c/${p.linkCardId}`)} className="pill-link">
                       → {CARD_BY_ID[p.linkCardId].name}

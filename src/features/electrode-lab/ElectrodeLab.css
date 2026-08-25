@@ -31,7 +31,7 @@
   border-radius: 999px;
   padding: 7px 12px;
 }
-.lab-mode button.on { background: var(--surface-2); color: var(--ink); }
+.lab-mode button.on { background: var(--accent); color: var(--accent-ink); }
 
 .lab-lede { color: var(--ink-2); font-size: var(--fs-meta); max-width: 46ch; padding-bottom: var(--sp-3); }
 
@@ -117,4 +117,26 @@
   padding-bottom: var(--sp-2);
   z-index: 4;
 }
-.lab-chip-share { color: var(--accent); }
+.lab-sharebtn {
+  min-width: 38px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 700;
+  margin-left: var(--sp-1);
+}
+.lab-toast {
+  position: fixed;
+  bottom: calc(var(--sp-5) + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: var(--fs-meta);
+  z-index: 20;
+}

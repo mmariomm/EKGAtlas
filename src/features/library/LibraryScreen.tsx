@@ -29,7 +29,7 @@ export default function LibraryScreen() {
       <input
         className="lib-search"
         type="search"
-        placeholder="Search patterns — “wide”, “AF”, “block”…"
+        placeholder="Search patterns — “wide”, “AF”, “block”"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         aria-label="Search patterns"
@@ -79,16 +79,21 @@ export default function LibraryScreen() {
             >
               <span className="lib-dot" /> cannot-miss{lethalOnly ? ' only' : ''}
             </button>
+            <span className="lib-pipslegend" aria-hidden>
+              <span className="lib-pip on" /> seen
+              <span className="lib-pip on" style={{ marginLeft: 10 }} /><span className="lib-pip on" /> learning
+              <span className="lib-pip on lib-pip-solid" style={{ marginLeft: 10 }} /><span className="lib-pip on lib-pip-solid" /><span className="lib-pip on lib-pip-solid" /> solid
+            </span>
           </div>
         </>
       )}
 
       {results ? (
-        <CardList items={results.map((c) => ({ ...c, mastery: masteryOf(c.id, drill) }))} empty={`Nothing matches “${q}”.`} />
+        <CardList items={results.map((c) => ({ ...c, mastery: masteryOf(c.id, drill), box: drill[c.id]?.box ?? 0 }))} empty={`Nothing matches “${q}”.`} />
       ) : (
         cardsByCategory().map((g) => {
           const items = (lethalOnly ? g.items.filter((c) => c.lethal) : g.items)
-            .map((c) => ({ ...c, mastery: masteryOf(c.id, drill) }))
+            .map((c) => ({ ...c, mastery: masteryOf(c.id, drill), box: drill[c.id]?.box ?? 0 }))
           if (!items.length) return null
           return (
             <section key={g.category} className="lib-group">
@@ -109,6 +114,7 @@ interface Row {
   tagline: string
   lethal: boolean
   mastery: Mastery
+  box: number
 }
 
 function Spark({ id }: { id: string }) {
@@ -121,6 +127,17 @@ function Spark({ id }: { id: string }) {
     <svg className="lib-spark" viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden>
       <path d={d} fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
     </svg>
+  )
+}
+
+function Pips({ mastery, box }: { mastery: Mastery; box: number }) {
+  const filled = mastery === 'solid' ? 3 : box >= 1 ? 2 : mastery !== 'unseen' ? 1 : 0
+  return (
+    <span className={`lib-pips ${mastery === 'solid' ? 'lib-pips-solid' : ''}`} aria-label={`progress: ${mastery}`} title={mastery}>
+      {[0, 1, 2].map((i) => (
+        <span key={i} className={`lib-pip ${i < filled ? 'on' : ''}`} />
+      ))}
+    </span>
   )
 }
 
@@ -139,7 +156,7 @@ function CardList({ items, empty }: { items: Row[]; empty: string }) {
               </span>
               <span className="lib-row-tag">{c.tagline}</span>
             </span>
-            <span className={`lib-mastery lib-mastery-${c.mastery}`} aria-label={`progress: ${c.mastery}`} title={c.mastery} />
+            <Pips mastery={c.mastery} box={c.box} />
           </a>
         </li>
       ))}

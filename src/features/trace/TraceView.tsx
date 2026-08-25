@@ -94,7 +94,12 @@ export default function TraceView({
   const [size, setSize] = useState({ w: 0, h: 0 })
 
   const laneH = laneHeight ?? laneHeightFor(leads.length)
-  const height = laneH * leads.length
+  // Edge breathing room: big deflections in the first/last lane must never
+  // crop at the canvas boundary (calibration is untouched — pure padding).
+  const PADV = 10
+  const height = laneH * leads.length + PADV * 2
+  // Compact chrome for short lanes (drill/gallery/lab): tools hide, badge shrinks.
+  const compact = laneH < 90
 
   useEffect(() => {
     const el = wrapRef.current
@@ -145,6 +150,7 @@ export default function TraceView({
     }
 
     const mvPx = MM_PER_MV * pxPerMm
+    const yLane = (li: number) => PADV + li * laneH
     const inkLane = (samples: Float32Array, durationMs: number, y0: number) => {
       ctx.beginPath()
       const n = samples.length
@@ -165,7 +171,7 @@ export default function TraceView({
       ctx.lineWidth = 1.1
       leads.forEach((lead, li) => {
         const samples = ghost.leads[lead]
-        if (samples) inkLane(samples, ghost.durationMs, li * laneH + laneH / 2)
+        if (samples) inkLane(samples, ghost.durationMs, yLane(li) + laneH / 2)
       })
       ctx.globalAlpha = 1
     }
@@ -173,7 +179,7 @@ export default function TraceView({
     ctx.lineWidth = 1.4
     leads.forEach((lead, li) => {
       const samples = data.leads[lead]
-      if (samples) inkLane(samples, data.durationMs, li * laneH + laneH / 2)
+      if (samples) inkLane(samples, data.durationMs, yLane(li) + laneH / 2)
     })
   }, [data, ghost, leads, geo, height, laneH, paper, size.w])
 
@@ -228,7 +234,7 @@ export default function TraceView({
       leads.forEach((lead, li) => {
         const samples = data.leads[lead]
         if (!samples) return
-        const y0 = li * laneH + laneH / 2
+        const y0 = PADV + li * laneH + laneH / 2
         const n = samples.length
         const msPerSample = data.durationMs / n
         ctx.strokeStyle = color
@@ -264,13 +270,13 @@ export default function TraceView({
 
       // pinned per-lane chrome: separator, calibration pulse, lead label
       leads.forEach((lead, li) => {
-        const y0 = li * laneH + laneH / 2
+        const y0 = PADV + li * laneH + laneH / 2
         if (li > 0) {
           ctx.strokeStyle = theme.gridMajor
           ctx.lineWidth = 1
           ctx.beginPath()
-          ctx.moveTo(0, li * laneH)
-          ctx.lineTo(size.w, li * laneH)
+          ctx.moveTo(0, PADV + li * laneH)
+          ctx.lineTo(size.w, PADV + li * laneH)
           ctx.stroke()
         }
         const calH = MM_PER_MV * geo.pxPerMm
@@ -286,7 +292,7 @@ export default function TraceView({
         ctx.stroke()
         ctx.fillStyle = theme.label
         ctx.font = '600 11px system-ui, sans-serif'
-        ctx.fillText(lead, 8, li * laneH + laneH - 8)
+        ctx.fillText(lead, 8, PADV + li * laneH + 15)
       })
     }
 
@@ -360,15 +366,20 @@ export default function TraceView({
         aria-label={`ECG trace, leads ${leads.join(', ')}`}
       />
       <div className="traceview-overlay">
-        <div className="traceview-badge">{badge}</div>
-        {ghost && ghostLabel && <span className="traceview-ghostlegend">{ghostLabel}</span>}
-        <div className="traceview-tools">
-          <button className="traceview-tool" onClick={() => setZoom(zoom === 1 ? 2 : 1)} aria-label="Toggle paper speed 25/50 mm/s">
-            <span className="traceview-tool-unit">zoom</span> {zoom === 1 ? '25' : '50'}<span className="traceview-tool-unit">mm/s</span>
-          </button>
-          <button className="traceview-tool" onClick={togglePaper} aria-label="Toggle paper look">
-            {paper ? 'dark' : 'paper'}
-          </button>
+        <div className={`traceview-badge ${compact ? 'traceview-badge-sm' : ''}`}>{badge}</div>
+        <div className="traceview-foot">
+          {ghost && ghostLabel && <span className="traceview-ghostlegend">{ghostLabel}</span>}
+          <span className="traceview-foot-spring" />
+          {!compact && (
+            <div className="traceview-tools">
+              <button className="traceview-tool" onClick={() => setZoom(zoom === 1 ? 2 : 1)} aria-label="Toggle paper speed 25/50 mm/s">
+                <span className="traceview-tool-unit">zoom</span> {zoom === 1 ? '25' : '50'}<span className="traceview-tool-unit">mm/s</span>
+              </button>
+              <button className="traceview-tool" onClick={togglePaper} aria-label="Toggle paper look">
+                {paper ? 'dark' : 'paper'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

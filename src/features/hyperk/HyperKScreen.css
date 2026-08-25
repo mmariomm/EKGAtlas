@@ -29,6 +29,7 @@
 
 .hk-sliderrow { display: block; }
 .hk-slider {
+  accent-color: var(--accent);
   width: 100%;
   accent-color: var(--ph-repol);
   height: 34px;
@@ -49,8 +50,6 @@
   background: color-mix(in srgb, var(--warn) 8%, var(--surface));
   border-radius: var(--r-m);
   padding: var(--sp-3) var(--sp-4);
-  position: sticky;
-  top: var(--sp-2);
   z-index: 5;
 }
 
@@ -109,3 +108,5 @@
   font-weight: 500;
   font-size: var(--fs-meta);
 }
+
+.hk-sliderlegend span.on { color: var(--accent); font-weight: 700; }
