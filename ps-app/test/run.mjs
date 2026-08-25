@@ -680,13 +680,14 @@ async function scenarioUiErgonomics(browser) {
   check(scen, /5 SELEZIONATI/.test(await $panel(page, ".selbar").innerText()), "✕ al passaggio rimuove il singolo esame");
 
   // selecting must NOT bounce the scroll back to the top
-  await page.evaluate(() => {
+  const posPrima = await page.evaluate(() => {
     const card = document.getElementById("psassist-host").shadowRoot.querySelector(".card");
-    card.scrollTop = 180;
+    card.scrollTop = 180;                    // the browser clamps to what fits
+    return card.scrollTop;
   });
   await $panel(page, '.opt[title*="GLUCOSIO"]').click();
   const st = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".card").scrollTop);
-  check(scen, st > 100, `lo scroll resta dov'era dopo la selezione (got ${st})`);
+  check(scen, posPrima > 40 && Math.abs(st - posPrima) <= 2, `lo scroll resta dov'era dopo la selezione (${st} ≈ ${posPrima})`);
 
   // drag the header → position saved and restored after reload
   const hd = $panel(page, "#draghd");
@@ -819,11 +820,15 @@ async function scenarioLabPlusRx(browser) {
   check(scen, /Crea 2 richieste/.test(await $panel(page, "#go").innerText()), "il bottone annuncia due richieste");
   await $panel(page, "#goconfirm").click();
 
-  // both richieste get built, then each is confirmed in turn
+  // the lab richiesta confirms itself; the RADIOLOGY one never does (README,
+  // collaudo 8-9): the panel walks to its exam page and waits for a human
   await page.waitForFunction(() => {
-    const s = document.querySelectorAll("form[name=Prestazioni]").length;
-    return s === 0; // we end up back on the patient page
-  }, { timeout: 60000 }).catch(() => {});
+    const f = document.forms.namedItem("Prestazioni");
+    return !!f && !!document.querySelector('a[href*="Delete=Elimina"][href*="PRESTAZIONE=35"]');
+  }, { timeout: 60000 });
+  await page.waitForTimeout(600);
+  check(scen, (await page.locator("#psassist-confirm").count()) === 0, "nessun conto alla rovescia sulla radiologia");
+  await page.locator('form[name="Prestazioni"] input[name="Update"]').first().click();   // the human confirms the RX
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 60000 });
 
   const rich = Object.entries(mock.state.richieste);
@@ -831,7 +836,7 @@ async function scenarioLabPlusRx(browser) {
   const lab = rich.find(([, r]) => r.cart.has("324"));
   const rx = rich.find(([, r]) => r.cart.has("35"));
   check(scen, !!lab && !!rx, "una di laboratorio (troponina) e una di radiologia (RX torace)");
-  check(scen, lab && lab[1].confirmed && rx && rx[1].confirmed, "entrambe confermate");
+  check(scen, lab && lab[1].confirmed && rx && rx[1].confirmed, "entrambe confermate (lab da sola, RX dal click umano)");
   check(scen, lab && lab[1].quesito === "dispnea e dolore toracico" && rx && rx[1].quesito === "dispnea e dolore toracico",
     "stesso quesito su entrambe");
 
@@ -882,11 +887,19 @@ async function scenarioRisultati(browser) {
   const vals = page.locator('#psassist-host [data-esito][data-kind="valori"]');
   check(scen, (await vals.count()) === 2, `2 accessi con valori (got ${await vals.count()})`);
 
-  // the preview is there on arrival: values are fetched in the background
-  await page.waitForSelector("#psassist-host .eprev", { timeout: 15000 });
+  // previews are there on arrival: BOTH draws are fetched in the background,
+  // and the marks need the older one to compare against
+  await page.waitForFunction(
+    () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
+    { timeout: 25000 },
+  );
   const prev = await $panel(page, ".eprev").first().innerText();
-  // names are abbreviated the way a doctor reads them: Emoglobina → Hb
-  check(scen, /^Hb 80↓/.test(prev.trim()), `anteprima con l'anomalo per primo, in sigla (got: ${prev.trim().slice(0, 40)})`);
+  // names abbreviated, every draw in the SAME order (the newest fixes it),
+  // and a change vs the previous draw carries its mark
+  check(scen, /^GB 6\.4 · Hb 80↓▼/.test(prev.trim()), `anteprima in ordine condiviso, variazione marcata (got: ${prev.trim().slice(0, 44)})`);
+  const prevAll = await $panel(page, ".eprev").allInnerTexts();
+  check(scen, prevAll.length === 2 && prevAll.every((t) => /^GB /.test(t.trim())), "i due prelievi elencano gli esami nello stesso ordine");
+  check(scen, !/▲|▼/.test(prevAll[1]), "il prelievo più vecchio non ha marchi (non ha un precedente)");
 
   // one tap opens the full values screen
   await vals.first().click();
@@ -977,8 +990,8 @@ async function scenarioHomePills(browser) {
   check(scen, /min fa|adesso|alle/.test(cards[1]), `gli altri mostrano quando (got: ${cards[1]?.replace(/\s+/g, " ").slice(0, 40)})`);
 
   // picking another patient LOADS HIS PAGE (never shows his data from here)
-  const other = page.locator('#psassist-host .pcard:not(.now) [data-go="esiti"]');
-  await other.click();
+  // the card itself is the button, and it opens the Esiti
+  await page.locator("#psassist-host .pcard:not(.now)").click();
   await page.waitForFunction(() => /EPISODIO_ID=999001/.test(location.href), { timeout: 15000 });
   await page.waitForSelector("#psassist-host", { state: "attached" });
   check(scen, /999001/.test(await $panel(page, ".hd .sub").innerText()), "siamo sulla pagina di quel paziente");

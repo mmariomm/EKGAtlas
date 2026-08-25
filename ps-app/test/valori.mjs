@@ -23,9 +23,9 @@ const grab = (name) => {
   }
   return core.slice(i, end);
 };
-const { outOfRange, sigla } = new Function(
+const { outOfRange, sigla, confrontaPrelievi, ordinaRighe } = new Function(
   grab("outOfRange") + "\n" + core.slice(core.indexOf("const SIGLE = ["), core.indexOf("// First ~160 chars"))
-  + "\nreturn { outOfRange, sigla };",
+  + "\nreturn { outOfRange, sigla, confrontaPrelievi, ordinaRighe };",
 )();
 
 let fail = 0;
@@ -61,6 +61,46 @@ eq(outOfRange("5", "1 - 2 - 3"), 0, "range malformato");
 eq(outOfRange("5", "10 - 1"), 0, "estremi invertiti");
 eq(outOfRange("", "1 - 10"), 0, "valore vuoto");
 eq(outOfRange("tracce", "neg"), 0, "tutto qualitativo");
+
+console.log("confronto tra prelievi");
+{
+  const R = (nome, valore, um = "") => ({ nome, valore, um, range: "", stato: "parziale" });
+  const draws = [
+    { id: "nuovo", rows: [R("Leucociti", "6.4", "x10"), R("Emoglobina", "80", "g/L"), R("Ematocrito", "44", "%")] },
+    { id: "vecchio", rows: [R("Emoglobina", "95", "g/L"), R("Leucociti", "6.1", "x10"), R("Ematocrito", "44", "%")] },
+  ];
+  const { order, delta } = confrontaPrelievi(draws);
+  const dNew = delta.get("nuovo");
+  check(dNew.has("emoglobina") && dNew.get("emoglobina").dir === "▼", "Hb −16% è marcata in discesa");
+  eq(dNew.has("leucociti"), false, "GB +5% resta sotto la soglia dell'emocromo");
+  eq(dNew.has("ematocrito"), false, "un valore identico non è una variazione");
+  eq(delta.get("vecchio").size, 0, "il prelievo più vecchio non ha un precedente");
+  const ord = ordinaRighe(draws[1].rows, order).map((r) => r.nome);
+  eq(ord.join(","), "Leucociti,Emoglobina,Ematocrito", "l'ordine del più recente comanda anche sul vecchio");
+
+  const mod = confrontaPrelievi([
+    { id: "a", rows: [R("Troponina", "<0.01", "ng/L")] },
+    { id: "b", rows: [R("Troponina", "0.05", "ng/L")] },
+  ]).delta.get("a");
+  eq(mod.size, 0, "un valore con modificatore (<0.01) non genera mai una variazione");
+
+  const umm = confrontaPrelievi([
+    { id: "a", rows: [R("Emoglobina", "8.0", "g/dL")] },
+    { id: "b", rows: [R("Emoglobina", "80", "g/L")] },
+  ]).delta.get("a");
+  eq(umm.size, 0, "unità diverse (g/dL vs g/L) non vengono mai confrontate");
+
+  const ph = confrontaPrelievi([
+    { id: "a", rows: [R("pH", "7.30", "")] },
+    { id: "b", rows: [R("pH", "7.42", "")] },
+  ]).delta.get("a");
+  check(ph.has("ph") && ph.get("ph").dir === "▼", "il pH usa la variazione assoluta (0.12 ≥ 0.05)");
+  const ph2 = confrontaPrelievi([
+    { id: "a", rows: [R("pH", "7.40", "")] },
+    { id: "b", rows: [R("pH", "7.42", "")] },
+  ]).delta.get("a");
+  eq(ph2.size, 0, "0.02 di pH non è una variazione");
+}
 
 console.log("sigle");
 eq(sigla("Emoglobina "), "Hb", "Emoglobina");

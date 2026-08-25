@@ -445,6 +445,7 @@
   function runCore() {
     document.getElementById("psassist-host")?.remove();
     document.getElementById("psassist-print")?.remove();   // a real page load takes the wizard with it
+    document.getElementById("psassist-confirm")?.remove(); // and any countdown
     recording = true;
     try { runScript(coreSrc); } catch (e) { console.error("core:", e); }
   }

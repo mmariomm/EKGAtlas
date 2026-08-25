@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.0.0";
+  const VERSION = "3.1.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -340,6 +340,64 @@
     return w.length > 9 ? w.slice(0, 8) + "." : w;
   }
 
+  // ---- comparing draws -----------------------------------------------------
+  // The same analyte must sit in the same place in every draw, or nothing can
+  // be compared at a glance: the newest draw fixes the order, the others follow
+  // it (their own extras go after, in their own order).
+  const valKey = (nome) => String(nome || "").replace(/&nbsp;/g, " ").replace(/[^a-zà-ù0-9%+]+/gi, " ").trim().toLowerCase();
+  const numVal = (x) => { const m = /-?\d+(?:[.,]\d+)?/.exec(String(x)); return m ? parseFloat(m[0].replace(",", ".")) : NaN; };
+
+  // When is a change worth marking? 5% would light up half of every emocromo:
+  // analytical + biological variation alone moves Hb ~3%, PLT ~9%. These
+  // per-analyte thresholds approximate reference change values (the smallest
+  // difference that is a real difference), rounded to be conservative;
+  // anything unknown uses 20%.
+  const DELTA_SOGLIA = {
+    Na: 3, Cl: 3, Ca: 5, "Ca++": 6, K: 8, HCO3: 10, BE: 999, pCO2: 10, pO2: 15, SatO2: 4,
+    Hb: 8, Ht: 8, GR: 8, MCV: 4, MCH: 4, MCHC: 4, RDW: 6, GB: 25, PLT: 25, Neu: 30, Lin: 30,
+    Cr: 15, Az: 20, Glu: 20, Lac: 30, NH3: 30, Alb: 10, INR: 10, PT: 10, PTT: 10, Fib: 15, DD: 40,
+    PCR: 50, PCT: 50, Trop: 30, Bil: 25, BilD: 25, AST: 30, ALT: 30, "γGT": 25, ALP: 25, LDH: 25,
+    Lip: 30, Amy: 30, NTproBNP: 30, BNP: 30, Mb: 30, COHb: 20, MetHb: 20,
+  };
+
+  // draws: [{id, rows}] newest first → { order: Map(key→idx),
+  //   delta: Map(drawId → Map(key → {prevRaw, pct, dir})) }
+  function confrontaPrelievi(draws) {
+    const order = new Map();
+    for (const d of draws) for (const r of d.rows) {
+      const k = valKey(r.nome);
+      if (k && !order.has(k)) order.set(k, order.size);
+    }
+    const delta = new Map();
+    const um = (x) => String(x || "").toLowerCase().replace(/[\s.]+/g, "");
+    const modificato = (x) => /^[<>≤≥]/.test(String(x).trim());
+    for (let i = 0; i < draws.length; i++) {
+      const m = new Map();
+      for (const r of draws[i].rows) {
+        const k = valKey(r.nome), v = numVal(r.valore);
+        if (!k || !isFinite(v) || modificato(r.valore)) continue;   // "<0.01" is a bound, not a number
+        for (let j = i + 1; j < draws.length; j++) {                // the next older draw with this analyte
+          const hit = draws[j].rows.find((rr) => valKey(rr.nome) === k);
+          if (!hit) continue;
+          const prev = numVal(hit.valore);
+          if (isFinite(prev) && Math.abs(prev) > 1e-9 && !modificato(hit.valore)
+              && !(um(r.um) && um(hit.um) && um(r.um) !== um(hit.um))) {   // g/L vs g/dL is a 10× trap
+            const pct = Math.round(((v - prev) / Math.abs(prev)) * 100);
+            const sg = sigla(r.nome);
+            // pH is logarithmic: percent is meaningless there, 0.05 units is not
+            const rilevante = sg === "pH" ? Math.abs(v - prev) >= 0.05 : Math.abs(pct) >= (DELTA_SOGLIA[sg] ?? 20);
+            if (rilevante) m.set(k, { prevRaw: hit.valore, pct, dir: v > prev ? "▲" : "▼" });
+          }
+          break;
+        }
+      }
+      delta.set(draws[i].id, m);
+    }
+    return { order, delta };
+  }
+  const ordinaRighe = (rows, order) => [...rows].sort((a, b) =>
+    (order.get(valKey(a.nome)) ?? 9e9) - (order.get(valKey(b.nome)) ?? 9e9));
+
   // First ~160 chars of visible page text, for the log when a page is unexpected.
   function snippet(doc) {
     return (doc.body?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 160);
@@ -350,7 +408,8 @@
   // IMPORTANT: trust the DOCUMENT first — the response URL only echoes the id
   // WE requested, so it is not independent evidence of what the server served.
   function assertSameEpisode(doc, baseUrl, episodeId, what) {
-    const found = findEpisodeIdInDoc(doc) || param(baseUrl, "EPISODIO_ID");
+    // The response URL only echoes the id WE asked for — it is not evidence.
+    const found = findEpisodeIdInDoc(doc);
     if (!found) {
       throw new StopError(`Episodio non identificabile nella pagina "${what}"`, "Interrotto per sicurezza.");
     }
@@ -725,6 +784,17 @@
   // what a values row needs to exist on its own, without the page
   const risMeta = (e) => ({ url: e.url, label: e.label || "", exams: e.exams || [], when: e.when || "", ts: e.ts || 0 });
 
+  // What a referto row is, from its own label: decides how it opens today and
+  // which ones become inline text when their sources are wired (lab table, RX
+  // and ECG referti). Anything else stays a document you open.
+  function refertoTipo(e) {
+    const l = String(e.label || "").toUpperCase();
+    if (/ELETTROCARDIOGRAMM|\bECG\b/.test(l)) return "ecg";
+    if (/\bRX\b|RADIOGRAF/.test(l)) return "rx";
+    if (/LIS/i.test(e.sistema || "")) return "lab";
+    return "altro";
+  }
+
   function esitiModel(doc, baseUrl) {
     const out = [
       ...risultatiModel(doc, baseUrl).map((r) => ({ ...r, kind: "valori", label: r.exams.join(", ") })),
@@ -944,6 +1014,7 @@
   // end of shift / another user: drop names and every per-episode leftover
   function forgetAll() {
     forgetPatients();
+    forgetQuesiti();
     try {
       for (const k of Object.keys(sessionStorage)) {
         if (k.startsWith(NS) && /(^|\.)(ris|log|refopen|receipt|confirm|queue|print|ui|afterNav)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
@@ -1199,7 +1270,10 @@
         quesitoKept: state.quesitoKept || null,
         items: state.added.map((i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label })),
       });
-      if (plan.autoConfirm && state.added.length && !plan.hold) {
+      // Radiology is deliberately excluded from auto-confirm (README, collaudo
+      // step 8-9): a booking must always be a human click.
+      const isRadio = state.added.some((i) => RADIO_SET.includes(i.res));
+      if (plan.autoConfirm && state.added.length && !plan.hold && !isRadio) {
         tabStore.set("confirm.v1", {
           richiestaId: model.richiestaId, episodeId: plan.episodeId,
           lastCode: last.code, lastLabel: last.label, count: state.added.length, ts: Date.now(),
@@ -1395,6 +1469,7 @@
     .rdot.saved { background: #177245; border-color: #177245; }
     .rdot.open { background: #9DBFDE; border-color: #9DBFDE; }
     .rdot.busy { background: #E5A83B; border-color: #E5A83B; animation: psaPulse 1s infinite; }
+    .rdot.err { background: #B3261E; border-color: #B3261E; }
     .rrow.saved { background: #F6FBF8; border-color: #BCE0C9; }
     .mini { float: right; border: 1px solid #C4D0DC; background: #fff; color: #0B5CAD; border-radius: 6px;
             padding: 1px 7px; font-size: 10.5px; font-weight: 700; cursor: pointer; letter-spacing: 0; text-transform: none; }
@@ -1412,7 +1487,11 @@
     .seg .n { margin-left: 4px; font-weight: 800; opacity: .7; font-variant-numeric: tabular-nums; }
     .rgo { flex: 0 0 auto; color: #8296A9; font-size: 12px; }
     .egroup, .rgroup { display: flex; flex-direction: column; }
-    .pcard { border: 1px solid #E3E8EF; border-radius: 10px; padding: 9px 10px; margin-bottom: 7px; background: #fff; }
+    .pcard { border: 1px solid #E3E8EF; border-radius: 10px; padding: 9px 10px; margin-bottom: 7px; background: #fff; cursor: pointer; }
+    .pcard:hover { border-color: #9DBFDE; background: #F4F9FD; }
+    .pcard:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .pgo { float: right; color: #0B5CAD; font-weight: 700; font-size: 11px; }
+    .pd { color: #B7791F; font-weight: 800; font-size: 10px; margin-left: 1px; }
     .pcard.now { border-color: #9DBFDE; background: #EAF2FA; }
     .pname { display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; font-weight: 700; margin-bottom: 2px; }
     .ptag { flex: 0 0 auto; font-size: 9.5px; font-weight: 800; letter-spacing: .4px; color: #0B5CAD; background: #EAF2FA;
@@ -1456,9 +1535,21 @@
   const RADIO_SET = [RES.RX, RES.ECO, RES.RMN, RES.TAC];
   function rememberQuesito(q) {
     store.set("lastQ", q);
+    store.set("quesiti.ts", Date.now());
     const list = store.get("quesiti", QUESITI_DEFAULT);
     const next = [q, ...list.filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 8);
     store.set("quesiti", next);
+  }
+  // Quesiti are clinical text: they live at most a shift, and the login page
+  // (forgetAll) drops them like every other clinical trace.
+  function scadenzaQuesiti() {
+    const ts = store.get("quesiti.ts", 0);
+    if (ts && Date.now() - ts > PATIENTS_TTL) forgetQuesiti();
+  }
+  function forgetQuesiti() {
+    store.set("lastQ", "");
+    store.set("quesiti", QUESITI_DEFAULT);
+    store.set("quesiti.ts", 0);
   }
   const hasExt = () => { try { return !!(chrome && chrome.runtime && chrome.runtime.id); } catch { return false; } };
   const ask = (msg) => new Promise((res) => {
@@ -1559,10 +1650,12 @@
       this._q = s.q || store.get("lastQ", "") || "";
       this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
       this.acq = s.acq || "";
-      // the ER worklist reads the episode of whoever is first in the list, so a
-      // stored view must never turn it into an ordering screen for that patient
-      this.view = this.defaultView() === "home" ? "home" : (s.view || "richieste");
-      this.viewId = s.viewId || null;
+      // A page load decides the view, not the stored one: opening a patient
+      // from the EHR means "act" and lands on Richieste; coming from a panel
+      // card means "see" and afterNav switches to Esiti right after this.
+      // (The ER worklist stays on the patient list either way.)
+      this.view = this.defaultView();
+      this.viewId = null;
     }
     clearOrderUi() { // after a successful run the order is placed: start clean
       this._q = "";
@@ -1717,7 +1810,7 @@
       const first = done[0];
       tabStore.set("queue.v1", { episodeId: plan.episodeId, autoConfirm: !!plan.autoConfirm, ts: Date.now(), items: done });
       tabStore.set("receipt.v1", { richiestaId: first.rid, episodeId: plan.episodeId, ts: Date.now(), items: first.added });
-      if (plan.autoConfirm && first.lastCode) {
+      if (plan.autoConfirm && first.lastCode && first.kind !== "radio") {
         tabStore.set("confirm.v1", { richiestaId: first.rid, episodeId: plan.episodeId, lastCode: first.lastCode, lastLabel: first.lastLabel, count: first.count, ts: Date.now() });
       }
       this.render();
@@ -1829,7 +1922,7 @@
           ` : `
             <div class="card" role="dialog" aria-label="${esc(APP)}" style="${sizeStyle}">
               <div class="hd" id="draghd" title="Trascina per spostare · doppio click per riportare in alto a destra">
-                ${section ? `<button class="iconbtn" id="back" title="Tutti i pazienti">‹</button>` : LOGO}<b class="who">${esc(inHome ? "Pazienti" : who)}</b>
+                ${section ? `<button class="iconbtn" id="back" title="${this.view === "valori" ? "Torna agli esiti" : "Tutti i pazienti"}">‹</button>` : LOGO}<b class="who">${esc(inHome ? "Pazienti" : who)}</b>
                 <span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>
                 <button class="iconbtn" id="collapse" title="Riduci">—</button>
               </div>
@@ -1842,11 +1935,11 @@
               ${!this.runState ? this.selbarHtml() : ""}
               <div class="bd">${body}</div>
               <div class="rsz" id="rsz" title="Trascina per ridimensionare · doppio click per la misura originale"></div>
-              <div class="foot">
+              ${inHome ? `<div class="foot">
                 <span>${esc(APP)} ${VERSION}${(typeof chrome !== "undefined" && chrome.runtime?.id)
                   ? ` · <button id="extreload" class="footlink" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">⟳ ricarica estensione</button>` : ""}</span>
                 <span></span>
-              </div>
+              </div>` : ""}
             </div>
           `}
         </div>`;
@@ -1865,13 +1958,15 @@
       const here = ep ? list.filter((p) => p.ep === ep) : [];
       const others = list.filter((p) => p.ep !== ep);
       const canOrder = !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
+      // The card itself opens the Esiti — from the panel you go to a patient to
+      // SEE something. Ordering stays one small button away; opening him from
+      // the EHR instead lands on Richieste (that navigation means "act").
       const card = (p, current) => `
-        <div class="pcard ${current ? "now" : ""}">
+        <div class="pcard ${current ? "now" : ""}" data-go="esiti" data-ep="${esc(p.ep)}" role="button" tabindex="0" title="Apri gli esiti di ${esc(p.name || "questo paziente")}">
           <div class="pname"><span class="nm">${esc(p.name || "paziente")}</span>${current ? `<span class="ptag">qui</span>` : ""}</div>
-          <div class="pmeta">${current ? `episodio ${esc(p.ep)}` : esc(agoLabel(p.ts))}</div>
+          <div class="pmeta">${current ? `episodio ${esc(p.ep)}` : esc(agoLabel(p.ts))}<span class="pgo">Esiti ›</span></div>
           <div class="pacts">
             <button class="pbtn" data-go="richieste" data-ep="${esc(p.ep)}">Richieste</button>
-            <button class="pbtn" data-go="esiti" data-ep="${esc(p.ep)}">Esiti</button>
           </div>
         </div>`;
       const cards = [
@@ -1993,7 +2088,7 @@
             <button class="btn primary" id="go" ${n && !problems.go.length ? "" : "disabled"}>${esc(goLabel)}</button>
             <button class="btn confirm" id="goconfirm" title="Come il bottone a sinistra, e in più preme Conferma per te (conto alla rovescia annullabile con Esc) e avvia la stampa guidata" ${n && !problems.confirm.length ? "" : "disabled"}>${esc(confirmLabel)}</button>
           </div>
-          ${problems.go[0] ? "" : `<div class="hint">Verifica esame per esame · conferma annullabile (Esc)</div>`}
+
         </div>
       `;
     }
@@ -2028,25 +2123,36 @@
     // ESITI — one chronological list: values we can read, and reported PDFs.
     // Row = open it (values expand / PDF opens). The 2-line preview under a
     // saved row is its own target: it opens the full values screen.
+    // every draw whose values this tab has, newest first — the basis for the
+    // shared ordering and the change marks
+    prelieviLetti() {
+      return this.esiti
+        .filter((e) => e.kind === "valori")
+        .map((e) => ({ id: e.id, rows: (tabStore.get(this.risKey(e.id), null) || {}).rows || [] }))
+        .filter((d) => d.rows.length);
+    }
+
     viewEsiti() {
       if (!this.esiti.length) return `<div class="hint">Nessun esito per questo paziente.</div>`;
+      const cmp = confrontaPrelievi(this.prelieviLetti());
       const open = new Set(tabStore.get(this.refKey(), []));
       const cached = this.refCache || {};
       const busy = this.refBusy || {};
       const rows = this.esiti.map((e) => {
         const vals = e.kind === "valori" ? tabStore.get(this.risKey(e.id), null) : null;
         const state = e.kind === "valori"
-          ? (vals ? "saved" : busy[e.id] === true ? "busy" : "")
-          : (cached[e.id] ? "saved" : busy[e.id] === true ? "busy" : open.has(e.id) ? "open" : "");
+          ? (vals ? "saved" : busy[e.id] === true ? "busy" : typeof busy[e.id] === "string" ? "err" : "")
+          : (cached[e.id] ? "saved" : busy[e.id] === true ? "busy" : typeof busy[e.id] === "string" ? "err" : open.has(e.id) ? "open" : "");
         const why = typeof busy[e.id] === "string" ? busy[e.id] : "";
+        const dd = cmp.delta.get(e.id);
         const preview = vals && vals.rows && vals.rows.length
           ? `<button class="eprev" data-vals="${esc(e.id)}" title="Vedi tutti i valori">${
-              [...vals.rows]
-                .sort((a, b) => (outOfRange(b.valore, b.range) ? 1 : 0) - (outOfRange(a.valore, a.range) ? 1 : 0))
-                .slice(0, 10)
+              ordinaRighe(vals.rows, cmp.order)
+                .slice(0, 12)
                 .map((v) => {
                   const oo = outOfRange(v.valore, v.range);
-                  return `<span class="pn">${esc(sigla(v.nome))}</span> <span class="pv${oo ? " bad" : ""}">${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>`;
+                  const d = dd && dd.get(valKey(v.nome));
+                  return `<span class="pn">${esc(sigla(v.nome))}</span> <span class="pv${oo ? " bad" : ""}"${d ? ` title="prima ${esc(d.prevRaw)} (${d.pct > 0 ? "+" : ""}${d.pct}%)"` : ""}>${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>${d ? `<span class="pd">${d.dir}</span>` : ""}`;
                 }).join(" · ")}</button>`
           : "";
         return `<div class="egroup">
@@ -2057,7 +2163,7 @@
             <span class="rlab">${esc(shortLabel(e.label))}</span>
             ${vals && vals.rows && vals.rows.some((v) => /parz/i.test(v.stato || "")) ? `<span class="rsys">parziale</span>` : ""}
             ${e.storico ? `<span class="rsys" title="Il laboratorio ha refertato: la finestra Risultati non c'è più, questi sono i valori già letti">già letti</span>` : ""}
-            <span class="rgo">${e.kind === "valori" ? "›" : "↗"}</span>
+            <span class="rgo">${e.kind === "valori" ? "›" : refertoTipo(e) === "altro" ? "Apri referto ↗" : "↗"}</span>
           </button>${preview}</div>`;
       }).join("");
       const nRef = this.esiti.filter((e) => e.kind === "referto").length;
@@ -2180,10 +2286,13 @@
       const e = this.esiti.find((x) => x.id === this.viewId);
       const vals = e ? tabStore.get(this.risKey(e.id), null) : null;
       if (!e) return `<div class="hint">Esito non disponibile.</div>`;
+      const cmp = confrontaPrelievi(this.prelieviLetti());
+      const dd = cmp.delta.get(e?.id);
       const body = vals && vals.rows && vals.rows.length
-        ? vals.rows.map((v) => {
+        ? ordinaRighe(vals.rows, cmp.order).map((v) => {
             const oo = outOfRange(v.valore, v.range);
-            return `<div class="rval ${oo ? "bad" : ""}" title="${esc(v.nome)}"><span class="rvn">${esc(sigla(v.nome))}</span><span class="rvv">${esc(v.valore)}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}</span><span class="rvr">${esc(v.um || "")}${v.range ? " · " + esc(v.range) : ""}</span></div>`;
+            const d = dd && dd.get(valKey(v.nome));
+            return `<div class="rval ${oo ? "bad" : ""}" title="${esc(v.nome)}${d ? ` — prelievo precedente: ${esc(d.prevRaw)} (${d.pct > 0 ? "+" : ""}${d.pct}%)` : ""}"><span class="rvn">${esc(sigla(v.nome))}</span><span class="rvv">${esc(v.valore)}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}${d ? `<span class="pd">${d.dir}</span>` : ""}</span><span class="rvr">${esc(v.um || "")}${v.range ? " · " + esc(v.range) : ""}</span></div>`;
           }).join("")
         : `<div class="rval">${this.risBusy === e.id ? "carico…" : "nessun valore"}</div>`;
       return `
@@ -2231,9 +2340,12 @@
       const e = this.esiti.find((x) => x.id === this.viewId);
       const vals = e ? tabStore.get(this.risKey(e.id), null) : null;
       if (!vals || !vals.rows) return;
-      const text = vals.rows.map((v) => {
+      const cmp = confrontaPrelievi(this.prelieviLetti());
+      const dd = cmp.delta.get(e.id);
+      const text = ordinaRighe(vals.rows, cmp.order).map((v) => {
         const oo = outOfRange(v.valore, v.range);
-        return `${v.nome} ${v.valore}${v.um ? " " + v.um : ""}${v.range ? ` (${v.range})` : ""}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}`;
+        const d = dd && dd.get(valKey(v.nome));
+        return `${v.nome} ${v.valore}${v.um ? " " + v.um : ""}${v.range ? ` (${v.range})` : ""}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}${d ? ` [prima ${d.prevRaw}, ${d.pct > 0 ? "+" : ""}${d.pct}%]` : ""}`;
       }).join("\n");
       let ok = false;
       try { await navigator.clipboard.writeText(text); ok = true; } catch { /* below */ }
@@ -2404,7 +2516,8 @@
       $("#back")?.addEventListener("click", () => this.setView(this.view === "valori" ? "esiti" : "home"));
       this.root.querySelectorAll("[data-seg]").forEach((b) => b.addEventListener("click", () => this.setView(b.getAttribute("data-seg"))));
       $("#forget")?.addEventListener("click", () => { forgetPatients(); this.render(); });
-      this.root.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => {
+      this.root.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", (ev) => {
+        ev.stopPropagation();   // Richieste sits inside the card, which is itself a [data-go]
         const ep = b.getAttribute("data-ep"), go = b.getAttribute("data-go");
         if (ep === this.episodeId) return this.setView(go);
         const p = knownPatients().find((x) => x.ep === ep);
@@ -2541,10 +2654,33 @@
     const inCart = model.exams.filter((e) => e.isDel);
     const cartPreview = inCart.slice(0, 5).map((e) => shortLabel(e.label));
     if (inCart.length > 5) cartPreview.push(`+${inCart.length - 5} altri`);
+    // The native Conferma submits the WHOLE richiesta, not this run's
+    // additions. This page shows only the CURRENT resource's cart rows, so the
+    // honest comparison is per-resource against the receipt: a row in the cart
+    // that this run did not add (a leftover from an earlier attempt) means the
+    // click would confirm more than the banner says — refuse, human decides.
+    const receipt = tabStore.get("receipt.v1", null);
+    if (receipt && receipt.richiestaId === model.richiestaId && Array.isArray(receipt.items)) {
+      const attesi = new Set(receipt.items.filter((i) => i.res === model.res).map((i) => String(i.code)));
+      const visti = inCart.map((e) => String(e.code));
+      const estranei = visti.filter((c) => !attesi.has(c));
+      if (estranei.length || visti.length !== attesi.size) {
+        if (panel) {
+          panel.message = {
+            head: `Conferma automatica sospesa: il carrello non coincide con gli esami appena aggiunti (${visti.length} nel carrello, ${attesi.size} attesi su questa risorsa).`,
+            body: "Controlla il carrello e premi Conferma sulla pagina.",
+          };
+          panel.log(`${now()}  auto-conferma sospesa: carrello ${visti.length} ≠ attesi ${attesi.size}${estranei.length ? ` (estranei: ${estranei.join(", ")})` : ""}`);
+          panel.render();
+        }
+        return;
+      }
+    }
 
     let n = CONFIRM_SECONDS;
     let finished = false;
     const wrap = document.createElement("div");
+    wrap.id = "psassist-confirm";
     const root = wrap.attachShadow({ mode: "open" });
     document.documentElement.appendChild(wrap);
 
@@ -2570,6 +2706,7 @@
           <small>tra <span id="cds">${n}</span> s — Esc o un click annulla</small></span>
           <button class="cbtn" id="cancel">Annulla (Esc)</button>
         </div>
+        <div class="clist">${cartPreview.map(esc).join(" · ")}</div>
         <div class="cbar"><i></i></div>
       </div></div>`;
 
@@ -2784,7 +2921,7 @@
   function goToQueued(entry) {
     const { q, next } = entry;
     tabStore.set("receipt.v1", { richiestaId: next.rid, episodeId: q.episodeId, ts: Date.now(), items: next.added || [] });
-    if (q.autoConfirm && next.lastCode) {
+    if (q.autoConfirm && next.lastCode && next.kind !== "radio") {
       tabStore.set("confirm.v1", { richiestaId: next.rid, episodeId: q.episodeId, lastCode: next.lastCode, lastLabel: next.lastLabel, count: next.count, ts: Date.now() });
     }
     tabStore.set("queue.v1", { ...q, items: q.items.map((it, i) => (i ? it : { ...it, nav: true })), ts: Date.now() });
@@ -2809,6 +2946,7 @@
       ...all.flatMap((j) => j.filter((x) => x.printer !== "etichettatrice")),
     ];
     if (!jobs.length) return false;
+    if (wizardOpen) return false;   // keep the flag: these jobs must not vanish behind another wizard
     tabStore.set("print.v1", null);
     openPrintWizard(jobs, { panel, title: ids.length > 1 ? `${ids.length} richieste appena confermate.` : "Richiesta appena confermata." });
     return true;
@@ -2817,6 +2955,7 @@
   // ==================================================================== BOOT
   function boot() {
     if (document.getElementById("psassist-host")) return;
+    scadenzaQuesiti();
     const pageType = classify(document);
     if (pageType === "login") { forgetAll(); return; }
     if (pageType === "other") {

@@ -73,6 +73,12 @@ Il pannello ha tre schermate, con **Richieste | Esiti** sempre in cima e il pazi
 nell'intestazione (anche da minimizzato).
 
 ### Pazienti (‹ in alto a sinistra)
+
+Ogni scheda-paziente **è un bottone**: un tocco apre i suoi **Esiti** (dal pannello si va da un
+paziente per *vedere*); il bottoncino **Richieste** resta per ordinare. Aprire un paziente **dal
+gestionale** fa il contrario: il pannello parte da **Richieste** (quella navigazione vuol dire
+*agire*).
+
 L'elenco dei pazienti su cui hai lavorato nel turno: quello della pagina aperta è primo e marcato
 **QUI**, gli altri con quando li hai visti. Da ogni scheda scegli **Richieste** o **Esiti**.
 Sceglierne un altro **carica la sua pagina**: il pannello non mostra mai i dati di un paziente
@@ -100,6 +106,13 @@ Un unico elenco in ordine di tempo:
   valore, unità e range — con **⧉ Copia** per il diario (lì i nomi tornano per esteso) e **↻** per
   rileggerli mentre il laboratorio completa. Il nome completo resta sotto il puntatore.
   I valori vengono precaricati in sottofondo, così l'anteprima c'è già.
+- **Prelievi confrontabili**: gli esami compaiono **nello stesso ordine in ogni prelievo** (comanda
+  il più recente), così le righe si leggono in colonna. Una **variazione significativa** rispetto
+  al prelievo precedente è marcata con **▲ ▼** ambra accanto al valore, col precedente nel
+  tooltip e nel testo copiato. «Significativa» non è un 5% fisso — a quel livello si accenderebbe
+  mezzo emocromo per sola variabilità analitica: le soglie sono **per esame** (Na 3%, Hb/Ht 8%,
+  creatinina 15%, GB/PLT 25%, PCR/PCT 50%, pH in valore assoluto 0.05…), 20% per gli esami non in
+  tabella. Mai un confronto tra unità diverse o con valori «<»/«>».
 - **LIS/RIS/AMB ↗** — referti già emessi (PDF): si aprono in una scheda e, con l'estensione, il
   documento che apri **viene tenuto** (pallino verde) — la volta dopo si apre all'istante, senza
   toccare il server. **⬇ Salva referti** li prende tutti in una volta, **↻ Resetta** svuota.
@@ -338,7 +351,8 @@ prima fase usa **solo** "Crea richiesta e aggiungi" — mai il bottone con confe
 8. **Radiologia (solo dopo qualche giorno di laboratorio pulito).** Prima apertura nativa di
    "Richieste Radiologia" (apprendimento del catalogo), poi un solo RX torace dal pannello, con
    verifica in radiologia che la richiesta sia arrivata unica e con il quesito giusto.
-9. **Auto-conferma (ultima fase, opzionale).** Primo uso con 1 esame restando davanti allo
+9. **Auto-conferma (ultima fase, opzionale; solo laboratorio — la radiologia richiede sempre
+    il tuo click, per codice oltre che per regola).** Primo uso con 1 esame restando davanti allo
    schermo: la prima volta **annulla apposta** (Esc, un click qualsiasi, o il bottone Annulla)
    per verificare che si fermi; la seconda lascia scadere il conto alla rovescia e ricontrolla
    etichette e richiesta. Nota: per la radiologia l'auto-conferma è disattivata in questa

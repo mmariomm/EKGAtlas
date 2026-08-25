@@ -249,13 +249,19 @@ export function createMock(opts = {}) {
         <input type="hidden" name="DATA_ORD" value="${a.when}">
       </td></tr>`).join("")}</table>`;
   }
-  const risultatiPage = (id) => `${HEAD}<table>
+  // two draws with the same panel: the older one differs where a change mark
+  // must appear (Hb −16%) and where it must not (GB +5%, Ht 0%)
+  const risultatiPage = (id) => {
+    const vecchio = String(id).endsWith("5301");
+    const [gb, hb] = vecchio ? ["6.1", "95"] : ["6.4", "80"];
+    return `${HEAD}<table>
       <tr><td class="AFCColumnTD">Esame</td><td class="AFCColumnTD">Valore</td><td class="AFCColumnTD">Unit&agrave; di Misura</td><td class="AFCColumnTD">Range</td><td class="AFCColumnTD">Stato</td><td class="AFCColumnTD">Data</td></tr>
       <tr><td class="AFCDataTD">Assistito</td><td class="AFCDataTD">${esc(NAME)}</td></tr>
-      <tr><td class="AFCDataTD">Leucociti&nbsp;</td><td class="AFCDataTD">6.4</td><td class="AFCDataTD">x10</td><td class="AFCDataTD">4 - 10</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
-      <tr><td class="AFCDataTD">Emoglobina&nbsp;</td><td class="AFCDataTD">80</td><td class="AFCDataTD">g/L</td><td class="AFCDataTD">135 - 180</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
+      <tr><td class="AFCDataTD">Leucociti&nbsp;</td><td class="AFCDataTD">${gb}</td><td class="AFCDataTD">x10</td><td class="AFCDataTD">4 - 10</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
+      <tr><td class="AFCDataTD">Emoglobina&nbsp;</td><td class="AFCDataTD">${hb}</td><td class="AFCDataTD">g/L</td><td class="AFCDataTD">135 - 180</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
       <tr><td class="AFCDataTD">Ematocrito&nbsp;</td><td class="AFCDataTD">44</td><td class="AFCDataTD">%</td><td class="AFCDataTD">40 - 54</td><td class="AFCDataTD">parziale</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>
     </table>accesso ${esc(id)}${FOOT}`;
+  };
 
   function printRows() {
     return Object.keys(state.richieste)
