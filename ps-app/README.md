@@ -300,30 +300,39 @@ stessi flussi dei test di prodotto.
 2. **Mai il paziente sbagliato**: l'EPISODIO_ID viene fissato all'avvio e ogni pagina ricevuta è
    verificata **dal contenuto che il server dichiara** (non dall'URL richiesto); se manca o non
    corrisponde, stop prima di qualunque invio.
-3. **Mai l'esame sbagliato**: prima di ogni invio il nome dell'esame sulla riga viva della pagina
+3. **Ogni sede ha i suoi numeri, non i suoi nomi**: gli identificativi di risorsa
+   (`LABORATORIO ANALISI POC` è `00660001P` in una sede e un altro numero altrove) e perfino i
+   codici delle prestazioni cambiano da presidio a presidio. Il pannello **non si fida dei numeri
+   salvati**: se la risorsa scelta non è tra quelle della richiesta la cerca per **nome** (senza
+   il suffisso di sede) e usa quella; se il codice di un esame non c'è, lo ritrova per **nome
+   esatto** o per il **mnemonico** che il LIS stampa tra parentesi — `(POCT1502)`. Ogni traduzione
+   finisce nel Registro, e il controllo del nome vivo resta comunque l'ultimo cancello prima di
+   ogni invio. Se il nome non corrisponde a nulla si ferma e **dice cosa offre quella richiesta**,
+   invece di un rifiuto muto.
+4. **Mai l'esame sbagliato**: prima di ogni invio il nome dell'esame sulla riga viva della pagina
    deve coincidere con quello selezionato — se l'ospedale rinumera un codice, il motore si ferma
    e lo dice, invece di ordinare un esame diverso con tutte le spie verdi.
-4. **La Conferma è sempre un click reale** sulla pagina visibile (il flusso di stampa etichette
+5. **La Conferma è sempre un click reale** sulla pagina visibile (il flusso di stampa etichette
    resta quello nativo), è opt-in e **immediata**: nessun conto alla rovescia, perché il tuo
    click su «+ Conferma» è già la decisione — ma scatta **solo** se il carrello coincide con la
    ricevuta di ciò che è stato appena aggiunto; ogni differenza la sospende con un messaggio.
-5. **Il quesito non viene mai sovrascritto**: se il triage l'ha già compilato, resta il suo.
-6. **Sessione scaduta riconosciuta**: se compare la pagina di login, stop con messaggio chiaro
+6. **Il quesito non viene mai sovrascritto**: se il triage l'ha già compilato, resta il suo.
+7. **Sessione scaduta riconosciuta**: se compare la pagina di login, stop con messaggio chiaro
    (che dice anche se l'ultimo esame è in stato ambiguo).
-7. **Un run non muore in silenzio**: chiudere o cambiare pagina durante un run fa scattare
+8. **Un run non muore in silenzio**: chiudere o cambiare pagina durante un run fa scattare
    l'avviso del browser; i passaggi falliti diventano rossi, quelli mai partiti "non eseguito".
-8. **Niente esce dall'ospedale**: ogni richiesta è bloccata a livello di codice se non è diretta
+9. **Niente esce dall'ospedale**: ogni richiesta è bloccata a livello di codice se non è diretta
    all'origine SA4PSO; nessuna telemetria; preferenze e catalogo appreso restano nel browser.
-9. **Due schede, due pazienti, zero interferenze**: i passaggi di consegna tra pagina e pagina
+10. **Due schede, due pazienti, zero interferenze**: i passaggi di consegna tra pagina e pagina
    (ricevuta e conferma automatica) vivono nella singola scheda (sessionStorage).
-10. Codifica **windows-1252 identica byte per byte** a quella del browser (verificato contro
+11. Codifica **windows-1252 identica byte per byte** a quella del browser (verificato contro
     Chromium reale, accenti e simboli inclusi).
-11. **Stampe solo dai link della pagina**: gli URL dei PDF non vengono mai costruiti a mano
+12. **Stampe solo dai link della pagina**: gli URL dei PDF non vengono mai costruiti a mano
     (`BRANCA` varia per richiesta) e passano gli stessi controlli di origine di tutto il resto.
-12. **Un paziente alla volta**: per ordinare devi essere sulla sua pagina, e ogni dato salvato
+13. **Un paziente alla volta**: per ordinare devi essere sulla sua pagina, e ogni dato salvato
     (valori, referti, registro, code di conferma) è legato al suo episodio — letto sotto un altro
     episodio semplicemente non esiste.
-13. **Niente contenuto clinico nella memoria del browser**: dei pazienti restano solo nome,
+14. **Niente contenuto clinico nella memoria del browser**: dei pazienti restano solo nome,
     episodio e indirizzo della pagina, al massimo 8 e per 12 ore, con **svuota** a mano; la
     pagina di login cancella tutto (nomi, valori, registro, referti salvati). I PDF salvati
     scadono dopo 8 ore, massimo 25, e si azzerano alla chiusura del browser.
@@ -351,27 +360,27 @@ prima fase usa **solo** "Crea richiesta e aggiungi" — mai il bottone con confe
 3. **Verifica il nome, non il conteggio.** Sulla pagina esami leggi la riga nel carrello: il
    **nome** deve corrispondere esattamente al chip scelto. (Il motore fa già questo controllo da
    solo prima di ogni invio e si ferma se un codice ha cambiato nome.)
-4. **Conferma manuale nativa.** Premi tu Conferma: si apre il wizard di stampa — verifica che il
+5. **Conferma manuale nativa.** Premi tu Conferma: si apre il wizard di stampa — verifica che il
    PDF etichette sia della **richiesta giusta** e che le etichette riportino il **paziente
    giusto**, scegli l'etichettatrice, poi "Stampata — avanti" e stampa la lista sulla stampante
    normale. (Il wizard si può sempre chiudere con Esc e rifare dalla sezione "Stampa".)
-5. **Controllo incrociato in EHR.** Riapri l'episodio: esattamente UNA richiesta nuova, 1 esame,
+6. **Controllo incrociato in EHR.** Riapri l'episodio: esattamente UNA richiesta nuova, 1 esame,
    quesito/medico/urgenza corretti, nessuna bozza doppia.
-6. **Run multiplo con cambio risorsa.** Profilo con POC + Urgenze (es. Base PS + Epatico):
+7. **Run multiplo con cambio risorsa.** Profilo con POC + Urgenze (es. Base PS + Epatico):
    ripeti i punti 3–5 riga per riga.
-7. **Esercitazione di interruzione.** Lancia un run e premi INTERROMPI (o Esc) a metà; leggi il
+8. **Esercitazione di interruzione.** Lancia un run e premi INTERROMPI (o Esc) a metà; leggi il
    messaggio e controlla il carrello col bottone "Apri il carrello e controlla". Regola
    permanente: **dopo qualsiasi banner rosso mai rilanciare** — si apre il carrello, si sistema a
    mano, si controllano le bozze sull'episodio.
-8. **Radiologia (solo dopo qualche giorno di laboratorio pulito).** Prima apertura nativa di
+9. **Radiologia (solo dopo qualche giorno di laboratorio pulito).** Prima apertura nativa di
    "Richieste Radiologia" (apprendimento del catalogo), poi un solo RX torace dal pannello, con
    verifica in radiologia che la richiesta sia arrivata unica e con il quesito giusto.
-9. **Auto-conferma (ultima fase, opzionale; solo laboratorio — la radiologia richiede sempre
+10. **Auto-conferma (ultima fase, opzionale; solo laboratorio — la radiologia richiede sempre
     il tuo click, per codice oltre che per regola).** È **immediata**: primo uso con 1 esame
     restando davanti allo schermo, e ricontrolla etichette e richiesta appena confermata. Per
     provare il blocco di sicurezza: lascia un esame nel carrello da un tentativo interrotto e
     rilancia — la conferma deve **sospendersi** con il messaggio, non partire.
-10. **Regime.** Una scheda per paziente; mai avviare un run e allontanarsi; nella prima settimana,
+11. **Regime.** Una scheda per paziente; mai avviare un run e allontanarsi; nella prima settimana,
     a fine turno, scorri le richieste create cercando doppioni o bozze non confermate.
 
 Se un passaggio non torna: il **Registro** (in fondo al pannello) elenca ogni azione con l'orario,

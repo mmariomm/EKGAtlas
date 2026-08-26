@@ -198,6 +198,53 @@ async function scenarioConfirmPostFails(browser) {
   await context.close();
 }
 
+async function scenarioAltroPresidio(browser) {
+  const scen = "altro-presidio";
+  // Same hospital group, another site: resources and exam codes are numbered
+  // differently, names and LIS mnemonics are not. The panel must recognise
+  // them by name and order anyway — never by trusting a stale id.
+  const mock = createMock({ altroPresidio: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, "#q").fill("dispnea");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();   // POC
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();        // URGENZE
+  await $panel(page, "#go").click();
+  await page.waitForSelector("#psassist-host #confirmnow", { timeout: 40000 });
+
+  const rid = Object.keys(mock.state.richieste)[0];
+  const cart = [...mock.state.richieste[rid].cart.keys()].sort();
+  check(scen, JSON.stringify(cart) === JSON.stringify(["159", "320"]),
+    `i due esami arrivano al LIS giusti (got ${cart})`);
+  const dup = Object.entries(mock.state.insertCount).filter(([, n]) => n !== 1);
+  check(scen, dup.length === 0, "ogni esame inviato una volta sola");
+  const reg = await page.evaluate(() => JSON.parse(sessionStorage.getItem("psassist:log.999001") || "{}").lines?.join("\n") || "");
+  check(scen, /risorsa di questo presidio/.test(reg), "il Registro dichiara la risorsa tradotta");
+  check(scen, /codice di questo presidio/.test(reg), "e il codice tradotto");
+  check(scen, /esami in carrello, verificati/.test(await $panel(page, ".banner.ok").innerText()), "la ricevuta è quella di sempre");
+  await context.close();
+}
+
+async function scenarioPresidioSconosciuto(browser) {
+  const scen = "presidio-sconosciuto";
+  // A resource whose NAME does not match anything known: no guessing — stop,
+  // and say exactly what this richiesta offers.
+  // another site's ids AND a name nothing can be matched against
+  const mock = createMock({ altroPresidio: true, resLabels: { "00660001P": "SETTORE ANALISI SPECIALI 7" } });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, "#q").fill("controllo");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, "#go").click();
+  await page.waitForSelector("#psassist-host .banner.err", { timeout: 30000 });
+  const banner = await $panel(page, ".banner.err").innerText();
+  check(scen, /Questa richiesta offre/.test(banner), `l'errore dice cosa c'è davvero (got: ${banner.replace(/\s+/g, " ").slice(0, 80)})`);
+  check(scen, Object.keys(mock.state.insertCount).length === 0, "e non invia nulla");
+  await context.close();
+}
+
 async function scenarioLagVerify(browser) {
   const scen = "lag-verify";
   // the DEL row for 320 stays hidden for the first 2 list renders after the add
@@ -1221,6 +1268,8 @@ const scenarios = [
   ["happy path (PRG)", (b) => scenarioHappyLab(b)],
   ["happy path (direct render)", (b) => scenarioHappyLab(b, { directRender: true })],
   ["auto-confirm handoff", scenarioAutoConfirm],
+  ["altro presidio: risorse e codici diversi", scenarioAltroPresidio],
+  ["risorsa sconosciuta: stop diagnostico", scenarioPresidioSconosciuto],
   ["auto-confirm bloccata su carrello diverso", scenarioAutoConfirmMismatch],
   ["conferma fallita sul server: niente stampa", scenarioConfirmPostFails],
   ["delayed cart visibility", scenarioLagVerify],

@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.3.0";
+  const VERSION = "3.4.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1034,6 +1034,21 @@
     cat[model.res] = entry;
     store.set("catalog.v1", cat);
   }
+  // A resource id is site-local: "LABORATORIO ANALISI POC" is 00660001P in one
+  // presidio and something else in another, and the same is true of radiology.
+  // What travels is the NAME, so that is what we match on — the site suffix
+  // ("- SSG (P)") is dropped first. Nothing is ordered on the strength of this
+  // alone: the exam's own live name is still checked before every send.
+  const chiaveRisorsa = (label) => String(label || "")
+    .toUpperCase().replace(/\s+/g, " ")
+    .replace(/\s*-\s*[A-Z]{2,5}\s*(\([A-Z]\))?\s*$/, "")
+    .replace(/\s*\([A-Z]\)\s*$/, "")
+    .trim();
+  // the mnemonic the LIS puts in brackets — "EMOCROMOCITOMETRICO URGENTE
+  // (POCT1502)" — identifies an exam far better than its numeric code
+  const mnemonico = (label) => { const m = /\(([A-Z0-9._-]{3,})\)\s*$/i.exec(String(label || "").trim()); return m ? m[1].toUpperCase() : ""; };
+  const normEsame = (s) => String(s || "").replace(/\s+/g, " ").trim().toUpperCase();
+
   function fullCatalog() {
     const out = {};
     for (const [res, v] of Object.entries(EMBEDDED_CATALOG)) out[res] = { label: v.label, items: { ...v.items } };
@@ -1175,9 +1190,28 @@
       if (!state.lastListUrl) throw new StopError("Impossibile ricostruire l'indirizzo dell'elenco esami", "Nessun esame inviato.");
       const offered = new Set(model.resOptions.map((o) => o.value));
       if (offered.size) {
+        const cat = fullCatalog();
+        const perChiave = new Map();
+        for (const o of model.resOptions) {
+          const k = chiaveRisorsa(o.label);
+          if (k && !perChiave.has(k)) perChiave.set(k, o);
+        }
+        for (const i of plan.items) {
+          if (!i.res || offered.has(i.res)) continue;
+          const atteso = chiaveRisorsa((cat[i.res] && cat[i.res].label) || RES_SHORT[i.res] || "");
+          const trovata = atteso ? perChiave.get(atteso) : null;
+          if (trovata) {
+            log(`risorsa di questo presidio: «${trovata.label}» ${trovata.value} (nel catalogo ${i.res})`);
+            i.res = trovata.value;   // the exam's own name is verified before any send
+          }
+        }
         const wrongRes = plan.items.filter((i) => i.res && !offered.has(i.res));
         if (wrongRes.length) {
-          throw new StopError("Esami non ordinabili in questa richiesta", `${wrongRes.map((i) => `«${i.display || i.label}»`).join(", ")}. Nessun esame inviato.`);
+          const qui = model.resOptions.map((o) => `«${o.label}» ${o.value}`).join(", ") || "nessuna";
+          const cercate = [...new Set(wrongRes.map((i) => `«${(cat[i.res] && cat[i.res].label) || RES_SHORT[i.res] || i.res}» ${i.res}`))].join(", ");
+          log(`risorse offerte qui: ${qui} — cercavo: ${cercate}`);
+          throw new StopError("Esami non ordinabili in questa richiesta",
+            `${wrongRes.map((i) => `«${i.display || i.label}»`).join(", ")}. Questa richiesta offre ${qui}. Nessun esame inviato.`);
         }
       }
 
@@ -1206,9 +1240,25 @@
           state.added.push(it);
           continue;
         }
-        const link = model.addLink(it.code);
+        let link = model.addLink(it.code);
+        if (!link && !/^esame \d+$/i.test(it.label)) {
+          // The numeric code is site-local too. The exam itself is not: match
+          // it by its full name, or by the mnemonic the LIS prints in brackets
+          // — and only accept a row whose name is exactly the one chosen.
+          const mio = mnemonico(it.label);
+          const perNome = model.exams.find((e) => e.isAdd && normEsame(e.label) === normEsame(it.label));
+          const perMnemo = !perNome && mio ? model.exams.find((e) => e.isAdd && mnemonico(e.label) === mio) : null;
+          const alt = perNome || perMnemo;
+          if (alt) {
+            log(`codice di questo presidio: ${alt.code} per «${alt.label}» (nel catalogo ${it.code})`);
+            it.code = alt.code;
+            link = alt;
+          }
+        }
         if (!link) {
-          throw new StopError(`«${nm}» non è nell'elenco di ${RES_SHORT[it.res] || it.res}`, "Non inviato. Completa a mano.");
+          const gia = model.exams.some((e) => e.code === it.code && e.isDel);
+          throw new StopError(`«${nm}» non è nell'elenco di ${RES_SHORT[it.res] || it.res}`,
+            gia ? "Risulta già nel carrello: controlla a mano." : "Non inviato. Completa a mano.");
         }
         // Anti wrong-exam guardrail: the LIVE row label must match what the
         // doctor picked. If the hospital ever renumbers a code, every other

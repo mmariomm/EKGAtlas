@@ -140,6 +140,10 @@ const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 const HEAD0 = `<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><title>ROSSI MARIO</title></head><body>`;
 const FOOT = `</body></html>`;
 
+// Another presidio numbers the same resources and the same exams differently
+// (site-local ids). Names and LIS mnemonics are what stay put.
+const ALTRO_PRESIDIO = { "00660001P": "00680001P", "00720001P": "00740001P", "00130001P": "00150001P", "00120001P": "00140001P" };
+
 export function createMock(opts = {}) {
   // one simulator per patient: the name lands in <title>, which is where the
   // panel reads it from (opts.name defaults to the single test patient)
@@ -175,6 +179,12 @@ export function createMock(opts = {}) {
   // episode — the client's wrong-patient guard must abort before any Insert.
   const EP = () => (state.requests.length > (opts.swapEpisodeAfter ?? Infinity) ? "666999" : EP0);
   const risorseOf = (tipo) => (tipo === "radio" ? RADIO_RES : LAB_RES);
+  // opts.altroPresidio: resource ids and exam codes shift, labels do not
+  const R = (res) => (opts.altroPresidio ? (ALTRO_PRESIDIO[res] || res) : res);
+  const Rback = (res) => (opts.altroPresidio
+    ? (Object.entries(ALTRO_PRESIDIO).find(([, v]) => v === res) || [res])[0] : res);
+  const C = (code) => (opts.altroPresidio ? String(Number(code) + 500) : String(code));
+  const Cback = (code) => (opts.altroPresidio ? String(Number(code) - 500) : String(code));
 
   function patientPage() {
     const mk = (tipo, title) => {
@@ -330,7 +340,8 @@ export function createMock(opts = {}) {
         rows.push(`<tr><td><a class="AFCDataLink" href="menuPsoEpisodio.do?toPG=RcsRichiestaPrestazioniRicercaErogatore&PADIGLIONE=&Insert=Inserisci&MVPG=RcsRichiestaCarrelloAggiungi&BRANCA=0&ccsForm=RichiestaCarrelloAggiungi&PRESTAZIONE=${code}&RICHIESTA_ID=${rid}&RISORSA_ID=${res}&s_PRESTAZIONE=&STRUTTURA=1&EPISODIO_ID=${EP()}&returnPage=PsoEpisodio&RISORSE=${alloc.risorse.join(",")}&toPage=RcsRichiestaPrestazioniRicercaErogatore">0-${code} ${esc(label)}</a></td></tr>`);
       }
     }
-    const options = alloc.risorse.map((x) => `<option value="${x}" ${x === res ? "selected" : ""}>${esc(RES_LABEL[x])}</option>`).join("");
+    const etichetta = (x) => (opts.resLabels && opts.resLabels[x]) || RES_LABEL[x];
+    const options = alloc.risorse.map((x) => `<option value="${x}" ${x === res ? "selected" : ""}>${esc(etichetta(x))}</option>`).join("");
     // NB: the cart-wide "svuota" link (Delete without PRESTAZIONE) is a trap the
     // client must not mistake for an exam row.
     return `${HEAD}
@@ -368,18 +379,34 @@ export function createMock(opts = {}) {
   // -------------------------------------------------------------- handler
   // Takes {method, url, bodyBuffer} and returns {status, headers, body(Buffer)}.
   function handle({ method, url, bodyBuffer }) {
+    if (opts.altroPresidio) {   // the client speaks this site's ids: translate back
+      let v = url;
+      for (const [canonico, locale] of Object.entries(ALTRO_PRESIDIO)) v = v.split(locale).join(canonico);
+      v = v.replace(/([?&])PRESTAZIONE=(\d+)/g, (m, sep, c) => `${sep}PRESTAZIONE=${Cback(c)}`);
+      url = v;
+    }
     const u = new URL(url);
     const params = u.searchParams;
     const rec = { method, url, params: Object.fromEntries(params.entries()) };
     if (bodyBuffer?.length) { rec.form = decodeFormBody(bodyBuffer); rec.rawBody = bodyBuffer.toString("latin1"); }
     state.requests.push(rec);
 
+    const traduci = (html) => {
+      if (!opts.altroPresidio) return html;
+      let out = html;
+      for (const [canonico, locale] of Object.entries(ALTRO_PRESIDIO)) out = out.split(canonico).join(locale);
+      out = out.replace(/([?&])PRESTAZIONE=(\d+)/g, (m, sep, c) => `${sep}PRESTAZIONE=${C(c)}`);
+      out = out.replace(/>(\d+)-(\d+) /g, (m, b, c) => `>${b}-${C(c)} `);
+      out = out.replace(/name="IN_PRESTAZIONE_ID_(\d+)" value="(\d+)"/g,
+        (m, i, c) => `name="IN_PRESTAZIONE_ID_${i}" value="${C(String(Number(c))).padStart(8, "0")}"`);
+      return out;
+    };
     const respond = (html, status = 200, headers = {}) => ({
       status,
       headers: { "content-type": "text/html; charset=windows-1252", ...headers },
-      body: encodeWin1252(html),
+      body: encodeWin1252(traduci(html)),
     });
-    const redirect = (loc) => ({ status: 302, headers: { location: loc }, body: Buffer.alloc(0) });
+    const redirect = (loc) => ({ status: 302, headers: { location: traduci(loc) }, body: Buffer.alloc(0) });
     const pageOrRedirect = (html, loc) => (state.directRender ? respond(html) : redirect(loc));
 
     if (state.requests.length > state.expireAfter) return respond(loginPage());
