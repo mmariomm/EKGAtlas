@@ -128,7 +128,12 @@ Un unico elenco in ordine di tempo:
   mezzo emocromo per sola variabilità analitica: le soglie sono **per esame** (Na 3%, Hb/Ht 8%,
   creatinina 15%, GB/PLT 25%, PCR/PCT 50%, pH in valore assoluto 0.05…), 20% per gli esami non in
   tabella. Mai un confronto tra unità diverse o con valori «<»/«>».
-- **LIS/RIS/AMB ↗** — referti già emessi (PDF): si aprono in una scheda e, con l'estensione, il
+- **RIS ›** — referti di **radiologia** (RX, TC, ecografia, RMN) ed **ECG**: si aprono **dentro il
+  pannello, come testo**. Il PDF di quei referti porta con sé la mappa dei caratteri, quindi le
+  parole si recuperano esatte invece di indovinarle: leggi il referto senza cambiare scheda, lo
+  copi per il diario con **⧉ Copia**, e il PDF resta a un tocco (**↗ PDF**). Se un documento non
+  contiene testo leggibile, il pannello lo dice e torna ad aprirlo come sempre.
+- **LIS/AMB ↗** — gli altri referti (PDF): si aprono in una scheda e, con l'estensione, il
   documento che apri **viene tenuto** (pallino verde) — la volta dopo si apre all'istante, senza
   toccare il server. **⬇ Salva referti** li prende tutti in una volta, **↻ Resetta** svuota.
 - **parziale** accanto a una riga = il laboratorio non ha ancora finito.
@@ -215,9 +220,11 @@ sparirebbero con lei. I prelievi già letti in quella scheda **restano in elenco
 vengono mai attaccati a un referto (niente li collega). Il referto in PDF resta lì accanto, come
 sempre.
 
-> Il **PDF del referto** non viene letto: quel PDF disegna il testo un glifo alla volta con un font
-> ridotto, quindi ricavarne «Emoglobina 8.0 g/dL» significherebbe ricostruire parole e colonne dalle
-> coordinate. Gli stessi valori sono già in HTML nella finestra Risultati, ed è da lì che si leggono.
+> Il PDF del referto **di laboratorio** non viene letto: quello disegna il testo un glifo alla volta
+> con un font ridotto e **senza mappa dei caratteri**, quindi ricavarne «Emoglobina 8.0 g/dL»
+> significherebbe indovinare. Gli stessi valori sono già in HTML nella finestra Risultati, ed è da lì
+> che si leggono. I referti di **radiologia ed ECG** sono l'opposto — hanno font e mappa veri — e
+> infatti quelli il pannello li legge e te li mostra come testo.
 
 ---
 

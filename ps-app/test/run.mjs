@@ -1154,6 +1154,46 @@ async function scenarioNuoviValori(browser) {
   await context.close();
 }
 
+async function scenarioRefertoTesto(browser) {
+  const scen = "referto-testo";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForSelector("#psassist-host [data-esito]", { timeout: 15000 });
+
+  // the radiology row announces it opens INSIDE the panel, the lab one does not
+  const rx = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "TC ENCEFALO" });
+  check(scen, /›/.test(await rx.innerText()), "il referto RIS si apre nel pannello");
+  const lis = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "EMOGASANALISI" });
+  check(scen, /Apri referto/.test(await lis.innerText()), "quello di laboratorio resta un documento da aprire");
+
+  await rx.click();
+  await page.waitForSelector("#psassist-host .reftxt .rt", { timeout: 20000 });
+  const testo = await $panel(page, ".reftxt").innerText();
+  check(scen, /RADIOGRAFIA TORACE 2 PROIEZIONI/.test(testo), "il titolo dell'esame è nel testo");
+  check(scen, /Non focolai a carattere broncopneumonico/.test(testo), `il corpo del referto, parola per parola (got: ${testo.replace(/\s+/g, " ").slice(0, 60)})`);
+  check(scen, !/\u0000/.test(testo), "nessun byte di codifica lasciato a vista");
+
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await $panel(page, "#copytxt").click();
+  await page.waitForTimeout(250);
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  check(scen, /Ombra cardiaca nei limiti/.test(clip), "si copia per il diario");
+
+  // and the PDF is always one tap away
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup", { timeout: 8000 }).catch(() => null),
+    $panel(page, "#apripdf").click(),
+  ]);
+  check(scen, !!popup, "il PDF resta a un tocco di distanza");
+  await $panel(page, "#back").click();
+  await page.waitForSelector("#psassist-host [data-esito]", { timeout: 8000 });
+  check(scen, (await page.locator("#psassist-host [data-esito]").count()) > 0, "‹ torna agli esiti");
+  await context.close();
+}
+
 async function scenarioValoriRefertati(browser) {
   const scen = "valori-refertati";
   // Before: the draw is still open, its values can be read.
@@ -1320,6 +1360,7 @@ const scenarios = [
   ["risultati inline", scenarioRisultati],
   ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],
   ["valori nuovi e aggiornati dopo il refresh", scenarioNuoviValori],
+  ["referto RX letto come testo", scenarioRefertoTesto],
   ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],

@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.5.0";
+  const VERSION = "3.6.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -790,9 +790,12 @@
   // and ECG referti). Anything else stays a document you open.
   function refertoTipo(e) {
     const l = String(e.label || "").toUpperCase();
+    const sis = String(e.sistema || "").toUpperCase();
     if (/ELETTROCARDIOGRAMM|\bECG\b/.test(l)) return "ecg";
-    if (/\bRX\b|RADIOGRAF/.test(l)) return "rx";
-    if (/LIS/i.test(e.sistema || "")) return "lab";
+    // the whole of radiology reads as text, not just plain films: the system
+    // that issued the document says it better than the exam's name does
+    if (sis.includes("RIS") || /\bRX\b|RADIOGRAF|\bTC\b|\bTAC\b|ECOGRAF|RISONANZA|\bRMN\b/.test(l)) return "rx";
+    if (sis.includes("LIS")) return "lab";
     return "altro";
   }
 
@@ -1018,7 +1021,7 @@
     forgetQuesiti();
     try {
       for (const k of Object.keys(sessionStorage)) {
-        if (k.startsWith(NS) && /(^|\.)(ris|visto|log|refopen|receipt|confirm|queue|print|ui|afterNav)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
+        if (k.startsWith(NS) && /(^|\.)(ris|visto|reftxt|log|refopen|receipt|confirm|queue|print|ui|afterNav)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
       }
     } catch { /* blocked storage: nothing to clear */ }
     try { if (typeof chrome !== "undefined" && chrome.runtime?.id) chrome.runtime.sendMessage({ t: "clearRef" }, () => void chrome.runtime.lastError); } catch { /* not the extension build */ }
@@ -1581,6 +1584,9 @@
     .eprev .pit.nuovo, .eprev .pv.agg, .rval .rvv.agg {
       background: #DCEAF9; border-radius: 3px; padding: 0 3px; box-shadow: inset 0 -2px 0 #0B5CAD; }
     .eprev.nuovi { -webkit-line-clamp: unset; }   /* nothing new stays hidden behind the clamp */
+    .reftxt { font-size: 12.5px; line-height: 1.5; color: #16232E; }
+    .reftxt .rt { padding: 1px 0; }
+    .reftxt .rt:empty { display: none; }
     .rval.nuova { border-left: 2px solid #0B5CAD; padding-left: 6px; margin-left: -8px; }
     .rval .rvn.nuovo { background: #DCEAF9; border-radius: 3px; padding: 0 3px; }
     .tagn { flex: 0 0 auto; color: #0B5CAD; background: #EAF2FA; border: 1px solid #9DBFDE;
@@ -1986,6 +1992,7 @@
       else if (this.runState) body = this.viewResult();
       else if (this.view === "esiti") body = this.viewEsiti();
       else if (this.view === "valori") body = this.viewValori();
+      else if (this.view === "referto") body = this.viewReferto();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
       else body = this.viewHome(patientName, ep);
 
@@ -2003,7 +2010,7 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto" }[this.view] || "";
       const sub = inHome ? "ultime 12 ore"
         : section ? `${section}${ep ? " · " + esc(ep) : ""}`
         : (ep ? "episodio " + esc(ep) : esc(APP));
@@ -2030,7 +2037,7 @@
           ` : `
             <div class="card" role="dialog" aria-label="${esc(APP)}" style="${sizeStyle}">
               <div class="hd" id="draghd" title="Trascina per spostare · doppio click per riportare in alto a destra">
-                ${section ? `<button class="iconbtn" id="back" title="${this.view === "valori" ? "Torna agli esiti" : "Tutti i pazienti"}">‹</button>` : LOGO}<b class="who">${esc(inHome ? "Pazienti" : who)}</b>
+                ${section ? `<button class="iconbtn" id="back" title="${this.view === "valori" || this.view === "referto" ? "Torna agli esiti" : "Tutti i pazienti"}">‹</button>` : LOGO}<b class="who">${esc(inHome ? "Pazienti" : who)}</b>
                 <span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>
                 <button class="iconbtn" id="collapse" title="Riduci">—</button>
               </div>
@@ -2282,7 +2289,9 @@
             ${vals && vals.rows && vals.rows.some((v) => /parz/i.test(v.stato || "")) ? `<span class="tagp">parziale</span>` : ""}
             ${nov.size ? `<span class="tagn" title="${nNuovi} ${nNuovi === 1 ? "nuovo" : "nuovi"}${nAgg ? ` · ${nAgg} ${nAgg === 1 ? "aggiornato" : "aggiornati"}` : ""} dall'ultima lettura">${nov.size} ${nov.size === 1 ? "nuovo" : "nuovi"}</span>` : ""}
             ${e.storico ? `<span class="tagl" title="Il laboratorio ha refertato: la finestra Risultati non c'è più, questi sono i valori già letti">già letti</span>` : ""}
-            <span class="rgo">${e.kind === "valori" ? "›" : refertoTipo(e) === "altro" ? "Apri referto ↗" : "↗"}</span>
+            <span class="rgo">${e.kind === "valori" ? "›"
+              : (refertoTipo(e) === "rx" || refertoTipo(e) === "ecg") && this.refBusy?.[e.id] === undefined ? "›"
+              : "Apri referto ↗"}</span>
           </button>${preview}</div>`;
       }).join("");
       const nRef = this.esiti.filter((e) => e.kind === "referto").length;
@@ -2323,6 +2332,50 @@
         }
         this.render();
       }
+    }
+
+    txtKey(id) { return `reftxt.${this.episodeId || "x"}.${id}`; }
+
+    // Radiology and ECG reports become TEXT inside the panel: their PDFs carry
+    // a real font map, so the words can be recovered exactly. Everything else
+    // stays a document to open. The PDF itself is never shown here — the ↗
+    // button is always one tap away.
+    async apriTesto(id) {
+      const e = this.esiti.find((x) => x.id === id);
+      if (!e) return;
+      if (!tabStore.get(this.txtKey(id), null)) {
+        this.refBusy = { ...(this.refBusy || {}), [id]: true };
+        this.render();
+        try {
+          const { blob } = await fetchPdf(e.url, {});
+          const righe = await estraiTestoPdf(await blob.arrayBuffer());
+          if (righe.length) {
+            tabStore.set(this.txtKey(id), { ts: Date.now(), righe });
+            this.refBusy[id] = false;
+          } else {
+            this.refBusy[id] = "nessun testo leggibile";
+            this.log(`${now()}  ${shortLabel(e.label)}: il PDF non contiene testo leggibile — resta da aprire`);
+          }
+        } catch (err) {
+          this.refBusy[id] = (err && (err.head || err.message)) || "non letto";
+          this.log(`${now()}  ${shortLabel(e.label)}: referto non letto (${this.refBusy[id]})`);
+        }
+        this.render();
+      }
+      if (tabStore.get(this.txtKey(id), null)) this.setView("referto", id);
+    }
+
+    viewReferto() {
+      const e = this.esiti.find((x) => x.id === this.viewId);
+      if (!e) return `<div class="hint">Referto non disponibile.</div>`;
+      const t = tabStore.get(this.txtKey(e.id), null);
+      const righe = (t && t.righe) || [];
+      return `
+        <div class="sec">
+          <div class="lbl">${esc(e.when)} · ${esc(shortLabel(e.label))}
+            <button class="mini" id="copytxt">⧉ Copia</button><button class="mini" id="apripdf">↗ PDF</button></div>
+          <div class="reftxt">${righe.map((r) => `<div class="rt">${esc(r)}</div>`).join("") || `<div class="hint">Nessun testo.</div>`}</div>
+        </div>`;
     }
 
     async openReferto(id) {
@@ -2434,7 +2487,14 @@
     }
 
     async openEsito(id, kind) {
-      if (kind === "referto") return this.openReferto(id);
+      if (kind === "referto") {
+        const e = this.esiti.find((x) => x.id === id);
+        const tipo = e ? refertoTipo(e) : "altro";
+        // a report whose text we could not read must never trap the doctor:
+        // it falls back to opening the document
+        if ((tipo === "rx" || tipo === "ecg") && this.refBusy?.[id] === undefined) return this.apriTesto(id);
+        return this.openReferto(id);
+      }
       // values: fetch once, then straight to the full screen
       const key = this.risKey(id);
       if (!tabStore.get(key, null)) {
@@ -2687,12 +2747,21 @@
         if (u) nav(u);
       });
 
-      $("#back")?.addEventListener("click", () => this.setView(this.view === "valori" ? "esiti" : "home"));
+      $("#back")?.addEventListener("click", () => this.setView(this.view === "valori" || this.view === "referto" ? "esiti" : "home"));
       this.root.querySelectorAll("[data-seg]").forEach((b) => b.addEventListener("click", () => this.setView(b.getAttribute("data-seg"))));
       $("#forget")?.addEventListener("click", () => { forgetPatients(); this.render(); });
       $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.render(); });
       $("#risall")?.addEventListener("click", () => this.reloadTuttiValori());
       $("#letto")?.addEventListener("click", () => { if (this.viewId) { this.marcaLetto(this.viewId); this.render(); } });
+      $("#apripdf")?.addEventListener("click", () => { if (this.viewId) this.openReferto(this.viewId); });
+      $("#copytxt")?.addEventListener("click", async () => {
+        const t = tabStore.get(this.txtKey(this.viewId), null);
+        if (!t || !t.righe) return;
+        let ok = false;
+        try { await navigator.clipboard.writeText(t.righe.join("\n")); ok = true; } catch { /* below */ }
+        const b = this.root.querySelector("#copytxt");
+        if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
+      });
       this.root.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", (ev) => {
         ev.stopPropagation();   // Richieste sits inside the card, which is itself a [data-go]
         const ep = b.getAttribute("data-ep"), go = b.getAttribute("data-go");
@@ -2857,6 +2926,186 @@
     panel?.log(`${now()}  conferma automatica: ${flag.count} ${flag.count === 1 ? "esame" : "esami"} · ${cartPreview.join(" · ")} · click nativo su Conferma`);
     void patientName;
     model.confirmButton.click(); // native click → server confirm → label print flow
+  }
+
+  // ============================================================ PDF → TESTO
+  // Radiology and ECG reports are PDFs whose text can be recovered: the fonts
+  // carry their own ToUnicode map, so glyph codes can be translated exactly
+  // instead of guessed. (Laboratory reports cannot: they are drawn one glyph
+  // at a time with a subset font and no map — those stay documents to open.)
+  async function estraiTestoPdf(bytes) {
+    // NB: TextDecoder("latin1") is windows-1252 in the browser and rewrites
+    // bytes 0x80-0x9F — which corrupts every compressed stream. One byte, one
+    // code unit, by hand.
+    const byteStr = (u8) => {
+      let out = "";
+      for (let i = 0; i < u8.length; i += 0x8000) out += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+      return out;
+    };
+    const lat = byteStr(bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes);
+    const objs = new Map();
+    for (const m of lat.matchAll(/(\d+)\s+\d+\s+obj\b([\s\S]*?)endobj/g)) objs.set(Number(m[1]), m[2]);
+    if (!objs.size) return [];
+
+    // The browser only decompresses asynchronously, so the whole extraction is
+    // async: zlib-wrapped first (what PDFs use), raw deflate as a fallback.
+    const inflate = async (grezzo) => {
+      const buf = new Uint8Array(grezzo.length);
+      for (let i = 0; i < grezzo.length; i++) buf[i] = grezzo.charCodeAt(i) & 0xff;
+      for (const modo of ["deflate", "deflate-raw"]) {
+        try {
+          const ds = new DecompressionStream(modo);
+          const out = new Response(new Blob([buf]).stream().pipeThrough(ds));
+          return new TextDecoder("latin1").decode(await out.arrayBuffer());
+        } catch { /* try the next mode */ }
+      }
+      return null;
+    };
+    const streamOf = async (body) => {
+      const i = body.indexOf("stream");
+      if (i < 0) return null;
+      let a = i + 6;
+      if (body[a] === "\r") a++;
+      if (body[a] === "\n") a++;
+      const e = body.lastIndexOf("endstream");
+      if (e < 0 || e <= a) return null;
+      // exact length when the dictionary states it (a trailing newline would
+      // make the decompressor reject the whole stream), else trim it by hand
+      const len = /\/Length\s+(\d+)/.exec(body.slice(0, i));
+      const grezzo = len && a + Number(len[1]) <= e
+        ? body.slice(a, a + Number(len[1]))
+        : body.slice(a, e).replace(/\r?\n$/, "");
+      if (!/\/FlateDecode/.test(body.slice(0, i))) return grezzo;
+      return await inflate(grezzo);
+    };
+
+    const hexToStr = (h) => {
+      let out = "";
+      for (let i = 0; i + 3 < h.length + 1; i += 4) out += String.fromCharCode(parseInt(h.slice(i, i + 4), 16));
+      return out;
+    };
+    const parseCMap = (txt) => {
+      const map = new Map();
+      const cs = /begincodespacerange([\s\S]*?)endcodespacerange/.exec(txt);
+      const primo = cs && /<([0-9A-Fa-f]{2,})>/.exec(cs[1]);
+      map.byteLen = primo ? Math.max(1, Math.floor(primo[1].length / 2)) : 1;
+      for (const b of txt.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
+        for (const m of b[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) map.set(parseInt(m[1], 16), hexToStr(m[2]));
+      }
+      for (const b of txt.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+        for (const m of b[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
+          const lo = parseInt(m[1], 16), hi = parseInt(m[2], 16), dst = parseInt(m[3], 16);
+          for (let c = lo; c <= hi && c - lo < 4096; c++) map.set(c, String.fromCharCode(dst + (c - lo)));
+        }
+      }
+      return map;
+    };
+    const cmapDiOggetto = new Map();
+    for (const [num, body] of objs) {
+      const tu = /\/ToUnicode\s+(\d+)\s+0\s+R/.exec(body);
+      if (!tu) continue;
+      const src = objs.get(Number(tu[1]));
+      const txt = src && await streamOf(src);
+      if (txt) cmapDiOggetto.set(num, parseCMap(txt));
+    }
+    const fonts = new Map();
+    for (const [, body] of objs) {
+      for (const m of body.matchAll(/\/(F\d+)\s+(\d+)\s+0\s+R/g)) {
+        const cm = cmapDiOggetto.get(Number(m[2]));
+        if (cm) fonts.set(m[1], cm);
+      }
+    }
+
+    let content = "";
+    for (const [, body] of objs) {
+      if (!/\/Type\s*\/Page[^s]/.test(body)) continue;
+      const c = /\/Contents\s+(\d+)\s+0\s+R/.exec(body);
+      if (c && objs.has(Number(c[1]))) content += ((await streamOf(objs.get(Number(c[1])))) || "") + "\n";
+    }
+    if (!content.trim()) {
+      let best = "";
+      for (const [, body] of objs) {
+        const t = (await streamOf(body)) || "";
+        if ((t.match(/T[jJ]/g) || []).length > (best.match(/T[jJ]/g) || []).length) best = t;
+      }
+      content = best;
+    }
+    if (!content.trim()) return [];
+
+    let cm = null, x = 0, y = 0;
+    const items = [];
+    const unesc = (t) => t.replace(/\\([nrtbf()\\])/g, (m, c) => ({ n: "\n", r: "\r", t: "\t", b: "\b", f: "\f" }[c] || c))
+      .replace(/\\([0-7]{1,3})/g, (m, o) => String.fromCharCode(parseInt(o, 8)));
+    const decode = (t) => {
+      if (!cm) return t;
+      const n = cm.byteLen || 1;
+      let out = "";
+      for (let i = 0; i < t.length; i += n) {
+        let code = 0;
+        for (let k = 0; k < n && i + k < t.length; k++) code = (code << 8) | (t.charCodeAt(i + k) & 0xff);
+        const u = cm.get(code);
+        out += u !== undefined ? u : (n === 1 ? t[i] : "");
+      }
+      return out;
+    };
+    // strings come either literal — (testo) — or hexadecimal — <00520041>
+    const daHex = (h) => {
+      const pulito = h.replace(/[^0-9A-Fa-f]/g, "");
+      let out = "";
+      for (let i = 0; i + 1 < pulito.length; i += 2) out += String.fromCharCode(parseInt(pulito.slice(i, i + 2), 16));
+      return out;
+    };
+    // BT resets the text matrix: without this the Td offsets of every block
+    // pile up and the lines come out in the wrong order.
+    const re = /\bBT\b|\/(F\d+)[^\S\n]+[\d.]+\s+Tf|([\d.-]+)\s+([\d.-]+)\s+T[dD]|([\d.-]+\s+){4}([\d.-]+)\s+([\d.-]+)\s+Tm|\((?:\\.|[^()\\])*\)\s*Tj|<[0-9A-Fa-f\s]*>\s*Tj|\[[\s\S]*?\]\s*TJ/g;
+    for (const m of content.matchAll(re)) {
+      const t = m[0];
+      if (t === "BT") { x = 0; y = 0; continue; }
+      if (t.startsWith("/F")) { cm = fonts.get(t.slice(1).split(/\s/)[0]) || cm; continue; }
+      if (/Tm$/.test(t)) { const n = t.trim().split(/\s+/); x = parseFloat(n[4]); y = parseFloat(n[5]); continue; }
+      if (/T[dD]$/.test(t)) { const n = t.trim().split(/\s+/); x += parseFloat(n[0]); y += parseFloat(n[1]); continue; }
+      if (/Tj$/.test(t)) {
+        const grezzo = t.trim().startsWith("<")
+          ? daHex(t.slice(t.indexOf("<") + 1, t.lastIndexOf(">")))
+          : unesc(t.slice(t.indexOf("(") + 1, t.lastIndexOf(")")));
+        items.push({ x, y, s: decode(grezzo) });
+        continue;
+      }
+      let s2 = "";
+      for (const p of t.matchAll(/\((?:\\.|[^()\\])*\)|<[0-9A-Fa-f\s]*>/g)) {
+        s2 += decode(p[0][0] === "<" ? daHex(p[0].slice(1, -1)) : unesc(p[0].slice(1, -1)));
+      }
+      items.push({ x, y, s: s2 });
+    }
+    if (!items.length) return [];
+
+    // rebuild lines from the coordinates: same y is the same line
+    items.sort((a, b) => (Math.abs(a.y - b.y) > 2 ? b.y - a.y : a.x - b.x));
+    const righe = [];
+    let cur = null;
+    for (const it of items) {
+      if (!it.s) continue;
+      if (!cur || Math.abs(cur.y - it.y) > 2) { cur = { y: it.y, parts: [] }; righe.push(cur); }
+      cur.parts.push(it);
+    }
+    return righe.map((l) => {
+      const passi = [];
+      for (let i = 1; i < l.parts.length; i++) {
+        const dx = l.parts[i].x - l.parts[i - 1].x, n = Math.max(1, l.parts[i - 1].s.length);
+        if (dx > 0) passi.push(dx / n);
+      }
+      passi.sort((a, b) => a - b);
+      const unita = passi.length ? passi[Math.floor(passi.length / 2)] : 6;
+      let out = "", prev = null;
+      for (const p of l.parts) {
+        if (prev) {
+          const dx = p.x - prev.x;
+          if (dx > unita * Math.max(1, prev.s.length) * 0.7 && !/\s$/.test(out) && !/^\s/.test(p.s)) out += " ";
+        }
+        out += p.s; prev = p;
+      }
+      return out.replace(/\s+/g, " ").trim();
+    }).filter(Boolean);
   }
 
   // ============================================================ PRINT WIZARD

@@ -6,7 +6,7 @@
     "test": "test"
   },
   "scripts": {
-    "test": "node tools/verifica-esempi.mjs && node test/valori.mjs && node test/run.mjs && node test/ext-referti.mjs && node tools/demo.mjs && node test/demo.mjs",
+    "test": "node tools/verifica-esempi.mjs && node test/valori.mjs && node test/pdftesto.mjs && node test/run.mjs && node test/ext-referti.mjs && node tools/demo.mjs && node test/demo.mjs",
     "build": "node tools/build.mjs && node tools/icons.mjs",
     "dist": "npm run build && node tools/dist.mjs",
     "demo": "node tools/build.mjs && node tools/demo.mjs",

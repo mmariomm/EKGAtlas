@@ -128,6 +128,54 @@ export function decodeFormBody(raw) {
 // A tiny but structurally valid PDF (one blank page), served for the print
 // endpoints. Content is irrelevant to the client; the magic bytes and the
 // application/pdf content type are what the wizard checks.
+// A radiology report with real, extractable text (CID font + ToUnicode), the
+// way the hospital's RIS builds them. Invented content only.
+export function refertoRxPdf(righe = [
+  "RADIOLOGIA - Ospedale di esempio",
+  "Quesito Diagnostico: dispnea",
+  "RADIOGRAFIA TORACE 2 PROIEZIONI",
+  "Non focolai a carattere broncopneumonico.",
+  "Ombra cardiaca nei limiti. Seni costofrenici liberi.",
+  "Il Medico DOTTORE ESEMPIO",
+]) {
+  const enc = (x) => [...x].map((c) => c.charCodeAt(0).toString(16).padStart(4, "0")).join("");
+  let content = "BT /F1 10 Tf\n";
+  let y = 700;
+  for (const r of righe) { content += `1 0 0 1 60 ${y} Tm <${enc(r)}> Tj\n`; y -= 14; }
+  content += "ET\n";
+  const cmap = [
+    "/CIDInit /ProcSet findresource begin 12 dict begin begincmap",
+    "1 begincodespacerange <0000> <FFFF> endcodespacerange",
+    "1 beginbfrange <0020> <00ff> <0020> endbfrange",
+    "endcmap end end",
+  ].join("\n");
+  const objs = [
+    "<</Type/Catalog/Pages 2 0 R>>",
+    "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+    "<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</Font<</F1 5 0 R>>>>/Contents 4 0 R>>",
+    { dict: `<</Length ${content.length}>>`, raw: Buffer.from(content, "latin1") },
+    "<</Type/Font/Subtype/Type0/BaseFont/AAAAAA+ArialMT/ToUnicode 6 0 R>>",
+    { dict: `<</Length ${cmap.length}>>`, raw: Buffer.from(cmap, "latin1") },
+  ];
+  const parts = [Buffer.from("%PDF-1.4\n", "latin1")];
+  let pos = parts[0].length;
+  const offs = [];
+  objs.forEach((o, i) => {
+    offs.push(pos);
+    const head = Buffer.from(`${i + 1} 0 obj\n${typeof o === "string" ? o : o.dict}\n`, "latin1");
+    const body = typeof o === "string" ? Buffer.alloc(0)
+      : Buffer.concat([Buffer.from("stream\n", "latin1"), o.raw, Buffer.from("\nendstream\n", "latin1")]);
+    const end = Buffer.from("endobj\n", "latin1");
+    parts.push(head, body, end);
+    pos += head.length + body.length + end.length;
+  });
+  const xref = pos;
+  parts.push(Buffer.from(`xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`
+    + offs.map((o) => String(o).padStart(10, "0") + " 00000 n \n").join("")
+    + `trailer\n<</Size ${objs.length + 1}/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF\n`, "latin1"));
+  return Buffer.concat(parts);
+}
+
 export const TINY_PDF = Buffer.from(
   "%PDF-1.4\n" +
   "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n" +
@@ -491,6 +539,10 @@ export function createMock(opts = {}) {
     }
     if (u.pathname.includes("/sa4/restrict2/Sa4ViewerExtRedirect.do")) {
       if (!params.get("REFERTO_ID")) return respond(`${HEAD}<h1>Archivio documenti</h1>${FOOT}`);
+      // the radiology report carries readable text, like the real RIS one
+      if ((params.get("REFERTO_SISTEMA") || "").includes("RIS")) {
+        return { status: 200, headers: { "content-type": "application/pdf" }, body: refertoRxPdf() };
+      }
       if (opts.blobViewers) return blobViewer("/sa4/restrict2/refertostream", `?REFERTO_ID=${params.get("REFERTO_ID")}`);
       return pdf();
     }

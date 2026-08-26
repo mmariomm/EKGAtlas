@@ -212,6 +212,21 @@
     if (/Sa4ViewerExtRedirect\.do|refertostream|uploaddownloadservlet/i.test(path)) {
       const id = q.get("REFERTO_ID") || "";
       const titolo = etichettaReferto(id);
+      // radiology reports carry readable text, like the real RIS ones: the
+      // panel shows them inside itself
+      if (/RIS/i.test(q.get("REFERTO_SISTEMA") || "") || /\bTC\b|RX|RADIOGRAF|ECOGRAF/i.test(titolo)) {
+        return pdf200(PSA_PDF.referto({
+          paziente: pazienteCorrente.nome, episodio: pazienteCorrente.ep, titolo,
+          righe: [
+            "Quesito Diagnostico: dolore addominale",
+            titolo,
+            "Non falde fluide libere in addome. Anse non distese.",
+            "Reni in sede, non idronefrosi. Milza nei limiti.",
+            "Conclusioni: quadro nei limiti per l'età.",
+            "Il Medico DOTTORE ESEMPIO 1",
+          ],
+        }));
+      }
       return pdf200(PSA_PDF.referto({
         paziente: pazienteCorrente.nome, episodio: pazienteCorrente.ep, titolo,
         righe: [
