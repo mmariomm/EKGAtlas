@@ -329,6 +329,11 @@ export function createMock(opts = {}) {
     const IN = [];
     for (let [code, label] of Object.entries(cat)) {
       if (opts.mislabel?.[code]) label = opts.mislabel[code];
+      // the other site writes the same exam with an en dash, and sometimes
+      // with one different word, keeping the LIS mnemonic
+      // exactly what the two real sites differ by: an en dash, and one word
+      // changed while the LIS mnemonic stays (VENOSA → CAPILLARE, POC2117)
+      if (opts.altroPresidio) label = label.replace(/ - /, " – ").replace(/EMOGASANALISI VENOSA/, "EMOGASANALISI CAPILLARE");
       if (search && !label.toUpperCase().includes(search.toUpperCase())) continue;
       inIdx++;
       IN.push(`<input type="hidden" name="IN_PRESTAZIONE_ID_${inIdx}" value="${String(code).padStart(8, "0")}"><input type="hidden" name="IN_RISORSA_ID_${inIdx}" value="${res}">`);

@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.4.0";
+  const VERSION = "3.5.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -105,6 +105,7 @@
     [RES.POC, "101"], [RES.POC, "324"], [RES.POC, "30"],
     [RES.URGENZE, "293"], [RES.URGENZE, "34"], [RES.URGENZE, "159"],
     [RES.URGENZE, "297"], [RES.URGENZE, "317"],
+    [RES.CENTRAL, "212"],
     [RES.RX, "35"], [RES.RX, "36"], [RES.RX, "28"],
   ];
   // Short ward names for the UI only. The catalog label stays the source of
@@ -120,6 +121,7 @@
     [`${RES.POC}:220`]: "PT POC",
     [`${RES.POC}:134`]: "PTT POC",
     [`${RES.POC}:135`]: "FIBRINOGENO POC",
+    [`${RES.CENTRAL}:212`]: "SARSCOV",
     [`${RES.URGENZE}:293`]: "PCR",
     [`${RES.URGENZE}:34`]:  "LIPASI",
     [`${RES.URGENZE}:159`]: "PROCALCITONINA",
@@ -1264,9 +1266,17 @@
         // doctor picked. If the hospital ever renumbers a code, every other
         // check would stay green — this one goes red BEFORE anything is sent.
         // (skipped for items carrying only the "esame N" fallback label)
-        const norm = (s) => s.replace(/\s+/g, " ").trim().toUpperCase();
+        // Dashes differ between sites ("PANNELLO 1 – ANEMIA" vs "- ANEMIA") and
+        // so does the odd word ("EMOGASANALISI MISTA" vs "CAPILLARE", same
+        // POC2117). Typography is never a rename, and neither is a different
+        // wording carrying the SAME LIS mnemonic — anything else still stops.
+        const norm = (s) => s.replace(/[–—‐‑‒−]/g, "-").replace(/\s+/g, " ").trim().toUpperCase();
         if (!/^esame \d+$/i.test(it.label) && norm(link.label) !== norm(it.label)) {
-          throw new StopError(`Il codice ${it.code} oggi si chiama «${link.label}»`, `Selezionato come «${nm}» — non inviato.`);
+          const mioMn = mnemonico(it.label), suoMn = mnemonico(link.label);
+          if (!mioMn || mioMn !== suoMn) {
+            throw new StopError(`Il codice ${it.code} oggi si chiama «${link.label}»`, `Selezionato come «${nm}» — non inviato.`);
+          }
+          log(`stesso esame, nome diverso in questa sede: «${link.label}» (${suoMn})`);
         }
 
         // ---- the one and only send of this exam -----------------------

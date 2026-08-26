@@ -222,6 +222,22 @@ async function scenarioAltroPresidio(browser) {
   const reg = await page.evaluate(() => JSON.parse(sessionStorage.getItem("psassist:log.999001") || "{}").lines?.join("\n") || "");
   check(scen, /risorsa di questo presidio/.test(reg), "il Registro dichiara la risorsa tradotta");
   check(scen, /codice di questo presidio/.test(reg), "e il codice tradotto");
+
+  // typography differs between sites: an en dash is not a rename
+  const mock2 = createMock({ altroPresidio: true });
+  const b2 = await newPage(browser, mock2);
+  await b2.page.goto(mock2.patientUrl);
+  await b2.page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(b2.page, "#q").fill("dispnea");
+  await $panel(b2.page, '.opt[title*="EMOGASANALISI VENOSA"]').first().click();
+  await $panel(b2.page, "#go").click();
+  await b2.page.waitForSelector("#psassist-host #confirmnow", { timeout: 40000 });
+  const rid2 = Object.keys(mock2.state.richieste)[0];
+  check(scen, mock2.state.richieste[rid2].cart.has("3"),
+    "«VENOSA» che qui si chiama «CAPILLARE», stesso mnemonico, non ferma l'ordine");
+  const reg2 = await b2.page.evaluate(() => JSON.parse(sessionStorage.getItem("psassist:log.999001") || "{}").lines?.join("\n") || "");
+  check(scen, /stesso esame, nome diverso in questa sede/.test(reg2), "e la differenza è dichiarata nel Registro");
+  await b2.context.close();
   check(scen, /esami in carrello, verificati/.test(await $panel(page, ".banner.ok").innerText()), "la ricevuta è quella di sempre");
   await context.close();
 }

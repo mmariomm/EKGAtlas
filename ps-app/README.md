@@ -85,7 +85,8 @@ lista del pronto soccorso); sulla scheda di un paziente parte direttamente da **
 
 ### Richieste
 1. **Quesito diagnostico** — casella su una riga, suggerimenti a fianco; l'ultimo resta scritto.
-2. **Profili rapidi** (Base PS, Epatico, Coag POC, Coag) o **esami singoli**, griglia compatta a
+2. **Profili rapidi** (Base PS, Epatico, Coag POC, Coag) o **esami singoli** — fra questi
+   **SARSCOV** (tampone antigenico SARS-CoV-2, laboratorio centrale), griglia compatta a
    due colonne per laboratorio (POC / Urgenze / RX). Per tutto il resto: **«altri esami…»** con
    menu a tendina su tutti i laboratori. I selezionati restano in alto, una riga per laboratorio,
    con la ✕ al passaggio del mouse.
@@ -396,7 +397,7 @@ così non escono testi clinici.
 ```
 ps-app/
 ├── src/core.js          ← unica fonte: motore + pannello (zero dipendenze)
-├── src/catalog.json     ← catalogo esami verificato dall'audit (POC/Urgenze/Centrale)
+├── src/catalog.json     ← catalogo esami verificato (SSG: POC/Urgenze/Centrale/RX · OSG: POC/Centrale)
 ├── extension/           ← estensione MV3 pronta da caricare (content.js è generato)
 ├── tools/build.mjs      ← genera extension/content.js e il bookmarklet
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
