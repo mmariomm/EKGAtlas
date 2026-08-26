@@ -96,7 +96,7 @@ export default function EvolutionScreen() {
         </a>
       </header>
 
-      <div className="evo-arcs" role="group" aria-label="Trajectory">
+      <div className="seg seg-fill evo-arcs" role="group" aria-label="Trajectory">
         <button className={arc === 'occlusion' ? 'on' : ''} onClick={() => { setArc('occlusion'); setX(0.25) }}>
           Artery closing
         </button>

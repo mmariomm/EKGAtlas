@@ -212,7 +212,7 @@ export default function ElectrodeLabScreen() {
       <header className="lab-head">
         <a href="/" onClick={linkClick('/')} className="lab-back" aria-label="Back to library">‹</a>
         <h1>Electrode Lab</h1>
-        <div className="lab-mode" role="group" aria-label="Signal source">
+        <div className="seg lab-mode" role="group" aria-label="Signal source">
           <button className={mode === 'model' ? 'on' : ''} onClick={() => switchMode('model')}>Modeled heart</button>
           <button className={mode === 'real' ? 'on' : ''} onClick={() => switchMode('real')}>Real recording</button>
         </div>
