@@ -128,6 +128,54 @@ export function decodeFormBody(raw) {
 // A tiny but structurally valid PDF (one blank page), served for the print
 // endpoints. Content is irrelevant to the client; the magic bytes and the
 // application/pdf content type are what the wizard checks.
+// A radiology report with real, extractable text (CID font + ToUnicode), the
+// way the hospital's RIS builds them. Invented content only.
+export function refertoRxPdf(righe = [
+  "RADIOLOGIA - Ospedale di esempio",
+  "Quesito Diagnostico: dispnea",
+  "RADIOGRAFIA TORACE 2 PROIEZIONI",
+  "Non focolai a carattere broncopneumonico.",
+  "Ombra cardiaca nei limiti. Seni costofrenici liberi.",
+  "Il Medico DOTTORE ESEMPIO",
+]) {
+  const enc = (x) => [...x].map((c) => c.charCodeAt(0).toString(16).padStart(4, "0")).join("");
+  let content = "BT /F1 10 Tf\n";
+  let y = 700;
+  for (const r of righe) { content += `1 0 0 1 60 ${y} Tm <${enc(r)}> Tj\n`; y -= 14; }
+  content += "ET\n";
+  const cmap = [
+    "/CIDInit /ProcSet findresource begin 12 dict begin begincmap",
+    "1 begincodespacerange <0000> <FFFF> endcodespacerange",
+    "1 beginbfrange <0020> <00ff> <0020> endbfrange",
+    "endcmap end end",
+  ].join("\n");
+  const objs = [
+    "<</Type/Catalog/Pages 2 0 R>>",
+    "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+    "<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</Font<</F1 5 0 R>>>>/Contents 4 0 R>>",
+    { dict: `<</Length ${content.length}>>`, raw: Buffer.from(content, "latin1") },
+    "<</Type/Font/Subtype/Type0/BaseFont/AAAAAA+ArialMT/ToUnicode 6 0 R>>",
+    { dict: `<</Length ${cmap.length}>>`, raw: Buffer.from(cmap, "latin1") },
+  ];
+  const parts = [Buffer.from("%PDF-1.4\n", "latin1")];
+  let pos = parts[0].length;
+  const offs = [];
+  objs.forEach((o, i) => {
+    offs.push(pos);
+    const head = Buffer.from(`${i + 1} 0 obj\n${typeof o === "string" ? o : o.dict}\n`, "latin1");
+    const body = typeof o === "string" ? Buffer.alloc(0)
+      : Buffer.concat([Buffer.from("stream\n", "latin1"), o.raw, Buffer.from("\nendstream\n", "latin1")]);
+    const end = Buffer.from("endobj\n", "latin1");
+    parts.push(head, body, end);
+    pos += head.length + body.length + end.length;
+  });
+  const xref = pos;
+  parts.push(Buffer.from(`xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`
+    + offs.map((o) => String(o).padStart(10, "0") + " 00000 n \n").join("")
+    + `trailer\n<</Size ${objs.length + 1}/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF\n`, "latin1"));
+  return Buffer.concat(parts);
+}
+
 export const TINY_PDF = Buffer.from(
   "%PDF-1.4\n" +
   "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n" +
@@ -139,6 +187,10 @@ export const TINY_PDF = Buffer.from(
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const HEAD0 = `<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><title>ROSSI MARIO</title></head><body>`;
 const FOOT = `</body></html>`;
+
+// Another presidio numbers the same resources and the same exams differently
+// (site-local ids). Names and LIS mnemonics are what stay put.
+const ALTRO_PRESIDIO = { "00660001P": "00680001P", "00720001P": "00740001P", "00130001P": "00150001P", "00120001P": "00140001P" };
 
 export function createMock(opts = {}) {
   // one simulator per patient: the name lands in <title>, which is where the
@@ -175,6 +227,12 @@ export function createMock(opts = {}) {
   // episode — the client's wrong-patient guard must abort before any Insert.
   const EP = () => (state.requests.length > (opts.swapEpisodeAfter ?? Infinity) ? "666999" : EP0);
   const risorseOf = (tipo) => (tipo === "radio" ? RADIO_RES : LAB_RES);
+  // opts.altroPresidio: resource ids and exam codes shift, labels do not
+  const R = (res) => (opts.altroPresidio ? (ALTRO_PRESIDIO[res] || res) : res);
+  const Rback = (res) => (opts.altroPresidio
+    ? (Object.entries(ALTRO_PRESIDIO).find(([, v]) => v === res) || [res])[0] : res);
+  const C = (code) => (opts.altroPresidio ? String(Number(code) + 500) : String(code));
+  const Cback = (code) => (opts.altroPresidio ? String(Number(code) - 500) : String(code));
 
   function patientPage() {
     const mk = (tipo, title) => {
@@ -319,6 +377,11 @@ export function createMock(opts = {}) {
     const IN = [];
     for (let [code, label] of Object.entries(cat)) {
       if (opts.mislabel?.[code]) label = opts.mislabel[code];
+      // the other site writes the same exam with an en dash, and sometimes
+      // with one different word, keeping the LIS mnemonic
+      // exactly what the two real sites differ by: an en dash, and one word
+      // changed while the LIS mnemonic stays (VENOSA → CAPILLARE, POC2117)
+      if (opts.altroPresidio) label = label.replace(/ - /, " – ").replace(/EMOGASANALISI VENOSA/, "EMOGASANALISI CAPILLARE");
       if (search && !label.toUpperCase().includes(search.toUpperCase())) continue;
       inIdx++;
       IN.push(`<input type="hidden" name="IN_PRESTAZIONE_ID_${inIdx}" value="${String(code).padStart(8, "0")}"><input type="hidden" name="IN_RISORSA_ID_${inIdx}" value="${res}">`);
@@ -330,7 +393,8 @@ export function createMock(opts = {}) {
         rows.push(`<tr><td><a class="AFCDataLink" href="menuPsoEpisodio.do?toPG=RcsRichiestaPrestazioniRicercaErogatore&PADIGLIONE=&Insert=Inserisci&MVPG=RcsRichiestaCarrelloAggiungi&BRANCA=0&ccsForm=RichiestaCarrelloAggiungi&PRESTAZIONE=${code}&RICHIESTA_ID=${rid}&RISORSA_ID=${res}&s_PRESTAZIONE=&STRUTTURA=1&EPISODIO_ID=${EP()}&returnPage=PsoEpisodio&RISORSE=${alloc.risorse.join(",")}&toPage=RcsRichiestaPrestazioniRicercaErogatore">0-${code} ${esc(label)}</a></td></tr>`);
       }
     }
-    const options = alloc.risorse.map((x) => `<option value="${x}" ${x === res ? "selected" : ""}>${esc(RES_LABEL[x])}</option>`).join("");
+    const etichetta = (x) => (opts.resLabels && opts.resLabels[x]) || RES_LABEL[x];
+    const options = alloc.risorse.map((x) => `<option value="${x}" ${x === res ? "selected" : ""}>${esc(etichetta(x))}</option>`).join("");
     // NB: the cart-wide "svuota" link (Delete without PRESTAZIONE) is a trap the
     // client must not mistake for an exam row.
     return `${HEAD}
@@ -368,18 +432,34 @@ export function createMock(opts = {}) {
   // -------------------------------------------------------------- handler
   // Takes {method, url, bodyBuffer} and returns {status, headers, body(Buffer)}.
   function handle({ method, url, bodyBuffer }) {
+    if (opts.altroPresidio) {   // the client speaks this site's ids: translate back
+      let v = url;
+      for (const [canonico, locale] of Object.entries(ALTRO_PRESIDIO)) v = v.split(locale).join(canonico);
+      v = v.replace(/([?&])PRESTAZIONE=(\d+)/g, (m, sep, c) => `${sep}PRESTAZIONE=${Cback(c)}`);
+      url = v;
+    }
     const u = new URL(url);
     const params = u.searchParams;
     const rec = { method, url, params: Object.fromEntries(params.entries()) };
     if (bodyBuffer?.length) { rec.form = decodeFormBody(bodyBuffer); rec.rawBody = bodyBuffer.toString("latin1"); }
     state.requests.push(rec);
 
+    const traduci = (html) => {
+      if (!opts.altroPresidio) return html;
+      let out = html;
+      for (const [canonico, locale] of Object.entries(ALTRO_PRESIDIO)) out = out.split(canonico).join(locale);
+      out = out.replace(/([?&])PRESTAZIONE=(\d+)/g, (m, sep, c) => `${sep}PRESTAZIONE=${C(c)}`);
+      out = out.replace(/>(\d+)-(\d+) /g, (m, b, c) => `>${b}-${C(c)} `);
+      out = out.replace(/name="IN_PRESTAZIONE_ID_(\d+)" value="(\d+)"/g,
+        (m, i, c) => `name="IN_PRESTAZIONE_ID_${i}" value="${C(String(Number(c))).padStart(8, "0")}"`);
+      return out;
+    };
     const respond = (html, status = 200, headers = {}) => ({
       status,
       headers: { "content-type": "text/html; charset=windows-1252", ...headers },
-      body: encodeWin1252(html),
+      body: encodeWin1252(traduci(html)),
     });
-    const redirect = (loc) => ({ status: 302, headers: { location: loc }, body: Buffer.alloc(0) });
+    const redirect = (loc) => ({ status: 302, headers: { location: traduci(loc) }, body: Buffer.alloc(0) });
     const pageOrRedirect = (html, loc) => (state.directRender ? respond(html) : redirect(loc));
 
     if (state.requests.length > state.expireAfter) return respond(loginPage());
@@ -459,6 +539,10 @@ export function createMock(opts = {}) {
     }
     if (u.pathname.includes("/sa4/restrict2/Sa4ViewerExtRedirect.do")) {
       if (!params.get("REFERTO_ID")) return respond(`${HEAD}<h1>Archivio documenti</h1>${FOOT}`);
+      // the radiology report carries readable text, like the real RIS one
+      if ((params.get("REFERTO_SISTEMA") || "").includes("RIS")) {
+        return { status: 200, headers: { "content-type": "application/pdf" }, body: refertoRxPdf() };
+      }
       if (opts.blobViewers) return blobViewer("/sa4/restrict2/refertostream", `?REFERTO_ID=${params.get("REFERTO_ID")}`);
       return pdf();
     }

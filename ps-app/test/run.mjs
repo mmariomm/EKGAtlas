@@ -198,6 +198,69 @@ async function scenarioConfirmPostFails(browser) {
   await context.close();
 }
 
+async function scenarioAltroPresidio(browser) {
+  const scen = "altro-presidio";
+  // Same hospital group, another site: resources and exam codes are numbered
+  // differently, names and LIS mnemonics are not. The panel must recognise
+  // them by name and order anyway — never by trusting a stale id.
+  const mock = createMock({ altroPresidio: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, "#q").fill("dispnea");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();   // POC
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();        // URGENZE
+  await $panel(page, "#go").click();
+  await page.waitForSelector("#psassist-host #confirmnow", { timeout: 40000 });
+
+  const rid = Object.keys(mock.state.richieste)[0];
+  const cart = [...mock.state.richieste[rid].cart.keys()].sort();
+  check(scen, JSON.stringify(cart) === JSON.stringify(["159", "320"]),
+    `i due esami arrivano al LIS giusti (got ${cart})`);
+  const dup = Object.entries(mock.state.insertCount).filter(([, n]) => n !== 1);
+  check(scen, dup.length === 0, "ogni esame inviato una volta sola");
+  const reg = await page.evaluate(() => JSON.parse(sessionStorage.getItem("psassist:log.999001") || "{}").lines?.join("\n") || "");
+  check(scen, /risorsa di questo presidio/.test(reg), "il Registro dichiara la risorsa tradotta");
+  check(scen, /codice di questo presidio/.test(reg), "e il codice tradotto");
+
+  // typography differs between sites: an en dash is not a rename
+  const mock2 = createMock({ altroPresidio: true });
+  const b2 = await newPage(browser, mock2);
+  await b2.page.goto(mock2.patientUrl);
+  await b2.page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(b2.page, "#q").fill("dispnea");
+  await $panel(b2.page, '.opt[title*="EMOGASANALISI VENOSA"]').first().click();
+  await $panel(b2.page, "#go").click();
+  await b2.page.waitForSelector("#psassist-host #confirmnow", { timeout: 40000 });
+  const rid2 = Object.keys(mock2.state.richieste)[0];
+  check(scen, mock2.state.richieste[rid2].cart.has("3"),
+    "«VENOSA» che qui si chiama «CAPILLARE», stesso mnemonico, non ferma l'ordine");
+  const reg2 = await b2.page.evaluate(() => JSON.parse(sessionStorage.getItem("psassist:log.999001") || "{}").lines?.join("\n") || "");
+  check(scen, /stesso esame, nome diverso in questa sede/.test(reg2), "e la differenza è dichiarata nel Registro");
+  await b2.context.close();
+  check(scen, /esami in carrello, verificati/.test(await $panel(page, ".banner.ok").innerText()), "la ricevuta è quella di sempre");
+  await context.close();
+}
+
+async function scenarioPresidioSconosciuto(browser) {
+  const scen = "presidio-sconosciuto";
+  // A resource whose NAME does not match anything known: no guessing — stop,
+  // and say exactly what this richiesta offers.
+  // another site's ids AND a name nothing can be matched against
+  const mock = createMock({ altroPresidio: true, resLabels: { "00660001P": "SETTORE ANALISI SPECIALI 7" } });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, "#q").fill("controllo");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, "#go").click();
+  await page.waitForSelector("#psassist-host .banner.err", { timeout: 30000 });
+  const banner = await $panel(page, ".banner.err").innerText();
+  check(scen, /Questa richiesta offre/.test(banner), `l'errore dice cosa c'è davvero (got: ${banner.replace(/\s+/g, " ").slice(0, 80)})`);
+  check(scen, Object.keys(mock.state.insertCount).length === 0, "e non invia nulla");
+  await context.close();
+}
+
 async function scenarioLagVerify(browser) {
   const scen = "lag-verify";
   // the DEL row for 320 stays hidden for the first 2 list renders after the add
@@ -1091,6 +1154,46 @@ async function scenarioNuoviValori(browser) {
   await context.close();
 }
 
+async function scenarioRefertoTesto(browser) {
+  const scen = "referto-testo";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForSelector("#psassist-host [data-esito]", { timeout: 15000 });
+
+  // the radiology row announces it opens INSIDE the panel, the lab one does not
+  const rx = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "TC ENCEFALO" });
+  check(scen, /›/.test(await rx.innerText()), "il referto RIS si apre nel pannello");
+  const lis = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "EMOGASANALISI" });
+  check(scen, /Apri referto/.test(await lis.innerText()), "quello di laboratorio resta un documento da aprire");
+
+  await rx.click();
+  await page.waitForSelector("#psassist-host .reftxt .rt", { timeout: 20000 });
+  const testo = await $panel(page, ".reftxt").innerText();
+  check(scen, /RADIOGRAFIA TORACE 2 PROIEZIONI/.test(testo), "il titolo dell'esame è nel testo");
+  check(scen, /Non focolai a carattere broncopneumonico/.test(testo), `il corpo del referto, parola per parola (got: ${testo.replace(/\s+/g, " ").slice(0, 60)})`);
+  check(scen, !/\u0000/.test(testo), "nessun byte di codifica lasciato a vista");
+
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await $panel(page, "#copytxt").click();
+  await page.waitForTimeout(250);
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  check(scen, /Ombra cardiaca nei limiti/.test(clip), "si copia per il diario");
+
+  // and the PDF is always one tap away
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup", { timeout: 8000 }).catch(() => null),
+    $panel(page, "#apripdf").click(),
+  ]);
+  check(scen, !!popup, "il PDF resta a un tocco di distanza");
+  await $panel(page, "#back").click();
+  await page.waitForSelector("#psassist-host [data-esito]", { timeout: 8000 });
+  check(scen, (await page.locator("#psassist-host [data-esito]").count()) > 0, "‹ torna agli esiti");
+  await context.close();
+}
+
 async function scenarioValoriRefertati(browser) {
   const scen = "valori-refertati";
   // Before: the draw is still open, its values can be read.
@@ -1221,6 +1324,8 @@ const scenarios = [
   ["happy path (PRG)", (b) => scenarioHappyLab(b)],
   ["happy path (direct render)", (b) => scenarioHappyLab(b, { directRender: true })],
   ["auto-confirm handoff", scenarioAutoConfirm],
+  ["altro presidio: risorse e codici diversi", scenarioAltroPresidio],
+  ["risorsa sconosciuta: stop diagnostico", scenarioPresidioSconosciuto],
   ["auto-confirm bloccata su carrello diverso", scenarioAutoConfirmMismatch],
   ["conferma fallita sul server: niente stampa", scenarioConfirmPostFails],
   ["delayed cart visibility", scenarioLagVerify],
@@ -1255,6 +1360,7 @@ const scenarios = [
   ["risultati inline", scenarioRisultati],
   ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],
   ["valori nuovi e aggiornati dopo il refresh", scenarioNuoviValori],
+  ["referto RX letto come testo", scenarioRefertoTesto],
   ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],
