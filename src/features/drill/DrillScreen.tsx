@@ -12,6 +12,9 @@ import { loadTrace, TraceData } from '../../lib/assets'
 import { nextDrillCard, progressSummary, recordDrillAnswer } from '../../lib/progress'
 import { metric } from '../../lib/metrics'
 import { emph } from '../../lib/emph'
+import { localizeCard } from '../../content/i18n'
+import { useLang } from '../../lib/useLang'
+import { t } from '../../lib/ui'
 import { linkClick } from '../../router'
 import TraceView from '../trace/TraceView'
 import ProvenanceBadge from '../card/ProvenanceBadge'
@@ -38,12 +41,15 @@ const confusablesOf = (correctId: string): string[] => {
   ).map((c) => c.id)
 }
 
-/** For a missed pick, the correct card's authored line on why that read tempts. */
-export const whyItTempted = (correctId: string, pickedId: string): string | null => {
+/**
+ * Index of the correct card's option that refers to the picked card — matched
+ * on the ENGLISH content so the lookup is stable in any language; the caller
+ * renders the localized text at that index.
+ */
+export const temptIndexFor = (correctId: string, pickedId: string): number => {
   const correct = CARD_BY_ID[correctId]
   const picked = CARD_BY_ID[pickedId]
-  const opt = correct.seeIt.commit.options.find((o) => !o.correct && labelMatchesCard(o.label, picked))
-  return opt?.tempts ?? null
+  return correct.seeIt.commit.options.findIndex((o) => !o.correct && labelMatchesCard(o.label, picked))
 }
 
 /** 3 distractors: the card's curated confusables first, then category, then catalog. */
@@ -77,6 +83,8 @@ const draw = (not?: string): Draw => {
 }
 
 export default function DrillScreen() {
+  const lang = useLang()
+  const nameOf = (id: string) => localizeCard(CARD_BY_ID[id], lang).name
   const [current, setCurrent] = useState<Draw>(() => draw())
   const [data, setData] = useState<TraceData | null>(null)
   const [picked, setPicked] = useState<string | null>(null)
@@ -93,7 +101,7 @@ export default function DrillScreen() {
 
   const clock = useCardiacClock(data?.durationMs ?? 1000, { autoplay: true })
 
-  const card = CARD_BY_ID[current.cardId]
+  const card = useMemo(() => localizeCard(CARD_BY_ID[current.cardId], lang), [current.cardId, lang])
   const answered = picked != null
   const right = picked === current.cardId
 
@@ -118,9 +126,9 @@ export default function DrillScreen() {
     <div className="screen drill">
       <header className="drill-head">
         <a href="/" onClick={linkClick('/')} className="drill-back" aria-label="Back to library">‹</a>
-        <h1>Drill</h1>
+        <h1>{t('drill.title')}</h1>
         <span className="drill-progress num" key={sessionTotal}>
-          {sessionTotal > 0 ? `${sessionRight}/${sessionTotal} · ` : ''}{progress.solid}/{progress.total} solid
+          {sessionTotal > 0 ? `${sessionRight}/${sessionTotal} · ` : ''}{t('drill.solid', { solid: progress.solid, total: progress.total })}
         </span>
       </header>
 
@@ -134,16 +142,16 @@ export default function DrillScreen() {
           laneHeight={104}
         />
       ) : (
-        <div className="drill-loading">loading strip…</div>
+        <div className="drill-loading">{t('drill.loading')}</div>
       )}
 
       {!answered ? (
         <>
-          <p className="drill-prompt">Your read?</p>
+          <p className="drill-prompt">{t('drill.prompt')}</p>
           <div className="drill-options">
             {current.options.map((id) => (
               <button key={id} className="drill-option" onClick={() => answer(id)}>
-                {CARD_BY_ID[id].name}
+                {nameOf(id)}
               </button>
             ))}
           </div>
@@ -151,26 +159,26 @@ export default function DrillScreen() {
       ) : (
         <div className="drill-result">
           {right ? (
-            <p className="drill-verdict drill-right">✓ {card.name}</p>
+            <p className="drill-verdict drill-right">✓ {nameOf(card.id)}</p>
           ) : (
             <>
-              <p className="drill-verdict drill-wrong">✕ You read: {CARD_BY_ID[picked!].name}</p>
+              <p className="drill-verdict drill-wrong">✕ {t('card.youRead')} {nameOf(picked!)}</p>
               {(() => {
-                const contrast = whyItTempted(current.cardId, picked!)
-                return contrast
-                  ? <p className="drill-contrast"><span className="drill-contrast-label">Why it tempted:</span> {emph(contrast)}</p>
-                  : <p className="drill-contrast"><span className="drill-contrast-label">{CARD_BY_ID[picked!].name}:</span> {CARD_BY_ID[picked!].tagline}</p>
+                const i = temptIndexFor(current.cardId, picked!)
+                return i >= 0
+                  ? <p className="drill-contrast"><span className="drill-contrast-label">{t('drill.whyTempted')}</span> {emph(card.seeIt.commit.options[i].tempts)}</p>
+                  : <p className="drill-contrast"><span className="drill-contrast-label">{nameOf(picked!)}:</span> {localizeCard(CARD_BY_ID[picked!], lang).tagline}</p>
               })()}
-              <p className="drill-verdict drill-right">✓ {card.name}</p>
+              <p className="drill-verdict drill-right">✓ {nameOf(card.id)}</p>
             </>
           )}
           {correctOption && <p className="drill-tempts">{emph(correctOption.tempts)}</p>}
-          {!right && <p className="drill-requeue">Missed — it comes back until it’s yours.</p>}
+          {!right && <p className="drill-requeue">{t('drill.missed')}</p>}
           <div className="drill-actions">
             <a href={`/c/${card.id}`} onClick={linkClick(`/c/${card.id}`)} className="drill-open">
-              open the card →
+              {t('drill.open')}
             </a>
-            <button className="drill-next" onClick={next}>Next strip</button>
+            <button className="drill-next" onClick={next}>{t('drill.next')}</button>
           </div>
         </div>
       )}

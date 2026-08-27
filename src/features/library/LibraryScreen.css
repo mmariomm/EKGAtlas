@@ -169,3 +169,6 @@
 }
 .lib-empty { color: var(--ink-3); padding: var(--sp-4) 0; }
 .lib-disclaimer { color: var(--ink-3); font-size: 12px; margin-top: var(--sp-6); }
+
+.lib-headright { display: flex; align-items: center; gap: var(--sp-2); }
+.lib-lang button { min-width: 34px; text-align: center; }

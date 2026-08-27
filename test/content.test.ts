@@ -9,6 +9,9 @@ import { resolve } from 'node:path'
 import { CARDS, CARD_BY_ID, PACKS } from '../src/content/index'
 import { GUIDELINE_BY_KEY, GUIDELINES } from '../src/content/guidelines'
 import { METHOD_BY_ID } from '../src/content/method'
+import { hasTranslation, translationCoverage } from '../src/content/i18n'
+import { IT_CARDS } from '../src/content/i18n/it'
+import { UI_KEYS, UI_DICTS } from '../src/lib/ui'
 import { Card, CardAssertion } from '../src/content/schema'
 import { buildMechanismStrip, hyperkStrip, tdpStrip } from '../src/content/mechanisms'
 import { buildWarp, modelFiducials } from '../src/engine/sync'
@@ -102,6 +105,38 @@ console.log('=== Schema & copy rules ===')
     }
   }
   ok(`${CARDS.length} cards, ${PACKS.length} packs structurally valid`)
+}
+
+// ---------------------------------------------------------------------------
+console.log('=== Translations (i18n) ===')
+{
+  // Shape drift is the real hazard: a positional array that no longer matches
+  // its English card would attach a clinical line to the wrong pill.
+  for (const c of CARDS) {
+    const tr = IT_CARDS[c.id]
+    if (!tr) continue
+    const at = (m: string) => `it/${c.id}: ${m}`
+    const len = (name: string, got: number, want: number) => {
+      if (got !== want) fail(at(`${name} has ${got} entries, English card has ${want}`))
+    }
+    len('options', tr.options.length, c.seeIt.commit.options.length)
+    len('tempts', tr.tempts.length, c.seeIt.commit.options.length)
+    len('why', tr.why.length, c.why.length)
+    len('whyDrawer', tr.whyDrawer.length, c.whyDrawer.length)
+    len('pills', tr.pills.length, c.pills.length)
+    len('suspectConfirm', tr.suspectConfirm.length, c.suspectConfirm.length)
+    len('guidelineMoves', tr.guidelineMoves.length, c.guidelineMoves.length)
+    len('rnMoves', tr.rnMoves.length, c.rnMoves.length)
+    if (c.avoid && !tr.avoid) fail(at('English card has an avoid line, translation does not'))
+    if (c.moduleHref && !tr.moduleLabel) fail(at('English card has a moduleHref, translation has no moduleLabel'))
+    if (!hasTranslation(c, 'it')) fail(at('registered but fails the completeness gate'))
+  }
+  // UI chrome parity — a missing key silently falls back to English.
+  const missingUi = UI_KEYS.filter((k) => !UI_DICTS.it[k])
+  if (missingUi.length) warn(`it UI strings missing (${missingUi.length}): ${missingUi.slice(0, 5).join(', ')}`)
+  const cov = translationCoverage(CARDS, 'it')
+  ok(`it: ${cov.done.length}/${CARDS.length} cards complete (${cov.pct}%)`)
+  if (cov.missing.length) console.log(`    untranslated: ${cov.missing.join(', ')}`)
 }
 
 // ---------------------------------------------------------------------------

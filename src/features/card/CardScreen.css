@@ -375,3 +375,12 @@
 
 /* 12-lead is a document, not a pinned stage (a >viewport sticky traps V5-V6) */
 .card-stage-tall { position: static; box-shadow: none; }
+
+/* honest marker: this card's clinical text isn't translated yet */
+.card-englishonly {
+  margin-bottom: var(--sp-3);
+  font-size: 12px;
+  color: var(--ink-3);
+  border-left: 2px solid var(--line);
+  padding-left: var(--sp-2);
+}
