@@ -125,7 +125,7 @@ export default function DrillScreen() {
   return (
     <div className="screen drill">
       <header className="drill-head">
-        <a href="/" onClick={linkClick('/')} className="drill-back" aria-label="Back to library">‹</a>
+        <a href="/" onClick={linkClick('/')} className="drill-back" aria-label={t('card.back')}>‹</a>
         <h1>{t('drill.title')}</h1>
         <span className="drill-progress num" key={sessionTotal}>
           {sessionTotal > 0 ? `${sessionRight}/${sessionTotal} · ` : ''}{t('drill.solid', { solid: progress.solid, total: progress.total })}

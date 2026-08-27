@@ -200,9 +200,9 @@ function CardInner({ cardId }: { cardId: string }) {
   return (
     <div className="screen cardscreen">
       <header className="card-top">
-        <a href="/" onClick={linkClick('/')} className="card-back" aria-label="Back to library">‹</a>
+        <a href="/" onClick={linkClick('/')} className="card-back" aria-label={t('card.back')}>‹</a>
         <div className="card-topname">{revealed ? card.name : card.category}</div>
-        <button className="card-share" onClick={share} aria-label="Share this card">{t('card.share')}</button>
+        <button className="card-share" onClick={share} aria-label={t('a11y.shareCard')}>{t('card.share')}</button>
       </header>
 
       <div className={`card-stage ${leads.length === 12 ? 'card-stage-tall' : ''}`}>
@@ -224,12 +224,12 @@ function CardInner({ cardId }: { cardId: string }) {
         <p className="card-coach">{t('card.coachTrace')}</p>
       )}
 
-      <div className="card-leadrow" role="group" aria-label="Choose leads">
+      <div className="card-leadrow" role="group" aria-label={t('a11y.chooseLeads')}>
         <button
           className={`leadchip ${leads.length === 12 ? 'leadchip-on' : ''}`}
           onClick={() => setLeads(leads.length === 12 ? [card.mechanism.primaryLead] : [...ALL_LEADS])}
         >
-          12-lead
+          {t('card.allLeads')}
         </button>
         {ALL_LEADS.map((l) => (
           <button
@@ -243,7 +243,7 @@ function CardInner({ cardId }: { cardId: string }) {
       </div>
 
       {revealed && (
-        <div className="card-phasechips" role="group" aria-label="Highlight a phase">
+        <div className="card-phasechips" role="group" aria-label={t('a11y.highlightPhase')}>
           <span className="phase-label">{t('card.highlight')}</span>
           {(['P', 'QRS', 'ST', 'T'] as PhaseId[]).map((p) => (
             <button
@@ -391,7 +391,7 @@ function CardInner({ cardId }: { cardId: string }) {
             <h2 className="sec-title">
               <span className="sec-num">5</span>
               {role === 'rn' ? t('card.movesRn') : t('card.moves')}
-              <span className="seg seg-sm role-toggle" role="group" aria-label="Audience">
+              <span className="seg seg-sm role-toggle" role="group" aria-label={t('a11y.audience')}>
                 <button className={role === 'md' ? 'on' : ''} onClick={() => setRoleAndSave('md')}>MD</button>
                 <button className={role === 'rn' ? 'on' : ''} onClick={() => setRoleAndSave('rn')}>RN</button>
               </span>
@@ -419,13 +419,13 @@ function CardInner({ cardId }: { cardId: string }) {
         <button className="playbar-btn" onClick={clock.toggle} aria-label={clock.isPlaying ? 'Pause' : 'Play'}>
           {clock.isPlaying ? '❚❚' : '▶'}
         </button>
-        <button className="playbar-btn playbar-speed num" onClick={cycleSpeed} aria-label="Playback speed">
+        <button className="playbar-btn playbar-speed num" onClick={cycleSpeed} aria-label={t('a11y.speed')}>
           {clock.speed}×
         </button>
         <div className="playbar-spring" />
         {!revealed && <span className="playbar-hint">scrub the trace · commit below</span>}
         {revealed && (
-          <button className="playbar-btn" onClick={() => navigate('/')} aria-label="Library">{t('card.library')}</button>
+          <button className="playbar-btn" onClick={() => navigate('/')} aria-label={t('card.library')}>{t('card.library')}</button>
         )}
       </div>
       {toast && <div className="toast">{toast}</div>}

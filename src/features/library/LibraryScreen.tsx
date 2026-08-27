@@ -28,7 +28,7 @@ export default function LibraryScreen() {
           <span className="brand-name">EKG&nbsp;Atlas</span>
         </div>
         <span className="lib-headright">
-          <span className="seg seg-sm lib-lang" role="group" aria-label="Language">
+          <span className="seg seg-sm lib-lang" role="group" aria-label={t('a11y.language')}>
             <button className={lang === 'en' ? 'on' : ''} onClick={() => setLang('en')}>EN</button>
             <button className={lang === 'it' ? 'on' : ''} onClick={() => setLang('it')}>IT</button>
           </span>
@@ -44,7 +44,7 @@ export default function LibraryScreen() {
         placeholder={t('lib.search')}
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        aria-label="Search patterns"
+        aria-label={t('a11y.search')}
       />
 
       {!results && (
@@ -74,7 +74,7 @@ export default function LibraryScreen() {
 
           <div className="lib-setrow">
             <span className="lib-setlabel">{t('lib.sets')}</span>
-            <div className="lib-packrow" role="group" aria-label="Curated sets">
+            <div className="lib-packrow" role="group" aria-label={t('a11y.sets')}>
               {PACKS.map((p) => (
                 <a key={p.id} href={`/p/${p.id}`} onClick={linkClick(`/p/${p.id}`)} className="lib-packchip">
                   {p.title}
