@@ -25,7 +25,20 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest,json}'],
+        // Recordings are heavy (the quiz bank alone is ~24 MB): never precache
+        // them — cache each strip the first time the learner meets it.
+        globIgnores: ['**/recordings/**'],
         navigateFallback: '/index.html',
+        runtimeCaching: [
+          {
+            urlPattern: /\/recordings\/.*\.json$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'recordings',
+              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 24 * 3600 },
+            },
+          },
+        ],
       },
     }),
   ],

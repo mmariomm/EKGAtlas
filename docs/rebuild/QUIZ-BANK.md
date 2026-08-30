@@ -35,11 +35,44 @@ levels, QTc…). Likelihood 0 = "confidence unstated", so the likelihood field
 alone must never gate a rhythm class. Labels propose; measurement disposes —
 same rule that rejected the false left-main anchors.
 
-## Design intent (not yet built)
+## Shipped (2026-08-30) — 94 strips, 15 classes
+
+`node tools/recordings/build-quiz-bank.mjs` builds it: candidates in
+signal-quality order → fetch → checksum-verified read → auto-annotate →
+independent re-verify → **class measurement gate** → neutral-named asset
+(`qs-<ecgId>` — no diagnosis in the filename) + generated manifest
+(`src/content/quizBank.gen.ts`) carrying each strip's measured findings.
+
+Final bank: nsr 10 · afib 10 · lbbb 10 · rbbb 10 · omi-anterior 8 ·
+lvh-strain 8 · aflutter 6 · paced-v 6 · longqt 6 · wpw 5 · svt-avnrt 5 ·
+avb-3 4 · avb-2 3 · leftmain 2 · wellens 1.
+
+What the gates caught (kept out of the bank):
+- **omi-inferior: 0 shipped.** Every INJIN/INJIL-labeled candidate measured
+  flat or negative inferior ST — PTB-XL's inferior-injury labels do not mean
+  acute STE on that tracing. The card keeps its canonical strip.
+- **AF under LBBB**: an admitted "lbbb" strip measured RR ±23.6% — an
+  unlabeled AFib under the block, i.e. two defensible quiz answers. All
+  morphology/injury gates now demand a regular rhythm (one strip, one answer).
+- **Normal V2–V3 J-point elevation** initially rejected normal hearts;
+  the NSR gate now allows the male norm (≤0.25 mV in V1–V3).
+- QTc is displayed only where Bazett can be trusted (regular rhythm, narrow
+  QRS, no injury current) — except clearly prolonged (≥470 ms) with only
+  minor ST shift, where the QT *is* the finding.
+
+Precache discipline: recordings are excluded from the PWA precache
+(545 KB shell); each strip is cached the first time the learner meets it.
+
+## Design (as built)
 
 - Not a separate mode: the existing drill, with a real-strip source and
-  **escalating transfer** — early Leitner levels show the canonical strip,
-  higher levels draw unseen real strips of the same class.
+  **escalating transfer** — Leitner box <2 shows the canonical strip; box ≥2
+  draws unseen real strips of the same class. A miss resets to the canonical.
+- Progression that is earned, never decorative: 10-strip sessions drawn as a
+  rhythm strip (upright beat = right, inverted = wrong), an end-of-session
+  recap (score, best run, streak, due in 24 h), a daily streak, and a ring on
+  the library pips once a card is solid AND right on ≥3 distinct real strips
+  ("proven on real ECGs").
 - "Why" at scale without fabrication: measured findings of THIS strip
   (from the assertion engine) + the card's hand-written class teaching one
   tap away. No generated per-record prose.

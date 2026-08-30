@@ -12,6 +12,7 @@ import { METHOD_BY_ID } from '../src/content/method'
 import { hasTranslation, translationCoverage } from '../src/content/i18n'
 import { IT_CARDS } from '../src/content/i18n/it'
 import { UI_KEYS, UI_DICTS } from '../src/lib/ui'
+import { QUIZ_STRIPS } from '../src/content/quizBank.gen'
 import { Card, CardAssertion } from '../src/content/schema'
 import { buildMechanismStrip, hyperkStrip, tdpStrip } from '../src/content/mechanisms'
 import { buildWarp, modelFiducials } from '../src/engine/sync'
@@ -484,6 +485,30 @@ for (const c of CARDS) {
     if (r.ok) ok(`${a.on}/${a.check} ${r.detail}`)
     else fail(`${c.id}: ${a.on}/${a.check} — ${r.detail}`)
   }
+}
+
+// ---------------------------------------------------------------------------
+console.log('=== Quiz bank (real-strip drill) ===')
+{
+  const seen = new Set<string>()
+  for (const q of QUIZ_STRIPS) {
+    if (seen.has(q.traceId)) fail(`quiz bank: duplicate strip ${q.traceId}`)
+    seen.add(q.traceId)
+    if (!CARD_BY_ID[q.cardId]) fail(`quiz bank: ${q.traceId} names unknown card '${q.cardId}'`)
+    const a = assets.get(q.traceId)
+    if (!a) { fail(`quiz bank: ${q.traceId} missing from public/recordings`); continue }
+    const p = (a as unknown as { provenance: Record<string, string> }).provenance
+    if (p?.tier !== 'recorded') fail(`quiz bank: ${q.traceId} must be tier 'recorded', is '${p?.tier}'`)
+    if (!(q.f.rate > 15 && q.f.rate < 260)) fail(`quiz bank: ${q.traceId} implausible rate ${q.f.rate}`)
+    if (!(q.f.qrs >= 40 && q.f.qrs <= 300)) fail(`quiz bank: ${q.traceId} implausible QRS ${q.f.qrs}`)
+  }
+  // no orphan qs-* asset: every generated strip must be reachable by the drill
+  for (const id of assets.keys()) {
+    if (id.startsWith('qs-') && !seen.has(id)) fail(`quiz bank: asset ${id} not in the generated manifest`)
+  }
+  const byCard = new Map<string, number>()
+  for (const q of QUIZ_STRIPS) byCard.set(q.cardId, (byCard.get(q.cardId) ?? 0) + 1)
+  ok(`quiz bank: ${QUIZ_STRIPS.length} real strips across ${byCard.size} classes`)
 }
 
 // keep the imports honest even before any card uses them

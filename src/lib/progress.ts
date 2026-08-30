@@ -124,3 +124,81 @@ export const nextDrillCard = (not?: string): string => {
   const soonest = [...pool].sort((a, b) => (drill[a]?.due ?? 0) - (drill[b]?.due ?? 0))
   return weightedPick(soonest.slice(0, Math.max(5, Math.ceil(soonest.length / 2))))
 }
+
+/* ── real-strip transfer + daily streak ─────────────────────────────── */
+
+import { QUIZ_BY_CARD } from '../content/quizBank.gen'
+
+/** Per-strip results ledger: which REAL strips this learner has answered. */
+export type StripState = Record<string, { seen: number; right: number }>
+const STRIPS_KEY = 'strips:v1'
+
+export const loadStrips = (): StripState => {
+  try { return JSON.parse(localStorage.getItem(STRIPS_KEY) ?? '{}') as StripState } catch { return {} }
+}
+
+export const recordStripAnswer = (traceId: string, right: boolean): void => {
+  const s = loadStrips()
+  const cur = s[traceId] ?? { seen: 0, right: 0 }
+  s[traceId] = { seen: cur.seen + 1, right: cur.right + (right ? 1 : 0) }
+  try { localStorage.setItem(STRIPS_KEY, JSON.stringify(s)) } catch { /* private mode */ }
+}
+
+/** How many DISTINCT real strips of this card were answered correctly. */
+export const transferCount = (cardId: string, strips: StripState = loadStrips()): number =>
+  (QUIZ_BY_CARD[cardId] ?? []).filter((q) => (strips[q.traceId]?.right ?? 0) > 0).length
+
+export const TRANSFER_PROVEN_AT = 3
+
+/**
+ * "Proven on real patients": solid in the Leitner ledger AND correct on ≥3
+ * distinct real recordings of the class — recognition that transfers beyond
+ * the card's canonical strip. The strongest state the app awards.
+ */
+export const provenOnReal = (cardId: string, drill: DrillState = loadDrill(), strips: StripState = loadStrips()): boolean =>
+  masteryOf(cardId, drill) === 'solid' && transferCount(cardId, strips) >= TRANSFER_PROVEN_AT
+
+/** Daily drill streak. A day counts once the first drill answer lands. */
+export interface Streak { days: number; last: string; best: number }
+const STREAK_KEY = 'streak:v1'
+const dayStamp = (d = new Date()): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+export const loadStreak = (): Streak => {
+  try {
+    const s = JSON.parse(localStorage.getItem(STREAK_KEY) ?? 'null') as Streak | null
+    if (s && typeof s.days === 'number') return s
+  } catch { /* fall through */ }
+  return { days: 0, last: '', best: 0 }
+}
+
+/** Streak as it stands RIGHT NOW: yesterday's run survives until midnight ends today unanswered. */
+export const currentStreak = (): number => {
+  const s = loadStreak()
+  if (!s.last) return 0
+  const today = dayStamp()
+  const yesterday = dayStamp(new Date(Date.now() - 86_400_000))
+  return s.last === today || s.last === yesterday ? s.days : 0
+}
+
+/** Called on each drill answer; bumps once per day. Returns the live streak. */
+export const bumpStreak = (): Streak => {
+  const s = loadStreak()
+  const today = dayStamp()
+  if (s.last === today) return s
+  const yesterday = dayStamp(new Date(Date.now() - 86_400_000))
+  const days = s.last === yesterday ? s.days + 1 : 1
+  const next = { days, last: today, best: Math.max(s.best, days) }
+  try { localStorage.setItem(STREAK_KEY, JSON.stringify(next)) } catch { /* private mode */ }
+  return next
+}
+
+/** Cards whose review lands within the next 24h — the recap's honest hook. */
+export const dueWithin24h = (): number => {
+  const drill = loadDrill()
+  const cutoff = Date.now() + 86_400_000
+  return CARDS.filter((c) => {
+    const d = drill[c.id]
+    return d && d.box < 4 && d.due <= cutoff
+  }).length
+}

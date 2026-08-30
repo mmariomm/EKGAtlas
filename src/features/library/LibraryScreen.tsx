@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { cardsByCategory, searchCards, PACKS } from '../../content'
 import { SPARKLINES } from '../../content/sparklines.gen'
 import { localizeCard } from '../../content/i18n'
-import { loadDrill, masteryOf, progressSummary, Mastery } from '../../lib/progress'
+import { currentStreak, loadDrill, loadStrips, masteryOf, progressSummary, provenOnReal, Mastery } from '../../lib/progress'
 import { setLang } from '../../lib/lang'
 import { useLang } from '../../lib/useLang'
 import { t } from '../../lib/ui'
@@ -16,6 +16,8 @@ export default function LibraryScreen() {
   const loc = useMemo(() => <T extends { id: string }>(c: T) => localizeCard(c as never, lang) as unknown as T, [lang])
   const results = q.trim() ? searchCards(q).map(loc) : null
   const drill = useMemo(() => loadDrill(), [])
+  const strips = loadStrips()
+  const streak = currentStreak()
   const progress = useMemo(() => progressSummary(), [])
 
   return (
@@ -57,6 +59,7 @@ export default function LibraryScreen() {
                 : progress.seen === 0
                   ? t('lib.drill.fresh')
                   : t('lib.drill.solid', { solid: progress.solid, total: progress.total })}
+              {streak >= 2 ? ` · ${t('lib.streakN', { n: streak })}` : ''}
             </span>
             <span className="lib-chev" aria-hidden>›</span>
           </a>
@@ -101,12 +104,12 @@ export default function LibraryScreen() {
       )}
 
       {results ? (
-        <CardList items={results.map((c) => ({ ...c, mastery: masteryOf(c.id, drill), box: drill[c.id]?.box ?? 0 }))} empty={t('lib.empty', { q })} />
+        <CardList items={results.map((c) => ({ ...c, mastery: masteryOf(c.id, drill), box: drill[c.id]?.box ?? 0, proven: provenOnReal(c.id, drill, strips) }))} empty={t('lib.empty', { q })} />
       ) : (
         cardsByCategory().map((g) => {
           const items = (lethalOnly ? g.items.filter((c) => c.lethal) : g.items)
             .map(loc)
-            .map((c) => ({ ...c, mastery: masteryOf(c.id, drill), box: drill[c.id]?.box ?? 0 }))
+            .map((c) => ({ ...c, mastery: masteryOf(c.id, drill), box: drill[c.id]?.box ?? 0, proven: provenOnReal(c.id, drill, strips) }))
           if (!items.length) return null
           return (
             <section key={g.category} className="lib-group">
@@ -127,6 +130,7 @@ interface Row {
   tagline: string
   lethal: boolean
   mastery: Mastery
+  proven: boolean
   box: number
 }
 
@@ -143,10 +147,11 @@ function Spark({ id }: { id: string }) {
   )
 }
 
-function Pips({ mastery, box }: { mastery: Mastery; box: number }) {
+function Pips({ mastery, box, proven }: { mastery: Mastery; box: number; proven: boolean }) {
   const filled = mastery === 'solid' ? 3 : box >= 1 ? 2 : mastery !== 'unseen' ? 1 : 0
+  const label = proven ? t('lib.proven') : mastery
   return (
-    <span className={`lib-pips ${mastery === 'solid' ? 'lib-pips-solid' : ''}`} aria-label={`progress: ${mastery}`} title={mastery}>
+    <span className={`lib-pips ${mastery === 'solid' ? 'lib-pips-solid' : ''} ${proven ? 'lib-pips-proven' : ''}`} aria-label={`progress: ${label}`} title={label}>
       {[0, 1, 2].map((i) => (
         <span key={i} className={`lib-pip ${i < filled ? 'on' : ''}`} />
       ))}
@@ -169,7 +174,7 @@ function CardList({ items, empty }: { items: Row[]; empty: string }) {
               </span>
               <span className="lib-row-tag">{c.tagline}</span>
             </span>
-            <Pips mastery={c.mastery} box={c.box} />
+            <Pips mastery={c.mastery} box={c.box} proven={c.proven} />
           </a>
         </li>
       ))}
