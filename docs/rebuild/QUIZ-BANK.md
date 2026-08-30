@@ -43,9 +43,18 @@ independent re-verify → **class measurement gate** → neutral-named asset
 (`qs-<ecgId>` — no diagnosis in the filename) + generated manifest
 (`src/content/quizBank.gen.ts`) carrying each strip's measured findings.
 
-Final bank: nsr 10 · afib 10 · lbbb 10 · rbbb 10 · omi-anterior 8 ·
-lvh-strain 8 · aflutter 6 · paced-v 6 · longqt 6 · wpw 5 · svt-avnrt 5 ·
-avb-3 4 · avb-2 3 · leftmain 2 · wellens 1.
+Final bank (with the imperfect layer, 2026-08-30): 117 strips — nsr 13 ·
+afib 13 · lbbb 13 · rbbb 13 · omi-anterior 9 · lvh-strain 9 · aflutter 8 ·
+paced-v 8 · longqt 8 · wpw 6 · svt-avnrt 5 · avb-3 5 · avb-2 3 · leftmain 2 ·
+wellens 2.
+
+**The imperfect layer**: ~1/3 of each class is deliberately drawn from
+records carrying PTB-XL noise annotations (baseline drift, static/muscle
+noise, burst artifact, electrode problems) — same diagnostic gates, dirty
+signal. The reveal names the imperfection ("Imperfect strip — like real
+life: static/muscle noise (I–aVL)"), so artifact becomes content. The
+gates that stay strict are about ANSWER UNIQUENESS (regular rhythm for
+morphology classes, measured STE for injury) — never about cosmetics.
 
 What the gates caught (kept out of the bank):
 - **omi-inferior: 0 shipped.** Every INJIN/INJIL-labeled candidate measured

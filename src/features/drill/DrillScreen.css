@@ -158,3 +158,33 @@
 .recap-row .num { color: var(--ink); font-size: var(--fs-title); }
 .drill-recap .drill-actions { width: 100%; max-width: 300px; }
 @media (prefers-reduced-motion: reduce) { .recap-score { animation: none; } }
+
+/* ── lead-count toggle + conduction heart + imperfection note ─────────── */
+.drill-leads { display: flex; justify-content: flex-end; margin: calc(-1 * var(--sp-2)) 0 var(--sp-2); }
+.drill-grit {
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  border-left: 2px solid var(--warn);
+  padding-left: var(--sp-3);
+  margin: var(--sp-2) 0;
+  line-height: 1.6;
+}
+.drill-grit-label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+.drill-heart-btn {
+  align-self: flex-start;
+  font-size: var(--fs-meta);
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: 7px 14px;
+  margin: var(--sp-2) 0;
+  min-height: var(--tap-min);
+}
+.drill-heart { margin: var(--sp-2) 0; }

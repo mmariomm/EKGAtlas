@@ -2328,6 +2328,645 @@
       "beats": 13,
       "bytes": 200988,
       "builtAt": "2026-08-30"
+    },
+    "qs-8210": {
+      "cardId": "avb-3",
+      "ecgId": 8210,
+      "patient": 10154,
+      "scp": {
+        "3AVB": 100,
+        "LNGQT": 100
+      },
+      "findings": {
+        "rate": 50,
+        "rrCv": 0.2,
+        "qrs": 82,
+        "qtc": 485,
+        "stMax": [
+          "V2",
+          0.1
+        ],
+        "stMin": [
+          "V5",
+          -0.09
+        ],
+        "sokolow": 3.6
+      },
+      "noise": {
+        "s": "I-AVL"
+      },
+      "beats": 9,
+      "bytes": 190028,
+      "builtAt": "2026-08-30"
+    },
+    "qs-17790": {
+      "cardId": "wellens",
+      "ecgId": 17790,
+      "patient": 1740,
+      "scp": {
+        "ISCAS": 100,
+        "ISCAL": 100,
+        "ISCIN": 100,
+        "IRBBB": 100,
+        "INVT": 0,
+        "STD_": 0,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 68,
+        "rrCv": 2.4,
+        "qrs": 96,
+        "pr": 174,
+        "stMin": [
+          "III",
+          -0.1
+        ]
+      },
+      "beats": 11,
+      "bytes": 187918,
+      "builtAt": "2026-08-30"
+    },
+    "qs-5028": {
+      "cardId": "wpw",
+      "ecgId": 5028,
+      "patient": 13947,
+      "scp": {
+        "WPW": 100,
+        "ABQRS": 0,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 75,
+        "rrCv": 3,
+        "qrs": 95,
+        "pr": 138,
+        "stMax": [
+          "III",
+          0.1
+        ],
+        "stMin": [
+          "V4",
+          -0.11
+        ]
+      },
+      "noise": {
+        "s": "I-AVR"
+      },
+      "beats": 12,
+      "bytes": 194115,
+      "builtAt": "2026-08-30"
+    },
+    "qs-858": {
+      "cardId": "aflutter",
+      "ecgId": 858,
+      "patient": 4520,
+      "scp": {
+        "AFLT": 100
+      },
+      "findings": {
+        "rate": 149,
+        "rrCv": 31.4,
+        "qrs": 136,
+        "stMax": [
+          "V4",
+          0.15
+        ],
+        "stMin": [
+          "V1",
+          -0.24
+        ]
+      },
+      "noise": {
+        "b": "v3"
+      },
+      "beats": 20,
+      "bytes": 203770,
+      "builtAt": "2026-08-30"
+    },
+    "qs-14070": {
+      "cardId": "aflutter",
+      "ecgId": 14070,
+      "patient": 2484,
+      "scp": {
+        "AFLT": 100,
+        "NST_": 0,
+        "SVTAC": 0
+      },
+      "findings": {
+        "rate": 152,
+        "rrCv": 0.6,
+        "qrs": 80,
+        "stMax": [
+          "aVL",
+          0.15
+        ],
+        "stMin": [
+          "III",
+          -0.27
+        ],
+        "sokolow": 3.7
+      },
+      "noise": {
+        "b": "v1"
+      },
+      "beats": 25,
+      "bytes": 202470,
+      "builtAt": "2026-08-30"
+    },
+    "qs-190": {
+      "cardId": "paced-v",
+      "ecgId": 190,
+      "patient": 10782,
+      "scp": {
+        "PACE": 100
+      },
+      "findings": {
+        "rate": 70,
+        "rrCv": 3,
+        "qrs": 196,
+        "stMax": [
+          "III",
+          1
+        ],
+        "stMin": [
+          "aVL",
+          -0.71
+        ]
+      },
+      "noise": {
+        "s": "alles"
+      },
+      "beats": 12,
+      "bytes": 218022,
+      "builtAt": "2026-08-30"
+    },
+    "qs-3893": {
+      "cardId": "paced-v",
+      "ecgId": 3893,
+      "patient": 17201,
+      "scp": {
+        "PACE": 100
+      },
+      "findings": {
+        "rate": 70,
+        "rrCv": 0.2,
+        "qrs": 168,
+        "stMax": [
+          "V2",
+          0.41
+        ],
+        "stMin": [
+          "aVL",
+          -0.17
+        ],
+        "sokolow": 3.9
+      },
+      "noise": {
+        "s": "alles"
+      },
+      "beats": 12,
+      "bytes": 206412,
+      "builtAt": "2026-08-30"
+    },
+    "qs-3326": {
+      "cardId": "longqt",
+      "ecgId": 3326,
+      "patient": 733,
+      "scp": {
+        "NST_": 100,
+        "LNGQT": 100,
+        "EL": 50,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 66,
+        "rrCv": 3.5,
+        "qrs": 85,
+        "qtc": 560,
+        "pr": 179,
+        "stMax": [
+          "V2",
+          0.09
+        ]
+      },
+      "noise": {
+        "d": "v5"
+      },
+      "beats": 11,
+      "bytes": 198721,
+      "builtAt": "2026-08-30"
+    },
+    "qs-5456": {
+      "cardId": "longqt",
+      "ecgId": 5456,
+      "patient": 13041,
+      "scp": {
+        "LNGQT": 100,
+        "STACH": 0
+      },
+      "findings": {
+        "rate": 120,
+        "rrCv": 10.2,
+        "qrs": 117,
+        "qtc": 631,
+        "stMax": [
+          "V2",
+          0.1
+        ],
+        "stMin": [
+          "II",
+          -0.1
+        ]
+      },
+      "noise": {
+        "d": "V6"
+      },
+      "beats": 20,
+      "bytes": 194564,
+      "builtAt": "2026-08-30"
+    },
+    "qs-9913": {
+      "cardId": "omi-anterior",
+      "ecgId": 9913,
+      "patient": 12994,
+      "scp": {
+        "IMI": 50,
+        "ASMI": 50,
+        "INJAS": 50,
+        "DIG": 50,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 77,
+        "rrCv": 0.4,
+        "qrs": 102,
+        "stMax": [
+          "aVR",
+          0.14
+        ],
+        "stMin": [
+          "V5",
+          -0.23
+        ]
+      },
+      "noise": {
+        "d": "V5,V6"
+      },
+      "beats": 13,
+      "bytes": 182321,
+      "builtAt": "2026-08-30"
+    },
+    "qs-12585": {
+      "cardId": "lvh-strain",
+      "ecgId": 12585,
+      "patient": 493,
+      "scp": {
+        "NDT": 100,
+        "LVH": 100,
+        "STD_": 0,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 79,
+        "rrCv": 1.9,
+        "qrs": 74,
+        "pr": 122,
+        "stMax": [
+          "V3",
+          0.22
+        ],
+        "stMin": [
+          "V5",
+          -0.21
+        ],
+        "sokolow": 7.7
+      },
+      "noise": {
+        "s": "stark"
+      },
+      "beats": 13,
+      "bytes": 212511,
+      "builtAt": "2026-08-30"
+    },
+    "qs-721": {
+      "cardId": "nsr",
+      "ecgId": 721,
+      "patient": 6866,
+      "scp": {
+        "NORM": 100,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 71,
+        "rrCv": 1.3,
+        "qrs": 80,
+        "pr": 250,
+        "stMax": [
+          "V2",
+          0.13
+        ]
+      },
+      "noise": {
+        "b": "v5,6"
+      },
+      "beats": 11,
+      "bytes": 194510,
+      "builtAt": "2026-08-30"
+    },
+    "qs-1119": {
+      "cardId": "nsr",
+      "ecgId": 1119,
+      "patient": 16469,
+      "scp": {
+        "NORM": 80,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 67,
+        "rrCv": 5.4,
+        "qrs": 98,
+        "pr": 156,
+        "stMax": [
+          "V2",
+          0.22
+        ]
+      },
+      "noise": {
+        "b": "I-AVR"
+      },
+      "beats": 11,
+      "bytes": 199332,
+      "builtAt": "2026-08-30"
+    },
+    "qs-1673": {
+      "cardId": "nsr",
+      "ecgId": 1673,
+      "patient": 4720,
+      "scp": {
+        "NORM": 100,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 85,
+        "rrCv": 1.1,
+        "qrs": 72,
+        "pr": 162,
+        "stMax": [
+          "V2",
+          0.21
+        ]
+      },
+      "noise": {
+        "b": "v1"
+      },
+      "beats": 13,
+      "bytes": 200202,
+      "builtAt": "2026-08-30"
+    },
+    "qs-1275": {
+      "cardId": "afib",
+      "ecgId": 1275,
+      "patient": 9170,
+      "scp": {
+        "ASMI": 100,
+        "PVC": 100,
+        "AFIB": 0
+      },
+      "findings": {
+        "rate": 73,
+        "rrCv": 32.7,
+        "qrs": 100,
+        "stMax": [
+          "V2",
+          0.14
+        ],
+        "stMin": [
+          "V5",
+          -0.18
+        ]
+      },
+      "noise": {
+        "b": "II"
+      },
+      "beats": 12,
+      "bytes": 185741,
+      "builtAt": "2026-08-30"
+    },
+    "qs-11686": {
+      "cardId": "afib",
+      "ecgId": 11686,
+      "patient": 18058,
+      "scp": {
+        "IMI": 15,
+        "IRBBB": 100,
+        "ISCLA": 100,
+        "PVC": 100,
+        "ABQRS": 0,
+        "AFIB": 0
+      },
+      "findings": {
+        "rate": 82,
+        "rrCv": 16.8,
+        "qrs": 82
+      },
+      "noise": {
+        "b": "I-V3"
+      },
+      "beats": 14,
+      "bytes": 166758,
+      "builtAt": "2026-08-30"
+    },
+    "qs-15537": {
+      "cardId": "afib",
+      "ecgId": 15537,
+      "patient": 14188,
+      "scp": {
+        "IMI": 100,
+        "ASMI": 100,
+        "ABQRS": 0,
+        "AFIB": 0
+      },
+      "findings": {
+        "rate": 109,
+        "rrCv": 22,
+        "qrs": 100,
+        "stMin": [
+          "V5",
+          -0.11
+        ]
+      },
+      "noise": {
+        "b": "V1"
+      },
+      "beats": 17,
+      "bytes": 174674,
+      "builtAt": "2026-08-30"
+    },
+    "qs-545": {
+      "cardId": "lbbb",
+      "ecgId": 545,
+      "patient": 15734,
+      "scp": {
+        "IMI": 50,
+        "LVH": 100,
+        "ISC_": 100,
+        "CLBBB": 100,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 68,
+        "rrCv": 1.9,
+        "qrs": 152,
+        "pr": 260,
+        "stMax": [
+          "V2",
+          0.36
+        ],
+        "stMin": [
+          "V6",
+          -0.17
+        ],
+        "sokolow": 4.9
+      },
+      "noise": {
+        "d": "V2"
+      },
+      "beats": 11,
+      "bytes": 200932,
+      "builtAt": "2026-08-30"
+    },
+    "qs-2135": {
+      "cardId": "lbbb",
+      "ecgId": 2135,
+      "patient": 8046,
+      "scp": {
+        "CLBBB": 100,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 58,
+        "rrCv": 0.9,
+        "qrs": 140,
+        "pr": 260,
+        "stMax": [
+          "V2",
+          0.15
+        ]
+      },
+      "noise": {
+        "d": "V3"
+      },
+      "beats": 9,
+      "bytes": 191181,
+      "builtAt": "2026-08-30"
+    },
+    "qs-3145": {
+      "cardId": "lbbb",
+      "ecgId": 3145,
+      "patient": 11192,
+      "scp": {
+        "CLBBB": 100,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 60,
+        "rrCv": 0.5,
+        "qrs": 162,
+        "pr": 260,
+        "stMax": [
+          "V2",
+          0.75
+        ],
+        "stMin": [
+          "V6",
+          -0.11
+        ]
+      },
+      "noise": {
+        "d": "V1-V4"
+      },
+      "beats": 10,
+      "bytes": 188826,
+      "builtAt": "2026-08-30"
+    },
+    "qs-1424": {
+      "cardId": "rbbb",
+      "ecgId": 1424,
+      "patient": 8130,
+      "scp": {
+        "CRBBB": 100,
+        "ISCIN": 100,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 63,
+        "rrCv": 2.2,
+        "qrs": 152,
+        "pr": 203,
+        "stMax": [
+          "V2",
+          0.13
+        ]
+      },
+      "noise": {
+        "d": "V2,V3"
+      },
+      "beats": 11,
+      "bytes": 198779,
+      "builtAt": "2026-08-30"
+    },
+    "qs-1478": {
+      "cardId": "rbbb",
+      "ecgId": 1478,
+      "patient": 16982,
+      "scp": {
+        "CRBBB": 100,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 66,
+        "rrCv": 2.2,
+        "qrs": 146,
+        "pr": 260,
+        "stMax": [
+          "V5",
+          0.13
+        ],
+        "stMin": [
+          "aVR",
+          -0.1
+        ]
+      },
+      "noise": {
+        "s": "I-AVF"
+      },
+      "beats": 10,
+      "bytes": 197907,
+      "builtAt": "2026-08-30"
+    },
+    "qs-2433": {
+      "cardId": "rbbb",
+      "ecgId": 2433,
+      "patient": 21554,
+      "scp": {
+        "CRBBB": 100,
+        "SR": 0
+      },
+      "findings": {
+        "rate": 52,
+        "rrCv": 2,
+        "qrs": 141,
+        "stMin": [
+          "V1",
+          -0.09
+        ]
+      },
+      "noise": {
+        "d": "III,AVL"
+      },
+      "beats": 8,
+      "bytes": 193161,
+      "builtAt": "2026-08-30"
     }
   }
 }

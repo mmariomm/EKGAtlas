@@ -14,8 +14,11 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CARDS, CARD_BY_ID } from '../../content'
-import { QUIZ_BY_CARD, QuizFindings } from '../../content/quizBank.gen'
+import { QUIZ_BY_CARD, QuizFindings, QuizNoise } from '../../content/quizBank.gen'
 import { useCardiacClock } from '../../lib/clock'
+import { ALL_LEADS } from '../../engine/leads'
+import { buildMechanismStrip } from '../../content/mechanisms'
+import { modelFiducials, buildWarp } from '../../engine/sync'
 import { loadTrace, TraceData } from '../../lib/assets'
 import {
   bumpStreak, currentStreak, dueWithin24h, loadDrill, loadStrips,
@@ -29,6 +32,7 @@ import { t } from '../../lib/ui'
 import { linkClick } from '../../router'
 import TraceView from '../trace/TraceView'
 import ProvenanceBadge from '../card/ProvenanceBadge'
+import HeartView from '../mechanism/HeartView'
 import './DrillScreen.css'
 
 export const SESSION_GOAL = 10
@@ -85,6 +89,7 @@ interface Draw {
   options: string[]
   /** Present when the strip is a real recording from the quiz bank. */
   findings?: QuizFindings
+  noise?: QuizNoise
 }
 
 const draw = (not?: string): Draw => {
@@ -100,7 +105,7 @@ const draw = (not?: string): Draw => {
     const unseen = real.filter((q) => !strips[q.traceId])
     const pool = unseen.length ? unseen : real
     const pick = pool[Math.floor(Math.random() * pool.length)]
-    return { cardId, traceId: pick.traceId, options, findings: pick.f }
+    return { cardId, traceId: pick.traceId, options, findings: pick.f, noise: pick.n }
   }
 
   const traces = [card.seeIt.traceId, ...(card.seeIt.extraTraceIds ?? [])]
@@ -115,6 +120,18 @@ const findingsLine = (f: QuizFindings): string => {
   if (f.stMax) parts.push(`ST ${f.stMax[0]} +${f.stMax[1]} mV`)
   if (f.stMin) parts.push(`ST ${f.stMin[0]} −${Math.abs(f.stMin[1])} mV`)
   if (f.sokolow != null) parts.push(`S·V1+R·V5/6 ${f.sokolow} mV`)
+  return parts.join(' · ')
+}
+
+/** PTB-XL noise annotations, humanized: 'alles' = all leads; severity words diffuse. */
+const noiseToken = (v: string): string =>
+  /alles/i.test(v) ? t('drill.allLeadsTok') : /mittel|leicht|schwer/i.test(v) ? t('drill.diffuse') : v
+const noiseLine = (n: QuizNoise): string => {
+  const parts: string[] = []
+  if (n.d) parts.push(`${t('drill.drift')} (${noiseToken(n.d)})`)
+  if (n.s) parts.push(`${t('drill.staticN')} (${noiseToken(n.s)})`)
+  if (n.b) parts.push(`${t('drill.burst')} (${noiseToken(n.b)})`)
+  if (n.e) parts.push(`${t('drill.electrodes')} (${noiseToken(n.e)})`)
   return parts.join(' · ')
 }
 
@@ -159,6 +176,8 @@ export default function DrillScreen() {
   const [log, setLog] = useState<boolean[]>([])
   const [recap, setRecap] = useState(false)
   const [streak, setStreak] = useState(() => currentStreak())
+  const [twelve, setTwelve] = useState(false)
+  const [showHeart, setShowHeart] = useState(false)
   const progress = useMemo(() => progressSummary(), [picked])
 
   useEffect(() => {
@@ -192,6 +211,7 @@ export default function DrillScreen() {
   const next = useCallback(() => {
     if (log.length >= SESSION_GOAL) { setRecap(true); return }
     setPicked(null)
+    setShowHeart(false)
     setCurrent(draw(current.cardId))
   }, [current.cardId, log.length])
 
@@ -216,6 +236,12 @@ export default function DrillScreen() {
       if (bestRun > prev) localStorage.setItem(BEST_RUN_KEY, String(bestRun))
     } catch { /* private mode */ }
   }, [recap, bestRun])
+
+  const mechStrip = useMemo(() => buildMechanismStrip(card.mechanism), [card])
+  const warp = useMemo(() => {
+    if (!data) return (t: number) => t
+    return buildWarp(data.annotation, modelFiducials(mechStrip), data.durationMs, mechStrip.durationMs)
+  }, [data, mechStrip])
 
   const correctOption = card.seeIt.commit.options.find((o) => o.correct)
 
@@ -262,15 +288,22 @@ export default function DrillScreen() {
       {data ? (
         <TraceView
           data={data}
-          leads={[card.mechanism.primaryLead, card.mechanism.primaryLead === 'II' ? 'V1' : 'II']}
+          leads={twelve ? [...ALL_LEADS] : [card.mechanism.primaryLead, card.mechanism.primaryLead === 'II' ? 'V1' : 'II']}
           clock={clock}
           onTap={clock.toggle}
           badge={<ProvenanceBadge provenance={data.provenance} />}
-          laneHeight={104}
+          laneHeight={twelve ? undefined : 104}
         />
       ) : (
         <div className="drill-loading">{t('drill.loading')}</div>
       )}
+
+      <div className="drill-leads">
+        <span className="seg seg-sm" role="group" aria-label={t('a11y.chooseLeads')}>
+          <button className={!twelve ? 'seg-fill' : ''} onClick={() => setTwelve(false)}>2</button>
+          <button className={twelve ? 'seg-fill' : ''} onClick={() => setTwelve(true)}>12</button>
+        </span>
+      </div>
 
       {!answered ? (
         <>
@@ -303,6 +336,18 @@ export default function DrillScreen() {
             <p className="drill-measured">
               <span className="drill-measured-label">{t('drill.measured')}</span> {findingsLine(current.findings)}
             </p>
+          )}
+          {current.noise && (
+            <p className="drill-grit">
+              <span className="drill-grit-label">{t('drill.imperfect')}</span> {noiseLine(current.noise)}
+            </p>
+          )}
+          {!showHeart ? (
+            <button className="drill-heart-btn" onClick={() => setShowHeart(true)}>{t('card.showHeart')}</button>
+          ) : (
+            <div className="drill-heart">
+              <HeartView strip={mechStrip} clock={clock} warp={warp} />
+            </div>
           )}
           {correctOption && <p className="drill-tempts">{emph(correctOption.tempts)}</p>}
           {!right && <p className="drill-requeue">{t('drill.missed')}</p>}
