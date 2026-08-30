@@ -129,7 +129,7 @@ function CardInner({ cardId }: { cardId: string }) {
   )
 
   const commit = (i: number) => {
-    if (i !== SKIPPED) metric('commit', card.id)
+    if (i !== SKIPPED) metric('commit', card.id, card.seeIt.commit.options[i]?.correct ? 1 : 0)
     setCommitted(i)
     setShowHeart(true)
     try { localStorage.setItem(COMMIT_KEY(card.id), String(i)) } catch { /* private mode */ }

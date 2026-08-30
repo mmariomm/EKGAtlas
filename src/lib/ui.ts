@@ -29,6 +29,7 @@ const EN: Dict = {
 
   'card.back': 'Back to library',
   'card.allLeads': '12-lead',
+  'about.metrics': 'Usage is measured anonymously: a random install id, which screens are used and whether answers are right — never your name, email, IP address or any patient data. No cookies. Do Not Track is honored.',
   'a11y.shareCard': 'Share this card',
   'a11y.chooseLeads': 'Choose leads',
   'a11y.highlightPhase': 'Highlight a phase',
@@ -107,6 +108,7 @@ const IT: Dict = {
 
   'card.back': 'Torna all’indice',
   'card.allLeads': '12 derivazioni',
+  'about.metrics': 'L’uso è misurato in forma anonima: un identificativo casuale di installazione, quali schermate vengono usate e se le risposte sono corrette — mai nome, email, indirizzo IP o dati di pazienti. Nessun cookie. Il Do Not Track è rispettato.',
   'a11y.shareCard': 'Condividi questa scheda',
   'a11y.chooseLeads': 'Scegli le derivazioni',
   'a11y.highlightPhase': 'Evidenzia una fase',

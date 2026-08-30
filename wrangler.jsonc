@@ -1,14 +1,19 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ekg-atlas",
+  "main": "worker/metrics.js",
   "compatibility_date": "2026-06-07",
   "observability": {
     "enabled": true
   },
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },
+  "analytics_engine_datasets": [
+    { "binding": "METRICS", "dataset": "ekg_atlas_events" }
+  ],
   "compatibility_flags": [
     "nodejs_compat"
   ]

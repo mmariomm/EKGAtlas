@@ -1,9 +1,12 @@
 /** The fidelity contract — how the atlas earns trust, in learner-readable lines. */
 import { GUIDELINES } from '../../content/guidelines'
 import { linkClick } from '../../router'
+import { t } from '../../lib/ui'
+import { useLang } from '../../lib/useLang'
 import './AboutScreen.css'
 
 export default function AboutScreen() {
+  useLang()
   return (
     <div className="screen about">
       <header className="about-head">
@@ -88,6 +91,8 @@ export default function AboutScreen() {
         a patient's ECG, and it is never a substitute for clinical judgment or your
         local protocol.
       </p>
+
+      <p className="about-disclaimer">{t('about.metrics')}</p>
     </div>
   )
 }

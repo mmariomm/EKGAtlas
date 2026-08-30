@@ -107,9 +107,9 @@ export default function DrillScreen() {
 
   const answer = (id: string) => {
     if (answered) return
-    metric('commit', `drill:${current.cardId}`)
     setPicked(id)
     const isRight = id === current.cardId
+    metric('drill', current.cardId, isRight ? 1 : 0)
     recordDrillAnswer(current.cardId, isRight)
     setSessionRight((r) => r + (isRight ? 1 : 0))
     setSessionTotal((t) => t + 1)
