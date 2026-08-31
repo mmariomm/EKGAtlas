@@ -11,9 +11,6 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },
-  "analytics_engine_datasets": [
-    { "binding": "METRICS", "dataset": "ekg_atlas_events" }
-  ],
   "compatibility_flags": [
     "nodejs_compat"
   ]
