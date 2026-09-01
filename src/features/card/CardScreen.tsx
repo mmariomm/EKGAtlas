@@ -20,6 +20,9 @@ import { loadTrace, TraceData } from '../../lib/assets'
 import { linkClick, navigate } from '../../router'
 import { metric } from '../../lib/metrics'
 import { emph } from '../../lib/emph'
+import { localizeCard, hasTranslation } from '../../content/i18n'
+import { useLang } from '../../lib/useLang'
+import { t } from '../../lib/ui'
 import TraceView from '../trace/TraceView'
 import HeartView from '../mechanism/HeartView'
 import MethodStrip from './MethodStrip'
@@ -49,7 +52,11 @@ export default function CardScreen({ cardId }: { cardId: string }) {
 }
 
 function CardInner({ cardId }: { cardId: string }) {
-  const card = CARD_BY_ID[cardId]
+  const lang = useLang()
+  const en = CARD_BY_ID[cardId]
+  const card = useMemo(() => localizeCard(en, lang), [en, lang])
+  // Honest marker: this card's clinical text has no translation yet.
+  const untranslated = lang !== 'en' && !hasTranslation(en, lang)
   const [traceId, setTraceId] = useState(card.seeIt.traceId)
   const [leads, setLeads] = useState<LeadId[]>([card.mechanism.primaryLead])
   const [data, setData] = useState<TraceData | null>(null)
@@ -122,7 +129,7 @@ function CardInner({ cardId }: { cardId: string }) {
   )
 
   const commit = (i: number) => {
-    if (i !== SKIPPED) metric('commit', card.id)
+    if (i !== SKIPPED) metric('commit', card.id, card.seeIt.commit.options[i]?.correct ? 1 : 0)
     setCommitted(i)
     setShowHeart(true)
     try { localStorage.setItem(COMMIT_KEY(card.id), String(i)) } catch { /* private mode */ }
@@ -193,9 +200,9 @@ function CardInner({ cardId }: { cardId: string }) {
   return (
     <div className="screen cardscreen">
       <header className="card-top">
-        <a href="/" onClick={linkClick('/')} className="card-back" aria-label="Back to library">‹</a>
+        <a href="/" onClick={linkClick('/')} className="card-back" aria-label={t('card.back')}>‹</a>
         <div className="card-topname">{revealed ? card.name : card.category}</div>
-        <button className="card-share" onClick={share} aria-label="Share this card">Share</button>
+        <button className="card-share" onClick={share} aria-label={t('a11y.shareCard')}>{t('card.share')}</button>
       </header>
 
       <div className={`card-stage ${leads.length === 12 ? 'card-stage-tall' : ''}`}>
@@ -214,15 +221,15 @@ function CardInner({ cardId }: { cardId: string }) {
         )}
       </div>
       {coachTrace && data && (
-        <p className="card-coach">↔ drag to scrub · pinch to zoom</p>
+        <p className="card-coach">{t('card.coachTrace')}</p>
       )}
 
-      <div className="card-leadrow" role="group" aria-label="Choose leads">
+      <div className="card-leadrow" role="group" aria-label={t('a11y.chooseLeads')}>
         <button
           className={`leadchip ${leads.length === 12 ? 'leadchip-on' : ''}`}
           onClick={() => setLeads(leads.length === 12 ? [card.mechanism.primaryLead] : [...ALL_LEADS])}
         >
-          12-lead
+          {t('card.allLeads')}
         </button>
         {ALL_LEADS.map((l) => (
           <button
@@ -236,8 +243,8 @@ function CardInner({ cardId }: { cardId: string }) {
       </div>
 
       {revealed && (
-        <div className="card-phasechips" role="group" aria-label="Highlight a phase">
-          <span className="phase-label">highlight</span>
+        <div className="card-phasechips" role="group" aria-label={t('a11y.highlightPhase')}>
+          <span className="phase-label">{t('card.highlight')}</span>
           {(['P', 'QRS', 'ST', 'T'] as PhaseId[]).map((p) => (
             <button
               key={p}
@@ -249,7 +256,7 @@ function CardInner({ cardId }: { cardId: string }) {
           ))}
           {!showHeart && (
             <button className="phasechip phasechip-heart" onClick={() => setShowHeart(true)}>
-              show heart
+              {t('card.showHeart')}
             </button>
           )}
         </div>
@@ -259,7 +266,7 @@ function CardInner({ cardId }: { cardId: string }) {
 
       {revealed && extras.length > 0 && (
         <div className="card-extras">
-          <span className="card-extras-label">Recordings</span>
+          <span className="card-extras-label">{t('card.recordings')}</span>
           {[card.seeIt.traceId, ...extras].map((id, i) => (
             <button
               key={id}
@@ -269,13 +276,14 @@ function CardInner({ cardId }: { cardId: string }) {
               {i + 1}
             </button>
           ))}
-          <span className="card-extras-note">same diagnosis, different patient</span>
+          <span className="card-extras-note">{t('card.sameDx')}</span>
         </div>
       )}
 
       {/* ---- 1 · SEE IT (the verdict lands first — the heart follows it) ---- */}
       <section className="card-section">
-        <h2 className="sec-title"><span className="sec-num">1</span> See it</h2>
+        <h2 className="sec-title"><span className="sec-num">1</span> {t('card.seeIt')}</h2>
+        {untranslated && <p className="card-englishonly">{t('card.englishOnly')}</p>}
         {!revealed ? (
           <>
             <p className="commit-prompt">{card.seeIt.commit.prompt}</p>
@@ -287,41 +295,41 @@ function CardInner({ cardId }: { cardId: string }) {
               ))}
             </div>
             <p className="commit-hint">
-              Commit a read — then the card opens.{' '}
-              <button className="commit-skip" onClick={() => commit(SKIPPED)}>skip — open as reference</button>
+              {t('card.commitHint')}{' '}
+              <button className="commit-skip" onClick={() => commit(SKIPPED)}>{t('card.skip')}</button>
             </p>
           </>
         ) : (
           <div className="commit-result">
             {committed === SKIPPED ? (
-              <p className="commit-verdict">{card.seeIt.commit.options[correctIdx].label} <span className="commit-skipnote">· opened as reference</span></p>
+              <p className="commit-verdict">{card.seeIt.commit.options[correctIdx].label} <span className="commit-skipnote">{t('card.skipped')}</span></p>
             ) : committed === correctIdx ? (
               <p className="commit-verdict commit-right">✓ {card.seeIt.commit.options[correctIdx].label}</p>
             ) : (
               <>
                 <p className="commit-verdict commit-wrong">
-                  ✕ You read: {card.seeIt.commit.options[committed!].label}
+                  ✕ {t('card.youRead')} {card.seeIt.commit.options[committed!].label}
                 </p>
                 <p className="commit-tempts">{emph(card.seeIt.commit.options[committed!].tempts)}</p>
                 <p className="commit-verdict commit-right">✓ {card.seeIt.commit.options[correctIdx].label}</p>
               </>
             )}
             <p className="commit-tempts">{emph(card.seeIt.commit.options[correctIdx].tempts)}</p>
-            <button className="commit-again" onClick={recommit}>re-commit</button>
+            <button className="commit-again" onClick={recommit}>{t('card.recommit')}</button>
           </div>
         )}
       </section>
 
       {revealed && showHeart && (
         <div className="card-heart">
-          <button className="heart-hide" onClick={() => setShowHeart(false)}>hide</button>
+          <button className="heart-hide" onClick={() => setShowHeart(false)}>{t('card.hideHeart')}</button>
           <HeartView
             strip={strip}
             clock={clock}
             warp={warp}
             blockedBranches={card.mechanism.kind === 'solver' ? blockedFromState(card) : undefined}
           />
-          {coachHeart && <p className="heart-coach">drag the heart to step through the beat — the trace follows</p>}
+          {coachHeart && <p className="heart-coach">{t('card.coachHeart')}</p>}
         </div>
       )}
 
@@ -335,12 +343,12 @@ function CardInner({ cardId }: { cardId: string }) {
         <>
           {/* ---- 2 · WHY ---- */}
           <section className="card-section">
-            <h2 className="sec-title"><span className="sec-num">2</span> Why</h2>
+            <h2 className="sec-title"><span className="sec-num">2</span> {t('card.why')}</h2>
             <ol className="why-lines">
               {card.why.map((w, i) => <li key={i}>{w}</li>)}
             </ol>
             <button className="drawer-toggle" onClick={() => setDrawerOpen((o) => !o)}>
-              {drawerOpen ? 'close' : 'explain more'}
+              {drawerOpen ? t('card.close') : t('card.explain')}
             </button>
             {drawerOpen && (
               <div className="why-drawer">
@@ -356,7 +364,7 @@ function CardInner({ cardId }: { cardId: string }) {
 
           {/* ---- 3 · PEARLS & TRAPS ---- */}
           <section className="card-section">
-            <h2 className="sec-title"><span className="sec-num">3</span> Pearls &amp; traps</h2>
+            <h2 className="sec-title"><span className="sec-num">3</span> {t('card.pills')}</h2>
             <div className="pills">
               {card.pills.map((p, i) => (
                 <div key={i} className={`pill pill-${p.kind}`}>
@@ -374,7 +382,7 @@ function CardInner({ cardId }: { cardId: string }) {
 
           {/* ---- 4 · SUSPECT & CONFIRM ---- */}
           <section className="card-section">
-            <h2 className="sec-title"><span className="sec-num">4</span> Suspect &amp; confirm</h2>
+            <h2 className="sec-title"><span className="sec-num">4</span> {t('card.suspect')}</h2>
             <CitedLines lines={card.suspectConfirm} />
           </section>
 
@@ -382,8 +390,8 @@ function CardInner({ cardId }: { cardId: string }) {
           <section className="card-section">
             <h2 className="sec-title">
               <span className="sec-num">5</span>
-              {role === 'rn' ? 'Recognize & respond' : 'Guideline moves'}
-              <span className="seg seg-sm role-toggle" role="group" aria-label="Audience">
+              {role === 'rn' ? t('card.movesRn') : t('card.moves')}
+              <span className="seg seg-sm role-toggle" role="group" aria-label={t('a11y.audience')}>
                 <button className={role === 'md' ? 'on' : ''} onClick={() => setRoleAndSave('md')}>MD</button>
                 <button className={role === 'rn' ? 'on' : ''} onClick={() => setRoleAndSave('rn')}>RN</button>
               </span>
@@ -391,20 +399,18 @@ function CardInner({ cardId }: { cardId: string }) {
             <CitedLines lines={role === 'rn' ? card.rnMoves : card.guidelineMoves} />
             {card.avoid && (
               <div className="avoid-line">
-                <span className="avoid-chip">avoid</span>
+                <span className="avoid-chip">{t('card.avoid')}</span>
                 <CitedLines lines={[card.avoid]} />
               </div>
             )}
-            <p className="local-protocol">Verify against your local protocol.</p>
-            <p className="stamp">
-              Checked against the cited guidelines · {card.guidelineVerifiedAt} — educational reference, not medical advice
-            </p>
+            <p className="local-protocol">{t('card.localProtocol')}</p>
+            <p className="stamp">{t('card.stamp', { date: card.guidelineVerifiedAt })}</p>
           </section>
 
           <footer className="card-foot">
-            <a href="/about" onClick={linkClick('/about')}>How we validate</a>
+            <a href="/about" onClick={linkClick('/about')}>{t('card.validate')}</a>
             <span>·</span>
-            <span>Education, not diagnosis</span>
+            <span>{t('card.notDiagnosis')}</span>
           </footer>
         </>
       )}
@@ -413,13 +419,13 @@ function CardInner({ cardId }: { cardId: string }) {
         <button className="playbar-btn" onClick={clock.toggle} aria-label={clock.isPlaying ? 'Pause' : 'Play'}>
           {clock.isPlaying ? '❚❚' : '▶'}
         </button>
-        <button className="playbar-btn playbar-speed num" onClick={cycleSpeed} aria-label="Playback speed">
+        <button className="playbar-btn playbar-speed num" onClick={cycleSpeed} aria-label={t('a11y.speed')}>
           {clock.speed}×
         </button>
         <div className="playbar-spring" />
         {!revealed && <span className="playbar-hint">scrub the trace · commit below</span>}
         {revealed && (
-          <button className="playbar-btn" onClick={() => navigate('/')} aria-label="Library">library</button>
+          <button className="playbar-btn" onClick={() => navigate('/')} aria-label={t('card.library')}>{t('card.library')}</button>
         )}
       </div>
       {toast && <div className="toast">{toast}</div>}

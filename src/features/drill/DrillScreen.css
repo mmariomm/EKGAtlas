@@ -89,3 +89,102 @@
   padding-left: var(--sp-3);
 }
 .drill-contrast-label { font-weight: 700; color: var(--ink); }
+
+/* ── session rhythm strip: the run so far, drawn as beats ─────────────── */
+.sess-strip { display: block; width: 100%; max-width: 340px; margin: 0 auto var(--sp-3); }
+.sess-base { stroke: var(--line); stroke-width: 1; }
+.sess-beat-right { stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; }
+.sess-beat-wrong { stroke: var(--danger); stroke-width: 1.8; stroke-linejoin: round; }
+
+/* ── measured findings on a real strip ────────────────────────────────── */
+.drill-measured {
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  border-left: 2px solid var(--accent);
+  padding-left: var(--sp-3);
+  margin: var(--sp-2) 0;
+  line-height: 1.6;
+}
+.drill-measured-label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ── session recap ────────────────────────────────────────────────────── */
+.drill-recap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  text-align: center;
+  padding: var(--sp-5) 0;
+}
+.recap-title {
+  font-size: var(--fs-meta);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.recap-score {
+  font-size: 56px;
+  font-weight: 650;
+  line-height: 1;
+  color: var(--ink);
+  animation: verdict-rise 260ms ease-out;
+}
+.recap-of { font-size: 24px; font-weight: 400; color: var(--ink-3); }
+.recap-rows {
+  width: 100%;
+  max-width: 300px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+.recap-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-body);
+  color: var(--ink-2);
+}
+.recap-row .num { color: var(--ink); font-size: var(--fs-title); }
+.drill-recap .drill-actions { width: 100%; max-width: 300px; }
+@media (prefers-reduced-motion: reduce) { .recap-score { animation: none; } }
+
+/* ── lead-count toggle + conduction heart + imperfection note ─────────── */
+.drill-leads { display: flex; justify-content: flex-end; margin: calc(-1 * var(--sp-2)) 0 var(--sp-2); }
+.drill-grit {
+  font-size: var(--fs-meta);
+  color: var(--ink-2);
+  border-left: 2px solid var(--warn);
+  padding-left: var(--sp-3);
+  margin: var(--sp-2) 0;
+  line-height: 1.6;
+}
+.drill-grit-label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+.drill-heart-btn {
+  align-self: flex-start;
+  font-size: var(--fs-meta);
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: 7px 14px;
+  margin: var(--sp-2) 0;
+  min-height: var(--tap-min);
+}
+.drill-heart { margin: var(--sp-2) 0; }

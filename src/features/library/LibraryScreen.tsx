@@ -1,15 +1,23 @@
 import { useMemo, useState } from 'react'
 import { cardsByCategory, searchCards, PACKS } from '../../content'
 import { SPARKLINES } from '../../content/sparklines.gen'
-import { loadDrill, masteryOf, progressSummary, Mastery } from '../../lib/progress'
+import { localizeCard } from '../../content/i18n'
+import { currentStreak, loadDrill, loadStrips, masteryOf, progressSummary, provenOnReal, Mastery } from '../../lib/progress'
+import { setLang } from '../../lib/lang'
+import { useLang } from '../../lib/useLang'
+import { t } from '../../lib/ui'
 import { linkClick } from '../../router'
 import './LibraryScreen.css'
 
 export default function LibraryScreen() {
+  const lang = useLang()
   const [q, setQ] = useState('')
   const [lethalOnly, setLethalOnly] = useState(false)
-  const results = q.trim() ? searchCards(q) : null
+  const loc = useMemo(() => <T extends { id: string }>(c: T) => localizeCard(c as never, lang) as unknown as T, [lang])
+  const results = q.trim() ? searchCards(q).map(loc) : null
   const drill = useMemo(() => loadDrill(), [])
+  const strips = loadStrips()
+  const streak = currentStreak()
   const progress = useMemo(() => progressSummary(), [])
 
   return (
@@ -21,48 +29,55 @@ export default function LibraryScreen() {
           </svg>
           <span className="brand-name">EKG&nbsp;Atlas</span>
         </div>
-        <a href="/about" onClick={linkClick('/about')} className="lib-about">About</a>
+        <span className="lib-headright">
+          <span className="seg seg-sm lib-lang" role="group" aria-label={t('a11y.language')}>
+            <button className={lang === 'en' ? 'on' : ''} onClick={() => setLang('en')}>EN</button>
+            <button className={lang === 'it' ? 'on' : ''} onClick={() => setLang('it')}>IT</button>
+          </span>
+          <a href="/about" onClick={linkClick('/about')} className="lib-about">{t('lib.about')}</a>
+        </span>
       </header>
 
-      <p className="lib-promise">Catch the cannot-miss ECGs — mechanism first, on real recordings.</p>
+      <p className="lib-promise">{t('lib.promise')}</p>
 
       <input
         className="lib-search"
         type="search"
-        placeholder="Search patterns — “wide”, “AF”, “block”"
+        placeholder={t('lib.search')}
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        aria-label="Search patterns"
+        aria-label={t('a11y.search')}
       />
 
       {!results && (
         <>
           <a href="/drill" onClick={linkClick('/drill')} className="lib-drill">
-            <span className="lib-drill-name">Drill</span>
+            <span className="lib-drill-name">{t('lib.drill')}</span>
             <span className="lib-drill-sub">
               {progress.due > 0
-                ? `${progress.due} due for review · ${progress.solid}/${progress.total} solid`
+                ? t('lib.drill.due', { due: progress.due, solid: progress.solid, total: progress.total })
                 : progress.seen === 0
-                  ? 'unknown strips, no labels — cannot-miss first'
-                  : `${progress.solid}/${progress.total} solid — cannot-miss first`}
+                  ? t('lib.drill.fresh')
+                  : t('lib.drill.solid', { solid: progress.solid, total: progress.total })}
+              {streak >= 2 ? ` · ${t('lib.streakN', { n: streak })}` : ''}
             </span>
             <span className="lib-chev" aria-hidden>›</span>
           </a>
 
           <div className="lib-labs">
             <a href="/lab/electrodes" onClick={linkClick('/lab/electrodes')} className="lib-lab">
-              <span className="lib-lab-name">Electrode Lab</span>
-              <span className="lib-lab-sub">Drag the electrodes — the trace obeys.</span>
+              <span className="lib-lab-name">{t('lab.electrodes')}</span>
+              <span className="lib-lab-sub">{t('lab.electrodes.sub')}</span>
             </a>
             <a href="/lab/hyperk" onClick={linkClick('/lab/hyperk')} className="lib-lab">
-              <span className="lib-lab-name">HyperK Lab</span>
-              <span className="lib-lab-sub">Five patients, one K⁺ — estimate it.</span>
+              <span className="lib-lab-name">{t('lab.hyperk')}</span>
+              <span className="lib-lab-sub">{t('lab.hyperk.sub')}</span>
             </a>
           </div>
 
           <div className="lib-setrow">
-            <span className="lib-setlabel">Curated sets</span>
-            <div className="lib-packrow" role="group" aria-label="Curated sets">
+            <span className="lib-setlabel">{t('lib.sets')}</span>
+            <div className="lib-packrow" role="group" aria-label={t('a11y.sets')}>
               {PACKS.map((p) => (
                 <a key={p.id} href={`/p/${p.id}`} onClick={linkClick(`/p/${p.id}`)} className="lib-packchip">
                   {p.title}
@@ -77,23 +92,24 @@ export default function LibraryScreen() {
               onClick={() => setLethalOnly((v) => !v)}
               aria-pressed={lethalOnly}
             >
-              <span className="lib-dot" /> cannot-miss{lethalOnly ? ' only' : ''}
+              <span className="lib-dot" /> {lethalOnly ? t('lib.lethalOnly') : t('lib.lethal')}
             </button>
             <span className="lib-pipslegend" aria-hidden>
-              <span className="lib-pip on" /> seen
-              <span className="lib-pip on" style={{ marginLeft: 10 }} /><span className="lib-pip on" /> learning
-              <span className="lib-pip on lib-pip-solid" style={{ marginLeft: 10 }} /><span className="lib-pip on lib-pip-solid" /><span className="lib-pip on lib-pip-solid" /> solid
+              <span className="lib-pip on" /> {t('lib.seen')}
+              <span className="lib-pip on" style={{ marginLeft: 10 }} /><span className="lib-pip on" /> {t('lib.learning')}
+              <span className="lib-pip on lib-pip-solid" style={{ marginLeft: 10 }} /><span className="lib-pip on lib-pip-solid" /><span className="lib-pip on lib-pip-solid" /> {t('lib.solid')}
             </span>
           </div>
         </>
       )}
 
       {results ? (
-        <CardList items={results.map((c) => ({ ...c, mastery: masteryOf(c.id, drill), box: drill[c.id]?.box ?? 0 }))} empty={`Nothing matches “${q}”.`} />
+        <CardList items={results.map((c) => ({ ...c, mastery: masteryOf(c.id, drill), box: drill[c.id]?.box ?? 0, proven: provenOnReal(c.id, drill, strips) }))} empty={t('lib.empty', { q })} />
       ) : (
         cardsByCategory().map((g) => {
           const items = (lethalOnly ? g.items.filter((c) => c.lethal) : g.items)
-            .map((c) => ({ ...c, mastery: masteryOf(c.id, drill), box: drill[c.id]?.box ?? 0 }))
+            .map(loc)
+            .map((c) => ({ ...c, mastery: masteryOf(c.id, drill), box: drill[c.id]?.box ?? 0, proven: provenOnReal(c.id, drill, strips) }))
           if (!items.length) return null
           return (
             <section key={g.category} className="lib-group">
@@ -103,7 +119,7 @@ export default function LibraryScreen() {
           )
         })
       )}
-      <p className="lib-disclaimer">Educational — never a substitute for clinical judgment or local protocol.</p>
+      <p className="lib-disclaimer">{t('lib.disclaimer')}</p>
     </div>
   )
 }
@@ -114,6 +130,7 @@ interface Row {
   tagline: string
   lethal: boolean
   mastery: Mastery
+  proven: boolean
   box: number
 }
 
@@ -130,10 +147,11 @@ function Spark({ id }: { id: string }) {
   )
 }
 
-function Pips({ mastery, box }: { mastery: Mastery; box: number }) {
+function Pips({ mastery, box, proven }: { mastery: Mastery; box: number; proven: boolean }) {
   const filled = mastery === 'solid' ? 3 : box >= 1 ? 2 : mastery !== 'unseen' ? 1 : 0
+  const label = proven ? t('lib.proven') : mastery
   return (
-    <span className={`lib-pips ${mastery === 'solid' ? 'lib-pips-solid' : ''}`} aria-label={`progress: ${mastery}`} title={mastery}>
+    <span className={`lib-pips ${mastery === 'solid' ? 'lib-pips-solid' : ''} ${proven ? 'lib-pips-proven' : ''}`} aria-label={`progress: ${label}`} title={label}>
       {[0, 1, 2].map((i) => (
         <span key={i} className={`lib-pip ${i < filled ? 'on' : ''}`} />
       ))}
@@ -156,7 +174,7 @@ function CardList({ items, empty }: { items: Row[]; empty: string }) {
               </span>
               <span className="lib-row-tag">{c.tagline}</span>
             </span>
-            <Pips mastery={c.mastery} box={c.box} />
+            <Pips mastery={c.mastery} box={c.box} proven={c.proven} />
           </a>
         </li>
       ))}
