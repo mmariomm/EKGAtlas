@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.6.0";
+  const VERSION = "3.7.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -145,6 +145,9 @@
   // they are LEARNED automatically the first time the list is seen and kept
   // in localStorage, after which radiology works one-click too.
   const EMBEDDED_CATALOG = /*__CATALOG__*/ {};
+  // Discharge instructions, reviewed before shipping and freely editable by
+  // the doctor: what is kept here is a TEMPLATE, never a patient's text.
+  const DIMISSIONI = /*__DIMISSIONI__*/ {};
 
   // ================================================================ UTILS
   const sleep = (ms, signal) => new Promise((res, rej) => {
@@ -976,7 +979,9 @@
       try { const v = JSON.parse(localStorage.getItem(NS + key)); return v ?? fallback; }
       catch { return fallback; }
     },
-    set(key, value) { try { localStorage.setItem(NS + key, JSON.stringify(value)); } catch { /* full/blocked: non-fatal */ } },
+    // returns false when the write did NOT happen (quota, blocked storage):
+    // a caller that promises the doctor "saved" has to be able to check.
+    set(key, value) { try { localStorage.setItem(NS + key, JSON.stringify(value)); return true; } catch { return false; } },
   };
   // Tab-scoped storage for the run→landing handoffs (receipt + auto-confirm
   // flag): sessionStorage survives the same-tab navigation but is invisible
@@ -1021,10 +1026,54 @@
     forgetQuesiti();
     try {
       for (const k of Object.keys(sessionStorage)) {
-        if (k.startsWith(NS) && /(^|\.)(ris|visto|reftxt|log|refopen|receipt|confirm|queue|print|ui|afterNav)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
+        if (k.startsWith(NS) && /(^|\.)(ris|visto|reftxt|log|refopen|receipt|confirm|queue|print|ui|afterNav|dimdraft)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
       }
     } catch { /* blocked storage: nothing to clear */ }
     try { if (typeof chrome !== "undefined" && chrome.runtime?.id) chrome.runtime.sendMessage({ t: "clearRef" }, () => void chrome.runtime.lastError); } catch { /* not the extension build */ }
+  }
+
+  // The doctor's edits live in localStorage under their own key. They are
+  // templates, not patient data, so forgetAll leaves them alone — and nothing
+  // patient-specific ever gets written here.
+  const dimKey = "dimissioni.v1";
+  // A short fingerprint of the text a doctor's version was forked from. It is
+  // what lets a later release SAY that the original changed (a dose, a
+  // contraindication): without it, a corrected sheet would be silently
+  // invisible to everyone who had ever edited that sheet.
+  function impronta(testo) {
+    let h = 0x811c9dc5;
+    const t = String(testo || "").replace(/\s+/g, " ").trim();
+    for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return (h >>> 0).toString(36);
+  }
+  const dimValido = (v) => !!(v && typeof v.testo === "string" && v.testo.trim());
+  function dimissioni() {
+    const mie = store.get(dimKey, {});
+    const out = {};
+    for (const [k, v] of Object.entries(DIMISSIONI)) {
+      const m = dimValido(mie[k]) ? mie[k] : null;
+      out[k] = {
+        nome: v.nome, testo: m ? m.testo : v.testo, originale: v.testo, modificato: !!m,
+        // the shipped text moved AFTER this doctor forked it
+        aggiornato: !!(m && m.base && m.base !== impronta(v.testo)),
+      };
+    }
+    for (const [k, v] of Object.entries(mie)) {
+      if (!out[k] && dimValido(v)) out[k] = { nome: (v.nome || k), testo: v.testo, originale: "", modificato: true, mio: true };
+    }
+    return out;
+  }
+  function salvaDimissione(k, nome, testo) {
+    const mie = store.get(dimKey, {});
+    const base = DIMISSIONI[k];
+    if (base && testo.trim() === base.testo.trim()) delete mie[k];   // back to the original: stop overriding
+    else mie[k] = { nome, testo, base: base ? impronta(base.testo) : "" };
+    return store.set(dimKey, mie);
+  }
+  function ripristinaDimissione(k) {
+    const mie = store.get(dimKey, {});
+    delete mie[k];
+    return store.set(dimKey, mie);
   }
 
   function learnedCatalog() { return store.get("catalog.v1", {}); }
@@ -1584,6 +1633,31 @@
     .eprev .pit.nuovo, .eprev .pv.agg, .rval .rvv.agg {
       background: #DCEAF9; border-radius: 3px; padding: 0 3px; box-shadow: inset 0 -2px 0 #0B5CAD; }
     .eprev.nuovi { -webkit-line-clamp: unset; }   /* nothing new stays hidden behind the clamp */
+    .dlist { display: flex; flex-direction: column; gap: 4px; }
+    .drow { display: flex; align-items: stretch; gap: 5px; }
+    /* Copying is what this list is FOR: the target is the whole row, not a
+       13px glyph at its edge. The pencil stays a button of its own. */
+    .dcopia { flex: 1 1 auto; display: flex; align-items: center; gap: 8px; min-width: 0; text-align: left;
+              border: 1px solid #E3E8EF; border-radius: 9px; background: #fff; cursor: pointer;
+              padding: 8px 10px 8px 11px; font: inherit; }
+    .dcopia:hover { border-color: #9DBFDE; background: #F4F9FD; }
+    .dcopia:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .dcopia.fatto { border-color: #BCE0C9; background: #EDF7F0; }
+    .dcopia.fatto .dico { color: #124F31; }
+    .dnome { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; color: #16232E; overflow: hidden;
+             white-space: nowrap; text-overflow: ellipsis; }
+    .dmeta { flex: 0 0 auto; font-size: 10.5px; color: #A3B2C2; }
+    .dico { flex: 0 0 auto; font-size: 13px; color: #6E8398; }
+    .dmod { color: #0B5CAD; font-weight: 800; margin-left: 5px; }
+    .dmod.agg { color: #A2600A; }
+    .dbtn { flex: 0 0 auto; min-width: 38px; border: 1px solid #E3E8EF; border-radius: 9px;
+            background: #F8FBFE; color: #35506B; font-size: 13px; cursor: pointer; }
+    .dbtn:hover { background: #EAF2FA; border-color: #9DBFDE; color: #0B5CAD; }
+    .dbtn:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .dedit { width: 100%; min-height: 46vh; resize: vertical; border: 1px solid #D9E2EC; border-radius: 9px;
+             padding: 9px 10px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+             color: #16232E; background: #fff; }
+    .dedit:focus { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     .reftxt { font-size: 12.5px; line-height: 1.5; color: #16232E; }
     .reftxt .rt { padding: 1px 0; }
     .reftxt .rt:empty { display: none; }
@@ -1679,7 +1753,8 @@
       const titleEl = document.querySelector("title");
       if (titleEl) {
         this._titleObs = new MutationObserver(() => {
-          if (this.runState !== "running") this.render();
+          // never rebuild a screen the doctor is typing into
+          if (this.runState !== "running" && this.view !== "dimtesto" && this.view !== "dimimport") this.render();
         });
         this._titleObs.observe(titleEl, { childList: true, characterData: true, subtree: true });
       }
@@ -1720,11 +1795,23 @@
       }
       return out;
     }
-    setView(v, id) {
+    setView(v, id, nota) {
       // leaving a draw's values means they have been read: that is when the
       // "nuovi" marks are cleared, never on the render that has to show them
       if (this.view === "valori" && this.viewId && !(v === "valori" && id === this.viewId)) this.marcaLetto(this.viewId);
+      // a banner belongs to the screen that raised it: changing screen clears
+      // it, unless this navigation is itself carrying the answer
+      this.message = nota || null;
       this.view = v; this.viewId = id || null; this.persistUi(); this.render();
+    }
+    // the inline banner: a string is something that went wrong, {ok} is a
+    // confirmation. Every view shows it — the panel always answers.
+    notaHtml() {
+      const m = this.message;
+      if (this.runState) return "";
+      if (typeof m === "string" && m) return `<div class="banner warn">${esc(m)}</div>`;
+      if (m && typeof m.ok === "string") return `<div class="banner ok">${esc(m.ok)}</div>`;
+      return "";
     }
     marcaLetto(id) {
       const held = tabStore.get(this.risKey(id), null);
@@ -1993,6 +2080,9 @@
       else if (this.view === "esiti") body = this.viewEsiti();
       else if (this.view === "valori") body = this.viewValori();
       else if (this.view === "referto") body = this.viewReferto();
+      else if (this.view === "dimissioni") body = this.viewDimissioni();
+      else if (this.view === "dimtesto") body = this.viewDimTesto();
+      else if (this.view === "dimimport") body = this.viewDimImport();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
       else body = this.viewHome(patientName, ep);
 
@@ -2010,8 +2100,11 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni" }[this.view] || "";
+      // the discharge sheets are templates: no episode belongs in that header
+      const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
       const sub = inHome ? "ultime 12 ore"
+        : inDim ? "Dimissioni · modelli"
         : section ? `${section}${ep ? " · " + esc(ep) : ""}`
         : (ep ? "episodio " + esc(ep) : esc(APP));
       // user-resized size (clamped so it always fits the screen)
@@ -2037,18 +2130,22 @@
           ` : `
             <div class="card" role="dialog" aria-label="${esc(APP)}" style="${sizeStyle}">
               <div class="hd" id="draghd" title="Trascina per spostare · doppio click per riportare in alto a destra">
-                ${section ? `<button class="iconbtn" id="back" title="${this.view === "valori" || this.view === "referto" ? "Torna agli esiti" : "Tutti i pazienti"}">‹</button>` : LOGO}<b class="who">${esc(inHome ? "Pazienti" : who)}</b>
+                ${section ? `<button class="iconbtn" id="back" title="${
+                  this.view === "valori" || this.view === "referto" ? "Torna agli esiti"
+                  : this.view === "dimtesto" || this.view === "dimimport" ? "Torna ai fogli di dimissione"
+                  : "Tutti i pazienti"}">‹</button>` : LOGO}<b class="who">${esc(inHome ? "Pazienti" : who)}</b>
                 <span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>
                 <button class="iconbtn" id="collapse" title="Riduci">—</button>
               </div>
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
-              ${!this.runState && this.pageType === "patient" && this.entry && (this.entry.labUrl || this.entry.radioUrl) && this.view !== "home" ? `
+              ${!this.runState && this.pageType === "patient" && this.view !== "home" ? `
                 <div class="seg">
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
-                  <button class="${this.view === "richieste" ? "" : "on"}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>
+                  <button class="${this.view === "esiti" || this.view === "valori" || this.view === "referto" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>
+                  <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
-              <div class="bd">${body}</div>
+              <div class="bd">${this.view === "richieste" ? "" : this.notaHtml()}${body}</div>
               <div class="rsz" id="rsz" title="Trascina per ridimensionare · doppio click per la misura originale"></div>
               ${inHome ? `<div class="foot">
                 <span><button id="verbtn" class="footlink" title="Mostra il Registro delle operazioni">${esc(APP)} ${VERSION}</button>${(typeof chrome !== "undefined" && chrome.runtime?.id)
@@ -2091,7 +2188,7 @@
       ].join("");
       return `
         <div class="sec">
-          <div class="lbl">Pazienti${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
+          <div class="lbl">Pazienti<button class="mini" id="vaidim" title="I fogli di dimissione: non appartengono a un paziente">Dimissioni</button>${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
           ${cards || `<div class="hint">Nessun paziente ancora. Apri un paziente: resta qui per il turno.</div>`}
           ${others.length ? `<div class="hint">Aprire un altro paziente ne carica la pagina.</div>` : ""}
           ${this.showLog ? `<details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>` : ""}
@@ -2197,7 +2294,7 @@
         ${this.viewPrint()}
 
         <div class="commit">
-          ${typeof this.message === "string" && this.message ? `<div class="banner warn">${esc(this.message)}</div>` : ""}
+          ${this.notaHtml()}
           <div class="idline">Richiesta per <b>${esc(patientName)}</b>${ep ? ` · episodio <b>${esc(ep)}</b>` : ""}</div>
           <div id="problems">${problems.go[0] ? `<div class="problem">${esc(problems.go[0])}</div>` : ""}</div>
           <div class="btnrow">
@@ -2363,6 +2460,77 @@
         this.render();
       }
       if (tabStore.get(this.txtKey(id), null)) this.setView("referto", id);
+    }
+
+    // The list shows only WHAT, never the text: at discharge the doctor knows
+    // which sheet he wants, and reading it here would only cost him a scroll.
+    viewDimissioni() {
+      const tutte = dimissioni();
+      const chiavi = Object.keys(tutte);
+      const righe = chiavi.map((k) => {
+        const d = tutte[k];
+        const n = d.testo.split("\n").filter((r) => r.trim()).length;
+        const segno = d.aggiornato
+          ? `<span class="dmod agg" title="L'originale è cambiato dopo la tua modifica">⟳</span>`
+          : d.modificato ? `<span class="dmod" title="Testo modificato da te">•</span>` : "";
+        return `
+        <div class="drow">
+          <button class="dcopia" data-dcopy="${esc(k)}" title="Copia negli appunti il foglio «${esc(d.nome)}»"
+                  aria-label="Copia il foglio ${esc(d.nome)}">
+            <span class="dnome">${esc(d.nome)}${segno}</span>
+            <span class="dmeta">${n} righe</span><span class="dico">⧉</span>
+          </button>
+          <button class="dbtn" data-dedit="${esc(k)}" title="Modifica il testo di «${esc(d.nome)}»"
+                  aria-label="Modifica il foglio ${esc(d.nome)}">✎</button>
+        </div>`;
+      }).join("");
+      return `
+        <div class="sec">
+          <div class="lbl">Fogli di dimissione (${chiavi.length})
+            <button class="mini" id="dimexport" title="Salva i tuoi testi in un file JSON">⬇ JSON</button>
+            <button class="mini" id="dimimport" title="Rimetti i testi di un JSON esportato">⤒ Importa</button>
+          </div>
+          <div class="dlist">${righe}</div>
+          <div class="hint">Clic sulla riga per copiare il foglio, ✎ per modificarlo una volta per tutte. Le modifiche restano su questo computer.</div>
+        </div>`;
+    }
+
+    // The editor keeps a draft in tabStore at every keystroke: the EHR retitles
+    // the page (which re-renders the panel) and reloads it under the doctor's
+    // hands, and a rewritten sheet must never die to something he did not do.
+    dimDraftKey(k) { return "dimdraft." + k; }
+    viewDimTesto() {
+      const k = this.viewId;
+      const d = dimissioni()[k];
+      if (!d) return `<div class="hint">Testo non disponibile.</div>`;
+      const bozza = tabStore.get(this.dimDraftKey(k), null);
+      const testo = bozza && typeof bozza.testo === "string" ? bozza.testo : d.testo;
+      return `
+        <div class="sec">
+          <div class="lbl">${esc(d.nome)}
+            <button class="mini" id="dimcopy" title="Copia questo testo senza salvarlo">⧉ Copia</button>
+            <button class="mini" id="dimsave" title="Tieni questo testo per le prossime dimissioni">✓ Salva</button>
+            ${d.modificato ? `<button class="mini" id="dimreset" title="${d.mio ? "Elimina questo foglio" : "Butta le tue modifiche e riprendi l'originale"}">${d.mio ? "✕ Elimina" : "↺ Originale"}</button>` : ""}
+          </div>
+          ${d.aggiornato ? `<div class="banner warn">L'originale di questo foglio è stato aggiornato dopo la tua modifica: con ↺ Originale prendi la versione nuova.</div>` : ""}
+          ${testo !== d.testo ? `<div class="banner ok">Bozza non salvata, ripresa da dove l'avevi lasciata.</div>` : ""}
+          <textarea class="dedit" id="dimarea" spellcheck="false" aria-label="Testo del foglio ${esc(d.nome)}">${esc(testo)}</textarea>
+          <div class="hint">Salva tiene questo testo per le prossime volte. Per un foglio su misura per QUESTO paziente, modifica e usa ⧉ Copia senza salvare: qui non vanno dati del paziente.</div>
+        </div>`;
+    }
+
+    // Import is a paste screen, not a window.prompt: a 20 KB JSON in a
+    // one-line browser dialog cannot be read, checked or corrected.
+    viewDimImport() {
+      return `
+        <div class="sec">
+          <div class="lbl">Importa i fogli
+            <button class="mini" id="dimimpok">⤒ Importa</button>
+          </div>
+          <textarea class="dedit" id="dimimparea" spellcheck="false"
+                    placeholder="Incolla qui il JSON esportato con ⬇ JSON" aria-label="JSON dei fogli di dimissione"></textarea>
+          <div class="hint">Entrano solo i testi diversi dagli originali: gli altri restano come sono.</div>
+        </div>`;
     }
 
     viewReferto() {
@@ -2747,13 +2915,139 @@
         if (u) nav(u);
       });
 
-      $("#back")?.addEventListener("click", () => this.setView(this.view === "valori" || this.view === "referto" ? "esiti" : "home"));
+      $("#back")?.addEventListener("click", () => this.setView(
+        this.view === "valori" || this.view === "referto" ? "esiti"
+        : this.view === "dimtesto" || this.view === "dimimport" ? "dimissioni"
+        : "home"));
       this.root.querySelectorAll("[data-seg]").forEach((b) => b.addEventListener("click", () => this.setView(b.getAttribute("data-seg"))));
       $("#forget")?.addEventListener("click", () => { forgetPatients(); this.render(); });
       $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.render(); });
       $("#risall")?.addEventListener("click", () => this.reloadTuttiValori());
       $("#letto")?.addEventListener("click", () => { if (this.viewId) { this.marcaLetto(this.viewId); this.render(); } });
       $("#apripdf")?.addEventListener("click", () => { if (this.viewId) this.openReferto(this.viewId); });
+      this.root.querySelectorAll("[data-dcopy]").forEach((b) => b.addEventListener("click", async () => {
+        const d = dimissioni()[b.getAttribute("data-dcopy")];
+        if (!d) return;
+        const ico = b.querySelector(".dico");
+        let ok = false;
+        try { await navigator.clipboard.writeText(d.testo); ok = true; } catch { /* below */ }
+        b.classList.toggle("fatto", ok);
+        if (ico) ico.textContent = ok ? "✓ copiato" : "✗ non riuscito";
+        setTimeout(() => {
+          if (!b.isConnected) return;
+          b.classList.remove("fatto");
+          if (ico) ico.textContent = "⧉";
+        }, 1800);
+      }));
+      this.root.querySelectorAll("[data-dedit]").forEach((b) => b.addEventListener("click", () => this.setView("dimtesto", b.getAttribute("data-dedit"))));
+      // every keystroke goes into the tab's draft: a re-render, a page change
+      // or a mis-click can no longer throw away a rewritten sheet
+      const area = this.root.querySelector("#dimarea");
+      if (area) area.addEventListener("input", () => tabStore.set(this.dimDraftKey(this.viewId), { ts: Date.now(), testo: area.value }));
+      $("#dimcopy")?.addEventListener("click", async () => {
+        const b = this.root.querySelector("#dimcopy");
+        let ok = false;
+        try { await navigator.clipboard.writeText(area ? area.value : ""); ok = true; } catch { /* below */ }
+        if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
+      });
+      $("#dimsave")?.addEventListener("click", () => {
+        const d = dimissioni()[this.viewId];
+        if (!area || !d) return;
+        if (!area.value.trim()) { this.message = "Il testo è vuoto: non lo salvo."; this.render(); return; }
+        const scritto = salvaDimissione(this.viewId, d.nome, area.value);
+        tabStore.set(this.dimDraftKey(this.viewId), null);
+        this.log(`${now()}  foglio di dimissione «${d.nome}» aggiornato`);
+        // never say "saved" when the browser refused to write it
+        this.setView("dimissioni", null, scritto
+          ? { ok: `«${d.nome}» salvato: sarà questo il testo copiato d'ora in poi.` }
+          : `«${d.nome}» NON salvato: la memoria di questo browser è piena o bloccata.`);
+      });
+      $("#dimreset")?.addEventListener("click", (ev) => {
+        const b = ev.currentTarget;
+        const d = dimissioni()[this.viewId] || {};
+        const etichetta = b.textContent;
+        // one tap must not be able to destroy a text the doctor wrote
+        if (b.dataset.sicuro !== "1") {
+          b.dataset.sicuro = "1";
+          b.textContent = d.mio ? "Elimino?" : "Confermi?";
+          setTimeout(() => { if (b.isConnected && b.dataset.sicuro === "1") { b.dataset.sicuro = ""; b.textContent = etichetta; } }, 4000);
+          return;
+        }
+        const nome = d.nome || this.viewId;
+        const scritto = ripristinaDimissione(this.viewId);
+        tabStore.set(this.dimDraftKey(this.viewId), null);
+        this.setView("dimissioni", null, scritto
+          ? { ok: `«${nome}» riportato al testo originale.` }
+          : `«${nome}» non ripristinato: la memoria di questo browser è bloccata.`);
+      });
+      $("#dimexport")?.addEventListener("click", async () => {
+        const tutte = dimissioni();
+        const mie = store.get(dimKey, {});
+        const dati = {};
+        for (const [k, v] of Object.entries(tutte)) {
+          dati[k] = { nome: v.nome, testo: v.testo };
+          // carry the fingerprint of the original this version was forked from,
+          // so a re-import keeps knowing when the original moves
+          if (mie[k] && mie[k].base) dati[k].base = mie[k].base;
+        }
+        const testo = JSON.stringify({ app: APP, versione: VERSION, salvato: new Date().toISOString(), dimissioni: dati }, null, 1);
+        // the file where downloads are allowed, the clipboard everywhere else:
+        // the doctor must end up with the text in his hands either way
+        let file = false, appunti = false;
+        try {
+          const url = URL.createObjectURL(new Blob([testo], { type: "application/json" }));
+          const a2 = document.createElement("a");
+          a2.href = url; a2.download = "dimissioni.json";
+          document.documentElement.appendChild(a2); a2.click(); a2.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 20000);
+          file = true;
+        } catch { /* clipboard below */ }
+        try { await navigator.clipboard.writeText(testo); appunti = true; } catch { /* said below */ }
+        const b = this.root.querySelector("#dimexport");
+        if (b) {
+          b.textContent = file && appunti ? "✓ file + appunti" : file ? "✓ dimissioni.json" : appunti ? "✓ negli appunti" : "✗ non riuscito";
+          setTimeout(() => { if (b.isConnected) b.textContent = "⬇ JSON"; }, 2500);
+        }
+      });
+      $("#vaidim")?.addEventListener("click", () => this.setView("dimissioni"));
+      $("#dimimport")?.addEventListener("click", () => this.setView("dimimport"));
+      $("#dimimpok")?.addEventListener("click", () => {
+        const ta = this.root.querySelector("#dimimparea");
+        const testo = (ta && ta.value || "").trim();
+        if (!testo) { this.message = "Incolla prima il JSON esportato."; this.render(); return; }
+        let dims = null;
+        try {
+          const dati = JSON.parse(testo);
+          dims = dati && dati.dimissioni && typeof dati.dimissioni === "object" ? dati.dimissioni : dati;
+        } catch (e) {
+          this.message = `JSON non valido: ${e.message}`; this.render(); return;
+        }
+        if (!dims || typeof dims !== "object") { this.message = "Questo file non contiene fogli di dimissione."; this.render(); return; }
+        const mie = store.get(dimKey, {});
+        let n = 0, uguali = 0, saltati = 0;
+        for (const [k, v] of Object.entries(dims)) {
+          if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
+          if (!dimValido(v) || v.testo.length > 40000 || k.length > 80) { saltati++; continue; }
+          const orig = DIMISSIONI[k];
+          // a text identical to the shipped one is NOT a change: importing it
+          // as an override would freeze that sheet at today's wording forever
+          if (orig && v.testo.trim() === orig.testo.trim()) { delete mie[k]; uguali++; continue; }
+          if (!(k in mie) && Object.keys(mie).length >= 40) { saltati++; continue; }
+          mie[k] = {
+            nome: String(v.nome || (orig && orig.nome) || k).slice(0, 80),
+            testo: v.testo,
+            base: typeof v.base === "string" && v.base ? v.base : (orig ? impronta(orig.testo) : ""),
+          };
+          n++;
+        }
+        if (!n && !uguali) { this.message = "Nessun testo valido in questo JSON."; this.render(); return; }
+        const scritto = store.set(dimKey, mie);
+        this.log(`${now()}  importati ${n} fogli di dimissione`);
+        const coda = [uguali ? `${uguali} già uguali all'originale` : "", saltati ? `${saltati} ignorati` : ""].filter(Boolean).join(", ");
+        this.setView("dimissioni", null, scritto
+          ? { ok: `${n === 1 ? "Importato 1 foglio" : `Importati ${n} fogli`}${coda ? ` (${coda})` : ""}.` }
+          : "Import NON salvato: la memoria di questo browser è piena o bloccata.");
+      });
       $("#copytxt")?.addEventListener("click", async () => {
         const t = tabStore.get(this.txtKey(this.viewId), null);
         if (!t || !t.righe) return;

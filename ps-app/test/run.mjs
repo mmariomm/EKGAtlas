@@ -1194,6 +1194,163 @@ async function scenarioRefertoTesto(browser) {
   await context.close();
 }
 
+async function scenarioDimissioni(browser) {
+  const scen = "dimissioni";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="dimissioni"]').click();
+  await page.waitForSelector("#psassist-host .drow", { timeout: 10000 });
+
+  const righe = await page.locator("#psassist-host .drow").count();
+  check(scen, righe === 8, `otto fogli di dimissione (got ${righe})`);
+  const testoLista = await $panel(page, ".dlist").innerText();
+  check(scen, /Colica renale/.test(testoLista) && !/paracetamolo/i.test(testoLista),
+    "la lista mostra le patologie, mai il testo");
+
+  // copy puts the whole sheet in the clipboard
+  await page.locator('#psassist-host [data-dcopy="colica-renale"]').click();
+  await page.waitForTimeout(300);
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  check(scen, /COLICA RENALE/.test(clip) && /Ketoprofene sale di lisina/.test(clip), "⧉ copia il foglio intero");
+  check(scen, /non sostituiscono il medico curante/.test(clip), "con la frase di chiusura standard");
+
+  // edit, save, and the change survives a page reload
+  await page.locator('#psassist-host [data-dedit="artrosi"]').click();
+  await page.waitForSelector("#psassist-host #dimarea", { timeout: 8000 });
+  await page.evaluate(() => {
+    const t = document.getElementById("psassist-host").shadowRoot.querySelector("#dimarea");
+    t.value = "ARTROSI — testo mio\nRiga di prova.";
+  });
+  await $panel(page, "#dimsave").click();
+  await page.waitForSelector("#psassist-host .drow", { timeout: 8000 });
+  check(scen, (await page.locator("#psassist-host .dmod").count()) === 1, "il foglio modificato è marcato");
+  const conferma = await $panel(page, ".bd").innerText();
+  check(scen, /salvato/.test(conferma), "Salva lo dice, invece di tornare muto alla lista");
+  // ...and that banner must NOT follow the doctor onto the ordering screen
+  await $panel(page, '[data-seg="richieste"]').click();
+  await page.waitForTimeout(200);
+  check(scen, !/salvato: sarà questo il testo/.test(await $panel(page, ".bd").innerText()),
+    "la conferma resta sulla sua schermata, non compare sopra Crea");
+  await $panel(page, '[data-seg="dimissioni"]').click();
+  await page.waitForSelector("#psassist-host .drow", { timeout: 8000 });
+  await page.reload();
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="dimissioni"]').click();
+  await page.waitForSelector("#psassist-host .drow", { timeout: 10000 });
+  await page.locator('#psassist-host [data-dcopy="artrosi"]').click();
+  await page.waitForTimeout(300);
+  const clip2 = await page.evaluate(() => navigator.clipboard.readText());
+  check(scen, /testo mio/.test(clip2), "la modifica resta dopo il cambio pagina");
+
+  // the export carries every sheet, edited ones included
+  await $panel(page, "#dimexport").click();
+  await page.waitForTimeout(400);
+  const json = await page.evaluate(() => navigator.clipboard.readText());
+  let dati = null;
+  try { dati = JSON.parse(json); } catch { /* checked below */ }
+  check(scen, !!dati && Object.keys(dati.dimissioni || {}).length === 8, "⬇ JSON esporta tutti i fogli");
+  check(scen, !!dati && /testo mio/.test(dati.dimissioni.artrosi.testo), "compresa la mia versione");
+
+  // back to the original
+  await page.waitForSelector('#psassist-host [data-dedit="artrosi"]', { timeout: 8000 });
+  await page.locator('#psassist-host [data-dedit="artrosi"]').click({ force: true });
+  await page.waitForSelector("#psassist-host #dimreset", { timeout: 8000 });
+  await $panel(page, "#dimreset").click();          // one tap only asks
+  await page.waitForTimeout(150);
+  check(scen, /Confermi/.test(await $panel(page, "#dimreset").innerText()),
+    "↺ Originale chiede conferma prima di buttare il testo del medico");
+  check(scen, await $panel(page, "#dimarea").isVisible(), "e intanto non ha cancellato niente");
+  await $panel(page, "#dimreset").click();          // the second confirms
+  await page.waitForTimeout(300);
+  await page.locator('#psassist-host [data-dcopy="artrosi"]').click();
+  await page.waitForTimeout(300);
+  const clip3 = await page.evaluate(() => navigator.clipboard.readText());
+  check(scen, /ARTROSI IN FASE DOLOROSA/.test(clip3), "↺ riporta al testo originale");
+
+  // a discharge sheet is a template, not patient data: the login wipe leaves it
+  await page.goto(`${mock.ORIGIN}${mock.PATH}?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=999001&expire=1`);
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("psassist:dimissioni.v1") || "{}");
+    s.artrosi = { nome: "Artrosi", testo: "mio testo dopo il logout" };
+    localStorage.setItem("psassist:dimissioni.v1", JSON.stringify(s));
+  });
+  const rimasto = await page.evaluate(() => localStorage.getItem("psassist:dimissioni.v1"));
+  check(scen, /mio testo dopo il logout/.test(rimasto || ""), "i fogli non sono dati del paziente: restano");
+
+  // an edited sheet remembers WHICH original it forked from: when a release
+  // corrects a dose, the doctor who edited that sheet has to be told
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.evaluate(() => {
+    localStorage.setItem("psassist:dimissioni.v1", JSON.stringify({
+      cistite: { nome: "Cistite non complicata", testo: "mia versione", base: "originale-di-ieri" },
+    }));
+  });
+  await page.reload();
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="dimissioni"]').click();
+  await page.waitForSelector("#psassist-host .drow", { timeout: 10000 });
+  check(scen, (await page.locator("#psassist-host .dmod.agg").count()) === 1,
+    "il foglio la cui versione originale è cambiata è segnalato");
+  await page.locator('#psassist-host [data-dedit="cistite"]').click();
+  await page.waitForSelector("#psassist-host #dimarea", { timeout: 8000 });
+  check(scen, /originale di questo foglio è stato aggiornato/i.test(await $panel(page, ".bd").innerText()),
+    "e l'editor lo spiega");
+
+  // a blank sheet is never saved as if it were a text
+  await page.evaluate(() => {
+    document.getElementById("psassist-host").shadowRoot.querySelector("#dimarea").value = "   ";
+  });
+  await $panel(page, "#dimsave").click();
+  await page.waitForTimeout(200);
+  check(scen, /vuoto/.test(await $panel(page, ".bd").innerText()) && await $panel(page, "#dimarea").isVisible(),
+    "un testo vuoto viene rifiutato, non salvato");
+
+  // tap ✎, get called away, come back: the text is still there
+  await page.evaluate(() => {
+    const t = document.getElementById("psassist-host").shadowRoot.querySelector("#dimarea");
+    t.value = "sto ancora scrivendo questo foglio";
+    t.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForTimeout(200);
+  await $panel(page, '[data-seg="dimissioni"]').click();
+  await page.waitForSelector("#psassist-host .drow", { timeout: 8000 });
+  await page.locator('#psassist-host [data-dedit="cistite"]').click();
+  await page.waitForSelector("#psassist-host #dimarea", { timeout: 8000 });
+  check(scen, /sto ancora scrivendo/.test(await $panel(page, "#dimarea").inputValue()),
+    "quello che stavo scrivendo mi aspetta al ritorno");
+  check(scen, /Bozza non salvata/.test(await $panel(page, ".bd").innerText()), "e il pannello dice che è una bozza");
+
+  // import: a paste screen, and only the texts that really differ get in
+  await $panel(page, "#back").click();
+  await page.waitForSelector("#psassist-host .drow", { timeout: 8000 });
+  await $panel(page, "#dimimport").click();
+  await page.waitForSelector("#psassist-host #dimimparea", { timeout: 8000 });
+  await page.evaluate(() => {
+    // written by hand: an object literal cannot carry an own "__proto__" key
+    document.getElementById("psassist-host").shadowRoot.querySelector("#dimimparea").value = `{"dimissioni":{
+      "lombalgia": {"nome":"Lombalgia acuta","testo":"LOMBALGIA - la mia versione importata"},
+      "colica-renale": {"nome":"Colica renale","testo":"   "},
+      "__proto__": {"nome":"x","testo":"veleno"}
+    }}`;
+  });
+  await $panel(page, "#dimimpok").click();
+  await page.waitForSelector("#psassist-host .drow", { timeout: 8000 });
+  check(scen, /Importato 1 foglio/.test(await $panel(page, ".bd").innerText()), "l'import conta solo ciò che entra davvero");
+  const dopoImport = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:dimissioni.v1") || "{}"));
+  check(scen, !!dopoImport.lombalgia && /la mia versione importata/.test(dopoImport.lombalgia.testo),
+    "il testo importato è quello che viene copiato");
+  check(scen, !Object.prototype.hasOwnProperty.call(dopoImport, "__proto__"),
+    "una chiave __proto__ nel JSON non viene scritta");
+  check(scen, Object.keys(dopoImport).length === 2, "i fogli identici all'originale non diventano miei");
+  check(scen, await page.evaluate(() => ({}).veleno === undefined), "e il prototipo della pagina resta intatto");
+  await context.close();
+}
+
 async function scenarioValoriRefertati(browser) {
   const scen = "valori-refertati";
   // Before: the draw is still open, its values can be read.
@@ -1361,6 +1518,7 @@ const scenarios = [
   ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],
   ["valori nuovi e aggiornati dopo il refresh", scenarioNuoviValori],
   ["referto RX letto come testo", scenarioRefertoTesto],
+  ["fogli di dimissione: copia, modifica, export", scenarioDimissioni],
   ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],

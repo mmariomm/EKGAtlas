@@ -67,8 +67,8 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
 
 ## Uso quotidiano
 
-Il pannello ha tre schermate, con **Richieste | Esiti** sempre in cima e il paziente + episodio
-nell'intestazione (anche da minimizzato).
+Il pannello ha quattro schermate, con **Richieste | Esiti | Dimissioni** sempre in cima e il
+paziente + episodio nell'intestazione (anche da minimizzato).
 
 ### Pazienti (‹ in alto a sinistra)
 
@@ -143,6 +143,31 @@ Un unico elenco in ordine di tempo:
 > abbinamento "a occhio" per nome ed ora prima o poi metterebbe i valori di un prelievo sotto il
 > documento di un altro. Meglio due righe distinte e oneste che una fusione plausibile ma
 > sbagliata.
+
+### Dimissioni
+Otto **fogli di dimissione** pronti — gastroenterite, colica renale, artrosi, lombalgia,
+distorsione di caviglia, cistite, faringotonsillite, trauma cranico minore — scritti per il
+paziente e rivisti da medici d'urgenza: dosi per esteso, tetto del paracetamolo, e in fondo a ogni
+foglio i motivi per **tornare in Pronto Soccorso**.
+
+- L'elenco mostra **solo la patologia**, mai il testo: al momento della dimissione sai già quale ti
+  serve, e leggerlo qui costerebbe solo uno scroll.
+- **Un tocco sulla riga copia tutto il foglio** negli appunti, pronto da incollare nel verbale. Il
+  bersaglio è la riga intera, non un'icona da 13 px.
+- **✎** apre il testo in grande e lo riscrive **per le volte successive**: le modifiche restano su
+  quel computer (`localStorage`), non nel repository e non sul server. Il foglio modificato porta un
+  **pallino azzurro** nell'elenco.
+- Quello che scrivi è **salvato come bozza a ogni tasto**: se cambi schermata, se il gestionale
+  ricarica la pagina o se ti chiamano, al ritorno il testo ti aspetta dov'era.
+- Per un foglio **su misura per questo paziente**: modifica e usa **⧉ Copia** *senza salvare*. Nei
+  modelli non vanno dati del paziente — e infatti la pulizia al logout li lascia stare, perché sono
+  modelli, non dati clinici.
+- **↺ Originale** chiede conferma prima di buttare il tuo testo. Se una nuova versione del
+  programma corregge un foglio che tu avevi modificato, quel foglio si marca **⟳** e l'editor te lo
+  dice: una correzione di dosaggio non può restare invisibile a chi ha personalizzato il testo.
+- **⬇ JSON** salva i tuoi testi in un file (e negli appunti); **⤒ Importa** li rimette da una
+  schermata dove incolli il JSON — entrano **solo i testi diversi dagli originali**, così un
+  ripristino non congela per sempre gli altri sette.
 
 ---
 
@@ -344,6 +369,11 @@ stessi flussi dei test di prodotto.
     episodio e indirizzo della pagina, al massimo 8 e per 12 ore, con **svuota** a mano; la
     pagina di login cancella tutto (nomi, valori, registro, referti salvati). I PDF salvati
     scadono dopo 8 ore, massimo 25, e si azzerano alla chiusura del browser.
+15. **I fogli di dimissione sono modelli, non cartelle**: sono l'unica cosa che sopravvive alla
+    pulizia del logout, proprio perché non contengono il paziente. Per questo l'editor offre
+    **⧉ Copia senza salvare** — chi vuole un foglio su misura non è mai costretto a salvarlo — e
+    un salvataggio rifiutato dal browser (memoria piena o bloccata) viene **detto**, mai spacciato
+    per riuscito.
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
@@ -405,6 +435,7 @@ così non escono testi clinici.
 ps-app/
 ├── src/core.js          ← unica fonte: motore + pannello (zero dipendenze)
 ├── src/catalog.json     ← catalogo esami verificato (SSG: POC/Urgenze/Centrale/RX · OSG: POC/Centrale)
+├── src/dimissioni.json  ← gli otto fogli di dimissione (testi rivisti, nessun dato di paziente)
 ├── extension/           ← estensione MV3 pronta da caricare (content.js è generato)
 ├── tools/build.mjs      ← genera extension/content.js e il bookmarklet
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
@@ -413,7 +444,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 39 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 46 scenari e2e in Chromium reale
 ```
 
 Sviluppo:
@@ -424,7 +455,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 39 scenari e2e + 5 sull'estensione + 24 sul banco + il cancello privacy
+npm test           # 46 scenari e2e + 5 sull'estensione + 24 sul banco + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

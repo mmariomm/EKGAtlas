@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.6.0";
+  const VERSION = "3.7.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -145,6 +145,9 @@
   // they are LEARNED automatically the first time the list is seen and kept
   // in localStorage, after which radiology works one-click too.
   const EMBEDDED_CATALOG = {"00660001P":{"label":"LABORATORIO ANALISI POC - SSG (P)","items":{"3":"EMOGASANALISI VENOSA POC (POC2117)","30":"GLUCOSIO (POC1250)","31":"ACIDO LATTICO POC (POC1094)","63":"NA+ POC (POC1434)","64":"K+ POC (POC1435)","101":"D-DIMERO POC (POC1405)","102":"BICARBONATI EMATICI POC (POC1499)","134":"PTT POC (POC1402)","135":"FIBRINOGENO POC (POC1404)","138":"ACT POC (POCACT)","166":"EGA EMOGASANALISI ARTERIOSA (POC1006)","176":"CREATININEMIA (POC1206)","220":"PT (POC1401)","221":"CL- POC (POC1436)","222":"TROPONINA I POC (POC2102)","223":"ACT LR POC (POCACTLR)","224":"CALCIO IONIZZATO (POC1982)","225":"TEST GRAVIDANZA URINE (POC1612)","266":"PCR POC (POC1102)","303":"BILIRUBINA (NEONATALE) (POC1341NEO)","305":"PANNELLO 1 - ANEMIA, EMORRAGIA, ISCHEMIA ARTO","306":"PANNELLO 3 - CARDIOPALMO","307":"PANNELLO 4 - TRAUMA","308":"PANNELLO 5 - DISPNEA, STROKE","309":"PANNELLO 6 - PDC, TORACALGIA","310":"PANNELLO 2 - BASE","318":"PANNELLO 9 - ESAMI POC","320":"EMOCROMOCITOMETRICO URGENTE (POCT1502)","323":"EMOGASANALISI MISTA POC (POC2117)","324":"TROPONINA ULTRASENSIBILE (POC3001)"}},"00720001P":{"label":"LABORATORIO ANALISI URGENZE - SSG (P)","items":{"1":"EMOCROMO (1501)","15":"PEPTIDE NATRIURETICO TIPO B BNP (450057)","16":"BILIRUBINA TOTALE REFLEX (450008)","23":"PSEUDOCOLINESTERASI (450007)","34":"LIPASI (1572)","35":"ANTIGENE URINARIO STRPTOCOCCUS PNEUMONIAE (2136)","53":"GOT (1582)","54":"PTT (1402)","59":"LIQUOR ESAME CHIMICO FISICO (2338)","62":"URINOCOLTURA DA MITTO INTERMEDIO (2015)","73":"EMOCOLTURA (2000)","92":"AZOTEMIA (1200)","93":"CPK (1560)","105":"POTASSIO NEL SIERO (1435)","141":"D-DIMERO (1405)","147":"LEGIONELLE: RICERCA ANTIGENE NELLE URINE (450124)","159":"PROCALCITONINA (1690)","167":"GAMMA GT (1596)","168":"GLUCOSIO (1250)","171":"TROPONINA I (450106)","175":"TIREOTROPINA RIFLESSA(TSH-R)TSH. INCL. EVENTUALE DOSAGGIO DI FT4 E FT3 (450064)","181":"PT (1401)","183":"AMMONIEMIA (1343)","211":"URINOCOLTURA DA SACCHETTO (2036)","215":"CLORO NEL SIERO (1436)","216":"CREATININEMIA (1206)","217":"SODIO NEL SIERO (1434)","228":"GPT (1583)","230":"BETA HCG PLASMATICO (1766)","258":"FIBRINOGENO (450102)","270":"CALCIO TOTALE (1437)","272":"ANTITROMBINA III (1530)","293":"PROTEINA C REATTIVA (1102)","297":"NT PRO-BNP (2040)","316":"RICERCA DIRETTA ANTIGENI MALARIA (21295)","317":"ESAME URINE URGENTI (21296)"}},"00130001P":{"label":"LABORATORIO ANALISI - SSG (P)","items":{"1":"EMOCROMO (1501)","2":"URICEMIA (1300)","6":"COPROCOLTURA (1205)","7":"PF4 (1209)","9":"COLTURALE SU RACCOLTA SIERO EMATICA (1275)","10":"COLTURALE SU LIQUIDO DA CISTI (1282)","15":"PEPTIDE NATRIURETICO TIPO B BNP (450057)","16":"BILIRUBINA TOTALE REFLEX (450008)","17":"QUANTIFERON SINGOLO MITOGENO (1358)","18":"PREALBUMINA (1397)","22":"DOSAGGIO AMIKACINA PICCO (450030)","23":"PSEUDOCOLINESTERASI (450007)","24":"FERRITINA (450042)","25":"DOSAGGIO GENTAMICINA VALLE (450032)","26":"HERPES VIRUS 2: RICERCA ANTICORPI IGM (450153)","27":"VIRUS PAROTITE ANTICORPI IGG E IGM PER SOSPETTA INFEZIONE ACUTA (450160)","28":"ACIDI BILIARI (1999)","29":"AB BORRELIA B. IGG (450109)","34":"LIPASI (1572)","35":"ANTIGENE URINARIO STRPTOCOCCUS PNEUMONIAE (2136)","37":"COLTURALE BRONCOLAVAGGIO BAL (1262)","39":"FT3 (1837)","41":"CRYPTOCOCCO ANTIGENE SU LIQUOR (450115)","42":"PLASMODI DELLA MALARIA: RIC. MICR. STRISCIO SOTTILE E GOCCIA SPESSA (450127)","47":"COLTURALE MICOLOGICO CUTE E ANNESSI UNGHIA (1619)","48":"COLTURALE MICOLOGICO CUTE E ANNESSI CUTE (1657)","49":"COLTURALE MICOLOGICO CUTE E ANNESSI CAPELLI (1658)","50":"FARMACI ANTIBIOTICI: VANCOMICINA (450034)","53":"GOT (1582)","54":"PTT (1402)","55":"VIRUS EPATITE B (HBSAG) ANT. AUSTRA (1119)","58":"LIQUIDO ASCITICO ESAME CHIMICO E FISICO (2335)","59":"LIQUOR ESAME CHIMICO FISICO (2338)","62":"URINOCOLTURA DA MITTO INTERMEDIO (2015)","69":"COLTURALE VALVOLA CARDIACA (2496)","70":"URICURIA (1301)","71":"LDH (LATTATODEIDROGENASI) (1569)","72":"ALCOOL ETILICO (ETANOLO) (2003)","73":"EMOCOLTURA (2000)","76":"COLTURALE SU TAMPONE CUTANEO (1274)","79":"COLTURALE BRONCOASPIRATO (1009)","84":"CONTEGGIO RETICOLOCITI (1511)","86":"IMMUNOGLOBULINE G (1539)","87":"PCR AD ALTA SENSIBILITA' (CRPH) (1556)","92":"AZOTEMIA (1200)","93":"CPK (1560)","94":"VIRUS IMMUNODEF. ACQUISITA [HIV 1-2] TEST COMB. ANTICORPI/ANTIGENE P24 (450158)","95":"VIRUS EPATITE B (HBSAG) ANTICORPI (1121)","98":"VIRUS MORBILLO IGG E IGM PER SOSPETTA INFEZIONE ACUTA (450159)","99":"DOSAGGIO GENTAMICINA PICCO (450033)","105":"POTASSIO NEL SIERO (1435)","106":"CLOSTRIDIOIDES DIFFICILE:RIC. DIRETTA DELLA TOSSINA NELLE FECI (450120)","109":"ESAME COLTURALE SU TAMPONE FARINGEO (12171)","110":"COLTURALE SU TAMPONE PIAGA DECUBITO (1270)","114":"COLTURALE BIOPSIA (1516)","116":"PARASSITI NEL SANGUE (450128)","117":"COLTURALE FERITA CHIRURGICA (1564)","120":"COLTURALE MAMMELLA SINISTRA (1603)","122":"URINOCOLTURA DA CATETERE A PERMANENZA (2035)","126":"FOSFATASI ALCALINA (1590)","127":"VIRUS EPATITE B (HBEAG) ANTIGENE (1116)","130":"COLTURALE FERITE SUPERFICIALI NON CHIRURGICHE (2494)","131":"COLTURALE FILI PACE-MAKER (2495)","133":"ALBUMINURIA (MICROALBUMINURIA) (1953)","141":"D-DIMERO (1405)","142":"VIRUS EPATITE DELTA [HDV]: RICERCA ANTICORPI (450149)","143":"ELETTROFORESI PROTEICA (2109)","147":"LEGIONELLE: RICERCA ANTIGENE NELLE URINE (450124)","149":"TEST DI COOMBS INDIRETTO (1171)","152":"FT4 (1839)","154":"EMOGLOBINE. DETERMINAZIONE FRAZIONI (HBA2, HBF, HB ANOMALE) (450104)","156":"COLTURALE PLACENTA (1575)","158":"COLTURALE MICOLOGICO CUTE E ANNESSI PELI (1654)","159":"PROCALCITONINA (1690)","160":"URINOCOLTURA DA CATETERISMO SINGOLO (2037)","161":"DOSAGGIO AMIKACINA VALLE (450031)","163":"AB BORRELIA B. IGM (450110)","164":"LIQUIDO SINOVIALE ESAME CHIMICO E FISICO (2337)","167":"GAMMA GT (1596)","168":"GLUCOSIO (1250)","169":"VIRUS EPATITE B [HBV] - REFLEX (450148)","170":"VIRUS EPATITE C (HCV) (1099)","171":"TROPONINA I (450106)","174":"HERPES VIRUS 2: RICERCA ANTICORPI IGG (450152)","175":"TIREOTROPINA RIFLESSA(TSH-R)TSH. INCL. EVENTUALE DOSAGGIO DI FT4 E FT3 (450064)","180":"ALBUMINA (2391)","181":"PT (1401)","183":"AMMONIEMIA (1343)","185":"FERRO (450043)","186":"APTOGLOBINA (1098)","187":"TITOLO ANTI-O-STREPTOLISINICO (1100)","195":"LIQUIDO PERICARDICO ESAME CHIIMICO FISICO E MICROSCOPICO (1884)","196":"TRANSFERRINA IND. SATURAZIONE (1351)","197":"COLTURALE PER YERSINIA NELLE FECI (1412)","198":"COLTURALE PER STREPTOCOCCUS AGALACTIAE (1414)","205":"IMMUNOGLOBULINE A (1538)","209":"COLTURALE MAMMELLA DESTRA (1589)","211":"URINOCOLTURA DA SACCHETTO (2036)","212":"TAMPONE ANTIGENICO SARS COV-2 (21225)","213":"BICARBONATI EMATICI (1499)","215":"CLORO NEL SIERO (1436)","216":"CREATININEMIA (1206)","217":"SODIO NEL SIERO (1434)","227":"PROTEINA S LIBERA (90724)","228":"GPT (1583)","229":"PROTEINE TOTALI (1346)","230":"BETA HCG PLASMATICO (1766)","231":"FOSFORO (SIERO) (1438)","232":"TRANSFERRINA TOTALE (1352)","233":"INSULINA (1139)","237":"TSH (1841)","239":"LIQUIDO PERITONEALE ESAME CHIMICO FISICO E MICROSCOPICO (1885)","240":"ALFA 1 GLICOPROTEINA (1348)","241":"QUANTIFERON ANTIGENI TB SPECIFICI (1357)","243":"LITIEMIA (1433)","250":"LIQUIDO DA VERSAMENTO ESAME CHIMICO FISICO (2217)","254":"LIQUIDO PLEURICO ESAME CHIMICO E FISICO (2336)","255":"TEMPO DI TROMBINA (2347)","256":"AMILASI PANCREATICA (1553)","257":"FARMACI: DIGOSSINA (450016)","258":"FIBRINOGENO (450102)","259":"VIRUS EPATITE A [HAV] ANTICORPI IGG E IGM PER SOSPETTA INFEZIONE ACUTA (450147)","260":"FARMACI ANTIEPILETTICI: CARBAMAZEPINA (450018)","261":"PROTEINA C ATTIVATA-RESISTENZA (2301)","263":"HERPES VIRUS 1: RICERCA ANTICORPI IGM (450151)","264":"HERPES VIRUS 1: RICERCA ANTICORPI IGG (450150)","265":"VIRUS VARICELLA ZOSTER ANTICORPI IGG E IGM PER SOSPETTA INF. ACUTA (450162)","267":"MAGNESIO NEL SIERO (1432)","268":"ALFA AMILASI NEL SIERO (1551)","270":"CALCIO TOTALE (1437)","271":"IG M (1540)","272":"ANTITROMBINA III (1530)","273":"VITAMINA B12 (1880)","274":"HBS AB DOSAGGIO QUANTITATIVO (1110)","275":"VELOCITA'ERITROSEDIMENTAZIONE (1095)","279":"COLTURALE MATERIALE VARIO (1212)","281":"COLTURALE SU MATERIALE DA TRACHEOSTOMA (1269)","282":"COLTURALE SU MATERIALE DA FISTOLA (1271)","293":"PROTEINA C REATTIVA (1102)","294":"MIOGLOBINA (1004)","295":"VIRUS EPATITE B (HBEAG) ANTICORPI (1120)","297":"NT PRO-BNP (2040)","299":"TREPONEMA PALLIDUM RICERCA ANTICORPI SCREENING (450137)","311":"PANNELLO 7 - ESAMI EMATICI DI CONTROLLO FANTOLI","312":"PANNELLO 8 - INFORTUNIO BIOLOGICO","316":"RICERCA DIRETTA ANTIGENI MALARIA (21295)"}},"00120001P":{"label":"RADIOLOGIA - RX - SSG (P)","items":{"21":"RX OSSA NASALI (A6952)","22":"ORTOPANORAMICA ARCATE DENTARIE (ORTOPANTOMOGRAFIA) (A699)","23":"SCHELETRO TORACICO COSTALE BIL (A6960)","24":"GINOCCHIO SX (A6936A)","25":"GINOCCHIO DX (A6936B)","26":"RX DIG.PARZ.STOMACO/DUODEN (6930)","27":"SENI PARANASALI (A6962)","28":"RX ADDOME SENZA CONTRASTO (A692)","29":"BACINO (A6917)","30":"RX COLONNA CERVICALE (6920)","31":"CRANIO (A6924)","32":"RX RACHIDE TORACO-DORSALE (A6929)","33":"RX RACHIDE LOMBO-SACRALE (A6941)","35":"RX TORACE (6979)","36":"RX TORACE 1 PROIEZIONE (6980)","37":"RX DELL'ANCA SX (A696A)","38":"RX DELL'ANCA DX (A696B)","39":"MANO SX (A6944A)","40":"GAMBA DX (A6936E)","41":"GAMBA SX (A6936F)","42":"FEMORE DX (A6936C)","43":"FEMORE SX (A6936D)","44":"GOMITO SX (A6937A)","45":"POLSO SX (A6955A)","46":"AVAMBRACCIO SX (A6915A)","47":"AVAMBRACCIO DX (A6915B)","48":"GOMITO DX (A6937B)","49":"MANO DX (A6944B)","50":"PIEDE DX (A6953B)","51":"POLSO DX (A6955B)","52":"PIEDE SX (A6953A)","53":"RX ORBITE (A6906)","54":"STERNO (A6985C)","118":"SPALLA DX (A6964C)","119":"SPALLA SX (A6964D)","120":"RADIOGRAFIA IN REPARTO (6903)","122":"TIBIO-TARSICA DX (A6953C)","123":"TIBIO-TARSICA SX (A6953D)","134":"RX CLAVICOLA DX (A6985D)","135":"RX CLAVICOLA SX (A6985E)"}},"00650002P":{"label":"LABORATORIO ANALISI POC - OSG (P)","items":{"3":"EMOGASANALISI VENOSA POC (POC2117)","30":"GLUCOSIO (POC1250)","31":"ACIDO LATTICO POC (POC1094)","63":"NA+ POC (POC1434)","64":"K+ POC (POC1435)","101":"D-DIMERO POC (POC1405)","102":"BICARBONATI EMATICI POC (POC1499)","134":"PTT POC (POC1402)","135":"FIBRINOGENO POC (POC1404)","138":"ACT POC (POCACT)","166":"EGA EMOGASANALISI ARTERIOSA (POC1006)","176":"CREATININEMIA (POC1206)","220":"PT (POC1401)","221":"CL- POC (POC1436)","223":"ACT LR POC (POCACTLR)","224":"CALCIO IONIZZATO (POC1982)","225":"TEST GRAVIDANZA URINE (POC1612)","266":"PCR POC (POC1102)","303":"BILIRUBINA (NEONATALE) (POC1341NEO)","305":"PANNELLO 1 – ANEMIA, EMORRAGIA, ISCHEMIA ARTO","306":"PANNELLO 3 - CARDIOPALMO","307":"PANNELLO 4 - TRAUMA","308":"PANNELLO 5 – DISPNEA, STROKE","309":"PANNELLO 6 – PDC, TORACALGIA","310":"PANNELLO 2 - BASE","318":"PANNELLO 9 - ESAMI POC","320":"EMOCROMOCITOMETRICO URGENTE (POCT1502)","323":"EMOGASANALISI CAPILLARE POC (POC2117)","324":"TROPONINA ULTRASENSIBILE (POC3001)","325":"EMOGASANALISI VENOSA&nbsp;POC - NEW (POC21171)","326":"EGA EMOGASANALISI ARTERIOSA POC - NEW (POC10061)","327":"BICARBONATI EMATICI POC - NEW (POC14991)","328":"GLUCOSIO POC - NEW (POC12501)","329":"ACIDO LATTICO POC - NEW (POC10941)","330":"SODIO NEL SIERO POC - NEW (POC14341)","331":"POTASSIO NEL SIERO - NEW (POC14351)","332":"CLORO NEL SIERO POC - NEW (POC14361)","333":"EMOGAS CAPILLARE POC (POC21172)"}},"00290002P":{"label":"LABORATORIO ANALISI - OSG (P)","items":{"1":"EMOCROMO (1501)","2":"URICEMIA (1300)","6":"COPROCOLTURA (1205)","7":"PF4 (1209)","9":"COLTURALE SU RACCOLTA SIERO EMATICA (1275)","10":"COLTURALE SU LIQUIDO DA CISTI (1282)","15":"PEPTIDE NATRIURETICO TIPO B BNP (450057)","16":"BILIRUBINA TOTALE REFLEX (450008)","17":"QUANTIFERON SINGOLO MITOGENO (1358)","18":"PREALBUMINA (1397)","22":"DOSAGGIO AMIKACINA PICCO (450030)","23":"PSEUDOCOLINESTERASI (450007)","24":"FERRITINA (450042)","25":"DOSAGGIO GENTAMICINA VALLE (450032)","26":"HERPES VIRUS 2: RICERCA ANTICORPI IGM (450153)","27":"VIRUS PAROTITE ANTICORPI IGG E IGM PER SOSPETTA INFEZIONE ACUTA (450160)","28":"ACIDI BILIARI (1999)","29":"AB BORRELIA B. IGG (450109)","34":"LIPASI (1572)","35":"ANTIGENE URINARIO STRPTOCOCCUS PNEUMONIAE (2136)","37":"COLTURALE BRONCOLAVAGGIO BAL (1262)","39":"FT3 (1837)","41":"CRYPTOCOCCO ANTIGENE SU LIQUOR (450115)","42":"PLASMODI DELLA MALARIA: RIC. MICR. STRISCIO SOTTILE E GOCCIA SPESSA (450127)","47":"COLTURALE MICOLOGICO CUTE E ANNESSI UNGHIA (1619)","48":"COLTURALE MICOLOGICO CUTE E ANNESSI CUTE (1657)","49":"COLTURALE MICOLOGICO CUTE E ANNESSI CAPELLI (1658)","50":"FARMACI ANTIBIOTICI: VANCOMICINA (450034)","53":"GOT (1582)","54":"PTT (1402)","55":"VIRUS EPATITE B (HBSAG) ANT. AUSTRA (1119)","58":"LIQUIDO ASCITICO ESAME CHIMICO E FISICO (2335)","59":"LIQUOR ESAME CHIMICO FISICO (2338)","62":"URINOCOLTURA DA MITTO INTERMEDIO (2015)","69":"COLTURALE VALVOLA CARDIACA (2496)","70":"URICURIA (1301)","71":"LDH (LATTATODEIDROGENASI) (1569)","72":"ALCOOL ETILICO (ETANOLO) (2003)","73":"EMOCOLTURA (2000)","76":"COLTURALE SU TAMPONE CUTANEO (1274)","79":"COLTURALE BRONCOASPIRATO (1009)","84":"CONTEGGIO RETICOLOCITI (1511)","86":"IMMUNOGLOBULINE G (1539)","87":"PCR AD ALTA SENSIBILITA' (CRPH) (1556)","92":"AZOTEMIA (1200)","93":"CPK (1560)","94":"VIRUS IMMUNODEF. ACQUISITA [HIV 1-2] TEST COMB. ANTICORPI/ANTIGENE P24 (450158)","95":"VIRUS EPATITE B (HBSAG) ANTICORPI (1121)","98":"VIRUS MORBILLO IGG E IGM PER SOSPETTA INFEZIONE ACUTA (450159)","99":"DOSAGGIO GENTAMICINA PICCO (450033)","105":"POTASSIO NEL SIERO (1435)","106":"CLOSTRIDIOIDES DIFFICILE:RIC. DIRETTA DELLA TOSSINA NELLE FECI (450120)","109":"ESAME COLTURALE SU TAMPONE FARINGEO (12171)","110":"COLTURALE SU TAMPONE PIAGA DECUBITO (1270)","114":"COLTURALE BIOPSIA (1516)","116":"PARASSITI NEL SANGUE (450128)","117":"COLTURALE FERITA CHIRURGICA (1564)","120":"COLTURALE MAMMELLA SINISTRA (1603)","122":"URINOCOLTURA DA CATETERE A PERMANENZA (2035)","126":"FOSFATASI ALCALINA (1590)","127":"VIRUS EPATITE B (HBEAG) ANTIGENE (1116)","130":"COLTURALE FERITE SUPERFICIALI NON CHIRURGICHE (2494)","131":"COLTURALE FILI PACE-MAKER (2495)","133":"ALBUMINURIA (MICROALBUMINURIA) (1953)","141":"D-DIMERO (1405)","142":"VIRUS EPATITE DELTA [HDV]: RICERCA ANTICORPI (450149)","143":"ELETTROFORESI PROTEICA (2109)","147":"LEGIONELLE: RICERCA ANTIGENE NELLE URINE (450124)","149":"TEST DI COOMBS INDIRETTO (1171)","152":"FT4 (1839)","154":"EMOGLOBINE. DETERMINAZIONE FRAZIONI (HBA2, HBF, HB ANOMALE) (450104)","156":"COLTURALE PLACENTA (1575)","158":"COLTURALE MICOLOGICO CUTE E ANNESSI PELI (1654)","159":"PROCALCITONINA (1690)","160":"URINOCOLTURA DA CATETERISMO SINGOLO (2037)","161":"DOSAGGIO AMIKACINA VALLE (450031)","163":"AB BORRELIA B. IGM (450110)","164":"LIQUIDO SINOVIALE ESAME CHIMICO E FISICO (2337)","167":"GAMMA GT (1596)","168":"GLUCOSIO (1250)","169":"VIRUS EPATITE B [HBV] - REFLEX (450148)","170":"VIRUS EPATITE C (HCV) (1099)","171":"TROPONINA I (450106)","174":"HERPES VIRUS 2: RICERCA ANTICORPI IGG (450152)","175":"TIREOTROPINA RIFLESSA(TSH-R)TSH. INCL. EVENTUALE DOSAGGIO DI FT4 E FT3 (450064)","180":"ALBUMINA (2391)","181":"PT (1401)","183":"AMMONIEMIA (1343)","185":"FERRO (450043)","186":"APTOGLOBINA (1098)","187":"TITOLO ANTI-O-STREPTOLISINICO (1100)","195":"LIQUIDO PERICARDICO ESAME CHIIMICO FISICO E MICROSCOPICO (1884)","196":"TRANSFERRINA IND. SATURAZIONE (1351)","197":"COLTURALE PER YERSINIA NELLE FECI (1412)","198":"COLTURALE PER STREPTOCOCCUS AGALACTIAE (1414)","205":"IMMUNOGLOBULINE A (1538)","209":"COLTURALE MAMMELLA DESTRA (1589)","211":"URINOCOLTURA DA SACCHETTO (2036)","212":"TAMPONE ANTIGENICO SARS COV-2 (21225)","213":"BICARBONATI EMATICI (1499)","215":"CLORO NEL SIERO (1436)","216":"CREATININEMIA (1206)","217":"SODIO NEL SIERO (1434)","227":"PROTEINA S LIBERA (90724)","228":"GPT (1583)","229":"PROTEINE TOTALI (1346)","230":"BETA HCG PLASMATICO (1766)","231":"FOSFORO (SIERO) (1438)","232":"TRANSFERRINA TOTALE (1352)","233":"INSULINA (1139)","237":"TSH (1841)","239":"LIQUIDO PERITONEALE ESAME CHIMICO FISICO E MICROSCOPICO (1885)","240":"ALFA 1 GLICOPROTEINA (1348)","241":"QUANTIFERON ANTIGENI TB SPECIFICI (1357)","243":"LITIEMIA (1433)","250":"LIQUIDO DA VERSAMENTO ESAME CHIMICO FISICO (2217)","254":"LIQUIDO PLEURICO ESAME CHIMICO E FISICO (2336)","255":"TEMPO DI TROMBINA (2347)","256":"AMILASI PANCREATICA (1553)","257":"FARMACI: DIGOSSINA (450016)","258":"FIBRINOGENO (450102)","259":"VIRUS EPATITE A [HAV] ANTICORPI IGG E IGM PER SOSPETTA INFEZIONE ACUTA (450147)","260":"FARMACI ANTIEPILETTICI: CARBAMAZEPINA (450018)","261":"PROTEINA C ATTIVATA-RESISTENZA (2301)","263":"HERPES VIRUS 1: RICERCA ANTICORPI IGM (450151)","264":"HERPES VIRUS 1: RICERCA ANTICORPI IGG (450150)","265":"VIRUS VARICELLA ZOSTER ANTICORPI IGG E IGM PER SOSPETTA INF. ACUTA (450162)","267":"MAGNESIO NEL SIERO (1432)","268":"ALFA AMILASI NEL SIERO (1551)","270":"CALCIO TOTALE (1437)","271":"IG M (1540)","272":"ANTITROMBINA III (1530)","273":"VITAMINA B12 (1880)","274":"HBS AB DOSAGGIO QUANTITATIVO (1110)","275":"VELOCITA'ERITROSEDIMENTAZIONE (1095)","279":"COLTURALE MATERIALE VARIO (1212)","281":"COLTURALE SU MATERIALE DA TRACHEOSTOMA (1269)","282":"COLTURALE SU MATERIALE DA FISTOLA (1271)","293":"PROTEINA C REATTIVA (1102)","294":"MIOGLOBINA (1004)","295":"VIRUS EPATITE B (HBEAG) ANTICORPI (1120)","297":"NT PRO-BNP (2040)","299":"TREPONEMA PALLIDUM RICERCA ANTICORPI SCREENING (450137)","311":"PANNELLO 7 – ESAMI EMATICI DI CONTROLLO FANTOLI","312":"PANNELLO 8 - INFORTUNIO BIOLOGICO","316":"RICERCA DIRETTA ANTIGENI MALARIA (21295)"}}};
+  // Discharge instructions, reviewed before shipping and freely editable by
+  // the doctor: what is kept here is a TEMPLATE, never a patient's text.
+  const DIMISSIONI = {"gastroenterite":{"nome":"Gastroenterite / diarrea acuta","testo":"GASTROENTERITE ACUTA — INDICAZIONI ALLA DIMISSIONE\n\nBERE (la cosa più importante)\n- Almeno 2 litri al giorno a piccoli sorsi, più un bicchiere in più dopo ogni scarica.\n- Meglio le soluzioni reidratanti orali (in farmacia, senza ricetta); in alternativa acqua, tè leggero, brodo salato.\n- Evitare bevande molto zuccherate, alcolici, caffè.\n\nMANGIARE\n- Riprendere appena tollerato, pasti piccoli e frequenti.\n- Nei primi giorni evitare latte e latticini freschi, fritti e cibi grassi.\n\nFARMACI\n- Paracetamolo 1 g ogni 8 ore se febbre o dolore (massimo 3 g al giorno; massimo 2 g se ha più di 75 anni, pesa meno di 50 kg, ha problemi di fegato o beve alcolici).\n- NON prendere antinfiammatori (ibuprofene, ketoprofene, diclofenac, aspirina) finché vomito e diarrea non sono passati: con la disidratazione possono danneggiare i reni.\n- Loperamide solo se serve per motivi pratici: 2 compresse subito, poi 1 dopo ogni scarica liquida, massimo 4 compresse al giorno e per non più di 2 giorni. MAI con febbre, sangue o muco nelle feci, pancia gonfia e dolente, o se ha preso antibiotici nell'ultimo mese.\n- Fermenti lattici: facoltativi, beneficio incerto.\n- Gli antibiotici non servono: quasi tutte le gastroenteriti sono virali.\n\nSE PRENDE ALTRE TERAPIE\n- Farmaci per la pressione (ramipril, sartani), diuretici, metformina o gliflozine (farmaci che finiscono in -gliflozin): li sospenda finché non torna a bere e mangiare normalmente, e lo dica al medico curante.\n- Se è diabetico controlli la glicemia più spesso.\n\nIGIENE\n- Lavarsi le mani con acqua e sapone dopo ogni evacuazione e prima di toccare cibo.\n- Non preparare cibo per altri fino a 48 ore dopo l'ultima scarica.\n\nTORNI IN PRONTO SOCCORSO SE\n- Sangue nelle feci o feci nere.\n- Vomito continuo che impedisce di bere.\n- Febbre oltre 39 °C o che dura più di 3 giorni.\n- Urina scarsa e scura, bocca secca, capogiri alzandosi, confusione.\n- Dolore addominale forte e localizzato, in peggioramento.\n- Diarrea che dura più di 7 giorni.\n\nCONTROLLO\n- Medico curante se non migliora in 3–4 giorni.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"colica-renale":{"nome":"Colica renale","testo":"COLICA RENALE — INDICAZIONI ALLA DIMISSIONE\n\nDOLORE\n- Ketoprofene sale di lisina 80 mg (1 bustina) fino a 3 volte al giorno a stomaco pieno, per non più di 5 giorni. In alternativa ibuprofene 600 mg fino a 3 volte al giorno.\n- Paracetamolo 1 g ogni 8 ore se il dolore persiste (massimo 3 g al giorno; 2 g se ha più di 75 anni, pesa meno di 50 kg, ha problemi di fegato o beve alcolici).\n- Non associare due antinfiammatori diversi.\n\nQUANDO NON PRENDERE L'ANTINFIAMMATORIO\n- Gravidanza, problemi di reni, rene unico o trapiantato, ulcera, scompenso cardiaco.\n- Se prende anticoagulanti, cardioaspirina, o insieme farmaci per la pressione e diuretici.\n- Se vomita e non riesce a bere.\n- In questi casi usi solo paracetamolo e contatti il medico.\n\nCOSA FARE A CASA\n- Bere normalmente, 1,5–2 litri al giorno: non deve forzarsi a bere di più, ma nemmeno bere di meno.\n- Filtrare l'urina se possibile e conservare il calcolo espulso per l'analisi.\n- Il calcolo può essere espulso in giorni o settimane: un nuovo episodio di dolore è possibile.\n- Se le è stata prescritta tamsulosina 0,4 mg (aiuta l'espulsione dei calcoli bassi): la prenda dopo cena, si alzi lentamente, non la associ a farmaci per l'erezione, e avvisi l'oculista se deve operarsi di cataratta.\n\nTORNI SUBITO IN PRONTO SOCCORSO SE\n- Febbre o brividi: possono indicare un rene ostruito e infetto. Chiami il 112.\n- Dolore che non passa con la terapia.\n- Vomito che impedisce di assumere i farmaci.\n- Urina assente o molto ridotta.\n- Rene unico o trapiantato: a qualsiasi ricomparsa del dolore.\n\nCONTROLLO\n- Visita urologica entro 7–14 giorni con gli esami eseguiti e la documentazione del Pronto Soccorso.\n- Se il calcolo non viene espulso entro 4 settimane serve comunque una rivalutazione: un'ostruzione che dura danneggia il rene anche quando il dolore è scomparso.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"artrosi":{"nome":"Artrosi (fase dolorosa)","testo":"ARTROSI IN FASE DOLOROSA — INDICAZIONI ALLA DIMISSIONE\n\nLA CURA PRINCIPALE È IL MOVIMENTO\n- Camminare in piano ogni giorno, secondo tolleranza: il riposo assoluto peggiora l'artrosi.\n- Esercizi quotidiani di rinforzo della coscia (li insegna il fisioterapista o il medico curante).\n- Evitare solo ciò che provoca dolore forte.\n- Perdere peso quando indicato: ogni chilo in meno scarica il ginocchio in modo significativo.\n- Bastone dal lato opposto all'articolazione dolente, se serve.\n- Ghiaccio 15–20 minuti 2–3 volte al giorno in fase acuta; calore se prevale la rigidità.\n\nFARMACI\n- Gel antinfiammatorio localmente 2–3 volte al giorno: è la prima scelta, più sicuro degli antinfiammatori per bocca. Non esporre al sole la zona trattata durante la cura e nelle 2 settimane successive.\n- Paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno; massimo 2 g sopra i 75 anni, sotto i 50 kg, con problemi di fegato o se beve alcolici).\n- Se non basta: ibuprofene 400–600 mg fino a 3 volte al giorno a stomaco pieno, per pochi giorni, con un farmaco che protegge lo stomaco.\n\nQUANDO NON PRENDERE ANTINFIAMMATORI PER BOCCA\n- Se prende anticoagulanti (warfarin, apixaban, rivaroxaban, edoxaban, dabigatran) o due antiaggreganti: in questi casi NON vanno presi in nessun caso, nemmeno con il gastroprotettore. Usi paracetamolo e gel locale.\n- Problemi di reni, scompenso cardiaco, pressione alta non controllata, ulcera.\n\nTORNI IN PRONTO SOCCORSO SE\n- Articolazione calda, molto gonfia e arrossata, con febbre: possibile infezione.\n- Articolazione che si gonfia improvvisamente senza trauma.\n- Impossibilità totale di caricare il peso, o deformità dopo una caduta.\n- Feci nere o vomito con sangue: sospenda l'antinfiammatorio e venga subito.\n\nCONTROLLO\n- Medico curante entro 1–2 settimane per la terapia di fondo e la fisioterapia.\n- Valutazione ortopedica se il dolore limita la vita quotidiana nonostante la terapia.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"lombalgia":{"nome":"Lombalgia acuta","testo":"MAL DI SCHIENA ACUTO — INDICAZIONI ALLA DIMISSIONE\n\nCOSA SAPERE\n- Nella grande maggioranza dei casi non c'è una lesione grave e il dolore migliora in 2–6 settimane.\n- Le radiografie non servono nel mal di schiena semplice: non cambiano la cura.\n\nCOSA FARE\n- Restare attivi: continuare le normali attività riducendo ciò che fa male. Il riposo a letto oltre 1–2 giorni PEGGIORA il dolore.\n- Camminare ogni giorno e alzarsi spesso se si sta seduti a lungo.\n- Calore locale 20 minuti più volte al giorno.\n\nFARMACI\n- Ibuprofene 400–600 mg fino a 3 volte al giorno a stomaco pieno per 5–7 giorni, oppure ketoprofene sale di lisina 80 mg 2 volte al giorno.\n- Paracetamolo 1 g ogni 8 ore, associabile (massimo 3 g al giorno; 2 g sopra i 75 anni, sotto i 50 kg, con problemi di fegato o se beve alcolici).\n- Farmaco che protegge lo stomaco se prende antinfiammatori per più giorni, ha più di 65 anni, ha avuto ulcera o gastrite, o prende cortisone o cardioaspirina.\n- Se le è stato prescritto un farmaco che rilassa i muscoli (tiocolchicoside 4 mg 2 volte al giorno): non più di 7 giorni, mai in gravidanza, allattamento o in età fertile senza contraccezione sicura. Dà sonnolenza: non guidi, non usi macchinari, non beva alcolici.\n\nTORNI IN PRONTO SOCCORSO SE\n- Difficoltà a urinare, o perdita di urina o feci.\n- Perdita di sensibilità nella zona genitale o all'interno delle cosce.\n- Debolezza di una gamba che peggiora.\n- Febbre insieme al mal di schiena.\n- Dolore che non si calma nemmeno da sdraiati o che sveglia di notte.\n\nCONTATTI PRESTO IL MEDICO SE\n- Ha avuto un tumore, prende cortisone, ha osteoporosi, ha perso peso senza motivo, oppure ha più di 65 anni e il dolore è comparso dopo una caduta.\n\nCONTROLLO\n- Medico curante se il dolore non migliora in 7–10 giorni o si accompagna a dolore lungo la gamba.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"distorsione-caviglia":{"nome":"Distorsione di caviglia","testo":"DISTORSIONE DI CAVIGLIA — INDICAZIONI ALLA DIMISSIONE\n\nPRIME 48–72 ORE\n- Ghiaccio 15–20 minuti ogni 2–3 ore, mai a contatto diretto con la pelle.\n- Bendaggio elastico durante il giorno, da togliere la notte.\n- Gamba sollevata sopra il livello del cuore da seduti o sdraiati.\n- Appoggiare il piede quanto il dolore permette, aiutandosi con le stampelle all'inizio.\n\nFARMACI\n- Paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno; 2 g sopra i 75 anni, sotto i 50 kg, con problemi di fegato o se beve alcolici).\n- Ibuprofene 400–600 mg fino a 3 volte al giorno a stomaco pieno per 3–5 giorni; gel antinfiammatorio localmente 2–3 volte al giorno.\n- Non prenda antinfiammatori in gravidanza, con anticoagulanti, ulcera o problemi di reni.\n\nDOPO I PRIMI GIORNI\n- Riprendere gradualmente il movimento: la caviglia rigida guarisce peggio.\n- Esercizi: muovere il piede su e giù, disegnare l'alfabeto con l'alluce, più volte al giorno; poi equilibrio su un piede solo.\n- Tornare allo sport quando si cammina e si corre senza dolore né gonfiore, di solito in 2–6 settimane; cavigliera negli sport per i 6 mesi successivi riduce le recidive.\n\nTORNI IN PRONTO SOCCORSO SE\n- Polpaccio dolente, gonfio e caldo, oppure affanno improvviso o dolore al torace.\n- Dolore sopra la caviglia lungo la gamba, vicino al ginocchio sul lato esterno, o sul bordo esterno del piede: possono essere fratture non visibili all'inizio.\n- Impossibilità di appoggiare il piede dopo 3–4 giorni.\n- Deformità evidente, formicolii persistenti, piede freddo o pallido.\n- Dolore o gonfiore che peggiorano dopo il terzo giorno.\n\nCONTROLLO\n- Medico curante o visita ortopedica se dopo 7–10 giorni persistono dolore o instabilità.\n- Se le è stato messo un tutore o un gesso, chieda al medico curante se le serve una puntura anticoagulante.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"cistite":{"nome":"Cistite non complicata","testo":"CISTITE NON COMPLICATA — INDICAZIONI ALLA DIMISSIONE\n(indicazioni per la donna non in gravidanza; nell'uomo la cistite va sempre rivalutata dal medico)\n\nANTIBIOTICO\n- Assumere l'antibiotico prescritto per tutta la durata indicata, anche se i sintomi passano prima.\n- Fosfomicina 3 g: una sola bustina, sciolta in un bicchiere d'acqua, la sera prima di coricarsi dopo aver urinato, lontano dai pasti. Una dose sola è tutta la cura.\n- Oppure nitrofurantoina 50 mg ogni 6 ore per 5 giorni, a stomaco pieno. Non va usata se la funzione renale è ridotta, in caso di favismo, o nell'ultimo mese di gravidanza. Se compare affanno o tosse durante la cura, la sospenda e si faccia vedere.\n\nSINTOMI\n- Paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno) oppure ibuprofene 400 mg fino a 3 volte al giorno per bruciore e dolore.\n- Bere 1,5–2 litri al giorno e urinare spesso, senza trattenere.\n\nSE È O POTREBBE ESSERE IN GRAVIDANZA\n- Lo dica subito: non prenda ibuprofene, servono un esame delle urine con antibiogramma e un controllo dopo la terapia. Usi solo paracetamolo e non assuma antibiotici di sua iniziativa.\n\nPER EVITARE CHE TORNI\n- Urinare dopo i rapporti sessuali.\n- Evitare lavande vaginali e detergenti aggressivi.\n\nTORNI IN PRONTO SOCCORSO SE\n- Febbre oltre 38 °C, brividi, dolore al fianco o alla schiena: possibile infezione del rene.\n- Vomito che impedisce di assumere l'antibiotico.\n- Sintomi che non migliorano dopo 48–72 ore di terapia.\n- Sangue nelle urine che persiste a terapia finita.\n\nCONTROLLO\n- Se i sintomi scompaiono non serve un esame delle urine di controllo.\n- Se i sintomi non passano o tornano entro 2 settimane, serve un esame delle urine con antibiogramma prima di riprendere l'antibiotico.\n- Medico curante se gli episodi si ripetono (3 o più in un anno).\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"faringotonsillite":{"nome":"Faringite / mal di gola","testo":"MAL DI GOLA — INDICAZIONI ALLA DIMISSIONE\n\nCOSA SAPERE\n- La maggior parte dei mal di gola è virale e guarisce da sola in 5–7 giorni: l'antibiotico non serve e non accorcia i tempi.\n- L'antibiotico serve solo nelle forme da streptococco, quando lo indica il medico: in quel caso va completato tutto il ciclo.\n\nFARMACI\n- Paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno; 2 g sopra i 75 anni, sotto i 50 kg, con problemi di fegato o se beve alcolici), oppure ibuprofene 400–600 mg fino a 3 volte al giorno a stomaco pieno.\n- Non prenda insieme bustine o compresse per l'influenza e il raffreddore: contengono già paracetamolo.\n- Bevande fresche o tiepide, ghiaccioli, miele (non sotto l'anno di età).\n\nCOSA FARE\n- Riposo relativo, bere spesso, non fumare.\n- Rientro al lavoro o a scuola dopo almeno 24 ore di antibiotico E almeno 24 ore senza febbre.\n\nTORNI IN PRONTO SOCCORSO SE\n- Difficoltà a respirare, voce ovattata come se avesse qualcosa in bocca, saliva che cola perché non riesce a deglutire.\n- Impossibilità a deglutire anche i liquidi.\n- Difficoltà ad aprire la bocca, gonfiore del collo, dolore forte da un lato solo.\n- Macchie rosse o violacee che NON scompaiono premendoci sopra un bicchiere trasparente.\n- Febbre che dura oltre 5 giorni o che ricompare dopo il miglioramento.\n- Gonfiore del viso, orticaria o affanno dopo l'antibiotico: lo sospenda e chiami il 112.\n\nATTENZIONE PARTICOLARE\n- Se assume metimazolo (per la tiroide), clozapina, immunosoppressori o chemioterapia, un mal di gola con febbre richiede un emocromo urgente: lo dica subito al medico.\n\nCONTROLLO\n- Medico curante se non migliora in 5 giorni.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese."},"trauma-cranico-minore":{"nome":"Trauma cranico minore","testo":"TRAUMA CRANICO MINORE — INDICAZIONI ALLA DIMISSIONE\n\nSE ASSUME ANTICOAGULANTI O CARDIOASPIRINA\n- Non resti solo nelle prossime 24 ore e torni in Pronto Soccorso per qualsiasi sintomo nuovo, anche solo mal di testa.\n- Non sospenda di sua iniziativa l'anticoagulante o la cardioaspirina.\n- Il sanguinamento può comparire anche dopo 3–7 giorni.\n\nLE PROSSIME 24–48 ORE\n- Non resti solo: una persona adulta deve poterla assistere.\n- Può dormire normalmente. Chi assiste deve solo verificare che respiri regolarmente e che si svegli facilmente chiamandolo; se non si sveglia facilmente, chiami subito il 112.\n- Riposo nelle prime 24–48 ore, poi ripresa graduale.\n- Niente alcol, niente sonniferi o sedativi.\n- Non guidare, non usare macchinari, non fare sport finché i sintomi non sono scomparsi. Ritorno allo sport per gradi e mai lo stesso giorno; per gli sport di contatto serve il via libera del medico.\n\nFARMACI\n- Per il mal di testa usi solo paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno).\n- Non prenda antinfiammatori (ibuprofene, ketoprofene, aspirina come antidolorifico) per una settimana.\n\nCHIAMI IL 112 SE COMPARE ANCHE UNO SOLO DI QUESTI (non si metta alla guida)\n- Mal di testa che peggiora e non passa con il paracetamolo.\n- Vomito ripetuto.\n- Sonnolenza insolita o difficoltà a svegliarsi.\n- Confusione, difficoltà a parlare, vista doppia, pupille di dimensione diversa, debolezza o formicolio a un braccio o a una gamba, perdita di equilibrio.\n- Convulsioni.\n- Sangue o liquido chiaro dal naso o dalle orecchie.\n\nNELLE SETTIMANE SUCCESSIVE\n- Sopra i 65 anni o in terapia anticoagulante i sintomi possono comparire anche dopo 2–6 settimane: mal di testa persistente, sonnolenza, cambiamento di carattere o difficoltà a camminare vanno rivalutati dal medico.\n\nCONTROLLO\n- Medico curante se mal di testa, stanchezza, difficoltà di concentrazione o irritabilità durano oltre una settimana.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."}};
 
   // ================================================================ UTILS
   const sleep = (ms, signal) => new Promise((res, rej) => {
@@ -976,7 +979,9 @@
       try { const v = JSON.parse(localStorage.getItem(NS + key)); return v ?? fallback; }
       catch { return fallback; }
     },
-    set(key, value) { try { localStorage.setItem(NS + key, JSON.stringify(value)); } catch { /* full/blocked: non-fatal */ } },
+    // returns false when the write did NOT happen (quota, blocked storage):
+    // a caller that promises the doctor "saved" has to be able to check.
+    set(key, value) { try { localStorage.setItem(NS + key, JSON.stringify(value)); return true; } catch { return false; } },
   };
   // Tab-scoped storage for the run→landing handoffs (receipt + auto-confirm
   // flag): sessionStorage survives the same-tab navigation but is invisible
@@ -1021,10 +1026,54 @@
     forgetQuesiti();
     try {
       for (const k of Object.keys(sessionStorage)) {
-        if (k.startsWith(NS) && /(^|\.)(ris|visto|reftxt|log|refopen|receipt|confirm|queue|print|ui|afterNav)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
+        if (k.startsWith(NS) && /(^|\.)(ris|visto|reftxt|log|refopen|receipt|confirm|queue|print|ui|afterNav|dimdraft)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
       }
     } catch { /* blocked storage: nothing to clear */ }
     try { if (typeof chrome !== "undefined" && chrome.runtime?.id) chrome.runtime.sendMessage({ t: "clearRef" }, () => void chrome.runtime.lastError); } catch { /* not the extension build */ }
+  }
+
+  // The doctor's edits live in localStorage under their own key. They are
+  // templates, not patient data, so forgetAll leaves them alone — and nothing
+  // patient-specific ever gets written here.
+  const dimKey = "dimissioni.v1";
+  // A short fingerprint of the text a doctor's version was forked from. It is
+  // what lets a later release SAY that the original changed (a dose, a
+  // contraindication): without it, a corrected sheet would be silently
+  // invisible to everyone who had ever edited that sheet.
+  function impronta(testo) {
+    let h = 0x811c9dc5;
+    const t = String(testo || "").replace(/\s+/g, " ").trim();
+    for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return (h >>> 0).toString(36);
+  }
+  const dimValido = (v) => !!(v && typeof v.testo === "string" && v.testo.trim());
+  function dimissioni() {
+    const mie = store.get(dimKey, {});
+    const out = {};
+    for (const [k, v] of Object.entries(DIMISSIONI)) {
+      const m = dimValido(mie[k]) ? mie[k] : null;
+      out[k] = {
+        nome: v.nome, testo: m ? m.testo : v.testo, originale: v.testo, modificato: !!m,
+        // the shipped text moved AFTER this doctor forked it
+        aggiornato: !!(m && m.base && m.base !== impronta(v.testo)),
+      };
+    }
+    for (const [k, v] of Object.entries(mie)) {
+      if (!out[k] && dimValido(v)) out[k] = { nome: (v.nome || k), testo: v.testo, originale: "", modificato: true, mio: true };
+    }
+    return out;
+  }
+  function salvaDimissione(k, nome, testo) {
+    const mie = store.get(dimKey, {});
+    const base = DIMISSIONI[k];
+    if (base && testo.trim() === base.testo.trim()) delete mie[k];   // back to the original: stop overriding
+    else mie[k] = { nome, testo, base: base ? impronta(base.testo) : "" };
+    return store.set(dimKey, mie);
+  }
+  function ripristinaDimissione(k) {
+    const mie = store.get(dimKey, {});
+    delete mie[k];
+    return store.set(dimKey, mie);
   }
 
   function learnedCatalog() { return store.get("catalog.v1", {}); }
@@ -1584,6 +1633,31 @@
     .eprev .pit.nuovo, .eprev .pv.agg, .rval .rvv.agg {
       background: #DCEAF9; border-radius: 3px; padding: 0 3px; box-shadow: inset 0 -2px 0 #0B5CAD; }
     .eprev.nuovi { -webkit-line-clamp: unset; }   /* nothing new stays hidden behind the clamp */
+    .dlist { display: flex; flex-direction: column; gap: 4px; }
+    .drow { display: flex; align-items: stretch; gap: 5px; }
+    /* Copying is what this list is FOR: the target is the whole row, not a
+       13px glyph at its edge. The pencil stays a button of its own. */
+    .dcopia { flex: 1 1 auto; display: flex; align-items: center; gap: 8px; min-width: 0; text-align: left;
+              border: 1px solid #E3E8EF; border-radius: 9px; background: #fff; cursor: pointer;
+              padding: 8px 10px 8px 11px; font: inherit; }
+    .dcopia:hover { border-color: #9DBFDE; background: #F4F9FD; }
+    .dcopia:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .dcopia.fatto { border-color: #BCE0C9; background: #EDF7F0; }
+    .dcopia.fatto .dico { color: #124F31; }
+    .dnome { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; color: #16232E; overflow: hidden;
+             white-space: nowrap; text-overflow: ellipsis; }
+    .dmeta { flex: 0 0 auto; font-size: 10.5px; color: #A3B2C2; }
+    .dico { flex: 0 0 auto; font-size: 13px; color: #6E8398; }
+    .dmod { color: #0B5CAD; font-weight: 800; margin-left: 5px; }
+    .dmod.agg { color: #A2600A; }
+    .dbtn { flex: 0 0 auto; min-width: 38px; border: 1px solid #E3E8EF; border-radius: 9px;
+            background: #F8FBFE; color: #35506B; font-size: 13px; cursor: pointer; }
+    .dbtn:hover { background: #EAF2FA; border-color: #9DBFDE; color: #0B5CAD; }
+    .dbtn:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .dedit { width: 100%; min-height: 46vh; resize: vertical; border: 1px solid #D9E2EC; border-radius: 9px;
+             padding: 9px 10px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+             color: #16232E; background: #fff; }
+    .dedit:focus { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     .reftxt { font-size: 12.5px; line-height: 1.5; color: #16232E; }
     .reftxt .rt { padding: 1px 0; }
     .reftxt .rt:empty { display: none; }
@@ -1679,7 +1753,8 @@
       const titleEl = document.querySelector("title");
       if (titleEl) {
         this._titleObs = new MutationObserver(() => {
-          if (this.runState !== "running") this.render();
+          // never rebuild a screen the doctor is typing into
+          if (this.runState !== "running" && this.view !== "dimtesto" && this.view !== "dimimport") this.render();
         });
         this._titleObs.observe(titleEl, { childList: true, characterData: true, subtree: true });
       }
@@ -1720,11 +1795,23 @@
       }
       return out;
     }
-    setView(v, id) {
+    setView(v, id, nota) {
       // leaving a draw's values means they have been read: that is when the
       // "nuovi" marks are cleared, never on the render that has to show them
       if (this.view === "valori" && this.viewId && !(v === "valori" && id === this.viewId)) this.marcaLetto(this.viewId);
+      // a banner belongs to the screen that raised it: changing screen clears
+      // it, unless this navigation is itself carrying the answer
+      this.message = nota || null;
       this.view = v; this.viewId = id || null; this.persistUi(); this.render();
+    }
+    // the inline banner: a string is something that went wrong, {ok} is a
+    // confirmation. Every view shows it — the panel always answers.
+    notaHtml() {
+      const m = this.message;
+      if (this.runState) return "";
+      if (typeof m === "string" && m) return `<div class="banner warn">${esc(m)}</div>`;
+      if (m && typeof m.ok === "string") return `<div class="banner ok">${esc(m.ok)}</div>`;
+      return "";
     }
     marcaLetto(id) {
       const held = tabStore.get(this.risKey(id), null);
@@ -1993,6 +2080,9 @@
       else if (this.view === "esiti") body = this.viewEsiti();
       else if (this.view === "valori") body = this.viewValori();
       else if (this.view === "referto") body = this.viewReferto();
+      else if (this.view === "dimissioni") body = this.viewDimissioni();
+      else if (this.view === "dimtesto") body = this.viewDimTesto();
+      else if (this.view === "dimimport") body = this.viewDimImport();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
       else body = this.viewHome(patientName, ep);
 
@@ -2010,8 +2100,11 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni" }[this.view] || "";
+      // the discharge sheets are templates: no episode belongs in that header
+      const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
       const sub = inHome ? "ultime 12 ore"
+        : inDim ? "Dimissioni · modelli"
         : section ? `${section}${ep ? " · " + esc(ep) : ""}`
         : (ep ? "episodio " + esc(ep) : esc(APP));
       // user-resized size (clamped so it always fits the screen)
@@ -2037,18 +2130,22 @@
           ` : `
             <div class="card" role="dialog" aria-label="${esc(APP)}" style="${sizeStyle}">
               <div class="hd" id="draghd" title="Trascina per spostare · doppio click per riportare in alto a destra">
-                ${section ? `<button class="iconbtn" id="back" title="${this.view === "valori" || this.view === "referto" ? "Torna agli esiti" : "Tutti i pazienti"}">‹</button>` : LOGO}<b class="who">${esc(inHome ? "Pazienti" : who)}</b>
+                ${section ? `<button class="iconbtn" id="back" title="${
+                  this.view === "valori" || this.view === "referto" ? "Torna agli esiti"
+                  : this.view === "dimtesto" || this.view === "dimimport" ? "Torna ai fogli di dimissione"
+                  : "Tutti i pazienti"}">‹</button>` : LOGO}<b class="who">${esc(inHome ? "Pazienti" : who)}</b>
                 <span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>
                 <button class="iconbtn" id="collapse" title="Riduci">—</button>
               </div>
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
-              ${!this.runState && this.pageType === "patient" && this.entry && (this.entry.labUrl || this.entry.radioUrl) && this.view !== "home" ? `
+              ${!this.runState && this.pageType === "patient" && this.view !== "home" ? `
                 <div class="seg">
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
-                  <button class="${this.view === "richieste" ? "" : "on"}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>
+                  <button class="${this.view === "esiti" || this.view === "valori" || this.view === "referto" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>
+                  <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
-              <div class="bd">${body}</div>
+              <div class="bd">${this.view === "richieste" ? "" : this.notaHtml()}${body}</div>
               <div class="rsz" id="rsz" title="Trascina per ridimensionare · doppio click per la misura originale"></div>
               ${inHome ? `<div class="foot">
                 <span><button id="verbtn" class="footlink" title="Mostra il Registro delle operazioni">${esc(APP)} ${VERSION}</button>${(typeof chrome !== "undefined" && chrome.runtime?.id)
@@ -2091,7 +2188,7 @@
       ].join("");
       return `
         <div class="sec">
-          <div class="lbl">Pazienti${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
+          <div class="lbl">Pazienti<button class="mini" id="vaidim" title="I fogli di dimissione: non appartengono a un paziente">Dimissioni</button>${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
           ${cards || `<div class="hint">Nessun paziente ancora. Apri un paziente: resta qui per il turno.</div>`}
           ${others.length ? `<div class="hint">Aprire un altro paziente ne carica la pagina.</div>` : ""}
           ${this.showLog ? `<details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>` : ""}
@@ -2197,7 +2294,7 @@
         ${this.viewPrint()}
 
         <div class="commit">
-          ${typeof this.message === "string" && this.message ? `<div class="banner warn">${esc(this.message)}</div>` : ""}
+          ${this.notaHtml()}
           <div class="idline">Richiesta per <b>${esc(patientName)}</b>${ep ? ` · episodio <b>${esc(ep)}</b>` : ""}</div>
           <div id="problems">${problems.go[0] ? `<div class="problem">${esc(problems.go[0])}</div>` : ""}</div>
           <div class="btnrow">
@@ -2363,6 +2460,77 @@
         this.render();
       }
       if (tabStore.get(this.txtKey(id), null)) this.setView("referto", id);
+    }
+
+    // The list shows only WHAT, never the text: at discharge the doctor knows
+    // which sheet he wants, and reading it here would only cost him a scroll.
+    viewDimissioni() {
+      const tutte = dimissioni();
+      const chiavi = Object.keys(tutte);
+      const righe = chiavi.map((k) => {
+        const d = tutte[k];
+        const n = d.testo.split("\n").filter((r) => r.trim()).length;
+        const segno = d.aggiornato
+          ? `<span class="dmod agg" title="L'originale è cambiato dopo la tua modifica">⟳</span>`
+          : d.modificato ? `<span class="dmod" title="Testo modificato da te">•</span>` : "";
+        return `
+        <div class="drow">
+          <button class="dcopia" data-dcopy="${esc(k)}" title="Copia negli appunti il foglio «${esc(d.nome)}»"
+                  aria-label="Copia il foglio ${esc(d.nome)}">
+            <span class="dnome">${esc(d.nome)}${segno}</span>
+            <span class="dmeta">${n} righe</span><span class="dico">⧉</span>
+          </button>
+          <button class="dbtn" data-dedit="${esc(k)}" title="Modifica il testo di «${esc(d.nome)}»"
+                  aria-label="Modifica il foglio ${esc(d.nome)}">✎</button>
+        </div>`;
+      }).join("");
+      return `
+        <div class="sec">
+          <div class="lbl">Fogli di dimissione (${chiavi.length})
+            <button class="mini" id="dimexport" title="Salva i tuoi testi in un file JSON">⬇ JSON</button>
+            <button class="mini" id="dimimport" title="Rimetti i testi di un JSON esportato">⤒ Importa</button>
+          </div>
+          <div class="dlist">${righe}</div>
+          <div class="hint">Clic sulla riga per copiare il foglio, ✎ per modificarlo una volta per tutte. Le modifiche restano su questo computer.</div>
+        </div>`;
+    }
+
+    // The editor keeps a draft in tabStore at every keystroke: the EHR retitles
+    // the page (which re-renders the panel) and reloads it under the doctor's
+    // hands, and a rewritten sheet must never die to something he did not do.
+    dimDraftKey(k) { return "dimdraft." + k; }
+    viewDimTesto() {
+      const k = this.viewId;
+      const d = dimissioni()[k];
+      if (!d) return `<div class="hint">Testo non disponibile.</div>`;
+      const bozza = tabStore.get(this.dimDraftKey(k), null);
+      const testo = bozza && typeof bozza.testo === "string" ? bozza.testo : d.testo;
+      return `
+        <div class="sec">
+          <div class="lbl">${esc(d.nome)}
+            <button class="mini" id="dimcopy" title="Copia questo testo senza salvarlo">⧉ Copia</button>
+            <button class="mini" id="dimsave" title="Tieni questo testo per le prossime dimissioni">✓ Salva</button>
+            ${d.modificato ? `<button class="mini" id="dimreset" title="${d.mio ? "Elimina questo foglio" : "Butta le tue modifiche e riprendi l'originale"}">${d.mio ? "✕ Elimina" : "↺ Originale"}</button>` : ""}
+          </div>
+          ${d.aggiornato ? `<div class="banner warn">L'originale di questo foglio è stato aggiornato dopo la tua modifica: con ↺ Originale prendi la versione nuova.</div>` : ""}
+          ${testo !== d.testo ? `<div class="banner ok">Bozza non salvata, ripresa da dove l'avevi lasciata.</div>` : ""}
+          <textarea class="dedit" id="dimarea" spellcheck="false" aria-label="Testo del foglio ${esc(d.nome)}">${esc(testo)}</textarea>
+          <div class="hint">Salva tiene questo testo per le prossime volte. Per un foglio su misura per QUESTO paziente, modifica e usa ⧉ Copia senza salvare: qui non vanno dati del paziente.</div>
+        </div>`;
+    }
+
+    // Import is a paste screen, not a window.prompt: a 20 KB JSON in a
+    // one-line browser dialog cannot be read, checked or corrected.
+    viewDimImport() {
+      return `
+        <div class="sec">
+          <div class="lbl">Importa i fogli
+            <button class="mini" id="dimimpok">⤒ Importa</button>
+          </div>
+          <textarea class="dedit" id="dimimparea" spellcheck="false"
+                    placeholder="Incolla qui il JSON esportato con ⬇ JSON" aria-label="JSON dei fogli di dimissione"></textarea>
+          <div class="hint">Entrano solo i testi diversi dagli originali: gli altri restano come sono.</div>
+        </div>`;
     }
 
     viewReferto() {
@@ -2747,13 +2915,139 @@
         if (u) nav(u);
       });
 
-      $("#back")?.addEventListener("click", () => this.setView(this.view === "valori" || this.view === "referto" ? "esiti" : "home"));
+      $("#back")?.addEventListener("click", () => this.setView(
+        this.view === "valori" || this.view === "referto" ? "esiti"
+        : this.view === "dimtesto" || this.view === "dimimport" ? "dimissioni"
+        : "home"));
       this.root.querySelectorAll("[data-seg]").forEach((b) => b.addEventListener("click", () => this.setView(b.getAttribute("data-seg"))));
       $("#forget")?.addEventListener("click", () => { forgetPatients(); this.render(); });
       $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.render(); });
       $("#risall")?.addEventListener("click", () => this.reloadTuttiValori());
       $("#letto")?.addEventListener("click", () => { if (this.viewId) { this.marcaLetto(this.viewId); this.render(); } });
       $("#apripdf")?.addEventListener("click", () => { if (this.viewId) this.openReferto(this.viewId); });
+      this.root.querySelectorAll("[data-dcopy]").forEach((b) => b.addEventListener("click", async () => {
+        const d = dimissioni()[b.getAttribute("data-dcopy")];
+        if (!d) return;
+        const ico = b.querySelector(".dico");
+        let ok = false;
+        try { await navigator.clipboard.writeText(d.testo); ok = true; } catch { /* below */ }
+        b.classList.toggle("fatto", ok);
+        if (ico) ico.textContent = ok ? "✓ copiato" : "✗ non riuscito";
+        setTimeout(() => {
+          if (!b.isConnected) return;
+          b.classList.remove("fatto");
+          if (ico) ico.textContent = "⧉";
+        }, 1800);
+      }));
+      this.root.querySelectorAll("[data-dedit]").forEach((b) => b.addEventListener("click", () => this.setView("dimtesto", b.getAttribute("data-dedit"))));
+      // every keystroke goes into the tab's draft: a re-render, a page change
+      // or a mis-click can no longer throw away a rewritten sheet
+      const area = this.root.querySelector("#dimarea");
+      if (area) area.addEventListener("input", () => tabStore.set(this.dimDraftKey(this.viewId), { ts: Date.now(), testo: area.value }));
+      $("#dimcopy")?.addEventListener("click", async () => {
+        const b = this.root.querySelector("#dimcopy");
+        let ok = false;
+        try { await navigator.clipboard.writeText(area ? area.value : ""); ok = true; } catch { /* below */ }
+        if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
+      });
+      $("#dimsave")?.addEventListener("click", () => {
+        const d = dimissioni()[this.viewId];
+        if (!area || !d) return;
+        if (!area.value.trim()) { this.message = "Il testo è vuoto: non lo salvo."; this.render(); return; }
+        const scritto = salvaDimissione(this.viewId, d.nome, area.value);
+        tabStore.set(this.dimDraftKey(this.viewId), null);
+        this.log(`${now()}  foglio di dimissione «${d.nome}» aggiornato`);
+        // never say "saved" when the browser refused to write it
+        this.setView("dimissioni", null, scritto
+          ? { ok: `«${d.nome}» salvato: sarà questo il testo copiato d'ora in poi.` }
+          : `«${d.nome}» NON salvato: la memoria di questo browser è piena o bloccata.`);
+      });
+      $("#dimreset")?.addEventListener("click", (ev) => {
+        const b = ev.currentTarget;
+        const d = dimissioni()[this.viewId] || {};
+        const etichetta = b.textContent;
+        // one tap must not be able to destroy a text the doctor wrote
+        if (b.dataset.sicuro !== "1") {
+          b.dataset.sicuro = "1";
+          b.textContent = d.mio ? "Elimino?" : "Confermi?";
+          setTimeout(() => { if (b.isConnected && b.dataset.sicuro === "1") { b.dataset.sicuro = ""; b.textContent = etichetta; } }, 4000);
+          return;
+        }
+        const nome = d.nome || this.viewId;
+        const scritto = ripristinaDimissione(this.viewId);
+        tabStore.set(this.dimDraftKey(this.viewId), null);
+        this.setView("dimissioni", null, scritto
+          ? { ok: `«${nome}» riportato al testo originale.` }
+          : `«${nome}» non ripristinato: la memoria di questo browser è bloccata.`);
+      });
+      $("#dimexport")?.addEventListener("click", async () => {
+        const tutte = dimissioni();
+        const mie = store.get(dimKey, {});
+        const dati = {};
+        for (const [k, v] of Object.entries(tutte)) {
+          dati[k] = { nome: v.nome, testo: v.testo };
+          // carry the fingerprint of the original this version was forked from,
+          // so a re-import keeps knowing when the original moves
+          if (mie[k] && mie[k].base) dati[k].base = mie[k].base;
+        }
+        const testo = JSON.stringify({ app: APP, versione: VERSION, salvato: new Date().toISOString(), dimissioni: dati }, null, 1);
+        // the file where downloads are allowed, the clipboard everywhere else:
+        // the doctor must end up with the text in his hands either way
+        let file = false, appunti = false;
+        try {
+          const url = URL.createObjectURL(new Blob([testo], { type: "application/json" }));
+          const a2 = document.createElement("a");
+          a2.href = url; a2.download = "dimissioni.json";
+          document.documentElement.appendChild(a2); a2.click(); a2.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 20000);
+          file = true;
+        } catch { /* clipboard below */ }
+        try { await navigator.clipboard.writeText(testo); appunti = true; } catch { /* said below */ }
+        const b = this.root.querySelector("#dimexport");
+        if (b) {
+          b.textContent = file && appunti ? "✓ file + appunti" : file ? "✓ dimissioni.json" : appunti ? "✓ negli appunti" : "✗ non riuscito";
+          setTimeout(() => { if (b.isConnected) b.textContent = "⬇ JSON"; }, 2500);
+        }
+      });
+      $("#vaidim")?.addEventListener("click", () => this.setView("dimissioni"));
+      $("#dimimport")?.addEventListener("click", () => this.setView("dimimport"));
+      $("#dimimpok")?.addEventListener("click", () => {
+        const ta = this.root.querySelector("#dimimparea");
+        const testo = (ta && ta.value || "").trim();
+        if (!testo) { this.message = "Incolla prima il JSON esportato."; this.render(); return; }
+        let dims = null;
+        try {
+          const dati = JSON.parse(testo);
+          dims = dati && dati.dimissioni && typeof dati.dimissioni === "object" ? dati.dimissioni : dati;
+        } catch (e) {
+          this.message = `JSON non valido: ${e.message}`; this.render(); return;
+        }
+        if (!dims || typeof dims !== "object") { this.message = "Questo file non contiene fogli di dimissione."; this.render(); return; }
+        const mie = store.get(dimKey, {});
+        let n = 0, uguali = 0, saltati = 0;
+        for (const [k, v] of Object.entries(dims)) {
+          if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
+          if (!dimValido(v) || v.testo.length > 40000 || k.length > 80) { saltati++; continue; }
+          const orig = DIMISSIONI[k];
+          // a text identical to the shipped one is NOT a change: importing it
+          // as an override would freeze that sheet at today's wording forever
+          if (orig && v.testo.trim() === orig.testo.trim()) { delete mie[k]; uguali++; continue; }
+          if (!(k in mie) && Object.keys(mie).length >= 40) { saltati++; continue; }
+          mie[k] = {
+            nome: String(v.nome || (orig && orig.nome) || k).slice(0, 80),
+            testo: v.testo,
+            base: typeof v.base === "string" && v.base ? v.base : (orig ? impronta(orig.testo) : ""),
+          };
+          n++;
+        }
+        if (!n && !uguali) { this.message = "Nessun testo valido in questo JSON."; this.render(); return; }
+        const scritto = store.set(dimKey, mie);
+        this.log(`${now()}  importati ${n} fogli di dimissione`);
+        const coda = [uguali ? `${uguali} già uguali all'originale` : "", saltati ? `${saltati} ignorati` : ""].filter(Boolean).join(", ");
+        this.setView("dimissioni", null, scritto
+          ? { ok: `${n === 1 ? "Importato 1 foglio" : `Importati ${n} fogli`}${coda ? ` (${coda})` : ""}.` }
+          : "Import NON salvato: la memoria di questo browser è piena o bloccata.");
+      });
       $("#copytxt")?.addEventListener("click", async () => {
         const t = tabStore.get(this.txtKey(this.viewId), null);
         if (!t || !t.righe) return;
