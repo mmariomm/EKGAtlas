@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.8.0";
+  const VERSION = "3.9.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -336,13 +336,45 @@
     [/base excess|^be\b|^eb\b/i, "BE"], [/lattat/i, "Lac"], [/saturaz|^so2/i, "SatO2"],
     [/carbossiemo|^cohb/i, "COHb"], [/metaemo|^methb/i, "MetHb"], [/^tsh/i, "TSH"],
     [/emogas/i, "EGA"], [/^ammonio|ammoniem/i, "NH3"], [/^mioglobin/i, "Mb"],
+    // urine dipstick and blood-gas derivatives: names the portal's multi-day
+    // table shows and the Risultati window does not
+    [/corpi chetonici|^chetoni/i, "Chet"], [/esterasi leucocit/i, "EstLeu"],
+    [/peso specifico/i, "PesoSp"], [/urobilinogen/i, "Urob"], [/^nitriti/i, "Nitr"],
+    [/anion gap/i, "AG"], [/^ratio\b/i, "Ratio"], [/^ca\+\+/i, "Ca++"],
+    [/^fcohb/i, "FCOHb"], [/^fo2hb|^fo₂hb/i, "FO2Hb"], [/^hhb/i, "HHb"],
+    [/^shunt/i, "Shunt"], [/^ctco2|^ctco₂/i, "ctCO2"], [/^cto2|^cto₂/i, "ctO2"],
   ];
-  function sigla(nome) {
+  // The portal writes the specimen in front of the analyte: S-ALT, P-Sodio,
+  // U-Emoglobina, Lcr-Glucosio. Serum, plasma and blood are what a sigla
+  // already means, so they drop; every other specimen STAYS in the label,
+  // because urine haemoglobin is not haemoglobin and must never read as Hb.
+  const CAMPIONE = /^\s*(S|P|B|Sg|Ser|Pl)\s*-\s*/i;
+  const CAMPIONE_ALTRO = /^\s*(U|Lcr|Liq|F|Fec|Exp|Esc)\s*-\s*/i;
+  function scomponi(nome) {
     const n = String(nome || "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
-    for (const [re, s] of SIGLE) if (re.test(n)) return s;
-    const w = n.split(/[\s(,.]+/).filter(Boolean)[0] || n;   // first word, never a paragraph
-    return w.length > 9 ? w.slice(0, 8) + "." : w;
+    if (CAMPIONE.test(n)) return { pre: "", resto: n.replace(CAMPIONE, "") };
+    const m = CAMPIONE_ALTRO.exec(n);
+    if (m) return { pre: m[1].toUpperCase() + "·", resto: n.slice(m[0].length) };
+    return { pre: "", resto: n };
   }
+  function sigla(nome) {
+    const { pre, resto } = scomponi(nome);
+    for (const [re, s] of SIGLE) if (re.test(resto)) return pre + s;
+    const w = resto.split(/[\s(,.]+/).filter(Boolean)[0] || resto;   // first word, never a paragraph
+    return pre + (w.length > 9 ? w.slice(0, 8) + "." : w);
+  }
+  // An abbreviation this program has NOT been taught is a guess, and a guess
+  // that looks like a known sigla is how a doctor reads the wrong analyte.
+  // Everywhere a guess is shown it is marked, and counted.
+  const siglaCurata = (nome) => SIGLE.some(([re]) => re.test(scomponi(nome).resto));
+  const nomiInattesi = (rows) => {
+    const out = [];
+    for (const r of rows || []) {
+      const n = String(r.nome || "").trim();
+      if (n && !siglaCurata(n) && !out.includes(n)) out.push(n);
+    }
+    return out;
+  };
 
   // ---- comparing draws -----------------------------------------------------
   // The same analyte must sit in the same place in every draw, or nothing can
@@ -736,10 +768,16 @@
     for (let i = 1; i < sx.rows.length; i++) {
       const tdE = sx.rows[i].querySelector("td.exam");
       if (!tdE) continue;                                   // header and filler rows
-      const nome = (tdE.textContent || "").replace(/\s+/g, " ").trim();
+      // The LEFT column is the ordered exam ("ESAME URINE COMPLETO"), the one
+      // next to it is the analyte ("U-Albumina", "S-ALT"): a panel repeats the
+      // same exam on every one of its rows, so the analyte is the name — and
+      // its specimen prefix (U-, S-) stays, because U-Emoglobina is not Hb.
+      const esame = (tdE.textContent || "").replace(/\s+/g, " ").trim();
+      const tdS = sx.rows[i].querySelector("td.exam-specific");
+      const spec = tdS ? tdS.querySelector("[uib-tooltip]") : null;
+      const nome = (tdS?.textContent || "").replace(/\s+/g, " ").trim() || esame;
       if (!nome) continue;
       const { codice } = pezziTooltip(tdE.querySelector("[uib-tooltip]")?.getAttribute("uib-tooltip"));
-      const spec = sx.rows[i].querySelector("td.exam-specific [uib-tooltip]");
       const mnem = mnemonicoStorico(spec?.getAttribute("uib-tooltip"));
       const valori = [];
       const celle = dx.rows[i] ? dx.rows[i].cells : [];
@@ -752,7 +790,7 @@
           : d.classList.contains("SUP") ? 1 : d.classList.contains("INF") ? -1 : 0;
         valori.push({ v, stato });
       }
-      if (valori.some((x) => x.v)) righe.push({ nome, codice, mnem, valori });
+      if (valori.some((x) => x.v)) righe.push({ nome, esame, codice, mnem, valori });
     }
     if (!righe.length) return null;
 
@@ -784,15 +822,17 @@
     const perEsame = new Map();
     const versa = (dati) => {
       for (const r of dati.righe) {
-        const k = (r.mnem || "") + "|" + r.nome;
-        const cur = perEsame.get(k) || { nome: r.nome, codice: r.codice, mnem: r.mnem, per: new Map() };
+        // HB is both blood haemoglobin and the urine dipstick: the analyte
+        // alone is not an identity, the ordered exam is part of it
+        const k = (r.esame || "") + "|" + r.nome + "|" + (r.mnem || "");
+        const cur = perEsame.get(k) || { nome: r.nome, esame: r.esame, codice: r.codice, mnem: r.mnem, per: new Map() };
         r.valori.forEach((v, i) => { if (v.v && dati.date[i]) cur.per.set(dati.date[i].label, v); });
         perEsame.set(k, cur);
       }
     };
     versa(vecchio); versa(nuovo);
     const righe = [...perEsame.values()].map((e) => ({
-      nome: e.nome, codice: e.codice, mnem: e.mnem,
+      nome: e.nome, esame: e.esame, codice: e.codice, mnem: e.mnem,
       valori: date.map((d) => e.per.get(d.label) || { v: "", stato: 0 }),
     }));
     return { paziente: nuovo.paziente, periodo: nuovo.periodo, date, righe, letto: Date.now() };
@@ -877,8 +917,10 @@
     return 0;
   }
 
+  // Returns the value rows AND the candidate rows it refused: a row this
+  // parser does not understand must become a warning, never a hole.
   function parseRisultati(doc) {
-    const rows = [];
+    const rows = [], scartate = [];
     for (const tr of doc.querySelectorAll("tr")) {
       // DIRECT children only: the patient header of the same table nests its own
       // tables, and cells picked up from those made a row look like a result
@@ -896,10 +938,10 @@
       const dataOk = /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(data || "");
       const rangeOk = /\d/.test(range || "") && /[-–<>≤≥]|fino a|inf\.|sup\./i.test(range || "");
       const statoOk = /^(parziale|definitiv|refertat|eseguit|in corso|validat|preliminar|provvisori)/i.test(stato || "");
-      if (!dataOk && !rangeOk && !statoOk) continue;
+      if (!dataOk && !rangeOk && !statoOk) { scartate.push({ nome, valore }); continue; }
       rows.push({ nome, valore, um, range, stato });
     }
-    return rows;
+    return { rows, scartate };
   }
 
   // One chronological list of everything the lab/radiology returned for this
@@ -1777,6 +1819,17 @@
              padding: 9px 10px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
              color: #16232E; background: #fff; }
     .dedit:focus { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    /* a name we were never taught: shown in full, and underlined so it can
+       never be mistaken for one of the curated sigle */
+    .rval .rvn.grezza, .sttab th.stn.grezza { text-decoration: underline dotted #C08A2E; text-underline-offset: 2px; }
+    .avvnomi { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #7a4b03;
+               background: #FFF7E6; border: 1px solid #E5C588; border-radius: 8px; padding: 5px 9px; margin-bottom: 6px; }
+    .avvnomi .avvi { flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%; background: #E5C588;
+                     color: #4d2f02; font-weight: 800; font-size: 11px; text-align: center; line-height: 16px; }
+    .avvnomi .avvb { margin-left: auto; border: 0; background: transparent; color: #7a4b03; font: inherit;
+                     font-weight: 700; cursor: pointer; text-decoration: underline; }
+    .avvlista { white-space: pre-wrap; font-size: 11px; line-height: 1.45; color: #5B6B7A;
+                background: #FFFDF7; border: 1px solid #EEDFC0; border-radius: 8px; padding: 6px 9px; margin-bottom: 6px; }
     .storbtn { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; cursor: pointer;
                border: 1px solid #9DBFDE; background: #F4F9FD; border-radius: 9px; padding: 7px 10px; margin-bottom: 6px; font: inherit; }
     .storbtn:hover { background: #EAF2FA; border-color: #0B5CAD; }
@@ -1882,6 +1935,7 @@
       this.storico = null;              // the portal's multi-day table, if it is THIS patient's
       this.storicoAltri = "";           // ...or the name it belongs to, when it is not
       this.soloAlterati = false;        // storico: show only what is out of range
+      this.mostraNomi = false;          // the unexpected-name list, open or closed
       this.pos = store.get("pos", null); // user-dragged panel position {left, top}
       this.size = store.get("size", null); // user-resized panel {w, h}
       this.runPatient = null;           // patient name PINNED when a run starts
@@ -2566,6 +2620,7 @@
       if (!st) return `<div class="hint">Nessuno storico in memoria. Aprilo dal gestionale: «Storico dati clinici» › Tabella.</div>`;
       const col = st.date.map((d, i) => ({ ...d, i })).reverse();   // newest first, like Esiti
       const righe = st.righe.filter((r) => !this.soloAlterati || r.valori.some((v) => v.v && v.stato));
+      const inatteso = (r) => !siglaCurata(r.nome);
       const celle = (r) => col.map((c) => {
         const v = r.valori[c.i] || { v: "", stato: 0 };
         return `<td class="${v.stato ? "fuori" : ""}">${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}</td>`;
@@ -2576,10 +2631,11 @@
             <button class="mini" id="storcopy">⧉ Copia</button>
             <button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>
           </div>
+          ${this.avvisoNomi(st.righe, null)}
           <div class="stwrap">
             <table class="sttab">
               <thead><tr><th class="stn">Esame</th>${col.map((c) => `<th>${esc(c.data.slice(0, 5))}<span class="sth">${esc(c.ora)}</span></th>`).join("")}</tr></thead>
-              <tbody>${righe.map((r) => `<tr><th class="stn" title="${esc(r.nome)}${r.mnem ? " · " + esc(r.mnem) : ""}">${esc(sigla(r.nome))}</th>${celle(r)}</tr>`).join("")}</tbody>
+              <tbody>${righe.map((r) => `<tr><th class="stn${inatteso(r) ? " grezza" : ""}" title="${esc(r.nome)}${r.esame && r.esame !== r.nome ? " — " + esc(r.esame) : ""}${r.mnem ? " · " + esc(r.mnem) : ""}">${esc(inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome))}</th>${celle(r)}</tr>`).join("")}</tbody>
             </table>
           </div>
           <div class="hint">${esc(st.periodo || "")} · letto dalla pagina del portale, senza chiedere niente al server.</div>
@@ -2592,7 +2648,7 @@
       const col = st.date.map((d, i) => ({ ...d, i })).reverse();
       const out = ["Esame\t" + col.map((c) => c.label).join("\t")];
       for (const r of st.righe) {
-        out.push([r.nome, ...col.map((c) => {
+        out.push([r.esame && r.esame !== r.nome ? `${r.esame} — ${r.nome}` : r.nome, ...col.map((c) => {
           const v = r.valori[c.i] || { v: "", stato: 0 };
           return v.v + (v.stato ? (v.stato < 0 ? " (basso)" : " (alto)") : "");
         })].join("\t"));
@@ -2860,7 +2916,8 @@
             const n = nov.get(k);
             const tip = [esc(v.nome), n === "nuovo" ? "nuovo dall'ultima lettura" : n === "cambiato" ? "aggiornato dall'ultima lettura" : "",
                          d ? `prelievo precedente: ${esc(d.prevRaw)} (${d.pct > 0 ? "+" : ""}${d.pct}%)` : ""].filter(Boolean).join(" — ");
-            return `<div class="rval ${oo ? "bad" : ""}${n ? " nuova" : ""}" title="${tip}"><span class="rvn${n === "nuovo" ? " nuovo" : ""}">${esc(sigla(v.nome))}</span><span class="rvv${n === "cambiato" ? " agg" : ""}">${esc(v.valore)}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}${d ? `<span class="pd">${d.dir}</span>` : ""}</span><span class="rvr">${esc(v.um || "")}${v.range ? " · " + esc(v.range) : ""}</span></div>`;
+            const grezza = !siglaCurata(v.nome);
+            return `<div class="rval ${oo ? "bad" : ""}${n ? " nuova" : ""}" title="${tip}"><span class="rvn${n === "nuovo" ? " nuovo" : ""}${grezza ? " grezza" : ""}">${esc(grezza ? String(v.nome).replace(/\s+/g, " ").trim() : sigla(v.nome))}</span><span class="rvv${n === "cambiato" ? " agg" : ""}">${esc(v.valore)}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}${d ? `<span class="pd">${d.dir}</span>` : ""}</span><span class="rvr">${esc(v.um || "")}${v.range ? " · " + esc(v.range) : ""}</span></div>`;
           }).join("")
         : `<div class="rval">${this.risBusy === e.id ? "carico…" : "nessun valore"}</div>`;
       return `
@@ -2868,8 +2925,30 @@
           <div class="lbl">${esc(e.when)} · ${esc(shortLabel(e.label))}
             <button class="mini" id="copyvals">⧉ Copia</button><button class="mini" id="risreload">↻</button></div>
           ${nov.size ? `<div class="newbar"><span>${nov.size} ${nov.size === 1 ? "valore nuovo" : "valori nuovi"} dall'ultima lettura</span><button id="letto" type="button">Letto</button></div>` : ""}
+          ${this.avvisoNomi(vals && vals.rows, vals && vals.scartate)}
           <div class="rvals plain">${body}</div>
         </div>`;
+    }
+
+    // Two things the doctor must never discover by himself: a name this
+    // program does not know (its abbreviation would be a guess) and a row it
+    // refused to read. Both are declared, with the names, and nothing is
+    // hidden — the values are all on screen anyway.
+    avvisoNomi(rows, scartate) {
+      const inattesi = nomiInattesi(rows);
+      const persi = (scartate || []).filter((x) => x && x.nome);
+      if (!inattesi.length && !persi.length) return "";
+      const pezzi = [];
+      if (inattesi.length) pezzi.push(`${inattesi.length} ${inattesi.length === 1 ? "nome non in elenco" : "nomi non in elenco"}: scritti per esteso`);
+      if (persi.length) pezzi.push(`${persi.length} ${persi.length === 1 ? "riga non letta" : "righe non lette"}`);
+      const elenco = [
+        inattesi.length ? "Non in elenco: " + inattesi.join(", ") : "",
+        persi.length ? "Non lette: " + persi.map((x) => `${x.nome} = ${x.valore}`).join(" · ") : "",
+      ].filter(Boolean).join("\n");
+      return `<div class="avvnomi" title="${esc(elenco)}">
+          <span class="avvi">!</span><span>${esc(pezzi.join(" · "))}</span>
+          <button class="avvb" id="avvnomi" type="button">${this.mostraNomi ? "nascondi" : "quali"}</button>
+        </div>${this.mostraNomi ? `<div class="avvlista">${esc(elenco)}</div>` : ""}`;
     }
 
     async openEsito(id, kind) {
@@ -2890,8 +2969,8 @@
         this.render();
         try {
           const { doc } = await fetchDoc(e.url, {});
-          const rows = parseRisultati(doc);
-          tabStore.set(key, { ts: Date.now(), rows, meta: risMeta(e) });
+          const { rows, scartate } = parseRisultati(doc);
+          tabStore.set(key, { ts: Date.now(), rows, scartate, meta: risMeta(e) });
           this.segnaVisto(id, rows);     // first read is the baseline
         } catch (err) {
           this.log(`${now()}  valori non letti: ${err?.head || err?.message || err}`);
@@ -2919,10 +2998,10 @@
         const prima = JSON.stringify((tabStore.get(key, null) || {}).rows || []);
         try {
           const { doc } = await fetchDoc(e.url, {});
-          const rows = parseRisultati(doc);
+          const { rows, scartate } = parseRisultati(doc);
           if (rows.length) {
             const mai = !tabStore.get(this.vistoKey(e.id), null);
-            tabStore.set(key, { ts: Date.now(), rows, meta: risMeta(e) });
+            tabStore.set(key, { ts: Date.now(), rows, scartate, meta: risMeta(e) });
             if (mai) this.segnaVisto(e.id, rows);   // never seen before: this read is its baseline
             if (JSON.stringify(rows) !== prima) cambiati++;
           } else {
@@ -2947,8 +3026,8 @@
       for (const e of todo) {
         try {
           const { doc } = await fetchDoc(e.url, {});
-          const rows = parseRisultati(doc);
-          tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, meta: risMeta(e) });
+          const { rows, scartate } = parseRisultati(doc);
+          tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, scartate, meta: risMeta(e) });
           this.segnaVisto(e.id, rows);   // first read is the baseline
           this.render();
         } catch { /* stays without preview; opening it will retry */ }
@@ -2980,9 +3059,9 @@
       this.render();
       try {
         const { doc } = await fetchDoc(e.url, {});
-        const rows = parseRisultati(doc);
+        const { rows, scartate } = parseRisultati(doc);
         // a reported draw no longer answers: keep what we already had
-        if (rows.length) tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, meta: risMeta(e) });
+        if (rows.length) tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, scartate, meta: risMeta(e) });
         else this.log(`${now()}  la finestra Risultati non risponde più: tengo i valori già letti`);
       } catch (err) { this.log(`${now()}  valori non letti (tengo i precedenti): ${err?.head || err?.message || err}`); }
       this.risBusy = null;
@@ -3145,6 +3224,7 @@
       $("#apripdf")?.addEventListener("click", () => { if (this.viewId) this.openReferto(this.viewId); });
       $("#apristorico")?.addEventListener("click", () => this.setView("storico"));
       $("#storfiltro")?.addEventListener("click", () => { this.soloAlterati = !this.soloAlterati; this.render(); });
+      $("#avvnomi")?.addEventListener("click", () => { this.mostraNomi = !this.mostraNomi; this.render(); });
       $("#storcopy")?.addEventListener("click", async () => {
         const b = this.root.querySelector("#storcopy");
         let ok = false;

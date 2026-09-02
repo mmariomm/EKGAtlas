@@ -23,9 +23,9 @@ const grab = (name) => {
   }
   return core.slice(i, end);
 };
-const { outOfRange, sigla, confrontaPrelievi, ordinaRighe } = new Function(
+const { outOfRange, sigla, siglaCurata, nomiInattesi, confrontaPrelievi, ordinaRighe } = new Function(
   grab("outOfRange") + "\n" + core.slice(core.indexOf("const SIGLE = ["), core.indexOf("// First ~160 chars"))
-  + "\nreturn { outOfRange, sigla, confrontaPrelievi, ordinaRighe };",
+  + "\nreturn { outOfRange, sigla, siglaCurata, nomiInattesi, confrontaPrelievi, ordinaRighe };",
 )();
 
 let fail = 0;
@@ -126,10 +126,15 @@ const chromiumPath = () => ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
   .find((p) => existsSync(p) && statSync(p).isFile());
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath() });
 const page = await browser.newPage();
-const parse = (body) => page.evaluate(({ src, body }) => {
-  eval(src);
-  return parseRisultati(new DOMParser().parseFromString(`<table><tbody>${body}</tbody></table>`, "text/html"));
-}, { src: grab("parseRisultati"), body });
+const parse = async (body) => {
+  const r = await page.evaluate(({ src, body }) => {
+    eval(src);
+    return parseRisultati(new DOMParser().parseFromString(`<table><tbody>${body}</tbody></table>`, "text/html"));
+  }, { src: grab("parseRisultati"), body });
+  const rows = r.rows;
+  rows.scartate = r.scartate;   // comodo per i controlli qui sotto
+  return rows;
+};
 
 const D = (...cells) => `<tr>${cells.map((c) => `<td class="AFCDataTD">${c}</td>`).join("")}</tr>`;
 const riga = D("Emoglobina&nbsp;", "8.0", "g/dL", "13 - 17", "definitivo", "23/08/2026 07:47");
@@ -167,6 +172,30 @@ eq(r.length, 0, "una riga di servizio senza data, range e stato viene scartata")
 const grosso = Array.from({ length: 60 }, (_, i) => D(`Esame ${i}`, String(i), "u", "0 - 100", "definitivo", "23/08/2026 07:47")).join("");
 r = await parse(grosso);
 eq(r.length, 60, "un pannello lungo viene letto per intero");
+
+// ---- niente sparisce in silenzio ---------------------------------------
+console.log("\nnomi inattesi e righe non lette");
+r = await parse(D("Nota di reparto", "vedi diario", "", "", "", "") + D("Emoglobina", "120", "g/L", "135 - 180", "definitivo", "23/08/2026"));
+eq(r.length, 1, "la riga di servizio resta fuori dai valori");
+eq((r.scartate || []).length, 1, "ma viene contata, non persa");
+eq((r.scartate || [{}])[0].nome, "Nota di reparto", "col suo nome");
+eq((r.scartate || [{}])[0].valore, "vedi diario", "e col suo valore");
+
+// il campione fa parte del nome: l'emoglobina delle urine non è l'emoglobina
+eq(sigla("S-ALT (ALANINA AMINOTRANSFERASI)"), "ALT", "siero e plasma non aggiungono niente alla sigla");
+eq(sigla("P-Sodio"), "Na", "idem per il plasma");
+eq(sigla("U-Emoglobina"), "U·Hb", "le urine restano scritte nella sigla");
+check(sigla("U-Emoglobina") !== sigla("Emoglobina"), "e non diventano mai l'emoglobina del sangue");
+eq(sigla("Lcr-Glucosio"), "LCR·Glu", "come il liquor");
+eq(sigla("U-Corpi chetonici"), "U·Chet", "i corpi chetonici hanno una sigla vera");
+
+check(siglaCurata("Emoglobina") === true, "«Emoglobina» è un nome che conosciamo");
+check(siglaCurata("Ricerca sangue occulto") === false, "«Ricerca sangue occulto» no");
+check(sigla("Ricerca sangue occulto") === "Ricerca", "e la sua abbreviazione è solo un'ipotesi");
+const inattesi = nomiInattesi([{ nome: "Emoglobina" }, { nome: "Ricerca sangue occulto" }, { nome: "Aspetto del campione" }, { nome: "Ricerca sangue occulto" }]);
+eq(inattesi.length, 2, "i nomi non in elenco vengono elencati una volta sola");
+check(inattesi.includes("Ricerca sangue occulto") && inattesi.includes("Aspetto del campione"), "e sono quelli giusti");
+check(!nomiInattesi([{ nome: "Sodio" }, { nome: "Potassio" }]).length, "quando li conosciamo tutti non avvisa di niente");
 
 await browser.close();
 

@@ -44,18 +44,28 @@ const { haStorico, dati } = await leggi(paginaStorico());
 check(haStorico, "riconosce la pagina dalla sua tabella, non dall'indirizzo");
 check(!!dati, "legge la tabella");
 check(dati.date.length === 3 && dati.date[2].label === DATE[2], `tre prelievi con data e ora (got ${dati.date.map((d) => d.label).join(" · ")})`);
-check(dati.righe.length === 7, `sette esami (got ${dati.righe.length})`);
+check(dati.righe.length === 10, `dieci analiti (got ${dati.righe.length})`);
 
-const hb = dati.righe.find((r) => r.nome === "EMOGLOBINA");
+// the left column is the ORDERED EXAM, the one next to it is the analyte: a
+// panel repeats the exam on every row, so reading the left one would give
+// three rows all called "ESAME URINE COMPLETO"
+const urine = dati.righe.filter((r) => r.esame === "ESAME URINE COMPLETO");
+check(urine.length === 3 && new Set(urine.map((r) => r.nome)).size === 3,
+  `un pannello dà un analita per riga, non tre volte lo stesso nome (got ${urine.map((r) => r.nome).join(", ")})`);
+check(urine.some((r) => r.nome === "U-Emoglobina"),
+  "e il prefisso del campione resta: U-Emoglobina non è l'emoglobina del sangue");
+
+const hb = dati.righe.find((r) => r.nome === "Emoglobina");
 check(!!hb && hb.codice === "1201" && hb.mnem === "HB", `codice e mnemonico dal tooltip (got ${hb?.codice} / ${hb?.mnem})`);
+check(hb.esame === "EMOCROMO", `e la prestazione che l'ha prodotto (got ${hb.esame})`);
 check(hb.valori.map((v) => v.v).join("|") === "13.2|11.8|10.4", `i valori in ordine di prelievo (got ${hb.valori.map((v) => v.v).join("|")})`);
 check(hb.valori[0].stato === 0 && hb.valori[1].stato === -1, "la pagina dice già cosa è fuori range: sotto");
 
-const gb = dati.righe.find((r) => r.nome === "LEUCOCITI");
+const gb = dati.righe.find((r) => r.nome === "Leucociti");
 check(gb.valori[1].v === "" && gb.valori[2].stato === 1, "buco in mezzo e valore alto in fondo, senza scivolare di colonna");
-const pcr = dati.righe.find((r) => r.nome === "PROTEINA C REATTIVA");
+const pcr = dati.righe.find((r) => r.nome === "S-PCR");
 check(pcr.valori[2].v === ">90.0" && pcr.valori[2].stato === 1, "tiene i valori non numerici così come sono (>90.0)");
-const emoc = dati.righe.find((r) => r.nome === "EMOCOLTURA");
+const emoc = dati.righe.find((r) => r.nome === "Emocoltura aerobi");
 check(emoc.valori[1].v === "NEGATIVO", "e le risposte a parole");
 
 check(dati.paziente.cognome === PAZIENTE.cognome && dati.paziente.nome === PAZIENTE.nome && dati.paziente.idMPI === PAZIENTE.idMPI,
@@ -72,7 +82,7 @@ const altra = await leggi("<html><body><table><tr><td>ciao</td></tr></table></bo
 check(altra.haStorico === false && altra.dati === null, "su una pagina qualsiasi non inventa una tabella");
 
 // no draw at all in the period
-const vuota = await leggi(paginaStorico({ esami: [["EMOGLOBINA", "1201", "HB", ["", "", ""], [0, 0, 0]]] }));
+const vuota = await leggi(paginaStorico({ esami: [["EMOCROMO", "Emoglobina", "1201", "HB", ["", "", ""], [0, 0, 0]]] }));
 check(vuota.dati === null, "un periodo senza risultati non produce una tabella vuota");
 
 await browser.close();

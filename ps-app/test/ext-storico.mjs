@@ -57,7 +57,7 @@ await portale.waitForFunction(
   { timeout: 10000 },
 ).catch(() => {});
 const barra = await portale.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".bar").textContent.replace(/\s+/g, " ").trim());
-check(/7 esami · 3 prelievi/.test(barra), `la striscia dice cosa ha letto (got: ${barra.slice(0, 80)})`);
+check(/10 esami · 3 prelievi/.test(barra), `la striscia dice cosa ha letto (got: ${barra.slice(0, 80)})`);
 check(chiamatePortale === 1, `una sola richiesta al portale: quella che ha fatto il medico aprendo la pagina (got ${chiamatePortale})`);
 
 const paziente = await ctx.newPage();
@@ -77,7 +77,7 @@ const tab = await paziente.evaluate(() => {
     prima: [...r.querySelectorAll(".sttab tbody tr")[0].cells].map((c) => c.textContent.trim()).join("|"),
   };
 });
-check(tab.righe === 7 && tab.colonne === 3, `sette esami per tre prelievi (got ${tab.righe}×${tab.colonne})`);
+check(tab.righe === 10 && tab.colonne === 3, `dieci analiti per tre prelievi (got ${tab.righe}×${tab.colonne})`);
 check(tab.rosse === 6, `i fuori range che la pagina aveva già marcato (got ${tab.rosse})`);
 check(tab.prima === "Hb|10.4↓|11.8↓|13.2", `il prelievo più recente per primo (got ${tab.prima})`);
 check(chiamatePortale === 1, "e nessuna richiesta in più al portale per mostrarla");

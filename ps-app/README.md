@@ -145,6 +145,23 @@ Un unico elenco in ordine di tempo:
 > documento di un altro. Meglio due righe distinte e oneste che una fusione plausibile ma
 > sbagliata.
 
+### Nomi che il pannello non conosce
+Le sigle (`Emoglobina` → `Hb`) sono un elenco scritto a mano: fuori da quell'elenco
+un'abbreviazione sarebbe **un'ipotesi**, e un'ipotesi che sembra una sigla nota è il modo in cui
+si legge l'analita sbagliato. Quindi:
+
+- il **campione fa parte del nome**: siero, plasma e sangue non aggiungono niente (`S-ALT` → `ALT`),
+  ma ogni altro campione resta scritto nella sigla (`U-Emoglobina` → **`U·Hb`**, `Lcr-Glucosio` →
+  `LCR·Glu`). L'emoglobina delle urine non diventerà mai `Hb`;
+- un nome fuori elenco è **scritto per esteso** e **sottolineato a puntini**, mai abbreviato a caso;
+- in cima compare una riga ambra: *«2 nomi non in elenco: scritti per esteso · 1 riga non letta»*,
+  e **quali** apre l'elenco esatto, con nome e valore di quello che non è stato letto;
+- una riga che il lettore rifiuta (niente data, niente range, niente stato: di solito è
+  un'intestazione) **non sparisce**: viene contata e mostrata lì dentro. Se è un esame vero lo vedi
+  e apri la finestra nativa.
+
+Vale sia per i valori di un prelievo sia per la tabella dello Storico.
+
 ### Storico (tutti i prelievi in una tabella)
 Il gestionale ha una pagina che mette **tutti i prelievi affiancati**: dal paziente, a sinistra,
 **Storico dati clinici › Tabella**. Il pannello **la legge da lì** — non chiede niente al server,
@@ -157,6 +174,11 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   il pannello, **prelievo più recente per primo**, con in rosso ciò che la pagina aveva già marcato
   fuori range (↑ sopra, ↓ sotto). **⧉ Copia** la mette negli appunti in colonne, **solo alterati**
   toglie di mezzo il resto.
+- Nella tabella del portale la colonna di sinistra è la **prestazione ordinata** (`ESAME URINE
+  COMPLETO`) e quella accanto è l'**analita** (`U-Albumina`, `U-Corpi chetonici`): il pannello legge
+  l'analita, altrimenti un pannello di urine diventerebbe diciotto righe con lo stesso nome. Il
+  prefisso del campione resta: **`U-Emoglobina` non è l'emoglobina del sangue**, e non viene mai
+  fusa con essa.
 - **La tabella si vede solo sotto il paziente giusto**: il nome viaggia insieme ai valori e viene
   confrontato con quello della pagina. Se non combacia il pannello lo dice e **non mostra un solo
   valore**. Le due metà della tabella del portale (nomi a sinistra, valori a destra) devono

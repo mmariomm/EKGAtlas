@@ -9,15 +9,21 @@ export const PAZIENTE = { idMPI: "900000001", cognome: "BIANCHI", nome: "ANNA" }
 
 export const DATE = ["01/09/2026 08:12", "01/09/2026 14:40", "02/09/2026 07:05"];
 
-// nome, codice, mnemonico, [valore per prelievo] — "" = non eseguito
+// esame ordinato, analita, codice, mnemonico, [valore per prelievo], [stato]
+// Il primo è la PRESTAZIONE (si ripete su tutte le righe del suo pannello),
+// il secondo è l'ANALITA: è quello il nome della riga.
 export const ESAMI = [
-  ["EMOGLOBINA", "1201", "HB", ["13.2", "11.8", "10.4"], [0, -1, -1]],
-  ["LEUCOCITI", "1202", "GB", ["6.4", "", "14.9"], [0, 0, 1]],
-  ["PIASTRINE", "1203", "PLT", ["220", "", ""], [0, 0, 0]],
-  ["CREATININA", "1560", "CREA", ["0.92", "1.44", ""], [0, 1, 0]],
-  ["SODIO", "1570", "NA", ["141", "138", "129"], [0, 0, -1]],
-  ["PROTEINA C REATTIVA", "1610", "PCR", ["", "", ">90.0"], [0, 0, 1]],
-  ["EMOCOLTURA", "1700", "EMOC", ["", "NEGATIVO", ""], [0, 0, 0]],
+  ["EMOCROMO", "Emoglobina", "1201", "HB", ["13.2", "11.8", "10.4"], [0, -1, -1]],
+  ["EMOCROMO", "Leucociti", "1201", "GB", ["6.4", "", "14.9"], [0, 0, 1]],
+  ["EMOCROMO", "Piastrine", "1201", "PLT", ["220", "", ""], [0, 0, 0]],
+  ["CREATININA", "S-Creatinina", "1560", "CREA", ["0.92", "1.44", ""], [0, 1, 0]],
+  ["SODIO", "S-Sodio", "1570", "NA", ["141", "138", "129"], [0, 0, -1]],
+  ["PROTEINA C REATTIVA", "S-PCR", "1610", "PCR", ["", "", ">90.0"], [0, 0, 1]],
+  ["EMOCOLTURA", "Emocoltura aerobi", "1700", "EMOC", ["", "NEGATIVO", ""], [0, 0, 0]],
+  // un pannello: stessa prestazione, analiti diversi — e HB qui NON è l'Hb
+  ["ESAME URINE COMPLETO", "U-Emoglobina", "1600", "HB", ["", "assente", "presente"], [0, 0, 0]],
+  ["ESAME URINE COMPLETO", "U-Corpi chetonici", "1600", "KET", ["", "assente", "++"], [0, 0, 0]],
+  ["ESAME URINE COMPLETO", "U-Peso Specifico", "1600", "PS", ["", "1015", "1028"], [0, 0, 0]],
 ];
 
 const cellaValore = (v, stato) => {
@@ -31,10 +37,10 @@ export function paginaStorico({ paziente = PAZIENTE, date = DATE, esami = ESAMI,
   const sxRighe = [
     `<tr><th class="size-14 exam locked"><div>Esame</div></th><th class="size-14 exam-specific locked"><div>Esame specifico</div></th></tr>`,
     `<tr class="filler-header h-50px"></tr>`,
-    ...esami.map(([nome, cod, mnem]) => `
+    ...esami.map(([esame, analita, cod, mnem]) => `
       <tr class="ng-scope">
-        <td class="exam locked"><div class="m-0 hidden-text ng-binding" uib-tooltip="${cod} - ${nome}">${nome}</div></td>
-        <td class="exam-specific locked"><div class="m-0 hidden-text ng-binding" uib-tooltip="${mnem} - S-${mnem} (${nome}) (${nome})">${mnem}</div></td>
+        <td class="exam locked"><div class="m-0 hidden-text ng-binding" uib-tooltip="${cod} - ${esame}">${esame}</div></td>
+        <td class="exam-specific locked"><div class="m-0 hidden-text ng-binding" uib-tooltip="${mnem} - ${analita} (${esame})">${analita}</div></td>
       </tr>`),
   ];
   const dxRighe = [
@@ -42,7 +48,7 @@ export function paginaStorico({ paziente = PAZIENTE, date = DATE, esami = ESAMI,
         <button type="button" class="btn btn-default btn-table-document ng-binding"> ${d} <i class="glyphicon glyphicon-file"></i></button>
       </div></th>`).join("")}</tr>`,
     `<tr class="filler-header h-50px"></tr>`,
-    ...esami.map(([, , , valori, stati]) => `<tr class="ng-scope">${
+    ...esami.map(([, , , , valori, stati]) => `<tr class="ng-scope">${
       date.map((_, i) => cellaValore(valori[i] || "", (stati && stati[i]) || 0)).join("")}</tr>`),
   ];
   if (disallinea) dxRighe.pop();   // one row short: the reader must refuse everything

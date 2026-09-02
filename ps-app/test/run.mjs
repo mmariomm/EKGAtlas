@@ -983,7 +983,7 @@ async function scenarioRisultati(browser) {
   await vals.first().click();
   await page.waitForSelector("#psassist-host .rval", { timeout: 8000 });
   const rows = await page.locator("#psassist-host .rval").allInnerTexts();
-  check(scen, rows.length === 3, `tutti i valori (got ${rows.length})`);
+  check(scen, rows.length === 4, `tutti i valori, compreso quello dal nome sconosciuto (got ${rows.length})`);
   const bad = await page.locator("#psassist-host .rval.bad").allInnerTexts();
   check(scen, bad.length === 1 && /Hb/.test(bad[0]) && /↓/.test(bad[0]), "solo il fuori range è segnalato");
   const rosso = await page.evaluate(() => {
@@ -1194,6 +1194,43 @@ async function scenarioRefertoTesto(browser) {
   await context.close();
 }
 
+// Un nome che il pannello non conosce, e una riga che non sa leggere, devono
+// diventare un avviso: mai un buco che il medico scopre da solo.
+async function scenarioNomiInattesi(browser) {
+  const scen = "nomi-inattesi";
+  const mock = createMock({ withResults: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForSelector("#psassist-host [data-esito]", { timeout: 10000 });
+  await page.locator('#psassist-host [data-esito][data-kind="valori"]').first().click();
+  await page.waitForSelector("#psassist-host .rval", { timeout: 10000 });
+
+  const avviso = await $panel(page, ".avvnomi").innerText().catch(() => "");
+  check(scen, /nome non in elenco|nomi non in elenco/.test(avviso), `avvisa dei nomi che non conosce (got: ${avviso})`);
+  check(scen, /riga non letta|righe non lette/.test(avviso), `e delle righe che non ha letto (got: ${avviso})`);
+
+  // il nome sconosciuto è scritto per esteso, non abbreviato a caso
+  const testo = await $panel(page, ".rvals").innerText();
+  check(scen, /Ricerca sangue occulto/.test(testo) && !/^Ricerca$/m.test(testo),
+    "un nome non in elenco è scritto per esteso, non ridotto a un'ipotesi");
+  check(scen, /POSITIVO/.test(testo), "e il suo valore c'è");
+  check(scen, (await page.locator("#psassist-host .rvn.grezza").count()) >= 1,
+    "ed è marcato come non riconosciuto");
+
+  // «quali» mostra esattamente cosa è rimasto fuori
+  await $panel(page, "#avvnomi").click();
+  await page.waitForTimeout(200);
+  const elenco = await $panel(page, ".avvlista").innerText();
+  check(scen, /Aspetto del campione/.test(elenco) && /limpido/.test(elenco),
+    `la riga non letta è mostrata con nome e valore (got: ${elenco.replace(/\n/g, " · ").slice(0, 90)})`);
+
+  // e i valori conosciuti non vengono toccati
+  check(scen, /Hb/.test(testo) && /GB/.test(testo), "gli esami noti restano con la loro sigla");
+  await context.close();
+}
+
 async function scenarioDimissioni(browser) {
   const scen = "dimissioni";
   const mock = createMock({});
@@ -1392,7 +1429,7 @@ async function scenarioValoriRefertati(browser) {
   const chiamate = dopo.state.requests.length;
   await page.locator('#psassist-host [data-esito][data-kind="valori"]').first().click();
   await page.waitForSelector("#psassist-host .rval", { timeout: 8000 });
-  check(scen, (await page.locator("#psassist-host .rval").count()) === 3, "aprendoli ci sono tutti");
+  check(scen, (await page.locator("#psassist-host .rval").count()) === 4, "aprendoli ci sono tutti");
   check(scen, dopo.state.requests.length === chiamate, "senza rileggere dal server");
   await context.close();
 }
@@ -1518,6 +1555,7 @@ const scenarios = [
   ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],
   ["valori nuovi e aggiornati dopo il refresh", scenarioNuoviValori],
   ["referto RX letto come testo", scenarioRefertoTesto],
+  ["nomi inattesi e righe non lette", scenarioNomiInattesi],
   ["fogli di dimissione: copia, modifica, export", scenarioDimissioni],
   ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
