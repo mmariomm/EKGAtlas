@@ -105,6 +105,26 @@ await page.waitForSelector(".psa-tab iframe", { timeout: 20000 });
 check(await page.locator(".psa-tab iframe").count() === 1, "e si aprono nella finta scheda");
 await page.locator(".psa-tab header button").click();
 
+// ---- lo storico: letto dalla pagina del portale, senza chiedere niente
+await page.locator('#sa4-page a:has-text("Storico Dati Clinici")').first().click();
+await page.waitForTimeout(1400);
+const striscia = await page.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector(".bar")?.textContent?.replace(/\s+/g, " ").trim() || "");
+check(/esami · \d+ prelievi/.test(striscia), `sulla pagina dello storico dice cosa ha letto (${striscia.slice(0, 60)})`);
+await page.getByRole("button", { name: "Lista PS" }).click();
+await page.waitForTimeout(900);
+await page.locator('#sa4-page a:has-text("ROSSI MARIO")').first().click();
+await page.waitForTimeout(1400);
+await $('[data-seg="esiti"]').click();
+await page.waitForTimeout(500);
+check(await $("#apristorico").count() === 1, "e tornando sul paziente lo Storico è negli Esiti");
+await $("#apristorico").click();
+await page.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
+const griglia = await page.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  return { righe: r.querySelectorAll(".sttab tbody tr").length, rosse: r.querySelectorAll(".sttab td.fuori").length };
+});
+check(griglia.righe === 7 && griglia.rosse === 6, `la tabella con i suoi fuori range (${griglia.righe} righe, ${griglia.rosse} rosse)`);
+
 // ---- una schermata mai salvata non è un errore
 await page.locator('#sa4-page a:has-text("Storico Documenti")').first().click().catch(() => {});
 await page.waitForTimeout(600);

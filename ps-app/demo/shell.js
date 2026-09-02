@@ -209,6 +209,12 @@
         esami: c ? [...c.etichette.values()] : [],
       }));
     }
+    // "Storico Dati Clinici" — the portal page with every draw side by side.
+    // Here it is the rebuilt one (invented exams): the panel reads it exactly
+    // as it reads the real one, and nothing is asked of anybody.
+    if (/MODALITA=CLINICA/i.test(u.search)) {
+      return { status: 200, headers: { "content-type": "text/html; charset=utf-8" }, body: pagina("storico") };
+    }
     if (/Sa4ViewerExtRedirect\.do|refertostream|uploaddownloadservlet/i.test(path)) {
       const id = q.get("REFERTO_ID") || "";
       const titolo = etichettaReferto(id);

@@ -68,7 +68,8 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
 ## Uso quotidiano
 
 Il pannello ha quattro schermate, con **Richieste | Esiti | Dimissioni** sempre in cima e il
-paziente + episodio nell'intestazione (anche da minimizzato).
+paziente + episodio nell'intestazione (anche da minimizzato). Sulla pagina «Storico dati clinici»
+del portale clinico non c'è pannello: solo una striscia che dice cosa ha letto.
 
 ### Pazienti (‹ in alto a sinistra)
 
@@ -143,6 +144,30 @@ Un unico elenco in ordine di tempo:
 > abbinamento "a occhio" per nome ed ora prima o poi metterebbe i valori di un prelievo sotto il
 > documento di un altro. Meglio due righe distinte e oneste che una fusione plausibile ma
 > sbagliata.
+
+### Storico (tutti i prelievi in una tabella)
+Il gestionale ha una pagina che mette **tutti i prelievi affiancati**: dal paziente, a sinistra,
+**Storico dati clinici › Tabella**. Il pannello **la legge da lì** — non chiede niente al server,
+nemmeno una richiesta in più: legge la tabella che hai già davanti.
+
+- Aprendo quella pagina compare in basso una striscia: *«90 esami · 4 prelievi letti — COGNOME
+  NOME»*. Se sposti le colonne o cambi il periodo, **↻ Rileggi** aggiunge i prelievi nuovi a
+  quelli già letti (non li sostituisce).
+- Tornando sul paziente, in **Esiti** compare la riga **Storico**: un tocco apre la tabella dentro
+  il pannello, **prelievo più recente per primo**, con in rosso ciò che la pagina aveva già marcato
+  fuori range (↑ sopra, ↓ sotto). **⧉ Copia** la mette negli appunti in colonne, **solo alterati**
+  toglie di mezzo il resto.
+- **La tabella si vede solo sotto il paziente giusto**: il nome viaggia insieme ai valori e viene
+  confrontato con quello della pagina. Se non combacia il pannello lo dice e **non mostra un solo
+  valore**. Le due metà della tabella del portale (nomi a sinistra, valori a destra) devono
+  combaciare riga per riga: se non combaciano non legge niente, invece di rischiare di attribuire
+  un valore all'esame sbagliato.
+- Vale solo con l'**estensione** (è lei a portare la tabella da una pagina all'altra), i valori
+  stanno **in memoria e non su disco**, scadono dopo 2 ore e spariscono chiudendo il browser.
+  Il logout li cancella con tutto il resto.
+- Il portale si apre in un'altra scheda: **non serve ricaricare** la pagina del paziente, basta
+  tornarci sopra. Nel **banco di prova** il giro c'è tutto (link «Storico Dati Clinici» in basso a
+  sinistra), su una tabella ricostruita con esami inventati.
 
 ### Dimissioni
 Otto **fogli di dimissione** pronti — gastroenterite, colica renale, artrosi, lombalgia,
@@ -296,6 +321,10 @@ Il flusso completo dell'ordine: quesito, profili, esami, «Crea e aggiungi» con
 la verifica esame per esame, il carrello che compare **nella pagina vera**, la
 Conferma nativa, il wizard di stampa. E gli **Esiti**: i valori letti dalla
 finestra Risultati vera, l'anteprima a due righe, i referti salvati e riaperti.
+Anche lo **Storico**: «Storico Dati Clinici» apre una tabella multi-prelievo
+ricostruita dalla sua forma (`test/fixtures/storico.mjs`, esami inventati: di
+quella pagina non esiste una copia salvata qui), il pannello la legge e la
+riporta negli Esiti come al lavoro.
 
 Di proposito **non** funziona il resto: gli script del gestionale sono rimossi
 (schede e menu interni non si aprono), le schermate mai salvate mostrano una
@@ -369,7 +398,13 @@ stessi flussi dei test di prodotto.
     episodio e indirizzo della pagina, al massimo 8 e per 12 ore, con **svuota** a mano; la
     pagina di login cancella tutto (nomi, valori, registro, referti salvati). I PDF salvati
     scadono dopo 8 ore, massimo 25, e si azzerano alla chiusura del browser.
-15. **I fogli di dimissione sono modelli, non cartelle**: sono l'unica cosa che sopravvive alla
+15. **Dalle pagine aperte, mai al posto tuo**: il programma non inventa chiamate al server. La
+    tabella multi-prelievo viene **letta dalla pagina che hai davanti**, non chiesta all'API che
+    la riempie — una chiamata diretta a quel servizio arriverebbe senza l'`Origin` della sua
+    app, cioè come una cosa diversa da te che clicchi, e non è quello che questo programma fa.
+    I valori portati di là valgono 2 ore, stanno in memoria e non toccano il disco, e non
+    compaiono mai sotto un nome che non sia il loro.
+16. **I fogli di dimissione sono modelli, non cartelle**: sono l'unica cosa che sopravvive alla
     pulizia del logout, proprio perché non contengono il paziente. Per questo l'editor offre
     **⧉ Copia senza salvare** — chi vuole un foglio su misura non è mai costretto a salvarlo — e
     un salvataggio rifiutato dal browser (memoria piena o bloccata) viene **detto**, mai spacciato
@@ -436,6 +471,7 @@ ps-app/
 ├── src/core.js          ← unica fonte: motore + pannello (zero dipendenze)
 ├── src/catalog.json     ← catalogo esami verificato (SSG: POC/Urgenze/Centrale/RX · OSG: POC/Centrale)
 ├── src/dimissioni.json  ← gli otto fogli di dimissione (testi rivisti, nessun dato di paziente)
+├── test/fixtures/       ← la tabella dello storico ricostruita dalla sua forma (dati inventati)
 ├── extension/           ← estensione MV3 pronta da caricare (content.js è generato)
 ├── tools/build.mjs      ← genera extension/content.js e il bookmarklet
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
@@ -444,7 +480,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 46 scenari e2e in Chromium reale
+└── test/                ← simulatore SA4PSO + 46 scenari e2e in Chromium reale (+ storico e referti)
 ```
 
 Sviluppo:
@@ -455,7 +491,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 46 scenari e2e + 5 sull'estensione + 24 sul banco + il cancello privacy
+npm test           # 46 scenari e2e + 15 sull'estensione + 24 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

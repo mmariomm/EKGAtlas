@@ -95,6 +95,7 @@ const b64 = (buf) => {
 
 const KEY = (id) => "ref:" + id;
 const REF_TTL = 8 * 3600e3;   // a shift: cached documents die with it
+const STORICO_TTL = 2 * 3600e3;  // the multi-day table: stale after two hours
 const REF_MAX = 25;           // and never pile up
 
 async function prune() {
@@ -153,9 +154,35 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
 
+  // The multi-day table read off the portal page. It is clinical content, so
+  // it lives in storage.session — memory only, gone when the browser closes —
+  // and there is ONE slot: the last table read. The panel hands it back only
+  // after checking the name, so a table can never be shown under another
+  // patient.
+  if (msg.t === "putStorico") {
+    chrome.storage.session.set({ storico: msg.dati || null })
+      .then(() => reply({ ok: true })).catch(() => reply({ ok: false }));
+    return true;
+  }
+  if (msg.t === "getStorico") {
+    chrome.storage.session.get("storico")
+      .then((o) => {
+        const s = o.storico;
+        if (!s || Date.now() - (s.letto || 0) > STORICO_TTL) return reply({ ok: false });
+        reply({ ok: true, dati: s });
+      })
+      .catch(() => reply({ ok: false }));
+    return true;
+  }
+  if (msg.t === "clearStorico") {
+    chrome.storage.session.remove("storico").then(() => reply({ ok: true })).catch(() => reply({ ok: false }));
+    return true;
+  }
+
   if (msg.t === "clearRef") {
     chrome.storage.local.get(null).then(async (all) => {
       await chrome.storage.local.remove(Object.keys(all).filter((k) => k.startsWith("ref:")));
+      await chrome.storage.session.remove("storico").catch(() => {});
       reply({ ok: true });
     });
     return true;

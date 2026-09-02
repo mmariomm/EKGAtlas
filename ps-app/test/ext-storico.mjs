@@ -1,0 +1,113 @@
+#!/usr/bin/env node
+/*
+ * The multi-day table crossing from ONE origin to the other, with the real
+ * unpacked extension: read on the portal page (zero requests to anyone),
+ * carried by the service worker, shown on the patient's page — and only if
+ * the name matches.
+ *   node test/ext-storico.mjs
+ */
+import { chromium } from "playwright";
+import { createMock } from "./sa4pso-mock.mjs";
+import { paginaStorico } from "./fixtures/storico.mjs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { rmSync, existsSync, statSync } from "node:fs";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const EXT = join(root, "extension");
+const PROFILE = join("/tmp", "psa-stor-" + process.pid);
+const PORTALE = "http://10.11.0.151:9080/clin-port/info-cliniche/dati-clinici";
+
+function chromiumPath() {
+  for (const p of ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"]) {
+    if (existsSync(p) && statSync(p).isFile()) return p;
+  }
+  return undefined;
+}
+let fail = 0;
+const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
+
+const mock = createMock({});           // the patient page is ROSSI MARIO
+const ctx = await chromium.launchPersistentContext(PROFILE, {
+  headless: true,
+  executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
+  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
+});
+await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
+  const req = r.request();
+  let out = mock.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });
+  let h = 0;
+  while (out.status === 302 && h++ < 5) out = mock.handle({ method: "GET", url: new URL(out.headers.location, req.url()).href });
+  await r.fulfill({ status: out.status, headers: out.headers, body: out.body });
+});
+// the portal page, served locally: the panel must never ask it for anything
+let chiamatePortale = 0;
+let paginaCorrente = paginaStorico({ paziente: { idMPI: "900000001", cognome: "ROSSI", nome: "MARIO" } });
+await ctx.route("http://10.11.0.151:9080/**", async (r) => {
+  chiamatePortale++;
+  await r.fulfill({ status: 200, headers: { "content-type": "text/html; charset=utf-8" }, body: paginaCorrente });
+});
+
+console.log("\nstorico: dal portale al paziente");
+const portale = await ctx.newPage();
+await portale.goto(PORTALE);
+await portale.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await portale.waitForFunction(
+  () => /prelievi/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),
+  { timeout: 10000 },
+).catch(() => {});
+const barra = await portale.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".bar").textContent.replace(/\s+/g, " ").trim());
+check(/7 esami · 3 prelievi/.test(barra), `la striscia dice cosa ha letto (got: ${barra.slice(0, 80)})`);
+check(chiamatePortale === 1, `una sola richiesta al portale: quella che ha fatto il medico aprendo la pagina (got ${chiamatePortale})`);
+
+const paziente = await ctx.newPage();
+await paziente.goto(mock.patientUrl);
+await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await paziente.locator('#psassist-host [data-seg="esiti"]').click();
+await paziente.waitForSelector("#psassist-host #apristorico", { timeout: 10000 });
+check(true, "sulla pagina del paziente compare lo Storico");
+await paziente.locator("#psassist-host #apristorico").click();
+await paziente.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
+const tab = await paziente.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  return {
+    righe: r.querySelectorAll(".sttab tbody tr").length,
+    colonne: r.querySelectorAll(".sttab thead th").length - 1,
+    rosse: r.querySelectorAll(".sttab td.fuori").length,
+    prima: [...r.querySelectorAll(".sttab tbody tr")[0].cells].map((c) => c.textContent.trim()).join("|"),
+  };
+});
+check(tab.righe === 7 && tab.colonne === 3, `sette esami per tre prelievi (got ${tab.righe}×${tab.colonne})`);
+check(tab.rosse === 6, `i fuori range che la pagina aveva già marcato (got ${tab.rosse})`);
+check(tab.prima === "Hb|10.4↓|11.8↓|13.2", `il prelievo più recente per primo (got ${tab.prima})`);
+check(chiamatePortale === 1, "e nessuna richiesta in più al portale per mostrarla");
+
+// filtro
+await paziente.locator("#psassist-host #storfiltro").click();
+await paziente.waitForTimeout(200);
+const soloAlterati = await paziente.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".sttab tbody tr").length);
+check(soloAlterati === 5, `«solo alterati» tiene solo le righe con un valore fuori range (got ${soloAlterati})`);
+
+// ---- l'altro paziente: la tabella NON deve comparire --------------------
+paginaCorrente = paginaStorico({ paziente: { idMPI: "900000002", cognome: "VERDI", nome: "GIULIA" } });
+await portale.reload();
+await portale.waitForFunction(
+  () => /prelievi/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),
+  { timeout: 10000 },
+).catch(() => {});
+await paziente.reload();
+await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await paziente.locator('#psassist-host [data-seg="esiti"]').click();
+await paziente.waitForTimeout(1200);
+const dopo = await paziente.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  return { bottone: r.querySelectorAll("#apristorico").length, testo: r.textContent.replace(/\s+/g, " ") };
+});
+check(dopo.bottone === 0, "lo storico di un altro paziente non si apre");
+check(/non di questo paziente/.test(dopo.testo) && !/10\.4/.test(dopo.testo),
+  "il pannello dice di chi è, senza mostrarne un solo valore");
+
+await ctx.close();
+rmSync(PROFILE, { recursive: true, force: true });
+console.log(fail ? `\nSTORICO-ESTENSIONE: ${fail} CHECK FALLITI\n` : "\nSTORICO-ESTENSIONE: TUTTO OK\n");
+process.exit(fail ? 1 : 0);

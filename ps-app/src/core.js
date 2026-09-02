@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.7.0";
+  const VERSION = "3.8.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -690,6 +690,125 @@
 
   // Get a PDF SAFELY, or throw ViewerError(url) so the caller opens it in a
   // tab. Same origin/timeout guards as fetchDoc.
+  // ------------------------------------------------------- STORICO (portale clinico)
+  // "Storico dati clinici" draws the multi-day table as TWO tables side by
+  // side: a frozen left one with the exam names, a scrollable right one with
+  // one column per draw, row-aligned by position. Nothing is asked of the
+  // server here — this reads the table the doctor already has on screen.
+  const STORICO_SX = ".clinical-data-table__freeze-container-left table";
+  const STORICO_DX = ".clinical-data-table__freeze-container-right table";
+  const DATA_ORA = /\b(\d{2}\/\d{2}\/\d{4})(?:\s+(\d{2}:\d{2}))?/;
+
+  function haStorico(doc) { return !!(doc.querySelector(STORICO_SX) && doc.querySelector(STORICO_DX)); }
+
+  // Both tooltips open with an identifier and " - ": the exam one with the
+  // catalogue code ("1583 - ALT TRANSAMINASI", "ABC1234 - …"), the specific
+  // one with the LIS mnemonic ("ALT - S-ALT (…)", "LINF% - …", "HbA1c - …").
+  function primoToken(t) {
+    const m = /^\s*([A-Za-z0-9][A-Za-z0-9%._/-]{0,23})\s+-\s+/.exec(String(t || ""));
+    return m ? m[1] : "";
+  }
+  function pezziTooltip(t) {
+    const tok = primoToken(t);
+    // a code has a number in it: a bare word is a name, and naming it "code"
+    // would be a made-up identifier
+    const codice = /\d/.test(tok) ? tok : "";
+    const resto = tok ? String(t).slice(String(t).indexOf(tok) + tok.length).replace(/^\s*-\s*/, "") : String(t || "");
+    return { codice, nome: resto.trim() };
+  }
+  const mnemonicoStorico = (t) => primoToken(t);
+
+  function leggiStorico(doc) {
+    const sx = doc.querySelector(STORICO_SX), dx = doc.querySelector(STORICO_DX);
+    if (!sx || !dx) return null;
+    // The two tables are one table cut in half: if they ever stop lining up,
+    // a value would land on the wrong exam. Then we read nothing at all.
+    if (sx.rows.length !== dx.rows.length) return null;
+
+    const date = [];
+    for (const th of dx.rows[0] ? dx.rows[0].cells : []) {
+      const m = DATA_ORA.exec((th.textContent || "").replace(/\s+/g, " "));
+      date.push(m ? { data: m[1], ora: m[2] || "", label: m[1] + (m[2] ? " " + m[2] : "") } : null);
+    }
+    if (!date.some(Boolean)) return null;
+
+    const righe = [];
+    for (let i = 1; i < sx.rows.length; i++) {
+      const tdE = sx.rows[i].querySelector("td.exam");
+      if (!tdE) continue;                                   // header and filler rows
+      const nome = (tdE.textContent || "").replace(/\s+/g, " ").trim();
+      if (!nome) continue;
+      const { codice } = pezziTooltip(tdE.querySelector("[uib-tooltip]")?.getAttribute("uib-tooltip"));
+      const spec = sx.rows[i].querySelector("td.exam-specific [uib-tooltip]");
+      const mnem = mnemonicoStorico(spec?.getAttribute("uib-tooltip"));
+      const valori = [];
+      const celle = dx.rows[i] ? dx.rows[i].cells : [];
+      for (let c = 0; c < date.length; c++) {
+        if (!date[c]) continue;
+        const d = celle[c] ? celle[c].querySelector(".exam-value") : null;
+        const v = d ? (d.textContent || "").replace(/\s+/g, " ").trim() : "";
+        // the page already knows what is out of range: SUP above, INF below
+        const stato = !v || !d.classList.contains("out-of-range") ? 0
+          : d.classList.contains("SUP") ? 1 : d.classList.contains("INF") ? -1 : 0;
+        valori.push({ v, stato });
+      }
+      if (valori.some((x) => x.v)) righe.push({ nome, codice, mnem, valori });
+    }
+    if (!righe.length) return null;
+
+    // who this table belongs to — a value under the wrong name is the worst
+    // thing this program could do, so the identity travels WITH the values
+    const testa = [...doc.querySelectorAll(".panel-heading, app-root-selected-anagrafe")]
+      .map((e) => (e.textContent || "").replace(/\s+/g, " ")).find((t) => /idMPI/i.test(t)) || "";
+    // "Nome" must not match inside "Cognome": the label starts a word
+    const campo = (k) => (new RegExp("(?:^|\\s)" + k + "\\s*:\\s*([^:]+?)(?:\\s+[A-Za-z ]+:|$)", "i").exec(testa) || [])[1]?.trim() || "";
+    const periodo = [...doc.querySelectorAll(".panel-heading")]
+      .map((e) => (e.textContent || "").replace(/\s+/g, " ").trim())
+      .find((t) => /^Tabella esami periodo/i.test(t)) || "";
+
+    return {
+      paziente: { idMPI: campo("idMPI"), cognome: campo("Cognome"), nome: campo("Nome") },
+      periodo, date: date.filter(Boolean), righe, letto: Date.now(),
+    };
+  }
+
+  // Two reads of the same table can show different draws: the portal only
+  // renders the columns in view. Merging by (esame, data) means scrolling the
+  // period ADDS draws instead of replacing them.
+  function unisciStorico(vecchio, nuovo) {
+    if (!vecchio || !nuovo) return nuovo || vecchio || null;
+    if (chiavePaziente(vecchio.paziente) !== chiavePaziente(nuovo.paziente)) return nuovo;  // another patient: start over
+    const date = [...vecchio.date];
+    for (const d of nuovo.date) if (!date.some((x) => x.label === d.label)) date.push(d);
+    date.sort((a, b) => ordData(a.label) - ordData(b.label));
+    const perEsame = new Map();
+    const versa = (dati) => {
+      for (const r of dati.righe) {
+        const k = (r.mnem || "") + "|" + r.nome;
+        const cur = perEsame.get(k) || { nome: r.nome, codice: r.codice, mnem: r.mnem, per: new Map() };
+        r.valori.forEach((v, i) => { if (v.v && dati.date[i]) cur.per.set(dati.date[i].label, v); });
+        perEsame.set(k, cur);
+      }
+    };
+    versa(vecchio); versa(nuovo);
+    const righe = [...perEsame.values()].map((e) => ({
+      nome: e.nome, codice: e.codice, mnem: e.mnem,
+      valori: date.map((d) => e.per.get(d.label) || { v: "", stato: 0 }),
+    }));
+    return { paziente: nuovo.paziente, periodo: nuovo.periodo, date, righe, letto: Date.now() };
+  }
+  const ordData = (label) => {
+    const m = /(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/.exec(label || "");
+    return m ? Date.UTC(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)) : 0;
+  };
+  // names as the two systems write them: "ROSSI MARIO" here, Cognome/Nome there
+  function chiavePaziente(p) {
+    const t = [p?.cognome, p?.nome].filter(Boolean).join(" ") || String(p?.nome || "");
+    return normNome(t);
+  }
+  const normNome = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9 ]+/g, " ").trim().split(/\s+/).filter(Boolean).sort().join(" ");
+
   // ------------------------------------------------------- RISULTATI MODEL
   // While a lab request is still being reported, the patient page shows a
   // coloured icon that pops up RcsAccessiRisultatiElenco.do — plain HTML on
@@ -1026,7 +1145,7 @@
     forgetQuesiti();
     try {
       for (const k of Object.keys(sessionStorage)) {
-        if (k.startsWith(NS) && /(^|\.)(ris|visto|reftxt|log|refopen|receipt|confirm|queue|print|ui|afterNav|dimdraft)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
+        if (k.startsWith(NS) && /(^|\.)(ris|visto|reftxt|log|refopen|receipt|confirm|queue|print|ui|afterNav|dimdraft|storico)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
       }
     } catch { /* blocked storage: nothing to clear */ }
     try { if (typeof chrome !== "undefined" && chrome.runtime?.id) chrome.runtime.sendMessage({ t: "clearRef" }, () => void chrome.runtime.lastError); } catch { /* not the extension build */ }
@@ -1658,6 +1777,24 @@
              padding: 9px 10px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
              color: #16232E; background: #fff; }
     .dedit:focus { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .storbtn { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; cursor: pointer;
+               border: 1px solid #9DBFDE; background: #F4F9FD; border-radius: 9px; padding: 7px 10px; margin-bottom: 6px; font: inherit; }
+    .storbtn:hover { background: #EAF2FA; border-color: #0B5CAD; }
+    .storbtn:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .sb-t { font-size: 12.5px; font-weight: 700; color: #0B5CAD; }
+    .sb-m { flex: 1 1 auto; font-size: 11.5px; color: #5B6B7A; }
+    .stwrap { overflow-x: auto; border: 1px solid #E3E8EF; border-radius: 8px; }
+    .sttab { border-collapse: collapse; font-size: 11.5px; width: 100%; }
+    .sttab th, .sttab td { padding: 3px 7px; white-space: nowrap; border-bottom: 1px solid #EDF1F6; }
+    .sttab thead th { position: sticky; top: 0; background: #F8FBFE; color: #5B6B7A; font-weight: 600;
+                      font-size: 10.5px; text-align: right; border-bottom: 1px solid #D9E2EC; }
+    .sttab .sth { display: block; font-size: 9.5px; color: #A3B2C2; font-weight: 500; }
+    .sttab th.stn { position: sticky; left: 0; z-index: 1; background: #fff; text-align: left;
+                    font-weight: 600; color: #16232E; max-width: 116px; overflow: hidden; text-overflow: ellipsis; }
+    .sttab thead th.stn { background: #F8FBFE; z-index: 2; }
+    .sttab td { text-align: right; color: #35506B; font-variant-numeric: tabular-nums; }
+    .sttab td.fuori { color: #B3261E; font-weight: 800; }
+    .sttab tbody tr:hover td, .sttab tbody tr:hover th.stn { background: #F4F9FD; }
     .reftxt { font-size: 12.5px; line-height: 1.5; color: #16232E; }
     .reftxt .rt { padding: 1px 0; }
     .reftxt .rt:empty { display: none; }
@@ -1742,6 +1879,9 @@
       this.referti = [];                // patient page: result rows, newest first
       this.risultati = [];              // lab values still being reported
       this.esiti = [];                  // risultati + referti, newest first
+      this.storico = null;              // the portal's multi-day table, if it is THIS patient's
+      this.storicoAltri = "";           // ...or the name it belongs to, when it is not
+      this.soloAlterati = false;        // storico: show only what is out of range
       this.pos = store.get("pos", null); // user-dragged panel position {left, top}
       this.size = store.get("size", null); // user-resized panel {w, h}
       this.runPatient = null;           // patient name PINNED when a run starts
@@ -1758,7 +1898,11 @@
         });
         this._titleObs.observe(titleEl, { childList: true, characterData: true, subtree: true });
       }
-      this._unload = (e) => { e.preventDefault(); e.returnValue = ""; };
+      // the portal page is another tab: coming back here is the moment to look
+    // for a table read in the meantime
+    this._visibile = () => { if (!document.hidden && this.pageType === "patient") this.caricaStorico(); };
+    document.addEventListener("visibilitychange", this._visibile);
+    this._unload = (e) => { e.preventDefault(); e.returnValue = ""; };
       this._esc = (e) => { if (e.key === "Escape" && this.runState === "running") this.stop(); };
       window.addEventListener("keydown", this._esc, true);
     }
@@ -1803,6 +1947,7 @@
       // it, unless this navigation is itself carrying the answer
       this.message = nota || null;
       this.view = v; this.viewId = id || null; this.persistUi(); this.render();
+      if (v === "esiti" && !this.storico) this.caricaStorico();   // read on the portal meanwhile?
     }
     // the inline banner: a string is something that went wrong, {ok} is a
     // confirmation. Every view shows it — the panel always answers.
@@ -2080,6 +2225,7 @@
       else if (this.view === "esiti") body = this.viewEsiti();
       else if (this.view === "valori") body = this.viewValori();
       else if (this.view === "referto") body = this.viewReferto();
+      else if (this.view === "storico") body = this.viewStorico();
       else if (this.view === "dimissioni") body = this.viewDimissioni();
       else if (this.view === "dimtesto") body = this.viewDimTesto();
       else if (this.view === "dimimport") body = this.viewDimImport();
@@ -2100,7 +2246,7 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto", storico: "Storico", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni" }[this.view] || "";
       // the discharge sheets are templates: no episode belongs in that header
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
       const sub = inHome ? "ultime 12 ore"
@@ -2131,7 +2277,7 @@
             <div class="card" role="dialog" aria-label="${esc(APP)}" style="${sizeStyle}">
               <div class="hd" id="draghd" title="Trascina per spostare · doppio click per riportare in alto a destra">
                 ${section ? `<button class="iconbtn" id="back" title="${
-                  this.view === "valori" || this.view === "referto" ? "Torna agli esiti"
+                  this.view === "valori" || this.view === "referto" || this.view === "storico" ? "Torna agli esiti"
                   : this.view === "dimtesto" || this.view === "dimimport" ? "Torna ai fogli di dimissione"
                   : "Tutti i pazienti"}">‹</button>` : LOGO}<b class="who">${esc(inHome ? "Pazienti" : who)}</b>
                 <span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>
@@ -2141,7 +2287,7 @@
               ${!this.runState && this.pageType === "patient" && this.view !== "home" ? `
                 <div class="seg">
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
-                  <button class="${this.view === "esiti" || this.view === "valori" || this.view === "referto" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>
+                  <button class="${this.view === "esiti" || this.view === "valori" || this.view === "referto" || this.view === "storico" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>
                   <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
@@ -2402,8 +2548,80 @@
             ${hasExt() && nSaved < nRef ? `<button class="mini" id="refsave">⬇ Salva referti</button>` : ""}
             ${(nSaved || open.size) ? `<button class="mini" id="refreset">↻ Resetta</button>` : ""}
           </div>
+          ${this.storico ? `
+            <button class="storbtn" id="apristorico" title="La tabella letta su «Storico dati clinici»">
+              <span class="sb-t">Storico</span>
+              <span class="sb-m">${esc(String(this.storico.righe.length))} esami · ${esc(String(this.storico.date.length))} prelievi</span>
+              <span class="rgo">›</span>
+            </button>` : this.storicoAltri ? `
+            <div class="hint">In memoria c'è lo storico di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non lo mostro.</div>` : ""}
           <div class="rlist">${rows}</div>
         </div>`;
+    }
+
+    // The multi-day table: exams down, draws across, newest first. It is read
+    // from the portal page, never asked to the server.
+    viewStorico() {
+      const st = this.storico;
+      if (!st) return `<div class="hint">Nessuno storico in memoria. Aprilo dal gestionale: «Storico dati clinici» › Tabella.</div>`;
+      const col = st.date.map((d, i) => ({ ...d, i })).reverse();   // newest first, like Esiti
+      const righe = st.righe.filter((r) => !this.soloAlterati || r.valori.some((v) => v.v && v.stato));
+      const celle = (r) => col.map((c) => {
+        const v = r.valori[c.i] || { v: "", stato: 0 };
+        return `<td class="${v.stato ? "fuori" : ""}">${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}</td>`;
+      }).join("");
+      return `
+        <div class="sec">
+          <div class="lbl">Storico (${st.righe.length} esami)
+            <button class="mini" id="storcopy">⧉ Copia</button>
+            <button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>
+          </div>
+          <div class="stwrap">
+            <table class="sttab">
+              <thead><tr><th class="stn">Esame</th>${col.map((c) => `<th>${esc(c.data.slice(0, 5))}<span class="sth">${esc(c.ora)}</span></th>`).join("")}</tr></thead>
+              <tbody>${righe.map((r) => `<tr><th class="stn" title="${esc(r.nome)}${r.mnem ? " · " + esc(r.mnem) : ""}">${esc(sigla(r.nome))}</th>${celle(r)}</tr>`).join("")}</tbody>
+            </table>
+          </div>
+          <div class="hint">${esc(st.periodo || "")} · letto dalla pagina del portale, senza chiedere niente al server.</div>
+        </div>`;
+    }
+
+    testoStorico() {
+      const st = this.storico;
+      if (!st) return "";
+      const col = st.date.map((d, i) => ({ ...d, i })).reverse();
+      const out = ["Esame\t" + col.map((c) => c.label).join("\t")];
+      for (const r of st.righe) {
+        out.push([r.nome, ...col.map((c) => {
+          const v = r.valori[c.i] || { v: "", stato: 0 };
+          return v.v + (v.stato ? (v.stato < 0 ? " (basso)" : " (alto)") : "");
+        })].join("\t"));
+      }
+      return out.join("\n");
+    }
+
+    // The table read on the portal page comes back through the extension. It
+    // is shown ONLY if it belongs to the patient on screen: everywhere else
+    // in this program the identity is checked before the data is used, and a
+    // table of values is the last place to make an exception.
+    async caricaStorico() {
+      if (this.pageType !== "patient" || (!hasExt() && !DEMO)) return;
+      const r = DEMO ? { ok: true, dati: tabStore.get("storico.demo", null) } : await ask({ t: "getStorico" });
+      const dati = r && r.ok ? r.dati : null;
+      if (!dati || !dati.righe) { this.storico = null; this.storicoAltri = ""; return; }
+      const qui = normNome((document.title || "").trim());
+      const suo = chiavePaziente(dati.paziente);
+      const prima = (this.storico?.letto || 0) + "|" + this.storicoAltri;
+      if (qui && suo && qui === suo) { this.storico = dati; this.storicoAltri = ""; }
+      else {
+        this.storico = null;
+        this.storicoAltri = [dati.paziente?.cognome, dati.paziente?.nome].filter(Boolean).join(" ");
+      }
+      // re-render only when something actually changed, and never over a
+      // screen being typed into: coming back to this tab must not cost a caret
+      if ((this.storico?.letto || 0) + "|" + this.storicoAltri === prima) return;
+      if (this.view === "dimtesto" || this.view === "dimimport") return;
+      this.render();
     }
 
     async refreshRefCache() {
@@ -2916,7 +3134,7 @@
       });
 
       $("#back")?.addEventListener("click", () => this.setView(
-        this.view === "valori" || this.view === "referto" ? "esiti"
+        this.view === "valori" || this.view === "referto" || this.view === "storico" ? "esiti"
         : this.view === "dimtesto" || this.view === "dimimport" ? "dimissioni"
         : "home"));
       this.root.querySelectorAll("[data-seg]").forEach((b) => b.addEventListener("click", () => this.setView(b.getAttribute("data-seg"))));
@@ -2925,6 +3143,14 @@
       $("#risall")?.addEventListener("click", () => this.reloadTuttiValori());
       $("#letto")?.addEventListener("click", () => { if (this.viewId) { this.marcaLetto(this.viewId); this.render(); } });
       $("#apripdf")?.addEventListener("click", () => { if (this.viewId) this.openReferto(this.viewId); });
+      $("#apristorico")?.addEventListener("click", () => this.setView("storico"));
+      $("#storfiltro")?.addEventListener("click", () => { this.soloAlterati = !this.soloAlterati; this.render(); });
+      $("#storcopy")?.addEventListener("click", async () => {
+        const b = this.root.querySelector("#storcopy");
+        let ok = false;
+        try { await navigator.clipboard.writeText(this.testoStorico()); ok = true; } catch { /* below */ }
+        if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
+      });
       this.root.querySelectorAll("[data-dcopy]").forEach((b) => b.addEventListener("click", async () => {
         const d = dimissioni()[b.getAttribute("data-dcopy")];
         if (!d) return;
@@ -3607,6 +3833,10 @@
   // ==================================================================== BOOT
   function boot() {
     if (document.getElementById("psassist-host")) return;
+    // The portal's multi-day table: here the panel does not order anything and
+    // does not ask the server anything. It reads the table already on screen
+    // and hands it to the patient's page. Nothing else.
+    if (haStorico(document)) { bootStorico(); return; }
     scadenzaQuesiti();
     const pageType = classify(document);
     if (pageType === "login") { forgetAll(); return; }
@@ -3640,6 +3870,7 @@
       panel.pending = pending; // a richiesta of this run still needs confirming
       panel.render();
       panel.refreshRefCache();
+      panel.caricaStorico();
       panel.prefetchValori();
       if (pending) {
         // auto-continue once per richiesta; afterwards it is a button, so an
@@ -3664,6 +3895,70 @@
       const pageQ = document.forms.namedItem("RICHIESTACrea")?.elements?.namedItem("QUESITO_DIAGNOSTICO");
       if (pageQ && pageQ.value.trim()) { panel._q = pageQ.value; panel.render(); }
     }
+  }
+
+  // ---------------------------------------------------- portale clinico
+  // A strip at the bottom of the portal page: what was read, for whom, and a
+  // way to read it again after moving the columns. No panel, no ordering.
+  function bootStorico() {
+    let unito = null;
+    const host = document.createElement("div");
+    host.id = "psassist-host";
+    const root = host.attachShadow({ mode: "open" });
+    document.documentElement.appendChild(host);
+
+    const disegna = (stato) => {
+      root.innerHTML = `
+        <style>
+          :host { all: initial; }
+          .bar { position: fixed; left: 12px; bottom: 12px; z-index: 2147483647;
+                 display: flex; align-items: center; gap: 10px; max-width: min(560px, 92vw);
+                 font: 12.5px/1.4 -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+                 background: #0B5CAD; color: #fff; border-radius: 10px; padding: 8px 10px 8px 12px;
+                 box-shadow: 0 6px 22px rgba(11,44,80,.28); }
+          .bar.ko { background: #6B7A88; }
+          b { font-weight: 700; }
+          .who { opacity: .85; }
+          button { border: 1px solid rgba(255,255,255,.5); background: transparent; color: #fff;
+                   border-radius: 7px; padding: 4px 9px; font: inherit; font-weight: 600; cursor: pointer; }
+          button:hover { background: rgba(255,255,255,.14); }
+          button:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+        </style>
+        <div class="bar ${stato.ok ? "" : "ko"}" role="status">
+          <span>${stato.testo}</span>
+          <button id="rileggi" title="Dopo aver spostato le colonne o cambiato il periodo">↻ Rileggi</button>
+        </div>`;
+      root.getElementById("rileggi").addEventListener("click", leggi);
+    };
+
+    const leggi = () => {
+      const letto = leggiStorico(document);
+      if (!letto) { disegna({ ok: false, testo: "Nessuna tabella da leggere in questa pagina." }); return; }
+      unito = unisciStorico(unito, letto);
+      const valori = unito.righe.reduce((n, r) => n + r.valori.filter((v) => v.v).length, 0);
+      const chi = [unito.paziente.cognome, unito.paziente.nome].filter(Boolean).join(" ");
+      const detto = `<b>${esc(String(unito.righe.length))} esami · ${esc(String(unito.date.length))} prelievi</b> letti (${esc(String(valori))} valori) <span class="who">— ${esc(chi)}</span>. Torna sul paziente: sono in Esiti.`;
+      // in the banco there is one origin and no service worker: the tab itself
+      // is the bridge
+      if (DEMO) { tabStore.set("storico.demo", unito); disegna({ ok: true, testo: detto }); return; }
+      if (!hasExt()) {
+        disegna({ ok: false, testo: `Letti ${esc(String(unito.righe.length))} esami, ma serve l'estensione per portarli sul paziente.` });
+        return;
+      }
+      ask({ t: "putStorico", dati: unito }).then((r) => {
+        disegna(r && r.ok ? { ok: true, testo: detto }
+          : { ok: false, testo: "Letto, ma l'estensione non li ha ricevuti: apri il paziente e riprova." });
+      });
+    };
+
+    // the table redraws when the period changes or the columns are scrolled
+    let attesa = null;
+    const osserva = document.querySelector(".clinical-data-table__freeze-panel");
+    if (osserva) {
+      new MutationObserver(() => { clearTimeout(attesa); attesa = setTimeout(leggi, 400); })
+        .observe(osserva, { childList: true, subtree: true });
+    }
+    leggi();
   }
 
   boot();

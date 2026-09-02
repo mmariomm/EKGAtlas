@@ -13,6 +13,7 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { paginaStorico } from "../test/fixtures/storico.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(root, p), "utf8");
@@ -43,6 +44,10 @@ for (const f of readdirSync(esempiDir)) {
   if (!f.endsWith(".html")) continue;
   pagine[f.replace(/\.html$/, "")] = readFileSync(join(esempiDir, f), "utf8");
 }
+// The portal's multi-day table is NOT a saved page: it is rebuilt from its
+// shape (test/fixtures/storico.mjs), with the banco's own patient on it, so
+// the banco can show the reader at work without a real one ever existing here.
+pagine.storico = paginaStorico({ paziente: { idMPI: "900000001", cognome: "ROSSI", nome: "MARIO" } });
 const ESEMPI = {
   pagine,
   icone: JSON.parse(readFileSync(join(esempiDir, "_icone.json"), "utf8")),
