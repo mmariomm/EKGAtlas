@@ -37,7 +37,7 @@ check(quanti === 8, `gli otto fogli in servizio sono già dentro (got ${quanti})
 
 // si scrive dentro, e basta: né tasti modifica né schermate
 await page.locator("input.tit").first().fill("Gastroenterite (mia versione)");
-await page.locator("textarea.corpo").first().click();
+await page.locator("article.foglio textarea.corpo").first().click();
 await page.keyboard.type("\nRIGA MIA\n");
 await page.getByRole("button", { name: "+ Nuovo foglio" }).click();
 await page.locator("input.tit").first().fill("Ferita suturata");
@@ -56,6 +56,15 @@ check(d.gastroenterite?.nome === "Gastroenterite (mia versione)" && /RIGA MIA/.t
   "titolo e testo modificati sono quelli salvati");
 check(!!d["ferita-suturata"], `la chiave del foglio nuovo viene dal titolo (got ${Object.keys(d).find((k) => /ferita/.test(k))})`);
 check(!Object.keys(d).some((k) => /foglio-nuovo/.test(k)), "e non resta la chiave provvisoria");
+
+// il download non si può verificare (e in certe pagine è vietato): il JSON
+// deve comparire anche sulla pagina, così non resta mai solo una promessa
+const box = await page.evaluate(() => {
+  const u = document.getElementById("uscita");
+  return { visibile: !!u && !u.hidden, testo: (document.getElementById("json") || {}).value || "" };
+});
+check(box.visibile && /"dimissioni"/.test(box.testo),
+  "il JSON compare anche nella pagina, da copiare a mano se serve");
 
 // il lavoro a metà non si perde ricaricando
 await page.reload();

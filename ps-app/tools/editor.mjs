@@ -63,6 +63,9 @@ const page = `<!doctype html>
   .corpo:focus { outline:0; border-color:var(--accent); background:var(--ground); }
   .meta { display:flex; gap:12px; font-size:11.5px; color:var(--faint); margin-top:4px; }
   .vuoto { text-align:center; color:var(--muted); padding:40px 10px; }
+  .jsonbox { display:block; width:100%; height:180px; resize:vertical; border:1px solid var(--accent);
+             border-radius:9px; padding:10px 12px; background:var(--card); color:var(--ink);
+             font:12.5px/1.5 "IBM Plex Mono", ui-monospace, monospace; margin-bottom:14px; }
   .nota { margin-top:18px; font-size:13px; color:var(--muted); }
   .nota code { font-family:"IBM Plex Mono", ui-monospace, monospace; font-size:12.5px; }
 </style></head><body>
@@ -70,8 +73,8 @@ const page = `<!doctype html>
   <header>
     <h1>Fogli di dimissione</h1>
     <p class="sub">Clicca un titolo o un testo e scrivi: è tutto modificabile.
-      <b>Salva</b> scarica il file da caricare nel pannello con <b>⤒ Importa</b> — e lo copia negli appunti.
-      Il lavoro a metà resta in questo browser.</p>
+      <b>Salva</b> mette il JSON <b>negli appunti</b> (e prova a scaricare il file): da lì lo carichi
+      nel pannello con <b>⤒ Importa</b>. Il lavoro a metà resta in questo browser.</p>
   </header>
 
   <div class="barra">
@@ -80,6 +83,11 @@ const page = `<!doctype html>
     <button id="carica">⤒ Carica un JSON</button>
     <button id="orig" title="Rimette i testi in servizio, buttando le modifiche">↺ Originali</button>
     <span class="spia" id="spia"></span>
+  </div>
+
+  <div id="uscita" hidden>
+    <p class="nota" id="uscitaTit"></p>
+    <textarea id="json" class="jsonbox" readonly spellcheck="false" aria-label="JSON dei fogli"></textarea>
   </div>
 
   <div id="elenco"></div>
@@ -187,7 +195,18 @@ document.getElementById("salva").addEventListener("click", async () => {
     file = true;
   } catch {}
   try { await navigator.clipboard.writeText(testo); appunti = true; } catch {}
-  spia(file && appunti ? "salvato: file + appunti" : file ? "salvato: dimissioni.json" : appunti ? "copiato negli appunti" : "non riuscito", !file && !appunti);
+  // Il download non si può verificare (e in certe pagine è vietato): quello
+  // che si può garantire è che il JSON finisca in mano a chi lo chiede.
+  // Quindi si mostra sempre, selezionato, sotto la barra.
+  const u = document.getElementById("uscita");
+  document.getElementById("uscitaTit").innerHTML = appunti
+    ? "<b>Negli appunti.</b> Incollalo nel pannello con <b>⤒ Importa</b>" + (file ? " — e ho anche provato a scaricare <code>dimissioni.json</code>." : ".")
+    : "<b>Copia da qui</b> (gli appunti non erano disponibili) e incollalo nel pannello con <b>⤒ Importa</b>.";
+  const ta = document.getElementById("json");
+  ta.value = testo;
+  u.hidden = false;
+  ta.focus(); ta.select();
+  spia(appunti ? "negli appunti" : "copia dal riquadro", !appunti);
 });
 
 document.getElementById("carica").addEventListener("click", async () => {
