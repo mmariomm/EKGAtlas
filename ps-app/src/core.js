@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.13.0";
+  const VERSION = "3.14.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1471,6 +1471,7 @@
       const m = dimValido(mie[k]) ? mie[k] : null;
       out[k] = {
         nome: v.nome, testo: m ? m.testo : v.testo, originale: v.testo, modificato: !!m,
+        rivisto: !!v.rivisto,
         // the shipped text moved AFTER this doctor forked it
         aggiornato: !!(m && m.base && m.base !== impronta(v.testo)),
       };
@@ -2078,6 +2079,9 @@
       background: #DCEAF9; border-radius: 3px; padding: 0 3px; box-shadow: inset 0 -2px 0 #0B5CAD; }
     .eprev.nuovi { -webkit-line-clamp: unset; }   /* nothing new stays hidden behind the clamp */
     .dlist { display: flex; flex-direction: column; gap: 4px; }
+    .dsep { display: flex; align-items: center; gap: 8px; margin: 8px 2px 3px; font-size: 10.5px;
+            color: #A3B2C2; text-transform: uppercase; letter-spacing: .06em; }
+    .dsep::after { content: ""; flex: 1 1 auto; height: 1px; background: #E3E8EF; }
     .drow { display: flex; align-items: stretch; gap: 5px; }
     /* Copying is what this list is FOR: the target is the whole row, not a
        13px glyph at its edge. The pencil stays a button of its own. */
@@ -3192,13 +3196,21 @@
     viewDimissioni() {
       const tutte = dimissioni();
       const chiavi = Object.keys(tutte);
+      // I fogli rivisti stanno in cima, gli altri sotto una riga che lo dice:
+      // così si vede a colpo d'occhio dove si è già messo mano.
+      let stacco = false;
       const righe = chiavi.map((k) => {
         const d = tutte[k];
+        let sep = "";
+        if (!d.rivisto && !stacco && chiavi.some((x) => tutte[x].rivisto)) {
+          stacco = true;
+          sep = `<div class="dsep"><span>non ancora rivisti</span></div>`;
+        }
         const n = d.testo.split("\n").filter((r) => r.trim()).length;
         const segno = d.aggiornato
           ? `<span class="dmod agg" title="L'originale è cambiato dopo la tua modifica">⟳</span>`
           : d.modificato ? `<span class="dmod" title="Testo modificato da te">•</span>` : "";
-        return `
+        return `${sep}
         <div class="drow">
           <button class="dcopia" data-dcopy="${esc(k)}" title="Copia negli appunti il foglio «${esc(d.nome)}»"
                   aria-label="Copia il foglio ${esc(d.nome)}">

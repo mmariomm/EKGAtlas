@@ -1266,7 +1266,12 @@ async function scenarioDimissioni(browser) {
   await page.waitForSelector("#psassist-host .drow", { timeout: 10000 });
 
   const righe = await page.locator("#psassist-host .drow").count();
-  check(scen, righe === 8, `otto fogli di dimissione (got ${righe})`);
+  check(scen, righe === 9, `nove fogli di dimissione (got ${righe})`);
+  // i rivisti in cima, poi una riga che separa gli altri
+  const ordine = await page.locator("#psassist-host .dnome").allInnerTexts();
+  check(scen, /Gastrite/.test(ordine[0] || ""), `i fogli rivisti vengono per primi (got ${ordine[0]})`);
+  check(scen, (await page.locator("#psassist-host .dsep").count()) === 1,
+    "e una riga separa quelli non ancora rivisti");
   const testoLista = await $panel(page, ".dlist").innerText();
   check(scen, /Colica renale/.test(testoLista) && !/paracetamolo/i.test(testoLista),
     "la lista mostra le patologie, mai il testo");
@@ -1276,6 +1281,7 @@ async function scenarioDimissioni(browser) {
   await page.waitForTimeout(300);
   const clip = await page.evaluate(() => navigator.clipboard.readText());
   check(scen, /COLICA RENALE/.test(clip) && /Ketoprofene sale di lisina/.test(clip), "⧉ copia il foglio intero");
+  check(scen, /Tamsulosina 0,4 mg/.test(clip), "col testo aggiornato dal medico");
   check(scen, /non sostituiscono il medico curante/.test(clip), "con la frase di chiusura standard");
 
   // edit, save, and the change survives a page reload
@@ -1312,7 +1318,7 @@ async function scenarioDimissioni(browser) {
   const json = await page.evaluate(() => navigator.clipboard.readText());
   let dati = null;
   try { dati = JSON.parse(json); } catch { /* checked below */ }
-  check(scen, !!dati && Object.keys(dati.dimissioni || {}).length === 8, "⬇ JSON esporta tutti i fogli");
+  check(scen, !!dati && Object.keys(dati.dimissioni || {}).length === 9, "⬇ JSON esporta tutti i fogli");
   check(scen, !!dati && /testo mio/.test(dati.dimissioni.artrosi.testo), "compresa la mia versione");
 
   // back to the original

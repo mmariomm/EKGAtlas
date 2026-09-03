@@ -33,16 +33,17 @@ await page.waitForSelector("article.foglio");
 
 console.log("\neditor dei fogli di dimissione");
 const quanti = await page.locator("article.foglio").count();
-check(quanti === 8, `gli otto fogli in servizio sono già dentro (got ${quanti})`);
+check(quanti === 9, `i fogli in servizio sono già dentro (got ${quanti})`);
 
 // si scrive dentro, e basta: né tasti modifica né schermate
-await page.locator("input.tit").first().fill("Gastroenterite (mia versione)");
+const primaChiave = await page.locator("article.foglio .chiave").first().innerText();
+await page.locator("input.tit").first().fill("Titolo cambiato a mano");
 await page.locator("article.foglio textarea.corpo").first().click();
 await page.keyboard.type("\nRIGA MIA\n");
 await page.getByRole("button", { name: "+ Nuovo foglio" }).click();
 await page.locator("input.tit").first().fill("Ferita suturata");
 await page.waitForTimeout(300);
-check(await page.locator("article.foglio").count() === 9, "un foglio nuovo si aggiunge in cima");
+check(await page.locator("article.foglio").count() === 10, "un foglio nuovo si aggiunge in cima");
 
 await page.getByRole("button", { name: "⬇ Salva (JSON)" }).click();
 await page.waitForTimeout(500);
@@ -51,9 +52,9 @@ try { dati = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()
 check(!!dati && dati.dimissioni && typeof dati.dimissioni === "object",
   "Salva produce la forma che il pannello importa ({dimissioni: {...}})");
 const d = (dati && dati.dimissioni) || {};
-check(Object.keys(d).length === 9, `con tutti i fogli (got ${Object.keys(d).length})`);
-check(d.gastroenterite?.nome === "Gastroenterite (mia versione)" && /RIGA MIA/.test(d.gastroenterite?.testo || ""),
-  "titolo e testo modificati sono quelli salvati");
+check(Object.keys(d).length === 10, `con tutti i fogli (got ${Object.keys(d).length})`);
+check(d[primaChiave]?.nome === "Titolo cambiato a mano" && /RIGA MIA/.test(d[primaChiave]?.testo || ""),
+  `titolo e testo modificati sono quelli salvati (${primaChiave})`);
 check(!!d["ferita-suturata"], `la chiave del foglio nuovo viene dal titolo (got ${Object.keys(d).find((k) => /ferita/.test(k))})`);
 check(!Object.keys(d).some((k) => /foglio-nuovo/.test(k)), "e non resta la chiave provvisoria");
 
@@ -79,7 +80,7 @@ await page.waitForTimeout(150);
 check(/Confermi/.test(await orig.innerText()), "↺ Originali chiede conferma prima di buttare il lavoro");
 await orig.click();
 await page.waitForTimeout(300);
-check(await page.locator("article.foglio").count() === 8, "e poi rimette gli otto fogli in servizio");
+check(await page.locator("article.foglio").count() === 9, "e poi rimette i fogli in servizio");
 
 check(errori.length === 0, `nessun errore JavaScript (${errori.slice(0, 2).join(" | ") || "nessuno"})`);
 await browser.close();

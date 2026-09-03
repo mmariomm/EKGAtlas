@@ -255,9 +255,9 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   sinistra), su una tabella ricostruita con esami inventati.
 
 ### Dimissioni
-Otto **fogli di dimissione** pronti — gastroenterite, colica renale, artrosi, lombalgia,
-distorsione di caviglia, cistite, faringotonsillite, trauma cranico minore — scritti per il
-paziente e rivisti da medici d'urgenza: dosi per esteso, tetto del paracetamolo, e in fondo a ogni
+Nove **fogli di dimissione** pronti — i **cinque rivisti dal medico** stanno in cima, poi una riga
+(*«non ancora rivisti»*) e sotto gli altri: si vede a colpo d'occhio dove si è già messo mano.
+Sono scritti per il paziente: dosi per esteso, tetto del paracetamolo, e in fondo a ogni
 foglio i motivi per **tornare in Pronto Soccorso**.
 
 - L'elenco mostra **solo la patologia**, mai il testo: al momento della dimissione sai già quale ti
@@ -265,7 +265,9 @@ foglio i motivi per **tornare in Pronto Soccorso**.
 - **Un tocco sulla riga copia tutto il foglio** negli appunti, pronto da incollare nel verbale. Il
   bersaglio è la riga intera, non un'icona da 13 px.
 - **✎** apre il testo in grande e lo riscrive **per le volte successive**: le modifiche restano su
-  quel computer (`localStorage`), non nel repository e non sul server. Il foglio modificato porta un
+  quel computer (`localStorage`) — **sopravvivono al logout, alla chiusura del browser e agli
+  aggiornamenti del programma**, perché sono tue e non dati di un paziente. Non finiscono nel
+  repository e non escono dal computer. Il foglio modificato porta un
   **pallino azzurro** nell'elenco.
 - Quello che scrivi è **salvato come bozza a ogni tasto**: se cambi schermata, se il gestionale
   ricarica la pagina o se ti chiamano, al ritorno il testo ti aspetta dov'era.
