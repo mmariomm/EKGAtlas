@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.15.0";
+  const VERSION = "3.16.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1468,6 +1468,47 @@
     return store.set(noteKey, n);
   }
 
+  // ----------------------------------------------------------------- TEMPI
+  // Un cronometro per capire dove va il tempo di un turno. Si tiene solo
+  // l'ISTANTE DI INIZIO, mai i secondi passati: così ricaricare la pagina o
+  // riavviare il browser non perde niente e il conto resta giusto. Il
+  // cronometro in corso è semplicemente la voce che non ha ancora una fine.
+  const tempiKey = "tempi.v1";
+  const TEMPI_TTL = 7 * 24 * 3600e3;
+  const TITOLI = ["Visita ed esami", "Scrittura cartella", "Gestione (consulenti)", "Dimissione"];
+  function tempi() {
+    const l = store.get(tempiKey, []);
+    const ora = Date.now();
+    const vivi = (Array.isArray(l) ? l : []).filter((t) => t && t.inizio && ora - t.inizio < TEMPI_TTL);
+    if (vivi.length !== (Array.isArray(l) ? l.length : 0)) store.set(tempiKey, vivi);
+    return vivi;
+  }
+  const tempoInCorso = () => tempi().find((t) => !t.fine) || null;
+  function avviaTempo(titolo, paz, ep) {
+    const l = tempi();
+    const ora = Date.now();
+    for (const t of l) if (!t.fine) t.fine = ora;   // uno solo alla volta: il precedente si chiude
+    l.push({ id: "t" + ora.toString(36), titolo: String(titolo || "").slice(0, 60) || "Attivita",
+             paz: String(paz || "").slice(0, 60), ep: String(ep || ""), inizio: ora });
+    return store.set(tempiKey, l);
+  }
+  function fermaTempo() {
+    const l = tempi();
+    const t = l.find((x) => !x.fine);
+    if (!t) return false;
+    t.fine = Date.now();
+    return store.set(tempiKey, l);
+  }
+  const scordaTempo = (id) => store.set(tempiKey, tempi().filter((t) => t.id !== id));
+  const durata = (t) => Math.max(0, ((t.fine || Date.now()) - t.inizio));
+  const mmss = (ms) => {
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m ${String(s % 60).padStart(2, "0")}s`;
+  };
+  const oraDi = (ms) => new Date(ms).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+  const giornoDi = (ms) => new Date(ms).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
+
   const dimKey = "dimissioni.v1";
   // A short fingerprint of the text a doctor's version was forked from. It is
   // what lets a later release SAY that the original changed (a dose, a
@@ -2151,6 +2192,35 @@
             border-radius: 7px; padding: 3px 8px; font: 600 11px/1.4 inherit; cursor: pointer; }
     .abtn:hover { border-color: #9DBFDE; color: #0B5CAD; }
     .abtn.del:hover { border-color: #E9BAB6; background: #FBEBEA; color: #B3261E; }
+    .tchip { display: flex; align-items: center; }
+    .tchip button { border: 1px solid rgba(255,255,255,.45); background: transparent; color: #fff;
+                    font: 600 11.5px/1 inherit; border-radius: 7px; padding: 5px 7px; cursor: pointer; }
+    .tchip button:hover { background: rgba(255,255,255,.16); }
+    .tchip.on button:first-child { border-radius: 7px 0 0 7px; border-right: 0; font-variant-numeric: tabular-nums; }
+    .tchip.on button:last-child { border-radius: 0 7px 7px 0; }
+    .tchip.on { box-shadow: 0 0 0 2px rgba(255,255,255,.18); border-radius: 8px; }
+    .tnow { display: flex; align-items: center; gap: 10px; background: #EDF7F0; border: 1px solid #BCE0C9;
+            border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+    .tbig { font: 800 20px/1 inherit; color: #124F31; font-variant-numeric: tabular-nums; }
+    .tlab { flex: 1 1 auto; font-size: 12px; color: #35506B; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .tpres { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+    .tpre { border: 1px solid #C4D0DC; background: #fff; color: #16232E; border-radius: 999px;
+            padding: 7px 12px; font: 600 12px/1 inherit; cursor: pointer; }
+    .tpre:hover { border-color: #0B5CAD; color: #0B5CAD; background: #F4F8FB; }
+    .tlibero { display: flex; gap: 6px; }
+    .tlibero input { flex: 1 1 auto; border: 1px solid #D9E2EC; border-radius: 8px; padding: 7px 9px;
+                     font: 12.5px/1.3 inherit; color: #16232E; }
+    .tlibero input:focus { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .ttot { float: right; font-size: 11px; color: #5B6B7A; font-weight: 600; }
+    .tlist { display: flex; flex-direction: column; gap: 3px; }
+    .trow { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 9px; font-size: 11.5px;
+            border: 1px solid #EDF1F6; border-radius: 8px; background: #fff; }
+    .trow .tt { flex: 1 1 auto; font-weight: 600; color: #16232E; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .trow .tp { flex: 0 1 90px; color: #8296A9; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .trow .td { flex: 0 0 auto; font-weight: 700; color: #0B5CAD; font-variant-numeric: tabular-nums; }
+    .trow .to { flex: 0 0 auto; color: #A3B2C2; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+    .tdel { border: 0; background: transparent; color: #A3B2C2; cursor: pointer; font-size: 12px; padding: 0 2px; }
+    .tdel:hover { color: #B3261E; }
     .notaw { position: relative; padding: 6px 10px 0; }
     .nota { display: block; width: 100%; resize: none; overflow: hidden;
             border: 1px solid transparent; border-radius: 8px; background: #F8FBFE;
@@ -2272,6 +2342,7 @@
       this.storico = null;              // the portal's multi-day table, if it is THIS patient's
       this.storicoAltri = "";           // ...or the name it belongs to, when it is not
       this.storicoVia = "nome";         // su cosa è stata confermata l'identità
+      this.storicoDaConfermare = false; // c'è, ma serve il codice fiscale per dire che è suo
       this.soloAlterati = false;        // storico: show only what is out of range
       this.mostraNomi = false;          // the unexpected-name list, open or closed
       this.mostraArch = false;          // l'elenco degli archiviati, aperto o chiuso
@@ -2343,11 +2414,18 @@
       // it, unless this navigation is itself carrying the answer
       this.message = nota || null;
       this.view = v; this.viewId = id || null; this.persistUi(); this.render();
-      if (v === "esiti") {
-        this.caricaStorico();          // letto sul portale intanto? e l'identità è cambiata?
-        this.prefetchValori({ tutti: true });   // aprire gli Esiti è chiedere i valori
-      }
+      if (v === "esiti") this.caricaStorico();   // letto sul portale intanto? e l'identità è cambiata?
     }
+    // Il cronometro si vede da ogni schermata, altrimenti ci si dimentica di
+    // fermarlo — ed è l'unica cosa che lo rende utile. Un tocco sul tempo
+    // apre la scheda, un tocco su ⏹ lo ferma: fermarlo non deve costare due
+    // passaggi.
+    chipTempo() {
+      const t = tempoInCorso();
+      if (!t) return `<button class="tchip off" id="tapri" title="Cronometro: misura quanto ti prende un'attività">▶</button>`;
+      return `<span class="tchip on"><button id="tapri" title="${esc(t.titolo)}${t.paz ? " · " + esc(t.paz) : ""} — apri i tempi">● ${esc(mmss(durata(t)))}</button><button id="tstop" title="Ferma il cronometro">⏹</button></span>`;
+    }
+
     // the inline banner: a string is something that went wrong, {ok} is a
     // confirmation. Every view shows it — the panel always answers.
     notaHtml() {
@@ -2629,6 +2707,7 @@
       else if (this.view === "dimtesto") body = this.viewDimTesto();
       else if (this.view === "dimimport") body = this.viewDimImport();
       else if (this.view === "consensi") body = this.viewConsensi();
+      else if (this.view === "tempi") body = this.viewTempi();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
       else body = this.viewHome(patientName, ep);
 
@@ -2646,10 +2725,11 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto", storico: "Storico", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto", storico: "Storico", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", tempi: "Tempi" }[this.view] || "";
       // the discharge sheets are templates: no episode belongs in that header
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
       const sub = inHome ? "ultime 12 ore"
+        : this.view === "tempi" ? "quanto ti prende"
         : this.view === "consensi" ? "Consensi · moduli"
         : inDim ? "Dimissioni · modelli"
         : section ? `${section}${ep ? " · " + esc(ep) : ""}`
@@ -2682,6 +2762,7 @@
                   : this.view === "dimtesto" || this.view === "dimimport" ? "Torna ai fogli di dimissione"
                   : "Tutti i pazienti"}">‹</button>` : LOGO}<b class="who">${esc(inHome ? "Pazienti" : who)}</b>
                 <span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>
+                ${this.chipTempo()}
                 <button class="iconbtn" id="collapse" title="Riduci">—</button>
               </div>
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
@@ -2979,7 +3060,8 @@
       return `
         <div class="sec">
           <div class="lbl">Esiti (${this.esiti.length})
-            ${nVivi ? `<button class="mini" id="risall" ${ra ? "disabled" : ""} title="Rilegge tutti i valori dal server, un prelievo alla volta">${ra ? `↻ ${ra.done}/${ra.total}…` : "↻ Aggiorna"}</button>` : ""}
+            ${nVivi ? `<button class="mini" id="risall" ${ra ? "disabled" : ""} title="Legge i valori dal gestionale, un prelievo alla volta">${
+              ra ? `↻ ${ra.done}/${ra.total}…` : this.daLeggere().length === nVivi ? "⭳ Carica i valori" : "↻ Aggiorna"}</button>` : ""}
             ${hasExt() && nSaved < nRef ? `<button class="mini" id="refsave">⬇ Salva referti</button>` : ""}
             ${(nSaved || open.size) ? `<button class="mini" id="refreset">↻ Resetta</button>` : ""}
           </div>
@@ -2989,7 +3071,11 @@
               <span class="sb-m">${esc(String(this.storico.righe.length))} esami · ${esc(String(this.storico.date.length))} prelievi</span>
               <span class="rgo">›</span>
             </button>` : this.storicoAltri ? `
-            <div class="hint">In memoria c'è lo storico di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non lo mostro.</div>` : ""}
+            <div class="hint">In memoria c'è lo storico di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non lo mostro.</div>`
+            : this.storicoDaConfermare ? `
+            <div class="hint">C'è uno storico letto per un paziente con questo nome. Per essere sicuri
+              che sia il suo serve il codice fiscale, che sta nella finestra Risultati:
+              <b>⭳ Carica i valori</b> e comparirà.</div>` : ""}
           <div class="rlist">${rows}</div>
         </div>`;
     }
@@ -3057,12 +3143,21 @@
       const mio = this.cfEpisodio();
       const scelta = scegliScheda(indice, mio, titolo);
       this.storicoVia = scelta && scelta.cf && mio ? "codice fiscale" : "nome";
+      // C'è una scheda con questo nome ma non gliela si può attribuire perché
+      // di questo paziente non conosciamo ancora il codice fiscale: lo si
+      // dice, invece di far sparire un bottone senza spiegazioni.
+      this.storicoDaConfermare = !scelta && !mio
+        && indice.some((v) => v.cf && combaciaNome(titolo, v.paziente));
+
       if (!scelta) {
         const altri = [...new Set(indice.map((v) => [v.paziente?.cognome, v.paziente?.nome].filter(Boolean).join(" "))
           .filter(Boolean))];
-        this.storicoAltri = altri.length
-          ? (altri.length === 1 ? altri[0] : `${altri.length} pazienti (${altri.slice(0, 2).join(", ")}…)`)
-          : "un paziente che la pagina non nomina";
+        // se la scheda porta QUESTO nome non è «di un altro paziente»: manca
+        // solo la prova che sia sua, e quella la si dice diversamente
+        this.storicoAltri = this.storicoDaConfermare ? ""
+          : altri.length
+            ? (altri.length === 1 ? altri[0] : `${altri.length} pazienti (${altri.slice(0, 2).join(", ")}…)`)
+            : "un paziente che la pagina non nomina";
         return null;
       }
       const pieno = await ask({ t: "getStorico", chiave: scelta.chiave });
@@ -3105,13 +3200,22 @@
     // Chi è questo paziente, per la nota: il codice fiscale se i prelievi
     // ce l'hanno detto, altrimenti il nome della pagina. Cambia da nome a
     // codice fiscale appena i valori arrivano — e la nota lo segue.
+    // Il titolo della pagina è il nome del paziente SOLO dove c'è davvero un
+    // paziente: sulla lista del reparto quel titolo è «PRONTO SOCCORSO -
+    // LISTA», e prenderlo per un nome è come attribuire una nota, un tempo o
+    // una scheda a un paziente che non esiste.
+    nomePaziente() {
+      const puoOrdinare = !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
+      return this.pageType === "patient" && puoOrdinare ? (document.title || "").trim() : "";
+    }
+
     // La chiave del paziente di questa pagina: una sola, usata dalla nota,
     // dalla scheda clinica e dai referti tenuti — così «elimina questo
     // paziente» sa esattamente cosa togliere.
     chiavePaz() {
       const cf = this.cfEpisodio();
       if (cf) return "cf:" + cf;
-      const n = normNome((document.title || "").trim());
+      const n = normNome(this.nomePaziente());
       return n ? "nome:" + n : "";
     }
     // La chiave passa da «nome:» a «cf:» nel momento in cui i valori portano
@@ -3120,7 +3224,7 @@
     chiaveNota() {
       const k = this.chiavePaz();
       if (!k.startsWith("cf:")) return k;
-      const vecchia = "nome:" + normNome((document.title || "").trim());
+      const vecchia = "nome:" + normNome(this.nomePaziente());
       const tutte = noteTutte();
       if (!tutte[k] && tutte[vecchia] && vecchia !== "nome:") {
         scriviNota(k, tutte[vecchia].t);
@@ -3306,6 +3410,90 @@
 
     // Un tocco apre il modulo e la finestra di stampa. I PDF sono dentro
     // l'estensione: nessuna richiesta al server, funziona anche offline.
+    // Fine turno: una pagina HTML da guardare o stampare, raggruppata per
+    // paziente, coi totali per attività. Come per l'editor dei fogli, si apre
+    // anche in una scheda: un download che il browser rifiuta non deve
+    // lasciare le mani vuote.
+    esportaTempi() {
+      const chiusi = tempi().filter((t) => t.fine).sort((a, b) => a.inizio - b.inizio);
+      if (!chiusi.length) return;
+      const perPaz = new Map(), perTit = new Map();
+      for (const t of chiusi) {
+        const k = t.paz || "(senza paziente)";
+        if (!perPaz.has(k)) perPaz.set(k, []);
+        perPaz.get(k).push(t);
+        perTit.set(t.titolo, (perTit.get(t.titolo) || 0) + durata(t));
+      }
+      const tot = chiusi.reduce((n, t) => n + durata(t), 0);
+      const riga = (t) => `<tr><td>${esc(t.titolo)}</td><td class="n">${esc(mmss(durata(t)))}</td><td class="n">${esc(oraDi(t.inizio))}</td><td class="n">${esc(oraDi(t.fine))}</td></tr>`;
+      const html = `<!doctype html><html lang="it"><head><meta charset="utf-8">
+<title>Tempi ${esc(giornoDi(chiusi[0].inizio))}</title><style>
+  body{font:14px/1.5 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#151E27;background:#fff;margin:0;padding:28px 22px 60px}
+  h1{font-size:22px;margin:0 0 4px} .sub{color:#5D6E7E;font-size:13px;margin-bottom:22px}
+  h2{font-size:15px;margin:22px 0 6px;padding-bottom:4px;border-bottom:1px solid #DBE3EA;display:flex;justify-content:space-between}
+  table{border-collapse:collapse;width:100%;max-width:760px} td,th{padding:4px 8px;border-bottom:1px solid #EDF1F6;text-align:left}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#8397A8}
+  .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap} .tot{font-weight:700}
+  @media print{body{padding:0}}
+</style></head><body>
+<h1>Tempi — ${esc(giornoDi(chiusi[0].inizio))}</h1>
+<p class="sub">${chiusi.length} attività · totale <b>${esc(mmss(tot))}</b> · dalle ${esc(oraDi(chiusi[0].inizio))} alle ${esc(oraDi(chiusi[chiusi.length - 1].fine))}</p>
+<h2>Per attività</h2>
+<table><tbody>${[...perTit.entries()].sort((a, b) => b[1] - a[1])
+  .map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n tot">${esc(mmss(v))}</td><td class="n">${Math.round((v / tot) * 100)}%</td></tr>`).join("")}</tbody></table>
+${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span class="tot">${esc(mmss(l.reduce((n, t) => n + durata(t), 0)))}</span></h2>
+<table><thead><tr><th>Attività</th><th class="n">Durata</th><th class="n">Inizio</th><th class="n">Fine</th></tr></thead>
+<tbody>${l.map(riga).join("")}</tbody></table>`).join("")}
+</body></html>`;
+      let file = false;
+      try {
+        const u = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+        const a = document.createElement("a");
+        a.href = u; a.download = `tempi-${new Date(chiusi[0].inizio).toISOString().slice(0, 10)}.html`;
+        document.documentElement.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(u), 20000);
+        file = true;
+      } catch { /* la scheda qui sotto resta */ }
+      openTab(URL.createObjectURL(new Blob([html], { type: "text/html" })), "_blank");
+      this.message = { ok: file ? "Tempi esportati: file nei download, e aperti in una scheda." : "Tempi aperti in una scheda: da lì Ctrl+S o Ctrl+P." };
+      this.render();
+    }
+
+    viewTempi() {
+      const t = tempoInCorso();
+      const chiusi = tempi().filter((x) => x.fine).sort((a, b) => b.inizio - a.inizio);
+      const chi = this.nomePaziente();
+      const preset = TITOLI.map((x) => `<button class="tpre" data-avvia="${esc(x)}">${esc(x)}</button>`).join("");
+      const tot = chiusi.reduce((n, x) => n + durata(x), 0);
+      const righe = chiusi.slice(0, 40).map((x) => `
+        <div class="trow">
+          <span class="tt">${esc(x.titolo)}</span>
+          <span class="tp">${esc(x.paz || "—")}</span>
+          <span class="td">${esc(mmss(durata(x)))}</span>
+          <span class="to">${esc(oraDi(x.inizio))}–${esc(oraDi(x.fine))}</span>
+          <button class="tdel" data-scorda="${esc(x.id)}" title="Togli questa riga">✕</button>
+        </div>`).join("");
+      return `
+        <div class="sec">
+          ${t ? `
+            <div class="tnow">
+              <span class="tbig">${esc(mmss(durata(t)))}</span>
+              <span class="tlab">${esc(t.titolo)}${t.paz ? ` · ${esc(t.paz)}` : ""}</span>
+              <button class="btn primary" id="tstop2">⏹ Ferma</button>
+            </div>` : `
+            <div class="lbl">Cosa stai facendo${chi ? ` · ${esc(chi)}` : ""}</div>
+            <div class="tpres">${preset}</div>
+            <div class="tlibero">
+              <input id="tlib" placeholder="…oppure scrivilo" maxlength="60" aria-label="Attività">
+              <button class="mini" id="tavvia">▶ Avvia</button>
+            </div>`}
+          <div class="lbl">Registrati (${chiusi.length})${chiusi.length ? `<button class="mini" id="texp">⬇ Esporta</button><span class="ttot">totale ${esc(mmss(tot))}</span>` : ""}</div>
+          <div class="tlist">${righe || `<div class="hint">Ancora niente. Avvia un cronometro qui sopra.</div>`}</div>
+          <div class="hint">Non si salvano i secondi passati, si salva l'istante di inizio: ricaricare
+            la pagina o riavviare il browser non cambia il conto. Restano una settimana, su questo computer.</div>
+        </div>`;
+    }
+
     viewConsensi() {
       const righe = CONSENSI.map((c) => `
         <button class="crow" data-cons="${esc(c.k)}" title="${esc(c.esteso)}">
@@ -3546,31 +3734,19 @@
       tabStore.set(key, { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
       this.archiviaPrelievo(e, rows, cf);
       if (baseline) this.segnaVisto(e.id, rows);   // prima lettura: è il riferimento
+      // coi valori arriva il codice fiscale: adesso la scheda clinica del
+      // portale si può attribuire (o escludere) con certezza
+      if (cf) this.caricaStorico();
       return rows;
     }
 
-    // Aprire una pagina paziente legge UN prelievo, il più recente: è quello
-    // che si guarda per primo. Gli altri si leggono quando si apre la scheda
-    // Esiti — che è il momento in cui li si vuole confrontare, cioè quando li
-    // stai chiedendo. E un prelievo che ha già fallito non si ritenta da solo
-    // a ogni ricarico di pagina: si rilegge col bottone ↻.
+    // Aprire un paziente NON legge niente. I valori si leggono quando li
+    // chiedi: aprendo un prelievo, o col bottone «Carica i valori» che li
+    // prende tutti, uno alla volta. Un clic su un paziente non è una
+    // richiesta di leggere il laboratorio.
     daLeggere() {
       return this.esiti.filter((x) => x.kind === "valori"
         && !tabStore.get(this.risKey(x.id), null) && !this.rottiTab.has(x.id));
-    }
-    async prefetchValori({ tutti = false } = {}) {
-      if (this._leggendo) return;
-      const todo = tutti ? this.daLeggere().slice(0, 6) : this.daLeggere().slice(0, 1);
-      if (!todo.length) return;
-      this._leggendo = true;
-      try {
-        for (const e of todo) {
-          try { await this.leggiPrelievo(e, { baseline: true }); this.render(); }
-          catch { this.rottiTab.add(e.id); }
-          if (todo.length > 1) await sleep(PACE_MS).catch(() => {});
-        }
-        this.caricaStorico();   // il codice fiscale arriva coi valori
-      } finally { this._leggendo = false; }
     }
 
     async copyValori() {
@@ -3895,6 +4071,22 @@
         // uscire dal campo salva subito: non si perde una riga per un clic
         nota.addEventListener("blur", () => { clearTimeout(attesa); scriviNota(this.chiaveNota(), nota.value); });
       }
+      $("#tapri")?.addEventListener("click", () => this.setView("tempi"));
+      const ferma = () => { fermaTempo(); this.render(); };
+      $("#tstop")?.addEventListener("click", ferma);
+      $("#tstop2")?.addEventListener("click", ferma);
+      const avvia = (titolo) => {
+        if (!String(titolo || "").trim()) return;
+        avviaTempo(titolo, this.nomePaziente(), this.episodeId);
+        this.setView("tempi");
+      };
+      this.root.querySelectorAll("[data-avvia]").forEach((b) =>
+        b.addEventListener("click", () => avvia(b.getAttribute("data-avvia"))));
+      $("#tavvia")?.addEventListener("click", () => avvia(this.root.querySelector("#tlib")?.value));
+      $("#tlib")?.addEventListener("keydown", (e) => { if (e.key === "Enter") avvia(e.target.value); });
+      this.root.querySelectorAll("[data-scorda]").forEach((b) =>
+        b.addEventListener("click", () => { scordaTempo(b.getAttribute("data-scorda")); this.render(); }));
+      $("#texp")?.addEventListener("click", () => this.esportaTempi());
       $("#vaidim")?.addEventListener("click", () => this.setView("dimissioni"));
       this.root.querySelectorAll("[data-cons]").forEach((b) => b.addEventListener("click", () => {
         const c = CONSENSI.find((x) => x.k === b.getAttribute("data-cons"));
@@ -4587,7 +4779,6 @@
       panel.render();
       panel.refreshRefCache();
       panel.caricaStorico();
-      panel.prefetchValori();
       if (pending) {
         // auto-continue once per richiesta; afterwards it is a button, so an
         // abandoned confirmation can never turn into a navigation loop

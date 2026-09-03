@@ -1011,6 +1011,8 @@ async function scenarioRisultati(browser) {
 
   // previews are there on arrival: BOTH draws are fetched in the background,
   // and the marks need the older one to compare against
+  // I valori non si leggono da soli: si chiedono. È il bottone che li carica.
+  await $panel(page, "#risall").click();
   await page.waitForFunction(
     () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
     { timeout: 25000 },
@@ -1135,6 +1137,8 @@ async function scenarioAggiornaTutti(browser) {
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, '[data-seg="esiti"]').click();
+  // I valori non si leggono da soli: si chiedono. È il bottone che li carica.
+  await $panel(page, "#risall").click();
   await page.waitForFunction(
     () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
     { timeout: 25000 },
@@ -1166,6 +1170,8 @@ async function scenarioNuoviValori(browser) {
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, '[data-seg="esiti"]').click();
+  // I valori non si leggono da soli: si chiedono. È il bottone che li carica.
+  await $panel(page, "#risall").click();
   await page.waitForFunction(
     () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
     { timeout: 25000 },
@@ -1272,6 +1278,45 @@ async function scenarioNomiInattesi(browser) {
 
   // e i valori conosciuti non vengono toccati
   check(scen, /Hb/.test(testo) && /GB/.test(testo), "gli esami noti restano con la loro sigla");
+  await context.close();
+}
+
+// Il cronometro tiene l'ISTANTE DI INIZIO, non i secondi passati: ricaricare
+// la pagina non deve azzerare niente, e il paziente registrato dev'essere un
+// paziente vero — non il titolo della lista del reparto.
+async function scenarioTempi(browser) {
+  const scen = "tempi";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, "#tapri").click();
+  await page.waitForSelector("#psassist-host .tpre", { timeout: 8000 });
+  await $panel(page, '[data-avvia="Visita ed esami"]').click();
+  await page.waitForSelector("#psassist-host .tbig", { timeout: 8000 });
+  check(scen, /0m/.test(await $panel(page, ".tbig").innerText()), "il cronometro parte con un tocco");
+
+  // il tempo continua a correre attraverso un ricarico della pagina
+  await page.evaluate(() => {
+    const k = "psassist:tempi.v1";
+    const l = JSON.parse(localStorage.getItem(k));
+    l[l.length - 1].inizio -= 5 * 60 * 1000;   // come se fosse partito 5 minuti fa
+    localStorage.setItem(k, JSON.stringify(l));
+  });
+  await page.reload();
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.waitForTimeout(600);
+  const chip = await $panel(page, ".tchip.on").innerText();
+  check(scen, /5m/.test(chip), `dopo il ricarico il conto è giusto, non azzerato (got ${chip.replace(/\s+/g, " ")})`);
+
+  await $panel(page, "#tstop").click();
+  await page.waitForTimeout(400);
+  await $panel(page, "#tapri").click();
+  await page.waitForSelector("#psassist-host .trow", { timeout: 8000 });
+  const riga = (await $panel(page, ".trow").first().innerText()).replace(/\s+/g, " ");
+  check(scen, /Visita ed esami/.test(riga) && /5m/.test(riga), `fermandolo resta durata e titolo (got ${riga})`);
+  check(scen, /ROSSI MARIO/.test(riga), "e il paziente su cui stavi");
+  check(scen, (await $panel(page, ".tchip.off").count()) === 1, "e il cronometro torna spento");
   await context.close();
 }
 
@@ -1447,6 +1492,8 @@ async function scenarioValoriRefertati(browser) {
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, '[data-seg="esiti"]').click();
   // both draws must be read before the laboratory reports, or there is nothing to keep
+  // I valori non si leggono da soli: si chiedono. È il bottone che li carica.
+  await $panel(page, "#risall").click();
   await page.waitForFunction(
     () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
     { timeout: 25000 },
@@ -1607,6 +1654,7 @@ const scenarios = [
   ["valori nuovi e aggiornati dopo il refresh", scenarioNuoviValori],
   ["referto RX letto come testo", scenarioRefertoTesto],
   ["nomi inattesi e righe non lette", scenarioNomiInattesi],
+  ["cronometro: parte, sopravvive al cambio pagina, si ferma", scenarioTempi],
   ["fogli di dimissione: copia, modifica, export", scenarioDimissioni],
   ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],

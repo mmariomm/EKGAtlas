@@ -24,6 +24,7 @@ function chromiumPath() {
   }
   return undefined;
 }
+const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`);
 let fail = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
 
@@ -66,8 +67,16 @@ const paziente = await ctx.newPage();
 await paziente.goto(mock.patientUrl);
 await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 await paziente.locator('#psassist-host [data-seg="esiti"]').click();
-await paziente.waitForSelector("#psassist-host #apristorico", { timeout: 10000 });
-check(true, "sulla pagina del paziente compare lo Storico");
+await paziente.waitForTimeout(600);
+// Senza aver letto un prelievo il pannello non conosce il codice fiscale del
+// paziente, quindi non può dire che quella tabella è sua: lo dice invece di
+// far sparire un bottone. I valori si leggono quando li si chiede.
+check(/serve il codice fiscale/.test(await $panel(paziente, ".bd").innerText()),
+  "prima dei valori dice perché non può attribuirsi lo storico");
+await $panel(paziente, "#risall").click();
+await paziente.waitForSelector("#psassist-host #apristorico", { timeout: 20000 });
+await paziente.waitForTimeout(1200);   // la scheda clinica si completa coi prelievi letti
+check(true, "caricati i valori, lo Storico compare");
 await paziente.locator("#psassist-host #apristorico").click();
 await paziente.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
 const tab = await paziente.evaluate(() => {
@@ -148,7 +157,7 @@ await portale.waitForFunction(
 await paziente.reload();
 await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 await paziente.locator('#psassist-host [data-seg="esiti"]').click();
-await paziente.waitForSelector("#psassist-host #apristorico", { timeout: 10000 });
+await paziente.waitForSelector("#psassist-host #apristorico", { timeout: 15000 });
 await paziente.locator("#psassist-host #apristorico").click();
 await paziente.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
 const suoi = await paziente.evaluate(() => {

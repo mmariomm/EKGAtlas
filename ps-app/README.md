@@ -496,12 +496,14 @@ stessi flussi dei test di prodotto.
     tenuti e nota. La pagina di login cancella il resto — ma il `sessionStorage` è
     **per scheda**: pulisce la scheda in cui è comparso il login, non le altre schede aperte.
     Su un PC condiviso: usa un profilo Chrome tuo e chiudi il browser a fine turno.
-15. **Dalle pagine aperte, mai al posto tuo**: il programma non inventa chiamate al server. La
-    tabella multi-prelievo viene **letta dalla pagina che hai davanti**, non chiesta all'API che
-    la riempie — una chiamata diretta a quel servizio arriverebbe senza l'`Origin` della sua
-    app, cioè come una cosa diversa da te che clicchi, e non è quello che questo programma fa.
-    I valori portati di là valgono 2 ore, stanno in memoria e non toccano il disco, e non
-    compaiono mai sotto un nome che non sia il loro.
+15. **Niente parte da solo, e niente si inventa.** Aprire la pagina di un paziente non legge
+    **nessun** valore: cliccare un paziente non è chiedere il laboratorio. I valori si leggono
+    quando li chiedi — aprendo un prelievo, o con **⭳ Carica i valori** che li prende tutti, uno
+    alla volta — e un prelievo che ha già fallito non si ritenta da solo. Un referto che apri non
+    viene riletto per tenerne una copia: per quello c'è **⬇ Salva referti**. E la tabella
+    multi-prelievo viene **letta dalla pagina che hai davanti**, non chiesta all'API che la
+    riempie — una chiamata diretta a quel servizio arriverebbe senza l'`Origin` della sua app,
+    cioè come una cosa diversa da te che clicchi, e non è quello che questo programma fa.
 16. **I fogli di dimissione sono modelli, non cartelle**: sono l'unica cosa che sopravvive alla
     pulizia del logout, proprio perché non contengono il paziente. Per questo l'editor offre
     **⧉ Copia senza salvare** — chi vuole un foglio su misura non è mai costretto a salvarlo — e

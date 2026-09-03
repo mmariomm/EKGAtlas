@@ -87,6 +87,8 @@ await $('[data-seg="esiti"]').click();
 await page.waitForSelector("#psassist-host [data-esito]", { state: "attached", timeout: 20000 });
 const nEsiti = await $("[data-esito]").count();
 check(nEsiti >= 4, `gli Esiti arrivano dalla pagina vera (${nEsiti} righe)`);
+// i valori non si leggono da soli: si chiedono
+await $("#risall").click();
 await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelector(".eprev"), { timeout: 30000 }).catch(() => {});
 const prev = await $(".eprev").first().innerText().catch(() => "");
 check(/\bHb\b|\bGB\b/.test(prev), `l'anteprima legge i valori veri, in sigla (${prev.replace(/\s+/g, " ").slice(0, 44)})`);
