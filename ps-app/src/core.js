@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.17.0";
+  const VERSION = "3.18.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -148,6 +148,9 @@
   // Discharge instructions, reviewed before shipping and freely editable by
   // the doctor: what is kept here is a TEMPLATE, never a patient's text.
   const DIMISSIONI = /*__DIMISSIONI__*/ {};
+  // Esame obiettivo: modelli PER IL MEDICO, da incollare nella cartella.
+  // Non escono mai dal computer e non contengono dati di nessun paziente.
+  const EO = /*__EO__*/ {};
 
   // ================================================================ UTILS
   const sleep = (ms, signal) => new Promise((res, rej) => {
@@ -156,6 +159,26 @@
   });
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const now = () => new Date().toLocaleTimeString("it-IT");
+
+  // Copiare negli appunti. navigator.clipboard non esiste sulle origini non
+  // sicure (il portale clinico è http://): lì si passa dal vecchio
+  // execCommand, che invece funziona. Un pulsante «copia» non deve dipendere
+  // da quale delle due pagine si ha davanti.
+  async function copiaTesto(text) {
+    const t = String(text ?? "");
+    try { await navigator.clipboard.writeText(t); return true; } catch { /* ripiego qui sotto */ }
+    let ok = false;
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = t;
+      ta.style.cssText = "position:fixed;left:-9999px;top:0";
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand("copy");
+      ta.remove();
+    } catch { ok = false; }
+    return ok;
+  }
 
   // Controlled hard-stop carrying a headline + body the UI can render loudly.
   class StopError extends Error {
@@ -1556,6 +1579,16 @@
     return store.set(dimKey, mie);
   }
 
+  // EO — un elenco piatto chiave→voce, così una riga o una tendina copiano
+  // allo stesso modo. I testi sono quelli scritti dal medico, verbatim.
+  function eoVoci() {
+    const out = {};
+    if (EO.base && EO.base.testo) out.base = { nome: EO.base.nome || "EO generale", meta: EO.base.meta || "", testo: EO.base.testo, gruppo: "base" };
+    for (const v of EO.casi || []) if (v && v.k && v.testo) out["caso:" + v.k] = { nome: v.nome || v.k, testo: v.testo, gruppo: "casi" };
+    for (const v of EO.frasi || []) if (v && v.k && v.testo) out["frase:" + v.k] = { nome: v.nome || v.k, testo: v.testo, gruppo: "frasi" };
+    return out;
+  }
+
   function learnedCatalog() { return store.get("catalog.v1", {}); }
   // Il catalogo si impara dalle pagine vere, MA un nome già noto non viene
   // mai sovrascritto. Il motivo è il controllo anti-esame-sbagliato: quello
@@ -2100,8 +2133,9 @@
             border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
     .rlab { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .seg { display: flex; margin: 10px 12px 0; border: 1px solid #C4D0DC; border-radius: 10px; overflow: hidden; background: #F4F8FB; }
-    .seg button { flex: 1 1 50%; border: 0; background: transparent; padding: 9px 8px; min-height: 36px;
-                  font-size: 13px; font-weight: 700; color: #35506B; cursor: pointer; }
+    .seg button { flex: 1 1 20%; border: 0; background: transparent; padding: 9px 6px; min-height: 36px;
+                  font-size: 13px; font-weight: 700; color: #35506B; cursor: pointer;
+                  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .seg button + button { border-left: 1px solid #C4D0DC; }
     .seg button.on { background: #0B5CAD; color: #fff; }
     .seg button:not(.on):hover { background: #EAF2FA; color: #0B5CAD; }
@@ -2164,6 +2198,11 @@
             background: #F8FBFE; color: #35506B; font-size: 13px; cursor: pointer; }
     .dbtn:hover { background: #EAF2FA; border-color: #9DBFDE; color: #0B5CAD; }
     .dbtn:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    /* il testo scelto nella tendina: si vede cosa è finito negli appunti */
+    .eotxt { margin-top: 8px; border: 1px solid #E3E8EF; border-left: 3px solid #0B5CAD; border-radius: 8px;
+             background: #F8FBFE; padding: 9px 11px; font-size: 12.5px; line-height: 1.55; color: #35506B;
+             max-height: 34vh; overflow: auto; white-space: pre-wrap; }
+    .eoazione { margin-top: 8px; }
     .dedit { width: 100%; min-height: 46vh; resize: vertical; border: 1px solid #D9E2EC; border-radius: 9px;
              padding: 9px 10px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
              color: #16232E; background: #fff; }
@@ -2458,6 +2497,7 @@
         acq: this.acq || "",
         view: this.view === "home" ? "richieste" : this.view,
         viewId: this.viewId,
+        eoSel: this.eoSel || "",
         ts: Date.now(),
       });
     }
@@ -2477,6 +2517,7 @@
         return;
       }
       this._q = s.q || store.get("lastQ", "") || "";
+      this.eoSel = s.eoSel || "";
       this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
       this.acq = s.acq || "";
       // A page load decides the view, not the stored one: opening a patient
@@ -2512,32 +2553,6 @@
       }
       this.persistUi();
       this.render();
-    }
-
-    // Copy the log for reporting. The quesito is the only clinical text that
-    // can end up in it, so it is masked out before leaving the page.
-    async copyLog() {
-      const head = [
-        `PS Assist ${VERSION} · pagina ${this.pageType}`,
-        `${navigator.userAgent}`,
-        `${new Date().toLocaleString("it-IT")}`,
-        "",
-      ].join("\n");
-      const body = this.logLines.join("\n").replace(/(quesito[^:]*:\s*)"[^"]*"/gi, '$1"…"');
-      const text = head + body;
-      let ok = false;
-      try { await navigator.clipboard.writeText(text); ok = true; } catch { /* fallback below */ }
-      if (!ok) {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.style.cssText = "position:fixed;left:-9999px;top:0";
-        document.body.appendChild(ta);
-        ta.select();
-        try { ok = document.execCommand("copy"); } catch { ok = false; }
-        ta.remove();
-      }
-      const b = this.root.querySelector("#copylog");
-      if (b) { b.textContent = ok ? "✓ copiato" : "copia non riuscita"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
     }
 
     log(line) {
@@ -2712,6 +2727,7 @@
       else if (this.view === "dimtesto") body = this.viewDimTesto();
       else if (this.view === "dimimport") body = this.viewDimImport();
       else if (this.view === "consensi") body = this.viewConsensi();
+      else if (this.view === "eo") body = this.viewEo();
       else if (this.view === "tempi") body = this.viewTempi();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
       else body = this.viewHome(patientName, ep);
@@ -2730,12 +2746,13 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto", storico: "Storico", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", tempi: "Tempi" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto", storico: "Storico", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", tempi: "Tempi" }[this.view] || "";
       // the discharge sheets are templates: no episode belongs in that header
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
       const sub = inHome ? "ultime 12 ore"
         : this.view === "tempi" ? "quanto ti prende"
         : this.view === "consensi" ? "Consensi · moduli"
+        : this.view === "eo" ? "EO · modelli"
         : inDim ? "Dimissioni · modelli"
         : section ? `${section}${ep ? " · " + esc(ep) : ""}`
         : (ep ? "episodio " + esc(ep) : esc(APP));
@@ -2778,6 +2795,7 @@
                   <button class="${this.view === "esiti" || this.view === "valori" || this.view === "referto" || this.view === "storico" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>
                   <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
                   <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi">Consensi</button>
+                  <button class="${this.view === "eo" ? "on" : ""}" data-seg="eo" title="Esame obiettivo da copiare">EO</button>
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
               <div class="bd">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div>
@@ -2836,7 +2854,7 @@
       ].join("");
       return `
         <div class="sec">
-          <div class="lbl">Pazienti<button class="mini" id="vaidim" title="I fogli di dimissione: non appartengono a un paziente">Dimissioni</button>${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
+          <div class="lbl">Pazienti<button class="mini" id="vaieo" title="I modelli di esame obiettivo: non appartengono a un paziente">EO</button><button class="mini" id="vaidim" title="I fogli di dimissione: non appartengono a un paziente">Dimissioni</button>${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
           ${cards || `<div class="hint">Nessun paziente ancora. Apri un paziente: resta qui per il turno.</div>`}
           ${others.length ? `<div class="hint">Aprire un altro paziente ne carica la pagina.</div>` : ""}
           ${archiviati.length ? `
@@ -3501,6 +3519,49 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         </div>`;
     }
 
+    // EO — un tocco copia l'esame obiettivo generale. Sotto, una tendina con
+    // le aggiunte per caso: sceglierne una la copia subito, e la lascia
+    // scritta qui perché si veda cosa è finito negli appunti.
+    viewEo() {
+      const voci = eoVoci();
+      const base = voci.base;
+      const sel = voci[this.eoSel] ? this.eoSel : "";
+      const scelta = sel ? voci[sel] : null;
+      const opz = (gruppo, etichetta) => {
+        const l = Object.entries(voci).filter(([, v]) => v.gruppo === gruppo);
+        if (!l.length) return "";
+        return `<optgroup label="${esc(etichetta)}">${l.map(([k, v]) =>
+          `<option value="${esc(k)}"${k === sel ? " selected" : ""}>${esc(v.nome)}</option>`).join("")}</optgroup>`;
+      };
+      if (!base && !Object.keys(voci).length) return `<div class="hint">Modelli di EO non disponibili in questa versione.</div>`;
+      return `
+        <div class="sec">
+          <div class="lbl">Esame obiettivo</div>
+          ${base ? `
+            <div class="drow">
+              <button class="dcopia" data-eocopy="base" title="Copia negli appunti l'esame obiettivo generale"
+                      aria-label="Copia l'esame obiettivo generale">
+                <span class="dnome">${esc(base.nome)}</span>
+                <span class="dmeta">${esc(base.meta)}</span><span class="dico">⧉</span>
+              </button>
+            </div>` : ""}
+          <div class="lbl">Aggiungi per caso</div>
+          <select class="res" id="eocaso" aria-label="Aggiunta di esame obiettivo da copiare">
+            <option value="">Scegli: si copia da sé…</option>
+            ${opz("casi", "Casi")}
+            ${opz("frasi", "Frasi pronte")}
+          </select>
+          <div class="drow eoazione" ${scelta ? "" : "hidden"}>
+            <button class="dcopia" data-eocopy="${esc(sel)}" id="eoricopia" title="Copia di nuovo questo testo">
+              <span class="dnome">Copia di nuovo</span><span class="dico">⧉</span>
+            </button>
+          </div>
+          <div class="eotxt" id="eotxt" ${scelta ? "" : "hidden"}>${esc(scelta ? scelta.testo : "")}</div>
+          <div class="hint">Prima l'EO generale, poi l'aggiunta del caso: due incollate. I testi restano
+            uguali per tutti i pazienti — quello che riguarda questo paziente si scrive in cartella.</div>
+        </div>`;
+    }
+
     viewConsensi() {
       const righe = CONSENSI.map((c) => `
         <button class="crow" data-cons="${esc(c.k)}" title="${esc(c.esteso)}">
@@ -3590,17 +3651,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     async copyLog() {
       const head = [`PS Assist ${VERSION} · pagina ${this.pageType}`, `${navigator.userAgent}`, `${new Date().toLocaleString("it-IT")}`, ""].join("\n");
       const text = head + this.logLines.join("\n").replace(/(quesito[^:]*:\s*)"[^"]*"/gi, '$1"…"');
-      let ok = false;
-      try { await navigator.clipboard.writeText(text); ok = true; } catch { /* fallback below */ }
-      if (!ok) {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.style.cssText = "position:fixed;left:-9999px;top:0";
-        document.body.appendChild(ta);
-        ta.select();
-        try { ok = document.execCommand("copy"); } catch { ok = false; }
-        ta.remove();
-      }
+      const ok = await copiaTesto(text);
       const b = this.root.querySelector("#copylog");
       if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
     }
@@ -3768,7 +3819,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         return `${v.nome} ${v.valore}${v.um ? " " + v.um : ""}${v.range ? ` (${v.range})` : ""}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}${d ? ` [prima ${d.prevRaw}, ${d.pct > 0 ? "+" : ""}${d.pct}%]` : ""}`;
       }).join("\n");
       let ok = false;
-      try { await navigator.clipboard.writeText(text); ok = true; } catch { /* below */ }
+      ok = await copiaTesto(text);
       const b = this.root.querySelector("#copyvals");
       if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
     }
@@ -3967,7 +4018,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#storcopy")?.addEventListener("click", async () => {
         const b = this.root.querySelector("#storcopy");
         let ok = false;
-        try { await navigator.clipboard.writeText(this.testoStorico()); ok = true; } catch { /* below */ }
+        ok = await copiaTesto(this.testoStorico());
         if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
       });
       this.root.querySelectorAll("[data-dcopy]").forEach((b) => b.addEventListener("click", async () => {
@@ -3975,7 +4026,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         if (!d) return;
         const ico = b.querySelector(".dico");
         let ok = false;
-        try { await navigator.clipboard.writeText(d.testo); ok = true; } catch { /* below */ }
+        ok = await copiaTesto(d.testo);
         b.classList.toggle("fatto", ok);
         if (ico) ico.textContent = ok ? "✓ copiato" : "✗ non riuscito";
         setTimeout(() => {
@@ -3984,6 +4035,37 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           if (ico) ico.textContent = "⧉";
         }, 1800);
       }));
+      // EO: la riga copia, la tendina copia scegliendo. In tutti e due i casi
+      // il testo scelto resta scritto sotto, così si vede cosa si è preso.
+      const eoFatto = (b, ok) => {
+        const ico = b.querySelector(".dico");
+        b.classList.toggle("fatto", ok);
+        if (ico) ico.textContent = ok ? "✓ copiato" : "✗ non riuscito";
+        setTimeout(() => {
+          if (!b.isConnected) return;
+          b.classList.remove("fatto");
+          if (ico) ico.textContent = "⧉";
+        }, 1800);
+      };
+      this.root.querySelectorAll("[data-eocopy]").forEach((b) => b.addEventListener("click", async () => {
+        const v = eoVoci()[b.getAttribute("data-eocopy")];
+        if (!v) return;
+        eoFatto(b, await copiaTesto(v.testo));
+      }));
+      $("#eocaso")?.addEventListener("change", async (ev) => {
+        const k = ev.target.value;
+        this.eoSel = k || "";
+        const v = eoVoci()[k];
+        const txt = this.root.querySelector("#eotxt");
+        const riga = this.root.querySelector(".eoazione");
+        const btn = this.root.querySelector("#eoricopia");
+        if (txt) { txt.textContent = v ? v.testo : ""; txt.hidden = !v; }
+        if (riga) riga.hidden = !v;
+        if (btn) btn.setAttribute("data-eocopy", k || "");
+        if (!v) return;
+        this.persistUi();
+        if (btn) eoFatto(btn, await copiaTesto(v.testo));
+      });
       this.root.querySelectorAll("[data-dedit]").forEach((b) => b.addEventListener("click", () => this.setView("dimtesto", b.getAttribute("data-dedit"))));
       // every keystroke goes into the tab's draft: a re-render, a page change
       // or a mis-click can no longer throw away a rewritten sheet
@@ -3992,7 +4074,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#dimcopy")?.addEventListener("click", async () => {
         const b = this.root.querySelector("#dimcopy");
         let ok = false;
-        try { await navigator.clipboard.writeText(area ? area.value : ""); ok = true; } catch { /* below */ }
+        ok = await copiaTesto(area ? area.value : "");
         if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
       });
       $("#dimsave")?.addEventListener("click", () => {
@@ -4047,7 +4129,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           setTimeout(() => URL.revokeObjectURL(url), 20000);
           file = true;
         } catch { /* clipboard below */ }
-        try { await navigator.clipboard.writeText(testo); appunti = true; } catch { /* said below */ }
+        appunti = await copiaTesto(testo);
         const b = this.root.querySelector("#dimexport");
         if (b) {
           b.textContent = file && appunti ? "✓ file + appunti" : file ? "✓ dimissioni.json" : appunti ? "✓ negli appunti" : "✗ non riuscito";
@@ -4095,6 +4177,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         b.addEventListener("click", () => { scordaTempo(b.getAttribute("data-scorda")); this.render(); }));
       $("#texp")?.addEventListener("click", () => this.esportaTempi());
       $("#vaidim")?.addEventListener("click", () => this.setView("dimissioni"));
+      $("#vaieo")?.addEventListener("click", () => this.setView("eo"));
       this.root.querySelectorAll("[data-cons]").forEach((b) => b.addEventListener("click", () => {
         const c = CONSENSI.find((x) => x.k === b.getAttribute("data-cons"));
         const url = c && urlConsenso(c);
@@ -4145,7 +4228,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const t = tabStore.get(this.txtKey(this.viewId), null);
         if (!t || !t.righe) return;
         let ok = false;
-        try { await navigator.clipboard.writeText(t.righe.join("\n")); ok = true; } catch { /* below */ }
+        ok = await copiaTesto(t.righe.join("\n"));
         const b = this.root.querySelector("#copytxt");
         if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
       });

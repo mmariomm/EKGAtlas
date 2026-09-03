@@ -1320,6 +1320,55 @@ async function scenarioTempi(browser) {
   await context.close();
 }
 
+async function scenarioEo(browser) {
+  const scen = "eo";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="eo"]').click();
+  await page.waitForSelector("#psassist-host [data-eocopy=\"base\"]", { timeout: 10000 });
+
+  // un tocco: l'EO generale è negli appunti, per intero
+  await $panel(page, '[data-eocopy="base"]').click();
+  await page.waitForTimeout(300);
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  check(scen, /^Vigile, orientato, eupnoico/.test(clip), "l'EO generale si copia con un tocco");
+  check(scen, /Cute: integra, non lesioni, non esantemi\.$/.test(clip.trim()), "fino all'ultima riga");
+
+  // la tendina ha i casi e le frasi, e sceglierne uno copia subito
+  const opzioni = await page.locator("#psassist-host #eocaso option").allInnerTexts();
+  check(scen, opzioni.length === 14, `una voce vuota, nove casi e quattro frasi (got ${opzioni.length})`);
+  await $panel(page, "#eocaso").selectOption("caso:vertigine");
+  await page.waitForTimeout(300);
+  const clip2 = await page.evaluate(() => navigator.clipboard.readText());
+  check(scen, /^Nistagmo \[assente\/orizzontale/.test(clip2) && /skew deviation assente/.test(clip2),
+    "scegliere un caso lo copia da sé");
+  check(scen, !/Vigile, orientato/.test(clip2), "e copia solo l'aggiunta, non l'EO generale");
+  const mostrato = await $panel(page, "#eotxt").innerText();
+  check(scen, /HINTS: head impulse/.test(mostrato), "il testo scelto resta scritto sotto la tendina");
+
+  // ⧉ ricopia lo stesso testo senza dover riscegliere
+  await page.evaluate(() => navigator.clipboard.writeText("svuotato"));
+  await $panel(page, "#eoricopia").click();
+  await page.waitForTimeout(300);
+  const clip3 = await page.evaluate(() => navigator.clipboard.readText());
+  check(scen, /skew deviation assente/.test(clip3), "⧉ ricopia lo stesso testo");
+
+  // la scelta sopravvive a un cambio di schermata
+  await $panel(page, '[data-seg="esiti"]').click();
+  await $panel(page, '[data-seg="eo"]').click();
+  await page.waitForSelector("#psassist-host #eotxt", { timeout: 8000 });
+  const ancora = await $panel(page, "#eotxt").innerText();
+  check(scen, /HINTS: head impulse/.test(ancora), "e resta scelto tornando sulla scheda");
+
+  // i modelli non sono dati di nessuno: nessun nome di paziente in giro
+  const testo = await $panel(page, ".sec").innerText();
+  check(scen, !/ROSSI|MARIO/.test(testo), "nessun dato di paziente in questa schermata");
+  await context.close();
+}
+
 async function scenarioDimissioni(browser) {
   const scen = "dimissioni";
   const mock = createMock({});
@@ -1656,6 +1705,7 @@ const scenarios = [
   ["nomi inattesi e righe non lette", scenarioNomiInattesi],
   ["cronometro: parte, sopravvive al cambio pagina, si ferma", scenarioTempi],
   ["fogli di dimissione: copia, modifica, export", scenarioDimissioni],
+  ["EO: copia il generale, la tendina copia il caso", scenarioEo],
   ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],

@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.17.0";
+  const VERSION = "3.18.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -148,6 +148,9 @@
   // Discharge instructions, reviewed before shipping and freely editable by
   // the doctor: what is kept here is a TEMPLATE, never a patient's text.
   const DIMISSIONI = {"gastrite":{"nome":"Gastrite acuta","rivisto":true,"testo":"GASTRITE ACUTA — INDICAZIONI ALLA DIMISSIONE\n\nFARMACI\n- Pantoprazolo 40 mg, 1 compressa al mattino a digiuno (30 minuti prima di colazione), per 4 settimane.\n- Antiacido/alginato al bisogno dopo i pasti e alla sera.\n- Sospendere i FANS. Per il dolore utilizzare paracetamolo 1 g fino a 3 volte al giorno.\n\nCOSA FARE A CASA\n- Sospendere alcol e fumo.\n- Pasti piccoli e frequenti; evitare cibi piccanti, grassi, caffè, cioccolato, bevande gassate.\n- Non coricarsi nelle 3 ore dopo il pasto.\n- Prediligere carboidrati come fette biscottate, pasta, patate, riso, e carni bianche come pollo e tacchino.\n\nFOLLOW-UP\n- Rivalutazione dal Medico Curante entro 7–10 giorni.\n- Valutare EGDS in caso di persistenza dei sintomi oltre 4 settimane di terapia, o in presenza di segni d'allarme.\n\nRITORNARE IN PRONTO SOCCORSO O CHIAMARE IL 112 SE\n- Vomito con sangue o a «fondo di caffè».\n- Feci nere, catramose o con sangue.\n- Dolore addominale intenso o improvviso.\n- Vomito persistente con impossibilità a bere.\n- Febbre.\n- Svenimento, vertigini, sudorazione fredda o palpitazioni.\n- Dolore che si irradia al dorso o al torace.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"gastroenterite":{"nome":"Gastroenterite / diarrea acuta","rivisto":true,"testo":"GASTROENTERITE ACUTA — INDICAZIONI ALLA DIMISSIONE\n\nBERE\n- Almeno 2 litri al giorno a piccoli sorsi, più un bicchiere in più dopo ogni scarica.\n- Evitare bevande molto zuccherate, alcolici, caffè.\n\nMANGIARE\n- Appena tollerato, in bianco, con pasti piccoli e frequenti.\n- Nei primi giorni evitare latte e latticini, fritti e cibi grassi, frutta e verdura (in particolare cruda).\n- Prediligere carboidrati semplici come fette biscottate, pasta, patate, riso, e carni bianche come pollo e tacchino.\n- Utili i fermenti lattici.\n\nIGIENE\n- Lavarsi le mani con acqua e sapone dopo ogni evacuazione.\n- Non preparare cibo per altri fino a 48 ore dopo l'ultima scarica.\n\nFARMACI\n- Sospendere metformina, farmaci per la pressione, diuretici o gliflozine.\n- Se dolore o febbre: paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno).\n- NON prendere antinfiammatori (ibuprofene, ketoprofene, diclofenac, aspirina) finché vomito e diarrea non sono passati.\n- Se la diarrea è un problema pratico: loperamide 2 mg (Imodium, Dissenten) 2 compresse subito, poi 1 compressa dopo ogni scarica liquida; massimo 8 compresse al giorno, per non più di due giorni consecutivi. NON assumerla se ha febbre o sangue nelle feci.\n\nTORNI IN PRONTO SOCCORSO SE\n- Sangue nelle feci o feci nere.\n- Vomito continuo che impedisce di bere.\n- Febbre oltre 39 °C che non risponde al paracetamolo o che dura più di 3 giorni.\n- Dolore addominale forte e localizzato, in peggioramento.\n\nCONTROLLO\n- Medico curante se non migliora in 3–4 giorni.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"colica-renale":{"nome":"Colica renale","rivisto":true,"testo":"COLICA RENALE — INDICAZIONI ALLA DIMISSIONE\n\nFARMACI\n- Metoclopramide 10 mg, 1 compressa fino a 3 volte al giorno.\n- Tamsulosina 0,4 mg dopo cena: si alzi lentamente e non la associ a farmaci per l'erezione.\n- Cefixoral 400 mg, 1 compressa al giorno per 5 giorni.\n\nSE DOLORE\n- Ketoprofene sale di lisina 80 mg (1 bustina) fino a 3 volte al giorno, a stomaco pieno (in alternativa ibuprofene 600 mg fino a 3 volte al giorno).\n- Se il dolore non è controllato, insieme al ketoprofene: Tachidol 500/30 mg, 1 bustina al bisogno, massimo 3 volte al giorno.\n- In alternativa, sospendere quanto sopra e assumere Lenizak 75/25, 1 bustina fino a 3 volte al giorno.\n\nCOSA FARE A CASA\n- Bere normalmente, 1,5–2 litri al giorno: non deve forzarsi a bere di più, ma nemmeno bere di meno.\n- Filtrare l'urina (con un filtro da caffè americano) se possibile e conservare il calcolo espulso per l'analisi.\n- Il calcolo può essere espulso in giorni o settimane: un nuovo episodio di dolore è possibile.\n\nTORNI SUBITO IN PRONTO SOCCORSO SE\n- Febbre o brividi: possono indicare un rene ostruito e infetto. Chiami il 112.\n- Dolore che non passa con la terapia.\n- Vomito che impedisce di assumere i farmaci.\n- Urina assente o molto ridotta.\n\nCONTROLLI\n- Ecografia addome completo entro 5 giorni.\n- Visita urologica in 7–14 giorni, con esami e documentazione del Pronto Soccorso.\n- Se il calcolo non viene espulso entro 4 settimane serve comunque una rivalutazione.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"cistite":{"nome":"Cistite non complicata","rivisto":true,"testo":"CISTITE NON COMPLICATA — INDICAZIONI ALLA DIMISSIONE\n(indicazioni per la donna non in gravidanza; nell'uomo la cistite va sempre rivalutata dal medico)\n\nANTIBIOTICO\n- Se nitriti presenti: fosfomicina 3 g, una sola bustina sciolta in un bicchiere d'acqua, la sera prima di coricarsi dopo aver urinato, lontano dai pasti. Una dose sola è tutta la cura.\n- Cefixoral 400 mg, 1 compressa al giorno per 5 giorni.\n\nSINTOMI\n- Paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno) oppure ibuprofene 400 mg fino a 3 volte al giorno per bruciore e dolore.\n- Bere 1,5–2 litri al giorno e urinare spesso, senza trattenere.\n\nSE È O POTREBBE ESSERE IN GRAVIDANZA\n- Lo dica subito: non prenda ibuprofene, servono un esame delle urine con antibiogramma e un controllo dopo la terapia. Usi solo paracetamolo e non assuma antibiotici di sua iniziativa.\n\nPER EVITARE CHE TORNI\n- Urinare dopo i rapporti sessuali.\n- Evitare lavande vaginali e detergenti aggressivi.\n\nTORNI IN PRONTO SOCCORSO SE\n- Febbre oltre 38 °C, brividi, dolore al fianco o alla schiena: possibile infezione del rene.\n- Vomito che impedisce di assumere l'antibiotico.\n\nCONTROLLO\nDal medico di base se:\n- I sintomi non migliorano dopo 48–72 ore di terapia.\n- Sangue nelle urine che persiste a terapia finita.\n- Se i sintomi scompaiono non serve un esame delle urine di controllo.\n- Se i sintomi non passano o tornano entro 2 settimane, serve un esame delle urine con antibiogramma prima di riprendere l'antibiotico.\n- Se gli episodi si ripetono (3 o più in un anno).\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"trauma-cranico-minore":{"nome":"Trauma cranico minore","rivisto":true,"testo":"TRAUMA CRANICO MINORE — INDICAZIONI ALLA DIMISSIONE\n\nSE ASSUME ANTICOAGULANTI O CARDIOASPIRINA\n- Non resti solo nelle prossime 24 ore e torni in Pronto Soccorso per qualsiasi sintomo nuovo, anche solo mal di testa.\n- Non sospenda di sua iniziativa l'anticoagulante o la cardioaspirina.\n- Il sanguinamento può comparire anche dopo 3–7 giorni.\n\nLE PROSSIME 24–48 ORE\n- Non resti solo: una persona adulta deve poterla assistere.\n- Può dormire normalmente. Chi assiste deve solo verificare che respiri regolarmente e che si svegli facilmente chiamandolo; se non si sveglia facilmente, chiami subito il 112.\n- Riposo nelle prime 24–48 ore, poi ripresa graduale.\n- Niente alcol, niente sonniferi o sedativi.\n- Non guidare, non usare macchinari, non fare sport finché i sintomi non sono scomparsi. Ritorno allo sport per gradi.\n\nFARMACI\n- Per il mal di testa usi solo paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno).\n- Non prenda antinfiammatori (ibuprofene, ketoprofene, aspirina come antidolorifico) per una settimana.\n\nCHIAMI IL 112 SE COMPARE ANCHE UNO SOLO DI QUESTI (non si metta alla guida)\n- Mal di testa che peggiora e non passa con il paracetamolo.\n- Vomito ripetuto.\n- Sonnolenza insolita o difficoltà a svegliarsi.\n- Confusione, difficoltà a parlare, vista doppia, pupille di dimensione diversa, debolezza o formicolio a un braccio o a una gamba, perdita di equilibrio.\n- Convulsioni.\n- Sangue o liquido chiaro dal naso o dalle orecchie.\n\nNELLE SETTIMANE SUCCESSIVE\n- Sopra i 65 anni o in terapia anticoagulante i sintomi possono comparire anche dopo 2–6 settimane: mal di testa persistente, sonnolenza, cambiamento di carattere o difficoltà a camminare vanno rivalutati dal medico.\n\nCONTROLLO\n- Medico curante se mal di testa, stanchezza, difficoltà di concentrazione o irritabilità durano oltre una settimana.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"artrosi":{"nome":"Artrosi (fase dolorosa)","testo":"ARTROSI IN FASE DOLOROSA — INDICAZIONI ALLA DIMISSIONE\n\nLA CURA PRINCIPALE È IL MOVIMENTO\n- Camminare in piano ogni giorno, secondo tolleranza: il riposo assoluto peggiora l'artrosi.\n- Esercizi quotidiani di rinforzo della coscia (li insegna il fisioterapista o il medico curante).\n- Evitare solo ciò che provoca dolore forte.\n- Perdere peso quando indicato: ogni chilo in meno scarica il ginocchio in modo significativo.\n- Bastone dal lato opposto all'articolazione dolente, se serve.\n- Ghiaccio 15–20 minuti 2–3 volte al giorno in fase acuta; calore se prevale la rigidità.\n\nFARMACI\n- Gel antinfiammatorio localmente 2–3 volte al giorno: è la prima scelta, più sicuro degli antinfiammatori per bocca. Non esporre al sole la zona trattata durante la cura e nelle 2 settimane successive.\n- Paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno; massimo 2 g sopra i 75 anni, sotto i 50 kg, con problemi di fegato o se beve alcolici).\n- Se non basta: ibuprofene 400–600 mg fino a 3 volte al giorno a stomaco pieno, per pochi giorni, con un farmaco che protegge lo stomaco.\n\nQUANDO NON PRENDERE ANTINFIAMMATORI PER BOCCA\n- Se prende anticoagulanti (warfarin, apixaban, rivaroxaban, edoxaban, dabigatran) o due antiaggreganti: in questi casi NON vanno presi in nessun caso, nemmeno con il gastroprotettore. Usi paracetamolo e gel locale.\n- Problemi di reni, scompenso cardiaco, pressione alta non controllata, ulcera.\n\nTORNI IN PRONTO SOCCORSO SE\n- Articolazione calda, molto gonfia e arrossata, con febbre: possibile infezione.\n- Articolazione che si gonfia improvvisamente senza trauma.\n- Impossibilità totale di caricare il peso, o deformità dopo una caduta.\n- Feci nere o vomito con sangue: sospenda l'antinfiammatorio e venga subito.\n\nCONTROLLO\n- Medico curante entro 1–2 settimane per la terapia di fondo e la fisioterapia.\n- Valutazione ortopedica se il dolore limita la vita quotidiana nonostante la terapia.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"lombalgia":{"nome":"Lombalgia acuta","testo":"MAL DI SCHIENA ACUTO — INDICAZIONI ALLA DIMISSIONE\n\nCOSA SAPERE\n- Nella grande maggioranza dei casi non c'è una lesione grave e il dolore migliora in 2–6 settimane.\n- Le radiografie non servono nel mal di schiena semplice: non cambiano la cura.\n\nCOSA FARE\n- Restare attivi: continuare le normali attività riducendo ciò che fa male. Il riposo a letto oltre 1–2 giorni PEGGIORA il dolore.\n- Camminare ogni giorno e alzarsi spesso se si sta seduti a lungo.\n- Calore locale 20 minuti più volte al giorno.\n\nFARMACI\n- Ibuprofene 400–600 mg fino a 3 volte al giorno a stomaco pieno per 5–7 giorni, oppure ketoprofene sale di lisina 80 mg 2 volte al giorno.\n- Paracetamolo 1 g ogni 8 ore, associabile (massimo 3 g al giorno; 2 g sopra i 75 anni, sotto i 50 kg, con problemi di fegato o se beve alcolici).\n- Farmaco che protegge lo stomaco se prende antinfiammatori per più giorni, ha più di 65 anni, ha avuto ulcera o gastrite, o prende cortisone o cardioaspirina.\n- Se le è stato prescritto un farmaco che rilassa i muscoli (tiocolchicoside 4 mg 2 volte al giorno): non più di 7 giorni, mai in gravidanza, allattamento o in età fertile senza contraccezione sicura. Dà sonnolenza: non guidi, non usi macchinari, non beva alcolici.\n\nTORNI IN PRONTO SOCCORSO SE\n- Difficoltà a urinare, o perdita di urina o feci.\n- Perdita di sensibilità nella zona genitale o all'interno delle cosce.\n- Debolezza di una gamba che peggiora.\n- Febbre insieme al mal di schiena.\n- Dolore che non si calma nemmeno da sdraiati o che sveglia di notte.\n\nCONTATTI PRESTO IL MEDICO SE\n- Ha avuto un tumore, prende cortisone, ha osteoporosi, ha perso peso senza motivo, oppure ha più di 65 anni e il dolore è comparso dopo una caduta.\n\nCONTROLLO\n- Medico curante se il dolore non migliora in 7–10 giorni o si accompagna a dolore lungo la gamba.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"distorsione-caviglia":{"nome":"Distorsione di caviglia","testo":"DISTORSIONE DI CAVIGLIA — INDICAZIONI ALLA DIMISSIONE\n\nPRIME 48–72 ORE\n- Ghiaccio 15–20 minuti ogni 2–3 ore, mai a contatto diretto con la pelle.\n- Bendaggio elastico durante il giorno, da togliere la notte.\n- Gamba sollevata sopra il livello del cuore da seduti o sdraiati.\n- Appoggiare il piede quanto il dolore permette, aiutandosi con le stampelle all'inizio.\n\nFARMACI\n- Paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno; 2 g sopra i 75 anni, sotto i 50 kg, con problemi di fegato o se beve alcolici).\n- Ibuprofene 400–600 mg fino a 3 volte al giorno a stomaco pieno per 3–5 giorni; gel antinfiammatorio localmente 2–3 volte al giorno.\n- Non prenda antinfiammatori in gravidanza, con anticoagulanti, ulcera o problemi di reni.\n\nDOPO I PRIMI GIORNI\n- Riprendere gradualmente il movimento: la caviglia rigida guarisce peggio.\n- Esercizi: muovere il piede su e giù, disegnare l'alfabeto con l'alluce, più volte al giorno; poi equilibrio su un piede solo.\n- Tornare allo sport quando si cammina e si corre senza dolore né gonfiore, di solito in 2–6 settimane; cavigliera negli sport per i 6 mesi successivi riduce le recidive.\n\nTORNI IN PRONTO SOCCORSO SE\n- Polpaccio dolente, gonfio e caldo, oppure affanno improvviso o dolore al torace.\n- Dolore sopra la caviglia lungo la gamba, vicino al ginocchio sul lato esterno, o sul bordo esterno del piede: possono essere fratture non visibili all'inizio.\n- Impossibilità di appoggiare il piede dopo 3–4 giorni.\n- Deformità evidente, formicolii persistenti, piede freddo o pallido.\n- Dolore o gonfiore che peggiorano dopo il terzo giorno.\n\nCONTROLLO\n- Medico curante o visita ortopedica se dopo 7–10 giorni persistono dolore o instabilità.\n- Se le è stato messo un tutore o un gesso, chieda al medico curante se le serve una puntura anticoagulante.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"faringotonsillite":{"nome":"Faringite / mal di gola","testo":"MAL DI GOLA — INDICAZIONI ALLA DIMISSIONE\n\nCOSA SAPERE\n- La maggior parte dei mal di gola è virale e guarisce da sola in 5–7 giorni: l'antibiotico non serve e non accorcia i tempi.\n- L'antibiotico serve solo nelle forme da streptococco, quando lo indica il medico: in quel caso va completato tutto il ciclo.\n\nFARMACI\n- Paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno; 2 g sopra i 75 anni, sotto i 50 kg, con problemi di fegato o se beve alcolici), oppure ibuprofene 400–600 mg fino a 3 volte al giorno a stomaco pieno.\n- Non prenda insieme bustine o compresse per l'influenza e il raffreddore: contengono già paracetamolo.\n- Bevande fresche o tiepide, ghiaccioli, miele (non sotto l'anno di età).\n\nCOSA FARE\n- Riposo relativo, bere spesso, non fumare.\n- Rientro al lavoro o a scuola dopo almeno 24 ore di antibiotico E almeno 24 ore senza febbre.\n\nTORNI IN PRONTO SOCCORSO SE\n- Difficoltà a respirare, voce ovattata come se avesse qualcosa in bocca, saliva che cola perché non riesce a deglutire.\n- Impossibilità a deglutire anche i liquidi.\n- Difficoltà ad aprire la bocca, gonfiore del collo, dolore forte da un lato solo.\n- Macchie rosse o violacee che NON scompaiono premendoci sopra un bicchiere trasparente.\n- Febbre che dura oltre 5 giorni o che ricompare dopo il miglioramento.\n- Gonfiore del viso, orticaria o affanno dopo l'antibiotico: lo sospenda e chiami il 112.\n\nATTENZIONE PARTICOLARE\n- Se assume metimazolo (per la tiroide), clozapina, immunosoppressori o chemioterapia, un mal di gola con febbre richiede un emocromo urgente: lo dica subito al medico.\n\nCONTROLLO\n- Medico curante se non migliora in 5 giorni.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese."}};
+  // Esame obiettivo: modelli PER IL MEDICO, da incollare nella cartella.
+  // Non escono mai dal computer e non contengono dati di nessun paziente.
+  const EO = {"base":{"nome":"EO generale","meta":"completo, tutto negativo","testo":"Vigile, orientato, eupnoico, normocolorito, ben perfuso, apiretico. Non segni di distress. Torace: MV normotrasmesso bilateralmente, non rumori patologici aggiunti. Cuore: toni ritmici, validi, non soffi. Polsi periferici presenti e simmetrici. Addome: piano, trattabile, non dolente né dolorabile, peristalsi presente, Blumberg e Murphy negativi, Giordano negativo bilateralmente. Non masse, non organomegalie. Arti inferiori: non edemi, non segni di TVP, polpacci indolori. Neuro: non deficit focali, forza e sensibilità conservate ai 4 arti, non segni meningei. Cute: integra, non lesioni, non esantemi."},"casi":[{"k":"toracico","nome":"Dolore toracico","testo":"Dolore non riproducibile alla palpazione della parete / riproducibile. Toni validi, non sfregamenti. Polsi radiali e femorali simmetrici, PA comparativa agli arti superiori [dx/sx]. Non turgore giugulare. Non edemi. Polpacci indolori simmetrici."},{"k":"dispnea","nome":"Dispnea","testo":"Utilizzo dei muscoli accessori sì/no, parla per frasi intere. MV ridotto alle basi con crepitii bibasali fino a [livello] / sibili diffusi espiratori. Non ottusità plessica. Turgore giugulare. Edemi declivi improntabili fino a [livello]. Polpacci simmetrici."},{"k":"addominale","nome":"Dolore addominale","testo":"Blumberg, Rovsing, Murphy, Giordano, psoas. Non difesa, non peritonismo. Non masse pulsanti (AAA). Orifizi erniari liberi. Peristalsi presente/torpida."},{"k":"cefalea","nome":"Cefalea","testo":"Non segni meningei (Kernig, Brudzinski negativi). Pupille isocoriche isocicliche normoreagenti. Nervi cranici indenni. Non deficit focali, non atassia, Romberg negativo. arterie temporali non dolenti (>50 anni)."},{"k":"trauma","nome":"Trauma / caduta","testo":"Non ferite lacerocontuse. Rachide cervicale non dolente alla palpazione della linea mediana, ROM conservato (criteri NEXUS soddisfatti). Bacino stabile. Non dolorabilità sternale né costale. Arti: assi conservati, non deformità, articolarità e polsi distali conservati, sensibilità integra. Sempre: polso distale + sensibilità + motilità distalmente alla lesione."},{"k":"sincope","nome":"Sincope","testo":"PA in clino e ortostatismo [valori], toni validi non soffi, polsi simmetrici, non deficit neurologici, esplorazione rettale negativa per melena se indicata."},{"k":"lombalgia","nome":"Lombalgia","testo":"Lasègue negativo bilateralmente, forza 5/5 ai distretti L2-S1, ROT rotulei e achillei normoevocabili simmetrici, sensibilità conservata, non anestesia a sella, tono sfinteriale conservato, non globo vescicale (cauda equina)"},{"k":"vertigine","nome":"Vertigine","testo":"Nistagmo [assente/orizzontale con fase rapida verso...], HINTS: head impulse [ ], nistagmo direzione fissa/mutevole, skew deviation assente. Marcia e Romberg [ ]. Non dismetria, non deficit focali."},{"k":"pediatrico","nome":"Pediatrico","testo":"Bambino vivace, reattivo, consolabile, colorito valido, refill capillare <2s, non segni di disidratazione (mucose umide, lacrimazione presente, diuresi riferita normale). Non esantemi, non petecchie. Fontanella normotesa. Non segni meningei."}],"frasi":[{"k":"rettale","nome":"Rettale non eseguita","testo":"Esplorazione rettale non eseguita per rifiuto del paziente"},{"k":"collaborazione","nome":"Neuro poco collaborante","testo":"esame neurologico limitato dalla scarsa collaborazione"},{"k":"nexus","nome":"NEXUS: niente collare","testo":"criteri NEXUS applicabili, non necessaria immobilizzazione"},{"k":"allarme","nome":"Segni d'allarme spiegati","testo":"Paziente informato dei segni d'allarme (elencati), che dichiara di aver compreso, con indicazione a tornare in PS."}]};
 
   // ================================================================ UTILS
   const sleep = (ms, signal) => new Promise((res, rej) => {
@@ -156,6 +159,26 @@
   });
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const now = () => new Date().toLocaleTimeString("it-IT");
+
+  // Copiare negli appunti. navigator.clipboard non esiste sulle origini non
+  // sicure (il portale clinico è http://): lì si passa dal vecchio
+  // execCommand, che invece funziona. Un pulsante «copia» non deve dipendere
+  // da quale delle due pagine si ha davanti.
+  async function copiaTesto(text) {
+    const t = String(text ?? "");
+    try { await navigator.clipboard.writeText(t); return true; } catch { /* ripiego qui sotto */ }
+    let ok = false;
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = t;
+      ta.style.cssText = "position:fixed;left:-9999px;top:0";
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand("copy");
+      ta.remove();
+    } catch { ok = false; }
+    return ok;
+  }
 
   // Controlled hard-stop carrying a headline + body the UI can render loudly.
   class StopError extends Error {
@@ -1556,6 +1579,16 @@
     return store.set(dimKey, mie);
   }
 
+  // EO — un elenco piatto chiave→voce, così una riga o una tendina copiano
+  // allo stesso modo. I testi sono quelli scritti dal medico, verbatim.
+  function eoVoci() {
+    const out = {};
+    if (EO.base && EO.base.testo) out.base = { nome: EO.base.nome || "EO generale", meta: EO.base.meta || "", testo: EO.base.testo, gruppo: "base" };
+    for (const v of EO.casi || []) if (v && v.k && v.testo) out["caso:" + v.k] = { nome: v.nome || v.k, testo: v.testo, gruppo: "casi" };
+    for (const v of EO.frasi || []) if (v && v.k && v.testo) out["frase:" + v.k] = { nome: v.nome || v.k, testo: v.testo, gruppo: "frasi" };
+    return out;
+  }
+
   function learnedCatalog() { return store.get("catalog.v1", {}); }
   // Il catalogo si impara dalle pagine vere, MA un nome già noto non viene
   // mai sovrascritto. Il motivo è il controllo anti-esame-sbagliato: quello
@@ -2100,8 +2133,9 @@
             border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
     .rlab { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .seg { display: flex; margin: 10px 12px 0; border: 1px solid #C4D0DC; border-radius: 10px; overflow: hidden; background: #F4F8FB; }
-    .seg button { flex: 1 1 50%; border: 0; background: transparent; padding: 9px 8px; min-height: 36px;
-                  font-size: 13px; font-weight: 700; color: #35506B; cursor: pointer; }
+    .seg button { flex: 1 1 20%; border: 0; background: transparent; padding: 9px 6px; min-height: 36px;
+                  font-size: 13px; font-weight: 700; color: #35506B; cursor: pointer;
+                  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .seg button + button { border-left: 1px solid #C4D0DC; }
     .seg button.on { background: #0B5CAD; color: #fff; }
     .seg button:not(.on):hover { background: #EAF2FA; color: #0B5CAD; }
@@ -2164,6 +2198,11 @@
             background: #F8FBFE; color: #35506B; font-size: 13px; cursor: pointer; }
     .dbtn:hover { background: #EAF2FA; border-color: #9DBFDE; color: #0B5CAD; }
     .dbtn:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    /* il testo scelto nella tendina: si vede cosa è finito negli appunti */
+    .eotxt { margin-top: 8px; border: 1px solid #E3E8EF; border-left: 3px solid #0B5CAD; border-radius: 8px;
+             background: #F8FBFE; padding: 9px 11px; font-size: 12.5px; line-height: 1.55; color: #35506B;
+             max-height: 34vh; overflow: auto; white-space: pre-wrap; }
+    .eoazione { margin-top: 8px; }
     .dedit { width: 100%; min-height: 46vh; resize: vertical; border: 1px solid #D9E2EC; border-radius: 9px;
              padding: 9px 10px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
              color: #16232E; background: #fff; }
@@ -2458,6 +2497,7 @@
         acq: this.acq || "",
         view: this.view === "home" ? "richieste" : this.view,
         viewId: this.viewId,
+        eoSel: this.eoSel || "",
         ts: Date.now(),
       });
     }
@@ -2477,6 +2517,7 @@
         return;
       }
       this._q = s.q || store.get("lastQ", "") || "";
+      this.eoSel = s.eoSel || "";
       this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
       this.acq = s.acq || "";
       // A page load decides the view, not the stored one: opening a patient
@@ -2512,32 +2553,6 @@
       }
       this.persistUi();
       this.render();
-    }
-
-    // Copy the log for reporting. The quesito is the only clinical text that
-    // can end up in it, so it is masked out before leaving the page.
-    async copyLog() {
-      const head = [
-        `PS Assist ${VERSION} · pagina ${this.pageType}`,
-        `${navigator.userAgent}`,
-        `${new Date().toLocaleString("it-IT")}`,
-        "",
-      ].join("\n");
-      const body = this.logLines.join("\n").replace(/(quesito[^:]*:\s*)"[^"]*"/gi, '$1"…"');
-      const text = head + body;
-      let ok = false;
-      try { await navigator.clipboard.writeText(text); ok = true; } catch { /* fallback below */ }
-      if (!ok) {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.style.cssText = "position:fixed;left:-9999px;top:0";
-        document.body.appendChild(ta);
-        ta.select();
-        try { ok = document.execCommand("copy"); } catch { ok = false; }
-        ta.remove();
-      }
-      const b = this.root.querySelector("#copylog");
-      if (b) { b.textContent = ok ? "✓ copiato" : "copia non riuscita"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
     }
 
     log(line) {
@@ -2712,6 +2727,7 @@
       else if (this.view === "dimtesto") body = this.viewDimTesto();
       else if (this.view === "dimimport") body = this.viewDimImport();
       else if (this.view === "consensi") body = this.viewConsensi();
+      else if (this.view === "eo") body = this.viewEo();
       else if (this.view === "tempi") body = this.viewTempi();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
       else body = this.viewHome(patientName, ep);
@@ -2730,12 +2746,13 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto", storico: "Storico", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", tempi: "Tempi" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto", storico: "Storico", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", tempi: "Tempi" }[this.view] || "";
       // the discharge sheets are templates: no episode belongs in that header
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
       const sub = inHome ? "ultime 12 ore"
         : this.view === "tempi" ? "quanto ti prende"
         : this.view === "consensi" ? "Consensi · moduli"
+        : this.view === "eo" ? "EO · modelli"
         : inDim ? "Dimissioni · modelli"
         : section ? `${section}${ep ? " · " + esc(ep) : ""}`
         : (ep ? "episodio " + esc(ep) : esc(APP));
@@ -2778,6 +2795,7 @@
                   <button class="${this.view === "esiti" || this.view === "valori" || this.view === "referto" || this.view === "storico" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>
                   <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
                   <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi">Consensi</button>
+                  <button class="${this.view === "eo" ? "on" : ""}" data-seg="eo" title="Esame obiettivo da copiare">EO</button>
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
               <div class="bd">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div>
@@ -2836,7 +2854,7 @@
       ].join("");
       return `
         <div class="sec">
-          <div class="lbl">Pazienti<button class="mini" id="vaidim" title="I fogli di dimissione: non appartengono a un paziente">Dimissioni</button>${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
+          <div class="lbl">Pazienti<button class="mini" id="vaieo" title="I modelli di esame obiettivo: non appartengono a un paziente">EO</button><button class="mini" id="vaidim" title="I fogli di dimissione: non appartengono a un paziente">Dimissioni</button>${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
           ${cards || `<div class="hint">Nessun paziente ancora. Apri un paziente: resta qui per il turno.</div>`}
           ${others.length ? `<div class="hint">Aprire un altro paziente ne carica la pagina.</div>` : ""}
           ${archiviati.length ? `
@@ -3501,6 +3519,49 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         </div>`;
     }
 
+    // EO — un tocco copia l'esame obiettivo generale. Sotto, una tendina con
+    // le aggiunte per caso: sceglierne una la copia subito, e la lascia
+    // scritta qui perché si veda cosa è finito negli appunti.
+    viewEo() {
+      const voci = eoVoci();
+      const base = voci.base;
+      const sel = voci[this.eoSel] ? this.eoSel : "";
+      const scelta = sel ? voci[sel] : null;
+      const opz = (gruppo, etichetta) => {
+        const l = Object.entries(voci).filter(([, v]) => v.gruppo === gruppo);
+        if (!l.length) return "";
+        return `<optgroup label="${esc(etichetta)}">${l.map(([k, v]) =>
+          `<option value="${esc(k)}"${k === sel ? " selected" : ""}>${esc(v.nome)}</option>`).join("")}</optgroup>`;
+      };
+      if (!base && !Object.keys(voci).length) return `<div class="hint">Modelli di EO non disponibili in questa versione.</div>`;
+      return `
+        <div class="sec">
+          <div class="lbl">Esame obiettivo</div>
+          ${base ? `
+            <div class="drow">
+              <button class="dcopia" data-eocopy="base" title="Copia negli appunti l'esame obiettivo generale"
+                      aria-label="Copia l'esame obiettivo generale">
+                <span class="dnome">${esc(base.nome)}</span>
+                <span class="dmeta">${esc(base.meta)}</span><span class="dico">⧉</span>
+              </button>
+            </div>` : ""}
+          <div class="lbl">Aggiungi per caso</div>
+          <select class="res" id="eocaso" aria-label="Aggiunta di esame obiettivo da copiare">
+            <option value="">Scegli: si copia da sé…</option>
+            ${opz("casi", "Casi")}
+            ${opz("frasi", "Frasi pronte")}
+          </select>
+          <div class="drow eoazione" ${scelta ? "" : "hidden"}>
+            <button class="dcopia" data-eocopy="${esc(sel)}" id="eoricopia" title="Copia di nuovo questo testo">
+              <span class="dnome">Copia di nuovo</span><span class="dico">⧉</span>
+            </button>
+          </div>
+          <div class="eotxt" id="eotxt" ${scelta ? "" : "hidden"}>${esc(scelta ? scelta.testo : "")}</div>
+          <div class="hint">Prima l'EO generale, poi l'aggiunta del caso: due incollate. I testi restano
+            uguali per tutti i pazienti — quello che riguarda questo paziente si scrive in cartella.</div>
+        </div>`;
+    }
+
     viewConsensi() {
       const righe = CONSENSI.map((c) => `
         <button class="crow" data-cons="${esc(c.k)}" title="${esc(c.esteso)}">
@@ -3590,17 +3651,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     async copyLog() {
       const head = [`PS Assist ${VERSION} · pagina ${this.pageType}`, `${navigator.userAgent}`, `${new Date().toLocaleString("it-IT")}`, ""].join("\n");
       const text = head + this.logLines.join("\n").replace(/(quesito[^:]*:\s*)"[^"]*"/gi, '$1"…"');
-      let ok = false;
-      try { await navigator.clipboard.writeText(text); ok = true; } catch { /* fallback below */ }
-      if (!ok) {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.style.cssText = "position:fixed;left:-9999px;top:0";
-        document.body.appendChild(ta);
-        ta.select();
-        try { ok = document.execCommand("copy"); } catch { ok = false; }
-        ta.remove();
-      }
+      const ok = await copiaTesto(text);
       const b = this.root.querySelector("#copylog");
       if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
     }
@@ -3768,7 +3819,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         return `${v.nome} ${v.valore}${v.um ? " " + v.um : ""}${v.range ? ` (${v.range})` : ""}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}${d ? ` [prima ${d.prevRaw}, ${d.pct > 0 ? "+" : ""}${d.pct}%]` : ""}`;
       }).join("\n");
       let ok = false;
-      try { await navigator.clipboard.writeText(text); ok = true; } catch { /* below */ }
+      ok = await copiaTesto(text);
       const b = this.root.querySelector("#copyvals");
       if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
     }
@@ -3967,7 +4018,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#storcopy")?.addEventListener("click", async () => {
         const b = this.root.querySelector("#storcopy");
         let ok = false;
-        try { await navigator.clipboard.writeText(this.testoStorico()); ok = true; } catch { /* below */ }
+        ok = await copiaTesto(this.testoStorico());
         if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
       });
       this.root.querySelectorAll("[data-dcopy]").forEach((b) => b.addEventListener("click", async () => {
@@ -3975,7 +4026,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         if (!d) return;
         const ico = b.querySelector(".dico");
         let ok = false;
-        try { await navigator.clipboard.writeText(d.testo); ok = true; } catch { /* below */ }
+        ok = await copiaTesto(d.testo);
         b.classList.toggle("fatto", ok);
         if (ico) ico.textContent = ok ? "✓ copiato" : "✗ non riuscito";
         setTimeout(() => {
@@ -3984,6 +4035,37 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           if (ico) ico.textContent = "⧉";
         }, 1800);
       }));
+      // EO: la riga copia, la tendina copia scegliendo. In tutti e due i casi
+      // il testo scelto resta scritto sotto, così si vede cosa si è preso.
+      const eoFatto = (b, ok) => {
+        const ico = b.querySelector(".dico");
+        b.classList.toggle("fatto", ok);
+        if (ico) ico.textContent = ok ? "✓ copiato" : "✗ non riuscito";
+        setTimeout(() => {
+          if (!b.isConnected) return;
+          b.classList.remove("fatto");
+          if (ico) ico.textContent = "⧉";
+        }, 1800);
+      };
+      this.root.querySelectorAll("[data-eocopy]").forEach((b) => b.addEventListener("click", async () => {
+        const v = eoVoci()[b.getAttribute("data-eocopy")];
+        if (!v) return;
+        eoFatto(b, await copiaTesto(v.testo));
+      }));
+      $("#eocaso")?.addEventListener("change", async (ev) => {
+        const k = ev.target.value;
+        this.eoSel = k || "";
+        const v = eoVoci()[k];
+        const txt = this.root.querySelector("#eotxt");
+        const riga = this.root.querySelector(".eoazione");
+        const btn = this.root.querySelector("#eoricopia");
+        if (txt) { txt.textContent = v ? v.testo : ""; txt.hidden = !v; }
+        if (riga) riga.hidden = !v;
+        if (btn) btn.setAttribute("data-eocopy", k || "");
+        if (!v) return;
+        this.persistUi();
+        if (btn) eoFatto(btn, await copiaTesto(v.testo));
+      });
       this.root.querySelectorAll("[data-dedit]").forEach((b) => b.addEventListener("click", () => this.setView("dimtesto", b.getAttribute("data-dedit"))));
       // every keystroke goes into the tab's draft: a re-render, a page change
       // or a mis-click can no longer throw away a rewritten sheet
@@ -3992,7 +4074,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#dimcopy")?.addEventListener("click", async () => {
         const b = this.root.querySelector("#dimcopy");
         let ok = false;
-        try { await navigator.clipboard.writeText(area ? area.value : ""); ok = true; } catch { /* below */ }
+        ok = await copiaTesto(area ? area.value : "");
         if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
       });
       $("#dimsave")?.addEventListener("click", () => {
@@ -4047,7 +4129,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           setTimeout(() => URL.revokeObjectURL(url), 20000);
           file = true;
         } catch { /* clipboard below */ }
-        try { await navigator.clipboard.writeText(testo); appunti = true; } catch { /* said below */ }
+        appunti = await copiaTesto(testo);
         const b = this.root.querySelector("#dimexport");
         if (b) {
           b.textContent = file && appunti ? "✓ file + appunti" : file ? "✓ dimissioni.json" : appunti ? "✓ negli appunti" : "✗ non riuscito";
@@ -4095,6 +4177,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         b.addEventListener("click", () => { scordaTempo(b.getAttribute("data-scorda")); this.render(); }));
       $("#texp")?.addEventListener("click", () => this.esportaTempi());
       $("#vaidim")?.addEventListener("click", () => this.setView("dimissioni"));
+      $("#vaieo")?.addEventListener("click", () => this.setView("eo"));
       this.root.querySelectorAll("[data-cons]").forEach((b) => b.addEventListener("click", () => {
         const c = CONSENSI.find((x) => x.k === b.getAttribute("data-cons"));
         const url = c && urlConsenso(c);
@@ -4145,7 +4228,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const t = tabStore.get(this.txtKey(this.viewId), null);
         if (!t || !t.righe) return;
         let ok = false;
-        try { await navigator.clipboard.writeText(t.righe.join("\n")); ok = true; } catch { /* below */ }
+        ok = await copiaTesto(t.righe.join("\n"));
         const b = this.root.querySelector("#copytxt");
         if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
       });

@@ -16,10 +16,12 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const core = readFileSync(join(root, "src/core.js"), "utf8");
 const catalog = JSON.parse(readFileSync(join(root, "src/catalog.json"), "utf8"));
 const dimissioni = JSON.parse(readFileSync(join(root, "src/dimissioni.json"), "utf8"));
+const eo = JSON.parse(readFileSync(join(root, "src/eo.json"), "utf8"));
 
 const PLACEHOLDER = "/*__CATALOG__*/ {}";
 const PLACEHOLDER_DIM = "/*__DIMISSIONI__*/ {}";
-for (const [ph, cosa] of [[PLACEHOLDER, "catalog"], [PLACEHOLDER_DIM, "dimissioni"]]) {
+const PLACEHOLDER_EO = "/*__EO__*/ {}";
+for (const [ph, cosa] of [[PLACEHOLDER, "catalog"], [PLACEHOLDER_DIM, "dimissioni"], [PLACEHOLDER_EO, "eo"]]) {
   if (!core.includes(ph)) {
     console.error(`${cosa} placeholder not found in src/core.js`);
     process.exit(1);
@@ -28,7 +30,8 @@ for (const [ph, cosa] of [[PLACEHOLDER, "catalog"], [PLACEHOLDER_DIM, "dimission
 const version = /const VERSION = "([^"]+)"/.exec(core)?.[1] ?? "0.0.0";
 const built = core
   .replace(PLACEHOLDER, () => JSON.stringify(catalog))       // fn form: no $-pattern pitfalls
-  .replace(PLACEHOLDER_DIM, () => JSON.stringify(dimissioni));
+  .replace(PLACEHOLDER_DIM, () => JSON.stringify(dimissioni))
+  .replace(PLACEHOLDER_EO, () => JSON.stringify(eo));
 
 writeFileSync(join(root, "extension/content.js"), built);
 

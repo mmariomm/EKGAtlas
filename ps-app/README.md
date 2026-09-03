@@ -67,7 +67,7 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
 
 ## Uso quotidiano
 
-Il pannello ha quattro schermate, con **Richieste | Esiti | Dimissioni** sempre in cima e il
+Il pannello ha cinque schermate, con **Richieste | Esiti | Dimissioni | Consensi | EO** sempre in cima e il
 paziente + episodio nell'intestazione (anche da minimizzato). Sulla pagina «Storico dati clinici»
 del portale clinico non c'è pannello: solo una striscia che dice cosa ha letto.
 
@@ -168,6 +168,24 @@ servizio. Clicchi un titolo o un testo e scrivi — nessun tasto «modifica», n
 importa con **⤒ Importa**: si passa da lì e i fogli nuovi sono in servizio. Il lavoro a metà resta
 nel browser, quindi chiudere la pagina non costa niente; **↺ Originali** rimette i testi spediti.
 La pagina sta nello zip e si rigenera con `npm run editor`.
+
+### EO
+Un elenco di **esami obiettivi da incollare in cartella**, scritti dal medico e tenuti verbatim.
+
+- **EO generale**: un tocco e l'esame obiettivo completo, tutto negativo, è negli appunti.
+- **Aggiungi per caso**: una tendina con nove quadri (*dolore toracico, dispnea, dolore addominale,
+  cefalea, trauma/caduta, sincope, lombalgia, vertigine, pediatrico*) e quattro **frasi pronte**
+  (rettale rifiutata, neuro poco collaborante, NEXUS, segni d'allarme spiegati). **Sceglierne uno lo
+  copia da sé**: nessun secondo passaggio.
+- Il testo scelto **resta scritto sotto la tendina**, così si vede cosa è finito negli appunti, e
+  **⧉ Copia di nuovo** lo ripete senza doverlo riscegliere. La scelta sopravvive al cambio schermata.
+- Si usa in due incollate: prima l'EO generale, poi l'aggiunta del caso. I testi sono **uguali per
+  tutti i pazienti** — quello che riguarda *questo* paziente si scrive in cartella. Nessun dato di
+  paziente entra qui (è un controllo del collaudo).
+
+I testi stanno in `src/eo.json` e sono compilati dentro l'estensione: **zero richieste al server**.
+In questa versione **non si modificano dal pannello** — per cambiarli si modifica quel file e si
+ricompila (`npm run build`).
 
 ### Consensi
 Cinque moduli di consenso, dentro l'estensione: **Emocolture**, **HIV Dipendente**, **Lesioni
@@ -275,6 +293,8 @@ foglio i motivi per **tornare in Pronto Soccorso**.
   **pallino azzurro** nell'elenco.
 - Quello che scrivi è **salvato come bozza a ogni tasto**: se cambi schermata, se il gestionale
   ricarica la pagina o se ti chiamano, al ritorno il testo ti aspetta dov'era.
+- Il **copia negli appunti** ha un ripiego (`execCommand`) per le pagine servite in `http://`,
+  dove `navigator.clipboard` non esiste: vale per tutti i pulsanti «copia» del pannello.
 - Per un foglio **su misura per questo paziente**: modifica e usa **⧉ Copia** *senza salvare*. Nei
   modelli non vanno dati del paziente — e infatti la pulizia al logout li lascia stare, perché sono
   modelli, non dati clinici.

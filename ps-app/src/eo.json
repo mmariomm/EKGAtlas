@@ -1,0 +1,37 @@
+{
+  "base": {
+    "nome": "EO generale",
+    "meta": "completo, tutto negativo",
+    "testo": "Vigile, orientato, eupnoico, normocolorito, ben perfuso, apiretico. Non segni di distress. Torace: MV normotrasmesso bilateralmente, non rumori patologici aggiunti. Cuore: toni ritmici, validi, non soffi. Polsi periferici presenti e simmetrici. Addome: piano, trattabile, non dolente né dolorabile, peristalsi presente, Blumberg e Murphy negativi, Giordano negativo bilateralmente. Non masse, non organomegalie. Arti inferiori: non edemi, non segni di TVP, polpacci indolori. Neuro: non deficit focali, forza e sensibilità conservate ai 4 arti, non segni meningei. Cute: integra, non lesioni, non esantemi."
+  },
+  "casi": [
+    { "k": "toracico", "nome": "Dolore toracico",
+      "testo": "Dolore non riproducibile alla palpazione della parete / riproducibile. Toni validi, non sfregamenti. Polsi radiali e femorali simmetrici, PA comparativa agli arti superiori [dx/sx]. Non turgore giugulare. Non edemi. Polpacci indolori simmetrici." },
+    { "k": "dispnea", "nome": "Dispnea",
+      "testo": "Utilizzo dei muscoli accessori sì/no, parla per frasi intere. MV ridotto alle basi con crepitii bibasali fino a [livello] / sibili diffusi espiratori. Non ottusità plessica. Turgore giugulare. Edemi declivi improntabili fino a [livello]. Polpacci simmetrici." },
+    { "k": "addominale", "nome": "Dolore addominale",
+      "testo": "Blumberg, Rovsing, Murphy, Giordano, psoas. Non difesa, non peritonismo. Non masse pulsanti (AAA). Orifizi erniari liberi. Peristalsi presente/torpida." },
+    { "k": "cefalea", "nome": "Cefalea",
+      "testo": "Non segni meningei (Kernig, Brudzinski negativi). Pupille isocoriche isocicliche normoreagenti. Nervi cranici indenni. Non deficit focali, non atassia, Romberg negativo. arterie temporali non dolenti (>50 anni)." },
+    { "k": "trauma", "nome": "Trauma / caduta",
+      "testo": "Non ferite lacerocontuse. Rachide cervicale non dolente alla palpazione della linea mediana, ROM conservato (criteri NEXUS soddisfatti). Bacino stabile. Non dolorabilità sternale né costale. Arti: assi conservati, non deformità, articolarità e polsi distali conservati, sensibilità integra. Sempre: polso distale + sensibilità + motilità distalmente alla lesione." },
+    { "k": "sincope", "nome": "Sincope",
+      "testo": "PA in clino e ortostatismo [valori], toni validi non soffi, polsi simmetrici, non deficit neurologici, esplorazione rettale negativa per melena se indicata." },
+    { "k": "lombalgia", "nome": "Lombalgia",
+      "testo": "Lasègue negativo bilateralmente, forza 5/5 ai distretti L2-S1, ROT rotulei e achillei normoevocabili simmetrici, sensibilità conservata, non anestesia a sella, tono sfinteriale conservato, non globo vescicale (cauda equina)" },
+    { "k": "vertigine", "nome": "Vertigine",
+      "testo": "Nistagmo [assente/orizzontale con fase rapida verso...], HINTS: head impulse [ ], nistagmo direzione fissa/mutevole, skew deviation assente. Marcia e Romberg [ ]. Non dismetria, non deficit focali." },
+    { "k": "pediatrico", "nome": "Pediatrico",
+      "testo": "Bambino vivace, reattivo, consolabile, colorito valido, refill capillare <2s, non segni di disidratazione (mucose umide, lacrimazione presente, diuresi riferita normale). Non esantemi, non petecchie. Fontanella normotesa. Non segni meningei." }
+  ],
+  "frasi": [
+    { "k": "rettale", "nome": "Rettale non eseguita",
+      "testo": "Esplorazione rettale non eseguita per rifiuto del paziente" },
+    { "k": "collaborazione", "nome": "Neuro poco collaborante",
+      "testo": "esame neurologico limitato dalla scarsa collaborazione" },
+    { "k": "nexus", "nome": "NEXUS: niente collare",
+      "testo": "criteri NEXUS applicabili, non necessaria immobilizzazione" },
+    { "k": "allarme", "nome": "Segni d'allarme spiegati",
+      "testo": "Paziente informato dei segni d'allarme (elencati), che dichiara di aver compreso, con indicazione a tornare in PS." }
+  ]
+}
