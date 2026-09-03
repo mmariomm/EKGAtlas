@@ -222,6 +222,34 @@ check(pdf.src.startsWith("blob:"), `il PDF si apre da locale (got ${pdf.src.slic
 check(/Antitetano/.test(pdf.testa), `con il titolo corto giusto (got: ${pdf.testa.slice(0, 60)})`);
 check(mock.state.requests.length === primaRete, "e senza una singola richiesta al gestionale");
 
+// ---- il portale aperto DAL link del paziente ---------------------------
+// Quel clic dice per chi lo stai aprendo: è l'identità più solida che ci sia.
+// Per un po' il programma ha avuto ricevitore, memoria, lettore e priorità —
+// e non il mittente. Nessun test arrivava di qua passando per il link, quindi
+// nessuno se ne accorgeva. Questo ci passa.
+// una pagina pulita: quella di prima ha ancora addosso il sovrapposto di stampa
+const p2 = await ctx.newPage();
+await p2.goto(mock.patientUrl);
+await p2.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await p2.locator('a[href*="MODALITA=CLINICA"]').first().click({ noWaitAfter: true });
+await p2.waitForTimeout(500);
+const port2 = await ctx.newPage();
+await port2.goto(PORTALE);
+await port2.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await port2.waitForFunction(
+  () => /prelievi/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),
+  { timeout: 10000 },
+).catch(() => {});
+await p2.reload();
+await p2.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await p2.locator('#psassist-host [data-seg="esiti"]').click();
+await p2.waitForTimeout(800);
+await p2.locator("#psassist-host #apristorico").click().catch(() => {});
+await p2.waitForTimeout(500);
+const via = await p2.locator("#psassist-host .bd").innerText().catch(() => "");
+check(/paziente da cui l'hai aperta/.test(via),
+  `l'identità è il paziente da cui hai aperto il portale (got ${(/identità confermata dal ([^.]*)/.exec(via) || [])[1] || "niente"})`);
+
 await ctx.close();
 rmSync(PROFILE, { recursive: true, force: true });
 console.log(fail ? `\nSTORICO-ESTENSIONE: ${fail} CHECK FALLITI\n` : "\nSTORICO-ESTENSIONE: TUTTO OK\n");

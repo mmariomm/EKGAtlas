@@ -179,6 +179,37 @@ async function scenarioAutoConfirmMismatch(browser) {
   await context.close();
 }
 
+// Non poter controllare NON è come aver controllato. Se la ricevuta della
+// corsa non c'è (memoria piena, un'altra scheda, un tentativo di prima), il
+// controllo «nel carrello c'è solo quello che ho aggiunto io» non si può fare
+// — e la Conferma nativa invia la richiesta intera. Si ferma.
+async function scenarioAutoConfirmSenzaRicevuta(browser) {
+  const scen = "confirm-senza-ricevuta";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await $panel(page, "#q").fill("dolore toracico");
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
+  // la ricevuta sparisce appena viene scritta, prima che la pagina la legga
+  await page.evaluate(() => {
+    const K = "psassist:receipt.v1";
+    const vero = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) {
+      if (k === K) return;                       // scritta persa, come a memoria piena
+      return vero.call(this, k, v);
+    };
+  });
+  await $panel(page, "#goconfirm").click();
+  await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 20000 });
+  await page.waitForTimeout(2500);
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.richieste[rid].confirmed === false,
+    "senza ricevuta NON conferma da sola");
+  check(scen, /sospesa/i.test(await $panel(page, ".card").innerText()),
+    "e lo dice invece di fingere di aver controllato");
+  await context.close();
+}
+
 // La Conferma nativa invia la richiesta INTERA. Se l'avanzo di un tentativo
 // precedente sta sul carrello di un'ALTRA risorsa, questa pagina non lo mostra
 // nemmeno: l'auto-conferma deve guardare il carrello di ogni risorsa che il
@@ -1320,6 +1351,67 @@ async function scenarioTempi(browser) {
   await context.close();
 }
 
+// Dopo una corsa fallita su una pagina esami, il carrello sullo SCHERMO è
+// quello di prima: gli inserimenti sono partiti in background e la pagina non
+// si è mai ricaricata. Rilanciare non deve reinserire quello che c'è già —
+// sarebbe un esame ordinato due volte a un paziente vero.
+async function scenarioRilancioPaginaEsami(browser) {
+  const scen = "rilancio-esami";
+  const mock = createMock({ neverAdd: ["159"] });   // la PCT non entra mai: la corsa fallisce
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.click('a[title="Richieste Laboratorio"]');
+  await page.fill('form[name="RICHIESTACrea"] textarea[name="QUESITO_DIAGNOSTICO"]', "controllo");
+  await page.click('form[name="RICHIESTACrea"] input[name="Update"]');
+  await page.waitForSelector('form[name="Prestazioni"]', { timeout: 20000 });
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+
+  const banner = () => page.waitForFunction(() => !!document.getElementById("psassist-host")
+    ?.shadowRoot?.querySelector(".banner.ok, .banner.err"), { timeout: 30000 }).catch(() => {});
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, "#go").click();
+  await banner();
+
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.insertCount[`${rid}:320`] === 1,
+    `la prima corsa manda un inserimento (got ${mock.state.insertCount[`${rid}:320`]})`);
+  check(scen, (await $panel(page, ".banner.err").count()) === 1, "e fallisce sull'esame che non entra");
+
+  // «Torna al pannello»: la selezione resta, la pagina NON si è ricaricata
+  await $panel(page, "#reset").click();
+  await page.waitForSelector("#psassist-host #go", { timeout: 8000 });
+  await $panel(page, "#go").click();
+  await banner();
+  check(scen, mock.state.insertCount[`${rid}:320`] === 1,
+    `rilanciando NON lo ordina una seconda volta (got ${mock.state.insertCount[`${rid}:320`]})`);
+  const reg = await $panel(page, ".bd").innerText();
+  check(scen, /già nel carrello/i.test(reg), `lo ritrova nel carrello rileggendolo dal server (got ${reg.slice(0, 80).replace(/\s+/g, " ")})`);
+  await context.close();
+}
+
+// Tutta la sicurezza del pannello sulle stringhe che arrivano dal gestionale
+// sta nel ricordarsi di chiamare esc(). Nessun test lo verificava: un esc()
+// dimenticato sarebbe passato in silenzio.
+async function scenarioNomeConHtml(browser) {
+  const scen = "html-nel-nome";
+  const CATTIVO = 'ROSSI <img src=x onerror="window.__bucato=1"> "MARIO" & Co';
+  const mock = createMock({ name: CATTIVO });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.waitForTimeout(400);
+
+  const bucato = await page.evaluate(() => !!window.__bucato);
+  check(scen, !bucato, "un nome col markup dentro non esegue niente");
+  const img = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll("img").length);
+  check(scen, img === 0, `e non diventa un elemento (got ${img} img nel pannello)`);
+  const testo = await $panel(page, ".hd").innerText();
+  check(scen, testo.includes('"MARIO"') && testo.includes("&"),
+    `si legge esattamente com'è scritto (got ${testo.replace(/\s+/g, " ").slice(0, 70)})`);
+  await context.close();
+}
+
 async function scenarioEo(browser) {
   const scen = "eo";
   const mock = createMock({});
@@ -1679,6 +1771,7 @@ const scenarios = [
   ["altro presidio: risorse e codici diversi", scenarioAltroPresidio],
   ["risorsa sconosciuta: stop diagnostico", scenarioPresidioSconosciuto],
   ["auto-confirm bloccata su carrello diverso", scenarioAutoConfirmMismatch],
+  ["auto-confirm bloccata senza ricevuta", scenarioAutoConfirmSenzaRicevuta],
   ["auto-confirm bloccata da un avanzo su un'altra risorsa", scenarioAutoConfirmAltraRisorsa],
   ["conferma fallita sul server: niente stampa", scenarioConfirmPostFails],
   ["delayed cart visibility", scenarioLagVerify],
@@ -1718,6 +1811,8 @@ const scenarios = [
   ["cronometro: parte, sopravvive al cambio pagina, si ferma", scenarioTempi],
   ["fogli di dimissione: copia, modifica, export", scenarioDimissioni],
   ["EO: copia il generale, la tendina copia il caso", scenarioEo],
+  ["rilancio su pagina esami: nessun doppio ordine", scenarioRilancioPaginaEsami],
+  ["un nome col markup dentro non rompe il pannello", scenarioNomeConHtml],
   ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],

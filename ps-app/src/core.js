@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.19.0";
+  const VERSION = "3.20.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -602,8 +602,7 @@
   // the audited system, so a page without one is itself an anomaly.
   // IMPORTANT: trust the DOCUMENT first — the response URL only echoes the id
   // WE requested, so it is not independent evidence of what the server served.
-  function assertSameEpisode(doc, baseUrl, episodeId, what) {
-    // The response URL only echoes the id WE asked for — it is not evidence.
+  function assertSameEpisode(doc, episodeId, what) {
     const found = findEpisodeIdInDoc(doc);
     if (!found) {
       throw new StopError(`Episodio non identificabile nella pagina "${what}"`, "Interrotto per sicurezza.");
@@ -750,7 +749,9 @@
   //   /UploadDownload/uploaddownloadservlet.rra2?…&mimetype=application/pdf
   // Those URLs are built inside the page, so we harvest them as text and try
   // them in order — never constructing one ourselves.
-  const PDF_SMELL = /uploaddownloadservlet|mimetype=application\/pdf|get_pdf|jasperservlet|refertostream|\.pdf(?:[?&"']|$)/i;
+  // NB: identica a quella in extension/bg.js — le due cacce al PDF (in pagina
+  // e nel service worker) devono giudicare lo stesso indirizzo allo stesso modo
+  const PDF_SMELL = /uploaddownloadservlet|mimetype=application\/pdf|get_pdf|jasperservlet|refertostream|report|\.pdf(?:[?&"']|$)/i;
   function pdfCandidates(text) {
     const out = [], seen = new Set();
     const push = (raw) => {
@@ -1029,7 +1030,10 @@
     // un'identità che non si è potuta leggere conta come un altro paziente.
     const chi = chiavePaziente(nuovo.paziente);
     if (!chi || chiavePaziente(vecchio.paziente) !== chi) return nuovo;
-    if ((vecchio.cf || "") !== (nuovo.cf || "")) return nuovo;
+    // Due codici fiscali che non si sono potuti leggere NON sono lo stesso
+    // codice fiscale: "" === "" è vero per JavaScript, non per due persone.
+    // Senza questa riga due omonimi senza codice finivano in un grafico solo.
+    if (!vecchio.cf || !nuovo.cf || vecchio.cf !== nuovo.cf) return nuovo;
     const date = [...vecchio.date];
     for (const d of nuovo.date) if (!date.some((x) => chiaveCol(x) === chiaveCol(d))) date.push(d);
     date.sort((a, b) => ordData(a.label) - ordData(b.label));   // stable: same minute keeps its order
@@ -1274,7 +1278,13 @@
     return out;
   }
 
-  async function fetchPdf(url, { signal, hop = 0 } = {}) {
+  // Un tetto duro ai tentativi, UNO SOLO per tutta la caccia: un documento che
+  // non si lascia catturare in pochi colpi si apre in una scheda e si stampa da
+  // lì. Il contatore va passato ai livelli sotto — quando stava dentro la
+  // funzione ogni ricorsione ripartiva da zero e il tetto vero era 6+6×6 = 43.
+  const MAX_TENTATIVI = 6;
+  async function fetchPdf(url, { signal, hop = 0, budget } = {}) {
+    budget = budget || { n: 0 };
     const target = new URL(url, location.href);
     if (target.origin !== location.origin) {
       throw new StopError("Richiesta fuori dall'ospedale bloccata", `destinazione inattesa: ${target.origin}`);
@@ -1307,22 +1317,16 @@
       const tried = [];
       const attempt = async (raw, via) => {
         if (!raw || /^(javascript:|#|about:)/i.test(raw)) return null;
-        if (++provati > MAX_TENTATIVI) return null;
+        if (++budget.n > MAX_TENTATIVI) return null;
         let u; try { u = new URL(String(raw).replace(/&amp;/gi, "&").trim(), base); } catch { return null; }
         if (u.origin !== location.origin || u.href === base) return null;
         if (tried.includes(u.href)) return null;
         tried.push(u.href);
         try {
-          const r = await fetchPdf(u.href, { signal, hop: hop + 1 });
+          const r = await fetchPdf(u.href, { signal, hop: hop + 1, budget });
           return r ? { ...r, via: r.via || via } : r;
         } catch (e) { if (e?.name === "AbortError") throw e; return null; }
       };
-
-      // Un tetto duro ai tentativi: un documento che non si lascia catturare
-      // in pochi colpi si apre in una scheda e si stampa da lì. Meglio un
-      // fallback onesto che decine di richieste al server per un foglio.
-      let provati = 0;
-      const MAX_TENTATIVI = 6;
 
       // 1. explicit references in the markup (old apps still use <frameset>)
       const domCands = [];
@@ -1743,7 +1747,8 @@
   //   startPage: 'patient' | 'crea' | 'exam',
   //   entryUrl:  (patient only) crea-page URL to open,
   //   creaForm:  (crea only) the LIVE form element to serialize,
-  //   examDoc/examUrl: (exam only) the live document,
+  //   examDoc/examUrl: (exam only) the live page — used ONLY to find the
+  //              list URL, which is then re-read from the server,
   //   quesito:   text used only if the server field is empty,
   //   items:     [{res, code, label}],
   //   autoConfirm: boolean,
@@ -1811,7 +1816,7 @@
         running(sOpen);
         ({ doc, url } = await fetchDoc(plan.entryUrl, { signal }));
         guardSession(doc, "Nessuna richiesta creata");
-        assertSameEpisode(doc, url, plan.episodeId, "nuova richiesta");
+        assertSameEpisode(doc, plan.episodeId, "nuova richiesta");
         if (classify(doc) !== "crea") throw new StopError("Pagina Nuova Richiesta inattesa", "Il server non ha aperto la pagina prevista. Nessuna richiesta creata.");
         done(sOpen);
       }
@@ -1842,7 +1847,7 @@
         const action = absUrl(form, "action", base);
         ({ doc, url } = await fetchDoc(action, { method: "POST", body, signal }));
         guardSession(doc, "La richiesta potrebbe non essere stata creata");
-        assertSameEpisode(doc, url, plan.episodeId, "esami della richiesta");
+        assertSameEpisode(doc, plan.episodeId, "esami della richiesta");
         if (classify(doc) !== "exam") {
           log(`pagina inattesa dopo Crea: "${snippet(doc)}"`);
           throw new StopError("Il server non ha aperto la pagina esami dopo la creazione", "Controlla a mano (vedi Registro).");
@@ -1850,7 +1855,22 @@
         done(sCrea);
         await pace();
       } else {
-        doc = plan.examDoc; url = plan.examUrl;
+        // La pagina esami che il medico ha davanti NON è una fonte attendibile:
+        // gli inserimenti viaggiano in background, quindi dopo una corsa
+        // interrotta il carrello sullo schermo è quello di prima. Fidarsene
+        // vorrebbe dire leggere «non c'è» un esame che c'è già — e ordinarlo
+        // una seconda volta. Del DOM vivo si prende solo l'INDIRIZZO
+        // dell'elenco, e lo si rilegge dal server come fa tutto il resto del
+        // motore: una richiesta in più, e in cambio i due controlli che questa
+        // strada saltava — sessione scaduta ed episodio.
+        const vivo = examModel(plan.examDoc, plan.examUrl);
+        ({ doc, url } = await fetchDoc(vivo.listUrl(vivo.res) || plan.examUrl, { signal }));
+        guardSession(doc, "Nessun esame inviato");
+        assertSameEpisode(doc, plan.episodeId, "esami della richiesta");
+        if (classify(doc) !== "exam") {
+          log(`pagina esami inattesa alla partenza: "${snippet(doc)}"`);
+          throw new StopError("Questa non è più la pagina degli esami", "Ricaricala e riprova. Nessun esame inviato.");
+        }
       }
 
       // ---- 2. add each exam, verifying every add ------------------------
@@ -1899,7 +1919,7 @@
           running(st, `passo a ${RES_SHORT[it.res] || it.res}`);
           ({ doc, url } = await fetchDoc(model.listUrl(it.res) || state.lastListUrl, { signal }));
           guardSession(doc);
-          assertSameEpisode(doc, url, plan.episodeId, "elenco esami");
+          assertSameEpisode(doc, plan.episodeId, "elenco esami");
           model = examModel(doc, url);
           learnFrom(model);
           if (model.res !== it.res) throw new StopError(`Cambio risorsa fallito (${RES_SHORT[it.res] || it.res})`, "Nessun ordine inviato per questo esame.");
@@ -1954,7 +1974,7 @@
         log(`aggiungo → ${nm}`);
         ({ doc, url } = await fetchDoc(link.href, { signal }));
         guardSession(doc, `«${nm}» potrebbe essere stato aggiunto o no`);
-        assertSameEpisode(doc, url, plan.episodeId, "conferma inserimento");
+        assertSameEpisode(doc, plan.episodeId, "conferma inserimento");
         if (classify(doc) !== "exam") {
           log(`pagina inattesa dopo l'inserimento: "${snippet(doc)}"`);
           throw new StopError(`«${nm}» potrebbe essere stato aggiunto o no`, "Pagina inattesa dal server (vedi Registro) — non reinviato.");
@@ -1970,7 +1990,7 @@
           await sleep(VERIFY_WAIT_MS, signal);
           ({ doc, url } = await fetchDoc(model.listUrl(it.res || model.res) || state.lastListUrl, { signal }));
           guardSession(doc, `«${nm}» potrebbe essere stato aggiunto o no`);
-          assertSameEpisode(doc, url, plan.episodeId, "verifica carrello");
+          assertSameEpisode(doc, plan.episodeId, "verifica carrello");
           if (classify(doc) !== "exam") {
             log(`pagina inattesa in verifica: "${snippet(doc)}"`);
             continue; // count the attempt; the next re-read may recover
@@ -2113,13 +2133,6 @@
     .chip.preset.on { background: #0B5CAD; color: #fff; }
     .chip.cart { background: #EDF7F0; border-color: #BCE0C9; color: #124F31; cursor: default; }
     .chip.ghosted { background: #F4F8FB; border-color: #E3E8EF; color: #5B6B7A; cursor: default; }
-    .tray { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; background: #F4F8FB; border: 1px dashed #C4D0DC; border-radius: 10px; min-height: 40px; }
-    .trayhdr { width: 100%; font-size: 10.5px; font-weight: 800; letter-spacing: .4px; color: #5B6B7A; margin: 2px 0 0; }
-    .tray .t { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid #C4D0DC; border-radius: 999px; padding: 4px 6px 4px 10px; font-size: 12px; }
-    .tray .t small { color: #5B6B7A; }
-    .tray .x { border: 0; background: #E8EEF4; border-radius: 999px; width: 22px; height: 22px; line-height: 1; cursor: pointer; color: #35506B; font-size: 12px; }
-    .tray .x:hover { background: #B3261E; color: #fff; }
-    .tray .empty { color: #8296A9; font-size: 12px; align-self: center; }
     .btn { display: block; width: 100%; border: 0; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; }
     .btn + .btn { margin-top: 7px; }
     .btnrow { display: flex; gap: 7px; }
@@ -2175,11 +2188,6 @@
     .log { font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; color: #35506B; background: #F8FAFC;
            border: 1px solid #E3E8EF; border-radius: 8px; padding: 8px; max-height: 130px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
     details.reg summary { cursor: pointer; font-size: 11.5px; color: #5B6B7A; margin: 8px 0 6px; }
-    details.browse summary { list-style: none; }
-    details.browse summary::-webkit-details-marker { display: none; }
-    .browserow { display: flex; align-items: center; justify-content: space-between; border: 1px solid #C4D0DC; border-radius: 10px;
-                 padding: 10px; background: #F4F8FB; cursor: pointer; font-size: 12.5px; font-weight: 600; color: #16232E; margin-top: 8px; }
-    .browserow:hover { border-color: #0B5CAD; }
     /* resize grip: bottom-LEFT, because the panel is anchored to the right */
     .rsz { position: absolute; left: 0; bottom: 0; width: 16px; height: 16px; cursor: nesw-resize; z-index: 4;
            background: linear-gradient(45deg, transparent 42%, #C4D0DC 42%, #C4D0DC 56%, transparent 56%,
@@ -2237,7 +2245,7 @@
     .seg2 button.on { border-color: #9DBFDE; background: #EAF2FA; color: #0B5CAD; }
     .seg2 button:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     .rgo { flex: 0 0 auto; color: #8296A9; font-size: 12px; }
-    .egroup, .rgroup { display: flex; flex-direction: column; }
+    .egroup { display: flex; flex-direction: column; }
     .pcard { border: 1px solid #E3E8EF; border-radius: 10px; padding: 9px 10px; margin-bottom: 7px; background: #fff; cursor: pointer; }
     .pcard:hover { border-color: #9DBFDE; background: #F4F9FD; }
     .pcard:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
@@ -3230,7 +3238,7 @@
           <div class="lbl">Esiti (${this.esiti.length})
             ${nVivi ? `<button class="mini" id="risall" ${ra ? "disabled" : ""} title="Legge i valori dal gestionale, un prelievo alla volta">${
               ra ? `↻ ${ra.done}/${ra.total}…` : this.daLeggere().length === nVivi ? "⭳ Carica i valori" : "↻ Aggiorna"}</button>` : ""}
-            ${hasExt() && nSaved < nRef ? `<button class="mini" id="refsave">⬇ Salva referti</button>` : ""}
+            ${hasExt() && nSaved < nRef ? `<button class="mini" id="refsave"${this._salvaRef ? " disabled" : ""}>${this._salvaRef ? "salvo…" : "⬇ Salva referti"}</button>` : ""}
             ${(nSaved || open.size) ? `<button class="mini" id="refreset">↻ Resetta</button>` : ""}
           </div>
           ${this.storico ? `
@@ -3308,6 +3316,12 @@
         parz ? `<div class="hint">… valore ancora <b>parziale</b>: il laboratorio non ha finito.</div>` : ""}`;
     }
 
+    // il corpo della tabella è UNO: quello che si aggiunge qui compare in
+    // tutte e due le viste, o non compare in nessuna
+    corpoStorico(st, t) {
+      return `${this.avvisoNomi(st.righe, st.scartate)}${t.html}${this.piedeStorico(st, t.legenda)}`;
+    }
+
     viewStorico() {
       const st = this.storico;
       if (!st) return `<div class="hint">Nessuno storico in memoria. Aprilo dal gestionale: «Storico dati clinici» › Tabella.</div>`;
@@ -3319,9 +3333,7 @@
             <button class="mini" id="storcopy">⧉ Copia</button>
             <button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>
           </div>
-          ${this.avvisoNomi(st.righe, st.scartate)}
-          ${t.html}
-          ${this.piedeStorico(st, t.legenda)}
+          ${this.corpoStorico(st, t)}
           <div class="hint">Letto per <b>${esc([st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") || "—")}</b>${st.paziente?.idMPI ? ` · idMPI ${esc(st.paziente.idMPI)}` : ""} · identità confermata dal <b>${esc(this.storicoVia || "nome")}</b>. ${esc(st.periodo || "")} · dalla pagina del portale, senza chiedere niente al server.</div>
         </div>`;
     }
@@ -3344,9 +3356,7 @@
               <button class="mini" id="storcopy2">⧉ Copia</button>
               <button class="iconbtn" id="stchiudi" title="Chiudi (Esc)">✕</button>
             </div>
-            ${this.avvisoNomi(st.righe, st.scartate)}
-            ${t.html}
-            ${this.piedeStorico(st, t.legenda)}
+            ${this.corpoStorico(st, t)}
           </div>
         </div>`;
     }
@@ -3542,7 +3552,8 @@
     }
 
     async saveAllReferti() {
-      if (!hasExt()) return;
+      if (!hasExt() || this._salvaRef) return;   // due clic non sono due salvataggi
+      this._salvaRef = true;
       this.refBusy = this.refBusy || {};
       const todo = this.esiti.filter((e) => e.kind === "referto" && !(this.refCache || {})[e.id]);
       for (const e of todo) this.refBusy[e.id] = true;
@@ -3558,6 +3569,8 @@
         }
         this.render();
       }
+      this._salvaRef = false;
+      this.render();
     }
 
     txtKey(id) { return `reftxt.${this.episodeId || "x"}.${id}`; }
@@ -4594,7 +4607,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (!model.confirmButton) return clear();
     clear(); // consume immediately: a reload must never re-trigger the countdown
 
-    const patientName = (document.title || "").trim();
     const inCart = model.exams.filter((e) => e.isDel);
     const cartPreview = inCart.slice(0, 5).map((e) => shortLabel(e.label));
     if (inCart.length > 5) cartPreview.push(`+${inCart.length - 5} altri`);
@@ -4604,7 +4616,21 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // that this run did not add (a leftover from an earlier attempt) means the
     // click would confirm more than the banner says — refuse, human decides.
     const receipt = tabStore.get("receipt.v1", null);
-    if (receipt && receipt.richiestaId === model.richiestaId && Array.isArray(receipt.items)) {
+    // Senza ricevuta non si può dire «nel carrello c'è solo quello che ho
+    // aggiunto io» — e la Conferma nativa invia la richiesta INTERA. Non
+    // poter controllare non è come aver controllato: si ferma, e preme il
+    // medico. (Prima di questa riga il controllo veniva semplicemente
+    // saltato e la conferma partiva lo stesso.)
+    if (!receipt || receipt.richiestaId !== model.richiestaId || !Array.isArray(receipt.items)) {
+      clear();
+      if (panel) {
+        panel.message = "Conferma automatica sospesa: non risulta cosa è stato aggiunto in questa corsa. La Conferma invia la richiesta intera — controlla il carrello e premila tu sulla pagina.";
+        panel.log(`${now()}  auto-conferma sospesa: ricevuta assente o di un'altra richiesta`);
+        panel.render();
+      }
+      return;
+    }
+    {
       // Questa pagina mostra il carrello di UNA risorsa sola, ma la Conferma
       // invia la richiesta intera. Quindi si controlla risorsa per risorsa:
       // quella davanti agli occhi dal vivo, le altre col carrello che il run
@@ -4644,7 +4670,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // its right name, cart identical to the receipt for this resource).
     // Confirm now — a countdown here was dead time, not safety.
     panel?.log(`${now()}  conferma automatica: ${flag.count} ${flag.count === 1 ? "esame" : "esami"} · ${cartPreview.join(" · ")} · click nativo su Conferma`);
-    void patientName;
     model.confirmButton.click(); // native click → server confirm → label print flow
   }
 
@@ -4841,6 +4866,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   let wizardOpen = false;
 
   function openPrintWizard(jobs, { title = "", onClose, panel = null } = {}) {
+    // Chiudere la finestra deve fermare davvero la caccia al PDF: senza questo
+    // il medico premeva Annulla, la catena continuava a chiedere al server, e
+    // una seconda stampa poteva partire mentre la prima era ancora in giro.
+    const abbandona = new AbortController();
     if (wizardOpen || !jobs.length) return;
     wizardOpen = true;
 
@@ -4862,6 +4891,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
             display: flex; flex-direction: column; max-height: 92vh; }
       .pwhd { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: #0B5CAD; color: #fff; }
       .pwhd b { font-size: 14.5px; }
+      .pwhd .pwtit { font-size: 12px; opacity: .85; }
       .pwhd .dest { margin-left: auto; background: #FFF7E6; color: #8a4b03; border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 12.5px; }
       .pwbody { flex: 1; min-height: 320px; background: #E8EEF4; }
       .pwbody iframe { width: 100%; height: 56vh; border: 0; display: block; background: #fff; }
@@ -4880,6 +4910,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
 
     const cleanup = () => {
       wizardOpen = false;
+      abbandona.abort();
       clearTimeout(timer);
       if (blobUrl) URL.revokeObjectURL(blobUrl);
       window.removeEventListener("keydown", onKey, true);
@@ -4905,6 +4936,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         <div class="pw" role="dialog" aria-label="Stampa documenti">
           <div class="pwhd">
             <b>Stampa ${i + 1} di ${jobs.length} — ${esc(job.name)}</b>
+            ${title ? `<span class="pwtit">${esc(title)}</span>` : ""}
             <span class="dest">→ ${esc(job.printer)}</span>
           </div>
           ${err ? `<div class="pwerr">${esc(err)}</div>` : ""}
@@ -4942,7 +4974,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         // gestionale: si prende così com'è, senza la catena same-origin
         const { blob, via } = jobs[i].diretto
           ? { blob: await (await fetch(jobs[i].url)).blob(), via: "estensione" }
-          : await fetchPdf(jobs[i].url, {});
+          : await fetchPdf(jobs[i].url, { signal: abbandona.signal });
         panel?.log(`${now()}  ${jobs[i].name}: PDF ottenuto${via ? " via " + via : ""}`);
         blobUrl = URL.createObjectURL(blob);
         const body = root.querySelector(".pwbody");
@@ -5091,6 +5123,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // classifies the same way but its episode belongs to someone in the list
       if (panel.entry && (panel.entry.labUrl || panel.entry.radioUrl)) {
         rememberPatient(panel.episodeId, (document.title || "").trim(), location.href);
+        // Il portale clinico si apre da QUESTO link, sulla pagina di QUESTO
+        // paziente: quel clic è l'identità, ed è esatta. Si annota qui, prima
+        // che la scheda si apra, così di là la tabella sa di chi è senza
+        // confrontare nomi e senza chiedere niente al server.
+        document.addEventListener("click", (ev) => {
+          const a = ev.target?.closest?.('a[href*="MODALITA=CLINICA"]');
+          if (!a || !hasExt()) return;
+          ask({ t: "apreStorico", ep: panel.episodeId || "", nome: panel.nomePaziente() || "" }).catch(() => {});
+        }, true);
       }
       panel.applyAfterNav();
       const pending = nextQueued(findEpisodeId(document, location.href));
@@ -5154,7 +5195,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           button:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
         </style>
         <div class="bar ${stato.ok ? "" : "ko"}" role="status">
-          <span>${stato.testo}</span>
+          <span>${stato.html || esc(stato.testo || "")}</span>
           <button id="rileggi" title="Dopo aver spostato le colonne o cambiato il periodo">↻ Rileggi</button>
         </div>`;
       root.getElementById("rileggi").addEventListener("click", leggi);
@@ -5174,17 +5215,19 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const valori = unito.righe.reduce((n, r) => n + r.valori.filter((v) => v.v).length, 0);
       const chi = [unito.paziente.cognome, unito.paziente.nome].filter(Boolean).join(" ");
       const quanti = `<b>${esc(String(unito.righe.length))} esami · ${esc(String(unito.date.length))} prelievi</b> letti (${esc(String(valori))} valori)`;
-      const detto = (nuovo, n) => `${quanti} <span class="who">— ${esc(chi)}${nuovo ? ", nuovo" : ""}${n > 1 ? ` · ${n} pazienti in memoria` : ""}</span>. Torna sul paziente: sono in Esiti.`;
+      // l'unico testo con del markup dentro: passa da `html`, e ogni pezzo che
+      // viene dalla pagina del portale è scappato qui, uno per uno
+      const detto = (nuovo, n) => `${quanti} <span class="who">— ${esc(chi)}${nuovo ? ", nuovo" : ""}${n > 1 ? ` · ${esc(String(n))} pazienti in memoria` : ""}</span>. Torna sul paziente: sono in Esiti.`;
       // in the banco there is one origin and no service worker: the tab itself
       // is the bridge
-      if (DEMO) { tabStore.set("storico.demo", unito); disegna({ ok: true, testo: detto(false, 1) }); return; }
+      if (DEMO) { tabStore.set("storico.demo", unito); disegna({ ok: true, html: detto(false, 1) }); return; }
       if (!hasExt()) {
-        disegna({ ok: false, testo: `Letti ${esc(String(unito.righe.length))} esami, ma serve l'estensione per portarli sul paziente.` });
+        disegna({ ok: false, testo: `Letti ${unito.righe.length} esami, ma serve l'estensione per portarli sul paziente.` });
         return;
       }
       // una scheda per paziente: se non c'era, la crea
       ask({ t: "putStorico", chiave: chiaveArchivio(unito), dati: unito }).then((r) => {
-        disegna(r && r.ok ? { ok: true, testo: detto(r.nuovo, r.pazienti || 1) }
+        disegna(r && r.ok ? { ok: true, html: detto(r.nuovo, r.pazienti || 1) }
           : { ok: false, testo: "Letto, ma l'estensione non li ha ricevuti: apri il paziente e riprova." });
       });
     };

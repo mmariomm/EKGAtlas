@@ -487,6 +487,12 @@ stessi flussi dei test di prodotto.
 1. **Mai doppi ordini**: l'URL di inserimento di un esame viene richiesto **al massimo una volta**.
    La verifica rilegge l'elenco "pulito" (senza parametri di inserimento); se dopo 3 verifiche
    l'esame non compare, il motore **si ferma** e ti dice esattamente cosa controllare.
+   Vale anche **fra una corsa e l'altra**: partendo da una pagina esami il motore **rilegge
+   l'elenco dal server** invece di fidarsi di quello che hai sullo schermo. Gli inserimenti
+   viaggiano in background, quindi dopo una corsa interrotta la pagina mostra ancora il carrello
+   di prima — fidarsene voleva dire leggere «non c'è» un esame che c'era già, e ordinarlo una
+   seconda volta. Costa una richiesta, e da quella rilettura arrivano anche i controlli di
+   sessione ed episodio che quella strada saltava. C'è un test che lo prova.
 2. **Mai il paziente sbagliato**: l'EPISODIO_ID viene fissato all'avvio e ogni pagina ricevuta è
    verificata **dal contenuto che il server dichiara** (non dall'URL richiesto); se manca o non
    corrisponde, stop prima di qualunque invio.
@@ -506,6 +512,10 @@ stessi flussi dei test di prodotto.
    resta quello nativo), è opt-in e **immediata**: nessun conto alla rovescia, perché il tuo
    click su «+ Conferma» è già la decisione — ma scatta **solo** se il carrello coincide con la
    ricevuta di ciò che è stato appena aggiunto; ogni differenza la sospende con un messaggio.
+   **Non poter controllare non è come aver controllato**: se la ricevuta manca o è di un'altra
+   richiesta, la conferma automatica **si sospende** invece di partire lo stesso. (Fino alla
+   3.20 quel caso saltava il controllo e confermava — la Conferma nativa invia la richiesta
+   *intera*, quindi era la strada per confermare l'avanzo di un tentativo precedente.)
 6. **Il quesito non viene mai sovrascritto**: se il triage l'ha già compilato, resta il suo.
 7. **Sessione scaduta riconosciuta**: se compare la pagina di login, stop con messaggio chiaro
    (che dice anche se l'ultimo esame è in stato ambiguo).
@@ -521,6 +531,10 @@ stessi flussi dei test di prodotto.
     Chromium reale, accenti e simboli inclusi).
 12. **Stampe solo dai link della pagina**: gli URL dei PDF non vengono mai costruiti a mano
     (`BRANCA` varia per richiesta) e passano gli stessi controlli di origine di tutto il resto.
+    La caccia al PDF ha **un tetto solo, sei tentativi in tutto**: oltre quello il documento si
+    apre in una scheda e lo stampi da lì. (Il contatore stava dentro la funzione ricorsiva, così
+    ogni livello ripartiva da zero e il tetto vero era 6+6×6 = **43 richieste**. Ora è uno solo,
+    passato ai livelli sotto.) Chiudere la finestra di stampa **ferma davvero** la caccia.
 13. **Un paziente alla volta**: per ordinare devi essere sulla sua pagina, e ogni dato salvato
     (valori, referti, registro, code di conferma) è legato al suo episodio — letto sotto un altro
     episodio semplicemente non esiste.

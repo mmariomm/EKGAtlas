@@ -246,6 +246,7 @@ export function createMock(opts = {}) {
       </form>
       ${mk("lab", "Richieste Laboratorio")} ${mk("radio", "Richieste Radiologia")}
       <a title="Richieste Consulenza" href="menuPsoEpisodio.do?MVPG=PsoRichiestaCreaRcs&EPISODIO_ID=${EP()}&REPARTO=001PS&STRUTTURA=1&toPage=PsoRichiestaPrestazioniRicercaErogatore&returnPage=PsoEpisodio">Consulenze</a>
+      <a href="/sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=ESEMPIO&MODALITA=CLINICA" target="_blank">Storico Dati Clinici</a>
       <table>${printRows()}</table>
       ${risultatiRows()}
       ${refertiRows()}

@@ -213,6 +213,25 @@ check(scelte.mioIgnotoSchedaConCodice === null,
   "se il codice del paziente davanti non si sa ancora, una scheda con un codice non gli si attribuisce");
 check(scelte.nessunaSuaScheda === null && scelte.archivioVuoto === null, "e di un paziente senza scheda non sceglie nulla");
 
+// ---- due omonimi senza codice fiscale NON sono la stessa persona ---------
+// Sul portale si passa da un paziente all'altro senza ricaricare, e il codice
+// fiscale non sempre si riesce a leggere. Prima "" === "" li faceva combaciare:
+// i prelievi del secondo finivano nel grafico del primo.
+const omonimi = await page.evaluate(([s, a, b]) => {
+  const doc = (h) => new DOMParser().parseFromString(h, "text/html");
+  // eslint-disable-next-line no-new-func
+  return new Function("dA", "dB", s + `
+    const x = leggiStorico(dA), y = leggiStorico(dB);
+    const senzaCf = unisciStorico({ ...x, cf: "" }, { ...y, cf: "" });
+    const stessoCf = unisciStorico({ ...x, cf: "abc" }, { ...y, cf: "abc" });
+    return { senzaCf: senzaCf.date.length, stessoCf: stessoCf.date.length };
+  `)(doc(a), doc(b));
+}, [src, paginaStorico({ date: [DATE[0]] }), paginaStorico({ date: [DATE[1]] })]);
+check(omonimi.senzaCf === 1,
+  `due schede senza codice fiscale non si fondono (got ${omonimi.senzaCf} colonne, attese 1)`);
+check(omonimi.stessoCf === 2,
+  `ma con lo STESSO codice fiscale sì (got ${omonimi.stessoCf} colonne, attese 2)`);
+
 // ---- sezioni: gli esami stanno dove un medico li cerca -------------------
 const sez = await page.evaluate((s) => {
   // eslint-disable-next-line no-new-func

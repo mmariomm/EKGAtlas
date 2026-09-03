@@ -240,13 +240,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       // Si cancella per IDENTITÀ, non per la chiave che ci ricordavamo: una
       // scheda arrivata dal portale o da un referto può non aver mai lasciato
       // una chiave nell'elenco, e «eliminato tutto» deve essere vero.
+      // Le parole ORDINATE facevano combaciare persone diverse: «DE ROSSI
+      // MARIA» e «DE MARIA ROSSI» diventavano la stessa stringa, e cancellare
+      // l'una cancellava la scheda dell'altra. Si accettano solo i due ordini
+      // veri, come combaciaNome nel pannello.
       const norm = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ").split(" ").sort().join(" ");
+        .replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ");
       const o = await chrome.storage.local.get(ARCH);
       const a = o[ARCH] || {};
       const suo = norm(msg.nome || "");
-      const via = Object.keys(a).filter((k) => k === msg.chiave
-        || (suo && norm([a[k]?.paziente?.cognome, a[k]?.paziente?.nome].filter(Boolean).join(" ")) === suo));
+      // e il nome si guarda SOLO se la chiave non ha già trovato la scheda:
+      // «elimina questo paziente» non deve mai toccarne un altro
+      const perChiave = Object.keys(a).filter((k) => k === msg.chiave);
+      const stessoNome = (cognome, nome) => {
+        const c = norm(cognome), n = norm(nome);
+        if (!suo || (!c && !n)) return false;
+        return suo === norm(c + " " + n) || suo === norm(n + " " + c);
+      };
+      const via = perChiave.length ? perChiave
+        : Object.keys(a).filter((k) => stessoNome(a[k]?.paziente?.cognome, a[k]?.paziente?.nome));
       if (via.length) { for (const k of via) delete a[k]; await chrome.storage.local.set({ [ARCH]: a }); }
       const all = await chrome.storage.local.get(null);
       const suoi = Object.keys(all).filter((k) => k.startsWith("ref:")
