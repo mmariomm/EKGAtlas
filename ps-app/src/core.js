@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.10.0";
+  const VERSION = "3.11.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -913,6 +913,9 @@
   const normNome = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ");
   const chiavePaziente = (p) => normNome([p?.cognome, p?.nome].filter(Boolean).join(" "));
+  // La scheda di un paziente nell'archivio: il codice fiscale quando c'è (è
+  // l'unica identità che non si può confondere), altrimenti il nome.
+  const chiaveArchivio = (d) => (d?.cf ? "cf:" + d.cf : "nome:" + chiavePaziente(d?.paziente));
   // SA4PSO scrive il nome come una stringa sola, il portale lo dà già
   // separato: da lì l'ordine delle due parole non si può dedurre. Ma
   // entrambi i sistemi scrivono anche il CODICE FISCALE — il portale nel
@@ -1293,6 +1296,26 @@
   // The doctor's edits live in localStorage under their own key. They are
   // templates, not patient data, so forgetAll leaves them alone — and nothing
   // patient-specific ever gets written here.
+  // ------------------------------------------------------------- CONSENSI
+  // I moduli di consenso stanno DENTRO l'estensione (cartella consensi/):
+  // niente rete, niente server, funzionano anche se il gestionale è giù.
+  // Un tocco apre il PDF e la finestra di stampa, come per la lista esami.
+  const CONSENSI = [
+    { k: "emocolture", nome: "Emocolture", file: "emocolture.pdf",
+      esteso: "Esame colturale su campioni biologici diversi" },
+    { k: "hiv-dipendente", nome: "HIV Dipendente", file: "hiv-dipendente.pdf",
+      esteso: "Consenso del dipendente all'esecuzione del test HIV (MDL 170)" },
+    { k: "lesioni-animali", nome: "Lesioni Animali", file: "lesioni-animali.pdf",
+      esteso: "Rapporto di lesione provocata da animali" },
+    { k: "antitetano", nome: "Antitetano", file: "antitetano.pdf",
+      esteso: "Immuno-profilassi antitetanica" },
+    { k: "tac-cmdc", nome: "TAC cmdc", file: "tac-cmdc.pdf",
+      esteso: "Consenso alla TAC con mezzo di contrasto" },
+  ];
+  // nel banco di prova non c'è un'estensione: la pagina finta serve un PDF
+  const urlConsenso = (c) => (DEMO ? "/consensi/" + c.file
+    : (hasExt() ? chrome.runtime.getURL("consensi/" + c.file) : ""));
+
   const dimKey = "dimissioni.v1";
   // A short fingerprint of the text a doctor's version was forked from. It is
   // what lets a later release SAY that the original changed (a dose, a
@@ -1927,6 +1950,12 @@
                      font-weight: 700; cursor: pointer; text-decoration: underline; }
     .avvlista { white-space: pre-wrap; font-size: 11px; line-height: 1.45; color: #5B6B7A;
                 background: #FFFDF7; border: 1px solid #EEDFC0; border-radius: 8px; padding: 6px 9px; margin-bottom: 6px; }
+    .crow { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; cursor: pointer;
+            border: 1px solid #E3E8EF; border-radius: 9px; background: #fff; padding: 10px 11px; font: inherit; }
+    .crow:hover { border-color: #9DBFDE; background: #F4F9FD; }
+    .crow:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .cnome { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; color: #16232E; }
+    .cgo { flex: 0 0 auto; font-size: 11px; color: #0B5CAD; font-weight: 700; }
     .storbtn { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; cursor: pointer;
                border: 1px solid #9DBFDE; background: #F4F9FD; border-radius: 9px; padding: 7px 10px; margin-bottom: 6px; font: inherit; }
     .storbtn:hover { background: #EAF2FA; border-color: #0B5CAD; }
@@ -2381,6 +2410,7 @@
       else if (this.view === "dimissioni") body = this.viewDimissioni();
       else if (this.view === "dimtesto") body = this.viewDimTesto();
       else if (this.view === "dimimport") body = this.viewDimImport();
+      else if (this.view === "consensi") body = this.viewConsensi();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
       else body = this.viewHome(patientName, ep);
 
@@ -2398,10 +2428,11 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto", storico: "Storico", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", valori: "Valori", referto: "Referto", storico: "Storico", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi" }[this.view] || "";
       // the discharge sheets are templates: no episode belongs in that header
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
       const sub = inHome ? "ultime 12 ore"
+        : this.view === "consensi" ? "Consensi · moduli"
         : inDim ? "Dimissioni · modelli"
         : section ? `${section}${ep ? " · " + esc(ep) : ""}`
         : (ep ? "episodio " + esc(ep) : esc(APP));
@@ -2441,6 +2472,7 @@
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
                   <button class="${this.view === "esiti" || this.view === "valori" || this.view === "referto" || this.view === "storico" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>
                   <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
+                  <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi">Consensi</button>
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
               <div class="bd">${this.view === "richieste" ? "" : this.notaHtml()}${body}</div>
@@ -2760,6 +2792,31 @@
     // is shown ONLY if it belongs to the patient on screen: everywhere else
     // in this program the identity is checked before the data is used, and a
     // table of values is the last place to make an exception.
+    // Fra le schede in memoria, quella di QUESTO paziente. L'identità la
+    // decide il pannello, non il service worker: le regole stanno in un posto
+    // solo. Le altre schede non vengono nemmeno chieste.
+    async schedaMia() {
+      const r = await ask({ t: "getStorico" });
+      const indice = (r && r.ok && r.indice) || [];
+      if (!indice.length) { this.storicoAltri = ""; return null; }
+      const titolo = (document.title || "").trim();
+      const mio = this.cfEpisodio();
+      const scelta = indice.find((v) => (mio && v.cf)
+        ? (mio === v.cf && nomiCompatibili(titolo, v.paziente))
+        : combaciaNome(titolo, v.paziente));
+      this.storicoVia = mio && scelta && scelta.cf ? "codice fiscale" : "nome";
+      if (!scelta) {
+        const altri = [...new Set(indice.map((v) => [v.paziente?.cognome, v.paziente?.nome].filter(Boolean).join(" "))
+          .filter(Boolean))];
+        this.storicoAltri = altri.length
+          ? (altri.length === 1 ? altri[0] : `${altri.length} pazienti (${altri.slice(0, 2).join(", ")}…)`)
+          : "un paziente che la pagina non nomina";
+        return null;
+      }
+      const pieno = await ask({ t: "getStorico", chiave: scelta.chiave });
+      return pieno && pieno.ok ? pieno.dati : null;
+    }
+
     // l'impronta del codice fiscale di QUESTO episodio, presa dai prelievi
     // che il pannello ha già letto: nessuna richiesta in più
     cfEpisodio() {
@@ -2772,28 +2829,27 @@
 
     async caricaStorico() {
       if (this.pageType !== "patient" || (!hasExt() && !DEMO)) return;
-      const r = DEMO ? { ok: true, dati: tabStore.get("storico.demo", null) } : await ask({ t: "getStorico" });
-      const dati = r && r.ok ? r.dati : null;
-      if (!dati || !dati.righe) { this.storico = null; this.storicoAltri = ""; return; }
       const prima = (this.storico?.letto || 0) + "|" + this.storicoAltri;
-      // il codice fiscale, quando c'è su entrambi i lati, è l'unica identità
-      // che uno scambio fra cognome e nome non può ingannare
-      const titolo = (document.title || "").trim();
-      const mio = this.cfEpisodio(), suo = dati.cf || "";
-      const combacia = mio && suo
-        ? (mio === suo && nomiCompatibili(titolo, dati.paziente))
-        : combaciaNome(titolo, dati.paziente);
-      this.storicoVia = mio && suo ? "codice fiscale" : "nome";
-      if (combacia) { this.storico = dati; this.storicoAltri = ""; }
-      else {
-        // refusing is right, but refusing in silence is not: the doctor read
-        // that table a minute ago and must be told why it is not here
-        this.storico = null;
-        this.storicoAltri = [dati.paziente?.cognome, dati.paziente?.nome].filter(Boolean).join(" ")
-          || "un paziente che la pagina non nomina";
+      // schedaMia() ha già deciso l'identità: qui non si ricontrolla, o la
+      // regola finirebbe scritta in due posti e prima o poi in due modi
+      let dati = null;
+      if (DEMO) {
+        const d = tabStore.get("storico.demo", null);
+        const titolo = (document.title || "").trim();
+        if (d && d.righe && combaciaNome(titolo, d.paziente)) { dati = d; this.storicoAltri = ""; }
+        else if (d && d.righe) {
+          this.storicoAltri = [d.paziente?.cognome, d.paziente?.nome].filter(Boolean).join(" ")
+            || "un paziente che la pagina non nomina";
+        } else this.storicoAltri = "";
+      } else {
+        dati = await this.schedaMia();
       }
-      // re-render only when something actually changed, and never over a
-      // screen being typed into: coming back to this tab must not cost a caret
+      // rifiutare è giusto, rifiutare in silenzio no: il medico quella tabella
+      // l'ha letta un minuto prima e deve sapere perché non è qui
+      this.storico = dati && dati.righe ? dati : null;
+      if (this.storico) this.storicoAltri = "";
+      // si ridisegna solo se è cambiato qualcosa, e mai sopra una schermata in
+      // cui si sta scrivendo: tornare su questa scheda non deve costare il cursore
       if ((this.storico?.letto || 0) + "|" + this.storicoAltri === prima) return;
       if (this.view === "dimtesto" || this.view === "dimimport") return;
       this.render();
@@ -2909,6 +2965,24 @@
           ${testo !== d.testo ? `<div class="banner ok">Bozza non salvata, ripresa da dove l'avevi lasciata.</div>` : ""}
           <textarea class="dedit" id="dimarea" spellcheck="false" aria-label="Testo del foglio ${esc(d.nome)}">${esc(testo)}</textarea>
           <div class="hint">Salva tiene questo testo per le prossime volte. Per un foglio su misura per QUESTO paziente, modifica e usa ⧉ Copia senza salvare: qui non vanno dati del paziente.</div>
+        </div>`;
+    }
+
+    // Un tocco apre il modulo e la finestra di stampa. I PDF sono dentro
+    // l'estensione: nessuna richiesta al server, funziona anche offline.
+    viewConsensi() {
+      const righe = CONSENSI.map((c) => `
+        <button class="crow" data-cons="${esc(c.k)}" title="${esc(c.esteso)}">
+          <span class="cnome">${esc(c.nome)}</span>
+          <span class="cgo">🖨 apri e stampa</span>
+        </button>`).join("");
+      return `
+        <div class="sec">
+          <div class="lbl">Moduli di consenso (${CONSENSI.length})</div>
+          <div class="dlist">${righe}</div>
+          <div class="hint">${hasExt() || DEMO
+            ? "I moduli sono dentro l'estensione: si aprono anche se il gestionale è lento o giù, e nessuna richiesta esce dal computer."
+            : "Servono i moduli dell'estensione: con il preferito (bookmarklet) questa sezione non ha i PDF."}</div>
         </div>`;
     }
 
@@ -3447,6 +3521,14 @@
         }
       });
       $("#vaidim")?.addEventListener("click", () => this.setView("dimissioni"));
+      this.root.querySelectorAll("[data-cons]").forEach((b) => b.addEventListener("click", () => {
+        const c = CONSENSI.find((x) => x.k === b.getAttribute("data-cons"));
+        const url = c && urlConsenso(c);
+        if (!url) { this.message = "I moduli di consenso ci sono solo con l'estensione."; this.render(); return; }
+        this.log(`${now()}  consenso «${c.nome}» aperto per la stampa`);
+        openPrintWizard([{ name: c.nome, printer: "stampante normale", url, diretto: true }],
+          { title: c.nome, panel: this });
+      }));
       $("#dimimport")?.addEventListener("click", () => this.setView("dimimport"));
       $("#dimimpok")?.addEventListener("click", () => {
         const ta = this.root.querySelector("#dimimparea");
@@ -3947,7 +4029,11 @@
     const load = async () => {
       render();
       try {
-        const { blob, via } = await fetchPdf(jobs[i].url, {});
+        // un modulo di consenso è un file dell'estensione, non una pagina del
+        // gestionale: si prende così com'è, senza la catena same-origin
+        const { blob, via } = jobs[i].diretto
+          ? { blob: await (await fetch(jobs[i].url)).blob(), via: "estensione" }
+          : await fetchPdf(jobs[i].url, {});
         panel?.log(`${now()}  ${jobs[i].name}: PDF ottenuto${via ? " via " + via : ""}`);
         blobUrl = URL.createObjectURL(blob);
         const body = root.querySelector(".pwbody");
@@ -4169,16 +4255,18 @@
       unito = unisciStorico(unito, letto);
       const valori = unito.righe.reduce((n, r) => n + r.valori.filter((v) => v.v).length, 0);
       const chi = [unito.paziente.cognome, unito.paziente.nome].filter(Boolean).join(" ");
-      const detto = `<b>${esc(String(unito.righe.length))} esami · ${esc(String(unito.date.length))} prelievi</b> letti (${esc(String(valori))} valori) <span class="who">— ${esc(chi)}</span>. Torna sul paziente: sono in Esiti.`;
+      const quanti = `<b>${esc(String(unito.righe.length))} esami · ${esc(String(unito.date.length))} prelievi</b> letti (${esc(String(valori))} valori)`;
+      const detto = (nuovo, n) => `${quanti} <span class="who">— ${esc(chi)}${nuovo ? ", nuovo" : ""}${n > 1 ? ` · ${n} pazienti in memoria` : ""}</span>. Torna sul paziente: sono in Esiti.`;
       // in the banco there is one origin and no service worker: the tab itself
       // is the bridge
-      if (DEMO) { tabStore.set("storico.demo", unito); disegna({ ok: true, testo: detto }); return; }
+      if (DEMO) { tabStore.set("storico.demo", unito); disegna({ ok: true, testo: detto(false, 1) }); return; }
       if (!hasExt()) {
         disegna({ ok: false, testo: `Letti ${esc(String(unito.righe.length))} esami, ma serve l'estensione per portarli sul paziente.` });
         return;
       }
-      ask({ t: "putStorico", dati: unito }).then((r) => {
-        disegna(r && r.ok ? { ok: true, testo: detto }
+      // una scheda per paziente: se non c'era, la crea
+      ask({ t: "putStorico", chiave: chiaveArchivio(unito), dati: unito }).then((r) => {
+        disegna(r && r.ok ? { ok: true, testo: detto(r.nuovo, r.pazienti || 1) }
           : { ok: false, testo: "Letto, ma l'estensione non li ha ricevuti: apri il paziente e riprova." });
       });
     };

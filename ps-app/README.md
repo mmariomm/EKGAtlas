@@ -145,6 +145,16 @@ Un unico elenco in ordine di tempo:
 > documento di un altro. Meglio due righe distinte e oneste che una fusione plausibile ma
 > sbagliata.
 
+### Consensi
+Cinque moduli di consenso, dentro l'estensione: **Emocolture**, **HIV Dipendente**, **Lesioni
+Animali**, **Antitetano**, **TAC cmdc**. Un tocco apre il PDF e la finestra di stampa, come per la
+lista esami.
+
+I file stanno nella cartella `extension/consensi/`: **niente rete, niente server**. Si aprono anche
+se il gestionale è lento o giù, e per stamparli non esce una singola richiesta dal computer (è un
+controllo del collaudo). Col preferito (bookmarklet) la sezione c'è ma i PDF no: quelli vivono
+nell'estensione.
+
 ### Nomi che il pannello non conosce
 Le sigle (`Emoglobina` → `Hb`) sono un elenco scritto a mano: fuori da quell'elenco
 un'abbreviazione sarebbe **un'ipotesi**, e un'ipotesi che sembra una sigla nota è il modo in cui
@@ -202,6 +212,12 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   (`/clin-port/info-cliniche/*`) e lì fa una cosa sola: leggerla. Su qualsiasi altra pagina di
   quel portale — compresa la sua schermata di accesso — **non fa assolutamente niente**, perché
   è un'altra applicazione e le regole scritte per SA4PSO non le si applicano.
+- **Una scheda per paziente.** Ogni tabella letta diventa la scheda clinica di quel paziente
+  dentro l'estensione: se non c'era, viene creata (la striscia lo dice: *«…— ROSSI MARIO, nuovo ·
+  3 pazienti in memoria»*), se c'era, i prelievi nuovi si aggiungono ai suoi. Sul paziente aperto
+  il pannello mostra **solo la sua** scheda, scelta col codice fiscale quando c'è: le altre non
+  vengono nemmeno chieste al service worker. Massimo 12 pazienti, 8 ore, **in memoria** — spariscono
+  chiudendo il browser e col logout.
 - Il portale si apre in un'altra scheda: **non serve ricaricare** la pagina del paziente, basta
   tornarci sopra. Nel **banco di prova** il giro c'è tutto (link «Storico Dati Clinici» in basso a
   sinistra), su una tabella ricostruita con esami inventati.

@@ -209,6 +209,22 @@
         esami: c ? [...c.etichette.values()] : [],
       }));
     }
+    // I moduli di consenso: nel banco non c'è un'estensione, quindi la pagina
+    // finta ne disegna uno leggibile con lo stesso titolo.
+    if (/^\/consensi\//.test(path)) {
+      const nome = path.split("/").pop().replace(/\.pdf$/, "").replace(/-/g, " ");
+      return pdf200(PSA_PDF.referto({
+        paziente: pazienteCorrente.nome, episodio: pazienteCorrente.ep,
+        titolo: "Modulo di consenso - " + nome,
+        righe: [
+          "Nel programma vero questo e il PDF del modulo, dentro l'estensione.",
+          "Qui il banco ne disegna uno finto: serve solo a mostrare il giro.",
+          "",
+          "Firma del paziente ______________________",
+          "Firma del medico   ______________________",
+        ],
+      }));
+    }
     // "Storico Dati Clinici" — the portal page with every draw side by side.
     // Here it is the rebuilt one (invented exams): the panel reads it exactly
     // as it reads the real one, and nothing is asked of anybody.

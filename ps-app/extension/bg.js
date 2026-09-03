@@ -95,7 +95,8 @@ const b64 = (buf) => {
 
 const KEY = (id) => "ref:" + id;
 const REF_TTL = 8 * 3600e3;   // a shift: cached documents die with it
-const STORICO_TTL = 2 * 3600e3;  // the multi-day table: stale after two hours
+const STORICO_TTL = 8 * 3600e3;  // i dati clinici letti: un turno, come i referti
+const STORICO_MAX = 12;          // e non più pazienti di quanti se ne vedono in un turno
 const REF_MAX = 25;           // and never pile up
 
 async function prune() {
@@ -154,27 +155,52 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
 
-  // The multi-day table read off the portal page. It is clinical content, so
-  // it lives in storage.session — memory only, gone when the browser closes —
-  // and there is ONE slot: the last table read. The panel hands it back only
-  // after checking the name, so a table can never be shown under another
-  // patient.
+  // The clinical tables read off the portal page, ONE RECORD PER PATIENT.
+  // It is clinical content, so it lives in storage.session — memory only,
+  // gone when the browser closes — capped, and time-limited. The panel asks
+  // for the index first and decides for itself which record belongs to the
+  // patient on screen: the identity rules live in one place, not in here.
+  const ARCH = "storicoArch";
+  const vivo = (r) => r && Date.now() - (r.letto || 0) <= STORICO_TTL;
+  const potaArchivio = (a) => {
+    const vive = Object.entries(a).filter(([, r]) => vivo(r))
+      .sort((x, y) => (y[1].letto || 0) - (x[1].letto || 0)).slice(0, STORICO_MAX);
+    return Object.fromEntries(vive);
+  };
+
   if (msg.t === "putStorico") {
-    chrome.storage.session.set({ storico: msg.dati || null })
-      .then(() => reply({ ok: true })).catch(() => reply({ ok: false }));
+    const chiave = String(msg.chiave || "").slice(0, 80);
+    if (!chiave || !msg.dati) return reply({ ok: false });
+    chrome.storage.session.get(ARCH)
+      .then(async (o) => {
+        const a = potaArchivio(o[ARCH] || {});
+        const nuovo = !a[chiave];
+        a[chiave] = msg.dati;
+        await chrome.storage.session.set({ [ARCH]: potaArchivio(a) });
+        reply({ ok: true, nuovo, pazienti: Object.keys(a).length });
+      })
+      .catch(() => reply({ ok: false }));
     return true;
   }
+  // senza chiave: l'indice (chi c'è, non i valori). Con chiave: quel record.
   if (msg.t === "getStorico") {
-    chrome.storage.session.get("storico")
-      .then((o) => {
-        const s = o.storico;
-        // stale means gone, not merely hidden: clinical content does not sit
-        // in memory for the life of the browser after it stops being shown
-        if (!s || Date.now() - (s.letto || 0) > STORICO_TTL) {
-          if (s) chrome.storage.session.remove("storico").catch(() => {});
-          return reply({ ok: false });
+    chrome.storage.session.get(ARCH)
+      .then(async (o) => {
+        const a = potaArchivio(o[ARCH] || {});
+        if (Object.keys(a).length !== Object.keys(o[ARCH] || {}).length) {
+          await chrome.storage.session.set({ [ARCH]: a });   // scaduti: via
         }
-        reply({ ok: true, dati: s });
+        if (msg.chiave) {
+          const r = a[msg.chiave];
+          return reply(r ? { ok: true, dati: r } : { ok: false });
+        }
+        reply({
+          ok: true,
+          indice: Object.entries(a).map(([chiave, r]) => ({
+            chiave, cf: r.cf || "", paziente: r.paziente || {}, letto: r.letto || 0,
+            esami: (r.righe || []).length, prelievi: (r.date || []).length,
+          })),
+        });
       })
       .catch(() => reply({ ok: false }));
     return true;
@@ -182,7 +208,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg.t === "clearRef") {
     chrome.storage.local.get(null).then(async (all) => {
       await chrome.storage.local.remove(Object.keys(all).filter((k) => k.startsWith("ref:")));
-      await chrome.storage.session.remove("storico").catch(() => {});
+      await chrome.storage.session.remove("storicoArch").catch(() => {});
       reply({ ok: true });
     });
     return true;

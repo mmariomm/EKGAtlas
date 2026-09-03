@@ -124,28 +124,11 @@ await paziente.waitForTimeout(1000);
 check((await paziente.locator("#psassist-host #apristorico").count()) === 1,
   "e lo storico letto prima è ancora lì: quella pagina non ha cancellato niente");
 
-// ---- il codice fiscale batte il nome ------------------------------------
-// Con nomi di due parole lo scambio cognome/nome è indistinguibile, ma il
-// codice fiscale no: stesso nome e codice diverso deve essere RIFIUTATO.
-paginaCorrente = paginaStorico({ paziente: { idMPI: "900000003", cognome: "ROSSI", nome: "MARIO", cf: "SMPRSS80A01F205Z" } });
-await portale.goto(PORTALE);
-await portale.waitForFunction(
-  () => /prelievi/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),
-  { timeout: 10000 },
-).catch(() => {});
-await paziente.reload();
-await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-await paziente.locator('#psassist-host [data-seg="esiti"]').click();
-await paziente.waitForTimeout(1500);
-const cfDiverso = await paziente.evaluate(() => {
-  const r = document.getElementById("psassist-host").shadowRoot;
-  return { bottone: r.querySelectorAll("#apristorico").length, testo: r.textContent.replace(/\s+/g, " ") };
-});
-check(cfDiverso.bottone === 0 && !/10\.4/.test(cfDiverso.testo),
-  "stesso nome ma codice fiscale diverso: la tabella non compare");
-
-// e con il codice fiscale giusto ricompare, dicendo su cosa si è basata
-paginaCorrente = paginaStorico({ paziente: { idMPI: "900000001", cognome: "ROSSI", nome: "MARIO" } });
+// ---- una scheda per paziente, e mai i valori di un altro ----------------
+// Un omonimo con un codice fiscale diverso è un'altra persona: la sua tabella
+// diventa una scheda a parte e i suoi valori non devono comparire qui.
+const ALTRI = [["EMOCROMO", "Emoglobina", "1201", "HB", ["1.1", "1.2", "1.3"], [0, 0, 0]]];
+paginaCorrente = paginaStorico({ paziente: { idMPI: "900000003", cognome: "ROSSI", nome: "MARIO", cf: "SMPRSS80A01F205Z" }, esami: ALTRI });
 await portale.goto(PORTALE);
 await portale.waitForFunction(
   () => /prelievi/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),
@@ -157,49 +140,52 @@ await paziente.locator('#psassist-host [data-seg="esiti"]').click();
 await paziente.waitForSelector("#psassist-host #apristorico", { timeout: 10000 });
 await paziente.locator("#psassist-host #apristorico").click();
 await paziente.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
-const via = await paziente.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".sec .hint")?.textContent?.replace(/\s+/g, " ") || "");
-check(/codice fiscale/.test(via), `e la tabella dice su cosa è stata verificata (got: ${via.slice(0, 90)})`);
-
-// ---- una riga fuori colonna arriva fino allo schermo --------------------
-paginaCorrente = paginaStorico({ paziente: { idMPI: "900000001", cognome: "ROSSI", nome: "MARIO" }, bucaColonna: 0 });
-await portale.goto(PORTALE);
-await portale.waitForFunction(
-  () => /prelievi/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),
-  { timeout: 10000 },
-).catch(() => {});
-await paziente.reload();
-await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-await paziente.locator('#psassist-host [data-seg="esiti"]').click();
-await paziente.waitForSelector("#psassist-host #apristorico", { timeout: 10000 });
-await paziente.locator("#psassist-host #apristorico").click();
-await paziente.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
-const avviso = await paziente.evaluate(() => {
+const suoi = await paziente.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
-  return { barra: r.querySelector(".avvnomi")?.textContent?.replace(/\s+/g, " ").trim() || "",
-           titolo: r.querySelector(".avvnomi")?.getAttribute("title") || "" };
+  return { testo: r.querySelector(".sttab").textContent.replace(/\s+/g, " "),
+           hint: r.querySelector(".sec .hint")?.textContent?.replace(/\s+/g, " ") || "" };
 });
-check(/riga non letta|righe non lette/.test(avviso.barra),
-  `la riga fuori colonna diventa un avviso sullo schermo (got: ${avviso.barra.slice(0, 70) || "NESSUN AVVISO"})`);
-check(/Emoglobina/.test(avviso.titolo), `e dice quale riga è (got: ${avviso.titolo.replace(/\n/g, " · ").slice(0, 80)})`);
+check(!/1\.1|1\.2|1\.3/.test(suoi.testo),
+  `i valori dell'omonimo col codice fiscale diverso non compaiono (got: ${suoi.testo.slice(0, 60)})`);
+check(/10\.4/.test(suoi.testo), "e ci sono ancora i suoi");
+check(/codice fiscale/.test(suoi.hint), "la scheda mostrata è scelta sul codice fiscale");
 
-// ---- l'altro paziente: la tabella NON deve comparire --------------------
-paginaCorrente = paginaStorico({ paziente: { idMPI: "900000002", cognome: "VERDI", nome: "GIULIA", cf: "SMPRSS80A01F205W" } });
-await portale.goto(PORTALE);
-await portale.waitForFunction(
-  () => /prelievi/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),
-  { timeout: 10000 },
-).catch(() => {});
-await paziente.reload();
-await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+// e la striscia sul portale dice quante schede ci sono in memoria
+const contate = await portale.evaluate(() =>
+  document.getElementById("psassist-host")?.shadowRoot?.querySelector(".bar")?.textContent?.replace(/\s+/g, " ") || "");
+check(/2 pazienti in memoria/.test(contate), `una scheda per paziente, non una sola (got: ${contate.slice(0, 90)})`);
+
+// ---- un paziente di cui non abbiamo niente: lo dice, senza mostrare nulla
+// (la pagina cambia paziente: il pannello legge il nome dal titolo)
+await paziente.evaluate(() => { document.title = "VERDI GIULIA"; });
+await paziente.locator('#psassist-host [data-seg="richieste"]').click();
+await paziente.waitForTimeout(200);
 await paziente.locator('#psassist-host [data-seg="esiti"]').click();
 await paziente.waitForTimeout(1200);
-const dopo = await paziente.evaluate(() => {
+const senza = await paziente.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
-  return { bottone: r.querySelectorAll("#apristorico").length, testo: r.textContent.replace(/\s+/g, " ") };
+  return { bottone: r.querySelectorAll("#apristorico").length, tabelle: r.querySelectorAll(".sttab").length,
+           avviso: (/In memoria[^.]{0,80}/.exec(r.textContent.replace(/\s+/g, " ")) || [""])[0] };
 });
-check(dopo.bottone === 0, "lo storico di un altro paziente non si apre");
-check(/non di questo paziente/.test(dopo.testo) && !/10\.4/.test(dopo.testo),
-  "il pannello dice di chi è, senza mostrarne un solo valore");
+check(senza.bottone === 0 && senza.tabelle === 0, "di un paziente senza scheda non si apre niente");
+check(/non di questo paziente/.test(senza.avviso) && /ROSSI MARIO/.test(senza.avviso),
+  `e il pannello dice cosa ha in memoria (got: ${senza.avviso})`);
+
+// ---- i moduli di consenso vengono dall'estensione, non dalla rete -------
+const primaRete = mock.state.requests.length;
+await paziente.locator('#psassist-host [data-seg="consensi"]').click();
+await paziente.waitForSelector("#psassist-host [data-cons]", { timeout: 8000 });
+check((await paziente.locator("#psassist-host [data-cons]").count()) === 5, "cinque moduli in elenco");
+await paziente.locator('#psassist-host [data-cons="antitetano"]').click();
+await paziente.waitForSelector("#psassist-print iframe", { timeout: 15000 });
+const pdf = await paziente.evaluate(() => {
+  const r = document.getElementById("psassist-print").shadowRoot;
+  return { src: r.querySelector("iframe")?.getAttribute("src") || "",
+           testa: r.querySelector(".pwhd")?.textContent?.replace(/\s+/g, " ").trim() || "" };
+});
+check(pdf.src.startsWith("blob:"), `il PDF si apre da locale (got ${pdf.src.slice(0, 24)}…)`);
+check(/Antitetano/.test(pdf.testa), `con il titolo corto giusto (got: ${pdf.testa.slice(0, 60)})`);
+check(mock.state.requests.length === primaRete, "e senza una singola richiesta al gestionale");
 
 await ctx.close();
 rmSync(PROFILE, { recursive: true, force: true });
