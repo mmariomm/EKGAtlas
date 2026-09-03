@@ -145,12 +145,29 @@ Un unico elenco in ordine di tempo:
 > documento di un altro. Meglio due righe distinte e oneste che una fusione plausibile ma
 > sbagliata.
 
+### Chi c'è, e chi è stato dimesso
+Nell'elenco **Pazienti** ogni scheda ha **Dimesso ✓**: il paziente esce dall'elenco principale e
+finisce fra gli **Archiviati** (in fondo, con il conteggio). Da lì lo si può **↩ riportare** fra gli
+attivi, oppure **🗑 eliminare** — e eliminare vuol dire *tutto quello che il programma sa di lui*:
+la scheda clinica, i referti tenuti, il testo dei referti letti, la nota, e i dati per episodio di
+quella scheda del browser. Chiede conferma una volta e non si torna indietro. L'elenco tiene un
+giorno e sessanta pazienti: un turno è di dodici ore.
+
 ### Nota sul paziente
 Sotto il nome, una **nota** di due righe che cresce con quello che scrivi. Non c'è un tasto Salva:
 **si salva mentre scrivi** (e comunque quando esci dal campo), e compare un «salvata» che scompare
 da sé. È legata al paziente — codice fiscale quando il pannello lo conosce, altrimenti il nome —
 resta cambiando pagina, e scade dopo 24 ore come i dati clinici. Vive nel browser di quel computer:
 non esce da lì.
+
+### Modificare i fogli in fretta: `dist/dimissioni.html`
+Una **pagina sola**, senza server: si apre col doppio clic e dentro ci sono già gli otto fogli in
+servizio. Clicchi un titolo o un testo e scrivi — nessun tasto «modifica», nessuna schermata.
+**+ Nuovo foglio**, **↑ ↓** per riordinare, **🗑** per buttarne uno (chiede conferma).
+**⬇ Salva** scarica `dimissioni.json` *e* lo copia negli appunti, nella forma esatta che il pannello
+importa con **⤒ Importa**: si passa da lì e i fogli nuovi sono in servizio. Il lavoro a metà resta
+nel browser, quindi chiudere la pagina non costa niente; **↺ Originali** rimette i testi spediti.
+La pagina sta nello zip e si rigenera con `npm run editor`.
 
 ### Consensi
 Cinque moduli di consenso, dentro l'estensione: **Emocolture**, **HIV Dipendente**, **Lesioni

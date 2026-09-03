@@ -124,7 +124,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       .then(async (r) => {
         if (!r.ok) return reply(r);
         const data = b64(r.buf);
-        await chrome.storage.local.set({ [KEY(msg.id)]: { data, ts: Date.now(), size: r.buf.byteLength, ep: msg.ep || "" } });
+        await chrome.storage.local.set({ [KEY(msg.id)]: { data, ts: Date.now(), size: r.buf.byteLength, ep: msg.ep || "", pk: msg.pk || "" } });
         await prune();
         reply({ ok: true, size: r.buf.byteLength });
       })
@@ -212,6 +212,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       .catch(() => reply({ ok: false }));
     return true;
   }
+  // Eliminare un paziente: la sua scheda clinica e i referti tenuti per lui.
+  if (msg.t === "delStorico") {
+    (async () => {
+      if (msg.chiave) {
+        const o = await chrome.storage.local.get(ARCH);
+        const a = o[ARCH] || {};
+        if (a[msg.chiave]) { delete a[msg.chiave]; await chrome.storage.local.set({ [ARCH]: a }); }
+      }
+      const all = await chrome.storage.local.get(null);
+      const suoi = Object.keys(all).filter((k) => k.startsWith("ref:")
+        && ((msg.chiave && all[k]?.pk === msg.chiave) || (msg.ep && String(all[k]?.ep || "") === String(msg.ep))));
+      if (suoi.length) await chrome.storage.local.remove(suoi);
+      reply({ ok: true, referti: suoi.length });
+    })().catch(() => reply({ ok: false }));
+    return true;
+  }
+
   if (msg.t === "clearRef") {
     chrome.storage.local.get(null).then(async (all) => {
       await chrome.storage.local.remove(Object.keys(all).filter((k) => k.startsWith("ref:")));

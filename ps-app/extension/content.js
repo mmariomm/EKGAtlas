@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.12.0";
+  const VERSION = "3.13.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -946,7 +946,10 @@
       nome: e.nome, esame: e.esame, codice: e.codice, mnem: e.mnem, pos: e.pos,
       valori: date.map((d) => e.per.get(chiaveCol(d)) || { v: "", stato: 0 }),
     }));
-    return { paziente: nuovo.paziente, periodo: nuovo.periodo, date, righe,
+    // i referti già letti per questo paziente non si perdono in una fusione
+    const referti = [...(nuovo.referti || []), ...(vecchio.referti || [])]
+      .filter((r, i, a) => r && r.id && a.findIndex((x) => x.id === r.id) === i).slice(0, 40);
+    return { paziente: nuovo.paziente, periodo: nuovo.periodo, date, righe, referti,
              scartate: [...(vecchio.scartate || []), ...(nuovo.scartate || [])].slice(0, 40), letto: Date.now() };
   }
   const chiaveCol = (d) => (d && (d.chiave || d.label)) || "";
@@ -1325,23 +1328,69 @@
   };
 
   // ------------------------------------------------------- KNOWN PATIENTS
-  // The panel remembers the patients worked on during the shift so it can
-  // offer them on its home screen. Deliberately minimal and short-lived:
-  // name + episode + the page URL, at most 8, forgotten after one shift.
-  // Never any clinical content (no exams, no values, no quesito).
-  const PATIENTS_TTL = 12 * 3600e3;
-  const PATIENTS_MAX = 8;
+  // I pazienti su cui si è lavorato, per ritrovarli dalla schermata iniziale:
+  // nome, episodio e indirizzo della pagina. Un turno è di dodici ore e i
+  // pazienti sono più di dodici, quindi l'elenco tiene un giorno e non ha un
+  // limite che dia fastidio. Qui non entra MAI contenuto clinico (né esami,
+  // né valori, né quesito): quello sta nella scheda, che è un'altra cosa.
+  // Chi viene dimesso si ARCHIVIA: esce dall'elenco principale e resta negli
+  // archiviati, da dove si può riportare indietro o cancellare del tutto.
+  const PATIENTS_TTL = 24 * 3600e3;
+  const PATIENTS_MAX = 60;
 
-  function knownPatients() {
+  function tuttiPazienti() {
     const list = store.get("patients.v1", []);
     const fresh = Array.isArray(list) ? list.filter((p) => p && p.ep && Date.now() - (p.ts || 0) < PATIENTS_TTL) : [];
     return fresh.sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, PATIENTS_MAX);
   }
+  const knownPatients = () => tuttiPazienti().filter((p) => !p.arch);
+  const pazientiArchiviati = () => tuttiPazienti().filter((p) => p.arch);
   function rememberPatient(ep, name, url) {
     if (!ep) return;
-    const list = knownPatients().filter((p) => p.ep !== ep);
-    list.unshift({ ep, name: (name || "").trim().slice(0, 60), url: url || "", ts: Date.now() });
+    const prima = tuttiPazienti().find((p) => p.ep === ep);
+    const list = tuttiPazienti().filter((p) => p.ep !== ep);
+    // riaprire un paziente archiviato lo riporta fra i vivi: se sei sulla sua
+    // pagina, è di lui che ti stai occupando
+    list.unshift({ ep, name: (name || "").trim().slice(0, 60), url: url || "", ts: Date.now(),
+                   pk: prima?.pk || "" });
     store.set("patients.v1", list.slice(0, PATIENTS_MAX));
+  }
+  // la chiave della scheda clinica, annotata quando la conosciamo, così
+  // archiviare o eliminare un paziente sa cosa toccare
+  function segnaChiave(ep, pk) {
+    if (!ep || !pk) return;
+    const list = tuttiPazienti();
+    const p = list.find((x) => x.ep === ep);
+    if (!p || p.pk === pk) return;
+    p.pk = pk;
+    store.set("patients.v1", list);
+  }
+  function archiviaPaziente(ep, si = true) {
+    const list = tuttiPazienti();
+    const p = list.find((x) => x.ep === ep);
+    if (!p) return false;
+    p.arch = !!si;
+    p.archTs = si ? Date.now() : 0;
+    return store.set("patients.v1", list);
+  }
+  // Eliminare un paziente vuol dire eliminare TUTTO quello che il programma
+  // sa di lui: la riga nell'elenco, la sua scheda clinica, i referti tenuti,
+  // la nota, e i dati per episodio in questa scheda del browser.
+  function eliminaPaziente(ep, pk) {
+    const list = tuttiPazienti().filter((x) => x.ep !== ep);
+    store.set("patients.v1", list);
+    if (pk) {
+      const n = store.get(noteKey, {});
+      if (n[pk]) { delete n[pk]; store.set(noteKey, n); }
+    }
+    try {
+      for (const k of Object.keys(sessionStorage)) {
+        const kk = k.startsWith(NS) ? k.slice(NS.length) : "";
+        if (kk && new RegExp(`(^|\\.)(ris|visto|reftxt|log|refopen|ui)\\.${ep}\\b`).test(kk)) sessionStorage.removeItem(k);
+      }
+    } catch { /* memoria bloccata: niente da togliere */ }
+    if (hasExt()) ask({ t: "delStorico", chiave: pk, ep }).catch(() => {});
+    return true;
   }
   function forgetPatients() { store.set("patients.v1", []); }
   // end of shift / another user: drop names and every per-episode leftover
@@ -2064,6 +2113,24 @@
                      font-weight: 700; cursor: pointer; text-decoration: underline; }
     .avvlista { white-space: pre-wrap; font-size: 11px; line-height: 1.45; color: #5B6B7A;
                 background: #FFFDF7; border: 1px solid #EEDFC0; border-radius: 8px; padding: 6px 9px; margin-bottom: 6px; }
+    .pbtn.pdim { color: #177245; border-color: #BCE0C9; }
+    .pbtn.pdim:hover { background: #EDF7F0; border-color: #177245; color: #124F31; }
+    .archhd { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 8px; cursor: pointer;
+              border: 1px solid #E3E8EF; border-radius: 9px; background: #F8FBFE; padding: 7px 10px;
+              font: 600 12px/1 inherit; color: #5B6B7A; }
+    .archhd:hover { border-color: #9DBFDE; color: #16232E; }
+    .archhd .an { background: #E3E8EF; color: #35506B; border-radius: 999px; padding: 1px 7px; font-size: 10.5px; }
+    .archhd .ago { margin-left: auto; color: #8296A9; }
+    .alist { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+    .arow { display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 10px;
+            border: 1px solid #EDF1F6; border-radius: 8px; background: #fff; }
+    .arow .anm { flex: 1 1 auto; font-size: 12px; color: #5B6B7A; overflow: hidden;
+                 white-space: nowrap; text-overflow: ellipsis; }
+    .arow .ameta { flex: 0 0 auto; font-size: 10.5px; color: #A3B2C2; }
+    .abtn { flex: 0 0 auto; border: 1px solid #D9E2EC; background: #F8FBFE; color: #35506B;
+            border-radius: 7px; padding: 3px 8px; font: 600 11px/1.4 inherit; cursor: pointer; }
+    .abtn:hover { border-color: #9DBFDE; color: #0B5CAD; }
+    .abtn.del:hover { border-color: #E9BAB6; background: #FBEBEA; color: #B3261E; }
     .notaw { position: relative; padding: 6px 10px 0; }
     .nota { display: block; width: 100%; resize: none; overflow: hidden;
             border: 1px solid transparent; border-radius: 8px; background: #F8FBFE;
@@ -2187,6 +2254,7 @@
       this.storicoVia = "nome";         // su cosa è stata confermata l'identità
       this.soloAlterati = false;        // storico: show only what is out of range
       this.mostraNomi = false;          // the unexpected-name list, open or closed
+      this.mostraArch = false;          // l'elenco degli archiviati, aperto o chiuso
       this.pos = store.get("pos", null); // user-dragged panel position {left, top}
       this.size = store.get("size", null); // user-resized panel {w, h}
       this.runPatient = null;           // patient name PINNED when a run starts
@@ -2636,8 +2704,17 @@
           <div class="pmeta">${current ? `episodio ${esc(p.ep)}` : esc(agoLabel(p.ts))}<span class="pgo">Esiti ›</span></div>
           <div class="pacts">
             <button class="pbtn" data-go="richieste" data-ep="${esc(p.ep)}">Richieste</button>
+            <button class="pbtn pdim" data-arch="${esc(p.ep)}" title="Dimesso: mettilo negli archiviati">Dimesso ✓</button>
           </div>
         </div>`;
+      const rigaArch = (p) => `
+        <div class="arow">
+          <span class="anm" title="${esc(p.name || "")}">${esc(p.name || "paziente")}</span>
+          <span class="ameta">${esc(agoLabel(p.archTs || p.ts))}</span>
+          <button class="abtn" data-unarch="${esc(p.ep)}" title="Riportalo fra i pazienti attivi">↩ riporta</button>
+          <button class="abtn del" data-del="${esc(p.ep)}" title="Elimina tutto quello che il programma sa di lui">🗑</button>
+        </div>`;
+      const archiviati = pazientiArchiviati();
       const cards = [
         ...here.map((p) => card({ ...p, name: patientName || p.name }, true)),
         ...(here.length ? [] : ep && canOrder ? [card({ ep, name: patientName, ts: Date.now() }, true)] : []),
@@ -2648,6 +2725,13 @@
           <div class="lbl">Pazienti<button class="mini" id="vaidim" title="I fogli di dimissione: non appartengono a un paziente">Dimissioni</button>${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
           ${cards || `<div class="hint">Nessun paziente ancora. Apri un paziente: resta qui per il turno.</div>`}
           ${others.length ? `<div class="hint">Aprire un altro paziente ne carica la pagina.</div>` : ""}
+          ${archiviati.length ? `
+            <button class="archhd" id="archtog" aria-expanded="${this.mostraArch ? "true" : "false"}">
+              <span>Archiviati</span><span class="an">${archiviati.length}</span><span class="ago">${this.mostraArch ? "▾" : "▸"}</span>
+            </button>
+            ${this.mostraArch ? `<div class="alist">${archiviati.map(rigaArch).join("")}
+              <div class="hint">🗑 cancella tutto di quel paziente: scheda clinica, referti tenuti e nota. Non si torna indietro.</div>
+            </div>` : ""}` : ""}
           ${this.showLog ? `<details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>` : ""}
         </div>`;
     }
@@ -2950,6 +3034,23 @@
       return pieno && pieno.ok ? pieno.dati : null;
     }
 
+    // E anche il testo di un referto letto: la scheda di un paziente è tutto
+    // quello che il programma sa di lui, non solo i numeri.
+    async archiviaReferto(e, righe) {
+      if (!hasExt() || DEMO || !righe || !righe.length) return;
+      const chiave = this.chiavePaz();
+      if (!chiave || chiave === "nome:") return;
+      const gia = await ask({ t: "getStorico", chiave });
+      const base = (gia && gia.ok && gia.dati) || {
+        paziente: { idMPI: "", cognome: "", nome: (document.title || "").trim() },
+        cf: this.cfEpisodio() || "", periodo: "", date: [], righe: [], scartate: [], letto: Date.now(),
+      };
+      const referti = (base.referti || []).filter((r) => r.id !== e.id);
+      referti.unshift({ id: e.id, quando: e.when || "", titolo: shortLabel(e.label || ""),
+                        sistema: e.sistema || "", testo: righe.slice(0, 200).join("\n").slice(0, 20000) });
+      await ask({ t: "putStorico", chiave, dati: { ...base, referti: referti.slice(0, 40), letto: Date.now() } });
+    }
+
     // Ogni prelievo letto entra anche nella scheda clinica del paziente, così
     // quello che il pannello sa di lui sta in un posto solo: la tabella del
     // portale e le finestre Risultati del gestionale, parziali comprese.
@@ -2959,6 +3060,7 @@
       if (!t) return;
       const chiave = chiaveArchivio(t);
       if (!chiave || chiave === "nome:") return;
+      segnaChiave(this.episodeId, chiave);
       const gia = await ask({ t: "getStorico", chiave });
       const unito = unisciStorico(gia && gia.ok ? gia.dati : null, t);
       await ask({ t: "putStorico", chiave, dati: unito });
@@ -2967,12 +3069,16 @@
     // Chi è questo paziente, per la nota: il codice fiscale se i prelievi
     // ce l'hanno detto, altrimenti il nome della pagina. Cambia da nome a
     // codice fiscale appena i valori arrivano — e la nota lo segue.
-    chiaveNota() {
+    // La chiave del paziente di questa pagina: una sola, usata dalla nota,
+    // dalla scheda clinica e dai referti tenuti — così «elimina questo
+    // paziente» sa esattamente cosa togliere.
+    chiavePaz() {
       const cf = this.cfEpisodio();
       if (cf) return "cf:" + cf;
       const n = normNome((document.title || "").trim());
       return n ? "nome:" + n : "";
     }
+    chiaveNota() { return this.chiavePaz(); }
     notaHtmlPaziente() {
       const k = this.chiaveNota();
       if (!k) return "";
@@ -3037,7 +3143,7 @@
       for (const e of todo) this.refBusy[e.id] = true;
       this.render();
       for (const e of todo) {
-        const res = await ask({ t: "cacheRef", id: e.id, url: e.url, ep: this.episodeId });
+        const res = await ask({ t: "cacheRef", id: e.id, url: e.url, ep: this.episodeId, pk: this.chiavePaz() });
         if (res && res.ok) {
           this.refCache = { ...(this.refCache || {}), [e.id]: res.size || 1 };
           this.refBusy[e.id] = false;
@@ -3066,6 +3172,7 @@
           const righe = await estraiTestoPdf(await blob.arrayBuffer());
           if (righe.length) {
             tabStore.set(this.txtKey(id), { ts: Date.now(), righe });
+            this.archiviaReferto(e, righe);
             this.refBusy[id] = false;
           } else {
             this.refBusy[id] = "nessun testo leggibile";
@@ -3220,7 +3327,7 @@
       if (!e || e.kind !== "referto") return;
       this.refBusy = { ...(this.refBusy || {}), [id]: true };
       this.render();
-      const res = await ask({ t: "cacheRef", id, url: e.url, ep: this.episodeId });
+      const res = await ask({ t: "cacheRef", id, url: e.url, ep: this.episodeId, pk: this.chiavePaz() });
       if (res && res.ok) {
         this.refCache = { ...(this.refCache || {}), [id]: res.size || 1 };
         this.refBusy[id] = false;
@@ -3598,6 +3705,29 @@
         : "home"));
       this.root.querySelectorAll("[data-seg]").forEach((b) => b.addEventListener("click", () => this.setView(b.getAttribute("data-seg"))));
       $("#forget")?.addEventListener("click", () => { forgetPatients(); this.render(); });
+      $("#archtog")?.addEventListener("click", () => { this.mostraArch = !this.mostraArch; this.render(); });
+      this.root.querySelectorAll("[data-arch]").forEach((b) => b.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        archiviaPaziente(b.getAttribute("data-arch"), true);
+        this.render();
+      }));
+      this.root.querySelectorAll("[data-unarch]").forEach((b) => b.addEventListener("click", () => {
+        archiviaPaziente(b.getAttribute("data-unarch"), false);
+        this.render();
+      }));
+      this.root.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
+        // un tasto che cancella davvero chiede una volta, e non di nascosto
+        if (b.dataset.sicuro !== "1") {
+          b.dataset.sicuro = "1"; b.textContent = "cancello?";
+          setTimeout(() => { if (b.isConnected && b.dataset.sicuro === "1") { b.dataset.sicuro = ""; b.textContent = "🗑"; } }, 4000);
+          return;
+        }
+        const ep = b.getAttribute("data-del");
+        const p = pazientiArchiviati().find((x) => x.ep === ep);
+        eliminaPaziente(ep, p?.pk || "");
+        this.message = { ok: `Eliminato tutto di ${p?.name || "quel paziente"}.` };
+        this.render();
+      }));
       $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.render(); });
       $("#risall")?.addEventListener("click", () => this.reloadTuttiValori());
       $("#letto")?.addEventListener("click", () => { if (this.viewId) { this.marcaLetto(this.viewId); this.render(); } });

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fogli di dimissione · PS Assist</title>
+<style>
+  :root {
+    --ground:#F2F5F8; --card:#fff; --ink:#151E27; --muted:#5D6E7E; --faint:#8397A8;
+    --line:#DBE3EA; --accent:#0B5CAD; --accent-soft:#E9F1F9; --ok:#177245; --bad:#B3261E;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --ground:#0E141A; --card:#161E26; --ink:#E3EAF1; --muted:#9AAAB8; --faint:#7C8D9C;
+    --line:#26313B; --accent:#7FB2E7; --accent-soft:#16243180; --ok:#7BC79B; --bad:#EE9C94;
+  } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+         font:15px/1.55 "IBM Plex Sans", -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  .page { max-width:1000px; margin:0 auto; padding:26px 18px 120px; }
+  header { border-bottom:2px solid var(--ink); padding-bottom:16px; margin-bottom:8px; }
+  h1 { margin:0; font-size:26px; letter-spacing:-.02em; }
+  .sub { color:var(--muted); font-size:14px; margin-top:6px; max-width:70ch; }
+  .barra { position:sticky; top:0; z-index:5; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+           background:var(--ground); padding:12px 0; border-bottom:1px solid var(--line); margin-bottom:14px; }
+  button { font:600 13.5px/1 inherit; border-radius:9px; padding:10px 14px; cursor:pointer;
+           border:1px solid var(--line); background:var(--card); color:var(--ink); }
+  button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primo { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primo:hover { filter:brightness(1.08); color:#fff; }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .spia { margin-left:auto; font-size:12.5px; color:var(--muted); }
+  .foglio { background:var(--card); border:1px solid var(--line); border-radius:12px;
+            padding:14px 16px 16px; margin-bottom:12px; }
+  .fh { display:flex; gap:10px; align-items:center; }
+  .tit { flex:1 1 auto; font:700 19px/1.3 inherit; color:var(--ink); border:1px solid transparent;
+         border-radius:8px; padding:5px 7px; background:transparent; min-width:0; }
+  .tit:hover { border-color:var(--line); }
+  .tit:focus { outline:0; border-color:var(--accent); background:var(--ground); }
+  .chiave { font:500 11.5px/1 "IBM Plex Mono", ui-monospace, monospace; color:var(--faint); }
+  .fh button { padding:6px 9px; font-size:12px; }
+  .corpo { display:block; width:100%; margin-top:8px; resize:vertical; min-height:120px;
+           border:1px solid transparent; border-radius:9px; padding:10px 12px; background:transparent;
+           font:13.5px/1.6 "IBM Plex Mono", ui-monospace, monospace; color:var(--ink); }
+  .corpo:hover { border-color:var(--line); }
+  .corpo:focus { outline:0; border-color:var(--accent); background:var(--ground); }
+  .meta { display:flex; gap:12px; font-size:11.5px; color:var(--faint); margin-top:4px; }
+  .vuoto { text-align:center; color:var(--muted); padding:40px 10px; }
+  .nota { margin-top:18px; font-size:13px; color:var(--muted); }
+  .nota code { font-family:"IBM Plex Mono", ui-monospace, monospace; font-size:12.5px; }
+</style></head><body>
+<div class="page">
+  <header>
+    <h1>Fogli di dimissione</h1>
+    <p class="sub">Clicca un titolo o un testo e scrivi: è tutto modificabile.
+      <b>Salva</b> scarica il file da caricare nel pannello con <b>⤒ Importa</b> — e lo copia negli appunti.
+      Il lavoro a metà resta in questo browser.</p>
+  </header>
+
+  <div class="barra">
+    <button class="primo" id="salva">⬇ Salva (JSON)</button>
+    <button id="nuovo">+ Nuovo foglio</button>
+    <button id="carica">⤒ Carica un JSON</button>
+    <button id="orig" title="Rimette i testi in servizio, buttando le modifiche">↺ Originali</button>
+    <span class="spia" id="spia"></span>
+  </div>
+
+  <div id="elenco"></div>
+  <p class="nota">In servizio: PS Assist <code>3.13.0</code> · 8 fogli.
+    Ogni foglio ha una <b>chiave</b> (<code>colica-renale</code>): è quella che il pannello usa per
+    riconoscerlo, quindi cambiarla crea un foglio nuovo invece di aggiornare quello vecchio.</p>
+</div>
+
+<script>
+const SPEDITI = {"gastroenterite":{"nome":"Gastroenterite / diarrea acuta","testo":"GASTROENTERITE ACUTA — INDICAZIONI ALLA DIMISSIONE\n\nBERE (la cosa più importante)\n- Almeno 2 litri al giorno a piccoli sorsi, più un bicchiere in più dopo ogni scarica.\n- Meglio le soluzioni reidratanti orali (in farmacia, senza ricetta); in alternativa acqua, tè leggero, brodo salato.\n- Evitare bevande molto zuccherate, alcolici, caffè.\n\nMANGIARE\n- Riprendere appena tollerato, pasti piccoli e frequenti.\n- Nei primi giorni evitare latte e latticini freschi, fritti e cibi grassi.\n\nFARMACI\n- Paracetamolo 1 g ogni 8 ore se febbre o dolore (massimo 3 g al giorno; massimo 2 g se ha più di 75 anni, pesa meno di 50 kg, ha problemi di fegato o beve alcolici).\n- NON prendere antinfiammatori (ibuprofene, ketoprofene, diclofenac, aspirina) finché vomito e diarrea non sono passati: con la disidratazione possono danneggiare i reni.\n- Loperamide solo se serve per motivi pratici: 2 compresse subito, poi 1 dopo ogni scarica liquida, massimo 4 compresse al giorno e per non più di 2 giorni. MAI con febbre, sangue o muco nelle feci, pancia gonfia e dolente, o se ha preso antibiotici nell'ultimo mese.\n- Fermenti lattici: facoltativi, beneficio incerto.\n- Gli antibiotici non servono: quasi tutte le gastroenteriti sono virali.\n\nSE PRENDE ALTRE TERAPIE\n- Farmaci per la pressione (ramipril, sartani), diuretici, metformina o gliflozine (farmaci che finiscono in -gliflozin): li sospenda finché non torna a bere e mangiare normalmente, e lo dica al medico curante.\n- Se è diabetico controlli la glicemia più spesso.\n\nIGIENE\n- Lavarsi le mani con acqua e sapone dopo ogni evacuazione e prima di toccare cibo.\n- Non preparare cibo per altri fino a 48 ore dopo l'ultima scarica.\n\nTORNI IN PRONTO SOCCORSO SE\n- Sangue nelle feci o feci nere.\n- Vomito continuo che impedisce di bere.\n- Febbre oltre 39 °C o che dura più di 3 giorni.\n- Urina scarsa e scura, bocca secca, capogiri alzandosi, confusione.\n- Dolore addominale forte e localizzato, in peggioramento.\n- Diarrea che dura più di 7 giorni.\n\nCONTROLLO\n- Medico curante se non migliora in 3–4 giorni.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"colica-renale":{"nome":"Colica renale","testo":"COLICA RENALE — INDICAZIONI ALLA DIMISSIONE\n\nDOLORE\n- Ketoprofene sale di lisina 80 mg (1 bustina) fino a 3 volte al giorno a stomaco pieno, per non più di 5 giorni. In alternativa ibuprofene 600 mg fino a 3 volte al giorno.\n- Paracetamolo 1 g ogni 8 ore se il dolore persiste (massimo 3 g al giorno; 2 g se ha più di 75 anni, pesa meno di 50 kg, ha problemi di fegato o beve alcolici).\n- Non associare due antinfiammatori diversi.\n\nQUANDO NON PRENDERE L'ANTINFIAMMATORIO\n- Gravidanza, problemi di reni, rene unico o trapiantato, ulcera, scompenso cardiaco.\n- Se prende anticoagulanti, cardioaspirina, o insieme farmaci per la pressione e diuretici.\n- Se vomita e non riesce a bere.\n- In questi casi usi solo paracetamolo e contatti il medico.\n\nCOSA FARE A CASA\n- Bere normalmente, 1,5–2 litri al giorno: non deve forzarsi a bere di più, ma nemmeno bere di meno.\n- Filtrare l'urina se possibile e conservare il calcolo espulso per l'analisi.\n- Il calcolo può essere espulso in giorni o settimane: un nuovo episodio di dolore è possibile.\n- Se le è stata prescritta tamsulosina 0,4 mg (aiuta l'espulsione dei calcoli bassi): la prenda dopo cena, si alzi lentamente, non la associ a farmaci per l'erezione, e avvisi l'oculista se deve operarsi di cataratta.\n\nTORNI SUBITO IN PRONTO SOCCORSO SE\n- Febbre o brividi: possono indicare un rene ostruito e infetto. Chiami il 112.\n- Dolore che non passa con la terapia.\n- Vomito che impedisce di assumere i farmaci.\n- Urina assente o molto ridotta.\n- Rene unico o trapiantato: a qualsiasi ricomparsa del dolore.\n\nCONTROLLO\n- Visita urologica entro 7–14 giorni con gli esami eseguiti e la documentazione del Pronto Soccorso.\n- Se il calcolo non viene espulso entro 4 settimane serve comunque una rivalutazione: un'ostruzione che dura danneggia il rene anche quando il dolore è scomparso.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"artrosi":{"nome":"Artrosi (fase dolorosa)","testo":"ARTROSI IN FASE DOLOROSA — INDICAZIONI ALLA DIMISSIONE\n\nLA CURA PRINCIPALE È IL MOVIMENTO\n- Camminare in piano ogni giorno, secondo tolleranza: il riposo assoluto peggiora l'artrosi.\n- Esercizi quotidiani di rinforzo della coscia (li insegna il fisioterapista o il medico curante).\n- Evitare solo ciò che provoca dolore forte.\n- Perdere peso quando indicato: ogni chilo in meno scarica il ginocchio in modo significativo.\n- Bastone dal lato opposto all'articolazione dolente, se serve.\n- Ghiaccio 15–20 minuti 2–3 volte al giorno in fase acuta; calore se prevale la rigidità.\n\nFARMACI\n- Gel antinfiammatorio localmente 2–3 volte al giorno: è la prima scelta, più sicuro degli antinfiammatori per bocca. Non esporre al sole la zona trattata durante la cura e nelle 2 settimane successive.\n- Paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno; massimo 2 g sopra i 75 anni, sotto i 50 kg, con problemi di fegato o se beve alcolici).\n- Se non basta: ibuprofene 400–600 mg fino a 3 volte al giorno a stomaco pieno, per pochi giorni, con un farmaco che protegge lo stomaco.\n\nQUANDO NON PRENDERE ANTINFIAMMATORI PER BOCCA\n- Se prende anticoagulanti (warfarin, apixaban, rivaroxaban, edoxaban, dabigatran) o due antiaggreganti: in questi casi NON vanno presi in nessun caso, nemmeno con il gastroprotettore. Usi paracetamolo e gel locale.\n- Problemi di reni, scompenso cardiaco, pressione alta non controllata, ulcera.\n\nTORNI IN PRONTO SOCCORSO SE\n- Articolazione calda, molto gonfia e arrossata, con febbre: possibile infezione.\n- Articolazione che si gonfia improvvisamente senza trauma.\n- Impossibilità totale di caricare il peso, o deformità dopo una caduta.\n- Feci nere o vomito con sangue: sospenda l'antinfiammatorio e venga subito.\n\nCONTROLLO\n- Medico curante entro 1–2 settimane per la terapia di fondo e la fisioterapia.\n- Valutazione ortopedica se il dolore limita la vita quotidiana nonostante la terapia.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"lombalgia":{"nome":"Lombalgia acuta","testo":"MAL DI SCHIENA ACUTO — INDICAZIONI ALLA DIMISSIONE\n\nCOSA SAPERE\n- Nella grande maggioranza dei casi non c'è una lesione grave e il dolore migliora in 2–6 settimane.\n- Le radiografie non servono nel mal di schiena semplice: non cambiano la cura.\n\nCOSA FARE\n- Restare attivi: continuare le normali attività riducendo ciò che fa male. Il riposo a letto oltre 1–2 giorni PEGGIORA il dolore.\n- Camminare ogni giorno e alzarsi spesso se si sta seduti a lungo.\n- Calore locale 20 minuti più volte al giorno.\n\nFARMACI\n- Ibuprofene 400–600 mg fino a 3 volte al giorno a stomaco pieno per 5–7 giorni, oppure ketoprofene sale di lisina 80 mg 2 volte al giorno.\n- Paracetamolo 1 g ogni 8 ore, associabile (massimo 3 g al giorno; 2 g sopra i 75 anni, sotto i 50 kg, con problemi di fegato o se beve alcolici).\n- Farmaco che protegge lo stomaco se prende antinfiammatori per più giorni, ha più di 65 anni, ha avuto ulcera o gastrite, o prende cortisone o cardioaspirina.\n- Se le è stato prescritto un farmaco che rilassa i muscoli (tiocolchicoside 4 mg 2 volte al giorno): non più di 7 giorni, mai in gravidanza, allattamento o in età fertile senza contraccezione sicura. Dà sonnolenza: non guidi, non usi macchinari, non beva alcolici.\n\nTORNI IN PRONTO SOCCORSO SE\n- Difficoltà a urinare, o perdita di urina o feci.\n- Perdita di sensibilità nella zona genitale o all'interno delle cosce.\n- Debolezza di una gamba che peggiora.\n- Febbre insieme al mal di schiena.\n- Dolore che non si calma nemmeno da sdraiati o che sveglia di notte.\n\nCONTATTI PRESTO IL MEDICO SE\n- Ha avuto un tumore, prende cortisone, ha osteoporosi, ha perso peso senza motivo, oppure ha più di 65 anni e il dolore è comparso dopo una caduta.\n\nCONTROLLO\n- Medico curante se il dolore non migliora in 7–10 giorni o si accompagna a dolore lungo la gamba.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"distorsione-caviglia":{"nome":"Distorsione di caviglia","testo":"DISTORSIONE DI CAVIGLIA — INDICAZIONI ALLA DIMISSIONE\n\nPRIME 48–72 ORE\n- Ghiaccio 15–20 minuti ogni 2–3 ore, mai a contatto diretto con la pelle.\n- Bendaggio elastico durante il giorno, da togliere la notte.\n- Gamba sollevata sopra il livello del cuore da seduti o sdraiati.\n- Appoggiare il piede quanto il dolore permette, aiutandosi con le stampelle all'inizio.\n\nFARMACI\n- Paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno; 2 g sopra i 75 anni, sotto i 50 kg, con problemi di fegato o se beve alcolici).\n- Ibuprofene 400–600 mg fino a 3 volte al giorno a stomaco pieno per 3–5 giorni; gel antinfiammatorio localmente 2–3 volte al giorno.\n- Non prenda antinfiammatori in gravidanza, con anticoagulanti, ulcera o problemi di reni.\n\nDOPO I PRIMI GIORNI\n- Riprendere gradualmente il movimento: la caviglia rigida guarisce peggio.\n- Esercizi: muovere il piede su e giù, disegnare l'alfabeto con l'alluce, più volte al giorno; poi equilibrio su un piede solo.\n- Tornare allo sport quando si cammina e si corre senza dolore né gonfiore, di solito in 2–6 settimane; cavigliera negli sport per i 6 mesi successivi riduce le recidive.\n\nTORNI IN PRONTO SOCCORSO SE\n- Polpaccio dolente, gonfio e caldo, oppure affanno improvviso o dolore al torace.\n- Dolore sopra la caviglia lungo la gamba, vicino al ginocchio sul lato esterno, o sul bordo esterno del piede: possono essere fratture non visibili all'inizio.\n- Impossibilità di appoggiare il piede dopo 3–4 giorni.\n- Deformità evidente, formicolii persistenti, piede freddo o pallido.\n- Dolore o gonfiore che peggiorano dopo il terzo giorno.\n\nCONTROLLO\n- Medico curante o visita ortopedica se dopo 7–10 giorni persistono dolore o instabilità.\n- Se le è stato messo un tutore o un gesso, chieda al medico curante se le serve una puntura anticoagulante.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"cistite":{"nome":"Cistite non complicata","testo":"CISTITE NON COMPLICATA — INDICAZIONI ALLA DIMISSIONE\n(indicazioni per la donna non in gravidanza; nell'uomo la cistite va sempre rivalutata dal medico)\n\nANTIBIOTICO\n- Assumere l'antibiotico prescritto per tutta la durata indicata, anche se i sintomi passano prima.\n- Fosfomicina 3 g: una sola bustina, sciolta in un bicchiere d'acqua, la sera prima di coricarsi dopo aver urinato, lontano dai pasti. Una dose sola è tutta la cura.\n- Oppure nitrofurantoina 50 mg ogni 6 ore per 5 giorni, a stomaco pieno. Non va usata se la funzione renale è ridotta, in caso di favismo, o nell'ultimo mese di gravidanza. Se compare affanno o tosse durante la cura, la sospenda e si faccia vedere.\n\nSINTOMI\n- Paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno) oppure ibuprofene 400 mg fino a 3 volte al giorno per bruciore e dolore.\n- Bere 1,5–2 litri al giorno e urinare spesso, senza trattenere.\n\nSE È O POTREBBE ESSERE IN GRAVIDANZA\n- Lo dica subito: non prenda ibuprofene, servono un esame delle urine con antibiogramma e un controllo dopo la terapia. Usi solo paracetamolo e non assuma antibiotici di sua iniziativa.\n\nPER EVITARE CHE TORNI\n- Urinare dopo i rapporti sessuali.\n- Evitare lavande vaginali e detergenti aggressivi.\n\nTORNI IN PRONTO SOCCORSO SE\n- Febbre oltre 38 °C, brividi, dolore al fianco o alla schiena: possibile infezione del rene.\n- Vomito che impedisce di assumere l'antibiotico.\n- Sintomi che non migliorano dopo 48–72 ore di terapia.\n- Sangue nelle urine che persiste a terapia finita.\n\nCONTROLLO\n- Se i sintomi scompaiono non serve un esame delle urine di controllo.\n- Se i sintomi non passano o tornano entro 2 settimane, serve un esame delle urine con antibiogramma prima di riprendere l'antibiotico.\n- Medico curante se gli episodi si ripetono (3 o più in un anno).\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."},"faringotonsillite":{"nome":"Faringite / mal di gola","testo":"MAL DI GOLA — INDICAZIONI ALLA DIMISSIONE\n\nCOSA SAPERE\n- La maggior parte dei mal di gola è virale e guarisce da sola in 5–7 giorni: l'antibiotico non serve e non accorcia i tempi.\n- L'antibiotico serve solo nelle forme da streptococco, quando lo indica il medico: in quel caso va completato tutto il ciclo.\n\nFARMACI\n- Paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno; 2 g sopra i 75 anni, sotto i 50 kg, con problemi di fegato o se beve alcolici), oppure ibuprofene 400–600 mg fino a 3 volte al giorno a stomaco pieno.\n- Non prenda insieme bustine o compresse per l'influenza e il raffreddore: contengono già paracetamolo.\n- Bevande fresche o tiepide, ghiaccioli, miele (non sotto l'anno di età).\n\nCOSA FARE\n- Riposo relativo, bere spesso, non fumare.\n- Rientro al lavoro o a scuola dopo almeno 24 ore di antibiotico E almeno 24 ore senza febbre.\n\nTORNI IN PRONTO SOCCORSO SE\n- Difficoltà a respirare, voce ovattata come se avesse qualcosa in bocca, saliva che cola perché non riesce a deglutire.\n- Impossibilità a deglutire anche i liquidi.\n- Difficoltà ad aprire la bocca, gonfiore del collo, dolore forte da un lato solo.\n- Macchie rosse o violacee che NON scompaiono premendoci sopra un bicchiere trasparente.\n- Febbre che dura oltre 5 giorni o che ricompare dopo il miglioramento.\n- Gonfiore del viso, orticaria o affanno dopo l'antibiotico: lo sospenda e chiami il 112.\n\nATTENZIONE PARTICOLARE\n- Se assume metimazolo (per la tiroide), clozapina, immunosoppressori o chemioterapia, un mal di gola con febbre richiede un emocromo urgente: lo dica subito al medico.\n\nCONTROLLO\n- Medico curante se non migliora in 5 giorni.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese."},"trauma-cranico-minore":{"nome":"Trauma cranico minore","testo":"TRAUMA CRANICO MINORE — INDICAZIONI ALLA DIMISSIONE\n\nSE ASSUME ANTICOAGULANTI O CARDIOASPIRINA\n- Non resti solo nelle prossime 24 ore e torni in Pronto Soccorso per qualsiasi sintomo nuovo, anche solo mal di testa.\n- Non sospenda di sua iniziativa l'anticoagulante o la cardioaspirina.\n- Il sanguinamento può comparire anche dopo 3–7 giorni.\n\nLE PROSSIME 24–48 ORE\n- Non resti solo: una persona adulta deve poterla assistere.\n- Può dormire normalmente. Chi assiste deve solo verificare che respiri regolarmente e che si svegli facilmente chiamandolo; se non si sveglia facilmente, chiami subito il 112.\n- Riposo nelle prime 24–48 ore, poi ripresa graduale.\n- Niente alcol, niente sonniferi o sedativi.\n- Non guidare, non usare macchinari, non fare sport finché i sintomi non sono scomparsi. Ritorno allo sport per gradi e mai lo stesso giorno; per gli sport di contatto serve il via libera del medico.\n\nFARMACI\n- Per il mal di testa usi solo paracetamolo 1 g ogni 8 ore (massimo 3 g al giorno).\n- Non prenda antinfiammatori (ibuprofene, ketoprofene, aspirina come antidolorifico) per una settimana.\n\nCHIAMI IL 112 SE COMPARE ANCHE UNO SOLO DI QUESTI (non si metta alla guida)\n- Mal di testa che peggiora e non passa con il paracetamolo.\n- Vomito ripetuto.\n- Sonnolenza insolita o difficoltà a svegliarsi.\n- Confusione, difficoltà a parlare, vista doppia, pupille di dimensione diversa, debolezza o formicolio a un braccio o a una gamba, perdita di equilibrio.\n- Convulsioni.\n- Sangue o liquido chiaro dal naso o dalle orecchie.\n\nNELLE SETTIMANE SUCCESSIVE\n- Sopra i 65 anni o in terapia anticoagulante i sintomi possono comparire anche dopo 2–6 settimane: mal di testa persistente, sonnolenza, cambiamento di carattere o difficoltà a camminare vanno rivalutati dal medico.\n\nCONTROLLO\n- Medico curante se mal di testa, stanchezza, difficoltà di concentrazione o irritabilità durano oltre una settimana.\n\nQueste indicazioni si riferiscono alla valutazione di oggi e non sostituiscono il medico curante. Se compaiono sintomi nuovi o il disturbo peggiora torni in Pronto Soccorso anche prima dei tempi indicati; chiami il 112 se il sintomo è grave o improvviso e non si metta alla guida. Porti con sé questo foglio, la documentazione consegnata e l'elenco dei farmaci che assume, allergie comprese. Attenzione ai preparati per l'influenza: contengono già paracetamolo."}};
+const CHIAVE_LS = "psassist.editor.dimissioni";
+let fogli = [];
+
+const slug = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "foglio";
+const daOggetto = (o) => Object.entries(o).map(([k, v]) => ({ k, nome: v.nome || k, testo: v.testo || "" }));
+
+function carica() {
+  try {
+    const salvato = JSON.parse(localStorage.getItem(CHIAVE_LS) || "null");
+    if (salvato && Array.isArray(salvato) && salvato.length) { fogli = salvato; return; }
+  } catch { /* si riparte dai testi in servizio */ }
+  fogli = daOggetto(SPEDITI);
+}
+const ricorda = () => { try { localStorage.setItem(CHIAVE_LS, JSON.stringify(fogli)); } catch {} };
+function spia(t, ko) {
+  const s = document.getElementById("spia");
+  s.textContent = t; s.style.color = ko ? "var(--bad)" : "var(--ok)";
+  clearTimeout(spia._t); spia._t = setTimeout(() => { s.textContent = ""; }, 2200);
+}
+
+function disegna() {
+  const el = document.getElementById("elenco");
+  if (!fogli.length) { el.innerHTML = '<p class="vuoto">Nessun foglio. Premi <b>+ Nuovo foglio</b>.</p>'; return; }
+  el.innerHTML = fogli.map((f, i) => {
+    const righe = f.testo.split("\n").filter((r) => r.trim()).length;
+    return `<article class="foglio">
+      <div class="fh">
+        <input class="tit" value="${esc(f.nome)}" data-i="${i}" data-campo="nome" aria-label="Titolo del foglio">
+        <span class="chiave">${esc(f.k)}</span>
+        <button data-su="${i}" title="Sposta su">↑</button>
+        <button data-giu="${i}" title="Sposta giù">↓</button>
+        <button data-del="${i}" title="Elimina questo foglio">🗑</button>
+      </div>
+      <textarea class="corpo" data-i="${i}" data-campo="testo" spellcheck="false"
+        aria-label="Testo del foglio">${esc(f.testo)}</textarea>
+      <div class="meta"><span>${righe} righe</span><span>${f.testo.length} caratteri</span></div>
+    </article>`;
+  }).join("");
+  el.querySelectorAll("textarea.corpo").forEach(cresci);
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function cresci(t) { t.style.height = "auto"; t.style.height = Math.max(120, t.scrollHeight + 2) + "px"; }
+
+document.getElementById("elenco").addEventListener("input", (e) => {
+  const t = e.target;
+  const i = +t.dataset.i;
+  if (!Number.isInteger(i) || !fogli[i]) return;
+  fogli[i][t.dataset.campo] = t.value;
+  if (t.tagName === "TEXTAREA") cresci(t);
+  ricorda();
+});
+document.getElementById("elenco").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  const g = (n) => (b.dataset[n] === undefined ? null : +b.dataset[n]);
+  const del = g("del"), su = g("su"), giu = g("giu");
+  if (del !== null) {
+    if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "cancello?"; 
+      setTimeout(() => { if (b.isConnected && b.dataset.sicuro === "1") { b.dataset.sicuro = ""; b.textContent = "🗑"; } }, 4000); return; }
+    fogli.splice(del, 1);
+  } else if (su !== null && su > 0) { [fogli[su - 1], fogli[su]] = [fogli[su], fogli[su - 1]]; }
+  else if (giu !== null && giu < fogli.length - 1) { [fogli[giu + 1], fogli[giu]] = [fogli[giu], fogli[giu + 1]]; }
+  else return;
+  ricorda(); disegna();
+});
+
+document.getElementById("nuovo").addEventListener("click", () => {
+  let k = "foglio-nuovo", n = 1;
+  while (fogli.some((f) => f.k === k)) k = "foglio-nuovo-" + (++n);
+  fogli.unshift({ k, nome: "Nuovo foglio", testo: "TITOLO — INDICAZIONI ALLA DIMISSIONE\n\nSEZIONE\n- prima indicazione\n" });
+  ricorda(); disegna();
+  document.querySelector("input.tit")?.focus();
+});
+
+document.getElementById("salva").addEventListener("click", async () => {
+  // la chiave segue il titolo solo per i fogli nuovi: cambiarla su uno
+  // esistente creerebbe un doppione invece di aggiornarlo
+  const dati = {};
+  for (const f of fogli) {
+    if (!f.nome.trim() && !f.testo.trim()) continue;
+    let k = f.k || slug(f.nome);
+    if (k.startsWith("foglio-nuovo")) k = slug(f.nome);
+    while (dati[k]) k += "-2";
+    dati[k] = { nome: f.nome.trim() || k, testo: f.testo };
+  }
+  const testo = JSON.stringify({ app: "PS assist", versione: "3.13.0", salvato: new Date().toISOString(), dimissioni: dati }, null, 1);
+  let file = false, appunti = false;
+  try {
+    const u = URL.createObjectURL(new Blob([testo], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = u; a.download = "dimissioni.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 20000);
+    file = true;
+  } catch {}
+  try { await navigator.clipboard.writeText(testo); appunti = true; } catch {}
+  spia(file && appunti ? "salvato: file + appunti" : file ? "salvato: dimissioni.json" : appunti ? "copiato negli appunti" : "non riuscito", !file && !appunti);
+});
+
+document.getElementById("carica").addEventListener("click", async () => {
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "application/json,.json";
+  inp.addEventListener("change", async () => {
+    const f = inp.files && inp.files[0];
+    if (!f) return;
+    try {
+      const o = JSON.parse(await f.text());
+      const d = o && o.dimissioni && typeof o.dimissioni === "object" ? o.dimissioni : o;
+      const nuovi = daOggetto(d).filter((x) => x.testo.trim());
+      if (!nuovi.length) throw new Error("nessun foglio");
+      fogli = nuovi; ricorda(); disegna(); spia(nuovi.length + " fogli caricati");
+    } catch (e) { spia("file non valido: " + e.message, true); }
+  });
+  inp.click();
+});
+
+document.getElementById("orig").addEventListener("click", (e) => {
+  const b = e.currentTarget;
+  if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "↺ Confermi?";
+    setTimeout(() => { if (b.dataset.sicuro === "1") { b.dataset.sicuro = ""; b.textContent = "↺ Originali"; } }, 4000); return; }
+  b.dataset.sicuro = ""; b.textContent = "↺ Originali";
+  fogli = daOggetto(SPEDITI); ricorda(); disegna(); spia("rimessi i testi in servizio");
+});
+
+carica(); disegna();
+</script></body></html>

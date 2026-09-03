@@ -6,11 +6,12 @@
     "test": "test"
   },
   "scripts": {
-    "test": "node tools/verifica-esempi.mjs && node test/valori.mjs && node test/pdftesto.mjs && node test/storico.mjs && node test/run.mjs && node test/ext-referti.mjs && node test/ext-storico.mjs && node tools/demo.mjs && node test/demo.mjs",
+    "test": "node tools/verifica-esempi.mjs && node test/valori.mjs && node test/pdftesto.mjs && node test/storico.mjs && node test/editor.mjs && node test/run.mjs && node test/ext-referti.mjs && node test/ext-storico.mjs && node tools/demo.mjs && node test/demo.mjs",
     "build": "node tools/build.mjs && node tools/icons.mjs",
-    "dist": "npm run build && node tools/demo.mjs && node tools/dist.mjs",
+    "dist": "npm run build && node tools/editor.mjs && node tools/dist.mjs",
     "demo": "node tools/build.mjs && node tools/demo.mjs",
-    "esempi": "node tools/esempi.mjs && node tools/verifica-esempi.mjs"
+    "esempi": "node tools/esempi.mjs && node tools/verifica-esempi.mjs",
+    "editor": "node tools/editor.mjs"
   },
   "keywords": [],
   "author": "",
