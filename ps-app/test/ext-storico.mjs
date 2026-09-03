@@ -160,6 +160,28 @@ await paziente.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
 const via = await paziente.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".sec .hint")?.textContent?.replace(/\s+/g, " ") || "");
 check(/codice fiscale/.test(via), `e la tabella dice su cosa è stata verificata (got: ${via.slice(0, 90)})`);
 
+// ---- una riga fuori colonna arriva fino allo schermo --------------------
+paginaCorrente = paginaStorico({ paziente: { idMPI: "900000001", cognome: "ROSSI", nome: "MARIO" }, bucaColonna: 0 });
+await portale.goto(PORTALE);
+await portale.waitForFunction(
+  () => /prelievi/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),
+  { timeout: 10000 },
+).catch(() => {});
+await paziente.reload();
+await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await paziente.locator('#psassist-host [data-seg="esiti"]').click();
+await paziente.waitForSelector("#psassist-host #apristorico", { timeout: 10000 });
+await paziente.locator("#psassist-host #apristorico").click();
+await paziente.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
+const avviso = await paziente.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  return { barra: r.querySelector(".avvnomi")?.textContent?.replace(/\s+/g, " ").trim() || "",
+           titolo: r.querySelector(".avvnomi")?.getAttribute("title") || "" };
+});
+check(/riga non letta|righe non lette/.test(avviso.barra),
+  `la riga fuori colonna diventa un avviso sullo schermo (got: ${avviso.barra.slice(0, 70) || "NESSUN AVVISO"})`);
+check(/Emoglobina/.test(avviso.titolo), `e dice quale riga è (got: ${avviso.titolo.replace(/\n/g, " · ").slice(0, 80)})`);
+
 // ---- l'altro paziente: la tabella NON deve comparire --------------------
 paginaCorrente = paginaStorico({ paziente: { idMPI: "900000002", cognome: "VERDI", nome: "GIULIA", cf: "SMPRSS80A01F205W" } });
 await portale.goto(PORTALE);
