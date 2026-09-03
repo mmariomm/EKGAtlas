@@ -107,6 +107,16 @@ const g = await due(gemelli, gemelli);
 check(g.hb === "13.2|-" && g.na === "-|141",
   `due prelievi nello stesso minuto restano due colonne (got hb=${g.hb} na=${g.na})`);
 
+// ---- una riga che non sta in colonna non viene letta a caso -------------
+// se al corpo manca una cella i valori scivolerebbero sotto il prelievo
+// sbagliato: quella riga resta fuori, e viene dichiarata
+const storta = await leggi(paginaStorico({ bucaColonna: 0 }));
+check((storta.dati.scartate || []).length === 1 && storta.dati.scartate[0].nome === "Emoglobina",
+  `una riga con una cella in meno non viene letta, e lo dice (got ${JSON.stringify(storta.dati.scartate)})`);
+check(!storta.dati.righe.some((r) => r.nome === "Emoglobina"),
+  "e i suoi valori non finiscono sotto le date sbagliate");
+check(storta.dati.righe.length === 9, `le altre righe restano tutte (got ${storta.dati.righe.length})`);
+
 // ---- di chi è questa tabella --------------------------------------------
 // L'unico controllo fra i valori di un paziente e lo schermo di un altro:
 // deve accettare i due ordini con cui i due sistemi scrivono il nome, e

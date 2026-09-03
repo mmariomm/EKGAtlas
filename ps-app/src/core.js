@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.9.2";
+  const VERSION = "3.9.3";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -318,7 +318,11 @@
   // ("MCH Cont. Media Hgb"), which is unreadable in a two-line preview: what a
   // doctor scans is the short form and the number.
   const SIGLE = [
-    [/^leucociti|^globuli bianchi|^wbc/i, "GB"], [/^emoglobina|^hgb\b|^hb\b/i, "Hb"],
+    [/^leucociti|^globuli bianchi|^wbc/i, "GB"],
+    // l'emoglobina glicata è un'altra grandezza in un'altra unità: non deve
+    // mai finire nella riga dell'Hb accanto a un'emoglobina in g/dL
+    [/emoglobina\s*glicat|^hba1c|\bhb\s?a1c\b/i, "HbA1c"],
+    [/^emoglobina(?!\s*glicat)|^hgb\b|^hb\b/i, "Hb"],
     [/^ematocrito|^hct/i, "Ht"], [/^piastrine|^plt/i, "PLT"], [/^eritrociti|globuli rossi|^rbc/i, "GR"],
     [/^mcv|vol\.? glob/i, "MCV"], [/^mchc/i, "MCHC"], [/^mch\b|cont\.? media/i, "MCH"], [/^rdw/i, "RDW"],
     [/^granulociti|neutrofil/i, "Neu"], [/^linfocit/i, "Lin"], [/^monocit/i, "Mon"],
@@ -327,13 +331,21 @@
     [/^cloro|^cl\b/i, "Cl"], [/calcio ioniz/i, "Ca++"], [/^calcio/i, "Ca"], [/^magnesio/i, "Mg"],
     [/^glucosio|glicemia/i, "Glu"], [/proteina c reattiva|^pcr\b/i, "PCR"], [/procalcitonin/i, "PCT"],
     [/troponina/i, "Trop"], [/d.?dimero/i, "DD"], [/^inr/i, "INR"], [/^pt\b|protrombin/i, "PT"],
-    [/^ptt|tromboplastin/i, "PTT"], [/fibrinogeno/i, "Fib"], [/bilirubina.*diretta/i, "BilD"],
+    [/^ptt|tromboplastin/i, "PTT"], [/fibrinogeno/i, "Fib"],
+    // "indiretta" contiene "diretta": vanno distinte, o la bilirubina diretta
+    // e l'indiretta diventano due righe con la stessa etichetta
+    [/bilirubina\s+indiretta|bil\.?\s*indiretta/i, "BilI"],
+    [/bilirubina\s+diretta|bil\.?\s*diretta/i, "BilD"],
     [/bilirubina/i, "Bil"], [/^got\b|^ast\b/i, "AST"], [/^gpt\b|^alt\b/i, "ALT"],
     [/gamma\s?gt|^ggt/i, "γGT"], [/fosfatasi alc/i, "ALP"], [/^ldh/i, "LDH"],
-    [/^cpk|creatinchinasi|^ck\b/i, "CPK"], [/^lipasi/i, "Lip"], [/^amilasi/i, "Amy"],
-    [/^albumin/i, "Alb"], [/nt.?pro.?bnp/i, "NTproBNP"], [/^bnp/i, "BNP"], [/^ves\b/i, "VES"],
+    [/\bck\s?-?\s?mb\b/i, "CKMB"], [/^cpk|creatinchinasi|^ck\b(?!\s?-?\s?mb)/i, "CPK"],
+    [/^lipasi/i, "Lip"], [/^amilasi/i, "Amy"],
+    [/albuminuria|microalbuminur/i, "Albu"], [/^albumin/i, "Alb"],
+    [/nt.?pro.?bnp/i, "NTproBNP"], [/^bnp/i, "BNP"], [/^ves\b/i, "VES"],
     [/^ph\b/i, "pH"], [/pco2|pco₂/i, "pCO2"], [/po2\b|po₂/i, "pO2"], [/hco3|bicarbon/i, "HCO3"],
-    [/base excess|^be\b|^eb\b/i, "BE"], [/lattat/i, "Lac"], [/saturaz|^so2/i, "SatO2"],
+    [/base excess|^be\b|^eb\b/i, "BE"],
+    [/lattico\s+deidrogen|lattato\s+deidrogen/i, "LDH"],   // prima di "lattat"
+    [/lattat/i, "Lac"], [/saturaz|^so2/i, "SatO2"],
     [/carbossiemo|^cohb/i, "COHb"], [/metaemo|^methb/i, "MetHb"], [/^tsh/i, "TSH"],
     [/emogas/i, "EGA"], [/^ammonio|ammoniem/i, "NH3"], [/^mioglobin/i, "Mb"],
     // urine dipstick and blood-gas derivatives: names the portal's multi-day
@@ -371,6 +383,23 @@
   // that looks like a known sigla is how a doctor reads the wrong analyte.
   // Everywhere a guess is shown it is marked, and counted.
   const siglaCurata = (nome) => SIGLE.some(([re]) => re.test(scomponi(nome).resto));
+  // Peggio di un nome che non conosciamo: due nomi DIVERSI che nello stesso
+  // prelievo escono con la stessa abbreviazione («PTT secondi» e «PTT Ratio»,
+  // «Granulociti» e «Granulociti %»). Anche quelli vanno scritti per esteso.
+  function sigleAmbigue(rows) {
+    const per = new Map();
+    for (const r of rows || []) {
+      const nome = String(r.nome || "").trim();
+      if (!nome) continue;
+      const s = sigla(nome);
+      const set = per.get(s) || new Set();
+      set.add(nome);
+      per.set(s, set);
+    }
+    const out = new Set();
+    for (const [s, nomi] of per) if (nomi.size > 1) out.add(s);
+    return out;
+  }
   const nomiInattesi = (rows) => {
     const out = [];
     for (const r of rows || []) {
@@ -776,7 +805,8 @@
     }
     if (!date.some(Boolean)) return null;
 
-    const righe = [];
+    const righe = [], scartate = [];
+    const nCol = dx.rows[0] ? dx.rows[0].cells.length : 0;
     for (let i = 1; i < sx.rows.length; i++) {
       const tdE = sx.rows[i].querySelector("td.exam");
       if (!tdE) continue;                                   // header and filler rows
@@ -793,6 +823,9 @@
       const mnem = mnemonicoStorico(spec?.getAttribute("uib-tooltip"));
       const valori = [];
       const celle = dx.rows[i] ? dx.rows[i].cells : [];
+      // one cell per column, or the values would slide under the wrong draw:
+      // a row that does not line up is left out AND declared, never guessed
+      if (celle.length !== nCol) { scartate.push({ nome, valore: "riga fuori colonna" }); continue; }
       for (let c = 0; c < date.length; c++) {
         if (!date[c]) continue;
         const d = celle[c] ? celle[c].querySelector(".exam-value") : null;
@@ -802,7 +835,7 @@
           : d.classList.contains("SUP") ? 1 : d.classList.contains("INF") ? -1 : 0;
         valori.push({ v, stato });
       }
-      if (valori.some((x) => x.v)) righe.push({ nome, esame, codice, mnem, valori });
+      if (valori.some((x) => x.v)) righe.push({ nome, esame, codice, mnem, pos: i, valori });
     }
     if (!righe.length) return null;
 
@@ -811,14 +844,23 @@
     const testa = [...doc.querySelectorAll(".panel-heading, app-root-selected-anagrafe")]
       .map((e) => (e.textContent || "").replace(/\s+/g, " ")).find((t) => /idMPI/i.test(t)) || "";
     // "Nome" must not match inside "Cognome": the label starts a word
-    const campo = (k) => (new RegExp("(?:^|\\s)" + k + "\\s*:\\s*([^:]+?)(?:\\s+[A-Za-z ]+:|$)", "i").exec(testa) || [])[1]?.trim() || "";
+    // The heading is one line of "Etichetta: valore" pairs. Cutting it on the
+    // labels we know is the only way to keep a two-word name whole: a generic
+    // "up to the next word with a colon" stops at the first space, turning
+    // "MARIA ANNA" into "MARIA" — the name of a different patient.
+    const campi = new Map();
+    for (const pezzo of testa.split(/\s+(?=(?:idMPI|Cognome|Nome|Sesso|Data di nascita|Data nascita)\s*:)/i)) {
+      const m = /^\s*([A-Za-z ]+?)\s*:\s*(.*)$/.exec(pezzo);
+      if (m) campi.set(m[1].toLowerCase(), m[2].trim());
+    }
+    const campo = (k) => campi.get(k.toLowerCase()) || "";
     const periodo = [...doc.querySelectorAll(".panel-heading")]
       .map((e) => (e.textContent || "").replace(/\s+/g, " ").trim())
       .find((t) => /^Tabella esami periodo/i.test(t)) || "";
 
     return {
       paziente: { idMPI: campo("idMPI"), cognome: campo("Cognome"), nome: campo("Nome") },
-      periodo, date: date.filter(Boolean), righe, letto: Date.now(),
+      periodo, date: date.filter(Boolean), righe, scartate, letto: Date.now(),
     };
   }
 
@@ -839,18 +881,23 @@
       for (const r of dati.righe) {
         // HB is both blood haemoglobin and the urine dipstick: the analyte
         // alone is not an identity, the ordered exam is part of it
-        const k = (r.esame || "") + "|" + r.nome + "|" + (r.mnem || "");
-        const cur = perEsame.get(k) || { nome: r.nome, esame: r.esame, codice: r.codice, mnem: r.mnem, per: new Map() };
+        // when the analyte cell is empty the name falls back to the ordered
+        // exam, and every row of that panel looks identical: only its position
+        // tells them apart, so it becomes part of the identity
+        const anonima = !r.mnem && r.nome === r.esame;
+        const k = (r.esame || "") + "|" + r.nome + "|" + (r.mnem || "") + (anonima ? "|#" + (r.pos ?? 0) : "");
+        const cur = perEsame.get(k) || { nome: r.nome, esame: r.esame, codice: r.codice, mnem: r.mnem, pos: r.pos, per: new Map() };
         r.valori.forEach((v, i) => { if (v.v && dati.date[i]) cur.per.set(chiaveCol(dati.date[i]), v); });
         perEsame.set(k, cur);
       }
     };
     versa(vecchio); versa(nuovo);
     const righe = [...perEsame.values()].map((e) => ({
-      nome: e.nome, esame: e.esame, codice: e.codice, mnem: e.mnem,
+      nome: e.nome, esame: e.esame, codice: e.codice, mnem: e.mnem, pos: e.pos,
       valori: date.map((d) => e.per.get(chiaveCol(d)) || { v: "", stato: 0 }),
     }));
-    return { paziente: nuovo.paziente, periodo: nuovo.periodo, date, righe, letto: Date.now() };
+    return { paziente: nuovo.paziente, periodo: nuovo.periodo, date, righe,
+             scartate: [...(vecchio.scartate || []), ...(nuovo.scartate || [])].slice(0, 40), letto: Date.now() };
   }
   const chiaveCol = (d) => (d && (d.chiave || d.label)) || "";
   const ordData = (label) => {
@@ -2586,6 +2633,7 @@
         const nov = vals && vals.rows ? this.novita(e.id, vals.rows) : new Map();
         const nNuovi = [...nov.values()].filter((x) => x === "nuovo").length;
         const nAgg = nov.size - nNuovi;
+        const ambP = vals && vals.rows ? sigleAmbigue(vals.rows) : new Set();
         const preview = vals && vals.rows && vals.rows.length
           ? `<button class="eprev${nov.size ? " nuovi" : ""}" data-vals="${esc(e.id)}" title="Vedi tutti i valori">${
               ordinaRighe(vals.rows, cmp.order)
@@ -2597,7 +2645,7 @@
                   const n = nov.get(k);
                   const tip = [n === "nuovo" ? "nuovo" : n === "cambiato" ? "aggiornato" : "",
                                d ? `prima ${d.prevRaw} (${d.pct > 0 ? "+" : ""}${d.pct}%)` : ""].filter(Boolean).join(" · ");
-                  return `<span class="pit${n === "nuovo" ? " nuovo" : ""}"><span class="pn${siglaCurata(v.nome) ? "" : " grezza"}">${esc(sigla(v.nome))}</span> <span class="pv${oo ? " bad" : ""}${n === "cambiato" ? " agg" : ""}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>${n ? `<span class="vhide"> ${n === "nuovo" ? "nuovo" : "aggiornato"}</span>` : ""}${d ? `<span class="pd">${d.dir}</span>` : ""}</span>`;
+                  return `<span class="pit${n === "nuovo" ? " nuovo" : ""}"><span class="pn${siglaCurata(v.nome) && !ambP.has(sigla(v.nome)) ? "" : " grezza"}">${esc(ambP.has(sigla(v.nome)) ? String(v.nome).replace(/\s+/g, " ").trim().slice(0, 22) : sigla(v.nome))}</span> <span class="pv${oo ? " bad" : ""}${n === "cambiato" ? " agg" : ""}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>${n ? `<span class="vhide"> ${n === "nuovo" ? "nuovo" : "aggiornato"}</span>` : ""}${d ? `<span class="pd">${d.dir}</span>` : ""}</span>`;
                 }).join(" · ")}</button>`
           : "";
         return `<div class="egroup">
@@ -2645,7 +2693,8 @@
       if (!st) return `<div class="hint">Nessuno storico in memoria. Aprilo dal gestionale: «Storico dati clinici» › Tabella.</div>`;
       const col = st.date.map((d, i) => ({ ...d, i })).reverse();   // newest first, like Esiti
       const righe = st.righe.filter((r) => !this.soloAlterati || r.valori.some((v) => v.v && v.stato));
-      const inatteso = (r) => !siglaCurata(r.nome);
+      const ambS = sigleAmbigue(st.righe);
+      const inatteso = (r) => !siglaCurata(r.nome) || ambS.has(sigla(r.nome));
       const celle = (r) => col.map((c) => {
         const v = r.valori[c.i] || { v: "", stato: 0 };
         return `<td class="${v.stato ? "fuori" : ""}">${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}</td>`;
@@ -2656,7 +2705,7 @@
             <button class="mini" id="storcopy">⧉ Copia</button>
             <button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>
           </div>
-          ${this.avvisoNomi(st.righe, null)}
+          ${this.avvisoNomi(st.righe, st.scartate)}
           <div class="stwrap">
             <table class="sttab">
               <thead><tr><th class="stn">Esame</th>${col.map((c) => `<th>${esc(c.data.slice(0, 5))}<span class="sth">${esc(c.ora)}</span></th>`).join("")}</tr></thead>
@@ -2934,6 +2983,7 @@
       // marks are read from the snapshot taken when this draw was LAST LEFT:
       // entering must not erase what it is here to show
       const nov = e && vals && vals.rows ? this.novita(e.id, vals.rows) : new Map();
+      const amb = vals && vals.rows ? sigleAmbigue(vals.rows) : new Set();
       const body = vals && vals.rows && vals.rows.length
         ? ordinaRighe(vals.rows, cmp.order).map((v) => {
             const oo = outOfRange(v.valore, v.range);
@@ -2942,7 +2992,7 @@
             const n = nov.get(k);
             const tip = [esc(v.nome), n === "nuovo" ? "nuovo dall'ultima lettura" : n === "cambiato" ? "aggiornato dall'ultima lettura" : "",
                          d ? `prelievo precedente: ${esc(d.prevRaw)} (${d.pct > 0 ? "+" : ""}${d.pct}%)` : ""].filter(Boolean).join(" — ");
-            const grezza = !siglaCurata(v.nome);
+            const grezza = !siglaCurata(v.nome) || amb.has(sigla(v.nome));
             return `<div class="rval ${oo ? "bad" : ""}${n ? " nuova" : ""}" title="${tip}"><span class="rvn${n === "nuovo" ? " nuovo" : ""}${grezza ? " grezza" : ""}">${esc(grezza ? String(v.nome).replace(/\s+/g, " ").trim() : sigla(v.nome))}</span><span class="rvv${n === "cambiato" ? " agg" : ""}">${esc(v.valore)}${oo ? (oo < 0 ? " ↓" : " ↑") : ""}${d ? `<span class="pd">${d.dir}</span>` : ""}</span><span class="rvr">${esc(v.um || "")}${v.range ? " · " + esc(v.range) : ""}</span></div>`;
           }).join("")
         : `<div class="rval">${this.risBusy === e.id ? "carico…" : "nessun valore"}</div>`;
@@ -2962,13 +3012,17 @@
     // hidden — the values are all on screen anyway.
     avvisoNomi(rows, scartate) {
       const inattesi = nomiInattesi(rows);
+      const amb = sigleAmbigue(rows);
+      const doppi = (rows || []).map((r) => r.nome).filter((n, i, a) => n && amb.has(sigla(n)) && a.indexOf(n) === i);
       const persi = (scartate || []).filter((x) => x && x.nome);
-      if (!inattesi.length && !persi.length) return "";
+      if (!inattesi.length && !doppi.length && !persi.length) return "";
       const pezzi = [];
       if (inattesi.length) pezzi.push(`${inattesi.length} ${inattesi.length === 1 ? "nome non in elenco" : "nomi non in elenco"}: scritti per esteso`);
+      if (doppi.length) pezzi.push(`${doppi.length} esami si abbrevierebbero uguale`);
       if (persi.length) pezzi.push(`${persi.length} ${persi.length === 1 ? "riga non letta" : "righe non lette"}`);
       const elenco = [
         inattesi.length ? "Non in elenco: " + inattesi.join(", ") : "",
+        doppi.length ? "Stessa abbreviazione: " + doppi.join(", ") : "",
         persi.length ? "Non lette: " + persi.map((x) => `${x.nome} = ${x.valore}`).join(" · ") : "",
       ].filter(Boolean).join("\n");
       return `<div class="avvnomi" title="${esc(elenco)}">
@@ -3949,7 +4003,21 @@
     // does not ask the server anything. It reads the table already on screen
     // and hands it to the patient's page. Nothing else.
     if (haStorico(document)) { bootStorico(); return; }
-    if (!SA4PSO) return;               // any other page of the portal: not ours
+    if (!SA4PSO) {
+      // The portal is a single-page application: it paints the table AFTER
+      // this script has run, and reaching it is an in-app route change that
+      // never re-injects us. Probing once would mean never reading anything.
+      let atteso = null;
+      const occhio = new MutationObserver(() => {
+        clearTimeout(atteso);
+        atteso = setTimeout(() => {
+          if (document.getElementById("psassist-host")) return;
+          if (haStorico(document)) { occhio.disconnect(); bootStorico(); }
+        }, 250);
+      });
+      occhio.observe(document.documentElement, { childList: true, subtree: true });
+      return;
+    }
     scadenzaQuesiti();
     const pageType = classify(document);
     if (pageType === "login") { forgetAll(); return; }

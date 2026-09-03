@@ -33,7 +33,9 @@ const cellaValore = (v, stato) => {
             uib-tooltip-template="'exam-result-tooltip.html'" tooltip-class="exam-result-tooltip"> ${v} </div></td>`;
 };
 
-export function paginaStorico({ paziente = PAZIENTE, date = DATE, esami = ESAMI, disallinea = false } = {}) {
+// disallinea: al corpo manca una riga (le due metà non combaciano)
+// bucaColonna: a UNA riga manca una cella (i valori scivolerebbero di colonna)
+export function paginaStorico({ paziente = PAZIENTE, date = DATE, esami = ESAMI, disallinea = false, bucaColonna = -1 } = {}) {
   const sxRighe = [
     `<tr><th class="size-14 exam locked"><div>Esame</div></th><th class="size-14 exam-specific locked"><div>Esame specifico</div></th></tr>`,
     `<tr class="filler-header h-50px"></tr>`,
@@ -48,8 +50,9 @@ export function paginaStorico({ paziente = PAZIENTE, date = DATE, esami = ESAMI,
         <button type="button" class="btn btn-default btn-table-document ng-binding"> ${d} <i class="glyphicon glyphicon-file"></i></button>
       </div></th>`).join("")}</tr>`,
     `<tr class="filler-header h-50px"></tr>`,
-    ...esami.map(([, , , , valori, stati]) => `<tr class="ng-scope">${
-      date.map((_, i) => cellaValore(valori[i] || "", (stati && stati[i]) || 0)).join("")}</tr>`),
+    ...esami.map(([, , , , valori, stati], r) => `<tr class="ng-scope">${
+      date.map((_, i) => cellaValore(valori[i] || "", (stati && stati[i]) || 0))
+          .filter((_, i) => !(r === bucaColonna && i === 1)).join("")}</tr>`),
   ];
   if (disallinea) dxRighe.pop();   // one row short: the reader must refuse everything
   return `<!doctype html><html><head><meta charset="utf-8"><title>${paziente.cognome} ${paziente.nome} - (SMPRSS80A01F205X) INFORMAZIONI CLINICHE</title></head><body>

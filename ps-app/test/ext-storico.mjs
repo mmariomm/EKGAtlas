@@ -88,6 +88,23 @@ await paziente.waitForTimeout(200);
 const soloAlterati = await paziente.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".sttab tbody tr").length);
 check(soloAlterati === 5, `«solo alterati» tiene solo le righe con un valore fuori range (got ${soloAlterati})`);
 
+// ---- la tabella disegnata DOPO il caricamento ---------------------------
+// Il portale è una single-page application: ci si arriva cambiando rotta
+// dentro l'app, e la tabella compare quando l'app la disegna. Guardare una
+// volta sola al caricamento vorrebbe dire non leggere mai niente.
+const tabella = paginaStorico({ paziente: { idMPI: "900000001", cognome: "ROSSI", nome: "MARIO" } });
+const testa = tabella.slice(0, tabella.indexOf("<body>") + 6);
+const corpo = tabella.slice(tabella.indexOf("<body>") + 6);
+paginaCorrente = `${testa}<div id="app"></div><script>
+  setTimeout(() => { document.getElementById("app").innerHTML = ${JSON.stringify(corpo)}; }, 700);
+</script></body></html>`;
+await portale.goto(PORTALE + "?tardi=1");
+await portale.waitForTimeout(2500);
+const tardi = await portale.evaluate(() =>
+  document.getElementById("psassist-host")?.shadowRoot?.querySelector(".bar")?.textContent?.replace(/\s+/g, " ").trim() || "");
+check(/10 esami · 3 prelievi/.test(tardi),
+  `legge la tabella anche se l'app la disegna dopo (got: ${tardi.slice(0, 60) || "NESSUNA STRISCIA"})`);
+
 // ---- un'ALTRA pagina del portale non è una pagina di SA4PSO -------------
 // La pagina di login del portale ha un campo password: scambiarla per quella
 // di SA4PSO farebbe cancellare i referti salvati del turno e questo storico.

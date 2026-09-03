@@ -150,6 +150,9 @@ Le sigle (`Emoglobina` → `Hb`) sono un elenco scritto a mano: fuori da quell'e
 un'abbreviazione sarebbe **un'ipotesi**, e un'ipotesi che sembra una sigla nota è il modo in cui
 si legge l'analita sbagliato. Quindi:
 
+- **due esami che si abbrevierebbero uguale** nello stesso prelievo (`PTT secondi` e `PTT Ratio`,
+  `Granulociti` e `Granulociti %`) vengono **scritti per esteso tutti e due**: due righe con la
+  stessa etichetta sono peggio di un nome sconosciuto;
 - il **campione fa parte del nome**: siero, plasma e sangue non aggiungono niente (`S-ALT` → `ALT`),
   ma ogni altro campione resta scritto nella sigla (`U-Emoglobina` → **`U·Hb`**, `Lcr-Glucosio` →
   `LCR·Glu`). L'emoglobina delle urine non diventerà mai `Hb`;
@@ -158,7 +161,8 @@ si legge l'analita sbagliato. Quindi:
   e **quali** apre l'elenco esatto, con nome e valore di quello che non è stato letto;
 - una riga che il lettore rifiuta (niente data, niente range, niente stato: di solito è
   un'intestazione) **non sparisce**: viene contata e mostrata lì dentro. Se è un esame vero lo vedi
-  e apri la finestra nativa.
+  e apri la finestra nativa. Lo stesso vale nello Storico per una riga che non sta in colonna
+  (meno celle dell'intestazione): non viene indovinata, viene dichiarata.
 
 Vale sia per i valori di un prelievo sia per la tabella dello Storico.
 

@@ -23,9 +23,9 @@ const grab = (name) => {
   }
   return core.slice(i, end);
 };
-const { outOfRange, sigla, siglaCurata, nomiInattesi, confrontaPrelievi, ordinaRighe } = new Function(
+const { outOfRange, sigla, siglaCurata, nomiInattesi, sigleAmbigue, confrontaPrelievi, ordinaRighe } = new Function(
   grab("outOfRange") + "\n" + core.slice(core.indexOf("const SIGLE = ["), core.indexOf("// First ~160 chars"))
-  + "\nreturn { outOfRange, sigla, siglaCurata, nomiInattesi, confrontaPrelievi, ordinaRighe };",
+  + "\nreturn { outOfRange, sigla, siglaCurata, nomiInattesi, sigleAmbigue, confrontaPrelievi, ordinaRighe };",
 )();
 
 let fail = 0;
@@ -203,6 +203,21 @@ const inattesi = nomiInattesi([{ nome: "Emoglobina" }, { nome: "Ricerca sangue o
 eq(inattesi.length, 2, "i nomi non in elenco vengono elencati una volta sola");
 check(inattesi.includes("Ricerca sangue occulto") && inattesi.includes("Aspetto del campione"), "e sono quelli giusti");
 check(!nomiInattesi([{ nome: "Sodio" }, { nome: "Potassio" }]).length, "quando li conosciamo tutti non avvisa di niente");
+
+// due nomi diversi che escono con la stessa abbreviazione sono peggio di un
+// nome sconosciuto: nel prelievo si leggerebbero come lo stesso esame
+const amb = sigleAmbigue([{ nome: "PTT secondi" }, { nome: "PTT Ratio" }, { nome: "Granulociti" }, { nome: "Granulociti %" }, { nome: "Sodio" }]);
+check(amb.has("PTT") && amb.has("Neu"), "riconosce le abbreviazioni che collidono nello stesso prelievo");
+check(!amb.has("Na"), "e non se la prende con quelle che non collidono");
+
+// pattern che prendevano esami per cui non erano stati scritti
+eq(sigla("Bilirubina indiretta"), "BilI", "l'indiretta non è la diretta");
+eq(sigla("Bilirubina diretta"), "BilD", "e la diretta resta la diretta");
+eq(sigla("Emoglobina glicata"), "HbA1c", "l'emoglobina glicata non è l'emoglobina");
+eq(sigla("Lattato deidrogenasi"), "LDH", "l'LDH non è il lattato");
+eq(sigla("Lattati"), "Lac", "e il lattato resta lattato");
+eq(sigla("CK-MB massa"), "CKMB", "il CK-MB non è il CPK");
+eq(sigla("Albuminuria"), "Albu", "l'albuminuria non è l'albumina");
 
 await browser.close();
 
