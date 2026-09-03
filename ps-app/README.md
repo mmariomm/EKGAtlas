@@ -183,9 +183,16 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   l'analita, altrimenti un pannello di urine diventerebbe diciotto righe con lo stesso nome. Il
   prefisso del campione resta: **`U-Emoglobina` non è l'emoglobina del sangue**, e non viene mai
   fusa con essa.
-- **La tabella si vede solo sotto il paziente giusto**: il nome viaggia insieme ai valori e viene
-  confrontato con quello della pagina. Se non combacia il pannello lo dice e **non mostra un solo
-  valore**. Le due metà della tabella del portale (nomi a sinistra, valori a destra) devono
+- **La tabella si vede solo sotto il paziente giusto.** SA4PSO scrive il nome come una stringa
+  sola (`ROSSI MARIO`), il portale lo dà già separato (`Cognome` + `Nome`): da quella stringa
+  l'ordine delle due parole non si può dedurre, quindi entrambi gli ordini vanno accettati — e con
+  nomi di due parole uno scambio resterebbe indistinguibile. Per questo, quando c'è, decide il
+  **codice fiscale**: il portale lo scrive nel titolo della pagina, il gestionale accanto al nome
+  nella finestra Risultati che il pannello legge già per i valori. Ne viaggia solo l'**impronta**,
+  mai il codice in chiaro. Le due prove non possono contraddirsi: un codice che combacia accanto a
+  un nome che non ha niente in comune fa **rifiutare** la tabella. Se il codice manca da un lato si
+  torna al confronto sui nomi. In fondo alla tabella c'è scritto **per chi è stata letta** e **su
+  cosa è stata verificata**, così un dubbio si vede invece di restare nascosto. Le due metà della tabella del portale (nomi a sinistra, valori a destra) devono
   combaciare riga per riga: se non combaciano non legge niente, invece di rischiare di attribuire
   un valore all'esame sbagliato.
 - Vale solo con l'**estensione** (è lei a portare la tabella da una pagina all'altra), i valori

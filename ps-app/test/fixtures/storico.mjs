@@ -5,7 +5,7 @@
  * per draw, the filler row between header and data, the out-of-range
  * classes), with invented patients, exams and numbers.
  */
-export const PAZIENTE = { idMPI: "900000001", cognome: "BIANCHI", nome: "ANNA" };
+export const PAZIENTE = { idMPI: "900000001", cognome: "BIANCHI", nome: "ANNA", cf: "SMPRSS80A01F205X" };
 
 export const DATE = ["01/09/2026 08:12", "01/09/2026 14:40", "02/09/2026 07:05"];
 
@@ -55,7 +55,7 @@ export function paginaStorico({ paziente = PAZIENTE, date = DATE, esami = ESAMI,
           .filter((_, i) => !(r === bucaColonna && i === 1)).join("")}</tr>`),
   ];
   if (disallinea) dxRighe.pop();   // one row short: the reader must refuse everything
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${paziente.cognome} ${paziente.nome} - (SMPRSS80A01F205X) INFORMAZIONI CLINICHE</title></head><body>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${paziente.cognome} ${paziente.nome} - (${paziente.cf || "SMPRSS80A01F205X"}) INFORMAZIONI CLINICHE</title></head><body>
     <div class="panel panel-default"><div class="panel-heading">
       idMPI: ${paziente.idMPI} Cognome: ${paziente.cognome} Nome: ${paziente.nome} Sesso: F Data di nascita: 01/01/1970
     </div></div>

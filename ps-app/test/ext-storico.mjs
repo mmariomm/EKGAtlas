@@ -27,7 +27,9 @@ function chromiumPath() {
 let fail = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
 
-const mock = createMock({});           // the patient page is ROSSI MARIO
+// il paziente è ROSSI MARIO, e ha prelievi: è da quelli che il pannello
+// impara l'impronta del codice fiscale di questo episodio
+const mock = createMock({ withResults: true });
 const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
@@ -122,8 +124,44 @@ await paziente.waitForTimeout(1000);
 check((await paziente.locator("#psassist-host #apristorico").count()) === 1,
   "e lo storico letto prima è ancora lì: quella pagina non ha cancellato niente");
 
+// ---- il codice fiscale batte il nome ------------------------------------
+// Con nomi di due parole lo scambio cognome/nome è indistinguibile, ma il
+// codice fiscale no: stesso nome e codice diverso deve essere RIFIUTATO.
+paginaCorrente = paginaStorico({ paziente: { idMPI: "900000003", cognome: "ROSSI", nome: "MARIO", cf: "SMPRSS80A01F205Z" } });
+await portale.goto(PORTALE);
+await portale.waitForFunction(
+  () => /prelievi/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),
+  { timeout: 10000 },
+).catch(() => {});
+await paziente.reload();
+await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await paziente.locator('#psassist-host [data-seg="esiti"]').click();
+await paziente.waitForTimeout(1500);
+const cfDiverso = await paziente.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  return { bottone: r.querySelectorAll("#apristorico").length, testo: r.textContent.replace(/\s+/g, " ") };
+});
+check(cfDiverso.bottone === 0 && !/10\.4/.test(cfDiverso.testo),
+  "stesso nome ma codice fiscale diverso: la tabella non compare");
+
+// e con il codice fiscale giusto ricompare, dicendo su cosa si è basata
+paginaCorrente = paginaStorico({ paziente: { idMPI: "900000001", cognome: "ROSSI", nome: "MARIO" } });
+await portale.goto(PORTALE);
+await portale.waitForFunction(
+  () => /prelievi/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),
+  { timeout: 10000 },
+).catch(() => {});
+await paziente.reload();
+await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await paziente.locator('#psassist-host [data-seg="esiti"]').click();
+await paziente.waitForSelector("#psassist-host #apristorico", { timeout: 10000 });
+await paziente.locator("#psassist-host #apristorico").click();
+await paziente.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
+const via = await paziente.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".sec .hint")?.textContent?.replace(/\s+/g, " ") || "");
+check(/codice fiscale/.test(via), `e la tabella dice su cosa è stata verificata (got: ${via.slice(0, 90)})`);
+
 // ---- l'altro paziente: la tabella NON deve comparire --------------------
-paginaCorrente = paginaStorico({ paziente: { idMPI: "900000002", cognome: "VERDI", nome: "GIULIA" } });
+paginaCorrente = paginaStorico({ paziente: { idMPI: "900000002", cognome: "VERDI", nome: "GIULIA", cf: "SMPRSS80A01F205W" } });
 await portale.goto(PORTALE);
 await portale.waitForFunction(
   () => /prelievi/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),

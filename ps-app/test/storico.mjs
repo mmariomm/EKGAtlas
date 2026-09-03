@@ -20,7 +20,18 @@ const core = readFileSync(join(root, "src/core.js"), "utf8");
 const da = core.indexOf("  const STORICO_SX =");
 const a = core.indexOf("  // ------------------------------------------------------- RISULTATI MODEL");
 if (da < 0 || a < 0 || a < da) throw new Error("blocco STORICO non trovato in src/core.js");
-const src = core.slice(da, a);
+// il lettore usa impronta() (definita altrove nel file): la portiamo con noi
+const grab = (name) => {
+  const i = core.indexOf(`function ${name}(`);
+  if (i < 0) throw new Error("non trovata: " + name);
+  let depth = 0, end = i;
+  for (let k = core.indexOf("{", i); k < core.length; k++) {
+    if (core[k] === "{") depth++;
+    else if (core[k] === "}") { depth--; if (!depth) { end = k + 1; break; } }
+  }
+  return core.slice(i, end);
+};
+const src = grab("impronta") + "\n" + core.slice(da, a);
 
 function chromiumPath() {
   for (const p of ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"]) {
@@ -140,6 +151,22 @@ check(nomi.dritto && nomi.rovescio, "accetta i due ordini: «ROSSI MARIO» e «M
 check(nomi.accenti && nomi.composto, "accenti, apostrofi e nomi composti combaciano");
 check(!nomi.rimescolato, "ma le parole rimescolate no: non basta che siano le stesse");
 check(!nomi.altro && !nomi.senzaNome && !nomi.senzaTitolo, "un altro nome, o un nome mancante, non combacia mai");
+
+// il codice fiscale e il nome non devono potersi contraddire
+const compat = await page.evaluate((s) => {
+  // eslint-disable-next-line no-new-func
+  const { nomiCompatibili } = new Function(s + "\nreturn { nomiCompatibili };")();
+  const P = (c, n) => ({ cognome: c, nome: n });
+  return {
+    uguali: nomiCompatibili("ROSSI MARIO", P("ROSSI", "MARIO")),
+    conCoda: nomiCompatibili("ROSSI MARIO - PRONTO SOCCORSO", P("ROSSI", "MARIO")),
+    diversi: nomiCompatibili("ROSSI MARIO", P("VERDI", "GIULIA")),
+    illeggibile: nomiCompatibili("ROSSI MARIO", P("", "")),
+  };
+}, src);
+check(compat.uguali && compat.conCoda, "un titolo che porta anche altro resta compatibile");
+check(!compat.diversi, "due nomi senza niente in comune si contraddicono");
+check(compat.illeggibile, "se un lato non è leggibile non c'è contraddizione da rilevare");
 
 // a page that is not that page
 const altra = await leggi("<html><body><table><tr><td>ciao</td></tr></table></body></html>");

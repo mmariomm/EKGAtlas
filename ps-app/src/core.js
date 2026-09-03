@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.9.3";
+  const VERSION = "3.10.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -860,6 +860,7 @@
 
     return {
       paziente: { idMPI: campo("idMPI"), cognome: campo("Cognome"), nome: campo("Nome") },
+      cf: cfImpronta(doc),
       periodo, date: date.filter(Boolean), righe, scartate, letto: Date.now(),
     };
   }
@@ -912,6 +913,30 @@
   const normNome = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ");
   const chiavePaziente = (p) => normNome([p?.cognome, p?.nome].filter(Boolean).join(" "));
+  // SA4PSO scrive il nome come una stringa sola, il portale lo dà già
+  // separato: da lì l'ordine delle due parole non si può dedurre. Ma
+  // entrambi i sistemi scrivono anche il CODICE FISCALE — il portale nel
+  // titolo, il gestionale accanto al nome nella finestra Risultati, che il
+  // pannello legge già per i valori. Quello è un identificativo unico: dove
+  // c'è, decide lui. Ne teniamo solo l'IMPRONTA, mai il codice in chiaro.
+  const CF_RE = /\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b/g;
+  function cfPagina(doc) {
+    const testo = ((doc.title || "") + " " + (doc.body?.textContent || "")).toUpperCase();
+    const trovati = [...new Set(testo.match(CF_RE) || [])];
+    return trovati.length === 1 ? trovati[0] : "";   // più di uno: non sappiamo quale
+  }
+  const cfImpronta = (doc) => { const c = cfPagina(doc); return c ? impronta(c) : ""; };
+
+  // Il codice fiscale è più forte del nome, ma le due prove non devono
+  // potersi CONTRADDIRE: un codice che combacia accanto a un nome che non
+  // ha niente in comune è un segnale che qualcosa non torna, non un via
+  // libera. Basta una parola in comune (il titolo può portare altro).
+  function nomiCompatibili(titolo, p) {
+    const a = normNome(titolo).split(" ").filter((x) => x.length >= 3);
+    const b = normNome([p?.cognome, p?.nome].filter(Boolean).join(" ")).split(" ").filter((x) => x.length >= 3);
+    if (!a.length || !b.length) return true;          // uno dei due non è leggibile
+    return a.some((x) => b.includes(x));
+  }
   function combaciaNome(titolo, p) {
     const t = normNome(titolo);
     const c = normNome(p?.cognome), n = normNome(p?.nome);
@@ -2006,6 +2031,7 @@
       this.esiti = [];                  // risultati + referti, newest first
       this.storico = null;              // the portal's multi-day table, if it is THIS patient's
       this.storicoAltri = "";           // ...or the name it belongs to, when it is not
+      this.storicoVia = "nome";         // su cosa è stata confermata l'identità
       this.soloAlterati = false;        // storico: show only what is out of range
       this.mostraNomi = false;          // the unexpected-name list, open or closed
       this.pos = store.get("pos", null); // user-dragged panel position {left, top}
@@ -2073,7 +2099,7 @@
       // it, unless this navigation is itself carrying the answer
       this.message = nota || null;
       this.view = v; this.viewId = id || null; this.persistUi(); this.render();
-      if (v === "esiti" && !this.storico) this.caricaStorico();   // read on the portal meanwhile?
+      if (v === "esiti") this.caricaStorico();   // letto sul portale intanto? e l'identità è cambiata?
     }
     // the inline banner: a string is something that went wrong, {ok} is a
     // confirmation. Every view shows it — the panel always answers.
@@ -2712,7 +2738,7 @@
               <tbody>${righe.map((r) => `<tr><th class="stn${inatteso(r) ? " grezza" : ""}" title="${esc(r.nome)}${r.esame && r.esame !== r.nome ? " — " + esc(r.esame) : ""}${r.mnem ? " · " + esc(r.mnem) : ""}">${esc(inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome))}</th>${celle(r)}</tr>`).join("")}</tbody>
             </table>
           </div>
-          <div class="hint">Letto per <b>${esc([st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") || "—")}</b>${st.paziente?.idMPI ? ` · idMPI ${esc(st.paziente.idMPI)}` : ""}. ${esc(st.periodo || "")} · dalla pagina del portale, senza chiedere niente al server.</div>
+          <div class="hint">Letto per <b>${esc([st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") || "—")}</b>${st.paziente?.idMPI ? ` · idMPI ${esc(st.paziente.idMPI)}` : ""} · identità confermata dal <b>${esc(this.storicoVia || "nome")}</b>. ${esc(st.periodo || "")} · dalla pagina del portale, senza chiedere niente al server.</div>
         </div>`;
     }
 
@@ -2734,13 +2760,31 @@
     // is shown ONLY if it belongs to the patient on screen: everywhere else
     // in this program the identity is checked before the data is used, and a
     // table of values is the last place to make an exception.
+    // l'impronta del codice fiscale di QUESTO episodio, presa dai prelievi
+    // che il pannello ha già letto: nessuna richiesta in più
+    cfEpisodio() {
+      for (const k of tabStore.keys(`ris.${this.episodeId || "x"}.`)) {
+        const v = tabStore.get(k, null);
+        if (v && v.cf) return v.cf;
+      }
+      return "";
+    }
+
     async caricaStorico() {
       if (this.pageType !== "patient" || (!hasExt() && !DEMO)) return;
       const r = DEMO ? { ok: true, dati: tabStore.get("storico.demo", null) } : await ask({ t: "getStorico" });
       const dati = r && r.ok ? r.dati : null;
       if (!dati || !dati.righe) { this.storico = null; this.storicoAltri = ""; return; }
       const prima = (this.storico?.letto || 0) + "|" + this.storicoAltri;
-      if (combaciaNome((document.title || "").trim(), dati.paziente)) { this.storico = dati; this.storicoAltri = ""; }
+      // il codice fiscale, quando c'è su entrambi i lati, è l'unica identità
+      // che uno scambio fra cognome e nome non può ingannare
+      const titolo = (document.title || "").trim();
+      const mio = this.cfEpisodio(), suo = dati.cf || "";
+      const combacia = mio && suo
+        ? (mio === suo && nomiCompatibili(titolo, dati.paziente))
+        : combaciaNome(titolo, dati.paziente);
+      this.storicoVia = mio && suo ? "codice fiscale" : "nome";
+      if (combacia) { this.storico = dati; this.storicoAltri = ""; }
       else {
         // refusing is right, but refusing in silence is not: the doctor read
         // that table a minute ago and must be told why it is not here
@@ -3050,7 +3094,8 @@
         try {
           const { doc } = await fetchDoc(e.url, {});
           const { rows, scartate } = parseRisultati(doc);
-          tabStore.set(key, { ts: Date.now(), rows, scartate, meta: risMeta(e) });
+          const cf = cfImpronta(doc);
+          tabStore.set(key, { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
           this.segnaVisto(id, rows);     // first read is the baseline
         } catch (err) {
           this.log(`${now()}  valori non letti: ${err?.head || err?.message || err}`);
@@ -3079,9 +3124,10 @@
         try {
           const { doc } = await fetchDoc(e.url, {});
           const { rows, scartate } = parseRisultati(doc);
+          const cf = cfImpronta(doc);
           if (rows.length) {
             const mai = !tabStore.get(this.vistoKey(e.id), null);
-            tabStore.set(key, { ts: Date.now(), rows, scartate, meta: risMeta(e) });
+            tabStore.set(key, { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
             if (mai) this.segnaVisto(e.id, rows);   // never seen before: this read is its baseline
             if (JSON.stringify(rows) !== prima) cambiati++;
           } else {
@@ -3107,12 +3153,16 @@
         try {
           const { doc } = await fetchDoc(e.url, {});
           const { rows, scartate } = parseRisultati(doc);
-          tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, scartate, meta: risMeta(e) });
+          const cf = cfImpronta(doc);
+          tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
           this.segnaVisto(e.id, rows);   // first read is the baseline
           this.render();
         } catch { /* stays without preview; opening it will retry */ }
         await sleep(PACE_MS).catch(() => {});
       }
+      // i prelievi portano l'impronta del codice fiscale: appena c'è, la
+      // provenienza dello storico va riesaminata con quella, non col nome
+      if (todo.length) this.caricaStorico();
     }
 
     async copyValori() {
@@ -3140,8 +3190,9 @@
       try {
         const { doc } = await fetchDoc(e.url, {});
         const { rows, scartate } = parseRisultati(doc);
+        const cf = cfImpronta(doc);
         // a reported draw no longer answers: keep what we already had
-        if (rows.length) tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, scartate, meta: risMeta(e) });
+        if (rows.length) tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
         else this.log(`${now()}  la finestra Risultati non risponde più: tengo i valori già letti`);
       } catch (err) { this.log(`${now()}  valori non letti (tengo i precedenti): ${err?.head || err?.message || err}`); }
       this.risBusy = null;
