@@ -77,6 +77,36 @@ check(/dal 01\/09\/2026 al 02\/09\/2026/.test(dati.periodo), `e col periodo most
 const rotta = await leggi(paginaStorico({ disallinea: true }));
 check(rotta.dati === null, "se le due metà non combaciano non legge NIENTE, invece di sbagliare esame");
 
+// ---- due letture della stessa tabella si sommano, non si sostituiscono ----
+// (la pagina disegna solo le colonne che stanno nello schermo: scorrendole il
+// medico ne fa comparire altre, e quelle già lette non devono sparire)
+const due = (a, b) => page.evaluate(([s, ha, hb]) => {
+  const P = (h) => new DOMParser().parseFromString(h, "text/html");
+  // eslint-disable-next-line no-new-func
+  const u = new Function("A", "B", s + "\nreturn unisciStorico(leggiStorico(A), leggiStorico(B));")(P(ha), P(hb));
+  const riga = (nome) => { const x = u.righe.find((y) => y.nome === nome); return x ? x.valori.map((v) => v.v || "-").join("|") : "(assente)"; };
+  return { date: u.date.map((d) => d.label), hb: riga("Emoglobina"), na: riga("S-Sodio") };
+}, [src, a, b]);
+
+const primi = paginaStorico({ date: ["01/09/2026 08:12", "01/09/2026 14:40"],
+  esami: [["EMOCROMO", "Emoglobina", "1201", "HB", ["13.2", "11.8"], [0, -1]],
+          ["SODIO", "S-Sodio", "1570", "NA", ["141", "138"], [0, 0]]] });
+const dopo = paginaStorico({ date: ["02/09/2026 07:05", "03/09/2026 06:30"],
+  esami: [["EMOCROMO", "Emoglobina", "1201", "HB", ["10.4", "9.1"], [-1, -1]],
+          ["SODIO", "S-Sodio", "1570", "NA", ["129", "133"], [-1, -1]]] });
+const uniti = await due(primi, dopo);
+check(uniti.date.length === 4, `scorrendo le colonne i prelievi si sommano (got ${uniti.date.length})`);
+check(uniti.hb === "13.2|11.8|10.4|9.1", `in ordine di tempo, ognuno nella sua colonna (got ${uniti.hb})`);
+
+// due prelievi nello STESSO minuto (POC e laboratorio centrale insieme): sono
+// due colonne diverse, e un valore non deve mai finire nell'altra
+const gemelli = paginaStorico({ date: ["01/09/2026 08:12", "01/09/2026 08:12"],
+  esami: [["EMOCROMO", "Emoglobina", "1201", "HB", ["13.2", ""], [0, 0]],
+          ["EGA", "S-Sodio", "1570", "NA", ["", "141"], [0, 0]]] });
+const g = await due(gemelli, gemelli);
+check(g.hb === "13.2|-" && g.na === "-|141",
+  `due prelievi nello stesso minuto restano due colonne (got hb=${g.hb} na=${g.na})`);
+
 // a page that is not that page
 const altra = await leggi("<html><body><table><tr><td>ciao</td></tr></table></body></html>");
 check(altra.haStorico === false && altra.dati === null, "su una pagina qualsiasi non inventa una tabella");

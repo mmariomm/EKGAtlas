@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.9.0";
+  const VERSION = "3.9.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -358,10 +358,14 @@
     return { pre: "", resto: n };
   }
   function sigla(nome) {
-    const { pre, resto } = scomponi(nome);
+    const n = String(nome || "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    const { pre, resto } = scomponi(n);
     for (const [re, s] of SIGLE) if (re.test(resto)) return pre + s;
-    const w = resto.split(/[\s(,.]+/).filter(Boolean)[0] || resto;   // first word, never a paragraph
-    return pre + (w.length > 9 ? w.slice(0, 8) + "." : w);
+    // Dropping the prefix only pays off when what is left is a name we KNOW.
+    // Otherwise that letter was never a specimen: "S-100" is a protein, not
+    // serum 100, and "B-12" is a vitamin. Keep the name whole.
+    const w = n.split(/[\s(,]+/).filter(Boolean)[0] || n;   // first word, never a paragraph
+    return w.length > 9 ? w.slice(0, 8) + "." : w;
   }
   // An abbreviation this program has NOT been taught is a guess, and a guess
   // that looks like a known sigla is how a doctor reads the wrong analyte.
@@ -757,10 +761,18 @@
     // a value would land on the wrong exam. Then we read nothing at all.
     if (sx.rows.length !== dx.rows.length) return null;
 
-    const date = [];
+    // Two draws can carry the SAME date and time — a POC and the central lab
+    // drawn together is an ordinary morning here — so a column's identity is
+    // not its label: each gets an occurrence key, or merging two reads would
+    // pour one draw's values into the other's empty cells.
+    const date = [], visti = new Map();
     for (const th of dx.rows[0] ? dx.rows[0].cells : []) {
       const m = DATA_ORA.exec((th.textContent || "").replace(/\s+/g, " "));
-      date.push(m ? { data: m[1], ora: m[2] || "", label: m[1] + (m[2] ? " " + m[2] : "") } : null);
+      if (!m) { date.push(null); continue; }
+      const label = m[1] + (m[2] ? " " + m[2] : "");
+      const n = (visti.get(label) || 0) + 1;
+      visti.set(label, n);
+      date.push({ data: m[1], ora: m[2] || "", label, chiave: label + "#" + n });
     }
     if (!date.some(Boolean)) return null;
 
@@ -815,10 +827,13 @@
   // period ADDS draws instead of replacing them.
   function unisciStorico(vecchio, nuovo) {
     if (!vecchio || !nuovo) return nuovo || vecchio || null;
-    if (chiavePaziente(vecchio.paziente) !== chiavePaziente(nuovo.paziente)) return nuovo;  // another patient: start over
+    // another patient: start over. An identity we could not read counts as
+    // another patient too — two unnamed tables must never be merged into one.
+    const chi = chiavePaziente(nuovo.paziente);
+    if (!chi || chiavePaziente(vecchio.paziente) !== chi) return nuovo;
     const date = [...vecchio.date];
-    for (const d of nuovo.date) if (!date.some((x) => x.label === d.label)) date.push(d);
-    date.sort((a, b) => ordData(a.label) - ordData(b.label));
+    for (const d of nuovo.date) if (!date.some((x) => chiaveCol(x) === chiaveCol(d))) date.push(d);
+    date.sort((a, b) => ordData(a.label) - ordData(b.label));   // stable: same minute keeps its order
     const perEsame = new Map();
     const versa = (dati) => {
       for (const r of dati.righe) {
@@ -826,17 +841,18 @@
         // alone is not an identity, the ordered exam is part of it
         const k = (r.esame || "") + "|" + r.nome + "|" + (r.mnem || "");
         const cur = perEsame.get(k) || { nome: r.nome, esame: r.esame, codice: r.codice, mnem: r.mnem, per: new Map() };
-        r.valori.forEach((v, i) => { if (v.v && dati.date[i]) cur.per.set(dati.date[i].label, v); });
+        r.valori.forEach((v, i) => { if (v.v && dati.date[i]) cur.per.set(chiaveCol(dati.date[i]), v); });
         perEsame.set(k, cur);
       }
     };
     versa(vecchio); versa(nuovo);
     const righe = [...perEsame.values()].map((e) => ({
       nome: e.nome, esame: e.esame, codice: e.codice, mnem: e.mnem,
-      valori: date.map((d) => e.per.get(d.label) || { v: "", stato: 0 }),
+      valori: date.map((d) => e.per.get(chiaveCol(d)) || { v: "", stato: 0 }),
     }));
     return { paziente: nuovo.paziente, periodo: nuovo.periodo, date, righe, letto: Date.now() };
   }
+  const chiaveCol = (d) => (d && (d.chiave || d.label)) || "";
   const ordData = (label) => {
     const m = /(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/.exec(label || "");
     return m ? Date.UTC(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)) : 0;
@@ -1821,7 +1837,7 @@
     .dedit:focus { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     /* a name we were never taught: shown in full, and underlined so it can
        never be mistaken for one of the curated sigle */
-    .rval .rvn.grezza, .sttab th.stn.grezza { text-decoration: underline dotted #C08A2E; text-underline-offset: 2px; }
+    .rval .rvn.grezza, .sttab th.stn.grezza, .eprev .pn.grezza { text-decoration: underline dotted #C08A2E; text-underline-offset: 2px; }
     .avvnomi { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #7a4b03;
                background: #FFF7E6; border: 1px solid #E5C588; border-radius: 8px; padding: 5px 9px; margin-bottom: 6px; }
     .avvnomi .avvi { flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%; background: #E5C588;
@@ -2572,7 +2588,7 @@
                   const n = nov.get(k);
                   const tip = [n === "nuovo" ? "nuovo" : n === "cambiato" ? "aggiornato" : "",
                                d ? `prima ${d.prevRaw} (${d.pct > 0 ? "+" : ""}${d.pct}%)` : ""].filter(Boolean).join(" · ");
-                  return `<span class="pit${n === "nuovo" ? " nuovo" : ""}"><span class="pn">${esc(sigla(v.nome))}</span> <span class="pv${oo ? " bad" : ""}${n === "cambiato" ? " agg" : ""}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>${n ? `<span class="vhide"> ${n === "nuovo" ? "nuovo" : "aggiornato"}</span>` : ""}${d ? `<span class="pd">${d.dir}</span>` : ""}</span>`;
+                  return `<span class="pit${n === "nuovo" ? " nuovo" : ""}"><span class="pn${siglaCurata(v.nome) ? "" : " grezza"}">${esc(sigla(v.nome))}</span> <span class="pv${oo ? " bad" : ""}${n === "cambiato" ? " agg" : ""}"${tip ? ` title="${esc(tip)}"` : ""}>${esc(v.valore)}${oo ? (oo < 0 ? "↓" : "↑") : ""}</span>${n ? `<span class="vhide"> ${n === "nuovo" ? "nuovo" : "aggiornato"}</span>` : ""}${d ? `<span class="pd">${d.dir}</span>` : ""}</span>`;
                 }).join(" · ")}</button>`
           : "";
         return `<div class="egroup">
@@ -2670,8 +2686,11 @@
       const prima = (this.storico?.letto || 0) + "|" + this.storicoAltri;
       if (qui && suo && qui === suo) { this.storico = dati; this.storicoAltri = ""; }
       else {
+        // refusing is right, but refusing in silence is not: the doctor read
+        // that table a minute ago and must be told why it is not here
         this.storico = null;
-        this.storicoAltri = [dati.paziente?.cognome, dati.paziente?.nome].filter(Boolean).join(" ");
+        this.storicoAltri = [dati.paziente?.cognome, dati.paziente?.nome].filter(Boolean).join(" ")
+          || "un paziente che la pagina non nomina";
       }
       // re-render only when something actually changed, and never over a
       // screen being typed into: coming back to this tab must not cost a caret

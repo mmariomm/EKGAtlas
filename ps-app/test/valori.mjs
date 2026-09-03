@@ -188,6 +188,13 @@ eq(sigla("U-Emoglobina"), "U·Hb", "le urine restano scritte nella sigla");
 check(sigla("U-Emoglobina") !== sigla("Emoglobina"), "e non diventano mai l'emoglobina del sangue");
 eq(sigla("Lcr-Glucosio"), "LCR·Glu", "come il liquor");
 eq(sigla("U-Corpi chetonici"), "U·Chet", "i corpi chetonici hanno una sigla vera");
+// la lettera davanti al trattino non è sempre il campione: togliere il prefisso
+// si fa SOLO se quel che resta è un nome che conosciamo davvero
+eq(sigla("S-100"), "S-100", "la proteina S-100 non diventa «100»");
+eq(sigla("B-12 (cobalamina)"), "B-12", "né la B-12 diventa «12»");
+eq(sigla("B-2 microglobulina"), "B-2", "né la beta-2 microglobulina «2»");
+eq(sigla("P-Anca"), "P-Anca", "e il p-ANCA resta p-ANCA");
+check(siglaCurata("S-100") === false, "e nessuno di questi viene spacciato per un nome noto");
 
 check(siglaCurata("Emoglobina") === true, "«Emoglobina» è un nome che conosciamo");
 check(siglaCurata("Ricerca sangue occulto") === false, "«Ricerca sangue occulto» no");
