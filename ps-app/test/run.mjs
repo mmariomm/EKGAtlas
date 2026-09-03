@@ -1327,6 +1327,12 @@ async function scenarioEo(browser) {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
+  // due righe: sopra quello che agisce sul paziente, sotto i modelli
+  check(scen, (await page.locator("#psassist-host .seg button").count()) === 2,
+    "la riga del paziente ha Richieste ed Esiti");
+  const modelli = await page.locator("#psassist-host .seg2 button").allInnerTexts();
+  check(scen, modelli.join("|") === "Dimissioni|Consensi|EO",
+    `i modelli stanno su un rigo loro (got ${modelli.join("|")})`);
   await $panel(page, '[data-seg="eo"]').click();
   await page.waitForSelector("#psassist-host [data-eocopy=\"base\"]", { timeout: 10000 });
 
@@ -1597,6 +1603,12 @@ async function scenarioNoPatientPage(browser) {
     "niente quesito, ricerca o bottoni di invio");
   check(scen, /pazienti/i.test(await $panel(page, ".bd").innerText()), "mostra invece l'elenco pazienti");
   check(scen, /pazienti/i.test(await $panel(page, ".hd .who").innerText()), "intestazione: elenco pazienti, non un nome");
+  // i modelli non appartengono a un paziente: la loro riga c'è anche qui,
+  // dove un paziente non c'è
+  check(scen, (await page.locator("#psassist-host .seg2 button").count()) === 3,
+    "la riga dei modelli c'è anche senza paziente");
+  check(scen, (await page.locator("#psassist-host .seg button").count()) === 0,
+    "quella del paziente no");
   await context.close();
 }
 

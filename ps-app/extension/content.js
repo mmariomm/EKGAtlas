@@ -2133,13 +2133,24 @@
             border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
     .rlab { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .seg { display: flex; margin: 10px 12px 0; border: 1px solid #C4D0DC; border-radius: 10px; overflow: hidden; background: #F4F8FB; }
-    .seg button { flex: 1 1 20%; border: 0; background: transparent; padding: 9px 6px; min-height: 36px;
+    .seg button { flex: 1 1 50%; border: 0; background: transparent; padding: 9px 8px; min-height: 36px;
                   font-size: 13px; font-weight: 700; color: #35506B; cursor: pointer;
                   min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .seg button + button { border-left: 1px solid #C4D0DC; }
     .seg button.on { background: #0B5CAD; color: #fff; }
     .seg button:not(.on):hover { background: #EAF2FA; color: #0B5CAD; }
     .seg .n { margin-left: 4px; font-weight: 800; opacity: .7; font-variant-numeric: tabular-nums; }
+    /* Seconda riga: Dimissioni, Consensi, EO non appartengono al paziente che
+       hai davanti — sono modelli. Stanno separati e pesano meno di proposito:
+       la riga sopra è quello che AGISCE su questo paziente. */
+    .seg2 { display: flex; align-items: center; gap: 5px; margin: 7px 12px 0; flex-wrap: wrap; }
+    .seg2lab { font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+               color: #A3B2C2; margin-right: 1px; cursor: default; }
+    .seg2 button { border: 1px solid #E3E8EF; background: #fff; border-radius: 999px; padding: 4px 11px;
+                   font: inherit; font-size: 11.5px; font-weight: 700; color: #5D6E7E; cursor: pointer; }
+    .seg2 button:hover { border-color: #9DBFDE; background: #F4F9FD; color: #0B5CAD; }
+    .seg2 button.on { border-color: #9DBFDE; background: #EAF2FA; color: #0B5CAD; }
+    .seg2 button:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     .rgo { flex: 0 0 auto; color: #8296A9; font-size: 12px; }
     .egroup, .rgroup { display: flex; flex-direction: column; }
     .pcard { border: 1px solid #E3E8EF; border-radius: 10px; padding: 9px 10px; margin-bottom: 7px; background: #fff; cursor: pointer; }
@@ -2793,6 +2804,10 @@
                 <div class="seg">
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
                   <button class="${this.view === "esiti" || this.view === "valori" || this.view === "referto" || this.view === "storico" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>
+                </div>` : ""}
+              ${!this.runState ? `
+                <div class="seg2">
+                  <span class="seg2lab" title="Non dipendono dal paziente: sono modelli tuoi, uguali per tutti">Modelli</span>
                   <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
                   <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi">Consensi</button>
                   <button class="${this.view === "eo" ? "on" : ""}" data-seg="eo" title="Esame obiettivo da copiare">EO</button>
@@ -2854,7 +2869,7 @@
       ].join("");
       return `
         <div class="sec">
-          <div class="lbl">Pazienti<button class="mini" id="vaieo" title="I modelli di esame obiettivo: non appartengono a un paziente">EO</button><button class="mini" id="vaidim" title="I fogli di dimissione: non appartengono a un paziente">Dimissioni</button>${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
+          <div class="lbl">Pazienti${others.length ? `<button class="mini" id="forget">svuota</button>` : ""}</div>
           ${cards || `<div class="hint">Nessun paziente ancora. Apri un paziente: resta qui per il turno.</div>`}
           ${others.length ? `<div class="hint">Aprire un altro paziente ne carica la pagina.</div>` : ""}
           ${archiviati.length ? `
@@ -4176,8 +4191,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       this.root.querySelectorAll("[data-scorda]").forEach((b) =>
         b.addEventListener("click", () => { scordaTempo(b.getAttribute("data-scorda")); this.render(); }));
       $("#texp")?.addEventListener("click", () => this.esportaTempi());
-      $("#vaidim")?.addEventListener("click", () => this.setView("dimissioni"));
-      $("#vaieo")?.addEventListener("click", () => this.setView("eo"));
       this.root.querySelectorAll("[data-cons]").forEach((b) => b.addEventListener("click", () => {
         const c = CONSENSI.find((x) => x.k === b.getAttribute("data-cons"));
         const url = c && urlConsenso(c);
