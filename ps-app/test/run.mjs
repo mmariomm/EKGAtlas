@@ -179,6 +179,30 @@ async function scenarioAutoConfirmMismatch(browser) {
   await context.close();
 }
 
+// La Conferma nativa invia la richiesta INTERA. Se l'avanzo di un tentativo
+// precedente sta sul carrello di un'ALTRA risorsa, questa pagina non lo mostra
+// nemmeno: l'auto-conferma deve guardare il carrello di ogni risorsa che il
+// run ha visitato, non solo quello che ha davanti.
+async function scenarioAutoConfirmAltraRisorsa(browser) {
+  const scen = "confirm-blocked-altra-risorsa";
+  const mock = createMock({ preloadCart: { code: "30", res: RES.POC } });   // avanzo su POC
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await $panel(page, "#q").fill("sepsi");
+  await $panel(page, '.opt[title*="TROPONINA"]').click();              // POC
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();         // URGENZE: si finisce qui
+  await $panel(page, "#goconfirm").click();
+  await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 25000 });
+  await page.waitForTimeout(3000);
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.richieste[rid].confirmed === false,
+    "un avanzo su un'altra risorsa impedisce l'auto-conferma");
+  const card = await $panel(page, ".card").innerText();
+  check(scen, /sospesa/i.test(card), "e lo dice");
+  check(scen, /POC/i.test(card), `nominando la risorsa dove sta l'avanzo (got: ${(/sospesa[^.]{0,110}/i.exec(card) || [""])[0]})`);
+  await context.close();
+}
+
 async function scenarioConfirmPostFails(browser) {
   const scen = "confirm-500";
   // the confirm POST dies on the server: nothing must print for that richiesta
@@ -1521,6 +1545,7 @@ const scenarios = [
   ["altro presidio: risorse e codici diversi", scenarioAltroPresidio],
   ["risorsa sconosciuta: stop diagnostico", scenarioPresidioSconosciuto],
   ["auto-confirm bloccata su carrello diverso", scenarioAutoConfirmMismatch],
+  ["auto-confirm bloccata da un avanzo su un'altra risorsa", scenarioAutoConfirmAltraRisorsa],
   ["conferma fallita sul server: niente stampa", scenarioConfirmPostFails],
   ["delayed cart visibility", scenarioLagVerify],
   ["lost add → hard stop", scenarioNeverVisible],

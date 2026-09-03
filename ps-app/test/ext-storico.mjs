@@ -79,9 +79,20 @@ const tab = await paziente.evaluate(() => {
     prima: [...r.querySelectorAll(".sttab tbody tr")[0].cells].map((c) => c.textContent.trim()).join("|"),
   };
 });
-check(tab.righe === 10 && tab.colonne === 3, `dieci analiti per tre prelievi (got ${tab.righe}×${tab.colonne})`);
-check(tab.rosse === 6, `i fuori range che la pagina aveva già marcato (got ${tab.rosse})`);
-check(tab.prima === "Hb|10.4↓|11.8↓|13.2", `il prelievo più recente per primo (got ${tab.prima})`);
+// dieci analiti dal portale + quelli letti dalla finestra Risultati del
+// gestionale, tutti nella stessa scheda, prelievo più recente per primo
+check(tab.righe >= 10 && tab.colonne === 4,
+  `la scheda unisce le due finestre (got ${tab.righe} analiti × ${tab.colonne} prelievi)`);
+check(tab.rosse >= 6, `i fuori range restano marcati (got ${tab.rosse})`);
+check(/^Hb\|10\.4↓\|11\.8↓\|13\.2\|/.test(tab.prima),
+  `il prelievo più recente per primo, e l'emoglobina è UNA riga sola (got ${tab.prima})`);
+// e un valore che il laboratorio non ha finito è marcato parziale
+const parz = await paziente.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  return { celle: r.querySelectorAll(".sttab td.parz").length,
+           nota: /ancora parziale/.test(r.textContent) };
+});
+check(parz.celle >= 1 && parz.nota, `i valori parziali sono marcati e spiegati (got ${parz.celle} celle)`);
 check(chiamatePortale === 1, "e nessuna richiesta in più al portale per mostrarla");
 
 // filtro

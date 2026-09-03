@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.11.0";
+  const VERSION = "3.12.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -449,8 +449,11 @@
           const hit = draws[j].rows.find((rr) => valKey(rr.nome) === k);
           if (!hit) continue;
           const prev = numVal(hit.valore);
-          if (isFinite(prev) && Math.abs(prev) > 1e-9 && !modificato(hit.valore)
-              && !(um(r.um) && um(hit.um) && um(r.um) !== um(hit.um))) {   // g/L vs g/dL is a 10× trap
+          // g/L contro g/dL è una trappola da 10×: le unità devono esserci
+          // ENTRAMBE e combaciare. Se una manca non si sa cosa si sta
+          // confrontando, e un ▲ inventato è peggio di nessun ▲.
+          const stessaUnita = um(r.um) === um(hit.um);
+          if (isFinite(prev) && Math.abs(prev) > 1e-9 && !modificato(hit.valore) && stessaUnita) {
             const pct = Math.round(((v - prev) / Math.abs(prev)) * 100);
             const sg = sigla(r.nome);
             // pH is logarithmic: percent is meaningless there, 0.05 units is not
@@ -466,6 +469,24 @@
   }
   const ordinaRighe = (rows, order) => [...rows].sort((a, b) =>
     (order.get(valKey(a.nome)) ?? 9e9) - (order.get(valKey(b.nome)) ?? 9e9));
+  // Quali righe entrano nell'anteprima corta: gli anomali e le novità prima
+  // di tutto. Con dodici posti e un emocromo da quindici righe, un potassio
+  // a 7.2 in fondo all'elenco del laboratorio non si vedrebbe mai.
+  function anteprimaRighe(rows, nov, quante) {
+    const peso = (v) => {
+      const fuori = outOfRange(v.valore, v.range) !== 0 ? 2 : 0;
+      const nuovo = nov && nov.get(valKey(v.nome)) ? 1 : 0;
+      return -(fuori + nuovo);
+    };
+    // Si SCEGLIE per importanza, si MOSTRA nell'ordine canonico: così il
+    // potassio a 7.2 entra nei dodici posti, e due prelievi restano
+    // confrontabili a colpo d'occhio perché elencano nello stesso ordine.
+    return [...rows].map((v, i) => [peso(v), i, v])
+      .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+      .slice(0, quante)
+      .sort((a, b) => a[1] - b[1])
+      .map((x) => x[2]);
+  }
 
   // First ~160 chars of visible page text, for the log when a page is unexpected.
   function snippet(doc) {
@@ -755,6 +776,31 @@
 
   // Get a PDF SAFELY, or throw ViewerError(url) so the caller opens it in a
   // tab. Same origin/timeout guards as fetchDoc.
+  // Un prelievo letto dalla finestra Risultati del gestionale, messo nella
+  // stessa forma della tabella del portale: una colonna (la sua data e ora) e
+  // una riga per analita. Così la scheda del paziente è una sola, alimentata
+  // da tutt'e due le finestre — comprese quelle ancora PARZIALI, che restano
+  // marcate come tali.
+  function prelievoComeTabella(meta, rows, cf) {
+    const m = DATA_ORA.exec(String(meta?.when || ""));
+    const label = m ? m[1] + (m[2] ? " " + m[2] : "") : String(meta?.when || "").trim();
+    if (!label || !rows || !rows.length) return null;
+    const date = [{ data: m ? m[1] : label, ora: m ? (m[2] || "") : "", label, chiave: label + "#1" }];
+    const righe = rows.filter((r) => r.nome && String(r.valore).trim()).map((r, i) => ({
+      nome: String(r.nome).replace(/\s+/g, " ").trim(),
+      esame: String(meta?.label || "").replace(/\s+/g, " ").trim(),
+      codice: "", mnem: "", pos: i,
+      valori: [{
+        v: String(r.valore).trim(), stato: outOfRange(r.valore, r.range),
+        um: String(r.um || "").trim(), range: String(r.range || "").trim(),
+        parziale: /parz/i.test(r.stato || ""),
+      }],
+    }));
+    if (!righe.length) return null;
+    return { paziente: { idMPI: "", cognome: "", nome: (document.title || "").trim() },
+             cf: cf || "", periodo: "", date, righe, scartate: [], letto: Date.now() };
+  }
+
   // ------------------------------------------------------- STORICO (portale clinico)
   // "Storico dati clinici" draws the multi-day table as TWO tables side by
   // side: a frozen left one with the exam names, a scrollable right one with
@@ -882,11 +928,14 @@
       for (const r of dati.righe) {
         // HB is both blood haemoglobin and the urine dipstick: the analyte
         // alone is not an identity, the ordered exam is part of it
-        // when the analyte cell is empty the name falls back to the ordered
-        // exam, and every row of that panel looks identical: only its position
-        // tells them apart, so it becomes part of the identity
+        // La chiave di una riga è l'ANALITA, la stessa identità che il
+        // programma usa già per dire «è lo stesso esame» fra due prelievi.
+        // Così l'emoglobina letta dalla finestra Risultati del gestionale e
+        // quella della tabella del portale finiscono nella stessa riga,
+        // invece di diventarne due. Quando l'analita non c'è (il nome ricade
+        // sulla prestazione) solo la posizione distingue le righe.
         const anonima = !r.mnem && r.nome === r.esame;
-        const k = (r.esame || "") + "|" + r.nome + "|" + (r.mnem || "") + (anonima ? "|#" + (r.pos ?? 0) : "");
+        const k = valKey(r.nome) + (anonima ? "|#" + (r.pos ?? 0) : "");
         const cur = perEsame.get(k) || { nome: r.nome, esame: r.esame, codice: r.codice, mnem: r.mnem, pos: r.pos, per: new Map() };
         r.valori.forEach((v, i) => { if (v.v && dati.date[i]) cur.per.set(chiaveCol(dati.date[i]), v); });
         perEsame.set(k, cur);
@@ -939,6 +988,20 @@
     const b = normNome([p?.cognome, p?.nome].filter(Boolean).join(" ")).split(" ").filter((x) => x.length >= 3);
     if (!a.length || !b.length) return true;          // uno dei due non è leggibile
     return a.some((x) => b.includes(x));
+  }
+  // Fra le schede in archivio, quella di questo paziente. DUE PASSATE, non
+  // una decisione per candidato: se esiste una scheda col codice fiscale di
+  // questo paziente è QUELLA, sempre. Si ripiega sul nome solo se nessuna
+  // scheda porta un codice fiscale — altrimenti un omonimo senza codice,
+  // incontrato per primo, vincerebbe su una scheda verificata col codice.
+  function scegliScheda(indice, mio, titolo) {
+    const v = indice || [];
+    if (mio) {
+      const perCf = v.find((x) => x.cf && x.cf === mio && nomiCompatibili(titolo, x.paziente));
+      if (perCf) return perCf;
+      if (v.some((x) => x.cf)) return null;   // qui il codice fiscale decide, e non combacia
+    }
+    return v.find((x) => combaciaNome(titolo, x.paziente)) || null;
   }
   function combaciaNome(titolo, p) {
     const t = normNome(titolo);
@@ -1316,6 +1379,30 @@
   const urlConsenso = (c) => (DEMO ? "/consensi/" + c.file
     : (hasExt() ? chrome.runtime.getURL("consensi/" + c.file) : ""));
 
+  // ------------------------------------------------------------------ NOTA
+  // Una nota per paziente, sotto il suo nome. Si scrive e basta: non c'è un
+  // tasto Salva, si salva mentre scrivi. Sta nel browser di questo computer,
+  // legata al paziente (codice fiscale quando c'è, altrimenti il nome), e
+  // scade dopo 24 ore come i dati clinici letti.
+  const noteKey = "note.v1";
+  const NOTA_TTL = 24 * 3600e3;
+  function noteTutte() {
+    const n = store.get(noteKey, {});
+    const ora = Date.now();
+    let pulito = false;
+    for (const k of Object.keys(n)) if (ora - (n[k]?.ts || 0) > NOTA_TTL) { delete n[k]; pulito = true; }
+    if (pulito) store.set(noteKey, n);
+    return n;
+  }
+  const leggiNota = (chiave) => (chiave ? (noteTutte()[chiave]?.t || "") : "");
+  function scriviNota(chiave, testo) {
+    if (!chiave) return false;
+    const n = noteTutte();
+    if (String(testo).trim()) n[chiave] = { t: String(testo).slice(0, 4000), ts: Date.now() };
+    else delete n[chiave];
+    return store.set(noteKey, n);
+  }
+
   const dimKey = "dimissioni.v1";
   // A short fingerprint of the text a doctor's version was forked from. It is
   // what lets a later release SAY that the original changed (a dose, a
@@ -1358,17 +1445,37 @@
   }
 
   function learnedCatalog() { return store.get("catalog.v1", {}); }
+  // Il catalogo si impara dalle pagine vere, MA un nome già noto non viene
+  // mai sovrascritto. Il motivo è il controllo anti-esame-sbagliato: quello
+  // confronta il nome della riga viva col nome con cui l'esame è stato
+  // scelto. Se la stessa pagina potesse riscrivere il catalogo un istante
+  // prima del click, il confronto sarebbe fra un valore e se stesso — e non
+  // potrebbe più fallire. Un codice che oggi porta un altro nome è proprio
+  // l'anomalia che deve fermare tutto: la si registra, non la si assorbe.
   function learnFrom(model) {
     if (!model.res || !model.exams.length) return;
     const cat = learnedCatalog();
     const entry = cat[model.res] || { label: "", items: {} };
     const opt = model.resOptions.find((o) => o.value === model.res);
     if (opt) entry.label = opt.label;
-    for (const e of model.exams) entry.items[e.code] = e.label;
+    const incisi = (EMBEDDED_CATALOG[model.res] || {}).items || {};
+    entry.rinominati = entry.rinominati || {};
+    for (const e of model.exams) {
+      const noto = incisi[e.code] || entry.items[e.code];
+      if (!noto) { entry.items[e.code] = e.label; delete entry.rinominati[e.code]; continue; }
+      if (normEsame(noto) !== normEsame(e.label)) entry.rinominati[e.code] = e.label;
+      else delete entry.rinominati[e.code];
+    }
     entry.ts = Date.now();
     cat[model.res] = entry;
     store.set("catalog.v1", cat);
+    return entry.rinominati;
   }
+  // i codici che su questa pagina portano un nome diverso da quello noto
+  const rinominatiQui = (model) => {
+    const r = (learnedCatalog()[model.res] || {}).rinominati || {};
+    return (model.exams || []).filter((e) => r[e.code]).map((e) => `${e.code}: «${r[e.code]}»`);
+  };
   // A resource id is site-local: "LABORATORIO ANALISI POC" is 00660001P in one
   // presidio and something else in another, and the same is true of radiology.
   // What travels is the NAME, so that is what we match on — the site suffix
@@ -1648,6 +1755,12 @@
         done(st, "nel carrello ✓");
         log(`aggiunto ✓ ${nm}`);
         state.added.push(it);
+        // Il carrello di QUESTA risorsa come lo vediamo adesso. La Conferma
+        // nativa invia la richiesta INTERA, comprese le righe che stanno sul
+        // carrello di un'altra risorsa e che questa pagina non mostra: senza
+        // registrarle qui, l'auto-conferma non potrebbe nemmeno vederle.
+        state.carrelli = state.carrelli || {};
+        state.carrelli[model.res] = model.exams.filter((e) => e.isDel).map((e) => String(e.code));
       }
 
       // ---- 3. hand the visible tab over for review / native confirm -----
@@ -1660,6 +1773,7 @@
       if (!plan.hold) tabStore.set("receipt.v1", {
         richiestaId: model.richiestaId, episodeId: plan.episodeId, ts: Date.now(),
         quesitoKept: state.quesitoKept || null,
+        carrelli: state.carrelli || {},
         items: state.added.map((i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label })),
       });
       // Radiology is deliberately excluded from auto-confirm (README, collaudo
@@ -1950,6 +2064,15 @@
                      font-weight: 700; cursor: pointer; text-decoration: underline; }
     .avvlista { white-space: pre-wrap; font-size: 11px; line-height: 1.45; color: #5B6B7A;
                 background: #FFFDF7; border: 1px solid #EEDFC0; border-radius: 8px; padding: 6px 9px; margin-bottom: 6px; }
+    .notaw { position: relative; padding: 6px 10px 0; }
+    .nota { display: block; width: 100%; resize: none; overflow: hidden;
+            border: 1px solid transparent; border-radius: 8px; background: #F8FBFE;
+            padding: 6px 8px; font: 12.5px/1.45 inherit; color: #16232E; }
+    .nota::placeholder { color: #9DB0C2; }
+    .nota:hover { border-color: #E3E8EF; }
+    .nota:focus { outline: 0; border-color: #9DBFDE; background: #fff; }
+    .notaok { position: absolute; right: 16px; bottom: 4px; font-size: 10px; color: #177245; }
+    .notaok.ko { color: #B3261E; }
     .crow { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; cursor: pointer;
             border: 1px solid #E3E8EF; border-radius: 9px; background: #fff; padding: 10px 11px; font: inherit; }
     .crow:hover { border-color: #9DBFDE; background: #F4F9FD; }
@@ -1973,6 +2096,7 @@
     .sttab thead th.stn { background: #F8FBFE; z-index: 2; }
     .sttab td { text-align: right; color: #35506B; font-variant-numeric: tabular-nums; }
     .sttab td.fuori { color: #B3261E; font-weight: 800; }
+    .sttab td.parz i { font-style: normal; color: #A2600A; font-weight: 700; }
     .sttab tbody tr:hover td, .sttab tbody tr:hover th.stn { background: #F4F9FD; }
     .reftxt { font-size: 12.5px; line-height: 1.5; color: #16232E; }
     .reftxt .rt { padding: 1px 0; }
@@ -2074,8 +2198,10 @@
       const titleEl = document.querySelector("title");
       if (titleEl) {
         this._titleObs = new MutationObserver(() => {
-          // never rebuild a screen the doctor is typing into
-          if (this.runState !== "running" && this.view !== "dimtesto" && this.view !== "dimimport") this.render();
+          // mai ricostruire una schermata in cui si sta scrivendo
+          const scrive = this.root.activeElement && this.root.activeElement.id === "nota";
+          if (this.runState !== "running" && !scrive
+              && this.view !== "dimtesto" && this.view !== "dimimport") this.render();
         });
         this._titleObs.observe(titleEl, { childList: true, characterData: true, subtree: true });
       }
@@ -2467,6 +2593,7 @@
                 <button class="iconbtn" id="collapse" title="Riduci">—</button>
               </div>
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
+              ${!this.runState && this.pageType === "patient" && !inHome ? this.notaHtmlPaziente() : ""}
               ${!this.runState && this.pageType === "patient" && this.view !== "home" ? `
                 <div class="seg">
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
@@ -2694,8 +2821,12 @@
         const ambP = vals && vals.rows ? sigleAmbigue(vals.rows) : new Set();
         const preview = vals && vals.rows && vals.rows.length
           ? `<button class="eprev${nov.size ? " nuovi" : ""}" data-vals="${esc(e.id)}" title="Vedi tutti i valori">${
-              ordinaRighe(vals.rows, cmp.order)
-                .slice(0, nov.size ? 40 : 12)
+              // L'anteprima è di due righe: quello che entra deve essere quello
+              // che conta. Prima i fuori range e le novità, poi il resto —
+              // nell'ordine del pannello dentro ogni gruppo, così le colonne
+              // restano confrontabili. (Aperto il prelievo, l'ordine è quello
+              // canonico: qui si scegli COSA mostrare, non come leggerlo.)
+              anteprimaRighe(ordinaRighe(vals.rows, cmp.order), nov, nov.size ? 40 : 12)
                 .map((v) => {
                   const oo = outOfRange(v.valore, v.range);
                   const k = valKey(v.nome);
@@ -2755,7 +2886,10 @@
       const inatteso = (r) => !siglaCurata(r.nome) || ambS.has(sigla(r.nome));
       const celle = (r) => col.map((c) => {
         const v = r.valori[c.i] || { v: "", stato: 0 };
-        return `<td class="${v.stato ? "fuori" : ""}">${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}</td>`;
+        const tip = [v.um, v.range].filter(Boolean).join(" · ");
+        return `<td class="${v.stato ? "fuori" : ""}${v.parziale ? " parz" : ""}"${
+          tip ? ` title="${esc(tip)}${v.parziale ? " · parziale" : ""}"` : v.parziale ? ` title="parziale"` : ""
+        }>${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}${v.parziale ? "<i>*</i>" : ""}</td>`;
       }).join("");
       return `
         <div class="sec">
@@ -2770,6 +2904,7 @@
               <tbody>${righe.map((r) => `<tr><th class="stn${inatteso(r) ? " grezza" : ""}" title="${esc(r.nome)}${r.esame && r.esame !== r.nome ? " — " + esc(r.esame) : ""}${r.mnem ? " · " + esc(r.mnem) : ""}">${esc(inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome))}</th>${celle(r)}</tr>`).join("")}</tbody>
             </table>
           </div>
+          ${st.righe.some((r) => r.valori.some((v) => v.parziale)) ? `<div class="hint">* valore ancora <b>parziale</b>: il laboratorio non ha finito.</div>` : ""}
           <div class="hint">Letto per <b>${esc([st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") || "—")}</b>${st.paziente?.idMPI ? ` · idMPI ${esc(st.paziente.idMPI)}` : ""} · identità confermata dal <b>${esc(this.storicoVia || "nome")}</b>. ${esc(st.periodo || "")} · dalla pagina del portale, senza chiedere niente al server.</div>
         </div>`;
     }
@@ -2801,10 +2936,8 @@
       if (!indice.length) { this.storicoAltri = ""; return null; }
       const titolo = (document.title || "").trim();
       const mio = this.cfEpisodio();
-      const scelta = indice.find((v) => (mio && v.cf)
-        ? (mio === v.cf && nomiCompatibili(titolo, v.paziente))
-        : combaciaNome(titolo, v.paziente));
-      this.storicoVia = mio && scelta && scelta.cf ? "codice fiscale" : "nome";
+      const scelta = scegliScheda(indice, mio, titolo);
+      this.storicoVia = scelta && scelta.cf && mio ? "codice fiscale" : "nome";
       if (!scelta) {
         const altri = [...new Set(indice.map((v) => [v.paziente?.cognome, v.paziente?.nome].filter(Boolean).join(" "))
           .filter(Boolean))];
@@ -2815,6 +2948,41 @@
       }
       const pieno = await ask({ t: "getStorico", chiave: scelta.chiave });
       return pieno && pieno.ok ? pieno.dati : null;
+    }
+
+    // Ogni prelievo letto entra anche nella scheda clinica del paziente, così
+    // quello che il pannello sa di lui sta in un posto solo: la tabella del
+    // portale e le finestre Risultati del gestionale, parziali comprese.
+    async archiviaPrelievo(e, rows, cf) {
+      if (!hasExt() || DEMO || !rows || !rows.length) return;
+      const t = prelievoComeTabella(risMeta(e), rows, cf);
+      if (!t) return;
+      const chiave = chiaveArchivio(t);
+      if (!chiave || chiave === "nome:") return;
+      const gia = await ask({ t: "getStorico", chiave });
+      const unito = unisciStorico(gia && gia.ok ? gia.dati : null, t);
+      await ask({ t: "putStorico", chiave, dati: unito });
+    }
+
+    // Chi è questo paziente, per la nota: il codice fiscale se i prelievi
+    // ce l'hanno detto, altrimenti il nome della pagina. Cambia da nome a
+    // codice fiscale appena i valori arrivano — e la nota lo segue.
+    chiaveNota() {
+      const cf = this.cfEpisodio();
+      if (cf) return "cf:" + cf;
+      const n = normNome((document.title || "").trim());
+      return n ? "nome:" + n : "";
+    }
+    notaHtmlPaziente() {
+      const k = this.chiaveNota();
+      if (!k) return "";
+      const t = leggiNota(k);
+      return `<div class="notaw">
+        <textarea class="nota" id="nota" rows="2" spellcheck="false"
+          placeholder="Nota su questo paziente — si salva mentre scrivi"
+          aria-label="Nota su questo paziente">${esc(t)}</textarea>
+        <span class="notaok" id="notaok" aria-live="polite"></span>
+      </div>`;
     }
 
     // l'impronta del codice fiscale di QUESTO episodio, presa dai prelievi
@@ -2852,6 +3020,7 @@
       // cui si sta scrivendo: tornare su questa scheda non deve costare il cursore
       if ((this.storico?.letto || 0) + "|" + this.storicoAltri === prima) return;
       if (this.view === "dimtesto" || this.view === "dimimport") return;
+      if (this.root.activeElement && this.root.activeElement.id === "nota") return;
       this.render();
     }
 
@@ -3170,6 +3339,7 @@
           const { rows, scartate } = parseRisultati(doc);
           const cf = cfImpronta(doc);
           tabStore.set(key, { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
+          this.archiviaPrelievo(e, rows, cf);
           this.segnaVisto(id, rows);     // first read is the baseline
         } catch (err) {
           this.log(`${now()}  valori non letti: ${err?.head || err?.message || err}`);
@@ -3202,6 +3372,7 @@
           if (rows.length) {
             const mai = !tabStore.get(this.vistoKey(e.id), null);
             tabStore.set(key, { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
+            this.archiviaPrelievo(e, rows, cf);
             if (mai) this.segnaVisto(e.id, rows);   // never seen before: this read is its baseline
             if (JSON.stringify(rows) !== prima) cambiati++;
           } else {
@@ -3229,6 +3400,7 @@
           const { rows, scartate } = parseRisultati(doc);
           const cf = cfImpronta(doc);
           tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
+          this.archiviaPrelievo(e, rows, cf);
           this.segnaVisto(e.id, rows);   // first read is the baseline
           this.render();
         } catch { /* stays without preview; opening it will retry */ }
@@ -3266,7 +3438,10 @@
         const { rows, scartate } = parseRisultati(doc);
         const cf = cfImpronta(doc);
         // a reported draw no longer answers: keep what we already had
-        if (rows.length) tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
+        if (rows.length) {
+          tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
+          this.archiviaPrelievo(e, rows, cf);
+        }
         else this.log(`${now()}  la finestra Risultati non risponde più: tengo i valori già letti`);
       } catch (err) { this.log(`${now()}  valori non letti (tengo i precedenti): ${err?.head || err?.message || err}`); }
       this.risBusy = null;
@@ -3520,6 +3695,30 @@
           setTimeout(() => { if (b.isConnected) b.textContent = "⬇ JSON"; }, 2500);
         }
       });
+      const nota = this.root.querySelector("#nota");
+      if (nota) {
+        const cresci = () => {
+          nota.style.height = "auto";
+          nota.style.height = Math.min(nota.scrollHeight, 160) + "px";
+        };
+        cresci();
+        let attesa = null;
+        nota.addEventListener("input", () => {
+          cresci();
+          clearTimeout(attesa);
+          attesa = setTimeout(() => {
+            const ok = scriviNota(this.chiaveNota(), nota.value);
+            const spia = this.root.querySelector("#notaok");
+            if (spia) {
+              spia.textContent = ok ? "salvata" : "NON salvata";
+              spia.classList.toggle("ko", !ok);
+              setTimeout(() => { if (spia.isConnected) spia.textContent = ""; }, 1400);
+            }
+          }, 500);
+        });
+        // uscire dal campo salva subito: non si perde una riga per un clic
+        nota.addEventListener("blur", () => { clearTimeout(attesa); scriviNota(this.chiaveNota(), nota.value); });
+      }
       $("#vaidim")?.addEventListener("click", () => this.setView("dimissioni"));
       this.root.querySelectorAll("[data-cons]").forEach((b) => b.addEventListener("click", () => {
         const c = CONSENSI.find((x) => x.k === b.getAttribute("data-cons"));
@@ -3719,13 +3918,34 @@
     // click would confirm more than the banner says — refuse, human decides.
     const receipt = tabStore.get("receipt.v1", null);
     if (receipt && receipt.richiestaId === model.richiestaId && Array.isArray(receipt.items)) {
-      const attesi = new Set(receipt.items.filter((i) => i.res === model.res).map((i) => String(i.code)));
-      const visti = inCart.map((e) => String(e.code));
-      const estranei = visti.filter((c) => !attesi.has(c));
-      if (estranei.length || visti.length !== attesi.size) {
+      // Questa pagina mostra il carrello di UNA risorsa sola, ma la Conferma
+      // invia la richiesta intera. Quindi si controlla risorsa per risorsa:
+      // quella davanti agli occhi dal vivo, le altre col carrello che il run
+      // ha visto quando le ha visitate. Una riga che non abbiamo aggiunto,
+      // su qualunque risorsa, sospende: decide una persona.
+      const perRes = new Map();
+      for (const i of receipt.items) {
+        const r = String(i.res);
+        perRes.set(r, (perRes.get(r) || new Set()).add(String(i.code)));
+      }
+      const carrelli = receipt.carrelli || {};
+      const guai = [];
+      let vistiQui = 0;
+      for (const [res, attesi] of perRes) {
+        const visti = res === model.res
+          ? inCart.map((e) => String(e.code))
+          : (Array.isArray(carrelli[res]) ? carrelli[res].map(String) : null);
+        if (res === model.res) vistiQui = visti.length;
+        if (!visti) { guai.push(`${RES_SHORT[res] || res}: carrello non visto`); continue; }
+        const estranei = visti.filter((c) => !attesi.has(c));
+        if (estranei.length || visti.length !== attesi.size) {
+          guai.push(`${RES_SHORT[res] || res}: ${visti.length} nel carrello, ${attesi.size} aggiunti${estranei.length ? ` (estranei ${estranei.join(", ")})` : ""}`);
+        }
+      }
+      if (guai.length) {
         if (panel) {
-          panel.message = `Conferma automatica sospesa: il carrello ha ${visti.length} esami su questa risorsa, la richiesta ne ha aggiunti ${attesi.size}. Controlla il carrello e premi Conferma sulla pagina.`;
-          panel.log(`${now()}  auto-conferma sospesa: carrello ${visti.length} ≠ attesi ${attesi.size}${estranei.length ? ` (estranei: ${estranei.join(", ")})` : ""}`);
+          panel.message = `Conferma automatica sospesa: ${guai.join("; ")}. La Conferma invia la richiesta intera — controlla il carrello e premila tu sulla pagina.`;
+          panel.log(`${now()}  auto-conferma sospesa (${vistiQui} esami su questa risorsa): ${guai.join("; ")}`);
           panel.render();
         }
         return;
@@ -3874,7 +4094,9 @@
     for (const m of content.matchAll(re)) {
       const t = m[0];
       if (t === "BT") { x = 0; y = 0; continue; }
-      if (t.startsWith("/F")) { cm = fonts.get(t.slice(1).split(/\s/)[0]) || cm; continue; }
+      // cambiare font azzera la mappa: un font senza ToUnicode va letto
+      // grezzo, non con la tabella di un altro font (i caratteri cambierebbero)
+      if (t.startsWith("/F")) { const nf = t.slice(1).split(/\s/)[0]; cm = fonts.has(nf) ? fonts.get(nf) : null; continue; }
       if (/Tm$/.test(t)) { const n = t.trim().split(/\s+/); x = parseFloat(n[4]); y = parseFloat(n[5]); continue; }
       if (/T[dD]$/.test(t)) { const n = t.trim().split(/\s+/); x += parseFloat(n[0]); y += parseFloat(n[1]); continue; }
       if (/Tj$/.test(t)) {
@@ -4203,6 +4425,8 @@
     if (pageType === "exam") {
       const model = examModel(document, location.href);
       learnFrom(model);
+      const rin = rinominatiQui(model);
+      if (rin.length) panel.log(`${now()}  ATTENZIONE: su questa pagina ${rin.length} codici portano un nome diverso da quello noto — ${rin.slice(0, 4).join(" · ")}`);
       panel.render(); // pick up anything just learned
       armPrintOnConfirm(model, findEpisodeId(document, location.href)); // native Conferma → print handoff
       maybeAutoConfirm(panel);

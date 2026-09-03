@@ -31,7 +31,13 @@ const grab = (name) => {
   }
   return core.slice(i, end);
 };
-const src = grab("impronta") + "\n" + core.slice(da, a);
+// il lettore usa impronta() e valKey(), definite altrove: le portiamo con noi
+const linea = (frammento) => {
+  const i = core.indexOf(frammento);
+  if (i < 0) throw new Error("non trovato: " + frammento);
+  return core.slice(i, core.indexOf("\n", i));
+};
+const src = grab("impronta") + "\n" + linea("const valKey =") + "\n" + core.slice(da, a);
 
 function chromiumPath() {
   for (const p of ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"]) {
@@ -167,6 +173,31 @@ const compat = await page.evaluate((s) => {
 check(compat.uguali && compat.conCoda, "un titolo che porta anche altro resta compatibile");
 check(!compat.diversi, "due nomi senza niente in comune si contraddicono");
 check(compat.illeggibile, "se un lato non è leggibile non c'è contraddizione da rilevare");
+
+// ---- quale scheda è la sua, fra quelle in archivio ----------------------
+// Il codice fiscale, quando c'è, decide sempre: un omonimo SENZA codice non
+// deve poter vincere solo perché sta prima nell'elenco.
+const scelte = await page.evaluate((s) => {
+  // eslint-disable-next-line no-new-func
+  const { scegliScheda } = new Function(s + "\nreturn { scegliScheda };")();
+  const P = (c, n) => ({ cognome: c, nome: n });
+  const senzaCf = { chiave: "nome:MARIO ROSSI", cf: "", paziente: P("ROSSI", "MARIO") };
+  const conCf = { chiave: "cf:abc", cf: "abc", paziente: P("ROSSI", "MARIO") };
+  const altro = { chiave: "cf:zzz", cf: "zzz", paziente: P("VERDI", "GIULIA") };
+  return {
+    cfPrimaDelNome: scegliScheda([senzaCf, conCf], "abc", "ROSSI MARIO")?.chiave,
+    cfSbagliatoNienteRipiego: scegliScheda([senzaCf, conCf], "xyz", "ROSSI MARIO")?.chiave ?? null,
+    senzaCodiceSulNome: scegliScheda([senzaCf], "", "ROSSI MARIO")?.chiave,
+    nessunaSuaScheda: scegliScheda([altro], "abc", "ROSSI MARIO")?.chiave ?? null,
+    archivioVuoto: scegliScheda([], "abc", "ROSSI MARIO") ?? null,
+  };
+}, src);
+check(scelte.cfPrimaDelNome === "cf:abc",
+  `fra un omonimo senza codice e la scheda col suo codice, vince il codice (got ${scelte.cfPrimaDelNome})`);
+check(scelte.cfSbagliatoNienteRipiego === null,
+  "e se il codice non combacia non si ripiega sul nome: non mostra niente");
+check(scelte.senzaCodiceSulNome === "nome:MARIO ROSSI", "senza codici in archivio decide il nome");
+check(scelte.nessunaSuaScheda === null && scelte.archivioVuoto === null, "e di un paziente senza scheda non sceglie nulla");
 
 // a page that is not that page
 const altra = await leggi("<html><body><table><tr><td>ciao</td></tr></table></body></html>");

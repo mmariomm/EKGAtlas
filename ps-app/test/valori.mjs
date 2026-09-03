@@ -219,6 +219,41 @@ eq(sigla("Lattati"), "Lac", "e il lattato resta lattato");
 eq(sigla("CK-MB massa"), "CKMB", "il CK-MB non è il CPK");
 eq(sigla("Albuminuria"), "Albu", "l'albuminuria non è l'albumina");
 
+// ---- il catalogo imparato non deve poter cancellare un nome noto --------
+// È da quel nome che dipende il controllo anti-esame-sbagliato: se la pagina
+// che stiamo per verificare potesse riscriverlo, il confronto sarebbe fra un
+// valore e se stesso e non potrebbe più fallire.
+console.log("\ncatalogo imparato");
+const cat = await page.evaluate(([src, embSrc]) => {
+  const mem = {};
+  const store = {
+    get: (k, d) => (k in mem ? JSON.parse(mem[k]) : d),
+    set: (k, v) => { mem[k] = JSON.stringify(v); return true; },
+  };
+  // eslint-disable-next-line no-new-func
+  const f = new Function("store", "EMBEDDED_CATALOG", embSrc + "\n" + src
+    + "\nreturn { learnFrom, learnedCatalog, rinominatiQui };");
+  const emb = { R1: { label: "POC", items: { 320: "EMOCROMOCITOMETRICO URGENTE (POCT1502)" } } };
+  const { learnFrom, learnedCatalog, rinominatiQui } = f(store, emb);
+  // la pagina oggi chiama 320 in un altro modo, e porta un codice nuovo
+  const model = { res: "R1", resOptions: [{ value: "R1", label: "POC - SSG (P)" }],
+    exams: [{ code: "320", label: "TEST RINOMINATO NON EMOCROMO (X999)" },
+            { code: "999", label: "ESAME MAI VISTO (Z1)" }] };
+  learnFrom(model);
+  const dopo = learnedCatalog().R1 || {};
+  // e una seconda passata non deve nemmeno accumulare rumore
+  learnFrom(model);
+  return { imparatoNuovo: (learnedCatalog().R1.items || {})["999"],
+           haRiscritto320: "320" in (dopo.items || {}),
+           segnalato: rinominatiQui(model), etichettaRisorsa: dopo.label };
+}, [grab("learnFrom") + "\n" + grab("learnedCatalog") + "\n" + core.slice(core.indexOf("  const rinominatiQui ="), core.indexOf("  // A resource id is site-local")) + "\nconst normEsame = (x) => String(x || \"\").replace(/\\s+/g, \" \").trim().toUpperCase();", ""]);
+eq(cat.imparatoNuovo, "ESAME MAI VISTO (Z1)", "un codice nuovo viene imparato");
+check(cat.haRiscritto320 === false, "ma un nome già noto NON viene riscritto dalla pagina");
+eq(cat.segnalato.length, 1, "il codice rinominato viene segnalato");
+check(/320/.test(cat.segnalato[0] || "") && /RINOMINATO/.test(cat.segnalato[0] || ""),
+  `col codice e col nome che porta oggi (got ${cat.segnalato[0]})`);
+eq(cat.etichettaRisorsa, "POC - SSG (P)", "l'etichetta della risorsa si aggiorna comunque");
+
 await browser.close();
 
 console.log(fail ? `\nVALORI: ${fail} CASI FALLITI\n` : "\nVALORI: TUTTI I CASI OK\n");

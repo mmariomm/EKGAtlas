@@ -145,6 +145,13 @@ Un unico elenco in ordine di tempo:
 > documento di un altro. Meglio due righe distinte e oneste che una fusione plausibile ma
 > sbagliata.
 
+### Nota sul paziente
+Sotto il nome, una **nota** di due righe che cresce con quello che scrivi. Non c'è un tasto Salva:
+**si salva mentre scrivi** (e comunque quando esci dal campo), e compare un «salvata» che scompare
+da sé. È legata al paziente — codice fiscale quando il pannello lo conosce, altrimenti il nome —
+resta cambiando pagina, e scade dopo 24 ore come i dati clinici. Vive nel browser di quel computer:
+non esce da lì.
+
 ### Consensi
 Cinque moduli di consenso, dentro l'estensione: **Emocolture**, **HIV Dipendente**, **Lesioni
 Animali**, **Antitetano**, **TAC cmdc**. Un tocco apre il PDF e la finestra di stampa, come per la
@@ -212,12 +219,20 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   (`/clin-port/info-cliniche/*`) e lì fa una cosa sola: leggerla. Su qualsiasi altra pagina di
   quel portale — compresa la sua schermata di accesso — **non fa assolutamente niente**, perché
   è un'altra applicazione e le regole scritte per SA4PSO non le si applicano.
-- **Una scheda per paziente.** Ogni tabella letta diventa la scheda clinica di quel paziente
-  dentro l'estensione: se non c'era, viene creata (la striscia lo dice: *«…— ROSSI MARIO, nuovo ·
-  3 pazienti in memoria»*), se c'era, i prelievi nuovi si aggiungono ai suoi. Sul paziente aperto
-  il pannello mostra **solo la sua** scheda, scelta col codice fiscale quando c'è: le altre non
-  vengono nemmeno chieste al service worker. Massimo 12 pazienti, 8 ore, **in memoria** — spariscono
-  chiudendo il browser e col logout.
+- **Una scheda per paziente, da tutt'e due le finestre.** Ogni tabella letta diventa la scheda
+  clinica di quel paziente: se non c'era viene creata (la striscia lo dice: *«…— ROSSI MARIO, nuovo
+  · 3 pazienti in memoria»*), se c'era i prelievi nuovi si aggiungono ai suoi. E non solo dal
+  portale: **ogni prelievo che il pannello legge dalla finestra Risultati del gestionale entra
+  nella stessa scheda**, parziali compresi — un valore che il laboratorio non ha finito porta un
+  **`*`** e la tabella lo spiega. Lo stesso analita letto dalle due finestre resta **una riga
+  sola**.
+- Sul paziente aperto il pannello mostra **solo la sua** scheda, scelta col codice fiscale quando
+  c'è: se in archivio esiste una scheda con quel codice fiscale è quella, sempre — si ripiega sul
+  nome solo se nessuna scheda porta un codice, altrimenti un omonimo senza codice potrebbe vincere
+  su una verificata. Le altre schede non attraversano nemmeno il ponte.
+- Le schede stanno nella memoria dell'estensione (**su disco**), **sopravvivono alla chiusura del
+  browser e al logout** — un turno è di dodici ore e i pazienti sono più di dodici — e **scadono da
+  sole 24 ore** dopo l'ultima lettura. Su un PC condiviso: profilo Chrome tuo, e chiudi a fine turno.
 - Il portale si apre in un'altra scheda: **non serve ricaricare** la pagina del paziente, basta
   tornarci sopra. Nel **banco di prova** il giro c'è tutto (link «Storico Dati Clinici» in basso a
   sinistra), su una tabella ricostruita con esami inventati.

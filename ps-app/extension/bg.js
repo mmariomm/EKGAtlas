@@ -95,8 +95,12 @@ const b64 = (buf) => {
 
 const KEY = (id) => "ref:" + id;
 const REF_TTL = 8 * 3600e3;   // a shift: cached documents die with it
-const STORICO_TTL = 8 * 3600e3;  // i dati clinici letti: un turno, come i referti
-const STORICO_MAX = 12;          // e non più pazienti di quanti se ne vedono in un turno
+// I dati clinici letti restano un giorno e SOPRAVVIVONO alla chiusura del
+// browser e al logout: un turno è di dodici ore e i pazienti sono più di
+// dodici, quindi una memoria che muore col browser sarebbe inutile. Ventiquattro
+// ore dopo l'ultima lettura la scheda scade e viene cancellata da sola.
+const STORICO_TTL = 24 * 3600e3;
+const STORICO_MAX = 200;         // di fatto nessun limite per un turno
 const REF_MAX = 25;           // and never pile up
 
 async function prune() {
@@ -131,8 +135,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg.t === "getRef") {
     chrome.storage.local.get(KEY(msg.id)).then(async (o) => {
       const hit = o[KEY(msg.id)];
-      // a document is only handed back for the episode it was saved under
-      if (!hit || (msg.ep && hit.ep && hit.ep !== msg.ep)) return reply({ ok: false });
+      // Un documento torna solo per l'episodio sotto cui è stato salvato: se
+      // uno dei due episodi non si sa, non si può dimostrare che è lo stesso,
+      // e allora non si consegna.
+      if (!hit || String(msg.ep || "") !== String(hit.ep || "")) return reply({ ok: false });
       if (Date.now() - (hit.ts || 0) > REF_TTL) { await chrome.storage.local.remove(KEY(msg.id)); return reply({ ok: false }); }
       reply({ ok: true, data: hit.data });
     });
@@ -147,7 +153,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
         if (!k.startsWith("ref:")) continue;
         const id = k.slice(4), rec = all[k];
         if (want && !want.has(id)) continue;                    // only what was asked for
-        if (msg.ep && rec.ep && rec.ep !== msg.ep) continue;     // and only this episode
+        if (String(msg.ep || "") !== String(rec.ep || "")) continue;   // e solo questo episodio
         out[id] = rec.size || 1;
       }
       reply({ ok: true, cached: out });
@@ -155,11 +161,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
 
-  // The clinical tables read off the portal page, ONE RECORD PER PATIENT.
-  // It is clinical content, so it lives in storage.session — memory only,
-  // gone when the browser closes — capped, and time-limited. The panel asks
-  // for the index first and decides for itself which record belongs to the
-  // patient on screen: the identity rules live in one place, not in here.
+  // Le tabelle cliniche lette, UNA SCHEDA PER PAZIENTE. Stanno nella memoria
+  // dell'estensione (su disco, non nella RAM della sessione): un turno dura
+  // dodici ore e non si può perdere tutto chiudendo il browser. Scadono da
+  // sole 24 ore dopo l'ultima lettura. Il pannello chiede prima l'indice e
+  // decide LUI quale scheda è di questo paziente: la regola d'identità sta
+  // in un posto solo, non anche qui dentro.
   const ARCH = "storicoArch";
   const vivo = (r) => r && Date.now() - (r.letto || 0) <= STORICO_TTL;
   const potaArchivio = (a) => {
@@ -171,12 +178,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg.t === "putStorico") {
     const chiave = String(msg.chiave || "").slice(0, 80);
     if (!chiave || !msg.dati) return reply({ ok: false });
-    chrome.storage.session.get(ARCH)
+    chrome.storage.local.get(ARCH)
       .then(async (o) => {
         const a = potaArchivio(o[ARCH] || {});
         const nuovo = !a[chiave];
         a[chiave] = msg.dati;
-        await chrome.storage.session.set({ [ARCH]: potaArchivio(a) });
+        await chrome.storage.local.set({ [ARCH]: potaArchivio(a) });
         reply({ ok: true, nuovo, pazienti: Object.keys(a).length });
       })
       .catch(() => reply({ ok: false }));
@@ -184,11 +191,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   }
   // senza chiave: l'indice (chi c'è, non i valori). Con chiave: quel record.
   if (msg.t === "getStorico") {
-    chrome.storage.session.get(ARCH)
+    chrome.storage.local.get(ARCH)
       .then(async (o) => {
         const a = potaArchivio(o[ARCH] || {});
         if (Object.keys(a).length !== Object.keys(o[ARCH] || {}).length) {
-          await chrome.storage.session.set({ [ARCH]: a });   // scaduti: via
+          await chrome.storage.local.set({ [ARCH]: a });   // scaduti: via
         }
         if (msg.chiave) {
           const r = a[msg.chiave];
@@ -208,7 +215,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg.t === "clearRef") {
     chrome.storage.local.get(null).then(async (all) => {
       await chrome.storage.local.remove(Object.keys(all).filter((k) => k.startsWith("ref:")));
-      await chrome.storage.session.remove("storicoArch").catch(() => {});
+      // le schede cliniche NON si cancellano al logout: hanno la loro
+      // scadenza a 24 ore, ed è quella a decidere
+
       reply({ ok: true });
     });
     return true;
