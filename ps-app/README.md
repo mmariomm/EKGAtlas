@@ -217,10 +217,14 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   l'analita, altrimenti un pannello di urine diventerebbe diciotto righe con lo stesso nome. Il
   prefisso del campione resta: **`U-Emoglobina` non è l'emoglobina del sangue**, e non viene mai
   fusa con essa.
-- **La tabella si vede solo sotto il paziente giusto.** SA4PSO scrive il nome come una stringa
-  sola (`ROSSI MARIO`), il portale lo dà già separato (`Cognome` + `Nome`): da quella stringa
-  l'ordine delle due parole non si può dedurre, quindi entrambi gli ordini vanno accettati — e con
-  nomi di due parole uno scambio resterebbe indistinguibile. Per questo, quando c'è, decide il
+- **La tabella si vede solo sotto il paziente giusto**, e la prova migliore è la più semplice:
+  **il portale lo apri da un link sulla pagina del paziente**. Quel clic dice per chi lo stai
+  aprendo, quindi la tabella letta di là si attacca a quell'**episodio** — nessun confronto di
+  nomi può essere più sicuro, e non costa una richiesta. Se sei arrivato al portale per un'altra
+  strada (un preferito, un'altra scheda), si ricade sulle prove più deboli: SA4PSO scrive il nome
+  come una stringa sola (`ROSSI MARIO`), il portale lo dà già separato (`Cognome` + `Nome`), da lì
+  l'ordine delle due parole non si deduce, quindi entrambi gli ordini vanno accettati — e con nomi
+  di due parole uno scambio resterebbe indistinguibile. Allora, quando c'è, decide il
   **codice fiscale**: il portale lo scrive nel titolo della pagina, il gestionale accanto al nome
   nella finestra Risultati che il pannello legge già per i valori. Ne viaggia solo l'**impronta**,
   mai il codice in chiaro. Le due prove non possono contraddirsi: un codice che combacia accanto a

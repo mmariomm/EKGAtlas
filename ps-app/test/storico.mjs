@@ -191,8 +191,13 @@ const scelte = await page.evaluate((s) => {
     nessunaSuaScheda: scegliScheda([altro], "abc", "ROSSI MARIO")?.chiave ?? null,
     archivioVuoto: scegliScheda([], "abc", "ROSSI MARIO") ?? null,
     mioIgnotoSchedaConCodice: scegliScheda([conCf], "", "ROSSI MARIO")?.chiave ?? null,
+    // la scheda che porta l'episodio da cui il medico ha aperto il portale:
+    // è lui ad averla aperta da lì, e vale più di nome e codice fiscale
+    epPrimaDiTutto: scegliScheda([senzaCf, conCf, { ...altro, ep: "700001" }], "abc", "ROSSI MARIO", "700001")?.chiave ?? null,
   };
 }, src);
+check(scelte.epPrimaDiTutto === "cf:zzz",
+  `la scheda letta arrivando da QUESTO paziente vince su tutto (got ${scelte.epPrimaDiTutto})`);
 check(scelte.cfPrimaDelNome === "cf:abc",
   `fra un omonimo senza codice e la scheda col suo codice, vince il codice (got ${scelte.cfPrimaDelNome})`);
 check(scelte.cfSbagliatoNienteRipiego === null,

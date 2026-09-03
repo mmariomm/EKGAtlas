@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.16.0";
+  const VERSION = "3.17.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -955,7 +955,8 @@
     const referti = [...(nuovo.referti || []), ...(vecchio.referti || [])]
       .filter((r, i, a) => r && r.id && a.findIndex((x) => x.id === r.id) === i).slice(0, 40);
     return { paziente: nuovo.paziente, cf: nuovo.cf || vecchio.cf || "",
-             periodo: nuovo.periodo, date, righe, referti,
+             ep: nuovo.ep || vecchio.ep || "", nomeSa4: nuovo.nomeSa4 || vecchio.nomeSa4 || "",
+      periodo: nuovo.periodo, date, righe, referti,
              scartate: [...(vecchio.scartate || []), ...(nuovo.scartate || [])].slice(0, 40), letto: Date.now() };
   }
   const chiaveCol = (d) => (d && (d.chiave || d.label)) || "";
@@ -1003,8 +1004,12 @@
   // questo paziente è QUELLA, sempre. Si ripiega sul nome solo se nessuna
   // scheda porta un codice fiscale — altrimenti un omonimo senza codice,
   // incontrato per primo, vincerebbe su una scheda verificata col codice.
-  function scegliScheda(indice, mio, titolo) {
+  function scegliScheda(indice, mio, titolo, ep) {
     const v = indice || [];
+    // Prima di tutto: la scheda letta ARRIVANDO DA QUESTO PAZIENTE. È stato il
+    // medico ad aprire il portale da questa pagina, e nessun confronto di nomi
+    // può essere più sicuro di così.
+    if (ep) { const suo = v.find((x) => x.ep && String(x.ep) === String(ep)); if (suo) return suo; }
     // Se di questo paziente conosciamo il codice fiscale, decide SOLO quello:
     // niente ripieghi sul nome, perché una scheda senza codice col suo stesso
     // nome può essere di un omonimo.
@@ -3141,13 +3146,15 @@
       if (!indice.length) { this.storicoAltri = ""; return null; }
       const titolo = (document.title || "").trim();
       const mio = this.cfEpisodio();
-      const scelta = scegliScheda(indice, mio, titolo);
-      this.storicoVia = scelta && scelta.cf && mio ? "codice fiscale" : "nome";
+      const scelta = scegliScheda(indice, mio, titolo, this.episodeId);
+      this.storicoVia = scelta && scelta.ep && String(scelta.ep) === String(this.episodeId)
+        ? "il paziente da cui l'hai aperta"
+        : scelta && scelta.cf && mio ? "codice fiscale" : "nome";
       // C'è una scheda con questo nome ma non gliela si può attribuire perché
       // di questo paziente non conosciamo ancora il codice fiscale: lo si
       // dice, invece di far sparire un bottone senza spiegazioni.
       this.storicoDaConfermare = !scelta && !mio
-        && indice.some((v) => v.cf && combaciaNome(titolo, v.paziente));
+        && indice.some((v) => v.cf && !v.ep && combaciaNome(titolo, v.paziente));
 
       if (!scelta) {
         const altri = [...new Set(indice.map((v) => [v.paziente?.cognome, v.paziente?.nome].filter(Boolean).join(" "))
@@ -4811,6 +4818,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // way to read it again after moving the columns. No panel, no ordering.
   function bootStorico() {
     let unito = null;
+    let chiAprivo;   // undefined = non ancora chiesto, null = non lo sappiamo
     const host = document.createElement("div");
     host.id = "psassist-host";
     const root = host.attachShadow({ mode: "open" });
@@ -4840,9 +4848,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       root.getElementById("rileggi").addEventListener("click", leggi);
     };
 
-    const leggi = () => {
+    const leggi = async () => {
       const letto = leggiStorico(document);
       if (!letto) { disegna({ ok: false, testo: "Nessuna tabella da leggere in questa pagina." }); return; }
+      // Da quale paziente il medico è arrivato qui: l'ha aperto lui, dalla sua
+      // pagina. È l'identità più solida che ci sia, e non costa una richiesta.
+      if (chiAprivo === undefined && hasExt()) {
+        chiAprivo = null;
+        try { const r = await ask({ t: "chiAprivo" }); if (r && r.ok) chiAprivo = r; } catch { /* si va avanti */ }
+      }
+      if (chiAprivo && chiAprivo.ep) { letto.ep = chiAprivo.ep; letto.nomeSa4 = chiAprivo.nome || ""; }
       unito = unisciStorico(unito, letto);
       const valori = unito.righe.reduce((n, r) => n + r.valori.filter((v) => v.v).length, 0);
       const chi = [unito.paziente.cognome, unito.paziente.nome].filter(Boolean).join(" ");

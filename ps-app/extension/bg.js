@@ -181,6 +181,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return Object.fromEntries(vive);
   };
 
+  // Il medico apre «Storico dati clinici» DALLA pagina di un paziente: quel
+  // passaggio è l'identità, ed è più sicuro di qualunque confronto di nomi.
+  // Si annota chi era, e la pagina del portale userà quello.
+  if (msg.t === "apreStorico") {
+    chrome.storage.session.set({ apertura: { ep: String(msg.ep || ""), nome: String(msg.nome || "").slice(0, 60), ts: Date.now() } })
+      .then(() => reply({ ok: true })).catch(() => reply({ ok: false }));
+    return true;
+  }
+  if (msg.t === "chiAprivo") {
+    chrome.storage.session.get("apertura")
+      .then((o) => {
+        const a = o.apertura;
+        reply(a && Date.now() - (a.ts || 0) < 20 * 60e3 ? { ok: true, ...a } : { ok: false });
+      }).catch(() => reply({ ok: false }));
+    return true;
+  }
+
   if (msg.t === "putStorico") {
     const chiave = String(msg.chiave || "").slice(0, 80);
     if (!chiave || !msg.dati) return reply({ ok: false });
@@ -209,7 +226,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
         reply({
           ok: true,
           indice: Object.entries(a).map(([chiave, r]) => ({
-            chiave, cf: r.cf || "", paziente: r.paziente || {}, letto: r.letto || 0,
+            chiave, cf: r.cf || "", ep: r.ep || "", paziente: r.paziente || {}, letto: r.letto || 0,
             esami: (r.righe || []).length, prelievi: (r.date || []).length,
           })),
         });

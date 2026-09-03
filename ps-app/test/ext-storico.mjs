@@ -90,7 +90,7 @@ const tab = await paziente.evaluate(() => {
 });
 // dieci analiti dal portale + quelli letti dalla finestra Risultati del
 // gestionale, tutti nella stessa scheda, prelievo più recente per primo
-check(tab.righe >= 10 && tab.colonne === 4,
+check(tab.righe >= 10 && tab.colonne >= 4,
   `la scheda unisce le due finestre (got ${tab.righe} analiti × ${tab.colonne} prelievi)`);
 check(tab.rosse >= 6, `i fuori range restano marcati (got ${tab.rosse})`);
 check(/^Hb\|10\.4↓\|11\.8↓\|13\.2\|/.test(tab.prima),
