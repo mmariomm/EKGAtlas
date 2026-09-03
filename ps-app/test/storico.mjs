@@ -239,7 +239,7 @@ const sez = await page.evaluate((s) => {
     };
   `)();
 }, src);
-check(sez.sezioni.join(" | ") === "Emocromo | Infiammazione | Organi | Emogas | Urine e altri liquidi | Altri",
+check(sez.sezioni.join(" | ") === "Emocromo | Biochim | Organi | Emogas | Urine e altri liquidi | Altri",
   `le sezioni escono nell'ordine in cui si leggono (got ${sez.sezioni.join(" | ")})`);
 check(sez.emocromo.join(",") === "GB,Hb,PLT",
   `dentro una sezione l'ordine è fisso, non quello del laboratorio (got ${sez.emocromo.join(",")})`);

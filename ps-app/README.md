@@ -232,8 +232,8 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   ↓ sotto). **⧉ Copia** la mette negli appunti in colonne, **solo alterati** toglie di mezzo il
   resto, **⤢ Ingrandisci** la apre grande.
 - Gli esami sono **divisi in sezioni** e dentro ogni sezione l'ordine è **fisso**: *Emocromo,
-  Coagulazione, Infiammazione, Cardio, Organi, Elettroliti e metabolismo, Emogas, Urine e altri
-  liquidi*, e in fondo **Altri**. Prima l'ordine era quello in cui il laboratorio aveva stampato
+  Coagulazione, Biochim* (PCR, PCT, VES, troponina, NT-proBNP, CPK, CK-MB, mioglobina, LDH),
+  *Organi, Elettroliti e metabolismo, Emogas, Urine e altri liquidi*, e in fondo **Altri**. Prima l'ordine era quello in cui il laboratorio aveva stampato
   la tabella, e **cambiava da un prelievo all'altro**: lo stesso esame andava cercato ogni volta.
   Un analita che il programma non conosce non si perde: finisce in **Altri**, scritto per esteso.
   Il campione decide per primo — **`U-Emoglobina` va in Urine, mai nell'emocromo**.

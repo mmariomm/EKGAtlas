@@ -392,9 +392,8 @@
   const SEZIONI = [
     ["Emocromo", ["GB", "Neu", "Lin", "Mon", "Eos", "Bas", "Altre", "Hb", "Ht", "GR", "MCV", "MCH", "MCHC", "RDW", "PLT"]],
     ["Coagulazione", ["PT", "INR", "PTT", "Fib", "DD"]],
-    ["Infiammazione", ["PCR", "PCT", "VES"]],
-    ["Cardio", ["Trop", "NTproBNP", "BNP", "CPK", "CKMB", "Mb"]],
-    ["Organi", ["Cr", "Az", "AST", "ALT", "γGT", "ALP", "Bil", "BilD", "BilI", "Amy", "Lip", "Alb", "NH3", "LDH"]],
+    ["Biochim", ["PCR", "PCT", "VES", "Trop", "NTproBNP", "BNP", "CPK", "CKMB", "Mb", "LDH"]],
+    ["Organi", ["Cr", "Az", "AST", "ALT", "γGT", "ALP", "Bil", "BilD", "BilI", "Amy", "Lip", "Alb", "NH3"]],
     ["Elettroliti e metabolismo", ["Na", "K", "Cl", "Ca", "Ca++", "Mg", "Glu", "HbA1c", "TSH"]],
     ["Emogas", ["pH", "pCO2", "pO2", "HCO3", "BE", "Lac", "SatO2", "AG", "ctCO2", "ctO2", "COHb", "MetHb", "FCOHb", "FO2Hb", "HHb", "Shunt", "Ratio", "EGA"]],
     ["Urine e altri liquidi", ["Albu", "PesoSp", "Nitr", "Chet", "EstLeu", "Urob"]],
