@@ -88,9 +88,26 @@ await paziente.waitForTimeout(200);
 const soloAlterati = await paziente.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".sttab tbody tr").length);
 check(soloAlterati === 5, `«solo alterati» tiene solo le righe con un valore fuori range (got ${soloAlterati})`);
 
+// ---- un'ALTRA pagina del portale non è una pagina di SA4PSO -------------
+// La pagina di login del portale ha un campo password: scambiarla per quella
+// di SA4PSO farebbe cancellare i referti salvati del turno e questo storico.
+paginaCorrente = `<!doctype html><html><head><title>Portale clinico</title></head><body>
+  <form><input type="text" name="user"><input type="password" name="pwd"><button>Entra</button></form>
+</body></html>`;
+await portale.goto(PORTALE + "?login=1");
+await portale.waitForTimeout(1200);
+check((await portale.locator("#psassist-host").count()) === 0,
+  "su una pagina del portale senza tabella il pannello non compare proprio");
+await paziente.reload();
+await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await paziente.locator('#psassist-host [data-seg="esiti"]').click();
+await paziente.waitForTimeout(1000);
+check((await paziente.locator("#psassist-host #apristorico").count()) === 1,
+  "e lo storico letto prima è ancora lì: quella pagina non ha cancellato niente");
+
 // ---- l'altro paziente: la tabella NON deve comparire --------------------
 paginaCorrente = paginaStorico({ paziente: { idMPI: "900000002", cognome: "VERDI", nome: "GIULIA" } });
-await portale.reload();
+await portale.goto(PORTALE);
 await portale.waitForFunction(
   () => /prelievi/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),
   { timeout: 10000 },

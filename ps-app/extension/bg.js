@@ -168,17 +168,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     chrome.storage.session.get("storico")
       .then((o) => {
         const s = o.storico;
-        if (!s || Date.now() - (s.letto || 0) > STORICO_TTL) return reply({ ok: false });
+        // stale means gone, not merely hidden: clinical content does not sit
+        // in memory for the life of the browser after it stops being shown
+        if (!s || Date.now() - (s.letto || 0) > STORICO_TTL) {
+          if (s) chrome.storage.session.remove("storico").catch(() => {});
+          return reply({ ok: false });
+        }
         reply({ ok: true, dati: s });
       })
       .catch(() => reply({ ok: false }));
     return true;
   }
-  if (msg.t === "clearStorico") {
-    chrome.storage.session.remove("storico").then(() => reply({ ok: true })).catch(() => reply({ ok: false }));
-    return true;
-  }
-
   if (msg.t === "clearRef") {
     chrome.storage.local.get(null).then(async (all) => {
       await chrome.storage.local.remove(Object.keys(all).filter((k) => k.startsWith("ref:")));

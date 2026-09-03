@@ -187,6 +187,10 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
 - Vale solo con l'**estensione** (è lei a portare la tabella da una pagina all'altra), i valori
   stanno **in memoria e non su disco**, scadono dopo 2 ore e spariscono chiudendo il browser.
   Il logout li cancella con tutto il resto.
+- Sul portale l'estensione entra **solo nella sezione che contiene quella tabella**
+  (`/clin-port/info-cliniche/*`) e lì fa una cosa sola: leggerla. Su qualsiasi altra pagina di
+  quel portale — compresa la sua schermata di accesso — **non fa assolutamente niente**, perché
+  è un'altra applicazione e le regole scritte per SA4PSO non le si applicano.
 - Il portale si apre in un'altra scheda: **non serve ricaricare** la pagina del paziente, basta
   tornarci sopra. Nel **banco di prova** il giro c'è tutto (link «Storico Dati Clinici» in basso a
   sinistra), su una tabella ricostruita con esami inventati.
@@ -406,7 +410,9 @@ stessi flussi dei test di prodotto.
 8. **Un run non muore in silenzio**: chiudere o cambiare pagina durante un run fa scattare
    l'avviso del browser; i passaggi falliti diventano rossi, quelli mai partiti "non eseguito".
 9. **Niente esce dall'ospedale**: ogni richiesta è bloccata a livello di codice se non è diretta
-   all'origine SA4PSO; nessuna telemetria; preferenze e catalogo appreso restano nel browser.
+   a una delle **due origini dell'ospedale** — SA4PSO e il portale clinico interno da cui
+   arrivano i referti e si legge la tabella multi-prelievo. Nessun altro indirizzo, nessuna
+   telemetria; preferenze e catalogo appreso restano nel browser.
 10. **Due schede, due pazienti, zero interferenze**: i passaggi di consegna tra pagina e pagina
    (ricevuta e conferma automatica) vivono nella singola scheda (sessionStorage).
 11. Codifica **windows-1252 identica byte per byte** a quella del browser (verificato contro
@@ -416,10 +422,16 @@ stessi flussi dei test di prodotto.
 13. **Un paziente alla volta**: per ordinare devi essere sulla sua pagina, e ogni dato salvato
     (valori, referti, registro, code di conferma) è legato al suo episodio — letto sotto un altro
     episodio semplicemente non esiste.
-14. **Niente contenuto clinico nella memoria del browser**: dei pazienti restano solo nome,
-    episodio e indirizzo della pagina, al massimo 8 e per 12 ore, con **svuota** a mano; la
-    pagina di login cancella tutto (nomi, valori, registro, referti salvati). I PDF salvati
-    scadono dopo 8 ore, massimo 25, e si azzerano alla chiusura del browser.
+14. **Dove finisce il contenuto clinico, detto con precisione.** Dei pazienti *conosciuti*
+    restano solo nome, episodio e indirizzo della pagina, al massimo 8 e per 12 ore, con
+    **svuota** a mano. Ma valori e testi dei referti letti in un turno stanno nel
+    `sessionStorage` della scheda: **Chrome lo tiene anche su disco**, nel profilo, per poter
+    ripristinare le schede — muore chiudendo la scheda, non prima. I PDF salvati stanno nella
+    memoria dell'estensione (su disco), scadono dopo 8 ore, massimo 25, e si azzerano alla
+    chiusura del browser. La tabella multi-prelievo è l'unica cosa che sta **solo in memoria**
+    (`storage.session`), 2 ore. La pagina di login cancella tutto — ma il `sessionStorage` è
+    **per scheda**: pulisce la scheda in cui è comparso il login, non le altre schede aperte.
+    Su un PC condiviso: usa un profilo Chrome tuo e chiudi il browser a fine turno.
 15. **Dalle pagine aperte, mai al posto tuo**: il programma non inventa chiamate al server. La
     tabella multi-prelievo viene **letta dalla pagina che hai davanti**, non chiesta all'API che
     la riempie — una chiamata diretta a quel servizio arriverebbe senza l'`Origin` della sua

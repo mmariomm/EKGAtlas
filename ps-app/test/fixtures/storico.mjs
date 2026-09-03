@@ -52,7 +52,7 @@ export function paginaStorico({ paziente = PAZIENTE, date = DATE, esami = ESAMI,
       date.map((_, i) => cellaValore(valori[i] || "", (stati && stati[i]) || 0)).join("")}</tr>`),
   ];
   if (disallinea) dxRighe.pop();   // one row short: the reader must refuse everything
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${paziente.cognome} ${paziente.nome} - (XXXYYY00A00Z000X) INFORMAZIONI CLINICHE</title></head><body>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${paziente.cognome} ${paziente.nome} - (SMPRSS80A01F205X) INFORMAZIONI CLINICHE</title></head><body>
     <div class="panel panel-default"><div class="panel-heading">
       idMPI: ${paziente.idMPI} Cognome: ${paziente.cognome} Nome: ${paziente.nome} Sesso: F Data di nascita: 01/01/1970
     </div></div>

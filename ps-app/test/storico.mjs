@@ -107,6 +107,30 @@ const g = await due(gemelli, gemelli);
 check(g.hb === "13.2|-" && g.na === "-|141",
   `due prelievi nello stesso minuto restano due colonne (got hb=${g.hb} na=${g.na})`);
 
+// ---- di chi è questa tabella --------------------------------------------
+// L'unico controllo fra i valori di un paziente e lo schermo di un altro:
+// deve accettare i due ordini con cui i due sistemi scrivono il nome, e
+// nient'altro.
+const nomi = await page.evaluate((s) => {
+  // eslint-disable-next-line no-new-func
+  const { combaciaNome } = new Function(s + "\nreturn { combaciaNome };")();
+  const P = (c, n) => ({ cognome: c, nome: n });
+  return {
+    dritto: combaciaNome("ROSSI MARIO", P("ROSSI", "MARIO")),
+    rovescio: combaciaNome("MARIO ROSSI", P("ROSSI", "MARIO")),
+    accenti: combaciaNome("D'AMICO NICOLO'", P("D'Amico", "Nicolò")),
+    composto: combaciaNome("DE LUCA MARIA GRAZIA", P("De Luca", "Maria Grazia")),
+    rimescolato: combaciaNome("GRAZIA LUCA DE MARIA", P("De Luca", "Maria Grazia")),
+    altro: combaciaNome("ROSSI MARIO", P("ROSSI", "MARIA")),
+    senzaNome: combaciaNome("ROSSI MARIO", P("", "")),
+    senzaTitolo: combaciaNome("", P("ROSSI", "MARIO")),
+  };
+}, src);
+check(nomi.dritto && nomi.rovescio, "accetta i due ordini: «ROSSI MARIO» e «MARIO ROSSI»");
+check(nomi.accenti && nomi.composto, "accenti, apostrofi e nomi composti combaciano");
+check(!nomi.rimescolato, "ma le parole rimescolate no: non basta che siano le stesse");
+check(!nomi.altro && !nomi.senzaNome && !nomi.senzaTitolo, "un altro nome, o un nome mancante, non combacia mai");
+
 // a page that is not that page
 const altra = await leggi("<html><body><table><tr><td>ciao</td></tr></table></body></html>");
 check(altra.haStorico === false && altra.dati === null, "su una pagina qualsiasi non inventa una tabella");

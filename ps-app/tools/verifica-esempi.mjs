@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 /*
- * Gate for esempi-gestionale/: nothing identifying, nothing that can call out.
- * Run before every commit that touches those files (npm run esempi).
+ * Gate for the files rebuilt from real hospital pages: nothing identifying,
+ * nothing that can call out. It covers esempi-gestionale/ (the saved screens)
+ * and test/fixtures/ (pages rebuilt from their shape) — anything written by
+ * looking at a real page goes through here.
+ * Run before every commit that touches those files (npm run esempi, npm test).
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const dir = join(root, "esempi-gestionale");
+const CARTELLE = [
+  { dir: join(root, "esempi-gestionale"), est: /\.(html|css|json)$/ },
+  { dir: join(root, "test/fixtures"), est: /\.(mjs|html|json)$/ },
+];
 
 const FORBIDDEN = [
   // patients
@@ -31,8 +37,8 @@ const FORBIDDEN = [
 const CF = /\b(?!SMPRSS80A01F205X)[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b/;
 
 let bad = 0, files = 0;
-for (const f of readdirSync(dir).sort()) {
-  if (!/\.(html|css|json)$/.test(f)) continue;
+for (const { dir, est } of CARTELLE) for (const f of readdirSync(dir).sort()) {
+  if (!est.test(f)) continue;
   files++;
   const text = readFileSync(join(dir, f), "utf8");
   const hits = [];
@@ -42,8 +48,9 @@ for (const f of readdirSync(dir).sort()) {
   }
   const cf = CF.exec(text);
   if (cf) hits.push(`codice fiscale: «${cf[0]}»`);
-  if (hits.length) { bad++; console.log(`  ✗ ${f}\n      ` + hits.join("\n      ")); }
-  else console.log(`  ✓ ${f}`);
+  const dove = dir.slice(root.length + 1) + "/" + f;
+  if (hits.length) { bad++; console.log(`  ✗ ${dove}\n      ` + hits.join("\n      ")); }
+  else console.log(`  ✓ ${dove}`);
 }
 console.log(bad ? `\nESEMPI: ${bad}/${files} file da ripulire\n` : `\nESEMPI PULITI (${files} file)\n`);
 process.exit(bad ? 1 : 0);

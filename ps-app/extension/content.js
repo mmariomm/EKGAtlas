@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.9.1";
+  const VERSION = "3.9.2";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -857,13 +857,22 @@
     const m = /(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/.exec(label || "");
     return m ? Date.UTC(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)) : 0;
   };
-  // names as the two systems write them: "ROSSI MARIO" here, Cognome/Nome there
-  function chiavePaziente(p) {
-    const t = [p?.cognome, p?.nome].filter(Boolean).join(" ") || String(p?.nome || "");
-    return normNome(t);
-  }
+  // names as the two systems write them: "ROSSI MARIO" in SA4PSO's title,
+  // Cognome + Nome on the portal. Only those two ORDERS are accepted: sorting
+  // the words would make "MARINO BRUNO" and "BRUNO MARINO" the same person,
+  // and that check is the only thing standing between one patient's lab table
+  // and another patient's screen.
   const normNome = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Z0-9 ]+/g, " ").trim().split(/\s+/).filter(Boolean).sort().join(" ");
+    .replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ");
+  const chiavePaziente = (p) => normNome([p?.cognome, p?.nome].filter(Boolean).join(" "));
+  function combaciaNome(titolo, p) {
+    const t = normNome(titolo);
+    const c = normNome(p?.cognome), n = normNome(p?.nome);
+    if (!t || (!c && !n)) return false;
+    const dritto = [c, n].filter(Boolean).join(" ");
+    const rovescio = [n, c].filter(Boolean).join(" ");
+    return t === dritto || t === rovescio;
+  }
 
   // ------------------------------------------------------- RISULTATI MODEL
   // While a lab request is still being reported, the patient page shows a
@@ -2654,7 +2663,7 @@
               <tbody>${righe.map((r) => `<tr><th class="stn${inatteso(r) ? " grezza" : ""}" title="${esc(r.nome)}${r.esame && r.esame !== r.nome ? " — " + esc(r.esame) : ""}${r.mnem ? " · " + esc(r.mnem) : ""}">${esc(inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome))}</th>${celle(r)}</tr>`).join("")}</tbody>
             </table>
           </div>
-          <div class="hint">${esc(st.periodo || "")} · letto dalla pagina del portale, senza chiedere niente al server.</div>
+          <div class="hint">Letto per <b>${esc([st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") || "—")}</b>${st.paziente?.idMPI ? ` · idMPI ${esc(st.paziente.idMPI)}` : ""}. ${esc(st.periodo || "")} · dalla pagina del portale, senza chiedere niente al server.</div>
         </div>`;
     }
 
@@ -2681,10 +2690,8 @@
       const r = DEMO ? { ok: true, dati: tabStore.get("storico.demo", null) } : await ask({ t: "getStorico" });
       const dati = r && r.ok ? r.dati : null;
       if (!dati || !dati.righe) { this.storico = null; this.storicoAltri = ""; return; }
-      const qui = normNome((document.title || "").trim());
-      const suo = chiavePaziente(dati.paziente);
       const prima = (this.storico?.letto || 0) + "|" + this.storicoAltri;
-      if (qui && suo && qui === suo) { this.storico = dati; this.storicoAltri = ""; }
+      if (combaciaNome((document.title || "").trim(), dati.paziente)) { this.storico = dati; this.storicoAltri = ""; }
       else {
         // refusing is right, but refusing in silence is not: the doctor read
         // that table a minute ago and must be told why it is not here
@@ -3930,12 +3937,19 @@
   }
 
   // ==================================================================== BOOT
+  // The extension runs on two applications: SA4PSO, and the clinical portal
+  // where the multi-day table lives. Everything below the storico reader is
+  // written for SA4PSO's markup and must never be applied to the other one —
+  // its login page carries a password field, and mistaking it for SA4PSO's
+  // would wipe the shift's saved documents.
+  const SA4PSO = location.hostname === "smarthealth.multimedica.it" || !!DEMO;
   function boot() {
     if (document.getElementById("psassist-host")) return;
     // The portal's multi-day table: here the panel does not order anything and
     // does not ask the server anything. It reads the table already on screen
     // and hands it to the patient's page. Nothing else.
     if (haStorico(document)) { bootStorico(); return; }
+    if (!SA4PSO) return;               // any other page of the portal: not ours
     scadenzaQuesiti();
     const pageType = classify(document);
     if (pageType === "login") { forgetAll(); return; }
