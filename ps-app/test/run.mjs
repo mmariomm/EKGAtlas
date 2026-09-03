@@ -672,11 +672,10 @@ async function scenarioPrintUploadViewer(browser) {
 }
 
 async function scenarioPrintViewerVariants(browser) {
-  for (const [scen, opt, why] of [
-    ["print-frameset-viewer", "framesetViewer", "frameset: PDF preso dal <frame src>"],
-    ["print-idonly-viewer", "idOnlyViewer", "solo id report in pagina: URL ricomposto e PDF preso"],
-  ]) {
-    const mock = createMock({ seedConfirmed: true, [opt]: true });
+  // Un visualizzatore che NOMINA il PDF nella pagina: si prende da lì.
+  {
+    const scen = "print-frameset-viewer";
+    const mock = createMock({ seedConfirmed: true, framesetViewer: true });
     const { context, page } = await newPage(browser, mock);
     await page.goto(mock.patientUrl);
     await page.waitForSelector("#psassist-host", { state: "attached" });
@@ -684,8 +683,29 @@ async function scenarioPrintViewerVariants(browser) {
     await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
     await page.waitForFunction(() => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= 1, { timeout: 25000 }).catch(() => {});
     const dl = mock.state.requests.filter((q) => q.url.includes("uploaddownloadservlet") && (q.params.mimetype || "").includes("pdf"));
-    check(scen, dl.length === 1, `${why} (got ${dl.length})`);
+    check(scen, dl.length === 1, `frameset: PDF preso dal <frame src> (got ${dl.length})`);
     check(scen, (await page.locator("#psassist-print .pwerr").count()) === 0, "stampa automatica, nessun ripiego manuale");
+    await context.close();
+  }
+  // Un visualizzatore che dà solo un ID: l'indirizzo del PDF NON si costruisce
+  // a mano. Un id letto male non darebbe un errore, darebbe il documento di un
+  // altro paziente. Si apre in una scheda e si stampa da lì.
+  {
+    const scen = "print-idonly-viewer";
+    const mock = createMock({ seedConfirmed: true, idOnlyViewer: true });
+    const { context, page } = await newPage(browser, mock);
+    await page.goto(mock.patientUrl);
+    await page.waitForSelector("#psassist-host", { state: "attached" });
+    await page.locator('#psassist-host [data-print="699999"]').first().click();
+    await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+    await page.waitForSelector("#psassist-print .pwerr", { timeout: 25000 });
+    const inventati = mock.state.requests.filter((q) => q.url.includes("uploaddownloadservlet"));
+    check(scen, inventati.length === 0,
+      `nessun indirizzo di PDF costruito a mano (got ${inventati.length})`);
+    const testo = await page.evaluate(() =>
+      document.getElementById("psassist-print").shadowRoot.textContent.replace(/\s+/g, " "));
+    check(scen, /Apri/.test(testo),
+      `e il medico ha il bottone per aprirlo in una scheda e stamparlo (got: ${testo.slice(0, 80)})`);
     await context.close();
   }
 }

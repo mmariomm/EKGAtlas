@@ -484,13 +484,16 @@ stessi flussi dei test di prodotto.
     (valori, referti, registro, code di conferma) è legato al suo episodio — letto sotto un altro
     episodio semplicemente non esiste.
 14. **Dove finisce il contenuto clinico, detto con precisione.** Dei pazienti *conosciuti*
-    restano solo nome, episodio e indirizzo della pagina, al massimo 8 e per 12 ore, con
-    **svuota** a mano. Ma valori e testi dei referti letti in un turno stanno nel
+    restano solo nome, episodio e indirizzo della pagina, al massimo 60 e per 24 ore, con
+    **svuota** a mano e **🗑** per cancellare tutto di uno. Ma valori e testi dei referti letti in un turno stanno nel
     `sessionStorage` della scheda: **Chrome lo tiene anche su disco**, nel profilo, per poter
     ripristinare le schede — muore chiudendo la scheda, non prima. I PDF salvati stanno nella
     memoria dell'estensione (su disco), scadono dopo 8 ore, massimo 25, e si azzerano alla
-    chiusura del browser. La tabella multi-prelievo è l'unica cosa che sta **solo in memoria**
-    (`storage.session`), 2 ore. La pagina di login cancella tutto — ma il `sessionStorage` è
+    chiusura del browser. Le **schede cliniche** (tabella multi-prelievo, testi dei referti letti)
+    stanno nella memoria dell'estensione, quindi **su disco**: un turno dura dodici ore e non si
+    può perdere tutto chiudendo il browser. Scadono da sole **24 ore** dopo l'ultima lettura, al
+    massimo 200 pazienti, e **🗑** su un paziente archiviato le cancella subito — schede, referti
+    tenuti e nota. La pagina di login cancella il resto — ma il `sessionStorage` è
     **per scheda**: pulisce la scheda in cui è comparso il login, non le altre schede aperte.
     Su un PC condiviso: usa un profilo Chrome tuo e chiudi il browser a fine turno.
 15. **Dalle pagine aperte, mai al posto tuo**: il programma non inventa chiamate al server. La

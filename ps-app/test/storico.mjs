@@ -190,6 +190,7 @@ const scelte = await page.evaluate((s) => {
     senzaCodiceSulNome: scegliScheda([senzaCf], "", "ROSSI MARIO")?.chiave,
     nessunaSuaScheda: scegliScheda([altro], "abc", "ROSSI MARIO")?.chiave ?? null,
     archivioVuoto: scegliScheda([], "abc", "ROSSI MARIO") ?? null,
+    mioIgnotoSchedaConCodice: scegliScheda([conCf], "", "ROSSI MARIO")?.chiave ?? null,
   };
 }, src);
 check(scelte.cfPrimaDelNome === "cf:abc",
@@ -197,6 +198,9 @@ check(scelte.cfPrimaDelNome === "cf:abc",
 check(scelte.cfSbagliatoNienteRipiego === null,
   "e se il codice non combacia non si ripiega sul nome: non mostra niente");
 check(scelte.senzaCodiceSulNome === "nome:MARIO ROSSI", "senza codici in archivio decide il nome");
+// e se il MIO codice non si sa, una scheda che ne porta uno non è attribuibile
+check(scelte.mioIgnotoSchedaConCodice === null,
+  "se il codice del paziente davanti non si sa ancora, una scheda con un codice non gli si attribuisce");
 check(scelte.nessunaSuaScheda === null && scelte.archivioVuoto === null, "e di un paziente senza scheda non sceglie nulla");
 
 // a page that is not that page

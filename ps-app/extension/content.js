@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.14.0";
+  const VERSION = "3.15.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -626,7 +626,8 @@
       const td = a.closest("td");
       const label = (td?.querySelector('input[name="DESCRIZIONE_TITLE"]')?.value ||
                      td?.getAttribute("title") || td?.textContent || "referto")
-                    .replace(/\s+/g, " ").trim();
+                    .replace(/\s+/g, " ").trim()
+                    .replace(/^\d+-\d+\s+/, "");   // «0-324 TROPONINA» → «TROPONINA»: le prime cifre sono del LIS
       const dt = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(td?.querySelector('input[name="DATA_ORD"]')?.value || "");
       out.push({
         id, url, label,
@@ -916,10 +917,14 @@
   // period ADDS draws instead of replacing them.
   function unisciStorico(vecchio, nuovo) {
     if (!vecchio || !nuovo) return nuovo || vecchio || null;
-    // another patient: start over. An identity we could not read counts as
-    // another patient too — two unnamed tables must never be merged into one.
+    // Un altro paziente: si ricomincia. Il nome NON basta a dire «è lo
+    // stesso»: sul portale si passa da un omonimo all'altro senza ricaricare
+    // la pagina, e due persone con lo stesso nome finirebbero in un unico
+    // grafico. Quindi devono combaciare il codice fiscale E il nome, e
+    // un'identità che non si è potuta leggere conta come un altro paziente.
     const chi = chiavePaziente(nuovo.paziente);
     if (!chi || chiavePaziente(vecchio.paziente) !== chi) return nuovo;
+    if ((vecchio.cf || "") !== (nuovo.cf || "")) return nuovo;
     const date = [...vecchio.date];
     for (const d of nuovo.date) if (!date.some((x) => chiaveCol(x) === chiaveCol(d))) date.push(d);
     date.sort((a, b) => ordData(a.label) - ordData(b.label));   // stable: same minute keeps its order
@@ -949,7 +954,8 @@
     // i referti già letti per questo paziente non si perdono in una fusione
     const referti = [...(nuovo.referti || []), ...(vecchio.referti || [])]
       .filter((r, i, a) => r && r.id && a.findIndex((x) => x.id === r.id) === i).slice(0, 40);
-    return { paziente: nuovo.paziente, periodo: nuovo.periodo, date, righe, referti,
+    return { paziente: nuovo.paziente, cf: nuovo.cf || vecchio.cf || "",
+             periodo: nuovo.periodo, date, righe, referti,
              scartate: [...(vecchio.scartate || []), ...(nuovo.scartate || [])].slice(0, 40), letto: Date.now() };
   }
   const chiaveCol = (d) => (d && (d.chiave || d.label)) || "";
@@ -999,12 +1005,15 @@
   // incontrato per primo, vincerebbe su una scheda verificata col codice.
   function scegliScheda(indice, mio, titolo) {
     const v = indice || [];
-    if (mio) {
-      const perCf = v.find((x) => x.cf && x.cf === mio && nomiCompatibili(titolo, x.paziente));
-      if (perCf) return perCf;
-      if (v.some((x) => x.cf)) return null;   // qui il codice fiscale decide, e non combacia
-    }
-    return v.find((x) => combaciaNome(titolo, x.paziente)) || null;
+    // Se di questo paziente conosciamo il codice fiscale, decide SOLO quello:
+    // niente ripieghi sul nome, perché una scheda senza codice col suo stesso
+    // nome può essere di un omonimo.
+    if (mio) return v.find((x) => x.cf === mio && nomiCompatibili(titolo, x.paziente)) || null;
+    // Se non lo conosciamo ancora, si può andare solo per nome — ma allora si
+    // guarda solo fra le schede che un codice non ce l'hanno: una scheda che
+    // porta un codice non si può attribuire a un paziente di cui non ne
+    // sappiamo nessuno.
+    return v.find((x) => !x.cf && combaciaNome(titolo, x.paziente)) || null;
   }
   function combaciaNome(titolo, p) {
     const t = normNome(titolo);
@@ -1185,6 +1194,7 @@
       const tried = [];
       const attempt = async (raw, via) => {
         if (!raw || /^(javascript:|#|about:)/i.test(raw)) return null;
+        if (++provati > MAX_TENTATIVI) return null;
         let u; try { u = new URL(String(raw).replace(/&amp;/gi, "&").trim(), base); } catch { return null; }
         if (u.origin !== location.origin || u.href === base) return null;
         if (tried.includes(u.href)) return null;
@@ -1194,6 +1204,12 @@
           return r ? { ...r, via: r.via || via } : r;
         } catch (e) { if (e?.name === "AbortError") throw e; return null; }
       };
+
+      // Un tetto duro ai tentativi: un documento che non si lascia catturare
+      // in pochi colpi si apre in una scheda e si stampa da lì. Meglio un
+      // fallback onesto che decine di richieste al server per un foglio.
+      let provati = 0;
+      const MAX_TENTATIVI = 6;
 
       // 1. explicit references in the markup (old apps still use <frameset>)
       const domCands = [];
@@ -1210,16 +1226,13 @@
       // 2. a whole direct-pdf URL sitting in the viewer's own script
       for (const c of pdfCandidates(text)) { const r = await attempt(c, "URL nello script"); if (r) return r; }
 
-      // 3. the report id + the endpoint the page itself names: join what the
-      //    page already contains (the id IS the document identity; a wrong one
-      //    simply 404s and we fall through to opening the viewer natively).
-      const idm = /\b([A-Z][A-Z0-9]*_[A-Z0-9]+_\d{6,})\b/.exec(text);
-      if (idm && /uploaddownloadservlet|get_pdf/i.test(text)) {
-        const r = await attempt(`/UploadDownload/uploaddownloadservlet.rra2?table=DUAL&blobfield=san_report_onthefly.get_pdf(%27${idm[1]}%27)&wherecondition=where%201=1&dataSource=jdbc/sa4web&mimetype=application/pdf`, "id report + endpoint");
-        if (r) return r;
-      }
+      // Qui prima c'era una terza strada: prendere l'id del documento dalla
+      // pagina e COSTRUIRE l'indirizzo del PDF. È stata tolta. Un indirizzo
+      // costruito a mano su un id letto male non dà un errore: dà il
+      // documento di qualcun altro. La regola del programma è che gli
+      // indirizzi si prendono dalla pagina, e questa era l'unica eccezione.
 
-      // 4. replay the viewer (sandboxed) and take the URL/Blob it produces
+      // 3. replay the viewer (sandboxed) and take the URL/Blob it produces
       // In the banco di prova the replay is skipped on purpose: it would run a
       // viewer's own script inside a frame, and the banco's promise is that
       // nothing on the page can reach the network. The tab fallback covers it.
@@ -1376,20 +1389,23 @@
   // Eliminare un paziente vuol dire eliminare TUTTO quello che il programma
   // sa di lui: la riga nell'elenco, la sua scheda clinica, i referti tenuti,
   // la nota, e i dati per episodio in questa scheda del browser.
-  function eliminaPaziente(ep, pk) {
+  function eliminaPaziente(ep, pk, nome) {
     const list = tuttiPazienti().filter((x) => x.ep !== ep);
     store.set("patients.v1", list);
-    if (pk) {
-      const n = store.get(noteKey, {});
-      if (n[pk]) { delete n[pk]; store.set(noteKey, n); }
-    }
+    // la nota può stare sotto la chiave del codice fiscale O sotto il nome,
+    // a seconda di quando è stata scritta: si tolgono tutt'e due
+    const n = store.get(noteKey, {});
+    const perNome = nome ? "nome:" + normNome(nome) : "";
+    let tolte = 0;
+    for (const k of [pk, perNome].filter(Boolean)) if (n[k]) { delete n[k]; tolte++; }
+    if (tolte) store.set(noteKey, n);
     try {
       for (const k of Object.keys(sessionStorage)) {
         const kk = k.startsWith(NS) ? k.slice(NS.length) : "";
         if (kk && new RegExp(`(^|\\.)(ris|visto|reftxt|log|refopen|ui)\\.${ep}\\b`).test(kk)) sessionStorage.removeItem(k);
       }
     } catch { /* memoria bloccata: niente da togliere */ }
-    if (hasExt()) ask({ t: "delStorico", chiave: pk, ep }).catch(() => {});
+    if (hasExt()) ask({ t: "delStorico", chiave: pk, ep, nome: nome || "" }).catch(() => {});
     return true;
   }
   function forgetPatients() { store.set("patients.v1", []); }
@@ -2259,6 +2275,7 @@
       this.soloAlterati = false;        // storico: show only what is out of range
       this.mostraNomi = false;          // the unexpected-name list, open or closed
       this.mostraArch = false;          // l'elenco degli archiviati, aperto o chiuso
+      this.rottiTab = new Set();        // prelievi che hanno già fallito: niente ritentativi da soli
       this.pos = store.get("pos", null); // user-dragged panel position {left, top}
       this.size = store.get("size", null); // user-resized panel {w, h}
       this.runPatient = null;           // patient name PINNED when a run starts
@@ -2326,7 +2343,10 @@
       // it, unless this navigation is itself carrying the answer
       this.message = nota || null;
       this.view = v; this.viewId = id || null; this.persistUi(); this.render();
-      if (v === "esiti") this.caricaStorico();   // letto sul portale intanto? e l'identità è cambiata?
+      if (v === "esiti") {
+        this.caricaStorico();          // letto sul portale intanto? e l'identità è cambiata?
+        this.prefetchValori({ tutti: true });   // aprire gli Esiti è chiedere i valori
+      }
     }
     // the inline banner: a string is something that went wrong, {ok} is a
     // confirmation. Every view shows it — the panel always answers.
@@ -2674,9 +2694,9 @@
                   <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi">Consensi</button>
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
-              <div class="bd">${this.view === "richieste" ? "" : this.notaHtml()}${body}</div>
+              <div class="bd">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div>
               <div class="rsz" id="rsz" title="Trascina per ridimensionare · doppio click per la misura originale"></div>
-              ${inHome ? `<div class="foot">
+              ${!this.runState ? `<div class="foot">
                 <span><button id="verbtn" class="footlink" title="Mostra il Registro delle operazioni">${esc(APP)} ${VERSION}</button>${(typeof chrome !== "undefined" && chrome.runtime?.id)
                   ? ` · <button id="extreload" class="footlink" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">⟳ ricarica estensione</button>` : ""}</span>
                 <span></span>
@@ -2708,7 +2728,7 @@
           <div class="pmeta">${current ? `episodio ${esc(p.ep)}` : esc(agoLabel(p.ts))}<span class="pgo">Esiti ›</span></div>
           <div class="pacts">
             <button class="pbtn" data-go="richieste" data-ep="${esc(p.ep)}">Richieste</button>
-            <button class="pbtn pdim" data-arch="${esc(p.ep)}" title="Dimesso: mettilo negli archiviati">Dimesso ✓</button>
+            <button class="pbtn pdim" data-arch="${esc(p.ep)}" title="Lo toglie da questo elenco e lo mette negli archiviati. Nel gestionale non cambia niente.">Togli dall'elenco</button>
           </div>
         </div>`;
       const rigaArch = (p) => `
@@ -2720,8 +2740,12 @@
         </div>`;
       const archiviati = pazientiArchiviati();
       const cards = [
-        ...here.map((p) => card({ ...p, name: patientName || p.name }, true)),
-        ...(here.length ? [] : ep && canOrder ? [card({ ep, name: patientName, ts: Date.now() }, true)] : []),
+        // Il nome è quello con cui il paziente è stato conosciuto. Il titolo
+        // della pagina si usa solo se non ne abbiamo uno: sulla lista PS quel
+        // titolo è «PRONTO SOCCORSO - LISTA», e stamparlo dove va il nome del
+        // paziente è esattamente ciò che questo programma promette di non fare.
+        ...here.map((p) => card({ ...p, name: p.name || patientName }, true)),
+        ...(here.length ? [] : ep && canOrder ? [card({ ep, name: patientName, ts: Date.now() }, true)] : []),   // solo dove si può ordinare: lì il titolo È il paziente
         ...others.map((p) => card(p, false)),
       ].join("");
       return `
@@ -2736,8 +2760,15 @@
             ${this.mostraArch ? `<div class="alist">${archiviati.map(rigaArch).join("")}
               <div class="hint">🗑 cancella tutto di quel paziente: scheda clinica, referti tenuti e nota. Non si torna indietro.</div>
             </div>` : ""}` : ""}
-          ${this.showLog ? `<details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>` : ""}
         </div>`;
+    }
+
+    // Il Registro si apre col numero di versione in fondo, che ora c'è su ogni
+    // schermata: dopo un banner rosso è lì che si va a vedere cos'è successo,
+    // e due ‹ di distanza erano due di troppo.
+    registroHtml() {
+      if (!this.showLog) return "";
+      return `<details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>`;
     }
 
     viewIdle(patientName, ep) {
@@ -2844,7 +2875,7 @@
           <div id="problems">${problems.go[0] ? `<div class="problem">${esc(problems.go[0])}</div>` : ""}</div>
           <div class="btnrow">
             <button class="btn primary" id="go" ${n && !problems.go.length ? "" : "disabled"}>${esc(goLabel)}</button>
-            <button class="btn confirm" id="goconfirm" title="Come il bottone a sinistra, e in più preme Conferma per te (conto alla rovescia annullabile con Esc) e avvia la stampa guidata" ${n && !problems.confirm.length ? "" : "disabled"}>${esc(confirmLabel)}</button>
+            <button class="btn confirm" id="goconfirm" title="Come il bottone a sinistra, e in più preme Conferma SUBITO — non si annulla — e avvia la stampa guidata" ${n && !problems.confirm.length ? "" : "disabled"}>${esc(confirmLabel)}</button>
           </div>
 
         </div>
@@ -3044,6 +3075,7 @@
       if (!hasExt() || DEMO || !righe || !righe.length) return;
       const chiave = this.chiavePaz();
       if (!chiave || chiave === "nome:") return;
+      segnaChiave(this.episodeId, chiave);
       const gia = await ask({ t: "getStorico", chiave });
       const base = (gia && gia.ok && gia.dati) || {
         paziente: { idMPI: "", cognome: "", nome: (document.title || "").trim() },
@@ -3082,7 +3114,23 @@
       const n = normNome((document.title || "").trim());
       return n ? "nome:" + n : "";
     }
-    chiaveNota() { return this.chiavePaz(); }
+    // La chiave passa da «nome:» a «cf:» nel momento in cui i valori portano
+    // il codice fiscale. La nota scritta prima deve SEGUIRE il paziente, non
+    // restare indietro (e non riaffiorare su un omonimo): la si sposta.
+    chiaveNota() {
+      const k = this.chiavePaz();
+      if (!k.startsWith("cf:")) return k;
+      const vecchia = "nome:" + normNome((document.title || "").trim());
+      const tutte = noteTutte();
+      if (!tutte[k] && tutte[vecchia] && vecchia !== "nome:") {
+        scriviNota(k, tutte[vecchia].t);
+        scriviNota(vecchia, "");
+        this.log(`${now()}  nota spostata sul codice fiscale del paziente`);
+      } else if (tutte[vecchia] && vecchia !== "nome:") {
+        scriviNota(vecchia, "");   // già migrata: la copia vecchia non deve restare in giro
+      }
+      return k;
+    }
     notaHtmlPaziente() {
       const k = this.chiaveNota();
       if (!k) return "";
@@ -3327,26 +3375,9 @@
       open.add(id);
       tabStore.set(this.refKey(), [...open]);
       this.render();
-      this.keepOne(id);   // opened once → keep it, so the next click is instant
-    }
-
-    // Save the copy of a referto that was just opened. Only that one: nothing
-    // is fetched before it is asked for, and a document already on screen is
-    // not new information.
-    async keepOne(id) {
-      if (!hasExt() || (this.refCache || {})[id]) return;
-      const e = this.esiti.find((x) => x.id === id);
-      if (!e || e.kind !== "referto") return;
-      this.refBusy = { ...(this.refBusy || {}), [id]: true };
-      this.render();
-      const res = await ask({ t: "cacheRef", id, url: e.url, ep: this.episodeId, pk: this.chiavePaz() });
-      if (res && res.ok) {
-        this.refCache = { ...(this.refCache || {}), [id]: res.size || 1 };
-        this.refBusy[id] = false;
-      } else {
-        this.refBusy[id] = (res && res.why) || "non riuscito";
-      }
-      this.render();
+      // Qui prima si rileggeva il PDF per tenerne una copia: una seconda
+      // richiesta per un documento che è già sullo schermo del medico. Per
+      // tenerne una copia c'è «⬇ Salva referti», che è una cosa che si chiede.
     }
 
     async resetReferti() {
@@ -3453,14 +3484,9 @@
         if (!e) return;
         this.risBusy = id;
         this.render();
-        try {
-          const { doc } = await fetchDoc(e.url, {});
-          const { rows, scartate } = parseRisultati(doc);
-          const cf = cfImpronta(doc);
-          tabStore.set(key, { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
-          this.archiviaPrelievo(e, rows, cf);
-          this.segnaVisto(id, rows);     // first read is the baseline
-        } catch (err) {
+        try { await this.leggiPrelievo(e, { baseline: true }); this.rottiTab.delete(id); }
+        catch (err) {
+          this.rottiTab.add(id);
           this.log(`${now()}  valori non letti: ${err?.head || err?.message || err}`);
         }
         this.risBusy = null;
@@ -3485,18 +3511,10 @@
         const key = this.risKey(e.id);
         const prima = JSON.stringify((tabStore.get(key, null) || {}).rows || []);
         try {
-          const { doc } = await fetchDoc(e.url, {});
-          const { rows, scartate } = parseRisultati(doc);
-          const cf = cfImpronta(doc);
-          if (rows.length) {
-            const mai = !tabStore.get(this.vistoKey(e.id), null);
-            tabStore.set(key, { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
-            this.archiviaPrelievo(e, rows, cf);
-            if (mai) this.segnaVisto(e.id, rows);   // never seen before: this read is its baseline
-            if (JSON.stringify(rows) !== prima) cambiati++;
-          } else {
-            this.log(`${now()}  ${shortLabel(e.label)}: la finestra Risultati non risponde più, tengo i valori già letti`);
-          }
+          const mai = !tabStore.get(this.vistoKey(e.id), null);
+          const rows = await this.leggiPrelievo(e, { baseline: mai });
+          this.rottiTab.delete(e.id);
+          if (rows && JSON.stringify(rows) !== prima) cambiati++;
         } catch (err) {
           this.log(`${now()}  ${shortLabel(e.label)}: valori non aggiornati (${err?.head || err?.message || err})`);
         }
@@ -3511,23 +3529,48 @@
     }
 
     // Values ready before he asks: the 2-line preview is the point of Esiti.
-    async prefetchValori() {
-      const todo = this.esiti.filter((e) => e.kind === "valori" && !tabStore.get(this.risKey(e.id), null)).slice(0, 6);
-      for (const e of todo) {
-        try {
-          const { doc } = await fetchDoc(e.url, {});
-          const { rows, scartate } = parseRisultati(doc);
-          const cf = cfImpronta(doc);
-          tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
-          this.archiviaPrelievo(e, rows, cf);
-          this.segnaVisto(e.id, rows);   // first read is the baseline
-          this.render();
-        } catch { /* stays without preview; opening it will retry */ }
-        await sleep(PACE_MS).catch(() => {});
+    // UNA lettura di un prelievo, usata da tutti: aprirlo, rileggerlo,
+    // ↻ Aggiorna, e il precarico. Prima erano quattro copie della stessa
+    // sequenza con quattro politiche d'errore diverse — ed è da lì che
+    // veniva un prelievo rotto riletto a ogni ricarico di pagina.
+    async leggiPrelievo(e, { baseline = false } = {}) {
+      const key = this.risKey(e.id);
+      const { doc } = await fetchDoc(e.url, {});
+      const { rows, scartate } = parseRisultati(doc);
+      const cf = cfImpronta(doc);
+      // una finestra che non risponde più non cancella quello che sapevamo
+      if (!rows.length && (tabStore.get(key, null) || {}).rows?.length) {
+        this.log(`${now()}  la finestra Risultati non risponde più: tengo i valori già letti`);
+        return null;
       }
-      // i prelievi portano l'impronta del codice fiscale: appena c'è, la
-      // provenienza dello storico va riesaminata con quella, non col nome
-      if (todo.length) this.caricaStorico();
+      tabStore.set(key, { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
+      this.archiviaPrelievo(e, rows, cf);
+      if (baseline) this.segnaVisto(e.id, rows);   // prima lettura: è il riferimento
+      return rows;
+    }
+
+    // Aprire una pagina paziente legge UN prelievo, il più recente: è quello
+    // che si guarda per primo. Gli altri si leggono quando si apre la scheda
+    // Esiti — che è il momento in cui li si vuole confrontare, cioè quando li
+    // stai chiedendo. E un prelievo che ha già fallito non si ritenta da solo
+    // a ogni ricarico di pagina: si rilegge col bottone ↻.
+    daLeggere() {
+      return this.esiti.filter((x) => x.kind === "valori"
+        && !tabStore.get(this.risKey(x.id), null) && !this.rottiTab.has(x.id));
+    }
+    async prefetchValori({ tutti = false } = {}) {
+      if (this._leggendo) return;
+      const todo = tutti ? this.daLeggere().slice(0, 6) : this.daLeggere().slice(0, 1);
+      if (!todo.length) return;
+      this._leggendo = true;
+      try {
+        for (const e of todo) {
+          try { await this.leggiPrelievo(e, { baseline: true }); this.render(); }
+          catch { this.rottiTab.add(e.id); }
+          if (todo.length > 1) await sleep(PACE_MS).catch(() => {});
+        }
+        this.caricaStorico();   // il codice fiscale arriva coi valori
+      } finally { this._leggendo = false; }
     }
 
     async copyValori() {
@@ -3552,17 +3595,8 @@
       if (!e) return;
       this.risBusy = e.id;
       this.render();
-      try {
-        const { doc } = await fetchDoc(e.url, {});
-        const { rows, scartate } = parseRisultati(doc);
-        const cf = cfImpronta(doc);
-        // a reported draw no longer answers: keep what we already had
-        if (rows.length) {
-          tabStore.set(this.risKey(e.id), { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
-          this.archiviaPrelievo(e, rows, cf);
-        }
-        else this.log(`${now()}  la finestra Risultati non risponde più: tengo i valori già letti`);
-      } catch (err) { this.log(`${now()}  valori non letti (tengo i precedenti): ${err?.head || err?.message || err}`); }
+      try { await this.leggiPrelievo(e); this.rottiTab.delete(e.id); }
+      catch (err) { this.log(`${now()}  valori non letti (tengo i precedenti): ${err?.head || err?.message || err}`); }
       this.risBusy = null;
       this.render();
     }
@@ -3736,7 +3770,7 @@
         }
         const ep = b.getAttribute("data-del");
         const p = pazientiArchiviati().find((x) => x.ep === ep);
-        eliminaPaziente(ep, p?.pk || "");
+        eliminaPaziente(ep, p?.pk || "", p?.name || "");
         this.message = { ok: `Eliminato tutto di ${p?.name || "quel paziente"}.` };
         this.render();
       }));

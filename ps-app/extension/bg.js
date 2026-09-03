@@ -99,6 +99,7 @@ const REF_TTL = 8 * 3600e3;   // a shift: cached documents die with it
 // browser e al logout: un turno è di dodici ore e i pazienti sono più di
 // dodici, quindi una memoria che muore col browser sarebbe inutile. Ventiquattro
 // ore dopo l'ultima lettura la scheda scade e viene cancellata da sola.
+let codaArch = Promise.resolve();   // le modifiche dell'archivio, una alla volta
 const STORICO_TTL = 24 * 3600e3;
 const STORICO_MAX = 200;         // di fatto nessun limite per un turno
 const REF_MAX = 25;           // and never pile up
@@ -168,6 +169,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   // decide LUI quale scheda è di questo paziente: la regola d'identità sta
   // in un posto solo, non anche qui dentro.
   const ARCH = "storicoArch";
+  // Leggere-modificare-riscrivere un unico blob da più schede insieme fa
+  // perdere schede: la seconda scrittura parte dalla copia che aveva letto
+  // prima ed è come se la prima non fosse mai avvenuta. Quindi le modifiche
+  // dell'archivio passano una alla volta, in fila.
+  const inFila = (fn) => (codaArch = codaArch.then(fn, fn));
   const vivo = (r) => r && Date.now() - (r.letto || 0) <= STORICO_TTL;
   const potaArchivio = (a) => {
     const vive = Object.entries(a).filter(([, r]) => vivo(r))
@@ -178,15 +184,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg.t === "putStorico") {
     const chiave = String(msg.chiave || "").slice(0, 80);
     if (!chiave || !msg.dati) return reply({ ok: false });
-    chrome.storage.local.get(ARCH)
-      .then(async (o) => {
-        const a = potaArchivio(o[ARCH] || {});
-        const nuovo = !a[chiave];
-        a[chiave] = msg.dati;
-        await chrome.storage.local.set({ [ARCH]: potaArchivio(a) });
-        reply({ ok: true, nuovo, pazienti: Object.keys(a).length });
-      })
-      .catch(() => reply({ ok: false }));
+    inFila(async () => {
+      const o = await chrome.storage.local.get(ARCH);
+      const a = potaArchivio(o[ARCH] || {});
+      const nuovo = !a[chiave];
+      a[chiave] = msg.dati;
+      await chrome.storage.local.set({ [ARCH]: potaArchivio(a) });
+      reply({ ok: true, nuovo, pazienti: Object.keys(a).length });
+    }).catch(() => reply({ ok: false }));
     return true;
   }
   // senza chiave: l'indice (chi c'è, non i valori). Con chiave: quel record.
@@ -214,18 +219,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   }
   // Eliminare un paziente: la sua scheda clinica e i referti tenuti per lui.
   if (msg.t === "delStorico") {
-    (async () => {
-      if (msg.chiave) {
-        const o = await chrome.storage.local.get(ARCH);
-        const a = o[ARCH] || {};
-        if (a[msg.chiave]) { delete a[msg.chiave]; await chrome.storage.local.set({ [ARCH]: a }); }
-      }
+    inFila(async () => {
+      // Si cancella per IDENTITÀ, non per la chiave che ci ricordavamo: una
+      // scheda arrivata dal portale o da un referto può non aver mai lasciato
+      // una chiave nell'elenco, e «eliminato tutto» deve essere vero.
+      const norm = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ").split(" ").sort().join(" ");
+      const o = await chrome.storage.local.get(ARCH);
+      const a = o[ARCH] || {};
+      const suo = norm(msg.nome || "");
+      const via = Object.keys(a).filter((k) => k === msg.chiave
+        || (suo && norm([a[k]?.paziente?.cognome, a[k]?.paziente?.nome].filter(Boolean).join(" ")) === suo));
+      if (via.length) { for (const k of via) delete a[k]; await chrome.storage.local.set({ [ARCH]: a }); }
       const all = await chrome.storage.local.get(null);
       const suoi = Object.keys(all).filter((k) => k.startsWith("ref:")
         && ((msg.chiave && all[k]?.pk === msg.chiave) || (msg.ep && String(all[k]?.ep || "") === String(msg.ep))));
       if (suoi.length) await chrome.storage.local.remove(suoi);
-      reply({ ok: true, referti: suoi.length });
-    })().catch(() => reply({ ok: false }));
+      reply({ ok: true, schede: via.length, referti: suoi.length });
+    }).catch(() => reply({ ok: false }));
     return true;
   }
 
