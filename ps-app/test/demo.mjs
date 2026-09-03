@@ -123,9 +123,11 @@ await $("#apristorico").click();
 await page.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
 const griglia = await page.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
-  return { righe: r.querySelectorAll(".sttab tbody tr").length, rosse: r.querySelectorAll(".sttab td.fuori").length };
+  return { righe: r.querySelectorAll(".sttab tbody tr:not(.stsez)").length, rosse: r.querySelectorAll(".sttab td.fuori").length,
+           sezioni: r.querySelectorAll(".sttab tr.stsez").length };
 });
 check(griglia.righe === 10 && griglia.rosse === 6, `la tabella con i suoi fuori range (${griglia.righe} righe, ${griglia.rosse} rosse)`);
+check(griglia.sezioni >= 4, `divisa in sezioni (${griglia.sezioni})`);
 
 // ---- una schermata mai salvata non è un errore
 await page.locator('#sa4-page a:has-text("Storico Documenti")').first().click().catch(() => {});

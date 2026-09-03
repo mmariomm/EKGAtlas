@@ -227,9 +227,26 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   NOME»*. Se sposti le colonne o cambi il periodo, **↻ Rileggi** aggiunge i prelievi nuovi a
   quelli già letti (non li sostituisce).
 - Tornando sul paziente, in **Esiti** compare la riga **Storico**: un tocco apre la tabella dentro
-  il pannello, **prelievo più recente per primo**, con in rosso ciò che la pagina aveva già marcato
-  fuori range (↑ sopra, ↓ sotto). **⧉ Copia** la mette negli appunti in colonne, **solo alterati**
-  toglie di mezzo il resto.
+  il pannello, **prelievo più recente per primo** (a sinistra il più fresco, verso destra si va
+  indietro nel tempo), con in rosso ciò che la pagina aveva già marcato fuori range (↑ sopra,
+  ↓ sotto). **⧉ Copia** la mette negli appunti in colonne, **solo alterati** toglie di mezzo il
+  resto, **⤢ Ingrandisci** la apre grande.
+- Gli esami sono **divisi in sezioni** e dentro ogni sezione l'ordine è **fisso**: *Emocromo,
+  Coagulazione, Infiammazione, Cardio, Organi, Elettroliti e metabolismo, Emogas, Urine e altri
+  liquidi*, e in fondo **Altri**. Prima l'ordine era quello in cui il laboratorio aveva stampato
+  la tabella, e **cambiava da un prelievo all'altro**: lo stesso esame andava cercato ogni volta.
+  Un analita che il programma non conosce non si perde: finisce in **Altri**, scritto per esteso.
+  Il campione decide per primo — **`U-Emoglobina` va in Urine, mai nell'emocromo**.
+- **Stessa riga, macchine diverse.** L'emocromo del POC e quello del laboratorio sono lo stesso
+  esame: stanno su **una riga sola**, e il valore che viene dall'altra macchina porta un
+  **asterisco**. Sopra ci si ferma col mouse per sapere quale, e sotto la tabella c'è scritto:
+  *«\* fatto con EMOCROMOCITOMETRICO URGENTE — gli altri con EMOCROMO»*. Prima questa
+  informazione **si perdeva in silenzio**: la riga fusa teneva solo il nome della prima
+  prestazione vista. Un valore ancora parziale è marcato **…**, non più con l'asterisco.
+- **⤢ Ingrandisci** apre la stessa tabella grande **dentro la pagina** — non è una finestra del
+  browser (niente popup da sbloccare) e il gestionale resta dov'è. Si chiude con **Esc**, con la
+  **✕** o cliccando fuori. Colonne delle date e colonna dei nomi restano ferme mentre scorri.
+- Le celle **vuote hanno un punto**: una riga con due soli prelievi non deve sembrarne una piena.
 - Nella tabella del portale la colonna di sinistra è la **prestazione ordinata** (`ESAME URINE
   COMPLETO`) e quella accanto è l'**analita** (`U-Albumina`, `U-Corpi chetonici`): il pannello legge
   l'analita, altrimenti un pannello di urine diventerebbe diciotto righe con lo stesso nome. Il

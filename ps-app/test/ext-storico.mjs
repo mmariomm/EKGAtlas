@@ -82,10 +82,19 @@ await paziente.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
 const tab = await paziente.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
   return {
-    righe: r.querySelectorAll(".sttab tbody tr").length,
+    righe: r.querySelectorAll(".sttab tbody tr:not(.stsez)").length,
     colonne: r.querySelectorAll(".sttab thead th").length - 1,
     rosse: r.querySelectorAll(".sttab td.fuori").length,
-    prima: [...r.querySelectorAll(".sttab tbody tr")[0].cells].map((c) => c.textContent.trim()).join("|"),
+    sezioni: [...r.querySelectorAll(".sttab tr.stsez th.stn")].map((c) => c.textContent.trim()),
+    // l'emoglobina si cerca per nome: con le sezioni la sua riga non è più
+    // la prima, ed è giusto così
+    hb: [...r.querySelectorAll(".sttab tbody tr:not(.stsez)")]
+      .filter((tr) => tr.cells[0].firstChild.textContent.trim() === "Hb")
+      .map((tr) => [...tr.cells].slice(1).map((c) => c.textContent.trim()).join("|")),
+    // la provenienza: il segno sulla cella e la riga che lo spiega
+    segni: r.querySelectorAll(".sttab .prov").length,
+    legenda: [...r.querySelectorAll(".hint")].map((h) => h.textContent.replace(/\s+/g, " ").trim())
+      .filter((t) => /^\* fatto con/.test(t)),
   };
 });
 // dieci analiti dal portale + quelli letti dalla finestra Risultati del
@@ -93,8 +102,14 @@ const tab = await paziente.evaluate(() => {
 check(tab.righe >= 10 && tab.colonne >= 4,
   `la scheda unisce le due finestre (got ${tab.righe} analiti × ${tab.colonne} prelievi)`);
 check(tab.rosse >= 6, `i fuori range restano marcati (got ${tab.rosse})`);
-check(/^Hb\|10\.4↓\|11\.8↓\|13\.2\|/.test(tab.prima),
-  `il prelievo più recente per primo, e l'emoglobina è UNA riga sola (got ${tab.prima})`);
+check(tab.hb.length === 1 && /^10\.4↓\|11\.8↓\|13\.2\|/.test(tab.hb[0]),
+  `il prelievo più recente per primo, e l'emoglobina è UNA riga sola (got ${tab.hb.join(" / ") || "nessuna"})`);
+// stessa riga, macchine diverse: il valore porta un asterisco e sotto la
+// tabella c'è scritto con che cosa è stato fatto
+check(tab.segni >= 1 && tab.legenda.length >= 1,
+  `la provenienza diversa è segnata e spiegata (${tab.segni} segni · ${tab.legenda[0] || "nessuna legenda"})`);
+check(tab.sezioni.includes("Emocromo") && tab.sezioni.includes("Organi"),
+  `gli esami sono divisi in sezioni (got ${tab.sezioni.join(", ")})`);
 // e un valore che il laboratorio non ha finito è marcato parziale
 const parz = await paziente.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
@@ -107,7 +122,7 @@ check(chiamatePortale === 1, "e nessuna richiesta in più al portale per mostrar
 // filtro
 await paziente.locator("#psassist-host #storfiltro").click();
 await paziente.waitForTimeout(200);
-const soloAlterati = await paziente.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".sttab tbody tr").length);
+const soloAlterati = await paziente.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".sttab tbody tr:not(.stsez)").length);
 check(soloAlterati === 5, `«solo alterati» tiene solo le righe con un valore fuori range (got ${soloAlterati})`);
 
 // ---- la tabella disegnata DOPO il caricamento ---------------------------

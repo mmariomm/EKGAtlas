@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.18.0";
+  const VERSION = "3.19.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -385,6 +385,38 @@
   // because urine haemoglobin is not haemoglobin and must never read as Hb.
   const CAMPIONE = /^\s*(S|P|B|Sg|Ser|Pl)\s*-\s*/i;
   const CAMPIONE_ALTRO = /^\s*(U|Lcr|Liq|F|Fec|Exp|Esc)\s*-\s*/i;
+  // Le sezioni dello storico. La chiave è la SIGLA (l'uscita di sigla()), non
+  // il nome del laboratorio: così bastano poche righe invece di un elenco di
+  // sinonimi, e l'ordine dentro ogni sezione è l'ordine in cui si leggono.
+  // Chi non è in elenco finisce in «Altri»: non si perde niente, mai.
+  const SEZIONI = [
+    ["Emocromo", ["GB", "Neu", "Lin", "Mon", "Eos", "Bas", "Altre", "Hb", "Ht", "GR", "MCV", "MCH", "MCHC", "RDW", "PLT"]],
+    ["Coagulazione", ["PT", "INR", "PTT", "Fib", "DD"]],
+    ["Infiammazione", ["PCR", "PCT", "VES"]],
+    ["Cardio", ["Trop", "NTproBNP", "BNP", "CPK", "CKMB", "Mb"]],
+    ["Organi", ["Cr", "Az", "AST", "ALT", "γGT", "ALP", "Bil", "BilD", "BilI", "Amy", "Lip", "Alb", "NH3", "LDH"]],
+    ["Elettroliti e metabolismo", ["Na", "K", "Cl", "Ca", "Ca++", "Mg", "Glu", "HbA1c", "TSH"]],
+    ["Emogas", ["pH", "pCO2", "pO2", "HCO3", "BE", "Lac", "SatO2", "AG", "ctCO2", "ctO2", "COHb", "MetHb", "FCOHb", "FO2Hb", "HHb", "Shunt", "Ratio", "EGA"]],
+    ["Urine e altri liquidi", ["Albu", "PesoSp", "Nitr", "Chet", "EstLeu", "Urob"]],
+  ];
+  const ALTRI = "Altri";
+  // sigla → [sezione, posizione dentro la sezione], costruita una volta sola
+  const DOVE = (() => {
+    const m = new Map();
+    SEZIONI.forEach(([sez, sigle]) => sigle.forEach((s, i) => m.set(s, [sez, i])));
+    return m;
+  })();
+  // Un'abbreviazione che porta il campione (U·Hb, Lcr·Glu) non è quell'analita
+  // nel sangue: l'emoglobina delle urine non va nell'emocromo. Il campione
+  // decide la sezione prima di tutto il resto.
+  function sezioneDi(sg) {
+    const s = String(sg || "");
+    if (s.includes("·")) return ["Urine e altri liquidi", 900];
+    return DOVE.get(s) || [ALTRI, 900];
+  }
+  const ordineSezioni = [...SEZIONI.map(([n]) => n), "Urine e altri liquidi", ALTRI]
+    .filter((n, i, a) => a.indexOf(n) === i);
+
   function scomponi(nome) {
     const n = String(nome || "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
     if (CAMPIONE.test(n)) return { pre: "", resto: n.replace(CAMPIONE, "") };
@@ -423,6 +455,57 @@
     for (const [s, nomi] of per) if (nomi.size > 1) out.add(s);
     return out;
   }
+  // Le righe divise in sezioni, in ordine FISSO. L'ordine non deve dipendere da
+  // come il laboratorio ha stampato la tabella: se dipendesse, lo stesso esame
+  // cambierebbe posto da un prelievo all'altro e lo si cercherebbe ogni volta.
+  function raggruppaStorico(righe) {
+    const per = new Map();
+    for (const r of righe || []) {
+      const sg = sigla(r.nome);
+      const [sez, ord] = sezioneDi(sg);
+      if (!per.has(sez)) per.set(sez, []);
+      per.get(sez).push({ ...r, sg, ord });
+    }
+    const out = [];
+    for (const sez of ordineSezioni) {
+      const l = per.get(sez);
+      if (!l) continue;
+      l.sort((a, b) => (a.ord - b.ord) || String(a.sg).localeCompare(String(b.sg), "it"));
+      out.push({ nome: sez, righe: l });
+      per.delete(sez);
+    }
+    for (const [sez, l] of per) out.push({ nome: sez, righe: l });   // mai, ma non si perde
+    return out;
+  }
+
+  // Chi ha fatto quale valore. Quasi sempre una macchina sola, e allora non si
+  // segna niente. Quando sono due o più — l'emocromo del POC e quello del
+  // laboratorio — la più frequente resta muta e le altre prendono un segno,
+  // spiegato sotto la tabella e sul valore stesso.
+  const SEGNI = ["*", "†", "‡", "§"];
+  function provenienze(r) {
+    const conta = new Map();
+    (r.valori || []).forEach((v, i) => {
+      if (!v || !v.v) return;
+      const e = String(v.esame || r.esame || "").trim();
+      if (!e) return;
+      const c = conta.get(e) || { n: 0, ultimo: -1 };
+      c.n++; c.ultimo = i;                       // date: dal più vecchio al più recente
+      conta.set(e, c);
+    });
+    const nulla = { solita: "", segno: () => "", legenda: [] };
+    if (conta.size < 2) return nulla;
+    const ord = [...conta.entries()].sort((a, b) => (b[1].n - a[1].n) || (b[1].ultimo - a[1].ultimo));
+    const solita = ord[0][0];
+    const marchi = new Map();
+    ord.slice(1).forEach(([e], i) => marchi.set(e, SEGNI[i] || "•"));
+    return {
+      solita,
+      segno: (v) => marchi.get(String((v && v.esame) || r.esame || "").trim()) || "",
+      legenda: [...marchi.entries()].map(([esame, segno]) => ({ segno, esame, solita })),
+    };
+  }
+
   const nomiInattesi = (rows) => {
     const out = [];
     for (const r of rows || []) {
@@ -965,7 +1048,10 @@
         const anonima = !r.mnem && r.nome === r.esame;
         const k = valKey(r.nome) + (anonima ? "|#" + (r.pos ?? 0) : "");
         const cur = perEsame.get(k) || { nome: r.nome, esame: r.esame, codice: r.codice, mnem: r.mnem, pos: r.pos, per: new Map() };
-        r.valori.forEach((v, i) => { if (v.v && dati.date[i]) cur.per.set(chiaveCol(dati.date[i]), v); });
+        // La provenienza viaggia CON il valore. Due prelievi possono aver
+        // fatto lo stesso esame con macchine diverse (POC e laboratorio):
+        // stessa riga, ma si deve poter dire quale cella viene da dove.
+        r.valori.forEach((v, i) => { if (v.v && dati.date[i]) cur.per.set(chiaveCol(dati.date[i]), r.esame ? { ...v, esame: r.esame } : v); });
         perEsame.set(k, cur);
       }
     };
@@ -2310,6 +2396,46 @@
     .sttab td.fuori { color: #B3261E; font-weight: 800; }
     .sttab td.parz i { font-style: normal; color: #A2600A; font-weight: 700; }
     .sttab tbody tr:hover td, .sttab tbody tr:hover th.stn { background: #F4F9FD; }
+    /* Sezioni: gli esami stanno dove un medico li cerca, e sempre nello stesso
+       posto. L'ordine non dipende più da come il laboratorio ha stampato. */
+    .sttab tr.stsez th.stn, .sttab tr.stsez td { background: #EEF4FA; border-bottom: 1px solid #D9E4EF;
+      font-size: 9.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #5B6B7A; }
+    .sttab tr.stsez th.stn { color: #35506B; padding-top: 7px; padding-bottom: 4px; }
+    .sttab tr.stsez td { text-align: left; padding-top: 7px; padding-bottom: 4px; }
+    .sttab tr.stsez:hover th.stn, .sttab tr.stsez:hover td { background: #EEF4FA; }
+    .stalt { color: #B3261E; font-weight: 800; letter-spacing: .04em; }
+    /* una cella senza valore si deve VEDERE che è vuota, o una riga con due
+       soli prelievi sembra una riga piena */
+    .sttab td.vuoto { color: #CBD6E1; }
+    .stum { display: block; font-size: 9px; color: #A3B2C2; font-weight: 500; letter-spacing: 0; }
+    .sttab th.ultima { color: #0B5CAD; }
+    .sttab th.ultima::after { content: "ultimo"; display: block; font-size: 8.5px; font-weight: 700;
+      letter-spacing: .06em; text-transform: uppercase; color: #9DBFDE; }
+    /* il segno di provenienza: piccolo, in alto, mai confondibile con un valore */
+    .sttab .prov { font-style: normal; font-size: 9px; vertical-align: super; color: #0B5CAD;
+                   font-weight: 800; margin-left: 1px; cursor: help; }
+    /* La finestra grande. Sta dentro la pagina (niente popup da sbloccare, e
+       il gestionale resta dov'era), si chiude con Esc, il fondo o la ✕. */
+    /* sopra il pannello, non sotto: mentre è aperta è lei che si guarda */
+    .stfull { position: fixed; inset: 0; z-index: 2147483647; background: rgba(9,42,74,.42);
+              display: flex; align-items: center; justify-content: center; padding: 3vh 2vw; }
+    /* larga quanto la tabella, non quanto lo schermo: tre colonne di numeri in
+       una carta da 1400 px sono un foglio vuoto con dei numeri in un angolo */
+    .stcard { width: fit-content; min-width: min(560px, 92vw); max-width: 96vw; max-height: 94vh;
+              display: flex; flex-direction: column;
+              background: #fff; border-radius: 14px; box-shadow: 0 18px 56px rgba(9,42,74,.34);
+              padding: 12px 14px 14px; overflow: auto; }
+    .sthd { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+    .sthd b { font-size: 15px; color: #16232E; }
+    .sthd .stsub { flex: 1 1 auto; font-size: 11.5px; color: #7A8CA0; overflow: hidden;
+                   white-space: nowrap; text-overflow: ellipsis; }
+    .sthd .mini { float: none; }
+    /* .iconbtn nasce per l'intestazione blu: qui è bianco su bianco */
+    .sthd .iconbtn { color: #5B6B7A; border: 1px solid #E3E8EF; border-radius: 8px; width: 26px; height: 26px; }
+    .sthd .iconbtn:hover { color: #B3261E; border-color: #E5B4B0; background: #FDF3F2; }
+    .stwrap.grande { flex: 1 1 auto; min-height: 0; overflow: auto; }
+    .stwrap.grande .sttab { font-size: 12.5px; }
+    .stwrap.grande .sttab th, .stwrap.grande .sttab td { padding: 4px 12px; }
     .reftxt { font-size: 12.5px; line-height: 1.5; color: #16232E; }
     .reftxt .rt { padding: 1px 0; }
     .reftxt .rt:empty { display: none; }
@@ -2399,6 +2525,7 @@
       this.storicoVia = "nome";         // su cosa è stata confermata l'identità
       this.storicoDaConfermare = false; // c'è, ma serve il codice fiscale per dire che è suo
       this.soloAlterati = false;        // storico: show only what is out of range
+      this.storicoGrande = false;       // la finestra grande dello storico, aperta o no
       this.mostraNomi = false;          // the unexpected-name list, open or closed
       this.mostraArch = false;          // l'elenco degli archiviati, aperto o chiuso
       this.rottiTab = new Set();        // prelievi che hanno già fallito: niente ritentativi da soli
@@ -2425,7 +2552,11 @@
     this._visibile = () => { if (!document.hidden && this.pageType === "patient") this.caricaStorico(); };
     document.addEventListener("visibilitychange", this._visibile);
     this._unload = (e) => { e.preventDefault(); e.returnValue = ""; };
-      this._esc = (e) => { if (e.key === "Escape" && this.runState === "running") this.stop(); };
+      this._esc = (e) => {
+        if (e.key !== "Escape") return;
+        if (this.runState === "running") this.stop();
+        else if (this.storicoGrande) { this.storicoGrande = false; this.render(); }
+      };
       window.addEventListener("keydown", this._esc, true);
     }
 
@@ -2822,7 +2953,7 @@
               </div>` : ""}
             </div>
           `}
-        </div>`;
+        </div>${!this.runState && this.view === "storico" && this.storicoGrande ? this.vistaGrande() : ""}`;
       this.bind();
       for (const [sel, top] of keepScroll) {
         const el = this.root.querySelector(sel);
@@ -3120,35 +3251,104 @@
 
     // The multi-day table: exams down, draws across, newest first. It is read
     // from the portal page, never asked to the server.
+    // UNA sola tabella, usata dal pannello e dalla finestra grande: due
+    // sorgenti che disegnano «la stessa» tabella finiscono sempre per
+    // divergere, e la differenza la scopre il medico.
+    tabellaStorico(st, grande) {
+      const col = st.date.map((d, i) => ({ ...d, i })).reverse();   // il più recente a sinistra
+      const ambS = sigleAmbigue(st.righe);
+      const inatteso = (r) => !siglaCurata(r.nome) || ambS.has(sigla(r.nome));
+      const legenda = [];
+      const gruppi = raggruppaStorico(st.righe)
+        .map((g) => ({ ...g, righe: g.righe.filter((r) => !this.soloAlterati || r.valori.some((v) => v.v && v.stato)) }))
+        .filter((g) => g.righe.length);
+
+      const rigaEsame = (r) => {
+        const p = provenienze(r);
+        for (const l of p.legenda) if (!legenda.some((x) => x.segno === l.segno && x.esame === l.esame)) legenda.push(l);
+        const um = (r.valori.find((v) => v && v.um) || {}).um || "";
+        const celle = col.map((c) => {
+          const v = r.valori[c.i] || { v: "", stato: 0 };
+          if (!v.v) return `<td class="vuoto">·</td>`;
+          const sg = p.segno(v);
+          const daChi = String(v.esame || r.esame || "").trim();
+          const tip = [v.um, v.range, sg && daChi ? "fatto con " + daChi : ""].filter(Boolean).join(" · ");
+          return `<td class="${v.stato ? "fuori" : ""}${v.parziale ? " parz" : ""}"${
+            tip ? ` title="${esc(tip)}${v.parziale ? " · parziale" : ""}"` : v.parziale ? ` title="parziale"` : ""
+          }>${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}${v.parziale ? "<i>…</i>" : ""}${
+            sg ? `<i class="prov" title="${esc(daChi ? "fatto con " + daChi + (p.solita ? " — gli altri con " + p.solita : "") : "")}">${esc(sg)}</i>` : ""
+          }</td>`;
+        }).join("");
+        const etichetta = inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome);
+        return `<tr><th class="stn${inatteso(r) ? " grezza" : ""}" title="${esc(r.nome)}${
+          r.esame && r.esame !== r.nome ? " — " + esc(r.esame) : ""}${r.mnem ? " · " + esc(r.mnem) : ""}">${
+          esc(etichetta)}${um ? `<span class="stum">${esc(um)}</span>` : ""}</th>${celle}</tr>`;
+      };
+
+      const corpo = gruppi.map((g) => {
+        const alterati = g.righe.filter((r) => r.valori.some((v) => v.v && v.stato)).length;
+        return `<tr class="stsez"><th class="stn">${esc(g.nome)}</th><td colspan="${col.length}">${
+          alterati ? `<span class="stalt">${alterati} fuori norma</span>` : ""}</td></tr>${g.righe.map(rigaEsame).join("")}`;
+      }).join("");
+
+      const testa = `<tr><th class="stn">Esame</th>${col.map((c, i) => `<th class="${i === 0 ? "ultima" : ""}">${
+        esc(c.data.slice(0, 5))}<span class="sth">${esc(c.ora)}</span></th>`).join("")}</tr>`;
+      const nRighe = gruppi.reduce((n, g) => n + g.righe.length, 0);
+      return {
+        html: `<div class="stwrap${grande ? " grande" : ""}"><table class="sttab"><thead>${testa}</thead><tbody>${corpo}</tbody></table></div>`,
+        legenda, nRighe, nCol: col.length,
+      };
+    }
+
+    // La legenda dei segni + la nota sui valori parziali: sotto la tabella,
+    // scritta, non solo in un tooltip che su un portatile non si vede.
+    piedeStorico(st, legenda) {
+      const parz = st.righe.some((r) => r.valori.some((v) => v.parziale));
+      return `${legenda.map((l) => `<div class="hint"><b>${esc(l.segno)}</b> fatto con <b>${esc(l.esame)}</b>${
+        l.solita ? ` — gli altri con ${esc(l.solita)}` : ""}</div>`).join("")}${
+        parz ? `<div class="hint">… valore ancora <b>parziale</b>: il laboratorio non ha finito.</div>` : ""}`;
+    }
+
     viewStorico() {
       const st = this.storico;
       if (!st) return `<div class="hint">Nessuno storico in memoria. Aprilo dal gestionale: «Storico dati clinici» › Tabella.</div>`;
-      const col = st.date.map((d, i) => ({ ...d, i })).reverse();   // newest first, like Esiti
-      const righe = st.righe.filter((r) => !this.soloAlterati || r.valori.some((v) => v.v && v.stato));
-      const ambS = sigleAmbigue(st.righe);
-      const inatteso = (r) => !siglaCurata(r.nome) || ambS.has(sigla(r.nome));
-      const celle = (r) => col.map((c) => {
-        const v = r.valori[c.i] || { v: "", stato: 0 };
-        const tip = [v.um, v.range].filter(Boolean).join(" · ");
-        return `<td class="${v.stato ? "fuori" : ""}${v.parziale ? " parz" : ""}"${
-          tip ? ` title="${esc(tip)}${v.parziale ? " · parziale" : ""}"` : v.parziale ? ` title="parziale"` : ""
-        }>${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}${v.parziale ? "<i>*</i>" : ""}</td>`;
-      }).join("");
+      const t = this.tabellaStorico(st, false);
       return `
         <div class="sec">
           <div class="lbl">Storico (${st.righe.length} esami)
+            <button class="mini" id="storgrande" title="Aprilo in grande: si legge tutto in una volta">⤢ Ingrandisci</button>
             <button class="mini" id="storcopy">⧉ Copia</button>
             <button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>
           </div>
           ${this.avvisoNomi(st.righe, st.scartate)}
-          <div class="stwrap">
-            <table class="sttab">
-              <thead><tr><th class="stn">Esame</th>${col.map((c) => `<th>${esc(c.data.slice(0, 5))}<span class="sth">${esc(c.ora)}</span></th>`).join("")}</tr></thead>
-              <tbody>${righe.map((r) => `<tr><th class="stn${inatteso(r) ? " grezza" : ""}" title="${esc(r.nome)}${r.esame && r.esame !== r.nome ? " — " + esc(r.esame) : ""}${r.mnem ? " · " + esc(r.mnem) : ""}">${esc(inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome))}</th>${celle(r)}</tr>`).join("")}</tbody>
-            </table>
-          </div>
-          ${st.righe.some((r) => r.valori.some((v) => v.parziale)) ? `<div class="hint">* valore ancora <b>parziale</b>: il laboratorio non ha finito.</div>` : ""}
+          ${t.html}
+          ${this.piedeStorico(st, t.legenda)}
           <div class="hint">Letto per <b>${esc([st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") || "—")}</b>${st.paziente?.idMPI ? ` · idMPI ${esc(st.paziente.idMPI)}` : ""} · identità confermata dal <b>${esc(this.storicoVia || "nome")}</b>. ${esc(st.periodo || "")} · dalla pagina del portale, senza chiedere niente al server.</div>
+        </div>`;
+    }
+
+    // La finestra grande: la stessa tabella, ma con lo spazio per leggerla.
+    // Non è una scheda nuova né una finestra del browser — resta dentro la
+    // pagina, si chiude con Esc e non porta via niente al gestionale.
+    vistaGrande() {
+      const st = this.storico;
+      if (!st) return "";
+      const t = this.tabellaStorico(st, true);
+      const chi = [st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") || "—";
+      return `
+        <div class="stfull" id="stfull">
+          <div class="stcard" role="dialog" aria-label="Storico di ${esc(chi)}">
+            <div class="sthd">
+              <b>${esc(chi)}</b>
+              <span class="stsub">${t.nRighe} esami · ${t.nCol} prelievi${st.periodo ? " · " + esc(st.periodo) : ""}</span>
+              <button class="mini" id="storfiltro2">${this.soloAlterati ? "tutti" : "solo alterati"}</button>
+              <button class="mini" id="storcopy2">⧉ Copia</button>
+              <button class="iconbtn" id="stchiudi" title="Chiudi (Esc)">✕</button>
+            </div>
+            ${this.avvisoNomi(st.righe, st.scartate)}
+            ${t.html}
+            ${this.piedeStorico(st, t.legenda)}
+          </div>
         </div>`;
     }
 
@@ -3157,13 +3357,23 @@
       if (!st) return "";
       const col = st.date.map((d, i) => ({ ...d, i })).reverse();
       const out = ["Esame\t" + col.map((c) => c.label).join("\t")];
-      for (const r of st.righe) {
-        out.push([r.esame && r.esame !== r.nome ? `${r.esame} — ${r.nome}` : r.nome, ...col.map((c) => {
-          const v = r.valori[c.i] || { v: "", stato: 0 };
-          return v.v + (v.stato ? (v.stato < 0 ? " (basso)" : " (alto)") : "");
-        })].join("\t"));
+      const note = [];
+      for (const g of raggruppaStorico(st.righe)) {
+        out.push("", "[" + g.nome + "]");
+        for (const r of g.righe) {
+          const p = provenienze(r);
+          for (const l of p.legenda) {
+            const riga = `${l.segno} fatto con ${l.esame}${l.solita ? ` — gli altri con ${l.solita}` : ""}`;
+            if (!note.includes(riga)) note.push(riga);
+          }
+          out.push([r.esame && r.esame !== r.nome ? `${r.esame} — ${r.nome}` : r.nome, ...col.map((c) => {
+            const v = r.valori[c.i] || { v: "", stato: 0 };
+            if (!v.v) return "";
+            return v.v + (v.stato ? (v.stato < 0 ? " (basso)" : " (alto)") : "") + p.segno(v);
+          })].join("\t"));
+        }
       }
-      return out.join("\n");
+      return out.join("\n") + (note.length ? "\n\n" + note.join("\n") : "");
     }
 
     // The table read on the portal page comes back through the extension. It
@@ -4028,12 +4238,19 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#letto")?.addEventListener("click", () => { if (this.viewId) { this.marcaLetto(this.viewId); this.render(); } });
       $("#apripdf")?.addEventListener("click", () => { if (this.viewId) this.openReferto(this.viewId); });
       $("#apristorico")?.addEventListener("click", () => this.setView("storico"));
-      $("#storfiltro")?.addEventListener("click", () => { this.soloAlterati = !this.soloAlterati; this.render(); });
+      const filtra = () => { this.soloAlterati = !this.soloAlterati; this.render(); };
+      $("#storfiltro")?.addEventListener("click", filtra);
+      $("#storfiltro2")?.addEventListener("click", filtra);
+      $("#storgrande")?.addEventListener("click", () => { this.storicoGrande = true; this.render(); });
+      $("#stchiudi")?.addEventListener("click", () => { this.storicoGrande = false; this.render(); });
+      // il fondo scuro chiude, il contenuto no
+      $("#stfull")?.addEventListener("click", (ev) => {
+        if (ev.target === this.root.querySelector("#stfull")) { this.storicoGrande = false; this.render(); }
+      });
       $("#avvnomi")?.addEventListener("click", () => { this.mostraNomi = !this.mostraNomi; this.render(); });
-      $("#storcopy")?.addEventListener("click", async () => {
-        const b = this.root.querySelector("#storcopy");
-        let ok = false;
-        ok = await copiaTesto(this.testoStorico());
+      for (const id of ["#storcopy", "#storcopy2"]) $(id)?.addEventListener("click", async () => {
+        const b = this.root.querySelector(id);
+        const ok = await copiaTesto(this.testoStorico());
         if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
       });
       this.root.querySelectorAll("[data-dcopy]").forEach((b) => b.addEventListener("click", async () => {

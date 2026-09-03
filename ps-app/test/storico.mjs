@@ -37,7 +37,12 @@ const linea = (frammento) => {
   if (i < 0) throw new Error("non trovato: " + frammento);
   return core.slice(i, core.indexOf("\n", i));
 };
-const src = grab("impronta") + "\n" + linea("const valKey =") + "\n" + core.slice(da, a);
+// le sigle, le sezioni e la provenienza: un blocco solo, com'è nel sorgente
+const sigleDa = core.indexOf("  const SIGLE = [");
+const sigleA = core.indexOf("  // ---- comparing draws");
+if (sigleDa < 0 || sigleA < sigleDa) throw new Error("blocco SIGLE non trovato in src/core.js");
+const src = grab("impronta") + "\n" + linea("const valKey =") + "\n"
+  + core.slice(sigleDa, sigleA) + "\n" + core.slice(da, a);
 
 function chromiumPath() {
   for (const p of ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"]) {
@@ -207,6 +212,84 @@ check(scelte.senzaCodiceSulNome === "nome:MARIO ROSSI", "senza codici in archivi
 check(scelte.mioIgnotoSchedaConCodice === null,
   "se il codice del paziente davanti non si sa ancora, una scheda con un codice non gli si attribuisce");
 check(scelte.nessunaSuaScheda === null && scelte.archivioVuoto === null, "e di un paziente senza scheda non sceglie nulla");
+
+// ---- sezioni: gli esami stanno dove un medico li cerca -------------------
+const sez = await page.evaluate((s) => {
+  // eslint-disable-next-line no-new-func
+  return new Function(s + `
+    const righe = [
+      { nome: "Emoglobina", esame: "EMOCROMO", valori: [{ v: "12", stato: 0 }] },
+      { nome: "Leucociti", esame: "EMOCROMO", valori: [{ v: "9", stato: 0 }] },
+      { nome: "Piastrine", esame: "EMOCROMO", valori: [{ v: "200", stato: 0 }] },
+      { nome: "Creatinina", esame: "CREATININA", valori: [{ v: "1.1", stato: 0 }] },
+      { nome: "ALT", esame: "EPATICO", valori: [{ v: "30", stato: 0 }] },
+      { nome: "PCR", esame: "PCR", valori: [{ v: "40", stato: 1 }] },
+      { nome: "pH", esame: "EGA ARTERIOSA", valori: [{ v: "7.31", stato: -1 }] },
+      { nome: "Lattati", esame: "EGA ARTERIOSA", valori: [{ v: "3.0", stato: 1 }] },
+      { nome: "U-Emoglobina", esame: "ESAME URINE", valori: [{ v: "presente", stato: 0 }] },
+      { nome: "Fantasilina", esame: "FANTASIA", valori: [{ v: "7", stato: 0 }] },
+    ];
+    const g = raggruppaStorico(righe);
+    return {
+      sezioni: g.map((x) => x.nome),
+      emocromo: (g.find((x) => x.nome === "Emocromo") || { righe: [] }).righe.map((r) => r.sg),
+      organi: (g.find((x) => x.nome === "Organi") || { righe: [] }).righe.map((r) => r.sg),
+      urine: (g.find((x) => x.nome === "Urine e altri liquidi") || { righe: [] }).righe.map((r) => r.sg),
+      altri: (g.find((x) => x.nome === "Altri") || { righe: [] }).righe.map((r) => r.nome),
+    };
+  `)();
+}, src);
+check(sez.sezioni.join(" | ") === "Emocromo | Infiammazione | Organi | Emogas | Urine e altri liquidi | Altri",
+  `le sezioni escono nell'ordine in cui si leggono (got ${sez.sezioni.join(" | ")})`);
+check(sez.emocromo.join(",") === "GB,Hb,PLT",
+  `dentro una sezione l'ordine è fisso, non quello del laboratorio (got ${sez.emocromo.join(",")})`);
+check(sez.organi.join(",") === "Cr,ALT", `l'esame va dove lo si cerca (got ${sez.organi.join(",")})`);
+// l'emoglobina delle urine non è quella del sangue: il campione decide prima
+check(sez.urine.join(",") === "U·Hb" && !sez.emocromo.includes("U·Hb"),
+  `l'emoglobina delle urine non finisce nell'emocromo (got ${sez.urine.join(",")})`);
+check(sez.altri.join(",") === "Fantasilina", "un nome che il programma non conosce non si perde: va in «Altri»");
+
+// ---- provenienza: stessa riga, macchine diverse --------------------------
+const prov = await page.evaluate((s) => {
+  // eslint-disable-next-line no-new-func
+  return new Function(s + `
+    // tre prelievi: due col POC, l'ultimo col laboratorio
+    const r = { nome: "Emoglobina", esame: "EMOCROMO POC", valori: [
+      { v: "13.0", stato: 0, esame: "EMOCROMO POC" },
+      { v: "12.0", stato: 0, esame: "EMOCROMO POC" },
+      { v: "11.0", stato: 0, esame: "EMOCROMO FANTOLI" },
+    ] };
+    const p = provenienze(r);
+    const sola = provenienze({ nome: "PCR", esame: "PCR", valori: [{ v: "9", stato: 0, esame: "PCR" }] });
+    return {
+      segni: r.valori.map((v) => p.segno(v)),
+      solita: p.solita,
+      legenda: p.legenda.map((l) => l.segno + " " + l.esame),
+      quandoUnaSola: { segno: sola.segno({ esame: "PCR" }), legenda: sola.legenda.length },
+    };
+  `)();
+}, src);
+check(sez && prov.segni.join("|") === "||*",
+  `la macchina di sempre non si segna, l'altra sì (got ${prov.segni.join("|")})`);
+check(prov.solita === "EMOCROMO POC", `«di sempre» è quella che ha fatto più valori (got ${prov.solita})`);
+check(prov.legenda.join(" ") === "* EMOCROMO FANTOLI", `e sotto la tabella si dice quale (got ${prov.legenda.join(" ")})`);
+check(prov.quandoUnaSola.segno === "" && prov.quandoUnaSola.legenda === 0,
+  "con una macchina sola non si segna niente: l'asterisco vuol dire qualcosa solo se è raro");
+
+// ---- la provenienza sopravvive alla fusione ------------------------------
+const provFusa = await page.evaluate(([s, a, b]) => {
+  const doc = (h) => new DOMParser().parseFromString(h, "text/html");
+  // eslint-disable-next-line no-new-func
+  return new Function("dA", "dB", s + `
+    const u = unisciStorico(leggiStorico(dA), leggiStorico(dB));
+    const hb = u.righe.find((r) => /emoglobina/i.test(r.nome));
+    return { esami: hb.valori.map((v) => v.esame || ""), n: u.date.length };
+  `)(doc(a), doc(b));
+}, [src, paginaStorico({ date: [DATE[0]], esami: [["EMOCROMO POC", "Emoglobina", "1201", "HB", ["13.0"], [0]]] }),
+    paginaStorico({ date: [DATE[1]], esami: [["EMOCROMO FANTOLI", "Emoglobina", "1201", "HB", ["11.0"], [0]]] })]);
+check(provFusa.n === 2 && provFusa.esami.filter(Boolean).length === 2
+  && new Set(provFusa.esami.filter(Boolean)).size === 2,
+  `fondendo due letture ogni valore si porta dietro chi l'ha fatto (got ${provFusa.esami.join(" / ")})`);
 
 // a page that is not that page
 const altra = await leggi("<html><body><table><tr><td>ciao</td></tr></table></body></html>");
