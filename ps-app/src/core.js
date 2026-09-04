@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.22.0";
+  const VERSION = "3.23.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -749,9 +749,12 @@
   //   /UploadDownload/uploaddownloadservlet.rra2?…&mimetype=application/pdf
   // Those URLs are built inside the page, so we harvest them as text and try
   // them in order — never constructing one ourselves.
-  // NB: identica a quella in extension/bg.js — le due cacce al PDF (in pagina
-  // e nel service worker) devono giudicare lo stesso indirizzo allo stesso modo
-  const PDF_SMELL = /uploaddownloadservlet|mimetype=application\/pdf|get_pdf|jasperservlet|refertostream|report|\.pdf(?:[?&"']|$)/i;
+  // Volutamente PIÙ STRETTA di quella in extension/bg.js: là si cacciano i
+  // referti, dove «report» è un indizio buono; qui si passa in rassegna una
+  // pagina intera e si tengono i primi quattro candidati — una parola larga
+  // se li mangia prima che tocchi a quello giusto. Le due cacciano documenti
+  // diversi su host diversi: farle identiche era un'idea mia, non un requisito.
+  const PDF_SMELL = /uploaddownloadservlet|mimetype=application\/pdf|get_pdf|jasperservlet|refertostream|\.pdf(?:[?&"']|$)/i;
   function pdfCandidates(text) {
     const out = [], seen = new Set();
     const push = (raw) => {
@@ -837,7 +840,22 @@
       // handed over the moment it is created. Both cover viewers that assemble
       // their pdf URL piece by piece.
       const CB = JSON.stringify(cb);
+      // Il visualizzatore replicato deve sapere DOV'È. Il suo script gira in
+      // una cornice che non ha il suo indirizzo, quindi un visualizzatore che
+      // costruisce l'indirizzo del PDF dalla propria query string leggeva la
+      // nostra: non trovava niente, e si finiva sul ripiego manuale. Qui non
+      // si inventa nessun indirizzo — si toglie una bugia che avevamo messo
+      // noi: l'indirizzo che gli si dà è il suo, quello che il medico ha
+      // aperto. L'indirizzo del PDF continua a calcolarselo lui.
+      const suo = (() => { try { return new URL(url, location.href); } catch { return null; } })();
+      const LOC = JSON.stringify(suo ? {
+        href: suo.href, search: suo.search, pathname: suo.pathname, origin: suo.origin,
+        protocol: suo.protocol, host: suo.host, hostname: suo.hostname, port: suo.port, hash: suo.hash,
+        toString: undefined,
+      } : {});
       const prelude = `<script>(function(){
+        window.__psaLoc = ${LOC};
+        window.__psaLoc.toString = function(){ return this.href || ""; };
         function nav(u){ try { parent.postMessage({ __psassist: ${CB}, nav: String(u) }, "*"); } catch (e) {} }
         window.__psaNav = nav;
         try { Object.defineProperty(window, "__psaNavHref", { set: nav, get: function(){ return ""; } }); } catch (e) {}
@@ -855,7 +873,11 @@
       const patched = String(html || "")
         .replace(new RegExp(`\\b${NAV_PREFIX}location\\s*\\.\\s*(?:replace|assign)\\s*\\(`, "gi"), "__psaNav(")
         .replace(new RegExp(`\\b${NAV_PREFIX}location\\s*\\.\\s*href\\s*=(?!=)`, "gi"), "__psaNavHref =")
-        .replace(new RegExp(`\\b(?:window|self|top)\\s*\\.\\s*location\\s*=(?!=)`, "gi"), "__psaNavHref =");
+        .replace(new RegExp(`\\b(?:window|self|top)\\s*\\.\\s*location\\s*=(?!=)`, "gi"), "__psaNavHref =")
+        // le LETTURE dell'indirizzo, dopo le scritture (che sopra sono già
+        // diventate __psaNav): quello che resta è codice che vuole SAPERE
+        // dove si trova, e adesso glielo si dice per davvero
+        .replace(new RegExp(`\\b${NAV_PREFIX}location\\s*\\.\\s*(href|search|pathname|hostname|host|origin|protocol|port|hash)\\b`, "gi"), "__psaLoc.$1");
       const idoc = iframe.contentDocument;
       idoc.open();
       idoc.write(prelude + `<base href="${esc(baseUrl || url)}">` + patched);
@@ -1358,7 +1380,12 @@
       catch (e) {
         if (e?.name === "AbortError") throw e;
         const err = new ViewerError(target.href);
-        err.diag = `html ${Math.round(text.length / 1024)}KB · ${(text.match(/<script/gi) || []).length} script · ${(text.match(/<frame\b/gi) || []).length} frame · tentati ${tried.length} URL · id ${idm ? "sì" : "no"} · upload ${/uploaddownloadservlet/i.test(text) ? "sì" : "no"}`;
+        // NB: questa diagnosi è l'unica cosa che dice, da uno schermo al
+        // lavoro, com'è fatto il visualizzatore vero. Era morta: citava una
+        // variabile che non esiste più, quindi al posto del ViewerError con la
+        // diagnosi partiva un ReferenceError, e non si vedeva niente.
+        const idQui = /\b[A-Z][A-Z0-9]*_[A-Z0-9]+_\d{6,}\b/.test(text);
+        err.diag = `html ${Math.round(text.length / 1024)}KB · ${(text.match(/<script/gi) || []).length} script · ${(text.match(/<frame\b/gi) || []).length} frame · tentati ${tried.length} URL · id ${idQui ? "sì" : "no"} · upload ${/uploaddownloadservlet/i.test(text) ? "sì" : "no"}`;
         throw err;
       }
     }

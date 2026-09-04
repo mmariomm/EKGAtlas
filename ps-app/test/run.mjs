@@ -777,25 +777,32 @@ async function scenarioPrintMergedFlow(browser) {
 
 async function scenarioPrintHardViewer(browser) {
   const scen = "print-hard-viewer";
-  // a viewer that can't be replayed off its real URL → the wizard must fall
-  // back to opening it in a new tab (Ctrl+P), never hang, never hijack
+  // Il visualizzatore che costruisce l'indirizzo del PDF dalla PROPRIA query
+  // string. Girando dentro la cornice della replica leggeva la nostra e non
+  // trovava niente: si finiva sul ripiego manuale, ed è il caso che il medico
+  // ha visto al lavoro. Ora la replica gli dice dov'è — nessun indirizzo
+  // inventato, il PDF se lo calcola sempre lui — e la cattura riesce.
   const mock = createMock({ seedConfirmed: true, hardViewer: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await page.locator('#psassist-host [data-print="699999"]').first().click();
-  // harvest fails (viewer can't be replayed off-URL) → the fallback state (pwerr) appears
-  await page.waitForSelector("#psassist-print .pwerr", { timeout: 15000 });
-  const hint = await $wiz(page, ".pwhint").innerText().catch(() => "");
-  check(scen, /Ctrl\+P/.test(hint) && /etichettatrice/.test(hint), `guida chiara al ripiego manuale (got: ${hint.slice(0, 70)})`);
+  await page.waitForSelector("#psassist-print iframe", { timeout: 20000 });
+  const st = await page.evaluate(() => {
+    const r = document.getElementById("psassist-print").shadowRoot;
+    return { src: r.querySelector("iframe")?.getAttribute("src") || "",
+             err: r.querySelector(".pwerr")?.textContent || "",
+             testa: r.querySelector(".pwhd")?.textContent?.replace(/\s+/g, " ").trim() || "" };
+  });
+  check(scen, st.src.startsWith("blob:") && !st.err,
+    `il visualizzatore che legge il proprio indirizzo ora si lascia catturare (got ${st.src.slice(0, 22)}… ${st.err.slice(0, 40)})`);
+  check(scen, /Etichette provette/.test(st.testa), `e sono le etichette (got ${st.testa.slice(0, 40)})`);
   check(scen, /PsoEpisodioClinicoAmbulatorio/.test(page.url()), "la pagina paziente NON è stata dirottata dal framebuster");
-  // clicking the button (user activation) opens the viewer tab — not popup-blocked
-  const [popup] = await Promise.all([
-    page.waitForEvent("popup", { timeout: 8000 }),
-    $wiz(page, "#pwtab").click(),
-  ]);
-  check(scen, popup.url().includes("RcsStampaEtichetteLISHMIMU.do"), `il bottone apre le etichette in una scheda (got …${popup.url().slice(-40)})`);
-  // sequence still advances to the exam-list job
+  // e nessun indirizzo è stato costruito: quelli che passano dal servlet sono
+  // solo quelli che il visualizzatore stesso ha calcolato
+  const inventati = mock.state.requests.filter((q) => q.url.includes("uploaddownloadservlet")
+    && !q.url.includes("san_report_onthefly"));
+  check(scen, inventati.length === 0, `nessun indirizzo ricomposto a mano (got ${inventati.length})`);
   await $wiz(page, "#pwnext").click();
   await page.waitForTimeout(400);
   const head = await $wiz(page, ".pwhd").innerText();
