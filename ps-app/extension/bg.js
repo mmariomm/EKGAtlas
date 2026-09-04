@@ -269,6 +269,32 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
 
+  // ---- l'indirizzo del portale clinico, deciso dal medico ----------------
+  // L'indirizzo stava scritto dentro il manifest: un numero IP e una porta. Se
+  // l'ospedale li cambia — o se sono diversi da un presidio all'altro — il
+  // programma semplicemente non parte su quella pagina, e non c'è modo di
+  // accorgersene da dentro. Ora l'indirizzo lo aggiunge il medico: Chrome
+  // chiede il permesso per QUEL sito e basta, e lo script si registra lì.
+  if (msg.t === "portale") {
+    chrome.storage.local.get("portale").then((o) => reply({ ok: true, origine: o.portale || "" }));
+    return true;
+  }
+  if (msg.t === "aggiungiPortale") {
+    (async () => {
+      let origine;
+      try { origine = new URL(String(msg.url || "").trim()).origin; }
+      catch { return reply({ ok: false, why: "Non è un indirizzo: incolla quello che vedi nella barra del browser." }); }
+      if (!/^https?:$/.test(new URL(origine).protocol)) return reply({ ok: false, why: "Serve un indirizzo http o https." });
+      const pattern = origine + "/*";
+      const dato = await chrome.permissions.request({ origins: [pattern] }).catch(() => false);
+      if (!dato) return reply({ ok: false, why: "Permesso non concesso." });
+      await registraPortale(pattern);
+      await chrome.storage.local.set({ portale: origine });
+      reply({ ok: true, origine });
+    })().catch((e) => reply({ ok: false, why: String(e && e.message || e) }));
+    return true;
+  }
+
   if (msg.t === "clearRef") {
     chrome.storage.local.get(null).then(async (all) => {
       await chrome.storage.local.remove(Object.keys(all).filter((k) => k.startsWith("ref:")));
@@ -280,3 +306,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
 });
+
+// Lo script sul portale scelto dal medico va rimesso a ogni avvio: le
+// registrazioni dinamiche sopravvivono, ma se il permesso è stato revocato
+// vanno tolte, e un doppione fa fallire register().
+async function registraPortale(pattern) {
+  try { await chrome.scripting.unregisterContentScripts({ ids: ["portale"] }); } catch { /* non c'era */ }
+  if (!pattern) return;
+  try {
+    await chrome.scripting.registerContentScripts([{
+      id: "portale", matches: [pattern], js: ["content.js"], runAt: "document_idle", persistAcrossSessions: true,
+    }]);
+  } catch { /* Chrome lo dirà al medico col messaggio del pannello */ }
+}
+async function riallineaPortale() {
+  const o = await chrome.storage.local.get("portale");
+  if (!o.portale) return;
+  const pattern = o.portale + "/*";
+  const ok = await chrome.permissions.contains({ origins: [pattern] }).catch(() => false);
+  if (ok) await registraPortale(pattern);
+  else { await registraPortale(null); await chrome.storage.local.remove("portale"); }
+}
+chrome.runtime.onStartup?.addListener(riallineaPortale);
+chrome.runtime.onInstalled?.addListener(riallineaPortale);

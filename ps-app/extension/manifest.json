@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "PS Assist — richieste Pronto Soccorso",
   "short_name": "PS Assist",
-  "version": "3.21.0",
+  "version": "3.22.0",
   "description": "Crea richieste lab/radiologia su SA4PSO e aggiunge gli esami scelti, verificando ogni inserimento nel carrello. La Conferma resta sempre un click reale sulla pagina.",
   "icons": {
     "16": "icon16.png",
@@ -16,7 +16,7 @@
     {
       "matches": [
         "https://smarthealth.multimedica.it/sa4pso/*",
-        "http://10.11.0.151:9080/clin-port/*"
+        "http://10.11.0.151/clin-port/*"
       ],
       "js": [
         "content.js"
@@ -27,11 +27,16 @@
   ],
   "permissions": [
     "storage",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "scripting"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
   "host_permissions": [
     "https://smarthealth.multimedica.it/*",
-    "http://10.11.0.151:9080/*"
+    "http://10.11.0.151/*"
   ],
   "web_accessible_resources": [
     {

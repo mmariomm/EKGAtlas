@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.21.0";
+  const VERSION = "3.22.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2420,6 +2420,14 @@
                border: 1px solid #9DBFDE; background: #F4F9FD; border-radius: 9px; padding: 7px 10px; margin-bottom: 6px; font: inherit; }
     .storbtn:hover { background: #EAF2FA; border-color: #0B5CAD; }
     .storbtn:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .linkbtn { border: 0; background: transparent; color: #0B5CAD; font: inherit; font-weight: 700;
+               text-decoration: underline; cursor: pointer; padding: 0; }
+    .portok { color: #177245; font-weight: 700; }
+    .portsec { border: 1px solid #C4D0DC; border-radius: 10px; padding: 9px 10px; background: #F8FBFE; }
+    .portinput { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 7px 9px;
+                 font: inherit; font-size: 12.5px; }
+    .portrow { display: flex; gap: 6px; margin-top: 7px; }
+    .portrow .mini { float: none; }
     .sb-t { font-size: 12.5px; font-weight: 700; color: #0B5CAD; }
     .sb-m { flex: 1 1 auto; font-size: 11.5px; color: #5B6B7A; }
     .stwrap { overflow-x: auto; border: 1px solid #E3E8EF; border-radius: 8px; }
@@ -2563,6 +2571,8 @@
       this.storicoAltri = "";           // ...or the name it belongs to, when it is not
       this.storicoVia = "nome";         // su cosa è stata confermata l'identità
       this.storicoDaConfermare = false; // c'è, ma serve il codice fiscale per dire che è suo
+      this.portale = "";                // indirizzo del portale aggiunto dal medico
+      this.portaleAperto = false;       // il riquadro per aggiungerlo, aperto o no
       this.soloAlterati = false;        // storico: show only what is out of range
       this.storicoGrande = false;       // la finestra grande dello storico, aperta o no
       this.mostraNomi = false;          // the unexpected-name list, open or closed
@@ -3291,7 +3301,35 @@
             <div class="hint">C'è uno storico letto per un paziente con questo nome. Per essere sicuri
               che sia il suo serve il codice fiscale, che sta nella finestra Risultati:
               <b>⭳ Carica i valori</b> e comparirà.</div>` : ""}
+          ${this.htmlPortale()}
           <div class="rlist">${rows}</div>
+        </div>`;
+    }
+
+    // L'indirizzo del portale clinico. Stava scritto dentro il programma: se
+    // l'ospedale lo cambia, o se è diverso da un presidio all'altro, il
+    // pannello non compare di là e da qui non si può capire perché. Ora lo
+    // aggiunge il medico, una volta: Chrome chiede il permesso per quel sito
+    // e lo script si registra lì.
+    htmlPortale() {
+      if (!hasExt()) return "";
+      if (!this.portaleAperto) {
+        return `<div class="hint">Il pannello non compare sulla pagina dello storico?
+          <button class="linkbtn" id="portapri">Aggiungi l'indirizzo del portale</button>${
+          this.portale ? ` <span class="portok">✓ ${esc(this.portale)}</span>` : ""}</div>`;
+      }
+      return `
+        <div class="sec portsec">
+          <div class="lbl">Indirizzo del portale clinico</div>
+          <input class="portinput" id="porturl" placeholder="http://10.…" value="${esc(this.portale || "")}"
+                 aria-label="Indirizzo del portale clinico">
+          <div class="portrow">
+            <button class="mini" id="portok">✓ Aggiungi</button>
+            <button class="mini" id="portno">✕ Chiudi</button>
+          </div>
+          <div class="hint">Apri la pagina con la tabella, copia l'indirizzo dalla barra del browser e
+            incollalo qui. Chrome chiederà il permesso <b>per quel sito soltanto</b>. Poi ricarica
+            quella pagina. Serve una volta sola.</div>
         </div>`;
     }
 
@@ -4289,6 +4327,19 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#letto")?.addEventListener("click", () => { if (this.viewId) { this.marcaLetto(this.viewId); this.render(); } });
       $("#apripdf")?.addEventListener("click", () => { if (this.viewId) this.openReferto(this.viewId); });
       $("#apristorico")?.addEventListener("click", () => this.setView("storico"));
+      $("#portapri")?.addEventListener("click", () => { this.portaleAperto = true; this.render(); });
+      $("#portno")?.addEventListener("click", () => { this.portaleAperto = false; this.render(); });
+      $("#portok")?.addEventListener("click", async () => {
+        const url = this.root.querySelector("#porturl")?.value || "";
+        const r = await ask({ t: "aggiungiPortale", url }).catch(() => null);
+        if (r && r.ok) {
+          this.portale = r.origine; this.portaleAperto = false;
+          this.message = { ok: `Portale aggiunto: ${r.origine}. Ricarica quella pagina e il pannello comparirà.` };
+        } else {
+          this.message = (r && r.why) || "Non riuscito: riprova incollando l'indirizzo per intero.";
+        }
+        this.render();
+      });
       const filtra = () => { this.soloAlterati = !this.soloAlterati; this.render(); };
       $("#storfiltro")?.addEventListener("click", filtra);
       $("#storfiltro2")?.addEventListener("click", filtra);
@@ -5134,7 +5185,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         atteso = setTimeout(() => {
           if (document.getElementById("psassist-host")) return;
           if (haStorico(document)) { occhio.disconnect(); clearTimeout(muto); bootStorico(); }
-        }, 250);
+        }, 120);
       });
       occhio.observe(document.documentElement, { childList: true, subtree: true });
       // Se dopo un po' la tabella non c'è, non si resta muti: «non si vede
@@ -5158,7 +5209,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         r.getElementById("via").addEventListener("click", () => h.remove());
         document.documentElement.appendChild(h);
         setTimeout(() => h.remove(), 15000);
-      }, 6000);
+      }, 1500);
       return;
     }
     scadenzaQuesiti();
@@ -5198,6 +5249,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           ask({ t: "apreStorico", ep: panel.episodeId || "", nome: panel.nomePaziente() || "" }).catch(() => {});
         }, true);
       }
+      if (hasExt()) ask({ t: "portale" }).then((r) => {
+        if (r && r.ok && r.origine) { panel.portale = r.origine; panel.render(); }
+      }).catch(() => {});
       panel.applyAfterNav();
       const pending = nextQueued(findEpisodeId(document, location.href));
       panel.pending = pending; // a richiesta of this run still needs confirming

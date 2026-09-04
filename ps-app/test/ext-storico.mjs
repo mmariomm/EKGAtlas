@@ -222,6 +222,27 @@ check(pdf.src.startsWith("blob:"), `il PDF si apre da locale (got ${pdf.src.slic
 check(/Antitetano/.test(pdf.testa), `con il titolo corto giusto (got: ${pdf.testa.slice(0, 60)})`);
 check(mock.state.requests.length === primaRete, "e senza una singola richiesta al gestionale");
 
+// ---- l'indirizzo del portale lo aggiunge il medico ----------------------
+// Stava scritto dentro il manifest: un IP e una porta. Se l'ospedale li
+// cambia il pannello non compare di là, e da qui non si capisce perché.
+await paziente.locator('#psassist-host [data-seg="esiti"]').click();
+await paziente.waitForTimeout(400);
+check((await paziente.locator("#psassist-host #portapri").count()) === 1,
+  "negli Esiti c'è come aggiungere l'indirizzo del portale");
+await paziente.locator("#psassist-host #portapri").click();
+await paziente.waitForSelector("#psassist-host #porturl", { timeout: 5000 });
+check((await paziente.locator("#psassist-host #porturl").count()) === 1, "e si apre una casella per incollarlo");
+const rifiuto = await paziente.evaluate(async () => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  r.querySelector("#porturl").value = "non-un-indirizzo";
+  r.querySelector("#portok").click();
+  await new Promise((k) => setTimeout(k, 600));
+  return r.querySelector(".banner.warn, .banner.ok")?.textContent?.trim() || "";
+});
+check(/non è un indirizzo/i.test(rifiuto), `un indirizzo storto viene rifiutato con un motivo (got ${rifiuto.slice(0, 60)})`);
+await paziente.locator("#psassist-host #portno").click().catch(() => {});
+await paziente.waitForTimeout(200);
+
 // ---- il portale aperto DAL link del paziente ---------------------------
 // Quel clic dice per chi lo stai aprendo: è l'identità più solida che ci sia.
 // Per un po' il programma ha avuto ricevitore, memoria, lettore e priorità —
