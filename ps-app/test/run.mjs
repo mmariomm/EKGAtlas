@@ -450,6 +450,14 @@ async function scenarioExamPageManual(browser) {
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   const wh = await page.locator("#psassist-print .pwhd").innerText();
   check(scen, /Etichette provette/.test(wh), "conferma manuale → wizard di stampa automatico sulla pagina paziente");
+  // i pulsanti: uno per verbo, niente doppioni. «Avanti» e «Salta» facevano
+  // esattamente la stessa cosa e stavano uno accanto all'altro.
+  const bott = await page.evaluate(() => [...document.getElementById("psassist-print").shadowRoot
+    .querySelectorAll(".pwft .pwbtn")].map((b) => ({ id: b.id, txt: b.textContent.replace(/\s+/g, " ").trim() })));
+  check(scen, bott.length === 4, `quattro pulsanti, non cinque (got ${bott.map((b) => b.txt).join(" | ")})`);
+  check(scen, !bott.some((b) => /salta/i.test(b.txt)), "niente «Salta»: era «Avanti» con un altro nome");
+  check(scen, bott.every((b) => /^[^A-Za-z0-9]/.test(b.txt)), `ognuno ha la sua icona (got ${bott.map((b) => b.txt).join(" | ")})`);
+  check(scen, new Set(bott.map((b) => b.id)).size === 4, "e nessun identificativo ripetuto");
   await context.close();
 }
 
@@ -1412,6 +1420,45 @@ async function scenarioNomeConHtml(browser) {
   await context.close();
 }
 
+// Il laboratorio affianca al vecchio esame la sua versione «- NEW» e lascia in
+// elenco tutti e due. Chi ordina vuole sempre il nuovo.
+async function scenarioEmogasNew(browser) {
+  const scen = "emogas-new";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  // il catalogo si impara dalle pagine vere: qui gli si mette accanto la
+  // versione NEW, come nell'ospedale dove c'è
+  await page.evaluate(() => {
+    const K = "psassist:catalog.v1";
+    const c = JSON.parse(localStorage.getItem(K) || "{}");
+    const res = "00660001P";
+    c[res] = c[res] || { label: "LABORATORIO ANALISI POC - SSG (P)", items: {} };
+    c[res].items["325"] = "EMOGASANALISI VENOSA&nbsp;POC - NEW (POC21171)";
+    c[res].items["326"] = "EGA EMOGASANALISI ARTERIOSA POC - NEW (POC10061)";
+    localStorage.setItem(K, JSON.stringify(c));
+  });
+  await page.reload();
+  await page.waitForSelector("#psassist-host .opt", { state: "attached", timeout: 15000 });
+
+  const opzioni = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot
+    .querySelectorAll(".opt")].map((b) => ({ code: b.getAttribute("data-code"), txt: b.textContent.trim() })));
+  const venose = opzioni.filter((o) => /EGA VENOSA/i.test(o.txt));
+  const arteriose = opzioni.filter((o) => /EGA ARTERIOSA/i.test(o.txt));
+  check(scen, venose.length === 1 && venose[0].code === "325",
+    `l'emogas venoso è quello nuovo, e uno solo (got ${JSON.stringify(venose)})`);
+  check(scen, arteriose.length === 1 && arteriose[0].code === "326",
+    `e così l'arterioso (got ${JSON.stringify(arteriose)})`);
+  check(scen, /NEW/.test(venose[0].txt), `e si vede che è il nuovo (got ${venose[0].txt})`);
+
+  // il codice scelto è quello che il motore manda: la strada dell'invio è la
+  // stessa di tutti gli altri esami, e ce l'hanno già i loro scenari
+  check(scen, (await page.locator('#psassist-host .opt[data-code="3"]').count()) === 0,
+    "e il vecchio non è più in elenco: non lo si può ordinare per sbaglio");
+  await context.close();
+}
+
 async function scenarioEo(browser) {
   const scen = "eo";
   const mock = createMock({});
@@ -1813,6 +1860,7 @@ const scenarios = [
   ["EO: copia il generale, la tendina copia il caso", scenarioEo],
   ["rilancio su pagina esami: nessun doppio ordine", scenarioRilancioPaginaEsami],
   ["un nome col markup dentro non rompe il pannello", scenarioNomeConHtml],
+  ["emogas: sceglie sempre la versione NEW", scenarioEmogasNew],
   ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],

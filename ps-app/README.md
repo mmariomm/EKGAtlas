@@ -272,7 +272,12 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   stanno **in memoria e non su disco**, scadono dopo 2 ore e spariscono chiudendo il browser.
   Il logout li cancella con tutto il resto.
 - Sul portale l'estensione entra **solo nella sezione che contiene quella tabella**
-  (`/clin-port/info-cliniche/*`) e lì fa una cosa sola: leggerla. Su qualsiasi altra pagina di
+  (`/clin-port/*`) e lì fa una cosa sola: leggerla. Il percorso era ristretto a
+  `/clin-port/info-cliniche/*`, ma il portale è una single-page application e
+  quel pezzo di indirizzo può stare **dopo il cancelletto**, dove le regole di
+  Chrome non guardano: l'estensione non partiva affatto. Se la tabella non
+  compare entro sei secondi ora te lo **dice** con una striscia, invece di
+  restare muta — «non si vede niente» e «non sto girando» erano indistinguibili. Su qualsiasi altra pagina di
   quel portale — compresa la sua schermata di accesso — **non fa assolutamente niente**, perché
   è un'altra applicazione e le regole scritte per SA4PSO non le si applicano.
 - **Una scheda per paziente, da tutt'e due le finestre.** Ogni tabella letta diventa la scheda

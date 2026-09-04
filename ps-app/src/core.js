@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.20.0";
+  const VERSION = "3.21.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1736,8 +1736,40 @@
     return out;
   }
   const examLabel = (res, code) => (fullCatalog()[res]?.items || {})[code] || `esame ${code}`;
+  // Il laboratorio affianca al vecchio esame la sua versione «- NEW» e lascia
+  // in elenco tutti e due: l'emogas venoso e l'arterioso sono così, in tutte e
+  // due le sedi. Chi ordina vuole sempre il nuovo, quindi lo si sceglie da sé.
+  // Il confronto è sul nome, senza il mnemonico fra parentesi, senza «POC» e
+  // senza il «- NEW»: così il vecchio e il nuovo si riconoscono per quello che
+  // sono, e non per un numero che cambia da un ospedale all'altro.
+  const baseEsame = (label) => String(label || "").replace(/&nbsp;/gi, " ").toUpperCase()
+    .replace(/\([^)]*\)/g, " ").replace(/\s+-\s*NEW\b/g, " ").replace(/\bPOC\b/g, " ")
+    .replace(/[^A-Z0-9]+/g, " ").trim();
+  const eNuovo = (label) => /\s-\s*NEW\b/i.test(String(label || "").replace(/&nbsp;/gi, " "));
+  function codicePreferito(res, code, cat) {
+    const items = (cat || fullCatalog())[res]?.items;
+    if (!items || !items[code] || eNuovo(items[code])) return code;
+    const mio = baseEsame(items[code]);
+    if (!mio) return code;
+    for (const [c, l] of Object.entries(items)) if (c !== code && eNuovo(l) && baseEsame(l) === mio) return c;
+    return code;
+  }
   // UI-facing short name (falls back to the catalog label, trimmed of its code)
-  const displayLabel = (res, code) => DISPLAY[`${res}:${code}`] || shortLabel(examLabel(res, code));
+  function displayLabel(res, code) {
+    const mio = DISPLAY[`${res}:${code}`];
+    if (mio) return mio;
+    const lab = examLabel(res, code);
+    if (eNuovo(lab)) {
+      // è la versione nuova di un esame che ha già un nome corto suo: si tiene
+      // quel nome, con NEW dietro, invece di stampare l'etichetta per intero
+      const items = fullCatalog()[res]?.items || {};
+      const base = baseEsame(lab);
+      for (const [c, l] of Object.entries(items)) {
+        if (c !== code && !eNuovo(l) && baseEsame(l) === base && DISPLAY[`${res}:${c}`]) return DISPLAY[`${res}:${c}`] + " NEW";
+      }
+    }
+    return shortLabel(lab);
+  }
 
   // ================================================================ ENGINE
   // A run is a linear list of steps executed by runPlan(). Each step updates
@@ -2694,8 +2726,11 @@
       this.render();
     }
     togglePreset(p) {
-      const allOn = p.items.every(([r, c]) => this.isSel(r, c));
-      for (const [r, c] of p.items) {
+      // il profilo elenca i codici storici: quello che finisce nel carrello è
+      // sempre la versione nuova, se il laboratorio ne ha messa una accanto
+      const items = p.items.map(([r, c]) => [r, codicePreferito(r, c)]);
+      const allOn = items.every(([r, c]) => this.isSel(r, c));
+      for (const [r, c] of items) {
         const k = this.key(r, c);
         if (allOn) this.selected.delete(k);
         else this.selected.set(k, { res: r, code: c, label: examLabel(r, c), display: displayLabel(r, c) });
@@ -3088,11 +3123,15 @@
       const presetHtml = PRESETS.map((p, i) => {
         const ok = p.items.every(([r, c]) => cat[r]?.items?.[c]);
         if (!ok) return "";
-        const on = p.items.every(([r, c]) => this.isSel(r, c));
+        const on = p.items.every(([r, c]) => this.isSel(r, codicePreferito(r, c, cat)));
         return `<button class="chip preset ${on ? "on" : ""}" data-preset="${i}">${esc(p.name)}</button>`;
       }).join("");
       const byLab = {};
-      for (const [r, c] of SINGLES) if (cat[r]?.items?.[c]) (byLab[r] = byLab[r] || []).push(c);
+      for (const [r, c0] of SINGLES) {
+        if (!cat[r]?.items?.[c0]) continue;
+        const c = codicePreferito(r, c0, cat);
+        if (!(byLab[r] = byLab[r] || []).includes(c)) byLab[r].push(c);
+      }
       const singles = Object.entries(byLab).map(([r, codes]) => `
         <div class="grouphdr">${esc(RES_SHORT[r] || r)}</div>
         ${codes.map((c) => {
@@ -4904,6 +4943,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       .pwbtn.re:hover { background: #094a8c; }
       .pwbtn.ghost { background: #F4F8FB; color: #16232E; border: 1px solid #C4D0DC; }
       .pwbtn.exit { background: transparent; color: #B3261E; border: 1px solid #E9BAB6; margin-left: auto; }
+      /* quando la cattura non riesce, l'unica strada che funziona si vede */
+      .pwbtn.grande { font-size: 15px; padding: 13px 22px; box-shadow: 0 3px 12px rgba(11,92,173,.35); }
       .pwhint { width: 100%; font-size: 11.5px; color: #5B6B7A; }
       .pwerr { margin: 12px 16px 0; background: #FBEBEA; border: 1px solid #E9BAB6; color: #7c1a14; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
     `;
@@ -4930,7 +4971,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
 
     const render = (err, viewer) => {
       const job = jobs[i];
-      const nextLbl = `✓ Stampata — ${i + 1 < jobs.length ? "avanti" : "fatto"}`;
+      // Un verbo per pulsante, un'icona per verbo. Prima ce n'erano cinque e
+      // due («Avanti» e «Salta») facevano esattamente la stessa cosa.
+      const nextLbl = i + 1 < jobs.length ? `→ Avanti (${i + 2} di ${jobs.length})` : "✓ Fine";
       root.innerHTML = `<style>${CSS}</style>
         <div class="back"></div>
         <div class="pw" role="dialog" aria-label="Stampa documenti">
@@ -4943,18 +4986,18 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           <div class="pwbody"><div class="pwmsg">Carico il PDF…</div></div>
           <div class="pwft">
             ${viewer
-              ? `<button class="pwbtn re" id="pwtab">↗ Apri ${esc(job.name)} (poi Ctrl+P → ${esc(job.printer)})</button>`
-              : `<button class="pwbtn re" id="pwre">🖨 Riapri stampa</button>`}
-            <button class="pwbtn next" id="pwnext">${nextLbl}</button>
-            <button class="pwbtn ghost" id="pwskip">Salta</button>
-            ${viewer ? "" : `<button class="pwbtn ghost" id="pwtab">Apri in una scheda</button>`}
-            <button class="pwbtn exit" id="pwexit">Annulla (Esc)</button>
-            <div class="pwhint">${viewer ? `Ctrl+P nella nuova scheda → <b style="display:inline">${esc(job.printer)}</b>` : `Scegli <b style="display:inline">${esc(job.printer)}</b> nel dialogo`}</div>
+              ? `<button class="pwbtn re grande" id="pwtab" title="Apre il documento in una scheda: da lì Ctrl+P">↗&nbsp; Apri e stampa</button>`
+              : `<button class="pwbtn re" id="pwre" title="Riapre la finestra di stampa del browser">🖨&nbsp; Stampa</button>`}
+            <button class="pwbtn next" id="pwnext" title="${i + 1 < jobs.length ? "Passa al documento successivo" : "Chiude: hai stampato tutto"}">${nextLbl}</button>
+            ${viewer ? "" : `<button class="pwbtn ghost" id="pwtab" title="Se la stampa non parte, aprilo in una scheda">↗&nbsp; Scheda</button>`}
+            <button class="pwbtn exit" id="pwexit" title="Chiude senza stampare il resto (Esc)">✕&nbsp; Chiudi</button>
+            <div class="pwhint">${viewer
+              ? `Questo documento non si lascia stampare da qui: <b style="display:inline">↗ Apri e stampa</b>, poi Ctrl+P → <b style="display:inline">${esc(job.printer)}</b>`
+              : `Scegli <b style="display:inline">${esc(job.printer)}</b> nel dialogo`}</div>
           </div>
         </div>`;
       root.querySelector("#pwre")?.addEventListener("click", tryPrint);
       root.querySelector("#pwnext").onclick = advance;
-      root.querySelector("#pwskip").onclick = advance;
       root.querySelector("#pwexit").onclick = cleanup;
       root.querySelector("#pwtab").onclick = () => openTab(job.url, "_blank"); // user-activated → not popup-blocked
     };
@@ -5090,10 +5133,32 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         clearTimeout(atteso);
         atteso = setTimeout(() => {
           if (document.getElementById("psassist-host")) return;
-          if (haStorico(document)) { occhio.disconnect(); bootStorico(); }
+          if (haStorico(document)) { occhio.disconnect(); clearTimeout(muto); bootStorico(); }
         }, 250);
       });
       occhio.observe(document.documentElement, { childList: true, subtree: true });
+      // Se dopo un po' la tabella non c'è, non si resta muti: «non si vede
+      // niente» è indistinguibile da «l'estensione non gira su questa pagina»,
+      // e senza saperlo non si sa nemmeno cosa raccontarmi. La striscia dice
+      // che il programma c'è e cosa gli manca. Sparisce da sola.
+      const muto = setTimeout(() => {
+        if (document.getElementById("psassist-host") || haStorico(document)) return;
+        const h = document.createElement("div");
+        h.id = "psassist-attesa";
+        const r = h.attachShadow({ mode: "open" });
+        r.innerHTML = `<style>:host{all:initial}
+          .b{position:fixed;left:12px;bottom:12px;z-index:2147483647;display:flex;align-items:center;gap:10px;
+             max-width:min(520px,92vw);font:12.5px/1.4 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+             background:#6B7A88;color:#fff;border-radius:10px;padding:8px 10px 8px 12px;box-shadow:0 6px 22px rgba(11,44,80,.28)}
+          button{border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:7px;
+                 padding:4px 9px;font:inherit;font-weight:600;cursor:pointer}
+          button:hover{background:rgba(255,255,255,.14)}</style>
+          <div class="b" role="status"><span><b>PS Assist</b> è attivo, ma qui non c'è nessuna tabella:
+          apri <b>Tabella</b> nello storico dati clinici.</span><button id="via">✕</button></div>`;
+        r.getElementById("via").addEventListener("click", () => h.remove());
+        document.documentElement.appendChild(h);
+        setTimeout(() => h.remove(), 15000);
+      }, 6000);
       return;
     }
     scadenzaQuesiti();
@@ -5170,6 +5235,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // A strip at the bottom of the portal page: what was read, for whom, and a
   // way to read it again after moving the columns. No panel, no ordering.
   function bootStorico() {
+    document.getElementById("psassist-attesa")?.remove();
     let unito = null;
     let chiAprivo;   // undefined = non ancora chiesto, null = non lo sappiamo
     const host = document.createElement("div");
