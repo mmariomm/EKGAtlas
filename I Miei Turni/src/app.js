@@ -223,7 +223,7 @@
     segCal = $('segCal'), segTab = $('segTab'), segOre = $('segOre'),
     viewCal = $('viewCal'), viewTab = $('viewTab'), viewOre = $('viewOre'),
     tableWrap = $('tablewrap'), oreCard = $('orecard'),
-    emptyEl = $('empty'), personLine = $('personline'), calEl = $('calendario'), legendEl = $('callegend'),
+    emptyEl = $('empty'), personLine = $('personline'), calEl = $('calendario'),
     detailEl = $('detail'), findEl = $('segnalazioni'), stripEl = $('strip'), datiEl = $('dati'), datiBody = $('datiBody'),
     fileInput = $('fileInput'), dropzone = $('dropzone'), toasts = $('toasts'), srStatus = $('srStatus'),
     reviewEl = $('review'), reviewPanel = $('reviewPanel'), reviewTitle = $('reviewTitle'),
@@ -490,17 +490,22 @@
     if (st.altri) parts.push(plural(st.altri, 'altro', 'altri'));
     if (st.dodici) parts.push(st.dodici + ' da 12 h');
     parts.push(R.formatHours(st.ore));
+    // Le ore per ospedale portano il puntino colorato: la riga fa anche da legenda dei colori.
     var hosps = D.hospitals.filter(function (h) { return st.oreByHospital[h]; });
-    if (hosps.length > 1) {
-      hosps.forEach(function (h) {
-        parts.push(h + ' ' + R.formatHours(st.oreByHospital[h]).replace(' h', ''));
-      });
-    }
+    var hospParts = hosps.length > 1 ? hosps.map(function (h) {
+      return h + ' ' + R.formatHours(st.oreByHospital[h]).replace(' h', '');
+    }) : [];
 
     var legend = 'G giornate · M mattine · P pomeriggi · N notti';
     personLine.title = legend;
-    personLine.setAttribute('aria-label', parts.join(', ') + '. ' + legend);
+    personLine.setAttribute('aria-label', parts.concat(hospParts).join(', ') + '. ' + legend);
     personLine.appendChild(document.createTextNode(parts.join(' · ')));
+    hosps.forEach(function (h, i) {
+      if (!hospParts.length) return;
+      personLine.appendChild(document.createTextNode(' · '));
+      personLine.appendChild(el('span', { class: 'dot ' + hospClass(h) }));
+      personLine.appendChild(document.createTextNode(' ' + hospParts[i]));
+    });
     if (mine.length) {
       personLine.appendChild(document.createTextNode(' · '));
       personLine.appendChild(el('button', {
@@ -540,7 +545,6 @@
       calEl.appendChild(row);
     }
 
-    renderLegend();
   }
 
   function prevMonthDay(firstDate, back) {
@@ -590,20 +594,6 @@
     });
   }
 
-  function renderLegend() {
-    clear(legendEl);
-    if (!calName) { legendEl.hidden = true; return; }
-    legendEl.hidden = false;
-    var slots = D.slotRows.map(function (row) {
-      return el('span', {}, [el('b', { text: row.key }), R.slotName(row.slot.label).split(' ')[0].toLowerCase()]);
-    });
-    slots.push(el('span', {}, [el('b', { text: 'G' }), 'giornata (M+P)']));
-    var hosps = D.hospitals.map(function (h) {
-      return el('span', {}, [el('span', { class: 'dot ' + hospClass(h) }), h]);
-    });
-    append(legendEl, slots.concat(hosps));
-  }
-
   // Nome disegnato nel calendario: quello in evidenza mentre si scrive, altrimenti il fissato.
   function previewName() {
     if (state.query.trim() && options.length) {
@@ -644,7 +634,7 @@
     viewTab.hidden = v !== 'tabella';
     viewOre.hidden = v !== 'ore';
 
-    if (v !== 'calendario') { clear(calEl); clear(detailEl); legendEl.hidden = true; }
+    if (v !== 'calendario') { clear(calEl); clear(detailEl); }
     if (v !== 'tabella') clear(tableWrap);
     if (v !== 'ore') clear(oreCard);
 
@@ -826,7 +816,7 @@
           'aria-label': label, text: st.person,
         }),
         bar,
-        el('span', { class: 'ore__v', text: R.formatHours(st.ore) }),
+        el('span', { class: 'ore__v', text: R.formatHours(st.ore).replace(' h', ' h') }),   // spazio sottile: nel mono lo spazio pieno sembra doppio
       ]));
     });
   }
@@ -1691,7 +1681,6 @@
       renderStrip();
     } else {
       personLine.hidden = true;
-      legendEl.hidden = true;
       clear(calEl); clear(detailEl); clear(tableWrap);
     }
     renderDati();

@@ -427,12 +427,7 @@ code { font-family: var(--mono); font-size: .92em; }
 .cal__dot.sev-2 { background: var(--sev2); }
 .cal__dot.sev-1 { background: var(--sev1); }
 
-.callegend {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
-  font-size: 11px; color: var(--muted); padding: 0 2px;
-}
-.callegend span { display: inline-flex; align-items: center; gap: 4px; }
-.callegend b { font-weight: 600; color: var(--ink-2); }
+.personline .dot { display: inline-block; vertical-align: middle; margin-bottom: 2px; }
 
 /* --------------------------------------------------------------------------
    7. Dettaglio del giorno scelto
@@ -534,7 +529,8 @@ code { font-family: var(--mono); font-size: .92em; }
 .tab__hs { display: table-cell; }
 .tab__hs b { font-size: 10.5px; font-weight: 600; color: var(--ink-2); }
 .tab__hs time { font-family: var(--mono); font-size: 9.5px; color: var(--muted); margin-left: 3px; }
-.tab thead .is-night { background: var(--night-veil); }
+/* Il velo della notte sopra un fondo opaco: l'intestazione fissa non lascia trasparire le righe. */
+.tab thead .is-night { background: linear-gradient(var(--night-veil), var(--night-veil)) var(--surface); }
 
 .tab tbody tr { background: var(--surface); scroll-margin-top: calc(var(--h-header) + 34px); }
 .tab tbody tr.is-weekend { background: var(--weekend); }
