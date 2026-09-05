@@ -20,7 +20,19 @@ const TurniParser = (function () {
   }
 
   function stripAccents(s) {
-    return s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    // Strip Unicode combining marks (range U+0300-U+036F) left behind by NFD
+    // normalization, e.g. "e" + combining acute -> "e". Written via numeric
+    // code points (rather than a \uXXXX-\uXXXX regex range) to keep the
+    // source file free of raw combining characters.
+    const COMBINING_LO = 0x0300;
+    const COMBINING_HI = 0x036f;
+    let out = '';
+    const decomposed = s.normalize('NFD');
+    for (let i = 0; i < decomposed.length; i++) {
+      const code = decomposed.charCodeAt(i);
+      if (code < COMBINING_LO || code > COMBINING_HI) out += decomposed.charAt(i);
+    }
+    return out;
   }
 
   function basename(p) {
@@ -407,7 +419,7 @@ const TurniParser = (function () {
     const warnings = [];
 
     // --- read the zip + the workbook-level XML parts ---
-    const entries = await readZip(toUint8Array(bytes instanceof Uint8Array || bytes instanceof ArrayBuffer ? bytes : bytes));
+    const entries = await readZip(bytes);
     function readEntry(name) {
       const data = entries.get(name);
       return data ? utf8Decode(data) : null;
