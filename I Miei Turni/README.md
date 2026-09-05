@@ -12,9 +12,10 @@ ospedali — **DEA** e **OSG** — letti dai file xlsx ufficiali. Pensata per il
   all'apertura; frecce o scorrimento laterale per cambiare giorno). Con un nome fissato,
   ogni giorno mostra le sue fasce nel colore dell'ospedale — `G` per la giornata (mattina
   e pomeriggio nello stesso ospedale), `M`, `P`, `N` in pieno per la notte, `A` — e una
-  riga di conteggi: `2G · 2M · 3P · 5N · 7 da 12 h · 114 h · DEA 78 · OSG 36` (M e P
-  contano solo quando da soli; l'ambulatorio conta come una mattina a tutti gli effetti;
-  le ore sono l'unione reale degli orari).
+  riga di conteggi in forma di addizione: `4,5G + 5N = 9,5 · 114 h · DEA 78 · OSG 36`.
+  Una mattina o un pomeriggio da soli valgono mezza giornata, l'ambulatorio conta come una
+  mattina, e i conti tornano sempre: i turni da 12 h per 12 fanno le ore del mese (le ore
+  sono comunque calcolate a parte, come unione reale degli orari).
 - **Tabella**: tutti i nomi del mese, giorno per riga, DEA e OSG su due righe, colonne
   M/P/N/A, con lo stesso evidenziatore.
 - **Ore**: le ore del mese per nome, in barre divise per ospedale. Compare solo a chi

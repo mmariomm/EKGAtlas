@@ -330,11 +330,15 @@ var TurniRules = (function () {
     return total;
   }
 
-  // 114 → "114 h"; 10.5 → "10,5 h" (virgola decimale italiana).
+  // 4.5 → "4,5"; 9 → "9" (virgola decimale italiana, mezzi turni compresi).
+  function formatNumber(value) {
+    var rounded = Math.round(value * 2) / 2;
+    return Number.isInteger(rounded) ? String(rounded) : String(rounded).replace('.', ',');
+  }
+
+  // 114 → "114 h"; 10.5 → "10,5 h".
   function formatHours(hours) {
-    var rounded = Math.round(hours * 2) / 2;
-    var text = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace('.', ',');
-    return text + ' h';
+    return formatNumber(hours) + ' h';
   }
 
   // L'ambulatorio conta come una mattina a tutti gli effetti: nei conteggi è una
@@ -395,6 +399,10 @@ var TurniRules = (function () {
       ambulatori: ambulatori,        // già compresi nelle mattine: solo informativo
       altri: counts.other,
       dodici: giornate + counts.N,
+      // Addizione che si legge da sola: una mattina o un pomeriggio da soli valgono
+      // mezza giornata, così "4,5G + 5N = 9,5" e 9,5 × 12 = le 114 ore del mese.
+      giornateEq: giornate + (mattine + pomeriggi) / 2,
+      turniEq: giornate + (mattine + pomeriggi) / 2 + counts.N,
       oreMin: oreMin,
       ore: oreMin / 60,
       oreByHospital: oreByHospital,
@@ -631,6 +639,7 @@ var TurniRules = (function () {
     formatDate: formatDate,
     formatRest: formatRest,
     formatHours: formatHours,
+    formatNumber: formatNumber,
     personStats: personStats,
     hoursByName: hoursByName,
     diffRosters: diffRosters,

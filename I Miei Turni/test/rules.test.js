@@ -460,6 +460,12 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
     'FLORENZAN: 14 turni, 2 giornate, 2 mattine, 3 pomeriggi, 5 notti, 7 turni da 12 h, 114 h'
   );
   deepEq(fl.oreByHospital, { DEA: 78, OSG: 36 }, 'FLORENZAN: ore per ospedale');
+  deepEq([fl.giornateEq, fl.turniEq], [4.5, 9.5], 'FLORENZAN: 4,5G + 5N = 9,5 turni');
+
+  // L'addizione è coerente con le ore per tutti: (giornate equivalenti + notti) × 12 = ore.
+  const tuttiCoerenti = TurniRules.hoursByName(realAssignments, '2026-09')
+    .every((s) => s.turniEq * 12 === s.ore);
+  ok(tuttiCoerenti, 'per ogni nome: turni da 12 h × 12 = ore del mese');
 
   const br = TurniRules.personStats(realAssignments, 'BRAHAM', '2026-09');
   deepEq([br.turni, br.giornate, br.mattine, br.pomeriggi, br.notti, br.dodici, br.ore], [20, 4, 2, 5, 5, 9, 150], 'BRAHAM: conteggi di settembre');
@@ -526,6 +532,8 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   eq(TurniRules.formatHours(114), '114 h', 'formatHours 114');
   eq(TurniRules.formatHours(10.5), '10,5 h', 'formatHours 10,5');
   eq(TurniRules.formatHours(0), '0 h', 'formatHours 0');
+  eq(TurniRules.formatNumber(4.5), '4,5', 'formatNumber 4,5');
+  eq(TurniRules.formatNumber(9), '9', 'formatNumber 9');
 }
 
 // ======================================================================
