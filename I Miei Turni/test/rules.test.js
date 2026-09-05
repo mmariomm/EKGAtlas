@@ -537,6 +537,60 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
 }
 
 // ======================================================================
+// 5b-bis. buildICS
+// ======================================================================
+
+{
+  const ics = TurniRules.buildICS(realAssignments, 'FLORENZAN', '2026-09', { now: Date.UTC(2026, 8, 5, 18, 0) });
+  const lines = ics.split('\r\n');
+  ok(lines[0] === 'BEGIN:VCALENDAR' && lines[lines.length - 2] === 'END:VCALENDAR', 'ics: apre e chiude come un calendario');
+  ok(ics.endsWith('\r\n') && !ics.includes('\n\n'), 'ics: righe separate da CRLF');
+  const summaries = lines.filter((l) => l.startsWith('SUMMARY:')).map((l) => l.slice(8));
+  const events = lines.filter((l) => l === 'BEGIN:VEVENT').length;
+  eq(events, summaries.length, 'ics: un titolo per evento');
+
+  // 14 turni, ma il 5 e il 20 sono mattina + pomeriggio: due eventi "Giornata" al posto di quattro.
+  eq(events, 12, 'ics: 12 eventi per i 14 turni di FLORENZAN');
+  eq(summaries.filter((s) => s === 'PS DEA Giornata').length, 0, 'ics: la sede si chiama SSG, non DEA');
+  eq(summaries.filter((s) => s === 'PS SSG Giornata').length, 2, 'ics: due giornate intere');
+  eq(summaries.filter((s) => s === 'PS SSG Notte').length + summaries.filter((s) => s === 'PS OSG Notte').length, 5, 'ics: cinque notti');
+  ok(summaries.every((s) => /^PS (SSG|OSG) (Mattina|Pomeriggio|Giornata|Notte|Ambulatorio)$/.test(s)), 'ics: titoli nella forma "PS <sede> <fascia>"');
+
+  // Orari veri, in ora legale (Roma = UTC+2 a settembre): giornata 8–20, notte 20–8.
+  const block = (summary) => {
+    const i = summaries.indexOf(summary);
+    const starts = lines.filter((l) => l.startsWith('DTSTART:')).map((l) => l.slice(8));
+    const ends = lines.filter((l) => l.startsWith('DTEND:')).map((l) => l.slice(6));
+    return [starts[i], ends[i]];
+  };
+  deepEq(block('PS SSG Giornata'), ['20260905T060000Z', '20260905T180000Z'], 'ics: giornata 8–20 di Roma = 06–18 UTC');
+  const nightIdx = summaries.indexOf('PS OSG Notte');
+  deepEq(
+    [lines.filter((l) => l.startsWith('DTSTART:')).map((l) => l.slice(8))[nightIdx],
+     lines.filter((l) => l.startsWith('DTEND:')).map((l) => l.slice(6))[nightIdx]],
+    ['20260901T180000Z', '20260902T060000Z'], 'ics: la notte scavalca la mezzanotte'
+  );
+
+  // Ambulatorio: da solo ha i suoi orari, con il pomeriggio diventa una giornata.
+  const lo = TurniRules.buildICS(realAssignments, 'LOFFREDO', '2026-09', { now: 0 });
+  const loSum = lo.split('\r\n').filter((l) => l.startsWith('SUMMARY:')).map((l) => l.slice(8));
+  eq(loSum.filter((s) => s === 'PS SSG Giornata').length, 4, 'ics: ambulatorio + pomeriggio = giornata');
+  eq(loSum.filter((s) => s === 'PS SSG Ambulatorio').length, 1, 'ics: l\'ambulatorio senza pomeriggio resta un evento a sé');
+  const first = lo.split('\r\n').filter((l) => l.startsWith('DTSTART:'))[0];
+  eq(first, 'DTSTART:20260901T073000Z', 'ics: la giornata che parte dall\'ambulatorio comincia alle 9:30');
+
+  // In inverno l'ora di Roma è UTC+1: stessa fascia, istante diverso.
+  const winter = TurniRules.buildICS(
+    [{ person: 'X', hospital: 'DEA', date: '2026-01-07', day: 7, slotKey: 'M', slotLabel: 'MATTINA',
+       slotStart: '08:00', slotEnd: '14:00', pos: 0, role: '', isNight: false,
+       startAbs: TurniRules.dayIndex('2026-01-07') * 1440 + 480, endAbs: TurniRules.dayIndex('2026-01-07') * 1440 + 840, id: 'x' }],
+    'X', '2026-01', { now: 0 });
+  ok(winter.indexOf('DTSTART:20260107T070000Z') !== -1, 'ics: in inverno le 8 di Roma sono le 07 UTC');
+
+  eq(TurniRules.buildICS(realAssignments, 'NESSUNO', '2026-09', { now: 0 }).indexOf('BEGIN:VEVENT'), -1, 'ics: nome assente, calendario vuoto');
+}
+
+// ======================================================================
 // 5c. diffRosters
 // ======================================================================
 

@@ -30,6 +30,14 @@ ospedali — **DEA** e **OSG** — letti dai file xlsx ufficiali. Pensata per il
   - **Notte attaccata** — turno diurno subito prima o subito dopo una notte, con meno di
     11 h di riposo.
   - **Cambio sede** — due turni diurni consecutivi in ospedali diversi senza pausa.
+- **Calendario da esportare**: con un nome fissato, il bottone *Calendario* scarica i suoi
+  turni del mese in un file `.ics` da aprire nel calendario del telefono. Gli eventi si
+  chiamano `PS SSG Mattina`, `PS OSG Notte`, e così via — `SSG` è il DEA di Sesto San
+  Giovanni, `OSG` il San Giuseppe (la corrispondenza è in `SITE_LABEL`, in `src/rules.js`).
+  Mattina 8–14, Pomeriggio 14–20, Giornata 8–20 quando mattina e pomeriggio sono nello
+  stesso ospedale, Notte 20–8, Ambulatorio 9:30–15 quando è da solo. Nella pagina
+  pubblicata come artifact non funziona: la piattaforma non permette di salvare file `.ics`,
+  e la pagina lo dice invece di non fare nulla.
 - La pagina **ricorda l'ultimo nome fissato** e la vista scelta; mese, nome, giorno e
   vista stanno anche nell'indirizzo (`#mese=…&nome=…&giorno=…&vista=…`), quindi un link
   condiviso apre la stessa vista.

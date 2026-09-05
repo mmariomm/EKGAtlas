@@ -427,6 +427,130 @@ var TurniRules = (function () {
   }
 
   // ------------------------------------------------------------------
+  // buildICS — i turni di una persona come file di calendario
+  // ------------------------------------------------------------------
+
+  // Come si chiama la sede negli eventi del calendario. Il foglio dice DEA e OSG;
+  // sul calendario si legge il luogo: Sesto San Giovanni e San Giuseppe.
+  var SITE_LABEL = { DEA: 'SSG', OSG: 'OSG' };
+
+  // Fuso di Roma senza tabelle: si chiede al motore Intl che ora locale corrisponde
+  // a un certo istante e si corregge lo scarto (due passate coprono anche i cambi d'ora).
+  function romeOffsetMinutes(utcMs) {
+    var parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Europe/Rome', hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    }).formatToParts(new Date(utcMs));
+    var p = {};
+    parts.forEach(function (x) { p[x.type] = x.value; });
+    var asUtc = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour) % 24, Number(p.minute));
+    return (asUtc - utcMs) / 60000;
+  }
+
+  // Minuti dall'inizio del giorno "date" (ora di Roma) → istante UTC.
+  function romeToUtc(date, minutes) {
+    var parts = String(date).split('-');
+    var guess = Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) + minutes * 60000;
+    var utc = guess - romeOffsetMinutes(guess) * 60000;
+    return guess - romeOffsetMinutes(utc) * 60000;
+  }
+
+  function icsStamp(utcMs) {
+    var d = new Date(utcMs);
+    var two = function (n) { return (n < 10 ? '0' : '') + n; };
+    return String(d.getUTCFullYear()) + two(d.getUTCMonth() + 1) + two(d.getUTCDate()) + 'T' +
+      two(d.getUTCHours()) + two(d.getUTCMinutes()) + '00Z';
+  }
+
+  function icsEscape(text) {
+    return String(text).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  }
+
+  // Righe piegate a 75 ottetti, come vuole il formato iCalendar.
+  function icsFold(line) {
+    if (line.length <= 75) return line;
+    var out = line.slice(0, 75);
+    var rest = line.slice(75);
+    while (rest.length > 74) { out += '\r\n ' + rest.slice(0, 74); rest = rest.slice(74); }
+    return out + '\r\n ' + rest;
+  }
+
+  // Un giorno, un ospedale: i turni diurni attaccati diventano un evento solo
+  // ("Giornata" quando c'è sia il mattino sia il pomeriggio), la notte resta a sé.
+  function icsEventsOfDay(list) {
+    var nights = list.filter(function (a) { return a.isNight; });
+    var days = list.filter(function (a) { return !a.isNight; })
+      .sort(function (x, y) { return x.startAbs - y.startAbs; });
+    var events = [];
+    nights.forEach(function (a) { events.push({ name: 'Notte', from: a, startAbs: a.startAbs, endAbs: a.endAbs }); });
+    var group = null;
+    days.forEach(function (a) {
+      if (group && a.startAbs <= group.endAbs) {
+        group.endAbs = Math.max(group.endAbs, a.endAbs);
+        group.keys.push(a.slotKey);
+        return;
+      }
+      group = { keys: [a.slotKey], from: a, startAbs: a.startAbs, endAbs: a.endAbs };
+      events.push(group);
+    });
+    events.forEach(function (ev) {
+      if (ev.name) return;
+      var morning = ev.keys.indexOf('M') !== -1 || ev.keys.indexOf('A') !== -1;
+      var afternoon = ev.keys.indexOf('P') !== -1;
+      ev.name = morning && afternoon ? 'Giornata'
+        : ev.keys.indexOf('P') !== -1 ? 'Pomeriggio'
+        : ev.keys.indexOf('A') !== -1 ? 'Ambulatorio'
+        : 'Mattina';
+    });
+    return events;
+  }
+
+  // File .ics con i turni di una persona (di un mese, o di tutti se month è vuoto).
+  // Gli eventi si chiamano "PS SSG Mattina", "PS OSG Notte", … con gli orari veri.
+  function buildICS(assignments, person, month, options) {
+    var opts = options || {};
+    var stamp = icsStamp(opts.now === undefined ? Date.now() : opts.now);
+    var byDayHospital = new Map();
+    assignments.forEach(function (a) {
+      if (a.person !== person) return;
+      if (month && a.date.slice(0, 7) !== month) return;
+      var key = a.date + '|' + a.hospital;
+      if (!byDayHospital.has(key)) byDayHospital.set(key, []);
+      byDayHospital.get(key).push(a);
+    });
+
+    var events = [];
+    Array.from(byDayHospital.keys()).sort().forEach(function (key) {
+      var list = byDayHospital.get(key);
+      var hospital = list[0].hospital;
+      var site = SITE_LABEL[hospital] || hospital;
+      icsEventsOfDay(list).forEach(function (ev) {
+        var base = dayIndex(ev.from.date) * MINUTES_PER_DAY;
+        events.push({
+          uid: ev.from.date + '-' + hospital + '-' + ev.name.toLowerCase() + '-' +
+            fold(person).toLowerCase() + '@imieiturni',
+          summary: 'PS ' + site + ' ' + ev.name,
+          start: romeToUtc(ev.from.date, ev.startAbs - base),
+          end: romeToUtc(ev.from.date, ev.endAbs - base),
+        });
+      });
+    });
+    events.sort(function (x, y) { return x.start - y.start; });
+
+    var lines = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//I Miei Turni//IT', 'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH', 'X-WR-CALNAME:' + icsEscape('Turni ' + person),
+    ];
+    events.forEach(function (ev) {
+      lines.push('BEGIN:VEVENT', 'UID:' + ev.uid, 'DTSTAMP:' + stamp,
+        'DTSTART:' + icsStamp(ev.start), 'DTEND:' + icsStamp(ev.end),
+        'SUMMARY:' + icsEscape(ev.summary), 'END:VEVENT');
+    });
+    lines.push('END:VCALENDAR');
+    return lines.map(icsFold).join('\r\n') + '\r\n';
+  }
+
+  // ------------------------------------------------------------------
   // diffRosters — cosa cambia tra due versioni dello stesso mese
   // ------------------------------------------------------------------
 
@@ -643,6 +767,8 @@ var TurniRules = (function () {
     personStats: personStats,
     hoursByName: hoursByName,
     diffRosters: diffRosters,
+    buildICS: buildICS,
+    SITE_LABEL: SITE_LABEL,
     SEVERITY: SEVERITY,
     KIND_LABEL: KIND_LABEL,
   };
