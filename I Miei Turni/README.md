@@ -1,43 +1,61 @@
 # I Miei Turni
 
 Una pagina sola, senza dipendenze, che mostra i turni mensili del Pronto Soccorso di due
-ospedali — **DEA** e **OSG** — letti dai file xlsx ufficiali. Serve a tre cose:
+ospedali — **DEA** e **OSG** — letti dai file xlsx ufficiali. Pensata per il telefono.
 
-1. **Trovare un nome in un attimo.** La ricerca evidenzia il nome nella griglia a ogni
-   lettera e mostra sotto i nomi possibili: se nel foglio c'è un refuso (per esempio
-   `ORLANDITOSKIC` senza la barra), lo si vede subito come nome a sé, con il suggerimento.
-2. **Vedere i problemi.** Le segnalazioni sono calcolate su tutti i turni caricati, anche
-   a cavallo di due mesi:
-   - **Conflitto** — stesso orario in due ospedali, oppure doppio incarico nello stesso
-     ospedale con più di 1 h di sovrapposizione (ambulatorio → pomeriggio nello stesso PS
-     è un passaggio di consegne, non un conflitto).
-   - **Notte attaccata** — turno diurno subito prima o subito dopo una notte, con meno di
-     11 h di riposo (pomeriggio → notte, notte → mattina, mattina → notte, ecc.).
-   - **Cambio sede** — due turni diurni consecutivi in ospedali diversi senza pausa.
-3. **Aggiornare senza fatica.** Vedi sotto.
+## Cosa fa
+
+- **Cerca un nome** e lo evidenzia a ogni lettera; sotto il campo compaiono i nomi
+  possibili, così un refuso nel foglio (per esempio `ORLANDITOSKIC` senza la barra) si
+  vede subito come nome a sé, con il suggerimento.
+- **Calendario**: il mese in una videata; sotto, il dettaglio del giorno scelto (oggi
+  all'apertura; frecce o scorrimento laterale per cambiare giorno). Con un nome fissato,
+  ogni giorno mostra le sue fasce — M, P, N, A — nel colore dell'ospedale, notti in
+  pieno, e una riga di conteggi: `2G · 2M · 3P · 5N · 7 da 12 h · 114 h · DEA 78 · OSG 36`
+  (G = giornate, cioè mattina + pomeriggio nello stesso giorno; M e P contano solo quando
+  da soli; l'ambulatorio conta come una mattina a tutti gli effetti; le ore sono l'unione
+  reale degli orari).
+- **Tabella**: tutti i nomi del mese, giorno per riga, DEA e OSG su due righe, colonne
+  M/P/N/A, con lo stesso evidenziatore.
+- **Ore**: le ore del mese per nome, in barre divise per ospedale.
+- **Segnalazioni**, calcolate su tutti i turni caricati anche a cavallo di due mesi, in
+  una riga ciascuna (`BRAHAM · notte 17 OSG → mattina 18 OSG · riposo 0 h`):
+  - **Conflitto** — stesso orario in due ospedali, oppure doppio incarico nello stesso
+    ospedale con più di 1 h di sovrapposizione (ambulatorio → pomeriggio nello stesso PS
+    è un passaggio di consegne, non un conflitto).
+  - **Notte attaccata** — turno diurno subito prima o subito dopo una notte, con meno di
+    11 h di riposo.
+  - **Cambio sede** — due turni diurni consecutivi in ospedali diversi senza pausa.
+- La pagina **ricorda l'ultimo nome fissato** e la vista scelta; mese, nome, giorno e
+  vista stanno anche nell'indirizzo (`#mese=…&nome=…&giorno=…&vista=…`), quindi un link
+  condiviso apre la stessa vista.
 
 ## Aprire
 
 Doppio clic su `index.html`. Funziona da file locale, offline, su telefono e computer.
 I dati del mese corrente sono già dentro la pagina.
 
-La schermata è pensata per il telefono: il calendario del mese sta in una videata, sotto
-c'è il dettaglio del giorno scelto (oggi all'apertura; frecce o scorrimento laterale per
-cambiare giorno). Con un nome fissato, ogni giorno mostra le sue fasce — M, P, N, A — nel
-colore dell'ospedale, con le notti in pieno. La pagina ricorda l'ultimo nome fissato e si
-riapre già sul suo mese; la × nel campo di ricerca lo dimentica. Mese, nome e giorno
-stanno anche nell'indirizzo (`#mese=…&nome=…&giorno=…`), quindi un link condiviso apre
-la stessa vista.
-
 ## Aggiornare i turni
 
-Due strade, a scelta:
+In tutti i casi, dopo aver scelto il file compare una **scheda di revisione** con le sole
+differenze rispetto alla versione già caricata dello stesso ospedale e mese (nomi
+aggiunti, tolti, sostituiti o solo riordinati), più gli avvisi del file. Si conferma con
+**Salva** o si annulla; prima di Salva non cambia nulla. Un file identico non salva
+niente; un mese nuovo mostra il riepilogo e chiede conferma.
 
-- **Dal browser (subito, solo su quel dispositivo).** Trascina i nuovi file xlsx sulla
-  pagina, oppure usa «Carica xlsx». I file vengono letti nel browser e ricordati lì
-  (localStorage). Un file dello stesso ospedale e mese sostituisce quello pubblicato;
-  «Ripristina i dati pubblicati» nella sezione *Dati* torna indietro.
-- **Pubblicando (per tutti i dispositivi).** Copia i nuovi xlsx in `data/` e lancia:
+Tre strade, a seconda di dove sta la pagina:
+
+- **Pagina pubblicata (artifact)**: chi ha il permesso di scrivere preme **Salva per
+  tutti** e la pagina pubblica una nuova versione dei dati (`data/turni.json`) dentro lo
+  stesso artifact: chi la ha aperta la vede aggiornarsi, ogni versione resta nello
+  storico. Con il solo permesso di vista, o se l'artifact è condiviso con link pubblico,
+  il salvataggio condiviso non è disponibile e i turni restano sul dispositivo, con un
+  messaggio esplicito.
+- **Dal browser (subito, solo su quel dispositivo)**: «Carica xlsx» o trascinamento del
+  file sulla pagina. I dati restano nel browser (localStorage); «Ripristina i dati
+  pubblicati» nella sezione *Dati* torna indietro.
+- **Pubblicando nel repo (per tutti i dispositivi)**: copia i nuovi xlsx in `data/` e
+  lancia:
 
   ```bash
   cd "I Miei Turni"
@@ -69,7 +87,7 @@ build.js          data/*.xlsx → index.html (inlina src/* e i dati)
 src/shell.html    scheletro HTML con i segnaposto
 src/styles.css    stili (tema chiaro/scuro, stampa)
 src/parser.js     lettura xlsx → roster (browser e Node, zero dipendenze)
-src/rules.js      assegnazioni, segnalazioni, analisi nomi, ricerca
+src/rules.js      assegnazioni, segnalazioni, conteggi, ore, confronto tra versioni, ricerca
 src/app.js        interfaccia
 test/             test di parser e regole (node:assert), con i roster attesi in test/fixtures
 data/             i file xlsx sorgente
