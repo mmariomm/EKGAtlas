@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.28.1";
+  const VERSION = "3.28.2";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2522,8 +2522,12 @@
        la novità perché il segno vince sullo sfondo azzurro; la riga blu sotto
        il numero (box-shadow) resta e continua a dire «nuovo». */
     .sttab td[data-cella] { cursor: pointer; user-select: none; }   /* due tocchi non devono selezionare il numero */
-    .sttab td.marca1, .sttab tbody tr:hover td.marca1 { background: #FFF1A8; }
-    .sttab td.marca2, .sttab tbody tr:hover td.marca2 { background: #FFCF8F; }
+    /* Il segno è una pastiglia stretta attorno al numero (freccia e segno
+       compresi), non tutta la cella: il margine negativo compensa il padding,
+       così il numero non si sposta quando la pastiglia compare. */
+    .sttab td .val { display: inline-block; border-radius: 999px; padding: 0 5px; margin: 0 -5px; }
+    .sttab td.marca1 .val { background: #FFE58A; }
+    .sttab td.marca2 .val { background: #FFC46B; }
     .sttab tbody tr:hover td, .sttab tbody tr:hover th.stn { background: #F4F9FD; }
     /* Sezioni: gli esami stanno dove un medico li cerca, e sempre nello stesso
        posto. L'ordine non dipende più da come il laboratorio ha stampato. */
@@ -2532,7 +2536,6 @@
     .sttab tr.stsez th.stn { color: #35506B; padding-top: 7px; padding-bottom: 4px; }
     .sttab tr.stsez td { text-align: left; padding-top: 7px; padding-bottom: 4px; }
     .sttab tr.stsez:hover th.stn, .sttab tr.stsez:hover td { background: #EEF4FA; }
-    .stalt { color: #B3261E; font-weight: 800; letter-spacing: .04em; }
     /* una cella senza valore si deve VEDERE che è vuota, o una riga con due
        soli prelievi sembra una riga piena */
     .sttab td.vuoto { color: #AEBECD; }
@@ -3437,9 +3440,9 @@
           const segno = segni[cella] === 2 ? " marca2" : segni[cella] === 1 ? " marca1" : "";
           return `<td class="${v.stato ? "fuori" : ""}${v.parziale ? " parz" : ""}${n === "nuovo" ? " nuovo" : n === "cambiato" ? " agg" : ""}${segno}" data-cella="${esc(cella)}"${
             tip ? ` title="${esc(tip)}${v.parziale ? " · parziale" : ""}"` : v.parziale ? ` title="parziale"` : ""
-          }>${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}${
+          }><span class="val">${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}${
             sg ? `<i class="prov" title="${esc(daChi ? "fatto con " + daChi + (p.solita ? " — gli altri con " + p.solita : "") : "")}">${esc(sg)}</i>` : ""
-          }</td>`;
+          }</span></td>`;
         }).join("");
         const etichetta = inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome);
         return `<tr><th class="stn${inatteso(r) ? " grezza" : ""}" title="${esc(r.nome)}${
@@ -3448,9 +3451,9 @@
       };
 
       const corpo = gruppi.map((g) => {
-        const alterati = g.righe.filter((r) => r.valori.some((v) => v.v && v.stato)).length;
-        return `<tr class="stsez"><th class="stn">${esc(g.nome)}</th><td colspan="${col.length}">${
-          alterati ? `<span class="stalt">${alterati} fuori norma</span>` : ""}</td></tr>${g.righe.map(rigaEsame).join("")}`;
+        // niente conteggio dei fuori norma sulla riga di sezione: tanti sono
+        // insignificanti, e il numero distrae da quelli che contano
+        return `<tr class="stsez"><th class="stn">${esc(g.nome)}</th><td colspan="${col.length}"></td></tr>${g.righe.map(rigaEsame).join("")}`;
       }).join("");
 
       // In cima a ogni colonna: se il prelievo è di oggi basta l'ora; se è di
