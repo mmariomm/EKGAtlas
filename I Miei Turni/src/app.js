@@ -452,10 +452,19 @@
       on: { click: function () { state.stripOpen = !state.stripOpen; renderStrip(); indexNames(); applyHighlight(); } },
     });
     stripEl.appendChild(more);
-    // Il pulsante serve solo se i nomi non ci stanno già tutti.
+    // Il taglio cade tra due righe di chip, mai a metà; se stanno tutte, niente pulsante.
     if (!state.stripOpen) {
       requestAnimationFrame(function () {
-        if (names.scrollHeight <= names.clientHeight + 2) more.hidden = true;
+        var tops = [];
+        Array.prototype.forEach.call(names.children, function (chip) {
+          if (tops.indexOf(chip.offsetTop) === -1) tops.push(chip.offsetTop);
+        });
+        if (tops.length <= 3) {
+          names.classList.remove('is-clamped');
+          more.hidden = true;
+        } else {
+          names.style.maxHeight = Math.max(40, tops[3] - names.offsetTop - 6) + 'px';
+        }
       });
     }
   }
@@ -505,7 +514,13 @@
       keepAnchor(function () { renderCards(); indexNames(); applyHighlight(); });
       syncHash();
     });
-    box.appendChild(el('label', { class: 'switch' }, [check, el('span', { class: 'switch__track' }), 'Solo i suoi giorni']));
+    box.appendChild(el('div', { class: 'scheda__actions' }, [
+      el('label', { class: 'switch' }, [check, el('span', { class: 'switch__track' }), 'Solo i suoi giorni']),
+      el('button', {
+        class: 'scheda__unpin', type: 'button',
+        on: { click: function () { setPinned(null); } },
+      }, [icon('i-back'), 'Tutti i nomi']),
+    ]));
 
     var mine = (D.findByPerson.get(name) || []);
     if (mine.length) {
@@ -514,11 +529,6 @@
         el('div', {}, mine.map(function (f) { return findingItem(f, true); })),
       ]));
     }
-
-    box.appendChild(el('button', {
-      class: 'scheda__unpin', type: 'button',
-      on: { click: function () { setPinned(null); } },
-    }, [icon('i-back'), 'Tutti i nomi']));
 
     stripEl.appendChild(box);
   }
@@ -560,15 +570,28 @@
     cardsEl.style.setProperty('--tpl', 'var(--labelw) repeat(' + Math.max(1, D.hospitals.length) + ', minmax(0, 1fr))');
     cardsEl.classList.toggle('is-pinned', !!state.pinned && !state.query.trim());
 
+    // Gli ospedali si nominano una volta sola, in una riga che resta in vista.
+    var colbar = el('div', { class: 'colbar' }, [el('span', {})].concat(
+      D.monthRosters.map(function (r) {
+        return el('span', { class: 'colbar__h ' + hospClass(r.hospital), title: r.title || r.hospital }, [
+          el('span', { class: 'dot ' + hospClass(r.hospital) }), r.hospital,
+        ]);
+      })
+    ));
+    cardsEl.appendChild(colbar);
+
     var days = D.days;
     if (state.pinned && state.onlyTheirDays && D.personDays) {
       days = days.filter(function (d) { return D.personDays.has(d.date); });
     }
     if (!days.length) {
-      cardsEl.appendChild(el('p', { class: 'cap', text: 'Nessun giorno da mostrare.' }));
+      cardsEl.appendChild(el('p', { class: 'cap', style: 'padding:14px', text: 'Nessun giorno da mostrare.' }));
       return;
     }
     days.forEach(function (d) { cardsEl.appendChild(dayCard(d)); });
+    requestAnimationFrame(function () {
+      document.documentElement.style.setProperty('--h-cols', colbar.offsetHeight + 'px');
+    });
   }
 
   function dayCard(d) {
@@ -585,20 +608,22 @@
       today ? el('span', { class: 'day__oggi', text: 'oggi' }) : null,
     ]));
 
-    card.appendChild(el('div', { class: 'day__hosp' }, [el('span', {})].concat(
-      D.monthRosters.map(function (r) {
-        return el('span', { class: 'day__h ' + hospClass(r.hospital), title: r.title || r.hospital }, [
-          el('span', { class: 'dot ' + hospClass(r.hospital) }), r.hospital,
-        ]);
-      })
-    )));
-
     D.slotRows.forEach(function (row) {
+      var slots = D.monthRosters.map(function (r) {
+        return (r.slots || []).filter(function (s) { return s.key === row.key; })[0] || null;
+      });
+      // Una fascia vuota in tutti gli ospedali non si mostra affatto.
+      var used = slots.some(function (slot, i) {
+        if (!slot) return false;
+        var cell = (d.cells[D.monthRosters[i].hospital] || {})[slot.key];
+        return !!(cell && cell.names && cell.names.length);
+      });
+      if (!used) return;
+
       var night = row.key === 'N';
-      var cells = D.monthRosters.map(function (r) {
-        var slot = (r.slots || []).filter(function (s) { return s.key === row.key; })[0];
+      var cells = slots.map(function (slot, i) {
         if (!slot) return el('div', { class: 'day__blank' });
-        return dayCell(r, slot, d);
+        return dayCell(D.monthRosters[i], slot, d);
       });
       card.appendChild(el('div', { class: 'day__row' + (night ? ' is-night' : '') }, [
         el('div', { class: 'day__lab' }, [
@@ -684,11 +709,13 @@
           : 'Nessuna segnalazione a ' + monthName(state.month),
       ]));
     } else {
-      KIND_ORDER.forEach(function (kind) {
+      var kinds = KIND_ORDER.filter(function (k) {
+        return list.some(function (f) { return f.kind === k; });
+      });
+      kinds.forEach(function (kind) {
         var group = list.filter(function (f) { return f.kind === kind; });
-        if (!group.length) return;
         findEl.appendChild(el('div', { class: 'fgroup' }, [
-          el('p', { class: 'fgroup__t', text: plural(group.length, KIND_PLURAL[kind][0], KIND_PLURAL[kind][1]) }),
+          kinds.length > 1 ? el('p', { class: 'fgroup__t', text: plural(group.length, KIND_PLURAL[kind][0], KIND_PLURAL[kind][1]) }) : null,
           el('div', {}, group.map(function (f) { return findingItem(f, false); })),
         ]));
       });
@@ -708,11 +735,7 @@
   function findingItem(f, compact) {
     var dates = f.a.date === f.b.date ? R.formatDate(f.a.date)
       : R.formatDate(f.a.date) + ' → ' + R.formatDate(f.b.date);
-    return el('div', {
-      class: 'fitem sev-' + f.severity, role: 'button', tabindex: '0',
-      'aria-label': f.person + ': ' + f.title + '. ' + f.detail + '. Vai al giorno ' + R.formatDate(f.a.date),
-      data: { goto: f.a.date },
-    }, [
+    return el('div', { class: 'fitem sev-' + f.severity, data: { goto: f.a.date } }, [
       el('div', { class: 'fitem__body' }, [
         compact ? null : el('button', {
           class: 'fitem__who', type: 'button', data: { name: f.person },
@@ -722,7 +745,10 @@
         el('p', { class: 'fitem__d', text: f.detail }),
         compact ? el('p', { class: 'fitem__d', text: dates }) : null,
       ]),
-      el('span', { class: 'fitem__go' }, icon('i-chevron')),
+      el('button', {
+        class: 'fitem__go', type: 'button',
+        'aria-label': 'Vai a ' + R.formatDate(f.a.date) + ': ' + f.title,
+      }, icon('i-chevron')),
     ]);
   }
 
@@ -1185,12 +1211,6 @@
       if (goto) { goToDay(goto.dataset.goto); }
     });
 
-    document.addEventListener('keydown', function (e) {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      var item = e.target.closest && e.target.closest('.fitem');
-      if (item && item.dataset.goto) { e.preventDefault(); goToDay(item.dataset.goto); }
-    });
-
     findingsBtn.addEventListener('click', function () {
       scrollToEl(findEl);
       findEl.focus({ preventScroll: true });
@@ -1211,17 +1231,21 @@
       dropzone.hidden = false;
     });
     window.addEventListener('dragover', function (e) { if (!dropzone.hidden) e.preventDefault(); });
-    window.addEventListener('dragleave', function () {
+    window.addEventListener('dragleave', function (e) {
       dragDepth = Math.max(0, dragDepth - 1);
-      if (!dragDepth) dropzone.hidden = true;
+      if (!dragDepth || !e.relatedTarget) { dragDepth = 0; dropzone.hidden = true; }
     });
     window.addEventListener('drop', function (e) {
       if (!e.dataTransfer) return;
       e.preventDefault();
-      dragDepth = 0;
-      dropzone.hidden = true;
+      endDrag();
       loadFiles(e.dataTransfer.files);
     });
+    window.addEventListener('dragend', endDrag);
+    window.addEventListener('blur', endDrag);
+    document.addEventListener('visibilitychange', function () { if (document.hidden) endDrag(); });
+
+    function endDrag() { dragDepth = 0; dropzone.hidden = true; }
 
     window.addEventListener('resize', measureHeader);
     window.addEventListener('hashchange', function () {
