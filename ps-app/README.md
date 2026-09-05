@@ -230,7 +230,8 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   il pannello, **prelievo più recente per primo** (a sinistra il più fresco, verso destra si va
   indietro nel tempo), con in rosso ciò che la pagina aveva già marcato fuori range (↑ sopra,
   ↓ sotto). **⧉ Copia** la mette negli appunti in colonne, **solo alterati** toglie di mezzo il
-  resto, **⤢ Ingrandisci** la apre grande.
+  resto. In cima a ogni colonna: **solo l'ora** se il prelievo è di oggi, **la data** (27/08) con
+  l'ora sotto se è di un altro giorno — «quale giorno» conta solo quando non è questo.
 - Gli esami sono **divisi in sezioni** e dentro ogni sezione l'ordine è **fisso**: *Emocromo,
   Coagulazione, Biochim* (PCR, PCT, VES, troponina, NT-proBNP, CPK, CK-MB, mioglobina, LDH),
   *Organi, Elettroliti e metabolismo, Emogas, Urine e altri liquidi*, e in fondo **Altri**. Prima l'ordine era quello in cui il laboratorio aveva stampato
@@ -243,9 +244,10 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   *«\* fatto con EMOCROMOCITOMETRICO URGENTE — gli altri con EMOCROMO»*. Prima questa
   informazione **si perdeva in silenzio**: la riga fusa teneva solo il nome della prima
   prestazione vista. Un valore ancora parziale è marcato **…**, non più con l'asterisco.
-- **⤢ Ingrandisci** apre la stessa tabella grande **dentro la pagina** — non è una finestra del
-  browser (niente popup da sbloccare) e il gestionale resta dov'è. Si chiude con **Esc**, con la
-  **✕** o cliccando fuori. Colonne delle date e colonna dei nomi restano ferme mentre scorri.
+- Con molti prelievi **il pannello si allarga da solo** quanto serve alla tabella, fino
+  all'**80 %** dello schermo in larghezza e altezza — mai più stretto di come l'hai ridimensionato
+  a mano. Niente finestra a parte: una vista sola. Colonna dei nomi e riga delle date restano
+  ferme mentre scorri.
 - Le celle **vuote hanno un punto**: una riga con due soli prelievi non deve sembrarne una piena.
 - Nella tabella del portale la colonna di sinistra è la **prestazione ordinata** (`ESAME URINE
   COMPLETO`) e quella accanto è l'**analita** (`U-Albumina`, `U-Corpi chetonici`): il pannello legge

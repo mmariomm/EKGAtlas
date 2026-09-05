@@ -124,10 +124,19 @@ await page.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
 const griglia = await page.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
   return { righe: r.querySelectorAll(".sttab tbody tr:not(.stsez)").length, rosse: r.querySelectorAll(".sttab td.fuori").length,
-           sezioni: r.querySelectorAll(".sttab tr.stsez").length };
+           sezioni: r.querySelectorAll(".sttab tr.stsez").length,
+           larghezza: Math.round(r.querySelector(".card").getBoundingClientRect().width),
+           tetto: Math.round(window.innerWidth * 0.8),
+           sotto: [...r.querySelectorAll(".sttab thead th .sth")].map((t) => t.textContent.trim()) };
 });
 check(griglia.righe === 10 && griglia.rosse === 6, `la tabella con i suoi fuori range (${griglia.righe} righe, ${griglia.rosse} rosse)`);
 check(griglia.sezioni >= 4, `divisa in sezioni (${griglia.sezioni})`);
+// il pannello si allarga da solo per le colonne, fino all'80 % dello schermo
+check(griglia.larghezza > 460 && griglia.larghezza <= griglia.tetto,
+  `il pannello si è allargato per lo storico (${griglia.larghezza} px, tetto ${griglia.tetto})`);
+// nessun prelievo di esempio è di oggi: in cima c'è la data, sotto l'ora
+check(griglia.sotto.length === 3 && griglia.sotto.every((t) => /^\d\d:\d\d$/.test(t)),
+  `colonne di altri giorni: data sopra, ora sotto (${griglia.sotto.join(" · ")})`);
 
 // ---- una schermata mai salvata non è un errore
 await page.locator('#sa4-page a:has-text("Storico Documenti")').first().click().catch(() => {});

@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.25.0";
+  const VERSION = "3.26.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2496,28 +2496,6 @@
     /* il segno di provenienza: piccolo, in alto, mai confondibile con un valore */
     .sttab .prov { font-style: normal; font-size: 9px; vertical-align: super; color: #0B5CAD;
                    font-weight: 800; margin-left: 1px; cursor: help; }
-    /* La finestra grande. Sta dentro la pagina (niente popup da sbloccare, e
-       il gestionale resta dov'era), si chiude con Esc, il fondo o la ✕. */
-    /* sopra il pannello, non sotto: mentre è aperta è lei che si guarda */
-    .stfull { position: fixed; inset: 0; z-index: 2147483647; background: rgba(9,42,74,.42);
-              display: flex; align-items: center; justify-content: center; padding: 3vh 2vw; }
-    /* larga quanto la tabella, non quanto lo schermo: tre colonne di numeri in
-       una carta da 1400 px sono un foglio vuoto con dei numeri in un angolo */
-    .stcard { width: fit-content; min-width: min(560px, 92vw); max-width: 96vw; max-height: 94vh;
-              display: flex; flex-direction: column;
-              background: #fff; border-radius: 14px; box-shadow: 0 18px 56px rgba(9,42,74,.34);
-              padding: 12px 14px 14px; overflow: auto; }
-    .sthd { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
-    .sthd b { font-size: 15px; color: #16232E; }
-    .sthd .stsub { flex: 1 1 auto; font-size: 11.5px; color: #7A8CA0; overflow: hidden;
-                   white-space: nowrap; text-overflow: ellipsis; }
-    .sthd .mini { float: none; }
-    /* .iconbtn nasce per l'intestazione blu: qui è bianco su bianco */
-    .sthd .iconbtn { color: #5B6B7A; border: 1px solid #E3E8EF; border-radius: 8px; width: 26px; height: 26px; }
-    .sthd .iconbtn:hover { color: #B3261E; border-color: #E5B4B0; background: #FDF3F2; }
-    .stwrap.grande { flex: 1 1 auto; min-height: 0; overflow: auto; }
-    .stwrap.grande .sttab { font-size: 12.5px; }
-    .stwrap.grande .sttab th, .stwrap.grande .sttab td { padding: 4px 12px; }
     .reftxt { font-size: 12.5px; line-height: 1.5; color: #16232E; }
     .reftxt .rt { padding: 1px 0; }
     .reftxt .rt:empty { display: none; }
@@ -2606,7 +2584,6 @@
       this.storicoDaConfermare = false; // c'è, ma serve il codice fiscale per dire che è suo
       this.portale = "";                // indirizzo del portale aggiunto dal medico
       this.soloAlterati = false;        // storico: show only what is out of range
-      this.storicoGrande = false;       // la finestra grande dello storico, aperta o no
       this.mostraNomi = false;          // the unexpected-name list, open or closed
       this.mostraArch = false;          // l'elenco degli archiviati, aperto o chiuso
       this.rottiTab = new Set();        // prelievi che hanno già fallito: niente ritentativi da soli
@@ -2636,7 +2613,6 @@
       this._esc = (e) => {
         if (e.key !== "Escape") return;
         if (this.runState === "running") this.stop();
-        else if (this.storicoGrande) { this.storicoGrande = false; this.render(); }
       };
       window.addEventListener("keydown", this._esc, true);
     }
@@ -3025,6 +3001,16 @@
         sizeStyle += `width:${w}px;`;
         if (this.size.h) sizeStyle += `max-height:${Math.max(240, Math.min(window.innerHeight - 20, this.size.h))}px;`;
       }
+      // Lo storico si legge per confronto fra colonne: il pannello si allarga
+      // da solo quanto serve alla tabella, fino all'80% dello schermo — mai
+      // più stretto di quanto il medico l'ha già fatto a mano.
+      if (!this.runState && this.view === "storico" && this.storico) {
+        const nCol = (this.storico.date || []).length;
+        const serve = 220 + 88 * nCol;
+        const tetto = Math.round(window.innerWidth * 0.8);
+        const w = Math.max(this.size?.w || 460, Math.min(serve, tetto));
+        sizeStyle = `width:${w}px;max-height:${Math.round(window.innerHeight * 0.8)}px;`;
+      }
       // user-dragged position (clamped to the current viewport), else top-right
       let posStyle = "";
       if (this.pos && Number.isFinite(this.pos.left) && Number.isFinite(this.pos.top)) {
@@ -3073,7 +3059,7 @@
               </div>` : ""}
             </div>
           `}
-        </div>${!this.runState && this.view === "storico" && this.storicoGrande ? this.vistaGrande() : ""}`;
+        </div>`;
       this.bind();
       for (const [sel, top] of keepScroll) {
         const el = this.root.querySelector(sel);
@@ -3386,10 +3372,10 @@
 
     // The multi-day table: exams down, draws across, newest first. It is read
     // from the portal page, never asked to the server.
-    // UNA sola tabella, usata dal pannello e dalla finestra grande: due
+    // UNA sola tabella, per il pannello e per il testo copiato: due
     // sorgenti che disegnano «la stessa» tabella finiscono sempre per
     // divergere, e la differenza la scopre il medico.
-    tabellaStorico(st, grande) {
+    tabellaStorico(st) {
       const col = st.date.map((d, i) => ({ ...d, i })).reverse();   // il più recente a sinistra
       const ambS = sigleAmbigue(st.righe);
       const inatteso = (r) => !siglaCurata(r.nome) || ambS.has(sigla(r.nome));
@@ -3426,11 +3412,19 @@
           alterati ? `<span class="stalt">${alterati} fuori norma</span>` : ""}</td></tr>${g.righe.map(rigaEsame).join("")}`;
       }).join("");
 
-      const testa = `<tr><th class="stn">Esame</th>${col.map((c, i) => `<th class="${i === 0 ? "ultima" : ""}">${
-        esc(c.data.slice(0, 5))}<span class="sth">${esc(c.ora)}</span></th>`).join("")}</tr>`;
+      // In cima a ogni colonna: se il prelievo è di oggi basta l'ora; se è di
+      // un altro giorno la data (27/08), con l'ora sotto in piccolo. Si legge
+      // per confronto, e «quale giorno» conta solo quando non è questo.
+      const d0 = new Date();
+      const oggi = `${String(d0.getDate()).padStart(2, "0")}/${String(d0.getMonth() + 1).padStart(2, "0")}/${d0.getFullYear()}`;
+      const testa = `<tr><th class="stn">Esame</th>${col.map((c, i) => {
+        const diOggi = c.data === oggi;
+        return `<th class="${i === 0 ? "ultima" : ""}">${esc(diOggi ? c.ora || "oggi" : c.data.slice(0, 5))}<span class="sth">${
+          esc(diOggi ? "oggi" : c.ora)}</span></th>`;
+      }).join("")}</tr>`;
       const nRighe = gruppi.reduce((n, g) => n + g.righe.length, 0);
       return {
-        html: `<div class="stwrap${grande ? " grande" : ""}"><table class="sttab"><thead>${testa}</thead><tbody>${corpo}</tbody></table></div>`,
+        html: `<div class="stwrap"><table class="sttab"><thead>${testa}</thead><tbody>${corpo}</tbody></table></div>`,
         legenda, nRighe, nCol: col.length,
       };
     }
@@ -3444,48 +3438,21 @@
         parz ? `<div class="hint">… valore ancora <b>parziale</b>: il laboratorio non ha finito.</div>` : ""}`;
     }
 
-    // il corpo della tabella è UNO: quello che si aggiunge qui compare in
-    // tutte e due le viste, o non compare in nessuna
-    corpoStorico(st, t) {
-      return `${this.avvisoNomi(st.righe, st.scartate)}${t.html}${this.piedeStorico(st, t.legenda)}`;
-    }
-
+    // Lo storico non ha una finestra a parte: è il pannello stesso che si
+    // allarga quanto serve alla tabella (vedi render), fino all'80% dello
+    // schermo. Una vista sola, un codice solo.
     viewStorico() {
       const st = this.storico;
       if (!st) return `<div class="hint">Nessuno storico in memoria. Aprilo dal gestionale: «Storico dati clinici» › Tabella.</div>`;
-      const t = this.tabellaStorico(st, false);
+      const t = this.tabellaStorico(st);
       return `
         <div class="sec">
-          <div class="lbl">Storico (${st.righe.length} esami)
-            <button class="mini" id="storgrande" title="Aprilo in grande: si legge tutto in una volta">⤢ Ingrandisci</button>
+          <div class="lbl">Storico (${st.righe.length} esami · ${t.nCol} prelievi)
             <button class="mini" id="storcopy">⧉ Copia</button>
             <button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>
           </div>
-          ${this.corpoStorico(st, t)}
+          ${this.avvisoNomi(st.righe, st.scartate)}${t.html}${this.piedeStorico(st, t.legenda)}
           <div class="hint">Letto per <b>${esc([st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") || "—")}</b>${st.paziente?.idMPI ? ` · idMPI ${esc(st.paziente.idMPI)}` : ""} · identità confermata dal <b>${esc(this.storicoVia || "nome")}</b>. ${esc(st.periodo || "")} · dalla pagina del portale, senza chiedere niente al server.</div>
-        </div>`;
-    }
-
-    // La finestra grande: la stessa tabella, ma con lo spazio per leggerla.
-    // Non è una scheda nuova né una finestra del browser — resta dentro la
-    // pagina, si chiude con Esc e non porta via niente al gestionale.
-    vistaGrande() {
-      const st = this.storico;
-      if (!st) return "";
-      const t = this.tabellaStorico(st, true);
-      const chi = [st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") || "—";
-      return `
-        <div class="stfull" id="stfull">
-          <div class="stcard" role="dialog" aria-label="Storico di ${esc(chi)}">
-            <div class="sthd">
-              <b>${esc(chi)}</b>
-              <span class="stsub">${t.nRighe} esami · ${t.nCol} prelievi${st.periodo ? " · " + esc(st.periodo) : ""}</span>
-              <button class="mini" id="storfiltro2">${this.soloAlterati ? "tutti" : "solo alterati"}</button>
-              <button class="mini" id="storcopy2">⧉ Copia</button>
-              <button class="iconbtn" id="stchiudi" title="Chiudi (Esc)">✕</button>
-            </div>
-            ${this.corpoStorico(st, t)}
-          </div>
         </div>`;
     }
 
@@ -4400,16 +4367,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       });
       const filtra = () => { this.soloAlterati = !this.soloAlterati; this.render(); };
       $("#storfiltro")?.addEventListener("click", filtra);
-      $("#storfiltro2")?.addEventListener("click", filtra);
-      $("#storgrande")?.addEventListener("click", () => { this.storicoGrande = true; this.render(); });
-      $("#stchiudi")?.addEventListener("click", () => { this.storicoGrande = false; this.render(); });
-      // il fondo scuro chiude, il contenuto no
-      $("#stfull")?.addEventListener("click", (ev) => {
-        if (ev.target === this.root.querySelector("#stfull")) { this.storicoGrande = false; this.render(); }
-      });
       $("#avvnomi")?.addEventListener("click", () => { this.mostraNomi = !this.mostraNomi; this.render(); });
-      for (const id of ["#storcopy", "#storcopy2"]) $(id)?.addEventListener("click", async () => {
-        const b = this.root.querySelector(id);
+      $("#storcopy")?.addEventListener("click", async () => {
+        const b = this.root.querySelector("#storcopy");
         const ok = await copiaTesto(this.testoStorico());
         segnaCopia(b, ok);
       });
