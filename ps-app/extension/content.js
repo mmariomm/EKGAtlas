@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.27.1";
+  const VERSION = "3.28.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1550,6 +1550,10 @@
     let tolte = 0;
     for (const k of [pk, perNome].filter(Boolean)) if (n[k]) { delete n[k]; tolte++; }
     if (tolte) store.set(noteKey, n);
+    const s = store.get(segniKey, {});   // e i segni sui valori, stesse chiavi
+    let toltiSegni = 0;
+    for (const k of [pk, perNome].filter(Boolean)) if (s[k]) { delete s[k]; toltiSegni++; }
+    if (toltiSegni) store.set(segniKey, s);
     try {
       for (const k of Object.keys(sessionStorage)) {
         const kk = k.startsWith(NS) ? k.slice(NS.length) : "";
@@ -1617,6 +1621,38 @@
     if (String(testo).trim()) n[chiave] = { t: String(testo).slice(0, 4000), ts: Date.now() };
     else delete n[chiave];
     return store.set(noteKey, n);
+  }
+
+  // ----------------------------------------------------------------- SEGNI
+  // Un valore toccato si evidenzia: giallo, al secondo tocco arancio, al
+  // terzo torna com'era. Il medico «segna» quello che vuole tenere d'occhio.
+  // Per paziente come la nota, con la stessa chiave e la stessa scadenza;
+  // la cella è «colonna|analita», la stessa identità della tabella.
+  const segniKey = "segni.v1";
+  function segniTutti() {
+    const s = store.get(segniKey, {});
+    const ora = Date.now();
+    let pulito = false;
+    for (const k of Object.keys(s)) if (ora - (s[k]?.ts || 0) > NOTA_TTL) { delete s[k]; pulito = true; }
+    if (pulito) store.set(segniKey, s);
+    return s;
+  }
+  const leggiSegni = (chiave) => (chiave ? (segniTutti()[chiave]?.celle || {}) : {});
+  function scriviSegno(chiave, cella, stato) {
+    if (!chiave || !cella) return false;
+    const s = segniTutti();
+    const celle = { ...(s[chiave]?.celle || {}) };
+    if (stato) celle[cella] = stato; else delete celle[cella];
+    if (Object.keys(celle).length) s[chiave] = { celle, ts: Date.now() }; else delete s[chiave];
+    return store.set(segniKey, s);
+  }
+  // come la nota: i segni fatti prima di conoscere il codice fiscale lo seguono
+  function migraSegni(da, a) {
+    const s = segniTutti();
+    if (!s[da]) return;
+    if (!s[a]) s[a] = s[da];
+    delete s[da];
+    store.set(segniKey, s);
   }
 
   // ----------------------------------------------------------------- TEMPI
@@ -2434,7 +2470,12 @@
     .sttab thead th.stn { background: #F8FBFE; z-index: 2; }
     .sttab td { text-align: right; color: #35506B; font-variant-numeric: tabular-nums; }
     .sttab td.fuori { color: #B3261E; font-weight: 800; }
-    .sttab td.parz i { font-style: normal; color: #A2600A; font-weight: 700; }
+    .sttab td.parz { font-style: italic; }   /* parziale: in corsivo, niente puntini */
+    /* i segni del medico: un tocco giallo, due arancio, tre via. Vincono
+       sullo sfondo della novità, che resta come riga sotto il numero. */
+    .sttab td[data-cella] { cursor: pointer; }
+    .sttab td.seg1, .sttab tbody tr:hover td.seg1 { background: #FFF1A8; }
+    .sttab td.seg2, .sttab tbody tr:hover td.seg2 { background: #FFCF8F; }
     /* Novelty rides a different channel: a tint behind the number. Text
        colour is untouched, so red keeps meaning "out of range". */
     .sttab td.nuovo, .sttab td.agg, .sttab tbody tr:hover td.nuovo, .sttab tbody tr:hover td.agg {
@@ -3255,7 +3296,7 @@
       const daLeggere = this.daLeggere().length;
       const rotti = prelievi.filter((e) => this.rottiTab.has(e.id)).length;
       const ra = this._refreshAll;
-      const t = st ? this.tabellaStorico(st, nov) : null;
+      const t = st ? this.tabellaStorico(st, nov, leggiSegni(this.chiaveNota())) : null;
       const chi = st ? [st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") : "";
       const valori = prelievi.length || st ? `
         <div class="sec">
@@ -3320,7 +3361,7 @@
     // UNA sola tabella, per il pannello e per il testo copiato: due
     // sorgenti che disegnano «la stessa» tabella finiscono sempre per
     // divergere, e la differenza la scopre il medico.
-    tabellaStorico(st, nov = null) {
+    tabellaStorico(st, nov = null, segni = {}) {
       const col = st.date.map((d, i) => ({ ...d, i })).reverse();   // il più recente a sinistra
       const ambS = sigleAmbigue(st.righe);
       const inatteso = (r) => !siglaCurata(r.nome) || ambS.has(sigla(r.nome));
@@ -3343,9 +3384,14 @@
           const n = nov && nov.get(chiaveCol(c))?.get(valKey(r.nome));
           const tip = [v.um, v.range, sg && daChi ? "fatto con " + daChi : "",
                        n === "nuovo" ? "nuovo dall'ultima lettura" : n === "cambiato" ? "aggiornato dall'ultima lettura" : ""].filter(Boolean).join(" · ");
-          return `<td class="${v.stato ? "fuori" : ""}${v.parziale ? " parz" : ""}${n === "nuovo" ? " nuovo" : n === "cambiato" ? " agg" : ""}"${
+          // il segno del medico (un tocco giallo, due arancio) vive sulla
+          // cella: «colonna|analita», la stessa identità con cui la tabella
+          // fonde i prelievi, così sopravvive a ogni ridisegno
+          const cella = chiaveCol(c) + "|" + valKey(r.nome);
+          const segno = segni[cella] === 2 ? " seg2" : segni[cella] === 1 ? " seg1" : "";
+          return `<td class="${v.stato ? "fuori" : ""}${v.parziale ? " parz" : ""}${n === "nuovo" ? " nuovo" : n === "cambiato" ? " agg" : ""}${segno}" data-cella="${esc(cella)}"${
             tip ? ` title="${esc(tip)}${v.parziale ? " · parziale" : ""}"` : v.parziale ? ` title="parziale"` : ""
-          }>${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}${v.parziale ? "<i>…</i>" : ""}${
+          }>${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}${
             sg ? `<i class="prov" title="${esc(daChi ? "fatto con " + daChi + (p.solita ? " — gli altri con " + p.solita : "") : "")}">${esc(sg)}</i>` : ""
           }</td>`;
         }).join("");
@@ -3384,7 +3430,7 @@
       const parz = st.righe.some((r) => r.valori.some((v) => v.parziale));
       return `${legenda.map((l) => `<div class="hint"><b>${esc(l.segno)}</b> fatto con <b>${esc(l.esame)}</b>${
         l.solita ? ` — gli altri con ${esc(l.solita)}` : ""}</div>`).join("")}${
-        parz ? `<div class="hint">… valore ancora <b>parziale</b>: il laboratorio non ha finito.</div>` : ""}`;
+        parz ? `<div class="hint"><i>In corsivo</i>: valore ancora <b>parziale</b>, il laboratorio non ha finito.</div>` : ""}`;
     }
 
     // Il testo per il diario: la stessa tabella degli Esiti, nomi per esteso.
@@ -3519,6 +3565,7 @@
       } else if (tutte[vecchia] && vecchia !== "nome:") {
         scriviNota(vecchia, "");   // già migrata: la copia vecchia non deve restare in giro
       }
+      if (vecchia !== "nome:") migraSegni(vecchia, k);
       return k;
     }
     notaHtmlPaziente() {
@@ -4217,6 +4264,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           : "Non riesco ad aprire le impostazioni: aprile da chrome://extensions → PS Assist → Dettagli → Opzioni.";
         this.render();
       });
+      // un tocco su un valore lo segna (giallo → arancio → niente): si cambia
+      // la cella sul posto, senza ridisegnare, così la tabella non scatta
+      this.root.querySelectorAll(".sttab td[data-cella]").forEach((td) => td.addEventListener("click", () => {
+        const stato = (td.classList.contains("seg2") ? 2 : td.classList.contains("seg1") ? 1 : 0) + 1;
+        const prossimo = stato > 2 ? 0 : stato;
+        if (!scriviSegno(this.chiaveNota(), td.getAttribute("data-cella"), prossimo)) return;
+        td.classList.remove("seg1", "seg2");
+        if (prossimo) td.classList.add("seg" + prossimo);
+      }));
       const filtra = () => { this.soloAlterati = !this.soloAlterati; this.render(); };
       $("#storfiltro")?.addEventListener("click", filtra);
       $("#avvnomi")?.addEventListener("click", () => { this.mostraNomi = !this.mostraNomi; this.render(); });

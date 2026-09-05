@@ -1152,6 +1152,26 @@ async function scenarioRisultati(browser) {
     `la copia parte dalle colonne, in ordine (got: ${clip.split("\n")[0]})`);
   check(scen, /Emoglobina\t80 \(basso\)\t95 \(basso\)/.test(clip),
     `coi nomi per esteso e il fuori range scritto (got: ${(clip.split("\n").find((l) => /Emoglobina/.test(l)) || "").slice(0, 60)})`);
+
+  // un tocco su un valore lo segna (giallo, poi arancio, poi via), e il segno
+  // resta col paziente: dopo un ricaricamento della pagina è ancora lì
+  const cella = page.locator("#psassist-host .sttab td[data-cella]").first();
+  const segno = async () => ((await cella.getAttribute("class")) || "").split(/\s+/).find((c) => /^seg\d$/.test(c)) || "nessuno";
+  await cella.click();
+  const primo = await segno();
+  await cella.click();
+  const secondo = await segno();
+  await cella.click();
+  const terzo = await segno();
+  check(scen, primo === "seg1" && secondo === "seg2" && terzo === "nessuno", `un tocco giallo, due arancio, tre via (${primo} → ${secondo} → ${terzo})`);
+  await cella.click();
+  const quale = await cella.getAttribute("data-cella");
+  await page.reload();
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForSelector("#psassist-host .sttab", { timeout: 10000 });
+  check(scen, (await page.locator(`#psassist-host .sttab td[data-cella="${quale}"].seg1`).count()) === 1,
+    "e il segno sopravvive al ricaricamento della pagina");
   await context.close();
 }
 

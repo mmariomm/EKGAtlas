@@ -114,14 +114,16 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   tooltip**. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
   vale per un'abbreviazione ambigua — e una riga d'avviso in cima dice **quali**.
 - In rosso c'è **solo il valore**, con ↑ ↓: il nome resta a sinistra, sempre nella stessa colonna.
-  Una cella **·** = quel prelievo non ha quell'analita; **…** = risultato ancora **parziale** (il
-  laboratorio non ha finito — c'è una riga che lo ricorda sotto la tabella). Quando lo stesso
+  Una cella **·** = quel prelievo non ha quell'analita; *in corsivo* = risultato ancora
+  **parziale** (il laboratorio non ha finito — c'è una riga che lo ricorda sotto la tabella). Quando lo stesso
   analita arriva da esami diversi — l'emocromo del POC e quello del laboratorio, per dire — chi
   non è «il solito» porta un **asterisco o una croce**, spiegati nella legenda sotto la tabella.
 - **⭳ Carica i valori** legge i prelievi non ancora letti; fatta la prima lettura diventa
   **↻ Aggiorna**, che rilegge **tutti** i prelievi ancora aperti, a passo lento e uno alla volta.
   **solo alterati** / **tutti** filtra le righe; **⧉ Copia** mette l'intera tabella negli appunti,
   tabulata e coi nomi per esteso — pronta per il diario.
+- **Un tocco su un valore lo segna**: giallo; un secondo tocco arancio; un terzo lo spegne. I segni
+  sono tuoi, restano col paziente (24 ore, come la nota) e sopravvivono al cambio di pagina.
 - **Cosa è cambiato dall'ultima volta che hai guardato**: dopo un **↻ Aggiorna**, in quel prelievo
   un valore cambiato ha **sfondo azzurro**, e lo stesso vale per un analita comparso da zero. In
   cima compare **«N valori nuovi dall'ultima lettura»** con un bottone **Letto** che spegne i

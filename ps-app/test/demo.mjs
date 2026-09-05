@@ -132,6 +132,27 @@ await page.waitForTimeout(400);
 check(await $(".sttab td.agg, .sttab td.nuovo").count() === 0 && await $(".newbar").count() === 0,
   "«Letto» spegne i marchi e la striscia");
 
+// ---- un tocco su un valore lo segna: giallo, arancio, poi via — e resta col paziente
+const cellaHb = () => page.locator("#psassist-host .sttab td[data-cella]").first();
+const segnoDi = async () => (await cellaHb().getAttribute("class")).split(/\s+/).filter((c) => /^seg\d$/.test(c)).join("") || "nessuno";
+await cellaHb().click();
+const s1 = await segnoDi();
+await cellaHb().click();
+const s2 = await segnoDi();
+await cellaHb().click();
+const s3 = await segnoDi();
+check(s1 === "seg1" && s2 === "seg2" && s3 === "nessuno", `un tocco giallo, due arancio, tre via (${s1} → ${s2} → ${s3})`);
+await cellaHb().click();
+const cellaSegnata = await cellaHb().getAttribute("data-cella");
+await page.getByRole("button", { name: "Lista PS" }).click();
+await page.waitForTimeout(700);
+await page.locator('#sa4-page a:has-text("BIANCHI ANNA")').first().click();
+await page.waitForTimeout(1200);
+await $('[data-seg="esiti"]').click();
+await page.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
+check(await page.locator(`#psassist-host .sttab td[data-cella="${cellaSegnata}"].seg1`).count() === 1,
+  "e il segno è ancora lì dopo il cambio pagina");
+
 await $("#refsave").click();
 await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length >= 1, { timeout: 30000 }).catch(() => {});
 check(await $(".rdot.saved").count() >= 1, "i referti si salvano col ponte estensione");
