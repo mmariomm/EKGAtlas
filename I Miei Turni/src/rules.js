@@ -337,20 +337,32 @@ var TurniRules = (function () {
     return text + ' h';
   }
 
+  // L'ambulatorio conta come una mattina a tutti gli effetti: nei conteggi è una
+  // "M", con il pomeriggio fa una giornata, e vale le 6 ore di una mattina (08–14).
+  var MORNING_START = 8 * 60, MORNING_END = 14 * 60;
+  function asMorningIfAmbulatorio(a) {
+    if (a.slotKey !== 'A') return a;
+    var base = dayIndex(a.date) * MINUTES_PER_DAY;
+    return { person: a.person, hospital: a.hospital, date: a.date, slotKey: 'M', isNight: false,
+      startAbs: base + MORNING_START, endAbs: base + MORNING_END };
+  }
+
   // Conteggi di una persona (nel mese "YYYY-MM" se indicato, altrimenti su tutto):
   // giornata = mattina + pomeriggio nello stesso giorno (anche in due ospedali);
   // mattine e pomeriggi da soli si contano a parte; "dodici" = giornate + notti;
-  // le ore sono l'unione reale degli orari.
+  // le ore sono l'unione reale degli orari (l'ambulatorio come una mattina).
   function personStats(assignments, person, month) {
     var mine = [];
+    var ambulatori = 0;
     for (var i = 0; i < assignments.length; i++) {
       var a = assignments[i];
       if (a.person !== person) continue;
       if (month && a.date.slice(0, 7) !== month) continue;
-      mine.push(a);
+      if (a.slotKey === 'A') ambulatori++;
+      mine.push(asMorningIfAmbulatorio(a));
     }
     var byDate = new Map();
-    var counts = { M: 0, P: 0, N: 0, A: 0, other: 0 };
+    var counts = { M: 0, P: 0, N: 0, other: 0 };
     var byHospital = {};
     for (i = 0; i < mine.length; i++) {
       a = mine[i];
@@ -380,7 +392,7 @@ var TurniRules = (function () {
       mattine: mattine,
       pomeriggi: pomeriggi,
       notti: counts.N,
-      ambulatori: counts.A,
+      ambulatori: ambulatori,        // già compresi nelle mattine: solo informativo
       altri: counts.other,
       dodici: giornate + counts.N,
       oreMin: oreMin,

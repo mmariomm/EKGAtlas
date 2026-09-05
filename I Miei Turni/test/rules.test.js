@@ -470,9 +470,11 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   const all = TurniRules.hoursByName(realAssignments, '2026-09');
   eq(all.length, 39, 'hoursByName: 39 nomi');
   eq(all[0].person, 'FRANCESCONI', 'hoursByName: FRANCESCONI in testa');
-  eq(all[0].ore, 166.5, 'hoursByName: FRANCESCONI 166,5 h');
+  eq(all[0].ore, 168, 'hoursByName: FRANCESCONI 168 h (3 ambulatori contati come mattine)');
   ok(all.every((x, i) => i === 0 || all[i - 1].ore >= x.ore), 'hoursByName: ordinato per ore decrescenti');
-  eq(all.reduce((s, x) => s + x.ore, 0), 2841.5, 'hoursByName: somma delle ore di settembre');
+  // 21 ambulatori contati come mattine da 6 h: 10 con il pomeriggio (giornate da 12 h, +1,5 h
+  // ciascuna rispetto a 09:30–20) e 11 da soli (+0,5 h ciascuno rispetto a 09:30–15).
+  eq(all.reduce((s, x) => s + x.ore, 0), 2862, 'hoursByName: somma delle ore di settembre');
 
   // Roster sintetici minimi per i casi limite.
   const synSlots = [
@@ -493,8 +495,13 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
     };
   }
 
+  // L'ambulatorio è una mattina a tutti gli effetti: con il pomeriggio fa una giornata da 12 h.
   const sA = TurniRules.personStats(TurniRules.buildAssignments([synRoster('DEA', { '2026-09-01': { A: ['X'], P: ['X'] } })]), 'X', '2026-09');
-  deepEq([sA.giornate, sA.mattine, sA.pomeriggi, sA.ambulatori, sA.dodici, sA.ore], [0, 0, 1, 1, 0, 10.5], 'ambulatorio + pomeriggio = 10,5 h, nessuna giornata');
+  deepEq([sA.giornate, sA.mattine, sA.pomeriggi, sA.ambulatori, sA.dodici, sA.ore], [1, 0, 0, 1, 1, 12], 'ambulatorio + pomeriggio = una giornata da 12 h');
+  const sA2 = TurniRules.personStats(TurniRules.buildAssignments([synRoster('DEA', { '2026-09-01': { A: ['X'] } })]), 'X', '2026-09');
+  deepEq([sA2.giornate, sA2.mattine, sA2.ambulatori, sA2.ore], [0, 1, 1, 6], 'ambulatorio da solo = una mattina da 6 h');
+  const sA3 = TurniRules.personStats(TurniRules.buildAssignments([synRoster('DEA', { '2026-09-01': { M: ['X'], A: ['X'] } })]), 'X', '2026-09');
+  deepEq([sA3.mattine, sA3.ore], [2, 6], 'mattina + ambulatorio lo stesso giorno: 2 mattine, 6 h reali');
 
   const asB = TurniRules.buildAssignments([synRoster('DEA', { '2026-09-01': { M: ['X'] } }), synRoster('OSG', { '2026-09-01': { P: ['X'] } })]);
   const sB = TurniRules.personStats(asB, 'X', '2026-09');
