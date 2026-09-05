@@ -99,6 +99,19 @@ check(await $(".rval.bad").count() >= 1, "e segna i fuori range");
 
 await $("#back").click();
 await page.waitForSelector("#psassist-host [data-esito]", { state: "attached" });
+// ---- i prelievi letti entrano nella scheda del paziente: per gruppo, una colonna a prelievo
+check(await $("#apristorico").count() === 1, "e i valori letti compaiono come Storico negli Esiti");
+await $("#apristorico").click();
+await page.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
+const daFinestra = await page.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  return { sezioni: [...r.querySelectorAll(".sttab tr.stsez")].map((t) => t.textContent.trim()),
+           colonne: r.querySelectorAll(".sttab thead th").length - 1 };
+});
+check(daFinestra.sezioni.length >= 2 && daFinestra.colonne >= 1,
+  `divisi per gruppo, una colonna a prelievo (${daFinestra.sezioni.join(", ")} · ${daFinestra.colonne})`);
+await $("#back").click();
+await page.waitForSelector("#psassist-host [data-esito]", { state: "attached" });
 await $("#refsave").click();
 await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length >= 1, { timeout: 30000 }).catch(() => {});
 check(await $(".rdot.saved").count() >= 1, "i referti si salvano col ponte estensione");
@@ -107,15 +120,27 @@ await page.waitForSelector(".psa-tab iframe", { timeout: 20000 });
 check(await page.locator(".psa-tab iframe").count() === 1, "e si aprono nella finta scheda");
 await page.locator(".psa-tab header button").click();
 
-// ---- lo storico: letto dalla pagina del portale, senza chiedere niente
+// ---- lo storico: letto dalla pagina del portale, senza chiedere niente.
+// Aperto dalla pagina di BIANCHI, ma la tabella (fissa, nel banco) è di ROSSI:
+// il clic da solo non attribuisce niente, e la striscia lo dice
+const leggiStriscia = () => page.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector(".bar")?.textContent?.replace(/\s+/g, " ").trim() || "");
+const vaiDa = async (nome) => {
+  await page.getByRole("button", { name: "Lista PS" }).click();
+  await page.waitForTimeout(900);
+  await page.locator(`#sa4-page a:has-text("${nome}")`).first().click();
+  await page.waitForTimeout(1400);
+};
 await page.locator('#sa4-page a:has-text("Storico Dati Clinici")').first().click();
 await page.waitForTimeout(1400);
-const striscia = await page.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector(".bar")?.textContent?.replace(/\s+/g, " ").trim() || "");
-check(/esami · \d+ prelievi/.test(striscia), `sulla pagina dello storico dice cosa ha letto (${striscia.slice(0, 60)})`);
-await page.getByRole("button", { name: "Lista PS" }).click();
-await page.waitForTimeout(900);
-await page.locator('#sa4-page a:has-text("ROSSI MARIO")').first().click();
+const daAltri = await leggiStriscia();
+check(/esami · \d+ prelievi/.test(daAltri) && /non è BIANCHI ANNA/.test(daAltri), `aperta dalla pagina di un altro, lo dice (${daAltri.slice(0, 100)})`);
+// aperto dalla pagina di ROSSI: quel clic è l'identità
+await vaiDa("ROSSI MARIO");
+await page.locator('#sa4-page a:has-text("Storico Dati Clinici")').first().click();
 await page.waitForTimeout(1400);
+const striscia = await leggiStriscia();
+check(/esami · \d+ prelievi/.test(striscia) && !/non è/.test(striscia), `sulla pagina dello storico dice cosa ha letto (${striscia.slice(0, 60)})`);
+await vaiDa("ROSSI MARIO");
 await $('[data-seg="esiti"]').click();
 await page.waitForTimeout(500);
 check(await $("#apristorico").count() === 1, "e tornando sul paziente lo Storico è negli Esiti");

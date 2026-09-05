@@ -50,12 +50,9 @@
   }
 
   // ---------------------------------------------------------------- pages
-  // esempi-gestionale/, embedded at build time: { pagine, icone, css }
+  // esempi-gestionale/, embedded at build time: { pagine, pazienti, icone, css }
   const E = JSON.parse(decodeB64("psa-esempi"));
-  const PAZIENTI = [
-    { ep: "700001", nome: "ROSSI MARIO", pagina: "paziente-1", tri: "arancione", motivo: "Dolore toracico", eta: 68, arrivo: "07:12", letto: "B3" },
-    { ep: "700003", nome: "BIANCHI ANNA", pagina: "paziente-2", tri: "azzurro", motivo: "Dolore addominale", eta: 34, arrivo: "08:40", letto: "A1" },
-  ];
+  const PAZIENTI = E.pazienti;   // tools/demo.mjs: the two saved cards, with their codice fiscale
   const byEp = (ep) => PAZIENTI.find((p) => p.ep === ep);
 
   // resource id → the saved catalogue for that laboratory / radiology
@@ -262,6 +259,9 @@
     if (/RcsAccessiRisultatiElenco\.do/i.test(path)) {
       const id = q.get("RCS_ACCESSO_ID") || "";
       let html = pagina(id.endsWith("2") ? "risultati-2" : "risultati-1");
+      // the real window names the patient, codice fiscale beside the name:
+      // the saved copy was anonymised, the banco puts its own patient back
+      html = html.replace(/<strong>UTENTE1<\/strong>UTENTE1/, `<strong>${pazienteCorrente.nome}</strong> ${pazienteCorrente.cf}`);
       // "il laboratorio ha completato": one value moves and one analyte
       // appears, so ↻ Aggiorna has something real to mark
       if (labCompletato) {
@@ -411,8 +411,31 @@
       return { ok: true, cached };
     }
     if (msg.t === "clearRef") { refs.clear(); return { ok: true }; }
+    // the clinical record, as bg.js keeps it: one card per patient key, the
+    // index without values and the record with them; session memory here
+    if (msg.t === "apreStorico") {
+      apertura = { ep: String(msg.ep || ""), nome: String(msg.nome || "").slice(0, 60), ts: Date.now() };
+      return { ok: true };
+    }
+    if (msg.t === "chiAprivo") return apertura && Date.now() - apertura.ts < 20 * 60e3 ? { ok: true, ...apertura } : { ok: false };
+    if (msg.t === "putStorico") {
+      const chiave = String(msg.chiave || "");
+      if (!chiave || !msg.dati) return { ok: false };
+      const nuovo = !arch.has(chiave);
+      arch.set(chiave, msg.dati);
+      return { ok: true, nuovo, pazienti: arch.size };
+    }
+    if (msg.t === "getStorico") {
+      if (msg.chiave) { const r = arch.get(String(msg.chiave)); return r ? { ok: true, dati: r } : { ok: false }; }
+      return { ok: true, indice: [...arch].map(([chiave, r]) => ({
+        chiave, cf: r.cf || "", ep: r.ep || "", paziente: r.paziente || {}, letto: r.letto || 0,
+        esami: (r.righe || []).length, prelievi: (r.date || []).length })) };
+    }
+    if (msg.t === "delStorico") { arch.delete(String(msg.chiave || "")); return { ok: true }; }
     return { ok: false };
   }
+  const arch = new Map();
+  let apertura = null;
   window.chrome = {
     runtime: {
       id: "banco-di-prova",

@@ -294,10 +294,14 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   nella stessa scheda**, parziali compresi — un valore che il laboratorio non ha finito porta un
   **`*`** e la tabella lo spiega. Lo stesso analita letto dalle due finestre resta **una riga
   sola**.
-- Sul paziente aperto il pannello mostra **solo la sua** scheda, scelta col codice fiscale quando
-  c'è: se in archivio esiste una scheda con quel codice fiscale è quella, sempre — si ripiega sul
-  nome solo se nessuna scheda porta un codice, altrimenti un omonimo senza codice potrebbe vincere
-  su una verificata. Le altre schede non attraversano nemmeno il ponte.
+- Sul paziente aperto il pannello mostra **solo la sua** scheda. Prima di tutto vale il **clic**:
+  la tabella letta sul portale aperto **dalla pagina di questo paziente** è sua — ma solo se di là
+  c'è **lo stesso nome**, perché il portale cambia paziente senza ricaricare la pagina e la tabella
+  di un altro non deve portarsi dietro l'episodio da cui si era partiti (la striscia lo dice:
+  *«non è BIANCHI ANNA, da cui l'hai aperta»*). Poi il **codice fiscale** quando c'è: se in
+  archivio esiste una scheda con quel codice fiscale è quella, sempre — si ripiega sul nome solo
+  se nessuna scheda porta un codice, altrimenti un omonimo senza codice potrebbe vincere su una
+  verificata. Le altre schede non attraversano nemmeno il ponte.
 - Le schede stanno nella memoria dell'estensione (**su disco**), **sopravvivono alla chiusura del
   browser e al logout** — un turno è di dodici ore e i pazienti sono più di dodici — e **scadono da
   sole 24 ore** dopo l'ultima lettura. Su un PC condiviso: profilo Chrome tuo, e chiudi a fine turno.
@@ -672,7 +676,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 46 scenari e2e + 15 sull'estensione + 24 sul banco + storico + il cancello privacy
+npm test           # 46 scenari e2e + 15 sull'estensione + 33 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

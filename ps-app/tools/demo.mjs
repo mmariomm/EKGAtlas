@@ -44,12 +44,20 @@ for (const f of readdirSync(esempiDir)) {
   if (!f.endsWith(".html")) continue;
   pagine[f.replace(/\.html$/, "")] = readFileSync(join(esempiDir, f), "utf8");
 }
+// The banco's patients: the two saved cards, each with an invented codice
+// fiscale. At work both the portal page and the Risultati window carry it,
+// and it is what lets the panel say "same patient" across the two sources.
+const PAZIENTI = [
+  { ep: "700001", nome: "ROSSI MARIO", cf: "RSSMRA58C15F205Z", pagina: "paziente-1", tri: "arancione", motivo: "Dolore toracico", eta: 68, arrivo: "07:12", letto: "B3" },
+  { ep: "700003", nome: "BIANCHI ANNA", cf: "BNCNNA92D41F205Q", pagina: "paziente-2", tri: "azzurro", motivo: "Dolore addominale", eta: 34, arrivo: "08:40", letto: "A1" },
+];
 // The portal's multi-day table is NOT a saved page: it is rebuilt from its
 // shape (test/fixtures/storico.mjs), with the banco's own patient on it, so
 // the banco can show the reader at work without a real one ever existing here.
-pagine.storico = paginaStorico({ paziente: { idMPI: "900000001", cognome: "ROSSI", nome: "MARIO" } });
+pagine.storico = paginaStorico({ paziente: { idMPI: "900000001", cognome: "ROSSI", nome: "MARIO", cf: PAZIENTI[0].cf } });
 const ESEMPI = {
   pagine,
+  pazienti: PAZIENTI,
   icone: JSON.parse(readFileSync(join(esempiDir, "_icone.json"), "utf8")),
   css: scope(readFileSync(join(esempiDir, "_stile.css"), "utf8"), "#sa4-page"),
 };

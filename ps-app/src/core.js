@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.26.0";
+  const VERSION = "3.26.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -931,10 +931,18 @@
   // da tutt'e due le finestre — comprese quelle ancora PARZIALI, che restano
   // marcate come tali.
   function prelievoComeTabella(meta, rows, cf) {
+    // La colonna vuole giorno E ora completi: «10/07 22:23» come lo scrive
+    // la lista Esiti non dice l'anno, e sia il confronto con «oggi» sia
+    // l'ordine fra le colonne si fanno sulla data intera. L'istante della
+    // richiesta (DATA_ORD, tenuto come ore UTC) ce l'ha tutta.
+    const pad = (n) => String(n).padStart(2, "0");
     const m = DATA_ORA.exec(String(meta?.when || ""));
-    const label = m ? m[1] + (m[2] ? " " + m[2] : "") : String(meta?.when || "").trim();
+    const t = !m && meta?.ts ? new Date(meta.ts) : null;
+    const data = m ? m[1] : t ? `${pad(t.getUTCDate())}/${pad(t.getUTCMonth() + 1)}/${t.getUTCFullYear()}` : String(meta?.when || "").trim();
+    const ora = m ? (m[2] || "") : t ? `${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}` : "";
+    const label = [data, ora].filter(Boolean).join(" ");
     if (!label || !rows || !rows.length) return null;
-    const date = [{ data: m ? m[1] : label, ora: m ? (m[2] || "") : "", label, chiave: label + "#1" }];
+    const date = [{ data, ora, label, chiave: label + "#1" }];
     const righe = rows.filter((r) => r.nome && String(r.valore).trim()).map((r, i) => ({
       nome: String(r.nome).replace(/\s+/g, " ").trim(),
       esame: String(meta?.label || "").replace(/\s+/g, " ").trim(),
@@ -3362,7 +3370,7 @@
     // aggiunge il medico, una volta: Chrome chiede il permesso per quel sito
     // e lo script si registra lì.
     htmlPortale() {
-      if (!hasExt()) return "";
+      if (!hasExt() || DEMO) return "";   // nel banco non c'è un portale da autorizzare
       // Il permesso lo chiede la pagina delle impostazioni: da qui non si può,
       // perché Chrome vuole un gesto e il gesto non arriva fin là.
       return `<div class="hint">Il pannello non compare sulla pagina dello storico?
@@ -3521,7 +3529,7 @@
     // E anche il testo di un referto letto: la scheda di un paziente è tutto
     // quello che il programma sa di lui, non solo i numeri.
     async archiviaReferto(e, righe) {
-      if (!hasExt() || DEMO || !righe || !righe.length) return;
+      if (!hasExt() || !righe || !righe.length) return;
       const chiave = this.chiavePaz();
       if (!chiave || chiave === "nome:") return;
       segnaChiave(this.episodeId, chiave);
@@ -3540,7 +3548,7 @@
     // quello che il pannello sa di lui sta in un posto solo: la tabella del
     // portale e le finestre Risultati del gestionale, parziali comprese.
     async archiviaPrelievo(e, rows, cf) {
-      if (!hasExt() || DEMO || !rows || !rows.length) return;
+      if (!hasExt() || !rows || !rows.length) return;
       const t = prelievoComeTabella(risMeta(e), rows, cf);
       if (!t) return;
       const chiave = chiaveArchivio(t);
@@ -3612,22 +3620,11 @@
     }
 
     async caricaStorico() {
-      if (this.pageType !== "patient" || (!hasExt() && !DEMO)) return;
+      if (this.pageType !== "patient" || !hasExt()) return;
       const prima = (this.storico?.letto || 0) + "|" + this.storicoAltri;
       // schedaMia() ha già deciso l'identità: qui non si ricontrolla, o la
       // regola finirebbe scritta in due posti e prima o poi in due modi
-      let dati = null;
-      if (DEMO) {
-        const d = tabStore.get("storico.demo", null);
-        const titolo = (document.title || "").trim();
-        if (d && d.righe && combaciaNome(titolo, d.paziente)) { dati = d; this.storicoAltri = ""; }
-        else if (d && d.righe) {
-          this.storicoAltri = [d.paziente?.cognome, d.paziente?.nome].filter(Boolean).join(" ")
-            || "un paziente che la pagina non nomina";
-        } else this.storicoAltri = "";
-      } else {
-        dati = await this.schedaMia();
-      }
+      const dati = await this.schedaMia();
       // rifiutare è giusto, rifiutare in silenzio no: il medico quella tabella
       // l'ha letta un minuto prima e deve sapere perché non è qui
       this.storico = dati && dati.righe ? dati : null;
@@ -4135,11 +4132,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         return null;
       }
       tabStore.set(key, { ts: Date.now(), rows, scartate, cf, meta: risMeta(e) });
-      this.archiviaPrelievo(e, rows, cf);
+      // in scheda PRIMA di rileggerla, o la riga «Storico» negli Esiti
+      // comparirebbe solo alla prossima visita. Un archivio che fallisce non
+      // è un prelievo non letto: i valori sono già qui sopra.
+      await this.archiviaPrelievo(e, rows, cf).catch((err) => this.log(`${now()}  prelievo non archiviato (${err?.message || err})`));
       if (baseline) this.segnaVisto(e.id, rows);   // prima lettura: è il riferimento
       // coi valori arriva il codice fiscale: adesso la scheda clinica del
-      // portale si può attribuire (o escludere) con certezza
-      if (cf) this.caricaStorico();
+      // portale si può attribuire (o escludere) con certezza — e il prelievo
+      // appena letto è già dentro
+      this.caricaStorico();
       return rows;
     }
 
@@ -5448,17 +5449,20 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         chiAprivo = null;
         try { const r = await ask({ t: "chiAprivo" }); if (r && r.ok) chiAprivo = r; } catch { /* si va avanti */ }
       }
-      if (chiAprivo && chiAprivo.ep) { letto.ep = chiAprivo.ep; letto.nomeSa4 = chiAprivo.nome || ""; }
+      // …ma vale solo se di là c'è LO STESSO nome: il portale cambia paziente
+      // senza ricaricare la pagina, e la tabella di un altro non deve portarsi
+      // dietro l'episodio da cui si era partiti.
+      const dalClic = !!(chiAprivo && chiAprivo.ep && combaciaNome(chiAprivo.nome, letto.paziente));
+      if (dalClic) { letto.ep = chiAprivo.ep; letto.nomeSa4 = chiAprivo.nome || ""; }
       unito = unisciStorico(unito, letto);
       const valori = unito.righe.reduce((n, r) => n + r.valori.filter((v) => v.v).length, 0);
       const chi = [unito.paziente.cognome, unito.paziente.nome].filter(Boolean).join(" ");
       const quanti = `<b>${esc(String(unito.righe.length))} esami · ${esc(String(unito.date.length))} prelievi</b> letti (${esc(String(valori))} valori)`;
       // l'unico testo con del markup dentro: passa da `html`, e ogni pezzo che
       // viene dalla pagina del portale è scappato qui, uno per uno
-      const detto = (nuovo, n) => `${quanti} <span class="who">— ${esc(chi)}${nuovo ? ", nuovo" : ""}${n > 1 ? ` · ${esc(String(n))} pazienti in memoria` : ""}</span>. Torna sul paziente: sono in Esiti.`;
-      // in the banco there is one origin and no service worker: the tab itself
-      // is the bridge
-      if (DEMO) { tabStore.set("storico.demo", unito); disegna({ ok: true, html: detto(false, 1) }); return; }
+      const nonSuo = chiAprivo && chiAprivo.ep && !dalClic
+        ? ` · non è ${esc(chiAprivo.nome || "il paziente")}, da cui l'hai aperta: si attribuirà col codice fiscale (⭳ Carica i valori)` : "";
+      const detto = (nuovo, n) => `${quanti} <span class="who">— ${esc(chi)}${nuovo ? ", nuovo" : ""}${n > 1 ? ` · ${esc(String(n))} pazienti in memoria` : ""}${nonSuo}</span>. Torna sul paziente: sono in Esiti.`;
       if (!hasExt()) {
         disegna({ ok: false, testo: `Letti ${unito.righe.length} esami, ma serve l'estensione per portarli sul paziente.` });
         return;
