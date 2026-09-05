@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#161B21" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="I Miei Turni">
+<meta name="description" content="I turni mensili del Pronto Soccorso di DEA e OSG: cerca un nome, evidenzialo nei giorni, controlla le segnalazioni.">
+<title>I Miei Turni</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap">
+<!--STYLES-->
+</head>
+<body>
+
+<a class="skiplink" href="#turni">Vai ai turni</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-pen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14.1 3.6 20.4 9.9l-8 8H7.7L5.5 15.6z"/>
+    <path d="M8.6 12.4 5 16v3h3l3.6-3.6"/>
+    <path d="M3 21.4h18"/>
+  </symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <path d="M20.3 15.1A8.6 8.6 0 0 1 9 3.8a8.6 8.6 0 1 0 11.3 11.3z"/>
+  </symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.6 21.2 20H2.8z"/>
+    <path d="M12 9.6v4.6"/>
+    <path d="M12 17.1h.01"/>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4.5 12.6 9.4 17.5 19.5 7"/>
+  </symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 15.6V4"/>
+    <path d="M7.8 8.2 12 4l4.2 4.2"/>
+    <path d="M4 16v2.6a1.4 1.4 0 0 0 1.4 1.4h13.2a1.4 1.4 0 0 0 1.4-1.4V16"/>
+  </symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.5 9.5 12 15l5.5-5.5"/>
+  </symbol>
+  <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.4 6.4 17.6 17.6"/>
+    <path d="M17.6 6.4 6.4 17.6"/>
+  </symbol>
+  <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10.5 6 4.5 12l6 6"/>
+    <path d="M4.8 12H19.5"/>
+  </symbol>
+</svg>
+
+<header class="topbar" id="topbar">
+  <div class="topbar__in">
+    <div class="toprow">
+      <h1 class="wordmark">I Miei Turni</h1>
+      <div class="toprow__end">
+        <div class="month" id="monthCtl"></div>
+        <button class="pillbtn" id="findingsBtn" type="button" aria-label="Segnalazioni"></button>
+        <button class="ghostbtn" id="todayBtn" type="button" hidden>Oggi</button>
+      </div>
+    </div>
+
+    <div class="search" id="search">
+      <svg class="ico search__ico" aria-hidden="true" focusable="false"><use href="#i-pen"></use></svg>
+      <div class="search__body">
+        <span class="pintoken" id="pintoken" hidden></span>
+        <input class="search__input" id="q" type="text" role="combobox" aria-expanded="false"
+               aria-controls="pop" aria-autocomplete="list" aria-haspopup="listbox"
+               aria-label="Cerca ed evidenzia un nome" placeholder="Cerca ed evidenzia un nome…"
+               enterkeyhint="search" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      </div>
+      <button class="iconbtn search__clear" id="clearBtn" type="button" hidden aria-label="Cancella la ricerca">
+        <svg class="ico" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+      </button>
+      <div class="pop" id="pop" role="listbox" aria-label="Nomi in servizio nel mese" hidden></div>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <section class="card empty" id="empty" hidden>
+    <svg class="ico empty__ico" aria-hidden="true" focusable="false"><use href="#i-pen"></use></svg>
+    <h2 class="empty__t">Nessun turno caricato</h2>
+    <p class="empty__p">Trascina qui i file xlsx dei turni, oppure mettili in <code>data/</code> e lancia <code>npm run build</code>.</p>
+    <button class="btn btn--solid" id="emptyUpload" type="button">
+      <svg class="ico" aria-hidden="true" focusable="false"><use href="#i-upload"></use></svg><span>Carica xlsx</span>
+    </button>
+  </section>
+
+  <section class="card strip" id="strip" aria-labelledby="stripTitle"></section>
+
+  <section class="cards" id="turni" aria-label="Turni del mese"></section>
+
+  <section class="card findings" id="segnalazioni" tabindex="-1" aria-labelledby="findingsTitle"></section>
+
+  <details class="dati" id="dati">
+    <summary class="dati__sum"><svg class="ico dati__chev" aria-hidden="true" focusable="false"><use href="#i-chevron"></use></svg>Dati e sorgenti</summary>
+    <div class="dati__body" id="datiBody"></div>
+  </details>
+</main>
+
+<input class="filein" id="fileInput" type="file" accept=".xlsx" multiple tabindex="-1" aria-label="Carica i file xlsx dei turni">
+
+<div class="dropzone" id="dropzone" hidden aria-hidden="true">
+  <div class="dropzone__frame">
+    <svg class="ico dropzone__ico" aria-hidden="true" focusable="false"><use href="#i-upload"></use></svg>
+    <p class="dropzone__t">Rilascia i file xlsx dei turni</p>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<p class="sr-only" id="srStatus" aria-live="polite"></p>
+
+<!--PARSER-->
+<!--RULES-->
+<!--DATA-->
+<!--APP-->
+</body>
+</html>
