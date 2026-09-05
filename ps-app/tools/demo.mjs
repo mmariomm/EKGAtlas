@@ -71,6 +71,11 @@ const body = `<meta charset="utf-8">
 `;
 
 mkdirSync(join(root, "dist"), { recursive: true });
+// Il corpo senza doctype/head: è quello che viene PUBBLICATO come Artifact
+// («Banco di prova PS Assist» su claude.ai), che aggiunge da sé l'involucro.
+// Non sta in git (cambia a ogni build) ma serve: senza, l'artifact resta
+// fermo alla versione di quando è stato pubblicato l'ultima volta.
+writeFileSync(join(root, "dist/demo.artifact.html"), body);
 // Offline file: the browser enforces the promise, not just the code. No host
 // is reachable at all — only blob:/data:, which is where the simulated PDFs
 // live — forms cannot submit anywhere, and frames can only show blobs.

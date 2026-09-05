@@ -3,3 +3,6 @@ node_modules/
 # keep the published download even though the root .gitignore excludes dist/
 !dist/
 !dist/**
+
+# generato a ogni build, consumato solo dalla pubblicazione dell'Artifact
+dist/demo.artifact.html
