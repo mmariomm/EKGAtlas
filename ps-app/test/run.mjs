@@ -1150,27 +1150,27 @@ async function scenarioRisultati(browser) {
   const clip = await page.evaluate(() => navigator.clipboard.readText());
   check(scen, /^Esame\t23\/08\/2026 07:28\t22\/08\/2026 22:23/.test(clip),
     `la copia parte dalle colonne, in ordine (got: ${clip.split("\n")[0]})`);
-  check(scen, /Emoglobina\t80 \(basso\)\t95 \(basso\)/.test(clip),
+  check(scen, /Emoglobina( \([^)]+\))?\t80 \(basso\)( \(parziale\))?\t95 \(basso\)/.test(clip),
     `coi nomi per esteso e il fuori range scritto (got: ${(clip.split("\n").find((l) => /Emoglobina/.test(l)) || "").slice(0, 60)})`);
 
   // un tocco su un valore lo segna (giallo, poi arancio, poi via), e il segno
   // resta col paziente: dopo un ricaricamento della pagina è ancora lì
   const cella = page.locator("#psassist-host .sttab td[data-cella]").first();
-  const segno = async () => ((await cella.getAttribute("class")) || "").split(/\s+/).find((c) => /^seg\d$/.test(c)) || "nessuno";
+  const segno = async () => ((await cella.getAttribute("class")) || "").split(/\s+/).find((c) => /^marca\d$/.test(c)) || "nessuno";
   await cella.click();
   const primo = await segno();
   await cella.click();
   const secondo = await segno();
   await cella.click();
   const terzo = await segno();
-  check(scen, primo === "seg1" && secondo === "seg2" && terzo === "nessuno", `un tocco giallo, due arancio, tre via (${primo} → ${secondo} → ${terzo})`);
+  check(scen, primo === "marca1" && secondo === "marca2" && terzo === "nessuno", `un tocco giallo, due arancio, tre via (${primo} → ${secondo} → ${terzo})`);
   await cella.click();
   const quale = await cella.getAttribute("data-cella");
   await page.reload();
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, '[data-seg="esiti"]').click();
   await page.waitForSelector("#psassist-host .sttab", { timeout: 10000 });
-  check(scen, (await page.locator(`#psassist-host .sttab td[data-cella="${quale}"].seg1`).count()) === 1,
+  check(scen, (await page.locator(`#psassist-host .sttab td[data-cella="${quale}"].marca1`).count()) === 1,
     "e il segno sopravvive al ricaricamento della pagina");
   await context.close();
 }
@@ -1280,7 +1280,7 @@ async function scenarioAggiornaTutti(browser) {
   check(scen, /^92↓/.test(hb[0] || "") && /^95↓/.test(hb[1] || ""),
     `la tabella mostra il valore nuovo nella colonna dell'ultimo prelievo (got: ${hb.join(" | ")})`);
   const reg = await page.evaluate(() => JSON.parse(sessionStorage.getItem("psassist:log.999001") || "{}").lines?.join("\n") || "");
-  check(scen, /aggiornati 2 prelievi, 1 con valori nuovi/.test(reg), "il Registro dice quanti sono cambiati");
+  check(scen, /letti 2 prelievi su 2, 1 con valori nuovi/.test(reg), "il Registro dice quanti sono stati letti e quanti sono cambiati");
   await context.close();
 }
 

@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.28.0";
+  const VERSION = "3.28.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -388,7 +388,7 @@
     // table shows and the Risultati window does not
     [/corpi chetonici|^chetoni/i, "Chet"], [/esterasi leucocit/i, "EstLeu"],
     [/peso specifico/i, "PesoSp"], [/urobilinogen/i, "Urob"], [/^nitriti/i, "Nitr"],
-    [/anion gap/i, "AG"], [/^ratio\b/i, "Ratio"], [/^ca\+\+/i, "Ca++"],
+    [/anion gap/i, "AG"], [/^ca\+\+/i, "Ca++"],
     [/^fcohb/i, "FCOHb"], [/^fo2hb|^fo₂hb/i, "FO2Hb"], [/^hhb/i, "HHb"],
     [/^shunt/i, "Shunt"], [/^ctco2|^ctco₂/i, "ctCO2"], [/^cto2|^cto₂/i, "ctO2"],
   ];
@@ -408,7 +408,7 @@
     ["Biochim", ["PCR", "PCT", "VES", "Trop", "NTproBNP", "BNP", "CPK", "CKMB", "Mb", "LDH"]],
     ["Organi", ["Cr", "Az", "AST", "ALT", "γGT", "ALP", "Bil", "BilD", "BilI", "Amy", "Lip", "Alb", "NH3"]],
     ["Elettroliti e metabolismo", ["Na", "K", "Cl", "Ca", "Ca++", "Mg", "Glu", "HbA1c", "TSH"]],
-    ["Emogas", ["pH", "pCO2", "pO2", "HCO3", "BE", "Lac", "SatO2", "AG", "ctCO2", "ctO2", "COHb", "MetHb", "FCOHb", "FO2Hb", "HHb", "Shunt", "Ratio", "EGA"]],
+    ["Emogas", ["pH", "pCO2", "pO2", "HCO3", "BE", "Lac", "SatO2", "AG", "ctCO2", "ctO2", "COHb", "MetHb", "FCOHb", "FO2Hb", "HHb", "Shunt", "EGA"]],
     ["Urine e altri liquidi", ["Albu", "PesoSp", "Nitr", "Chet", "EstLeu", "Urob"]],
   ];
   const ALTRI = "Altri";
@@ -495,7 +495,9 @@
   // laboratorio — la più frequente resta muta e le altre prendono un segno,
   // spiegato sotto la tabella e sul valore stesso.
   const SEGNI = ["*", "†", "‡", "§"];
-  function provenienze(r) {
+  // `simboli` è condiviso da tutta la tabella (esame → segno): così «*» vuol
+  // dire lo stesso esame in ogni riga, e la legenda lo spiega una volta sola.
+  function provenienze(r, simboli = new Map()) {
     const conta = new Map();
     (r.valori || []).forEach((v, i) => {
       if (!v || !v.v) return;
@@ -510,7 +512,10 @@
     const ord = [...conta.entries()].sort((a, b) => (b[1].n - a[1].n) || (b[1].ultimo - a[1].ultimo));
     const solita = ord[0][0];
     const marchi = new Map();
-    ord.slice(1).forEach(([e], i) => marchi.set(e, SEGNI[i] || "•"));
+    ord.slice(1).forEach(([e]) => {
+      if (!simboli.has(e)) simboli.set(e, SEGNI[simboli.size] || "•");
+      marchi.set(e, simboli.get(e));
+    });
     return {
       solita,
       segno: (v) => marchi.get(String((v && v.esame) || r.esame || "").trim()) || "",
@@ -866,7 +871,7 @@
     "Coagulazione": /\bPT\b|\bPTT\b|\bINR\b|FIBRIN|D.?DIM|COAGUL|ANTITROMB/i,
     "Biochim": /\bPCR\b|PROTEINA C|PROCALC|\bPCT\b|\bVES\b|TROPON|BNP|\bCPK\b|CK.?MB|MIOGLOB|\bLDH\b/i,
     "Organi": /CREATININ|AZOT|\bUREA\b|\bAST\b|\bALT\b|TRANSAMIN|\bGGT\b|GAMMA.?GT|γ.?GT|FOSFATASI|BILIRUB|AMILAS|LIPAS|ALBUMIN|AMMON/i,
-    "Elettroliti e metabolismo": /SODIO|POTASSIO|CLORO|CALCIO|MAGNESIO|ELETTROL|GLUC|GLICEM|GLICAT|HBA1C|\bTSH\b|EMOGAS|\bEGA\b/i,
+    "Elettroliti e metabolismo": /SODIO|POTASSIO|CLORO|CALCIO|MAGNESIO|ELETTROL|GLUC|GLICEM|GLICAT|HBA1C|\bTSH\b/i,
     "Emogas": /EMOGAS|\bEGA\b/i,
     "Urine e altri liquidi": /URIN|LIQU|STICK/i,
   };
@@ -876,9 +881,11 @@
     PT: /\bPT\b|PROTROMB/i, INR: /\bPT\b|PROTROMB|\bINR\b/i, PTT: /\bPTT\b|TROMBOPLASTINA/i, Fib: /FIBRIN/i, DD: /D.?DIM/i,
   };
   function esameDiRiga(exams, label, nome) {
-    const tutti = (Array.isArray(exams) ? exams : []).map((x) => String(x || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+    // un tampone o una PCR virale non fanno valori di chimica: fuori dai candidati
+    const tutti = (Array.isArray(exams) ? exams : []).map((x) => String(x || "").replace(/\s+/g, " ").trim())
+      .filter((x) => x && !/TAMPONE|MOLECOL|SARS|COV|VIRUS|ANTIGEN/i.test(x));
     const pacchetto = String(label || "").replace(/\s+/g, " ").trim();
-    if (tutti.length < 2) return pacchetto;
+    if ((Array.isArray(exams) ? exams.length : 0) < 2) return pacchetto;
     const sg = sigla(nome);
     for (const re of [ESAME_DI_SIGLA[sg], ESAME_DI[sezioneDi(sg)[0]]]) {
       const miei = re ? tutti.filter((x) => re.test(x)) : [];
@@ -901,7 +908,7 @@
     if (!label || !rows || !rows.length) return null;
     // il titolo della richiesta viaggia con la colonna: in tabella lo dice il
     // tooltip dell'intestazione, e non serve più una riga per prelievo
-    const date = [{ data, ora, label, chiave: label + "#1", titolo: String(meta?.label || "").replace(/\s+/g, " ").trim() }];
+    const date = [{ data, ora, label, chiave: label + "#1", id: String(meta?.id || ""), titolo: String(meta?.label || "").replace(/\s+/g, " ").trim() }];
     const righe = rows.filter((r) => r.nome && String(r.valore).trim()).map((r, i) => ({
       nome: String(r.nome).replace(/\s+/g, " ").trim(),
       esame: esameDiRiga(meta?.exams, meta?.label, r.nome),
@@ -1040,8 +1047,7 @@
     // la pagina, e due persone con lo stesso nome finirebbero in un unico
     // grafico. Quindi devono combaciare il codice fiscale E il nome, e
     // un'identità che non si è potuta leggere conta come un altro paziente.
-    const chi = chiavePaziente(nuovo.paziente);
-    if (!chi || chiavePaziente(vecchio.paziente) !== chi) return nuovo;
+    if (!stessoPaziente(vecchio.paziente, nuovo.paziente)) return nuovo;
     // Due codici fiscali che non si sono potuti leggere NON sono lo stesso
     // codice fiscale: "" === "" è vero per JavaScript, non per due persone.
     // Senza questa riga due omonimi senza codice finivano in un grafico solo.
@@ -1054,10 +1060,27 @@
   function fondiStorico(vecchio, nuovo) {
     if (!vecchio || !nuovo) return nuovo || vecchio || null;
     const date = [...vecchio.date];
-    for (const d of nuovo.date) if (!date.some((x) => chiaveCol(x) === chiaveCol(d))) date.push(d);
+    // Due prelievi allo stesso minuto (POC e laboratorio centrale: una
+    // mattina qualunque) NON sono lo stesso prelievo: se l'accesso è un
+    // altro, la colonna è un'altra e prende il primo numero libero. Senza
+    // accesso (la tabella del portale) vale la chiave com'è.
+    const rinomina = new Map();
+    for (const d of nuovo.date) {
+      const k = chiaveCol(d);
+      const gia = date.find((x) => chiaveCol(x) === k);
+      if (!gia) { date.push(d); continue; }
+      if (!d.id || !gia.id || d.id === gia.id) continue;
+      const stesso = date.find((x) => x.id && x.id === d.id);
+      if (stesso) { rinomina.set(k, chiaveCol(stesso)); continue; }
+      let n = 2;
+      while (date.some((x) => chiaveCol(x) === d.label + "#" + n)) n++;
+      const nuova = { ...d, chiave: d.label + "#" + n };
+      date.push(nuova); rinomina.set(k, nuova.chiave);
+    }
     date.sort((a, b) => ordData(a.label) - ordData(b.label));   // stable: same minute keeps its order
     const perEsame = new Map();
-    const versa = (dati) => {
+    const versa = (dati, mappa) => {
+      const colDi = (d) => (mappa && mappa.get(chiaveCol(d))) || chiaveCol(d);
       for (const r of dati.righe) {
         // HB is both blood haemoglobin and the urine dipstick: the analyte
         // alone is not an identity, the ordered exam is part of it
@@ -1077,11 +1100,11 @@
         // tabella già fusa non deve riscrivere ogni cella con l'esame della
         // riga, o la provenienza (POC vs laboratorio) sparisce alla seconda
         // passata.
-        r.valori.forEach((v, i) => { if (v.v && dati.date[i]) cur.per.set(chiaveCol(dati.date[i]), v.esame ? v : r.esame ? { ...v, esame: r.esame } : v); });
+        r.valori.forEach((v, i) => { if (v.v && dati.date[i]) cur.per.set(colDi(dati.date[i]), v.esame ? v : r.esame ? { ...v, esame: r.esame } : v); });
         perEsame.set(k, cur);
       }
     };
-    versa(vecchio); versa(nuovo);
+    versa(vecchio); versa(nuovo, rinomina);
     const righe = [...perEsame.values()].map((e) => ({
       nome: e.nome, esame: e.esame, codice: e.codice, mnem: e.mnem, pos: e.pos,
       valori: date.map((d) => e.per.get(chiaveCol(d)) || { v: "", stato: 0 }),
@@ -1114,6 +1137,15 @@
   // La scheda di un paziente nell'archivio: il codice fiscale quando c'è (è
   // l'unica identità che non si può confondere), altrimenti il nome.
   const chiaveArchivio = (d) => (d?.cf ? "cf:" + d.cf : "nome:" + chiavePaziente(d?.paziente));
+  // Il gestionale scrive il nome come una stringa sola («ROSSI MARIO» o
+  // «MARIO ROSSI», a seconda del presidio), il portale lo dà separato: si
+  // accettano i due ordini, mai le parole mescolate.
+  function stessoPaziente(a, b) {
+    const ka = chiavePaziente(a), kb = chiavePaziente(b);
+    if (!ka || !kb) return false;
+    if (ka === kb) return true;
+    return (!a?.cognome && combaciaNome(a?.nome, b)) || (!b?.cognome && combaciaNome(b?.nome, a));
+  }
   // SA4PSO scrive il nome come una stringa sola, il portale lo dà già
   // separato: da lì l'ordine delle due parole non si può dedurre. Ma
   // entrambi i sistemi scrivono anche il CODICE FISCALE — il portale nel
@@ -1148,7 +1180,15 @@
     // Prima di tutto: la scheda letta ARRIVANDO DA QUESTO PAZIENTE. È stato il
     // medico ad aprire il portale da questa pagina, e nessun confronto di nomi
     // può essere più sicuro di così.
-    if (ep) { const suo = v.find((x) => x.ep && String(x.ep) === String(ep)); if (suo) return suo; }
+    // …ma il clic non può CONTRADDIRE le altre prove: sul portale si passa
+    // da un omonimo all'altro senza ricaricare, e la scheda arrivata da quel
+    // clic può essere di un altro ROSSI MARIO. Con un codice fiscale diverso
+    // o un nome che non c'entra, il clic non conta.
+    if (ep) {
+      const suo = v.find((x) => x.ep && String(x.ep) === String(ep)
+        && (!mio || !x.cf || x.cf === mio) && nomiCompatibili(titolo, x.paziente));
+      if (suo) return suo;
+    }
     // Se di questo paziente conosciamo il codice fiscale, decide SOLO quello:
     // niente ripieghi sul nome, perché una scheda senza codice col suo stesso
     // nome può essere di un omonimo.
@@ -1266,7 +1306,7 @@
   // One chronological list of everything the lab/radiology returned for this
   // patient: values we can read (risultati) and reported documents (referti).
   // what a values row needs to exist on its own, without the page
-  const risMeta = (e) => ({ url: e.url, label: e.label || "", exams: e.exams || [], when: e.when || "", ts: e.ts || 0 });
+  const risMeta = (e) => ({ id: e.id || "", url: e.url, label: e.label || "", exams: e.exams || [], when: e.when || "", ts: e.ts || 0 });
 
   // What a referto row is, from its own label: decides how it opens today and
   // which ones become inline text when their sources are wired (lab table, RX
@@ -1650,7 +1690,8 @@
   function migraSegni(da, a) {
     const s = segniTutti();
     if (!s[da]) return;
-    if (!s[a]) s[a] = s[da];
+    // due buste (una per il nome, una per il codice) si sommano, non si scelgono
+    s[a] = { celle: { ...s[da].celle, ...(s[a]?.celle || {}) }, ts: Date.now() };
     delete s[da];
     store.set(segniKey, s);
   }
@@ -2459,7 +2500,9 @@
                text-decoration: underline; cursor: pointer; padding: 0; }
     .portok { color: #177245; font-weight: 700; }
 
-    .stwrap { overflow-x: auto; border: 1px solid #E3E8EF; border-radius: 8px; }
+    /* La tabella scorre dentro la sua cornice, non col pannello: solo così
+       l'intestazione (sticky) resta sotto gli occhi con venti analiti. */
+    .stwrap { overflow: auto; max-height: 60vh; overscroll-behavior: contain; border: 1px solid #E3E8EF; border-radius: 8px; }
     .sttab { border-collapse: collapse; font-size: 11.5px; width: 100%; }
     .sttab th, .sttab td { padding: 3px 7px; white-space: nowrap; border-bottom: 1px solid #EDF1F6; }
     .sttab thead th { position: sticky; top: 0; background: #F8FBFE; color: #5B6B7A; font-weight: 600;
@@ -2471,15 +2514,16 @@
     .sttab td { text-align: right; color: #35506B; font-variant-numeric: tabular-nums; }
     .sttab td.fuori { color: #B3261E; font-weight: 800; }
     .sttab td.parz { font-style: italic; }   /* parziale: in corsivo, niente puntini */
-    /* i segni del medico: un tocco giallo, due arancio, tre via. Vincono
-       sullo sfondo della novità, che resta come riga sotto il numero. */
-    .sttab td[data-cella] { cursor: pointer; }
-    .sttab td.seg1, .sttab tbody tr:hover td.seg1 { background: #FFF1A8; }
-    .sttab td.seg2, .sttab tbody tr:hover td.seg2 { background: #FFCF8F; }
     /* Novelty rides a different channel: a tint behind the number. Text
        colour is untouched, so red keeps meaning "out of range". */
     .sttab td.nuovo, .sttab td.agg, .sttab tbody tr:hover td.nuovo, .sttab tbody tr:hover td.agg {
       background: #DCEAF9; box-shadow: inset 0 -2px 0 #0B5CAD; }
+    /* I segni del medico: un tocco giallo, due arancio, tre via. Stanno DOPO
+       la novità perché il segno vince sullo sfondo azzurro; la riga blu sotto
+       il numero (box-shadow) resta e continua a dire «nuovo». */
+    .sttab td[data-cella] { cursor: pointer; user-select: none; }   /* due tocchi non devono selezionare il numero */
+    .sttab td.marca1, .sttab tbody tr:hover td.marca1 { background: #FFF1A8; }
+    .sttab td.marca2, .sttab tbody tr:hover td.marca2 { background: #FFCF8F; }
     .sttab tbody tr:hover td, .sttab tbody tr:hover th.stn { background: #F4F9FD; }
     /* Sezioni: gli esami stanno dove un medico li cerca, e sempre nello stesso
        posto. L'ordine non dipende più da come il laboratorio ha stampato. */
@@ -2491,7 +2535,7 @@
     .stalt { color: #B3261E; font-weight: 800; letter-spacing: .04em; }
     /* una cella senza valore si deve VEDERE che è vuota, o una riga con due
        soli prelievi sembra una riga piena */
-    .sttab td.vuoto { color: #CBD6E1; }
+    .sttab td.vuoto { color: #AEBECD; }
     .stum { display: block; font-size: 9px; color: #A3B2C2; font-weight: 500; letter-spacing: 0; }
     .sttab th.ultima { color: #0B5CAD; }
     .sttab th.ultima::after { content: "ultimo"; display: block; font-size: 8.5px; font-weight: 700;
@@ -2571,7 +2615,7 @@
       this.esiti = [];                  // risultati + referti, newest first
       this.storico = null;              // the portal's multi-day table, if it is THIS patient's
       this.storicoAltri = "";           // ...or the name it belongs to, when it is not
-      this.storicoVia = "nome";         // su cosa è stata confermata l'identità
+      this.storicoVia = "dal nome";     // su cosa è stata confermata l'identità
       this.storicoDaConfermare = false; // c'è, ma serve il codice fiscale per dire che è suo
       this.portale = "";                // indirizzo del portale aggiunto dal medico
       this.soloAlterati = false;        // valori: show only what is out of range
@@ -3283,18 +3327,19 @@
       if (!this.esiti.length && !st) return `<div class="hint">Nessun esito per questo paziente.</div>`;
 
       // ---- valori: cosa è cambiato dall'ultima lettura, colonna per colonna
+      // si parte dalle COLONNE della tabella: ognuna porta l'accesso da cui
+      // viene, così due prelievi allo stesso minuto non si rubano i marchi
       const nov = new Map();
       let nNov = 0;
-      for (const e of prelievi) {
-        const v = tabStore.get(this.risKey(e.id), null);
-        const n = v && v.rows ? this.novita(e.id, v.rows) : null;
-        if (!n || !n.size) continue;
-        const t = prelievoComeTabella(risMeta(e), v.rows, v.cf || "");
-        if (t) { nov.set(chiaveCol(t.date[0]), n); nNov += n.size; }
+      for (const d of st ? st.date : []) {
+        if (!d.id) continue;
+        const v = tabStore.get(this.risKey(d.id), null);
+        const n = v && v.rows ? this.novita(d.id, v.rows) : null;
+        if (n && n.size) { nov.set(chiaveCol(d), n); nNov += n.size; }
       }
       const vivi = prelievi.filter((e) => !e.storico).length;
       const daLeggere = this.daLeggere().length;
-      const rotti = prelievi.filter((e) => this.rottiTab.has(e.id)).length;
+      const rotti = prelievi.filter((e) => this.rottiTab.has(e.id));
       const ra = this._refreshAll;
       const t = st ? this.tabellaStorico(st, nov, leggiSegni(this.chiaveNota())) : null;
       const chi = st ? [st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") : "";
@@ -3307,10 +3352,12 @@
             <button class="mini" id="storcopy" title="Copia la tabella per il diario, coi nomi per esteso">⧉ Copia</button>` : ""}
           </div>
           ${nNov ? `<div class="newbar"><span>${nNov} ${nNov === 1 ? "valore nuovo" : "valori nuovi"} dall'ultima lettura</span><button id="letto" type="button">Letto</button></div>` : ""}
-          ${daLeggere ? `<div class="hint">${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"}: <b>⭳ Carica i valori</b>.</div>` : ""}
-          ${rotti ? `<div class="hint">${rotti} ${rotti === 1 ? "prelievo non si è lasciato leggere" : "prelievi non si sono lasciati leggere"} (il Registro dice perché): <b>↻ Aggiorna</b> riprova.</div>` : ""}
-          ${t ? `${this.avvisoNomi(st.righe, st.scartate)}${t.html}${this.piedeStorico(st, t.legenda)}` : ""}
-          ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Con lo storico del portale, letto per <b>${esc(chi || "—")}</b> · identità confermata dal <b>${esc(this.storicoVia || "nome")}</b>.</div>`
+          ${daLeggere && !ra ? `<div class="hint">${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"}: <b>⭳ Carica i valori</b>.</div>` : ""}
+          ${rotti.length ? `<div class="hint">${rotti.length === 1 ? "Un prelievo non si è lasciato leggere" : `${rotti.length} prelievi non si sono lasciati leggere`} (${
+            esc(rotti.map((e) => e.when).filter(Boolean).join(", "))}): il Registro dice perché, <b>↻ Aggiorna</b> riprova.</div>` : ""}
+          ${t ? `${this.avvisoNomi(st.righe, st.scartate)}${t.nRighe ? t.html
+            : `<div class="hint">Tutti i valori sono in range: con «solo alterati» non resta niente da mostrare.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
+          ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Con lo storico del portale, letto per <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
             : this.storicoAltri ? `<div class="hint">In memoria c'è lo storico di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non lo mostro.</div>`
             : this.storicoDaConfermare ? `<div class="hint">C'è uno storico letto per un paziente con questo nome. Per essere sicuri
               che sia il suo serve il codice fiscale, che sta nella finestra Risultati: <b>⭳ Carica i valori</b> e comparirà.</div>` : ""}
@@ -3365,14 +3412,13 @@
       const col = st.date.map((d, i) => ({ ...d, i })).reverse();   // il più recente a sinistra
       const ambS = sigleAmbigue(st.righe);
       const inatteso = (r) => !siglaCurata(r.nome) || ambS.has(sigla(r.nome));
-      const legenda = [];
+      const simboli = new Map();   // esame → segno, uno per tutta la tabella
       const gruppi = raggruppaStorico(st.righe)
         .map((g) => ({ ...g, righe: g.righe.filter((r) => !this.soloAlterati || r.valori.some((v) => v.v && v.stato)) }))
         .filter((g) => g.righe.length);
 
       const rigaEsame = (r) => {
-        const p = provenienze(r);
-        for (const l of p.legenda) if (!legenda.some((x) => x.segno === l.segno && x.esame === l.esame)) legenda.push(l);
+        const p = provenienze(r, simboli);
         const um = (r.valori.find((v) => v && v.um) || {}).um || "";
         const celle = col.map((c) => {
           const v = r.valori[c.i] || { v: "", stato: 0 };
@@ -3387,8 +3433,8 @@
           // il segno del medico (un tocco giallo, due arancio) vive sulla
           // cella: «colonna|analita», la stessa identità con cui la tabella
           // fonde i prelievi, così sopravvive a ogni ridisegno
-          const cella = chiaveCol(c) + "|" + valKey(r.nome);
-          const segno = segni[cella] === 2 ? " seg2" : segni[cella] === 1 ? " seg1" : "";
+          const cella = chiaveCol(c) + "|" + valKey(r.nome) + (!r.mnem && r.nome === r.esame ? "|#" + (r.pos ?? 0) : "");
+          const segno = segni[cella] === 2 ? " marca2" : segni[cella] === 1 ? " marca1" : "";
           return `<td class="${v.stato ? "fuori" : ""}${v.parziale ? " parz" : ""}${n === "nuovo" ? " nuovo" : n === "cambiato" ? " agg" : ""}${segno}" data-cella="${esc(cella)}"${
             tip ? ` title="${esc(tip)}${v.parziale ? " · parziale" : ""}"` : v.parziale ? ` title="parziale"` : ""
           }>${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}${
@@ -3415,9 +3461,10 @@
       const testa = `<tr><th class="stn">Esame</th>${col.map((c, i) => {
         const diOggi = c.data === oggi;
         return `<th class="${i === 0 ? "ultima" : ""}" title="${esc([c.label, c.titolo].filter(Boolean).join(" · "))}">${esc(diOggi ? c.ora || "oggi" : c.data.slice(0, 5))}<span class="sth">${
-          esc(diOggi ? "oggi" : c.ora)}</span></th>`;
+          esc(diOggi ? "" : c.ora)}</span></th>`;
       }).join("")}</tr>`;
       const nRighe = gruppi.reduce((n, g) => n + g.righe.length, 0);
+      const legenda = [...simboli].map(([esame, segno]) => ({ segno, esame }));
       return {
         html: `<div class="stwrap"><table class="sttab"><thead>${testa}</thead><tbody>${corpo}</tbody></table></div>`,
         legenda, nRighe, nCol: col.length,
@@ -3428,33 +3475,37 @@
     // scritta, non solo in un tooltip che su un portatile non si vede.
     piedeStorico(st, legenda) {
       const parz = st.righe.some((r) => r.valori.some((v) => v.parziale));
-      return `${legenda.map((l) => `<div class="hint"><b>${esc(l.segno)}</b> fatto con <b>${esc(l.esame)}</b>${
-        l.solita ? ` — gli altri con ${esc(l.solita)}` : ""}</div>`).join("")}${
-        parz ? `<div class="hint"><i>In corsivo</i>: valore ancora <b>parziale</b>, il laboratorio non ha finito.</div>` : ""}`;
+      return `${legenda.map((l) => `<div class="hint"><b>${esc(l.segno)}</b> fatto con <b>${esc(l.esame)}</b> (sul valore c'è scritto con cosa gli altri)</div>`).join("")}${
+        parz ? `<div class="hint"><i>In corsivo</i>: valore ancora <b>parziale</b>, il laboratorio non ha finito.</div>` : ""}
+        <div class="hint">Tocca un valore per segnarlo: giallo, poi arancio, poi via.</div>`;
     }
 
     // Il testo per il diario: la stessa tabella degli Esiti, nomi per esteso.
     testoStorico() {
       const st = this.datiEsiti();
       if (!st) return "";
+      // Le stesse righe che si vedono (col filtro, se è acceso), nome per
+      // esteso con l'unità, «parziale» scritto: nel diario un numero senza
+      // unità o dato per definitivo è un errore che il medico non deve
+      // poter fare copiando.
       const col = st.date.map((d, i) => ({ ...d, i })).reverse();
       const out = ["Esame\t" + col.map((c) => c.label).join("\t")];
-      const note = [];
+      const simboli = new Map();
       for (const g of raggruppaStorico(st.righe)) {
+        const righe = g.righe.filter((r) => !this.soloAlterati || r.valori.some((v) => v.v && v.stato));
+        if (!righe.length) continue;
         out.push("", "[" + g.nome + "]");
-        for (const r of g.righe) {
-          const p = provenienze(r);
-          for (const l of p.legenda) {
-            const riga = `${l.segno} fatto con ${l.esame}${l.solita ? ` — gli altri con ${l.solita}` : ""}`;
-            if (!note.includes(riga)) note.push(riga);
-          }
-          out.push([r.esame && r.esame !== r.nome ? `${r.esame} — ${r.nome}` : r.nome, ...col.map((c) => {
+        for (const r of righe) {
+          const p = provenienze(r, simboli);
+          const um = (r.valori.find((v) => v && v.um) || {}).um || "";
+          out.push([r.nome + (um ? ` (${um})` : ""), ...col.map((c) => {
             const v = r.valori[c.i] || { v: "", stato: 0 };
             if (!v.v) return "";
-            return v.v + (v.stato ? (v.stato < 0 ? " (basso)" : " (alto)") : "") + p.segno(v);
+            return v.v + (v.stato ? (v.stato < 0 ? " (basso)" : " (alto)") : "") + (v.parziale ? " (parziale)" : "") + p.segno(v);
           })].join("\t"));
         }
       }
+      const note = [...simboli].map(([esame, segno]) => `${segno} fatto con ${esame}`);
       return out.join("\n") + (note.length ? "\n\n" + note.join("\n") : "");
     }
 
@@ -3473,8 +3524,8 @@
       const mio = this.cfEpisodio();
       const scelta = scegliScheda(indice, mio, titolo, this.episodeId);
       this.storicoVia = scelta && scelta.ep && String(scelta.ep) === String(this.episodeId)
-        ? "il paziente da cui l'hai aperta"
-        : scelta && scelta.cf && mio ? "codice fiscale" : "nome";
+        ? "dal paziente da cui l'hai aperta"
+        : scelta && scelta.cf && mio ? "dal codice fiscale" : "dal nome";
       // C'è una scheda con questo nome ma non gliela si può attribuire perché
       // di questo paziente non conosciamo ancora il codice fiscale: lo si
       // dice, invece di far sparire un bottone senza spiegazioni.
@@ -3566,6 +3617,8 @@
         scriviNota(vecchia, "");   // già migrata: la copia vecchia non deve restare in giro
       }
       if (vecchia !== "nome:") migraSegni(vecchia, k);
+      // «elimina paziente» deve trovare anche questa chiave, con o senza estensione
+      segnaChiave(this.episodeId, k);
       return k;
     }
     notaHtmlPaziente() {
@@ -3973,10 +4026,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const amb = sigleAmbigue(rows);
       const doppi = (rows || []).map((r) => r.nome).filter((n, i, a) => n && amb.has(sigla(n)) && a.indexOf(n) === i);
       const persi = (scartate || []).filter((x) => x && x.nome);
-      if (!inattesi.length && !doppi.length && !persi.length) return "";
+      // due nomi che si abbrevierebbero uguale sono GIÀ scritti per esteso in
+      // tabella: non meritano un avviso a ogni emocromo, solo l'elenco «quali»
+      if (!inattesi.length && !persi.length) return "";
       const pezzi = [];
       if (inattesi.length) pezzi.push(`${inattesi.length} ${inattesi.length === 1 ? "nome non in elenco" : "nomi non in elenco"}: scritti per esteso`);
-      if (doppi.length) pezzi.push(`${doppi.length} esami si abbrevierebbero uguale`);
       if (persi.length) pezzi.push(`${persi.length} ${persi.length === 1 ? "riga non letta" : "righe non lette"}`);
       const elenco = [
         inattesi.length ? "Non in elenco: " + inattesi.join(", ") : "",
@@ -4035,7 +4089,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this._refreshAll = null;
         for (const e of targets) this.refBusy[e.id] = false;
       }
-      this.log(`${now()}  aggiornati ${targets.length} prelievi${cambiati ? `, ${cambiati} con valori nuovi` : ", nessun valore nuovo"}`);
+      const letti = targets.filter((e) => !this.rottiTab.has(e.id)).length;
+      this.log(`${now()}  letti ${letti} prelievi su ${targets.length}${cambiati ? `, ${cambiati} con valori nuovi` : ", nessun valore nuovo"}`);
       this.render();
     }
 
@@ -4266,13 +4321,21 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       });
       // un tocco su un valore lo segna (giallo → arancio → niente): si cambia
       // la cella sul posto, senza ridisegnare, così la tabella non scatta
-      this.root.querySelectorAll(".sttab td[data-cella]").forEach((td) => td.addEventListener("click", () => {
-        const stato = (td.classList.contains("seg2") ? 2 : td.classList.contains("seg1") ? 1 : 0) + 1;
+      const tabella = this.root.querySelector(".sttab");
+      if (tabella) tabella.addEventListener("click", (ev) => {
+        const td = ev.target?.closest?.("td[data-cella]");
+        if (!td) return;
+        const stato = (td.classList.contains("marca2") ? 2 : td.classList.contains("marca1") ? 1 : 0) + 1;
         const prossimo = stato > 2 ? 0 : stato;
-        if (!scriviSegno(this.chiaveNota(), td.getAttribute("data-cella"), prossimo)) return;
-        td.classList.remove("seg1", "seg2");
-        if (prossimo) td.classList.add("seg" + prossimo);
-      }));
+        if (!scriviSegno(this.chiaveNota(), td.getAttribute("data-cella"), prossimo)) {
+          // un salvataggio rifiutato si dice, non si finge
+          this.message = "Il browser non ha accettato il segno: memoria piena o bloccata.";
+          this.render();
+          return;
+        }
+        td.classList.remove("marca1", "marca2");
+        if (prossimo) td.classList.add("marca" + prossimo);
+      });
       const filtra = () => { this.soloAlterati = !this.soloAlterati; this.render(); };
       $("#storfiltro")?.addEventListener("click", filtra);
       $("#avvnomi")?.addEventListener("click", () => { this.mostraNomi = !this.mostraNomi; this.render(); });
@@ -5342,7 +5405,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (!letto) { disegna({ ok: false, testo: "Nessuna tabella da leggere in questa pagina." }); return; }
       // Da quale paziente il medico è arrivato qui: l'ha aperto lui, dalla sua
       // pagina. È l'identità più solida che ci sia, e non costa una richiesta.
-      if (chiAprivo === undefined && hasExt()) {
+      // Si richiede a OGNI lettura: la scheda del portale resta aperta, e nel
+      // frattempo il medico può aver cliccato «Storico» da un altro paziente.
+      if (hasExt()) {
         chiAprivo = null;
         try { const r = await ask({ t: "chiAprivo" }); if (r && r.ok) chiAprivo = r; } catch { /* si va avanti */ }
       }

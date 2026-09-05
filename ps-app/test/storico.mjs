@@ -198,11 +198,19 @@ const scelte = await page.evaluate((s) => {
     mioIgnotoSchedaConCodice: scegliScheda([conCf], "", "ROSSI MARIO")?.chiave ?? null,
     // la scheda che porta l'episodio da cui il medico ha aperto il portale:
     // è lui ad averla aperta da lì, e vale più di nome e codice fiscale
-    epPrimaDiTutto: scegliScheda([senzaCf, conCf, { ...altro, ep: "700001" }], "abc", "ROSSI MARIO", "700001")?.chiave ?? null,
+    epPrimaDiTutto: scegliScheda([senzaCf, { ...conCf, ep: "700001" }], "abc", "ROSSI MARIO", "700001")?.chiave ?? null,
+    epMaCodiceDiverso: scegliScheda([senzaCf, conCf, { ...altro, ep: "700001" }], "abc", "ROSSI MARIO", "700001")?.chiave ?? null,
+    epMaNomeDiverso: scegliScheda([{ ...altro, cf: "", ep: "700001" }], "", "ROSSI MARIO", "700001")?.chiave ?? null,
   };
 }, src);
-check(scelte.epPrimaDiTutto === "cf:zzz",
-  `la scheda letta arrivando da QUESTO paziente vince su tutto (got ${scelte.epPrimaDiTutto})`);
+check(scelte.epPrimaDiTutto === "cf:abc",
+  `la scheda letta arrivando da QUESTO paziente vince, quando non contraddice le altre prove (got ${scelte.epPrimaDiTutto})`);
+// sul portale si passa da un omonimo all'altro senza ricaricare: il clic non
+// può imporre una scheda con un ALTRO codice fiscale, né con un altro nome
+check(scelte.epMaCodiceDiverso === "cf:abc",
+  `ma con un codice fiscale diverso il clic non conta, e decide il codice (got ${scelte.epMaCodiceDiverso})`);
+check(scelte.epMaNomeDiverso === null,
+  `e con un nome che non c'entra il clic non conta (got ${scelte.epMaNomeDiverso})`);
 check(scelte.cfPrimaDelNome === "cf:abc",
   `fra un omonimo senza codice e la scheda col suo codice, vince il codice (got ${scelte.cfPrimaDelNome})`);
 check(scelte.cfSbagliatoNienteRipiego === null,
@@ -313,6 +321,34 @@ check(provFusa.n === 2 && provFusa.esami.filter(Boolean).length === 2
 // a page that is not that page
 const altra = await leggi("<html><body><table><tr><td>ciao</td></tr></table></body></html>");
 check(altra.haStorico === false && altra.dati === null, "su una pagina qualsiasi non inventa una tabella");
+
+// ---- lo stesso paziente scritto nei due ordini, e due prelievi allo stesso minuto
+// Il gestionale scrive «MARIO ROSSI» in titolo dove il portale ha ROSSI /
+// MARIO: fondere, non sostituire — prima la tabella del portale spariva.
+// E due accessi allo stesso minuto (POC + laboratorio) sono due colonne.
+const fusioni = await page.evaluate((s) => {
+  // eslint-disable-next-line no-new-func
+  return new Function(s + `
+    const col = (label, n, id) => ({ data: label.slice(0, 10), ora: label.slice(11), label, chiave: label + "#" + n, id });
+    const riga = (v, esame) => ({ nome: "Emoglobina", esame, codice: "", mnem: "", pos: 0, valori: [{ v, stato: 0, um: "g/L", range: "" }] });
+    const base = { cf: "abc", periodo: "", scartate: [], letto: 1 };
+    const portale = { ...base, paziente: { idMPI: "1", cognome: "ROSSI", nome: "MARIO" }, date: [col("23/08/2026 08:10", 1, "")], righe: [riga("120", "EMOCROMO")] };
+    const titolo = { ...base, paziente: { idMPI: "", cognome: "", nome: "MARIO ROSSI" }, date: [col("23/08/2026 09:00", 1, "A1")], righe: [riga("121", "EMOCROMO POC")] };
+    const inverso = unisciStorico(portale, titolo);
+    const poc = { ...titolo, date: [col("23/08/2026 08:10", 1, "A1")], righe: [riga("91", "EMOCROMO POC")] };
+    const lab = { ...titolo, date: [col("23/08/2026 08:10", 1, "B2")], righe: [riga("142", "EMOCROMO LAB")] };
+    const due = fondiStorico(poc, lab);
+    const uno = fondiStorico(poc, { ...poc });
+    const rifuso = fondiStorico(poc, due);
+    return { inverso: inverso.date.length, due: due.date.length, valori: due.righe[0].valori.map((v) => v.v), uno: uno.date.length, rifuso: rifuso.date.length };
+  `)();
+}, src);
+check(fusioni.inverso === 2,
+  `«MARIO ROSSI» in titolo e ROSSI / MARIO sul portale sono la stessa persona: le tabelle si fondono (got ${fusioni.inverso} colonne)`);
+check(fusioni.due === 2 && fusioni.valori.join("|") === "91|142",
+  `due accessi allo stesso minuto restano due colonne (got ${fusioni.due}: ${fusioni.valori.join("|")})`);
+check(fusioni.uno === 1 && fusioni.rifuso === 2,
+  `lo stesso accesso non raddoppia, nemmeno rifondendo (got ${fusioni.uno} e ${fusioni.rifuso})`);
 
 // no draw at all in the period
 const vuota = await leggi(paginaStorico({ esami: [["EMOCROMO", "Emoglobina", "1201", "HB", ["", "", ""], [0, 0, 0]]] }));

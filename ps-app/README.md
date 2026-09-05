@@ -111,7 +111,7 @@ fondo **Altri** — i dettagli più sotto), una colonna per prelievo, **il più 
 data e ora per esteso e **gli esami** compresi in quella richiesta.
 
 - I nomi sono in **sigla** (`Hb`, `GB`, `PLT`…), con l'**unità sotto il nome** e il **range nel
-  tooltip**. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
+  tooltip del valore**. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
   vale per un'abbreviazione ambigua — e una riga d'avviso in cima dice **quali**.
 - In rosso c'è **solo il valore**, con ↑ ↓: il nome resta a sinistra, sempre nella stessa colonna.
   Una cella **·** = quel prelievo non ha quell'analita; *in corsivo* = risultato ancora
@@ -121,7 +121,8 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
 - **⭳ Carica i valori** legge i prelievi non ancora letti; fatta la prima lettura diventa
   **↻ Aggiorna**, che rilegge **tutti** i prelievi ancora aperti, a passo lento e uno alla volta.
   **solo alterati** / **tutti** filtra le righe; **⧉ Copia** mette l'intera tabella negli appunti,
-  tabulata e coi nomi per esteso — pronta per il diario.
+  tabulata, coi nomi per esteso e l'unità, «parziale» scritto, e solo le righe che vedi (col
+  filtro acceso, gli alterati) — pronta per il diario.
 - **Un tocco su un valore lo segna**: giallo; un secondo tocco arancio; un terzo lo spegne. I segni
   sono tuoi, restano col paziente (24 ore, come la nota) e sopravvivono al cambio di pagina.
 - **Cosa è cambiato dall'ultima volta che hai guardato**: dopo un **↻ Aggiorna**, in quel prelievo
@@ -139,7 +140,7 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
 - Il pannello **si allarga da solo** quanto serve alle colonne, fino all'**80%** dello schermo in
   larghezza e altezza — mai più stretto di come l'hai già ridimensionato a mano.
 - Quando la scheda viene (anche) dal portale, sotto la tabella compare: *«Con lo storico del
-  portale, letto per NOME · identità confermata dal clic / codice fiscale / nome»*.
+  portale, letto per NOME · identità confermata dal paziente da cui l'hai aperta / dal codice fiscale / dal nome»*.
 
 **Referti** è la lista dei documenti (ECG, RX, TC, visite…), una riga ciascuno, come sempre:
 - **RIS ›** — referti di **radiologia** (RX, TC, ecografia, RMN) ed **ECG**: si aprono **dentro il
@@ -289,8 +290,8 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   clinica di quel paziente: se non c'era viene creata (la striscia lo dice: *«…— ROSSI MARIO, nuovo
   · 3 pazienti in memoria»*), se c'era i prelievi nuovi si aggiungono ai suoi. E non solo dal
   portale: **ogni prelievo che il pannello legge dalla finestra Risultati del gestionale entra
-  nella stessa scheda**, parziali compresi — un valore che il laboratorio non ha finito porta un
-  **`*`** e la tabella lo spiega. Lo stesso analita letto dalle due finestre resta **una riga
+  nella stessa scheda**, parziali compresi — un valore che il laboratorio non ha finito è in
+  *corsivo* e la tabella lo spiega. Lo stesso analita letto dalle due finestre resta **una riga
   sola**.
 - Sul paziente aperto il pannello mostra **solo la sua** scheda. Prima di tutto vale il **clic**:
   la tabella letta sul portale aperto **dalla pagina di questo paziente** è sua — ma solo se di là
