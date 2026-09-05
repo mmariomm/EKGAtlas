@@ -1,6 +1,8 @@
 /* =============================================================================
    I Miei Turni — interfaccia (vanilla JS, nessun modulo, nessuna dipendenza).
    Gira dopo TurniParser, TurniRules e window.TURNI_DATA.
+   Schermata: calendario del mese + dettaglio del giorno scelto; sotto,
+   segnalazioni, elenco dei nomi, dati.
    Ordine del file: costanti → aiutanti → stato → derivazione → render → eventi.
    ============================================================================= */
 (function () {
@@ -13,15 +15,17 @@
   // Costanti
   // ---------------------------------------------------------------------------
 
-  var LS_KEY = 'imieiturni.rosters.v1';
+  var LS_ROSTERS = 'imieiturni.rosters.v1';
+  var LS_ME = 'imieiturni.me';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var MONTHS_IT = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
     'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
   var WEEKDAYS_IT = ['domenica', 'lunedì', 'martedì', 'mercoledì',
     'giovedì', 'venerdì', 'sabato'];
+  var WEEKDAYS_SHORT_IT = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'];
 
-  // Ordine delle colonne dei turni nelle schede: mattina, pomeriggio, notte, poi il resto.
+  // Ordine delle fasce: mattina, pomeriggio, notte, poi il resto.
   var SLOT_RANK = { M: 0, P: 1, N: 2 };
 
   var KIND_ORDER = ['conflitto', 'notte-attaccata', 'cambio-sede'];
@@ -88,6 +92,7 @@
   function monthName(m) { return MONTHS_IT[Number(String(m).slice(5, 7)) - 1] || m; }
   function monthLabel(m) { return capitalize(monthName(m)) + ' ' + String(m).slice(0, 4); }
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
 
   function weekdayOf(dateStr) {
     var p = String(dateStr).split('-');
@@ -95,21 +100,29 @@
   }
   function isWeekend(dateStr) { var d = weekdayOf(dateStr); return d === 0 || d === 6; }
   function weekdayLong(dateStr) { return WEEKDAYS_IT[weekdayOf(dateStr)]; }
+  function dayNum(dateStr) { return Number(String(dateStr).slice(8, 10)); }
+  function dateOf(month, day) { return month + '-' + pad2(day); }
+  function monthLength(month) {
+    var y = Number(month.slice(0, 4)), m = Number(month.slice(5, 7));
+    return new Date(Date.UTC(y, m, 0)).getUTCDate();
+  }
 
   function todayISO() {
     var d = new Date();
-    var mm = String(d.getMonth() + 1);
-    var dd = String(d.getDate());
-    return d.getFullYear() + '-' + (mm.length < 2 ? '0' + mm : mm) + '-' + (dd.length < 2 ? '0' + dd : dd);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
   }
 
   // "AMBULATORIO CM" → "Amb. CM" (una riga sola nella colonna di sinistra).
   function shortSlotName(label) {
-    var name = R.slotName(label);
-    return name.replace(/^Ambulatorio\b/, 'Amb.');
+    return R.slotName(label).replace(/^Ambulatorio\b/, 'Amb.');
   }
 
   function hospClass(h) { return h === 'DEA' ? 'h-dea' : (h === 'OSG' ? 'h-osg' : 'h-alt'); }
+
+  function suspicionText(s) {
+    if (!s) return '';
+    return s.kind === 'concat' ? 'forse ' + s.suggestion + '?' : 'simile a ' + s.to;
+  }
 
   // Divide un nome in tre parti attorno alla porzione che combacia con la query
   // (indici calcolati carattere per carattere, così accenti e apostrofi non sballano).
@@ -123,8 +136,7 @@
     }
     var at = folded.indexOf(q);
     if (at === -1) return null;
-    var from = idx[at], to = idx[at + q.length - 1] + 1;
-    return [name.slice(0, from), name.slice(from, to), name.slice(to)];
+    return [name.slice(0, idx[at]), name.slice(idx[at], idx[at + q.length - 1] + 1), name.slice(idx[at + q.length - 1] + 1)];
   }
 
   // ---------------------------------------------------------------------------
@@ -133,19 +145,29 @@
 
   function readLocal() {
     try {
-      var raw = window.localStorage.getItem(LS_KEY);
-      if (!raw) return [];
-      var parsed = JSON.parse(raw);
+      var raw = window.localStorage.getItem(LS_ROSTERS);
+      var parsed = raw ? JSON.parse(raw) : null;
       return Array.isArray(parsed) ? parsed : [];
     } catch (e) { return []; }
   }
 
   function writeLocal(list) {
     try {
-      if (!list.length) window.localStorage.removeItem(LS_KEY);
-      else window.localStorage.setItem(LS_KEY, JSON.stringify(list));
+      if (!list.length) window.localStorage.removeItem(LS_ROSTERS);
+      else window.localStorage.setItem(LS_ROSTERS, JSON.stringify(list));
       return true;
     } catch (e) { return false; }
+  }
+
+  function readMe() {
+    try { return window.localStorage.getItem(LS_ME) || null; } catch (e) { return null; }
+  }
+
+  function writeMe(name) {
+    try {
+      if (name) window.localStorage.setItem(LS_ME, name);
+      else window.localStorage.removeItem(LS_ME);
+    } catch (e) { /* niente memoria: pazienza */ }
   }
 
   // ---------------------------------------------------------------------------
@@ -157,30 +179,29 @@
 
   var state = {
     month: '',
+    selected: '',
     query: '',
     armedIndex: 0,
     pinned: null,
-    onlyTheirDays: false,
-    stripOpen: false,
     findingsAll: false,
     popOpen: false,
   };
 
   var local = readLocal();
-  var D = {};          // vista derivata (ricalcolata a ogni cambio di dati o di mese)
+  var D = {};                // vista derivata
   var nameEls = new Map();   // nome → elementi evidenziabili
   var painted = [];          // elementi attualmente evidenziati
   var options = [];          // righe dell'elenco candidati
+  var calName = null;        // nome disegnato nel calendario (fissato o in anteprima)
 
   // ---------------------------------------------------------------------------
   // Riferimenti al DOM
   // ---------------------------------------------------------------------------
 
-  var topbar = $('topbar'), monthCtl = $('monthCtl'), findingsBtn = $('findingsBtn'),
-    todayBtn = $('todayBtn'),
-    searchBox = $('search'), input = $('q'), pintoken = $('pintoken'), clearBtn = $('clearBtn'),
-    pop = $('pop'), emptyEl = $('empty'), stripEl = $('strip'), cardsEl = $('turni'),
-    findEl = $('segnalazioni'), datiEl = $('dati'), datiBody = $('datiBody'),
+  var topbar = $('topbar'), monthCtl = $('monthCtl'), findingsBtn = $('findingsBtn'), todayBtn = $('todayBtn'),
+    searchBox = $('search'), input = $('q'), pintoken = $('pintoken'), clearBtn = $('clearBtn'), pop = $('pop'),
+    emptyEl = $('empty'), personLine = $('personline'), calEl = $('calendario'), legendEl = $('callegend'),
+    detailEl = $('detail'), findEl = $('segnalazioni'), stripEl = $('strip'), datiEl = $('dati'), datiBody = $('datiBody'),
     fileInput = $('fileInput'), dropzone = $('dropzone'), toasts = $('toasts'), srStatus = $('srStatus');
 
   // ---------------------------------------------------------------------------
@@ -208,20 +229,24 @@
     return a.hospital.localeCompare(b.hospital, 'it');
   }
 
-  // Giorni del mese: unione dei giorni presenti nei roster dei due ospedali.
+  function slotRank(key, fallback) {
+    return SLOT_RANK[key] !== undefined ? SLOT_RANK[key] : 10 + fallback;
+  }
+
+  // Giorni con dati: unione dei giorni presenti nei roster dei due ospedali.
   function buildDays(rosters) {
     var map = new Map();
     rosters.forEach(function (r) {
       (r.days || []).forEach(function (d) {
-        var rec = map.get(d.day);
-        if (!rec) { rec = { day: d.day, date: d.date, cells: {} }; map.set(d.day, rec); }
+        var rec = map.get(d.date);
+        if (!rec) { rec = { day: d.day, date: d.date, cells: {} }; map.set(d.date, rec); }
         rec.cells[r.hospital] = d.cells || {};
       });
     });
     return Array.from(map.values()).sort(function (a, b) { return a.day - b.day; });
   }
 
-  // Righe delle schede: unione delle fasce dei due ospedali, in ordine M, P, N, resto.
+  // Righe del dettaglio: unione delle fasce dei due ospedali, in ordine M, P, N, resto.
   function buildSlotRows(rosters) {
     var seen = new Map();
     rosters.forEach(function (r) {
@@ -230,9 +255,7 @@
       });
     });
     return Array.from(seen.values()).sort(function (a, b) {
-      var ra = SLOT_RANK[a.key] !== undefined ? SLOT_RANK[a.key] : 10 + a.order;
-      var rb = SLOT_RANK[b.key] !== undefined ? SLOT_RANK[b.key] : 10 + b.order;
-      return ra - rb;
+      return slotRank(a.key, a.order) - slotRank(b.key, b.order);
     });
   }
 
@@ -255,7 +278,6 @@
     var rosters = mergedRosters();
     D.rosters = rosters;
     D.months = Array.from(new Set(rosters.map(function (r) { return r.month; }))).sort();
-
     if (D.months.indexOf(state.month) === -1) state.month = defaultMonth();
 
     D.assignments = R.buildAssignments(rosters);
@@ -272,13 +294,16 @@
       return f.a.date.slice(0, 7) === m || f.b.date.slice(0, 7) === m;
     });
     D.days = buildDays(D.monthRosters);
+    D.dayByDate = new Map(D.days.map(function (d) { return [d.date, d]; }));
     D.slotRows = buildSlotRows(D.monthRosters);
+    D.monthLen = m ? monthLength(m) : 0;
     D.today = todayISO();
-    D.todayInMonth = D.days.some(function (d) { return d.date === D.today; });
+    D.todayInMonth = !!m && D.today.slice(0, 7) === m;
 
-    // Celle e nomi coinvolti in una segnalazione (per il bordo e il puntino).
+    // Celle, nomi e giorni coinvolti in una segnalazione.
     D.cellFind = new Map();
     D.pillFind = new Map();
+    D.dayFind = new Map();
     D.findByPerson = new Map();
     D.findingsOfMonth.forEach(function (f) {
       [f.a, f.b].forEach(function (a) {
@@ -286,42 +311,55 @@
         var prev = D.cellFind.get(ck);
         if (!prev || f.severity > prev.severity) D.cellFind.set(ck, { severity: f.severity, title: f.title });
         var pk = ck + '|' + a.person;
-        var arr = D.pillFind.get(pk) || [];
-        arr.push(f);
-        D.pillFind.set(pk, arr);
+        var arr = D.pillFind.get(pk) || []; arr.push(f); D.pillFind.set(pk, arr);
+        var dprev = D.dayFind.get(a.date);
+        if (!dprev || f.severity > dprev.severity) D.dayFind.set(a.date, { severity: f.severity, title: f.title });
       });
-      var list = D.findByPerson.get(f.person) || [];
-      list.push(f);
-      D.findByPerson.set(f.person, list);
+      var list = D.findByPerson.get(f.person) || []; list.push(f); D.findByPerson.set(f.person, list);
     });
 
     if (state.pinned && !D.nameMap.has(state.pinned)) state.pinned = null;
-    if (!state.pinned) { state.onlyTheirDays = false; state.findingsAll = false; }
-    D.personDays = state.pinned ? personDays(state.pinned) : null;
+    if (!state.pinned) state.findingsAll = false;
+    if (!validDay(state.selected)) state.selected = defaultDay();
   }
 
   function defaultMonth() {
     if (!D.months.length) return '';
     var t = todayISO().slice(0, 7);
-    if (D.months.indexOf(t) !== -1) return t;
-    return D.months[D.months.length - 1];
+    return D.months.indexOf(t) !== -1 ? t : D.months[D.months.length - 1];
   }
 
-  // Mappa data → { ospedali, notte } per il mini-mese e per il filtro dei giorni.
-  function personDays(name) {
+  function validDay(date) {
+    if (!date || !state.month || date.slice(0, 7) !== state.month) return false;
+    var n = dayNum(date);
+    return n >= 1 && n <= D.monthLen;
+  }
+
+  function defaultDay() {
+    if (!state.month) return '';
+    return D.todayInMonth ? D.today : dateOf(state.month, 1);
+  }
+
+  // Turni di una persona, giorno per giorno, in ordine di fascia: le pastiglie del calendario.
+  function chipsByDate(name) {
     var map = new Map();
+    if (!name) return map;
     D.monthAssignments.forEach(function (a) {
       if (a.person !== name) return;
-      var rec = map.get(a.date);
-      if (!rec) { rec = { hospitals: {}, night: false }; map.set(a.date, rec); }
-      rec.hospitals[a.hospital] = true;
-      if (a.isNight) rec.night = true;
+      var arr = map.get(a.date) || []; arr.push(a); map.set(a.date, arr);
+    });
+    map.forEach(function (arr) {
+      arr.sort(function (x, y) {
+        var rx = slotRank(x.slotKey, 0), ry = slotRank(y.slotKey, 0);
+        if (rx !== ry) return rx - ry;
+        return D.hospitals.indexOf(x.hospital) - D.hospitals.indexOf(y.hospital);
+      });
     });
     return map;
   }
 
   // ---------------------------------------------------------------------------
-  // Indirizzo (hash) — mese, nome fissato, filtro
+  // Indirizzo (hash) — mese, nome, giorno
   // ---------------------------------------------------------------------------
 
   function readHash() {
@@ -333,7 +371,7 @@
       var k = part.slice(0, eq), v = decodeURIComponent(part.slice(eq + 1).replace(/\+/g, ' '));
       if (k === 'mese') state.month = v;
       else if (k === 'nome') state.pinned = v.toLocaleUpperCase('it-IT');
-      else if (k === 'solo') state.onlyTheirDays = v === '1';
+      else if (k === 'giorno') state.selected = v;
     });
   }
 
@@ -341,7 +379,7 @@
     var parts = [];
     if (state.month) parts.push('mese=' + state.month);
     if (state.pinned) parts.push('nome=' + encodeURIComponent(state.pinned));
-    if (state.pinned && state.onlyTheirDays) parts.push('solo=1');
+    if (state.selected) parts.push('giorno=' + state.selected);
     var hash = parts.length ? '#' + parts.join('&') : '';
     if (hash !== window.location.hash) {
       try { window.history.replaceState(null, '', window.location.pathname + window.location.search + hash); }
@@ -387,7 +425,6 @@
     }
 
     todayBtn.hidden = !D.todayInMonth;
-    todayBtn.setAttribute('aria-label', 'Vai a oggi, ' + (D.todayInMonth ? R.formatDate(D.today) : ''));
     renderPinToken();
   }
 
@@ -404,241 +441,226 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Render — striscia dei nomi / scheda della persona
+  // Render — riga della persona
   // ---------------------------------------------------------------------------
 
-  function hospitalDots(byHospital) {
-    return el('span', { class: 'chip__dots' }, D.hospitals.filter(function (h) {
-      return byHospital[h];
-    }).map(function (h) {
-      return el('span', { class: 'dot ' + hospClass(h), title: h + ': ' + plural(byHospital[h], 'turno', 'turni') });
-    }));
-  }
+  function renderPersonLine() {
+    clear(personLine);
+    if (!state.pinned) { personLine.hidden = true; return; }
+    var info = D.nameMap.get(state.pinned) || { count: 0, byHospital: {}, nights: 0, amb: 0 };
+    var mine = D.findByPerson.get(state.pinned) || [];
+    personLine.hidden = false;
 
-  function suspicionText(s) {
-    if (!s) return '';
-    return s.kind === 'concat' ? 'forse ' + s.suggestion + '?' : 'simile a ' + s.to;
-  }
-
-  function renderStrip() {
-    clear(stripEl);
-    stripEl.classList.toggle('is-scheda', !!state.pinned);
-    if (!D.names.length) { stripEl.hidden = true; return; }
-    stripEl.hidden = false;
-    if (state.pinned) renderScheda();
-    else renderNames();
-  }
-
-  function renderNames() {
-    var both = D.names.filter(function (n) { return Object.keys(n.byHospital).length > 1; }).length;
-    var warn = D.names.filter(function (n) { return n.suspicion; }).length;
-    var caption = [plural(D.names.length, 'nome', 'nomi')];
-    if (both) caption.push(both + ' in entrambi gli ospedali');
-    if (warn) caption.push(plural(warn, 'da controllare', 'da controllare'));
-
-    stripEl.appendChild(el('div', { class: 'strip__head' }, [
-      el('h2', { class: 'stitle', id: 'stripTitle', text: 'Chi c’è a ' + monthName(state.month) }),
-    ]));
-    stripEl.appendChild(el('p', { class: 'cap strip__cap', text: caption.join(' · ') }));
-
-    var names = el('div', { class: 'strip__names' + (state.stripOpen ? '' : ' is-clamped') },
-      D.names.map(function (n) { return nameChip(n); }));
-    stripEl.appendChild(names);
-
-    var more = el('button', {
-      class: 'strip__more', type: 'button',
-      text: state.stripOpen ? 'Riduci' : 'Mostra tutti i ' + D.names.length + ' nomi',
-      'aria-expanded': state.stripOpen ? 'true' : 'false',
-      on: { click: function () { state.stripOpen = !state.stripOpen; renderStrip(); indexNames(); applyHighlight(); } },
-    });
-    stripEl.appendChild(more);
-    // Il taglio cade tra due righe di chip, mai a metà; se stanno tutte, niente pulsante.
-    if (!state.stripOpen) {
-      requestAnimationFrame(function () {
-        var tops = [];
-        Array.prototype.forEach.call(names.children, function (chip) {
-          if (tops.indexOf(chip.offsetTop) === -1) tops.push(chip.offsetTop);
-        });
-        if (tops.length <= 3) {
-          names.classList.remove('is-clamped');
-          more.hidden = true;
-        } else {
-          names.style.maxHeight = Math.max(40, tops[3] - names.offsetTop - 6) + 'px';
-        }
-      });
-    }
-  }
-
-  function nameChip(n) {
-    var why = suspicionText(n.suspicion);
-    return el('button', {
-      class: 'chip' + (n.suspicion ? ' is-warn' : ''), type: 'button',
-      data: { name: n.name },
-      'aria-label': n.name + ', ' + plural(n.count, 'turno', 'turni') + (why ? ', ' + why : ''),
-    }, [
-      el('span', { class: 'chip__name', text: n.name }),
-      el('span', { class: 'chip__n', text: String(n.count) }),
-      hospitalDots(n.byHospital),
-      why ? el('span', { class: 'chip__why' }, [icon('i-warn'), why]) : null,
-    ]);
-  }
-
-  function renderScheda() {
-    var name = state.pinned;
-    var info = D.nameMap.get(name) || { count: 0, byHospital: {}, nights: 0, amb: 0 };
-    var box = el('div', { class: 'scheda' });
-
-    box.appendChild(el('div', { class: 'scheda__top' }, [
-      el('div', {}, [
-        el('h2', { class: 'scheda__label', id: 'stripTitle', text: 'Scheda' }),
-        el('div', {}, el('span', { class: 'scheda__name', text: name })),
-      ]),
-    ]));
-
-    var stats = [plural(info.count, 'turno', 'turni') + ' a ' + monthName(state.month)];
-    D.hospitals.forEach(function (h) { if (info.byHospital[h]) stats.push(h + ' ' + info.byHospital[h]); });
-    if (info.nights) stats.push(plural(info.nights, 'notte', 'notti'));
-    if (info.amb) stats.push(plural(info.amb, 'ambulatorio', 'ambulatori'));
-    box.appendChild(el('p', { class: 'scheda__stats', text: stats.join(' · ') }));
-
-    box.appendChild(renderMiniMonth(name));
-    box.appendChild(el('p', { class: 'mm__legend' }, [
-      el('span', {}, [el('span', { class: 'dot h-dea' }), 'DEA']),
-      el('span', {}, [el('span', { class: 'dot h-osg' }), 'OSG']),
-      el('span', {}, [icon('i-moon'), 'notte']),
-    ]));
-
-    var check = el('input', { type: 'checkbox', role: 'switch', checked: state.onlyTheirDays });
-    check.addEventListener('change', function () {
-      state.onlyTheirDays = check.checked;
-      keepAnchor(function () { renderCards(); indexNames(); applyHighlight(); });
-      syncHash();
-    });
-    box.appendChild(el('div', { class: 'scheda__actions' }, [
-      el('label', { class: 'switch' }, [check, el('span', { class: 'switch__track' }), 'Solo i suoi giorni']),
-      el('button', {
-        class: 'scheda__unpin', type: 'button',
-        on: { click: function () { setPinned(null); } },
-      }, [icon('i-back'), 'Tutti i nomi']),
-    ]));
-
-    var mine = (D.findByPerson.get(name) || []);
+    var parts = [plural(info.count, 'turno', 'turni')];
+    D.hospitals.forEach(function (h) { if (info.byHospital[h]) parts.push(h + ' ' + info.byHospital[h]); });
+    if (info.nights) parts.push(plural(info.nights, 'notte', 'notti'));
+    if (info.amb) parts.push(plural(info.amb, 'ambulatorio', 'ambulatori'));
+    personLine.appendChild(document.createTextNode(parts.join(' · ')));
     if (mine.length) {
-      box.appendChild(el('div', { class: 'scheda__findings' }, [
-        el('p', { class: 'fgroup__t', text: plural(mine.length, 'segnalazione', 'segnalazioni') }),
-        el('div', {}, mine.map(function (f) { return findingItem(f, true); })),
-      ]));
+      personLine.appendChild(document.createTextNode(' · '));
+      personLine.appendChild(el('button', {
+        class: 'linkbtn', type: 'button',
+        text: plural(mine.length, 'segnalazione', 'segnalazioni'),
+        on: { click: function () { scrollToEl(findEl); findEl.focus({ preventScroll: true }); } },
+      }));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — calendario del mese
+  // ---------------------------------------------------------------------------
+
+  function renderCalendar() {
+    clear(calEl);
+    calEl.setAttribute('aria-label', 'Calendario di ' + monthLabel(state.month));
+    if (!state.month) return;
+
+    calEl.appendChild(el('div', { class: 'cal__row cal__wd', role: 'row' },
+      WEEKDAYS_SHORT_IT.map(function (w) { return el('span', { role: 'columnheader', text: w }); })));
+
+    calName = previewName();
+    var chips = chipsByDate(calName);
+    var first = dateOf(state.month, 1);
+    var lead = (weekdayOf(first) + 6) % 7;           // le settimane iniziano di lunedì
+    var cells = [];
+
+    for (var i = lead; i > 0; i--) cells.push({ out: true, n: prevMonthDay(first, i) });
+    for (var d = 1; d <= D.monthLen; d++) cells.push({ out: false, n: d, date: dateOf(state.month, d) });
+    var after = 1;
+    while (cells.length % 7 !== 0) cells.push({ out: true, n: after++ });
+
+    for (var w = 0; w < cells.length; w += 7) {
+      var row = el('div', { class: 'cal__row', role: 'row' });
+      cells.slice(w, w + 7).forEach(function (c) { row.appendChild(calCell(c, chips)); });
+      calEl.appendChild(row);
     }
 
-    stripEl.appendChild(box);
+    renderLegend();
   }
 
-  function renderMiniMonth(name) {
-    var grid = el('div', { class: 'mm' });
-    D.days.forEach(function (d) {
-      var rec = D.personDays ? D.personDays.get(d.date) : null;
-      var cls = ['mm__d'];
-      if (isWeekend(d.date)) cls.push('is-weekend');
-      if (d.date === D.today) cls.push('is-today');
-      var hosps = rec ? D.hospitals.filter(function (h) { return rec.hospitals[h]; }) : [];
-      hosps.forEach(function (h) { cls.push(h === 'DEA' ? 'on-dea' : (h === 'OSG' ? 'on-osg' : 'on-alt')); });
+  function prevMonthDay(firstDate, back) {
+    var y = Number(firstDate.slice(0, 4)), m = Number(firstDate.slice(5, 7));
+    return new Date(Date.UTC(y, m - 1, 1 - back)).getUTCDate();
+  }
 
-      var marks = el('span', { class: 'mm__marks' }, [
-        rec && rec.night ? icon('i-moon') : null,
-        hosps.length > 1 ? hosps.map(function (h) { return el('span', { class: 'dot ' + hospClass(h) }); }) : null,
-      ]);
-      var body = [el('span', { text: String(d.day) }), marks];
+  function calCell(c, chips) {
+    if (c.out) {
+      return el('span', { class: 'cal__d is-out', role: 'gridcell' },
+        el('span', { class: 'cal__n', text: String(c.n) }));
+    }
+    var date = c.date;
+    var today = date === D.today;
+    var sel = date === state.selected;
+    var weekend = isWeekend(date);
+    var mine = chips.get(date) || [];
+    var find = D.dayFind.get(date);
 
-      if (rec) {
-        grid.appendChild(el('button', {
-          class: cls.join(' '), type: 'button', data: { goto: d.date },
-          'aria-label': R.formatDate(d.date) + ': ' + hosps.join(' e ') + (rec.night ? ', notte' : ''),
-        }, body));
-      } else {
-        grid.appendChild(el('span', { class: cls.join(' '), 'aria-hidden': 'true' }, body));
-      }
+    var label = c.n + ' ' + weekdayLong(date);
+    if (today) label += ', oggi';
+    if (mine.length) label += ', ' + plural(mine.length, 'turno', 'turni') + ' di ' + calName;
+    else if (find) label += ', ' + find.title;
+
+    var cell = el('button', {
+      class: 'cal__d' + (weekend ? ' is-weekend' : '') + (sel ? ' is-sel' : ''),
+      type: 'button', role: 'gridcell',
+      'aria-selected': sel ? 'true' : 'false',
+      tabindex: sel ? '0' : '-1',
+      'aria-label': label,
+      data: { day: date },
+    }, [
+      el('span', { class: 'cal__n' + (today ? ' is-today' : ''), text: String(c.n) }),
+      mine.length ? el('span', { class: 'cal__chips' }, mine.slice(0, 4).map(function (a) { return slotChip(a); })) : null,
+      (!calName && find) ? el('span', { class: 'cal__dot sev-' + find.severity, title: find.title }) : null,
+    ]);
+    return cell;
+  }
+
+  function slotChip(a) {
+    var finds = D.pillFind.get(a.hospital + '|' + a.date + '|' + a.slotKey + '|' + a.person);
+    var sev = finds ? Math.max.apply(null, finds.map(function (f) { return f.severity; })) : 0;
+    return el('span', {
+      class: 'chipslot ' + hospClass(a.hospital) + (a.isNight ? ' is-night' : '') + (sev ? ' is-find sev-' + sev : ''),
+      title: R.slotName(a.slotLabel) + ' ' + a.hospital + ' ' + R.timeRange(a),
+      text: a.slotKey.charAt(0),
     });
-    return grid;
+  }
+
+  function renderLegend() {
+    clear(legendEl);
+    if (!calName) { legendEl.hidden = true; return; }
+    legendEl.hidden = false;
+    var slots = D.slotRows.map(function (row) {
+      return el('span', {}, [el('b', { text: row.key }), R.slotName(row.slot.label).split(' ')[0].toLowerCase()]);
+    });
+    var hosps = D.hospitals.map(function (h) {
+      return el('span', {}, [el('span', { class: 'dot ' + hospClass(h) }), h]);
+    });
+    append(legendEl, slots.concat(hosps));
+  }
+
+  // Nome disegnato nel calendario: quello in evidenza mentre si scrive, altrimenti il fissato.
+  function previewName() {
+    if (state.query.trim() && options.length) {
+      var armed = options[state.armedIndex];
+      if (armed) return armed.dataset.name;
+    }
+    return state.pinned;
+  }
+
+  function updateCalSelection(prev, next) {
+    var before = calEl.querySelector('[data-day="' + prev + '"]');
+    if (before) {
+      before.classList.remove('is-sel');
+      before.setAttribute('aria-selected', 'false');
+      before.tabIndex = -1;
+    }
+    var now = calEl.querySelector('[data-day="' + next + '"]');
+    if (now) {
+      now.classList.add('is-sel');
+      now.setAttribute('aria-selected', 'true');
+      now.tabIndex = 0;
+    }
   }
 
   // ---------------------------------------------------------------------------
-  // Render — schede dei giorni
+  // Render — dettaglio del giorno scelto
   // ---------------------------------------------------------------------------
 
-  function renderCards() {
-    clear(cardsEl);
-    cardsEl.style.setProperty('--tpl', 'var(--labelw) repeat(' + Math.max(1, D.hospitals.length) + ', minmax(0, 1fr))');
-    cardsEl.classList.toggle('is-pinned', !!state.pinned && !state.query.trim());
+  function renderDetail() {
+    clear(detailEl);
+    detailEl.style.setProperty('--tpl', 'var(--dlabel) repeat(' + Math.max(1, D.hospitals.length) + ', minmax(0, 1fr))');
+    var date = state.selected;
+    if (!date) return;
+    var day = D.dayByDate.get(date);
+    var today = date === D.today;
+    detailEl.classList.toggle('is-weekend', isWeekend(date));
+    detailEl.classList.toggle('is-pinned', !!state.pinned && !state.query.trim());
 
-    // Gli ospedali si nominano una volta sola, in una riga che resta in vista.
-    var colbar = el('div', { class: 'colbar' }, [el('span', {})].concat(
+    var idx = D.days.map(function (d) { return d.date; }).indexOf(date);
+    detailEl.appendChild(el('div', { class: 'detail__hd' }, [
+      el('button', {
+        class: 'navday', type: 'button', 'aria-label': 'Giorno precedente',
+        disabled: dayNum(date) <= 1,
+        on: { click: function () { step(-1); } },
+      }, icon('i-prev')),
+      el('h2', { class: 'detail__t', id: 'detailTitle' }, [
+        el('span', { class: 'detail__num', text: String(dayNum(date)) }),
+        ' ',
+        el('span', { class: 'detail__wd', text: weekdayLong(date) }),
+        today ? el('span', { class: 'detail__oggi', text: 'oggi' }) : null,
+      ]),
+      el('button', {
+        class: 'navday', type: 'button', 'aria-label': 'Giorno successivo',
+        disabled: dayNum(date) >= D.monthLen,
+        on: { click: function () { step(1); } },
+      }, icon('i-next')),
+    ]));
+
+    if (!day) {
+      detailEl.appendChild(el('p', { class: 'detail__none', text: 'Nessun turno per questo giorno.' }));
+      return;
+    }
+
+    detailEl.appendChild(el('div', { class: 'detail__cols' }, [el('span', {})].concat(
       D.monthRosters.map(function (r) {
-        return el('span', { class: 'colbar__h ' + hospClass(r.hospital), title: r.title || r.hospital }, [
+        return el('span', { class: 'detail__h ' + hospClass(r.hospital), title: r.title || r.hospital }, [
           el('span', { class: 'dot ' + hospClass(r.hospital) }), r.hospital,
         ]);
       })
-    ));
-    cardsEl.appendChild(colbar);
+    )));
 
-    var days = D.days;
-    if (state.pinned && state.onlyTheirDays && D.personDays) {
-      days = days.filter(function (d) { return D.personDays.has(d.date); });
-    }
-    if (!days.length) {
-      cardsEl.appendChild(el('p', { class: 'cap', style: 'padding:14px', text: 'Nessun giorno da mostrare.' }));
-      return;
-    }
-    days.forEach(function (d) { cardsEl.appendChild(dayCard(d)); });
-    requestAnimationFrame(function () {
-      document.documentElement.style.setProperty('--h-cols', colbar.offsetHeight + 'px');
-    });
-  }
-
-  function dayCard(d) {
-    var weekend = isWeekend(d.date), today = d.date === D.today;
-    var card = el('article', {
-      class: 'day' + (weekend ? ' is-weekend' : '') + (today ? ' is-today' : ''),
-      id: 'd-' + d.date, data: { date: d.date },
-      'aria-label': weekdayLong(d.date) + ' ' + d.day + ' ' + monthName(state.month),
-    });
-
-    card.appendChild(el('div', { class: 'day__hd' }, [
-      el('span', { class: 'day__num' + (today ? ' is-today' : ''), text: String(d.day) }),
-      el('span', { class: 'day__wd', text: weekdayLong(d.date) }),
-      today ? el('span', { class: 'day__oggi', text: 'oggi' }) : null,
-    ]));
-
+    var shown = 0;
     D.slotRows.forEach(function (row) {
       var slots = D.monthRosters.map(function (r) {
         return (r.slots || []).filter(function (s) { return s.key === row.key; })[0] || null;
       });
-      // Una fascia vuota in tutti gli ospedali non si mostra affatto.
       var used = slots.some(function (slot, i) {
         if (!slot) return false;
-        var cell = (d.cells[D.monthRosters[i].hospital] || {})[slot.key];
+        var cell = (day.cells[D.monthRosters[i].hospital] || {})[slot.key];
         return !!(cell && cell.names && cell.names.length);
       });
       if (!used) return;
+      shown++;
 
       var night = row.key === 'N';
       var cells = slots.map(function (slot, i) {
-        if (!slot) return el('div', { class: 'day__blank' });
-        return dayCell(D.monthRosters[i], slot, d);
+        if (!slot) return el('div', {});
+        return detailCell(D.monthRosters[i], slot, day);
       });
-      card.appendChild(el('div', { class: 'day__row' + (night ? ' is-night' : '') }, [
-        el('div', { class: 'day__lab' }, [
+      detailEl.appendChild(el('div', { class: 'detail__row' + (night ? ' is-night' : '') }, [
+        el('div', { class: 'detail__lab' }, [
           el('b', {}, [shortSlotName(row.slot.label), night ? icon('i-moon') : null]),
           el('time', { text: R.timeRange(row.slot) }),
         ]),
       ].concat(cells)));
     });
 
-    return card;
+    if (!shown) detailEl.appendChild(el('p', { class: 'detail__none', text: 'Nessun turno assegnato in questo giorno.' }));
   }
 
-  function dayCell(roster, slot, day) {
+  function detailCell(roster, slot, day) {
     var cell = (day.cells[roster.hospital] || {})[slot.key];
-    var box = el('div', { class: 'day__cell' });
+    var box = el('div', { class: 'detail__cell' });
     var mark = D.cellFind.get(roster.hospital + '|' + day.date + '|' + slot.key);
     if (mark) {
       box.classList.add('has-find', 'sev-' + mark.severity);
@@ -693,8 +715,7 @@
 
     if (filtered && all.length) {
       findEl.appendChild(el('p', { class: 'findings__filter' }, [
-        'Solo ' + state.pinned,
-        el('span', { text: '·' }),
+        'Solo ' + state.pinned, el('span', { text: '·' }),
         el('button', {
           class: 'linkbtn', type: 'button', text: 'mostra tutte',
           on: { click: function () { state.findingsAll = true; renderFindings(); } },
@@ -709,14 +730,12 @@
           : 'Nessuna segnalazione a ' + monthName(state.month),
       ]));
     } else {
-      var kinds = KIND_ORDER.filter(function (k) {
-        return list.some(function (f) { return f.kind === k; });
-      });
+      var kinds = KIND_ORDER.filter(function (k) { return list.some(function (f) { return f.kind === k; }); });
       kinds.forEach(function (kind) {
         var group = list.filter(function (f) { return f.kind === kind; });
         findEl.appendChild(el('div', { class: 'fgroup' }, [
           kinds.length > 1 ? el('p', { class: 'fgroup__t', text: plural(group.length, KIND_PLURAL[kind][0], KIND_PLURAL[kind][1]) }) : null,
-          el('div', {}, group.map(function (f) { return findingItem(f, false); })),
+          el('div', {}, group.map(function (f) { return findingItem(f); })),
         ]));
       });
     }
@@ -732,23 +751,58 @@
   }
 
   // Una riga di segnalazione: la striscia dà la gravità, il corpo porta al giorno.
-  function findingItem(f, compact) {
-    var dates = f.a.date === f.b.date ? R.formatDate(f.a.date)
-      : R.formatDate(f.a.date) + ' → ' + R.formatDate(f.b.date);
+  function findingItem(f) {
     return el('div', { class: 'fitem sev-' + f.severity, data: { goto: f.a.date } }, [
       el('div', { class: 'fitem__body' }, [
-        compact ? null : el('button', {
+        el('button', {
           class: 'fitem__who', type: 'button', data: { name: f.person },
           'aria-label': 'Evidenzia ' + f.person, text: f.person,
         }),
         el('p', { class: 'fitem__t', text: f.title }),
         el('p', { class: 'fitem__d', text: f.detail }),
-        compact ? el('p', { class: 'fitem__d', text: dates }) : null,
       ]),
       el('button', {
         class: 'fitem__go', type: 'button',
         'aria-label': 'Vai a ' + R.formatDate(f.a.date) + ': ' + f.title,
       }, icon('i-chevron')),
+    ]);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — chi c'è questo mese
+  // ---------------------------------------------------------------------------
+
+  function renderStrip() {
+    clear(stripEl);
+    if (!D.names.length) { stripEl.hidden = true; return; }
+    stripEl.hidden = false;
+
+    var both = D.names.filter(function (n) { return Object.keys(n.byHospital).length > 1; }).length;
+    var warn = D.names.filter(function (n) { return n.suspicion; }).length;
+    var caption = [plural(D.names.length, 'nome', 'nomi')];
+    if (both) caption.push(both + ' in entrambi gli ospedali');
+    if (warn) caption.push(warn + ' da controllare');
+
+    stripEl.appendChild(el('div', { class: 'strip__head' },
+      el('h2', { class: 'stitle', id: 'stripTitle', text: 'Chi c’è a ' + monthName(state.month) })));
+    stripEl.appendChild(el('p', { class: 'cap strip__cap', text: caption.join(' · ') }));
+    stripEl.appendChild(el('div', { class: 'strip__names' }, D.names.map(nameChip)));
+  }
+
+  function nameChip(n) {
+    var why = suspicionText(n.suspicion);
+    return el('button', {
+      class: 'chip' + (n.suspicion ? ' is-warn' : ''), type: 'button',
+      data: { name: n.name, top: '1' },
+      'aria-label': n.name + ', ' + plural(n.count, 'turno', 'turni') + (why ? ', ' + why : ''),
+    }, [
+      el('span', { class: 'chip__name', text: n.name }),
+      el('span', { class: 'chip__n', text: String(n.count) }),
+      el('span', { class: 'chip__dots' }, D.hospitals.filter(function (h) { return n.byHospital[h]; })
+        .map(function (h) {
+          return el('span', { class: 'dot ' + hospClass(h), title: h + ': ' + plural(n.byHospital[h], 'turno', 'turni') });
+        })),
+      why ? el('span', { class: 'chip__why' }, [icon('i-warn'), why]) : null,
     ]);
   }
 
@@ -766,7 +820,7 @@
     }).forEach(function (r) {
       var meta = [r.hospital, monthLabel(r.month), plural((r.days || []).length, 'giorno', 'giorni')];
       if (r.source === 'browser' && r.replaces) meta.push('sostituisce la versione pubblicata');
-      var row = el('div', { class: 'src' }, [
+      sources.appendChild(el('div', { class: 'src' }, [
         el('span', { class: 'src__file', text: r.file }),
         el('span', { class: 'badge' + (r.source === 'browser' ? ' is-browser' : ''), text: r.source === 'browser' ? 'dal browser' : 'pubblicato' }),
         r.source === 'browser' ? el('button', {
@@ -775,23 +829,18 @@
           on: { click: function () { removeLocal(r); } },
         }) : null,
         el('span', { class: 'src__meta', text: meta.join(' · ') }),
-      ]);
-      sources.appendChild(row);
+      ]));
     });
     datiBody.appendChild(sources);
 
     var warnings = [];
     D.rosters.forEach(function (r) {
-      (r.warnings || []).forEach(function (w) {
-        warnings.push(r.hospital + ' · ' + (w.message || w.type));
-      });
+      (r.warnings || []).forEach(function (w) { warnings.push(r.hospital + ' · ' + (w.message || w.type)); });
     });
     if (warnings.length) {
       datiBody.appendChild(el('div', { class: 'dati__block' }, [
         el('p', { class: 'dati__t', text: plural(warnings.length, 'avviso di lettura', 'avvisi di lettura') }),
-      ].concat(warnings.map(function (w) {
-        return el('p', { class: 'warnrow' }, [icon('i-warn'), w]);
-      }))));
+      ].concat(warnings.map(function (w) { return el('p', { class: 'warnrow' }, [icon('i-warn'), w]); }))));
     }
 
     var suspicious = D.namesAll.filter(function (n) { return n.suspicion; });
@@ -803,33 +852,26 @@
       }))));
     }
 
-    var actions = el('div', { class: 'dati__block' }, [
+    datiBody.appendChild(el('div', { class: 'dati__block' }, [
       el('p', { class: 'dati__t', text: 'Aggiornare i turni' }),
-      el('div', { style: 'display:flex; gap:8px; flex-wrap:wrap' }, [
-        el('button', {
-          class: 'btn', type: 'button',
-          on: { click: function () { fileInput.click(); } },
-        }, [icon('i-upload'), 'Carica xlsx']),
+      el('div', { class: 'dati__row' }, [
+        el('button', { class: 'btn', type: 'button', on: { click: function () { fileInput.click(); } } },
+          [icon('i-upload'), 'Carica xlsx']),
         local.length ? el('button', {
-          class: 'btn', type: 'button', text: 'Ripristina i dati pubblicati',
-          on: { click: restorePublished },
+          class: 'btn', type: 'button', text: 'Ripristina i dati pubblicati', on: { click: restorePublished },
         }) : null,
       ]),
       el('p', { class: 'dati__note', text: 'Sul telefono: «Carica xlsx» e scegli il file ricevuto (per esempio da WhatsApp o dalla mail).' }),
       el('p', { class: 'dati__note', text: 'Per aggiornare: trascina qui i nuovi file xlsx, oppure mettili in data/ e lancia npm run build.' }),
       GENERATED_AT ? el('p', { class: 'dati__note', text: 'Dati pubblicati il ' + formatGenerated(GENERATED_AT) + '.' }) : null,
-    ]);
-    datiBody.appendChild(actions);
+    ]));
   }
 
   function formatGenerated(iso) {
     var d = new Date(iso);
     if (isNaN(d.getTime())) return iso;
-    var day = d.getDate();
-    var month = MONTHS_IT[d.getMonth()].slice(0, 3);
-    var hh = String(d.getHours()); if (hh.length < 2) hh = '0' + hh;
-    var mm = String(d.getMinutes()); if (mm.length < 2) mm = '0' + mm;
-    return day + ' ' + month + ' ' + d.getFullYear() + ', ' + hh + ':' + mm;
+    return d.getDate() + ' ' + MONTHS_IT[d.getMonth()].slice(0, 3) + ' ' + d.getFullYear() +
+      ', ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
   }
 
   // ---------------------------------------------------------------------------
@@ -839,16 +881,13 @@
   function indexNames() {
     nameEls = new Map();
     painted = [];
-    var nodes = cardsEl.querySelectorAll('[data-name]');
-    var chips = stripEl.querySelectorAll('[data-name]');
     var add = function (node) {
-      var name = node.dataset.name;
-      var arr = nameEls.get(name);
-      if (!arr) { arr = []; nameEls.set(name, arr); }
+      var arr = nameEls.get(node.dataset.name);
+      if (!arr) { arr = []; nameEls.set(node.dataset.name, arr); }
       arr.push(node);
     };
-    Array.prototype.forEach.call(nodes, add);
-    Array.prototype.forEach.call(chips, add);
+    Array.prototype.forEach.call(detailEl.querySelectorAll('[data-name]'), add);
+    Array.prototype.forEach.call(stripEl.querySelectorAll('[data-name]'), add);
   }
 
   function paint(name, cls) {
@@ -867,17 +906,21 @@
 
     var q = state.query.trim();
     if (q) {
-      cardsEl.classList.remove('is-pinned');
+      detailEl.classList.remove('is-pinned');
       var list = R.searchNames(q, D.names);
       list.forEach(function (n) { paint(n.name, 'is-soft'); });
       var armed = list[state.armedIndex];
       if (armed) paint(armed.name, 'is-strong');
     } else if (state.pinned) {
-      cardsEl.classList.add('is-pinned');
+      detailEl.classList.add('is-pinned');
       paint(state.pinned, 'is-strong');
     } else {
-      cardsEl.classList.remove('is-pinned');
+      detailEl.classList.remove('is-pinned');
     }
+
+    // Il calendario segue il nome in evidenza: si vede il mese della persona
+    // già mentre si scrive.
+    if (previewName() !== calName) { renderCalendar(); }
   }
 
   // ---------------------------------------------------------------------------
@@ -919,7 +962,8 @@
           why ? el('span', { class: 'opt__why' }, [icon('i-warn'), why]) : null,
         ]),
         el('span', { class: 'opt__n', text: String(n.count) }),
-        hospitalDots(n.byHospital),
+        el('span', { class: 'opt__dots' }, D.hospitals.filter(function (h) { return n.byHospital[h]; })
+          .map(function (h) { return el('span', { class: 'dot ' + hospClass(h), title: h }); })),
       ]);
       options.push(row);
       pop.appendChild(row);
@@ -943,11 +987,7 @@
     if (!options.length) input.removeAttribute('aria-activedescendant');
   }
 
-  function openPop() {
-    pop.hidden = false;
-    state.popOpen = true;
-    input.setAttribute('aria-expanded', 'true');
-  }
+  function openPop() { pop.hidden = false; state.popOpen = true; input.setAttribute('aria-expanded', 'true'); }
 
   function closePop() {
     pop.hidden = true;
@@ -970,17 +1010,16 @@
 
   function setMonth(m) {
     state.month = m;
-    state.pinned = null;
-    state.onlyTheirDays = false;
+    state.selected = '';
     renderAll();
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
 
-  function setPinned(name) {
-    var wasPinned = state.pinned;
+  function setPinned(name, opts) {
+    opts = opts || {};
     state.pinned = name;
     state.findingsAll = false;
-    if (!name) state.onlyTheirDays = false;
+    writeMe(name);
     state.query = '';
     input.value = '';
     clearBtn.hidden = true;
@@ -988,54 +1027,58 @@
     if (document.activeElement === input) input.blur();
 
     keepAnchor(function () {
-      D.personDays = name ? personDays(name) : null;
       renderHeader();
-      renderStrip();
-      renderCards();
+      renderPersonLine();
+      renderCalendar();
+      renderDetail();
       renderFindings();
       indexNames();
       applyHighlight();
-    });
+    }, opts.toTop);
     syncHash();
-    srSay(name ? name + ' evidenziato: ' + plural((D.nameMap.get(name) || { count: 0 }).count, 'turno', 'turni') + ' nel mese'
-      : (wasPinned ? 'Evidenziazione tolta' : ''));
+    if (opts.toTop) window.scrollTo({ top: 0, behavior: 'instant' });
+    srSay(name ? name + ': ' + plural((D.nameMap.get(name) || { count: 0 }).count, 'turno', 'turni') + ' nel mese'
+      : 'Evidenziazione tolta');
   }
 
-  function togglePin(name) { setPinned(state.pinned === name ? null : name); }
+  function togglePin(name, opts) { setPinned(state.pinned === name ? null : name, opts); }
 
-  // Mantiene il punto di lettura: se una scheda è in vista, resta dov'è.
-  function keepAnchor(fn) {
-    var anchor = null, before = 0;
-    var cards = cardsEl.querySelectorAll('.day');
-    var top = topbar.offsetHeight;
-    for (var i = 0; i < cards.length; i++) {
-      var rect = cards[i].getBoundingClientRect();
-      if (rect.bottom > top + 4) { anchor = cards[i].dataset.date; before = rect.top; break; }
-    }
+  // Il dettaglio resta dov'è quando sopra compare o sparisce la riga della persona.
+  function keepAnchor(fn, skip) {
+    if (skip) { fn(); return; }
+    var before = detailEl.getBoundingClientRect().top;
     fn();
-    if (!anchor) return;
-    var after = document.getElementById('d-' + anchor);
-    if (!after) return;
-    var delta = after.getBoundingClientRect().top - before;
-    if (Math.abs(delta) > 1) window.scrollBy({ top: delta, behavior: 'instant' });
+    var delta = detailEl.getBoundingClientRect().top - before;
+    if (Math.abs(delta) > 1 && window.scrollY > 0) window.scrollBy({ top: delta, behavior: 'instant' });
+  }
+
+  function selectDay(date, opts) {
+    opts = opts || {};
+    if (!validDay(date)) return;
+    var prev = state.selected;
+    state.selected = date;
+    updateCalSelection(prev, date);
+    renderDetail();
+    indexNames();
+    applyHighlight();
+    syncHash();
+    if (opts.scroll) scrollToEl(detailEl);
+    if (opts.flash) flash(detailEl);
+    if (opts.focusCell) {
+      var b = calEl.querySelector('[data-day="' + date + '"]');
+      if (b && b.focus) b.focus();
+    }
+  }
+
+  function step(delta) {
+    var n = dayNum(state.selected) + delta;
+    if (n < 1 || n > D.monthLen) return;
+    selectDay(dateOf(state.month, n));
   }
 
   function scrollToEl(node, instant) {
     if (!node) return;
-    var behavior = (instant || reduceMotion.matches) ? 'instant' : 'smooth';
-    node.scrollIntoView({ block: 'start', behavior: behavior });
-  }
-
-  function goToDay(date, instant) {
-    var node = document.getElementById('d-' + date);
-    if (!node && state.onlyTheirDays) {
-      state.onlyTheirDays = false;
-      renderStrip(); renderCards(); indexNames(); applyHighlight(); syncHash();
-      node = document.getElementById('d-' + date);
-    }
-    if (!node) return;
-    scrollToEl(node, instant);
-    flash(node);
+    node.scrollIntoView({ block: 'start', behavior: (instant || reduceMotion.matches) ? 'instant' : 'smooth' });
   }
 
   function flash(node) {
@@ -1069,15 +1112,12 @@
     if (!files.length) return;
     var loaded = [];
     var chain = Promise.resolve();
-    files.forEach(function (file) {
-      chain = chain.then(function () { return loadOne(file, loaded); });
-    });
+    files.forEach(function (file) { chain = chain.then(function () { return loadOne(file, loaded); }); });
     chain.then(function () {
       if (!loaded.length) return;
       if (!writeLocal(local)) toast('I turni sono caricati ma non restano in memoria (spazio del browser non disponibile)', true);
-      var last = loaded[loaded.length - 1];
-      state.month = last.month;
-      state.pinned = null;
+      state.month = loaded[loaded.length - 1].month;
+      state.selected = '';
       renderAll();
       window.scrollTo({ top: 0, behavior: 'instant' });
     });
@@ -1100,7 +1140,8 @@
         local = local.filter(function (r) { return rosterKey(r) !== rosterKey(roster); });
         local.push(roster);
         loaded.push(roster);
-        toast('Caricato ' + roster.hospital + ' · ' + monthLabel(roster.month) + ' · ' + plural((roster.days || []).length, 'giorno', 'giorni'));
+        toast('Caricato ' + roster.hospital + ' · ' + monthLabel(roster.month) + ' · ' +
+          plural((roster.days || []).length, 'giorno', 'giorni'));
       })
       .catch(function (err) {
         toast(file.name + ': ' + ((err && err.message) || 'file non leggibile'), true);
@@ -1130,17 +1171,23 @@
     derive();
     var hasData = D.rosters.length > 0;
     emptyEl.hidden = hasData;
-    stripEl.hidden = !hasData;
-    cardsEl.hidden = !hasData;
-    findEl.hidden = !hasData;
-    datiEl.hidden = !hasData && !local.length;
     searchBox.hidden = !hasData;
+    calEl.hidden = !hasData;
+    detailEl.hidden = !hasData;
+    findEl.hidden = !hasData;
+    stripEl.hidden = !hasData;
+    datiEl.hidden = !hasData && !local.length;
 
     renderHeader();
     if (hasData) {
-      renderStrip();
-      renderCards();
+      renderPersonLine();
+      renderCalendar();
+      renderDetail();
       renderFindings();
+      renderStrip();
+    } else {
+      personLine.hidden = true;
+      legendEl.hidden = true;
     }
     renderDati();
     indexNames();
@@ -1174,7 +1221,7 @@
       else if (e.key === 'Enter') {
         e.preventDefault();
         var armed = options[state.armedIndex];
-        if (armed) setPinned(armed.dataset.name);
+        if (armed) setPinned(armed.dataset.name, { toTop: true });
       } else if (e.key === 'Escape') {
         e.preventDefault();
         if (state.popOpen) closePop();
@@ -1191,40 +1238,71 @@
       input.focus();
     });
 
-    // Il puntatore giù sull'elenco non deve togliere il fuoco al campo.
     pop.addEventListener('mousedown', function (e) { e.preventDefault(); });
     pop.addEventListener('click', function (e) {
       var row = e.target.closest('.opt');
-      if (row && row.dataset.name) setPinned(row.dataset.name);
+      if (row && row.dataset.name) setPinned(row.dataset.name, { toTop: true });
     });
 
     document.addEventListener('pointerdown', function (e) {
-      if (!state.popOpen) return;
-      if (!searchBox.contains(e.target)) closePop();
+      if (state.popOpen && !searchBox.contains(e.target)) closePop();
     });
 
-    // Un solo ascoltatore per pillole, chip, quadretti del mini-mese e segnalazioni.
+    // Un solo ascoltatore per pastiglie, chip, celle del calendario e segnalazioni.
     document.addEventListener('click', function (e) {
-      var goto = e.target.closest('[data-goto]');
       var named = e.target.closest('[data-name]');
-      if (named && !named.closest('.opt')) { togglePin(named.dataset.name); return; }
-      if (goto) { goToDay(goto.dataset.goto); }
+      if (named && !named.closest('.opt')) {
+        togglePin(named.dataset.name, { toTop: named.dataset.top === '1' });
+        return;
+      }
+      var cell = e.target.closest('[data-day]');
+      if (cell) { selectDay(cell.dataset.day); return; }
+      var goto = e.target.closest('[data-goto]');
+      if (goto) selectDay(goto.dataset.goto, { scroll: true, flash: true });
     });
+
+    // Calendario: le frecce spostano il fuoco, Invio sceglie il giorno.
+    calEl.addEventListener('keydown', function (e) {
+      var deltas = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+      var d = deltas[e.key];
+      if (!d) return;
+      var cur = e.target.closest('[data-day]');
+      if (!cur) return;
+      e.preventDefault();
+      var n = dayNum(cur.dataset.day) + d;
+      if (n < 1 || n > D.monthLen) return;
+      var next = calEl.querySelector('[data-day="' + dateOf(state.month, n) + '"]');
+      if (next) { next.tabIndex = 0; next.focus(); }
+    });
+
+    // Scorrimento laterale sul dettaglio: giorno precedente / successivo.
+    var tx = 0, ty = 0, tt = 0;
+    detailEl.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1) { tt = 0; return; }
+      tx = e.touches[0].clientX; ty = e.touches[0].clientY; tt = Date.now();
+    }, { passive: true });
+    detailEl.addEventListener('touchend', function (e) {
+      if (!tt || !e.changedTouches.length || Date.now() - tt > 900) return;
+      var dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty;
+      if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+      step(dx < 0 ? 1 : -1);
+    }, { passive: true });
 
     findingsBtn.addEventListener('click', function () {
       scrollToEl(findEl);
       findEl.focus({ preventScroll: true });
     });
 
-    todayBtn.addEventListener('click', function () { goToDay(D.today); });
-
-    $('emptyUpload').addEventListener('click', function () { fileInput.click(); });
-    fileInput.addEventListener('change', function () {
-      loadFiles(fileInput.files);
-      fileInput.value = '';
+    todayBtn.addEventListener('click', function () {
+      selectDay(D.today);
+      window.scrollTo({ top: 0, behavior: reduceMotion.matches ? 'instant' : 'smooth' });
     });
 
+    $('emptyUpload').addEventListener('click', function () { fileInput.click(); });
+    fileInput.addEventListener('change', function () { loadFiles(fileInput.files); fileInput.value = ''; });
+
     var dragDepth = 0;
+    function endDrag() { dragDepth = 0; dropzone.hidden = true; }
     window.addEventListener('dragenter', function (e) {
       if (!e.dataTransfer || Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') === -1) return;
       dragDepth++;
@@ -1233,7 +1311,7 @@
     window.addEventListener('dragover', function (e) { if (!dropzone.hidden) e.preventDefault(); });
     window.addEventListener('dragleave', function (e) {
       dragDepth = Math.max(0, dragDepth - 1);
-      if (!dragDepth || !e.relatedTarget) { dragDepth = 0; dropzone.hidden = true; }
+      if (!dragDepth || !e.relatedTarget) endDrag();
     });
     window.addEventListener('drop', function (e) {
       if (!e.dataTransfer) return;
@@ -1245,13 +1323,11 @@
     window.addEventListener('blur', endDrag);
     document.addEventListener('visibilitychange', function () { if (document.hidden) endDrag(); });
 
-    function endDrag() { dragDepth = 0; dropzone.hidden = true; }
-
     window.addEventListener('resize', measureHeader);
     window.addEventListener('hashchange', function () {
-      var before = state.month + '|' + state.pinned;
+      var before = state.month + '|' + state.pinned + '|' + state.selected;
       readHash();
-      if (before !== state.month + '|' + state.pinned) renderAll();
+      if (before !== state.month + '|' + state.pinned + '|' + state.selected) renderAll();
     });
   }
 
@@ -1261,17 +1337,10 @@
 
   function init() {
     readHash();
+    if (!state.pinned) state.pinned = readMe();   // la pagina si riapre sul proprio mese
     wire();
     renderAll();
-    if (state.pinned) {
-      srSay(state.pinned + ' evidenziato');
-    } else if (D.todayInMonth) {
-      // Sul telefono si apre già sul giorno di oggi.
-      window.requestAnimationFrame(function () {
-        var node = document.getElementById('d-' + D.today);
-        if (node) scrollToEl(node, true);
-      });
-    }
+    if (state.pinned) srSay(state.pinned + ' evidenziato');
   }
 
   init();

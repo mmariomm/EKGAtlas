@@ -21,6 +21,14 @@ ospedali — **DEA** e **OSG** — letti dai file xlsx ufficiali. Serve a tre co
 Doppio clic su `index.html`. Funziona da file locale, offline, su telefono e computer.
 I dati del mese corrente sono già dentro la pagina.
 
+La schermata è pensata per il telefono: il calendario del mese sta in una videata, sotto
+c'è il dettaglio del giorno scelto (oggi all'apertura; frecce o scorrimento laterale per
+cambiare giorno). Con un nome fissato, ogni giorno mostra le sue fasce — M, P, N, A — nel
+colore dell'ospedale, con le notti in pieno. La pagina ricorda l'ultimo nome fissato e si
+riapre già sul suo mese; la × nel campo di ricerca lo dimentica. Mese, nome e giorno
+stanno anche nell'indirizzo (`#mese=…&nome=…&giorno=…`), quindi un link condiviso apre
+la stessa vista.
+
 ## Aggiornare i turni
 
 Due strade, a scelta:

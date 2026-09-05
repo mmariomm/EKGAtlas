@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="I Miei Turni">
-<meta name="description" content="I turni mensili del Pronto Soccorso di DEA e OSG: cerca un nome, evidenzialo nei giorni, controlla le segnalazioni.">
+<meta name="description" content="I turni mensili del Pronto Soccorso di DEA e OSG: cerca un nome, evidenzialo nel calendario, controlla le segnalazioni.">
 <title>I Miei Turni</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,7 +18,7 @@
 </head>
 <body>
 
-<a class="skiplink" href="#turni">Vai ai turni</a>
+<a class="skiplink" href="#calendario">Vai al calendario</a>
 
 <svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
   <symbol id="i-pen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
@@ -49,9 +49,11 @@
     <path d="M6.4 6.4 17.6 17.6"/>
     <path d="M17.6 6.4 6.4 17.6"/>
   </symbol>
-  <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M10.5 6 4.5 12l6 6"/>
-    <path d="M4.8 12H19.5"/>
+  <symbol id="i-prev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14.5 5.5 8 12l6.5 6.5"/>
+  </symbol>
+  <symbol id="i-next" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9.5 5.5 16 12l-6.5 6.5"/>
   </symbol>
 </svg>
 
@@ -93,11 +95,17 @@
     </button>
   </section>
 
-  <section class="card strip" id="strip" aria-labelledby="stripTitle"></section>
+  <p class="personline" id="personline" hidden></p>
 
-  <section class="cards" id="turni" aria-label="Turni del mese"></section>
+  <h2 class="sr-only" id="calTitle">Calendario dei turni</h2>
+  <div class="cal" id="calendario" role="grid" aria-labelledby="calTitle"></div>
+  <p class="callegend" id="callegend" hidden></p>
+
+  <section class="card detail" id="detail" aria-live="polite" aria-labelledby="detailTitle"></section>
 
   <section class="card findings" id="segnalazioni" tabindex="-1" aria-labelledby="findingsTitle"></section>
+
+  <section class="card strip" id="strip" aria-labelledby="stripTitle"></section>
 
   <details class="dati" id="dati">
     <summary class="dati__sum"><svg class="ico dati__chev" aria-hidden="true" focusable="false"><use href="#i-chevron"></use></svg>Dati e sorgenti</summary>
