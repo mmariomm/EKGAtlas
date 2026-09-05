@@ -1,0 +1,11 @@
+{
+  "name": "i-miei-turni",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Turni PS DEA + OSG: ricerca nomi, sovrapposizioni, aggiornamento da xlsx.",
+  "type": "commonjs",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node test/parser.test.js && node test/rules.test.js"
+  }
+}

@@ -1,0 +1,4083 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#161B21" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="I Miei Turni">
+<meta name="description" content="I turni mensili del Pronto Soccorso di DEA e OSG: cerca un nome, evidenzialo nel calendario, controlla le segnalazioni.">
+<title>I Miei Turni</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+/* ==========================================================================
+   I Miei Turni — foglio di stile unico, mobile first.
+   Un foglio solo: titolo, viste (calendario · tabella · ore), giorno scelto,
+   segnalazioni, dati. Tutti i colori passano dai token in :root.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Token — un blocco solo, chiaro e scuro con light-dark()
+   -------------------------------------------------------------------------- */
+:root {
+  color-scheme: light dark;
+
+  --bg: light-dark(#F3F4F6, #0E1216);
+  --surface: light-dark(#FFFFFF, #161B21);
+  --surface-2: light-dark(#F8F9FB, #1C222A);
+  --ink: light-dark(#151B22, #E9EDF2);
+  --ink-2: light-dark(#4A5563, #B4BCC7);
+  --muted: light-dark(#7B8594, #8B95A3);
+  --line: light-dark(#E2E5EA, #262D36);
+  --line-strong: light-dark(#C9CED6, #3A434F);
+
+  --night-veil: light-dark(rgba(24, 38, 62, .045), rgba(150, 180, 220, .05));
+  --weekend: light-dark(#FAF6EC, #191711);
+
+  --hl: light-dark(#FFE45C, #F2D53C);
+  --hl-ink: #1A1500;
+  --hl-soft: light-dark(#FFF4A8, #5C5117);
+  --hl-soft-ink: light-dark(#1A1500, #FFF0A0);
+
+  --dea: light-dark(#0A8F82, #3FBFB0);
+  --dea-tint: light-dark(#E4F4F1, #123430);
+  --osg: light-dark(#9B3B8E, #C468B4);
+  --osg-tint: light-dark(#F5E7F3, #3A1E36);
+  --alt: light-dark(#64707E, #94A0AE);
+  --alt-tint: light-dark(#ECEEF1, #232A33);
+
+  --sev3: light-dark(#D1343B, #F0616A);
+  --sev2: light-dark(#E07B12, #F0A03A);
+  --sev1: light-dark(#3B6FD9, #6E9BF0);
+  --ok: light-dark(#2E8B57, #5BC98A);
+
+  --focus: light-dark(#2F6FE4, #6E9BF0);
+  --scrim: light-dark(rgba(20, 26, 34, .55), rgba(4, 7, 10, .6));
+  --shadow-color: light-dark(rgba(16, 22, 30, .16), rgba(0, 0, 0, .55));
+  --shadow: 0 10px 30px var(--shadow-color), 0 2px 6px var(--shadow-color);
+
+  --ui: "IBM Plex Sans", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --display: "Instrument Serif", Georgia, "Times New Roman", serif;
+
+  --fs: 14px;
+  --pad: 12px;
+  --dlabel: 72px;                         /* colonna delle fasce nel dettaglio */
+  --h-header: 58px;                       /* misurata da app.js: la riga di ricerca */
+  --tpl: var(--dlabel) 1fr 1fr;
+}
+
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+/* --------------------------------------------------------------------------
+   2. Base
+   -------------------------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Un elemento nascosto resta nascosto anche se una classe gli dà un display. */
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 var(--fs)/1.5 var(--ui);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Il foglio: una colonna sola, bianca, al centro. */
+.topbar, .searchbar, .page { max-width: 640px; margin: 0 auto; background: var(--surface); }
+
+h1, h2, h3 { margin: 0; font-weight: 400; text-wrap: balance; }
+p { margin: 0; }
+button { font: inherit; color: inherit; }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+
+.sprite { display: none; }
+.ico { width: 16px; height: 16px; flex: none; display: block; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px;
+  padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+.filein { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+.skiplink {
+  position: absolute; left: 8px; top: -60px; z-index: 90;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line-strong); border-radius: 8px;
+  padding: 8px 12px; text-decoration: none; transition: top .12s ease;
+}
+.skiplink:focus { top: 8px; }
+
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--alt); flex: none; }
+.dot.h-dea { background: var(--dea); }
+.dot.h-osg { background: var(--osg); }
+
+.cap { font-size: 12px; color: var(--muted); }
+.stitle { font-family: var(--display); font-size: 19px; line-height: 1.15; color: var(--ink); }
+.linkbtn {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--ink-2); font-size: inherit; text-decoration: underline; text-underline-offset: 2px;
+}
+.linkbtn:hover { color: var(--ink); }
+
+/* --------------------------------------------------------------------------
+   3. Titolo, viste, ricerca
+   -------------------------------------------------------------------------- */
+.topbar { padding: 10px var(--pad) 0; }
+
+.titlerow { display: flex; align-items: baseline; gap: 10px; }
+.wordmark {
+  font-family: var(--display); font-style: italic; font-size: 21px; line-height: 1.15;
+  color: var(--ink-2); letter-spacing: .01em; white-space: nowrap;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
+.month { margin-left: auto; display: flex; align-items: baseline; min-width: 0; }
+.month__t { font-family: var(--display); font-size: 21px; line-height: 1.15; color: var(--ink); white-space: nowrap; }
+.month__sel { position: relative; display: inline-flex; align-items: center; gap: 3px; }
+.month__sel select {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; border: 0; padding: 0; margin: 0; -webkit-appearance: none; appearance: none;
+}
+.month__sel .ico { width: 14px; height: 14px; color: var(--muted); }
+.month__sel:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.segbar { display: flex; gap: 16px; padding: 8px 0 0; }
+.seg {
+  padding: 4px 0 6px; background: none; border: 0; border-bottom: 2px solid transparent;
+  cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted);
+}
+.seg[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.seg:hover { color: var(--ink); }
+
+.searchbar {
+  position: sticky; top: 0; z-index: 40;
+  padding: 6px var(--pad) 7px;
+  border-bottom: 1px solid var(--line);
+}
+
+.search {
+  position: relative;
+  display: flex; align-items: center; gap: 8px;
+  min-height: 44px; padding: 0 8px 0 12px;
+  background: transparent;
+  border: 1px solid var(--line-strong); border-radius: 10px;
+}
+.search:focus-within { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent); }
+.search__ico { width: 18px; height: 18px; color: var(--muted); }
+.search__body { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.search__input {
+  flex: 1; min-width: 40px; width: 100%;
+  border: 0; background: none; outline: none; padding: 0;
+  font: 400 16px/1.3 var(--ui); color: var(--ink);
+}
+.search__input::placeholder { color: var(--muted); }
+
+.pintoken {
+  display: inline-flex; align-items: center; gap: 2px;
+  max-width: 62%; padding: 3px 3px 3px 7px;
+  background: var(--hl); color: var(--hl-ink); border-radius: 4px;
+  font-size: 14px; font-weight: 600; letter-spacing: .01em;
+}
+.pintoken__n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pintoken button {
+  display: grid; place-items: center; width: 24px; height: 24px;
+  background: none; border: 0; border-radius: 4px; cursor: pointer; color: var(--hl-ink);
+}
+.pintoken button:hover { background: rgba(0, 0, 0, .12); }
+
+.iconbtn {
+  display: grid; place-items: center; width: 34px; height: 34px; flex: none;
+  background: none; border: 0; border-radius: 8px; cursor: pointer; color: var(--muted);
+}
+.iconbtn:hover { background: var(--surface-2); color: var(--ink); }
+
+/* Elenco dei nomi sotto il campo */
+.pop {
+  position: absolute; top: calc(100% + 6px); left: -1px; right: -1px; z-index: 50;
+  max-height: 50vh; overflow-y: auto; overscroll-behavior-y: none;
+  background: var(--surface); border: 0; border-radius: 12px;
+  box-shadow: var(--shadow); padding: 4px;
+}
+.opt {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  min-height: 42px; padding: 6px 8px;
+  background: none; border: 0; border-radius: 7px; cursor: pointer; text-align: left;
+}
+.opt + .opt { border-top: 1px solid var(--line); }
+.opt.is-armed { background: var(--hl-soft); color: var(--hl-soft-ink); border-top-color: transparent; }
+.opt__main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.opt__name { font-size: 14px; font-weight: 500; letter-spacing: .01em; overflow-wrap: break-word; }
+.opt__name b { font-weight: 600; box-shadow: inset 0 -.55em 0 var(--hl-soft); }
+.opt.is-armed .opt__name b { box-shadow: none; text-decoration: underline; text-underline-offset: 2px; }
+.opt__why { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--sev2); }
+.opt__why .ico { width: 12px; height: 12px; }
+.opt__n { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.opt__dots { display: flex; gap: 3px; }
+.opt__empty { padding: 12px 10px; color: var(--muted); font-size: 13.5px; }
+
+/* --------------------------------------------------------------------------
+   4. Impaginato
+   -------------------------------------------------------------------------- */
+.page {
+  padding: 12px var(--pad) calc(48px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 14px;
+}
+.view { display: flex; flex-direction: column; gap: 12px; }
+
+.personline {
+  font-size: 12.5px; color: var(--ink-2);
+  font-variant-numeric: tabular-nums; letter-spacing: .005em;
+}
+.personline .dot { display: inline-block; vertical-align: baseline; margin-right: 3px; }
+
+/* --------------------------------------------------------------------------
+   5. Calendario
+   -------------------------------------------------------------------------- */
+.cal { display: flex; flex-direction: column; gap: 4px; }
+.cal__row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal__wd span { font-size: 10.5px; letter-spacing: .06em; color: var(--muted); padding: 0 0 1px 6px; }
+
+.cal__d {
+  position: relative;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  min-height: 46px; padding: 3px 4px 4px;
+  background: none; border: 1.5px solid transparent; border-radius: 7px;
+  font: inherit; color: var(--ink-2); text-align: left; cursor: pointer;
+  transition: background-color .15s ease, border-color .12s ease, transform .08s ease;
+}
+.cal__d:hover { background: var(--surface-2); }
+.cal__d:active { transform: scale(.96); }
+.cal__d.is-weekend { background: var(--weekend); }
+.cal__d.is-sel { border-color: var(--ink); }
+.cal__d.is-out { cursor: default; }
+.cal__d.is-out .cal__n { color: var(--muted); opacity: .5; }
+
+.cal__n {
+  font-family: var(--mono); font-size: 12px; line-height: 15px;
+  font-variant-numeric: tabular-nums; color: var(--ink-2);
+}
+.cal__n.is-today {
+  display: inline-grid; place-items: center; min-width: 19px; height: 19px; margin: -2px 0 -2px -3px;
+  border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink); color: var(--ink);
+}
+
+.cal__chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.chipslot {
+  width: 14px; height: 14px; border-radius: 3px;
+  display: grid; place-items: center;
+  font-size: 9.5px; font-weight: 600; line-height: 1;
+  background: var(--alt-tint); color: var(--alt);
+}
+/* La lettera vira verso l'inchiostro: resta leggibile su fondo tenue nei due temi. */
+.chipslot.h-dea { background: var(--dea-tint); color: color-mix(in srgb, var(--dea) 75%, var(--ink)); }
+.chipslot.h-osg { background: var(--osg-tint); color: color-mix(in srgb, var(--osg) 75%, var(--ink)); }
+.chipslot.is-night.h-dea { background: var(--dea); color: var(--surface); }
+.chipslot.is-night.h-osg { background: var(--osg); color: var(--surface); }
+.chipslot.is-find { outline: 1px solid var(--fsev); outline-offset: 1px; }
+
+.cal__dot { position: absolute; right: 4px; bottom: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--fsev); }
+
+.sev-1 { --fsev: var(--sev1); }
+.sev-2 { --fsev: var(--sev2); }
+.sev-3 { --fsev: var(--sev3); }
+
+.callegend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  font-size: 11px; color: var(--muted);
+}
+.callegend span { display: inline-flex; align-items: center; gap: 4px; }
+.callegend b { font-weight: 600; color: var(--ink-2); }
+
+/* --------------------------------------------------------------------------
+   6. Giorno scelto
+   -------------------------------------------------------------------------- */
+.detail {
+  margin: 0 calc(var(--pad) * -1);          /* il fondo del weekend arriva ai bordi del foglio */
+  padding: 4px var(--pad) 6px;
+  border-top: 1px solid var(--line);
+  scroll-margin-top: calc(var(--h-header) + 8px);
+  touch-action: pan-y;
+}
+.detail.is-weekend { background: var(--weekend); }
+
+.detail__hd { display: flex; align-items: center; gap: 4px; }
+.detail__t { flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.detail__num { font-family: var(--display); font-size: 26px; line-height: 1.1; color: var(--ink); }
+.detail__wd { font-size: 13.5px; color: var(--ink-2); }
+.detail__oggi {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.navday {
+  width: 40px; height: 40px; flex: none;
+  display: grid; place-items: center;
+  background: none; border: 0; border-radius: 8px; color: var(--ink-2); cursor: pointer;
+}
+.navday:hover { background: var(--surface-2); color: var(--ink); }
+.navday[disabled] { opacity: .35; cursor: default; }
+.navday .ico { width: 18px; height: 18px; }
+
+.detail__cols { display: grid; grid-template-columns: var(--tpl); gap: 0 8px; padding: 0 0 2px; }
+.detail__h {
+  display: flex; align-items: center; gap: 5px; padding-left: 6px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+}
+
+.detail__row { display: grid; grid-template-columns: var(--tpl); gap: 0 8px; padding: 3px 0; align-items: start; }
+.detail__row:last-child { padding-bottom: 7px; }
+.detail__row.is-night { background: var(--night-veil); margin: 0 calc(var(--pad) * -1); padding: 3px var(--pad); }
+.detail__lab { padding-top: 3px; min-width: 0; font-size: 12px; color: var(--ink-2); }
+.detail__lab time { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.detail__cell { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.dash { padding: 3px 0; color: var(--line-strong); font-size: 13px; }
+.detail__none { padding: 6px 0 2px; font-size: 12.5px; color: var(--muted); }
+
+.pill {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+  padding: 3px 6px;
+  background: none; border: 0; border-radius: 4px; cursor: pointer; text-align: left;
+  font-size: 12.5px; font-weight: 500; line-height: 18px; letter-spacing: .01em;
+  color: var(--ink); overflow-wrap: break-word;
+  transition: background-color .15s ease, color .15s ease, opacity .15s ease, transform .08s ease;
+}
+.pill::after { content: ""; position: absolute; inset: -5px -2px; }   /* area di tocco */
+.pill:hover { background: var(--surface-2); }
+.pill:active { transform: scale(.97); }
+.pill.is-soft { background: var(--hl-soft); color: var(--hl-soft-ink); }
+.pill.is-strong { background: var(--hl); color: var(--hl-ink); }
+.pill .fdot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--fsev); }
+
+.is-pinned .pill:not(.is-strong) { opacity: .45; }
+.tab.is-pinned .pill:not(.is-strong) { opacity: .72; }   /* qui si legge tutti, non solo la persona */
+
+@keyframes flashcell { from { background-color: var(--hl-soft); } }
+.detail.is-flash, .tab tr.is-flash > * { animation: flashcell 1.2s ease-out; }
+
+/* --------------------------------------------------------------------------
+   7. Tabella del mese
+   -------------------------------------------------------------------------- */
+.tab {
+  width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.tab th, .tab td { padding: 0; text-align: left; vertical-align: top; }
+
+.tab thead th {
+  position: sticky; top: calc(var(--h-header) - 1px); z-index: 5;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+  padding: 5px 2px; font-weight: 400;
+}
+.tab__hs b { font-size: 10.5px; font-weight: 600; color: var(--ink-2); }
+.tab__hs time { font-family: var(--mono); font-size: 9.5px; color: var(--muted); margin-left: 3px; }
+.tab thead .is-night { background: var(--night-veil); }
+
+.tab tbody tr { scroll-margin-top: calc(var(--h-header) + 34px); }
+.tab tbody tr.is-weekend { background: var(--weekend); }
+.tab__r--first > * { border-top: 1px solid var(--line); }
+.tab__r--first:first-child > * { border-top: 0; }
+.tab tbody tr > .is-night { background: var(--night-veil); }
+
+.tab__day { padding: 3px 2px 3px 4px !important; scroll-margin-top: calc(var(--h-header) + 34px); }
+.tab__daybtn {
+  display: flex; flex-direction: column; align-items: flex-start;
+  min-height: 34px; padding: 1px 2px; background: none; border: 0; border-radius: 5px;
+  cursor: pointer; text-align: left;
+}
+.tab__daybtn:hover { background: var(--surface-2); }
+.tab__daybtn .n {
+  font-family: var(--mono); font-size: 14px; line-height: 16px; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.tab__daybtn .n.is-today {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: -2px;
+  border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+.tab__daybtn .wd { font-size: 10px; line-height: 11px; color: var(--muted); }
+
+.tab__h { padding: 4px 0 0 !important; }
+.tab__h .dot { margin: 0 auto; }
+.tab__c { padding: 2px 1px !important; overflow: hidden; }
+
+.pill--t {
+  display: flex; align-items: center; gap: 3px; width: 100%; max-width: 100%;
+  padding: 0 1px; margin: 0; border-radius: 3px;
+  font-size: var(--tabfs, 10px); font-weight: 500; line-height: 13px; letter-spacing: -.02em;
+}
+.pill--t > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill--t::after { inset: -3px -2px; }
+.pill--t .fdot { width: 5px; height: 5px; }
+
+/* --------------------------------------------------------------------------
+   8. Ore
+   -------------------------------------------------------------------------- */
+.ore { display: flex; flex-direction: column; gap: 2px; }
+.ore__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ore__legend { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.ore__legend span { display: inline-flex; align-items: center; gap: 4px; }
+
+.ore__row {
+  display: grid; grid-template-columns: minmax(96px, 30%) 1fr 40px;
+  align-items: center; gap: 6px; min-height: 30px;
+}
+.ore__name {
+  justify-self: start; max-width: 100%;
+  padding: 3px 5px; border-radius: 4px;
+  font-size: 12.5px; font-weight: 500; letter-spacing: .01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ore__bar { display: flex; align-items: center; height: 10px; min-width: 0; }
+.ore__seg { display: block; height: 10px; flex: none; background: var(--alt); }
+.ore__seg.h-dea { background: var(--dea); }
+.ore__seg.h-osg { background: var(--osg); }
+.ore__seg + .ore__seg { margin-left: 2px; }
+.ore__seg:last-child { border-radius: 0 2px 2px 0; }
+.ore__v { text-align: right; font-family: var(--mono); font-size: 12px; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------------------------
+   9. Segnalazioni
+   -------------------------------------------------------------------------- */
+.findings { border-top: 1px solid var(--line); padding-top: 12px; scroll-margin-top: calc(var(--h-header) + 8px); }
+.findings__head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+
+.fgroup { margin-top: 10px; }
+.fgroup__t {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+  margin-bottom: 4px;
+}
+.fitem {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; width: 100%;
+  padding: 6px 0 6px 9px; margin-bottom: 2px;
+  border-left: 3px solid var(--fsev); cursor: pointer;
+}
+.fitem__who {
+  padding: 2px 5px; margin: 0 0 0 -5px;
+  background: none; border: 0; border-radius: 4px; cursor: pointer;
+  font-size: 13px; font-weight: 600; letter-spacing: .01em; color: var(--ink);
+}
+.fitem__who.is-soft { background: var(--hl-soft); color: var(--hl-soft-ink); }
+.fitem__who.is-strong { background: var(--hl); color: var(--hl-ink); }
+.fitem__short {
+  flex: 1; min-width: 0; padding: 2px 0; text-align: left;
+  background: none; border: 0; cursor: pointer;
+  font-size: 12.5px; color: var(--ink-2);
+}
+.fempty { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--ink-2); font-size: 13.5px; }
+.fempty .ico { color: var(--ok); }
+
+.legenda { margin-top: 8px; }
+.legenda__t {
+  display: flex; align-items: center; gap: 6px; min-height: 36px;
+  font-size: 12px; color: var(--muted); cursor: pointer; list-style: none;
+}
+.legenda__t::-webkit-details-marker { display: none; }
+.legenda__t .ico { width: 14px; height: 14px; transition: transform .15s ease; }
+.legenda[open] .legenda__t .ico { transform: rotate(180deg); }
+.legenda__row { display: flex; gap: 8px; margin-bottom: 6px; font-size: 11.5px; color: var(--ink-2); line-height: 1.45; }
+.legenda__mark { width: 3px; border-radius: 2px; flex: none; background: var(--fsev); margin: 2px 0; }
+.legenda__row b { font-weight: 600; color: var(--ink); }
+
+/* --------------------------------------------------------------------------
+   10. Dati
+   -------------------------------------------------------------------------- */
+.dati { border-top: 1px solid var(--line); font-size: 12.5px; }
+.dati__sum {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 44px; cursor: pointer;
+  font-weight: 500; color: var(--ink-2); list-style: none;
+}
+.dati__sum::-webkit-details-marker { display: none; }
+.dati__chev { transition: transform .15s ease; color: var(--muted); }
+.dati[open] .dati__chev { transform: rotate(180deg); }
+.dati__body { padding: 0 0 12px; display: flex; flex-direction: column; gap: 12px; color: var(--ink-2); }
+.dati__block { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.dati__block.is-off { opacity: .5; }
+.dati__t { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.dati__row { display: flex; gap: 8px; flex-wrap: wrap; }
+.dati__note { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+.src { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); }
+.src:first-of-type { border-top: 0; }
+.src__file { font-family: var(--mono); font-size: 11.5px; color: var(--ink); overflow-wrap: anywhere; }
+.src__meta { width: 100%; font-size: 11.5px; color: var(--muted); }
+.badge {
+  padding: 2px 6px; border-radius: 4px; font-size: 10.5px; font-weight: 600;
+  letter-spacing: .04em; text-transform: uppercase;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--muted);
+}
+.badge.is-browser { color: var(--ink-2); border-color: var(--line-strong); }
+.minibtn {
+  min-height: 32px; padding: 0 10px;
+  background: none; border: 1px solid var(--line); border-radius: 6px;
+  color: var(--ink-2); font-size: 12px; cursor: pointer;
+}
+.minibtn:hover { border-color: var(--line-strong); color: var(--ink); }
+.warnrow { display: flex; gap: 6px; align-items: flex-start; font-size: 11.5px; color: var(--ink-2); }
+.warnrow .ico { width: 13px; height: 13px; color: var(--sev2); margin-top: 2px; }
+
+.switch { display: flex; align-items: center; gap: 10px; min-height: 40px; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch__track {
+  position: relative; width: 36px; height: 22px; flex: none;
+  background: var(--line-strong); border-radius: 11px; transition: background-color .16s ease;
+}
+.switch__track::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+  background: var(--surface); border-radius: 50%; transition: transform .16s ease;
+}
+.switch input:checked + .switch__track { background: var(--ink-2); }
+.switch input:checked + .switch__track::after { transform: translateX(14px); }
+.switch input:focus-visible + .switch__track { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* --------------------------------------------------------------------------
+   11. Pulsanti, stato vuoto, foglio di revisione, avvisi
+   -------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 44px; padding: 0 14px;
+  border-radius: 8px; border: 1px solid var(--line-strong); background: none;
+  color: var(--ink); font-size: 13.5px; font-weight: 500; cursor: pointer;
+  transition: transform .08s ease, background-color .15s ease;
+}
+.btn:hover { background: var(--surface-2); }
+.btn:active { transform: scale(.97); }
+.btn[disabled] { opacity: .5; cursor: default; transform: none; }
+.btn--solid { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.btn--solid:hover { background: var(--ink-2); border-color: var(--ink-2); }
+
+.empty { padding: 40px 0; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.empty__t { font-family: var(--display); font-size: 24px; }
+
+/* Foglio di revisione delle modifiche di un file caricato */
+.sheet { position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-end; justify-content: center; }
+.sheet__scrim { position: absolute; inset: 0; background: var(--scrim); }
+.sheet__panel:focus { outline: none; }
+.sheet__panel {
+  position: relative; z-index: 1; width: 100%; max-width: 640px; max-height: 86vh;
+  display: flex; flex-direction: column; overscroll-behavior: contain;
+  background: var(--surface); border-radius: 14px 14px 0 0; box-shadow: var(--shadow);
+}
+.sheet__head { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+.sheet__t { font-family: var(--display); font-size: 19px; line-height: 1.2; color: var(--ink); }
+.sheet__cap { margin-top: 3px; font-size: 12px; color: var(--muted); }
+.sheet__body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 4px 16px 14px; }
+.sheet__foot {
+  display: flex; gap: 8px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+}
+.sheet__foot .btn { flex: 1; }
+
+.chg__day {
+  display: flex; align-items: baseline; gap: 6px;
+  margin: 12px -16px 2px; padding: 4px 16px;
+  font-size: 12.5px; font-weight: 500; color: var(--ink);
+}
+.chg__day.is-weekend { background: var(--weekend); }
+.chg {
+  display: grid; grid-template-columns: 76px 1fr; gap: 8px; align-items: baseline;
+  margin: 0 -16px; padding: 5px 16px;
+}
+.chg.is-night { background: var(--night-veil); }
+.chg__slot { font-size: 11px; color: var(--muted); }
+.chg__val { font-size: 12.5px; color: var(--ink-2); overflow-wrap: break-word; }
+.chg__old { color: var(--muted); text-decoration: line-through; }
+.chg__new { color: var(--ink); font-weight: 600; }
+.chg__add { color: var(--ok); font-weight: 600; }
+.chg__del { color: var(--sev3); text-decoration: line-through; }
+.chg__note { display: block; font-size: 11px; color: var(--muted); }
+.chg__sum { font-size: 12.5px; color: var(--ink-2); margin-top: 8px; }
+.chg__block { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
+
+.toasts {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 0 12px calc(14px + env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+.toast {
+  display: flex; align-items: flex-start; gap: 8px;
+  width: min(520px, 100%); padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--ok); border-radius: 8px;
+  box-shadow: var(--shadow); font-size: 13px; color: var(--ink);
+  animation: toastin .18s ease-out;
+}
+.toast.is-error { border-left-color: var(--sev3); }
+.toast .ico { margin-top: 2px; color: var(--ok); }
+.toast.is-error .ico { color: var(--sev3); }
+@keyframes toastin { from { opacity: 0; transform: translateY(8px); } }
+
+/* --------------------------------------------------------------------------
+   12. Schermi larghi e telefoni stretti
+   -------------------------------------------------------------------------- */
+@media (min-width: 640px) {
+  :root { --fs: 15px; --pad: 16px; --dlabel: 84px; --tabfs: 12px; }
+  .wordmark, .month__t { font-size: 23px; }
+  .cal__d { min-height: 58px; }
+  .detail__num { font-size: 30px; }
+  .stitle { font-size: 21px; }
+  .pill { font-size: 13px; }
+  .sheet { align-items: center; padding: 24px; }
+  .sheet__panel { max-width: 520px; border-radius: 14px; max-height: 80vh; }
+}
+
+@media (max-width: 379px) {
+  :root { --dlabel: 66px; --pad: 10px; }
+  .wordmark, .month__t { font-size: 18px; }
+  .segbar { gap: 12px; }
+}
+
+/* --------------------------------------------------------------------------
+   13. Movimento ridotto
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .pill:active, .btn:active, .cal__d:active { transform: none; }
+  *, *::before, *::after {
+    animation-duration: .001ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important; scroll-behavior: auto !important;
+  }
+}
+
+</style>
+</head>
+<body>
+
+<a class="skiplink" href="#calendario">Vai al calendario</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-pen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14.1 3.6 20.4 9.9l-8 8H7.7L5.5 15.6z"/>
+    <path d="M8.6 12.4 5 16v3h3l3.6-3.6"/>
+    <path d="M3 21.4h18"/>
+  </symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.6 21.2 20H2.8z"/>
+    <path d="M12 9.6v4.6"/>
+    <path d="M12 17.1h.01"/>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4.5 12.6 9.4 17.5 19.5 7"/>
+  </symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 15.6V4"/>
+    <path d="M7.8 8.2 12 4l4.2 4.2"/>
+    <path d="M4 16v2.6a1.4 1.4 0 0 0 1.4 1.4h13.2a1.4 1.4 0 0 0 1.4-1.4V16"/>
+  </symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.5 9.5 12 15l5.5-5.5"/>
+  </symbol>
+  <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.4 6.4 17.6 17.6"/>
+    <path d="M17.6 6.4 6.4 17.6"/>
+  </symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14.5 5.5 8 12l6.5 6.5"/>
+  </symbol>
+  <symbol id="i-next" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9.5 5.5 16 12l-6.5 6.5"/>
+  </symbol>
+</svg>
+
+<header class="topbar">
+  <div class="titlerow">
+    <h1 class="wordmark">I Miei Turni</h1>
+    <div class="month" id="monthCtl"></div>
+  </div>
+  <div class="segbar" id="segbar" role="tablist" aria-label="Vista">
+    <button class="seg" id="segCal" type="button" role="tab" aria-selected="true" aria-controls="viewCal">Calendario</button>
+    <button class="seg" id="segTab" type="button" role="tab" aria-selected="false" aria-controls="viewTab" tabindex="-1">Tabella</button>
+    <button class="seg" id="segOre" type="button" role="tab" aria-selected="false" aria-controls="viewOre" tabindex="-1">Ore</button>
+  </div>
+</header>
+
+<div class="searchbar" id="searchbar">
+  <div class="search" id="search">
+    <svg class="ico search__ico" aria-hidden="true" focusable="false"><use href="#i-pen"></use></svg>
+    <div class="search__body">
+      <span class="pintoken" id="pintoken" hidden></span>
+      <input class="search__input" id="q" type="text" role="combobox" aria-expanded="false"
+             aria-controls="pop" aria-autocomplete="list" aria-haspopup="listbox"
+             aria-label="Cerca un nome" placeholder="Cerca un nome"
+             enterkeyhint="search" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </div>
+    <button class="iconbtn search__clear" id="clearBtn" type="button" hidden aria-label="Cancella la ricerca">
+      <svg class="ico" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+    </button>
+    <div class="pop" id="pop" role="listbox" aria-label="Nomi in servizio nel mese" hidden></div>
+  </div>
+</div>
+
+<main class="page">
+  <section class="empty" id="empty" hidden>
+    <h2 class="empty__t">Nessun turno caricato</h2>
+    <button class="btn btn--solid" id="emptyUpload" type="button">
+      <svg class="ico" aria-hidden="true" focusable="false"><use href="#i-upload"></use></svg><span>Carica xlsx</span>
+    </button>
+  </section>
+
+  <p class="personline" id="personline" hidden></p>
+
+  <div class="view" id="viewCal" role="tabpanel" aria-labelledby="segCal">
+    <h2 class="sr-only" id="calTitle">Calendario dei turni</h2>
+    <div class="cal" id="calendario" aria-labelledby="calTitle"></div>
+    <p class="callegend" id="callegend" hidden></p>
+    <section class="detail" id="detail" aria-live="polite" aria-labelledby="detailTitle"></section>
+  </div>
+
+  <div class="view" id="viewTab" role="tabpanel" aria-labelledby="segTab" hidden>
+    <h2 class="sr-only" id="tabTitle">Tabella dei turni del mese</h2>
+    <div class="tablewrap" id="tablewrap"></div>
+  </div>
+
+  <div class="view" id="viewOre" role="tabpanel" aria-labelledby="segOre" hidden>
+    <section class="ore" id="orecard"></section>
+  </div>
+
+  <section class="findings" id="segnalazioni" tabindex="-1" aria-labelledby="findingsTitle"></section>
+
+  <details class="dati" id="dati">
+    <summary class="dati__sum" id="datiSum"><svg class="ico dati__chev" aria-hidden="true" focusable="false"><use href="#i-chevron"></use></svg><span id="datiSumText">Dati</span></summary>
+    <div class="dati__body" id="datiBody"></div>
+  </details>
+</main>
+
+<input class="filein" id="fileInput" type="file" accept=".xlsx" multiple tabindex="-1" aria-label="Carica i file xlsx dei turni">
+
+<div class="sheet" id="review" hidden>
+  <div class="sheet__scrim" id="reviewScrim"></div>
+  <div class="sheet__panel" id="reviewPanel" role="dialog" aria-modal="true" aria-labelledby="reviewTitle" tabindex="-1">
+    <div class="sheet__head">
+      <h2 class="sheet__t" id="reviewTitle"></h2>
+      <p class="sheet__cap" id="reviewCap"></p>
+    </div>
+    <div class="sheet__body" id="reviewBody"></div>
+    <div class="sheet__foot">
+      <button class="btn" id="reviewCancel" type="button">Annulla</button>
+      <button class="btn btn--solid" id="reviewSave" type="button">Salva</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<p class="sr-only" id="srStatus" aria-live="polite"></p>
+
+<script>
+'use strict';
+
+// parser.js -- xlsx (zero dependencies) -> Roster
+// Works both as a classic <script> in the browser (window.TurniParser) and
+// as a CommonJS module in Node 22 (module.exports). See README.md / SPEC for
+// the exact data model and parsing rules this file implements.
+
+const TurniParser = (function () {
+
+  // ============================================================
+  // Phase 0: small generic helpers (strings, refs, dates)
+  // ============================================================
+
+  function pad2(n) {
+    return (n < 10 ? '0' : '') + n;
+  }
+
+  function collapseWs(s) {
+    return s.replace(/\s+/g, ' ').trim();
+  }
+
+  function stripAccents(s) {
+    // Strip Unicode combining marks (range U+0300-U+036F) left behind by NFD
+    // normalization, e.g. "e" + combining acute -> "e". Written via numeric
+    // code points (rather than a \uXXXX-\uXXXX regex range) to keep the
+    // source file free of raw combining characters.
+    const COMBINING_LO = 0x0300;
+    const COMBINING_HI = 0x036f;
+    let out = '';
+    const decomposed = s.normalize('NFD');
+    for (let i = 0; i < decomposed.length; i++) {
+      const code = decomposed.charCodeAt(i);
+      if (code < COMBINING_LO || code > COMBINING_HI) out += decomposed.charAt(i);
+    }
+    return out;
+  }
+
+  function basename(p) {
+    const parts = String(p).split(/[\\/]/);
+    return parts[parts.length - 1];
+  }
+
+  // "AB12" -> "AB"
+  function colLetters(ref) {
+    const m = /^[A-Za-z]+/.exec(ref);
+    return m ? m[0].toUpperCase() : '';
+  }
+
+  // "AB12" -> 12
+  function rowNum(ref) {
+    const m = /\d+/.exec(ref);
+    return m ? parseInt(m[0], 10) : NaN;
+  }
+
+  // "A" -> 1, "Z" -> 26, "AA" -> 27, "AB" -> 28
+  function colIndex(letters) {
+    const s = letters.toUpperCase();
+    let n = 0;
+    for (let i = 0; i < s.length; i++) {
+      n = n * 26 + (s.charCodeAt(i) - 64);
+    }
+    return n;
+  }
+
+  function toUint8Array(bytes) {
+    if (bytes instanceof Uint8Array) return bytes;
+    if (bytes instanceof ArrayBuffer) return new Uint8Array(bytes);
+    throw new Error('parseWorkbook: bytes must be a Uint8Array or ArrayBuffer');
+  }
+
+  function utf8Decode(u8) {
+    return new TextDecoder('utf-8').decode(u8);
+  }
+
+  // ============================================================
+  // Phase 1: XML entity / attribute helpers
+  // ============================================================
+
+  const ENTITY_RE = /&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);/g;
+
+  function decodeEntities(s) {
+    if (s.indexOf('&') === -1) return s;
+    return s.replace(ENTITY_RE, function (whole, ent) {
+      if (ent.charAt(0) === '#') {
+        const isHex = ent.charAt(1) === 'x' || ent.charAt(1) === 'X';
+        const code = isHex ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
+        return String.fromCodePoint(code);
+      }
+      switch (ent) {
+        case 'amp': return '&';
+        case 'lt': return '<';
+        case 'gt': return '>';
+        case 'quot': return '"';
+        case 'apos': return '\'';
+        default: return whole;
+      }
+    });
+  }
+
+  // Generic attribute-string ("a=\"1\" b='2'") -> {a:"1", b:"2"}. Order-independent.
+  function parseAttrs(attrStr) {
+    const attrs = {};
+    if (!attrStr) return attrs;
+    const re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*"([^"]*)"|([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*'([^']*)'/g;
+    let m;
+    while ((m = re.exec(attrStr))) {
+      if (m[1] !== undefined) attrs[m[1]] = decodeEntities(m[2]);
+      else attrs[m[3]] = decodeEntities(m[4]);
+    }
+    return attrs;
+  }
+
+  // First occurrence of <tag>content</tag> or <tag/> inside `content`.
+  // Returns the inner text, or null if the tag is absent entirely.
+  function firstTag(content, tag) {
+    const re = new RegExp('<' + tag + '\\b[^>]*\\/>|<' + tag + '\\b[^>]*>([\\s\\S]*?)<\\/' + tag + '>');
+    const m = re.exec(content);
+    if (!m) return null;
+    return m[1] !== undefined ? m[1] : '';
+  }
+
+  // Concatenation of every <tag>...</tag> (or self-closing) occurrence inside `content`.
+  function allTagText(content, tag) {
+    const re = new RegExp('<' + tag + '\\b[^>]*\\/>|<' + tag + '\\b[^>]*>([\\s\\S]*?)<\\/' + tag + '>', 'g');
+    let out = '';
+    let m;
+    while ((m = re.exec(content))) {
+      out += m[1] !== undefined ? m[1] : '';
+    }
+    return out;
+  }
+
+  function extractIs(cellInner) {
+    const m = /<is\b[^>]*\/>|<is\b[^>]*>([\s\S]*?)<\/is>/.exec(cellInner);
+    if (!m) return cellInner;
+    return m[1] !== undefined ? m[1] : '';
+  }
+
+  // ============================================================
+  // Phase 2: ZIP reading (no dependencies)
+  // ============================================================
+
+  const EOCD_SIG = 0x06054b50;
+  const CEN_SIG = 0x02014b50;
+  const LOC_SIG = 0x04034b50;
+
+  async function readZip(bytes) {
+    const u8 = toUint8Array(bytes);
+    if (u8.length < 22) throw new Error('File ZIP non valido: troppo piccolo');
+    const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+
+    // find End Of Central Directory scanning backwards (comment can be up to 65535 bytes)
+    const maxBack = Math.min(u8.length, 22 + 65535);
+    let eocd = -1;
+    for (let i = u8.length - 22; i >= u8.length - maxBack; i--) {
+      if (i < 0) break;
+      if (view.getUint32(i, true) === EOCD_SIG) { eocd = i; break; }
+    }
+    if (eocd === -1) throw new Error('File ZIP non valido: End Of Central Directory non trovato');
+
+    const totalEntries = view.getUint16(eocd + 10, true);
+    let off = view.getUint32(eocd + 16, true);
+
+    const entries = new Map();
+    for (let i = 0; i < totalEntries; i++) {
+      if (view.getUint32(off, true) !== CEN_SIG) {
+        throw new Error('File ZIP non valido: central directory malformata');
+      }
+      const method = view.getUint16(off + 10, true);
+      const compSize = view.getUint32(off + 20, true);
+      const nameLen = view.getUint16(off + 28, true);
+      const extraLen = view.getUint16(off + 30, true);
+      const commentLen = view.getUint16(off + 32, true);
+      const localOffset = view.getUint32(off + 42, true);
+      const name = utf8Decode(u8.subarray(off + 46, off + 46 + nameLen));
+      off += 46 + nameLen + extraLen + commentLen;
+
+      if (name.charAt(name.length - 1) === '/') continue; // directory entry, no data
+
+      if (view.getUint32(localOffset, true) !== LOC_SIG) {
+        throw new Error('File ZIP non valido: local header malformato per ' + name);
+      }
+      const localNameLen = view.getUint16(localOffset + 26, true);
+      const localExtraLen = view.getUint16(localOffset + 28, true);
+      const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+      const compData = u8.subarray(dataStart, dataStart + compSize);
+
+      let data;
+      if (method === 0) {
+        data = compData.slice();
+      } else if (method === 8) {
+        data = await inflateRaw(compData);
+      } else {
+        throw new Error('Metodo di compressione ZIP non supportato (' + method + ') per ' + name);
+      }
+      entries.set(name, data);
+    }
+    return entries;
+  }
+
+  // Raw DEFLATE inflate, kept isolated: Node uses zlib, the browser uses
+  // DecompressionStream('deflate-raw') (both act on headerless deflate streams).
+  async function inflateRaw(u8) {
+    const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
+    if (isNode) {
+      const zlib = require('zlib');
+      return new Uint8Array(zlib.inflateRawSync(u8));
+    }
+    const stream = new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    const buf = await new Response(stream).arrayBuffer();
+    return new Uint8Array(buf);
+  }
+
+  // ============================================================
+  // Phase 3: shared strings + sheet cell extraction
+  // ============================================================
+
+  function parseSharedStrings(xml) {
+    if (!xml) return [];
+    const out = [];
+    const re = /<si\b[^>]*\/>|<si\b[^>]*>([\s\S]*?)<\/si>/g;
+    let m;
+    while ((m = re.exec(xml))) {
+      const content = m[1] !== undefined ? m[1] : '';
+      out.push(decodeEntities(allTagText(content, 't')));
+    }
+    return out;
+  }
+
+  function cellTextFromInner(type, inner, sharedStrings) {
+    if (type === 's') {
+      const v = firstTag(inner, 'v');
+      if (v === null) return '';
+      const idx = parseInt(v, 10);
+      return sharedStrings[idx] !== undefined ? sharedStrings[idx] : '';
+    }
+    if (type === 'inlineStr') {
+      return decodeEntities(allTagText(extractIs(inner), 't'));
+    }
+    if (type === 'str') {
+      const v = firstTag(inner, 'v');
+      return v === null ? '' : decodeEntities(v);
+    }
+    if (type === 'b') {
+      const v = firstTag(inner, 'v');
+      if (v === '1') return 'TRUE';
+      if (v === '0') return 'FALSE';
+      return '';
+    }
+    if (type === 'e') {
+      return '';
+    }
+    // absent or "n": plain number, kept as its literal text
+    const v = firstTag(inner, 'v');
+    return v === null ? '' : decodeEntities(v);
+  }
+
+  // Iterates every <c ...>...</c> / <c .../> in a worksheet XML string.
+  // Returns Map<ref, text> containing only non-empty cells.
+  function parseSheetCells(sheetXml, sharedStrings) {
+    const strings = sharedStrings || [];
+    const cells = new Map();
+    const re = /<c\b([^>]*)\/>|<c\b([^>]*)>([\s\S]*?)<\/c>/g;
+    let m;
+    while ((m = re.exec(sheetXml))) {
+      const attrStr = m[1] !== undefined ? m[1] : m[2];
+      const inner = m[3] || '';
+      const attrs = parseAttrs(attrStr);
+      if (!attrs.r) continue;
+      const text = cellTextFromInner(attrs.t, inner, strings);
+      if (text !== '') cells.set(attrs.r, text);
+    }
+    return cells;
+  }
+
+  // ============================================================
+  // Phase 4: names (splitting / normalizing)
+  // ============================================================
+
+  function normalizeName(s) {
+    return s
+      .replace(/[’‘`]/g, '\'')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLocaleUpperCase('it-IT');
+  }
+
+  function splitNames(raw) {
+    if (!raw) return [];
+    return raw
+      .split(/[\/,;+&\n]/)
+      .map(normalizeName)
+      .filter(function (x) { return x.length > 0; });
+  }
+
+  // ============================================================
+  // Phase 5: time ranges, months, weekdays
+  // ============================================================
+
+  const TIME_RANGE_RE = /(\d{1,2})(?:[.:,](\d{2}))?\s*[-–—]\s*(\d{1,2})(?:[.:,](\d{2}))?/;
+
+  function parseTimeRange(headerText) {
+    const m = TIME_RANGE_RE.exec(headerText);
+    if (!m) return null;
+    const sh = parseInt(m[1], 10);
+    const sm = m[2] ? parseInt(m[2], 10) : 0;
+    const eh = parseInt(m[3], 10);
+    const em = m[4] ? parseInt(m[4], 10) : 0;
+    const startMin = sh * 60 + sm;
+    let endMin = eh * 60 + em;
+    if (endMin <= startMin) endMin += 1440;
+    const label = collapseWs(headerText.slice(0, m.index) + headerText.slice(m.index + m[0].length));
+    return {
+      label: label,
+      start: pad2(sh) + ':' + pad2(sm),
+      end: pad2(eh) + ':' + pad2(em),
+      startMin: startMin,
+      endMin: endMin
+    };
+  }
+
+  const MONTHS_IT = ['GENNAIO', 'FEBBRAIO', 'MARZO', 'APRILE', 'MAGGIO', 'GIUGNO',
+    'LUGLIO', 'AGOSTO', 'SETTEMBRE', 'OTTOBRE', 'NOVEMBRE', 'DICEMBRE'];
+
+  // Accepts "<mese> <anno>" with any separator (space, underscore, ...) between
+  // the month word and the year, so it also works directly against filenames
+  // like "TURNI_PS_DEA_SETTEMBRE_2026.xlsx".
+  function monthFromLabel(label) {
+    if (!label) return null;
+    const re = /([A-Za-zÀ-ÿ]+)[^A-Za-zÀ-ÿ0-9]*(\d{4})/;
+    const m = re.exec(label);
+    if (!m) return null;
+    const prefix = stripAccents(m[1]).toUpperCase().slice(0, 3);
+    const idx = MONTHS_IT.findIndex(function (mo) { return mo.slice(0, 3) === prefix; });
+    if (idx === -1) return null;
+    return m[2] + '-' + pad2(idx + 1);
+  }
+
+  const WEEKDAYS_IT = ['LUNEDI', 'MARTEDI', 'MERCOLEDI', 'GIOVEDI', 'VENERDI', 'SABATO', 'DOMENICA'];
+  // indexed by Date#getUTCDay() (0 = Sunday)
+  const WEEKDAY_BY_JSDAY = ['DOMENICA', 'LUNEDI', 'MARTEDI', 'MERCOLEDI', 'GIOVEDI', 'VENERDI', 'SABATO'];
+
+  function normalizeWeekday(s) {
+    if (s == null) return '';
+    return stripAccents(String(s))
+      .replace(/['’`]/g, '')
+      .toUpperCase()
+      .trim();
+  }
+
+  function daysInMonth(year, month1based) {
+    return new Date(Date.UTC(year, month1based, 0)).getUTCDate();
+  }
+
+  // ============================================================
+  // Phase 6: workbook.xml / rels (sheet list + sheet-id -> file resolution)
+  // ============================================================
+
+  function parseWorkbookSheets(xml) {
+    const out = [];
+    const re = /<sheet\b([^>]*)\/>|<sheet\b([^>]*)>[\s\S]*?<\/sheet>/g;
+    let m;
+    while ((m = re.exec(xml))) {
+      const attrStr = m[1] !== undefined ? m[1] : m[2];
+      const attrs = parseAttrs(attrStr);
+      out.push({ name: attrs.name, rId: attrs['r:id'] });
+    }
+    return out;
+  }
+
+  function parseRels(xml) {
+    const map = {};
+    const re = /<Relationship\b([^>]*)\/>|<Relationship\b([^>]*)>[\s\S]*?<\/Relationship>/g;
+    let m;
+    while ((m = re.exec(xml))) {
+      const attrStr = m[1] !== undefined ? m[1] : m[2];
+      const attrs = parseAttrs(attrStr);
+      if (attrs.Id) map[attrs.Id] = attrs.Target;
+    }
+    return map;
+  }
+
+  // "worksheets/sheet1.xml" -> "xl/worksheets/sheet1.xml"; "/xl/worksheets/sheet1.xml" -> "xl/worksheets/sheet1.xml"
+  function resolveTarget(target) {
+    if (target.charAt(0) === '/') return target.slice(1);
+    return 'xl/' + target;
+  }
+
+  // ============================================================
+  // Phase 7: generic cell-map lookups shared by title/period/day scanning
+  // ============================================================
+
+  // First cell (reading order: row asc, then column asc) matching `predicate(text, ref)`.
+  function findFirstMatch(cellsMap, predicate) {
+    let best = null;
+    for (const entry of cellsMap) {
+      const ref = entry[0];
+      const text = entry[1];
+      if (!predicate(text, ref)) continue;
+      const r = rowNum(ref);
+      const c = colIndex(colLetters(ref));
+      if (!best || r < best.r || (r === best.r && c < best.c)) {
+        best = { ref: ref, text: text, r: r, c: c };
+      }
+    }
+    return best;
+  }
+
+  function startsWithCI(text, prefix) {
+    return text.trim().toUpperCase().indexOf(prefix) === 0;
+  }
+
+  // ============================================================
+  // Phase 8: main entry point -- xlsx bytes -> Roster
+  // ============================================================
+
+  async function parseWorkbook(bytes, filename) {
+    const file = basename(filename);
+    const warnings = [];
+
+    // --- read the zip + the workbook-level XML parts ---
+    const entries = await readZip(bytes);
+    function readEntry(name) {
+      const data = entries.get(name);
+      return data ? utf8Decode(data) : null;
+    }
+    const workbookXml = readEntry('xl/workbook.xml');
+    if (!workbookXml) throw new Error('xl/workbook.xml non trovato in ' + file);
+    const sheetDefs = parseWorkbookSheets(workbookXml);
+    const rels = parseRels(readEntry('xl/_rels/workbook.xml.rels') || '');
+    const sharedStrings = parseSharedStrings(readEntry('xl/sharedStrings.xml') || '');
+
+    // --- find the first sheet (in workbook order) with a "MATTINA..." header cell ---
+    let sheetName = null;
+    let cells = null;
+    let headerRef = null;
+    for (const sd of sheetDefs) {
+      const target = sd.rId && rels[sd.rId];
+      if (!target) continue;
+      const sheetXml = readEntry(resolveTarget(target));
+      if (sheetXml === null) continue;
+      const sheetCells = parseSheetCells(sheetXml, sharedStrings);
+      const hit = findFirstMatch(sheetCells, function (text) { return startsWithCI(text, 'MATTINA'); });
+      if (hit) {
+        sheetName = sd.name;
+        cells = sheetCells;
+        headerRef = hit.ref;
+        break;
+      }
+    }
+    if (!cells) throw new Error('Foglio con intestazione "MATTINA" non trovato in ' + file);
+    const headerRow = rowNum(headerRef);
+
+    // --- slot columns on the header row ---
+    const slots = buildSlots(cells, headerRow, warnings, file);
+
+    // sub-header row -> roles
+    const subRow = headerRow + 1;
+    for (const slot of slots) {
+      const subText = (cells.get(slot.col + subRow) || '').trim();
+      slot.sub = subText;
+      slot.roles = subText
+        ? subText.split('/').map(function (x) { return x.trim(); }).filter(function (x) { return x.length > 0; })
+        : [];
+    }
+
+    // --- title / hospital ---
+    const title = findTitle(cells, headerRow);
+    const hospital = deriveHospital(title, file);
+
+    // --- period / month ---
+    const period = findPeriod(cells, file, warnings);
+
+    // --- day rows ---
+    const days = buildDays(cells, headerRow, slots, period.month, warnings);
+
+    return {
+      file: file,
+      sheet: sheetName,
+      hospital: hospital,
+      title: title,
+      periodLabel: period.periodLabel,
+      month: period.month,
+      slots: slots,
+      days: days,
+      warnings: warnings
+    };
+  }
+
+  // ---- helpers used by parseWorkbook (kept separate for readability) ----
+
+  const SLOT_DEFAULTS = {
+    M: { start: '08:00', end: '14:00', startMin: 480, endMin: 840 },
+    P: { start: '14:00', end: '20:00', startMin: 840, endMin: 1200 },
+    N: { start: '20:00', end: '08:00', startMin: 1200, endMin: 1920 },
+    A: { start: '09:30', end: '15:00', startMin: 570, endMin: 900 }
+  };
+
+  function buildSlots(cells, headerRow, warnings, file) {
+    const headerCells = [];
+    for (const entry of cells) {
+      const ref = entry[0];
+      if (rowNum(ref) === headerRow) {
+        headerCells.push({ ref: ref, text: entry[1], col: colLetters(ref), ci: colIndex(colLetters(ref)) });
+      }
+    }
+    headerCells.sort(function (a, b) { return a.ci - b.ci; });
+
+    const slots = [];
+    let unknownCount = 0;
+    for (const hc of headerCells) {
+      const header = hc.text.trim();
+      const up = header.toUpperCase();
+      let key = null;
+      if (up.indexOf('MATTINA') !== -1) key = 'M';
+      else if (up.indexOf('POMERIGGIO') !== -1) key = 'P';
+      else if (up.indexOf('NOTTE') !== -1) key = 'N';
+      else if (up.indexOf('AMBULATORIO') !== -1) key = 'A';
+
+      const range = parseTimeRange(header);
+      if (key === null && !range) continue; // not a slot column at all
+
+      if (key === null) {
+        unknownCount++;
+        key = 'X' + unknownCount;
+      }
+
+      let label, start, end, startMin, endMin;
+      if (range) {
+        label = range.label;
+        start = range.start; end = range.end;
+        startMin = range.startMin; endMin = range.endMin;
+      } else if (SLOT_DEFAULTS[key]) {
+        const d = SLOT_DEFAULTS[key];
+        label = collapseWs(header);
+        start = d.start; end = d.end; startMin = d.startMin; endMin = d.endMin;
+        warnings.push({
+          type: 'slot-default-time',
+          message: 'Nessun orario nell\'intestazione "' + header + '", uso orario predefinito ' + start + '-' + end,
+          row: headerRow
+        });
+      } else {
+        throw new Error('Intestazione turno senza orario riconoscibile: "' + header + '" in ' + file);
+      }
+
+      slots.push({
+        key: key, label: label, header: header, sub: '', roles: [],
+        start: start, end: end, startMin: startMin, endMin: endMin, col: hc.col
+      });
+    }
+    if (slots.length === 0) throw new Error('Nessuna colonna turno trovata in ' + file);
+    return slots;
+  }
+
+  function findTitle(cells, headerRow) {
+    const turniHit = findFirstMatch(cells, function (text, ref) {
+      return rowNum(ref) < headerRow && startsWithCI(text, 'TURNI');
+    });
+    if (turniHit) return turniHit.text.trim();
+    const anyHit = findFirstMatch(cells, function (text, ref) { return rowNum(ref) < headerRow; });
+    return anyHit ? anyHit.text.trim() : '';
+  }
+
+  function deriveHospital(title, file) {
+    const titleUp = title.toUpperCase();
+    let hospital;
+    if (titleUp.indexOf('OSG') !== -1) hospital = 'OSG';
+    else if (titleUp.indexOf('DEA') !== -1) hospital = 'DEA';
+    else hospital = collapseWs(title.replace(/TURNI/gi, '').replace(/PS/gi, ''));
+
+    if (!hospital) {
+      const fileUp = file.toUpperCase();
+      if (fileUp.indexOf('OSG') !== -1) hospital = 'OSG';
+      else if (fileUp.indexOf('DEA') !== -1) hospital = 'DEA';
+      else hospital = '?';
+    }
+    return hospital;
+  }
+
+  function findPeriod(cells, file, warnings) {
+    let periodLabel = '';
+    const periodoHit = findFirstMatch(cells, function (text) { return startsWithCI(text, 'PERIODO'); });
+    if (periodoHit) {
+      const pr = periodoHit.r;
+      const pc = periodoHit.c;
+      const rightHit = findFirstMatch(cells, function (text, ref) {
+        return rowNum(ref) === pr && colIndex(colLetters(ref)) > pc;
+      });
+      if (rightHit) periodLabel = rightHit.text.trim();
+    }
+
+    let month = periodLabel ? monthFromLabel(periodLabel) : null;
+    if (!month) {
+      const fromFile = monthFromLabel(file);
+      if (fromFile) {
+        month = fromFile;
+        warnings.push({ type: 'period-from-filename', message: 'Periodo dedotto dal nome del file ' + file });
+      }
+    }
+    if (!month) throw new Error('Periodo di riferimento non trovato in ' + file);
+
+    return { periodLabel: periodLabel, month: month };
+  }
+
+  function buildDays(cells, headerRow, slots, month, warnings) {
+    const year = parseInt(month.slice(0, 4), 10);
+    const monthNum = parseInt(month.slice(5, 7), 10);
+    const ndays = daysInMonth(year, monthNum);
+    const subHeaderRow = headerRow + 1;
+
+    const candidates = [];
+    for (const entry of cells) {
+      const ref = entry[0];
+      if (colLetters(ref) !== 'A') continue;
+      const r = rowNum(ref);
+      if (r <= subHeaderRow) continue;
+      const t = entry[1].trim();
+      if (!/^\d{1,2}$/.test(t)) continue;
+      const d = parseInt(t, 10);
+      if (d < 1 || d > 31) continue;
+      candidates.push({ row: r, day: d });
+    }
+    candidates.sort(function (a, b) { return a.row - b.row; });
+
+    const days = [];
+    const seen = new Set();
+    for (const cand of candidates) {
+      const d = cand.day;
+      const r = cand.row;
+
+      if (d > ndays) {
+        warnings.push({ type: 'day-out-of-range', message: 'Giorno ' + d + ' oltre la fine del mese', row: r, day: d });
+        continue;
+      }
+      if (seen.has(d)) {
+        warnings.push({ type: 'day-duplicate', message: 'Giorno ' + d + ' duplicato', row: r, day: d });
+        continue;
+      }
+      seen.add(d);
+
+      const weekdayLabel = (cells.get('B' + r) || '').trim();
+      const expected = WEEKDAY_BY_JSDAY[new Date(Date.UTC(year, monthNum - 1, d)).getUTCDay()];
+      const weekdayOk = normalizeWeekday(weekdayLabel) === expected;
+      if (!weekdayOk) {
+        warnings.push({
+          type: 'weekday-mismatch',
+          message: 'Giorno ' + d + ': etichetta "' + (weekdayLabel || '(vuoto)') + '", atteso ' + expected,
+          row: r,
+          day: d
+        });
+      }
+
+      const dayCells = {};
+      for (const slot of slots) {
+        const raw = (cells.get(slot.col + r) || '').trim();
+        dayCells[slot.key] = { raw: raw, names: splitNames(raw) };
+      }
+
+      days.push({
+        day: d,
+        date: month + '-' + pad2(d),
+        weekdayLabel: weekdayLabel,
+        weekdayOk: weekdayOk,
+        cells: dayCells
+      });
+    }
+    days.sort(function (a, b) { return a.day - b.day; });
+    return days;
+  }
+
+  // ============================================================
+  // Public API
+  // ============================================================
+
+  return {
+    parseWorkbook: parseWorkbook,
+    readZip: readZip,
+    parseSheetCells: parseSheetCells,
+    parseSharedStrings: parseSharedStrings,
+    decodeEntities: decodeEntities,
+    normalizeName: normalizeName,
+    splitNames: splitNames,
+    parseTimeRange: parseTimeRange,
+    monthFromLabel: monthFromLabel,
+    normalizeWeekday: normalizeWeekday,
+    colLetters: colLetters,
+    rowNum: rowNum,
+    colIndex: colIndex,
+    inflateRaw: inflateRaw
+  };
+
+})();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = TurniParser; else window.TurniParser = TurniParser;
+
+</script>
+<script>
+// src/rules.js — "I Miei Turni": motore delle regole (nessuna dipendenza dal DOM).
+//
+// Prende in input i Roster prodotti da src/parser.js e calcola:
+//   - buildAssignments: l'elenco piatto dei turni assegnati (una riga per persona/turno);
+//   - computeFindings:  le anomalie tra turni della stessa persona (conflitti, notti
+//                        attaccate, cambi di sede senza pausa);
+//   - analyzeNames / searchNames: analisi e ricerca dei nomi (per intercettare refusi).
+//
+// Tutte le funzioni sono pure: nessun accesso al DOM, nessuna dipendenza esterna.
+
+var TurniRules = (function () {
+  'use strict';
+
+  // ------------------------------------------------------------------
+  // Costanti
+  // ------------------------------------------------------------------
+
+  var SEVERITY = { conflitto: 3, 'notte-attaccata': 2, 'cambio-sede': 1 };
+  var KIND_LABEL = { conflitto: 'Conflitto', 'notte-attaccata': 'Notte attaccata', 'cambio-sede': 'Cambio sede' };
+
+  var MINUTES_PER_DAY = 1440;
+  var FORTYEIGHT_HOURS_MIN = 48 * 60;
+
+  var WEEKDAY_SHORT_IT = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab']; // indicizzato su getUTCDay() (0 = domenica)
+  var MONTH_SHORT_IT = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
+
+  // ------------------------------------------------------------------
+  // Helper di base: date, testo
+  // ------------------------------------------------------------------
+
+  // Numero di giorni trascorsi dal 1970-01-01 (UTC) — calcolato sempre in UTC così
+  // il risultato non dipende dal fuso orario della macchina che esegue il codice.
+  function dayIndex(dateStr) {
+    var parts = String(dateStr).split('-');
+    var y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2]);
+    return Math.floor(Date.UTC(y, m - 1, d) / 86400000);
+  }
+
+  // "2026-09-01" → "mar 1 set" (giorno della settimana e mese abbreviati in italiano, minuscoli, senza punto).
+  function formatDate(dateStr) {
+    var parts = String(dateStr).split('-');
+    var y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2]);
+    var dt = new Date(Date.UTC(y, m - 1, d));
+    return WEEKDAY_SHORT_IT[dt.getUTCDay()] + ' ' + dt.getUTCDate() + ' ' + MONTH_SHORT_IT[dt.getUTCMonth()];
+  }
+
+  // 0 → "0 h"; 360 → "6 h"; 90 → "1 h 30" (ore intere + eventuali minuti).
+  function formatRest(min) {
+    var h = Math.floor(min / 60);
+    var r = min % 60;
+    return r === 0 ? (h + ' h') : (h + ' h ' + r);
+  }
+
+  // "MATTINA" → "Mattina"; "AMBULATORIO CM" → "Ambulatorio CM" (le sigle di due lettere
+  // restano maiuscole, le altre parole diventano Title Case).
+  function slotName(label) {
+    var words = String(label).trim().split(/\s+/);
+    var out = [];
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      if (w.length === 0) continue;
+      out.push(w.length <= 2 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+    }
+    return out.join(' ');
+  }
+
+  // "08:00" → "08"; "09:30" → "09:30" (i minuti a zero si tolgono, gli altri restano).
+  function fmtClock(t) {
+    return t.slice(-3) === ':00' ? t.slice(0, -3) : t;
+  }
+
+  // Accetta uno Slot ({start,end}) o un Assignment ({slotStart,slotEnd}):
+  // "08–14", "20–08", "09:30–15" (trattino medio, ":00" tolto, ":30" mantenuto).
+  function timeRange(x) {
+    var start = x.start !== undefined ? x.start : x.slotStart;
+    var end = x.end !== undefined ? x.end : x.slotEnd;
+    return fmtClock(start) + '–' + fmtClock(end);
+  }
+
+  // NFD, via gli accenti, maiuscolo, via tutto ciò che non è A-Z: "D'AMORE" → "DAMORE",
+  // "DI VITA F." → "DIVITAF". Usato per confrontare nomi ignorando accenti/apostrofi/spazi.
+  function fold(s) {
+    return String(s)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z]/g, '');
+  }
+
+  // Distanza di Levenshtein (numero minimo di inserimenti/cancellazioni/sostituzioni).
+  function levenshtein(a, b) {
+    a = String(a);
+    b = String(b);
+    var m = a.length, n = b.length;
+    if (m === 0) return n;
+    if (n === 0) return m;
+    var prev = new Array(n + 1);
+    for (var j = 0; j <= n; j++) prev[j] = j;
+    for (var i = 1; i <= m; i++) {
+      var cur = new Array(n + 1);
+      cur[0] = i;
+      var ca = a.charAt(i - 1);
+      for (j = 1; j <= n; j++) {
+        var cost = ca === b.charAt(j - 1) ? 0 : 1;
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      }
+      prev = cur;
+    }
+    return prev[n];
+  }
+
+  // ------------------------------------------------------------------
+  // buildAssignments
+  // ------------------------------------------------------------------
+
+  // Trasforma i Roster in un elenco piatto di Assignment: un elemento per ogni
+  // persona effettivamente presente in una cella (i nomi ripetuti nella stessa
+  // cella contano una volta sola, alla loro prima posizione).
+  function buildAssignments(rosters) {
+    var out = [];
+    for (var r = 0; r < rosters.length; r++) {
+      var roster = rosters[r];
+      var slots = roster.slots || [];
+      var days = roster.days || [];
+      for (var d = 0; d < days.length; d++) {
+        var day = days[d];
+        var cells = day.cells || {};
+        for (var s = 0; s < slots.length; s++) {
+          var slot = slots[s];
+          var cell = cells[slot.key];
+          if (!cell) continue;
+          var names = cell.names || [];
+          var seen = Object.create(null);
+          var di = dayIndex(day.date);
+          for (var pos = 0; pos < names.length; pos++) {
+            var name = names[pos];
+            if (seen[name]) continue;
+            seen[name] = true;
+            out.push({
+              id: roster.hospital + '|' + day.date + '|' + slot.key + '|' + pos,
+              person: name,
+              hospital: roster.hospital,
+              date: day.date,
+              day: day.day,
+              slotKey: slot.key,
+              slotLabel: slot.label,
+              slotStart: slot.start,
+              slotEnd: slot.end,
+              pos: pos,
+              role: (slot.roles && slot.roles[pos]) || '',
+              startAbs: di * MINUTES_PER_DAY + slot.startMin,
+              endAbs: di * MINUTES_PER_DAY + slot.endMin,
+              isNight: slot.key === 'N',
+            });
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------------
+  // computeFindings — tre regole, una funzione ciascuna
+  // ------------------------------------------------------------------
+
+  function piece(a) {
+    return slotName(a.slotLabel) + ' ' + a.hospital + ' ' + timeRange(a);
+  }
+
+  // Dettaglio di un conflitto: stessa data → un'unica data in fondo; date diverse →
+  // ciascuna data accanto al proprio turno.
+  function conflittoDetail(a, b) {
+    if (a.date === b.date) {
+      return piece(a) + ' e ' + piece(b) + ' · ' + formatDate(a.date);
+    }
+    return piece(a) + ' ' + formatDate(a.date) + ' e ' + piece(b) + ' ' + formatDate(b.date);
+  }
+
+  // Dettaglio di notte-attaccata / cambio-sede: sempre in sequenza (a → b), con il
+  // riposo residuo in fondo.
+  function sequenceDetail(a, b, restMin) {
+    return piece(a) + ' ' + formatDate(a.date) + ' → ' + piece(b) + ' ' + formatDate(b.date) +
+      ' · riposo ' + formatRest(restMin);
+  }
+
+  // Forma breve di un turno per le segnalazioni schematiche: "notte 17 OSG".
+  // Il mese compare solo quando i due turni della coppia stanno in mesi diversi.
+  function shortPiece(a, withMonth) {
+    var parts = String(a.date).split('-');
+    var day = Number(parts[2]);
+    var label = slotName(a.slotLabel).toLowerCase().replace(/^ambulatorio\b.*/, 'ambulatorio');
+    var when = withMonth ? day + ' ' + MONTH_SHORT_IT[Number(parts[1]) - 1] : String(day);
+    return label + ' ' + when + ' ' + a.hospital;
+  }
+
+  // "mattina 5 DEA + mattina 5 OSG · stesso orario" / "notte 17 OSG → mattina 18 OSG · riposo 0 h"
+  function shortText(a, b, joiner, tail) {
+    var withMonth = a.date.slice(0, 7) !== b.date.slice(0, 7);
+    return shortPiece(a, withMonth) + ' ' + joiner + ' ' + shortPiece(b, withMonth) + ' · ' + tail;
+  }
+
+  // Regola "conflitto": due turni della stessa persona si sovrappongono nel tempo.
+  // In ospedali diversi qualunque sovrapposizione conta; nello stesso ospedale conta
+  // solo se supera i 60 minuti (altrimenti è un normale passaggio di consegne).
+  function checkConflitto(person, a, b, overlap) {
+    if (a.hospital === b.hospital && a.date === b.date && a.slotKey === b.slotKey) return null; // stesso turno: non dovrebbe accadere dopo la deduplica
+    var sameHospital = a.hospital === b.hospital;
+    if (sameHospital && overlap <= 60) return null; // passaggio di consegne nello stesso PS
+    return {
+      kind: 'conflitto',
+      severity: SEVERITY.conflitto,
+      person: person,
+      a: a,
+      b: b,
+      overlapMin: overlap,
+      date: a.date,
+      title: sameHospital ? 'Doppio incarico nello stesso ospedale' : 'Stesso orario in due ospedali',
+      detail: conflittoDetail(a, b),
+      short: shortText(a, b, '+', sameHospital ? 'doppio incarico' : 'stesso orario'),
+    };
+  }
+
+  // Regola "notte-attaccata": una notte è troppo vicina (meno di 11 ore di riposo) a un
+  // turno diurno, prima o dopo, in qualsiasi ospedale.
+  function checkNotteAttaccata(person, a, b, rest) {
+    if (a.isNight === b.isNight) return null; // servono una notte e un turno diurno
+    if (!(rest >= 0 && rest < 660)) return null;
+    return {
+      kind: 'notte-attaccata',
+      severity: SEVERITY['notte-attaccata'],
+      person: person,
+      a: a,
+      b: b,
+      restMin: rest,
+      date: a.date,
+      title: rest === 0 ? 'Notte attaccata a un turno diurno' : 'Riposo breve intorno alla notte',
+      detail: sequenceDetail(a, b, rest),
+      short: shortText(a, b, '→', 'riposo ' + formatRest(rest)),
+    };
+  }
+
+  // Regola "cambio-sede": due turni diurni in ospedali diversi con meno di 60 minuti di
+  // pausa tra loro (turni diurni consecutivi nello stesso ospedale sono un unico turno,
+  // non un'anomalia).
+  function checkCambioSede(person, a, b, rest) {
+    if (a.isNight || b.isNight) return null;
+    if (a.hospital === b.hospital) return null;
+    if (!(rest >= 0 && rest < 60)) return null;
+    return {
+      kind: 'cambio-sede',
+      severity: SEVERITY['cambio-sede'],
+      person: person,
+      a: a,
+      b: b,
+      restMin: rest,
+      date: a.date,
+      title: 'Cambio di sede senza pausa',
+      detail: sequenceDetail(a, b, rest),
+      short: shortText(a, b, '→', 'riposo ' + formatRest(rest)),
+    };
+  }
+
+  function evaluatePair(person, a, b) {
+    var overlap = Math.min(a.endAbs, b.endAbs) - Math.max(a.startAbs, b.startAbs);
+    if (overlap > 0) return checkConflitto(person, a, b, overlap);
+    var rest = b.startAbs - a.endAbs;
+    return checkNotteAttaccata(person, a, b, rest) || checkCambioSede(person, a, b, rest);
+  }
+
+  function comparePersonAssignments(x, y) {
+    if (x.startAbs !== y.startAbs) return x.startAbs - y.startAbs;
+    if (x.date !== y.date) return x.date < y.date ? -1 : 1;
+    if (x.hospital !== y.hospital) return x.hospital < y.hospital ? -1 : 1;
+    return 0;
+  }
+
+  // Confronta ogni coppia di turni della stessa persona la cui distanza tra gli orari di
+  // inizio è inferiore a 48 ore (n è piccolo: un confronto O(n²) per persona va benissimo).
+  function computeFindings(assignments) {
+    var byPerson = new Map();
+    for (var i = 0; i < assignments.length; i++) {
+      var a = assignments[i];
+      var list = byPerson.get(a.person);
+      if (!list) { list = []; byPerson.set(a.person, list); }
+      list.push(a);
+    }
+
+    var findings = [];
+    byPerson.forEach(function (listRaw, person) {
+      var list = listRaw.slice().sort(comparePersonAssignments);
+      for (var i = 0; i < list.length; i++) {
+        for (var j = i + 1; j < list.length; j++) {
+          var pa = list[i], pb = list[j];
+          if (pb.startAbs - pa.startAbs >= FORTYEIGHT_HOURS_MIN) continue; // troppo lontani nel tempo: non si confrontano
+          var finding = evaluatePair(person, pa, pb);
+          if (finding) findings.push(finding);
+        }
+      }
+    });
+
+    findings.sort(function (f, g) {
+      if (f.severity !== g.severity) return g.severity - f.severity;
+      if (f.a.startAbs !== g.a.startAbs) return f.a.startAbs - g.a.startAbs;
+      return f.person.localeCompare(g.person, 'it');
+    });
+    return findings;
+  }
+
+  // ------------------------------------------------------------------
+  // personStats / hoursByName — conteggi e ore di una persona
+  // ------------------------------------------------------------------
+
+  // Somma le durate dell'unione degli intervalli [startAbs, endAbs): un turno
+  // mattina + pomeriggio vale 12 h, ambulatorio + pomeriggio 10 h 30 (l'ora in
+  // comune conta una volta sola), due turni sovrapposti in due ospedali contano
+  // il tempo reale, non il doppio.
+  function unionMinutes(list) {
+    var sorted = list.slice().sort(function (x, y) { return x.startAbs - y.startAbs; });
+    var total = 0, curStart = null, curEnd = null;
+    for (var i = 0; i < sorted.length; i++) {
+      var a = sorted[i];
+      if (curEnd === null || a.startAbs > curEnd) {
+        if (curEnd !== null) total += curEnd - curStart;
+        curStart = a.startAbs; curEnd = a.endAbs;
+      } else if (a.endAbs > curEnd) {
+        curEnd = a.endAbs;
+      }
+    }
+    if (curEnd !== null) total += curEnd - curStart;
+    return total;
+  }
+
+  // 4.5 → "4,5"; 9 → "9" (virgola decimale italiana, mezzi turni compresi).
+  function formatNumber(value) {
+    var rounded = Math.round(value * 2) / 2;
+    return Number.isInteger(rounded) ? String(rounded) : String(rounded).replace('.', ',');
+  }
+
+  // 114 → "114 h"; 10.5 → "10,5 h".
+  function formatHours(hours) {
+    return formatNumber(hours) + ' h';
+  }
+
+  // L'ambulatorio conta come una mattina a tutti gli effetti: nei conteggi è una
+  // "M", con il pomeriggio fa una giornata, e vale le 6 ore di una mattina (08–14).
+  var MORNING_START = 8 * 60, MORNING_END = 14 * 60;
+  function asMorningIfAmbulatorio(a) {
+    if (a.slotKey !== 'A') return a;
+    var base = dayIndex(a.date) * MINUTES_PER_DAY;
+    return { person: a.person, hospital: a.hospital, date: a.date, slotKey: 'M', isNight: false,
+      startAbs: base + MORNING_START, endAbs: base + MORNING_END };
+  }
+
+  // Conteggi di una persona (nel mese "YYYY-MM" se indicato, altrimenti su tutto):
+  // giornata = mattina + pomeriggio nello stesso giorno (anche in due ospedali);
+  // mattine e pomeriggi da soli si contano a parte; "dodici" = giornate + notti;
+  // le ore sono l'unione reale degli orari (l'ambulatorio come una mattina).
+  function personStats(assignments, person, month) {
+    var mine = [];
+    var ambulatori = 0;
+    for (var i = 0; i < assignments.length; i++) {
+      var a = assignments[i];
+      if (a.person !== person) continue;
+      if (month && a.date.slice(0, 7) !== month) continue;
+      if (a.slotKey === 'A') ambulatori++;
+      mine.push(asMorningIfAmbulatorio(a));
+    }
+    var byDate = new Map();
+    var counts = { M: 0, P: 0, N: 0, other: 0 };
+    var byHospital = {};
+    for (i = 0; i < mine.length; i++) {
+      a = mine[i];
+      var key = counts.hasOwnProperty(a.slotKey) && a.slotKey !== 'other' ? a.slotKey : 'other';
+      counts[key]++;
+      var d = byDate.get(a.date);
+      if (!d) { d = { M: 0, P: 0 }; byDate.set(a.date, d); }
+      if (a.slotKey === 'M') d.M++;
+      if (a.slotKey === 'P') d.P++;
+      if (!byHospital[a.hospital]) byHospital[a.hospital] = [];
+      byHospital[a.hospital].push(a);
+    }
+    var giornate = 0, mattine = 0, pomeriggi = 0;
+    byDate.forEach(function (d) {
+      var g = d.M > 0 && d.P > 0 ? 1 : 0;
+      giornate += g;
+      mattine += d.M - g;
+      pomeriggi += d.P - g;
+    });
+    var oreMin = unionMinutes(mine);
+    var oreByHospital = {};
+    Object.keys(byHospital).forEach(function (h) { oreByHospital[h] = unionMinutes(byHospital[h]) / 60; });
+    return {
+      person: person,
+      turni: mine.length,
+      giornate: giornate,
+      mattine: mattine,
+      pomeriggi: pomeriggi,
+      notti: counts.N,
+      ambulatori: ambulatori,        // già compresi nelle mattine: solo informativo
+      altri: counts.other,
+      dodici: giornate + counts.N,
+      // Addizione che si legge da sola: una mattina o un pomeriggio da soli valgono
+      // mezza giornata, così "4,5G + 5N = 9,5" e 9,5 × 12 = le 114 ore del mese.
+      giornateEq: giornate + (mattine + pomeriggi) / 2,
+      turniEq: giornate + (mattine + pomeriggi) / 2 + counts.N,
+      oreMin: oreMin,
+      ore: oreMin / 60,
+      oreByHospital: oreByHospital,
+    };
+  }
+
+  // Ore totali di tutti i nomi (nel mese se indicato), dal più carico al meno.
+  function hoursByName(assignments, month) {
+    var seen = new Map();
+    for (var i = 0; i < assignments.length; i++) {
+      var a = assignments[i];
+      if (month && a.date.slice(0, 7) !== month) continue;
+      if (!seen.has(a.person)) seen.set(a.person, true);
+    }
+    var out = [];
+    seen.forEach(function (_, person) { out.push(personStats(assignments, person, month)); });
+    out.sort(function (x, y) {
+      if (x.ore !== y.ore) return y.ore - x.ore;
+      return x.person.localeCompare(y.person, 'it');
+    });
+    return out;
+  }
+
+  // ------------------------------------------------------------------
+  // buildICS — i turni di una persona come file di calendario
+  // ------------------------------------------------------------------
+
+  // Come si chiama la sede negli eventi del calendario. Il foglio dice DEA e OSG;
+  // sul calendario si legge il luogo: Sesto San Giovanni e San Giuseppe.
+  var SITE_LABEL = { DEA: 'SSG', OSG: 'OSG' };
+
+  // Fuso di Roma senza tabelle: si chiede al motore Intl che ora locale corrisponde
+  // a un certo istante e si corregge lo scarto (due passate coprono anche i cambi d'ora).
+  function romeOffsetMinutes(utcMs) {
+    var parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Europe/Rome', hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    }).formatToParts(new Date(utcMs));
+    var p = {};
+    parts.forEach(function (x) { p[x.type] = x.value; });
+    var asUtc = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour) % 24, Number(p.minute));
+    return (asUtc - utcMs) / 60000;
+  }
+
+  // Minuti dall'inizio del giorno "date" (ora di Roma) → istante UTC.
+  function romeToUtc(date, minutes) {
+    var parts = String(date).split('-');
+    var guess = Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) + minutes * 60000;
+    var utc = guess - romeOffsetMinutes(guess) * 60000;
+    return guess - romeOffsetMinutes(utc) * 60000;
+  }
+
+  function icsStamp(utcMs) {
+    var d = new Date(utcMs);
+    var two = function (n) { return (n < 10 ? '0' : '') + n; };
+    return String(d.getUTCFullYear()) + two(d.getUTCMonth() + 1) + two(d.getUTCDate()) + 'T' +
+      two(d.getUTCHours()) + two(d.getUTCMinutes()) + '00Z';
+  }
+
+  function icsEscape(text) {
+    return String(text).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  }
+
+  // Righe piegate a 75 ottetti, come vuole il formato iCalendar.
+  function icsFold(line) {
+    if (line.length <= 75) return line;
+    var out = line.slice(0, 75);
+    var rest = line.slice(75);
+    while (rest.length > 74) { out += '\r\n ' + rest.slice(0, 74); rest = rest.slice(74); }
+    return out + '\r\n ' + rest;
+  }
+
+  // Un giorno, un ospedale: i turni diurni attaccati diventano un evento solo
+  // ("Giornata" quando c'è sia il mattino sia il pomeriggio), la notte resta a sé.
+  function icsEventsOfDay(list) {
+    var nights = list.filter(function (a) { return a.isNight; });
+    var days = list.filter(function (a) { return !a.isNight; })
+      .sort(function (x, y) { return x.startAbs - y.startAbs; });
+    var events = [];
+    nights.forEach(function (a) { events.push({ name: 'Notte', from: a, startAbs: a.startAbs, endAbs: a.endAbs }); });
+    var group = null;
+    days.forEach(function (a) {
+      if (group && a.startAbs <= group.endAbs) {
+        group.endAbs = Math.max(group.endAbs, a.endAbs);
+        group.keys.push(a.slotKey);
+        return;
+      }
+      group = { keys: [a.slotKey], from: a, startAbs: a.startAbs, endAbs: a.endAbs };
+      events.push(group);
+    });
+    events.forEach(function (ev) {
+      if (ev.name) return;
+      var morning = ev.keys.indexOf('M') !== -1 || ev.keys.indexOf('A') !== -1;
+      var afternoon = ev.keys.indexOf('P') !== -1;
+      ev.name = morning && afternoon ? 'Giornata'
+        : ev.keys.indexOf('P') !== -1 ? 'Pomeriggio'
+        : ev.keys.indexOf('A') !== -1 ? 'Ambulatorio'
+        : 'Mattina';
+    });
+    return events;
+  }
+
+  // File .ics con i turni di una persona (di un mese, o di tutti se month è vuoto).
+  // Gli eventi si chiamano "PS SSG Mattina", "PS OSG Notte", … con gli orari veri.
+  function buildICS(assignments, person, month, options) {
+    var opts = options || {};
+    var stamp = icsStamp(opts.now === undefined ? Date.now() : opts.now);
+    var byDayHospital = new Map();
+    assignments.forEach(function (a) {
+      if (a.person !== person) return;
+      if (month && a.date.slice(0, 7) !== month) return;
+      var key = a.date + '|' + a.hospital;
+      if (!byDayHospital.has(key)) byDayHospital.set(key, []);
+      byDayHospital.get(key).push(a);
+    });
+
+    var events = [];
+    Array.from(byDayHospital.keys()).sort().forEach(function (key) {
+      var list = byDayHospital.get(key);
+      var hospital = list[0].hospital;
+      var site = SITE_LABEL[hospital] || hospital;
+      icsEventsOfDay(list).forEach(function (ev) {
+        var base = dayIndex(ev.from.date) * MINUTES_PER_DAY;
+        events.push({
+          uid: ev.from.date + '-' + hospital + '-' + ev.name.toLowerCase() + '-' +
+            fold(person).toLowerCase() + '@imieiturni',
+          summary: 'PS ' + site + ' ' + ev.name,
+          start: romeToUtc(ev.from.date, ev.startAbs - base),
+          end: romeToUtc(ev.from.date, ev.endAbs - base),
+        });
+      });
+    });
+    events.sort(function (x, y) { return x.start - y.start; });
+
+    var lines = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//I Miei Turni//IT', 'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH', 'X-WR-CALNAME:' + icsEscape('Turni ' + person),
+    ];
+    events.forEach(function (ev) {
+      lines.push('BEGIN:VEVENT', 'UID:' + ev.uid, 'DTSTAMP:' + stamp,
+        'DTSTART:' + icsStamp(ev.start), 'DTEND:' + icsStamp(ev.end),
+        'SUMMARY:' + icsEscape(ev.summary), 'END:VEVENT');
+    });
+    lines.push('END:VCALENDAR');
+    return lines.map(icsFold).join('\r\n') + '\r\n';
+  }
+
+  // ------------------------------------------------------------------
+  // diffRosters — cosa cambia tra due versioni dello stesso mese
+  // ------------------------------------------------------------------
+
+  function sameList(a, b) {
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+
+  function minus(a, b) {
+    return a.filter(function (x) { return b.indexOf(x) === -1; });
+  }
+
+  // Confronta cella per cella (giorno × fascia) il roster vecchio con il nuovo.
+  // Ogni differenza è una riga: nomi tolti, aggiunti, sostituiti (uno al posto di
+  // un altro) o solo riordinati (la posizione nella cella è il ruolo). Le fasce
+  // o i giorni presenti in una sola versione si confrontano con la cella vuota.
+  function diffRosters(oldRoster, newRoster) {
+    var slotKeys = [];
+    var slotLabel = {};
+    [oldRoster, newRoster].forEach(function (r) {
+      (r.slots || []).forEach(function (s) {
+        if (slotKeys.indexOf(s.key) === -1) slotKeys.push(s.key);
+        slotLabel[s.key] = slotLabel[s.key] || s.label;
+      });
+    });
+    var byDate = new Map();
+    function index(r, which) {
+      (r.days || []).forEach(function (d) {
+        var entry = byDate.get(d.date);
+        if (!entry) { entry = { day: d.day, date: d.date }; byDate.set(d.date, entry); }
+        entry[which] = d.cells || {};
+      });
+    }
+    index(oldRoster, 'before');
+    index(newRoster, 'after');
+
+    var changes = [];
+    var counts = { added: 0, removed: 0, replaced: 0, reordered: 0 };
+    Array.from(byDate.keys()).sort().forEach(function (date) {
+      var entry = byDate.get(date);
+      slotKeys.forEach(function (key) {
+        var before = (entry.before && entry.before[key] && entry.before[key].names) || [];
+        var after = (entry.after && entry.after[key] && entry.after[key].names) || [];
+        if (sameList(before, after)) return;
+        var removed = minus(before, after);
+        var added = minus(after, before);
+        var kind = removed.length && added.length ? 'replaced'
+          : added.length ? 'added'
+          : removed.length ? 'removed'
+          : 'reordered';
+        counts[kind]++;
+        changes.push({
+          date: date, day: entry.day, hospital: newRoster.hospital || oldRoster.hospital,
+          slotKey: key, slotLabel: slotLabel[key] || key,
+          before: before, after: after, removed: removed, added: added, kind: kind,
+        });
+      });
+    });
+    var days = new Set(changes.map(function (c) { return c.date; })).size;
+    return { changes: changes, days: days, added: counts.added, removed: counts.removed,
+      replaced: counts.replaced, reordered: counts.reordered };
+  }
+
+  // ------------------------------------------------------------------
+  // analyzeNames
+  // ------------------------------------------------------------------
+
+  // Un nome raro (al più 2 turni) è probabilmente due nomi concatenati per errore se il
+  // suo testo, ripulito, è esattamente l'unione di altri due nomi frequenti (>= 2 turni).
+  function findConcat(n, list) {
+    var foldedN = fold(n.name);
+    for (var i = 0; i < list.length; i++) {
+      var A = list[i];
+      if (A.name === n.name || A.count < 2) continue;
+      var foldedA = fold(A.name);
+      for (var j = 0; j < list.length; j++) {
+        var B = list[j];
+        if (B.name === n.name || B.name === A.name || B.count < 2) continue;
+        if (foldedA + fold(B.name) === foldedN) return { A: A, B: B };
+      }
+    }
+    return null;
+  }
+
+  // Un nome raro (al più 2 turni) è probabilmente un refuso di un nome molto più
+  // frequente (almeno 3 volte più turni) se le due forme ripulite sono quasi identiche
+  // (distanza di Levenshtein <= 2, o <= 1 se il nome è molto corto).
+  function findSimilar(n, list) {
+    var foldedN = fold(n.name);
+    var limit = foldedN.length <= 5 ? 1 : 2;
+    var best = null;
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (o.name === n.name || o.count < 3 * n.count) continue;
+      var d = levenshtein(foldedN, fold(o.name));
+      if (d > limit) continue;
+      if (!best || d < best.d || (d === best.d && o.count > best.o.count)) best = { d: d, o: o };
+    }
+    return best ? { kind: 'similar', to: best.o.name, distance: best.d } : null;
+  }
+
+  // Aggrega gli Assignment per persona (conteggio, per ospedale, notti) e segnala i nomi
+  // sospetti: probabile concatenazione di due nomi, oppure probabile refuso di un nome
+  // frequente.
+  function analyzeNames(assignments) {
+    var map = new Map();
+    for (var i = 0; i < assignments.length; i++) {
+      var a = assignments[i];
+      var info = map.get(a.person);
+      if (!info) {
+        info = { name: a.person, count: 0, byHospital: {}, nights: 0, suspicion: null };
+        map.set(a.person, info);
+      }
+      info.count++;
+      info.byHospital[a.hospital] = (info.byHospital[a.hospital] || 0) + 1;
+      if (a.isNight) info.nights++;
+    }
+
+    var list = Array.from(map.values());
+    for (i = 0; i < list.length; i++) {
+      var n = list[i];
+      if (n.count > 2) continue; // il sospetto si valuta solo sui nomi rari
+      var concat = findConcat(n, list);
+      if (concat) {
+        n.suspicion = { kind: 'concat', parts: [concat.A.name, concat.B.name], suggestion: concat.A.name + '/' + concat.B.name };
+        continue;
+      }
+      var similar = findSimilar(n, list);
+      if (similar) n.suspicion = similar;
+    }
+
+    list.sort(function (x, y) { return x.name.localeCompare(y.name, 'it'); });
+    return list;
+  }
+
+  // ------------------------------------------------------------------
+  // searchNames
+  // ------------------------------------------------------------------
+
+  function wordsOf(name) {
+    return String(name).split(/[\s'.]+/).filter(function (w) { return w.length > 0; });
+  }
+
+  function isSubsequence(needle, hay) {
+    var i = 0;
+    for (var j = 0; j < hay.length && i < needle.length; j++) {
+      if (hay.charAt(j) === needle.charAt(i)) i++;
+    }
+    return i === needle.length;
+  }
+
+  // Punteggio di un nome rispetto a una query già "foldata": corrispondenza esatta,
+  // prefisso, prefisso di una delle parole del nome, sottostringa, sottosequenza, e
+  // infine un confronto approssimato (Levenshtein) per intercettare i refusi di ricerca.
+  function matchScore(q, originalName, foldedName) {
+    if (foldedName === q) return 1000;
+    if (foldedName.indexOf(q) === 0) return 800;
+    var words = wordsOf(originalName);
+    for (var i = 0; i < words.length; i++) {
+      if (fold(words[i]).indexOf(q) === 0) return 700;
+    }
+    if (foldedName.indexOf(q) !== -1) return 600;
+    if (isSubsequence(q, foldedName)) return 400;
+    // Refusi di digitazione: query corte tollerano un solo errore, altrimenti "fla"
+    // pescherebbe anche KASO o PASTORE.
+    var fuzzyLimit = q.length <= 5 ? 1 : 2;
+    if (q.length >= 3 && levenshtein(q, foldedName.slice(0, q.length)) <= fuzzyLimit) return 300;
+    return 0;
+  }
+
+  // Cerca tra i NameInfo per query testuale (accenti/apostrofi/maiuscole ignorati).
+  // Query vuota o di soli spazi → tutti i nomi in ordine alfabetico.
+  function searchNames(query, names) {
+    var trimmed = String(query == null ? '' : query).trim();
+    if (trimmed === '') {
+      return names.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'it'); });
+    }
+    var q = fold(trimmed);
+    if (!q) return [];
+
+    var scored = [];
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i];
+      var score = matchScore(q, n.name, fold(n.name));
+      if (score > 0) scored.push({ n: n, score: score });
+    }
+    scored.sort(function (x, y) {
+      if (x.score !== y.score) return y.score - x.score;
+      if (x.n.count !== y.n.count) return y.n.count - x.n.count;
+      return x.n.name.localeCompare(y.n.name, 'it');
+    });
+    return scored.map(function (s) { return s.n; });
+  }
+
+  // ------------------------------------------------------------------
+  // Esportazione
+  // ------------------------------------------------------------------
+
+  return {
+    buildAssignments: buildAssignments,
+    computeFindings: computeFindings,
+    analyzeNames: analyzeNames,
+    searchNames: searchNames,
+    levenshtein: levenshtein,
+    fold: fold,
+    dayIndex: dayIndex,
+    slotName: slotName,
+    timeRange: timeRange,
+    formatDate: formatDate,
+    formatRest: formatRest,
+    formatHours: formatHours,
+    formatNumber: formatNumber,
+    personStats: personStats,
+    hoursByName: hoursByName,
+    diffRosters: diffRosters,
+    buildICS: buildICS,
+    SITE_LABEL: SITE_LABEL,
+    SEVERITY: SEVERITY,
+    KIND_LABEL: KIND_LABEL,
+  };
+})();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = TurniRules; else window.TurniRules = TurniRules;
+
+</script>
+<script>
+window.TURNI_DATA = {"generatedAt":"2026-09-05T22:08:32.443Z","rosters":[{"file":"TURNI_PS_DEA_SETTEMBRE_2026.xlsx","sheet":"Turni MPA I","hospital":"DEA","title":"TURNI PS/DEA","periodLabel":"SETTEMBRE 2026","month":"2026-09","slots":[{"key":"M","label":"MATTINA","header":"MATTINA 8-14","sub":"PS Codici M-OBI/Codici minori","roles":["PS Codici M-OBI","Codici minori"],"start":"08:00","end":"14:00","startMin":480,"endMin":840,"col":"C"},{"key":"P","label":"POMERIGGIO","header":"POMERIGGIO 14-20","sub":"PS Codici M-OBI/Codici Minori","roles":["PS Codici M-OBI","Codici Minori"],"start":"14:00","end":"20:00","startMin":840,"endMin":1200,"col":"E"},{"key":"N","label":"NOTTE","header":"NOTTE 20-08","sub":"PS Codici M-OBI/Codici Minori","roles":["PS Codici M-OBI","Codici Minori"],"start":"20:00","end":"08:00","startMin":1200,"endMin":1920,"col":"F"},{"key":"A","label":"AMBULATORIO CM","header":"AMBULATORIO CM 09.30-15.00","sub":"","roles":[],"start":"09:30","end":"15:00","startMin":570,"endMin":900,"col":"G"}],"days":[{"day":1,"date":"2026-09-01","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"ORLANDI","names":["ORLANDI"]},"P":{"raw":"ORLANDI/LOFFREDO","names":["ORLANDI","LOFFREDO"]},"N":{"raw":"COLOMBINI/KASO","names":["COLOMBINI","KASO"]},"A":{"raw":"LOFFREDO","names":["LOFFREDO"]}}},{"day":2,"date":"2026-09-02","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"FRANCESCONI/TOSKIC","names":["FRANCESCONI","TOSKIC"]},"N":{"raw":"DE PASQUALE/UGAZ","names":["DE PASQUALE","UGAZ"]},"A":{"raw":"TOSKIC","names":["TOSKIC"]}}},{"day":3,"date":"2026-09-03","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI","names":["FRANCESCONI"]},"P":{"raw":"FRANCESCONI/KASO","names":["FRANCESCONI","KASO"]},"N":{"raw":"ORLANDITOSKIC","names":["ORLANDITOSKIC"]},"A":{"raw":"MASTROLILLI","names":["MASTROLILLI"]}}},{"day":4,"date":"2026-09-04","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI","names":["FRANCESCONI"]},"P":{"raw":"MEGLIO/PASTORE","names":["MEGLIO","PASTORE"]},"N":{"raw":"COLOMBINI/LOFFREDO","names":["COLOMBINI","LOFFREDO"]},"A":{"raw":"","names":[]}}},{"day":5,"date":"2026-09-05","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"PASTORE/FLORENZAN","names":["PASTORE","FLORENZAN"]},"P":{"raw":"PASTORE/FLORENZAN","names":["PASTORE","FLORENZAN"]},"N":{"raw":"PUSCEDDU/KASO","names":["PUSCEDDU","KASO"]},"A":{"raw":"","names":[]}}},{"day":6,"date":"2026-09-06","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"MEGLIO/TOSKIC","names":["MEGLIO","TOSKIC"]},"P":{"raw":"MEGLIO/TOSKIC","names":["MEGLIO","TOSKIC"]},"N":{"raw":"PASTORE/FLORENZAN","names":["PASTORE","FLORENZAN"]},"A":{"raw":"","names":[]}}},{"day":7,"date":"2026-09-07","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"CARAPELLA","names":["CARAPELLA"]},"P":{"raw":"CARAPELLA/TOSKIC","names":["CARAPELLA","TOSKIC"]},"N":{"raw":"PUSCEDDU/FRANCESCONI","names":["PUSCEDDU","FRANCESCONI"]},"A":{"raw":"TOSKIC","names":["TOSKIC"]}}},{"day":8,"date":"2026-09-08","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"ORLANDI","names":["ORLANDI"]},"P":{"raw":"ORLANDI/PASTORE","names":["ORLANDI","PASTORE"]},"N":{"raw":"TCHIPEV/UGAZ","names":["TCHIPEV","UGAZ"]},"A":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]}}},{"day":9,"date":"2026-09-09","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/KASO","names":["PASTORE","KASO"]},"N":{"raw":"DE PASQUALE/TOSKIC","names":["DE PASQUALE","TOSKIC"]},"A":{"raw":"FRANCESCONI","names":["FRANCESCONI"]}}},{"day":10,"date":"2026-09-10","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"CARAPELLA","names":["CARAPELLA"]},"P":{"raw":"FRANCESCONI/UGAZ","names":["FRANCESCONI","UGAZ"]},"N":{"raw":"ORLANDI/TCHIPEV","names":["ORLANDI","TCHIPEV"]},"A":{"raw":"PASTORE","names":["PASTORE"]}}},{"day":11,"date":"2026-09-11","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"MEGLIO","names":["MEGLIO"]},"P":{"raw":"MEGLIO/KASO","names":["MEGLIO","KASO"]},"N":{"raw":"FRANCESCONI/RUSSOTTO","names":["FRANCESCONI","RUSSOTTO"]},"A":{"raw":"KASO","names":["KASO"]}}},{"day":12,"date":"2026-09-12","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"CARAPELLA/D'AMORE","names":["CARAPELLA","D'AMORE"]},"P":{"raw":"CARAPELLA/D'AMORE","names":["CARAPELLA","D'AMORE"]},"N":{"raw":"TCHIPEV/RUSSOTTO","names":["TCHIPEV","RUSSOTTO"]},"A":{"raw":"","names":[]}}},{"day":13,"date":"2026-09-13","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI/SANTAMBROGIO","names":["FRANCESCONI","SANTAMBROGIO"]},"P":{"raw":"FRANCESCONI/SANTAMBROGIO","names":["FRANCESCONI","SANTAMBROGIO"]},"N":{"raw":"PUSCEDDU/RUSSOTTO","names":["PUSCEDDU","RUSSOTTO"]},"A":{"raw":"","names":[]}}},{"day":14,"date":"2026-09-14","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/TOSKIC","names":["PASTORE","TOSKIC"]},"N":{"raw":"FRANCESCONI/RUSSOTTO","names":["FRANCESCONI","RUSSOTTO"]},"A":{"raw":"TOSKIC","names":["TOSKIC"]}}},{"day":15,"date":"2026-09-15","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"ORLANDI","names":["ORLANDI"]},"P":{"raw":"ORLANDI/STRACKA","names":["ORLANDI","STRACKA"]},"N":{"raw":"TCHIPEV/KASO","names":["TCHIPEV","KASO"]},"A":{"raw":"LOFFREDO","names":["LOFFREDO"]}}},{"day":16,"date":"2026-09-16","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"FRANCESCONI/STRACKA","names":["FRANCESCONI","STRACKA"]},"N":{"raw":"PUSCEDDU/TOSKIC","names":["PUSCEDDU","TOSKIC"]},"A":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]}}},{"day":17,"date":"2026-09-17","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"MASTROLILLI","names":["MASTROLILLI"]},"P":{"raw":"COLOMBINI/KASO","names":["COLOMBINI","KASO"]},"N":{"raw":"ORLANDI/TCHIPEV","names":["ORLANDI","TCHIPEV"]},"A":{"raw":"FRANCESCONI","names":["FRANCESCONI"]}}},{"day":18,"date":"2026-09-18","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/TRUBBIA","names":["PASTORE","TRUBBIA"]},"N":{"raw":"COLOMBINI/FLORENZAN","names":["COLOMBINI","FLORENZAN"]},"A":{"raw":"FRANCESCONI","names":["FRANCESCONI"]}}},{"day":19,"date":"2026-09-19","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"DE PASQUALE/LOFFREDO","names":["DE PASQUALE","LOFFREDO"]},"P":{"raw":"DE PASQUALE/LOFFREDO","names":["DE PASQUALE","LOFFREDO"]},"N":{"raw":"CARAPELLA/PASTORE","names":["CARAPELLA","PASTORE"]},"A":{"raw":"","names":[]}}},{"day":20,"date":"2026-09-20","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"DE PASQUALE/FLORENZAN","names":["DE PASQUALE","FLORENZAN"]},"P":{"raw":"DE PASQUALE/FLORENZAN","names":["DE PASQUALE","FLORENZAN"]},"N":{"raw":"COLOMBINI/TRUBBIA","names":["COLOMBINI","TRUBBIA"]},"A":{"raw":"","names":[]}}},{"day":21,"date":"2026-09-21","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/KASO","names":["PASTORE","KASO"]},"N":{"raw":"FRANCESCONI/FLORENZAN","names":["FRANCESCONI","FLORENZAN"]},"A":{"raw":"KASO","names":["KASO"]}}},{"day":22,"date":"2026-09-22","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"ORLANDI","names":["ORLANDI"]},"P":{"raw":"ORLANDI/KASO","names":["ORLANDI","KASO"]},"N":{"raw":"BOTTA/TCHIPEV","names":["BOTTA","TCHIPEV"]},"A":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]}}},{"day":23,"date":"2026-09-23","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI","names":["FRANCESCONI"]},"P":{"raw":"PASTORE/LOFFREDO","names":["PASTORE","LOFFREDO"]},"N":{"raw":"CARAPELLA/COLOMBINI","names":["CARAPELLA","COLOMBINI"]},"A":{"raw":"LOFFREDO","names":["LOFFREDO"]}}},{"day":24,"date":"2026-09-24","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"FRANCESCONI/KASO","names":["FRANCESCONI","KASO"]},"N":{"raw":"TCHIPEV/ORLANDI","names":["TCHIPEV","ORLANDI"]},"A":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]}}},{"day":25,"date":"2026-09-25","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI","names":["FRANCESCONI"]},"P":{"raw":"FRANCESCONI/LOFFREDO","names":["FRANCESCONI","LOFFREDO"]},"N":{"raw":"COLOMBINI/TRUBBIA","names":["COLOMBINI","TRUBBIA"]},"A":{"raw":"LOFFREDO","names":["LOFFREDO"]}}},{"day":26,"date":"2026-09-26","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"DE PASQUALE /TOSKIC","names":["DE PASQUALE","TOSKIC"]},"P":{"raw":"DE PASQUALE/TOSKIC","names":["DE PASQUALE","TOSKIC"]},"N":{"raw":"TCHIPEV/KASO","names":["TCHIPEV","KASO"]},"A":{"raw":"","names":[]}}},{"day":27,"date":"2026-09-27","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"PUSCEDDU/FRANCESCONI","names":["PUSCEDDU","FRANCESCONI"]},"P":{"raw":"PUSCEDDU/FRANCESCONI","names":["PUSCEDDU","FRANCESCONI"]},"N":{"raw":"DE PASQUALE/TOSKIC","names":["DE PASQUALE","TOSKIC"]},"A":{"raw":"","names":[]}}},{"day":28,"date":"2026-09-28","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/KASO","names":["PASTORE","KASO"]},"N":{"raw":"FRANCESCONI/FLORENZAN","names":["FRANCESCONI","FLORENZAN"]},"A":{"raw":"KASO","names":["KASO"]}}},{"day":29,"date":"2026-09-29","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"CARAPELLA","names":["CARAPELLA"]},"P":{"raw":"CARAPELLA/TRUBBIA","names":["CARAPELLA","TRUBBIA"]},"N":{"raw":"TCHIPEV/KASO","names":["TCHIPEV","KASO"]},"A":{"raw":"TRUBBIA","names":["TRUBBIA"]}}},{"day":30,"date":"2026-09-30","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]},"P":{"raw":"FRANCESCONI/FLORENZAN","names":["FRANCESCONI","FLORENZAN"]},"N":{"raw":"PASTORE/PUSCEDDU","names":["PASTORE","PUSCEDDU"]},"A":{"raw":"TOSKIC","names":["TOSKIC"]}}}],"warnings":[]},{"file":"TURNI_PS_OSG_SETTEMBRE_2026.xlsx","sheet":"Turni MPA I","hospital":"OSG","title":"TURNI PS OSG","periodLabel":"SETTEMBRE 2026","month":"2026-09","slots":[{"key":"M","label":"MATTINA","header":"MATTINA 8-14","sub":"Guardia Ps/OBI","roles":["Guardia Ps","OBI"],"start":"08:00","end":"14:00","startMin":480,"endMin":840,"col":"C"},{"key":"P","label":"POMERIGGIO","header":"POMERIGGIO 14-20","sub":"Alta Intensità-OBI/Bassa intensità","roles":["Alta Intensità-OBI","Bassa intensità"],"start":"14:00","end":"20:00","startMin":840,"endMin":1200,"col":"E"},{"key":"N","label":"NOTTE","header":"NOTTE 20-08","sub":"Alta Intensità-OBI/Bassa intensità","roles":["Alta Intensità-OBI","Bassa intensità"],"start":"20:00","end":"08:00","startMin":1200,"endMin":1920,"col":"F"}],"days":[{"day":1,"date":"2026-09-01","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/DI PIETRO","names":["BRAHAM","DI PIETRO"]},"P":{"raw":"BRAHAM/ DI VITA F.","names":["BRAHAM","DI VITA F."]},"N":{"raw":"RAMONDINO/FLORENZAN","names":["RAMONDINO","FLORENZAN"]}}},{"day":2,"date":"2026-09-02","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PELLEGATTA/ALBERTI","names":["PELLEGATTA","ALBERTI"]},"P":{"raw":"REBESCO/BRAHAM","names":["REBESCO","BRAHAM"]},"N":{"raw":"DI PIETRO/RAMONDINO","names":["DI PIETRO","RAMONDINO"]}}},{"day":3,"date":"2026-09-03","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/ALBERTI","names":["REBESCO","ALBERTI"]},"P":{"raw":"PACIONI/DI VITA F.","names":["PACIONI","DI VITA F."]},"N":{"raw":"BOTTA/SANCHES","names":["BOTTA","SANCHES"]}}},{"day":4,"date":"2026-09-04","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/FLORENZAN","names":["REBESCO","FLORENZAN"]},"P":{"raw":"REBESCO/BRAHAM","names":["REBESCO","BRAHAM"]},"N":{"raw":"PACIONI/UGAZ","names":["PACIONI","UGAZ"]}}},{"day":5,"date":"2026-09-05","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/DI VITA F.","names":["DI PIETRO","DI VITA F."]},"P":{"raw":"DI PIETRO/DI VITA F.","names":["DI PIETRO","DI VITA F."]},"N":{"raw":"REBESCO/SANCHES","names":["REBESCO","SANCHES"]}}},{"day":6,"date":"2026-09-06","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"BOTTA/DI VITA F.","names":["BOTTA","DI VITA F."]},"P":{"raw":"BOTTA/DI VITA F.","names":["BOTTA","DI VITA F."]},"N":{"raw":"BRAHAM/ALBERTAZZI","names":["BRAHAM","ALBERTAZZI"]}}},{"day":7,"date":"2026-09-07","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"PETRELLA/PELLEGATTA","names":["PETRELLA","PELLEGATTA"]},"P":{"raw":"SCHIRALDI/SANCHES","names":["SCHIRALDI","SANCHES"]},"N":{"raw":"RAMONDINO/TRUBBIA","names":["RAMONDINO","TRUBBIA"]}}},{"day":8,"date":"2026-09-08","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"PELLEGATTA/BOULES","names":["PELLEGATTA","BOULES"]},"P":{"raw":"BRAHAM/BOULES","names":["BRAHAM","BOULES"]},"N":{"raw":"RAMONDINO/SANCHES","names":["RAMONDINO","SANCHES"]}}},{"day":9,"date":"2026-09-09","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/ALBERTI","names":["BRAHAM","ALBERTI"]},"P":{"raw":"BRAHAM/FLORENZAN","names":["BRAHAM","FLORENZAN"]},"N":{"raw":"PELLEGATTA/TRUBBIA","names":["PELLEGATTA","TRUBBIA"]}}},{"day":10,"date":"2026-09-10","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/PETRELLA","names":["DI PIETRO","PETRELLA"]},"P":{"raw":"DI PIETRO/FLORENZAN","names":["DI PIETRO","FLORENZAN"]},"N":{"raw":"BOTTA/BRAHAM","names":["BOTTA","BRAHAM"]}}},{"day":11,"date":"2026-09-11","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"PELLEGATTA/FLORENZAN","names":["PELLEGATTA","FLORENZAN"]},"P":{"raw":"SCHIRALDI/DI VITA F.","names":["SCHIRALDI","DI VITA F."]},"N":{"raw":"RAMONDINO/UGAZ","names":["RAMONDINO","UGAZ"]}}},{"day":12,"date":"2026-09-12","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/NOFF","names":["DI PIETRO","NOFF"]},"P":{"raw":"DI PIETRO/NOFF","names":["DI PIETRO","NOFF"]},"N":{"raw":"BOTTA/CAPRINI","names":["BOTTA","CAPRINI"]}}},{"day":13,"date":"2026-09-13","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"NOFF/DI PIETRO","names":["NOFF","DI PIETRO"]},"P":{"raw":"NOFF/DI PIETRO","names":["NOFF","DI PIETRO"]},"N":{"raw":"PELLEGATTA/UGAZ","names":["PELLEGATTA","UGAZ"]}}},{"day":14,"date":"2026-09-14","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/ALBERTI","names":["REBESCO","ALBERTI"]},"P":{"raw":"REBESCO/BRAHAM","names":["REBESCO","BRAHAM"]},"N":{"raw":"RAMONDINO/BOBROWSKI","names":["RAMONDINO","BOBROWSKI"]}}},{"day":15,"date":"2026-09-15","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/BOULES","names":["BRAHAM","BOULES"]},"P":{"raw":"BRAHAM/REBESCO","names":["BRAHAM","REBESCO"]},"N":{"raw":"PELLEGATTA/UGAZ","names":["PELLEGATTA","UGAZ"]}}},{"day":16,"date":"2026-09-16","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PACIONI/BOBROWSKI","names":["PACIONI","BOBROWSKI"]},"P":{"raw":"PACIONI/BOBROWSKI","names":["PACIONI","BOBROWSKI"]},"N":{"raw":"REBESCO/TRUBBIA","names":["REBESCO","TRUBBIA"]}}},{"day":17,"date":"2026-09-17","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/PETRELLA","names":["DI PIETRO","PETRELLA"]},"P":{"raw":"DI PIETRO/PACIONI","names":["DI PIETRO","PACIONI"]},"N":{"raw":"BRAHAM/BOTTA","names":["BRAHAM","BOTTA"]}}},{"day":18,"date":"2026-09-18","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/BOULES","names":["BRAHAM","BOULES"]},"P":{"raw":"REBESCO/BOULES","names":["REBESCO","BOULES"]},"N":{"raw":"DI PIETRO/BOBROWSKI","names":["DI PIETRO","BOBROWSKI"]}}},{"day":19,"date":"2026-09-19","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/NOFF","names":["REBESCO","NOFF"]},"P":{"raw":"REBESCO/NOFF","names":["REBESCO","NOFF"]},"N":{"raw":"PELLEGATTA/TRUBBIA","names":["PELLEGATTA","TRUBBIA"]}}},{"day":20,"date":"2026-09-20","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/BOULES","names":["DI PIETRO","BOULES"]},"P":{"raw":"DI PIETRO/BOULES","names":["DI PIETRO","BOULES"]},"N":{"raw":"REBESCO/BOBROWSKI","names":["REBESCO","BOBROWSKI"]}}},{"day":21,"date":"2026-09-21","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"BOTTA/BOULES","names":["BOTTA","BOULES"]},"P":{"raw":"BRAHAM/PACIONI","names":["BRAHAM","PACIONI"]},"N":{"raw":"RAMONDINO/BOULES","names":["RAMONDINO","BOULES"]}}},{"day":22,"date":"2026-09-22","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/PELLEGATTA","names":["BRAHAM","PELLEGATTA"]},"P":{"raw":"REBESCO/DI VITA F.","names":["REBESCO","DI VITA F."]},"N":{"raw":"RAMONDINO/ALBERTAZZI","names":["RAMONDINO","ALBERTAZZI"]}}},{"day":23,"date":"2026-09-23","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PELLEGATTA/BOBROWSKI","names":["PELLEGATTA","BOBROWSKI"]},"P":{"raw":"REBESCO/BOBROWSKI","names":["REBESCO","BOBROWSKI"]},"N":{"raw":"PACIONI/SANCHES","names":["PACIONI","SANCHES"]}}},{"day":24,"date":"2026-09-24","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/PELLEGATTA","names":["DI PIETRO","PELLEGATTA"]},"P":{"raw":"DI PIETRO/BOBROWSKI","names":["DI PIETRO","BOBROWSKI"]},"N":{"raw":"BRAHAM/BOULES","names":["BRAHAM","BOULES"]}}},{"day":25,"date":"2026-09-25","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"PACIONI/BOBROWSKI","names":["PACIONI","BOBROWSKI"]},"P":{"raw":"PACIONI/BOBROWSKI","names":["PACIONI","BOBROWSKI"]},"N":{"raw":"REBESCO/DI PIETRO","names":["REBESCO","DI PIETRO"]}}},{"day":26,"date":"2026-09-26","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"NOFF/ALBERTI","names":["NOFF","ALBERTI"]},"P":{"raw":"NOFF/MEGLIO","names":["NOFF","MEGLIO"]},"N":{"raw":"PACIONI/CAPRINI","names":["PACIONI","CAPRINI"]}}},{"day":27,"date":"2026-09-27","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"NOFF/MEGLIO","names":["NOFF","MEGLIO"]},"P":{"raw":"NOFF/MEGLIO","names":["NOFF","MEGLIO"]},"N":{"raw":"PELLEGATTA/TRUBBIA","names":["PELLEGATTA","TRUBBIA"]}}},{"day":28,"date":"2026-09-28","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/BRAHAM","names":["REBESCO","BRAHAM"]},"P":{"raw":"BRAHAM/REBESCO","names":["BRAHAM","REBESCO"]},"N":{"raw":"RAMONDINO/ALBERTAZZI","names":["RAMONDINO","ALBERTAZZI"]}}},{"day":29,"date":"2026-09-29","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"COLOMBINI/BOULES","names":["COLOMBINI","BOULES"]},"P":{"raw":"PACIONI/ALBERTI","names":["PACIONI","ALBERTI"]},"N":{"raw":"BRAHAM/RAMONDINO","names":["BRAHAM","RAMONDINO"]}}},{"day":30,"date":"2026-09-30","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/PETRELLA","names":["DI PIETRO","PETRELLA"]},"P":{"raw":"DI PIETRO/REBESCO","names":["DI PIETRO","REBESCO"]},"N":{"raw":"PACIONI/COLOMBINI","names":["PACIONI","COLOMBINI"]}}}],"warnings":[]}]};
+</script>
+<script>
+/* =============================================================================
+   I Miei Turni — interfaccia (vanilla JS, nessun modulo, nessuna dipendenza).
+   Gira dopo TurniParser, TurniRules e window.TURNI_DATA.
+   Tre viste: calendario + giorno scelto, tabella del mese, ore per nome.
+   Ordine del file: costanti → aiutanti → stato → derivazione → render → eventi.
+   ============================================================================= */
+(function () {
+  'use strict';
+
+  var R = window.TurniRules;
+  if (!R) return;
+
+  // ---------------------------------------------------------------------------
+  // Costanti
+  // ---------------------------------------------------------------------------
+
+  var LS_ROSTERS = 'imieiturni.rosters.v1';
+  var LS_ME = 'imieiturni.me';
+  var LS_VIEW = 'imieiturni.view';
+  var LS_GESTORE = 'imieiturni.gestore';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+
+  var MONTHS_IT = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
+    'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+  var WEEKDAYS_IT = ['domenica', 'lunedì', 'martedì', 'mercoledì',
+    'giovedì', 'venerdì', 'sabato'];
+  var WEEKDAYS_SHORT_IT = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'];
+
+  var SLOT_RANK = { M: 0, P: 1, N: 2 };          // ordine delle righe e delle colonne: il resto in coda
+  var CHIP_RANK = { G: 0, M: 0, A: 0, P: 1, N: 2 };   // fra le pastiglie l'ambulatorio sta con la mattina
+  var SLOT_WORD = { G: 'giornata', M: 'mattina', P: 'pomeriggio', N: 'notte', A: 'ambulatorio' };
+
+  var VIEWS = ['calendario', 'tabella', 'ore'];
+  var KIND_ORDER = ['conflitto', 'notte-attaccata', 'cambio-sede'];
+  var KIND_PLURAL = {
+    conflitto: ['conflitto', 'conflitti'],
+    'notte-attaccata': ['notte attaccata', 'notti attaccate'],
+    'cambio-sede': ['cambio sede', 'cambi sede'],
+  };
+  var LEGEND = [
+    [3, 'Conflitto', 'stesso orario in due ospedali, o doppio incarico oltre 1 h nello stesso PS.'],
+    [2, 'Notte attaccata', 'turno diurno subito prima o dopo una notte, con meno di 11 h di riposo.'],
+    [1, 'Cambio sede', 'due turni diurni in ospedali diversi senza pausa.'],
+  ];
+
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  // ---------------------------------------------------------------------------
+  // Aiutanti DOM — tutto il testo passa da textContent, mai da innerHTML
+  // ---------------------------------------------------------------------------
+
+  function append(node, kids) {
+    if (kids === null || kids === undefined || kids === false) return;
+    if (Array.isArray(kids)) { kids.forEach(function (k) { append(node, k); }); return; }
+    node.appendChild(kids.nodeType ? kids : document.createTextNode(String(kids)));
+  }
+
+  function el(tag, opts, kids) {
+    var n = document.createElement(tag);
+    if (opts) {
+      Object.keys(opts).forEach(function (k) {
+        var v = opts[k];
+        if (v === null || v === undefined || v === false) return;
+        if (k === 'class') n.className = v;
+        else if (k === 'text') n.textContent = v;
+        else if (k === 'on') Object.keys(v).forEach(function (e) { n.addEventListener(e, v[e]); });
+        else if (k === 'data') Object.keys(v).forEach(function (d) { n.dataset[d] = v[d]; });
+        else if (v === true) n.setAttribute(k, '');
+        else n.setAttribute(k, v);
+      });
+    }
+    append(n, kids);
+    return n;
+  }
+
+  function icon(id, cls) {
+    var svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('class', 'ico' + (cls ? ' ' + cls : ''));
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    var use = document.createElementNS(SVGNS, 'use');
+    use.setAttribute('href', '#' + id);
+    svg.appendChild(use);
+    return svg;
+  }
+
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+  function $(id) { return document.getElementById(id); }
+
+  function hospClass(h) { return h === 'DEA' ? 'h-dea' : (h === 'OSG' ? 'h-osg' : 'h-alt'); }
+  function dot(h, title) { return el('span', { class: 'dot ' + hospClass(h), title: title }); }
+  function warnRow(text) { return el('p', { class: 'warnrow' }, [icon('i-warn'), text]); }
+
+  // ---------------------------------------------------------------------------
+  // Aiutanti di formato
+  // ---------------------------------------------------------------------------
+
+  function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  function monthName(m) { return MONTHS_IT[Number(String(m).slice(5, 7)) - 1] || m; }
+  function monthLabel(m) { return capitalize(monthName(m)) + ' ' + String(m).slice(0, 4); }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+  function weekdayOf(dateStr) {
+    var p = String(dateStr).split('-');
+    return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
+  }
+  function isWeekend(dateStr) { var d = weekdayOf(dateStr); return d === 0 || d === 6; }
+  function weekdayLong(dateStr) { return WEEKDAYS_IT[weekdayOf(dateStr)]; }
+  function dayNum(dateStr) { return Number(String(dateStr).slice(8, 10)); }
+  function dateOf(month, day) { return month + '-' + pad2(day); }
+  function monthLength(month) {
+    return new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  }
+  function todayISO() {
+    var d = new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+  function shortSlotName(label) { return R.slotName(label).replace(/^Ambulatorio\b/, 'Amb.'); }
+
+  function suspicionText(s) {
+    if (!s) return '';
+    return s.kind === 'concat' ? 'forse ' + s.suggestion + '?' : 'simile a ' + s.to;
+  }
+
+  // Divide un nome in tre parti attorno alla porzione che combacia con la query
+  // (indici calcolati carattere per carattere, così accenti e apostrofi non sballano).
+  function matchParts(name, query) {
+    var q = R.fold(query);
+    if (!q) return null;
+    var folded = '', idx = [];
+    for (var i = 0; i < name.length; i++) {
+      var ch = name.charAt(i).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z]/g, '');
+      for (var k = 0; k < ch.length; k++) { folded += ch.charAt(k); idx.push(i); }
+    }
+    var at = folded.indexOf(q);
+    if (at === -1) return null;
+    return [name.slice(0, idx[at]), name.slice(idx[at], idx[at + q.length - 1] + 1), name.slice(idx[at + q.length - 1] + 1)];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Memoria del browser (sempre in try/catch: la pagina funziona anche senza)
+  // ---------------------------------------------------------------------------
+
+  function readLocal() {
+    try {
+      var raw = window.localStorage.getItem(LS_ROSTERS);
+      var parsed = raw ? JSON.parse(raw) : null;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+  }
+
+  function writeLocal(list) {
+    try {
+      if (!list.length) window.localStorage.removeItem(LS_ROSTERS);
+      else window.localStorage.setItem(LS_ROSTERS, JSON.stringify(list));
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function readStore(key) {
+    try { return window.localStorage.getItem(key); } catch (e) { return null; }
+  }
+
+  function writeStore(key, value) {
+    try {
+      if (value) window.localStorage.setItem(key, value);
+      else window.localStorage.removeItem(key);
+    } catch (e) { /* niente memoria: pazienza */ }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Stato
+  // ---------------------------------------------------------------------------
+
+  var BAKED = (window.TURNI_DATA && window.TURNI_DATA.rosters) || [];
+  var GENERATED_AT = (window.TURNI_DATA && window.TURNI_DATA.generatedAt) || '';
+
+  var state = {
+    month: '',
+    view: 'calendario',
+    selected: '',
+    query: '',
+    armedIndex: 0,
+    pinned: null,
+    popOpen: false,
+  };
+
+  var local = readLocal();
+  var shared = null;          // data/turni.json pubblicato nell'artifact
+  var pendingShared = null;   // arrivato mentre un foglio era aperto
+  var pub = null;             // spazio dei nomi "artifact" della piattaforma
+  var soloVista = false;      // vero dopo un rifiuto not_writer / not_granted / capability_disabled
+  var runtime = !!(window.claude && typeof window.claude.use === 'function');
+  var gestore = !runtime || readStore(LS_GESTORE) === '1';
+
+  var D = {};
+  var hits = [];              // ultimo risultato di searchNames (una volta per battuta)
+  var nameEls = new Map();
+  var painted = [];
+  var options = [];
+  var calName = null;
+  var tableWidth = 0;
+  var today = todayISO();
+  var reviewQueue = [], reviewCurrent = null, reviewOpener = null, reviewTotal = 0, reviewDone = 0;
+
+  // ---------------------------------------------------------------------------
+  // Riferimenti al DOM
+  // ---------------------------------------------------------------------------
+
+  var searchbar = $('searchbar'), monthCtl = $('monthCtl'),
+    segCal = $('segCal'), segTab = $('segTab'), segOre = $('segOre'),
+    viewCal = $('viewCal'), viewTab = $('viewTab'), viewOre = $('viewOre'),
+    tableWrap = $('tablewrap'), oreCard = $('orecard'),
+    searchBox = $('search'), input = $('q'), pintoken = $('pintoken'), clearBtn = $('clearBtn'), pop = $('pop'),
+    emptyEl = $('empty'), personLine = $('personline'), calEl = $('calendario'), legendEl = $('callegend'),
+    detailEl = $('detail'), findEl = $('segnalazioni'), datiEl = $('dati'), datiSumText = $('datiSumText'),
+    datiBody = $('datiBody'), fileInput = $('fileInput'), toasts = $('toasts'), srStatus = $('srStatus'),
+    reviewEl = $('review'), reviewPanel = $('reviewPanel'), reviewTitle = $('reviewTitle'),
+    reviewCap = $('reviewCap'), reviewBody = $('reviewBody'), reviewSave = $('reviewSave'), reviewCancel = $('reviewCancel');
+
+  // ---------------------------------------------------------------------------
+  // Derivazione della vista
+  // ---------------------------------------------------------------------------
+
+  function rosterKey(r) { return r.hospital + '|' + r.month; }
+
+  function mergedRosters() {
+    var map = new Map();
+    var add = function (r, source, replaces) {
+      var c = Object.assign({}, r);
+      c.source = source;
+      c.replaces = replaces;
+      c.slotsByKey = {};
+      (c.slots || []).forEach(function (s) { c.slotsByKey[s.key] = s; });
+      map.set(rosterKey(c), c);
+    };
+    BAKED.forEach(function (r) { add(r, 'pubblicato', false); });
+    ((shared && shared.rosters) || []).forEach(function (r) { add(r, 'pubblicato', false); });
+    local.forEach(function (r) { add(r, 'browser', map.has(rosterKey(r))); });
+    return Array.from(map.values());
+  }
+
+  function hospitalOrder(a, b) {
+    var rank = function (h) { return h === 'DEA' ? 0 : (h === 'OSG' ? 1 : 2); };
+    if (rank(a.hospital) !== rank(b.hospital)) return rank(a.hospital) - rank(b.hospital);
+    return a.hospital.localeCompare(b.hospital, 'it');
+  }
+
+  function slotRank(key, fallback) {
+    return SLOT_RANK[key] !== undefined ? SLOT_RANK[key] : 10 + fallback;
+  }
+
+  function buildDays(rosters) {
+    var map = new Map();
+    rosters.forEach(function (r) {
+      (r.days || []).forEach(function (d) {
+        var rec = map.get(d.date);
+        if (!rec) { rec = { day: d.day, date: d.date, cells: {} }; map.set(d.date, rec); }
+        rec.cells[r.hospital] = d.cells || {};
+      });
+    });
+    return Array.from(map.values()).sort(function (a, b) { return a.day - b.day; });
+  }
+
+  function buildSlotRows(rosters) {
+    var seen = new Map();
+    rosters.forEach(function (r) {
+      (r.slots || []).forEach(function (s) {
+        if (!seen.has(s.key)) seen.set(s.key, { key: s.key, slot: s, order: seen.size });
+      });
+    });
+    return Array.from(seen.values()).sort(function (a, b) {
+      return slotRank(a.key, a.order) - slotRank(b.key, b.order);
+    });
+  }
+
+  function namesOfMonth(namesAll, assignments) {
+    var map = new Map();
+    assignments.forEach(function (a) {
+      var i = map.get(a.person);
+      if (!i) { i = { name: a.person, count: 0, byHospital: {}, nights: 0, suspicion: null }; map.set(a.person, i); }
+      i.count++;
+      i.byHospital[a.hospital] = (i.byHospital[a.hospital] || 0) + 1;
+      if (a.isNight) i.nights++;
+    });
+    namesAll.forEach(function (n) { var i = map.get(n.name); if (i) i.suspicion = n.suspicion; });
+    return Array.from(map.values()).sort(function (a, b) { return a.name.localeCompare(b.name, 'it'); });
+  }
+
+  // I nomi di una cella, senza ripetizioni, con il ruolo che viene dalla posizione.
+  function cellNames(day, hospital, slot) {
+    var cell = (day.cells[hospital] || {})[slot.key];
+    var names = (cell && cell.names) || [];
+    var seen = Object.create(null), out = [];
+    names.forEach(function (name, pos) {
+      if (seen[name]) return;
+      seen[name] = true;
+      out.push({ name: name, pos: pos, role: (slot.roles && slot.roles[pos]) || '' });
+    });
+    return out;
+  }
+
+  function pillKey(hospital, date, slotKey, person) {
+    return hospital + '|' + date + '|' + slotKey + '|' + person;
+  }
+  function sevOf(hospital, date, slotKey, person) {
+    return D.sevByPill.get(pillKey(hospital, date, slotKey, person)) || null;
+  }
+
+  function derive() {
+    var rosters = mergedRosters();
+    D.rosters = rosters;
+    D.months = Array.from(new Set(rosters.map(function (r) { return r.month; }))).sort();
+    if (D.months.indexOf(state.month) === -1) state.month = defaultMonth();
+
+    D.assignments = R.buildAssignments(rosters);
+    D.findings = R.computeFindings(D.assignments);
+    D.namesAll = R.analyzeNames(D.assignments);
+
+    var m = state.month;
+    D.monthRosters = rosters.filter(function (r) { return r.month === m; }).sort(hospitalOrder);
+    D.hospitals = D.monthRosters.map(function (r) { return r.hospital; });
+    D.monthAssignments = D.assignments.filter(function (a) { return a.date.slice(0, 7) === m; });
+    D.names = namesOfMonth(D.namesAll, D.monthAssignments);
+    D.nameMap = new Map(D.names.map(function (n) { return [n.name, n]; }));
+    D.findingsOfMonth = D.findings.filter(function (f) {
+      return f.a.date.slice(0, 7) === m || f.b.date.slice(0, 7) === m;
+    });
+    D.days = buildDays(D.monthRosters);
+    D.dayByDate = new Map(D.days.map(function (d) { return [d.date, d]; }));
+    D.slotRows = buildSlotRows(D.monthRosters);
+    D.monthLen = m ? monthLength(m) : 0;
+    D.todayInMonth = !!m && today.slice(0, 7) === m;
+
+    // Una segnalazione si marca una volta sola: sul nome coinvolto e sul giorno.
+    D.sevByPill = new Map();
+    D.dayFind = new Map();
+    D.findingsOfMonth.forEach(function (f) {
+      [f.a, f.b].forEach(function (a) {
+        var pk = pillKey(a.hospital, a.date, a.slotKey, a.person);
+        var prev = D.sevByPill.get(pk);
+        if (!prev || f.severity > prev.sev) D.sevByPill.set(pk, { sev: f.severity, title: f.title });
+        var dprev = D.dayFind.get(a.date);
+        if (!dprev || f.severity > dprev.sev) D.dayFind.set(a.date, { sev: f.severity, title: f.title });
+      });
+    });
+
+    // Parte fissa delle larghezze della tabella: il nome più lungo per colonna.
+    D.tableLens = D.slotRows.map(function (row) {
+      var max = 4;
+      D.days.forEach(function (d) {
+        D.monthRosters.forEach(function (r) {
+          var slot = r.slotsByKey[row.key];
+          if (!slot) return;
+          cellNames(d, r.hospital, slot).forEach(function (n) { if (n.name.length > max) max = n.name.length; });
+        });
+      });
+      return max + 2;
+    });
+
+    if (state.pinned && !D.nameMap.has(state.pinned)) state.pinned = null;
+    if (!validDay(state.selected)) state.selected = defaultDay();
+    if (state.view === 'ore' && !canSeeOre()) state.view = 'calendario';
+  }
+
+  function defaultMonth() {
+    if (!D.months.length) return '';
+    var t = today.slice(0, 7);
+    return D.months.indexOf(t) !== -1 ? t : D.months[D.months.length - 1];
+  }
+
+  function validDay(date) {
+    if (!date || !state.month || date.slice(0, 7) !== state.month) return false;
+    var n = dayNum(date);
+    return n >= 1 && n <= D.monthLen;
+  }
+
+  function defaultDay() {
+    if (!state.month) return '';
+    return D.todayInMonth ? today : dateOf(state.month, 1);
+  }
+
+  function canSeeOre() { return gestore && !soloVista; }
+
+  // Le pastiglie del calendario: mattina + pomeriggio nello stesso ospedale
+  // diventano una giornata sola (G); la notte resta N, l'ambulatorio da solo A.
+  function chipsByDate(name) {
+    var byDate = new Map();
+    if (!name) return byDate;
+    D.monthAssignments.forEach(function (a) {
+      if (a.person !== name) return;
+      var perDay = byDate.get(a.date);
+      if (!perDay) { perDay = new Map(); byDate.set(a.date, perDay); }
+      var list = perDay.get(a.hospital);
+      if (!list) { list = []; perDay.set(a.hospital, list); }
+      list.push(a);
+    });
+
+    var out = new Map();
+    byDate.forEach(function (perDay, date) {
+      var chips = [];
+      D.hospitals.forEach(function (h) {
+        var list = perDay.get(h);
+        if (!list) return;
+        var morning = list.filter(function (a) { return a.slotKey === 'M' || a.slotKey === 'A'; });
+        var afternoon = list.filter(function (a) { return a.slotKey === 'P'; });
+        var rest = list.filter(function (a) { return a.slotKey !== 'M' && a.slotKey !== 'A' && a.slotKey !== 'P'; });
+        if (morning.length && afternoon.length) {
+          chips.push({ letter: 'G', word: 'giornata', hospital: h, night: false, a: morning[0] });
+        } else {
+          morning.concat(afternoon).forEach(function (a) {
+            chips.push({ letter: a.slotKey, word: SLOT_WORD[a.slotKey] || R.slotName(a.slotLabel).toLowerCase(), hospital: h, night: false, a: a });
+          });
+        }
+        rest.forEach(function (a) {
+          chips.push({
+            letter: a.slotKey.charAt(0), word: SLOT_WORD[a.slotKey] || R.slotName(a.slotLabel).toLowerCase(),
+            hospital: h, night: a.isNight, a: a,
+          });
+        });
+      });
+      chips.sort(function (x, y) {
+        var rx = CHIP_RANK[x.letter] !== undefined ? CHIP_RANK[x.letter] : 3;
+        var ry = CHIP_RANK[y.letter] !== undefined ? CHIP_RANK[y.letter] : 3;
+        if (rx !== ry) return rx - ry;
+        return D.hospitals.indexOf(x.hospital) - D.hospitals.indexOf(y.hospital);
+      });
+      out.set(date, chips);
+    });
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Indirizzo (hash) — mese, nome, giorno, vista
+  // ---------------------------------------------------------------------------
+
+  function readHash() {
+    var h = String(window.location.hash || '').replace(/^#/, '');
+    if (!h) return;
+    h.split('&').forEach(function (part) {
+      var eq = part.indexOf('=');
+      if (eq === -1) return;
+      var k = part.slice(0, eq), v = decodeURIComponent(part.slice(eq + 1).replace(/\+/g, ' '));
+      if (k === 'mese') state.month = v;
+      else if (k === 'nome') state.pinned = v.toLocaleUpperCase('it-IT');
+      else if (k === 'giorno') state.selected = v;
+      else if (k === 'vista') state.view = VIEWS.indexOf(v) !== -1 ? v : 'calendario';
+    });
+  }
+
+  function syncHash() {
+    var parts = [];
+    if (state.month) parts.push('mese=' + state.month);
+    if (state.pinned) parts.push('nome=' + encodeURIComponent(state.pinned));
+    if (state.selected) parts.push('giorno=' + state.selected);
+    if (state.view !== 'calendario') parts.push('vista=' + state.view);
+    var hash = parts.length ? '#' + parts.join('&') : '';
+    if (hash !== window.location.hash) {
+      try { window.history.replaceState(null, '', window.location.pathname + window.location.search + hash); }
+      catch (e) { /* file:// senza history: si ignora */ }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — titolo, viste, riga della persona
+  // ---------------------------------------------------------------------------
+
+  function renderHeader() {
+    clear(monthCtl);
+    if (!D.months.length) {
+      monthCtl.appendChild(el('span', { class: 'month__t', text: '—' }));
+    } else if (D.months.length === 1) {
+      monthCtl.appendChild(el('span', { class: 'month__t', text: monthLabel(state.month) }));
+    } else {
+      var select = el('select', { 'aria-label': 'Mese mostrato' },
+        D.months.map(function (m) {
+          return el('option', { value: m, selected: m === state.month, text: monthLabel(m) });
+        }));
+      select.addEventListener('change', function () { setMonth(select.value); });
+      monthCtl.appendChild(el('span', { class: 'month__sel' }, [
+        el('span', { class: 'month__t', text: monthLabel(state.month) }),
+        icon('i-chevron'),
+        select,
+      ]));
+    }
+    renderPinToken();
+  }
+
+  function renderPinToken() {
+    clear(pintoken);
+    if (!state.pinned) { pintoken.hidden = true; return; }
+    pintoken.hidden = false;
+    pintoken.appendChild(el('span', { class: 'pintoken__n', text: state.pinned }));
+    pintoken.appendChild(el('button', {
+      type: 'button', 'aria-label': 'Togli l’evidenziazione di ' + state.pinned,
+      on: { click: function (e) { e.preventDefault(); setPinned(null); } },
+    }, icon('i-close')));
+  }
+
+  function renderPersonLine() {
+    clear(personLine);
+    if (!state.pinned) { personLine.hidden = true; return; }
+    var st = R.personStats(D.assignments, state.pinned, state.month);
+    var mine = D.findingsOfMonth.filter(function (f) { return f.person === state.pinned; });
+    personLine.hidden = false;
+
+    // La riga è la somma stessa: giornate + notti = turni, e i turni per 12 fanno le ore.
+    var terms = [];
+    if (st.giornateEq) terms.push(R.formatNumber(st.giornateEq) + 'G');
+    if (st.notti) terms.push(st.notti + 'N');
+    var parts = [];
+    if (terms.length) parts.push(terms.join(' + ') + ' = ' + R.formatNumber(st.turniEq));
+    if (st.altri) parts.push(plural(st.altri, 'altro', 'altri'));
+    parts.push(R.formatHours(st.ore));
+    personLine.title = 'G giornate (mattina + pomeriggio; una mattina o un pomeriggio da soli valgono mezza giornata) · N notti';
+
+    append(personLine, parts.join(' · '));
+    var hosps = D.hospitals.filter(function (h) { return st.oreByHospital[h]; });
+    if (hosps.length > 1) {
+      hosps.forEach(function (h) {
+        append(personLine, ' · ');
+        personLine.appendChild(dot(h));
+        append(personLine, h + ' ' + R.formatHours(st.oreByHospital[h]).replace(' h', ''));
+      });
+    }
+    if (mine.length) {
+      append(personLine, ' · ');
+      personLine.appendChild(el('button', {
+        class: 'linkbtn', type: 'button',
+        text: plural(mine.length, 'segnalazione', 'segnalazioni'),
+        on: { click: function () { scrollToEl(findEl); findEl.focus({ preventScroll: true }); } },
+      }));
+    }
+    append(personLine, ' · ');
+    personLine.appendChild(el('button', {
+      // "Esporta", non "Calendario": sullo schermo c'è già la vista con quel nome.
+      class: 'linkbtn', type: 'button', id: 'icsBtn', text: 'Esporta',
+      'aria-label': 'Scarica i turni di ' + state.pinned + ' nel calendario',
+      on: { click: exportICS },
+    }));
+    personLine.setAttribute('aria-label', personLine.textContent + '. ' + personLine.title);
+  }
+
+  function renderMain() {
+    var v = state.view;
+    var segs = { calendario: segCal, tabella: segTab, ore: segOre };
+    segOre.hidden = !canSeeOre();
+    VIEWS.forEach(function (name) {
+      var on = name === v;
+      segs[name].setAttribute('aria-selected', on ? 'true' : 'false');
+      segs[name].tabIndex = on ? 0 : -1;
+    });
+    viewCal.hidden = v !== 'calendario';
+    viewTab.hidden = v !== 'tabella';
+    viewOre.hidden = v !== 'ore';
+
+    if (v !== 'calendario') { clear(calEl); clear(detailEl); legendEl.hidden = true; }
+    if (v !== 'tabella') clear(tableWrap);
+    if (v !== 'ore') clear(oreCard);
+
+    if (v === 'calendario') { renderCalendar(); renderDetail(); }
+    else if (v === 'tabella') renderTable();
+    else renderOre();
+  }
+
+  function setView(v) {
+    if (state.view === v) return;
+    if (v === 'ore' && !canSeeOre()) return;
+    state.view = v;
+    writeStore(LS_VIEW, v);
+    renderMain();
+    indexNames();
+    applyHighlight();
+    syncHash();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — calendario del mese
+  // ---------------------------------------------------------------------------
+
+  function renderCalendar() {
+    clear(calEl);
+    calEl.setAttribute('aria-label', 'Calendario di ' + monthLabel(state.month));
+    if (!state.month) return;
+
+    calEl.appendChild(el('div', { class: 'cal__row cal__wd' },
+      WEEKDAYS_SHORT_IT.map(function (w) { return el('span', { text: w }); })));
+
+    calName = previewName();
+    var chips = chipsByDate(calName);
+    var first = dateOf(state.month, 1);
+    var lead = (weekdayOf(first) + 6) % 7;
+    var cells = [];
+    for (var i = lead; i > 0; i--) cells.push({ out: true, n: prevMonthDay(first, i) });
+    for (var d = 1; d <= D.monthLen; d++) cells.push({ out: false, n: d, date: dateOf(state.month, d) });
+    var after = 1;
+    while (cells.length % 7 !== 0) cells.push({ out: true, n: after++ });
+
+    for (var w = 0; w < cells.length; w += 7) {
+      var row = el('div', { class: 'cal__row' });
+      cells.slice(w, w + 7).forEach(function (c) { row.appendChild(calCell(c, chips)); });
+      calEl.appendChild(row);
+    }
+    renderLegend(chips);
+  }
+
+  function prevMonthDay(firstDate, back) {
+    return new Date(Date.UTC(Number(firstDate.slice(0, 4)), Number(firstDate.slice(5, 7)) - 1, 1 - back)).getUTCDate();
+  }
+
+  function calCell(c, chips) {
+    if (c.out) return el('span', { class: 'cal__d is-out' }, el('span', { class: 'cal__n', text: String(c.n) }));
+
+    var date = c.date;
+    var isToday = date === today;
+    var sel = date === state.selected;
+    var mine = chips.get(date) || [];
+    var find = D.dayFind.get(date);
+
+    var label = c.n + ' ' + weekdayLong(date);
+    if (isToday) label += ', oggi';
+    if (mine.length) {
+      label += ', ' + mine.map(function (ch) { return ch.word + ' ' + ch.hospital; }).join(', ') + ' di ' + calName;
+    } else if (find) label += ', ' + find.title;
+
+    return el('button', {
+      class: 'cal__d' + (isWeekend(date) ? ' is-weekend' : '') + (sel ? ' is-sel' : ''),
+      type: 'button', 'aria-current': sel ? 'date' : null,
+      'aria-label': label, data: { day: date },
+    }, [
+      el('span', { class: 'cal__n' + (isToday ? ' is-today' : ''), text: String(c.n) }),
+      mine.length ? el('span', { class: 'cal__chips' }, mine.slice(0, 4).map(slotChip)) : null,
+      (!calName && find) ? el('span', { class: 'cal__dot sev-' + find.sev, title: find.title }) : null,
+    ]);
+  }
+
+  function slotChip(ch) {
+    var f = sevOf(ch.hospital, ch.a.date, ch.a.slotKey, ch.a.person);
+    return el('span', {
+      class: 'chipslot ' + hospClass(ch.hospital) + (ch.night ? ' is-night' : '') + (f ? ' is-find sev-' + f.sev : ''),
+      title: capitalize(ch.word) + ' ' + ch.hospital,
+      text: ch.letter,
+    });
+  }
+
+  // La legenda spiega solo le lettere disegnate per quella persona: chi non fa
+  // ambulatorio non deve leggere che cos'è.
+  var LEGEND_ORDER = ['G', 'M', 'P', 'N', 'A'];
+
+  function renderLegend(chipsByDay) {
+    clear(legendEl);
+    var words = new Map();
+    if (chipsByDay) {
+      chipsByDay.forEach(function (chips) {
+        chips.forEach(function (c) {
+          if (!words.has(c.letter)) words.set(c.letter, c.letter === 'G' ? 'giornata (M+P)' : c.word);
+        });
+      });
+    }
+    if (!calName || !words.size) { legendEl.hidden = true; return; }
+    legendEl.hidden = false;
+    var letters = Array.from(words.keys()).sort(function (x, y) {
+      var ix = LEGEND_ORDER.indexOf(x), iy = LEGEND_ORDER.indexOf(y);
+      return (ix === -1 ? 99 : ix) - (iy === -1 ? 99 : iy);
+    });
+    append(legendEl, letters.map(function (k) {
+      return el('span', {}, [el('b', { text: k }), words.get(k)]);
+    }));
+  }
+
+  function previewName() {
+    if (state.query.trim() && options.length && state.armedIndex >= 0) {
+      var armed = options[state.armedIndex];
+      if (armed) return armed.dataset.name;
+    }
+    return state.pinned;
+  }
+
+  function updateCalSelection(prev, next) {
+    var before = calEl.querySelector('[data-day="' + prev + '"]');
+    if (before) { before.classList.remove('is-sel'); before.removeAttribute('aria-current'); }
+    var now = calEl.querySelector('[data-day="' + next + '"]');
+    if (now) { now.classList.add('is-sel'); now.setAttribute('aria-current', 'date'); }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — giorno scelto
+  // ---------------------------------------------------------------------------
+
+  function namePill(name, sev, opts) {
+    return el('button', {
+      class: 'pill' + (opts.cls ? ' ' + opts.cls : '') + (sev ? ' sev-' + sev.sev : ''),
+      type: 'button', data: { name: name }, title: opts.title, 'aria-label': opts.label,
+    }, [
+      el('span', { text: name }),
+      sev ? el('span', { class: 'fdot', title: sev.title }) : null,
+    ]);
+  }
+
+  function renderDetail() {
+    clear(detailEl);
+    detailEl.style.setProperty('--tpl', 'var(--dlabel) repeat(' + Math.max(1, D.hospitals.length) + ', minmax(0, 1fr))');
+    var date = state.selected;
+    if (!date) return;
+    var day = D.dayByDate.get(date);
+    detailEl.classList.toggle('is-weekend', isWeekend(date));
+    detailEl.classList.toggle('is-pinned', !!state.pinned && !state.query.trim());
+
+    detailEl.appendChild(el('div', { class: 'detail__hd' }, [
+      el('button', {
+        class: 'navday', type: 'button', 'aria-label': 'Giorno precedente',
+        disabled: dayNum(date) <= 1, on: { click: function () { step(-1); } },
+      }, icon('i-prev')),
+      el('h2', { class: 'detail__t', id: 'detailTitle' }, [
+        el('span', { class: 'detail__num', text: String(dayNum(date)) }),
+        ' ',
+        el('span', { class: 'detail__wd', text: weekdayLong(date) }),
+        date === today ? el('span', { class: 'detail__oggi', text: 'oggi' }) : null,
+      ]),
+      el('button', {
+        class: 'navday', type: 'button', 'aria-label': 'Giorno successivo',
+        disabled: dayNum(date) >= D.monthLen, on: { click: function () { step(1); } },
+      }, icon('i-next')),
+    ]));
+
+    if (!day) {
+      detailEl.appendChild(el('p', { class: 'detail__none', text: 'Nessun turno per questo giorno.' }));
+      return;
+    }
+
+    detailEl.appendChild(el('div', { class: 'detail__cols' }, [el('span', {})].concat(
+      D.monthRosters.map(function (r) {
+        return el('span', { class: 'detail__h', title: r.title || r.hospital }, [dot(r.hospital), r.hospital]);
+      })
+    )));
+
+    var shown = 0;
+    D.slotRows.forEach(function (row) {
+      var cells = D.monthRosters.map(function (r) {
+        var slot = r.slotsByKey[row.key];
+        return slot ? cellNames(day, r.hospital, slot) : null;
+      });
+      if (!cells.some(function (list) { return list && list.length; })) return;
+      shown++;
+
+      detailEl.appendChild(el('div', { class: 'detail__row' + (row.key === 'N' ? ' is-night' : '') }, [
+        el('div', { class: 'detail__lab' }, [
+          shortSlotName(row.slot.label),
+          el('time', { text: R.timeRange(row.slot) }),
+        ]),
+      ].concat(cells.map(function (list, i) {
+        var box = el('div', { class: 'detail__cell' });
+        if (!list) return box;
+        if (!list.length) { box.appendChild(el('span', { class: 'dash', text: '—' })); return box; }
+        var roster = D.monthRosters[i];
+        list.forEach(function (n) {
+          box.appendChild(namePill(n.name, sevOf(roster.hospital, date, row.key, n.name), {
+            title: n.role ? (n.pos + 1) + 'º · ' + n.role : n.name,
+            label: n.name + ' — ' + R.slotName(row.slot.label) + ' ' + roster.hospital + (n.role ? ', ' + n.role : ''),
+          }));
+        });
+        return box;
+      }))));
+    });
+
+    if (!shown) detailEl.appendChild(el('p', { class: 'detail__none', text: 'Nessun turno assegnato in questo giorno.' }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — tabella del mese
+  // ---------------------------------------------------------------------------
+
+  function renderTable() {
+    clear(tableWrap);
+    if (!D.days.length || !D.slotRows.length) return;
+    var table = el('table', { class: 'tab', 'aria-labelledby': 'tabTitle' });
+
+    // Percentuali (non calc(): Chrome le ignora sui <col>), rifatte a ogni cambio
+    // di larghezza. 38px vanno alla colonna del giorno e a quella del pallino.
+    tableWidth = tableWrap.clientWidth || 366;
+    var total = D.tableLens.reduce(function (x, y) { return x + y; }, 0);
+    var free = Math.max(140, tableWidth - 38);
+    var pct = function (px) { return (px / tableWidth * 100).toFixed(3) + '%'; };
+    table.appendChild(el('colgroup', {}, [
+      el('col', { style: 'width:' + pct(28) }),
+      el('col', { style: 'width:' + pct(10) }),
+    ].concat(D.tableLens.map(function (l) { return el('col', { style: 'width:' + pct(free * l / total) }); }))));
+
+    table.appendChild(el('thead', {}, el('tr', {}, [
+      el('th', { class: 'tab__corner', scope: 'col' }, el('span', { class: 'sr-only', text: 'Giorno' })),
+      el('th', { class: 'tab__hh', scope: 'col' }, el('span', { class: 'sr-only', text: 'Ospedale' })),
+    ].concat(D.slotRows.map(function (row) {
+      return el('th', { class: 'tab__hs' + (row.key === 'N' ? ' is-night' : ''), scope: 'col' }, [
+        el('b', { text: row.key }), el('time', { text: R.timeRange(row.slot) }),
+      ]);
+    })))));
+
+    var body = el('tbody');
+    D.days.forEach(function (d) {
+      var weekend = isWeekend(d.date);
+      D.monthRosters.forEach(function (r, i) {
+        var tr = el('tr', {
+          class: 'tab__r ' + (i === 0 ? 'tab__r--first' : 'tab__r--second') + (weekend ? ' is-weekend' : ''),
+          data: { date: d.date },
+        });
+        if (i === 0) tr.appendChild(tableDayCell(d));
+        tr.appendChild(el('td', { class: 'tab__h' }, [dot(r.hospital), el('span', { class: 'sr-only', text: r.hospital })]));
+        D.slotRows.forEach(function (row) {
+          var box = el('td', { class: 'tab__c' + (row.key === 'N' ? ' is-night' : '') });
+          var slot = r.slotsByKey[row.key];
+          if (slot) {
+            cellNames(d, r.hospital, slot).forEach(function (n) {
+              box.appendChild(namePill(n.name, sevOf(r.hospital, d.date, row.key, n.name), {
+                cls: 'pill--t',
+                title: n.name + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
+                label: n.name + ' — ' + R.slotName(slot.label) + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
+              }));
+            });
+          }
+          tr.appendChild(box);
+        });
+        body.appendChild(tr);
+      });
+    });
+    table.appendChild(body);
+    table.classList.toggle('is-pinned', !!state.pinned && !state.query.trim());
+    tableWrap.appendChild(table);
+  }
+
+  function tableDayCell(d) {
+    return el('th', { class: 'tab__day', scope: 'row', rowspan: '2' },
+      el('button', {
+        class: 'tab__daybtn', type: 'button', data: { goday: d.date },
+        'aria-label': d.day + ' ' + weekdayLong(d.date) + ': apri nel calendario',
+      }, [
+        el('span', { class: 'n' + (d.date === today ? ' is-today' : ''), text: String(d.day) }),
+        el('span', { class: 'wd', text: R.formatDate(d.date).split(' ')[0] }),
+      ]));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — ore per nome
+  // ---------------------------------------------------------------------------
+
+  function renderOre() {
+    clear(oreCard);
+    var rows = R.hoursByName(D.assignments, state.month);
+    oreCard.appendChild(el('div', { class: 'ore__head' },
+      el('h2', { class: 'stitle', text: 'Ore di ' + monthName(state.month) })));
+    oreCard.appendChild(el('p', { class: 'ore__legend' }, D.hospitals.map(function (h) {
+      return el('span', {}, [dot(h), h]);
+    })));
+    if (!rows.length) {
+      oreCard.appendChild(el('p', { class: 'cap', text: 'Nessun turno in questo mese.' }));
+      return;
+    }
+
+    var max = rows[0].ore || 1;
+    rows.forEach(function (st) {
+      var parts = [st.person, R.formatHours(st.ore)];
+      D.hospitals.forEach(function (h) {
+        if (st.oreByHospital[h]) parts.push(h + ' ' + R.formatHours(st.oreByHospital[h]));
+      });
+      if (st.notti) parts.push(plural(st.notti, 'notte', 'notti'));
+      var label = parts.join(' · ');
+
+      oreCard.appendChild(el('div', { class: 'ore__row', title: label }, [
+        el('button', {
+          class: 'pill ore__name', type: 'button', data: { name: st.person },
+          'aria-label': label, text: st.person,
+        }),
+        el('div', { class: 'ore__bar' }, D.hospitals.filter(function (h) { return st.oreByHospital[h] > 0; })
+          .map(function (h) {
+            return el('span', {
+              class: 'ore__seg ' + hospClass(h),
+              style: 'width:' + (st.oreByHospital[h] / max * 100).toFixed(2) + '%',
+            });
+          })),
+        el('span', { class: 'ore__v', text: R.formatHours(st.ore).replace(' h', '') }),
+      ]));
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — segnalazioni
+  // ---------------------------------------------------------------------------
+
+  function renderFindings() {
+    clear(findEl);
+    var list = D.findingsOfMonth;
+
+    var counts = {};
+    list.forEach(function (f) { counts[f.kind] = (counts[f.kind] || 0) + 1; });
+    var countText = KIND_ORDER.filter(function (k) { return counts[k]; })
+      .map(function (k) { return plural(counts[k], KIND_PLURAL[k][0], KIND_PLURAL[k][1]); })
+      .join(' · ');
+
+    findEl.appendChild(el('div', { class: 'findings__head' }, [
+      el('h2', { class: 'stitle', id: 'findingsTitle', text: 'Segnalazioni' }),
+      countText ? el('span', { class: 'cap', text: countText }) : null,
+    ]));
+
+    if (!list.length) {
+      findEl.appendChild(el('p', { class: 'fempty' }, [icon('i-check'), 'Nessuna segnalazione a ' + monthName(state.month)]));
+    } else {
+      var kinds = KIND_ORDER.filter(function (k) { return list.some(function (f) { return f.kind === k; }); });
+      kinds.forEach(function (kind) {
+        var group = list.filter(function (f) { return f.kind === kind; });
+        findEl.appendChild(el('div', { class: 'fgroup' }, [
+          kinds.length > 1 ? el('p', { class: 'fgroup__t', text: plural(group.length, KIND_PLURAL[kind][0], KIND_PLURAL[kind][1]) }) : null,
+          el('div', {}, group.map(findingItem)),
+        ]));
+      });
+    }
+
+    findEl.appendChild(el('details', { class: 'legenda' }, [
+      el('summary', { class: 'legenda__t' }, [icon('i-chevron'), 'Come si calcolano']),
+    ].concat(LEGEND.map(function (row) {
+      return el('div', { class: 'legenda__row' }, [
+        el('span', { class: 'legenda__mark sev-' + row[0] }),
+        el('span', {}, [el('b', { text: row[1] }), ' — ' + row[2]]),
+      ]);
+    }))));
+  }
+
+  function findingItem(f) {
+    return el('div', { class: 'fitem sev-' + f.severity, data: { goto: f.a.date }, title: f.detail }, [
+      el('button', {
+        class: 'fitem__who', type: 'button', data: { name: f.person },
+        'aria-label': 'Evidenzia ' + f.person, text: f.person,
+      }),
+      ' ',
+      el('button', {
+        class: 'fitem__short', type: 'button', text: f.short,
+        'aria-label': f.title + ': ' + f.detail + '. Vai al giorno.',
+      }),
+    ]);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — dati e sorgenti
+  // ---------------------------------------------------------------------------
+
+  function shortDate(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.getDate() + ' ' + MONTHS_IT[d.getMonth()].slice(0, 3);
+  }
+
+  function formatGenerated(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.getDate() + ' ' + MONTHS_IT[d.getMonth()].slice(0, 3) + ' ' + d.getFullYear() +
+      ', ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+
+  function renderDati() {
+    var stamp = (shared && shared.generatedAt) || GENERATED_AT;
+    datiSumText.textContent = stamp ? 'Dati · aggiornati il ' + shortDate(stamp) : 'Dati';
+    clear(datiBody);
+
+    var sources = el('div', { class: 'dati__block' }, el('p', { class: 'dati__t', text: 'Sorgenti' }));
+    D.rosters.slice().sort(function (a, b) {
+      if (a.month !== b.month) return a.month < b.month ? 1 : -1;
+      return hospitalOrder(a, b);
+    }).forEach(function (r) {
+      var meta = [r.hospital, monthLabel(r.month), plural((r.days || []).length, 'giorno', 'giorni')];
+      if (r.source === 'browser' && r.replaces) meta.push('sostituisce la versione pubblicata');
+      sources.appendChild(el('div', { class: 'src' }, [
+        el('span', { class: 'src__file', text: r.file }),
+        el('span', { class: 'badge' + (r.source === 'browser' ? ' is-browser' : ''), text: r.source === 'browser' ? 'dal browser' : 'pubblicato' }),
+        r.source === 'browser' ? el('button', {
+          class: 'minibtn', type: 'button', text: 'Rimuovi',
+          'aria-label': 'Rimuovi ' + r.file + ' dal browser',
+          on: { click: function () { removeLocal(r); } },
+        }) : null,
+        el('span', { class: 'src__meta', text: meta.join(' · ') }),
+      ]));
+    });
+    datiBody.appendChild(sources);
+
+    var warnings = [];
+    D.rosters.forEach(function (r) {
+      (r.warnings || []).forEach(function (w) { warnings.push(r.hospital + ' · ' + (w.message || w.type)); });
+    });
+    if (warnings.length) {
+      datiBody.appendChild(el('div', { class: 'dati__block' }, [
+        el('p', { class: 'dati__t', text: plural(warnings.length, 'avviso di lettura', 'avvisi di lettura') }),
+      ].concat(warnings.map(warnRow))));
+    }
+
+    var suspicious = D.namesAll.filter(function (n) { return n.suspicion; });
+    if (suspicious.length) {
+      datiBody.appendChild(el('div', { class: 'dati__block' }, [
+        el('p', { class: 'dati__t', text: 'Nomi da controllare' }),
+      ].concat(suspicious.map(function (n) { return warnRow(n.name + ' — ' + suspicionText(n.suspicion)); }))));
+    }
+
+    datiBody.appendChild(el('div', { class: 'dati__block' + (soloVista ? ' is-off' : '') }, [
+      el('p', { class: 'dati__t', text: 'Aggiornare i turni' }),
+      el('button', {
+        class: 'btn', type: 'button', disabled: soloVista, 'aria-disabled': soloVista ? 'true' : null,
+        on: { click: function () { if (!soloVista) fileInput.click(); } },
+      }, [icon('i-upload'), 'Carica xlsx']),
+      soloVista ? el('p', { class: 'dati__note', text: 'Solo chi gestisce la pagina può aggiornare i turni.' }) : null,
+      stamp ? el('p', { class: 'dati__note', text: (shared ? 'Dati condivisi aggiornati il ' : 'Dati pubblicati il ') + formatGenerated(stamp) + '.' }) : null,
+    ]));
+
+    // Togliere le proprie copie resta possibile anche a chi può solo guardare.
+    if (local.length) {
+      datiBody.appendChild(el('div', { class: 'dati__block' },
+        el('button', {
+          class: 'btn', type: 'button', text: 'Ripristina i dati pubblicati', on: { click: restorePublished },
+        })));
+    }
+
+    if (!soloVista && !gestore) {
+      var check = el('input', { type: 'checkbox', role: 'switch' });
+      check.addEventListener('change', function () {
+        gestore = check.checked;
+        writeStore(LS_GESTORE, gestore ? '1' : null);
+        renderMain();
+        renderDati();
+        indexNames();
+        applyHighlight();
+      });
+      datiBody.appendChild(el('div', { class: 'dati__block' },
+        el('label', { class: 'switch' }, [check, el('span', { class: 'switch__track' }), 'Mostra le ore di tutti'])));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Evidenziazione
+  // ---------------------------------------------------------------------------
+
+  function indexNames() {
+    nameEls = new Map();
+    painted = [];
+    var add = function (node) {
+      var arr = nameEls.get(node.dataset.name);
+      if (!arr) { arr = []; nameEls.set(node.dataset.name, arr); }
+      arr.push(node);
+    };
+    [detailEl, tableWrap, oreCard, findEl].forEach(function (root) {
+      Array.prototype.forEach.call(root.querySelectorAll('[data-name]'), add);
+    });
+  }
+
+  function paint(name, cls) {
+    var arr = nameEls.get(name);
+    if (!arr) return;
+    arr.forEach(function (node) {
+      node.classList.remove('is-soft', 'is-strong');
+      node.classList.add(cls);
+      painted.push(node);
+    });
+  }
+
+  function applyHighlight() {
+    painted.forEach(function (node) { node.classList.remove('is-soft', 'is-strong'); });
+    painted = [];
+
+    var table = tableWrap.firstChild;
+    var dim = function (on) {
+      detailEl.classList.toggle('is-pinned', on);
+      if (table && table.classList) table.classList.toggle('is-pinned', on);
+    };
+
+    if (state.query.trim()) {
+      dim(false);
+      hits.forEach(function (n) { paint(n.name, 'is-soft'); });
+      var armed = hits[state.armedIndex];
+      if (armed) paint(armed.name, 'is-strong');
+    } else if (state.pinned) {
+      dim(true);
+      paint(state.pinned, 'is-strong');
+    } else {
+      dim(false);
+    }
+
+    if (state.view === 'calendario' && previewName() !== calName) renderCalendar();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Elenco dei nomi sotto il campo
+  // ---------------------------------------------------------------------------
+
+  function renderPop() {
+    clear(pop);
+    options = [];
+    var q = state.query.trim();
+    hits = R.searchNames(q, D.names);
+
+    if (!hits.length) {
+      pop.appendChild(el('p', { class: 'opt__empty', text: 'Nessun nome corrisponde a «' + q + '»' }));
+      openPop();
+      srSay('Nessun nome corrisponde');
+      return;
+    }
+    if (!q) state.armedIndex = -1;
+    else if (state.armedIndex >= hits.length || state.armedIndex < 0) state.armedIndex = 0;
+
+    hits.forEach(function (n, i) {
+      var parts = q ? matchParts(n.name, q) : null;
+      var nameNode = el('span', { class: 'opt__name' });
+      if (parts) {
+        append(nameNode, parts[0]);
+        nameNode.appendChild(el('b', { text: parts[1] }));
+        append(nameNode, parts[2]);
+      } else nameNode.textContent = n.name;
+
+      var why = suspicionText(n.suspicion);
+      var row = el('div', {
+        class: 'opt' + (i === state.armedIndex ? ' is-armed' : ''),
+        role: 'option', id: 'opt-' + i, 'aria-selected': i === state.armedIndex ? 'true' : 'false',
+        data: { name: n.name },
+      }, [
+        el('span', { class: 'opt__main' }, [
+          nameNode,
+          why ? el('span', { class: 'opt__why' }, [icon('i-warn'), why]) : null,
+        ]),
+        el('span', { class: 'opt__n', text: String(n.count) }),
+        el('span', { class: 'opt__dots' }, D.hospitals.filter(function (h) { return n.byHospital[h]; })
+          .map(function (h) { return dot(h, h); })),
+      ]);
+      options.push(row);
+      pop.appendChild(row);
+    });
+
+    openPop();
+    if (q) srSay(plural(hits.length, 'nome trovato', 'nomi trovati'));
+    armRow();
+  }
+
+  function armRow() {
+    options.forEach(function (row, i) {
+      var on = i === state.armedIndex;
+      row.classList.toggle('is-armed', on);
+      row.setAttribute('aria-selected', on ? 'true' : 'false');
+      if (on) {
+        input.setAttribute('aria-activedescendant', row.id);
+        if (row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+      }
+    });
+    if (!options.length) input.removeAttribute('aria-activedescendant');
+  }
+
+  function openPop() { pop.hidden = false; state.popOpen = true; input.setAttribute('aria-expanded', 'true'); }
+
+  function closePop() {
+    pop.hidden = true;
+    state.popOpen = false;
+    options = [];
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+    applyPendingShared();
+  }
+
+  function moveArmed(delta) {
+    if (!options.length) return;
+    if (state.armedIndex < 0) state.armedIndex = delta > 0 ? 0 : options.length - 1;
+    else state.armedIndex = (state.armedIndex + delta + options.length) % options.length;
+    armRow();
+    applyHighlight();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Azioni
+  // ---------------------------------------------------------------------------
+
+  function setMonth(m) {
+    state.month = m;
+    state.selected = '';
+    renderAll();
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  function setPinned(name, opts) {
+    opts = opts || {};
+    state.pinned = name;
+    writeStore(LS_ME, name);
+    state.query = '';
+    input.value = '';
+    clearBtn.hidden = true;
+    closePop();
+    if (document.activeElement === input) input.blur();
+
+    keepAnchor(function () {
+      renderPinToken();
+      renderPersonLine();
+      renderMain();
+      renderFindings();
+      indexNames();
+      applyHighlight();
+    }, opts.toTop);
+    syncHash();
+    if (opts.toTop) window.scrollTo({ top: 0, behavior: 'instant' });
+    srSay(name ? name + ': ' + plural((D.nameMap.get(name) || { count: 0 }).count, 'turno', 'turni') + ' nel mese'
+      : 'Evidenziazione tolta');
+  }
+
+  function togglePin(name, opts) { setPinned(state.pinned === name ? null : name, opts); }
+
+  // La vista resta dov'è quando sopra compare o sparisce la riga della persona.
+  function keepAnchor(fn, skip) {
+    var anchor = state.view === 'calendario' ? detailEl : (state.view === 'tabella' ? viewTab : viewOre);
+    if (skip) { fn(); return; }
+    var before = anchor.getBoundingClientRect().top;
+    fn();
+    var delta = anchor.getBoundingClientRect().top - before;
+    if (Math.abs(delta) > 1 && window.scrollY > 0) window.scrollBy({ top: delta, behavior: 'instant' });
+  }
+
+  function selectDay(date, opts) {
+    opts = opts || {};
+    if (!validDay(date)) return;
+    var prev = state.selected;
+    state.selected = date;
+    if (state.view !== 'calendario') { syncHash(); return; }
+    updateCalSelection(prev, date);
+    renderDetail();
+    indexNames();
+    applyHighlight();
+    syncHash();
+    if (opts.scroll) scrollToEl(detailEl);
+    if (opts.flash) flash(detailEl);
+  }
+
+  function step(delta) {
+    var n = dayNum(state.selected) + delta;
+    if (n < 1 || n > D.monthLen) return;
+    selectDay(dateOf(state.month, n));
+  }
+
+  // Dalla segnalazione al giorno: nel calendario lo sceglie, nella tabella porta
+  // al gruppo di righe. In entrambi i casi lampeggia.
+  function goToDay(date) {
+    if (state.view === 'tabella') {
+      if (validDay(date)) { state.selected = date; syncHash(); }
+      var rows = tableWrap.querySelectorAll('tr[data-date="' + date + '"]');
+      if (rows.length) { scrollToEl(rows[0]); flash(rows); }
+      return;
+    }
+    selectDay(date, { scroll: true, flash: true });
+  }
+
+  function scrollToEl(node, instant) {
+    if (!node) return;
+    node.scrollIntoView({ block: 'start', behavior: (instant || reduceMotion.matches) ? 'instant' : 'smooth' });
+  }
+
+  function flash(nodes) {
+    if (reduceMotion.matches) return;
+    var list = nodes.length !== undefined ? Array.prototype.slice.call(nodes) : [nodes];
+    list.forEach(function (node) {
+      node.classList.remove('is-flash');
+      void node.offsetWidth;
+      node.classList.add('is-flash');
+      window.setTimeout(function () { node.classList.remove('is-flash'); }, 1400);
+    });
+  }
+
+  function srSay(text) { if (text) srStatus.textContent = text; }
+
+  // ---------------------------------------------------------------------------
+  // Esportazione nel calendario (.ics)
+  // ---------------------------------------------------------------------------
+
+  var ICS_NOT_HERE = 'Il calendario si esporta dalla copia della pagina, non da qui.';
+  var ICS_NO_WAY = ['rejected_extension', 'extension_not_enabled', 'unavailable', 'not_granted', 'capability_disabled'];
+
+  function slug(s) {
+    return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  function exportICS() {
+    var name = state.pinned;
+    if (!name) return;
+    var data = R.buildICS(D.assignments, name, state.month, {});
+    var filename = 'turni-' + slug(name) + '-' + slug(monthName(state.month)) + '-' + state.month.slice(0, 4) + '.ics';
+
+    // Nella pagina pubblicata il salvataggio passa dalla piattaforma; altrove
+    // (copia locale, sito normale) basta il vecchio link con download.
+    if (!runtime) { saveAsFile(filename, data); return; }
+    Promise.resolve(window.claude.use('downloads')).then(function (ns) {
+      if (!ns || typeof ns.save !== 'function') { toast(ICS_NOT_HERE, true); return; }
+      return Promise.resolve(ns.save({ filename: filename, data: data })).catch(function (err) {
+        var code = (err && err.code) || 'errore';
+        if (code === 'declined') return;
+        toast(ICS_NO_WAY.indexOf(code) !== -1 ? ICS_NOT_HERE : 'Esportazione non riuscita (' + code + ').', true);
+      });
+    }).catch(function () { toast(ICS_NOT_HERE, true); });
+  }
+
+  function saveAsFile(filename, data) {
+    try {
+      var url = URL.createObjectURL(new Blob([data], { type: 'text/calendar;charset=utf-8' }));
+      var link = el('a', { href: url, download: filename });
+      document.body.appendChild(link);
+      link.click();
+      window.setTimeout(function () { link.remove(); URL.revokeObjectURL(url); }, 0);
+    } catch (e) {
+      toast('Esportazione non riuscita.', true);
+    }
+  }
+
+  function toast(message, isError) {
+    var node = el('div', { class: 'toast' + (isError ? ' is-error' : ''), role: 'status' }, [
+      icon(isError ? 'i-warn' : 'i-check'),
+      el('span', { text: message }),
+    ]);
+    toasts.appendChild(node);
+    window.setTimeout(function () {
+      node.style.opacity = '0';
+      window.setTimeout(function () { if (node.parentNode) node.remove(); }, 250);
+    }, 4000);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Caricamento dei file e revisione delle modifiche
+  // ---------------------------------------------------------------------------
+
+  function loadFiles(fileList) {
+    var files = Array.prototype.slice.call(fileList || []);
+    if (!files.length) return;
+    var queue = [];
+    var chain = Promise.resolve();
+    files.forEach(function (file) { chain = chain.then(function () { return parseOne(file, queue); }); });
+    chain.then(function () {
+      reviewQueue = queue;
+      reviewTotal = queue.length;
+      reviewDone = 0;
+      nextReview();
+    });
+  }
+
+  function parseOne(file, queue) {
+    if (!/\.xlsx$/i.test(file.name)) {
+      toast('Formato non riconosciuto: usa i file .xlsx dei turni', true);
+      return Promise.resolve();
+    }
+    var parser = window.TurniParser;
+    if (!parser || typeof parser.parseWorkbook !== 'function') {
+      toast('Lettore xlsx non disponibile in questa pagina', true);
+      return Promise.resolve();
+    }
+    return file.arrayBuffer()
+      .then(function (buf) { return parser.parseWorkbook(buf, file.name); })
+      .then(function (roster) {
+        var existing = null;
+        D.rosters.forEach(function (r) { if (rosterKey(r) === rosterKey(roster)) existing = r; });
+        if (!existing) { queue.push({ roster: roster, existing: null, diff: null }); return; }
+        var diff = R.diffRosters(existing, roster);
+        if (!diff.changes.length) {
+          toast(roster.hospital + ' · ' + monthLabel(roster.month) + ': nessuna modifica rispetto alla versione caricata');
+          return;
+        }
+        queue.push({ roster: roster, existing: existing, diff: diff });
+      })
+      .catch(function (err) {
+        toast(file.name + ': ' + ((err && err.message) || 'file non leggibile'), true);
+      });
+  }
+
+  function nextReview() {
+    if (!reviewQueue.length) { closeReview(); return; }
+    reviewCurrent = reviewQueue.shift();
+    reviewDone++;
+    renderReview(reviewCurrent);
+    openReview();
+  }
+
+  function renderReview(item) {
+    var roster = item.roster;
+    var isNew = !item.existing;
+    clear(reviewBody);
+
+    reviewTitle.textContent = (isNew ? 'Nuovo mese: ' : 'Modifiche · ') + roster.hospital + ' · ' + monthLabel(roster.month);
+
+    var caps = [];
+    if (reviewTotal > 1) caps.push(reviewDone + ' di ' + reviewTotal);
+    caps.push(roster.file);
+    if (item.existing) {
+      caps.push(item.existing.source === 'browser' ? 'sostituisce la versione dal browser' : 'sostituisce la versione pubblicata');
+    }
+    reviewCap.textContent = caps.join(' · ');
+
+    if (isNew) {
+      var names = allNames(roster);
+      reviewBody.appendChild(el('p', { class: 'chg__sum', text: plural((roster.days || []).length, 'giorno', 'giorni') +
+        ' · ' + plural(names.length, 'nome', 'nomi') + ' · ' + plural((roster.slots || []).length, 'fascia', 'fasce') }));
+      if (names.length) {
+        reviewBody.appendChild(el('p', { class: 'chg__sum', text: 'Tra i nomi: ' + names.slice(0, 3).join(', ') + (names.length > 3 ? '…' : '') }));
+      }
+    } else {
+      var lastDate = null;
+      item.diff.changes.forEach(function (c) {
+        if (c.date !== lastDate) {
+          lastDate = c.date;
+          var parts = R.formatDate(c.date).split(' ');
+          reviewBody.appendChild(el('div', { class: 'chg__day' + (isWeekend(c.date) ? ' is-weekend' : '') },
+            parts[0] + ' ' + parts[1]));
+        }
+        reviewBody.appendChild(changeRow(c));
+      });
+    }
+
+    var warnings = roster.warnings || [];
+    if (warnings.length) {
+      reviewBody.appendChild(el('div', { class: 'chg__block' }, [
+        el('p', { class: 'dati__t', text: 'Avvisi del file' }),
+      ].concat(warnings.map(function (w) { return warnRow(w.message || w.type); }))));
+    }
+
+    reviewSave.disabled = false;
+    reviewCancel.disabled = false;
+    reviewSave.textContent = saveLabel();
+  }
+
+  function allNames(roster) {
+    var seen = Object.create(null), out = [];
+    (roster.days || []).forEach(function (d) {
+      Object.keys(d.cells || {}).forEach(function (k) {
+        ((d.cells[k] && d.cells[k].names) || []).forEach(function (n) {
+          if (!seen[n]) { seen[n] = true; out.push(n); }
+        });
+      });
+    });
+    return out.sort(function (x, y) { return x.localeCompare(y, 'it'); });
+  }
+
+  function changeRow(c) {
+    var val = el('span', { class: 'chg__val' });
+    if (c.kind === 'replaced') {
+      val.appendChild(el('span', { class: 'chg__old', text: c.removed.join(' · ') }));
+      append(val, ' → ');
+      val.appendChild(el('span', { class: 'chg__new', text: c.added.join(' · ') }));
+    } else if (c.kind === 'added') {
+      append(val, '+ ');
+      val.appendChild(el('span', { class: 'chg__add', text: c.added.join(' · ') }));
+    } else if (c.kind === 'removed') {
+      append(val, '− ');
+      val.appendChild(el('span', { class: 'chg__del', text: c.removed.join(' · ') }));
+    } else {
+      val.appendChild(el('span', { class: 'chg__new', text: c.after.join(' · ') }));
+      val.appendChild(el('span', { class: 'chg__note', text: 'solo l’ordine è cambiato' }));
+    }
+    return el('div', { class: 'chg' + (c.slotKey === 'N' ? ' is-night' : '') }, [
+      el('span', { class: 'chg__slot', text: shortSlotName(c.slotLabel) }),
+      val,
+    ]);
+  }
+
+  function openReview() {
+    if (reviewEl.hidden) reviewOpener = document.activeElement;
+    reviewEl.hidden = false;
+    document.body.style.overflow = 'hidden';
+    reviewPanel.focus();
+  }
+
+  function closeReview() {
+    reviewEl.hidden = true;
+    reviewCurrent = null;
+    document.body.style.overflow = '';
+    if (reviewOpener && reviewOpener.focus) reviewOpener.focus();
+    reviewOpener = null;
+    applyPendingShared();
+  }
+
+  function saveLabel() { return (pub && !soloVista) ? 'Salva per tutti' : 'Salva'; }
+
+  function whatChanged(item) {
+    return item.roster.hospital + ' · ' + monthLabel(item.roster.month) + ' · ' +
+      (item.diff ? plural(item.diff.changes.length, 'modifica', 'modifiche') : 'nuovo mese');
+  }
+
+  function markGestore() {
+    if (soloVista) return;
+    gestore = true;
+    writeStore(LS_GESTORE, '1');
+  }
+
+  function saveHere(item) {
+    var roster = item.roster;
+    roster.source = 'browser';
+    local = local.filter(function (r) { return rosterKey(r) !== rosterKey(roster); });
+    local.push(roster);
+    if (!writeLocal(local)) toast('I turni sono caricati ma non restano in memoria (spazio del browser non disponibile)', true);
+    markGestore();
+    state.month = roster.month;
+    state.selected = '';
+    renderAll();
+  }
+
+  function stripRuntime(roster) {
+    var copy = Object.assign({}, roster);
+    delete copy.source;
+    delete copy.replaces;
+    delete copy.slotsByKey;
+    return copy;
+  }
+
+  function buildNext(roster) {
+    var base = (shared && shared.rosters) ? shared.rosters : BAKED;
+    var map = new Map();
+    base.forEach(function (r) { map.set(rosterKey(r), stripRuntime(r)); });
+    map.set(rosterKey(roster), stripRuntime(roster));
+    return { generatedAt: new Date().toISOString(), rosters: Array.from(map.values()) };
+  }
+
+  function setReviewBusy(busy) {
+    reviewSave.disabled = busy;
+    reviewCancel.disabled = busy;
+    reviewSave.textContent = busy ? 'Pubblico…' : saveLabel();
+  }
+
+  function saveReview() {
+    var item = reviewCurrent;
+    if (!item) return;
+    if (!pub || soloVista) {
+      saveHere(item);
+      toast('Salvato: ' + whatChanged(item));
+      nextReview();
+      return;
+    }
+    publishReview(item);
+  }
+
+  // Pubblica il file dei dati: la pagina resta quella, cambia solo data/turni.json.
+  function publishReview(item) {
+    var next = buildNext(item.roster);
+    setReviewBusy(true);
+    var done = function () { setReviewBusy(false); nextReview(); };
+    Promise.resolve(pub.publish({
+      'data/turni.json': { content: JSON.stringify(next), contentType: 'application/json' },
+    })).then(function () {
+      shared = next;
+      local = local.filter(function (r) { return rosterKey(r) !== rosterKey(item.roster); });
+      writeLocal(local);
+      markGestore();
+      state.month = item.roster.month;
+      state.selected = '';
+      renderAll();
+      toast('Pubblicato per tutti: ' + whatChanged(item));
+      done();
+    }).catch(function (err) {
+      var code = (err && err.code) || 'errore';
+      if (code === 'conflict') {
+        setReviewBusy(false);
+        reviewQueue = [];
+        closeReview();
+        toast('Qualcun altro ha appena pubblicato: la pagina si aggiorna', true);
+        return;
+      }
+      if (code === 'not_writer' || code === 'not_granted' || code === 'capability_disabled') {
+        soloVista = true;
+        gestore = false;
+        writeStore(LS_GESTORE, null);
+        saveHere(item);
+        toast(code === 'capability_disabled'
+          ? 'Salvataggio condiviso non disponibile qui: salvato solo su questo dispositivo'
+          : 'Non puoi pubblicare questa pagina: salvato solo su questo dispositivo', true);
+      } else {
+        saveHere(item);
+        toast('Pubblicazione non riuscita (' + code + '): salvato solo su questo dispositivo', true);
+      }
+      done();
+    });
+  }
+
+  function removeLocal(roster) {
+    local = local.filter(function (r) { return rosterKey(r) !== rosterKey(roster); });
+    writeLocal(local);
+    renderAll();
+    toast('Rimosso ' + roster.hospital + ' · ' + monthLabel(roster.month));
+  }
+
+  function restorePublished() {
+    if (!window.confirm('Rimuovere i turni caricati nel browser e tornare ai dati pubblicati?')) return;
+    local = [];
+    writeLocal(local);
+    renderAll();
+    toast('Ripristinati i dati pubblicati');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render completo
+  // ---------------------------------------------------------------------------
+
+  function renderAll() {
+    derive();
+    var hasData = D.rosters.length > 0;
+    emptyEl.hidden = hasData;
+    searchbar.hidden = !hasData;
+    viewCal.hidden = !hasData;
+    viewTab.hidden = true;
+    viewOre.hidden = true;
+    findEl.hidden = !hasData;
+    datiEl.hidden = !hasData && !local.length;
+
+    renderHeader();
+    if (hasData) {
+      renderPersonLine();
+      renderMain();
+      renderFindings();
+    } else {
+      personLine.hidden = true;
+      legendEl.hidden = true;
+      clear(calEl); clear(detailEl); clear(tableWrap); clear(oreCard);
+    }
+    renderDati();
+    indexNames();
+    applyHighlight();
+    syncHash();
+    measureHeader();
+  }
+
+  function measureHeader() {
+    document.documentElement.style.setProperty('--h-header', searchbar.offsetHeight + 'px');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Dati condivisi e piattaforma
+  // ---------------------------------------------------------------------------
+
+  function validShared(data) {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.rosters) || !data.rosters.length) return false;
+    return data.rosters.every(function (r) {
+      return r && typeof r.hospital === 'string' && typeof r.month === 'string' &&
+        Array.isArray(r.days) && Array.isArray(r.slots);
+    });
+  }
+
+  // Mai ridisegnare sotto le dita: se un foglio è aperto, i dati arrivati aspettano.
+  function applyPendingShared() {
+    if (!pendingShared || !reviewEl.hidden || state.popOpen) return;
+    shared = pendingShared;
+    pendingShared = null;
+    renderAll();
+    srSay('Dati condivisi aggiornati');
+  }
+
+  function boot() {
+    if (/^https?:$/.test(window.location.protocol) && typeof window.fetch === 'function') {
+      window.fetch('data/turni.json', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!validShared(data)) return;
+          pendingShared = data;
+          applyPendingShared();
+        })
+        .catch(function () { /* nessun file condiviso: restano i dati della pagina */ });
+    }
+    if (runtime) {
+      try {
+        Promise.resolve(window.claude.use('artifact')).then(function (ns) {
+          pub = (ns && typeof ns.publish === 'function') ? ns : null;
+          if (!reviewEl.hidden && reviewCurrent) reviewSave.textContent = saveLabel();
+        }).catch(function () { pub = null; });
+      } catch (e) { pub = null; }
+    }
+  }
+
+  // Il giorno di oggi non deve invecchiare con la pagina aperta.
+  function refreshToday() {
+    var now = todayISO();
+    if (now === today) return;
+    today = now;
+    renderAll();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Eventi
+  // ---------------------------------------------------------------------------
+
+  function wire() {
+    input.addEventListener('input', function () {
+      state.query = input.value;
+      state.armedIndex = input.value.trim() ? 0 : -1;
+      clearBtn.hidden = !input.value;
+      renderPop();
+      applyHighlight();
+    });
+
+    input.addEventListener('focus', function () { renderPop(); });
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (!state.popOpen) renderPop(); else moveArmed(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); moveArmed(-1); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        var armed = options[state.armedIndex];
+        if (armed) setPinned(armed.dataset.name, { toTop: true });
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        if (state.popOpen) closePop();
+        else if (input.value) { input.value = ''; state.query = ''; clearBtn.hidden = true; applyHighlight(); }
+        else if (state.pinned) setPinned(null);
+      } else if (e.key === 'Tab') closePop();
+    });
+
+    clearBtn.addEventListener('click', function () {
+      input.value = ''; state.query = ''; state.armedIndex = -1;
+      clearBtn.hidden = true;
+      closePop();
+      applyHighlight();
+      input.focus();
+    });
+
+    pop.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    pop.addEventListener('click', function (e) {
+      var row = e.target.closest('.opt');
+      if (row && row.dataset.name) setPinned(row.dataset.name, { toTop: true });
+    });
+
+    document.addEventListener('pointerdown', function (e) {
+      if (state.popOpen && !searchBox.contains(e.target)) closePop();
+    });
+
+    // Un solo ascoltatore per pastiglie, celle del calendario e segnalazioni.
+    document.addEventListener('click', function (e) {
+      var named = e.target.closest('[data-name]');
+      if (named && !named.closest('.opt')) { togglePin(named.dataset.name); return; }
+      var goday = e.target.closest('[data-goday]');
+      if (goday) {
+        selectDay(goday.dataset.goday);
+        setView('calendario');
+        window.scrollTo({ top: 0, behavior: reduceMotion.matches ? 'instant' : 'smooth' });
+        return;
+      }
+      var cell = e.target.closest('[data-day]');
+      if (cell) { selectDay(cell.dataset.day); return; }
+      var goto = e.target.closest('[data-goto]');
+      if (goto) goToDay(goto.dataset.goto);
+    });
+
+    segCal.addEventListener('click', function () { setView('calendario'); });
+    segTab.addEventListener('click', function () { setView('tabella'); });
+    segOre.addEventListener('click', function () { setView('ore'); });
+    $('segbar').addEventListener('keydown', function (e) {
+      var keys = { ArrowLeft: -1, ArrowRight: 1 };
+      if (!(e.key in keys)) return;
+      e.preventDefault();
+      var shown = VIEWS.filter(function (v) { return v !== 'ore' || canSeeOre(); });
+      var i = shown.indexOf(state.view);
+      var next = shown[(i + keys[e.key] + shown.length) % shown.length];
+      setView(next);
+      var btn = { calendario: segCal, tabella: segTab, ore: segOre }[next];
+      if (btn) btn.focus();
+    });
+
+    // Scorrimento laterale sul dettaglio: giorno precedente / successivo.
+    var tx = 0, ty = 0, tt = 0;
+    detailEl.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1) { tt = 0; return; }
+      tx = e.touches[0].clientX; ty = e.touches[0].clientY; tt = Date.now();
+    }, { passive: true });
+    detailEl.addEventListener('touchend', function (e) {
+      if (!tt || !e.changedTouches.length || Date.now() - tt > 900) return;
+      var dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty;
+      if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+      step(dx < 0 ? 1 : -1);
+    }, { passive: true });
+
+    $('emptyUpload').addEventListener('click', function () { fileInput.click(); });
+    fileInput.addEventListener('change', function () { loadFiles(fileInput.files); fileInput.value = ''; });
+
+    reviewSave.addEventListener('click', saveReview);
+    reviewCancel.addEventListener('click', nextReview);
+    $('reviewScrim').addEventListener('click', nextReview);
+    document.addEventListener('keydown', function (e) {
+      if (reviewEl.hidden) return;
+      if (e.key === 'Escape') { e.preventDefault(); nextReview(); return; }
+      if (e.key !== 'Tab') return;
+      var focusable = reviewPanel.querySelectorAll('button:not([disabled])');
+      if (!focusable.length) return;
+      var first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === reviewPanel)) {
+        e.preventDefault(); last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first.focus();
+      }
+    });
+
+    window.addEventListener('resize', function () {
+      measureHeader();
+      if (state.view === 'tabella' && Math.abs(tableWrap.clientWidth - tableWidth) > 2) {
+        renderTable();
+        indexNames();
+        applyHighlight();
+      }
+    });
+
+    window.addEventListener('hashchange', function () {
+      var before = state.month + '|' + state.pinned + '|' + state.selected + '|' + state.view;
+      readHash();
+      if (before !== state.month + '|' + state.pinned + '|' + state.selected + '|' + state.view) renderAll();
+    });
+
+    window.addEventListener('focus', refreshToday);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshToday(); });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Avvio
+  // ---------------------------------------------------------------------------
+
+  function init() {
+    var savedView = readStore(LS_VIEW);
+    if (VIEWS.indexOf(savedView) !== -1) state.view = savedView;
+    readHash();
+    if (!state.pinned) state.pinned = readStore(LS_ME);
+    wire();
+    renderAll();
+    if (state.pinned) srSay(state.pinned + ' evidenziato');
+    boot();
+  }
+
+  init();
+})();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,1079 @@
+{
+ "file": "TURNI_PS_DEA_SETTEMBRE_2026.xlsx",
+ "sheet": "Turni MPA I",
+ "hospital": "DEA",
+ "title": "TURNI PS/DEA",
+ "periodLabel": "SETTEMBRE 2026",
+ "month": "2026-09",
+ "slots": [
+  {
+   "key": "M",
+   "label": "MATTINA",
+   "header": "MATTINA 8-14",
+   "sub": "PS Codici M-OBI/Codici minori",
+   "roles": [
+    "PS Codici M-OBI",
+    "Codici minori"
+   ],
+   "start": "08:00",
+   "end": "14:00",
+   "startMin": 480,
+   "endMin": 840,
+   "col": "C"
+  },
+  {
+   "key": "P",
+   "label": "POMERIGGIO",
+   "header": "POMERIGGIO 14-20",
+   "sub": "PS Codici M-OBI/Codici Minori",
+   "roles": [
+    "PS Codici M-OBI",
+    "Codici Minori"
+   ],
+   "start": "14:00",
+   "end": "20:00",
+   "startMin": 840,
+   "endMin": 1200,
+   "col": "E"
+  },
+  {
+   "key": "N",
+   "label": "NOTTE",
+   "header": "NOTTE 20-08",
+   "sub": "PS Codici M-OBI/Codici Minori",
+   "roles": [
+    "PS Codici M-OBI",
+    "Codici Minori"
+   ],
+   "start": "20:00",
+   "end": "08:00",
+   "startMin": 1200,
+   "endMin": 1920,
+   "col": "F"
+  },
+  {
+   "key": "A",
+   "label": "AMBULATORIO CM",
+   "header": "AMBULATORIO CM 09.30-15.00",
+   "sub": "",
+   "roles": [],
+   "start": "09:30",
+   "end": "15:00",
+   "startMin": 570,
+   "endMin": 900,
+   "col": "G"
+  }
+ ],
+ "days": [
+  {
+   "day": 1,
+   "date": "2026-09-01",
+   "weekdayLabel": "MARTEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "ORLANDI",
+     "names": [
+      "ORLANDI"
+     ]
+    },
+    "P": {
+     "raw": "ORLANDI/LOFFREDO",
+     "names": [
+      "ORLANDI",
+      "LOFFREDO"
+     ]
+    },
+    "N": {
+     "raw": "COLOMBINI/KASO",
+     "names": [
+      "COLOMBINI",
+      "KASO"
+     ]
+    },
+    "A": {
+     "raw": "LOFFREDO",
+     "names": [
+      "LOFFREDO"
+     ]
+    }
+   }
+  },
+  {
+   "day": 2,
+   "date": "2026-09-02",
+   "weekdayLabel": "MERCOLEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PASTORE",
+     "names": [
+      "PASTORE"
+     ]
+    },
+    "P": {
+     "raw": "FRANCESCONI/TOSKIC",
+     "names": [
+      "FRANCESCONI",
+      "TOSKIC"
+     ]
+    },
+    "N": {
+     "raw": "DE PASQUALE/UGAZ",
+     "names": [
+      "DE PASQUALE",
+      "UGAZ"
+     ]
+    },
+    "A": {
+     "raw": "TOSKIC",
+     "names": [
+      "TOSKIC"
+     ]
+    }
+   }
+  },
+  {
+   "day": 3,
+   "date": "2026-09-03",
+   "weekdayLabel": "GIOVEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "FRANCESCONI",
+     "names": [
+      "FRANCESCONI"
+     ]
+    },
+    "P": {
+     "raw": "FRANCESCONI/KASO",
+     "names": [
+      "FRANCESCONI",
+      "KASO"
+     ]
+    },
+    "N": {
+     "raw": "ORLANDITOSKIC",
+     "names": [
+      "ORLANDITOSKIC"
+     ]
+    },
+    "A": {
+     "raw": "MASTROLILLI",
+     "names": [
+      "MASTROLILLI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 4,
+   "date": "2026-09-04",
+   "weekdayLabel": "VENERDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "FRANCESCONI",
+     "names": [
+      "FRANCESCONI"
+     ]
+    },
+    "P": {
+     "raw": "MEGLIO/PASTORE",
+     "names": [
+      "MEGLIO",
+      "PASTORE"
+     ]
+    },
+    "N": {
+     "raw": "COLOMBINI/LOFFREDO",
+     "names": [
+      "COLOMBINI",
+      "LOFFREDO"
+     ]
+    },
+    "A": {
+     "raw": "",
+     "names": []
+    }
+   }
+  },
+  {
+   "day": 5,
+   "date": "2026-09-05",
+   "weekdayLabel": "SABATO",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PASTORE/FLORENZAN",
+     "names": [
+      "PASTORE",
+      "FLORENZAN"
+     ]
+    },
+    "P": {
+     "raw": "PASTORE/FLORENZAN",
+     "names": [
+      "PASTORE",
+      "FLORENZAN"
+     ]
+    },
+    "N": {
+     "raw": "PUSCEDDU/KASO",
+     "names": [
+      "PUSCEDDU",
+      "KASO"
+     ]
+    },
+    "A": {
+     "raw": "",
+     "names": []
+    }
+   }
+  },
+  {
+   "day": 6,
+   "date": "2026-09-06",
+   "weekdayLabel": "DOMENICA",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "MEGLIO/TOSKIC",
+     "names": [
+      "MEGLIO",
+      "TOSKIC"
+     ]
+    },
+    "P": {
+     "raw": "MEGLIO/TOSKIC",
+     "names": [
+      "MEGLIO",
+      "TOSKIC"
+     ]
+    },
+    "N": {
+     "raw": "PASTORE/FLORENZAN",
+     "names": [
+      "PASTORE",
+      "FLORENZAN"
+     ]
+    },
+    "A": {
+     "raw": "",
+     "names": []
+    }
+   }
+  },
+  {
+   "day": 7,
+   "date": "2026-09-07",
+   "weekdayLabel": "LUNEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "CARAPELLA",
+     "names": [
+      "CARAPELLA"
+     ]
+    },
+    "P": {
+     "raw": "CARAPELLA/TOSKIC",
+     "names": [
+      "CARAPELLA",
+      "TOSKIC"
+     ]
+    },
+    "N": {
+     "raw": "PUSCEDDU/FRANCESCONI",
+     "names": [
+      "PUSCEDDU",
+      "FRANCESCONI"
+     ]
+    },
+    "A": {
+     "raw": "TOSKIC",
+     "names": [
+      "TOSKIC"
+     ]
+    }
+   }
+  },
+  {
+   "day": 8,
+   "date": "2026-09-08",
+   "weekdayLabel": "MARTEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "ORLANDI",
+     "names": [
+      "ORLANDI"
+     ]
+    },
+    "P": {
+     "raw": "ORLANDI/PASTORE",
+     "names": [
+      "ORLANDI",
+      "PASTORE"
+     ]
+    },
+    "N": {
+     "raw": "TCHIPEV/UGAZ",
+     "names": [
+      "TCHIPEV",
+      "UGAZ"
+     ]
+    },
+    "A": {
+     "raw": "GIUSTIZIERI",
+     "names": [
+      "GIUSTIZIERI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 9,
+   "date": "2026-09-09",
+   "weekdayLabel": "MERCOLEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PASTORE",
+     "names": [
+      "PASTORE"
+     ]
+    },
+    "P": {
+     "raw": "PASTORE/KASO",
+     "names": [
+      "PASTORE",
+      "KASO"
+     ]
+    },
+    "N": {
+     "raw": "DE PASQUALE/TOSKIC",
+     "names": [
+      "DE PASQUALE",
+      "TOSKIC"
+     ]
+    },
+    "A": {
+     "raw": "FRANCESCONI",
+     "names": [
+      "FRANCESCONI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 10,
+   "date": "2026-09-10",
+   "weekdayLabel": "GIOVEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "CARAPELLA",
+     "names": [
+      "CARAPELLA"
+     ]
+    },
+    "P": {
+     "raw": "FRANCESCONI/UGAZ",
+     "names": [
+      "FRANCESCONI",
+      "UGAZ"
+     ]
+    },
+    "N": {
+     "raw": "ORLANDI/TCHIPEV",
+     "names": [
+      "ORLANDI",
+      "TCHIPEV"
+     ]
+    },
+    "A": {
+     "raw": "PASTORE",
+     "names": [
+      "PASTORE"
+     ]
+    }
+   }
+  },
+  {
+   "day": 11,
+   "date": "2026-09-11",
+   "weekdayLabel": "VENERDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "MEGLIO",
+     "names": [
+      "MEGLIO"
+     ]
+    },
+    "P": {
+     "raw": "MEGLIO/KASO",
+     "names": [
+      "MEGLIO",
+      "KASO"
+     ]
+    },
+    "N": {
+     "raw": "FRANCESCONI/RUSSOTTO",
+     "names": [
+      "FRANCESCONI",
+      "RUSSOTTO"
+     ]
+    },
+    "A": {
+     "raw": "KASO",
+     "names": [
+      "KASO"
+     ]
+    }
+   }
+  },
+  {
+   "day": 12,
+   "date": "2026-09-12",
+   "weekdayLabel": "SABATO",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "CARAPELLA/D'AMORE",
+     "names": [
+      "CARAPELLA",
+      "D'AMORE"
+     ]
+    },
+    "P": {
+     "raw": "CARAPELLA/D'AMORE",
+     "names": [
+      "CARAPELLA",
+      "D'AMORE"
+     ]
+    },
+    "N": {
+     "raw": "TCHIPEV/RUSSOTTO",
+     "names": [
+      "TCHIPEV",
+      "RUSSOTTO"
+     ]
+    },
+    "A": {
+     "raw": "",
+     "names": []
+    }
+   }
+  },
+  {
+   "day": 13,
+   "date": "2026-09-13",
+   "weekdayLabel": "DOMENICA",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "FRANCESCONI/SANTAMBROGIO",
+     "names": [
+      "FRANCESCONI",
+      "SANTAMBROGIO"
+     ]
+    },
+    "P": {
+     "raw": "FRANCESCONI/SANTAMBROGIO",
+     "names": [
+      "FRANCESCONI",
+      "SANTAMBROGIO"
+     ]
+    },
+    "N": {
+     "raw": "PUSCEDDU/RUSSOTTO",
+     "names": [
+      "PUSCEDDU",
+      "RUSSOTTO"
+     ]
+    },
+    "A": {
+     "raw": "",
+     "names": []
+    }
+   }
+  },
+  {
+   "day": 14,
+   "date": "2026-09-14",
+   "weekdayLabel": "LUNEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PASTORE",
+     "names": [
+      "PASTORE"
+     ]
+    },
+    "P": {
+     "raw": "PASTORE/TOSKIC",
+     "names": [
+      "PASTORE",
+      "TOSKIC"
+     ]
+    },
+    "N": {
+     "raw": "FRANCESCONI/RUSSOTTO",
+     "names": [
+      "FRANCESCONI",
+      "RUSSOTTO"
+     ]
+    },
+    "A": {
+     "raw": "TOSKIC",
+     "names": [
+      "TOSKIC"
+     ]
+    }
+   }
+  },
+  {
+   "day": 15,
+   "date": "2026-09-15",
+   "weekdayLabel": "MARTEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "ORLANDI",
+     "names": [
+      "ORLANDI"
+     ]
+    },
+    "P": {
+     "raw": "ORLANDI/STRACKA",
+     "names": [
+      "ORLANDI",
+      "STRACKA"
+     ]
+    },
+    "N": {
+     "raw": "TCHIPEV/KASO",
+     "names": [
+      "TCHIPEV",
+      "KASO"
+     ]
+    },
+    "A": {
+     "raw": "LOFFREDO",
+     "names": [
+      "LOFFREDO"
+     ]
+    }
+   }
+  },
+  {
+   "day": 16,
+   "date": "2026-09-16",
+   "weekdayLabel": "MERCOLEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PASTORE",
+     "names": [
+      "PASTORE"
+     ]
+    },
+    "P": {
+     "raw": "FRANCESCONI/STRACKA",
+     "names": [
+      "FRANCESCONI",
+      "STRACKA"
+     ]
+    },
+    "N": {
+     "raw": "PUSCEDDU/TOSKIC",
+     "names": [
+      "PUSCEDDU",
+      "TOSKIC"
+     ]
+    },
+    "A": {
+     "raw": "GIUSTIZIERI",
+     "names": [
+      "GIUSTIZIERI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 17,
+   "date": "2026-09-17",
+   "weekdayLabel": "GIOVEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "MASTROLILLI",
+     "names": [
+      "MASTROLILLI"
+     ]
+    },
+    "P": {
+     "raw": "COLOMBINI/KASO",
+     "names": [
+      "COLOMBINI",
+      "KASO"
+     ]
+    },
+    "N": {
+     "raw": "ORLANDI/TCHIPEV",
+     "names": [
+      "ORLANDI",
+      "TCHIPEV"
+     ]
+    },
+    "A": {
+     "raw": "FRANCESCONI",
+     "names": [
+      "FRANCESCONI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 18,
+   "date": "2026-09-18",
+   "weekdayLabel": "VENERDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PASTORE",
+     "names": [
+      "PASTORE"
+     ]
+    },
+    "P": {
+     "raw": "PASTORE/TRUBBIA",
+     "names": [
+      "PASTORE",
+      "TRUBBIA"
+     ]
+    },
+    "N": {
+     "raw": "COLOMBINI/FLORENZAN",
+     "names": [
+      "COLOMBINI",
+      "FLORENZAN"
+     ]
+    },
+    "A": {
+     "raw": "FRANCESCONI",
+     "names": [
+      "FRANCESCONI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 19,
+   "date": "2026-09-19",
+   "weekdayLabel": "SABATO",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "DE PASQUALE/LOFFREDO",
+     "names": [
+      "DE PASQUALE",
+      "LOFFREDO"
+     ]
+    },
+    "P": {
+     "raw": "DE PASQUALE/LOFFREDO",
+     "names": [
+      "DE PASQUALE",
+      "LOFFREDO"
+     ]
+    },
+    "N": {
+     "raw": "CARAPELLA/PASTORE",
+     "names": [
+      "CARAPELLA",
+      "PASTORE"
+     ]
+    },
+    "A": {
+     "raw": "",
+     "names": []
+    }
+   }
+  },
+  {
+   "day": 20,
+   "date": "2026-09-20",
+   "weekdayLabel": "DOMENICA",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "DE PASQUALE/FLORENZAN",
+     "names": [
+      "DE PASQUALE",
+      "FLORENZAN"
+     ]
+    },
+    "P": {
+     "raw": "DE PASQUALE/FLORENZAN",
+     "names": [
+      "DE PASQUALE",
+      "FLORENZAN"
+     ]
+    },
+    "N": {
+     "raw": "COLOMBINI/TRUBBIA",
+     "names": [
+      "COLOMBINI",
+      "TRUBBIA"
+     ]
+    },
+    "A": {
+     "raw": "",
+     "names": []
+    }
+   }
+  },
+  {
+   "day": 21,
+   "date": "2026-09-21",
+   "weekdayLabel": "LUNEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PASTORE",
+     "names": [
+      "PASTORE"
+     ]
+    },
+    "P": {
+     "raw": "PASTORE/KASO",
+     "names": [
+      "PASTORE",
+      "KASO"
+     ]
+    },
+    "N": {
+     "raw": "FRANCESCONI/FLORENZAN",
+     "names": [
+      "FRANCESCONI",
+      "FLORENZAN"
+     ]
+    },
+    "A": {
+     "raw": "KASO",
+     "names": [
+      "KASO"
+     ]
+    }
+   }
+  },
+  {
+   "day": 22,
+   "date": "2026-09-22",
+   "weekdayLabel": "MARTEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "ORLANDI",
+     "names": [
+      "ORLANDI"
+     ]
+    },
+    "P": {
+     "raw": "ORLANDI/KASO",
+     "names": [
+      "ORLANDI",
+      "KASO"
+     ]
+    },
+    "N": {
+     "raw": "BOTTA/TCHIPEV",
+     "names": [
+      "BOTTA",
+      "TCHIPEV"
+     ]
+    },
+    "A": {
+     "raw": "GIUSTIZIERI",
+     "names": [
+      "GIUSTIZIERI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 23,
+   "date": "2026-09-23",
+   "weekdayLabel": "MERCOLEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "FRANCESCONI",
+     "names": [
+      "FRANCESCONI"
+     ]
+    },
+    "P": {
+     "raw": "PASTORE/LOFFREDO",
+     "names": [
+      "PASTORE",
+      "LOFFREDO"
+     ]
+    },
+    "N": {
+     "raw": "CARAPELLA/COLOMBINI",
+     "names": [
+      "CARAPELLA",
+      "COLOMBINI"
+     ]
+    },
+    "A": {
+     "raw": "LOFFREDO",
+     "names": [
+      "LOFFREDO"
+     ]
+    }
+   }
+  },
+  {
+   "day": 24,
+   "date": "2026-09-24",
+   "weekdayLabel": "GIOVEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PASTORE",
+     "names": [
+      "PASTORE"
+     ]
+    },
+    "P": {
+     "raw": "FRANCESCONI/KASO",
+     "names": [
+      "FRANCESCONI",
+      "KASO"
+     ]
+    },
+    "N": {
+     "raw": "TCHIPEV/ORLANDI",
+     "names": [
+      "TCHIPEV",
+      "ORLANDI"
+     ]
+    },
+    "A": {
+     "raw": "GIUSTIZIERI",
+     "names": [
+      "GIUSTIZIERI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 25,
+   "date": "2026-09-25",
+   "weekdayLabel": "VENERDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "FRANCESCONI",
+     "names": [
+      "FRANCESCONI"
+     ]
+    },
+    "P": {
+     "raw": "FRANCESCONI/LOFFREDO",
+     "names": [
+      "FRANCESCONI",
+      "LOFFREDO"
+     ]
+    },
+    "N": {
+     "raw": "COLOMBINI/TRUBBIA",
+     "names": [
+      "COLOMBINI",
+      "TRUBBIA"
+     ]
+    },
+    "A": {
+     "raw": "LOFFREDO",
+     "names": [
+      "LOFFREDO"
+     ]
+    }
+   }
+  },
+  {
+   "day": 26,
+   "date": "2026-09-26",
+   "weekdayLabel": "SABATO",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "DE PASQUALE /TOSKIC",
+     "names": [
+      "DE PASQUALE",
+      "TOSKIC"
+     ]
+    },
+    "P": {
+     "raw": "DE PASQUALE/TOSKIC",
+     "names": [
+      "DE PASQUALE",
+      "TOSKIC"
+     ]
+    },
+    "N": {
+     "raw": "TCHIPEV/KASO",
+     "names": [
+      "TCHIPEV",
+      "KASO"
+     ]
+    },
+    "A": {
+     "raw": "",
+     "names": []
+    }
+   }
+  },
+  {
+   "day": 27,
+   "date": "2026-09-27",
+   "weekdayLabel": "DOMENICA",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PUSCEDDU/FRANCESCONI",
+     "names": [
+      "PUSCEDDU",
+      "FRANCESCONI"
+     ]
+    },
+    "P": {
+     "raw": "PUSCEDDU/FRANCESCONI",
+     "names": [
+      "PUSCEDDU",
+      "FRANCESCONI"
+     ]
+    },
+    "N": {
+     "raw": "DE PASQUALE/TOSKIC",
+     "names": [
+      "DE PASQUALE",
+      "TOSKIC"
+     ]
+    },
+    "A": {
+     "raw": "",
+     "names": []
+    }
+   }
+  },
+  {
+   "day": 28,
+   "date": "2026-09-28",
+   "weekdayLabel": "LUNEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PASTORE",
+     "names": [
+      "PASTORE"
+     ]
+    },
+    "P": {
+     "raw": "PASTORE/KASO",
+     "names": [
+      "PASTORE",
+      "KASO"
+     ]
+    },
+    "N": {
+     "raw": "FRANCESCONI/FLORENZAN",
+     "names": [
+      "FRANCESCONI",
+      "FLORENZAN"
+     ]
+    },
+    "A": {
+     "raw": "KASO",
+     "names": [
+      "KASO"
+     ]
+    }
+   }
+  },
+  {
+   "day": 29,
+   "date": "2026-09-29",
+   "weekdayLabel": "MARTEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "CARAPELLA",
+     "names": [
+      "CARAPELLA"
+     ]
+    },
+    "P": {
+     "raw": "CARAPELLA/TRUBBIA",
+     "names": [
+      "CARAPELLA",
+      "TRUBBIA"
+     ]
+    },
+    "N": {
+     "raw": "TCHIPEV/KASO",
+     "names": [
+      "TCHIPEV",
+      "KASO"
+     ]
+    },
+    "A": {
+     "raw": "TRUBBIA",
+     "names": [
+      "TRUBBIA"
+     ]
+    }
+   }
+  },
+  {
+   "day": 30,
+   "date": "2026-09-30",
+   "weekdayLabel": "MERCOLEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "GIUSTIZIERI",
+     "names": [
+      "GIUSTIZIERI"
+     ]
+    },
+    "P": {
+     "raw": "FRANCESCONI/FLORENZAN",
+     "names": [
+      "FRANCESCONI",
+      "FLORENZAN"
+     ]
+    },
+    "N": {
+     "raw": "PASTORE/PUSCEDDU",
+     "names": [
+      "PASTORE",
+      "PUSCEDDU"
+     ]
+    },
+    "A": {
+     "raw": "TOSKIC",
+     "names": [
+      "TOSKIC"
+     ]
+    }
+   }
+  }
+ ],
+ "warnings": []
+}

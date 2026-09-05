@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#161B21" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="I Miei Turni">
+<meta name="description" content="I turni mensili del Pronto Soccorso di DEA e OSG: cerca un nome, evidenzialo nel calendario, controlla le segnalazioni.">
+<title>I Miei Turni</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap">
+<!--STYLES-->
+</head>
+<body>
+
+<a class="skiplink" href="#calendario">Vai al calendario</a>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-pen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14.1 3.6 20.4 9.9l-8 8H7.7L5.5 15.6z"/>
+    <path d="M8.6 12.4 5 16v3h3l3.6-3.6"/>
+    <path d="M3 21.4h18"/>
+  </symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.6 21.2 20H2.8z"/>
+    <path d="M12 9.6v4.6"/>
+    <path d="M12 17.1h.01"/>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4.5 12.6 9.4 17.5 19.5 7"/>
+  </symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 15.6V4"/>
+    <path d="M7.8 8.2 12 4l4.2 4.2"/>
+    <path d="M4 16v2.6a1.4 1.4 0 0 0 1.4 1.4h13.2a1.4 1.4 0 0 0 1.4-1.4V16"/>
+  </symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.5 9.5 12 15l5.5-5.5"/>
+  </symbol>
+  <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.4 6.4 17.6 17.6"/>
+    <path d="M17.6 6.4 6.4 17.6"/>
+  </symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14.5 5.5 8 12l6.5 6.5"/>
+  </symbol>
+  <symbol id="i-next" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9.5 5.5 16 12l-6.5 6.5"/>
+  </symbol>
+</svg>
+
+<header class="topbar">
+  <div class="titlerow">
+    <h1 class="wordmark">I Miei Turni</h1>
+    <div class="month" id="monthCtl"></div>
+  </div>
+  <div class="segbar" id="segbar" role="tablist" aria-label="Vista">
+    <button class="seg" id="segCal" type="button" role="tab" aria-selected="true" aria-controls="viewCal">Calendario</button>
+    <button class="seg" id="segTab" type="button" role="tab" aria-selected="false" aria-controls="viewTab" tabindex="-1">Tabella</button>
+    <button class="seg" id="segOre" type="button" role="tab" aria-selected="false" aria-controls="viewOre" tabindex="-1">Ore</button>
+  </div>
+</header>
+
+<div class="searchbar" id="searchbar">
+  <div class="search" id="search">
+    <svg class="ico search__ico" aria-hidden="true" focusable="false"><use href="#i-pen"></use></svg>
+    <div class="search__body">
+      <span class="pintoken" id="pintoken" hidden></span>
+      <input class="search__input" id="q" type="text" role="combobox" aria-expanded="false"
+             aria-controls="pop" aria-autocomplete="list" aria-haspopup="listbox"
+             aria-label="Cerca un nome" placeholder="Cerca un nome"
+             enterkeyhint="search" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </div>
+    <button class="iconbtn search__clear" id="clearBtn" type="button" hidden aria-label="Cancella la ricerca">
+      <svg class="ico" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+    </button>
+    <div class="pop" id="pop" role="listbox" aria-label="Nomi in servizio nel mese" hidden></div>
+  </div>
+</div>
+
+<main class="page">
+  <section class="empty" id="empty" hidden>
+    <h2 class="empty__t">Nessun turno caricato</h2>
+    <button class="btn btn--solid" id="emptyUpload" type="button">
+      <svg class="ico" aria-hidden="true" focusable="false"><use href="#i-upload"></use></svg><span>Carica xlsx</span>
+    </button>
+  </section>
+
+  <p class="personline" id="personline" hidden></p>
+
+  <div class="view" id="viewCal" role="tabpanel" aria-labelledby="segCal">
+    <h2 class="sr-only" id="calTitle">Calendario dei turni</h2>
+    <div class="cal" id="calendario" aria-labelledby="calTitle"></div>
+    <p class="callegend" id="callegend" hidden></p>
+    <section class="detail" id="detail" aria-live="polite" aria-labelledby="detailTitle"></section>
+  </div>
+
+  <div class="view" id="viewTab" role="tabpanel" aria-labelledby="segTab" hidden>
+    <h2 class="sr-only" id="tabTitle">Tabella dei turni del mese</h2>
+    <div class="tablewrap" id="tablewrap"></div>
+  </div>
+
+  <div class="view" id="viewOre" role="tabpanel" aria-labelledby="segOre" hidden>
+    <section class="ore" id="orecard"></section>
+  </div>
+
+  <section class="findings" id="segnalazioni" tabindex="-1" aria-labelledby="findingsTitle"></section>
+
+  <details class="dati" id="dati">
+    <summary class="dati__sum" id="datiSum"><svg class="ico dati__chev" aria-hidden="true" focusable="false"><use href="#i-chevron"></use></svg><span id="datiSumText">Dati</span></summary>
+    <div class="dati__body" id="datiBody"></div>
+  </details>
+</main>
+
+<input class="filein" id="fileInput" type="file" accept=".xlsx" multiple tabindex="-1" aria-label="Carica i file xlsx dei turni">
+
+<div class="sheet" id="review" hidden>
+  <div class="sheet__scrim" id="reviewScrim"></div>
+  <div class="sheet__panel" id="reviewPanel" role="dialog" aria-modal="true" aria-labelledby="reviewTitle" tabindex="-1">
+    <div class="sheet__head">
+      <h2 class="sheet__t" id="reviewTitle"></h2>
+      <p class="sheet__cap" id="reviewCap"></p>
+    </div>
+    <div class="sheet__body" id="reviewBody"></div>
+    <div class="sheet__foot">
+      <button class="btn" id="reviewCancel" type="button">Annulla</button>
+      <button class="btn btn--solid" id="reviewSave" type="button">Salva</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<p class="sr-only" id="srStatus" aria-live="polite"></p>
+
+<!--PARSER-->
+<!--RULES-->
+<!--DATA-->
+<!--APP-->
+</body>
+</html>
