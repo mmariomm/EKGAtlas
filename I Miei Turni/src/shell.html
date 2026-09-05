@@ -82,6 +82,11 @@
       </button>
       <div class="pop" id="pop" role="listbox" aria-label="Nomi in servizio nel mese" hidden></div>
     </div>
+
+    <div class="segbar" id="segbar" role="tablist" aria-label="Vista">
+      <button class="seg" id="segCal" type="button" role="tab" aria-selected="true" aria-controls="viewCal">Calendario</button>
+      <button class="seg" id="segTab" type="button" role="tab" aria-selected="false" aria-controls="viewTab" tabindex="-1">Tabella</button>
+    </div>
   </div>
 </header>
 
@@ -97,11 +102,17 @@
 
   <p class="personline" id="personline" hidden></p>
 
-  <h2 class="sr-only" id="calTitle">Calendario dei turni</h2>
-  <div class="cal" id="calendario" role="grid" aria-labelledby="calTitle"></div>
-  <p class="callegend" id="callegend" hidden></p>
+  <div class="view" id="viewCal" role="tabpanel" aria-labelledby="segCal">
+    <h2 class="sr-only" id="calTitle">Calendario dei turni</h2>
+    <div class="cal" id="calendario" role="grid" aria-labelledby="calTitle"></div>
+    <p class="callegend" id="callegend" hidden></p>
+    <section class="card detail" id="detail" aria-live="polite" aria-labelledby="detailTitle"></section>
+  </div>
 
-  <section class="card detail" id="detail" aria-live="polite" aria-labelledby="detailTitle"></section>
+  <div class="view" id="viewTab" role="tabpanel" aria-labelledby="segTab" hidden>
+    <h2 class="sr-only" id="tabTitle">Tabella dei turni del mese</h2>
+    <div class="card tablewrap" id="tablewrap"></div>
+  </div>
 
   <section class="card findings" id="segnalazioni" tabindex="-1" aria-labelledby="findingsTitle"></section>
 

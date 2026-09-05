@@ -17,6 +17,7 @@
 
   var LS_ROSTERS = 'imieiturni.rosters.v1';
   var LS_ME = 'imieiturni.me';
+  var LS_VIEW = 'imieiturni.view';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var MONTHS_IT = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
@@ -170,6 +171,15 @@
     } catch (e) { /* niente memoria: pazienza */ }
   }
 
+  function readView() {
+    try { return window.localStorage.getItem(LS_VIEW) === 'tabella' ? 'tabella' : 'calendario'; }
+    catch (e) { return 'calendario'; }
+  }
+
+  function writeView(v) {
+    try { window.localStorage.setItem(LS_VIEW, v); } catch (e) { /* pazienza */ }
+  }
+
   // ---------------------------------------------------------------------------
   // Stato
   // ---------------------------------------------------------------------------
@@ -179,6 +189,7 @@
 
   var state = {
     month: '',
+    view: 'calendario',
     selected: '',
     query: '',
     armedIndex: 0,
@@ -200,6 +211,7 @@
 
   var topbar = $('topbar'), monthCtl = $('monthCtl'), findingsBtn = $('findingsBtn'), todayBtn = $('todayBtn'),
     searchBox = $('search'), input = $('q'), pintoken = $('pintoken'), clearBtn = $('clearBtn'), pop = $('pop'),
+    segCal = $('segCal'), segTab = $('segTab'), viewCal = $('viewCal'), viewTab = $('viewTab'), tableWrap = $('tablewrap'),
     emptyEl = $('empty'), personLine = $('personline'), calEl = $('calendario'), legendEl = $('callegend'),
     detailEl = $('detail'), findEl = $('segnalazioni'), stripEl = $('strip'), datiEl = $('dati'), datiBody = $('datiBody'),
     fileInput = $('fileInput'), dropzone = $('dropzone'), toasts = $('toasts'), srStatus = $('srStatus');
@@ -372,6 +384,7 @@
       if (k === 'mese') state.month = v;
       else if (k === 'nome') state.pinned = v.toLocaleUpperCase('it-IT');
       else if (k === 'giorno') state.selected = v;
+      else if (k === 'vista') state.view = v === 'tabella' ? 'tabella' : 'calendario';
     });
   }
 
@@ -380,6 +393,7 @@
     if (state.month) parts.push('mese=' + state.month);
     if (state.pinned) parts.push('nome=' + encodeURIComponent(state.pinned));
     if (state.selected) parts.push('giorno=' + state.selected);
+    if (state.view === 'tabella') parts.push('vista=tabella');
     var hash = parts.length ? '#' + parts.join('&') : '';
     if (hash !== window.location.hash) {
       try { window.history.replaceState(null, '', window.location.pathname + window.location.search + hash); }
@@ -580,6 +594,154 @@
       now.setAttribute('aria-selected', 'true');
       now.tabIndex = 0;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — le due viste
+  // ---------------------------------------------------------------------------
+
+  function renderMain() {
+    var isTable = state.view === 'tabella';
+    segCal.setAttribute('aria-selected', isTable ? 'false' : 'true');
+    segTab.setAttribute('aria-selected', isTable ? 'true' : 'false');
+    segCal.tabIndex = isTable ? -1 : 0;
+    segTab.tabIndex = isTable ? 0 : -1;
+    viewCal.hidden = isTable;
+    viewTab.hidden = !isTable;
+
+    if (isTable) {
+      clear(calEl); clear(detailEl); legendEl.hidden = true;
+      renderTable();
+    } else {
+      clear(tableWrap);
+      renderCalendar();
+      renderDetail();
+    }
+  }
+
+  function setView(v) {
+    if (state.view === v) return;
+    state.view = v;
+    writeView(v);
+    renderMain();
+    indexNames();
+    applyHighlight();
+    syncHash();
+    measureHeader();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — tabella del mese (tutti i nomi)
+  // ---------------------------------------------------------------------------
+
+  function renderTable() {
+    clear(tableWrap);
+    if (!D.days.length || !D.slotRows.length) return;
+    var table = el('table', { class: 'tab', 'aria-labelledby': 'tabTitle' });
+
+    // Larghezze proporzionali al nome più lungo di ogni colonna: a 390px
+    // nessun nome resta tagliato.
+    var lens = D.slotRows.map(function (row) {
+      var max = 4;
+      D.days.forEach(function (d) {
+        D.monthRosters.forEach(function (r) {
+          var cell = (d.cells[r.hospital] || {})[row.key];
+          ((cell && cell.names) || []).forEach(function (n) { if (n.length > max) max = n.length; });
+        });
+      });
+      return max + 2;
+    });
+    var total = lens.reduce(function (x, y) { return x + y; }, 0);
+    table.appendChild(el('colgroup', {}, [
+      el('col', { style: 'width:28px' }),
+      el('col', { style: 'width:10px' }),
+    ].concat(lens.map(function (l) {
+      return el('col', { style: 'width:calc((100% - 38px) * ' + (Math.round(l / total * 1000) / 1000) + ')' });
+    }))));
+
+    table.appendChild(el('thead', {}, el('tr', {}, [
+      el('th', { class: 'tab__corner', scope: 'col' }, el('span', { class: 'sr-only', text: 'Giorno' })),
+      el('th', { class: 'tab__hh', scope: 'col' }, el('span', { class: 'sr-only', text: 'Ospedale' })),
+    ].concat(D.slotRows.map(function (row) {
+      return el('th', { class: 'tab__hs' + (row.key === 'N' ? ' is-night' : ''), scope: 'col' }, [
+        el('b', { text: row.key }), el('time', { text: R.timeRange(row.slot) }),
+      ]);
+    })))));
+
+    var body = el('tbody');
+    D.days.forEach(function (d) {
+      var weekend = isWeekend(d.date);
+      D.monthRosters.forEach(function (r, i) {
+        var tr = el('tr', {
+          class: 'tab__r ' + (i === 0 ? 'tab__r--first' : 'tab__r--second') + (weekend ? ' is-weekend' : ''),
+          data: { date: d.date },
+        });
+        if (i === 0) tr.appendChild(tableDayCell(d));
+        tr.appendChild(el('td', { class: 'tab__h' }, [
+          el('span', { class: 'dot ' + hospClass(r.hospital) }),
+          el('span', { class: 'sr-only', text: r.hospital }),
+        ]));
+        D.slotRows.forEach(function (row) {
+          var slot = (r.slots || []).filter(function (s) { return s.key === row.key; })[0] || null;
+          tr.appendChild(tableCell(r, slot, d, row.key));
+        });
+        body.appendChild(tr);
+      });
+    });
+    table.appendChild(body);
+    table.classList.toggle('is-pinned', !!state.pinned && !state.query.trim());
+    tableWrap.appendChild(table);
+  }
+
+  function tableDayCell(d) {
+    var today = d.date === D.today;
+    return el('th', { class: 'tab__day', scope: 'row', rowspan: '2' },
+      el('button', {
+        class: 'tab__daybtn', type: 'button', data: { goday: d.date },
+        'aria-label': d.day + ' ' + weekdayLong(d.date) + ': apri nel calendario',
+      }, [
+        el('span', { class: 'n' + (today ? ' is-today' : ''), text: String(d.day) }),
+        el('span', { class: 'wd', text: R.formatDate(d.date).split(' ')[0] }),
+      ]));
+  }
+
+  function tableCell(roster, slot, day, key) {
+    var box = el('td', { class: 'tab__c' + (key === 'N' ? ' is-night' : '') });
+    if (!slot) return box;
+    var mark = D.cellFind.get(roster.hospital + '|' + day.date + '|' + slot.key);
+    if (mark) {
+      box.classList.add('has-find', 'sev-' + mark.severity);
+      box.title = mark.title;
+    }
+    var names = ((day.cells[roster.hospital] || {})[slot.key] || {}).names || [];
+    var seen = Object.create(null);
+    names.forEach(function (name, pos) {
+      if (seen[name]) return;
+      seen[name] = true;
+      var role = (slot.roles && slot.roles[pos]) || '';
+      var finds = D.pillFind.get(roster.hospital + '|' + day.date + '|' + slot.key + '|' + name);
+      var sev = finds ? Math.max.apply(null, finds.map(function (f) { return f.severity; })) : 0;
+      box.appendChild(el('button', {
+        class: 'pill pill--t', type: 'button', data: { name: name },
+        title: name + (role ? ' · ' + (pos + 1) + 'º ' + role : ''),
+        'aria-label': name + ' — ' + R.slotName(slot.label) + ' ' + roster.hospital + (role ? ', ' + role : ''),
+      }, [
+        el('span', { text: name }),
+        sev ? el('span', { class: 'fdot sev-' + sev, title: finds[0].title }) : null,
+      ]));
+    });
+    return box;
+  }
+
+  function flashGroup(date) {
+    if (reduceMotion.matches) return;
+    var rows = tableWrap.querySelectorAll('tr[data-date="' + date + '"]');
+    Array.prototype.forEach.call(rows, function (tr) {
+      tr.classList.remove('is-flash');
+      void tr.offsetWidth;
+      tr.classList.add('is-flash');
+      window.setTimeout(function () { tr.classList.remove('is-flash'); }, 1400);
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -887,6 +1049,7 @@
       arr.push(node);
     };
     Array.prototype.forEach.call(detailEl.querySelectorAll('[data-name]'), add);
+    Array.prototype.forEach.call(tableWrap.querySelectorAll('[data-name]'), add);
     Array.prototype.forEach.call(stripEl.querySelectorAll('[data-name]'), add);
   }
 
@@ -904,23 +1067,29 @@
     painted.forEach(function (node) { node.classList.remove('is-soft', 'is-strong'); });
     painted = [];
 
+    var table = tableWrap.firstChild;
+    var dim = function (on) {
+      detailEl.classList.toggle('is-pinned', on);
+      if (table && table.classList) table.classList.toggle('is-pinned', on);
+    };
+
     var q = state.query.trim();
     if (q) {
-      detailEl.classList.remove('is-pinned');
+      dim(false);
       var list = R.searchNames(q, D.names);
       list.forEach(function (n) { paint(n.name, 'is-soft'); });
       var armed = list[state.armedIndex];
       if (armed) paint(armed.name, 'is-strong');
     } else if (state.pinned) {
-      detailEl.classList.add('is-pinned');
+      dim(true);
       paint(state.pinned, 'is-strong');
     } else {
-      detailEl.classList.remove('is-pinned');
+      dim(false);
     }
 
     // Il calendario segue il nome in evidenza: si vede il mese della persona
     // già mentre si scrive.
-    if (previewName() !== calName) { renderCalendar(); }
+    if (state.view === 'calendario' && previewName() !== calName) renderCalendar();
   }
 
   // ---------------------------------------------------------------------------
@@ -1029,8 +1198,7 @@
     keepAnchor(function () {
       renderHeader();
       renderPersonLine();
-      renderCalendar();
-      renderDetail();
+      renderMain();
       renderFindings();
       indexNames();
       applyHighlight();
@@ -1046,9 +1214,10 @@
   // Il dettaglio resta dov'è quando sopra compare o sparisce la riga della persona.
   function keepAnchor(fn, skip) {
     if (skip) { fn(); return; }
-    var before = detailEl.getBoundingClientRect().top;
+    var anchor = state.view === 'tabella' ? viewTab : detailEl;
+    var before = anchor.getBoundingClientRect().top;
     fn();
-    var delta = detailEl.getBoundingClientRect().top - before;
+    var delta = anchor.getBoundingClientRect().top - before;
     if (Math.abs(delta) > 1 && window.scrollY > 0) window.scrollBy({ top: delta, behavior: 'instant' });
   }
 
@@ -1057,6 +1226,7 @@
     if (!validDay(date)) return;
     var prev = state.selected;
     state.selected = date;
+    if (state.view === 'tabella') { syncHash(); return; }
     updateCalSelection(prev, date);
     renderDetail();
     indexNames();
@@ -1068,6 +1238,19 @@
       var b = calEl.querySelector('[data-day="' + date + '"]');
       if (b && b.focus) b.focus();
     }
+  }
+
+  // Dalla segnalazione al giorno: nel calendario lo seleziona, nella tabella
+  // porta al gruppo di righe e lo fa lampeggiare.
+  function goToDay(date) {
+    if (state.view === 'tabella') {
+      state.selected = validDay(date) ? date : state.selected;
+      syncHash();
+      var row = tableWrap.querySelector('tr[data-date="' + date + '"]');
+      if (row) { scrollToEl(row); flashGroup(date); }
+      return;
+    }
+    selectDay(date, { scroll: true, flash: true });
   }
 
   function step(delta) {
@@ -1172,8 +1355,8 @@
     var hasData = D.rosters.length > 0;
     emptyEl.hidden = hasData;
     searchBox.hidden = !hasData;
-    calEl.hidden = !hasData;
-    detailEl.hidden = !hasData;
+    viewCal.hidden = !hasData;
+    viewTab.hidden = true;
     findEl.hidden = !hasData;
     stripEl.hidden = !hasData;
     datiEl.hidden = !hasData && !local.length;
@@ -1181,13 +1364,13 @@
     renderHeader();
     if (hasData) {
       renderPersonLine();
-      renderCalendar();
-      renderDetail();
+      renderMain();
       renderFindings();
       renderStrip();
     } else {
       personLine.hidden = true;
       legendEl.hidden = true;
+      clear(calEl); clear(detailEl); clear(tableWrap);
     }
     renderDati();
     indexNames();
@@ -1257,8 +1440,15 @@
       }
       var cell = e.target.closest('[data-day]');
       if (cell) { selectDay(cell.dataset.day); return; }
+      var goday = e.target.closest('[data-goday]');
+      if (goday) {
+        selectDay(goday.dataset.goday);
+        setView('calendario');
+        window.scrollTo({ top: 0, behavior: reduceMotion.matches ? 'instant' : 'smooth' });
+        return;
+      }
       var goto = e.target.closest('[data-goto]');
-      if (goto) selectDay(goto.dataset.goto, { scroll: true, flash: true });
+      if (goto) goToDay(goto.dataset.goto);
     });
 
     // Calendario: le frecce spostano il fuoco, Invio sceglie il giorno.
@@ -1287,6 +1477,16 @@
       if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
       step(dx < 0 ? 1 : -1);
     }, { passive: true });
+
+    segCal.addEventListener('click', function () { setView('calendario'); });
+    segTab.addEventListener('click', function () { setView('tabella'); });
+    $('segbar').addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return;
+      e.preventDefault();
+      var next = (e.key === 'ArrowLeft' || e.key === 'Home') ? 'calendario' : 'tabella';
+      setView(next);
+      (next === 'tabella' ? segTab : segCal).focus();
+    });
 
     findingsBtn.addEventListener('click', function () {
       scrollToEl(findEl);
@@ -1336,7 +1536,8 @@
   // ---------------------------------------------------------------------------
 
   function init() {
-    readHash();
+    state.view = readView();
+    readHash();                                    // l'indirizzo vince sulla memoria
     if (!state.pinned) state.pinned = readMe();   // la pagina si riapre sul proprio mese
     wire();
     renderAll();

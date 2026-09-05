@@ -196,8 +196,8 @@ code { font-family: var(--mono); font-size: .92em; }
 
 .topbar__in {
   max-width: 640px; margin: 0 auto;
-  padding: 6px var(--pad) 8px;
-  display: flex; flex-direction: column; gap: 7px;
+  padding: 6px var(--pad) 7px;
+  display: flex; flex-direction: column; gap: 6px;
 }
 
 .toprow { display: flex; align-items: center; gap: 10px; min-height: 32px; }
@@ -254,7 +254,7 @@ code { font-family: var(--mono); font-size: .92em; }
 .search {
   position: relative;
   display: flex; align-items: center; gap: 8px;
-  min-height: 46px; padding: 0 8px 0 12px;
+  min-height: 44px; padding: 0 8px 0 12px;
   background: var(--surface-2);
   border: 1px solid var(--line-strong); border-radius: 10px;
 }
@@ -288,6 +288,23 @@ code { font-family: var(--mono); font-size: .92em; }
   background: none; border: 0; border-radius: 8px; cursor: pointer; color: var(--muted);
 }
 .iconbtn:hover { background: var(--surface); color: var(--ink); }
+
+/* Interruttore fra le due viste */
+.segbar {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 2px;
+  padding: 2px; border-radius: 9px; background: var(--surface-2);
+}
+.seg {
+  min-height: 28px; padding: 0 10px;
+  background: none; border: 0; border-radius: 7px; cursor: pointer;
+  font-size: 12.5px; font-weight: 500; color: var(--muted);
+  transition: background-color .15s ease, color .15s ease;
+}
+.seg[aria-selected="true"] {
+  background: var(--surface); color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(16, 22, 30, .06);
+}
+.seg:hover { color: var(--ink); }
 
 /* --------------------------------------------------------------------------
    4. Elenco dei candidati (foglio sotto il campo)
@@ -493,6 +510,81 @@ code { font-family: var(--mono); font-size: .92em; }
 .detail.is-flash { animation: flashcard 1.2s ease-out; }
 
 /* --------------------------------------------------------------------------
+   7bis. Tabella del mese — tutti i nomi, il più fitta che il telefono consenta
+   -------------------------------------------------------------------------- */
+.view { display: flex; flex-direction: column; gap: 10px; }
+
+.tablewrap { overflow: hidden; }        /* i bordi arrotondati tagliano la tabella */
+
+.tab {
+  width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.tab th, .tab td { padding: 0; text-align: left; vertical-align: top; }
+
+.tab thead th {
+  position: sticky; top: calc(var(--h-header) - 1px); z-index: 5;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+  padding: 5px 2px; font-weight: 400;
+}
+.tab__hs { display: table-cell; }
+.tab__hs b { font-size: 10.5px; font-weight: 600; color: var(--ink-2); }
+.tab__hs time { font-family: var(--mono); font-size: 9.5px; color: var(--muted); margin-left: 3px; }
+.tab thead .is-night { background: var(--night-veil); }
+
+.tab tbody tr { background: var(--surface); scroll-margin-top: calc(var(--h-header) + 34px); }
+.tab tbody tr.is-weekend { background: var(--weekend); }
+.tab__r--first > * { border-top: 1px solid var(--line); }
+.tab__r--first:first-child > * { border-top: 0; }
+.tab tbody tr > .is-night { background: var(--night-veil); }
+
+.tab__day {
+  position: sticky; left: 0; z-index: 2;
+  background: inherit; padding: 3px 2px 3px 4px !important;
+  scroll-margin-top: calc(var(--h-header) + 34px);
+}
+.tab__daybtn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0;
+  min-height: 34px; padding: 1px 2px; background: none; border: 0; border-radius: 5px;
+  cursor: pointer; text-align: left;
+}
+.tab__daybtn:hover { background: var(--surface-2); }
+.tab__daybtn .n {
+  font-family: var(--mono); font-size: 14px; line-height: 16px; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.tab tbody tr.is-weekend .tab__daybtn .n { font-weight: 500; }
+.tab__daybtn .n.is-today {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: -2px;
+  border-radius: 50%; box-shadow: inset 0 0 0 2px var(--hl-ring);
+  print-color-adjust: exact; -webkit-print-color-adjust: exact;
+}
+.tab__daybtn .wd { font-size: 10px; line-height: 11px; color: var(--muted); }
+
+.tab__h { padding: 4px 0 0 !important; }
+.tab__h .dot { margin: 0 auto; }
+
+.tab__c { padding: 2px 1px !important; overflow: hidden; }
+.tab__c.has-find { box-shadow: inset 3px 0 0 var(--fsev, var(--sev2)); padding-left: 5px !important; }
+.tab__c.sev-3 { --fsev: var(--sev3); }
+.tab__c.sev-2 { --fsev: var(--sev2); }
+.tab__c.sev-1 { --fsev: var(--sev1); }
+
+.pill--t {
+  display: flex; align-items: center; gap: 3px; width: 100%; max-width: 100%;
+  padding: 0 2px; margin: 0; border-radius: 3px;
+  font-size: var(--tabfs, 10px); font-weight: 500; line-height: 13px; letter-spacing: -.02em;
+}
+.pill--t > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill--t::after { inset: -3px -2px; }
+.pill--t .fdot { width: 5px; height: 5px; }
+
+.tab.is-pinned .pill:not(.is-strong) { opacity: .72; }
+
+@keyframes flashcell { from { background-color: var(--hl-soft); } }
+.tab tr.is-flash > * { animation: flashcell 1.2s ease-out; }
+
+/* --------------------------------------------------------------------------
    8. Segnalazioni
    -------------------------------------------------------------------------- */
 .findings { padding: 12px; scroll-margin-top: calc(var(--h-header) + 8px); }
@@ -659,7 +751,7 @@ code { font-family: var(--mono); font-size: .92em; }
    12. Schermi larghi — stessa colonna, centrata
    -------------------------------------------------------------------------- */
 @media (min-width: 640px) {
-  :root { --fs: 15px; --pad: 16px; --dlabel: 84px; }
+  :root { --fs: 15px; --pad: 16px; --dlabel: 84px; --tabfs: 12px; }
   .wordmark, .month__t { font-size: 23px; }
   .cal__d { min-height: 58px; }
   .detail__num { font-size: 30px; }
@@ -701,6 +793,9 @@ code { font-family: var(--mono); font-size: .92em; }
   .topbar__in { padding: 0 0 6pt; border-bottom: 1pt solid #999; }
   .page { padding: 8pt 0 0; max-width: none; }
   .cal__d, .card { border-color: #bbb; break-inside: avoid; }
+  .segbar { display: none !important; }
+  .tab thead th { position: static; }
+  .tab tbody tr { break-inside: avoid; }
   .pill, .chipslot, .pintoken, .detail__oggi, .cal__n.is-today {
     print-color-adjust: exact; -webkit-print-color-adjust: exact;
   }
