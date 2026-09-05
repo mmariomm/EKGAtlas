@@ -183,6 +183,22 @@ var TurniRules = (function () {
       ' · riposo ' + formatRest(restMin);
   }
 
+  // Forma breve di un turno per le segnalazioni schematiche: "notte 17 OSG".
+  // Il mese compare solo quando i due turni della coppia stanno in mesi diversi.
+  function shortPiece(a, withMonth) {
+    var parts = String(a.date).split('-');
+    var day = Number(parts[2]);
+    var label = slotName(a.slotLabel).toLowerCase().replace(/^ambulatorio\b.*/, 'ambulatorio');
+    var when = withMonth ? day + ' ' + MONTH_SHORT_IT[Number(parts[1]) - 1] : String(day);
+    return label + ' ' + when + ' ' + a.hospital;
+  }
+
+  // "mattina 5 DEA + mattina 5 OSG · stesso orario" / "notte 17 OSG → mattina 18 OSG · riposo 0 h"
+  function shortText(a, b, joiner, tail) {
+    var withMonth = a.date.slice(0, 7) !== b.date.slice(0, 7);
+    return shortPiece(a, withMonth) + ' ' + joiner + ' ' + shortPiece(b, withMonth) + ' · ' + tail;
+  }
+
   // Regola "conflitto": due turni della stessa persona si sovrappongono nel tempo.
   // In ospedali diversi qualunque sovrapposizione conta; nello stesso ospedale conta
   // solo se supera i 60 minuti (altrimenti è un normale passaggio di consegne).
@@ -200,6 +216,7 @@ var TurniRules = (function () {
       date: a.date,
       title: sameHospital ? 'Doppio incarico nello stesso ospedale' : 'Stesso orario in due ospedali',
       detail: conflittoDetail(a, b),
+      short: shortText(a, b, '+', sameHospital ? 'doppio incarico' : 'stesso orario'),
     };
   }
 
@@ -218,6 +235,7 @@ var TurniRules = (function () {
       date: a.date,
       title: rest === 0 ? 'Notte attaccata a un turno diurno' : 'Riposo breve intorno alla notte',
       detail: sequenceDetail(a, b, rest),
+      short: shortText(a, b, '→', 'riposo ' + formatRest(rest)),
     };
   }
 
@@ -238,6 +256,7 @@ var TurniRules = (function () {
       date: a.date,
       title: 'Cambio di sede senza pausa',
       detail: sequenceDetail(a, b, rest),
+      short: shortText(a, b, '→', 'riposo ' + formatRest(rest)),
     };
   }
 
@@ -285,6 +304,106 @@ var TurniRules = (function () {
       return f.person.localeCompare(g.person, 'it');
     });
     return findings;
+  }
+
+  // ------------------------------------------------------------------
+  // personStats / hoursByName — conteggi e ore di una persona
+  // ------------------------------------------------------------------
+
+  // Somma le durate dell'unione degli intervalli [startAbs, endAbs): un turno
+  // mattina + pomeriggio vale 12 h, ambulatorio + pomeriggio 10 h 30 (l'ora in
+  // comune conta una volta sola), due turni sovrapposti in due ospedali contano
+  // il tempo reale, non il doppio.
+  function unionMinutes(list) {
+    var sorted = list.slice().sort(function (x, y) { return x.startAbs - y.startAbs; });
+    var total = 0, curStart = null, curEnd = null;
+    for (var i = 0; i < sorted.length; i++) {
+      var a = sorted[i];
+      if (curEnd === null || a.startAbs > curEnd) {
+        if (curEnd !== null) total += curEnd - curStart;
+        curStart = a.startAbs; curEnd = a.endAbs;
+      } else if (a.endAbs > curEnd) {
+        curEnd = a.endAbs;
+      }
+    }
+    if (curEnd !== null) total += curEnd - curStart;
+    return total;
+  }
+
+  // 114 → "114 h"; 10.5 → "10,5 h" (virgola decimale italiana).
+  function formatHours(hours) {
+    var rounded = Math.round(hours * 2) / 2;
+    var text = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace('.', ',');
+    return text + ' h';
+  }
+
+  // Conteggi di una persona (nel mese "YYYY-MM" se indicato, altrimenti su tutto):
+  // giornata = mattina + pomeriggio nello stesso giorno (anche in due ospedali);
+  // mattine e pomeriggi da soli si contano a parte; "dodici" = giornate + notti;
+  // le ore sono l'unione reale degli orari.
+  function personStats(assignments, person, month) {
+    var mine = [];
+    for (var i = 0; i < assignments.length; i++) {
+      var a = assignments[i];
+      if (a.person !== person) continue;
+      if (month && a.date.slice(0, 7) !== month) continue;
+      mine.push(a);
+    }
+    var byDate = new Map();
+    var counts = { M: 0, P: 0, N: 0, A: 0, other: 0 };
+    var byHospital = {};
+    for (i = 0; i < mine.length; i++) {
+      a = mine[i];
+      var key = counts.hasOwnProperty(a.slotKey) && a.slotKey !== 'other' ? a.slotKey : 'other';
+      counts[key]++;
+      var d = byDate.get(a.date);
+      if (!d) { d = { M: 0, P: 0 }; byDate.set(a.date, d); }
+      if (a.slotKey === 'M') d.M++;
+      if (a.slotKey === 'P') d.P++;
+      if (!byHospital[a.hospital]) byHospital[a.hospital] = [];
+      byHospital[a.hospital].push(a);
+    }
+    var giornate = 0, mattine = 0, pomeriggi = 0;
+    byDate.forEach(function (d) {
+      var g = d.M > 0 && d.P > 0 ? 1 : 0;
+      giornate += g;
+      mattine += d.M - g;
+      pomeriggi += d.P - g;
+    });
+    var oreMin = unionMinutes(mine);
+    var oreByHospital = {};
+    Object.keys(byHospital).forEach(function (h) { oreByHospital[h] = unionMinutes(byHospital[h]) / 60; });
+    return {
+      person: person,
+      turni: mine.length,
+      giornate: giornate,
+      mattine: mattine,
+      pomeriggi: pomeriggi,
+      notti: counts.N,
+      ambulatori: counts.A,
+      altri: counts.other,
+      dodici: giornate + counts.N,
+      oreMin: oreMin,
+      ore: oreMin / 60,
+      oreByHospital: oreByHospital,
+    };
+  }
+
+  // Ore totali di tutti i nomi (nel mese se indicato), dal più carico al meno.
+  function hoursByName(assignments, month) {
+    var seen = new Map();
+    for (var i = 0; i < assignments.length; i++) {
+      var a = assignments[i];
+      if (month && a.date.slice(0, 7) !== month) continue;
+      if (!seen.has(a.person)) seen.set(a.person, true);
+    }
+    var out = [];
+    seen.forEach(function (_, person) { out.push(personStats(assignments, person, month)); });
+    out.sort(function (x, y) {
+      if (x.ore !== y.ore) return y.ore - x.ore;
+      return x.person.localeCompare(y.person, 'it');
+    });
+    return out;
   }
 
   // ------------------------------------------------------------------
@@ -434,6 +553,9 @@ var TurniRules = (function () {
     timeRange: timeRange,
     formatDate: formatDate,
     formatRest: formatRest,
+    formatHours: formatHours,
+    personStats: personStats,
+    hoursByName: hoursByName,
     SEVERITY: SEVERITY,
     KIND_LABEL: KIND_LABEL,
   };

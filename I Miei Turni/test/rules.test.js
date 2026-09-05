@@ -449,6 +449,79 @@ deepEq(TurniRules.searchNames('zzzz', realNames), [], '"zzzz" → nessun risulta
 eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apostrofi/maiuscole ignorati)');
 
 // ======================================================================
+// 5b. personStats / hoursByName / formatHours / short
+// ======================================================================
+
+{
+  const fl = TurniRules.personStats(realAssignments, 'FLORENZAN', '2026-09');
+  deepEq(
+    [fl.turni, fl.giornate, fl.mattine, fl.pomeriggi, fl.notti, fl.ambulatori, fl.dodici, fl.ore],
+    [14, 2, 2, 3, 5, 0, 7, 114],
+    'FLORENZAN: 14 turni, 2 giornate, 2 mattine, 3 pomeriggi, 5 notti, 7 turni da 12 h, 114 h'
+  );
+  deepEq(fl.oreByHospital, { DEA: 78, OSG: 36 }, 'FLORENZAN: ore per ospedale');
+
+  const br = TurniRules.personStats(realAssignments, 'BRAHAM', '2026-09');
+  deepEq([br.turni, br.giornate, br.mattine, br.pomeriggi, br.notti, br.dodici, br.ore], [20, 4, 2, 5, 5, 9, 150], 'BRAHAM: conteggi di settembre');
+
+  const none = TurniRules.personStats(realAssignments, 'NESSUNO', '2026-09');
+  deepEq([none.turni, none.ore, none.dodici, none.oreByHospital], [0, 0, 0, {}], 'nome assente: tutto a zero');
+
+  const all = TurniRules.hoursByName(realAssignments, '2026-09');
+  eq(all.length, 39, 'hoursByName: 39 nomi');
+  eq(all[0].person, 'FRANCESCONI', 'hoursByName: FRANCESCONI in testa');
+  eq(all[0].ore, 166.5, 'hoursByName: FRANCESCONI 166,5 h');
+  ok(all.every((x, i) => i === 0 || all[i - 1].ore >= x.ore), 'hoursByName: ordinato per ore decrescenti');
+  eq(all.reduce((s, x) => s + x.ore, 0), 2841.5, 'hoursByName: somma delle ore di settembre');
+
+  // Roster sintetici minimi per i casi limite.
+  const synSlots = [
+    { key: 'M', label: 'MATTINA', header: 'MATTINA 8-14', sub: '', roles: [], start: '08:00', end: '14:00', startMin: 480, endMin: 840, col: 'C' },
+    { key: 'P', label: 'POMERIGGIO', header: 'POMERIGGIO 14-20', sub: '', roles: [], start: '14:00', end: '20:00', startMin: 840, endMin: 1200, col: 'E' },
+    { key: 'N', label: 'NOTTE', header: 'NOTTE 20-08', sub: '', roles: [], start: '20:00', end: '08:00', startMin: 1200, endMin: 1920, col: 'F' },
+    { key: 'A', label: 'AMBULATORIO CM', header: 'AMBULATORIO CM 09.30-15.00', sub: '', roles: [], start: '09:30', end: '15:00', startMin: 570, endMin: 900, col: 'G' },
+  ];
+  function synRoster(hospital, cellsByDay) {
+    const dates = Object.keys(cellsByDay);
+    return {
+      file: hospital, sheet: 's', hospital, title: hospital, periodLabel: '', month: dates[0].slice(0, 7), slots: synSlots,
+      days: dates.map((date) => ({
+        day: Number(date.slice(8)), date, weekdayLabel: '', weekdayOk: true,
+        cells: Object.fromEntries(synSlots.map((s) => [s.key, { raw: (cellsByDay[date][s.key] || []).join('/'), names: cellsByDay[date][s.key] || [] }])),
+      })),
+      warnings: [],
+    };
+  }
+
+  const sA = TurniRules.personStats(TurniRules.buildAssignments([synRoster('DEA', { '2026-09-01': { A: ['X'], P: ['X'] } })]), 'X', '2026-09');
+  deepEq([sA.giornate, sA.mattine, sA.pomeriggi, sA.ambulatori, sA.dodici, sA.ore], [0, 0, 1, 1, 0, 10.5], 'ambulatorio + pomeriggio = 10,5 h, nessuna giornata');
+
+  const asB = TurniRules.buildAssignments([synRoster('DEA', { '2026-09-01': { M: ['X'] } }), synRoster('OSG', { '2026-09-01': { P: ['X'] } })]);
+  const sB = TurniRules.personStats(asB, 'X', '2026-09');
+  deepEq([sB.giornate, sB.mattine, sB.pomeriggi, sB.dodici, sB.ore, sB.oreByHospital], [1, 0, 0, 1, 12, { DEA: 6, OSG: 6 }], 'mattina DEA + pomeriggio OSG = una giornata da 12 h');
+  eq(TurniRules.computeFindings(asB)[0].short, 'mattina 1 DEA → pomeriggio 1 OSG · riposo 0 h', 'short del cambio sede');
+
+  const asC = TurniRules.buildAssignments([synRoster('DEA', { '2026-09-01': { M: ['X'] } }), synRoster('OSG', { '2026-09-01': { M: ['X'] } })]);
+  const sC = TurniRules.personStats(asC, 'X', '2026-09');
+  deepEq([sC.giornate, sC.mattine, sC.ore], [0, 2, 6], 'due mattine sovrapposte: 2 mattine, 6 h reali');
+  eq(TurniRules.computeFindings(asC)[0].short, 'mattina 1 DEA + mattina 1 OSG · stesso orario', 'short del conflitto');
+
+  const asD = TurniRules.buildAssignments([synRoster('DEA', { '2026-09-30': { N: ['X'] } }), synRoster('DEA', { '2026-10-01': { M: ['X'] } })]);
+  deepEq([TurniRules.personStats(asD, 'X', '2026-09').ore, TurniRules.personStats(asD, 'X', '2026-10').ore, TurniRules.personStats(asD, 'X').ore, TurniRules.personStats(asD, 'X').dodici],
+    [12, 6, 18, 1], 'ore per mese e totali a cavallo del mese');
+  eq(TurniRules.computeFindings(asD)[0].short, 'notte 30 set DEA → mattina 1 ott DEA · riposo 0 h', 'short a cavallo del mese: con il mese');
+
+  deepEq(realFindings.map((f) => f.short), [
+    'notte 17 OSG → mattina 18 OSG · riposo 0 h',
+    'mattina 21 OSG → notte 21 OSG · riposo 6 h',
+  ], 'short delle segnalazioni reali');
+
+  eq(TurniRules.formatHours(114), '114 h', 'formatHours 114');
+  eq(TurniRules.formatHours(10.5), '10,5 h', 'formatHours 10,5');
+  eq(TurniRules.formatHours(0), '0 h', 'formatHours 0');
+}
+
+// ======================================================================
 // 6. Helper di formattazione
 // ======================================================================
 
