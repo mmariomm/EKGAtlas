@@ -522,6 +522,19 @@ stessi flussi dei test di prodotto.
    resta quello nativo), è opt-in e **immediata**: nessun conto alla rovescia, perché il tuo
    click su «+ Conferma» è già la decisione — ma scatta **solo** se il carrello coincide con la
    ricevuta di ciò che è stato appena aggiunto; ogni differenza la sospende con un messaggio.
+   **La pagina della Conferma può essere invisibile.** Viene caricata davvero —
+   stessa sessione, stesso modulo, stesso bottone — dentro una cornice nascosta
+   invece che davanti agli occhi, e il clic è quello vero sul bottone del
+   gestionale: i byte che partono sono gli stessi, perché a serializzare il
+   modulo è il browser, non noi. La cornice gira **senza script**
+   (`allow-forms allow-same-origin`, mai `allow-scripts` né
+   `allow-top-navigation`), così il codice della pagina non può portarsi via la
+   scheda del medico. Se il server **vieta di essere incorniciato**, il
+   documento non è leggibile: il programma se ne accorge e torna alla pagina
+   visibile, come prima. Ogni intoppo — cornice rifiutata, controllo che dice
+   di no, stato incerto — finisce sulla pagina vera col motivo scritto, e la
+   conferma resta al medico. C'è un test che prova che in quel caso la
+   richiesta viene confermata **una volta sola**.
    **Non poter controllare non è come aver controllato**: se la ricevuta manca o è di un'altra
    richiesta, la conferma automatica **si sospende** invece di partire lo stesso. (Fino alla
    3.20 quel caso saltava il controllo e confermava — la Conferma nativa invia la richiesta

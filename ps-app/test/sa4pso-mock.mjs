@@ -465,7 +465,12 @@ export function createMock(opts = {}) {
     };
     const respond = (html, status = 200, headers = {}) => ({
       status,
-      headers: { "content-type": "text/html; charset=windows-1252", ...headers },
+      headers: {
+        "content-type": "text/html; charset=windows-1252",
+        // opts.vietaCornice: la sede che non si lascia incorniciare
+        ...(opts.vietaCornice ? { "x-frame-options": "DENY" } : {}),
+        ...headers,
+      },
       body: encodeWin1252(traduci(html)),
     });
     const redirect = (loc) => ({ status: 302, headers: { location: traduci(loc) }, body: Buffer.alloc(0) });

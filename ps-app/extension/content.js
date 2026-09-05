@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.24.0";
+  const VERSION = "3.25.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -73,6 +73,9 @@
   const VERIFY_RECHECKS = 3;     // list re-reads before declaring an add lost
   const VERIFY_WAIT_MS = 1200;   // pause before each verify re-read
   const CONFIRM_FLAG_TTL = 120e3;// ms an auto-confirm handoff stays valid
+  // un messaggio che deve sopravvivere al cambio di pagina: quello che si è
+  // deciso in sottofondo va detto sulla pagina dove il medico arriva
+  const AVVISO = "avviso.v1";
   const PRINT_FLAG_TTL = 180e3;  // ms a post-confirm print handoff stays valid
   const QUEUE_TTL = 30 * 60e3;   // ms a still-unconfirmed richiesta keeps reminding
 
@@ -2803,7 +2806,46 @@
         body: state.quesitoKept ? "Quesito del triage mantenuto." : "",
       };
       this.render();
-      if (state.finishedListUrl) setTimeout(() => nav(state.finishedListUrl), 900);
+      if (state.finishedListUrl) this.chiudiRichiesta(state.finishedListUrl);
+    }
+
+    // Ultimo passo: la conferma. Si prova a farla in sottofondo — la pagina
+    // del carrello caricata davvero, in una cornice invisibile, col suo
+    // bottone premuto davvero. Se il server non si lascia incorniciare, o se
+    // un controllo dice di no, si va sulla pagina come si è sempre fatto: lì
+    // il medico vede tutto e decide lui.
+    async chiudiRichiesta(listUrl) {
+      const daConfermare = !!tabStore.get("confirm.v1", null);
+      if (!daConfermare || DEMO) { setTimeout(() => nav(listUrl), 400); return; }
+      this.message = { head: this.message?.head || "", body: "Confermo in sottofondo…" };
+      this.render();
+      let esito = "rifiutata";
+      try { esito = await confermaInCornice(listUrl, { panel: this, episodeId: this.episodeId }); }
+      catch { esito = "rifiutata"; }
+      this.log(`${now()}  conferma in sottofondo: ${esito}`);
+      if (esito === "stampata") {
+        this.message = { ok: "✓ Richiesta confermata — senza passare dal carrello." };
+        this.render();
+        return;
+      }
+      if (esito === "confermata") {
+        // Confermata, ma i fogli non erano su quella pagina: si ricarica quella
+        // del paziente e la stampa parte come è sempre partita.
+        tabStore.set(AVVISO, { testo: { ok: "✓ Richiesta confermata — senza passare dal carrello." }, ts: Date.now() });
+        nav(location.href);
+        return;
+      }
+      // Rifiutata (il server non si lascia incorniciare), sospesa (un controllo
+      // ha detto di no) o incerta: si finisce sulla pagina vera, col motivo.
+      if (esito !== "rifiutata") {
+        tabStore.set(AVVISO, {
+          testo: esito === "incerta"
+            ? "Stato della conferma incerto: controlla il carrello prima di confermare."
+            : (typeof this.message === "string" && this.message) || "Conferma automatica sospesa: controlla il carrello e premi tu Conferma.",
+          ts: Date.now(),
+        });
+      }
+      nav(listUrl);
     }
     failed(state, msg) {
       window.removeEventListener("beforeunload", this._unload);
@@ -4692,15 +4734,85 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // here, on the real page, with a countdown any human interaction cancels:
   // Esc, any click on the page, or the tab going hidden.
 
-  function maybeAutoConfirm(panel) {
+  // La conferma senza guardare la pagina.
+  //
+  // La pagina del carrello viene caricata DAVVERO — stessa sessione, stesso
+  // modulo, stesso bottone — solo dentro una cornice invisibile invece che
+  // davanti agli occhi. Il clic è quello vero sul bottone del gestionale, e i
+  // byte che partono sono gli stessi: la codifica del modulo la fa il browser,
+  // non noi. Cambia solo che il medico non deve stare a guardare il LIS.
+  //
+  // La cornice gira SENZA script (`allow-forms allow-same-origin`, mai
+  // `allow-scripts` né `allow-top-navigation`): così il codice della pagina non
+  // può portarsi via la scheda del medico, e non serve — l'invio di un modulo
+  // lo fa il browser. Se il server vieta di essere incorniciato, il documento
+  // non è leggibile: ce ne accorgiamo e si torna a fare come prima.
+  //
+  // Fallisce sempre CHIUSA: qualunque intoppo lascia la conferma al medico.
+  const FRAME_MS = 25000;
+  function confermaInCornice(listUrl, { panel, episodeId }) {
+    return new Promise((resolve) => {
+      const f = document.createElement("iframe");
+      f.setAttribute("sandbox", "allow-forms allow-same-origin");
+      f.setAttribute("aria-hidden", "true");
+      f.style.cssText = "position:fixed;left:-10000px;top:0;width:1024px;height:768px;border:0;visibility:hidden";
+      let fatto = false, fase = "carico";
+      const chiudi = (esito) => {
+        if (fatto) return;
+        fatto = true;
+        clearTimeout(tid);
+        try { f.remove(); } catch { /* già via */ }
+        resolve(esito);
+      };
+      const tid = setTimeout(() => chiudi(fase === "carico" ? "rifiutata" : "incerta"), FRAME_MS);
+
+      f.addEventListener("load", () => {
+        let doc = null, url = "";
+        try { doc = f.contentDocument; url = f.contentWindow.location.href; } catch { doc = null; }
+        // Una cornice appena inserita emette un `load` per la sua pagina vuota,
+        // prima ancora di caricare la nostra: quello non è il carrello.
+        if (url === "about:blank" || url === "") return;
+        // Non leggibile = il server non si lascia incorniciare. Non è un
+        // errore: è la strada di prima, e si prende quella.
+        if (!doc || !doc.documentElement) return chiudi("rifiutata");
+
+        if (fase === "carico") {
+          fase = "confermo";
+          let cliccato = false;
+          try { cliccato = maybeAutoConfirm(panel, doc, url); }
+          catch (e) { panel?.log(`${now()}  conferma in sottofondo interrotta: ${e?.message || e}`); }
+          // Nessun clic vuol dire che un controllo ha detto di no: la pagina
+          // va mostrata al medico, che decide lui.
+          if (!cliccato) return chiudi("sospesa");
+          panel?.render();
+          return;
+        }
+        // Seconda pagina: quella dopo la conferma. In certe installazioni i
+        // fogli da stampare stanno proprio lì, e da lì si prendono; altrimenti
+        // si lascia il segno e li raccoglie la pagina del paziente, come ha
+        // sempre fatto.
+        const suo = findEpisodeId(doc, url);
+        if (episodeId && suo && suo !== episodeId) return chiudi("incerta");
+        if (classify(doc) === "login") return chiudi("incerta");
+        let stampata = false;
+        try { stampata = maybeAutoPrint(panel, doc, url); } catch { stampata = false; }
+        chiudi(stampata ? "stampata" : "confermata");
+      });
+      f.addEventListener("error", () => chiudi("rifiutata"));
+      document.documentElement.appendChild(f);
+      f.src = listUrl;
+    });
+  }
+
+  function maybeAutoConfirm(panel, doc = document, url = location.href) {
     const flag = tabStore.get("confirm.v1", null);
-    if (!flag) return;
-    const clear = () => tabStore.set("confirm.v1", null);
+    if (!flag) return false;
+    const clear = () => { tabStore.set("confirm.v1", null); return false; };
     if (Date.now() - (flag.ts || 0) > CONFIRM_FLAG_TTL) return clear();
 
-    const model = examModel(document, location.href);
-    const ep = findEpisodeId(document, location.href);
-    if (!model.form || !model.richiestaId) return; // not an exam page
+    const model = examModel(doc, url);
+    const ep = findEpisodeId(doc, url);
+    if (!model.form || !model.richiestaId) return false; // not an exam page
     // The flag is tab-scoped, so a mismatching richiesta here is stale: drop it.
     if (model.richiestaId !== flag.richiestaId || (flag.episodeId && ep && ep !== flag.episodeId)) return clear();
     if (!model.inCart(flag.lastCode)) return clear(); // right richiesta, wrong cart → abort the auto-confirm
@@ -4734,7 +4846,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         panel.log(`${now()}  auto-conferma sospesa: ricevuta assente o di un'altra richiesta`);
         panel.render();
       }
-      return;
+      return false;
     }
     {
       // Questa pagina mostra il carrello di UNA risorsa sola, ma la Conferma
@@ -4767,7 +4879,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           panel.log(`${now()}  auto-conferma sospesa (${vistiQui} esami su questa risorsa): ${guai.join("; ")}`);
           panel.render();
         }
-        return;
+        return false;
       }
     }
 
@@ -4776,7 +4888,20 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // its right name, cart identical to the receipt for this resource).
     // Confirm now — a countdown here was dead time, not safety.
     panel?.log(`${now()}  conferma automatica: ${flag.count} ${flag.count === 1 ? "esame" : "esami"} · ${cartPreview.join(" · ")} · click nativo su Conferma`);
+    // Quando la pagina non è quella davanti agli occhi, la stampa va armata
+    // qui: il gancio sul bottone vive solo sulla pagina vera.
+    if (doc !== document) {
+      const prec = tabStore.get("print.v1", null);
+      const vecchi = prec && prec.episodeId === (ep || "") && Date.now() - (prec.ts || 0) < PRINT_FLAG_TTL ? prec.ids || [] : [];
+      tabStore.set("print.v1", { ids: [...new Set([...vecchi, model.richiestaId])], episodeId: ep || "", ts: Date.now() });
+      const q = tabStore.get("queue.v1", null);
+      if (q && q.items) {
+        const restano = q.items.filter((it) => it.rid !== model.richiestaId);
+        tabStore.set("queue.v1", restano.length ? { ...q, items: restano, ts: Date.now() } : null);
+      }
+    }
     model.confirmButton.click(); // native click → server confirm → label print flow
+    return true;
   }
 
   // ============================================================ PDF → TESTO
@@ -5164,14 +5289,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     nav(next.listUrl);
   }
 
-  function maybeAutoPrint(panel) {
+  function maybeAutoPrint(panel, doc = document, url = location.href) {
     const flag = tabStore.get("print.v1", null);
     if (!flag) return false;
     // never print for an episode other than the page in front of the user
-    const here = findEpisodeId(document, location.href);
+    const here = findEpisodeId(doc, url);
     if (!here || (flag.episodeId && flag.episodeId !== here)) return false;
     if (Date.now() - (flag.ts || 0) > PRINT_FLAG_TTL) { tabStore.set("print.v1", null); return false; }
-    const map = printModel(document, location.href);
+    const map = printModel(doc, url);
     const ids = (flag.ids || [flag.richiestaId]).filter((id) => map[id]);
     if (!ids.length) return false; // this page doesn't list them yet — keep waiting
     // group by printer ACROSS the confirmed richieste: labels, then lists,
@@ -5258,6 +5383,13 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       panel.esiti = esitiModel(document, location.href);
     }
     panel.restoreUi(); // same tab + same episode → quesito/selezione/vista tornano come prima
+    // Quello che è stato deciso in sottofondo si dice sulla pagina dove il
+    // medico atterra — che può essere il carrello, non solo quella del paziente.
+    const av = tabStore.get(AVVISO, null);
+    if (av) {
+      tabStore.set(AVVISO, null);
+      if (Date.now() - (av.ts || 0) < CONFIRM_FLAG_TTL) panel.message = av.testo;
+    }
     panel.render();
     if (pageType === "patient") {
       // this patient is now one the panel knows (name + episode + page only)

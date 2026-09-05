@@ -150,14 +150,39 @@ async function scenarioAutoConfirm(browser) {
   await page.goto(mock.patientUrl);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
+  const eraQui = page.url();
   await $panel(page, "#goconfirm").click();
-  await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 20000 });
-  // countdown, native Conferma click, then (field-observed) back to the patient page
-  await page.waitForSelector('a[title="Richieste Laboratorio"]', { timeout: 15000 });
+  // la conferma avviene in una cornice invisibile: la scheda del medico non
+  // va sul carrello, e questo è esattamente il punto
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 });
   const rid = Object.keys(mock.state.richieste)[0];
-  check(scen, mock.state.richieste[rid].confirmed === true, "richiesta confermata dopo il countdown");
+  check(scen, mock.state.richieste[rid].confirmed === true, "richiesta confermata");
+  check(scen, page.url() === eraQui, `la scheda non si è mossa dalla pagina del paziente (got …${page.url().slice(-40)})`);
   const confirmPost = mock.state.requests.find((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni"));
   check(scen, confirmPost && confirmPost.form.MVPG === "RcsStampaEtichetteLIS", "POST Conferma con MVPG etichette (click nativo)");
+  check(scen, confirmPost && confirmPost.form.Cancel === undefined && confirmPost.form.Update === "Conferma",
+    "e i campi inviati sono quelli del modulo, come li serializza il browser");
+  check(scen, /Etichette provette/.test(await $wiz(page, ".pwhd").innerText()), "la stampa parte lo stesso");
+  await context.close();
+}
+
+// Se il server non si lascia incorniciare, la conferma in sottofondo non è
+// possibile: si torna alla strada di sempre — la pagina del carrello davanti
+// agli occhi — e la richiesta si conferma lo stesso, una volta sola.
+async function scenarioCorniceVietata(browser) {
+  const scen = "cornice-vietata";
+  const mock = createMock({ vietaCornice: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await $panel(page, "#q").fill("dolore toracico");
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
+  await $panel(page, "#goconfirm").click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 });
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.richieste[rid].confirmed === true, "la richiesta viene confermata lo stesso");
+  const conferme = mock.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni"));
+  check(scen, conferme.length === 1, `e una volta sola, mai due (got ${conferme.length})`);
+  check(scen, /Etichette provette/.test(await $wiz(page, ".pwhd").innerText()), "e la stampa parte");
   await context.close();
 }
 
@@ -243,8 +268,7 @@ async function scenarioConfirmPostFails(browser) {
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
-  await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 20000 });
-  await page.waitForTimeout(4000);   // instant confirm fires, server answers 500
+  await page.waitForTimeout(6000);   // la conferma parte, il server risponde 500
   const rid = Object.keys(mock.state.richieste)[0];
   check(scen, mock.state.richieste[rid].confirmed === false, "la richiesta resta non confermata");
   check(scen, hits(mock, "RcsStampaEtichetteLISHMIMU") === 0 && hits(mock, "jasperservlet") === 0,
@@ -639,9 +663,10 @@ async function scenarioPrintAutoInterstitial(browser) {
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
-  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 30000 });
-  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
-  check(scen, /Etichette provette/.test(await $wiz(page, ".pwhd").innerText()), "wizard parte sulla pagina intermedia con i link");
+  // la pagina intermedia coi link ora sta nella cornice invisibile: il wizard
+  // deve partire lo stesso, e il medico non deve vederla passare
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 });
+  check(scen, /Etichette provette/.test(await $wiz(page, ".pwhd").innerText()), "il wizard parte dai link della pagina intermedia");
   await context.close();
 }
 
@@ -655,11 +680,11 @@ async function scenarioPrintAutoOnReturn(browser) {
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
-  await page.waitForSelector("text=Stampa etichette LIS", { timeout: 30000 });
-  await page.waitForTimeout(1800);
-  check(scen, (await page.locator("#psassist-print").count()) === 0, "nessun wizard dove mancano i link");
-  await page.goto(mock.patientUrl);
-  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  // La pagina intermedia non ha i link. Prima toccava al medico tornare sulla
+  // pagina del paziente; ora ci torna il programma, e i fogli si raccolgono lì.
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 });
+  check(scen, /PsoEpisodioClinicoAmbulatorio/.test(page.url()),
+    `il programma riporta da solo sulla pagina del paziente (got …${page.url().slice(-40)})`);
   await $wiz(page, "#pwnext").click(); // etichette stampate
   await page.waitForTimeout(400);
   await $wiz(page, "#pwnext").click(); // lista stampata
@@ -1827,6 +1852,7 @@ const scenarios = [
   ["auto-confirm handoff", scenarioAutoConfirm],
   ["altro presidio: risorse e codici diversi", scenarioAltroPresidio],
   ["risorsa sconosciuta: stop diagnostico", scenarioPresidioSconosciuto],
+  ["cornice vietata dal server: si torna alla pagina", scenarioCorniceVietata],
   ["auto-confirm bloccata su carrello diverso", scenarioAutoConfirmMismatch],
   ["auto-confirm bloccata senza ricevuta", scenarioAutoConfirmSenzaRicevuta],
   ["auto-confirm bloccata da un avanzo su un'altra risorsa", scenarioAutoConfirmAltraRisorsa],
