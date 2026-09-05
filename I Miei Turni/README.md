@@ -5,19 +5,22 @@ ospedali — **DEA** e **OSG** — letti dai file xlsx ufficiali. Pensata per il
 
 ## Cosa fa
 
-- **Cerca un nome** e lo evidenzia a ogni lettera; sotto il campo compaiono i nomi
-  possibili, così un refuso nel foglio (per esempio `ORLANDITOSKIC` senza la barra) si
-  vede subito come nome a sé, con il suggerimento.
+- **Cerca un nome** e lo evidenzia a ogni lettera; toccando il campo si aprono tutti i
+  nomi del mese, e scrivendo restano i possibili, così un refuso nel foglio (per esempio
+  `ORLANDITOSKIC` senza la barra) si vede subito come nome a sé, con il suggerimento.
 - **Calendario**: il mese in una videata; sotto, il dettaglio del giorno scelto (oggi
   all'apertura; frecce o scorrimento laterale per cambiare giorno). Con un nome fissato,
-  ogni giorno mostra le sue fasce — M, P, N, A — nel colore dell'ospedale, notti in
-  pieno, e una riga di conteggi: `2G · 2M · 3P · 5N · 7 da 12 h · 114 h · DEA 78 · OSG 36`
-  (G = giornate, cioè mattina + pomeriggio nello stesso giorno; M e P contano solo quando
-  da soli; l'ambulatorio conta come una mattina a tutti gli effetti; le ore sono l'unione
-  reale degli orari).
+  ogni giorno mostra le sue fasce nel colore dell'ospedale — `G` per la giornata (mattina
+  e pomeriggio nello stesso ospedale), `M`, `P`, `N` in pieno per la notte, `A` — e una
+  riga di conteggi: `2G · 2M · 3P · 5N · 7 da 12 h · 114 h · DEA 78 · OSG 36` (M e P
+  contano solo quando da soli; l'ambulatorio conta come una mattina a tutti gli effetti;
+  le ore sono l'unione reale degli orari).
 - **Tabella**: tutti i nomi del mese, giorno per riga, DEA e OSG su due righe, colonne
   M/P/N/A, con lo stesso evidenziatore.
-- **Ore**: le ore del mese per nome, in barre divise per ospedale.
+- **Ore**: le ore del mese per nome, in barre divise per ospedale. Compare solo a chi
+  aggiorna i turni: su una copia propria del file, o dopo il primo salvataggio riuscito
+  (in *Dati* c'è l'interruttore per mostrarle su un altro dispositivo). Non è una
+  serratura: la piattaforma non dice alla pagina chi la sta guardando.
 - **Segnalazioni**, calcolate su tutti i turni caricati anche a cavallo di due mesi, in
   una riga ciascuna (`BRAHAM · notte 17 OSG → mattina 18 OSG · riposo 0 h`):
   - **Conflitto** — stesso orario in due ospedali, oppure doppio incarico nello stesso
@@ -49,11 +52,11 @@ Tre strade, a seconda di dove sta la pagina:
   tutti** e la pagina pubblica una nuova versione dei dati (`data/turni.json`) dentro lo
   stesso artifact: chi la ha aperta la vede aggiornarsi, ogni versione resta nello
   storico. Con il solo permesso di vista, o se l'artifact è condiviso con link pubblico,
-  il salvataggio condiviso non è disponibile e i turni restano sul dispositivo, con un
-  messaggio esplicito.
-- **Dal browser (subito, solo su quel dispositivo)**: «Carica xlsx» o trascinamento del
-  file sulla pagina. I dati restano nel browser (localStorage); «Ripristina i dati
-  pubblicati» nella sezione *Dati* torna indietro.
+  il salvataggio condiviso non è disponibile: i turni restano sul dispositivo e da lì in
+  poi la sezione di caricamento resta in grigio, con la spiegazione.
+- **Dal browser (subito, solo su quel dispositivo)**: «Carica xlsx». I dati restano nel
+  browser (localStorage); «Ripristina i dati pubblicati» nella sezione *Dati* torna
+  indietro.
 - **Pubblicando nel repo (per tutti i dispositivi)**: copia i nuovi xlsx in `data/` e
   lancia:
 
