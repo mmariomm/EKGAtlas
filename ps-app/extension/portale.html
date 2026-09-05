@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>PS Assist — portale clinico</title>
+<style>
+  body { font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #16232E;
+         background: #F4F8FB; margin: 0; padding: 32px 24px; }
+  .box { max-width: 620px; margin: 0 auto; background: #fff; border: 1px solid #D9E2EC;
+         border-radius: 14px; padding: 22px 24px 26px; box-shadow: 0 8px 26px rgba(9,42,74,.12); }
+  h1 { font-size: 18px; margin: 0 0 4px; } .sub { color: #5B6B7A; font-size: 13px; margin: 0 0 20px; }
+  label { display: block; font-size: 12px; font-weight: 700; color: #35506B; margin-bottom: 6px; }
+  input { width: 100%; box-sizing: border-box; border: 1px solid #C4D0DC; border-radius: 9px;
+          padding: 10px 12px; font: inherit; }
+  button { margin-top: 14px; border: 0; border-radius: 10px; background: #0B5CAD; color: #fff;
+           padding: 11px 20px; font: inherit; font-weight: 700; cursor: pointer; }
+  button:hover { background: #094a8c; }
+  button.via { background: transparent; color: #B3261E; border: 1px solid #E9BAB6; margin-left: 8px; }
+  .msg { margin-top: 16px; border-radius: 9px; padding: 10px 12px; font-size: 13px; display: none; }
+  .msg.ok { background: #EDF7F0; border: 1px solid #BCE0C9; color: #124F31; display: block; }
+  .msg.ko { background: #FDF3F2; border: 1px solid #E9BAB6; color: #8A1F19; display: block; }
+  .hint { font-size: 12.5px; color: #5B6B7A; margin-top: 18px; }
+  code { background: #F4F8FB; border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
+</style></head><body>
+<div class="box">
+  <h1>Indirizzo del portale clinico</h1>
+  <p class="sub">Serve una volta sola. Il pannello comparirà sulla pagina con la tabella dello storico.</p>
+  <label for="u">Apri quella pagina, copia l'indirizzo dalla barra del browser e incollalo qui</label>
+  <input id="u" placeholder="http://10.…/clin-port/…" autocomplete="off" spellcheck="false">
+  <div><button id="ok">Autorizza questo sito</button><button id="via" class="via" hidden>Rimuovi</button></div>
+  <div id="m" class="msg"></div>
+  <p class="hint">Chrome chiederà il permesso <b>solo per quel sito</b>. Su quella pagina il programma
+    fa una cosa sola: <b>legge la tabella che hai già davanti</b> — non chiede niente al server.
+    Attuale: <code id="cur">nessuno</code></p>
+</div>
+<script src="portale.js"></script>
+</body></html>

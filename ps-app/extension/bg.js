@@ -55,7 +55,8 @@ function candidates(text, baseUrl) {
   return out.slice(0, 6);
 }
 
-async function grabPdf(url, hop = 0) {
+async function grabPdf(url, hop = 0, budget) {
+  budget = budget || { n: 0 };
   if (!ALLOWED_ORIGINS.has(new URL(url).origin)) return { ok: false, why: "fuori dall'ospedale" };
   // a hung hospital endpoint must fail a row, never hang the whole save
   const ctl = new AbortController();
@@ -79,7 +80,8 @@ async function grabPdf(url, hop = 0) {
   const cands = candidates(text, res.url || url);
   for (const c of cands) {
     try {
-      const r = await grabPdf(c, hop + 1);
+      if (++budget.n > 6) break;   // un tetto solo per tutta la caccia, come in core.js
+      const r = await grabPdf(c, hop + 1, budget);
       if (r.ok) return r;
     } catch { /* next candidate */ }
   }
@@ -142,7 +144,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       if (!hit || String(msg.ep || "") !== String(hit.ep || "")) return reply({ ok: false });
       if (Date.now() - (hit.ts || 0) > REF_TTL) { await chrome.storage.local.remove(KEY(msg.id)); return reply({ ok: false }); }
       reply({ ok: true, data: hit.data });
-    });
+    }).catch(() => reply({ ok: false }));   // senza questo il pannello resta appeso
     return true;
   }
 
@@ -158,7 +160,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
         out[id] = rec.size || 1;
       }
       reply({ ok: true, cached: out });
-    });
+    }).catch(() => reply({ ok: false }));
     return true;
   }
 
@@ -276,7 +278,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   // accorgersene da dentro. Ora l'indirizzo lo aggiunge il medico: Chrome
   // chiede il permesso per QUEL sito e basta, e lo script si registra lì.
   if (msg.t === "portale") {
-    chrome.storage.local.get("portale").then((o) => reply({ ok: true, origine: o.portale || "" }));
+    chrome.storage.local.get("portale")
+      .then((o) => reply({ ok: true, origine: o.portale || "" }))
+      .catch(() => reply({ ok: false, origine: "" }));
+    return true;
+  }
+  if (msg.t === "apriImpostazioni") {
+    chrome.runtime.openOptionsPage().then(() => reply({ ok: true })).catch(() => reply({ ok: false }));
+    return true;
+  }
+  if (msg.t === "togliPortale") {
+    registraPortale(null)
+      .then(() => chrome.storage.local.remove("portale"))
+      .then(() => reply({ ok: true })).catch(() => reply({ ok: false }));
     return true;
   }
   if (msg.t === "aggiungiPortale") {
@@ -286,9 +300,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       catch { return reply({ ok: false, why: "Non è un indirizzo: incolla quello che vedi nella barra del browser." }); }
       if (!/^https?:$/.test(new URL(origine).protocol)) return reply({ ok: false, why: "Serve un indirizzo http o https." });
       const pattern = origine + "/*";
-      const dato = await chrome.permissions.request({ origins: [pattern] }).catch(() => false);
-      if (!dato) return reply({ ok: false, why: "Permesso non concesso." });
-      await registraPortale(pattern);
+      // Il permesso si chiede dalla PAGINA delle impostazioni, non da qui:
+      // chrome.permissions.request vuole un gesto dell'utente, e un gesto non
+      // sopravvive al salto di messaggio dal pannello al service worker.
+      // Qui si registra soltanto, e SOLO se il permesso c'è davvero.
+      const ha = await chrome.permissions.contains({ origins: [pattern] }).catch(() => false);
+      if (!ha) return reply({ ok: false, why: "Chrome non ha dato il permesso per questo sito." });
+      try { await registraPortale(pattern); }
+      catch (e) { return reply({ ok: false, why: "Chrome non ha registrato lo script: " + String(e && e.message || e).slice(0, 80) }); }
       await chrome.storage.local.set({ portale: origine });
       reply({ ok: true, origine });
     })().catch((e) => reply({ ok: false, why: String(e && e.message || e) }));
@@ -302,7 +321,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       // scadenza a 24 ore, ed è quella a decidere
 
       reply({ ok: true });
-    });
+    }).catch(() => reply({ ok: false }));
     return true;
   }
 });
@@ -313,11 +332,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 async function registraPortale(pattern) {
   try { await chrome.scripting.unregisterContentScripts({ ids: ["portale"] }); } catch { /* non c'era */ }
   if (!pattern) return;
-  try {
-    await chrome.scripting.registerContentScripts([{
-      id: "portale", matches: [pattern], js: ["content.js"], runAt: "document_idle", persistAcrossSessions: true,
-    }]);
-  } catch { /* Chrome lo dirà al medico col messaggio del pannello */ }
+  await chrome.scripting.registerContentScripts([{
+    id: "portale", matches: [pattern], js: ["content.js"], runAt: "document_idle", persistAcrossSessions: true,
+  }]);
 }
 async function riallineaPortale() {
   const o = await chrome.storage.local.get("portale");
@@ -327,5 +344,7 @@ async function riallineaPortale() {
   if (ok) await registraPortale(pattern);
   else { await registraPortale(null); await chrome.storage.local.remove("portale"); }
 }
-chrome.runtime.onStartup?.addListener(riallineaPortale);
-chrome.runtime.onInstalled?.addListener(riallineaPortale);
+// un errore qui non deve diventare un rifiuto non gestito nel service worker
+const riallinea = () => { riallineaPortale().catch(() => {}); };
+chrome.runtime.onStartup?.addListener(riallinea);
+chrome.runtime.onInstalled?.addListener(riallinea);

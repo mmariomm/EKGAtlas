@@ -229,19 +229,23 @@ await paziente.locator('#psassist-host [data-seg="esiti"]').click();
 await paziente.waitForTimeout(400);
 check((await paziente.locator("#psassist-host #portapri").count()) === 1,
   "negli Esiti c'è come aggiungere l'indirizzo del portale");
+// Il permesso NON si può chiedere da qui: chrome.permissions.request vuole un
+// gesto dell'utente, e un gesto non sopravvive al salto verso il service
+// worker. Il pulsante apre la pagina delle impostazioni, dove il gesto è vero.
+const apre = paziente.context().waitForEvent("page", { timeout: 8000 }).catch(() => null);
 await paziente.locator("#psassist-host #portapri").click();
-await paziente.waitForSelector("#psassist-host #porturl", { timeout: 5000 });
-check((await paziente.locator("#psassist-host #porturl").count()) === 1, "e si apre una casella per incollarlo");
-const rifiuto = await paziente.evaluate(async () => {
-  const r = document.getElementById("psassist-host").shadowRoot;
-  r.querySelector("#porturl").value = "non-un-indirizzo";
-  r.querySelector("#portok").click();
-  await new Promise((k) => setTimeout(k, 600));
-  return r.querySelector(".banner.warn, .banner.ok")?.textContent?.trim() || "";
-});
-check(/non è un indirizzo/i.test(rifiuto), `un indirizzo storto viene rifiutato con un motivo (got ${rifiuto.slice(0, 60)})`);
-await paziente.locator("#psassist-host #portno").click().catch(() => {});
-await paziente.waitForTimeout(200);
+const impostazioni = await apre;
+check(!!impostazioni && /portale\.html$/.test(impostazioni.url()),
+  `il pulsante apre la pagina delle impostazioni (got ${impostazioni ? impostazioni.url().slice(-30) : "niente"})`);
+if (impostazioni) {
+  await impostazioni.waitForSelector("#u", { timeout: 8000 });
+  await impostazioni.fill("#u", "non-un-indirizzo");
+  await impostazioni.click("#ok");
+  await impostazioni.waitForTimeout(300);
+  const detto = await impostazioni.locator("#m").innerText().catch(() => "");
+  check(/non è un indirizzo/i.test(detto), `un indirizzo storto viene rifiutato con un motivo (got ${detto.slice(0, 50)})`);
+  await impostazioni.close();
+}
 
 // ---- il portale aperto DAL link del paziente ---------------------------
 // Quel clic dice per chi lo stai aprendo: è l'identità più solida che ci sia.

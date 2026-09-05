@@ -71,7 +71,6 @@ const body = `<meta charset="utf-8">
 `;
 
 mkdirSync(join(root, "dist"), { recursive: true });
-writeFileSync(join(root, "dist/demo.artifact.html"), body);
 // Offline file: the browser enforces the promise, not just the code. No host
 // is reachable at all — only blob:/data:, which is where the simulated PDFs
 // live — forms cannot submit anywhere, and frames can only show blobs.
@@ -97,5 +96,5 @@ ${body}
 </html>
 `;
 writeFileSync(join(root, "dist/demo.html"), html);
-console.log(`banco di prova: dist/demo.html + dist/demo.artifact.html (${Math.round(html.length / 1024)} KB)`);
+console.log(`banco di prova: dist/demo.html (${Math.round(html.length / 1024)} KB)`);
 console.log(`  pannello v${version} · ${Object.keys(pagine).length} pagine del gestionale · ${Object.keys(ESEMPI.icone).length} icone`);

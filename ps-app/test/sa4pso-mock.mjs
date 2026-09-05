@@ -373,7 +373,13 @@ export function createMock(opts = {}) {
   function examPage(rid, res, search) {
     const alloc = state.allocated[rid];
     const r = state.richieste[rid];
-    const cat = CATALOG[res] || {};
+    // opts.nuoveVersioni: {codiceVecchio: codiceNuovo} — il laboratorio
+    // affianca al vecchio esame la sua versione «- NEW» e lascia in elenco
+    // tutti e due, come fa davvero su una delle due sedi
+    const cat = { ...(CATALOG[res] || {}) };
+    for (const [vecchio, nuovo] of Object.entries(opts.nuoveVersioni || {})) {
+      if (cat[vecchio] && !cat[nuovo]) cat[nuovo] = String(cat[vecchio]).replace(/\s*\(([^)]*)\)\s*$/, " - NEW ($11)");
+    }
     const common = `STRUTTURA=1&EPISODIO_ID=${EP()}&returnPage=PsoEpisodio&RISORSE=${alloc.risorse.join("%2C")}&RICHIESTA_ID=${rid}&PADIGLIONE=&toPage=RcsRichiestaPrestazioniRicercaErogatore&s_PRESTAZIONE=`;
     const rows = [];
     let inIdx = 0;

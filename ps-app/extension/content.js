@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.23.0";
+  const VERSION = "3.24.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -164,6 +164,13 @@
   // sicure (il portale clinico è http://): lì si passa dal vecchio
   // execCommand, che invece funziona. Un pulsante «copia» non deve dipendere
   // da quale delle due pagine si ha davanti.
+  // il lampo sul pulsante dopo una copia: era ricopiato in sette punti
+  function segnaCopia(b, ok, riposo = "⧉ Copia", ms = 2000) {
+    if (!b) return ok;
+    b.textContent = ok ? "✓ copiato" : "non riuscito";
+    setTimeout(() => { if (b.isConnected) b.textContent = riposo; }, ms);
+    return ok;
+  }
   async function copiaTesto(text) {
     const t = String(text ?? "");
     try { await navigator.clipboard.writeText(t); return true; } catch { /* ripiego qui sotto */ }
@@ -247,7 +254,7 @@
       if (signal.aborted) { clearTimeout(tid); throw new DOMException("Aborted", "AbortError"); }
       signal.addEventListener("abort", onAbort, { once: true });
     }
-    let res;
+    let res, buf;
     try {
       res = await fetch(target.href, {
         method, body, signal: ctl.signal,
@@ -256,15 +263,18 @@
         redirect: "follow",
         headers: method === "POST" ? { "Content-Type": "application/x-www-form-urlencoded" } : undefined,
       });
+      // La scadenza e lo STOP devono coprire ANCHE il corpo: il vecchio
+      // finally li spegneva appena arrivavano le intestazioni, e un corpo che
+      // non arriva mai lasciava la corsa appesa senza modo di fermarla.
+      if (new URL(res.url || target.href).origin !== location.origin) {
+        throw new StopError("Risposta fuori dall'ospedale bloccata", `destinazione inattesa: ${res.url}`);
+      }
+      if (!res.ok) throw new StopError(`Il server ha risposto HTTP ${res.status}`, res.statusText || "");
+      buf = await res.arrayBuffer();
     } finally {
       clearTimeout(tid);
       if (signal) signal.removeEventListener("abort", onAbort);
     }
-    if (new URL(res.url || target.href).origin !== location.origin) {
-      throw new StopError("Risposta fuori dall'ospedale bloccata", `destinazione inattesa: ${res.url}`);
-    }
-    if (!res.ok) throw new StopError(`Il server ha risposto HTTP ${res.status}`, res.statusText || "");
-    const buf = await res.arrayBuffer();
     const ct = res.headers.get("content-type") || "";
     const m = /charset=([\w-]+)/i.exec(ct);
     let charset = (m ? m[1] : "windows-1252").toLowerCase();
@@ -813,6 +823,7 @@
         iframe.remove();
         fn(v);
       };
+      if (signal?.aborted) return finish(reject, new DOMException("Aborted", "AbortError"));
       const onAbort = () => finish(reject, new DOMException("Aborted", "AbortError"));
       signal?.addEventListener("abort", onAbort, { once: true });
       const tt = setTimeout(() => finish(reject, new ViewerError(url)), timeoutMs);
@@ -847,7 +858,7 @@
       // si inventa nessun indirizzo — si toglie una bugia che avevamo messo
       // noi: l'indirizzo che gli si dà è il suo, quello che il medico ha
       // aperto. L'indirizzo del PDF continua a calcolarselo lui.
-      const suo = (() => { try { return new URL(url, location.href); } catch { return null; } })();
+      const suo = (() => { try { return new URL(baseUrl || url, location.href); } catch { return null; } })();
       const LOC = JSON.stringify(suo ? {
         href: suo.href, search: suo.search, pathname: suo.pathname, origin: suo.origin,
         protocol: suo.protocol, host: suo.host, hostname: suo.hostname, port: suo.port, hash: suo.hash,
@@ -869,15 +880,21 @@
           window.webkitURL.createObjectURL = function(b){ hb(b); return wm(b); };
         }
       })();<\/script>`;
-      const NAV_PREFIX = "(?:(?:window|self|top|parent|document)\\s*\\.\\s*)?";
+      // `location` va riconosciuto SOLO quando è quello globale: preceduto da
+      // niente, o da window/self/top/parent/document. Con un prefisso
+      // facoltativo «a.location.search» diventava «a.__psaLoc.search», cioè un
+      // errore dentro lo script del visualizzatore — che moriva lì.
+      const LOCRE = "(?:\\b(?:window|self|top|parent|document)\\s*\\.\\s*|(?<![.\\w$]))location";
+      const PROPS = "href|search|pathname|hostname|host|origin|protocol|port|hash";
       const patched = String(html || "")
-        .replace(new RegExp(`\\b${NAV_PREFIX}location\\s*\\.\\s*(?:replace|assign)\\s*\\(`, "gi"), "__psaNav(")
-        .replace(new RegExp(`\\b${NAV_PREFIX}location\\s*\\.\\s*href\\s*=(?!=)`, "gi"), "__psaNavHref =")
-        .replace(new RegExp(`\\b(?:window|self|top)\\s*\\.\\s*location\\s*=(?!=)`, "gi"), "__psaNavHref =")
-        // le LETTURE dell'indirizzo, dopo le scritture (che sopra sono già
-        // diventate __psaNav): quello che resta è codice che vuole SAPERE
-        // dove si trova, e adesso glielo si dice per davvero
-        .replace(new RegExp(`\\b${NAV_PREFIX}location\\s*\\.\\s*(href|search|pathname|hostname|host|origin|protocol|port|hash)\\b`, "gi"), "__psaLoc.$1");
+        .replace(new RegExp(`${LOCRE}\\s*\\.\\s*(?:replace|assign)\\s*\\(`, "g"), "__psaNav(")
+        // una SCRITTURA su una qualunque parte dell'indirizzo è una navigazione:
+        // prima solo «.href =» era riconosciuta, e «.search = …» finiva fra le
+        // letture, cioè spariva senza che nessuno se ne accorgesse
+        .replace(new RegExp(`${LOCRE}\\s*\\.\\s*(?:${PROPS})\\s*(?:\\+)?=(?!=)`, "g"), "__psaNavHref =")
+        .replace(new RegExp(`\\b(?:window|self|top)\\s*\\.\\s*location\\s*=(?!=)`, "g"), "__psaNavHref =")
+        // quello che resta sono LETTURE: codice che vuole sapere dove si trova
+        .replace(new RegExp(`${LOCRE}\\s*\\.\\s*(${PROPS})\\b`, "g"), "__psaLoc.$1");
       const idoc = iframe.contentDocument;
       idoc.open();
       idoc.write(prelude + `<base href="${esc(baseUrl || url)}">` + patched);
@@ -1314,18 +1331,24 @@
     const ctl = new AbortController();
     const tid = setTimeout(() => ctl.abort(new DOMException("Timeout", "TimeoutError")), TIMEOUT_MS);
     const onAbort = () => ctl.abort(new DOMException("Aborted", "AbortError"));
-    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    if (signal) {
+      // agganciarsi a un segnale GIÀ abortito non fa scattare niente: chiudere
+      // la finestra di stampa deve fermare anche il tentativo che deve ancora
+      // partire, non solo quello in volo
+      if (signal.aborted) { clearTimeout(tid); throw new DOMException("Aborted", "AbortError"); }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
     let res;
     try {
       res = await fetch(target.href, { signal: ctl.signal, credentials: "same-origin", cache: "no-store", redirect: "follow" });
+      if (new URL(res.url || target.href).origin !== location.origin) {
+        throw new StopError("Risposta fuori dall'ospedale bloccata", `destinazione inattesa: ${res.url}`);
+      }
+      if (!res.ok) throw new StopError(`Il server ha risposto HTTP ${res.status}`, res.statusText || "");
     } finally {
       clearTimeout(tid);
       if (signal) signal.removeEventListener("abort", onAbort);
     }
-    if (new URL(res.url || target.href).origin !== location.origin) {
-      throw new StopError("Risposta fuori dall'ospedale bloccata", `destinazione inattesa: ${res.url}`);
-    }
-    if (!res.ok) throw new StopError(`Il server ha risposto HTTP ${res.status}`, res.statusText || "");
     const ctype = (res.headers.get("content-type") || "").toLowerCase();
     if (ctype.includes("pdf") || ctype.includes("octet-stream")) {
       return { blob: await res.blob(), url: res.url || target.href, via: hop === 0 ? "diretto" : "" };
@@ -1458,31 +1481,27 @@
   // Merged view of the embedded (audited) catalog and everything learned
   // from live pages. Learning happens on every parsed list, so radiology
   // becomes one-click after it has been seen once.
-  const store = {
+  // Un solo magazzino, due depositi. `set` torna false quando la scrittura NON
+  // è avvenuta (memoria piena o bloccata): chi promette al medico «salvato»
+  // deve poterlo verificare — e ora vale anche per le consegne fra pagina e
+  // pagina, che prima fallivano in silenzio.
+  const magazzino = (dep) => ({
     get(key, fallback) {
-      try { const v = JSON.parse(localStorage.getItem(NS + key)); return v ?? fallback; }
+      try { const v = JSON.parse(dep.getItem(NS + key)); return v ?? fallback; }
       catch { return fallback; }
     },
-    // returns false when the write did NOT happen (quota, blocked storage):
-    // a caller that promises the doctor "saved" has to be able to check.
-    set(key, value) { try { localStorage.setItem(NS + key, JSON.stringify(value)); return true; } catch { return false; } },
-  };
+    set(key, value) { try { dep.setItem(NS + key, JSON.stringify(value)); return true; } catch { return false; } },
+    keys(prefix) {
+      try { return Object.keys(dep).filter((k) => k.startsWith(NS + prefix)).map((k) => k.slice(NS.length)); }
+      catch { return []; }
+    },
+  });
+  const store = magazzino(localStorage);
   // Tab-scoped storage for the run→landing handoffs (receipt + auto-confirm
   // flag): sessionStorage survives the same-tab navigation but is invisible
   // to other tabs, so two patients in two tabs can never clobber or clear
   // each other's pending confirm.
-  const tabStore = {
-    get(key, fallback) {
-      try { const v = JSON.parse(sessionStorage.getItem(NS + key)); return v ?? fallback; }
-      catch { return fallback; }
-    },
-    set(key, value) { try { sessionStorage.setItem(NS + key, JSON.stringify(value)); } catch { /* non-fatal */ } },
-    keys(prefix) {
-      try {
-        return Object.keys(sessionStorage).filter((k) => k.startsWith(NS + prefix)).map((k) => k.slice(NS.length));
-      } catch { return []; }
-    },
-  };
+  const tabStore = magazzino(sessionStorage);
 
   // ------------------------------------------------------- KNOWN PATIENTS
   // I pazienti su cui si è lavorato, per ritrovarli dalla schermata iniziale:
@@ -1764,39 +1783,18 @@
   }
   const examLabel = (res, code) => (fullCatalog()[res]?.items || {})[code] || `esame ${code}`;
   // Il laboratorio affianca al vecchio esame la sua versione «- NEW» e lascia
-  // in elenco tutti e due: l'emogas venoso e l'arterioso sono così, in tutte e
-  // due le sedi. Chi ordina vuole sempre il nuovo, quindi lo si sceglie da sé.
-  // Il confronto è sul nome, senza il mnemonico fra parentesi, senza «POC» e
-  // senza il «- NEW»: così il vecchio e il nuovo si riconoscono per quello che
-  // sono, e non per un numero che cambia da un ospedale all'altro.
+  // in elenco tutti e due (l'emogas venoso e l'arterioso sono così). Chi
+  // ordina vuole il nuovo. Il confronto è sul NOME, non sul numero, che cambia
+  // da un ospedale all'altro.
+  // NB: si toglie SOLO il mnemonico in fondo — «(POC2117)» — non tutte le
+  // parentesi: «EPATITE B (HBSAG) ANTICORPI» e «EPATITE B (HBEAG) ANTICORPI»
+  // sono due esami diversi e diventerebbero lo stesso nome.
   const baseEsame = (label) => String(label || "").replace(/&nbsp;/gi, " ").toUpperCase()
-    .replace(/\([^)]*\)/g, " ").replace(/\s+-\s*NEW\b/g, " ").replace(/\bPOC\b/g, " ")
-    .replace(/[^A-Z0-9]+/g, " ").trim();
+    .replace(/\s*\([A-Z]*\d+\)\s*$/, " ").replace(/\s+-\s*NEW\b/g, " ").replace(/\bPOC\b/g, " ")
+    .replace(/[^A-Z0-9()]+/g, " ").trim();
   const eNuovo = (label) => /\s-\s*NEW\b/i.test(String(label || "").replace(/&nbsp;/gi, " "));
-  function codicePreferito(res, code, cat) {
-    const items = (cat || fullCatalog())[res]?.items;
-    if (!items || !items[code] || eNuovo(items[code])) return code;
-    const mio = baseEsame(items[code]);
-    if (!mio) return code;
-    for (const [c, l] of Object.entries(items)) if (c !== code && eNuovo(l) && baseEsame(l) === mio) return c;
-    return code;
-  }
   // UI-facing short name (falls back to the catalog label, trimmed of its code)
-  function displayLabel(res, code) {
-    const mio = DISPLAY[`${res}:${code}`];
-    if (mio) return mio;
-    const lab = examLabel(res, code);
-    if (eNuovo(lab)) {
-      // è la versione nuova di un esame che ha già un nome corto suo: si tiene
-      // quel nome, con NEW dietro, invece di stampare l'etichetta per intero
-      const items = fullCatalog()[res]?.items || {};
-      const base = baseEsame(lab);
-      for (const [c, l] of Object.entries(items)) {
-        if (c !== code && !eNuovo(l) && baseEsame(l) === base && DISPLAY[`${res}:${c}`]) return DISPLAY[`${res}:${c}`] + " NEW";
-      }
-    }
-    return shortLabel(lab);
-  }
+  const displayLabel = (res, code) => DISPLAY[`${res}:${code}`] || shortLabel(examLabel(res, code));
 
   // ================================================================ ENGINE
   // A run is a linear list of steps executed by runPlan(). Each step updates
@@ -1990,6 +1988,17 @@
           log(`già presente ✓ ${nm}`);
           state.added.push(it);
           continue;
+        }
+        // La versione «- NEW» dello stesso esame, se la pagina ne offre una:
+        // si guarda l'elenco VIVO, non il catalogo, così vale in ogni sede e
+        // anche per gli esami nuovi che il catalogo non ha mai visto.
+        if (!/^esame \d+$/i.test(it.label) && !eNuovo(it.label)) {
+          const mia = baseEsame(it.label);
+          const nuova = mia && model.exams.find((e) => e.isAdd && eNuovo(e.label) && baseEsame(e.label) === mia);
+          if (nuova && nuova.code !== it.code) {
+            log(`questa sede ha la versione nuova: «${nuova.label}» al posto di «${it.label}»`);
+            it.code = nuova.code; it.label = nuova.label;
+          }
         }
         let link = model.addLink(it.code);
         if (!link && !/^esame \d+$/i.test(it.label)) {
@@ -2450,11 +2459,7 @@
     .linkbtn { border: 0; background: transparent; color: #0B5CAD; font: inherit; font-weight: 700;
                text-decoration: underline; cursor: pointer; padding: 0; }
     .portok { color: #177245; font-weight: 700; }
-    .portsec { border: 1px solid #C4D0DC; border-radius: 10px; padding: 9px 10px; background: #F8FBFE; }
-    .portinput { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 7px 9px;
-                 font: inherit; font-size: 12.5px; }
-    .portrow { display: flex; gap: 6px; margin-top: 7px; }
-    .portrow .mini { float: none; }
+
     .sb-t { font-size: 12.5px; font-weight: 700; color: #0B5CAD; }
     .sb-m { flex: 1 1 auto; font-size: 11.5px; color: #5B6B7A; }
     .stwrap { overflow-x: auto; border: 1px solid #E3E8EF; border-radius: 8px; }
@@ -2591,15 +2596,12 @@
       document.documentElement.appendChild(this.host);
       this.collapsed = store.get("collapsed", false);
       this.acq = "";           // catalog search text
-      this.referti = [];                // patient page: result rows, newest first
-      this.risultati = [];              // lab values still being reported
       this.esiti = [];                  // risultati + referti, newest first
       this.storico = null;              // the portal's multi-day table, if it is THIS patient's
       this.storicoAltri = "";           // ...or the name it belongs to, when it is not
       this.storicoVia = "nome";         // su cosa è stata confermata l'identità
       this.storicoDaConfermare = false; // c'è, ma serve il codice fiscale per dire che è suo
       this.portale = "";                // indirizzo del portale aggiunto dal medico
-      this.portaleAperto = false;       // il riquadro per aggiungerlo, aperto o no
       this.soloAlterati = false;        // storico: show only what is out of range
       this.storicoGrande = false;       // la finestra grande dello storico, aperta o no
       this.mostraNomi = false;          // the unexpected-name list, open or closed
@@ -2713,8 +2715,6 @@
         q: this._q || "",
         sel: [...this.selected.values()].map((i) => [i.res, i.code, i.label]),
         acq: this.acq || "",
-        view: this.view === "home" ? "richieste" : this.view,
-        viewId: this.viewId,
         eoSel: this.eoSel || "",
         ts: Date.now(),
       });
@@ -2763,9 +2763,7 @@
       this.render();
     }
     togglePreset(p) {
-      // il profilo elenca i codici storici: quello che finisce nel carrello è
-      // sempre la versione nuova, se il laboratorio ne ha messa una accanto
-      const items = p.items.map(([r, c]) => [r, codicePreferito(r, c)]);
+      const items = p.items;
       const allOn = items.every(([r, c]) => this.isSel(r, c));
       for (const [r, c] of items) {
         const k = this.key(r, c);
@@ -2858,6 +2856,7 @@
         if (this.runState !== "running" || !st || !st.richiestaId) return; // failed/stopped: stop here
         done.push({
           rid: st.richiestaId, listUrl: st.finishedListUrl || st.lastListUrl, kind: leg.kind,
+          carrelli: st.carrelli || {},
           count: st.added.length,
           lastCode: st.added.length ? st.added[st.added.length - 1].code : null,
           lastLabel: st.added.length ? st.added[st.added.length - 1].label : null,
@@ -2873,7 +2872,7 @@
       // hand the rest of the walk to the pages we are about to land on
       const first = done[0];
       tabStore.set("queue.v1", { episodeId: plan.episodeId, autoConfirm: !!plan.autoConfirm, ts: Date.now(), items: done });
-      tabStore.set("receipt.v1", { richiestaId: first.rid, episodeId: plan.episodeId, ts: Date.now(), items: first.added });
+      tabStore.set("receipt.v1", { richiestaId: first.rid, episodeId: plan.episodeId, ts: Date.now(), items: first.added, carrelli: first.carrelli || {} });
       if (plan.autoConfirm && first.lastCode && first.kind !== "radio") {
         tabStore.set("confirm.v1", { richiestaId: first.rid, episodeId: plan.episodeId, lastCode: first.lastCode, lastLabel: first.lastLabel, count: first.count, ts: Date.now() });
       }
@@ -3160,15 +3159,11 @@
       const presetHtml = PRESETS.map((p, i) => {
         const ok = p.items.every(([r, c]) => cat[r]?.items?.[c]);
         if (!ok) return "";
-        const on = p.items.every(([r, c]) => this.isSel(r, codicePreferito(r, c, cat)));
+        const on = p.items.every(([r, c]) => this.isSel(r, c));
         return `<button class="chip preset ${on ? "on" : ""}" data-preset="${i}">${esc(p.name)}</button>`;
       }).join("");
       const byLab = {};
-      for (const [r, c0] of SINGLES) {
-        if (!cat[r]?.items?.[c0]) continue;
-        const c = codicePreferito(r, c0, cat);
-        if (!(byLab[r] = byLab[r] || []).includes(c)) byLab[r].push(c);
-      }
+      for (const [r, c] of SINGLES) if (cat[r]?.items?.[c]) (byLab[r] = byLab[r] || []).push(c);
       const singles = Object.entries(byLab).map(([r, codes]) => `
         <div class="grouphdr">${esc(RES_SHORT[r] || r)}</div>
         ${codes.map((c) => {
@@ -3340,24 +3335,11 @@
     // e lo script si registra lì.
     htmlPortale() {
       if (!hasExt()) return "";
-      if (!this.portaleAperto) {
-        return `<div class="hint">Il pannello non compare sulla pagina dello storico?
-          <button class="linkbtn" id="portapri">Aggiungi l'indirizzo del portale</button>${
-          this.portale ? ` <span class="portok">✓ ${esc(this.portale)}</span>` : ""}</div>`;
-      }
-      return `
-        <div class="sec portsec">
-          <div class="lbl">Indirizzo del portale clinico</div>
-          <input class="portinput" id="porturl" placeholder="http://10.…" value="${esc(this.portale || "")}"
-                 aria-label="Indirizzo del portale clinico">
-          <div class="portrow">
-            <button class="mini" id="portok">✓ Aggiungi</button>
-            <button class="mini" id="portno">✕ Chiudi</button>
-          </div>
-          <div class="hint">Apri la pagina con la tabella, copia l'indirizzo dalla barra del browser e
-            incollalo qui. Chrome chiederà il permesso <b>per quel sito soltanto</b>. Poi ricarica
-            quella pagina. Serve una volta sola.</div>
-        </div>`;
+      // Il permesso lo chiede la pagina delle impostazioni: da qui non si può,
+      // perché Chrome vuole un gesto e il gesto non arriva fin là.
+      return `<div class="hint">Il pannello non compare sulla pagina dello storico?
+        <button class="linkbtn" id="portapri">Aggiungi l'indirizzo del portale</button>${
+        this.portale ? ` <span class="portok">✓ ${esc(this.portale)}</span>` : ""}</div>`;
     }
 
     // The multi-day table: exams down, draws across, newest first. It is read
@@ -3658,6 +3640,7 @@
     async saveAllReferti() {
       if (!hasExt() || this._salvaRef) return;   // due clic non sono due salvataggi
       this._salvaRef = true;
+      try {
       this.refBusy = this.refBusy || {};
       const todo = this.esiti.filter((e) => e.kind === "referto" && !(this.refCache || {})[e.id]);
       for (const e of todo) this.refBusy[e.id] = true;
@@ -3673,8 +3656,12 @@
         }
         this.render();
       }
-      this._salvaRef = false;
-      this.render();
+      } finally {
+        // senza il finally una sola eccezione spegneva «Salva referti» per
+        // tutta la vita della scheda, e i pallini restavano a girare
+        this._salvaRef = false;
+        this.render();
+      }
     }
 
     txtKey(id) { return `reftxt.${this.episodeId || "x"}.${id}`; }
@@ -3811,16 +3798,18 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
 <table><thead><tr><th>Attività</th><th class="n">Durata</th><th class="n">Inizio</th><th class="n">Fine</th></tr></thead>
 <tbody>${l.map(riga).join("")}</tbody></table>`).join("")}
 </body></html>`;
+      // UN solo Blob: prima se ne creavano due per lo stesso testo e il secondo
+      // non veniva mai liberato, quindi restava in memoria per tutta la scheda
+      const u = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       let file = false;
       try {
-        const u = URL.createObjectURL(new Blob([html], { type: "text/html" }));
         const a = document.createElement("a");
         a.href = u; a.download = `tempi-${new Date(chiusi[0].inizio).toISOString().slice(0, 10)}.html`;
         document.documentElement.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(u), 20000);
         file = true;
       } catch { /* la scheda qui sotto resta */ }
-      openTab(URL.createObjectURL(new Blob([html], { type: "text/html" })), "_blank");
+      openTab(u, "_blank");
+      setTimeout(() => URL.revokeObjectURL(u), 60000);
       this.message = { ok: file ? "Tempi esportati: file nei download, e aperti in una scheda." : "Tempi aperti in una scheda: da lì Ctrl+S o Ctrl+P." };
       this.render();
     }
@@ -3994,7 +3983,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const text = head + this.logLines.join("\n").replace(/(quesito[^:]*:\s*)"[^"]*"/gi, '$1"…"');
       const ok = await copiaTesto(text);
       const b = this.root.querySelector("#copylog");
-      if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
+      segnaCopia(b, ok);
     }
 
     // full values of one accesso, inside the panel
@@ -4094,6 +4083,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       for (const e of targets) this.refBusy[e.id] = true;
       this.render();
       let cambiati = 0;
+      try {
       for (const e of targets) {
         const key = this.risKey(e.id);
         const prima = JSON.stringify((tabStore.get(key, null) || {}).rows || []);
@@ -4110,7 +4100,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.render();
         await sleep(PACE_MS).catch(() => {});
       }
-      this._refreshAll = null;
+      } finally {
+        // come per «Salva referti»: senza il finally «↻ Aggiorna» resta
+        // disabilitato per sempre alla prima eccezione
+        this._refreshAll = null;
+        for (const e of targets) this.refBusy[e.id] = false;
+      }
       this.log(`${now()}  aggiornati ${targets.length} prelievi${cambiati ? `, ${cambiati} con valori nuovi` : ", nessun valore nuovo"}`);
       this.render();
     }
@@ -4162,7 +4157,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       let ok = false;
       ok = await copiaTesto(text);
       const b = this.root.querySelector("#copyvals");
-      if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
+      segnaCopia(b, ok);
     }
 
     async reloadValori() {
@@ -4354,17 +4349,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#letto")?.addEventListener("click", () => { if (this.viewId) { this.marcaLetto(this.viewId); this.render(); } });
       $("#apripdf")?.addEventListener("click", () => { if (this.viewId) this.openReferto(this.viewId); });
       $("#apristorico")?.addEventListener("click", () => this.setView("storico"));
-      $("#portapri")?.addEventListener("click", () => { this.portaleAperto = true; this.render(); });
-      $("#portno")?.addEventListener("click", () => { this.portaleAperto = false; this.render(); });
-      $("#portok")?.addEventListener("click", async () => {
-        const url = this.root.querySelector("#porturl")?.value || "";
-        const r = await ask({ t: "aggiungiPortale", url }).catch(() => null);
-        if (r && r.ok) {
-          this.portale = r.origine; this.portaleAperto = false;
-          this.message = { ok: `Portale aggiunto: ${r.origine}. Ricarica quella pagina e il pannello comparirà.` };
-        } else {
-          this.message = (r && r.why) || "Non riuscito: riprova incollando l'indirizzo per intero.";
-        }
+      $("#portapri")?.addEventListener("click", async () => {
+        const r = await ask({ t: "apriImpostazioni" }).catch(() => null);
+        this.message = r && r.ok
+          ? { ok: "Si è aperta la pagina delle impostazioni: incolla lì l'indirizzo del portale." }
+          : "Non riesco ad aprire le impostazioni: aprile da chrome://extensions → PS Assist → Dettagli → Opzioni.";
         this.render();
       });
       const filtra = () => { this.soloAlterati = !this.soloAlterati; this.render(); };
@@ -4380,7 +4369,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       for (const id of ["#storcopy", "#storcopy2"]) $(id)?.addEventListener("click", async () => {
         const b = this.root.querySelector(id);
         const ok = await copiaTesto(this.testoStorico());
-        if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
+        segnaCopia(b, ok);
       });
       this.root.querySelectorAll("[data-dcopy]").forEach((b) => b.addEventListener("click", async () => {
         const d = dimissioni()[b.getAttribute("data-dcopy")];
@@ -4436,7 +4425,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const b = this.root.querySelector("#dimcopy");
         let ok = false;
         ok = await copiaTesto(area ? area.value : "");
-        if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
+        segnaCopia(b, ok);
       });
       $("#dimsave")?.addEventListener("click", () => {
         const d = dimissioni()[this.viewId];
@@ -4589,7 +4578,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         let ok = false;
         ok = await copiaTesto(t.righe.join("\n"));
         const b = this.root.querySelector("#copytxt");
-        if (b) { b.textContent = ok ? "✓ copiato" : "non riuscito"; setTimeout(() => { if (b.isConnected) b.textContent = "⧉ Copia"; }, 2000); }
+        segnaCopia(b, ok);
       });
       this.root.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", (ev) => {
         ev.stopPropagation();   // Richieste sits inside the card, which is itself a [data-go]
@@ -5094,7 +5083,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         // un modulo di consenso è un file dell'estensione, non una pagina del
         // gestionale: si prende così com'è, senza la catena same-origin
         const { blob, via } = jobs[i].diretto
-          ? { blob: await (await fetch(jobs[i].url)).blob(), via: "estensione" }
+          ? { blob: await (await fetch(jobs[i].url, { signal: abbandona.signal })).blob(), via: "estensione" }
           : await fetchPdf(jobs[i].url, { signal: abbandona.signal });
         panel?.log(`${now()}  ${jobs[i].name}: PDF ottenuto${via ? " via " + via : ""}`);
         blobUrl = URL.createObjectURL(blob);
@@ -5102,8 +5091,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         body.innerHTML = `<iframe title="Anteprima PDF"></iframe>`;
         const f = body.querySelector("iframe");
         let printed = false;
-        const once = () => { if (!printed) { printed = true; tryPrint(); } };
-        f.addEventListener("load", () => setTimeout(once, 350));
+        // il cronometro va SEMPRE dentro `timer`, e la stampa parte solo se
+        // quella cornice è ancora quella a schermo: «Avanti» ne lasciava uno
+        // orfano, che stampava il documento dopo al posto di questo
+        const once = () => { if (!printed && root.contains(f)) { printed = true; tryPrint(); } };
+        f.addEventListener("load", () => { clearTimeout(timer); timer = setTimeout(once, 350); });
         timer = setTimeout(once, 1500); // headless/viewer-less fallback
         f.src = blobUrl;
       } catch (e) {
@@ -5113,9 +5105,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         // activation) — offer a big button the doctor clicks, which carries
         // activation and always opens the tab. The sequence still advances.
         const job = jobs[i];
-        render(`Anteprima non catturabile per questo documento (è un visualizzatore).${e?.diag ? " [" + e.diag + "]" : ""}`, true);
-        root.querySelector(".pwbody").innerHTML =
-          `<div class="pwmsg">Premi <b>↗ Apri ${esc(job.name)}</b> qui sotto, poi <b>Ctrl+P → ${esc(job.printer)}</b>,<br>torna qui e premi «Stampata — avanti».</div>`;
+        // Non tutto quello che fallisce è «un visualizzatore»: una sessione
+        // scaduta, un HTTP 500 o una risposta fuori dall'ospedale finivano
+        // sotto quella scritta, e «Apri e stampa» apriva la pagina di login.
+        const suo = e instanceof ViewerError;
+        render(suo
+          ? `Anteprima non catturabile per questo documento (è un visualizzatore).${e?.diag ? " [" + e.diag + "]" : ""}`
+          : `${e?.head || "Non riuscito"}${e?.body ? " — " + e.body : ""}`, true);
+        root.querySelector(".pwbody").innerHTML = suo
+          ? `<div class="pwmsg">Premi <b>↗ Apri ${esc(job.name)}</b> qui sotto, poi <b>Ctrl+P → ${esc(job.printer)}</b>,<br>torna qui e premi «→ Avanti».</div>`
+          : `<div class="pwmsg">Questo documento non è stato scaricato. Risolvi il problema qui sopra e riprova la stampa dal pannello.</div>`;
       }
     };
 
@@ -5157,7 +5156,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
 
   function goToQueued(entry) {
     const { q, next } = entry;
-    tabStore.set("receipt.v1", { richiestaId: next.rid, episodeId: q.episodeId, ts: Date.now(), items: next.added || [] });
+    tabStore.set("receipt.v1", { richiestaId: next.rid, episodeId: q.episodeId, ts: Date.now(), items: next.added || [], carrelli: next.carrelli || {} });
     if (q.autoConfirm && next.lastCode && next.kind !== "radio") {
       tabStore.set("confirm.v1", { richiestaId: next.rid, episodeId: q.episodeId, lastCode: next.lastCode, lastLabel: next.lastLabel, count: next.count, ts: Date.now() });
     }

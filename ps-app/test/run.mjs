@@ -1428,41 +1428,44 @@ async function scenarioNomeConHtml(browser) {
 }
 
 // Il laboratorio affianca al vecchio esame la sua versione «- NEW» e lascia in
-// elenco tutti e due. Chi ordina vuole sempre il nuovo.
+// elenco tutti e due. Chi ordina vuole sempre il nuovo. La scelta si fa
+// sull'elenco VIVO della pagina, non sul catalogo: i codici nuovi cambiano da
+// una sede all'altra, e in una sede il catalogo non li ha mai visti.
 async function scenarioEmogasNew(browser) {
   const scen = "emogas-new";
-  const mock = createMock({});
+  const mock = createMock({ nuoveVersioni: { 3: "325", 166: "326" } });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
-  // il catalogo si impara dalle pagine vere: qui gli si mette accanto la
-  // versione NEW, come nell'ospedale dove c'è
-  await page.evaluate(() => {
-    const K = "psassist:catalog.v1";
-    const c = JSON.parse(localStorage.getItem(K) || "{}");
-    const res = "00660001P";
-    c[res] = c[res] || { label: "LABORATORIO ANALISI POC - SSG (P)", items: {} };
-    c[res].items["325"] = "EMOGASANALISI VENOSA&nbsp;POC - NEW (POC21171)";
-    c[res].items["326"] = "EGA EMOGASANALISI ARTERIOSA POC - NEW (POC10061)";
-    localStorage.setItem(K, JSON.stringify(c));
-  });
-  await page.reload();
-  await page.waitForSelector("#psassist-host .opt", { state: "attached", timeout: 15000 });
+  await $panel(page, "#q").fill("dispnea");
+  await $panel(page, '.opt[title*="EMOGASANALISI VENOSA"]').click();
+  await $panel(page, "#go").click();
+  await page.waitForFunction(() => !!document.getElementById("psassist-host")
+    ?.shadowRoot?.querySelector(".banner.ok, .banner.err"), { timeout: 30000 }).catch(() => {});
 
-  const opzioni = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot
-    .querySelectorAll(".opt")].map((b) => ({ code: b.getAttribute("data-code"), txt: b.textContent.trim() })));
-  const venose = opzioni.filter((o) => /EGA VENOSA/i.test(o.txt));
-  const arteriose = opzioni.filter((o) => /EGA ARTERIOSA/i.test(o.txt));
-  check(scen, venose.length === 1 && venose[0].code === "325",
-    `l'emogas venoso è quello nuovo, e uno solo (got ${JSON.stringify(venose)})`);
-  check(scen, arteriose.length === 1 && arteriose[0].code === "326",
-    `e così l'arterioso (got ${JSON.stringify(arteriose)})`);
-  check(scen, /NEW/.test(venose[0].txt), `e si vede che è il nuovo (got ${venose[0].txt})`);
+  const rid = Object.keys(mock.state.richieste)[0];
+  const carrello = [...mock.state.richieste[rid].cart.keys()];
+  check(scen, carrello.includes("325") && !carrello.includes("3"),
+    `al server va la versione NEW, non la vecchia (got ${carrello})`);
+  check(scen, mock.state.insertCount[`${rid}:3`] === undefined,
+    "e la vecchia non viene nemmeno tentata");
+  const reg = await $panel(page, ".card").innerText();
+  check(scen, /versione nuova/i.test(reg), `il Registro dice che ha cambiato (got ${(/[^.]*versione nuova[^.]*/i.exec(reg) || [])[0] || "niente"})`);
 
-  // il codice scelto è quello che il motore manda: la strada dell'invio è la
-  // stessa di tutti gli altri esami, e ce l'hanno già i loro scenari
-  check(scen, (await page.locator('#psassist-host .opt[data-code="3"]').count()) === 0,
-    "e il vecchio non è più in elenco: non lo si può ordinare per sbaglio");
+  // e dove la versione nuova NON c'è, si ordina la vecchia senza storie
+  const m2 = createMock({});
+  const { context: c2, page: p2 } = await newPage(browser, m2);
+  await p2.goto(m2.patientUrl);
+  await p2.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(p2, "#q").fill("dispnea");
+  await $panel(p2, '.opt[title*="EMOGASANALISI VENOSA"]').click();
+  await $panel(p2, "#go").click();
+  await p2.waitForFunction(() => !!document.getElementById("psassist-host")
+    ?.shadowRoot?.querySelector(".banner.ok, .banner.err"), { timeout: 30000 }).catch(() => {});
+  const rid2 = Object.keys(m2.state.richieste)[0];
+  check(scen, [...m2.state.richieste[rid2].cart.keys()].includes("3"),
+    `senza versione nuova ordina la vecchia (got ${[...m2.state.richieste[rid2].cart.keys()]})`);
+  await c2.close();
   await context.close();
 }
 

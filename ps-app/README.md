@@ -272,7 +272,12 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   stanno **in memoria e non su disco**, scadono dopo 2 ore e spariscono chiudendo il browser.
   Il logout li cancella con tutto il resto.
 - Sul portale l'estensione entra **solo nella sezione che contiene quella tabella**
-  (`/clin-port/*`) e lì fa una cosa sola: leggerla. Il percorso era ristretto a
+  (`/clin-port/*`) e lì fa una cosa sola: leggerla. **Se l'indirizzo del portale
+  è un altro** — un altro IP, un'altra sede — lo aggiungi tu: nel pannello, negli
+  Esiti, «Aggiungi l'indirizzo del portale» apre una pagina di impostazioni dove
+  incolli l'indirizzo e Chrome chiede il permesso **per quel sito soltanto**.
+  Il permesso si chiede da lì e non dal pannello perché Chrome pretende un gesto
+  dell'utente, e un gesto non sopravvive al passaggio verso il service worker. Il percorso era ristretto a
   `/clin-port/info-cliniche/*`, ma il portale è una single-page application e
   quel pezzo di indirizzo può stare **dopo il cancelletto**, dove le regole di
   Chrome non guardano: l'estensione non partiva affatto. Se la tabella non
@@ -538,7 +543,8 @@ stessi flussi dei test di prodotto.
     (`BRANCA` varia per richiesta) e passano gli stessi controlli di origine di tutto il resto.
     La caccia al PDF ha **un tetto solo, sei tentativi in tutto**: oltre quello il documento si
     apre in una scheda e lo stampi da lì. (Il contatore stava dentro la funzione ricorsiva, così
-    ogni livello ripartiva da zero e il tetto vero era 6+6×6 = **43 richieste**. Ora è uno solo,
+    ogni livello ripartiva da zero e il tetto vero era 6+6×6 = **43 richieste**. Lo stesso
+    difetto era rimasto nel service worker, per i referti, ed è corretto anche lì. Ora è uno solo,
     passato ai livelli sotto.) Chiudere la finestra di stampa **ferma davvero** la caccia.
 13. **Un paziente alla volta**: per ordinare devi essere sulla sua pagina, e ogni dato salvato
     (valori, referti, registro, code di conferma) è legato al suo episodio — letto sotto un altro
