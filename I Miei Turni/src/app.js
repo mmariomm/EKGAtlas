@@ -1,8 +1,7 @@
 /* =============================================================================
    I Miei Turni — interfaccia (vanilla JS, nessun modulo, nessuna dipendenza).
    Gira dopo TurniParser, TurniRules e window.TURNI_DATA.
-   Schermata: calendario del mese + dettaglio del giorno scelto; sotto,
-   segnalazioni, elenco dei nomi, dati.
+   Tre viste: calendario + giorno scelto, tabella del mese, ore per nome.
    Ordine del file: costanti → aiutanti → stato → derivazione → render → eventi.
    ============================================================================= */
 (function () {
@@ -18,6 +17,7 @@
   var LS_ROSTERS = 'imieiturni.rosters.v1';
   var LS_ME = 'imieiturni.me';
   var LS_VIEW = 'imieiturni.view';
+  var LS_GESTORE = 'imieiturni.gestore';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var MONTHS_IT = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
@@ -26,9 +26,11 @@
     'giovedì', 'venerdì', 'sabato'];
   var WEEKDAYS_SHORT_IT = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'];
 
-  // Ordine delle fasce: mattina, pomeriggio, notte, poi il resto.
-  var SLOT_RANK = { M: 0, P: 1, N: 2 };
+  var SLOT_RANK = { M: 0, P: 1, N: 2 };          // ordine delle righe e delle colonne: il resto in coda
+  var CHIP_RANK = { G: 0, M: 0, A: 0, P: 1, N: 2 };   // fra le pastiglie l'ambulatorio sta con la mattina
+  var SLOT_WORD = { G: 'giornata', M: 'mattina', P: 'pomeriggio', N: 'notte', A: 'ambulatorio' };
 
+  var VIEWS = ['calendario', 'tabella', 'ore'];
   var KIND_ORDER = ['conflitto', 'notte-attaccata', 'cambio-sede'];
   var KIND_PLURAL = {
     conflitto: ['conflitto', 'conflitti'],
@@ -85,6 +87,10 @@
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
   function $(id) { return document.getElementById(id); }
 
+  function hospClass(h) { return h === 'DEA' ? 'h-dea' : (h === 'OSG' ? 'h-osg' : 'h-alt'); }
+  function dot(h, title) { return el('span', { class: 'dot ' + hospClass(h), title: title }); }
+  function warnRow(text) { return el('p', { class: 'warnrow' }, [icon('i-warn'), text]); }
+
   // ---------------------------------------------------------------------------
   // Aiutanti di formato
   // ---------------------------------------------------------------------------
@@ -104,21 +110,13 @@
   function dayNum(dateStr) { return Number(String(dateStr).slice(8, 10)); }
   function dateOf(month, day) { return month + '-' + pad2(day); }
   function monthLength(month) {
-    var y = Number(month.slice(0, 4)), m = Number(month.slice(5, 7));
-    return new Date(Date.UTC(y, m, 0)).getUTCDate();
+    return new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
   }
-
   function todayISO() {
     var d = new Date();
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
   }
-
-  // "AMBULATORIO CM" → "Amb. CM" (una riga sola nella colonna di sinistra).
-  function shortSlotName(label) {
-    return R.slotName(label).replace(/^Ambulatorio\b/, 'Amb.');
-  }
-
-  function hospClass(h) { return h === 'DEA' ? 'h-dea' : (h === 'OSG' ? 'h-osg' : 'h-alt'); }
+  function shortSlotName(label) { return R.slotName(label).replace(/^Ambulatorio\b/, 'Amb.'); }
 
   function suspicionText(s) {
     if (!s) return '';
@@ -132,7 +130,7 @@
     if (!q) return null;
     var folded = '', idx = [];
     for (var i = 0; i < name.length; i++) {
-      var ch = name.charAt(i).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]/g, '');
+      var ch = name.charAt(i).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z]/g, '');
       for (var k = 0; k < ch.length; k++) { folded += ch.charAt(k); idx.push(i); }
     }
     var at = folded.indexOf(q);
@@ -160,28 +158,15 @@
     } catch (e) { return false; }
   }
 
-  function readMe() {
-    try { return window.localStorage.getItem(LS_ME) || null; } catch (e) { return null; }
+  function readStore(key) {
+    try { return window.localStorage.getItem(key); } catch (e) { return null; }
   }
 
-  function writeMe(name) {
+  function writeStore(key, value) {
     try {
-      if (name) window.localStorage.setItem(LS_ME, name);
-      else window.localStorage.removeItem(LS_ME);
+      if (value) window.localStorage.setItem(key, value);
+      else window.localStorage.removeItem(key);
     } catch (e) { /* niente memoria: pazienza */ }
-  }
-
-  var VIEWS = ['calendario', 'tabella', 'ore'];
-
-  function readView() {
-    try {
-      var v = window.localStorage.getItem(LS_VIEW);
-      return VIEWS.indexOf(v) !== -1 ? v : 'calendario';
-    } catch (e) { return 'calendario'; }
-  }
-
-  function writeView(v) {
-    try { window.localStorage.setItem(LS_VIEW, v); } catch (e) { /* pazienza */ }
   }
 
   // ---------------------------------------------------------------------------
@@ -198,34 +183,39 @@
     query: '',
     armedIndex: 0,
     pinned: null,
-    findingsAll: false,
     popOpen: false,
   };
 
   var local = readLocal();
-  var shared = null;        // data/turni.json pubblicato nell'artifact (se c'è)
-  var pub = null;           // spazio dei nomi "artifact" della piattaforma
-  var readOnly = false;     // vero dopo un rifiuto not_writer / not_granted
-  var D = {};                // vista derivata
-  var nameEls = new Map();   // nome → elementi evidenziabili
-  var painted = [];          // elementi attualmente evidenziati
-  var options = [];          // righe dell'elenco candidati
-  var calName = null;        // nome disegnato nel calendario (fissato o in anteprima)
-  var tableWidth = 0;        // larghezza con cui sono state calcolate le colonne
+  var shared = null;          // data/turni.json pubblicato nell'artifact
+  var pendingShared = null;   // arrivato mentre un foglio era aperto
+  var pub = null;             // spazio dei nomi "artifact" della piattaforma
+  var soloVista = false;      // vero dopo un rifiuto not_writer / not_granted / capability_disabled
+  var runtime = !!(window.claude && typeof window.claude.use === 'function');
+  var gestore = !runtime || readStore(LS_GESTORE) === '1';
+
+  var D = {};
+  var hits = [];              // ultimo risultato di searchNames (una volta per battuta)
+  var nameEls = new Map();
+  var painted = [];
+  var options = [];
+  var calName = null;
+  var tableWidth = 0;
+  var today = todayISO();
   var reviewQueue = [], reviewCurrent = null, reviewOpener = null, reviewTotal = 0, reviewDone = 0;
 
   // ---------------------------------------------------------------------------
   // Riferimenti al DOM
   // ---------------------------------------------------------------------------
 
-  var topbar = $('topbar'), monthCtl = $('monthCtl'), findingsBtn = $('findingsBtn'), todayBtn = $('todayBtn'),
-    searchBox = $('search'), input = $('q'), pintoken = $('pintoken'), clearBtn = $('clearBtn'), pop = $('pop'),
+  var searchbar = $('searchbar'), monthCtl = $('monthCtl'),
     segCal = $('segCal'), segTab = $('segTab'), segOre = $('segOre'),
     viewCal = $('viewCal'), viewTab = $('viewTab'), viewOre = $('viewOre'),
     tableWrap = $('tablewrap'), oreCard = $('orecard'),
-    emptyEl = $('empty'), personLine = $('personline'), calEl = $('calendario'),
-    detailEl = $('detail'), findEl = $('segnalazioni'), stripEl = $('strip'), datiEl = $('dati'), datiBody = $('datiBody'),
-    fileInput = $('fileInput'), dropzone = $('dropzone'), toasts = $('toasts'), srStatus = $('srStatus'),
+    searchBox = $('search'), input = $('q'), pintoken = $('pintoken'), clearBtn = $('clearBtn'), pop = $('pop'),
+    emptyEl = $('empty'), personLine = $('personline'), calEl = $('calendario'), legendEl = $('callegend'),
+    detailEl = $('detail'), findEl = $('segnalazioni'), datiEl = $('dati'), datiSumText = $('datiSumText'),
+    datiBody = $('datiBody'), fileInput = $('fileInput'), toasts = $('toasts'), srStatus = $('srStatus'),
     reviewEl = $('review'), reviewPanel = $('reviewPanel'), reviewTitle = $('reviewTitle'),
     reviewCap = $('reviewCap'), reviewBody = $('reviewBody'), reviewSave = $('reviewSave'), reviewCancel = $('reviewCancel');
 
@@ -237,17 +227,17 @@
 
   function mergedRosters() {
     var map = new Map();
-    BAKED.forEach(function (r) {
-      var c = Object.assign({}, r); c.source = 'pubblicato'; map.set(rosterKey(c), c);
-    });
-    ((shared && shared.rosters) || []).forEach(function (r) {
-      var c = Object.assign({}, r); c.source = 'pubblicato'; c.replaces = false; map.set(rosterKey(c), c);
-    });
-    local.forEach(function (r) {
-      var c = Object.assign({}, r); c.source = 'browser';
-      c.replaces = map.has(rosterKey(c));
+    var add = function (r, source, replaces) {
+      var c = Object.assign({}, r);
+      c.source = source;
+      c.replaces = replaces;
+      c.slotsByKey = {};
+      (c.slots || []).forEach(function (s) { c.slotsByKey[s.key] = s; });
       map.set(rosterKey(c), c);
-    });
+    };
+    BAKED.forEach(function (r) { add(r, 'pubblicato', false); });
+    ((shared && shared.rosters) || []).forEach(function (r) { add(r, 'pubblicato', false); });
+    local.forEach(function (r) { add(r, 'browser', map.has(rosterKey(r))); });
     return Array.from(map.values());
   }
 
@@ -261,7 +251,6 @@
     return SLOT_RANK[key] !== undefined ? SLOT_RANK[key] : 10 + fallback;
   }
 
-  // Giorni con dati: unione dei giorni presenti nei roster dei due ospedali.
   function buildDays(rosters) {
     var map = new Map();
     rosters.forEach(function (r) {
@@ -274,7 +263,6 @@
     return Array.from(map.values()).sort(function (a, b) { return a.day - b.day; });
   }
 
-  // Righe del dettaglio: unione delle fasce dei due ospedali, in ordine M, P, N, resto.
   function buildSlotRows(rosters) {
     var seen = new Map();
     rosters.forEach(function (r) {
@@ -287,19 +275,37 @@
     });
   }
 
-  // Conteggi del mese mostrato; il sospetto di refuso arriva dall'analisi completa.
   function namesOfMonth(namesAll, assignments) {
     var map = new Map();
     assignments.forEach(function (a) {
       var i = map.get(a.person);
-      if (!i) { i = { name: a.person, count: 0, byHospital: {}, nights: 0, amb: 0, suspicion: null }; map.set(a.person, i); }
+      if (!i) { i = { name: a.person, count: 0, byHospital: {}, nights: 0, suspicion: null }; map.set(a.person, i); }
       i.count++;
       i.byHospital[a.hospital] = (i.byHospital[a.hospital] || 0) + 1;
       if (a.isNight) i.nights++;
-      if (a.slotKey === 'A') i.amb++;
     });
     namesAll.forEach(function (n) { var i = map.get(n.name); if (i) i.suspicion = n.suspicion; });
     return Array.from(map.values()).sort(function (a, b) { return a.name.localeCompare(b.name, 'it'); });
+  }
+
+  // I nomi di una cella, senza ripetizioni, con il ruolo che viene dalla posizione.
+  function cellNames(day, hospital, slot) {
+    var cell = (day.cells[hospital] || {})[slot.key];
+    var names = (cell && cell.names) || [];
+    var seen = Object.create(null), out = [];
+    names.forEach(function (name, pos) {
+      if (seen[name]) return;
+      seen[name] = true;
+      out.push({ name: name, pos: pos, role: (slot.roles && slot.roles[pos]) || '' });
+    });
+    return out;
+  }
+
+  function pillKey(hospital, date, slotKey, person) {
+    return hospital + '|' + date + '|' + slotKey + '|' + person;
+  }
+  function sevOf(hospital, date, slotKey, person) {
+    return D.sevByPill.get(pillKey(hospital, date, slotKey, person)) || null;
   }
 
   function derive() {
@@ -325,35 +331,42 @@
     D.dayByDate = new Map(D.days.map(function (d) { return [d.date, d]; }));
     D.slotRows = buildSlotRows(D.monthRosters);
     D.monthLen = m ? monthLength(m) : 0;
-    D.today = todayISO();
-    D.todayInMonth = !!m && D.today.slice(0, 7) === m;
+    D.todayInMonth = !!m && today.slice(0, 7) === m;
 
-    // Celle, nomi e giorni coinvolti in una segnalazione.
-    D.cellFind = new Map();
-    D.pillFind = new Map();
+    // Una segnalazione si marca una volta sola: sul nome coinvolto e sul giorno.
+    D.sevByPill = new Map();
     D.dayFind = new Map();
-    D.findByPerson = new Map();
     D.findingsOfMonth.forEach(function (f) {
       [f.a, f.b].forEach(function (a) {
-        var ck = a.hospital + '|' + a.date + '|' + a.slotKey;
-        var prev = D.cellFind.get(ck);
-        if (!prev || f.severity > prev.severity) D.cellFind.set(ck, { severity: f.severity, title: f.title });
-        var pk = ck + '|' + a.person;
-        var arr = D.pillFind.get(pk) || []; arr.push(f); D.pillFind.set(pk, arr);
+        var pk = pillKey(a.hospital, a.date, a.slotKey, a.person);
+        var prev = D.sevByPill.get(pk);
+        if (!prev || f.severity > prev.sev) D.sevByPill.set(pk, { sev: f.severity, title: f.title });
         var dprev = D.dayFind.get(a.date);
-        if (!dprev || f.severity > dprev.severity) D.dayFind.set(a.date, { severity: f.severity, title: f.title });
+        if (!dprev || f.severity > dprev.sev) D.dayFind.set(a.date, { sev: f.severity, title: f.title });
       });
-      var list = D.findByPerson.get(f.person) || []; list.push(f); D.findByPerson.set(f.person, list);
+    });
+
+    // Parte fissa delle larghezze della tabella: il nome più lungo per colonna.
+    D.tableLens = D.slotRows.map(function (row) {
+      var max = 4;
+      D.days.forEach(function (d) {
+        D.monthRosters.forEach(function (r) {
+          var slot = r.slotsByKey[row.key];
+          if (!slot) return;
+          cellNames(d, r.hospital, slot).forEach(function (n) { if (n.name.length > max) max = n.name.length; });
+        });
+      });
+      return max + 2;
     });
 
     if (state.pinned && !D.nameMap.has(state.pinned)) state.pinned = null;
-    if (!state.pinned) state.findingsAll = false;
     if (!validDay(state.selected)) state.selected = defaultDay();
+    if (state.view === 'ore' && !canSeeOre()) state.view = 'calendario';
   }
 
   function defaultMonth() {
     if (!D.months.length) return '';
-    var t = todayISO().slice(0, 7);
+    var t = today.slice(0, 7);
     return D.months.indexOf(t) !== -1 ? t : D.months[D.months.length - 1];
   }
 
@@ -365,29 +378,61 @@
 
   function defaultDay() {
     if (!state.month) return '';
-    return D.todayInMonth ? D.today : dateOf(state.month, 1);
+    return D.todayInMonth ? today : dateOf(state.month, 1);
   }
 
-  // Turni di una persona, giorno per giorno, in ordine di fascia: le pastiglie del calendario.
+  function canSeeOre() { return gestore && !soloVista; }
+
+  // Le pastiglie del calendario: mattina + pomeriggio nello stesso ospedale
+  // diventano una giornata sola (G); la notte resta N, l'ambulatorio da solo A.
   function chipsByDate(name) {
-    var map = new Map();
-    if (!name) return map;
+    var byDate = new Map();
+    if (!name) return byDate;
     D.monthAssignments.forEach(function (a) {
       if (a.person !== name) return;
-      var arr = map.get(a.date) || []; arr.push(a); map.set(a.date, arr);
+      var perDay = byDate.get(a.date);
+      if (!perDay) { perDay = new Map(); byDate.set(a.date, perDay); }
+      var list = perDay.get(a.hospital);
+      if (!list) { list = []; perDay.set(a.hospital, list); }
+      list.push(a);
     });
-    map.forEach(function (arr) {
-      arr.sort(function (x, y) {
-        var rx = slotRank(x.slotKey, 0), ry = slotRank(y.slotKey, 0);
+
+    var out = new Map();
+    byDate.forEach(function (perDay, date) {
+      var chips = [];
+      D.hospitals.forEach(function (h) {
+        var list = perDay.get(h);
+        if (!list) return;
+        var morning = list.filter(function (a) { return a.slotKey === 'M' || a.slotKey === 'A'; });
+        var afternoon = list.filter(function (a) { return a.slotKey === 'P'; });
+        var rest = list.filter(function (a) { return a.slotKey !== 'M' && a.slotKey !== 'A' && a.slotKey !== 'P'; });
+        if (morning.length && afternoon.length) {
+          chips.push({ letter: 'G', word: 'giornata', hospital: h, night: false, a: morning[0] });
+        } else {
+          morning.concat(afternoon).forEach(function (a) {
+            chips.push({ letter: a.slotKey, word: SLOT_WORD[a.slotKey] || R.slotName(a.slotLabel).toLowerCase(), hospital: h, night: false, a: a });
+          });
+        }
+        rest.forEach(function (a) {
+          chips.push({
+            letter: a.slotKey.charAt(0), word: SLOT_WORD[a.slotKey] || R.slotName(a.slotLabel).toLowerCase(),
+            hospital: h, night: a.isNight, a: a,
+          });
+        });
+      });
+      chips.sort(function (x, y) {
+        var rx = CHIP_RANK[x.letter] !== undefined ? CHIP_RANK[x.letter] : 3;
+        var ry = CHIP_RANK[y.letter] !== undefined ? CHIP_RANK[y.letter] : 3;
         if (rx !== ry) return rx - ry;
         return D.hospitals.indexOf(x.hospital) - D.hospitals.indexOf(y.hospital);
       });
+      out.set(date, chips);
     });
-    return map;
+    return out;
   }
 
   // ---------------------------------------------------------------------------
-  // Indirizzo (hash) — mese, nome, giorno
+  // Indirizzo (hash) — mese, nome, giorno, vista
   // ---------------------------------------------------------------------------
 
   function readHash() {
@@ -418,7 +463,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Render — intestazione
+  // Render — titolo, viste, riga della persona
   // ---------------------------------------------------------------------------
 
   function renderHeader() {
@@ -439,30 +484,13 @@
         select,
       ]));
     }
-
-    var n = D.findingsOfMonth.length;
-    clear(findingsBtn);
-    if (n === 0) {
-      findingsBtn.setAttribute('aria-label', 'Nessuna segnalazione');
-      findingsBtn.title = 'Nessuna segnalazione';
-      findingsBtn.appendChild(icon('i-check'));
-    } else {
-      var maxSev = Math.max.apply(null, D.findingsOfMonth.map(function (f) { return f.severity; }));
-      findingsBtn.setAttribute('aria-label', plural(n, 'segnalazione', 'segnalazioni'));
-      findingsBtn.title = plural(n, 'segnalazione', 'segnalazioni');
-      findingsBtn.appendChild(el('span', { class: 'sevdot sev-' + maxSev }));
-      findingsBtn.appendChild(el('span', { text: String(n) }));
-    }
-
-    todayBtn.hidden = !D.todayInMonth;
     renderPinToken();
   }
 
   function renderPinToken() {
     clear(pintoken);
-    if (!state.pinned) { pintoken.hidden = true; input.placeholder = 'Cerca ed evidenzia un nome…'; return; }
+    if (!state.pinned) { pintoken.hidden = true; return; }
     pintoken.hidden = false;
-    input.placeholder = 'Cerca un altro nome…';
     pintoken.appendChild(el('span', { class: 'pintoken__n', text: state.pinned }));
     pintoken.appendChild(el('button', {
       type: 'button', 'aria-label': 'Togli l’evidenziazione di ' + state.pinned,
@@ -470,50 +498,74 @@
     }, icon('i-close')));
   }
 
-  // ---------------------------------------------------------------------------
-  // Render — riga della persona
-  // ---------------------------------------------------------------------------
-
   function renderPersonLine() {
     clear(personLine);
     if (!state.pinned) { personLine.hidden = true; return; }
     var st = R.personStats(D.assignments, state.pinned, state.month);
-    var mine = D.findByPerson.get(state.pinned) || [];
+    var mine = D.findingsOfMonth.filter(function (f) { return f.person === state.pinned; });
     personLine.hidden = false;
 
-    // Riga in forma breve: 2G · 2M · 3P · 5N · 7 da 12 h · 114 h · DEA 78 · OSG 36
+    // La riga è la somma stessa: giornate + notti = turni, e i turni per 12 fanno le ore.
+    var terms = [];
+    if (st.giornateEq) terms.push(R.formatNumber(st.giornateEq) + 'G');
+    if (st.notti) terms.push(st.notti + 'N');
     var parts = [];
-    if (st.giornate) parts.push(st.giornate + 'G');
-    if (st.mattine) parts.push(st.mattine + 'M');
-    if (st.pomeriggi) parts.push(st.pomeriggi + 'P');
-    if (st.notti) parts.push(st.notti + 'N');
+    if (terms.length) parts.push(terms.join(' + ') + ' = ' + R.formatNumber(st.turniEq));
     if (st.altri) parts.push(plural(st.altri, 'altro', 'altri'));
-    if (st.dodici) parts.push(st.dodici + ' da 12 h');
     parts.push(R.formatHours(st.ore));
-    // Le ore per ospedale portano il puntino colorato: la riga fa anche da legenda dei colori.
-    var hosps = D.hospitals.filter(function (h) { return st.oreByHospital[h]; });
-    var hospParts = hosps.length > 1 ? hosps.map(function (h) {
-      return h + ' ' + R.formatHours(st.oreByHospital[h]).replace(' h', '');
-    }) : [];
+    personLine.title = 'G giornate (mattina + pomeriggio; una mattina o un pomeriggio da soli valgono mezza giornata) · N notti';
 
-    var legend = 'G giornate · M mattine · P pomeriggi · N notti';
-    personLine.title = legend;
-    personLine.setAttribute('aria-label', parts.concat(hospParts).join(', ') + '. ' + legend);
-    personLine.appendChild(document.createTextNode(parts.join(' · ')));
-    hosps.forEach(function (h, i) {
-      if (!hospParts.length) return;
-      personLine.appendChild(document.createTextNode(' · '));
-      personLine.appendChild(el('span', { class: 'dot ' + hospClass(h) }));
-      personLine.appendChild(document.createTextNode(' ' + hospParts[i]));
-    });
+    append(personLine, parts.join(' · '));
+    var hosps = D.hospitals.filter(function (h) { return st.oreByHospital[h]; });
+    if (hosps.length > 1) {
+      hosps.forEach(function (h) {
+        append(personLine, ' · ');
+        personLine.appendChild(dot(h));
+        append(personLine, h + ' ' + R.formatHours(st.oreByHospital[h]).replace(' h', ''));
+      });
+    }
     if (mine.length) {
-      personLine.appendChild(document.createTextNode(' · '));
+      append(personLine, ' · ');
       personLine.appendChild(el('button', {
         class: 'linkbtn', type: 'button',
         text: plural(mine.length, 'segnalazione', 'segnalazioni'),
         on: { click: function () { scrollToEl(findEl); findEl.focus({ preventScroll: true }); } },
       }));
     }
+    personLine.setAttribute('aria-label', personLine.textContent + '. ' + personLine.title);
+  }
+
+  function renderMain() {
+    var v = state.view;
+    var segs = { calendario: segCal, tabella: segTab, ore: segOre };
+    segOre.hidden = !canSeeOre();
+    VIEWS.forEach(function (name) {
+      var on = name === v;
+      segs[name].setAttribute('aria-selected', on ? 'true' : 'false');
+      segs[name].tabIndex = on ? 0 : -1;
+    });
+    viewCal.hidden = v !== 'calendario';
+    viewTab.hidden = v !== 'tabella';
+    viewOre.hidden = v !== 'ore';
+
+    if (v !== 'calendario') { clear(calEl); clear(detailEl); legendEl.hidden = true; }
+    if (v !== 'tabella') clear(tableWrap);
+    if (v !== 'ore') clear(oreCard);
+
+    if (v === 'calendario') { renderCalendar(); renderDetail(); }
+    else if (v === 'tabella') renderTable();
+    else renderOre();
+  }
+
+  function setView(v) {
+    if (state.view === v) return;
+    if (v === 'ore' && !canSeeOre()) return;
+    state.view = v;
+    writeStore(LS_VIEW, v);
+    renderMain();
+    indexNames();
+    applyHighlight();
+    syncHash();
   }
 
   // ---------------------------------------------------------------------------
@@ -525,78 +577,81 @@
     calEl.setAttribute('aria-label', 'Calendario di ' + monthLabel(state.month));
     if (!state.month) return;
 
-    calEl.appendChild(el('div', { class: 'cal__row cal__wd', role: 'row' },
-      WEEKDAYS_SHORT_IT.map(function (w) { return el('span', { role: 'columnheader', text: w }); })));
+    calEl.appendChild(el('div', { class: 'cal__row cal__wd' },
+      WEEKDAYS_SHORT_IT.map(function (w) { return el('span', { text: w }); })));
 
     calName = previewName();
     var chips = chipsByDate(calName);
     var first = dateOf(state.month, 1);
-    var lead = (weekdayOf(first) + 6) % 7;           // le settimane iniziano di lunedì
+    var lead = (weekdayOf(first) + 6) % 7;
     var cells = [];
-
     for (var i = lead; i > 0; i--) cells.push({ out: true, n: prevMonthDay(first, i) });
     for (var d = 1; d <= D.monthLen; d++) cells.push({ out: false, n: d, date: dateOf(state.month, d) });
     var after = 1;
     while (cells.length % 7 !== 0) cells.push({ out: true, n: after++ });
 
     for (var w = 0; w < cells.length; w += 7) {
-      var row = el('div', { class: 'cal__row', role: 'row' });
+      var row = el('div', { class: 'cal__row' });
       cells.slice(w, w + 7).forEach(function (c) { row.appendChild(calCell(c, chips)); });
       calEl.appendChild(row);
     }
-
+    renderLegend();
   }
 
   function prevMonthDay(firstDate, back) {
-    var y = Number(firstDate.slice(0, 4)), m = Number(firstDate.slice(5, 7));
-    return new Date(Date.UTC(y, m - 1, 1 - back)).getUTCDate();
+    return new Date(Date.UTC(Number(firstDate.slice(0, 4)), Number(firstDate.slice(5, 7)) - 1, 1 - back)).getUTCDate();
   }
 
   function calCell(c, chips) {
-    if (c.out) {
-      return el('span', { class: 'cal__d is-out', role: 'gridcell' },
-        el('span', { class: 'cal__n', text: String(c.n) }));
-    }
+    if (c.out) return el('span', { class: 'cal__d is-out' }, el('span', { class: 'cal__n', text: String(c.n) }));
+
     var date = c.date;
-    var today = date === D.today;
+    var isToday = date === today;
     var sel = date === state.selected;
-    var weekend = isWeekend(date);
     var mine = chips.get(date) || [];
     var find = D.dayFind.get(date);
 
     var label = c.n + ' ' + weekdayLong(date);
-    if (today) label += ', oggi';
-    if (mine.length) label += ', ' + plural(mine.length, 'turno', 'turni') + ' di ' + calName;
-    else if (find) label += ', ' + find.title;
+    if (isToday) label += ', oggi';
+    if (mine.length) {
+      label += ', ' + mine.map(function (ch) { return ch.word + ' ' + ch.hospital; }).join(', ') + ' di ' + calName;
+    } else if (find) label += ', ' + find.title;
 
-    var cell = el('button', {
-      class: 'cal__d' + (weekend ? ' is-weekend' : '') + (sel ? ' is-sel' : ''),
-      type: 'button', role: 'gridcell',
-      'aria-selected': sel ? 'true' : 'false',
-      tabindex: sel ? '0' : '-1',
-      'aria-label': label,
-      data: { day: date },
+    return el('button', {
+      class: 'cal__d' + (isWeekend(date) ? ' is-weekend' : '') + (sel ? ' is-sel' : ''),
+      type: 'button', 'aria-current': sel ? 'date' : null,
+      'aria-label': label, data: { day: date },
     }, [
-      el('span', { class: 'cal__n' + (today ? ' is-today' : ''), text: String(c.n) }),
-      mine.length ? el('span', { class: 'cal__chips' }, mine.slice(0, 4).map(function (a) { return slotChip(a); })) : null,
-      (!calName && find) ? el('span', { class: 'cal__dot sev-' + find.severity, title: find.title }) : null,
+      el('span', { class: 'cal__n' + (isToday ? ' is-today' : ''), text: String(c.n) }),
+      mine.length ? el('span', { class: 'cal__chips' }, mine.slice(0, 4).map(slotChip)) : null,
+      (!calName && find) ? el('span', { class: 'cal__dot sev-' + find.sev, title: find.title }) : null,
     ]);
-    return cell;
   }
 
-  function slotChip(a) {
-    var finds = D.pillFind.get(a.hospital + '|' + a.date + '|' + a.slotKey + '|' + a.person);
-    var sev = finds ? Math.max.apply(null, finds.map(function (f) { return f.severity; })) : 0;
+  function slotChip(ch) {
+    var f = sevOf(ch.hospital, ch.a.date, ch.a.slotKey, ch.a.person);
     return el('span', {
-      class: 'chipslot ' + hospClass(a.hospital) + (a.isNight ? ' is-night' : '') + (sev ? ' is-find sev-' + sev : ''),
-      title: R.slotName(a.slotLabel) + ' ' + a.hospital + ' ' + R.timeRange(a),
-      text: a.slotKey.charAt(0),
+      class: 'chipslot ' + hospClass(ch.hospital) + (ch.night ? ' is-night' : '') + (f ? ' is-find sev-' + f.sev : ''),
+      title: capitalize(ch.word) + ' ' + ch.hospital,
+      text: ch.letter,
     });
   }
 
-  // Nome disegnato nel calendario: quello in evidenza mentre si scrive, altrimenti il fissato.
+  function renderLegend() {
+    clear(legendEl);
+    if (!calName) { legendEl.hidden = true; return; }
+    legendEl.hidden = false;
+    var keys = D.slotRows.map(function (row) { return row.key; });
+    var items = [];
+    if (keys.indexOf('M') !== -1 && keys.indexOf('P') !== -1) items.push(['G', 'giornata (M+P)']);
+    keys.forEach(function (k) { items.push([k, SLOT_WORD[k] || R.slotName(k).toLowerCase()]); });
+    append(legendEl, items.map(function (it) {
+      return el('span', {}, [el('b', { text: it[0] }), it[1]]);
+    }));
+  }
+
   function previewName() {
-    if (state.query.trim() && options.length) {
+    if (state.query.trim() && options.length && state.armedIndex >= 0) {
       var armed = options[state.armedIndex];
       if (armed) return armed.dataset.name;
     }
@@ -605,57 +660,96 @@
 
   function updateCalSelection(prev, next) {
     var before = calEl.querySelector('[data-day="' + prev + '"]');
-    if (before) {
-      before.classList.remove('is-sel');
-      before.setAttribute('aria-selected', 'false');
-      before.tabIndex = -1;
-    }
+    if (before) { before.classList.remove('is-sel'); before.removeAttribute('aria-current'); }
     var now = calEl.querySelector('[data-day="' + next + '"]');
-    if (now) {
-      now.classList.add('is-sel');
-      now.setAttribute('aria-selected', 'true');
-      now.tabIndex = 0;
+    if (now) { now.classList.add('is-sel'); now.setAttribute('aria-current', 'date'); }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — giorno scelto
+  // ---------------------------------------------------------------------------
+
+  function namePill(name, sev, opts) {
+    return el('button', {
+      class: 'pill' + (opts.cls ? ' ' + opts.cls : '') + (sev ? ' sev-' + sev.sev : ''),
+      type: 'button', data: { name: name }, title: opts.title, 'aria-label': opts.label,
+    }, [
+      el('span', { text: name }),
+      sev ? el('span', { class: 'fdot', title: sev.title }) : null,
+    ]);
+  }
+
+  function renderDetail() {
+    clear(detailEl);
+    detailEl.style.setProperty('--tpl', 'var(--dlabel) repeat(' + Math.max(1, D.hospitals.length) + ', minmax(0, 1fr))');
+    var date = state.selected;
+    if (!date) return;
+    var day = D.dayByDate.get(date);
+    detailEl.classList.toggle('is-weekend', isWeekend(date));
+    detailEl.classList.toggle('is-pinned', !!state.pinned && !state.query.trim());
+
+    detailEl.appendChild(el('div', { class: 'detail__hd' }, [
+      el('button', {
+        class: 'navday', type: 'button', 'aria-label': 'Giorno precedente',
+        disabled: dayNum(date) <= 1, on: { click: function () { step(-1); } },
+      }, icon('i-prev')),
+      el('h2', { class: 'detail__t', id: 'detailTitle' }, [
+        el('span', { class: 'detail__num', text: String(dayNum(date)) }),
+        ' ',
+        el('span', { class: 'detail__wd', text: weekdayLong(date) }),
+        date === today ? el('span', { class: 'detail__oggi', text: 'oggi' }) : null,
+      ]),
+      el('button', {
+        class: 'navday', type: 'button', 'aria-label': 'Giorno successivo',
+        disabled: dayNum(date) >= D.monthLen, on: { click: function () { step(1); } },
+      }, icon('i-next')),
+    ]));
+
+    if (!day) {
+      detailEl.appendChild(el('p', { class: 'detail__none', text: 'Nessun turno per questo giorno.' }));
+      return;
     }
-  }
 
-  // ---------------------------------------------------------------------------
-  // Render — le due viste
-  // ---------------------------------------------------------------------------
+    detailEl.appendChild(el('div', { class: 'detail__cols' }, [el('span', {})].concat(
+      D.monthRosters.map(function (r) {
+        return el('span', { class: 'detail__h', title: r.title || r.hospital }, [dot(r.hospital), r.hospital]);
+      })
+    )));
 
-  function renderMain() {
-    var v = state.view;
-    var segs = { calendario: segCal, tabella: segTab, ore: segOre };
-    VIEWS.forEach(function (name) {
-      var on = name === v;
-      segs[name].setAttribute('aria-selected', on ? 'true' : 'false');
-      segs[name].tabIndex = on ? 0 : -1;
+    var shown = 0;
+    D.slotRows.forEach(function (row) {
+      var cells = D.monthRosters.map(function (r) {
+        var slot = r.slotsByKey[row.key];
+        return slot ? cellNames(day, r.hospital, slot) : null;
+      });
+      if (!cells.some(function (list) { return list && list.length; })) return;
+      shown++;
+
+      detailEl.appendChild(el('div', { class: 'detail__row' + (row.key === 'N' ? ' is-night' : '') }, [
+        el('div', { class: 'detail__lab' }, [
+          shortSlotName(row.slot.label),
+          el('time', { text: R.timeRange(row.slot) }),
+        ]),
+      ].concat(cells.map(function (list, i) {
+        var box = el('div', { class: 'detail__cell' });
+        if (!list) return box;
+        if (!list.length) { box.appendChild(el('span', { class: 'dash', text: '—' })); return box; }
+        var roster = D.monthRosters[i];
+        list.forEach(function (n) {
+          box.appendChild(namePill(n.name, sevOf(roster.hospital, date, row.key, n.name), {
+            title: n.role ? (n.pos + 1) + 'º · ' + n.role : n.name,
+            label: n.name + ' — ' + R.slotName(row.slot.label) + ' ' + roster.hospital + (n.role ? ', ' + n.role : ''),
+          }));
+        });
+        return box;
+      }))));
     });
-    viewCal.hidden = v !== 'calendario';
-    viewTab.hidden = v !== 'tabella';
-    viewOre.hidden = v !== 'ore';
 
-    if (v !== 'calendario') { clear(calEl); clear(detailEl); }
-    if (v !== 'tabella') clear(tableWrap);
-    if (v !== 'ore') clear(oreCard);
-
-    if (v === 'calendario') { renderCalendar(); renderDetail(); }
-    else if (v === 'tabella') renderTable();
-    else renderOre();
-  }
-
-  function setView(v) {
-    if (state.view === v) return;
-    state.view = v;
-    writeView(v);
-    renderMain();
-    indexNames();
-    applyHighlight();
-    syncHash();
-    measureHeader();
+    if (!shown) detailEl.appendChild(el('p', { class: 'detail__none', text: 'Nessun turno assegnato in questo giorno.' }));
   }
 
   // ---------------------------------------------------------------------------
-  // Render — tabella del mese (tutti i nomi)
+  // Render — tabella del mese
   // ---------------------------------------------------------------------------
 
   function renderTable() {
@@ -663,30 +757,16 @@
     if (!D.days.length || !D.slotRows.length) return;
     var table = el('table', { class: 'tab', 'aria-labelledby': 'tabTitle' });
 
-    // Larghezze proporzionali al nome più lungo di ogni colonna: a 390px
-    // nessun nome resta tagliato.
-    var lens = D.slotRows.map(function (row) {
-      var max = 4;
-      D.days.forEach(function (d) {
-        D.monthRosters.forEach(function (r) {
-          var cell = (d.cells[r.hospital] || {})[row.key];
-          ((cell && cell.names) || []).forEach(function (n) { if (n.length > max) max = n.length; });
-        });
-      });
-      return max + 2;
-    });
-    var total = lens.reduce(function (x, y) { return x + y; }, 0);
-    // Percentuali (non calc(): Chrome le ignora sui <col>), ricalcolate a ogni
-    // cambio di larghezza. 38px vanno alla colonna del giorno e a quella del pallino.
+    // Percentuali (non calc(): Chrome le ignora sui <col>), rifatte a ogni cambio
+    // di larghezza. 38px vanno alla colonna del giorno e a quella del pallino.
     tableWidth = tableWrap.clientWidth || 366;
+    var total = D.tableLens.reduce(function (x, y) { return x + y; }, 0);
     var free = Math.max(140, tableWidth - 38);
     var pct = function (px) { return (px / tableWidth * 100).toFixed(3) + '%'; };
     table.appendChild(el('colgroup', {}, [
       el('col', { style: 'width:' + pct(28) }),
       el('col', { style: 'width:' + pct(10) }),
-    ].concat(lens.map(function (l) {
-      return el('col', { style: 'width:' + pct(free * l / total) });
-    }))));
+    ].concat(D.tableLens.map(function (l) { return el('col', { style: 'width:' + pct(free * l / total) }); }))));
 
     table.appendChild(el('thead', {}, el('tr', {}, [
       el('th', { class: 'tab__corner', scope: 'col' }, el('span', { class: 'sr-only', text: 'Giorno' })),
@@ -706,13 +786,20 @@
           data: { date: d.date },
         });
         if (i === 0) tr.appendChild(tableDayCell(d));
-        tr.appendChild(el('td', { class: 'tab__h' }, [
-          el('span', { class: 'dot ' + hospClass(r.hospital) }),
-          el('span', { class: 'sr-only', text: r.hospital }),
-        ]));
+        tr.appendChild(el('td', { class: 'tab__h' }, [dot(r.hospital), el('span', { class: 'sr-only', text: r.hospital })]));
         D.slotRows.forEach(function (row) {
-          var slot = (r.slots || []).filter(function (s) { return s.key === row.key; })[0] || null;
-          tr.appendChild(tableCell(r, slot, d, row.key));
+          var box = el('td', { class: 'tab__c' + (row.key === 'N' ? ' is-night' : '') });
+          var slot = r.slotsByKey[row.key];
+          if (slot) {
+            cellNames(d, r.hospital, slot).forEach(function (n) {
+              box.appendChild(namePill(n.name, sevOf(r.hospital, d.date, row.key, n.name), {
+                cls: 'pill--t',
+                title: n.name + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
+                label: n.name + ' — ' + R.slotName(slot.label) + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
+              }));
+            });
+          }
+          tr.appendChild(box);
         });
         body.appendChild(tr);
       });
@@ -723,69 +810,27 @@
   }
 
   function tableDayCell(d) {
-    var today = d.date === D.today;
     return el('th', { class: 'tab__day', scope: 'row', rowspan: '2' },
       el('button', {
         class: 'tab__daybtn', type: 'button', data: { goday: d.date },
         'aria-label': d.day + ' ' + weekdayLong(d.date) + ': apri nel calendario',
       }, [
-        el('span', { class: 'n' + (today ? ' is-today' : ''), text: String(d.day) }),
+        el('span', { class: 'n' + (d.date === today ? ' is-today' : ''), text: String(d.day) }),
         el('span', { class: 'wd', text: R.formatDate(d.date).split(' ')[0] }),
       ]));
   }
 
-  function tableCell(roster, slot, day, key) {
-    var box = el('td', { class: 'tab__c' + (key === 'N' ? ' is-night' : '') });
-    if (!slot) return box;
-    var mark = D.cellFind.get(roster.hospital + '|' + day.date + '|' + slot.key);
-    if (mark) {
-      box.classList.add('has-find', 'sev-' + mark.severity);
-      box.title = mark.title;
-    }
-    var names = ((day.cells[roster.hospital] || {})[slot.key] || {}).names || [];
-    var seen = Object.create(null);
-    names.forEach(function (name, pos) {
-      if (seen[name]) return;
-      seen[name] = true;
-      var role = (slot.roles && slot.roles[pos]) || '';
-      var finds = D.pillFind.get(roster.hospital + '|' + day.date + '|' + slot.key + '|' + name);
-      var sev = finds ? Math.max.apply(null, finds.map(function (f) { return f.severity; })) : 0;
-      box.appendChild(el('button', {
-        class: 'pill pill--t', type: 'button', data: { name: name },
-        title: name + (role ? ' · ' + (pos + 1) + 'º ' + role : ''),
-        'aria-label': name + ' — ' + R.slotName(slot.label) + ' ' + roster.hospital + (role ? ', ' + role : ''),
-      }, [
-        el('span', { text: name }),
-        sev ? el('span', { class: 'fdot sev-' + sev, title: finds[0].title }) : null,
-      ]));
-    });
-    return box;
-  }
-
-  function flashGroup(date) {
-    if (reduceMotion.matches) return;
-    var rows = tableWrap.querySelectorAll('tr[data-date="' + date + '"]');
-    Array.prototype.forEach.call(rows, function (tr) {
-      tr.classList.remove('is-flash');
-      void tr.offsetWidth;
-      tr.classList.add('is-flash');
-      window.setTimeout(function () { tr.classList.remove('is-flash'); }, 1400);
-    });
-  }
-
   // ---------------------------------------------------------------------------
-  // Render — Ore: classifica delle ore per nome
+  // Render — ore per nome
   // ---------------------------------------------------------------------------
 
   function renderOre() {
     clear(oreCard);
     var rows = R.hoursByName(D.assignments, state.month);
-    oreCard.appendChild(el('div', { class: 'ore__head' }, [
-      el('h2', { class: 'stitle', id: 'oreTitle', text: 'Ore di ' + monthName(state.month) + ' per nome' }),
-      el('span', { class: 'cap', text: plural(rows.length, 'nome', 'nomi') }),
-    ]));
+    oreCard.appendChild(el('div', { class: 'ore__head' },
+      el('h2', { class: 'stitle', text: 'Ore di ' + monthName(state.month) })));
     oreCard.appendChild(el('p', { class: 'ore__legend' }, D.hospitals.map(function (h) {
-      return el('span', {}, [el('span', { class: 'dot ' + hospClass(h) }), h]);
+      return el('span', {}, [dot(h), h]);
     })));
     if (!rows.length) {
       oreCard.appendChild(el('p', { class: 'cap', text: 'Nessun turno in questo mese.' }));
@@ -801,130 +846,21 @@
       if (st.notti) parts.push(plural(st.notti, 'notte', 'notti'));
       var label = parts.join(' · ');
 
-      var bar = el('div', { class: 'ore__bar' }, D.hospitals.filter(function (h) {
-        return st.oreByHospital[h] > 0;
-      }).map(function (h) {
-        return el('span', {
-          class: 'ore__seg ' + hospClass(h),
-          style: 'width:' + (st.oreByHospital[h] / max * 100).toFixed(2) + '%',
-        });
-      }));
-
       oreCard.appendChild(el('div', { class: 'ore__row', title: label }, [
         el('button', {
           class: 'pill ore__name', type: 'button', data: { name: st.person },
           'aria-label': label, text: st.person,
         }),
-        bar,
-        el('span', { class: 'ore__v', text: R.formatHours(st.ore).replace(' h', ' h') }),   // spazio sottile: nel mono lo spazio pieno sembra doppio
+        el('div', { class: 'ore__bar' }, D.hospitals.filter(function (h) { return st.oreByHospital[h] > 0; })
+          .map(function (h) {
+            return el('span', {
+              class: 'ore__seg ' + hospClass(h),
+              style: 'width:' + (st.oreByHospital[h] / max * 100).toFixed(2) + '%',
+            });
+          })),
+        el('span', { class: 'ore__v', text: R.formatHours(st.ore).replace(' h', '') }),
       ]));
     });
-  }
-
-  // ---------------------------------------------------------------------------
-  // Render — dettaglio del giorno scelto
-  // ---------------------------------------------------------------------------
-
-  function renderDetail() {
-    clear(detailEl);
-    detailEl.style.setProperty('--tpl', 'var(--dlabel) repeat(' + Math.max(1, D.hospitals.length) + ', minmax(0, 1fr))');
-    var date = state.selected;
-    if (!date) return;
-    var day = D.dayByDate.get(date);
-    var today = date === D.today;
-    detailEl.classList.toggle('is-weekend', isWeekend(date));
-    detailEl.classList.toggle('is-pinned', !!state.pinned && !state.query.trim());
-
-    var idx = D.days.map(function (d) { return d.date; }).indexOf(date);
-    detailEl.appendChild(el('div', { class: 'detail__hd' }, [
-      el('button', {
-        class: 'navday', type: 'button', 'aria-label': 'Giorno precedente',
-        disabled: dayNum(date) <= 1,
-        on: { click: function () { step(-1); } },
-      }, icon('i-prev')),
-      el('h2', { class: 'detail__t', id: 'detailTitle' }, [
-        el('span', { class: 'detail__num', text: String(dayNum(date)) }),
-        ' ',
-        el('span', { class: 'detail__wd', text: weekdayLong(date) }),
-        today ? el('span', { class: 'detail__oggi', text: 'oggi' }) : null,
-      ]),
-      el('button', {
-        class: 'navday', type: 'button', 'aria-label': 'Giorno successivo',
-        disabled: dayNum(date) >= D.monthLen,
-        on: { click: function () { step(1); } },
-      }, icon('i-next')),
-    ]));
-
-    if (!day) {
-      detailEl.appendChild(el('p', { class: 'detail__none', text: 'Nessun turno per questo giorno.' }));
-      return;
-    }
-
-    detailEl.appendChild(el('div', { class: 'detail__cols' }, [el('span', {})].concat(
-      D.monthRosters.map(function (r) {
-        return el('span', { class: 'detail__h ' + hospClass(r.hospital), title: r.title || r.hospital }, [
-          el('span', { class: 'dot ' + hospClass(r.hospital) }), r.hospital,
-        ]);
-      })
-    )));
-
-    var shown = 0;
-    D.slotRows.forEach(function (row) {
-      var slots = D.monthRosters.map(function (r) {
-        return (r.slots || []).filter(function (s) { return s.key === row.key; })[0] || null;
-      });
-      var used = slots.some(function (slot, i) {
-        if (!slot) return false;
-        var cell = (day.cells[D.monthRosters[i].hospital] || {})[slot.key];
-        return !!(cell && cell.names && cell.names.length);
-      });
-      if (!used) return;
-      shown++;
-
-      var night = row.key === 'N';
-      var cells = slots.map(function (slot, i) {
-        if (!slot) return el('div', {});
-        return detailCell(D.monthRosters[i], slot, day);
-      });
-      detailEl.appendChild(el('div', { class: 'detail__row' + (night ? ' is-night' : '') }, [
-        el('div', { class: 'detail__lab' }, [
-          el('b', {}, [shortSlotName(row.slot.label), night ? icon('i-moon') : null]),
-          el('time', { text: R.timeRange(row.slot) }),
-        ]),
-      ].concat(cells)));
-    });
-
-    if (!shown) detailEl.appendChild(el('p', { class: 'detail__none', text: 'Nessun turno assegnato in questo giorno.' }));
-  }
-
-  function detailCell(roster, slot, day) {
-    var cell = (day.cells[roster.hospital] || {})[slot.key];
-    var box = el('div', { class: 'detail__cell' });
-    var mark = D.cellFind.get(roster.hospital + '|' + day.date + '|' + slot.key);
-    if (mark) {
-      box.classList.add('has-find', 'sev-' + mark.severity);
-      box.title = mark.title;
-    }
-    var names = (cell && cell.names) || [];
-    if (!names.length) { box.appendChild(el('span', { class: 'dash', text: '—' })); return box; }
-
-    var seen = Object.create(null);
-    names.forEach(function (name, pos) {
-      if (seen[name]) return;
-      seen[name] = true;
-      var role = (slot.roles && slot.roles[pos]) || '';
-      var finds = D.pillFind.get(roster.hospital + '|' + day.date + '|' + slot.key + '|' + name);
-      var sev = finds ? Math.max.apply(null, finds.map(function (f) { return f.severity; })) : 0;
-      box.appendChild(el('button', {
-        class: 'pill', type: 'button', data: { name: name },
-        title: role ? (pos + 1) + 'º · ' + role : name,
-        'aria-label': name + ' — ' + R.slotName(slot.label) + ' ' + roster.hospital + (role ? ', ' + role : ''),
-      }, [
-        el('span', { text: name }),
-        sev ? el('span', { class: 'fdot sev-' + sev, title: finds[0].title }) : null,
-      ]));
-    });
-    return box;
   }
 
   // ---------------------------------------------------------------------------
@@ -933,16 +869,10 @@
 
   function renderFindings() {
     clear(findEl);
-    var all = D.findingsOfMonth;
-    var list = all;
-    var filtered = false;
-    if (state.pinned && !state.findingsAll) {
-      list = all.filter(function (f) { return f.person === state.pinned; });
-      filtered = true;
-    }
+    var list = D.findingsOfMonth;
 
     var counts = {};
-    all.forEach(function (f) { counts[f.kind] = (counts[f.kind] || 0) + 1; });
+    list.forEach(function (f) { counts[f.kind] = (counts[f.kind] || 0) + 1; });
     var countText = KIND_ORDER.filter(function (k) { return counts[k]; })
       .map(function (k) { return plural(counts[k], KIND_PLURAL[k][0], KIND_PLURAL[k][1]); })
       .join(' · ');
@@ -952,29 +882,15 @@
       countText ? el('span', { class: 'cap', text: countText }) : null,
     ]));
 
-    if (filtered && all.length) {
-      findEl.appendChild(el('p', { class: 'findings__filter' }, [
-        'Solo ' + state.pinned, el('span', { text: '·' }),
-        el('button', {
-          class: 'linkbtn', type: 'button', text: 'mostra tutte',
-          on: { click: function () { state.findingsAll = true; renderFindings(); } },
-        }),
-      ]));
-    }
-
     if (!list.length) {
-      findEl.appendChild(el('p', { class: 'fempty' }, [
-        icon('i-check'),
-        all.length ? 'Nessuna segnalazione per ' + state.pinned + ' a ' + monthName(state.month)
-          : 'Nessuna segnalazione a ' + monthName(state.month),
-      ]));
+      findEl.appendChild(el('p', { class: 'fempty' }, [icon('i-check'), 'Nessuna segnalazione a ' + monthName(state.month)]));
     } else {
       var kinds = KIND_ORDER.filter(function (k) { return list.some(function (f) { return f.kind === k; }); });
       kinds.forEach(function (kind) {
         var group = list.filter(function (f) { return f.kind === kind; });
         findEl.appendChild(el('div', { class: 'fgroup' }, [
           kinds.length > 1 ? el('p', { class: 'fgroup__t', text: plural(group.length, KIND_PLURAL[kind][0], KIND_PLURAL[kind][1]) }) : null,
-          el('div', {}, group.map(function (f) { return findingItem(f); })),
+          el('div', {}, group.map(findingItem)),
         ]));
       });
     }
@@ -989,7 +905,6 @@
     }))));
   }
 
-  // Una riga di segnalazione: la striscia dà la gravità, il corpo porta al giorno.
   function findingItem(f) {
     return el('div', { class: 'fitem sev-' + f.severity, data: { goto: f.a.date }, title: f.detail }, [
       el('button', {
@@ -1005,48 +920,25 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Render — chi c'è questo mese
-  // ---------------------------------------------------------------------------
-
-  function renderStrip() {
-    clear(stripEl);
-    if (!D.names.length) { stripEl.hidden = true; return; }
-    stripEl.hidden = false;
-
-    var both = D.names.filter(function (n) { return Object.keys(n.byHospital).length > 1; }).length;
-    var warn = D.names.filter(function (n) { return n.suspicion; }).length;
-    var caption = [plural(D.names.length, 'nome', 'nomi')];
-    if (both) caption.push(both + ' in entrambi gli ospedali');
-    if (warn) caption.push(warn + ' da controllare');
-
-    stripEl.appendChild(el('div', { class: 'strip__head' },
-      el('h2', { class: 'stitle', id: 'stripTitle', text: 'Chi c’è a ' + monthName(state.month) })));
-    stripEl.appendChild(el('p', { class: 'cap strip__cap', text: caption.join(' · ') }));
-    stripEl.appendChild(el('div', { class: 'strip__names' }, D.names.map(nameChip)));
-  }
-
-  function nameChip(n) {
-    var why = suspicionText(n.suspicion);
-    return el('button', {
-      class: 'chip' + (n.suspicion ? ' is-warn' : ''), type: 'button',
-      data: { name: n.name, top: '1' },
-      'aria-label': n.name + ', ' + plural(n.count, 'turno', 'turni') + (why ? ', ' + why : ''),
-    }, [
-      el('span', { class: 'chip__name', text: n.name }),
-      el('span', { class: 'chip__n', text: String(n.count) }),
-      el('span', { class: 'chip__dots' }, D.hospitals.filter(function (h) { return n.byHospital[h]; })
-        .map(function (h) {
-          return el('span', { class: 'dot ' + hospClass(h), title: h + ': ' + plural(n.byHospital[h], 'turno', 'turni') });
-        })),
-      why ? el('span', { class: 'chip__why' }, [icon('i-warn'), why]) : null,
-    ]);
-  }
-
-  // ---------------------------------------------------------------------------
   // Render — dati e sorgenti
   // ---------------------------------------------------------------------------
 
+  function shortDate(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.getDate() + ' ' + MONTHS_IT[d.getMonth()].slice(0, 3);
+  }
+
+  function formatGenerated(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.getDate() + ' ' + MONTHS_IT[d.getMonth()].slice(0, 3) + ' ' + d.getFullYear() +
+      ', ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+
   function renderDati() {
+    var stamp = (shared && shared.generatedAt) || GENERATED_AT;
+    datiSumText.textContent = stamp ? 'Dati · aggiornati il ' + shortDate(stamp) : 'Dati';
     clear(datiBody);
 
     var sources = el('div', { class: 'dati__block' }, el('p', { class: 'dati__t', text: 'Sorgenti' }));
@@ -1076,40 +968,47 @@
     if (warnings.length) {
       datiBody.appendChild(el('div', { class: 'dati__block' }, [
         el('p', { class: 'dati__t', text: plural(warnings.length, 'avviso di lettura', 'avvisi di lettura') }),
-      ].concat(warnings.map(function (w) { return el('p', { class: 'warnrow' }, [icon('i-warn'), w]); }))));
+      ].concat(warnings.map(warnRow))));
     }
 
     var suspicious = D.namesAll.filter(function (n) { return n.suspicion; });
     if (suspicious.length) {
       datiBody.appendChild(el('div', { class: 'dati__block' }, [
         el('p', { class: 'dati__t', text: 'Nomi da controllare' }),
-      ].concat(suspicious.map(function (n) {
-        return el('p', { class: 'warnrow' }, [icon('i-warn'), n.name + ' — ' + suspicionText(n.suspicion)]);
-      }))));
+      ].concat(suspicious.map(function (n) { return warnRow(n.name + ' — ' + suspicionText(n.suspicion)); }))));
     }
 
-    datiBody.appendChild(el('div', { class: 'dati__block' }, [
+    datiBody.appendChild(el('div', { class: 'dati__block' + (soloVista ? ' is-off' : '') }, [
       el('p', { class: 'dati__t', text: 'Aggiornare i turni' }),
-      el('div', { class: 'dati__row' }, [
-        el('button', { class: 'btn', type: 'button', on: { click: function () { fileInput.click(); } } },
-          [icon('i-upload'), 'Carica xlsx']),
-        local.length ? el('button', {
-          class: 'btn', type: 'button', text: 'Ripristina i dati pubblicati', on: { click: restorePublished },
-        }) : null,
-      ]),
-      el('p', { class: 'dati__note', text: 'Sul telefono: «Carica xlsx» e scegli il file ricevuto (per esempio da WhatsApp o dalla mail).' }),
-      el('p', { class: 'dati__note', text: 'Per aggiornare: trascina qui i nuovi file xlsx, oppure mettili in data/ e lancia npm run build.' }),
-      shared && shared.generatedAt
-        ? el('p', { class: 'dati__note', text: 'Dati condivisi aggiornati il ' + formatGenerated(shared.generatedAt) + '.' })
-        : (GENERATED_AT ? el('p', { class: 'dati__note', text: 'Dati pubblicati il ' + formatGenerated(GENERATED_AT) + '.' }) : null),
+      el('button', {
+        class: 'btn', type: 'button', disabled: soloVista, 'aria-disabled': soloVista ? 'true' : null,
+        on: { click: function () { if (!soloVista) fileInput.click(); } },
+      }, [icon('i-upload'), 'Carica xlsx']),
+      soloVista ? el('p', { class: 'dati__note', text: 'Solo chi gestisce la pagina può aggiornare i turni.' }) : null,
+      stamp ? el('p', { class: 'dati__note', text: (shared ? 'Dati condivisi aggiornati il ' : 'Dati pubblicati il ') + formatGenerated(stamp) + '.' }) : null,
     ]));
-  }
 
-  function formatGenerated(iso) {
-    var d = new Date(iso);
-    if (isNaN(d.getTime())) return iso;
-    return d.getDate() + ' ' + MONTHS_IT[d.getMonth()].slice(0, 3) + ' ' + d.getFullYear() +
-      ', ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    // Togliere le proprie copie resta possibile anche a chi può solo guardare.
+    if (local.length) {
+      datiBody.appendChild(el('div', { class: 'dati__block' },
+        el('button', {
+          class: 'btn', type: 'button', text: 'Ripristina i dati pubblicati', on: { click: restorePublished },
+        })));
+    }
+
+    if (!soloVista && !gestore) {
+      var check = el('input', { type: 'checkbox', role: 'switch' });
+      check.addEventListener('change', function () {
+        gestore = check.checked;
+        writeStore(LS_GESTORE, gestore ? '1' : null);
+        renderMain();
+        renderDati();
+        indexNames();
+        applyHighlight();
+      });
+      datiBody.appendChild(el('div', { class: 'dati__block' },
+        el('label', { class: 'switch' }, [check, el('span', { class: 'switch__track' }), 'Mostra le ore di tutti'])));
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1124,10 +1023,9 @@
       if (!arr) { arr = []; nameEls.set(node.dataset.name, arr); }
       arr.push(node);
     };
-    Array.prototype.forEach.call(detailEl.querySelectorAll('[data-name]'), add);
-    Array.prototype.forEach.call(tableWrap.querySelectorAll('[data-name]'), add);
-    Array.prototype.forEach.call(oreCard.querySelectorAll('[data-name]'), add);
-    Array.prototype.forEach.call(stripEl.querySelectorAll('[data-name]'), add);
+    [detailEl, tableWrap, oreCard, findEl].forEach(function (root) {
+      Array.prototype.forEach.call(root.querySelectorAll('[data-name]'), add);
+    });
   }
 
   function paint(name, cls) {
@@ -1150,12 +1048,10 @@
       if (table && table.classList) table.classList.toggle('is-pinned', on);
     };
 
-    var q = state.query.trim();
-    if (q) {
+    if (state.query.trim()) {
       dim(false);
-      var list = R.searchNames(q, D.names);
-      list.forEach(function (n) { paint(n.name, 'is-soft'); });
-      var armed = list[state.armedIndex];
+      hits.forEach(function (n) { paint(n.name, 'is-soft'); });
+      var armed = hits[state.armedIndex];
       if (armed) paint(armed.name, 'is-strong');
     } else if (state.pinned) {
       dim(true);
@@ -1164,32 +1060,30 @@
       dim(false);
     }
 
-    // Il calendario segue il nome in evidenza: si vede il mese della persona
-    // già mentre si scrive.
     if (state.view === 'calendario' && previewName() !== calName) renderCalendar();
   }
 
   // ---------------------------------------------------------------------------
-  // Elenco dei candidati
+  // Elenco dei nomi sotto il campo
   // ---------------------------------------------------------------------------
 
   function renderPop() {
     clear(pop);
     options = [];
     var q = state.query.trim();
-    if (!q) { closePop(); return; }
+    hits = R.searchNames(q, D.names);
 
-    var list = R.searchNames(q, D.names);
-    if (!list.length) {
+    if (!hits.length) {
       pop.appendChild(el('p', { class: 'opt__empty', text: 'Nessun nome corrisponde a «' + q + '»' }));
       openPop();
       srSay('Nessun nome corrisponde');
       return;
     }
-    if (state.armedIndex >= list.length) state.armedIndex = 0;
+    if (!q) state.armedIndex = -1;
+    else if (state.armedIndex >= hits.length || state.armedIndex < 0) state.armedIndex = 0;
 
-    list.forEach(function (n, i) {
-      var parts = matchParts(n.name, q);
+    hits.forEach(function (n, i) {
+      var parts = q ? matchParts(n.name, q) : null;
       var nameNode = el('span', { class: 'opt__name' });
       if (parts) {
         append(nameNode, parts[0]);
@@ -1209,14 +1103,14 @@
         ]),
         el('span', { class: 'opt__n', text: String(n.count) }),
         el('span', { class: 'opt__dots' }, D.hospitals.filter(function (h) { return n.byHospital[h]; })
-          .map(function (h) { return el('span', { class: 'dot ' + hospClass(h), title: h }); })),
+          .map(function (h) { return dot(h, h); })),
       ]);
       options.push(row);
       pop.appendChild(row);
     });
 
     openPop();
-    srSay(plural(list.length, 'nome trovato', 'nomi trovati'));
+    if (q) srSay(plural(hits.length, 'nome trovato', 'nomi trovati'));
     armRow();
   }
 
@@ -1241,11 +1135,13 @@
     options = [];
     input.setAttribute('aria-expanded', 'false');
     input.removeAttribute('aria-activedescendant');
+    applyPendingShared();
   }
 
   function moveArmed(delta) {
     if (!options.length) return;
-    state.armedIndex = (state.armedIndex + delta + options.length) % options.length;
+    if (state.armedIndex < 0) state.armedIndex = delta > 0 ? 0 : options.length - 1;
+    else state.armedIndex = (state.armedIndex + delta + options.length) % options.length;
     armRow();
     applyHighlight();
   }
@@ -1264,8 +1160,7 @@
   function setPinned(name, opts) {
     opts = opts || {};
     state.pinned = name;
-    state.findingsAll = false;
-    writeMe(name);
+    writeStore(LS_ME, name);
     state.query = '';
     input.value = '';
     clearBtn.hidden = true;
@@ -1273,7 +1168,7 @@
     if (document.activeElement === input) input.blur();
 
     keepAnchor(function () {
-      renderHeader();
+      renderPinToken();
       renderPersonLine();
       renderMain();
       renderFindings();
@@ -1288,10 +1183,10 @@
 
   function togglePin(name, opts) { setPinned(state.pinned === name ? null : name, opts); }
 
-  // Il dettaglio resta dov'è quando sopra compare o sparisce la riga della persona.
+  // La vista resta dov'è quando sopra compare o sparisce la riga della persona.
   function keepAnchor(fn, skip) {
+    var anchor = state.view === 'calendario' ? detailEl : (state.view === 'tabella' ? viewTab : viewOre);
     if (skip) { fn(); return; }
-    var anchor = state.view === 'tabella' ? viewTab : detailEl;
     var before = anchor.getBoundingClientRect().top;
     fn();
     var delta = anchor.getBoundingClientRect().top - before;
@@ -1303,7 +1198,7 @@
     if (!validDay(date)) return;
     var prev = state.selected;
     state.selected = date;
-    if (state.view === 'tabella') { syncHash(); return; }
+    if (state.view !== 'calendario') { syncHash(); return; }
     updateCalSelection(prev, date);
     renderDetail();
     indexNames();
@@ -1311,23 +1206,6 @@
     syncHash();
     if (opts.scroll) scrollToEl(detailEl);
     if (opts.flash) flash(detailEl);
-    if (opts.focusCell) {
-      var b = calEl.querySelector('[data-day="' + date + '"]');
-      if (b && b.focus) b.focus();
-    }
-  }
-
-  // Dalla segnalazione al giorno: nel calendario lo seleziona, nella tabella
-  // porta al gruppo di righe e lo fa lampeggiare.
-  function goToDay(date) {
-    if (state.view === 'tabella') {
-      state.selected = validDay(date) ? date : state.selected;
-      syncHash();
-      var row = tableWrap.querySelector('tr[data-date="' + date + '"]');
-      if (row) { scrollToEl(row); flashGroup(date); }
-      return;
-    }
-    selectDay(date, { scroll: true, flash: true });
   }
 
   function step(delta) {
@@ -1336,17 +1214,32 @@
     selectDay(dateOf(state.month, n));
   }
 
+  // Dalla segnalazione al giorno: nel calendario lo sceglie, nella tabella porta
+  // al gruppo di righe. In entrambi i casi lampeggia.
+  function goToDay(date) {
+    if (state.view === 'tabella') {
+      if (validDay(date)) { state.selected = date; syncHash(); }
+      var rows = tableWrap.querySelectorAll('tr[data-date="' + date + '"]');
+      if (rows.length) { scrollToEl(rows[0]); flash(rows); }
+      return;
+    }
+    selectDay(date, { scroll: true, flash: true });
+  }
+
   function scrollToEl(node, instant) {
     if (!node) return;
     node.scrollIntoView({ block: 'start', behavior: (instant || reduceMotion.matches) ? 'instant' : 'smooth' });
   }
 
-  function flash(node) {
+  function flash(nodes) {
     if (reduceMotion.matches) return;
-    node.classList.remove('is-flash');
-    void node.offsetWidth;
-    node.classList.add('is-flash');
-    window.setTimeout(function () { node.classList.remove('is-flash'); }, 1400);
+    var list = nodes.length !== undefined ? Array.prototype.slice.call(nodes) : [nodes];
+    list.forEach(function (node) {
+      node.classList.remove('is-flash');
+      void node.offsetWidth;
+      node.classList.add('is-flash');
+      window.setTimeout(function () { node.classList.remove('is-flash'); }, 1400);
+    });
   }
 
   function srSay(text) { if (text) srStatus.textContent = text; }
@@ -1364,7 +1257,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Caricamento dei file
+  // Caricamento dei file e revisione delle modifiche
   // ---------------------------------------------------------------------------
 
   function loadFiles(fileList) {
@@ -1381,7 +1274,6 @@
     });
   }
 
-  // Legge il file e lo mette in coda per la revisione; se non cambia nulla lo dice e basta.
   function parseOne(file, queue) {
     if (!/\.xlsx$/i.test(file.name)) {
       toast('Formato non riconosciuto: usa i file .xlsx dei turni', true);
@@ -1395,30 +1287,20 @@
     return file.arrayBuffer()
       .then(function (buf) { return parser.parseWorkbook(buf, file.name); })
       .then(function (roster) {
-        var existing = findExisting(roster);
-        if (!existing) { queue.push({ roster: roster, existing: null, diff: null, file: file.name }); return; }
+        var existing = null;
+        D.rosters.forEach(function (r) { if (rosterKey(r) === rosterKey(roster)) existing = r; });
+        if (!existing) { queue.push({ roster: roster, existing: null, diff: null }); return; }
         var diff = R.diffRosters(existing, roster);
         if (!diff.changes.length) {
           toast(roster.hospital + ' · ' + monthLabel(roster.month) + ': nessuna modifica rispetto alla versione caricata');
           return;
         }
-        queue.push({ roster: roster, existing: existing, diff: diff, file: file.name });
+        queue.push({ roster: roster, existing: existing, diff: diff });
       })
       .catch(function (err) {
         toast(file.name + ': ' + ((err && err.message) || 'file non leggibile'), true);
       });
   }
-
-  function findExisting(roster) {
-    var key = rosterKey(roster);
-    var found = null;
-    D.rosters.forEach(function (r) { if (rosterKey(r) === key) found = r; });
-    return found;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Foglio di revisione: prima si guardano le differenze, poi si salva
-  // ---------------------------------------------------------------------------
 
   function nextReview() {
     if (!reviewQueue.length) { closeReview(); return; }
@@ -1433,18 +1315,10 @@
     var isNew = !item.existing;
     clear(reviewBody);
 
-    reviewTitle.textContent = isNew
-      ? 'Nuovo mese: ' + roster.hospital + ' · ' + monthLabel(roster.month)
-      : 'Modifiche · ' + roster.hospital + ' · ' + monthLabel(roster.month);
+    reviewTitle.textContent = (isNew ? 'Nuovo mese: ' : 'Modifiche · ') + roster.hospital + ' · ' + monthLabel(roster.month);
 
     var caps = [];
     if (reviewTotal > 1) caps.push(reviewDone + ' di ' + reviewTotal);
-    if (isNew) {
-      caps.push(plural((roster.days || []).length, 'giorno', 'giorni'));
-    } else {
-      caps.push(plural(item.diff.changes.length, 'modifica', 'modifiche') + ' in ' +
-        plural(item.diff.days, 'giorno', 'giorni'));
-    }
     caps.push(roster.file);
     if (item.existing) {
       caps.push(item.existing.source === 'browser' ? 'sostituisce la versione dal browser' : 'sostituisce la versione pubblicata');
@@ -1452,7 +1326,7 @@
     reviewCap.textContent = caps.join(' · ');
 
     if (isNew) {
-      var names = uniqueNames(roster);
+      var names = allNames(roster);
       reviewBody.appendChild(el('p', { class: 'chg__sum', text: plural((roster.days || []).length, 'giorno', 'giorni') +
         ' · ' + plural(names.length, 'nome', 'nomi') + ' · ' + plural((roster.slots || []).length, 'fascia', 'fasce') }));
       if (names.length) {
@@ -1471,21 +1345,19 @@
       });
     }
 
-    reviewSave.disabled = false;
-    reviewCancel.disabled = false;
-    reviewSave.textContent = saveLabel();
-
     var warnings = roster.warnings || [];
     if (warnings.length) {
       reviewBody.appendChild(el('div', { class: 'chg__block' }, [
         el('p', { class: 'dati__t', text: 'Avvisi del file' }),
-      ].concat(warnings.map(function (w) {
-        return el('p', { class: 'warnrow' }, [icon('i-warn'), w.message || w.type]);
-      }))));
+      ].concat(warnings.map(function (w) { return warnRow(w.message || w.type); }))));
     }
+
+    reviewSave.disabled = false;
+    reviewCancel.disabled = false;
+    reviewSave.textContent = saveLabel();
   }
 
-  function uniqueNames(roster) {
+  function allNames(roster) {
     var seen = Object.create(null), out = [];
     (roster.days || []).forEach(function (d) {
       Object.keys(d.cells || {}).forEach(function (k) {
@@ -1501,20 +1373,20 @@
     var val = el('span', { class: 'chg__val' });
     if (c.kind === 'replaced') {
       val.appendChild(el('span', { class: 'chg__old', text: c.removed.join(' · ') }));
-      val.appendChild(document.createTextNode(' → '));
+      append(val, ' → ');
       val.appendChild(el('span', { class: 'chg__new', text: c.added.join(' · ') }));
     } else if (c.kind === 'added') {
-      val.appendChild(document.createTextNode('+ '));
+      append(val, '+ ');
       val.appendChild(el('span', { class: 'chg__add', text: c.added.join(' · ') }));
     } else if (c.kind === 'removed') {
-      val.appendChild(document.createTextNode('− '));
+      append(val, '− ');
       val.appendChild(el('span', { class: 'chg__del', text: c.removed.join(' · ') }));
     } else {
       val.appendChild(el('span', { class: 'chg__new', text: c.after.join(' · ') }));
       val.appendChild(el('span', { class: 'chg__note', text: 'solo l’ordine è cambiato' }));
     }
     return el('div', { class: 'chg' + (c.slotKey === 'N' ? ' is-night' : '') }, [
-      el('span', { class: 'chg__slot', text: shortSlotName(c.slotLabel) + ' · ' + c.hospital }),
+      el('span', { class: 'chg__slot', text: shortSlotName(c.slotLabel) }),
       val,
     ]);
   }
@@ -1523,7 +1395,7 @@
     if (reviewEl.hidden) reviewOpener = document.activeElement;
     reviewEl.hidden = false;
     document.body.style.overflow = 'hidden';
-    reviewPanel.focus();   // il foglio si annuncia da solo (aria-labelledby)
+    reviewPanel.focus();
   }
 
   function closeReview() {
@@ -1532,36 +1404,42 @@
     document.body.style.overflow = '';
     if (reviewOpener && reviewOpener.focus) reviewOpener.focus();
     reviewOpener = null;
+    applyPendingShared();
   }
 
-  function saveLabel() { return (pub && !readOnly) ? 'Salva per tutti' : 'Salva'; }
+  function saveLabel() { return (pub && !soloVista) ? 'Salva per tutti' : 'Salva'; }
 
   function whatChanged(item) {
     return item.roster.hospital + ' · ' + monthLabel(item.roster.month) + ' · ' +
       (item.diff ? plural(item.diff.changes.length, 'modifica', 'modifiche') : 'nuovo mese');
   }
 
-  // Salvataggio locale: resta su questo dispositivo (come nella V6).
+  function markGestore() {
+    if (soloVista) return;
+    gestore = true;
+    writeStore(LS_GESTORE, '1');
+  }
+
   function saveHere(item) {
     var roster = item.roster;
     roster.source = 'browser';
     local = local.filter(function (r) { return rosterKey(r) !== rosterKey(roster); });
     local.push(roster);
     if (!writeLocal(local)) toast('I turni sono caricati ma non restano in memoria (spazio del browser non disponibile)', true);
+    markGestore();
     state.month = roster.month;
     state.selected = '';
     renderAll();
   }
 
-  // Copia pulita di un roster: fuori i campi che servono solo a questa pagina.
   function stripRuntime(roster) {
     var copy = Object.assign({}, roster);
     delete copy.source;
     delete copy.replaces;
+    delete copy.slotsByKey;
     return copy;
   }
 
-  // Il file condiviso completo, con dentro il roster appena rivisto.
   function buildNext(roster) {
     var base = (shared && shared.rosters) ? shared.rosters : BAKED;
     var map = new Map();
@@ -1579,7 +1457,7 @@
   function saveReview() {
     var item = reviewCurrent;
     if (!item) return;
-    if (!pub || readOnly) {
+    if (!pub || soloVista) {
       saveHere(item);
       toast('Salvato: ' + whatChanged(item));
       nextReview();
@@ -1599,6 +1477,7 @@
       shared = next;
       local = local.filter(function (r) { return rosterKey(r) !== rosterKey(item.roster); });
       writeLocal(local);
+      markGestore();
       state.month = item.roster.month;
       state.selected = '';
       renderAll();
@@ -1613,34 +1492,20 @@
         toast('Qualcun altro ha appena pubblicato: la pagina si aggiorna', true);
         return;
       }
-      if (code === 'not_writer' || code === 'not_granted') {
-        readOnly = true;
+      if (code === 'not_writer' || code === 'not_granted' || code === 'capability_disabled') {
+        soloVista = true;
+        gestore = false;
+        writeStore(LS_GESTORE, null);
         saveHere(item);
-        toast('Non puoi pubblicare questa pagina: salvato solo su questo dispositivo', true);
-      } else if (code === 'capability_disabled') {
-        saveHere(item);
-        toast('Salvataggio condiviso non disponibile qui: salvato solo su questo dispositivo', true);
+        toast(code === 'capability_disabled'
+          ? 'Salvataggio condiviso non disponibile qui: salvato solo su questo dispositivo'
+          : 'Non puoi pubblicare questa pagina: salvato solo su questo dispositivo', true);
       } else {
         saveHere(item);
         toast('Pubblicazione non riuscita (' + code + '): salvato solo su questo dispositivo', true);
       }
       done();
     });
-  }
-
-  function cancelReview() { nextReview(); }
-
-  // Il fuoco resta dentro il foglio finché è aperto.
-  function trapFocus(e) {
-    if (e.key !== 'Tab') return;
-    var focusable = reviewPanel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-    if (!focusable.length) return;
-    var first = focusable[0], last = focusable[focusable.length - 1];
-    if (e.shiftKey && (document.activeElement === first || document.activeElement === reviewPanel)) {
-      e.preventDefault(); last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault(); first.focus();
-    }
   }
 
   function removeLocal(roster) {
@@ -1666,11 +1531,11 @@
     derive();
     var hasData = D.rosters.length > 0;
     emptyEl.hidden = hasData;
-    searchBox.hidden = !hasData;
+    searchbar.hidden = !hasData;
     viewCal.hidden = !hasData;
     viewTab.hidden = true;
+    viewOre.hidden = true;
     findEl.hidden = !hasData;
-    stripEl.hidden = !hasData;
     datiEl.hidden = !hasData && !local.length;
 
     renderHeader();
@@ -1678,10 +1543,10 @@
       renderPersonLine();
       renderMain();
       renderFindings();
-      renderStrip();
     } else {
       personLine.hidden = true;
-      clear(calEl); clear(detailEl); clear(tableWrap);
+      legendEl.hidden = true;
+      clear(calEl); clear(detailEl); clear(tableWrap); clear(oreCard);
     }
     renderDati();
     indexNames();
@@ -1691,7 +1556,57 @@
   }
 
   function measureHeader() {
-    document.documentElement.style.setProperty('--h-header', topbar.offsetHeight + 'px');
+    document.documentElement.style.setProperty('--h-header', searchbar.offsetHeight + 'px');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Dati condivisi e piattaforma
+  // ---------------------------------------------------------------------------
+
+  function validShared(data) {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.rosters) || !data.rosters.length) return false;
+    return data.rosters.every(function (r) {
+      return r && typeof r.hospital === 'string' && typeof r.month === 'string' &&
+        Array.isArray(r.days) && Array.isArray(r.slots);
+    });
+  }
+
+  // Mai ridisegnare sotto le dita: se un foglio è aperto, i dati arrivati aspettano.
+  function applyPendingShared() {
+    if (!pendingShared || !reviewEl.hidden || state.popOpen) return;
+    shared = pendingShared;
+    pendingShared = null;
+    renderAll();
+    srSay('Dati condivisi aggiornati');
+  }
+
+  function boot() {
+    if (/^https?:$/.test(window.location.protocol) && typeof window.fetch === 'function') {
+      window.fetch('data/turni.json', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!validShared(data)) return;
+          pendingShared = data;
+          applyPendingShared();
+        })
+        .catch(function () { /* nessun file condiviso: restano i dati della pagina */ });
+    }
+    if (runtime) {
+      try {
+        Promise.resolve(window.claude.use('artifact')).then(function (ns) {
+          pub = (ns && typeof ns.publish === 'function') ? ns : null;
+          if (!reviewEl.hidden && reviewCurrent) reviewSave.textContent = saveLabel();
+        }).catch(function () { pub = null; });
+      } catch (e) { pub = null; }
+    }
+  }
+
+  // Il giorno di oggi non deve invecchiare con la pagina aperta.
+  function refreshToday() {
+    var now = todayISO();
+    if (now === today) return;
+    today = now;
+    renderAll();
   }
 
   // ---------------------------------------------------------------------------
@@ -1701,13 +1616,13 @@
   function wire() {
     input.addEventListener('input', function () {
       state.query = input.value;
-      state.armedIndex = 0;
+      state.armedIndex = input.value.trim() ? 0 : -1;
       clearBtn.hidden = !input.value;
       renderPop();
       applyHighlight();
     });
 
-    input.addEventListener('focus', function () { if (state.query.trim()) renderPop(); });
+    input.addEventListener('focus', function () { renderPop(); });
 
     input.addEventListener('keydown', function (e) {
       if (e.key === 'ArrowDown') { e.preventDefault(); if (!state.popOpen) renderPop(); else moveArmed(1); }
@@ -1725,7 +1640,7 @@
     });
 
     clearBtn.addEventListener('click', function () {
-      input.value = ''; state.query = ''; state.armedIndex = 0;
+      input.value = ''; state.query = ''; state.armedIndex = -1;
       clearBtn.hidden = true;
       closePop();
       applyHighlight();
@@ -1742,15 +1657,10 @@
       if (state.popOpen && !searchBox.contains(e.target)) closePop();
     });
 
-    // Un solo ascoltatore per pastiglie, chip, celle del calendario e segnalazioni.
+    // Un solo ascoltatore per pastiglie, celle del calendario e segnalazioni.
     document.addEventListener('click', function (e) {
       var named = e.target.closest('[data-name]');
-      if (named && !named.closest('.opt')) {
-        togglePin(named.dataset.name, { toTop: named.dataset.top === '1' });
-        return;
-      }
-      var cell = e.target.closest('[data-day]');
-      if (cell) { selectDay(cell.dataset.day); return; }
+      if (named && !named.closest('.opt')) { togglePin(named.dataset.name); return; }
       var goday = e.target.closest('[data-goday]');
       if (goday) {
         selectDay(goday.dataset.goday);
@@ -1758,22 +1668,25 @@
         window.scrollTo({ top: 0, behavior: reduceMotion.matches ? 'instant' : 'smooth' });
         return;
       }
+      var cell = e.target.closest('[data-day]');
+      if (cell) { selectDay(cell.dataset.day); return; }
       var goto = e.target.closest('[data-goto]');
       if (goto) goToDay(goto.dataset.goto);
     });
 
-    // Calendario: le frecce spostano il fuoco, Invio sceglie il giorno.
-    calEl.addEventListener('keydown', function (e) {
-      var deltas = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
-      var d = deltas[e.key];
-      if (!d) return;
-      var cur = e.target.closest('[data-day]');
-      if (!cur) return;
+    segCal.addEventListener('click', function () { setView('calendario'); });
+    segTab.addEventListener('click', function () { setView('tabella'); });
+    segOre.addEventListener('click', function () { setView('ore'); });
+    $('segbar').addEventListener('keydown', function (e) {
+      var keys = { ArrowLeft: -1, ArrowRight: 1 };
+      if (!(e.key in keys)) return;
       e.preventDefault();
-      var n = dayNum(cur.dataset.day) + d;
-      if (n < 1 || n > D.monthLen) return;
-      var next = calEl.querySelector('[data-day="' + dateOf(state.month, n) + '"]');
-      if (next) { next.tabIndex = 0; next.focus(); }
+      var shown = VIEWS.filter(function (v) { return v !== 'ore' || canSeeOre(); });
+      var i = shown.indexOf(state.view);
+      var next = shown[(i + keys[e.key] + shown.length) % shown.length];
+      setView(next);
+      var btn = { calendario: segCal, tabella: segTab, ore: segOre }[next];
+      if (btn) btn.focus();
     });
 
     // Scorrimento laterale sul dettaglio: giorno precedente / successivo.
@@ -1789,123 +1702,54 @@
       step(dx < 0 ? 1 : -1);
     }, { passive: true });
 
-    segCal.addEventListener('click', function () { setView('calendario'); });
-    segTab.addEventListener('click', function () { setView('tabella'); });
-    segOre.addEventListener('click', function () { setView('ore'); });
-    $('segbar').addEventListener('keydown', function (e) {
-      var keys = { ArrowLeft: -1, ArrowRight: 1, Home: 'first', End: 'last' };
-      if (!(e.key in keys)) return;
-      e.preventDefault();
-      var i = VIEWS.indexOf(state.view);
-      var next = keys[e.key] === 'first' ? 0 : keys[e.key] === 'last' ? VIEWS.length - 1
-        : (i + keys[e.key] + VIEWS.length) % VIEWS.length;
-      setView(VIEWS[next]);
-      $('segbar').children[next].focus();
-    });
-
-    findingsBtn.addEventListener('click', function () {
-      scrollToEl(findEl);
-      findEl.focus({ preventScroll: true });
-    });
-
-    todayBtn.addEventListener('click', function () {
-      selectDay(D.today);
-      window.scrollTo({ top: 0, behavior: reduceMotion.matches ? 'instant' : 'smooth' });
-    });
-
     $('emptyUpload').addEventListener('click', function () { fileInput.click(); });
     fileInput.addEventListener('change', function () { loadFiles(fileInput.files); fileInput.value = ''; });
 
-    var dragDepth = 0;
-    function endDrag() { dragDepth = 0; dropzone.hidden = true; }
-    window.addEventListener('dragenter', function (e) {
-      if (!e.dataTransfer || Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') === -1) return;
-      dragDepth++;
-      dropzone.hidden = false;
-    });
-    window.addEventListener('dragover', function (e) { if (!dropzone.hidden) e.preventDefault(); });
-    window.addEventListener('dragleave', function (e) {
-      dragDepth = Math.max(0, dragDepth - 1);
-      if (!dragDepth || !e.relatedTarget) endDrag();
-    });
-    window.addEventListener('drop', function (e) {
-      if (!e.dataTransfer) return;
-      e.preventDefault();
-      endDrag();
-      loadFiles(e.dataTransfer.files);
-    });
-    window.addEventListener('dragend', endDrag);
-    window.addEventListener('blur', endDrag);
-    document.addEventListener('visibilitychange', function () { if (document.hidden) endDrag(); });
-
     reviewSave.addEventListener('click', saveReview);
-    reviewCancel.addEventListener('click', cancelReview);
-    $('reviewScrim').addEventListener('click', cancelReview);
+    reviewCancel.addEventListener('click', nextReview);
+    $('reviewScrim').addEventListener('click', nextReview);
     document.addEventListener('keydown', function (e) {
       if (reviewEl.hidden) return;
-      if (e.key === 'Escape') { e.preventDefault(); cancelReview(); }
-      else trapFocus(e);
+      if (e.key === 'Escape') { e.preventDefault(); nextReview(); return; }
+      if (e.key !== 'Tab') return;
+      var focusable = reviewPanel.querySelectorAll('button:not([disabled])');
+      if (!focusable.length) return;
+      var first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === reviewPanel)) {
+        e.preventDefault(); last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first.focus();
+      }
     });
 
     window.addEventListener('resize', function () {
       measureHeader();
-      // Le colonne della tabella sono percentuali calcolate su una larghezza:
-      // se cambia davvero, si rifanno.
       if (state.view === 'tabella' && Math.abs(tableWrap.clientWidth - tableWidth) > 2) {
         renderTable();
         indexNames();
         applyHighlight();
       }
     });
+
     window.addEventListener('hashchange', function () {
-      var before = state.month + '|' + state.pinned + '|' + state.selected;
+      var before = state.month + '|' + state.pinned + '|' + state.selected + '|' + state.view;
       readHash();
-      if (before !== state.month + '|' + state.pinned + '|' + state.selected) renderAll();
+      if (before !== state.month + '|' + state.pinned + '|' + state.selected + '|' + state.view) renderAll();
     });
+
+    window.addEventListener('focus', refreshToday);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshToday(); });
   }
 
   // ---------------------------------------------------------------------------
   // Avvio
   // ---------------------------------------------------------------------------
 
-  // I dati condivisi devono avere la forma giusta: altrimenti si ignorano.
-  function validShared(data) {
-    if (!data || typeof data !== 'object' || !Array.isArray(data.rosters) || !data.rosters.length) return false;
-    return data.rosters.every(function (r) {
-      return r && typeof r.hospital === 'string' && typeof r.month === 'string' &&
-        Array.isArray(r.days) && Array.isArray(r.slots);
-    });
-  }
-
-  // Dopo il primo disegno: i dati condivisi e lo spazio dei nomi della piattaforma.
-  // Nessuno dei due blocca la pagina; se mancano, tutto funziona come prima.
-  function boot() {
-    if (/^https?:$/.test(window.location.protocol) && typeof window.fetch === 'function') {
-      window.fetch('data/turni.json', { cache: 'no-store' })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (data) {
-          if (!validShared(data)) return;
-          shared = data;
-          renderAll();
-          if (state.pinned) srSay('Dati condivisi aggiornati');
-        })
-        .catch(function () { /* nessun file condiviso: restano i dati della pagina */ });
-    }
-    var platform = window.claude;
-    if (platform && typeof platform.use === 'function') {
-      try {
-        Promise.resolve(platform.use('artifact')).then(function (ns) {
-          pub = (ns && typeof ns.publish === 'function') ? ns : null;
-          if (!reviewEl.hidden && reviewCurrent) reviewSave.textContent = saveLabel();
-        }).catch(function () { pub = null; });
-      } catch (e) { pub = null; }
-    }
-  }
-
   function init() {
-    state.view = readView();
-    readHash();                                    // l'indirizzo vince sulla memoria
-    if (!state.pinned) state.pinned = readMe();   // la pagina si riapre sul proprio mese
+    var savedView = readStore(LS_VIEW);
+    if (VIEWS.indexOf(savedView) !== -1) state.view = savedView;
+    readHash();
+    if (!state.pinned) state.pinned = readStore(LS_ME);
     wire();
     renderAll();
     if (state.pinned) srSay(state.pinned + ' evidenziato');

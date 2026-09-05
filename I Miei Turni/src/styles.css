@@ -288,7 +288,8 @@ button { font: inherit; color: inherit; }
    6. Giorno scelto
    -------------------------------------------------------------------------- */
 .detail {
-  padding: 4px 0 6px;
+  margin: 0 calc(var(--pad) * -1);          /* il fondo del weekend arriva ai bordi del foglio */
+  padding: 4px var(--pad) 6px;
   border-top: 1px solid var(--line);
   scroll-margin-top: calc(var(--h-header) + 8px);
   touch-action: pan-y;
@@ -344,6 +345,7 @@ button { font: inherit; color: inherit; }
 .pill .fdot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--fsev); }
 
 .is-pinned .pill:not(.is-strong) { opacity: .45; }
+.tab.is-pinned .pill:not(.is-strong) { opacity: .72; }   /* qui si legge tutti, non solo la persona */
 
 @keyframes flashcell { from { background-color: var(--hl-soft); } }
 .detail.is-flash, .tab tr.is-flash > * { animation: flashcell 1.2s ease-out; }
@@ -484,7 +486,7 @@ button { font: inherit; color: inherit; }
 .dati__chev { transition: transform .15s ease; color: var(--muted); }
 .dati[open] .dati__chev { transform: rotate(180deg); }
 .dati__body { padding: 0 0 12px; display: flex; flex-direction: column; gap: 12px; color: var(--ink-2); }
-.dati__block { display: flex; flex-direction: column; gap: 6px; }
+.dati__block { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .dati__block.is-off { opacity: .5; }
 .dati__t { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .dati__row { display: flex; gap: 8px; flex-wrap: wrap; }
