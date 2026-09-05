@@ -86,6 +86,7 @@
     <div class="segbar" id="segbar" role="tablist" aria-label="Vista">
       <button class="seg" id="segCal" type="button" role="tab" aria-selected="true" aria-controls="viewCal">Calendario</button>
       <button class="seg" id="segTab" type="button" role="tab" aria-selected="false" aria-controls="viewTab" tabindex="-1">Tabella</button>
+      <button class="seg" id="segOre" type="button" role="tab" aria-selected="false" aria-controls="viewOre" tabindex="-1">Ore</button>
     </div>
   </div>
 </header>
@@ -114,6 +115,10 @@
     <div class="card tablewrap" id="tablewrap"></div>
   </div>
 
+  <div class="view" id="viewOre" role="tabpanel" aria-labelledby="segOre" hidden>
+    <section class="card ore" id="orecard"></section>
+  </div>
+
   <section class="card findings" id="segnalazioni" tabindex="-1" aria-labelledby="findingsTitle"></section>
 
   <section class="card strip" id="strip" aria-labelledby="stripTitle"></section>
@@ -130,6 +135,21 @@
   <div class="dropzone__frame">
     <svg class="ico dropzone__ico" aria-hidden="true" focusable="false"><use href="#i-upload"></use></svg>
     <p class="dropzone__t">Rilascia i file xlsx dei turni</p>
+  </div>
+</div>
+
+<div class="sheet" id="review" hidden>
+  <div class="sheet__scrim" id="reviewScrim"></div>
+  <div class="sheet__panel" id="reviewPanel" role="dialog" aria-modal="true" aria-labelledby="reviewTitle" tabindex="-1">
+    <div class="sheet__head">
+      <h2 class="sheet__t" id="reviewTitle"></h2>
+      <p class="sheet__cap" id="reviewCap"></p>
+    </div>
+    <div class="sheet__body" id="reviewBody"></div>
+    <div class="sheet__foot">
+      <button class="btn" id="reviewCancel" type="button">Annulla</button>
+      <button class="btn btn--solid" id="reviewSave" type="button">Salva</button>
+    </div>
   </div>
 </div>
 

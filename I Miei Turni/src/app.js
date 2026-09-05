@@ -36,9 +36,9 @@
     'cambio-sede': ['cambio sede', 'cambi sede'],
   };
   var LEGEND = [
-    [3, 'Conflitto', 'stesso orario in due ospedali, oppure doppio incarico nello stesso ospedale (oltre 1 h di sovrapposizione: ambulatorio → pomeriggio è un passaggio di consegne, non un conflitto).'],
+    [3, 'Conflitto', 'stesso orario in due ospedali, o doppio incarico oltre 1 h nello stesso PS.'],
     [2, 'Notte attaccata', 'turno diurno subito prima o dopo una notte, con meno di 11 h di riposo.'],
-    [1, 'Cambio sede', 'due turni diurni consecutivi in due ospedali diversi, senza pausa.'],
+    [1, 'Cambio sede', 'due turni diurni in ospedali diversi senza pausa.'],
   ];
 
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -171,9 +171,13 @@
     } catch (e) { /* niente memoria: pazienza */ }
   }
 
+  var VIEWS = ['calendario', 'tabella', 'ore'];
+
   function readView() {
-    try { return window.localStorage.getItem(LS_VIEW) === 'tabella' ? 'tabella' : 'calendario'; }
-    catch (e) { return 'calendario'; }
+    try {
+      var v = window.localStorage.getItem(LS_VIEW);
+      return VIEWS.indexOf(v) !== -1 ? v : 'calendario';
+    } catch (e) { return 'calendario'; }
   }
 
   function writeView(v) {
@@ -199,12 +203,16 @@
   };
 
   var local = readLocal();
+  var shared = null;        // data/turni.json pubblicato nell'artifact (se c'è)
+  var pub = null;           // spazio dei nomi "artifact" della piattaforma
+  var readOnly = false;     // vero dopo un rifiuto not_writer / not_granted
   var D = {};                // vista derivata
   var nameEls = new Map();   // nome → elementi evidenziabili
   var painted = [];          // elementi attualmente evidenziati
   var options = [];          // righe dell'elenco candidati
   var calName = null;        // nome disegnato nel calendario (fissato o in anteprima)
   var tableWidth = 0;        // larghezza con cui sono state calcolate le colonne
+  var reviewQueue = [], reviewCurrent = null, reviewOpener = null, reviewTotal = 0, reviewDone = 0;
 
   // ---------------------------------------------------------------------------
   // Riferimenti al DOM
@@ -212,10 +220,14 @@
 
   var topbar = $('topbar'), monthCtl = $('monthCtl'), findingsBtn = $('findingsBtn'), todayBtn = $('todayBtn'),
     searchBox = $('search'), input = $('q'), pintoken = $('pintoken'), clearBtn = $('clearBtn'), pop = $('pop'),
-    segCal = $('segCal'), segTab = $('segTab'), viewCal = $('viewCal'), viewTab = $('viewTab'), tableWrap = $('tablewrap'),
+    segCal = $('segCal'), segTab = $('segTab'), segOre = $('segOre'),
+    viewCal = $('viewCal'), viewTab = $('viewTab'), viewOre = $('viewOre'),
+    tableWrap = $('tablewrap'), oreCard = $('orecard'),
     emptyEl = $('empty'), personLine = $('personline'), calEl = $('calendario'), legendEl = $('callegend'),
     detailEl = $('detail'), findEl = $('segnalazioni'), stripEl = $('strip'), datiEl = $('dati'), datiBody = $('datiBody'),
-    fileInput = $('fileInput'), dropzone = $('dropzone'), toasts = $('toasts'), srStatus = $('srStatus');
+    fileInput = $('fileInput'), dropzone = $('dropzone'), toasts = $('toasts'), srStatus = $('srStatus'),
+    reviewEl = $('review'), reviewPanel = $('reviewPanel'), reviewTitle = $('reviewTitle'),
+    reviewCap = $('reviewCap'), reviewBody = $('reviewBody'), reviewSave = $('reviewSave'), reviewCancel = $('reviewCancel');
 
   // ---------------------------------------------------------------------------
   // Derivazione della vista
@@ -227,6 +239,9 @@
     var map = new Map();
     BAKED.forEach(function (r) {
       var c = Object.assign({}, r); c.source = 'pubblicato'; map.set(rosterKey(c), c);
+    });
+    ((shared && shared.rosters) || []).forEach(function (r) {
+      var c = Object.assign({}, r); c.source = 'pubblicato'; c.replaces = false; map.set(rosterKey(c), c);
     });
     local.forEach(function (r) {
       var c = Object.assign({}, r); c.source = 'browser';
@@ -385,7 +400,7 @@
       if (k === 'mese') state.month = v;
       else if (k === 'nome') state.pinned = v.toLocaleUpperCase('it-IT');
       else if (k === 'giorno') state.selected = v;
-      else if (k === 'vista') state.view = v === 'tabella' ? 'tabella' : 'calendario';
+      else if (k === 'vista') state.view = VIEWS.indexOf(v) !== -1 ? v : 'calendario';
     });
   }
 
@@ -394,7 +409,7 @@
     if (state.month) parts.push('mese=' + state.month);
     if (state.pinned) parts.push('nome=' + encodeURIComponent(state.pinned));
     if (state.selected) parts.push('giorno=' + state.selected);
-    if (state.view === 'tabella') parts.push('vista=tabella');
+    if (state.view !== 'calendario') parts.push('vista=' + state.view);
     var hash = parts.length ? '#' + parts.join('&') : '';
     if (hash !== window.location.hash) {
       try { window.history.replaceState(null, '', window.location.pathname + window.location.search + hash); }
@@ -462,14 +477,29 @@
   function renderPersonLine() {
     clear(personLine);
     if (!state.pinned) { personLine.hidden = true; return; }
-    var info = D.nameMap.get(state.pinned) || { count: 0, byHospital: {}, nights: 0, amb: 0 };
+    var st = R.personStats(D.assignments, state.pinned, state.month);
     var mine = D.findByPerson.get(state.pinned) || [];
     personLine.hidden = false;
 
-    var parts = [plural(info.count, 'turno', 'turni')];
-    D.hospitals.forEach(function (h) { if (info.byHospital[h]) parts.push(h + ' ' + info.byHospital[h]); });
-    if (info.nights) parts.push(plural(info.nights, 'notte', 'notti'));
-    if (info.amb) parts.push(plural(info.amb, 'ambulatorio', 'ambulatori'));
+    // Riga in forma breve: 2G · 2M · 3P · 5N · 7 da 12 h · 114 h · DEA 78 · OSG 36
+    var parts = [];
+    if (st.giornate) parts.push(st.giornate + 'G');
+    if (st.mattine) parts.push(st.mattine + 'M');
+    if (st.pomeriggi) parts.push(st.pomeriggi + 'P');
+    if (st.notti) parts.push(st.notti + 'N');
+    if (st.altri) parts.push(plural(st.altri, 'altro', 'altri'));
+    if (st.dodici) parts.push(st.dodici + ' da 12 h');
+    parts.push(R.formatHours(st.ore));
+    var hosps = D.hospitals.filter(function (h) { return st.oreByHospital[h]; });
+    if (hosps.length > 1) {
+      hosps.forEach(function (h) {
+        parts.push(h + ' ' + R.formatHours(st.oreByHospital[h]).replace(' h', ''));
+      });
+    }
+
+    var legend = 'G giornate · M mattine · P pomeriggi · N notti';
+    personLine.title = legend;
+    personLine.setAttribute('aria-label', parts.join(', ') + '. ' + legend);
     personLine.appendChild(document.createTextNode(parts.join(' · ')));
     if (mine.length) {
       personLine.appendChild(document.createTextNode(' · '));
@@ -567,6 +597,7 @@
     var slots = D.slotRows.map(function (row) {
       return el('span', {}, [el('b', { text: row.key }), R.slotName(row.slot.label).split(' ')[0].toLowerCase()]);
     });
+    slots.push(el('span', {}, [el('b', { text: 'G' }), 'giornata (M+P)']));
     var hosps = D.hospitals.map(function (h) {
       return el('span', {}, [el('span', { class: 'dot ' + hospClass(h) }), h]);
     });
@@ -602,22 +633,24 @@
   // ---------------------------------------------------------------------------
 
   function renderMain() {
-    var isTable = state.view === 'tabella';
-    segCal.setAttribute('aria-selected', isTable ? 'false' : 'true');
-    segTab.setAttribute('aria-selected', isTable ? 'true' : 'false');
-    segCal.tabIndex = isTable ? -1 : 0;
-    segTab.tabIndex = isTable ? 0 : -1;
-    viewCal.hidden = isTable;
-    viewTab.hidden = !isTable;
+    var v = state.view;
+    var segs = { calendario: segCal, tabella: segTab, ore: segOre };
+    VIEWS.forEach(function (name) {
+      var on = name === v;
+      segs[name].setAttribute('aria-selected', on ? 'true' : 'false');
+      segs[name].tabIndex = on ? 0 : -1;
+    });
+    viewCal.hidden = v !== 'calendario';
+    viewTab.hidden = v !== 'tabella';
+    viewOre.hidden = v !== 'ore';
 
-    if (isTable) {
-      clear(calEl); clear(detailEl); legendEl.hidden = true;
-      renderTable();
-    } else {
-      clear(tableWrap);
-      renderCalendar();
-      renderDetail();
-    }
+    if (v !== 'calendario') { clear(calEl); clear(detailEl); legendEl.hidden = true; }
+    if (v !== 'tabella') clear(tableWrap);
+    if (v !== 'ore') clear(oreCard);
+
+    if (v === 'calendario') { renderCalendar(); renderDetail(); }
+    else if (v === 'tabella') renderTable();
+    else renderOre();
   }
 
   function setView(v) {
@@ -747,6 +780,54 @@
       void tr.offsetWidth;
       tr.classList.add('is-flash');
       window.setTimeout(function () { tr.classList.remove('is-flash'); }, 1400);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — Ore: classifica delle ore per nome
+  // ---------------------------------------------------------------------------
+
+  function renderOre() {
+    clear(oreCard);
+    var rows = R.hoursByName(D.assignments, state.month);
+    oreCard.appendChild(el('div', { class: 'ore__head' }, [
+      el('h2', { class: 'stitle', id: 'oreTitle', text: 'Ore di ' + monthName(state.month) + ' per nome' }),
+      el('span', { class: 'cap', text: plural(rows.length, 'nome', 'nomi') }),
+    ]));
+    oreCard.appendChild(el('p', { class: 'ore__legend' }, D.hospitals.map(function (h) {
+      return el('span', {}, [el('span', { class: 'dot ' + hospClass(h) }), h]);
+    })));
+    if (!rows.length) {
+      oreCard.appendChild(el('p', { class: 'cap', text: 'Nessun turno in questo mese.' }));
+      return;
+    }
+
+    var max = rows[0].ore || 1;
+    rows.forEach(function (st) {
+      var parts = [st.person, R.formatHours(st.ore)];
+      D.hospitals.forEach(function (h) {
+        if (st.oreByHospital[h]) parts.push(h + ' ' + R.formatHours(st.oreByHospital[h]));
+      });
+      if (st.notti) parts.push(plural(st.notti, 'notte', 'notti'));
+      var label = parts.join(' · ');
+
+      var bar = el('div', { class: 'ore__bar' }, D.hospitals.filter(function (h) {
+        return st.oreByHospital[h] > 0;
+      }).map(function (h) {
+        return el('span', {
+          class: 'ore__seg ' + hospClass(h),
+          style: 'width:' + (st.oreByHospital[h] / max * 100).toFixed(2) + '%',
+        });
+      }));
+
+      oreCard.appendChild(el('div', { class: 'ore__row', title: label }, [
+        el('button', {
+          class: 'pill ore__name', type: 'button', data: { name: st.person },
+          'aria-label': label, text: st.person,
+        }),
+        bar,
+        el('span', { class: 'ore__v', text: R.formatHours(st.ore) }),
+      ]));
     });
   }
 
@@ -908,8 +989,8 @@
       });
     }
 
-    findEl.appendChild(el('div', { class: 'legenda' }, [
-      el('p', { class: 'legenda__t', text: 'Legenda' }),
+    findEl.appendChild(el('details', { class: 'legenda' }, [
+      el('summary', { class: 'legenda__t' }, [icon('i-chevron'), 'Come si calcolano']),
     ].concat(LEGEND.map(function (row) {
       return el('div', { class: 'legenda__row' }, [
         el('span', { class: 'legenda__mark sev-' + row[0] }),
@@ -920,19 +1001,16 @@
 
   // Una riga di segnalazione: la striscia dà la gravità, il corpo porta al giorno.
   function findingItem(f) {
-    return el('div', { class: 'fitem sev-' + f.severity, data: { goto: f.a.date } }, [
-      el('div', { class: 'fitem__body' }, [
-        el('button', {
-          class: 'fitem__who', type: 'button', data: { name: f.person },
-          'aria-label': 'Evidenzia ' + f.person, text: f.person,
-        }),
-        el('p', { class: 'fitem__t', text: f.title }),
-        el('p', { class: 'fitem__d', text: f.detail }),
-      ]),
+    return el('div', { class: 'fitem sev-' + f.severity, data: { goto: f.a.date }, title: f.detail }, [
       el('button', {
-        class: 'fitem__go', type: 'button',
-        'aria-label': 'Vai a ' + R.formatDate(f.a.date) + ': ' + f.title,
-      }, icon('i-chevron')),
+        class: 'fitem__who', type: 'button', data: { name: f.person },
+        'aria-label': 'Evidenzia ' + f.person, text: f.person,
+      }),
+      ' ',
+      el('button', {
+        class: 'fitem__short', type: 'button', text: f.short,
+        'aria-label': f.title + ': ' + f.detail + '. Vai al giorno.',
+      }),
     ]);
   }
 
@@ -1031,7 +1109,9 @@
       ]),
       el('p', { class: 'dati__note', text: 'Sul telefono: «Carica xlsx» e scegli il file ricevuto (per esempio da WhatsApp o dalla mail).' }),
       el('p', { class: 'dati__note', text: 'Per aggiornare: trascina qui i nuovi file xlsx, oppure mettili in data/ e lancia npm run build.' }),
-      GENERATED_AT ? el('p', { class: 'dati__note', text: 'Dati pubblicati il ' + formatGenerated(GENERATED_AT) + '.' }) : null,
+      shared && shared.generatedAt
+        ? el('p', { class: 'dati__note', text: 'Dati condivisi aggiornati il ' + formatGenerated(shared.generatedAt) + '.' })
+        : (GENERATED_AT ? el('p', { class: 'dati__note', text: 'Dati pubblicati il ' + formatGenerated(GENERATED_AT) + '.' }) : null),
     ]));
   }
 
@@ -1056,6 +1136,7 @@
     };
     Array.prototype.forEach.call(detailEl.querySelectorAll('[data-name]'), add);
     Array.prototype.forEach.call(tableWrap.querySelectorAll('[data-name]'), add);
+    Array.prototype.forEach.call(oreCard.querySelectorAll('[data-name]'), add);
     Array.prototype.forEach.call(stripEl.querySelectorAll('[data-name]'), add);
   }
 
@@ -1299,20 +1380,19 @@
   function loadFiles(fileList) {
     var files = Array.prototype.slice.call(fileList || []);
     if (!files.length) return;
-    var loaded = [];
+    var queue = [];
     var chain = Promise.resolve();
-    files.forEach(function (file) { chain = chain.then(function () { return loadOne(file, loaded); }); });
+    files.forEach(function (file) { chain = chain.then(function () { return parseOne(file, queue); }); });
     chain.then(function () {
-      if (!loaded.length) return;
-      if (!writeLocal(local)) toast('I turni sono caricati ma non restano in memoria (spazio del browser non disponibile)', true);
-      state.month = loaded[loaded.length - 1].month;
-      state.selected = '';
-      renderAll();
-      window.scrollTo({ top: 0, behavior: 'instant' });
+      reviewQueue = queue;
+      reviewTotal = queue.length;
+      reviewDone = 0;
+      nextReview();
     });
   }
 
-  function loadOne(file, loaded) {
+  // Legge il file e lo mette in coda per la revisione; se non cambia nulla lo dice e basta.
+  function parseOne(file, queue) {
     if (!/\.xlsx$/i.test(file.name)) {
       toast('Formato non riconosciuto: usa i file .xlsx dei turni', true);
       return Promise.resolve();
@@ -1325,16 +1405,252 @@
     return file.arrayBuffer()
       .then(function (buf) { return parser.parseWorkbook(buf, file.name); })
       .then(function (roster) {
-        roster.source = 'browser';
-        local = local.filter(function (r) { return rosterKey(r) !== rosterKey(roster); });
-        local.push(roster);
-        loaded.push(roster);
-        toast('Caricato ' + roster.hospital + ' · ' + monthLabel(roster.month) + ' · ' +
-          plural((roster.days || []).length, 'giorno', 'giorni'));
+        var existing = findExisting(roster);
+        if (!existing) { queue.push({ roster: roster, existing: null, diff: null, file: file.name }); return; }
+        var diff = R.diffRosters(existing, roster);
+        if (!diff.changes.length) {
+          toast(roster.hospital + ' · ' + monthLabel(roster.month) + ': nessuna modifica rispetto alla versione caricata');
+          return;
+        }
+        queue.push({ roster: roster, existing: existing, diff: diff, file: file.name });
       })
       .catch(function (err) {
         toast(file.name + ': ' + ((err && err.message) || 'file non leggibile'), true);
       });
+  }
+
+  function findExisting(roster) {
+    var key = rosterKey(roster);
+    var found = null;
+    D.rosters.forEach(function (r) { if (rosterKey(r) === key) found = r; });
+    return found;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Foglio di revisione: prima si guardano le differenze, poi si salva
+  // ---------------------------------------------------------------------------
+
+  function nextReview() {
+    if (!reviewQueue.length) { closeReview(); return; }
+    reviewCurrent = reviewQueue.shift();
+    reviewDone++;
+    renderReview(reviewCurrent);
+    openReview();
+  }
+
+  function renderReview(item) {
+    var roster = item.roster;
+    var isNew = !item.existing;
+    clear(reviewBody);
+
+    reviewTitle.textContent = isNew
+      ? 'Nuovo mese: ' + roster.hospital + ' · ' + monthLabel(roster.month)
+      : 'Modifiche · ' + roster.hospital + ' · ' + monthLabel(roster.month);
+
+    var caps = [];
+    if (reviewTotal > 1) caps.push(reviewDone + ' di ' + reviewTotal);
+    if (isNew) {
+      caps.push(plural((roster.days || []).length, 'giorno', 'giorni'));
+    } else {
+      caps.push(plural(item.diff.changes.length, 'modifica', 'modifiche') + ' in ' +
+        plural(item.diff.days, 'giorno', 'giorni'));
+    }
+    caps.push(roster.file);
+    if (item.existing) {
+      caps.push(item.existing.source === 'browser' ? 'sostituisce la versione dal browser' : 'sostituisce la versione pubblicata');
+    }
+    reviewCap.textContent = caps.join(' · ');
+
+    if (isNew) {
+      var names = uniqueNames(roster);
+      reviewBody.appendChild(el('p', { class: 'chg__sum', text: plural((roster.days || []).length, 'giorno', 'giorni') +
+        ' · ' + plural(names.length, 'nome', 'nomi') + ' · ' + plural((roster.slots || []).length, 'fascia', 'fasce') }));
+      if (names.length) {
+        reviewBody.appendChild(el('p', { class: 'chg__sum', text: 'Tra i nomi: ' + names.slice(0, 3).join(', ') + (names.length > 3 ? '…' : '') }));
+      }
+    } else {
+      var lastDate = null;
+      item.diff.changes.forEach(function (c) {
+        if (c.date !== lastDate) {
+          lastDate = c.date;
+          var parts = R.formatDate(c.date).split(' ');
+          reviewBody.appendChild(el('div', { class: 'chg__day' + (isWeekend(c.date) ? ' is-weekend' : '') },
+            parts[0] + ' ' + parts[1]));
+        }
+        reviewBody.appendChild(changeRow(c));
+      });
+    }
+
+    reviewSave.disabled = false;
+    reviewCancel.disabled = false;
+    reviewSave.textContent = saveLabel();
+
+    var warnings = roster.warnings || [];
+    if (warnings.length) {
+      reviewBody.appendChild(el('div', { class: 'chg__block' }, [
+        el('p', { class: 'dati__t', text: 'Avvisi del file' }),
+      ].concat(warnings.map(function (w) {
+        return el('p', { class: 'warnrow' }, [icon('i-warn'), w.message || w.type]);
+      }))));
+    }
+  }
+
+  function uniqueNames(roster) {
+    var seen = Object.create(null), out = [];
+    (roster.days || []).forEach(function (d) {
+      Object.keys(d.cells || {}).forEach(function (k) {
+        ((d.cells[k] && d.cells[k].names) || []).forEach(function (n) {
+          if (!seen[n]) { seen[n] = true; out.push(n); }
+        });
+      });
+    });
+    return out.sort(function (x, y) { return x.localeCompare(y, 'it'); });
+  }
+
+  function changeRow(c) {
+    var val = el('span', { class: 'chg__val' });
+    if (c.kind === 'replaced') {
+      val.appendChild(el('span', { class: 'chg__old', text: c.removed.join(' · ') }));
+      val.appendChild(document.createTextNode(' → '));
+      val.appendChild(el('span', { class: 'chg__new', text: c.added.join(' · ') }));
+    } else if (c.kind === 'added') {
+      val.appendChild(document.createTextNode('+ '));
+      val.appendChild(el('span', { class: 'chg__add', text: c.added.join(' · ') }));
+    } else if (c.kind === 'removed') {
+      val.appendChild(document.createTextNode('− '));
+      val.appendChild(el('span', { class: 'chg__del', text: c.removed.join(' · ') }));
+    } else {
+      val.appendChild(el('span', { class: 'chg__new', text: c.after.join(' · ') }));
+      val.appendChild(el('span', { class: 'chg__note', text: 'solo l’ordine è cambiato' }));
+    }
+    return el('div', { class: 'chg' + (c.slotKey === 'N' ? ' is-night' : '') }, [
+      el('span', { class: 'chg__slot', text: shortSlotName(c.slotLabel) + ' · ' + c.hospital }),
+      val,
+    ]);
+  }
+
+  function openReview() {
+    if (reviewEl.hidden) reviewOpener = document.activeElement;
+    reviewEl.hidden = false;
+    document.body.style.overflow = 'hidden';
+    reviewPanel.focus();   // il foglio si annuncia da solo (aria-labelledby)
+  }
+
+  function closeReview() {
+    reviewEl.hidden = true;
+    reviewCurrent = null;
+    document.body.style.overflow = '';
+    if (reviewOpener && reviewOpener.focus) reviewOpener.focus();
+    reviewOpener = null;
+  }
+
+  function saveLabel() { return (pub && !readOnly) ? 'Salva per tutti' : 'Salva'; }
+
+  function whatChanged(item) {
+    return item.roster.hospital + ' · ' + monthLabel(item.roster.month) + ' · ' +
+      (item.diff ? plural(item.diff.changes.length, 'modifica', 'modifiche') : 'nuovo mese');
+  }
+
+  // Salvataggio locale: resta su questo dispositivo (come nella V6).
+  function saveHere(item) {
+    var roster = item.roster;
+    roster.source = 'browser';
+    local = local.filter(function (r) { return rosterKey(r) !== rosterKey(roster); });
+    local.push(roster);
+    if (!writeLocal(local)) toast('I turni sono caricati ma non restano in memoria (spazio del browser non disponibile)', true);
+    state.month = roster.month;
+    state.selected = '';
+    renderAll();
+  }
+
+  // Copia pulita di un roster: fuori i campi che servono solo a questa pagina.
+  function stripRuntime(roster) {
+    var copy = Object.assign({}, roster);
+    delete copy.source;
+    delete copy.replaces;
+    return copy;
+  }
+
+  // Il file condiviso completo, con dentro il roster appena rivisto.
+  function buildNext(roster) {
+    var base = (shared && shared.rosters) ? shared.rosters : BAKED;
+    var map = new Map();
+    base.forEach(function (r) { map.set(rosterKey(r), stripRuntime(r)); });
+    map.set(rosterKey(roster), stripRuntime(roster));
+    return { generatedAt: new Date().toISOString(), rosters: Array.from(map.values()) };
+  }
+
+  function setReviewBusy(busy) {
+    reviewSave.disabled = busy;
+    reviewCancel.disabled = busy;
+    reviewSave.textContent = busy ? 'Pubblico…' : saveLabel();
+  }
+
+  function saveReview() {
+    var item = reviewCurrent;
+    if (!item) return;
+    if (!pub || readOnly) {
+      saveHere(item);
+      toast('Salvato: ' + whatChanged(item));
+      nextReview();
+      return;
+    }
+    publishReview(item);
+  }
+
+  // Pubblica il file dei dati: la pagina resta quella, cambia solo data/turni.json.
+  function publishReview(item) {
+    var next = buildNext(item.roster);
+    setReviewBusy(true);
+    var done = function () { setReviewBusy(false); nextReview(); };
+    Promise.resolve(pub.publish({
+      'data/turni.json': { content: JSON.stringify(next), contentType: 'application/json' },
+    })).then(function () {
+      shared = next;
+      local = local.filter(function (r) { return rosterKey(r) !== rosterKey(item.roster); });
+      writeLocal(local);
+      state.month = item.roster.month;
+      state.selected = '';
+      renderAll();
+      toast('Pubblicato per tutti: ' + whatChanged(item));
+      done();
+    }).catch(function (err) {
+      var code = (err && err.code) || 'errore';
+      if (code === 'conflict') {
+        setReviewBusy(false);
+        reviewQueue = [];
+        closeReview();
+        toast('Qualcun altro ha appena pubblicato: la pagina si aggiorna', true);
+        return;
+      }
+      if (code === 'not_writer' || code === 'not_granted') {
+        readOnly = true;
+        saveHere(item);
+        toast('Non puoi pubblicare questa pagina: salvato solo su questo dispositivo', true);
+      } else if (code === 'capability_disabled') {
+        saveHere(item);
+        toast('Salvataggio condiviso non disponibile qui: salvato solo su questo dispositivo', true);
+      } else {
+        saveHere(item);
+        toast('Pubblicazione non riuscita (' + code + '): salvato solo su questo dispositivo', true);
+      }
+      done();
+    });
+  }
+
+  function cancelReview() { nextReview(); }
+
+  // Il fuoco resta dentro il foglio finché è aperto.
+  function trapFocus(e) {
+    if (e.key !== 'Tab') return;
+    var focusable = reviewPanel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (!focusable.length) return;
+    var first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === reviewPanel)) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus();
+    }
   }
 
   function removeLocal(roster) {
@@ -1486,12 +1802,16 @@
 
     segCal.addEventListener('click', function () { setView('calendario'); });
     segTab.addEventListener('click', function () { setView('tabella'); });
+    segOre.addEventListener('click', function () { setView('ore'); });
     $('segbar').addEventListener('keydown', function (e) {
-      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return;
+      var keys = { ArrowLeft: -1, ArrowRight: 1, Home: 'first', End: 'last' };
+      if (!(e.key in keys)) return;
       e.preventDefault();
-      var next = (e.key === 'ArrowLeft' || e.key === 'Home') ? 'calendario' : 'tabella';
-      setView(next);
-      (next === 'tabella' ? segTab : segCal).focus();
+      var i = VIEWS.indexOf(state.view);
+      var next = keys[e.key] === 'first' ? 0 : keys[e.key] === 'last' ? VIEWS.length - 1
+        : (i + keys[e.key] + VIEWS.length) % VIEWS.length;
+      setView(VIEWS[next]);
+      $('segbar').children[next].focus();
     });
 
     findingsBtn.addEventListener('click', function () {
@@ -1529,6 +1849,15 @@
     window.addEventListener('blur', endDrag);
     document.addEventListener('visibilitychange', function () { if (document.hidden) endDrag(); });
 
+    reviewSave.addEventListener('click', saveReview);
+    reviewCancel.addEventListener('click', cancelReview);
+    $('reviewScrim').addEventListener('click', cancelReview);
+    document.addEventListener('keydown', function (e) {
+      if (reviewEl.hidden) return;
+      if (e.key === 'Escape') { e.preventDefault(); cancelReview(); }
+      else trapFocus(e);
+    });
+
     window.addEventListener('resize', function () {
       measureHeader();
       // Le colonne della tabella sono percentuali calcolate su una larghezza:
@@ -1550,6 +1879,40 @@
   // Avvio
   // ---------------------------------------------------------------------------
 
+  // I dati condivisi devono avere la forma giusta: altrimenti si ignorano.
+  function validShared(data) {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.rosters) || !data.rosters.length) return false;
+    return data.rosters.every(function (r) {
+      return r && typeof r.hospital === 'string' && typeof r.month === 'string' &&
+        Array.isArray(r.days) && Array.isArray(r.slots);
+    });
+  }
+
+  // Dopo il primo disegno: i dati condivisi e lo spazio dei nomi della piattaforma.
+  // Nessuno dei due blocca la pagina; se mancano, tutto funziona come prima.
+  function boot() {
+    if (/^https?:$/.test(window.location.protocol) && typeof window.fetch === 'function') {
+      window.fetch('data/turni.json', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!validShared(data)) return;
+          shared = data;
+          renderAll();
+          if (state.pinned) srSay('Dati condivisi aggiornati');
+        })
+        .catch(function () { /* nessun file condiviso: restano i dati della pagina */ });
+    }
+    var platform = window.claude;
+    if (platform && typeof platform.use === 'function') {
+      try {
+        Promise.resolve(platform.use('artifact')).then(function (ns) {
+          pub = (ns && typeof ns.publish === 'function') ? ns : null;
+          if (!reviewEl.hidden && reviewCurrent) reviewSave.textContent = saveLabel();
+        }).catch(function () { pub = null; });
+      } catch (e) { pub = null; }
+    }
+  }
+
   function init() {
     state.view = readView();
     readHash();                                    // l'indirizzo vince sulla memoria
@@ -1557,6 +1920,7 @@
     wire();
     renderAll();
     if (state.pinned) srSay(state.pinned + ' evidenziato');
+    boot();
   }
 
   init();

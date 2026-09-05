@@ -28,7 +28,7 @@
   --hl-soft-ink: #1A1500;
   --hl-ring: #E8C400;
 
-  --dea: #0F8A7E;
+  --dea: #0A8F82;
   --dea-tint: #E4F4F1;
   --osg: #9B3B8E;
   --osg-tint: #F5E7F3;
@@ -78,7 +78,7 @@
 
     --dea: #3FBFB0;
     --dea-tint: #123430;
-    --osg: #C86BB8;
+    --osg: #C468B4;
     --osg-tint: #3A1E36;
     --alt: #94A0AE;
     --alt-tint: #232A33;
@@ -116,7 +116,7 @@
 
   --dea: #3FBFB0;
   --dea-tint: #123430;
-  --osg: #C86BB8;
+  --osg: #C468B4;
   --osg-tint: #3A1E36;
   --alt: #94A0AE;
   --alt-tint: #232A33;
@@ -291,7 +291,7 @@ code { font-family: var(--mono); font-size: .92em; }
 
 /* Interruttore fra le due viste */
 .segbar {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 2px;
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px;
   padding: 2px; border-radius: 9px; background: var(--surface-2);
 }
 .seg {
@@ -367,8 +367,9 @@ code { font-family: var(--mono); font-size: .92em; }
    -------------------------------------------------------------------------- */
 .personline {
   font-size: 12.5px; color: var(--ink-2); padding: 0 2px;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums; letter-spacing: .005em;
 }
+.personline b { font-weight: 600; color: var(--ink); }
 
 .cal { display: flex; flex-direction: column; gap: 4px; }
 .cal__row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -411,8 +412,9 @@ code { font-family: var(--mono); font-size: .92em; }
   background: var(--alt-tint); color: var(--alt);
   print-color-adjust: exact; -webkit-print-color-adjust: exact;
 }
-.chipslot.h-dea { background: var(--dea-tint); color: var(--dea); }
-.chipslot.h-osg { background: var(--osg-tint); color: var(--osg); }
+/* La lettera vira verso l'inchiostro: resta leggibile su fondo tenue in entrambi i temi. */
+.chipslot.h-dea { background: var(--dea-tint); color: color-mix(in srgb, var(--dea) 75%, var(--ink)); }
+.chipslot.h-osg { background: var(--osg-tint); color: color-mix(in srgb, var(--osg) 75%, var(--ink)); }
 .chipslot.is-night.h-dea { background: var(--dea); color: var(--surface); }
 .chipslot.is-night.h-osg { background: var(--osg); color: var(--surface); }
 .chipslot.is-find { outline: 1px solid var(--fsev, var(--sev2)); outline-offset: 1px; }
@@ -574,7 +576,7 @@ code { font-family: var(--mono); font-size: .92em; }
 
 .pill--t {
   display: flex; align-items: center; gap: 3px; width: 100%; max-width: 100%;
-  padding: 0 2px; margin: 0; border-radius: 3px;
+  padding: 0 1px; margin: 0; border-radius: 3px;
   font-size: var(--tabfs, 10px); font-weight: 500; line-height: 13px; letter-spacing: -.02em;
 }
 .pill--t > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -585,6 +587,35 @@ code { font-family: var(--mono); font-size: .92em; }
 
 @keyframes flashcell { from { background-color: var(--hl-soft); } }
 .tab tr.is-flash > * { animation: flashcell 1.2s ease-out; }
+
+/* --------------------------------------------------------------------------
+   7ter. Ore — classifica delle ore per nome (due serie: DEA e OSG)
+   -------------------------------------------------------------------------- */
+.ore { padding: 12px; }
+.ore__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
+.ore__legend { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+.ore__legend span { display: inline-flex; align-items: center; gap: 4px; }
+
+.ore__row {
+  display: grid; grid-template-columns: minmax(96px, 30%) 1fr 52px;
+  align-items: center; gap: 6px; min-height: 30px;
+}
+.ore__name {
+  justify-self: start; max-width: 100%;
+  padding: 3px 5px; border-radius: 4px;
+  font-size: 12.5px; font-weight: 500; letter-spacing: .01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ore__bar { display: flex; align-items: center; height: 10px; min-width: 0; }
+.ore__seg { display: block; height: 10px; flex: none; background: var(--alt); }
+.ore__seg.h-dea { background: var(--dea); }
+.ore__seg.h-osg { background: var(--osg); }
+.ore__seg + .ore__seg { margin-left: 2px; }
+.ore__seg:last-child { border-radius: 0 2px 2px 0; }
+.ore__v {
+  text-align: right; font-family: var(--mono); font-size: 12px; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
 
 /* --------------------------------------------------------------------------
    8. Segnalazioni
@@ -599,8 +630,8 @@ code { font-family: var(--mono); font-size: .92em; }
   margin-bottom: 6px;
 }
 .fitem {
-  display: flex; gap: 10px; width: 100%; text-align: left;
-  padding: 9px 10px; margin-bottom: 6px;
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; width: 100%; text-align: left;
+  padding: 7px 10px; margin-bottom: 5px;
   background: var(--surface-2); border: 0; border-left: 3px solid var(--fsev, var(--sev2));
   border-radius: 0 8px 8px 0; cursor: pointer;
 }
@@ -610,9 +641,14 @@ code { font-family: var(--mono); font-size: .92em; }
 .fitem.sev-1 { --fsev: var(--sev1); }
 .fitem__body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .fitem__who {
-  align-self: flex-start; padding: 2px 5px; margin: -2px 0 0 -5px;
+  padding: 2px 5px; margin: 0 0 0 -5px;
   background: none; border: 0; border-radius: 4px; cursor: pointer;
-  font-size: 13.5px; font-weight: 600; letter-spacing: .01em; color: var(--ink);
+  font-size: 13px; font-weight: 600; letter-spacing: .01em; color: var(--ink);
+}
+.fitem__short {
+  flex: 1; min-width: 0; padding: 2px 0; text-align: left;
+  background: none; border: 0; cursor: pointer;
+  font-size: 12.5px; color: var(--ink-2);
 }
 .fitem__who:hover { background: var(--hl-soft); color: var(--hl-soft-ink); }
 .fitem__t { font-size: 12.5px; color: var(--ink); }
@@ -627,8 +663,14 @@ code { font-family: var(--mono); font-size: .92em; }
 .fempty { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--ink-2); font-size: 13.5px; }
 .fempty .ico { color: var(--ok); }
 
-.legenda { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
-.legenda__t { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.legenda { margin-top: 10px; border-top: 1px solid var(--line); }
+.legenda__t {
+  display: flex; align-items: center; gap: 6px; min-height: 36px;
+  font-size: 12px; color: var(--muted); cursor: pointer; list-style: none;
+}
+.legenda__t::-webkit-details-marker { display: none; }
+.legenda__t .ico { width: 14px; height: 14px; transition: transform .15s ease; }
+.legenda[open] .legenda__t .ico { transform: rotate(180deg); }
 .legenda__row { display: flex; gap: 8px; margin-bottom: 6px; font-size: 11.5px; color: var(--ink-2); line-height: 1.45; }
 .legenda__mark { width: 3px; border-radius: 2px; flex: none; background: var(--muted); margin: 2px 0; }
 .legenda__mark.sev-3 { background: var(--sev3); }
@@ -730,6 +772,47 @@ code { font-family: var(--mono); font-size: .92em; }
 .dropzone__ico { width: 30px; height: 30px; color: var(--hl-ring); }
 .dropzone__t { font-family: var(--display); font-size: 24px; text-align: center; color: var(--ink); }
 
+/* Foglio di revisione delle modifiche di un file caricato */
+.sheet { position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-end; justify-content: center; }
+.sheet__scrim { position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(2px); }
+.sheet__panel:focus { outline: none; }
+.sheet__panel {
+  position: relative; z-index: 1; width: 100%; max-width: 640px; max-height: 86vh;
+  display: flex; flex-direction: column; overscroll-behavior: contain;
+  background: var(--surface); border-radius: 14px 14px 0 0; box-shadow: var(--shadow);
+}
+.sheet__head { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+.sheet__t { font-family: var(--display); font-size: 19px; line-height: 1.2; color: var(--ink); }
+.sheet__cap { margin-top: 3px; font-size: 12px; color: var(--muted); }
+.sheet__body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 4px 16px 14px; }
+.sheet__foot {
+  display: flex; gap: 8px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+}
+.sheet__foot .btn { flex: 1; }
+
+.chg__day {
+  display: flex; align-items: baseline; gap: 6px;
+  margin: 12px -16px 2px; padding: 4px 16px;
+  font-size: 12.5px; font-weight: 500; color: var(--ink);
+}
+.chg__day.is-weekend { background: var(--weekend); }
+.chg {
+  display: grid; grid-template-columns: 86px 1fr; gap: 8px; align-items: baseline;
+  margin: 0 -16px; padding: 5px 16px;
+}
+.chg.is-night { background: var(--night-veil); }
+.chg__slot { font-size: 11px; color: var(--muted); }
+.chg__val { font-size: 12.5px; color: var(--ink-2); overflow-wrap: break-word; }
+.chg__old { color: var(--muted); text-decoration: line-through; }
+.chg__new { color: var(--ink); font-weight: 600; }
+.chg__add { color: var(--ok); font-weight: 600; }
+.chg__val { font-variant-numeric: tabular-nums; }
+.chg__del { color: var(--sev3); text-decoration: line-through; }
+.chg__note { display: block; font-size: 11px; color: var(--muted); }
+.chg__sum { font-size: 12.5px; color: var(--ink-2); margin-top: 8px; }
+.chg__block { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
+
 .toasts {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
@@ -754,6 +837,8 @@ code { font-family: var(--mono); font-size: .92em; }
    -------------------------------------------------------------------------- */
 @media (min-width: 640px) {
   :root { --fs: 15px; --pad: 16px; --dlabel: 84px; --tabfs: 12px; }
+  .sheet { align-items: center; padding: 24px; }
+  .sheet__panel { max-width: 520px; border-radius: 14px; max-height: 80vh; }
   .wordmark, .month__t { font-size: 23px; }
   .cal__d { min-height: 58px; }
   .detail__num { font-size: 30px; }
@@ -791,7 +876,7 @@ code { font-family: var(--mono); font-size: .92em; }
   body { background: #fff; color: #000; }
   .topbar { position: static; border: 0; padding: 0; }
   .search, .toprow__end .pillbtn, .toprow__end .ghostbtn, .skiplink,
-  .toasts, .dropzone, .dati, .findings, .strip, .navday { display: none !important; }
+  .toasts, .dropzone, .dati, .findings, .strip, .navday, .sheet { display: none !important; }
   .topbar__in { padding: 0 0 6pt; border-bottom: 1pt solid #999; }
   .page { padding: 8pt 0 0; max-width: none; }
   .cal__d, .card { border-color: #bbb; break-inside: avoid; }
