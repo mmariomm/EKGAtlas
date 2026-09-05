@@ -26,9 +26,6 @@
     <path d="M8.6 12.4 5 16v3h3l3.6-3.6"/>
     <path d="M3 21.4h18"/>
   </symbol>
-  <symbol id="i-moon" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-    <path d="M20.3 15.1A8.6 8.6 0 0 1 9 3.8a8.6 8.6 0 1 0 11.3 11.3z"/>
-  </symbol>
   <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 3.6 21.2 20H2.8z"/>
     <path d="M12 9.6v4.6"/>
@@ -57,45 +54,38 @@
   </symbol>
 </svg>
 
-<header class="topbar" id="topbar">
-  <div class="topbar__in">
-    <div class="toprow">
-      <h1 class="wordmark">I Miei Turni</h1>
-      <div class="toprow__end">
-        <div class="month" id="monthCtl"></div>
-        <button class="pillbtn" id="findingsBtn" type="button" aria-label="Segnalazioni"></button>
-        <button class="ghostbtn" id="todayBtn" type="button" hidden>Oggi</button>
-      </div>
-    </div>
-
-    <div class="search" id="search">
-      <svg class="ico search__ico" aria-hidden="true" focusable="false"><use href="#i-pen"></use></svg>
-      <div class="search__body">
-        <span class="pintoken" id="pintoken" hidden></span>
-        <input class="search__input" id="q" type="text" role="combobox" aria-expanded="false"
-               aria-controls="pop" aria-autocomplete="list" aria-haspopup="listbox"
-               aria-label="Cerca ed evidenzia un nome" placeholder="Cerca ed evidenzia un nome…"
-               enterkeyhint="search" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-      </div>
-      <button class="iconbtn search__clear" id="clearBtn" type="button" hidden aria-label="Cancella la ricerca">
-        <svg class="ico" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
-      </button>
-      <div class="pop" id="pop" role="listbox" aria-label="Nomi in servizio nel mese" hidden></div>
-    </div>
-
-    <div class="segbar" id="segbar" role="tablist" aria-label="Vista">
-      <button class="seg" id="segCal" type="button" role="tab" aria-selected="true" aria-controls="viewCal">Calendario</button>
-      <button class="seg" id="segTab" type="button" role="tab" aria-selected="false" aria-controls="viewTab" tabindex="-1">Tabella</button>
-      <button class="seg" id="segOre" type="button" role="tab" aria-selected="false" aria-controls="viewOre" tabindex="-1">Ore</button>
-    </div>
+<header class="topbar">
+  <div class="titlerow">
+    <h1 class="wordmark">I Miei Turni</h1>
+    <div class="month" id="monthCtl"></div>
+  </div>
+  <div class="segbar" id="segbar" role="tablist" aria-label="Vista">
+    <button class="seg" id="segCal" type="button" role="tab" aria-selected="true" aria-controls="viewCal">Calendario</button>
+    <button class="seg" id="segTab" type="button" role="tab" aria-selected="false" aria-controls="viewTab" tabindex="-1">Tabella</button>
+    <button class="seg" id="segOre" type="button" role="tab" aria-selected="false" aria-controls="viewOre" tabindex="-1">Ore</button>
   </div>
 </header>
 
+<div class="searchbar" id="searchbar">
+  <div class="search" id="search">
+    <svg class="ico search__ico" aria-hidden="true" focusable="false"><use href="#i-pen"></use></svg>
+    <div class="search__body">
+      <span class="pintoken" id="pintoken" hidden></span>
+      <input class="search__input" id="q" type="text" role="combobox" aria-expanded="false"
+             aria-controls="pop" aria-autocomplete="list" aria-haspopup="listbox"
+             aria-label="Cerca un nome" placeholder="Cerca un nome"
+             enterkeyhint="search" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </div>
+    <button class="iconbtn search__clear" id="clearBtn" type="button" hidden aria-label="Cancella la ricerca">
+      <svg class="ico" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+    </button>
+    <div class="pop" id="pop" role="listbox" aria-label="Nomi in servizio nel mese" hidden></div>
+  </div>
+</div>
+
 <main class="page">
-  <section class="card empty" id="empty" hidden>
-    <svg class="ico empty__ico" aria-hidden="true" focusable="false"><use href="#i-pen"></use></svg>
+  <section class="empty" id="empty" hidden>
     <h2 class="empty__t">Nessun turno caricato</h2>
-    <p class="empty__p">Trascina qui i file xlsx dei turni, oppure mettili in <code>data/</code> e lancia <code>npm run build</code>.</p>
     <button class="btn btn--solid" id="emptyUpload" type="button">
       <svg class="ico" aria-hidden="true" focusable="false"><use href="#i-upload"></use></svg><span>Carica xlsx</span>
     </button>
@@ -105,37 +95,29 @@
 
   <div class="view" id="viewCal" role="tabpanel" aria-labelledby="segCal">
     <h2 class="sr-only" id="calTitle">Calendario dei turni</h2>
-    <div class="cal" id="calendario" role="grid" aria-labelledby="calTitle"></div>
-    <section class="card detail" id="detail" aria-live="polite" aria-labelledby="detailTitle"></section>
+    <div class="cal" id="calendario" aria-labelledby="calTitle"></div>
+    <p class="callegend" id="callegend" hidden></p>
+    <section class="detail" id="detail" aria-live="polite" aria-labelledby="detailTitle"></section>
   </div>
 
   <div class="view" id="viewTab" role="tabpanel" aria-labelledby="segTab" hidden>
     <h2 class="sr-only" id="tabTitle">Tabella dei turni del mese</h2>
-    <div class="card tablewrap" id="tablewrap"></div>
+    <div class="tablewrap" id="tablewrap"></div>
   </div>
 
   <div class="view" id="viewOre" role="tabpanel" aria-labelledby="segOre" hidden>
-    <section class="card ore" id="orecard"></section>
+    <section class="ore" id="orecard"></section>
   </div>
 
-  <section class="card findings" id="segnalazioni" tabindex="-1" aria-labelledby="findingsTitle"></section>
-
-  <section class="card strip" id="strip" aria-labelledby="stripTitle"></section>
+  <section class="findings" id="segnalazioni" tabindex="-1" aria-labelledby="findingsTitle"></section>
 
   <details class="dati" id="dati">
-    <summary class="dati__sum"><svg class="ico dati__chev" aria-hidden="true" focusable="false"><use href="#i-chevron"></use></svg>Dati e sorgenti</summary>
+    <summary class="dati__sum" id="datiSum"><svg class="ico dati__chev" aria-hidden="true" focusable="false"><use href="#i-chevron"></use></svg><span id="datiSumText">Dati</span></summary>
     <div class="dati__body" id="datiBody"></div>
   </details>
 </main>
 
 <input class="filein" id="fileInput" type="file" accept=".xlsx" multiple tabindex="-1" aria-label="Carica i file xlsx dei turni">
-
-<div class="dropzone" id="dropzone" hidden aria-hidden="true">
-  <div class="dropzone__frame">
-    <svg class="ico dropzone__ico" aria-hidden="true" focusable="false"><use href="#i-upload"></use></svg>
-    <p class="dropzone__t">Rilascia i file xlsx dei turni</p>
-  </div>
-</div>
 
 <div class="sheet" id="review" hidden>
   <div class="sheet__scrim" id="reviewScrim"></div>
