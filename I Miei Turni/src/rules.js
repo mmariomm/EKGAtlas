@@ -1,0 +1,442 @@
+// src/rules.js — "I Miei Turni": motore delle regole (nessuna dipendenza dal DOM).
+//
+// Prende in input i Roster prodotti da src/parser.js e calcola:
+//   - buildAssignments: l'elenco piatto dei turni assegnati (una riga per persona/turno);
+//   - computeFindings:  le anomalie tra turni della stessa persona (conflitti, notti
+//                        attaccate, cambi di sede senza pausa);
+//   - analyzeNames / searchNames: analisi e ricerca dei nomi (per intercettare refusi).
+//
+// Tutte le funzioni sono pure: nessun accesso al DOM, nessuna dipendenza esterna.
+
+var TurniRules = (function () {
+  'use strict';
+
+  // ------------------------------------------------------------------
+  // Costanti
+  // ------------------------------------------------------------------
+
+  var SEVERITY = { conflitto: 3, 'notte-attaccata': 2, 'cambio-sede': 1 };
+  var KIND_LABEL = { conflitto: 'Conflitto', 'notte-attaccata': 'Notte attaccata', 'cambio-sede': 'Cambio sede' };
+
+  var MINUTES_PER_DAY = 1440;
+  var FORTYEIGHT_HOURS_MIN = 48 * 60;
+
+  var WEEKDAY_SHORT_IT = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab']; // indicizzato su getUTCDay() (0 = domenica)
+  var MONTH_SHORT_IT = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
+
+  // ------------------------------------------------------------------
+  // Helper di base: date, testo
+  // ------------------------------------------------------------------
+
+  // Numero di giorni trascorsi dal 1970-01-01 (UTC) — calcolato sempre in UTC così
+  // il risultato non dipende dal fuso orario della macchina che esegue il codice.
+  function dayIndex(dateStr) {
+    var parts = String(dateStr).split('-');
+    var y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2]);
+    return Math.floor(Date.UTC(y, m - 1, d) / 86400000);
+  }
+
+  // "2026-09-01" → "mar 1 set" (giorno della settimana e mese abbreviati in italiano, minuscoli, senza punto).
+  function formatDate(dateStr) {
+    var parts = String(dateStr).split('-');
+    var y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2]);
+    var dt = new Date(Date.UTC(y, m - 1, d));
+    return WEEKDAY_SHORT_IT[dt.getUTCDay()] + ' ' + dt.getUTCDate() + ' ' + MONTH_SHORT_IT[dt.getUTCMonth()];
+  }
+
+  // 0 → "0 h"; 360 → "6 h"; 90 → "1 h 30" (ore intere + eventuali minuti).
+  function formatRest(min) {
+    var h = Math.floor(min / 60);
+    var r = min % 60;
+    return r === 0 ? (h + ' h') : (h + ' h ' + r);
+  }
+
+  // "MATTINA" → "Mattina"; "AMBULATORIO CM" → "Ambulatorio CM" (le sigle di due lettere
+  // restano maiuscole, le altre parole diventano Title Case).
+  function slotName(label) {
+    var words = String(label).trim().split(/\s+/);
+    var out = [];
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      if (w.length === 0) continue;
+      out.push(w.length <= 2 ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+    }
+    return out.join(' ');
+  }
+
+  // "08:00" → "08"; "09:30" → "09:30" (i minuti a zero si tolgono, gli altri restano).
+  function fmtClock(t) {
+    return t.slice(-3) === ':00' ? t.slice(0, -3) : t;
+  }
+
+  // Accetta uno Slot ({start,end}) o un Assignment ({slotStart,slotEnd}):
+  // "08–14", "20–08", "09:30–15" (trattino medio, ":00" tolto, ":30" mantenuto).
+  function timeRange(x) {
+    var start = x.start !== undefined ? x.start : x.slotStart;
+    var end = x.end !== undefined ? x.end : x.slotEnd;
+    return fmtClock(start) + '–' + fmtClock(end);
+  }
+
+  // NFD, via gli accenti, maiuscolo, via tutto ciò che non è A-Z: "D'AMORE" → "DAMORE",
+  // "DI VITA F." → "DIVITAF". Usato per confrontare nomi ignorando accenti/apostrofi/spazi.
+  function fold(s) {
+    return String(s)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z]/g, '');
+  }
+
+  // Distanza di Levenshtein (numero minimo di inserimenti/cancellazioni/sostituzioni).
+  function levenshtein(a, b) {
+    a = String(a);
+    b = String(b);
+    var m = a.length, n = b.length;
+    if (m === 0) return n;
+    if (n === 0) return m;
+    var prev = new Array(n + 1);
+    for (var j = 0; j <= n; j++) prev[j] = j;
+    for (var i = 1; i <= m; i++) {
+      var cur = new Array(n + 1);
+      cur[0] = i;
+      var ca = a.charAt(i - 1);
+      for (j = 1; j <= n; j++) {
+        var cost = ca === b.charAt(j - 1) ? 0 : 1;
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      }
+      prev = cur;
+    }
+    return prev[n];
+  }
+
+  // ------------------------------------------------------------------
+  // buildAssignments
+  // ------------------------------------------------------------------
+
+  // Trasforma i Roster in un elenco piatto di Assignment: un elemento per ogni
+  // persona effettivamente presente in una cella (i nomi ripetuti nella stessa
+  // cella contano una volta sola, alla loro prima posizione).
+  function buildAssignments(rosters) {
+    var out = [];
+    for (var r = 0; r < rosters.length; r++) {
+      var roster = rosters[r];
+      var slots = roster.slots || [];
+      var days = roster.days || [];
+      for (var d = 0; d < days.length; d++) {
+        var day = days[d];
+        var cells = day.cells || {};
+        for (var s = 0; s < slots.length; s++) {
+          var slot = slots[s];
+          var cell = cells[slot.key];
+          if (!cell) continue;
+          var names = cell.names || [];
+          var seen = Object.create(null);
+          var di = dayIndex(day.date);
+          for (var pos = 0; pos < names.length; pos++) {
+            var name = names[pos];
+            if (seen[name]) continue;
+            seen[name] = true;
+            out.push({
+              id: roster.hospital + '|' + day.date + '|' + slot.key + '|' + pos,
+              person: name,
+              hospital: roster.hospital,
+              date: day.date,
+              day: day.day,
+              slotKey: slot.key,
+              slotLabel: slot.label,
+              slotStart: slot.start,
+              slotEnd: slot.end,
+              pos: pos,
+              role: (slot.roles && slot.roles[pos]) || '',
+              startAbs: di * MINUTES_PER_DAY + slot.startMin,
+              endAbs: di * MINUTES_PER_DAY + slot.endMin,
+              isNight: slot.key === 'N',
+            });
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------------
+  // computeFindings — tre regole, una funzione ciascuna
+  // ------------------------------------------------------------------
+
+  function piece(a) {
+    return slotName(a.slotLabel) + ' ' + a.hospital + ' ' + timeRange(a);
+  }
+
+  // Dettaglio di un conflitto: stessa data → un'unica data in fondo; date diverse →
+  // ciascuna data accanto al proprio turno.
+  function conflittoDetail(a, b) {
+    if (a.date === b.date) {
+      return piece(a) + ' e ' + piece(b) + ' · ' + formatDate(a.date);
+    }
+    return piece(a) + ' ' + formatDate(a.date) + ' e ' + piece(b) + ' ' + formatDate(b.date);
+  }
+
+  // Dettaglio di notte-attaccata / cambio-sede: sempre in sequenza (a → b), con il
+  // riposo residuo in fondo.
+  function sequenceDetail(a, b, restMin) {
+    return piece(a) + ' ' + formatDate(a.date) + ' → ' + piece(b) + ' ' + formatDate(b.date) +
+      ' · riposo ' + formatRest(restMin);
+  }
+
+  // Regola "conflitto": due turni della stessa persona si sovrappongono nel tempo.
+  // In ospedali diversi qualunque sovrapposizione conta; nello stesso ospedale conta
+  // solo se supera i 60 minuti (altrimenti è un normale passaggio di consegne).
+  function checkConflitto(person, a, b, overlap) {
+    if (a.hospital === b.hospital && a.date === b.date && a.slotKey === b.slotKey) return null; // stesso turno: non dovrebbe accadere dopo la deduplica
+    var sameHospital = a.hospital === b.hospital;
+    if (sameHospital && overlap <= 60) return null; // passaggio di consegne nello stesso PS
+    return {
+      kind: 'conflitto',
+      severity: SEVERITY.conflitto,
+      person: person,
+      a: a,
+      b: b,
+      overlapMin: overlap,
+      date: a.date,
+      title: sameHospital ? 'Doppio incarico nello stesso ospedale' : 'Stesso orario in due ospedali',
+      detail: conflittoDetail(a, b),
+    };
+  }
+
+  // Regola "notte-attaccata": una notte è troppo vicina (meno di 11 ore di riposo) a un
+  // turno diurno, prima o dopo, in qualsiasi ospedale.
+  function checkNotteAttaccata(person, a, b, rest) {
+    if (a.isNight === b.isNight) return null; // servono una notte e un turno diurno
+    if (!(rest >= 0 && rest < 660)) return null;
+    return {
+      kind: 'notte-attaccata',
+      severity: SEVERITY['notte-attaccata'],
+      person: person,
+      a: a,
+      b: b,
+      restMin: rest,
+      date: a.date,
+      title: rest === 0 ? 'Notte attaccata a un turno diurno' : 'Riposo breve intorno alla notte',
+      detail: sequenceDetail(a, b, rest),
+    };
+  }
+
+  // Regola "cambio-sede": due turni diurni in ospedali diversi con meno di 60 minuti di
+  // pausa tra loro (turni diurni consecutivi nello stesso ospedale sono un unico turno,
+  // non un'anomalia).
+  function checkCambioSede(person, a, b, rest) {
+    if (a.isNight || b.isNight) return null;
+    if (a.hospital === b.hospital) return null;
+    if (!(rest >= 0 && rest < 60)) return null;
+    return {
+      kind: 'cambio-sede',
+      severity: SEVERITY['cambio-sede'],
+      person: person,
+      a: a,
+      b: b,
+      restMin: rest,
+      date: a.date,
+      title: 'Cambio di sede senza pausa',
+      detail: sequenceDetail(a, b, rest),
+    };
+  }
+
+  function evaluatePair(person, a, b) {
+    var overlap = Math.min(a.endAbs, b.endAbs) - Math.max(a.startAbs, b.startAbs);
+    if (overlap > 0) return checkConflitto(person, a, b, overlap);
+    var rest = b.startAbs - a.endAbs;
+    return checkNotteAttaccata(person, a, b, rest) || checkCambioSede(person, a, b, rest);
+  }
+
+  function comparePersonAssignments(x, y) {
+    if (x.startAbs !== y.startAbs) return x.startAbs - y.startAbs;
+    if (x.date !== y.date) return x.date < y.date ? -1 : 1;
+    if (x.hospital !== y.hospital) return x.hospital < y.hospital ? -1 : 1;
+    return 0;
+  }
+
+  // Confronta ogni coppia di turni della stessa persona la cui distanza tra gli orari di
+  // inizio è inferiore a 48 ore (n è piccolo: un confronto O(n²) per persona va benissimo).
+  function computeFindings(assignments) {
+    var byPerson = new Map();
+    for (var i = 0; i < assignments.length; i++) {
+      var a = assignments[i];
+      var list = byPerson.get(a.person);
+      if (!list) { list = []; byPerson.set(a.person, list); }
+      list.push(a);
+    }
+
+    var findings = [];
+    byPerson.forEach(function (listRaw, person) {
+      var list = listRaw.slice().sort(comparePersonAssignments);
+      for (var i = 0; i < list.length; i++) {
+        for (var j = i + 1; j < list.length; j++) {
+          var pa = list[i], pb = list[j];
+          if (pb.startAbs - pa.startAbs >= FORTYEIGHT_HOURS_MIN) continue; // troppo lontani nel tempo: non si confrontano
+          var finding = evaluatePair(person, pa, pb);
+          if (finding) findings.push(finding);
+        }
+      }
+    });
+
+    findings.sort(function (f, g) {
+      if (f.severity !== g.severity) return g.severity - f.severity;
+      if (f.a.startAbs !== g.a.startAbs) return f.a.startAbs - g.a.startAbs;
+      return f.person.localeCompare(g.person, 'it');
+    });
+    return findings;
+  }
+
+  // ------------------------------------------------------------------
+  // analyzeNames
+  // ------------------------------------------------------------------
+
+  // Un nome raro (al più 2 turni) è probabilmente due nomi concatenati per errore se il
+  // suo testo, ripulito, è esattamente l'unione di altri due nomi frequenti (>= 2 turni).
+  function findConcat(n, list) {
+    var foldedN = fold(n.name);
+    for (var i = 0; i < list.length; i++) {
+      var A = list[i];
+      if (A.name === n.name || A.count < 2) continue;
+      var foldedA = fold(A.name);
+      for (var j = 0; j < list.length; j++) {
+        var B = list[j];
+        if (B.name === n.name || B.name === A.name || B.count < 2) continue;
+        if (foldedA + fold(B.name) === foldedN) return { A: A, B: B };
+      }
+    }
+    return null;
+  }
+
+  // Un nome raro (al più 2 turni) è probabilmente un refuso di un nome molto più
+  // frequente (almeno 3 volte più turni) se le due forme ripulite sono quasi identiche
+  // (distanza di Levenshtein <= 2, o <= 1 se il nome è molto corto).
+  function findSimilar(n, list) {
+    var foldedN = fold(n.name);
+    var limit = foldedN.length <= 5 ? 1 : 2;
+    var best = null;
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (o.name === n.name || o.count < 3 * n.count) continue;
+      var d = levenshtein(foldedN, fold(o.name));
+      if (d > limit) continue;
+      if (!best || d < best.d || (d === best.d && o.count > best.o.count)) best = { d: d, o: o };
+    }
+    return best ? { kind: 'similar', to: best.o.name, distance: best.d } : null;
+  }
+
+  // Aggrega gli Assignment per persona (conteggio, per ospedale, notti) e segnala i nomi
+  // sospetti: probabile concatenazione di due nomi, oppure probabile refuso di un nome
+  // frequente.
+  function analyzeNames(assignments) {
+    var map = new Map();
+    for (var i = 0; i < assignments.length; i++) {
+      var a = assignments[i];
+      var info = map.get(a.person);
+      if (!info) {
+        info = { name: a.person, count: 0, byHospital: {}, nights: 0, suspicion: null };
+        map.set(a.person, info);
+      }
+      info.count++;
+      info.byHospital[a.hospital] = (info.byHospital[a.hospital] || 0) + 1;
+      if (a.isNight) info.nights++;
+    }
+
+    var list = Array.from(map.values());
+    for (i = 0; i < list.length; i++) {
+      var n = list[i];
+      if (n.count > 2) continue; // il sospetto si valuta solo sui nomi rari
+      var concat = findConcat(n, list);
+      if (concat) {
+        n.suspicion = { kind: 'concat', parts: [concat.A.name, concat.B.name], suggestion: concat.A.name + '/' + concat.B.name };
+        continue;
+      }
+      var similar = findSimilar(n, list);
+      if (similar) n.suspicion = similar;
+    }
+
+    list.sort(function (x, y) { return x.name.localeCompare(y.name, 'it'); });
+    return list;
+  }
+
+  // ------------------------------------------------------------------
+  // searchNames
+  // ------------------------------------------------------------------
+
+  function wordsOf(name) {
+    return String(name).split(/[\s'.]+/).filter(function (w) { return w.length > 0; });
+  }
+
+  function isSubsequence(needle, hay) {
+    var i = 0;
+    for (var j = 0; j < hay.length && i < needle.length; j++) {
+      if (hay.charAt(j) === needle.charAt(i)) i++;
+    }
+    return i === needle.length;
+  }
+
+  // Punteggio di un nome rispetto a una query già "foldata": corrispondenza esatta,
+  // prefisso, prefisso di una delle parole del nome, sottostringa, sottosequenza, e
+  // infine un confronto approssimato (Levenshtein) per intercettare i refusi di ricerca.
+  function matchScore(q, originalName, foldedName) {
+    if (foldedName === q) return 1000;
+    if (foldedName.indexOf(q) === 0) return 800;
+    var words = wordsOf(originalName);
+    for (var i = 0; i < words.length; i++) {
+      if (fold(words[i]).indexOf(q) === 0) return 700;
+    }
+    if (foldedName.indexOf(q) !== -1) return 600;
+    if (isSubsequence(q, foldedName)) return 400;
+    // Refusi di digitazione: query corte tollerano un solo errore, altrimenti "fla"
+    // pescherebbe anche KASO o PASTORE.
+    var fuzzyLimit = q.length <= 5 ? 1 : 2;
+    if (q.length >= 3 && levenshtein(q, foldedName.slice(0, q.length)) <= fuzzyLimit) return 300;
+    return 0;
+  }
+
+  // Cerca tra i NameInfo per query testuale (accenti/apostrofi/maiuscole ignorati).
+  // Query vuota o di soli spazi → tutti i nomi in ordine alfabetico.
+  function searchNames(query, names) {
+    var trimmed = String(query == null ? '' : query).trim();
+    if (trimmed === '') {
+      return names.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'it'); });
+    }
+    var q = fold(trimmed);
+    if (!q) return [];
+
+    var scored = [];
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i];
+      var score = matchScore(q, n.name, fold(n.name));
+      if (score > 0) scored.push({ n: n, score: score });
+    }
+    scored.sort(function (x, y) {
+      if (x.score !== y.score) return y.score - x.score;
+      if (x.n.count !== y.n.count) return y.n.count - x.n.count;
+      return x.n.name.localeCompare(y.n.name, 'it');
+    });
+    return scored.map(function (s) { return s.n; });
+  }
+
+  // ------------------------------------------------------------------
+  // Esportazione
+  // ------------------------------------------------------------------
+
+  return {
+    buildAssignments: buildAssignments,
+    computeFindings: computeFindings,
+    analyzeNames: analyzeNames,
+    searchNames: searchNames,
+    levenshtein: levenshtein,
+    fold: fold,
+    dayIndex: dayIndex,
+    slotName: slotName,
+    timeRange: timeRange,
+    formatDate: formatDate,
+    formatRest: formatRest,
+    SEVERITY: SEVERITY,
+    KIND_LABEL: KIND_LABEL,
+  };
+})();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = TurniRules; else window.TurniRules = TurniRules;
