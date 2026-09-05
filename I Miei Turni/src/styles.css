@@ -514,7 +514,9 @@ code { font-family: var(--mono); font-size: .92em; }
    -------------------------------------------------------------------------- */
 .view { display: flex; flex-direction: column; gap: 10px; }
 
-.tablewrap { overflow: hidden; }        /* i bordi arrotondati tagliano la tabella */
+/* clip e non hidden: hidden creerebbe un contenitore di scorrimento e
+   l'intestazione di colonna resterebbe appiccicata dentro la card. */
+.tablewrap { overflow: clip; }
 
 .tab {
   width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0;

@@ -204,6 +204,7 @@
   var painted = [];          // elementi attualmente evidenziati
   var options = [];          // righe dell'elenco candidati
   var calName = null;        // nome disegnato nel calendario (fissato o in anteprima)
+  var tableWidth = 0;        // larghezza con cui sono state calcolate le colonne
 
   // ---------------------------------------------------------------------------
   // Riferimenti al DOM
@@ -652,11 +653,16 @@
       return max + 2;
     });
     var total = lens.reduce(function (x, y) { return x + y; }, 0);
+    // Percentuali (non calc(): Chrome le ignora sui <col>), ricalcolate a ogni
+    // cambio di larghezza. 38px vanno alla colonna del giorno e a quella del pallino.
+    tableWidth = tableWrap.clientWidth || 366;
+    var free = Math.max(140, tableWidth - 38);
+    var pct = function (px) { return (px / tableWidth * 100).toFixed(3) + '%'; };
     table.appendChild(el('colgroup', {}, [
-      el('col', { style: 'width:28px' }),
-      el('col', { style: 'width:10px' }),
+      el('col', { style: 'width:' + pct(28) }),
+      el('col', { style: 'width:' + pct(10) }),
     ].concat(lens.map(function (l) {
-      return el('col', { style: 'width:calc((100% - 38px) * ' + (Math.round(l / total * 1000) / 1000) + ')' });
+      return el('col', { style: 'width:' + pct(free * l / total) });
     }))));
 
     table.appendChild(el('thead', {}, el('tr', {}, [
@@ -1523,7 +1529,16 @@
     window.addEventListener('blur', endDrag);
     document.addEventListener('visibilitychange', function () { if (document.hidden) endDrag(); });
 
-    window.addEventListener('resize', measureHeader);
+    window.addEventListener('resize', function () {
+      measureHeader();
+      // Le colonne della tabella sono percentuali calcolate su una larghezza:
+      // se cambia davvero, si rifanno.
+      if (state.view === 'tabella' && Math.abs(tableWrap.clientWidth - tableWidth) > 2) {
+        renderTable();
+        indexNames();
+        applyHighlight();
+      }
+    });
     window.addEventListener('hashchange', function () {
       var before = state.month + '|' + state.pinned + '|' + state.selected;
       readHash();
