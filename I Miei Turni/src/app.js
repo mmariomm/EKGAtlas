@@ -532,6 +532,13 @@
         on: { click: function () { scrollToEl(findEl); findEl.focus({ preventScroll: true }); } },
       }));
     }
+    append(personLine, ' · ');
+    personLine.appendChild(el('button', {
+      // "Esporta", non "Calendario": sullo schermo c'è già la vista con quel nome.
+      class: 'linkbtn', type: 'button', id: 'icsBtn', text: 'Esporta',
+      'aria-label': 'Scarica i turni di ' + state.pinned + ' nel calendario',
+      on: { click: exportICS },
+    }));
     personLine.setAttribute('aria-label', personLine.textContent + '. ' + personLine.title);
   }
 
@@ -595,7 +602,7 @@
       cells.slice(w, w + 7).forEach(function (c) { row.appendChild(calCell(c, chips)); });
       calEl.appendChild(row);
     }
-    renderLegend();
+    renderLegend(chips);
   }
 
   function prevMonthDay(firstDate, back) {
@@ -637,16 +644,28 @@
     });
   }
 
-  function renderLegend() {
+  // La legenda spiega solo le lettere disegnate per quella persona: chi non fa
+  // ambulatorio non deve leggere che cos'è.
+  var LEGEND_ORDER = ['G', 'M', 'P', 'N', 'A'];
+
+  function renderLegend(chipsByDay) {
     clear(legendEl);
-    if (!calName) { legendEl.hidden = true; return; }
+    var words = new Map();
+    if (chipsByDay) {
+      chipsByDay.forEach(function (chips) {
+        chips.forEach(function (c) {
+          if (!words.has(c.letter)) words.set(c.letter, c.letter === 'G' ? 'giornata (M+P)' : c.word);
+        });
+      });
+    }
+    if (!calName || !words.size) { legendEl.hidden = true; return; }
     legendEl.hidden = false;
-    var keys = D.slotRows.map(function (row) { return row.key; });
-    var items = [];
-    if (keys.indexOf('M') !== -1 && keys.indexOf('P') !== -1) items.push(['G', 'giornata (M+P)']);
-    keys.forEach(function (k) { items.push([k, SLOT_WORD[k] || R.slotName(k).toLowerCase()]); });
-    append(legendEl, items.map(function (it) {
-      return el('span', {}, [el('b', { text: it[0] }), it[1]]);
+    var letters = Array.from(words.keys()).sort(function (x, y) {
+      var ix = LEGEND_ORDER.indexOf(x), iy = LEGEND_ORDER.indexOf(y);
+      return (ix === -1 ? 99 : ix) - (iy === -1 ? 99 : iy);
+    });
+    append(legendEl, letters.map(function (k) {
+      return el('span', {}, [el('b', { text: k }), words.get(k)]);
     }));
   }
 
@@ -1243,6 +1262,49 @@
   }
 
   function srSay(text) { if (text) srStatus.textContent = text; }
+
+  // ---------------------------------------------------------------------------
+  // Esportazione nel calendario (.ics)
+  // ---------------------------------------------------------------------------
+
+  var ICS_NOT_HERE = 'Il calendario si esporta dalla copia della pagina, non da qui.';
+  var ICS_NO_WAY = ['rejected_extension', 'extension_not_enabled', 'unavailable', 'not_granted', 'capability_disabled'];
+
+  function slug(s) {
+    return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  function exportICS() {
+    var name = state.pinned;
+    if (!name) return;
+    var data = R.buildICS(D.assignments, name, state.month, {});
+    var filename = 'turni-' + slug(name) + '-' + slug(monthName(state.month)) + '-' + state.month.slice(0, 4) + '.ics';
+
+    // Nella pagina pubblicata il salvataggio passa dalla piattaforma; altrove
+    // (copia locale, sito normale) basta il vecchio link con download.
+    if (!runtime) { saveAsFile(filename, data); return; }
+    Promise.resolve(window.claude.use('downloads')).then(function (ns) {
+      if (!ns || typeof ns.save !== 'function') { toast(ICS_NOT_HERE, true); return; }
+      return Promise.resolve(ns.save({ filename: filename, data: data })).catch(function (err) {
+        var code = (err && err.code) || 'errore';
+        if (code === 'declined') return;
+        toast(ICS_NO_WAY.indexOf(code) !== -1 ? ICS_NOT_HERE : 'Esportazione non riuscita (' + code + ').', true);
+      });
+    }).catch(function () { toast(ICS_NOT_HERE, true); });
+  }
+
+  function saveAsFile(filename, data) {
+    try {
+      var url = URL.createObjectURL(new Blob([data], { type: 'text/calendar;charset=utf-8' }));
+      var link = el('a', { href: url, download: filename });
+      document.body.appendChild(link);
+      link.click();
+      window.setTimeout(function () { link.remove(); URL.revokeObjectURL(url); }, 0);
+    } catch (e) {
+      toast('Esportazione non riuscita.', true);
+    }
+  }
 
   function toast(message, isError) {
     var node = el('div', { class: 'toast' + (isError ? ' is-error' : ''), role: 'status' }, [
