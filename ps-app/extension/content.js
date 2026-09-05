@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.27.0";
+  const VERSION = "3.27.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -856,6 +856,37 @@
   // una riga per analita. Così la scheda del paziente è una sola, alimentata
   // da tutt'e due le finestre — comprese quelle ancora PARZIALI, che restano
   // marcate come tali.
+  // La finestra Risultati porta TUTTA la richiesta («PT, PTT POC, EMOCROMO
+  // URGENTE»): un valore va attribuito al SUO esame dentro il pacchetto, o
+  // due richieste che differiscono per un esame in più segnerebbero come
+  // «fatta con un'altra macchina» ogni riga. Si sceglie l'esame che parla
+  // della stessa sezione dell'analita; se non è uno solo, resta il pacchetto.
+  const ESAME_DI = {
+    "Emocromo": /EMOCROM|EMOCITOM/i,
+    "Coagulazione": /\bPT\b|\bPTT\b|\bINR\b|FIBRIN|D.?DIM|COAGUL|ANTITROMB/i,
+    "Biochim": /\bPCR\b|PROTEINA C|PROCALC|\bPCT\b|\bVES\b|TROPON|BNP|\bCPK\b|CK.?MB|MIOGLOB|\bLDH\b/i,
+    "Organi": /CREATININ|AZOT|\bUREA\b|\bAST\b|\bALT\b|TRANSAMIN|\bGGT\b|GAMMA.?GT|γ.?GT|FOSFATASI|BILIRUB|AMILAS|LIPAS|ALBUMIN|AMMON/i,
+    "Elettroliti e metabolismo": /SODIO|POTASSIO|CLORO|CALCIO|MAGNESIO|ELETTROL|GLUC|GLICEM|GLICAT|HBA1C|\bTSH\b|EMOGAS|\bEGA\b/i,
+    "Emogas": /EMOGAS|\bEGA\b/i,
+    "Urine e altri liquidi": /URIN|LIQU|STICK/i,
+  };
+  // PT e PTT viaggiano quasi sempre insieme: la sezione non basta a dire
+  // quale dei due è il SUO, la sigla sì.
+  const ESAME_DI_SIGLA = {
+    PT: /\bPT\b|PROTROMB/i, INR: /\bPT\b|PROTROMB|\bINR\b/i, PTT: /\bPTT\b|TROMBOPLASTINA/i, Fib: /FIBRIN/i, DD: /D.?DIM/i,
+  };
+  function esameDiRiga(exams, label, nome) {
+    const tutti = (Array.isArray(exams) ? exams : []).map((x) => String(x || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+    const pacchetto = String(label || "").replace(/\s+/g, " ").trim();
+    if (tutti.length < 2) return pacchetto;
+    const sg = sigla(nome);
+    for (const re of [ESAME_DI_SIGLA[sg], ESAME_DI[sezioneDi(sg)[0]]]) {
+      const miei = re ? tutti.filter((x) => re.test(x)) : [];
+      if (miei.length === 1) return miei[0];
+    }
+    return pacchetto;
+  }
+
   function prelievoComeTabella(meta, rows, cf, scartate = []) {
     // La colonna vuole giorno E ora completi: «10/07 22:23» come lo scrive
     // la lista Esiti non dice l'anno, e sia il confronto con «oggi» sia
@@ -873,7 +904,7 @@
     const date = [{ data, ora, label, chiave: label + "#1", titolo: String(meta?.label || "").replace(/\s+/g, " ").trim() }];
     const righe = rows.filter((r) => r.nome && String(r.valore).trim()).map((r, i) => ({
       nome: String(r.nome).replace(/\s+/g, " ").trim(),
-      esame: String(meta?.label || "").replace(/\s+/g, " ").trim(),
+      esame: esameDiRiga(meta?.exams, meta?.label, r.nome),
       codice: "", mnem: "", pos: i,
       valori: [{
         v: String(r.valore).trim(), stato: outOfRange(r.valore, r.range),
