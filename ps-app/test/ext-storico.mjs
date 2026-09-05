@@ -74,11 +74,12 @@ await paziente.waitForTimeout(600);
 check(/serve il codice fiscale/.test(await $panel(paziente, ".bd").innerText()),
   "prima dei valori dice perché non può attribuirsi lo storico");
 await $panel(paziente, "#risall").click();
-await paziente.waitForSelector("#psassist-host #apristorico", { timeout: 20000 });
+await paziente.waitForSelector("#psassist-host .sttab", { timeout: 20000 });
 await paziente.waitForTimeout(1200);   // la scheda clinica si completa coi prelievi letti
-check(true, "caricati i valori, lo Storico compare");
-await paziente.locator("#psassist-host #apristorico").click();
-await paziente.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
+// non c'è più una schermata a parte: la tabella del portale È la tabella
+// degli Esiti, e ci si arriva senza aprire niente
+check((await paziente.locator("#psassist-host .sec .sttab").count()) === 1,
+  "caricati i valori, la tabella è lì negli Esiti");
 const tab = await paziente.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
   return {
@@ -105,7 +106,9 @@ check(tab.rosse >= 6, `i fuori range restano marcati (got ${tab.rosse})`);
 check(tab.hb.length === 1 && /^10\.4↓\|11\.8↓\|13\.2\|/.test(tab.hb[0]),
   `il prelievo più recente per primo, e l'emoglobina è UNA riga sola (got ${tab.hb.join(" / ") || "nessuna"})`);
 // stessa riga, macchine diverse: il valore porta un asterisco e sotto la
-// tabella c'è scritto con che cosa è stato fatto
+// tabella c'è scritto con che cosa è stato fatto — anche dopo che la scheda
+// d'archivio è stata rifusa coi prelievi di questa pagina (una cella tiene
+// il SUO esame, non quello della riga)
 check(tab.segni >= 1 && tab.legenda.length >= 1,
   `la provenienza diversa è segnata e spiegata (${tab.segni} segni · ${tab.legenda[0] || "nessuna legenda"})`);
 check(tab.sezioni.includes("Emocromo") && tab.sezioni.includes("Organi"),
@@ -155,8 +158,8 @@ check((await portale.locator("#psassist-host").count()) === 0,
 await paziente.reload();
 await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 await paziente.locator('#psassist-host [data-seg="esiti"]').click();
-await paziente.waitForTimeout(1000);
-check((await paziente.locator("#psassist-host #apristorico").count()) === 1,
+await paziente.waitForSelector("#psassist-host .sttab", { timeout: 15000 }).catch(() => {});
+check((await paziente.locator("#psassist-host .sttab").count()) === 1,
   "e lo storico letto prima è ancora lì: quella pagina non ha cancellato niente");
 
 // ---- una scheda per paziente, e mai i valori di un altro ----------------
@@ -172,18 +175,17 @@ await portale.waitForFunction(
 await paziente.reload();
 await paziente.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 await paziente.locator('#psassist-host [data-seg="esiti"]').click();
-await paziente.waitForSelector("#psassist-host #apristorico", { timeout: 15000 });
-await paziente.locator("#psassist-host #apristorico").click();
-await paziente.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
+await paziente.waitForSelector("#psassist-host .sttab", { timeout: 15000 });
 const suoi = await paziente.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
   return { testo: r.querySelector(".sttab").textContent.replace(/\s+/g, " "),
-           hint: r.querySelector(".sec .hint")?.textContent?.replace(/\s+/g, " ") || "" };
+           hint: [...r.querySelectorAll(".sec .hint")].map((h) => h.textContent.replace(/\s+/g, " ").trim())
+             .find((t) => /Con lo storico del portale/.test(t)) || "" };
 });
 check(!/1\.1|1\.2|1\.3/.test(suoi.testo),
   `i valori dell'omonimo col codice fiscale diverso non compaiono (got: ${suoi.testo.slice(0, 60)})`);
 check(/10\.4/.test(suoi.testo), "e ci sono ancora i suoi");
-check(/codice fiscale/.test(suoi.hint), "la scheda mostrata è scelta sul codice fiscale");
+check(/codice fiscale/.test(suoi.hint), `la scheda mostrata è scelta sul codice fiscale (got: ${suoi.hint.slice(0, 90) || "nessuna riga"})`);
 
 // e la striscia sul portale dice quante schede ci sono in memoria
 const contate = await portale.evaluate(() =>
@@ -197,12 +199,16 @@ await paziente.locator('#psassist-host [data-seg="richieste"]').click();
 await paziente.waitForTimeout(200);
 await paziente.locator('#psassist-host [data-seg="esiti"]').click();
 await paziente.waitForTimeout(1200);
+// In tabella restano SOLO i prelievi letti su questa pagina, che sono di
+// questo episodio: la scheda in archivio, che è di un altro, non entra.
 const senza = await paziente.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
-  return { bottone: r.querySelectorAll("#apristorico").length, tabelle: r.querySelectorAll(".sttab").length,
+  return { colonne: r.querySelectorAll(".sttab thead th").length - 1,
+           testo: r.querySelector(".sttab")?.textContent?.replace(/\s+/g, " ") || "",
            avviso: (/In memoria[^.]{0,80}/.exec(r.textContent.replace(/\s+/g, " ")) || [""])[0] };
 });
-check(senza.bottone === 0 && senza.tabelle === 0, "di un paziente senza scheda non si apre niente");
+check(!/10\.4|11\.8|13\.2/.test(senza.testo) && senza.colonne <= 2,
+  `di un paziente senza scheda non si mostrano i valori di un altro (got ${senza.colonne} colonne: ${senza.testo.slice(0, 60)})`);
 check(/non di questo paziente/.test(senza.avviso) && /ROSSI MARIO/.test(senza.avviso),
   `e il pannello dice cosa ha in memoria (got: ${senza.avviso})`);
 
@@ -268,9 +274,7 @@ await port2.waitForFunction(
 await p2.reload();
 await p2.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 await p2.locator('#psassist-host [data-seg="esiti"]').click();
-await p2.waitForTimeout(800);
-await p2.locator("#psassist-host #apristorico").click().catch(() => {});
-await p2.waitForTimeout(500);
+await p2.waitForTimeout(1200);
 const via = await p2.locator("#psassist-host .bd").innerText().catch(() => "");
 check(/paziente da cui l'hai aperta/.test(via),
   `l'identità è il paziente da cui hai aperto il portale (got ${(/identità confermata dal ([^.]*)/.exec(via) || [])[1] || "niente"})`);

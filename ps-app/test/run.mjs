@@ -59,6 +59,20 @@ async function newPage(browser, mock) {
 
 const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`); // pierces open shadow DOM
 
+// «⭳ Carica i valori» legge OGNI prelievo, uno alla volta: si aspetta che la
+// tabella abbia le sue colonne e che il bottone sia tornato pronto — finché
+// gira porta scritto «↻ 1/2…» e la schermata si ridisegna a ogni passo.
+async function attendiTabella(page, nCol, timeout = 25000) {
+  await page.waitForFunction(
+    (n) => {
+      const r = document.getElementById("psassist-host").shadowRoot;
+      const b = r.querySelector("#risall");
+      return r.querySelectorAll(".sttab thead th").length === n + 1 && (!b || !b.disabled);
+    },
+    nCol, { timeout },
+  );
+}
+
 async function selectExams(page, labels) {
   // one-line catalog search + dropdown
   for (const { text } of labels) {
@@ -1077,52 +1091,67 @@ async function scenarioRisultati(browser) {
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, '[data-seg="esiti"]').click();
-  const vals = page.locator('#psassist-host [data-esito][data-kind="valori"]');
-  check(scen, (await vals.count()) === 2, `2 accessi con valori (got ${await vals.count()})`);
+  await page.waitForSelector("#psassist-host .sec", { timeout: 15000 });
+  // I prelievi non sono più righe da aprire: sono le colonne di UNA tabella,
+  // e finché non li si chiede la tabella non c'è.
+  check(scen, (await page.locator('#psassist-host [data-esito][data-kind="valori"]').count()) === 0,
+    "i prelievi non sono più righe da aprire");
+  check(scen, (await page.locator("#psassist-host .sttab").count()) === 0, "e all'arrivo non c'è nessuna tabella");
+  check(scen, /2 prelievi ancora da leggere/.test(await $panel(page, ".sec").first().innerText()),
+    "la schermata dice quanti prelievi ci sono da leggere");
 
-  // previews are there on arrival: BOTH draws are fetched in the background,
-  // and the marks need the older one to compare against
   // I valori non si leggono da soli: si chiedono. È il bottone che li carica.
   await $panel(page, "#risall").click();
-  await page.waitForFunction(
-    () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
-    { timeout: 25000 },
-  );
-  const prev = await $panel(page, ".eprev").first().innerText();
-  // names abbreviated, every draw in the SAME order (the newest fixes it),
-  // and a change vs the previous draw carries its mark
-  check(scen, /^GB 6\.4 · Hb 80↓▼/.test(prev.trim()), `anteprima in ordine condiviso, variazione marcata (got: ${prev.trim().slice(0, 44)})`);
-  const prevAll = await $panel(page, ".eprev").allInnerTexts();
-  check(scen, prevAll.length === 2 && prevAll.every((t) => /^GB /.test(t.trim())), "i due prelievi elencano gli esami nello stesso ordine");
-  check(scen, !/▲|▼/.test(prevAll[1]), "il prelievo più vecchio non ha marchi (non ha un precedente)");
+  await attendiTabella(page, 2);
+  const lbl = (await $panel(page, ".sec .lbl").first().innerText()).replace(/\s+/g, " ");
+  check(scen, /valori \(4 esami · 2 prelievi\)/i.test(lbl), `l'intestazione conta esami e prelievi (got: ${lbl.slice(0, 40)})`);
 
-  // one tap opens the full values screen
-  await vals.first().click();
-  await page.waitForSelector("#psassist-host .rval", { timeout: 8000 });
-  const rows = await page.locator("#psassist-host .rval").allInnerTexts();
-  check(scen, rows.length === 4, `tutti i valori, compreso quello dal nome sconosciuto (got ${rows.length})`);
-  const bad = await page.locator("#psassist-host .rval.bad").allInnerTexts();
-  check(scen, bad.length === 1 && /Hb/.test(bad[0]) && /↓/.test(bad[0]), "solo il fuori range è segnalato");
+  const tab = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    const testa = [...r.querySelectorAll(".sttab thead th")].slice(1);
+    const righe = [...r.querySelectorAll(".sttab tbody tr:not(.stsez)")].map((tr) => ({
+      nome: tr.cells[0].firstChild.textContent.trim(),
+      grezza: tr.cells[0].classList.contains("grezza"),
+      celle: [...tr.cells].slice(1).map((c) => ({ t: c.textContent.trim(), fuori: c.classList.contains("fuori") })),
+    }));
+    return {
+      colonne: testa.map((th) => ({ titolo: th.getAttribute("title"), ultima: th.classList.contains("ultima") })),
+      righe,
+    };
+  });
+  // il più recente a SINISTRA, ogni colonna con la sua richiesta nel tooltip
+  check(scen, tab.colonne.length === 2 && tab.colonne[0].ultima && !tab.colonne[1].ultima,
+    "due colonne, e la prima è marcata come l'ultimo prelievo");
+  check(scen, /^23\/08\/2026 07:28 · EMOCROMOCITOMETRICO URGENTE/.test(tab.colonne[0].titolo || "")
+    && /^22\/08\/2026 22:23 · PT, EMOCROMOCITOMETRICO URGENTE/.test(tab.colonne[1].titolo || ""),
+    `il più recente a sinistra, con data, ora e richiesta (got: ${tab.colonne.map((c) => c.titolo).join(" | ").slice(0, 70)})`);
+  // nomi in sigla, e OGNI analita una riga sola: i due prelievi si leggono per
+  // confronto sulla stessa riga, non due elenchi da rimettere in ordine
+  check(scen, tab.righe.length === 4, `tutti i valori, compreso quello dal nome sconosciuto (got ${tab.righe.length})`);
+  check(scen, tab.righe.map((r) => r.nome).join(",") === "GB,Hb,Ht,Ricerca sangue occulto",
+    `nomi in sigla, per esteso solo quelli non in elenco (got: ${tab.righe.map((r) => r.nome).join(",")})`);
+  const hb = tab.righe.find((r) => r.nome === "Hb");
+  check(scen, hb && hb.celle.length === 2 && /^80↓/.test(hb.celle[0].t) && /^95↓/.test(hb.celle[1].t),
+    `l'emoglobina è UNA riga con i due prelievi (got: ${hb ? hb.celle.map((c) => c.t).join(" | ") : "nessuna"})`);
+  // solo il fuori range è segnalato, e solo dove è fuori
+  const fuori = tab.righe.filter((r) => r.celle.some((c) => c.fuori)).map((r) => r.nome);
+  check(scen, fuori.join(",") === "Hb", `solo il fuori range è segnalato (got: ${fuori.join(",") || "nessuno"})`);
   const rosso = await page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot;
-    const row = r.querySelector(".rval.bad");
-    const nome = getComputedStyle(row.querySelector(".rvn")).color;
-    const val = getComputedStyle(row.querySelector(".rvv")).color;
-    return { nome, val };
+    const cella = r.querySelector(".sttab td.fuori");
+    return { nome: getComputedStyle(cella.closest("tr").cells[0]).color, val: getComputedStyle(cella).color };
   });
   check(scen, /179, 38, 30/.test(rosso.val) && !/179, 38, 30/.test(rosso.nome), `in rosso c'è solo il valore (${rosso.val} vs ${rosso.nome})`);
 
-  // copy them for the diario
+  // copy the whole table for the diario, with the names spelled out
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await $panel(page, "#copyvals").click();
+  await $panel(page, "#storcopy").click();
   await page.waitForTimeout(300);
   const clip = await page.evaluate(() => navigator.clipboard.readText());
-  check(scen, /Emoglobina 80 g\/L \(135 - 180\) ↓/.test(clip), `copia valori pronta da incollare (got: ${clip.split("\n")[1] || clip.slice(0, 40)})`);
-
-  const before = hits(mock, "RcsAccessiRisultatiElenco");
-  await $panel(page, "#risreload").click();
-  await page.waitForTimeout(600);
-  check(scen, hits(mock, "RcsAccessiRisultatiElenco") === before + 1, "↻ rilegge dal server");
+  check(scen, /^Esame\t23\/08\/2026 07:28\t22\/08\/2026 22:23/.test(clip),
+    `la copia parte dalle colonne, in ordine (got: ${clip.split("\n")[0]})`);
+  check(scen, /Emoglobina\t80 \(basso\)\t95 \(basso\)/.test(clip),
+    `coi nomi per esteso e il fuori range scritto (got: ${(clip.split("\n").find((l) => /Emoglobina/.test(l)) || "").slice(0, 60)})`);
   await context.close();
 }
 
@@ -1209,26 +1238,27 @@ async function scenarioAggiornaTutti(browser) {
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, '[data-seg="esiti"]').click();
   // I valori non si leggono da soli: si chiedono. È il bottone che li carica.
+  check(scen, /⭳ Carica i valori/.test(await $panel(page, "#risall").innerText()),
+    "prima di leggere niente il bottone invita a caricare");
   await $panel(page, "#risall").click();
-  await page.waitForFunction(
-    () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
-    { timeout: 25000 },
-  );
+  await attendiTabella(page, 2);
+  check(scen, /↻ Aggiorna/.test(await $panel(page, "#risall").innerText()),
+    "letti i prelievi, lo stesso bottone diventa «↻ Aggiorna»");
   const prima = hits(mock, "RcsAccessiRisultatiElenco");
   // the lab has updated a value since the prefetch
   mock.state.hbNuova = "92";
   await $panel(page, "#risall").click();
-  await page.waitForFunction(
-    () => {
-      const r = document.getElementById("psassist-host").shadowRoot;
-      const b = r.querySelector("#risall");
-      return b && !b.disabled;
-    },
-    { timeout: 20000 },
-  );
+  await attendiTabella(page, 2, 20000);
   check(scen, hits(mock, "RcsAccessiRisultatiElenco") === prima + 2, "rilegge ogni prelievo aperto, una volta ciascuno");
-  const prev = await $panel(page, ".eprev").first().innerText();
-  check(scen, /Hb 92/.test(prev), `l'anteprima mostra il valore nuovo (got: ${prev.trim().slice(0, 30)})`);
+  // il valore nuovo è nella colonna del prelievo giusto, quella più recente
+  const hb = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    const tr = [...r.querySelectorAll(".sttab tbody tr:not(.stsez)")]
+      .find((x) => x.cells[0].firstChild.textContent.trim() === "Hb");
+    return tr ? [...tr.cells].slice(1).map((c) => c.textContent.trim()) : [];
+  });
+  check(scen, /^92↓/.test(hb[0] || "") && /^95↓/.test(hb[1] || ""),
+    `la tabella mostra il valore nuovo nella colonna dell'ultimo prelievo (got: ${hb.join(" | ")})`);
   const reg = await page.evaluate(() => JSON.parse(sessionStorage.getItem("psassist:log.999001") || "{}").lines?.join("\n") || "");
   check(scen, /aggiornati 2 prelievi, 1 con valori nuovi/.test(reg), "il Registro dice quanti sono cambiati");
   await context.close();
@@ -1243,35 +1273,47 @@ async function scenarioNuoviValori(browser) {
   await $panel(page, '[data-seg="esiti"]').click();
   // I valori non si leggono da soli: si chiedono. È il bottone che li carica.
   await $panel(page, "#risall").click();
-  await page.waitForFunction(
-    () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
-    { timeout: 25000 },
-  );
-  check(scen, (await page.locator("#psassist-host .tagn").count()) === 0, "alla prima lettura nulla è «nuovo»");
+  await attendiTabella(page, 2);
+  check(scen, (await page.locator("#psassist-host .sttab td.nuovo, #psassist-host .sttab td.agg").count()) === 0,
+    "alla prima lettura nulla è «nuovo»: quella lettura È il riferimento");
+  check(scen, (await page.locator("#psassist-host .newbar").count()) === 0, "e non c'è niente da annunciare");
 
   // the laboratory completes the panel: one value moves, one analyte appears
   mock.state.hbNuova = "92";
   mock.state.extraRow = { nome: "Sodio", valore: "128", um: "mmol/L", range: "136 - 145" };
   await $panel(page, "#risall").click();
   await page.waitForFunction(
-    () => { const b = document.getElementById("psassist-host").shadowRoot.querySelector("#risall"); return b && !b.disabled; },
+    () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".sttab td.nuovo, .sttab td.agg").length === 2,
     { timeout: 20000 },
   );
-  const pill = await $panel(page, ".tagn").first().innerText();
-  check(scen, /2 nuovi/.test(pill), `la riga chiusa conta le novità (got: ${pill})`);
-  check(scen, (await page.locator("#psassist-host .eprev .pit.nuovo").count()) === 1, "l'esame comparso è evidenziato per intero");
-  check(scen, (await page.locator("#psassist-host .eprev .pv.agg").count()) === 1, "del valore cambiato si evidenzia solo il numero");
-  const tinted = await page.locator("#psassist-host .eprev .pit.nuovo").first().innerText();
-  check(scen, /Na 128/.test(tinted), `il nuovo esame è quello arrivato (got: ${tinted.trim()})`);
+  await attendiTabella(page, 2, 20000);
+  check(scen, /2 valori nuovi dall'ultima lettura/.test(await $panel(page, ".newbar").innerText()),
+    "la striscia annuncia quanti sono");
+  const marcate = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    const sigla = (td) => td.closest("tr").cells[0].firstChild.textContent.trim();
+    const dove = (td) => [...td.closest("tr").cells].indexOf(td);
+    return { nuovo: [...r.querySelectorAll(".sttab td.nuovo")].map((td) => [sigla(td), td.textContent.trim(), dove(td)]),
+             agg: [...r.querySelectorAll(".sttab td.agg")].map((td) => [sigla(td), td.textContent.trim(), dove(td)]) };
+  });
+  check(scen, marcate.nuovo.length === 1 && marcate.nuovo[0][0] === "Na" && /^128↓/.test(marcate.nuovo[0][1]),
+    `l'analita comparso è marcato «nuovo» (got: ${JSON.stringify(marcate.nuovo)})`);
+  check(scen, marcate.agg.length === 1 && marcate.agg[0][0] === "Hb" && /^92↓/.test(marcate.agg[0][1]),
+    `il valore cambiato è marcato «aggiornato», e i due marchi restano distinti (got: ${JSON.stringify(marcate.agg)})`);
+  check(scen, marcate.nuovo[0][2] === 1 && marcate.agg[0][2] === 1,
+    "e i marchi stanno nella colonna del prelievo riletto, non sugli altri");
+  // il rosso non si perde per strada: la novità viaggia su un canale suo
+  check(scen, (await page.locator("#psassist-host .sttab td.agg.fuori, #psassist-host .sttab td.nuovo.fuori").count()) === 2,
+    "un valore nuovo fuori range resta anche fuori range");
 
-  // opening the draw shows the banner; leaving it clears the marks
-  await page.locator('#psassist-host [data-esito][data-kind="valori"]').first().click();
-  await page.waitForSelector("#psassist-host .rval", { timeout: 8000 });
-  check(scen, /2 valori nuovi/.test(await $panel(page, ".newbar").innerText()), "la schermata valori annuncia quanti sono");
-  check(scen, (await page.locator("#psassist-host .rval.nuova").count()) === 2, "e li ancora nelle loro righe, senza riordinare");
-  await $panel(page, "#back").click();
-  await page.waitForSelector("#psassist-host [data-esito]", { timeout: 8000 });
-  check(scen, (await page.locator("#psassist-host .tagn").count()) === 0, "uscendo dai valori i marchi si spengono: sono stati letti");
+  // «Letto»: da qui in poi le novità si contano da adesso, per tutti i prelievi
+  await $panel(page, "#letto").click();
+  await page.waitForTimeout(300);
+  check(scen, (await page.locator("#psassist-host .sttab td.nuovo, #psassist-host .sttab td.agg").count()) === 0,
+    "«Letto» spegne i marchi: sono stati visti");
+  check(scen, (await page.locator("#psassist-host .newbar").count()) === 0, "e la striscia sparisce con loro");
+  check(scen, (await page.locator("#psassist-host .sttab tbody tr:not(.stsez)").count()) === 5,
+    "i valori restano tutti in tabella: si spegne il marchio, non la riga");
   await context.close();
 }
 
@@ -1324,31 +1366,36 @@ async function scenarioNomiInattesi(browser) {
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, '[data-seg="esiti"]').click();
-  await page.waitForSelector("#psassist-host [data-esito]", { timeout: 10000 });
-  await page.locator('#psassist-host [data-esito][data-kind="valori"]').first().click();
-  await page.waitForSelector("#psassist-host .rval", { timeout: 10000 });
+  await page.waitForSelector("#psassist-host .sec", { timeout: 10000 });
+  await $panel(page, "#risall").click();
+  await attendiTabella(page, 2);
 
   const avviso = await $panel(page, ".avvnomi").innerText().catch(() => "");
   check(scen, /nome non in elenco|nomi non in elenco/.test(avviso), `avvisa dei nomi che non conosce (got: ${avviso})`);
+  // La finestra Risultati ha una riga che il programma non sa leggere
+  // («Aspetto del campione = limpido»): viaggia con la tabella, e l'avviso
+  // la conta — un buco che il medico non deve scoprire da solo.
   check(scen, /riga non letta|righe non lette/.test(avviso), `e delle righe che non ha letto (got: ${avviso})`);
 
   // il nome sconosciuto è scritto per esteso, non abbreviato a caso
-  const testo = await $panel(page, ".rvals").innerText();
-  check(scen, /Ricerca sangue occulto/.test(testo) && !/^Ricerca$/m.test(testo),
+  const tabella = await $panel(page, ".sttab").innerText();
+  check(scen, /Ricerca sangue occulto/.test(tabella) && !/^Ricerca$/m.test(tabella),
     "un nome non in elenco è scritto per esteso, non ridotto a un'ipotesi");
-  check(scen, /POSITIVO/.test(testo), "e il suo valore c'è");
-  check(scen, (await page.locator("#psassist-host .rvn.grezza").count()) >= 1,
+  check(scen, /POSITIVO/.test(tabella), "e il suo valore c'è");
+  check(scen, (await page.locator("#psassist-host .sttab th.stn.grezza").count()) === 1,
     "ed è marcato come non riconosciuto");
 
   // «quali» mostra esattamente cosa è rimasto fuori
   await $panel(page, "#avvnomi").click();
   await page.waitForTimeout(200);
   const elenco = await $panel(page, ".avvlista").innerText();
+  check(scen, /Non in elenco: Ricerca sangue occulto/.test(elenco.replace(/\s+/g, " ")),
+    `il nome non in elenco è mostrato per esteso (got: ${elenco.replace(/\n/g, " · ").slice(0, 90)})`);
   check(scen, /Aspetto del campione/.test(elenco) && /limpido/.test(elenco),
     `la riga non letta è mostrata con nome e valore (got: ${elenco.replace(/\n/g, " · ").slice(0, 90)})`);
 
   // e i valori conosciuti non vengono toccati
-  check(scen, /Hb/.test(testo) && /GB/.test(testo), "gli esami noti restano con la loro sigla");
+  check(scen, /\bHb\b/.test(tabella) && /\bGB\b/.test(tabella), "gli esami noti restano con la loro sigla");
   await context.close();
 }
 
@@ -1723,12 +1770,11 @@ async function scenarioValoriRefertati(browser) {
   // both draws must be read before the laboratory reports, or there is nothing to keep
   // I valori non si leggono da soli: si chiedono. È il bottone che li carica.
   await $panel(page, "#risall").click();
-  await page.waitForFunction(
-    () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".eprev").length === 2,
-    { timeout: 25000 },
-  );
-  const aperti = await page.locator('#psassist-host [data-esito][data-kind="valori"]').count();
-  check(scen, aperti === 2, `i prelievi aperti sono in elenco (got ${aperti})`);
+  await attendiTabella(page, 2);
+  const testeprima = await page.evaluate(() =>
+    [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".sttab thead th")].slice(1)
+      .map((th) => th.getAttribute("title")));
+  check(scen, testeprima.length === 2, `i due prelievi sono le colonne della tabella (got ${testeprima.length})`);
 
   // After: the laboratory reports and the LIS takes the window away.
   const dopo = createMock({});                     // stesso episodio, niente icona Risultati
@@ -1740,23 +1786,31 @@ async function scenarioValoriRefertati(browser) {
     while (out.status === 302 && hops++ < 5) out = dopo.handle({ method: "GET", url: new URL(out.headers.location, req.url()).href });
     await route.fulfill({ status: out.status, headers: out.headers, body: out.body });
   });
+  const chiamate = dopo.state.requests.length;
   await page.goto(dopo.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, '[data-seg="esiti"]').click();
-  await page.waitForSelector("#psassist-host [data-esito]", { timeout: 20000 });
+  await page.waitForSelector("#psassist-host .sttab", { timeout: 20000 });
 
-  const righe = await page.locator('#psassist-host [data-esito][data-kind="valori"]').count();
-  check(scen, righe === 2, `i valori già letti restano in elenco (got ${righe})`);
-  check(scen, /già letti/.test(await $panel(page, ".sec").innerText()), "e sono marcati «già letti»");
-  const prev = await $panel(page, ".eprev").first().innerText().catch(() => "");
-  check(scen, /Hb 80/.test(prev), `l'anteprima li mostra ancora (got: ${prev.slice(0, 26)})`);
-
-  // opening one goes straight to the values, without asking the server again
-  const chiamate = dopo.state.requests.length;
-  await page.locator('#psassist-host [data-esito][data-kind="valori"]').first().click();
-  await page.waitForSelector("#psassist-host .rval", { timeout: 8000 });
-  check(scen, (await page.locator("#psassist-host .rval").count()) === 4, "aprendoli ci sono tutti");
-  check(scen, dopo.state.requests.length === chiamate, "senza rileggere dal server");
+  const tab = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    const tr = [...r.querySelectorAll(".sttab tbody tr:not(.stsez)")]
+      .find((x) => x.cells[0].firstChild.textContent.trim() === "Hb");
+    return { teste: [...r.querySelectorAll(".sttab thead th")].slice(1).map((th) => th.getAttribute("title")),
+             righe: r.querySelectorAll(".sttab tbody tr:not(.stsez)").length,
+             hb: tr ? [...tr.cells].slice(1).map((c) => c.textContent.trim()) : [],
+             risall: r.querySelectorAll("#risall").length };
+  });
+  // la finestra Risultati non c'è più: quei prelievi restano COLONNE, coi
+  // loro valori e la loro ora — sono nostri, li abbiamo letti noi
+  check(scen, tab.teste.length === 2 && tab.teste.join("|") === testeprima.join("|"),
+    `i prelievi già letti restano colonne della tabella (got ${tab.teste.join(" | ")})`);
+  check(scen, tab.righe === 4, `con tutti i loro valori (got ${tab.righe} analiti)`);
+  check(scen, /^80↓/.test(tab.hb[0] || "") && /^95↓/.test(tab.hb[1] || ""),
+    `la tabella li mostra ancora (got: ${tab.hb.join(" | ") || "niente"})`);
+  // niente più da leggere: non c'è nemmeno il bottone per rileggerli
+  check(scen, tab.risall === 0, "e non c'è più niente da caricare: quelle finestre non rispondono più");
+  check(scen, dopo.state.requests.length === chiamate + 1, "senza rileggere dal server: solo la pagina del paziente");
   await context.close();
 }
 
@@ -1886,7 +1940,7 @@ const scenarios = [
   ["rx singles (torace/addome)", scenarioRxSingles],
   ["lab + rx: two richieste, one flow", scenarioLabPlusRx],
   ["lab + rx manual walk", scenarioLabPlusRxManual],
-  ["risultati inline", scenarioRisultati],
+  ["valori: una tabella, una colonna per prelievo", scenarioRisultati],
   ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],
   ["valori nuovi e aggiornati dopo il refresh", scenarioNuoviValori],
   ["referto RX letto come testo", scenarioRefertoTesto],
@@ -1897,7 +1951,7 @@ const scenarios = [
   ["rilancio su pagina esami: nessun doppio ordine", scenarioRilancioPaginaEsami],
   ["un nome col markup dentro non rompe il pannello", scenarioNomeConHtml],
   ["emogas: sceglie sempre la versione NEW", scenarioEmogasNew],
-  ["valori tenuti dopo la refertazione", scenarioValoriRefertati],
+  ["prelievi refertati: restano colonne della tabella", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],
   ["no-patient page has no exams", scenarioNoPatientPage],

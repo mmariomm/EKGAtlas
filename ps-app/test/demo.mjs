@@ -44,6 +44,13 @@ const apri = async (q = "") => {
   await page.goto("https://banco.test/" + q);
   await page.waitForSelector("#psassist-host", { state: "attached", timeout: 20000 });
 };
+// «⭳ Carica i valori» legge OGNI prelievo, uno alla volta: si aspetta la
+// tabella e il bottone di nuovo pronto (mentre gira porta scritto «↻ 3/6…»).
+const attendiTabella = (timeout = 30000) => page.waitForFunction(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  const b = r.querySelector("#risall");
+  return !!r.querySelector(".sttab") && (!b || !b.disabled);
+}, { timeout });
 
 console.log("\nbanco di prova — pagine vere del gestionale");
 await apri();
@@ -87,31 +94,44 @@ await $('[data-seg="esiti"]').click();
 await page.waitForSelector("#psassist-host [data-esito]", { state: "attached", timeout: 20000 });
 const nEsiti = await $("[data-esito]").count();
 check(nEsiti >= 4, `gli Esiti arrivano dalla pagina vera (${nEsiti} righe)`);
-// i valori non si leggono da soli: si chiedono
+// i valori non si leggono da soli: si chiedono, e arrivano in UNA tabella
+check(await $(".sttab").count() === 0, "prima di chiederli non c'è nessuna tabella");
 await $("#risall").click();
-await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelector(".eprev"), { timeout: 30000 }).catch(() => {});
-const prev = await $(".eprev").first().innerText().catch(() => "");
-check(/\bHb\b|\bGB\b/.test(prev), `l'anteprima legge i valori veri, in sigla (${prev.replace(/\s+/g, " ").slice(0, 44)})`);
-await $('[data-esito][data-kind="valori"]').first().click();
-await page.waitForSelector("#psassist-host .rval", { state: "attached", timeout: 20000 });
-check(await $(".rval").count() >= 8, "la schermata valori elenca tutto l'emocromo");
-check(await $(".rval.bad").count() >= 1, "e segna i fuori range");
-
-await $("#back").click();
-await page.waitForSelector("#psassist-host [data-esito]", { state: "attached" });
-// ---- i prelievi letti entrano nella scheda del paziente: per gruppo, una colonna a prelievo
-check(await $("#apristorico").count() === 1, "e i valori letti compaiono come Storico negli Esiti");
-await $("#apristorico").click();
-await page.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
+await attendiTabella(30000);
 const daFinestra = await page.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
-  return { sezioni: [...r.querySelectorAll(".sttab tr.stsez")].map((t) => t.textContent.trim()),
-           colonne: r.querySelectorAll(".sttab thead th").length - 1 };
+  return { sezioni: [...r.querySelectorAll(".sttab tr.stsez th.stn")].map((t) => t.textContent.trim()),
+           colonne: r.querySelectorAll(".sttab thead th").length - 1,
+           righe: r.querySelectorAll(".sttab tbody tr:not(.stsez)").length,
+           rosse: r.querySelectorAll(".sttab td.fuori").length,
+           sigle: [...r.querySelectorAll(".sttab tbody tr:not(.stsez) th.stn")].map((t) => t.firstChild.textContent.trim()) };
 });
-check(daFinestra.sezioni.length >= 2 && daFinestra.colonne >= 1,
-  `divisi per gruppo, una colonna a prelievo (${daFinestra.sezioni.join(", ")} · ${daFinestra.colonne})`);
-await $("#back").click();
-await page.waitForSelector("#psassist-host [data-esito]", { state: "attached" });
+check(daFinestra.righe >= 8 && daFinestra.sigle.includes("Hb") && daFinestra.sigle.includes("GB"),
+  `la tabella legge i valori veri, in sigla (${daFinestra.righe} analiti: ${daFinestra.sigle.slice(0, 6).join(", ")})`);
+check(daFinestra.rosse >= 1, `e segna i fuori range (${daFinestra.rosse} celle)`);
+// ---- i prelievi letti sono le colonne di una tabella sola, divisa per gruppo
+check(daFinestra.sezioni.length >= 2 && daFinestra.colonne >= 2,
+  `divisi per gruppo, una colonna a prelievo (${daFinestra.sezioni.join(", ")} · ${daFinestra.colonne} colonne)`);
+
+// ---- il laboratorio completa il pannello: un valore cambia, un esame compare
+await page.evaluate(() => document.getElementById("psa-lab").click());
+await $("#risall").click();
+await attendiTabella(30000);
+const novita = await page.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  const sigla = (td) => td.closest("tr").cells[0].firstChild.textContent.trim();
+  return { striscia: r.querySelector(".newbar")?.textContent?.replace(/\s+/g, " ").trim() || "",
+           agg: [...new Set([...r.querySelectorAll(".sttab td.agg")].map(sigla))],
+           nuovi: [...new Set([...r.querySelectorAll(".sttab td.nuovo")].map(sigla))] };
+});
+check(/valori nuovi dall'ultima lettura/.test(novita.striscia), `dopo ↻ Aggiorna la striscia annuncia le novità (${novita.striscia.slice(0, 50)})`);
+check(novita.agg.includes("Hb") && novita.nuovi.includes("Na"),
+  `il valore cambiato e l'analita comparso sono marcati (agg: ${novita.agg.join(",")} · nuovi: ${novita.nuovi.join(",")})`);
+await $("#letto").click();
+await page.waitForTimeout(400);
+check(await $(".sttab td.agg, .sttab td.nuovo").count() === 0 && await $(".newbar").count() === 0,
+  "«Letto» spegne i marchi e la striscia");
+
 await $("#refsave").click();
 await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length >= 1, { timeout: 30000 }).catch(() => {});
 check(await $(".rdot.saved").count() >= 1, "i referti si salvano col ponte estensione");
@@ -142,18 +162,21 @@ const striscia = await leggiStriscia();
 check(/esami · \d+ prelievi/.test(striscia) && !/non è/.test(striscia), `sulla pagina dello storico dice cosa ha letto (${striscia.slice(0, 60)})`);
 await vaiDa("ROSSI MARIO");
 await $('[data-seg="esiti"]').click();
-await page.waitForTimeout(500);
-check(await $("#apristorico").count() === 1, "e tornando sul paziente lo Storico è negli Esiti");
-await $("#apristorico").click();
 await page.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
+// non c'è più una schermata a parte: la tabella del portale È la tabella
+// degli Esiti di ROSSI, senza aprire niente
 const griglia = await page.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
   return { righe: r.querySelectorAll(".sttab tbody tr:not(.stsez)").length, rosse: r.querySelectorAll(".sttab td.fuori").length,
            sezioni: r.querySelectorAll(".sttab tr.stsez").length,
            larghezza: Math.round(r.querySelector(".card").getBoundingClientRect().width),
            tetto: Math.round(window.innerWidth * 0.8),
+           dentroEsiti: !!r.querySelector(".sec .sttab"),
+           chi: (/Con lo storico del portale[^.]*\./.exec(r.textContent.replace(/\s+/g, " ")) || [""])[0],
            sotto: [...r.querySelectorAll(".sttab thead th .sth")].map((t) => t.textContent.trim()) };
 });
+check(griglia.dentroEsiti, "tornando sul paziente lo storico è DENTRO gli Esiti, senza una schermata a parte");
+check(/letto per ROSSI MARIO/.test(griglia.chi), `e la schermata dice per chi è stato letto (${griglia.chi.slice(0, 80)})`);
 check(griglia.righe === 10 && griglia.rosse === 6, `la tabella con i suoi fuori range (${griglia.righe} righe, ${griglia.rosse} rosse)`);
 check(griglia.sezioni >= 4, `divisa in sezioni (${griglia.sezioni})`);
 // il pannello si allarga da solo per le colonne, fino all'80 % dello schermo

@@ -101,34 +101,45 @@ lista del pronto soccorso); sulla scheda di un paziente parte direttamente da **
 4. **Stampa**: ogni richiesta con data, ora e la lista compatta degli esami.
 
 ### Esiti
-Un unico elenco in ordine di tempo:
-- **LAB ›** — valori che il pannello sa leggere: si aprono **dentro il pannello**, e sotto la riga
-  c'è un'**anteprima di due righe** con gli **anomali per primi**. I nomi sono in **sigla**
-  (`Emoglobina` → `Hb`, `Leucociti` → `GB`, `Piastrine` → `PLT`…) e in rosso c'è **solo il valore**,
-  con ↑ ↓: quello che si scorre è il numero, non il nome. Un tocco apre tutti i valori — sigla,
-  valore, unità e range — con **⧉ Copia** per il diario (lì i nomi tornano per esteso) e **↻** per
-  rileggerli mentre il laboratorio completa. Il nome completo resta sotto il puntatore.
-  I valori vengono precaricati in sottofondo, così l'anteprima c'è già.
-- **↻ Aggiorna** (in cima all'elenco) rilegge in un colpo **tutti** i prelievi ancora aperti, a
-  passo lento e uno alla volta, e dice nel Registro quanti hanno valori nuovi: è il collaudo
-  manuale del futuro aggiornamento automatico — stessa lettura, ma parte solo quando lo premi tu.
-- **Cosa è cambiato dall'ultima volta che hai guardato**: dopo un aggiornamento la riga chiusa
-  porta una pastiglia azzurra (**«2 nuovi»**) e nell'anteprima la novità è **sfondo azzurro**, non
-  un quarto colore: se è comparso un esame che prima non c'era, si illumina **tutta la coppia**
-  (`Na 128↓`); se è cambiato solo il numero, si illumina **solo il numero** (`Hb 92↓`). Il rosso
-  resta «fuori range», l'ambra ▲▼ resta «cambiato rispetto al prelievo precedente»: tre domande
-  diverse, tre segni diversi. Finché c'è qualcosa di nuovo l'anteprima non taglia più a due righe.
-  Aprendo il prelievo trovi in cima **«N valori nuovi dall'ultima lettura»** e le righe interessate
-  hanno una barretta azzurra a sinistra — **senza mai riordinare**, così le colonne restano
-  confrontabili. I marchi si spengono quando esci dal prelievo (o col bottone **Letto**): a
-  spegnerli è la lettura, mai un timer.
-- **Prelievi confrontabili**: gli esami compaiono **nello stesso ordine in ogni prelievo** (comanda
-  il più recente), così le righe si leggono in colonna. Una **variazione significativa** rispetto
-  al prelievo precedente è marcata con **▲ ▼** ambra accanto al valore, col precedente nel
-  tooltip e nel testo copiato. «Significativa» non è un 5% fisso — a quel livello si accenderebbe
-  mezzo emocromo per sola variabilità analitica: le soglie sono **per esame** (Na 3%, Hb/Ht 8%,
-  creatinina 15%, GB/PLT 25%, PCR/PCT 50%, pH in valore assoluto 0.05…), 20% per gli esami non in
-  tabella. Mai un confronto tra unità diverse o con valori «<»/«>».
+Due sezioni, una sotto l'altra: **Valori** e **Referti**.
+
+**Valori** è un'unica tabella: gli analiti in riga, raggruppati per sezione fissa (*Emocromo,
+Coagulazione, Biochim, Organi, Elettroliti e metabolismo, Emogas, Urine e altri liquidi*, e in
+fondo **Altri** — i dettagli più sotto), una colonna per prelievo, **il più recente a sinistra**
+(marcato «ultimo»). In cima a ogni colonna: **solo l'ora** se il prelievo è di oggi, **la data**
+(27/08) con l'ora sotto se è di un altro giorno; **passando il mouse** sull'intestazione si legge
+data e ora per esteso e **gli esami** compresi in quella richiesta.
+
+- I nomi sono in **sigla** (`Hb`, `GB`, `PLT`…), con l'**unità sotto il nome** e il **range nel
+  tooltip**. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
+  vale per un'abbreviazione ambigua — e una riga d'avviso in cima dice **quali**.
+- In rosso c'è **solo il valore**, con ↑ ↓: il nome resta a sinistra, sempre nella stessa colonna.
+  Una cella **·** = quel prelievo non ha quell'analita; **…** = risultato ancora **parziale** (il
+  laboratorio non ha finito — c'è una riga che lo ricorda sotto la tabella). Quando lo stesso
+  analita arriva da esami diversi — l'emocromo del POC e quello del laboratorio, per dire — chi
+  non è «il solito» porta un **asterisco o una croce**, spiegati nella legenda sotto la tabella.
+- **⭳ Carica i valori** legge i prelievi non ancora letti; fatta la prima lettura diventa
+  **↻ Aggiorna**, che rilegge **tutti** i prelievi ancora aperti, a passo lento e uno alla volta.
+  **solo alterati** / **tutti** filtra le righe; **⧉ Copia** mette l'intera tabella negli appunti,
+  tabulata e coi nomi per esteso — pronta per il diario.
+- **Cosa è cambiato dall'ultima volta che hai guardato**: dopo un **↻ Aggiorna**, in quel prelievo
+  un valore cambiato ha **sfondo azzurro**, e lo stesso vale per un analita comparso da zero. In
+  cima compare **«N valori nuovi dall'ultima lettura»** con un bottone **Letto** che spegne i
+  marchi. La prima lettura di un prelievo è sempre il riferimento: non è mai un muro di marchi.
+- Un avviso dice quanti prelievi mancano ancora (**«N prelievi ancora da leggere»**: ⭳ Carica i
+  valori) e quali non si sono lasciati leggere (il **Registro** dice perché; **↻ Aggiorna**
+  riprova).
+- La tabella mette insieme due cose: i prelievi letti **in questa scheda del browser** — sempre,
+  anche col bookmarklet e senza estensione — e, quando è di questo paziente, la **scheda
+  clinica** che l'estensione tiene in archivio (la tabella del portale, e i prelievi letti in
+  altre schede). Un prelievo il cui referto è arrivato nel frattempo — e la cui finestra
+  Risultati è quindi sparita — **resta in tabella** come colonna: non scompare mai.
+- Il pannello **si allarga da solo** quanto serve alle colonne, fino all'**80%** dello schermo in
+  larghezza e altezza — mai più stretto di come l'hai già ridimensionato a mano.
+- Quando la scheda viene (anche) dal portale, sotto la tabella compare: *«Con lo storico del
+  portale, letto per NOME · identità confermata dal clic / codice fiscale / nome»*.
+
+**Referti** è la lista dei documenti (ECG, RX, TC, visite…), una riga ciascuno, come sempre:
 - **RIS ›** — referti di **radiologia** (RX, TC, ecografia, RMN) ed **ECG**: si aprono **dentro il
   pannello, come testo**. Il PDF di quei referti porta con sé la mappa dei caratteri, quindi le
   parole si recuperano esatte invece di indovinarle: leggi il referto senza cambiare scheda, lo
@@ -137,13 +148,12 @@ Un unico elenco in ordine di tempo:
 - **LIS/AMB ↗** — gli altri referti (PDF): si aprono in una scheda e, con l'estensione, il
   documento che apri **viene tenuto** (pallino verde) — la volta dopo si apre all'istante, senza
   toccare il server. **⬇ Salva referti** li prende tutti in una volta, **↻ Resetta** svuota.
-- **parziale** accanto a una riga = il laboratorio non ha ancora finito.
 
-> Perché l'anteprima non compare sotto i referti PDF: referto e prelievo sono due cose diverse per
-> il gestionale (un referto per documento, un accesso per prelievo, senza una chiave comune) e un
-> abbinamento "a occhio" per nome ed ora prima o poi metterebbe i valori di un prelievo sotto il
-> documento di un altro. Meglio due righe distinte e oneste che una fusione plausibile ma
-> sbagliata.
+> Perché i referti restano fuori dalla tabella dei Valori: referto e prelievo sono due cose
+> diverse per il gestionale (un referto per documento, un accesso per prelievo, senza una chiave
+> comune) e un abbinamento "a occhio" per nome ed ora prima o poi metterebbe i valori di un
+> prelievo sotto il documento di un altro. Meglio due sezioni distinte e oneste che una fusione
+> plausibile ma sbagliata.
 
 ### Chi c'è, e chi è stato dimesso
 Nell'elenco **Pazienti** ogni scheda ha **Dimesso ✓**: il paziente esce dall'elenco principale e
@@ -218,7 +228,7 @@ si legge l'analita sbagliato. Quindi:
 
 Vale sia per i valori di un prelievo sia per la tabella dello Storico.
 
-### Storico (tutti i prelievi in una tabella)
+### Da dove viene la tabella (scheda clinica e portale)
 Il gestionale ha una pagina che mette **tutti i prelievi affiancati**: dal paziente, a sinistra,
 **Storico dati clinici › Tabella**. Il pannello **la legge da lì** — non chiede niente al server,
 nemmeno una richiesta in più: legge la tabella che hai già davanti.
@@ -226,29 +236,15 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
 - Aprendo quella pagina compare in basso una striscia: *«90 esami · 4 prelievi letti — COGNOME
   NOME»*. Se sposti le colonne o cambi il periodo, **↻ Rileggi** aggiunge i prelievi nuovi a
   quelli già letti (non li sostituisce).
-- Tornando sul paziente, in **Esiti** compare la riga **Storico**: un tocco apre la tabella dentro
-  il pannello, **prelievo più recente per primo** (a sinistra il più fresco, verso destra si va
-  indietro nel tempo), con in rosso ciò che la pagina aveva già marcato fuori range (↑ sopra,
-  ↓ sotto). **⧉ Copia** la mette negli appunti in colonne, **solo alterati** toglie di mezzo il
-  resto. In cima a ogni colonna: **solo l'ora** se il prelievo è di oggi, **la data** (27/08) con
-  l'ora sotto se è di un altro giorno — «quale giorno» conta solo quando non è questo.
+- Tornando sul paziente, quei prelievi entrano **da soli** nella tabella **Valori** di **Esiti**,
+  uniti a quelli letti dalla finestra Risultati del gestionale — niente riga da aprire, niente
+  schermata a parte (vedi sopra come si legge la tabella).
 - Gli esami sono **divisi in sezioni** e dentro ogni sezione l'ordine è **fisso**: *Emocromo,
   Coagulazione, Biochim* (PCR, PCT, VES, troponina, NT-proBNP, CPK, CK-MB, mioglobina, LDH),
   *Organi, Elettroliti e metabolismo, Emogas, Urine e altri liquidi*, e in fondo **Altri**. Prima l'ordine era quello in cui il laboratorio aveva stampato
   la tabella, e **cambiava da un prelievo all'altro**: lo stesso esame andava cercato ogni volta.
   Un analita che il programma non conosce non si perde: finisce in **Altri**, scritto per esteso.
   Il campione decide per primo — **`U-Emoglobina` va in Urine, mai nell'emocromo**.
-- **Stessa riga, macchine diverse.** L'emocromo del POC e quello del laboratorio sono lo stesso
-  esame: stanno su **una riga sola**, e il valore che viene dall'altra macchina porta un
-  **asterisco**. Sopra ci si ferma col mouse per sapere quale, e sotto la tabella c'è scritto:
-  *«\* fatto con EMOCROMOCITOMETRICO URGENTE — gli altri con EMOCROMO»*. Prima questa
-  informazione **si perdeva in silenzio**: la riga fusa teneva solo il nome della prima
-  prestazione vista. Un valore ancora parziale è marcato **…**, non più con l'asterisco.
-- Con molti prelievi **il pannello si allarga da solo** quanto serve alla tabella, fino
-  all'**80 %** dello schermo in larghezza e altezza — mai più stretto di come l'hai ridimensionato
-  a mano. Niente finestra a parte: una vista sola. Colonna dei nomi e riga delle date restano
-  ferme mentre scorri.
-- Le celle **vuote hanno un punto**: una riga con due soli prelievi non deve sembrarne una piena.
 - Nella tabella del portale la colonna di sinistra è la **prestazione ordinata** (`ESAME URINE
   COMPLETO`) e quella accanto è l'**analita** (`U-Albumina`, `U-Corpi chetonici`): il pannello legge
   l'analita, altrimenti un pannello di urine diventerebbe diciotto righe con lo stesso nome. Il
@@ -405,14 +401,13 @@ un range che dipende dal sesso, un formato mai visto, due range nella stessa cel
 **non segna nulla** e mostra il valore in nero. È una scelta: meglio un fuori range non evidenziato
 che un rosso che non sappiamo giustificare.
 
-Un esame sconosciuto non sparisce mai: se non ha una sigla nota viene mostrato con la prima parola
-del nome, e il nome completo resta sotto il puntatore.
+Un esame sconosciuto non sparisce mai: se non ha una sigla nota viene scritto **per esteso**,
+sottolineato a puntini — mai abbreviato a caso.
 
 **Quando il laboratorio referta**, il gestionale toglie la finestra Risultati e quei valori
-sparirebbero con lei. I prelievi già letti in quella scheda **restano in elenco**, marcati
-**«già letti»** e con la loro ora: sono ciò che il pannello aveva realmente sotto gli occhi, e non
-vengono mai attaccati a un referto (niente li collega). Il referto in PDF resta lì accanto, come
-sempre.
+sparirebbero con lei. I prelievi già letti in quella scheda **restano nella tabella dei Valori**,
+come una colonna in più: sono ciò che il pannello aveva realmente sotto gli occhi, e non vengono
+mai attaccati a un referto (niente li collega). Il referto in PDF resta lì accanto, come sempre.
 
 > Il PDF del referto **di laboratorio** non viene letto: quello disegna il testo un glifo alla volta
 > con un font ridotto e **senza mappa dei caratteri**, quindi ricavarne «Emoglobina 8.0 g/dL»
@@ -424,9 +419,10 @@ sempre.
 
 ## Dove finiscono referti e valori
 
-- **Valori** (righe LAB): letti da `RcsAccessiRisultatiElenco.do`, HTML sullo stesso server. Restano
-  in memoria **per la scheda e per quell'episodio**, così riaprirli è istantaneo; **↻** li rilegge
-  man mano che il laboratorio completa. Chiusa la scheda, spariscono.
+- **Valori** (i prelievi in tabella): letti da `RcsAccessiRisultatiElenco.do`, HTML sullo stesso
+  server. Restano in memoria **per la scheda e per quell'episodio**, così la tabella si
+  ricostruisce all'istante; **↻ Aggiorna** li rilegge tutti, uno alla volta, man mano che il
+  laboratorio completa. Chiusa la scheda, spariscono.
 - **Referti** (righe LIS/RIS/AMB): il visualizzatore **non è su SA4PSO** — gira su un altro host
   interno e mostra il PDF come `blob:` di quell'origine, quindi una pagina di SA4PSO non può
   leggerlo. È il **service worker** dell'estensione a seguire la catena (redirect → visualizzatore
@@ -464,11 +460,11 @@ esami → conferma → stampa; e sulla seconda scheda, risultati e referti.
 Il flusso completo dell'ordine: quesito, profili, esami, «Crea e aggiungi» con
 la verifica esame per esame, il carrello che compare **nella pagina vera**, la
 Conferma nativa, il wizard di stampa. E gli **Esiti**: i valori letti dalla
-finestra Risultati vera, l'anteprima a due righe, i referti salvati e riaperti.
-Anche lo **Storico**: «Storico Dati Clinici» apre una tabella multi-prelievo
-ricostruita dalla sua forma (`test/fixtures/storico.mjs`, esami inventati: di
-quella pagina non esiste una copia salvata qui), il pannello la legge e la
-riporta negli Esiti come al lavoro.
+finestra Risultati vera, i referti salvati e riaperti. Anche la tabella **Valori**:
+«Storico Dati Clinici» ricostruisce, sull'altra scheda, una tabella multi-prelievo
+dalla sua forma (`test/fixtures/storico.mjs`, esami inventati: di quella pagina non
+esiste una copia salvata qui); tornando sul paziente il pannello la ritrova già
+unita ai suoi Esiti.
 
 Di proposito **non** funziona il resto: gli script del gestionale sono rimossi
 (schede e menu interni non si aprono), le schermate mai salvate mostrano una
@@ -676,7 +672,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 46 scenari e2e + 15 sull'estensione + 33 sul banco + storico + il cancello privacy
+npm test           # 56 scenari e2e + 32 sull'estensione + 36 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
