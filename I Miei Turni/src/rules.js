@@ -419,6 +419,71 @@ var TurniRules = (function () {
   }
 
   // ------------------------------------------------------------------
+  // diffRosters — cosa cambia tra due versioni dello stesso mese
+  // ------------------------------------------------------------------
+
+  function sameList(a, b) {
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+
+  function minus(a, b) {
+    return a.filter(function (x) { return b.indexOf(x) === -1; });
+  }
+
+  // Confronta cella per cella (giorno × fascia) il roster vecchio con il nuovo.
+  // Ogni differenza è una riga: nomi tolti, aggiunti, sostituiti (uno al posto di
+  // un altro) o solo riordinati (la posizione nella cella è il ruolo). Le fasce
+  // o i giorni presenti in una sola versione si confrontano con la cella vuota.
+  function diffRosters(oldRoster, newRoster) {
+    var slotKeys = [];
+    var slotLabel = {};
+    [oldRoster, newRoster].forEach(function (r) {
+      (r.slots || []).forEach(function (s) {
+        if (slotKeys.indexOf(s.key) === -1) slotKeys.push(s.key);
+        slotLabel[s.key] = slotLabel[s.key] || s.label;
+      });
+    });
+    var byDate = new Map();
+    function index(r, which) {
+      (r.days || []).forEach(function (d) {
+        var entry = byDate.get(d.date);
+        if (!entry) { entry = { day: d.day, date: d.date }; byDate.set(d.date, entry); }
+        entry[which] = d.cells || {};
+      });
+    }
+    index(oldRoster, 'before');
+    index(newRoster, 'after');
+
+    var changes = [];
+    var counts = { added: 0, removed: 0, replaced: 0, reordered: 0 };
+    Array.from(byDate.keys()).sort().forEach(function (date) {
+      var entry = byDate.get(date);
+      slotKeys.forEach(function (key) {
+        var before = (entry.before && entry.before[key] && entry.before[key].names) || [];
+        var after = (entry.after && entry.after[key] && entry.after[key].names) || [];
+        if (sameList(before, after)) return;
+        var removed = minus(before, after);
+        var added = minus(after, before);
+        var kind = removed.length && added.length ? 'replaced'
+          : added.length ? 'added'
+          : removed.length ? 'removed'
+          : 'reordered';
+        counts[kind]++;
+        changes.push({
+          date: date, day: entry.day, hospital: newRoster.hospital || oldRoster.hospital,
+          slotKey: key, slotLabel: slotLabel[key] || key,
+          before: before, after: after, removed: removed, added: added, kind: kind,
+        });
+      });
+    });
+    var days = new Set(changes.map(function (c) { return c.date; })).size;
+    return { changes: changes, days: days, added: counts.added, removed: counts.removed,
+      replaced: counts.replaced, reordered: counts.reordered };
+  }
+
+  // ------------------------------------------------------------------
   // analyzeNames
   // ------------------------------------------------------------------
 
@@ -568,6 +633,7 @@ var TurniRules = (function () {
     formatHours: formatHours,
     personStats: personStats,
     hoursByName: hoursByName,
+    diffRosters: diffRosters,
     SEVERITY: SEVERITY,
     KIND_LABEL: KIND_LABEL,
   };

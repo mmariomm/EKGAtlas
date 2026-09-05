@@ -529,6 +529,42 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
 }
 
 // ======================================================================
+// 5c. diffRosters
+// ======================================================================
+
+{
+  const clone = (r) => JSON.parse(JSON.stringify(r));
+  const same = TurniRules.diffRosters(OSG, clone(OSG));
+  deepEq([same.changes.length, same.days], [0, 0], 'diff di due copie identiche: nessuna modifica');
+
+  const v2 = clone(OSG);
+  const cell = (day, key) => v2.days.find((d) => d.day === day).cells[key];
+  cell(12, 'N').names = ['BOTTA', 'PELLEGATTA'];           // CAPRINI → PELLEGATTA (sostituzione)
+  cell(17, 'M').names = ['DI PIETRO', 'PETRELLA', 'NOFF'];  // + NOFF
+  cell(21, 'N').names = ['RAMONDINO'];                      // − BOULES
+  cell(1, 'M').names = ['DI PIETRO', 'BRAHAM'];             // solo riordinati
+  v2.days = v2.days.filter((d) => d.day !== 30);            // giorno 30 sparito dal nuovo file
+  const diff = TurniRules.diffRosters(OSG, v2);
+  deepEq(diff.changes.map((c) => [c.day, c.slotKey, c.kind]), [
+    [1, 'M', 'reordered'], [12, 'N', 'replaced'], [17, 'M', 'added'], [21, 'N', 'removed'],
+    [30, 'M', 'removed'], [30, 'P', 'removed'], [30, 'N', 'removed'],
+  ], 'diff: righe in ordine di data, con il tipo giusto');
+  deepEq([diff.days, diff.added, diff.removed, diff.replaced, diff.reordered], [5, 1, 4, 1, 1], 'diff: conteggi');
+  const rep = diff.changes.find((c) => c.day === 12);
+  deepEq([rep.removed, rep.added, rep.hospital, rep.slotLabel], [['CAPRINI'], ['PELLEGATTA'], 'OSG', 'NOTTE'], 'diff: sostituzione con tolti/aggiunti');
+  const gone = diff.changes.find((c) => c.day === 30 && c.slotKey === 'M');
+  deepEq([gone.before, gone.after], [['DI PIETRO', 'PETRELLA'], []], 'diff: giorno mancante confrontato con la cella vuota');
+
+  // Fascia presente solo nel nuovo file (es. ambulatorio aggiunto all'OSG).
+  const v3 = clone(OSG);
+  v3.slots.push({ key: 'A', label: 'AMBULATORIO', header: 'AMBULATORIO 9-15', sub: '', roles: [], start: '09:00', end: '15:00', startMin: 540, endMin: 900, col: 'G' });
+  v3.days.forEach((d) => { d.cells.A = { raw: '', names: [] }; });
+  v3.days[0].cells.A = { raw: 'NOFF', names: ['NOFF'] };
+  const d3 = TurniRules.diffRosters(OSG, v3);
+  deepEq(d3.changes.map((c) => [c.day, c.slotKey, c.kind, c.added]), [[1, 'A', 'added', ['NOFF']]], 'diff: fascia nuova confrontata con il vuoto');
+}
+
+// ======================================================================
 // 6. Helper di formattazione
 // ======================================================================
 
