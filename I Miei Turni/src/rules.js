@@ -497,10 +497,8 @@ var TurniRules = (function () {
       if (ev.name) return;
       var morning = ev.keys.indexOf('M') !== -1 || ev.keys.indexOf('A') !== -1;
       var afternoon = ev.keys.indexOf('P') !== -1;
-      ev.name = morning && afternoon ? 'Giornata'
-        : ev.keys.indexOf('P') !== -1 ? 'Pomeriggio'
-        : ev.keys.indexOf('A') !== -1 ? 'Ambulatorio'
-        : 'Mattina';
+      // L'ambulatorio è una mattina a tutti gli effetti, con i suoi orari veri.
+      ev.name = morning && afternoon ? 'Giornata' : afternoon ? 'Pomeriggio' : 'Mattina';
     });
     return events;
   }

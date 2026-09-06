@@ -554,7 +554,7 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   eq(summaries.filter((s) => s === 'PS DEA Giornata').length, 0, 'ics: la sede si chiama SSG, non DEA');
   eq(summaries.filter((s) => s === 'PS SSG Giornata').length, 2, 'ics: due giornate intere');
   eq(summaries.filter((s) => s === 'PS SSG Notte').length + summaries.filter((s) => s === 'PS OSG Notte').length, 5, 'ics: cinque notti');
-  ok(summaries.every((s) => /^PS (SSG|OSG) (Mattina|Pomeriggio|Giornata|Notte|Ambulatorio)$/.test(s)), 'ics: titoli nella forma "PS <sede> <fascia>"');
+  ok(summaries.every((s) => /^PS (SSG|OSG) (Mattina|Pomeriggio|Giornata|Notte)$/.test(s)), 'ics: titoli nella forma "PS <sede> <fascia>"');
 
   // Orari veri, in ora legale (Roma = UTC+2 a settembre): giornata 8–20, notte 20–8.
   const block = (summary) => {
@@ -575,7 +575,8 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   const lo = TurniRules.buildICS(realAssignments, 'LOFFREDO', '2026-09', { now: 0 });
   const loSum = lo.split('\r\n').filter((l) => l.startsWith('SUMMARY:')).map((l) => l.slice(8));
   eq(loSum.filter((s) => s === 'PS SSG Giornata').length, 4, 'ics: ambulatorio + pomeriggio = giornata');
-  eq(loSum.filter((s) => s === 'PS SSG Ambulatorio').length, 1, 'ics: l\'ambulatorio senza pomeriggio resta un evento a sé');
+  eq(loSum.filter((s) => s === 'PS SSG Mattina').length, 1, 'ics: l\'ambulatorio da solo si chiama Mattina');
+  eq(loSum.filter((s) => s.indexOf('Ambulatorio') !== -1).length, 0, 'ics: nessun evento chiamato Ambulatorio');
   const first = lo.split('\r\n').filter((l) => l.startsWith('DTSTART:'))[0];
   eq(first, 'DTSTART:20260901T073000Z', 'ics: la giornata che parte dall\'ambulatorio comincia alle 9:30');
 
