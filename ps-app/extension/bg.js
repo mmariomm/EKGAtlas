@@ -71,11 +71,15 @@ async function grabPdf(url, hop = 0, budget) {
   clearTimeout(tid);
   if (!res.ok) return { ok: false, why: `HTTP ${res.status}` };
   const ctype = (res.headers.get("content-type") || "").toLowerCase();
-  if (ctype.includes("pdf") || ctype.includes("octet-stream")) {
-    return { ok: true, buf: await res.arrayBuffer(), type: "application/pdf" };
+  const buf = await res.arrayBuffer();
+  // come in core.js: il tipo dichiarato è un'etichetta, i primi byte sono il
+  // documento — un PDF chiamato «text/html» resta un PDF
+  const magico = buf.byteLength > 4 && String.fromCharCode(...new Uint8Array(buf, 0, 5)) === "%PDF-";
+  if (magico || ctype.includes("pdf") || ctype.includes("octet-stream")) {
+    return { ok: true, buf, type: "application/pdf" };
   }
   if (hop >= 2 || !ctype.includes("html")) return { ok: false, why: `tipo ${ctype.split(";")[0] || "?"}` };
-  const text = await res.text();
+  const text = new TextDecoder("windows-1252").decode(buf);
   if (/name=["']?password/i.test(text)) return { ok: false, why: "sessione scaduta" };
   const cands = candidates(text, res.url || url);
   for (const c of cands) {

@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.30.1";
+  const VERSION = "3.31.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -98,13 +98,13 @@
   // (see ps-app/README.md). A preset is shown only when every code exists in
   // the catalog available on this machine (embedded + learned).
   const PRESETS = [
-    { name: "Base PS",  items: [[RES.POC, "320"], [RES.POC, "3"], [RES.POC, "176"]] },            // emocromo, EGA venosa, creatinina
+    { name: "Base PS",  items: [[RES.POC, "320"], [RES.POC, "325"], [RES.POC, "176"]] },          // emocromo, EGA venosa NEW, creatinina
     { name: "Epatico",  items: [[RES.URGENZE, "16"], [RES.URGENZE, "228"], [RES.URGENZE, "53"], [RES.URGENZE, "167"], [RES.URGENZE, "34"]] }, // bili reflex, GPT, GOT, GGT, lipasi
     { name: "Coag POC", items: [[RES.POC, "220"], [RES.POC, "134"], [RES.POC, "135"]] },          // PT, PTT, fibrinogeno POC
     { name: "Coag",     items: [[RES.URGENZE, "181"], [RES.URGENZE, "54"], [RES.URGENZE, "258"]] }, // PT, PTT, fibrinogeno urgenze
   ];
   const SINGLES = [ // one-tap single exams (compact grid, grouped by lab)
-    [RES.POC, "320"], [RES.POC, "3"], [RES.POC, "166"], [RES.POC, "176"],
+    [RES.POC, "320"], [RES.POC, "325"], [RES.POC, "326"], [RES.POC, "176"],
     [RES.POC, "101"], [RES.POC, "324"], [RES.POC, "30"],
     [RES.URGENZE, "293"], [RES.URGENZE, "34"], [RES.URGENZE, "159"],
     [RES.URGENZE, "297"], [RES.URGENZE, "317"],
@@ -115,8 +115,11 @@
   // truth for the anti-wrong-exam check, so renaming here is always safe.
   const DISPLAY = {
     [`${RES.POC}:320`]: "EMOCROMO POC",
-    [`${RES.POC}:3`]:   "EGA VENOSA",
-    [`${RES.POC}:166`]: "EGA ARTERIOSA",
+    // Il laboratorio ha rifatto gli emogas: sono i codici «- NEW». Chi ordina
+    // deve vedere che è quella nuova, o non saprebbe distinguerla dalla
+    // vecchia che resta in elenco.
+    [`${RES.POC}:325`]: "EGA VENOSA NEW",
+    [`${RES.POC}:326`]: "EGA ARTERIOSA NEW",
     [`${RES.POC}:176`]: "CREATININA POC",
     [`${RES.POC}:101`]: "D-DIMERO POC",
     [`${RES.POC}:324`]: "TROPONINA US",
@@ -135,7 +138,10 @@
     [`${RES.RX}:28`]: "RX ADDOME",
   };
   // If EGA arteriosa is selected, the venosa is dropped automatically.
-  const EXCLUDE = [{ keep: [RES.POC, "166"], drop: [RES.POC, "3"], note: "EGA arteriosa sostituisce la venosa" }];
+  const EXCLUDE = [
+    { keep: [RES.POC, "326"], drop: [RES.POC, "325"], note: "EGA arteriosa sostituisce la venosa" },
+    { keep: [RES.POC, "166"], drop: [RES.POC, "3"], note: "EGA arteriosa sostituisce la venosa" },
+  ];
 
   // Common quesiti offered as one-tap chips (editable; last used are kept).
   const QUESITI_DEFAULT = [
@@ -739,7 +745,7 @@
   }
 
   const isPdfBlob = (b) => b instanceof Blob && b.size > 4 &&
-    (b.type.includes("pdf") || b.type === "" || b.type.includes("octet"));
+    (b.type.includes("pdf") || b.type === "" || b.type.includes("octet") || b.type.includes("download"));
 
   // Raised when an endpoint is a client-side VIEWER we can't safely turn into
   // a Blob (see note below). Carries the URL so the caller opens it natively.
@@ -1450,11 +1456,18 @@
       if (signal) signal.removeEventListener("abort", onAbort);
     }
     const ctype = (res.headers.get("content-type") || "").toLowerCase();
-    if (ctype.includes("pdf") || ctype.includes("octet-stream")) {
-      return { blob: await res.blob(), url: res.url || target.href, via: hop === 0 ? "diretto" : "" };
+    const buf = await res.arrayBuffer();
+    // Il tipo dichiarato è un'etichetta; i primi cinque byte sono il
+    // documento. Un servlet che manda un PDF chiamandolo «text/html» o
+    // «application/force-download» manda comunque un PDF, e buttarlo via per
+    // il nome sarebbe l'unico errore vero: si guarda dentro.
+    const magico = buf.byteLength > 4
+      && String.fromCharCode(...new Uint8Array(buf, 0, 5)) === "%PDF-";
+    if (magico || ctype.includes("pdf") || ctype.includes("octet-stream")) {
+      return { blob: new Blob([buf], { type: "application/pdf" }), url: res.url || target.href,
+               via: hop === 0 ? "diretto" : magico && !ctype.includes("pdf") ? `dichiarato ${ctype.split(";")[0] || "senza tipo"}` : "" };
     }
     if (ctype.includes("html") && hop < 2) {
-      const buf = await res.arrayBuffer();
       const text = new TextDecoder("windows-1252").decode(buf);
       const doc = new DOMParser().parseFromString(text, "text/html");
       if (classify(doc) === "login") throw new StopError("Sessione scaduta", "Fai l'accesso a SA4PSO e riprova la stampa.");
@@ -2100,6 +2113,7 @@
           const trovata = atteso ? perChiave.get(atteso) : null;
           if (trovata) {
             log(`risorsa di questo presidio: «${trovata.label}» ${trovata.value} (nel catalogo ${i.res})`);
+            i.resCat = i.res;        // il catalogo che conosce questo esame resta quello di partenza
             i.res = trovata.value;   // the exam's own name is verified before any send
           }
         }
@@ -2141,12 +2155,27 @@
         // La versione «- NEW» dello stesso esame, se la pagina ne offre una:
         // si guarda l'elenco VIVO, non il catalogo, così vale in ogni sede e
         // anche per gli esami nuovi che il catalogo non ha mai visto.
-        if (!/^esame \d+$/i.test(it.label) && !eNuovo(it.label)) {
+        // …e al contrario: se qui la «- NEW» non c'è ancora, si torna a quella
+        // di sempre invece di fallire per un codice che questa sede non ha.
+        if (!/^esame \d+$/i.test(it.label)) {
           const mia = baseEsame(it.label);
-          const nuova = mia && model.exams.find((e) => e.isAdd && eNuovo(e.label) && baseEsame(e.label) === mia);
-          if (nuova && nuova.code !== it.code) {
-            log(`questa sede ha la versione nuova: «${nuova.label}» al posto di «${it.label}»`);
-            it.code = nuova.code; it.label = nuova.label;
+          const trova = (nuova) => mia && model.exams.find((e) => e.isAdd && eNuovo(e.label) === nuova && baseEsame(e.label) === mia);
+          let scelto = trova(true) || (eNuovo(it.label) ? trova(false) : null);
+          // Qui la «- NEW» non c'è e nemmeno la sua gemella in elenco: si
+          // torna alla vecchia del NOSTRO catalogo. Serve davvero, perché la
+          // versione nuova ha anche un mnemonico nuovo (POC21171 contro
+          // POC2117): senza questo passo, in una sede che ha solo la vecchia
+          // e la chiama in un altro modo non la ritroverebbe più nessuno.
+          if (!scelto && eNuovo(it.label)) {
+            const items = (fullCatalog()[it.resCat || it.res]?.items) || {};
+            const twin = Object.entries(items).find(([c, l]) => c !== it.code && !eNuovo(l) && baseEsame(l) === mia);
+            if (twin) scelto = { code: twin[0], label: twin[1] };
+          }
+          if (scelto && scelto.code !== it.code) {
+            log(eNuovo(scelto.label)
+              ? `questa sede ha la versione nuova: «${scelto.label}» al posto di «${it.label}»`
+              : `qui la versione «- NEW» non c'è: uso «${scelto.label}»`);
+            it.code = scelto.code; it.label = scelto.label;
           }
         }
         let link = model.addLink(it.code);

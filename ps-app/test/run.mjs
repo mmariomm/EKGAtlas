@@ -1531,7 +1531,11 @@ async function scenarioEmogasNew(browser) {
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, "#q").fill("dispnea");
-  await $panel(page, '.opt[title*="EMOGASANALISI VENOSA"]').click();
+  // si parte da quella VECCHIA, presa dall'elenco completo: è il caso di chi
+  // ha in memoria il codice di sempre, o di una selezione salvata prima
+  await $panel(page, "#acq").fill("EMOGASANALISI VENOSA POC (");
+  await $panel(page, '.acitem:has-text("EMOGASANALISI VENOSA POC (")').first().click();
+  await $panel(page, "#acq").fill("");
   await $panel(page, "#go").click();
   await page.waitForFunction(() => !!document.getElementById("psassist-host")
     ?.shadowRoot?.querySelector(".banner.ok, .banner.err"), { timeout: 30000 }).catch(() => {});
@@ -1551,13 +1555,34 @@ async function scenarioEmogasNew(browser) {
   await p2.goto(m2.patientUrl);
   await p2.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(p2, "#q").fill("dispnea");
-  await $panel(p2, '.opt[title*="EMOGASANALISI VENOSA"]').click();
+  await $panel(p2, "#acq").fill("EMOGASANALISI VENOSA POC (");
+  await $panel(p2, '.acitem:has-text("EMOGASANALISI VENOSA POC (")').first().click();
+  await $panel(p2, "#acq").fill("");
   await $panel(p2, "#go").click();
   await p2.waitForFunction(() => !!document.getElementById("psassist-host")
     ?.shadowRoot?.querySelector(".banner.ok, .banner.err"), { timeout: 30000 }).catch(() => {});
   const rid2 = Object.keys(m2.state.richieste)[0];
   check(scen, [...m2.state.richieste[rid2].cart.keys()].includes("3"),
     `senza versione nuova ordina la vecchia (got ${[...m2.state.richieste[rid2].cart.keys()]})`);
+
+  // E dal verso opposto: il pannello parte dal codice NEW (è quello nel suo
+  // catalogo), ma questa sede ha ancora solo il vecchio. Deve ordinare quello,
+  // non fallire per un codice che qui non esiste.
+  const m3 = createMock({});
+  const { context: c3, page: p3 } = await newPage(browser, m3);
+  await p3.goto(m3.patientUrl);
+  await p3.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(p3, "#q").fill("dispnea");
+  await $panel(p3, '.opt[data-code="325"]').click();
+  await $panel(p3, "#go").click();
+  await p3.waitForFunction(() => !!document.getElementById("psassist-host")
+    ?.shadowRoot?.querySelector(".banner.ok, .banner.err"), { timeout: 30000 }).catch(() => {});
+  const rid3 = Object.keys(m3.state.richieste)[0];
+  const c3cart = [...m3.state.richieste[rid3].cart.keys()];
+  check(scen, c3cart.includes("3"), `chiedendo la NEW dove non c'è, ordina quella di sempre (got ${c3cart})`);
+  const reg3 = await $panel(p3, ".card").innerText();
+  check(scen, /non c'è: uso/i.test(reg3), `e il Registro dice perché (got ${(/[^.]*non c'è: uso[^.]*/i.exec(reg3) || [])[0] || "niente"})`);
+  await c3.close();
   await c2.close();
   await context.close();
 }

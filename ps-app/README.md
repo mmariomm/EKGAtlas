@@ -87,10 +87,14 @@ lista del pronto soccorso); sulla scheda di un paziente parte direttamente da **
 ### Richieste
 1. **Quesito diagnostico** — casella su una riga, suggerimenti a fianco; l'ultimo resta scritto.
 2. **Profili rapidi** (Base PS, Epatico, Coag POC, Coag) o **esami singoli** — fra questi
-   **SARSCOV** (tampone antigenico SARS-CoV-2, laboratorio centrale), griglia compatta a
+   **EGA VENOSA NEW** / **EGA ARTERIOSA NEW** (il laboratorio ha rifatto gli emogas: sono i
+   codici nuovi, e la vecchia versione resta in elenco solo in «altri esami…») e **SARSCOV**
+   (tampone antigenico SARS-CoV-2, laboratorio centrale), griglia compatta a
    due colonne per laboratorio (POC / Urgenze / RX). Per tutto il resto: **«altri esami…»** con
    menu a tendina su tutti i laboratori. I selezionati restano in alto, una riga per laboratorio,
    con la ✕ al passaggio del mouse.
+   In una sede che la versione **- NEW** non ce l'ha ancora, il pannello ordina **quella di
+   sempre** e lo scrive nel Registro: un codice nuovo non deve far fallire un ordine.
 3. **Crea e aggiungi N esami** → ricevuta + bottone **✓ CONFERMA → stampa**; oppure
    **+ Conferma 🖨** che fa tutto da solo e conferma **subito**: il click è la decisione, e la
    conferma parte solo se ogni controllo passa — episodio, richiesta, nome dell'ultimo esame, e
