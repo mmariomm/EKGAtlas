@@ -214,6 +214,21 @@ check(/320/.test(cat.segnalato[0] || "") && /RINOMINATO/.test(cat.segnalato[0] |
   `col codice e col nome che porta oggi (got ${cat.segnalato[0]})`);
 eq(cat.etichettaRisorsa, "POC - SSG (P)", "l'etichetta della risorsa si aggiorna comunque");
 
+// ---- quando è stato fatto un prelievo -----------------------------------
+// Senza un istante un prelievo non diventa una colonna: qui si fissa cosa
+// il programma accetta come data e ora, e cosa rifiuta invece di indovinare.
+console.log("data e ora di un prelievo");
+const { istanteDa } = new Function(grab("istanteDa") + "\nreturn { istanteDa };")();
+const quando = (s) => { const t = istanteDa(s); return t ? `${t.when}|${new Date(t.ts).toISOString().slice(0, 16)}` : null; };
+eq(quando("2026-08-23 07:28"), "23/08 07:28|2026-08-23T07:28", "il campo nascosto come lo scrive SA4PSO");
+eq(quando("2026-08-23T07:28:11"), "23/08 07:28|2026-08-23T07:28", "…anche con la T e i secondi");
+eq(quando("23/08/2026 07:28"), "23/08 07:28|2026-08-23T07:28", "la cella che il medico vede, con l'anno intero");
+eq(quando("23/08/26 07:28"), "23/08 07:28|2026-08-23T07:28", "…e con l'anno a due cifre");
+eq(quando("202608230728"), "23/08 07:28|2026-08-23T07:28", "…e tutto attaccato");
+eq(quando("23/08/2026"), null, "una data senza ora non basta: due prelievi dello stesso giorno sarebbero uno");
+eq(quando("valore"), null, "e un campo che non è una data si rifiuta, non si indovina");
+eq(quando(""), null, "come un campo vuoto");
+
 await browser.close();
 
 console.log(fail ? `\nVALORI: ${fail} CASI FALLITI\n` : "\nVALORI: TUTTI I CASI OK\n");

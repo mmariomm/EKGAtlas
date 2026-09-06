@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.30.0";
+  const VERSION = "3.30.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -598,11 +598,8 @@
       // the row this print icon lives in also carries when + what was ordered
       const tr = a.closest("tr");
       if (tr) {
-        const dt = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(tr.querySelector('input[name="DATA_ORD"]')?.value || "");
-        if (dt) {
-          const ts = Date.UTC(+dt[1], dt[2] - 1, +dt[3], +dt[4], +dt[5]);
-          if (!rows._meta.ts || ts < rows._meta.ts) { rows._meta.ts = ts; rows._meta.when = `${dt[3]}/${dt[2]} ${dt[4]}:${dt[5]}`; }
-        }
+        const dt = istanteRiga(tr);
+        if (dt && (!rows._meta.ts || dt.ts < rows._meta.ts)) { rows._meta.ts = dt.ts; rows._meta.when = dt.when; }
         const desc = tr.querySelector('input[name="DESCRIZIONE_TITLE"]')?.value || "";
         const nice = shortLabel(desc.replace(/^\d+-\d+\s*/, "")).trim();
         if (nice && !rows._meta.exams.includes(nice)) rows._meta.exams.push(nice);
@@ -676,12 +673,12 @@
                      td?.getAttribute("title") || td?.textContent || "referto")
                     .replace(/\s+/g, " ").trim()
                     .replace(/^\d+-\d+\s+/, "");   // «0-324 TROPONINA» → «TROPONINA»: le prime cifre sono del LIS
-      const dt = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(td?.querySelector('input[name="DATA_ORD"]')?.value || "");
+      const dt = istanteDa(td?.querySelector('input[name="DATA_ORD"]')?.value) || istanteRiga(a.closest("tr"));
       out.push({
         id, url, label,
         sistema: (param(url, "REFERTO_SISTEMA") || "").replace(/^HL7/, ""),
-        ts: dt ? Date.UTC(+dt[1], dt[2] - 1, +dt[3], +dt[4], +dt[5]) : 0,
-        when: dt ? `${dt[3]}/${dt[2]} ${dt[4]}:${dt[5]}` : "—",
+        ts: dt ? dt.ts : 0,
+        when: dt ? dt.when : "—",
       });
     }
     out.sort((a, b) => b.ts - a.ts || a.label.localeCompare(b.label));
@@ -1236,6 +1233,37 @@
   // While a lab request is still being reported, the patient page shows a
   // coloured icon that pops up RcsAccessiRisultatiElenco.do — plain HTML on
   // THIS origin, so the values can be read and shown inside the panel.
+  // QUANDO è stato fatto un prelievo. SA4PSO lo scrive in un campo nascosto
+  // della riga (DATA_ORD) come «yyyy-mm-dd HH:MM», ma un presidio può averlo
+  // in un'altra forma, e senza un istante un prelievo non può diventare una
+  // colonna. Si accettano le forme che NON sono ambigue; il giorno prima del
+  // mese perché questo programma gira in un ospedale italiano, dove così è
+  // scritto anche a video. Tutto il resto si rifiuta invece di indovinare.
+  function istanteDa(grezzo) {
+    const s = String(grezzo || "").trim();
+    const fatto = (a, me, g, h, mi) => ({ ts: Date.UTC(a, me - 1, g, h, mi), when: `${String(g).padStart(2, "0")}/${String(me).padStart(2, "0")} ${String(h).padStart(2, "0")}:${String(mi).padStart(2, "0")}` });
+    let m = /^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2})[:.](\d{2})/.exec(s);
+    if (m) return fatto(+m[1], +m[2], +m[3], +m[4], +m[5]);
+    m = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})[ ,T]+(\d{1,2})[:.](\d{2})/.exec(s);
+    if (m) return fatto(m[3].length === 2 ? 2000 + +m[3] : +m[3], +m[2], +m[1], +m[4], +m[5]);
+    m = /^(\d{4})(\d{2})(\d{2})[ T]?(\d{2})(\d{2})/.exec(s);
+    if (m) return fatto(+m[1], +m[2], +m[3], +m[4], +m[5]);
+    return null;
+  }
+  // La data della riga, presa dalla riga: prima il campo nascosto, e se non
+  // c'è (o è scritto in un modo mai visto) la cella che il medico ha davanti.
+  // Non si costruisce niente: si legge quello che la pagina mostra già.
+  function istanteRiga(tr) {
+    const campo = tr?.querySelector('input[name="DATA_ORD"]');
+    const dal = istanteDa(campo ? campo.value : "");
+    if (dal) return { ...dal, via: "campo" };
+    for (const td of tr?.querySelectorAll(":scope > td") || []) {
+      const t = istanteDa(td.textContent.replace(/\s+/g, " ").trim());
+      if (t) return { ...t, via: "cella" };
+    }
+    return null;
+  }
+
   function risultatiModel(doc, baseUrl) {
     const out = [], seen = new Set();
     for (const a of doc.querySelectorAll('a[title="Visualizza Risultati"]')) {
@@ -1249,15 +1277,35 @@
       const td = a.closest("td"), tr = a.closest("tr");
       const exams = (td?.getAttribute("title") || "").split(";")
         .map((x) => shortLabel(x.replace(/^\s*\d+-\d+\s*/, "")).trim()).filter(Boolean);
-      const dt = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(tr?.querySelector('input[name="DATA_ORD"]')?.value || "");
-      out.push({
-        id, url, exams,
-        ts: dt ? Date.UTC(+dt[1], dt[2] - 1, +dt[3], +dt[4], +dt[5]) : 0,
-        when: dt ? `${dt[3]}/${dt[2]} ${dt[4]}:${dt[5]}` : "",
-      });
+      const dt = istanteRiga(tr);
+      out.push({ id, url, exams, ts: dt ? dt.ts : 0, when: dt ? dt.when : "", dataVia: dt ? dt.via : "" });
     }
     out.sort((a, b) => b.ts - a.ts);
     return out;
+  }
+
+  // Perché un prelievo non è diventato una colonna: l'unica risposta sta
+  // nelle righe della pagina, non nel pannello. Una riga per collegamento
+  // «Visualizza Risultati», con quello che c'era scritto davvero.
+  function diagPrelievi(doc, baseUrl) {
+    const righe = [], visti = new Set();
+    for (const a of doc.querySelectorAll('a[title="Visualizza Risultati"]')) {
+      const m = /window\.open\(\s*['"]([^'"]+)['"]/.exec(a.getAttribute("onclick") || "");
+      const tr = a.closest("tr");
+      const campo = tr?.querySelector('input[name="DATA_ORD"]');
+      let id = "";
+      if (m) { try { id = param(new URL(m[1], baseUrl).href, "RCS_ACCESSO_ID") || ""; } catch { /* indirizzo rotto */ } }
+      const doppio = !!id && visti.has(id);
+      if (id) visti.add(id);
+      const dt = istanteRiga(tr);
+      righe.push({
+        ok: !!dt && !doppio && !!id && !!m,
+        testo: `${id || "senza identificativo"}${doppio ? " (già visto: la riga si ripete)" : ""} · campo ${
+          !campo ? "ASSENTE" : campo.value ? `«${String(campo.value).slice(0, 30)}»` : "vuoto"} · ${
+          dt ? `letta dalla ${dt.via}: ${dt.when}` : "NESSUNA data leggibile in questa riga"}${m ? "" : " · senza collegamento"}`,
+      });
+    }
+    return righe;
   }
 
   // a value outside its own reference range is worth the eye
@@ -3417,8 +3465,8 @@
           ${daLeggere && !ra ? `<div class="hint">${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"}: <b>⭳ Carica i valori</b>.</div>` : ""}
           ${rotti.length ? `<div class="hint">${rotti.length === 1 ? "Un prelievo non si è lasciato leggere" : `${rotti.length} prelievi non si sono lasciati leggere`} (${
             esc(rotti.map((e) => e.when).filter(Boolean).join(", "))}): il Registro dice perché, <b>↻ Aggiorna</b> riprova.</div>` : ""}
-          ${senzaData.length ? `<div class="hint">${senzaData.length === 1 ? "Un prelievo letto è" : `${senzaData.length} prelievi letti sono`} senza data e ora nel gestionale: non ${senzaData.length === 1 ? "entra" : "entrano"} in tabella (${
-            esc(senzaData.map((e) => shortLabel(e.label)).join(", "))}).</div>` : ""}
+          ${senzaData.length ? `<div class="hint">Di ${senzaData.length === 1 ? "un prelievo letto" : `${senzaData.length} prelievi letti`} la pagina non dà l'ora, né nel campo nascosto né nella riga: senza un istante non ${senzaData.length === 1 ? "diventa" : "diventano"} una colonna (${
+            esc(senzaData.map((e) => shortLabel(e.label)).join(", "))}). Il Registro dice cosa c'era scritto.</div>` : ""}
           ${t ? `${this.avvisoNomi(st.righe, st.scartate)}${t.nRighe ? t.html
             : `<div class="hint">Tutti i valori sono in range: con «solo alterati» non resta niente da mostrare.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
           ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Con lo storico del portale, letto per <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
@@ -5376,6 +5424,17 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       panel.esiti = esitiModel(document, location.href);
+      // Se una riga di prelievo non si lascia leggere, il Registro lo dice
+      // subito e con le sue parole: senza questo, un prelievo che non diventa
+      // una colonna è indistinguibile da un prelievo che non esiste. Quando
+      // sono tutte a posto non si scrive niente: la pagina si ricarica a ogni
+      // click, e un Registro pieno di righe uguali non lo legge nessuno.
+      const dp = diagPrelievi(document, location.href);
+      const male = dp.filter((r) => !r.ok);
+      if (male.length) {
+        panel.log(`${now()}  ${male.length} righe di prelievo su ${dp.length} non si lasciano leggere:\n${
+          dp.map((r) => `    ${r.ok ? "ok" : "✗ "} ${r.testo}`).join("\n")}`);
+      }
     }
     panel.restoreUi(); // same tab + same episode → quesito/selezione/vista tornano come prima
     // Quello che è stato deciso in sottofondo si dice sulla pagina dove il
