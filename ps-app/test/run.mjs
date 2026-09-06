@@ -1144,6 +1144,33 @@ async function scenarioRisultati(browser) {
   check(scen, /179, 38, 30/.test(rosso.val) && !/179, 38, 30/.test(rosso.nome), `in rosso c'è solo il valore (${rosso.val} vs ${rosso.nome})`);
 
   // copy the whole table for the diario, with the names spelled out
+  // Un prelievo di cui il gestionale non dà l'ora NON sparisce: diventa la
+  // colonna «?», in fondo, coi suoi valori tutti leggibili.
+  const senzaOra = createMock({ withResults: true, senzaOra: true });
+  const b4 = await newPage(browser, senzaOra);
+  await b4.page.goto(senzaOra.patientUrl);
+  await b4.page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(b4.page, '[data-seg="esiti"]').click();
+  await $panel(b4.page, "#risall").click();
+  await attendiTabella(b4.page, 2);
+  const ignota = await b4.page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    const th = [...r.querySelectorAll(".sttab thead th")].slice(1);
+    const riga = [...r.querySelectorAll(".sttab tbody tr:not(.stsez)")]
+      .find((t) => t.cells[0].firstChild.textContent.trim() === "Hb");
+    return { teste: th.map((t) => t.textContent.replace(/\s+/g, " ").trim()),
+             ultima: th[th.length - 1]?.getAttribute("title") || "",
+             hb: [...(riga?.querySelectorAll("td") || [])].map((td) => td.textContent.trim()),
+             avviso: (/non dà data e ora[^.]*\./.exec(r.textContent.replace(/\s+/g, " ")) || [""])[0] };
+  });
+  check(scen, ignota.teste.length === 2 && /^\?/.test(ignota.teste[1]),
+    `il prelievo senza ora è la colonna «?», in fondo (got ${ignota.teste.join(" | ")})`);
+  check(scen, /non dà data e ora/.test(ignota.ultima), `e l'intestazione lo spiega (got ${ignota.ultima})`);
+  check(scen, ignota.hb.length === 2 && ignota.hb.every((v) => /\d/.test(v)),
+    `i suoi valori ci sono tutti (Hb: ${ignota.hb.join(" | ")})`);
+  check(scen, /colonn/.test(ignota.avviso), `e la schermata lo dice (got ${ignota.avviso.slice(0, 90)})`);
+  await b4.context.close();
+
   // «↺ Reset» dimentica i valori letti: la tabella sparisce, il bottone torna
   // a «⭳ Carica i valori», e una nuova lettura la ricostruisce da zero
   await $panel(page, "#valreset").click();

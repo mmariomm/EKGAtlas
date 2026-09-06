@@ -126,8 +126,11 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   **↻ Aggiorna**, che rilegge **tutti** i prelievi ancora aperti, a passo lento e uno alla volta.
   **solo alterati** / **tutti** filtra le righe; **↺ Reset** dimentica i valori letti e la scheda
   in archivio di questo paziente, e **⭳ Carica i valori** li rilegge da zero (i tuoi segni
-  restano). Un prelievo letto ma senza data e ora nel gestionale non può diventare una colonna:
-  una riga sotto i bottoni lo dice, e il Registro elenca ogni prelievo letto con la sua colonna.
+  restano).
+- Di un prelievo il gestionale può **non dare data e ora** (né nel campo nascosto della riga, né
+  a video). Quei valori **non spariscono**: diventano la colonna **?**, in fondo a destra, con
+  «ora ignota» sotto e il motivo nel tooltip. Una riga sotto i bottoni lo dice, e il Registro
+  elenca ogni prelievo letto con la colonna in cui è finito.
 - **Un tocco su un valore lo segna**: giallo; un secondo tocco arancio; un terzo lo spegne. I segni
   sono tuoi, restano col paziente (24 ore, come la nota) e sopravvivono al cambio di pagina.
 - **Cosa è cambiato dall'ultima volta che hai guardato**: dopo un **↻ Aggiorna**, in quel prelievo

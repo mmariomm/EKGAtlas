@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.31.0";
+  const VERSION = "3.31.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -932,10 +932,21 @@
     const data = m ? m[1] : t ? `${pad(t.getUTCDate())}/${pad(t.getUTCMonth() + 1)}/${t.getUTCFullYear()}` : String(meta?.when || "").trim();
     const ora = m ? (m[2] || "") : t ? `${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}` : "";
     const label = [data, ora].filter(Boolean).join(" ");
-    if (!label || !rows || !rows.length) return null;
+    if (!rows || !rows.length) return null;
+    // Senza data il prelievo NON sparisce: diventa una colonna «?». Un valore
+    // che il medico vede, con l'ora dichiarata ignota, vale infinitamente più
+    // di un valore buttato via in silenzio. L'accesso fa da identità, così due
+    // prelievi senza ora restano due colonne e non si fondono.
+    const ignota = !label;
+    const id = String(meta?.id || "");
     // il titolo della richiesta viaggia con la colonna: in tabella lo dice il
     // tooltip dell'intestazione, e non serve più una riga per prelievo
-    const date = [{ data, ora, label, chiave: label + "#1", id: String(meta?.id || ""), titolo: String(meta?.label || "").replace(/\s+/g, " ").trim() }];
+    const date = [{
+      data, ora, ignota, id,
+      label: label || "?",
+      chiave: ignota ? "?#" + (id || Math.random().toString(36).slice(2)) : label + "#1",
+      titolo: String(meta?.label || "").replace(/\s+/g, " ").trim(),
+    }];
     const righe = rows.filter((r) => r.nome && String(r.valore).trim()).map((r, i) => ({
       nome: String(r.nome).replace(/\s+/g, " ").trim(),
       esame: esameDiRiga(meta?.exams, meta?.label, r.nome),
@@ -3477,7 +3488,9 @@
       // una colonna, e non devono sparire in silenzio
       const senzaData = prelievi.filter((e) => {
         const v = tabStore.get(this.risKey(e.id), null);
-        return v && v.rows && v.rows.length && !prelievoComeTabella(risMeta(e), v.rows, "");
+        if (!v || !v.rows || !v.rows.length) return false;
+        const t = prelievoComeTabella(risMeta(e), v.rows, "");
+        return !!t && t.date[0].ignota;
       });
       const ra = this._refreshAll;
       const t = st ? this.tabellaStorico(st, nov, leggiSegni(this.chiaveNota())) : null;
@@ -3494,8 +3507,9 @@
           ${daLeggere && !ra ? `<div class="hint">${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"}: <b>⭳ Carica i valori</b>.</div>` : ""}
           ${rotti.length ? `<div class="hint">${rotti.length === 1 ? "Un prelievo non si è lasciato leggere" : `${rotti.length} prelievi non si sono lasciati leggere`} (${
             esc(rotti.map((e) => e.when).filter(Boolean).join(", "))}): il Registro dice perché, <b>↻ Aggiorna</b> riprova.</div>` : ""}
-          ${senzaData.length ? `<div class="hint">Di ${senzaData.length === 1 ? "un prelievo letto" : `${senzaData.length} prelievi letti`} la pagina non dà l'ora, né nel campo nascosto né nella riga: senza un istante non ${senzaData.length === 1 ? "diventa" : "diventano"} una colonna (${
-            esc(senzaData.map((e) => shortLabel(e.label)).join(", "))}). Il Registro dice cosa c'era scritto.</div>` : ""}
+          ${senzaData.length ? `<div class="hint">Di ${senzaData.length === 1 ? "un prelievo" : `${senzaData.length} prelievi`} la pagina non dà data e ora, né nel campo nascosto né nella riga: ${
+            senzaData.length === 1 ? "è la colonna" : "sono le colonne"} <b>?</b>, in fondo a destra (${
+            esc(senzaData.map((e) => shortLabel(e.label)).join(", "))}). I valori ci sono tutti; il Registro dice cosa c'era scritto al posto dell'ora.</div>` : ""}
           ${t ? `${this.avvisoNomi(st.righe, st.scartate)}${t.nRighe ? t.html
             : `<div class="hint">Tutti i valori sono in range: con «solo alterati» non resta niente da mostrare.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
           ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Con lo storico del portale, letto per <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
@@ -3602,8 +3616,10 @@
       const oggi = `${String(d0.getDate()).padStart(2, "0")}/${String(d0.getMonth() + 1).padStart(2, "0")}/${d0.getFullYear()}`;
       const testa = `<tr><th class="stn">Esame</th>${col.map((c, i) => {
         const diOggi = c.data === oggi;
-        return `<th class="${i === 0 ? "ultima" : ""}" title="${esc([c.label, c.titolo].filter(Boolean).join(" · "))}">${esc(diOggi ? c.ora || "oggi" : c.data.slice(0, 5))}<span class="sth">${
-          esc(diOggi ? "" : c.ora)}</span></th>`;
+        const cima = c.ignota ? "?" : diOggi ? c.ora || "oggi" : c.data.slice(0, 5);
+        const sotto = c.ignota ? "ora ignota" : diOggi ? "" : c.ora;
+        const tip = [c.ignota ? "Il gestionale non dà data e ora per questo prelievo" : c.label, c.titolo].filter(Boolean).join(" · ");
+        return `<th class="${i === 0 && !c.ignota ? "ultima" : ""}" title="${esc(tip)}">${esc(cima)}<span class="sth">${esc(sotto)}</span></th>`;
       }).join("")}</tr>`;
       const nRighe = gruppi.reduce((n, g) => n + g.righe.length, 0);
       const legenda = [...simboli].map(([esame, segno]) => ({ segno, esame }));
@@ -4213,7 +4229,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           // qui si vede cosa è stato letto e cosa non ha una data per entrarci
           const inTabella = rows && rows.length ? prelievoComeTabella(risMeta(e), rows, "") : null;
           this.log(`${now()}  ${e.when || "senza data"} · ${shortLabel(e.label)}: ${rows ? rows.length : 0} valori${
-            rows && rows.length && !inTabella ? " — senza data e ora nel gestionale: non entra in tabella" : inTabella ? ` → colonna ${inTabella.date[0].label}` : ""}`);
+            inTabella ? ` → colonna ${inTabella.date[0].ignota ? "«?» (il gestionale non dà data e ora)" : inTabella.date[0].label}` : ""}`);
         } catch (err) {
           this.rottiTab.add(e.id);   // lo dice la schermata, non solo il Registro
           this.log(`${now()}  ${shortLabel(e.label)}: valori non aggiornati (${err?.head || err?.message || err})`);

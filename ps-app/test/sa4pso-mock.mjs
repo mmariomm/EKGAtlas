@@ -302,10 +302,12 @@ export function createMock(opts = {}) {
   ];
   function risultatiRows() {
     if (!opts.withResults) return "";
-    return `<table>${ACCESSI.map((a) => `<tr>
+    // opts.senzaOra: su una riga il gestionale non dà l'ora — né nel campo
+    // nascosto né a video. Succede, e quei valori non devono sparire.
+    return `<table>${ACCESSI.map((a, i) => `<tr>
       <td class="AFCDataTD" title="${esc(a.exams)}">
         <a class="AFCDataLink" href="menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${EP()}#" title="Visualizza Risultati" onclick="window.open('/sa4rcs/restrict/RcsAccessiRisultatiElenco.do?RCS_ACCESSO_ID=${a.id}','*TEST00001','height=500,width=800');"><img alt="risultati"></a>
-        <input type="hidden" name="DATA_ORD" value="${a.when}">
+        <input type="hidden" name="DATA_ORD" value="${opts.senzaOra && i === 1 ? "campo di esempio" : a.when}">
       </td></tr>`).join("")}</table>`;
   }
   // two draws with the same panel: the older one differs where a change mark

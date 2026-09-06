@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "PS Assist — richieste Pronto Soccorso",
   "short_name": "PS Assist",
-  "version": "3.31.0",
+  "version": "3.31.1",
   "description": "Crea richieste lab/radiologia su SA4PSO e aggiunge gli esami scelti, verificando ogni inserimento nel carrello. La Conferma resta sempre un click reale sulla pagina.",
   "icons": {
     "16": "icon16.png",
