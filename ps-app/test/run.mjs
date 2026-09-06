@@ -749,6 +749,32 @@ async function scenarioPrintUploadViewer(browser) {
   await context.close();
 }
 
+// Visto al lavoro: le etichette non uscivano mai. La pagina è 1 KB, senza
+// script e senza frame — solo un <meta refresh> dentro una cella — e
+// l'indirizzo del PDF porta degli apici: get_pdf('PSOWEB_HL7_…'). Tagliarlo
+// al primo apice dava un indirizzo monco, ed era l'unico tentativo fatto.
+async function scenarioPrintMetaViewer(browser) {
+  const scen = "print-meta-viewer";
+  const mock = createMock({ seedConfirmed: true, metaViewer: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.locator('#psassist-host [data-print="699999"]').first().click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  await page.waitForFunction(() => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= 1, { timeout: 25000 });
+  const dl = mock.state.requests.filter((q) => q.url.includes("uploaddownloadservlet") && (q.params.mimetype || "").includes("pdf"));
+  check(scen, dl.length === 1, `le etichette si prendono dal rinvio della pagina (got ${dl.length} richieste buone)`);
+  check(scen, /get_pdf\('PSOWEB_HL7_\d+'\)/.test(decodeURIComponent(dl[0]?.url || "")),
+    `l'indirizzo arriva intero, apici compresi (got ${decodeURIComponent(dl[0]?.url || "").slice(-90)})`);
+  const monchi = mock.state.requests.filter((q) => q.url.includes("uploaddownloadservlet")).length - dl.length;
+  check(scen, monchi === 0, `nessun tentativo su un indirizzo tagliato (got ${monchi})`);
+  check(scen, (await page.locator("#psassist-print .pwerr").count()) === 0, "e niente «apri e stampa» a mano");
+  check(scen, /^blob:/.test(await page.locator("#psassist-print iframe").getAttribute("src") || ""),
+    "il PDF è nel wizard, pronto da stampare");
+  await $wiz(page, "#pwexit").click();
+  await context.close();
+}
+
 async function scenarioPrintViewerVariants(browser) {
   // Un visualizzatore che NOMINA il PDF nella pagina: si prende da lì.
   {
@@ -2005,6 +2031,7 @@ const scenarios = [
   ["print etichette html wrapper", scenarioPrintWrapper],
   ["print inline viewer captured", scenarioPrintInlineViewer],
   ["print upload-servlet viewer (field URL)", scenarioPrintUploadViewer],
+  ["print meta-refresh viewer (apici nell'indirizzo)", scenarioPrintMetaViewer],
   ["print viewer variants (frameset / id-only)", scenarioPrintViewerVariants],
   ["print hard viewer → tab fallback", scenarioPrintHardViewer],
   ["ui ergonomics (selbar/drag/scroll)", scenarioUiErgonomics],

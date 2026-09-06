@@ -532,7 +532,18 @@ export function createMock(opts = {}) {
           if (!window.__viewerReady) return; buildAndGo(rep);
         }
       <\/script>caricamento…${FOOT}`);
+    // Il visualizzatore VERO delle etichette, come si è visto al lavoro:
+    // nessuno script, nessun frame, un solo <meta refresh> dentro una cella —
+    // e l'indirizzo del PDF porta APICI veri, non %27.
+    const metaViewer = (rid, prog) => respond(`<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html><head><title>Lista Strutture Esterne</title>
+<link rel="stylesheet" type="text/css" href="../Themes/AFC/Style.css"></head>
+<body><strong>Stampa&nbsp;Etichetta LIS ...</strong><br>
+<table border="0" cellspacing="0" cellpadding="0"><tbody><tr>
+<td><meta http-equiv="refresh" content="0; URL=/UploadDownload/uploaddownloadservlet.rra2?table=DUAL&blobfield=san_report_onthefly.get_pdf('PSOWEB_HL7_2026001${String(rid).slice(-4)}${prog}')&wherecondition=where%201=1&dataSource=jdbc/sa4web&mimetype=application/pdf">&nbsp;&nbsp;</td>
+</tr></tbody></table></body></html>`);
     if (u.pathname.endsWith("RcsStampaEtichetteLISHMIMU.do")) {
+      if (opts.metaViewer) return metaViewer(params.get("RICHIESTA_ID"), params.get("RICHIESTA_PROG"));
       if (opts.framesetViewer) return framesetViewer(params.get("RICHIESTA_ID"), params.get("RICHIESTA_PROG"));
       if (opts.idOnlyViewer) return idOnlyViewer(params.get("RICHIESTA_ID"), params.get("RICHIESTA_PROG"));
       if (opts.uploadViewer) return uploadViewer(params.get("RICHIESTA_ID"), params.get("RICHIESTA_PROG"));

@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.31.1";
+  const VERSION = "3.32.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1504,8 +1504,15 @@
         const loose = el.tagName === "FRAME" || el.tagName === "IFRAME" || el.tagName === "EMBED" || el.tagName === "OBJECT";
         if (v && (loose || /jasperservlet|uploaddownload|\.pdf|report|stampa/i.test(v))) domCands.push(v);
       }
+      // Il rinvio del visualizzatore delle etichette porta l'indirizzo del PDF
+      // con dentro degli APICI:
+      //   URL=…uploaddownloadservlet.rra2?…blobfield=…get_pdf('PSOWEB_HL7_123')…
+      // Tagliarlo al primo apice dava un indirizzo monco — ed era l'unico
+      // tentativo che il programma faceva, quindi le etichette non uscivano.
+      // Dopo «URL=» finisce l'attributo: si prende tutto quello che resta.
       const meta = doc.querySelector('meta[http-equiv="refresh" i]')?.getAttribute("content") || "";
-      domCands.push((/url\s*=\s*['"]?([^'"\s>]+)/i.exec(meta) || [])[1]);
+      const rinvio = /url\s*=\s*(.+)$/is.exec(meta);
+      domCands.push(rinvio ? rinvio[1].trim().replace(/^(["'])([\s\S]*)\1$/, "$2").trim() : undefined);
       for (const m of text.matchAll(/window\.open\(\s*["']([^"']+)["']/gi)) domCands.push(m[1]);
       for (const c of domCands) { const r = await attempt(c, "link nella pagina"); if (r) return r; }
 
@@ -2628,15 +2635,19 @@
     /* La tabella scorre dentro la sua cornice, non col pannello: solo così
        l'intestazione (sticky) resta sotto gli occhi con venti analiti. */
     .stwrap { overflow: auto; max-height: 60vh; overscroll-behavior: contain; border: 1px solid #E3E8EF; border-radius: 8px; }
-    .sttab { border-collapse: collapse; font-size: 11.5px; width: 100%; }
+    /* La tabella è larga quanto i suoi numeri, non quanto il pannello: se il
+       medico allarga la finestra i valori restano accanto ai nomi invece di
+       allontanarsene. Per lo stesso motivo i numeri sono allineati a
+       sinistra, incolonnati dalle cifre tabulari. */
+    .sttab { border-collapse: collapse; font-size: 11.5px; width: auto; }
     .sttab th, .sttab td { padding: 3px 7px; white-space: nowrap; border-bottom: 1px solid #EDF1F6; }
     .sttab thead th { position: sticky; top: 0; background: #F8FBFE; color: #5B6B7A; font-weight: 600;
-                      font-size: 10.5px; text-align: right; border-bottom: 1px solid #D9E2EC; }
+                      font-size: 10.5px; text-align: left; border-bottom: 1px solid #D9E2EC; }
     .sttab .sth { display: block; font-size: 9.5px; color: #A3B2C2; font-weight: 500; }
     .sttab th.stn { position: sticky; left: 0; z-index: 1; background: #fff; text-align: left;
                     font-weight: 600; color: #16232E; max-width: 116px; overflow: hidden; text-overflow: ellipsis; }
     .sttab thead th.stn { background: #F8FBFE; z-index: 2; }
-    .sttab td { text-align: right; color: #35506B; font-variant-numeric: tabular-nums; }
+    .sttab td { text-align: left; color: #35506B; font-variant-numeric: tabular-nums; }
     .sttab td.fuori { color: #B3261E; font-weight: 800; }
     .sttab td.parz { font-style: italic; }   /* parziale: in corsivo, niente puntini */
     /* Novelty rides a different channel: a tint behind the number. Text

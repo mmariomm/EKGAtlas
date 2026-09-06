@@ -117,6 +117,9 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
 - I nomi sono in **sigla** (`Hb`, `GB`, `PLT`…), con l'**unità sotto il nome** e il **range nel
   tooltip del valore**. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
   vale per un'abbreviazione ambigua — e una riga d'avviso in cima dice **quali**.
+- La tabella è **larga quanto i suoi numeri**, non quanto il pannello: se allarghi la finestra i
+  valori restano **accanto ai nomi** invece di allontanarsene, e sono allineati a sinistra
+  (incolonnati dalle cifre tabulari).
 - In rosso c'è **solo il valore**, con ↑ ↓: il nome resta a sinistra, sempre nella stessa colonna.
   Una cella **·** = quel prelievo non ha quell'analita; *in corsivo* = risultato ancora
   **parziale** (il laboratorio non ha finito — c'è una riga che lo ricorda sotto la tabella). Quando lo stesso
@@ -691,7 +694,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 56 scenari e2e + 32 sull'estensione + 36 sul banco + storico + il cancello privacy
+npm test           # 57 scenari e2e + 32 sull'estensione + 36 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
