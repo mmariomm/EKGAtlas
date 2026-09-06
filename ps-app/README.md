@@ -207,9 +207,12 @@ In questa versione **non si modificano dal pannello** — per cambiarli si modif
 ricompila (`npm run build`).
 
 ### Consensi
-Cinque moduli di consenso, dentro l'estensione: **Emocolture**, **HIV Dipendente**, **Lesioni
-Animali**, **Antitetano**, **TAC cmdc**. Un tocco apre il PDF e la finestra di stampa, come per la
-lista esami.
+Nove moduli, dentro l'estensione. Da firmare: **Emocolture**, **HIV Dipendente**, **Lesioni
+Animali**, **Antitetano**, **TAC cmdc**, **Emotrasfusione** (il pacchetto trasfusionale:
+consenso informato, richiesta emocomponenti, dichiarazione del medico in urgenza). Sotto, staccate,
+le **deleghe per il ritiro**: **Ritiro esami**, **Ritiro referto RX**, **Ritiro cartella e CD**.
+Un tocco apre il PDF e la finestra di stampa, come per la lista esami; un modulo di più pagine
+dice **quanta carta esce** prima che tu prema Stampa.
 
 I file stanno nella cartella `extension/consensi/`: **niente rete, niente server**. Si aprono anche
 se il gestionale è lento o giù, e per stamparli non esce una singola richiesta dal computer (è un

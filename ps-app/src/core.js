@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.29.1";
+  const VERSION = "3.30.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1649,17 +1649,27 @@
   // I moduli di consenso stanno DENTRO l'estensione (cartella consensi/):
   // niente rete, niente server, funzionano anche se il gestionale è giù.
   // Un tocco apre il PDF e la finestra di stampa, come per la lista esami.
+  // `pagine` è quanta carta esce: nove pagine non si scoprono dalla stampante.
+  // `gruppo` separa i consensi da firmare dalle deleghe per il ritiro.
   const CONSENSI = [
-    { k: "emocolture", nome: "Emocolture", file: "emocolture.pdf",
+    { k: "emocolture", nome: "Emocolture", file: "emocolture.pdf", pagine: 1,
       esteso: "Esame colturale su campioni biologici diversi" },
-    { k: "hiv-dipendente", nome: "HIV Dipendente", file: "hiv-dipendente.pdf",
+    { k: "hiv-dipendente", nome: "HIV Dipendente", file: "hiv-dipendente.pdf", pagine: 1,
       esteso: "Consenso del dipendente all'esecuzione del test HIV (MDL 170)" },
-    { k: "lesioni-animali", nome: "Lesioni Animali", file: "lesioni-animali.pdf",
+    { k: "lesioni-animali", nome: "Lesioni Animali", file: "lesioni-animali.pdf", pagine: 1,
       esteso: "Rapporto di lesione provocata da animali" },
-    { k: "antitetano", nome: "Antitetano", file: "antitetano.pdf",
+    { k: "antitetano", nome: "Antitetano", file: "antitetano.pdf", pagine: 1,
       esteso: "Immuno-profilassi antitetanica" },
-    { k: "tac-cmdc", nome: "TAC cmdc", file: "tac-cmdc.pdf",
+    { k: "tac-cmdc", nome: "TAC cmdc", file: "tac-cmdc.pdf", pagine: 1,
       esteso: "Consenso alla TAC con mezzo di contrasto" },
+    { k: "emotrasfusione", nome: "Emotrasfusione", file: "emotrasfusione.pdf", pagine: 9,
+      esteso: "Pacchetto trasfusionale: consenso informato, richiesta emocomponenti, dichiarazione del medico in urgenza" },
+    { k: "ritiro-esami", nome: "Ritiro esami", file: "ritiro-esami.pdf", pagine: 1, gruppo: "ritiro",
+      esteso: "Delega per il ritiro del referto degli esami ematochimici di Pronto Soccorso" },
+    { k: "ritiro-referto-rx", nome: "Ritiro referto RX", file: "ritiro-referto-rx.pdf", pagine: 1, gruppo: "ritiro",
+      esteso: "Delega per il ritiro del referto radiologico" },
+    { k: "ritiro-cartella-cd", nome: "Ritiro cartella e CD", file: "ritiro-cartella-cd.pdf", pagine: 5, gruppo: "ritiro",
+      esteso: "Richiesta e delega per copia della documentazione sanitaria: verbale di PS, referti, CD radiologico" },
   ];
   // nel banco di prova non c'è un'estensione: la pagina finta serve un PDF
   const urlConsenso = (c) => (DEMO ? "/consensi/" + c.file
@@ -2522,6 +2532,7 @@
     .crow:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     .cnome { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; color: #16232E; }
     .cgo { flex: 0 0 auto; font-size: 11px; color: #0B5CAD; font-weight: 700; }
+    .cpag { flex: 0 0 auto; font-size: 10px; color: #8a4b03; background: #FFF3DB; border-radius: 999px; padding: 1px 7px; font-weight: 700; }
     .linkbtn { border: 0; background: transparent; color: #0B5CAD; font: inherit; font-weight: 700;
                text-decoration: underline; cursor: pointer; padding: 0; }
     .portok { color: #177245; font-weight: 700; }
@@ -3963,11 +3974,18 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
 
     viewConsensi() {
-      const righe = CONSENSI.map((c) => `
-        <button class="crow" data-cons="${esc(c.k)}" title="${esc(c.esteso)}">
+      let gruppo = "";
+      const righe = CONSENSI.map((c) => {
+        // le deleghe di ritiro non sono consensi da firmare: stanno sotto, con
+        // il loro titoletto, invece di allungare un elenco solo
+        const sep = (c.gruppo || "") !== gruppo && (gruppo = c.gruppo || "")
+          ? `<div class="dsep"><span>deleghe per il ritiro</span></div>` : "";
+        return `${sep}<button class="crow" data-cons="${esc(c.k)}" title="${esc(c.esteso)}">
           <span class="cnome">${esc(c.nome)}</span>
+          ${c.pagine > 1 ? `<span class="cpag" title="Esce così tanta carta">${esc(String(c.pagine))} pagine</span>` : ""}
           <span class="cgo">🖨 apri e stampa</span>
-        </button>`).join("");
+        </button>`;
+      }).join("");
       return `
         <div class="sec">
           <div class="lbl">Moduli di consenso (${CONSENSI.length})</div>
