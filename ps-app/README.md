@@ -75,14 +75,14 @@ del portale clinico non c'è pannello: solo una striscia che dice cosa ha letto.
 
 Ogni scheda-paziente **è un bottone**: un tocco apre i suoi **Esiti** (dal pannello si va da un
 paziente per *vedere*); il bottoncino **Richieste** resta per ordinare. Aprire un paziente **dal
-gestionale** fa il contrario: il pannello parte da **Richieste** (quella navigazione vuol dire
-*agire*).
+gestionale** porta allo stesso posto: gli **Esiti**, perché è quasi sempre quello che si va a
+fare. Ordinare è un tocco più in là — **Richieste** è sempre in cima.
 
 L'elenco dei pazienti su cui hai lavorato nel turno: quello della pagina aperta è primo e marcato
 **QUI**, gli altri con quando li hai visti. Da ogni scheda scegli **Richieste** o **Esiti**.
 Sceglierne un altro **carica la sua pagina**: il pannello non mostra mai i dati di un paziente
-diverso da quello che hai davanti. Il pannello parte da qui solo dove non si può ordinare (la
-lista del pronto soccorso); sulla scheda di un paziente parte direttamente da **Richieste**.
+diverso da quello che hai davanti. Il pannello parte da qui solo sulla lista del pronto soccorso,
+dove non c'è un paziente aperto; sulla scheda di un paziente parte dagli **Esiti**.
 
 ### Richieste
 1. **Quesito diagnostico** — casella su una riga, suggerimenti a fianco; l'ultimo resta scritto.
@@ -116,8 +116,8 @@ fondo **Altri** — i dettagli più sotto), una colonna per prelievo, **il più 
 (27/08) con l'ora sotto se è di un altro giorno; **passando il mouse** sull'intestazione si legge
 data e ora per esteso e **gli esami** compresi in quella richiesta.
 
-- I nomi sono in **sigla** (`Hb`, `GB`, `PLT`…), con l'**unità sotto il nome** e il **range nel
-  tooltip del valore**. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
+- I nomi sono in **sigla** (`Hb`, `GB`, `PLT`…), con l'**unità fra parentesi accanto al nome**
+  (`GB (x10³/µL)`) e il **range nel tooltip del valore**. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
   vale per un'abbreviazione ambigua — e una riga d'avviso in cima dice **quali**.
 - La tabella è **larga quanto i suoi numeri**, non quanto il pannello: se allarghi la finestra i
   valori restano **accanto ai nomi** invece di allontanarsene, e sono allineati a sinistra
@@ -714,7 +714,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 60 scenari e2e + 32 sull'estensione + 39 sul banco + storico + il cancello privacy
+npm test           # 60 scenari e2e + 32 sull'estensione + 42 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

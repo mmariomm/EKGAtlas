@@ -58,6 +58,10 @@ check(await page.locator('#sa4-page a:has-text("ROSSI MARIO")').count() === 1, "
 check((await $("b.who").innerText()).toLowerCase().includes("pazienti"), "senza paziente aperto il pannello parte dai Pazienti");
 
 await page.locator('#sa4-page a:has-text("ROSSI MARIO")').click();
+await page.waitForSelector("#psassist-host [data-seg]", { state: "attached", timeout: 20000 });
+check(await $('[data-seg="esiti"].on').count() === 1, "aprendo un paziente il pannello parte dagli Esiti");
+// per ordinare si passa da Richieste, un tocco
+await $('[data-seg="richieste"]').click();
 await page.waitForSelector("#psassist-host #q", { state: "attached", timeout: 20000 });
 check(await page.title() === "ROSSI MARIO", `la scheda è quella del paziente aperto (${await page.title()})`);
 check(page.url().includes("EPISODIO_ID=700001"), "l'indirizzo porta l'episodio come al lavoro");

@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.35.0";
+  const VERSION = "3.36.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2710,7 +2710,7 @@
                       font-size: 10.5px; text-align: left; border-bottom: 1px solid #D9E2EC; }
     .sttab .sth { display: block; font-size: 9.5px; color: #A3B2C2; font-weight: 500; }
     .sttab th.stn { position: sticky; left: 0; z-index: 1; background: #fff; text-align: left;
-                    font-weight: 600; color: #16232E; max-width: 116px; overflow: hidden; text-overflow: ellipsis; }
+                    font-weight: 600; color: #16232E; max-width: 168px; overflow: hidden; text-overflow: ellipsis; }
     .sttab thead th.stn { background: #F8FBFE; z-index: 2; }
     .sttab td { text-align: left; color: #35506B; font-variant-numeric: tabular-nums; }
     .sttab td.fuori { color: #B3261E; font-weight: 800; }
@@ -2740,7 +2740,9 @@
     /* una cella senza valore si deve VEDERE che è vuota, o una riga con due
        soli prelievi sembra una riga piena */
     .sttab td.vuoto { color: #AEBECD; }
-    .stum { display: block; font-size: 9px; color: #A3B2C2; font-weight: 500; letter-spacing: 0; }
+    /* L'unità sta ACCANTO al nome, fra parentesi: su un rigo suo raddoppiava
+       l'altezza di ogni riga e allontanava i numeri dal nome. */
+    .stum { font-size: 9px; color: #A3B2C2; font-weight: 500; letter-spacing: 0; }
     .sttab th.ultima { color: #0B5CAD; }
     .sttab th.ultima::after { content: "ultimo"; display: block; font-size: 8.5px; font-weight: 700;
       letter-spacing: .06em; text-transform: uppercase; color: #9DBFDE; }
@@ -2920,10 +2922,14 @@
       const held = tabStore.get(this.risKey(id), null);
       if (held && held.rows) this.segnaVisto(id, held.rows);
     }
-    // ordering is the 90% action: land there whenever this page can order.
+    // Aprire un paziente vuol dire quasi sempre GUARDARE: si atterra sugli
+    // Esiti. Ordinare è un tocco più in là (Richieste resta in cima), e chi
+    // arriva da una scheda del pannello sceglie già dove andare.
     defaultView() {
       if (this.pageType !== "patient") return "richieste";
-      return this.entry && (this.entry.labUrl || this.entry.radioUrl) ? "richieste" : "home";
+      // senza i link per ordinare non è la scheda di un paziente ma la lista
+      // del pronto soccorso: lì si mostra l'elenco dei pazienti
+      return this.entry && (this.entry.labUrl || this.entry.radioUrl) ? "esiti" : "home";
     }
     persistUi() {
       const k = this.uiKey();
@@ -2958,8 +2964,9 @@
       this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
       this.acq = s.acq || "";
       // A page load decides the view, not the stored one: opening a patient
-      // from the EHR means "act" and lands on Richieste; coming from a panel
-      // card means "see" and afterNav switches to Esiti right after this.
+      // lands on Esiti — quello che si va a fare, nove volte su dieci, è
+      // guardare — e chi arriva da una scheda del pannello ha già scelto lui
+      // dove andare (afterNav decide subito dopo).
       // (The ER worklist stays on the patient list either way.)
       this.view = this.defaultView();
       this.viewId = null;
@@ -3693,7 +3700,7 @@
         const etichetta = inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome);
         return `<tr><th class="stn${inatteso(r) ? " grezza" : ""}" title="${esc(r.nome)}${
           r.esame && r.esame !== r.nome ? " — " + esc(r.esame) : ""}${r.mnem ? " · " + esc(r.mnem) : ""}">${
-          esc(etichetta)}${um ? `<span class="stum">${esc(um)}</span>` : ""}</th>${celle}</tr>`;
+          esc(etichetta)}${um ? `<span class="stum"> (${esc(um)})</span>` : ""}</th>${celle}</tr>`;
       };
 
       const corpo = gruppi.map((g) => {
@@ -5637,6 +5644,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       panel.applyAfterNav();
       const pending = nextQueued(findEpisodeId(document, location.href));
       panel.pending = pending; // a richiesta of this run still needs confirming
+      // Il bottone che porta a termine la richiesta rimasta a metà (la
+      // radiologia dopo il laboratorio) sta nelle Richieste: finché qualcosa
+      // è in sospeso si atterra lì, non sugli Esiti.
+      if (pending && panel.view === "esiti") panel.view = "richieste";
       panel.render();
       panel.refreshRefCache();
       panel.caricaStorico();

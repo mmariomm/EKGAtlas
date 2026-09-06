@@ -73,6 +73,14 @@ async function attendiTabella(page, nCol, timeout = 25000) {
   );
 }
 
+// Il pannello si apre sugli ESITI: aprire un paziente vuol dire quasi sempre
+// guardare. Per ordinare si passa da Richieste — un tocco, come fa il medico.
+async function richieste(page) {
+  const q = page.locator("#psassist-host #q");
+  if (!(await q.count())) await page.locator('#psassist-host [data-seg="richieste"]').click();
+  await q.waitFor({ timeout: 10000 });
+}
+
 async function selectExams(page, labels) {
   // one-line catalog search + dropdown
   for (const { text } of labels) {
@@ -103,6 +111,7 @@ async function scenarioHappyLab(browser, { directRender = false } = {}) {
   const mock = createMock({ directRender });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
 
   await $panel(page, "#q").fill("Sospetta colangite acuta — età ≥80");
   // preset chip: Epatico (5 URGENZE exams) + one POC single via chip
@@ -156,6 +165,7 @@ async function scenarioLabelMismatch(browser) {
   const mock = createMock({ mislabel: { 320: "TEST COAGULATIVO SPECIALE (X999)" } });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("controllo");
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, "#go").click();
@@ -172,6 +182,7 @@ async function scenarioAutoConfirm(browser) {
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   const eraQui = page.url();
@@ -198,6 +209,7 @@ async function scenarioCorniceVietata(browser) {
   const mock = createMock({ vietaCornice: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
@@ -217,6 +229,7 @@ async function scenarioAutoConfirmMismatch(browser) {
   const mock = createMock({ preloadCart: { code: "30", res: RES.POC } });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
@@ -237,6 +250,7 @@ async function scenarioAutoConfirmSenzaRicevuta(browser) {
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   // la ricevuta sparisce appena viene scritta, prima che la pagina la legga
@@ -268,6 +282,7 @@ async function scenarioAutoConfirmAltraRisorsa(browser) {
   const mock = createMock({ preloadCart: { code: "30", res: RES.POC } });   // avanzo su POC
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("sepsi");
   await $panel(page, '.opt[title*="TROPONINA"]').click();              // POC
   await $panel(page, '.opt[title*="PROCALCITONINA"]').click();         // URGENZE: si finisce qui
@@ -289,6 +304,7 @@ async function scenarioConfirmPostFails(browser) {
   const mock = createMock({ confirmFails: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
@@ -309,6 +325,7 @@ async function scenarioAltroPresidio(browser) {
   const mock = createMock({ altroPresidio: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, "#q").fill("dispnea");
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();   // POC
@@ -330,6 +347,7 @@ async function scenarioAltroPresidio(browser) {
   const mock2 = createMock({ altroPresidio: true });
   const b2 = await newPage(browser, mock2);
   await b2.page.goto(mock2.patientUrl);
+  await richieste(b2.page);
   await b2.page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(b2.page, "#q").fill("dispnea");
   await $panel(b2.page, '.opt[title*="EMOGASANALISI VENOSA"]').first().click();
@@ -353,6 +371,7 @@ async function scenarioPresidioSconosciuto(browser) {
   const mock = createMock({ altroPresidio: true, resLabels: { "00660001P": "SETTORE ANALISI SPECIALI 7" } });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, "#q").fill("controllo");
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
@@ -370,6 +389,7 @@ async function scenarioLagVerify(browser) {
   const mock = createMock({ lagRenders: { 320: 2 } });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("controllo");
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, "#go").click();
@@ -385,6 +405,7 @@ async function scenarioNeverVisible(browser) {
   const mock = createMock({ neverAdd: ["320"] }); // server "loses" the add
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("controllo");
   // POC exam (lost by the server) runs first; the URGENZE one must never start
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
@@ -409,6 +430,7 @@ async function scenarioRiflesso(browser) {
   const mock = createMock({ riflesso: { 16: { code: "17", label: "BILIRUBINA TOTALE (1341)" } } });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("ittero");
   await $panel(page, '.opt[title*="BILIRUBINA"]').click();
   await $panel(page, "#go").click();
@@ -429,6 +451,7 @@ async function scenarioRiflesso(browser) {
   const mock2 = createMock({ riflesso: { 159: { code: "555", label: "ANTITROMBINA III (1450)" } } });
   const b = await newPage(browser, mock2);
   await b.page.goto(mock2.patientUrl);
+  await richieste(b.page);
   await $panel(b.page, "#q").fill("controllo");
   await $panel(b.page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(b.page, "#go").click();
@@ -447,6 +470,7 @@ async function scenarioAvvisoDopoInsert(browser) {
   const mock = createMock({ avvisoDopoInsert: ["159"] });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("febbre");
   await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(page, "#go").click();
@@ -470,6 +494,7 @@ async function scenarioEpisodeSwap(browser) {
   const mock = createMock({ swapEpisodeAfter: 3 });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("controllo");
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, "#go").click();
@@ -487,6 +512,7 @@ async function scenarioExpiryOnInsert(browser) {
   const mock = createMock({ expireAfter: 5 });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("controllo");
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
@@ -505,6 +531,7 @@ async function scenarioSessionExpiry(browser) {
   const mock = createMock({ expireAfter: 3 }); // patient + entry + crea POST, then dead
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("controllo");
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, "#go").click();
@@ -535,6 +562,7 @@ async function scenarioExamPageManual(browser) {
   const { context, page } = await newPage(browser, mock);
   // create a richiesta by driving the REAL pages natively (no helper)
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.click('a[title="Richieste Laboratorio"]');
   await page.fill('form[name="RICHIESTACrea"] textarea[name="QUESITO_DIAGNOSTICO"]', "febbre");
   await page.click('form[name="RICHIESTACrea"] input[name="Update"]');
@@ -592,6 +620,7 @@ async function scenarioMissingQuesito(browser) {
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   const before = mock.state.requests.length;
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   check(scen, await $panel(page, "#go").isDisabled(), "senza quesito il CTA è disabilitato");
@@ -617,6 +646,7 @@ async function scenarioRadiologyLearning(browser) {
   await page.waitForSelector("#psassist-host", { state: "attached" }); // content script ran → learned the RX list
   // 2) back on the patient page, RX TORACE is now selectable and one-click works
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("dispnea e dolore toracico");
   await selectExams(page, [{ res: RES.RX, text: "RX TORACE 2 PROIEZIONI" }]); // mock-only: proves learning
   await $panel(page, "#go").click();
@@ -636,6 +666,7 @@ async function scenarioPrintManual(browser) {
   const mock = createMock({ seedConfirmed: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   let head = await $wiz(page, ".pwhd").innerText();
@@ -661,6 +692,7 @@ async function scenarioPrintMultiLab(browser) {
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("febbre di origine sconosciuta");
   await $panel(page, '.opt[title*="TROPONINA"]').click();      // POC
   await $panel(page, '.opt[title*="PROCALCITONINA"]').click(); // URGENZE
@@ -700,6 +732,7 @@ async function scenarioPrintRadio(browser) {
   const mock = createMock({ seedConfirmedRadio: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   const rowTxt = await page.locator('#psassist-host [data-print="699998"]').first().innerText();
   check(scen, /prenotazione/i.test(rowTxt), `riga radiologia etichettata "prenotazione" (got: ${rowTxt.trim().slice(0, 60)})`);
   await page.locator('#psassist-host [data-print="699998"]').first().click();
@@ -722,6 +755,7 @@ async function scenarioPrintAutoOnPatient(browser) {
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
@@ -746,6 +780,7 @@ async function scenarioPrintAutoInterstitial(browser) {
   const mock = createMock({ labelsInterstitial: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
@@ -763,6 +798,7 @@ async function scenarioPrintAutoOnReturn(browser) {
   const mock = createMock({ labelsInterstitial: true, labelsBare: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
@@ -788,6 +824,7 @@ async function scenarioPrintInlineViewer(browser) {
   const mock = createMock({ seedConfirmed: true, blobViewers: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
@@ -807,6 +844,7 @@ async function scenarioPrintUploadViewer(browser) {
   const mock = createMock({ seedConfirmed: true, uploadViewer: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
@@ -830,6 +868,7 @@ async function scenarioPrintMetaViewer(browser) {
   const mock = createMock({ seedConfirmed: true, metaViewer: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
@@ -856,6 +895,7 @@ async function scenarioPrintAvanzaDaSolo(browser) {
   const mock = createMock({ seedConfirmed: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
@@ -892,6 +932,7 @@ async function scenarioPrintViewerVariants(browser) {
     const mock = createMock({ seedConfirmed: true, framesetViewer: true });
     const { context, page } = await newPage(browser, mock);
     await page.goto(mock.patientUrl);
+    await richieste(page);
     await page.waitForSelector("#psassist-host", { state: "attached" });
     await page.locator('#psassist-host [data-print="699999"]').first().click();
     await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
@@ -909,6 +950,7 @@ async function scenarioPrintViewerVariants(browser) {
     const mock = createMock({ seedConfirmed: true, idOnlyViewer: true });
     const { context, page } = await newPage(browser, mock);
     await page.goto(mock.patientUrl);
+    await richieste(page);
     await page.waitForSelector("#psassist-host", { state: "attached" });
     await page.locator('#psassist-host [data-print="699999"]').first().click();
     await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
@@ -960,6 +1002,7 @@ async function scenarioPrintHardViewer(browser) {
   const mock = createMock({ seedConfirmed: true, hardViewer: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print iframe", { timeout: 20000 });
@@ -991,6 +1034,7 @@ async function scenarioPrintWrapper(browser) {
   const mock = createMock({ seedConfirmed: true, etichetteWrapper: true });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   await page.waitForTimeout(800);
@@ -1007,6 +1051,7 @@ async function scenarioUiErgonomics(browser) {
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
 
   // sticky compact selection bar: grouped plain text + count
@@ -1045,6 +1090,7 @@ async function scenarioUiErgonomics(browser) {
   });
   check(scen, pos1.left !== "" && pos1.top !== "", `pannello trascinato (got ${pos1.left},${pos1.top})`);
   await page.reload();
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   const pos2 = await page.evaluate(() => {
     const w = document.getElementById("psassist-host").shadowRoot.querySelector(".wrap");
@@ -1080,6 +1126,7 @@ async function scenarioContinuity(browser) {
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
 
   // build up state, then reload: the EHR refreshes pages all the time and
@@ -1088,6 +1135,7 @@ async function scenarioContinuity(browser) {
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await page.reload();
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   check(scen, (await $panel(page, "#q").inputValue()) === "dolore toracico irradiato", "quesito ripristinato dopo il refresh");
   check(scen, /2 SELEZIONATI/.test(await $panel(page, ".selbar").innerText()), "selezione ripristinata dopo il refresh");
@@ -1165,6 +1213,7 @@ async function scenarioLabPlusRx(browser) {
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, "#q").fill("dispnea e dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();   // POC
@@ -1210,6 +1259,7 @@ async function scenarioLabPlusRxManual(browser) {
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, "#q").fill("trauma");
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
@@ -1345,6 +1395,10 @@ async function scenarioRisultati(browser) {
   await page.waitForSelector("#psassist-host .sttab", { timeout: 10000 });
   check(scen, (await page.locator(`#psassist-host .sttab td[data-cella="${quale}"].marca1`).count()) === 1,
     "e il segno sopravvive al ricaricamento della pagina");
+  // l'unità sta fra parentesi accanto al nome, non su un rigo suo
+  const nome = await $panel(page, ".sttab tbody tr:not(.stsez) th.stn").first().innerText();
+  check(scen, /\(.+\)/.test(nome) && !/\n/.test(nome), `unità accanto al nome (got: ${JSON.stringify(nome)})`);
+  await shot(page, scen + "-tabella");
   await context.close();
 }
 
@@ -1354,6 +1408,7 @@ async function scenarioResizeAndLog(browser) {
   const { context, page } = await newPage(browser, mock);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
 
   // --- resize from the bottom-left grip ---
@@ -1366,6 +1421,7 @@ async function scenarioResizeAndLog(browser) {
   const w1 = (await $panel(page, ".card").boundingBox()).width;
   check(scen, w1 > w0 + 80, `trascinando si allarga (${Math.round(w0)} → ${Math.round(w1)} px)`);
   await page.reload();
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   const w2 = (await $panel(page, ".card").boundingBox()).width;
   check(scen, Math.abs(w2 - w1) < 3, `la misura resta dopo il refresh (${Math.round(w2)} px)`);
@@ -1400,7 +1456,9 @@ async function scenarioHomePills(browser) {
   // visit patient A, then a second episode: both become pills
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
-  check(scen, (await $panel(page, "#q").count()) === 1, "su una pagina paziente si apre su Richieste, non sull'elenco");
+  check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1,
+    "su una pagina paziente si apre sugli Esiti, non sull'elenco");
+  check(scen, (await $panel(page, "#q").count()) === 0, "e non sulle Richieste: ordinare è un tocco più in là");
 
   await page.goto(mock.patientUrl.replace("999001", "999002"));
   await page.waitForSelector("#psassist-host", { state: "attached" });
@@ -1410,13 +1468,14 @@ async function scenarioHomePills(browser) {
   check(scen, /qui/i.test(cards[0]), "il paziente della pagina è marcato «qui» ed è il primo");
   check(scen, /min fa|adesso|alle/.test(cards[1]), `gli altri mostrano quando (got: ${cards[1]?.replace(/\s+/g, " ").slice(0, 40)})`);
 
-  // picking another patient LOADS HIS PAGE (never shows his data from here)
-  // the card itself is the button, and it opens the Esiti
-  await page.locator("#psassist-host .pcard:not(.now)").click();
+  // picking another patient LOADS HIS PAGE (never shows his data from here).
+  // La scheda porta agli Esiti — dove si arriva comunque —, il bottoncino
+  // «Richieste» porta a ordinare: è quello che dimostra che la scelta viaggia.
+  await page.locator('#psassist-host .pcard:not(.now) .pbtn[data-go="richieste"]').click();
   await page.waitForFunction(() => /EPISODIO_ID=999001/.test(location.href), { timeout: 15000 });
   await page.waitForSelector("#psassist-host", { state: "attached" });
   check(scen, /999001/.test(await $panel(page, ".hd .sub").innerText()), "siamo sulla pagina di quel paziente");
-  check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1, "e si apre proprio sulla sezione scelta");
+  check(scen, (await $panel(page, '[data-seg="richieste"].on').count()) === 1, "e si apre proprio sulla sezione scelta");
 
   // the panel never carries another patient's selection across
   check(scen, (await page.locator("#psassist-host .selbar").count()) === 0, "nessuna selezione trascinata da un paziente all'altro");
@@ -1641,6 +1700,7 @@ async function scenarioRilancioPaginaEsami(browser) {
   const mock = createMock({ neverAdd: ["159"] });   // la PCT non entra mai: la corsa fallisce
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.click('a[title="Richieste Laboratorio"]');
   await page.fill('form[name="RICHIESTACrea"] textarea[name="QUESITO_DIAGNOSTICO"]', "controllo");
   await page.click('form[name="RICHIESTACrea"] input[name="Update"]');
@@ -1702,6 +1762,7 @@ async function scenarioEmogasNew(browser) {
   const mock = createMock({ nuoveVersioni: { 3: "325", 166: "326" } });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, "#q").fill("dispnea");
   // si parte da quella VECCHIA, presa dall'elenco completo: è il caso di chi
@@ -1726,6 +1787,7 @@ async function scenarioEmogasNew(browser) {
   const m2 = createMock({});
   const { context: c2, page: p2 } = await newPage(browser, m2);
   await p2.goto(m2.patientUrl);
+  await richieste(p2);
   await p2.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(p2, "#q").fill("dispnea");
   await $panel(p2, "#acq").fill("EMOGASANALISI VENOSA POC (");
@@ -1744,6 +1806,7 @@ async function scenarioEmogasNew(browser) {
   const m3 = createMock({});
   const { context: c3, page: p3 } = await newPage(browser, m3);
   await p3.goto(m3.patientUrl);
+  await richieste(p3);
   await p3.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(p3, "#q").fill("dispnea");
   await $panel(p3, '.opt[data-code="325"]').click();
@@ -2040,6 +2103,7 @@ async function scenarioNoPatientPage(browser) {
   // come from that patient's page, where the ordering screen was in use: the
   // worklist carries HIS episode in the row links and must not inherit it
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host #q", { state: "attached" });
   await $panel(page, "#q").fill("controllo");
   await page.goto(mock.worklistUrl);
@@ -2078,6 +2142,7 @@ async function scenarioRxSingles(browser) {
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   const rx = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".opt .nm")]
     .map((o) => o.textContent).filter((t) => /^RX/.test(t)));
@@ -2099,6 +2164,7 @@ async function scenarioStopButton(browser) {
   const mock = createMock({ lagRenders: { 320: 99 } }); // verify loop gives time to press stop
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
+  await richieste(page);
   await $panel(page, "#q").fill("controllo");
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
