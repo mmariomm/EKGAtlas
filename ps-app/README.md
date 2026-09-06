@@ -376,6 +376,12 @@ raggruppando per stampante:
 3. per la **radiologia**, la riga ha l'icona stampante "Stampa Prenotazione Esterna": il wizard
    stampa quel PDF → **stampante normale**.
 
+**Non serve una mano libera**: quando la finestra di stampa del browser si chiude, il wizard
+**passa da solo al documento dopo** — come se avessi premuto «→ Avanti» — e sull'ultimo si chiude.
+Il browser dice soltanto che il dialogo si è chiuso, non se hai stampato o annullato: si va avanti
+in tutt'e due i casi, e i bottoni restano lì se vuoi guidare a mano. Un dialogo che si chiude
+all'istante (stampa non disponibile su quel PC) **non** fa saltare la coda.
+
 **Righe multiple**: quando gli esami di una richiesta appartengono a laboratori diversi (POC +
 Urgenze, ecc.) il LIS la divide in **più righe** — stessa `RICHIESTA_ID`, `RICHIESTA_PROG` 1, 2… —
 ognuna col suo PDF etichette e il suo foglio. Il wizard le stampa **tutte** ("Etichette — riga 1",
@@ -699,7 +705,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 57 scenari e2e + 32 sull'estensione + 39 sul banco + storico + il cancello privacy
+npm test           # 58 scenari e2e + 32 sull'estensione + 39 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

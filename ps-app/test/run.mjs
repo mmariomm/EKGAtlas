@@ -785,6 +785,44 @@ async function scenarioPrintMetaViewer(browser) {
   await context.close();
 }
 
+// Con l'etichettatrice davanti non si ha una mano libera: chiuso il dialogo di
+// stampa si passa al documento dopo da soli. Il browser dice solo che il
+// dialogo si è chiuso («afterprint»), non se ha stampato: qui lo si simula
+// esattamente come lo manda lui.
+async function scenarioPrintAvanzaDaSolo(browser) {
+  const scen = "print-avanza";
+  const mock = createMock({ seedConfirmed: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.locator('#psassist-host [data-print="699999"]').first().click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  const titolo = () => page.locator("#psassist-print .pwhd b").innerText();
+  const attesi = (n) => page.waitForFunction(
+    (k) => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= k, n, { timeout: 25000 });
+  await attesi(1);
+  check(scen, /Stampa 1 di 2/.test(await titolo()), `si parte dal primo (got ${await titolo()})`);
+
+  // un «afterprint» che arriva subito NON conta: sarebbe una corsa a vuoto
+  // fino in fondo alla coda su un computer dove la stampa non è disponibile
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  await page.waitForTimeout(400);
+  check(scen, /Stampa 1 di 2/.test(await titolo()), `un dialogo che si chiude all'istante non fa saltare niente (got ${await titolo()})`);
+
+  await page.waitForTimeout(600);
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  await page.waitForFunction(() => /Stampa 2 di 2/.test(document.getElementById("psassist-print")
+    ?.shadowRoot?.querySelector(".pwhd b")?.textContent || ""), { timeout: 8000 }).catch(() => {});
+  check(scen, /Stampa 2 di 2/.test(await titolo()), `chiuso il dialogo si passa al documento dopo (got ${await titolo()})`);
+
+  await attesi(2);
+  await page.waitForTimeout(700);
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  await page.waitForSelector("#psassist-print", { state: "detached", timeout: 8000 }).catch(() => {});
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "e sull'ultimo la finestra si chiude da sola");
+  await context.close();
+}
+
 async function scenarioPrintViewerVariants(browser) {
   // Un visualizzatore che NOMINA il PDF nella pagina: si prende da lì.
   {
@@ -2050,6 +2088,7 @@ const scenarios = [
   ["print inline viewer captured", scenarioPrintInlineViewer],
   ["print upload-servlet viewer (field URL)", scenarioPrintUploadViewer],
   ["print meta-refresh viewer (apici nell'indirizzo)", scenarioPrintMetaViewer],
+  ["print: chiuso il dialogo si passa al documento dopo", scenarioPrintAvanzaDaSolo],
   ["print viewer variants (frameset / id-only)", scenarioPrintViewerVariants],
   ["print hard viewer → tab fallback", scenarioPrintHardViewer],
   ["ui ergonomics (selbar/drag/scroll)", scenarioUiErgonomics],

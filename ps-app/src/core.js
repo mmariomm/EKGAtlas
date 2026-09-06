@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.33.0";
+  const VERSION = "3.34.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -5237,6 +5237,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     let attempts = 0;
     let blobUrl = null;
     let timer = null;
+    let staccaStampa = () => {};   // toglie l'ascolto del dialogo di stampa del documento in corso
 
     const CSS = `${COLORS}
       .back { position: fixed; inset: 0; background: rgba(9,42,74,.45); z-index: 2147483646; }
@@ -5268,6 +5269,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const cleanup = () => {
       wizardOpen = false;
       abbandona.abort();
+      staccaStampa();
       clearTimeout(timer);
       if (blobUrl) URL.revokeObjectURL(blobUrl);
       window.removeEventListener("keydown", onKey, true);
@@ -5325,6 +5327,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
 
     const advance = () => {
       clearTimeout(timer);
+      staccaStampa();
       if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
       i++;
       if (i >= jobs.length) return cleanup();
@@ -5344,12 +5347,40 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const body = root.querySelector(".pwbody");
         body.innerHTML = `<iframe title="Anteprima PDF"></iframe>`;
         const f = body.querySelector("iframe");
-        let printed = false;
+        let printed = false;   // il dialogo di stampa è stato chiesto per QUESTO documento
+        let apertoIl = 0;      // quando: un dialogo che si chiude subito non si è mai aperto
+        let avanzato = false;  // al documento dopo si passa una volta sola
+        // Chiuso il dialogo di stampa si passa al documento dopo da soli: è
+        // quello che il medico farebbe premendo «→ Avanti», e con
+        // l'etichettatrice davanti non ha una mano libera. Il browser non dice
+        // se ha stampato o annullato — dice solo che il dialogo si è chiuso —
+        // quindi si va avanti in tutt'e due i casi, una volta sola per
+        // documento. Un dialogo che si chiude PRIMA di essersi aperto davvero
+        // (stampa non disponibile) non conta: sarebbe una corsa a vuoto fino
+        // in fondo alla coda.
+        const dopoStampa = () => {
+          if (avanzato || !root.contains(f)) return;
+          if (!printed || Date.now() - apertoIl < 500) return;
+          avanzato = true;
+          staccaStampa();
+          panel?.log(`${now()}  ${jobs[i].name}: finestra di stampa chiusa, passo al documento dopo`);
+          clearTimeout(timer);
+          timer = setTimeout(advance, 300);
+        };
+        staccaStampa();   // resti del documento precedente
+        window.addEventListener("afterprint", dopoStampa);
+        staccaStampa = () => {
+          window.removeEventListener("afterprint", dopoStampa);
+          try { f.contentWindow?.removeEventListener("afterprint", dopoStampa); } catch { /* cornice già andata */ }
+        };
         // il cronometro va SEMPRE dentro `timer`, e la stampa parte solo se
         // quella cornice è ancora quella a schermo: «Avanti» ne lasciava uno
         // orfano, che stampava il documento dopo al posto di questo
-        const once = () => { if (!printed && root.contains(f)) { printed = true; tryPrint(); } };
-        f.addEventListener("load", () => { clearTimeout(timer); timer = setTimeout(once, 350); });
+        const once = () => { if (!printed && root.contains(f)) { printed = true; apertoIl = Date.now(); tryPrint(); } };
+        f.addEventListener("load", () => {
+          try { f.contentWindow?.addEventListener("afterprint", dopoStampa); } catch { /* cornice già andata */ }
+          clearTimeout(timer); timer = setTimeout(once, 350);
+        });
         timer = setTimeout(once, 1500); // headless/viewer-less fallback
         f.src = blobUrl;
       } catch (e) {
