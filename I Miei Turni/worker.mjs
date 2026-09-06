@@ -246,7 +246,7 @@ function loginPage(message) {
     '<form method="post" action="/login">\n' +
     errore +
     '<input class="campo" type="password" name="password" autocomplete="current-password"\n' +
-    '       autofocus required aria-label="Password">\n' +
+    '       placeholder="Password" autofocus required aria-label="Password">\n' +
     '<button class="entra" type="submit">Entra</button>\n' +
     '</form>\n'
   );
