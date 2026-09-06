@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.28.2";
+  const VERSION = "3.29.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1519,6 +1519,7 @@
       catch { return fallback; }
     },
     set(key, value) { try { dep.setItem(NS + key, JSON.stringify(value)); return true; } catch { return false; } },
+    del(key) { try { dep.removeItem(NS + key); return true; } catch { return false; } },
     keys(prefix) {
       try { return Object.keys(dep).filter((k) => k.startsWith(NS + prefix)).map((k) => k.slice(NS.length)); }
       catch { return []; }
@@ -3319,6 +3320,22 @@
       return dati && dati.righe && dati.righe.length ? dati : null;
     }
 
+    // «↺ Reset»: si dimentica tutto quello che si era letto di questo
+    // paziente — i prelievi in questa scheda del browser e la scheda clinica
+    // in archivio — e si ricomincia da «⭳ Carica i valori». I segni del
+    // medico restano: sono suoi, e ritrovano le stesse celle.
+    resetValori() {
+      const ep = this.episodeId || "x";
+      for (const k of [...tabStore.keys(`ris.${ep}.`), ...tabStore.keys(`visto.${ep}.`)]) tabStore.del(k);
+      this.rottiTab.clear();
+      if (hasExt()) ask({ t: "delStorico", chiave: this.chiavePaz(), ep: this.episodeId, nome: this.nomePaziente() || "" }).catch(() => {});
+      this.storico = null; this.storicoAltri = ""; this.storicoDaConfermare = false;
+      this.esiti = esitiModel(document, location.href);   // le righe «già letti» se ne vanno coi loro valori
+      this.log(`${now()}  valori azzerati: si rileggono da zero`);
+      this.message = { ok: "Valori dimenticati: ⭳ Carica i valori li rilegge da zero." };
+      this.render();
+    }
+
     viewEsiti() {
       const open = new Set(tabStore.get(this.refKey(), []));
       const cached = this.refCache || {};
@@ -3343,6 +3360,12 @@
       const vivi = prelievi.filter((e) => !e.storico).length;
       const daLeggere = this.daLeggere().length;
       const rotti = prelievi.filter((e) => this.rottiTab.has(e.id));
+      // letti, ma senza una data e ora nel gestionale: non possono diventare
+      // una colonna, e non devono sparire in silenzio
+      const senzaData = prelievi.filter((e) => {
+        const v = tabStore.get(this.risKey(e.id), null);
+        return v && v.rows && v.rows.length && !prelievoComeTabella(risMeta(e), v.rows, "");
+      });
       const ra = this._refreshAll;
       const t = st ? this.tabellaStorico(st, nov, leggiSegni(this.chiaveNota())) : null;
       const chi = st ? [st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") : "";
@@ -3351,13 +3374,15 @@
           <div class="lbl">Valori${t ? ` (${st.righe.length} esami · ${t.nCol} prelievi)` : ""}
             ${vivi ? `<button class="mini" id="risall" ${ra ? "disabled" : ""} title="Legge i valori dal gestionale, un prelievo alla volta">${
               ra ? `↻ ${ra.done}/${ra.total}…` : daLeggere === vivi ? "⭳ Carica i valori" : "↻ Aggiorna"}</button>` : ""}
-            ${t ? `<button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>
-            <button class="mini" id="storcopy" title="Copia la tabella per il diario, coi nomi per esteso">⧉ Copia</button>` : ""}
+            ${t ? `<button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>` : ""}
+            ${t || prelievi.some((e) => tabStore.get(this.risKey(e.id), null)) ? `<button class="mini" id="valreset" title="Dimentica i valori letti e la scheda in archivio di questo paziente: ⭳ Carica i valori li rilegge da zero">↺ Reset</button>` : ""}
           </div>
           ${nNov ? `<div class="newbar"><span>${nNov} ${nNov === 1 ? "valore nuovo" : "valori nuovi"} dall'ultima lettura</span><button id="letto" type="button">Letto</button></div>` : ""}
           ${daLeggere && !ra ? `<div class="hint">${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"}: <b>⭳ Carica i valori</b>.</div>` : ""}
           ${rotti.length ? `<div class="hint">${rotti.length === 1 ? "Un prelievo non si è lasciato leggere" : `${rotti.length} prelievi non si sono lasciati leggere`} (${
             esc(rotti.map((e) => e.when).filter(Boolean).join(", "))}): il Registro dice perché, <b>↻ Aggiorna</b> riprova.</div>` : ""}
+          ${senzaData.length ? `<div class="hint">${senzaData.length === 1 ? "Un prelievo letto è" : `${senzaData.length} prelievi letti sono`} senza data e ora nel gestionale: non ${senzaData.length === 1 ? "entra" : "entrano"} in tabella (${
+            esc(senzaData.map((e) => shortLabel(e.label)).join(", "))}).</div>` : ""}
           ${t ? `${this.avvisoNomi(st.righe, st.scartate)}${t.nRighe ? t.html
             : `<div class="hint">Tutti i valori sono in range: con «solo alterati» non resta niente da mostrare.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
           ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Con lo storico del portale, letto per <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
@@ -3481,35 +3506,6 @@
       return `${legenda.map((l) => `<div class="hint"><b>${esc(l.segno)}</b> fatto con <b>${esc(l.esame)}</b> (sul valore c'è scritto con cosa gli altri)</div>`).join("")}${
         parz ? `<div class="hint"><i>In corsivo</i>: valore ancora <b>parziale</b>, il laboratorio non ha finito.</div>` : ""}
         <div class="hint">Tocca un valore per segnarlo: giallo, poi arancio, poi via.</div>`;
-    }
-
-    // Il testo per il diario: la stessa tabella degli Esiti, nomi per esteso.
-    testoStorico() {
-      const st = this.datiEsiti();
-      if (!st) return "";
-      // Le stesse righe che si vedono (col filtro, se è acceso), nome per
-      // esteso con l'unità, «parziale» scritto: nel diario un numero senza
-      // unità o dato per definitivo è un errore che il medico non deve
-      // poter fare copiando.
-      const col = st.date.map((d, i) => ({ ...d, i })).reverse();
-      const out = ["Esame\t" + col.map((c) => c.label).join("\t")];
-      const simboli = new Map();
-      for (const g of raggruppaStorico(st.righe)) {
-        const righe = g.righe.filter((r) => !this.soloAlterati || r.valori.some((v) => v.v && v.stato));
-        if (!righe.length) continue;
-        out.push("", "[" + g.nome + "]");
-        for (const r of righe) {
-          const p = provenienze(r, simboli);
-          const um = (r.valori.find((v) => v && v.um) || {}).um || "";
-          out.push([r.nome + (um ? ` (${um})` : ""), ...col.map((c) => {
-            const v = r.valori[c.i] || { v: "", stato: 0 };
-            if (!v.v) return "";
-            return v.v + (v.stato ? (v.stato < 0 ? " (basso)" : " (alto)") : "") + (v.parziale ? " (parziale)" : "") + p.segno(v);
-          })].join("\t"));
-        }
-      }
-      const note = [...simboli].map(([esame, segno]) => `${segno} fatto con ${esame}`);
-      return out.join("\n") + (note.length ? "\n\n" + note.join("\n") : "");
     }
 
     // The table read on the portal page comes back through the extension. It
@@ -4077,6 +4073,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           const rows = await this.leggiPrelievo(e, { baseline: mai });
           this.rottiTab.delete(e.id);
           if (rows && JSON.stringify(rows) !== prima) cambiati++;
+          // una riga nel Registro per prelievo: quando la tabella non torna,
+          // qui si vede cosa è stato letto e cosa non ha una data per entrarci
+          const inTabella = rows && rows.length ? prelievoComeTabella(risMeta(e), rows, "") : null;
+          this.log(`${now()}  ${e.when || "senza data"} · ${shortLabel(e.label)}: ${rows ? rows.length : 0} valori${
+            rows && rows.length && !inTabella ? " — senza data e ora nel gestionale: non entra in tabella" : inTabella ? ` → colonna ${inTabella.date[0].label}` : ""}`);
         } catch (err) {
           this.rottiTab.add(e.id);   // lo dice la schermata, non solo il Registro
           this.log(`${now()}  ${shortLabel(e.label)}: valori non aggiornati (${err?.head || err?.message || err})`);
@@ -4342,11 +4343,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const filtra = () => { this.soloAlterati = !this.soloAlterati; this.render(); };
       $("#storfiltro")?.addEventListener("click", filtra);
       $("#avvnomi")?.addEventListener("click", () => { this.mostraNomi = !this.mostraNomi; this.render(); });
-      $("#storcopy")?.addEventListener("click", async () => {
-        const b = this.root.querySelector("#storcopy");
-        const ok = await copiaTesto(this.testoStorico());
-        segnaCopia(b, ok);
-      });
+      $("#valreset")?.addEventListener("click", () => this.resetValori());
       this.root.querySelectorAll("[data-dcopy]").forEach((b) => b.addEventListener("click", async () => {
         const d = dimissioni()[b.getAttribute("data-dcopy")];
         if (!d) return;

@@ -1144,14 +1144,15 @@ async function scenarioRisultati(browser) {
   check(scen, /179, 38, 30/.test(rosso.val) && !/179, 38, 30/.test(rosso.nome), `in rosso c'è solo il valore (${rosso.val} vs ${rosso.nome})`);
 
   // copy the whole table for the diario, with the names spelled out
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await $panel(page, "#storcopy").click();
+  // «↺ Reset» dimentica i valori letti: la tabella sparisce, il bottone torna
+  // a «⭳ Carica i valori», e una nuova lettura la ricostruisce da zero
+  await $panel(page, "#valreset").click();
   await page.waitForTimeout(300);
-  const clip = await page.evaluate(() => navigator.clipboard.readText());
-  check(scen, /^Esame\t23\/08\/2026 07:28\t22\/08\/2026 22:23/.test(clip),
-    `la copia parte dalle colonne, in ordine (got: ${clip.split("\n")[0]})`);
-  check(scen, /Emoglobina( \([^)]+\))?\t80 \(basso\)( \(parziale\))?\t95 \(basso\)/.test(clip),
-    `coi nomi per esteso e il fuori range scritto (got: ${(clip.split("\n").find((l) => /Emoglobina/.test(l)) || "").slice(0, 60)})`);
+  check(scen, (await page.locator("#psassist-host .sttab").count()) === 0 && /Carica i valori/.test(await $panel(page, "#risall").innerText()),
+    "«↺ Reset» dimentica i valori letti: niente tabella, si ricomincia da «Carica i valori»");
+  await $panel(page, "#risall").click();
+  await attendiTabella(page, 2);
+  check(scen, (await page.locator("#psassist-host .sttab thead th").count()) === 3, "e una nuova lettura ricostruisce le due colonne");
 
   // un tocco su un valore lo segna (giallo, poi arancio, poi via), e il segno
   // resta col paziente: dopo un ricaricamento della pagina è ancora lì
