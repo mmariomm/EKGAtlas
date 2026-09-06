@@ -82,6 +82,16 @@ async function selectExams(page, labels) {
   }
 }
 
+// I referti di laboratorio stanno in un gruppo chiuso: chi li vuole in elenco
+// lo apre, come farebbe il medico. Lo stato resta anche dopo un ricaricamento.
+async function apriRefertiLab(page) {
+  const g = page.locator("#psassist-host #reflab");
+  if (await g.count() && (await g.getAttribute("aria-expanded")) !== "true") {
+    await g.click();
+    await page.waitForTimeout(200);
+  }
+}
+
 async function shot(page, name) {
   if (!SHOTS) return;
   try { await page.screenshot({ path: join(SHOTS, name + ".png") }); } catch {}
@@ -1005,15 +1015,22 @@ async function scenarioReferti(browser) {
   await page.waitForSelector("#psassist-host [data-esito]");
 
   const refs = page.locator('#psassist-host [data-esito][data-kind="referto"]');
+  // chiusi, in elenco resta solo quello che NON è laboratorio
+  const primaChiusi = await refs.allInnerTexts();
+  check(scen, primaChiusi.length === 1 && /TC ENCEFALO/.test(primaChiusi[0]),
+    `i referti di laboratorio stanno in un gruppo chiuso (in elenco: ${primaChiusi.map((t) => t.replace(/\s+/g, " ").slice(0, 24)).join(" · ") || "niente"})`);
+  await apriRefertiLab(page);
   const rows = await refs.allInnerTexts();
   check(scen, rows.length === 3, `3 referti, il link-archivio senza REFERTO_ID è ignorato (got ${rows.length})`);
-  check(scen, /22\/08 07:45/.test(rows[0]) && /EMOGASANALISI/.test(rows[0]), `più recente in cima (got: ${rows[0]?.replace(/\s+/g, " ").slice(0, 40)})`);
-  check(scen, /↗/.test(rows[0]), "il referto dichiara che si apre in una scheda");
+  // dentro il gruppo il più recente resta in cima
+  const primoLab = () => page.locator('#psassist-host [data-esito][data-kind="referto"]').nth(1);
+  check(scen, /22\/08 07:45/.test(rows[1]) && /EMOGASANALISI/.test(rows[1]), `più recente in cima nel gruppo (got: ${rows[1]?.replace(/\s+/g, " ").slice(0, 40)})`);
+  check(scen, /↗/.test(rows[1]), "il referto dichiara che si apre in una scheda");
   check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "nessuno ancora aperto");
 
   const [popup] = await Promise.all([
     page.waitForEvent("popup", { timeout: 8000 }),
-    refs.first().click(),
+    primoLab().click(),
   ]);
   // the tab is opened blank and then navigated, so wait for the real URL
   await popup.waitForURL(/Sa4ViewerExtRedirect/, { timeout: 8000 }).catch(() => {});
@@ -1029,7 +1046,7 @@ async function scenarioReferti(browser) {
   check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 1, "lo stato resiste al refresh");
 
   const before = context.pages().length, reqBefore = hits(mock, "bbbb2222");
-  await refs.first().click();
+  await primoLab().click();
   await page.waitForTimeout(700);
   check(scen, context.pages().length === before && hits(mock, "bbbb2222") === reqBefore,
     "riclick torna alla scheda già aperta, senza ricaricare");
@@ -1401,6 +1418,7 @@ async function scenarioRefertoTesto(browser) {
   await page.waitForSelector("#psassist-host [data-esito]", { timeout: 15000 });
 
   // the radiology row announces it opens INSIDE the panel, the lab one does not
+  await apriRefertiLab(page);
   const rx = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "TC ENCEFALO" });
   check(scen, /›/.test(await rx.innerText()), "il referto RIS si apre nel pannello");
   const lis = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "EMOGASANALISI" });

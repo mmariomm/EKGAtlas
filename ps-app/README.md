@@ -153,7 +153,12 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
 - Quando la scheda viene (anche) dal portale, sotto la tabella compare: *«Con lo storico del
   portale, letto per NOME · identità confermata dal paziente da cui l'hai aperta / dal codice fiscale / dal nome»*.
 
-**Referti** è la lista dei documenti (ECG, RX, TC, visite…), una riga ciascuno, come sempre:
+**Referti** è la lista dei documenti (ECG, RX, TC, visite…), una riga ciascuno, come sempre. I
+referti di **laboratorio** stanno tutti insieme sotto una riga **Laboratorio**, **chiusa**: quello
+che dicono è già nella tabella qui sopra, e in mezzo agli altri facevano perdere l'ECG e la
+radiologia. Un tocco sulla riga li apre — restano documenti da aprire come prima, ognuno con
+**data e ora della richiesta**; il gruppo chiuso dice quanti sono e di quando è l'ultimo. Aperto o
+chiuso, resta com'era anche dopo che la pagina si ricarica.
 - **RIS ›** — referti di **radiologia** (RX, TC, ecografia, RMN) ed **ECG**: si aprono **dentro il
   pannello, come testo**. Il PDF di quei referti porta con sé la mappa dei caratteri, quindi le
   parole si recuperano esatte invece di indovinarle: leggi il referto senza cambiare scheda, lo
@@ -694,7 +699,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 57 scenari e2e + 32 sull'estensione + 36 sul banco + storico + il cancello privacy
+npm test           # 57 scenari e2e + 32 sull'estensione + 39 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

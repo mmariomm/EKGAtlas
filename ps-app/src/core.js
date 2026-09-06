@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.32.0";
+  const VERSION = "3.33.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2522,6 +2522,18 @@
     .pbtn:hover { border-color: #0B5CAD; background: #EAF2FA; color: #0B5CAD; }
     .pcard.now .pbtn { background: #fff; }
     .dlist { display: flex; flex-direction: column; gap: 4px; }
+    /* Il gruppo dei referti di laboratorio: una riga di separazione che si
+       apre. Sta in mezzo all'elenco, quindi non deve sembrare un bottone
+       d'azione — è la riga stessa a essere toccabile. */
+    .gruppo { display: flex; align-items: center; gap: 8px; width: 100%; margin: 8px 0 3px; padding: 3px 2px;
+              border: 0; background: transparent; font: inherit; cursor: pointer; text-align: left;
+              font-size: 10.5px; color: #5B6B7A; text-transform: uppercase; letter-spacing: .06em; }
+    .gruppo:hover { color: #0B5CAD; }
+    .gruppo:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; border-radius: 4px; }
+    .gruppo .gfr { flex: 0 0 auto; color: #0B5CAD; font-weight: 800; }
+    .gruppo .gnome { flex: 0 0 auto; font-weight: 800; }
+    .gruppo .gmeta { flex: 1 1 auto; text-transform: none; letter-spacing: 0; color: #A3B2C2; font-size: 10.5px; }
+    .gruppo::after { content: ""; flex: 0 0 auto; width: 12px; height: 1px; background: #E3E8EF; }
     .dsep { display: flex; align-items: center; gap: 8px; margin: 8px 2px 3px; font-size: 10.5px;
             color: #A3B2C2; text-transform: uppercase; letter-spacing: .06em; }
     .dsep::after { content: ""; flex: 1 1 auto; height: 1px; background: #E3E8EF; }
@@ -2758,6 +2770,7 @@
       this.storicoDaConfermare = false; // c'è, ma serve il codice fiscale per dire che è suo
       this.portale = "";                // indirizzo del portale aggiunto dal medico
       this.soloAlterati = false;        // valori: show only what is out of range
+      this.refLabAperti = false;        // i referti di laboratorio: chiusi finché non servono
       this.nColEsiti = 0;               // colonne della tabella degli Esiti: decide la larghezza
       this.mostraNomi = false;          // the unexpected-name list, open or closed
       this.mostraArch = false;          // l'elenco degli archiviati, aperto o chiuso
@@ -2867,6 +2880,7 @@
         sel: [...this.selected.values()].map((i) => [i.res, i.code, i.label]),
         acq: this.acq || "",
         eoSel: this.eoSel || "",
+        refLab: !!this.refLabAperti,
         ts: Date.now(),
       });
     }
@@ -2887,6 +2901,7 @@
       }
       this._q = s.q || store.get("lastQ", "") || "";
       this.eoSel = s.eoSel || "";
+      this.refLabAperti = !!s.refLab;   // il gestionale ricarica a ogni click: il gruppo resta com'era
       this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
       this.acq = s.acq || "";
       // A page load decides the view, not the stored one: opening a patient
@@ -3532,7 +3547,7 @@
 
       // ---- referti: i documenti, uno per riga, come sempre
       const nSaved = referti.filter((e) => cached[e.id]).length;
-      const rows = referti.map((e) => {
+      const riga = (e) => {
         const state = cached[e.id] ? "saved" : busy[e.id] === true ? "busy" : typeof busy[e.id] === "string" ? "err" : open.has(e.id) ? "open" : "";
         const why = typeof busy[e.id] === "string" ? busy[e.id] : "";
         const tipo = refertoTipo(e);
@@ -3543,7 +3558,13 @@
             <span class="rlab">${esc(shortLabel(e.label))}</span>
             <span class="rgo">${(tipo === "rx" || tipo === "ecg") && busy[e.id] === undefined ? "›" : "Apri referto ↗"}</span>
           </button>`;
-      }).join("");
+      };
+      // I referti del laboratorio dicono quello che la tabella qui sopra dice
+      // già, e in mezzo agli altri fanno perdere l'ECG e la radiologia. Stanno
+      // insieme, chiusi, con la data e l'ora della richiesta su ogni riga: si
+      // aprono quando servono, e restano documenti da aprire come prima.
+      const lab = referti.filter((e) => refertoTipo(e) === "lab");
+      const altri = referti.filter((e) => refertoTipo(e) !== "lab");
       const docs = referti.length ? `
         <div class="sec">
           <div class="lbl">Referti (${referti.length})
@@ -3551,7 +3572,15 @@
             ${(nSaved || open.size) ? `<button class="mini" id="refreset">↻ Resetta</button>` : ""}
             ${this.diagnosi ? `<button class="mini" id="refdiag" title="Copia com'è fatto il visualizzatore che non si è lasciato leggere (senza numeri), da mandare a chi fa il pannello">⧉ Copia diagnosi</button>` : ""}
           </div>
-          <div class="rlist">${rows}</div>
+          ${altri.length ? `<div class="rlist">${altri.map(riga).join("")}</div>` : ""}
+          ${lab.length ? `
+            <button class="gruppo" id="reflab" aria-expanded="${this.refLabAperti ? "true" : "false"}"
+                    title="I valori sono già nella tabella qui sopra: qui ci sono i documenti firmati">
+              <span class="gfr">${this.refLabAperti ? "▾" : "▸"}</span>
+              <span class="gnome">Laboratorio</span>
+              <span class="gmeta">${esc(String(lab.length))} referti${lab[0]?.when ? ` · ultimo ${esc(lab[0].when)}` : ""}</span>
+            </button>
+            ${this.refLabAperti ? `<div class="rlist">${lab.map(riga).join("")}</div>` : ""}` : ""}
         </div>` : "";
       return valori + docs;
     }
@@ -4507,6 +4536,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#storfiltro")?.addEventListener("click", filtra);
       $("#avvnomi")?.addEventListener("click", () => { this.mostraNomi = !this.mostraNomi; this.render(); });
       $("#valreset")?.addEventListener("click", () => this.resetValori());
+      $("#reflab")?.addEventListener("click", () => { this.refLabAperti = !this.refLabAperti; this.persistUi(); this.render(); });
       $("#refdiag")?.addEventListener("click", async () => {
         const b = this.root.querySelector("#refdiag");
         segnaCopia(b, await copiaTesto(diagnosiTesto(this.diagnosi)));

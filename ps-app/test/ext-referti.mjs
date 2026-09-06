@@ -47,6 +47,9 @@ await page.waitForSelector("#psassist-host", { state: "attached", timeout: 15000
 // the saved documents live behind the Esiti tab
 await page.locator('#psassist-host [data-seg="esiti"]').click();
 await page.waitForSelector('#psassist-host [data-esito]', { timeout: 10000 });
+// i referti di laboratorio stanno in un gruppo chiuso: qui li vogliamo in elenco
+const gruppo = page.locator("#psassist-host #reflab");
+if (await gruppo.count()) { await gruppo.click(); await page.waitForTimeout(200); }
 
 const saveBtn = page.locator("#psassist-host #refsave");
 check(await saveBtn.count() === 1, "il bottone «Salva referti» compare solo nell'estensione");

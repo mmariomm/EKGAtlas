@@ -92,8 +92,11 @@ await page.waitForSelector("#psassist-host [data-seg]", { state: "attached", tim
 check(await page.title() === "BIANCHI ANNA", "il secondo paziente è la seconda scheda salvata");
 await $('[data-seg="esiti"]').click();
 await page.waitForSelector("#psassist-host [data-esito]", { state: "attached", timeout: 20000 });
-const nEsiti = await $("[data-esito]").count();
-check(nEsiti >= 4, `gli Esiti arrivano dalla pagina vera (${nEsiti} righe)`);
+// il conteggio è nell'intestazione: in elenco i referti di laboratorio sono
+// raccolti in un gruppo chiuso, quindi le righe visibili sono meno
+const titoloRef = await $(".sec .lbl:has-text('Referti')").innerText();
+check(/referti \((\d+)\)/i.test(titoloRef) && Number(/referti \((\d+)\)/i.exec(titoloRef)[1]) >= 4,
+  `gli Esiti arrivano dalla pagina vera (${titoloRef.replace(/\s+/g, " ").trim()})`);
 // i valori non si leggono da soli: si chiedono, e arrivano in UNA tabella
 check(await $(".sttab").count() === 0, "prima di chiederli non c'è nessuna tabella");
 await $("#risall").click();
@@ -152,6 +155,21 @@ await $('[data-seg="esiti"]').click();
 await page.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
 check(await page.locator(`#psassist-host .sttab td[data-cella="${cellaSegnata}"].marca1`).count() === 1,
   "e il segno è ancora lì dopo il cambio pagina");
+
+// ---- i referti di laboratorio stanno insieme e chiusi: l'ECG e la radiologia
+// non si perdono in mezzo. Restano documenti da aprire, con la loro data e ora.
+const refertiVisibili = () => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot
+  .querySelectorAll('[data-esito][data-kind="referto"]')].map((b) => b.textContent.replace(/\s+/g, " ").trim()));
+const chiusi = await refertiVisibili();
+check(chiusi.length && chiusi.every((t) => !/\bLIS\b/.test(t)),
+  `chiusi, in elenco restano solo gli altri referti (${chiusi.length}: ${chiusi.map((t) => t.slice(0, 22)).join(" · ")})`);
+check(/Laboratorio/i.test(await $("#reflab").innerText()) && /ultimo \d\d\/\d\d \d\d:\d\d/.test(await $("#reflab").innerText()),
+  `il gruppo dice quanti sono e di quando (${(await $("#reflab").innerText()).replace(/\s+/g, " ")})`);
+await $("#reflab").click();
+await page.waitForTimeout(300);
+const aperti = (await refertiVisibili()).filter((t) => /\bLIS\b/.test(t));
+check(aperti.length >= 1 && aperti.every((t) => /^\d\d\/\d\d \d\d:\d\d/.test(t)),
+  `aprendolo compaiono, ognuno con data e ora della richiesta (${aperti.map((t) => t.slice(0, 12)).join(" · ")})`);
 
 await $("#refsave").click();
 await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length >= 1, { timeout: 30000 }).catch(() => {});
