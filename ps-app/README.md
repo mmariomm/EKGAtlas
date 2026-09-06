@@ -152,6 +152,11 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
 - **LIS/AMB ↗** — gli altri referti (PDF): si aprono in una scheda e, con l'estensione, il
   documento che apri **viene tenuto** (pallino verde) — la volta dopo si apre all'istante, senza
   toccare il server. **⬇ Salva referti** li prende tutti in una volta, **↻ Resetta** svuota.
+  Un referto che non si lascia salvare (pallino rosso, il motivo al passaggio del mouse e nel
+  Registro) resta apribile con un tocco; **⧉ Copia diagnosi** copia com'è fatto il visualizzatore
+  che l'ha impedito — senza numeri né valori dei campi — da mandare a chi fa il pannello. Lo
+  stesso bottone (**⧉ Diagnosi**) compare nella finestra di stampa quando un documento non si
+  lascia catturare.
 
 > Perché i referti restano fuori dalla tabella dei Valori: referto e prelievo sono due cose
 > diverse per il gestionale (un referto per documento, un accesso per prelievo, senza una chiave

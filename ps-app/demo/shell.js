@@ -388,6 +388,11 @@
   async function estensione(msg) {
     if (!msg || typeof msg !== "object") return { ok: true };
     if (msg.t === "cacheRef") {
+      // the panel may hand over the PDF it already read, as bg.js accepts
+      if (typeof msg.data === "string" && msg.data) {
+        refs.set(msg.id, { data: msg.data, ts: Date.now(), size: msg.size || 1, ep: msg.ep || "" });
+        return { ok: true, size: msg.size || 1 };
+      }
       const r = await window.fetch(msg.url);
       const ct = (r.headers.get("content-type") || "").toLowerCase();
       if (!ct.includes("pdf")) return { ok: false, why: "tipo " + (ct.split(";")[0] || "?") };

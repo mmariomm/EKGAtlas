@@ -123,13 +123,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (!msg || typeof msg !== "object") return;
 
   if (msg.t === "cacheRef") {
+    const salva = async (data, size) => {
+      await chrome.storage.local.set({ [KEY(msg.id)]: { data, ts: Date.now(), size, ep: msg.ep || "", pk: msg.pk || "" } });
+      await prune();
+      reply({ ok: true, size });
+    };
+    // Il pannello può aver già letto il PDF col suo lettore (che sa replicare
+    // un visualizzatore): allora arriva già in base64, e qui si mette solo via.
+    if (typeof msg.data === "string" && msg.data) {
+      if (!/^JVBERi/.test(msg.data)) return reply({ ok: false, why: "non è un PDF" }), true;
+      salva(msg.data, msg.size || 1).catch((e) => reply({ ok: false, why: String(e && e.message || e).slice(0, 60) }));
+      return true;
+    }
     grabPdf(msg.url)
       .then(async (r) => {
         if (!r.ok) return reply(r);
-        const data = b64(r.buf);
-        await chrome.storage.local.set({ [KEY(msg.id)]: { data, ts: Date.now(), size: r.buf.byteLength, ep: msg.ep || "", pk: msg.pk || "" } });
-        await prune();
-        reply({ ok: true, size: r.buf.byteLength });
+        await salva(b64(r.buf), r.buf.byteLength);
       })
       .catch((e) => reply({ ok: false, why: String(e && e.message || e).slice(0, 60) }));
     return true; // async reply

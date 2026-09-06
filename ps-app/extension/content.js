@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.29.0";
+  const VERSION = "3.29.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -699,6 +699,30 @@
   // se li mangia prima che tocchi a quello giusto. Le due cacciano documenti
   // diversi su host diversi: farle identiche era un'idea mia, non un requisito.
   const PDF_SMELL = /uploaddownloadservlet|mimetype=application\/pdf|get_pdf|jasperservlet|refertostream|\.pdf(?:[?&"']|$)/i;
+  // Quando un visualizzatore non si lascia leggere, l'unica cosa che può
+  // dire com'è fatto è la sua pagina. La si copia SENZA numeri
+  // (identificativi, date, token) e senza i valori dei campi: resta la
+  // struttura, che è quello che serve per adattare il lettore.
+  function mascheraDiagnosi(html) {
+    return String(html || "")
+      .replace(/(value\s*=\s*")[^"]*(")/gi, "$1…$2")
+      .replace(/(value\s*=\s*')[^']*(')/gi, "$1…$2")
+      .replace(/\d{3,}/g, "###")
+      .slice(0, 16000);
+  }
+  function diagnosiTesto(d) {
+    if (!d) return "";
+    let dove = String(d.url || "");
+    try { const u = new URL(d.url, location.href); dove = u.pathname + "?" + [...u.searchParams.keys()].join("&"); } catch { /* com'è */ }
+    return [`PS Assist ${VERSION} · ${d.quando || ""} · ${d.cosa || ""}`, dove, d.diag || "", "---", mascheraDiagnosi(d.html)].join("\n");
+  }
+  function bufB64(buf) {
+    const by = new Uint8Array(buf);
+    let s = "";
+    for (let i = 0; i < by.length; i += 0x8000) s += String.fromCharCode.apply(null, by.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+
   function pdfCandidates(text) {
     const out = [], seen = new Set();
     const push = (raw) => {
@@ -1437,6 +1461,7 @@
         // diagnosi partiva un ReferenceError, e non si vedeva niente.
         const idQui = /\b[A-Z][A-Z0-9]*_[A-Z0-9]+_\d{6,}\b/.test(text);
         err.diag = `html ${Math.round(text.length / 1024)}KB · ${(text.match(/<script/gi) || []).length} script · ${(text.match(/<frame\b/gi) || []).length} frame · tentati ${tried.length} URL · id ${idQui ? "sì" : "no"} · upload ${/uploaddownloadservlet/i.test(text) ? "sì" : "no"}`;
+        err.html = text;   // la pagina stessa, per «⧉ Diagnosi» (mascherata prima di copiarla)
         throw err;
       }
     }
@@ -3411,6 +3436,7 @@
           <div class="lbl">Referti (${referti.length})
             ${hasExt() && nSaved < referti.length ? `<button class="mini" id="refsave"${this._salvaRef ? " disabled" : ""}>${this._salvaRef ? "salvo…" : "⬇ Salva referti"}</button>` : ""}
             ${(nSaved || open.size) ? `<button class="mini" id="refreset">↻ Resetta</button>` : ""}
+            ${this.diagnosi ? `<button class="mini" id="refdiag" title="Copia com'è fatto il visualizzatore che non si è lasciato leggere (senza numeri), da mandare a chi fa il pannello">⧉ Copia diagnosi</button>` : ""}
           </div>
           <div class="rlist">${rows}</div>
         </div>` : "";
@@ -3675,12 +3701,27 @@
       for (const e of todo) this.refBusy[e.id] = true;
       this.render();
       for (const e of todo) {
-        const res = await ask({ t: "cacheRef", id: e.id, url: e.url, ep: this.episodeId, pk: this.chiavePaz() });
+        // Prima dal pannello, con lo stesso lettore delle etichette (sa
+        // replicare un visualizzatore); se non basta, dal service worker. Il
+        // perché di un fallimento va nel Registro, e la pagina del
+        // visualizzatore resta pronta da copiare come diagnosi.
+        let res = null;
+        const motivi = [];
+        try {
+          const r = await fetchPdf(e.url, {});
+          res = await ask({ t: "cacheRef", id: e.id, ep: this.episodeId, pk: this.chiavePaz(), data: bufB64(await r.blob.arrayBuffer()), size: r.blob.size });
+          if (!(res && res.ok)) motivi.push(`memoria: ${(res && res.why) || "non riuscito"}`);
+        } catch (err) {
+          motivi.push(`${err?.head || err?.message || err}${err?.diag ? ` [${err.diag}]` : ""}`);
+          if (err instanceof ViewerError && err.html) this.diagnosi = { cosa: `referto ${shortLabel(e.label)}`, url: e.url, html: err.html, diag: err.diag, quando: now() };
+          res = await ask({ t: "cacheRef", id: e.id, url: e.url, ep: this.episodeId, pk: this.chiavePaz() });
+          if (!(res && res.ok)) motivi.push(`service worker: ${(res && res.why) || "non riuscito"}`);
+        }
         if (res && res.ok) {
           this.refCache = { ...(this.refCache || {}), [e.id]: res.size || 1 };
           this.refBusy[e.id] = false;
         } else {
-          this.refBusy[e.id] = (res && res.why) || "non riuscito";
+          this.refBusy[e.id] = motivi.join(" · ") || "non riuscito";
           this.log(`${now()}  referto non salvato (${shortLabel(e.label)}): ${this.refBusy[e.id]}`);
         }
         this.render();
@@ -4344,6 +4385,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#storfiltro")?.addEventListener("click", filtra);
       $("#avvnomi")?.addEventListener("click", () => { this.mostraNomi = !this.mostraNomi; this.render(); });
       $("#valreset")?.addEventListener("click", () => this.resetValori());
+      $("#refdiag")?.addEventListener("click", async () => {
+        const b = this.root.querySelector("#refdiag");
+        segnaCopia(b, await copiaTesto(diagnosiTesto(this.diagnosi)));
+      });
       this.root.querySelectorAll("[data-dcopy]").forEach((b) => b.addEventListener("click", async () => {
         const d = dimissioni()[b.getAttribute("data-dcopy")];
         if (!d) return;
@@ -5023,6 +5068,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   let wizardOpen = false;
 
   function openPrintWizard(jobs, { title = "", onClose, panel = null } = {}) {
+    let ultimaDiag = null;   // l'ultimo visualizzatore non catturato, per «⧉ Diagnosi»
     // Chiudere la finestra deve fermare davvero la caccia al PDF: senza questo
     // il medico premeva Annulla, la catena continuava a chiedere al server, e
     // una seconda stampa poteva partire mentre la prima era ancora in giro.
@@ -5108,6 +5154,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
               : `<button class="pwbtn re" id="pwre" title="Riapre la finestra di stampa del browser">🖨&nbsp; Stampa</button>`}
             <button class="pwbtn next" id="pwnext" title="${i + 1 < jobs.length ? "Passa al documento successivo" : "Chiude: hai stampato tutto"}">${nextLbl}</button>
             ${viewer ? "" : `<button class="pwbtn ghost" id="pwtab" title="Se la stampa non parte, aprilo in una scheda">↗&nbsp; Scheda</button>`}
+            ${viewer && ultimaDiag ? `<button class="pwbtn ghost" id="pwdiag" title="Copia com'è fatto il visualizzatore (senza numeri), da mandare a chi fa il pannello">⧉&nbsp; Diagnosi</button>` : ""}
             <button class="pwbtn exit" id="pwexit" title="Chiude senza stampare il resto (Esc)">✕&nbsp; Chiudi</button>
             <div class="pwhint">${viewer
               ? `Questo documento non si lascia stampare da qui: <b style="display:inline">↗ Apri e stampa</b>, poi Ctrl+P → <b style="display:inline">${esc(job.printer)}</b>`
@@ -5118,6 +5165,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       root.querySelector("#pwnext").onclick = advance;
       root.querySelector("#pwexit").onclick = cleanup;
       root.querySelector("#pwtab").onclick = () => openTab(job.url, "_blank"); // user-activated → not popup-blocked
+      root.querySelector("#pwdiag")?.addEventListener("click", async () => {
+        const b = root.querySelector("#pwdiag");
+        segnaCopia(b, await copiaTesto(diagnosiTesto(ultimaDiag)));
+      });
     };
 
     const advance = () => {
@@ -5160,6 +5211,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         // scaduta, un HTTP 500 o una risposta fuori dall'ospedale finivano
         // sotto quella scritta, e «Apri e stampa» apriva la pagina di login.
         const suo = e instanceof ViewerError;
+        if (suo && e.html) {
+          ultimaDiag = { cosa: `stampa ${job.name}`, url: job.url, html: e.html, diag: e.diag, quando: now() };
+          if (panel) panel.diagnosi = ultimaDiag;
+        }
+        panel?.log(`${now()}  ${job.name}: PDF non catturato — ${suo ? `visualizzatore${e.diag ? " [" + e.diag + "]" : ""}` : `${e?.head || e?.message || e}`}`);
         render(suo
           ? `Anteprima non catturabile per questo documento (è un visualizzatore).${e?.diag ? " [" + e.diag + "]" : ""}`
           : `${e?.head || "Non riuscito"}${e?.body ? " — " + e.body : ""}`, true);
