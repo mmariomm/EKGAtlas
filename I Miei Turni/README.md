@@ -78,6 +78,32 @@ Tre strade, a seconda di dove sta la pagina:
   Poi commit e push (o copia `index.html` dove serve). Non servono pacchetti npm: bastano
   Node 18+ e i file in `src/`.
 
+## Pubblicare il sito con le password
+
+Il sito sta su Cloudflare Workers e chiede una password all'ingresso. Ce ne sono due, che
+danno due permessi diversi: una per chi guarda (calendario, tabella, segnalazioni) e una per
+chi aggiorna, che in più vede le **Ore** e può caricare i nuovi xlsx per tutti. I turni
+condivisi stanno in uno spazio dati (KV) del Worker, non nel repository.
+
+La prima volta, dalla cartella `I Miei Turni/`:
+
+```bash
+npx wrangler kv namespace create TURNI   # copia l'id stampato dentro wrangler.jsonc
+npx wrangler secret put PASS_MEDICO      # la password di chi guarda
+npx wrangler secret put PASS_GESTORE     # la password di chi aggiorna
+npx wrangler secret put SESSION_SECRET   # una frase lunga a caso, serve a firmare le sessioni
+npm run deploy                           # rifà la pagina e la pubblica
+```
+
+Le password non stanno in nessun file del progetto: vivono solo nei secret di Cloudflare.
+Per cambiarne una basta rilanciare il `secret put` corrispondente. Da sapere: **cambiare una
+password non fa uscire chi è già entrato** — la sessione dura 180 giorni ed è firmata con
+`SESSION_SECRET`. Per far rientrare tutti, cambia anche quello.
+
+Dopo la prima volta, ogni aggiornamento del codice o dei dati di partenza è solo
+`npm run deploy`. I turni del mese, invece, si aggiornano dal telefono: chi ha la seconda
+password carica l'xlsx dalla pagina, controlla le differenze e salva per tutti.
+
 ## Cosa si aspetta dai file xlsx
 
 Il formato è quello dei fogli «Turni MPA I» in uso: una riga di intestazione con
