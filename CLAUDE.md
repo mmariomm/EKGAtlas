@@ -35,3 +35,11 @@ Pronto Soccorso). Sorgente unico `ps-app/src/core.js` → `extension/content.js`
 bookmarklet via `npm run build`. `npm test` fa girare tutta la suite; `npm run dist`
 rifà lo zip. Le regole di sicurezza sono in `ps-app/README.md` — si leggono prima di
 toccare il motore delle richieste.
+
+## I Miei Turni
+
+`I Miei Turni/` è una pagina statica a sé (nessuna dipendenza, niente Vite): i turni
+mensili del PS di DEA e OSG letti dagli xlsx in `data/`. `npm run build` lì dentro rigenera
+`index.html` con i dati inlinati; `npm test` verifica parser e regole. Il contratto dati e
+le regole delle segnalazioni sono descritti nel suo README. Non va agganciata al deploy di
+EKG Atlas: contiene nomi reali di colleghi.

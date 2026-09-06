@@ -1,0 +1,6 @@
+# Pagina generata da build.js e inclusa nel bundle del Worker.
+worker-page.js
+
+# Wrangler
+.wrangler/
+.dev.vars*

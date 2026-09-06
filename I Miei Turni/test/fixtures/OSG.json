@@ -1,0 +1,928 @@
+{
+ "file": "TURNI_PS_OSG_SETTEMBRE_2026.xlsx",
+ "sheet": "Turni MPA I",
+ "hospital": "OSG",
+ "title": "TURNI PS OSG",
+ "periodLabel": "SETTEMBRE 2026",
+ "month": "2026-09",
+ "slots": [
+  {
+   "key": "M",
+   "label": "MATTINA",
+   "header": "MATTINA 8-14",
+   "sub": "Guardia Ps/OBI",
+   "roles": [
+    "Guardia Ps",
+    "OBI"
+   ],
+   "start": "08:00",
+   "end": "14:00",
+   "startMin": 480,
+   "endMin": 840,
+   "col": "C"
+  },
+  {
+   "key": "P",
+   "label": "POMERIGGIO",
+   "header": "POMERIGGIO 14-20",
+   "sub": "Alta Intensità-OBI/Bassa intensità",
+   "roles": [
+    "Alta Intensità-OBI",
+    "Bassa intensità"
+   ],
+   "start": "14:00",
+   "end": "20:00",
+   "startMin": 840,
+   "endMin": 1200,
+   "col": "E"
+  },
+  {
+   "key": "N",
+   "label": "NOTTE",
+   "header": "NOTTE 20-08",
+   "sub": "Alta Intensità-OBI/Bassa intensità",
+   "roles": [
+    "Alta Intensità-OBI",
+    "Bassa intensità"
+   ],
+   "start": "20:00",
+   "end": "08:00",
+   "startMin": 1200,
+   "endMin": 1920,
+   "col": "F"
+  }
+ ],
+ "days": [
+  {
+   "day": 1,
+   "date": "2026-09-01",
+   "weekdayLabel": "MARTEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "BRAHAM/DI PIETRO",
+     "names": [
+      "BRAHAM",
+      "DI PIETRO"
+     ]
+    },
+    "P": {
+     "raw": "BRAHAM/ DI VITA F.",
+     "names": [
+      "BRAHAM",
+      "DI VITA F."
+     ]
+    },
+    "N": {
+     "raw": "RAMONDINO/FLORENZAN",
+     "names": [
+      "RAMONDINO",
+      "FLORENZAN"
+     ]
+    }
+   }
+  },
+  {
+   "day": 2,
+   "date": "2026-09-02",
+   "weekdayLabel": "MERCOLEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PELLEGATTA/ALBERTI",
+     "names": [
+      "PELLEGATTA",
+      "ALBERTI"
+     ]
+    },
+    "P": {
+     "raw": "REBESCO/BRAHAM",
+     "names": [
+      "REBESCO",
+      "BRAHAM"
+     ]
+    },
+    "N": {
+     "raw": "DI PIETRO/RAMONDINO",
+     "names": [
+      "DI PIETRO",
+      "RAMONDINO"
+     ]
+    }
+   }
+  },
+  {
+   "day": 3,
+   "date": "2026-09-03",
+   "weekdayLabel": "GIOVEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "REBESCO/ALBERTI",
+     "names": [
+      "REBESCO",
+      "ALBERTI"
+     ]
+    },
+    "P": {
+     "raw": "PACIONI/DI VITA F.",
+     "names": [
+      "PACIONI",
+      "DI VITA F."
+     ]
+    },
+    "N": {
+     "raw": "BOTTA/SANCHES",
+     "names": [
+      "BOTTA",
+      "SANCHES"
+     ]
+    }
+   }
+  },
+  {
+   "day": 4,
+   "date": "2026-09-04",
+   "weekdayLabel": "VENERDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "REBESCO/FLORENZAN",
+     "names": [
+      "REBESCO",
+      "FLORENZAN"
+     ]
+    },
+    "P": {
+     "raw": "REBESCO/BRAHAM",
+     "names": [
+      "REBESCO",
+      "BRAHAM"
+     ]
+    },
+    "N": {
+     "raw": "PACIONI/UGAZ",
+     "names": [
+      "PACIONI",
+      "UGAZ"
+     ]
+    }
+   }
+  },
+  {
+   "day": 5,
+   "date": "2026-09-05",
+   "weekdayLabel": "SABATO",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "DI PIETRO/DI VITA F.",
+     "names": [
+      "DI PIETRO",
+      "DI VITA F."
+     ]
+    },
+    "P": {
+     "raw": "DI PIETRO/DI VITA F.",
+     "names": [
+      "DI PIETRO",
+      "DI VITA F."
+     ]
+    },
+    "N": {
+     "raw": "REBESCO/SANCHES",
+     "names": [
+      "REBESCO",
+      "SANCHES"
+     ]
+    }
+   }
+  },
+  {
+   "day": 6,
+   "date": "2026-09-06",
+   "weekdayLabel": "DOMENICA",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "BOTTA/DI VITA F.",
+     "names": [
+      "BOTTA",
+      "DI VITA F."
+     ]
+    },
+    "P": {
+     "raw": "BOTTA/DI VITA F.",
+     "names": [
+      "BOTTA",
+      "DI VITA F."
+     ]
+    },
+    "N": {
+     "raw": "BRAHAM/ALBERTAZZI",
+     "names": [
+      "BRAHAM",
+      "ALBERTAZZI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 7,
+   "date": "2026-09-07",
+   "weekdayLabel": "LUNEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PETRELLA/PELLEGATTA",
+     "names": [
+      "PETRELLA",
+      "PELLEGATTA"
+     ]
+    },
+    "P": {
+     "raw": "SCHIRALDI/SANCHES",
+     "names": [
+      "SCHIRALDI",
+      "SANCHES"
+     ]
+    },
+    "N": {
+     "raw": "RAMONDINO/TRUBBIA",
+     "names": [
+      "RAMONDINO",
+      "TRUBBIA"
+     ]
+    }
+   }
+  },
+  {
+   "day": 8,
+   "date": "2026-09-08",
+   "weekdayLabel": "MARTEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PELLEGATTA/BOULES",
+     "names": [
+      "PELLEGATTA",
+      "BOULES"
+     ]
+    },
+    "P": {
+     "raw": "BRAHAM/BOULES",
+     "names": [
+      "BRAHAM",
+      "BOULES"
+     ]
+    },
+    "N": {
+     "raw": "RAMONDINO/SANCHES",
+     "names": [
+      "RAMONDINO",
+      "SANCHES"
+     ]
+    }
+   }
+  },
+  {
+   "day": 9,
+   "date": "2026-09-09",
+   "weekdayLabel": "MERCOLEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "BRAHAM/ALBERTI",
+     "names": [
+      "BRAHAM",
+      "ALBERTI"
+     ]
+    },
+    "P": {
+     "raw": "BRAHAM/FLORENZAN",
+     "names": [
+      "BRAHAM",
+      "FLORENZAN"
+     ]
+    },
+    "N": {
+     "raw": "PELLEGATTA/TRUBBIA",
+     "names": [
+      "PELLEGATTA",
+      "TRUBBIA"
+     ]
+    }
+   }
+  },
+  {
+   "day": 10,
+   "date": "2026-09-10",
+   "weekdayLabel": "GIOVEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "DI PIETRO/PETRELLA",
+     "names": [
+      "DI PIETRO",
+      "PETRELLA"
+     ]
+    },
+    "P": {
+     "raw": "DI PIETRO/FLORENZAN",
+     "names": [
+      "DI PIETRO",
+      "FLORENZAN"
+     ]
+    },
+    "N": {
+     "raw": "BOTTA/BRAHAM",
+     "names": [
+      "BOTTA",
+      "BRAHAM"
+     ]
+    }
+   }
+  },
+  {
+   "day": 11,
+   "date": "2026-09-11",
+   "weekdayLabel": "VENERDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PELLEGATTA/FLORENZAN",
+     "names": [
+      "PELLEGATTA",
+      "FLORENZAN"
+     ]
+    },
+    "P": {
+     "raw": "SCHIRALDI/DI VITA F.",
+     "names": [
+      "SCHIRALDI",
+      "DI VITA F."
+     ]
+    },
+    "N": {
+     "raw": "RAMONDINO/UGAZ",
+     "names": [
+      "RAMONDINO",
+      "UGAZ"
+     ]
+    }
+   }
+  },
+  {
+   "day": 12,
+   "date": "2026-09-12",
+   "weekdayLabel": "SABATO",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "DI PIETRO/NOFF",
+     "names": [
+      "DI PIETRO",
+      "NOFF"
+     ]
+    },
+    "P": {
+     "raw": "DI PIETRO/NOFF",
+     "names": [
+      "DI PIETRO",
+      "NOFF"
+     ]
+    },
+    "N": {
+     "raw": "BOTTA/CAPRINI",
+     "names": [
+      "BOTTA",
+      "CAPRINI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 13,
+   "date": "2026-09-13",
+   "weekdayLabel": "DOMENICA",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "NOFF/DI PIETRO",
+     "names": [
+      "NOFF",
+      "DI PIETRO"
+     ]
+    },
+    "P": {
+     "raw": "NOFF/DI PIETRO",
+     "names": [
+      "NOFF",
+      "DI PIETRO"
+     ]
+    },
+    "N": {
+     "raw": "PELLEGATTA/UGAZ",
+     "names": [
+      "PELLEGATTA",
+      "UGAZ"
+     ]
+    }
+   }
+  },
+  {
+   "day": 14,
+   "date": "2026-09-14",
+   "weekdayLabel": "LUNEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "REBESCO/ALBERTI",
+     "names": [
+      "REBESCO",
+      "ALBERTI"
+     ]
+    },
+    "P": {
+     "raw": "REBESCO/BRAHAM",
+     "names": [
+      "REBESCO",
+      "BRAHAM"
+     ]
+    },
+    "N": {
+     "raw": "RAMONDINO/BOBROWSKI",
+     "names": [
+      "RAMONDINO",
+      "BOBROWSKI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 15,
+   "date": "2026-09-15",
+   "weekdayLabel": "MARTEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "BRAHAM/BOULES",
+     "names": [
+      "BRAHAM",
+      "BOULES"
+     ]
+    },
+    "P": {
+     "raw": "BRAHAM/REBESCO",
+     "names": [
+      "BRAHAM",
+      "REBESCO"
+     ]
+    },
+    "N": {
+     "raw": "PELLEGATTA/UGAZ",
+     "names": [
+      "PELLEGATTA",
+      "UGAZ"
+     ]
+    }
+   }
+  },
+  {
+   "day": 16,
+   "date": "2026-09-16",
+   "weekdayLabel": "MERCOLEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PACIONI/BOBROWSKI",
+     "names": [
+      "PACIONI",
+      "BOBROWSKI"
+     ]
+    },
+    "P": {
+     "raw": "PACIONI/BOBROWSKI",
+     "names": [
+      "PACIONI",
+      "BOBROWSKI"
+     ]
+    },
+    "N": {
+     "raw": "REBESCO/TRUBBIA",
+     "names": [
+      "REBESCO",
+      "TRUBBIA"
+     ]
+    }
+   }
+  },
+  {
+   "day": 17,
+   "date": "2026-09-17",
+   "weekdayLabel": "GIOVEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "DI PIETRO/PETRELLA",
+     "names": [
+      "DI PIETRO",
+      "PETRELLA"
+     ]
+    },
+    "P": {
+     "raw": "DI PIETRO/PACIONI",
+     "names": [
+      "DI PIETRO",
+      "PACIONI"
+     ]
+    },
+    "N": {
+     "raw": "BRAHAM/BOTTA",
+     "names": [
+      "BRAHAM",
+      "BOTTA"
+     ]
+    }
+   }
+  },
+  {
+   "day": 18,
+   "date": "2026-09-18",
+   "weekdayLabel": "VENERDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "BRAHAM/BOULES",
+     "names": [
+      "BRAHAM",
+      "BOULES"
+     ]
+    },
+    "P": {
+     "raw": "REBESCO/BOULES",
+     "names": [
+      "REBESCO",
+      "BOULES"
+     ]
+    },
+    "N": {
+     "raw": "DI PIETRO/BOBROWSKI",
+     "names": [
+      "DI PIETRO",
+      "BOBROWSKI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 19,
+   "date": "2026-09-19",
+   "weekdayLabel": "SABATO",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "REBESCO/NOFF",
+     "names": [
+      "REBESCO",
+      "NOFF"
+     ]
+    },
+    "P": {
+     "raw": "REBESCO/NOFF",
+     "names": [
+      "REBESCO",
+      "NOFF"
+     ]
+    },
+    "N": {
+     "raw": "PELLEGATTA/TRUBBIA",
+     "names": [
+      "PELLEGATTA",
+      "TRUBBIA"
+     ]
+    }
+   }
+  },
+  {
+   "day": 20,
+   "date": "2026-09-20",
+   "weekdayLabel": "DOMENICA",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "DI PIETRO/BOULES",
+     "names": [
+      "DI PIETRO",
+      "BOULES"
+     ]
+    },
+    "P": {
+     "raw": "DI PIETRO/BOULES",
+     "names": [
+      "DI PIETRO",
+      "BOULES"
+     ]
+    },
+    "N": {
+     "raw": "REBESCO/BOBROWSKI",
+     "names": [
+      "REBESCO",
+      "BOBROWSKI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 21,
+   "date": "2026-09-21",
+   "weekdayLabel": "LUNEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "BOTTA/BOULES",
+     "names": [
+      "BOTTA",
+      "BOULES"
+     ]
+    },
+    "P": {
+     "raw": "BRAHAM/PACIONI",
+     "names": [
+      "BRAHAM",
+      "PACIONI"
+     ]
+    },
+    "N": {
+     "raw": "RAMONDINO/BOULES",
+     "names": [
+      "RAMONDINO",
+      "BOULES"
+     ]
+    }
+   }
+  },
+  {
+   "day": 22,
+   "date": "2026-09-22",
+   "weekdayLabel": "MARTEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "BRAHAM/PELLEGATTA",
+     "names": [
+      "BRAHAM",
+      "PELLEGATTA"
+     ]
+    },
+    "P": {
+     "raw": "REBESCO/DI VITA F.",
+     "names": [
+      "REBESCO",
+      "DI VITA F."
+     ]
+    },
+    "N": {
+     "raw": "RAMONDINO/ALBERTAZZI",
+     "names": [
+      "RAMONDINO",
+      "ALBERTAZZI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 23,
+   "date": "2026-09-23",
+   "weekdayLabel": "MERCOLEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PELLEGATTA/BOBROWSKI",
+     "names": [
+      "PELLEGATTA",
+      "BOBROWSKI"
+     ]
+    },
+    "P": {
+     "raw": "REBESCO/BOBROWSKI",
+     "names": [
+      "REBESCO",
+      "BOBROWSKI"
+     ]
+    },
+    "N": {
+     "raw": "PACIONI/SANCHES",
+     "names": [
+      "PACIONI",
+      "SANCHES"
+     ]
+    }
+   }
+  },
+  {
+   "day": 24,
+   "date": "2026-09-24",
+   "weekdayLabel": "GIOVEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "DI PIETRO/PELLEGATTA",
+     "names": [
+      "DI PIETRO",
+      "PELLEGATTA"
+     ]
+    },
+    "P": {
+     "raw": "DI PIETRO/BOBROWSKI",
+     "names": [
+      "DI PIETRO",
+      "BOBROWSKI"
+     ]
+    },
+    "N": {
+     "raw": "BRAHAM/BOULES",
+     "names": [
+      "BRAHAM",
+      "BOULES"
+     ]
+    }
+   }
+  },
+  {
+   "day": 25,
+   "date": "2026-09-25",
+   "weekdayLabel": "VENERDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "PACIONI/BOBROWSKI",
+     "names": [
+      "PACIONI",
+      "BOBROWSKI"
+     ]
+    },
+    "P": {
+     "raw": "PACIONI/BOBROWSKI",
+     "names": [
+      "PACIONI",
+      "BOBROWSKI"
+     ]
+    },
+    "N": {
+     "raw": "REBESCO/DI PIETRO",
+     "names": [
+      "REBESCO",
+      "DI PIETRO"
+     ]
+    }
+   }
+  },
+  {
+   "day": 26,
+   "date": "2026-09-26",
+   "weekdayLabel": "SABATO",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "NOFF/ALBERTI",
+     "names": [
+      "NOFF",
+      "ALBERTI"
+     ]
+    },
+    "P": {
+     "raw": "NOFF/MEGLIO",
+     "names": [
+      "NOFF",
+      "MEGLIO"
+     ]
+    },
+    "N": {
+     "raw": "PACIONI/CAPRINI",
+     "names": [
+      "PACIONI",
+      "CAPRINI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 27,
+   "date": "2026-09-27",
+   "weekdayLabel": "DOMENICA",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "NOFF/MEGLIO",
+     "names": [
+      "NOFF",
+      "MEGLIO"
+     ]
+    },
+    "P": {
+     "raw": "NOFF/MEGLIO",
+     "names": [
+      "NOFF",
+      "MEGLIO"
+     ]
+    },
+    "N": {
+     "raw": "PELLEGATTA/TRUBBIA",
+     "names": [
+      "PELLEGATTA",
+      "TRUBBIA"
+     ]
+    }
+   }
+  },
+  {
+   "day": 28,
+   "date": "2026-09-28",
+   "weekdayLabel": "LUNEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "REBESCO/BRAHAM",
+     "names": [
+      "REBESCO",
+      "BRAHAM"
+     ]
+    },
+    "P": {
+     "raw": "BRAHAM/REBESCO",
+     "names": [
+      "BRAHAM",
+      "REBESCO"
+     ]
+    },
+    "N": {
+     "raw": "RAMONDINO/ALBERTAZZI",
+     "names": [
+      "RAMONDINO",
+      "ALBERTAZZI"
+     ]
+    }
+   }
+  },
+  {
+   "day": 29,
+   "date": "2026-09-29",
+   "weekdayLabel": "MARTEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "COLOMBINI/BOULES",
+     "names": [
+      "COLOMBINI",
+      "BOULES"
+     ]
+    },
+    "P": {
+     "raw": "PACIONI/ALBERTI",
+     "names": [
+      "PACIONI",
+      "ALBERTI"
+     ]
+    },
+    "N": {
+     "raw": "BRAHAM/RAMONDINO",
+     "names": [
+      "BRAHAM",
+      "RAMONDINO"
+     ]
+    }
+   }
+  },
+  {
+   "day": 30,
+   "date": "2026-09-30",
+   "weekdayLabel": "MERCOLEDI",
+   "weekdayOk": true,
+   "cells": {
+    "M": {
+     "raw": "DI PIETRO/PETRELLA",
+     "names": [
+      "DI PIETRO",
+      "PETRELLA"
+     ]
+    },
+    "P": {
+     "raw": "DI PIETRO/REBESCO",
+     "names": [
+      "DI PIETRO",
+      "REBESCO"
+     ]
+    },
+    "N": {
+     "raw": "PACIONI/COLOMBINI",
+     "names": [
+      "PACIONI",
+      "COLOMBINI"
+     ]
+    }
+   }
+  }
+ ],
+ "warnings": []
+}

@@ -1,0 +1,366 @@
+[
+ {
+  "name": "ALBERTAZZI",
+  "count": 3,
+  "byHospital": {
+   "OSG": 3
+  },
+  "nights": 3,
+  "suspicion": null
+ },
+ {
+  "name": "ALBERTI",
+  "count": 6,
+  "byHospital": {
+   "OSG": 6
+  },
+  "nights": 0,
+  "suspicion": null
+ },
+ {
+  "name": "BOBROWSKI",
+  "count": 10,
+  "byHospital": {
+   "OSG": 10
+  },
+  "nights": 3,
+  "suspicion": null
+ },
+ {
+  "name": "BOTTA",
+  "count": 8,
+  "byHospital": {
+   "DEA": 1,
+   "OSG": 7
+  },
+  "nights": 5,
+  "suspicion": null
+ },
+ {
+  "name": "BOULES",
+  "count": 11,
+  "byHospital": {
+   "OSG": 11
+  },
+  "nights": 2,
+  "suspicion": null
+ },
+ {
+  "name": "BRAHAM",
+  "count": 20,
+  "byHospital": {
+   "OSG": 20
+  },
+  "nights": 5,
+  "suspicion": null
+ },
+ {
+  "name": "CAPRINI",
+  "count": 2,
+  "byHospital": {
+   "OSG": 2
+  },
+  "nights": 2,
+  "suspicion": null
+ },
+ {
+  "name": "CARAPELLA",
+  "count": 9,
+  "byHospital": {
+   "DEA": 9
+  },
+  "nights": 2,
+  "suspicion": null
+ },
+ {
+  "name": "COLOMBINI",
+  "count": 9,
+  "byHospital": {
+   "DEA": 7,
+   "OSG": 2
+  },
+  "nights": 7,
+  "suspicion": null
+ },
+ {
+  "name": "D'AMORE",
+  "count": 2,
+  "byHospital": {
+   "DEA": 2
+  },
+  "nights": 0,
+  "suspicion": null
+ },
+ {
+  "name": "DE PASQUALE",
+  "count": 9,
+  "byHospital": {
+   "DEA": 9
+  },
+  "nights": 3,
+  "suspicion": null
+ },
+ {
+  "name": "DI PIETRO",
+  "count": 20,
+  "byHospital": {
+   "OSG": 20
+  },
+  "nights": 3,
+  "suspicion": null
+ },
+ {
+  "name": "DI VITA F.",
+  "count": 8,
+  "byHospital": {
+   "OSG": 8
+  },
+  "nights": 0,
+  "suspicion": null
+ },
+ {
+  "name": "FLORENZAN",
+  "count": 14,
+  "byHospital": {
+   "DEA": 9,
+   "OSG": 5
+  },
+  "nights": 5,
+  "suspicion": null
+ },
+ {
+  "name": "FRANCESCONI",
+  "count": 23,
+  "byHospital": {
+   "DEA": 23
+  },
+  "nights": 5,
+  "suspicion": null
+ },
+ {
+  "name": "GIUSTIZIERI",
+  "count": 5,
+  "byHospital": {
+   "DEA": 5
+  },
+  "nights": 0,
+  "suspicion": null
+ },
+ {
+  "name": "KASO",
+  "count": 16,
+  "byHospital": {
+   "DEA": 16
+  },
+  "nights": 5,
+  "suspicion": null
+ },
+ {
+  "name": "LOFFREDO",
+  "count": 10,
+  "byHospital": {
+   "DEA": 10
+  },
+  "nights": 1,
+  "suspicion": null
+ },
+ {
+  "name": "MASTROLILLI",
+  "count": 2,
+  "byHospital": {
+   "DEA": 2
+  },
+  "nights": 0,
+  "suspicion": null
+ },
+ {
+  "name": "MEGLIO",
+  "count": 8,
+  "byHospital": {
+   "DEA": 5,
+   "OSG": 3
+  },
+  "nights": 0,
+  "suspicion": null
+ },
+ {
+  "name": "NOFF",
+  "count": 10,
+  "byHospital": {
+   "OSG": 10
+  },
+  "nights": 0,
+  "suspicion": null
+ },
+ {
+  "name": "ORLANDI",
+  "count": 11,
+  "byHospital": {
+   "DEA": 11
+  },
+  "nights": 3,
+  "suspicion": null
+ },
+ {
+  "name": "ORLANDITOSKIC",
+  "count": 1,
+  "byHospital": {
+   "DEA": 1
+  },
+  "nights": 1,
+  "suspicion": {
+   "kind": "concat",
+   "parts": [
+    "ORLANDI",
+    "TOSKIC"
+   ],
+   "suggestion": "ORLANDI/TOSKIC"
+  }
+ },
+ {
+  "name": "PACIONI",
+  "count": 12,
+  "byHospital": {
+   "OSG": 12
+  },
+  "nights": 4,
+  "suspicion": null
+ },
+ {
+  "name": "PASTORE",
+  "count": 22,
+  "byHospital": {
+   "DEA": 22
+  },
+  "nights": 3,
+  "suspicion": null
+ },
+ {
+  "name": "PELLEGATTA",
+  "count": 12,
+  "byHospital": {
+   "OSG": 12
+  },
+  "nights": 5,
+  "suspicion": null
+ },
+ {
+  "name": "PETRELLA",
+  "count": 4,
+  "byHospital": {
+   "OSG": 4
+  },
+  "nights": 0,
+  "suspicion": null
+ },
+ {
+  "name": "PUSCEDDU",
+  "count": 7,
+  "byHospital": {
+   "DEA": 7
+  },
+  "nights": 5,
+  "suspicion": null
+ },
+ {
+  "name": "RAMONDINO",
+  "count": 10,
+  "byHospital": {
+   "OSG": 10
+  },
+  "nights": 10,
+  "suspicion": null
+ },
+ {
+  "name": "REBESCO",
+  "count": 19,
+  "byHospital": {
+   "OSG": 19
+  },
+  "nights": 4,
+  "suspicion": null
+ },
+ {
+  "name": "RUSSOTTO",
+  "count": 4,
+  "byHospital": {
+   "DEA": 4
+  },
+  "nights": 4,
+  "suspicion": null
+ },
+ {
+  "name": "SANCHES",
+  "count": 5,
+  "byHospital": {
+   "OSG": 5
+  },
+  "nights": 4,
+  "suspicion": null
+ },
+ {
+  "name": "SANTAMBROGIO",
+  "count": 2,
+  "byHospital": {
+   "DEA": 2
+  },
+  "nights": 0,
+  "suspicion": null
+ },
+ {
+  "name": "SCHIRALDI",
+  "count": 2,
+  "byHospital": {
+   "OSG": 2
+  },
+  "nights": 0,
+  "suspicion": null
+ },
+ {
+  "name": "STRACKA",
+  "count": 2,
+  "byHospital": {
+   "DEA": 2
+  },
+  "nights": 0,
+  "suspicion": null
+ },
+ {
+  "name": "TCHIPEV",
+  "count": 9,
+  "byHospital": {
+   "DEA": 9
+  },
+  "nights": 9,
+  "suspicion": null
+ },
+ {
+  "name": "TOSKIC",
+  "count": 14,
+  "byHospital": {
+   "DEA": 14
+  },
+  "nights": 3,
+  "suspicion": null
+ },
+ {
+  "name": "TRUBBIA",
+  "count": 10,
+  "byHospital": {
+   "DEA": 5,
+   "OSG": 5
+  },
+  "nights": 7,
+  "suspicion": null
+ },
+ {
+  "name": "UGAZ",
+  "count": 7,
+  "byHospital": {
+   "DEA": 3,
+   "OSG": 4
+  },
+  "nights": 6,
+  "suspicion": null
+ }
+]
