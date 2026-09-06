@@ -190,9 +190,11 @@
   var shared = null;          // data/turni.json pubblicato nell'artifact
   var pendingShared = null;   // arrivato mentre un foglio era aperto
   var pub = null;             // spazio dei nomi "artifact" della piattaforma
-  var soloVista = false;      // vero dopo un rifiuto not_writer / not_granted / capability_disabled
   var runtime = !!(window.claude && typeof window.claude.use === 'function');
-  var gestore = !runtime || readStore(LS_GESTORE) === '1';
+  // Se la pagina passa da un server con le due password, il ruolo lo decide lui.
+  var role = (window.TURNI_ROLE === 'gestore' || window.TURNI_ROLE === 'medico') ? window.TURNI_ROLE : null;
+  var gestore = role ? role === 'gestore' : (!runtime || readStore(LS_GESTORE) === '1');
+  var soloVista = role === 'medico';
 
   var D = {};
   var hits = [];              // ultimo risultato di searchNames (una volta per battuta)
@@ -1015,7 +1017,19 @@
         })));
     }
 
-    if (!soloVista && !gestore) {
+    if (role) {
+      datiBody.appendChild(el('div', { class: 'dati__block' },
+        el('button', {
+          class: 'minibtn', type: 'button', text: 'Esci',
+          on: { click: function () {
+            var reload = function () { window.location.reload(); };
+            try { window.fetch('logout', { method: 'POST' }).then(reload, reload); }
+            catch (e) { reload(); }
+          } },
+        })));
+    }
+
+    if (!role && !soloVista && !gestore) {
       var check = el('input', { type: 'checkbox', role: 'switch' });
       check.addEventListener('change', function () {
         gestore = check.checked;
@@ -1469,7 +1483,7 @@
     applyPendingShared();
   }
 
-  function saveLabel() { return (pub && !soloVista) ? 'Salva per tutti' : 'Salva'; }
+  function saveLabel() { return (role === 'gestore' || (pub && !soloVista)) ? 'Salva per tutti' : 'Salva'; }
 
   function whatChanged(item) {
     return item.roster.hospital + ' · ' + monthLabel(item.roster.month) + ' · ' +
@@ -1477,6 +1491,7 @@
   }
 
   function markGestore() {
+    if (role) return;          // decide il server: la memoria locale non c'entra
     if (soloVista) return;
     gestore = true;
     writeStore(LS_GESTORE, '1');
@@ -1519,6 +1534,7 @@
   function saveReview() {
     var item = reviewCurrent;
     if (!item) return;
+    if (role === 'gestore') { putReview(item); return; }
     if (!pub || soloVista) {
       saveHere(item);
       toast('Salvato: ' + whatChanged(item));
@@ -1526,6 +1542,40 @@
       return;
     }
     publishReview(item);
+  }
+
+  // Con le password del server: il file dei dati si aggiorna con una PUT.
+  function putReview(item) {
+    var next = buildNext(item.roster);
+    setReviewBusy(true);
+    var done = function () { setReviewBusy(false); nextReview(); };
+    var fallback = function () {
+      saveHere(item);
+      toast('Salvato solo su questo dispositivo (il server non risponde).', true);
+      done();
+    };
+    window.fetch('data/turni.json', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    }).then(function (r) {
+      if (r.status === 200) {
+        shared = next;
+        local = local.filter(function (x) { return rosterKey(x) !== rosterKey(item.roster); });
+        writeLocal(local);
+        state.month = item.roster.month;
+        state.selected = '';
+        renderAll();
+        toast('Salvato per tutti: ' + whatChanged(item));
+        done();
+        return;
+      }
+      if (r.status === 401) toast('Sessione scaduta: ricarica la pagina ed entra di nuovo.', true);
+      else if (r.status === 403) toast('Non hai i permessi per aggiornare i turni.', true);
+      else if (r.status === 400 || r.status === 413) toast('Il file non è stato accettato dal server.', true);
+      else { fallback(); return; }
+      done();
+    }).catch(fallback);
   }
 
   // Pubblica il file dei dati: la pagina resta quella, cambia solo data/turni.json.

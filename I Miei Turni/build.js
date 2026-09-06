@@ -136,6 +136,26 @@ function assembleHtml(rootDir, rosters) {
 }
 
 // ============================================================
+// Phase 3: bake the page into worker-page.js for the Cloudflare Worker
+// ============================================================
+
+// The Worker serves the page out of its own bundle, so there is no route that
+// could hand it out without a password. `jsonForScript` is reused on purpose:
+// for a string it produces a double-quoted JavaScript string literal, so
+// backticks and "${" are ordinary characters, while quotes, backslashes,
+// newlines, "</script" and U+2028/U+2029 all come out escaped.
+function writeWorkerPage(rootDir, html) {
+  const outPath = path.join(rootDir, 'worker-page.js');
+  const module_ =
+    '// Generato da build.js: non modificarlo a mano (è in .gitignore).\n' +
+    '// Contiene index.html come stringa, per il bundle del Worker.\n' +
+    "'use strict';\n" +
+    'module.exports = { PAGE: ' + jsonForScript(html) + ' };\n';
+  fs.writeFileSync(outPath, module_, 'utf8');
+  return { path: outPath, bytes: Buffer.byteLength(module_, 'utf8') };
+}
+
+// ============================================================
 // Entry point
 // ============================================================
 
@@ -162,6 +182,9 @@ async function build(rootDir) {
   const outPath = path.join(rootDir, 'index.html');
   fs.writeFileSync(outPath, html, 'utf8');
   console.log('Scritto ' + outPath + ' (' + formatSize(Buffer.byteLength(html, 'utf8')) + ')');
+
+  const workerPage = writeWorkerPage(rootDir, html);
+  console.log('Scritto ' + workerPage.path + ' (' + formatSize(workerPage.bytes) + ')');
 }
 
 module.exports = { build: build };

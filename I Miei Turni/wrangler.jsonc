@@ -1,0 +1,29 @@
+// Configurazione del Worker "I Miei Turni" (pagina dei turni dietro due password).
+//
+// Prima messa in opera, nell'ordine, da questa cartella:
+//
+//   1) npx wrangler kv namespace create TURNI
+//      copia l'id che stampa dentro "kv_namespaces[0].id" qui sotto,
+//      al posto di <da riempire con l'id reale>
+//   2) npx wrangler secret put PASS_MEDICO      (password di chi guarda)
+//   3) npx wrangler secret put PASS_GESTORE     (password di chi aggiorna)
+//   4) npx wrangler secret put SESSION_SECRET   (stringa lunga e casuale, per la firma
+//                                                dei cookie: cambiarla scollega tutti)
+//   5) npm run deploy                           (fa "node build.js" e poi "wrangler deploy")
+//
+// Le tre password/segreti non stanno mai nel repository: vivono solo come secret
+// di Cloudflare. Per le prove in locale (`npm run dev`) si mettono in .dev.vars,
+// che è ignorato da git.
+//
+// "main" punta a worker.mjs: il formato a moduli (ESM) è quello che Wrangler
+// pubblica con l'handler `fetch`. La pagina dei turni entra nel bundle tramite
+// worker-page.js, generato da `node build.js` — niente binding "assets", così
+// non esiste una rotta che serva la pagina senza password.
+{
+  "name": "i-miei-turni",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-06-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "kv_namespaces": [{ "binding": "TURNI", "id": "<da riempire con l'id reale>" }]
+}

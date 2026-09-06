@@ -6,6 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "build": "node build.js",
-    "test": "node test/parser.test.js && node test/rules.test.js"
+    "dev": "wrangler dev",
+    "deploy": "node build.js && wrangler deploy",
+    "test": "node test/parser.test.js && node test/rules.test.js && node test/worker.test.js"
   }
 }
