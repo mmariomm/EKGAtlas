@@ -96,11 +96,38 @@ nomi sospetti (concatenazioni o varianti rare di un nome frequente).
 ```
 index.html        pagina generata da build.js (è quella da aprire e condividere)
 build.js          data/*.xlsx → index.html (inlina src/* e i dati)
+worker.js         il sito su Cloudflare: password, ruoli, turni condivisi in KV
+wrangler.jsonc    configurazione del deploy (in testa i comandi per KV e password)
 src/shell.html    scheletro HTML con i segnaposto
-src/styles.css    stili (tema chiaro/scuro, stampa)
+src/styles.css    stili (tema chiaro/scuro)
 src/parser.js     lettura xlsx → roster (browser e Node, zero dipendenze)
-src/rules.js      assegnazioni, segnalazioni, conteggi, ore, confronto tra versioni, ricerca
+src/rules.js      assegnazioni, segnalazioni, conteggi, ore, calendario, confronto, ricerca
 src/app.js        interfaccia
-test/             test di parser e regole (node:assert), con i roster attesi in test/fixtures
+test/             test di parser, regole e worker (node:assert), con i roster attesi in test/fixtures
 data/             i file xlsx sorgente
 ```
+
+## Prossimo passo: avvisi sul telefono
+
+Da fare, non ancora fatto. Quando chi gestisce salva un file nuovo, chi ha la pagina sul
+telefono riceve un avviso che dice **quali dei suoi turni sono cambiati**, non solo che
+qualcosa è cambiato: «Turni aggiornati — 2 tuoi turni cambiati: sab 12 notte OSG, gio 17
+mattina SSG».
+
+Come si costruisce, quando sarà il momento:
+
+- I pezzi difficili ci sono già. `TurniRules.diffRosters` dice esattamente quali celle sono
+  cambiate, e la pagina ricorda il cognome dell'utente (`localStorage["imieiturni.me"]`):
+  filtrare le differenze su quel cognome è una riga.
+- Serve un **service worker** (`sw.js`) e una sottoscrizione Web Push per dispositivo,
+  salvata in KV insieme al cognome scelto: `push:<endpoint>` → `{ cognome, chiavi }`.
+  Le chiavi VAPID si generano una volta e stanno nei secret di Cloudflare.
+- Al salvataggio, il Worker confronta la versione vecchia con la nuova, e per ogni
+  sottoscrizione manda l'avviso solo se quel cognome compare tra le celle cambiate. Un
+  invio per dispositivo, testo già pronto lato server.
+- Sul telefono va chiesto il permesso una volta sola, con un interruttore in *Dati*
+  («Avvisami quando cambiano i miei turni»). Su iPhone gli avvisi web funzionano solo se la
+  pagina è stata aggiunta alla schermata Home: va detto nell'interfaccia, non dato per
+  scontato.
+- Utile anche senza avvisi: all'apertura, una riga che dice cosa è cambiato per te dall'ultima
+  volta che hai guardato (basta ricordare la data dell'ultima visita e rifare il confronto).
