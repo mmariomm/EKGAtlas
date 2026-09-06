@@ -71,7 +71,7 @@
   </div>
 
   <div id="elenco"></div>
-  <p class="nota">In servizio: PS Assist <code>3.34.0</code> · 9 fogli.
+  <p class="nota">In servizio: PS Assist <code>3.35.0</code> · 9 fogli.
     Ogni foglio ha una <b>chiave</b> (<code>colica-renale</code>): è quella che il pannello usa per
     riconoscerlo, quindi cambiarla crea un foglio nuovo invece di aggiornare quello vecchio.</p>
 </div>
@@ -164,7 +164,7 @@ document.getElementById("salva").addEventListener("click", async () => {
     while (dati[k]) k += "-2";
     dati[k] = { nome: f.nome.trim() || k, testo: f.testo };
   }
-  const testo = JSON.stringify({ app: "PS assist", versione: "3.34.0", salvato: new Date().toISOString(), dimissioni: dati }, null, 1);
+  const testo = JSON.stringify({ app: "PS assist", versione: "3.35.0", salvato: new Date().toISOString(), dimissioni: dati }, null, 1);
   let file = false, appunti = false;
   try {
     const u = URL.createObjectURL(new Blob([testo], { type: "application/json" }));

@@ -382,6 +382,11 @@ export function createMock(opts = {}) {
     for (const [vecchio, nuovo] of Object.entries(opts.nuoveVersioni || {})) {
       if (cat[vecchio] && !cat[nuovo]) cat[nuovo] = String(cat[vecchio]).replace(/\s*\(([^)]*)\)\s*$/, " - NEW ($11)");
     }
+    // opts.riflesso: {codice: {code, label}} — una prestazione «a riflesso»:
+    // inserirla mette in carrello un ALTRO esame, che l'elenco tiene per sé
+    for (const [da, a] of Object.entries(opts.riflesso || {})) {
+      if (cat[da] && !cat[a.code]) cat[a.code] = a.label;
+    }
     const common = `STRUTTURA=1&EPISODIO_ID=${EP()}&returnPage=PsoEpisodio&RISORSE=${alloc.risorse.join("%2C")}&RICHIESTA_ID=${rid}&PADIGLIONE=&toPage=RcsRichiestaPrestazioniRicercaErogatore&s_PRESTAZIONE=`;
     const rows = [];
     let inIdx = 0;
@@ -618,8 +623,18 @@ export function createMock(opts = {}) {
       const r = state.richieste[rid];
       if (!r) return respond(notFound("insert su richiesta inesistente"));
       state.insertCount[`${rid}:${code}`] = (state.insertCount[`${rid}:${code}`] || 0) + 1;
-      if (!(opts.neverAdd || []).includes(code)) r.cart.set(String(code), res);
+      // una prestazione a riflesso entra in carrello col codice dell'esame che
+      // ne deriva, non col proprio
+      const rifl = (opts.riflesso || {})[code];
+      if (!(opts.neverAdd || []).includes(code)) r.cart.set(String(rifl ? rifl.code : code), res);
       const alloc = state.allocated[rid];
+      // opts.avvisoDopoInsert: l'inserimento è avvenuto, ma il server risponde
+      // con una pagina di avviso invece che con l'elenco
+      if ((opts.avvisoDopoInsert || []).includes(code)) {
+        // come ogni pagina del portale, porta l'episodio nei propri link
+        return respond(`${HEAD}<h1>Prestazione a riflesso</h1><p>L'esame è stato inserito nella richiesta.</p>
+          <a class="AFCDataLink" href="menuPsoEpisodio.do?MVPG=PsoEpisodioDiario&EPISODIO_ID=${EP()}">Torna all'episodio</a>${FOOT}`);
+      }
       return pageOrRedirect(examPage(rid, res), `${ORIGIN}${PATH}?${listQuery(rid, res, alloc)}`);
     }
 

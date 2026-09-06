@@ -401,6 +401,68 @@ async function scenarioNeverVisible(browser) {
   await context.close();
 }
 
+// Una prestazione «a riflesso» entra in carrello col codice dell'esame che ne
+// deriva: cercare il proprio numero non la trova più, e il vecchio motore si
+// fermava dicendo che non era entrata mentre invece c'era.
+async function scenarioRiflesso(browser) {
+  const scen = "riflesso";
+  const mock = createMock({ riflesso: { 16: { code: "17", label: "BILIRUBINA TOTALE (1341)" } } });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await $panel(page, "#q").fill("ittero");
+  await $panel(page, '.opt[title*="BILIRUBINA"]').click();
+  await $panel(page, "#go").click();
+  await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 30000 });
+  await page.waitForTimeout(400);
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.richieste[rid].cart.has("17"), "l'esame a riflesso è in carrello col suo codice derivato");
+  check(scen, mock.state.insertCount[`${rid}:16`] === 1, "inviato una volta sola");
+  const err = await $panel(page, ".banner.err").count();
+  check(scen, err === 0, "nessun errore: la riga nuova col nome giusto vale come conferma");
+  const ok = await $panel(page, ".banner.ok").innerText().catch(() => "");
+  check(scen, /1 esame in carrello, verificato/.test(ok), `ricevuta corretta (got: ${ok.trim().slice(0, 40)})`);
+  await context.close();
+
+  // …ma una riga nuova che NON è l'esame chiesto non vale come conferma:
+  // il carrello cresce e il motore si ferma lo stesso.
+  const scen2 = "riflesso-estraneo";
+  const mock2 = createMock({ riflesso: { 159: { code: "555", label: "ANTITROMBINA III (1450)" } } });
+  const b = await newPage(browser, mock2);
+  await b.page.goto(mock2.patientUrl);
+  await $panel(b.page, "#q").fill("controllo");
+  await $panel(b.page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(b.page, "#go").click();
+  await b.page.waitForSelector("#psassist-host .banner.err", { timeout: 30000 });
+  const banner = await $panel(b.page, ".banner.err").innerText();
+  check(scen2, /non risulta nel carrello/i.test(banner), `si ferma comunque (got: ${banner.trim().slice(0, 60)})`);
+  const rid2 = Object.keys(mock2.state.richieste)[0];
+  check(scen2, mock2.state.insertCount[`${rid2}:159`] === 1, "e non reinvia niente");
+  await b.context.close();
+}
+
+// Il server risponde all'inserimento con una pagina che non è l'elenco:
+// l'esame è entrato lo stesso, e si vede rileggendo il carrello.
+async function scenarioAvvisoDopoInsert(browser) {
+  const scen = "avviso-dopo-insert";
+  const mock = createMock({ avvisoDopoInsert: ["159"] });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await $panel(page, "#q").fill("febbre");
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, "#go").click();
+  await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 30000 });
+  await page.waitForTimeout(400);
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.richieste[rid].cart.has("159"), "esame in carrello");
+  check(scen, mock.state.insertCount[`${rid}:159`] === 1, "una pagina inattesa non fa reinviare l'esame");
+  const err = await $panel(page, ".banner.err").count();
+  check(scen, err === 0, "nessun errore: il carrello riletto dice che c'è");
+  await $panel(page, "#verbtn").click();   // il Registro, dal numero di versione in fondo
+  const reg = await $panel(page, ".log").innerText();
+  check(scen, /rileggo il carrello/.test(reg), `il Registro dice che è successo (got: ${(/[^\n]*rilegg[^\n]*/.exec(reg) || ["niente"])[0].slice(0, 70)})`);
+  await context.close();
+}
+
 async function scenarioEpisodeSwap(browser) {
   const scen = "episode-swap";
   // after 3 handled requests every page belongs to ANOTHER episode:
@@ -1005,6 +1067,8 @@ async function scenarioUiErgonomics(browser) {
   check(scen, /EMOCROMO POC/.test(optTxt) && !/EMOCROMOCITOMETRICO/.test(optTxt), "emocromo rinominato in EMOCROMO POC");
   check(scen, /\bPCR\b/.test(optTxt) && /LIPASI/.test(optTxt) && /TROPONINA US/.test(optTxt) && !/TROPONINA I POC/.test(optTxt),
     "singoli aggiornati: PCR e lipasi presenti, tropo ultrasensibile al posto della vecchia");
+  check(scen, /\bGPT\b/.test(optTxt) && /\bGOT\b/.test(optTxt) && /GAMMA GT/.test(optTxt) && /BILIRUBINA/.test(optTxt),
+    "gli epatici si ordinano anche uno per uno, non solo col profilo");
   check(scen, /Coag POC/.test(preTxt) && /Coag/.test(preTxt), "profili rapidi: Coag POC e Coag");
   const optBox = await $panel(page, ".opt").first().boundingBox();
   check(scen, optBox.height <= 34, `righe esame compatte (${Math.round(optBox.height)}px)`);
@@ -2108,6 +2172,8 @@ const scenarios = [
   ["rilancio su pagina esami: nessun doppio ordine", scenarioRilancioPaginaEsami],
   ["un nome col markup dentro non rompe il pannello", scenarioNomeConHtml],
   ["emogas: sceglie sempre la versione NEW", scenarioEmogasNew],
+  ["riflesso: entra in carrello con un altro codice", scenarioRiflesso],
+  ["pagina inattesa dopo l'inserimento: rilegge il carrello", scenarioAvvisoDopoInsert],
   ["prelievi refertati: restano colonne della tabella", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],
@@ -2116,7 +2182,10 @@ const scenarios = [
   ["stop button", scenarioStopButton],
 ];
 
-for (const [name, fn] of scenarios) {
+// `node test/run.mjs riflesso` gira solo gli scenari che contengono la parola:
+// una suite intera per rivedere un dettaglio sono cinque minuti buttati
+const solo = (process.argv[2] || "").toLowerCase();
+for (const [name, fn] of scenarios.filter(([n]) => !solo || n.toLowerCase().includes(solo))) {
   const t0 = Date.now();
   try {
     await fn(browser);

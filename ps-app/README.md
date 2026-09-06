@@ -88,7 +88,9 @@ lista del pronto soccorso); sulla scheda di un paziente parte direttamente da **
 1. **Quesito diagnostico** — casella su una riga, suggerimenti a fianco; l'ultimo resta scritto.
 2. **Profili rapidi** (Base PS, Epatico, Coag POC, Coag) o **esami singoli** — fra questi
    **EGA VENOSA NEW** / **EGA ARTERIOSA NEW** (il laboratorio ha rifatto gli emogas: sono i
-   codici nuovi, e la vecchia versione resta in elenco solo in «altri esami…») e **SARSCOV**
+   codici nuovi, e la vecchia versione resta in elenco solo in «altri esami…»), gli **epatici
+   uno per uno** (GPT, GOT, GAMMA GT, BILIRUBINA, LIPASI: il profilo li ordina insieme, ma
+   quasi sempre se ne vuole uno solo) e **SARSCOV**
    (tampone antigenico SARS-CoV-2, laboratorio centrale), griglia compatta a
    due colonne per laboratorio (POC / Urgenze / RX). Per tutto il resto: **«altri esami…»** con
    menu a tendina su tutti i laboratori. I selezionati restano in alto, una riga per laboratorio,
@@ -538,6 +540,13 @@ stessi flussi dei test di prodotto.
    di prima — fidarsene voleva dire leggere «non c'è» un esame che c'era già, e ordinarlo una
    seconda volta. Costa una richiesta, e da quella rilettura arrivano anche i controlli di
    sessione ed episodio che quella strada saltava. C'è un test che lo prova.
+   **Un esame può entrare in carrello con un numero diverso dal suo**: le prestazioni a
+   riflesso (BILIRUBINA TOTALE REFLEX) ci mettono l'esame che ne deriva. Il motore fotografa il
+   carrello *prima* dell'invio e guarda quale riga è comparsa *dopo*: vale solo se porta il
+   **nome** di quello che hai scelto — stesso nome, stesso mnemonico LIS, o l'uno dentro
+   l'altro parola per parola. Una riga estranea non conta e il motore si ferma lo stesso.
+   E se il server risponde all'inserimento con **una pagina che non è l'elenco**, l'esame è
+   entrato lo stesso: si rilegge il carrello (mai un secondo invio) invece di fermarsi al buio.
 2. **Mai il paziente sbagliato**: l'EPISODIO_ID viene fissato all'avvio e ogni pagina ricevuta è
    verificata **dal contenuto che il server dichiara** (non dall'URL richiesto); se manca o non
    corrisponde, stop prima di qualunque invio.
@@ -694,7 +703,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 46 scenari e2e in Chromium reale (+ storico e referti)
+└── test/                ← simulatore SA4PSO + 60 scenari e2e in Chromium reale (+ storico e referti)
 ```
 
 Sviluppo:
@@ -705,7 +714,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 58 scenari e2e + 32 sull'estensione + 39 sul banco + storico + il cancello privacy
+npm test           # 60 scenari e2e + 32 sull'estensione + 39 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

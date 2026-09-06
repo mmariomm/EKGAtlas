@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.34.0";
+  const VERSION = "3.35.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -106,8 +106,12 @@
   const SINGLES = [ // one-tap single exams (compact grid, grouped by lab)
     [RES.POC, "320"], [RES.POC, "325"], [RES.POC, "326"], [RES.POC, "176"],
     [RES.POC, "101"], [RES.POC, "324"], [RES.POC, "30"],
-    [RES.URGENZE, "293"], [RES.URGENZE, "34"], [RES.URGENZE, "159"],
-    [RES.URGENZE, "297"], [RES.URGENZE, "317"],
+    [RES.URGENZE, "293"], [RES.URGENZE, "159"], [RES.URGENZE, "297"],
+    [RES.URGENZE, "317"],
+    // gli epatici: il profilo rapido li ordina insieme, ma quasi sempre se ne
+    // vuole uno solo — la lipasi c'era già, gli altri quattro no
+    [RES.URGENZE, "228"], [RES.URGENZE, "53"], [RES.URGENZE, "167"],
+    [RES.URGENZE, "16"], [RES.URGENZE, "34"],
     [RES.CENTRAL, "212"],
     [RES.RX, "35"], [RES.RX, "36"], [RES.RX, "28"],
   ];
@@ -130,6 +134,10 @@
     [`${RES.CENTRAL}:212`]: "SARSCOV",
     [`${RES.URGENZE}:293`]: "PCR",
     [`${RES.URGENZE}:34`]:  "LIPASI",
+    [`${RES.URGENZE}:228`]: "GPT",
+    [`${RES.URGENZE}:53`]:  "GOT",
+    [`${RES.URGENZE}:167`]: "GAMMA GT",
+    [`${RES.URGENZE}:16`]:  "BILIRUBINA",
     [`${RES.URGENZE}:159`]: "PROCALCITONINA",
     [`${RES.URGENZE}:297`]: "NT PRO-BNP",
     [`${RES.URGENZE}:317`]: "ESAME URINE",
@@ -1973,6 +1981,20 @@
     .replace(/\s*\([A-Z]*\d+\)\s*$/, " ").replace(/\s+-\s*NEW\b/g, " ").replace(/\bPOC\b/g, " ")
     .replace(/[^A-Z0-9()]+/g, " ").trim();
   const eNuovo = (label) => /\s-\s*NEW\b/i.test(String(label || "").replace(/&nbsp;/gi, " "));
+  // Due nomi che parlano dello stesso esame: identici, stesso mnemonico, o
+  // l'uno dentro l'altro parola per parola — «BILIRUBINA TOTALE REFLEX» mette
+  // in carrello «BILIRUBINA TOTALE». Serve SOLO a riconoscere la riga che il
+  // nostro inserimento ha appena prodotto: nessun esame viene mai scelto o
+  // inviato in base a questo.
+  const stessoEsame = (a, b) => {
+    const x = baseEsame(a), y = baseEsame(b);
+    if (!x || !y) return false;
+    if (x === y) return true;
+    const ma = mnemonico(a), mb = mnemonico(b);
+    if (ma && ma === mb) return true;
+    const [lungo, corto] = x.length >= y.length ? [x, y] : [y, x];
+    return corto.length >= 6 && ` ${lungo} `.includes(` ${corto} `);
+  };
   // UI-facing short name (falls back to the catalog label, trimmed of its code)
   const displayLabel = (res, code) => DISPLAY[`${res}:${code}`] || shortLabel(examLabel(res, code));
 
@@ -2236,19 +2258,35 @@
         // ---- the one and only send of this exam -----------------------
         running(st, "invio…");
         log(`aggiungo → ${nm}`);
+        // Il carrello com'è un attimo prima: se l'esame entra sotto un altro
+        // codice — le prestazioni «REFLEX» lo fanno — è questa differenza a
+        // dire quale riga ha prodotto il nostro clic.
+        const prima = new Set(model.exams.filter((e) => e.isDel).map((e) => e.code));
         ({ doc, url } = await fetchDoc(link.href, { signal }));
         guardSession(doc, `«${nm}» potrebbe essere stato aggiunto o no`);
         assertSameEpisode(doc, plan.episodeId, "conferma inserimento");
+        // Una pagina inattesa QUI non dice che l'esame non sia entrato:
+        // l'inserimento è già partito. Invece di fermarsi al buio si rilegge
+        // l'elenco pulito — mai un secondo invio — e si guarda il carrello.
         if (classify(doc) !== "exam") {
-          log(`pagina inattesa dopo l'inserimento: "${snippet(doc)}"`);
-          throw new StopError(`«${nm}» potrebbe essere stato aggiunto o no`, "Pagina inattesa dal server (vedi Registro) — non reinviato.");
+          log(`pagina inattesa dopo l'inserimento: "${snippet(doc)}" — rileggo il carrello`);
+        } else {
+          model = examModel(doc, url);
+          learnFrom(model);
+          noteList();
         }
-        model = examModel(doc, url);
-        learnFrom(model);
-        noteList();
 
         // ---- verify (re-reading the clean list only — never re-insert) --
-        let verified = model.inCart(it.code);
+        // In carrello l'esame può comparire col proprio codice oppure, se è a
+        // riflesso, con quello dell'esame che ne deriva: una riga nuova vale
+        // solo se porta il NOME di quello che il medico ha scelto.
+        const entrato = () => {
+          if (model.inCart(it.code)) return { code: it.code, label: it.label };
+          const nuove = model.exams.filter((e) => e.isDel && !prima.has(e.code));
+          if (nuove.length) log(`nuove righe in carrello: ${nuove.map((e) => `«${e.label}» ${e.code}`).join(", ")}`);
+          return nuove.find((e) => stessoEsame(e.label, it.label)) || null;
+        };
+        let verified = classify(doc) === "exam" && entrato();
         for (let attempt = 1; !verified && attempt <= VERIFY_RECHECKS; attempt++) {
           running(st, `verifica ${attempt}/${VERIFY_RECHECKS}…`);
           await sleep(VERIFY_WAIT_MS, signal);
@@ -2260,11 +2298,26 @@
             continue; // count the attempt; the next re-read may recover
           }
           model = examModel(doc, url);
-          verified = model.inCart(it.code);
+          verified = entrato();
           noteList();
         }
         if (!verified) {
-          throw new StopError(`«${nm}» non risulta nel carrello`, `Verificato ${VERIFY_RECHECKS} volte, non reinviato. Apri il carrello.`);
+          // Una riga che porta lo stesso esame sotto un altro nome c'era già
+          // PRIMA del nostro clic: non vale come conferma — potrebbe essere
+          // un altro esame con un nome che somiglia — ma dirlo evita al medico
+          // di cercare al buio.
+          const simile = model.exams.find((e) => e.isDel && stessoEsame(e.label, it.label));
+          throw new StopError(`«${nm}» non risulta nel carrello`,
+            simile ? `In carrello c'è «${simile.label}»: forse c'era già. Non reinviato — controlla.`
+              : `Verificato ${VERIFY_RECHECKS} volte, non reinviato. Apri il carrello.`);
+        }
+        // È entrato con un altro numero: da qui in poi l'esame è QUELLA riga —
+        // la ricevuta, il carrello registrato e la conferma automatica devono
+        // parlare del carrello vero, non di quello che avevamo chiesto.
+        if (verified.code !== it.code) {
+          log(`«${nm}» è entrato come «${verified.label}» (${verified.code})`);
+          it.code = verified.code;
+          it.label = verified.label;
         }
         done(st, "nel carrello ✓");
         log(`aggiunto ✓ ${nm}`);
