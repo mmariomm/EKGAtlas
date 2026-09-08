@@ -19,6 +19,9 @@
   var LS_VIEW = 'imieiturni.view';
   var LS_GESTORE = 'imieiturni.gestore';
   var LS_SITES = 'imieiturni.sedi';
+  var LS_SIMPL = 'imieiturni.semplifica';
+  var LS_INTRO = 'imieiturni.intro';
+  var LS_DEV = 'imieiturni.dev';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var MONTHS_IT = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
@@ -89,6 +92,7 @@
   function $(id) { return document.getElementById(id); }
 
   function hospClass(h) { return h === 'DEA' ? 'h-dea' : (h === 'OSG' ? 'h-osg' : 'h-alt'); }
+  function hospKey(h) { return hospClass(h).slice(2); }
 
   function dot(h, title) { return el('span', { class: 'dot ' + hospClass(h), title: title }); }
   function warnRow(text) { return el('p', { class: 'warnrow' }, [icon('i-warn'), text]); }
@@ -200,6 +204,7 @@
     armedIndex: 0,
     pinned: null,
     popOpen: false,
+    simplify: readStore(LS_SIMPL) === '1',
   };
 
   var local = readLocal();
@@ -212,6 +217,14 @@
   var role = (window.TURNI_ROLE === 'gestore' || window.TURNI_ROLE === 'medico') ? window.TURNI_ROLE : null;
   var gestore = role ? role === 'gestore' : (!runtime || readStore(LS_GESTORE) === '1');
   var soloVista = role === 'medico';
+  // Se la pagina arriva dal Worker c'è un ruolo scritto dentro: solo lì esiste
+  // la rotta cal-link, quindi solo lì il calendario si può abbonare.
+  var onWorker = typeof window.TURNI_ROLE === 'string' && !!window.TURNI_ROLE;
+  var calLink = null;
+  var installEvent = null;      // beforeinstallprompt messo da parte (Android)
+  var sheetMode = 'review';     // lo stesso foglio serve revisione, presentazione e uso
+  var ricerche = [];            // i nomi fissati in questa sessione
+  var usoSent = false;
 
   var D = {};
   var hits = [];              // ultimo risultato di searchNames (una volta per battuta)
@@ -235,6 +248,7 @@
     emptyEl = $('empty'), totaleEl = $('totale'), calEl = $('calendario'), legendEl = $('callegend'),
     detailEl = $('detail'), findEl = $('segnalazioni'), bottomEl = $('bottom'),
     sitesEl = $('sites'), updatedEl = $('updated'),
+    filtersRow = $('filtersrow'), sitesLabel = $('sitesLabel'), simplBtn = $('simplBtn'),
     fileInput = $('fileInput'), toasts = $('toasts'), srStatus = $('srStatus'),
     reviewEl = $('review'), reviewPanel = $('reviewPanel'), reviewTitle = $('reviewTitle'),
     reviewCap = $('reviewCap'), reviewBody = $('reviewBody'), reviewSave = $('reviewSave'), reviewCancel = $('reviewCancel');
@@ -319,6 +333,97 @@
       out.push({ name: name, pos: pos, role: (slot.roles && slot.roles[pos]) || '' });
     });
     return out;
+  }
+
+  // Con Semplifica mattina e pomeriggio diventano una colonna sola, «Giorno»:
+  // ogni persona si scrive una volta, con accanto la parte di giornata che copre.
+  // Le altre fasce restano dov'erano. Spento, le colonne sono quelle del foglio.
+  function columns() {
+    var rows = D.slotRows, out = [], day = null, ai = -1;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].key === 'A') ai = i;
+      if (state.simplify && rows[i].key === 'M' && rows[i + 1] && rows[i + 1].key === 'P') {
+        day = { key: 'MP', day: true, mi: i, pi: i + 1, slot: daySlot(rows[i].slot, rows[i + 1].slot) };
+        out.push(day);
+        i++;
+      } else {
+        out.push({ key: rows[i].key, idx: i, row: rows[i], slot: rows[i].slot });
+      }
+    }
+    // L'ambulatorio ha le ore della mattina: con Semplifica sta dentro «Giorno»,
+    // e la sua colonna sparisce invece di ripetere gli stessi nomi.
+    if (day) {
+      day.ai = ai;
+      out = out.filter(function (c) { return c.key !== 'A'; });
+    }
+    return out;
+  }
+
+  // La fascia finta della colonna unita: serve al titolo e al riquadro che spiega.
+  function daySlot(m, p) {
+    return { label: 'GIORNO', start: m.start, end: p.end, sub: m.sub || p.sub || '', roles: m.roles || [] };
+  }
+
+  // Le righe di una cella «Giorno»: una per persona, in ordine di ruolo, e
+  // dentro lo stesso ruolo prima chi fa solo la mattina, poi solo il pomeriggio.
+  function dayLines(r, day) {
+    var ms = r.slotsByKey.M, ps = r.slotsByKey.P, as = r.slotsByKey.A;
+    var m = (ms && day) ? cellNames(day, r.hospital, ms) : [];
+    var p = (ps && day) ? cellNames(day, r.hospital, ps) : [];
+    var amb = (as && day) ? cellNames(day, r.hospital, as) : [];
+
+    // La mattina è mattina + ambulatorio; chi fa anche il pomeriggio si scrive
+    // una volta sola, con l'orario intero.
+    var mornings = m.slice();
+    amb.forEach(function (n) {
+      if (!mornings.some(function (x) { return x.name === n.name; })) mornings.push(n);
+    });
+
+    var left = Object.create(null);
+    p.forEach(function (n, i) { left[n.name] = i; });
+
+    var rows = [];
+    mornings.forEach(function (n, i) {
+      var both = left[n.name] !== undefined;
+      var key = i < m.length ? 'M' : 'A';                      // da quale colonna viene
+      rows.push({
+        n: n, keys: both ? key + 'P' : key, i: i, o: 0,
+        ind: n.pos > 0 || (i > 0 && i >= m.length),
+      });
+      if (both) delete left[n.name];
+    });
+    p.forEach(function (n, i) {
+      if (left[n.name] === undefined) return;                  // già unito alla sua mattina
+      rows.push({ n: n, keys: 'P', i: i, o: 1, ind: n.pos > 0 });
+    });
+    rows.sort(function (x, y) { return x.i - y.i || x.o - y.o; });
+    return rows;
+  }
+
+  // "08–14" + "14–20" → "8–20"; una fascia sola → "8–14". Sempre presente:
+  // una riga senza etichetta vorrebbe dire qualcosa che nessuno può indovinare.
+  function spanChip(r, keys) {
+    var from = r.slotsByKey[keys.charAt(0)], to = r.slotsByKey[keys.charAt(keys.length - 1)];
+    if (!from || !to) return '';
+    var a = String(R.timeRange(from)).split('–'), b = String(R.timeRange(to)).split('–');
+    return noZero(a[0]) + '–' + noZero(b[1] || b[0]);
+  }
+  function noZero(t) { return String(t).replace(/^0/, ''); }
+
+  var SLOT_SAY = { M: 'mattina', A: 'ambulatorio', P: 'pomeriggio' };
+  function spanWord(keys) {
+    return keys.split('').map(function (k) { return SLOT_SAY[k] || k; }).join(' e ');
+  }
+
+  // Nella cella unita il nome sta in due fasce: vale la segnalazione più grave.
+  // Una riga che copre due fasce porta la segnalazione più grave delle due.
+  function sevKeys(hospital, date, person, keys) {
+    var worst = null;
+    keys.split('').forEach(function (k) {
+      var f = sevOf(hospital, date, k, person);
+      if (f && (!worst || f.sev > worst.sev)) worst = f;
+    });
+    return worst;
   }
 
   function pillKey(hospital, date, slotKey, person) {
@@ -453,19 +558,16 @@
       D.hospitals.forEach(function (h) {
         var list = perDay.get(h);
         if (!list) return;
-        var morning = list.filter(function (a) { return a.slotKey === 'M' || a.slotKey === 'A'; });
-        var afternoon = list.filter(function (a) { return a.slotKey === 'P'; });
-        var rest = list.filter(function (a) { return a.slotKey !== 'M' && a.slotKey !== 'A' && a.slotKey !== 'P'; });
-        if (morning.length && afternoon.length) {
-          chips.push({ letter: 'G', word: 'giornata', hospital: h, night: false, a: morning[0] });
-        } else {
-          morning.concat(afternoon).forEach(function (a) {
-            chips.push({ letter: a.slotKey, word: SLOT_WORD[a.slotKey] || R.slotName(a.slotLabel).toLowerCase(), hospital: h, night: false, a: a });
-          });
-        }
-        rest.forEach(function (a) {
+        // L'ambulatorio è una mattina: nel calendario si scrive M, e se uno fa
+        // ambulatorio e mattina resta una M sola.
+        var seen = Object.create(null);
+        list.forEach(function (a) {
+          var letter = (a.slotKey === 'A') ? 'M' : a.slotKey.charAt(0);
+          if (seen[letter]) return;
+          seen[letter] = true;
           chips.push({
-            letter: a.slotKey.charAt(0), word: SLOT_WORD[a.slotKey] || R.slotName(a.slotLabel).toLowerCase(),
+            letter: letter,
+            word: letter === 'M' ? 'mattina' : (SLOT_WORD[a.slotKey] || R.slotName(a.slotLabel).toLowerCase()),
             hospital: h, night: a.isNight, a: a,
           });
         });
@@ -541,18 +643,43 @@
 
   function renderSites() {
     clear(sitesEl);
-    if (D.allHospitals.length < 2) { sitesEl.hidden = true; return; }
-    sitesEl.hidden = false;
-    D.allHospitals.forEach(function (h) {
-      var on = isOn(h);
-      sitesEl.appendChild(el('button', {
-        class: 'site ' + hospClass(h), type: 'button',
-        'aria-pressed': on ? 'true' : 'false',
-        title: (on ? 'Nascondi' : 'Mostra') + ' i turni di ' + h,
-        text: h,
-        on: { click: function () { toggleSite(h); } },
-      }));
-    });
+    var many = D.allHospitals.length > 1;
+    sitesEl.hidden = !many;
+    sitesLabel.hidden = !many;
+    if (many) {
+      D.allHospitals.forEach(function (h) {
+        var on = isOn(h);
+        sitesEl.appendChild(el('button', {
+          class: 'site ' + hospClass(h), type: 'button',
+          'aria-pressed': on ? 'true' : 'false',
+          title: (on ? 'Nascondi' : 'Mostra') + ' i turni di ' + h,
+          on: { click: function () { toggleSite(h); } },
+        }, [on ? icon('i-check') : null, el('span', { text: h })]));
+      });
+    }
+    renderSimpl();
+    filtersRow.hidden = !many && simplBtn.hidden;
+  }
+
+  // Semplifica: si mostra solo dove serve davvero (tabella e calendario).
+  function renderSimpl() {
+    clear(simplBtn);
+    var useful = state.view !== 'ore';
+    simplBtn.hidden = !useful;
+    if (!useful) return;
+    simplBtn.setAttribute('aria-pressed', state.simplify ? 'true' : 'false');
+    simplBtn.title = state.simplify
+      ? 'Torna a mostrare mattina e pomeriggio separati'
+      : 'Unisci mattina e pomeriggio quando sono gli stessi nomi';
+    if (state.simplify) simplBtn.appendChild(icon('i-check'));
+    simplBtn.appendChild(el('span', { text: 'Semplifica' }));
+  }
+
+  function toggleSimpl() {
+    state.simplify = !state.simplify;
+    writeStore(LS_SIMPL, state.simplify ? '1' : null);
+    renderAll();
+    srSay(state.simplify ? 'Mattina e pomeriggio uniti quando coincidono' : 'Fasce separate');
   }
 
   function renderUpdated() {
@@ -585,35 +712,40 @@
     }).filter(function (r) { return r.st.turni > 0; });
     var all = R.personStats(D.assignments, name, state.month);
 
-    totaleEl.appendChild(el('div', { class: 'totale__head' }, [
+    var allSpan = rows.length > 1 ? el('span', { class: 'totale__all' }, sumNodes(all)) : null;
+    var head = el('div', { class: 'totale__head' }, [
       el('h2', { class: 'stitle', text: 'Totale' }),
       ' ',
-      rows.length > 1 ? el('span', {
-        class: 'totale__all',
-        text: R.formatNumber(all.turniEq) + ' turni · ' + R.formatHours(all.ore),
-      }) : null,
-    ]));
+      allSpan,
+    ]);
+    totaleEl.appendChild(head);
 
     rows.forEach(function (r) {
       totaleEl.appendChild(el('div', { class: 'totale__row' }, [
         el('span', { class: 'totale__site ' + hospClass(r.hospital), text: r.hospital }),
         ' ',
-        el('span', {
-          text: R.formatNumber(r.st.giornateEq) + 'G + ' + r.st.notti + 'N = ' +
-            R.formatNumber(r.st.turniEq) + ' turni · ' + R.formatHours(r.st.ore),
-        }),
+        el('span', {}, sumNodes(r.st)),
       ]));
     });
 
+    // Il titolo porta la somma scomposta solo se ci sta su una riga: altrimenti
+    // torna alla forma breve, che è quella che deve restare leggibile.
+    if (allSpan && wraps(allSpan)) {
+      clear(allSpan);
+      append(allSpan, R.formatHours(all.ore));
+    }
+
     totaleEl.appendChild(el('button', {
       class: 'btn btn--solid btn--wide', type: 'button', id: 'icsBtn',
-      text: 'Esporta i miei turni nel mio calendario',
-      'aria-label': 'Scarica i turni di ' + name + ' nel calendario',
+      text: 'Mostra i miei turni nel mio calendario',
+      'aria-label': 'Mostra i turni di ' + name + ' nel calendario',
       on: { click: exportICS },
     }));
+    if (calLink && calLink.person === name) totaleEl.appendChild(calLinkRow(calLink));
   }
 
   function renderMain() {
+    closeSlotPop();
     var v = state.view;
     var segs = { calendario: segCal, tabella: segTab, ore: segOre };
     segOre.hidden = !canSeeOre();
@@ -655,8 +787,12 @@
     calEl.setAttribute('aria-label', 'Calendario di ' + monthLabel(state.month));
     if (!state.month) return;
 
+    // Sabato e domenica sono due bande verticali, intestazione compresa: la
+    // forma della settimana si vede prima di leggere un numero.
     calEl.appendChild(el('div', { class: 'cal__row cal__wd' },
-      WEEKDAYS_SHORT_IT.map(function (w) { return el('span', { text: w }); })));
+      WEEKDAYS_SHORT_IT.map(function (w, i) {
+        return el('span', { class: i >= 5 ? 'is-weekend' : null, text: w });
+      })));
 
     calName = previewName();
     var chips = chipsByDate(calName);
@@ -670,7 +806,7 @@
 
     for (var w = 0; w < cells.length; w += 7) {
       var row = el('div', { class: 'cal__row' });
-      cells.slice(w, w + 7).forEach(function (c) { row.appendChild(calCell(c, chips)); });
+      cells.slice(w, w + 7).forEach(function (c, i) { row.appendChild(calCell(c, chips, i)); });
       calEl.appendChild(row);
     }
     renderLegend(chips);
@@ -680,8 +816,11 @@
     return new Date(Date.UTC(Number(firstDate.slice(0, 4)), Number(firstDate.slice(5, 7)) - 1, 1 - back)).getUTCDate();
   }
 
-  function calCell(c, chips) {
-    if (c.out) return el('span', { class: 'cal__d is-out' }, el('span', { class: 'cal__n', text: String(c.n) }));
+  function calCell(c, chips, col) {
+    var band = col >= 5 ? ' is-weekend' : '';
+    if (c.out) {
+      return el('span', { class: 'cal__d is-out' + band }, el('span', { class: 'cal__n', text: String(c.n) }));
+    }
 
     var date = c.date;
     var isToday = date === today;
@@ -695,29 +834,37 @@
       label += ', ' + mine.map(function (ch) { return ch.word + ' ' + ch.hospital; }).join(', ') + ' di ' + calName;
     } else if (find) label += ', ' + find.title;
 
+    // Quando la persona lavora, la casella prende una velatura della sede
+    // (due sedi: mezza e mezza, in diagonale). Le lettere restano il segnale vero.
+    var sites = [];
+    mine.forEach(function (ch) { if (sites.indexOf(ch.hospital) === -1) sites.push(ch.hospital); });
+    var tint = sites.length
+      ? '--c1: var(--cal-' + hospKey(sites[0]) + '); --c2: var(--cal-' + hospKey(sites[sites.length > 1 ? 1 : 0]) + ');'
+      : null;
+
     return el('button', {
-      class: 'cal__d' + (isWeekend(date) ? ' is-weekend' : '') + (sel ? ' is-sel' : ''),
-      type: 'button', 'aria-current': sel ? 'date' : null,
+      class: 'cal__d' + band + (sel ? ' is-sel' : '') + (sites.length ? ' is-mine' : ''),
+      type: 'button', 'aria-current': sel ? 'date' : null, style: tint,
       'aria-label': label, data: { day: date },
     }, [
       el('span', { class: 'cal__n' + (isToday ? ' is-today' : ''), text: String(c.n) }),
-      mine.length ? el('span', { class: 'cal__chips' }, mine.slice(0, 4).map(slotChip)) : null,
+      mine.length ? el('span', { class: 'cal__big' }, mine.map(slotLetter)) : null,
       (!calName && find) ? el('span', { class: 'cal__dot sev-' + find.sev, title: find.title }) : null,
     ]);
   }
 
-  function slotChip(ch) {
+  function slotLetter(ch) {
     var f = sevOf(ch.hospital, ch.a.date, ch.a.slotKey, ch.a.person);
-    return el('span', {
-      class: 'chipslot ' + hospClass(ch.hospital) + (ch.night ? ' is-night' : '') + (f ? ' is-find sev-' + f.sev : ''),
-      title: capitalize(ch.word) + ' ' + ch.hospital,
+    return el('b', {
+      class: 'cal__k ' + hospClass(ch.hospital) + (f ? ' is-find sev-' + f.sev : ''),
+      title: capitalize(ch.word) + ' ' + ch.hospital + (f ? ' · ' + f.title : ''),
       text: ch.letter,
     });
   }
 
   // La legenda spiega solo le lettere disegnate per quella persona: chi non fa
   // ambulatorio non deve leggere che cos'è.
-  var LEGEND_ORDER = ['G', 'M', 'P', 'N', 'A'];
+  var LEGEND_ORDER = ['M', 'P', 'N'];
 
   function renderLegend(chipsByDay) {
     clear(legendEl);
@@ -725,7 +872,7 @@
     if (chipsByDay) {
       chipsByDay.forEach(function (chips) {
         chips.forEach(function (c) {
-          if (!words.has(c.letter)) words.set(c.letter, c.letter === 'G' ? 'giornata (M+P)' : c.word);
+          if (!words.has(c.letter)) words.set(c.letter, c.word);
         });
       });
     }
@@ -761,11 +908,15 @@
 
   function namePill(name, sev, opts) {
     return el('button', {
-      class: 'pill' + (opts.cls ? ' ' + opts.cls : '') + (sev ? ' sev-' + sev.sev : ''),
-      type: 'button', data: { name: name }, title: opts.title, 'aria-label': opts.label,
+      class: 'pill' + (opts.cls ? ' ' + opts.cls : '') + (sev ? ' sev-' + sev.sev : '') +
+        (opts.in ? ' is-in' : ''),
+      type: 'button', data: { name: name, slots: opts.slots || '' },
+      title: (opts.title || name) + (sev ? ' · ' + sev.title : ''),
+      'aria-label': opts.label + (sev ? ' — ' + sev.title : ''),
     }, [
       el('span', { text: name }),
-      sev ? el('span', { class: 'fdot', title: sev.title }) : null,
+      opts.chip ? el('span', { class: 'tchip', text: opts.chip }) : null,
+      opts.tag ? el('span', { class: 'ttag', text: opts.tag }) : null,
     ]);
   }
 
@@ -800,10 +951,12 @@
       return;
     }
 
-    // Colonne = fasce, righe = sedi: lo stesso schema della tabella.
-    var slots = D.slotRows.filter(function (row) {
+    // Colonne = fasce (con Semplifica, mattina e pomeriggio in una sola),
+    // righe = sedi: lo stesso schema della tabella.
+    var slots = columns().filter(function (c) {
       return D.monthRosters.some(function (r) {
-        var slot = r.slotsByKey[row.key];
+        if (c.day) return dayLines(r, day).length;
+        var slot = r.slotsByKey[c.key];
         return slot && cellNames(day, r.hospital, slot).length;
       });
     });
@@ -815,35 +968,25 @@
         // 72px è la larghezza sotto la quale un cognome comincia a spezzarsi:
         // finché ci stanno, le colonne si dividono lo spazio; sotto, è il solo
         // dettaglio a scorrere di lato (mai la pagina), come da regola.
-        style: '--dtpl: 42px repeat(' + slots.length + ', minmax(72px, 1fr))',
+        // Le colonne non scendono sotto il loro contenuto: se non ci stanno,
+        // è il dettaglio a scorrere di lato, mai un nome a spezzarsi.
+        style: '--dtpl: 42px ' + slots.map(function (c) {
+          return c.day ? 'minmax(min-content, 1.8fr)' : 'minmax(min-content, 1fr)';
+        }).join(' '),
       });
       grid.appendChild(el('div', { class: 'detail__gh' }));
-      slots.forEach(function (row) {
-        grid.appendChild(el('div', { class: 'detail__gh' + (row.key === 'N' ? ' is-night' : '') }, [
-          el('b', { text: shortSlotName(row.slot.label) }),
+      slots.forEach(function (c) {
+        grid.appendChild(el('div', { class: 'detail__gh' }, slotButton(c, [
+          el('b', { text: shortSlotName(c.slot.label) }),
           ' ',
-          el('time', { text: R.timeRange(row.slot) }),
-        ]));
+          el('time', { text: R.timeRange(c.slot) }),
+        ])));
       });
       D.monthRosters.forEach(function (r) {
         grid.appendChild(el('div', {
           class: 'detail__site ' + hospClass(r.hospital), title: r.title || r.hospital, text: r.hospital,
         }));
-        slots.forEach(function (row) {
-          var box = el('div', {
-            class: 'detail__cell ' + hospClass(r.hospital) + (row.key === 'N' ? ' is-night' : ''),
-          });
-          var slot = r.slotsByKey[row.key];
-          if (slot) {
-            cellNames(day, r.hospital, slot).forEach(function (n) {
-              box.appendChild(namePill(n.name, sevOf(r.hospital, date, row.key, n.name), {
-                title: n.role ? (n.pos + 1) + 'º · ' + n.role : n.name,
-                label: n.name + ' — ' + R.slotName(row.slot.label) + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
-              }));
-            });
-          }
-          grid.appendChild(box);
-        });
+        slots.forEach(function (c) { grid.appendChild(cellFor(r, day, c, 'div')); });
       });
       detailEl.appendChild(grid);
     }
@@ -859,6 +1002,7 @@
     clear(tableWrap);
     if (!D.days.length || !D.slotRows.length) return;
     var table = el('table', { class: 'tab', 'aria-labelledby': 'tabTitle' });
+    var tableStyle = function (w) { table.style.setProperty('--tabw', w + 'px'); };
 
     // Percentuali (non calc(): Chrome le ignora sui <col>), rifatte a ogni cambio
     // di larghezza. 27px al giorno, 28px alla sigla della sede; il resto va alle
@@ -866,7 +1010,15 @@
     // lungo, più 2px di pastiglia: nessun nome si tronca finché ci stanno tutti.
     tableWidth = tableWrap.clientWidth || 366;
     var free = Math.max(140, tableWidth - 55);
-    var need = measureCols(D.tableNames).map(function (w) { return w + 2; });
+    var cols = columns();
+    var m = measureCols(D.tableNames);
+    // La colonna «Giorno» ospita i nomi delle due fasce più la pastiglia dell'orario.
+    var need = cols.map(function (c) {
+      if (!c.day) return m.cols[c.idx] + 2;
+      var w = Math.max(m.cols[c.mi], m.cols[c.pi], c.ai >= 0 ? m.cols[c.ai] : 0);
+      // il nome, l'orario accanto, e la targhetta dell'ambulatorio dove serve
+      return w + m.chip + 8 + (c.ai >= 0 ? m.tag + 2 : 0);
+    });
     var sum = need.reduce(function (x, y) { return x + y; }, 0) || 1;
     // L'avanzo si divide in parti uguali, non in proporzione: così anche la
     // colonna col nome più lungo tiene lo stesso spazio bianco prima della
@@ -883,15 +1035,19 @@
     table.appendChild(el('thead', {}, el('tr', {}, [
       el('th', { class: 'tab__corner', scope: 'col' }, el('span', { class: 'sr-only', text: 'Giorno' })),
       el('th', { class: 'tab__hh', scope: 'col' }, el('span', { class: 'sr-only', text: 'Ospedale' })),
-    ].concat(D.slotRows.map(function (row) {
-      return el('th', { class: 'tab__hs' + (row.key === 'N' ? ' is-night' : ''), scope: 'col' }, [
-        el('b', { text: row.key }), el('time', { text: R.timeRange(row.slot) }),
-      ]);
+    ].concat(cols.map(function (c) {
+      return el('th', { class: 'tab__hs', scope: 'col' }, slotButton(c, [
+        el('b', { text: c.day ? 'Giorno' : c.key }), el('time', { text: R.timeRange(c.slot) }),
+      ]));
     })))));
 
-    var body = el('tbody');
     D.days.forEach(function (d) {
       var weekend = isWeekend(d.date);
+      // Un gruppo di righe per giorno: così «oggi» si può incorniciare tutto
+      // insieme, senza toccare le righe delle sedi.
+      var body = el('tbody', {
+        class: 'tab__g' + (d.date === today ? ' is-today' : ''), data: { date: d.date },
+      });
       D.monthRosters.forEach(function (r, i) {
         var tr = el('tr', {
           class: 'tab__r ' + (i === 0 ? 'tab__r--first' : 'tab__r--second') +
@@ -901,24 +1057,12 @@
         if (i === 0) tr.appendChild(tableDayCell(d));
         tr.appendChild(el('td', { class: 'tab__h' },
           el('span', { class: 'tab__site ' + hospClass(r.hospital), text: r.hospital })));
-        D.slotRows.forEach(function (row) {
-          var box = el('td', { class: 'tab__c' + (row.key === 'N' ? ' is-night' : '') });
-          var slot = r.slotsByKey[row.key];
-          if (slot) {
-            cellNames(d, r.hospital, slot).forEach(function (n) {
-              box.appendChild(namePill(n.name, sevOf(r.hospital, d.date, row.key, n.name), {
-                cls: 'pill--t',
-                title: n.name + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
-                label: n.name + ' — ' + R.slotName(slot.label) + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
-              }));
-            });
-          }
-          tr.appendChild(box);
-        });
+        cols.forEach(function (c) { tr.appendChild(cellFor(r, d, c, 'td')); });
         body.appendChild(tr);
       });
+      table.appendChild(body);
     });
-    table.appendChild(body);
+    tableStyle(tableWidth);
     table.classList.toggle('is-pinned', !!state.pinned && !state.query.trim());
     table.classList.toggle('is-multi', D.monthRosters.length > 1);
     tableWrap.appendChild(table);
@@ -936,6 +1080,10 @@
         return s;
       });
     });
+    var chip = el('span', { class: 'tchip', text: '14–20' });
+    var tag = el('span', { class: 'ttag', text: 'amb' });
+    ruler.appendChild(chip);
+    ruler.appendChild(tag);
     tableWrap.appendChild(ruler);
     var out = spans.map(function (ss, i) {
       var m = 0;
@@ -944,8 +1092,102 @@
       if (m < 8) groups[i].forEach(function (n) { m = Math.max(m, n.length * 6.3); });
       return Math.max(24, m);
     });
+    var chipW = Math.max(24, chip.getBoundingClientRect().width);
+    var tagW = Math.max(14, tag.getBoundingClientRect().width);
     tableWrap.removeChild(ruler);
-    return out;
+    return { cols: out, chip: chipW, tag: tagW };
+  }
+
+  // Sul telefono non c'è il passaggio del mouse: l'intestazione della fascia è
+  // un bottone che apre due righe (nome per esteso e orario a parole), più il
+  // ruolo scritto nel foglio quando c'è. Il riquadro sta sul corpo della pagina,
+  // in posizione fissa: non sposta niente e la testata appiccicata non lo taglia.
+  var popEl = null, popBtn = null;
+
+  function slotButton(col, kids) {
+    return el('button', {
+      class: 'slotbtn', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'slotpop',
+      on: {
+        click: function (e) {
+          e.stopPropagation();
+          toggleSlotPop(this, col.slot);
+        },
+      },
+    }, kids);
+  }
+
+  function toggleSlotPop(btn, slot) {
+    toggleInfoPop(btn, R.slotFullName(slot), [
+      { c: 'slotpop__t', t: R.slotFullName(slot) },
+      { c: 'slotpop__h', t: R.slotHoursPhrase(slot) },
+      slot.sub ? { c: 'slotpop__s', t: slot.sub } : null,
+    ]);
+  }
+
+  // Lo stesso riquadro serve le intestazioni delle fasce e le colonne del
+  // grafico: il valore si legge al tocco, non stampato su ogni colonna.
+  function toggleInfoPop(btn, label, lines) {
+    var same = popBtn === btn;
+    closeSlotPop();
+    if (same) return;
+    popEl = el('div', { class: 'slotpop', id: 'slotpop', role: 'dialog', 'aria-label': label },
+      lines.map(function (l) { return l ? el('p', { class: l.c, text: l.t }) : null; }));
+    document.body.appendChild(popEl);
+    popBtn = btn;
+    btn.setAttribute('aria-expanded', 'true');
+    placeSlotPop();
+  }
+
+  function placeSlotPop() {
+    if (!popEl || !popBtn) return;
+    var r = popBtn.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) { closeSlotPop(); return; }
+    var w = popEl.offsetWidth;
+    popEl.style.left = Math.round(Math.min(Math.max(8, r.left - 6), Math.max(8, window.innerWidth - w - 8))) + 'px';
+    popEl.style.top = Math.round(r.bottom + 6) + 'px';
+  }
+
+  function closeSlotPop() {
+    if (popBtn) popBtn.setAttribute('aria-expanded', 'false');
+    if (popEl && popEl.parentNode) popEl.parentNode.removeChild(popEl);
+    popEl = null;
+    popBtn = null;
+  }
+
+  // Una cella: gli stessi nomi in tabella (td) e nel dettaglio (div). La colonna
+  // «Giorno» porta anche la pastiglia dell'orario; le altre no.
+  function cellFor(r, day, col, tag) {
+    var box = tag === 'td'
+      ? el('td', { class: 'tab__c' + (col.day ? ' tab__c--day' : ''), data: { slot: col.day ? 'M P' : col.key } })
+      : el('div', {
+        class: 'detail__cell ' + hospClass(r.hospital) + (col.day ? ' detail__cell--day' : ''),
+        data: { slot: col.day ? 'M P' : col.key },
+      });
+    var cls = tag === 'td' ? 'pill--t' : '';
+    if (col.day) {
+      dayLines(r, day).forEach(function (line) {
+        var n = line.n, word = spanWord(line.keys);
+        box.appendChild(namePill(n.name, sevKeys(r.hospital, day.date, n.name, line.keys), {
+          cls: cls, in: line.ind, slots: line.keys, chip: spanChip(r, line.keys),
+          // Tre persone alle 8–14 non sono tre persone nella stessa stanza:
+          // la riga che viene dall'ambulatorio lo dice.
+          tag: line.keys.indexOf('A') !== -1 ? 'amb' : null,
+          title: n.name + ' · ' + word + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
+          label: n.name + ' — ' + word + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
+        }));
+      });
+      return box;
+    }
+    var slot = r.slotsByKey[col.key];
+    if (!slot) return box;
+    cellNames(day, r.hospital, slot).forEach(function (n) {
+      box.appendChild(namePill(n.name, sevOf(r.hospital, day.date, col.key, n.name), {
+        cls: cls, in: n.pos > 0, slots: col.key,
+        title: n.name + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
+        label: n.name + ' — ' + R.slotName(slot.label) + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
+      }));
+    });
+    return box;
   }
 
   function tableDayCell(d) {
@@ -954,7 +1196,7 @@
         class: 'tab__daybtn', type: 'button', data: { goday: d.date },
         'aria-label': d.day + ' ' + weekdayLong(d.date) + ': apri nel calendario',
       }, [
-        el('span', { class: 'n' + (d.date === today ? ' is-today' : ''), text: String(d.day) }),
+        el('span', { class: 'n', text: String(d.day) }),
         el('span', { class: 'wd', text: R.formatDate(d.date).split(' ')[0] }),
       ]));
   }
@@ -1000,6 +1242,32 @@
         el('span', { class: 'ore__v', text: R.formatHours(st.ore).replace(/\s*h$/, '') }),
       ]));
     });
+  }
+
+  // «G2,5 (M2 + P3) + N4 = 6,5 turni · 78h»: la lettera prima del numero, in
+  // grassetto; la scomposizione fra parentesi è una nota, non una seconda somma.
+  // G = (M + P) / 2, con dentro anche le mattine e i pomeriggi delle giornate.
+  function sumNodes(st) {
+    var out = [];
+    var k = function (letter) { return el('b', { class: 'totale__k', text: letter }); };
+    if (st.giornateEq) {
+      out.push(k('G'), R.formatNumber(st.giornateEq));
+      if (st.mattineTot || st.pomeriggiTot) {
+        out.push(el('span', { class: 'totale__dec' }, [
+          ' (', k('M'), String(st.mattineTot || 0), ' + ', k('P'), String(st.pomeriggiTot || 0), ')',
+        ]));
+      }
+      if (st.notti) out.push(' + ');
+    }
+    if (st.notti) out.push(k('N'), String(st.notti));
+    out.push(' = ' + R.formatHours(st.ore));
+    return out;
+  }
+
+  // Vero se il testo occupa più di una riga (misura reale, non stima).
+  function wraps(node) {
+    var line = parseFloat(getComputedStyle(node).lineHeight) || 16;
+    return node.getBoundingClientRect().height > line * 1.6;
   }
 
   // ---------------------------------------------------------------------------
@@ -1074,8 +1342,16 @@
     clear(bottomEl);
     var canUpload = gestore && !soloVista;
     var canRestore = canUpload && local.length > 0;
-    if (!canUpload && !role) { bottomEl.hidden = true; return; }
+    if (!canUpload && !role && !installEvent && !onWorker) { bottomEl.hidden = true; return; }
     bottomEl.hidden = false;
+
+    // Chi ha chiuso la presentazione può installare da qui, finché si può.
+    if (installEvent) {
+      bottomEl.appendChild(el('button', {
+        class: 'minibtn', type: 'button', text: 'Installa',
+        on: { click: installNow },
+      }));
+    }
 
     if (canUpload) {
       bottomEl.appendChild(el('button', {
@@ -1087,6 +1363,13 @@
       bottomEl.appendChild(el('button', {
         class: 'minibtn', type: 'button', text: 'Ripristina i dati pubblicati',
         on: { click: restorePublished },
+      }));
+    }
+    if (onWorker && gestore && !soloVista) {
+      bottomEl.appendChild(el('button', {
+        class: 'minibtn', type: 'button', text: 'Uso',
+        title: 'Quante persone usano la pagina e che cosa cercano',
+        on: { click: showUso },
       }));
     }
     if (role) {
@@ -1251,6 +1534,8 @@
     opts = opts || {};
     state.pinned = name;
     writeStore(LS_ME, name);
+    // Si conta il nome quando qualcuno lo sceglie davvero, non a ogni lettera.
+    if (name && ricerche[ricerche.length - 1] !== name) ricerche.push(name);
     state.query = '';
     input.value = '';
     clearBtn.hidden = true;
@@ -1346,9 +1631,62 @@
       .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
+  // Sul Worker il calendario si abbona (webcal:), altrove si scarica.
   function exportICS() {
     var name = state.pinned;
     if (!name) return;
+    if (onWorker) {
+      fetchJSON('cal-link?nome=' + encodeURIComponent(name)).then(function (j) {
+        if (!j || !j.webcal || !j.url) throw new Error('senza indirizzo');
+        calLink = { person: name, url: j.url, webcal: j.webcal };
+        renderTotale();
+        window.location.href = j.webcal;
+      }).catch(function () { downloadICS(name); });
+      return;
+    }
+    downloadICS(name);
+  }
+
+  function fetchJSON(url) {
+    return fetch(url, { headers: { accept: 'application/json' } }).then(function (res) {
+      if (!res.ok) {
+        var e = new Error('http ' + res.status);
+        e.status = res.status;
+        throw e;
+      }
+      return res.json();
+    });
+  }
+
+  // L'indirizzo da incollare a mano (Android, computer): mono, con «Copia».
+  function calLinkRow(link) {
+    return el('div', { class: 'callink' }, [
+      el('div', { class: 'callink__row' }, [
+        el('code', { class: 'callink__url', text: link.url }),
+        el('button', {
+          class: 'minibtn', type: 'button', text: 'Copia',
+          'aria-label': 'Copia l’indirizzo del calendario',
+          on: { click: function () { copyText(link.url); } },
+        }),
+      ]),
+      el('p', {
+        class: 'callink__note',
+        text: 'Si aggiorna da solo. Su Android: aggiungi il calendario da questo indirizzo in Google Calendar.',
+      }),
+    ]);
+  }
+
+  function copyText(text) {
+    var done = function () { toast('Indirizzo copiato.'); };
+    var fail = function () { toast('Copia non riuscita: tieni premuto sull’indirizzo.', true); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fail);
+      return;
+    }
+    fail();
+  }
+
+  function downloadICS(name) {
     var data = R.buildICS(D.assignments, name, state.month, {});
     var filename = 'turni-' + slug(name) + '-' + slug(monthName(state.month)) + '-' + state.month.slice(0, 4) + '.ics';
 
@@ -1522,6 +1860,340 @@
       el('span', { class: 'chg__slot', text: shortSlotName(c.slotLabel) }),
       val,
     ]);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Uso: quanti dispositivi, quante aperture, quali nomi si cercano.
+  // Un identificativo casuale del dispositivo, niente che dica chi è: serve a
+  // decidere come far crescere la pagina, non a sapere chi ha guardato cosa.
+  // ---------------------------------------------------------------------------
+
+  function deviceId() {
+    var v = readStore(LS_DEV);
+    if (v) return v;
+    var bytes = new Uint8Array(16), s = '';
+    (window.crypto || window.msCrypto).getRandomValues(bytes);
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    v = window.btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    writeStore(LS_DEV, v);
+    return v;
+  }
+
+  // Una volta sola per sessione, quando la pagina se ne va, e senza far
+  // aspettare nessuno: se non parte, pazienza.
+  function sendUso() {
+    if (usoSent || !onWorker) return;
+    usoSent = true;
+    var body;
+    try {
+      body = JSON.stringify({
+        dev: deviceId(), installata: installed(), haCercato: ricerche.length > 0, ricerche: ricerche,
+      });
+    } catch (e) { return; }
+    try {
+      if (navigator.sendBeacon && navigator.sendBeacon('uso', new Blob([body], { type: 'application/json' }))) return;
+      window.fetch('uso', {
+        method: 'POST', body: body, keepalive: true, headers: { 'content-type': 'application/json' },
+      }).catch(function () { /* niente rumore */ });
+    } catch (e) { /* niente rumore */ }
+  }
+
+  // Il cruscotto risponde a tre domande e basta: la usano? sfogliano o cercano
+  // il proprio nome? si sono iscritti al calendario? Un asse e una serie per
+  // grafico, grigio d'inchiostro: i colori delle sedi significano altro.
+  var usoMonth = '';
+
+  function showUso() {
+    if (!usoMonth) usoMonth = state.month || today.slice(0, 7);
+    loadUso();
+  }
+
+  function loadUso() {
+    Promise.all([
+      fetchJSON('uso?mese=' + encodeURIComponent(usoMonth)),
+      fetchJSON('stats').catch(function () { return null; }),
+    ]).then(function (r) {
+      renderUso(r[0] || {}, r[1]);
+    }, function (err) {
+      var code = err && err.status;
+      if (code === 401 || code === 403) { if (sheetMode === 'uso') closeUso(); return; }
+      openUso([el('p', { class: 'cap', text: code === 503 ? 'Registro non disponibile.' : 'Non riesco a leggere l’uso.' })], null);
+    });
+  }
+
+  function stepUso(n) {
+    var y = Number(usoMonth.slice(0, 4)), m = Number(usoMonth.slice(5, 7)) - 1 + n;
+    var d = new Date(Date.UTC(y, m, 1));
+    usoMonth = d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+    loadUso();
+  }
+
+  function openUso(nodes, stamp) {
+    sheetMode = 'uso';
+    reviewEl.classList.add('is-uso');
+    clear(reviewTitle);
+    reviewTitle.appendChild(el('span', { text: 'Uso' }));
+    reviewTitle.appendChild(el('span', { class: 'uso__m', text: monthLabel(usoMonth) }));
+    reviewTitle.appendChild(el('span', { class: 'uso__nav' }, [
+      el('button', {
+        class: 'navday', type: 'button', 'aria-label': 'Mese precedente',
+        on: { click: function () { stepUso(-1); } },
+      }, icon('i-prev')),
+      el('button', {
+        class: 'navday', type: 'button', 'aria-label': 'Mese successivo',
+        disabled: usoMonth >= today.slice(0, 7),
+        on: { click: function () { stepUso(1); } },
+      }, icon('i-next')),
+    ]));
+    reviewCap.textContent = stamp ? 'Ultimo aggiornamento dei turni: ' + shortDate(stamp) : '';
+    reviewCap.hidden = !stamp;
+    reviewCancel.hidden = true;
+    reviewSave.disabled = false;
+    reviewSave.textContent = 'Chiudi';
+    clear(reviewBody);
+    append(reviewBody, nodes);
+    openReview();
+  }
+
+  function renderUso(d, stats) {
+    var giorni = Array.isArray(d.giorni) ? d.giorni : [];
+    var cal = d.calendario || {};
+    var out = [];
+
+    out.push(usoNums([
+      { n: d.dispositivi, l: 'dispositivi' },
+      { n: d.installate, l: 'con l’app installata' },
+      { n: d.aperture, l: 'aperture' },
+      { n: cal.iscritti, l: 'iscritti al calendario' },
+    ]));
+
+    // La domanda vera, scritta a parole: una frase e una barra sola.
+    var ap = d.aperture, sc = d.sessioniConRicerca;
+    if (typeof ap === 'number' && ap > 0 && typeof sc === 'number') {
+      out.push(el('p', { class: 'uq', text: 'Su ' + ap + ' aperture, ' + sc + ' hanno cercato un nome' }));
+      out.push(el('div', { class: 'ubar' },
+        el('span', { style: 'width:' + Math.max(0, Math.min(100, sc / ap * 100)).toFixed(1) + '%' })));
+      out.push(el('p', { class: 'unote', text: 'le altre ' + (ap - sc) + ' hanno solo sfogliato i turni' }));
+    }
+
+    out.push(usoChart('Aperture al giorno', giorni, 'aperture', 90));
+    out.push(usoChart('Aperture per dispositivo', giorni, 'dispositivi', 60));
+    out.push(usoNames(d.cercatiPiu));
+
+    out.push(el('h3', { class: 'uso__h', text: 'Calendario' }));
+    out.push(usoNums([
+      { n: cal.iscritti, l: 'iscritti' },
+      { n: cal.letture, l: 'letture' },
+      { n: cal.richieste, l: 'richieste dell’indirizzo' },
+    ]));
+    out.push(el('p', { class: 'unote', text: 'le letture si contano una volta al giorno per iscritto' }));
+    out.push(usoAccessi(stats));
+
+    openUso(out, stats && stats.ultimoSalvataggio);
+  }
+
+  function usoNums(items) {
+    return el('div', { class: 'unums' }, items.map(function (it) {
+      return el('div', { class: 'unum' }, [
+        el('span', { class: 'unum__n', text: fmtNum(it.n) }),
+        el('span', { class: 'unum__l', text: it.l }),
+      ]);
+    }));
+  }
+
+  // Un campo che manca non è uno zero: si scrive così com'è, cioè niente.
+  function fmtNum(v) { return (typeof v === 'number' && isFinite(v)) ? String(v) : '—'; }
+
+  function usoChart(title, giorni, key, height) {
+    var vals = giorni.map(function (g) {
+      return (typeof g[key] === 'number' && isFinite(g[key])) ? g[key] : null;
+    });
+    if (!vals.some(function (v) { return v !== null; })) return null;
+    var max = vals.reduce(function (a, v) { return v === null ? a : Math.max(a, v); }, 0) || 1;
+
+    var plot = el('div', { class: 'uplot', style: 'height:' + height + 'px' });
+    var xs = el('div', { class: 'uxs' });
+    giorni.forEach(function (g, i) {
+      var v = vals[i];
+      var day = Number(String(g.giorno || '').slice(8, 10)) || (i + 1);
+      if (v === null) {
+        plot.appendChild(el('span', { class: 'ucol ucol--none' }));      // niente dato, non zero
+      } else {
+        var phrase = usoPhrase(g);
+        plot.appendChild(el('button', {
+          class: 'ucol' + (g.giorno === today ? ' is-today' : ''), type: 'button',
+          style: 'height:' + Math.max(2, v / max * 100).toFixed(1) + '%',
+          'aria-label': phrase, 'aria-expanded': 'false', 'aria-controls': 'slotpop',
+          on: {
+            click: function (e) {
+              e.stopPropagation();
+              toggleInfoPop(this, phrase, [
+                { c: 'slotpop__t', t: dayLabel(g.giorno) },
+                { c: 'slotpop__h', t: phrase.split(' · ').slice(1).join(' · ') },
+              ]);
+            },
+          },
+        }));
+      }
+      xs.appendChild(el('span', { text: [1, 8, 15, 22, 29].indexOf(day) !== -1 ? String(day) : '' }));
+    });
+
+    return el('section', { class: 'uchart' }, [
+      el('p', { class: 'uchart__t' }, [
+        el('b', { text: title }),
+        el('span', { class: 'uchart__max', text: 'max ' + max }),
+      ]),
+      plot,
+      xs,
+    ]);
+  }
+
+  function usoPhrase(g) {
+    var per = g.aperturePerDispositivo;
+    if (typeof per !== 'number' && typeof g.aperture === 'number' && g.dispositivi) {
+      per = g.aperture / g.dispositivi;
+    }
+    return [
+      dayLabel(g.giorno),
+      fmtNum(g.aperture) + ' aperture',
+      fmtNum(g.dispositivi) + ' dispositivi',
+      (typeof per === 'number' && isFinite(per) ? decimal(per) : '—') + ' a testa',
+    ].join(' · ');
+  }
+
+  function usoNames(list) {
+    var rows = (Array.isArray(list) ? list : []).slice(0, 20);
+    var box = el('section', { class: 'uso__names' }, el('h3', { class: 'uso__h', text: 'Nomi più cercati' }));
+    if (!rows.length) {
+      box.appendChild(el('p', { class: 'cap', text: 'Nessuna ricerca registrata questo mese.' }));
+      return box;
+    }
+    var max = rows.reduce(function (a, r) { return Math.max(a, num(r.volte)); }, 0) || 1;
+    rows.forEach(function (r) {
+      box.appendChild(el('div', { class: 'ore__row' }, [
+        el('span', { class: 'ore__name', text: String(r.nome) }),
+        el('span', { class: 'ore__bar' },
+          el('span', { class: 'ore__seg useg', style: 'width:' + (num(r.volte) / max * 100).toFixed(1) + '%' })),
+        el('span', { class: 'ore__v', text: fmtNum(r.volte) }),
+      ]));
+    });
+    return box;
+  }
+
+  function usoAccessi(s) {
+    if (!s) return null;
+    var per = s.perRuolo || {};
+    var med = pick(per, ['medico', 'lettura'], null), ges = pick(per, ['gestore', 'modifica'], null);
+    var parts = [plural(num(s.accessi), 'accesso', 'accessi') + ' questo mese'];
+    if (med !== null || ges !== null) {
+      parts.push(fmtNum(med) + ' con la password di lettura, ' + fmtNum(ges) + ' con quella di modifica');
+    }
+    parts.push(plural(num(s.salvataggi), 'salvataggio', 'salvataggi'));
+    return el('p', { class: 'unote unote--last', text: parts.join(' · ') });
+  }
+
+  // Un decimale, con la virgola, e senza lo zero inutile: 1,6 · 1 · 2,4.
+  function decimal(v) {
+    return (Math.round(v * 10) / 10).toFixed(1).replace('.', ',').replace(/,0$/, '');
+  }
+
+  function dayLabel(v) {
+    var s = String(v || '');
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? R.formatDate(s) : s;
+  }
+
+  function pick(o, keys, dflt) {
+    for (var i = 0; i < keys.length; i++) {
+      if (o && o[keys[i]] !== undefined && o[keys[i]] !== null) return o[keys[i]];
+    }
+    return dflt === undefined ? 0 : dflt;
+  }
+
+  function num(v) { return typeof v === 'number' && isFinite(v) ? v : 0; }
+
+  // ---------------------------------------------------------------------------
+  // Presentazione: come tenersi la pagina a portata di mano (una volta sola)
+  // ---------------------------------------------------------------------------
+
+  function platform() {
+    var ua = navigator.userAgent || '';
+    if (/iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
+    if (/Android/.test(ua)) return 'android';
+    return 'desktop';
+  }
+
+  function installed() {
+    try {
+      return !!(navigator.standalone ||
+        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+    } catch (e) { return false; }
+  }
+
+  // Si mostra al primo avvio, dopo che la pagina è disegnata, e mai più.
+  // Sul computer no (sarebbe rumore) e sulla copia locale nemmeno.
+  function maybeIntro() {
+    if (location.protocol === 'file:') return;
+    if (readStore(LS_INTRO) === '1' || installed()) return;
+    if (platform() === 'desktop') return;
+    if (!reviewEl.hidden) return;
+    openIntro();
+  }
+
+  function openIntro() {
+    sheetMode = 'intro';
+    reviewTitle.textContent = 'Tienila a portata di mano';
+    reviewCap.textContent = 'Aggiungila alla schermata Home: si apre come un’app, a schermo intero.';
+    reviewCancel.hidden = true;
+    reviewSave.disabled = false;
+    reviewSave.textContent = 'Ho capito';
+    renderIntroBody();
+    openReview();
+  }
+
+  function renderIntroBody() {
+    if (sheetMode !== 'intro') return;
+    clear(reviewBody);
+    if (platform() === 'ios') {
+      reviewBody.appendChild(el('p', { class: 'intro__step' }, [
+        'Tocca ', icon('i-share'), ' Condividi, poi Aggiungi alla schermata Home.',
+      ]));
+      return;
+    }
+    if (installEvent) {
+      reviewBody.appendChild(el('p', { class: 'intro__step' }, [
+        el('button', {
+          class: 'btn btn--solid', type: 'button', text: 'Installa',
+          on: { click: installNow },
+        }),
+      ]));
+      return;
+    }
+    reviewBody.appendChild(el('p', { class: 'intro__step', text: 'Apri il menu ⋮ e scegli Installa app.' }));
+  }
+
+  function closeUso() {
+    sheetMode = 'review';
+    reviewCancel.hidden = false;
+    reviewCap.hidden = false;
+    reviewEl.classList.remove('is-uso');
+    reviewTitle.textContent = '';
+    closeReview();
+  }
+
+  function closeIntro() {
+    writeStore(LS_INTRO, '1');
+    sheetMode = 'review';
+    reviewCancel.hidden = false;
+    closeReview();
+  }
+
+  function installNow() {
+    var e = installEvent;
+    if (!e) return;
+    installEvent = null;
+    renderBottom();
+    renderIntroBody();
+    try { Promise.resolve(e.prompt()).catch(function () {}); } catch (err) { /* niente */ }
   }
 
   function openReview() {
@@ -1852,6 +2524,17 @@
     });
 
     segCal.addEventListener('click', function () { setView('calendario'); });
+    simplBtn.addEventListener('click', toggleSimpl);
+    document.addEventListener('click', function (e) {
+      if (popEl && !popEl.contains(e.target)) closeSlotPop();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && popEl) { var b = popBtn; closeSlotPop(); if (b) b.focus(); }
+    });
+    window.addEventListener('scroll', function () {
+      if (popEl) placeSlotPop();
+    }, true);
+    window.addEventListener('resize', function () { if (popEl) placeSlotPop(); });
     segTab.addEventListener('click', function () { setView('tabella'); });
     segOre.addEventListener('click', function () { setView('ore'); });
     $('segbar').addEventListener('keydown', function (e) {
@@ -1882,12 +2565,31 @@
     $('emptyUpload').addEventListener('click', function () { fileInput.click(); });
     fileInput.addEventListener('change', function () { loadFiles(fileInput.files); fileInput.value = ''; });
 
-    reviewSave.addEventListener('click', saveReview);
-    reviewCancel.addEventListener('click', nextReview);
-    $('reviewScrim').addEventListener('click', nextReview);
+    var sheetClose = function () {
+      if (sheetMode === 'intro') closeIntro();
+      else if (sheetMode === 'uso') closeUso();
+      else nextReview();
+    };
+    reviewSave.addEventListener('click', function () {
+      if (sheetMode === 'intro') closeIntro();
+      else if (sheetMode === 'uso') closeUso();
+      else saveReview();
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') sendUso();
+    });
+    window.addEventListener('pagehide', sendUso);
+    reviewCancel.addEventListener('click', sheetClose);
+    $('reviewScrim').addEventListener('click', sheetClose);
+    window.addEventListener('beforeinstallprompt', function (e) {
+      if (e && e.preventDefault) e.preventDefault();
+      installEvent = e;
+      renderBottom();
+      renderIntroBody();
+    });
     document.addEventListener('keydown', function (e) {
       if (reviewEl.hidden) return;
-      if (e.key === 'Escape') { e.preventDefault(); nextReview(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); sheetClose(); return; }
       if (e.key !== 'Tab') return;
       var focusable = reviewPanel.querySelectorAll('button:not([disabled])');
       if (!focusable.length) return;
@@ -1933,6 +2635,8 @@
     if (state.pinned) srSay(state.pinned + ' evidenziato');
     if (!hadDay) window.requestAnimationFrame(centerToday);
     boot();
+    // La presentazione arriva dopo il disegno e non blocca niente.
+    window.setTimeout(maybeIntro, 400);
   }
 
   init();

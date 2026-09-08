@@ -40,6 +40,11 @@
     <path d="M7.8 8.2 12 4l4.2 4.2"/>
     <path d="M4 16v2.6a1.4 1.4 0 0 0 1.4 1.4h13.2a1.4 1.4 0 0 0 1.4-1.4V16"/>
   </symbol>
+  <symbol id="i-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3.5v11"/>
+    <path d="M8.4 7.1 12 3.5l3.6 3.6"/>
+    <path d="M6.4 10.5H5.2A1.2 1.2 0 0 0 4 11.7v7.1A1.2 1.2 0 0 0 5.2 20h13.6a1.2 1.2 0 0 0 1.2-1.2v-7.1a1.2 1.2 0 0 0-1.2-1.2h-1.2"/>
+  </symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <path d="M6.5 9.5 12 15l5.5-5.5"/>
   </symbol>
@@ -69,7 +74,11 @@
       <button class="seg" id="segCal" type="button" role="tab" aria-selected="false" aria-controls="viewCal" tabindex="-1">Calendario</button>
       <button class="seg" id="segOre" type="button" role="tab" aria-selected="false" aria-controls="viewOre" tabindex="-1">Ore</button>
     </div>
-    <div class="sites" id="sites"></div>
+  </div>
+  <div class="filtersrow" id="filtersrow">
+    <span class="filtersrow__lb" id="sitesLabel">Mostra:</span>
+    <div class="sites" id="sites" role="group" aria-labelledby="sitesLabel"></div>
+    <button class="simpl" id="simplBtn" type="button" aria-pressed="false"></button>
   </div>
 </header>
 

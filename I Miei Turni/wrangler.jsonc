@@ -15,6 +15,20 @@
 // di Cloudflare. Per le prove in locale (`npm run dev`) si mettono in .dev.vars,
 // che è ignorato da git.
 //
+// SESSION_SECRET firma due cose. La prima è il cookie di sessione. La seconda è
+// l'indirizzo del calendario: /cal/<slug>-<firma>.ics si apre SENZA password,
+// perché l'app del calendario del telefono interroga senza cookie. Quella firma
+// (22 caratteri base64url, circa 132 bit: non si indovina) è a tutti gli effetti
+// una chiave d'accesso ai turni di quella persona — è il suo indirizzo, glielo si
+// dà e va bene, ma chi lo riceve vede quei turni senza altre domande. Per
+// revocarli tutti in un colpo — un telefono perso, un indirizzo finito nel posto
+// sbagliato — basta rifare SESSION_SECRET:
+//
+//   npx wrangler secret put SESSION_SECRET
+//
+// Da quel momento gli indirizzi vecchi danno 404 (e tutte le sessioni aperte
+// tornano alla pagina di accesso): ognuno rifà l'iscrizione dalla pagina.
+//
 // "main" punta a worker.mjs: il formato a moduli (ESM) è quello che Wrangler
 // pubblica con l'handler `fetch`. La pagina dei turni entra nel bundle tramite
 // worker-page.js, generato da `node build.js` — niente binding "assets", così

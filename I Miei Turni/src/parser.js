@@ -493,7 +493,13 @@ const TurniParser = (function () {
     M: { start: '08:00', end: '14:00', startMin: 480, endMin: 840 },
     P: { start: '14:00', end: '20:00', startMin: 840, endMin: 1200 },
     N: { start: '20:00', end: '08:00', startMin: 1200, endMin: 1920 },
-    A: { start: '09:30', end: '15:00', startMin: 570, endMin: 900 }
+    A: { start: '08:00', end: '14:00', startMin: 480, endMin: 840 }
+  };
+
+  // Orari veri che il foglio non ha ancora aggiornato: l'ambulatorio si fa dalle
+  // 8 alle 14, come una mattina, non dalle 9.30 alle 15 come dice l'intestazione.
+  const SLOT_FIX = {
+    A: { start: '08:00', end: '14:00', startMin: 480, endMin: 840 }
   };
 
   function buildSlots(cells, headerRow, warnings, file) {
@@ -541,6 +547,15 @@ const TurniParser = (function () {
         });
       } else {
         throw new Error('Intestazione turno senza orario riconoscibile: "' + header + '" in ' + file);
+      }
+
+      // Correzione nota: l'intestazione dell'ambulatorio nel foglio dice ancora
+      // 09.30-15.00, ma il turno si fa dalle 8 alle 14 come una mattina. Si
+      // corregge qui, una volta sola, così ore, segnalazioni ed esportazione nel
+      // calendario partono tutte dall'orario vero.
+      if (key === 'A') {
+        const fix = SLOT_FIX.A;
+        start = fix.start; end = fix.end; startMin = fix.startMin; endMin = fix.endMin;
       }
 
       slots.push({

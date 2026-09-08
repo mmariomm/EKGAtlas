@@ -24,6 +24,11 @@
   --veil-osg: light-dark(color-mix(in srgb, var(--osg) 5%, transparent), color-mix(in srgb, var(--osg) 9%, transparent));
   --veil-alt: color-mix(in srgb, var(--alt) 7%, transparent);
   --weekend: light-dark(#FAF6EC, #191711);
+  /* Velature del calendario: dicono la sede senza rubare la scena alle lettere. */
+  --cal-dea: color-mix(in srgb, var(--dea) 8%, transparent);
+  --cal-osg: color-mix(in srgb, var(--osg) 8%, transparent);
+  --cal-alt: color-mix(in srgb, var(--alt) 8%, transparent);
+  --ubar: color-mix(in srgb, var(--ink) 45%, var(--surface));   /* le barre del cruscotto */
 
   --hl: light-dark(#FFE45C, #F2D53C);
   --hl-ink: #1A1500;
@@ -40,6 +45,11 @@
   --sev3: light-dark(#D1343B, #F0616A);
   --sev2: light-dark(#E07B12, #F0A03A);
   --sev1: light-dark(#3B6FD9, #6E9BF0);
+  /* Inchiostri dei nomi segnalati: scuriti (chiaro) o schiariti (scuro) fino a
+     stare sopra 4,5:1 contro il proprio fondo. */
+  --sev3-ink: light-dark(#9D272C, #F49097);
+  --sev2-ink: light-dark(#8B4C0B, #F2AE58);
+  --sev1-ink: light-dark(#2C53A3, #9AB9F4);
   --ok: light-dark(#2E8B57, #5BC98A);
 
   --focus: light-dark(#2F6FE4, #6E9BF0);
@@ -217,19 +227,27 @@ button { font: inherit; color: inherit; }
 .opt__dots { display: flex; gap: 3px; }
 .opt__empty { padding: 12px 10px; color: var(--muted); font-size: 13.5px; }
 
-/* Filtri delle sedi: accese si tingono del proprio colore, spente sono un contorno */
-.sites { margin-left: auto; display: flex; gap: 6px; }
-.site {
-  position: relative; min-height: 28px; padding: 0 11px;
+/* Riga dei filtri: «Mostra:» e le due sedi a sinistra, Semplifica a destra.
+   Acceso e spento si distinguono da soli (spunta + fondo contro contorno). */
+.filtersrow { display: flex; align-items: center; gap: 8px; padding: 6px 0 2px; }
+.filtersrow__lb { font-size: 11px; color: var(--muted); flex: none; }
+.sites { display: flex; gap: 6px; }
+.site, .simpl {
+  position: relative; display: inline-flex; align-items: center; gap: 4px;
+  min-height: 28px; padding: 0 11px;
   border: 1px solid var(--line); border-radius: 14px; background: none;
   font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--muted);
-  cursor: pointer; transition: background-color .15s ease, color .15s ease;
+  cursor: pointer; transition: background-color .15s ease, color .15s ease, transform .08s ease;
 }
-.site::after { content: ""; position: absolute; inset: -6px -2px; }   /* area di tocco */
-.site[aria-pressed="true"] { border-color: transparent; }
+.site::after, .simpl::after { content: ""; position: absolute; inset: -6px -2px; }   /* area di tocco */
+.site:active, .simpl:active { transform: scale(.97); }
+.site .ico, .simpl .ico { width: 10px; height: 10px; margin-left: -2px; }
+.site[aria-pressed="true"], .simpl[aria-pressed="true"] { border-color: transparent; }
 .site.h-dea[aria-pressed="true"] { background: color-mix(in srgb, var(--dea) 14%, var(--surface)); color: var(--dea); }
 .site.h-osg[aria-pressed="true"] { background: color-mix(in srgb, var(--osg) 14%, var(--surface)); color: var(--osg); }
 .site.h-alt[aria-pressed="true"] { background: color-mix(in srgb, var(--alt) 14%, var(--surface)); color: var(--alt); }
+.simpl { margin-left: auto; font-weight: 500; }
+.simpl[aria-pressed="true"] { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
 
 /* --------------------------------------------------------------------------
    4. Impaginato
@@ -244,6 +262,18 @@ button { font: inherit; color: inherit; }
 .totale { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--line); padding-top: 12px; }
 .totale__head { display: flex; align-items: baseline; gap: 10px; }
 .totale__all { margin-left: auto; font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
+/* Indirizzo del calendario: mono piccolo, con «Copia» accanto. */
+.callink { margin-top: 8px; }
+.callink__row { display: flex; align-items: center; gap: 8px; }
+.callink__url {
+  flex: 1; min-width: 0; overflow-wrap: anywhere;
+  font-family: var(--mono); font-size: 11px; line-height: 1.35; color: var(--ink-2);
+}
+.callink__note { margin: 5px 0 0; font-size: 11.5px; line-height: 1.4; color: var(--muted); }
+
+.totale__k { font-weight: 600; color: var(--ink); }
+.totale__dec { color: var(--muted); }
+
 .totale__row {
   display: grid; grid-template-columns: 42px 1fr; gap: 8px; align-items: baseline;
   font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums;
@@ -257,14 +287,15 @@ button { font: inherit; color: inherit; }
 /* --------------------------------------------------------------------------
    5. Calendario
    -------------------------------------------------------------------------- */
-.cal { display: flex; flex-direction: column; gap: 4px; }
+.cal { display: flex; flex-direction: column; gap: 4px; container-type: inline-size; }
 .cal__row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.cal__wd span { font-size: 10.5px; letter-spacing: .06em; color: var(--muted); padding: 0 0 1px 6px; }
+.cal__wd span { font-size: 10.5px; letter-spacing: .06em; color: var(--muted); padding: 1px 0 2px 6px; }
+.cal__wd span.is-weekend { background: var(--weekend); color: var(--ink-2); border-radius: 6px 6px 0 0; }
 
 .cal__d {
   position: relative;
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  min-height: 46px; padding: 3px 4px 4px;
+  min-height: 54px; padding: 3px 4px 4px;
   background: none; border: 1.5px solid transparent; border-radius: 7px;
   font: inherit; color: var(--ink-2); text-align: left; cursor: pointer;
   transition: background-color .15s ease, border-color .12s ease, transform .08s ease;
@@ -272,6 +303,9 @@ button { font: inherit; color: inherit; }
 .cal__d:hover { background: var(--surface-2); }
 .cal__d:active { transform: scale(.96); }
 .cal__d.is-weekend { background: var(--weekend); }
+/* Il giorno in cui la persona lavora si vela del colore della sede; due sedi,
+   mezza e mezza in diagonale. Sta sotto la lavatura del weekend senza sporcarla. */
+.cal__d.is-mine { background-image: linear-gradient(135deg, var(--c1) 0 50%, var(--c2) 50% 100%); }
 .cal__d.is-sel { border-color: var(--ink); }
 .cal__d.is-out { cursor: default; }
 .cal__d.is-out .cal__n { color: var(--muted); opacity: .5; }
@@ -285,25 +319,25 @@ button { font: inherit; color: inherit; }
   border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink); color: var(--ink);
 }
 
-.cal__chips { display: flex; flex-wrap: wrap; gap: 3px; }
-.chipslot {
-  width: 14px; height: 14px; border-radius: 3px;
-  display: grid; place-items: center;
-  font-size: 9.5px; font-weight: 600; line-height: 1;
-  background: var(--alt-tint); color: var(--alt);
+/* Le fasce del giorno, scritte grandi: ogni lettera nel colore della sua sede.
+   È questo che fa vedere in un attimo un giorno a cavallo fra due ospedali. */
+.cal__big {
+  display: flex; gap: 1px; margin: auto; align-self: center;
+  font-size: min(23px, 5.2vw);          /* ripiego dove non ci sono le unità di contenitore */
+  font-size: min(23px, 6cqw);           /* la lettera cresce con la casella, non con la finestra */
+  line-height: 1; letter-spacing: 0; color: var(--alt);
 }
-/* La lettera vira verso l'inchiostro: resta leggibile su fondo tenue nei due temi. */
-.chipslot.h-dea { background: var(--dea-tint); color: color-mix(in srgb, var(--dea) 75%, var(--ink)); }
-.chipslot.h-osg { background: var(--osg-tint); color: color-mix(in srgb, var(--osg) 75%, var(--ink)); }
-.chipslot.is-night.h-dea { background: var(--dea); color: var(--surface); }
-.chipslot.is-night.h-osg { background: var(--osg); color: var(--surface); }
-.chipslot.is-find { outline: 1px solid var(--fsev); outline-offset: 1px; }
+.cal__k { font-weight: 600; }
+.cal__k.h-dea { color: var(--dea); }
+.cal__k.h-osg { color: var(--osg); }
+.cal__k.h-alt { color: var(--alt); }
+.cal__k.is-find { box-shadow: inset 0 -2px 0 var(--fsev); }
 
 .cal__dot { position: absolute; right: 4px; bottom: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--fsev); }
 
-.sev-1 { --fsev: var(--sev1); }
-.sev-2 { --fsev: var(--sev2); }
-.sev-3 { --fsev: var(--sev3); }
+.sev-1 { --fsev: var(--sev1); --fsev-ink: var(--sev1-ink); }
+.sev-2 { --fsev: var(--sev2); --fsev-ink: var(--sev2-ink); }
+.sev-3 { --fsev: var(--sev3); --fsev-ink: var(--sev3-ink); }
 
 .callegend {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
@@ -352,8 +386,14 @@ button { font: inherit; color: inherit; }
 }
 .detail__site.h-dea { color: var(--dea); }
 .detail__site.h-osg { color: var(--osg); }
-.detail__cell { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 2px 0 6px; }
-.detail__cell.is-night, .detail__gh.is-night { background: var(--night-veil); }
+/* Nel dettaglio si legge un giorno con calma: nomi a 12px, che vanno a capo solo
+   fra parole intere; se le colonne non bastano, scorre il dettaglio, non la pagina. */
+.detail__cell { min-width: 72px; display: flex; flex-direction: column; align-items: flex-start; padding: 2px 0 6px; }
+.detail__cell .pill { font-size: 12px; line-height: 17px; padding: 2px 6px; }
+/* Colonna «Giorno»: le righe occupano tutta la cella, l'orario va a destra. */
+.detail__cell--day { align-self: stretch; }
+.detail__cell--day .pill { width: 100%; }
+.detail__cell--day .tchip { font-size: 10px; }
 .detail.is-multi .detail__cell.h-dea, .detail.is-multi .detail__site.h-dea { background-image: linear-gradient(var(--veil-dea), var(--veil-dea)); }
 .detail.is-multi .detail__cell.h-osg, .detail.is-multi .detail__site.h-osg { background-image: linear-gradient(var(--veil-osg), var(--veil-osg)); }
 .detail.is-multi .detail__cell.h-alt, .detail.is-multi .detail__site.h-alt { background-image: linear-gradient(var(--veil-alt), var(--veil-alt)); }
@@ -365,15 +405,42 @@ button { font: inherit; color: inherit; }
   padding: 3px 6px;
   background: none; border: 0; border-radius: 4px; cursor: pointer; text-align: left;
   font-size: 12.5px; font-weight: 500; line-height: 18px; letter-spacing: .01em;
-  color: var(--ink); overflow-wrap: anywhere;
+  color: var(--ink); overflow-wrap: break-word;
   transition: background-color .15s ease, color .15s ease, opacity .15s ease, transform .08s ease;
 }
 .pill::after { content: ""; position: absolute; inset: -5px -2px; }   /* area di tocco */
 .pill:hover { background: var(--surface-2); }
 .pill:active { transform: scale(.97); }
+/* Una segnalazione colora il nome intero: si vede da lontano e non aggiunge segni. */
+.pill.sev-1, .pill.sev-2, .pill.sev-3 {
+  background: light-dark(color-mix(in srgb, var(--fsev) 16%, var(--surface)),
+                         color-mix(in srgb, var(--fsev) 26%, var(--surface)));
+  color: var(--fsev-ink);
+}
+/* Se il nome è anche quello cercato vince il giallo, e la segnalazione resta
+   come sottolineatura: mai due fondi sullo stesso nome. */
 .pill.is-soft { background: var(--hl-soft); color: var(--hl-soft-ink); }
 .pill.is-strong { background: var(--hl); color: var(--hl-ink); }
-.pill .fdot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--fsev); }
+.pill.sev-1.is-soft, .pill.sev-2.is-soft, .pill.sev-3.is-soft,
+.pill.sev-1.is-strong, .pill.sev-2.is-strong, .pill.sev-3.is-strong {
+  box-shadow: inset 0 -2px 0 var(--fsev);
+}
+/* Dal secondo ruolo in poi il nome rientra: l'ordine è il ruolo, e si vede. */
+.detail__cell .pill.is-in { padding-left: 16px; }
+/* La parte di giornata coperta, accanto al nome: piccola, dello stesso inchiostro
+   ma più chiara, così sta bene anche sul giallo e sui fondi delle segnalazioni. */
+/* L'orario sta attaccato al suo nome, non all'altro capo della cella: chi legge
+   deve accoppiarli con l'occhio, e l'occhio accoppia ciò che è vicino. */
+.ttag {
+  margin-left: 2px; flex: none; font-size: 9.5px; letter-spacing: .04em;
+  color: color-mix(in srgb, currentColor 52%, transparent);
+}
+.tchip {
+  margin-left: 6px; flex: none;
+  font-family: var(--mono); font-size: 9px; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, currentColor 58%, transparent);
+}
 
 .is-pinned .pill:not(.is-strong) { opacity: .45; }
 .tab.is-pinned .pill:not(.is-strong) { opacity: .72; }   /* qui si legge tutti, non solo la persona */
@@ -396,18 +463,31 @@ button { font: inherit; color: inherit; }
   padding: 5px 2px; font-weight: 400;
 }
 .tab__hs b { font-size: 10.5px; font-weight: 600; color: var(--ink-2); }
+/* L'intestazione della fascia si tocca e si spiega. */
+.slotbtn {
+  display: block; width: 100%; padding: 0; margin: 0; border: 0; background: none;
+  font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 4px;
+}
+.slotbtn:active { transform: scale(.97); }
+.slotbtn[aria-expanded="true"] { background: var(--surface-2); }
+.slotpop {
+  position: fixed; z-index: 60; max-width: min(260px, calc(100vw - 16px));
+  padding: 8px 11px 9px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.slotpop p { margin: 0; }
+.slotpop__t { font-size: 13px; font-weight: 600; letter-spacing: .01em; color: var(--ink); }
+.slotpop__h { font-size: 12.5px; color: var(--ink-2); }
+.slotpop__s { margin-top: 3px !important; font-size: 11.5px; line-height: 1.35; color: var(--muted); }
 .tab__hs time { font-family: var(--mono); font-size: 9.5px; color: var(--muted); margin-left: 3px; }
-.tab thead .is-night { background: linear-gradient(var(--night-veil), var(--night-veil)) var(--surface); }
 
 .tab tbody tr { scroll-margin-top: calc(var(--h-header) + 34px); }
-.tab tbody tr.is-weekend { background: var(--weekend); }
-/* Con due sedi accese ogni riga porta una velatura del proprio colore (5%). */
+/* Con due sedi accese ogni riga porta una velatura del proprio colore. */
 .tab.is-multi tbody tr.h-dea { background-image: linear-gradient(var(--veil-dea), var(--veil-dea)); }
 .tab.is-multi tbody tr.h-osg { background-image: linear-gradient(var(--veil-osg), var(--veil-osg)); }
 .tab.is-multi tbody tr.h-alt { background-image: linear-gradient(var(--veil-alt), var(--veil-alt)); }
 .tab__r--first > * { border-top: 1px solid var(--line); }
 .tab__r--first:first-child > * { border-top: 0; }
-.tab tbody tr > .is-night { background: var(--night-veil); }
 
 .tab__day {
   padding: 3px 2px 3px 4px !important;
@@ -415,6 +495,7 @@ button { font: inherit; color: inherit; }
   scroll-margin-top: calc(var(--h-header) + 34px);
 }
 .tab tbody tr.is-weekend .tab__day { background: var(--weekend); }
+.tab tbody tr.is-weekend .tab__daybtn .wd { color: var(--ink-2); }
 .tab__daybtn {
   display: flex; flex-direction: column; align-items: flex-start;
   min-height: 34px; padding: 1px 2px; background: none; border: 0; border-radius: 5px;
@@ -425,9 +506,14 @@ button { font: inherit; color: inherit; }
   font-family: var(--mono); font-size: 14px; line-height: 16px; color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
-.tab__daybtn .n.is-today {
-  display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: -2px;
-  border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink);
+/* Oggi: una cornice intorno a tutto il gruppo del giorno. È disegnata dalla
+   cella della data (che copre già l'altezza del gruppo con il rowspan) e larga
+   quanto la tabella: non aggiunge un pixel di altezza e non muove niente. */
+.tab__g.is-today .tab__day { position: relative; }
+.tab__g.is-today .tab__day::after {
+  content: ""; position: absolute; left: 0; top: 0; height: 100%;
+  width: var(--tabw, 100%);
+  border: 2px solid var(--ink); border-radius: 4px; pointer-events: none;
 }
 .tab__daybtn .wd { font-size: 10px; line-height: 11px; color: var(--muted); }
 
@@ -456,7 +542,7 @@ button { font: inherit; color: inherit; }
    restano, ma servono a far stare i nomi su una riga, non a decidere cosa si legge. */
 .pill--t > span:first-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .pill--t::after { inset: -3px -2px; }
-.pill--t .fdot { width: 5px; height: 5px; margin-top: 4px; }
+.pill--t.is-in { padding-left: 11px; }
 
 /* --------------------------------------------------------------------------
    8. Ore
@@ -602,6 +688,55 @@ button { font: inherit; color: inherit; }
 .chg__add { color: var(--ok); font-weight: 600; }
 .chg__del { color: var(--sev3); text-decoration: line-through; }
 .chg__note { display: block; font-size: 11px; color: var(--muted); }
+
+/* Lettura d'uso: un elenco, non un cruscotto. */
+/* --------------------------------------------------------------------------
+   Cruscotto «Uso»: una serie per grafico, un asse solo, un grigio d'inchiostro.
+   Nessun colore di sede e nessun giallo: qui non vorrebbero dire niente.
+   -------------------------------------------------------------------------- */
+.sheet.is-uso .sheet__panel { height: 92vh; max-height: 92vh; }
+.sheet.is-uso .sheet__t { display: flex; align-items: center; gap: 8px; }
+.uso__m { font-family: var(--ui); font-size: 13px; color: var(--muted); }
+.uso__nav { display: flex; gap: 2px; margin-left: auto; }
+.uso__nav .navday { width: 30px; height: 30px; }
+.uso__h { margin: 18px 0 2px; font-family: var(--display); font-size: 16px; font-weight: 400; color: var(--ink); }
+
+.unums { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin: 12px 0 4px; }
+.unum { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.unum__n { font-size: 24px; line-height: 1.05; color: var(--ink); font-variant-numeric: tabular-nums; }
+.unum__l { font-size: 11.5px; line-height: 1.25; color: var(--muted); }
+
+.uq { margin: 16px 0 6px; font-size: 14px; line-height: 1.4; color: var(--ink); }
+.ubar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.ubar span { display: block; height: 100%; border-radius: 4px; background: var(--ink-2); }
+.unote { margin: 5px 0 0; font-size: 11px; line-height: 1.4; color: var(--muted); }
+.unote--last { margin-top: 16px; }
+
+.uchart { margin-top: 18px; }
+.uchart__t { display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px; font-size: 12.5px; color: var(--ink-2); }
+.uchart__t b { font-weight: 500; }
+.uchart__max { font-family: var(--mono); font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.uplot { display: flex; align-items: flex-end; gap: 2px; }
+.ucol {
+  flex: 1 1 0; min-width: 0; padding: 0; border: 0; border-radius: 3px 3px 0 0;
+  background: var(--ubar); cursor: pointer;
+}
+.ucol.is-today { background: var(--ink); }
+.ucol--none { background: none; cursor: default; height: 100%; }
+.uxs {
+  display: flex; gap: 2px; margin-top: 3px;
+  font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.uxs span { flex: 1 1 0; min-width: 0; text-align: center; }
+.useg { background: var(--ubar); }
+.uso__names .ore__row { min-height: 26px; }
+
+/* Presentazione: un passo solo, quello del telefono che si ha in mano. */
+.intro__step {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin: 10px 0 2px; font-size: 14px; line-height: 1.45; color: var(--ink);
+}
+.intro__step .ico { width: 17px; height: 17px; color: var(--ink-2); }
 .chg__sum { font-size: 12.5px; color: var(--ink-2); margin-top: 8px; }
 .chg__block { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
 

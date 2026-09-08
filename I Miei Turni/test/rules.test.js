@@ -468,6 +468,13 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   deepEq([flDea.giornateEq, flDea.notti, flDea.turniEq, flDea.ore], [2.5, 4, 6.5, 78], 'FLORENZAN al DEA: 2,5G + 4N = 6,5 · 78 h');
   deepEq([flOsg.giornateEq, flOsg.notti, flOsg.turniEq, flOsg.ore], [2, 1, 3, 36], 'FLORENZAN all\'OSG: 2G + 1N = 3 · 36 h');
   eq(flDea.turniEq + flOsg.turniEq, fl.turniEq, 'le sedi sommate danno il totale dei turni');
+
+  // G si scompone in M e P: le giornate equivalenti sono la metà delle mezze giornate.
+  deepEq([flDea.mattineTot, flDea.pomeriggiTot], [2, 3], 'FLORENZAN al DEA: 2 mattine e 3 pomeriggi in tutto');
+  deepEq([fl.mattineTot, fl.pomeriggiTot], [4, 5], 'FLORENZAN nel mese: 4 mattine e 5 pomeriggi in tutto');
+  const gTorna = TurniRules.hoursByName(realAssignments, '2026-09')
+    .every((s) => (s.mattineTot + s.pomeriggiTot) / 2 === s.giornateEq);
+  ok(gTorna, 'per ogni nome: G = (M + P) / 2');
   eq(flDea.ore + flOsg.ore, fl.ore, 'le sedi sommate danno le ore del mese');
 
   // Somme coerenti per tutti i nomi del mese, sede per sede.
@@ -496,8 +503,7 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   eq(all[0].person, 'FRANCESCONI', 'hoursByName: FRANCESCONI in testa');
   eq(all[0].ore, 168, 'hoursByName: FRANCESCONI 168 h (3 ambulatori contati come mattine)');
   ok(all.every((x, i) => i === 0 || all[i - 1].ore >= x.ore), 'hoursByName: ordinato per ore decrescenti');
-  // 21 ambulatori contati come mattine da 6 h: 10 con il pomeriggio (giornate da 12 h, +1,5 h
-  // ciascuna rispetto a 09:30–20) e 11 da soli (+0,5 h ciascuno rispetto a 09:30–15).
+  // 21 ambulatori contati come mattine da 6 h, ora anche con l'orario vero 8–14.
   eq(all.reduce((s, x) => s + x.ore, 0), 2862, 'hoursByName: somma delle ore di settembre');
 
   // Roster sintetici minimi per i casi limite.
@@ -604,7 +610,7 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   eq(loSum.filter((s) => s === 'PS DEA Mattina').length, 1, 'ics: l\'ambulatorio da solo si chiama Mattina');
   eq(loSum.filter((s) => s.indexOf('Ambulatorio') !== -1).length, 0, 'ics: nessun evento chiamato Ambulatorio');
   const first = lo.split('\r\n').filter((l) => l.startsWith('DTSTART:'))[0];
-  eq(first, 'DTSTART:20260901T073000Z', 'ics: la giornata che parte dall\'ambulatorio comincia alle 9:30');
+  eq(first, 'DTSTART:20260901T060000Z', 'ics: la giornata che parte dall\'ambulatorio comincia alle 8');
 
   // In inverno l'ora di Roma è UTC+1: stessa fascia, istante diverso.
   const winter = TurniRules.buildICS(
@@ -663,6 +669,20 @@ eq(TurniRules.formatDate('2026-10-01'), 'gio 1 ott', 'formatDate 2026-10-01');
 eq(TurniRules.timeRange({ start: '08:00', end: '14:00' }), '08–14', 'timeRange Mattina');
 eq(TurniRules.timeRange({ start: '20:00', end: '08:00' }), '20–08', 'timeRange Notte');
 eq(TurniRules.timeRange({ start: '09:30', end: '15:00' }), '09:30–15', 'timeRange Ambulatorio');
+
+// Nome per esteso e orario a parole: quello che si legge toccando l'intestazione.
+eq(TurniRules.slotFullName({ label: 'AMBULATORIO CM' }), 'Ambulatorio Codici Minori', 'slotFullName scioglie CM');
+eq(TurniRules.slotFullName({ label: 'MATTINA' }), 'Mattina', 'slotFullName Mattina');
+eq(TurniRules.slotFullName({ label: '' }), '', 'slotFullName senza etichetta');
+eq(TurniRules.slotHoursPhrase({ start: '08:00', end: '14:00' }), 'dalle 8 alle 14', 'slotHoursPhrase mattina');
+eq(TurniRules.slotHoursPhrase({ start: '20:00', end: '08:00' }), 'dalle 20 alle 8', 'slotHoursPhrase notte');
+eq(TurniRules.slotHoursPhrase({ start: '09:30', end: '15:00' }), 'dalle 9.30 alle 15', 'slotHoursPhrase con i minuti');
+
+// L'ambulatorio dei dati veri si fa dalle 8 alle 14, come una mattina.
+{
+  const slotA = DEA.slots.find((s) => s.key === 'A');
+  deepEq([slotA.start, slotA.end, slotA.startMin, slotA.endMin], ['08:00', '14:00', 480, 840], 'ambulatorio: orario corretto a 8–14');
+}
 
 eq(TurniRules.formatRest(0), '0h', 'formatRest 0');
 eq(TurniRules.formatRest(360), '6h', 'formatRest 360');

@@ -5,16 +5,19 @@ ospedali — **DEA** e **OSG** — letti dai file xlsx ufficiali. Pensata per il
 
 ## Cosa fa
 
-Tre viste, con lo stesso evidenziatore e lo stesso filtro:
+Tre viste, con la stessa ricerca e lo stesso filtro delle sedi:
 
 - **Tabella** (è quella che si apre): tutti i nomi del mese, un giorno per riga, le due sedi
   una sotto l'altra — la sigla `DEA` o `OSG` scritta nel suo colore, con la riga velata dello
   stesso colore — e le colonne M, P, N, A. All'apertura la pagina si porta sul giorno di
-  oggi, a metà schermo.
-- **Calendario**: il mese in una videata; sotto, il dettaglio del giorno scelto (frecce o
-  scorrimento laterale per cambiare giorno), con le fasce in colonna e le sedi in riga. Con
-  un nome fissato, ogni giorno mostra le sue fasce nel colore della sede: `G` per la giornata
-  (mattina e pomeriggio nella stessa sede), `M`, `P`, `N` in pieno per la notte, `A`.
+  oggi, incorniciato, a metà schermo. L'interruttore **Semplifica** unisce mattina e
+  pomeriggio in una colonna `Giorno 08–20`: chi fa entrambi si legge una volta sola, con la
+  sua fascia accanto al nome (`PASTORE 8–20`), e l'ambulatorio entra lì come mattina, marcato
+  `amb`.
+- **Calendario**: il mese in una videata, con sabato e domenica in due bande. Il quadrato di
+  un giorno lavorato prende una velatura della sede e le lettere grandi delle fasce — `M`,
+  `MP`, `N` — nel colore della sede. Sotto, il dettaglio del giorno scelto: le fasce in
+  colonna, le sedi in riga, i nomi incolonnati.
 - **Ore**: le ore del mese per nome, in barre divise per sede. La vedono solo quelli che
   possono aggiornare i turni.
 
@@ -23,33 +26,35 @@ E in più:
 - **Cerca un nome** e lo evidenzia a ogni lettera, in tutte le viste; toccando il campo si
   aprono tutti i nomi del mese, e scrivendo restano i possibili, così un refuso nel foglio
   (per esempio `ORLANDITOSKIC` senza la barra) si vede subito come nome a sé, col
-  suggerimento.
+  suggerimento. Il nome fissato resta finché non lo togli, anche riaprendo l'app.
 - **Le due pillole in alto** accendono e spengono una sede: filtrano tabella, calendario,
   ore e conteggi, e restano come le lasci. Sono anche la legenda dei colori, sempre in vista.
-- **Totale**, in fondo, quando un nome è fissato: `Totale · 9,5 turni · 114h`, e sotto una
-  riga per sede — `DEA 2,5G + 4N = 6,5 turni · 78h`. Una mattina o un pomeriggio da soli
-  valgono mezza giornata, l'ambulatorio conta come una mattina, e i conti tornano: le due
-  sedi sommate danno il mese, e i turni da 12 h per 12 danno le ore.
-- **Esporta i miei turni nel mio calendario**, il pulsante in fondo: scarica i turni della
-  persona fissata come file `.ics` da aprire sul telefono. Gli eventi si chiamano
-  `PS DEA Mattina`, `PS OSG Notte` e simili — Mattina 8–14, Pomeriggio 14–20, Giornata 8–20
-  quando mattina e pomeriggio sono nella stessa sede, Notte 20–8, e l'ambulatorio da solo è
-  una Mattina con i suoi orari (`SITE_LABEL`, in `src/rules.js`, è il punto unico da cambiare
-  se le sedi cambiano nome). Nella pagina pubblicata come artifact non funziona: la
-  piattaforma non permette di salvare file `.ics`, e la pagina lo dice invece di non fare
-  nulla.
+- **Toccando l'intestazione di una fascia** si legge cos'è per esteso: `Ambulatorio Codici
+  Minori`, `dalle 8 alle 14`, e il ruolo scritto nel foglio.
+- **Totale**, in fondo, quando un nome è fissato: `Totale G4,5 (M4 + P5) + N5 = 114h`, e sotto
+  una riga per sede. G sono le giornate, e si scompone in mattine e pomeriggi con i conti che
+  tornano sempre: G = (M + P) / 2, e i turni da 12 h per 12 danno le ore. Una mattina o un
+  pomeriggio da soli valgono mezza giornata; l'ambulatorio conta come una mattina.
+- **Mostra i miei turni nel mio calendario**, il pulsante in fondo: sul sito iscrive il
+  calendario del telefono a un indirizzo che si aggiorna da solo (`webcal://`, un tocco su
+  iPhone; su Android si aggiunge l'indirizzo da Google Calendar). Fuori dal sito scarica un
+  file `.ics`. Gli eventi si chiamano `PS DEA Mattina`, `PS OSG Notte` e simili — Mattina
+  8–14, Pomeriggio 14–20, Giornata 8–20, Notte 20–8.
 - **Segnalazioni**, calcolate su tutti i turni caricati anche a cavallo di due mesi, in una
   riga ciascuna (`BRAHAM · notte 17 OSG → mattina 18 OSG · riposo 0h`). L'elenco lo vede solo
-  chi aggiorna i turni; il puntino accanto al nome, invece, lo vedono tutti.
+  chi aggiorna i turni; il nome evidenziato nel colore della segnalazione lo vedono tutti.
   - **Conflitto** — stesso orario in due sedi, oppure doppio incarico nella stessa sede con
-    più di 1 h di sovrapposizione (ambulatorio → pomeriggio nello stesso PS è un passaggio di
-    consegne, non un conflitto).
+    più di 1 h di sovrapposizione.
   - **Notte attaccata** — turno diurno subito prima o subito dopo una notte, con meno di 11 h
     di riposo.
   - **Cambio sede** — due turni diurni consecutivi in sedi diverse senza pausa.
-- La pagina **ricorda l'ultimo nome fissato**, la vista e le pillole; mese, nome, giorno e
-  vista stanno anche nell'indirizzo (`#mese=…&nome=…&giorno=…&vista=…`), quindi un link
-  condiviso apre la stessa cosa.
+- **Uso**, per chi aggiorna: quante aperture, quanti dispositivi, quanti hanno installato
+  l'app, quante sessioni hanno cercato un nome, il ritmo giorno per giorno, i nomi più
+  cercati e gli iscritti al calendario. Solo numeri: nessun nome è collegato a un
+  dispositivo, nessun indirizzo IP viene registrato.
+- **Sul telefono**: alla prima apertura una finestra spiega come aggiungere la pagina alla
+  schermata Home — su Android con un pulsante *Installa*, su iPhone con il percorso di
+  Safari. La pagina ricorda vista, pillole e nome fissato.
 
 ## Aprire
 
