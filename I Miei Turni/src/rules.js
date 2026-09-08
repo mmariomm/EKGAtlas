@@ -429,6 +429,10 @@ var TurniRules = (function () {
       ambulatori: ambulatori,        // già compresi nelle mattine: solo informativo
       altri: counts.other,
       dodici: giornate + counts.N,
+      // Mattine e pomeriggi in tutto, quelli dentro una giornata compresi: sono la
+      // scomposizione di G, e i conti tornano sempre — G = (M + P) / 2.
+      mattineTot: counts.M,
+      pomeriggiTot: counts.P,
       // Addizione che si legge da sola: una mattina o un pomeriggio da soli valgono
       // mezza giornata, così "4,5G + 5N = 9,5" e 9,5 × 12 = le 114 ore del mese.
       giornateEq: giornate + (mattine + pomeriggi) / 2,

@@ -468,6 +468,13 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   deepEq([flDea.giornateEq, flDea.notti, flDea.turniEq, flDea.ore], [2.5, 4, 6.5, 78], 'FLORENZAN al DEA: 2,5G + 4N = 6,5 · 78 h');
   deepEq([flOsg.giornateEq, flOsg.notti, flOsg.turniEq, flOsg.ore], [2, 1, 3, 36], 'FLORENZAN all\'OSG: 2G + 1N = 3 · 36 h');
   eq(flDea.turniEq + flOsg.turniEq, fl.turniEq, 'le sedi sommate danno il totale dei turni');
+
+  // G si scompone in M e P: le giornate equivalenti sono la metà delle mezze giornate.
+  deepEq([flDea.mattineTot, flDea.pomeriggiTot], [2, 3], 'FLORENZAN al DEA: 2 mattine e 3 pomeriggi in tutto');
+  deepEq([fl.mattineTot, fl.pomeriggiTot], [4, 5], 'FLORENZAN nel mese: 4 mattine e 5 pomeriggi in tutto');
+  const gTorna = TurniRules.hoursByName(realAssignments, '2026-09')
+    .every((s) => (s.mattineTot + s.pomeriggiTot) / 2 === s.giornateEq);
+  ok(gTorna, 'per ogni nome: G = (M + P) / 2');
   eq(flDea.ore + flOsg.ore, fl.ore, 'le sedi sommate danno le ore del mese');
 
   // Somme coerenti per tutti i nomi del mese, sede per sede.
