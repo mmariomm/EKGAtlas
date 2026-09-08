@@ -60,13 +60,18 @@ const KV_STAT_LOGIN = 'stat:login:';    // stat:login:<AAAA-MM>[:<ruolo>]
 const KV_STAT_SAVE = 'stat:save:';      // stat:save:<AAAA-MM>
 const KV_STAT_LAST_SAVE = 'stat:last-save';
 
-const KV_USO_MESE = 'uso:';             // uso:<AAAA-MM> — tre numeri, aggregati
-const KV_USO_DEV = 'dev:';              // dev:<AAAA-MM>:<dev> — "1" oppure "app"
+const KV_USO_MESE = 'uso:';             // uso:<AAAA-MM> e uso:<AAAA-MM-GG>
+const KV_USO_DEV = 'dev:';              // dev:<AAAA-MM>:<dev> e dev:<AAAA-MM-GG>:<dev>
 const KV_USO_CERCA = 'cerca:';          // cerca:<AAAA-MM>:<NOME> — un numero
+const KV_CAL_LETTURE = 'cal:';          // cal:<AAAA-MM> — letture del calendario
+const KV_CAL_ISCRITTO = 'calsub:';      // calsub:<AAAA-MM>:<pezzo di firma>
+const KV_CAL_OGGI = 'calday:';          // calday:<AAAA-MM-GG>:<pezzo di firma>
+const KV_CAL_LINK = 'callink:';         // callink:<AAAA-MM> — indirizzi chiesti
 const MAX_USO_BYTES = 2048;
 const USO_DEV = /^[A-Za-z0-9_-]{22}$/;  // l'identificativo casuale del dispositivo
 const USO_MAX_NOME = 60;
 const USO_MAX_RICERCHE = 50;            // nomi cercati per singola richiesta
+const USO_MAX_DISTINTI = 200;           // nomi distinti tenuti nella riga del mese
 const USO_TOP = 20;                     // quanti nomi nella classifica dei cercati
 const USO_PAGINE = 50;                  // freno: al massimo 50 giri di list
 // La riga del dispositivo esiste solo per contare quanti sono e quanti hanno
@@ -74,6 +79,15 @@ const USO_PAGINE = 50;                  // freno: al massimo 50 giri di list
 // ricordarsi di ripulirla. I conteggi aggregati, che non riguardano nessuno in
 // particolare, restano.
 const USO_DEV_TTL = 3456000;
+// La riga del giorno serve solo a contare i dispositivi di quel giorno: dieci
+// giorni e via. Oltre quella finestra "quanti erano" non si sa più — e /uso lo
+// dice con null, invece di far credere che fossero zero.
+const USO_GIORNI_DEV = 10;
+const USO_DEV_GIORNO_TTL = USO_GIORNI_DEV * 86400;
+// Della firma del calendario si tiene solo un pezzo: basta a riconoscere due
+// letture dello stesso abbonamento, non dice di chi sia. Lo slug — che è il
+// cognome piegato — non entra qui in nessun caso.
+const CAL_FRAMMENTO = 12;
 
 const CAL_PREFIX = '/cal/';            // /cal/<slug>-<firma>.ics
 const CAL_MESSAGE = 'cal:';            // cosa si firma: "cal:" + il nome vero
@@ -488,6 +502,18 @@ function monthKey(nowSec) {
   return new Date(nowSec * 1000).toISOString().slice(0, 7);
 }
 
+// Il giorno in forma AAAA-MM-GG, sempre in UTC come il mese.
+function dayKey(nowSec) {
+  return new Date(nowSec * 1000).toISOString().slice(0, 10);
+}
+
+// Quanti giorni fa è quel giorno, contando in UTC.
+function giorniFa(giorno, nowSec) {
+  const pezzi = String(giorno).split('-');
+  const quello = Date.UTC(Number(pezzi[0]), Number(pezzi[1]) - 1, Number(pezzi[2]));
+  return Math.round((Math.floor(nowSec / 86400) * 86400000 - quello) / 86400000);
+}
+
 // Leggi, somma uno, riscrivi: senza transazioni, due incrementi nello stesso
 // istante possono contarne uno solo. Sono numeri indicativi, non una contabilità.
 // Se KV non risponde si va avanti senza contare: un conteggio non deve mai far
@@ -777,6 +803,7 @@ function parseUso(text) {
   if (body.nome !== undefined) return null;
   if (typeof body.dev !== 'string' || !USO_DEV.test(body.dev)) return null;
   if (body.installata !== undefined && typeof body.installata !== 'boolean') return null;
+  if (body.haCercato !== undefined && typeof body.haCercato !== 'boolean') return null;
 
   const ricerche = [];
   if (body.ricerche !== undefined && body.ricerche !== null) {
@@ -790,25 +817,34 @@ function parseUso(text) {
       if (pulito !== '') ricerche.push(pulito);
     }
   }
-  return { dev: body.dev, installata: body.installata === true, ricerche: ricerche };
+  return {
+    dev: body.dev,
+    installata: body.installata === true,
+    // Vero quando in quella sessione la persona ha fissato almeno un nome: è la
+    // differenza fra chi sfoglia i turni e chi viene a cercare il proprio.
+    haCercato: body.haCercato === true,
+    ricerche: ricerche
+  };
 }
 
 // Leggi-somma-riscrivi, senza transazioni: due aperture nello stesso istante
 // possono contarne una sola (e KV accetta una scrittura al secondo per chiave).
 // Sono numeri indicativi — quanto si usa la pagina — non una contabilità.
-async function bumpUso(env, mese, uso) {
-  const key = KV_USO_MESE + mese;
+async function bumpRiga(env, key, uso, conInstallate) {
   try {
     const prima = parseRow(await env.TURNI.get(key)) || {};
-    await env.TURNI.put(key, JSON.stringify({
+    const riga = {
       aperture: asCount(prima.aperture) + 1,
-      // Aperture fatte dall'app installata (nella risposta di /uso "installate"
-      // sono invece i dispositivi che ce l'hanno: due domande diverse).
-      installate: asCount(prima.installate) + (uso.installata ? 1 : 0),
-      ricerche: asCount(prima.ricerche) + uso.ricerche.length
-    }));
+      ricerche: asCount(prima.ricerche) + uso.ricerche.length,
+      sessioniConRicerca: asCount(prima.sessioniConRicerca) + (uso.haCercato ? 1 : 0)
+    };
+    // Aperture fatte dall'app installata: solo nella riga del mese (nella
+    // risposta di /uso "installate" sono invece i dispositivi che ce l'hanno —
+    // due domande diverse, ed è quella dei dispositivi che si legge).
+    if (conInstallate) riga.installate = asCount(prima.installate) + (uso.installata ? 1 : 0);
+    await env.TURNI.put(key, JSON.stringify(riga));
   } catch (err) {
-    console.warn('Conteggi del mese non aggiornati, KV non raggiungibile: ' + errText(err));
+    console.warn('Conteggi non aggiornati, KV non raggiungibile: ' + errText(err));
   }
 }
 
@@ -829,22 +865,87 @@ async function noteDevice(env, mese, uso) {
   }
 }
 
-// Un contatore per nome cercato, sommato su tutti quanti. Una scrittura per
-// nome distinto nella richiesta: tre ricerche dello stesso nome sono una
-// scrittura sola, con +3.
-async function bumpRicerche(env, mese, ricerche) {
-  const quante = new Map();
-  for (let i = 0; i < ricerche.length; i++) {
-    quante.set(ricerche[i], (quante.get(ricerche[i]) || 0) + 1);
+// La riga del giorno per il dispositivo: solo "1", e scade dopo dieci giorni.
+// Si scrive una volta al giorno — le aperture successive la trovano già lì.
+async function noteDeviceGiorno(env, giorno, dev) {
+  const key = KV_USO_DEV + giorno + ':' + dev;
+  try {
+    if (await env.TURNI.get(key) !== null) return;
+    await env.TURNI.put(key, '1', { expirationTtl: USO_DEV_GIORNO_TTL });
+  } catch (err) {
+    console.warn('Dispositivo del giorno non contato, KV non raggiungibile: ' + errText(err));
   }
-  for (const [nome, volte] of quante) {
-    const key = KV_USO_CERCA + mese + ':' + nome;
-    try {
-      const prima = await env.TURNI.get(key);
-      await env.TURNI.put(key, String(asCount(prima) + volte));
-    } catch (err) {
-      console.warn('Conteggio delle ricerche non aggiornato, KV non raggiungibile: ' + errText(err));
+}
+
+// Tutti i nomi cercati nel mese in una riga sola, nome → quante volte: una
+// scrittura per apertura invece di una per nome cercato. Leggi-somma-riscrivi
+// come gli altri conteggi, con gli stessi limiti.
+async function bumpCerche(env, mese, ricerche) {
+  if (ricerche.length === 0) return;
+  const key = KV_USO_CERCA + mese;
+  try {
+    const prima = parseRow(await env.TURNI.get(key)) || {};
+    const mappa = Object.create(null);   // niente prototipo: un nome non può diventare una proprietà di Object
+    let distinti = 0;
+    const vecchi = Object.keys(prima);
+    for (let i = 0; i < vecchi.length; i++) {
+      const volte = asCount(prima[vecchi[i]]);
+      if (volte > 0) { mappa[vecchi[i]] = volte; distinti++; }
     }
+    for (let i = 0; i < ricerche.length; i++) {
+      const nome = ricerche[i];
+      // Oltre 200 nomi distinti nel mese non se ne aggiungono altri: la riga non
+      // deve poter crescere senza fine. Quelli già dentro continuano a contare.
+      if (mappa[nome] === undefined) {
+        if (distinti >= USO_MAX_DISTINTI) continue;
+        distinti++;
+      }
+      mappa[nome] = (mappa[nome] || 0) + 1;
+    }
+    await env.TURNI.put(key, JSON.stringify(mappa));
+  } catch (err) {
+    console.warn('Conteggio delle ricerche non aggiornato, KV non raggiungibile: ' + errText(err));
+  }
+}
+
+// Un contatore qualunque, +quanto. Chi chiama si prende la briga del try/catch.
+async function addCounter(env, key, quanto) {
+  const prima = await env.TURNI.get(key);
+  await env.TURNI.put(key, String(asCount(prima) + quanto));
+}
+
+// Una lettura del calendario, contata senza sapere di chi sia: della firma si
+// tiene solo un pezzo, mai lo slug (che è il cognome piegato). Si conta una
+// volta al giorno per abbonamento, non a ogni richiesta: le app di calendario
+// ripassano anche ogni ora e da sole riempirebbero il piano gratuito di
+// scritture senza dire niente di più — quello che interessa è quanti calendari
+// stanno davvero leggendo i turni, non con che frequenza li interroga Apple.
+async function noteCalRead(env, signature, nowSec) {
+  if (!env.TURNI) return;
+  const frammento = signature.slice(0, CAL_FRAMMENTO);
+  const mese = monthKey(nowSec);
+  try {
+    const oggi = KV_CAL_OGGI + dayKey(nowSec) + ':' + frammento;
+    if (await env.TURNI.get(oggi) !== null) return;
+    await env.TURNI.put(oggi, '1', { expirationTtl: USO_DEV_GIORNO_TTL });
+    await addCounter(env, KV_CAL_LETTURE + mese, 1);
+    const iscritto = KV_CAL_ISCRITTO + mese + ':' + frammento;
+    if (await env.TURNI.get(iscritto) === null) {
+      await env.TURNI.put(iscritto, '1', { expirationTtl: USO_DEV_TTL });
+    }
+  } catch (err) {
+    console.warn('Lettura del calendario non contata, KV non raggiungibile: ' + errText(err));
+  }
+}
+
+// Chi ha chiesto il proprio indirizzo: insieme agli iscritti dice quanti sono
+// arrivati in fondo all'iscrizione e quanti si sono fermati prima.
+async function noteCalLink(env, nowSec) {
+  if (!env.TURNI) return;
+  try {
+    await addCounter(env, KV_CAL_LINK + monthKey(nowSec), 1);
+  } catch (err) {
+    console.warn('Indirizzo chiesto non contato, KV non raggiungibile: ' + errText(err));
   }
 }
 
@@ -861,9 +962,12 @@ async function handleUsoPost(request, env, nowSec) {
 
   if (env.TURNI) {
     const mese = monthKey(nowSec);
-    await bumpUso(env, mese, uso);
+    const giorno = dayKey(nowSec);
+    await bumpRiga(env, KV_USO_MESE + mese, uso, true);
+    await bumpRiga(env, KV_USO_MESE + giorno, uso, false);
     await noteDevice(env, mese, uso);
-    await bumpRicerche(env, mese, uso.ricerche);
+    await noteDeviceGiorno(env, giorno, uso.dev);
+    await bumpCerche(env, mese, uso.ricerche);
   }
   return new Response(null, { status: 204, headers: securityHeaders() });
 }
@@ -896,15 +1000,15 @@ async function countDevices(env, mese) {
   return { dispositivi: chiavi.length, installate: installate };
 }
 
-// I nomi più cercati del mese, dal più al meno; a pari merito, in ordine
+// I nomi più cercati del mese, dal più al meno; a pari merito in ordine
 // alfabetico, così la classifica non balla fra una lettura e l'altra.
-async function topRicerche(env, mese) {
-  const prefix = KV_USO_CERCA + mese + ':';
-  const chiavi = await listKeys(env, prefix);
+async function topCerche(env, mese) {
+  const mappa = parseRow(await env.TURNI.get(KV_USO_CERCA + mese)) || {};
   const classifica = [];
-  for (let i = 0; i < chiavi.length; i++) {
-    const volte = asCount(await env.TURNI.get(chiavi[i]));
-    if (volte > 0) classifica.push({ nome: chiavi[i].slice(prefix.length), volte: volte });
+  const nomi = Object.keys(mappa);
+  for (let i = 0; i < nomi.length; i++) {
+    const volte = asCount(mappa[nomi[i]]);
+    if (volte > 0) classifica.push({ nome: nomi[i], volte: volte });
   }
   classifica.sort(function (a, b) {
     if (a.volte !== b.volte) return b.volte - a.volte;
@@ -913,9 +1017,55 @@ async function topRicerche(env, mese) {
   return classifica.slice(0, USO_TOP);
 }
 
+// Il ritmo del mese, un giorno per riga e in ordine di data. I dispositivi di
+// un giorno si contano dalle loro righe, che però campano dieci giorni: più
+// indietro di così non si sa più quanti fossero, e lì si risponde null — dire
+// «zero dispositivi» per un giorno con quaranta aperture sarebbe una bugia.
+async function readGiorni(env, mese, nowSec) {
+  const perGiorno = new Map();
+  const chiaviDev = await listKeys(env, KV_USO_DEV + mese + '-');
+  for (let i = 0; i < chiaviDev.length; i++) {
+    const resto = chiaviDev[i].slice(KV_USO_DEV.length);
+    const taglio = resto.indexOf(':');
+    if (taglio === -1) continue;
+    const giorno = resto.slice(0, taglio);
+    perGiorno.set(giorno, (perGiorno.get(giorno) || 0) + 1);
+  }
+
+  const giorni = [];
+  const chiaviRighe = await listKeys(env, KV_USO_MESE + mese + '-');
+  for (let i = 0; i < chiaviRighe.length; i++) {
+    const giorno = chiaviRighe[i].slice(KV_USO_MESE.length);
+    const riga = parseRow(await env.TURNI.get(chiaviRighe[i])) || {};
+    const aperture = asCount(riga.aperture);
+    const scaduti = giorniFa(giorno, nowSec) > USO_GIORNI_DEV;
+    const dispositivi = scaduti ? null : (perGiorno.get(giorno) || 0);
+    giorni.push({
+      giorno: giorno,
+      aperture: aperture,
+      dispositivi: dispositivi,
+      aperturePerDispositivo: dispositivi === null ? null
+        : (dispositivi > 0 ? Math.round((aperture / dispositivi) * 10) / 10 : 0),
+      sessioniConRicerca: asCount(riga.sessioniConRicerca)
+    });
+  }
+  giorni.sort(function (a, b) { return a.giorno < b.giorno ? -1 : (a.giorno > b.giorno ? 1 : 0); });
+  return giorni;
+}
+
+// Quanti si sono iscritti al calendario, quanti giorni-abbonato di letture e
+// quanti hanno chiesto il proprio indirizzo.
+async function readCalendario(env, mese) {
+  return {
+    iscritti: (await listKeys(env, KV_CAL_ISCRITTO + mese + ':')).length,
+    letture: asCount(await env.TURNI.get(KV_CAL_LETTURE + mese)),
+    richieste: asCount(await env.TURNI.get(KV_CAL_LINK + mese))
+  };
+}
+
 // Il riepilogo del mese, oppure null se KV non risponde: come per /stats, meglio
 // dire che non si è potuto guardare che rispondere zeri che sembrano veri.
-async function readUso(env, mese) {
+async function readUso(env, mese, nowSec) {
   if (!env.TURNI || typeof env.TURNI.list !== 'function') {
     console.error('Binding KV TURNI assente o senza list: registro d\'uso non leggibile.');
     return null;
@@ -923,14 +1073,18 @@ async function readUso(env, mese) {
   try {
     const row = parseRow(await env.TURNI.get(KV_USO_MESE + mese)) || {};
     const dispositivi = await countDevices(env, mese);
-    const cercatiPiu = await topRicerche(env, mese);
     return {
       mese: mese,
       aperture: asCount(row.aperture),
       dispositivi: dispositivi.dispositivi,
       installate: dispositivi.installate,
       ricerche: asCount(row.ricerche),
-      cercatiPiu: cercatiPiu
+      // Quante aperture sono finite con un nome fissato: è la risposta alla
+      // domanda «guardano i turni o vengono a cercare il proprio?».
+      sessioniConRicerca: asCount(row.sessioniConRicerca),
+      cercatiPiu: await topCerche(env, mese),
+      giorni: await readGiorni(env, mese, nowSec),
+      calendario: await readCalendario(env, mese)
     };
   } catch (err) {
     console.error('Registro d\'uso non leggibile, KV non raggiungibile: ' + errText(err));
@@ -948,7 +1102,7 @@ async function handleUsoGet(request, env, nowSec) {
   if (chiesto !== null && chiesto !== '' && !/^\d{4}-\d{2}$/.test(chiesto)) {
     return jsonResponse({ error: MSG_MESE_NON_VALIDO }, 400);
   }
-  const registro = await readUso(env, chiesto ? chiesto : monthKey(nowSec));
+  const registro = await readUso(env, chiesto ? chiesto : monthKey(nowSec), nowSec);
   if (registro === null) return jsonResponse({ error: MSG_USO_NON_DISPONIBILE }, 503);
   return jsonResponse(registro, 200);
 }
@@ -1071,7 +1225,7 @@ function personBySlug(assignments, slug) {
 // perché l'app del calendario interroga senza cookie. Ogni intoppo (indirizzo
 // storto, nome assente, slug ambiguo, firma diversa, KV vuoto) esce allo stesso
 // modo, 404 a corpo vuoto: da fuori non si capisce nemmeno se il nome esista.
-async function handleCalendar(request, env) {
+async function handleCalendar(request, env, nowSec) {
   const parsed = parseCalPath(new URL(request.url).pathname);
   if (parsed === null) return notFound();
 
@@ -1083,6 +1237,8 @@ async function handleCalendar(request, env) {
 
   const expected = await calSignature(env.SESSION_SECRET, person);
   if (!equalBytes(utf8(parsed.signature), utf8(expected))) return notFound();
+
+  await noteCalRead(env, expected, nowSec);
 
   // Tutti i mesi presenti in KV: chi si iscrive una volta se li ritrova tutti.
   const ics = TurniRules.buildICS(assignments, person);
@@ -1110,6 +1266,7 @@ async function handleCalLink(request, env, nowSec) {
   if (person === null) return jsonResponse({ error: MSG_NOME_NON_TROVATO }, 404);
 
   const signature = await calSignature(env.SESSION_SECRET, person);
+  await noteCalLink(env, nowSec);
   const path = CAL_PREFIX + calSlug(person) + '-' + signature + '.ics';
   return jsonResponse({
     url: 'https://' + url.host + path,
@@ -1170,7 +1327,7 @@ async function route(request, env) {
       : methodNotAllowed('GET, HEAD');
   } else if (path.indexOf(CAL_PREFIX) === 0) {
     response = method === 'GET'
-      ? await handleCalendar(request, env)
+      ? await handleCalendar(request, env, nowSec)
       : methodNotAllowed('GET, HEAD');
   } else {
     response = notFound();

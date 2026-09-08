@@ -89,6 +89,12 @@ function nonContiene(testo, pezzo, messaggio) {
 // Finti env, KV, richieste
 // ============================================================
 
+const PREFISSI_CONTATORI = ['try:', 'stat:', 'uso:', 'dev:', 'cerca:', 'cal:', 'calsub:', 'calday:', 'callink:'];
+
+function contatore(chiave) {
+  return PREFISSI_CONTATORI.some(function (p) { return String(chiave).indexOf(p) === 0; });
+}
+
 function kvFinto() {
   const store = new Map();
   const puts = [];
@@ -125,12 +131,13 @@ function kvFinto() {
         cursor: finita ? undefined : String(da + 2)
       };
     },
-    // Fotografia dei dati (senza i contatori: né quelli dei tentativi né quelli
-    // d'uso) per verificare che una richiesta rifiutata non abbia scritto niente.
+    // Fotografia dei soli dati (i turni): fuori restano tutti i contatori —
+    // tentativi, statistiche, registro d'uso, calendario. Serve a verificare che
+    // una richiesta rifiutata non abbia scritto niente di vero.
     fotografia() {
       const dati = [];
       for (const [key, valore] of store) {
-        if (key.indexOf('try:') !== 0 && key.indexOf('stat:') !== 0) dati.push(key + '=' + valore);
+        if (!contatore(key)) dati.push(key + '=' + valore);
       }
       return dati.sort().join('|');
     }
@@ -669,6 +676,7 @@ async function testCalLink(worker) {
 
   const medico = await accedi(worker, env, PASS_MEDICO, '198.51.100.40');
   const scritture = kv.puts.length;
+  const datiPrima = kv.fotografia();
   const risposta = await chiediLink(worker, env, medico.cookie, 'FLORENZAN');
   const corpo = await risposta.json();
   uguale(risposta.status, 200, '/cal-link con sessione medico: 200');
@@ -677,7 +685,8 @@ async function testCalLink(worker) {
   uguale(corpo.url, atteso, '/cal-link: slug in minuscolo e firma calcolata sul nome vero');
   uguale(corpo.webcal, 'webcal://' + atteso.slice('https://'.length), '/cal-link: webcal è lo stesso indirizzo con l\'altro schema');
   vero(FORMA_INDIRIZZO.test(new URL(corpo.url).pathname), '/cal-link: forma /cal/<slug>-<22 caratteri>.ics');
-  uguale(kv.puts.length, scritture, '/cal-link non scrive niente in KV');
+  uguale(kv.puts.length - scritture, 1, '/cal-link scrive solo il contatore delle richieste');
+  uguale(kv.fotografia(), datiPrima, '/cal-link non tocca i turni salvati');
 
   // Vale qualunque ruolo, e lo stesso nome dà sempre lo stesso indirizzo.
   const gestore = await accedi(worker, env, PASS_GESTORE, '198.51.100.41');
@@ -714,7 +723,6 @@ async function testCalendarioPubblico(worker) {
   const percorso = await indirizzoDi(worker, env, medico.cookie, 'FLORENZAN');
 
   const prima = kv.fotografia();
-  const scritture = kv.puts.length;
   // Come lo chiede l'app del calendario: senza nessun cookie.
   const risposta = await worker.fetch(richiesta('GET', percorso), env);
   const testo = await risposta.text();
@@ -725,8 +733,8 @@ async function testCalendarioPubblico(worker) {
   uguale(risposta.headers.get('X-Robots-Tag'), 'noindex, nofollow', 'calendario: X-Robots-Tag');
   uguale(risposta.headers.get('X-Content-Type-Options'), 'nosniff', 'calendario: nosniff');
   uguale(risposta.headers.get('Set-Cookie'), null, 'la rotta pubblica non tocca i cookie');
-  uguale(kv.fotografia(), prima, 'il calendario non cambia niente in KV');
-  uguale(kv.puts.length, scritture, 'il calendario non scrive in KV');
+  // Gli unici segni che lascia sono i contatori aggregati, contati più sotto.
+  uguale(kv.fotografia(), prima, 'il calendario non tocca i turni salvati');
 
   uguale(testo.indexOf('BEGIN:VCALENDAR'), 0, 'il file comincia con BEGIN:VCALENDAR');
   contiene(testo, 'END:VCALENDAR', 'il file si chiude come un calendario');
@@ -1138,6 +1146,7 @@ async function testPagineInstallabili(worker) {
 const DEV_A = 'AAAAAAAAAAAAAAAAAAAAAA';   // 22 caratteri base64url
 const DEV_B = 'bbbbbbbbbbbbbbbbbbbb-_';
 const MESE = new Date().toISOString().slice(0, 7);
+const GIORNO = new Date().toISOString().slice(0, 10);
 
 function richiestaUso(cookie, corpo, extra) {
   return richiesta('POST', '/uso', Object.assign({
@@ -1162,34 +1171,45 @@ async function testUsoScrittura(worker) {
 
   const medico = await accedi(worker, env, PASS_MEDICO, '203.0.113.40');
   const prima = await worker.fetch(richiestaUso(medico.cookie, {
-    dev: DEV_A, installata: true, ricerche: ['BRAHAM', 'braham', ' pastore ']
+    dev: DEV_A, installata: true, haCercato: true, ricerche: ['BRAHAM', 'braham', ' pastore ']
   }), env);
   uguale(prima.status, 204, 'POST /uso valido: 204');
   uguale(await prima.text(), '', 'POST /uso: risposta senza corpo');
   uguale(prima.headers.get('Set-Cookie'), null, 'POST /uso: nessun cookie');
 
-  uguale(kv.store.get('uso:' + MESE), JSON.stringify({ aperture: 1, installate: 1, ricerche: 3 }),
-    'la riga del mese conta apertura, app e ricerche');
+  uguale(kv.store.get('uso:' + MESE),
+    JSON.stringify({ aperture: 1, ricerche: 3, sessioniConRicerca: 1, installate: 1 }),
+    'la riga del mese conta apertura, ricerche, sessioni con ricerca e app');
+  uguale(kv.store.get('uso:' + GIORNO),
+    JSON.stringify({ aperture: 1, ricerche: 3, sessioniConRicerca: 1 }),
+    'la riga del giorno conta le stesse cose, senza l\'app');
   uguale(kv.store.get('dev:' + MESE + ':' + DEV_A), 'app', 'il dispositivo risulta con l\'app installata');
-  uguale(kv.store.get('cerca:' + MESE + ':BRAHAM'), '2', 'maiuscole e minuscole sono lo stesso nome');
-  uguale(kv.store.get('cerca:' + MESE + ':PASTORE'), '1', 'gli spazi intorno al nome non contano');
+  uguale(kv.store.get('dev:' + GIORNO + ':' + DEV_A), '1', 'il dispositivo è segnato anche nel giorno');
+  uguale(kv.store.get('cerca:' + MESE), JSON.stringify({ BRAHAM: 2, PASTORE: 1 }),
+    'i nomi cercati stanno in una riga sola: maiuscole, minuscole e spazi non contano');
 
-  const perDispositivo = kv.puts.filter(function (p) { return p.key.indexOf('dev:') === 0; });
-  uguale(perDispositivo.length, 1, 'una sola scrittura per il dispositivo');
-  uguale(perDispositivo[0].opzioni && perDispositivo[0].opzioni.expirationTtl, 3456000,
-    'la riga del dispositivo scade da sola dopo 40 giorni');
+  const perMese = kv.puts.filter(function (p) { return p.key === 'dev:' + MESE + ':' + DEV_A; });
+  uguale(perMese.length, 1, 'una sola scrittura per il dispositivo nel mese');
+  uguale(perMese[0].opzioni && perMese[0].opzioni.expirationTtl, 3456000,
+    'la riga mensile del dispositivo scade dopo 40 giorni');
+  const perGiorno = kv.puts.filter(function (p) { return p.key === 'dev:' + GIORNO + ':' + DEV_A; });
+  uguale(perGiorno[0].opzioni && perGiorno[0].opzioni.expirationTtl, 864000,
+    'la riga giornaliera del dispositivo scade dopo 10 giorni');
 
-  // Seconda apertura dallo stesso dispositivo: i numeri si sommano e la riga del
-  // dispositivo non si riscrive, perché non è cambiato niente.
+  // Seconda apertura dallo stesso dispositivo: i numeri si sommano e le righe
+  // del dispositivo non si riscrivono, perché non è cambiato niente.
   const scritture = kv.puts.length;
   const seconda = await worker.fetch(richiestaUso(medico.cookie, {
-    dev: DEV_A, installata: true, ricerche: ['BRAHAM']
+    dev: DEV_A, installata: true, haCercato: false, ricerche: ['BRAHAM']
   }), env);
   uguale(seconda.status, 204, 'seconda apertura: 204');
-  uguale(kv.store.get('uso:' + MESE), JSON.stringify({ aperture: 2, installate: 2, ricerche: 4 }),
-    'due aperture contate');
-  uguale(kv.store.get('cerca:' + MESE + ':BRAHAM'), '3', 'le ricerche si sommano');
-  uguale(kv.puts.length - scritture, 2, 'il dispositivo già visto non si riscrive: due scritture, non tre');
+  uguale(kv.store.get('uso:' + MESE),
+    JSON.stringify({ aperture: 2, ricerche: 4, sessioniConRicerca: 1, installate: 2 }),
+    'due aperture, ma una sola con una ricerca');
+  uguale(kv.store.get('cerca:' + MESE), JSON.stringify({ BRAHAM: 3, PASTORE: 1 }),
+    'le ricerche si sommano nella stessa riga');
+  uguale(kv.puts.length - scritture, 3,
+    'una apertura costa tre scritture: mese, giorno e ricerche');
 
   // Chi ha installato l'app resta installato anche se poi apre da una scheda.
   await worker.fetch(richiestaUso(medico.cookie, { dev: DEV_A, installata: false }), env);
@@ -1235,6 +1255,7 @@ async function testUsoValidazione(worker) {
     [{ dev: DEV_A, ricerche: ['x'.repeat(61)] }, 'nome cercato troppo lungo'],
     [{ dev: DEV_A, ricerche: new Array(51).fill('BRAHAM') }, 'più di cinquanta ricerche'],
     [{ dev: DEV_A, installata: 'si' }, 'installata non è un booleano'],
+    [{ dev: DEV_A, haCercato: 'si' }, 'haCercato non è un booleano'],
     [[], 'corpo non oggetto'],
     ['{ questo non è json', 'JSON malformato']
   ];
@@ -1349,6 +1370,88 @@ async function testUsoClassifica(worker) {
   uguale(uso.corpo.dispositivi, 1, 'un solo dispositivo');
 }
 
+async function testUsoGiorni(worker) {
+  const env = envFinto();
+  const kv = env.TURNI;
+  const medico = await accedi(worker, env, PASS_MEDICO, '203.0.113.51');
+  const gestore = await accedi(worker, env, PASS_GESTORE, '203.0.113.52');
+  const DEV_C = 'CCCCCCCCCCCCCCCCCCCC-_';
+
+  // Quattro aperture da tre dispositivi, due delle quali hanno cercato un nome.
+  await worker.fetch(richiestaUso(medico.cookie, { dev: DEV_A, haCercato: true, ricerche: ['BRAHAM'] }), env);
+  await worker.fetch(richiestaUso(medico.cookie, { dev: DEV_A, haCercato: false }), env);
+  await worker.fetch(richiestaUso(gestore.cookie, { dev: DEV_B, haCercato: true, ricerche: ['PASTORE'] }), env);
+  await worker.fetch(richiestaUso(gestore.cookie, { dev: DEV_C, haCercato: false }), env);
+
+  const uso = await leggiUso(worker, env, gestore.cookie);
+  uguale(uso.corpo.aperture, 4, 'quattro aperture nel mese');
+  uguale(uso.corpo.sessioniConRicerca, 2,
+    'due aperture su quattro hanno cercato un nome: è la risposta a «lo guardano o lo cercano?»');
+
+  uguale(uso.corpo.giorni.length, 1, 'un giorno solo, oggi');
+  const oggi = uso.corpo.giorni[0];
+  uguale(oggi.giorno, GIORNO, 'il giorno è quello di oggi');
+  uguale(oggi.aperture, 4, 'le quattro aperture di oggi');
+  uguale(oggi.dispositivi, 3, 'tre dispositivi distinti oggi');
+  uguale(oggi.aperturePerDispositivo, 1.3, 'aperture per dispositivo, a un decimale');
+  uguale(oggi.sessioniConRicerca, 2, 'due sessioni con ricerca oggi');
+
+  // I giorni escono in ordine di data, dal più vecchio.
+  kv.store.set('uso:2020-01-05', JSON.stringify({ aperture: 40, ricerche: 3, sessioniConRicerca: 2 }));
+  kv.store.set('uso:2020-01-02', JSON.stringify({ aperture: 10, ricerche: 0, sessioniConRicerca: 0 }));
+  const vecchio = await leggiUso(worker, env, gestore.cookie, '2020-01');
+  uguale(vecchio.corpo.giorni.map(function (g) { return g.giorno; }).join(','), '2020-01-02,2020-01-05',
+    'i giorni vanno dal più vecchio al più recente');
+  // Oltre i dieci giorni le righe dei dispositivi sono scadute: quanti fossero
+  // non si sa più, e si risponde null invece di uno zero che sembrerebbe vero.
+  uguale(vecchio.corpo.giorni[1].dispositivi, null, 'di un giorno vecchio non si sa più quanti dispositivi fossero');
+  uguale(vecchio.corpo.giorni[1].aperturePerDispositivo, null, 'e nemmeno le aperture per dispositivo');
+  uguale(vecchio.corpo.giorni[1].aperture, 40, 'le aperture di quel giorno invece restano');
+}
+
+async function testCalendarioConteggi(worker) {
+  const env = envConTurni();
+  const kv = env.TURNI;
+  const gestore = await accedi(worker, env, PASS_GESTORE, '203.0.113.53');
+  const percorso = await indirizzoDi(worker, env, gestore.cookie, 'FLORENZAN');
+  const frammento = FORMA_INDIRIZZO.exec(percorso)[2].slice(0, 12);
+
+  // L'app del calendario ripassa cinque volte nello stesso giorno: è un
+  // abbonamento che sta leggendo, non cinque.
+  for (let i = 0; i < 5; i++) {
+    uguale((await worker.fetch(richiesta('GET', percorso), env)).status, 200, 'il calendario si apre');
+  }
+  // Una firma sbagliata non conta niente: si contano solo le letture riuscite.
+  await worker.fetch(richiesta('GET', '/cal/florenzan-' + 'A'.repeat(22) + '.ics'), env);
+
+  const uso = await leggiUso(worker, env, gestore.cookie);
+  uguale(uso.corpo.calendario.iscritti, 1, 'un abbonamento distinto');
+  uguale(uso.corpo.calendario.letture, 1, 'cinque passaggi nello stesso giorno valgono una lettura');
+  uguale(uso.corpo.calendario.richieste, 1, 'un indirizzo chiesto');
+
+  const secondo = await indirizzoDi(worker, env, gestore.cookie, 'D\'AMORE');
+  await worker.fetch(richiesta('GET', secondo), env);
+  const dopo = await leggiUso(worker, env, gestore.cookie);
+  uguale(dopo.corpo.calendario.iscritti, 2, 'due abbonamenti distinti');
+  uguale(dopo.corpo.calendario.letture, 2, 'due letture');
+  uguale(dopo.corpo.calendario.richieste, 2, 'due indirizzi chiesti');
+
+  // Del calendario si tiene un pezzo della firma, mai lo slug: il cognome non
+  // deve comparire da nessuna parte nel registro.
+  vero(kv.store.has('calsub:' + MESE + ':' + frammento),
+    'l\'abbonato è segnato con i primi dodici caratteri della firma');
+  const scritture = kv.puts.filter(function (p) { return p.key.indexOf('cal') === 0; });
+  vero(scritture.length >= 3, 'il calendario ha scritto i suoi contatori');
+  for (const scrittura of scritture) {
+    nonContiene(scrittura.key.toLowerCase(), 'florenzan', 'nelle chiavi del calendario non finisce il cognome');
+    nonContiene(scrittura.key.toLowerCase(), 'damore', 'nelle chiavi del calendario non finisce il cognome');
+  }
+  const iscritto = scritture.filter(function (p) { return p.key.indexOf('calsub:') === 0; })[0];
+  uguale(iscritto.opzioni && iscritto.opzioni.expirationTtl, 3456000, 'l\'abbonato scade dopo 40 giorni');
+  const delGiorno = scritture.filter(function (p) { return p.key.indexOf('calday:') === 0; })[0];
+  uguale(delGiorno.opzioni && delGiorno.opzioni.expirationTtl, 864000, 'il segno del giorno scade dopo 10 giorni');
+}
+
 async function testUsoSenzaPersone(worker) {
   const env = envFinto();
   const kv = env.TURNI;
@@ -1432,6 +1535,8 @@ const prove = [
   ['registro d\'uso: validazione', testUsoValidazione],
   ['registro d\'uso: lettura', testUsoLettura],
   ['registro d\'uso: classifica', testUsoClassifica],
+  ['registro d\'uso: giorni', testUsoGiorni],
+  ['calendario: conteggi', testCalendarioConteggi],
   ['registro d\'uso: nessuna persona', testUsoSenzaPersone]
 ];
 

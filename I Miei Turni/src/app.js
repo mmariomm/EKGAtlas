@@ -1835,7 +1835,9 @@
     usoSent = true;
     var body;
     try {
-      body = JSON.stringify({ dev: deviceId(), installata: installed(), ricerche: ricerche });
+      body = JSON.stringify({
+        dev: deviceId(), installata: installed(), haCercato: ricerche.length > 0, ricerche: ricerche,
+      });
     } catch (e) { return; }
     try {
       if (navigator.sendBeacon && navigator.sendBeacon('uso', new Blob([body], { type: 'application/json' }))) return;
@@ -1857,24 +1859,65 @@
       plural(num(d.dispositivi), 'dispositivo', 'dispositivi'),
       num(d.installate) + ' con l’app installata',
       plural(num(d.aperture), 'apertura', 'aperture'),
-      plural(num(d.ricerche), 'ricerca', 'ricerche'),
+      num(pick(d, ['cercatori', 'haCercato', 'conRicerca', 'hanno_cercato'])) + ' hanno cercato un nome',
     ].join(' · ');
     reviewCancel.hidden = true;
     reviewSave.disabled = false;
     reviewSave.textContent = 'Chiudi';
     clear(reviewBody);
-    var list = topNames(d.nomi);
-    if (!list.length) {
-      reviewBody.appendChild(el('p', { class: 'cap', text: 'Ancora nessuna ricerca.' }));
-    } else {
-      list.forEach(function (row) {
-        reviewBody.appendChild(el('div', { class: 'usorow' }, [
-          el('span', { class: 'usorow__n', text: row.nome }),
-          el('span', { class: 'usorow__c', text: String(row.n) }),
-        ]));
-      });
+
+    // Le righe che il server non manda semplicemente non compaiono.
+    var cal = d.calendario;
+    if (cal) {
+      reviewBody.appendChild(el('p', { class: 'usoline', text: 'Calendario: ' + [
+        plural(num(pick(cal, ['iscritti', 'abbonati'])), 'iscritto', 'iscritti'),
+        plural(num(pick(cal, ['letture', 'download', 'scaricamenti'])), 'lettura', 'letture'),
+        plural(num(pick(cal, ['indirizzi', 'richieste', 'link'])), 'richiesta dell’indirizzo', 'richieste dell’indirizzo'),
+      ].join(' · ') }));
     }
+
+    var giorni = Array.isArray(d.giorni) ? d.giorni : [];
+    giorni.forEach(function (g) {
+      var when = pick(g, ['giorno', 'data', 'date']);
+      var aperture = num(pick(g, ['aperture', 'letture']));
+      var disp = num(pick(g, ['dispositivi', 'dev']));
+      var media = pick(g, ['media', 'aTesta'], null);
+      if (typeof media !== 'number' || !isFinite(media)) media = disp ? aperture / disp : 0;
+      reviewBody.appendChild(el('div', { class: 'usorow' }, [
+        el('span', { class: 'usorow__n', text: dayLabel(when) }),
+        el('span', { class: 'usorow__c', text: aperture + ' aperture · ' + disp + ' dispositivi · ' +
+          decimal(media) + ' a testa' }),
+      ]));
+    });
+
+    var list = topNames(d.nomi);
+    if (!list.length && !giorni.length) {
+      reviewBody.appendChild(el('p', { class: 'cap', text: 'Ancora nessuna ricerca.' }));
+    }
+    list.forEach(function (row) {
+      reviewBody.appendChild(el('div', { class: 'usorow' }, [
+        el('span', { class: 'usorow__n', text: row.nome }),
+        el('span', { class: 'usorow__c', text: String(row.n) }),
+      ]));
+    });
     openReview();
+  }
+
+  // Un decimale, con la virgola, e senza lo zero inutile: 1,6 · 1 · 2,4.
+  function decimal(v) {
+    return (Math.round(v * 10) / 10).toFixed(1).replace('.', ',').replace(/,0$/, '');
+  }
+
+  function dayLabel(v) {
+    var s = String(v || '');
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? R.formatDate(s) : s;
+  }
+
+  function pick(o, keys, dflt) {
+    for (var i = 0; i < keys.length; i++) {
+      if (o && o[keys[i]] !== undefined && o[keys[i]] !== null) return o[keys[i]];
+    }
+    return dflt === undefined ? 0 : dflt;
   }
 
   function num(v) { return typeof v === 'number' && isFinite(v) ? v : 0; }
