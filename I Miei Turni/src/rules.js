@@ -506,7 +506,7 @@ var TurniRules = (function () {
   }
 
   // File .ics con i turni di una persona (di un mese, o di tutti se month è vuoto).
-  // Gli eventi si chiamano "PS SSG Mattina", "PS OSG Notte", … con gli orari veri.
+  // Gli eventi si chiamano "PS DEA Mattina", "PS OSG Notte", … con gli orari veri.
   function buildICS(assignments, person, month, options) {
     var opts = options || {};
     var stamp = icsStamp(opts.now === undefined ? Date.now() : opts.now);
