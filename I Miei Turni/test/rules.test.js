@@ -479,18 +479,6 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   });
   ok(tuttiSommano, 'per ogni nome, i conti delle due sedi sommati danno il totale');
 
-  // Una giornata a cavallo delle due sedi vale mezza di qua e mezza di là.
-  const misto = TurniRules.buildAssignments([
-    synRoster('DEA', { '2026-09-01': { M: ['X'] } }),
-    synRoster('OSG', { '2026-09-01': { P: ['X'] } }),
-  ]);
-  deepEq(
-    [TurniRules.personStats(misto, 'X', '2026-09').giornateEq,
-     TurniRules.personStats(misto, 'X', '2026-09', 'DEA').giornateEq,
-     TurniRules.personStats(misto, 'X', '2026-09', 'OSG').giornateEq],
-    [1, 0.5, 0.5],
-    'giornata su due sedi: 1 in totale, mezza per sede'
-  );
 
   // L'addizione è coerente con le ore per tutti: (giornate equivalenti + notti) × 12 = ore.
   const tuttiCoerenti = TurniRules.hoursByName(realAssignments, '2026-09')
@@ -540,6 +528,14 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   deepEq([sA3.mattine, sA3.ore], [2, 6], 'mattina + ambulatorio lo stesso giorno: 2 mattine, 6 h reali');
 
   const asB = TurniRules.buildAssignments([synRoster('DEA', { '2026-09-01': { M: ['X'] } }), synRoster('OSG', { '2026-09-01': { P: ['X'] } })]);
+  // Una giornata a cavallo delle due sedi vale mezza di qua e mezza di là.
+  deepEq(
+    [TurniRules.personStats(asB, 'X', '2026-09').giornateEq,
+     TurniRules.personStats(asB, 'X', '2026-09', 'DEA').giornateEq,
+     TurniRules.personStats(asB, 'X', '2026-09', 'OSG').giornateEq],
+    [1, 0.5, 0.5],
+    'giornata su due sedi: 1 in totale, mezza per sede'
+  );
   const sB = TurniRules.personStats(asB, 'X', '2026-09');
   deepEq([sB.giornate, sB.mattine, sB.pomeriggi, sB.dodici, sB.ore, sB.oreByHospital], [1, 0, 0, 1, 12, { DEA: 6, OSG: 6 }], 'mattina DEA + pomeriggio OSG = una giornata da 12 h');
   eq(TurniRules.computeFindings(asB)[0].short, 'mattina 1 DEA → pomeriggio 1 OSG · riposo 0 h', 'short del cambio sede');
