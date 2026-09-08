@@ -266,6 +266,9 @@ button { font: inherit; color: inherit; }
 }
 .callink__note { margin: 5px 0 0; font-size: 11.5px; line-height: 1.4; color: var(--muted); }
 
+.totale__k { font-weight: 600; color: var(--ink); }
+.totale__dec { color: var(--muted); }
+
 .totale__row {
   display: grid; grid-template-columns: 42px 1fr; gap: 8px; align-items: baseline;
   font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums;
@@ -485,9 +488,14 @@ button { font: inherit; color: inherit; }
   font-family: var(--mono); font-size: 14px; line-height: 16px; color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
-.tab__daybtn .n.is-today {
-  display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: -2px;
-  border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink);
+/* Oggi: una cornice intorno a tutto il gruppo del giorno. È disegnata dalla
+   cella della data (che copre già l'altezza del gruppo con il rowspan) e larga
+   quanto la tabella: non aggiunge un pixel di altezza e non muove niente. */
+.tab__g.is-today .tab__day { position: relative; }
+.tab__g.is-today .tab__day::after {
+  content: ""; position: absolute; left: 0; top: 0; height: 100%;
+  width: var(--tabw, 100%);
+  border: 2px solid var(--ink); border-radius: 4px; pointer-events: none;
 }
 .tab__daybtn .wd { font-size: 10px; line-height: 11px; color: var(--muted); }
 

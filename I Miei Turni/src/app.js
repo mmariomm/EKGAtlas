@@ -677,25 +677,28 @@
     }).filter(function (r) { return r.st.turni > 0; });
     var all = R.personStats(D.assignments, name, state.month);
 
-    totaleEl.appendChild(el('div', { class: 'totale__head' }, [
+    var allSpan = rows.length > 1 ? el('span', { class: 'totale__all' }, sumNodes(all)) : null;
+    var head = el('div', { class: 'totale__head' }, [
       el('h2', { class: 'stitle', text: 'Totale' }),
       ' ',
-      rows.length > 1 ? el('span', {
-        class: 'totale__all',
-        text: R.formatNumber(all.turniEq) + ' turni · ' + R.formatHours(all.ore),
-      }) : null,
-    ]));
+      allSpan,
+    ]);
+    totaleEl.appendChild(head);
 
     rows.forEach(function (r) {
       totaleEl.appendChild(el('div', { class: 'totale__row' }, [
         el('span', { class: 'totale__site ' + hospClass(r.hospital), text: r.hospital }),
         ' ',
-        el('span', {
-          text: R.formatNumber(r.st.giornateEq) + 'G + ' + r.st.notti + 'N = ' +
-            R.formatNumber(r.st.turniEq) + ' turni · ' + R.formatHours(r.st.ore),
-        }),
+        el('span', {}, sumNodes(r.st)),
       ]));
     });
+
+    // Il titolo porta la somma scomposta solo se ci sta su una riga: altrimenti
+    // torna alla forma breve, che è quella che deve restare leggibile.
+    if (allSpan && wraps(allSpan)) {
+      clear(allSpan);
+      append(allSpan, R.formatNumber(all.turniEq) + ' turni · ' + R.formatHours(all.ore));
+    }
 
     totaleEl.appendChild(el('button', {
       class: 'btn btn--solid btn--wide', type: 'button', id: 'icsBtn',
@@ -946,6 +949,7 @@
     clear(tableWrap);
     if (!D.days.length || !D.slotRows.length) return;
     var table = el('table', { class: 'tab', 'aria-labelledby': 'tabTitle' });
+    var tableStyle = function (w) { table.style.setProperty('--tabw', w + 'px'); };
 
     // Percentuali (non calc(): Chrome le ignora sui <col>), rifatte a ogni cambio
     // di larghezza. 27px al giorno, 28px alla sigla della sede; il resto va alle
@@ -981,9 +985,13 @@
       ]));
     })))));
 
-    var body = el('tbody');
     D.days.forEach(function (d) {
       var weekend = isWeekend(d.date);
+      // Un gruppo di righe per giorno: così «oggi» si può incorniciare tutto
+      // insieme, senza toccare le righe delle sedi.
+      var body = el('tbody', {
+        class: 'tab__g' + (d.date === today ? ' is-today' : ''), data: { date: d.date },
+      });
       D.monthRosters.forEach(function (r, i) {
         var tr = el('tr', {
           class: 'tab__r ' + (i === 0 ? 'tab__r--first' : 'tab__r--second') +
@@ -996,8 +1004,9 @@
         cols.forEach(function (c) { tr.appendChild(cellFor(r, d, c, 'td')); });
         body.appendChild(tr);
       });
+      table.appendChild(body);
     });
-    table.appendChild(body);
+    tableStyle(tableWidth);
     table.classList.toggle('is-pinned', !!state.pinned && !state.query.trim());
     table.classList.toggle('is-multi', D.monthRosters.length > 1);
     tableWrap.appendChild(table);
@@ -1122,7 +1131,7 @@
         class: 'tab__daybtn', type: 'button', data: { goday: d.date },
         'aria-label': d.day + ' ' + weekdayLong(d.date) + ': apri nel calendario',
       }, [
-        el('span', { class: 'n' + (d.date === today ? ' is-today' : ''), text: String(d.day) }),
+        el('span', { class: 'n', text: String(d.day) }),
         el('span', { class: 'wd', text: R.formatDate(d.date).split(' ')[0] }),
       ]));
   }
@@ -1168,6 +1177,32 @@
         el('span', { class: 'ore__v', text: R.formatHours(st.ore).replace(/\s*h$/, '') }),
       ]));
     });
+  }
+
+  // «G2,5 (M2 + P3) + N4 = 6,5 turni · 78h»: la lettera prima del numero, in
+  // grassetto; la scomposizione fra parentesi è una nota, non una seconda somma.
+  // G = (M + P) / 2, con dentro anche le mattine e i pomeriggi delle giornate.
+  function sumNodes(st) {
+    var out = [];
+    var k = function (letter) { return el('b', { class: 'totale__k', text: letter }); };
+    if (st.giornateEq) {
+      out.push(k('G'), R.formatNumber(st.giornateEq));
+      if (st.mattineTot || st.pomeriggiTot) {
+        out.push(el('span', { class: 'totale__dec' }, [
+          ' (', k('M'), String(st.mattineTot || 0), ' + ', k('P'), String(st.pomeriggiTot || 0), ')',
+        ]));
+      }
+      if (st.notti) out.push(' + ');
+    }
+    if (st.notti) out.push(k('N'), String(st.notti));
+    out.push(' = ' + R.formatNumber(st.turniEq) + ' turni · ' + R.formatHours(st.ore));
+    return out;
+  }
+
+  // Vero se il testo occupa più di una riga (misura reale, non stima).
+  function wraps(node) {
+    var line = parseFloat(getComputedStyle(node).lineHeight) || 16;
+    return node.getBoundingClientRect().height > line * 1.6;
   }
 
   // ---------------------------------------------------------------------------

@@ -94,6 +94,7 @@ const MSG_PASSWORD_ERRATA = 'Password non valida.';
 const MSG_TROPPI_TENTATIVI = 'Troppi tentativi, riprova tra qualche minuto.';
 const MSG_SERVIZIO = 'Servizio non disponibile, riprova più tardi.';
 const MSG_SOLO_GESTORE = 'Non hai i permessi per vedere queste informazioni.';
+const MSG_STATS_NON_DISPONIBILI = 'Statistiche non disponibili.';
 const MSG_NOME_NON_TROVATO = 'Nome non trovato.';
 
 const encoder = new TextEncoder();
@@ -477,15 +478,20 @@ async function bumpCounter(env, key) {
   }
 }
 
-async function readCounter(env, key) {
-  if (!env.TURNI) return 0;
+// Una chiave che non c'è vale zero: è un mese in cui non è ancora successo
+// niente. Una chiave illeggibile è un'altra cosa e non passa da qui.
+function asCount(raw) {
+  const value = parseInt(raw === null || raw === undefined ? '0' : raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function parseLastSave(raw) {
+  if (raw === null || raw === undefined) return null;
   try {
-    const raw = await env.TURNI.get(key);
-    const value = parseInt(raw === null || raw === undefined ? '0' : raw, 10);
-    return Number.isFinite(value) && value > 0 ? value : 0;
+    return JSON.parse(raw);
   } catch (err) {
-    console.warn('Conteggio non leggibile, KV non raggiungibile: ' + errText(err));
-    return 0;
+    console.warn('Data dell\'ultimo salvataggio illeggibile: ' + errText(err));
+    return null;
   }
 }
 
@@ -509,22 +515,35 @@ async function noteSave(env, rosters, nowSec) {
   }
 }
 
-// L'ultimo salvataggio, o null se non è ancora stato fatto niente.
-async function readLastSave(env) {
-  if (!env.TURNI) return null;
+// I conteggi del mese, oppure null se KV non risponde. «Zero» e «non si è
+// potuto leggere» sono due risposte diverse e non vanno confuse: un contatore
+// che dice zero mentre in realtà non lo si è potuto guardare racconta una bugia
+// a chi legge (crederebbe che non l'abbia usata nessuno).
+async function readStats(env, month) {
+  if (!env.TURNI) {
+    console.error('Binding KV TURNI assente: impossibile leggere i conteggi.');
+    return null;
+  }
   let raw;
   try {
-    raw = await env.TURNI.get(KV_STAT_LAST_SAVE);
+    raw = await Promise.all([
+      env.TURNI.get(KV_STAT_LOGIN + month),
+      env.TURNI.get(KV_STAT_LOGIN + month + ':' + ROLE_MEDICO),
+      env.TURNI.get(KV_STAT_LOGIN + month + ':' + ROLE_GESTORE),
+      env.TURNI.get(KV_STAT_SAVE + month),
+      env.TURNI.get(KV_STAT_LAST_SAVE)
+    ]);
   } catch (err) {
-    console.warn('Ultimo salvataggio non leggibile, KV non raggiungibile: ' + errText(err));
+    console.error('Conteggi non leggibili, KV non raggiungibile: ' + errText(err));
     return null;
   }
-  if (raw === null || raw === undefined) return null;
-  try {
-    return JSON.parse(raw);
-  } catch (err) {
-    return null;
-  }
+  return {
+    mese: month,
+    accessi: asCount(raw[0]),
+    perRuolo: { medico: asCount(raw[1]), gestore: asCount(raw[2]) },
+    salvataggi: asCount(raw[3]),
+    ultimoSalvataggio: parseLastSave(raw[4])
+  };
 }
 
 // ============================================================
@@ -697,28 +716,17 @@ async function handleDataPut(request, env, nowSec) {
 
 // GET /stats — solo il gestore: quanto si usa e quando è stata aggiornata.
 // Niente dati ancora in KV significa zeri, non un errore: è la risposta giusta
-// per un mese appena cominciato.
+// per un mese appena cominciato. Se invece KV non si lascia leggere, 503: è una
+// pagina che serve a dire la verità sull'uso, e uno zero al posto di un errore
+// farebbe capire «non l'ha usata nessuno» invece di «non abbiamo potuto vedere».
 async function handleStats(request, env, nowSec) {
   const role = await sessionRole(request, env, nowSec);
   if (!role) return jsonResponse({ error: 'Accesso richiesto.' }, 401);
   if (role !== ROLE_GESTORE) return jsonResponse({ error: MSG_SOLO_GESTORE }, 403);
 
-  const month = monthKey(nowSec);
-  const [accessi, medico, gestore, salvataggi, ultimo] = await Promise.all([
-    readCounter(env, KV_STAT_LOGIN + month),
-    readCounter(env, KV_STAT_LOGIN + month + ':' + ROLE_MEDICO),
-    readCounter(env, KV_STAT_LOGIN + month + ':' + ROLE_GESTORE),
-    readCounter(env, KV_STAT_SAVE + month),
-    readLastSave(env)
-  ]);
-
-  return jsonResponse({
-    mese: month,
-    accessi: accessi,
-    perRuolo: { medico: medico, gestore: gestore },
-    salvataggi: salvataggi,
-    ultimoSalvataggio: ultimo
-  }, 200);
+  const stats = await readStats(env, monthKey(nowSec));
+  if (stats === null) return jsonResponse({ error: MSG_STATS_NON_DISPONIBILI }, 503);
+  return jsonResponse(stats, 200);
 }
 
 // ============================================================

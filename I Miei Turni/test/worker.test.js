@@ -1011,7 +1011,10 @@ async function testContatoriNonBloccanti(worker) {
   uguale(stats.risposta.status, 200, 'contatori guasti: /stats risponde lo stesso');
   uguale(stats.corpo.accessi, 0, 'contatori guasti: quello che non è stato scritto vale zero');
 
-  // KV completamente giù, anche in lettura: sempre 200 con gli zeri.
+  // KV completamente giù, anche in lettura: l'accesso riesce lo stesso, ma
+  // /stats non finge di aver guardato. Zero e «non si è potuto leggere» sono
+  // due risposte diverse: qui la seconda, altrimenti il gestore crederebbe che
+  // non l'abbia usata nessuno.
   const giu = envFinto({
     TURNI: {
       async get() { throw new Error('KV giù'); },
@@ -1021,10 +1024,17 @@ async function testContatoriNonBloccanti(worker) {
   });
   const accesso = await accedi(worker, giu, PASS_GESTORE, '198.51.100.58');
   uguale(accesso.risposta.status, 303, 'KV giù: l\'accesso riesce');
-  const zeri = await leggiStats(worker, giu, accesso.cookie);
-  uguale(zeri.risposta.status, 200, 'KV giù: /stats risponde 200');
-  uguale(zeri.corpo.accessi, 0, 'KV giù: zeri');
-  uguale(zeri.corpo.ultimoSalvataggio, null, 'KV giù: nessun ultimo salvataggio');
+  const rotto = await leggiStats(worker, giu, accesso.cookie);
+  uguale(rotto.risposta.status, 503, 'KV giù: /stats dice 503, non zeri');
+  uguale(rotto.corpo.error, 'Statistiche non disponibili.', 'KV giù: messaggio in italiano');
+  uguale(rotto.corpo.accessi, undefined, 'KV giù: nessun numero inventato');
+
+  // Stessa cosa se il binding non c'è proprio.
+  const senzaKv = envFinto({ TURNI: undefined });
+  const suSenzaKv = await accedi(worker, senzaKv, PASS_GESTORE, '198.51.100.61');
+  const senzaBinding = await leggiStats(worker, senzaKv, suSenzaKv.cookie);
+  uguale(senzaBinding.risposta.status, 503, 'senza binding KV: /stats dice 503');
+  uguale(senzaBinding.corpo.error, 'Statistiche non disponibili.', 'senza binding KV: messaggio in italiano');
 }
 
 // ============================================================
