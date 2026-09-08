@@ -45,6 +45,7 @@
   --cal-dea: color-mix(in srgb, var(--dea) 8%, transparent);
   --cal-osg: color-mix(in srgb, var(--osg) 8%, transparent);
   --cal-alt: color-mix(in srgb, var(--alt) 8%, transparent);
+  --ubar: color-mix(in srgb, var(--ink) 45%, var(--surface));   /* le barre del cruscotto */
 
   --hl: light-dark(#FFE45C, #F2D53C);
   --hl-ink: #1A1500;
@@ -445,8 +446,14 @@ button { font: inherit; color: inherit; }
 .detail__cell .pill.is-in { padding-left: 16px; }
 /* La parte di giornata coperta, accanto al nome: piccola, dello stesso inchiostro
    ma più chiara, così sta bene anche sul giallo e sui fondi delle segnalazioni. */
+/* L'orario sta attaccato al suo nome, non all'altro capo della cella: chi legge
+   deve accoppiarli con l'occhio, e l'occhio accoppia ciò che è vicino. */
+.ttag {
+  margin-left: 2px; flex: none; font-size: 9.5px; letter-spacing: .04em;
+  color: color-mix(in srgb, currentColor 52%, transparent);
+}
 .tchip {
-  margin-left: auto; flex: none; padding-left: 5px;
+  margin-left: 6px; flex: none;
   font-family: var(--mono); font-size: 9px; letter-spacing: -.02em;
   font-variant-numeric: tabular-nums;
   color: color-mix(in srgb, currentColor 58%, transparent);
@@ -700,10 +707,46 @@ button { font: inherit; color: inherit; }
 .chg__note { display: block; font-size: 11px; color: var(--muted); }
 
 /* Lettura d'uso: un elenco, non un cruscotto. */
-.usoline { margin: 8px 0 2px; font-size: 12.5px; color: var(--ink-2); }
-.usorow { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 13px; }
-.usorow__n { color: var(--ink); }
-.usorow__c { font-family: var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* --------------------------------------------------------------------------
+   Cruscotto «Uso»: una serie per grafico, un asse solo, un grigio d'inchiostro.
+   Nessun colore di sede e nessun giallo: qui non vorrebbero dire niente.
+   -------------------------------------------------------------------------- */
+.sheet.is-uso .sheet__panel { height: 92vh; max-height: 92vh; }
+.sheet.is-uso .sheet__t { display: flex; align-items: center; gap: 8px; }
+.uso__m { font-family: var(--ui); font-size: 13px; color: var(--muted); }
+.uso__nav { display: flex; gap: 2px; margin-left: auto; }
+.uso__nav .navday { width: 30px; height: 30px; }
+.uso__h { margin: 18px 0 2px; font-family: var(--display); font-size: 16px; font-weight: 400; color: var(--ink); }
+
+.unums { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin: 12px 0 4px; }
+.unum { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.unum__n { font-size: 24px; line-height: 1.05; color: var(--ink); font-variant-numeric: tabular-nums; }
+.unum__l { font-size: 11.5px; line-height: 1.25; color: var(--muted); }
+
+.uq { margin: 16px 0 6px; font-size: 14px; line-height: 1.4; color: var(--ink); }
+.ubar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.ubar span { display: block; height: 100%; border-radius: 4px; background: var(--ink-2); }
+.unote { margin: 5px 0 0; font-size: 11px; line-height: 1.4; color: var(--muted); }
+.unote--last { margin-top: 16px; }
+
+.uchart { margin-top: 18px; }
+.uchart__t { display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px; font-size: 12.5px; color: var(--ink-2); }
+.uchart__t b { font-weight: 500; }
+.uchart__max { font-family: var(--mono); font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.uplot { display: flex; align-items: flex-end; gap: 2px; }
+.ucol {
+  flex: 1 1 0; min-width: 0; padding: 0; border: 0; border-radius: 3px 3px 0 0;
+  background: var(--ubar); cursor: pointer;
+}
+.ucol.is-today { background: var(--ink); }
+.ucol--none { background: none; cursor: default; height: 100%; }
+.uxs {
+  display: flex; gap: 2px; margin-top: 3px;
+  font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.uxs span { flex: 1 1 0; min-width: 0; text-align: center; }
+.useg { background: var(--ubar); }
+.uso__names .ore__row { min-height: 26px; }
 
 /* Presentazione: un passo solo, quello del telefono che si ha in mano. */
 .intro__step {
@@ -2432,7 +2475,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = TurniRules
 
 </script>
 <script>
-window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file":"TURNI_PS_DEA_SETTEMBRE_2026.xlsx","sheet":"Turni MPA I","hospital":"DEA","title":"TURNI PS/DEA","periodLabel":"SETTEMBRE 2026","month":"2026-09","slots":[{"key":"M","label":"MATTINA","header":"MATTINA 8-14","sub":"PS Codici M-OBI/Codici minori","roles":["PS Codici M-OBI","Codici minori"],"start":"08:00","end":"14:00","startMin":480,"endMin":840,"col":"C"},{"key":"P","label":"POMERIGGIO","header":"POMERIGGIO 14-20","sub":"PS Codici M-OBI/Codici Minori","roles":["PS Codici M-OBI","Codici Minori"],"start":"14:00","end":"20:00","startMin":840,"endMin":1200,"col":"E"},{"key":"N","label":"NOTTE","header":"NOTTE 20-08","sub":"PS Codici M-OBI/Codici Minori","roles":["PS Codici M-OBI","Codici Minori"],"start":"20:00","end":"08:00","startMin":1200,"endMin":1920,"col":"F"},{"key":"A","label":"AMBULATORIO CM","header":"AMBULATORIO CM 09.30-15.00","sub":"","roles":[],"start":"08:00","end":"14:00","startMin":480,"endMin":840,"col":"G"}],"days":[{"day":1,"date":"2026-09-01","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"ORLANDI","names":["ORLANDI"]},"P":{"raw":"ORLANDI/LOFFREDO","names":["ORLANDI","LOFFREDO"]},"N":{"raw":"COLOMBINI/KASO","names":["COLOMBINI","KASO"]},"A":{"raw":"LOFFREDO","names":["LOFFREDO"]}}},{"day":2,"date":"2026-09-02","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"FRANCESCONI/TOSKIC","names":["FRANCESCONI","TOSKIC"]},"N":{"raw":"DE PASQUALE/UGAZ","names":["DE PASQUALE","UGAZ"]},"A":{"raw":"TOSKIC","names":["TOSKIC"]}}},{"day":3,"date":"2026-09-03","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI","names":["FRANCESCONI"]},"P":{"raw":"FRANCESCONI/KASO","names":["FRANCESCONI","KASO"]},"N":{"raw":"ORLANDITOSKIC","names":["ORLANDITOSKIC"]},"A":{"raw":"MASTROLILLI","names":["MASTROLILLI"]}}},{"day":4,"date":"2026-09-04","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI","names":["FRANCESCONI"]},"P":{"raw":"MEGLIO/PASTORE","names":["MEGLIO","PASTORE"]},"N":{"raw":"COLOMBINI/LOFFREDO","names":["COLOMBINI","LOFFREDO"]},"A":{"raw":"","names":[]}}},{"day":5,"date":"2026-09-05","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"PASTORE/FLORENZAN","names":["PASTORE","FLORENZAN"]},"P":{"raw":"PASTORE/FLORENZAN","names":["PASTORE","FLORENZAN"]},"N":{"raw":"PUSCEDDU/KASO","names":["PUSCEDDU","KASO"]},"A":{"raw":"","names":[]}}},{"day":6,"date":"2026-09-06","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"MEGLIO/TOSKIC","names":["MEGLIO","TOSKIC"]},"P":{"raw":"MEGLIO/TOSKIC","names":["MEGLIO","TOSKIC"]},"N":{"raw":"PASTORE/FLORENZAN","names":["PASTORE","FLORENZAN"]},"A":{"raw":"","names":[]}}},{"day":7,"date":"2026-09-07","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"CARAPELLA","names":["CARAPELLA"]},"P":{"raw":"CARAPELLA/TOSKIC","names":["CARAPELLA","TOSKIC"]},"N":{"raw":"PUSCEDDU/FRANCESCONI","names":["PUSCEDDU","FRANCESCONI"]},"A":{"raw":"TOSKIC","names":["TOSKIC"]}}},{"day":8,"date":"2026-09-08","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"ORLANDI","names":["ORLANDI"]},"P":{"raw":"ORLANDI/PASTORE","names":["ORLANDI","PASTORE"]},"N":{"raw":"TCHIPEV/UGAZ","names":["TCHIPEV","UGAZ"]},"A":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]}}},{"day":9,"date":"2026-09-09","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/KASO","names":["PASTORE","KASO"]},"N":{"raw":"DE PASQUALE/TOSKIC","names":["DE PASQUALE","TOSKIC"]},"A":{"raw":"FRANCESCONI","names":["FRANCESCONI"]}}},{"day":10,"date":"2026-09-10","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"CARAPELLA","names":["CARAPELLA"]},"P":{"raw":"FRANCESCONI/UGAZ","names":["FRANCESCONI","UGAZ"]},"N":{"raw":"ORLANDI/TCHIPEV","names":["ORLANDI","TCHIPEV"]},"A":{"raw":"PASTORE","names":["PASTORE"]}}},{"day":11,"date":"2026-09-11","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"MEGLIO","names":["MEGLIO"]},"P":{"raw":"MEGLIO/KASO","names":["MEGLIO","KASO"]},"N":{"raw":"FRANCESCONI/RUSSOTTO","names":["FRANCESCONI","RUSSOTTO"]},"A":{"raw":"KASO","names":["KASO"]}}},{"day":12,"date":"2026-09-12","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"CARAPELLA/D'AMORE","names":["CARAPELLA","D'AMORE"]},"P":{"raw":"CARAPELLA/D'AMORE","names":["CARAPELLA","D'AMORE"]},"N":{"raw":"TCHIPEV/RUSSOTTO","names":["TCHIPEV","RUSSOTTO"]},"A":{"raw":"","names":[]}}},{"day":13,"date":"2026-09-13","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI/SANTAMBROGIO","names":["FRANCESCONI","SANTAMBROGIO"]},"P":{"raw":"FRANCESCONI/SANTAMBROGIO","names":["FRANCESCONI","SANTAMBROGIO"]},"N":{"raw":"PUSCEDDU/RUSSOTTO","names":["PUSCEDDU","RUSSOTTO"]},"A":{"raw":"","names":[]}}},{"day":14,"date":"2026-09-14","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/TOSKIC","names":["PASTORE","TOSKIC"]},"N":{"raw":"FRANCESCONI/RUSSOTTO","names":["FRANCESCONI","RUSSOTTO"]},"A":{"raw":"TOSKIC","names":["TOSKIC"]}}},{"day":15,"date":"2026-09-15","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"ORLANDI","names":["ORLANDI"]},"P":{"raw":"ORLANDI/STRACKA","names":["ORLANDI","STRACKA"]},"N":{"raw":"TCHIPEV/KASO","names":["TCHIPEV","KASO"]},"A":{"raw":"LOFFREDO","names":["LOFFREDO"]}}},{"day":16,"date":"2026-09-16","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"FRANCESCONI/STRACKA","names":["FRANCESCONI","STRACKA"]},"N":{"raw":"PUSCEDDU/TOSKIC","names":["PUSCEDDU","TOSKIC"]},"A":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]}}},{"day":17,"date":"2026-09-17","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"MASTROLILLI","names":["MASTROLILLI"]},"P":{"raw":"COLOMBINI/KASO","names":["COLOMBINI","KASO"]},"N":{"raw":"ORLANDI/TCHIPEV","names":["ORLANDI","TCHIPEV"]},"A":{"raw":"FRANCESCONI","names":["FRANCESCONI"]}}},{"day":18,"date":"2026-09-18","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/TRUBBIA","names":["PASTORE","TRUBBIA"]},"N":{"raw":"COLOMBINI/FLORENZAN","names":["COLOMBINI","FLORENZAN"]},"A":{"raw":"FRANCESCONI","names":["FRANCESCONI"]}}},{"day":19,"date":"2026-09-19","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"DE PASQUALE/LOFFREDO","names":["DE PASQUALE","LOFFREDO"]},"P":{"raw":"DE PASQUALE/LOFFREDO","names":["DE PASQUALE","LOFFREDO"]},"N":{"raw":"CARAPELLA/PASTORE","names":["CARAPELLA","PASTORE"]},"A":{"raw":"","names":[]}}},{"day":20,"date":"2026-09-20","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"DE PASQUALE/FLORENZAN","names":["DE PASQUALE","FLORENZAN"]},"P":{"raw":"DE PASQUALE/FLORENZAN","names":["DE PASQUALE","FLORENZAN"]},"N":{"raw":"COLOMBINI/TRUBBIA","names":["COLOMBINI","TRUBBIA"]},"A":{"raw":"","names":[]}}},{"day":21,"date":"2026-09-21","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/KASO","names":["PASTORE","KASO"]},"N":{"raw":"FRANCESCONI/FLORENZAN","names":["FRANCESCONI","FLORENZAN"]},"A":{"raw":"KASO","names":["KASO"]}}},{"day":22,"date":"2026-09-22","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"ORLANDI","names":["ORLANDI"]},"P":{"raw":"ORLANDI/KASO","names":["ORLANDI","KASO"]},"N":{"raw":"BOTTA/TCHIPEV","names":["BOTTA","TCHIPEV"]},"A":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]}}},{"day":23,"date":"2026-09-23","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI","names":["FRANCESCONI"]},"P":{"raw":"PASTORE/LOFFREDO","names":["PASTORE","LOFFREDO"]},"N":{"raw":"CARAPELLA/COLOMBINI","names":["CARAPELLA","COLOMBINI"]},"A":{"raw":"LOFFREDO","names":["LOFFREDO"]}}},{"day":24,"date":"2026-09-24","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"FRANCESCONI/KASO","names":["FRANCESCONI","KASO"]},"N":{"raw":"TCHIPEV/ORLANDI","names":["TCHIPEV","ORLANDI"]},"A":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]}}},{"day":25,"date":"2026-09-25","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI","names":["FRANCESCONI"]},"P":{"raw":"FRANCESCONI/LOFFREDO","names":["FRANCESCONI","LOFFREDO"]},"N":{"raw":"COLOMBINI/TRUBBIA","names":["COLOMBINI","TRUBBIA"]},"A":{"raw":"LOFFREDO","names":["LOFFREDO"]}}},{"day":26,"date":"2026-09-26","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"DE PASQUALE /TOSKIC","names":["DE PASQUALE","TOSKIC"]},"P":{"raw":"DE PASQUALE/TOSKIC","names":["DE PASQUALE","TOSKIC"]},"N":{"raw":"TCHIPEV/KASO","names":["TCHIPEV","KASO"]},"A":{"raw":"","names":[]}}},{"day":27,"date":"2026-09-27","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"PUSCEDDU/FRANCESCONI","names":["PUSCEDDU","FRANCESCONI"]},"P":{"raw":"PUSCEDDU/FRANCESCONI","names":["PUSCEDDU","FRANCESCONI"]},"N":{"raw":"DE PASQUALE/TOSKIC","names":["DE PASQUALE","TOSKIC"]},"A":{"raw":"","names":[]}}},{"day":28,"date":"2026-09-28","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/KASO","names":["PASTORE","KASO"]},"N":{"raw":"FRANCESCONI/FLORENZAN","names":["FRANCESCONI","FLORENZAN"]},"A":{"raw":"KASO","names":["KASO"]}}},{"day":29,"date":"2026-09-29","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"CARAPELLA","names":["CARAPELLA"]},"P":{"raw":"CARAPELLA/TRUBBIA","names":["CARAPELLA","TRUBBIA"]},"N":{"raw":"TCHIPEV/KASO","names":["TCHIPEV","KASO"]},"A":{"raw":"TRUBBIA","names":["TRUBBIA"]}}},{"day":30,"date":"2026-09-30","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]},"P":{"raw":"FRANCESCONI/FLORENZAN","names":["FRANCESCONI","FLORENZAN"]},"N":{"raw":"PASTORE/PUSCEDDU","names":["PASTORE","PUSCEDDU"]},"A":{"raw":"TOSKIC","names":["TOSKIC"]}}}],"warnings":[]},{"file":"TURNI_PS_OSG_SETTEMBRE_2026.xlsx","sheet":"Turni MPA I","hospital":"OSG","title":"TURNI PS OSG","periodLabel":"SETTEMBRE 2026","month":"2026-09","slots":[{"key":"M","label":"MATTINA","header":"MATTINA 8-14","sub":"Guardia Ps/OBI","roles":["Guardia Ps","OBI"],"start":"08:00","end":"14:00","startMin":480,"endMin":840,"col":"C"},{"key":"P","label":"POMERIGGIO","header":"POMERIGGIO 14-20","sub":"Alta Intensità-OBI/Bassa intensità","roles":["Alta Intensità-OBI","Bassa intensità"],"start":"14:00","end":"20:00","startMin":840,"endMin":1200,"col":"E"},{"key":"N","label":"NOTTE","header":"NOTTE 20-08","sub":"Alta Intensità-OBI/Bassa intensità","roles":["Alta Intensità-OBI","Bassa intensità"],"start":"20:00","end":"08:00","startMin":1200,"endMin":1920,"col":"F"}],"days":[{"day":1,"date":"2026-09-01","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/DI PIETRO","names":["BRAHAM","DI PIETRO"]},"P":{"raw":"BRAHAM/ DI VITA F.","names":["BRAHAM","DI VITA F."]},"N":{"raw":"RAMONDINO/FLORENZAN","names":["RAMONDINO","FLORENZAN"]}}},{"day":2,"date":"2026-09-02","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PELLEGATTA/ALBERTI","names":["PELLEGATTA","ALBERTI"]},"P":{"raw":"REBESCO/BRAHAM","names":["REBESCO","BRAHAM"]},"N":{"raw":"DI PIETRO/RAMONDINO","names":["DI PIETRO","RAMONDINO"]}}},{"day":3,"date":"2026-09-03","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/ALBERTI","names":["REBESCO","ALBERTI"]},"P":{"raw":"PACIONI/DI VITA F.","names":["PACIONI","DI VITA F."]},"N":{"raw":"BOTTA/SANCHES","names":["BOTTA","SANCHES"]}}},{"day":4,"date":"2026-09-04","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/FLORENZAN","names":["REBESCO","FLORENZAN"]},"P":{"raw":"REBESCO/BRAHAM","names":["REBESCO","BRAHAM"]},"N":{"raw":"PACIONI/UGAZ","names":["PACIONI","UGAZ"]}}},{"day":5,"date":"2026-09-05","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/DI VITA F.","names":["DI PIETRO","DI VITA F."]},"P":{"raw":"DI PIETRO/DI VITA F.","names":["DI PIETRO","DI VITA F."]},"N":{"raw":"REBESCO/SANCHES","names":["REBESCO","SANCHES"]}}},{"day":6,"date":"2026-09-06","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"BOTTA/DI VITA F.","names":["BOTTA","DI VITA F."]},"P":{"raw":"BOTTA/DI VITA F.","names":["BOTTA","DI VITA F."]},"N":{"raw":"BRAHAM/ALBERTAZZI","names":["BRAHAM","ALBERTAZZI"]}}},{"day":7,"date":"2026-09-07","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"PETRELLA/PELLEGATTA","names":["PETRELLA","PELLEGATTA"]},"P":{"raw":"SCHIRALDI/SANCHES","names":["SCHIRALDI","SANCHES"]},"N":{"raw":"RAMONDINO/TRUBBIA","names":["RAMONDINO","TRUBBIA"]}}},{"day":8,"date":"2026-09-08","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"PELLEGATTA/BOULES","names":["PELLEGATTA","BOULES"]},"P":{"raw":"BRAHAM/BOULES","names":["BRAHAM","BOULES"]},"N":{"raw":"RAMONDINO/SANCHES","names":["RAMONDINO","SANCHES"]}}},{"day":9,"date":"2026-09-09","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/ALBERTI","names":["BRAHAM","ALBERTI"]},"P":{"raw":"BRAHAM/FLORENZAN","names":["BRAHAM","FLORENZAN"]},"N":{"raw":"PELLEGATTA/TRUBBIA","names":["PELLEGATTA","TRUBBIA"]}}},{"day":10,"date":"2026-09-10","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/PETRELLA","names":["DI PIETRO","PETRELLA"]},"P":{"raw":"DI PIETRO/FLORENZAN","names":["DI PIETRO","FLORENZAN"]},"N":{"raw":"BOTTA/BRAHAM","names":["BOTTA","BRAHAM"]}}},{"day":11,"date":"2026-09-11","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"PELLEGATTA/FLORENZAN","names":["PELLEGATTA","FLORENZAN"]},"P":{"raw":"SCHIRALDI/DI VITA F.","names":["SCHIRALDI","DI VITA F."]},"N":{"raw":"RAMONDINO/UGAZ","names":["RAMONDINO","UGAZ"]}}},{"day":12,"date":"2026-09-12","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/NOFF","names":["DI PIETRO","NOFF"]},"P":{"raw":"DI PIETRO/NOFF","names":["DI PIETRO","NOFF"]},"N":{"raw":"BOTTA/CAPRINI","names":["BOTTA","CAPRINI"]}}},{"day":13,"date":"2026-09-13","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"NOFF/DI PIETRO","names":["NOFF","DI PIETRO"]},"P":{"raw":"NOFF/DI PIETRO","names":["NOFF","DI PIETRO"]},"N":{"raw":"PELLEGATTA/UGAZ","names":["PELLEGATTA","UGAZ"]}}},{"day":14,"date":"2026-09-14","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/ALBERTI","names":["REBESCO","ALBERTI"]},"P":{"raw":"REBESCO/BRAHAM","names":["REBESCO","BRAHAM"]},"N":{"raw":"RAMONDINO/BOBROWSKI","names":["RAMONDINO","BOBROWSKI"]}}},{"day":15,"date":"2026-09-15","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/BOULES","names":["BRAHAM","BOULES"]},"P":{"raw":"BRAHAM/REBESCO","names":["BRAHAM","REBESCO"]},"N":{"raw":"PELLEGATTA/UGAZ","names":["PELLEGATTA","UGAZ"]}}},{"day":16,"date":"2026-09-16","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PACIONI/BOBROWSKI","names":["PACIONI","BOBROWSKI"]},"P":{"raw":"PACIONI/BOBROWSKI","names":["PACIONI","BOBROWSKI"]},"N":{"raw":"REBESCO/TRUBBIA","names":["REBESCO","TRUBBIA"]}}},{"day":17,"date":"2026-09-17","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/PETRELLA","names":["DI PIETRO","PETRELLA"]},"P":{"raw":"DI PIETRO/PACIONI","names":["DI PIETRO","PACIONI"]},"N":{"raw":"BRAHAM/BOTTA","names":["BRAHAM","BOTTA"]}}},{"day":18,"date":"2026-09-18","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/BOULES","names":["BRAHAM","BOULES"]},"P":{"raw":"REBESCO/BOULES","names":["REBESCO","BOULES"]},"N":{"raw":"DI PIETRO/BOBROWSKI","names":["DI PIETRO","BOBROWSKI"]}}},{"day":19,"date":"2026-09-19","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/NOFF","names":["REBESCO","NOFF"]},"P":{"raw":"REBESCO/NOFF","names":["REBESCO","NOFF"]},"N":{"raw":"PELLEGATTA/TRUBBIA","names":["PELLEGATTA","TRUBBIA"]}}},{"day":20,"date":"2026-09-20","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/BOULES","names":["DI PIETRO","BOULES"]},"P":{"raw":"DI PIETRO/BOULES","names":["DI PIETRO","BOULES"]},"N":{"raw":"REBESCO/BOBROWSKI","names":["REBESCO","BOBROWSKI"]}}},{"day":21,"date":"2026-09-21","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"BOTTA/BOULES","names":["BOTTA","BOULES"]},"P":{"raw":"BRAHAM/PACIONI","names":["BRAHAM","PACIONI"]},"N":{"raw":"RAMONDINO/BOULES","names":["RAMONDINO","BOULES"]}}},{"day":22,"date":"2026-09-22","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/PELLEGATTA","names":["BRAHAM","PELLEGATTA"]},"P":{"raw":"REBESCO/DI VITA F.","names":["REBESCO","DI VITA F."]},"N":{"raw":"RAMONDINO/ALBERTAZZI","names":["RAMONDINO","ALBERTAZZI"]}}},{"day":23,"date":"2026-09-23","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PELLEGATTA/BOBROWSKI","names":["PELLEGATTA","BOBROWSKI"]},"P":{"raw":"REBESCO/BOBROWSKI","names":["REBESCO","BOBROWSKI"]},"N":{"raw":"PACIONI/SANCHES","names":["PACIONI","SANCHES"]}}},{"day":24,"date":"2026-09-24","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/PELLEGATTA","names":["DI PIETRO","PELLEGATTA"]},"P":{"raw":"DI PIETRO/BOBROWSKI","names":["DI PIETRO","BOBROWSKI"]},"N":{"raw":"BRAHAM/BOULES","names":["BRAHAM","BOULES"]}}},{"day":25,"date":"2026-09-25","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"PACIONI/BOBROWSKI","names":["PACIONI","BOBROWSKI"]},"P":{"raw":"PACIONI/BOBROWSKI","names":["PACIONI","BOBROWSKI"]},"N":{"raw":"REBESCO/DI PIETRO","names":["REBESCO","DI PIETRO"]}}},{"day":26,"date":"2026-09-26","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"NOFF/ALBERTI","names":["NOFF","ALBERTI"]},"P":{"raw":"NOFF/MEGLIO","names":["NOFF","MEGLIO"]},"N":{"raw":"PACIONI/CAPRINI","names":["PACIONI","CAPRINI"]}}},{"day":27,"date":"2026-09-27","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"NOFF/MEGLIO","names":["NOFF","MEGLIO"]},"P":{"raw":"NOFF/MEGLIO","names":["NOFF","MEGLIO"]},"N":{"raw":"PELLEGATTA/TRUBBIA","names":["PELLEGATTA","TRUBBIA"]}}},{"day":28,"date":"2026-09-28","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/BRAHAM","names":["REBESCO","BRAHAM"]},"P":{"raw":"BRAHAM/REBESCO","names":["BRAHAM","REBESCO"]},"N":{"raw":"RAMONDINO/ALBERTAZZI","names":["RAMONDINO","ALBERTAZZI"]}}},{"day":29,"date":"2026-09-29","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"COLOMBINI/BOULES","names":["COLOMBINI","BOULES"]},"P":{"raw":"PACIONI/ALBERTI","names":["PACIONI","ALBERTI"]},"N":{"raw":"BRAHAM/RAMONDINO","names":["BRAHAM","RAMONDINO"]}}},{"day":30,"date":"2026-09-30","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/PETRELLA","names":["DI PIETRO","PETRELLA"]},"P":{"raw":"DI PIETRO/REBESCO","names":["DI PIETRO","REBESCO"]},"N":{"raw":"PACIONI/COLOMBINI","names":["PACIONI","COLOMBINI"]}}}],"warnings":[]}]};
+window.TURNI_DATA = {"generatedAt":"2026-09-08T14:28:28.954Z","rosters":[{"file":"TURNI_PS_DEA_SETTEMBRE_2026.xlsx","sheet":"Turni MPA I","hospital":"DEA","title":"TURNI PS/DEA","periodLabel":"SETTEMBRE 2026","month":"2026-09","slots":[{"key":"M","label":"MATTINA","header":"MATTINA 8-14","sub":"PS Codici M-OBI/Codici minori","roles":["PS Codici M-OBI","Codici minori"],"start":"08:00","end":"14:00","startMin":480,"endMin":840,"col":"C"},{"key":"P","label":"POMERIGGIO","header":"POMERIGGIO 14-20","sub":"PS Codici M-OBI/Codici Minori","roles":["PS Codici M-OBI","Codici Minori"],"start":"14:00","end":"20:00","startMin":840,"endMin":1200,"col":"E"},{"key":"N","label":"NOTTE","header":"NOTTE 20-08","sub":"PS Codici M-OBI/Codici Minori","roles":["PS Codici M-OBI","Codici Minori"],"start":"20:00","end":"08:00","startMin":1200,"endMin":1920,"col":"F"},{"key":"A","label":"AMBULATORIO CM","header":"AMBULATORIO CM 09.30-15.00","sub":"","roles":[],"start":"08:00","end":"14:00","startMin":480,"endMin":840,"col":"G"}],"days":[{"day":1,"date":"2026-09-01","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"ORLANDI","names":["ORLANDI"]},"P":{"raw":"ORLANDI/LOFFREDO","names":["ORLANDI","LOFFREDO"]},"N":{"raw":"COLOMBINI/KASO","names":["COLOMBINI","KASO"]},"A":{"raw":"LOFFREDO","names":["LOFFREDO"]}}},{"day":2,"date":"2026-09-02","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"FRANCESCONI/TOSKIC","names":["FRANCESCONI","TOSKIC"]},"N":{"raw":"DE PASQUALE/UGAZ","names":["DE PASQUALE","UGAZ"]},"A":{"raw":"TOSKIC","names":["TOSKIC"]}}},{"day":3,"date":"2026-09-03","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI","names":["FRANCESCONI"]},"P":{"raw":"FRANCESCONI/KASO","names":["FRANCESCONI","KASO"]},"N":{"raw":"ORLANDITOSKIC","names":["ORLANDITOSKIC"]},"A":{"raw":"MASTROLILLI","names":["MASTROLILLI"]}}},{"day":4,"date":"2026-09-04","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI","names":["FRANCESCONI"]},"P":{"raw":"MEGLIO/PASTORE","names":["MEGLIO","PASTORE"]},"N":{"raw":"COLOMBINI/LOFFREDO","names":["COLOMBINI","LOFFREDO"]},"A":{"raw":"","names":[]}}},{"day":5,"date":"2026-09-05","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"PASTORE/FLORENZAN","names":["PASTORE","FLORENZAN"]},"P":{"raw":"PASTORE/FLORENZAN","names":["PASTORE","FLORENZAN"]},"N":{"raw":"PUSCEDDU/KASO","names":["PUSCEDDU","KASO"]},"A":{"raw":"","names":[]}}},{"day":6,"date":"2026-09-06","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"MEGLIO/TOSKIC","names":["MEGLIO","TOSKIC"]},"P":{"raw":"MEGLIO/TOSKIC","names":["MEGLIO","TOSKIC"]},"N":{"raw":"PASTORE/FLORENZAN","names":["PASTORE","FLORENZAN"]},"A":{"raw":"","names":[]}}},{"day":7,"date":"2026-09-07","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"CARAPELLA","names":["CARAPELLA"]},"P":{"raw":"CARAPELLA/TOSKIC","names":["CARAPELLA","TOSKIC"]},"N":{"raw":"PUSCEDDU/FRANCESCONI","names":["PUSCEDDU","FRANCESCONI"]},"A":{"raw":"TOSKIC","names":["TOSKIC"]}}},{"day":8,"date":"2026-09-08","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"ORLANDI","names":["ORLANDI"]},"P":{"raw":"ORLANDI/PASTORE","names":["ORLANDI","PASTORE"]},"N":{"raw":"TCHIPEV/UGAZ","names":["TCHIPEV","UGAZ"]},"A":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]}}},{"day":9,"date":"2026-09-09","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/KASO","names":["PASTORE","KASO"]},"N":{"raw":"DE PASQUALE/TOSKIC","names":["DE PASQUALE","TOSKIC"]},"A":{"raw":"FRANCESCONI","names":["FRANCESCONI"]}}},{"day":10,"date":"2026-09-10","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"CARAPELLA","names":["CARAPELLA"]},"P":{"raw":"FRANCESCONI/UGAZ","names":["FRANCESCONI","UGAZ"]},"N":{"raw":"ORLANDI/TCHIPEV","names":["ORLANDI","TCHIPEV"]},"A":{"raw":"PASTORE","names":["PASTORE"]}}},{"day":11,"date":"2026-09-11","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"MEGLIO","names":["MEGLIO"]},"P":{"raw":"MEGLIO/KASO","names":["MEGLIO","KASO"]},"N":{"raw":"FRANCESCONI/RUSSOTTO","names":["FRANCESCONI","RUSSOTTO"]},"A":{"raw":"KASO","names":["KASO"]}}},{"day":12,"date":"2026-09-12","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"CARAPELLA/D'AMORE","names":["CARAPELLA","D'AMORE"]},"P":{"raw":"CARAPELLA/D'AMORE","names":["CARAPELLA","D'AMORE"]},"N":{"raw":"TCHIPEV/RUSSOTTO","names":["TCHIPEV","RUSSOTTO"]},"A":{"raw":"","names":[]}}},{"day":13,"date":"2026-09-13","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI/SANTAMBROGIO","names":["FRANCESCONI","SANTAMBROGIO"]},"P":{"raw":"FRANCESCONI/SANTAMBROGIO","names":["FRANCESCONI","SANTAMBROGIO"]},"N":{"raw":"PUSCEDDU/RUSSOTTO","names":["PUSCEDDU","RUSSOTTO"]},"A":{"raw":"","names":[]}}},{"day":14,"date":"2026-09-14","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/TOSKIC","names":["PASTORE","TOSKIC"]},"N":{"raw":"FRANCESCONI/RUSSOTTO","names":["FRANCESCONI","RUSSOTTO"]},"A":{"raw":"TOSKIC","names":["TOSKIC"]}}},{"day":15,"date":"2026-09-15","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"ORLANDI","names":["ORLANDI"]},"P":{"raw":"ORLANDI/STRACKA","names":["ORLANDI","STRACKA"]},"N":{"raw":"TCHIPEV/KASO","names":["TCHIPEV","KASO"]},"A":{"raw":"LOFFREDO","names":["LOFFREDO"]}}},{"day":16,"date":"2026-09-16","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"FRANCESCONI/STRACKA","names":["FRANCESCONI","STRACKA"]},"N":{"raw":"PUSCEDDU/TOSKIC","names":["PUSCEDDU","TOSKIC"]},"A":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]}}},{"day":17,"date":"2026-09-17","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"MASTROLILLI","names":["MASTROLILLI"]},"P":{"raw":"COLOMBINI/KASO","names":["COLOMBINI","KASO"]},"N":{"raw":"ORLANDI/TCHIPEV","names":["ORLANDI","TCHIPEV"]},"A":{"raw":"FRANCESCONI","names":["FRANCESCONI"]}}},{"day":18,"date":"2026-09-18","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/TRUBBIA","names":["PASTORE","TRUBBIA"]},"N":{"raw":"COLOMBINI/FLORENZAN","names":["COLOMBINI","FLORENZAN"]},"A":{"raw":"FRANCESCONI","names":["FRANCESCONI"]}}},{"day":19,"date":"2026-09-19","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"DE PASQUALE/LOFFREDO","names":["DE PASQUALE","LOFFREDO"]},"P":{"raw":"DE PASQUALE/LOFFREDO","names":["DE PASQUALE","LOFFREDO"]},"N":{"raw":"CARAPELLA/PASTORE","names":["CARAPELLA","PASTORE"]},"A":{"raw":"","names":[]}}},{"day":20,"date":"2026-09-20","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"DE PASQUALE/FLORENZAN","names":["DE PASQUALE","FLORENZAN"]},"P":{"raw":"DE PASQUALE/FLORENZAN","names":["DE PASQUALE","FLORENZAN"]},"N":{"raw":"COLOMBINI/TRUBBIA","names":["COLOMBINI","TRUBBIA"]},"A":{"raw":"","names":[]}}},{"day":21,"date":"2026-09-21","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/KASO","names":["PASTORE","KASO"]},"N":{"raw":"FRANCESCONI/FLORENZAN","names":["FRANCESCONI","FLORENZAN"]},"A":{"raw":"KASO","names":["KASO"]}}},{"day":22,"date":"2026-09-22","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"ORLANDI","names":["ORLANDI"]},"P":{"raw":"ORLANDI/KASO","names":["ORLANDI","KASO"]},"N":{"raw":"BOTTA/TCHIPEV","names":["BOTTA","TCHIPEV"]},"A":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]}}},{"day":23,"date":"2026-09-23","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI","names":["FRANCESCONI"]},"P":{"raw":"PASTORE/LOFFREDO","names":["PASTORE","LOFFREDO"]},"N":{"raw":"CARAPELLA/COLOMBINI","names":["CARAPELLA","COLOMBINI"]},"A":{"raw":"LOFFREDO","names":["LOFFREDO"]}}},{"day":24,"date":"2026-09-24","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"FRANCESCONI/KASO","names":["FRANCESCONI","KASO"]},"N":{"raw":"TCHIPEV/ORLANDI","names":["TCHIPEV","ORLANDI"]},"A":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]}}},{"day":25,"date":"2026-09-25","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"FRANCESCONI","names":["FRANCESCONI"]},"P":{"raw":"FRANCESCONI/LOFFREDO","names":["FRANCESCONI","LOFFREDO"]},"N":{"raw":"COLOMBINI/TRUBBIA","names":["COLOMBINI","TRUBBIA"]},"A":{"raw":"LOFFREDO","names":["LOFFREDO"]}}},{"day":26,"date":"2026-09-26","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"DE PASQUALE /TOSKIC","names":["DE PASQUALE","TOSKIC"]},"P":{"raw":"DE PASQUALE/TOSKIC","names":["DE PASQUALE","TOSKIC"]},"N":{"raw":"TCHIPEV/KASO","names":["TCHIPEV","KASO"]},"A":{"raw":"","names":[]}}},{"day":27,"date":"2026-09-27","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"PUSCEDDU/FRANCESCONI","names":["PUSCEDDU","FRANCESCONI"]},"P":{"raw":"PUSCEDDU/FRANCESCONI","names":["PUSCEDDU","FRANCESCONI"]},"N":{"raw":"DE PASQUALE/TOSKIC","names":["DE PASQUALE","TOSKIC"]},"A":{"raw":"","names":[]}}},{"day":28,"date":"2026-09-28","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"PASTORE","names":["PASTORE"]},"P":{"raw":"PASTORE/KASO","names":["PASTORE","KASO"]},"N":{"raw":"FRANCESCONI/FLORENZAN","names":["FRANCESCONI","FLORENZAN"]},"A":{"raw":"KASO","names":["KASO"]}}},{"day":29,"date":"2026-09-29","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"CARAPELLA","names":["CARAPELLA"]},"P":{"raw":"CARAPELLA/TRUBBIA","names":["CARAPELLA","TRUBBIA"]},"N":{"raw":"TCHIPEV/KASO","names":["TCHIPEV","KASO"]},"A":{"raw":"TRUBBIA","names":["TRUBBIA"]}}},{"day":30,"date":"2026-09-30","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"GIUSTIZIERI","names":["GIUSTIZIERI"]},"P":{"raw":"FRANCESCONI/FLORENZAN","names":["FRANCESCONI","FLORENZAN"]},"N":{"raw":"PASTORE/PUSCEDDU","names":["PASTORE","PUSCEDDU"]},"A":{"raw":"TOSKIC","names":["TOSKIC"]}}}],"warnings":[]},{"file":"TURNI_PS_OSG_SETTEMBRE_2026.xlsx","sheet":"Turni MPA I","hospital":"OSG","title":"TURNI PS OSG","periodLabel":"SETTEMBRE 2026","month":"2026-09","slots":[{"key":"M","label":"MATTINA","header":"MATTINA 8-14","sub":"Guardia Ps/OBI","roles":["Guardia Ps","OBI"],"start":"08:00","end":"14:00","startMin":480,"endMin":840,"col":"C"},{"key":"P","label":"POMERIGGIO","header":"POMERIGGIO 14-20","sub":"Alta Intensità-OBI/Bassa intensità","roles":["Alta Intensità-OBI","Bassa intensità"],"start":"14:00","end":"20:00","startMin":840,"endMin":1200,"col":"E"},{"key":"N","label":"NOTTE","header":"NOTTE 20-08","sub":"Alta Intensità-OBI/Bassa intensità","roles":["Alta Intensità-OBI","Bassa intensità"],"start":"20:00","end":"08:00","startMin":1200,"endMin":1920,"col":"F"}],"days":[{"day":1,"date":"2026-09-01","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/DI PIETRO","names":["BRAHAM","DI PIETRO"]},"P":{"raw":"BRAHAM/ DI VITA F.","names":["BRAHAM","DI VITA F."]},"N":{"raw":"RAMONDINO/FLORENZAN","names":["RAMONDINO","FLORENZAN"]}}},{"day":2,"date":"2026-09-02","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PELLEGATTA/ALBERTI","names":["PELLEGATTA","ALBERTI"]},"P":{"raw":"REBESCO/BRAHAM","names":["REBESCO","BRAHAM"]},"N":{"raw":"DI PIETRO/RAMONDINO","names":["DI PIETRO","RAMONDINO"]}}},{"day":3,"date":"2026-09-03","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/ALBERTI","names":["REBESCO","ALBERTI"]},"P":{"raw":"PACIONI/DI VITA F.","names":["PACIONI","DI VITA F."]},"N":{"raw":"BOTTA/SANCHES","names":["BOTTA","SANCHES"]}}},{"day":4,"date":"2026-09-04","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/FLORENZAN","names":["REBESCO","FLORENZAN"]},"P":{"raw":"REBESCO/BRAHAM","names":["REBESCO","BRAHAM"]},"N":{"raw":"PACIONI/UGAZ","names":["PACIONI","UGAZ"]}}},{"day":5,"date":"2026-09-05","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/DI VITA F.","names":["DI PIETRO","DI VITA F."]},"P":{"raw":"DI PIETRO/DI VITA F.","names":["DI PIETRO","DI VITA F."]},"N":{"raw":"REBESCO/SANCHES","names":["REBESCO","SANCHES"]}}},{"day":6,"date":"2026-09-06","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"BOTTA/DI VITA F.","names":["BOTTA","DI VITA F."]},"P":{"raw":"BOTTA/DI VITA F.","names":["BOTTA","DI VITA F."]},"N":{"raw":"BRAHAM/ALBERTAZZI","names":["BRAHAM","ALBERTAZZI"]}}},{"day":7,"date":"2026-09-07","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"PETRELLA/PELLEGATTA","names":["PETRELLA","PELLEGATTA"]},"P":{"raw":"SCHIRALDI/SANCHES","names":["SCHIRALDI","SANCHES"]},"N":{"raw":"RAMONDINO/TRUBBIA","names":["RAMONDINO","TRUBBIA"]}}},{"day":8,"date":"2026-09-08","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"PELLEGATTA/BOULES","names":["PELLEGATTA","BOULES"]},"P":{"raw":"BRAHAM/BOULES","names":["BRAHAM","BOULES"]},"N":{"raw":"RAMONDINO/SANCHES","names":["RAMONDINO","SANCHES"]}}},{"day":9,"date":"2026-09-09","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/ALBERTI","names":["BRAHAM","ALBERTI"]},"P":{"raw":"BRAHAM/FLORENZAN","names":["BRAHAM","FLORENZAN"]},"N":{"raw":"PELLEGATTA/TRUBBIA","names":["PELLEGATTA","TRUBBIA"]}}},{"day":10,"date":"2026-09-10","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/PETRELLA","names":["DI PIETRO","PETRELLA"]},"P":{"raw":"DI PIETRO/FLORENZAN","names":["DI PIETRO","FLORENZAN"]},"N":{"raw":"BOTTA/BRAHAM","names":["BOTTA","BRAHAM"]}}},{"day":11,"date":"2026-09-11","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"PELLEGATTA/FLORENZAN","names":["PELLEGATTA","FLORENZAN"]},"P":{"raw":"SCHIRALDI/DI VITA F.","names":["SCHIRALDI","DI VITA F."]},"N":{"raw":"RAMONDINO/UGAZ","names":["RAMONDINO","UGAZ"]}}},{"day":12,"date":"2026-09-12","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/NOFF","names":["DI PIETRO","NOFF"]},"P":{"raw":"DI PIETRO/NOFF","names":["DI PIETRO","NOFF"]},"N":{"raw":"BOTTA/CAPRINI","names":["BOTTA","CAPRINI"]}}},{"day":13,"date":"2026-09-13","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"NOFF/DI PIETRO","names":["NOFF","DI PIETRO"]},"P":{"raw":"NOFF/DI PIETRO","names":["NOFF","DI PIETRO"]},"N":{"raw":"PELLEGATTA/UGAZ","names":["PELLEGATTA","UGAZ"]}}},{"day":14,"date":"2026-09-14","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/ALBERTI","names":["REBESCO","ALBERTI"]},"P":{"raw":"REBESCO/BRAHAM","names":["REBESCO","BRAHAM"]},"N":{"raw":"RAMONDINO/BOBROWSKI","names":["RAMONDINO","BOBROWSKI"]}}},{"day":15,"date":"2026-09-15","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/BOULES","names":["BRAHAM","BOULES"]},"P":{"raw":"BRAHAM/REBESCO","names":["BRAHAM","REBESCO"]},"N":{"raw":"PELLEGATTA/UGAZ","names":["PELLEGATTA","UGAZ"]}}},{"day":16,"date":"2026-09-16","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PACIONI/BOBROWSKI","names":["PACIONI","BOBROWSKI"]},"P":{"raw":"PACIONI/BOBROWSKI","names":["PACIONI","BOBROWSKI"]},"N":{"raw":"REBESCO/TRUBBIA","names":["REBESCO","TRUBBIA"]}}},{"day":17,"date":"2026-09-17","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/PETRELLA","names":["DI PIETRO","PETRELLA"]},"P":{"raw":"DI PIETRO/PACIONI","names":["DI PIETRO","PACIONI"]},"N":{"raw":"BRAHAM/BOTTA","names":["BRAHAM","BOTTA"]}}},{"day":18,"date":"2026-09-18","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/BOULES","names":["BRAHAM","BOULES"]},"P":{"raw":"REBESCO/BOULES","names":["REBESCO","BOULES"]},"N":{"raw":"DI PIETRO/BOBROWSKI","names":["DI PIETRO","BOBROWSKI"]}}},{"day":19,"date":"2026-09-19","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/NOFF","names":["REBESCO","NOFF"]},"P":{"raw":"REBESCO/NOFF","names":["REBESCO","NOFF"]},"N":{"raw":"PELLEGATTA/TRUBBIA","names":["PELLEGATTA","TRUBBIA"]}}},{"day":20,"date":"2026-09-20","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/BOULES","names":["DI PIETRO","BOULES"]},"P":{"raw":"DI PIETRO/BOULES","names":["DI PIETRO","BOULES"]},"N":{"raw":"REBESCO/BOBROWSKI","names":["REBESCO","BOBROWSKI"]}}},{"day":21,"date":"2026-09-21","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"BOTTA/BOULES","names":["BOTTA","BOULES"]},"P":{"raw":"BRAHAM/PACIONI","names":["BRAHAM","PACIONI"]},"N":{"raw":"RAMONDINO/BOULES","names":["RAMONDINO","BOULES"]}}},{"day":22,"date":"2026-09-22","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"BRAHAM/PELLEGATTA","names":["BRAHAM","PELLEGATTA"]},"P":{"raw":"REBESCO/DI VITA F.","names":["REBESCO","DI VITA F."]},"N":{"raw":"RAMONDINO/ALBERTAZZI","names":["RAMONDINO","ALBERTAZZI"]}}},{"day":23,"date":"2026-09-23","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"PELLEGATTA/BOBROWSKI","names":["PELLEGATTA","BOBROWSKI"]},"P":{"raw":"REBESCO/BOBROWSKI","names":["REBESCO","BOBROWSKI"]},"N":{"raw":"PACIONI/SANCHES","names":["PACIONI","SANCHES"]}}},{"day":24,"date":"2026-09-24","weekdayLabel":"GIOVEDI","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/PELLEGATTA","names":["DI PIETRO","PELLEGATTA"]},"P":{"raw":"DI PIETRO/BOBROWSKI","names":["DI PIETRO","BOBROWSKI"]},"N":{"raw":"BRAHAM/BOULES","names":["BRAHAM","BOULES"]}}},{"day":25,"date":"2026-09-25","weekdayLabel":"VENERDI","weekdayOk":true,"cells":{"M":{"raw":"PACIONI/BOBROWSKI","names":["PACIONI","BOBROWSKI"]},"P":{"raw":"PACIONI/BOBROWSKI","names":["PACIONI","BOBROWSKI"]},"N":{"raw":"REBESCO/DI PIETRO","names":["REBESCO","DI PIETRO"]}}},{"day":26,"date":"2026-09-26","weekdayLabel":"SABATO","weekdayOk":true,"cells":{"M":{"raw":"NOFF/ALBERTI","names":["NOFF","ALBERTI"]},"P":{"raw":"NOFF/MEGLIO","names":["NOFF","MEGLIO"]},"N":{"raw":"PACIONI/CAPRINI","names":["PACIONI","CAPRINI"]}}},{"day":27,"date":"2026-09-27","weekdayLabel":"DOMENICA","weekdayOk":true,"cells":{"M":{"raw":"NOFF/MEGLIO","names":["NOFF","MEGLIO"]},"P":{"raw":"NOFF/MEGLIO","names":["NOFF","MEGLIO"]},"N":{"raw":"PELLEGATTA/TRUBBIA","names":["PELLEGATTA","TRUBBIA"]}}},{"day":28,"date":"2026-09-28","weekdayLabel":"LUNEDI","weekdayOk":true,"cells":{"M":{"raw":"REBESCO/BRAHAM","names":["REBESCO","BRAHAM"]},"P":{"raw":"BRAHAM/REBESCO","names":["BRAHAM","REBESCO"]},"N":{"raw":"RAMONDINO/ALBERTAZZI","names":["RAMONDINO","ALBERTAZZI"]}}},{"day":29,"date":"2026-09-29","weekdayLabel":"MARTEDI","weekdayOk":true,"cells":{"M":{"raw":"COLOMBINI/BOULES","names":["COLOMBINI","BOULES"]},"P":{"raw":"PACIONI/ALBERTI","names":["PACIONI","ALBERTI"]},"N":{"raw":"BRAHAM/RAMONDINO","names":["BRAHAM","RAMONDINO"]}}},{"day":30,"date":"2026-09-30","weekdayLabel":"MERCOLEDI","weekdayOk":true,"cells":{"M":{"raw":"DI PIETRO/PETRELLA","names":["DI PIETRO","PETRELLA"]},"P":{"raw":"DI PIETRO/REBESCO","names":["DI PIETRO","REBESCO"]},"N":{"raw":"PACIONI/COLOMBINI","names":["PACIONI","COLOMBINI"]}}}],"warnings":[]}]};
 </script>
 <script>
 /* =============================================================================
@@ -2776,14 +2819,22 @@ window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file"
   // ogni persona si scrive una volta, con accanto la parte di giornata che copre.
   // Le altre fasce restano dov'erano. Spento, le colonne sono quelle del foglio.
   function columns() {
-    var rows = D.slotRows, out = [];
+    var rows = D.slotRows, out = [], day = null, ai = -1;
     for (var i = 0; i < rows.length; i++) {
+      if (rows[i].key === 'A') ai = i;
       if (state.simplify && rows[i].key === 'M' && rows[i + 1] && rows[i + 1].key === 'P') {
-        out.push({ key: 'MP', day: true, mi: i, pi: i + 1, slot: daySlot(rows[i].slot, rows[i + 1].slot) });
+        day = { key: 'MP', day: true, mi: i, pi: i + 1, slot: daySlot(rows[i].slot, rows[i + 1].slot) };
+        out.push(day);
         i++;
       } else {
         out.push({ key: rows[i].key, idx: i, row: rows[i], slot: rows[i].slot });
       }
+    }
+    // L'ambulatorio ha le ore della mattina: con Semplifica sta dentro «Giorno»,
+    // e la sua colonna sparisce invece di ripetere gli stessi nomi.
+    if (day) {
+      day.ai = ai;
+      out = out.filter(function (c) { return c.key !== 'A'; });
     }
     return out;
   }
@@ -2796,37 +2847,63 @@ window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file"
   // Le righe di una cella «Giorno»: una per persona, in ordine di ruolo, e
   // dentro lo stesso ruolo prima chi fa solo la mattina, poi solo il pomeriggio.
   function dayLines(r, day) {
-    var ms = r.slotsByKey.M, ps = r.slotsByKey.P;
-    var m = ms && day ? cellNames(day, r.hospital, ms) : [];
-    var p = ps && day ? cellNames(day, r.hospital, ps) : [];
-    var out = [];
-    for (var i = 0; i < Math.max(m.length, p.length); i++) {
-      var a = m[i], b = p[i];
-      if (a && b && a.name === b.name) { out.push({ n: a, span: 'MP' }); continue; }
-      if (a) out.push({ n: a, span: 'M' });
-      if (b) out.push({ n: b, span: 'P' });
-    }
-    return out;
+    var ms = r.slotsByKey.M, ps = r.slotsByKey.P, as = r.slotsByKey.A;
+    var m = (ms && day) ? cellNames(day, r.hospital, ms) : [];
+    var p = (ps && day) ? cellNames(day, r.hospital, ps) : [];
+    var amb = (as && day) ? cellNames(day, r.hospital, as) : [];
+
+    // La mattina è mattina + ambulatorio; chi fa anche il pomeriggio si scrive
+    // una volta sola, con l'orario intero.
+    var mornings = m.slice();
+    amb.forEach(function (n) {
+      if (!mornings.some(function (x) { return x.name === n.name; })) mornings.push(n);
+    });
+
+    var left = Object.create(null);
+    p.forEach(function (n, i) { left[n.name] = i; });
+
+    var rows = [];
+    mornings.forEach(function (n, i) {
+      var both = left[n.name] !== undefined;
+      var key = i < m.length ? 'M' : 'A';                      // da quale colonna viene
+      rows.push({
+        n: n, keys: both ? key + 'P' : key, i: i, o: 0,
+        ind: n.pos > 0 || (i > 0 && i >= m.length),
+      });
+      if (both) delete left[n.name];
+    });
+    p.forEach(function (n, i) {
+      if (left[n.name] === undefined) return;                  // già unito alla sua mattina
+      rows.push({ n: n, keys: 'P', i: i, o: 1, ind: n.pos > 0 });
+    });
+    rows.sort(function (x, y) { return x.i - y.i || x.o - y.o; });
+    return rows;
   }
 
   // "08–14" + "14–20" → "8–20"; una fascia sola → "8–14". Sempre presente:
   // una riga senza etichetta vorrebbe dire qualcosa che nessuno può indovinare.
-  function spanChip(r, span) {
-    var ms = r.slotsByKey.M, ps = r.slotsByKey.P;
-    var from = span === 'P' ? ps : ms, to = span === 'M' ? ms : ps;
+  function spanChip(r, keys) {
+    var from = r.slotsByKey[keys.charAt(0)], to = r.slotsByKey[keys.charAt(keys.length - 1)];
+    if (!from || !to) return '';
     var a = String(R.timeRange(from)).split('–'), b = String(R.timeRange(to)).split('–');
     return noZero(a[0]) + '–' + noZero(b[1] || b[0]);
   }
   function noZero(t) { return String(t).replace(/^0/, ''); }
 
-  var SPAN_WORD = { MP: 'mattina e pomeriggio', M: 'mattina', P: 'pomeriggio' };
+  var SLOT_SAY = { M: 'mattina', A: 'ambulatorio', P: 'pomeriggio' };
+  function spanWord(keys) {
+    return keys.split('').map(function (k) { return SLOT_SAY[k] || k; }).join(' e ');
+  }
 
   // Nella cella unita il nome sta in due fasce: vale la segnalazione più grave.
-  function sevPair(hospital, date, person) {
-    var a = sevOf(hospital, date, 'M', person), b = sevOf(hospital, date, 'P', person);
-    if (!a) return b;
-    if (!b) return a;
-    return b.sev > a.sev ? b : a;
+  // Una riga che copre due fasce porta la segnalazione più grave delle due.
+  function sevKeys(hospital, date, person, keys) {
+    var worst = null;
+    keys.split('').forEach(function (k) {
+      var f = sevOf(hospital, date, k, person);
+      if (f && (!worst || f.sev > worst.sev)) worst = f;
+    });
+    return worst;
   }
 
   function pillKey(hospital, date, slotKey, person) {
@@ -3319,6 +3396,7 @@ window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file"
     }, [
       el('span', { text: name }),
       opts.chip ? el('span', { class: 'tchip', text: opts.chip }) : null,
+      opts.tag ? el('span', { class: 'ttag', text: opts.tag }) : null,
     ]);
   }
 
@@ -3416,7 +3494,10 @@ window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file"
     var m = measureCols(D.tableNames);
     // La colonna «Giorno» ospita i nomi delle due fasce più la pastiglia dell'orario.
     var need = cols.map(function (c) {
-      return c.day ? Math.max(m.cols[c.mi], m.cols[c.pi]) + m.chip + 4 : m.cols[c.idx] + 2;
+      if (!c.day) return m.cols[c.idx] + 2;
+      var w = Math.max(m.cols[c.mi], m.cols[c.pi], c.ai >= 0 ? m.cols[c.ai] : 0);
+      // il nome, l'orario accanto, e la targhetta dell'ambulatorio dove serve
+      return w + m.chip + 8 + (c.ai >= 0 ? m.tag + 2 : 0);
     });
     var sum = need.reduce(function (x, y) { return x + y; }, 0) || 1;
     // L'avanzo si divide in parti uguali, non in proporzione: così anche la
@@ -3480,7 +3561,9 @@ window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file"
       });
     });
     var chip = el('span', { class: 'tchip', text: '14–20' });
+    var tag = el('span', { class: 'ttag', text: 'amb' });
     ruler.appendChild(chip);
+    ruler.appendChild(tag);
     tableWrap.appendChild(ruler);
     var out = spans.map(function (ss, i) {
       var m = 0;
@@ -3490,8 +3573,9 @@ window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file"
       return Math.max(24, m);
     });
     var chipW = Math.max(24, chip.getBoundingClientRect().width);
+    var tagW = Math.max(14, tag.getBoundingClientRect().width);
     tableWrap.removeChild(ruler);
-    return { cols: out, chip: chipW };
+    return { cols: out, chip: chipW, tag: tagW };
   }
 
   // Sul telefono non c'è il passaggio del mouse: l'intestazione della fascia è
@@ -3513,16 +3597,21 @@ window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file"
   }
 
   function toggleSlotPop(btn, slot) {
+    toggleInfoPop(btn, R.slotFullName(slot), [
+      { c: 'slotpop__t', t: R.slotFullName(slot) },
+      { c: 'slotpop__h', t: R.slotHoursPhrase(slot) },
+      slot.sub ? { c: 'slotpop__s', t: slot.sub } : null,
+    ]);
+  }
+
+  // Lo stesso riquadro serve le intestazioni delle fasce e le colonne del
+  // grafico: il valore si legge al tocco, non stampato su ogni colonna.
+  function toggleInfoPop(btn, label, lines) {
     var same = popBtn === btn;
     closeSlotPop();
     if (same) return;
-    popEl = el('div', {
-      class: 'slotpop', id: 'slotpop', role: 'dialog', 'aria-label': R.slotFullName(slot),
-    }, [
-      el('p', { class: 'slotpop__t', text: R.slotFullName(slot) }),
-      el('p', { class: 'slotpop__h', text: R.slotHoursPhrase(slot) }),
-      slot.sub ? el('p', { class: 'slotpop__s', text: slot.sub }) : null,
-    ]);
+    popEl = el('div', { class: 'slotpop', id: 'slotpop', role: 'dialog', 'aria-label': label },
+      lines.map(function (l) { return l ? el('p', { class: l.c, text: l.t }) : null; }));
     document.body.appendChild(popEl);
     popBtn = btn;
     btn.setAttribute('aria-expanded', 'true');
@@ -3557,13 +3646,14 @@ window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file"
     var cls = tag === 'td' ? 'pill--t' : '';
     if (col.day) {
       dayLines(r, day).forEach(function (line) {
-        var n = line.n;
-        box.appendChild(namePill(n.name, line.span === 'MP'
-          ? sevPair(r.hospital, day.date, n.name)
-          : sevOf(r.hospital, day.date, line.span, n.name), {
-          cls: cls, in: n.pos > 0, slots: line.span, chip: spanChip(r, line.span),
-          title: n.name + ' · ' + SPAN_WORD[line.span] + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
-          label: n.name + ' — ' + SPAN_WORD[line.span] + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
+        var n = line.n, word = spanWord(line.keys);
+        box.appendChild(namePill(n.name, sevKeys(r.hospital, day.date, n.name, line.keys), {
+          cls: cls, in: line.ind, slots: line.keys, chip: spanChip(r, line.keys),
+          // Tre persone alle 8–14 non sono tre persone nella stessa stanza:
+          // la riga che viene dall'ambulatorio lo dice.
+          tag: line.keys.indexOf('A') !== -1 ? 'amb' : null,
+          title: n.name + ' · ' + word + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
+          label: n.name + ' — ' + word + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
         }));
       });
       return box;
@@ -4039,7 +4129,11 @@ window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file"
 
   function fetchJSON(url) {
     return fetch(url, { headers: { accept: 'application/json' } }).then(function (res) {
-      if (!res.ok) throw new Error('http ' + res.status);
+      if (!res.ok) {
+        var e = new Error('http ' + res.status);
+        e.status = res.status;
+        throw e;
+      }
       return res.json();
     });
   }
@@ -4284,60 +4378,198 @@ window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file"
     } catch (e) { /* niente rumore */ }
   }
 
+  // Il cruscotto risponde a tre domande e basta: la usano? sfogliano o cercano
+  // il proprio nome? si sono iscritti al calendario? Un asse e una serie per
+  // grafico, grigio d'inchiostro: i colori delle sedi significano altro.
+  var usoMonth = '';
+
   function showUso() {
-    fetchJSON('uso').then(renderUso, function () { toast('Non riesco a leggere l’uso.', true); });
+    if (!usoMonth) usoMonth = state.month || today.slice(0, 7);
+    loadUso();
   }
 
-  function renderUso(d) {
-    d = d || {};
+  function loadUso() {
+    Promise.all([
+      fetchJSON('uso?mese=' + encodeURIComponent(usoMonth)),
+      fetchJSON('stats').catch(function () { return null; }),
+    ]).then(function (r) {
+      renderUso(r[0] || {}, r[1]);
+    }, function (err) {
+      var code = err && err.status;
+      if (code === 401 || code === 403) { if (sheetMode === 'uso') closeUso(); return; }
+      openUso([el('p', { class: 'cap', text: code === 503 ? 'Registro non disponibile.' : 'Non riesco a leggere l’uso.' })], null);
+    });
+  }
+
+  function stepUso(n) {
+    var y = Number(usoMonth.slice(0, 4)), m = Number(usoMonth.slice(5, 7)) - 1 + n;
+    var d = new Date(Date.UTC(y, m, 1));
+    usoMonth = d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+    loadUso();
+  }
+
+  function openUso(nodes, stamp) {
     sheetMode = 'uso';
-    reviewTitle.textContent = 'Uso della pagina';
-    reviewCap.textContent = [
-      plural(num(d.dispositivi), 'dispositivo', 'dispositivi'),
-      num(d.installate) + ' con l’app installata',
-      plural(num(d.aperture), 'apertura', 'aperture'),
-      num(pick(d, ['cercatori', 'haCercato', 'conRicerca', 'hanno_cercato'])) + ' hanno cercato un nome',
-    ].join(' · ');
+    reviewEl.classList.add('is-uso');
+    clear(reviewTitle);
+    reviewTitle.appendChild(el('span', { text: 'Uso' }));
+    reviewTitle.appendChild(el('span', { class: 'uso__m', text: monthLabel(usoMonth) }));
+    reviewTitle.appendChild(el('span', { class: 'uso__nav' }, [
+      el('button', {
+        class: 'navday', type: 'button', 'aria-label': 'Mese precedente',
+        on: { click: function () { stepUso(-1); } },
+      }, icon('i-prev')),
+      el('button', {
+        class: 'navday', type: 'button', 'aria-label': 'Mese successivo',
+        disabled: usoMonth >= today.slice(0, 7),
+        on: { click: function () { stepUso(1); } },
+      }, icon('i-next')),
+    ]));
+    reviewCap.textContent = stamp ? 'Ultimo aggiornamento dei turni: ' + shortDate(stamp) : '';
+    reviewCap.hidden = !stamp;
     reviewCancel.hidden = true;
     reviewSave.disabled = false;
     reviewSave.textContent = 'Chiudi';
     clear(reviewBody);
-
-    // Le righe che il server non manda semplicemente non compaiono.
-    var cal = d.calendario;
-    if (cal) {
-      reviewBody.appendChild(el('p', { class: 'usoline', text: 'Calendario: ' + [
-        plural(num(pick(cal, ['iscritti', 'abbonati'])), 'iscritto', 'iscritti'),
-        plural(num(pick(cal, ['letture', 'download', 'scaricamenti'])), 'lettura', 'letture'),
-        plural(num(pick(cal, ['indirizzi', 'richieste', 'link'])), 'richiesta dell’indirizzo', 'richieste dell’indirizzo'),
-      ].join(' · ') }));
-    }
-
-    var giorni = Array.isArray(d.giorni) ? d.giorni : [];
-    giorni.forEach(function (g) {
-      var when = pick(g, ['giorno', 'data', 'date']);
-      var aperture = num(pick(g, ['aperture', 'letture']));
-      var disp = num(pick(g, ['dispositivi', 'dev']));
-      var media = pick(g, ['media', 'aTesta'], null);
-      if (typeof media !== 'number' || !isFinite(media)) media = disp ? aperture / disp : 0;
-      reviewBody.appendChild(el('div', { class: 'usorow' }, [
-        el('span', { class: 'usorow__n', text: dayLabel(when) }),
-        el('span', { class: 'usorow__c', text: aperture + ' aperture · ' + disp + ' dispositivi · ' +
-          decimal(media) + ' a testa' }),
-      ]));
-    });
-
-    var list = topNames(d.nomi);
-    if (!list.length && !giorni.length) {
-      reviewBody.appendChild(el('p', { class: 'cap', text: 'Ancora nessuna ricerca.' }));
-    }
-    list.forEach(function (row) {
-      reviewBody.appendChild(el('div', { class: 'usorow' }, [
-        el('span', { class: 'usorow__n', text: row.nome }),
-        el('span', { class: 'usorow__c', text: String(row.n) }),
-      ]));
-    });
+    append(reviewBody, nodes);
     openReview();
+  }
+
+  function renderUso(d, stats) {
+    var giorni = Array.isArray(d.giorni) ? d.giorni : [];
+    var cal = d.calendario || {};
+    var out = [];
+
+    out.push(usoNums([
+      { n: d.dispositivi, l: 'dispositivi' },
+      { n: d.installate, l: 'con l’app installata' },
+      { n: d.aperture, l: 'aperture' },
+      { n: cal.iscritti, l: 'iscritti al calendario' },
+    ]));
+
+    // La domanda vera, scritta a parole: una frase e una barra sola.
+    var ap = d.aperture, sc = d.sessioniConRicerca;
+    if (typeof ap === 'number' && ap > 0 && typeof sc === 'number') {
+      out.push(el('p', { class: 'uq', text: 'Su ' + ap + ' aperture, ' + sc + ' hanno cercato un nome' }));
+      out.push(el('div', { class: 'ubar' },
+        el('span', { style: 'width:' + Math.max(0, Math.min(100, sc / ap * 100)).toFixed(1) + '%' })));
+      out.push(el('p', { class: 'unote', text: 'le altre ' + (ap - sc) + ' hanno solo sfogliato i turni' }));
+    }
+
+    out.push(usoChart('Aperture al giorno', giorni, 'aperture', 90));
+    out.push(usoChart('Aperture per dispositivo', giorni, 'dispositivi', 60));
+    out.push(usoNames(d.cercatiPiu));
+
+    out.push(el('h3', { class: 'uso__h', text: 'Calendario' }));
+    out.push(usoNums([
+      { n: cal.iscritti, l: 'iscritti' },
+      { n: cal.letture, l: 'letture' },
+      { n: cal.richieste, l: 'richieste dell’indirizzo' },
+    ]));
+    out.push(el('p', { class: 'unote', text: 'le letture si contano una volta al giorno per iscritto' }));
+    out.push(usoAccessi(stats));
+
+    openUso(out, stats && stats.ultimoSalvataggio);
+  }
+
+  function usoNums(items) {
+    return el('div', { class: 'unums' }, items.map(function (it) {
+      return el('div', { class: 'unum' }, [
+        el('span', { class: 'unum__n', text: fmtNum(it.n) }),
+        el('span', { class: 'unum__l', text: it.l }),
+      ]);
+    }));
+  }
+
+  // Un campo che manca non è uno zero: si scrive così com'è, cioè niente.
+  function fmtNum(v) { return (typeof v === 'number' && isFinite(v)) ? String(v) : '—'; }
+
+  function usoChart(title, giorni, key, height) {
+    var vals = giorni.map(function (g) {
+      return (typeof g[key] === 'number' && isFinite(g[key])) ? g[key] : null;
+    });
+    if (!vals.some(function (v) { return v !== null; })) return null;
+    var max = vals.reduce(function (a, v) { return v === null ? a : Math.max(a, v); }, 0) || 1;
+
+    var plot = el('div', { class: 'uplot', style: 'height:' + height + 'px' });
+    var xs = el('div', { class: 'uxs' });
+    giorni.forEach(function (g, i) {
+      var v = vals[i];
+      var day = Number(String(g.giorno || '').slice(8, 10)) || (i + 1);
+      if (v === null) {
+        plot.appendChild(el('span', { class: 'ucol ucol--none' }));      // niente dato, non zero
+      } else {
+        var phrase = usoPhrase(g);
+        plot.appendChild(el('button', {
+          class: 'ucol' + (g.giorno === today ? ' is-today' : ''), type: 'button',
+          style: 'height:' + Math.max(2, v / max * 100).toFixed(1) + '%',
+          'aria-label': phrase, 'aria-expanded': 'false', 'aria-controls': 'slotpop',
+          on: {
+            click: function (e) {
+              e.stopPropagation();
+              toggleInfoPop(this, phrase, [
+                { c: 'slotpop__t', t: dayLabel(g.giorno) },
+                { c: 'slotpop__h', t: phrase.split(' · ').slice(1).join(' · ') },
+              ]);
+            },
+          },
+        }));
+      }
+      xs.appendChild(el('span', { text: [1, 8, 15, 22, 29].indexOf(day) !== -1 ? String(day) : '' }));
+    });
+
+    return el('section', { class: 'uchart' }, [
+      el('p', { class: 'uchart__t' }, [
+        el('b', { text: title }),
+        el('span', { class: 'uchart__max', text: 'max ' + max }),
+      ]),
+      plot,
+      xs,
+    ]);
+  }
+
+  function usoPhrase(g) {
+    var per = g.aperturePerDispositivo;
+    if (typeof per !== 'number' && typeof g.aperture === 'number' && g.dispositivi) {
+      per = g.aperture / g.dispositivi;
+    }
+    return [
+      dayLabel(g.giorno),
+      fmtNum(g.aperture) + ' aperture',
+      fmtNum(g.dispositivi) + ' dispositivi',
+      (typeof per === 'number' && isFinite(per) ? decimal(per) : '—') + ' a testa',
+    ].join(' · ');
+  }
+
+  function usoNames(list) {
+    var rows = (Array.isArray(list) ? list : []).slice(0, 20);
+    var box = el('section', { class: 'uso__names' }, el('h3', { class: 'uso__h', text: 'Nomi più cercati' }));
+    if (!rows.length) {
+      box.appendChild(el('p', { class: 'cap', text: 'Nessuna ricerca registrata questo mese.' }));
+      return box;
+    }
+    var max = rows.reduce(function (a, r) { return Math.max(a, num(r.volte)); }, 0) || 1;
+    rows.forEach(function (r) {
+      box.appendChild(el('div', { class: 'ore__row' }, [
+        el('span', { class: 'ore__name', text: String(r.nome) }),
+        el('span', { class: 'ore__bar' },
+          el('span', { class: 'ore__seg useg', style: 'width:' + (num(r.volte) / max * 100).toFixed(1) + '%' })),
+        el('span', { class: 'ore__v', text: fmtNum(r.volte) }),
+      ]));
+    });
+    return box;
+  }
+
+  function usoAccessi(s) {
+    if (!s) return null;
+    var per = s.perRuolo || {};
+    var med = pick(per, ['medico', 'lettura'], null), ges = pick(per, ['gestore', 'modifica'], null);
+    var parts = [plural(num(s.accessi), 'accesso', 'accessi') + ' questo mese'];
+    if (med !== null || ges !== null) {
+      parts.push(fmtNum(med) + ' con la password di lettura, ' + fmtNum(ges) + ' con quella di modifica');
+    }
+    parts.push(plural(num(s.salvataggi), 'salvataggio', 'salvataggi'));
+    return el('p', { class: 'unote unote--last', text: parts.join(' · ') });
   }
 
   // Un decimale, con la virgola, e senza lo zero inutile: 1,6 · 1 · 2,4.
@@ -4358,21 +4590,6 @@ window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file"
   }
 
   function num(v) { return typeof v === 'number' && isFinite(v) ? v : 0; }
-
-  // I nomi possono arrivare come elenco, come coppie o come mappa: si accettano
-  // tutti e tre, e si tengono i venti più cercati.
-  function topNames(raw) {
-    var out = [];
-    if (Array.isArray(raw)) {
-      raw.forEach(function (x) {
-        if (Array.isArray(x)) out.push({ nome: String(x[0]), n: num(x[1]) });
-        else if (x && x.nome !== undefined) out.push({ nome: String(x.nome), n: num(x.n !== undefined ? x.n : x.conteggio) });
-      });
-    } else if (raw && typeof raw === 'object') {
-      Object.keys(raw).forEach(function (k) { out.push({ nome: k, n: num(raw[k]) }); });
-    }
-    return out.sort(function (a, b) { return b.n - a.n; }).slice(0, 20);
-  }
 
   // ---------------------------------------------------------------------------
   // Presentazione: come tenersi la pagina a portata di mano (una volta sola)
@@ -4437,6 +4654,9 @@ window.TURNI_DATA = {"generatedAt":"2026-09-08T14:19:05.570Z","rosters":[{"file"
   function closeUso() {
     sheetMode = 'review';
     reviewCancel.hidden = false;
+    reviewCap.hidden = false;
+    reviewEl.classList.remove('is-uso');
+    reviewTitle.textContent = '';
     closeReview();
   }
 

@@ -339,14 +339,22 @@
   // ogni persona si scrive una volta, con accanto la parte di giornata che copre.
   // Le altre fasce restano dov'erano. Spento, le colonne sono quelle del foglio.
   function columns() {
-    var rows = D.slotRows, out = [];
+    var rows = D.slotRows, out = [], day = null, ai = -1;
     for (var i = 0; i < rows.length; i++) {
+      if (rows[i].key === 'A') ai = i;
       if (state.simplify && rows[i].key === 'M' && rows[i + 1] && rows[i + 1].key === 'P') {
-        out.push({ key: 'MP', day: true, mi: i, pi: i + 1, slot: daySlot(rows[i].slot, rows[i + 1].slot) });
+        day = { key: 'MP', day: true, mi: i, pi: i + 1, slot: daySlot(rows[i].slot, rows[i + 1].slot) };
+        out.push(day);
         i++;
       } else {
         out.push({ key: rows[i].key, idx: i, row: rows[i], slot: rows[i].slot });
       }
+    }
+    // L'ambulatorio ha le ore della mattina: con Semplifica sta dentro «Giorno»,
+    // e la sua colonna sparisce invece di ripetere gli stessi nomi.
+    if (day) {
+      day.ai = ai;
+      out = out.filter(function (c) { return c.key !== 'A'; });
     }
     return out;
   }
@@ -359,37 +367,63 @@
   // Le righe di una cella «Giorno»: una per persona, in ordine di ruolo, e
   // dentro lo stesso ruolo prima chi fa solo la mattina, poi solo il pomeriggio.
   function dayLines(r, day) {
-    var ms = r.slotsByKey.M, ps = r.slotsByKey.P;
-    var m = ms && day ? cellNames(day, r.hospital, ms) : [];
-    var p = ps && day ? cellNames(day, r.hospital, ps) : [];
-    var out = [];
-    for (var i = 0; i < Math.max(m.length, p.length); i++) {
-      var a = m[i], b = p[i];
-      if (a && b && a.name === b.name) { out.push({ n: a, span: 'MP' }); continue; }
-      if (a) out.push({ n: a, span: 'M' });
-      if (b) out.push({ n: b, span: 'P' });
-    }
-    return out;
+    var ms = r.slotsByKey.M, ps = r.slotsByKey.P, as = r.slotsByKey.A;
+    var m = (ms && day) ? cellNames(day, r.hospital, ms) : [];
+    var p = (ps && day) ? cellNames(day, r.hospital, ps) : [];
+    var amb = (as && day) ? cellNames(day, r.hospital, as) : [];
+
+    // La mattina è mattina + ambulatorio; chi fa anche il pomeriggio si scrive
+    // una volta sola, con l'orario intero.
+    var mornings = m.slice();
+    amb.forEach(function (n) {
+      if (!mornings.some(function (x) { return x.name === n.name; })) mornings.push(n);
+    });
+
+    var left = Object.create(null);
+    p.forEach(function (n, i) { left[n.name] = i; });
+
+    var rows = [];
+    mornings.forEach(function (n, i) {
+      var both = left[n.name] !== undefined;
+      var key = i < m.length ? 'M' : 'A';                      // da quale colonna viene
+      rows.push({
+        n: n, keys: both ? key + 'P' : key, i: i, o: 0,
+        ind: n.pos > 0 || (i > 0 && i >= m.length),
+      });
+      if (both) delete left[n.name];
+    });
+    p.forEach(function (n, i) {
+      if (left[n.name] === undefined) return;                  // già unito alla sua mattina
+      rows.push({ n: n, keys: 'P', i: i, o: 1, ind: n.pos > 0 });
+    });
+    rows.sort(function (x, y) { return x.i - y.i || x.o - y.o; });
+    return rows;
   }
 
   // "08–14" + "14–20" → "8–20"; una fascia sola → "8–14". Sempre presente:
   // una riga senza etichetta vorrebbe dire qualcosa che nessuno può indovinare.
-  function spanChip(r, span) {
-    var ms = r.slotsByKey.M, ps = r.slotsByKey.P;
-    var from = span === 'P' ? ps : ms, to = span === 'M' ? ms : ps;
+  function spanChip(r, keys) {
+    var from = r.slotsByKey[keys.charAt(0)], to = r.slotsByKey[keys.charAt(keys.length - 1)];
+    if (!from || !to) return '';
     var a = String(R.timeRange(from)).split('–'), b = String(R.timeRange(to)).split('–');
     return noZero(a[0]) + '–' + noZero(b[1] || b[0]);
   }
   function noZero(t) { return String(t).replace(/^0/, ''); }
 
-  var SPAN_WORD = { MP: 'mattina e pomeriggio', M: 'mattina', P: 'pomeriggio' };
+  var SLOT_SAY = { M: 'mattina', A: 'ambulatorio', P: 'pomeriggio' };
+  function spanWord(keys) {
+    return keys.split('').map(function (k) { return SLOT_SAY[k] || k; }).join(' e ');
+  }
 
   // Nella cella unita il nome sta in due fasce: vale la segnalazione più grave.
-  function sevPair(hospital, date, person) {
-    var a = sevOf(hospital, date, 'M', person), b = sevOf(hospital, date, 'P', person);
-    if (!a) return b;
-    if (!b) return a;
-    return b.sev > a.sev ? b : a;
+  // Una riga che copre due fasce porta la segnalazione più grave delle due.
+  function sevKeys(hospital, date, person, keys) {
+    var worst = null;
+    keys.split('').forEach(function (k) {
+      var f = sevOf(hospital, date, k, person);
+      if (f && (!worst || f.sev > worst.sev)) worst = f;
+    });
+    return worst;
   }
 
   function pillKey(hospital, date, slotKey, person) {
@@ -882,6 +916,7 @@
     }, [
       el('span', { text: name }),
       opts.chip ? el('span', { class: 'tchip', text: opts.chip }) : null,
+      opts.tag ? el('span', { class: 'ttag', text: opts.tag }) : null,
     ]);
   }
 
@@ -979,7 +1014,10 @@
     var m = measureCols(D.tableNames);
     // La colonna «Giorno» ospita i nomi delle due fasce più la pastiglia dell'orario.
     var need = cols.map(function (c) {
-      return c.day ? Math.max(m.cols[c.mi], m.cols[c.pi]) + m.chip + 4 : m.cols[c.idx] + 2;
+      if (!c.day) return m.cols[c.idx] + 2;
+      var w = Math.max(m.cols[c.mi], m.cols[c.pi], c.ai >= 0 ? m.cols[c.ai] : 0);
+      // il nome, l'orario accanto, e la targhetta dell'ambulatorio dove serve
+      return w + m.chip + 8 + (c.ai >= 0 ? m.tag + 2 : 0);
     });
     var sum = need.reduce(function (x, y) { return x + y; }, 0) || 1;
     // L'avanzo si divide in parti uguali, non in proporzione: così anche la
@@ -1043,7 +1081,9 @@
       });
     });
     var chip = el('span', { class: 'tchip', text: '14–20' });
+    var tag = el('span', { class: 'ttag', text: 'amb' });
     ruler.appendChild(chip);
+    ruler.appendChild(tag);
     tableWrap.appendChild(ruler);
     var out = spans.map(function (ss, i) {
       var m = 0;
@@ -1053,8 +1093,9 @@
       return Math.max(24, m);
     });
     var chipW = Math.max(24, chip.getBoundingClientRect().width);
+    var tagW = Math.max(14, tag.getBoundingClientRect().width);
     tableWrap.removeChild(ruler);
-    return { cols: out, chip: chipW };
+    return { cols: out, chip: chipW, tag: tagW };
   }
 
   // Sul telefono non c'è il passaggio del mouse: l'intestazione della fascia è
@@ -1125,13 +1166,14 @@
     var cls = tag === 'td' ? 'pill--t' : '';
     if (col.day) {
       dayLines(r, day).forEach(function (line) {
-        var n = line.n;
-        box.appendChild(namePill(n.name, line.span === 'MP'
-          ? sevPair(r.hospital, day.date, n.name)
-          : sevOf(r.hospital, day.date, line.span, n.name), {
-          cls: cls, in: n.pos > 0, slots: line.span, chip: spanChip(r, line.span),
-          title: n.name + ' · ' + SPAN_WORD[line.span] + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
-          label: n.name + ' — ' + SPAN_WORD[line.span] + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
+        var n = line.n, word = spanWord(line.keys);
+        box.appendChild(namePill(n.name, sevKeys(r.hospital, day.date, n.name, line.keys), {
+          cls: cls, in: line.ind, slots: line.keys, chip: spanChip(r, line.keys),
+          // Tre persone alle 8–14 non sono tre persone nella stessa stanza:
+          // la riga che viene dall'ambulatorio lo dice.
+          tag: line.keys.indexOf('A') !== -1 ? 'amb' : null,
+          title: n.name + ' · ' + word + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
+          label: n.name + ' — ' + word + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
         }));
       });
       return box;
@@ -1856,60 +1898,198 @@
     } catch (e) { /* niente rumore */ }
   }
 
+  // Il cruscotto risponde a tre domande e basta: la usano? sfogliano o cercano
+  // il proprio nome? si sono iscritti al calendario? Un asse e una serie per
+  // grafico, grigio d'inchiostro: i colori delle sedi significano altro.
+  var usoMonth = '';
+
   function showUso() {
-    fetchJSON('uso').then(renderUso, function () { toast('Non riesco a leggere l’uso.', true); });
+    if (!usoMonth) usoMonth = state.month || today.slice(0, 7);
+    loadUso();
   }
 
-  function renderUso(d) {
-    d = d || {};
+  function loadUso() {
+    Promise.all([
+      fetchJSON('uso?mese=' + encodeURIComponent(usoMonth)),
+      fetchJSON('stats').catch(function () { return null; }),
+    ]).then(function (r) {
+      renderUso(r[0] || {}, r[1]);
+    }, function (err) {
+      var code = err && err.status;
+      if (code === 401 || code === 403) { if (sheetMode === 'uso') closeUso(); return; }
+      openUso([el('p', { class: 'cap', text: code === 503 ? 'Registro non disponibile.' : 'Non riesco a leggere l’uso.' })], null);
+    });
+  }
+
+  function stepUso(n) {
+    var y = Number(usoMonth.slice(0, 4)), m = Number(usoMonth.slice(5, 7)) - 1 + n;
+    var d = new Date(Date.UTC(y, m, 1));
+    usoMonth = d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+    loadUso();
+  }
+
+  function openUso(nodes, stamp) {
     sheetMode = 'uso';
-    reviewTitle.textContent = 'Uso della pagina';
-    reviewCap.textContent = [
-      plural(num(d.dispositivi), 'dispositivo', 'dispositivi'),
-      num(d.installate) + ' con l’app installata',
-      plural(num(d.aperture), 'apertura', 'aperture'),
-      num(pick(d, ['cercatori', 'haCercato', 'conRicerca', 'hanno_cercato'])) + ' hanno cercato un nome',
-    ].join(' · ');
+    reviewEl.classList.add('is-uso');
+    clear(reviewTitle);
+    reviewTitle.appendChild(el('span', { text: 'Uso' }));
+    reviewTitle.appendChild(el('span', { class: 'uso__m', text: monthLabel(usoMonth) }));
+    reviewTitle.appendChild(el('span', { class: 'uso__nav' }, [
+      el('button', {
+        class: 'navday', type: 'button', 'aria-label': 'Mese precedente',
+        on: { click: function () { stepUso(-1); } },
+      }, icon('i-prev')),
+      el('button', {
+        class: 'navday', type: 'button', 'aria-label': 'Mese successivo',
+        disabled: usoMonth >= today.slice(0, 7),
+        on: { click: function () { stepUso(1); } },
+      }, icon('i-next')),
+    ]));
+    reviewCap.textContent = stamp ? 'Ultimo aggiornamento dei turni: ' + shortDate(stamp) : '';
+    reviewCap.hidden = !stamp;
     reviewCancel.hidden = true;
     reviewSave.disabled = false;
     reviewSave.textContent = 'Chiudi';
     clear(reviewBody);
-
-    // Le righe che il server non manda semplicemente non compaiono.
-    var cal = d.calendario;
-    if (cal) {
-      reviewBody.appendChild(el('p', { class: 'usoline', text: 'Calendario: ' + [
-        plural(num(pick(cal, ['iscritti', 'abbonati'])), 'iscritto', 'iscritti'),
-        plural(num(pick(cal, ['letture', 'download', 'scaricamenti'])), 'lettura', 'letture'),
-        plural(num(pick(cal, ['indirizzi', 'richieste', 'link'])), 'richiesta dell’indirizzo', 'richieste dell’indirizzo'),
-      ].join(' · ') }));
-    }
-
-    var giorni = Array.isArray(d.giorni) ? d.giorni : [];
-    giorni.forEach(function (g) {
-      var when = pick(g, ['giorno', 'data', 'date']);
-      var aperture = num(pick(g, ['aperture', 'letture']));
-      var disp = num(pick(g, ['dispositivi', 'dev']));
-      var media = pick(g, ['media', 'aTesta'], null);
-      if (typeof media !== 'number' || !isFinite(media)) media = disp ? aperture / disp : 0;
-      reviewBody.appendChild(el('div', { class: 'usorow' }, [
-        el('span', { class: 'usorow__n', text: dayLabel(when) }),
-        el('span', { class: 'usorow__c', text: aperture + ' aperture · ' + disp + ' dispositivi · ' +
-          decimal(media) + ' a testa' }),
-      ]));
-    });
-
-    var list = topNames(d.nomi);
-    if (!list.length && !giorni.length) {
-      reviewBody.appendChild(el('p', { class: 'cap', text: 'Ancora nessuna ricerca.' }));
-    }
-    list.forEach(function (row) {
-      reviewBody.appendChild(el('div', { class: 'usorow' }, [
-        el('span', { class: 'usorow__n', text: row.nome }),
-        el('span', { class: 'usorow__c', text: String(row.n) }),
-      ]));
-    });
+    append(reviewBody, nodes);
     openReview();
+  }
+
+  function renderUso(d, stats) {
+    var giorni = Array.isArray(d.giorni) ? d.giorni : [];
+    var cal = d.calendario || {};
+    var out = [];
+
+    out.push(usoNums([
+      { n: d.dispositivi, l: 'dispositivi' },
+      { n: d.installate, l: 'con l’app installata' },
+      { n: d.aperture, l: 'aperture' },
+      { n: cal.iscritti, l: 'iscritti al calendario' },
+    ]));
+
+    // La domanda vera, scritta a parole: una frase e una barra sola.
+    var ap = d.aperture, sc = d.sessioniConRicerca;
+    if (typeof ap === 'number' && ap > 0 && typeof sc === 'number') {
+      out.push(el('p', { class: 'uq', text: 'Su ' + ap + ' aperture, ' + sc + ' hanno cercato un nome' }));
+      out.push(el('div', { class: 'ubar' },
+        el('span', { style: 'width:' + Math.max(0, Math.min(100, sc / ap * 100)).toFixed(1) + '%' })));
+      out.push(el('p', { class: 'unote', text: 'le altre ' + (ap - sc) + ' hanno solo sfogliato i turni' }));
+    }
+
+    out.push(usoChart('Aperture al giorno', giorni, 'aperture', 90));
+    out.push(usoChart('Aperture per dispositivo', giorni, 'dispositivi', 60));
+    out.push(usoNames(d.cercatiPiu));
+
+    out.push(el('h3', { class: 'uso__h', text: 'Calendario' }));
+    out.push(usoNums([
+      { n: cal.iscritti, l: 'iscritti' },
+      { n: cal.letture, l: 'letture' },
+      { n: cal.richieste, l: 'richieste dell’indirizzo' },
+    ]));
+    out.push(el('p', { class: 'unote', text: 'le letture si contano una volta al giorno per iscritto' }));
+    out.push(usoAccessi(stats));
+
+    openUso(out, stats && stats.ultimoSalvataggio);
+  }
+
+  function usoNums(items) {
+    return el('div', { class: 'unums' }, items.map(function (it) {
+      return el('div', { class: 'unum' }, [
+        el('span', { class: 'unum__n', text: fmtNum(it.n) }),
+        el('span', { class: 'unum__l', text: it.l }),
+      ]);
+    }));
+  }
+
+  // Un campo che manca non è uno zero: si scrive così com'è, cioè niente.
+  function fmtNum(v) { return (typeof v === 'number' && isFinite(v)) ? String(v) : '—'; }
+
+  function usoChart(title, giorni, key, height) {
+    var vals = giorni.map(function (g) {
+      return (typeof g[key] === 'number' && isFinite(g[key])) ? g[key] : null;
+    });
+    if (!vals.some(function (v) { return v !== null; })) return null;
+    var max = vals.reduce(function (a, v) { return v === null ? a : Math.max(a, v); }, 0) || 1;
+
+    var plot = el('div', { class: 'uplot', style: 'height:' + height + 'px' });
+    var xs = el('div', { class: 'uxs' });
+    giorni.forEach(function (g, i) {
+      var v = vals[i];
+      var day = Number(String(g.giorno || '').slice(8, 10)) || (i + 1);
+      if (v === null) {
+        plot.appendChild(el('span', { class: 'ucol ucol--none' }));      // niente dato, non zero
+      } else {
+        var phrase = usoPhrase(g);
+        plot.appendChild(el('button', {
+          class: 'ucol' + (g.giorno === today ? ' is-today' : ''), type: 'button',
+          style: 'height:' + Math.max(2, v / max * 100).toFixed(1) + '%',
+          'aria-label': phrase, 'aria-expanded': 'false', 'aria-controls': 'slotpop',
+          on: {
+            click: function (e) {
+              e.stopPropagation();
+              toggleInfoPop(this, phrase, [
+                { c: 'slotpop__t', t: dayLabel(g.giorno) },
+                { c: 'slotpop__h', t: phrase.split(' · ').slice(1).join(' · ') },
+              ]);
+            },
+          },
+        }));
+      }
+      xs.appendChild(el('span', { text: [1, 8, 15, 22, 29].indexOf(day) !== -1 ? String(day) : '' }));
+    });
+
+    return el('section', { class: 'uchart' }, [
+      el('p', { class: 'uchart__t' }, [
+        el('b', { text: title }),
+        el('span', { class: 'uchart__max', text: 'max ' + max }),
+      ]),
+      plot,
+      xs,
+    ]);
+  }
+
+  function usoPhrase(g) {
+    var per = g.aperturePerDispositivo;
+    if (typeof per !== 'number' && typeof g.aperture === 'number' && g.dispositivi) {
+      per = g.aperture / g.dispositivi;
+    }
+    return [
+      dayLabel(g.giorno),
+      fmtNum(g.aperture) + ' aperture',
+      fmtNum(g.dispositivi) + ' dispositivi',
+      (typeof per === 'number' && isFinite(per) ? decimal(per) : '—') + ' a testa',
+    ].join(' · ');
+  }
+
+  function usoNames(list) {
+    var rows = (Array.isArray(list) ? list : []).slice(0, 20);
+    var box = el('section', { class: 'uso__names' }, el('h3', { class: 'uso__h', text: 'Nomi più cercati' }));
+    if (!rows.length) {
+      box.appendChild(el('p', { class: 'cap', text: 'Nessuna ricerca registrata questo mese.' }));
+      return box;
+    }
+    var max = rows.reduce(function (a, r) { return Math.max(a, num(r.volte)); }, 0) || 1;
+    rows.forEach(function (r) {
+      box.appendChild(el('div', { class: 'ore__row' }, [
+        el('span', { class: 'ore__name', text: String(r.nome) }),
+        el('span', { class: 'ore__bar' },
+          el('span', { class: 'ore__seg useg', style: 'width:' + (num(r.volte) / max * 100).toFixed(1) + '%' })),
+        el('span', { class: 'ore__v', text: fmtNum(r.volte) }),
+      ]));
+    });
+    return box;
+  }
+
+  function usoAccessi(s) {
+    if (!s) return null;
+    var per = s.perRuolo || {};
+    var med = pick(per, ['medico', 'lettura'], null), ges = pick(per, ['gestore', 'modifica'], null);
+    var parts = [plural(num(s.accessi), 'accesso', 'accessi') + ' questo mese'];
+    if (med !== null || ges !== null) {
+      parts.push(fmtNum(med) + ' con la password di lettura, ' + fmtNum(ges) + ' con quella di modifica');
+    }
+    parts.push(plural(num(s.salvataggi), 'salvataggio', 'salvataggi'));
+    return el('p', { class: 'unote unote--last', text: parts.join(' · ') });
   }
 
   // Un decimale, con la virgola, e senza lo zero inutile: 1,6 · 1 · 2,4.
@@ -1930,21 +2110,6 @@
   }
 
   function num(v) { return typeof v === 'number' && isFinite(v) ? v : 0; }
-
-  // I nomi possono arrivare come elenco, come coppie o come mappa: si accettano
-  // tutti e tre, e si tengono i venti più cercati.
-  function topNames(raw) {
-    var out = [];
-    if (Array.isArray(raw)) {
-      raw.forEach(function (x) {
-        if (Array.isArray(x)) out.push({ nome: String(x[0]), n: num(x[1]) });
-        else if (x && x.nome !== undefined) out.push({ nome: String(x.nome), n: num(x.n !== undefined ? x.n : x.conteggio) });
-      });
-    } else if (raw && typeof raw === 'object') {
-      Object.keys(raw).forEach(function (k) { out.push({ nome: k, n: num(raw[k]) }); });
-    }
-    return out.sort(function (a, b) { return b.n - a.n; }).slice(0, 20);
-  }
 
   // ---------------------------------------------------------------------------
   // Presentazione: come tenersi la pagina a portata di mano (una volta sola)
@@ -2009,6 +2174,9 @@
   function closeUso() {
     sheetMode = 'review';
     reviewCancel.hidden = false;
+    reviewCap.hidden = false;
+    reviewEl.classList.remove('is-uso');
+    reviewTitle.textContent = '';
     closeReview();
   }
 

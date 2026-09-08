@@ -28,6 +28,7 @@
   --cal-dea: color-mix(in srgb, var(--dea) 8%, transparent);
   --cal-osg: color-mix(in srgb, var(--osg) 8%, transparent);
   --cal-alt: color-mix(in srgb, var(--alt) 8%, transparent);
+  --ubar: color-mix(in srgb, var(--ink) 45%, var(--surface));   /* le barre del cruscotto */
 
   --hl: light-dark(#FFE45C, #F2D53C);
   --hl-ink: #1A1500;
@@ -428,8 +429,14 @@ button { font: inherit; color: inherit; }
 .detail__cell .pill.is-in { padding-left: 16px; }
 /* La parte di giornata coperta, accanto al nome: piccola, dello stesso inchiostro
    ma più chiara, così sta bene anche sul giallo e sui fondi delle segnalazioni. */
+/* L'orario sta attaccato al suo nome, non all'altro capo della cella: chi legge
+   deve accoppiarli con l'occhio, e l'occhio accoppia ciò che è vicino. */
+.ttag {
+  margin-left: 2px; flex: none; font-size: 9.5px; letter-spacing: .04em;
+  color: color-mix(in srgb, currentColor 52%, transparent);
+}
 .tchip {
-  margin-left: auto; flex: none; padding-left: 5px;
+  margin-left: 6px; flex: none;
   font-family: var(--mono); font-size: 9px; letter-spacing: -.02em;
   font-variant-numeric: tabular-nums;
   color: color-mix(in srgb, currentColor 58%, transparent);
@@ -683,10 +690,46 @@ button { font: inherit; color: inherit; }
 .chg__note { display: block; font-size: 11px; color: var(--muted); }
 
 /* Lettura d'uso: un elenco, non un cruscotto. */
-.usoline { margin: 8px 0 2px; font-size: 12.5px; color: var(--ink-2); }
-.usorow { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 13px; }
-.usorow__n { color: var(--ink); }
-.usorow__c { font-family: var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* --------------------------------------------------------------------------
+   Cruscotto «Uso»: una serie per grafico, un asse solo, un grigio d'inchiostro.
+   Nessun colore di sede e nessun giallo: qui non vorrebbero dire niente.
+   -------------------------------------------------------------------------- */
+.sheet.is-uso .sheet__panel { height: 92vh; max-height: 92vh; }
+.sheet.is-uso .sheet__t { display: flex; align-items: center; gap: 8px; }
+.uso__m { font-family: var(--ui); font-size: 13px; color: var(--muted); }
+.uso__nav { display: flex; gap: 2px; margin-left: auto; }
+.uso__nav .navday { width: 30px; height: 30px; }
+.uso__h { margin: 18px 0 2px; font-family: var(--display); font-size: 16px; font-weight: 400; color: var(--ink); }
+
+.unums { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin: 12px 0 4px; }
+.unum { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.unum__n { font-size: 24px; line-height: 1.05; color: var(--ink); font-variant-numeric: tabular-nums; }
+.unum__l { font-size: 11.5px; line-height: 1.25; color: var(--muted); }
+
+.uq { margin: 16px 0 6px; font-size: 14px; line-height: 1.4; color: var(--ink); }
+.ubar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.ubar span { display: block; height: 100%; border-radius: 4px; background: var(--ink-2); }
+.unote { margin: 5px 0 0; font-size: 11px; line-height: 1.4; color: var(--muted); }
+.unote--last { margin-top: 16px; }
+
+.uchart { margin-top: 18px; }
+.uchart__t { display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px; font-size: 12.5px; color: var(--ink-2); }
+.uchart__t b { font-weight: 500; }
+.uchart__max { font-family: var(--mono); font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.uplot { display: flex; align-items: flex-end; gap: 2px; }
+.ucol {
+  flex: 1 1 0; min-width: 0; padding: 0; border: 0; border-radius: 3px 3px 0 0;
+  background: var(--ubar); cursor: pointer;
+}
+.ucol.is-today { background: var(--ink); }
+.ucol--none { background: none; cursor: default; height: 100%; }
+.uxs {
+  display: flex; gap: 2px; margin-top: 3px;
+  font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.uxs span { flex: 1 1 0; min-width: 0; text-align: center; }
+.useg { background: var(--ubar); }
+.uso__names .ore__row { min-height: 26px; }
 
 /* Presentazione: un passo solo, quello del telefono che si ha in mano. */
 .intro__step {
