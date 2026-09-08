@@ -17,6 +17,11 @@
 // Oltre alla pagina c'è la sottoscrizione al calendario: /cal/<slug>-<firma>.ics
 // si apre senza cookie (la chiave sta nell'indirizzo), mentre /cal-link la sessione
 // la chiede ed è l'unico posto da cui la pagina può sapere la firma.
+//
+// Senza sessione rispondono anche il manifest e le icone (/manifest.webmanifest,
+// /icon-180.png, /icon-192.png, /icon-512.png): servono a installare la pagina
+// sul telefono e il sistema operativo le chiede fuori dal contesto della pagina.
+// /stats, invece, è solo del gestore: due contatori d'uso, nient'altro.
 
 // Il motore delle regole serve anche qui: fold per lo slug, buildAssignments e
 // buildICS per il file di calendario. src/rules.js è CommonJS con la coda UMD e
@@ -25,6 +30,8 @@
 // `module.exports`. Niente copie del file, niente modifiche a build.js: le
 // regole restano in un posto solo.
 import TurniRules from './src/rules.js';
+// Stessa storia per le icone dell'app (PNG in base64, per manifest e iPhone).
+import TurniIcons from './src/icons.js';
 
 // ============================================================
 // Costanti
@@ -42,14 +49,51 @@ const ROLE_MEDICO = 'medico';
 const ROLE_GESTORE = 'gestore';
 const SECRET_NAMES = ['PASS_MEDICO', 'PASS_GESTORE', 'SESSION_SECRET'];
 
+const KV_STAT_LOGIN = 'stat:login:';    // stat:login:<AAAA-MM>[:<ruolo>]
+const KV_STAT_SAVE = 'stat:save:';      // stat:save:<AAAA-MM>
+const KV_STAT_LAST_SAVE = 'stat:last-save';
+
 const CAL_PREFIX = '/cal/';            // /cal/<slug>-<firma>.ics
 const CAL_MESSAGE = 'cal:';            // cosa si firma: "cal:" + il nome vero
 const CAL_SIG_LEN = 22;                // 22 caratteri base64url ~ 132 bit
 const CAL_MAX_AGE = 3600;              // quanto può tenerselo il telefono
+const ICON_MAX_AGE = 604800;           // le icone non cambiano: una settimana
+const MANIFEST_MAX_AGE = 86400;        // il manifest cambia solo con il codice
+
+// Le due righe che rendono la pagina installabile: manifest per Android, icona
+// per la schermata Home di iPhone. Stanno qui perché servono a due pagine — la
+// pagina di accesso, che le ha scritte dentro, e quella dei turni, dove vengono
+// iniettate al volo (il file su disco non viene toccato).
+const HEAD_LINKS = '<link rel="manifest" href="/manifest.webmanifest">' +
+  '<link rel="apple-touch-icon" href="/icon-180.png">';
+
+const ICON_ROUTES = new Map([
+  ['/icon-180.png', 'ICON_180'],
+  ['/icon-192.png', 'ICON_192'],
+  ['/icon-512.png', 'ICON_512']
+]);
+
+const MANIFEST = {
+  name: 'I Miei Turni',
+  short_name: 'Turni',
+  start_url: '/',
+  scope: '/',
+  display: 'standalone',
+  background_color: '#F3F4F6',
+  theme_color: '#FFFFFF',
+  lang: 'it',
+  orientation: 'portrait',
+  icons: [
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+  ]
+};
 
 const MSG_PASSWORD_ERRATA = 'Password non valida.';
 const MSG_TROPPI_TENTATIVI = 'Troppi tentativi, riprova tra qualche minuto.';
 const MSG_SERVIZIO = 'Servizio non disponibile, riprova più tardi.';
+const MSG_SOLO_GESTORE = 'Non hai i permessi per vedere queste informazioni.';
 const MSG_NOME_NON_TROVATO = 'Nome non trovato.';
 
 const encoder = new TextEncoder();
@@ -104,6 +148,14 @@ function base64urlDecode(text) {
   return out;
 }
 
+// base64 classico (non base64url) → byte: serve alle icone di src/icons.js.
+function base64ToBytes(text) {
+  const binary = atob(text);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
 async function hmacSha256(secret, message) {
   const key = await crypto.subtle.importKey(
     'raw', utf8(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
@@ -129,9 +181,15 @@ async function createSessionValue(role, secret, nowSec) {
   return payload + '.' + signature;
 }
 
-function sessionCookie(value) {
-  return COOKIE_NAME + '=' + value +
-    '; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=' + SESSION_TTL;
+// Con «Ricordami» il browser tiene il cookie 180 giorni; senza, è un cookie di
+// sessione (niente Max-Age né Expires) e sparisce quando il browser si chiude.
+// La scadenza firmata dentro il payload resta 180 giorni in tutti e due i casi:
+// qui cambia solo quanto a lungo il browser se lo tiene. La password non viene
+// conservata da nessuna parte — a ricordare l'accesso è il cookie firmato, che
+// non è riusabile altrove e JavaScript non lo può leggere.
+function sessionCookie(value, remember) {
+  const base = COOKIE_NAME + '=' + value + '; HttpOnly; Secure; SameSite=Lax; Path=/';
+  return remember ? base + '; Max-Age=' + SESSION_TTL : base;
 }
 
 function clearedCookie() {
@@ -226,6 +284,7 @@ function shellPage(inner) {
     '<meta charset="utf-8">\n' +
     '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n' +
     '<meta name="robots" content="noindex, nofollow">\n' +
+    HEAD_LINKS + '\n' +
     '<title>I Miei Turni</title>\n' +
     '<style>\n' +
     ':root { color-scheme: light dark; }\n' +
@@ -248,6 +307,10 @@ function shellPage(inner) {
     '  border: 1px solid light-dark(#D1D5DB, #3A424D);\n' +
     '  background: light-dark(#FFFFFF, #14181D); color: inherit; }\n' +
     '.campo:focus { outline: 2px solid light-dark(#111827, #E8EBEF); outline-offset: 1px; }\n' +
+    '.ricorda { display: flex; align-items: center; gap: 10px; min-height: 44px;\n' +
+    '  margin-top: 10px; font-size: 16px; cursor: pointer; }\n' +
+    '.ricorda input { width: 20px; height: 20px; margin: 0; flex: none;\n' +
+    '  accent-color: light-dark(#111827, #E8EBEF); }\n' +
     '.entra { width: 100%; height: 44px; margin-top: 12px; border: 0; border-radius: 8px;\n' +
     '  font-size: 15px; font-weight: 600; cursor: pointer;\n' +
     '  background: light-dark(#111827, #E8EBEF); color: light-dark(#FFFFFF, #111827); }\n' +
@@ -271,6 +334,8 @@ function loginPage(message) {
     errore +
     '<input class="campo" type="password" name="password" autocomplete="current-password"\n' +
     '       placeholder="Password" autofocus required aria-label="Password">\n' +
+    '<label class="ricorda"><input type="checkbox" name="ricordami" value="1" checked>\n' +
+    'Ricordami su questo dispositivo</label>\n' +
     '<button class="entra" type="submit">Entra</button>\n' +
     '</form>\n'
   );
@@ -312,6 +377,17 @@ function bundledPage() {
 async function resolvePage(env) {
   if (env && typeof env.__PAGE === 'string') return env.__PAGE;
   return await bundledPage();
+}
+
+// Manifest e icona di iPhone nella pagina dei turni: entrano subito prima di
+// </head> e non toccano nient'altro. È una sostituzione a parte rispetto al
+// ruolo, che invece finisce nel body; il file su disco non cambia, così la copia
+// locale — dove il Worker non c'è e quegli indirizzi non risponderebbero —
+// resta quella che è.
+function injectHead(page) {
+  const close = page.search(/<\/head\s*>/i);
+  if (close === -1) return page;
+  return page.slice(0, close) + HEAD_LINKS + page.slice(close);
 }
 
 // Inietta il ruolo nella pagina: al posto del segnaposto <!--ROLE--> se c'è,
@@ -374,6 +450,84 @@ async function clearFailures(env, ip) {
 }
 
 // ============================================================
+// Due conteggi d'uso: quanto si usa e quando è stata aggiornata.
+// Il traffico grezzo (richieste, errori, paesi) lo dà già il pannello di
+// Cloudflare: qui non si replica. Si contano solo eventi rari — accessi riusciti
+// e salvataggi — e solo numeri: mai un indirizzo IP, mai chi ha fatto cosa.
+// ============================================================
+
+// Il mese in forma AAAA-MM, in UTC. A Roma un accesso fatto nella prima mezz'ora
+// del mese finisce nel mese precedente: per un contatore d'uso non cambia nulla.
+function monthKey(nowSec) {
+  return new Date(nowSec * 1000).toISOString().slice(0, 7);
+}
+
+// Leggi, somma uno, riscrivi: senza transazioni, due incrementi nello stesso
+// istante possono contarne uno solo. Sono numeri indicativi, non una contabilità.
+// Se KV non risponde si va avanti senza contare: un conteggio non deve mai far
+// fallire l'accesso o il salvataggio.
+async function bumpCounter(env, key) {
+  try {
+    const raw = await env.TURNI.get(key);
+    const current = parseInt(raw === null || raw === undefined ? '0' : raw, 10);
+    const next = (Number.isFinite(current) && current > 0 ? current : 0) + 1;
+    await env.TURNI.put(key, String(next));
+  } catch (err) {
+    console.warn('Conteggio non aggiornato, KV non raggiungibile: ' + errText(err));
+  }
+}
+
+async function readCounter(env, key) {
+  if (!env.TURNI) return 0;
+  try {
+    const raw = await env.TURNI.get(key);
+    const value = parseInt(raw === null || raw === undefined ? '0' : raw, 10);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch (err) {
+    console.warn('Conteggio non leggibile, KV non raggiungibile: ' + errText(err));
+    return 0;
+  }
+}
+
+async function noteLogin(env, role, nowSec) {
+  if (!env.TURNI) return;
+  const month = monthKey(nowSec);
+  await bumpCounter(env, KV_STAT_LOGIN + month);
+  await bumpCounter(env, KV_STAT_LOGIN + month + ':' + role);
+}
+
+async function noteSave(env, rosters, nowSec) {
+  if (!env.TURNI) return;
+  await bumpCounter(env, KV_STAT_SAVE + monthKey(nowSec));
+  try {
+    await env.TURNI.put(KV_STAT_LAST_SAVE, JSON.stringify({
+      at: new Date(nowSec * 1000).toISOString(),
+      rosters: rosters
+    }));
+  } catch (err) {
+    console.warn('Data dell\'ultimo salvataggio non aggiornata, KV non raggiungibile: ' + errText(err));
+  }
+}
+
+// L'ultimo salvataggio, o null se non è ancora stato fatto niente.
+async function readLastSave(env) {
+  if (!env.TURNI) return null;
+  let raw;
+  try {
+    raw = await env.TURNI.get(KV_STAT_LAST_SAVE);
+  } catch (err) {
+    console.warn('Ultimo salvataggio non leggibile, KV non raggiungibile: ' + errText(err));
+    return null;
+  }
+  if (raw === null || raw === undefined) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    return null;
+  }
+}
+
+// ============================================================
 // Corpo della richiesta
 // ============================================================
 
@@ -432,7 +586,7 @@ async function handleRoot(request, env, nowSec) {
     console.error('Pagina dei turni assente dal bundle: eseguire "node build.js" prima del deploy.');
     return htmlResponse(neutralPage(), 500);
   }
-  return htmlResponse(injectRole(page, role), 200);
+  return htmlResponse(injectHead(injectRole(page, role)), 200);
 }
 
 async function handleLogin(request, env, nowSec) {
@@ -443,7 +597,10 @@ async function handleLogin(request, env, nowSec) {
   }
 
   const body = await readBody(request, MAX_LOGIN_BYTES);
-  const password = body.tooBig ? '' : (new URLSearchParams(body.text).get('password') || '');
+  const form = new URLSearchParams(body.tooBig ? '' : body.text);
+  const password = form.get('password') || '';
+  // La casella è spuntata di default: se manca è perché l'utente l'ha tolta.
+  const ricordami = form.get('ricordami') !== null;
 
   // Le due verifiche girano sempre entrambe: nessun ramo corto che riveli quale
   // password era vicina o quale ruolo esiste. Prima gestore, poi medico.
@@ -458,10 +615,11 @@ async function handleLogin(request, env, nowSec) {
   }
 
   await clearFailures(env, ip);
+  await noteLogin(env, role, nowSec);
   const value = await createSessionValue(role, env.SESSION_SECRET, nowSec);
   return new Response(null, {
     status: 303,
-    headers: securityHeaders({ Location: '/', 'Set-Cookie': sessionCookie(value) })
+    headers: securityHeaders({ Location: '/', 'Set-Cookie': sessionCookie(value, ricordami) })
   });
 }
 
@@ -532,7 +690,56 @@ async function handleDataPut(request, env, nowSec) {
     console.error('Scrittura su KV non riuscita: ' + errText(err));
     return jsonResponse({ error: 'Salvataggio non riuscito, riprova.' }, 503);
   }
+  // I turni sono già salvati: da qui in poi niente può più far fallire il PUT.
+  await noteSave(env, data.rosters.length, nowSec);
   return jsonResponse({ ok: true, rosters: data.rosters.length }, 200);
+}
+
+// GET /stats — solo il gestore: quanto si usa e quando è stata aggiornata.
+// Niente dati ancora in KV significa zeri, non un errore: è la risposta giusta
+// per un mese appena cominciato.
+async function handleStats(request, env, nowSec) {
+  const role = await sessionRole(request, env, nowSec);
+  if (!role) return jsonResponse({ error: 'Accesso richiesto.' }, 401);
+  if (role !== ROLE_GESTORE) return jsonResponse({ error: MSG_SOLO_GESTORE }, 403);
+
+  const month = monthKey(nowSec);
+  const [accessi, medico, gestore, salvataggi, ultimo] = await Promise.all([
+    readCounter(env, KV_STAT_LOGIN + month),
+    readCounter(env, KV_STAT_LOGIN + month + ':' + ROLE_MEDICO),
+    readCounter(env, KV_STAT_LOGIN + month + ':' + ROLE_GESTORE),
+    readCounter(env, KV_STAT_SAVE + month),
+    readLastSave(env)
+  ]);
+
+  return jsonResponse({
+    mese: month,
+    accessi: accessi,
+    perRuolo: { medico: medico, gestore: gestore },
+    salvataggi: salvataggi,
+    ultimoSalvataggio: ultimo
+  }, 200);
+}
+
+// ============================================================
+// Installazione sul telefono: manifest e icone (senza sessione)
+// ============================================================
+
+// Un'icona non è un dato riservato e il sistema operativo la scarica fuori dalla
+// pagina, quindi senza cookie: sono le uniche cose che si possono mettere in
+// cache pubblica, e restano uguali finché non si rigenera src/icons.js.
+function handleIcon(name) {
+  const headers = securityHeaders();
+  headers.set('Content-Type', 'image/png');
+  headers.set('Cache-Control', 'public, max-age=' + ICON_MAX_AGE + ', immutable');
+  return new Response(base64ToBytes(TurniIcons[name]), { status: 200, headers: headers });
+}
+
+function handleManifest() {
+  const headers = securityHeaders();
+  headers.set('Content-Type', 'application/manifest+json');
+  headers.set('Cache-Control', 'public, max-age=' + MANIFEST_MAX_AGE);
+  return new Response(JSON.stringify(MANIFEST), { status: 200, headers: headers });
 }
 
 // ============================================================
@@ -698,6 +905,14 @@ async function route(request, env) {
     if (method === 'GET') response = await handleDataGet(request, env, nowSec);
     else if (method === 'PUT') response = await handleDataPut(request, env, nowSec);
     else response = methodNotAllowed('GET, HEAD, PUT');
+  } else if (path === '/stats') {
+    response = method === 'GET'
+      ? await handleStats(request, env, nowSec)
+      : methodNotAllowed('GET, HEAD');
+  } else if (path === '/manifest.webmanifest') {
+    response = method === 'GET' ? handleManifest() : methodNotAllowed('GET, HEAD');
+  } else if (ICON_ROUTES.has(path)) {
+    response = method === 'GET' ? handleIcon(ICON_ROUTES.get(path)) : methodNotAllowed('GET, HEAD');
   } else if (path === '/cal-link') {
     response = method === 'GET'
       ? await handleCalLink(request, env, nowSec)
