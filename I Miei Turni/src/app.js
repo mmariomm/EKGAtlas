@@ -1076,16 +1076,21 @@
   }
 
   function toggleSlotPop(btn, slot) {
+    toggleInfoPop(btn, R.slotFullName(slot), [
+      { c: 'slotpop__t', t: R.slotFullName(slot) },
+      { c: 'slotpop__h', t: R.slotHoursPhrase(slot) },
+      slot.sub ? { c: 'slotpop__s', t: slot.sub } : null,
+    ]);
+  }
+
+  // Lo stesso riquadro serve le intestazioni delle fasce e le colonne del
+  // grafico: il valore si legge al tocco, non stampato su ogni colonna.
+  function toggleInfoPop(btn, label, lines) {
     var same = popBtn === btn;
     closeSlotPop();
     if (same) return;
-    popEl = el('div', {
-      class: 'slotpop', id: 'slotpop', role: 'dialog', 'aria-label': R.slotFullName(slot),
-    }, [
-      el('p', { class: 'slotpop__t', text: R.slotFullName(slot) }),
-      el('p', { class: 'slotpop__h', text: R.slotHoursPhrase(slot) }),
-      slot.sub ? el('p', { class: 'slotpop__s', text: slot.sub }) : null,
-    ]);
+    popEl = el('div', { class: 'slotpop', id: 'slotpop', role: 'dialog', 'aria-label': label },
+      lines.map(function (l) { return l ? el('p', { class: l.c, text: l.t }) : null; }));
     document.body.appendChild(popEl);
     popBtn = btn;
     btn.setAttribute('aria-expanded', 'true');
@@ -1602,7 +1607,11 @@
 
   function fetchJSON(url) {
     return fetch(url, { headers: { accept: 'application/json' } }).then(function (res) {
-      if (!res.ok) throw new Error('http ' + res.status);
+      if (!res.ok) {
+        var e = new Error('http ' + res.status);
+        e.status = res.status;
+        throw e;
+      }
       return res.json();
     });
   }
