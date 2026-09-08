@@ -355,13 +355,17 @@ var TurniRules = (function () {
   // giornata = mattina + pomeriggio nello stesso giorno (anche in due ospedali);
   // mattine e pomeriggi da soli si contano a parte; "dodici" = giornate + notti;
   // le ore sono l'unione reale degli orari (l'ambulatorio come una mattina).
-  function personStats(assignments, person, month) {
+  // Con `hospital` i conti si restringono a quella sede. Le mezze giornate fanno
+  // tornare la somma: una mattina al DEA e un pomeriggio all'OSG danno 0,5G di qua
+  // e 0,5G di là, cioè la stessa giornata intera del conto complessivo.
+  function personStats(assignments, person, month, hospital) {
     var mine = [];
     var ambulatori = 0;
     for (var i = 0; i < assignments.length; i++) {
       var a = assignments[i];
       if (a.person !== person) continue;
       if (month && a.date.slice(0, 7) !== month) continue;
+      if (hospital && a.hospital !== hospital) continue;
       if (a.slotKey === 'A') ambulatori++;
       mine.push(asMorningIfAmbulatorio(a));
     }

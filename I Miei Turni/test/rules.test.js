@@ -462,6 +462,36 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   deepEq(fl.oreByHospital, { DEA: 78, OSG: 36 }, 'FLORENZAN: ore per ospedale');
   deepEq([fl.giornateEq, fl.turniEq], [4.5, 9.5], 'FLORENZAN: 4,5G + 5N = 9,5 turni');
 
+  // Conti per sede: la riga "Totale" in fondo alla pagina.
+  const flDea = TurniRules.personStats(realAssignments, 'FLORENZAN', '2026-09', 'DEA');
+  const flOsg = TurniRules.personStats(realAssignments, 'FLORENZAN', '2026-09', 'OSG');
+  deepEq([flDea.giornateEq, flDea.notti, flDea.turniEq, flDea.ore], [2.5, 4, 6.5, 78], 'FLORENZAN al DEA: 2,5G + 4N = 6,5 · 78 h');
+  deepEq([flOsg.giornateEq, flOsg.notti, flOsg.turniEq, flOsg.ore], [2, 1, 3, 36], 'FLORENZAN all\'OSG: 2G + 1N = 3 · 36 h');
+  eq(flDea.turniEq + flOsg.turniEq, fl.turniEq, 'le sedi sommate danno il totale dei turni');
+  eq(flDea.ore + flOsg.ore, fl.ore, 'le sedi sommate danno le ore del mese');
+
+  // Somme coerenti per tutti i nomi del mese, sede per sede.
+  const sedi = ['DEA', 'OSG'];
+  const tuttiSommano = TurniRules.hoursByName(realAssignments, '2026-09').every((s) => {
+    const parti = sedi.map((h) => TurniRules.personStats(realAssignments, s.person, '2026-09', h));
+    return parti.reduce((t, p) => t + p.turniEq, 0) === s.turniEq
+      && parti.reduce((t, p) => t + p.ore, 0) === s.ore;
+  });
+  ok(tuttiSommano, 'per ogni nome, i conti delle due sedi sommati danno il totale');
+
+  // Una giornata a cavallo delle due sedi vale mezza di qua e mezza di là.
+  const misto = TurniRules.buildAssignments([
+    synRoster('DEA', { '2026-09-01': { M: ['X'] } }),
+    synRoster('OSG', { '2026-09-01': { P: ['X'] } }),
+  ]);
+  deepEq(
+    [TurniRules.personStats(misto, 'X', '2026-09').giornateEq,
+     TurniRules.personStats(misto, 'X', '2026-09', 'DEA').giornateEq,
+     TurniRules.personStats(misto, 'X', '2026-09', 'OSG').giornateEq],
+    [1, 0.5, 0.5],
+    'giornata su due sedi: 1 in totale, mezza per sede'
+  );
+
   // L'addizione è coerente con le ore per tutti: (giornate equivalenti + notti) × 12 = ore.
   const tuttiCoerenti = TurniRules.hoursByName(realAssignments, '2026-09')
     .every((s) => s.turniEq * 12 === s.ore);
