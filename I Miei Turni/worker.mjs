@@ -13,6 +13,18 @@
 // Segreti attesi (secret di Cloudflare, mai nel repository):
 //   PASS_MEDICO, PASS_GESTORE, SESSION_SECRET
 // Binding KV: TURNI.
+//
+// Oltre alla pagina c'è la sottoscrizione al calendario: /cal/<slug>-<firma>.ics
+// si apre senza cookie (la chiave sta nell'indirizzo), mentre /cal-link la sessione
+// la chiede ed è l'unico posto da cui la pagina può sapere la firma.
+
+// Il motore delle regole serve anche qui: fold per lo slug, buildAssignments e
+// buildICS per il file di calendario. src/rules.js è CommonJS con la coda UMD e
+// il pacchetto è `"type": "commonjs"`, quindi sia Node (test) sia esbuild (il
+// bundler di Wrangler) lo trattano da CommonJS e l'import di default riceve
+// `module.exports`. Niente copie del file, niente modifiche a build.js: le
+// regole restano in un posto solo.
+import TurniRules from './src/rules.js';
 
 // ============================================================
 // Costanti
@@ -30,9 +42,15 @@ const ROLE_MEDICO = 'medico';
 const ROLE_GESTORE = 'gestore';
 const SECRET_NAMES = ['PASS_MEDICO', 'PASS_GESTORE', 'SESSION_SECRET'];
 
+const CAL_PREFIX = '/cal/';            // /cal/<slug>-<firma>.ics
+const CAL_MESSAGE = 'cal:';            // cosa si firma: "cal:" + il nome vero
+const CAL_SIG_LEN = 22;                // 22 caratteri base64url ~ 132 bit
+const CAL_MAX_AGE = 3600;              // quanto può tenerselo il telefono
+
 const MSG_PASSWORD_ERRATA = 'Password non valida.';
 const MSG_TROPPI_TENTATIVI = 'Troppi tentativi, riprova tra qualche minuto.';
 const MSG_SERVIZIO = 'Servizio non disponibile, riprova più tardi.';
+const MSG_NOME_NON_TROVATO = 'Nome non trovato.';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -189,6 +207,12 @@ function jsonResponse(value, status, extra) {
 
 function methodNotAllowed(allow) {
   return new Response(null, { status: 405, headers: securityHeaders({ Allow: allow }) });
+}
+
+// Un 404 sempre uguale, a corpo vuoto: rotta sconosciuta e calendario rifiutato
+// devono essere indistinguibili da fuori.
+function notFound() {
+  return new Response(null, { status: 404, headers: securityHeaders() });
 }
 
 // ============================================================
@@ -512,6 +536,134 @@ async function handleDataPut(request, env, nowSec) {
 }
 
 // ============================================================
+// Calendario: un indirizzo per persona, da dare in pasto al telefono
+// ============================================================
+
+// Lo slug è il nome "piegato" (via accenti, apostrofi, spazi e punti) in
+// minuscolo: FLORENZAN → florenzan, "DI VITA F." → divitaf, "D'AMORE" → damore.
+// Serve solo a rendere leggibile l'indirizzo: non è un segreto.
+function calSlug(person) {
+  return TurniRules.fold(person).toLowerCase();
+}
+
+// La firma è la chiave d'accesso: primi 22 caratteri base64url dell'HMAC del
+// nome vero (non dello slug, che è ambiguo per costruzione). 22 caratteri sono
+// circa 132 bit: non si indovina. Si revocano tutte cambiando SESSION_SECRET.
+async function calSignature(secret, person) {
+  const full = base64urlEncode(await hmacSha256(secret, CAL_MESSAGE + person));
+  return full.slice(0, CAL_SIG_LEN);
+}
+
+// "/cal/<slug>-<firma>.ics" → { slug, signature }, oppure null se l'indirizzo
+// non ha quella forma. Lo slug non contiene mai un trattino (fold tiene solo
+// A-Z), quindi il primo trattino è sempre quello che separa i due pezzi.
+function parseCalPath(path) {
+  if (path.indexOf(CAL_PREFIX) !== 0) return null;
+  const file = path.slice(CAL_PREFIX.length);
+  if (file.slice(-4) !== '.ics') return null;
+  const stem = file.slice(0, -4);
+  const dash = stem.indexOf('-');
+  if (dash <= 0) return null;
+  const slug = stem.slice(0, dash);
+  const signature = stem.slice(dash + 1);
+  if (!/^[a-z]+$/.test(slug)) return null;
+  if (signature.length !== CAL_SIG_LEN || !/^[A-Za-z0-9_-]+$/.test(signature)) return null;
+  return { slug: slug, signature: signature };
+}
+
+// I turni salvati, già ridotti a elenco di assegnazioni; null se non c'è niente
+// da leggere. KV assente, vuoto, irraggiungibile o con dentro qualcosa di rotto
+// valgono tutti la stessa cosa: chi chiede il calendario riceve un 404.
+async function readAssignments(env) {
+  if (!env.TURNI) {
+    console.error('Binding KV TURNI assente: impossibile leggere i turni.');
+    return null;
+  }
+  let stored;
+  try {
+    stored = await env.TURNI.get(KV_DATA_KEY);
+  } catch (err) {
+    console.error('Lettura da KV non riuscita: ' + errText(err));
+    return null;
+  }
+  if (stored === null || stored === undefined) return null;
+  try {
+    const data = JSON.parse(stored);
+    const rosters = data && Array.isArray(data.rosters) ? data.rosters : [];
+    return TurniRules.buildAssignments(rosters);
+  } catch (err) {
+    console.error('Turni salvati non utilizzabili: ' + errText(err));
+    return null;
+  }
+}
+
+// Il nome vero il cui slug è quello chiesto. Nessuna corrispondenza, oppure due
+// nomi diversi che si piegano allo stesso slug (un refuso tipo "DAMORE" accanto
+// a "D'AMORE"): null, cioè 404 — non sapendo quale dei due sia non si può
+// nemmeno ricalcolare la firma, e tirare a indovinare mostrerebbe i turni
+// sbagliati a qualcuno.
+function personBySlug(assignments, slug) {
+  let found = null;
+  for (let i = 0; i < assignments.length; i++) {
+    const person = assignments[i].person;
+    if (calSlug(person) !== slug) continue;
+    if (found === null) found = person;
+    else if (found !== person) return null;
+  }
+  return found;
+}
+
+// GET /cal/<slug>-<firma>.ics — nessuna sessione: la chiave sta nell'indirizzo,
+// perché l'app del calendario interroga senza cookie. Ogni intoppo (indirizzo
+// storto, nome assente, slug ambiguo, firma diversa, KV vuoto) esce allo stesso
+// modo, 404 a corpo vuoto: da fuori non si capisce nemmeno se il nome esista.
+async function handleCalendar(request, env) {
+  const parsed = parseCalPath(new URL(request.url).pathname);
+  if (parsed === null) return notFound();
+
+  const assignments = await readAssignments(env);
+  if (assignments === null) return notFound();
+
+  const person = personBySlug(assignments, parsed.slug);
+  if (person === null) return notFound();
+
+  const expected = await calSignature(env.SESSION_SECRET, person);
+  if (!equalBytes(utf8(parsed.signature), utf8(expected))) return notFound();
+
+  // Tutti i mesi presenti in KV: chi si iscrive una volta se li ritrova tutti.
+  const ics = TurniRules.buildICS(assignments, person);
+  const headers = securityHeaders();
+  headers.set('Content-Type', 'text/calendar; charset=utf-8');
+  headers.set('Cache-Control', 'private, max-age=' + CAL_MAX_AGE);
+  return new Response(ics, { status: 200, headers: headers });
+}
+
+// GET /cal-link?nome=<nome> — con la sessione (qualunque ruolo). È l'unico modo
+// in cui la pagina può conoscere la firma, perché il segreto sta solo qui.
+// Il nome chiesto si risolve attraverso lo slug, così "florenzan" e "FLORENZAN"
+// portano allo stesso indirizzo e i casi ambigui vengono rifiutati qui, invece
+// di consegnare un indirizzo che poi darebbe 404.
+async function handleCalLink(request, env, nowSec) {
+  const role = await sessionRole(request, env, nowSec);
+  if (!role) return jsonResponse({ error: 'Accesso richiesto.' }, 401);
+
+  const url = new URL(request.url);
+  const slug = calSlug(url.searchParams.get('nome') || '');
+  if (slug === '') return jsonResponse({ error: MSG_NOME_NON_TROVATO }, 404);
+
+  const assignments = await readAssignments(env);
+  const person = assignments === null ? null : personBySlug(assignments, slug);
+  if (person === null) return jsonResponse({ error: MSG_NOME_NON_TROVATO }, 404);
+
+  const signature = await calSignature(env.SESSION_SECRET, person);
+  const path = CAL_PREFIX + calSlug(person) + '-' + signature + '.ics';
+  return jsonResponse({
+    url: 'https://' + url.host + path,
+    webcal: 'webcal://' + url.host + path
+  }, 200);
+}
+
+// ============================================================
 // Instradamento
 // ============================================================
 
@@ -546,8 +698,16 @@ async function route(request, env) {
     if (method === 'GET') response = await handleDataGet(request, env, nowSec);
     else if (method === 'PUT') response = await handleDataPut(request, env, nowSec);
     else response = methodNotAllowed('GET, HEAD, PUT');
+  } else if (path === '/cal-link') {
+    response = method === 'GET'
+      ? await handleCalLink(request, env, nowSec)
+      : methodNotAllowed('GET, HEAD');
+  } else if (path.indexOf(CAL_PREFIX) === 0) {
+    response = method === 'GET'
+      ? await handleCalendar(request, env)
+      : methodNotAllowed('GET, HEAD');
   } else {
-    response = new Response(null, { status: 404, headers: securityHeaders() });
+    response = notFound();
   }
 
   if (request.method === 'HEAD' && response.body) {

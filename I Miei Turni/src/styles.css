@@ -257,6 +257,15 @@ button { font: inherit; color: inherit; }
 .totale { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--line); padding-top: 12px; }
 .totale__head { display: flex; align-items: baseline; gap: 10px; }
 .totale__all { margin-left: auto; font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
+/* Indirizzo del calendario: mono piccolo, con «Copia» accanto. */
+.callink { margin-top: 8px; }
+.callink__row { display: flex; align-items: center; gap: 8px; }
+.callink__url {
+  flex: 1; min-width: 0; overflow-wrap: anywhere;
+  font-family: var(--mono); font-size: 11px; line-height: 1.35; color: var(--ink-2);
+}
+.callink__note { margin: 5px 0 0; font-size: 11.5px; line-height: 1.4; color: var(--muted); }
+
 .totale__row {
   display: grid; grid-template-columns: 42px 1fr; gap: 8px; align-items: baseline;
   font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums;
@@ -425,6 +434,22 @@ button { font: inherit; color: inherit; }
   padding: 5px 2px; font-weight: 400;
 }
 .tab__hs b { font-size: 10.5px; font-weight: 600; color: var(--ink-2); }
+/* L'intestazione della fascia si tocca e si spiega. */
+.slotbtn {
+  display: block; width: 100%; padding: 0; margin: 0; border: 0; background: none;
+  font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 4px;
+}
+.slotbtn:active { transform: scale(.97); }
+.slotbtn[aria-expanded="true"] { background: var(--surface-2); }
+.slotpop {
+  position: fixed; z-index: 60; max-width: min(260px, calc(100vw - 16px));
+  padding: 8px 11px 9px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.slotpop p { margin: 0; }
+.slotpop__t { font-size: 13px; font-weight: 600; letter-spacing: .01em; color: var(--ink); }
+.slotpop__h { font-size: 12.5px; color: var(--ink-2); }
+.slotpop__s { margin-top: 3px !important; font-size: 11.5px; line-height: 1.35; color: var(--muted); }
 .tab__hs time { font-family: var(--mono); font-size: 9.5px; color: var(--muted); margin-left: 3px; }
 
 .tab tbody tr { scroll-margin-top: calc(var(--h-header) + 34px); }

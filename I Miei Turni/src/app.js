@@ -214,6 +214,10 @@
   var role = (window.TURNI_ROLE === 'gestore' || window.TURNI_ROLE === 'medico') ? window.TURNI_ROLE : null;
   var gestore = role ? role === 'gestore' : (!runtime || readStore(LS_GESTORE) === '1');
   var soloVista = role === 'medico';
+  // Se la pagina arriva dal Worker c'è un ruolo scritto dentro: solo lì esiste
+  // la rotta cal-link, quindi solo lì il calendario si può abbonare.
+  var onWorker = typeof window.TURNI_ROLE === 'string' && !!window.TURNI_ROLE;
+  var calLink = null;
 
   var D = {};
   var hits = [];              // ultimo risultato di searchNames (una volta per battuta)
@@ -672,13 +676,15 @@
 
     totaleEl.appendChild(el('button', {
       class: 'btn btn--solid btn--wide', type: 'button', id: 'icsBtn',
-      text: 'Esporta i miei turni nel mio calendario',
-      'aria-label': 'Scarica i turni di ' + name + ' nel calendario',
+      text: 'Mostra i miei turni nel mio calendario',
+      'aria-label': 'Mostra i turni di ' + name + ' nel calendario',
       on: { click: exportICS },
     }));
+    if (calLink && calLink.person === name) totaleEl.appendChild(calLinkRow(calLink));
   }
 
   function renderMain() {
+    closeSlotPop();
     var v = state.view;
     var segs = { calendario: segCal, tabella: segTab, ore: segOre };
     segOre.hidden = !canSeeOre();
@@ -888,11 +894,11 @@
       });
       grid.appendChild(el('div', { class: 'detail__gh' }));
       slots.forEach(function (row) {
-        grid.appendChild(el('div', { class: 'detail__gh' }, [
+        grid.appendChild(el('div', { class: 'detail__gh' }, slotButton(row, [
           el('b', { text: shortSlotName(row.slot.label) }),
           ' ',
           el('time', { text: R.timeRange(row.slot) }),
-        ]));
+        ])));
       });
       D.monthRosters.forEach(function (r) {
         grid.appendChild(el('div', {
@@ -947,9 +953,9 @@
       el('th', { class: 'tab__corner', scope: 'col' }, el('span', { class: 'sr-only', text: 'Giorno' })),
       el('th', { class: 'tab__hh', scope: 'col' }, el('span', { class: 'sr-only', text: 'Ospedale' })),
     ].concat(D.slotRows.map(function (row) {
-      return el('th', { class: 'tab__hs', scope: 'col' }, [
+      return el('th', { class: 'tab__hs', scope: 'col' }, slotButton(row, [
         el('b', { text: row.key }), el('time', { text: R.timeRange(row.slot) }),
-      ]);
+      ]));
     })))));
 
     var body = el('tbody');
@@ -1005,6 +1011,57 @@
     });
     tableWrap.removeChild(ruler);
     return out;
+  }
+
+  // Sul telefono non c'è il passaggio del mouse: l'intestazione della fascia è
+  // un bottone che apre due righe (nome per esteso e orario a parole), più il
+  // ruolo scritto nel foglio quando c'è. Il riquadro sta sul corpo della pagina,
+  // in posizione fissa: non sposta niente e la testata appiccicata non lo taglia.
+  var popEl = null, popBtn = null;
+
+  function slotButton(row, kids) {
+    return el('button', {
+      class: 'slotbtn', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'slotpop',
+      on: {
+        click: function (e) {
+          e.stopPropagation();
+          toggleSlotPop(this, row.slot);
+        },
+      },
+    }, kids);
+  }
+
+  function toggleSlotPop(btn, slot) {
+    var same = popBtn === btn;
+    closeSlotPop();
+    if (same) return;
+    popEl = el('div', {
+      class: 'slotpop', id: 'slotpop', role: 'dialog', 'aria-label': R.slotFullName(slot),
+    }, [
+      el('p', { class: 'slotpop__t', text: R.slotFullName(slot) }),
+      el('p', { class: 'slotpop__h', text: R.slotHoursPhrase(slot) }),
+      slot.sub ? el('p', { class: 'slotpop__s', text: slot.sub }) : null,
+    ]);
+    document.body.appendChild(popEl);
+    popBtn = btn;
+    btn.setAttribute('aria-expanded', 'true');
+    placeSlotPop();
+  }
+
+  function placeSlotPop() {
+    if (!popEl || !popBtn) return;
+    var r = popBtn.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) { closeSlotPop(); return; }
+    var w = popEl.offsetWidth;
+    popEl.style.left = Math.round(Math.min(Math.max(8, r.left - 6), Math.max(8, window.innerWidth - w - 8))) + 'px';
+    popEl.style.top = Math.round(r.bottom + 6) + 'px';
+  }
+
+  function closeSlotPop() {
+    if (popBtn) popBtn.setAttribute('aria-expanded', 'false');
+    if (popEl && popEl.parentNode) popEl.parentNode.removeChild(popEl);
+    popEl = null;
+    popBtn = null;
   }
 
   // Una cella di fascia: gli stessi nomi in tabella (td) e nel dettaglio (div).
@@ -1439,9 +1496,58 @@
       .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
+  // Sul Worker il calendario si abbona (webcal:), altrove si scarica.
   function exportICS() {
     var name = state.pinned;
     if (!name) return;
+    if (onWorker) {
+      fetchJSON('cal-link?nome=' + encodeURIComponent(name)).then(function (j) {
+        if (!j || !j.webcal || !j.url) throw new Error('senza indirizzo');
+        calLink = { person: name, url: j.url, webcal: j.webcal };
+        renderTotale();
+        window.location.href = j.webcal;
+      }).catch(function () { downloadICS(name); });
+      return;
+    }
+    downloadICS(name);
+  }
+
+  function fetchJSON(url) {
+    return fetch(url, { headers: { accept: 'application/json' } }).then(function (res) {
+      if (!res.ok) throw new Error('http ' + res.status);
+      return res.json();
+    });
+  }
+
+  // L'indirizzo da incollare a mano (Android, computer): mono, con «Copia».
+  function calLinkRow(link) {
+    return el('div', { class: 'callink' }, [
+      el('div', { class: 'callink__row' }, [
+        el('code', { class: 'callink__url', text: link.url }),
+        el('button', {
+          class: 'minibtn', type: 'button', text: 'Copia',
+          'aria-label': 'Copia l’indirizzo del calendario',
+          on: { click: function () { copyText(link.url); } },
+        }),
+      ]),
+      el('p', {
+        class: 'callink__note',
+        text: 'Si aggiorna da solo. Su Android: aggiungi il calendario da questo indirizzo in Google Calendar.',
+      }),
+    ]);
+  }
+
+  function copyText(text) {
+    var done = function () { toast('Indirizzo copiato.'); };
+    var fail = function () { toast('Copia non riuscita: tieni premuto sull’indirizzo.', true); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fail);
+      return;
+    }
+    fail();
+  }
+
+  function downloadICS(name) {
     var data = R.buildICS(D.assignments, name, state.month, {});
     var filename = 'turni-' + slug(name) + '-' + slug(monthName(state.month)) + '-' + state.month.slice(0, 4) + '.ics';
 
@@ -1946,6 +2052,16 @@
 
     segCal.addEventListener('click', function () { setView('calendario'); });
     simplBtn.addEventListener('click', toggleSimpl);
+    document.addEventListener('click', function (e) {
+      if (popEl && !popEl.contains(e.target)) closeSlotPop();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && popEl) { var b = popBtn; closeSlotPop(); if (b) b.focus(); }
+    });
+    window.addEventListener('scroll', function () {
+      if (popEl) placeSlotPop();
+    }, true);
+    window.addEventListener('resize', function () { if (popEl) placeSlotPop(); });
     segTab.addEventListener('click', function () { setView('tabella'); });
     segOre.addEventListener('click', function () { setView('ore'); });
     $('segbar').addEventListener('keydown', function (e) {
