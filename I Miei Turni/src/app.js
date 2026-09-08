@@ -19,6 +19,7 @@
   var LS_VIEW = 'imieiturni.view';
   var LS_GESTORE = 'imieiturni.gestore';
   var LS_SITES = 'imieiturni.sedi';
+  var LS_SIMPL = 'imieiturni.semplifica';
   var LS_INTRO = 'imieiturni.intro';
   var LS_DEV = 'imieiturni.dev';
   var SVGNS = 'http://www.w3.org/2000/svg';
@@ -203,6 +204,7 @@
     armedIndex: 0,
     pinned: null,
     popOpen: false,
+    simplify: readStore(LS_SIMPL) === '1',
   };
 
   var local = readLocal();
@@ -246,7 +248,7 @@
     emptyEl = $('empty'), totaleEl = $('totale'), calEl = $('calendario'), legendEl = $('callegend'),
     detailEl = $('detail'), findEl = $('segnalazioni'), bottomEl = $('bottom'),
     sitesEl = $('sites'), updatedEl = $('updated'),
-    filtersRow = $('filtersrow'), sitesLabel = $('sitesLabel'),
+    filtersRow = $('filtersrow'), sitesLabel = $('sitesLabel'), simplBtn = $('simplBtn'),
     fileInput = $('fileInput'), toasts = $('toasts'), srStatus = $('srStatus'),
     reviewEl = $('review'), reviewPanel = $('reviewPanel'), reviewTitle = $('reviewTitle'),
     reviewCap = $('reviewCap'), reviewBody = $('reviewBody'), reviewSave = $('reviewSave'), reviewCancel = $('reviewCancel');
@@ -336,15 +338,64 @@
   // La tabella ha tre colonne: M, P, N. L'ambulatorio non ha una colonna sua:
   // sta dentro la mattina (stesse ore) con la targhetta AMB, perché la stanza
   // non è la stessa. Se un foglio non avesse la mattina, la colonna A resta.
+  // Spento: le colonne del foglio, tali e quali (M, P, N, A). Acceso: mattina e
+  // pomeriggio restano due intestazioni ma il corpo diventa una cella sola, e
+  // l'ambulatorio entra nella mattina (stesse ore, targhetta AMB).
   function columns() {
-    var rows = D.slotRows;
-    var hasM = rows.some(function (r) { return r.key === 'M'; });
-    var out = [];
+    var rows = D.slotRows, out = [];
+    var fold = state.simplify && hasMP();
     rows.forEach(function (r, i) {
-      if (hasM && r.key === 'A') return;
+      if (fold && r.key === 'A') return;
       out.push({ key: r.key, row: r, slot: r.slot, idx: i });
     });
     return out;
+  }
+
+  function hasMP() {
+    var m = false, p = false;
+    D.slotRows.forEach(function (r) { if (r.key === 'M') m = true; if (r.key === 'P') p = true; });
+    return m && p;
+  }
+
+  // Nella lista delle colonne, l'indice della mattina seguita dal pomeriggio.
+  function mpAt(cols) {
+    for (var i = 0; i < cols.length; i++) {
+      if (cols[i].key === 'M' && cols[i + 1] && cols[i + 1].key === 'P') return i;
+    }
+    return -1;
+  }
+
+  // Una riga per persona: chi fa mattina e pomeriggio si scrive una volta sola,
+  // in mezzo alle due colonne; gli altri stanno nella loro metà.
+  function mpLines(r, day) {
+    var ms = r.slotsByKey.M, ps = r.slotsByKey.P, as = r.slotsByKey.A;
+    var m = (ms && day) ? cellNames(day, r.hospital, ms) : [];
+    var p = (ps && day) ? cellNames(day, r.hospital, ps) : [];
+    var amb = (as && day) ? cellNames(day, r.hospital, as) : [];
+
+    var mornings = m.map(function (n) { return { n: n, keys: 'M' }; });
+    amb.forEach(function (n) {
+      var same = null;
+      mornings.forEach(function (x) { if (x.n.name === n.name) same = x; });
+      if (same) { same.keys += 'A'; return; }
+      mornings.push({ n: n, keys: 'A' });
+    });
+
+    var left = Object.create(null);
+    p.forEach(function (n, i) { left[n.name] = i; });
+
+    var rows = [];
+    mornings.forEach(function (x, i) {
+      var both = left[x.n.name] !== undefined;
+      rows.push({ n: x.n, keys: both ? x.keys + 'P' : x.keys, span: both, col: 1, i: i, o: 0 });
+      if (both) delete left[x.n.name];
+    });
+    p.forEach(function (n, i) {
+      if (left[n.name] === undefined) return;                    // già unito alla sua mattina
+      rows.push({ n: n, keys: 'P', span: false, col: 2, i: i, o: 1 });
+    });
+    rows.sort(function (a, b) { return a.i - b.i || a.o - b.o; });
+    return rows;
   }
 
   function ambIndex() {
@@ -355,23 +406,11 @@
   // I nomi di una cella, nell'ordine del foglio (che è il ruolo). Nella mattina,
   // dopo i nomi della mattina, vengono quelli dell'ambulatorio.
   function cellEntries(r, day, key) {
-    var out = [], seen = Object.create(null);
     var slot = r.slotsByKey[key];
-    if (slot && day) {
-      cellNames(day, r.hospital, slot).forEach(function (n) {
-        var e = { n: n, keys: key, amb: false };
-        seen[n.name] = e;
-        out.push(e);
-      });
-    }
-    var amb = key === 'M' ? r.slotsByKey.A : null;
-    if (amb && day) {
-      cellNames(day, r.hospital, amb).forEach(function (n) {
-        if (seen[n.name]) { seen[n.name].keys += 'A'; seen[n.name].amb = true; return; }
-        out.push({ n: n, keys: 'A', amb: true });
-      });
-    }
-    return out;
+    if (!slot || !day) return [];
+    return cellNames(day, r.hospital, slot).map(function (n) {
+      return { n: n, keys: key, amb: key === 'A' };
+    });
   }
 
   // Un nome che copre due fasce porta la segnalazione più grave delle due.
@@ -617,7 +656,23 @@
         }, [on ? icon('i-check') : null, el('span', { text: h })]));
       });
     }
-    filtersRow.hidden = !many;
+    renderSimpl();
+    filtersRow.hidden = false;
+  }
+
+  // Un interruttore vero: si vede che è acceso o spento senza doverlo provare.
+  function renderSimpl() {
+    simplBtn.setAttribute('aria-checked', state.simplify ? 'true' : 'false');
+    simplBtn.title = state.simplify
+      ? 'Torna a mostrare mattina, pomeriggio e ambulatorio separati'
+      : 'Scrivi una volta sola chi fa mattina e pomeriggio';
+  }
+
+  function toggleSimpl() {
+    state.simplify = !state.simplify;
+    writeStore(LS_SIMPL, state.simplify ? '1' : null);
+    renderAll();
+    srSay(state.simplify ? 'Mattina e pomeriggio uniti' : 'Fasce separate');
   }
 
   function renderUpdated() {
@@ -892,9 +947,16 @@
 
     // Colonne = fasce (con Semplifica, mattina e pomeriggio in una sola),
     // righe = sedi: lo stesso schema della tabella.
-    var slots = columns().filter(function (c) {
+    var all = columns();
+    var slots = all.filter(function (c) {
+      // con Semplifica mattina e pomeriggio restano due colonne anche se una
+      // delle due è vuota: la cella unita ci sta sotto.
+      if (state.simplify && (c.key === 'M' || c.key === 'P') && mpAt(all) >= 0) {
+        return D.monthRosters.some(function (r) { return mpLines(r, day).length; });
+      }
       return D.monthRosters.some(function (r) { return cellEntries(r, day, c.key).length; });
     });
+    var dmp = state.simplify ? mpAt(slots) : -1;
     var shown = slots.length;
 
     if (shown) {
@@ -919,7 +981,10 @@
         grid.appendChild(el('div', {
           class: 'detail__site ' + hospClass(r.hospital), title: r.title || r.hospital, text: r.hospital,
         }));
-        slots.forEach(function (c) { grid.appendChild(cellFor(r, day, c, 'div')); });
+        for (var ci = 0; ci < slots.length; ci++) {
+          if (dmp === ci) { grid.appendChild(mpCell(r, day, 'div')); ci++; continue; }
+          grid.appendChild(cellFor(r, day, slots[ci], 'div'));
+        }
       });
       detailEl.appendChild(grid);
     }
@@ -944,12 +1009,13 @@
     tableWidth = tableWrap.clientWidth || 366;
     var free = Math.max(140, tableWidth - 55);
     var cols = columns();
+    var mpi = state.simplify ? mpAt(cols) : -1;
     var m = measureCols(D.tableNames);
     // La colonna «Giorno» ospita i nomi delle due fasce più la pastiglia dell'orario.
-    var ai = ambIndex();
+    var ai = state.simplify ? ambIndex() : -1;
     var need = cols.map(function (c) {
       if (c.key !== 'M' || ai < 0) return m.cols[c.idx] + 2;
-      // la mattina tiene anche i nomi dell'ambulatorio, con la loro targhetta
+      // con Semplifica la mattina ospita anche l'ambulatorio, targhetta compresa
       return Math.max(m.cols[c.idx], m.cols[ai] + m.tag + 4) + 2;
     });
     var sum = need.reduce(function (x, y) { return x + y; }, 0) || 1;
@@ -990,7 +1056,10 @@
         if (i === 0) tr.appendChild(tableDayCell(d));
         tr.appendChild(el('td', { class: 'tab__h' },
           el('span', { class: 'tab__site ' + hospClass(r.hospital), text: r.hospital })));
-        cols.forEach(function (c) { tr.appendChild(cellFor(r, d, c, 'td')); });
+        for (var ci = 0; ci < cols.length; ci++) {
+          if (mpi === ci) { tr.appendChild(mpCell(r, d, 'td')); ci++; continue; }
+          tr.appendChild(cellFor(r, d, cols[ci], 'td'));
+        }
         body.appendChild(tr);
       });
       table.appendChild(body);
@@ -1092,13 +1161,41 @@
     var cls = tag === 'td' ? 'pill--t' : '';
     cellEntries(r, day, col.key).forEach(function (e, i) {
       var n = e.n;
-      var word = e.amb ? 'ambulatorio' : (SLOT_SAY[col.key] || R.slotName(col.slot.label).toLowerCase());
+      var word = SLOT_SAY[col.key] || R.slotName(col.slot.label).toLowerCase();
+      // Qui la colonna dice già di che fascia si tratta: la targhetta AMB serve
+      // solo dentro la cella unita, dove mattina e ambulatorio stanno insieme.
       box.appendChild(namePill(n.name, sevKeys(r.hospital, day.date, n.name, e.keys), {
-        cls: cls, first: i === 0, in: i > 0, slots: e.keys, tag: e.amb ? 'AMB' : null,
+        cls: cls, first: i === 0, in: i > 0, slots: e.keys,
         title: n.name + ' · ' + word + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
         label: n.name + ' — ' + word + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
       }));
     });
+    return box;
+  }
+
+  // Mattina e pomeriggio in una cella sola, due colonne: chi fa tutto il giorno
+  // sta in mezzo, scritto una volta; gli altri nella loro metà.
+  function mpCell(r, day, tag) {
+    var lines = mpLines(r, day);
+    var box = tag === 'td'
+      ? el('td', { class: 'tab__c tab__c--mp', colspan: '2', data: { slot: 'MP' } })
+      : el('div', { class: 'detail__cell detail__cell--mp ' + hospClass(r.hospital), data: { slot: 'MP' } });
+    var grid = el('div', { class: 'mpgrid' });
+    lines.forEach(function (line, i) {
+      var amb = line.keys.indexOf('A') !== -1;
+      var word = line.span ? (amb ? 'ambulatorio e pomeriggio' : 'mattina e pomeriggio')
+        : (amb ? 'ambulatorio' : SLOT_SAY[line.keys]);
+      var pill = namePill(line.n.name, sevKeys(r.hospital, day.date, line.n.name, line.keys), {
+        cls: tag === 'td' ? 'pill--t' : '',
+        first: i === 0, in: i > 0, slots: line.keys, tag: amb ? 'AMB' : null,
+        title: line.n.name + ' · ' + word + (line.n.role ? ' · ' + (line.n.pos + 1) + 'º ' + line.n.role : ''),
+        label: line.n.name + ' — ' + word + ' ' + r.hospital + (line.n.role ? ', ' + line.n.role : ''),
+      });
+      pill.classList.add(line.span ? 'mp--both' : (line.col === 1 ? 'mp--m' : 'mp--p'));
+      pill.style.gridRow = String(i + 1);
+      grid.appendChild(pill);
+    });
+    box.appendChild(grid);
     return box;
   }
 
@@ -2436,6 +2533,7 @@
     });
 
     segCal.addEventListener('click', function () { setView('calendario'); });
+    simplBtn.addEventListener('click', toggleSimpl);
     document.addEventListener('click', function (e) {
       if (popEl && !popEl.contains(e.target)) closeSlotPop();
     });
