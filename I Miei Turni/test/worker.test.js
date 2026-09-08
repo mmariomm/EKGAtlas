@@ -89,7 +89,7 @@ function nonContiene(testo, pezzo, messaggio) {
 // Finti env, KV, richieste
 // ============================================================
 
-const PREFISSI_CONTATORI = ['try:', 'stat:', 'uso:', 'cal:', 'calsub:', 'calday:', 'callink:'];
+const PREFISSI_CONTATORI = ['try:', 'stat:', 'uso:', 'calday:', 'callink:'];
 
 function contatore(chiave) {
   return PREFISSI_CONTATORI.some(function (p) { return String(chiave).indexOf(p) === 0; });
@@ -1454,18 +1454,22 @@ async function testCalendarioConteggi(worker) {
 
   // Del calendario si tiene un pezzo della firma, mai lo slug: il cognome non
   // deve comparire da nessuna parte nel registro.
-  vero(kv.store.has('calsub:' + MESE + ':' + frammento),
-    'l\'abbonato è segnato con i primi dodici caratteri della firma');
+  vero(kv.store.has('calday:' + GIORNO + ':' + frammento),
+    'la lettura è segnata con i primi dodici caratteri della firma');
   const scritture = kv.puts.filter(function (p) { return p.key.indexOf('cal') === 0; });
-  vero(scritture.length >= 3, 'il calendario ha scritto i suoi contatori');
+  vero(scritture.length >= 3, 'il calendario ha scritto le sue righe');
   for (const scrittura of scritture) {
     nonContiene(scrittura.key.toLowerCase(), 'florenzan', 'nelle chiavi del calendario non finisce il cognome');
     nonContiene(scrittura.key.toLowerCase(), 'damore', 'nelle chiavi del calendario non finisce il cognome');
   }
-  const iscritto = scritture.filter(function (p) { return p.key.indexOf('calsub:') === 0; })[0];
-  uguale(iscritto.opzioni && iscritto.opzioni.expirationTtl, 3456000, 'l\'abbonato scade dopo 40 giorni');
-  const delGiorno = scritture.filter(function (p) { return p.key.indexOf('calday:') === 0; })[0];
-  uguale(delGiorno.opzioni && delGiorno.opzioni.expirationTtl, 864000, 'il segno del giorno scade dopo 10 giorni');
+
+  // Una forma di chiave sola: le letture. Niente contatori da tenere allineati.
+  const letture = scritture.filter(function (p) { return p.key.indexOf('calday:') === 0; });
+  uguale(letture.length, 2, 'una scrittura per abbonamento al giorno, non due');
+  uguale(letture[0].opzioni && letture[0].opzioni.expirationTtl, 3456000,
+    'la riga della lettura scade dopo 40 giorni');
+  uguale(kv.store.has('cal:' + MESE), false, 'nessun contatore delle letture da tenere a parte');
+  uguale(kv.store.has('calsub:' + MESE + ':' + frammento), false, 'nessuna riga separata per gli abbonati');
 }
 
 async function testUsoSenzaPersone(worker) {

@@ -61,9 +61,7 @@ const KV_STAT_SAVE = 'stat:save:';      // stat:save:<AAAA-MM>
 const KV_STAT_LAST_SAVE = 'stat:last-save';
 
 const KV_USO = 'uso:';                  // uso:<AAAA-MM-GG> — tutta la giornata
-const KV_CAL_LETTURE = 'cal:';          // cal:<AAAA-MM> — letture del calendario
-const KV_CAL_ISCRITTO = 'calsub:';      // calsub:<AAAA-MM>:<pezzo di firma>
-const KV_CAL_OGGI = 'calday:';          // calday:<AAAA-MM-GG>:<pezzo di firma>
+const KV_CAL_LETTURA = 'calday:';       // calday:<AAAA-MM-GG>:<pezzo di firma>
 const KV_CAL_LINK = 'callink:';         // callink:<AAAA-MM> — indirizzi chiesti
 const MAX_USO_BYTES = 2048;
 const USO_DEV = /^[A-Za-z0-9_-]{22}$/;  // l'identificativo casuale del dispositivo
@@ -80,8 +78,7 @@ const USO_PAGINE = 50;                  // freno: al massimo 50 giri di list
 // Il registro non è eterno: 400 giorni tengono anche l'anno prima, e poi le
 // righe spariscono da sole senza che nessuno debba ricordarsi di ripulirle.
 const USO_TTL = 34560000;
-const CAL_ISCRITTO_TTL = 3456000;       // 40 giorni
-const CAL_OGGI_TTL = 864000;            // 10 giorni
+const CAL_LETTURA_TTL = 3456000;        // 40 giorni
 // Della firma del calendario si tiene solo un pezzo: basta a riconoscere due
 // letture dello stesso abbonamento, non dice di chi sia. Lo slug — che è il
 // cognome piegato — non entra qui in nessun caso.
@@ -892,24 +889,21 @@ async function addCounter(env, key, quanto) {
 }
 
 // Una lettura del calendario, contata senza sapere di chi sia: della firma si
-// tiene solo un pezzo, mai lo slug (che è il cognome piegato). Si conta una
-// volta al giorno per abbonamento, non a ogni richiesta: le app di calendario
-// ripassano anche ogni ora e da sole riempirebbero il piano gratuito di
-// scritture senza dire niente di più — quello che interessa è quanti calendari
-// stanno davvero leggendo i turni, non con che frequenza li interroga Apple.
+// tiene solo un pezzo, mai lo slug (che è il cognome piegato).
+//
+// Una riga per abbonamento e per giorno, e basta: si conta una volta al giorno,
+// non a ogni richiesta. Le app di calendario ripassano anche ogni ora e da sole
+// riempirebbero il piano gratuito di scritture senza dire niente di più —
+// quello che interessa è quanti calendari stanno davvero leggendo i turni, non
+// con che frequenza li interroga Apple. Da queste righe si ricavano tutte e due
+// le risposte: quante letture (quante righe) e quanti abbonati (quanti pezzi di
+// firma diversi), senza nessun contatore da tenere allineato.
 async function noteCalRead(env, signature, nowSec) {
   if (!env.TURNI) return;
-  const frammento = signature.slice(0, CAL_FRAMMENTO);
-  const mese = monthKey(nowSec);
   try {
-    const oggi = KV_CAL_OGGI + dayKey(nowSec) + ':' + frammento;
-    if (await env.TURNI.get(oggi) !== null) return;
-    await env.TURNI.put(oggi, '1', { expirationTtl: CAL_OGGI_TTL });
-    await addCounter(env, KV_CAL_LETTURE + mese, 1);
-    const iscritto = KV_CAL_ISCRITTO + mese + ':' + frammento;
-    if (await env.TURNI.get(iscritto) === null) {
-      await env.TURNI.put(iscritto, '1', { expirationTtl: CAL_ISCRITTO_TTL });
-    }
+    const key = KV_CAL_LETTURA + dayKey(nowSec) + ':' + signature.slice(0, CAL_FRAMMENTO);
+    if (await env.TURNI.get(key) !== null) return;
+    await env.TURNI.put(key, '1', { expirationTtl: CAL_LETTURA_TTL });
   } catch (err) {
     console.warn('Lettura del calendario non contata, KV non raggiungibile: ' + errText(err));
   }
@@ -959,12 +953,20 @@ async function listKeys(env, prefix) {
   return nomi;
 }
 
-// Quanti si sono iscritti al calendario, quanti giorni-abbonato di letture e
-// quanti hanno chiesto il proprio indirizzo.
+// Il calendario, tutto dalle righe delle letture: quante ne sono state fatte
+// (una per abbonamento al giorno) e quanti abbonamenti diversi le hanno fatte.
+// "richieste" è un'altra domanda — quanti hanno chiesto il proprio indirizzo —
+// e insieme dicono quanti sono arrivati in fondo all'iscrizione.
 async function readCalendario(env, mese) {
+  const chiavi = await listKeys(env, KV_CAL_LETTURA + mese + '-');
+  const iscritti = new Set();
+  for (let i = 0; i < chiavi.length; i++) {
+    const taglio = chiavi[i].lastIndexOf(':');
+    if (taglio !== -1) iscritti.add(chiavi[i].slice(taglio + 1));
+  }
   return {
-    iscritti: (await listKeys(env, KV_CAL_ISCRITTO + mese + ':')).length,
-    letture: asCount(await env.TURNI.get(KV_CAL_LETTURE + mese)),
+    iscritti: iscritti.size,
+    letture: chiavi.length,
     richieste: asCount(await env.TURNI.get(KV_CAL_LINK + mese))
   };
 }
