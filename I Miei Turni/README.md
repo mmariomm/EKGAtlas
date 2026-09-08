@@ -32,8 +32,9 @@ ospedali — **DEA** e **OSG** — letti dai file xlsx ufficiali. Pensata per il
   - **Cambio sede** — due turni diurni consecutivi in ospedali diversi senza pausa.
 - **Calendario da esportare**: con un nome fissato, il bottone *Calendario* scarica i suoi
   turni del mese in un file `.ics` da aprire nel calendario del telefono. Gli eventi si
-  chiamano `PS SSG Mattina`, `PS OSG Notte`, e così via — `SSG` è il DEA di Sesto San
-  Giovanni, `OSG` il San Giuseppe (la corrispondenza è in `SITE_LABEL`, in `src/rules.js`).
+  chiamano `PS DEA Mattina`, `PS OSG Notte`, e così via: le stesse sigle del foglio, che si
+  distinguono a colpo d'occhio (`SITE_LABEL`, in `src/rules.js`, è il punto unico da
+  cambiare se un giorno le sedi cambiano nome).
   Mattina 8–14, Pomeriggio 14–20, Giornata 8–20 quando mattina e pomeriggio sono nello
   stesso ospedale, Notte 20–8, Ambulatorio 9:30–15 quando è da solo. Nella pagina
   pubblicata come artifact non funziona: la piattaforma non permette di salvare file `.ics`,
@@ -138,7 +139,7 @@ data/             i file xlsx sorgente
 Da fare, non ancora fatto. Quando chi gestisce salva un file nuovo, chi ha la pagina sul
 telefono riceve un avviso che dice **quali dei suoi turni sono cambiati**, non solo che
 qualcosa è cambiato: «Turni aggiornati — 2 tuoi turni cambiati: sab 12 notte OSG, gio 17
-mattina SSG».
+mattina DEA».
 
 Come si costruisce, quando sarà il momento:
 

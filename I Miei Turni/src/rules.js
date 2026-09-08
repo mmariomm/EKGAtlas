@@ -430,9 +430,11 @@ var TurniRules = (function () {
   // buildICS — i turni di una persona come file di calendario
   // ------------------------------------------------------------------
 
-  // Come si chiama la sede negli eventi del calendario. Il foglio dice DEA e OSG;
-  // sul calendario si legge il luogo: Sesto San Giovanni e San Giuseppe.
-  var SITE_LABEL = { DEA: 'SSG', OSG: 'OSG' };
+  // Come si chiama la sede sullo schermo e negli eventi del calendario. Oggi sono
+  // le stesse sigle del foglio: "DEA" e "OSG" si distinguono a colpo d'occhio,
+  // mentre "SSG" e "OSG" si somigliano troppo. Questa tabella resta il punto
+  // unico da cambiare se un giorno le sedi cambiano nome.
+  var SITE_LABEL = { DEA: 'DEA', OSG: 'OSG' };
 
   // Fuso di Roma senza tabelle: si chiede al motore Intl che ora locale corrisponde
   // a un certo istante e si corregge lo scarto (due passate coprono anche i cambi d'ora).
