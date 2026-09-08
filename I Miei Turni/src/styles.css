@@ -232,22 +232,20 @@ button { font: inherit; color: inherit; }
 .filtersrow { display: flex; align-items: center; gap: 8px; padding: 6px 0 2px; }
 .filtersrow__lb { font-size: 11px; color: var(--muted); flex: none; }
 .sites { display: flex; gap: 6px; }
-.site, .simpl {
+.site {
   position: relative; display: inline-flex; align-items: center; gap: 4px;
   min-height: 28px; padding: 0 11px;
   border: 1px solid var(--line); border-radius: 14px; background: none;
   font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--muted);
   cursor: pointer; transition: background-color .15s ease, color .15s ease, transform .08s ease;
 }
-.site::after, .simpl::after { content: ""; position: absolute; inset: -6px -2px; }   /* area di tocco */
-.site:active, .simpl:active { transform: scale(.97); }
-.site .ico, .simpl .ico { width: 10px; height: 10px; margin-left: -2px; }
-.site[aria-pressed="true"], .simpl[aria-pressed="true"] { border-color: transparent; }
+.site::after { content: ""; position: absolute; inset: -6px -2px; }   /* area di tocco */
+.site:active { transform: scale(.97); }
+.site .ico { width: 10px; height: 10px; margin-left: -2px; }
+.site[aria-pressed="true"] { border-color: transparent; }
 .site.h-dea[aria-pressed="true"] { background: color-mix(in srgb, var(--dea) 14%, var(--surface)); color: var(--dea); }
 .site.h-osg[aria-pressed="true"] { background: color-mix(in srgb, var(--osg) 14%, var(--surface)); color: var(--osg); }
 .site.h-alt[aria-pressed="true"] { background: color-mix(in srgb, var(--alt) 14%, var(--surface)); color: var(--alt); }
-.simpl { margin-left: auto; font-weight: 500; }
-.simpl[aria-pressed="true"] { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
 
 /* --------------------------------------------------------------------------
    4. Impaginato
@@ -390,10 +388,6 @@ button { font: inherit; color: inherit; }
    fra parole intere; se le colonne non bastano, scorre il dettaglio, non la pagina. */
 .detail__cell { min-width: 72px; display: flex; flex-direction: column; align-items: flex-start; padding: 2px 0 6px; }
 .detail__cell .pill { font-size: 12px; line-height: 17px; padding: 2px 6px; }
-/* Colonna «Giorno»: le righe occupano tutta la cella, l'orario va a destra. */
-.detail__cell--day { align-self: stretch; }
-.detail__cell--day .pill { width: 100%; }
-.detail__cell--day .tchip { font-size: 10px; }
 .detail.is-multi .detail__cell.h-dea, .detail.is-multi .detail__site.h-dea { background-image: linear-gradient(var(--veil-dea), var(--veil-dea)); }
 .detail.is-multi .detail__cell.h-osg, .detail.is-multi .detail__site.h-osg { background-image: linear-gradient(var(--veil-osg), var(--veil-osg)); }
 .detail.is-multi .detail__cell.h-alt, .detail.is-multi .detail__site.h-alt { background-image: linear-gradient(var(--veil-alt), var(--veil-alt)); }
@@ -427,19 +421,14 @@ button { font: inherit; color: inherit; }
 }
 /* Dal secondo ruolo in poi il nome rientra: l'ordine è il ruolo, e si vede. */
 .detail__cell .pill.is-in { padding-left: 16px; }
+.detail__cell .pill.is-first { font-weight: 600; }
+.detail__cell .pill:not(.is-first) { font-weight: 400; }
 /* La parte di giornata coperta, accanto al nome: piccola, dello stesso inchiostro
    ma più chiara, così sta bene anche sul giallo e sui fondi delle segnalazioni. */
-/* L'orario sta attaccato al suo nome, non all'altro capo della cella: chi legge
-   deve accoppiarli con l'occhio, e l'occhio accoppia ciò che è vicino. */
+/* La targhetta dell'ambulatorio: stesse ore della mattina, stanza diversa. */
 .ttag {
-  margin-left: 2px; flex: none; font-size: 9.5px; letter-spacing: .04em;
+  margin-left: 5px; flex: none; font-size: 9.5px; letter-spacing: .04em; font-weight: 400;
   color: color-mix(in srgb, currentColor 52%, transparent);
-}
-.tchip {
-  margin-left: 6px; flex: none;
-  font-family: var(--mono); font-size: 9px; letter-spacing: -.02em;
-  font-variant-numeric: tabular-nums;
-  color: color-mix(in srgb, currentColor 58%, transparent);
 }
 
 .is-pinned .pill:not(.is-strong) { opacity: .45; }
@@ -543,6 +532,9 @@ button { font: inherit; color: inherit; }
 .pill--t > span:first-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .pill--t::after { inset: -3px -2px; }
 .pill--t.is-in { padding-left: 11px; }
+/* Il primo nome della cella è il primo ruolo: peso, oltre alla posizione. */
+.pill--t.is-first { font-weight: 600; }
+.pill--t:not(.is-first) { font-weight: 400; }
 
 /* --------------------------------------------------------------------------
    8. Ore
