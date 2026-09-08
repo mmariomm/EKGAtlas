@@ -570,6 +570,8 @@ var TurniRules = (function () {
     var lines = [
       'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//I Miei Turni//IT', 'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH', 'X-WR-CALNAME:' + icsEscape('Turni ' + person),
+      // Quanto spesso ha senso ricontrollare, per chi si iscrive al calendario.
+      'REFRESH-INTERVAL;VALUE=DURATION:PT12H', 'X-PUBLISHED-TTL:PT12H',
     ];
     events.forEach(function (ev) {
       lines.push('BEGIN:VEVENT', 'UID:' + ev.uid, 'DTSTAMP:' + stamp,
