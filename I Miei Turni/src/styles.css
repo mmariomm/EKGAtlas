@@ -682,6 +682,11 @@ button { font: inherit; color: inherit; }
 .chg__del { color: var(--sev3); text-decoration: line-through; }
 .chg__note { display: block; font-size: 11px; color: var(--muted); }
 
+/* Lettura d'uso: un elenco, non un cruscotto. */
+.usorow { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 13px; }
+.usorow__n { color: var(--ink); }
+.usorow__c { font-family: var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
 /* Presentazione: un passo solo, quello del telefono che si ha in mano. */
 .intro__step {
   display: flex; align-items: center; flex-wrap: wrap; gap: 6px;

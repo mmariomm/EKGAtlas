@@ -21,6 +21,7 @@
   var LS_SITES = 'imieiturni.sedi';
   var LS_SIMPL = 'imieiturni.semplifica';
   var LS_INTRO = 'imieiturni.intro';
+  var LS_DEV = 'imieiturni.dev';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var MONTHS_IT = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
@@ -221,7 +222,9 @@
   var onWorker = typeof window.TURNI_ROLE === 'string' && !!window.TURNI_ROLE;
   var calLink = null;
   var installEvent = null;      // beforeinstallprompt messo da parte (Android)
-  var sheetMode = 'review';     // lo stesso foglio serve la revisione e l'intro
+  var sheetMode = 'review';     // lo stesso foglio serve revisione, presentazione e uso
+  var ricerche = [];            // i nomi fissati in questa sessione
+  var usoSent = false;
 
   var D = {};
   var hits = [];              // ultimo risultato di searchNames (una volta per battuta)
@@ -1292,7 +1295,7 @@
     clear(bottomEl);
     var canUpload = gestore && !soloVista;
     var canRestore = canUpload && local.length > 0;
-    if (!canUpload && !role && !installEvent) { bottomEl.hidden = true; return; }
+    if (!canUpload && !role && !installEvent && !onWorker) { bottomEl.hidden = true; return; }
     bottomEl.hidden = false;
 
     // Chi ha chiuso la presentazione può installare da qui, finché si può.
@@ -1313,6 +1316,13 @@
       bottomEl.appendChild(el('button', {
         class: 'minibtn', type: 'button', text: 'Ripristina i dati pubblicati',
         on: { click: restorePublished },
+      }));
+    }
+    if (onWorker && gestore && !soloVista) {
+      bottomEl.appendChild(el('button', {
+        class: 'minibtn', type: 'button', text: 'Uso',
+        title: 'Quante persone usano la pagina e che cosa cercano',
+        on: { click: showUso },
       }));
     }
     if (role) {
@@ -1477,6 +1487,8 @@
     opts = opts || {};
     state.pinned = name;
     writeStore(LS_ME, name);
+    // Si conta il nome quando qualcuno lo sceglie davvero, non a ogni lettera.
+    if (name && ricerche[ricerche.length - 1] !== name) ricerche.push(name);
     state.query = '';
     input.value = '';
     clearBtn.hidden = true;
@@ -1800,6 +1812,89 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Uso: quanti dispositivi, quante aperture, quali nomi si cercano.
+  // Un identificativo casuale del dispositivo, niente che dica chi è: serve a
+  // decidere come far crescere la pagina, non a sapere chi ha guardato cosa.
+  // ---------------------------------------------------------------------------
+
+  function deviceId() {
+    var v = readStore(LS_DEV);
+    if (v) return v;
+    var bytes = new Uint8Array(16), s = '';
+    (window.crypto || window.msCrypto).getRandomValues(bytes);
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    v = window.btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    writeStore(LS_DEV, v);
+    return v;
+  }
+
+  // Una volta sola per sessione, quando la pagina se ne va, e senza far
+  // aspettare nessuno: se non parte, pazienza.
+  function sendUso() {
+    if (usoSent || !onWorker) return;
+    usoSent = true;
+    var body;
+    try {
+      body = JSON.stringify({ dev: deviceId(), installata: installed(), ricerche: ricerche });
+    } catch (e) { return; }
+    try {
+      if (navigator.sendBeacon && navigator.sendBeacon('uso', new Blob([body], { type: 'application/json' }))) return;
+      window.fetch('uso', {
+        method: 'POST', body: body, keepalive: true, headers: { 'content-type': 'application/json' },
+      }).catch(function () { /* niente rumore */ });
+    } catch (e) { /* niente rumore */ }
+  }
+
+  function showUso() {
+    fetchJSON('uso').then(renderUso, function () { toast('Non riesco a leggere l’uso.', true); });
+  }
+
+  function renderUso(d) {
+    d = d || {};
+    sheetMode = 'uso';
+    reviewTitle.textContent = 'Uso della pagina';
+    reviewCap.textContent = [
+      plural(num(d.dispositivi), 'dispositivo', 'dispositivi'),
+      num(d.installate) + ' con l’app installata',
+      plural(num(d.aperture), 'apertura', 'aperture'),
+      plural(num(d.ricerche), 'ricerca', 'ricerche'),
+    ].join(' · ');
+    reviewCancel.hidden = true;
+    reviewSave.disabled = false;
+    reviewSave.textContent = 'Chiudi';
+    clear(reviewBody);
+    var list = topNames(d.nomi);
+    if (!list.length) {
+      reviewBody.appendChild(el('p', { class: 'cap', text: 'Ancora nessuna ricerca.' }));
+    } else {
+      list.forEach(function (row) {
+        reviewBody.appendChild(el('div', { class: 'usorow' }, [
+          el('span', { class: 'usorow__n', text: row.nome }),
+          el('span', { class: 'usorow__c', text: String(row.n) }),
+        ]));
+      });
+    }
+    openReview();
+  }
+
+  function num(v) { return typeof v === 'number' && isFinite(v) ? v : 0; }
+
+  // I nomi possono arrivare come elenco, come coppie o come mappa: si accettano
+  // tutti e tre, e si tengono i venti più cercati.
+  function topNames(raw) {
+    var out = [];
+    if (Array.isArray(raw)) {
+      raw.forEach(function (x) {
+        if (Array.isArray(x)) out.push({ nome: String(x[0]), n: num(x[1]) });
+        else if (x && x.nome !== undefined) out.push({ nome: String(x.nome), n: num(x.n !== undefined ? x.n : x.conteggio) });
+      });
+    } else if (raw && typeof raw === 'object') {
+      Object.keys(raw).forEach(function (k) { out.push({ nome: k, n: num(raw[k]) }); });
+    }
+    return out.sort(function (a, b) { return b.n - a.n; }).slice(0, 20);
+  }
+
+  // ---------------------------------------------------------------------------
   // Presentazione: come tenersi la pagina a portata di mano (una volta sola)
   // ---------------------------------------------------------------------------
 
@@ -1857,6 +1952,12 @@
       return;
     }
     reviewBody.appendChild(el('p', { class: 'intro__step', text: 'Apri il menu ⋮ e scegli Installa app.' }));
+  }
+
+  function closeUso() {
+    sheetMode = 'review';
+    reviewCancel.hidden = false;
+    closeReview();
   }
 
   function closeIntro() {
@@ -2244,10 +2345,20 @@
     $('emptyUpload').addEventListener('click', function () { fileInput.click(); });
     fileInput.addEventListener('change', function () { loadFiles(fileInput.files); fileInput.value = ''; });
 
-    var sheetClose = function () { if (sheetMode === 'intro') closeIntro(); else nextReview(); };
+    var sheetClose = function () {
+      if (sheetMode === 'intro') closeIntro();
+      else if (sheetMode === 'uso') closeUso();
+      else nextReview();
+    };
     reviewSave.addEventListener('click', function () {
-      if (sheetMode === 'intro') closeIntro(); else saveReview();
+      if (sheetMode === 'intro') closeIntro();
+      else if (sheetMode === 'uso') closeUso();
+      else saveReview();
     });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') sendUso();
+    });
+    window.addEventListener('pagehide', sendUso);
     reviewCancel.addEventListener('click', sheetClose);
     $('reviewScrim').addEventListener('click', sheetClose);
     window.addEventListener('beforeinstallprompt', function (e) {

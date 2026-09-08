@@ -107,6 +107,24 @@ function kvFinto() {
     async delete(key) {
       store.delete(key);
     },
+    // list con prefisso e cursore, come quello vero. Impagina a due chiavi per
+    // volta anche quando ce ne sono poche: così il giro del cursore viene
+    // provato davvero, invece di finire sempre alla prima pagina.
+    async list(opzioni) {
+      const o = opzioni || {};
+      const prefisso = o.prefix || '';
+      const tutte = Array.from(store.keys()).filter(function (k) {
+        return k.indexOf(prefisso) === 0;
+      }).sort();
+      const da = o.cursor ? Number(o.cursor) : 0;
+      const pezzo = tutte.slice(da, da + 2);
+      const finita = da + 2 >= tutte.length;
+      return {
+        keys: pezzo.map(function (name) { return { name: name }; }),
+        list_complete: finita,
+        cursor: finita ? undefined : String(da + 2)
+      };
+    },
     // Fotografia dei dati (senza i contatori: né quelli dei tentativi né quelli
     // d'uso) per verificare che una richiesta rifiutata non abbia scritto niente.
     fotografia() {
@@ -1114,7 +1132,255 @@ async function testPagineInstallabili(worker) {
 }
 
 // ============================================================
-// 19. Nei log non finiscono password, cookie o indirizzi
+// 19. Registro d'uso: POST /uso e GET /uso
+// ============================================================
+
+const DEV_A = 'AAAAAAAAAAAAAAAAAAAAAA';   // 22 caratteri base64url
+const DEV_B = 'bbbbbbbbbbbbbbbbbbbb-_';
+const MESE = new Date().toISOString().slice(0, 7);
+
+function richiestaUso(cookie, corpo, extra) {
+  return richiesta('POST', '/uso', Object.assign({
+    cookie: cookie,
+    body: typeof corpo === 'string' ? corpo : JSON.stringify(corpo)
+  }, extra || {}));
+}
+
+async function leggiUso(worker, env, cookie, mese) {
+  const percorso = mese === undefined ? '/uso' : '/uso?mese=' + encodeURIComponent(mese);
+  const risposta = await worker.fetch(richiesta('GET', percorso, { cookie: cookie }), env);
+  return { risposta: risposta, corpo: await risposta.json() };
+}
+
+async function testUsoScrittura(worker) {
+  const env = envFinto();
+  const kv = env.TURNI;
+
+  const senza = await worker.fetch(richiestaUso('', { dev: DEV_A, installata: false, ricerche: [] }), env);
+  uguale(senza.status, 401, 'POST /uso senza sessione: 401');
+  uguale(kv.fotografia(), '', 'POST /uso senza sessione: niente scritto');
+
+  const medico = await accedi(worker, env, PASS_MEDICO, '203.0.113.40');
+  const prima = await worker.fetch(richiestaUso(medico.cookie, {
+    dev: DEV_A, installata: true, ricerche: ['BRAHAM', 'braham', ' pastore ']
+  }), env);
+  uguale(prima.status, 204, 'POST /uso valido: 204');
+  uguale(await prima.text(), '', 'POST /uso: risposta senza corpo');
+  uguale(prima.headers.get('Set-Cookie'), null, 'POST /uso: nessun cookie');
+
+  uguale(kv.store.get('uso:' + MESE), JSON.stringify({ aperture: 1, installate: 1, ricerche: 3 }),
+    'la riga del mese conta apertura, app e ricerche');
+  uguale(kv.store.get('dev:' + MESE + ':' + DEV_A), 'app', 'il dispositivo risulta con l\'app installata');
+  uguale(kv.store.get('cerca:' + MESE + ':BRAHAM'), '2', 'maiuscole e minuscole sono lo stesso nome');
+  uguale(kv.store.get('cerca:' + MESE + ':PASTORE'), '1', 'gli spazi intorno al nome non contano');
+
+  const perDispositivo = kv.puts.filter(function (p) { return p.key.indexOf('dev:') === 0; });
+  uguale(perDispositivo.length, 1, 'una sola scrittura per il dispositivo');
+  uguale(perDispositivo[0].opzioni && perDispositivo[0].opzioni.expirationTtl, 3456000,
+    'la riga del dispositivo scade da sola dopo 40 giorni');
+
+  // Seconda apertura dallo stesso dispositivo: i numeri si sommano e la riga del
+  // dispositivo non si riscrive, perché non è cambiato niente.
+  const scritture = kv.puts.length;
+  const seconda = await worker.fetch(richiestaUso(medico.cookie, {
+    dev: DEV_A, installata: true, ricerche: ['BRAHAM']
+  }), env);
+  uguale(seconda.status, 204, 'seconda apertura: 204');
+  uguale(kv.store.get('uso:' + MESE), JSON.stringify({ aperture: 2, installate: 2, ricerche: 4 }),
+    'due aperture contate');
+  uguale(kv.store.get('cerca:' + MESE + ':BRAHAM'), '3', 'le ricerche si sommano');
+  uguale(kv.puts.length - scritture, 2, 'il dispositivo già visto non si riscrive: due scritture, non tre');
+
+  // Chi ha installato l'app resta installato anche se poi apre da una scheda.
+  await worker.fetch(richiestaUso(medico.cookie, { dev: DEV_A, installata: false }), env);
+  uguale(kv.store.get('dev:' + MESE + ':' + DEV_A), 'app', 'l\'app installata non torna indietro');
+
+  // Campi che non conosciamo: si ignorano, non fanno fallire la richiesta.
+  const domani = await worker.fetch(richiestaUso(medico.cookie, { dev: DEV_B, qualcosaDiNuovo: 1 }), env);
+  uguale(domani.status, 204, 'un campo in più non rompe niente: 204');
+  uguale(kv.store.get('dev:' + MESE + ':' + DEV_B), '1', 'il dispositivo senza app vale "1"');
+
+  // Se KV non scrive, la pagina non se ne accorge.
+  const kvRotto = envFinto({
+    TURNI: {
+      async get() { return null; },
+      async put() { throw new Error('KV giù'); },
+      async delete() {},
+      async list() { throw new Error('KV giù'); }
+    }
+  });
+  const suRotto = await accedi(worker, kvRotto, PASS_MEDICO, '203.0.113.41');
+  const rotto = await worker.fetch(richiestaUso(suRotto.cookie, { dev: DEV_B, ricerche: ['BRAHAM'] }), kvRotto);
+  uguale(rotto.status, 204, 'con KV in errore in scrittura: 204 lo stesso');
+
+  const senzaKv = envFinto({ TURNI: undefined });
+  const suSenzaKv = await accedi(worker, senzaKv, PASS_MEDICO, '203.0.113.42');
+  uguale((await worker.fetch(richiestaUso(suSenzaKv.cookie, { dev: DEV_B }), senzaKv)).status, 204,
+    'senza binding KV: 204 lo stesso');
+}
+
+async function testUsoValidazione(worker) {
+  const env = envFinto();
+  const kv = env.TURNI;
+  const medico = await accedi(worker, env, PASS_MEDICO, '203.0.113.43');
+  const prima = kv.fotografia();
+
+  const storti = [
+    [{ installata: true }, 'senza dev'],
+    [{ dev: 'troppo-corto' }, 'dev fuori formato'],
+    [{ dev: DEV_A + 'x' }, 'dev troppo lungo'],
+    [{ dev: 'A'.repeat(21) + '!' }, 'dev con un carattere illegale'],
+    [{ dev: DEV_A, ricerche: 'BRAHAM' }, 'ricerche non è un elenco'],
+    [{ dev: DEV_A, ricerche: [123] }, 'ricerche con dentro un numero'],
+    [{ dev: DEV_A, ricerche: ['x'.repeat(61)] }, 'nome cercato troppo lungo'],
+    [{ dev: DEV_A, ricerche: new Array(51).fill('BRAHAM') }, 'più di cinquanta ricerche'],
+    [{ dev: DEV_A, installata: 'si' }, 'installata non è un booleano'],
+    [[], 'corpo non oggetto'],
+    ['{ questo non è json', 'JSON malformato']
+  ];
+  for (const [corpo, descrizione] of storti) {
+    const risposta = await worker.fetch(richiestaUso(medico.cookie, corpo), env);
+    uguale(risposta.status, 400, 'POST /uso ' + descrizione + ': 400');
+    vero(typeof (await risposta.json()).error === 'string', 'POST /uso ' + descrizione + ': campo error');
+  }
+
+  // Il nome di una persona non entra in questo registro: la richiesta che lo
+  // porta viene rifiutata in blocco, invece di essere accolta a metà.
+  for (const corpo of [{ dev: DEV_A, nome: 'FLORENZAN' }, { dev: DEV_A, nome: null, ricerche: ['BRAHAM'] }]) {
+    const conNome = await worker.fetch(richiestaUso(medico.cookie, corpo), env);
+    uguale(conNome.status, 400, 'POST /uso con un campo "nome": 400');
+  }
+
+  const enorme = await worker.fetch(richiestaUso(medico.cookie, {
+    dev: DEV_A, ricerche: ['BRAHAM'], zavorra: 'z'.repeat(3000)
+  }), env);
+  uguale(enorme.status, 400, 'POST /uso con corpo oltre 2 KB: 400');
+
+  uguale(kv.fotografia(), prima, 'nessuna richiesta rifiutata ha scritto in KV');
+  for (const [chiave, valore] of kv.store) {
+    nonContiene(chiave + '=' + valore, 'FLORENZAN', 'nessun nome di persona è finito in KV');
+  }
+}
+
+async function testUsoLettura(worker) {
+  const env = envFinto();
+  const medico = await accedi(worker, env, PASS_MEDICO, '203.0.113.44');
+  const gestore = await accedi(worker, env, PASS_GESTORE, '203.0.113.45');
+
+  const senza = await worker.fetch(richiesta('GET', '/uso'), env);
+  uguale(senza.status, 401, 'GET /uso senza sessione: 401');
+  const negato = await leggiUso(worker, env, medico.cookie);
+  uguale(negato.risposta.status, 403, 'GET /uso come medico: 403');
+  vero(typeof negato.corpo.error === 'string', 'GET /uso vietato: campo error');
+
+  // Un mese in cui non è successo niente: zeri e liste vuote, non un 404.
+  const vuoto = await leggiUso(worker, env, gestore.cookie, '2020-01');
+  uguale(vuoto.risposta.status, 200, 'GET /uso su un mese vuoto: 200');
+  uguale(vuoto.corpo.mese, '2020-01', 'GET /uso: risponde per il mese chiesto');
+  uguale(vuoto.corpo.aperture, 0, 'mese vuoto: zero aperture');
+  uguale(vuoto.corpo.dispositivi, 0, 'mese vuoto: zero dispositivi');
+  uguale(vuoto.corpo.installate, 0, 'mese vuoto: zero con l\'app');
+  uguale(vuoto.corpo.ricerche, 0, 'mese vuoto: zero ricerche');
+  uguale(JSON.stringify(vuoto.corpo.cercatiPiu), '[]', 'mese vuoto: classifica vuota');
+
+  // Due dispositivi diversi, uno con l'app: i numeri si sommano.
+  await worker.fetch(richiestaUso(medico.cookie, {
+    dev: DEV_A, installata: true, ricerche: ['BRAHAM', 'BRAHAM', 'PASTORE']
+  }), env);
+  await worker.fetch(richiestaUso(gestore.cookie, {
+    dev: DEV_B, installata: false, ricerche: ['BRAHAM', 'CAPRINI']
+  }), env);
+  await worker.fetch(richiestaUso(gestore.cookie, { dev: DEV_B, installata: false }), env);
+
+  const uso = await leggiUso(worker, env, gestore.cookie);
+  uguale(uso.risposta.status, 200, 'GET /uso come gestore: 200');
+  uguale(uso.corpo.mese, MESE, 'GET /uso: di default il mese corrente');
+  uguale(uso.corpo.aperture, 3, 'tre aperture in tutto');
+  uguale(uso.corpo.dispositivi, 2, 'due dispositivi distinti');
+  uguale(uso.corpo.installate, 1, 'uno dei due ha l\'app');
+  uguale(uso.corpo.ricerche, 5, 'cinque ricerche in tutto');
+  uguale(JSON.stringify(uso.corpo.cercatiPiu),
+    JSON.stringify([{ nome: 'BRAHAM', volte: 3 }, { nome: 'CAPRINI', volte: 1 }, { nome: 'PASTORE', volte: 1 }]),
+    'i più cercati in cima, a pari merito in ordine alfabetico');
+
+  const storto = await leggiUso(worker, env, gestore.cookie, 'settembre');
+  uguale(storto.risposta.status, 400, 'GET /uso con un mese fuori formato: 400');
+
+  // Lettura fallita: 503, mai zeri inventati.
+  const kvRotto = envFinto({
+    TURNI: {
+      async get() { throw new Error('KV giù'); },
+      async put() {},
+      async delete() {},
+      async list() { throw new Error('KV giù'); }
+    }
+  });
+  const suRotto = await accedi(worker, kvRotto, PASS_GESTORE, '203.0.113.46');
+  const rotto = await leggiUso(worker, kvRotto, suRotto.cookie);
+  uguale(rotto.risposta.status, 503, 'GET /uso con KV in errore: 503');
+  uguale(rotto.corpo.error, 'Registro non disponibile.', 'GET /uso in errore: messaggio in italiano');
+  uguale(rotto.corpo.aperture, undefined, 'GET /uso in errore: nessun numero inventato');
+
+  const senzaKv = envFinto({ TURNI: undefined });
+  const suSenzaKv = await accedi(worker, senzaKv, PASS_GESTORE, '203.0.113.47');
+  uguale((await leggiUso(worker, senzaKv, suSenzaKv.cookie)).risposta.status, 503,
+    'senza binding KV: 503, non zeri');
+
+  const metodo = await worker.fetch(richiesta('PUT', '/uso', { cookie: gestore.cookie, body: '{}' }), env);
+  uguale(metodo.status, 405, 'PUT /uso: 405');
+  uguale(metodo.headers.get('Allow'), 'GET, HEAD, POST', 'PUT /uso: intestazione Allow');
+}
+
+async function testUsoClassifica(worker) {
+  const env = envFinto();
+  const gestore = await accedi(worker, env, PASS_GESTORE, '203.0.113.48');
+
+  const molti = [];
+  for (let i = 0; i < 25; i++) molti.push('NOME' + (i < 10 ? '0' + i : String(i)));
+  molti.push('BRAHAM', 'BRAHAM');
+  await worker.fetch(richiestaUso(gestore.cookie, { dev: DEV_A, ricerche: molti }), env);
+
+  const uso = await leggiUso(worker, env, gestore.cookie);
+  uguale(uso.corpo.cercatiPiu.length, 20, 'la classifica si ferma ai primi venti nomi');
+  uguale(uso.corpo.cercatiPiu[0].nome, 'BRAHAM', 'in cima il più cercato');
+  uguale(uso.corpo.cercatiPiu[0].volte, 2, 'con quante volte è stato cercato');
+  uguale(uso.corpo.cercatiPiu[1].nome, 'NOME00', 'poi gli altri, in ordine alfabetico');
+  uguale(uso.corpo.ricerche, 27, 'le ricerche contate sono tutte, anche oltre i venti nomi');
+  uguale(uso.corpo.dispositivi, 1, 'un solo dispositivo');
+}
+
+async function testUsoSenzaPersone(worker) {
+  const env = envFinto();
+  const kv = env.TURNI;
+  const ip = '203.0.113.49';
+  const agente = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)';
+  const gestore = await accedi(worker, env, PASS_GESTORE, ip);
+
+  const risposta = await worker.fetch(richiesta('POST', '/uso', {
+    cookie: gestore.cookie,
+    ip: ip,
+    headers: { 'User-Agent': agente },
+    body: JSON.stringify({ dev: DEV_A, installata: true, ricerche: ['BRAHAM'] })
+  }), env);
+  uguale(risposta.status, 204, 'POST /uso con IP e user-agent addosso: 204');
+
+  // In KV resta solo quello che la pagina ha mandato: niente di chi l'ha mandato.
+  for (const [chiave, valore] of kv.store) {
+    if (chiave.indexOf('try:') === 0) continue;   // il freno ai tentativi usa l'IP apposta
+    nonContiene(chiave + '=' + valore, ip, 'nel registro non finisce nessun indirizzo IP');
+    nonContiene(chiave + '=' + valore, 'Mozilla', 'nel registro non finisce nessuno user-agent');
+  }
+
+  const uso = await leggiUso(worker, env, gestore.cookie);
+  const testo = JSON.stringify(uso.corpo);
+  nonContiene(testo, ip, 'la risposta non contiene indirizzi IP');
+  nonContiene(testo, 'Mozilla', 'la risposta non contiene user-agent');
+  nonContiene(testo, DEV_A, 'la risposta non contiene l\'identificativo del dispositivo');
+  uguale(uso.corpo.dispositivi, 1, 'dei dispositivi resta soltanto quanti sono');
+}
+
+// ============================================================
+// 20. Nei log non finiscono password, cookie o indirizzi
 // ============================================================
 
 function controllaRegistro() {
@@ -1161,7 +1427,12 @@ const prove = [
   ['i conteggi non bloccano niente', testContatoriNonBloccanti],
   ['manifest', testManifest],
   ['icone', testIcone],
-  ['pagine installabili', testPagineInstallabili]
+  ['pagine installabili', testPagineInstallabili],
+  ['registro d\'uso: scrittura', testUsoScrittura],
+  ['registro d\'uso: validazione', testUsoValidazione],
+  ['registro d\'uso: lettura', testUsoLettura],
+  ['registro d\'uso: classifica', testUsoClassifica],
+  ['registro d\'uso: nessuna persona', testUsoSenzaPersone]
 ];
 
 async function main() {

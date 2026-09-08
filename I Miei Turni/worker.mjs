@@ -22,6 +22,13 @@
 // /icon-180.png, /icon-192.png, /icon-512.png): servono a installare la pagina
 // sul telefono e il sistema operativo le chiede fuori dal contesto della pagina.
 // /stats, invece, è solo del gestore: due contatori d'uso, nient'altro.
+//
+// C'è poi il registro d'uso (POST /uso per scrivere, GET /uso per leggerlo, solo
+// il gestore): sono conteggi aggregati — quante aperture, quanti dispositivi,
+// quanti con l'app installata, quante ricerche e quali nomi si cercano di più.
+// Niente che leghi un dispositivo a una persona: nessun nome di chi cerca,
+// nessun indirizzo IP, nessuno user-agent. L'identificativo del dispositivo
+// serve solo a contare quanti sono e scade da solo dopo 40 giorni.
 
 // Il motore delle regole serve anche qui: fold per lo slug, buildAssignments e
 // buildICS per il file di calendario. src/rules.js è CommonJS con la coda UMD e
@@ -52,6 +59,21 @@ const SECRET_NAMES = ['PASS_MEDICO', 'PASS_GESTORE', 'SESSION_SECRET'];
 const KV_STAT_LOGIN = 'stat:login:';    // stat:login:<AAAA-MM>[:<ruolo>]
 const KV_STAT_SAVE = 'stat:save:';      // stat:save:<AAAA-MM>
 const KV_STAT_LAST_SAVE = 'stat:last-save';
+
+const KV_USO_MESE = 'uso:';             // uso:<AAAA-MM> — tre numeri, aggregati
+const KV_USO_DEV = 'dev:';              // dev:<AAAA-MM>:<dev> — "1" oppure "app"
+const KV_USO_CERCA = 'cerca:';          // cerca:<AAAA-MM>:<NOME> — un numero
+const MAX_USO_BYTES = 2048;
+const USO_DEV = /^[A-Za-z0-9_-]{22}$/;  // l'identificativo casuale del dispositivo
+const USO_MAX_NOME = 60;
+const USO_MAX_RICERCHE = 50;            // nomi cercati per singola richiesta
+const USO_TOP = 20;                     // quanti nomi nella classifica dei cercati
+const USO_PAGINE = 50;                  // freno: al massimo 50 giri di list
+// La riga del dispositivo esiste solo per contare quanti sono e quanti hanno
+// l'app installata: dopo 40 giorni sparisce da sola, senza che nessuno debba
+// ricordarsi di ripulirla. I conteggi aggregati, che non riguardano nessuno in
+// particolare, restano.
+const USO_DEV_TTL = 3456000;
 
 const CAL_PREFIX = '/cal/';            // /cal/<slug>-<firma>.ics
 const CAL_MESSAGE = 'cal:';            // cosa si firma: "cal:" + il nome vero
@@ -95,6 +117,9 @@ const MSG_TROPPI_TENTATIVI = 'Troppi tentativi, riprova tra qualche minuto.';
 const MSG_SERVIZIO = 'Servizio non disponibile, riprova più tardi.';
 const MSG_SOLO_GESTORE = 'Non hai i permessi per vedere queste informazioni.';
 const MSG_STATS_NON_DISPONIBILI = 'Statistiche non disponibili.';
+const MSG_USO_NON_DISPONIBILE = 'Registro non disponibile.';
+const MSG_USO_NON_VALIDO = 'Dati del registro d\'uso non validi.';
+const MSG_MESE_NON_VALIDO = 'Mese non valido: serve AAAA-MM.';
 const MSG_NOME_NON_TROVATO = 'Nome non trovato.';
 
 const encoder = new TextEncoder();
@@ -485,6 +510,17 @@ function asCount(raw) {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+// Una riga JSON letta da KV, oppure null se non c'è o non si lascia leggere.
+function parseRow(stored) {
+  if (stored === null || stored === undefined) return null;
+  try {
+    const row = JSON.parse(stored);
+    return row && typeof row === 'object' && !Array.isArray(row) ? row : null;
+  } catch (err) {
+    return null;
+  }
+}
+
 function parseLastSave(raw) {
   if (raw === null || raw === undefined) return null;
   try {
@@ -714,6 +750,209 @@ async function handleDataPut(request, env, nowSec) {
   return jsonResponse({ ok: true, rosters: data.rosters.length }, 200);
 }
 
+// ============================================================
+// Registro d'uso: conteggi aggregati, nessuna persona
+// ============================================================
+//
+// Serve a decidere sull'app («la cambio? come la usano?»), non a sapere chi fa
+// cosa: qui dentro non entra nessun nome di chi apre o cerca, nessun indirizzo
+// IP, nessuno user-agent. Le uniche tre cose che si tengono per un mese sono
+// numeri: quante aperture, quanti dispositivi (con quanti hanno l'app), quante
+// ricerche e quali nomi vengono cercati di più — quelli sì, perché sapere che si
+// cerca sempre lo stesso reparto cambia il disegno della pagina, mentre sapere
+// chi lo cerca no.
+
+// Il corpo ripulito, oppure null se non è nella forma attesa. Il campo `nome`
+// qui non esiste: se arriva lo stesso la richiesta viene rifiutata, invece di
+// essere accolta a metà — così nessun nome di persona può entrare per sbaglio.
+// I campi che non conosciamo si ignorano e basta.
+function parseUso(text) {
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch (err) {
+    return null;
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  if (body.nome !== undefined) return null;
+  if (typeof body.dev !== 'string' || !USO_DEV.test(body.dev)) return null;
+  if (body.installata !== undefined && typeof body.installata !== 'boolean') return null;
+
+  const ricerche = [];
+  if (body.ricerche !== undefined && body.ricerche !== null) {
+    if (!Array.isArray(body.ricerche) || body.ricerche.length > USO_MAX_RICERCHE) return null;
+    for (let i = 0; i < body.ricerche.length; i++) {
+      const cercato = body.ricerche[i];
+      if (typeof cercato !== 'string' || cercato.length > USO_MAX_NOME) return null;
+      // Maiuscolo e spazi normalizzati, così "braham" e "BRAHAM" sono la stessa
+      // riga; il nome resta leggibile ("DI VITA F."), non viene ridotto a codice.
+      const pulito = cercato.trim().replace(/\s+/g, ' ').toUpperCase();
+      if (pulito !== '') ricerche.push(pulito);
+    }
+  }
+  return { dev: body.dev, installata: body.installata === true, ricerche: ricerche };
+}
+
+// Leggi-somma-riscrivi, senza transazioni: due aperture nello stesso istante
+// possono contarne una sola (e KV accetta una scrittura al secondo per chiave).
+// Sono numeri indicativi — quanto si usa la pagina — non una contabilità.
+async function bumpUso(env, mese, uso) {
+  const key = KV_USO_MESE + mese;
+  try {
+    const prima = parseRow(await env.TURNI.get(key)) || {};
+    await env.TURNI.put(key, JSON.stringify({
+      aperture: asCount(prima.aperture) + 1,
+      // Aperture fatte dall'app installata (nella risposta di /uso "installate"
+      // sono invece i dispositivi che ce l'hanno: due domande diverse).
+      installate: asCount(prima.installate) + (uso.installata ? 1 : 0),
+      ricerche: asCount(prima.ricerche) + uso.ricerche.length
+    }));
+  } catch (err) {
+    console.warn('Conteggi del mese non aggiornati, KV non raggiungibile: ' + errText(err));
+  }
+}
+
+// Una riga per dispositivo, "1" oppure "app", buona solo per contare quanti
+// sono e quanti hanno installato. Si riscrive solo se cambia: chi apre la pagina
+// tre volte al giorno costa una scrittura al mese, non novanta. E "app" non
+// torna indietro: chi l'ha installata ce l'ha installata anche quando poi apre
+// la pagina da una scheda del browser.
+async function noteDevice(env, mese, uso) {
+  const key = KV_USO_DEV + mese + ':' + uso.dev;
+  try {
+    const prima = await env.TURNI.get(key);
+    const valore = uso.installata || prima === 'app' ? 'app' : '1';
+    if (prima === valore) return;
+    await env.TURNI.put(key, valore, { expirationTtl: USO_DEV_TTL });
+  } catch (err) {
+    console.warn('Dispositivo non contato, KV non raggiungibile: ' + errText(err));
+  }
+}
+
+// Un contatore per nome cercato, sommato su tutti quanti. Una scrittura per
+// nome distinto nella richiesta: tre ricerche dello stesso nome sono una
+// scrittura sola, con +3.
+async function bumpRicerche(env, mese, ricerche) {
+  const quante = new Map();
+  for (let i = 0; i < ricerche.length; i++) {
+    quante.set(ricerche[i], (quante.get(ricerche[i]) || 0) + 1);
+  }
+  for (const [nome, volte] of quante) {
+    const key = KV_USO_CERCA + mese + ':' + nome;
+    try {
+      const prima = await env.TURNI.get(key);
+      await env.TURNI.put(key, String(asCount(prima) + volte));
+    } catch (err) {
+      console.warn('Conteggio delle ricerche non aggiornato, KV non raggiungibile: ' + errText(err));
+    }
+  }
+}
+
+// POST /uso — con la sessione, qualunque ruolo. Risponde sempre 204: se KV non
+// risponde si perde un conteggio e pazienza, il registro non deve mai rompere
+// la pagina di chi sta lavorando.
+async function handleUsoPost(request, env, nowSec) {
+  const role = await sessionRole(request, env, nowSec);
+  if (!role) return jsonResponse({ error: 'Accesso richiesto.' }, 401);
+
+  const body = await readBody(request, MAX_USO_BYTES);
+  const uso = body.tooBig ? null : parseUso(body.text);
+  if (uso === null) return jsonResponse({ error: MSG_USO_NON_VALIDO }, 400);
+
+  if (env.TURNI) {
+    const mese = monthKey(nowSec);
+    await bumpUso(env, mese, uso);
+    await noteDevice(env, mese, uso);
+    await bumpRicerche(env, mese, uso.ricerche);
+  }
+  return new Response(null, { status: 204, headers: securityHeaders() });
+}
+
+// Tutte le chiavi con un prefisso, seguendo il cursore di list. Il freno a
+// USO_PAGINE giri evita di restare appesi se il cursore non avanzasse.
+async function listKeys(env, prefix) {
+  const nomi = [];
+  let cursor;
+  for (let giro = 0; giro < USO_PAGINE; giro++) {
+    const pagina = await env.TURNI.list(
+      cursor === undefined ? { prefix: prefix } : { prefix: prefix, cursor: cursor });
+    const keys = (pagina && pagina.keys) || [];
+    for (let i = 0; i < keys.length; i++) nomi.push(keys[i].name);
+    if (!pagina || pagina.list_complete || !pagina.cursor) return nomi;
+    cursor = pagina.cursor;
+  }
+  console.warn('Registro d\'uso: elenco fermato dopo ' + USO_PAGINE + ' pagine.');
+  return nomi;
+}
+
+// Quanti dispositivi distinti nel mese e quanti hanno l'app installata.
+async function countDevices(env, mese) {
+  const prefix = KV_USO_DEV + mese + ':';
+  const chiavi = await listKeys(env, prefix);
+  let installate = 0;
+  for (let i = 0; i < chiavi.length; i++) {
+    if (await env.TURNI.get(chiavi[i]) === 'app') installate++;
+  }
+  return { dispositivi: chiavi.length, installate: installate };
+}
+
+// I nomi più cercati del mese, dal più al meno; a pari merito, in ordine
+// alfabetico, così la classifica non balla fra una lettura e l'altra.
+async function topRicerche(env, mese) {
+  const prefix = KV_USO_CERCA + mese + ':';
+  const chiavi = await listKeys(env, prefix);
+  const classifica = [];
+  for (let i = 0; i < chiavi.length; i++) {
+    const volte = asCount(await env.TURNI.get(chiavi[i]));
+    if (volte > 0) classifica.push({ nome: chiavi[i].slice(prefix.length), volte: volte });
+  }
+  classifica.sort(function (a, b) {
+    if (a.volte !== b.volte) return b.volte - a.volte;
+    return a.nome < b.nome ? -1 : (a.nome > b.nome ? 1 : 0);
+  });
+  return classifica.slice(0, USO_TOP);
+}
+
+// Il riepilogo del mese, oppure null se KV non risponde: come per /stats, meglio
+// dire che non si è potuto guardare che rispondere zeri che sembrano veri.
+async function readUso(env, mese) {
+  if (!env.TURNI || typeof env.TURNI.list !== 'function') {
+    console.error('Binding KV TURNI assente o senza list: registro d\'uso non leggibile.');
+    return null;
+  }
+  try {
+    const row = parseRow(await env.TURNI.get(KV_USO_MESE + mese)) || {};
+    const dispositivi = await countDevices(env, mese);
+    const cercatiPiu = await topRicerche(env, mese);
+    return {
+      mese: mese,
+      aperture: asCount(row.aperture),
+      dispositivi: dispositivi.dispositivi,
+      installate: dispositivi.installate,
+      ricerche: asCount(row.ricerche),
+      cercatiPiu: cercatiPiu
+    };
+  } catch (err) {
+    console.error('Registro d\'uso non leggibile, KV non raggiungibile: ' + errText(err));
+    return null;
+  }
+}
+
+// GET /uso — solo il gestore, con ?mese=AAAA-MM (di default il mese corrente).
+async function handleUsoGet(request, env, nowSec) {
+  const role = await sessionRole(request, env, nowSec);
+  if (!role) return jsonResponse({ error: 'Accesso richiesto.' }, 401);
+  if (role !== ROLE_GESTORE) return jsonResponse({ error: MSG_SOLO_GESTORE }, 403);
+
+  const chiesto = new URL(request.url).searchParams.get('mese');
+  if (chiesto !== null && chiesto !== '' && !/^\d{4}-\d{2}$/.test(chiesto)) {
+    return jsonResponse({ error: MSG_MESE_NON_VALIDO }, 400);
+  }
+  const registro = await readUso(env, chiesto ? chiesto : monthKey(nowSec));
+  if (registro === null) return jsonResponse({ error: MSG_USO_NON_DISPONIBILE }, 503);
+  return jsonResponse(registro, 200);
+}
+
 // GET /stats — solo il gestore: quanto si usa e quando è stata aggiornata.
 // Niente dati ancora in KV significa zeri, non un errore: è la risposta giusta
 // per un mese appena cominciato. Se invece KV non si lascia leggere, 503: è una
@@ -917,6 +1156,10 @@ async function route(request, env) {
     response = method === 'GET'
       ? await handleStats(request, env, nowSec)
       : methodNotAllowed('GET, HEAD');
+  } else if (path === '/uso') {
+    if (method === 'GET') response = await handleUsoGet(request, env, nowSec);
+    else if (method === 'POST') response = await handleUsoPost(request, env, nowSec);
+    else response = methodNotAllowed('GET, HEAD, POST');
   } else if (path === '/manifest.webmanifest') {
     response = method === 'GET' ? handleManifest() : methodNotAllowed('GET, HEAD');
   } else if (ICON_ROUTES.has(path)) {
