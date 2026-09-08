@@ -44,11 +44,11 @@ var TurniRules = (function () {
     return WEEKDAY_SHORT_IT[dt.getUTCDay()] + ' ' + dt.getUTCDate() + ' ' + MONTH_SHORT_IT[dt.getUTCMonth()];
   }
 
-  // 0 → "0 h"; 360 → "6 h"; 90 → "1 h 30" (ore intere + eventuali minuti).
+  // 0 → "0h"; 360 → "6h"; 90 → "1h30". Numero e unità attaccati, come per le ore.
   function formatRest(min) {
     var h = Math.floor(min / 60);
     var r = min % 60;
-    return r === 0 ? (h + ' h') : (h + ' h ' + r);
+    return r === 0 ? (h + 'h') : (h + 'h' + (r < 10 ? '0' : '') + r);
   }
 
   // "MATTINA" → "Mattina"; "AMBULATORIO CM" → "Ambulatorio CM" (le sigle di due lettere
@@ -337,8 +337,10 @@ var TurniRules = (function () {
   }
 
   // 114 → "114 h"; 10.5 → "10,5 h".
+  // Le ore stanno attaccate alla loro unità — "114h", non "114 h" — così il numero
+  // e la sua misura si leggono come una cosa sola.
   function formatHours(hours) {
-    return formatNumber(hours) + ' h';
+    return formatNumber(hours) + 'h';
   }
 
   // L'ambulatorio conta come una mattina a tutti gli effetti: nei conteggi è una

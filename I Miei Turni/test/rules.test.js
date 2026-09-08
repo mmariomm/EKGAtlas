@@ -110,7 +110,7 @@ deepEq(
   eq(braham.b.id, 'OSG|2026-09-18|M|0', 'BRAHAM: b = OSG|2026-09-18|M|0');
   eq(braham.restMin, 0, 'BRAHAM: riposo 0');
   eq(braham.title, 'Notte attaccata a un turno diurno', 'titolo BRAHAM');
-  ok(braham.detail.includes('riposo 0 h'), 'dettaglio BRAHAM contiene "riposo 0 h"');
+  ok(braham.detail.includes('riposo 0h'), 'dettaglio BRAHAM contiene "riposo 0h"');
   ok(braham.detail.includes('gio 17 set'), 'dettaglio BRAHAM contiene "gio 17 set"');
 
   eq(boules.person, 'BOULES', 'secondo reperto: BOULES');
@@ -230,11 +230,11 @@ function scenario(person, a, b) {
   eq(findings[0].title, 'Riposo breve intorno alla notte', 'S07: titolo (riposo > 0)');
 }
 {
-  // Notte poi Ambulatorio il giorno dopo: riposo 90 (1 h 30).
+  // Notte poi Ambulatorio il giorno dopo: riposo 90 (1h30).
   const { findings } = scenario('S08', { hospital: 'DEA', date: '2026-09-01', slotKey: 'N' }, { hospital: 'DEA', date: '2026-09-02', slotKey: 'A' });
   eq(findings.length, 1, 'S08: Notte → Ambulatorio (giorno dopo)');
   eq(findings[0].restMin, 90, 'S08: riposo 90');
-  ok(findings[0].detail.includes('1 h 30'), 'S08: dettaglio contiene "1 h 30"');
+  ok(findings[0].detail.includes('1h30'), 'S08: dettaglio contiene "1h30"');
 }
 {
   // Notte poi Pomeriggio il giorno dopo: riposo 360.
@@ -538,7 +538,7 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   );
   const sB = TurniRules.personStats(asB, 'X', '2026-09');
   deepEq([sB.giornate, sB.mattine, sB.pomeriggi, sB.dodici, sB.ore, sB.oreByHospital], [1, 0, 0, 1, 12, { DEA: 6, OSG: 6 }], 'mattina DEA + pomeriggio OSG = una giornata da 12 h');
-  eq(TurniRules.computeFindings(asB)[0].short, 'mattina 1 DEA → pomeriggio 1 OSG · riposo 0 h', 'short del cambio sede');
+  eq(TurniRules.computeFindings(asB)[0].short, 'mattina 1 DEA → pomeriggio 1 OSG · riposo 0h', 'short del cambio sede');
 
   const asC = TurniRules.buildAssignments([synRoster('DEA', { '2026-09-01': { M: ['X'] } }), synRoster('OSG', { '2026-09-01': { M: ['X'] } })]);
   const sC = TurniRules.personStats(asC, 'X', '2026-09');
@@ -548,16 +548,16 @@ eq(topNames("D'amòre", 1)[0], "D'AMORE", 'la query viene "foldata" (accenti/apo
   const asD = TurniRules.buildAssignments([synRoster('DEA', { '2026-09-30': { N: ['X'] } }), synRoster('DEA', { '2026-10-01': { M: ['X'] } })]);
   deepEq([TurniRules.personStats(asD, 'X', '2026-09').ore, TurniRules.personStats(asD, 'X', '2026-10').ore, TurniRules.personStats(asD, 'X').ore, TurniRules.personStats(asD, 'X').dodici],
     [12, 6, 18, 1], 'ore per mese e totali a cavallo del mese');
-  eq(TurniRules.computeFindings(asD)[0].short, 'notte 30 set DEA → mattina 1 ott DEA · riposo 0 h', 'short a cavallo del mese: con il mese');
+  eq(TurniRules.computeFindings(asD)[0].short, 'notte 30 set DEA → mattina 1 ott DEA · riposo 0h', 'short a cavallo del mese: con il mese');
 
   deepEq(realFindings.map((f) => f.short), [
-    'notte 17 OSG → mattina 18 OSG · riposo 0 h',
-    'mattina 21 OSG → notte 21 OSG · riposo 6 h',
+    'notte 17 OSG → mattina 18 OSG · riposo 0h',
+    'mattina 21 OSG → notte 21 OSG · riposo 6h',
   ], 'short delle segnalazioni reali');
 
-  eq(TurniRules.formatHours(114), '114 h', 'formatHours 114');
-  eq(TurniRules.formatHours(10.5), '10,5 h', 'formatHours 10,5');
-  eq(TurniRules.formatHours(0), '0 h', 'formatHours 0');
+  eq(TurniRules.formatHours(114), '114h', 'formatHours 114');
+  eq(TurniRules.formatHours(10.5), '10,5h', 'formatHours 10,5');
+  eq(TurniRules.formatHours(0), '0h', 'formatHours 0');
   eq(TurniRules.formatNumber(4.5), '4,5', 'formatNumber 4,5');
   eq(TurniRules.formatNumber(9), '9', 'formatNumber 9');
 }
@@ -664,9 +664,9 @@ eq(TurniRules.timeRange({ start: '08:00', end: '14:00' }), '08–14', 'timeRange
 eq(TurniRules.timeRange({ start: '20:00', end: '08:00' }), '20–08', 'timeRange Notte');
 eq(TurniRules.timeRange({ start: '09:30', end: '15:00' }), '09:30–15', 'timeRange Ambulatorio');
 
-eq(TurniRules.formatRest(0), '0 h', 'formatRest 0');
-eq(TurniRules.formatRest(360), '6 h', 'formatRest 360');
-eq(TurniRules.formatRest(90), '1 h 30', 'formatRest 90');
+eq(TurniRules.formatRest(0), '0h', 'formatRest 0');
+eq(TurniRules.formatRest(360), '6h', 'formatRest 360');
+eq(TurniRules.formatRest(90), '1h30', 'formatRest 90');
 
 eq(TurniRules.slotName('AMBULATORIO CM'), 'Ambulatorio CM', 'slotName Ambulatorio CM');
 eq(TurniRules.slotName('MATTINA'), 'Mattina', 'slotName Mattina');
