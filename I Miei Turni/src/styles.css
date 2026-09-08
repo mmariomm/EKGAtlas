@@ -375,9 +375,10 @@ button { font: inherit; color: inherit; }
 .detail__site.h-dea { color: var(--dea); }
 .detail__site.h-osg { color: var(--osg); }
 .detail__cell { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 2px 0 6px; }
-/* Mattina e pomeriggio uniti: una cella sola su due colonne, nomi centrati. */
-.detail__cell--merge { grid-column: span 2; align-items: center; }
-.detail__cell--merge .pill:not(:first-child) { padding-left: 6px; }
+/* Colonna «Giorno»: le righe occupano tutta la cella, l'orario va a destra. */
+.detail__cell--day { align-self: stretch; }
+.detail__cell--day .pill { width: 100%; }
+.detail__cell--day .tchip { font-size: 10px; }
 .detail.is-multi .detail__cell.h-dea, .detail.is-multi .detail__site.h-dea { background-image: linear-gradient(var(--veil-dea), var(--veil-dea)); }
 .detail.is-multi .detail__cell.h-osg, .detail.is-multi .detail__site.h-osg { background-image: linear-gradient(var(--veil-osg), var(--veil-osg)); }
 .detail.is-multi .detail__cell.h-alt, .detail.is-multi .detail__site.h-alt { background-image: linear-gradient(var(--veil-alt), var(--veil-alt)); }
@@ -409,9 +410,16 @@ button { font: inherit; color: inherit; }
 .pill.sev-1.is-strong, .pill.sev-2.is-strong, .pill.sev-3.is-strong {
   box-shadow: inset 0 -2px 0 var(--fsev);
 }
-/* Il secondo nome di una cella rientra: l'ordine è il ruolo, e si vede. */
-.detail__cell .pill:not(:first-child) { padding-left: 16px; }
-.pill__cont { color: var(--ink-2); flex: none; }
+/* Dal secondo ruolo in poi il nome rientra: l'ordine è il ruolo, e si vede. */
+.detail__cell .pill.is-in { padding-left: 16px; }
+/* La parte di giornata coperta, accanto al nome: piccola, dello stesso inchiostro
+   ma più chiara, così sta bene anche sul giallo e sui fondi delle segnalazioni. */
+.tchip {
+  margin-left: auto; flex: none; padding-left: 5px;
+  font-family: var(--mono); font-size: 9px; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, currentColor 58%, transparent);
+}
 
 .is-pinned .pill:not(.is-strong) { opacity: .45; }
 .tab.is-pinned .pill:not(.is-strong) { opacity: .72; }   /* qui si legge tutti, non solo la persona */
@@ -508,16 +516,7 @@ button { font: inherit; color: inherit; }
    restano, ma servono a far stare i nomi su una riga, non a decidere cosa si legge. */
 .pill--t > span:first-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .pill--t::after { inset: -3px -2px; }
-.tab__c .pill--t:not(:first-child) { padding-left: 11px; }
-/* Cella unita di mattina e pomeriggio: i nomi si centrano e non rientrano,
-   l'ordine dei ruoli resta quello verticale. */
-.tab__c--merge { text-align: center; }
-.tab__c--merge .pill--t { justify-content: center; padding-left: 1px; }
-.tab__c--merge .pill--t > span:first-child { text-align: center; }
-.mergelab {
-  display: block; font-family: var(--mono); font-size: 9px; line-height: 11px;
-  color: var(--muted); text-align: center; letter-spacing: -.02em;
-}
+.pill--t.is-in { padding-left: 11px; }
 
 /* --------------------------------------------------------------------------
    8. Ore
@@ -663,6 +662,13 @@ button { font: inherit; color: inherit; }
 .chg__add { color: var(--ok); font-weight: 600; }
 .chg__del { color: var(--sev3); text-decoration: line-through; }
 .chg__note { display: block; font-size: 11px; color: var(--muted); }
+
+/* Presentazione: un passo solo, quello del telefono che si ha in mano. */
+.intro__step {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin: 10px 0 2px; font-size: 14px; line-height: 1.45; color: var(--ink);
+}
+.intro__step .ico { width: 17px; height: 17px; color: var(--ink-2); }
 .chg__sum { font-size: 12.5px; color: var(--ink-2); margin-top: 8px; }
 .chg__block { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
 

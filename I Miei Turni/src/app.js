@@ -20,6 +20,7 @@
   var LS_GESTORE = 'imieiturni.gestore';
   var LS_SITES = 'imieiturni.sedi';
   var LS_SIMPL = 'imieiturni.semplifica';
+  var LS_INTRO = 'imieiturni.intro';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var MONTHS_IT = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
@@ -218,6 +219,8 @@
   // la rotta cal-link, quindi solo lì il calendario si può abbonare.
   var onWorker = typeof window.TURNI_ROLE === 'string' && !!window.TURNI_ROLE;
   var calLink = null;
+  var installEvent = null;      // beforeinstallprompt messo da parte (Android)
+  var sheetMode = 'review';     // lo stesso foglio serve la revisione e l'intro
 
   var D = {};
   var hits = [];              // ultimo risultato di searchNames (una volta per battuta)
@@ -328,34 +331,54 @@
     return out;
   }
 
-  // Semplifica: mattina e pomeriggio della stessa sede nello stesso giorno.
-  // Restituisce null se l'interruttore è spento, se le due fasce non ci sono o
-  // non sono colonne adiacenti; altrimenti dice se coincidono del tutto.
-  function pair(r, day) {
-    if (!state.simplify || !day) return null;
+  // Con Semplifica mattina e pomeriggio diventano una colonna sola, «Giorno»:
+  // ogni persona si scrive una volta, con accanto la parte di giornata che copre.
+  // Le altre fasce restano dov'erano. Spento, le colonne sono quelle del foglio.
+  function columns() {
+    var rows = D.slotRows, out = [];
+    for (var i = 0; i < rows.length; i++) {
+      if (state.simplify && rows[i].key === 'M' && rows[i + 1] && rows[i + 1].key === 'P') {
+        out.push({ key: 'MP', day: true, mi: i, pi: i + 1, slot: daySlot(rows[i].slot, rows[i + 1].slot) });
+        i++;
+      } else {
+        out.push({ key: rows[i].key, idx: i, row: rows[i], slot: rows[i].slot });
+      }
+    }
+    return out;
+  }
+
+  // La fascia finta della colonna unita: serve al titolo e al riquadro che spiega.
+  function daySlot(m, p) {
+    return { label: 'GIORNO', start: m.start, end: p.end, sub: m.sub || p.sub || '', roles: m.roles || [] };
+  }
+
+  // Le righe di una cella «Giorno»: una per persona, in ordine di ruolo, e
+  // dentro lo stesso ruolo prima chi fa solo la mattina, poi solo il pomeriggio.
+  function dayLines(r, day) {
     var ms = r.slotsByKey.M, ps = r.slotsByKey.P;
-    if (!ms || !ps) return null;
-    var m = cellNames(day, r.hospital, ms), p = cellNames(day, r.hospital, ps);
-    if (!m.length || !p.length) return null;
-    var same = m.length === p.length && m.every(function (n, i) { return n.name === p[i].name; });
-    return { m: m, p: p, same: same, label: spanRange(ms, ps) };
+    var m = ms && day ? cellNames(day, r.hospital, ms) : [];
+    var p = ps && day ? cellNames(day, r.hospital, ps) : [];
+    var out = [];
+    for (var i = 0; i < Math.max(m.length, p.length); i++) {
+      var a = m[i], b = p[i];
+      if (a && b && a.name === b.name) { out.push({ n: a, span: 'MP' }); continue; }
+      if (a) out.push({ n: a, span: 'M' });
+      if (b) out.push({ n: b, span: 'P' });
+    }
+    return out;
   }
 
-  // Le due fasce si uniscono solo se sono davvero una accanto all'altra.
-  function isMP(list, i) {
-    return !!(list[i] && list[i].key === 'M' && list[i + 1] && list[i + 1].key === 'P');
+  // "08–14" + "14–20" → "8–20"; una fascia sola → "8–14". Sempre presente:
+  // una riga senza etichetta vorrebbe dire qualcosa che nessuno può indovinare.
+  function spanChip(r, span) {
+    var ms = r.slotsByKey.M, ps = r.slotsByKey.P;
+    var from = span === 'P' ? ps : ms, to = span === 'M' ? ms : ps;
+    var a = String(R.timeRange(from)).split('–'), b = String(R.timeRange(to)).split('–');
+    return noZero(a[0]) + '–' + noZero(b[1] || b[0]);
   }
+  function noZero(t) { return String(t).replace(/^0/, ''); }
 
-  // Il nome in posizione idx del pomeriggio è lo stesso della mattina?
-  function continues(pr, key, idx, name) {
-    return !!(pr && !pr.same && key === 'P' && pr.m[idx] && pr.m[idx].name === name);
-  }
-
-  // "08–14" + "14–20" → "08–20": l'orario della giornata intera.
-  function spanRange(a, b) {
-    var x = String(R.timeRange(a)).split('–'), y = String(R.timeRange(b)).split('–');
-    return (x[0] || '') + '–' + (y[1] || y[0] || '');
-  }
+  var SPAN_WORD = { MP: 'mattina e pomeriggio', M: 'mattina', P: 'pomeriggio' };
 
   // Nella cella unita il nome sta in due fasce: vale la segnalazione più grave.
   function sevPair(hospital, date, person) {
@@ -833,14 +856,13 @@
   function namePill(name, sev, opts) {
     return el('button', {
       class: 'pill' + (opts.cls ? ' ' + opts.cls : '') + (sev ? ' sev-' + sev.sev : '') +
-        (opts.cont ? ' is-cont' : ''),
-      type: 'button', data: { name: name },
+        (opts.in ? ' is-in' : ''),
+      type: 'button', data: { name: name, slots: opts.slots || '' },
       title: (opts.title || name) + (sev ? ' · ' + sev.title : ''),
-      'aria-label': (opts.cont ? 'continua dalla mattina: ' : '') + opts.label +
-        (sev ? ' — ' + sev.title : ''),
+      'aria-label': opts.label + (sev ? ' — ' + sev.title : ''),
     }, [
-      opts.cont ? el('span', { class: 'pill__cont', text: '↳' }) : null,
       el('span', { text: name }),
+      opts.chip ? el('span', { class: 'tchip', text: opts.chip }) : null,
     ]);
   }
 
@@ -875,10 +897,12 @@
       return;
     }
 
-    // Colonne = fasce, righe = sedi: lo stesso schema della tabella.
-    var slots = D.slotRows.filter(function (row) {
+    // Colonne = fasce (con Semplifica, mattina e pomeriggio in una sola),
+    // righe = sedi: lo stesso schema della tabella.
+    var slots = columns().filter(function (c) {
       return D.monthRosters.some(function (r) {
-        var slot = r.slotsByKey[row.key];
+        if (c.day) return dayLines(r, day).length;
+        var slot = r.slotsByKey[c.key];
         return slot && cellNames(day, r.hospital, slot).length;
       });
     });
@@ -890,29 +914,23 @@
         // 72px è la larghezza sotto la quale un cognome comincia a spezzarsi:
         // finché ci stanno, le colonne si dividono lo spazio; sotto, è il solo
         // dettaglio a scorrere di lato (mai la pagina), come da regola.
-        style: '--dtpl: 42px repeat(' + slots.length + ', minmax(72px, 1fr))',
+        style: '--dtpl: 42px ' + slots.map(function (c) {
+          return c.day ? 'minmax(104px, 1.8fr)' : 'minmax(72px, 1fr)';
+        }).join(' '),
       });
       grid.appendChild(el('div', { class: 'detail__gh' }));
-      slots.forEach(function (row) {
-        grid.appendChild(el('div', { class: 'detail__gh' }, slotButton(row, [
-          el('b', { text: shortSlotName(row.slot.label) }),
+      slots.forEach(function (c) {
+        grid.appendChild(el('div', { class: 'detail__gh' }, slotButton(c, [
+          el('b', { text: shortSlotName(c.slot.label) }),
           ' ',
-          el('time', { text: R.timeRange(row.slot) }),
+          el('time', { text: R.timeRange(c.slot) }),
         ])));
       });
       D.monthRosters.forEach(function (r) {
         grid.appendChild(el('div', {
           class: 'detail__site ' + hospClass(r.hospital), title: r.title || r.hospital, text: r.hospital,
         }));
-        var pr = pair(r, day);
-        for (var ci = 0; ci < slots.length; ci++) {
-          if (pr && pr.same && isMP(slots, ci)) {
-            grid.appendChild(mergedCell(r, day, pr, 'div'));
-            ci++;
-            continue;
-          }
-          grid.appendChild(slotCell(r, day, slots[ci], pr, 'div'));
-        }
+        slots.forEach(function (c) { grid.appendChild(cellFor(r, day, c, 'div')); });
       });
       detailEl.appendChild(grid);
     }
@@ -935,7 +953,12 @@
     // lungo, più 2px di pastiglia: nessun nome si tronca finché ci stanno tutti.
     tableWidth = tableWrap.clientWidth || 366;
     var free = Math.max(140, tableWidth - 55);
-    var need = measureCols(D.tableNames).map(function (w) { return w + 2; });
+    var cols = columns();
+    var m = measureCols(D.tableNames);
+    // La colonna «Giorno» ospita i nomi delle due fasce più la pastiglia dell'orario.
+    var need = cols.map(function (c) {
+      return c.day ? Math.max(m.cols[c.mi], m.cols[c.pi]) + m.chip + 4 : m.cols[c.idx] + 2;
+    });
     var sum = need.reduce(function (x, y) { return x + y; }, 0) || 1;
     // L'avanzo si divide in parti uguali, non in proporzione: così anche la
     // colonna col nome più lungo tiene lo stesso spazio bianco prima della
@@ -952,9 +975,9 @@
     table.appendChild(el('thead', {}, el('tr', {}, [
       el('th', { class: 'tab__corner', scope: 'col' }, el('span', { class: 'sr-only', text: 'Giorno' })),
       el('th', { class: 'tab__hh', scope: 'col' }, el('span', { class: 'sr-only', text: 'Ospedale' })),
-    ].concat(D.slotRows.map(function (row) {
-      return el('th', { class: 'tab__hs', scope: 'col' }, slotButton(row, [
-        el('b', { text: row.key }), el('time', { text: R.timeRange(row.slot) }),
+    ].concat(cols.map(function (c) {
+      return el('th', { class: 'tab__hs', scope: 'col' }, slotButton(c, [
+        el('b', { text: c.day ? 'Giorno' : c.key }), el('time', { text: R.timeRange(c.slot) }),
       ]));
     })))));
 
@@ -970,16 +993,7 @@
         if (i === 0) tr.appendChild(tableDayCell(d));
         tr.appendChild(el('td', { class: 'tab__h' },
           el('span', { class: 'tab__site ' + hospClass(r.hospital), text: r.hospital })));
-        var pr = pair(r, d);
-        for (var ci = 0; ci < D.slotRows.length; ci++) {
-          var row = D.slotRows[ci];
-          if (pr && pr.same && isMP(D.slotRows, ci)) {
-            tr.appendChild(mergedCell(r, d, pr, 'td'));
-            ci++;                                   // il pomeriggio è già dentro
-            continue;
-          }
-          tr.appendChild(slotCell(r, d, row, pr, 'td'));
-        }
+        cols.forEach(function (c) { tr.appendChild(cellFor(r, d, c, 'td')); });
         body.appendChild(tr);
       });
     });
@@ -1001,6 +1015,8 @@
         return s;
       });
     });
+    var chip = el('span', { class: 'tchip', text: '14–20' });
+    ruler.appendChild(chip);
     tableWrap.appendChild(ruler);
     var out = spans.map(function (ss, i) {
       var m = 0;
@@ -1009,8 +1025,9 @@
       if (m < 8) groups[i].forEach(function (n) { m = Math.max(m, n.length * 6.3); });
       return Math.max(24, m);
     });
+    var chipW = Math.max(24, chip.getBoundingClientRect().width);
     tableWrap.removeChild(ruler);
-    return out;
+    return { cols: out, chip: chipW };
   }
 
   // Sul telefono non c'è il passaggio del mouse: l'intestazione della fascia è
@@ -1019,13 +1036,13 @@
   // in posizione fissa: non sposta niente e la testata appiccicata non lo taglia.
   var popEl = null, popBtn = null;
 
-  function slotButton(row, kids) {
+  function slotButton(col, kids) {
     return el('button', {
       class: 'slotbtn', type: 'button', 'aria-expanded': 'false', 'aria-controls': 'slotpop',
       on: {
         click: function (e) {
           e.stopPropagation();
-          toggleSlotPop(this, row.slot);
+          toggleSlotPop(this, col.slot);
         },
       },
     }, kids);
@@ -1064,35 +1081,36 @@
     popBtn = null;
   }
 
-  // Una cella di fascia: gli stessi nomi in tabella (td) e nel dettaglio (div).
-  function slotCell(r, day, row, pr, tag) {
-    var td = tag === 'td'
-      ? el('td', { class: 'tab__c', data: { slot: row.key } })
-      : el('div', { class: 'detail__cell ' + hospClass(r.hospital), data: { slot: row.key } });
-    var slot = r.slotsByKey[row.key];
-    if (!slot) return td;
-    cellNames(day, r.hospital, slot).forEach(function (n, idx) {
-      td.appendChild(namePill(n.name, sevOf(r.hospital, day.date, row.key, n.name), {
-        cls: tag === 'td' ? 'pill--t' : '',
-        cont: continues(pr, row.key, idx, n.name),
+  // Una cella: gli stessi nomi in tabella (td) e nel dettaglio (div). La colonna
+  // «Giorno» porta anche la pastiglia dell'orario; le altre no.
+  function cellFor(r, day, col, tag) {
+    var box = tag === 'td'
+      ? el('td', { class: 'tab__c' + (col.day ? ' tab__c--day' : ''), data: { slot: col.day ? 'M P' : col.key } })
+      : el('div', {
+        class: 'detail__cell ' + hospClass(r.hospital) + (col.day ? ' detail__cell--day' : ''),
+        data: { slot: col.day ? 'M P' : col.key },
+      });
+    var cls = tag === 'td' ? 'pill--t' : '';
+    if (col.day) {
+      dayLines(r, day).forEach(function (line) {
+        var n = line.n;
+        box.appendChild(namePill(n.name, line.span === 'MP'
+          ? sevPair(r.hospital, day.date, n.name)
+          : sevOf(r.hospital, day.date, line.span, n.name), {
+          cls: cls, in: n.pos > 0, slots: line.span, chip: spanChip(r, line.span),
+          title: n.name + ' · ' + SPAN_WORD[line.span] + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
+          label: n.name + ' — ' + SPAN_WORD[line.span] + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
+        }));
+      });
+      return box;
+    }
+    var slot = r.slotsByKey[col.key];
+    if (!slot) return box;
+    cellNames(day, r.hospital, slot).forEach(function (n) {
+      box.appendChild(namePill(n.name, sevOf(r.hospital, day.date, col.key, n.name), {
+        cls: cls, in: n.pos > 0, slots: col.key,
         title: n.name + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
         label: n.name + ' — ' + R.slotName(slot.label) + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
-      }));
-    });
-    return td;
-  }
-
-  // Mattina e pomeriggio identici: una cella sola larga due colonne.
-  function mergedCell(r, day, pr, tag) {
-    var box = tag === 'td'
-      ? el('td', { class: 'tab__c tab__c--merge', colspan: '2', data: { slot: 'M P' } })
-      : el('div', { class: 'detail__cell detail__cell--merge ' + hospClass(r.hospital), data: { slot: 'M P' } });
-    box.appendChild(el('span', { class: 'mergelab', text: pr.label }));
-    pr.m.forEach(function (n) {
-      box.appendChild(namePill(n.name, sevPair(r.hospital, day.date, n.name), {
-        cls: tag === 'td' ? 'pill--t' : '',
-        title: n.name + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
-        label: n.name + ' — mattina e pomeriggio ' + r.hospital + (n.role ? ', ' + n.role : ''),
       }));
     });
     return box;
@@ -1224,8 +1242,16 @@
     clear(bottomEl);
     var canUpload = gestore && !soloVista;
     var canRestore = canUpload && local.length > 0;
-    if (!canUpload && !role) { bottomEl.hidden = true; return; }
+    if (!canUpload && !role && !installEvent) { bottomEl.hidden = true; return; }
     bottomEl.hidden = false;
+
+    // Chi ha chiuso la presentazione può installare da qui, finché si può.
+    if (installEvent) {
+      bottomEl.appendChild(el('button', {
+        class: 'minibtn', type: 'button', text: 'Installa',
+        on: { click: installNow },
+      }));
+    }
 
     if (canUpload) {
       bottomEl.appendChild(el('button', {
@@ -1723,6 +1749,82 @@
     ]);
   }
 
+  // ---------------------------------------------------------------------------
+  // Presentazione: come tenersi la pagina a portata di mano (una volta sola)
+  // ---------------------------------------------------------------------------
+
+  function platform() {
+    var ua = navigator.userAgent || '';
+    if (/iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
+    if (/Android/.test(ua)) return 'android';
+    return 'desktop';
+  }
+
+  function installed() {
+    try {
+      return !!(navigator.standalone ||
+        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+    } catch (e) { return false; }
+  }
+
+  // Si mostra al primo avvio, dopo che la pagina è disegnata, e mai più.
+  // Sul computer no (sarebbe rumore) e sulla copia locale nemmeno.
+  function maybeIntro() {
+    if (location.protocol === 'file:') return;
+    if (readStore(LS_INTRO) === '1' || installed()) return;
+    if (platform() === 'desktop') return;
+    if (!reviewEl.hidden) return;
+    openIntro();
+  }
+
+  function openIntro() {
+    sheetMode = 'intro';
+    reviewTitle.textContent = 'Tienila a portata di mano';
+    reviewCap.textContent = 'Aggiungila alla schermata Home: si apre come un’app, a schermo intero.';
+    reviewCancel.hidden = true;
+    reviewSave.disabled = false;
+    reviewSave.textContent = 'Ho capito';
+    renderIntroBody();
+    openReview();
+  }
+
+  function renderIntroBody() {
+    if (sheetMode !== 'intro') return;
+    clear(reviewBody);
+    if (platform() === 'ios') {
+      reviewBody.appendChild(el('p', { class: 'intro__step' }, [
+        'Tocca ', icon('i-share'), ' Condividi, poi Aggiungi alla schermata Home.',
+      ]));
+      return;
+    }
+    if (installEvent) {
+      reviewBody.appendChild(el('p', { class: 'intro__step' }, [
+        el('button', {
+          class: 'btn btn--solid', type: 'button', text: 'Installa',
+          on: { click: installNow },
+        }),
+      ]));
+      return;
+    }
+    reviewBody.appendChild(el('p', { class: 'intro__step', text: 'Apri il menu ⋮ e scegli Installa app.' }));
+  }
+
+  function closeIntro() {
+    writeStore(LS_INTRO, '1');
+    sheetMode = 'review';
+    reviewCancel.hidden = false;
+    closeReview();
+  }
+
+  function installNow() {
+    var e = installEvent;
+    if (!e) return;
+    installEvent = null;
+    renderBottom();
+    renderIntroBody();
+    try { Promise.resolve(e.prompt()).catch(function () {}); } catch (err) { /* niente */ }
+  }
+
   function openReview() {
     if (reviewEl.hidden) reviewOpener = document.activeElement;
     reviewEl.hidden = false;
@@ -2092,12 +2194,21 @@
     $('emptyUpload').addEventListener('click', function () { fileInput.click(); });
     fileInput.addEventListener('change', function () { loadFiles(fileInput.files); fileInput.value = ''; });
 
-    reviewSave.addEventListener('click', saveReview);
-    reviewCancel.addEventListener('click', nextReview);
-    $('reviewScrim').addEventListener('click', nextReview);
+    var sheetClose = function () { if (sheetMode === 'intro') closeIntro(); else nextReview(); };
+    reviewSave.addEventListener('click', function () {
+      if (sheetMode === 'intro') closeIntro(); else saveReview();
+    });
+    reviewCancel.addEventListener('click', sheetClose);
+    $('reviewScrim').addEventListener('click', sheetClose);
+    window.addEventListener('beforeinstallprompt', function (e) {
+      if (e && e.preventDefault) e.preventDefault();
+      installEvent = e;
+      renderBottom();
+      renderIntroBody();
+    });
     document.addEventListener('keydown', function (e) {
       if (reviewEl.hidden) return;
-      if (e.key === 'Escape') { e.preventDefault(); nextReview(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); sheetClose(); return; }
       if (e.key !== 'Tab') return;
       var focusable = reviewPanel.querySelectorAll('button:not([disabled])');
       if (!focusable.length) return;
@@ -2143,6 +2254,8 @@
     if (state.pinned) srSay(state.pinned + ' evidenziato');
     if (!hadDay) window.requestAnimationFrame(centerToday);
     boot();
+    // La presentazione arriva dopo il disegno e non blocca niente.
+    window.setTimeout(maybeIntro, 400);
   }
 
   init();
