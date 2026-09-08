@@ -431,9 +431,20 @@ button { font: inherit; color: inherit; }
 }
 .tab__daybtn .wd { font-size: 10px; line-height: 11px; color: var(--muted); }
 
-.tab__h { padding: 4px 0 0 !important; }
-.tab__h .dot { margin: 0 auto; }
-.tab__c { padding: 2px 1px !important; overflow: hidden; }
+/* La sigla della sede, scritta: si legge senza legenda, alla prima apertura. */
+.tab__h { padding: 5px 1px 0 !important; text-align: center; }
+.tab__site {
+  font-size: 9.5px; font-weight: 600; letter-spacing: .06em; line-height: 12px;
+  color: var(--alt); white-space: nowrap;
+}
+.tab__site.h-dea { color: var(--dea); }
+.tab__site.h-osg { color: var(--osg); }
+.tab__c { padding: 2px 0 !important; overflow: hidden; }
+.tab__ruler {
+  position: absolute; left: -9999px; top: 0; visibility: hidden; white-space: pre;
+  font-size: var(--tabfs, 10px); font-weight: 500; letter-spacing: -.02em;
+}
+.tab__ruler span { display: inline-block; }
 
 .pill--t {
   display: flex; align-items: center; gap: 3px; width: 100%; max-width: 100%;

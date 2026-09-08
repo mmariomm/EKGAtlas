@@ -375,17 +375,19 @@
       });
     });
 
-    // Parte fissa delle larghezze della tabella: il nome più lungo per colonna.
-    D.tableLens = D.slotRows.map(function (row) {
-      var max = 4;
+    // Larghezze della tabella: per ogni colonna i nomi più lunghi, che renderTable
+    // misura poi col font vero (i caratteri non bastano: ORLANDITOSKIC ha 13 lettere
+    // ma è più stretto di SANTAMBROGIO, che ne ha 12).
+    D.tableNames = D.slotRows.map(function (row) {
+      var seen = Object.create(null);
       D.days.forEach(function (d) {
         D.monthRosters.forEach(function (r) {
           var slot = r.slotsByKey[row.key];
           if (!slot) return;
-          cellNames(d, r.hospital, slot).forEach(function (n) { if (n.name.length > max) max = n.name.length; });
+          cellNames(d, r.hospital, slot).forEach(function (n) { seen[n.name] = true; });
         });
       });
-      return max + 2;
+      return Object.keys(seen).sort(function (a, b) { return b.length - a.length; }).slice(0, 6);
     });
 
     if (state.pinned && !D.nameMap.has(state.pinned)) state.pinned = null;
@@ -588,7 +590,7 @@
       ' ',
       rows.length > 1 ? el('span', {
         class: 'totale__all',
-        text: R.formatNumber(all.turniEq) + ' · ' + R.formatHours(all.ore),
+        text: R.formatNumber(all.turniEq) + ' turni · ' + R.formatHours(all.ore),
       }) : null,
     ]));
 
@@ -598,7 +600,7 @@
         ' ',
         el('span', {
           text: R.formatNumber(r.st.giornateEq) + 'G + ' + r.st.notti + 'N = ' +
-            R.formatNumber(r.st.turniEq) + ' · ' + R.formatHours(r.st.ore),
+            R.formatNumber(r.st.turniEq) + ' turni · ' + R.formatHours(r.st.ore),
         }),
       ]));
     });
@@ -856,15 +858,24 @@
     var table = el('table', { class: 'tab', 'aria-labelledby': 'tabTitle' });
 
     // Percentuali (non calc(): Chrome le ignora sui <col>), rifatte a ogni cambio
-    // di larghezza. 38px vanno alla colonna del giorno e a quella del pallino.
+    // di larghezza. 27px al giorno, 28px alla sigla della sede; il resto va alle
+    // colonne dei nomi in proporzione a quanto misura davvero il loro nome più
+    // lungo, più 2px di pastiglia: nessun nome si tronca finché ci stanno tutti.
     tableWidth = tableWrap.clientWidth || 366;
-    var total = D.tableLens.reduce(function (x, y) { return x + y; }, 0);
-    var free = Math.max(140, tableWidth - 38);
+    var free = Math.max(140, tableWidth - 55);
+    var need = measureCols(D.tableNames).map(function (w) { return w + 2; });
+    var sum = need.reduce(function (x, y) { return x + y; }, 0) || 1;
+    // L'avanzo si divide in parti uguali, non in proporzione: così anche la
+    // colonna col nome più lungo tiene lo stesso spazio bianco prima della
+    // successiva, ed è quello che separa due nomi lunghi affiancati.
+    var extra = Math.max(0, free - sum) / need.length;
     var pct = function (px) { return (px / tableWidth * 100).toFixed(3) + '%'; };
     table.appendChild(el('colgroup', {}, [
+      el('col', { style: 'width:' + pct(27) }),
       el('col', { style: 'width:' + pct(28) }),
-      el('col', { style: 'width:' + pct(10) }),
-    ].concat(D.tableLens.map(function (l) { return el('col', { style: 'width:' + pct(free * l / total) }); }))));
+    ].concat(need.map(function (n) {
+      return el('col', { style: 'width:' + pct(extra ? n + extra : free * n / sum) });
+    }))));
 
     table.appendChild(el('thead', {}, el('tr', {}, [
       el('th', { class: 'tab__corner', scope: 'col' }, el('span', { class: 'sr-only', text: 'Giorno' })),
@@ -885,7 +896,8 @@
           data: { date: d.date },
         });
         if (i === 0) tr.appendChild(tableDayCell(d));
-        tr.appendChild(el('td', { class: 'tab__h' }, [dot(r.hospital), el('span', { class: 'sr-only', text: r.hospital })]));
+        tr.appendChild(el('td', { class: 'tab__h' },
+          el('span', { class: 'tab__site ' + hospClass(r.hospital), text: r.hospital })));
         D.slotRows.forEach(function (row) {
           var box = el('td', { class: 'tab__c' + (row.key === 'N' ? ' is-night' : '') });
           var slot = r.slotsByKey[row.key];
@@ -907,6 +919,30 @@
     table.classList.toggle('is-pinned', !!state.pinned && !state.query.trim());
     table.classList.toggle('is-multi', D.monthRosters.length > 1);
     tableWrap.appendChild(table);
+  }
+
+  // Misura, col font vero della tabella, il nome più largo di ogni colonna.
+  // Tutti i righelli entrano insieme: una sola lettura del layout.
+  function measureCols(groups) {
+    var ruler = el('div', { class: 'tab__ruler', 'aria-hidden': 'true' });
+    var spans = groups.map(function (names) {
+      return names.map(function (n) {
+        var s = el('span', { text: n });
+        ruler.appendChild(s);
+        ruler.appendChild(el('br'));
+        return s;
+      });
+    });
+    tableWrap.appendChild(ruler);
+    var out = spans.map(function (ss, i) {
+      var m = 0;
+      ss.forEach(function (s) { m = Math.max(m, s.getBoundingClientRect().width); });
+      // Se il layout non è disponibile (vista nascosta, stampa) si stima dai caratteri.
+      if (m < 8) groups[i].forEach(function (n) { m = Math.max(m, n.length * 6.3); });
+      return Math.max(24, m);
+    });
+    tableWrap.removeChild(ruler);
+    return out;
   }
 
   function tableDayCell(d) {
@@ -958,7 +994,7 @@
               style: 'width:' + (st.oreByHospital[h] / max * 100).toFixed(2) + '%',
             });
           })),
-        el('span', { class: 'ore__v', text: R.formatHours(st.ore).replace(' h', '') }),
+        el('span', { class: 'ore__v', text: R.formatHours(st.ore).replace(/\s*h$/, '') }),
       ]));
     });
   }
