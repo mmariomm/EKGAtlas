@@ -57,10 +57,10 @@
    "header": "AMBULATORIO CM 09.30-15.00",
    "sub": "",
    "roles": [],
-   "start": "09:30",
-   "end": "15:00",
-   "startMin": 570,
-   "endMin": 900,
+   "start": "08:00",
+   "end": "14:00",
+   "startMin": 480,
+   "endMin": 840,
    "col": "G"
   }
  ],

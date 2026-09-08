@@ -40,6 +40,11 @@
   --sev3: light-dark(#D1343B, #F0616A);
   --sev2: light-dark(#E07B12, #F0A03A);
   --sev1: light-dark(#3B6FD9, #6E9BF0);
+  /* Inchiostri dei nomi segnalati: scuriti (chiaro) o schiariti (scuro) fino a
+     stare sopra 4,5:1 contro il proprio fondo. */
+  --sev3-ink: light-dark(#9D272C, #F49097);
+  --sev2-ink: light-dark(#8B4C0B, #F2AE58);
+  --sev1-ink: light-dark(#2C53A3, #9AB9F4);
   --ok: light-dark(#2E8B57, #5BC98A);
 
   --focus: light-dark(#2F6FE4, #6E9BF0);
@@ -217,19 +222,27 @@ button { font: inherit; color: inherit; }
 .opt__dots { display: flex; gap: 3px; }
 .opt__empty { padding: 12px 10px; color: var(--muted); font-size: 13.5px; }
 
-/* Filtri delle sedi: accese si tingono del proprio colore, spente sono un contorno */
-.sites { margin-left: auto; display: flex; gap: 6px; }
-.site {
-  position: relative; min-height: 28px; padding: 0 11px;
+/* Riga dei filtri: «Mostra:» e le due sedi a sinistra, Semplifica a destra.
+   Acceso e spento si distinguono da soli (spunta + fondo contro contorno). */
+.filtersrow { display: flex; align-items: center; gap: 8px; padding: 6px 0 2px; }
+.filtersrow__lb { font-size: 11px; color: var(--muted); flex: none; }
+.sites { display: flex; gap: 6px; }
+.site, .simpl {
+  position: relative; display: inline-flex; align-items: center; gap: 4px;
+  min-height: 28px; padding: 0 11px;
   border: 1px solid var(--line); border-radius: 14px; background: none;
   font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--muted);
-  cursor: pointer; transition: background-color .15s ease, color .15s ease;
+  cursor: pointer; transition: background-color .15s ease, color .15s ease, transform .08s ease;
 }
-.site::after { content: ""; position: absolute; inset: -6px -2px; }   /* area di tocco */
-.site[aria-pressed="true"] { border-color: transparent; }
+.site::after, .simpl::after { content: ""; position: absolute; inset: -6px -2px; }   /* area di tocco */
+.site:active, .simpl:active { transform: scale(.97); }
+.site .ico, .simpl .ico { width: 10px; height: 10px; margin-left: -2px; }
+.site[aria-pressed="true"], .simpl[aria-pressed="true"] { border-color: transparent; }
 .site.h-dea[aria-pressed="true"] { background: color-mix(in srgb, var(--dea) 14%, var(--surface)); color: var(--dea); }
 .site.h-osg[aria-pressed="true"] { background: color-mix(in srgb, var(--osg) 14%, var(--surface)); color: var(--osg); }
 .site.h-alt[aria-pressed="true"] { background: color-mix(in srgb, var(--alt) 14%, var(--surface)); color: var(--alt); }
+.simpl { margin-left: auto; font-weight: 500; }
+.simpl[aria-pressed="true"] { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
 
 /* --------------------------------------------------------------------------
    4. Impaginato
@@ -301,9 +314,9 @@ button { font: inherit; color: inherit; }
 
 .cal__dot { position: absolute; right: 4px; bottom: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--fsev); }
 
-.sev-1 { --fsev: var(--sev1); }
-.sev-2 { --fsev: var(--sev2); }
-.sev-3 { --fsev: var(--sev3); }
+.sev-1 { --fsev: var(--sev1); --fsev-ink: var(--sev1-ink); }
+.sev-2 { --fsev: var(--sev2); --fsev-ink: var(--sev2-ink); }
+.sev-3 { --fsev: var(--sev3); --fsev-ink: var(--sev3-ink); }
 
 .callegend {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
@@ -353,7 +366,9 @@ button { font: inherit; color: inherit; }
 .detail__site.h-dea { color: var(--dea); }
 .detail__site.h-osg { color: var(--osg); }
 .detail__cell { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 2px 0 6px; }
-.detail__cell.is-night, .detail__gh.is-night { background: var(--night-veil); }
+/* Mattina e pomeriggio uniti: una cella sola su due colonne, nomi centrati. */
+.detail__cell--merge { grid-column: span 2; align-items: center; }
+.detail__cell--merge .pill:not(:first-child) { padding-left: 6px; }
 .detail.is-multi .detail__cell.h-dea, .detail.is-multi .detail__site.h-dea { background-image: linear-gradient(var(--veil-dea), var(--veil-dea)); }
 .detail.is-multi .detail__cell.h-osg, .detail.is-multi .detail__site.h-osg { background-image: linear-gradient(var(--veil-osg), var(--veil-osg)); }
 .detail.is-multi .detail__cell.h-alt, .detail.is-multi .detail__site.h-alt { background-image: linear-gradient(var(--veil-alt), var(--veil-alt)); }
@@ -371,9 +386,23 @@ button { font: inherit; color: inherit; }
 .pill::after { content: ""; position: absolute; inset: -5px -2px; }   /* area di tocco */
 .pill:hover { background: var(--surface-2); }
 .pill:active { transform: scale(.97); }
+/* Una segnalazione colora il nome intero: si vede da lontano e non aggiunge segni. */
+.pill.sev-1, .pill.sev-2, .pill.sev-3 {
+  background: light-dark(color-mix(in srgb, var(--fsev) 16%, var(--surface)),
+                         color-mix(in srgb, var(--fsev) 26%, var(--surface)));
+  color: var(--fsev-ink);
+}
+/* Se il nome è anche quello cercato vince il giallo, e la segnalazione resta
+   come sottolineatura: mai due fondi sullo stesso nome. */
 .pill.is-soft { background: var(--hl-soft); color: var(--hl-soft-ink); }
 .pill.is-strong { background: var(--hl); color: var(--hl-ink); }
-.pill .fdot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--fsev); }
+.pill.sev-1.is-soft, .pill.sev-2.is-soft, .pill.sev-3.is-soft,
+.pill.sev-1.is-strong, .pill.sev-2.is-strong, .pill.sev-3.is-strong {
+  box-shadow: inset 0 -2px 0 var(--fsev);
+}
+/* Il secondo nome di una cella rientra: l'ordine è il ruolo, e si vede. */
+.detail__cell .pill:not(:first-child) { padding-left: 16px; }
+.pill__cont { color: var(--ink-2); flex: none; }
 
 .is-pinned .pill:not(.is-strong) { opacity: .45; }
 .tab.is-pinned .pill:not(.is-strong) { opacity: .72; }   /* qui si legge tutti, non solo la persona */
@@ -397,17 +426,14 @@ button { font: inherit; color: inherit; }
 }
 .tab__hs b { font-size: 10.5px; font-weight: 600; color: var(--ink-2); }
 .tab__hs time { font-family: var(--mono); font-size: 9.5px; color: var(--muted); margin-left: 3px; }
-.tab thead .is-night { background: linear-gradient(var(--night-veil), var(--night-veil)) var(--surface); }
 
 .tab tbody tr { scroll-margin-top: calc(var(--h-header) + 34px); }
-.tab tbody tr.is-weekend { background: var(--weekend); }
-/* Con due sedi accese ogni riga porta una velatura del proprio colore (5%). */
+/* Con due sedi accese ogni riga porta una velatura del proprio colore. */
 .tab.is-multi tbody tr.h-dea { background-image: linear-gradient(var(--veil-dea), var(--veil-dea)); }
 .tab.is-multi tbody tr.h-osg { background-image: linear-gradient(var(--veil-osg), var(--veil-osg)); }
 .tab.is-multi tbody tr.h-alt { background-image: linear-gradient(var(--veil-alt), var(--veil-alt)); }
 .tab__r--first > * { border-top: 1px solid var(--line); }
 .tab__r--first:first-child > * { border-top: 0; }
-.tab tbody tr > .is-night { background: var(--night-veil); }
 
 .tab__day {
   padding: 3px 2px 3px 4px !important;
@@ -415,6 +441,7 @@ button { font: inherit; color: inherit; }
   scroll-margin-top: calc(var(--h-header) + 34px);
 }
 .tab tbody tr.is-weekend .tab__day { background: var(--weekend); }
+.tab tbody tr.is-weekend .tab__daybtn .wd { color: var(--ink-2); }
 .tab__daybtn {
   display: flex; flex-direction: column; align-items: flex-start;
   min-height: 34px; padding: 1px 2px; background: none; border: 0; border-radius: 5px;
@@ -456,7 +483,16 @@ button { font: inherit; color: inherit; }
    restano, ma servono a far stare i nomi su una riga, non a decidere cosa si legge. */
 .pill--t > span:first-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .pill--t::after { inset: -3px -2px; }
-.pill--t .fdot { width: 5px; height: 5px; margin-top: 4px; }
+.tab__c .pill--t:not(:first-child) { padding-left: 11px; }
+/* Cella unita di mattina e pomeriggio: i nomi si centrano e non rientrano,
+   l'ordine dei ruoli resta quello verticale. */
+.tab__c--merge { text-align: center; }
+.tab__c--merge .pill--t { justify-content: center; padding-left: 1px; }
+.tab__c--merge .pill--t > span:first-child { text-align: center; }
+.mergelab {
+  display: block; font-family: var(--mono); font-size: 9px; line-height: 11px;
+  color: var(--muted); text-align: center; letter-spacing: -.02em;
+}
 
 /* --------------------------------------------------------------------------
    8. Ore

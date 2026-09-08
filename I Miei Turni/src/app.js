@@ -19,6 +19,7 @@
   var LS_VIEW = 'imieiturni.view';
   var LS_GESTORE = 'imieiturni.gestore';
   var LS_SITES = 'imieiturni.sedi';
+  var LS_SIMPL = 'imieiturni.semplifica';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var MONTHS_IT = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
@@ -200,6 +201,7 @@
     armedIndex: 0,
     pinned: null,
     popOpen: false,
+    simplify: readStore(LS_SIMPL) === '1',
   };
 
   var local = readLocal();
@@ -235,6 +237,7 @@
     emptyEl = $('empty'), totaleEl = $('totale'), calEl = $('calendario'), legendEl = $('callegend'),
     detailEl = $('detail'), findEl = $('segnalazioni'), bottomEl = $('bottom'),
     sitesEl = $('sites'), updatedEl = $('updated'),
+    filtersRow = $('filtersrow'), sitesLabel = $('sitesLabel'), simplBtn = $('simplBtn'),
     fileInput = $('fileInput'), toasts = $('toasts'), srStatus = $('srStatus'),
     reviewEl = $('review'), reviewPanel = $('reviewPanel'), reviewTitle = $('reviewTitle'),
     reviewCap = $('reviewCap'), reviewBody = $('reviewBody'), reviewSave = $('reviewSave'), reviewCancel = $('reviewCancel');
@@ -319,6 +322,43 @@
       out.push({ name: name, pos: pos, role: (slot.roles && slot.roles[pos]) || '' });
     });
     return out;
+  }
+
+  // Semplifica: mattina e pomeriggio della stessa sede nello stesso giorno.
+  // Restituisce null se l'interruttore è spento, se le due fasce non ci sono o
+  // non sono colonne adiacenti; altrimenti dice se coincidono del tutto.
+  function pair(r, day) {
+    if (!state.simplify || !day) return null;
+    var ms = r.slotsByKey.M, ps = r.slotsByKey.P;
+    if (!ms || !ps) return null;
+    var m = cellNames(day, r.hospital, ms), p = cellNames(day, r.hospital, ps);
+    if (!m.length || !p.length) return null;
+    var same = m.length === p.length && m.every(function (n, i) { return n.name === p[i].name; });
+    return { m: m, p: p, same: same, label: spanRange(ms, ps) };
+  }
+
+  // Le due fasce si uniscono solo se sono davvero una accanto all'altra.
+  function isMP(list, i) {
+    return !!(list[i] && list[i].key === 'M' && list[i + 1] && list[i + 1].key === 'P');
+  }
+
+  // Il nome in posizione idx del pomeriggio è lo stesso della mattina?
+  function continues(pr, key, idx, name) {
+    return !!(pr && !pr.same && key === 'P' && pr.m[idx] && pr.m[idx].name === name);
+  }
+
+  // "08–14" + "14–20" → "08–20": l'orario della giornata intera.
+  function spanRange(a, b) {
+    var x = String(R.timeRange(a)).split('–'), y = String(R.timeRange(b)).split('–');
+    return (x[0] || '') + '–' + (y[1] || y[0] || '');
+  }
+
+  // Nella cella unita il nome sta in due fasce: vale la segnalazione più grave.
+  function sevPair(hospital, date, person) {
+    var a = sevOf(hospital, date, 'M', person), b = sevOf(hospital, date, 'P', person);
+    if (!a) return b;
+    if (!b) return a;
+    return b.sev > a.sev ? b : a;
   }
 
   function pillKey(hospital, date, slotKey, person) {
@@ -541,18 +581,43 @@
 
   function renderSites() {
     clear(sitesEl);
-    if (D.allHospitals.length < 2) { sitesEl.hidden = true; return; }
-    sitesEl.hidden = false;
-    D.allHospitals.forEach(function (h) {
-      var on = isOn(h);
-      sitesEl.appendChild(el('button', {
-        class: 'site ' + hospClass(h), type: 'button',
-        'aria-pressed': on ? 'true' : 'false',
-        title: (on ? 'Nascondi' : 'Mostra') + ' i turni di ' + h,
-        text: h,
-        on: { click: function () { toggleSite(h); } },
-      }));
-    });
+    var many = D.allHospitals.length > 1;
+    sitesEl.hidden = !many;
+    sitesLabel.hidden = !many;
+    if (many) {
+      D.allHospitals.forEach(function (h) {
+        var on = isOn(h);
+        sitesEl.appendChild(el('button', {
+          class: 'site ' + hospClass(h), type: 'button',
+          'aria-pressed': on ? 'true' : 'false',
+          title: (on ? 'Nascondi' : 'Mostra') + ' i turni di ' + h,
+          on: { click: function () { toggleSite(h); } },
+        }, [on ? icon('i-check') : null, el('span', { text: h })]));
+      });
+    }
+    renderSimpl();
+    filtersRow.hidden = !many && simplBtn.hidden;
+  }
+
+  // Semplifica: si mostra solo dove serve davvero (tabella e calendario).
+  function renderSimpl() {
+    clear(simplBtn);
+    var useful = state.view !== 'ore';
+    simplBtn.hidden = !useful;
+    if (!useful) return;
+    simplBtn.setAttribute('aria-pressed', state.simplify ? 'true' : 'false');
+    simplBtn.title = state.simplify
+      ? 'Torna a mostrare mattina e pomeriggio separati'
+      : 'Unisci mattina e pomeriggio quando sono gli stessi nomi';
+    if (state.simplify) simplBtn.appendChild(icon('i-check'));
+    simplBtn.appendChild(el('span', { text: 'Semplifica' }));
+  }
+
+  function toggleSimpl() {
+    state.simplify = !state.simplify;
+    writeStore(LS_SIMPL, state.simplify ? '1' : null);
+    renderAll();
+    srSay(state.simplify ? 'Mattina e pomeriggio uniti quando coincidono' : 'Fasce separate');
   }
 
   function renderUpdated() {
@@ -761,11 +826,15 @@
 
   function namePill(name, sev, opts) {
     return el('button', {
-      class: 'pill' + (opts.cls ? ' ' + opts.cls : '') + (sev ? ' sev-' + sev.sev : ''),
-      type: 'button', data: { name: name }, title: opts.title, 'aria-label': opts.label,
+      class: 'pill' + (opts.cls ? ' ' + opts.cls : '') + (sev ? ' sev-' + sev.sev : '') +
+        (opts.cont ? ' is-cont' : ''),
+      type: 'button', data: { name: name },
+      title: (opts.title || name) + (sev ? ' · ' + sev.title : ''),
+      'aria-label': (opts.cont ? 'continua dalla mattina: ' : '') + opts.label +
+        (sev ? ' — ' + sev.title : ''),
     }, [
+      opts.cont ? el('span', { class: 'pill__cont', text: '↳' }) : null,
       el('span', { text: name }),
-      sev ? el('span', { class: 'fdot', title: sev.title }) : null,
     ]);
   }
 
@@ -819,7 +888,7 @@
       });
       grid.appendChild(el('div', { class: 'detail__gh' }));
       slots.forEach(function (row) {
-        grid.appendChild(el('div', { class: 'detail__gh' + (row.key === 'N' ? ' is-night' : '') }, [
+        grid.appendChild(el('div', { class: 'detail__gh' }, [
           el('b', { text: shortSlotName(row.slot.label) }),
           ' ',
           el('time', { text: R.timeRange(row.slot) }),
@@ -829,21 +898,15 @@
         grid.appendChild(el('div', {
           class: 'detail__site ' + hospClass(r.hospital), title: r.title || r.hospital, text: r.hospital,
         }));
-        slots.forEach(function (row) {
-          var box = el('div', {
-            class: 'detail__cell ' + hospClass(r.hospital) + (row.key === 'N' ? ' is-night' : ''),
-          });
-          var slot = r.slotsByKey[row.key];
-          if (slot) {
-            cellNames(day, r.hospital, slot).forEach(function (n) {
-              box.appendChild(namePill(n.name, sevOf(r.hospital, date, row.key, n.name), {
-                title: n.role ? (n.pos + 1) + 'º · ' + n.role : n.name,
-                label: n.name + ' — ' + R.slotName(row.slot.label) + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
-              }));
-            });
+        var pr = pair(r, day);
+        for (var ci = 0; ci < slots.length; ci++) {
+          if (pr && pr.same && isMP(slots, ci)) {
+            grid.appendChild(mergedCell(r, day, pr, 'div'));
+            ci++;
+            continue;
           }
-          grid.appendChild(box);
-        });
+          grid.appendChild(slotCell(r, day, slots[ci], pr, 'div'));
+        }
       });
       detailEl.appendChild(grid);
     }
@@ -884,7 +947,7 @@
       el('th', { class: 'tab__corner', scope: 'col' }, el('span', { class: 'sr-only', text: 'Giorno' })),
       el('th', { class: 'tab__hh', scope: 'col' }, el('span', { class: 'sr-only', text: 'Ospedale' })),
     ].concat(D.slotRows.map(function (row) {
-      return el('th', { class: 'tab__hs' + (row.key === 'N' ? ' is-night' : ''), scope: 'col' }, [
+      return el('th', { class: 'tab__hs', scope: 'col' }, [
         el('b', { text: row.key }), el('time', { text: R.timeRange(row.slot) }),
       ]);
     })))));
@@ -901,20 +964,16 @@
         if (i === 0) tr.appendChild(tableDayCell(d));
         tr.appendChild(el('td', { class: 'tab__h' },
           el('span', { class: 'tab__site ' + hospClass(r.hospital), text: r.hospital })));
-        D.slotRows.forEach(function (row) {
-          var box = el('td', { class: 'tab__c' + (row.key === 'N' ? ' is-night' : '') });
-          var slot = r.slotsByKey[row.key];
-          if (slot) {
-            cellNames(d, r.hospital, slot).forEach(function (n) {
-              box.appendChild(namePill(n.name, sevOf(r.hospital, d.date, row.key, n.name), {
-                cls: 'pill--t',
-                title: n.name + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
-                label: n.name + ' — ' + R.slotName(slot.label) + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
-              }));
-            });
+        var pr = pair(r, d);
+        for (var ci = 0; ci < D.slotRows.length; ci++) {
+          var row = D.slotRows[ci];
+          if (pr && pr.same && isMP(D.slotRows, ci)) {
+            tr.appendChild(mergedCell(r, d, pr, 'td'));
+            ci++;                                   // il pomeriggio è già dentro
+            continue;
           }
-          tr.appendChild(box);
-        });
+          tr.appendChild(slotCell(r, d, row, pr, 'td'));
+        }
         body.appendChild(tr);
       });
     });
@@ -946,6 +1005,40 @@
     });
     tableWrap.removeChild(ruler);
     return out;
+  }
+
+  // Una cella di fascia: gli stessi nomi in tabella (td) e nel dettaglio (div).
+  function slotCell(r, day, row, pr, tag) {
+    var td = tag === 'td'
+      ? el('td', { class: 'tab__c', data: { slot: row.key } })
+      : el('div', { class: 'detail__cell ' + hospClass(r.hospital), data: { slot: row.key } });
+    var slot = r.slotsByKey[row.key];
+    if (!slot) return td;
+    cellNames(day, r.hospital, slot).forEach(function (n, idx) {
+      td.appendChild(namePill(n.name, sevOf(r.hospital, day.date, row.key, n.name), {
+        cls: tag === 'td' ? 'pill--t' : '',
+        cont: continues(pr, row.key, idx, n.name),
+        title: n.name + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
+        label: n.name + ' — ' + R.slotName(slot.label) + ' ' + r.hospital + (n.role ? ', ' + n.role : ''),
+      }));
+    });
+    return td;
+  }
+
+  // Mattina e pomeriggio identici: una cella sola larga due colonne.
+  function mergedCell(r, day, pr, tag) {
+    var box = tag === 'td'
+      ? el('td', { class: 'tab__c tab__c--merge', colspan: '2', data: { slot: 'M P' } })
+      : el('div', { class: 'detail__cell detail__cell--merge ' + hospClass(r.hospital), data: { slot: 'M P' } });
+    box.appendChild(el('span', { class: 'mergelab', text: pr.label }));
+    pr.m.forEach(function (n) {
+      box.appendChild(namePill(n.name, sevPair(r.hospital, day.date, n.name), {
+        cls: tag === 'td' ? 'pill--t' : '',
+        title: n.name + (n.role ? ' · ' + (n.pos + 1) + 'º ' + n.role : ''),
+        label: n.name + ' — mattina e pomeriggio ' + r.hospital + (n.role ? ', ' + n.role : ''),
+      }));
+    });
+    return box;
   }
 
   function tableDayCell(d) {
@@ -1852,6 +1945,7 @@
     });
 
     segCal.addEventListener('click', function () { setView('calendario'); });
+    simplBtn.addEventListener('click', toggleSimpl);
     segTab.addEventListener('click', function () { setView('tabella'); });
     segOre.addEventListener('click', function () { setView('ore'); });
     $('segbar').addEventListener('keydown', function (e) {

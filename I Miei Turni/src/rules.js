@@ -51,6 +51,30 @@ var TurniRules = (function () {
     return r === 0 ? (h + 'h') : (h + 'h' + (r < 10 ? '0' : '') + r);
   }
 
+  // Nome per esteso della fascia, quello che si legge toccando l'intestazione:
+  // "AMBULATORIO CM" → "Ambulatorio Codici Minori".
+  var SLOT_WORDS = { CM: 'Codici Minori', OBI: 'Osservazione Breve Intensiva', PS: 'Pronto Soccorso' };
+
+  function slotFullName(slot) {
+    var label = String((slot && slot.label) || '');
+    return label.split(/\s+/).filter(Boolean).map(function (word) {
+      var up = word.toUpperCase();
+      if (SLOT_WORDS[up]) return SLOT_WORDS[up];
+      return up.charAt(0) + up.slice(1).toLowerCase();
+    }).join(' ');
+  }
+
+  // "dalle 8 alle 14", "dalle 20 alle 8", "dalle 9.30 alle 15".
+  function slotHoursPhrase(slot) {
+    var say = function (hhmm) {
+      var parts = String(hhmm || '').split(':');
+      var h = Number(parts[0]);
+      var m = Number(parts[1] || 0);
+      return m === 0 ? String(h) : h + '.' + (m < 10 ? '0' : '') + m;
+    };
+    return 'dalle ' + say(slot && slot.start) + ' alle ' + say(slot && slot.end);
+  }
+
   // "MATTINA" → "Mattina"; "AMBULATORIO CM" → "Ambulatorio CM" (le sigle di due lettere
   // restano maiuscole, le altre parole diventano Title Case).
   function slotName(label) {
@@ -765,6 +789,8 @@ var TurniRules = (function () {
     fold: fold,
     dayIndex: dayIndex,
     slotName: slotName,
+    slotFullName: slotFullName,
+    slotHoursPhrase: slotHoursPhrase,
     timeRange: timeRange,
     formatDate: formatDate,
     formatRest: formatRest,
