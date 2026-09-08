@@ -89,7 +89,7 @@ function nonContiene(testo, pezzo, messaggio) {
 // Finti env, KV, richieste
 // ============================================================
 
-const PREFISSI_CONTATORI = ['try:', 'stat:', 'uso:', 'dev:', 'cerca:', 'cal:', 'calsub:', 'calday:', 'callink:'];
+const PREFISSI_CONTATORI = ['try:', 'stat:', 'uso:', 'cal:', 'calsub:', 'calday:', 'callink:'];
 
 function contatore(chiave) {
   return PREFISSI_CONTATORI.some(function (p) { return String(chiave).indexOf(p) === 0; });
@@ -1177,48 +1177,51 @@ async function testUsoScrittura(worker) {
   uguale(await prima.text(), '', 'POST /uso: risposta senza corpo');
   uguale(prima.headers.get('Set-Cookie'), null, 'POST /uso: nessun cookie');
 
-  uguale(kv.store.get('uso:' + MESE),
-    JSON.stringify({ aperture: 1, ricerche: 3, sessioniConRicerca: 1, installate: 1 }),
-    'la riga del mese conta apertura, ricerche, sessioni con ricerca e app');
-  uguale(kv.store.get('uso:' + GIORNO),
-    JSON.stringify({ aperture: 1, ricerche: 3, sessioniConRicerca: 1 }),
-    'la riga del giorno conta le stesse cose, senza l\'app');
-  uguale(kv.store.get('dev:' + MESE + ':' + DEV_A), 'app', 'il dispositivo risulta con l\'app installata');
-  uguale(kv.store.get('dev:' + GIORNO + ':' + DEV_A), '1', 'il dispositivo è segnato anche nel giorno');
-  uguale(kv.store.get('cerca:' + MESE), JSON.stringify({ BRAHAM: 2, PASTORE: 1 }),
-    'i nomi cercati stanno in una riga sola: maiuscole, minuscole e spazi non contano');
+  // Tutta la giornata sta in una riga sola.
+  const riga = JSON.parse(kv.store.get('uso:' + GIORNO));
+  uguale(riga.aperture, 1, 'una apertura contata');
+  uguale(riga.ricerche, 3, 'tre nomi cercati');
+  uguale(riga.sessioniConRicerca, 1, 'la sessione ha cercato un nome');
+  uguale(riga.installate, 1, 'un dispositivo con l\'app');
+  uguale(JSON.stringify(riga.dev), JSON.stringify([DEV_A]), 'il dispositivo è nell\'elenco del giorno');
+  uguale(JSON.stringify(riga.app), JSON.stringify([DEV_A]), 'e in quello di chi ha l\'app');
+  uguale(JSON.stringify(riga.cerca), JSON.stringify({ BRAHAM: 2, PASTORE: 1 }),
+    'i nomi cercati stanno nella stessa riga: maiuscole, minuscole e spazi non contano');
+  uguale(kv.store.has('uso:' + MESE), false,
+    'nessuna riga del mese: i totali si ricavano dai giorni');
 
-  const perMese = kv.puts.filter(function (p) { return p.key === 'dev:' + MESE + ':' + DEV_A; });
-  uguale(perMese.length, 1, 'una sola scrittura per il dispositivo nel mese');
-  uguale(perMese[0].opzioni && perMese[0].opzioni.expirationTtl, 3456000,
-    'la riga mensile del dispositivo scade dopo 40 giorni');
-  const perGiorno = kv.puts.filter(function (p) { return p.key === 'dev:' + GIORNO + ':' + DEV_A; });
-  uguale(perGiorno[0].opzioni && perGiorno[0].opzioni.expirationTtl, 864000,
-    'la riga giornaliera del dispositivo scade dopo 10 giorni');
+  const scritte = kv.puts.filter(function (p) { return p.key.indexOf('uso:') === 0; });
+  uguale(scritte.length, 1, 'un\'apertura costa una scrittura sola');
+  uguale(scritte[0].opzioni && scritte[0].opzioni.expirationTtl, 34560000,
+    'la riga del giorno scade da sola dopo 400 giorni');
 
-  // Seconda apertura dallo stesso dispositivo: i numeri si sommano e le righe
-  // del dispositivo non si riscrivono, perché non è cambiato niente.
+  // Seconda apertura dallo stesso dispositivo: i numeri si sommano, il
+  // dispositivo non si conta due volte, e la scrittura resta una.
   const scritture = kv.puts.length;
   const seconda = await worker.fetch(richiestaUso(medico.cookie, {
     dev: DEV_A, installata: true, haCercato: false, ricerche: ['BRAHAM']
   }), env);
   uguale(seconda.status, 204, 'seconda apertura: 204');
-  uguale(kv.store.get('uso:' + MESE),
-    JSON.stringify({ aperture: 2, ricerche: 4, sessioniConRicerca: 1, installate: 2 }),
-    'due aperture, ma una sola con una ricerca');
-  uguale(kv.store.get('cerca:' + MESE), JSON.stringify({ BRAHAM: 3, PASTORE: 1 }),
+  const dopo = JSON.parse(kv.store.get('uso:' + GIORNO));
+  uguale(dopo.aperture, 2, 'due aperture');
+  uguale(dopo.sessioniConRicerca, 1, 'ma una sola ha cercato un nome');
+  uguale(dopo.ricerche, 4, 'quattro nomi cercati in tutto');
+  uguale(JSON.stringify(dopo.cerca), JSON.stringify({ BRAHAM: 3, PASTORE: 1 }),
     'le ricerche si sommano nella stessa riga');
-  uguale(kv.puts.length - scritture, 3,
-    'una apertura costa tre scritture: mese, giorno e ricerche');
+  uguale(JSON.stringify(dopo.dev), JSON.stringify([DEV_A]), 'lo stesso dispositivo non si conta due volte');
+  uguale(kv.puts.length - scritture, 1, 'anche la seconda apertura costa una scrittura sola');
 
-  // Chi ha installato l'app resta installato anche se poi apre da una scheda.
+  // Chi ha installato l'app resta contato anche se poi apre da una scheda.
   await worker.fetch(richiestaUso(medico.cookie, { dev: DEV_A, installata: false }), env);
-  uguale(kv.store.get('dev:' + MESE + ':' + DEV_A), 'app', 'l\'app installata non torna indietro');
+  uguale(JSON.parse(kv.store.get('uso:' + GIORNO)).installate, 1,
+    'l\'app installata non torna indietro');
 
   // Campi che non conosciamo: si ignorano, non fanno fallire la richiesta.
   const domani = await worker.fetch(richiestaUso(medico.cookie, { dev: DEV_B, qualcosaDiNuovo: 1 }), env);
   uguale(domani.status, 204, 'un campo in più non rompe niente: 204');
-  uguale(kv.store.get('dev:' + MESE + ':' + DEV_B), '1', 'il dispositivo senza app vale "1"');
+  const conDue = JSON.parse(kv.store.get('uso:' + GIORNO));
+  uguale(JSON.stringify(conDue.dev), JSON.stringify([DEV_A, DEV_B]), 'due dispositivi distinti nel giorno');
+  uguale(conDue.installate, 1, 'ma uno solo con l\'app');
 
   // Se KV non scrive, la pagina non se ne accorge.
   const kvRotto = envFinto({
@@ -1396,17 +1399,30 @@ async function testUsoGiorni(worker) {
   uguale(oggi.aperturePerDispositivo, 1.3, 'aperture per dispositivo, a un decimale');
   uguale(oggi.sessioniConRicerca, 2, 'due sessioni con ricerca oggi');
 
-  // I giorni escono in ordine di data, dal più vecchio.
-  kv.store.set('uso:2020-01-05', JSON.stringify({ aperture: 40, ricerche: 3, sessioniConRicerca: 2 }));
-  kv.store.set('uso:2020-01-02', JSON.stringify({ aperture: 10, ricerche: 0, sessioniConRicerca: 0 }));
+  // I totali del mese si ricavano dai giorni: le somme si sommano, ma i
+  // dispositivi si uniscono — chi apre in due giorni diversi resta uno.
+  kv.store.set('uso:2020-01-02', JSON.stringify({
+    aperture: 10, ricerche: 1, sessioniConRicerca: 1, installate: 1,
+    dev: [DEV_A, DEV_B], app: [DEV_A], cerca: { BRAHAM: 2 }
+  }));
+  kv.store.set('uso:2020-01-05', JSON.stringify({
+    aperture: 40, ricerche: 5, sessioniConRicerca: 3, installate: 1,
+    dev: [DEV_A, DEV_C], app: [DEV_A], cerca: { BRAHAM: 1, PASTORE: 4 }
+  }));
   const vecchio = await leggiUso(worker, env, gestore.cookie, '2020-01');
   uguale(vecchio.corpo.giorni.map(function (g) { return g.giorno; }).join(','), '2020-01-02,2020-01-05',
     'i giorni vanno dal più vecchio al più recente');
-  // Oltre i dieci giorni le righe dei dispositivi sono scadute: quanti fossero
-  // non si sa più, e si risponde null invece di uno zero che sembrerebbe vero.
-  uguale(vecchio.corpo.giorni[1].dispositivi, null, 'di un giorno vecchio non si sa più quanti dispositivi fossero');
-  uguale(vecchio.corpo.giorni[1].aperturePerDispositivo, null, 'e nemmeno le aperture per dispositivo');
-  uguale(vecchio.corpo.giorni[1].aperture, 40, 'le aperture di quel giorno invece restano');
+  uguale(vecchio.corpo.aperture, 50, 'le aperture del mese sono la somma dei giorni');
+  uguale(vecchio.corpo.ricerche, 6, 'e così le ricerche');
+  uguale(vecchio.corpo.sessioniConRicerca, 4, 'e le sessioni che hanno cercato');
+  uguale(vecchio.corpo.dispositivi, 3,
+    'i dispositivi del mese sono l\'unione dei giorni, non la somma: chi torna conta una volta');
+  uguale(vecchio.corpo.installate, 1, 'e anche quelli con l\'app si uniscono');
+  uguale(JSON.stringify(vecchio.corpo.cercatiPiu),
+    JSON.stringify([{ nome: 'PASTORE', volte: 4 }, { nome: 'BRAHAM', volte: 3 }]),
+    'i nomi cercati si sommano fra i giorni');
+  uguale(vecchio.corpo.giorni[1].dispositivi, 2, 'il giorno tiene i suoi dispositivi');
+  uguale(vecchio.corpo.giorni[1].aperturePerDispositivo, 20, 'quaranta aperture da due dispositivi');
 }
 
 async function testCalendarioConteggi(worker) {
