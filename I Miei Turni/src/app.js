@@ -812,7 +812,10 @@
     if (shown) {
       var grid = el('div', {
         class: 'detail__grid',
-        style: '--dtpl: 42px repeat(' + slots.length + ', minmax(0, 1fr))',
+        // 72px è la larghezza sotto la quale un cognome comincia a spezzarsi:
+        // finché ci stanno, le colonne si dividono lo spazio; sotto, è il solo
+        // dettaglio a scorrere di lato (mai la pagina), come da regola.
+        style: '--dtpl: 42px repeat(' + slots.length + ', minmax(72px, 1fr))',
       });
       grid.appendChild(el('div', { class: 'detail__gh' }));
       slots.forEach(function (row) {

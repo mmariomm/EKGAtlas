@@ -365,7 +365,7 @@ button { font: inherit; color: inherit; }
   padding: 3px 6px;
   background: none; border: 0; border-radius: 4px; cursor: pointer; text-align: left;
   font-size: 12.5px; font-weight: 500; line-height: 18px; letter-spacing: .01em;
-  color: var(--ink); overflow-wrap: break-word;
+  color: var(--ink); overflow-wrap: anywhere;
   transition: background-color .15s ease, color .15s ease, opacity .15s ease, transform .08s ease;
 }
 .pill::after { content: ""; position: absolute; inset: -5px -2px; }   /* area di tocco */
@@ -439,7 +439,7 @@ button { font: inherit; color: inherit; }
 }
 .tab__site.h-dea { color: var(--dea); }
 .tab__site.h-osg { color: var(--osg); }
-.tab__c { padding: 2px 0 !important; overflow: hidden; }
+.tab__c { padding: 2px 0 !important; }
 .tab__ruler {
   position: absolute; left: -9999px; top: 0; visibility: hidden; white-space: pre;
   font-size: var(--tabfs, 10px); font-weight: 500; letter-spacing: -.02em;
@@ -447,13 +447,16 @@ button { font: inherit; color: inherit; }
 .tab__ruler span { display: inline-block; }
 
 .pill--t {
-  display: flex; align-items: center; gap: 3px; width: 100%; max-width: 100%;
+  display: flex; align-items: flex-start; gap: 3px; width: 100%; max-width: 100%;
   padding: 0 1px; margin: 0; border-radius: 3px;
   font-size: var(--tabfs, 10px); font-weight: 500; line-height: 13px; letter-spacing: -.02em;
 }
-.pill--t > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Un cognome tagliato è informazione persa (FRANCESC… può essere FRANCESCONI o
+   FRANCESCHI): se non ci sta va a capo e la riga si alza. Le larghezze misurate
+   restano, ma servono a far stare i nomi su una riga, non a decidere cosa si legge. */
+.pill--t > span:first-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .pill--t::after { inset: -3px -2px; }
-.pill--t .fdot { width: 5px; height: 5px; }
+.pill--t .fdot { width: 5px; height: 5px; margin-top: 4px; }
 
 /* --------------------------------------------------------------------------
    8. Ore
@@ -471,7 +474,7 @@ button { font: inherit; color: inherit; }
   justify-self: start; max-width: 100%;
   padding: 3px 5px; border-radius: 4px;
   font-size: 12.5px; font-weight: 500; letter-spacing: .01em;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0; overflow-wrap: anywhere;
 }
 .ore__bar { display: flex; align-items: center; height: 10px; min-width: 0; }
 .ore__seg { display: block; height: 10px; flex: none; background: var(--alt); }
