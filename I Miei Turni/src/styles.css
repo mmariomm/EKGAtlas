@@ -24,6 +24,10 @@
   --veil-osg: light-dark(color-mix(in srgb, var(--osg) 5%, transparent), color-mix(in srgb, var(--osg) 9%, transparent));
   --veil-alt: color-mix(in srgb, var(--alt) 7%, transparent);
   --weekend: light-dark(#FAF6EC, #191711);
+  /* Velature del calendario: dicono la sede senza rubare la scena alle lettere. */
+  --cal-dea: color-mix(in srgb, var(--dea) 8%, transparent);
+  --cal-osg: color-mix(in srgb, var(--osg) 8%, transparent);
+  --cal-alt: color-mix(in srgb, var(--alt) 8%, transparent);
 
   --hl: light-dark(#FFE45C, #F2D53C);
   --hl-ink: #1A1500;
@@ -282,14 +286,15 @@ button { font: inherit; color: inherit; }
 /* --------------------------------------------------------------------------
    5. Calendario
    -------------------------------------------------------------------------- */
-.cal { display: flex; flex-direction: column; gap: 4px; }
+.cal { display: flex; flex-direction: column; gap: 4px; container-type: inline-size; }
 .cal__row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.cal__wd span { font-size: 10.5px; letter-spacing: .06em; color: var(--muted); padding: 0 0 1px 6px; }
+.cal__wd span { font-size: 10.5px; letter-spacing: .06em; color: var(--muted); padding: 1px 0 2px 6px; }
+.cal__wd span.is-weekend { background: var(--weekend); color: var(--ink-2); border-radius: 6px 6px 0 0; }
 
 .cal__d {
   position: relative;
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  min-height: 46px; padding: 3px 4px 4px;
+  min-height: 54px; padding: 3px 4px 4px;
   background: none; border: 1.5px solid transparent; border-radius: 7px;
   font: inherit; color: var(--ink-2); text-align: left; cursor: pointer;
   transition: background-color .15s ease, border-color .12s ease, transform .08s ease;
@@ -297,6 +302,9 @@ button { font: inherit; color: inherit; }
 .cal__d:hover { background: var(--surface-2); }
 .cal__d:active { transform: scale(.96); }
 .cal__d.is-weekend { background: var(--weekend); }
+/* Il giorno in cui la persona lavora si vela del colore della sede; due sedi,
+   mezza e mezza in diagonale. Sta sotto la lavatura del weekend senza sporcarla. */
+.cal__d.is-mine { background-image: linear-gradient(135deg, var(--c1) 0 50%, var(--c2) 50% 100%); }
 .cal__d.is-sel { border-color: var(--ink); }
 .cal__d.is-out { cursor: default; }
 .cal__d.is-out .cal__n { color: var(--muted); opacity: .5; }
@@ -310,19 +318,19 @@ button { font: inherit; color: inherit; }
   border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink); color: var(--ink);
 }
 
-.cal__chips { display: flex; flex-wrap: wrap; gap: 3px; }
-.chipslot {
-  width: 14px; height: 14px; border-radius: 3px;
-  display: grid; place-items: center;
-  font-size: 9.5px; font-weight: 600; line-height: 1;
-  background: var(--alt-tint); color: var(--alt);
+/* Le fasce del giorno, scritte grandi: ogni lettera nel colore della sua sede.
+   È questo che fa vedere in un attimo un giorno a cavallo fra due ospedali. */
+.cal__big {
+  display: flex; gap: 1px; margin: auto; align-self: center;
+  font-size: min(23px, 5.2vw);          /* ripiego dove non ci sono le unità di contenitore */
+  font-size: min(23px, 6cqw);           /* la lettera cresce con la casella, non con la finestra */
+  line-height: 1; letter-spacing: 0; color: var(--alt);
 }
-/* La lettera vira verso l'inchiostro: resta leggibile su fondo tenue nei due temi. */
-.chipslot.h-dea { background: var(--dea-tint); color: color-mix(in srgb, var(--dea) 75%, var(--ink)); }
-.chipslot.h-osg { background: var(--osg-tint); color: color-mix(in srgb, var(--osg) 75%, var(--ink)); }
-.chipslot.is-night.h-dea { background: var(--dea); color: var(--surface); }
-.chipslot.is-night.h-osg { background: var(--osg); color: var(--surface); }
-.chipslot.is-find { outline: 1px solid var(--fsev); outline-offset: 1px; }
+.cal__k { font-weight: 600; }
+.cal__k.h-dea { color: var(--dea); }
+.cal__k.h-osg { color: var(--osg); }
+.cal__k.h-alt { color: var(--alt); }
+.cal__k.is-find { box-shadow: inset 0 -2px 0 var(--fsev); }
 
 .cal__dot { position: absolute; right: 4px; bottom: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--fsev); }
 
@@ -377,7 +385,10 @@ button { font: inherit; color: inherit; }
 }
 .detail__site.h-dea { color: var(--dea); }
 .detail__site.h-osg { color: var(--osg); }
-.detail__cell { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 2px 0 6px; }
+/* Nel dettaglio si legge un giorno con calma: nomi a 12px, che vanno a capo solo
+   fra parole intere; se le colonne non bastano, scorre il dettaglio, non la pagina. */
+.detail__cell { min-width: 72px; display: flex; flex-direction: column; align-items: flex-start; padding: 2px 0 6px; }
+.detail__cell .pill { font-size: 12px; line-height: 17px; padding: 2px 6px; }
 /* Colonna «Giorno»: le righe occupano tutta la cella, l'orario va a destra. */
 .detail__cell--day { align-self: stretch; }
 .detail__cell--day .pill { width: 100%; }
@@ -393,7 +404,7 @@ button { font: inherit; color: inherit; }
   padding: 3px 6px;
   background: none; border: 0; border-radius: 4px; cursor: pointer; text-align: left;
   font-size: 12.5px; font-weight: 500; line-height: 18px; letter-spacing: .01em;
-  color: var(--ink); overflow-wrap: anywhere;
+  color: var(--ink); overflow-wrap: break-word;
   transition: background-color .15s ease, color .15s ease, opacity .15s ease, transform .08s ease;
 }
 .pill::after { content: ""; position: absolute; inset: -5px -2px; }   /* area di tocco */

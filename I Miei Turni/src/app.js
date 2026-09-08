@@ -91,6 +91,7 @@
   function $(id) { return document.getElementById(id); }
 
   function hospClass(h) { return h === 'DEA' ? 'h-dea' : (h === 'OSG' ? 'h-osg' : 'h-alt'); }
+  function hospKey(h) { return hospClass(h).slice(2); }
 
   function dot(h, title) { return el('span', { class: 'dot ' + hospClass(h), title: title }); }
   function warnRow(text) { return el('p', { class: 'warnrow' }, [icon('i-warn'), text]); }
@@ -520,19 +521,16 @@
       D.hospitals.forEach(function (h) {
         var list = perDay.get(h);
         if (!list) return;
-        var morning = list.filter(function (a) { return a.slotKey === 'M' || a.slotKey === 'A'; });
-        var afternoon = list.filter(function (a) { return a.slotKey === 'P'; });
-        var rest = list.filter(function (a) { return a.slotKey !== 'M' && a.slotKey !== 'A' && a.slotKey !== 'P'; });
-        if (morning.length && afternoon.length) {
-          chips.push({ letter: 'G', word: 'giornata', hospital: h, night: false, a: morning[0] });
-        } else {
-          morning.concat(afternoon).forEach(function (a) {
-            chips.push({ letter: a.slotKey, word: SLOT_WORD[a.slotKey] || R.slotName(a.slotLabel).toLowerCase(), hospital: h, night: false, a: a });
-          });
-        }
-        rest.forEach(function (a) {
+        // L'ambulatorio è una mattina: nel calendario si scrive M, e se uno fa
+        // ambulatorio e mattina resta una M sola.
+        var seen = Object.create(null);
+        list.forEach(function (a) {
+          var letter = (a.slotKey === 'A') ? 'M' : a.slotKey.charAt(0);
+          if (seen[letter]) return;
+          seen[letter] = true;
           chips.push({
-            letter: a.slotKey.charAt(0), word: SLOT_WORD[a.slotKey] || R.slotName(a.slotLabel).toLowerCase(),
+            letter: letter,
+            word: letter === 'M' ? 'mattina' : (SLOT_WORD[a.slotKey] || R.slotName(a.slotLabel).toLowerCase()),
             hospital: h, night: a.isNight, a: a,
           });
         });
@@ -697,7 +695,7 @@
     // torna alla forma breve, che è quella che deve restare leggibile.
     if (allSpan && wraps(allSpan)) {
       clear(allSpan);
-      append(allSpan, R.formatNumber(all.turniEq) + ' turni · ' + R.formatHours(all.ore));
+      append(allSpan, R.formatHours(all.ore));
     }
 
     totaleEl.appendChild(el('button', {
@@ -752,8 +750,12 @@
     calEl.setAttribute('aria-label', 'Calendario di ' + monthLabel(state.month));
     if (!state.month) return;
 
+    // Sabato e domenica sono due bande verticali, intestazione compresa: la
+    // forma della settimana si vede prima di leggere un numero.
     calEl.appendChild(el('div', { class: 'cal__row cal__wd' },
-      WEEKDAYS_SHORT_IT.map(function (w) { return el('span', { text: w }); })));
+      WEEKDAYS_SHORT_IT.map(function (w, i) {
+        return el('span', { class: i >= 5 ? 'is-weekend' : null, text: w });
+      })));
 
     calName = previewName();
     var chips = chipsByDate(calName);
@@ -767,7 +769,7 @@
 
     for (var w = 0; w < cells.length; w += 7) {
       var row = el('div', { class: 'cal__row' });
-      cells.slice(w, w + 7).forEach(function (c) { row.appendChild(calCell(c, chips)); });
+      cells.slice(w, w + 7).forEach(function (c, i) { row.appendChild(calCell(c, chips, i)); });
       calEl.appendChild(row);
     }
     renderLegend(chips);
@@ -777,8 +779,11 @@
     return new Date(Date.UTC(Number(firstDate.slice(0, 4)), Number(firstDate.slice(5, 7)) - 1, 1 - back)).getUTCDate();
   }
 
-  function calCell(c, chips) {
-    if (c.out) return el('span', { class: 'cal__d is-out' }, el('span', { class: 'cal__n', text: String(c.n) }));
+  function calCell(c, chips, col) {
+    var band = col >= 5 ? ' is-weekend' : '';
+    if (c.out) {
+      return el('span', { class: 'cal__d is-out' + band }, el('span', { class: 'cal__n', text: String(c.n) }));
+    }
 
     var date = c.date;
     var isToday = date === today;
@@ -792,29 +797,37 @@
       label += ', ' + mine.map(function (ch) { return ch.word + ' ' + ch.hospital; }).join(', ') + ' di ' + calName;
     } else if (find) label += ', ' + find.title;
 
+    // Quando la persona lavora, la casella prende una velatura della sede
+    // (due sedi: mezza e mezza, in diagonale). Le lettere restano il segnale vero.
+    var sites = [];
+    mine.forEach(function (ch) { if (sites.indexOf(ch.hospital) === -1) sites.push(ch.hospital); });
+    var tint = sites.length
+      ? '--c1: var(--cal-' + hospKey(sites[0]) + '); --c2: var(--cal-' + hospKey(sites[sites.length > 1 ? 1 : 0]) + ');'
+      : null;
+
     return el('button', {
-      class: 'cal__d' + (isWeekend(date) ? ' is-weekend' : '') + (sel ? ' is-sel' : ''),
-      type: 'button', 'aria-current': sel ? 'date' : null,
+      class: 'cal__d' + band + (sel ? ' is-sel' : '') + (sites.length ? ' is-mine' : ''),
+      type: 'button', 'aria-current': sel ? 'date' : null, style: tint,
       'aria-label': label, data: { day: date },
     }, [
       el('span', { class: 'cal__n' + (isToday ? ' is-today' : ''), text: String(c.n) }),
-      mine.length ? el('span', { class: 'cal__chips' }, mine.slice(0, 4).map(slotChip)) : null,
+      mine.length ? el('span', { class: 'cal__big' }, mine.map(slotLetter)) : null,
       (!calName && find) ? el('span', { class: 'cal__dot sev-' + find.sev, title: find.title }) : null,
     ]);
   }
 
-  function slotChip(ch) {
+  function slotLetter(ch) {
     var f = sevOf(ch.hospital, ch.a.date, ch.a.slotKey, ch.a.person);
-    return el('span', {
-      class: 'chipslot ' + hospClass(ch.hospital) + (ch.night ? ' is-night' : '') + (f ? ' is-find sev-' + f.sev : ''),
-      title: capitalize(ch.word) + ' ' + ch.hospital,
+    return el('b', {
+      class: 'cal__k ' + hospClass(ch.hospital) + (f ? ' is-find sev-' + f.sev : ''),
+      title: capitalize(ch.word) + ' ' + ch.hospital + (f ? ' · ' + f.title : ''),
       text: ch.letter,
     });
   }
 
   // La legenda spiega solo le lettere disegnate per quella persona: chi non fa
   // ambulatorio non deve leggere che cos'è.
-  var LEGEND_ORDER = ['G', 'M', 'P', 'N', 'A'];
+  var LEGEND_ORDER = ['M', 'P', 'N'];
 
   function renderLegend(chipsByDay) {
     clear(legendEl);
@@ -822,7 +835,7 @@
     if (chipsByDay) {
       chipsByDay.forEach(function (chips) {
         chips.forEach(function (c) {
-          if (!words.has(c.letter)) words.set(c.letter, c.letter === 'G' ? 'giornata (M+P)' : c.word);
+          if (!words.has(c.letter)) words.set(c.letter, c.word);
         });
       });
     }
@@ -917,8 +930,10 @@
         // 72px è la larghezza sotto la quale un cognome comincia a spezzarsi:
         // finché ci stanno, le colonne si dividono lo spazio; sotto, è il solo
         // dettaglio a scorrere di lato (mai la pagina), come da regola.
+        // Le colonne non scendono sotto il loro contenuto: se non ci stanno,
+        // è il dettaglio a scorrere di lato, mai un nome a spezzarsi.
         style: '--dtpl: 42px ' + slots.map(function (c) {
-          return c.day ? 'minmax(104px, 1.8fr)' : 'minmax(72px, 1fr)';
+          return c.day ? 'minmax(min-content, 1.8fr)' : 'minmax(min-content, 1fr)';
         }).join(' '),
       });
       grid.appendChild(el('div', { class: 'detail__gh' }));
@@ -1195,7 +1210,7 @@
       if (st.notti) out.push(' + ');
     }
     if (st.notti) out.push(k('N'), String(st.notti));
-    out.push(' = ' + R.formatNumber(st.turniEq) + ' turni · ' + R.formatHours(st.ore));
+    out.push(' = ' + R.formatHours(st.ore));
     return out;
   }
 
