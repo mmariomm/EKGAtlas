@@ -58,12 +58,18 @@
 <header class="topbar">
   <div class="titlerow">
     <h1 class="wordmark">I Miei Turni</h1>
-    <div class="month" id="monthCtl"></div>
+    <div class="titlerow__end">
+      <div class="month" id="monthCtl"></div>
+      <p class="updated" id="updated" hidden></p>
+    </div>
   </div>
-  <div class="segbar" id="segbar" role="tablist" aria-label="Vista">
-    <button class="seg" id="segCal" type="button" role="tab" aria-selected="true" aria-controls="viewCal">Calendario</button>
-    <button class="seg" id="segTab" type="button" role="tab" aria-selected="false" aria-controls="viewTab" tabindex="-1">Tabella</button>
-    <button class="seg" id="segOre" type="button" role="tab" aria-selected="false" aria-controls="viewOre" tabindex="-1">Ore</button>
+  <div class="viewsrow">
+    <div class="segbar" id="segbar" role="tablist" aria-label="Vista">
+      <button class="seg" id="segTab" type="button" role="tab" aria-selected="true" aria-controls="viewTab">Tabella</button>
+      <button class="seg" id="segCal" type="button" role="tab" aria-selected="false" aria-controls="viewCal" tabindex="-1">Calendario</button>
+      <button class="seg" id="segOre" type="button" role="tab" aria-selected="false" aria-controls="viewOre" tabindex="-1">Ore</button>
+    </div>
+    <div class="sites" id="sites"></div>
   </div>
 </header>
 
@@ -92,18 +98,16 @@
     </button>
   </section>
 
-  <p class="personline" id="personline" hidden></p>
+  <div class="view" id="viewTab" role="tabpanel" aria-labelledby="segTab">
+    <h2 class="sr-only" id="tabTitle">Tabella dei turni del mese</h2>
+    <div class="tablewrap" id="tablewrap"></div>
+  </div>
 
-  <div class="view" id="viewCal" role="tabpanel" aria-labelledby="segCal">
+  <div class="view" id="viewCal" role="tabpanel" aria-labelledby="segCal" hidden>
     <h2 class="sr-only" id="calTitle">Calendario dei turni</h2>
     <div class="cal" id="calendario" aria-labelledby="calTitle"></div>
     <p class="callegend" id="callegend" hidden></p>
     <section class="detail" id="detail" aria-live="polite" aria-labelledby="detailTitle"></section>
-  </div>
-
-  <div class="view" id="viewTab" role="tabpanel" aria-labelledby="segTab" hidden>
-    <h2 class="sr-only" id="tabTitle">Tabella dei turni del mese</h2>
-    <div class="tablewrap" id="tablewrap"></div>
   </div>
 
   <div class="view" id="viewOre" role="tabpanel" aria-labelledby="segOre" hidden>
@@ -112,10 +116,9 @@
 
   <section class="findings" id="segnalazioni" tabindex="-1" aria-labelledby="findingsTitle"></section>
 
-  <details class="dati" id="dati">
-    <summary class="dati__sum" id="datiSum"><svg class="ico dati__chev" aria-hidden="true" focusable="false"><use href="#i-chevron"></use></svg><span id="datiSumText">Dati</span></summary>
-    <div class="dati__body" id="datiBody"></div>
-  </details>
+  <section class="totale" id="totale" hidden></section>
+
+  <div class="bottom" id="bottom" hidden></div>
 </main>
 
 <input class="filein" id="fileInput" type="file" accept=".xlsx" multiple tabindex="-1" aria-label="Carica i file xlsx dei turni">

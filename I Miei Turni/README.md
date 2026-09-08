@@ -5,42 +5,51 @@ ospedali — **DEA** e **OSG** — letti dai file xlsx ufficiali. Pensata per il
 
 ## Cosa fa
 
-- **Cerca un nome** e lo evidenzia a ogni lettera; toccando il campo si aprono tutti i
-  nomi del mese, e scrivendo restano i possibili, così un refuso nel foglio (per esempio
-  `ORLANDITOSKIC` senza la barra) si vede subito come nome a sé, con il suggerimento.
-- **Calendario**: il mese in una videata; sotto, il dettaglio del giorno scelto (oggi
-  all'apertura; frecce o scorrimento laterale per cambiare giorno). Con un nome fissato,
-  ogni giorno mostra le sue fasce nel colore dell'ospedale — `G` per la giornata (mattina
-  e pomeriggio nello stesso ospedale), `M`, `P`, `N` in pieno per la notte, `A` — e una
-  riga di conteggi in forma di addizione: `4,5G + 5N = 9,5 · 114 h · DEA 78 · OSG 36`.
-  Una mattina o un pomeriggio da soli valgono mezza giornata, l'ambulatorio conta come una
-  mattina, e i conti tornano sempre: i turni da 12 h per 12 fanno le ore del mese (le ore
-  sono comunque calcolate a parte, come unione reale degli orari).
-- **Tabella**: tutti i nomi del mese, giorno per riga, DEA e OSG su due righe, colonne
-  M/P/N/A, con lo stesso evidenziatore.
-- **Ore**: le ore del mese per nome, in barre divise per ospedale. Compare solo a chi
-  aggiorna i turni: su una copia propria del file, o dopo il primo salvataggio riuscito
-  (in *Dati* c'è l'interruttore per mostrarle su un altro dispositivo). Non è una
-  serratura: la piattaforma non dice alla pagina chi la sta guardando.
-- **Segnalazioni**, calcolate su tutti i turni caricati anche a cavallo di due mesi, in
-  una riga ciascuna (`BRAHAM · notte 17 OSG → mattina 18 OSG · riposo 0 h`):
-  - **Conflitto** — stesso orario in due ospedali, oppure doppio incarico nello stesso
-    ospedale con più di 1 h di sovrapposizione (ambulatorio → pomeriggio nello stesso PS
-    è un passaggio di consegne, non un conflitto).
-  - **Notte attaccata** — turno diurno subito prima o subito dopo una notte, con meno di
-    11 h di riposo.
-  - **Cambio sede** — due turni diurni consecutivi in ospedali diversi senza pausa.
-- **Calendario da esportare**: con un nome fissato, il bottone *Calendario* scarica i suoi
-  turni del mese in un file `.ics` da aprire nel calendario del telefono. Gli eventi si
-  chiamano `PS SSG Mattina`, `PS OSG Notte`, e così via — `SSG` è il DEA di Sesto San
-  Giovanni, `OSG` il San Giuseppe (la corrispondenza è in `SITE_LABEL`, in `src/rules.js`).
-  Mattina 8–14, Pomeriggio 14–20, Giornata 8–20 quando mattina e pomeriggio sono nello
-  stesso ospedale, Notte 20–8, Ambulatorio 9:30–15 quando è da solo. Nella pagina
-  pubblicata come artifact non funziona: la piattaforma non permette di salvare file `.ics`,
-  e la pagina lo dice invece di non fare nulla.
-- La pagina **ricorda l'ultimo nome fissato** e la vista scelta; mese, nome, giorno e
+Tre viste, con lo stesso evidenziatore e lo stesso filtro:
+
+- **Tabella** (è quella che si apre): tutti i nomi del mese, un giorno per riga, le due sedi
+  una sotto l'altra — la sigla `DEA` o `OSG` scritta nel suo colore, con la riga velata dello
+  stesso colore — e le colonne M, P, N, A. All'apertura la pagina si porta sul giorno di
+  oggi, a metà schermo.
+- **Calendario**: il mese in una videata; sotto, il dettaglio del giorno scelto (frecce o
+  scorrimento laterale per cambiare giorno), con le fasce in colonna e le sedi in riga. Con
+  un nome fissato, ogni giorno mostra le sue fasce nel colore della sede: `G` per la giornata
+  (mattina e pomeriggio nella stessa sede), `M`, `P`, `N` in pieno per la notte, `A`.
+- **Ore**: le ore del mese per nome, in barre divise per sede. La vedono solo quelli che
+  possono aggiornare i turni.
+
+E in più:
+
+- **Cerca un nome** e lo evidenzia a ogni lettera, in tutte le viste; toccando il campo si
+  aprono tutti i nomi del mese, e scrivendo restano i possibili, così un refuso nel foglio
+  (per esempio `ORLANDITOSKIC` senza la barra) si vede subito come nome a sé, col
+  suggerimento.
+- **Le due pillole in alto** accendono e spengono una sede: filtrano tabella, calendario,
+  ore e conteggi, e restano come le lasci. Sono anche la legenda dei colori, sempre in vista.
+- **Totale**, in fondo, quando un nome è fissato: `Totale · 9,5 turni · 114h`, e sotto una
+  riga per sede — `DEA 2,5G + 4N = 6,5 turni · 78h`. Una mattina o un pomeriggio da soli
+  valgono mezza giornata, l'ambulatorio conta come una mattina, e i conti tornano: le due
+  sedi sommate danno il mese, e i turni da 12 h per 12 danno le ore.
+- **Esporta i miei turni nel mio calendario**, il pulsante in fondo: scarica i turni della
+  persona fissata come file `.ics` da aprire sul telefono. Gli eventi si chiamano
+  `PS DEA Mattina`, `PS OSG Notte` e simili — Mattina 8–14, Pomeriggio 14–20, Giornata 8–20
+  quando mattina e pomeriggio sono nella stessa sede, Notte 20–8, e l'ambulatorio da solo è
+  una Mattina con i suoi orari (`SITE_LABEL`, in `src/rules.js`, è il punto unico da cambiare
+  se le sedi cambiano nome). Nella pagina pubblicata come artifact non funziona: la
+  piattaforma non permette di salvare file `.ics`, e la pagina lo dice invece di non fare
+  nulla.
+- **Segnalazioni**, calcolate su tutti i turni caricati anche a cavallo di due mesi, in una
+  riga ciascuna (`BRAHAM · notte 17 OSG → mattina 18 OSG · riposo 0h`). L'elenco lo vede solo
+  chi aggiorna i turni; il puntino accanto al nome, invece, lo vedono tutti.
+  - **Conflitto** — stesso orario in due sedi, oppure doppio incarico nella stessa sede con
+    più di 1 h di sovrapposizione (ambulatorio → pomeriggio nello stesso PS è un passaggio di
+    consegne, non un conflitto).
+  - **Notte attaccata** — turno diurno subito prima o subito dopo una notte, con meno di 11 h
+    di riposo.
+  - **Cambio sede** — due turni diurni consecutivi in sedi diverse senza pausa.
+- La pagina **ricorda l'ultimo nome fissato**, la vista e le pillole; mese, nome, giorno e
   vista stanno anche nell'indirizzo (`#mese=…&nome=…&giorno=…&vista=…`), quindi un link
-  condiviso apre la stessa vista.
+  condiviso apre la stessa cosa.
 
 ## Aprire
 
@@ -63,9 +72,9 @@ Tre strade, a seconda di dove sta la pagina:
   storico. Con il solo permesso di vista, o se l'artifact è condiviso con link pubblico,
   il salvataggio condiviso non è disponibile: i turni restano sul dispositivo e da lì in
   poi la sezione di caricamento resta in grigio, con la spiegazione.
-- **Dal browser (subito, solo su quel dispositivo)**: «Carica xlsx». I dati restano nel
-  browser (localStorage); «Ripristina i dati pubblicati» nella sezione *Dati* torna
-  indietro.
+- **Dal browser (subito, solo su quel dispositivo)**: «Carica xlsx», il bottone in fondo
+  alla pagina. I dati restano nel browser (localStorage); «Ripristina i dati pubblicati»,
+  lì accanto, torna indietro.
 - **Pubblicando nel repo (per tutti i dispositivi)**: copia i nuovi xlsx in `data/` e
   lancia:
 
@@ -81,8 +90,9 @@ Tre strade, a seconda di dove sta la pagina:
 ## Pubblicare il sito con le password
 
 Il sito sta su Cloudflare Workers e chiede una password all'ingresso. Ce ne sono due, che
-danno due permessi diversi: una per chi guarda (calendario, tabella, segnalazioni) e una per
-chi aggiorna, che in più vede le **Ore** e può caricare i nuovi xlsx per tutti. I turni
+danno due permessi diversi: una per chi guarda (tabella e calendario) e una per
+chi aggiorna, che in più vede le **Ore** e le **Segnalazioni** e può caricare i nuovi
+xlsx per tutti. I turni
 condivisi stanno in uno spazio dati (KV) del Worker, non nel repository.
 
 La prima volta, dalla cartella `I Miei Turni/`:
@@ -113,16 +123,17 @@ settimana in colonna A e B, e i nomi separati da `/`. La riga «Periodo di rifer
 dà mese e anno; la cella «TURNI PS …» dà l'ospedale. Niente è cablato per riga o colonna:
 l'intestazione viene cercata, quindi righe spostate o colonne nascoste non rompono nulla.
 
-Controlli fatti sui dati e mostrati nella sezione *Dati*: giorno della settimana che non
-corrisponde alla data, giorni duplicati o fuori mese, orari non trovati nell'intestazione,
-nomi sospetti (concatenazioni o varianti rare di un nome frequente).
+Controlli fatti sui dati e mostrati nella scheda di revisione al momento del caricamento:
+giorno della settimana che non corrisponde alla data, giorni duplicati o fuori mese, orari
+non trovati nell'intestazione, nomi sospetti (concatenazioni o varianti rare di un nome
+frequente, segnalati anche sotto la ricerca).
 
 ## Struttura
 
 ```
 index.html        pagina generata da build.js (è quella da aprire e condividere)
 build.js          data/*.xlsx → index.html (inlina src/* e i dati)
-worker.js         il sito su Cloudflare: password, ruoli, turni condivisi in KV
+worker.mjs        il sito su Cloudflare: password, ruoli, turni condivisi in KV
 wrangler.jsonc    configurazione del deploy (in testa i comandi per KV e password)
 src/shell.html    scheletro HTML con i segnaposto
 src/styles.css    stili (tema chiaro/scuro)
@@ -138,7 +149,7 @@ data/             i file xlsx sorgente
 Da fare, non ancora fatto. Quando chi gestisce salva un file nuovo, chi ha la pagina sul
 telefono riceve un avviso che dice **quali dei suoi turni sono cambiati**, non solo che
 qualcosa è cambiato: «Turni aggiornati — 2 tuoi turni cambiati: sab 12 notte OSG, gio 17
-mattina SSG».
+mattina DEA».
 
 Come si costruisce, quando sarà il momento:
 
@@ -151,7 +162,7 @@ Come si costruisce, quando sarà il momento:
 - Al salvataggio, il Worker confronta la versione vecchia con la nuova, e per ogni
   sottoscrizione manda l'avviso solo se quel cognome compare tra le celle cambiate. Un
   invio per dispositivo, testo già pronto lato server.
-- Sul telefono va chiesto il permesso una volta sola, con un interruttore in *Dati*
+- Sul telefono va chiesto il permesso una volta sola, con un interruttore in fondo alla pagina
   («Avvisami quando cambiano i miei turni»). Su iPhone gli avvisi web funzionano solo se la
   pagina è stata aggiunta alla schermata Home: va detto nell'interfaccia, non dato per
   scontato.

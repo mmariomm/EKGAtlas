@@ -44,11 +44,11 @@ var TurniRules = (function () {
     return WEEKDAY_SHORT_IT[dt.getUTCDay()] + ' ' + dt.getUTCDate() + ' ' + MONTH_SHORT_IT[dt.getUTCMonth()];
   }
 
-  // 0 → "0 h"; 360 → "6 h"; 90 → "1 h 30" (ore intere + eventuali minuti).
+  // 0 → "0h"; 360 → "6h"; 90 → "1h30". Numero e unità attaccati, come per le ore.
   function formatRest(min) {
     var h = Math.floor(min / 60);
     var r = min % 60;
-    return r === 0 ? (h + ' h') : (h + ' h ' + r);
+    return r === 0 ? (h + 'h') : (h + 'h' + (r < 10 ? '0' : '') + r);
   }
 
   // "MATTINA" → "Mattina"; "AMBULATORIO CM" → "Ambulatorio CM" (le sigle di due lettere
@@ -337,8 +337,10 @@ var TurniRules = (function () {
   }
 
   // 114 → "114 h"; 10.5 → "10,5 h".
+  // Le ore stanno attaccate alla loro unità — "114h", non "114 h" — così il numero
+  // e la sua misura si leggono come una cosa sola.
   function formatHours(hours) {
-    return formatNumber(hours) + ' h';
+    return formatNumber(hours) + 'h';
   }
 
   // L'ambulatorio conta come una mattina a tutti gli effetti: nei conteggi è una
@@ -355,13 +357,17 @@ var TurniRules = (function () {
   // giornata = mattina + pomeriggio nello stesso giorno (anche in due ospedali);
   // mattine e pomeriggi da soli si contano a parte; "dodici" = giornate + notti;
   // le ore sono l'unione reale degli orari (l'ambulatorio come una mattina).
-  function personStats(assignments, person, month) {
+  // Con `hospital` i conti si restringono a quella sede. Le mezze giornate fanno
+  // tornare la somma: una mattina al DEA e un pomeriggio all'OSG danno 0,5G di qua
+  // e 0,5G di là, cioè la stessa giornata intera del conto complessivo.
+  function personStats(assignments, person, month, hospital) {
     var mine = [];
     var ambulatori = 0;
     for (var i = 0; i < assignments.length; i++) {
       var a = assignments[i];
       if (a.person !== person) continue;
       if (month && a.date.slice(0, 7) !== month) continue;
+      if (hospital && a.hospital !== hospital) continue;
       if (a.slotKey === 'A') ambulatori++;
       mine.push(asMorningIfAmbulatorio(a));
     }
@@ -430,9 +436,11 @@ var TurniRules = (function () {
   // buildICS — i turni di una persona come file di calendario
   // ------------------------------------------------------------------
 
-  // Come si chiama la sede negli eventi del calendario. Il foglio dice DEA e OSG;
-  // sul calendario si legge il luogo: Sesto San Giovanni e San Giuseppe.
-  var SITE_LABEL = { DEA: 'SSG', OSG: 'OSG' };
+  // Come si chiama la sede sullo schermo e negli eventi del calendario. Oggi sono
+  // le stesse sigle del foglio: "DEA" e "OSG" si distinguono a colpo d'occhio,
+  // mentre "SSG" e "OSG" si somigliano troppo. Questa tabella resta il punto
+  // unico da cambiare se un giorno le sedi cambiano nome.
+  var SITE_LABEL = { DEA: 'DEA', OSG: 'OSG' };
 
   // Fuso di Roma senza tabelle: si chiede al motore Intl che ora locale corrisponde
   // a un certo istante e si corregge lo scarto (due passate coprono anche i cambi d'ora).
@@ -504,7 +512,7 @@ var TurniRules = (function () {
   }
 
   // File .ics con i turni di una persona (di un mese, o di tutti se month è vuoto).
-  // Gli eventi si chiamano "PS SSG Mattina", "PS OSG Notte", … con gli orari veri.
+  // Gli eventi si chiamano "PS DEA Mattina", "PS OSG Notte", … con gli orari veri.
   function buildICS(assignments, person, month, options) {
     var opts = options || {};
     var stamp = icsStamp(opts.now === undefined ? Date.now() : opts.now);
