@@ -598,6 +598,45 @@ async function scenarioRipresaInVoloPerso(browser) {
   await context.close();
 }
 
+// Due interruzioni di fila sullo STESSO esame in volo: deve restare «in volo»
+// anche alla seconda ripresa. Se scivolasse fra i «già fatti», un esame mai
+// partito verrebbe saltato in silenzio e la richiesta confermata senza.
+async function scenarioRipresaDueVolteInVolo(browser) {
+  const scen = "ripresa-due-volte";
+  const mock = createMock({ neverAdd: ["159"] });   // il server non prende mai la PCT
+  const { context, page } = await newPage(browser, mock, {
+    ritardo: (u) => (/Insert=Inserisci/.test(u) && /PRESTAZIONE=159/.test(u) ? 2500 : 0),
+  });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("febbre");
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, '.opt[title*="ESAME URINE"]').click();
+  await $panel(page, "#go").click();
+  const inVolo = () => page.waitForFunction(() => {
+    const t = document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || "";
+    return /PROCALCITONINA/.test(t) && /invio|controllo/i.test(t);
+  }, { timeout: 25000 });
+  await inVolo();
+  await page.goto(mock.worklistUrl);          // prima interruzione
+  await inVolo();
+  await page.goto(mock.patientUrl);           // seconda, mentre lo sta cercando
+  await page.waitForFunction(() => {
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    return !!r?.querySelector(".banner.err") || /interrotto/i.test(r?.querySelector(".pill.run .l2")?.textContent || "");
+  }, { timeout: 45000 });
+  if (await page.locator("#psassist-host .pill.run").count()) await $panel(page, ".pill.run").click();
+  await page.waitForSelector("#psassist-host .banner.err", { timeout: 10000 });
+  const err = await $panel(page, ".banner.err").innerText();
+  check(scen, /invio interrotto dal cambio pagina/i.test(err),
+    `dopo due interruzioni l'esame in volo si ferma ancora (got: ${err.replace(/\s+/g, " ").slice(0, 70)})`);
+  check(scen, !/non è più in carrello/i.test(err), "e NON viene scambiato per uno tolto a mano");
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.insertCount[`${rid}:159`] === 1, "inviato una volta sola, mai rimandato");
+  check(scen, mock.state.richieste[rid].confirmed === false, "e la richiesta NON viene confermata senza di lui");
+  await context.close();
+}
+
 async function scenarioEpisodeSwap(browser) {
   const scen = "episode-swap";
   // after 3 handled requests every page belongs to ANOTHER episode:
@@ -2354,6 +2393,7 @@ const scenarios = [
   ["riflesso: entra in carrello con un altro codice", scenarioRiflesso],
   ["il giro riprende dopo un cambio pagina", scenarioRipresa],
   ["l'esame in volo non viene mai rimandato", scenarioRipresaInVoloPerso],
+  ["due interruzioni: l'in volo resta in volo", scenarioRipresaDueVolteInVolo],
   ["pagina inattesa dopo l'inserimento: rilegge il carrello", scenarioAvvisoDopoInsert],
   ["prelievi refertati: restano colonne della tabella", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],

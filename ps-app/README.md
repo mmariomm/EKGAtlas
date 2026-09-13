@@ -112,7 +112,8 @@ dove non c'è un paziente aperto; sulla scheda di un paziente parte dagli **Esit
    è un dettaglio). Finito, la pagina **non** te la porta via: il carrello lo apri col bottone,
    e le etichette partono quando torni sulla scheda di quel paziente.
    Un tocco sulla striscia apre il pannello intero (passi + Registro), il quadratino rosso
-   ferma tutto. Se intanto sei sulla scheda di un altro paziente la striscia diventa **ambra** e
+   ferma tutto. **Esc** ferma il giro solo col pannello aperto: da quando gira in sottofondo, un
+   Esc dato al gestionale (una tendina, un campo) non deve fermare gli esami. Se intanto sei sulla scheda di un altro paziente la striscia diventa **ambra** e
    lo scrive: gli esami restano quelli di chi li hai ordinati.
 4. **Crea e aggiungi N esami** → ricevuta + bottone **✓ CONFERMA → stampa**; oppure
    **+ Conferma 🖨** che fa tutto da solo e conferma **subito**: il click è la decisione, e la
@@ -561,11 +562,28 @@ stessi flussi dei test di prodotto.
    sessione ed episodio che quella strada saltava. C'è un test che lo prova.
    **Il giro riprende, gli invii no.** Ogni passo è annotato nella scheda del browser: che cosa
    è già in carrello, che cosa era **in volo**, che cosa resta. Se la pagina cambia, il giro
-   riparte da lì. Quello che era in volo si **cerca** (fino a 3 riletture, anche sotto un altro
-   nome), non si rimanda: se non si trova, stop e messaggio. Quello che era già entrato si
-   ricontrolla, e se nel frattempo qualcuno l'ha tolto dal carrello **non** viene rimesso.
-   L'appunto vale 10 minuti e al massimo 12 riprese, muore con la scheda del browser e con il
-   «fine turno», e non parte mai da solo dopo uno STOP o un errore che ha già fermato il giro.
+   riparte da lì. Quello che era in volo si **cerca** — fino a 3 riletture, col proprio codice,
+   col nome identico o con lo stesso mnemonico LIS, **mai** per somiglianza (o «POTASSIO» si
+   riconoscerebbe in «POTASSIO URINARIO») — e non si rimanda: se non si trova, stop e messaggio.
+   Resta «in volo» finché non lo si ritrova, anche attraverso più interruzioni di fila: non
+   scivola mai fra i «già fatti», o un esame mai partito passerebbe per uno tolto a mano e
+   sparirebbe in silenzio. Quello che era già entrato si ricontrolla, e se nel frattempo
+   qualcuno l'ha tolto dal carrello **non** viene rimesso.
+   L'appunto vale 10 minuti e al massimo 12 riprese (il conto si scrive prima di ripartire, così
+   vale anche se la ripresa muore subito), muore con la scheda del browser e con il «fine
+   turno», e non parte mai da solo dopo uno STOP o un errore che ha già fermato il giro.
+   **Una sola scheda alla volta.** Duplicando la scheda, Chrome ne copia anche l'appunto: due
+   motori sullo stesso carrello vorrebbe dire due volte lo stesso esame. C'è un **presidio** in
+   memoria condivisa — chi ci sta lavorando, su quale richiesta, da quando — che si molla quando
+   la pagina se ne va e scade da solo in 25 secondi: la seconda scheda non manda niente e lo
+   dice. Il presidio si ricontrolla **prima di ogni invio**, non solo alla partenza.
+   **Niente sparisce zitto.** Un giro che nessuno riprenderà — scheda chiusa, browser caduto,
+   sessione scaduta — lascia un segno in memoria condivisa: la prima pagina utile dice «un giro
+   su X è rimasto a metà: N esami non sono stati mandati». Sulla pagina di login, dove il
+   pannello non nasce nemmeno, compare una striscia rossa che lo dice **senza il nome**, perché
+   quella pagina la può avere davanti chiunque. Se la memoria del browser è piena e l'appunto
+   non si riesce a scrivere, il pannello non promette una ripresa che non ci sarà: lo scrive nel
+   Registro e il giro torna a comportarsi come prima.
    **Un esame può entrare in carrello con un numero diverso dal suo**: le prestazioni a
    riflesso (BILIRUBINA TOTALE REFLEX) ci mettono l'esame che ne deriva. Il motore fotografa il
    carrello *prima* dell'invio e guarda quale riga è comparsa *dopo*: vale solo se porta il
@@ -729,7 +747,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 62 scenari e2e in Chromium reale (+ storico e referti)
+└── test/                ← simulatore SA4PSO + 63 scenari e2e in Chromium reale (+ storico e referti)
 ```
 
 Sviluppo:
@@ -740,7 +758,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 62 scenari e2e + 32 sull'estensione + 42 sul banco + storico + il cancello privacy
+npm test           # 63 scenari e2e + 32 sull'estensione + 42 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

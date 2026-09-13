@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.37.0";
+  const VERSION = "3.37.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -84,6 +84,16 @@
   const CORSA = "corsa.v1";
   const CORSA_TTL = 10 * 60e3;   // più vecchio di così non si riprende da solo
   const CORSA_MAX = 12;          // riprese massime: mai un ciclo senza fine
+  // Due schede sulla stessa richiesta non devono mandare gli stessi esami.
+  // L'appunto sta nella scheda (sessionStorage) e una scheda DUPLICATA se lo
+  // porta dietro: il presidio invece sta in memoria condivisa, dove le schede
+  // si vedono fra loro, e dice chi ci sta lavorando adesso.
+  const PRESIDIO = "corsa.presidio.v1";
+  const PRESIDIO_MS = 25e3;      // un segno più vecchio è di una scheda morta
+  // Un giro lasciato a metà (scheda chiusa, sessione scaduta, browser caduto)
+  // non deve sparire in silenzio: questo lo dice alla prima pagina utile.
+  const APERTA = "corsa.aperta.v1";
+  const APERTA_TTL = 30 * 60e3;
 
   // Resources ("Risorsa" dropdown values) — verified in the saved pages.
   const RES = {
@@ -1644,6 +1654,15 @@
     },
   });
   const store = magazzino(localStorage);
+  // il presidio del giro: chi lo tiene, su quale richiesta, e da quando
+  const presidioLibero = (rid, token) => {
+    const p = store.get(PRESIDIO, null);
+    if (!p || !p.rid || !rid || p.rid !== String(rid)) return true;
+    if (p.token === token) return true;
+    return Date.now() - (p.ts || 0) > PRESIDIO_MS;
+  };
+  const segnaPresidio = (rid, token) => { if (rid) store.set(PRESIDIO, { rid: String(rid), token, ts: Date.now() }); };
+  const liberaPresidio = (token) => { const p = store.get(PRESIDIO, null); if (p && p.token === token) store.set(PRESIDIO, null); };
   // Tab-scoped storage for the run→landing handoffs (receipt + auto-confirm
   // flag): sessionStorage survives the same-tab navigation but is invisible
   // to other tabs, so two patients in two tabs can never clobber or clear
@@ -1721,6 +1740,8 @@
     } catch { /* memoria bloccata: niente da togliere */ }
     const corsa = tabStore.get(CORSA, null);
     if (corsa && corsa.ep === ep) tabStore.set(CORSA, null);
+    const aperta = store.get(APERTA, null);
+    if (aperta && aperta.ep === ep) store.set(APERTA, null);
     if (hasExt()) ask({ t: "delStorico", chiave: pk, ep, nome: nome || "" }).catch(() => {});
     return true;
   }
@@ -1734,6 +1755,8 @@
         if (k.startsWith(NS) && /(^|\.)(ris|visto|reftxt|log|refopen|receipt|confirm|queue|print|ui|afterNav|dimdraft|storico|corsa)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
       }
     } catch { /* blocked storage: nothing to clear */ }
+    store.set(APERTA, null);    // porta un nome: se ne va col turno
+    store.set(PRESIDIO, null);
     try { if (typeof chrome !== "undefined" && chrome.runtime?.id) chrome.runtime.sendMessage({ t: "clearRef" }, () => void chrome.runtime.lastError); } catch { /* not the extension build */ }
   }
 
@@ -2051,6 +2074,11 @@
     // lab+radiologia no: le sue due gambe vivono nella memoria del pannello,
     // e a metà non si riprendono. Lì si avvisa prima di uscire, come sempre.
     plan.riprendibile = !plan.hold;
+    const token = Math.random().toString(36).slice(2);   // questo motore, per il presidio
+    // La pagina che se ne va porta via il motore: il presidio si molla subito,
+    // o la pagina dopo crederebbe che ci sia ancora qualcuno a lavorare.
+    const mollaPresidio = () => liberaPresidio(token);
+    window.addEventListener("pagehide", mollaPresidio);
     const state = {
       steps: [], added: [], stop: () => ctrl.abort(),
       finishedListUrl: null, lastListUrl: null, richiestaId: null,
@@ -2208,21 +2236,40 @@
       // Il giro annotato dove sopravvive al cambio pagina: cosa è già entrato,
       // cosa era in volo, cosa resta. Si riscrive a ogni passo — è la memoria
       // da cui il pannello riparte, e l'unica che non muore con la pagina.
-      const nudo = (i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label });
+      // …con la risorsa di catalogo di partenza: serve al ritorno alla versione
+      // vecchia in una sede che la «- NEW» non ce l'ha
+      const nudo = (i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label, ...(i.resCat ? { resCat: i.resCat } : {}) });
       const salvaCorsa = (inVolo, resto) => {
         if (!plan.riprendibile) return;
         // Un esame che è già passato di qui non torna mai fra quelli «da
         // mandare»: resta fra i fatti, e alla ripresa si cerca in carrello.
         const rimasti = resto || [];
-        tabStore.set(CORSA, {
+        segnaPresidio(state.richiestaId, token);
+        const restano = rimasti.filter((x) => !x.soloVerifica).length + (inVolo ? 1 : 0);
+        // Il segno condiviso: se questa scheda muore, la prima pagina utile —
+        // anche in un'altra scheda — dirà che un giro è rimasto a metà.
+        store.set(APERTA, restano
+          ? { ts: Date.now(), ep: plan.episodeId, paziente: plan.patientName || "", rid: state.richiestaId || null, quanti: restano }
+          : null);
+        const scritto = tabStore.set(CORSA, {
           ts: Date.now(), ep: plan.episodeId, paziente: plan.patientName || "",
           autoConfirm: !!plan.autoConfirm, quesito: plan.quesito || "",
           rid: state.richiestaId || null, listUrl: state.lastListUrl || null,
           riprese: plan.riprese || 0,
-          fatti: [...state.added, ...rimasti.filter((x) => x.soloVerifica)].map(nudo),
-          involo: inVolo ? nudo(inVolo) : null,
+          // «in volo» resta in volo finché non lo si ritrova: se scivolasse fra
+          // i fatti, alla ripresa dopo passerebbe per uno che qualcuno ha tolto
+          // dal carrello — e un esame mai partito sparirebbe in silenzio.
+          fatti: [...state.added, ...rimasti.filter((x) => x.giaFatto)].map(nudo),
+          involo: inVolo ? nudo(inVolo) : (rimasti.find((x) => x.soloVerifica && !x.giaFatto) ? nudo(rimasti.find((x) => x.soloVerifica && !x.giaFatto)) : null),
           restanti: rimasti.filter((x) => !x.soloVerifica).map(nudo),
         });
+        // Memoria piena o bloccata: l'appunto non c'è. Non si promette una
+        // ripresa che non ci sarà — si dice, una volta sola, e da qui in poi
+        // il giro è quello di prima: se cambi pagina, va perso.
+        if (!scritto && plan.riprendibile) {
+          plan.riprendibile = false;
+          log("⚠ non riesco ad annotare il giro: se cambi pagina adesso, quello che resta non riparte da solo");
+        }
       };
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
@@ -2275,8 +2322,14 @@
             // qui la fotografia «prima» non c'è più: vale il proprio codice,
             // oppure una riga che porta lo stesso nome (le prestazioni a
             // riflesso entrano sotto il codice dell'esame che ne deriva)
+            // Qui la fotografia «prima» non c'è più: senza, «POTASSIO» si
+            // riconoscerebbe in «POTASSIO URINARIO». Vale il proprio codice,
+            // il nome IDENTICO, o lo stesso mnemonico LIS — niente di più
+            // largo, o si dichiara entrato un esame che non c'è.
             riga = model.inCart(it.code) ? { code: it.code, label: it.label }
-              : model.exams.find((e) => e.isDel && stessoEsame(e.label, it.label)) || null;
+              : model.exams.find((e) => e.isDel && (
+                baseEsame(e.label) === baseEsame(it.label) ||
+                (mnemonico(it.label) && mnemonico(e.label) === mnemonico(it.label)))) || null;
           }
           if (!riga) {
             if (it.giaFatto) {
@@ -2375,6 +2428,13 @@
         // Il carrello com'è un attimo prima: se l'esame entra sotto un altro
         // codice — le prestazioni «REFLEX» lo fanno — è questa differenza a
         // dire quale riga ha prodotto il nostro clic.
+        // Un'altra scheda sta mandando gli esami di QUESTA richiesta (succede
+        // duplicando la scheda: si porta dietro l'appunto del giro). Due
+        // motori sullo stesso carrello vuol dire due volte lo stesso esame.
+        if (!presidioLibero(state.richiestaId, token)) {
+          throw new StopError("Un'altra scheda sta mandando gli esami di questa richiesta",
+            "Da qui non mando niente. Finisci di là, o ricarica questa pagina.");
+        }
         const prima = new Set(model.exams.filter((e) => e.isDel).map((e) => e.code));
         salvaCorsa(it, items.slice(i + 1));   // da qui è IN VOLO: non si rimanda
         ({ doc, url } = await fetchDoc(link.href, { signal }));
@@ -2472,6 +2532,9 @@
       // Da qui in poi il giro non ha più esami da mandare: quello che resta
       // (conferma e stampa) ha già i suoi passaggi di consegna fra le pagine.
       tabStore.set(CORSA, null);
+      store.set(APERTA, null);
+      liberaPresidio(token);
+      window.removeEventListener("pagehide", mollaPresidio);
       log(plan.autoConfirm ? "tutti verificati — passo alla pagina esami per la conferma" : "tutti verificati — rivedi il carrello e premi Conferma");
       ui.finished(state, plan);
       return state;
@@ -2481,7 +2544,12 @@
       // ha appena detto. Un errore non deciso (la rete, o la pagina che muore
       // mentre navighi) invece NON cancella il giro: è proprio quello da cui
       // si riprende.
-      if (signal.aborted || err?.name === "AbortError" || err instanceof StopError) tabStore.set(CORSA, null);
+      if (signal.aborted || err?.name === "AbortError" || err instanceof StopError) {
+        tabStore.set(CORSA, null);
+        store.set(APERTA, null);   // fermato o fallito: il medico lo sta leggendo adesso
+        liberaPresidio(token);
+        window.removeEventListener("pagehide", mollaPresidio);
+      }
       // Make the failure legible in the step plan: the live step goes red,
       // everything not yet run is explicitly "skipped".
       for (const s of state.steps) {
@@ -2493,7 +2561,11 @@
         ui.stopped(state, { head: "Interrotto", body: "L'ultimo esame inviato potrebbe essere in carrello: controlla." });
       } else if (err instanceof StopError) {
         log(`⚠ ${err.message}`);
-        ui.failed(state, { head: err.head, body: err.body });
+        // quanti esami restavano fuori: senza questo, il messaggio parla solo
+        // di quello che è andato storto e il resto si vede solo espandendo
+        const restavano = plan.items.filter((x) => !state.added.includes(x)).length - 1;
+        ui.failed(state, { head: err.head, body: `${err.body || ""}${
+          restavano > 0 ? ` Restavano ${restavano === 1 ? "1 altro esame" : restavano + " altri esami"} da mandare.` : ""}` });
       } else {
         // La pagina che muore mentre navighi arriva qui come una fetch fallita:
         // il giro annotato è ancora lì, e riprende da solo alla pagina dopo.
@@ -2999,7 +3071,10 @@
     this._unload = (e) => { e.preventDefault(); e.returnValue = ""; };
       this._esc = (e) => {
         if (e.key !== "Escape") return;
-        if (this.runState === "running") this.stop();
+        // Solo col pannello aperto: da quando il giro va in sottofondo, un Esc
+        // dato al gestionale (una tendina, un campo) non deve fermare gli
+        // esami. Dalla striscia si ferma col quadratino rosso.
+        if (this.runState === "running" && !this.collapsed) this.stop();
       };
       window.addEventListener("keydown", this._esc, true);
     }
@@ -3165,14 +3240,19 @@
       // …e intanto il pannello si fa piccolo: una striscia in un angolo che
       // dice a che punto è, e il gestionale resta tutto tuo. La preferenza del
       // medico NON si tocca (niente store.set): finito il giro torna com'era.
-      this.collapsed = true;
+      // Solo per i giri che possono andare in sottofondo: una catena
+      // lab+radiologia resta sotto gli occhi, come è sempre stata.
+      if (plan && plan.riprendibile) this.collapsed = true;
       this.render();
     }
     renderRun(state) { this.runData = state; this.render(); }
     finished(state, plan) {
       if (plan.hold) { this.runData = state; this.render(); return; } // the chain finishes for us
       window.removeEventListener("beforeunload", this._unload);
-      this.clearOrderUi(); // the order is placed: next page starts clean
+      // L'ordine è partito: la prossima pagina riparte pulita. Ma se il giro
+      // era di un ALTRO paziente (ripreso mentre guardavi altro), il quesito e
+      // gli esami che stai spuntando qui non si toccano.
+      if (!plan || !plan.episodeId || plan.episodeId === this.episodeId) this.clearOrderUi();
       this.runState = "done"; this.runData = state;
       const n = state.added.length;
       this.message = {
@@ -3205,7 +3285,7 @@
       this.message = { head: this.message?.head || "", body: "Confermo in sottofondo…" };
       this.render();
       let esito = "rifiutata";
-      try { esito = await confermaInCornice(listUrl, { panel: this, episodeId: this.episodeId }); }
+      try { esito = await confermaInCornice(listUrl, { panel: this, episodeId: plan?.episodeId || this.episodeId }); }
       catch { esito = "rifiutata"; }
       this.log(`${now()}  conferma in sottofondo: ${esito}`);
       if (esito === "stampata") {
@@ -4694,6 +4774,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     bind() {
       const $ = (s) => this.root.querySelector(s);
       $("#expand")?.addEventListener("click", () => {
+        // aprire la striscia di un giro in corso è un gesto di adesso, non una
+        // preferenza: finito il giro il pannello torna com'era
+        if (this.runState === "running") { this.collapsed = false; this.render(); return; }
         if (this._justDragged) return; // it was a drag, not a click
         this.collapsed = false; store.set("collapsed", false); this.render();
       });
@@ -5212,6 +5295,17 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }
       return false;
     }
+    if (!presidioLibero(c.rid, null)) {
+      // Qualcuno ci sta già lavorando: quasi sempre questa stessa scheda
+      // duplicata, che si è portata dietro l'appunto. Non si manda niente e non
+      // si butta via niente: se fra poco quel presidio scade, la pagina dopo
+      // riprende. (Cambiando pagina il presidio si molla subito, quindi questo
+      // non scatta per una navigazione normale.)
+      panel.log(`${now()}  un'altra scheda sta già mandando gli esami di questa richiesta: da qui, niente`);
+      panel.message = "Un'altra scheda sta finendo questo giro di esami: da qui non mando niente.";
+      panel.render();
+      return false;
+    }
     const items = [];
     // Quello che era già in carrello prima dell'interruzione rientra nel giro:
     // si ricontrolla (mai si rimanda) così la ricevuta finale parla della
@@ -5220,12 +5314,33 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (c.involo) items.push({ ...c.involo, soloVerifica: true });
     for (const r of c.restanti || []) items.push({ ...r });
     panel.runPatient = c.paziente || "";
+    // Il conto delle riprese si scrive PRIMA di ripartire: se anche questa
+    // ripresa muore subito, il tetto vale lo stesso e non si ricomincia in
+    // eterno a ogni ricaricamento.
+    tabStore.set(CORSA, { ...c, ts: Date.now(), riprese: (c.riprese || 0) + 1 });
     panel.log(`${now()}  ── riprendo il giro dopo il cambio pagina: ${items.length} da sistemare ──`);
     runPlan({
       startPage: "ripresa", listUrl: c.listUrl, items,
       episodeId: c.ep, autoConfirm: !!c.autoConfirm, quesito: c.quesito || "",
       patientName: c.paziente || "", riprese: (c.riprese || 0) + 1,
     }, panel);
+    return true;
+  }
+
+  // Un giro rimasto a metà che NESSUNO riprenderà (scheda chiusa, browser
+  // caduto, sessione scaduta): l'appunto vive nella scheda e se n'è andato con
+  // lei, ma il segno condiviso no. Lo si dice, una volta, e lo si toglie.
+  function avvisaGiroAbbandonato(panel) {
+    const a = store.get(APERTA, null);
+    if (!a || !a.quanti) return false;
+    const eta = Date.now() - (a.ts || 0);
+    if (eta > APERTA_TTL) { store.set(APERTA, null); return false; }
+    // fresco = c'è una scheda che ci sta ancora lavorando: non è abbandonato
+    if (eta < 60e3 || tabStore.get(CORSA, null)) return false;
+    store.set(APERTA, null);
+    panel.message = `Un giro di esami su ${a.paziente || "un paziente"} è rimasto a metà: ${
+      a.quanti === 1 ? "1 esame non è stato mandato" : `${a.quanti} esami non sono stati mandati`}. Apri la sua richiesta e controlla.`;
+    panel.render();
     return true;
   }
 
@@ -5832,7 +5947,23 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
     scadenzaQuesiti();
     const pageType = classify(document);
-    if (pageType === "login") { forgetAll(); return; }
+    if (pageType === "login") {
+      // La sessione è caduta. forgetAll() porta via anche l'appunto del giro:
+      // se c'era qualcosa da mandare va detto QUI, prima di cancellare, perché
+      // dopo il nuovo accesso non ne resterebbe traccia. Senza nomi: questa
+      // pagina la può avere davanti chiunque.
+      const c = tabStore.get(CORSA, null);
+      const restavano = c ? (c.restanti || []).length + (c.involo ? 1 : 0) : 0;
+      forgetAll();
+      if (restavano) {
+        const d = document.createElement("div");
+        d.id = "psassist-avviso-login";
+        d.style.cssText = "position:fixed;left:12px;bottom:12px;z-index:2147483647;max-width:min(520px,92vw);background:#B3261E;color:#fff;border-radius:10px;padding:10px 12px;font:13px/1.45 -apple-system,'Segoe UI',Roboto,Arial,sans-serif;box-shadow:0 6px 20px rgba(9,42,74,.35)";
+        d.textContent = `PS Assist: la sessione è scaduta mentre mandava gli esami — ${restavano === 1 ? "1 esame non è partito" : restavano + " esami non sono partiti"}. Rientra e controlla il carrello dell'ultima richiesta.`;
+        document.documentElement.appendChild(d);
+      }
+      return;
+    }
     if (pageType === "other") {
       // e.g. the post-confirm label page: no panel, but a pending print
       // handoff starts here when the page lists the richiesta's print links.
@@ -5868,6 +5999,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // e riprende da qualunque pagina del gestionale — anche da quella di un
     // altro paziente, perché le richieste portano il loro episodio con sé.
     const ripresa = riprendiCorsa(panel);
+    if (!ripresa) avvisaGiroAbbandonato(panel);
     if (pageType === "patient") {
       // this patient is now one the panel knows (name + episode + page only)
       // only a page that can actually order is a patient: the ER worklist
