@@ -27,10 +27,14 @@ function check(scen, cond, msg) {
   else results.push(`  ✓ [${scen}] ${msg}`);
 }
 
-async function newPage(browser, mock) {
+async function newPage(browser, mock, opts = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await context.route("https://smarthealth.multimedica.it/**", async (route) => {
     const req = route.request();
+    // opts.ritardo(url) → ms: una risposta lenta è l'unico modo per navigare
+    // MENTRE il motore sta mandando qualcosa
+    const attesa = opts.ritardo ? opts.ritardo(req.url()) : 0;
+    if (attesa) await new Promise((r) => setTimeout(r, attesa));
     let out = mock.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });
     // Playwright drops fulfilled redirects out of interception (they'd hit
     // the real network), so the harness follows them itself for every
@@ -484,6 +488,113 @@ async function scenarioAvvisoDopoInsert(browser) {
   await $panel(page, "#verbtn").click();   // il Registro, dal numero di versione in fondo
   const reg = await $panel(page, ".log").innerText();
   check(scen, /rileggo il carrello/.test(reg), `il Registro dice che è successo (got: ${(/[^\n]*rilegg[^\n]*/.exec(reg) || ["niente"])[0].slice(0, 70)})`);
+  await context.close();
+}
+
+// Il gestionale ricarica la pagina a ogni click, e il motore muore con lei.
+// Il giro però è annotato passo per passo: riprende da dov'era, su qualunque
+// pagina, e quello che era IN VOLO si cerca in carrello — mai rimandato.
+async function scenarioRipresa(browser) {
+  const scen = "ripresa";
+  const mock = createMock({});
+  // la PROCALCITONINA parte lenta: si naviga via mentre il server la sta prendendo
+  const { context, page } = await newPage(browser, mock, {
+    ritardo: (u) => (/Insert=Inserisci/.test(u) && /PRESTAZIONE=(159|317)/.test(u) ? 2500 : 0),
+  });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("febbre");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, '.opt[title*="ESAME URINE"]').click();
+  await $panel(page, "#go").click();
+
+  // mentre gira, il pannello è una striscia: chi, a che punto, che cosa sta facendo
+  await page.waitForSelector("#psassist-host .pill.run", { timeout: 15000 });
+  check(scen, (await page.locator("#psassist-host .card").count()) === 0,
+    "mentre gira il pannello è una striscia, non il pannello intero");
+  // si aspetta che stia mandando PROPRIO la PCT (quella lenta): così la
+  // navigazione la coglie in volo, sempre, non a caso
+  const vivo = await (await page.waitForFunction(() => {
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    const t = (r?.querySelector(".pill.run")?.innerText || "").replace(/\s+/g, " ");
+    return /PROCALCITONINA/.test(t) && /invio/i.test(t) ? t : false;
+  }, { timeout: 20000 })).jsonValue();
+  check(scen, /ROSSI MARIO/.test(vivo) && /\d\/\d/.test(vivo) && /invio/i.test(vivo),
+    `la striscia dice paziente, passo e che cosa sta facendo (got: ${vivo})`);
+  check(scen, (await page.locator("#psassist-host #stopbtn").count()) === 1, "e si può fermare da lì");
+
+  // …e si naviga via, come farebbe un click qualunque del gestionale
+  await page.goto(mock.worklistUrl);
+  await page.waitForSelector("#psassist-host .pill.run", { timeout: 15000 });
+  const ripresa = (await $panel(page, ".pill.run").innerText()).replace(/\s+/g, " ");
+  check(scen, /ROSSI MARIO/.test(ripresa) && /\d\/\d/.test(ripresa),
+    `il giro riprende da solo sulla pagina nuova, e la striscia resta (got: ${ripresa})`);
+
+  // e si cambia pagina un'altra volta, mentre manda l'ultimo: si riprende
+  // quante volte serve, senza mai rimandare niente
+  await page.waitForFunction(() => {
+    const t = document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || "";
+    return /ESAME URINE/.test(t) && /invio/i.test(t);
+  }, { timeout: 30000 });
+  await page.goto(mock.patientUrl);
+  await page.waitForFunction(() => {
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    return /esami in carrello/.test(r?.querySelector(".pill.run .l2")?.textContent || "")
+      || !!r?.querySelector(".banner.ok");
+  }, { timeout: 40000 });
+  const rid = Object.keys(mock.state.richieste)[0];
+  const carrello = [...mock.state.richieste[rid].cart.keys()].sort();
+  check(scen, JSON.stringify(carrello) === JSON.stringify(["159", "317", "320"]),
+    `tutti e tre gli esami sono in carrello (got ${carrello})`);
+  const doppi = Object.entries(mock.state.insertCount).filter(([, n]) => n !== 1);
+  check(scen, doppi.length === 0, `ogni esame inviato UNA volta sola (${JSON.stringify(mock.state.insertCount)})`);
+  check(scen, [...mock.state.requests.filter((q) => q.params.Insert === "Inserisci")].length === 3,
+    "tre inserimenti in tutto, quanti sono gli esami");
+  check(scen, !/RcsRichiestaPrestazioniRicercaErogatore/.test(page.url()),
+    "e il pannello non si riprende la pagina: resti dove sei, il carrello non si apre da solo");
+  await $panel(page, ".pill.run").click();
+  await page.waitForSelector("#psassist-host .card", { timeout: 5000 });
+  const reg = await $panel(page, ".card").innerText();
+  check(scen, /riprendo il giro/.test(reg), "il Registro dice che ha ripreso");
+  check(scen, /ritrovato ✓ PROCALCITONINA|già presente ✓ PROCALCITONINA/.test(reg),
+    `e che l'esame in volo è stato ritrovato, non rimandato (got: ${JSON.stringify(reg.split("\n").filter((l) => /PROCALCITONINA/.test(l)))})`);
+  check(scen, (reg.match(/aggiungo → /g) || []).length === 3,
+    `nel Registro un solo «aggiungo» per esame (${(reg.match(/aggiungo → /g) || []).length})`);
+  check(scen, /Apri il carrello/.test(reg), "il carrello si apre col bottone, quando vuoi tu");
+  await shot(page, scen);
+  await context.close();
+}
+
+// L'esame che era in volo e che il server NON ha preso: non si rimanda, si
+// dice. Un secondo invio sarebbe una provetta in più.
+async function scenarioRipresaInVoloPerso(browser) {
+  const scen = "ripresa-in-volo";
+  const mock = createMock({ neverAdd: ["159"] });   // il server perde la PCT
+  const { context, page } = await newPage(browser, mock, {
+    ritardo: (u) => (/Insert=Inserisci/.test(u) && /PRESTAZIONE=159/.test(u) ? 2500 : 0),
+  });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("febbre");
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, '.opt[title*="ESAME URINE"]').click();
+  await $panel(page, "#go").click();
+  await page.waitForFunction(() => /invio/.test(document.getElementById("psassist-host")
+    ?.shadowRoot?.querySelector(".pill.run .l2")?.textContent || ""), { timeout: 20000 });
+  await page.goto(mock.worklistUrl);
+  await page.waitForFunction(() => {
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    return !!r?.querySelector(".banner.err") || /interrotto|non risulta/i.test(r?.querySelector(".pill.run .l2")?.textContent || "");
+  }, { timeout: 40000 });
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.insertCount[`${rid}:159`] === 1, "l'esame in volo NON viene rimandato");
+  check(scen, !mock.state.insertCount[`${rid}:317`], "e il giro si ferma lì: niente esami dopo");
+  if (await page.locator("#psassist-host .pill.run").count()) await $panel(page, ".pill.run").click();
+  await page.waitForSelector("#psassist-host .banner.err", { timeout: 10000 });
+  const err = await $panel(page, ".banner.err").innerText();
+  check(scen, /invio interrotto dal cambio pagina/i.test(err) && /controlla/i.test(err),
+    `e lo dice con parole chiare (got: ${err.replace(/\s+/g, " ").slice(0, 80)})`);
   await context.close();
 }
 
@@ -2169,9 +2280,11 @@ async function scenarioStopButton(browser) {
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#go").click();
-  await page.waitForSelector("#psassist-host .btn.stop", { timeout: 10000 });
-  await $panel(page, ".btn.stop").click();
+  // si ferma dalla striscia, senza aprire niente
+  await page.waitForSelector("#psassist-host .strip #stopbtn", { timeout: 10000 });
+  await $panel(page, "#stopbtn").click();
   await page.waitForSelector("#psassist-host .banner.warn", { timeout: 10000 });
+  check(scen, /Interrotto/i.test(await $panel(page, ".banner.warn").innerText()), "il pannello si apre e dice che è interrotto");
   await page.waitForTimeout(2000);
   const rid = Object.keys(mock.state.richieste)[0];
   check(scen, (mock.state.insertCount[`${rid}:222`] || 0) === 0, "dopo STOP niente nuovi invii");
@@ -2239,6 +2352,8 @@ const scenarios = [
   ["un nome col markup dentro non rompe il pannello", scenarioNomeConHtml],
   ["emogas: sceglie sempre la versione NEW", scenarioEmogasNew],
   ["riflesso: entra in carrello con un altro codice", scenarioRiflesso],
+  ["il giro riprende dopo un cambio pagina", scenarioRipresa],
+  ["l'esame in volo non viene mai rimandato", scenarioRipresaInVoloPerso],
   ["pagina inattesa dopo l'inserimento: rilegge il carrello", scenarioAvvisoDopoInsert],
   ["prelievi refertati: restano colonne della tabella", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],

@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.36.0";
+  const VERSION = "3.37.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -78,6 +78,12 @@
   const AVVISO = "avviso.v1";
   const PRINT_FLAG_TTL = 180e3;  // ms a post-confirm print handoff stays valid
   const QUEUE_TTL = 30 * 60e3;   // ms a still-unconfirmed richiesta keeps reminding
+  // Il giro in corso, annotato passo per passo. Il gestionale ricarica la
+  // pagina a ogni click e il motore muore con lei: così invece riprende da
+  // dov'era, e quello che era già partito non riparte MAI una seconda volta.
+  const CORSA = "corsa.v1";
+  const CORSA_TTL = 10 * 60e3;   // più vecchio di così non si riprende da solo
+  const CORSA_MAX = 12;          // riprese massime: mai un ciclo senza fine
 
   // Resources ("Risorsa" dropdown values) — verified in the saved pages.
   const RES = {
@@ -1713,6 +1719,8 @@
         if (kk && new RegExp(`(^|\\.)(ris|visto|reftxt|log|refopen|ui)\\.${ep}\\b`).test(kk)) sessionStorage.removeItem(k);
       }
     } catch { /* memoria bloccata: niente da togliere */ }
+    const corsa = tabStore.get(CORSA, null);
+    if (corsa && corsa.ep === ep) tabStore.set(CORSA, null);
     if (hasExt()) ask({ t: "delStorico", chiave: pk, ep, nome: nome || "" }).catch(() => {});
     return true;
   }
@@ -1723,7 +1731,7 @@
     forgetQuesiti();
     try {
       for (const k of Object.keys(sessionStorage)) {
-        if (k.startsWith(NS) && /(^|\.)(ris|visto|reftxt|log|refopen|receipt|confirm|queue|print|ui|afterNav|dimdraft|storico)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
+        if (k.startsWith(NS) && /(^|\.)(ris|visto|reftxt|log|refopen|receipt|confirm|queue|print|ui|afterNav|dimdraft|storico|corsa)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
       }
     } catch { /* blocked storage: nothing to clear */ }
     try { if (typeof chrome !== "undefined" && chrome.runtime?.id) chrome.runtime.sendMessage({ t: "clearRef" }, () => void chrome.runtime.lastError); } catch { /* not the extension build */ }
@@ -2003,7 +2011,7 @@
   // its own status so the UI can render live progress.
   //
   // plan = {
-  //   startPage: 'patient' | 'crea' | 'exam',
+  //   startPage: 'patient' | 'crea' | 'exam' | 'ripresa',
   //   entryUrl:  (patient only) crea-page URL to open,
   //   creaForm:  (crea only) the LIVE form element to serialize,
   //   examDoc/examUrl: (exam only) the live page — used ONLY to find the
@@ -2012,6 +2020,10 @@
   //   items:     [{res, code, label}],
   //   autoConfirm: boolean,
   //   episodeId: pinned patient episode,
+  //   listUrl:   (ripresa only) the exam list to re-read — nothing is created,
+  //   items:     (ripresa) what is still to send; the one that was IN FLIGHT
+  //              when the page changed comes first, marked soloVerifica: it is
+  //              looked up in the cart and NEVER sent again.
   // }
 
   function orderItems(items, currentRes) {
@@ -2035,6 +2047,10 @@
   async function runPlan(plan, ui) {
     const ctrl = new AbortController();
     const signal = ctrl.signal;
+    // Un giro solo si riprende dopo un cambio pagina; una catena
+    // lab+radiologia no: le sue due gambe vivono nella memoria del pannello,
+    // e a metà non si riprendono. Lì si avvisa prima di uscire, come sempre.
+    plan.riprendibile = !plan.hold;
     const state = {
       steps: [], added: [], stop: () => ctrl.abort(),
       finishedListUrl: null, lastListUrl: null, richiestaId: null,
@@ -2061,11 +2077,14 @@
 
     // Pre-build the visible step list.
     const legTag = plan.legLabel ? ` (${plan.legLabel})` : "";
+    const riprende = plan.startPage === "ripresa";
     const sOpen = plan.startPage === "patient" ? step("Apro la nuova richiesta" + legTag) : null;
-    const sCrea = plan.startPage !== "exam" ? step("Compilo quesito e creo la richiesta" + legTag) : null;
+    const sRipresa = riprende ? step("Riprendo la richiesta da dov'ero") : null;
+    const sCrea = plan.startPage !== "exam" && !riprende ? step("Compilo quesito e creo la richiesta" + legTag) : null;
     const itemSteps = new Map();
     for (const it of plan.items) itemSteps.set(it, step(it.display || it.label));
-    const sEnd = step(plan.autoConfirm ? "Passo alla pagina esami per la conferma" : "Passo alla pagina esami per la revisione");
+    const sEnd = step(riprende && !plan.autoConfirm ? "Chiudo: il carrello è pronto"
+      : plan.autoConfirm ? "Passo alla pagina esami per la conferma" : "Passo alla pagina esami per la revisione");
     ui.renderRun(state);
 
     try {
@@ -2080,7 +2099,19 @@
         done(sOpen);
       }
 
-      if (plan.startPage !== "exam") {
+      if (riprende) {
+        // Non si crea niente e non si manda niente: si rilegge l'elenco della
+        // richiesta che era già aperta, e da lì si continua.
+        running(sRipresa);
+        ({ doc, url } = await fetchDoc(plan.listUrl, { signal }));
+        guardSession(doc, "Nessun esame inviato");
+        assertSameEpisode(doc, plan.episodeId, "elenco esami");
+        if (classify(doc) !== "exam") {
+          log(`elenco esami inatteso alla ripresa: "${snippet(doc)}"`);
+          throw new StopError("Non ritrovo l'elenco esami della richiesta", "Il giro si ferma qui: apri il carrello e controlla.");
+        }
+        done(sRipresa);
+      } else if (plan.startPage !== "exam") {
         running(sCrea);
         if (plan.startPage === "patient") await pace();
         let form, base;
@@ -2167,10 +2198,37 @@
         }
       }
 
-      const items = orderItems(plan.items, model.res);
-      for (const it of items) {
+      // Quello che in questo giro era già passato — sistemato prima
+      // dell'interruzione, o in volo nell'istante in cui la pagina è cambiata —
+      // viene per primo e si CERCA soltanto in carrello: non si rimanda mai.
+      const items = [
+        ...plan.items.filter((i) => i.soloVerifica),
+        ...orderItems(plan.items.filter((i) => !i.soloVerifica), model.res),
+      ];
+      // Il giro annotato dove sopravvive al cambio pagina: cosa è già entrato,
+      // cosa era in volo, cosa resta. Si riscrive a ogni passo — è la memoria
+      // da cui il pannello riparte, e l'unica che non muore con la pagina.
+      const nudo = (i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label });
+      const salvaCorsa = (inVolo, resto) => {
+        if (!plan.riprendibile) return;
+        // Un esame che è già passato di qui non torna mai fra quelli «da
+        // mandare»: resta fra i fatti, e alla ripresa si cerca in carrello.
+        const rimasti = resto || [];
+        tabStore.set(CORSA, {
+          ts: Date.now(), ep: plan.episodeId, paziente: plan.patientName || "",
+          autoConfirm: !!plan.autoConfirm, quesito: plan.quesito || "",
+          rid: state.richiestaId || null, listUrl: state.lastListUrl || null,
+          riprese: plan.riprese || 0,
+          fatti: [...state.added, ...rimasti.filter((x) => x.soloVerifica)].map(nudo),
+          involo: inVolo ? nudo(inVolo) : null,
+          restanti: rimasti.filter((x) => !x.soloVerifica).map(nudo),
+        });
+      };
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
         const st = itemSteps.get(it);
         const nm = it.display || it.label; // short name for messages
+        salvaCorsa(null, items.slice(i));   // da qui in poi, questo è ancora da mandare
         running(st);
         await pace(); // pace AFTER marking, so exactly one step is always live
 
@@ -2190,6 +2248,62 @@
           done(st, "già nel carrello");
           log(`già presente ✓ ${nm}`);
           state.added.push(it);
+          // anche qui il carrello vero di questa risorsa va registrato: la
+          // conferma automatica confronta la ricevuta col carrello, e una
+          // risorsa mai «toccata» in questo giro le risulterebbe non vista
+          state.carrelli = state.carrelli || {};
+          state.carrelli[model.res] = model.exams.filter((e) => e.isDel).map((e) => String(e.code));
+          salvaCorsa(null, items.slice(i + 1));
+          continue;
+        }
+        if (it.soloVerifica) {
+          // Questo era IN VOLO quando la pagina è cambiata: il server può
+          // averlo preso lo stesso. Si guarda — con le stesse riletture di
+          // sempre — e non si rimanda mai: un esame ordinato due volte è una
+          // provetta in più al laboratorio.
+          running(st, "controllo se è entrato…");
+          let riga = null;
+          for (let attempt = 1; !riga && attempt <= VERIFY_RECHECKS; attempt++) {
+            running(st, `controllo il carrello ${attempt}/${VERIFY_RECHECKS}…`);
+            await sleep(VERIFY_WAIT_MS, signal);
+            ({ doc, url } = await fetchDoc(model.listUrl(it.res || model.res) || state.lastListUrl, { signal }));
+            guardSession(doc, `«${nm}» potrebbe essere stato aggiunto o no`);
+            assertSameEpisode(doc, plan.episodeId, "verifica carrello");
+            if (classify(doc) !== "exam") { log(`pagina inattesa in verifica: "${snippet(doc)}"`); continue; }
+            model = examModel(doc, url);
+            noteList();
+            // qui la fotografia «prima» non c'è più: vale il proprio codice,
+            // oppure una riga che porta lo stesso nome (le prestazioni a
+            // riflesso entrano sotto il codice dell'esame che ne deriva)
+            riga = model.inCart(it.code) ? { code: it.code, label: it.label }
+              : model.exams.find((e) => e.isDel && stessoEsame(e.label, it.label)) || null;
+          }
+          if (!riga) {
+            if (it.giaFatto) {
+              // era entrato prima dell'interruzione e adesso non c'è più: lo
+              // ha tolto qualcuno a mano. Non si rimette: si dice e si va.
+              st.status = "skipped"; st.note = "non è più in carrello";
+              log(`⚠ «${nm}» era in carrello e adesso non c'è più: non lo rimetto`);
+              ui.renderRun(state);
+              salvaCorsa(null, items.slice(i + 1));
+              continue;
+            }
+            throw new StopError(`«${nm}»: invio interrotto dal cambio pagina`,
+              "Non risulta nel carrello e NON è stato rimandato. Apri il carrello e controlla.");
+          }
+          if (riga.code !== it.code) {
+            log(`«${nm}» era entrato come «${riga.label}» (${riga.code})`);
+            it.code = riga.code; it.label = riga.label;
+          }
+          done(st, "nel carrello ✓");
+          log(`ritrovato ✓ ${nm}`);
+          state.added.push(it);
+          // il carrello vero di questa risorsa, come per un inserimento: senza,
+          // una ripresa fatta di sole verifiche lascerebbe la ricevuta vuota e
+          // la conferma automatica si sospenderebbe da sola
+          state.carrelli = state.carrelli || {};
+          state.carrelli[model.res] = model.exams.filter((e) => e.isDel).map((e) => String(e.code));
+          salvaCorsa(null, items.slice(i + 1));
           continue;
         }
         // La versione «- NEW» dello stesso esame, se la pagina ne offre una:
@@ -2262,6 +2376,7 @@
         // codice — le prestazioni «REFLEX» lo fanno — è questa differenza a
         // dire quale riga ha prodotto il nostro clic.
         const prima = new Set(model.exams.filter((e) => e.isDel).map((e) => e.code));
+        salvaCorsa(it, items.slice(i + 1));   // da qui è IN VOLO: non si rimanda
         ({ doc, url } = await fetchDoc(link.href, { signal }));
         guardSession(doc, `«${nm}» potrebbe essere stato aggiunto o no`);
         assertSameEpisode(doc, plan.episodeId, "conferma inserimento");
@@ -2322,6 +2437,7 @@
         done(st, "nel carrello ✓");
         log(`aggiunto ✓ ${nm}`);
         state.added.push(it);
+        salvaCorsa(null, items.slice(i + 1));
         // Il carrello di QUESTA risorsa come lo vediamo adesso. La Conferma
         // nativa invia la richiesta INTERA, comprese le righe che stanno sul
         // carrello di un'altra risorsa e che questa pagina non mostra: senza
@@ -2353,10 +2469,19 @@
         });
       }
       done(sEnd);
+      // Da qui in poi il giro non ha più esami da mandare: quello che resta
+      // (conferma e stampa) ha già i suoi passaggi di consegna fra le pagine.
+      tabStore.set(CORSA, null);
       log(plan.autoConfirm ? "tutti verificati — passo alla pagina esami per la conferma" : "tutti verificati — rivedi il carrello e premi Conferma");
       ui.finished(state, plan);
       return state;
     } catch (err) {
+      // Una decisione — STOP del medico, o un controllo che ha detto no — mette
+      // fine al giro: da lì in poi decide lui, con quello che il pannello gli
+      // ha appena detto. Un errore non deciso (la rete, o la pagina che muore
+      // mentre navighi) invece NON cancella il giro: è proprio quello da cui
+      // si riprende.
+      if (signal.aborted || err?.name === "AbortError" || err instanceof StopError) tabStore.set(CORSA, null);
       // Make the failure legible in the step plan: the live step goes red,
       // everything not yet run is explicitly "skipped".
       for (const s of state.steps) {
@@ -2370,8 +2495,13 @@
         log(`⚠ ${err.message}`);
         ui.failed(state, { head: err.head, body: err.body });
       } else {
-        log(`⚠ errore imprevisto: ${err?.message || err}`);
-        ui.failed(state, { head: "Errore imprevisto", body: `${err?.message || err} — apri il carrello e controlla.` });
+        // La pagina che muore mentre navighi arriva qui come una fetch fallita:
+        // il giro annotato è ancora lì, e riprende da solo alla pagina dopo.
+        const riprende2 = !!tabStore.get(CORSA, null);
+        log(`⚠ ${riprende2 ? "giro interrotto" : "errore imprevisto"}: ${err?.message || err}`);
+        ui.failed(state, riprende2
+          ? { head: "Giro interrotto", body: "Riprende da solo appena si carica una pagina del gestionale: niente viene rimandato due volte." }
+          : { head: "Errore imprevisto", body: `${err?.message || err} — apri il carrello e controlla.` });
       }
       return state;
     }
@@ -2392,6 +2522,20 @@
     .pill:hover { background: #094a8c; }
     .pill .badge { background: #fff; color: #0B5CAD; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 800; }
     .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #7FD1A8; animation: psaPulse 1.2s ease-in-out infinite; }
+    /* La striscia del giro in corso: due righe in un angolo, e sotto ci lavori
+       come se il pannello non ci fosse. */
+    .strip { display: flex; align-items: center; gap: 6px; }
+    .pill.run { border-radius: 12px; padding: 7px 13px 7px 11px; max-width: min(380px, 82vw); text-align: left; }
+    .pill.run.alt { background: #8A5A00; }
+    .pill.run.alt:hover { background: #764d00; }
+    .pill .col { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.3; }
+    .pill .l1 { display: flex; align-items: center; gap: 6px; }
+    .pill .l2 { font-size: 11.5px; font-weight: 500; opacity: .93; max-width: 100%;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pill .tick { font-size: 13px; font-weight: 800; }
+    .stopmini { border: 0; border-radius: 999px; width: 30px; height: 30px; cursor: pointer; font-size: 12px;
+                background: #B3261E; color: #fff; box-shadow: 0 6px 20px rgba(9,42,74,.35); }
+    .stopmini:hover { background: #8f1e18; }
     .card { width: 460px; max-width: 96vw; max-height: min(92vh, 900px); overflow: auto; background: #fff; border: 1px solid #D9E2EC;
             border-radius: 14px; box-shadow: 0 10px 32px rgba(9,42,74,.22); font-size: 13px; line-height: 1.45; }
     .hd { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #0B5CAD; color: #fff;
@@ -3013,8 +3157,15 @@
       // a chained second richiesta keeps the first one's steps on screen
       if (plan && plan.continuation && this.runData && this.runData.steps) state.steps.unshift(...this.runData.steps);
       this.runState = "running"; this.runData = state; this.stopFn = state.stop;
-      if (this.collapsed) { this.collapsed = false; store.set("collapsed", false); }
-      window.addEventListener("beforeunload", this._unload); // a run must not die silently
+      this.runRipreso = !!(plan && plan.startPage === "ripresa");
+      // Il giro sopravvive al cambio pagina: riprende da dov'era. Si avvisa
+      // prima di uscire solo dove riprendere non si può — le catene
+      // lab+radiologia, e il bookmarklet, che va ricliccato a mano.
+      if (!plan || !plan.riprendibile || !hasExt()) window.addEventListener("beforeunload", this._unload);
+      // …e intanto il pannello si fa piccolo: una striscia in un angolo che
+      // dice a che punto è, e il gestionale resta tutto tuo. La preferenza del
+      // medico NON si tocca (niente store.set): finito il giro torna com'era.
+      this.collapsed = true;
       this.render();
     }
     renderRun(state) { this.runData = state; this.render(); }
@@ -3028,8 +3179,9 @@
         head: `✓ ${n} ${n === 1 ? "esame" : "esami"} in carrello, ${n === 1 ? "verificato" : "verificati"}`,
         body: state.quesitoKept ? "Quesito del triage mantenuto." : "",
       };
+      if (!this.runRipreso) this.collapsed = !!store.get("collapsed", false);
       this.render();
-      if (state.finishedListUrl) this.chiudiRichiesta(state.finishedListUrl);
+      if (state.finishedListUrl) this.chiudiRichiesta(state.finishedListUrl, plan);
     }
 
     // Ultimo passo: la conferma. Si prova a farla in sottofondo — la pagina
@@ -3037,9 +3189,19 @@
     // bottone premuto davvero. Se il server non si lascia incorniciare, o se
     // un controllo dice di no, si va sulla pagina come si è sempre fatto: lì
     // il medico vede tutto e decide lui.
-    async chiudiRichiesta(listUrl) {
+    async chiudiRichiesta(listUrl, plan) {
       const daConfermare = !!tabStore.get("confirm.v1", null);
-      if (!daConfermare || DEMO) { setTimeout(() => nav(listUrl), 400); return; }
+      if (!daConfermare || DEMO) {
+        // Un giro ripreso vuol dire che stavi facendo altro: la pagina non te
+        // la porto via. Il carrello è pronto, ci vai col bottone.
+        if (plan && plan.startPage === "ripresa") {
+          this.message = { head: this.message?.head || "", body: "Il carrello è pronto: aprilo quando vuoi." };
+          this.render();
+          return;
+        }
+        setTimeout(() => nav(listUrl), 400);
+        return;
+      }
       this.message = { head: this.message?.head || "", body: "Confermo in sottofondo…" };
       this.render();
       let esito = "rifiutata";
@@ -3054,17 +3216,33 @@
       if (esito === "confermata") {
         // Confermata, ma i fogli non erano su quella pagina: si ricarica quella
         // del paziente e la stampa parte come è sempre partita.
+        // …a meno che il giro sia stato ripreso: lì stavi facendo altro, e la
+        // pagina non te la tocco. La stampa resta armata e parte da sola
+        // quando torni sulla scheda di questo paziente (mai su un'altra).
+        if (this.runRipreso && findEpisodeId(document, location.href) !== plan?.episodeId) {
+          this.message = { ok: "✓ Richiesta confermata. Le etichette partono quando torni sulla sua scheda." };
+          this.render();
+          return;
+        }
         tabStore.set(AVVISO, { testo: { ok: "✓ Richiesta confermata — senza passare dal carrello." }, ts: Date.now() });
         nav(location.href);
         return;
       }
       // Rifiutata (il server non si lascia incorniciare), sospesa (un controllo
       // ha detto di no) o incerta: si finisce sulla pagina vera, col motivo.
+      const motivo = esito === "incerta"
+        ? "Stato della conferma incerto: controlla il carrello prima di confermare."
+        : "Conferma automatica sospesa: controlla il carrello e premi tu Conferma.";
+      if (this.runRipreso) {
+        // giro ripreso: niente salti di pagina, il carrello si apre col bottone
+        this.message = { head: this.message?.head || "", body: esito === "rifiutata" ? "Conferma da fare a mano: apri il carrello." : motivo };
+        this.render();
+        return;
+      }
       if (esito !== "rifiutata") {
         tabStore.set(AVVISO, {
-          testo: esito === "incerta"
-            ? "Stato della conferma incerto: controlla il carrello prima di confermare."
-            : (typeof this.message === "string" && this.message) || "Conferma automatica sospesa: controlla il carrello e premi tu Conferma.",
+          testo: esito === "incerta" ? motivo
+            : (typeof this.message === "string" && this.message) || motivo,
           ts: Date.now(),
         });
       }
@@ -3073,7 +3251,11 @@
     failed(state, msg) {
       window.removeEventListener("beforeunload", this._unload);
       this.runState = "fail"; this.runData = state; this.message = msg;
-      if (this.collapsed) { this.collapsed = false; store.set("collapsed", false); } // an error may never hide
+      // un errore non si nasconde… ma un giro che riprenderà da solo non deve
+      // lasciare il pannello spalancato per sempre: la preferenza resta quella
+      // del medico
+      const riprenderà = !!tabStore.get(CORSA, null);
+      if (this.collapsed && !riprenderà) { this.collapsed = false; store.set("collapsed", false); }
       this.render();
     }
     stopped(state, msg) {
@@ -3219,7 +3401,17 @@
       const total = this.runData?.steps?.length || 0;
       const doneN = this.runData?.steps?.filter((s) => s.status === "ok").length || 0;
       // The panel is titled by the PATIENT it is acting on — collapsed too.
-      const who = (running && this.runPatient) || patientName || APP;
+      const who = (this.runState && this.runPatient) || patientName || APP;
+      // Mentre il giro va avanti il pannello è una striscia: chi, a che punto,
+      // e che cosa sta facendo adesso. Il gestionale resta usabile sotto.
+      const passo = (this.runData?.steps || []).find((s) => s.status === "running");
+      const fase = running
+        ? (passo ? `${passo.label}${passo.note ? " · " + passo.note : ""}` : "…")
+        : typeof this.message === "string" ? this.message
+          : (this.message?.ok || this.message?.head || this.message?.body || "");
+      // Sei su un'altra scheda: il giro continua (le richieste portano il loro
+      // episodio), ma va detto a chiare lettere di chi sono gli esami.
+      const altrove = !!(this.runState && this.runPatient && patientName && this.runPatient !== patientName);
       const pillInner = running
         ? `<span class="dot"></span> <span class="who">${esc(who)}</span> <span class="badge">${doneN}/${total}</span>`
         : this.selected.size
@@ -3266,7 +3458,19 @@
       this.root.innerHTML = `
         <style>${COLORS}</style>
         <div class="wrap" style="${posStyle}">
-          ${this.collapsed ? `
+          ${this.collapsed && this.runState ? `
+            <div class="strip">
+              <button class="pill run ${altrove ? "alt" : ""}" id="expand" title="${esc(who)}${
+                altrove ? " — stai guardando un'altra scheda" : ""} — tocca per aprire il pannello">
+                ${running ? `<span class="dot"></span>` : `<span class="tick">${this.runState === "done" ? "✓" : "!"}</span>`}
+                <span class="col">
+                  <span class="l1"><b>${esc(who)}</b>${total ? ` <span class="badge">${doneN}/${total}</span>` : ""}</span>
+                  <span class="l2">${esc(fase || (this.runState === "done" ? "fatto" : ""))}</span>
+                </span>
+              </button>
+              ${running ? `<button class="stopmini" id="stopbtn" title="Interrompi (Esc)">⏹</button>` : ""}
+            </div>
+          ` : this.collapsed ? `
             <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}</button>
           ` : `
             <div class="card" role="dialog" aria-label="${esc(APP)}" style="${sizeStyle}">
@@ -4415,8 +4619,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           <span class="ic">${s.status === "ok" ? "✓" : s.status === "running" ? "⟳" : s.status === "fail" ? "✕" : s.status === "skipped" ? "–" : "·"}</span>
           <span>${esc(s.label)}</span><small>${esc(s.note || "")}</small>
         </div>`).join("");
+      const qui = (document.title || "").trim();
       return `
         ${this.runPatient ? `<div class="idline" style="margin-top:0">Operazione per <b>${esc(this.runPatient)}</b></div>` : ""}
+        ${this.runPatient && qui && qui !== this.runPatient ? `<div class="banner warn">Stai guardando <b>${esc(qui)}</b>: questi esami sono di <b>${esc(this.runPatient)}</b> e vanno alla sua richiesta.</div>` : ""}
         <div class="sec"><div class="lbl">In corso — passo ${Math.min(doneN + 1, total)} di ${total}</div><div class="steps">${stepHtml}</div></div>
         <details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
@@ -4444,7 +4650,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         <div class="sec"><div class="steps">${steps}</div></div>
         <details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
-          ${!ok && listUrl ? `<button class="btn primary" id="openlist">Apri il carrello e controlla</button>` : ""}
+          ${listUrl && (!ok || this.runRipreso) ? `<button class="btn primary" id="openlist">${
+            ok ? "Apri il carrello" : "Apri il carrello e controlla"}</button>` : ""}
           <button class="btn ghost" id="reset">Torna al pannello</button>
         </div>
       `;
@@ -4985,6 +5192,41 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       document.documentElement.appendChild(f);
       f.src = listUrl;
     });
+  }
+
+  // Il giro che la navigazione ha interrotto: riprende da dov'era, su
+  // qualunque pagina del gestionale il medico sia finito. Quello che era IN
+  // VOLO si cerca in carrello e non si rimanda mai — l'unica cosa che la
+  // pagina morendo si porta via è la RISPOSTA, non l'ordine.
+  function riprendiCorsa(panel) {
+    const c = tabStore.get(CORSA, null);
+    if (!c) return false;
+    const daFare = (c.involo ? 1 : 0) + (c.restanti || []).length;   // roba ancora aperta: i soli «fatti» non bastano
+    const scaduta = Date.now() - (c.ts || 0) > CORSA_TTL;
+    const troppe = (c.riprese || 0) >= CORSA_MAX;
+    if (scaduta || troppe || !c.listUrl || !c.ep || !daFare) {
+      tabStore.set(CORSA, null);
+      if (daFare && (scaduta || troppe)) {
+        panel.message = `Il giro su ${c.paziente || "questo paziente"} era rimasto a metà da troppo tempo: apri il carrello e controlla.`;
+        panel.render();
+      }
+      return false;
+    }
+    const items = [];
+    // Quello che era già in carrello prima dell'interruzione rientra nel giro:
+    // si ricontrolla (mai si rimanda) così la ricevuta finale parla della
+    // richiesta intera, non solo del pezzo dopo la navigazione.
+    for (const f of c.fatti || []) items.push({ ...f, soloVerifica: true, giaFatto: true });
+    if (c.involo) items.push({ ...c.involo, soloVerifica: true });
+    for (const r of c.restanti || []) items.push({ ...r });
+    panel.runPatient = c.paziente || "";
+    panel.log(`${now()}  ── riprendo il giro dopo il cambio pagina: ${items.length} da sistemare ──`);
+    runPlan({
+      startPage: "ripresa", listUrl: c.listUrl, items,
+      episodeId: c.ep, autoConfirm: !!c.autoConfirm, quesito: c.quesito || "",
+      patientName: c.paziente || "", riprese: (c.riprese || 0) + 1,
+    }, panel);
+    return true;
   }
 
   function maybeAutoConfirm(panel, doc = document, url = location.href) {
@@ -5622,6 +5864,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (Date.now() - (av.ts || 0) < CONFIRM_FLAG_TTL) panel.message = av.testo;
     }
     panel.render();
+    // Un giro rimasto a metà viene prima di tutto: ha esami ancora da mandare,
+    // e riprende da qualunque pagina del gestionale — anche da quella di un
+    // altro paziente, perché le richieste portano il loro episodio con sé.
+    const ripresa = riprendiCorsa(panel);
     if (pageType === "patient") {
       // this patient is now one the panel knows (name + episode + page only)
       // only a page that can actually order is a patient: the ER worklist
@@ -5651,6 +5897,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       panel.render();
       panel.refreshRefCache();
       panel.caricaStorico();
+      if (ripresa) return;   // il giro ripreso arriva da sé a conferma e stampa
       if (pending) {
         // auto-continue once per richiesta; afterwards it is a button, so an
         // abandoned confirmation can never turn into a navigation loop
@@ -5668,7 +5915,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (rin.length) panel.log(`${now()}  ATTENZIONE: su questa pagina ${rin.length} codici portano un nome diverso da quello noto — ${rin.slice(0, 4).join(" · ")}`);
       panel.render(); // pick up anything just learned
       armPrintOnConfirm(model, findEpisodeId(document, location.href)); // native Conferma → print handoff
-      maybeAutoConfirm(panel);
+      if (!ripresa) maybeAutoConfirm(panel);   // prima si finisce di mandare gli esami
     }
     if (pageType === "crea") {
       // Mirror a quesito the server (triage) already filled in, so the panel

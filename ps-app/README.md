@@ -58,8 +58,10 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
      incolla il testo copiato nel campo **URL** → nominalo `PS Assist`.
   3. Su ogni pagina SA4PSO, **un click sul preferito** fa comparire il pannello. Unica
      differenza dall'estensione: dopo un cambio pagina (es. dopo la Conferma) va ricliccato —
-     conferma e wizard di stampa ripartono al click, perché i passaggi di consegna vivono
-     nella scheda.
+     conferma, ripresa del giro e wizard di stampa ripartono al click, perché i passaggi di
+     consegna vivono nella scheda. Per lo stesso motivo qui il browser continua ad avvisare
+     prima di lasciare una pagina mentre il giro sta mandando: senza un click nessuno lo
+     riprenderebbe.
 - A regime, la strada pulita è chiedere all'IT di consentire l'estensione (cartella locale o
   allowlist aziendale).
 
@@ -97,14 +99,31 @@ dove non c'è un paziente aperto; sulla scheda di un paziente parte dagli **Esit
    con la ✕ al passaggio del mouse.
    In una sede che la versione **- NEW** non ce l'ha ancora, il pannello ordina **quella di
    sempre** e lo scrive nel Registro: un codice nuovo non deve far fallire un ordine.
-3. **Crea e aggiungi N esami** → ricevuta + bottone **✓ CONFERMA → stampa**; oppure
+3. **Mentre manda, puoi fare altro.** Partito il giro il pannello si fa piccolo: una
+   **striscia** in un angolo con il nome del paziente, a che punto è (3/6) e che cosa sta
+   facendo in quel momento — *creo la richiesta*, *invio LIPASI*, *controllo il carrello 2/3*,
+   *confermo*. Sotto ci lavori normalmente: il gestionale non è bloccato e non compare più
+   «vuoi lasciare la pagina?».
+   **Se navighi, il giro non muore: riprende.** Il motore vive nella pagina e la pagina muore a
+   ogni click, quindi il giro è annotato passo per passo e riparte da solo sulla pagina dopo —
+   rilegge il carrello dal server, salta quello che c'è già, manda il resto. L'esame che era
+   **in volo** nell'istante del cambio pagina **non viene mai rimandato**: si cerca in
+   carrello, e se non c'è il giro si ferma e te lo dice (una provetta in più al laboratorio non
+   è un dettaglio). Finito, la pagina **non** te la porta via: il carrello lo apri col bottone,
+   e le etichette partono quando torni sulla scheda di quel paziente.
+   Un tocco sulla striscia apre il pannello intero (passi + Registro), il quadratino rosso
+   ferma tutto. Se intanto sei sulla scheda di un altro paziente la striscia diventa **ambra** e
+   lo scrive: gli esami restano quelli di chi li hai ordinati.
+4. **Crea e aggiungi N esami** → ricevuta + bottone **✓ CONFERMA → stampa**; oppure
    **+ Conferma 🖨** che fa tutto da solo e conferma **subito**: il click è la decisione, e la
    conferma parte solo se ogni controllo passa — episodio, richiesta, nome dell'ultimo esame, e
    **carrello identico alla ricevuta** (un avanzo di un tentativo precedente la **sospende** e
    la lascia a te).
    Selezionando laboratorio **e** radiologia il bottone diventa **Crea 2 richieste** e il pannello
-   le costruisce e le porta entrambe a conferma, con **una sola** stampa finale.
-4. **Stampa**: ogni richiesta con data, ora e la lista compatta degli esami.
+   le costruisce e le porta entrambe a conferma, con **una sola** stampa finale. Questa è
+   l'unica che **non** va in sottofondo: le due richieste vivono nella memoria del pannello, e
+   a metà non si riprendono — lì il browser avvisa ancora prima di cambiare pagina.
+5. **Stampa**: ogni richiesta con data, ora e la lista compatta degli esami.
 
 ### Esiti
 Due sezioni, una sotto l'altra: **Valori** e **Referti**.
@@ -540,6 +559,13 @@ stessi flussi dei test di prodotto.
    di prima — fidarsene voleva dire leggere «non c'è» un esame che c'era già, e ordinarlo una
    seconda volta. Costa una richiesta, e da quella rilettura arrivano anche i controlli di
    sessione ed episodio che quella strada saltava. C'è un test che lo prova.
+   **Il giro riprende, gli invii no.** Ogni passo è annotato nella scheda del browser: che cosa
+   è già in carrello, che cosa era **in volo**, che cosa resta. Se la pagina cambia, il giro
+   riparte da lì. Quello che era in volo si **cerca** (fino a 3 riletture, anche sotto un altro
+   nome), non si rimanda: se non si trova, stop e messaggio. Quello che era già entrato si
+   ricontrolla, e se nel frattempo qualcuno l'ha tolto dal carrello **non** viene rimesso.
+   L'appunto vale 10 minuti e al massimo 12 riprese, muore con la scheda del browser e con il
+   «fine turno», e non parte mai da solo dopo uno STOP o un errore che ha già fermato il giro.
    **Un esame può entrare in carrello con un numero diverso dal suo**: le prestazioni a
    riflesso (BILIRUBINA TOTALE REFLEX) ci mettono l'esame che ne deriva. Il motore fotografa il
    carrello *prima* dell'invio e guarda quale riga è comparsa *dopo*: vale solo se porta il
@@ -703,7 +729,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 60 scenari e2e in Chromium reale (+ storico e referti)
+└── test/                ← simulatore SA4PSO + 62 scenari e2e in Chromium reale (+ storico e referti)
 ```
 
 Sviluppo:
@@ -714,7 +740,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 60 scenari e2e + 32 sull'estensione + 42 sul banco + storico + il cancello privacy
+npm test           # 62 scenari e2e + 32 sull'estensione + 42 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
