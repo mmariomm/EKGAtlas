@@ -38,8 +38,6 @@ toccare il motore delle richieste.
 
 ## I Miei Turni
 
-`I Miei Turni/` è una pagina statica a sé (nessuna dipendenza, niente Vite): i turni
-mensili del PS di DEA e OSG letti dagli xlsx in `data/`. `npm run build` lì dentro rigenera
-`index.html` con i dati inlinati; `npm test` verifica parser e regole. Il contratto dati e
-le regole delle segnalazioni sono descritti nel suo README. Non va agganciata al deploy di
-EKG Atlas: contiene nomi reali di colleghi.
+La pagina dei turni del PS non sta più qui: vive nel suo repository privato,
+`mmariomm/imieiturni`. Non va riportata dentro EKG Atlas e non va agganciata al suo deploy —
+contiene nomi reali di colleghi, e questo sito è pubblico.
