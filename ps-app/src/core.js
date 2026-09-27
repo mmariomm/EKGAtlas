@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.40.0";
+  const VERSION = "3.40.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -4309,13 +4309,17 @@
       try {
         const r = await ask({ t: "apriStoricoSotto", url, ep: this.episodeId, nome: this.nomePaziente() });
         if (!r || !r.ok) { s = { esito: "rifiutato", why: r && r.why }; return; }
-        while (Date.now() - this._sotto.t0 < 40000) {
+        // la tabella si scorre a passi (il portale disegna solo le colonne in
+        // vista): con tanti prelievi ci vuole un po'
+        while (Date.now() - this._sotto.t0 < 60000) {
           await sleep(800);
           s = await ask({ t: "esitoSotto", tabId: r.tabId });
           if (!s || !s.ok || (s.esito !== "attesa" && s.esito !== "lettura")) break;
         }
       } finally {
         this._sotto = null;
+        // ancora «in lettura» allo scadere: quello che è arrivato è arrivato
+        if (s && s.esito === "lettura") s = { ...s, esito: "letto" };
         if (s && s.esito === "letto") {
           this.log(`${now()}  storico del portale letto in sottofondo: ${s.esami} esami · ${s.prelievi} prelievi`);
           this.notaPortale = "";
@@ -6410,7 +6414,26 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       new MutationObserver(() => { clearTimeout(attesa); attesa = setTimeout(leggi, 400); })
         .observe(osserva, { childList: true, subtree: true });
     }
-    leggi();
+    // Il portale disegna solo le colonne IN VISTA: il medico scorre la tabella e
+    // i prelievi compaiono. Nella scheda che il pannello ha aperto in sottofondo
+    // non scorre nessuno — e si leggevano solo i primi quattro. Lì la tabella la
+    // si scorre qui, a passi, da un capo all'altro: lo stesso gesto del medico,
+    // nessuna richiesta nostra. Ogni passo che disegna colonne nuove le aggiunge
+    // a quelle già lette (unisciStorico somma, non sostituisce).
+    const scorriTutto = async () => {
+      const sc = document.querySelector(".clinical-data-table__freeze-container-right");
+      if (!sc || sc.scrollWidth <= sc.clientWidth + 4) return;
+      const vai = async (x) => {
+        sc.scrollLeft = x;
+        sc.dispatchEvent(new Event("scroll"));   // in una scheda nascosta il browser non lo manda da sé
+        await sleep(700);
+        await leggi();
+      };
+      const passo = Math.max(60, Math.floor(sc.clientWidth * 0.7));
+      for (let x = 0; x < sc.scrollWidth; x += passo) await vai(x);
+      await vai(sc.scrollWidth);
+    };
+    leggi().then(() => { if (chiAprivo && chiAprivo.sotto) scorriTutto().catch(() => {}); });
   }
 
   boot();

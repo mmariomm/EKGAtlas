@@ -156,12 +156,20 @@ async function sottoControlla() {
     else if (s.fine && Date.now() - s.fine > 10 * 60e3) await chrome.storage.session.remove(k);
   }
 }
-// La scheda ha finito di caricare ma è rimasta sul gestionale: il link non
-// ha portato al portale (sessione scaduta, pagina d'errore). Inutile aspettare
-// 30 secondi — lo si dice subito, e il pannello legge i Risultati.
+// La scheda ha finito di caricare ma è RIMASTA sul gestionale: il link non ha
+// portato al portale (sessione scaduta, pagina d'errore). Inutile aspettare 30
+// secondi. Ma il rinvio al portale passa spesso da una pagina del gestionale
+// che salta da sé (meta refresh, script): quella finisce di caricare PRIMA del
+// salto. Quindi si guarda di nuovo dopo qualche secondo, e si conclude solo se
+// la scheda è ancora lì.
 chrome.tabs.onUpdated.addListener((id, info, tab) => {
-  if (info.status !== "complete" || !tab || !/^https:\/\/smarthealth\.multimedica\.it\//.test(tab.url || "")) return;
-  sottoGet(id).then((s) => s && s.esito === "attesa" && sottoFine(id, "nonportale")).catch(() => {});
+  const sulGestionale = (u) => /^https:\/\/smarthealth\.multimedica\.it\//.test(u || "");
+  if (info.status !== "complete" || !tab || !sulGestionale(tab.url)) return;
+  setTimeout(() => {
+    Promise.all([sottoGet(id), chrome.tabs.get(id).catch(() => null)]).then(([s, t]) => {
+      if (s && s.esito === "attesa" && t && t.status === "complete" && sulGestionale(t.url)) return sottoFine(id, "nonportale");
+    }).catch(() => {});
+  }, 4000);
 });
 chrome.tabs.onRemoved.addListener((id) => {
   sottoGet(id).then((s) => inCorso(s) && sottoSet(id, {

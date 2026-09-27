@@ -329,6 +329,49 @@ const risDopo = mock.state.requests.filter((q) => /RcsAccessiRisultatiElenco/.te
 check(risDopo === risPrima, `col portale le finestre Risultati non si leggono: lì ci sono già tutti i valori (got ${risDopo - risPrima} letture)`);
 check(!portale.isClosed(), "la scheda del portale che il medico aveva aperto non si tocca");
 
+// ---- il portale disegna solo le colonne IN VISTA (4): la scheda di
+// sottofondo scorre la tabella e le legge tutte, non solo le prime quattro
+const DATE8 = ["01/09/2026 08:00", "01/09/2026 12:00", "01/09/2026 16:00", "01/09/2026 20:00",
+  "02/09/2026 08:00", "02/09/2026 12:00", "02/09/2026 16:00", "02/09/2026 20:00"];
+const esami8 = [["EMOCROMO", "Emoglobina", "1201", "HB", ["13.1", "13.0", "12.9", "12.8", "12.7", "12.6", "12.5", "12.4"], [0, 0, 0, 0, 0, 0, 0, 0]]];
+const virtuale = `<script>(() => {
+  const sc = document.querySelector(".clinical-data-table__freeze-container-right");
+  const t = sc.querySelector("table");
+  const righe = [...t.rows].map((r) => [...r.cells].map((c) => c.outerHTML));
+  const classi = [...t.rows].map((r) => r.className);
+  const W = 100, VIS = 4, N = righe[0].length;
+  sc.style.cssText = "width:" + (W * VIS) + "px;overflow-x:auto;position:relative;height:200px";
+  const spazio = document.createElement("div"); spazio.style.cssText = "height:1px;width:" + (W * N) + "px";
+  const disegna = () => {
+    const da = Math.min(N - VIS, Math.max(0, Math.floor(sc.scrollLeft / W)));
+    t.innerHTML = righe.map((cs, i) => '<tr class="' + classi[i] + '">' + cs.slice(da, da + VIS).join("") + "</tr>").join("");
+    t.style.cssText = "position:absolute;top:0;left:" + (da * W) + "px;width:" + (W * VIS) + "px";
+  };
+  sc.appendChild(spazio); sc.addEventListener("scroll", disegna); disegna();
+})();</script>`;
+paginaCorrente = paginaStorico({ paziente: { idMPI: "900000005", cognome: "ROSSI", nome: "MARIO" }, date: DATE8, esami: esami8 })
+  .replace("</body>", virtuale + "</body>");
+const p4 = await ctx.newPage();
+await p4.goto(mock.patientUrl);
+await p4.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await p4.locator('#psassist-host [data-seg="esiti"]').click();
+await p4.waitForSelector("#psassist-host #risall", { timeout: 10000 });
+const nasce4 = ctx.waitForEvent("page", { timeout: 15000 });
+await p4.locator("#psassist-host #risall").click();
+const sotto4 = await nasce4.catch(() => null);
+if (sotto4) await sotto4.waitForEvent("close", { timeout: 60000 }).catch(() => {});
+// si aspetta che le colonne arrivino (il pannello le prende appena la scheda ha finito)
+await p4.waitForFunction(() => [...(document.getElementById("psassist-host")?.shadowRoot?.querySelectorAll(".sttab thead th") || [])]
+  .filter((t) => /0[12]\/09\/2026 (08|12|16|20):00/.test(t.getAttribute("title") || "")).length >= 8, { timeout: 20000 }).catch(() => {});
+const colonne8 = await p4.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  return [...r.querySelectorAll(".sttab thead th")].slice(1).map((t) => (t.getAttribute("title") || t.innerText).replace(/\s+/g, " ").trim())
+    .filter((t) => /0[12]\/09/.test(t)).length;
+});
+const testate8 = await p4.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".sttab thead th")].slice(1).map((t) => (t.getAttribute("title") || t.innerText).replace(/\s+/g, " ").trim().slice(0, 16)).join(" | "));
+const reg8 = await p4.evaluate(() => document.getElementById("psassist-host").shadowRoot.textContent.match(/storico del portale[^\n]{0,120}/g) || []);
+check(colonne8 >= 8, `il portale ne disegna 4 alla volta, la scheda di sottofondo li legge tutti (got ${colonne8} prelievi di settembre: ${testate8} · ${reg8.join(" / ")})`);
+
 await ctx.close();
 rmSync(PROFILE, { recursive: true, force: true });
 console.log(fail ? `\nSTORICO-ESTENSIONE: ${fail} CHECK FALLITI\n` : "\nSTORICO-ESTENSIONE: TUTTO OK\n");

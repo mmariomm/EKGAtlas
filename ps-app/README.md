@@ -311,7 +311,10 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   diretta al portale — e l'estensione lo apre in una **scheda di sottofondo**, accanto, senza
   toglierti la vista. Lì la tabella si legge come quando la apri tu; se il portale la tiene
   dietro la voce **Tabella**, la si apre con un clic nell'interfaccia, come faresti tu (solo nelle
-  schede aperte così). Arrivata la tabella, la scheda **si chiude da sola** — se ci sei andato
+  schede aperte così). Il portale disegna **solo le colonne in vista** (quattro prelievi alla
+  volta): nella scheda di sottofondo la tabella si **scorre da un capo all'altro**, a passi, come
+  faresti tu, e ogni passo aggiunge i prelievi nuovi — così arrivano tutti, non i primi quattro.
+  Arrivata la tabella, la scheda **si chiude da sola** — se ci sei andato
   sopra, resta tua. Per chi è lo sa la scheda stessa: la apre il pannello di quel paziente.
   La scheda del portale che hai aperto tu non si tocca. Se in 30 secondi la tabella non arriva
   (il portale chiede di entrare, si apre altrove, mostra un altro paziente) il pannello **dice
@@ -804,7 +807,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 64 scenari e2e + 43 sull'estensione + 44 sul banco + storico + il cancello privacy
+npm test           # 64 scenari e2e + 44 sull'estensione + 44 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
