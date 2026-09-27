@@ -1693,6 +1693,10 @@ async function scenarioHomePills(browser) {
   check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1,
     "su una pagina paziente si apre sugli Esiti, non sull'elenco");
   check(scen, (await $panel(page, "#q").count()) === 0, "e non sulle Richieste: ordinare è un tocco più in là");
+  // una nota su questo paziente: nell'elenco comparirà accanto al nome
+  await $panel(page, "#nota").fill("allergico a penicillina\nrivalutare ore 14");
+  await $panel(page, "#nota").press("Tab");
+  await page.waitForTimeout(300);
 
   await page.goto(mock.patientUrl.replace("999001", "999002"));
   await page.waitForSelector("#psassist-host", { state: "attached" });
@@ -1704,6 +1708,11 @@ async function scenarioHomePills(browser) {
   check(scen, cards.length === 2, `due pazienti conosciuti (got ${cards.length})`);
   check(scen, /qui/i.test(cards[0]), "il paziente della pagina è marcato «qui» ed è il primo");
   check(scen, /min fa|adesso|alle/.test(cards[1]), `gli altri mostrano quando (got: ${cards[1]?.replace(/\s+/g, " ").slice(0, 40)})`);
+  const desc = await page.locator("#psassist-host .pcard:not(.now) .pdesc").innerText().catch(() => "");
+  // (i due episodi del simulatore sono la stessa persona: la nota è di tutti e due)
+  check(scen, desc === "allergico a penicillina · rivalutare ore 14",
+    `accanto al nome, in grigio, la nota del paziente, su una riga (got: ${desc})`);
+  check(scen, (await $panel(page, ".pcard").first().boundingBox()).height <= 40, "e la riga resta una riga");
 
   // picking another patient LOADS HIS PAGE (never shows his data from here).
   // La scheda porta agli Esiti — dove si arriva comunque —, il bottoncino

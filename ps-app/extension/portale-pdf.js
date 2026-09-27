@@ -20,17 +20,19 @@
   let sotto = false;                       // scheda aperta dal pannello: niente finestre nuove
 
   const al = (msg) => { try { window.top.postMessage(msg, ORIGINE); } catch { /* niente */ } };
+  const preso = (buf, via) => {
+    conta.pdf++;
+    visti.push({ buf, via });
+    if (visti.length > 4) visti.shift();
+    al({ psassistPdf: 1, buf, via });
+  };
+  const ePdf = (buf) => buf && buf.byteLength > 8 && buf.byteLength < MAX && String.fromCharCode(...new Uint8Array(buf, 0, 5)) === "%PDF-";
   const guarda = (blob, via) => {
     try {
       if (!(blob instanceof Blob) || blob.size < 8 || blob.size > MAX) return;
       blob.slice(0, 5).arrayBuffer().then((t) => {
         if (String.fromCharCode(...new Uint8Array(t)) !== "%PDF-") return null;
-        return blob.arrayBuffer().then((buf) => {
-          conta.pdf++;
-          visti.push({ buf, via });
-          if (visti.length > 4) visti.shift();
-          al({ psassistPdf: 1, buf, via });
-        });
+        return blob.arrayBuffer().then((buf) => preso(buf, via));
       }).catch(() => {});
     } catch { /* niente */ }
   };
@@ -63,19 +65,27 @@
         try {
           const t = this.responseType;
           if (t === "blob" && this.response) { conta.rete++; guarda(this.response, "xhr"); }
-          else if (t === "arraybuffer" && this.response) { conta.rete++; guarda(new Blob([this.response]), "xhr"); }
+          // i byte ci sono già: la copia parte SUBITO, prima che la pagina
+          // salti altrove (il portale, avuto il PDF, porta la scheda sul blob:)
+          else if (t === "arraybuffer" && this.response) { conta.rete++; if (ePdf(this.response)) preso(this.response.slice(0), "xhr"); }
         } catch { /* niente */ }
       });
     } catch { /* niente */ }
     return manda.apply(this, arguments);
   };
   // 3. in una scheda aperta dal pannello (dietro, non la guarda nessuno) il
-  //    PDF non si apre in una finestra nuova: è già stato preso al punto 1
+  //    PDF non si apre altrove: né in una finestra nuova, né portando la
+  //    scheda sul blob: — la pagina deve restare finché la copia è partita
   const apri = window.open;
   window.open = function (u) {
     try { if (sotto && /^blob:/i.test(String(u || ""))) return null; } catch { /* niente */ }
     return apri.apply(this, arguments);
   };
+  try {
+    window.navigation?.addEventListener("navigate", (e) => {
+      try { if (sotto && e.cancelable && /^blob:/i.test(e.destination.url)) e.preventDefault(); } catch { /* niente */ }
+    });
+  } catch { /* browser senza Navigation API */ }
 
   // content.js parte a pagina pronta: chiede quelli già visti, e dice se la
   // scheda è una delle sue

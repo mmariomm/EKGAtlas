@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.44.0";
+  const VERSION = "3.45.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2992,6 +2992,7 @@
              padding: 4px 5px 4px 9px; margin-bottom: 4px; background: #fff; cursor: pointer; min-height: 30px; }
     .pcard .nm { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 700; color: #16232E;
                  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .pcard .pdesc { margin-left: 7px; font-size: 11.5px; font-weight: 400; color: #7A8A99; }
     .pcard .pago { flex: 0 0 auto; font-size: 10.5px; color: #7A8A99; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .pcard .pbtn { flex: 0 0 auto; padding: 3px 8px; font-size: 11px; border-radius: 6px; }
     .pcard .pbtn.px { padding: 3px 7px; color: #7A8A99; border-color: #E3E8EF; }
@@ -3830,13 +3831,25 @@
       // Una riga per paziente: il nome (tocco = Esiti), quando, e due
       // bottoncini — Richieste, e ✕ per toglierlo dall'elenco. Un turno ne
       // porta tanti: tre righe ciascuno riempivano il pannello di cornici.
-      const card = (p, current) => `
-        <div class="pcard ${current ? "now" : ""}" data-go="esiti" data-ep="${esc(p.ep)}" role="button" tabindex="0" title="Apri gli esiti di ${esc(p.name || "questo paziente")}${current ? " — episodio " + esc(p.ep) : ""}">
-          <span class="nm">${esc(p.name || "paziente")}</span>
+      // accanto al nome, in grigio, la nota del paziente se c'è: la chiave è
+      // quella annotata sulla sua pagina (codice fiscale), o il nome
+      const notaDi = (p) => {
+        for (const k of [p.pk, p.name ? "nome:" + normNome(p.name) : ""]) {
+          const t = k ? leggiNota(k) : "";
+          if (t) return t.replace(/\s*\n+\s*/g, " · ").trim();
+        }
+        return "";
+      };
+      const card = (p, current) => {
+        const nota = notaDi(p);
+        return `
+        <div class="pcard ${current ? "now" : ""}" data-go="esiti" data-ep="${esc(p.ep)}" role="button" tabindex="0" title="Apri gli esiti di ${esc(p.name || "questo paziente")}${current ? " — episodio " + esc(p.ep) : ""}${nota ? "\nNota: " + esc(nota) : ""}">
+          <span class="nm">${esc(p.name || "paziente")}${nota ? `<span class="pdesc">${esc(nota)}</span>` : ""}</span>
           ${current ? `<span class="ptag">qui</span>` : `<span class="pago">${esc(agoLabel(p.ts))}</span>`}
           <button class="pbtn" data-go="richieste" data-ep="${esc(p.ep)}" title="Richieste per ${esc(p.name || "questo paziente")}">Richieste</button>
           <button class="pbtn px" data-arch="${esc(p.ep)}" title="Togli dall'elenco: va negli archiviati. Nel gestionale non cambia niente." aria-label="Togli dall'elenco">✕</button>
         </div>`;
+      };
       const rigaArch = (p) => `
         <div class="arow">
           <span class="anm" title="${esc(p.name || "")}">${esc(p.name || "paziente")}</span>

@@ -108,10 +108,9 @@ await ctx.route("http://10.11.0.151:9080/**", async (r) => {
         const x = new XMLHttpRequest();
         x.open("GET", "/clin-port/rest/documenti/1/contenuto");
         x.responseType = "arraybuffer";
-        x.onload = () => {
-          const u = URL.createObjectURL(new Blob([x.response], { type: "application/pdf" }));
-          const f = document.createElement("iframe"); f.src = u; document.body.appendChild(f);
-        };
+        // come il portale vero: avuto il PDF, porta la scheda sul blob:
+        // (nella barra resta «blob:http://10.11.0.151:9080/…»)
+        x.onload = () => { location.href = URL.createObjectURL(new Blob([x.response], { type: "application/pdf" })); };
         x.send();
       }, 300);
     </script></body></html>` });
