@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.37.1";
+  const VERSION = "3.38.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -500,6 +500,44 @@
   // Le righe divise in sezioni, in ordine FISSO. L'ordine non deve dipendere da
   // come il laboratorio ha stampato la tabella: se dipendesse, lo stesso esame
   // cambierebbe posto da un prelievo all'altro e lo si cercherebbe ogni volta.
+  // La formula leucocitaria arriva in coppia — «Granulociti» (x10³/µL) e
+  // «Granulociti %» — e in tabella erano due righe con lo stesso nome, che il
+  // medico leggeva come doppioni (e che, per non confonderle, finivano pure
+  // scritte per esteso). Diventano UNA riga: il valore assoluto, e fra
+  // parentesi la percentuale. Il fuori range è quello dell'assoluto; una
+  // percentuale senza assoluto resta da sola («Altre 5.9%»).
+  const FORMULA = new Set(["Neu", "Lin", "Mon", "Eos", "Bas", "Altre"]);
+  function fondiFormula(righe) {
+    const ePct = (r) => /%/.test(String(r.nome || "")) || (r.valori || []).some((v) => v && String(v.um || "").trim() === "%");
+    const coppie = new Map();   // sigla → { abs, pct }
+    const out = [];
+    for (const r of righe || []) {
+      const sg = sigla(r.nome);
+      if (!FORMULA.has(sg)) { out.push(r); continue; }
+      const c = coppie.get(sg) || {};
+      const lato = ePct(r) ? "pct" : "abs";
+      // una terza riga con la stessa sigla non si indovina: resta com'è
+      if (c[lato]) { out.push(r); continue; }
+      c[lato] = r;
+      if (!coppie.has(sg)) { coppie.set(sg, c); out.push({ segnaposto: sg }); }
+    }
+    return out.map((r) => {
+      if (!r.segnaposto) return r;
+      const { abs, pct } = coppie.get(r.segnaposto);
+      if (!abs || !pct) return abs || pct;
+      const n = Math.max(abs.valori.length, pct.valori.length);
+      const valori = Array.from({ length: n }, (_, i) => {
+        const a = abs.valori[i], q = pct.valori[i];
+        if (a && a.v) return { ...a, pct: q && q.v ? String(q.v) : "" };
+        // solo la percentuale in quel prelievo: il numero porta il suo «%», e
+        // l'unità resta quella dell'assoluto per tutta la riga
+        if (q && q.v) return { ...q, v: String(q.v) + "%", um: "" };
+        return a || q;
+      });
+      return { ...abs, valori };
+    });
+  }
+
   function raggruppaStorico(righe) {
     const per = new Map();
     for (const r of righe || []) {
@@ -1990,6 +2028,61 @@
   const mnemonico = (label) => { const m = /\(([A-Z0-9._-]{3,})\)\s*$/i.exec(String(label || "").trim()); return m ? m[1].toUpperCase() : ""; };
   const normEsame = (s) => String(s || "").replace(/\s+/g, " ").trim().toUpperCase();
 
+  // Dove va un esame in QUESTA sede. Le risorse cambiano numero da una sede
+  // all'altra (e si riconoscono per nome), ma una sede può anche non avere
+  // proprio quella risorsa: a OSG il laboratorio «Urgenze» non esiste, e i
+  // suoi esami stanno nel laboratorio unico. Allora vale la risorsa offerta
+  // qui che ha lo STESSO esame — stesso nome o stesso mnemonico LIS — e mai un
+  // POC per un esame che POC non è (è un altro strumento, un'altra provetta),
+  // né il contrario. Nessun esame viene inviato sulla fiducia di questa
+  // scelta: il nome vero si ricontrolla sull'elenco vivo prima di ogni invio.
+  const ePoc = (label) => /\bPOC\b/i.test(String(label || ""));
+  function risorsaQui(it, opzioni, cat) {
+    const offerte = new Set(opzioni.map((o) => o.value));
+    if (!it.res || offerte.has(it.res)) return it.res ? { res: it.res } : null;
+    const nomeRis = (cat[it.res] && cat[it.res].label) || RES_SHORT[it.res] || "";
+    const atteso = chiaveRisorsa(nomeRis);
+    const stessoNome = atteso ? opzioni.find((o) => chiaveRisorsa(o.label) === atteso) : null;
+    if (stessoNome) return { res: stessoNome.value, perNome: true, opt: stessoNome };
+    const mioPoc = ePoc(nomeRis) || ePoc(it.label);
+    const mioNome = normEsame(it.label), mioMn = mnemonico(it.label);
+    if (!mioNome || /^ESAME \d+$/.test(mioNome)) return null;
+    for (const o of opzioni) {
+      if (ePoc(o.label) !== mioPoc) continue;
+      const voci = Object.entries((cat[o.value] && cat[o.value].items) || {});
+      const hit = voci.find(([, l]) => normEsame(l) === mioNome) || (mioMn ? voci.find(([, l]) => mnemonico(l) === mioMn) : null);
+      if (hit) return { res: o.value, code: hit[0], label: hit[1], opt: o };
+    }
+    return null;
+  }
+  // Come si chiamano in reparto → come comincia il nome nel catalogo del LIS.
+  const ALIAS_RICERCA = {
+    PCR: ["PROTEINA C REATTIVA"], PCT: ["PROCALCITONINA"],
+    EGA: ["EMOGAS", "EGA "], GGT: ["GAMMA GT"], AST: ["GOT"], ALT: ["GPT"],
+    BNP: ["NT PRO-BNP", "NT-PRO", "BNP"], TROPO: ["TROPONINA"], TROP: ["TROPONINA"],
+    EMOCROMO: ["EMOCROMOCITOMETRICO"], URINE: ["ESAME URINE"],
+  };
+  // a parità di nome: urgenze, poi il laboratorio, poi il POC, poi il resto
+  function ordineRisorsa(res, cat) {
+    const l = chiaveRisorsa((cat[res] && cat[res].label) || RES_SHORT[res] || "");
+    if (/URGENZ/.test(l)) return 0;
+    if (/\bPOC\b/.test(l)) return 2;
+    if (/^LABORATORIO/.test(l)) return 1;
+    return 3;
+  }
+  // un nome corto per una risorsa che RES_SHORT non conosce (quelle di
+  // un'altra sede): «LABORATORIO ANALISI POC - OSG (P)» → «POC»
+  function risorsaCorta(res, cat = fullCatalog()) {
+    if (RES_SHORT[res]) return RES_SHORT[res];
+    const l = chiaveRisorsa((cat[res] && cat[res].label) || "");
+    if (!l) return res;
+    if (/\bPOC\b/.test(l)) return "POC";
+    if (/URGENZ/.test(l)) return "Urgenze";
+    if (/^RADIOLOGIA/.test(l)) return l.replace(/^RADIOLOGIA\s*-?\s*/, "").replace(/RISONANZA MAGNETICA NUCLEARE/, "RMN").trim() || "Radiologia";
+    if (/^LABORATORIO/.test(l)) return "Laboratorio";
+    return l.slice(0, 18);
+  }
+
   function fullCatalog() {
     const out = {};
     for (const [res, v] of Object.entries(EMBEDDED_CATALOG)) out[res] = { label: v.label, items: { ...v.items } };
@@ -2201,20 +2294,15 @@
       const offered = new Set(model.resOptions.map((o) => o.value));
       if (offered.size) {
         const cat = fullCatalog();
-        const perChiave = new Map();
-        for (const o of model.resOptions) {
-          const k = chiaveRisorsa(o.label);
-          if (k && !perChiave.has(k)) perChiave.set(k, o);
-        }
         for (const i of plan.items) {
           if (!i.res || offered.has(i.res)) continue;
-          const atteso = chiaveRisorsa((cat[i.res] && cat[i.res].label) || RES_SHORT[i.res] || "");
-          const trovata = atteso ? perChiave.get(atteso) : null;
-          if (trovata) {
-            log(`risorsa di questo presidio: «${trovata.label}» ${trovata.value} (nel catalogo ${i.res})`);
-            i.resCat = i.res;        // il catalogo che conosce questo esame resta quello di partenza
-            i.res = trovata.value;   // the exam's own name is verified before any send
-          }
+          const dove = risorsaQui(i, model.resOptions, cat);
+          if (!dove) continue;
+          if (dove.perNome) log(`risorsa di questo presidio: «${dove.opt.label}» ${dove.res} (nel catalogo ${i.res})`);
+          else log(`«${i.display || i.label}»: qui la risorsa ${risorsaCorta(i.res, cat)} non c'è — lo stesso esame sta in «${dove.opt.label}»`);
+          i.resCat = i.res;        // il catalogo che conosce questo esame resta quello di partenza
+          i.res = dove.res;        // the exam's own name is verified before any send
+          if (dove.code && dove.code !== i.code) i.code = dove.code;
         }
         const wrongRes = plan.items.filter((i) => i.res && !offered.has(i.res));
         if (wrongRes.length) {
@@ -2281,13 +2369,13 @@
 
         // Switch list when the exam lives on another resource.
         if (it.res && model.res !== it.res) {
-          running(st, `passo a ${RES_SHORT[it.res] || it.res}`);
+          running(st, `passo a ${risorsaCorta(it.res)}`);
           ({ doc, url } = await fetchDoc(model.listUrl(it.res) || state.lastListUrl, { signal }));
           guardSession(doc);
           assertSameEpisode(doc, plan.episodeId, "elenco esami");
           model = examModel(doc, url);
           learnFrom(model);
-          if (model.res !== it.res) throw new StopError(`Cambio risorsa fallito (${RES_SHORT[it.res] || it.res})`, "Nessun ordine inviato per questo esame.");
+          if (model.res !== it.res) throw new StopError(`Cambio risorsa fallito (${risorsaCorta(it.res)})`, "Nessun ordine inviato per questo esame.");
           noteList();
         }
 
@@ -2402,7 +2490,7 @@
         }
         if (!link) {
           const gia = model.exams.some((e) => e.code === it.code && e.isDel);
-          throw new StopError(`«${nm}» non è nell'elenco di ${RES_SHORT[it.res] || it.res}`,
+          throw new StopError(`«${nm}» non è nell'elenco di ${risorsaCorta(it.res)}`,
             gia ? "Risulta già nel carrello: controlla a mano." : "Non inviato. Completa a mano.");
         }
         // Anti wrong-exam guardrail: the LIVE row label must match what the
@@ -2775,17 +2863,19 @@
     .seg2 button.on { border-color: #9DBFDE; background: #EAF2FA; color: #0B5CAD; }
     .seg2 button:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     .rgo { flex: 0 0 auto; color: #8296A9; font-size: 12px; }
-    .pcard { border: 1px solid #E3E8EF; border-radius: 10px; padding: 9px 10px; margin-bottom: 7px; background: #fff; cursor: pointer; }
+    .pcard { display: flex; align-items: center; gap: 6px; border: 1px solid #E3E8EF; border-radius: 8px;
+             padding: 4px 5px 4px 9px; margin-bottom: 4px; background: #fff; cursor: pointer; min-height: 30px; }
+    .pcard .nm { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 700; color: #16232E;
+                 overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .pcard .pago { flex: 0 0 auto; font-size: 10.5px; color: #7A8A99; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .pcard .pbtn { flex: 0 0 auto; padding: 3px 8px; font-size: 11px; border-radius: 6px; }
+    .pcard .pbtn.px { padding: 3px 7px; color: #7A8A99; border-color: #E3E8EF; }
+    .pcard .pbtn.px:hover { color: #B3261E; border-color: #E8B4B0; background: #FDF1F0; }
     .pcard:hover { border-color: #9DBFDE; background: #F4F9FD; }
     .pcard:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
-    .pgo { float: right; color: #0B5CAD; font-weight: 700; font-size: 11px; }
     .pcard.now { border-color: #9DBFDE; background: #EAF2FA; }
-    .pname { display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; font-weight: 700; margin-bottom: 2px; }
     .ptag { flex: 0 0 auto; font-size: 9.5px; font-weight: 800; letter-spacing: .4px; color: #0B5CAD; background: #EAF2FA;
             border: 1px solid #9DBFDE; border-radius: 999px; padding: 1px 7px; text-transform: uppercase; }
-    .pmeta { font-size: 10.5px; color: #5B6B7A; margin-bottom: 7px; font-variant-numeric: tabular-nums; }
-    .pname .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .pacts { display: flex; gap: 6px; }
     .pbtn { flex: 1 1 0; border: 1px solid #C4D0DC; background: #fff; color: #16232E; border-radius: 8px;
             padding: 8px 6px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
     .pbtn:hover { border-color: #0B5CAD; background: #EAF2FA; color: #0B5CAD; }
@@ -2846,8 +2936,6 @@
                      font-weight: 700; cursor: pointer; text-decoration: underline; }
     .avvlista { white-space: pre-wrap; font-size: 11px; line-height: 1.45; color: #5B6B7A;
                 background: #FFFDF7; border: 1px solid #EEDFC0; border-radius: 8px; padding: 6px 9px; margin-bottom: 6px; }
-    .pbtn.pdim { color: #177245; border-color: #BCE0C9; }
-    .pbtn.pdim:hover { background: #EDF7F0; border-color: #177245; color: #124F31; }
     .archhd { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 8px; cursor: pointer;
               border: 1px solid #E3E8EF; border-radius: 9px; background: #F8FBFE; padding: 7px 10px;
               font: 600 12px/1 inherit; color: #5B6B7A; }
@@ -2943,6 +3031,7 @@
        compresi), non tutta la cella: il margine negativo compensa il padding,
        così il numero non si sposta quando la pastiglia compare. */
     .sttab td .val { display: inline-block; border-radius: 999px; padding: 0 5px; margin: 0 -5px; }
+    .sttab td .pct { font-weight: 500; color: #7A8A99; font-style: normal; }
     .sttab td.marca1 .val { background: #FFE58A; }
     .sttab td.marca2 .val { background: #FFC46B; }
     .sttab tbody tr:hover td, .sttab tbody tr:hover th.stn { background: #F4F9FD; }
@@ -3421,7 +3510,9 @@
       } else if (this.pageType === "crea") {
         const allowed = new Set((param(location.href, "RISORSE") || "").split(",").filter(Boolean));
         if (allowed.size) {
-          const wrong = items.filter((i) => i.res && !allowed.has(i.res));
+          const cat = fullCatalog();
+          const opzioni = [...allowed].map((v) => ({ value: v, label: (cat[v] && cat[v].label) || v }));
+          const wrong = items.filter((i) => i.res && !risorsaQui(i, opzioni, cat));
           if (wrong.length) both(`Non ordinabili in questa richiesta: ${wrong.map((i) => i.display || shortLabel(i.label)).join(", ")}.`);
         }
         const form = document.forms.namedItem("RICHIESTACrea");
@@ -3429,9 +3520,11 @@
         if (items.length && !pageQ && !(this._q || "").trim()) both("Scrivi il quesito diagnostico (nel pannello o nella pagina).");
       } else if (this.pageType === "exam") {
         const live = examModel(document, location.href);
-        const offered = new Set(live.resOptions.map((o) => o.value));
-        if (offered.size) {
-          const wrong = items.filter((i) => i.res && !offered.has(i.res));
+        if (live.resOptions.length) {
+          // lo stesso criterio del motore: un esame che in questa sede sta in
+          // un'altra risorsa (per nome, o perché ha lo stesso esame) si ordina
+          const cat = fullCatalog();
+          const wrong = items.filter((i) => i.res && !risorsaQui(i, live.resOptions, cat));
           if (wrong.length) both(`Non ordinabili in questa richiesta: ${wrong.map((i) => i.display || shortLabel(i.label)).join(", ")}.`);
         }
       }
@@ -3451,7 +3544,7 @@
         const items = arr.map((i) =>
           `<span class="selitem" title="${esc(i.label)}">${esc(i.display || shortLabel(i.label))}<button class="selx" data-unsel="${esc(this.key(i.res, i.code))}" title="Rimuovi" aria-label="Rimuovi ${esc(i.display || shortLabel(i.label))}">✕</button></span>`
         ).join(", ");
-        return `<span class="selgrp">${esc((RES_SHORT[r] || r).toUpperCase())}:</span> ${items}`;
+        return `<span class="selgrp">${esc(risorsaCorta(r).toUpperCase())}:</span> ${items}`;
       });
       return `<div class="selbar"><span class="selcount">${this.selected.size} SELEZIONATI</span>${groups.map((g) => `<div class="selrow">${g}</div>`).join("")}</div>`;
     }
@@ -3606,14 +3699,15 @@
       // The card itself opens the Esiti — from the panel you go to a patient to
       // SEE something. Ordering stays one small button away; opening him from
       // the EHR instead lands on Richieste (that navigation means "act").
+      // Una riga per paziente: il nome (tocco = Esiti), quando, e due
+      // bottoncini — Richieste, e ✕ per toglierlo dall'elenco. Un turno ne
+      // porta tanti: tre righe ciascuno riempivano il pannello di cornici.
       const card = (p, current) => `
-        <div class="pcard ${current ? "now" : ""}" data-go="esiti" data-ep="${esc(p.ep)}" role="button" tabindex="0" title="Apri gli esiti di ${esc(p.name || "questo paziente")}">
-          <div class="pname"><span class="nm">${esc(p.name || "paziente")}</span>${current ? `<span class="ptag">qui</span>` : ""}</div>
-          <div class="pmeta">${current ? `episodio ${esc(p.ep)}` : esc(agoLabel(p.ts))}<span class="pgo">Esiti ›</span></div>
-          <div class="pacts">
-            <button class="pbtn" data-go="richieste" data-ep="${esc(p.ep)}">Richieste</button>
-            <button class="pbtn pdim" data-arch="${esc(p.ep)}" title="Lo toglie da questo elenco e lo mette negli archiviati. Nel gestionale non cambia niente.">Togli dall'elenco</button>
-          </div>
+        <div class="pcard ${current ? "now" : ""}" data-go="esiti" data-ep="${esc(p.ep)}" role="button" tabindex="0" title="Apri gli esiti di ${esc(p.name || "questo paziente")}${current ? " — episodio " + esc(p.ep) : ""}">
+          <span class="nm">${esc(p.name || "paziente")}</span>
+          ${current ? `<span class="ptag">qui</span>` : `<span class="pago">${esc(agoLabel(p.ts))}</span>`}
+          <button class="pbtn" data-go="richieste" data-ep="${esc(p.ep)}" title="Richieste per ${esc(p.name || "questo paziente")}">Richieste</button>
+          <button class="pbtn px" data-arch="${esc(p.ep)}" title="Togli dall'elenco: va negli archiviati. Nel gestionale non cambia niente." aria-label="Togli dall'elenco">✕</button>
         </div>`;
       const rigaArch = (p) => `
         <div class="arow">
@@ -3704,10 +3798,10 @@
         const elsewhere = receipt ? receipt.items.filter((i) => i.res !== live.res && !here.has(i.code)) : [];
         cartSec = `
           <div class="sec">
-            <div class="lbl">Già nel carrello — ${esc(RES_SHORT[live.res] || live.res || "?")} (${inCart.length})</div>
+            <div class="lbl">Già nel carrello — ${esc(live.res ? risorsaCorta(live.res) : "?")} (${inCart.length})</div>
             <div class="chips">
               ${inCart.map((e) => `<span class="chip cart">${esc(shortLabel(e.label))}</span>`).join("") || `<span class="hint">Ancora nessun esame su questa risorsa.</span>`}
-              ${elsewhere.map((i) => `<span class="chip ghosted" title="verificato su ${esc(RES_SHORT[i.res] || i.res)}">${esc(i.display || shortLabel(i.label))} · ${esc(RES_SHORT[i.res] || i.res)} ✓</span>`).join("")}
+              ${elsewhere.map((i) => `<span class="chip ghosted" title="verificato su ${esc(risorsaCorta(i.res))}">${esc(i.display || shortLabel(i.label))} · ${esc(risorsaCorta(i.res))} ✓</span>`).join("")}
             </div>
           </div>`;
       }
@@ -3950,10 +4044,11 @@
     // divergere, e la differenza la scopre il medico.
     tabellaStorico(st, nov = null, segni = {}) {
       const col = st.date.map((d, i) => ({ ...d, i })).reverse();   // il più recente a sinistra
-      const ambS = sigleAmbigue(st.righe);
+      const righe = fondiFormula(st.righe);   // «Neu 4.0 (56%)»: una riga, non due
+      const ambS = sigleAmbigue(righe);
       const inatteso = (r) => !siglaCurata(r.nome) || ambS.has(sigla(r.nome));
       const simboli = new Map();   // esame → segno, uno per tutta la tabella
-      const gruppi = raggruppaStorico(st.righe)
+      const gruppi = raggruppaStorico(righe)
         .map((g) => ({ ...g, righe: g.righe.filter((r) => !this.soloAlterati || r.valori.some((v) => v.v && v.stato)) }))
         .filter((g) => g.righe.length);
 
@@ -3979,7 +4074,7 @@
             tip ? ` title="${esc(tip)}${v.parziale ? " · parziale" : ""}"` : v.parziale ? ` title="parziale"` : ""
           }><span class="val">${esc(v.v)}${v.stato ? (v.stato < 0 ? "↓" : "↑") : ""}${
             sg ? `<i class="prov" title="${esc(daChi ? "fatto con " + daChi + (p.solita ? " — gli altri con " + p.solita : "") : "")}">${esc(sg)}</i>` : ""
-          }</span></td>`;
+          }</span>${v.pct ? `<span class="pct"> (${esc(v.pct)}%)</span>` : ""}</td>`;
         }).join("");
         const etichetta = inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome);
         return `<tr><th class="stn${inatteso(r) ? " grezza" : ""}" title="${esc(r.nome)}${
@@ -4671,20 +4766,51 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         && !tabStore.get(this.risKey(x.id), null) && !this.rottiTab.has(x.id));
     }
 
+    // Le risorse di QUESTA sede, lette dalla pagina: i link «Richieste
+    // Laboratorio/Radiologia» (paziente), l'indirizzo (nuova richiesta), la
+    // tendina (esami). Vuoto = non si sa, e allora si mostra tutto.
+    risorseQui() {
+      const ids = new Set();
+      const da = (u) => (param(u || "", "RISORSE") || "").split(",").filter(Boolean).forEach((x) => ids.add(x));
+      if (this.pageType === "patient") { da(this.entry?.labUrl); da(this.entry?.radioUrl); }
+      else da(location.href);
+      if (this.pageType === "exam") examModel(document, location.href).resOptions.forEach((o) => ids.add(o.value));
+      return ids;
+    }
+
     viewBrowse(cat) {
       const q = (this.acq || "").trim().toUpperCase();
       let drop = "";
       if (q.length >= 2) {
+        // I nomi che si dicono in reparto non sono quelli del laboratorio:
+        // «PCR» è «PROTEINA C REATTIVA», che scrivendo PCR non si trovava —
+        // e restava solo la PCR POC.
+        const alias = ALIAS_RICERCA[q] || [];
+        // solo le risorse di questa sede: senza, ogni esame compariva due
+        // volte, una per sede, con un codice che qui non vale
+        // (se di questa sede il catalogo non conosce ancora niente, si mostra
+        // tutto: meglio un doppione che una ricerca vuota)
+        const noti = [...this.risorseQui()].filter((r) => cat[r]);
+        const qui = new Set(noti);
         const hits = [];
         for (const [res, v] of Object.entries(cat)) {
+          if (qui.size && !qui.has(res)) continue;
           for (const [code, label] of Object.entries(v.items || {})) {
-            if (label.toUpperCase().includes(q)) hits.push({ res, code, label });
+            const L = label.toUpperCase();
+            const perAlias = alias.some((x) => L.startsWith(x));
+            if (perAlias || L.includes(q)) hits.push({ res, code, label, perAlias, poc: ePoc(label) || ePoc(v.label) });
           }
         }
-        hits.sort((a, b) => a.label.toUpperCase().indexOf(q) - b.label.toUpperCase().indexOf(q) || a.label.localeCompare(b.label));
+        // prima il nome che il medico intendeva, e fra quelli il laboratorio
+        // prima del POC; poi chi comincia con quello che ha scritto
+        const rango = (h) => (h.perAlias ? 0 : 1) * 10 + (h.poc ? 1 : 0);
+        hits.sort((a, b) => rango(a) - rango(b)
+          || a.label.toUpperCase().indexOf(q) - b.label.toUpperCase().indexOf(q)
+          || ordineRisorsa(a.res, cat) - ordineRisorsa(b.res, cat)
+          || a.label.localeCompare(b.label));
         drop = `<div class="acdrop">${
           hits.slice(0, 12).map((h) => `<button class="acitem ${this.isSel(h.res, h.code) ? "on" : ""}" data-res="${esc(h.res)}" data-code="${esc(h.code)}" title="${esc(h.label)}">
-            <span class="acnm">${esc(h.label)}</span><span class="actag">${esc(RES_SHORT[h.res] || h.res)}</span></button>`).join("")
+            <span class="acnm">${esc(h.label)}</span><span class="actag">${esc(risorsaCorta(h.res, cat))}</span></button>`).join("")
           || `<div class="acempty">Nessun esame trovato</div>`}</div>`;
       }
       return `<div class="ac"><input id="acq" type="search" autocomplete="off" placeholder="altri esami…" value="${esc(this.acq || "")}">${drop}</div>`;
@@ -5407,10 +5533,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           ? inCart.map((e) => String(e.code))
           : (Array.isArray(carrelli[res]) ? carrelli[res].map(String) : null);
         if (res === model.res) vistiQui = visti.length;
-        if (!visti) { guai.push(`${RES_SHORT[res] || res}: carrello non visto`); continue; }
+        if (!visti) { guai.push(`${risorsaCorta(res)}: carrello non visto`); continue; }
         const estranei = visti.filter((c) => !attesi.has(c));
         if (estranei.length || visti.length !== attesi.size) {
-          guai.push(`${RES_SHORT[res] || res}: ${visti.length} nel carrello, ${attesi.size} aggiunti${estranei.length ? ` (estranei ${estranei.join(", ")})` : ""}`);
+          guai.push(`${risorsaCorta(res)}: ${visti.length} nel carrello, ${attesi.size} aggiunti${estranei.length ? ` (estranei ${estranei.join(", ")})` : ""}`);
         }
       }
       if (guai.length) {

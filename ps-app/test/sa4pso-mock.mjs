@@ -13,6 +13,15 @@
  *   - Post/Redirect/Get by default; direct-render mode as a variant
  */
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// La seconda sede (OSG) com'è davvero: solo POC e un laboratorio unico — il
+// laboratorio «Urgenze» non c'è — con gli elenchi veri del catalogo.
+const CATALOGO_VERO = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/catalog.json"), "utf8"));
+export const OSG = { POC: "00650002P", LAB: "00290002P" };
+
 const ORIGIN = "https://smarthealth.multimedica.it";
 const PATH = "/sa4pso/restrict/menuPsoEpisodio.do";
 
@@ -24,6 +33,8 @@ const LAB_RES = [RES.POC, RES.CENTRAL, RES.URGENZE];
 const RADIO_RES = [RES.RX, RES.ECO, RES.RMN, RES.TAC];
 
 export const RES_LABEL = {
+  [OSG.POC]: CATALOGO_VERO[OSG.POC].label,
+  [OSG.LAB]: CATALOGO_VERO[OSG.LAB].label,
   [RES.POC]: "LABORATORIO ANALISI POC - SSG (P)",
   [RES.URGENZE]: "LABORATORIO ANALISI URGENZE - SSG (P)",
   [RES.CENTRAL]: "LABORATORIO ANALISI - SSG (P)",
@@ -226,7 +237,8 @@ export function createMock(opts = {}) {
   // After swapEpisodeAfter handled requests, every page renders as ANOTHER
   // episode — the client's wrong-patient guard must abort before any Insert.
   const EP = () => (state.requests.length > (opts.swapEpisodeAfter ?? Infinity) ? "666999" : EP0);
-  const risorseOf = (tipo) => (tipo === "radio" ? RADIO_RES : LAB_RES);
+  const labRes = opts.sedeOSG ? [OSG.POC, OSG.LAB] : LAB_RES;
+  const risorseOf = (tipo) => (tipo === "radio" ? RADIO_RES : labRes);
   // opts.altroPresidio: resource ids and exam codes shift, labels do not
   const R = (res) => (opts.altroPresidio ? (ALTRO_PRESIDIO[res] || res) : res);
   const Rback = (res) => (opts.altroPresidio
@@ -337,7 +349,7 @@ export function createMock(opts = {}) {
   }
 
   function creaPage(params) {
-    const risorse = (params.get("RISORSE") || LAB_RES.join(",")).split(",");
+    const risorse = (params.get("RISORSE") || labRes.join(",")).split(",");
     const rid = state.nextRichiestaId++;
     state.allocated[rid] = { tipo: RADIO_RES.includes(risorse[0]) ? "radio" : "lab", risorse };
     const prefill = opts.prefilledQuesito || "";
@@ -378,7 +390,7 @@ export function createMock(opts = {}) {
     // opts.nuoveVersioni: {codiceVecchio: codiceNuovo} — il laboratorio
     // affianca al vecchio esame la sua versione «- NEW» e lascia in elenco
     // tutti e due, come fa davvero su una delle due sedi
-    const cat = { ...(CATALOG[res] || {}) };
+    const cat = { ...(CATALOG[res] || (CATALOGO_VERO[res] && CATALOGO_VERO[res].items) || {}) };
     for (const [vecchio, nuovo] of Object.entries(opts.nuoveVersioni || {})) {
       if (cat[vecchio] && !cat[nuovo]) cat[nuovo] = String(cat[vecchio]).replace(/\s*\(([^)]*)\)\s*$/, " - NEW ($11)");
     }

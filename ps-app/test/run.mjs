@@ -8,7 +8,7 @@
  * Screenshots for design review land in TEST_SHOTS_DIR if set.
  */
 import { chromium } from "playwright";
-import { createMock, RES } from "./sa4pso-mock.mjs";
+import { createMock, RES, OSG } from "./sa4pso-mock.mjs";
 import { readFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -634,6 +634,47 @@ async function scenarioRipresaDueVolteInVolo(browser) {
   const rid = Object.keys(mock.state.richieste)[0];
   check(scen, mock.state.insertCount[`${rid}:159`] === 1, "inviato una volta sola, mai rimandato");
   check(scen, mock.state.richieste[rid].confirmed === false, "e la richiesta NON viene confermata senza di lui");
+  await context.close();
+}
+
+// La seconda sede (OSG) non ha il laboratorio «Urgenze»: gli esami di quella
+// colonna stanno nel laboratorio unico. La PCR deve andare lì — non nel POC,
+// che è un altro strumento — e cercando «PCR» si deve trovare quella.
+async function scenarioSedeOSG(browser) {
+  const scen = "sede-osg";
+  const mock = createMock({ sedeOSG: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+
+  // la ricerca: «PCR» trova PROTEINA C REATTIVA, prima del POC, e solo di questa sede
+  await $panel(page, "#acq").fill("PCR");
+  await page.waitForSelector("#psassist-host .acitem", { timeout: 5000 });
+  const voci = await page.locator("#psassist-host .acitem").allInnerTexts();
+  const prima = (voci[0] || "").replace(/\s+/g, " ");
+  check(scen, /PROTEINA C REATTIVA/.test(prima) && !/POC/.test(prima),
+    `scrivendo PCR la prima voce è la PCR di laboratorio (got: ${prima})`);
+  const ids = await page.locator("#psassist-host .acitem").evaluateAll((els) => els.map((e) => e.getAttribute("data-res")));
+  check(scen, ids.every((r) => r === OSG.POC || r === OSG.LAB),
+    `solo esami di questa sede, niente doppioni dell'altra (got ${[...new Set(ids)].join(",")})`);
+  check(scen, !voci.some((v) => /0029000|0065000/.test(v)), "e le risorse hanno un nome, non un numero");
+  await $panel(page, "#acq").fill("");
+
+  // il bottone PCR (colonna Urgenze) a OSG va nel laboratorio unico
+  await $panel(page, "#q").fill("febbre");
+  await $panel(page, '.opt[title*="PROTEINA C REATTIVA"]').click();
+  await $panel(page, "#go").click();
+  await page.waitForFunction(() => {
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    return !!r?.querySelector(".banner.ok, .banner.err") || /esami in carrello/.test(r?.querySelector(".pill.run .l2")?.textContent || "");
+  }, { timeout: 30000 });
+  const rid = Object.keys(mock.state.richieste)[0];
+  const carrello = [...mock.state.richieste[rid].cart.entries()];
+  check(scen, carrello.length === 1 && carrello[0][1] === OSG.LAB && carrello[0][0] === "293",
+    `la PCR è nel laboratorio unico, non nel POC (got ${JSON.stringify(carrello)})`);
+  check(scen, !Object.keys(mock.state.insertCount).some((k) => k.endsWith(":266")), "la PCR POC non viene nemmeno tentata");
+  const err = await $panel(page, ".banner.err").count();
+  check(scen, err === 0, "nessun errore di risorsa");
   await context.close();
 }
 
@@ -1613,6 +1654,9 @@ async function scenarioHomePills(browser) {
   await page.goto(mock.patientUrl.replace("999001", "999002"));
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, "#back").click(); // to Home
+  await shot(page, scen + "-lista");
+  const alta = (await $panel(page, ".pcard").first().boundingBox()).height;
+  check(scen, alta <= 40, `una riga per paziente, non una scheda (${Math.round(alta)}px)`);
   const cards = await page.locator("#psassist-host .pcard").allInnerTexts();
   check(scen, cards.length === 2, `due pazienti conosciuti (got ${cards.length})`);
   check(scen, /qui/i.test(cards[0]), "il paziente della pagina è marcato «qui» ed è il primo");
@@ -2394,6 +2438,7 @@ const scenarios = [
   ["il giro riprende dopo un cambio pagina", scenarioRipresa],
   ["l'esame in volo non viene mai rimandato", scenarioRipresaInVoloPerso],
   ["due interruzioni: l'in volo resta in volo", scenarioRipresaDueVolteInVolo],
+  ["seconda sede (OSG): la PCR va nel laboratorio, non nel POC", scenarioSedeOSG],
   ["pagina inattesa dopo l'inserimento: rilegge il carrello", scenarioAvvisoDopoInsert],
   ["prelievi refertati: restano colonne della tabella", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],

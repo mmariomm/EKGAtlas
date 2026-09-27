@@ -116,6 +116,19 @@ const daFinestra = await page.evaluate(() => {
 check(daFinestra.righe >= 8 && daFinestra.sigle.includes("Hb") && daFinestra.sigle.includes("GB"),
   `la tabella legge i valori veri, in sigla (${daFinestra.righe} analiti: ${daFinestra.sigle.slice(0, 6).join(", ")})`);
 check(daFinestra.rosse >= 1, `e segna i fuori range (${daFinestra.rosse} celle)`);
+// la formula leucocitaria: una riga per cellula, l'assoluto e fra parentesi la
+// percentuale — non più «Granulociti» e «Granulociti %» come due righe
+const formula = await page.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  const riga = [...r.querySelectorAll(".sttab tbody tr:not(.stsez)")].find((tr) => tr.querySelector("th.stn")?.firstChild?.textContent.trim() === "Neu");
+  return { neu: [...r.querySelectorAll(".sttab tbody tr:not(.stsez) th.stn")].filter((t) => t.firstChild.textContent.trim() === "Neu").length,
+           cella: riga ? riga.querySelector("td")?.innerText.trim() : "",
+           grezze: [...r.querySelectorAll(".sttab th.stn.grezza")].map((t) => t.textContent.trim()) };
+});
+check(formula.neu === 1 && /^\d+(\.\d+)?↑?↓?\s*\(\d+(\.\d+)?%\)$/.test(formula.cella),
+  `neutrofili in una riga sola, «assoluto (percentuale)» (${formula.neu} riga: «${formula.cella}»)`);
+check(!formula.grezze.some((g) => /granulociti|linfociti/i.test(g)),
+  `e la formula non finisce più fra i nomi scritti per esteso (${formula.grezze.join(", ") || "nessuno"})`);
 // ---- i prelievi letti sono le colonne di una tabella sola, divisa per gruppo
 check(daFinestra.sezioni.length >= 2 && daFinestra.colonne >= 2,
   `divisi per gruppo, una colonna a prelievo (${daFinestra.sezioni.join(", ")} · ${daFinestra.colonne} colonne)`);

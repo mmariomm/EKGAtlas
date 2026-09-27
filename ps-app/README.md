@@ -80,8 +80,9 @@ paziente per *vedere*); il bottoncino **Richieste** resta per ordinare. Aprire u
 gestionale** porta allo stesso posto: gli **Esiti**, perché è quasi sempre quello che si va a
 fare. Ordinare è un tocco più in là — **Richieste** è sempre in cima.
 
-L'elenco dei pazienti su cui hai lavorato nel turno: quello della pagina aperta è primo e marcato
-**QUI**, gli altri con quando li hai visti. Da ogni scheda scegli **Richieste** o **Esiti**.
+L'elenco dei pazienti su cui hai lavorato nel turno, **una riga per paziente**: il nome (un tocco
+apre gli Esiti), quando l'hai visto — o **QUI** per quello della pagina aperta, che è il primo —,
+il bottoncino **Richieste** e la **✕** per toglierlo dall'elenco.
 Sceglierne un altro **carica la sua pagina**: il pannello non mostra mai i dati di un paziente
 diverso da quello che hai davanti. Il pannello parte da qui solo sulla lista del pronto soccorso,
 dove non c'è un paziente aperto; sulla scheda di un paziente parte dagli **Esiti**.
@@ -99,6 +100,13 @@ dove non c'è un paziente aperto; sulla scheda di un paziente parte dagli **Esit
    con la ✕ al passaggio del mouse.
    In una sede che la versione **- NEW** non ce l'ha ancora, il pannello ordina **quella di
    sempre** e lo scrive nel Registro: un codice nuovo non deve far fallire un ordine.
+   **La seconda sede (OSG)** non ha il laboratorio «Urgenze»: POC e un laboratorio unico. Gli
+   esami della colonna Urgenze vanno nella risorsa di questa sede che ha **lo stesso esame** —
+   stesso nome o stesso mnemonico LIS — e **mai** in un POC (un altro strumento, un'altra
+   provetta): la PCR del bottone finisce nel laboratorio, non fra i POC. In «altri esami…» si
+   vedono solo le risorse della sede in cui sei (prima ogni esame usciva due volte, una per
+   sede), e i nomi di reparto funzionano: **PCR** trova «PROTEINA C REATTIVA» (prima trovava
+   solo «PCR POC»), e così PCT, EGA, GGT, AST/ALT, BNP, tropo — il laboratorio prima del POC.
 3. **Mentre manda, puoi fare altro.** Partito il giro il pannello si fa piccolo: una
    **striscia** in un angolo con il nome del paziente, a che punto è (3/6) e che cosa sta
    facendo in quel momento — *creo la richiesta*, *invio LIPASI*, *controllo il carrello 2/3*,
@@ -137,7 +145,11 @@ fondo **Altri** — i dettagli più sotto), una colonna per prelievo, **il più 
 data e ora per esteso e **gli esami** compresi in quella richiesta.
 
 - I nomi sono in **sigla** (`Hb`, `GB`, `PLT`…), con l'**unità fra parentesi accanto al nome**
-  (`GB (x10³/µL)`) e il **range nel tooltip del valore**. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
+  (`GB (x10³/µL)`) e il **range nel tooltip del valore**.
+- La **formula leucocitaria** è una riga per cellula: il valore **assoluto** e fra parentesi la
+  **percentuale** — `Neu 4.0 (56%)`. Il laboratorio le manda in coppia («Granulociti» e
+  «Granulociti %»), che prima erano due righe con lo stesso nome. Il fuori range è quello
+  dell'assoluto; una percentuale che arriva da sola resta da sola. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
   vale per un'abbreviazione ambigua — e una riga d'avviso in cima dice **quali**.
 - La tabella è **larga quanto i suoi numeri**, non quanto il pannello: se allarghi la finestra i
   valori restano **accanto ai nomi** invece di allontanarsene, e sono allineati a sinistra
@@ -747,7 +759,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 63 scenari e2e in Chromium reale (+ storico e referti)
+└── test/                ← simulatore SA4PSO + 64 scenari e2e in Chromium reale (+ storico e referti)
 ```
 
 Sviluppo:
@@ -758,7 +770,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 63 scenari e2e + 32 sull'estensione + 42 sul banco + storico + il cancello privacy
+npm test           # 64 scenari e2e + 32 sull'estensione + 44 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
