@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.43.0";
+  const VERSION = "3.44.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1568,6 +1568,18 @@
     return "altro";
   }
 
+  // Quali sistemi di referti stanno nel portale (lo si scopre al primo tocco:
+  // il link del gestionale rimanda là). Vale un turno, poi si riverifica.
+  const nelPortale = (e) => {
+    if (!hasExt() || !e || !e.sistema) return false;
+    const t = (store.get("refPortale", {}) || {})[String(e.sistema).toUpperCase()];
+    return !!t && Date.now() - t < 12 * 3600e3;
+  };
+  const segnaPortale = (e) => {
+    if (!e || !e.sistema) return;
+    store.set("refPortale", { ...(store.get("refPortale", {}) || {}), [String(e.sistema).toUpperCase()]: Date.now() });
+  };
+
   function esitiModel(doc, baseUrl) {
     const out = [
       ...risultatiModel(doc, baseUrl).map((r) => ({ ...r, kind: "valori", label: r.exams.join(", ") })),
@@ -1682,6 +1694,19 @@
       // Dopo «URL=» finisce l'attributo: si prende tutto quello che resta.
       const meta = doc.querySelector('meta[http-equiv="refresh" i]')?.getAttribute("content") || "";
       const rinvio = /url\s*=\s*(.+)$/is.exec(meta);
+      // Un rinvio verso un ALTRO server è il portale (ECG, radiologia): là il
+      // referto si apre con un accesso a token, e la pagina lo scarica e lo
+      // mostra da sé. Da qui non si legge e non ci si prova nemmeno (niente
+      // replay, niente attese): chi chiama lo apre nel portale, in una scheda.
+      if (rinvio) {
+        let dest = null;
+        try { dest = new URL(rinvio[1].trim().replace(/^(["'])([\s\S]*)\1$/, "$2").trim().replace(/&amp;/gi, "&"), base); } catch { /* niente */ }
+        if (dest && dest.origin !== location.origin && /^https?:$/.test(dest.protocol)) {
+          const x = new StopError("Il referto si apre nel portale", `rimanda a ${dest.origin}`);
+          x.portale = dest.origin;
+          throw x;
+        }
+      }
       domCands.push(rinvio ? rinvio[1].trim().replace(/^(["'])([\s\S]*)\1$/, "$2").trim() : undefined);
       for (const m of text.matchAll(/window\.open\(\s*["']([^"']+)["']/gi)) domCands.push(m[1]);
       for (const c of domCands) { const r = await attempt(c, "link nella pagina"); if (r) return r; }
@@ -4478,13 +4503,22 @@
         let res = null;
         const motivi = [];
         try {
+          if (nelPortale(e)) { const x = new StopError("Il referto si apre nel portale", "come gli altri di questo sistema"); x.portale = true; throw x; }
           const r = await fetchPdf(e.url, {});
           res = await ask({ t: "cacheRef", id: e.id, ep: this.episodeId, pk: this.chiavePaz(), data: bufB64(await r.blob.arrayBuffer()), size: r.blob.size });
           if (!(res && res.ok)) motivi.push(`memoria: ${(res && res.why) || "non riuscito"}`);
         } catch (err) {
-          motivi.push(`${err?.head || err?.message || err}${err?.body ? ` — ${err.body}` : ""}${err?.diag ? ` [${err.diag}]` : ""}`);
-          res = await ask({ t: "cacheRef", id: e.id, url: e.url, ep: this.episodeId, pk: this.chiavePaz() });
-          if (!(res && res.ok)) motivi.push(`service worker: ${(res && res.why) || "non riuscito"}`);
+          if (err && err.portale) {
+            // sta nel portale: si legge dalla sua scheda, come al tocco
+            segnaPortale(e);
+            try { await this.refertoDalPortale(e); res = { ok: true, size: this.refCache?.[e.id] || 1 }; }
+            catch (err2) { err = err2; res = null; }
+          }
+          if (!(res && res.ok)) motivi.push(`${err?.head || err?.message || err}${err?.body ? ` — ${err.body}` : ""}${err?.diag ? ` [${err.diag}]` : ""}`);
+          if (!(res && res.ok) && !(err && (err.portale || /portale/i.test(err.head || "")))) {
+            res = await ask({ t: "cacheRef", id: e.id, url: e.url, ep: this.episodeId, pk: this.chiavePaz() });
+            if (!(res && res.ok)) motivi.push(`service worker: ${(res && res.why) || "non riuscito"}`);
+          }
           if (!(res && res.ok)) this.diagnosi = { cosa: `referto ${shortLabel(e.label)} (${e.sistema || "?"})`, url: e.url, html: (err && err.html) || "", diag: motivi.join(" · "), quando: now() };
         }
         if (res && res.ok) {
@@ -4506,6 +4540,39 @@
 
     txtKey(id) { return `reftxt.${this.episodeId || "x"}.${id}`; }
 
+    // Il referto sta nel portale (ECG, radiologia): si apre col link del
+    // gestionale — lo stesso clic del medico — in una scheda DIETRO. Là la
+    // pagina lo scarica e lo mostra da sé, e lo script del portale ne passa
+    // una copia; la scheda si chiude. Nessuna richiesta nostra.
+    async refertoDalPortale(e) {
+      const r = await ask({ t: "apriRefertoSotto", url: e.url, id: e.id, ep: this.episodeId, pk: this.chiavePaz() });
+      if (!r || !r.ok) throw new StopError("Portale non aperto", (r && r.why) || "estensione non raggiungibile");
+      this.log(`${now()}  ${shortLabel(e.label)}: lo apro nel portale, in una scheda dietro`);
+      const fine = Date.now() + 45e3;
+      let s = null;
+      while (Date.now() < fine) {
+        await sleep(900);
+        s = await ask({ t: "esitoSotto", tabId: r.tabId });
+        if (!s || !s.ok || (s.esito !== "attesa" && s.esito !== "lettura")) break;
+      }
+      if (!s || !s.ok || s.esito !== "letto") {
+        const perche = {
+          login: "il portale chiede di entrare: aprilo una volta e fai l'accesso",
+          tempo: "il portale non l'ha mostrato in tempo", attesa: "il portale non l'ha mostrato in tempo",
+          nonportale: "il link non ha portato al portale (sessione del gestionale?)",
+          nonTrovato: "il portale l'ha aperto, ma il PDF non si vede da qui",
+          chiusa: "la scheda del portale è stata chiusa", altrove: "la scheda del portale è andata altrove",
+        }[s && s.esito] || (s && s.esito) || "nessuna risposta dall'estensione";
+        const x = new StopError("Referto non letto dal portale", perche);
+        if (s && s.diag) x.diag = s.diag;
+        throw x;
+      }
+      const g = await ask({ t: "getRef", id: e.id, ep: this.episodeId });
+      if (!(g && g.ok && g.data)) throw new StopError("Referto letto ma non ritrovato", "riprova");
+      this.refCache = { ...(this.refCache || {}), [e.id]: Math.round(g.data.length * 3 / 4) || 1 };
+      return Uint8Array.from(atob(g.data), (c) => c.charCodeAt(0)).buffer;
+    }
+
     // Radiology and ECG reports become TEXT inside the panel: their PDFs carry
     // a real font map, so the words can be recovered exactly. Everything else
     // stays a document to open. The PDF itself is never shown here — the ↗
@@ -4518,21 +4585,35 @@
         this.render();
         try {
           let buf;
-          try {
+          // già salvato (pallino verde): si legge la copia, senza chiedere niente a nessuno
+          if (hasExt() && (this.refCache || {})[id]) {
+            const g = await ask({ t: "getRef", id, ep: this.episodeId });
+            if (g && g.ok && g.data) buf = Uint8Array.from(atob(g.data), (c) => c.charCodeAt(0)).buffer;
+          }
+          // un sistema che si è già visto stare nel portale (ECG, RIS) ci va
+          // diretto: chiedere di nuovo il link al gestionale solo per scoprire
+          // che rimanda là sarebbe una richiesta in più a ogni tocco
+          if (!buf && nelPortale(e)) buf = await this.refertoDalPortale(e);
+          if (!buf) try {
             buf = await (await fetchPdf(e.url, {})).blob.arrayBuffer();
           } catch (err) {
-            // Dal pannello no: ci prova il service worker, che può seguire il
-            // rinvio anche sul server del portale. Se neanche lui, il perché
-            // dei due tentativi resta sul pallino e nella diagnosi.
             if (err?.name === "AbortError" || !hasExt()) throw err;
-            const r = await ask({ t: "cacheRef", id, url: e.url, ep: this.episodeId, pk: this.chiavePaz() });
-            const g = r && r.ok ? await ask({ t: "getRef", id, ep: this.episodeId }) : null;
-            if (!(g && g.ok && g.data)) {
-              err.diag = `${err.diag ? `${err.diag} · ` : ""}service worker: ${(r && r.why) || "non riuscito"}`;
-              throw err;
+            if (err && err.portale) {
+              // il referto sta nel portale: lo si legge dalla scheda del portale
+              segnaPortale(e);
+              buf = await this.refertoDalPortale(e);
+            } else {
+              // Dal pannello no: ci prova il service worker. Se neanche lui, il
+              // perché dei due tentativi resta sul pallino e nella diagnosi.
+              const r = await ask({ t: "cacheRef", id, url: e.url, ep: this.episodeId, pk: this.chiavePaz() });
+              const g = r && r.ok ? await ask({ t: "getRef", id, ep: this.episodeId }) : null;
+              if (!(g && g.ok && g.data)) {
+                err.diag = `${err.diag ? `${err.diag} · ` : ""}service worker: ${(r && r.why) || "non riuscito"}`;
+                throw err;
+              }
+              buf = Uint8Array.from(atob(g.data), (c) => c.charCodeAt(0)).buffer;
+              this.refCache = { ...(this.refCache || {}), [id]: r.size || 1 };
             }
-            buf = Uint8Array.from(atob(g.data), (c) => c.charCodeAt(0)).buffer;
-            this.refCache = { ...(this.refCache || {}), [id]: r.size || 1 };
           }
           const blob = { size: buf.byteLength };
           const letto = await testoPdf(buf);
@@ -6384,6 +6465,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // and hands it to the patient's page. Nothing else.
     if (haStorico(document)) { bootStorico(); return; }
     if (!SA4PSO) {
+      // Una scheda che il pannello ha aperto per un REFERTO: qui non c'è
+      // nessuna tabella da aspettare, si aspetta il PDF (vedi sotto).
+      let perReferto = false;
+      const chi = hasExt() ? ask({ t: "chiAprivo" }).catch(() => null) : Promise.resolve(null);
+      chi.then((r) => { if (r && r.ok && r.sotto && r.cosa === "referto") { perReferto = true; leggiRefertoPortale(); } });
       // The portal is a single-page application: it paints the table AFTER
       // this script has run, and reaching it is an in-app route change that
       // never re-injects us. Probing once would mean never reading anything.
@@ -6408,7 +6494,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         // voce «Tabella», la si apre — un clic nell'interfaccia del portale,
         // come farebbe il medico, e UNA volta sola.
         let mia = false;
-        if (hasExt()) { try { const r = await ask({ t: "chiAprivo" }); mia = !!(r && r.ok && r.sotto); } catch { /* no */ } }
+        const r0 = await chi;
+        if (perReferto || (r0 && r0.ok && r0.sotto && r0.cosa === "referto")) return;
+        mia = !!(r0 && r0.ok && r0.sotto);
         if (mia) {
           let cliccato = false;
           for (let giro = 0; giro < 8 && !document.getElementById("psassist-host") && !haStorico(document); giro++) {
@@ -6552,6 +6640,77 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // ---------------------------------------------------- portale clinico
   // A strip at the bottom of the portal page: what was read, for whom, and a
   // way to read it again after moving the columns. No panel, no ordering.
+  // Una scheda del portale aperta dal pannello per leggere un REFERTO (ECG,
+  // radiologia). Il PDF lo ha in mano la pagina — l'ha scaricato lei, per
+  // mostrarlo — e portale-pdf.js, che sta nel suo mondo, ne passa una copia:
+  // qui la si porta al service worker, che la tiene e chiude la scheda. Se il
+  // portale chiede di entrare lo si dice; se il PDF non arriva, si manda com'è
+  // fatta la pagina (mai il contenuto), per capire perché.
+  function leggiRefertoPortale() {
+    let fatto = false;
+    let sguardo = null;   // i conti di portale-pdf.js: se risponde, e cosa ha visto
+    const consegna = (buf, via) => {
+      if (fatto || !buf || !(buf.byteLength > 8)) return;
+      fatto = true;
+      ask({ t: "refertoSotto", data: bufB64(buf), size: buf.byteLength, via }).catch(() => {});
+    };
+    window.addEventListener("message", (ev) => {
+      const d = ev.data;
+      if (ev.origin !== location.origin || !d || typeof d !== "object") return;
+      if (d.psassistPdfPronto === 1) {
+        const v = sguardo || { blob: 0, rete: 0, pdf: 0 };
+        sguardo = { blob: Math.max(v.blob, d.blob || 0), rete: Math.max(v.rete, d.rete || 0), pdf: Math.max(v.pdf, d.pdf || 0) };
+      }
+      if (d.psassistPdf === 1) consegna(d.buf, d.via || "");
+    });
+    // a tutti i frame di questa origine: «sei una scheda del pannello» e
+    // «ripeti quelli già visti» (lo script del portale parte prima di noi)
+    const chiedi = () => {
+      const tutti = [window];
+      for (let i = 0; i < window.frames.length; i++) tutti.push(window.frames[i]);
+      for (const w of tutti) { try { w.postMessage({ psassistSotto: 1, psassistPdfChiedi: 1 }, location.origin); } catch { /* altra origine */ } }
+    };
+    // …e la pagina stessa: un PDF dentro un frame, un embed o un object come blob:
+    const nellaPagina = async () => {
+      for (const el of document.querySelectorAll("iframe[src], embed[src], object[data]")) {
+        const src = el.getAttribute("src") || el.getAttribute("data") || "";
+        if (!/^blob:/i.test(src)) continue;
+        try {
+          const b = await (await fetch(src)).arrayBuffer();
+          if (b.byteLength > 8 && String.fromCharCode(...new Uint8Array(b, 0, 5)) === "%PDF-") return consegna(b, "pagina");
+        } catch { /* revocato, o d'altra origine */ }
+      }
+    };
+    (async () => {
+      for (let giro = 0; giro < 25 && !fatto; giro++) {
+        if (document.querySelector('input[type="password"]')) { ask({ t: "sottoLogin" }).catch(() => {}); return; }
+        chiedi();
+        await nellaPagina();
+        await sleep(1000);
+      }
+      if (!fatto) ask({ t: "refertoSottoDiag", diag: diagPortale(sguardo) }).catch(() => {});
+    })();
+  }
+  // Com'è fatta la pagina del portale, senza niente del paziente: il percorso
+  // (numeri tolti), i frame e cosa mostrano, e cosa ha visto portale-pdf.js.
+  function diagPortale(sguardo) {
+    const senzaId = (x) => String(x || "").replace(/[?#].*$/, "").replace(/\d{2,}/g, "#").slice(0, 80);
+    const hash = String(location.hash || "").replace(/[?].*$/, "").replace(/\d+/g, "#").slice(0, 60);
+    const frame = [...document.querySelectorAll("iframe, embed, object")].slice(0, 6).map((el) => {
+      const src = el.getAttribute("src") || el.getAttribute("data") || "";
+      const tipo = el.getAttribute("type") ? `[${el.getAttribute("type")}]` : "";
+      return `${el.tagName.toLowerCase()}${tipo} ${/^blob:/i.test(src) ? "blob:" : src ? senzaId(src) : "(vuoto)"}`;
+    });
+    return [
+      `portale ${senzaId(location.pathname)}${hash ? " " + hash : ""}`,
+      sguardo ? `sguardo sì (blob ${sguardo.blob} · rete ${sguardo.rete} · pdf ${sguardo.pdf})` : "sguardo NO (portale-pdf.js non risponde)",
+      `frame: ${frame.length ? frame.join(", ") : "nessuno"}`,
+      `canvas ${document.querySelectorAll("canvas").length}`,
+      `textLayer ${document.querySelectorAll(".textLayer").length}`,
+      `script ${document.scripts.length}`,
+    ].join(" · ");
+  }
+
   function bootStorico() {
     document.getElementById("psassist-attesa")?.remove();
     let unito = null;

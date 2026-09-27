@@ -75,27 +75,53 @@ await page.locator("#psassist-host #refreset").click();
 await page.waitForTimeout(1200);
 check(await page.locator("#psassist-host .rdot.saved").count() === 0, "Resetta svuota i salvataggi");
 
-// ---- un referto RIS che il gestionale rimanda al portale (un altro server) ----
-// Dal pannello non si legge (altra origine, e in http): al tocco ci prova il
-// service worker, che segue il rinvio della pagina fino al portale. Il PDF è
-// di quelli veri: cifrato, font Type0 con un nome qualsiasi — il lettore di
-// casa non lo legge, pdf.js sì.
+// ---- un referto (RIS/ECG) che il gestionale manda al portale -----------------
+// Com'è davvero (dalla diagnosi di un ECG): il link del gestionale risponde
+// «Redirect in corso…» con un meta refresh verso clin-port/loginPC.jsp?token=…;
+// là il portale scarica il PDF da sé e lo mostra come blob:. Il pannello non
+// lo scarica: apre lo stesso link in una scheda DIETRO, lo script del portale
+// passa la copia che la pagina ha già in mano, la scheda si chiude, e il testo
+// (cifrato, font Type0: lo legge pdf.js) compare nel pannello.
 const eRis = (u) => u.pathname.endsWith("/Sa4ViewerExtRedirect.do") && /RIS/.test(u.searchParams.get("REFERTO_SISTEMA") || "");
 const pdfRis = pdfCifrato(RIGHE_ESEMPIO);
-let alPortale = 0; const chi = [];
+const chi = [];
+let senzaPdf = false;   // più sotto: un portale che il PDF non lo mostra
 await ctx.route((u) => eRis(new URL(u)), async (r) => {
   await r.fulfill({ status: 200, headers: { "content-type": "text/html" },
-    body: `<html><head><meta http-equiv="refresh" content="0;url=http://10.11.0.151:9080/clin-port/documento?id=1"></head><body></body></html>` });
+    body: `<html><head></head><body><font class="AFCFormHeaderFont">Redirect in corso...</font><br><table><tbody><tr>
+      <td class="AFCDataTD"><meta http-equiv="refresh" content="0; URL=http://10.11.0.151:9080/clin-port/loginPC.jsp?token=abc123"></td>
+      </tr></tbody></table></body></html>` });
 });
 await ctx.route("http://10.11.0.151:9080/**", async (r) => {
-  alPortale++; chi.push(`${r.request().serviceWorker() ? "sw" : "pagina"}:${r.request().resourceType()}`);
-  await r.fulfill({ status: 200, headers: { "content-type": "application/pdf" }, body: pdfRis });
+  const req = r.request();
+  chi.push(`${req.serviceWorker() ? "sw" : "pagina"}:${new URL(req.url()).pathname}`);
+  if (/\/clin-port\/rest\//.test(req.url())) {
+    return r.fulfill({ status: 200, headers: { "content-type": "application/pdf" }, body: pdfRis });
+  }
+  if (senzaPdf) return r.fulfill({ status: 200, headers: { "content-type": "text/html" }, body: "<!doctype html><html><body><div id=app>Portale clinico</div></body></html>" });
+  // la «single page application» del portale: entra col token, scarica il
+  // referto e lo mostra in un frame come blob: — tutto da sé
+  return r.fulfill({ status: 200, headers: { "content-type": "text/html" }, body: `<!doctype html><html><body>
+    <div id="app">Portale clinico</div>
+    <script>
+      setTimeout(() => {
+        const x = new XMLHttpRequest();
+        x.open("GET", "/clin-port/rest/documenti/1/contenuto");
+        x.responseType = "arraybuffer";
+        x.onload = () => {
+          const u = URL.createObjectURL(new Blob([x.response], { type: "application/pdf" }));
+          const f = document.createElement("iframe"); f.src = u; document.body.appendChild(f);
+        };
+        x.send();
+      }, 300);
+    </script></body></html>` });
 });
 const p2 = await ctx.newPage();
 await p2.goto(mock.patientUrl);
 await p2.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 await p2.locator('#psassist-host [data-seg="esiti"]').click();
 await p2.waitForSelector('#psassist-host [data-esito]', { timeout: 10000 });
+const schedePrima = ctx.pages().length;
 await p2.locator('#psassist-host [data-esito][data-kind="referto"]:has-text("TC ENCEFALO")').first().click();
 const letto = await p2.waitForFunction(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
@@ -103,14 +129,33 @@ const letto = await p2.waitForFunction(() => {
 }, { timeout: 60000 }).then(() => true).catch(() => false);
 const tipsRosso = await p2.locator("#psassist-host .rrow.err").first().getAttribute("title", { timeout: 1000 }).catch(() => null);
 const testo = await p2.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".reftxt")?.textContent || "");
-// il testo lo legge pdf.js, che l'estensione carica nella scheda solo adesso
+await p2.waitForTimeout(800);
+const schedeDopo = ctx.pages().filter((p) => !p.isClosed()).length;
 await p2.locator("#psassist-host #verbtn").click();   // il Registro, dal numero di versione in fondo
 await p2.waitForSelector("#psassist-host .log", { state: "attached", timeout: 5000 }).catch(() => {});
 const registro = await p2.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".log")?.textContent || "");
-check(/testo letto \(\d+ righe, pdf\.js\)/.test(registro), `testo letto con pdf.js (${(/testo (?:letto|non letto)[^\n]*/.exec(registro) || ["niente nel registro"])[0].slice(0, 140)})`);
-check(testo.includes(RIGHE_ESEMPIO[0]) && testo.includes(RIGHE_ESEMPIO[1]), `il testo del referto nel pannello (got: ${testo.slice(0, 80)})`);
-check(letto && !tipsRosso && chi.includes("sw:fetch"),
-  `referto RIS rimandato al portale: letto dal service worker (portale ${alPortale}× ${chi.join(",")}${tipsRosso ? `, rosso: ${tipsRosso.slice(0, 120)}` : ""})`);
+check(letto && !tipsRosso && testo.includes(RIGHE_ESEMPIO[0]) && testo.includes(RIGHE_ESEMPIO[1]),
+  `referto del portale: il testo nel pannello (got: ${tipsRosso ? "rosso — " + tipsRosso.slice(0, 160) : testo.slice(0, 60)})`);
+check(/lo apro nel portale, in una scheda dietro/.test(registro) && /testo letto \(\d+ righe, pdf\.js\)/.test(registro),
+  `aperto nel portale, letto con pdf.js (${(/testo (?:letto|non letto)[^\n]*/.exec(registro) || ["niente nel registro"])[0].slice(0, 120)})`);
+check(!chi.some((c) => c.startsWith("sw:")) && chi.some((c) => /loginPC\.jsp/.test(c)),
+  `al portale ci va la pagina, mai il service worker (${chi.join(", ")})`);
+check(schedeDopo === schedePrima, `la scheda dietro si richiude da sola (schede ${schedePrima} → ${schedeDopo})`);
+
+// …e se il portale il PDF non lo mostra: pallino rosso, il perché, e com'è
+// fatta la sua pagina (niente del paziente) da copiare nella diagnosi
+senzaPdf = true;
+const p3 = await ctx.newPage();
+await p3.goto(mock.patientUrl);
+await p3.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await p3.locator('#psassist-host [data-seg="esiti"]').click();
+await p3.waitForSelector('#psassist-host [data-esito]', { timeout: 10000 });
+await p3.locator("#psassist-host #refreset").click();   // via la copia salvata: si riapre il portale
+await p3.waitForTimeout(800);
+await p3.locator('#psassist-host [data-esito][data-kind="referto"]:has-text("TC ENCEFALO")').first().click();
+const rosso = await p3.waitForSelector("#psassist-host .rrow.err", { state: "attached", timeout: 70000 }).then((el) => el.getAttribute("title")).catch(() => "");
+check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.test(rosso) && /sguardo sì \(blob 0/.test(rosso) && !/abc123/.test(rosso),
+  `senza PDF: il motivo e la pagina del portale, senza il token (got: ${String(rosso).slice(0, 220)})`);
 
 await ctx.close();
 rmSync(PROFILE, { recursive: true, force: true });

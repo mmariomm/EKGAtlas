@@ -26,13 +26,13 @@ const ALLOWED_ORIGINS = new Set([
 function candidates(text, baseUrl, fuori = new Set()) {
   const out = [];
   const seen = new Set();
-  const push = (raw, rinvio = false) => {
+  const push = (raw) => {
     const u = String(raw || "").trim().replace(/&amp;/gi, "&");
     if (!u || u.length < 8 || seen.has(u)) return;
     if (/^(javascript:|#|data:|blob:|mailto:)/i.test(u)) return;
     if (!/^(https?:)?\/|^[\w.-]+\.(?:do|rra2|pdf|jsp|html?)\b/i.test(u)) return;
     if (/[([+=&%]$|%27$/.test(u)) return;
-    if (!rinvio && !PDF_SMELL.test(u)) return;
+    if (!PDF_SMELL.test(u)) return;
     if (/logout|logoff|signout|esci\b/i.test(u)) return;   // un GET qui chiuderebbe la sessione
     seen.add(u);
     try {
@@ -41,15 +41,6 @@ function candidates(text, baseUrl, fuori = new Set()) {
       out.push(abs.href);
     } catch { /* skip */ }
   };
-  // Il RINVIO della pagina (meta refresh) è la pagina stessa che dice dove
-  // andare: si segue anche se l'indirizzo non «sa» di PDF — è così che il
-  // gestionale passa i referti al visualizzatore. Solo il meta refresh, non
-  // un «location = …» qualsiasi di uno script (potrebbe essere un'uscita), e
-  // sempre e solo verso i server dell'estensione.
-  for (const re of [
-    /http-equiv\s*=\s*["']?refresh["']?[^>]*content\s*=\s*["'][^"']*url\s*=\s*([^"'\s>]+)/gi,
-    /content\s*=\s*["'][^"']*url\s*=\s*([^"'\s>]+)["'][^>]*http-equiv\s*=\s*["']?refresh/gi,
-  ]) for (const m of text.matchAll(re)) push(m[1], true);
   // frames, embeds, iframes, forms, links, meta refresh, window.open, plain strings
   for (const re of [
     /<(?:i?frame|embed)[^>]+src\s*=\s*["']([^"']+)["']/gi,
@@ -294,7 +285,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     // condiviso «apertura» non si tocca — è quello del clic del medico, e una
     // scheda del portale aperta a mano deve continuare a trovarci il suo.
     sottoGet(_sender.tab && _sender.tab.id).then(async (s) => {
-      if (s) return reply({ ok: true, ep: s.ep, nome: s.nome, ts: s.ts, sotto: true });
+      if (s) return reply({ ok: true, ep: s.ep, nome: s.nome, ts: s.ts, sotto: true, cosa: s.cosa || "storico" });
       const a = (await chrome.storage.session.get("apertura")).apertura;
       reply(a && Date.now() - (a.ts || 0) < 20 * 60e3 ? { ok: true, ...a } : { ok: false });
     }).catch(() => reply({ ok: false }));
@@ -330,9 +321,68 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     })().catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 80) }));
     return true;
   }
+  // Un referto che il gestionale manda al portale (ECG, radiologia): lo
+  // stesso link che il medico clicca, aperto in una scheda dietro. Là la
+  // pagina lo scarica e lo mostra da sé; lo script del portale ne passa una
+  // copia (refertoSotto) e la scheda si chiude.
+  if (msg.t === "apriRefertoSotto") {
+    (async () => {
+      const da = _sender.tab;
+      let u;
+      try { u = new URL(String(msg.url || "")); } catch { return reply({ ok: false, why: "link non valido" }); }
+      let origineMia = "";
+      try { origineMia = new URL(_sender.url).origin; } catch { /* niente */ }
+      if (!da || u.origin !== origineMia || u.origin !== "https://smarthealth.multimedica.it"
+          || !/\/Sa4ViewerExtRedirect\.do$/i.test(u.pathname) || !u.searchParams.get("REFERTO_ID")) {
+        return reply({ ok: false, why: "link inatteso" });
+      }
+      const id = String(msg.id || "").slice(0, 80);
+      if (!id) return reply({ ok: false, why: "referto senza id" });
+      await sottoControlla();
+      const vive = Object.entries(await chrome.storage.session.get(null)).filter(([k, s]) => k.startsWith("sotto:") && inCorso(s));
+      const gia = vive.find(([, s]) => s.opener === da.id && s.cosa === "referto" && s.id === id);
+      if (gia) return reply({ ok: true, tabId: Number(gia[0].slice(6)), gia: true });   // doppio clic
+      if (vive.length >= 3) return reply({ ok: false, why: "troppe letture in corso" });
+      const vuota = { url: "about:blank", active: false };
+      const t = await chrome.tabs.create({ ...vuota, openerTabId: da.id, index: da.index + 1, windowId: da.windowId })
+        .catch(() => chrome.tabs.create(vuota));
+      await sottoSet(t.id, { opener: da.id, cosa: "referto", id, ep: String(msg.ep || ""), pk: String(msg.pk || ""),
+        nome: "", ts: Date.now(), esito: "attesa" });
+      await chrome.tabs.update(t.id, { url: u.href });
+      setTimeout(() => sottoControlla().catch(() => {}), SOTTO_MAX + 500);
+      reply({ ok: true, tabId: t.id });
+    })().catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 80) }));
+    return true;
+  }
+  // la scheda del portale ha il PDF: si tiene come ogni referto salvato
+  // (stesso posto, stessa scadenza, stesso episodio) e la scheda si chiude
+  if (msg.t === "refertoSotto") {
+    const tid = _sender.tab && _sender.tab.id;
+    sottoGet(tid).then(async (s) => {
+      if (!inCorso(s) || s.cosa !== "referto") return reply({ ok: false, why: "scheda non nostra" });
+      if (typeof msg.data !== "string" || !/^JVBERi/.test(msg.data)) return reply({ ok: false, why: "non è un PDF" });
+      await chrome.storage.local.set({ [KEY(s.id)]: { data: msg.data, ts: Date.now(), size: msg.size || 1, ep: s.ep, pk: s.pk } });
+      await prune();
+      await sottoSet(tid, { ...s, via: String(msg.via || "").slice(0, 20) });
+      await sottoFine(tid, "letto");
+      reply({ ok: true });
+    }).catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 60) }));
+    return true;
+  }
+  // …o non ce l'ha: com'è fatta la pagina (mai il contenuto), per capire perché
+  if (msg.t === "refertoSottoDiag") {
+    const tid = _sender.tab && _sender.tab.id;
+    sottoGet(tid).then(async (s) => {
+      if (!inCorso(s) || s.cosa !== "referto") return reply({ ok: false });
+      await sottoSet(tid, { ...s, diag: String(msg.diag || "").slice(0, 700) });
+      await sottoFine(tid, "nonTrovato");
+      reply({ ok: true });
+    }).catch(() => reply({ ok: false }));
+    return true;
+  }
   if (msg.t === "esitoSotto") {
     sottoControlla().then(() => sottoGet(Number(msg.tabId)))
-      .then((s) => reply(s ? { ok: true, esito: s.esito, esami: s.esami || 0, prelievi: s.prelievi || 0 } : { ok: false }))
+      .then((s) => reply(s ? { ok: true, esito: s.esito, esami: s.esami || 0, prelievi: s.prelievi || 0, diag: s.diag || "" } : { ok: false }))
       .catch(() => reply({ ok: false }));
     return true;
   }
@@ -365,7 +415,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       // Si chiude dopo un momento di calma (la tabella può arrivare a pezzi).
       const id = _sender.tab && _sender.tab.id;
       const st = id != null ? await sottoGet(id) : null;
-      if (inCorso(st)) {
+      if (inCorso(st) && st.cosa !== "referto") {   // una scheda aperta per un referto aspetta il PDF, non la tabella
         await sottoSet(id, { ...st, esito: "lettura", ultima: Date.now(), suo: String(msg.dati.ep || "") === st.ep,
           esami: (msg.dati.righe || []).length, prelievi: (msg.dati.date || []).length });
         clearTimeout(quiete.get(id));
@@ -492,10 +542,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 // vanno tolte, e un doppione fa fallire register().
 async function registraPortale(pattern) {
   try { await chrome.scripting.unregisterContentScripts({ ids: ["portale"] }); } catch { /* non c'era */ }
+  try { await chrome.scripting.unregisterContentScripts({ ids: ["portale-pdf"] }); } catch { /* non c'era */ }
   if (!pattern) return;
   await chrome.scripting.registerContentScripts([{
     id: "portale", matches: [pattern], js: ["content.js"], runAt: "document_idle", persistAcrossSessions: true,
   }]);
+  // il PDF del referto lo vede solo chi sta nel mondo della pagina (vedi portale-pdf.js)
+  await chrome.scripting.registerContentScripts([{
+    id: "portale-pdf", matches: [pattern], js: ["portale-pdf.js"], runAt: "document_start", allFrames: true,
+    world: "MAIN", persistAcrossSessions: true,
+  }]).catch(() => {});
 }
 async function riallineaPortale() {
   const o = await chrome.storage.local.get("portale");
