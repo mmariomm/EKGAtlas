@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.41.0";
+  const VERSION = "3.42.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -4481,10 +4481,9 @@
             this.refCache = { ...(this.refCache || {}), [id]: r.size || 1 };
           }
           const blob = { size: buf.byteLength };
-          const righe = await estraiTestoPdf(buf);
-          // Il PDF c'è: si tiene in ogni caso. Prima, se non aveva testo, lo si
-          // buttava via e il pallino diventava rosso — ma un ECG è spesso un
-          // tracciato scansionato: niente testo, e va benissimo così.
+          const letto = await testoPdf(buf);
+          const righe = letto.righe;
+          // Il PDF c'è: si tiene in ogni caso, anche se il testo non esce.
           if (hasExt() && !(this.refCache || {})[id]) {
             const res = await ask({ t: "cacheRef", id, ep: this.episodeId, pk: this.chiavePaz(), data: bufB64(buf), size: blob.size });
             if (res && res.ok) this.refCache = { ...(this.refCache || {}), [id]: res.size || 1 };
@@ -4493,8 +4492,14 @@
           if (righe.length) {
             tabStore.set(this.txtKey(id), { ts: Date.now(), righe });
             this.archiviaReferto(e, righe);
+            this.log(`${now()}  ${shortLabel(e.label)}: testo letto (${righe.length} righe, ${letto.lettore}${letto.motivo ? `; ${letto.motivo}` : ""})`);
           } else {
-            this.log(`${now()}  ${shortLabel(e.label)}: il PDF è un'immagine, senza testo — salvato, si apre com'è`);
+            // I referti sono PDF di testo, mai immagini: se il testo non esce
+            // lo sbaglio è del lettore. Si apre il PDF, e la diagnosi dice
+            // com'è fatto (la struttura, mai il contenuto) per correggerlo.
+            const diag = `${letto.motivo ? `${letto.motivo} · ` : ""}${pdfDiag(buf)}`;
+            this.diagnosi = { cosa: `referto ${shortLabel(e.label)} (${e.sistema || "?"})`, url: e.url, html: "", diag, quando: now() };
+            this.log(`${now()}  ${shortLabel(e.label)}: testo non letto — si apre il PDF (⧉ Copia diagnosi) [${diag}]`);
             this.render();
             return this.openReferto(id);
           }
@@ -5932,6 +5937,108 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }
       return out.replace(/\s+/g, " ").trim();
     }).filter(Boolean);
+  }
+
+  // pdf.js (Mozilla) è il lettore vero: cifratura, oggetti compressi, font
+  // con nomi qualsiasi, testo dentro i moduli — tutto quello che il lettore
+  // qui sopra non sa. Sta dentro l'estensione e si carica nella scheda solo
+  // la prima volta che serve (il service worker lo mette nel mondo isolato
+  // del pannello, mai nella pagina). Senza estensione resta il lettore di casa.
+  let pdfjsInArrivo = null;
+  function pdfjsPronto() {
+    if (globalThis.pdfjsLib?.getDocument && globalThis.pdfjsWorker?.WorkerMessageHandler) return Promise.resolve(globalThis.pdfjsLib);
+    if (!hasExt()) return Promise.resolve(null);
+    return pdfjsInArrivo = pdfjsInArrivo || ask({ t: "pdfjs" }).then((r) => {
+      const lib = r && r.ok && globalThis.pdfjsLib?.getDocument ? globalThis.pdfjsLib : null;
+      if (!lib) pdfjsInArrivo = null;   // si riprova al prossimo referto
+      return lib;
+    });
+  }
+
+  // Pezzi di testo con la loro posizione → righe: stessa linea di base, stessa
+  // riga; dentro la riga da sinistra a destra, con uno spazio dove c'è un buco.
+  function righeDaPezzi(pezzi) {
+    const righe = [];
+    for (const p of pezzi.filter((q) => q.s).sort((a, b) => b.y - a.y)) {
+      const r = righe[righe.length - 1];
+      if (r && Math.abs(r.y - p.y) <= Math.max(2, Math.min(r.h, p.h) * 0.4)) r.parti.push(p);
+      else righe.push({ y: p.y, h: p.h, parti: [p] });
+    }
+    return righe.map((r) => {
+      let out = "", prev = null;
+      for (const p of r.parti.sort((a, b) => a.x - b.x)) {
+        if (prev && !/\s$/.test(out) && !/^\s/.test(p.s) && p.x - (prev.x + prev.w) > Math.max(prev.h, p.h) * 0.2) out += " ";
+        out += p.s; prev = p;
+      }
+      return out.replace(/\s+/g, " ").trim();
+    }).filter(Boolean);
+  }
+
+  async function testoPdfjs(lib, bytes) {
+    // una COPIA: pdf.js si prende il buffer che gli si passa, e questo serve
+    // ancora intero per tenere il PDF
+    const doc = await lib.getDocument({
+      data: new Uint8Array(bytes).slice(), isEvalSupported: false, disableFontFace: true,
+      useSystemFonts: false, useWorkerFetch: false, disableAutoFetch: true, disableStream: true, verbosity: 0,
+    }).promise;
+    try {
+      const righe = [];
+      for (let n = 1; n <= doc.numPages; n++) {
+        const { items } = await (await doc.getPage(n)).getTextContent();
+        righe.push(...righeDaPezzi(items.map((it) => {
+          const t = it.transform || [1, 0, 0, 1, 0, 0];
+          return { x: t[4], y: t[5], w: it.width || 0, h: Math.hypot(t[2], t[3]) || it.height || 10, s: it.str || "" };
+        })));
+      }
+      return righe;
+    } finally { Promise.resolve(doc.destroy()).catch(() => {}); }
+  }
+
+  // Il testo di un referto: pdf.js se c'è, il lettore di casa se no (o se
+  // pdf.js non ne cava niente). Dice anche chi l'ha letto, o perché nessuno.
+  async function testoPdf(bytes) {
+    let motivo = "";
+    const lib = await pdfjsPronto().catch(() => null);
+    if (lib) {
+      try {
+        const righe = await testoPdfjs(lib, bytes);
+        if (righe.length) return { righe, lettore: "pdf.js" };
+        motivo = "pdf.js: nessun testo";
+      } catch (e) { motivo = `pdf.js: ${(e && (e.name || "errore"))}${e && e.message ? ` ${String(e.message).slice(0, 80)}` : ""}`; }
+    } else if (hasExt()) motivo = "pdf.js non caricato";
+    const righe = await estraiTestoPdf(bytes).catch(() => []);
+    return { righe, lettore: "lettore di casa", motivo };
+  }
+
+  // Com'è fatto un PDF, senza una parola di quello che c'è scritto: versione,
+  // cifratura, oggetti compressi, font e codifiche, filtri, immagini, chi l'ha
+  // prodotto. È quello che serve per capire perché il testo non esce.
+  function pdfDiag(bytes) {
+    try {
+      const u8 = bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes;
+      let t = "";
+      for (let i = 0; i < u8.length; i += 0x8000) t += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+      const conta = (re) => (t.match(re) || []).length;
+      const tipi = (re) => [...new Set([...t.matchAll(re)].map((m) => m[1]))].slice(0, 6).join(",") || "—";
+      const enc = /\/Encrypt\s+(\d+)\s+\d+\s+R/.exec(t);
+      const encObj = enc ? (new RegExp(`\\b${enc[1]}\\s+\\d+\\s+obj([\\s\\S]{0,400}?)endobj`).exec(t) || [])[1] || "" : "";
+      const vr = encObj ? `V${(/\/V\s+(\d)/.exec(encObj) || [])[1] || "?"}/R${(/\/R\s+(\d)/.exec(encObj) || [])[1] || "?"}${/\/AESV[23]/.test(encObj) ? " AES" : ""}` : "";
+      const leggibile = (re) => { const m = re.exec(t); return m && /^[\x20-\x7E]{2,60}$/.test(m[1]) ? m[1] : ""; };
+      const prod = leggibile(/\/Producer\s*\(([^)]{2,60})\)/);   // il programma, non l'autore
+      return [
+        `PDF ${(/%PDF-(\d\.\d)/.exec(t) || [])[1] || "?"} ${Math.round(u8.length / 1024)}KB`,
+        enc ? `cifrato ${vr}` : "non cifrato",
+        `ObjStm ${conta(/\/Type\s*\/ObjStm/g)}`,
+        `pagine ${conta(/\/Type\s*\/Page(?!s)/g) || "?"}`,
+        `font ${tipi(/\/Subtype\s*\/(Type0|TrueType|Type1|Type3|MMType1)\b/g)}`,
+        `encoding ${tipi(/\/Encoding\s*\/([A-Za-z0-9-]+)/g)}`,
+        `ToUnicode ${conta(/\/ToUnicode\b/g)}`,
+        `filtri ${tipi(/\/Filter\s*\[?\s*\/([A-Za-z0-9]+)/g)}`,
+        `immagini ${conta(/\/Subtype\s*\/Image\b/g)}`,
+        `moduli ${conta(/\/Subtype\s*\/Form\b/g)}`,
+        prod ? `prodotto da «${prod}»` : "",
+      ].filter(Boolean).join(" · ");
+    } catch (e) { return `diagnosi PDF non riuscita (${e && e.message})`; }
   }
 
   // ============================================================ PRINT WIZARD

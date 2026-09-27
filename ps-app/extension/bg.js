@@ -197,6 +197,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg === "psassist-reload") { chrome.runtime.reload(); return; }
   if (!msg || typeof msg !== "object") return;
 
+  // pdf.js, il lettore PDF di Mozilla, sta dentro l'estensione (pdfjs/) e
+  // si carica nella scheda solo quando si apre un referto: nel mondo isolato
+  // del pannello, accanto a content.js, mai nella pagina del gestionale.
+  if (msg.t === "pdfjs") {
+    const tabId = _sender && _sender.tab && _sender.tab.id;
+    if (tabId == null) return reply({ ok: false, why: "nessuna scheda" }), true;
+    chrome.scripting.executeScript({
+      target: { tabId, frameIds: [_sender.frameId || 0] },
+      files: ["pdfjs/pdf.min.js", "pdfjs/pdf.worker.min.js"],
+    }).then(() => reply({ ok: true }))
+      .catch((e) => reply({ ok: false, why: String(e && e.message || e).slice(0, 80) }));
+    return true;
+  }
+
   if (msg.t === "cacheRef") {
     const salva = async (data, size) => {
       await chrome.storage.local.set({ [KEY(msg.id)]: { data, ts: Date.now(), size, ep: msg.ep || "", pk: msg.pk || "" } });

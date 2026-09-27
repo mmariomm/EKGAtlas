@@ -7,6 +7,7 @@
  */
 import { chromium } from "playwright";
 import { createMock } from "./sa4pso-mock.mjs";
+import { pdfCifrato, RIGHE_ESEMPIO } from "./pdf-difficili.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rmSync, existsSync, statSync } from "node:fs";
@@ -76,11 +77,13 @@ check(await page.locator("#psassist-host .rdot.saved").count() === 0, "Resetta s
 
 // ---- un referto RIS che il gestionale rimanda al portale (un altro server) ----
 // Dal pannello non si legge (altra origine, e in http): al tocco ci prova il
-// service worker, che segue il rinvio della pagina fino al portale.
+// service worker, che segue il rinvio della pagina fino al portale. Il PDF è
+// di quelli veri: cifrato, font Type0 con un nome qualsiasi — il lettore di
+// casa non lo legge, pdf.js sì.
 const eRis = (u) => u.pathname.endsWith("/Sa4ViewerExtRedirect.do") && /RIS/.test(u.searchParams.get("REFERTO_SISTEMA") || "");
-let pdfRis = null, alPortale = 0; const chi = [];
+const pdfRis = pdfCifrato(RIGHE_ESEMPIO);
+let alPortale = 0; const chi = [];
 await ctx.route((u) => eRis(new URL(u)), async (r) => {
-  pdfRis = pdfRis || mock.handle({ method: "GET", url: r.request().url() }).body;
   await r.fulfill({ status: 200, headers: { "content-type": "text/html" },
     body: `<html><head><meta http-equiv="refresh" content="0;url=http://10.11.0.151:9080/clin-port/documento?id=1"></head><body></body></html>` });
 });
@@ -99,6 +102,13 @@ const letto = await p2.waitForFunction(() => {
   return r.querySelectorAll(".reftxt .rt").length > 0 || !!r.querySelector(".rrow.err");
 }, { timeout: 60000 }).then(() => true).catch(() => false);
 const tipsRosso = await p2.locator("#psassist-host .rrow.err").first().getAttribute("title", { timeout: 1000 }).catch(() => null);
+const testo = await p2.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".reftxt")?.textContent || "");
+// il testo lo legge pdf.js, che l'estensione carica nella scheda solo adesso
+await p2.locator("#psassist-host #verbtn").click();   // il Registro, dal numero di versione in fondo
+await p2.waitForSelector("#psassist-host .log", { state: "attached", timeout: 5000 }).catch(() => {});
+const registro = await p2.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".log")?.textContent || "");
+check(/testo letto \(\d+ righe, pdf\.js\)/.test(registro), `testo letto con pdf.js (${(/testo (?:letto|non letto)[^\n]*/.exec(registro) || ["niente nel registro"])[0].slice(0, 140)})`);
+check(testo.includes(RIGHE_ESEMPIO[0]) && testo.includes(RIGHE_ESEMPIO[1]), `il testo del referto nel pannello (got: ${testo.slice(0, 80)})`);
 check(letto && !tipsRosso && chi.includes("sw:fetch"),
   `referto RIS rimandato al portale: letto dal service worker (portale ${alPortale}× ${chi.join(",")}${tipsRosso ? `, rosso: ${tipsRosso.slice(0, 120)}` : ""})`);
 

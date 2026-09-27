@@ -206,11 +206,14 @@ radiologia. Un tocco sulla riga li apre — restano documenti da aprire come pri
 **data e ora della richiesta**; il gruppo chiuso dice quanti sono e di quando è l'ultimo. Aperto o
 chiuso, resta com'era anche dopo che la pagina si ricarica.
 - **RIS ›** — referti di **radiologia** (RX, TC, ecografia, RMN) ed **ECG**: si aprono **dentro il
-  pannello, come testo**. Il PDF di quei referti porta con sé la mappa dei caratteri, quindi le
-  parole si recuperano esatte invece di indovinarle: leggi il referto senza cambiare scheda, lo
-  copi per il diario con **⧉ Copia**, e il PDF resta a un tocco (**↗ PDF**). Un documento senza
-  testo — un ECG è spesso un tracciato scansionato — non è un errore: il PDF **si tiene** (pallino
-  verde) e si apre com'è. Se il pannello non lo legge, al tocco ci prova anche il **service
+  pannello, come testo**. Il testo lo legge **pdf.js** — il lettore PDF di Firefox, dentro
+  l'estensione, caricato nella scheda solo quando apri un referto: legge quello che legge Firefox
+  (PDF cifrati, oggetti compressi, font di ogni tipo). Senza estensione resta il lettore interno,
+  più semplice. Leggi il referto senza cambiare scheda, lo copi per il diario con **⧉ Copia**, e
+  il PDF resta a un tocco (**↗ PDF**). I referti sono **PDF di testo, mai immagini**: se il testo
+  non esce è uno sbaglio del lettore, non del referto — il PDF **si tiene** lo stesso (pallino
+  verde) e si apre, e **⧉ Copia diagnosi** dice com'è fatto quel PDF (versione, cifratura, font,
+  filtri: **mai il contenuto**), per correggerlo. Se il pannello non lo legge, al tocco ci prova anche il **service
   worker** (che raggiunge il server del portale, dove la pagina del gestionale non arriva). Se
   neanche lui, il pallino è rosso col motivo — e il motivo dice **su quale server** il gestionale
   rimanda il referto (solo l'indirizzo del server, niente del paziente) — e il documento **si apre
@@ -799,6 +802,7 @@ ps-app/
 ├── src/dimissioni.json  ← gli otto fogli di dimissione (testi rivisti, nessun dato di paziente)
 ├── test/fixtures/       ← la tabella dello storico ricostruita dalla sua forma (dati inventati)
 ├── extension/           ← estensione MV3 pronta da caricare (content.js è generato)
+├── extension/pdfjs/     ← pdf.js 3.11.174 di Mozilla (Apache-2.0), preso tale e quale: legge i referti
 ├── tools/build.mjs      ← genera extension/content.js e il bookmarklet
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
@@ -817,7 +821,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 65 scenari e2e + 45 sull'estensione + 44 sul banco + storico + il cancello privacy
+npm test           # 65 scenari e2e + 47 sull'estensione + 44 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

@@ -13,6 +13,7 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { pdfCifrato, pdfOggettiCompressi, pdfKerning, RIGHE_ESEMPIO } from "./pdf-difficili.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const core = readFileSync(join(root, "src/core.js"), "utf8");
@@ -27,6 +28,12 @@ const grab = (name) => {
   return core.slice(i, end);
 };
 const src = "async " + grab("estraiTestoPdf");   // declared `async function` in core
+// il lettore vero (pdf.js) e la strada che li mette in fila, come nell'estensione:
+// pdf.js prima, il lettore di casa se pdf.js non ne cava niente
+const srcTutto = [
+  "const hasExt = () => false; const ask = async () => ({ ok: false }); let pdfjsInArrivo = null;",
+  src, grab("pdfjsPronto"), grab("righeDaPezzi"), "async " + grab("testoPdfjs"), "async " + grab("testoPdf"), grab("pdfDiag"),
+].join("\n");
 
 function chromiumPath() {
   for (const p of ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"]) {
@@ -107,6 +114,34 @@ check(cid.every((r) => !/\u0000/.test(r)), "nessun byte di codifica lasciato nel
 // a PDF with no text at all must come back empty, never with noise
 const vuoto = await estrai(Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n", "latin1"));
 check(Array.isArray(vuoto) && vuoto.length === 0, `un PDF senza testo non inventa righe (got ${JSON.stringify(vuoto).slice(0, 40)})`);
+
+// ---- pdf.js: i PDF che il lettore di casa non sa leggere --------------------
+// Caricato come lo carica l'estensione: i due file, nello stesso mondo.
+console.log("\nreferto PDF -> testo, con pdf.js");
+await page.addScriptTag({ path: join(root, "extension/pdfjs/pdf.min.js") });
+await page.addScriptTag({ path: join(root, "extension/pdfjs/pdf.worker.min.js") });
+const leggi = (buf) => page.evaluate(async (arg) => {
+  // eslint-disable-next-line no-eval
+  eval(arg.src);
+  const bytes = Uint8Array.from(arg.bytes);
+  const r = await testoPdf(bytes);
+  return { ...r, casa: await estraiTestoPdf(bytes), diag: pdfDiag(bytes), intatto: bytes.byteLength === arg.bytes.length };
+}, { src: srcTutto, bytes: [...buf] });
+const norm = (x) => String(x).replace(/\s+/g, " ").trim();
+for (const [nome, fare] of [["cifrato (RC4, font /C2_0)", pdfCifrato], ["oggetti compressi, /Contents a due, T*", pdfOggettiCompressi], ["TJ con crenatura e un modulo", pdfKerning]]) {
+  const r = await leggi(fare(RIGHE_ESEMPIO));
+  const mancano = RIGHE_ESEMPIO.filter((l) => !r.righe.map(norm).includes(norm(l)));
+  check(r.lettore === "pdf.js" && !mancano.length,
+    `${nome}: pdf.js le legge tutte (${r.lettore}, ${r.righe.length} righe${mancano.length ? `; mancano: ${mancano.join(" | ").slice(0, 120)}` : ""}; il lettore di casa ne prendeva ${RIGHE_ESEMPIO.filter((l) => r.casa.map(norm).includes(norm(l))).length}/${RIGHE_ESEMPIO.length})`);
+  check(r.intatto, `${nome}: il PDF resta intero dopo la lettura (si tiene così com'è)`);
+  check(!RIGHE_ESEMPIO.some((l) => r.diag.includes(l.slice(0, 12))), `${nome}: la diagnosi non contiene il testo (${r.diag.slice(0, 110)})`);
+}
+check(/cifrato V2\/R3/.test((await leggi(pdfCifrato(RIGHE_ESEMPIO))).diag), "la diagnosi dice che è cifrato, e come");
+check(/ObjStm [1-9]/.test((await leggi(pdfOggettiCompressi(RIGHE_ESEMPIO))).diag), "la diagnosi vede gli oggetti compressi");
+// un PDF che pdf.js non legge (qui un font Type0 incompleto) torna al lettore di casa
+const ripiego = await leggi(pdfCid(RIGHE));
+check(ripiego.lettore === "lettore di casa" && ripiego.righe.length === RIGHE.length,
+  `se pdf.js non ne cava niente, resta il lettore di casa (${ripiego.lettore}, ${ripiego.righe.length} righe${ripiego.motivo ? `; ${ripiego.motivo}` : ""})`);
 
 await browser.close();
 console.log(fail ? `\nPDF-TESTO: ${fail} CHECK FALLITI\n` : "\nPDF-TESTO: TUTTO OK\n");

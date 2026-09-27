@@ -1,0 +1,4 @@
+pdf.js 3.11.174 (Mozilla, Apache-2.0) — https://github.com/mozilla/pdf.js
+File presi tali e quali da pdfjs-dist@3.11.174 (build/pdf.min.js, build/pdf.worker.min.js).
+Servono solo a leggere il TESTO dei referti: il pannello li carica nella scheda
+quando apri un referto, mai prima. Nessuna rete: stanno dentro l'estensione.
