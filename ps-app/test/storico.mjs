@@ -365,6 +365,37 @@ check(fusa.includes("Sodio=141|129"), `S-Sodio del portale e Sodio della finestr
 check(fusa.includes("P-Sodio=139|-"), "un P-Sodio diverso nello stesso prelievo non viene coperto");
 check(fusa.some((x) => /^U-Emoglobina=/.test(x)) && fusa.some((x) => /^Emoglobina=/.test(x)), "le urine restano a parte");
 
+// ---- l'emogas resta diviso: Hb, Ht, K… dell'EGA non entrano nelle righe del laboratorio
+// Stesso analita, stesso nome («Emoglobina», «B-Potassio» contro «S-Potassio»),
+// ma un esame EGA: righe separate. E una tabella salvata PRIMA di questa
+// regola, con dentro una riga mista, alla prima fusione si divide.
+const ega = await page.evaluate((s) => new Function(s + `
+  const col = (label, id) => ({ data: label.slice(0, 10), ora: label.slice(11), label, chiave: label + "#1", id });
+  const riga = (nome, esame, valori) => ({ nome, esame, codice: "", mnem: "", pos: 0, valori: valori.map((v) => ({ v, stato: 0 })) });
+  const date = [col("01/09/2026 08:12", ""), col("01/09/2026 08:20", "")];
+  const portale = { cf: "x", date, righe: [
+    riga("Emoglobina", "EMOCROMO", ["13.1", ""]), riga("Emoglobina", "EGA VENOSA NEW", ["", "12.4"]),
+    riga("S-Potassio", "POTASSIO", ["4.1", ""]), riga("B-Potassio", "EGA VENOSA NEW", ["", "3.9"]),
+    riga("pH", "EGA VENOSA NEW", ["", "7.35"]) ] };
+  const u = fondiStorico(portale, { ...portale, righe: [] });
+  const dice = (x) => x.righe.map((r) => r.nome + "@" + (eEga(r.esame) ? "EGA" : "lab") + "=" + r.valori.map((v) => v.v || "-").join("|")).sort();
+  const mista = { cf: "x", date, righe: [{ nome: "Emoglobina", esame: "EMOCROMO", codice: "", mnem: "", pos: 0,
+    valori: [{ v: "13.1", stato: 0, esame: "EMOCROMO" }, { v: "12.4", stato: 0, esame: "EGA VENOSA NEW" }] }] };
+  const divisa = dividiEga(mista);
+  const intatta = dividiEga(portale) === portale;   // niente di misto: la tabella non si tocca
+  const sezioni = raggruppaStorico(u.righe).map((g) => g.nome + ":" + g.righe.map((r) => r.sg).join(","));
+  return { fusa: dice(u), divisa: dice(divisa), sezioni, intatta };
+`)(), src);
+check(ega.fusa.includes("Emoglobina@lab=13.1|-") && ega.fusa.includes("Emoglobina@EGA=-|12.4"),
+  `Hb dell'emocromo e Hb dell'emogas: due righe (got ${ega.fusa.join(" · ")})`);
+check(ega.fusa.includes("S-Potassio@lab=4.1|-") && ega.fusa.includes("B-Potassio@EGA=-|3.9"),
+  "il potassio dell'emogas non entra nella riga di quello del laboratorio");
+check(ega.divisa.includes("Emoglobina@lab=13.1|-") && ega.divisa.includes("Emoglobina@EGA=-|12.4"),
+  `una riga mista salvata prima si divide prima di mostrarla (got ${ega.divisa.join(" · ")})`);
+check(ega.intatta, "una tabella senza righe miste resta quella che è");
+check(ega.sezioni.includes("Emocromo:Hb") && ega.sezioni.includes("Emogas:pH,Hb,K") && ega.sezioni.includes("Elettroliti e metabolismo:K"),
+  `in tabella: l'Hb dell'emogas sta nell'Emogas, col pH e il suo potassio (got ${ega.sezioni.join(" · ")})`);
+
 // no draw at all in the period
 const vuota = await leggi(paginaStorico({ esami: [["EMOCROMO", "Emoglobina", "1201", "HB", ["", "", ""], [0, 0, 0]]] }));
 check(vuota.dati === null, "un periodo senza risultati non produce una tabella vuota");

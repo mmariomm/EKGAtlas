@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.42.0";
+  const VERSION = "3.43.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -390,7 +390,7 @@
     // l'emoglobina glicata è un'altra grandezza in un'altra unità: non deve
     // mai finire nella riga dell'Hb accanto a un'emoglobina in g/dL
     [/emoglobina\s*glicat|^hba1c|\bhb\s?a1c\b/i, "HbA1c"],
-    [/^emoglobina(?!\s*glicat)|^hgb\b|^hb\b/i, "Hb"],
+    [/^emoglobina(?!\s*glicat)|^hgb\b|^hb\b|^c?thb\b/i, "Hb"],
     [/^ematocrito|^hct/i, "Ht"], [/^piastrine|^plt/i, "PLT"], [/^eritrociti|globuli rossi|^rbc/i, "GR"],
     [/^mcv|vol\.? glob/i, "MCV"], [/^mchc/i, "MCHC"], [/^mch\b|cont\.? media/i, "MCH"], [/^rdw/i, "RDW"],
     [/^(granulociti\s+)?eosinofil/i, "Eos"], [/^(granulociti\s+)?basofil/i, "Bas"], [/^granulociti|neutrofil/i, "Neu"], [/^linfocit/i, "Lin"], [/^monocit/i, "Mon"],
@@ -412,12 +412,15 @@
     // «cK+» è il potassio dell'emogas: senza questa riga la regola del CPK
     // (^ck) lo prendeva, e il potassio compariva come CPK fra gli enzimi
     [/^c?k\s*\+/i, "K"],
+    // gli altri nomi dell'emogas, scritti come li scrive l'emogasanalizzatore
+    [/^c?na\s*\+/i, "Na"], [/^c?cl\s*-/i, "Cl"], [/^c?ca\s*(?:2\s*\+|\+\+)/i, "Ca++"],
+    [/^c?glu\b/i, "Glu"], [/^cLac\b/, "Lac"],   // «LAC» (lupus anticoagulant) non è lattato
     [/\bck\s?-?\s?mb\b/i, "CKMB"], [/^cpk|creatinchinasi|^ck\b(?!\s?-?\s?mb)/i, "CPK"],
     [/^lipasi/i, "Lip"], [/^amilasi/i, "Amy"],
     [/albuminuria|microalbuminur/i, "Albu"], [/^albumin/i, "Alb"],
     [/nt.?pro.?bnp/i, "NTproBNP"], [/^bnp/i, "BNP"], [/^ves\b/i, "VES"],
     [/^ph\b/i, "pH"], [/pco2|pco₂/i, "pCO2"], [/po2\b|po₂/i, "pO2"], [/hco3|bicarbon/i, "HCO3"],
-    [/base excess|^be\b|^eb\b/i, "BE"],
+    [/base excess|^be\b|^eb\b|^[as]be\b|^cbase/i, "BE"],
     [/lattico\s+deidrogen|lattato\s+deidrogen/i, "LDH"],   // prima di "lattat"
     [/lattat/i, "Lac"], [/saturaz|^so2/i, "SatO2"],
     [/carbossiemo|^cohb/i, "COHb"], [/metaemo|^methb/i, "MetHb"], [/^tsh/i, "TSH"],
@@ -464,6 +467,20 @@
     if (s.includes("·")) return ["Urine e altri liquidi", 900];
     return DOVE.get(s) || [ALTRI, 900];
   }
+  // L'emogas è un'altra macchina e un altro campione: Hb, Ht, K, Na, Cl, Ca++
+  // e glucosio dell'emogas NON sono quelli dell'emocromo o della chimica.
+  // Chi li legge li vuole divisi: stanno nella sezione Emogas, su righe loro,
+  // e non si fondono mai con gli stessi analiti fatti in laboratorio. Lo dice
+  // l'ESAME che li ha prodotti (EGA venosa, emogasanalisi…), non il nome.
+  const eEga = (esame) => /EMOGAS|\bEGA\b/i.test(String(esame || ""));
+  const ORDINE_EGA = ["pH", "pCO2", "pO2", "HCO3", "BE", "Lac", "SatO2", "Hb", "Ht", "Na", "K", "Cl", "Ca++", "Glu",
+    "AG", "ctCO2", "ctO2", "COHb", "MetHb", "FCOHb", "FO2Hb", "HHb", "Shunt", "EGA"];
+  function sezioneRiga(r, sg = sigla(r.nome)) {
+    const [sez, ord] = eEga(r.esame) && !String(sg).includes("·") ? ["Emogas", 0] : sezioneDi(sg);
+    if (sez !== "Emogas") return [sez, ord];
+    const i = ORDINE_EGA.indexOf(sg);
+    return ["Emogas", i < 0 ? 900 : i];
+  }
   const ordineSezioni = [...SEZIONI.map(([n]) => n), "Urine e altri liquidi", ALTRI]
     .filter((n, i, a) => a.indexOf(n) === i);
 
@@ -491,18 +508,22 @@
   // Peggio di un nome che non conosciamo: due nomi DIVERSI che nello stesso
   // prelievo escono con la stessa abbreviazione («PTT secondi» e «PTT Ratio»,
   // «Granulociti» e «Granulociti %»). Anche quelli vanno scritti per esteso.
+  // (L'Hb dell'emogas e quella dell'emocromo stanno in due sezioni diverse:
+  // la stessa sigla non le confonde. Si confondono due righe della STESSA
+  // sezione con la stessa sigla — la chiave è quella.)
+  const chiaveAmbigua = (r) => sezioneRiga(r)[0] + "|" + sigla(r.nome);
   function sigleAmbigue(rows) {
     const per = new Map();
     for (const r of rows || []) {
       const nome = String(r.nome || "").trim();
       if (!nome) continue;
-      const s = sigla(nome);
-      const set = per.get(s) || new Set();
-      set.add(nome);
-      per.set(s, set);
+      const k = chiaveAmbigua(r);
+      const set = per.get(k) || new Set();
+      set.add(nome + (eEga(r.esame) ? "|ega" : ""));
+      per.set(k, set);
     }
     const out = new Set();
-    for (const [s, nomi] of per) if (nomi.size > 1) out.add(s);
+    for (const [k, nomi] of per) if (nomi.size > 1) out.add(k);
     return out;
   }
   // Le righe divise in sezioni, in ordine FISSO. L'ordine non deve dipendere da
@@ -551,7 +572,7 @@
     const per = new Map();
     for (const r of righe || []) {
       const sg = sigla(r.nome);
-      const [sez, ord] = sezioneDi(sg);
+      const [sez, ord] = sezioneRiga(r, sg);
       if (!per.has(sez)) per.set(sez, []);
       per.get(sez).push({ ...r, sg, ord });
     }
@@ -987,6 +1008,12 @@
       .filter((x) => x && !/TAMPONE|MOLECOL|SARS|COV|VIRUS|ANTIGEN/i.test(x));
     const pacchetto = String(label || "").replace(/\s+/g, " ").trim();
     if ((Array.isArray(exams) ? exams.length : 0) < 2) return pacchetto;
+    // cK+, cNa+, ctHb, cGlu, cLac, Hctc… sono i nomi dell'emogasanalizzatore:
+    // in un pacchetto con l'emocromo e l'EGA, quei valori sono dell'EGA
+    if (/^c(?:K|Na|Ca|Cl|Glu|Lac|tHb|HCO3|tCO2|tO2|Base|Crea|Urea)(?![a-z])|^Hctc\b|^[as]BE\b/.test(String(nome || "").trim())) {
+      const ega = tutti.filter((x) => eEga(x));
+      if (ega.length === 1) return ega[0];
+    }
     const sg = sigla(nome);
     for (const re of [ESAME_DI_SIGLA[sg], ESAME_DI[sezioneDi(sg)[0]]]) {
       const miei = re ? tutti.filter((x) => re.test(x)) : [];
@@ -1219,25 +1246,43 @@
         // invece di diventarne due. Quando l'analita non c'è (il nome ricade
         // sulla prestazione) solo la posizione distingue le righe.
         const anonima = !r.mnem && r.nome === r.esame;
-        let k = valKey(r.nome) + (anonima ? "|#" + (r.pos ?? 0) : "");
-        // due nomi DIVERSI della stessa tabella con la stessa chiave (S-Sodio e P-Sodio)
-        // si fondono solo se non si contraddicono: un valore non ne copre mai un altro
-        const gia = qui.get(k);
-        if (gia && gia.nome !== r.nome && r.valori.some((v, i) => v.v && dati.date[i]
-            && gia.celle.has(colDi(dati.date[i])) && gia.celle.get(colDi(dati.date[i])) !== v.v)) k += "|" + r.nome;
-        const mio = qui.get(k) || { nome: r.nome, celle: new Map() };
-        r.valori.forEach((v, i) => { if (v.v && dati.date[i]) mio.celle.set(colDi(dati.date[i]), v.v); });
-        qui.set(k, mio);
-        const cur = perEsame.get(k) || { nome: r.nome, esame: r.esame, codice: r.codice, mnem: r.mnem, pos: r.pos, per: new Map() };
-        // La provenienza viaggia CON il valore. Due prelievi possono aver
-        // fatto lo stesso esame con macchine diverse (POC e laboratorio):
-        // stessa riga, ma si deve poter dire quale cella viene da dove.
-        // Una cella che sa già con cosa è stata fatta lo tiene: rifondere una
-        // tabella già fusa non deve riscrivere ogni cella con l'esame della
-        // riga, o la provenienza (POC vs laboratorio) sparisce alla seconda
-        // passata.
-        r.valori.forEach((v, i) => { if (v.v && dati.date[i]) cur.per.set(colDi(dati.date[i]), v.esame ? v : r.esame ? { ...v, esame: r.esame } : v); });
-        perEsame.set(k, cur);
+        const base = valKey(r.nome) + (anonima ? "|#" + (r.pos ?? 0) : "");
+        // L'emogas fa riga a sé (vedi eEga). Si decide valore per valore: una
+        // tabella salvata prima di questa regola può avere nella stessa riga
+        // valori dell'emocromo e dell'emogas — qui si separano.
+        const gruppi = new Map();   // chiave → indici dei valori
+        r.valori.forEach((v, i) => {
+          if (!(v && v.v && dati.date[i])) return;
+          const kv = base + (eEga(v.esame || r.esame) ? "|ega" : "");
+          if (!gruppi.has(kv)) gruppi.set(kv, []);
+          gruppi.get(kv).push(i);
+        });
+        if (!gruppi.size) gruppi.set(base + (eEga(r.esame) ? "|ega" : ""), []);
+        for (const [k0, idx] of gruppi) {
+          let k = k0;
+          // due righe della stessa tabella con la stessa chiave (S-Sodio e
+          // P-Sodio, o lo stesso nome due volte nello stesso prelievo) si
+          // fondono solo se non si contraddicono: un valore non ne copre mai
+          // un altro
+          const gia = qui.get(k);
+          if (gia && idx.some((i) => gia.celle.has(colDi(dati.date[i])) && gia.celle.get(colDi(dati.date[i])) !== r.valori[i].v)) {
+            k += gia.nome !== r.nome ? "|" + r.nome : "|#" + (r.pos ?? 0);
+          }
+          const mio = qui.get(k) || { nome: r.nome, celle: new Map() };
+          idx.forEach((i) => mio.celle.set(colDi(dati.date[i]), r.valori[i].v));
+          qui.set(k, mio);
+          const primo = idx.length ? r.valori[idx[0]] : null;
+          const cur = perEsame.get(k) || { nome: r.nome, esame: (primo && primo.esame) || r.esame, codice: r.codice, mnem: r.mnem, pos: r.pos, per: new Map() };
+          // La provenienza viaggia CON il valore. Due prelievi possono aver
+          // fatto lo stesso esame con macchine diverse (POC e laboratorio):
+          // stessa riga, ma si deve poter dire quale cella viene da dove.
+          // Una cella che sa già con cosa è stata fatta lo tiene: rifondere una
+          // tabella già fusa non deve riscrivere ogni cella con l'esame della
+          // riga, o la provenienza (POC vs laboratorio) sparisce alla seconda
+          // passata.
+          idx.forEach((i) => { const v = r.valori[i]; cur.per.set(colDi(dati.date[i]), v.esame ? v : r.esame ? { ...v, esame: r.esame } : v); });
+          perEsame.set(k, cur);
+        }
       }
     };
     versa(vecchio); versa(nuovo, rinomina);
@@ -1263,6 +1308,13 @@
              scartate: [...(vecchio.scartate || []), ...(nuovo.scartate || [])]
                .filter((x, i, a) => x && a.findIndex((y) => y && y.nome === x.nome && y.valore === x.valore) === i).slice(0, 40),
              letto: Date.now() };
+  }
+  // Una scheda salvata prima che l'emogas avesse righe sue può avere, nella
+  // stessa riga, valori dell'emocromo e dell'emogas: si dividono prima di
+  // mostrarla (la prossima lettura la riscrive già divisa).
+  function dividiEga(st) {
+    const mista = st && (st.righe || []).some((r) => (r.valori || []).some((v) => v && v.v && eEga(v.esame || r.esame) !== eEga(r.esame)));
+    return mista ? fondiStorico(st, { ...st, righe: [], date: [], referti: [], scartate: [] }) : st;
   }
   const chiaveCol = (d) => (d && (d.chiave || d.label)) || "";
   const ordData = (label) => {
@@ -3954,7 +4006,7 @@
     // Una tabella sola: per gruppo, una colonna a prelievo, il più recente a
     // sinistra. Non c'è più una riga per richiesta da aprire.
     datiEsiti() {
-      let dati = this.storico || null;
+      let dati = dividiEga(this.storico || null);
       for (const e of this.esiti) {
         if (e.kind !== "valori") continue;
         const v = tabStore.get(this.risKey(e.id), null);
@@ -4114,7 +4166,7 @@
       const col = st.date.map((d, i) => ({ ...d, i })).reverse();   // il più recente a sinistra
       const righe = fondiFormula(st.righe);   // «Neu 4.0 (56%)»: una riga, non due
       const ambS = sigleAmbigue(righe);
-      const inatteso = (r) => !siglaCurata(r.nome) || ambS.has(sigla(r.nome));
+      const inatteso = (r) => !siglaCurata(r.nome) || ambS.has(chiaveAmbigua(r));
       const simboli = new Map();   // esame → segno, uno per tutta la tabella
       const gruppi = raggruppaStorico(righe)
         .map((g) => ({ ...g, righe: g.righe.filter((r) => !this.soloAlterati || r.valori.some((v) => v.v && v.stato)) }))
@@ -4136,7 +4188,7 @@
           // il segno del medico (un tocco giallo, due arancio) vive sulla
           // cella: «colonna|analita», la stessa identità con cui la tabella
           // fonde i prelievi, così sopravvive a ogni ridisegno
-          const cella = chiaveCol(c) + "|" + valKey(r.nome) + (!r.mnem && r.nome === r.esame ? "|#" + (r.pos ?? 0) : "");
+          const cella = chiaveCol(c) + "|" + valKey(r.nome) + (eEga(r.esame) ? "|ega" : "") + (!r.mnem && r.nome === r.esame ? "|#" + (r.pos ?? 0) : "");
           const segno = segni[cella] === 2 ? " marca2" : segni[cella] === 1 ? " marca1" : "";
           return `<td class="${v.stato ? "fuori" : ""}${v.parziale ? " parz" : ""}${n === "nuovo" ? " nuovo" : n === "cambiato" ? " agg" : ""}${segno}" data-cella="${esc(cella)}"${
             tip ? ` title="${esc(tip)}${v.parziale ? " · parziale" : ""}"` : v.parziale ? ` title="parziale"` : ""
@@ -4144,7 +4196,9 @@
             sg ? `<i class="prov" title="${esc(daChi ? "fatto con " + daChi + (p.solita ? " — gli altri con " + p.solita : "") : "")}">${esc(sg)}</i>` : ""
           }</span>${v.pct ? `<span class="pct"> (${esc(v.pct)}%)</span>` : ""}</td>`;
         }).join("");
-        const etichetta = inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome);
+        const etichetta = inatteso(r)
+          ? String(r.nome).replace(/\s+/g, " ").trim() + (eEga(r.esame) && ambS.has(chiaveAmbigua(r)) ? " (EGA)" : "")
+          : sigla(r.nome);
         return `<tr><th class="stn${inatteso(r) ? " grezza" : ""}" title="${esc(r.nome)}${
           r.esame && r.esame !== r.nome ? " — " + esc(r.esame) : ""}${r.mnem ? " · " + esc(r.mnem) : ""}">${
           esc(etichetta)}${um ? `<span class="stum"> (${esc(um)})</span>` : ""}</th>${celle}</tr>`;
@@ -4834,7 +4888,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     avvisoNomi(rows, scartate) {
       const inattesi = nomiInattesi(rows);
       const amb = sigleAmbigue(rows);
-      const doppi = (rows || []).map((r) => r.nome).filter((n, i, a) => n && amb.has(sigla(n)) && a.indexOf(n) === i);
+      const doppi = (rows || []).filter((r) => r.nome && amb.has(chiaveAmbigua(r))).map((r) => r.nome).filter((n, i, a) => a.indexOf(n) === i);
       const persi = (scartate || []).filter((x) => x && x.nome);
       // due nomi che si abbrevierebbero uguale sono GIÀ scritti per esteso in
       // tabella: non meritano un avviso a ogni emocromo, solo l'elenco «quali»

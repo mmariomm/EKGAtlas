@@ -343,6 +343,14 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   parte, «S-100» e «B-12» restano interi, pCO₂ = pCO2. Due nomi diversi che nello stesso prelievo
   si contraddicono (S-Sodio e P-Sodio) non si coprono mai. «PTT Ratio» ha una sigla sua (PTTr),
   e «cK+» dell'emogas è potassio, non CPK.
+- **L'emogas resta diviso dal laboratorio.** Hb, Ht, K, Na, Cl, Ca++, glucosio e lattato fatti
+  dall'**EGA** non sono quelli dell'emocromo o della chimica: stanno nella sezione **Emogas**, su
+  righe loro, accanto a pH e gas — mai nella riga dell'Hb dell'emocromo o del K del laboratorio.
+  Lo decide l'**esame** che li ha prodotti (EGA venosa/arteriosa, emogasanalisi), non il nome: anche
+  quando il nome è identico («Emoglobina», «B-Potassio»). Nella finestra Risultati di una richiesta
+  con emocromo **e** EGA insieme (il Base PS) lo dicono i nomi dell'emogasanalizzatore (cK+, cNa+,
+  ctHb, Hctc, cGlu, cLac…). Una tabella salvata prima, con righe miste, si divide da sola alla
+  prima lettura.
 - Tornando sul paziente, quei prelievi entrano **da soli** nella tabella **Valori** di **Esiti**,
   uniti a quelli letti dalla finestra Risultati del gestionale — niente riga da aprire, niente
   schermata a parte (vedi sopra come si legge la tabella).

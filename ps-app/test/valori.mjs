@@ -23,9 +23,9 @@ const grab = (name) => {
   }
   return core.slice(i, end);
 };
-const { outOfRange, sigla, siglaCurata, nomiInattesi, sigleAmbigue, valKey, fondiFormula } = new Function(
+const { outOfRange, sigla, siglaCurata, nomiInattesi, sigleAmbigue, valKey, fondiFormula, sezioneRiga, raggruppaStorico } = new Function(
   grab("outOfRange") + "\n" + core.slice(core.indexOf("const SIGLE = ["), core.indexOf("// First ~160 chars"))
-  + "\nreturn { outOfRange, sigla, siglaCurata, nomiInattesi, sigleAmbigue, valKey, fondiFormula };",
+  + "\nreturn { outOfRange, sigla, siglaCurata, nomiInattesi, sigleAmbigue, valKey, fondiFormula, sezioneRiga, raggruppaStorico };",
 )();
 
 let fail = 0;
@@ -167,11 +167,41 @@ check(!nomiInattesi([{ nome: "Sodio" }, { nome: "Potassio" }]).length, "quando l
 // due nomi diversi che escono con la stessa abbreviazione sono peggio di un
 // nome sconosciuto: nel prelievo si leggerebbero come lo stesso esame
 const amb = sigleAmbigue([{ nome: "PTT secondi" }, { nome: "PTT Ratio" }, { nome: "Granulociti" }, { nome: "Granulociti %" }, { nome: "Sodio" }]);
-check(amb.has("Neu"), "riconosce le abbreviazioni che collidono nello stesso prelievo");
-check(!amb.has("Na"), "e non se la prende con quelle che non collidono");
+check(amb.has("Emocromo|Neu"), "riconosce le abbreviazioni che collidono nello stesso prelievo");
+check(!amb.has("Elettroliti e metabolismo|Na"), "e non se la prende con quelle che non collidono");
 // …ma il rapporto del PTT ha la sua sigla: non è più un «doppione» del PTT in secondi
 eq(sigla("PTT Ratio"), "PTTr", "PTT Ratio ha la sua sigla");
-check(!amb.has("PTT"), "e PTT secondi / PTT Ratio non collidono più");
+check(!amb.has("Coagulazione|PTT"), "e PTT secondi / PTT Ratio non collidono più");
+
+// ---- l'emogas resta diviso dall'emocromo e dalla chimica ---------------------
+// Hb, Ht, K, Na… dell'emogas sono un'altra macchina: la sezione è Emogas e la
+// sigla uguale non li confonde con quelli del laboratorio.
+for (const [nome, sg] of [["cK+", "K"], ["cNa+", "Na"], ["cCl-", "Cl"], ["cCa2+", "Ca++"], ["ctHb", "Hb"], ["Hctc", "Ht"],
+                          ["cGlu", "Glu"], ["cLac", "Lac"], ["ABE", "BE"], ["cBase(B)", "BE"]]) eq(sigla(nome), sg, `«${nome}» dell'emogas è ${sg}`);
+eq(sezioneRiga({ nome: "Emoglobina", esame: "EGA VENOSA NEW" })[0], "Emogas", "l'Hb dell'emogas sta nella sezione Emogas");
+eq(sezioneRiga({ nome: "Emoglobina", esame: "EMOCROMO POC" })[0], "Emocromo", "quella dell'emocromo nell'emocromo");
+eq(sezioneRiga({ nome: "S-Potassio", esame: "POTASSIO" })[0], "Elettroliti e metabolismo", "il potassio del laboratorio negli elettroliti");
+eq(sezioneRiga({ nome: "cK+", esame: "EMOGASANALISI ARTERIOSA" })[0], "Emogas", "quello dell'emogas nell'emogas");
+const ambEga = sigleAmbigue([{ nome: "Emoglobina", esame: "EMOCROMO" }, { nome: "Emoglobina", esame: "EGA VENOSA NEW" },
+                              { nome: "S-Potassio", esame: "POTASSIO" }, { nome: "cK+", esame: "EGA VENOSA NEW" }]);
+check(!ambEga.size, `stessa sigla in due sezioni: nessuna confusione, niente nomi per esteso (got ${[...ambEga].join(", ")})`);
+const ordEga = raggruppaStorico([{ nome: "cK+", esame: "EGA" }, { nome: "ctHb", esame: "EGA" }, { nome: "pH", esame: "EGA" }, { nome: "cLac", esame: "EGA" }])
+  .find((g) => g.nome === "Emogas").righe.map((r) => r.sg).join(",");
+eq(ordEga, "pH,Lac,Hb,K", "dentro l'emogas l'ordine è quello del referto: gas, lattato, Hb, elettroliti");
+// finestra Risultati del «Base PS» (emocromo + EGA + creatinina in una richiesta):
+// i nomi dell'emogasanalizzatore dicono da soli che il valore è dell'EGA
+const esameDiRiga = new Function(core.slice(core.indexOf("const SIGLE = ["), core.indexOf("// First ~160 chars")) + "\n"
+  + core.slice(core.indexOf("const ESAME_DI = {"), core.indexOf("function esameDiRiga(")) + grab("esameDiRiga") + "\nreturn esameDiRiga;")();
+const basePs = ["EMOCROMO POC", "EGA VENOSA NEW", "CREATININA POC"];
+// «cTnI» è la troponina, non un parametro dell'emogas: resta della troponina
+check(esameDiRiga([...basePs, "TROPONINA US"], "Base PS + tropo", "cTnI") !== "EGA VENOSA NEW", "«cTnI» (la troponina) non diventa emogas");
+eq(sigla("LAC screening"), "LAC", "«LAC» (lupus anticoagulant) non è il lattato");
+eq(sigla("cLac"), "Lac", "«cLac» sì");
+for (const [nome, esame] of [["cK+", "EGA VENOSA NEW"], ["ctHb", "EGA VENOSA NEW"], ["Hctc", "EGA VENOSA NEW"], ["cGlu", "EGA VENOSA NEW"],
+                             ["pH", "EGA VENOSA NEW"], ["Emoglobina", "EMOCROMO POC"], ["Ematocrito", "EMOCROMO POC"], ["Creatinina", "CREATININA POC"],
+                             ["cCa2+", "EGA VENOSA NEW"], ["cNa+", "EGA VENOSA NEW"]]) {
+  eq(esameDiRiga(basePs, "Base PS", nome), esame, `«${nome}» nel Base PS è di ${esame}`);
+}
 
 // ---- i doppioni veri: lo stesso analita scritto in due modi dalle due fonti
 eq(valKey("S-Sodio"), valKey("Sodio"), "S-Sodio del portale e Sodio della finestra: una riga");
