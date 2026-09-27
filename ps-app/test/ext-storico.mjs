@@ -216,10 +216,17 @@ check(/non di questo paziente/.test(senza.avviso) && /ROSSI MARIO/.test(senza.av
 const primaRete = mock.state.requests.length;
 await paziente.locator('#psassist-host [data-seg="consensi"]').click();
 await paziente.waitForSelector("#psassist-host [data-cons]", { timeout: 8000 });
-check((await paziente.locator("#psassist-host [data-cons]").count()) === 9, "nove moduli in elenco");
-check((await paziente.locator("#psassist-host .dsep").count()) === 1
+check((await paziente.locator("#psassist-host [data-cons]").count()) === 6, "sei consensi in elenco");
+check((await paziente.locator('#psassist-host [data-cons^="ritiro"]').count()) === 0
   && /9 pagine/.test(await paziente.locator('#psassist-host [data-cons="emotrasfusione"]').innerText()),
-  "le deleghe di ritiro sono staccate, e un modulo lungo dice quanta carta esce");
+  "le deleghe per il ritiro non stanno fra i consensi, e un modulo lungo dice quanta carta esce");
+// …stanno nella schermata Dimissioni, dove si danno a chi va a casa
+await paziente.locator('#psassist-host [data-seg="dimissioni"]').click();
+await paziente.waitForSelector('#psassist-host [data-cons^="ritiro"]', { timeout: 8000 });
+check((await paziente.locator('#psassist-host [data-cons^="ritiro"]').count()) === 3,
+  "i tre moduli per il ritiro sono nella schermata Dimissioni");
+await paziente.locator('#psassist-host [data-seg="consensi"]').click();
+await paziente.waitForSelector("#psassist-host [data-cons]", { timeout: 8000 });
 await paziente.locator('#psassist-host [data-cons="antitetano"]').click();
 await paziente.waitForSelector("#psassist-print iframe", { timeout: 15000 });
 const pdf = await paziente.evaluate(() => {

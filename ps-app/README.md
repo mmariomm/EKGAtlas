@@ -256,10 +256,11 @@ In questa versione **non si modificano dal pannello** — per cambiarli si modif
 ricompila (`npm run build`).
 
 ### Consensi
-Nove moduli, dentro l'estensione. Da firmare: **Emocolture**, **HIV Dipendente**, **Lesioni
+Sei moduli da firmare, dentro l'estensione: **Emocolture**, **HIV Dipendente**, **Lesioni
 Animali**, **Antitetano**, **TAC cmdc**, **Emotrasfusione** (il pacchetto trasfusionale:
-consenso informato, richiesta emocomponenti, dichiarazione del medico in urgenza). Sotto, staccate,
-le **deleghe per il ritiro**: **Ritiro esami**, **Ritiro referto RX**, **Ritiro cartella e CD**.
+consenso informato, richiesta emocomponenti, dichiarazione del medico in urgenza).
+Le **deleghe per il ritiro** — **Ritiro esami**, **Ritiro referto RX**, **Ritiro cartella e CD**
+— non sono consensi: si danno a chi va a casa, e stanno in cima alla schermata **Dimissioni**.
 Un tocco apre il PDF e la finestra di stampa, come per la lista esami; un modulo di più pagine
 dice **quanta carta esce** prima che tu prema Stampa.
 
@@ -367,7 +368,10 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   sinistra), su una tabella ricostruita con esami inventati.
 
 ### Dimissioni
-Nove **fogli di dimissione** pronti — i **cinque rivisti dal medico** stanno in cima, poi una riga
+In cima, i **moduli per il ritiro** da dare a chi va a casa — Ritiro esami, Ritiro referto RX,
+Ritiro cartella e CD: un tocco e parte la stampa, come per i consensi.
+
+Poi nove **fogli di dimissione** pronti — i **cinque rivisti dal medico** stanno in cima, poi una riga
 (*«non ancora rivisti»*) e sotto gli altri: si vede a colpo d'occhio dove si è già messo mano.
 Sono scritti per il paziente: dosi per esteso, tetto del paracetamolo, e in fondo a ogni
 foglio i motivi per **tornare in Pronto Soccorso**.

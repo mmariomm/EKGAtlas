@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.38.0";
+  const VERSION = "3.38.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2880,7 +2880,7 @@
             padding: 8px 6px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
     .pbtn:hover { border-color: #0B5CAD; background: #EAF2FA; color: #0B5CAD; }
     .pcard.now .pbtn { background: #fff; }
-    .dlist { display: flex; flex-direction: column; gap: 4px; }
+    .dlist, .mlist { display: flex; flex-direction: column; gap: 4px; }
     /* Il gruppo dei referti di laboratorio: una riga di separazione che si
        apre. Sta in mezzo all'elenco, quindi non deve sembrare un bottone
        d'azione — è la riga stessa a essere toccabile. */
@@ -4379,7 +4379,14 @@
                   aria-label="Modifica il foglio ${esc(d.nome)}">✎</button>
         </div>`;
       }).join("");
+      // le deleghe per il ritiro si danno a chi va a casa: stanno qui, in cima
+      const ritiro = CONSENSI.filter((c) => c.gruppo === "ritiro");
       return `
+        ${ritiro.length ? `
+        <div class="sec">
+          <div class="lbl">Moduli per il ritiro (${ritiro.length})</div>
+          <div class="mlist">${ritiro.map((c) => this.rigaModulo(c)).join("")}</div>
+        </div>` : ""}
         <div class="sec">
           <div class="lbl">Fogli di dimissione (${chiavi.length})
             <button class="mini" id="dimexport" title="Salva i tuoi testi in un file JSON">⬇ JSON</button>
@@ -4545,26 +4552,31 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         </div>`;
     }
 
-    viewConsensi() {
-      let gruppo = "";
-      const righe = CONSENSI.map((c) => {
-        // le deleghe di ritiro non sono consensi da firmare: stanno sotto, con
-        // il loro titoletto, invece di allungare un elenco solo
-        const sep = (c.gruppo || "") !== gruppo && (gruppo = c.gruppo || "")
-          ? `<div class="dsep"><span>deleghe per il ritiro</span></div>` : "";
-        return `${sep}<button class="crow" data-cons="${esc(c.k)}" title="${esc(c.esteso)}">
+    // Un modulo in elenco: un tocco lo apre e parte la stampa. Lo stesso per i
+    // consensi e per i moduli della dimissione.
+    rigaModulo(c) {
+      return `<button class="crow" data-cons="${esc(c.k)}" title="${esc(c.esteso)}">
           <span class="cnome">${esc(c.nome)}</span>
           ${c.pagine > 1 ? `<span class="cpag" title="Esce così tanta carta">${esc(String(c.pagine))} pagine</span>` : ""}
           <span class="cgo">🖨 apri e stampa</span>
         </button>`;
-      }).join("");
+    }
+    notaModuli() {
+      return hasExt() || DEMO
+        ? "I moduli sono dentro l'estensione: si aprono anche se il gestionale è lento o giù, e nessuna richiesta esce dal computer."
+        : "Servono i moduli dell'estensione: con il preferito (bookmarklet) questa sezione non ha i PDF.";
+    }
+
+    // Solo i consensi da firmare. Le deleghe per il ritiro (esami, referto RX,
+    // cartella e CD) si danno al paziente quando va a casa: stanno nella
+    // schermata Dimissioni, dove servono.
+    viewConsensi() {
+      const consensi = CONSENSI.filter((c) => !c.gruppo);
       return `
         <div class="sec">
-          <div class="lbl">Moduli di consenso (${CONSENSI.length})</div>
-          <div class="dlist">${righe}</div>
-          <div class="hint">${hasExt() || DEMO
-            ? "I moduli sono dentro l'estensione: si aprono anche se il gestionale è lento o giù, e nessuna richiesta esce dal computer."
-            : "Servono i moduli dell'estensione: con il preferito (bookmarklet) questa sezione non ha i PDF."}</div>
+          <div class="lbl">Moduli di consenso (${consensi.length})</div>
+          <div class="dlist">${consensi.map((c) => this.rigaModulo(c)).join("")}</div>
+          <div class="hint">${esc(this.notaModuli())}</div>
         </div>`;
     }
 
@@ -5175,8 +5187,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       this.root.querySelectorAll("[data-cons]").forEach((b) => b.addEventListener("click", () => {
         const c = CONSENSI.find((x) => x.k === b.getAttribute("data-cons"));
         const url = c && urlConsenso(c);
-        if (!url) { this.message = "I moduli di consenso ci sono solo con l'estensione."; this.render(); return; }
-        this.log(`${now()}  consenso «${c.nome}» aperto per la stampa`);
+        if (!url) { this.message = "I moduli ci sono solo con l'estensione."; this.render(); return; }
+        this.log(`${now()}  modulo «${c.nome}» aperto per la stampa`);
         openPrintWizard([{ name: c.nome, printer: "stampante normale", url, diretto: true }],
           { title: c.nome, panel: this });
       }));
