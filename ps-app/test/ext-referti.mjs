@@ -74,6 +74,34 @@ await page.locator("#psassist-host #refreset").click();
 await page.waitForTimeout(1200);
 check(await page.locator("#psassist-host .rdot.saved").count() === 0, "Resetta svuota i salvataggi");
 
+// ---- un referto RIS che il gestionale rimanda al portale (un altro server) ----
+// Dal pannello non si legge (altra origine, e in http): al tocco ci prova il
+// service worker, che segue il rinvio della pagina fino al portale.
+const eRis = (u) => u.pathname.endsWith("/Sa4ViewerExtRedirect.do") && /RIS/.test(u.searchParams.get("REFERTO_SISTEMA") || "");
+let pdfRis = null, alPortale = 0; const chi = [];
+await ctx.route((u) => eRis(new URL(u)), async (r) => {
+  pdfRis = pdfRis || mock.handle({ method: "GET", url: r.request().url() }).body;
+  await r.fulfill({ status: 200, headers: { "content-type": "text/html" },
+    body: `<html><head><meta http-equiv="refresh" content="0;url=http://10.11.0.151:9080/clin-port/documento?id=1"></head><body></body></html>` });
+});
+await ctx.route("http://10.11.0.151:9080/**", async (r) => {
+  alPortale++; chi.push(`${r.request().serviceWorker() ? "sw" : "pagina"}:${r.request().resourceType()}`);
+  await r.fulfill({ status: 200, headers: { "content-type": "application/pdf" }, body: pdfRis });
+});
+const p2 = await ctx.newPage();
+await p2.goto(mock.patientUrl);
+await p2.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await p2.locator('#psassist-host [data-seg="esiti"]').click();
+await p2.waitForSelector('#psassist-host [data-esito]', { timeout: 10000 });
+await p2.locator('#psassist-host [data-esito][data-kind="referto"]:has-text("TC ENCEFALO")').first().click();
+const letto = await p2.waitForFunction(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  return r.querySelectorAll(".reftxt .rt").length > 0 || !!r.querySelector(".rrow.err");
+}, { timeout: 60000 }).then(() => true).catch(() => false);
+const tipsRosso = await p2.locator("#psassist-host .rrow.err").first().getAttribute("title", { timeout: 1000 }).catch(() => null);
+check(letto && !tipsRosso && chi.includes("sw:fetch"),
+  `referto RIS rimandato al portale: letto dal service worker (portale ${alPortale}× ${chi.join(",")}${tipsRosso ? `, rosso: ${tipsRosso.slice(0, 120)}` : ""})`);
+
 await ctx.close();
 rmSync(PROFILE, { recursive: true, force: true });
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nEXTENSION CHECKS PASSED");

@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.40.1";
+  const VERSION = "3.41.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -106,7 +106,9 @@
     TAC:     "00380001P", // RADIOLOGIA - TAC - SSG
   };
   const RES_SHORT = {
-    [RES.POC]: "POC", [RES.URGENZE]: "Urgenze", [RES.CENTRAL]: "Lab centrale",
+    // Urgenze e laboratorio centrale, per chi ordina, sono lo stesso posto:
+    // un nome solo, e nella griglia un gruppo solo
+    [RES.POC]: "POC", [RES.URGENZE]: "Lab centrale", [RES.CENTRAL]: "Lab centrale",
     [RES.RX]: "RX", [RES.ECO]: "Eco", [RES.RMN]: "RMN", [RES.TAC]: "TAC",
   };
 
@@ -1560,9 +1562,20 @@
     }
     let res;
     try {
-      res = await fetch(target.href, { signal: ctl.signal, credentials: "same-origin", cache: "no-store", redirect: "follow" });
+      try {
+        res = await fetch(target.href, { signal: ctl.signal, credentials: "same-origin", cache: "no-store", redirect: "follow" });
+      } catch (e) {
+        // Solo l'errore di rete (TypeError) si traduce: timeout e stop
+        // restano quello che sono. Quasi sempre è un rinvio verso un ALTRO
+        // server (il RIS, gli ECG, il portale in http): la pagina del
+        // gestionale non può leggerlo, il medico che clicca sì — per questo
+        // il referto si apre ma non si lascia salvare.
+        if (!(e instanceof TypeError)) throw e;
+        throw new StopError("Non raggiungibile da qui", "rete, o rinvio a un altro server");
+      }
       if (new URL(res.url || target.href).origin !== location.origin) {
-        throw new StopError("Risposta fuori dall'ospedale bloccata", `destinazione inattesa: ${res.url}`);
+        // si dice DOVE (solo il server: nell'indirizzo ci sono gli id del paziente)
+        throw new StopError("Il documento sta su un altro server", `rimanda a ${new URL(res.url).origin}`);
       }
       if (!res.ok) throw new StopError(`Il server ha risposto HTTP ${res.status}`, res.statusText || "");
     } finally {
@@ -1587,10 +1600,12 @@
       if (classify(doc) === "login") throw new StopError("Sessione scaduta", "Fai l'accesso a SA4PSO e riprova la stampa.");
       const base = res.url || target.href;
       const tried = [];
+      const fuoriQui = new Set();   // dove rimanda, quando rimanda a un altro server
       const attempt = async (raw, via) => {
         if (!raw || /^(javascript:|#|about:)/i.test(raw)) return null;
         if (++budget.n > MAX_TENTATIVI) return null;
         let u; try { u = new URL(String(raw).replace(/&amp;/gi, "&").trim(), base); } catch { return null; }
+        if (u.origin !== location.origin && /^https?:$/.test(u.protocol)) fuoriQui.add(u.origin);
         if (u.origin !== location.origin || u.href === base) return null;
         if (tried.includes(u.href)) return null;
         tried.push(u.href);
@@ -1642,7 +1657,7 @@
         // variabile che non esiste più, quindi al posto del ViewerError con la
         // diagnosi partiva un ReferenceError, e non si vedeva niente.
         const idQui = /\b[A-Z][A-Z0-9]*_[A-Z0-9]+_\d{6,}\b/.test(text);
-        err.diag = `html ${Math.round(text.length / 1024)}KB · ${(text.match(/<script/gi) || []).length} script · ${(text.match(/<frame\b/gi) || []).length} frame · tentati ${tried.length} URL · id ${idQui ? "sì" : "no"} · upload ${/uploaddownloadservlet/i.test(text) ? "sì" : "no"}`;
+        err.diag = `html ${Math.round(text.length / 1024)}KB · ${(text.match(/<script/gi) || []).length} script · ${(text.match(/<frame\b/gi) || []).length} frame · tentati ${tried.length} URL · id ${idQui ? "sì" : "no"} · upload ${/uploaddownloadservlet/i.test(text) ? "sì" : "no"}${fuoriQui.size ? ` · rimanda a ${[...fuoriQui].join(", ")}` : ""}`;
         err.html = text;   // la pagina stessa, per «⧉ Diagnosi» (mascherata prima di copiarla)
         throw err;
       }
@@ -2081,7 +2096,7 @@
   function risorsaQui(it, opzioni, cat) {
     const offerte = new Set(opzioni.map((o) => o.value));
     if (!it.res || offerte.has(it.res)) return it.res ? { res: it.res } : null;
-    const nomeRis = (cat[it.res] && cat[it.res].label) || RES_SHORT[it.res] || "";
+    const nomeRis = (cat[it.res] && cat[it.res].label) || "";
     const atteso = chiaveRisorsa(nomeRis);
     const stessoNome = atteso ? opzioni.find((o) => chiaveRisorsa(o.label) === atteso) : null;
     if (stessoNome) return { res: stessoNome.value, perNome: true, opt: stessoNome };
@@ -2105,7 +2120,7 @@
   };
   // a parità di nome: urgenze, poi il laboratorio, poi il POC, poi il resto
   function ordineRisorsa(res, cat) {
-    const l = chiaveRisorsa((cat[res] && cat[res].label) || RES_SHORT[res] || "");
+    const l = chiaveRisorsa((cat[res] && cat[res].label) || "");
     if (/URGENZ/.test(l)) return 0;
     if (/\bPOC\b/.test(l)) return 2;
     if (/^LABORATORIO/.test(l)) return 1;
@@ -2118,9 +2133,9 @@
     const l = chiaveRisorsa((cat[res] && cat[res].label) || "");
     if (!l) return res;
     if (/\bPOC\b/.test(l)) return "POC";
-    if (/URGENZ/.test(l)) return "Urgenze";
+    if (/URGENZ/.test(l)) return "Lab centrale";
     if (/^RADIOLOGIA/.test(l)) return l.replace(/^RADIOLOGIA\s*-?\s*/, "").replace(/RISONANZA MAGNETICA NUCLEARE/, "RMN").trim() || "Radiologia";
-    if (/^LABORATORIO/.test(l)) return "Laboratorio";
+    if (/^LABORATORIO/.test(l)) return "Lab centrale";
     return l.slice(0, 18);
   }
 
@@ -2793,6 +2808,8 @@
     .grouphdr { grid-column: 1 / -1; font-size: 9.5px; font-weight: 800; letter-spacing: .6px; color: #5B6B7A;
                 margin: 5px 0 0; text-transform: uppercase; }
     .chip.preset.on { background: #0B5CAD; color: #fff; }
+    .gchips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; margin: 1px 0; }
+    .qrx { grid-column: 1 / -1; min-width: 0; }
     .chip.cart { background: #EDF7F0; border-color: #BCE0C9; color: #124F31; cursor: default; }
     .chip.ghosted { background: #F4F8FB; border-color: #E3E8EF; color: #5B6B7A; cursor: default; }
     .btn { display: block; width: 100%; border: 0; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; }
@@ -3275,6 +3292,7 @@
       if (!k) return;
       tabStore.set(k, {
         q: this._q || "",
+        qrx: this._qrx || "",
         sel: [...this.selected.values()].map((i) => [i.res, i.code, i.label]),
         acq: this.acq || "",
         eoSel: this.eoSel || "",
@@ -3294,10 +3312,12 @@
       const s = k ? tabStore.get(k, null) : null;
       if (!s || Date.now() - (s.ts || 0) > 6 * 3600e3) {
         this._q = store.get("lastQ", "") || ""; // keep the last quesito typed
+        this._qrx = "";
         this.view = this.defaultView() === "home" ? "home" : (this.view || this.defaultView());
         return;
       }
       this._q = s.q || store.get("lastQ", "") || "";
+      this._qrx = s.qrx || "";
       this.eoSel = s.eoSel || "";
       this.refLabAperti = !!s.refLab;   // il gestionale ricarica a ogni click: il gruppo resta com'era
       this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
@@ -3312,6 +3332,7 @@
     }
     clearOrderUi() { // after a successful run the order is placed: start clean
       this._q = "";
+      this._qrx = "";
       this.selected.clear();
       this.persistUi();
     }
@@ -3484,7 +3505,7 @@
       // THIS name, never whatever the page title becomes later.
       this.runPatient = (document.title || "").trim();
       const plan = { quesito: (this._q || "").trim(), items, episodeId, patientName: this.runPatient, ...base };
-      if (plan.quesito) rememberQuesito(plan.quesito);
+      if ((this._q || "").trim()) rememberQuesito((this._q || "").trim());
       if (plan.legs && plan.legs.length > 1) this.runChain(plan);
       else runPlan(plan, this); // fire and forget; the engine drives the UI via callbacks
     }
@@ -3499,6 +3520,7 @@
         const st = await runPlan({
           ...plan, hold: true, continuation: i > 0,
           entryUrl: leg.entryUrl, items: leg.items, legLabel: leg.label,
+          quesito: leg.quesito ?? plan.quesito,
         }, this);
         if (this.runState !== "running" || !st || !st.richiestaId) return; // failed/stopped: stop here
         done.push({
@@ -3534,8 +3556,9 @@
       const both = (m) => { problems.go.push(m); problems.confirm.push(m); };
       const wantsRadio = items.some((i) => RADIO_SET.includes(i.res));
       const wantsLab = items.some((i) => !RADIO_SET.includes(i.res));
+      const q = (this._q || "").trim(), qrx = (this._qrx || "").trim();
       if (this.pageType === "patient") {
-        if (items.length && !(this._q || "").trim()) both("Scrivi il quesito diagnostico prima di creare la richiesta.");
+        if ((wantsLab && !q) || (wantsRadio && !q && !qrx)) both("Scrivi il quesito diagnostico prima di creare la richiesta.");
         if (wantsRadio && !wantsLab && !this.entry?.radioUrl) both("Link Richieste Radiologia non trovato su questa pagina.");
         if (wantsLab && !this.entry?.labUrl) both("Link Richieste Laboratorio non trovato su questa pagina.");
       } else if (this.pageType === "crea") {
@@ -3548,7 +3571,7 @@
         }
         const form = document.forms.namedItem("RICHIESTACrea");
         const pageQ = (form?.elements?.namedItem("QUESITO_DIAGNOSTICO")?.value || "").trim();
-        if (items.length && !pageQ && !(this._q || "").trim()) both("Scrivi il quesito diagnostico (nel pannello o nella pagina).");
+        if (items.length && !pageQ && !q && !(wantsRadio && !wantsLab && qrx)) both("Scrivi il quesito diagnostico (nel pannello o nella pagina).");
       } else if (this.pageType === "exam") {
         const live = examModel(document, location.href);
         if (live.resOptions.length) {
@@ -3569,13 +3592,13 @@
     selbarHtml() {
       if (!this.selected.size) return "";
       if (this.pageType === "patient" && !(this.entry && (this.entry.labUrl || this.entry.radioUrl))) return "";
-      const byRes = {};
-      for (const i of this.selected.values()) (byRes[i.res] = byRes[i.res] || []).push(i);
+      const byRes = {};   // per nome corto: Urgenze e centrale sono un gruppo solo
+      for (const i of this.selected.values()) (byRes[risorsaCorta(i.res)] = byRes[risorsaCorta(i.res)] || []).push(i);
       const groups = Object.entries(byRes).map(([r, arr]) => {
         const items = arr.map((i) =>
           `<span class="selitem" title="${esc(i.label)}">${esc(i.display || shortLabel(i.label))}<button class="selx" data-unsel="${esc(this.key(i.res, i.code))}" title="Rimuovi" aria-label="Rimuovi ${esc(i.display || shortLabel(i.label))}">✕</button></span>`
         ).join(", ");
-        return `<span class="selgrp">${esc(risorsaCorta(r).toUpperCase())}:</span> ${items}`;
+        return `<span class="selgrp">${esc(r.toUpperCase())}:</span> ${items}`;
       });
       return `<div class="selbar"><span class="selcount">${this.selected.size} SELEZIONATI</span>${groups.map((g) => `<div class="selrow">${g}</div>`).join("")}</div>`;
     }
@@ -3834,20 +3857,28 @@
           </div>`;
       }
 
-      const presetHtml = PRESETS.map((p, i) => {
-        const ok = p.items.every(([r, c]) => cat[r]?.items?.[c]);
-        if (!ok) return "";
+      // Un gruppo per laboratorio, col suo nome corto: dentro, prima i
+      // profili rapidi di quel laboratorio, poi gli esami uno per uno. Nel
+      // gruppo RX c'è il quesito della radiologia, che non è quello del lab.
+      const gruppi = {};
+      const gruppo = (r) => (gruppi[RES_SHORT[r] || r] = gruppi[RES_SHORT[r] || r] || { profili: [], esami: [] });
+      PRESETS.forEach((p, i) => {
+        if (!p.items.every(([r, c]) => cat[r]?.items?.[c])) return;
         const on = p.items.every(([r, c]) => this.isSel(r, c));
-        return `<button class="chip preset ${on ? "on" : ""}" data-preset="${i}">${esc(p.name)}</button>`;
-      }).join("");
-      const byLab = {};
-      for (const [r, c] of SINGLES) if (cat[r]?.items?.[c]) (byLab[r] = byLab[r] || []).push(c);
-      const singles = Object.entries(byLab).map(([r, codes]) => `
-        <div class="grouphdr">${esc(RES_SHORT[r] || r)}</div>
-        ${codes.map((c) => {
-          const on = this.isSel(r, c);
-          return `<button class="opt ${on ? "on" : ""}" data-res="${esc(r)}" data-code="${esc(c)}" title="${esc(examLabel(r, c))} — ${esc(RES_SHORT[r] || r)}"><span class="box">✓</span><span class="nm">${esc(displayLabel(r, c))}</span></button>`;
-        }).join("")}`).join("");
+        gruppo(p.items[0][0]).profili.push(`<button class="chip preset ${on ? "on" : ""}" data-preset="${i}">${esc(p.name)}</button>`);
+      });
+      for (const [r, c] of SINGLES) {
+        if (!cat[r]?.items?.[c]) continue;
+        const on = this.isSel(r, c);
+        gruppo(r).esami.push(`<button class="opt ${on ? "on" : ""}" data-res="${esc(r)}" data-code="${esc(c)}" title="${esc(examLabel(r, c))} — ${esc(RES_SHORT[r] || r)}"><span class="box">✓</span><span class="nm">${esc(displayLabel(r, c))}</span></button>`);
+      }
+      const qrxHtml = canOneClick
+        ? `<input id="qrx" class="qrx" type="text" placeholder="Quesito RX — se vuoto, quello sopra" value="${esc(this._qrx || "")}">` : "";
+      const singles = Object.entries(gruppi).map(([nome, g]) => `
+        <div class="grouphdr">${esc(nome)}</div>
+        ${nome === RES_SHORT[RES.RX] ? qrxHtml : ""}
+        ${g.profili.length ? `<div class="gchips">${g.profili.join("")}</div>` : ""}
+        ${g.esami.join("")}`).join("");
 
       const n = this.selected.size;
       const nTxt = n === 0 ? "esami" : n === 1 ? "1 esame" : `${n} esami`;
@@ -3868,8 +3899,7 @@
         ${quesitoSec}
         ${cartSec}
         <div class="sec">
-          ${presetHtml ? `<div class="lbl">Profili rapidi</div><div class="chips">${presetHtml}</div>` : ""}
-          <div class="lbl" style="margin-top:10px">Esami singoli</div>
+          <div class="lbl">Esami</div>
           <div class="grid">${singles}</div>
           ${this.viewBrowse(cat)}
         </div>
@@ -4398,10 +4428,10 @@
           res = await ask({ t: "cacheRef", id: e.id, ep: this.episodeId, pk: this.chiavePaz(), data: bufB64(await r.blob.arrayBuffer()), size: r.blob.size });
           if (!(res && res.ok)) motivi.push(`memoria: ${(res && res.why) || "non riuscito"}`);
         } catch (err) {
-          motivi.push(`${err?.head || err?.message || err}${err?.diag ? ` [${err.diag}]` : ""}`);
-          if (err instanceof ViewerError && err.html) this.diagnosi = { cosa: `referto ${shortLabel(e.label)}`, url: e.url, html: err.html, diag: err.diag, quando: now() };
+          motivi.push(`${err?.head || err?.message || err}${err?.body ? ` — ${err.body}` : ""}${err?.diag ? ` [${err.diag}]` : ""}`);
           res = await ask({ t: "cacheRef", id: e.id, url: e.url, ep: this.episodeId, pk: this.chiavePaz() });
           if (!(res && res.ok)) motivi.push(`service worker: ${(res && res.why) || "non riuscito"}`);
+          if (!(res && res.ok)) this.diagnosi = { cosa: `referto ${shortLabel(e.label)} (${e.sistema || "?"})`, url: e.url, html: (err && err.html) || "", diag: motivi.join(" · "), quando: now() };
         }
         if (res && res.ok) {
           this.refCache = { ...(this.refCache || {}), [e.id]: res.size || 1 };
@@ -4433,13 +4463,29 @@
         this.refBusy = { ...(this.refBusy || {}), [id]: true };
         this.render();
         try {
-          const { blob } = await fetchPdf(e.url, {});
-          const buf = await blob.arrayBuffer();
+          let buf;
+          try {
+            buf = await (await fetchPdf(e.url, {})).blob.arrayBuffer();
+          } catch (err) {
+            // Dal pannello no: ci prova il service worker, che può seguire il
+            // rinvio anche sul server del portale. Se neanche lui, il perché
+            // dei due tentativi resta sul pallino e nella diagnosi.
+            if (err?.name === "AbortError" || !hasExt()) throw err;
+            const r = await ask({ t: "cacheRef", id, url: e.url, ep: this.episodeId, pk: this.chiavePaz() });
+            const g = r && r.ok ? await ask({ t: "getRef", id, ep: this.episodeId }) : null;
+            if (!(g && g.ok && g.data)) {
+              err.diag = `${err.diag ? `${err.diag} · ` : ""}service worker: ${(r && r.why) || "non riuscito"}`;
+              throw err;
+            }
+            buf = Uint8Array.from(atob(g.data), (c) => c.charCodeAt(0)).buffer;
+            this.refCache = { ...(this.refCache || {}), [id]: r.size || 1 };
+          }
+          const blob = { size: buf.byteLength };
           const righe = await estraiTestoPdf(buf);
           // Il PDF c'è: si tiene in ogni caso. Prima, se non aveva testo, lo si
           // buttava via e il pallino diventava rosso — ma un ECG è spesso un
           // tracciato scansionato: niente testo, e va benissimo così.
-          if (hasExt()) {
+          if (hasExt() && !(this.refCache || {})[id]) {
             const res = await ask({ t: "cacheRef", id, ep: this.episodeId, pk: this.chiavePaz(), data: bufB64(buf), size: blob.size });
             if (res && res.ok) this.refCache = { ...(this.refCache || {}), [id]: res.size || 1 };
           }
@@ -4455,8 +4501,8 @@
         } catch (err) {
           // Non letto: si dice perché (sul pallino e nel Registro) e il
           // documento si apre lo stesso, con lo stesso clic — non al secondo.
-          this.refBusy[id] = `${(err && (err.head || err.message)) || "non letto"}${err && err.diag ? ` [${err.diag}]` : ""}`;
-          if (err instanceof ViewerError && err.html) this.diagnosi = { cosa: `referto ${shortLabel(e.label)}`, url: e.url, html: err.html, diag: err.diag, quando: now() };
+          this.refBusy[id] = `${(err && (err.head || err.message)) || "non letto"}${err && err.body ? ` — ${err.body}` : ""}${err && err.diag ? ` [${err.diag}]` : ""}`;
+          this.diagnosi = { cosa: `referto ${shortLabel(e.label)} (${e.sistema || "?"})`, url: e.url, html: (err && err.html) || "", diag: this.refBusy[id], quando: now() };
           this.log(`${now()}  ${shortLabel(e.label)}: referto non letto (${this.refBusy[id]})`);
           this.render();
           return this.openReferto(id);
@@ -5375,6 +5421,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       });
       const qEl = $("#q");
       qEl?.addEventListener("input", () => { this._q = qEl.value; this.persistUi(); this.refreshCommit(); });
+      const qrxEl = $("#qrx");
+      qrxEl?.addEventListener("input", () => { this._qrx = qrxEl.value; this.persistUi(); this.refreshCommit(); });
       this.root.querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () => {
         qEl.value = b.getAttribute("data-q"); this._q = qEl.value; this.persistUi(); this.refreshCommit(); qEl.focus();
       }));
@@ -5435,17 +5483,22 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const lab = items.filter((i) => !RADIO_SET.includes(i.res));
         const radio = items.filter((i) => RADIO_SET.includes(i.res));
         const legs = [];
-        if (lab.length) legs.push({ kind: "lab", label: "laboratorio", items: lab, entryUrl: this.entry?.labUrl });
-        if (radio.length) legs.push({ kind: "radio", label: "radiologia", items: radio, entryUrl: this.entry?.radioUrl });
+        // ognuna col suo quesito: la radiologia ha il suo, se è scritto
+        const q = (this._q || "").trim(), qrx = (this._qrx || "").trim() || q;
+        if (lab.length) legs.push({ kind: "lab", label: "laboratorio", items: lab, entryUrl: this.entry?.labUrl, quesito: q });
+        if (radio.length) legs.push({ kind: "radio", label: "radiologia", items: radio, entryUrl: this.entry?.radioUrl, quesito: qrx });
         if (legs.some((l) => !l.entryUrl)) { this.message = "Link di apertura richiesta non trovato su questa pagina."; this.render(); return; }
         base.startPage = "patient";
         base.legs = legs;
         base.entryUrl = legs[0].entryUrl;
         base.items = legs[0].items;
+        base.quesito = legs[0].quesito;
       } else if (this.pageType === "crea") {
         const form = document.forms.namedItem("RICHIESTACrea");
         if (!form) { this.message = "Form della richiesta non trovato."; this.render(); return; }
         base.startPage = "crea";
+        // una richiesta di radiologia prende il quesito RX, se è scritto
+        if (items.every((i) => RADIO_SET.includes(i.res)) && (this._qrx || "").trim()) base.quesito = this._qrx.trim();
         base.creaForm = form;
         base.creaUrl = location.href;
       } else {

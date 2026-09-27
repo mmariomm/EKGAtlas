@@ -23,23 +23,33 @@ const ALLOWED_ORIGINS = new Set([
   "http://10.11.0.151:9080",
 ]);
 
-function candidates(text, baseUrl) {
+function candidates(text, baseUrl, fuori = new Set()) {
   const out = [];
   const seen = new Set();
-  const push = (raw) => {
+  const push = (raw, rinvio = false) => {
     const u = String(raw || "").trim().replace(/&amp;/gi, "&");
     if (!u || u.length < 8 || seen.has(u)) return;
     if (/^(javascript:|#|data:|blob:|mailto:)/i.test(u)) return;
     if (!/^(https?:)?\/|^[\w.-]+\.(?:do|rra2|pdf|jsp|html?)\b/i.test(u)) return;
     if (/[([+=&%]$|%27$/.test(u)) return;
-    if (!PDF_SMELL.test(u)) return;
+    if (!rinvio && !PDF_SMELL.test(u)) return;
+    if (/logout|logoff|signout|esci\b/i.test(u)) return;   // un GET qui chiuderebbe la sessione
     seen.add(u);
     try {
       const abs = new URL(u, baseUrl);
-      if (!ALLOWED_ORIGINS.has(abs.origin)) return;
+      if (!ALLOWED_ORIGINS.has(abs.origin)) { if (/^https?:$/.test(abs.protocol)) fuori.add(abs.origin); return; }
       out.push(abs.href);
     } catch { /* skip */ }
   };
+  // Il RINVIO della pagina (meta refresh) è la pagina stessa che dice dove
+  // andare: si segue anche se l'indirizzo non «sa» di PDF — è così che il
+  // gestionale passa i referti al visualizzatore. Solo il meta refresh, non
+  // un «location = …» qualsiasi di uno script (potrebbe essere un'uscita), e
+  // sempre e solo verso i server dell'estensione.
+  for (const re of [
+    /http-equiv\s*=\s*["']?refresh["']?[^>]*content\s*=\s*["'][^"']*url\s*=\s*([^"'\s>]+)/gi,
+    /content\s*=\s*["'][^"']*url\s*=\s*([^"'\s>]+)["'][^>]*http-equiv\s*=\s*["']?refresh/gi,
+  ]) for (const m of text.matchAll(re)) push(m[1], true);
   // frames, embeds, iframes, forms, links, meta refresh, window.open, plain strings
   for (const re of [
     /<(?:i?frame|embed)[^>]+src\s*=\s*["']([^"']+)["']/gi,
@@ -57,7 +67,7 @@ function candidates(text, baseUrl) {
 
 async function grabPdf(url, hop = 0, budget) {
   budget = budget || { n: 0 };
-  if (!ALLOWED_ORIGINS.has(new URL(url).origin)) return { ok: false, why: "fuori dall'ospedale" };
+  if (!ALLOWED_ORIGINS.has(new URL(url).origin)) return { ok: false, why: `fuori dall'ospedale (${new URL(url).origin})` };
   // a hung hospital endpoint must fail a row, never hang the whole save
   const ctl = new AbortController();
   const tid = setTimeout(() => ctl.abort(), 15000);
@@ -66,10 +76,15 @@ async function grabPdf(url, hop = 0, budget) {
     res = await fetch(url, { credentials: "include", redirect: "follow", cache: "no-store", signal: ctl.signal });
   } catch (e) {
     clearTimeout(tid);
-    return { ok: false, why: e && e.name === "AbortError" ? "timeout" : String(e && e.message || e).slice(0, 40) };
+    // «Failed to fetch» da solo non dice niente: quasi sempre è un rinvio
+    // verso un server che l'estensione non ha il permesso di leggere
+    return { ok: false, why: e && e.name === "AbortError" ? "timeout" : `${String(e && e.message || e).slice(0, 40)} (rete, o rinvio a un server non permesso)` };
   }
   clearTimeout(tid);
   if (!res.ok) return { ok: false, why: `HTTP ${res.status}` };
+  // dove è finito davvero, se un rinvio l'ha portato altrove
+  const finale = (() => { try { return new URL(res.url || url).origin; } catch { return ""; } })();
+  if (finale && !ALLOWED_ORIGINS.has(finale)) return { ok: false, why: `fuori dall'ospedale (${finale})` };
   const ctype = (res.headers.get("content-type") || "").toLowerCase();
   const buf = await res.arrayBuffer();
   // come in core.js: il tipo dichiarato è un'etichetta, i primi byte sono il
@@ -81,7 +96,8 @@ async function grabPdf(url, hop = 0, budget) {
   if (hop >= 2 || !ctype.includes("html")) return { ok: false, why: `tipo ${ctype.split(";")[0] || "?"}` };
   const text = new TextDecoder("windows-1252").decode(buf);
   if (/name=["']?password/i.test(text)) return { ok: false, why: "sessione scaduta" };
-  const cands = candidates(text, res.url || url);
+  const fuori = new Set();
+  const cands = candidates(text, res.url || url, fuori);
   for (const c of cands) {
     try {
       if (++budget.n > 6) break;   // un tetto solo per tutta la caccia, come in core.js
@@ -89,7 +105,7 @@ async function grabPdf(url, hop = 0, budget) {
       if (r.ok) return r;
     } catch { /* next candidate */ }
   }
-  return { ok: false, why: `visualizzatore (${cands.length} link tentati)` };
+  return { ok: false, why: `visualizzatore (${cands.length} link tentati${fuori.size ? `; rimanda a ${[...fuori].slice(0, 3).join(", ")}` : ""})` };
 }
 
 const b64 = (buf) => {

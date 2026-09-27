@@ -1249,7 +1249,7 @@ async function scenarioUiErgonomics(browser) {
   await $panel(page, '.chip.preset:has-text("Epatico")').click();
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   const bar = await $panel(page, ".selbar").innerText();
-  check(scen, /POC:/.test(bar) && /URGENZE:/.test(bar) && /6 SELEZIONATI/.test(bar),
+  check(scen, /POC:/.test(bar) && /LAB CENTRALE:/.test(bar) && /6 SELEZIONATI/.test(bar),
     `selbar compatta con gruppi e conteggio (got: ${bar.replace(/\s+/g, " ").slice(0, 80)})`);
   check(scen, (await $panel(page, ".selbar .chip").count()) === 0, "selbar è testo, non pill");
 
@@ -1307,6 +1307,20 @@ async function scenarioUiErgonomics(browser) {
   check(scen, /\bGPT\b/.test(optTxt) && /\bGOT\b/.test(optTxt) && /GAMMA GT/.test(optTxt) && /BILIRUBINA/.test(optTxt),
     "gli epatici si ordinano anche uno per uno, non solo col profilo");
   check(scen, /Coag POC/.test(preTxt) && /Coag/.test(preTxt), "profili rapidi: Coag POC e Coag");
+  // ogni profilo sta nel gruppo del suo laboratorio; Urgenze e centrale sono un gruppo solo
+  const dove = await page.evaluate(() => {
+    const root = document.getElementById("psassist-host").shadowRoot;
+    const gruppoDi = (el) => { let x = el; while (x && !x.classList?.contains("grouphdr")) x = x.previousElementSibling; return x ? x.textContent.trim() : "?"; };
+    return {
+      hdr: [...root.querySelectorAll(".grid .grouphdr")].map((h) => h.textContent.trim()),
+      profili: Object.fromEntries([...root.querySelectorAll(".grid .gchips .chip.preset")].map((c) => [c.textContent.trim(), gruppoDi(c.parentElement)])),
+      qrx: root.querySelector(".grid #qrx") ? gruppoDi(root.querySelector(".grid #qrx")) : null,
+    };
+  });
+  check(scen, dove.hdr.join("|") === "POC|Lab centrale|RX", `gruppi: POC, Lab centrale, RX (got ${dove.hdr.join("|")})`);
+  check(scen, dove.profili["Epatico"] === "Lab centrale" && dove.profili["Coag"] === "Lab centrale" && dove.profili["Coag POC"] === "POC",
+    `Epatico e Coag sotto Lab centrale, Coag POC sotto POC (got ${JSON.stringify(dove.profili)})`);
+  check(scen, dove.qrx === "RX", `quesito RX nel gruppo RX (got ${dove.qrx})`);
   const optBox = await $panel(page, ".opt").first().boundingBox();
   check(scen, optBox.height <= 34, `righe esame compatte (${Math.round(optBox.height)}px)`);
   await context.close();
@@ -1395,6 +1409,35 @@ async function scenarioReferti(browser) {
   await $panel(page, "#refreset").click();
   await page.waitForTimeout(400);
   check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "Resetta azzera lo stato");
+  await context.close();
+}
+
+async function scenarioQuesitoRx(browser) {
+  const scen = "quesito-rx";
+  // la radiologia ha il suo quesito: il laboratorio prende quello sopra
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await page.waitForSelector("#psassist-host #qrx", { state: "attached" });
+  await $panel(page, '.opt[title*="TROPONINA"]').click();   // POC
+  await $panel(page, '.opt[title*="RX TORACE ("]').first().click(); // RX
+  // solo il quesito RX: la radiologia partirebbe, il laboratorio no
+  await $panel(page, "#qrx").fill("sospetto PNX");
+  check(scen, await $panel(page, "#go").isDisabled(), "senza il quesito del lab non parte");
+  await $panel(page, "#q").fill("dolore toracico");
+  check(scen, !(await $panel(page, "#go").isDisabled()), "con tutti e due parte");
+  await $panel(page, "#go").click();
+  for (let i = 0; i < 150; i++) {
+    const r = Object.values(mock.state.richieste);
+    if (r.length === 2 && r.some((x) => x.cart.has("324")) && r.some((x) => x.cart.has("35"))) break;
+    await page.waitForTimeout(200);
+  }
+  const rich = Object.values(mock.state.richieste);
+  const lab = rich.find((r) => r.cart.has("324"));
+  const rx = rich.find((r) => r.cart.has("35"));
+  check(scen, lab && lab.quesito === "dolore toracico", `laboratorio col suo quesito (got ${lab && JSON.stringify(lab.quesito)})`);
+  check(scen, rx && rx.quesito === "sospetto PNX", `radiologia col quesito RX (got ${rx && JSON.stringify(rx.quesito)})`);
   await context.close();
 }
 
@@ -2401,6 +2444,7 @@ const scenarios = [
   ["manual add on exam page", scenarioExamPageManual],
   ["wrong resource refused", scenarioWrongResourceRefused],
   ["missing quesito refused", scenarioMissingQuesito],
+  ["quesito RX distinto", scenarioQuesitoRx],
   ["radiology learning loop", scenarioRadiologyLearning],
   ["print wizard manual", scenarioPrintManual],
   ["print multi-lab rows (PROG split)", scenarioPrintMultiLab],

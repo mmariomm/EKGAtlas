@@ -90,13 +90,19 @@ dove non c'è un paziente aperto; sulla scheda di un paziente parte dagli **Esit
 
 ### Richieste
 1. **Quesito diagnostico** — casella su una riga, suggerimenti a fianco; l'ultimo resta scritto.
-2. **Profili rapidi** (Base PS, Epatico, Coag POC, Coag) o **esami singoli** — fra questi
+   La **radiologia ha il suo**: casella «Quesito RX» nel gruppo RX. Se è vuota, la richiesta di
+   radiologia prende quello sopra; se è scritta, il laboratorio usa quello sopra e la radiologia
+   il suo.
+2. Gli esami stanno in **gruppi per laboratorio** — **POC**, **Lab centrale** (le «Urgenze» e il
+   laboratorio centrale: per chi ordina sono lo stesso posto), **RX** — e ogni gruppo ha **in
+   testa i suoi profili rapidi**: Base PS e Coag POC sotto POC, Epatico e Coag sotto Lab
+   centrale. Poi gli **esami singoli** — fra questi
    **EGA VENOSA NEW** / **EGA ARTERIOSA NEW** (il laboratorio ha rifatto gli emogas: sono i
    codici nuovi, e la vecchia versione resta in elenco solo in «altri esami…»), gli **epatici
    uno per uno** (GPT, GOT, GAMMA GT, BILIRUBINA, LIPASI: il profilo li ordina insieme, ma
    quasi sempre se ne vuole uno solo) e **SARSCOV**
    (tampone antigenico SARS-CoV-2, laboratorio centrale), griglia compatta a
-   due colonne per laboratorio (POC / Urgenze / RX). Per tutto il resto: **«altri esami…»** con
+   due colonne per laboratorio (POC / Lab centrale / RX). Per tutto il resto: **«altri esami…»** con
    menu a tendina su tutti i laboratori. I selezionati restano in alto, una riga per laboratorio,
    con la ✕ al passaggio del mouse.
    In una sede che la versione **- NEW** non ce l'ha ancora, il pannello ordina **quella di
@@ -204,8 +210,12 @@ chiuso, resta com'era anche dopo che la pagina si ricarica.
   parole si recuperano esatte invece di indovinarle: leggi il referto senza cambiare scheda, lo
   copi per il diario con **⧉ Copia**, e il PDF resta a un tocco (**↗ PDF**). Un documento senza
   testo — un ECG è spesso un tracciato scansionato — non è un errore: il PDF **si tiene** (pallino
-  verde) e si apre com'è. Se il PDF proprio non si lascia leggere, il pallino è rosso col motivo, e
-  il documento **si apre lo stesso, con lo stesso tocco**.
+  verde) e si apre com'è. Se il pannello non lo legge, al tocco ci prova anche il **service
+  worker** (che raggiunge il server del portale, dove la pagina del gestionale non arriva). Se
+  neanche lui, il pallino è rosso col motivo — e il motivo dice **su quale server** il gestionale
+  rimanda il referto (solo l'indirizzo del server, niente del paziente) — e il documento **si apre
+  lo stesso, con lo stesso tocco**. **⧉ Copia diagnosi** ora c'è per **ogni** referto non letto,
+  non solo per i visualizzatori HTML.
 - **LIS/AMB ↗** — gli altri referti (PDF): si aprono in una scheda e, con l'estensione, il
   documento che apri **viene tenuto** (pallino verde) — la volta dopo si apre all'istante, senza
   toccare il server. **⬇ Salva referti** li prende tutti in una volta, **↻ Resetta** svuota.
@@ -796,7 +806,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 64 scenari e2e in Chromium reale (+ storico e referti)
+└── test/                ← simulatore SA4PSO + 65 scenari e2e in Chromium reale (+ storico e referti)
 ```
 
 Sviluppo:
@@ -807,7 +817,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 64 scenari e2e + 44 sull'estensione + 44 sul banco + storico + il cancello privacy
+npm test           # 65 scenari e2e + 45 sull'estensione + 44 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
