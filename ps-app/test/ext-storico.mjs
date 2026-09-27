@@ -241,6 +241,8 @@ check(mock.state.requests.length === primaRete, "e senza una singola richiesta a
 // ---- l'indirizzo del portale lo aggiunge il medico ----------------------
 // Stava scritto dentro il manifest: un IP e una porta. Se l'ospedale li
 // cambia il pannello non compare di là, e da qui non si capisce perché.
+await paziente.keyboard.press("Escape");   // la stampa del consenso è ancora aperta sopra
+await paziente.waitForTimeout(300);
 await paziente.locator('#psassist-host [data-seg="esiti"]').click();
 await paziente.waitForTimeout(400);
 check((await paziente.locator("#psassist-host #portapri").count()) === 1,
@@ -303,6 +305,7 @@ await p3.goto(mock.patientUrl);
 await p3.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 await p3.locator('#psassist-host [data-seg="esiti"]').click();
 await p3.waitForSelector("#psassist-host #risall", { timeout: 10000 });
+const risPrima = mock.state.requests.filter((q) => /RcsAccessiRisultatiElenco/.test(q.url)).length;
 const nasce = ctx.waitForEvent("page", { timeout: 15000 });
 await p3.locator("#psassist-host #risall").click();
 const sotto = await nasce.catch(() => null);
@@ -322,6 +325,8 @@ const dopo = await p3.locator("#psassist-host .bd").innerText().catch(() => "");
 check(/storico del portale|paziente da cui l'hai aperta/i.test(dopo) && (await p3.locator("#psassist-host .sttab").count()) === 1,
   "e lo storico è nella tabella degli Esiti, attribuito al paziente da cui è partito");
 check(chiamatePortale - primaP === 1, `una sola pagina del portale aperta per leggerlo (got ${chiamatePortale - primaP})`);
+const risDopo = mock.state.requests.filter((q) => /RcsAccessiRisultatiElenco/.test(q.url)).length;
+check(risDopo === risPrima, `col portale le finestre Risultati non si leggono: lì ci sono già tutti i valori (got ${risDopo - risPrima} letture)`);
 check(!portale.isClosed(), "la scheda del portale che il medico aveva aperto non si tocca");
 
 await ctx.close();

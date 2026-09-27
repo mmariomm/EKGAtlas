@@ -156,6 +156,13 @@ async function sottoControlla() {
     else if (s.fine && Date.now() - s.fine > 10 * 60e3) await chrome.storage.session.remove(k);
   }
 }
+// La scheda ha finito di caricare ma è rimasta sul gestionale: il link non
+// ha portato al portale (sessione scaduta, pagina d'errore). Inutile aspettare
+// 30 secondi — lo si dice subito, e il pannello legge i Risultati.
+chrome.tabs.onUpdated.addListener((id, info, tab) => {
+  if (info.status !== "complete" || !tab || !/^https:\/\/smarthealth\.multimedica\.it\//.test(tab.url || "")) return;
+  sottoGet(id).then((s) => s && s.esito === "attesa" && sottoFine(id, "nonportale")).catch(() => {});
+});
 chrome.tabs.onRemoved.addListener((id) => {
   sottoGet(id).then((s) => inCorso(s) && sottoSet(id, {
     ...s, fine: Date.now(), esito: s.esito === "lettura" ? (s.suo ? "letto" : "altro") : "chiusa",

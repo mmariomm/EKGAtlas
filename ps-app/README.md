@@ -69,8 +69,9 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
 
 ## Uso quotidiano
 
-Il pannello ha cinque schermate, con **Richieste | Esiti | Dimissioni | Consensi | EO** sempre in cima e il
-paziente + episodio nell'intestazione (anche da minimizzato). Sulla pagina «Storico dati clinici»
+Il pannello ha cinque schermate, in **una fila di pillole** sempre in cima e nell'ordine in cui si
+lavora: **Richieste · Esiti · EO · Consensi · Dimissioni** (dove non c'è un paziente, solo le ultime
+tre). Il paziente + episodio stanno nell'intestazione (anche da minimizzato). Sulla pagina «Storico dati clinici»
 del portale clinico non c'è pannello: solo una striscia che dice cosa ha letto.
 
 ### Pazienti (‹ in alto a sinistra)
@@ -161,8 +162,11 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   non è «il solito» porta un **asterisco o una croce**, spiegati nella legenda sotto la tabella.
 - **⭳ Carica i valori** legge i prelievi non ancora letti; fatta la prima lettura diventa
   **↻ Aggiorna**, che rilegge **tutti** i prelievi ancora aperti, a passo lento e uno alla volta.
-  Con l'estensione, lo stesso bottone apre anche lo **storico del portale** in una scheda di
-  sottofondo (vedi *Da dove viene la tabella*): si legge e si chiude da sola.
+  Con l'estensione il bottone legge **lo storico del portale**, in una scheda di sottofondo che si
+  chiude da sola (vedi *Da dove viene la tabella*): lì ci sono **tutti** i valori del laboratorio,
+  refertati e no, con una pagina sola. Le finestre Risultati — una richiesta per prelievo — si
+  leggono **solo se il portale non si può leggere** (niente estensione, niente link, o non ha
+  risposto: il pannello dice perché).
   **solo alterati** / **tutti** filtra le righe; **↺ Reset** dimentica i valori letti e la scheda
   in archivio di questo paziente, e **⭳ Carica i valori** li rilegge da zero (i tuoi segni
   restano).
@@ -198,8 +202,10 @@ chiuso, resta com'era anche dopo che la pagina si ricarica.
 - **RIS ›** — referti di **radiologia** (RX, TC, ecografia, RMN) ed **ECG**: si aprono **dentro il
   pannello, come testo**. Il PDF di quei referti porta con sé la mappa dei caratteri, quindi le
   parole si recuperano esatte invece di indovinarle: leggi il referto senza cambiare scheda, lo
-  copi per il diario con **⧉ Copia**, e il PDF resta a un tocco (**↗ PDF**). Se un documento non
-  contiene testo leggibile, il pannello lo dice e torna ad aprirlo come sempre.
+  copi per il diario con **⧉ Copia**, e il PDF resta a un tocco (**↗ PDF**). Un documento senza
+  testo — un ECG è spesso un tracciato scansionato — non è un errore: il PDF **si tiene** (pallino
+  verde) e si apre com'è. Se il PDF proprio non si lascia leggere, il pallino è rosso col motivo, e
+  il documento **si apre lo stesso, con lo stesso tocco**.
 - **LIS/AMB ↗** — gli altri referti (PDF): si aprono in una scheda e, con l'estensione, il
   documento che apri **viene tenuto** (pallino verde) — la volta dopo si apre all'istante, senza
   toccare il server. **⬇ Salva referti** li prende tutti in una volta, **↻ Resetta** svuota.
@@ -798,7 +804,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 64 scenari e2e + 42 sull'estensione + 44 sul banco + storico + il cancello privacy
+npm test           # 64 scenari e2e + 43 sull'estensione + 44 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

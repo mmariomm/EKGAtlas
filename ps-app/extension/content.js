@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.39.0";
+  const VERSION = "3.40.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2884,25 +2884,15 @@
     .rsys { flex: 0 0 auto; font-size: 9.5px; font-weight: 800; letter-spacing: .5px; color: #5B6B7A; background: #F4F8FB;
             border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
     .rlab { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .seg { display: flex; margin: 10px 12px 0; border: 1px solid #C4D0DC; border-radius: 10px; overflow: hidden; background: #F4F8FB; }
-    .seg button { flex: 1 1 50%; border: 0; background: transparent; padding: 9px 8px; min-height: 36px;
-                  font-size: 13px; font-weight: 700; color: #35506B; cursor: pointer;
-                  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .seg button + button { border-left: 1px solid #C4D0DC; }
-    .seg button.on { background: #0B5CAD; color: #fff; }
-    .seg button:not(.on):hover { background: #EAF2FA; color: #0B5CAD; }
-    .seg .n { margin-left: 4px; font-weight: 800; opacity: .7; font-variant-numeric: tabular-nums; }
-    /* Seconda riga: Dimissioni, Consensi, EO non appartengono al paziente che
-       hai davanti — sono modelli. Stanno separati e pesano meno di proposito:
-       la riga sopra è quello che AGISCE su questo paziente. */
-    .seg2 { display: flex; align-items: center; gap: 5px; margin: 7px 12px 0; flex-wrap: wrap; }
-    .seg2lab { font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
-               color: #A3B2C2; margin-right: 1px; cursor: default; }
-    .seg2 button { border: 1px solid #E3E8EF; background: #fff; border-radius: 999px; padding: 4px 11px;
-                   font: inherit; font-size: 11.5px; font-weight: 700; color: #5D6E7E; cursor: pointer; }
-    .seg2 button:hover { border-color: #9DBFDE; background: #F4F9FD; color: #0B5CAD; }
-    .seg2 button.on { border-color: #9DBFDE; background: #EAF2FA; color: #0B5CAD; }
-    .seg2 button:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    /* Le schermate in UNA fila di pillole, nell'ordine in cui si lavora:
+       Richieste, Esiti, EO, Consensi, Dimissioni. La pillola accesa è quella
+       dove sei. */
+    .seg { display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 12px 0; }
+    .seg button { border: 1px solid #C4D0DC; background: #fff; border-radius: 999px; padding: 5px 12px;
+                  font: inherit; font-size: 12.5px; font-weight: 700; color: #35506B; cursor: pointer; white-space: nowrap; }
+    .seg button:hover { border-color: #0B5CAD; background: #EAF2FA; color: #0B5CAD; }
+    .seg button.on { border-color: #0B5CAD; background: #0B5CAD; color: #fff; }
+    .seg .n { margin-left: 4px; font-weight: 800; opacity: .75; font-variant-numeric: tabular-nums; }
     .rgo { flex: 0 0 auto; color: #8296A9; font-size: 12px; }
     .pcard { display: flex; align-items: center; gap: 6px; border: 1px solid #E3E8EF; border-radius: 8px;
              padding: 4px 5px 4px 9px; margin-bottom: 4px; background: #fff; cursor: pointer; min-height: 30px; }
@@ -3699,17 +3689,14 @@
               </div>
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
               ${!this.runState && this.pageType === "patient" && !inHome ? this.notaHtmlPaziente() : ""}
-              ${!this.runState && this.pageType === "patient" && this.view !== "home" ? `
-                <div class="seg">
-                  <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
-                  <button class="${this.view === "esiti" || this.view === "referto" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>
-                </div>` : ""}
               ${!this.runState ? `
-                <div class="seg2">
-                  <span class="seg2lab" title="Non dipendono dal paziente: sono modelli tuoi, uguali per tutti">Modelli</span>
-                  <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
-                  <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi">Consensi</button>
+                <div class="seg" role="tablist">
+                  ${this.pageType === "patient" && this.view !== "home" ? `
+                  <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
+                  <button class="${this.view === "esiti" || this.view === "referto" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>` : ""}
                   <button class="${this.view === "eo" ? "on" : ""}" data-seg="eo" title="Esame obiettivo da copiare">EO</button>
+                  <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi">Consensi</button>
+                  <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
               <div class="bd">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div>
@@ -3975,7 +3962,9 @@
       this.nColEsiti = st ? st.date.length : 0;
       // con l'estensione e il link dello storico, il portale è una fonte anche
       // quando nel gestionale non c'è niente da leggere (tutto già refertato)
-      const conPortale = hasExt() && !DEMO && !!this.nomePaziente() && !!this.linkStorico();
+      const conPortale = this.conPortale();
+      // la tabella del portale è arrivata: allora non c'è più niente «da leggere»
+      const dalPortale = !!(this.storico && (this.storico.periodo || this.storico.paziente?.idMPI));
       if (!this.esiti.length && !st && !conPortale) return `<div class="hint">Nessun esito per questo paziente.</div>`;
 
       // ---- valori: cosa è cambiato dall'ultima lettura, colonna per colonna
@@ -4008,13 +3997,16 @@
         <div class="sec">
           <div class="lbl">Valori${t ? ` (${fondiFormula(st.righe).length} esami · ${t.nCol} prelievi)` : ""}
             ${vivi || conPortale ? `<button class="mini" id="risall" ${ra || sotto ? "disabled" : ""} title="Legge i valori dal gestionale, un prelievo alla volta${conPortale ? ", e lo storico del portale in una scheda di sottofondo" : ""}">${
-              ra ? `↻ ${ra.done}/${ra.total}…` : sotto ? "↻ storico…" : daLeggere === vivi ? "⭳ Carica i valori" : "↻ Aggiorna"}</button>` : ""}
+              ra ? `↻ ${ra.done}/${ra.total}…` : sotto ? "↻ storico…" : (conPortale ? !dalPortale : daLeggere === vivi) ? "⭳ Carica i valori" : "↻ Aggiorna"}</button>` : ""}
             ${t ? `<button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>` : ""}
             ${t || prelievi.some((e) => tabStore.get(this.risKey(e.id), null)) ? `<button class="mini" id="valreset" title="Dimentica i valori letti e la scheda in archivio di questo paziente: ⭳ Carica i valori li rilegge da zero">↺ Reset</button>` : ""}
           </div>
           ${nNov ? `<div class="newbar"><span>${nNov} ${nNov === 1 ? "valore nuovo" : "valori nuovi"} dall'ultima lettura</span><button id="letto" type="button">Letto</button></div>` : ""}
           ${sotto ? `<div class="hint">Leggo lo storico del portale in una scheda di sottofondo: si chiude da sola.</div>` : ""}
-          ${daLeggere && !ra ? `<div class="hint">${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"}: <b>⭳ Carica i valori</b>.</div>` : ""}
+          ${daLeggere && !ra && !conPortale ? `<div class="hint">${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"}: <b>⭳ Carica i valori</b>.</div>` : ""}
+          ${conPortale && !dalPortale && !sotto && !ra && !this.notaPortale ? `<div class="hint"><b>⭳ Carica i valori</b> legge lo storico del portale — tutti i prelievi, refertati e no — in una scheda di sottofondo.</div>` : ""}
+          ${this.notaPortale && !sotto ? `<div class="hint">Storico del portale non letto: ${esc(this.notaPortale)}. ${
+            vivi ? "I prelievi arrivano dalle finestre Risultati." : ""} Si può aprire dal link «Storico Dati Clinici»: si legge da solo.</div>` : ""}
           ${rotti.length ? `<div class="hint">${rotti.length === 1 ? "Un prelievo non si è lasciato leggere" : `${rotti.length} prelievi non si sono lasciati leggere`} (${
             esc(rotti.map((e) => e.when).filter(Boolean).join(", "))}): il Registro dice perché, <b>↻ Aggiorna</b> riprova.</div>` : ""}
           ${senzaData.length ? `<div class="hint">Di ${senzaData.length === 1 ? "un prelievo" : `${senzaData.length} prelievi`} la pagina non dà data e ora, né nel campo nascosto né nella riga: ${
@@ -4326,20 +4318,37 @@
         this._sotto = null;
         if (s && s.esito === "letto") {
           this.log(`${now()}  storico del portale letto in sottofondo: ${s.esami} esami · ${s.prelievi} prelievi`);
+          this.notaPortale = "";
           await this.caricaStorico();
         } else {
           const perche = {
             login: "il portale chiede di entrare", tempo: "la tabella non è comparsa in 30 secondi",
             altrove: "il portale si è aperto a un indirizzo che l'estensione non conosce (aggiungi l'indirizzo del portale)",
+            nonportale: "il link dello storico non ha aperto il portale",
             altro: "il portale ha aperto un altro paziente: non lo attribuisco", chiusa: "la scheda del portale è stata chiusa",
             rifiutato: (s && s.why) || "non aperto",
           }[s && s.esito] || "nessuna risposta";
           this.log(`${now()}  storico del portale in sottofondo: ${perche}`);
-          this.message = `Storico del portale non letto: ${perche}. Aprilo dal link «Storico Dati Clinici»: si legge da solo.`;
+          this.notaPortale = perche;
         }
         this.render();
       }
+      return !!(s && s.esito === "letto");
     }
+
+    // «⭳ Carica i valori». Lo storico del portale ha TUTTI i valori del
+    // laboratorio, refertati e no: basta quello, una pagina sola. Le finestre
+    // Risultati — una richiesta per prelievo — si leggono solo se il portale
+    // non si può leggere: senza estensione, senza link, o se non ha risposto.
+    async caricaValori() {
+      if (!this.conPortale()) return this.reloadTuttiValori();
+      const letto = await this.storicoInSottofondo();
+      if (!letto) {
+        this.log(`${now()}  leggo i prelievi dalle finestre Risultati, uno alla volta`);
+        return this.reloadTuttiValori();
+      }
+    }
+    conPortale() { return hasExt() && !DEMO && !!this.nomePaziente() && !!this.linkStorico(); }
 
     async caricaStorico() {
       if (this.pageType !== "patient" || !hasExt()) return;
@@ -4421,18 +4430,32 @@
         this.render();
         try {
           const { blob } = await fetchPdf(e.url, {});
-          const righe = await estraiTestoPdf(await blob.arrayBuffer());
+          const buf = await blob.arrayBuffer();
+          const righe = await estraiTestoPdf(buf);
+          // Il PDF c'è: si tiene in ogni caso. Prima, se non aveva testo, lo si
+          // buttava via e il pallino diventava rosso — ma un ECG è spesso un
+          // tracciato scansionato: niente testo, e va benissimo così.
+          if (hasExt()) {
+            const res = await ask({ t: "cacheRef", id, ep: this.episodeId, pk: this.chiavePaz(), data: bufB64(buf), size: blob.size });
+            if (res && res.ok) this.refCache = { ...(this.refCache || {}), [id]: res.size || 1 };
+          }
+          this.refBusy[id] = false;
           if (righe.length) {
             tabStore.set(this.txtKey(id), { ts: Date.now(), righe });
             this.archiviaReferto(e, righe);
-            this.refBusy[id] = false;
           } else {
-            this.refBusy[id] = "nessun testo leggibile";
-            this.log(`${now()}  ${shortLabel(e.label)}: il PDF non contiene testo leggibile — resta da aprire`);
+            this.log(`${now()}  ${shortLabel(e.label)}: il PDF è un'immagine, senza testo — salvato, si apre com'è`);
+            this.render();
+            return this.openReferto(id);
           }
         } catch (err) {
-          this.refBusy[id] = (err && (err.head || err.message)) || "non letto";
+          // Non letto: si dice perché (sul pallino e nel Registro) e il
+          // documento si apre lo stesso, con lo stesso clic — non al secondo.
+          this.refBusy[id] = `${(err && (err.head || err.message)) || "non letto"}${err && err.diag ? ` [${err.diag}]` : ""}`;
+          if (err instanceof ViewerError && err.html) this.diagnosi = { cosa: `referto ${shortLabel(e.label)}`, url: e.url, html: err.html, diag: err.diag, quando: now() };
           this.log(`${now()}  ${shortLabel(e.label)}: referto non letto (${this.refBusy[id]})`);
+          this.render();
+          return this.openReferto(id);
         }
         this.render();
       }
@@ -5079,7 +5102,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.render();
       }));
       $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.render(); });
-      $("#risall")?.addEventListener("click", () => { this.storicoInSottofondo(); this.reloadTuttiValori(); });
+      $("#risall")?.addEventListener("click", () => this.caricaValori());
       // «Letto»: da qui in poi le novità si contano da adesso, per tutti i prelievi
       $("#letto")?.addEventListener("click", () => {
         for (const e of this.esiti) if (e.kind === "valori") this.marcaLetto(e.id);
