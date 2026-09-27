@@ -289,6 +289,41 @@ const via = await p2.locator("#psassist-host .bd").innerText().catch(() => "");
 check(/paziente da cui l'hai aperta/.test(via),
   `l'identità è il paziente da cui hai aperto il portale (got ${(/identità confermata dal ([^.]*)/.exec(via) || [])[1] || "niente"})`);
 
+// ---- «⭳ Carica i valori» apre da solo lo storico, in sottofondo ----------
+// Lo stesso link che il medico clicca, aperto in una scheda che non ruba la
+// vista, letto come sempre e richiuso. Il link del gestionale reindirizza al
+// portale: qui lo fa una pagina con meta refresh (Playwright non segue un 302
+// finto verso un'altra origine).
+await ctx.route((u) => u.pathname.endsWith("/Sa4ViewerExtRedirect.do") && u.searchParams.get("MODALITA") === "CLINICA",
+  (r) => r.fulfill({ status: 200, headers: { "content-type": "text/html" }, body: `<meta http-equiv="refresh" content="0;url=${PORTALE}?sotto=1">` }));
+paginaCorrente = paginaStorico({ paziente: { idMPI: "900000004", cognome: "ROSSI", nome: "MARIO" } });
+const primaP = chiamatePortale;
+const p3 = await ctx.newPage();
+await p3.goto(mock.patientUrl);
+await p3.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+await p3.locator('#psassist-host [data-seg="esiti"]').click();
+await p3.waitForSelector("#psassist-host #risall", { timeout: 10000 });
+const nasce = ctx.waitForEvent("page", { timeout: 15000 });
+await p3.locator("#psassist-host #risall").click();
+const sotto = await nasce.catch(() => null);
+check(!!sotto, "il bottone apre una scheda per lo storico del portale");
+if (sotto) {
+  const sw = ctx.serviceWorkers()[0];
+  const attiva = sw ? await sw.evaluate(() => chrome.tabs.query({ active: true, currentWindow: true }).then((t) => (t[0] && t[0].url) || "")) : "";
+  check(!/sotto=1/.test(attiva), "in sottofondo: la scheda davanti resta quella del paziente");
+  await sotto.waitForEvent("close", { timeout: 40000 }).catch(() => {});
+  check(sotto.isClosed(), "letta la tabella, la scheda si chiude da sola");
+}
+await p3.waitForFunction(
+  () => /letto in sottofondo|paziente da cui l'hai aperta/.test(document.getElementById("psassist-host")?.shadowRoot?.textContent || ""),
+  { timeout: 15000 },
+).catch(() => {});
+const dopo = await p3.locator("#psassist-host .bd").innerText().catch(() => "");
+check(/storico del portale|paziente da cui l'hai aperta/i.test(dopo) && (await p3.locator("#psassist-host .sttab").count()) === 1,
+  "e lo storico è nella tabella degli Esiti, attribuito al paziente da cui è partito");
+check(chiamatePortale - primaP === 1, `una sola pagina del portale aperta per leggerlo (got ${chiamatePortale - primaP})`);
+check(!portale.isClosed(), "la scheda del portale che il medico aveva aperto non si tocca");
+
 await ctx.close();
 rmSync(PROFILE, { recursive: true, force: true });
 console.log(fail ? `\nSTORICO-ESTENSIONE: ${fail} CHECK FALLITI\n` : "\nSTORICO-ESTENSIONE: TUTTO OK\n");

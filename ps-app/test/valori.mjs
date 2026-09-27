@@ -23,9 +23,9 @@ const grab = (name) => {
   }
   return core.slice(i, end);
 };
-const { outOfRange, sigla, siglaCurata, nomiInattesi, sigleAmbigue } = new Function(
+const { outOfRange, sigla, siglaCurata, nomiInattesi, sigleAmbigue, valKey, fondiFormula } = new Function(
   grab("outOfRange") + "\n" + core.slice(core.indexOf("const SIGLE = ["), core.indexOf("// First ~160 chars"))
-  + "\nreturn { outOfRange, sigla, siglaCurata, nomiInattesi, sigleAmbigue };",
+  + "\nreturn { outOfRange, sigla, siglaCurata, nomiInattesi, sigleAmbigue, valKey, fondiFormula };",
 )();
 
 let fail = 0;
@@ -167,8 +167,36 @@ check(!nomiInattesi([{ nome: "Sodio" }, { nome: "Potassio" }]).length, "quando l
 // due nomi diversi che escono con la stessa abbreviazione sono peggio di un
 // nome sconosciuto: nel prelievo si leggerebbero come lo stesso esame
 const amb = sigleAmbigue([{ nome: "PTT secondi" }, { nome: "PTT Ratio" }, { nome: "Granulociti" }, { nome: "Granulociti %" }, { nome: "Sodio" }]);
-check(amb.has("PTT") && amb.has("Neu"), "riconosce le abbreviazioni che collidono nello stesso prelievo");
+check(amb.has("Neu"), "riconosce le abbreviazioni che collidono nello stesso prelievo");
 check(!amb.has("Na"), "e non se la prende con quelle che non collidono");
+// …ma il rapporto del PTT ha la sua sigla: non è più un «doppione» del PTT in secondi
+eq(sigla("PTT Ratio"), "PTTr", "PTT Ratio ha la sua sigla");
+check(!amb.has("PTT"), "e PTT secondi / PTT Ratio non collidono più");
+
+// ---- i doppioni veri: lo stesso analita scritto in due modi dalle due fonti
+eq(valKey("S-Sodio"), valKey("Sodio"), "S-Sodio del portale e Sodio della finestra: una riga");
+eq(valKey("P-Sodio"), valKey("Sodio"), "idem il plasma");
+check(valKey("U-Emoglobina") !== valKey("Emoglobina"), "l'Hb delle urine resta un'altra riga");
+check(valKey("S-100") !== valKey("100") && valKey("B-12") !== valKey("12"), "S-100 e B-12 restano interi");
+eq(valKey("pCO₂"), valKey("pCO2"), "pedice = cifra");
+eq(valKey("Linfociti%"), valKey("Linfociti %"), "% attaccato = staccato");
+check(valKey("Granulociti %") !== valKey("Granulociti"), "% e assoluto restano due grandezze");
+
+// ---- la formula in una riga: si accoppia per NOME, non per sigla
+const RF = (nome, um, vals) => ({ nome, esame: "", mnem: "", pos: 0, valori: vals.map((v) => v == null ? { v: "", stato: 0 } : { v: String(v), stato: 0, um }) });
+const ff = fondiFormula([RF("Neutrofili %", "%", [null, 68]), RF("Granulociti", "x10", [4, null]), RF("Granulociti %", "%", [56, null]), RF("Neutrofili", "x10", [null, 5.1])]);
+const cellaF = (nome) => ff.find((r) => r.nome === nome)?.valori.map((v) => v.v + (v.pct ? `(${v.pct}%)` : "")).join("|");
+eq(cellaF("Granulociti"), "4(56%)|", "il % dei neutrofili non finisce nella riga dei granulociti");
+eq(cellaF("Neutrofili"), "|5.1(68%)", "i neutrofili hanno la loro percentuale");
+eq(ff.length, 2, "due righe, non tre");
+eq(sigla("Granulociti eosinofili"), "Eos", "eosinofili per esteso");
+eq(sigla("Granulociti basofili %"), "Bas", "basofili");
+eq(sigla("Ricerca eosinofili nel secreto nasale"), "Ricerca", "una citologia non diventa Eos");
+
+// ---- il potassio dell'emogas non è il CPK
+eq(sigla("cK+"), "K", "cK+ dell'emogas è potassio");
+eq(sigla("CK"), "CPK", "e il CK resta CPK");
+eq(sigla("CK-MB"), "CKMB", "e il CK-MB resta CK-MB");
 
 // pattern che prendevano esami per cui non erano stati scritti
 eq(sigla("Bilirubina indiretta"), "BilI", "l'indiretta non è la diretta");

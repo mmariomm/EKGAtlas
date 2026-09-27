@@ -350,6 +350,21 @@ check(fusioni.due === 2 && fusioni.valori.join("|") === "91|142",
 check(fusioni.uno === 1 && fusioni.rifuso === 2,
   `lo stesso accesso non raddoppia, nemmeno rifondendo (got ${fusioni.uno} e ${fusioni.rifuso})`);
 
+// ---- lo stesso analita scritto in due modi dalle due fonti: UNA riga
+// Il portale scrive «S-Sodio», la finestra Risultati «Sodio»: erano due righe,
+// e il medico vedeva mezza chimica due volte. Ma due nomi diversi che nello
+// stesso prelievo si contraddicono (S- e P-) non si coprono mai.
+const fusa = await page.evaluate((s) => new Function(s + `
+  const col = (label, id) => ({ data: label.slice(0, 10), ora: label.slice(11), label, chiave: label + "#1", id });
+  const riga = (nome, v) => ({ nome, esame: "X", codice: "", mnem: "", pos: 0, valori: [{ v, stato: 0 }] });
+  const portale = { cf: "x", date: [col("01/09/2026 08:12", "")], righe: [riga("S-Sodio", "141"), riga("P-Sodio", "139"), riga("U-Emoglobina", "assente")] };
+  const finestra = { cf: "x", date: [col("02/09/2026 07:05", "A1")], righe: [riga("Sodio", "129"), riga("Emoglobina", "120")] };
+  return fondiStorico(finestra, portale).righe.map((r) => r.nome + "=" + r.valori.map((v) => v.v || "-").join("|"));
+`)(), src);
+check(fusa.includes("Sodio=141|129"), `S-Sodio del portale e Sodio della finestra: UNA riga (got ${fusa.join(" · ")})`);
+check(fusa.includes("P-Sodio=139|-"), "un P-Sodio diverso nello stesso prelievo non viene coperto");
+check(fusa.some((x) => /^U-Emoglobina=/.test(x)) && fusa.some((x) => /^Emoglobina=/.test(x)), "le urine restano a parte");
+
 // no draw at all in the period
 const vuota = await leggi(paginaStorico({ esami: [["EMOCROMO", "Emoglobina", "1201", "HB", ["", "", ""], [0, 0, 0]]] }));
 check(vuota.dati === null, "un periodo senza risultati non produce una tabella vuota");

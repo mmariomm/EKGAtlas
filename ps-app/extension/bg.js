@@ -122,6 +122,46 @@ async function prune() {
 chrome.runtime.onStartup?.addListener(() => chrome.storage.local.get(null).then((all) =>
   chrome.storage.local.remove(Object.keys(all).filter((k) => k.startsWith("ref:")))));
 
+// ---------------------------------------------------------------------------
+// «⭳ Carica i valori» apre anche lo storico del portale, in una scheda di
+// sottofondo: la stessa pagina che il medico apre col link «Storico Dati
+// Clinici», dallo stesso link della pagina — mai un indirizzo costruito, mai
+// una richiesta diretta al portale. Lì il content script legge la tabella come
+// fa sempre; qui si segue la scheda e la si chiude appena ha consegnato.
+// Lo stato sta in storage.session: se il service worker si ferma a metà, non
+// si perde niente.
+let SOTTO_MAX = 30000;                 // oltre, la tabella non arriverà
+const SOTTO_QUIETE = 2500;             // dopo l'ultima consegna, si chiude
+const quiete = new Map();
+const sottoK = (id) => "sotto:" + id;
+const inCorso = (s) => !!s && (s.esito === "attesa" || s.esito === "lettura");
+async function sottoGet(id) { if (id == null) return null; return (await chrome.storage.session.get(sottoK(id)))[sottoK(id)] || null; }
+const sottoSet = (id, v) => chrome.storage.session.set({ [sottoK(id)]: v });
+async function sottoFine(id, esito) {
+  const s = await sottoGet(id);
+  if (!inCorso(s)) return;
+  const t = await chrome.tabs.get(id).catch(() => null);
+  if (esito === "tempo" && t && !t.url) esito = "altrove";   // l'url si vede solo sui nostri indirizzi
+  await sottoSet(id, { ...s, esito, fine: Date.now() });
+  clearTimeout(quiete.get(id)); quiete.delete(id);
+  // se il medico ci è andato sopra, la scheda è sua: non si chiude
+  if (t && !t.active) await chrome.tabs.remove(id).catch(() => {});
+}
+async function sottoControlla() {
+  for (const [k, s] of Object.entries(await chrome.storage.session.get(null))) {
+    if (!k.startsWith("sotto:")) continue;
+    const id = Number(k.slice(6));
+    if (s.esito === "attesa" && Date.now() - s.ts > SOTTO_MAX) await sottoFine(id, "tempo");
+    else if (s.esito === "lettura" && Date.now() - s.ultima > SOTTO_QUIETE) await sottoFine(id, s.suo ? "letto" : "altro");
+    else if (s.fine && Date.now() - s.fine > 10 * 60e3) await chrome.storage.session.remove(k);
+  }
+}
+chrome.tabs.onRemoved.addListener((id) => {
+  sottoGet(id).then((s) => inCorso(s) && sottoSet(id, {
+    ...s, fine: Date.now(), esito: s.esito === "lettura" ? (s.suo ? "letto" : "altro") : "chiusa",
+  })).catch(() => {});
+});
+
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg === "psassist-reload") { chrome.runtime.reload(); return; }
   if (!msg || typeof msg !== "object") return;
@@ -205,11 +245,57 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
   if (msg.t === "chiAprivo") {
-    chrome.storage.session.get("apertura")
-      .then((o) => {
-        const a = o.apertura;
-        reply(a && Date.now() - (a.ts || 0) < 20 * 60e3 ? { ok: true, ...a } : { ok: false });
-      }).catch(() => reply({ ok: false }));
+    // Prima la scheda aperta da noi in sottofondo: sa per chi è, e lo spazio
+    // condiviso «apertura» non si tocca — è quello del clic del medico, e una
+    // scheda del portale aperta a mano deve continuare a trovarci il suo.
+    sottoGet(_sender.tab && _sender.tab.id).then(async (s) => {
+      if (s) return reply({ ok: true, ep: s.ep, nome: s.nome, ts: s.ts, sotto: true });
+      const a = (await chrome.storage.session.get("apertura")).apertura;
+      reply(a && Date.now() - (a.ts || 0) < 20 * 60e3 ? { ok: true, ...a } : { ok: false });
+    }).catch(() => reply({ ok: false }));
+    return true;
+  }
+
+  if (msg.t === "apriStoricoSotto") {
+    (async () => {
+      const da = _sender.tab;
+      let u;
+      try { u = new URL(String(msg.url || "")); } catch { return reply({ ok: false, why: "link non valido" }); }
+      // solo il link vero della pagina del paziente, e solo quello
+      let origineMia = "";
+      try { origineMia = new URL(_sender.url).origin; } catch { /* niente */ }
+      if (!da || u.origin !== origineMia || u.origin !== "https://smarthealth.multimedica.it"
+          || !/\/Sa4ViewerExtRedirect\.do$/i.test(u.pathname) || u.searchParams.get("MODALITA") !== "CLINICA") {
+        return reply({ ok: false, why: "link inatteso" });
+      }
+      await sottoControlla();
+      const vive = Object.entries(await chrome.storage.session.get(null)).filter(([k, s]) => k.startsWith("sotto:") && inCorso(s));
+      const gia = vive.find(([, s]) => s.opener === da.id);
+      if (gia) return reply({ ok: true, tabId: Number(gia[0].slice(6)), gia: true });   // doppio clic
+      if (vive.length >= 3) return reply({ ok: false, why: "troppe letture in corso" });
+      // nasce vuota, si annota per chi è, POI parte: così l'annotazione arriva
+      // sempre prima dello script del portale
+      const vuota = { url: "about:blank", active: false };
+      const t = await chrome.tabs.create({ ...vuota, openerTabId: da.id, index: da.index + 1, windowId: da.windowId })
+        .catch(() => chrome.tabs.create(vuota));
+      await sottoSet(t.id, { opener: da.id, ep: String(msg.ep || ""), nome: String(msg.nome || "").slice(0, 60), ts: Date.now(), esito: "attesa" });
+      await chrome.tabs.update(t.id, { url: u.href });
+      setTimeout(() => sottoControlla().catch(() => {}), SOTTO_MAX + 500);
+      reply({ ok: true, tabId: t.id });
+    })().catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 80) }));
+    return true;
+  }
+  if (msg.t === "esitoSotto") {
+    sottoControlla().then(() => sottoGet(Number(msg.tabId)))
+      .then((s) => reply(s ? { ok: true, esito: s.esito, esami: s.esami || 0, prelievi: s.prelievi || 0 } : { ok: false }))
+      .catch(() => reply({ ok: false }));
+    return true;
+  }
+  // il portale ha chiesto di entrare: vale solo per le schede aperte da noi
+  if (msg.t === "sottoLogin") {
+    const id = _sender.tab && _sender.tab.id;
+    sottoGet(id).then((s) => s && s.esito === "attesa" && sottoFine(id, "login"))
+      .catch(() => {}).then(() => reply({ ok: true }));
     return true;
   }
 
@@ -219,10 +305,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     inFila(async () => {
       const o = await chrome.storage.local.get(ARCH);
       const a = potaArchivio(o[ARCH] || {});
+      // Chi scrive dice da quale revisione della scheda è partito: se nel
+      // frattempo qualcun altro l'ha cambiata (il portale mentre si leggono i
+      // Risultati, o due schede insieme), non la si copre — si risponde
+      // «conflitto», e chi scrive rilegge, rifonde e riprova.
+      if ("base" in msg && ((a[chiave] && a[chiave].rev) || 0) !== (msg.base || 0)) {
+        return reply({ ok: false, conflitto: true });
+      }
       const nuovo = !a[chiave];
-      a[chiave] = msg.dati;
+      a[chiave] = { ...msg.dati, rev: ((a[chiave] && a[chiave].rev) || 0) + 1 };
       await chrome.storage.local.set({ [ARCH]: potaArchivio(a) });
       reply({ ok: true, nuovo, pazienti: Object.keys(a).length });
+      // se l'ha mandata una scheda aperta da noi in sottofondo: ha letto.
+      // Si chiude dopo un momento di calma (la tabella può arrivare a pezzi).
+      const id = _sender.tab && _sender.tab.id;
+      const st = id != null ? await sottoGet(id) : null;
+      if (inCorso(st)) {
+        await sottoSet(id, { ...st, esito: "lettura", ultima: Date.now(), suo: String(msg.dati.ep || "") === st.ep,
+          esami: (msg.dati.righe || []).length, prelievi: (msg.dati.date || []).length });
+        clearTimeout(quiete.get(id));
+        quiete.set(id, setTimeout(() => sottoControlla().catch(() => {}), SOTTO_QUIETE + 100));
+      }
     }).catch(() => reply({ ok: false }));
     return true;
   }

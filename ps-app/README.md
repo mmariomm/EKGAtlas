@@ -161,6 +161,8 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   non è «il solito» porta un **asterisco o una croce**, spiegati nella legenda sotto la tabella.
 - **⭳ Carica i valori** legge i prelievi non ancora letti; fatta la prima lettura diventa
   **↻ Aggiorna**, che rilegge **tutti** i prelievi ancora aperti, a passo lento e uno alla volta.
+  Con l'estensione, lo stesso bottone apre anche lo **storico del portale** in una scheda di
+  sottofondo (vedi *Da dove viene la tabella*): si legge e si chiude da sola.
   **solo alterati** / **tutti** filtra le righe; **↺ Reset** dimentica i valori letti e la scheda
   in archivio di questo paziente, e **⭳ Carica i valori** li rilegge da zero (i tuoi segni
   restano).
@@ -298,6 +300,27 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
 - Aprendo quella pagina compare in basso una striscia: *«90 esami · 4 prelievi letti — COGNOME
   NOME»*. Se sposti le colonne o cambi il periodo, **↻ Rileggi** aggiunge i prelievi nuovi a
   quelli già letti (non li sostituisce).
+- **Non serve aprirla a mano: ⭳ Carica i valori lo fa da sé.** Il pannello prende il link
+  «Storico Dati Clinici» **di questa pagina** — mai un indirizzo costruito, mai una richiesta
+  diretta al portale — e l'estensione lo apre in una **scheda di sottofondo**, accanto, senza
+  toglierti la vista. Lì la tabella si legge come quando la apri tu; se il portale la tiene
+  dietro la voce **Tabella**, la si apre con un clic nell'interfaccia, come faresti tu (solo nelle
+  schede aperte così). Arrivata la tabella, la scheda **si chiude da sola** — se ci sei andato
+  sopra, resta tua. Per chi è lo sa la scheda stessa: la apre il pannello di quel paziente.
+  La scheda del portale che hai aperto tu non si tocca. Se in 30 secondi la tabella non arriva
+  (il portale chiede di entrare, si apre altrove, mostra un altro paziente) il pannello **dice
+  perché** e il link a mano resta. Nessun permesso nuovo per l'estensione.
+- **La scheda clinica si fonde, non si sovrascrive.** Il portale, le finestre Risultati e i
+  referti letti scrivono nella stessa scheda del paziente: ognuno rilegge quello che c'è, fonde e
+  riscrive dicendo da quale revisione è partito — se nel frattempo un altro ha scritto, rilegge e
+  rifonde. Prima l'ultimo a scrivere cancellava gli altri: la tabella del portale arrivata dopo i
+  Risultati si portava via i prelievi letti e i referti salvati.
+- **Lo stesso esame scritto in due modi è una riga sola.** Il portale scrive «S-Sodio», la
+  finestra Risultati «Sodio»: erano due righe, e mezza chimica compariva due volte. Il prefisso del
+  campione (S-, P-, B-) non fa l'identità quando il resto è un nome noto; U- (urine) resta a
+  parte, «S-100» e «B-12» restano interi, pCO₂ = pCO2. Due nomi diversi che nello stesso prelievo
+  si contraddicono (S-Sodio e P-Sodio) non si coprono mai. «PTT Ratio» ha una sigla sua (PTTr),
+  e «cK+» dell'emogas è potassio, non CPK.
 - Tornando sul paziente, quei prelievi entrano **da soli** nella tabella **Valori** di **Esiti**,
   uniti a quelli letti dalla finestra Risultati del gestionale — niente riga da aprire, niente
   schermata a parte (vedi sopra come si legge la tabella).
@@ -682,7 +705,8 @@ stessi flussi dei test di prodotto.
 15. **Niente parte da solo, e niente si inventa.** Aprire la pagina di un paziente non legge
     **nessun** valore: cliccare un paziente non è chiedere il laboratorio. I valori si leggono
     quando li chiedi — aprendo un prelievo, o con **⭳ Carica i valori** che li prende tutti, uno
-    alla volta — e un prelievo che ha già fallito non si ritenta da solo. Un referto che apri non
+    alla volta, insieme allo storico del portale aperto in sottofondo dal link della pagina —
+    e un prelievo che ha già fallito non si ritenta da solo. Un referto che apri non
     viene riletto per tenerne una copia: per quello c'è **⬇ Salva referti**. E la tabella
     multi-prelievo viene **letta dalla pagina che hai davanti**, non chiesta all'API che la
     riempie — una chiamata diretta a quel servizio arriverebbe senza l'`Origin` della sua app,
@@ -774,7 +798,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 64 scenari e2e + 32 sull'estensione + 44 sul banco + storico + il cancello privacy
+npm test           # 64 scenari e2e + 42 sull'estensione + 44 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

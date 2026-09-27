@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.38.1";
+  const VERSION = "3.39.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -391,12 +391,15 @@
     [/^emoglobina(?!\s*glicat)|^hgb\b|^hb\b/i, "Hb"],
     [/^ematocrito|^hct/i, "Ht"], [/^piastrine|^plt/i, "PLT"], [/^eritrociti|globuli rossi|^rbc/i, "GR"],
     [/^mcv|vol\.? glob/i, "MCV"], [/^mchc/i, "MCHC"], [/^mch\b|cont\.? media/i, "MCH"], [/^rdw/i, "RDW"],
-    [/^granulociti|neutrofil/i, "Neu"], [/^linfocit/i, "Lin"], [/^monocit/i, "Mon"],
+    [/^(granulociti\s+)?eosinofil/i, "Eos"], [/^(granulociti\s+)?basofil/i, "Bas"], [/^granulociti|neutrofil/i, "Neu"], [/^linfocit/i, "Lin"], [/^monocit/i, "Mon"],
     [/^eosinofil/i, "Eos"], [/^basofil/i, "Bas"], [/altre popolazioni/i, "Altre"],
     [/^creatinin/i, "Cr"], [/^azotemia|^urea/i, "Az"], [/^sodio|^na\b/i, "Na"], [/^potassio|^k\b/i, "K"],
     [/^cloro|^cl\b/i, "Cl"], [/calcio ioniz/i, "Ca++"], [/^calcio/i, "Ca"], [/^magnesio/i, "Mg"],
     [/^glucosio|glicemia/i, "Glu"], [/proteina c reattiva|^pcr\b/i, "PCR"], [/procalcitonin/i, "PCT"],
     [/troponina/i, "Trop"], [/d.?dimero/i, "DD"], [/^inr/i, "INR"], [/^pt\b|protrombin/i, "PT"],
+    // il rapporto del PTT è un'altra grandezza dei secondi: con la stessa
+    // sigla le due righe finivano scritte per esteso, e sembravano un doppione
+    [/^a?ptt\s*ratio/i, "PTTr"],
     [/^ptt|tromboplastin/i, "PTT"], [/fibrinogeno/i, "Fib"],
     // "indiretta" contiene "diretta": vanno distinte, o la bilirubina diretta
     // e l'indiretta diventano due righe con la stessa etichetta
@@ -404,6 +407,9 @@
     [/bilirubina\s+diretta|bil\.?\s*diretta/i, "BilD"],
     [/bilirubina/i, "Bil"], [/^got\b|^ast\b/i, "AST"], [/^gpt\b|^alt\b/i, "ALT"],
     [/gamma\s?gt|^ggt/i, "γGT"], [/fosfatasi alc/i, "ALP"], [/^ldh/i, "LDH"],
+    // «cK+» è il potassio dell'emogas: senza questa riga la regola del CPK
+    // (^ck) lo prendeva, e il potassio compariva come CPK fra gli enzimi
+    [/^c?k\s*\+/i, "K"],
     [/\bck\s?-?\s?mb\b/i, "CKMB"], [/^cpk|creatinchinasi|^ck\b(?!\s?-?\s?mb)/i, "CPK"],
     [/^lipasi/i, "Lip"], [/^amilasi/i, "Amy"],
     [/albuminuria|microalbuminur/i, "Albu"], [/^albumin/i, "Alb"],
@@ -434,7 +440,7 @@
   // Chi non è in elenco finisce in «Altri»: non si perde niente, mai.
   const SEZIONI = [
     ["Emocromo", ["GB", "Neu", "Lin", "Mon", "Eos", "Bas", "Altre", "Hb", "Ht", "GR", "MCV", "MCH", "MCHC", "RDW", "PLT"]],
-    ["Coagulazione", ["PT", "INR", "PTT", "Fib", "DD"]],
+    ["Coagulazione", ["PT", "INR", "PTT", "PTTr", "Fib", "DD"]],
     ["Biochim", ["PCR", "PCT", "VES", "Trop", "NTproBNP", "BNP", "CPK", "CKMB", "Mb", "LDH"]],
     ["Organi", ["Cr", "Az", "AST", "ALT", "γGT", "ALP", "Bil", "BilD", "BilI", "Amy", "Lip", "Alb", "NH3"]],
     ["Elettroliti e metabolismo", ["Na", "K", "Cl", "Ca", "Ca++", "Mg", "Glu", "HbA1c", "TSH"]],
@@ -514,12 +520,13 @@
     for (const r of righe || []) {
       const sg = sigla(r.nome);
       if (!FORMULA.has(sg)) { out.push(r); continue; }
-      const c = coppie.get(sg) || {};
+      const stelo = valKey(String(r.nome).replace(/[%#]/g, " "));   // «Granulociti %» → «granulociti»
+      const c = coppie.get(stelo) || {};
       const lato = ePct(r) ? "pct" : "abs";
       // una terza riga con la stessa sigla non si indovina: resta com'è
       if (c[lato]) { out.push(r); continue; }
       c[lato] = r;
-      if (!coppie.has(sg)) { coppie.set(sg, c); out.push({ segnaposto: sg }); }
+      if (!coppie.has(stelo)) { coppie.set(stelo, c); out.push({ segnaposto: stelo }); }
     }
     return out.map((r) => {
       if (!r.segnaposto) return r;
@@ -603,7 +610,10 @@
   // ---- comparing draws -----------------------------------------------------
   // The identity of an analyte across draws: the same name however the
   // laboratory spelled it. Rows of two draws meet on this key.
-  const valKey = (nome) => String(nome || "").replace(/&nbsp;/g, " ").replace(/[^a-zà-ù0-9%+]+/gi, " ").trim().toLowerCase();
+  // Il campione neutro (S-, P-, B-…) non fa l'identità, come per sigla(): «S-Sodio» del portale
+  // e «Sodio» della finestra Risultati sono lo stesso analita — solo se il resto è un nome noto
+  // («S-100» resta intero), e U-/Lcr- restano. pCO₂ = pCO2, «Linfociti%» = «Linfociti %».
+  const valKey = (nome) => { const n = String(nome || "").replace(/&nbsp;/g, " ").normalize("NFKC"), { pre, resto } = scomponi(n); return (siglaCurata(n) ? pre + resto : n).replace(/[^a-zà-ù0-9%+]+/gi, " ").replace(/\s*%\s*/g, " % ").trim().toLowerCase(); };
 
   // First ~160 chars of visible page text, for the log when a page is unexpected.
   function snippet(doc) {
@@ -1140,6 +1150,21 @@
   // Two reads of the same table can show different draws: the portal only
   // renders the columns in view. Merging by (esame, data) means scrolling the
   // period ADDS draws instead of replacing them.
+  // Scrivere nella scheda clinica del paziente SENZA cancellare quello che
+  // c'è: si legge, si fonde, si riscrive dicendo da quale revisione si è
+  // partiti. Se un'altra scrittura è passata nel mezzo, si rilegge e si
+  // rifonde. Prima si scriveva e basta: la tabella del portale arrivata dopo i
+  // Risultati si portava via i prelievi letti e i referti salvati.
+  async function mettiInScheda(chiave, nuovo, fondi = unisciStorico) {
+    for (let i = 0; i < 4; i++) {
+      const gia = await ask({ t: "getStorico", chiave });
+      const vecchio = gia && gia.ok ? gia.dati : null;
+      const r = await ask({ t: "putStorico", chiave, dati: fondi(vecchio, nuovo), base: (vecchio && vecchio.rev) || 0 });
+      if (!r || !r.conflitto) return r || { ok: false };
+    }
+    return { ok: false };
+  }
+
   function unisciStorico(vecchio, nuovo) {
     if (!vecchio || !nuovo) return nuovo || vecchio || null;
     // Un altro paziente: si ricomincia. Il nome NON basta a dire «è lo
@@ -1181,6 +1206,7 @@
     const perEsame = new Map();
     const versa = (dati, mappa) => {
       const colDi = (d) => (mappa && mappa.get(chiaveCol(d))) || chiaveCol(d);
+      const qui = new Map();   // chiave → { nome, celle }, dentro QUESTA tabella
       for (const r of dati.righe) {
         // HB is both blood haemoglobin and the urine dipstick: the analyte
         // alone is not an identity, the ordered exam is part of it
@@ -1191,7 +1217,15 @@
         // invece di diventarne due. Quando l'analita non c'è (il nome ricade
         // sulla prestazione) solo la posizione distingue le righe.
         const anonima = !r.mnem && r.nome === r.esame;
-        const k = valKey(r.nome) + (anonima ? "|#" + (r.pos ?? 0) : "");
+        let k = valKey(r.nome) + (anonima ? "|#" + (r.pos ?? 0) : "");
+        // due nomi DIVERSI della stessa tabella con la stessa chiave (S-Sodio e P-Sodio)
+        // si fondono solo se non si contraddicono: un valore non ne copre mai un altro
+        const gia = qui.get(k);
+        if (gia && gia.nome !== r.nome && r.valori.some((v, i) => v.v && dati.date[i]
+            && gia.celle.has(colDi(dati.date[i])) && gia.celle.get(colDi(dati.date[i])) !== v.v)) k += "|" + r.nome;
+        const mio = qui.get(k) || { nome: r.nome, celle: new Map() };
+        r.valori.forEach((v, i) => { if (v.v && dati.date[i]) mio.celle.set(colDi(dati.date[i]), v.v); });
+        qui.set(k, mio);
         const cur = perEsame.get(k) || { nome: r.nome, esame: r.esame, codice: r.codice, mnem: r.mnem, pos: r.pos, per: new Map() };
         // La provenienza viaggia CON il valore. Due prelievi possono aver
         // fatto lo stesso esame con macchine diverse (POC e laboratorio):
@@ -1212,9 +1246,16 @@
     // i referti già letti per questo paziente non si perdono in una fusione
     const referti = [...(nuovo.referti || []), ...(vecchio.referti || [])]
       .filter((r, i, a) => r && r.id && a.findIndex((x) => x.id === r.id) === i).slice(0, 40);
-    return { paziente: nuovo.paziente, cf: nuovo.cf || vecchio.cf || "",
+    // Chi arriva dopo con meno non cancella quello che c'era: un prelievo dei
+    // Risultati non ha il periodo del portale, e ha il nome solo come titolo
+    // di pagina. L'identità strutturata (cognome/nome del portale) resta —
+    // mai mescolata campo per campo, o «ROSSI» + «ROSSI MARIO» diventerebbe
+    // un terzo nome che non combacia più con nessuno.
+    const strutturata = (p) => !!(p && (p.cognome || p.idMPI));
+    const paziente = strutturata(vecchio.paziente) && !strutturata(nuovo.paziente) ? vecchio.paziente : nuovo.paziente;
+    return { paziente, cf: nuovo.cf || vecchio.cf || "",
              ep: nuovo.ep || vecchio.ep || "", nomeSa4: nuovo.nomeSa4 || vecchio.nomeSa4 || "",
-      periodo: nuovo.periodo, date, righe, referti,
+      periodo: nuovo.periodo || vecchio.periodo || "", date, righe, referti,
              // le stesse righe rifiutate arrivano da tutt'e due i lati quando
              // una tabella viene rifusa: una volta sola
              scartate: [...(vecchio.scartate || []), ...(nuovo.scartate || [])]
@@ -3932,7 +3973,10 @@
       const referti = this.esiti.filter((e) => e.kind === "referto");
       const st = this.datiEsiti();
       this.nColEsiti = st ? st.date.length : 0;
-      if (!this.esiti.length && !st) return `<div class="hint">Nessun esito per questo paziente.</div>`;
+      // con l'estensione e il link dello storico, il portale è una fonte anche
+      // quando nel gestionale non c'è niente da leggere (tutto già refertato)
+      const conPortale = hasExt() && !DEMO && !!this.nomePaziente() && !!this.linkStorico();
+      if (!this.esiti.length && !st && !conPortale) return `<div class="hint">Nessun esito per questo paziente.</div>`;
 
       // ---- valori: cosa è cambiato dall'ultima lettura, colonna per colonna
       // si parte dalle COLONNE della tabella: ognuna porta l'accesso da cui
@@ -3959,22 +4003,24 @@
       const ra = this._refreshAll;
       const t = st ? this.tabellaStorico(st, nov, leggiSegni(this.chiaveNota())) : null;
       const chi = st ? [st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") : "";
-      const valori = prelievi.length || st ? `
+      const sotto = this._sotto;
+      const valori = prelievi.length || st || conPortale ? `
         <div class="sec">
-          <div class="lbl">Valori${t ? ` (${st.righe.length} esami · ${t.nCol} prelievi)` : ""}
-            ${vivi ? `<button class="mini" id="risall" ${ra ? "disabled" : ""} title="Legge i valori dal gestionale, un prelievo alla volta">${
-              ra ? `↻ ${ra.done}/${ra.total}…` : daLeggere === vivi ? "⭳ Carica i valori" : "↻ Aggiorna"}</button>` : ""}
+          <div class="lbl">Valori${t ? ` (${fondiFormula(st.righe).length} esami · ${t.nCol} prelievi)` : ""}
+            ${vivi || conPortale ? `<button class="mini" id="risall" ${ra || sotto ? "disabled" : ""} title="Legge i valori dal gestionale, un prelievo alla volta${conPortale ? ", e lo storico del portale in una scheda di sottofondo" : ""}">${
+              ra ? `↻ ${ra.done}/${ra.total}…` : sotto ? "↻ storico…" : daLeggere === vivi ? "⭳ Carica i valori" : "↻ Aggiorna"}</button>` : ""}
             ${t ? `<button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>` : ""}
             ${t || prelievi.some((e) => tabStore.get(this.risKey(e.id), null)) ? `<button class="mini" id="valreset" title="Dimentica i valori letti e la scheda in archivio di questo paziente: ⭳ Carica i valori li rilegge da zero">↺ Reset</button>` : ""}
           </div>
           ${nNov ? `<div class="newbar"><span>${nNov} ${nNov === 1 ? "valore nuovo" : "valori nuovi"} dall'ultima lettura</span><button id="letto" type="button">Letto</button></div>` : ""}
+          ${sotto ? `<div class="hint">Leggo lo storico del portale in una scheda di sottofondo: si chiude da sola.</div>` : ""}
           ${daLeggere && !ra ? `<div class="hint">${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"}: <b>⭳ Carica i valori</b>.</div>` : ""}
           ${rotti.length ? `<div class="hint">${rotti.length === 1 ? "Un prelievo non si è lasciato leggere" : `${rotti.length} prelievi non si sono lasciati leggere`} (${
             esc(rotti.map((e) => e.when).filter(Boolean).join(", "))}): il Registro dice perché, <b>↻ Aggiorna</b> riprova.</div>` : ""}
           ${senzaData.length ? `<div class="hint">Di ${senzaData.length === 1 ? "un prelievo" : `${senzaData.length} prelievi`} la pagina non dà data e ora, né nel campo nascosto né nella riga: ${
             senzaData.length === 1 ? "è la colonna" : "sono le colonne"} <b>?</b>, in fondo a destra (${
             esc(senzaData.map((e) => shortLabel(e.label)).join(", "))}). I valori ci sono tutti; il Registro dice cosa c'era scritto al posto dell'ora.</div>` : ""}
-          ${t ? `${this.avvisoNomi(st.righe, st.scartate)}${t.nRighe ? t.html
+          ${t ? `${this.avvisoNomi(fondiFormula(st.righe), st.scartate)}${t.nRighe ? t.html
             : `<div class="hint">Tutti i valori sono in range: con «solo alterati» non resta niente da mostrare.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
           ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Con lo storico del portale, letto per <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
             : this.storicoAltri ? `<div class="hint">In memoria c'è lo storico di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non lo mostro.</div>`
@@ -4162,15 +4208,17 @@
       const chiave = this.chiavePaz();
       if (!chiave || chiave === "nome:") return;
       segnaChiave(this.episodeId, chiave);
-      const gia = await ask({ t: "getStorico", chiave });
-      const base = (gia && gia.ok && gia.dati) || {
+      const vuota = {
         paziente: { idMPI: "", cognome: "", nome: (document.title || "").trim() },
         cf: this.cfEpisodio() || "", periodo: "", date: [], righe: [], scartate: [], letto: Date.now(),
       };
-      const referti = (base.referti || []).filter((r) => r.id !== e.id);
-      referti.unshift({ id: e.id, quando: e.when || "", titolo: shortLabel(e.label || ""),
-                        sistema: e.sistema || "", testo: righe.slice(0, 200).join("\n").slice(0, 20000) });
-      await ask({ t: "putStorico", chiave, dati: { ...base, referti: referti.slice(0, 40), letto: Date.now() } });
+      await mettiInScheda(chiave, null, (vecchio) => {
+        const base = vecchio || vuota;
+        const referti = (base.referti || []).filter((r) => r.id !== e.id);
+        referti.unshift({ id: e.id, quando: e.when || "", titolo: shortLabel(e.label || ""),
+                          sistema: e.sistema || "", testo: righe.slice(0, 200).join("\n").slice(0, 20000) });
+        return { ...base, referti: referti.slice(0, 40), letto: Date.now() };
+      });
     }
 
     // Ogni prelievo letto entra anche nella scheda clinica del paziente, così
@@ -4183,9 +4231,7 @@
       const chiave = chiaveArchivio(t);
       if (!chiave || chiave === "nome:") return;
       segnaChiave(this.episodeId, chiave);
-      const gia = await ask({ t: "getStorico", chiave });
-      const unito = unisciStorico(gia && gia.ok ? gia.dati : null, t);
-      await ask({ t: "putStorico", chiave, dati: unito });
+      await mettiInScheda(chiave, t);
     }
 
     // Chi è questo paziente, per la nota: il codice fiscale se i prelievi
@@ -4249,6 +4295,50 @@
         if (v && v.cf) return v.cf;
       }
       return "";
+    }
+
+    // Il link «Storico Dati Clinici» di QUESTA pagina, come ce l'ha il
+    // gestionale: mai un indirizzo costruito.
+    linkStorico() {
+      const a = document.querySelector('a[href*="MODALITA=CLINICA"]');
+      if (!a) return "";
+      try { const u = new URL(a.href, location.href); return u.origin === location.origin ? u.href : ""; } catch { return ""; }
+    }
+    // «⭳ Carica i valori» apre anche lo storico del portale, in una scheda di
+    // sottofondo che si chiude da sola: la stessa pagina che si apre col link,
+    // letta come sempre. Se non arriva, lo si dice — e il link a mano resta.
+    async storicoInSottofondo() {
+      if (!hasExt() || DEMO || this._sotto || !this.episodeId || !this.nomePaziente()) return;
+      const url = this.linkStorico();
+      if (!url) { this.log(`${now()}  portale: su questa pagina non c'è il link «Storico Dati Clinici»`); return; }
+      this._sotto = { t0: Date.now() };
+      this.render();
+      let s = { esito: "" };
+      try {
+        const r = await ask({ t: "apriStoricoSotto", url, ep: this.episodeId, nome: this.nomePaziente() });
+        if (!r || !r.ok) { s = { esito: "rifiutato", why: r && r.why }; return; }
+        while (Date.now() - this._sotto.t0 < 40000) {
+          await sleep(800);
+          s = await ask({ t: "esitoSotto", tabId: r.tabId });
+          if (!s || !s.ok || (s.esito !== "attesa" && s.esito !== "lettura")) break;
+        }
+      } finally {
+        this._sotto = null;
+        if (s && s.esito === "letto") {
+          this.log(`${now()}  storico del portale letto in sottofondo: ${s.esami} esami · ${s.prelievi} prelievi`);
+          await this.caricaStorico();
+        } else {
+          const perche = {
+            login: "il portale chiede di entrare", tempo: "la tabella non è comparsa in 30 secondi",
+            altrove: "il portale si è aperto a un indirizzo che l'estensione non conosce (aggiungi l'indirizzo del portale)",
+            altro: "il portale ha aperto un altro paziente: non lo attribuisco", chiusa: "la scheda del portale è stata chiusa",
+            rifiutato: (s && s.why) || "non aperto",
+          }[s && s.esito] || "nessuna risposta";
+          this.log(`${now()}  storico del portale in sottofondo: ${perche}`);
+          this.message = `Storico del portale non letto: ${perche}. Aprilo dal link «Storico Dati Clinici»: si legge da solo.`;
+        }
+        this.render();
+      }
     }
 
     async caricaStorico() {
@@ -4989,7 +5079,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.render();
       }));
       $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.render(); });
-      $("#risall")?.addEventListener("click", () => this.reloadTuttiValori());
+      $("#risall")?.addEventListener("click", () => { this.storicoInSottofondo(); this.reloadTuttiValori(); });
       // «Letto»: da qui in poi le novità si contano da adesso, per tutti i prelievi
       $("#letto")?.addEventListener("click", () => {
         for (const e of this.esiti) if (e.kind === "valori") this.marcaLetto(e.id);
@@ -6040,6 +6130,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // its login page carries a password field, and mistaking it for SA4PSO's
   // would wipe the shift's saved documents.
   const SA4PSO = location.hostname === "smarthealth.multimedica.it" || !!DEMO;
+  function voceTabella(doc) {
+    const el = [...doc.querySelectorAll('button, a, [role="tab"], [role="button"], li, span')]
+      .find((x) => x.childElementCount <= 2 && /^tabella$/i.test((x.textContent || "").trim()));
+    return el ? el.closest('button, a, [role="tab"], [role="button"], [onclick]') || el : null;
+  }
+
   function boot() {
     if (document.getElementById("psassist-host")) return;
     // The portal's multi-day table: here the panel does not order anything and
@@ -6063,8 +6159,25 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // niente» è indistinguibile da «l'estensione non gira su questa pagina»,
       // e senza saperlo non si sa nemmeno cosa raccontarmi. La striscia dice
       // che il programma c'è e cosa gli manca. Sparisce da sola.
-      const muto = setTimeout(() => {
+      const muto = setTimeout(async () => {
         if (document.getElementById("psassist-host") || haStorico(document)) return;
+        // La scheda che il pannello ha aperto in sottofondo («⭳ Carica i
+        // valori»): nessuno la guarda, quindi niente striscia. Se il portale
+        // chiede di entrare lo si dice al pannello; se la tabella sta dietro la
+        // voce «Tabella», la si apre — un clic nell'interfaccia del portale,
+        // come farebbe il medico, e UNA volta sola.
+        let mia = false;
+        if (hasExt()) { try { const r = await ask({ t: "chiAprivo" }); mia = !!(r && r.ok && r.sotto); } catch { /* no */ } }
+        if (mia) {
+          let cliccato = false;
+          for (let giro = 0; giro < 8 && !document.getElementById("psassist-host") && !haStorico(document); giro++) {
+            if (document.querySelector('input[type="password"]')) { ask({ t: "sottoLogin" }).catch(() => {}); return; }
+            const voce = !cliccato && voceTabella(document);
+            if (voce) { voce.click(); cliccato = true; }
+            await sleep(1500);
+          }
+          return;
+        }
         const h = document.createElement("div");
         h.id = "psassist-attesa";
         const r = h.attachShadow({ mode: "open" });
@@ -6261,7 +6374,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         return;
       }
       // una scheda per paziente: se non c'era, la crea
-      ask({ t: "putStorico", chiave: chiaveArchivio(unito), dati: unito }).then((r) => {
+      mettiInScheda(chiaveArchivio(unito), unito).then((r) => {
         disegna(r && r.ok ? { ok: true, html: detto(r.nuovo, r.pazienti || 1) }
           : { ok: false, testo: "Letto, ma l'estensione non li ha ricevuti: apri il paziente e riprova." });
       });
