@@ -77,9 +77,16 @@ sull'intestazione o sull'angolo la rimette al centro, all'85%. **—** la riduce
 resta dove la trascini; un tocco sulla pill riapre la finestra dove l'avevi lasciata. Per usare il
 gestionale sotto, si riduce alla pill: la finestra lo copre quasi tutto, apposta.
 
-Il pannello ha cinque schermate, in **una fila di pillole** sempre in cima e nell'ordine in cui si
-lavora: **Richieste · Esiti · EO · Consensi · Dimissioni** (dove non c'è un paziente, solo le ultime
-tre). Il paziente + episodio stanno nell'intestazione (anche da minimizzato). Sulla pagina «Storico dati clinici»
+**Si apre da solo solo quando serve.** Una pagina raggiunta cliccando nel gestionale mostra la
+pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha aperta il pannello
+(un paziente scelto dall'elenco, Richieste…) o quando ha qualcosa da dirti (un giro finito, un
+avviso). **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
+«✓ Copiato · incolla». Nel menu **⋯**: **Al centro** e **Affianca a destra** (una colonna, col
+gestionale accanto), poi Registro e versione.
+
+Il pannello ha cinque schermate, in **una fila di schede** sempre in cima e nell'ordine in cui si
+lavora: **Richieste · Esiti · EO · Consensi · Dimissioni** (sulla lista del pronto soccorso, dove
+non c'è un paziente: **Pazienti · EO · Consensi · Dimissioni**). Il paziente + episodio stanno nell'intestazione (anche da minimizzato). Sulla pagina «Storico dati clinici»
 del portale clinico non c'è pannello: solo una striscia che dice cosa ha letto.
 
 ### Pazienti (‹ in alto a sinistra)
