@@ -65,6 +65,9 @@ check((await $("b.who").innerText()).toLowerCase().includes("pazienti"), "senza 
 await page.locator('#sa4-page a:has-text("ROSSI MARIO")').click();
 await page.waitForSelector("#psassist-host [data-seg]", { state: "attached", timeout: 20000 });
 check(await $('[data-seg="esiti"].on').count() === 1, "aprendo un paziente il pannello parte dagli Esiti");
+// il colore del triage si legge dall'intestazione della scheda vera
+const triage = await page.evaluate(() => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((p) => p.name === "ROSSI MARIO") || {}).triage);
+check(triage === "ARANCIONE", `il triage della scheda finisce sul paziente, per la Stanza (got ${triage})`);
 // per ordinare si passa da Richieste, un tocco
 await $('[data-seg="richieste"]').click();
 await page.waitForSelector("#psassist-host #q", { state: "attached", timeout: 20000 });
