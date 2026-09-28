@@ -3490,7 +3490,7 @@
     // passaggi.
     chipTempo() {
       const t = tempoInCorso();
-      if (!t) return `<button class="tchip off" id="tapri" title="Cronometro: misura quanto ti prende un'attività">▶</button>`;
+      if (!t) return `<span class="tchip off"><button id="tapri" title="Cronometro: misura quanto ti prende un'attività" aria-label="Cronometro">▶</button></span>`;
       return `<span class="tchip on"><button id="tapri" title="${esc(t.titolo)}${t.paz ? " · " + esc(t.paz) : ""} — apri i tempi">● ${esc(mmss(durata(t)))}</button><button id="tstop" title="Ferma il cronometro">⏹</button></span>`;
     }
 
