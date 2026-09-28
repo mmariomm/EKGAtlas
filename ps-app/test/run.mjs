@@ -1742,6 +1742,144 @@ async function scenarioHomePills(browser) {
   await context.close();
 }
 
+// La Stanza: la sala si disegna una volta (letti, aree, nomi), poi si portano
+// i pazienti al loro posto. Tutto col mouse vero, come il medico: premi,
+// trascini a passi, lasci.
+async function scenarioStanza(browser) {
+  const scen = "stanza";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  const ep2 = mock.patientUrl.replace("999001", "999002");
+  const trascina = async (da, dx, dy) => {
+    const b = await da.boundingBox();
+    const x = b.x + b.width / 2, y = b.y + b.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + dx, y + dy, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+  };
+  const portaSu = async (da, a) => {
+    const s = await da.boundingBox(), t = await a.boundingBox();
+    await trascina(da, t.x + t.width / 2 - (s.x + s.width / 2), t.y + t.height / 2 - (s.y + s.height / 2));
+  };
+  const chip = (dove, ep) => $panel(page, `${dove} .stp[data-stp="${ep}"]`);
+  const tutti = async () => (await page.locator("#psassist-host .stmap .stp:not(.stghost)").count()) === 2;
+  const alleStanze = async () => {
+    await page.waitForSelector("#psassist-host", { state: "attached" });
+    await $panel(page, "#back").click();
+    await $panel(page, ".stmap").waitFor({ timeout: 10000 });
+  };
+
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.goto(ep2);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, "#back").click();
+  check(scen, (await $panel(page, '[data-pazvista="lista"].on').count()) === 1, "l'elenco resta la vista di partenza");
+  await $panel(page, '[data-pazvista="stanza"]').click();
+  await $panel(page, ".stmap").waitFor({ timeout: 10000 });
+  check(scen, await $panel(page, "#stdisegna").isVisible(), "sala vuota: l'invito a disegnarla, con il suo bottone");
+  check(scen, (await $panel(page, ".sttray .stp").count()) === 2, "tutti e due i pazienti aspettano in «Da sistemare»");
+  check(scen, (await chip(".sttray", "999002").getAttribute("class")).includes("qui"), "il paziente di questa pagina è segnato «qui»");
+  check(scen, (await page.locator("#psassist-host .stp[data-go]").count()) === 0, "un paziente trascinabile non è un [data-go]");
+
+  // Modifica: la griglia a puntini si vede solo qui
+  await $panel(page, "#stmod").click();
+  const griglia = () => page.evaluate(() => getComputedStyle(document.getElementById("psassist-host").shadowRoot.querySelector(".stcanvas")).backgroundImage);
+  check(scen, /radial-gradient/.test(await griglia()), "in Modifica la mappa mostra la griglia");
+  await $panel(page, "#stpiuletto").click();
+  await $panel(page, ".stbed").waitFor();
+  // il letto nuovo si battezza subito; Esc tiene il nome proposto
+  await $panel(page, ".stnomein").press("Escape");
+  check(scen, (await $panel(page, ".stbed .stname").textContent()) === "Letto 1", "Esc lascia il nome proposto");
+  await $panel(page, ".stbed .stname").click();
+  await $panel(page, ".stnomein").fill("Box 1");
+  await $panel(page, ".stnomein").press("Enter");
+  check(scen, (await $panel(page, ".stbed .stname").textContent()) === "Box 1", "un tocco sul nome lo rende scrivibile: Box 1");
+  await $panel(page, "#stpiuarea").click();
+  await $panel(page, ".stnomein").fill("Corridoio");
+  await $panel(page, ".stnomein").press("Enter");
+  check(scen, (await $panel(page, ".starea .stname").textContent()) === "Corridoio", "l'area nasce e si chiama Corridoio");
+  const bedB = await $panel(page, ".stbed").boundingBox(), areaB = await $panel(page, ".starea").boundingBox();
+  check(scen, bedB.x + bedB.width <= areaB.x || areaB.x + areaB.width <= bedB.x || bedB.y + bedB.height <= areaB.y || areaB.y + areaB.height <= bedB.y,
+    "l'area nuova trova un posto libero, non sopra il letto");
+  // ↻ gira il letto; l'angolo allarga l'area (sulla griglia da 8px)
+  await $panel(page, ".stbed .strot").click();
+  const girato = await $panel(page, ".stbed").boundingBox();
+  check(scen, Math.round(girato.width) === Math.round(bedB.height) && Math.round(girato.height) === Math.round(bedB.width),
+    `↻ ruota il letto di 90° (${Math.round(bedB.width)}×${Math.round(bedB.height)} → ${Math.round(girato.width)}×${Math.round(girato.height)})`);
+  await trascina($panel(page, ".starea .strsz"), 40, 30);
+  const allargata = await $panel(page, ".starea").boundingBox();
+  check(scen, allargata.width > areaB.width + 30 && allargata.height > areaB.height + 20 && Math.round(allargata.width) % 8 === 0,
+    `l'area si allarga dall'angolo, a passi di 8px (${Math.round(areaB.width)} → ${Math.round(allargata.width)})`);
+  await $panel(page, "#stfine").click();
+  check(scen, !/radial-gradient/.test(await griglia()), "fuori da Modifica la griglia sparisce");
+
+  // i pazienti al loro posto: uno nel letto, l'altro in corridoio
+  await portaSu(chip(".sttray", "999001"), $panel(page, ".stbed"));
+  await portaSu(chip(".sttray", "999002"), $panel(page, ".starea"));
+  check(scen, (await chip(".stbed", "999001").count()) === 1, "trascinato su Box 1, il paziente è nel letto");
+  check(scen, (await chip(".starea", "999002").count()) === 1, "e l'altro nell'area");
+  check(scen, (await $panel(page, ".sttray .stp").count()) === 0 && await tutti(), "nessuno resta da sistemare, e nessuno si perde");
+  const posti = await page.evaluate(() => localStorage.getItem("psassist:stanza.posti.v1") || "");
+  check(scen, /999001/.test(posti) && !/ROSSI/.test(posti), "si salvano gli episodi, mai i nomi");
+
+  // ricaricando resta tutto: vista, nomi, posti
+  await page.reload();
+  await alleStanze();
+  check(scen, (await $panel(page, ".stbed .stname").textContent()) === "Box 1", "il nome del letto resta dopo il ricaricamento");
+  check(scen, (await chip(".stbed", "999001").count()) === 1 && (await chip(".starea", "999002").count()) === 1,
+    "e anche chi sta dove");
+
+  // In Modifica si sposta il letto, non il paziente (lo si prende proprio sul paziente)
+  await $panel(page, "#stmod").click();
+  const prima = await $panel(page, ".stbed").boundingBox();
+  await trascina(chip(".stbed", "999001"), 83, 101);
+  const dopo = await $panel(page, ".stbed").boundingBox();
+  check(scen, Math.abs(dopo.x - prima.x - 83) <= 8 && Math.abs(dopo.y - prima.y - 101) <= 8 && (await chip(".stbed", "999001").count()) === 1,
+    `il letto si sposta col suo paziente (${Math.round(dopo.x - prima.x)}, ${Math.round(dopo.y - prima.y)})`);
+  const cv = await $panel(page, ".stcanvas").boundingBox();
+  check(scen, Math.round(dopo.x - cv.x) % 8 === 0 && Math.round(dopo.y - cv.y) % 8 === 0, "e si ferma sulla griglia da 8px");
+  await $panel(page, "#stfine").click();
+  await page.reload();
+  await alleStanze();
+  const ricaricato = await $panel(page, ".stbed").boundingBox();
+  check(scen, Math.abs(ricaricato.x - dopo.x) <= 1 && Math.abs(ricaricato.y - dopo.y) <= 1, "la nuova posizione del letto resta salvata");
+
+  // su un letto occupato i due si scambiano
+  await portaSu(chip(".starea", "999002"), $panel(page, ".stbed"));
+  check(scen, (await chip(".stbed", "999002").count()) === 1 && (await chip(".starea", "999001").count()) === 1,
+    "lasciato su un letto occupato, i due pazienti si scambiano il posto");
+  check(scen, await tutti(), "sempre due pazienti in vista");
+  check(scen, (await $panel(page, ".stbed .stqui").count()) === 1, "il letto di chi è su questa pagina porta il segno «qui»");
+
+  // × toglie l'area: chi c'era torna fra i da sistemare
+  await $panel(page, "#stmod").click();
+  await $panel(page, ".starea .stx").click();
+  check(scen, (await $panel(page, ".starea").count()) === 0 && (await chip(".sttray", "999001").count()) === 1,
+    "eliminata l'area, il suo paziente torna in «Da sistemare»");
+  await $panel(page, "#stfine").click();
+
+  // un tocco fermo apre il paziente, come le schede dell'elenco
+  await chip(".sttray", "999001").click();
+  await page.waitForFunction(() => /EPISODIO_ID=999001/.test(location.href), null, { timeout: 15000 });
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  check(scen, /999001/.test(await $panel(page, ".hd .sub").innerText()), "un tocco senza trascinare apre la pagina di quel paziente");
+  check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1, "sui suoi Esiti");
+
+  // Sulla lista del PS nessuno è «qui» — i suoi link portano l'episodio del
+  // primo in elenco — e un tocco su quel primo carica davvero la sua pagina.
+  await page.goto(mock.worklistUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, ".stmap").waitFor({ timeout: 10000 });
+  check(scen, (await page.locator("#psassist-host .stp.qui, #psassist-host .stqui").count()) === 0, "sulla lista del PS nessun paziente è «qui»");
+  await chip(".sttray", "999001").click();
+  await page.waitForFunction(() => /EPISODIO_ID=999001/.test(location.href), null, { timeout: 15000 });
+  check(scen, true, "e un tocco sul primo della lista apre la sua pagina");
+  await context.close();
+}
+
 async function scenarioAggiornaTutti(browser) {
   const scen = "aggiorna-tutti";
   const mock = createMock({ withResults: true });
@@ -2509,6 +2647,7 @@ const scenarios = [
   ["prelievi refertati: restano colonne della tabella", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],
+  ["stanza: la mappa della sala", scenarioStanza],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],
   ["stop button", scenarioStopButton],
