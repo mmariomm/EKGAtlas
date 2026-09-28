@@ -1723,9 +1723,11 @@ async function scenarioHomePills(browser) {
   check(scen, /qui/i.test(cards[0]), "il paziente della pagina è marcato «qui» ed è il primo");
   check(scen, /min fa|adesso|alle/.test(cards[1]), `gli altri mostrano quando (got: ${cards[1]?.replace(/\s+/g, " ").slice(0, 40)})`);
   const desc = await page.locator("#psassist-host .pcard:not(.now) .pdesc").innerText().catch(() => "");
-  // (i due episodi del simulatore sono la stessa persona: la nota è di tutti e due)
-  check(scen, desc === "allergico a penicillina · rivalutare ore 14",
-    `accanto al nome, in grigio, la nota del paziente, su una riga (got: ${desc})`);
+  // I due episodi del simulatore hanno lo stesso nome e nessun codice fiscale:
+  // per il programma potrebbero essere due persone. La nota scritta «per
+  // nome» NON si mostra: sul paziente sbagliato sarebbe peggio di niente.
+  check(scen, desc === "" && (await page.locator("#psassist-host .pdesc").count()) === 0,
+    `due pazienti attivi con lo stesso nome e senza codice fiscale: la nota non si mostra nell'elenco (got: ${desc})`);
   check(scen, (await $panel(page, ".pcard").first().boundingBox()).height <= 40, "e la riga resta una riga");
 
   // picking another patient LOADS HIS PAGE (never shows his data from here).

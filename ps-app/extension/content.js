@@ -1985,12 +1985,16 @@
   const leggiNota = (chiave) => (chiave ? (noteTutte()[chiave]?.t || "") : "");
   // la nota di un paziente dell'elenco, su una riga: la chiave è quella
   // annotata sulla sua pagina (codice fiscale), o il nome
-  const notaDi = (p) => {
-    for (const k of [p.pk, p.name ? "nome:" + normNome(p.name) : ""]) {
-      const t = k ? leggiNota(k) : "";
-      if (t) return t.replace(/\s*\n+\s*/g, " · ").trim();
-    }
-    return "";
+  // La nota di un paziente dell'elenco o della stanza. Col codice fiscale
+  // (pk «cf:…») si legge SOLO quella: il nome è di chiunque si chiami così.
+  // Senza codice fiscale, il nome — ma mai se fra i pazienti attivi c'è un
+  // omonimo: la nota sul paziente sbagliato è peggio di nessuna nota.
+  const notaDi = (p, attivi = knownPatients()) => {
+    const pulisci = (t) => String(t || "").replace(/\s*\n+\s*/g, " · ").trim();
+    if (p.pk && String(p.pk).startsWith("cf:")) return pulisci(leggiNota(p.pk));
+    const n = normNome(p.name);
+    if (!n || attivi.some((x) => x.ep !== p.ep && normNome(x.name) === n)) return "";
+    return pulisci(leggiNota(p.pk || "nome:" + n));
   };
   function scriviNota(chiave, testo) {
     if (!chiave) return false;
