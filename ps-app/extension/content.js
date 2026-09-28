@@ -2829,21 +2829,37 @@
     .stopmini { border: 0; border-radius: 999px; width: 30px; height: 30px; cursor: pointer; font-size: 12px;
                 background: #B3261E; color: #fff; box-shadow: 0 6px 20px rgba(9,42,74,.35); }
     .stopmini:hover { background: #8f1e18; }
-    .card { width: 460px; max-width: 96vw; max-height: min(92vh, 900px); overflow: auto; background: #fff; border: 1px solid #D9E2EC;
-            border-radius: 14px; box-shadow: 0 10px 32px rgba(9,42,74,.22); font-size: 13px; line-height: 1.45; }
-    .hd { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #0B5CAD; color: #fff;
-          border-radius: 13px 13px 0 0; position: sticky; top: 0; z-index: 3; cursor: move; user-select: none; touch-action: none; }
+    /* La finestra: al centro, l'85% dello schermo. Intestazione, schede e
+       selezione restano ferme; scorre solo il corpo. Il contenuto sta su una
+       colonna comoda da leggere; valori e stanza usano tutta la larghezza. */
+    .wrap.win { display: flex; }
+    .card { --maxw: 1040px; position: relative; display: flex; flex-direction: column; width: 100%; height: 100%;
+            overflow: hidden; background: #fff; border: 1px solid #D9E2EC; border-radius: 14px;
+            box-shadow: 0 28px 70px rgba(9,42,74,.24), 0 2px 8px rgba(9,42,74,.08); font-size: 13px; line-height: 1.45; }
+    .card.largo { --maxw: none; }
+    .cap { flex: 0 0 auto; width: 100%; max-width: var(--maxw); margin: 0 auto; box-sizing: border-box; }
+    .bd { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+    .bdi { max-width: var(--maxw); margin: 0 auto; padding: 12px 16px; box-sizing: border-box; }
+    .rz { position: absolute; z-index: 6; touch-action: none; }
+    .rz-n, .rz-s { left: 14px; right: 14px; height: 6px; cursor: ns-resize; }
+    .rz-e, .rz-w { top: 14px; bottom: 14px; width: 6px; cursor: ew-resize; }
+    .rz-n { top: 0; } .rz-s { bottom: 0; } .rz-e { right: 0; } .rz-w { left: 0; }
+    .rz-ne, .rz-nw, .rz-se, .rz-sw { width: 14px; height: 14px; }
+    .rz-ne { top: 0; right: 0; cursor: nesw-resize; } .rz-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+    .rz-nw { top: 0; left: 0; cursor: nwse-resize; } .rz-se { bottom: 0; right: 0; cursor: nwse-resize; }
+    .hd { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #0B5CAD; color: #fff;
+          border-radius: 13px 13px 0 0; position: relative; z-index: 3; cursor: move; user-select: none; touch-action: none; }
     .hd b { font-size: 13.5px; letter-spacing: .2px; }
-    .hd .who { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 250px; }
+    .hd .who { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 42%; }
     .pill .who { max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .hd .sub { margin-left: auto; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+    .hd .sub { margin-left: auto; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; opacity: .92; }
     .iconbtn { background: transparent; border: 0; color: #fff; cursor: pointer; font-size: 15px; line-height: 1; padding: 4px 6px; border-radius: 6px; }
     .iconbtn:hover { background: rgba(255,255,255,.18); }
-    .pbar { height: 3px; background: #E3E8EF; position: sticky; top: 42px; z-index: 3; }
+    .pbar { flex: 0 0 auto; height: 3px; background: #E3E8EF; }
     .pbar i { display: block; height: 100%; background: #0B5CAD; transition: width .25s ease; }
     /* compact, always-visible selection strip (plain text, not pills) */
-    .selbar { position: sticky; top: 42px; z-index: 2; background: #F8FBFE; border-bottom: 1px solid #D9E2EC;
-              padding: 7px 12px; font-size: 12px; line-height: 1.8; color: #16232E; box-shadow: 0 6px 10px -8px rgba(9,42,74,.18); }
+    .selbar { background: #F8FBFE; border-bottom: 1px solid #D9E2EC;
+              padding: 7px 16px; font-size: 12px; line-height: 1.8; color: #16232E; }
     .selbar .selgrp { color: #0B5CAD; font-weight: 800; }
     .selbar .selrow { display: block; }
     .selbar .selcount { float: right; color: #5B6B7A; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; }
@@ -2853,7 +2869,7 @@
                      width: 15px; height: 15px; line-height: 13px; font-size: 10px; cursor: pointer; padding: 0;
                      vertical-align: 1px; margin-left: 2px; }
     .selitem:hover .selx { display: inline-block; }
-    .bd { padding: 12px; }
+    .bd { padding: 0; }
     .sec { margin-bottom: 14px; }
     .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #5B6B7A; margin-bottom: 6px; }
     textarea, input[type="text"], input[type="search"] { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 8px 10px; font-size: 13px; color: #16232E; background: #fff; }
@@ -2872,7 +2888,7 @@
     .qchips { flex: 1 1 48%; display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; }
     .chip.preset { background: #EAF2FA; border-color: #9DBFDE; font-weight: 600; padding: 5px 11px; font-size: 11.5px; min-height: 26px; }
     /* dense two-column exam grid: many exams, little space, still tappable */
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 5px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 5px; }
     .opt { display: flex; align-items: center; gap: 6px; border: 1px solid #E3E8EF; background: #fff; color: #16232E;
            border-radius: 7px; padding: 5px 7px; font-size: 11.5px; line-height: 1.2; cursor: pointer; text-align: left;
            min-height: 27px; overflow: hidden; }
@@ -2944,14 +2960,13 @@
     .log { font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; color: #35506B; background: #F8FAFC;
            border: 1px solid #E3E8EF; border-radius: 8px; padding: 8px; max-height: 130px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
     details.reg summary { cursor: pointer; font-size: 11.5px; color: #5B6B7A; margin: 8px 0 6px; }
-    /* resize grip: bottom-LEFT, because the panel is anchored to the right */
-    .rsz { position: absolute; left: 0; bottom: 0; width: 16px; height: 16px; cursor: nesw-resize; z-index: 4;
-           background: linear-gradient(45deg, transparent 42%, #C4D0DC 42%, #C4D0DC 56%, transparent 56%,
+    /* l'angolo per ridimensionare: in basso a destra, come in ogni finestra */
+    .rsz { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 7;
+           background: linear-gradient(135deg, transparent 42%, #C4D0DC 42%, #C4D0DC 56%, transparent 56%,
                                         transparent 66%, #C4D0DC 66%, #C4D0DC 80%, transparent 80%); }
-    .rsz:hover { background: linear-gradient(45deg, transparent 42%, #0B5CAD 42%, #0B5CAD 56%, transparent 56%,
+    .rsz:hover { background: linear-gradient(135deg, transparent 42%, #0B5CAD 42%, #0B5CAD 56%, transparent 56%,
                                              transparent 66%, #0B5CAD 66%, #0B5CAD 80%, transparent 80%); }
-    .card { position: relative; }
-    .commit { position: sticky; bottom: -1px; margin: 0 -12px -12px; padding: 10px 12px 12px; background: #fff;
+    .commit { position: sticky; bottom: -1px; margin: 0 -16px -12px; padding: 10px 16px 12px; background: #fff;
               border-top: 1px solid #EEF2F6; box-shadow: 0 -10px 14px -12px rgba(9,42,74,.25); }
     .rlist { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
     .rrow { display: flex; align-items: center; gap: 8px; border: 1px solid #E3E8EF; background: #fff; border-radius: 8px;
@@ -2981,7 +2996,7 @@
     /* Le schermate in UNA fila di pillole, nell'ordine in cui si lavora:
        Richieste, Esiti, EO, Consensi, Dimissioni. La pillola accesa è quella
        dove sei. */
-    .seg { display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 12px 0; }
+    .seg { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 16px 2px; }
     .seg button { border: 1px solid #C4D0DC; background: #fff; border-radius: 999px; padding: 5px 12px;
                   font: inherit; font-size: 12.5px; font-weight: 700; color: #35506B; cursor: pointer; white-space: nowrap; }
     .seg button:hover { border-color: #0B5CAD; background: #EAF2FA; color: #0B5CAD; }
@@ -3107,7 +3122,7 @@
     .trow .to { flex: 0 0 auto; color: #A3B2C2; font-size: 10.5px; font-variant-numeric: tabular-nums; }
     .tdel { border: 0; background: transparent; color: #A3B2C2; cursor: pointer; font-size: 12px; padding: 0 2px; }
     .tdel:hover { color: #B3261E; }
-    .notaw { position: relative; padding: 6px 10px 0; }
+    .notaw { position: relative; padding: 8px 16px 0; }
     .nota { display: block; width: 100%; resize: none; overflow: hidden;
             border: 1px solid transparent; border-radius: 8px; background: #F8FBFE;
             padding: 6px 8px; font: 12.5px/1.45 inherit; color: #16232E; }
@@ -3186,7 +3201,7 @@
     .newbar { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #0B5CAD;
               background: #EAF2FA; border: 1px solid #9DBFDE; border-radius: 8px; padding: 5px 9px; margin-bottom: 6px; }
     .newbar button { margin-left: auto; border: 0; background: transparent; color: #0B5CAD; font: inherit; font-weight: 700; cursor: pointer; }
-    .foot { padding: 8px 12px 10px; border-top: 1px solid #EEF2F6; display: flex; justify-content: space-between; align-items: center; color: #5B6B7A; font-size: 11px; }
+    .foot { flex: 0 0 auto; padding: 8px 14px 10px; border-top: 1px solid #EEF2F6; display: flex; justify-content: space-between; align-items: center; color: #5B6B7A; font-size: 11px; }
     .footlink { border: 0; background: transparent; color: #0B5CAD; font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
     select.res { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 7px 8px; font-size: 12.5px; background: #fff; }
     @keyframes psaSpin { to { transform: rotate(360deg); } }
@@ -3233,6 +3248,19 @@
     return r;
   }
 
+  // La finestra aperta: frazioni dello schermo, così segue il browser quando
+  // cambia misura. Di partenza al centro, all'85%. Mai più piccola di così,
+  // e un pezzo d'intestazione resta sempre a portata di mano.
+  const FINESTRA = { x: 0.075, y: 0.075, w: 0.85, h: 0.85 };
+  function geometriaFinestra(win) {
+    const g = win && [win.x, win.y, win.w, win.h].every(Number.isFinite) ? win : FINESTRA;
+    const vw = window.innerWidth || 1000, vh = window.innerHeight || 800;
+    const w = Math.min(1, Math.max(380 / vw, g.w)), h = Math.min(1, Math.max(320 / vh, g.h));
+    const x = Math.min(Math.max(g.x, 120 / vw - w), 1 - 120 / vw);
+    const y = Math.min(Math.max(g.y, 0), 1 - 44 / vh);
+    return { x, y, w, h };
+  }
+
   class Panel {
     constructor(pageType) {
       this.pageType = pageType;
@@ -3261,8 +3289,11 @@
       this.mostraNomi = false;          // the unexpected-name list, open or closed
       this.mostraArch = false;          // l'elenco degli archiviati, aperto o chiuso
       this.rottiTab = new Set();        // prelievi che hanno già fallito: niente ritentativi da soli
-      this.pos = store.get("pos", null); // user-dragged panel position {left, top}
-      this.size = store.get("size", null); // user-resized panel {w, h}
+      // La finestra aperta e la pill ridotta vivono in due posti diversi: la
+      // finestra (frazioni dello schermo, così segue il browser che cambia
+      // misura) parte al centro e prende l'85%; la pill resta dove la metti.
+      this.win = store.get("win.v1", null);       // {x, y, w, h} in frazioni dello schermo
+      this.pillPos = store.get("pillpos.v1", null); // {left, top} in px
       this.runPatient = null;           // patient name PINNED when a run starts
       this.episodeId = findEpisodeId(document, location.href);
       this.view = null;                 // home | richieste | esiti | valori
@@ -3686,7 +3717,7 @@
       const ep = findEpisodeId(document, location.href);
       // keep every scroll position across re-renders (chip toggles must not
       // bounce the panel back to the top)
-      const keepScroll = [".card", ".list", ".rlist"].map((s) => [s, this.root.querySelector(s)?.scrollTop || 0]);
+      const keepScroll = [".bd", ".list", ".rlist"].map((s) => [s, this.root.querySelector(s)?.scrollTop || 0]);
 
       let body;
       if (this.runState === "running") body = this.viewRunning();
@@ -3736,33 +3767,26 @@
         : inDim ? "Dimissioni · modelli"
         : section ? `${section}${ep ? " · " + esc(ep) : ""}`
         : (ep ? "episodio " + esc(ep) : esc(APP));
-      // user-resized size (clamped so it always fits the screen)
-      let sizeStyle = "";
-      if (this.size && this.size.w) {
-        const w = Math.max(320, Math.min(window.innerWidth - 20, this.size.w));
-        sizeStyle += `width:${w}px;`;
-        if (this.size.h) sizeStyle += `max-height:${Math.max(240, Math.min(window.innerHeight - 20, this.size.h))}px;`;
+      // Aperto: una finestra al centro, l'85% dello schermo (o come l'hai
+      // lasciata tu). Ridotto: la pill, dove l'hai messa (in alto a destra
+      // se non l'hai mai spostata).
+      const ridotto = this.collapsed;
+      let posStyle;
+      if (ridotto) {
+        const pp = this.pillPos;
+        posStyle = pp && Number.isFinite(pp.left) && Number.isFinite(pp.top)
+          ? `left:${Math.max(0, Math.min(window.innerWidth - 80, pp.left))}px;top:${Math.max(0, Math.min(window.innerHeight - 48, pp.top))}px;right:auto;`
+          : "";
+      } else {
+        const g = geometriaFinestra(this.win);
+        posStyle = `left:${g.x * 100}vw;top:${g.y * 100}vh;width:${g.w * 100}vw;height:${g.h * 100}vh;right:auto;`;
       }
-      // I valori si leggono per confronto fra colonne: il pannello si allarga
-      // da solo quanto serve alla tabella, fino all'80% dello schermo — mai
-      // più stretto di quanto il medico l'ha già fatto a mano.
-      if (!this.runState && this.view === "esiti" && this.nColEsiti) {
-        const serve = 220 + 88 * this.nColEsiti;
-        const tetto = Math.round(window.innerWidth * 0.8);
-        const w = Math.max(this.size?.w || 460, Math.min(serve, tetto));
-        sizeStyle = `width:${w}px;max-height:${Math.round(window.innerHeight * 0.8)}px;`;
-      }
-      // user-dragged position (clamped to the current viewport), else top-right
-      let posStyle = "";
-      if (this.pos && Number.isFinite(this.pos.left) && Number.isFinite(this.pos.top)) {
-        const left = Math.max(0, Math.min(window.innerWidth - 80, this.pos.left));
-        const top = Math.max(0, Math.min(window.innerHeight - 48, this.pos.top));
-        posStyle = `left:${left}px;top:${top}px;right:auto;`;
-      }
+      // i valori e la stanza si leggono in larghezza; il resto su una colonna comoda
+      const largo = !this.runState && (this.view === "esiti" || (this.view === "home" && store.get("pazVista", "lista") === "stanza"));
 
       this.root.innerHTML = `
         <style>${COLORS}</style>
-        <div class="wrap" style="${posStyle}">
+        <div class="wrap${ridotto ? "" : " win"}" style="${posStyle}">
           ${this.collapsed && this.runState ? `
             <div class="strip">
               <button class="pill run ${altrove ? "alt" : ""}" id="expand" title="${esc(who)}${
@@ -3778,8 +3802,8 @@
           ` : this.collapsed ? `
             <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}</button>
           ` : `
-            <div class="card" role="dialog" aria-label="${esc(APP)}" style="${sizeStyle}">
-              <div class="hd" id="draghd" title="Trascina per spostare · doppio click per riportare in alto a destra">
+            <div class="card${largo ? " largo" : ""}" role="dialog" aria-label="${esc(APP)}">
+              <div class="hd" id="draghd" title="Trascina per spostare · doppio click per rimetterla al centro">
                 ${section ? `<button class="iconbtn" id="back" title="${
                   this.view === "referto" ? "Torna agli esiti"
                   : this.view === "dimtesto" || this.view === "dimimport" ? "Torna ai fogli di dimissione"
@@ -3789,6 +3813,7 @@
                 <button class="iconbtn" id="collapse" title="Riduci">—</button>
               </div>
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
+              <div class="cap">
               ${!this.runState && this.pageType === "patient" && !inHome ? this.notaHtmlPaziente() : ""}
               ${!this.runState ? `
                 <div class="seg" role="tablist">
@@ -3800,8 +3825,10 @@
                   <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
-              <div class="bd">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div>
-              <div class="rsz" id="rsz" title="Trascina per ridimensionare · doppio click per la misura originale"></div>
+              </div>
+              <div class="bd"><div class="bdi">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div></div>
+              ${["n", "s", "e", "w", "ne", "nw", "se", "sw"].map((d) => `<div class="rz rz-${d}" data-rz="${d}"></div>`).join("")}
+              <div class="rsz" id="rsz" data-rz="se" title="Trascina per ridimensionare · doppio click per la misura di partenza"></div>
               ${!this.runState ? `<div class="foot">
                 <span><button id="verbtn" class="footlink" title="Mostra il Registro delle operazioni">${esc(APP)} ${VERSION}</button>${(typeof chrome !== "undefined" && chrome.runtime?.id)
                   ? ` · <button id="extreload" class="footlink" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">⟳ ricarica estensione</button>` : ""}</span>
@@ -5191,34 +5218,79 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       `;
     }
 
-    // Drag to move (header or collapsed pill); a real click on the pill still
-    // expands it, and double-click on the header resets to the default corner.
+    // Trascinare: la pill (ridotta) si sposta dove vuoi e resta lì; la
+    // finestra (aperta) si sposta intera dall'intestazione. Un clic vero
+    // sulla pill la apre comunque; il doppio clic sull'intestazione rimette
+    // la finestra al centro.
     attachDrag(el) {
       el.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0 || e.target.closest(".iconbtn")) return;
+        if (e.button !== 0 || e.target.closest(".iconbtn, button:not(#expand), input, a, [data-rz]")) return;
         const wrap = this.root.querySelector(".wrap");
         const r = wrap.getBoundingClientRect();
         const sx = e.clientX, sy = e.clientY, ox = r.left, oy = r.top;
+        const finestra = wrap.classList.contains("win");
         let moved = false;
         const mm = (ev) => {
           if (!moved && Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 5) return;
           moved = true;
-          this.pos = {
-            left: Math.max(0, Math.min(window.innerWidth - 80, ox + ev.clientX - sx)),
-            top: Math.max(0, Math.min(window.innerHeight - 48, oy + ev.clientY - sy)),
-          };
-          wrap.style.left = this.pos.left + "px";
-          wrap.style.top = this.pos.top + "px";
-          wrap.style.right = "auto";
+          const vw = window.innerWidth, vh = window.innerHeight;
+          if (finestra) {
+            const g = geometriaFinestra(this.win);
+            this.win = geometriaFinestra({ ...g, x: (ox + ev.clientX - sx) / vw, y: (oy + ev.clientY - sy) / vh });
+            wrap.style.left = this.win.x * 100 + "vw";
+            wrap.style.top = this.win.y * 100 + "vh";
+          } else {
+            this.pillPos = {
+              left: Math.max(0, Math.min(vw - 80, ox + ev.clientX - sx)),
+              top: Math.max(0, Math.min(vh - 48, oy + ev.clientY - sy)),
+            };
+            wrap.style.left = this.pillPos.left + "px";
+            wrap.style.top = this.pillPos.top + "px";
+            wrap.style.right = "auto";
+          }
         };
         const up = () => {
           window.removeEventListener("pointermove", mm, true);
           window.removeEventListener("pointerup", up, true);
           if (moved) {
-            store.set("pos", this.pos);
+            if (finestra) store.set("win.v1", this.win); else store.set("pillpos.v1", this.pillPos);
             this._justDragged = true;
             setTimeout(() => { this._justDragged = false; }, 0);
           }
+        };
+        window.addEventListener("pointermove", mm, true);
+        window.addEventListener("pointerup", up, true);
+      });
+    }
+
+    // Ridimensionare da ogni bordo e da ogni angolo, come una finestra vera.
+    attachResize(el) {
+      el.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault(); e.stopPropagation();
+        const d = el.getAttribute("data-rz") || "se";
+        const wrap = this.root.querySelector(".wrap");
+        const r = wrap.getBoundingClientRect();
+        const sx = e.clientX, sy = e.clientY;
+        const mm = (ev) => {
+          const vw = window.innerWidth, vh = window.innerHeight;
+          const dx = ev.clientX - sx, dy = ev.clientY - sy;
+          let { left, top, width, height } = r;
+          if (d.includes("e")) width = r.width + dx;
+          if (d.includes("s")) height = r.height + dy;
+          if (d.includes("w")) { width = r.width - dx; left = r.left + dx; }
+          if (d.includes("n")) { height = r.height - dy; top = r.top + dy; }
+          // mai più piccola del minimo: il bordo che si tira si ferma lì
+          if (width < 380) { if (d.includes("w")) left -= 380 - width; width = 380; }
+          if (height < 320) { if (d.includes("n")) top -= 320 - height; height = 320; }
+          this.win = geometriaFinestra({ x: left / vw, y: top / vh, w: Math.min(width, vw) / vw, h: Math.min(height, vh) / vh });
+          wrap.style.left = this.win.x * 100 + "vw"; wrap.style.top = this.win.y * 100 + "vh";
+          wrap.style.width = this.win.w * 100 + "vw"; wrap.style.height = this.win.h * 100 + "vh";
+        };
+        const up = () => {
+          window.removeEventListener("pointermove", mm, true);
+          window.removeEventListener("pointerup", up, true);
+          store.set("win.v1", this.win);
         };
         window.addEventListener("pointermove", mm, true);
         window.addEventListener("pointerup", up, true);
@@ -5235,36 +5307,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.collapsed = false; store.set("collapsed", false); this.render();
       });
       $("#collapse")?.addEventListener("click", () => { this.collapsed = true; store.set("collapsed", true); this.render(); });
-      const rsz = $("#rsz");
-      if (rsz) {
-        rsz.addEventListener("pointerdown", (e) => {
-          e.preventDefault(); e.stopPropagation();
-          const card = this.root.querySelector(".card");
-          const r = card.getBoundingClientRect();
-          const sx = e.clientX, sy = e.clientY, w0 = r.width, h0 = r.height;
-          const mm = (ev) => {
-            // dragging left widens (the panel grows towards the page), down heightens
-            this.size = {
-              w: Math.max(320, Math.min(window.innerWidth - 20, w0 + (sx - ev.clientX))),
-              h: Math.max(240, Math.min(window.innerHeight - 20, h0 + (ev.clientY - sy))),
-            };
-            card.style.width = this.size.w + "px";
-            card.style.maxHeight = this.size.h + "px";
-          };
-          const up = () => {
-            window.removeEventListener("pointermove", mm, true);
-            window.removeEventListener("pointerup", up, true);
-            store.set("size", this.size);
-          };
-          window.addEventListener("pointermove", mm, true);
-          window.addEventListener("pointerup", up, true);
-        });
-        rsz.addEventListener("dblclick", (e) => { e.stopPropagation(); this.size = null; store.set("size", null); this.render(); });
-      }
+      this.root.querySelectorAll("[data-rz]").forEach((el) => this.attachResize(el));
+      // doppio clic sull'angolo o sull'intestazione: di nuovo al centro, all'85%
+      const alCentro = (e) => { e.stopPropagation(); this.win = null; store.set("win.v1", null); this.render(); };
+      $("#rsz")?.addEventListener("dblclick", alCentro);
       const hd = $("#draghd");
       if (hd) {
         this.attachDrag(hd);
-        hd.addEventListener("dblclick", () => { this.pos = null; store.set("pos", null); this.render(); });
+        hd.addEventListener("dblclick", (e) => { if (!e.target.closest("button")) alCentro(e); });
       }
       const pill = $("#expand");
       if (pill) this.attachDrag(pill);

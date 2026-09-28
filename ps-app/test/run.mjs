@@ -27,8 +27,18 @@ function check(scen, cond, msg) {
   else results.push(`  ✓ [${scen}] ${msg}`);
 }
 
+// Aperto, il pannello è una finestra all'85% dello schermo che copre il
+// gestionale. Qui i test cliccano ANCHE la pagina vera: la finestra parte
+// come colonna a destra (i test della finestra la rimettono al centro).
+const COLONNA = { x: 0.6, y: 0.01, w: 0.39, h: 0.97 };
+async function colonna(context) {
+  await context.addInitScript((g) => {
+    try { if (!localStorage.getItem("psassist:win.v1")) localStorage.setItem("psassist:win.v1", JSON.stringify(g)); } catch { /* niente */ }
+  }, COLONNA);
+}
 async function newPage(browser, mock, opts = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  if (opts.finestra !== "centro") await colonna(context);
   await context.route("https://smarthealth.multimedica.it/**", async (route) => {
     const req = route.request();
     // opts.ritardo(url) → ms: una risposta lenta è l'unico modo per navigare
@@ -1260,12 +1270,12 @@ async function scenarioUiErgonomics(browser) {
 
   // selecting must NOT bounce the scroll back to the top
   const posPrima = await page.evaluate(() => {
-    const card = document.getElementById("psassist-host").shadowRoot.querySelector(".card");
-    card.scrollTop = 180;                    // the browser clamps to what fits
-    return card.scrollTop;
+    const bd = document.getElementById("psassist-host").shadowRoot.querySelector(".bd");
+    bd.scrollTop = 180;                    // the browser clamps to what fits
+    return bd.scrollTop;
   });
   await $panel(page, '.opt[title*="GLUCOSIO"]').click();
-  const st = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".card").scrollTop);
+  const st = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".bd").scrollTop);
   check(scen, posPrima > 40 && Math.abs(st - posPrima) <= 2, `lo scroll resta dov'era dopo la selezione (${st} ≈ ${posPrima})`);
 
   // drag the header → position saved and restored after reload
@@ -1288,10 +1298,14 @@ async function scenarioUiErgonomics(browser) {
     return { left: w.style.left, top: w.style.top };
   });
   check(scen, pos2.left === pos1.left && pos2.top === pos1.top, `posizione ricordata dopo reload (got ${pos2.left},${pos2.top})`);
-  // double-click header → back to default corner
+  // doppio clic sull'intestazione → di nuovo al centro, all'85%
   await $panel(page, "#draghd").dblclick();
-  const pos3 = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".wrap").style.left);
-  check(scen, pos3 === "", "doppio click riporta in alto a destra");
+  const pos3 = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot.querySelector(".wrap").getBoundingClientRect();
+    return { l: Math.round(r.left), w: Math.round(r.width), vw: innerWidth };
+  });
+  check(scen, Math.abs(pos3.w - pos3.vw * 0.85) < 3 && Math.abs(pos3.l - pos3.vw * 0.075) < 3,
+    `doppio clic: di nuovo al centro, all'85% (${pos3.l}px, largo ${pos3.w} su ${pos3.vw})`);
 
   // the two CTAs share one row
   check(scen, (await $panel(page, ".btnrow #go").count()) === 1 && (await $panel(page, ".btnrow #goconfirm").count()) === 1,
@@ -1645,15 +1659,15 @@ async function scenarioResizeAndLog(browser) {
   await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
 
-  // --- resize from the bottom-left grip ---
+  // --- ridimensionare: si tira un bordo qualsiasi, qui il sinistro ---
   const w0 = (await $panel(page, ".card").boundingBox()).width;
-  const g = await $panel(page, "#rsz").boundingBox();
-  await page.mouse.move(g.x + 6, g.y + 6);
+  const g = await $panel(page, ".rz-w").boundingBox();
+  await page.mouse.move(g.x + 3, g.y + g.height / 2);
   await page.mouse.down();
-  await page.mouse.move(g.x - 120, g.y + 80, { steps: 6 });
+  await page.mouse.move(g.x - 120, g.y + g.height / 2, { steps: 6 });
   await page.mouse.up();
   const w1 = (await $panel(page, ".card").boundingBox()).width;
-  check(scen, w1 > w0 + 80, `trascinando si allarga (${Math.round(w0)} → ${Math.round(w1)} px)`);
+  check(scen, w1 > w0 + 80, `tirando il bordo si allarga (${Math.round(w0)} → ${Math.round(w1)} px)`);
   await page.reload();
   await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
@@ -1661,7 +1675,7 @@ async function scenarioResizeAndLog(browser) {
   check(scen, Math.abs(w2 - w1) < 3, `la misura resta dopo il refresh (${Math.round(w2)} px)`);
   await $panel(page, "#rsz").dblclick();
   const w3 = (await $panel(page, ".card").boundingBox()).width;
-  check(scen, Math.abs(w3 - w0) < 3, "doppio click torna alla misura originale");
+  check(scen, Math.abs(w3 - 1280 * 0.85) < 4, `doppio clic sull'angolo: la misura di partenza, l'85% (${Math.round(w3)} px)`);
 
   // --- copy the log, with the quesito masked ---
   await $panel(page, "#q").fill("dolore toracico");

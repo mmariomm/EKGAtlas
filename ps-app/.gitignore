@@ -6,3 +6,6 @@ node_modules/
 
 # generato a ogni build, consumato solo dalla pubblicazione dell'Artifact
 dist/demo.artifact.html
+
+# istantanee e prove a mano, fuori dal repository
+test/_*.mjs

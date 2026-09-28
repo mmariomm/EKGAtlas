@@ -36,6 +36,11 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
 });
+// aperto, il pannello è una finestra all'85% che copre la pagina: qui i test
+// cliccano anche la pagina, quindi parte come colonna a destra
+await ctx.addInitScript(() => {
+  try { if (!localStorage.getItem("psassist:win.v1")) localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.6, y: 0.01, w: 0.39, h: 0.97 })); } catch { /* niente */ }
+});
 await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   const req = r.request();
   let out = mock.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });

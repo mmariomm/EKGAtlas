@@ -24,6 +24,11 @@ const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fa
 
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath() });
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+// aperto, il pannello è una finestra all'85% che copre la pagina: qui i test
+// cliccano anche la pagina, quindi parte come colonna a destra
+await ctx.addInitScript(() => {
+  try { if (!localStorage.getItem("psassist:win.v1")) localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.6, y: 0.01, w: 0.39, h: 0.97 })); } catch { /* niente */ }
+});
 const errors = [], leaks = [];
 // ONLY the page itself may be fetched: everything else is a leak, and is
 // aborted rather than sent, so a hole shows up as a failure and not as traffic.
