@@ -44,6 +44,15 @@ async function apertoDalPannello(context) {
     try { sessionStorage.setItem("psassist:navPannello.v1", JSON.stringify(Date.now())); } catch { /* niente */ }
   });
 }
+// Copiato un testo da incollare nel gestionale, la finestra si riduce da
+// sola alla pill («✓ Copiato · incolla»): per andare avanti si riapre.
+async function riapriDopoCopia(page) {
+  await page.waitForSelector("#psassist-host #expand", { state: "attached", timeout: 3000 });
+  const t = await page.locator("#psassist-host #expand").innerText();
+  await page.locator("#psassist-host #expand").click();
+  await page.waitForSelector("#psassist-host .card", { state: "attached", timeout: 3000 });
+  return /Copiato/.test(t);
+}
 // il Registro sta nel menu «⋯» dell'intestazione
 async function registro(page) {
   await page.locator("#psassist-host #menubtn").click();
@@ -2296,7 +2305,7 @@ async function scenarioEo(browser) {
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   // una fila di pillole, nell'ordine in cui si lavora
-  const pillole = (await page.locator("#psassist-host .seg button").allInnerTexts()).map((t) => t.replace(/\s*\d+$/, "").trim());
+  const pillole = (await page.locator("#psassist-host .seg > button").allInnerTexts()).map((t) => t.replace(/\s*\d+$/, "").trim());
   check(scen, pillole.join("|") === "Richieste|Esiti|EO|Consensi|Dimissioni",
     `le schermate in una fila: Richieste, Esiti, EO, Consensi, Dimissioni (got ${pillole.join("|")})`);
   await $panel(page, '[data-seg="eo"]').click();
@@ -2308,6 +2317,7 @@ async function scenarioEo(browser) {
   const clip = await page.evaluate(() => navigator.clipboard.readText());
   check(scen, /^Vigile, orientato, eupnoico/.test(clip), "l'EO generale si copia con un tocco");
   check(scen, /Cute: integra, non lesioni, non esantemi\.$/.test(clip.trim()), "fino all'ultima riga");
+  check(scen, await riapriDopoCopia(page), "copiato, la finestra si toglie di mezzo: la pill dice di incollare");
 
   // la tendina ha i casi e le frasi, e sceglierne uno copia subito
   const opzioni = await page.locator("#psassist-host #eocaso option").allInnerTexts();
@@ -2318,6 +2328,7 @@ async function scenarioEo(browser) {
   check(scen, /^Nistagmo \[assente\/orizzontale/.test(clip2) && /skew deviation assente/.test(clip2),
     "scegliere un caso lo copia da sé");
   check(scen, !/Vigile, orientato/.test(clip2), "e copia solo l'aggiunta, non l'EO generale");
+  await riapriDopoCopia(page);
   const mostrato = await $panel(page, "#eotxt").innerText();
   check(scen, /HINTS: head impulse/.test(mostrato), "il testo scelto resta scritto sotto la tendina");
 
@@ -2327,6 +2338,7 @@ async function scenarioEo(browser) {
   await page.waitForTimeout(300);
   const clip3 = await page.evaluate(() => navigator.clipboard.readText());
   check(scen, /skew deviation assente/.test(clip3), "⧉ ricopia lo stesso testo");
+  await riapriDopoCopia(page);
 
   // la scelta sopravvive a un cambio di schermata
   await $panel(page, '[data-seg="esiti"]').click();
@@ -2369,6 +2381,7 @@ async function scenarioDimissioni(browser) {
   check(scen, /COLICA RENALE/.test(clip) && /Ketoprofene sale di lisina/.test(clip), "⧉ copia il foglio intero");
   check(scen, /Tamsulosina 0,4 mg/.test(clip), "col testo aggiornato dal medico");
   check(scen, /non sostituiscono il medico curante/.test(clip), "con la frase di chiusura standard");
+  await riapriDopoCopia(page);
 
   // edit, save, and the change survives a page reload
   await page.locator('#psassist-host [data-dedit="artrosi"]').click();
@@ -2397,6 +2410,7 @@ async function scenarioDimissioni(browser) {
   await page.waitForTimeout(300);
   const clip2 = await page.evaluate(() => navigator.clipboard.readText());
   check(scen, /testo mio/.test(clip2), "la modifica resta dopo il cambio pagina");
+  await riapriDopoCopia(page);
 
   // the export carries every sheet, edited ones included
   await $panel(page, "#dimexport").click();
@@ -2579,9 +2593,9 @@ async function scenarioNoPatientPage(browser) {
   check(scen, /pazienti/i.test(await $panel(page, ".hd .who").innerText()), "intestazione: elenco pazienti, non un nome");
   // i modelli non appartengono a un paziente: la loro riga c'è anche qui,
   // dove un paziente non c'è
-  const qui = (await page.locator("#psassist-host .seg button").allInnerTexts()).map((t) => t.trim());
-  check(scen, qui.join("|") === "EO|Consensi|Dimissioni",
-    `i modelli ci sono anche senza paziente (got ${qui.join("|")})`);
+  const qui = (await page.locator("#psassist-host .seg > button").allInnerTexts()).map((t) => t.trim());
+  check(scen, qui.join("|") === "Pazienti|EO|Consensi|Dimissioni",
+    `i modelli ci sono anche senza paziente, accanto ai Pazienti (got ${qui.join("|")})`);
   check(scen, (await page.locator('#psassist-host [data-seg="richieste"], #psassist-host [data-seg="esiti"]').count()) === 0,
     "Richieste ed Esiti no: qui non c'è un paziente");
   await context.close();
