@@ -103,45 +103,60 @@ schede e si ricorda l'ultima scelta.
 **Lista** — i pazienti su cui hai lavorato nel turno, **una riga per paziente**: la striscia del
 **triage**, il nome (un tocco sulla riga apre gli Esiti), la nota in grigio, **visto 20 min fa** —
 in ambra dopo 3 ore —, oppure **questa pagina** per quello aperto, che è il primo; poi **dove sta**
-nella sala («Box 3 ▾», o «—»: un tocco e lo sposti), **Richieste**, e passandoci sopra la **✕**
-per toglierlo dall'elenco. In fondo, chiusi, gli **Archiviati** e **Svuota l'elenco**.
+nella stanza («Box 3 ▾», o «—»: un tocco e lo sposti), **Richieste** (in azzurro sulla riga sotto il
+mouse), e passandoci sopra la **✕** per toglierlo dall'elenco. Il nome non si taglia mai per primo:
+nella colonna stretta la nota scende sotto il nome e «visto…» si toglie. In fondo, chiusi, gli
+**Archiviati** e **Svuota l'elenco**.
 
-**Stanza** — una mappa minima della sala, per vedere a colpo d'occhio **dove sta ogni paziente**:
+**Stanza** — una mappa minima della stanza, per vedere a colpo d'occhio **dove sta ogni paziente**:
 i **letti** (uno per paziente) e le **aree** senza letto — corridoio, attesa, poltrone — dove ne
 stanno quanti servono. A sinistra **Da sistemare**: chi non ha ancora un posto. Un paziente nuovo
 arriva lì da solo, e nessuno sparisce: se il suo letto viene tolto, torna lì. Nella finestra
 stretta «Da sistemare» scende in fondo, su una riga che scorre.
 
+La stanza è una **griglia di celle uguali** (40 × 24; un letto ne prende 5 × 4): allargando o
+stringendo la finestra cresce o cala tutta insieme, in scala, e **niente si sovrappone** — nemmeno
+affiancata o alla misura minima, dove semmai la mappa scorre (sotto i 20 px una cella non porta più
+un nome leggibile). Fuori da Modifica si vede solo il
+pezzo disegnato, così anche una stanza piccola riempie la mappa. Il testo non cambia misura: in un
+letto piccolo sparisce prima la nota, poi tutto tranne il nome del paziente (quello del letto resta
+nel passaggio del mouse). Un letto vuoto è solo il suo nome e un letto disegnato appena.
+
 - **Portare un paziente**: lo prendi e lo lasci su un letto, su un'area o in «Da sistemare»
-  (col dito: soglia di 10 px, un tocco breve apre). Su un letto occupato i due si **scambiano** il
-  posto — passandoci sopra lo dice: «⇄ scambia con BIANCHI A.». Un tocco senza trascinare **apre il
-  paziente**, come le righe dell'elenco.
+  (col dito: soglia di 10 px); ti segue il suo nome, accanto al puntatore, mai sopra il letto che
+  miri. Su un letto occupato **il nuovo prende il letto e chi c'era va in «Da sistemare»** —
+  passandoci sopra lo dice: «ROSSI M. → Da sistemare». Premuto e lasciato senza trascinare, per
+  quanto a lungo, **apre il paziente**, come le righe dell'elenco.
 - **Sposta in…**, senza trascinare: tasto destro sul paziente, dito tenuto premuto, Maiusc+F10 (o
-  il tasto menu), oppure il «posto» della Lista. Prima i letti vuoti, poi quelli occupati (=
-  scambio), le aree, «Da sistemare»; frecce, Invio, Esc.
-- **Niente conferme: si annulla.** Ogni spostamento, un letto o un'area eliminati, «svuota» e la ✕
-  mostrano per 8 secondi, in fondo, «… · **Annulla**».
-- **Modifica** serve a disegnare la sala, di solito una volta sola: **+ Letto** e **+ Area** (nella
-  riga in cima alla mappa) e li trascini dove stanno davvero, sulla griglia a puntini che si vede
-  solo qui. Un tocco sul **nome** lo cambia (Invio salva, Esc lascia com'era); sul letto scelto,
-  **↻** sposta il cuscino dalla parte del muro (il letto resta orizzontale, il nome si legge) e
-  **×** lo toglie; l'angolo in basso a destra allarga un'area. In Modifica i pazienti stanno fermi,
-  in grigio; **Fine** (o un minuto senza toccare niente) e si torna a spostarli.
+  il tasto menu), oppure il «posto» della Lista. Prima i letti vuoti, poi quelli occupati («al posto
+  di ROSSI M.»), le aree, «Da sistemare» e, a parte, **Togli dall'elenco** (come la ✕); frecce,
+  Invio, Esc.
+- **Niente conferme: si annulla.** Ogni spostamento, un letto o un'area eliminati, «Togli
+  dall'elenco», «svuota» e la ✕ mostrano per 8 secondi, in fondo, «… · **Annulla**».
+- **Modifica** serve a disegnare la stanza, di solito una volta sola. Ci entri da **Disegna la
+  stanza** (a stanza vuota) o dal menu **⋯ → Modifica la stanza**; la fila delle schede diventa la
+  sua barra: **+ Letto**, **+ Area** e **Fine**. Si vede la pianta intera, coi puntini, e letti e
+  aree si trascinano di cella in cella; uno nuovo va nel primo posto libero (se non ce n'è, lo
+  dice). Dove un oggetto finirebbe sopra un altro diventa **rosso**, e lasciato lì torna dov'era.
+  Un tocco sul **nome** lo cambia (Invio salva, Esc lascia com'era); sull'oggetto scelto la **×** lo
+  toglie; l'angolo in basso a destra allarga un'area. In Modifica i pazienti stanno fermi, in
+  grigio; **Fine** (o Esc) e si torna a spostarli.
 
 **Per non sbagliare paziente.** Due pazienti in elenco con lo **stesso cognome** portano **⚠** e il
 nome intero; con lo **stesso nome e cognome**, anche le ultime cifre dell'episodio: «ROSSI MARIO ·
 …9001». Passando col mouse su un paziente: nome intero, episodio, quando l'hai aperto, da quando sta
 nel suo posto, il triage, la nota. Lo **stesso paziente** (stesso codice fiscale) con due episodi:
-il più vecchio è **episodio precedente**, in grigio, fuori dalla sala. Un posto **scade** se non
-apri quel paziente da **12 ore**: torna in «Da sistemare», in grigio, «visto 13 h fa».
+il più vecchio è **episodio precedente**, in grigio, fuori dalla stanza. Il posto **non scade**:
+resta finché non sposti il paziente, non lo togli dall'elenco o dall'elenco non esce; se non lo apri
+da **12 ore** diventa grigio, dov'è.
 
 **Il triage** è il colore che l'intestazione della scheda mostra quando la apri (ROSSO, ARANCIONE,
-AZZURRO, VERDE, BIANCO): una striscia a sinistra del nome, e basta — nella Stanza il colore vuol dire
-solo triage.
+AZZURRO, VERDE, BIANCO): una striscia a sinistra del nome, la stessa in Lista e in Stanza (nel letto
+la porta il letto), e basta — nella Stanza il colore vuol dire solo triage.
 
 Tutto resta **solo in questo browser** (`localStorage`), niente va in rete; un altro PC o un altro
-profilo Chrome ha la sua sala. La **sala disegnata** (`stanza.v1`: posizioni in proporzione alla
-mappa, così segue la finestra) resta come i fogli di dimissione: è un modello, non contiene
+profilo Chrome ha la sua stanza. La **stanza disegnata** (`stanza.v1`: celle intere della griglia,
+così a ogni misura è la stessa) resta come i fogli di dimissione: è un modello, non contiene
 pazienti. **Chi sta dove** (`stanza.posti.v1`) sono solo numeri di episodio, mai nomi. La pagina di
 login **non** li cancella: chi viene riaperto dopo una sessione scaduta ritrova il suo letto (il
 posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; eliminare un paziente
@@ -877,7 +892,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 66 scenari e2e in Chromium reale (+ storico e referti)
+└── test/                ← simulatore SA4PSO + 67 scenari e2e in Chromium reale (+ storico e referti)
 ```
 
 Sviluppo:
@@ -888,7 +903,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 66 scenari e2e + 47 sull'estensione + 44 sul banco + storico + il cancello privacy
+npm test           # 67 scenari e2e + 49 sull'estensione + 45 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

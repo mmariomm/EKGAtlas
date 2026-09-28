@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.45.0";
+  const VERSION = "3.46.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1935,7 +1935,7 @@
     if (corsa && corsa.ep === ep) tabStore.set(CORSA, null);
     const aperta = store.get(APERTA, null);
     if (aperta && aperta.ep === ep) store.set(APERTA, null);
-    const posti = store.get("stanza.posti.v1", null);   // e il suo posto nella sala
+    const posti = store.get("stanza.posti.v1", null);   // e il suo posto nella stanza
     if (posti && posti[ep]) { delete posti[ep]; store.set("stanza.posti.v1", posti); }
     if (hasExt()) ask({ t: "delStorico", chiave: pk, ep, nome: nome || "" }).catch(() => {});
     return true;
@@ -1952,7 +1952,7 @@
     } catch { /* blocked storage: nothing to clear */ }
     store.set(APERTA, null);    // porta un nome: se ne va col turno
     store.set(PRESIDIO, null);
-    // I posti nella sala NO: sono solo numeri di episodio, e chi viene
+    // I posti nella stanza NO: sono solo numeri di episodio, e chi viene
     // riaperto dopo una sessione scaduta deve ritrovare il suo letto.
     try { if (typeof chrome !== "undefined" && chrome.runtime?.id) chrome.runtime.sendMessage({ t: "clearRef" }, () => void chrome.runtime.lastError); } catch { /* not the extension build */ }
   }
@@ -2839,6 +2839,13 @@
     }
   }
 
+  // La pianta della Stanza: una griglia di celle tutte uguali, 40 × 24. Un
+  // letto prende 5 × 4 celle, un'area almeno 5 × 3. Si salvano solo celle
+  // intere: a qualunque misura la stanza si ridisegna uguale, in scala.
+  const PIANTA = { cols: 40, rows: 24, lw: 5, lh: 4, aw: 5, ah: 3 };
+  // due rettangoli di celle si sovrappongono (con g > 0: stanno a meno di g celle)
+  const troppoVicini = (a, b, g = 0) => a.c < b.c + b.w + g && b.c < a.c + a.w + g && a.r < b.r + b.h + g && b.r < a.r + a.h + g;
+
   // ============================================================== UI (panel)
   // Shadow-DOM panel, top right. Collapsible pill with live state; per-page
   // content; running/error states designed to be legible from a metre away;
@@ -3055,7 +3062,11 @@
                     padding: 12px 10px 10px; font-size: 13px; font-weight: 400; color: #5B6B7A; cursor: pointer; }
     .seg > button:hover { color: #16232E; }
     .seg > button.on { color: #16232E; font-weight: 600; border-bottom-color: #0B5CAD; }
-    .segdx { margin-left: auto; align-self: center; display: flex; align-items: center; gap: 6px; padding: 6px 0; }
+    .segdx { margin-left: auto; align-self: center; display: flex; align-items: center; gap: 6px; padding: 9px 0 3px; }
+    /* in Modifica la fila resta com'è (stessa altezza, stesse righe di testo) ma non va mai a capo */
+    .seg.modifica { flex-wrap: nowrap; }
+    .segtit { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 12px 0 10px;
+              border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 13px; font-weight: 600; line-height: normal; color: #16232E; }
     .seg .n { margin-left: 5px; font-weight: 600; color: #5B6B7A; font-variant-numeric: tabular-nums; }
     .rgo { flex: 0 0 auto; color: #8296A9; font-size: 12px; }
     .dlist, .mlist { display: flex; flex-direction: column; gap: 4px; }
@@ -3249,17 +3260,19 @@
     @media (prefers-reduced-motion: reduce) { .step.running .ic, .pill .dot { animation: none; } }
 
     /* ---- Stanza ---- */
-    /* nella finestra la mappa riempie tutto il corpo che resta */
-    .card.stanza .bdi { height: 100%; display: flex; flex-direction: column; }
+    /* nella finestra la mappa riempie tutto il corpo che resta, da bordo a bordo */
+    .card.stanza .bdi { height: 100%; display: flex; flex-direction: column; padding: 0; }
     .card.stanza .bdi > .sec { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; margin-bottom: 0; }
+    .card.stanza .bdi > .banner, .card.stanza .bdi > .reg { flex: none; margin: 10px 14px; }
     .card.stanza .stmap { flex: 1 1 auto; height: auto; }
     /* I Pazienti, in Lista e in Stanza. Due grigi per il testo; l'azzurro solo
        per il paziente di questa pagina, per il fuoco e per l'azione che conta;
        il colore solo per il triage, in una striscia. */
     .t-rosso { --tr: #C62828; } .t-arancione { --tr: #EF6C00; } .t-azzurro { --tr: #1E88E5; }
     .t-verde { --tr: #2E7D32; } .t-bianco { --tr: #B0BEC5; }
-    /* le azioni in fondo alla fila delle schede: Lista | Stanza sempre ultimo */
-    .stazioni { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+    /* le azioni in fondo alla fila delle schede: Lista | Stanza, o in Modifica
+       + Letto, + Area, Fine. Mai a capo, e alte uguali in ogni caso */
+    .stazioni { display: inline-flex; flex: none; flex-wrap: nowrap; align-items: center; gap: 6px; height: 32px; margin-left: auto; white-space: nowrap; }
     .stazioni .stseg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: #EEF2F6; }
     .stazioni .stseg button { border: 0; border-radius: 6px; background: transparent; padding: 4px 12px; cursor: pointer;
                               font-size: 13px; font-weight: 600; line-height: 20px; color: #5B6B7A; white-space: nowrap; }
@@ -3272,7 +3285,7 @@
     .stbtn.pri:hover, .stazioni .stbtn.pri:hover { background: #094a8c; border-color: #094a8c; color: #fff; }
     .stazioni button:focus-visible, .stbtn:focus-visible, .stctl:focus-visible, .stp:focus-visible, .stname:focus-visible,
     .pzrow:has(.pzapri:focus-visible), .pzric:focus-visible, .pzposto:focus-visible, .pzx:focus-visible, .pzarchhd:focus-visible,
-    .pzsvuota:focus-visible, .pzabtn:focus-visible, .stannulla:focus-visible, .stlink:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .pzsvuota:focus-visible, .pzabtn:focus-visible, .stannulla:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     /* quello che dicono tutti e due: da quanto non lo apri, «questa pagina», i segni */
     .stvisto { flex: none; font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .stvisto.amb { padding: 0 7px; border-radius: 999px; background: #FFF4DB; color: #8A5A00; }
@@ -3283,8 +3296,9 @@
     .stn { margin-left: 6px; font-size: 12px; font-weight: 400; color: #5B6B7A; font-variant-numeric: tabular-nums; letter-spacing: 0; }
     .stsr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }   /* solo per chi legge con la voce */
 
-    /* LISTA: righe da 44px separate da un filo, niente riquadri */
-    .pzlista { border-top: 1px solid #EEF2F6; }
+    /* LISTA: righe da 44px separate da un filo, niente riquadri. Il nome non si
+       taglia mai per primo: prima cede la nota */
+    .pzlista { border-top: 1px solid #EEF2F6; container: pzlista / inline-size; }
     .pzrow { position: relative; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 6px 0 10px;
              border-bottom: 1px solid #EEF2F6; color: #16232E; }
     .pzapri { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 10px; padding: 0; border: 0; background: none;
@@ -3296,21 +3310,32 @@
     .pzrow.qui { background: #F4F8FC; box-shadow: inset 3px 0 0 #0B5CAD; }
     .pzrow.prec { opacity: .55; }
     .pztr { flex: none; width: 4px; height: 22px; border-radius: 2px; background: var(--tr, transparent); }
-    .pznm { flex: 0 1 auto; min-width: 0; max-width: 70%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    .pznm { flex: none; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
             font-size: 14px; font-weight: 600; }
-    .pznota { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #5B6B7A; }
-    .pzposto { position: relative; z-index: 1; flex: none; display: inline-flex; align-items: center; min-height: 28px; white-space: nowrap;
-               border: 1px solid #E3E8EF; border-radius: 6px; background: #fff; padding: 2px 8px; cursor: pointer;
-               font-size: 12px; color: #5B6B7A; }
-    .pzpn { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
-    .pzposto:hover { border-color: #9DBFDE; color: #16232E; }
+    .pznota { flex: 1 1 auto; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #5B6B7A; }
+    /* il posto: sempre largo uguale; il bordo solo sulla riga sotto il mouse */
+    .pzposto { position: relative; z-index: 1; flex: 0 0 104px; display: inline-flex; align-items: center; justify-content: space-between;
+               min-height: 28px; white-space: nowrap; border: 1px solid transparent; border-radius: 6px; background: none; padding: 2px 8px;
+               cursor: pointer; font-size: 12px; color: #5B6B7A; }
+    .pzpn { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .pzrow:hover .pzposto, .pzrow:focus-within .pzposto { border-color: #E3E8EF; background: #fff; }
+    .pzrow .pzposto:hover { border-color: #9DBFDE; color: #16232E; }
+    /* Richieste in grigio; azzurro sulla riga sotto il mouse o col fuoco */
     .pzric { position: relative; z-index: 1; flex: none; min-height: 28px; border: 0; border-radius: 6px; background: none; padding: 2px 8px; cursor: pointer;
-             font-size: 13px; font-weight: 600; color: #0B5CAD; }
+             font-size: 13px; font-weight: 500; color: #5B6B7A; }
+    .pzrow:hover .pzric, .pzrow:focus-within .pzric { color: #0B5CAD; }
     .pzric:hover { background: #EAF2FA; }
     .pzx { position: relative; z-index: 1; flex: none; width: 28px; height: 28px; border: 0; border-radius: 6px; background: none; cursor: pointer;
            font-size: 13px; color: #5B6B7A; opacity: 0; }
     .pzrow:hover .pzx, .pzrow:focus-within .pzx { opacity: 1; }
     .pzx:hover { background: #FDF1F0; color: #B3261E; }
+    /* colonna stretta: la nota scende sotto il nome; «visto…» e «questa pagina»
+       li dice solo la voce (la riga di questa pagina è già azzurra) */
+    @container pzlista (max-width: 560px) {
+      .pzrow { gap: 6px; }
+      .pzapri { flex-direction: column; align-items: flex-start; gap: 0; }
+      .pzrow .stvisto, .pzrow .stqui { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    }
     .pzvuoto { padding: 16px 10px; font-size: 13px; color: #5B6B7A; }
     .pzarchhd { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 6px 4px; border: 0; background: none; cursor: pointer;
                 font-size: 13px; font-weight: 600; color: #5B6B7A; }
@@ -3328,21 +3353,12 @@
     .pzsvuota { margin: 8px 0 0 6px; padding: 6px 4px; border: 0; background: none; cursor: pointer; font-size: 13px; color: #5B6B7A; text-decoration: underline; }
     .pzsvuota:hover { color: #16232E; }
 
-    /* STANZA: a sinistra «Da sistemare», a destra la sala */
-    .stmap { position: relative; display: flex; flex-direction: column; height: 62vh; min-height: 380px;
-             border: 1px solid #E3E8EF; border-radius: 12px; background: #F7F9FB;
+    /* STANZA: a sinistra «Da sistemare», a destra la stanza */
+    .stmap { position: relative; display: flex; flex-direction: column; height: 62vh; min-height: 380px; background: #F7F9FB;
              user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-    /* la riga in cima ha un'altezza fissa (e non va mai a capo): la sala sotto non cambia misura */
-    .ststato { flex: none; display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px; border-bottom: 1px solid #E3E8EF;
-               border-radius: 11px 11px 0 0; background: #fff; font-size: 12px; color: #5B6B7A; white-space: nowrap; overflow: hidden; }
-    .ststato span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .stmap.edit .ststato { gap: 8px; padding-left: 8px; background: #EEF2F6; color: #16232E; }
-    .ststato .stbtn { flex: none; padding: 1px 10px; }
-    #stmod, #stfine { min-width: 88px; }
-    .stlink { position: relative; flex: none; border: 0; background: none; padding: 0; cursor: pointer; font-size: 12px; font-weight: 600; color: #16232E; text-decoration: underline; }
     .stcorpo { flex: 1 1 auto; display: flex; min-height: 0; }
     .sttray { flex: 0 1 220px; min-width: 150px; display: flex; flex-direction: column; border-right: 1px solid #E3E8EF;
-              border-radius: 0 0 0 11px; background: #fff; transition: background-color .12s; }
+              background: #fff; transition: background-color .12s; }
     .sttray.over { background: #EAF2FA; }
     .sttrayhd { flex: none; padding: 12px 12px 8px; font-size: 13px; font-weight: 600; color: #16232E; }
     .strow { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 0 12px 12px; }
@@ -3351,28 +3367,39 @@
     .stmap { container: stmap / inline-size; }
     @container stmap (max-width: 700px) {
       .stcorpo { flex-direction: column; }
-      .stcanvas { order: -1; border-radius: 0; }
-      .sttray { flex: none; height: 96px; min-width: 0; border-right: 0; border-top: 1px solid #E3E8EF; border-radius: 0 0 11px 11px; }
+      .stcanvas { order: -1; }
+      .sttray { flex: none; height: 96px; min-width: 0; border-right: 0; border-top: 1px solid #E3E8EF; }
       .sttrayhd { padding: 8px 12px 6px; }
       .strow { flex: 1 1 auto; flex-direction: row; align-items: flex-start; overflow-x: auto; overflow-y: hidden; padding: 0 12px 8px; scrollbar-width: thin; }
       .strow .stp { flex: none; max-width: 220px; touch-action: pan-x; }
     }
-    /* i letti crescono con la sala: la mappa è il loro contenitore */
-    .stcanvas { position: relative; flex: 1 1 auto; min-width: 0; overflow: hidden; container-type: size; border-radius: 0 0 11px 0;
-                --bw: clamp(136px, 17cqw, 200px); --bh: clamp(112px, 12cqw, 132px); }
-    .stmap.edit .stcanvas { background-image: radial-gradient(circle, #C4D0DC 1px, transparent 1.5px);
-                            background-size: 16px 16px; background-position: -8px -8px; }
+    /* La pianta: celle tutte uguali (--u), le più grandi che ci stanno, fra 20 e
+       44px. Tutto si misura in celle: allargando o stringendo la finestra la
+       stanza cresce o cala tutta insieme e niente si sovrappone; se non ci sta
+       nemmeno a 20px (un nome non si leggerebbe più), scorre. */
+    .stcanvas { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; container-type: size;
+                display: grid; place-items: center; }
+    .stplan { position: relative; --u: clamp(20px, min(100cqw / var(--cols), 100cqh / var(--rows)), 44px);
+              width: calc(var(--cols) * var(--u)); height: calc(var(--rows) * var(--u)); }
+    /* in Modifica la pianta intera, coi puntini agli angoli delle celle (e un
+       margine per la × degli oggetti sul bordo) */
+    .stmap.edit .stcanvas { padding: 12px; }
+    .stmap.edit .stplan { background-image: radial-gradient(circle, #C4D0DC 1px, transparent 1.5px);
+                          background-size: var(--u) var(--u); background-position: calc(var(--u) / -2) calc(var(--u) / -2); }
+    /* ogni oggetto sulle sue celle, con un filo d'aria: due letti vicini non si toccano */
+    .stbed, .starea { position: absolute; left: calc(var(--c) * var(--u) + 3px); top: calc(var(--r) * var(--u) + 3px);
+                      width: calc(var(--w) * var(--u) - 6px); height: calc(var(--h) * var(--u) - 6px); }
     .sthd { display: flex; align-items: baseline; min-width: 0; }
     .stname { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .stmap.edit .stname { cursor: text; border-radius: 4px; }
     .stmap.edit .stname:hover { background: #EEF2F6; box-shadow: 0 0 0 3px #EEF2F6; color: #16232E; }
-    /* il paziente: striscia del triage, nome; sotto, da quanto non lo apri e la nota */
-    .stp { position: relative; display: flex; flex-direction: column; gap: 1px; min-width: 0; max-width: 100%; padding: 6px 10px 6px 12px;
+    /* il paziente: il nome; sotto, «questa pagina» e la nota */
+    .stp { position: relative; display: flex; flex-direction: column; gap: 1px; min-width: 0; max-width: 100%; padding: 6px 10px 6px 14px;
            border: 1px solid #D9E2EC; border-radius: 8px; background: #fff; cursor: grab; touch-action: none; transition: border-color .12s; }
-    .stp.tri { border-left: 4px solid var(--tr); padding-left: 9px; }
+    /* il triage: la stessa striscia dappertutto, dentro il bordo (nel letto la porta il letto) */
+    .stp.tri::before, .stbed.tri::before { content: ""; position: absolute; left: 4px; top: 8px; bottom: 8px; width: 4px; border-radius: 2px; background: var(--tr); }
     .stp:hover { border-color: #9DBFDE; }
     .stp.qui { border-color: #0B5CAD; }
-    .stp.tri:hover, .stp.tri.qui { border-left-color: var(--tr); }
     .stp1 { display: flex; align-items: baseline; min-width: 0; }
     .stpn { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: 600; line-height: 18px; color: #16232E; }
     .stp2 { display: flex; align-items: baseline; gap: 6px; min-width: 0; line-height: 16px; }
@@ -3380,60 +3407,62 @@
     .stp.spento { opacity: .55; }
     .stp.prec { cursor: pointer; }
     .stp.via { opacity: .3; }
-    .stghost { position: absolute; z-index: 20; margin: 0; width: max-content; max-width: 240px; pointer-events: none;
-               border-color: #9DBFDE; box-shadow: 0 10px 24px rgba(9,42,74,.18); }
+    /* quello che si porta: il nome e basta, accanto al puntatore, mai sopra quello che si mira */
+    .stghost { position: absolute; left: 0; top: 0; z-index: 20; max-width: 220px; padding: 3px 10px; border: 1px solid #9DBFDE; border-radius: 6px;
+               background: #fff; box-shadow: 0 8px 20px rgba(9,42,74,.18); font-size: 13px; font-weight: 600; line-height: 18px; color: #16232E;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
     .stmap.trascino, .stmap.trascino * { cursor: grabbing !important; }
-    /* il letto visto dall'alto: il materasso e il cuscino, dalla parte della testa */
-    .stbed { position: absolute; z-index: 1; width: var(--bw); height: var(--bh); border: 1px solid #D9E2EC; border-radius: 12px;
-             background: #fff; transition: border-color .12s; }
-    .stbed.occ { border-color: #C4D0DC; }
-    .stbed.tri { border-left: 4px solid var(--tr); }
+    /* il letto: il suo nome, poi il paziente. Il testo non cambia misura: nel
+       letto piccolo sparisce prima la nota, poi tutto tranne il nome del
+       paziente (quello del letto resta nel passaggio del mouse). Vuoto, è più quieto. */
+    .stbed { z-index: 1; container: stbed / size; border: 1px solid #E3E8EF; border-radius: 10px; background: transparent; transition: border-color .12s; }
+    .stbed.occ { border-color: #C4D0DC; background: #fff; }
     .stbed.qui { border-color: #0B5CAD; box-shadow: 0 0 0 1px #0B5CAD; }
-    .stbed.qui.tri { border-left-color: var(--tr); }
-    .stbed.over { outline: 2px dashed #0B5CAD; outline-offset: 3px; }
+    .stbed.over { z-index: 4; outline: 2px dashed #0B5CAD; outline-offset: 3px; }
     .stmap:not(.edit) .stbed.occ { cursor: grab; touch-action: none; }
-    .stpw { position: absolute; border: 1px solid #D9E2EC; border-radius: 4px; background: #F7F9FB; }
-    .stbed.r0 .stpw { left: 6px; top: 12px; bottom: 12px; width: 10px; }
-    .stbed.r90 .stpw { top: 6px; left: 14px; right: 14px; height: 9px; }
-    .stbed.r180 .stpw { right: 6px; top: 12px; bottom: 12px; width: 10px; }
-    .stbed.r270 .stpw { bottom: 6px; left: 14px; right: 14px; height: 9px; }
-    .stbedin { position: absolute; inset: 8px 10px 8px 24px; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
-    .stbed.r90 .stbedin { inset: 18px 10px 6px 12px; }
-    .stbed.r180 .stbedin { inset: 8px 24px 8px 12px; }
-    .stbed.r270 .stbedin { inset: 6px 10px 18px 12px; }
+    .stbedin { position: absolute; inset: 6px 8px 6px 14px; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
     .stbed .stname { flex: none; font-size: 12px; font-weight: 400; line-height: 16px; color: #5B6B7A; }
-    .stvuoto { font-size: 12px; color: #5B6B7A; }
+    .stglifo { flex: none; margin: auto; }
     .stbed .stp { flex: 1 1 auto; min-height: 0; gap: 0; padding: 0; border: 0; border-radius: 0; background: none; }
     .stbed .stp2 .stcoda { font-size: 12px; }
+    .stbed .stqui, .stbed .sttag { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .stbed .stnota { flex: 0 1 auto; min-height: 0; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
                      font-size: 12px; line-height: 16px; }
-    .stswap { position: absolute; left: 50%; bottom: -12px; z-index: 3; transform: translateX(-50%); padding: 2px 9px; border-radius: 999px;
-              background: #16232E; color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none; }
+    @container stbed (max-height: 94px) { .stbed .stnota { -webkit-line-clamp: 1; } }
+    @container stbed (max-height: 70px) { .stbed .stnota { display: none; } }
+    @container stbed (max-height: 62px) {
+      .stmap:not(.edit) .stbed.occ .stname, .stbed .stp2, .stglifo { display: none; }
+      .stmap.edit .stbed .stp { display: none; }   /* in Modifica conta il nome del letto */
+    }
+    .stfuori { position: absolute; left: 50%; bottom: -12px; z-index: 3; transform: translateX(-50%); padding: 2px 9px; border-radius: 999px;
+               background: #16232E; color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none; }
     /* le aree: senza letto, dentro quanti pazienti servono */
-    .starea { position: absolute; display: flex; flex-direction: column; min-width: 96px; min-height: 64px;
-              border: 1.5px dashed #C4D0DC; border-radius: 12px; background: rgba(255,255,255,.6);
+    .starea { display: flex; flex-direction: column; border: 1.5px dashed #C4D0DC; border-radius: 12px; background: rgba(255,255,255,.6);
               transition: border-color .12s, background-color .12s; }
     .starea > .sthd { flex: none; padding: 8px 10px 6px; }
     .starea .stname { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #5B6B7A; }
     .starea.over { border-color: #0B5CAD; background: #EAF2FA; }
     .starbody { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; padding: 0 8px 8px; }
     .starbody .stp { max-width: 240px; }
-    /* Modifica: i pazienti si fermano; l'oggetto scelto (o sotto il mouse) mostra × ↻ e l'angolo */
+    /* Modifica: i pazienti si fermano; l'oggetto scelto (o sotto il mouse) mostra la × e, l'area, l'angolo */
     .stmap.edit .stp { opacity: .4; pointer-events: none; }
     .stmap.edit .stbed, .stmap.edit .starea { cursor: move; touch-action: none; }
+    .stmap.edit .stbed { background: #F7F9FB; }   /* i puntini non passano dentro il letto */
+    .stmap.edit .stbed.occ { background: #fff; }
     .stbed.sel, .starea.sel { outline: 2px solid #9DBFDE; outline-offset: 3px; }
-    .stbed.drag, .starea.drag { z-index: 5; box-shadow: 0 10px 24px rgba(9,42,74,.16); }
+    .stbed.drag, .starea.drag { z-index: 5; background: #fff; box-shadow: 0 10px 24px rgba(9,42,74,.16); }
+    /* sopra un altro non ci sta: rosso, e lasciato lì torna dov'era */
+    .stbed.bad, .starea.bad { outline: 2px solid #B3261E; outline-offset: 2px; }
     .stctl { position: absolute; z-index: 4; width: 24px; height: 24px; padding: 0; border: 1px solid #D9E2EC; border-radius: 50%;
              background: #fff; cursor: pointer; font-size: 13px; line-height: 22px; text-align: center; color: #16232E;
              opacity: 0; pointer-events: none; transition: opacity .12s; }
-    .stctl::before, .pzposto::before, .pzric::before, .pzx::before, .pzabtn::before, .stannulla::before, .stlink::before { content: ""; position: absolute; inset: -4px; }
+    .stctl::before, .pzposto::before, .pzric::before, .pzx::before, .pzabtn::before, .stannulla::before { content: ""; position: absolute; inset: -4px; }
     .strsz::before { content: ""; position: absolute; inset: -8px; }
     .stbed:hover > .stctl, .starea:hover > .stctl, .sel > .stctl, .stbed:focus-within > .stctl, .starea:focus-within > .stctl,
     .starea:hover > .strsz, .starea.sel > .strsz { opacity: 1; pointer-events: auto; }
     .stctl:hover { border-color: #9DBFDE; }
     .stx { top: -12px; right: -12px; }
     .stx:hover { border-color: #E9BAB6; background: #FDF1F0; color: #B3261E; }
-    .strot { right: -12px; bottom: -12px; }
     .strsz { position: absolute; right: 3px; bottom: 3px; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none; opacity: 0;
              pointer-events: none; transition: opacity .12s;
              background: linear-gradient(135deg, transparent 48%, #C4D0DC 48% 56%, transparent 56% 68%, #C4D0DC 68% 76%, transparent 76%); }
@@ -3444,7 +3473,6 @@
                gap: 6px; padding: 24px; text-align: center; pointer-events: none; }
     .stvuota svg { margin-bottom: 6px; }
     .stvuota b { font-size: 16px; font-weight: 600; color: #16232E; }
-    .stvuota small { max-width: 320px; font-size: 13px; line-height: 1.45; color: #5B6B7A; }
     .stvuota .stbtn { margin-top: 8px; pointer-events: auto; }
     /* «Sposta in…» */
     .stmenu { position: absolute; z-index: 30; min-width: 220px; max-width: 300px; max-height: min(60vh, 420px); overflow-y: auto; padding: 4px;
@@ -3468,10 +3496,11 @@
                  font-size: 13px; font-weight: 600; color: #0B5CAD; }
     .stannulla:hover { background: #EAF2FA; }
     @media (pointer: coarse) {
+      .stazioni { height: 40px; }
       .stazioni .stseg button, .stbtn, .stazioni .stbtn { min-height: 36px; }
       .pzx { opacity: 1; }
       .stctl { width: 32px; height: 32px; line-height: 30px; }
-      .stx { top: -16px; right: -16px; } .strot { right: -16px; bottom: -16px; }
+      .stx { top: -16px; right: -16px; }
     }
     @media (prefers-reduced-motion: reduce) { .stmap *, .stazioni *, .pzlista * { transition: none !important; } }
   `;
@@ -3533,6 +3562,8 @@
   // cambia misura. Di partenza al centro, all'85%. Mai più piccola di così,
   // e un pezzo d'intestazione resta sempre a portata di mano.
   const FINESTRA = { x: 0.075, y: 0.075, w: 0.85, h: 0.85 };
+  const AFFIANCA = { x: 0.63, y: 0.02, w: 0.36, h: 0.96 };   // una colonna a destra: il gestionale resta visibile
+  const eAffiancata = (w) => !!w && ["x", "y", "w", "h"].every((k) => Math.abs(w[k] - AFFIANCA[k]) < 0.005);
   function geometriaFinestra(win) {
     const g = win && [win.x, win.y, win.w, win.h].every(Number.isFinite) ? win : FINESTRA;
     const vw = window.innerWidth || 1000, vh = window.innerHeight || 800;
@@ -4142,8 +4173,9 @@
                 <span class="menuw">
                   <button class="iconbtn" id="menubtn" title="Altro" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
                   ${this.menuAperto ? `<div class="menu" role="menu">
-                    <button role="menuitem" id="wincentra" title="La finestra al centro, all'85% dello schermo">Al centro</button>
-                    <button role="menuitem" id="winaffianca" title="Una colonna a destra: il gestionale resta visibile a sinistra">Affianca a destra</button>
+                    ${this.win ? `<button role="menuitem" id="wincentra" title="La finestra al centro, all'85% dello schermo">Al centro</button>` : ""}
+                    ${eAffiancata(this.win) ? "" : `<button role="menuitem" id="winaffianca" title="Una colonna a destra: il gestionale resta visibile a sinistra">Affianca a destra</button>`}
+                    ${inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Disegna la stanza: aggiungi, sposta e rinomina letti e aree">Modifica la stanza</button>` : ""}
                     <hr>
                     <button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${this.showLog ? "Nascondi il registro" : "Registro"}</button>
                     ${(typeof chrome !== "undefined" && chrome.runtime?.id) ? `<button role="menuitem" id="extreload" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">Ricarica estensione</button>` : ""}
@@ -4155,7 +4187,10 @@
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
               <div class="cap">
               ${!this.runState && this.pageType === "patient" && !inHome ? this.notaHtmlPaziente() : ""}
-              ${!this.runState ? `
+              ${!this.runState && inStanza && this.stanzaEdit ? `
+                <div class="seg modifica" role="toolbar" aria-label="Modifica la stanza">
+                  <b class="segtit">Modifica la stanza</b><span class="segdx">${this.stanzaAzioni()}</span>
+                </div>` : !this.runState ? `
                 <div class="seg" role="tablist">
                   ${this.pageType === "patient" && this.view !== "home" ? `
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
@@ -4190,21 +4225,21 @@
     // their page first: the panel never shows data belonging to a patient
     // other than the page in front of you.
     // La stessa gente in due viste: la Lista (una riga per paziente) e la
-    // Stanza (dove sta nella sala). L'interruttore e Modifica stanno nella
-    // fila delle schede: stanzaAzioni().
+    // Stanza (dove sta nella stanza). L'interruttore, e in Modifica i suoi
+    // comandi, stanno nella fila delle schede: stanzaAzioni().
     viewHome(patientName) {
       const m = this.pazModello();
       return `<div class="sec">${this.pazVista() === "stanza" ? this.viewStanza(m) : this.viewLista(m, patientName)}</div>`;
     }
 
     // ================================================================ STANZA
-    // La mappa della sala del PS. Letti (un paziente ciascuno) e aree senza
+    // La mappa della stanza del PS. Letti (un paziente ciascuno) e aree senza
     // letto (corridoio, attesa: quanti ne servono); a sinistra «Da sistemare»,
     // dove finisce chiunque non abbia un posto — un paziente non sparisce mai.
     // Di norma si spostano i PAZIENTI (trascinando, o «Sposta in…»); con
-    // Modifica si disegna la SALA, di solito una volta sola. Ogni spostamento
-    // si annulla per 8 secondi. Tutto resta in questo browser: la sala in
-    // "stanza.v1" (posizioni in frazioni della mappa, così segue la finestra),
+    // Modifica si disegna la STANZA, di solito una volta sola. Ogni spostamento
+    // si annulla per 8 secondi. Tutto resta in questo browser: la stanza in
+    // "stanza.v1" (celle intere della PIANTA, così a ogni misura è la stessa),
     // chi-sta-dove in "stanza.posti.v1" — solo episodi, mai nomi.
     pazVista() {
       const v = this._pazVista || store.get("pazVista", "lista");
@@ -4226,44 +4261,56 @@
     inPazienti() {
       return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "tempi", "richieste"].includes(this.view);
     }
-    // Le azioni dei Pazienti, in fondo alla fila delle schede. Lista | Stanza
-    // sta all'estrema destra e non si sposta mai; alla sua sinistra Modifica
-    // o, disegnando, Fine: larghi uguali, così la fila non va mai a capo e la
-    // sala sotto non cambia misura (+ Letto e + Area stanno dentro la mappa).
+    // Le azioni dei Pazienti, in fondo alla fila delle schede: Lista | Stanza,
+    // e basta. In Modifica, al suo posto, + Letto, + Area e Fine. Si entra in
+    // Modifica da «Disegna la stanza» (stanza vuota) o dal menu «⋯».
     stanzaAzioni() {
       if (!this.inPazienti()) return "";
-      const vista = this.pazVista(), edit = vista === "stanza" && this.stanzaEdit;
+      const vista = this.pazVista();
+      if (vista === "stanza" && this.stanzaEdit) {
+        return `<span class="stazioni"><button type="button" class="stbtn" id="stpiuletto" title="Aggiungi un letto: un paziente">+ Letto</button><button type="button" class="stbtn" id="stpiuarea" title="Aggiungi un'area senza letti (corridoio, attesa, poltrone): più pazienti">+ Area</button><button type="button" class="stbtn pri" id="stfine" title="La stanza è pronta: si torna a spostare i pazienti (Esc)">Fine</button></span>`;
+      }
       const seg = (v, testo, tip) => `<button type="button" class="${vista === v ? "on" : ""}" data-pazvista="${v}" aria-pressed="${vista === v}" title="${tip}">${testo}</button>`;
-      return `<span class="stazioni">${vista !== "stanza" ? "" : edit
-        ? `<button type="button" class="stbtn pri" id="stfine" title="La sala è pronta: si torna a spostare i pazienti">Fine</button>`
-        : `<button type="button" class="stbtn" id="stmod" title="Disegna la sala: aggiungi, sposta e rinomina letti e aree">Modifica</button>`}<span class="stseg" role="group" aria-label="Vista dei pazienti">${
-        seg("lista", "Lista", "I pazienti in elenco")}${seg("stanza", "Stanza", "La mappa della sala: dove sta ogni paziente")}</span></span>`;
+      return `<span class="stazioni"><span class="stseg" role="group" aria-label="Vista dei pazienti">${
+        seg("lista", "Lista", "I pazienti in elenco")}${seg("stanza", "Stanza", "La mappa della stanza: dove sta ogni paziente")}</span></span>`;
     }
-    // La sala com'è salvata, ripulita: numeri dentro la mappa, nomi corti,
-    // niente doppioni. Una memoria rotta dà una sala vuota, non un errore.
+    // La stanza com'è salvata, ripulita: celle intere dentro la pianta, niente
+    // sopra un altro, nomi corti, niente doppioni. Quello che non torna (anche
+    // una stanza salvata in un altro formato) si lascia fuori; una memoria
+    // rotta dà una stanza vuota, non un errore.
     stanzaSala() {
       const s = store.get("stanza.v1", null) || {};
-      const f = (v, d) => (Number.isFinite(+v) ? Math.min(1, Math.max(0, +v)) : d);
-      const visti = new Set();
-      const buono = (o) => o && typeof o.id === "string" && /^[\w-]{1,16}$/.test(o.id) && !visti.has(o.id) && visti.add(o.id);
+      const { cols, rows, lw, lh, aw, ah } = PIANTA;
+      const int = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
+      const visti = new Set(), presi = [];
+      const buono = (o) => typeof o.id === "string" && /^[\w-]{1,16}$/.test(o.id) && !visti.has(o.id) && visti.add(o.id);
+      const posa = (q) => !presi.some((p) => troppoVicini(p, q)) && presi.push(q);
       const nome = (o, d) => String(o.nome ?? "").replace(/\s+/g, " ").trim().slice(0, 24) || d;
-      const letti = (Array.isArray(s.letti) ? s.letti : []).filter(buono).slice(0, 60).map((l) => ({
-        id: l.id, x: f(l.x, 0), y: f(l.y, 0), nome: nome(l, "Letto"), rot: [0, 90, 180, 270].includes(+l.rot) ? +l.rot : 0,
-      }));
-      const aree = (Array.isArray(s.aree) ? s.aree : []).filter(buono).slice(0, 30).map((a) => {
-        const w = Math.max(0.05, f(a.w, 0.3)), h = Math.max(0.05, f(a.h, 0.25));
-        return { id: a.id, x: Math.min(f(a.x, 0), 1 - w), y: Math.min(f(a.y, 0), 1 - h), w, h, nome: nome(a, "Area") };
-      });
+      const letti = [], aree = [];
+      for (const l of Array.isArray(s.letti) ? s.letti : []) {
+        if (letti.length >= 60 || !l || !int(l.c, 0, cols - lw) || !int(l.r, 0, rows - lh) || !buono(l) || !posa({ c: l.c, r: l.r, w: lw, h: lh })) continue;
+        letti.push({ id: l.id, c: l.c, r: l.r, nome: nome(l, "Letto") });
+      }
+      for (const a of Array.isArray(s.aree) ? s.aree : []) {
+        if (aree.length >= 30 || !a || !int(a.w, aw, cols) || !int(a.h, ah, rows) || !int(a.c, 0, cols - a.w) || !int(a.r, 0, rows - a.h)
+          || !buono(a) || !posa({ c: a.c, r: a.r, w: a.w, h: a.h })) continue;
+        aree.push({ id: a.id, c: a.c, r: a.r, w: a.w, h: a.h, nome: nome(a, "Area") });
+      }
       return { letti, aree };
+    }
+    // gli oggetti della stanza come rettangoli di celle
+    stanzaRettangoli(sala) {
+      return [...sala.letti.map((l) => ({ id: l.id, c: l.c, r: l.r, w: PIANTA.lw, h: PIANTA.lh })),
+        ...sala.aree.map((a) => ({ id: a.id, c: a.c, r: a.r, w: a.w, h: a.h }))];
     }
     stanzaScrivi(sala) {
       if (store.set("stanza.v1", sala)) return true;
-      this.message = "La sala NON è stata salvata: la memoria di questo browser è piena o bloccata.";
+      this.message = "La stanza NON è stata salvata: la memoria di questo browser è piena o bloccata.";
       this.render();
       return false;
     }
     // Lo stesso paziente (stesso codice fiscale) con due episodi aperti: il
-    // più vecchio è l'«episodio precedente» — fuori dalla sala, in grigio.
+    // più vecchio è l'«episodio precedente» — fuori dalla stanza, in grigio.
     stanzaPrecedenti(pazienti) {
       const perCf = new Map(), out = new Set();
       for (const p of pazienti) if (String(p.pk || "").startsWith("cf:")) perCf.set(p.pk, [...(perCf.get(p.pk) || []), p]);
@@ -4275,11 +4322,12 @@
       }
       return out;
     }
-    // Chi sta dove. Vale per i pazienti attivi, sui posti che esistono, se li
-    // hai aperti nelle ultime 12 ore: dopo, il posto scade e si torna «da
-    // sistemare». Un letto tiene un paziente: se i dati ne dicono due, resta
-    // il più recente. Il posto di chi non è in elenco (sessione scaduta,
-    // archiviato) aspetta un giorno che torni — ma mai su un letto già preso.
+    // Chi sta dove. Un paziente in elenco tiene il suo posto finché non lo
+    // sposti, non lo togli dall'elenco o dall'elenco non sparisce: se non lo
+    // apri da 12 ore diventa grigio, ma resta dov'è. Un letto tiene un
+    // paziente: se i dati ne dicono due, resta il più recente. Il posto di chi
+    // non è in elenco (sessione scaduta, archiviato) aspetta un giorno che
+    // torni — ma mai su un letto già preso.
     stanzaStato(pazienti, sala, precedenti) {
       const raw = store.get("stanza.posti.v1", {});
       const tutti = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
@@ -4290,7 +4338,7 @@
       const posti = {}, perLetto = {}, tieni = {}, preso = {};
       for (const [ep, v] of voci) {   // prima chi è in elenco: sono loro a occupare i letti
         const p = perEp.get(ep);
-        if (!p || !esiste(v) || ora - (p.ts || 0) > 12 * 3600e3 || precedenti.has(ep) || (v.tipo === "letto" && perLetto[v.id])) continue;
+        if (!p || !esiste(v) || precedenti.has(ep) || (v.tipo === "letto" && perLetto[v.id])) continue;
         if (v.tipo === "letto") perLetto[v.id] = preso[v.id] = ep;
         posti[ep] = tieni[ep] = { tipo: v.tipo, id: v.id, ts: +v.ts || 0 };
       }
@@ -4373,7 +4421,7 @@
       return `<span class="stvisto${Date.now() - (i.p.ts || 0) > 3 * 3600e3 ? " amb" : ""}">${this.vistoFa(i.p.ts)}</span>`;
     }
     // LISTA — una riga per paziente: triage, nome, nota, da quanto non lo
-    // apri, dove sta nella sala, Richieste. La ✕ compare passandoci sopra.
+    // apri, dove sta nella stanza, Richieste. La ✕ compare passandoci sopra.
     viewLista(m, patientName) {
       const canOrder = !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
       const conSala = m.sala.letti.length + m.sala.aree.length > 0;
@@ -4398,7 +4446,7 @@
             <span class="pznota">${esc(i.nota)}</span>
           </button>
           ${this.pazStato(i)}
-          ${conSala && !i.prec && m.info.has(p.ep) ? `<button type="button" class="pzposto" data-posto="${esc(p.ep)}" aria-haspopup="menu" title="${posto ? `In ${esc(posto)}: cambia posto` : "Non ha un posto nella sala: scegline uno"}"><span class="pzpn">${esc(posto || "—")}</span><span aria-hidden="true">&nbsp;▾</span></button>` : ""}
+          ${conSala && !i.prec && m.info.has(p.ep) ? `<button type="button" class="pzposto" data-posto="${esc(p.ep)}" aria-haspopup="menu" title="${posto ? `In ${esc(posto)}: cambia posto` : "Non ha un posto nella stanza: scegline uno"}"><span class="pzpn">${esc(posto || "—")}</span><span aria-hidden="true">&nbsp;▾</span></button>` : ""}
           <button type="button" class="pzric" data-go="richieste" data-ep="${esc(p.ep)}" title="Richieste per ${esc(i.lungo)}">Richieste</button>
           ${m.info.has(p.ep) ? `<button type="button" class="pzx" data-parch="${esc(p.ep)}" title="Togli dall'elenco: va negli archiviati (si può annullare). Nel gestionale non cambia niente." aria-label="Togli ${esc(i.lungo)} dall'elenco">✕</button>` : ""}
         </div>`;
@@ -4416,23 +4464,31 @@
         <button type="button" class="pzarchhd" id="archtog" aria-expanded="${this.mostraArch ? "true" : "false"}">Archiviati${archiviati.length ? ` <span class="stn">${archiviati.length}</span>` : ""}<span aria-hidden="true">${this.mostraArch ? "▾" : "▸"}</span></button>
         ${this.mostraArch ? `<div class="pzarch">${archiviati.map(rigaArch).join("")}
           <div class="pzhint">${archiviati.length ? "🗑 cancella tutto di quel paziente: scheda clinica, referti tenuti e nota. Non si torna indietro." : "Nessun paziente archiviato."}</div>
-          <button type="button" class="pzsvuota" id="stsvuota" title="Toglie tutti i pazienti dall'elenco e dalla sala. Per 8 secondi si può annullare.">Svuota l'elenco</button>
+          <button type="button" class="pzsvuota" id="stsvuota" title="Toglie tutti i pazienti dall'elenco e dalla stanza. Per 8 secondi si può annullare.">Svuota l'elenco</button>
         </div>` : ""}` : "";
       return `
         <div class="pzlista">${lista.map(riga).join("") || `<div class="pzvuoto">Nessun paziente ancora. Apri un paziente: resta qui per il turno.</div>`}</div>
         ${archivio}${this.stanzaSnack()}`;
     }
     // Il paziente nella Stanza: striscia del triage, nome (⚠ se un altro ha
-    // lo stesso cognome), e sotto da quanto non lo apri e la nota. Nel letto
-    // il nome sta su una riga e l'episodio che lo distingue scende accanto
-    // allo stato: così non si taglia mai.
+    // lo stesso cognome), e sotto «questa pagina» (o «episodio precedente») e
+    // la nota. Da quanto non lo apri lo dice la Lista; qui, dopo 12 ore, il
+    // grigio. Nel letto la striscia la porta il letto, il nome sta su una riga
+    // e l'episodio che lo distingue scende accanto allo stato: non si taglia mai.
     stanzaChip(m, i, inLetto) {
       const { p } = i, edit = !!this.stanzaEdit;
-      const cls = ["stp", i.qui && "qui", i.prec && "prec", i.spento && "spento", p.triage && "tri t-" + p.triage.toLowerCase()].filter(Boolean).join(" ");
+      const cls = ["stp", i.qui && "qui", i.prec && "prec", i.spento && "spento", !inLetto && p.triage && "tri t-" + p.triage.toLowerCase()].filter(Boolean).join(" ");
       const nota = i.nota ? `<span class="stnota">${esc(i.nota)}</span>` : "";
+      const stato = i.prec ? `<span class="sttag">episodio precedente</span>` : i.qui ? `<span class="stqui">questa pagina</span>` : "";
+      const sotto = `${i.coda && inLetto ? `<span class="stcoda">${esc(i.coda.replace(/^ · /, ""))}</span>` : ""}${stato}${inLetto ? "" : nota}`;
       return `<div class="${cls}" data-stp="${esc(p.ep)}" role="button" tabindex="${edit ? -1 : 0}"${i.prec ? "" : ' aria-haspopup="menu"'} title="${esc(this.pazTitolo(m, i, true))}" aria-label="${esc(i.lungo + i.coda)}${p.triage ? `, triage ${esc(p.triage)}` : ""}${i.qui ? ", questa pagina" : i.prec ? ", episodio precedente" : ""}">
-        <span class="stp1">${i.omonimo ? `<b class="stom" aria-hidden="true">⚠</b>` : ""}<b class="stpn">${esc(i.breve)}${i.coda && !inLetto ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</b></span>
-        <span class="stp2">${i.coda && inLetto ? `<span class="stcoda">${esc(i.coda.replace(/^ · /, ""))}</span>` : ""}${this.pazStato(i)}${inLetto ? "" : nota}</span>${inLetto ? nota : ""}</div>`;
+        <span class="stp1">${i.omonimo ? `<b class="stom" aria-hidden="true">⚠</b>` : ""}<b class="stpn">${esc(i.breve)}${i.coda && !inLetto ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</b></span>${
+        sotto ? `<span class="stp2">${sotto}</span>` : ""}${inLetto ? nota : ""}</div>`;
+    }
+    // il letto vuoto: un letto a tratto, appena accennato
+    stanzaGlifo(w, cls) {
+      const t = 'vector-effect="non-scaling-stroke"';
+      return `<svg${cls ? ` class="${cls}"` : ""} width="${w}" height="${Math.round(w * 2 / 3)}" viewBox="0 0 30 20" fill="none" stroke="#C4D0DC" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path ${t} d="M2 3v15M2 14h26v4M2 10h24a2 2 0 0 1 2 2v2"/><rect ${t} x="5" y="6" width="7" height="4" rx="1.5"/></svg>`;
     }
     // il nome di un letto o di un'area; in Modifica un tocco lo rende scrivibile
     stanzaNome(tipo, o) {
@@ -4444,28 +4500,36 @@
         ? `<span class="stname" data-stnome="${tipo}" role="button" tabindex="0" title="Tocca per rinominare, trascina per spostare">${esc(o.nome)}</span>`
         : `<span class="stname">${esc(o.nome)}</span>`;
     }
-    // In Modifica, sull'oggetto scelto o sotto il mouse: × elimina, ↻ gira il
-    // letto, l'angolo allarga l'area.
+    // In Modifica, sull'oggetto scelto o sotto il mouse: × lo elimina;
+    // l'angolo in basso a destra allarga l'area.
     stanzaCtl(tipo, o) {
       const del = `<button type="button" class="stctl stx" data-stdel="${tipo}:${esc(o.id)}" title="Elimina ${tipo === "letto" ? "il letto" : "l'area"} «${esc(o.nome)}»: chi c'era torna in «Da sistemare». Si può annullare." aria-label="Elimina ${esc(o.nome)}">×</button>`;
-      return tipo === "letto"
-        ? `${del}<button type="button" class="stctl strot" data-strot="${esc(o.id)}" title="Gira il letto: il cuscino dalla parte del muro" aria-label="Gira ${esc(o.nome)}">↻</button>`
-        : `${del}<span class="strsz" data-strsz="1" title="Trascina per ridimensionare l'area"></span>`;
+      return tipo === "letto" ? del : `${del}<span class="strsz" data-strsz="1" title="Trascina per ridimensionare l'area"></span>`;
     }
     viewStanza(m) {
       const { sala, pazienti, info, perLetto, posti } = m;
       const edit = !!this.stanzaEdit;
-      const pct = (v) => +(v * 100).toFixed(3);
       const chip = (p) => this.stanzaChip(m, info.get(p.ep));
+      // In Modifica la pianta intera, coi puntini: sotto il mouse niente cambia
+      // misura. Fuori, solo il pezzo disegnato con una cella di margine: anche
+      // una stanza piccola riempie la mappa.
+      const rett = this.stanzaRettangoli(sala);
+      let c0 = 0, r0 = 0, cols = PIANTA.cols, rows = PIANTA.rows;
+      if (!edit && rett.length) {
+        c0 = Math.min(...rett.map((q) => q.c)) - 1;
+        r0 = Math.min(...rett.map((q) => q.r)) - 1;
+        cols = Math.max(...rett.map((q) => q.c + q.w)) + 1 - c0;
+        rows = Math.max(...rett.map((q) => q.r + q.h)) + 1 - r0;
+      }
+      const celle = (c, r, w, h) => `--c:${c - c0};--r:${r - r0};--w:${w};--h:${h}`;
       const letto = (l) => {
         const i = perLetto[l.id] ? info.get(perLetto[l.id]) : null;
-        const cls = ["stbed", "r" + l.rot, i && "occ", i?.qui && "qui", i?.p.triage && "tri t-" + i.p.triage.toLowerCase(),
+        const cls = ["stbed", i && "occ", i?.qui && "qui", i?.p.triage && "tri t-" + i.p.triage.toLowerCase(),
           edit && this._stanzaSel === "letto:" + l.id && "sel"].filter(Boolean).join(" ");
         return `<div class="${cls}" data-letto="${esc(l.id)}" data-drop="letto:${esc(l.id)}"${i ? ` data-occ="${esc(i.breve + i.coda)}" data-occep="${esc(i.p.ep)}"` : ""} role="group"
-          aria-label="${esc(l.nome)}: ${i ? esc(i.lungo + i.coda) : "vuoto"}"${i || edit ? "" : ` title="${esc(l.nome)}: vuoto — trascina qui un paziente"`}
-          style="left:max(8px,min(${pct(l.x)}%,calc(100% - var(--bw) - 8px)));top:max(8px,min(${pct(l.y)}%,calc(100% - var(--bh) - 8px)))">
-          <i class="stpw" aria-hidden="true"></i>
-          <div class="stbedin">${this.stanzaNome("letto", l)}${i ? this.stanzaChip(m, i, true) : `<span class="stvuoto">vuoto</span>`}</div>
+          aria-label="${esc(l.nome)}: ${i ? esc(i.lungo + i.coda) : "vuoto"}"${edit ? "" : ` title="${esc(l.nome)}${i ? "" : " — trascina qui un paziente"}"`}
+          style="${celle(l.c, l.r, PIANTA.lw, PIANTA.lh)}">
+          <div class="stbedin">${this.stanzaNome("letto", l)}${i ? this.stanzaChip(m, i, true) : this.stanzaGlifo(28, "stglifo")}</div>
           ${edit ? this.stanzaCtl("letto", l) : ""}
         </div>`;
       };
@@ -4473,7 +4537,7 @@
         const dentro = pazienti.filter((p) => posti[p.ep]?.tipo === "area" && posti[p.ep].id === a.id)
           .sort((x, y) => posti[x.ep].ts - posti[y.ep].ts);   // in ordine di arrivo: chi c'è non si sposta
         return `<div class="starea${edit && this._stanzaSel === "area:" + a.id ? " sel" : ""}" data-area="${esc(a.id)}" data-drop="area:${esc(a.id)}" role="group" aria-label="${esc(a.nome)}: ${dentro.length} ${dentro.length === 1 ? "paziente" : "pazienti"}"${edit ? "" : ` title="${esc(a.nome)} — trascina qui i pazienti"`}
-          style="left:${pct(a.x)}%;top:${pct(a.y)}%;width:${pct(a.w)}%;height:${pct(a.h)}%">
+          style="${celle(a.c, a.r, a.w, a.h)}">
           <div class="sthd">${this.stanzaNome("area", a)}${dentro.length ? `<span class="stn">${dentro.length}</span>` : ""}</div>
           <div class="starbody">${dentro.map(chip).join("")}</div>
           ${edit ? this.stanzaCtl("area", a) : ""}
@@ -4482,28 +4546,22 @@
       // da sistemare: prima chi è su questa pagina, poi i vivi, in fondo i grigi
       const liberi = pazienti.filter((p) => !posti[p.ep])
         .sort((a, b) => info.get(b.ep).qui - info.get(a.ep).qui || info.get(a.ep).spento - info.get(b.ep).spento);
-      const vuota = !sala.letti.length && !sala.aree.length;
+      const vuota = !rett.length;
       return `
-        <div class="stmap${edit ? " edit" : ""}" role="region" aria-label="Mappa della sala">
-          <div class="ststato">${edit
-            ? `<button type="button" class="stbtn" id="stpiuletto" title="Aggiungi un letto: un paziente">+ Letto</button><button type="button" class="stbtn" id="stpiuarea" title="Aggiungi un'area senza letti (corridoio, attesa, poltrone): più pazienti">+ Area</button>
-               <span title="Stai disegnando la sala: trascina letti e aree, clic sul nome per rinominare. Fine quando hai finito.">Stai disegnando la sala · trascina letti e aree · clic sul nome per rinominare ·</span><button type="button" class="stlink" data-stfine title="La sala è pronta: si torna a spostare i pazienti">Fine</button>`
-            : `<span title="Trascina un paziente su un letto o un'area; tasto destro (o tieni premuto) per Sposta in…">Trascina un paziente su un letto o un'area · tasto destro: Sposta in…</span>`}</div>
+        <div class="stmap${edit ? " edit" : ""}" role="region" aria-label="Mappa della stanza">
           <div class="stcorpo">
-            <div class="sttray" data-drop="tray" role="group" aria-label="Da sistemare: ${liberi.length}" title="Da sistemare: chi non ha ancora un posto nella sala">
+            <div class="sttray" data-drop="tray" role="group" aria-label="Da sistemare: ${liberi.length}" title="Da sistemare: chi non ha ancora un posto nella stanza">
               <div class="sttrayhd">Da sistemare${liberi.length ? `<span class="stn">${liberi.length}</span>` : ""}</div>
               <div class="strow">${liberi.map(chip).join("") || `<span class="stnone">${pazienti.length ? "Tutti al loro posto" : "Nessun paziente ancora: chi apri arriva qui"}</span>`}</div>
             </div>
             <div class="stcanvas">
-              ${sala.letti.map(letto).join("")}
-              ${sala.aree.map(area).join("")}
+              ${vuota && !edit ? "" : `<div class="stplan" style="--cols:${cols};--rows:${rows}">${sala.letti.map(letto).join("")}${sala.aree.map(area).join("")}</div>`}
               ${!vuota ? "" : edit ? `
-              <div class="stvuota"><b>La sala è vuota</b><small>Aggiungi letti e aree con + Letto e + Area, qui sopra.</small></div>` : `
+              <div class="stvuota"><b>La stanza è vuota</b></div>` : `
               <div class="stvuota">
-                <svg width="64" height="40" viewBox="0 0 64 40" aria-hidden="true"><rect x="1" y="1" width="62" height="38" rx="9" fill="#fff" stroke="#C4D0DC"/><rect x="6" y="7" width="9" height="26" rx="3" fill="#F7F9FB" stroke="#D9E2EC"/></svg>
-                <b>Disegna la tua sala una volta</b>
-                <small>Modifica → + Letto, + Area.<br>Poi porti ogni paziente al suo posto.</small>
-                <button type="button" class="stbtn" id="stdisegna" title="Entra in Modifica e disegna la sala">Disegna la sala</button>
+                ${this.stanzaGlifo(60)}
+                <b>Disegna la tua stanza una volta</b>
+                <button type="button" class="stbtn" id="stdisegna" title="Entra in Modifica: + Letto e + Area, e li porti dove stanno davvero">Disegna la stanza</button>
               </div>`}
             </div>
           </div>
@@ -4524,14 +4582,17 @@
         this.stanzaEdit = false; this._stanzaRinomina = null; this._stanzaSel = null;
         this.render();
       }));
+      // In Modifica si entra da «Disegna la stanza» o dal menu «⋯», e si esce
+      // con Fine (o Esc); il fuoco resta dove si continua.
       const modifica = (si) => () => {
         if (!si) this.stanzaSalvaBozza();
-        this.stanzaEdit = si; this._stanzaRinomina = null; this._stanzaSel = null;
+        this.stanzaEdit = si; this._stanzaRinomina = null; this._stanzaSel = null; this.menuAperto = false;
+        this._stanzaFocus = si ? "#stpiuletto" : '[data-pazvista="stanza"]';
         this.render();
       };
-      $("#stmod")?.addEventListener("click", modifica(true));
       $("#stdisegna")?.addEventListener("click", modifica(true));
-      this.root.querySelectorAll("#stfine, [data-stfine]").forEach((b) => b.addEventListener("click", modifica(false)));
+      $("#stmodmenu")?.addEventListener("click", modifica(true));
+      $("#stfine")?.addEventListener("click", modifica(false));
       $("#stpiuletto")?.addEventListener("click", () => this.stanzaAggiungi("letto"));
       $("#stpiuarea")?.addEventListener("click", () => this.stanzaAggiungi("area"));
       $(".stannulla")?.addEventListener("click", () => this.stanzaAnnulla());
@@ -4543,9 +4604,8 @@
       if (map) {
         map.addEventListener("pointerdown", (e) => this.stanzaPresa(e, map));
         map.addEventListener("click", (e) => {
-          const del = e.target.closest("[data-stdel]"), rot = e.target.closest("[data-strot]");
+          const del = e.target.closest("[data-stdel]");
           if (del) { const [tipo, id] = del.getAttribute("data-stdel").split(":"); this.stanzaElimina(tipo, id); }
-          else if (rot) this.stanzaRuota(rot.getAttribute("data-strot"));
         });
         // da tastiera: Invio apre il paziente (o rinomina, in Modifica); Maiusc+F10 o il tasto menu: Sposta in…
         map.addEventListener("keydown", (e) => {
@@ -4586,29 +4646,17 @@
           inp.addEventListener("blur", () => { if (inp.isConnected) this.stanzaChiudiNome(inp, true); });
         }
       }
-      // In Modifica, un minuto senza toccare niente e si torna a spostare i pazienti
-      clearTimeout(this._stanzaEditT);
-      if (this.stanzaEdit && map) {
-        const riarma = () => {
-          clearTimeout(this._stanzaEditT);
-          this._stanzaEditT = setTimeout(() => { if (this.stanzaEdit) modifica(false)(); }, 60e3);
-        };
-        riarma();
-        const card = $(".card");
-        card?.addEventListener("pointerdown", riarma, true);
-        card?.addEventListener("keydown", riarma, true);
-      }
       if (this._stanzaFocus) { const f = $(this._stanzaFocus); this._stanzaFocus = null; f?.focus(); }
     }
     // Esc appartiene a chi lo sta usando: il menu «Sposta in…» o un trascinamento
     // (il gestore di Esc della finestra lo chiede prima di ridurre il pannello)
     escLocale() { return !!(this._stanzaPresa || this._stanzaMenu?.menu?.isConnected); }
     // Un solo gesto alla volta. Tocco o trascinamento? Sotto i 5px col mouse
-    // (10 col dito) ed entro 400 ms è un tocco; oltre la soglia, un
+    // (10 col dito) è un tocco, per quanto duri; oltre la soglia, un
     // trascinamento. Tenere premuto col dito (mezzo secondo): «Sposta in…».
     // Esc o un annullo del browser lasciano tutto com'era.
     stanzaGesto(e, { inizia, muovi, lascia, tocco, lungo, annulla }) {
-      const id = e.pointerId, sx = e.clientX, sy = e.clientY, t0 = Date.now();
+      const id = e.pointerId, sx = e.clientX, sy = e.clientY;
       const soglia = e.pointerType === "mouse" ? 5 : 10;
       let mosso = false, partito = false;
       const via = () => {
@@ -4636,7 +4684,7 @@
         if (ev.pointerId !== id) return;
         via();
         if (partito) lascia(ev);
-        else if (!mosso && Date.now() - t0 < 400) tocco?.();
+        else if (!mosso) tocco?.();
       };
       const kd = (ev) => { if (ev.key === "Escape") { ev.stopPropagation(); nulla(); } };
       const tl = lungo && e.pointerType !== "mouse" ? setTimeout(() => { if (!partito) { via(); lungo(); } }, 500) : 0;
@@ -4653,7 +4701,7 @@
         const chip = e.target.closest(".stp[data-stp]") || e.target.closest(".stbed.occ")?.querySelector(".stp[data-stp]");
         if (!chip) return;
         const ep = chip.getAttribute("data-stp");
-        // l'episodio precedente non va in sala: un tocco lo apre, e basta
+        // l'episodio precedente non va nella stanza: un tocco lo apre, e basta
         if (chip.classList.contains("prec")) return this.stanzaGesto(e, { tocco: () => this.apriPaziente(ep, "esiti") });
         return this.stanzaTrascinaPaziente(e, map, chip);
       }
@@ -4677,41 +4725,49 @@
       }
       return null;
     }
-    // Il paziente si porta con una copia che segue il dito; il posto si
-    // scrive solo quando lo si lascia. Sopra un letto occupato si legge con
-    // chi ci si scambia.
+    // Il paziente si porta col suo nome accanto al puntatore (in basso a
+    // destra, o dall'altra parte se lì non c'è posto): non copre mai il nome
+    // del letto che si mira. Il posto si scrive solo quando lo si lascia.
+    // Sopra un letto occupato si legge chi va in «Da sistemare».
     stanzaTrascinaPaziente(e, map, chip) {
       const ep = chip.getAttribute("data-stp");
-      const mr = map.getBoundingClientRect(), cr = chip.getBoundingClientRect();
-      let copia = null, sopra = null, gr = null;
+      let copia = null, sopra = null;
       const segna = (el) => {
         if (el === sopra) return;
-        if (sopra) { sopra.classList.remove("over"); sopra.querySelector(".stswap")?.remove(); }
+        if (sopra) { sopra.classList.remove("over"); sopra.querySelector(".stfuori")?.remove(); }
         sopra = el;
         if (!el) return;
         el.classList.add("over");
         const altro = el.getAttribute("data-occep");
-        if (altro && altro !== ep) el.insertAdjacentHTML("beforeend", `<span class="stswap">⇄ scambia con ${esc(el.getAttribute("data-occ") || "")}</span>`);
+        if (!altro || altro === ep) return;
+        el.insertAdjacentHTML("beforeend", `<span class="stfuori">${esc(el.getAttribute("data-occ") || "")} → Da sistemare</span>`);
+        // tutta dentro la mappa: se sporge da un lato, si sposta verso l'altro
+        const lab = el.lastElementChild, cv = map.querySelector(".stcanvas").getBoundingClientRect(), lr = lab.getBoundingClientRect();
+        const dx = Math.max(0, cv.left + 4 - lr.left) - Math.max(0, lr.right - cv.right + 4);
+        if (dx) lab.style.marginLeft = dx + "px";
       };
       const pulisci = () => { segna(null); copia?.remove(); chip.classList.remove("via"); map.classList.remove("trascino"); };
+      // la copia resta dentro la mappa: fuori non si lascia niente
+      const metti = (ev) => {
+        const mr = map.getBoundingClientRect(), w = copia.offsetWidth, h = copia.offsetHeight;
+        let x = ev.clientX - mr.left + 12, y = ev.clientY - mr.top + 12;
+        if (x + w > mr.width) x = ev.clientX - mr.left - 12 - w;
+        if (y + h > mr.height) y = ev.clientY - mr.top - 12 - h;
+        copia.style.transform = `translate(${Math.max(0, x)}px,${Math.max(0, y)}px)`;
+      };
       this.stanzaGesto(e, {
         inizia: () => {
-          copia = chip.cloneNode(true);
-          copia.classList.add("stghost");
-          copia.removeAttribute("tabindex"); copia.removeAttribute("role"); copia.removeAttribute("title");
+          const i = this.pazModello().info.get(ep);
+          copia = document.createElement("div");
+          copia.className = "stghost";
           copia.setAttribute("aria-hidden", "true");
-          copia.style.left = cr.left - mr.left - map.clientLeft + "px";
-          copia.style.top = cr.top - mr.top - map.clientTop + "px";
+          copia.textContent = i ? i.breve + i.coda : chip.querySelector(".stpn")?.textContent || "";
           map.appendChild(copia);
-          gr = copia.getBoundingClientRect();
           chip.classList.add("via");
           map.classList.add("trascino");
         },
         muovi: (dx, dy, ev) => {
-          // la copia resta dentro la mappa: fuori non si lascia niente
-          const x = Math.max(mr.left - gr.left, Math.min(mr.right - gr.right, dx));
-          const y = Math.max(mr.top - gr.top, Math.min(mr.bottom - gr.bottom, dy));
-          copia.style.transform = `translate(${x}px,${y}px)`;
+          metti(ev);
           segna(this.stanzaBersaglio(ev.clientX, ev.clientY));
         },
         lascia: (ev) => {
@@ -4725,7 +4781,8 @@
       });
     }
     // Portare un paziente: sullo stesso posto non succede niente; su un letto
-    // occupato i due si scambiano (l'altro va dov'era questo). Si annulla.
+    // occupato il nuovo prende il letto e chi c'era va in «Da sistemare» —
+    // niente scambi, che spostano qualcuno dove non l'hai deciso tu. Si annulla.
     stanzaSposta(ep, dove) {
       const [tipo, id] = String(dove || "").split(":");
       const m = this.pazModello(), i = m.info.get(ep);
@@ -4734,19 +4791,16 @@
       if (tipo === "tray" ? !da : da && da.tipo === tipo && da.id === id) return;   // è già lì
       const raw = store.get("stanza.posti.v1", {});
       const posti = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-      const foto = this.stanzaFoto(), ora = Date.now(), nm = (x) => x.breve + x.coda;
+      const foto = this.stanzaFoto(), nm = (x) => x.breve + x.coda;
       const nomeDi = (t, k) => (t === "letto" ? m.sala.letti : m.sala.aree).find((o) => o.id === k)?.nome || "";
       let testo = `${nm(i)} in ${tipo === "tray" ? "Da sistemare" : nomeDi(tipo, id)}`;
       if (tipo === "tray") delete posti[ep];
-      else posti[ep] = { tipo, id, ts: ora };
+      else posti[ep] = { tipo, id, ts: Date.now() };
       if (tipo === "letto") {
+        // chiunque altro reclami quel letto (anche chi ora non è in elenco) lo lascia
+        for (const [k, v] of Object.entries(posti)) if (k !== ep && v?.tipo === "letto" && v.id === id) delete posti[k];
         const altro = m.perLetto[id];
-        // chi altro reclama quel letto (anche chi ora non è in elenco) lo lascia
-        for (const [k, v] of Object.entries(posti)) if (k !== ep && k !== altro && v?.tipo === "letto" && v.id === id) delete posti[k];
-        if (altro) {
-          if (da) posti[altro] = { tipo: da.tipo, id: da.id, ts: ora - 1 }; else delete posti[altro];
-          testo = `Scambiati ${nm(i)} e ${nm(m.info.get(altro))}`;
-        }
+        if (altro && altro !== ep) testo += ` · ${nm(m.info.get(altro))} da sistemare`;
       }
       if (!store.set("stanza.posti.v1", posti)) { this.message = "Il posto NON è stato salvato: la memoria di questo browser è piena o bloccata."; return this.render(); }
       this.stanzaAnnullabile(testo, foto);
@@ -4771,15 +4825,16 @@
       if (a.foto.pazienti !== undefined) store.set("patients.v1", a.foto.pazienti);
       this.render();
     }
-    // «Sposta in…»: i letti vuoti, poi quelli occupati (= scambio), le aree,
-    // «Da sistemare». Col tasto destro, tenendo premuto col dito, con Maiusc+F10
-    // o dal «posto» della Lista. Frecce, Invio, Esc.
+    // «Sposta in…»: i letti vuoti, poi quelli occupati (chi c'è va in «Da
+    // sistemare»), le aree, «Da sistemare»; in fondo, a parte, «Togli
+    // dall'elenco» (come la ✕ della Lista). Col tasto destro, tenendo premuto
+    // col dito, con Maiusc+F10 o dal «posto» della Lista. Frecce, Invio, Esc.
     stanzaMenu(ep, anchor) {
       const aperto = this._stanzaMenu;
       if (aperto && aperto.ep === ep && aperto.menu.isConnected) return;
       this.stanzaChiudiMenu();
       const m = this.pazModello(), i = m.info.get(ep), wrap = this.root.querySelector(".wrap");
-      if (!i || i.prec || !wrap || !anchor?.isConnected || !(m.sala.letti.length + m.sala.aree.length)) return;   // senza sala non c'è dove
+      if (!i || i.prec || !wrap || !anchor?.isConnected || !(m.sala.letti.length + m.sala.aree.length)) return;   // senza stanza non c'è dove
       const qui = i.posto, attuale = (tipo, id) => !!qui && qui.tipo === tipo && qui.id === id;
       const voce = (dove, testo, det, cur) => `<button type="button" role="menuitem" class="stmi${cur ? " cur" : ""}" data-dove="${esc(dove)}"${cur ? ' aria-disabled="true"' : ""}><span>${esc(testo)}</span><small>${esc(cur ? "qui ora" : det)}</small></button>`;
       const inArea = (a) => Object.values(m.posti).filter((v) => v.tipo === "area" && v.id === a.id).length;
@@ -4787,10 +4842,11 @@
         m.sala.letti.filter((l) => !m.perLetto[l.id]).map((l) => voce("letto:" + l.id, l.nome, "vuoto")),
         m.sala.letti.filter((l) => m.perLetto[l.id]).map((l) => {
           const o = m.info.get(m.perLetto[l.id]);
-          return voce("letto:" + l.id, l.nome, "⇄ " + o.breve + o.coda, attuale("letto", l.id));
+          return voce("letto:" + l.id, l.nome, "al posto di " + o.breve + o.coda, attuale("letto", l.id));
         }),
         m.sala.aree.map((a) => voce("area:" + a.id, a.nome, inArea(a) ? `${inArea(a)} ${inArea(a) === 1 ? "paziente" : "pazienti"}` : "", attuale("area", a.id))),
         [voce("tray", "Da sistemare", "", !qui)],
+        [voce("togli", "Togli dall'elenco", "")],
       ].filter((g) => g.length);
       const titolo = `Sposta ${i.breve + i.coda} in…`;
       wrap.insertAdjacentHTML("beforeend", `<div class="stmenu" role="menu" aria-label="${esc(titolo)}"><div class="stmenuhd" aria-hidden="true">${esc(titolo)}</div>${
@@ -4807,8 +4863,10 @@
         const b = e.target.closest(".stmi");
         if (!b || b.hasAttribute("aria-disabled")) return;
         this.stanzaChiudiMenu();
+        const dove = b.getAttribute("data-dove");
+        if (dove === "togli") return this.stanzaArchivia(ep);
         this._stanzaFocus = anchor.matches("[data-posto]") ? `[data-posto="${CSS.escape(ep)}"]` : `.stmap .stp[data-stp="${CSS.escape(ep)}"]`;
-        this.stanzaSposta(ep, b.getAttribute("data-dove"));
+        this.stanzaSposta(ep, dove);
       });
       menu.addEventListener("keydown", (e) => {
         const l = voci(), k = l.indexOf(this.root.activeElement);
@@ -4845,37 +4903,41 @@
       this.stanzaAnnullabile("Elenco svuotato", foto);
       this.render();
     }
-    // In Modifica: si spostano letti e aree (o si allarga un'area dall'angolo),
-    // sempre sulla griglia da 8px e dentro la mappa. Un tocco fermo sul nome
+    // In Modifica: si spostano letti e aree (o si allarga un'area dall'angolo)
+    // di cella in cella, sempre dentro la pianta. Dove finirebbe sopra un
+    // altro si fa rosso e, lasciato lì, torna com'era. Un tocco fermo sul nome
     // lo rende scrivibile.
     stanzaTrascinaOggetto(e, map, obj, allarga, nome) {
-      const canvas = map.querySelector(".stcanvas");
-      const cr = canvas.getBoundingClientRect(), or = obj.getBoundingClientRect();
+      const plan = map.querySelector(".stplan");
       const tipo = obj.hasAttribute("data-letto") ? "letto" : "area";
       const id = obj.getAttribute("data-" + tipo);
-      const g = (v) => Math.round(v / 8) * 8, lim = (v, a, b) => Math.max(a, Math.min(b, v));
-      const x0 = or.left - cr.left, y0 = or.top - cr.top;
-      let x = x0, y = y0, w = or.width, h = or.height;
+      const sala = this.stanzaSala(), o = (tipo === "letto" ? sala.letti : sala.aree).find((x) => x.id === id);
+      if (!plan || !o) return;
+      const { cols, rows, lw, lh, aw, ah } = PIANTA;
+      const u = plan.getBoundingClientRect().width / cols;   // in Modifica la pianta è intera
+      const altri = this.stanzaRettangoli(sala).filter((x) => x.id !== id);
+      const lim = (v, a, b) => Math.max(a, Math.min(b, v));
+      const w0 = tipo === "letto" ? lw : o.w, h0 = tipo === "letto" ? lh : o.h;
+      let q = { c: o.c, r: o.r, w: w0, h: h0 }, ok = true;
       this.stanzaGesto(e, {
         inizia: () => { obj.classList.add("drag"); map.classList.add("trascino"); },
         muovi: (dx, dy) => {
-          if (allarga) {
-            w = lim(g(or.width + dx), 96, cr.width - x0 - 8);
-            h = lim(g(or.height + dy), 64, cr.height - y0 - 8);
-            obj.style.width = w + "px"; obj.style.height = h + "px";
-          } else {
-            x = lim(g(x0 + dx), 8, cr.width - w - 8);
-            y = lim(g(y0 + dy), 8, cr.height - h - 8);
-            obj.style.transform = `translate(${x - x0}px,${y - y0}px)`;
-          }
+          const dc = Math.round(dx / u), dr = Math.round(dy / u);
+          q = allarga
+            ? { c: o.c, r: o.r, w: lim(w0 + dc, aw, cols - o.c), h: lim(h0 + dr, ah, rows - o.r) }
+            : { c: lim(o.c + dc, 0, cols - w0), r: lim(o.r + dr, 0, rows - h0), w: w0, h: h0 };
+          ok = !altri.some((x) => troppoVicini(x, q));
+          for (const k of ["c", "r", "w", "h"]) obj.style.setProperty("--" + k, q[k]);
+          obj.classList.toggle("bad", !ok);
         },
         lascia: () => {
-          const sala = this.stanzaSala();
-          const o = (tipo === "letto" ? sala.letti : sala.aree).find((q) => q.id === id);
-          if (!o) return this.render();
-          o.x = Math.max(0, x / cr.width); o.y = Math.max(0, y / cr.height);
-          if (tipo === "area") { o.w = Math.min(1 - o.x, w / cr.width); o.h = Math.min(1 - o.y, h / cr.height); }
-          if (this.stanzaScrivi(sala)) this.render();
+          if (!ok || (q.c === o.c && q.r === o.r && q.w === w0 && q.h === h0)) return this.render();
+          // si riparte da quella salvata adesso: un nome appena scritto (salvato uscendo dal campo) resta
+          const ora = this.stanzaSala(), x = (tipo === "letto" ? ora.letti : ora.aree).find((y) => y.id === id);
+          if (!x) return this.render();
+          x.c = q.c; x.r = q.r;
+          if (tipo === "area") { x.w = q.w; x.h = q.h; }
+          if (this.stanzaScrivi(ora)) this.render();
         },
         tocco: () => { if (nome) this.stanzaRinomina(nome); },
         annulla: () => this.render(),
@@ -4922,40 +4984,36 @@
       const sala = this.stanzaSala(), o = (r.tipo === "letto" ? sala.letti : sala.aree).find((q) => q.id === r.id);
       if (o && nuovo && nuovo !== o.nome) { o.nome = nuovo; store.set("stanza.v1", sala); }
     }
-    // Un posto libero per il nuovo arrivato: dall'angolo in alto a sinistra,
-    // riga per riga; se la sala è piena, a cascata — mai esattamente sopra un altro.
-    stanzaPostoLibero(W, H, w, h, occupati) {
-      const libero = (x, y) => occupati.every((o) => x + w + 16 <= o.x || o.x + o.w + 16 <= x || y + h + 16 <= o.y || o.y + o.h + 16 <= y);
-      for (let y = 16; y + h <= H - 8; y += 16) for (let x = 16; x + w <= W - 8; x += 16) if (libero(x, y)) return { x, y };
-      for (let i = 1; i < 400; i++) {
-        const x = 16 + (24 * i) % Math.max(24, W - w - 24), y = 16 + (24 * i) % Math.max(24, H - h - 24);
-        if (!occupati.some((o) => Math.abs(o.x - x) < 4 && Math.abs(o.y - y) < 4)) return { x, y };
+    // Il primo posto libero per il nuovo arrivato: riga per riga dall'angolo in
+    // alto a sinistra, meglio se con una cella d'aria intorno.
+    stanzaPostoLibero(sala, w, h) {
+      const presi = this.stanzaRettangoli(sala);
+      for (const g of [1, 0]) {
+        for (let r = 0; r + h <= PIANTA.rows; r++) {
+          for (let c = 0; c + w <= PIANTA.cols; c++) if (!presi.some((q) => troppoVicini(q, { c, r, w, h }, g))) return { c, r };
+        }
       }
-      return { x: 16, y: 16 };
+      return null;
     }
     stanzaAggiungi(tipo) {
       const sala = this.stanzaSala();
       const lista = tipo === "letto" ? sala.letti : sala.aree;
       if (lista.length >= (tipo === "letto" ? 60 : 30)) { this.message = tipo === "letto" ? "Al massimo 60 letti." : "Al massimo 30 aree."; return this.render(); }
-      const canvas = this.root.querySelector(".stcanvas");
-      const cr = canvas ? canvas.getBoundingClientRect() : null;
-      const W = cr?.width || 800, H = cr?.height || 480;
-      const [w, h] = tipo === "letto"
-        ? [Math.min(200, Math.max(136, W * 0.17)), Math.min(132, Math.max(112, W * 0.12))]   // come --bw e --bh nel CSS
-        : [176, 112];
-      const occupati = cr ? [...canvas.querySelectorAll("[data-letto], [data-area]")].map((el) => {
-        const b = el.getBoundingClientRect();
-        return { x: b.left - cr.left, y: b.top - cr.top, w: b.width, h: b.height };
-      }) : [];
-      const p = this.stanzaPostoLibero(W, H, w, h, occupati);
+      // un'area nasce 8 × 5; se non ci sta, piccola quanto può
+      const misure = tipo === "letto" ? [[PIANTA.lw, PIANTA.lh]] : [[8, 5], [PIANTA.aw, PIANTA.ah]];
+      let p = null, w = 0, h = 0;
+      for (const [mw, mh] of misure) if ((p = this.stanzaPostoLibero(sala, mw, mh))) { w = mw; h = mh; break; }
+      const piena = "La stanza è piena: togli o sposta qualcosa.";
+      if (!p) { this.message = piena; return this.render(); }
+      if (this.message === piena) this.message = null;
       let id;
       do id = Math.random().toString(36).slice(2, 8); while (!id || sala.letti.some((o) => o.id === id) || sala.aree.some((o) => o.id === id));
       const base = tipo === "letto" ? "Letto" : "Area";
       let n = lista.length + 1;
       for (let i = 1; i <= lista.length + 1; i++) if (!lista.some((o) => o.nome.toLowerCase() === `${base} ${i}`.toLowerCase())) { n = i; break; }
       const nome = `${base} ${n}`;
-      if (tipo === "letto") sala.letti.push({ id, x: p.x / W, y: p.y / H, nome, rot: 0 });
-      else sala.aree.push({ id, x: p.x / W, y: p.y / H, w: Math.min(1, w / W), h: Math.min(1, h / H), nome });
+      if (tipo === "letto") sala.letti.push({ id, c: p.c, r: p.r, nome });
+      else sala.aree.push({ id, c: p.c, r: p.r, w, h, nome });
       if (!this.stanzaScrivi(sala)) return;
       this._stanzaRinomina = { tipo, id, testo: nome, seleziona: true };   // appena messo, si battezza
       this._stanzaSel = tipo + ":" + id;
@@ -4976,15 +5034,6 @@
       store.set("stanza.posti.v1", posti);
       this.stanzaAnnullabile(tipo === "letto" ? `Eliminato il letto ${o.nome}` : `Eliminata l'area ${o.nome}`, foto);
       this.render();
-    }
-    // ↻ sposta il cuscino: la testa del letto dalla parte del muro. Il letto
-    // resta orizzontale, così il nome si legge sempre.
-    stanzaRuota(id) {
-      const sala = this.stanzaSala(), l = sala.letti.find((o) => o.id === id);
-      if (!l) return;
-      l.rot = (l.rot + 90) % 360;
-      this._stanzaSel = "letto:" + id;
-      if (this.stanzaScrivi(sala)) this.render();
     }
 
     // Il Registro si apre col numero di versione in fondo, che ora c'è su ogni
@@ -6425,7 +6474,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // due posizioni pronte: al centro (85%), o in colonna a destra col gestionale visibile
       const metti = (g) => { this.win = g; store.set("win.v1", g); this.menuAperto = false; this.render(); };
       $("#wincentra")?.addEventListener("click", () => metti(null));
-      $("#winaffianca")?.addEventListener("click", () => metti({ x: 0.63, y: 0.02, w: 0.36, h: 0.96 }));
+      $("#winaffianca")?.addEventListener("click", () => metti({ ...AFFIANCA }));
       this.root.querySelectorAll("[data-rz]").forEach((el) => this.attachResize(el));
       // doppio clic sull'angolo o sull'intestazione: di nuovo al centro, all'85%
       const alCentro = (e) => { e.stopPropagation(); this.win = null; store.set("win.v1", null); this.render(); };
