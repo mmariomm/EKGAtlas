@@ -69,6 +69,14 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
 
 ## Uso quotidiano
 
+**Due forme, un tocco per passare dall'una all'altra.** Aperto, il pannello è una **finestra al
+centro che prende l'85% dello schermo**: intestazione e schede restano ferme, scorre solo il
+contenuto, che sta su una colonna comoda da leggere (valori e stanza usano tutta la larghezza).
+La sposti dall'intestazione, la ridimensioni da **qualsiasi bordo o angolo**; **doppio clic**
+sull'intestazione o sull'angolo la rimette al centro, all'85%. **—** la riduce alla **pill**, che
+resta dove la trascini; un tocco sulla pill riapre la finestra dove l'avevi lasciata. Per usare il
+gestionale sotto, si riduce alla pill: la finestra lo copre quasi tutto, apposta.
+
 Il pannello ha cinque schermate, in **una fila di pillole** sempre in cima e nell'ordine in cui si
 lavora: **Richieste · Esiti · EO · Consensi · Dimissioni** (dove non c'è un paziente, solo le ultime
 tre). Il paziente + episodio stanno nell'intestazione (anche da minimizzato). Sulla pagina «Storico dati clinici»
