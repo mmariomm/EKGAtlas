@@ -41,6 +41,10 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
 await ctx.addInitScript(() => {
   try { if (!localStorage.getItem("psassist:win.v1")) localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.6, y: 0.01, w: 0.39, h: 0.97 })); } catch { /* niente */ }
 });
+// e parte aperto, come se ci avesse portato il pannello (dal gestionale partirebbe dalla pill)
+await ctx.addInitScript(() => {
+  try { sessionStorage.setItem("psassist:navPannello.v1", JSON.stringify(Date.now())); } catch { /* niente */ }
+});
 await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   const req = r.request();
   let out = mock.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });

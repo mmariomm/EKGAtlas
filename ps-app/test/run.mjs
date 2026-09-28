@@ -36,9 +36,23 @@ async function colonna(context) {
     try { if (!localStorage.getItem("psassist:win.v1")) localStorage.setItem("psassist:win.v1", JSON.stringify(g)); } catch { /* niente */ }
   }, COLONNA);
 }
+// Una pagina a cui il medico arriva dal gestionale apre il pannello ridotto
+// (la pill). Nei test si arriva con page.goto: si fa come se ci avesse
+// portato il pannello, così parte aperto — tranne dove si prova proprio la pill.
+async function apertoDalPannello(context) {
+  await context.addInitScript(() => {
+    try { sessionStorage.setItem("psassist:navPannello.v1", JSON.stringify(Date.now())); } catch { /* niente */ }
+  });
+}
+// il Registro sta nel menu «⋯» dell'intestazione
+async function registro(page) {
+  await page.locator("#psassist-host #menubtn").click();
+  await page.locator("#psassist-host #verbtn").click();
+}
 async function newPage(browser, mock, opts = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   if (opts.finestra !== "centro") await colonna(context);
+  if (!opts.pill) await apertoDalPannello(context);
   await context.route("https://smarthealth.multimedica.it/**", async (route) => {
     const req = route.request();
     // opts.ritardo(url) → ms: una risposta lenta è l'unico modo per navigare
@@ -495,7 +509,7 @@ async function scenarioAvvisoDopoInsert(browser) {
   check(scen, mock.state.insertCount[`${rid}:159`] === 1, "una pagina inattesa non fa reinviare l'esame");
   const err = await $panel(page, ".banner.err").count();
   check(scen, err === 0, "nessun errore: il carrello riletto dice che c'è");
-  await $panel(page, "#verbtn").click();   // il Registro, dal numero di versione in fondo
+  await registro(page);
   const reg = await $panel(page, ".log").innerText();
   check(scen, /rileggo il carrello/.test(reg), `il Registro dice che è successo (got: ${(/[^\n]*rilegg[^\n]*/.exec(reg) || ["niente"])[0].slice(0, 70)})`);
   await context.close();
@@ -1684,8 +1698,8 @@ async function scenarioResizeAndLog(browser) {
   await page.waitForSelector("#psassist-host #confirmnow", { timeout: 30000 });
   // the Registro now lives behind the version button, on the Pazienti screen
   await $panel(page, "#back").click();
-  await page.waitForSelector("#psassist-host #verbtn");
-  await $panel(page, "#verbtn").click();
+  await page.waitForSelector("#psassist-host #menubtn");
+  await registro(page);
   await page.waitForSelector("#psassist-host #copylog");
   await $panel(page, "#copylog").click();
   await page.waitForTimeout(300);
@@ -1694,6 +1708,57 @@ async function scenarioResizeAndLog(browser) {
   check(scen, /aggiunto ✓/.test(clip), "contiene le righe del registro");
   check(scen, !/dolore toracico/.test(clip), "il quesito NON finisce negli appunti");
   check(scen, /✓ copiato/.test(await $panel(page, "#copylog").innerText()), "il bottone conferma la copia");
+  await context.close();
+}
+
+async function scenarioFinestra(browser) {
+  const scen = "finestra";
+  const mock = createMock({});
+  // come al lavoro: la finestra al centro, e si arriva dal gestionale (niente spinta del pannello)
+  const { context, page } = await newPage(browser, mock, { finestra: "centro", pill: true });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const box = () => page.evaluate(() => {
+    const w = document.getElementById("psassist-host").shadowRoot.querySelector(".wrap");
+    const r = w.getBoundingClientRect();
+    return { l: Math.round(r.left), w: Math.round(r.width), vw: innerWidth, win: w.classList.contains("win") };
+  });
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+  check(scen, (await $panel(page, ".card").count()) === 0, "arrivando dal gestionale il pannello è la pill: la pagina si vede");
+  await $panel(page, "#expand").click();
+  const b1 = await box();
+  check(scen, b1.win && Math.abs(b1.w - b1.vw * 0.85) < 3 && Math.abs(b1.l - b1.vw * 0.075) < 3, `un tocco sulla pill: la finestra al centro, all'85% (${b1.l}px, ${b1.w}px)`);
+  await page.keyboard.press("Escape");
+  check(scen, (await $panel(page, ".card").count()) === 0, "Esc la riduce alla pill");
+  await $panel(page, "#expand").click();
+  await page.mouse.click(8, 450);   // sul gestionale, nel bordo che si vede
+  check(scen, (await $panel(page, ".card").count()) === 0, "un clic fuori dalla finestra la riduce");
+  // due posizioni pronte nel menu «⋯»
+  await $panel(page, "#expand").click();
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#winaffianca").click();
+  const b2 = await box();
+  check(scen, b2.l > b2.vw * 0.6 && b2.w < b2.vw * 0.4, `«Affianca a destra»: una colonna, il gestionale resta visibile (${b2.l}px, ${b2.w}px)`);
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#wincentra").click();
+  const b3 = await box();
+  check(scen, Math.abs(b3.w - b3.vw * 0.85) < 3, "«Al centro» la rimette all'85%");
+  // copiato un testo da incollare nel gestionale: la finestra si toglie di mezzo
+  await $panel(page, '[data-seg="eo"]').click();
+  await $panel(page, '[data-eocopy]').first().click();
+  await page.waitForSelector("#psassist-host #expand", { state: "attached", timeout: 3000 }).catch(() => {});
+  const pill = await $panel(page, "#expand").innerText().catch(() => "");
+  check(scen, /Copiato/.test(pill), `dopo «Copia» la finestra si riduce e la pill dice di incollare (got: ${pill})`);
+  // sulla lista del PS la pill non porta mai il titolo della pagina
+  await page.goto(mock.worklistUrl);
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+  const pl = await $panel(page, "#expand").innerText();
+  check(scen, /Pazienti/.test(pl) && !/PRONTO SOCCORSO/i.test(pl), `sulla lista del PS la pill dice «Pazienti», non il titolo della pagina (got: ${pl})`);
+  // ci porta il pannello (un paziente scelto dalla lista): si apre grande
+  await $panel(page, "#expand").click();
+  await $panel(page, '.pcard .pbtn[data-go="richieste"], [data-go="richieste"]').first().click();
+  await page.waitForSelector("#psassist-host .card", { state: "attached", timeout: 15000 });
+  check(scen, (await $panel(page, ".card").count()) === 1, "una pagina a cui ti porta il pannello si apre con la finestra aperta");
   await context.close();
 }
 
@@ -2650,6 +2715,7 @@ const scenarios = [
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],
   ["stanza: la mappa della sala", scenarioStanza],
+  ["finestra: pill, Esc, clic fuori, affianca, copia", scenarioFinestra],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],
   ["stop button", scenarioStopButton],

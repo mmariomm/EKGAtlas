@@ -38,6 +38,10 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
 await ctx.addInitScript(() => {
   try { if (!localStorage.getItem("psassist:win.v1")) localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.6, y: 0.01, w: 0.39, h: 0.97 })); } catch { /* niente */ }
 });
+// e parte aperto, come se ci avesse portato il pannello (dal gestionale partirebbe dalla pill)
+await ctx.addInitScript(() => {
+  try { sessionStorage.setItem("psassist:navPannello.v1", JSON.stringify(Date.now())); } catch { /* niente */ }
+});
 const route = async (r) => {
   const req = r.request();
   let out = mock.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });
@@ -135,7 +139,8 @@ const tipsRosso = await p2.locator("#psassist-host .rrow.err").first().getAttrib
 const testo = await p2.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".reftxt")?.textContent || "");
 await p2.waitForTimeout(800);
 const schedeDopo = ctx.pages().filter((p) => !p.isClosed()).length;
-await p2.locator("#psassist-host #verbtn").click();   // il Registro, dal numero di versione in fondo
+await p2.locator("#psassist-host #menubtn").click();   // il Registro, dal menu «⋯»
+await p2.locator("#psassist-host #verbtn").click();
 await p2.waitForSelector("#psassist-host .log", { state: "attached", timeout: 5000 }).catch(() => {});
 const registro = await p2.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".log")?.textContent || "");
 check(letto && !tipsRosso && testo.includes(RIGHE_ESEMPIO[0]) && testo.includes(RIGHE_ESEMPIO[1]),

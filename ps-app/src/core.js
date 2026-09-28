@@ -233,7 +233,13 @@
   // the real system the hooks do not exist and nothing served by SA4PSO can
   // take over navigation, tabs or printing.
   const DEMO = (location.hostname !== "smarthealth.multimedica.it" && window.__PSA_DEMO__) || null;
-  const nav = (url) => { if (DEMO && DEMO.nav) return DEMO.nav(url); location.href = url; };
+  // Una pagina a cui ci ha portato il PANNELLO si apre con la finestra
+  // aperta; una a cui è arrivato il medico dal gestionale, con la pill.
+  const nav = (url) => {
+    try { sessionStorage.setItem("psassist:navPannello.v1", JSON.stringify(Date.now())); } catch { /* niente */ }
+    if (DEMO && DEMO.nav) return DEMO.nav(url);
+    location.href = url;
+  };
   const openTab = (url, name) => (DEMO && DEMO.open ? DEMO.open(url, name) : window.open(url, name));
 
   function param(url, name) {
@@ -2827,7 +2833,9 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
     .wrap { position: fixed; top: 10px; right: 10px; z-index: 2147483647; color: #16232E; }
     .pill { display: flex; align-items: center; gap: 8px; background: #0B5CAD; color: #fff; border: 0; border-radius: 999px;
-            padding: 9px 15px 9px 11px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 6px 20px rgba(9,42,74,.35); }
+            padding: 9px 15px 9px 11px; font-size: 13px; font-weight: 600; cursor: grab; box-shadow: 0 6px 20px rgba(9,42,74,.35);
+            touch-action: none; }
+    .pill:active { cursor: grabbing; }
     .pill:hover { background: #094a8c; }
     .pill .badge { background: #fff; color: #0B5CAD; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 800; }
     .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #7FD1A8; animation: psaPulse 1.2s ease-in-out infinite; }
@@ -2849,13 +2857,14 @@
        selezione restano ferme; scorre solo il corpo. Il contenuto sta su una
        colonna comoda da leggere; valori e stanza usano tutta la larghezza. */
     .wrap.win { display: flex; }
-    .card { --maxw: 1040px; position: relative; display: flex; flex-direction: column; width: 100%; height: 100%;
+    .card { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%;
             overflow: hidden; background: #fff; border: 1px solid #D9E2EC; border-radius: 14px;
             box-shadow: 0 28px 70px rgba(9,42,74,.24), 0 2px 8px rgba(9,42,74,.08); font-size: 13px; line-height: 1.45; }
-    .card.largo { --maxw: none; }
-    .cap { flex: 0 0 auto; width: 100%; max-width: var(--maxw); margin: 0 auto; box-sizing: border-box; }
+    .cap { flex: 0 0 auto; width: 100%; box-sizing: border-box; }
     .bd { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-    .bdi { max-width: var(--maxw); margin: 0 auto; padding: 12px 16px; box-sizing: border-box; }
+    .bdi { padding: 14px 24px; box-sizing: border-box; }
+    /* il testo da leggere di seguito resta su una riga comoda */
+    .eotxt, .reftxt, .dedit, .qrow, .btnrow, .banner { max-width: 820px; }
     .rz { position: absolute; z-index: 6; touch-action: none; }
     .rz-n, .rz-s { left: 14px; right: 14px; height: 6px; cursor: ns-resize; }
     .rz-e, .rz-w { top: 14px; bottom: 14px; width: 6px; cursor: ew-resize; }
@@ -2863,19 +2872,32 @@
     .rz-ne, .rz-nw, .rz-se, .rz-sw { width: 14px; height: 14px; }
     .rz-ne { top: 0; right: 0; cursor: nesw-resize; } .rz-sw { bottom: 0; left: 0; cursor: nesw-resize; }
     .rz-nw { top: 0; left: 0; cursor: nwse-resize; } .rz-se { bottom: 0; right: 0; cursor: nwse-resize; }
-    .hd { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #0B5CAD; color: #fff;
-          border-radius: 13px 13px 0 0; position: relative; z-index: 3; cursor: move; user-select: none; touch-action: none; }
-    .hd b { font-size: 13.5px; letter-spacing: .2px; }
-    .hd .who { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 42%; }
+    .hd { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 12px 0 20px; background: #fff; color: #16232E;
+          border-bottom: 1px solid #E6EBF0; border-radius: 13px 13px 0 0; position: relative; z-index: 3; cursor: grab; user-select: none; touch-action: none; }
+    .hd:active { cursor: grabbing; }
+    .hd .logo { display: inline-flex; }
+    .hd b { font-size: 16px; font-weight: 600; letter-spacing: .1px; }
+    .hd .who { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 50%; outline: none; }
+    .hd .hsp { flex: 1 1 auto; }
     .pill .who { max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .hd .sub { margin-left: auto; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; opacity: .92; }
-    .iconbtn { background: transparent; border: 0; color: #fff; cursor: pointer; font-size: 15px; line-height: 1; padding: 4px 6px; border-radius: 6px; }
-    .iconbtn:hover { background: rgba(255,255,255,.18); }
+    .hd .sub { font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .iconbtn { display: inline-grid; place-items: center; width: 36px; height: 36px; background: transparent; border: 0; color: #5B6B7A;
+               cursor: pointer; border-radius: 8px; padding: 0; }
+    .iconbtn:hover { background: #F1F4F7; color: #16232E; }
+    .iconbtn:focus-visible { outline: 2px solid #0B5CAD; outline-offset: -2px; }
+    .menuw { position: relative; }
+    .menu { position: absolute; right: 0; top: 40px; z-index: 20; min-width: 200px; background: #fff; border: 1px solid #E3E8EF;
+            border-radius: 10px; box-shadow: 0 12px 32px rgba(9,42,74,.16); padding: 6px; cursor: default; }
+    .menu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 6px;
+                   font-size: 13px; color: #16232E; cursor: pointer; }
+    .menu button:hover, .menu button:focus-visible { background: #F1F4F7; outline: none; }
+    .menu hr { border: 0; border-top: 1px solid #EEF2F6; margin: 5px 4px; }
+    .menu .mver { padding: 6px 10px 4px; font-size: 12px; color: #5B6B7A; }
     .pbar { flex: 0 0 auto; height: 3px; background: #E3E8EF; }
     .pbar i { display: block; height: 100%; background: #0B5CAD; transition: width .25s ease; }
     /* compact, always-visible selection strip (plain text, not pills) */
     .selbar { background: #F8FBFE; border-bottom: 1px solid #D9E2EC;
-              padding: 7px 16px; font-size: 12px; line-height: 1.8; color: #16232E; }
+              padding: 7px 24px; font-size: 12px; line-height: 1.8; color: #16232E; }
     .selbar .selgrp { color: #0B5CAD; font-weight: 800; }
     .selbar .selrow { display: block; }
     .selbar .selcount { float: right; color: #5B6B7A; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; }
@@ -2887,14 +2909,14 @@
     .selitem:hover .selx { display: inline-block; }
     .bd { padding: 0; }
     .sec { margin-bottom: 14px; }
-    .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #5B6B7A; margin-bottom: 6px; }
+    .lbl { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: #5B6B7A; margin-bottom: 6px; }
     textarea, input[type="text"], input[type="search"] { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 8px 10px; font-size: 13px; color: #16232E; background: #fff; }
     textarea:focus-visible, input:focus-visible, .chip:focus-visible, .pbtn:focus-visible, .seg button:focus-visible, .btn:focus-visible, select.res:focus-visible, summary:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .chip { display: inline-flex; align-items: center; border: 1px solid #C4D0DC; background: #F4F8FB; color: #16232E; border-radius: 999px;
             padding: 6px 12px; font-size: 12.5px; min-height: 28px; cursor: pointer; }
     .chip:hover { border-color: #0B5CAD; }
-    .chip.on { background: #0B5CAD; border-color: #0B5CAD; color: #fff; }
+    .chip.on { background: #EAF2FA; border-color: #0B5CAD; color: #16232E; }
     .chip.on::before { content: "✓ "; font-weight: 800; white-space: pre; }
     .chip.q { background: transparent; border-style: dashed; color: #35506B; }
     .chip.q:hover { border-color: #0B5CAD; color: #0B5CAD; }
@@ -2911,12 +2933,12 @@
     .opt:hover { border-color: #0B5CAD; background: #F4F8FB; }
     .opt .box { flex: 0 0 13px; width: 13px; height: 13px; border: 1.5px solid #9DBFDE; border-radius: 3px;
                 display: inline-grid; place-items: center; font-size: 9px; font-weight: 800; color: transparent; }
-    .opt.on { background: #0B5CAD; border-color: #0B5CAD; color: #fff; font-weight: 600; }
-    .opt.on .box { background: #fff; border-color: #fff; color: #0B5CAD; }
+    .opt.on { background: #EAF2FA; border-color: #0B5CAD; color: #16232E; font-weight: 600; }
+    .opt.on .box { background: #0B5CAD; border-color: #0B5CAD; color: #fff; }
     .opt .nm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .grouphdr { grid-column: 1 / -1; font-size: 9.5px; font-weight: 800; letter-spacing: .6px; color: #5B6B7A;
+    .grouphdr { grid-column: 1 / -1; font-size: 11px; font-weight: 600; letter-spacing: .06em; color: #5B6B7A;
                 margin: 5px 0 0; text-transform: uppercase; }
-    .chip.preset.on { background: #0B5CAD; color: #fff; }
+    .chip.preset.on { background: #EAF2FA; border-color: #0B5CAD; color: #16232E; }
     .gchips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; margin: 1px 0; }
     .qrx { grid-column: 1 / -1; min-width: 0; }
     .chip.cart { background: #EDF7F0; border-color: #BCE0C9; color: #124F31; cursor: default; }
@@ -2977,12 +2999,12 @@
            border: 1px solid #E3E8EF; border-radius: 8px; padding: 8px; max-height: 130px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
     details.reg summary { cursor: pointer; font-size: 11.5px; color: #5B6B7A; margin: 8px 0 6px; }
     /* l'angolo per ridimensionare: in basso a destra, come in ogni finestra */
-    .rsz { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 7;
+    .rsz { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 7; touch-action: none; opacity: .6;
            background: linear-gradient(135deg, transparent 42%, #C4D0DC 42%, #C4D0DC 56%, transparent 56%,
                                         transparent 66%, #C4D0DC 66%, #C4D0DC 80%, transparent 80%); }
     .rsz:hover { background: linear-gradient(135deg, transparent 42%, #0B5CAD 42%, #0B5CAD 56%, transparent 56%,
                                              transparent 66%, #0B5CAD 66%, #0B5CAD 80%, transparent 80%); }
-    .commit { position: sticky; bottom: -1px; margin: 0 -16px -12px; padding: 10px 16px 12px; background: #fff;
+    .commit { position: sticky; bottom: -1px; margin: 0 -24px -14px; padding: 10px 24px 14px; background: #fff;
               border-top: 1px solid #EEF2F6; box-shadow: 0 -10px 14px -12px rgba(9,42,74,.25); }
     .rlist { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
     .rrow { display: flex; align-items: center; gap: 8px; border: 1px solid #E3E8EF; background: #fff; border-radius: 8px;
@@ -3012,21 +3034,25 @@
     /* Le schermate in UNA fila di pillole, nell'ordine in cui si lavora:
        Richieste, Esiti, EO, Consensi, Dimissioni. La pillola accesa è quella
        dove sei. */
-    .seg { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 16px 2px; }
-    .seg button { border: 1px solid #C4D0DC; background: #fff; border-radius: 999px; padding: 5px 12px;
+    .seg { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 2px; margin: 0; padding: 0 24px;
+           border-bottom: 1px solid #EEF2F6; min-height: 42px; }
+    .seg > button { border: 0; border-bottom: 2px solid transparent; background: none; border-radius: 0; margin-bottom: -1px;
+                    padding: 12px 10px 10px; font-size: 13px; font-weight: 400; color: #5B6B7A; cursor: pointer; }
+    .seg > button:hover { color: #16232E; }
+    .seg > button.on { color: #16232E; font-weight: 600; border-bottom-color: #0B5CAD; }
+    .segdx { margin-left: auto; align-self: center; display: flex; align-items: center; gap: 6px; padding: 6px 0; }
+    .segvecchio { border: 1px solid #C4D0DC; background: #fff; border-radius: 999px; padding: 5px 12px;
                   font: inherit; font-size: 12.5px; font-weight: 700; color: #35506B; cursor: pointer; white-space: nowrap; }
-    .seg button:hover { border-color: #0B5CAD; background: #EAF2FA; color: #0B5CAD; }
-    .seg button.on { border-color: #0B5CAD; background: #0B5CAD; color: #fff; }
-    .seg .n { margin-left: 4px; font-weight: 800; opacity: .75; font-variant-numeric: tabular-nums; }
+    .seg .n { margin-left: 5px; font-weight: 600; color: #5B6B7A; font-variant-numeric: tabular-nums; }
     .rgo { flex: 0 0 auto; color: #8296A9; font-size: 12px; }
     .pcard { display: flex; align-items: center; gap: 6px; border: 1px solid #E3E8EF; border-radius: 8px;
              padding: 4px 5px 4px 9px; margin-bottom: 4px; background: #fff; cursor: pointer; min-height: 30px; }
     .pcard .nm { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 700; color: #16232E;
                  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .pcard .pdesc { margin-left: 7px; font-size: 11.5px; font-weight: 400; color: #7A8A99; }
-    .pcard .pago { flex: 0 0 auto; font-size: 10.5px; color: #7A8A99; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .pcard .pdesc { margin-left: 7px; font-size: 11.5px; font-weight: 400; color: #5B6B7A; }
+    .pcard .pago { flex: 0 0 auto; font-size: 10.5px; color: #5B6B7A; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .pcard .pbtn { flex: 0 0 auto; padding: 3px 8px; font-size: 11px; border-radius: 6px; }
-    .pcard .pbtn.px { padding: 3px 7px; color: #7A8A99; border-color: #E3E8EF; }
+    .pcard .pbtn.px { padding: 3px 7px; color: #5B6B7A; border-color: #E3E8EF; }
     .pcard .pbtn.px:hover { color: #B3261E; border-color: #E8B4B0; background: #FDF1F0; }
     .pcard:hover { border-color: #9DBFDE; background: #F4F9FD; }
     .pcard:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
@@ -3048,10 +3074,10 @@
     .gruppo:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; border-radius: 4px; }
     .gruppo .gfr { flex: 0 0 auto; color: #0B5CAD; font-weight: 800; }
     .gruppo .gnome { flex: 0 0 auto; font-weight: 800; }
-    .gruppo .gmeta { flex: 1 1 auto; text-transform: none; letter-spacing: 0; color: #A3B2C2; font-size: 10.5px; }
+    .gruppo .gmeta { flex: 1 1 auto; text-transform: none; letter-spacing: 0; color: #5B6B7A; font-size: 10.5px; }
     .gruppo::after { content: ""; flex: 0 0 auto; width: 12px; height: 1px; background: #E3E8EF; }
     .dsep { display: flex; align-items: center; gap: 8px; margin: 8px 2px 3px; font-size: 10.5px;
-            color: #A3B2C2; text-transform: uppercase; letter-spacing: .06em; }
+            color: #5B6B7A; text-transform: uppercase; letter-spacing: .06em; }
     .dsep::after { content: ""; flex: 1 1 auto; height: 1px; background: #E3E8EF; }
     .drow { display: flex; align-items: stretch; gap: 5px; }
     /* Copying is what this list is FOR: the target is the whole row, not a
@@ -3065,7 +3091,7 @@
     .dcopia.fatto .dico { color: #124F31; }
     .dnome { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; color: #16232E; overflow: hidden;
              white-space: nowrap; text-overflow: ellipsis; }
-    .dmeta { flex: 0 0 auto; font-size: 10.5px; color: #A3B2C2; }
+    .dmeta { flex: 0 0 auto; font-size: 10.5px; color: #5B6B7A; }
     .dico { flex: 0 0 auto; font-size: 13px; color: #6E8398; }
     .dmod { color: #0B5CAD; font-weight: 800; margin-left: 5px; }
     .dmod.agg { color: #A2600A; }
@@ -3104,18 +3130,20 @@
             border: 1px solid #EDF1F6; border-radius: 8px; background: #fff; }
     .arow .anm { flex: 1 1 auto; font-size: 12px; color: #5B6B7A; overflow: hidden;
                  white-space: nowrap; text-overflow: ellipsis; }
-    .arow .ameta { flex: 0 0 auto; font-size: 10.5px; color: #A3B2C2; }
+    .arow .ameta { flex: 0 0 auto; font-size: 10.5px; color: #5B6B7A; }
     .abtn { flex: 0 0 auto; border: 1px solid #D9E2EC; background: #F8FBFE; color: #35506B;
             border-radius: 7px; padding: 3px 8px; font: 600 11px/1.4 inherit; cursor: pointer; }
     .abtn:hover { border-color: #9DBFDE; color: #0B5CAD; }
     .abtn.del:hover { border-color: #E9BAB6; background: #FBEBEA; color: #B3261E; }
     .tchip { display: flex; align-items: center; }
-    .tchip button { border: 1px solid rgba(255,255,255,.45); background: transparent; color: #fff;
-                    font: 600 11.5px/1 inherit; border-radius: 7px; padding: 5px 7px; cursor: pointer; }
-    .tchip button:hover { background: rgba(255,255,255,.16); }
+    .tchip button { display: inline-flex; align-items: center; gap: 6px; height: 32px; border: 1px solid #E3E8EF; background: #fff; color: #5B6B7A;
+                    font: 600 12px/1 inherit; border-radius: 8px; padding: 0 9px; cursor: pointer; font-variant-numeric: tabular-nums; }
+    .tchip.off button { border-color: transparent; width: 36px; justify-content: center; padding: 0; }
+    .tchip button:hover { background: #F1F4F7; color: #16232E; }
+    .tchip .tdot { width: 7px; height: 7px; border-radius: 50%; background: #C62828; }
     .tchip.on button:first-child { border-radius: 7px 0 0 7px; border-right: 0; font-variant-numeric: tabular-nums; }
     .tchip.on button:last-child { border-radius: 0 7px 7px 0; }
-    .tchip.on { box-shadow: 0 0 0 2px rgba(255,255,255,.18); border-radius: 8px; }
+    .tchip.on button { color: #16232E; }
     .tnow { display: flex; align-items: center; gap: 10px; background: #EDF7F0; border: 1px solid #BCE0C9;
             border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
     .tbig { font: 800 20px/1 inherit; color: #124F31; font-variant-numeric: tabular-nums; }
@@ -3135,10 +3163,10 @@
     .trow .tt { flex: 1 1 auto; font-weight: 600; color: #16232E; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .trow .tp { flex: 0 1 90px; color: #8296A9; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .trow .td { flex: 0 0 auto; font-weight: 700; color: #0B5CAD; font-variant-numeric: tabular-nums; }
-    .trow .to { flex: 0 0 auto; color: #A3B2C2; font-size: 10.5px; font-variant-numeric: tabular-nums; }
-    .tdel { border: 0; background: transparent; color: #A3B2C2; cursor: pointer; font-size: 12px; padding: 0 2px; }
+    .trow .to { flex: 0 0 auto; color: #5B6B7A; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+    .tdel { border: 0; background: transparent; color: #5B6B7A; cursor: pointer; font-size: 12px; padding: 0 2px; }
     .tdel:hover { color: #B3261E; }
-    .notaw { position: relative; padding: 8px 16px 0; }
+    .notaw { position: relative; padding: 10px 24px 0; }
     .nota { display: block; width: 100%; resize: none; overflow: hidden;
             border: 1px solid transparent; border-radius: 8px; background: #F8FBFE;
             padding: 6px 8px; font: 12.5px/1.45 inherit; color: #16232E; }
@@ -3169,7 +3197,7 @@
     .sttab th, .sttab td { padding: 3px 7px; white-space: nowrap; border-bottom: 1px solid #EDF1F6; }
     .sttab thead th { position: sticky; top: 0; background: #F8FBFE; color: #5B6B7A; font-weight: 600;
                       font-size: 10.5px; text-align: left; border-bottom: 1px solid #D9E2EC; }
-    .sttab .sth { display: block; font-size: 9.5px; color: #A3B2C2; font-weight: 500; }
+    .sttab .sth { display: block; font-size: 9.5px; color: #5B6B7A; font-weight: 500; }
     .sttab th.stn { position: sticky; left: 0; z-index: 1; background: #fff; text-align: left;
                     font-weight: 600; color: #16232E; max-width: 168px; overflow: hidden; text-overflow: ellipsis; }
     .sttab thead th.stn { background: #F8FBFE; z-index: 2; }
@@ -3188,7 +3216,7 @@
        compresi), non tutta la cella: il margine negativo compensa il padding,
        così il numero non si sposta quando la pastiglia compare. */
     .sttab td .val { display: inline-block; border-radius: 999px; padding: 0 5px; margin: 0 -5px; }
-    .sttab td .pct { font-weight: 500; color: #7A8A99; font-style: normal; }
+    .sttab td .pct { font-weight: 500; color: #5B6B7A; font-style: normal; }
     .sttab td.marca1 .val { background: #FFE58A; }
     .sttab td.marca2 .val { background: #FFC46B; }
     .sttab tbody tr:hover td, .sttab tbody tr:hover th.stn { background: #F4F9FD; }
@@ -3204,7 +3232,7 @@
     .sttab td.vuoto { color: #AEBECD; }
     /* L'unità sta ACCANTO al nome, fra parentesi: su un rigo suo raddoppiava
        l'altezza di ogni riga e allontanava i numeri dal nome. */
-    .stum { font-size: 9px; color: #A3B2C2; font-weight: 500; letter-spacing: 0; }
+    .stum { font-size: 9px; color: #5B6B7A; font-weight: 500; letter-spacing: 0; }
     .sttab th.ultima { color: #0B5CAD; }
     .sttab th.ultima::after { content: "ultimo"; display: block; font-size: 8.5px; font-weight: 700;
       letter-spacing: .06em; text-transform: uppercase; color: #9DBFDE; }
@@ -3339,6 +3367,22 @@
     <path d="M12 5v14M5 12h14" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>
   </svg>`;
 
+  // il logo sull'intestazione bianca: stessa croce, fondo blu
+  const LOGO_BLU = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="1" y="1" width="22" height="22" rx="6" fill="#0B5CAD"/>
+    <path d="M12 6v12M6 12h12" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+  </svg>`;
+  // Icone a tratto, 16px, colore del testo: le emoji cambiano faccia da un
+  // computer all'altro (il ▶ diventava un quadratino nero).
+  const ico = (d) => `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const ICO = {
+    indietro: ico('<path d="M10 3 5 8l5 5"/>'),
+    riduci: ico('<path d="M3.5 8h9"/>'),
+    altro: ico('<circle cx="3.5" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r=".9" fill="currentColor" stroke="none"/>'),
+    crono: ico('<circle cx="8" cy="9" r="5"/><path d="M8 9V6.5M6.5 2h3M12 4.5l1-1"/>'),
+    ferma: ico('<rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" stroke="none"/>'),
+  };
+
   const RADIO_SET = [RES.RX, RES.ECO, RES.RMN, RES.TAC];
   function rememberQuesito(q) {
     store.set("lastQ", q);
@@ -3399,7 +3443,16 @@
       this.host.id = "psassist-host";
       this.root = this.host.attachShadow({ mode: "open" });
       document.documentElement.appendChild(this.host);
-      this.collapsed = store.get("collapsed", false);
+      // Aperto o ridotto, a ogni pagina. Il gestionale ricarica la pagina a
+      // ogni clic: se ci è arrivato il medico dal gestionale voleva VEDERE il
+      // gestionale, e la finestra all'85% glielo coprirebbe — si parte dalla
+      // pill. Se ce l'ha portato il pannello (un paziente scelto qui, la fine
+      // di un giro), si parte aperti.
+      const daPannello = Date.now() - (Number(tabStore.get("navPannello.v1", 0)) || 0) < 30e3;
+      tabStore.set("navPannello.v1", 0);
+      this.collapsed = !daPannello;
+      this.menuAperto = false;   // il menu «⋯» dell'intestazione
+      this.avvisoPill = "";      // una parola sulla pill, per pochi secondi («✓ Copiato · incolla»)
       this.acq = "";           // catalog search text
       this.esiti = [];                  // risultati + referti, newest first
       this.storico = null;              // the portal's multi-day table, if it is THIS patient's
@@ -3444,9 +3497,38 @@
         // Solo col pannello aperto: da quando il giro va in sottofondo, un Esc
         // dato al gestionale (una tendina, un campo) non deve fermare gli
         // esami. Dalla striscia si ferma col quadratino rosso.
-        if (this.runState === "running" && !this.collapsed) this.stop();
+        if (this.runState === "running" && !this.collapsed) return this.stop();
+        if (this.collapsed || this.runState) return;
+        // Altrimenti Esc riduce la finestra alla pill — ma solo se viene dal
+        // pannello (o da nessuna parte: la finestra copre la pagina), e mai
+        // da un campo in cui si sta scrivendo: lì Esc è del campo.
+        const via = e.composedPath ? e.composedPath() : [];
+        const dentro = via.includes(this.host);
+        const t = via[0];
+        if (!dentro && t && t !== document.body && t !== document.documentElement && t !== document) return;
+        if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "")) return;
+        e.preventDefault();
+        if (this.menuAperto) { this.menuAperto = false; this.render(); return; }
+        if (this.stanzaEdit) { this.stanzaEdit = false; this.render(); return; }
+        this.riduci();
       };
       window.addEventListener("keydown", this._esc, true);
+      // Un clic FUORI dalla finestra (sul gestionale che si vede ai bordi) la
+      // riduce alla pill: il clic intanto arriva alla pagina, non si ferma.
+      // Dentro la finestra, un clic fuori dal menu «⋯» lo chiude.
+      this._fuori = (e) => {
+        const via = e.composedPath ? e.composedPath() : [];
+        if (via.includes(this.host)) {
+          if (this.menuAperto && !via.some((x) => x.classList && x.classList.contains("menuw"))) { this.menuAperto = false; this.render(); }
+          return;
+        }
+        if (this.collapsed || this.runState === "running") return;
+        if (via.some((x) => x.id === "psassist-print" || x.id === "psassist-confirm")) return;   // le nostre finestre di stampa e conferma
+        this.riduci();
+      };
+      window.addEventListener("pointerdown", this._fuori, true);
+      // il fuoco sopravvive al ridisegno: dopo ogni azione resta dov'era
+      this.root.addEventListener("focusin", (e) => { const id = e.target && e.target.id; if (id) this._fuocoId = id; });
     }
 
     // ---- cross-page continuity -------------------------------------------
@@ -3494,8 +3576,8 @@
     // passaggi.
     chipTempo() {
       const t = tempoInCorso();
-      if (!t) return `<span class="tchip off"><button id="tapri" title="Cronometro: misura quanto ti prende un'attività" aria-label="Cronometro">▶</button></span>`;
-      return `<span class="tchip on"><button id="tapri" title="${esc(t.titolo)}${t.paz ? " · " + esc(t.paz) : ""} — apri i tempi">● ${esc(mmss(durata(t)))}</button><button id="tstop" title="Ferma il cronometro">⏹</button></span>`;
+      if (!t) return `<span class="tchip off"><button id="tapri" title="Cronometro: misura quanto ti prende un'attività" aria-label="Cronometro">${ICO.crono}</button></span>`;
+      return `<span class="tchip on"><button id="tapri" title="${esc(t.titolo)}${t.paz ? " · " + esc(t.paz) : ""} — apri i tempi"><i class="tdot"></i>${esc(mmss(durata(t)))}</button><button id="tstop" title="Ferma il cronometro" aria-label="Ferma il cronometro">${ICO.ferma}</button></span>`;
     }
 
     // the inline banner: a string is something that went wrong, {ok} is a
@@ -3633,7 +3715,7 @@
         head: `✓ ${n} ${n === 1 ? "esame" : "esami"} in carrello, ${n === 1 ? "verificato" : "verificati"}`,
         body: state.quesitoKept ? "Quesito del triage mantenuto." : "",
       };
-      if (!this.runRipreso) this.collapsed = !!store.get("collapsed", false);
+      if (!this.runRipreso) this.collapsed = false;   // l'esito si guarda: finestra aperta
       this.render();
       if (state.finishedListUrl) this.chiudiRichiesta(state.finishedListUrl, plan);
     }
@@ -3864,7 +3946,10 @@
       const total = this.runData?.steps?.length || 0;
       const doneN = this.runData?.steps?.filter((s) => s.status === "ok").length || 0;
       // The panel is titled by the PATIENT it is acting on — collapsed too.
-      const who = (this.runState && this.runPatient) || patientName || APP;
+      // Dove un paziente non c'è (la lista del PS) il titolo della pagina è
+      // «PRONTO SOCCORSO - LISTA»: quello non va mai dove va un nome.
+      const sulPaziente = !!this.epDiQuesta();
+      const who = (this.runState && this.runPatient) || (sulPaziente ? patientName : "") || APP;
       // Mentre il giro va avanti il pannello è una striscia: chi, a che punto,
       // e che cosa sta facendo adesso. Il gestionale resta usabile sotto.
       const passo = (this.runData?.steps || []).find((s) => s.status === "running");
@@ -3875,11 +3960,13 @@
       // Sei su un'altra scheda: il giro continua (le richieste portano il loro
       // episodio), ma va detto a chiare lettere di chi sono gli esami.
       const altrove = !!(this.runState && this.runPatient && patientName && this.runPatient !== patientName);
+      const nPaz = knownPatients().length;
+      const chiPill = this.avvisoPill || ((this.runState || sulPaziente) ? who : `Pazienti${nPaz ? " · " + nPaz : ""}`);
       const pillInner = running
         ? `<span class="dot"></span> <span class="who">${esc(who)}</span> <span class="badge">${doneN}/${total}</span>`
-        : this.selected.size
-          ? `${LOGO} <span class="who">${esc(who)}</span> <span class="badge">${this.selected.size}</span>`
-          : `${LOGO} <span class="who">${esc(who)}</span>`;
+        : this.selected.size && !this.avvisoPill
+          ? `${LOGO} <span class="who">${esc(chiPill)}</span> <span class="badge">${this.selected.size}</span>`
+          : `${LOGO} <span class="who">${esc(chiPill)}</span>`;
 
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
@@ -3887,13 +3974,8 @@
       const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", tempi: "Tempi" }[this.view] || "";
       // the discharge sheets are templates: no episode belongs in that header
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
-      const sub = inHome ? "ultime 12 ore"
-        : this.view === "tempi" ? "quanto ti prende"
-        : this.view === "consensi" ? "Consensi · moduli"
-        : this.view === "eo" ? "EO · modelli"
-        : inDim ? "Dimissioni · modelli"
-        : section ? `${section}${ep ? " · " + esc(ep) : ""}`
-        : (ep ? "episodio " + esc(ep) : esc(APP));
+      // accanto al nome, l'episodio: di chi sono i dati, sempre a colpo d'occhio
+      const sub = sulPaziente && !inHome && !inDim && ep ? `ep. ${esc(ep)}` : "";
       // Aperto: una finestra al centro, l'85% dello schermo (o come l'hai
       // lasciata tu). Ridotto: la pill, dove l'hai messa (in alto a destra
       // se non l'hai mai spostata).
@@ -3909,7 +3991,6 @@
         posStyle = `left:${g.x * 100}vw;top:${g.y * 100}vh;width:${g.w * 100}vw;height:${g.h * 100}vh;right:auto;`;
       }
       // i valori e la stanza si leggono in larghezza; il resto su una colonna comoda
-      const largo = !this.runState && (this.view === "esiti" || inStanza);
 
       this.root.innerHTML = `
         <style>${COLORS}</style>
@@ -3929,15 +4010,27 @@
           ` : this.collapsed ? `
             <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}</button>
           ` : `
-            <div class="card${largo ? " largo" : ""}${inStanza ? " stanza" : ""}" role="dialog" aria-label="${esc(APP)}">
-              <div class="hd" id="draghd" title="Trascina per spostare · doppio click per rimetterla al centro">
+            <div class="card${inStanza ? " stanza" : ""}" role="dialog" aria-label="${esc(APP)}">
+              <div class="hd" id="draghd" title="Trascina per spostare · doppio clic per rimetterla al centro">
                 ${section ? `<button class="iconbtn" id="back" title="${
                   this.view === "referto" ? "Torna agli esiti"
                   : this.view === "dimtesto" || this.view === "dimimport" ? "Torna ai fogli di dimissione"
-                  : "Tutti i pazienti"}">‹</button>` : LOGO}<b class="who">${esc(inHome ? "Pazienti" : who)}</b>
-                <span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>
+                  : "Tutti i pazienti"}" aria-label="Indietro">${ICO.indietro}</button>` : `<span class="logo">${LOGO_BLU}</span>`}<b class="who">${esc(this.runState ? who : inHome || !sulPaziente ? (inHome ? "Pazienti" : APP) : who)}</b>
+                ${sub ? `<span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>` : ""}
+                <span class="hsp"></span>
                 ${this.chipTempo()}
-                <button class="iconbtn" id="collapse" title="Riduci">—</button>
+                <span class="menuw">
+                  <button class="iconbtn" id="menubtn" title="Altro" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
+                  ${this.menuAperto ? `<div class="menu" role="menu">
+                    <button role="menuitem" id="wincentra" title="La finestra al centro, all'85% dello schermo">Al centro</button>
+                    <button role="menuitem" id="winaffianca" title="Una colonna a destra: il gestionale resta visibile a sinistra">Affianca a destra</button>
+                    <hr>
+                    <button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${this.showLog ? "Nascondi il registro" : "Registro"}</button>
+                    ${(typeof chrome !== "undefined" && chrome.runtime?.id) ? `<button role="menuitem" id="extreload" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">Ricarica estensione</button>` : ""}
+                    <div class="mver">${esc(APP)} ${VERSION}</div>
+                  </div>` : ""}
+                </span>
+                <button class="iconbtn" id="collapse" title="Riduci alla pill (Esc)" aria-label="Riduci">${ICO.riduci}</button>
               </div>
               ${running && total ? `<div class="pbar"><i style="width:${Math.round((doneN / Math.max(total, 1)) * 100)}%"></i></div>` : ""}
               <div class="cap">
@@ -3946,21 +4039,19 @@
                 <div class="seg" role="tablist">
                   ${this.pageType === "patient" && this.view !== "home" ? `
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
-                  <button class="${this.view === "esiti" || this.view === "referto" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>` : ""}
+                  <button class="${this.view === "esiti" || this.view === "referto" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>`
+                  : `<button class="${inHome || !section ? "on" : ""}" data-seg="home">Pazienti</button>`}
                   <button class="${this.view === "eo" ? "on" : ""}" data-seg="eo" title="Esame obiettivo da copiare">EO</button>
                   <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi">Consensi</button>
                   <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
+                  ${(inHome || !section) && this.stanzaAzioni ? `<span class="segdx">${this.stanzaAzioni()}</span>` : ""}
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
               </div>
               <div class="bd"><div class="bdi">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div></div>
               ${["n", "s", "e", "w", "ne", "nw", "se", "sw"].map((d) => `<div class="rz rz-${d}" data-rz="${d}"></div>`).join("")}
               <div class="rsz" id="rsz" data-rz="se" title="Trascina per ridimensionare · doppio click per la misura di partenza"></div>
-              ${!this.runState ? `<div class="foot">
-                <span><button id="verbtn" class="footlink" title="Mostra il Registro delle operazioni">${esc(APP)} ${VERSION}</button>${(typeof chrome !== "undefined" && chrome.runtime?.id)
-                  ? ` · <button id="extreload" class="footlink" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">⟳ ricarica estensione</button>` : ""}</span>
-                <span></span>
-              </div>` : ""}
+
             </div>
           `}
         </div>`;
@@ -3968,6 +4059,10 @@
       for (const [sel, top] of keepScroll) {
         const el = this.root.querySelector(sel);
         if (el && top) el.scrollTop = top;
+      }
+      if (this._fuocoId && !this.root.activeElement) {
+        const f = this.root.getElementById ? this.root.getElementById(this._fuocoId) : null;
+        if (f && !/^(INPUT|TEXTAREA)$/.test(f.tagName)) f.focus({ preventScroll: true });
       }
     }
 
@@ -4594,7 +4689,7 @@
         [...this.selected.values()].some((i) => !RADIO_SET.includes(i.res));
       const goLabel = this.pageType === "exam" ? `Aggiungi ${nTxt}`
         : twoLegs ? `Crea 2 richieste · ${nTxt}` : `Crea e aggiungi ${nTxt}`;
-      const confirmLabel = `+ Conferma 🖨`;
+      const confirmLabel = `Conferma e stampa`;
 
       const problems = this.computeProblems();
 
@@ -4781,7 +4876,7 @@
       const docs = referti.length ? `
         <div class="sec">
           <div class="lbl">Referti (${referti.length})
-            ${hasExt() && nSaved < referti.length ? `<button class="mini" id="refsave"${this._salvaRef ? " disabled" : ""}>${this._salvaRef ? "salvo…" : "⬇ Salva referti"}</button>` : ""}
+            ${hasExt() && nSaved < referti.length ? `<button class="mini" id="refsave"${this._salvaRef ? " disabled" : ""}>${this._salvaRef ? "salvo…" : "Salva referti"}</button>` : ""}
             ${(nSaved || open.size) ? `<button class="mini" id="refreset">↻ Resetta</button>` : ""}
             ${this.diagnosi ? `<button class="mini" id="refdiag" title="Copia com'è fatto il visualizzatore che non si è lasciato leggere (senza numeri), da mandare a chi fa il pannello">⧉ Copia diagnosi</button>` : ""}
           </div>
@@ -5808,19 +5903,49 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       `;
     }
 
+    // Ridurre alla pill e riaprire. Ridurre chiude anche il menu e la
+    // Modifica della stanza; il fuoco va sulla pill (e al riaprire sul titolo),
+    // così la tastiera non finisce nel gestionale coperto.
+    riduci() {
+      if (this.collapsed) return;
+      this.collapsed = true; this.menuAperto = false; this.stanzaEdit = false;
+      store.set("collapsed", true);
+      this.render();
+      this.root.querySelector("#expand")?.focus({ preventScroll: true });
+    }
+    apri() {
+      this.collapsed = false; this.avvisoPill = "";
+      store.set("collapsed", false);
+      this.render();
+      this.root.querySelector(".hd .who")?.focus?.({ preventScroll: true });
+    }
+    // Copiato un testo da incollare nel gestionale (EO, dimissioni, referto):
+    // la finestra si toglie di mezzo da sola, la pill dice che è pronto.
+    dopoCopia(ok) {
+      if (!ok || this.collapsed || this.runState) return;
+      setTimeout(() => {
+        if (this.collapsed || this.runState) return;
+        this.avvisoPill = "✓ Copiato · incolla";
+        this.riduci();
+        setTimeout(() => { if (this.avvisoPill) { this.avvisoPill = ""; if (this.collapsed) this.render(); } }, 5000);
+      }, 650);
+    }
+
     // Trascinare: la pill (ridotta) si sposta dove vuoi e resta lì; la
     // finestra (aperta) si sposta intera dall'intestazione. Un clic vero
     // sulla pill la apre comunque; il doppio clic sull'intestazione rimette
     // la finestra al centro.
     attachDrag(el) {
       el.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0 || e.target.closest(".iconbtn, button:not(#expand), input, a, [data-rz]")) return;
+        if (e.button !== 0 || e.target.closest(".iconbtn, .tchip, .menuw, button:not(#expand), input, a, [data-rz]")) return;
+        try { el.setPointerCapture(e.pointerId); } catch { /* niente */ }
         const wrap = this.root.querySelector(".wrap");
         const r = wrap.getBoundingClientRect();
         const sx = e.clientX, sy = e.clientY, ox = r.left, oy = r.top;
         const finestra = wrap.classList.contains("win");
         let moved = false;
         const mm = (ev) => {
+          if (!ev.buttons) return up();   // il bottone è stato lasciato fuori dalla finestra
           if (!moved && Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 5) return;
           moved = true;
           const vw = window.innerWidth, vh = window.innerHeight;
@@ -5842,6 +5967,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const up = () => {
           window.removeEventListener("pointermove", mm, true);
           window.removeEventListener("pointerup", up, true);
+          window.removeEventListener("pointercancel", up, true);
           if (moved) {
             if (finestra) store.set("win.v1", this.win); else store.set("pillpos.v1", this.pillPos);
             this._justDragged = true;
@@ -5850,6 +5976,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         };
         window.addEventListener("pointermove", mm, true);
         window.addEventListener("pointerup", up, true);
+        window.addEventListener("pointercancel", up, true);
       });
     }
 
@@ -5859,10 +5986,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         if (e.button !== 0) return;
         e.preventDefault(); e.stopPropagation();
         const d = el.getAttribute("data-rz") || "se";
+        try { el.setPointerCapture(e.pointerId); } catch { /* niente */ }
         const wrap = this.root.querySelector(".wrap");
         const r = wrap.getBoundingClientRect();
         const sx = e.clientX, sy = e.clientY;
         const mm = (ev) => {
+          if (!ev.buttons) return up();
           const vw = window.innerWidth, vh = window.innerHeight;
           const dx = ev.clientX - sx, dy = ev.clientY - sy;
           let { left, top, width, height } = r;
@@ -5880,10 +6009,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const up = () => {
           window.removeEventListener("pointermove", mm, true);
           window.removeEventListener("pointerup", up, true);
+          window.removeEventListener("pointercancel", up, true);
           store.set("win.v1", this.win);
         };
         window.addEventListener("pointermove", mm, true);
         window.addEventListener("pointerup", up, true);
+        window.addEventListener("pointercancel", up, true);
       });
     }
 
@@ -5894,9 +6025,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         // preferenza: finito il giro il pannello torna com'era
         if (this.runState === "running") { this.collapsed = false; this.render(); return; }
         if (this._justDragged) return; // it was a drag, not a click
-        this.collapsed = false; store.set("collapsed", false); this.render();
+        this.apri();
       });
-      $("#collapse")?.addEventListener("click", () => { this.collapsed = true; store.set("collapsed", true); this.render(); });
+      $("#collapse")?.addEventListener("click", () => this.riduci());
+      $("#menubtn")?.addEventListener("click", (e) => { e.stopPropagation(); this.menuAperto = !this.menuAperto; this.render(); });
+      // due posizioni pronte: al centro (85%), o in colonna a destra col gestionale visibile
+      const metti = (g) => { this.win = g; store.set("win.v1", g); this.menuAperto = false; this.render(); };
+      $("#wincentra")?.addEventListener("click", () => metti(null));
+      $("#winaffianca")?.addEventListener("click", () => metti({ x: 0.63, y: 0.02, w: 0.36, h: 0.96 }));
       this.root.querySelectorAll("[data-rz]").forEach((el) => this.attachResize(el));
       // doppio clic sull'angolo o sull'intestazione: di nuovo al centro, all'85%
       const alCentro = (e) => { e.stopPropagation(); this.win = null; store.set("win.v1", null); this.render(); };
@@ -5944,7 +6080,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.message = { ok: `Eliminato tutto di ${p?.name || "quel paziente"}.` };
         this.render();
       }));
-      $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.render(); });
+      $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.menuAperto = false; this.render(); });
       $("#risall")?.addEventListener("click", () => this.caricaValori());
       // «Letto»: da qui in poi le novità si contano da adesso, per tutti i prelievi
       $("#letto")?.addEventListener("click", () => {
@@ -5991,6 +6127,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const ico = b.querySelector(".dico");
         let ok = false;
         ok = await copiaTesto(d.testo);
+        this.dopoCopia(ok);
         b.classList.toggle("fatto", ok);
         if (ico) ico.textContent = ok ? "✓ copiato" : "✗ non riuscito";
         setTimeout(() => {
@@ -6014,7 +6151,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       this.root.querySelectorAll("[data-eocopy]").forEach((b) => b.addEventListener("click", async () => {
         const v = eoVoci()[b.getAttribute("data-eocopy")];
         if (!v) return;
-        eoFatto(b, await copiaTesto(v.testo));
+        const ok = await copiaTesto(v.testo);
+        eoFatto(b, ok);
+        this.dopoCopia(ok);
       }));
       $("#eocaso")?.addEventListener("change", async (ev) => {
         const k = ev.target.value;
@@ -6028,7 +6167,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         if (btn) btn.setAttribute("data-eocopy", k || "");
         if (!v) return;
         this.persistUi();
-        if (btn) eoFatto(btn, await copiaTesto(v.testo));
+        if (btn) { const ok = await copiaTesto(v.testo); eoFatto(btn, ok); this.dopoCopia(ok); }
       });
       this.root.querySelectorAll("[data-dedit]").forEach((b) => b.addEventListener("click", () => this.setView("dimtesto", b.getAttribute("data-dedit"))));
       // every keystroke goes into the tab's draft: a re-render, a page change
@@ -6040,6 +6179,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         let ok = false;
         ok = await copiaTesto(area ? area.value : "");
         segnaCopia(b, ok);
+        this.dopoCopia(ok);
       });
       $("#dimsave")?.addEventListener("click", () => {
         const d = dimissioni()[this.viewId];
@@ -6193,6 +6333,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         ok = await copiaTesto(t.righe.join("\n"));
         const b = this.root.querySelector("#copytxt");
         segnaCopia(b, ok);
+        this.dopoCopia(ok);
       });
       this.root.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", (ev) => {
         ev.stopPropagation();   // Richieste sits inside the card, which is itself a [data-go]
@@ -6437,6 +6578,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     store.set(APERTA, null);
     panel.message = `Un giro di esami su ${a.paziente || "un paziente"} è rimasto a metà: ${
       a.quanti === 1 ? "1 esame non è stato mandato" : `${a.quanti} esami non sono stati mandati`}. Apri la sua richiesta e controlla.`;
+    panel.collapsed = false;   // un avviso chiuso nella pill non lo legge nessuno
     panel.render();
     return true;
   }
@@ -7221,7 +7363,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const av = tabStore.get(AVVISO, null);
     if (av) {
       tabStore.set(AVVISO, null);
-      if (Date.now() - (av.ts || 0) < CONFIRM_FLAG_TTL) panel.message = av.testo;
+      if (Date.now() - (av.ts || 0) < CONFIRM_FLAG_TTL) { panel.message = av.testo; panel.collapsed = false; }
     }
     panel.render();
     // Un giro rimasto a metà viene prima di tutto: ha esami ancora da mandare,
