@@ -15,3 +15,6 @@ dist-ssr
 !.env.example
 shots/
 tools/recordings/raw/
+
+# copie di lavoro temporanee dei sub-agenti
+.claude/worktrees/
