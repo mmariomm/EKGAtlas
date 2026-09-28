@@ -88,6 +88,30 @@ Sceglierne un altro **carica la sua pagina**: il pannello non mostra mai i dati 
 diverso da quello che hai davanti. Il pannello parte da qui solo sulla lista del pronto soccorso,
 dove non c'è un paziente aperto; sulla scheda di un paziente parte dagli **Esiti**.
 
+**Lista | Stanza.** Accanto a «Pazienti» c'è un interruttore: la **Lista** è l'elenco qui sopra, la
+**Stanza** è una mappa minima della sala, per vedere a colpo d'occhio **dove sta ogni paziente**.
+Ci sono i **letti** (uno per paziente: occupato si colora d'azzurro) e le **aree** senza letto —
+corridoio, attesa, poltrone — dove ne stanno quanti servono. In fondo c'è **Da sistemare**: chi
+non ha ancora un posto. Un paziente nuovo arriva lì da solo, e nessuno sparisce: se il suo letto
+viene tolto, torna lì. L'interruttore si ricorda l'ultima scelta.
+
+- **Portare un paziente**: lo prendi e lo lasci su un letto, su un'area o di nuovo in «Da
+  sistemare». Su un letto già occupato i due si **scambiano** il posto. Un tocco senza trascinare
+  **apre il paziente**, come le righe dell'elenco. Quello della pagina aperta ha il bordo blu e il
+  segno **qui**; accanto al nome, in grigio, la sua nota.
+- **Modifica** serve a disegnare la sala, di solito una volta sola: **+ Letto**, **+ Area**, e li
+  trascini dove stanno davvero (si allineano su una griglia a puntini, che si vede solo in
+  Modifica). Un tocco sul **nome** lo cambia (Invio salva, Esc lascia com'era), **↻** gira il
+  letto di 90° (la testa dalla parte del muro), l'angolo in basso a destra allarga un'area, **×**
+  toglie letto o area. In Modifica i pazienti stanno fermi; **Fine**, e si torna a spostarli.
+
+Tutto resta **solo in questo browser** (`localStorage`), niente va in rete; un altro PC o un altro
+profilo Chrome ha la sua sala. La **sala disegnata** (`stanza.v1`: posizioni in proporzione alla
+mappa, così segue la finestra) resta come i fogli di dimissione: è un modello, non contiene
+pazienti. **Chi sta dove** (`stanza.posti.v1`) sono solo numeri di episodio, mai nomi, e dura
+quanto l'elenco: chi esce dall'elenco (archiviato, eliminato, dopo 24 ore) lascia libero il suo
+posto, e la pagina di login li cancella tutti insieme al resto del turno.
+
 ### Richieste
 1. **Quesito diagnostico** — casella su una riga, suggerimenti a fianco; l'ultimo resta scritto.
    La **radiologia ha il suo**: casella «Quesito RX» nel gruppo RX. Se è vuota, la richiesta di
@@ -818,7 +842,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 65 scenari e2e in Chromium reale (+ storico e referti)
+└── test/                ← simulatore SA4PSO + 66 scenari e2e in Chromium reale (+ storico e referti)
 ```
 
 Sviluppo:
@@ -829,7 +853,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 65 scenari e2e + 47 sull'estensione + 44 sul banco + storico + il cancello privacy
+npm test           # 66 scenari e2e + 47 sull'estensione + 44 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
