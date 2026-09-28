@@ -53,6 +53,12 @@ const apri = async (q = "") => {
   await page.goto("https://banco.test/" + q);
   await page.waitForSelector("#psassist-host", { state: "attached", timeout: 20000 });
 };
+// arrivato cliccando il gestionale (non il pannello), il pannello riparte
+// dalla pill: si riapre con un tocco, come al lavoro
+const riapri = async () => {
+  await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached", timeout: 20000 });
+  if (await $(".card").count() === 0) await $("#expand").click();
+};
 // «⭳ Carica i valori» legge OGNI prelievo, uno alla volta: si aspetta la
 // tabella e il bottone di nuovo pronto (mentre gira porta scritto «↻ 3/6…»).
 const attendiTabella = (timeout = 30000) => page.waitForFunction(() => {
@@ -67,8 +73,12 @@ check(await page.locator('#sa4-page a:has-text("ROSSI MARIO")').count() === 1, "
 check((await $("b.who").innerText()).toLowerCase().includes("pazienti"), "senza paziente aperto il pannello parte dai Pazienti");
 
 await page.locator('#sa4-page a:has-text("ROSSI MARIO")').click();
+await riapri();
 await page.waitForSelector("#psassist-host [data-seg]", { state: "attached", timeout: 20000 });
 check(await $('[data-seg="esiti"].on').count() === 1, "aprendo un paziente il pannello parte dagli Esiti");
+// il colore del triage si legge dall'intestazione della scheda vera
+const triage = await page.evaluate(() => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((p) => p.name === "ROSSI MARIO") || {}).triage);
+check(triage === "ARANCIONE", `il triage della scheda finisce sul paziente, per la Stanza (got ${triage})`);
 // per ordinare si passa da Richieste, un tocco
 await $('[data-seg="richieste"]').click();
 await page.waitForSelector("#psassist-host #q", { state: "attached", timeout: 20000 });
@@ -177,6 +187,7 @@ await page.getByRole("button", { name: "Lista PS" }).click();
 await page.waitForTimeout(700);
 await page.locator('#sa4-page a:has-text("BIANCHI ANNA")').first().click();
 await page.waitForTimeout(1200);
+await riapri();
 await $('[data-seg="esiti"]').click();
 await page.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
 check(await page.locator(`#psassist-host .sttab td[data-cella="${cellaSegnata}"].marca1`).count() === 1,
@@ -214,6 +225,7 @@ const vaiDa = async (nome) => {
   await page.waitForTimeout(900);
   await page.locator(`#sa4-page a:has-text("${nome}")`).first().click();
   await page.waitForTimeout(1400);
+  await riapri();
 };
 await page.locator('#sa4-page a:has-text("Storico Dati Clinici")').first().click();
 await page.waitForTimeout(1400);
@@ -235,7 +247,7 @@ const griglia = await page.evaluate(() => {
   return { righe: r.querySelectorAll(".sttab tbody tr:not(.stsez)").length, rosse: r.querySelectorAll(".sttab td.fuori").length,
            sezioni: r.querySelectorAll(".sttab tr.stsez").length,
            larghezza: Math.round(r.querySelector(".card").getBoundingClientRect().width),
-           tetto: Math.round(window.innerWidth * 0.8),
+           colonna: Math.round(window.innerWidth * 0.39),
            dentroEsiti: !!r.querySelector(".sec .sttab"),
            chi: (/Con lo storico del portale[^.]*\./.exec(r.textContent.replace(/\s+/g, " ")) || [""])[0],
            sotto: [...r.querySelectorAll(".sttab thead th .sth")].map((t) => t.textContent.trim()) };
@@ -244,9 +256,9 @@ check(griglia.dentroEsiti, "tornando sul paziente lo storico è DENTRO gli Esiti
 check(/letto per ROSSI MARIO/.test(griglia.chi), `e la schermata dice per chi è stato letto (${griglia.chi.slice(0, 80)})`);
 check(griglia.righe === 10 && griglia.rosse === 6, `la tabella con i suoi fuori range (${griglia.righe} righe, ${griglia.rosse} rosse)`);
 check(griglia.sezioni >= 4, `divisa in sezioni (${griglia.sezioni})`);
-// il pannello si allarga da solo per le colonne, fino all'80 % dello schermo
-check(griglia.larghezza > 460 && griglia.larghezza <= griglia.tetto,
-  `il pannello si è allargato per lo storico (${griglia.larghezza} px, tetto ${griglia.tetto})`);
+// la finestra la decide chi la usa: lo storico non la ridimensiona
+check(Math.abs(griglia.larghezza - griglia.colonna) <= 3,
+  `la finestra resta come l'ha messa l'utente (${griglia.larghezza} px)`);
 // nessun prelievo di esempio è di oggi: in cima c'è la data, sotto l'ora
 check(griglia.sotto.length === 3 && griglia.sotto.every((t) => /^\d\d:\d\d$/.test(t)),
   `colonne di altri giorni: data sopra, ora sotto (${griglia.sotto.join(" · ")})`);

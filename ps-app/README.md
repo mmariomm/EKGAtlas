@@ -84,41 +84,61 @@ del portale clinico non c'è pannello: solo una striscia che dice cosa ha letto.
 
 ### Pazienti (‹ in alto a sinistra)
 
-Ogni scheda-paziente **è un bottone**: un tocco apre i suoi **Esiti** (dal pannello si va da un
-paziente per *vedere*); il bottoncino **Richieste** resta per ordinare. Aprire un paziente **dal
-gestionale** porta allo stesso posto: gli **Esiti**, perché è quasi sempre quello che si va a
-fare. Ordinare è un tocco più in là — **Richieste** è sempre in cima.
+Aprire un paziente **dal gestionale** porta ai suoi **Esiti**, perché è quasi sempre quello che si
+va a fare; ordinare è un tocco più in là — **Richieste** è sempre in cima. Dal pannello, sceglierne
+un altro **carica la sua pagina**: il pannello non mostra mai i dati di un paziente diverso da
+quello che hai davanti. Il pannello parte da qui solo sulla lista del pronto soccorso, dove non c'è
+un paziente aperto; sulla scheda di un paziente parte dagli **Esiti**.
 
-L'elenco dei pazienti su cui hai lavorato nel turno, **una riga per paziente**: il nome (un tocco
-apre gli Esiti), quando l'hai visto — o **QUI** per quello della pagina aperta, che è il primo —,
-il bottoncino **Richieste** e la **✕** per toglierlo dall'elenco.
-Sceglierne un altro **carica la sua pagina**: il pannello non mostra mai i dati di un paziente
-diverso da quello che hai davanti. Il pannello parte da qui solo sulla lista del pronto soccorso,
-dove non c'è un paziente aperto; sulla scheda di un paziente parte dagli **Esiti**.
+La stessa gente in due viste, **Lista | Stanza**: l'interruttore sta in fondo alla fila delle
+schede e si ricorda l'ultima scelta.
 
-**Lista | Stanza.** Accanto a «Pazienti» c'è un interruttore: la **Lista** è l'elenco qui sopra, la
-**Stanza** è una mappa minima della sala, per vedere a colpo d'occhio **dove sta ogni paziente**.
-Ci sono i **letti** (uno per paziente: occupato si colora d'azzurro) e le **aree** senza letto —
-corridoio, attesa, poltrone — dove ne stanno quanti servono. In fondo c'è **Da sistemare**: chi
-non ha ancora un posto. Un paziente nuovo arriva lì da solo, e nessuno sparisce: se il suo letto
-viene tolto, torna lì. L'interruttore si ricorda l'ultima scelta.
+**Lista** — i pazienti su cui hai lavorato nel turno, **una riga per paziente**: la striscia del
+**triage**, il nome (un tocco sulla riga apre gli Esiti), la nota in grigio, **visto 20 min fa** —
+in ambra dopo 3 ore —, oppure **questa pagina** per quello aperto, che è il primo; poi **dove sta**
+nella sala («Box 3 ▾», o «—»: un tocco e lo sposti), **Richieste**, e passandoci sopra la **✕**
+per toglierlo dall'elenco. In fondo, chiusi, gli **Archiviati** e **Svuota l'elenco**.
 
-- **Portare un paziente**: lo prendi e lo lasci su un letto, su un'area o di nuovo in «Da
-  sistemare». Su un letto già occupato i due si **scambiano** il posto. Un tocco senza trascinare
-  **apre il paziente**, come le righe dell'elenco. Quello della pagina aperta ha il bordo blu e il
-  segno **qui**; accanto al nome, in grigio, la sua nota.
-- **Modifica** serve a disegnare la sala, di solito una volta sola: **+ Letto**, **+ Area**, e li
-  trascini dove stanno davvero (si allineano su una griglia a puntini, che si vede solo in
-  Modifica). Un tocco sul **nome** lo cambia (Invio salva, Esc lascia com'era), **↻** gira il
-  letto di 90° (la testa dalla parte del muro), l'angolo in basso a destra allarga un'area, **×**
-  toglie letto o area. In Modifica i pazienti stanno fermi; **Fine**, e si torna a spostarli.
+**Stanza** — una mappa minima della sala, per vedere a colpo d'occhio **dove sta ogni paziente**:
+i **letti** (uno per paziente) e le **aree** senza letto — corridoio, attesa, poltrone — dove ne
+stanno quanti servono. A sinistra **Da sistemare**: chi non ha ancora un posto. Un paziente nuovo
+arriva lì da solo, e nessuno sparisce: se il suo letto viene tolto, torna lì. Nella finestra
+stretta «Da sistemare» scende in fondo, su una riga che scorre.
+
+- **Portare un paziente**: lo prendi e lo lasci su un letto, su un'area o in «Da sistemare»
+  (col dito: soglia di 10 px, un tocco breve apre). Su un letto occupato i due si **scambiano** il
+  posto — passandoci sopra lo dice: «⇄ scambia con BIANCHI A.». Un tocco senza trascinare **apre il
+  paziente**, come le righe dell'elenco.
+- **Sposta in…**, senza trascinare: tasto destro sul paziente, dito tenuto premuto, Maiusc+F10 (o
+  il tasto menu), oppure il «posto» della Lista. Prima i letti vuoti, poi quelli occupati (=
+  scambio), le aree, «Da sistemare»; frecce, Invio, Esc.
+- **Niente conferme: si annulla.** Ogni spostamento, un letto o un'area eliminati, «svuota» e la ✕
+  mostrano per 8 secondi, in fondo, «… · **Annulla**».
+- **Modifica** serve a disegnare la sala, di solito una volta sola: **+ Letto** e **+ Area** (nella
+  riga in cima alla mappa) e li trascini dove stanno davvero, sulla griglia a puntini che si vede
+  solo qui. Un tocco sul **nome** lo cambia (Invio salva, Esc lascia com'era); sul letto scelto,
+  **↻** sposta il cuscino dalla parte del muro (il letto resta orizzontale, il nome si legge) e
+  **×** lo toglie; l'angolo in basso a destra allarga un'area. In Modifica i pazienti stanno fermi,
+  in grigio; **Fine** (o un minuto senza toccare niente) e si torna a spostarli.
+
+**Per non sbagliare paziente.** Due pazienti in elenco con lo **stesso cognome** portano **⚠** e il
+nome intero; con lo **stesso nome e cognome**, anche le ultime cifre dell'episodio: «ROSSI MARIO ·
+…9001». Passando col mouse su un paziente: nome intero, episodio, quando l'hai aperto, da quando sta
+nel suo posto, il triage, la nota. Lo **stesso paziente** (stesso codice fiscale) con due episodi:
+il più vecchio è **episodio precedente**, in grigio, fuori dalla sala. Un posto **scade** se non
+apri quel paziente da **12 ore**: torna in «Da sistemare», in grigio, «visto 13 h fa».
+
+**Il triage** è il colore che l'intestazione della scheda mostra quando la apri (ROSSO, ARANCIONE,
+AZZURRO, VERDE, BIANCO): una striscia a sinistra del nome, e basta — nella Stanza il colore vuol dire
+solo triage.
 
 Tutto resta **solo in questo browser** (`localStorage`), niente va in rete; un altro PC o un altro
 profilo Chrome ha la sua sala. La **sala disegnata** (`stanza.v1`: posizioni in proporzione alla
 mappa, così segue la finestra) resta come i fogli di dimissione: è un modello, non contiene
-pazienti. **Chi sta dove** (`stanza.posti.v1`) sono solo numeri di episodio, mai nomi, e dura
-quanto l'elenco: chi esce dall'elenco (archiviato, eliminato, dopo 24 ore) lascia libero il suo
-posto, e la pagina di login li cancella tutti insieme al resto del turno.
+pazienti. **Chi sta dove** (`stanza.posti.v1`) sono solo numeri di episodio, mai nomi. La pagina di
+login **non** li cancella: chi viene riaperto dopo una sessione scaduta ritrova il suo letto (il
+posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; eliminare un paziente
+(🗑) toglie anche il suo.
 
 ### Richieste
 1. **Quesito diagnostico** — casella su una riga, suggerimenti a fianco; l'ultimo resta scritto.
@@ -752,7 +772,7 @@ stessi flussi dei test di prodotto.
     (valori, referti, registro, code di conferma) è legato al suo episodio — letto sotto un altro
     episodio semplicemente non esiste.
 14. **Dove finisce il contenuto clinico, detto con precisione.** Dei pazienti *conosciuti*
-    restano solo nome, episodio e indirizzo della pagina, al massimo 60 e per 24 ore, con
+    restano solo nome, episodio, indirizzo della pagina e colore del triage, al massimo 60 e per 24 ore, con
     **svuota** a mano e **🗑** per cancellare tutto di uno. Ma valori e testi dei referti letti in un turno stanno nel
     `sessionStorage` della scheda: **Chrome lo tiene anche su disco**, nel profilo, per poter
     ripristinare le schede — muore chiudendo la scheda, non prima. I PDF salvati stanno nella
