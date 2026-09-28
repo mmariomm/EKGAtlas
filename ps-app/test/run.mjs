@@ -1936,8 +1936,8 @@ async function scenarioStanza(browser) {
   check(scen, fila0 === fila1 && fila1 === fila2 && (await alta(".stazioni")) === 32,
     `la fila delle schede non cambia altezza: Lista, Stanza, Modifica (${fila0}, ${fila1}, ${fila2}px)`);
   const griglia = () => stile(".stplan", "backgroundImage");
-  check(scen, /radial-gradient/.test(await griglia()) && /La stanza è vuota/.test(await $panel(page, ".stvuota").innerText()) && (await $panel(page, ".stvuota small").count()) === 0,
-    "in Modifica la pianta mostra i puntini, e la stanza vuota lo dice");
+  check(scen, /radial-gradient/.test(await griglia()) && /Comincia con \+ Letto/.test(await $panel(page, ".stvuota").innerText()) && (await $panel(page, ".stvuota small").count()) === 0,
+    "in Modifica la pianta mostra i puntini, e la stanza vuota dice da dove cominciare");
   await $panel(page, "#stpiuletto").click();
   await $panel(page, ".stbed").waitFor();
   // il letto nuovo si battezza subito; Esc tiene il nome proposto
@@ -1968,6 +1968,8 @@ async function scenarioStanza(browser) {
   await $panel(page, ".stnomein").fill("Corridoio");
   await $panel(page, ".stnomein").press("Enter");
   check(scen, (await $panel(page, ".starea .stname").textContent()) === "Corridoio", "l'area nasce e si chiama Corridoio");
+  check(scen, (await archivio("stanza.v1")).letti.map((l) => l.nome).join() === "Box 1,Box 2,Box 3,Box 4,Box 5,Box 6",
+    "il nome proposto segue l'ultimo: dopo «Box 1» vengono «Box 2», «Box 3»…");
   const s1 = await archivio("stanza.v1");
   check(scen, s1.letti.map((l) => `${l.c},${l.r}`).join(" ") === "0,0 6,0 12,0 18,0 24,0 30,0" && s1.aree.map((a) => `${a.c},${a.r} ${a.w}×${a.h}`).join() === "0,5 8×5",
     `+ Letto e + Area: il primo posto libero, riga per riga, con una cella d'aria (got: ${s1.letti.map((l) => `${l.c},${l.r}`).join(" ")} | ${s1.aree.map((a) => `${a.c},${a.r} ${a.w}×${a.h}`).join()})`);
@@ -1985,19 +1987,19 @@ async function scenarioStanza(browser) {
   const a2 = (await archivio("stanza.v1")).aree[0];
   check(scen, a2.w === 10 && a2.h === 6, `l'area si allarga dall'angolo, di cella in cella (8×5 → ${a2.w}×${a2.h})`);
   // un letto si sposta di cella in cella: dove lo lasci, sulla griglia
-  await trascina(await letto("Letto 5"), 2.4 * u, 6.4 * u);
-  const l5 = (await archivio("stanza.v1")).letti.find((l) => l.nome === "Letto 5");
-  const b5 = await (await letto("Letto 5")).boundingBox(), pm = await $panel(page, ".stplan").boundingBox();
+  await trascina(await letto("Box 6"), 2.4 * u, 6.4 * u);
+  const l5 = (await archivio("stanza.v1")).letti.find((l) => l.nome === "Box 6");
+  const b5 = await (await letto("Box 6")).boundingBox(), pm = await $panel(page, ".stplan").boundingBox();
   check(scen, l5.c === 32 && l5.r === 6 && Math.abs(b5.x - pm.x - (32 * u + 3)) < 1.5 && Math.abs(b5.y - pm.y - (6 * u + 3)) < 1.5,
     `un letto si sposta di cella in cella (30,0 → ${l5.c},${l5.r})`);
   // sopra un altro non ci sta: rosso mentre lo porti, e lasciato lì torna dov'era
-  const l2 = await letto("Letto 1"), b2 = await l2.boundingBox(), b1 = await (await letto("Box 1")).boundingBox();
+  const l2 = await letto("Box 2"), b2 = await l2.boundingBox(), b1 = await (await letto("Box 1")).boundingBox();
   await giu(l2);
   await page.mouse.move(b1.x + b1.width / 2 + 5, b1.y + b1.height / 2, { steps: 10 });
   const rosso = (await l2.getAttribute("class")).includes("bad");
   await page.mouse.up();
   await page.waitForTimeout(150);
-  const b2dopo = await (await letto("Letto 1")).boundingBox(), l2s = (await archivio("stanza.v1")).letti.find((l) => l.nome === "Letto 1");
+  const b2dopo = await (await letto("Box 2")).boundingBox(), l2s = (await archivio("stanza.v1")).letti.find((l) => l.nome === "Box 2");
   check(scen, rosso && Math.abs(b2dopo.x - b2.x) < 1 && Math.abs(b2dopo.y - b2.y) < 1 && l2s.c === 6 && l2s.r === 0,
     "un letto lasciato sopra un altro: rosso mentre lo porti, e torna dov'era");
   await $panel(page, "#stfine").click();
@@ -2008,6 +2010,26 @@ async function scenarioStanza(browser) {
   await menu("#winaffianca");
   const sAff = await sovrapposti();
   check(scen, sAff.oggetti === 7 && sAff.n === 0, `«Affianca a destra»: nessuno sopra un altro (${sAff.n}; il più stretto ${sAff.w}px)`);
+  // affiancata la mappa non ci sta in larghezza: la rotella la porta di lato, il bordo sfuma
+  // dalla parte dove c'è altro, e un paziente portato non la riporta a sinistra
+  const tela = () => page.evaluate(() => {
+    const c = document.getElementById("psassist-host").shadowRoot.querySelector(".stcanvas");
+    return { l: Math.round(c.scrollLeft), max: c.scrollWidth - c.clientWidth, sx: c.classList.contains("sx"), dx: c.classList.contains("dx") };
+  });
+  const tl0 = await tela(), tb = await $panel(page, ".stcanvas").boundingBox();
+  await page.mouse.move(tb.x + tb.width / 2, tb.y + 30);
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(150);
+  const tlr = await tela();
+  await page.evaluate(() => { const c = document.getElementById("psassist-host").shadowRoot.querySelector(".stcanvas"); c.scrollLeft = c.scrollWidth; });
+  await page.waitForTimeout(100);
+  const tl1 = await tela();
+  await chip(".sttray", "999001").click({ button: "right" });
+  await $panel(page, '.stmenu [data-dove^="letto:"]').first().click();
+  const tl2 = await tela();
+  check(scen, tl0.max > 0 && tl0.l === 0 && tl0.dx && !tl0.sx && tlr.l > 0 && tl1.l === tl1.max && tl1.sx && !tl1.dx && tl2.l === tl1.l && tl2.sx,
+    `affiancata la mappa scorre di lato (rotella compresa), il bordo sfuma dove c'è altro, e dopo uno spostamento resta lì (${[tl0, tlr, tl1, tl2].map((t) => `${t.l}/${t.max}${t.sx ? "◂" : ""}${t.dx ? "▸" : ""}`).join(" → ")})`);
+  await $panel(page, ".stannulla").click();
   const rsz = await $panel(page, "#rsz").boundingBox();
   await page.mouse.move(rsz.x + rsz.width / 2, rsz.y + rsz.height / 2);
   await page.mouse.down();
@@ -2023,6 +2045,19 @@ async function scenarioStanza(browser) {
   check(scen, /^ROSSI MARIO · …9001 in Box 1$/.test(await avviso()), `ogni spostamento si può annullare (got: ${await avviso()})`);
   await portaSu(chip(".sttray", "999002"), $panel(page, ".starea"));
   check(scen, (await chip(".stbed", "999001").count()) === 1, "trascinato su Box 1, il paziente è nel letto");
+  // nel letto un cognome lungo va a capo invece di perdere l'iniziale
+  await ritocca("999001", { name: "D'ALESSANDRO MARIO" });
+  await page.reload();
+  await aiPazienti(".stmap");
+  const lungo = await page.evaluate(() => {
+    const n = document.getElementById("psassist-host").shadowRoot.querySelector('.stbed .stp[data-stp="999001"] .stpn');
+    return { t: n.textContent.trim(), tagliato: n.scrollWidth > n.clientWidth + 1 || n.scrollHeight > n.clientHeight + 1, righe: Math.round(n.clientHeight / 18) };
+  });
+  check(scen, lungo.t === "D'ALESSANDRO M." && !lungo.tagliato,
+    `nel letto il nome lungo va a capo, intero, invece di perdere l'iniziale (got: ${JSON.stringify(lungo)})`);
+  await ritocca("999001", { name: "ROSSI MARIO" });
+  await page.reload();
+  await aiPazienti(".stmap");
   check(scen, (await chip(".starea", "999002").count()) === 1, "e l'altro nell'area");
   check(scen, (await $panel(page, ".sttray .stp").count()) === 0 && await tutti(), "nessuno resta da sistemare, e nessuno si perde");
   check(scen, /Tutti al loro posto/.test(await $panel(page, ".sttray").innerText()), "«Da sistemare» vuoto lo dice, e resta dov'è");
@@ -2071,7 +2106,7 @@ async function scenarioStanza(browser) {
   await chip(".starea", "999002").click({ button: "right" });
   await $panel(page, ".stmenu").waitFor();
   const voci = (await page.locator("#psassist-host .stmenu .stmi").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
-  check(scen, voci.length === 9 && voci.slice(0, 5).every((v) => /^Letto \d vuoto$/.test(v)) && /^Box 1 al posto di ROSSI MARIO · …9001$/.test(voci[5])
+  check(scen, voci.length === 9 && voci.slice(0, 5).every((v) => /^Box [2-6] vuoto$/.test(v)) && /^Box 1 al posto di ROSSI MARIO · …9001$/.test(voci[5])
     && /^Corridoio qui ora/.test(voci[6]) && /^Da sistemare/.test(voci[7]) && /^Togli dall'elenco$/.test(voci[8])
     && (await $panel(page, '.stmenu .stmsep + [data-dove="togli"]').count()) === 1,
     `tasto destro: «Sposta in…» elenca letti, aree, «Da sistemare» e, a parte, «Togli dall'elenco» (got: ${voci.slice(4).join(" | ")})`);
@@ -2082,7 +2117,7 @@ async function scenarioStanza(browser) {
   await page.keyboard.press("Shift+F10");
   await $panel(page, ".stmenu").waitFor();
   await page.keyboard.press("Enter");
-  check(scen, (await chip(`[data-letto="${await id("Letto 1")}"]`, "999002").count()) === 1, "da tastiera: Maiusc+F10, Invio → in Letto 1");
+  check(scen, (await chip(`[data-letto="${await id("Box 2")}"]`, "999002").count()) === 1, "da tastiera: Maiusc+F10, Invio → in Box 2");
   check(scen, await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.getAttribute("data-stp") === "999002"),
     "e il fuoco resta sul paziente, nel posto nuovo");
   // «Togli dall'elenco»: come la ✕ della Lista, e si annulla
@@ -2092,13 +2127,13 @@ async function scenarioStanza(browser) {
   check(scen, (await chip(".stmap", "999002").count()) === 0 && archiviato?.arch === true && /tolto dall'elenco/.test(await avviso()),
     `«Togli dall'elenco» lo archivia, come la ✕ della Lista (got: ${await avviso()})`);
   await $panel(page, ".stannulla").click();
-  check(scen, (await chip(`[data-letto="${await id("Letto 1")}"]`, "999002").count()) === 1 && !(await archivio("patients.v1")).find((p) => p.ep === "999002").arch,
+  check(scen, (await chip(`[data-letto="${await id("Box 2")}"]`, "999002").count()) === 1 && !(await archivio("patients.v1")).find((p) => p.ep === "999002").arch,
     "Annulla: torna in elenco, e al suo posto");
 
   // la Lista dice dove sta ognuno, e da lì si cambia
   await $panel(page, '[data-pazvista="lista"]').click();
   const posto = (ep) => $panel(page, `.pzrow [data-posto="${ep}"]`);
-  check(scen, /Box 1/.test(await posto("999001").innerText()) && /Letto 1/.test(await posto("999002").innerText()),
+  check(scen, /Box 1/.test(await posto("999001").innerText()) && /Box 2/.test(await posto("999002").innerText()),
     "nella Lista, accanto a ognuno, il suo posto");
   await page.mouse.move(5, 5);
   const riga2 = $panel(page, ".pzrow:not(.qui)");
@@ -2158,10 +2193,10 @@ async function scenarioStanza(browser) {
   await alleStanze();
   check(scen, (await chip(".stbed", "999001").count()) === 1 && (await chip(".stbed", "999001").getAttribute("class")).includes("spento")
     && !!(await archivio("stanza.posti.v1"))["999001"], "non aperto da 13 ore: resta nel suo letto, in grigio");
-  await portaSu(chip(".stbed", "999001"), await letto("Letto 3"));
+  await portaSu(chip(".stbed", "999001"), await letto("Box 4"));
   await page.reload();
   await alleStanze();
-  check(scen, (await chip(`[data-letto="${await id("Letto 3")}"]`, "999001").count()) === 1, "e portato altrove ci resta, anche dopo un ricaricamento");
+  check(scen, (await chip(`[data-letto="${await id("Box 4")}"]`, "999001").count()) === 1, "e portato altrove ci resta, anche dopo un ricaricamento");
 
   // il triage letto sulla scheda: una striscia colorata, sempre la stessa; nel letto la porta il letto
   await ritocca("999002", { triage: "ARANCIONE" });
@@ -2174,8 +2209,8 @@ async function scenarioStanza(browser) {
   const nellArea = await barra('.stp[data-stp="999002"]');
   check(scen, nellArea === '"" rgb(239, 108, 0) 4px 4px' && /triage all'apertura: ARANCIONE/.test(await chip(".starea", "999002").getAttribute("title")),
     `triage ARANCIONE: la striscia dentro il bordo, e il passaggio del mouse lo dice (got: ${nellArea})`);
-  await portaSu(chip(".starea", "999002"), await letto("Letto 4"));
-  const nelLetto = await barra(`[data-letto="${await id("Letto 4")}"]`);
+  await portaSu(chip(".starea", "999002"), await letto("Box 5"));
+  const nelLetto = await barra(`[data-letto="${await id("Box 5")}"]`);
   check(scen, nelLetto === '"" rgb(239, 108, 0) 4px 4px' && !(await chip(".stbed", "999002").getAttribute("class")).includes("tri"),
     `nel letto la stessa striscia, una sola: la porta il letto (got: ${nelLetto})`);
 

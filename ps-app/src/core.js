@@ -3299,6 +3299,7 @@
     /* LISTA: righe da 44px separate da un filo, niente riquadri. Il nome non si
        taglia mai per primo: prima cede la nota */
     .pzlista { border-top: 1px solid #EEF2F6; container: pzlista / inline-size; }
+    .pzlista, .pzarch { max-width: 960px; }
     .pzrow { position: relative; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 6px 0 10px;
              border-bottom: 1px solid #EEF2F6; color: #16232E; }
     .pzapri { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 10px; padding: 0; border: 0; background: none;
@@ -3379,6 +3380,10 @@
        nemmeno a 20px (un nome non si leggerebbe più), scorre. */
     .stcanvas { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; container-type: size;
                 display: grid; place-items: center; }
+    .stcanvas.dx { --sf: linear-gradient(to left, transparent, #000 40px); }
+    .stcanvas.sx { --sf: linear-gradient(to right, transparent, #000 40px); }
+    .stcanvas.sx.dx { --sf: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); }
+    .stcanvas.sx, .stcanvas.dx { -webkit-mask-image: var(--sf); mask-image: var(--sf); }
     .stplan { position: relative; --u: clamp(20px, min(100cqw / var(--cols), 100cqh / var(--rows)), 44px);
               width: calc(var(--cols) * var(--u)); height: calc(var(--rows) * var(--u)); }
     /* in Modifica la pianta intera, coi puntini agli angoli delle celle (e un
@@ -3425,11 +3430,13 @@
     .stglifo { flex: none; margin: auto; }
     .stbed .stp { flex: 1 1 auto; min-height: 0; gap: 0; padding: 0; border: 0; border-radius: 0; background: none; }
     .stbed .stp2 .stcoda { font-size: 12px; }
+    .stbed .stpn { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .stbed .stqui, .stbed .sttag { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .stbed .stnota { flex: 0 1 auto; min-height: 0; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
                      font-size: 12px; line-height: 16px; }
     @container stbed (max-height: 94px) { .stbed .stnota { -webkit-line-clamp: 1; } }
     @container stbed (max-height: 70px) { .stbed .stnota { display: none; } }
+    @container stbed (max-width: 110px) { .stbed .stnota { display: none; } }
     @container stbed (max-height: 62px) {
       .stmap:not(.edit) .stbed.occ .stname, .stbed .stp2, .stglifo { display: none; }
       .stmap.edit .stbed .stp { display: none; }   /* in Modifica conta il nome del letto */
@@ -3492,6 +3499,7 @@
                box-shadow: 0 6px 18px rgba(9,42,74,.12); font-size: 13px; color: #16232E; pointer-events: none; }
     .stsnack span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .sec > .stsnack { position: sticky; left: auto; bottom: 12px; transform: none; width: max-content; margin: 16px auto 0; }
+    @container stmap (max-width: 700px) { .stmap > .stsnack { bottom: 108px; } }
     .stannulla { position: relative; flex: none; min-height: 28px; border: 0; border-radius: 6px; background: none; padding: 2px 10px; cursor: pointer; pointer-events: auto;
                  font-size: 13px; font-weight: 600; color: #0B5CAD; }
     .stannulla:hover { background: #EAF2FA; }
@@ -4069,8 +4077,14 @@
       const patientName = (document.title || "").trim();
       const ep = findEpisodeId(document, location.href);
       // keep every scroll position across re-renders (chip toggles must not
-      // bounce the panel back to the top)
-      const keepScroll = [".bd", ".list", ".rlist"].map((s) => [s, this.root.querySelector(s)?.scrollTop || 0]);
+      // bounce the panel back to the top), sideways too: dopo un paziente
+      // portato la mappa, «Da sistemare» e le aree restano dove li hai lasciati
+      const scorre = (el) => {
+        const a = el.classList.contains("starbody") && el.closest("[data-area]");
+        return a ? `[data-area="${CSS.escape(a.getAttribute("data-area"))}"] .starbody` : "." + ["bd", "list", "rlist", "stcanvas", "strow"].find((c) => el.classList.contains(c));
+      };
+      const keepScroll = [...this.root.querySelectorAll(".bd, .list, .rlist, .stcanvas, .strow, .starbody")]
+        .filter((el) => el.scrollTop || el.scrollLeft).map((el) => [scorre(el), el.scrollTop, el.scrollLeft]);
 
       let body;
       if (this.runState === "running") body = this.viewRunning();
@@ -4211,9 +4225,9 @@
           `}
         </div>`;
       this.bind();
-      for (const [sel, top] of keepScroll) {
+      for (const [sel, top, left] of keepScroll) {
         const el = this.root.querySelector(sel);
-        if (el && top) el.scrollTop = top;
+        if (el) { el.scrollTop = top; el.scrollLeft = left; }
       }
       if (this._fuocoId && !this.root.activeElement) {
         const f = this.root.getElementById ? this.root.getElementById(this._fuocoId) : null;
@@ -4557,7 +4571,7 @@
             <div class="stcanvas">
               ${vuota && !edit ? "" : `<div class="stplan" style="--cols:${cols};--rows:${rows}">${sala.letti.map(letto).join("")}${sala.aree.map(area).join("")}</div>`}
               ${!vuota ? "" : edit ? `
-              <div class="stvuota"><b>La stanza è vuota</b></div>` : `
+              <div class="stvuota"><b>Comincia con + Letto, in alto a destra</b></div>` : `
               <div class="stvuota">
                 ${this.stanzaGlifo(60)}
                 <b>Disegna la tua stanza una volta</b>
@@ -4625,14 +4639,23 @@
           e.preventDefault();
           if (!chip.classList.contains("prec")) this.stanzaMenu(chip.getAttribute("data-stp"), chip);
         });
-        // stretta, «Da sistemare» è una riga: la rotella la scorre di lato (finché c'è strada)
-        const riga = map.querySelector(".strow");
-        riga?.addEventListener("wheel", (e) => {
-          if (riga.scrollWidth <= riga.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-          if (e.deltaY > 0 ? riga.scrollLeft + riga.clientWidth >= riga.scrollWidth - 1 : riga.scrollLeft <= 0) return;
-          riga.scrollLeft += e.deltaY;
+        // stretta, «Da sistemare» è una riga, e la mappa può non starci in
+        // larghezza: dove si scorre solo di lato, la rotella scorre di lato
+        // (finché c'è strada), e il bordo sfuma dalla parte dove c'è altro
+        const diLato = (el) => el?.addEventListener("wheel", (e) => {
+          if (el.scrollWidth <= el.clientWidth || el.scrollHeight > el.clientHeight || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+          if (e.deltaY > 0 ? el.scrollLeft + el.clientWidth >= el.scrollWidth - 1 : el.scrollLeft <= 0) return;
+          el.scrollLeft += e.deltaY;
           e.preventDefault();
         }, { passive: false });
+        diLato(map.querySelector(".strow"));
+        const tela = map.querySelector(".stcanvas");
+        diLato(tela);
+        const bordi = () => {
+          tela.classList.toggle("sx", tela.scrollLeft > 1);
+          tela.classList.toggle("dx", tela.scrollLeft + tela.clientWidth < tela.scrollWidth - 1);
+        };
+        if (tela) { bordi(); tela.addEventListener("scroll", bordi, { passive: true }); }
         const inp = map.querySelector(".stnomein");
         if (inp) {
           inp.focus();
@@ -5008,10 +5031,13 @@
       if (this.message === piena) this.message = null;
       let id;
       do id = Math.random().toString(36).slice(2, 8); while (!id || sala.letti.some((o) => o.id === id) || sala.aree.some((o) => o.id === id));
-      const base = tipo === "letto" ? "Letto" : "Area";
-      let n = lista.length + 1;
-      for (let i = 1; i <= lista.length + 1; i++) if (!lista.some((o) => o.nome.toLowerCase() === `${base} ${i}`.toLowerCase())) { n = i; break; }
-      const nome = `${base} ${n}`;
+      // il nome segue quello dell'ultimo: dopo «Box 1» viene «Box 2», dopo «B3» «B4»
+      const ultimo = /^(.*?)(\d+)$/.exec(lista[lista.length - 1]?.nome || "");
+      const base = ultimo ? ultimo[1] : tipo === "letto" ? "Letto " : "Area ";
+      const usati = new Set(lista.map((o) => o.nome.toLowerCase()));
+      let n = ultimo ? +ultimo[2] + 1 : 1;
+      while (usati.has(`${base}${n}`.toLowerCase())) n++;
+      const nome = `${base}${n}`.slice(0, 24);
       if (tipo === "letto") sala.letti.push({ id, c: p.c, r: p.r, nome });
       else sala.aree.push({ id, c: p.c, r: p.r, w, h, nome });
       if (!this.stanzaScrivi(sala)) return;

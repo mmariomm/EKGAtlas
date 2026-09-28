@@ -117,10 +117,11 @@ stretta «Da sistemare» scende in fondo, su una riga che scorre.
 La stanza è una **griglia di celle uguali** (40 × 24; un letto ne prende 5 × 4): allargando o
 stringendo la finestra cresce o cala tutta insieme, in scala, e **niente si sovrappone** — nemmeno
 affiancata o alla misura minima, dove semmai la mappa scorre (sotto i 20 px una cella non porta più
-un nome leggibile). Fuori da Modifica si vede solo il
+un nome leggibile): di lato anche con la rotella, e il bordo sfuma dalla parte dove c'è altro. Dopo
+uno spostamento la mappa resta dov'era. Fuori da Modifica si vede solo il
 pezzo disegnato, così anche una stanza piccola riempie la mappa. Il testo non cambia misura: in un
-letto piccolo sparisce prima la nota, poi tutto tranne il nome del paziente (quello del letto resta
-nel passaggio del mouse). Un letto vuoto è solo il suo nome e un letto disegnato appena.
+letto piccolo sparisce prima la nota, poi tutto tranne il nome del paziente, che se è lungo va a
+capo invece di perdere l'iniziale (quello del letto resta nel passaggio del mouse). Un letto vuoto è solo il suo nome e un letto disegnato appena.
 
 - **Portare un paziente**: lo prendi e lo lasci su un letto, su un'area o in «Da sistemare»
   (col dito: soglia di 10 px); ti segue il suo nome, accanto al puntatore, mai sopra il letto che
@@ -137,7 +138,7 @@ nel passaggio del mouse). Un letto vuoto è solo il suo nome e un letto disegnat
   stanza** (a stanza vuota) o dal menu **⋯ → Modifica la stanza**; la fila delle schede diventa la
   sua barra: **+ Letto**, **+ Area** e **Fine**. Si vede la pianta intera, coi puntini, e letti e
   aree si trascinano di cella in cella; uno nuovo va nel primo posto libero (se non ce n'è, lo
-  dice). Dove un oggetto finirebbe sopra un altro diventa **rosso**, e lasciato lì torna dov'era.
+  dice), col nome che segue l'ultimo: dopo «Box 1», «Box 2». Dove un oggetto finirebbe sopra un altro diventa **rosso**, e lasciato lì torna dov'era.
   Un tocco sul **nome** lo cambia (Invio salva, Esc lascia com'era); sull'oggetto scelto la **×** lo
   toglie; l'angolo in basso a destra allarga un'area. In Modifica i pazienti stanno fermi, in
   grigio; **Fine** (o Esc) e si torna a spostarli.
