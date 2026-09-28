@@ -1832,14 +1832,17 @@ async function scenarioHomePills(browser) {
   await context.close();
 }
 
-// La Stanza: la sala si disegna una volta (letti, aree, nomi), poi si portano
-// i pazienti al loro posto. Tutto col mouse vero, come il medico: premi,
-// trascini a passi, lasci. Ogni spostamento si annulla; «Sposta in…» fa lo
-// stesso senza trascinare (tasto destro, tastiera, o il «posto» della Lista).
+// La Stanza: la stanza si disegna una volta (letti, aree, nomi), poi si
+// portano i pazienti al loro posto. Tutto col mouse vero, come il medico:
+// premi, trascini a passi, lasci. Ogni spostamento si annulla; «Sposta in…»
+// fa lo stesso senza trascinare (tasto destro, tastiera, o il «posto» della
+// Lista). La pianta è una griglia di celle uguali: a qualunque misura della
+// finestra niente si sovrappone.
 async function scenarioStanza(browser) {
   const scen = "stanza";
   const mock = createMock({});
-  const { context, page } = await newPage(browser, mock);
+  // si disegna come al lavoro: la finestra al centro, all'85%
+  const { context, page } = await newPage(browser, mock, { finestra: "centro" });
   const ep2 = mock.patientUrl.replace("999001", "999002");
   const giu = async (da) => {
     const b = await da.boundingBox();
@@ -1858,31 +1861,59 @@ async function scenarioStanza(browser) {
     await trascina(da, t.x + t.width / 2 - (s.x + s.width / 2), t.y + t.height / 2 - (s.y + s.height / 2));
   };
   const chip = (dove, ep) => $panel(page, `${dove} .stp[data-stp="${ep}"]`);
-  const tutti = async () => (await page.locator("#psassist-host .stmap .stp:not(.stghost)").count()) === 2;
+  const tutti = async () => (await page.locator("#psassist-host .stmap .stp").count()) === 2;
   const avviso = async () => ((await $panel(page, ".stsnack").count()) ? (await $panel(page, ".stsnack span").innerText()) : "");
   const archivio = (k) => page.evaluate((k) => JSON.parse(localStorage.getItem("psassist:" + k) || "null"), k);
+  // letti e aree per nome: l'id sta nella stanza salvata
+  const id = async (nome) => { const s = await archivio("stanza.v1"); return [...s.letti, ...s.aree].find((o) => o.nome === nome)?.id; };
+  const letto = async (nome) => $panel(page, `[data-letto="${await id(nome)}"]`);
   // corregge a mano i pazienti salvati: come se il tempo fosse passato
   const ritocca = (ep, campi) => page.evaluate(([ep, campi]) => {
     const l = JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]");
     for (const p of l) if (!ep || p.ep === ep) Object.assign(p, campi);
     localStorage.setItem("psassist:patients.v1", JSON.stringify(l));
   }, [ep, campi]);
-  const alleStanze = async () => {
+  const aiPazienti = async (sel) => {
     await page.waitForSelector("#psassist-host", { state: "attached" });
     await $panel(page, "#back").click();
-    await $panel(page, ".stmap").waitFor({ timeout: 10000 });
+    await $panel(page, sel).waitFor({ timeout: 10000 });
   };
-  const opacita = (sel) => page.evaluate((s) => getComputedStyle(document.getElementById("psassist-host").shadowRoot.querySelector(s)).opacity, sel);
+  const alleStanze = () => aiPazienti(".stmap");
+  const stile = (sel, prop, pseudo) => page.evaluate(([s, p, ps]) => {
+    const el = document.getElementById("psassist-host").shadowRoot.querySelector(s);
+    return el ? getComputedStyle(el, ps || null)[p] : null;
+  }, [sel, prop, pseudo]);
+  const alta = async (sel) => Math.round((await $panel(page, sel).boundingBox()).height);
+  // nessun letto e nessuna area si sovrappone (i rettangoli veri, sullo schermo)
+  const sovrapposti = () => page.evaluate(() => {
+    const r = [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".stmap [data-letto], .stmap [data-area]")].map((el) => el.getBoundingClientRect());
+    let n = 0;
+    for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
+      const a = r[i], b = r[j];
+      if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) n++;
+    }
+    return { oggetti: r.length, n, w: Math.round(Math.min(...r.map((x) => x.width))) };
+  });
+  const menu = async (voce) => { await $panel(page, "#menubtn").click(); await $panel(page, voce).click(); };
 
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await page.goto(ep2);
-  await page.waitForSelector("#psassist-host", { state: "attached" });
-  await $panel(page, "#back").click();
+  await aiPazienti(".pzlista");
   check(scen, (await $panel(page, '[data-pazvista="lista"].on').count()) === 1, "l'elenco resta la vista di partenza");
+  check(scen, (await $panel(page, ".stazioni button").count()) === 2 && (await $panel(page, ".stazioni [data-pazvista]").count()) === 2,
+    "in fondo alla fila delle schede solo Lista | Stanza");
+  const fila0 = await alta(".seg");
+  await $panel(page, "#menubtn").click();
+  check(scen, (await $panel(page, "#stmodmenu").count()) === 0, "nella Lista il menu ⋯ non offre «Modifica la stanza»");
+  await $panel(page, "#menubtn").click();
   await $panel(page, '[data-pazvista="stanza"]').click();
   await $panel(page, ".stmap").waitFor({ timeout: 10000 });
-  check(scen, await $panel(page, "#stdisegna").isVisible(), "sala vuota: l'invito a disegnarla, con il suo bottone");
+  check(scen, /^Disegna la stanza$/.test(await $panel(page, "#stdisegna").innerText()) && (await $panel(page, ".stvuota small").count()) === 0,
+    "stanza vuota: il titolo e il bottone «Disegna la stanza», nient'altro");
+  check(scen, (await $panel(page, ".ststato").count()) === 0 && (await $panel(page, ".stazioni button").count()) === 2,
+    "niente riga di suggerimenti sopra la mappa; nelle schede ancora solo Lista | Stanza");
+  const fila1 = await alta(".seg");
   check(scen, (await $panel(page, ".sttray .stp").count()) === 2, "tutti e due i pazienti aspettano in «Da sistemare»");
   check(scen, (await chip(".sttray", "999002").getAttribute("class")).includes("qui") && /questa pagina/.test(await chip(".sttray", "999002").innerText()),
     "il paziente di questa pagina è segnato: «questa pagina»");
@@ -1890,12 +1921,23 @@ async function scenarioStanza(browser) {
   const nomi = (await page.locator("#psassist-host .sttray .stp .stp1").allInnerTexts()).map((t) => t.replace(/\s+/g, " "));
   check(scen, nomi.some((n) => /ROSSI MARIO · …9001/.test(n)) && nomi.some((n) => /ROSSI MARIO · …9002/.test(n)) && nomi.every((n) => n.includes("⚠")),
     `omonimi: ⚠, nome intero e le ultime cifre dell'episodio (got: ${nomi.join(" | ")})`);
+  check(scen, !/visto/.test(await $panel(page, ".stmap").innerText()), "sulla mappa niente «visto … fa» (lo dice la Lista)");
+  await $panel(page, "#menubtn").click();
+  check(scen, /Modifica la stanza/.test(await $panel(page, "#stmodmenu").innerText()), "nella Stanza il menu ⋯ offre «Modifica la stanza»");
+  await $panel(page, "#menubtn").click();
 
-  // Modifica: la griglia a puntini si vede solo qui
-  await $panel(page, "#stmod").click();
-  const griglia = () => page.evaluate(() => getComputedStyle(document.getElementById("psassist-host").shadowRoot.querySelector(".stcanvas")).backgroundImage);
-  check(scen, /radial-gradient/.test(await griglia()), "in Modifica la mappa mostra la griglia");
-  check(scen, /Stai disegnando la sala/.test(await $panel(page, ".ststato").innerText()), "e una riga in cima dice cosa si sta facendo");
+  // Modifica: al posto di Lista | Stanza, + Letto, + Area e Fine; la pianta intera, coi puntini
+  await $panel(page, "#stdisegna").click();
+  check(scen, (await $panel(page, "#stpiuletto").count()) === 1 && (await $panel(page, "#stpiuarea").count()) === 1 && (await $panel(page, "#stfine.pri").count()) === 1
+    && (await $panel(page, ".stazioni [data-pazvista]").count()) === 0 && (await $panel(page, ".stazioni .pri").count()) === 1,
+    "in Modifica, al posto di Lista | Stanza: + Letto, + Area e Fine (solo Fine in blu)");
+  check(scen, await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id === "stpiuletto"), "e il fuoco va su + Letto");
+  const fila2 = await alta(".seg");
+  check(scen, fila0 === fila1 && fila1 === fila2 && (await alta(".stazioni")) === 32,
+    `la fila delle schede non cambia altezza: Lista, Stanza, Modifica (${fila0}, ${fila1}, ${fila2}px)`);
+  const griglia = () => stile(".stplan", "backgroundImage");
+  check(scen, /radial-gradient/.test(await griglia()) && /La stanza è vuota/.test(await $panel(page, ".stvuota").innerText()) && (await $panel(page, ".stvuota small").count()) === 0,
+    "in Modifica la pianta mostra i puntini, e la stanza vuota lo dice");
   await $panel(page, "#stpiuletto").click();
   await $panel(page, ".stbed").waitFor();
   // il letto nuovo si battezza subito; Esc tiene il nome proposto
@@ -1905,35 +1947,80 @@ async function scenarioStanza(browser) {
   await $panel(page, ".stnomein").fill("Box 1");
   await $panel(page, ".stnomein").press("Enter");
   check(scen, (await $panel(page, ".stbed .stname").textContent()) === "Box 1", "un tocco sul nome lo rende scrivibile: Box 1");
+  // In Modifica la pianta intera (40 celle); fuori, solo il pezzo disegnato: la stanza piccola riempie la mappa
+  const lettoM = await $panel(page, ".stbed").boundingBox(), piantaM = await $panel(page, ".stplan").boundingBox();
+  const cella = (lettoM.width + 6) / 5;
+  check(scen, Math.abs(piantaM.width / cella - 40) < 0.5, `in Modifica la pianta è intera: 40 celle (${Math.round(piantaM.width)}px, cella ${cella.toFixed(1)}px)`);
+  await $panel(page, "#stfine").click();
+  check(scen, !/radial-gradient/.test(await griglia()), "fuori da Modifica i puntini spariscono");
+  const lettoN = await $panel(page, ".stbed").boundingBox(), piantaN = await $panel(page, ".stplan").boundingBox();
+  check(scen, lettoN.width > lettoM.width * 1.5 && Math.abs(piantaN.width / ((lettoN.width + 6) / 5) - 7) < 0.5,
+    `fuori da Modifica solo il pezzo disegnato, e il letto viene grande (${Math.round(lettoM.width)} → ${Math.round(lettoN.width)}px)`);
+
+  // dal menu ⋯ si torna in Modifica, e il menu si chiude
+  await menu("#stmodmenu");
+  check(scen, (await $panel(page, ".menu").count()) === 0 && (await $panel(page, "#stfine").count()) === 1, "⋯ → «Modifica la stanza»: si torna a disegnare, e il menu si chiude");
+  for (let k = 0; k < 5; k++) {
+    await $panel(page, "#stpiuletto").click();
+    await $panel(page, ".stnomein").press("Enter");
+  }
   await $panel(page, "#stpiuarea").click();
   await $panel(page, ".stnomein").fill("Corridoio");
   await $panel(page, ".stnomein").press("Enter");
   check(scen, (await $panel(page, ".starea .stname").textContent()) === "Corridoio", "l'area nasce e si chiama Corridoio");
-  const bedB = await $panel(page, ".stbed").boundingBox(), areaB = await $panel(page, ".starea").boundingBox();
-  check(scen, bedB.x + bedB.width <= areaB.x || areaB.x + areaB.width <= bedB.x || bedB.y + bedB.height <= areaB.y || areaB.y + areaB.height <= bedB.y,
-    "l'area nuova trova un posto libero, non sopra il letto");
-  // × e ↻ solo sull'oggetto scelto o sotto il mouse
+  const s1 = await archivio("stanza.v1");
+  check(scen, s1.letti.map((l) => `${l.c},${l.r}`).join(" ") === "0,0 6,0 12,0 18,0 24,0 30,0" && s1.aree.map((a) => `${a.c},${a.r} ${a.w}×${a.h}`).join() === "0,5 8×5",
+    `+ Letto e + Area: il primo posto libero, riga per riga, con una cella d'aria (got: ${s1.letti.map((l) => `${l.c},${l.r}`).join(" ")} | ${s1.aree.map((a) => `${a.c},${a.r} ${a.w}×${a.h}`).join()})`);
+  check(scen, s1.letti.every((l) => Object.keys(l).sort().join() === "c,id,nome,r"),
+    `si salvano celle intere, e nient'altro (got: ${Object.keys(s1.letti[0]).join(",")})`);
+  check(scen, (await sovrapposti()).n === 0, "l'area nuova trova un posto libero, non sopra un letto");
+  // la × solo sull'oggetto scelto o sotto il mouse; niente più ↻
   await page.mouse.move(5, 5);
-  check(scen, (await opacita(".stbed .strot")) === "0" && (await opacita(".starea .stx")) === "1",
-    "× e ↻ solo sull'oggetto scelto (l'area appena fatta), non sugli altri");
-  // ↻ gira il cuscino: il letto resta orizzontale, il nome si legge
-  await $panel(page, ".stbed").hover();
-  await $panel(page, ".stbed .strot").click();
-  const girato = await $panel(page, ".stbed").boundingBox();
-  check(scen, (await $panel(page, ".stbed.r90").count()) === 1 && Math.abs(girato.width - bedB.width) < 1 && girato.width > girato.height,
-    `↻ sposta il cuscino in alto, il letto resta orizzontale (${Math.round(girato.width)}×${Math.round(girato.height)})`);
+  check(scen, (await stile(".stbed .stx", "opacity")) === "0" && (await stile(".starea .stx", "opacity")) === "1" && (await $panel(page, ".strot").count()) === 0,
+    "la × solo sull'oggetto scelto (l'area appena fatta), e nessun ↻");
+  check(scen, (await stile(".stmap .stp", "opacity")) === "0.4", "in Modifica i pazienti stanno fermi, in grigio");
+  const u = (await $panel(page, ".stplan").boundingBox()).width / 40;
   await $panel(page, ".starea").hover();
-  await trascina($panel(page, ".starea .strsz"), 40, 30);
-  const allargata = await $panel(page, ".starea").boundingBox();
-  check(scen, allargata.width > areaB.width + 30 && allargata.height > areaB.height + 20 && Math.round(allargata.width) % 8 === 0,
-    `l'area si allarga dall'angolo, a passi di 8px (${Math.round(areaB.width)} → ${Math.round(allargata.width)})`);
-  check(scen, (await opacita(".stmap .stp")) === "0.4", "in Modifica i pazienti stanno fermi, in grigio");
+  await trascina($panel(page, ".starea .strsz"), 2 * u + 3, u + 3);
+  const a2 = (await archivio("stanza.v1")).aree[0];
+  check(scen, a2.w === 10 && a2.h === 6, `l'area si allarga dall'angolo, di cella in cella (8×5 → ${a2.w}×${a2.h})`);
+  // un letto si sposta di cella in cella: dove lo lasci, sulla griglia
+  await trascina(await letto("Letto 5"), 2.4 * u, 6.4 * u);
+  const l5 = (await archivio("stanza.v1")).letti.find((l) => l.nome === "Letto 5");
+  const b5 = await (await letto("Letto 5")).boundingBox(), pm = await $panel(page, ".stplan").boundingBox();
+  check(scen, l5.c === 32 && l5.r === 6 && Math.abs(b5.x - pm.x - (32 * u + 3)) < 1.5 && Math.abs(b5.y - pm.y - (6 * u + 3)) < 1.5,
+    `un letto si sposta di cella in cella (30,0 → ${l5.c},${l5.r})`);
+  // sopra un altro non ci sta: rosso mentre lo porti, e lasciato lì torna dov'era
+  const l2 = await letto("Letto 1"), b2 = await l2.boundingBox(), b1 = await (await letto("Box 1")).boundingBox();
+  await giu(l2);
+  await page.mouse.move(b1.x + b1.width / 2 + 5, b1.y + b1.height / 2, { steps: 10 });
+  const rosso = (await l2.getAttribute("class")).includes("bad");
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  const b2dopo = await (await letto("Letto 1")).boundingBox(), l2s = (await archivio("stanza.v1")).letti.find((l) => l.nome === "Letto 1");
+  check(scen, rosso && Math.abs(b2dopo.x - b2.x) < 1 && Math.abs(b2dopo.y - b2.y) < 1 && l2s.c === 6 && l2s.r === 0,
+    "un letto lasciato sopra un altro: rosso mentre lo porti, e torna dov'era");
   await $panel(page, "#stfine").click();
-  check(scen, !/radial-gradient/.test(await griglia()), "fuori da Modifica la griglia sparisce");
+
+  // a qualunque misura niente si sovrappone: all'85%, affiancata, alla misura minima
+  const s85 = await sovrapposti();
+  check(scen, s85.oggetti === 7 && s85.n === 0, `all'85%: 7 oggetti, nessuno sopra un altro (${s85.n})`);
+  await menu("#winaffianca");
+  const sAff = await sovrapposti();
+  check(scen, sAff.oggetti === 7 && sAff.n === 0, `«Affianca a destra»: nessuno sopra un altro (${sAff.n}; il più stretto ${sAff.w}px)`);
+  const rsz = await $panel(page, "#rsz").boundingBox();
+  await page.mouse.move(rsz.x + rsz.width / 2, rsz.y + rsz.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rsz.x - 700, rsz.y - 900, { steps: 8 });
+  await page.mouse.up();
+  const wMin = await $panel(page, ".card").boundingBox(), sMin = await sovrapposti();
+  check(scen, wMin.width <= 382 && wMin.height <= 322 && sMin.oggetti === 7 && sMin.n === 0,
+    `alla misura minima (${Math.round(wMin.width)}×${Math.round(wMin.height)}): nessuno sopra un altro (${sMin.n})`);
+  await menu("#wincentra");
 
   // i pazienti al loro posto: uno nel letto, l'altro in corridoio
-  await portaSu(chip(".sttray", "999001"), $panel(page, ".stbed"));
-  check(scen, /ROSSI MARIO · …9001 in Box 1/.test(await avviso()), `ogni spostamento si può annullare (got: ${await avviso()})`);
+  await portaSu(chip(".sttray", "999001"), await letto("Box 1"));
+  check(scen, /^ROSSI MARIO · …9001 in Box 1$/.test(await avviso()), `ogni spostamento si può annullare (got: ${await avviso()})`);
   await portaSu(chip(".sttray", "999002"), $panel(page, ".starea"));
   check(scen, (await chip(".stbed", "999001").count()) === 1, "trascinato su Box 1, il paziente è nel letto");
   check(scen, (await chip(".starea", "999002").count()) === 1, "e l'altro nell'area");
@@ -1944,81 +2031,113 @@ async function scenarioStanza(browser) {
   const titolo = (await chip(".stbed", "999001").getAttribute("title")) || "";
   check(scen, /episodio 999001 · aperto/.test(titolo) && /in Box 1 dalle \d\d:\d\d/.test(titolo),
     `al passaggio del mouse: episodio, ora di apertura e da quando sta lì (got: ${titolo.split("\n").slice(1, 3).join(" / ")})`);
+  const vuoto = $panel(page, ".stbed:not(.occ)").first();
+  check(scen, !/vuoto/.test(await vuoto.innerText()) && (await vuoto.locator("svg.stglifo").count()) === 1
+    && (await stile(".stbed:not(.occ)", "backgroundColor")) === "rgba(0, 0, 0, 0)" && (await stile(".stbed:not(.occ)", "borderTopColor")) === "rgb(227, 232, 239)"
+    && (await stile(".stbed.occ", "backgroundColor")) === "rgb(255, 255, 255)",
+    "un letto vuoto: il suo nome e un letto accennato, più quieto di uno occupato");
 
   // ricaricando resta tutto: vista, nomi, posti
   await page.reload();
   await alleStanze();
-  check(scen, (await $panel(page, ".stbed .stname").textContent()) === "Box 1", "il nome del letto resta dopo il ricaricamento");
-  check(scen, (await chip(".stbed", "999001").count()) === 1 && (await chip(".starea", "999002").count()) === 1,
-    "e anche chi sta dove");
+  check(scen, (await (await letto("Box 1")).locator(".stname").textContent()) === "Box 1", "il nome del letto resta dopo il ricaricamento");
+  check(scen, (await chip(".stbed", "999001").count()) === 1 && (await chip(".starea", "999002").count()) === 1, "e anche chi sta dove");
 
-  // In Modifica si sposta il letto, non il paziente (lo si prende proprio sul paziente)
-  await $panel(page, "#stmod").click();
-  const prima = await $panel(page, ".stbed").boundingBox();
-  await trascina(chip(".stbed", "999001"), 83, 101);
-  const dopo = await $panel(page, ".stbed").boundingBox();
-  check(scen, Math.abs(dopo.x - prima.x - 83) <= 8 && Math.abs(dopo.y - prima.y - 101) <= 8 && (await chip(".stbed", "999001").count()) === 1,
-    `il letto si sposta col suo paziente (${Math.round(dopo.x - prima.x)}, ${Math.round(dopo.y - prima.y)})`);
-  const cv = await $panel(page, ".stcanvas").boundingBox();
-  check(scen, Math.round(dopo.x - cv.x) % 8 === 0 && Math.round(dopo.y - cv.y) % 8 === 0, "e si ferma sulla griglia da 8px");
-  await $panel(page, "#stfine").click();
-  await page.reload();
-  await alleStanze();
-  const ricaricato = await $panel(page, ".stbed").boundingBox(), cv2 = await $panel(page, ".stcanvas").boundingBox();
-  check(scen, Math.abs(ricaricato.x - dopo.x) <= 1 && Math.abs(ricaricato.y - dopo.y) <= 1,
-    `la nuova posizione del letto resta salvata (${Math.round(dopo.x - cv.x)},${Math.round(dopo.y - cv.y)} → ${Math.round(ricaricato.x - cv2.x)},${Math.round(ricaricato.y - cv2.y)}; sala ${Math.round(cv.width)}×${Math.round(cv.height)} → ${Math.round(cv2.width)}×${Math.round(cv2.height)})`);
-
-  // su un letto occupato i due si scambiano: passandoci sopra lo si legge, e si annulla
+  // su un letto occupato il nuovo prende il letto, chi c'era va in «Da sistemare»; si annulla
   await giu(chip(".starea", "999002"));
-  const t0 = await $panel(page, ".stbed").boundingBox();
-  await page.mouse.move(t0.x + t0.width / 2, t0.y + t0.height / 2, { steps: 12 });
-  const etichetta = await $panel(page, ".stbed .stswap").innerText().catch(() => "");
-  check(scen, /scambia con ROSSI MARIO · …9001/.test(etichetta), `sopra un letto occupato: «⇄ scambia con…» (got: ${etichetta})`);
+  const t0 = await (await letto("Box 1")).boundingBox(), cx = t0.x + t0.width / 2, cy = t0.y + t0.height / 2;
+  await page.mouse.move(cx, cy, { steps: 12 });
+  const etichetta = await $panel(page, ".stbed .stfuori").innerText().catch(() => "");
+  const copia = await $panel(page, ".stghost").boundingBox(), nomeLetto = await (await letto("Box 1")).locator(".stname").boundingBox();
+  const sopraNome = copia && nomeLetto && copia.x < nomeLetto.x + nomeLetto.width && nomeLetto.x < copia.x + copia.width && copia.y < nomeLetto.y + nomeLetto.height && nomeLetto.y < copia.y + copia.height;
+  check(scen, /^ROSSI MARIO · …9001 → Da sistemare$/.test(etichetta), `sopra un letto occupato: «… → Da sistemare» (got: ${etichetta})`);
+  check(scen, (await $panel(page, ".stghost").innerText()) === "ROSSI MARIO · …9002" && copia.x > cx && copia.y > cy && !sopraNome,
+    "quello che si porta è solo il nome, accanto al puntatore: non copre il letto che si mira");
   await page.mouse.up();
   await page.waitForTimeout(150);
-  check(scen, (await chip(".stbed", "999002").count()) === 1 && (await chip(".starea", "999001").count()) === 1,
-    "lasciato su un letto occupato, i due pazienti si scambiano il posto");
-  check(scen, /Scambiati ROSSI MARIO · …9002 e ROSSI MARIO · …9001/.test(await avviso()), `e l'avviso dice chi con chi (got: ${await avviso()})`);
+  check(scen, (await chip(".stbed", "999002").count()) === 1 && (await chip(".sttray", "999001").count()) === 1 && await tutti(),
+    "lasciato su un letto occupato: il nuovo nel letto, chi c'era in «Da sistemare» (niente scambi)");
+  check(scen, /^ROSSI MARIO · …9002 in Box 1 · ROSSI MARIO · …9001 da sistemare$/.test(await avviso()), `e l'avviso dice tutti e due (got: ${await avviso()})`);
   check(scen, (await $panel(page, ".stbed.qui").count()) === 1, "il letto di chi è su questa pagina ha il bordo blu");
   await $panel(page, ".stannulla").click();
   check(scen, (await chip(".stbed", "999001").count()) === 1 && (await chip(".starea", "999002").count()) === 1 && await tutti(),
     "Annulla: tutti e due tornano dov'erano");
 
   // lo stesso posto non è uno spostamento
-  await portaSu(chip(".stbed", "999001"), $panel(page, ".stbed"));
+  await portaSu(chip(".stbed", "999001"), await letto("Box 1"));
   check(scen, (await $panel(page, ".stsnack").count()) === 0, "lasciato dov'era: niente cambia, niente da annullare");
 
-  // «Sposta in…» col tasto destro: letti, aree, «Da sistemare»
+  // «Sposta in…» col tasto destro: i letti vuoti, quelli occupati, le aree, «Da sistemare»; in fondo «Togli dall'elenco»
   await chip(".starea", "999002").click({ button: "right" });
   await $panel(page, ".stmenu").waitFor();
   const voci = (await page.locator("#psassist-host .stmenu .stmi").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
-  check(scen, voci.length === 3 && /^Box 1 ⇄ ROSSI MARIO · …9001/.test(voci[0]) && /^Corridoio qui ora/.test(voci[1]) && /^Da sistemare/.test(voci[2]),
-    `tasto destro: «Sposta in…» elenca letti, aree e «Da sistemare» (got: ${voci.join(" | ")})`);
+  check(scen, voci.length === 9 && voci.slice(0, 5).every((v) => /^Letto \d vuoto$/.test(v)) && /^Box 1 al posto di ROSSI MARIO · …9001$/.test(voci[5])
+    && /^Corridoio qui ora/.test(voci[6]) && /^Da sistemare/.test(voci[7]) && /^Togli dall'elenco$/.test(voci[8])
+    && (await $panel(page, '.stmenu .stmsep + [data-dove="togli"]').count()) === 1,
+    `tasto destro: «Sposta in…» elenca letti, aree, «Da sistemare» e, a parte, «Togli dall'elenco» (got: ${voci.slice(4).join(" | ")})`);
   await $panel(page, '.stmenu [data-dove="tray"]').click();
   check(scen, (await chip(".sttray", "999002").count()) === 1 && (await $panel(page, ".stmenu").count()) === 0, "scelto «Da sistemare», ci va, e il menu si chiude");
-  // …e da tastiera: Maiusc+F10, frecce, Invio
+  // …e da tastiera: Maiusc+F10, Invio (il primo è il primo letto vuoto)
   await chip(".sttray", "999002").focus();
   await page.keyboard.press("Shift+F10");
   await $panel(page, ".stmenu").waitFor();
-  await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
-  check(scen, (await chip(".starea", "999002").count()) === 1, "da tastiera: Maiusc+F10, freccia giù, Invio → in Corridoio");
+  check(scen, (await chip(`[data-letto="${await id("Letto 1")}"]`, "999002").count()) === 1, "da tastiera: Maiusc+F10, Invio → in Letto 1");
   check(scen, await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.getAttribute("data-stp") === "999002"),
     "e il fuoco resta sul paziente, nel posto nuovo");
+  // «Togli dall'elenco»: come la ✕ della Lista, e si annulla
+  await chip(".stbed", "999002").click({ button: "right" });
+  await $panel(page, '.stmenu [data-dove="togli"]').click();
+  const archiviato = (await archivio("patients.v1")).find((p) => p.ep === "999002");
+  check(scen, (await chip(".stmap", "999002").count()) === 0 && archiviato?.arch === true && /tolto dall'elenco/.test(await avviso()),
+    `«Togli dall'elenco» lo archivia, come la ✕ della Lista (got: ${await avviso()})`);
+  await $panel(page, ".stannulla").click();
+  check(scen, (await chip(`[data-letto="${await id("Letto 1")}"]`, "999002").count()) === 1 && !(await archivio("patients.v1")).find((p) => p.ep === "999002").arch,
+    "Annulla: torna in elenco, e al suo posto");
 
   // la Lista dice dove sta ognuno, e da lì si cambia
   await $panel(page, '[data-pazvista="lista"]').click();
   const posto = (ep) => $panel(page, `.pzrow [data-posto="${ep}"]`);
-  check(scen, /Box 1/.test(await posto("999001").innerText()) && /Corridoio/.test(await posto("999002").innerText()),
+  check(scen, /Box 1/.test(await posto("999001").innerText()) && /Letto 1/.test(await posto("999002").innerText()),
     "nella Lista, accanto a ognuno, il suo posto");
+  await page.mouse.move(5, 5);
+  const riga2 = $panel(page, ".pzrow:not(.qui)");
+  const quieta = [await stile(".pzrow:not(.qui) .pzric", "color"), await stile(".pzrow:not(.qui) .pzric", "fontWeight"), await stile(".pzrow:not(.qui) .pzposto", "borderTopColor")];
+  await riga2.hover();
+  const accesa = [await stile(".pzrow:not(.qui) .pzric", "color"), await stile(".pzrow:not(.qui) .pzposto", "borderTopColor")];
+  check(scen, quieta.join() === "rgb(91, 107, 122),500,rgba(0, 0, 0, 0)" && accesa[0] === "rgb(11, 92, 173)" && accesa[1] !== "rgba(0, 0, 0, 0)",
+    `Richieste in grigio e il posto senza bordo; sulla riga sotto il mouse, azzurro e bordo (got: ${quieta.join(" ")} → ${accesa.join(" ")})`);
+  const larghi = await page.locator("#psassist-host .pzposto").evaluateAll((l) => l.map((b) => Math.round(b.getBoundingClientRect().width)));
+  check(scen, larghi.every((w) => w === 104), `il posto è largo uguale su ogni riga (${larghi.join(", ")}px)`);
   await posto("999001").click();
   await $panel(page, '.stmenu [data-dove="tray"]').click();
   check(scen, /—/.test(await posto("999001").innerText()), "e dalla Lista si sposta: tolto dal letto, il suo posto è «—»");
+  // nella colonna stretta il nome non si taglia: la nota scende sotto, «visto…» si toglie
+  await ritocca("999001", { name: "BIANCHI ANNA", pk: "cf:BNCNNA80A41F205X" });
+  await page.evaluate(() => localStorage.setItem("psassist:note.v1", JSON.stringify({ "cf:BNCNNA80A41F205X": { t: "allergica alla penicillina, rivalutare alle 14 con gli esami", ts: Date.now() } })));
+  await page.reload();
+  await aiPazienti(".pzlista");
+  await menu("#winaffianca");
+  const stretta = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    const riga = [...r.querySelectorAll(".pzrow")].find((x) => /BIANCHI/.test(x.textContent));
+    const nm = riga.querySelector(".pznm"), nota = riga.querySelector(".pznota"), visto = riga.querySelector(".stvisto");
+    return { col: getComputedStyle(riga.querySelector(".pzapri")).flexDirection, tagliati: [...r.querySelectorAll(".pznm")].filter((n) => n.scrollWidth > n.clientWidth + 1).length,
+             sotto: nota.getBoundingClientRect().top >= nm.getBoundingClientRect().bottom - 1, visto: Math.round(visto.getBoundingClientRect().width), alta: Math.round(riga.getBoundingClientRect().height) };
+  });
+  check(scen, stretta.col === "column" && stretta.sotto && stretta.tagliati === 0 && stretta.visto <= 1 && stretta.alta <= 48,
+    `colonna stretta: la nota sotto il nome, nessun nome tagliato, «visto» via, la riga resta una riga (got: ${JSON.stringify(stretta)})`);
+  await menu("#wincentra");
+  await ritocca("999001", { name: "ROSSI MARIO", pk: "" });
+  await page.evaluate(() => localStorage.removeItem("psassist:note.v1"));
+  await page.reload();
+  await aiPazienti(".pzlista");
   await $panel(page, '[data-pazvista="stanza"]').click();
   await $panel(page, ".stmap").waitFor();
 
-  // × toglie l'area: chi c'era torna fra i da sistemare. Niente conferme: si annulla.
-  await $panel(page, "#stmod").click();
+  // × toglie l'area: chi c'era torna fra i da sistemare. Niente conferme: si annulla. Esc esce da Modifica
+  await portaSu(chip(".stbed", "999002"), $panel(page, ".starea"));
+  await menu("#stmodmenu");
   await $panel(page, ".starea").hover();
   await $panel(page, ".starea .stx").click();
   check(scen, (await $panel(page, ".starea").count()) === 0 && (await chip(".sttray", "999002").count()) === 1,
@@ -2027,37 +2146,57 @@ async function scenarioStanza(browser) {
   await $panel(page, ".stannulla").click();
   check(scen, (await $panel(page, ".starea").count()) === 1 && (await chip(".starea", "999002").count()) === 1,
     "Annulla: l'area torna, col suo paziente");
-  await $panel(page, "#stfine").click();
+  await page.mouse.move(5, 5);
+  await page.keyboard.press("Escape");
+  check(scen, (await $panel(page, "#stfine").count()) === 0 && (await $panel(page, '[data-pazvista="stanza"].on').count()) === 1 && (await $panel(page, ".card").count()) === 1,
+    "Esc esce da Modifica (e la finestra resta aperta)");
 
-  // un posto scade: chi non apri da 12 ore torna «da sistemare», in grigio
-  await portaSu(chip(".sttray", "999001"), $panel(page, ".stbed"));
+  // chi non apri da 13 ore resta al suo posto, in grigio; e si sposta ancora
+  await portaSu(chip(".sttray", "999001"), await letto("Box 1"));
   await ritocca("999001", { ts: Date.now() - 13 * 3600e3 });
   await page.reload();
   await alleStanze();
-  check(scen, (await chip(".sttray", "999001").count()) === 1 && /visto 13 h fa/.test(await chip(".sttray", "999001").innerText())
-    && (await chip(".sttray", "999001").getAttribute("class")).includes("spento"), "non aperto da 13 ore: torna da sistemare, in grigio, «visto 13 h fa»");
-  check(scen, /vuoto/.test(await $panel(page, ".stbed").innerText()) && !(await archivio("stanza.posti.v1"))["999001"], "e il suo letto è di nuovo vuoto");
+  check(scen, (await chip(".stbed", "999001").count()) === 1 && (await chip(".stbed", "999001").getAttribute("class")).includes("spento")
+    && !!(await archivio("stanza.posti.v1"))["999001"], "non aperto da 13 ore: resta nel suo letto, in grigio");
+  await portaSu(chip(".stbed", "999001"), await letto("Letto 3"));
+  await page.reload();
+  await alleStanze();
+  check(scen, (await chip(`[data-letto="${await id("Letto 3")}"]`, "999001").count()) === 1, "e portato altrove ci resta, anche dopo un ricaricamento");
 
-  // il triage letto sulla scheda: una striscia colorata, e basta
+  // il triage letto sulla scheda: una striscia colorata, sempre la stessa; nel letto la porta il letto
   await ritocca("999002", { triage: "ARANCIONE" });
   await page.reload();
   await alleStanze();
-  const striscia = await page.evaluate(() => getComputedStyle(document.getElementById("psassist-host").shadowRoot.querySelector('.stp[data-stp="999002"]')).borderLeftColor);
-  check(scen, striscia === "rgb(239, 108, 0)" && /triage all'apertura: ARANCIONE/.test(await chip(".starea", "999002").getAttribute("title")),
-    `triage ARANCIONE: la striscia a sinistra, e il passaggio del mouse lo dice (got: ${striscia})`);
+  const barra = (sel) => page.evaluate((s) => {
+    const cs = getComputedStyle(document.getElementById("psassist-host").shadowRoot.querySelector(s), "::before");
+    return `${cs.content} ${cs.backgroundColor} ${cs.width} ${cs.left}`;
+  }, sel);
+  const nellArea = await barra('.stp[data-stp="999002"]');
+  check(scen, nellArea === '"" rgb(239, 108, 0) 4px 4px' && /triage all'apertura: ARANCIONE/.test(await chip(".starea", "999002").getAttribute("title")),
+    `triage ARANCIONE: la striscia dentro il bordo, e il passaggio del mouse lo dice (got: ${nellArea})`);
+  await portaSu(chip(".starea", "999002"), await letto("Letto 4"));
+  const nelLetto = await barra(`[data-letto="${await id("Letto 4")}"]`);
+  check(scen, nelLetto === '"" rgb(239, 108, 0) 4px 4px' && !(await chip(".stbed", "999002").getAttribute("class")).includes("tri"),
+    `nel letto la stessa striscia, una sola: la porta il letto (got: ${nelLetto})`);
+
+  // premuto e lasciato senza muoversi apre il paziente, anche dopo mezzo secondo
+  await giu(chip(".stbed", "999002"));
+  await page.waitForTimeout(500);
+  await page.mouse.up();
+  await $panel(page, '[data-seg="esiti"].on').waitFor({ timeout: 5000 }).catch(() => {});
+  check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1, "premuto mezzo secondo e lasciato fermo: apre il paziente (i suoi Esiti)");
+  await $panel(page, "#back").click();
+  await $panel(page, ".stmap").waitFor({ timeout: 10000 });
 
   // stesso paziente (stesso codice fiscale), due episodi: il più vecchio è «episodio precedente»
   await ritocca("999001", { ts: Date.now() });
-  await page.reload();
-  await alleStanze();
-  await portaSu(chip(".sttray", "999001"), $panel(page, ".stbed"));
   await ritocca("", { pk: "cf:RSSMRA58C15F205Z" });
   await page.reload();
   await alleStanze();
   check(scen, (await chip(".sttray", "999001").getAttribute("class")).includes("prec") && /episodio precedente/i.test(await chip(".sttray", "999001").innerText())
     && (await chip(".stbed", "999001").count()) === 0, "stesso codice fiscale: l'episodio più vecchio esce dal letto, «episodio precedente»");
 
-  // un tocco fermo apre il paziente, come le righe dell'elenco
+  // un tocco fermo apre il paziente, come le righe dell'elenco: si carica la sua pagina
   await chip(".sttray", "999001").click();
   await page.waitForFunction(() => /EPISODIO_ID=999001/.test(location.href), null, { timeout: 15000 });
   await page.waitForSelector("#psassist-host", { state: "attached" });
@@ -2074,6 +2213,25 @@ async function scenarioStanza(browser) {
   await chip(".stmap", "999001").click();
   await page.waitForFunction(() => /EPISODIO_ID=999001/.test(location.href), null, { timeout: 15000 });
   check(scen, true, "e un tocco sul primo della lista apre la sua pagina");
+
+  // la stanza salvata si ripulisce da sola; piena, lo dice
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.evaluate(() => {
+    const letti = [];
+    for (let r = 0; r < 24; r += 4) for (let c = 0; c < 40; c += 5) letti.push({ id: `p${c}-${r}`, c, r, nome: `L${letti.length + 1}` });
+    letti.push({ id: "vecchio", x: 0.5, y: 0.5, rot: 90, nome: "Vecchio" }, { id: "sopra", c: 1, r: 1, nome: "Sopra" },
+      { id: "fuori", c: 38, r: 0, nome: "Fuori" }, { id: "mezzo", c: 2.5, r: 0, nome: "Mezzo" });
+    localStorage.setItem("psassist:stanza.v1", JSON.stringify({ letti, aree: [{ id: "piccola", c: 0, r: 0, w: 4, h: 3, nome: "Piccola" }] }));
+  });
+  await page.reload();
+  await alleStanze();
+  const disegnati = await page.locator("#psassist-host .stbed").evaluateAll((l) => l.map((b) => b.getAttribute("data-letto")));
+  check(scen, disegnati.length === 48 && !disegnati.some((d) => ["vecchio", "sopra", "fuori", "mezzo"].includes(d)) && (await $panel(page, ".starea").count()) === 0,
+    `la stanza salvata si ripulisce: fuori pianta, sopra un altro, a mezza cella o nel formato vecchio non si disegna (${disegnati.length} letti)`);
+  await menu("#stmodmenu");
+  await $panel(page, "#stpiuletto").click();
+  check(scen, /La stanza è piena: togli o sposta qualcosa\./.test(await $panel(page, ".banner").innerText().catch(() => "")) && (await $panel(page, ".stbed").count()) === 48,
+    "stanza piena: + Letto lo dice, e non mette niente sopra");
   await context.close();
 }
 
@@ -2850,7 +3008,7 @@ const scenarios = [
   ["prelievi refertati: restano colonne della tabella", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],
-  ["stanza: la mappa della sala", scenarioStanza],
+  ["stanza: la mappa della stanza", scenarioStanza],
   ["finestra: pill, Esc, clic fuori, affianca, copia", scenarioFinestra],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],
