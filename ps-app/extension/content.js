@@ -2850,7 +2850,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
     .wrap { position: fixed; top: 10px; right: 10px; z-index: 2147483647; color: #16232E; }
     .pill { display: flex; align-items: center; gap: 8px; background: #0B5CAD; color: #fff; border: 0; border-radius: 999px;
-            padding: 9px 15px 9px 11px; font-size: 13px; font-weight: 600; cursor: grab; box-shadow: 0 6px 20px rgba(9,42,74,.35);
+            padding: 9px 15px 9px 11px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 14px rgba(9,42,74,.22);
             touch-action: none; }
     .pill:active { cursor: grabbing; }
     .pill:hover { background: #094a8c; }
@@ -2894,7 +2894,8 @@
     .hd:active { cursor: grabbing; }
     .hd .logo { display: inline-flex; }
     .hd b { font-size: 16px; font-weight: 600; letter-spacing: .1px; }
-    .hd .who { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 50%; outline: none; }
+    .hd .who { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 50%; }
+    .card:focus { outline: none; }
     .hd .hsp { flex: 1 1 auto; }
     .pill .who { max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .hd .sub { font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -3015,12 +3016,9 @@
     .log { font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; color: #35506B; background: #F8FAFC;
            border: 1px solid #E3E8EF; border-radius: 8px; padding: 8px; max-height: 130px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
     details.reg summary { cursor: pointer; font-size: 11.5px; color: #5B6B7A; margin: 8px 0 6px; }
-    /* l'angolo per ridimensionare: in basso a destra, come in ogni finestra */
-    .rsz { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 7; touch-action: none; opacity: .6;
-           background: linear-gradient(135deg, transparent 42%, #C4D0DC 42%, #C4D0DC 56%, transparent 56%,
-                                        transparent 66%, #C4D0DC 66%, #C4D0DC 80%, transparent 80%); }
-    .rsz:hover { background: linear-gradient(135deg, transparent 42%, #0B5CAD 42%, #0B5CAD 56%, transparent 56%,
-                                             transparent 66%, #0B5CAD 66%, #0B5CAD 80%, transparent 80%); }
+    /* l'angolo per ridimensionare: in basso a destra, come in ogni finestra, e
+       come lì senza disegno (il bordo tondo lo tagliava): lo dice il cursore */
+    .rsz { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 7; touch-action: none; }
     .commit { position: sticky; bottom: -1px; margin: 0 -24px -14px; padding: 10px 24px 14px; background: #fff;
               border-top: 1px solid #EEF2F6; box-shadow: 0 -10px 14px -12px rgba(9,42,74,.25); }
     .rlist { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
@@ -3479,7 +3477,6 @@
   `;
 
   const LOGO = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <rect x="1" y="1" width="22" height="22" rx="6" fill="#fff" fill-opacity=".18"/>
     <path d="M12 5v14M5 12h14" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>
   </svg>`;
 
@@ -4079,8 +4076,7 @@
       // Sei su un'altra scheda: il giro continua (le richieste portano il loro
       // episodio), ma va detto a chiare lettere di chi sono gli esami.
       const altrove = !!(this.runState && this.runPatient && patientName && this.runPatient !== patientName);
-      const nPaz = knownPatients().length;
-      const chiPill = this.avvisoPill || ((this.runState || sulPaziente) ? who : `Pazienti${nPaz ? " · " + nPaz : ""}`);
+      const chiPill = this.avvisoPill || ((this.runState || sulPaziente) ? who : "Pazienti");
       const pillInner = running
         ? `<span class="dot"></span> <span class="who">${esc(who)}</span> <span class="badge">${doneN}/${total}</span>`
         : this.selected.size && !this.avvisoPill
@@ -4095,6 +4091,11 @@
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
       // accanto al nome, l'episodio: di chi sono i dati, sempre a colpo d'occhio
       const sub = sulPaziente && !inHome && !inDim && ep ? `ep. ${esc(ep)}` : "";
+      // Il titolo è il paziente, e solo lui: dove non c'è, niente titolo — lo
+      // dice la scheda accesa, e sulla lista PS la scheda Pazienti fa anche da ‹.
+      // Il ‹ resta sul paziente, e dentro un referto o un foglio di dimissione.
+      const indietro = !!section && (sulPaziente || ["referto", "dimtesto", "dimimport"].includes(this.view));
+      const titolo = this.runState || (sulPaziente && !inHome) ? who : "";
       // Aperto: una finestra al centro, l'85% dello schermo (o come l'hai
       // lasciata tu). Ridotto: la pill, dove l'hai messa (in alto a destra
       // se non l'hai mai spostata).
@@ -4129,12 +4130,12 @@
           ` : this.collapsed ? `
             <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}</button>
           ` : `
-            <div class="card${inStanza ? " stanza" : ""}" role="dialog" aria-label="${esc(APP)}">
+            <div class="card${inStanza ? " stanza" : ""}" role="dialog" aria-label="${esc(APP)}" tabindex="-1">
               <div class="hd" id="draghd" title="Trascina per spostare · doppio clic per rimetterla al centro">
-                ${section ? `<button class="iconbtn" id="back" title="${
+                ${indietro ? `<button class="iconbtn" id="back" title="${
                   this.view === "referto" ? "Torna agli esiti"
                   : this.view === "dimtesto" || this.view === "dimimport" ? "Torna ai fogli di dimissione"
-                  : "Tutti i pazienti"}" aria-label="Indietro">${ICO.indietro}</button>` : `<span class="logo">${LOGO_BLU}</span>`}<b class="who">${esc(this.runState ? who : inHome || !sulPaziente ? (inHome ? "Pazienti" : APP) : who)}</b>
+                  : "Tutti i pazienti"}" aria-label="Indietro">${ICO.indietro}</button>` : `<span class="logo">${LOGO_BLU}</span>`}${titolo ? `<b class="who">${esc(titolo)}</b>` : ""}
                 ${sub ? `<span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>` : ""}
                 <span class="hsp"></span>
                 ${this.chipTempo()}
@@ -6309,7 +6310,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       this.collapsed = false; this.avvisoPill = "";
       store.set("collapsed", false);
       this.render();
-      this.root.querySelector(".hd .who")?.focus?.({ preventScroll: true });
+      this.root.querySelector(".card")?.focus({ preventScroll: true });   // la tastiera nel pannello, non nel gestionale coperto
     }
     // Copiato un testo da incollare nel gestionale (EO, dimissioni, referto):
     // la finestra si toglie di mezzo da sola, la pill dice che è pronto.

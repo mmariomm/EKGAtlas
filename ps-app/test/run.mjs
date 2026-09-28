@@ -2712,7 +2712,8 @@ async function scenarioNoPatientPage(browser) {
     "niente quesito, ricerca o bottoni di invio");
   // l'elenco (l'etichetta «Pazienti» sta nella fila delle schede, non più nel corpo)
   check(scen, (await $panel(page, ".bd .pzrow").count()) >= 1, "mostra invece l'elenco pazienti");
-  check(scen, /pazienti/i.test(await $panel(page, ".hd .who").innerText()), "intestazione: elenco pazienti, non un nome");
+  check(scen, (await $panel(page, ".hd .who").count()) === 0 && (await $panel(page, '[data-seg="home"].on').count()) === 1,
+    "intestazione senza nome: qui il titolo è la scheda Pazienti, accesa");
   // i modelli non appartengono a un paziente: la loro riga c'è anche qui,
   // dove un paziente non c'è
   const qui = (await page.locator("#psassist-host .seg > button").allInnerTexts()).map((t) => t.trim());

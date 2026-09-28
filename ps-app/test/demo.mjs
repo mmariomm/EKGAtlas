@@ -70,7 +70,7 @@ const attendiTabella = (timeout = 30000) => page.waitForFunction(() => {
 console.log("\nbanco di prova — pagine vere del gestionale");
 await apri();
 check(await page.locator('#sa4-page a:has-text("ROSSI MARIO")').count() === 1, "la lista PS elenca i pazienti degli esempi");
-check((await $("b.who").innerText()).toLowerCase().includes("pazienti"), "senza paziente aperto il pannello parte dai Pazienti");
+check(await $('[data-seg="home"].on').count() === 1 && await $("b.who").count() === 0, "senza paziente aperto il pannello parte dai Pazienti, senza un nome in cima");
 
 await page.locator('#sa4-page a:has-text("ROSSI MARIO")').click();
 await riapri();
