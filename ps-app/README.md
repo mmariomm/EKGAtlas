@@ -193,7 +193,8 @@ posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; e
    **EGA VENOSA NEW** / **EGA ARTERIOSA NEW** (il laboratorio ha rifatto gli emogas: sono i
    codici nuovi, e la vecchia versione resta in elenco solo in «altri esami…»), gli **epatici
    uno per uno** (GPT, GOT, GAMMA GT, BILIRUBINA, LIPASI: il profilo li ordina insieme, ma
-   quasi sempre se ne vuole uno solo) e **SARSCOV**
+   quasi sempre se ne vuole uno solo), **PT POC** e **PTT POC** (la coagulazione che i pacchetti
+   mettono: qui si vede e si toglie) e **SARSCOV**
    (tampone antigenico SARS-CoV-2, laboratorio centrale), griglia compatta a
    due colonne per laboratorio (POC / Lab centrale / RX). Per tutto il resto: **«altri esami…»** con
    menu a tendina su tutti i laboratori. I selezionati restano in alto, una riga per laboratorio,
@@ -208,7 +209,8 @@ posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; e
    sede), e i nomi di reparto funzionano: **PCR** trova «PROTEINA C REATTIVA» (prima trovava
    solo «PCR POC»), e così PCT, EGA, GGT, AST/ALT, BNP, tropo — il laboratorio prima del POC.
 3. **Mentre manda, puoi fare altro.** Partito il giro il pannello si fa piccolo: una
-   **striscia** in un angolo con il nome del paziente, a che punto è (3/6) e che cosa sta
+   **striscia** in un angolo con il nome del paziente, a che punto è — in esami, «esame 3 di 6»,
+   non in passi — e che cosa sta
    facendo in quel momento — *creo la richiesta*, *invio LIPASI*, *controllo il carrello 2/3*,
    *confermo*. Sotto ci lavori normalmente: il gestionale non è bloccato e non compare più
    «vuoi lasciare la pagina?».
@@ -231,17 +233,41 @@ posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; e
    **carrello identico alla ricevuta** (un avanzo di un tentativo precedente la **sospende** e
    la lascia a te: striscia ambra «Conferma sospesa», sul carrello). La finestra **non si apre
    mai da sola**: la striscia dice «Confermo…» → «Confermata · Aspetto le etichette…» →
-   «Stampo le etichette» → «Aspetto la lista esami…» → «✓ Stampato», poi torna la pill.
+   «Stampo le etichette» → «Aspetto la lista esami…» → e alla fine il **resoconto, che resta**
+   finché non fai altro: «Stampato · 6 esami confermati 14:32». Se la stampa è stata annullata o
+   un foglio non è uscito, accanto c'è un **Ristampa** tranquillo.
+   **«Confermata» solo con una prova**: una pagina dello stesso episodio che elenca i fogli da
+   stampare di quella richiesta. Se dopo il clic arriva altro — un errore del server, di nuovo
+   il carrello, niente — il pannello legge **una volta** la pagina del paziente (una lettura, mai
+   un invio); se nemmeno lì la richiesta risulta, la striscia è **ambra**, «Non confermata ·
+   tocca per il carrello», mai verde. Niente viene riconfermato da solo: un tocco apre il
+   carrello, e lì decidi tu.
+   **Nessuna richiesta dimenticata.** Prima della conferma in sottofondo (e alla fine di un giro
+   in revisione, o fermato da un errore) il pannello annota la richiesta — solo numeri:
+   richiesta, episodio, ora, quanti esami; mai un nome — e la tiene d'occhio: se dopo **2
+   minuti** la pagina di quel paziente che hai davanti non la mostra fra le confermate, la
+   striscia dice «Richiesta 14:32 non confermata · tocca per il carrello». Vale anche se hai
+   cambiato pagina mentre diceva «Confermo…»: la conferma automatica muore con la pagina e non
+   riparte da sola più tardi. Vista confermata, il segno se ne va (dopo 12 ore comunque). Al
+   server non si chiede niente per questo: si guarda la pagina che hai aperto.
    **Se qualcosa va storto, si finisce a mano nel gestionale.** La striscia diventa **rossa** —
-   «Errore · completa a mano» / «Mancano: PTT POC, Troponina» — e la scheda va sul **carrello**
-   della richiesta: una semplice lettura dell'elenco, niente inviato, niente confermato. Lì vedi
-   gli esami già scelti e aggiungi il resto. Un tocco sulla striscia: il motivo intero e gli
-   elenchi «Nel carrello» / «Da aggiungere a mano». Sessione scaduta, episodio che non torna o
-   un'altra scheda al lavoro: solo la striscia rossa, la pagina resta quella.
-   **Una riga che la pagina non mostra** (l'elenco a volte arriva monco) non ferma il giro: se il
-   codice di quell'esame è noto e il suo «aggiungi» è già stato visto su un link vero, lo si
-   manda col codice salvato (nel Registro: «riga assente nella pagina») e lo si controlla, stretto,
-   in carrello. Vedi le regole 3 e 4.
+   «Errore · completa a mano» / «Mancano: PTT POC · Da controllare: Troponina» — e la scheda va
+   sul **carrello** della richiesta, sul laboratorio del **primo esame rimasto fuori**: una
+   semplice lettura dell'elenco, niente inviato, niente confermato. **Mancano** sono gli esami
+   mai partiti: li aggiungi tu. **Da controllare** sono quelli mandati ma non visti in carrello:
+   guarda se ci sono prima di aggiungerli — mai due volte. Un tocco sulla striscia: il motivo
+   intero e gli elenchi «Nel carrello» / «Da controllare» / «Da aggiungere a mano». Sessione
+   scaduta, episodio che non torna o un'altra scheda al lavoro: solo la striscia rossa, la
+   pagina resta quella.
+   **Mentre scrivi, la pagina non cambia da sola.** Ogni salto di pagina deciso dal pannello
+   (errore → carrello, revisione → carrello, conferma sospesa) prima guarda: se hai il cursore
+   in un campo del gestionale, hai cambiato un campo, o hai premuto un tasto negli ultimi 15
+   secondi, resta dov'è e la striscia dice «… · tocca per il carrello» — un tocco ci porta.
+   **Una riga che la pagina non mostra** (l'elenco a volte arriva monco) si **rilegge con la
+   ricerca del gestionale**: lo stesso elenco con la casella «Prestazione» compilata — il
+   mnemonico LIS fra parentesi se il nome ne ha uno, se no il nome — una sola lettura. Se la riga
+   compare, passa per la strada di sempre (nome vivo controllato, un invio solo); se no, l'esame
+   finisce fra i «Mancano» e lo aggiungi a mano. Vedi le regole 3 e 4.
    Selezionando laboratorio **e** radiologia il bottone diventa **Crea 2 richieste** e il pannello
    le costruisce e le porta entrambe a conferma, con **una sola** stampa finale. Questa è
    l'unica che **non** va in sottofondo: le due richieste vivono nella memoria del pannello, e
@@ -308,11 +334,14 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
 
 **Referti** è la lista dei documenti (ECG, RX, TC, visite…), una riga ciascuno, ognuno con
 **data e ora della richiesta**, il più recente in cima. I referti di **laboratorio** (LIS) **non
-ci sono**: quello che dicono è già nella tabella dei Valori, e in mezzo agli altri facevano perdere
-l'ECG e la radiologia. Né il conteggio «Referti (n)», né il numero sulla scheda **Esiti**, né
-**⬇ Salva referti** e **↻ Resetta** li contano o li toccano — agiscono solo sui referti che
-vedi. Se di un paziente non resta niente da
-mostrare (solo referti di laboratorio e nessun prelievo), gli Esiti dicono «Nessun esito per questo paziente».
+ci sono** quando la tabella dei Valori li può mostrare — c'è una tabella, o c'è da dove leggerla
+(estensione e portale): lì quello che dicono è già nei Valori, e in mezzo agli altri facevano
+perdere l'ECG e la radiologia. Né il conteggio «Referti (n)» né **⬇ Salva referti** e **↻ Resetta**
+li contano o li toccano. **Senza tabella e senza portale** (il bookmarklet, per dire) i referti di
+laboratorio sono l'unico posto dove si vedono i risultati finali: allora restano, **chiusi** sotto
+**«Laboratorio (N)»** in fondo agli Esiti — un tocco li apre — e la scheda **Esiti** li conta. Un
+esito finale non sparisce mai: «Nessun esito per questo paziente» compare solo quando non c'è
+davvero niente, nemmeno un referto.
 - **RIS ›** — referti di **radiologia** (RX, TC, ecografia, RMN) ed **ECG**: si aprono **dentro il
   pannello, come testo**. Il testo lo legge **pdf.js** — il lettore PDF di Firefox, dentro
   l'estensione, caricato nella scheda solo quando apri un referto: legge quello che legge Firefox
@@ -575,7 +604,8 @@ foglio i motivi per **tornare in Pronto Soccorso**.
 Dopo la **Conferma** (manuale o automatica) la stampa parte da sola, in sequenza, raggruppando
 per stampante — **senza finestre davanti**: ogni PDF va in una cornice nascosta e si apre
 direttamente il **dialogo di stampa** del browser. A che punto è lo dice la striscia
-(«Aspetto le etichette…», «Stampo le etichette», «Aspetto la lista esami…», «✓ Stampato»);
+(«Aspetto le etichette…», «Stampo le etichette», «Aspetto la lista esami…», e alla fine
+«Stampato · 6 esami confermati 14:32», che **resta** finché non fai altro);
 senza pannello, o col pannello aperto, un riquadrino nello stesso angolo.
 
 1. **Tutte le etichette provette** — i PDF dell'icona col codice a barre
@@ -588,8 +618,10 @@ senza pannello, o col pannello aperto, un riquadrino nello stesso angolo.
 
 **Non serve una mano libera**: quando la finestra di stampa del browser si chiude, si **passa da
 solo al documento dopo** — come se avessi premuto «→ Avanti» — e dopo l'ultimo la striscia dice
-«✓ Stampato». Il browser dice soltanto che il dialogo si è chiuso, non se hai stampato o
-annullato: si va avanti in tutt'e due i casi.
+«Stampato · N esami confermati HH:MM». Il browser dice soltanto che il dialogo si è chiuso, non se
+hai stampato o annullato: si va avanti in tutt'e due i casi. Se la stampa l'hai annullata (Esc,
+✕) o un documento non è uscito, il resoconto resta lo stesso — la richiesta è confermata — con
+accanto un **Ristampa** tranquillo che rifà etichette e lista.
 
 **I comandi compaiono solo quando serve una mano**, in un riquadro compatto vicino alla pill (mai
 una finestra davanti): documento che non si lascia catturare (**↗ Apri e stampa**, poi Ctrl+P),
@@ -785,15 +817,19 @@ stessi flussi dei test di prodotto.
    l'altro parola per parola. Una riga estranea non conta e il motore si ferma lo stesso.
    E se il server risponde all'inserimento con **una pagina che non è l'elenco**, l'esame è
    entrato lo stesso: si rilegge il carrello (mai un secondo invio) invece di fermarsi al buio.
-   Un esame mandato **col codice salvato** (regola 3) ha la verifica **stretta**: vale solo la
-   riga col suo codice **e** il suo nome (stesso nome, stesso mnemonico LIS, o l'uno dentro
-   l'altro). Lo stesso codice con un altro nome è un altro esame entrato al suo posto: stop,
-   «Il codice X oggi è «Y»: è entrato in carrello, toglilo».
    **Dopo uno stop si finisce a mano.** La scheda va sul carrello della richiesta — una semplice
-   lettura dell'elenco, quello che il gestionale stesso mostra — senza inviare né confermare
-   niente, e il giro non riparte. Non ci va dopo un episodio che non torna, una sessione
-   scaduta o un'altra scheda al lavoro (lì resta la striscia rossa), né se il giro ripreso ti ha
-   trovato sulla pagina di un altro paziente.
+   lettura dell'elenco, quello che il gestionale stesso mostra, sul laboratorio del primo esame
+   rimasto fuori (stessa richiesta, cambia solo `RISORSA_ID`) — senza inviare né confermare
+   niente, e il giro non riparte. La striscia separa **«Mancano»** (mai partiti: da aggiungere)
+   da **«Da controllare»** (mandati e non visti in carrello: da guardare, mai da rimandare). Non
+   ci va dopo un episodio che non torna, una sessione scaduta o un'altra scheda al lavoro (lì
+   resta la striscia rossa), né se il giro ripreso ti ha trovato sulla pagina di un altro
+   paziente.
+   **Nessun salto di pagina sopra chi scrive.** Ogni navigazione decisa dal programma (errore
+   → carrello, revisione → carrello, conferma sospesa o rifiutata dalla cornice) passa da un
+   solo controllo: cursore in un campo del gestionale, un campo cambiato, un tasto premuto
+   negli ultimi 15 secondi → non si va, la striscia dice «… · tocca per il carrello» e un tocco
+   ci porta. Dopo una conferma non si ricarica niente: la prova si legge in sottofondo (regola 5).
 2. **Mai il paziente sbagliato**: l'EPISODIO_ID viene fissato all'avvio e ogni pagina ricevuta è
    verificata **dal contenuto che il server dichiara** (non dall'URL richiesto); se manca o non
    corrisponde, stop prima di qualunque invio.
@@ -807,19 +843,19 @@ stessi flussi dei test di prodotto.
    ogni invio. Se il nome non corrisponde a nulla si ferma e **dice cosa offre quella richiesta**,
    invece di un rifiuto muto.
    **Una riga che la pagina non mostra** (l'elenco a volte arriva monco: la riga c'è, ma non si
-   vede) è l'unico caso in cui un numero salvato si usa: SOLO se né il codice né il nome sono
-   sull'elenco vivo, il codice sta nel catalogo di **quella** risorsa col nome scelto, non ha mai
-   mostrato un altro nome, e il suo «aggiungi» è già stato visto su un **link vero** (per ogni
-   risorsa si impara lo schema dei parametri; per ogni codice i valori di riga, `BRANCA`).
-   Il link si fa da un «aggiungi» vero della pagina cambiando solo `PRESTAZIONE` e `BRANCA`; se
-   la pagina non ne ha, dall'elenco di adesso con lo schema imparato. Richiesta, episodio e
-   risorsa vengono **sempre** dalla pagina di adesso, mai dalla memoria. Nel Registro: «riga
-   assente nella pagina: uso il codice salvato».
+   vede) si **rilegge con la ricerca del gestionale**, UNA volta: lo stesso elenco con
+   `s_PRESTAZIONE` compilato — è lo stato della ricerca, ogni link della pagina lo porta già — e
+   una semplice GET. Si cerca il mnemonico LIS fra parentesi se il nome ne ha uno, se no il nome.
+   La riga che compare passa per la strada **normale**: nome vivo controllato (regola 4), un
+   invio solo, verifica sull'elenco intero. Se non compare, l'esame va fra i «Mancano» e non
+   parte niente. Un indirizzo d'inserimento **non si costruisce mai** a mano: una riga che il
+   gestionale nasconde apposta resta nascosta. Nel Registro: «riletto con la ricerca del
+   gestionale». (Fino alla 3.46 un codice salvato costruiva il link da solo: poteva scavalcare
+   il gestionale, e la sua verifica «stretta» non lo era. Tolto, coi suoi appunti.)
 4. **Mai l'esame sbagliato**: prima di ogni invio il nome dell'esame sulla riga viva della pagina
    deve coincidere con quello selezionato — se l'ospedale rinumera un codice, il motore si ferma
-   e lo dice, invece di ordinare un esame diverso con tutte le spie verdi. Col codice salvato
-   (regola 3) una riga viva non c'è e questo controllo non si può fare: al suo posto la verifica
-   dopo l'invio è stretta (regola 1), e un nome diverso ferma tutto e chiede di togliere la riga.
+   e lo dice, invece di ordinare un esame diverso con tutte le spie verdi. Vale anche per la riga
+   ritrovata con la ricerca del gestionale (regola 3): ogni invio parte da una riga viva.
 5. **La Conferma è sempre un click reale** sulla pagina visibile (il flusso di stampa etichette
    resta quello nativo), è opt-in e **immediata**: nessun conto alla rovescia, perché il tuo
    click su «+ Conferma» è già la decisione — ma scatta **solo** se il carrello coincide con la
@@ -838,6 +874,15 @@ stessi flussi dei test di prodotto.
    striscia ambra lo annuncia, un tocco lo apre), e la conferma resta al
    medico. C'è un test che prova che in quel caso la richiesta viene
    confermata **una volta sola**.
+   **Confermata vuol dire provata.** Dopo il clic vale come prova solo una pagina dello stesso
+   episodio che elenca i fogli da stampare di **quella** richiesta (`RICHIESTA_ID`). Un HTTP
+   500, il carrello che ricompare, il tempo scaduto, la cornice sparita: «incerta». Allora si
+   legge UNA volta la pagina del paziente (GET, mai un invio): se la elenca, è confermata e i
+   fogli si prendono da lì; se no la striscia è ambra, «Non confermata · tocca per il
+   carrello», e nessuna seconda conferma parte da sola. Se la pagina se ne va mentre la cornice
+   lavora, la conferma automatica muore con lei. In ogni caso la richiesta resta annotata (solo
+   numeri) finché una pagina del paziente non la mostra confermata: dopo 2 minuti la striscia
+   lo dice.
    **Non poter controllare non è come aver controllato**: se la ricevuta manca o è di un'altra
    richiesta, la conferma automatica **si sospende** invece di partire lo stesso. (Fino alla
    3.20 quel caso saltava il controllo e confermava — la Conferma nativa invia la richiesta
@@ -964,7 +1009,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 70 scenari e2e in Chromium reale (+ storico e referti)
+└── test/                ← simulatore SA4PSO + 74 scenari e2e in Chromium reale (+ storico e referti)
 ```
 
 Sviluppo:
@@ -975,7 +1020,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 70 scenari e2e + 49 sull'estensione + 47 sul banco + storico + il cancello privacy
+npm test           # 74 scenari e2e + 51 sull'estensione + 55 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
@@ -987,9 +1032,13 @@ ambiguità), **cambio episodio a metà run** (zero invii sul paziente sbagliato)
 pre-compilato non sovrascritto, aggiunte dalla pagina esami con cambio risorsa, rifiuto live di
 esami di risorsa sbagliata (CTA disabilitato con motivo), quesito mancante (CTA disabilitato,
 si riattiva scrivendo), apprendimento radiologia end-to-end, STOP, il giro in sottofondo **senza
-mai la finestra** fino alle etichette, l'errore a metà (striscia rossa, carrello, zero invii
-dopo), la **riga assente** ordinata col codice salvato e il codice salvato che porta un altro
-esame (stop), e la stampa: sequenza manuale etichette→lista e download singoli, **richiesta divisa su due laboratori → 4 PDF
+mai la finestra** fino alle etichette (col resoconto che resta e il «Ristampa»), l'errore a metà
+(striscia rossa, «Mancano» separati da «Da controllare», carrello del primo esame mancante, zero
+invii dopo), la conferma **senza prova** (HTTP 500 o carrello ripresentato: ambra, mai verde, mai
+riconfermata), la conferma interrotta da un cambio pagina (la pagina dopo avvisa, passato il
+tempo), il medico che scrive nel gestionale (nessun salto di pagina, la pill dice di toccare), la
+**riga assente** ritrovata con la ricerca del gestionale — o, se nascosta davvero, nessun invio e
+«Mancano» — e la stampa: sequenza manuale etichette→lista e download singoli, **richiesta divisa su due laboratori → 4 PDF
 (PROG 1 e 2, tutte le righe, BRANCA passato intatto dal DOM)**, **prenotazione radiologica**,
 auto-apertura sulla pagina post-conferma, attesa-e-ripartenza al ritorno sulla pagina paziente,
 wrapper HTML seguito fino al PDF, conferma manuale nativa che arma la stampa, e i referti:

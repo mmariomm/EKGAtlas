@@ -138,12 +138,15 @@ await page.waitForSelector("#psassist-host [data-seg]", { state: "attached", tim
 check(await page.title() === "BIANCHI ANNA", "il secondo paziente è la seconda scheda salvata");
 await $('[data-seg="esiti"]').click();
 await page.waitForSelector("#psassist-host [data-esito]", { state: "attached", timeout: 20000 });
-// il conteggio è nell'intestazione e conta solo i referti mostrati: quelli di
-// laboratorio non sono negli Esiti
+// il conteggio è nell'intestazione e conta solo i referti dell'elenco: quelli
+// di laboratorio, finché la tabella dei valori non c'è, stanno a parte, chiusi
+// sotto «Laboratorio (N)» — e se ne vanno quando la tabella arriva (più sotto)
 const titoloRef = await $(".sec .lbl:has-text('Referti')").innerText();
 const nIntest = Number((/referti \((\d+)\)/i.exec(titoloRef) || [])[1] || 0);
-check(nIntest >= 2 && nIntest === await page.locator('#psassist-host [data-esito][data-kind="referto"]').count(),
+check(nIntest >= 2 && nIntest === await page.locator('#psassist-host .sec:not(.reflab) [data-esito][data-kind="referto"]').count(),
   `gli Esiti arrivano dalla pagina vera, e l'intestazione conta le righe che si vedono (${titoloRef.replace(/\s+/g, " ").trim()})`);
+check(await $("#reflab").count() === 0 || /laboratorio \(\d+\)/i.test(await $("#reflab summary").innerText()),
+  "senza tabella, i referti di laboratorio stanno a parte, in «Laboratorio (N)»");
 // i valori non si leggono da soli: si chiedono, e arrivano in UNA tabella
 check(await $(".sttab").count() === 0, "prima di chiederli non c'è nessuna tabella");
 await $("#risall").click();
