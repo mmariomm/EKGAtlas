@@ -418,6 +418,14 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   parte, «S-100» e «B-12» restano interi, pCO₂ = pCO2. Due nomi diversi che nello stesso prelievo
   si contraddicono (S-Sodio e P-Sodio) non si coprono mai. «PTT Ratio» ha una sigla sua (PTTr),
   e «cK+» dell'emogas è potassio, non CPK.
+- **Lo stesso esame chiesto due volte è una riga sola.** Con «EMOCROMO» e «EMOCROMO CON FORMULA»
+  nella stessa richiesta il portale dà ogni analita due volte, coi valori uguali e a volte col nome
+  scritto in due modi («MCH Cont. Medio Hgb», «… Media Hgb»): in tabella erano doppioni. Due righe
+  della stessa sezione con la stessa sigla diventano una se dicono la stessa cosa — tutte e due
+  assolute o tutte e due percentuali, almeno un prelievo in comune, lo stesso valore in ognuno
+  («131» e «131.0» sono lo stesso numero). Un solo valore diverso, e restano due. E le **colonne
+  vanno sempre in ordine di tempo**, anche quando il portale le dà dalla più recente: prima
+  «ultimo» poteva finire sul prelievo più vecchio.
 - **L'emogas resta diviso dal laboratorio.** Hb, Ht, K, Na, Cl, Ca++, glucosio e lattato fatti
   dall'**EGA** non sono quelli dell'emocromo o della chimica: stanno nella sezione **Emogas**, su
   righe loro, accanto a pH e gas — mai nella riga dell'Hb dell'emocromo o del K del laboratorio.

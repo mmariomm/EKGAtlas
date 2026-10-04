@@ -381,8 +381,9 @@ const ega = await page.evaluate((s) => new Function(s + `
   const dice = (x) => x.righe.map((r) => r.nome + "@" + (eEga(r.esame) ? "EGA" : "lab") + "=" + r.valori.map((v) => v.v || "-").join("|")).sort();
   const mista = { cf: "x", date, righe: [{ nome: "Emoglobina", esame: "EMOCROMO", codice: "", mnem: "", pos: 0,
     valori: [{ v: "13.1", stato: 0, esame: "EMOCROMO" }, { v: "12.4", stato: 0, esame: "EGA VENOSA NEW" }] }] };
-  const divisa = dividiEga(mista);
-  const intatta = dividiEga(portale) === portale;   // niente di misto: la tabella non si tocca
+  const divisa = normalizzaStorico(mista);
+  // niente di misto: la tabella resta quella che è (stesse righe, stessi valori)
+  const intatta = JSON.stringify(dice(normalizzaStorico(portale))) === JSON.stringify(dice(portale));
   const sezioni = raggruppaStorico(u.righe).map((g) => g.nome + ":" + g.righe.map((r) => r.sg).join(","));
   return { fusa: dice(u), divisa: dice(divisa), sezioni, intatta };
 `)(), src);
@@ -393,6 +394,60 @@ check(ega.fusa.includes("S-Potassio@lab=4.1|-") && ega.fusa.includes("B-Potassio
 check(ega.divisa.includes("Emoglobina@lab=13.1|-") && ega.divisa.includes("Emoglobina@EGA=-|12.4"),
   `una riga mista salvata prima si divide prima di mostrarla (got ${ega.divisa.join(" · ")})`);
 check(ega.intatta, "una tabella senza righe miste resta quella che è");
+
+// ---- lo stesso emocromo in due prestazioni, colonne dalla più recente ----
+// Sul portale vero l'emocromo chiesto due volte nella stessa richiesta
+// («EMOCROMO» e «EMOCROMO CON FORMULA») dà ogni analita due volte, coi
+// valori uguali e a volte col nome scritto in due modi; e le colonne possono
+// arrivare dalla più recente. In tabella erano doppioni, e «ultimo» stava
+// sul prelievo più vecchio.
+const DUE = ["03/10/2026 07:33", "03/10/2026 07:23", "02/10/2026 21:35", "02/10/2026 21:32"];
+const doppio = paginaStorico({ date: DUE, esami: [
+  ["EMOCROMO CON FORMULA", "Leucociti", "1202", "WBC", ["", "5.8", "", "8.0"], [0, 0, 0, 0]],
+  ["EMOCROMO CON FORMULA", "Neutrofili", "1202", "NEU", ["", "4.3", "", "5.9"], [0, 0, 0, 0]],
+  ["EMOCROMO CON FORMULA", "Neutrofili %", "1202", "NEU%", ["", "72.9", "", "73.2"], [0, 0, 0, 0]],
+  ["EMOCROMO CON FORMULA", "Linfociti", "1202", "LIN", ["", "1.1", "", "1.5"], [0, 0, 0, 0]],
+  ["EMOCROMO CON FORMULA", "Linfociti %", "1202", "LIN%", ["", "19.1", "", "18.6"], [0, 0, 0, 0]],
+  ["EMOCROMO CON FORMULA", "Emoglobina", "1202", "HB", ["", "123", "", "131"], [0, -1, 0, -1]],
+  ["EMOCROMO CON FORMULA", "MCH Cont. Medio Hgb", "1202", "MCH", ["", "32.7", "", "32.8"], [0, 1, 0, 1]],
+  ["EMOCROMO CON FORMULA", "Piastrine", "1202", "PLT", ["", "179", "", "195"], [0, 0, 0, 0]],
+  ["EMOCROMO", "Leucociti", "1201", "WBC", ["", "5.8", "", "8.0"], [0, 0, 0, 0]],
+  ["EMOCROMO", "Linfociti", "1201", "LIN", ["", "1.1", "", "1.5"], [0, 0, 0, 0]],
+  ["EMOCROMO", "Emoglobina", "1201", "HB", ["", "123.0", "", "131.0"], [0, -1, 0, -1]],
+  ["EMOCROMO", "MCH Cont. Media Hgb", "1201", "MCH", ["", "32.7", "", "32.8"], [0, 1, 0, 1]],
+  ["EMOCROMO", "Piastrine", "1201", "PLT", ["", "178", "", "195"], [0, 0, 0, 0]],
+  ["EMOGASANALISI VENOSA", "Emoglobina", "1800", "HB", ["128", "", "", ""], [0, 0, 0, 0]],
+] });
+const dd = await page.evaluate(([s, h]) => {
+  const doc = new DOMParser().parseFromString(h, "text/html");
+  // eslint-disable-next-line no-new-func
+  return new Function("doc", s + `
+    const st = leggiStorico(doc);
+    const righe = righeTabella(st.righe);
+    const vista = raggruppaStorico(righe).map((g) => g.nome + ":" + g.righe.map((r) => r.sg).join(","));
+    const val = (r) => r.valori.map((v) => (v.v || "-") + (v.pct ? "(" + v.pct + "%)" : "")).join("|");
+    return {
+      date: st.date.map((d) => d.label),
+      leucociti: st.righe.filter((r) => r.nome === "Leucociti").length,
+      vista,
+      lin: righe.filter((r) => sigla(r.nome) === "Lin").map(val),
+      mch: righe.filter((r) => sigla(r.nome) === "MCH").map(val),
+      plt: righe.filter((r) => sigla(r.nome) === "PLT").map(val),
+      ambigue: [...sigleAmbigue(righe)],
+    };
+  `)(doc);
+}, [src, doppio]);
+check(dd.date.join(" · ") === [...DUE].reverse().join(" · "),
+  `le colonne si mettono in ordine di tempo, anche se il portale le dà dalla più recente (got ${dd.date.join(" · ")})`);
+check(dd.leucociti === 1, `lo stesso analita da due prestazioni, stessi valori: UNA riga già alla lettura (got ${dd.leucociti})`);
+check(dd.vista.includes("Emocromo:GB,Neu,Lin,Hb,MCH,PLT,PLT") && dd.vista.includes("Emogas:Hb"),
+  `in tabella ogni analita una volta, l'Hb dell'emogas a parte (got ${dd.vista.join(" · ")})`);
+check(dd.lin.length === 1 && dd.lin[0] === "1.5(18.6%)|-|1.1(19.1%)|-",
+  `i linfociti: una riga, l'assoluto con la sua percentuale (got ${dd.lin.join(" / ")})`);
+check(dd.mch.length === 1 && dd.mch[0] === "32.8|-|32.7|-" && !dd.ambigue.some((k) => /MCH/.test(k)),
+  `«MCH Cont. Medio Hgb» e «… Media Hgb», stessi valori: una riga, che non va più scritta per esteso (got ${dd.mch.join(" / ")})`);
+check(dd.plt.length === 2,
+  `due piastrine che si contraddicono (178 e 179 nello stesso prelievo) restano due: un valore non ne copre mai un altro (got ${dd.plt.join(" / ")})`);
 check(ega.sezioni.includes("Emocromo:Hb") && ega.sezioni.includes("Emogas:pH,Hb,K") && ega.sezioni.includes("Elettroliti e metabolismo:K"),
   `in tabella: l'Hb dell'emogas sta nell'Emogas, col pH e il suo potassio (got ${ega.sezioni.join(" · ")})`);
 

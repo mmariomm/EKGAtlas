@@ -65,7 +65,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.46.0";
+  const VERSION = "3.46.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -542,8 +542,8 @@
   // parentesi la percentuale. Il fuori range è quello dell'assoluto; una
   // percentuale senza assoluto resta da sola («Altre 5.9%»).
   const FORMULA = new Set(["Neu", "Lin", "Mon", "Eos", "Bas", "Altre"]);
+  const ePct = (r) => /%/.test(String(r.nome || "")) || (r.valori || []).some((v) => v && String(v.um || "").trim() === "%");
   function fondiFormula(righe) {
-    const ePct = (r) => /%/.test(String(r.nome || "")) || (r.valori || []).some((v) => v && String(v.um || "").trim() === "%");
     const coppie = new Map();   // sigla → { abs, pct }
     const out = [];
     for (const r of righe || []) {
@@ -573,6 +573,38 @@
       return { ...abs, valori };
     });
   }
+
+  // Lo stesso esame in due prestazioni della stessa richiesta («EMOCROMO» e
+  // «EMOCROMO CON FORMULA») dà le stesse righe due volte, a volte col nome
+  // scritto in due modi («MCH Cont. Medio Hgb», «… Media Hgb»): in tabella
+  // erano doppioni. Due righe della stessa sezione con la stessa sigla
+  // diventano una sola se dicono LA STESSA COSA: tutte e due assolute o
+  // tutte e due percentuali, almeno un prelievo in comune e lo stesso valore
+  // in ognuno. Un solo valore diverso, e restano due (scritte per esteso).
+  function fondiDoppioni(righe) {
+    const numero = (x) => (/^-?\d+(?:[.,]\d+)?$/.test(x) ? Number(x.replace(",", ".")) : NaN);
+    const uguali = (a, b) => a === b || numero(a) === numero(b);   // «131.0» e «131»: lo stesso numero
+    const stessa = (a, b) => {
+      let comuni = 0;
+      for (let i = 0; i < Math.max(a.valori.length, b.valori.length); i++) {
+        const x = String(a.valori[i]?.v || "").trim(), y = String(b.valori[i]?.v || "").trim();
+        if (!x || !y) continue;
+        if (!uguali(x, y)) return false;
+        comuni++;
+      }
+      return comuni > 0;
+    };
+    const out = [];
+    for (const r of righe || []) {
+      const k = chiaveAmbigua(r) + (ePct(r) ? "|%" : "") + (eEga(r.esame) ? "|ega" : "");
+      const gemella = out.find((x) => x.k === k && stessa(x.r, r));
+      if (!gemella) { out.push({ k, r }); continue; }
+      gemella.r = { ...gemella.r, valori: gemella.r.valori.map((v, i) => (v && v.v ? v : r.valori[i] || v)) };
+    }
+    return out.map((x) => x.r);
+  }
+  // le righe come si mostrano: prima via i doppioni, poi la formula in coppia
+  const righeTabella = (righe) => fondiFormula(fondiDoppioni(righe));
 
   function raggruppaStorico(righe) {
     const per = new Map();
@@ -1175,11 +1207,11 @@
       .map((e) => (e.textContent || "").replace(/\s+/g, " ").trim())
       .find((t) => /^Tabella esami periodo/i.test(t)) || "";
 
-    return {
+    return normalizzaStorico({
       paziente: { idMPI: campo("idMPI"), cognome: campo("Cognome"), nome: campo("Nome") },
       cf: cfImpronta(doc),
       periodo, date: date.filter(Boolean), righe, scartate, letto: Date.now(),
-    };
+    });
   }
 
   // Two reads of the same table can show different draws: the portal only
@@ -1315,12 +1347,13 @@
                .filter((x, i, a) => x && a.findIndex((y) => y && y.nome === x.nome && y.valore === x.valore) === i).slice(0, 40),
              letto: Date.now() };
   }
-  // Una scheda salvata prima che l'emogas avesse righe sue può avere, nella
-  // stessa riga, valori dell'emocromo e dell'emogas: si dividono prima di
-  // mostrarla (la prossima lettura la riscrive già divisa).
-  function dividiEga(st) {
-    const mista = st && (st.righe || []).some((r) => (r.valori || []).some((v) => v && v.v && eEga(v.esame || r.esame) !== eEga(r.esame)));
-    return mista ? fondiStorico(st, { ...st, righe: [], date: [], referti: [], scartate: [] }) : st;
+  // Una tabella passa per la fusione anche da sola, appena letta e prima di
+  // mostrarla: così le colonne vanno sempre in ordine di tempo (il portale le
+  // può dare dalla più recente, e «ultimo» finiva sul prelievo più vecchio),
+  // lo stesso analita ripetuto da due prestazioni è una riga sola, e una
+  // scheda salvata prima che l'emogas avesse righe sue si divide.
+  function normalizzaStorico(st) {
+    return st ? fondiStorico(st, { ...st, righe: [], date: [], referti: [], scartate: [] }) : null;
   }
   const chiaveCol = (d) => (d && (d.chiave || d.label)) || "";
   const ordData = (label) => {
@@ -4229,6 +4262,7 @@
         const el = this.root.querySelector(sel);
         if (el) { el.scrollTop = top; el.scrollLeft = left; }
       }
+      this._bordiStanza?.();   // i bordi sfumati della mappa, sullo scorrimento appena rimesso
       if (this._fuocoId && !this.root.activeElement) {
         const f = this.root.getElementById ? this.root.getElementById(this._fuocoId) : null;
         if (f && !/^(INPUT|TEXTAREA)$/.test(f.tagName)) f.focus({ preventScroll: true });
@@ -4590,6 +4624,7 @@
     }
     bindStanza() {
       const $ = (s) => this.root.querySelector(s);
+      this._bordiStanza = null;   // vale solo per la mappa disegnata adesso
       this.root.querySelectorAll("[data-pazvista]").forEach((b) => b.addEventListener("click", () => {
         this._pazVista = b.getAttribute("data-pazvista");
         store.set("pazVista", this._pazVista);
@@ -4655,7 +4690,8 @@
           tela.classList.toggle("sx", tela.scrollLeft > 1);
           tela.classList.toggle("dx", tela.scrollLeft + tela.clientWidth < tela.scrollWidth - 1);
         };
-        if (tela) { bordi(); tela.addEventListener("scroll", bordi, { passive: true }); }
+        // anche subito dopo che render() ha rimesso lo scorrimento di prima
+        if (tela) { bordi(); tela.addEventListener("scroll", bordi, { passive: true }); this._bordiStanza = bordi; }
         const inp = map.querySelector(".stnomein");
         if (inp) {
           inp.focus();
@@ -5224,7 +5260,7 @@
     // Una tabella sola: per gruppo, una colonna a prelievo, il più recente a
     // sinistra. Non c'è più una riga per richiesta da aprire.
     datiEsiti() {
-      let dati = dividiEga(this.storico || null);
+      let dati = normalizzaStorico(this.storico || null);
       for (const e of this.esiti) {
         if (e.kind !== "valori") continue;
         const v = tabStore.get(this.risKey(e.id), null);
@@ -5295,7 +5331,7 @@
       const sotto = this._sotto;
       const valori = prelievi.length || st || conPortale ? `
         <div class="sec">
-          <div class="lbl">Valori${t ? ` (${fondiFormula(st.righe).length} esami · ${t.nCol} prelievi)` : ""}
+          <div class="lbl">Valori${t ? ` (${righeTabella(st.righe).length} esami · ${t.nCol} prelievi)` : ""}
             ${vivi || conPortale ? `<button class="mini" id="risall" ${ra || sotto ? "disabled" : ""} title="Legge i valori dal gestionale, un prelievo alla volta${conPortale ? ", e lo storico del portale in una scheda di sottofondo" : ""}">${
               ra ? `↻ ${ra.done}/${ra.total}…` : sotto ? "↻ storico…" : (conPortale ? !dalPortale : daLeggere === vivi) ? "⭳ Carica i valori" : "↻ Aggiorna"}</button>` : ""}
             ${t ? `<button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>` : ""}
@@ -5312,7 +5348,7 @@
           ${senzaData.length ? `<div class="hint">Di ${senzaData.length === 1 ? "un prelievo" : `${senzaData.length} prelievi`} la pagina non dà data e ora, né nel campo nascosto né nella riga: ${
             senzaData.length === 1 ? "è la colonna" : "sono le colonne"} <b>?</b>, in fondo a destra (${
             esc(senzaData.map((e) => shortLabel(e.label)).join(", "))}). I valori ci sono tutti; il Registro dice cosa c'era scritto al posto dell'ora.</div>` : ""}
-          ${t ? `${this.avvisoNomi(fondiFormula(st.righe), st.scartate)}${t.nRighe ? t.html
+          ${t ? `${this.avvisoNomi(righeTabella(st.righe), st.scartate)}${t.nRighe ? t.html
             : `<div class="hint">Tutti i valori sono in range: con «solo alterati» non resta niente da mostrare.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
           ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Con lo storico del portale, letto per <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
             : this.storicoAltri ? `<div class="hint">In memoria c'è lo storico di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non lo mostro.</div>`
@@ -5382,7 +5418,7 @@
     // divergere, e la differenza la scopre il medico.
     tabellaStorico(st, nov = null, segni = {}) {
       const col = st.date.map((d, i) => ({ ...d, i })).reverse();   // il più recente a sinistra
-      const righe = fondiFormula(st.righe);   // «Neu 4.0 (56%)»: una riga, non due
+      const righe = righeTabella(st.righe);   // niente doppioni, e «Neu 4.0 (56%)»: una riga, non due
       const ambS = sigleAmbigue(righe);
       const inatteso = (r) => !siglaCurata(r.nome) || ambS.has(chiaveAmbigua(r));
       const simboli = new Map();   // esame → segno, uno per tutta la tabella
