@@ -91,7 +91,12 @@ check(await page.locator('#sa4-page a[title="Richieste Laboratorio"]').count() >
 await $("#q").fill("dolore toracico, sospetta SCA");
 await $('.chip.preset:has-text("Base PS")').click();
 await $("#go").click();
-await page.waitForSelector("#psassist-host #confirmnow", { state: "attached", timeout: 90000 });
+// il giro va in sottofondo: si atterra sul carrello con la striscia, e un tocco apre la ricevuta
+await page.waitForFunction(() => /Conferma dal gestionale/.test(document.getElementById("psassist-host")
+  ?.shadowRoot?.querySelector(".pill.run")?.textContent || ""), null, { timeout: 90000 });
+check(await $(".card").count() === 0, "finito il giro la finestra non si apre da sola: c'è la striscia");
+await $(".pill.run").click();
+await page.waitForSelector("#psassist-host #confirmnow", { state: "attached", timeout: 10000 });
 check(/esami in carrello, verificati/.test(await $(".banner.ok").innerText()), "la richiesta si crea e gli esami si aggiungono");
 check(await $(".chip.cart").count() >= 3, "il pannello elenca il carrello");
 check(await page.locator('#sa4-page a[href*="Delete=Elimina"]').count() >= 1, "e la pagina vera mostra gli esami nel carrello");
@@ -101,11 +106,16 @@ check(await page.locator('#sa4-page form[name="Prestazioni"]').count() === 1, "s
 await $("#confirmnow").click();
 await page.waitForFunction(() => document.title === "ROSSI MARIO", { timeout: 30000 }).catch(() => {});
 check(await page.title() === "ROSSI MARIO", "dopo la Conferma si torna alla scheda del paziente");
-// the wizard is its own host, like at work: a separate overlay over everything
+// la stampa non ha finestra: il PDF va in una cornice nascosta (al lavoro si
+// apre il dialogo del browser); nel banco il dialogo non c'è, e lo dicono i
+// comandi compatti nell'angolo
 await page.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 }).catch(() => {});
-check(await page.locator("#psassist-print .pwbody").count() >= 1, "e parte il wizard di stampa");
-const passo = await page.locator("#psassist-print .pwhd").innerText().catch(() => "");
-check(/etichett/i.test(passo), `che comincia dalle etichette (${passo.replace(/\s+/g, " ").slice(0, 50)})`);
+const passo = await page.evaluate(() => document.getElementById("psassist-print")?.dataset.doc || "");
+check(!!passo, "e parte la stampa");
+check(/etichett/i.test(passo), `che comincia dalle etichette (${passo.slice(0, 50)})`);
+await page.waitForSelector("#psassist-print .pc:not([hidden]) .pwhd", { state: "attached", timeout: 15000 }).catch(() => {});
+check(/etichett/i.test(await page.locator("#psassist-print .pwhd").innerText().catch(() => "")),
+  "e i comandi nell'angolo dicono quale documento");
 await page.keyboard.press("Escape");
 await page.waitForTimeout(300);
 

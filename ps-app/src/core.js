@@ -688,12 +688,16 @@
   function assertSameEpisode(doc, episodeId, what) {
     const found = findEpisodeIdInDoc(doc);
     if (!found) {
-      throw new StopError(`Episodio non identificabile nella pagina "${what}"`, "Interrotto per sicurezza.");
+      throw restaQui(new StopError(`Episodio non identificabile nella pagina "${what}"`, "Interrotto per sicurezza."));
     }
     if (episodeId && found !== episodeId) {
-      throw new StopError(`La pagina "${what}" appartiene a un altro episodio (${found} ≠ ${episodeId})`, "Interrotto per sicurezza.");
+      throw restaQui(new StopError(`La pagina "${what}" appartiene a un altro episodio (${found} ≠ ${episodeId})`, "Interrotto per sicurezza."));
     }
   }
+  // Un errore dopo il quale la scheda NON va portata sul carrello: un episodio
+  // che non torna (quel carrello potrebbe essere di un altro paziente), la
+  // sessione scaduta, un'altra scheda al lavoro sulla stessa richiesta.
+  const restaQui = (err) => { err.restaQui = true; return err; };
 
   // Patient page: entry links to open a new richiesta.
   function patientModel(doc, baseUrl) {
@@ -2208,10 +2212,94 @@
       if (normEsame(noto) !== normEsame(e.label)) entry.rinominati[e.code] = e.label;
       else delete entry.rinominati[e.code];
     }
+    // Come è fatto un «aggiungi» vero di questa risorsa, per quando la riga di
+    // un esame manca dalla pagina (vedi linkSalvato): l'ordine dei parametri,
+    // quelli fissi dell'azione, e per ogni codice i valori che cambiano da
+    // riga a riga (BRANCA). Richiesta, episodio e risorsa non si salvano mai.
+    const ins = model.exams.filter((e) => e.isAdd);
+    if (ins.length) {
+      const tutte = ins.map((e) => coppieQuery(e.href));
+      const perRiga = new Set([...((entry.ins && entry.ins.perRiga) || []), ...PER_RIGA]);
+      if (tutte.length > 1) {
+        for (const [k] of tutte[0]) {
+          if (new Set(tutte.map((cc) => (cc.find(([x]) => x === k) || [])[1])).size > 1) perRiga.add(k);
+        }
+      }
+      entry.ins = { schema: tutte[0].map(([k, v]) => [k, perRiga.has(k) || IDENTITA.includes(k) ? "" : v]), perRiga: [...perRiga] };
+      entry.par = entry.par || {};
+      ins.forEach((e, n) => {
+        const valori = {};
+        for (const [k, v] of tutte[n]) if (perRiga.has(k) && k !== "PRESTAZIONE") valori[k] = v;
+        entry.par[e.code] = valori;
+      });
+    }
     entry.ts = Date.now();
     cat[model.res] = entry;
     store.set("catalog.v1", cat);
     return entry.rinominati;
+  }
+  // I parametri dell'indirizzo così come stanno scritti nel link (mai
+  // decodificati e ricodificati): una sostituzione tocca solo il valore.
+  const coppieQuery = (href) => {
+    const q = new URL(href).search.slice(1);
+    return q ? q.split("&").map((p) => { const j = p.indexOf("="); return j < 0 ? [p, ""] : [p.slice(0, j), p.slice(j + 1)]; }) : [];
+  };
+  const PER_RIGA = ["PRESTAZIONE", "BRANCA"];          // cambiano da un esame all'altro
+  const FISSI_INS = ["Insert", "MVPG", "ccsForm", "toPG"]; // l'azione «aggiungi»
+  // di chi e di che cosa: questi vengono SEMPRE dalla pagina di adesso, mai dalla memoria
+  const IDENTITA = ["RICHIESTA_ID", "EPISODIO_ID", "RISORSA_ID", "RISORSE", "STRUTTURA", "ASSISTITO_ID"];
+  // La riga di un esame che la pagina oggi non mostra (l'elenco a volte arriva
+  // monco: la riga c'è, ma non si vede). Si ordina col codice salvato SOLO se
+  // tutto viene da link veri del gestionale: il codice sta nel catalogo di
+  // QUESTA risorsa col nome di quello scelto, non ha mai mostrato un altro
+  // nome, e i suoi parametri di riga (BRANCA) sono stati visti su un suo
+  // «aggiungi». Il link si fa da un «aggiungi» vero della pagina, cambiando
+  // solo PRESTAZIONE e BRANCA; se la pagina non ne ha nessuno, dall'elenco di
+  // adesso con lo schema imparato. Il nome non si può controllare prima
+  // dell'invio: lo controlla, stretto, la verifica dopo (runPlan).
+  function linkSalvato(model, it) {
+    const res = model.res;
+    if (!res || res !== it.res || !/^[A-Za-z0-9]+$/.test(String(it.code))) return null;
+    const imp = learnedCatalog()[res] || {};
+    const nomeCat = (fullCatalog()[res]?.items || {})[it.code];
+    if (!nomeCat) return null;
+    const mn = mnemonico(it.label);
+    if (normEsame(nomeCat) !== normEsame(it.label) && !(mn && mnemonico(nomeCat) === mn)) return null;
+    if ((imp.rinominati || {})[it.code]) return null;
+    const ins = imp.ins, par = (imp.par || {})[it.code];
+    if (!ins || !Array.isArray(ins.perRiga) || !Array.isArray(ins.schema) || !par) return null;
+    const valori = { ...par, PRESTAZIONE: String(it.code) };
+    if (!ins.perRiga.every((k) => k in valori)) return null;
+    if (!Object.values(valori).every((v) => /^[A-Za-z0-9._~%+-]*$/.test(String(v)))) return null;
+    let href = null, via = "";
+    const vero = model.exams.find((e) => e.isAdd);
+    if (vero) {
+      const cc = coppieQuery(vero.href);
+      if (!ins.perRiga.every((k) => cc.some(([x]) => x === k))) return null;
+      const u = new URL(vero.href);
+      u.search = "?" + cc.map(([k, v]) => `${k}=${ins.perRiga.includes(k) ? valori[k] : v}`).join("&");
+      href = u.href; via = "da un «aggiungi» di questa pagina";
+    } else {
+      const base = model.listUrl(res);
+      if (!base) return null;
+      const qui = new Map(coppieQuery(base));
+      const out = [];
+      for (const [k, v] of ins.schema) {
+        if (ins.perRiga.includes(k)) out.push([k, valori[k]]);
+        else if (FISSI_INS.includes(k)) out.push([k, v]);
+        else if (qui.has(k)) out.push([k, qui.get(k)]);
+        else if (IDENTITA.includes(k)) return null;   // di chi è, lo dice solo la pagina di adesso
+        else out.push([k, v]);   // un parametro di navigazione: com'era sul link vero
+      }
+      const u = new URL(base);
+      u.search = "?" + out.map(([k, v]) => `${k}=${v}`).join("&");
+      href = u.href; via = "dallo schema imparato";
+    }
+    // l'ultima parola la dice l'indirizzo stesso: questa richiesta, questa
+    // risorsa, questo esame, e un «aggiungi»
+    if (param(href, "RISORSA_ID") !== res || param(href, "RICHIESTA_ID") !== model.richiestaId
+        || param(href, "PRESTAZIONE") !== String(it.code) || !/[?&]Insert=Inserisci(&|$)/.test(href)) return null;
+    return { href, code: String(it.code), salvato: true, via };
   }
   // i codici che su questa pagina portano un nome diverso da quello noto
   const rinominatiQui = (model) => {
@@ -2386,8 +2474,10 @@
     // Any fetched page that is a login page means the session died mid-flow.
     const guardSession = (doc, whatMayHaveHappened) => {
       if (classify(doc) === "login") {
-        throw new StopError("Sessione scaduta durante l'operazione",
-          `${whatMayHaveHappened ? whatMayHaveHappened + ". " : ""}Rifai l'accesso e controlla il carrello.`);
+        const e = restaQui(new StopError("Sessione scaduta durante l'operazione",
+          `${whatMayHaveHappened ? whatMayHaveHappened + ". " : ""}Rifai l'accesso e controlla il carrello.`));
+        e.sessione = true;
+        throw e;
       }
     };
     const step = (label) => {
@@ -2531,7 +2621,13 @@
       // da cui il pannello riparte, e l'unica che non muore con la pagina.
       // …con la risorsa di catalogo di partenza: serve al ritorno alla versione
       // vecchia in una sede che la «- NEW» non ce l'ha
-      const nudo = (i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label, ...(i.resCat ? { resCat: i.resCat } : {}) });
+      // …e il segno di un esame mandato col codice salvato: alla ripresa la
+      // sua verifica resta stretta (codice E nome), come quella del primo giro
+      const nudo = (i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label,
+        ...(i.resCat ? { resCat: i.resCat } : {}), ...(i.perCodice ? { perCodice: true } : {}) });
+      // il codice salvato ha messo in carrello un esame che non è quello scelto
+      const altroEsame = (it, riga, nm) => new StopError(`Il codice ${it.code} oggi è «${shortLabel(riga.label)}»: è entrato in carrello, toglilo`,
+        `Doveva essere «${nm}», mandato col codice salvato perché la sua riga mancava dalla pagina. Nient'altro è stato inviato.`);
       const salvaCorsa = (inVolo, resto) => {
         if (!plan.riprendibile) return;
         // Un esame che è già passato di qui non torna mai fra quelli «da
@@ -2612,6 +2708,10 @@
             if (classify(doc) !== "exam") { log(`pagina inattesa in verifica: "${snippet(doc)}"`); continue; }
             model = examModel(doc, url);
             noteList();
+            // mandato col codice salvato: la riga col suo codice deve portare
+            // anche il suo nome, o in carrello è entrato un altro esame
+            const suaRiga = it.perCodice ? model.exams.find((e) => e.isDel && e.code === it.code) : null;
+            if (suaRiga && !stessoEsame(suaRiga.label, it.label)) throw altroEsame(it, suaRiga, nm);
             // qui la fotografia «prima» non c'è più: vale il proprio codice,
             // oppure una riga che porta lo stesso nome (le prestazioni a
             // riflesso entrano sotto il codice dell'esame che ne deriva)
@@ -2629,6 +2729,7 @@
               // era entrato prima dell'interruzione e adesso non c'è più: lo
               // ha tolto qualcuno a mano. Non si rimette: si dice e si va.
               st.status = "skipped"; st.note = "non è più in carrello";
+              it.tolto = true;   // tolto a mano: non è uno «da aggiungere»
               log(`⚠ «${nm}» era in carrello e adesso non c'è più: non lo rimetto`);
               ui.renderRun(state);
               salvaCorsa(null, items.slice(i + 1));
@@ -2693,6 +2794,17 @@
             link = alt;
           }
         }
+        // Né il codice né il nome sulla pagina: l'elenco può essere arrivato
+        // monco. Si prova il codice salvato (linkSalvato dice quando si può) —
+        // il nome lo controlla poi, stretto, la verifica dopo l'invio.
+        let perCodice = false;
+        if (!link && !/^esame \d+$/i.test(it.label) && !model.exams.some((e) => e.code === it.code && e.isDel)) {
+          const salvato = linkSalvato(model, it);
+          if (salvato) {
+            log(`riga assente nella pagina: uso il codice salvato ${it.code} per «${nm}» (${salvato.via})`);
+            link = salvato; perCodice = true; it.perCodice = true;
+          }
+        }
         if (!link) {
           const gia = model.exams.some((e) => e.code === it.code && e.isDel);
           throw new StopError(`«${nm}» non è nell'elenco di ${risorsaCorta(it.res)}`,
@@ -2706,8 +2818,10 @@
         // so does the odd word ("EMOGASANALISI MISTA" vs "CAPILLARE", same
         // POC2117). Typography is never a rename, and neither is a different
         // wording carrying the SAME LIS mnemonic — anything else still stops.
+        // (Col codice salvato una riga viva non c'è: questo controllo non si
+        // può fare, e al suo posto la verifica dopo l'invio è stretta.)
         const norm = (s) => s.replace(/[–—‐‑‒−]/g, "-").replace(/\s+/g, " ").trim().toUpperCase();
-        if (!/^esame \d+$/i.test(it.label) && norm(link.label) !== norm(it.label)) {
+        if (!perCodice && !/^esame \d+$/i.test(it.label) && norm(link.label) !== norm(it.label)) {
           const mioMn = mnemonico(it.label), suoMn = mnemonico(link.label);
           if (!mioMn || mioMn !== suoMn) {
             throw new StopError(`Il codice ${it.code} oggi si chiama «${link.label}»`, `Selezionato come «${nm}» — non inviato.`);
@@ -2725,8 +2839,8 @@
         // duplicando la scheda: si porta dietro l'appunto del giro). Due
         // motori sullo stesso carrello vuol dire due volte lo stesso esame.
         if (!presidioLibero(state.richiestaId, token)) {
-          throw new StopError("Un'altra scheda sta mandando gli esami di questa richiesta",
-            "Da qui non mando niente. Finisci di là, o ricarica questa pagina.");
+          throw restaQui(new StopError("Un'altra scheda sta mandando gli esami di questa richiesta",
+            "Da qui non mando niente. Finisci di là, o ricarica questa pagina."));
         }
         const prima = new Set(model.exams.filter((e) => e.isDel).map((e) => e.code));
         salvaCorsa(it, items.slice(i + 1));   // da qui è IN VOLO: non si rimanda
@@ -2748,7 +2862,17 @@
         // In carrello l'esame può comparire col proprio codice oppure, se è a
         // riflesso, con quello dell'esame che ne deriva: una riga nuova vale
         // solo se porta il NOME di quello che il medico ha scelto.
+        // Col codice salvato la verifica è STRETTA: vale solo la riga col suo
+        // codice E il suo nome (stesso nome, stesso mnemonico LIS, o l'uno
+        // dentro l'altro). Lo stesso codice con un altro nome è un altro esame
+        // entrato al suo posto: ci si ferma e lo si dice.
         const entrato = () => {
+          if (perCodice) {
+            const riga = model.exams.find((e) => e.isDel && e.code === it.code);
+            if (!riga) return null;
+            if (!stessoEsame(riga.label, it.label)) throw altroEsame(it, riga, nm);
+            return { code: it.code, label: riga.label };
+          }
           if (model.inCart(it.code)) return { code: it.code, label: it.label };
           const nuove = model.exams.filter((e) => e.isDel && !prima.has(e.code));
           if (nuove.length) log(`nuove righe in carrello: ${nuove.map((e) => `«${e.label}» ${e.code}`).join(", ")}`);
@@ -2849,24 +2973,33 @@
         if (s.status === "running") { s.status = "fail"; s.note = "fermato qui"; }
         else if (s.status === "pending") { s.status = "skipped"; s.note = "non eseguito"; }
       }
+      // Che cosa è in carrello e che cosa resta da aggiungere a mano: è quello
+      // che il medico deve sapere per finire dal gestionale. (Un esame tolto a
+      // mano durante il giro non è «da aggiungere».)
+      const nomeDi = (x) => x.display || shortLabel(x.label);
+      const liste = {
+        nel: state.added.map(nomeDi),
+        mancano: plan.items.filter((x) => !state.added.includes(x) && !x.tolto).map(nomeDi),
+      };
       if (signal.aborted || err?.name === "AbortError") {
         log("■ interrotto dall'utente");
-        ui.stopped(state, { head: "Interrotto", body: "L'ultimo esame inviato potrebbe essere in carrello: controlla." });
+        ui.stopped(state, { head: "Interrotto", body: "L'ultimo esame inviato potrebbe essere in carrello: controlla.", ...liste }, plan);
       } else if (err instanceof StopError) {
         log(`⚠ ${err.message}`);
         // quanti esami restavano fuori: senza questo, il messaggio parla solo
         // di quello che è andato storto e il resto si vede solo espandendo
         const restavano = plan.items.filter((x) => !state.added.includes(x)).length - 1;
         ui.failed(state, { head: err.head, body: `${err.body || ""}${
-          restavano > 0 ? ` Restavano ${restavano === 1 ? "1 altro esame" : restavano + " altri esami"} da mandare.` : ""}` });
+          restavano > 0 ? ` Restavano ${restavano === 1 ? "1 altro esame" : restavano + " altri esami"} da mandare.` : ""}`,
+          ...liste, restaQui: !!err.restaQui, sessione: !!err.sessione }, plan);
       } else {
         // La pagina che muore mentre navighi arriva qui come una fetch fallita:
         // il giro annotato è ancora lì, e riprende da solo alla pagina dopo.
         const riprende2 = !!tabStore.get(CORSA, null);
         log(`⚠ ${riprende2 ? "giro interrotto" : "errore imprevisto"}: ${err?.message || err}`);
         ui.failed(state, riprende2
-          ? { head: "Giro interrotto", body: "Riprende da solo appena si carica una pagina del gestionale: niente viene rimandato due volte." }
-          : { head: "Errore imprevisto", body: `${err?.message || err} — apri il carrello e controlla.` });
+          ? { head: "Giro interrotto", body: "Riprende da solo appena si carica una pagina del gestionale: niente viene rimandato due volte.", ...liste }
+          : { head: "Errore imprevisto", body: `${err?.message || err} — apri il carrello e controlla.`, ...liste }, plan);
       }
       return state;
     }
@@ -2900,10 +3033,15 @@
        come se il pannello non ci fosse. */
     .strip { display: flex; align-items: center; gap: 6px; }
     .pill.run { border-radius: 12px; padding: 7px 13px 7px 11px; max-width: min(380px, 82vw); text-align: left; }
-    .pill.run.alt { background: #8A5A00; }
-    .pill.run.alt:hover { background: #764d00; }
+    .pill.run.alt, .pill.run.warn { background: #8A5A00; }
+    .pill.run.alt:hover, .pill.run.warn:hover { background: #764d00; }
+    /* errore: si completa a mano, nel gestionale */
+    .pill.run.err { background: #B3261E; }
+    .pill.run.err:hover { background: #8f1e18; }
     .pill .col { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.3; }
-    .pill .l1 { display: flex; align-items: center; gap: 6px; }
+    .pill .l1 { display: flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; }
+    .pill .l1 .who { max-width: 150px; }
+    .pill .tag { font-weight: 700; white-space: nowrap; }
     .pill .l2 { font-size: 11.5px; font-weight: 500; opacity: .93; max-width: 100%;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .pill .tick { font-size: 13px; font-weight: 800; }
@@ -3001,6 +3139,8 @@
     .qrx { grid-column: 1 / -1; min-width: 0; }
     .chip.cart { background: #EDF7F0; border-color: #BCE0C9; color: #124F31; cursor: default; }
     .chip.ghosted { background: #F4F8FB; border-color: #E3E8EF; color: #5B6B7A; cursor: default; }
+    .chip.nel { background: #EDF7F0; border-color: #BCE0C9; color: #124F31; cursor: default; }
+    .chip.manca { background: #FBEBEA; border-color: #E9BAB6; color: #7c1a14; cursor: default; font-weight: 600; }
     .btn { display: block; width: 100%; border: 0; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; }
     .btn + .btn { margin-top: 7px; }
     .btnrow { display: flex; gap: 7px; }
@@ -3638,6 +3778,10 @@
       this.collapsed = !daPannello;
       this.menuAperto = false;   // il menu «⋯» dell'intestazione
       this.avvisoPill = "";      // una parola sulla pill, per pochi secondi («✓ Copiato · incolla»)
+      // Che cosa sta succedendo fuori dalla finestra — conferma, etichette,
+      // un errore da finire a mano — detto dalla striscia nell'angolo:
+      // {tag, testo, tono: ok|run|warn|err, badge?, paziente?, onTap?, onStop?}
+      this.striscia = null;
       this.acq = "";           // catalog search text
       this.esiti = [];                  // risultati + referti, newest first
       this.storico = null;              // the portal's multi-day table, if it is THIS patient's
@@ -3680,7 +3824,7 @@
       this._esc = (e) => {
         if (e.key !== "Escape") return;
         if (this.escLocale && this.escLocale()) return;   // la stanza lo usa per sé (menu, trascinamento)
-        // la stampa guidata e il conto alla rovescia della conferma stanno sopra: l'Esc è loro
+        // una stampa in corso (Esc la annulla) e il conto alla rovescia della conferma: l'Esc è loro
         if (document.getElementById("psassist-print") || document.getElementById("psassist-confirm")) return;
         // Solo col pannello aperto: da quando il giro va in sottofondo, un Esc
         // dato al gestionale (una tendina, un campo) non deve fermare gli
@@ -3871,11 +4015,36 @@
       if (el) { el.textContent = this.logLines.join("\n"); el.scrollTop = el.scrollHeight; }
     }
 
+    // La striscia dice a che punto è, due righe: chi (e cosa) sopra, il
+    // momento sotto. Con `ms` se ne va da sola, e `poi` dice cosa resta.
+    segnala(s, { ms = 0, poi = null } = {}) {
+      clearTimeout(this._tStriscia);
+      this.striscia = s ? { ...s } : null;
+      if (s && ms) {
+        const mia = this.striscia;
+        this._tStriscia = setTimeout(() => {
+          if (this.striscia !== mia) return;
+          this.striscia = null;
+          poi?.();
+          this.render();
+        }, ms);
+      }
+      // a finestra aperta la striscia non si vede: niente ridisegno (si
+      // starebbe magari scrivendo in un campo)
+      if (this.collapsed) this.render();
+    }
+    // finito tutto (stampato): la pill torna quella di sempre
+    chiudiGiro() {
+      if (this.runState !== "done") return;
+      this.runState = null; this.runData = null; this.message = null;
+    }
+
     // ---- engine callbacks ----
     beginRun(state, plan) {
       // a chained second richiesta keeps the first one's steps on screen
       if (plan && plan.continuation && this.runData && this.runData.steps) state.steps.unshift(...this.runData.steps);
       this.runState = "running"; this.runData = state; this.stopFn = state.stop;
+      clearTimeout(this._tStriscia); this.striscia = null;
       this.runRipreso = !!(plan && plan.startPage === "ripresa");
       // Il giro sopravvive al cambio pagina: riprende da dov'era. Si avvisa
       // prima di uscire solo dove riprendere non si può — le catene
@@ -3903,7 +4072,13 @@
         head: `✓ ${n} ${n === 1 ? "esame" : "esami"} in carrello, ${n === 1 ? "verificato" : "verificati"}`,
         body: state.quesitoKept ? "Quesito del triage mantenuto." : "",
       };
-      if (!this.runRipreso) this.collapsed = false;   // l'esito si guarda: finestra aperta
+      // In sottofondo la finestra non si apre mai da sola: dalla spedizione
+      // alle etichette parla la striscia, e un tocco la apre con la ricevuta.
+      // (Solo la catena lab+radiologia, plan.hold, resta sotto gli occhi.)
+      this.cartTag = `✓ ${n} ${n === 1 ? "esame" : "esami"} in carrello`;
+      const daConfermare = !!tabStore.get("confirm.v1", null);
+      this.segnala({ tag: this.cartTag, tono: daConfermare ? "run" : "ok",
+        testo: daConfermare ? "Confermo…" : plan.startPage === "ripresa" ? "Il carrello è pronto: aprilo quando vuoi" : "Apro il carrello…" });
       this.render();
       if (state.finishedListUrl) this.chiudiRichiesta(state.finishedListUrl, plan);
     }
@@ -3912,9 +4087,14 @@
     // del carrello caricata davvero, in una cornice invisibile, col suo
     // bottone premuto davvero. Se il server non si lascia incorniciare, o se
     // un controllo dice di no, si va sulla pagina come si è sempre fatto: lì
-    // il medico vede tutto e decide lui.
+    // il medico vede tutto e decide lui. Ogni pagina dopo ci arriva con la
+    // striscia (AVVISO), mai con la finestra.
     async chiudiRichiesta(listUrl, plan) {
       const daConfermare = !!tabStore.get("confirm.v1", null);
+      const tag = this.cartTag || "";
+      const consegna = (striscia, testo) => tabStore.set(AVVISO, {
+        ts: Date.now(), striscia: { paziente: this.runPatient || "", ...striscia }, ...(testo ? { testo } : {}),
+      });
       if (!daConfermare || DEMO) {
         // Un giro ripreso vuol dire che stavi facendo altro: la pagina non te
         // la porto via. Il carrello è pronto, ci vai col bottone.
@@ -3923,6 +4103,10 @@
           this.render();
           return;
         }
+        // Revisione: si va sul carrello, e lì la Conferma è quella del
+        // gestionale (il suo clic arma comunque la stampa delle etichette).
+        consegna(daConfermare ? { tag, testo: "Confermo…", tono: "run", attesaConferma: true }
+          : { tag, testo: "Conferma dal gestionale", tono: "ok" });
         setTimeout(() => nav(listUrl), 400);
         return;
       }
@@ -3933,6 +4117,7 @@
       catch { esito = "rifiutata"; }
       this.log(`${now()}  conferma in sottofondo: ${esito}`);
       if (esito === "stampata") {
+        // la striscia adesso è della stampa, partita dalla pagina dopo la conferma
         this.message = { ok: "✓ Richiesta confermata — senza passare dal carrello." };
         this.render();
         return;
@@ -3945,10 +4130,13 @@
         // quando torni sulla scheda di questo paziente (mai su un'altra).
         if (this.runRipreso && findEpisodeId(document, location.href) !== plan?.episodeId) {
           this.message = { ok: "✓ Richiesta confermata. Le etichette partono quando torni sulla sua scheda." };
+          this.segnala({ tag: "Confermata", testo: "Etichette quando torni sulla sua scheda", tono: "ok" });
           this.render();
           return;
         }
-        tabStore.set(AVVISO, { testo: { ok: "✓ Richiesta confermata — senza passare dal carrello." }, ts: Date.now() });
+        consegna({ tag: "Confermata", testo: "Aspetto le etichette…", tono: "run", attesaStampa: true },
+          { ok: "✓ Richiesta confermata — senza passare dal carrello." });
+        this.segnala({ tag: "Confermata", testo: "Aspetto le etichette…", tono: "run" });
         nav(location.href);
         return;
       }
@@ -3960,32 +4148,83 @@
       if (this.runRipreso) {
         // giro ripreso: niente salti di pagina, il carrello si apre col bottone
         this.message = { head: this.message?.head || "", body: esito === "rifiutata" ? "Conferma da fare a mano: apri il carrello." : motivo };
+        this.segnala(esito === "rifiutata"
+          ? { tag, testo: "Conferma da fare a mano: apri il carrello", tono: "warn" }
+          : { tag: esito === "incerta" ? "Conferma incerta" : "Conferma sospesa", testo: "Controlla il carrello e premi tu Conferma", tono: "warn" });
         this.render();
         return;
       }
       if (esito !== "rifiutata") {
-        tabStore.set(AVVISO, {
-          testo: esito === "incerta" ? motivo
-            : (typeof this.message === "string" && this.message) || motivo,
-          ts: Date.now(),
-        });
+        consegna({ tag: esito === "incerta" ? "Conferma incerta" : "Conferma sospesa", testo: "Controlla il carrello e premi tu Conferma", tono: "warn" },
+          esito === "incerta" ? motivo : (typeof this.message === "string" && this.message) || motivo);
+      } else {
+        // cornice vietata: la conferma la fa la pagina vera, appena caricata
+        consegna({ tag, testo: "Confermo…", tono: "run", attesaConferma: true });
       }
       nav(listUrl);
     }
-    failed(state, msg) {
+    failed(state, msg, plan) {
       window.removeEventListener("beforeunload", this._unload);
       this.runState = "fail"; this.runData = state; this.message = msg;
-      // un errore non si nasconde… ma un giro che riprenderà da solo non deve
-      // lasciare il pannello spalancato per sempre: la preferenza resta quella
-      // del medico
       const riprenderà = !!tabStore.get(CORSA, null);
-      if (this.collapsed && !riprenderà) { this.collapsed = false; store.set("collapsed", false); }
+      // La catena lab+radiologia resta sotto gli occhi, com'è sempre stata.
+      if (plan && plan.hold) {
+        if (this.collapsed && !riprenderà) { this.collapsed = false; store.set("collapsed", false); }
+        this.render();
+        return;
+      }
+      // Un giro che riprenderà da solo alla pagina dopo: lo dice la striscia.
+      if (riprenderà) {
+        this.segnala({ tag: "Giro interrotto", testo: "Riprende alla prossima pagina", tono: "warn", paziente: this.runPatient || "" });
+        this.render();
+        return;
+      }
+      // Errore in sottofondo: la finestra NON si apre. La striscia diventa
+      // rossa e dice che cosa manca, e la scheda va sul carrello della
+      // richiesta — una semplice lettura dell'elenco, quello che il gestionale
+      // stesso mostra: niente si manda, niente si conferma. Lì il medico vede
+      // gli esami già scelti e aggiunge il resto a mano.
+      tabStore.set("confirm.v1", null);
+      const mancano = msg.mancano || [];
+      const striscia = msg.sessione
+        ? { tag: "Sessione scaduta", testo: "Rifai l'accesso, poi controlla il carrello", tono: "err", paziente: this.runPatient || "" }
+        : { tag: "Errore · completa a mano", testo: mancano.length ? `Mancano: ${mancano.join(", ")}` : msg.head, tono: "err", paziente: this.runPatient || "" };
+      // solo l'elenco semplice, di questo ospedale: niente che inserisca o tolga
+      let listUrl = state.lastListUrl;
+      try { if (new URL(listUrl).origin !== location.origin || /[?&](Insert|Delete)=/.test(listUrl)) listUrl = null; }
+      catch { listUrl = null; }
+      // Mai sul carrello dopo un episodio che non torna o la sessione scaduta
+      // (restaQui), né se il giro ripreso ti ha trovato sulla scheda di un
+      // altro paziente: quella pagina non te la porto via.
+      // (epDiQuesta: la lista del PS non è la pagina di nessun paziente)
+      const qui = this.epDiQuesta();
+      const vai = !!listUrl && !msg.restaQui && (!this.runRipreso || (!!qui && qui === plan?.episodeId));
+      if (vai) {
+        const scritto = tabStore.set(AVVISO, {
+          ts: Date.now(), testo: msg, striscia,
+          giro: { stato: "fail", paziente: this.runPatient || "", listUrl,
+            steps: (state.steps || []).map(({ label, status, note }) => ({ label, status, note })) },
+        });
+        if (scritto) {
+          this.segnala(striscia);
+          this.render();
+          setTimeout(() => nav(listUrl), 300);
+          return;
+        }
+      }
+      this.segnala(striscia);
       this.render();
     }
-    stopped(state, msg) {
+    stopped(state, msg, plan) {
       window.removeEventListener("beforeunload", this._unload);
       this.runState = "stopped"; this.runData = state; this.message = msg;
-      if (this.collapsed) { this.collapsed = false; store.set("collapsed", false); }
+      if (plan && plan.hold) {
+        if (this.collapsed) { this.collapsed = false; store.set("collapsed", false); }
+        this.render();
+        return;
+      }
+      // fermato dal medico: lo dice la striscia, un tocco apre il resoconto
+      this.segnala({ tag: "Interrotto", testo: "L'ultimo esame potrebbe essere in carrello: controlla", tono: "warn", paziente: this.runPatient || "" });
       this.render();
     }
     stop() { this.stopFn?.(); }
@@ -4154,6 +4393,10 @@
       // Sei su un'altra scheda: il giro continua (le richieste portano il loro
       // episodio), ma va detto a chiare lettere di chi sono gli esami.
       const altrove = !!(this.runState && this.runPatient && patientName && this.runPatient !== patientName);
+      // la striscia di quello che succede fuori dalla finestra: rossa per un
+      // errore, ambra quando tocca a te
+      const strWho = (this.striscia && this.striscia.paziente) || who;
+      const strTono = !this.striscia ? "" : this.striscia.tono === "err" ? "err" : this.striscia.tono === "warn" ? "warn" : "";
       const chiPill = this.avvisoPill || ((this.runState || sulPaziente) ? who : "Pazienti");
       const pillInner = running
         ? `<span class="dot"></span> <span class="who">${esc(who)}</span> <span class="badge">${doneN}/${total}</span>`
@@ -4193,9 +4436,21 @@
       this.root.innerHTML = `
         <style>${COLORS}</style>
         <div class="wrap${ridotto ? "" : " win"}" style="${posStyle}">
-          ${this.collapsed && this.runState ? `
+          ${this.collapsed && !running && this.striscia ? `
             <div class="strip">
-              <button class="pill run ${altrove ? "alt" : ""}" id="expand" title="${esc(who)}${
+              <button class="pill run ${esc(strTono)}" id="expand" title="${esc(strWho)} — ${esc(this.striscia.onTap ? "tocca per i comandi" : "tocca per aprire il pannello")}">
+                ${this.striscia.tono === "run" ? `<span class="dot"></span>` : `<span class="tick">${this.striscia.tono === "err" || this.striscia.tono === "warn" ? "!" : "✓"}</span>`}
+                <span class="col">
+                  <span class="l1"><b class="who">${esc(strWho)}</b>${this.striscia.tag ? ` <span class="tag">${esc(this.striscia.tag)}</span>` : ""}${
+                    this.striscia.badge ? ` <span class="badge">${esc(this.striscia.badge)}</span>` : ""}</span>
+                  <span class="l2">${esc(this.striscia.testo || "")}</span>
+                </span>
+              </button>
+              ${this.striscia.onStop ? `<button class="stopmini" id="strstop" title="Annulla (Esc)">✕</button>` : ""}
+            </div>
+          ` : this.collapsed && this.runState ? `
+            <div class="strip">
+              <button class="pill run ${altrove ? "alt" : this.runState === "fail" ? "err" : this.runState === "stopped" ? "warn" : ""}" id="expand" title="${esc(who)}${
                 altrove ? " — stai guardando un'altra scheda" : ""} — tocca per aprire il pannello">
                 ${running ? `<span class="dot"></span>` : `<span class="tick">${this.runState === "done" ? "✓" : "!"}</span>`}
                 <span class="col">
@@ -6394,13 +6649,24 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           <span>${esc(s.label)}</span><small>${esc(s.note || "")}</small>
         </div>`).join("");
       const listUrl = this.runData?.finishedListUrl || this.runData?.lastListUrl;
+      // già sul carrello di quella richiesta (ci ha portato l'errore): niente bottone per andarci
+      const giaQui = !!listUrl && this.pageType === "exam" && param(listUrl, "RICHIESTA_ID") === param(location.href, "RICHIESTA_ID");
+      // Fermato a metà: che cosa c'è già in carrello e che cosa va aggiunto a
+      // mano dal gestionale — l'elenco che serve per finire.
+      const nel = (typeof m === "object" && m.nel) || [], mancano = (typeof m === "object" && m.mancano) || [];
+      const liste = !ok && (nel.length || mancano.length) ? `
+        <div class="sec"><div class="lbl">Nel carrello (${nel.length})</div><div class="chips">${
+          nel.map((x) => `<span class="chip nel">${esc(x)}</span>`).join("") || `<span class="hint">nessuno</span>`}</div></div>
+        <div class="sec"><div class="lbl">Da aggiungere a mano (${mancano.length})</div><div class="chips">${
+          mancano.map((x) => `<span class="chip manca">${esc(x)}</span>`).join("") || `<span class="hint">nessuno</span>`}</div></div>` : "";
       return `
         ${this.runPatient ? `<div class="idline" style="margin-top:0">Operazione per <b>${esc(this.runPatient)}</b></div>` : ""}
         <div class="banner ${cls}">${head ? `<b>${esc(head)}</b>` : ""}${esc(bodyTxt || "")}</div>
+        ${liste}
         <div class="sec"><div class="steps">${steps}</div></div>
         <details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
-          ${listUrl && (!ok || this.runRipreso) ? `<button class="btn primary" id="openlist">${
+          ${listUrl && !giaQui && (!ok || this.runRipreso) ? `<button class="btn primary" id="openlist">${
             ok ? "Apri il carrello" : "Apri il carrello e controlla"}</button>` : ""}
           <button class="btn ghost" id="reset">Torna al pannello</button>
         </div>
@@ -6419,6 +6685,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
     apri() {
       this.collapsed = false; this.avvisoPill = "";
+      // aperta la finestra, la striscia ha detto quello che doveva
+      if (this.striscia && !this.striscia.onTap) { clearTimeout(this._tStriscia); this.striscia = null; }
       store.set("collapsed", false);
       this.render();
       this.root.querySelector(".card")?.focus({ preventScroll: true });   // la tastiera nel pannello, non nel gestionale coperto
@@ -6529,8 +6797,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         // preferenza: finito il giro il pannello torna com'era
         if (this.runState === "running") { this.collapsed = false; this.render(); return; }
         if (this._justDragged) return; // it was a drag, not a click
+        // durante la stampa la striscia porta i suoi comandi, non il pannello
+        if (this.striscia && this.striscia.onTap) { this.striscia.onTap(); return; }
         this.apri();
       });
+      $("#strstop")?.addEventListener("click", () => this.striscia?.onStop?.());
       $("#collapse")?.addEventListener("click", () => this.riduci());
       $("#menubtn")?.addEventListener("click", (e) => { e.stopPropagation(); this.menuAperto = !this.menuAperto; this.render(); });
       // due posizioni pronte: al centro (85%), o in colonna a destra col gestionale visibile
@@ -7469,18 +7740,26 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // Sequential printing of the richiesta PDFs: labels first (label printer),
   // then the exam list (normal printer). True silent printing with per-job
   // printer selection is not possible from a web page on Windows, so this is
-  // the most automatic legal flow: each PDF opens in an overlay with the
-  // print dialog already triggered; "Stampata — avanti" moves to the next.
-  // Chrome's dialog remembers recent destinations, so switching printer is
-  // one click.
+  // the most automatic legal flow. Chrome's dialog remembers recent
+  // destinations, so switching printer is one click.
+  // Niente finestra davanti: il PDF va in una cornice NASCOSTA (c'è, perché il
+  // visualizzatore PDF di Chrome deve caricarsi, ma non si vede) e si apre
+  // subito il dialogo di stampa del browser. A che punto è lo dice la pill —
+  // o, senza pannello (o col pannello aperto), un riquadrino nello stesso
+  // angolo. Un riquadro coi comandi compare solo quando serve una mano:
+  // documento non catturabile, PDF non arrivato, dialogo che non si apre.
   let wizardOpen = false;
+  // Nessun segno dal dialogo di stampa entro questo tempo: si mostrano i
+  // comandi. Se il dialogo invece è aperto, il riquadro gli resta sotto e
+  // sparisce quando si chiude.
+  const NIENTE_DIALOGO_MS = 5000;
+  const cosaStampo = (job) => /^etichett/i.test(job.name) ? "le etichette"
+    : /^lista esami/i.test(job.name) ? "la lista esami"
+    : /^prenotazione/i.test(job.name) ? "la prenotazione RX"
+    : `«${job.name}»`;
 
-  function openPrintWizard(jobs, { title = "", onClose, panel = null } = {}) {
+  function openPrintWizard(jobs, { title = "", onClose, panel = null, tag = "Stampa" } = {}) {
     let ultimaDiag = null;   // l'ultimo visualizzatore non catturato, per «⧉ Diagnosi»
-    // Chiudere la finestra deve fermare davvero la caccia al PDF: senza questo
-    // il medico premeva Annulla, la catena continuava a chiedere al server, e
-    // una seconda stampa poteva partire mentre la prima era ancora in giro.
-    const abbandona = new AbortController();
     if (wizardOpen || !jobs.length) return;
     wizardOpen = true;
 
@@ -7493,23 +7772,39 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     let attempts = 0;
     let blobUrl = null;
     let timer = null;
+    let nienteDialogo = null;
+    let gen = 0;               // il caricamento in corso: uno saltato non deve stampare al posto del dopo
+    // Chiudere (✕, Esc) deve fermare davvero la caccia al PDF: senza questo il
+    // medico annullava, la catena continuava a chiedere al server, e una
+    // seconda stampa poteva partire mentre la prima era ancora in giro.
+    // Anche «Avanti» ferma quella del documento che si salta.
+    let ctlDoc = null;
+    let cur = null;            // il documento in stampa: { f, printed, apertoIl, avanzato }
+    let scheda = null;         // perché servono i comandi: { viewer, err, nonParte, banco }
+    let tuttiChiesti = true;   // ogni documento ha avuto la sua stampa
+    let chiuso = false;
     let staccaStampa = () => {};   // toglie l'ascolto del dialogo di stampa del documento in corso
 
     const CSS = `${COLORS}
-      .back { position: fixed; inset: 0; background: rgba(9,42,74,.45); z-index: 2147483646; }
-      .pw { position: fixed; top: 4vh; left: 50%; transform: translateX(-50%); z-index: 2147483647;
-            width: min(720px, 94vw); background: #fff; border-radius: 16px; overflow: hidden;
-            box-shadow: 0 18px 48px rgba(9,42,74,.4); font-size: 13.5px; color: #16232E;
-            display: flex; flex-direction: column; max-height: 92vh; }
-      .pwhd { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: #0B5CAD; color: #fff; }
-      .pwhd b { font-size: 14.5px; }
-      .pwhd .pwtit { font-size: 12px; opacity: .85; }
-      .pwhd .dest { margin-left: auto; background: #FFF7E6; color: #8a4b03; border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 12.5px; }
-      .pwbody { flex: 1; min-height: 320px; background: #E8EEF4; }
-      .pwbody iframe { width: 100%; height: 56vh; border: 0; display: block; background: #fff; }
-      .pwmsg { padding: 40px 20px; text-align: center; color: #5B6B7A; }
-      .pwft { padding: 12px 16px; display: flex; gap: 8px; align-items: center; border-top: 1px solid #E3E8EF; flex-wrap: wrap; }
-      .pwbtn { border: 0; border-radius: 10px; padding: 11px 16px; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+      /* la cornice del PDF: c'è (il visualizzatore deve caricarsi), non si vede */
+      .pf { position: fixed; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; pointer-events: none; }
+      .ps, .pc { position: fixed; z-index: 2147483647; color: #16232E; }
+      .ps[hidden], .pc[hidden] { display: none; }
+      .ps { display: flex; align-items: center; gap: 8px; max-width: min(380px, 82vw); background: #0B5CAD; color: #fff;
+            border-radius: 12px; padding: 7px 8px 7px 11px; font-size: 12px; box-shadow: 0 4px 14px rgba(9,42,74,.22); cursor: pointer; }
+      .ps .dot { width: 8px; height: 8px; border-radius: 50%; background: #7FD1A8; flex: none; animation: psaPulse 1.2s ease-in-out infinite; }
+      .ps .pst { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ps .psx { border: 0; background: rgba(255,255,255,.18); color: #fff; border-radius: 999px; width: 24px; height: 24px; cursor: pointer; flex: none; }
+      .pc { width: min(420px, 92vw); background: #fff; border: 1px solid #D9E2EC; border-radius: 14px; overflow: hidden;
+            box-shadow: 0 12px 32px rgba(9,42,74,.22); font-size: 13px; }
+      .pwhd { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #0B5CAD; color: #fff; flex-wrap: wrap; }
+      .pwhd b { font-size: 13px; }
+      .pwhd .dest { margin-left: auto; background: #FFF7E6; color: #8a4b03; border-radius: 999px; padding: 2px 10px; font-weight: 700; font-size: 11.5px; }
+      .pwtit { padding: 6px 12px 0; font-size: 11.5px; color: #5B6B7A; }
+      .pwmsg { padding: 10px 12px 0; color: #35506B; font-size: 12.5px; }
+      .pwmsg b { display: inline; }
+      .pwft { padding: 10px 12px 12px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+      .pwbtn { border: 0; border-radius: 9px; padding: 8px 11px; font-weight: 700; font-size: 12.5px; cursor: pointer; }
       .pwbtn.next { background: #177245; color: #fff; }
       .pwbtn.next:hover { background: #125c37; }
       .pwbtn.re { background: #0B5CAD; color: #fff; }
@@ -7517,135 +7812,222 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       .pwbtn.ghost { background: #F4F8FB; color: #16232E; border: 1px solid #C4D0DC; }
       .pwbtn.exit { background: transparent; color: #B3261E; border: 1px solid #E9BAB6; margin-left: auto; }
       /* quando la cattura non riesce, l'unica strada che funziona si vede */
-      .pwbtn.grande { font-size: 15px; padding: 13px 22px; box-shadow: 0 3px 12px rgba(11,92,173,.35); }
-      .pwhint { width: 100%; font-size: 11.5px; color: #5B6B7A; }
-      .pwerr { margin: 12px 16px 0; background: #FBEBEA; border: 1px solid #E9BAB6; color: #7c1a14; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
+      .pwbtn.grande { font-size: 13.5px; padding: 10px 16px; box-shadow: 0 3px 12px rgba(11,92,173,.35); }
+      .pwerr { margin: 10px 12px 0; background: #FBEBEA; border: 1px solid #E9BAB6; color: #7c1a14; border-radius: 9px; padding: 8px 10px; font-size: 12px; }
     `;
+    root.innerHTML = `<style>${CSS}</style><div class="ps" role="status" hidden></div><div class="pc" role="dialog" aria-label="Stampa documenti" hidden></div>`;
+    const ps = root.querySelector(".ps");
+    const pc = root.querySelector(".pc");
 
-    const cleanup = () => {
-      wizardOpen = false;
-      abbandona.abort();
-      staccaStampa();
-      clearTimeout(timer);
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-      window.removeEventListener("keydown", onKey, true);
-      wrap.remove();
-      onClose?.();
+    // Il riquadro sta nell'angolo della pill: sotto se la pill è in alto,
+    // sopra se è in basso, allineato al suo lato. Senza pill, in alto a destra.
+    const angolo = () => {
+      const p = panel && panel.collapsed && panel.root ? panel.root.querySelector("#expand") : null;
+      const r = p ? p.getBoundingClientRect() : null;
+      const W = window.innerWidth || 1000, H = window.innerHeight || 800;
+      if (!r || !r.width) return "top:10px;right:10px;";
+      const x = r.left + r.width / 2 > W / 2 ? `right:${Math.max(8, Math.round(W - r.right))}px;` : `left:${Math.max(8, Math.round(r.left))}px;`;
+      const y = r.top + r.height / 2 < H / 2 ? `top:${Math.round(r.bottom + 8)}px;` : `bottom:${Math.max(8, Math.round(H - r.top + 8))}px;`;
+      return x + y;
     };
-    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); cleanup(); } };
-    window.addEventListener("keydown", onKey, true);
-
-    const tryPrint = () => {
-      attempts++;
-      wrap.dataset.printAttempts = String(attempts);
-      const f = root.querySelector("iframe");
-      if (DEMO) return; // banco di prova: PDF shown, no print dialog
-      try { f?.contentWindow?.print(); } catch { /* fallback: the re-open button */ }
+    const conto = () => (jobs.length > 1 ? `${Math.min(i + 1, jobs.length)}/${jobs.length}` : "");
+    // A che punto è: nella pill se il pannello è ridotto, altrimenti nel
+    // riquadrino. Un tocco lì mostra i comandi; ✕ (o Esc) annulla.
+    const stato = (testo, tono = "run") => {
+      wrap.dataset.testo = testo;
+      if (panel && panel.collapsed) {
+        ps.hidden = true;
+        panel.segnala({ tag, badge: conto(), testo, tono, daStampa: true, onTap: () => comandi(), onStop: () => chiudi(false) });
+        return;
+      }
+      ps.hidden = !pc.hidden;   // coi comandi a vista il riquadrino non serve
+      ps.style.cssText = angolo();
+      ps.innerHTML = `<span class="dot"></span><span class="pst"><b>${esc(tag)}${conto() ? " " + esc(conto()) : ""}</b> · ${esc(testo)}</span><button class="psx" title="Annulla la stampa (Esc)" aria-label="Annulla la stampa">✕</button>`;
+      ps.querySelector(".psx").onclick = (e) => { e.stopPropagation(); chiudi(false); };
+      ps.onclick = () => comandi();
     };
 
-    const render = (err, viewer) => {
+    // I comandi di sempre, compatti nell'angolo — mai una finestra modale.
+    // Si mostrano da soli solo quando serve una mano; un tocco sulla pill li
+    // mostra comunque.
+    const comandi = (s) => {
+      if (chiuso) return;
+      if (s) scheda = s;
       const job = jobs[i];
+      if (!job) return;
+      const viewer = !!(scheda && scheda.viewer);
+      const err = scheda && scheda.err;
       // Un verbo per pulsante, un'icona per verbo. Prima ce n'erano cinque e
       // due («Avanti» e «Salta») facevano esattamente la stessa cosa.
       const nextLbl = i + 1 < jobs.length ? `→ Avanti (${i + 2} di ${jobs.length})` : "✓ Fine";
-      root.innerHTML = `<style>${CSS}</style>
-        <div class="back"></div>
-        <div class="pw" role="dialog" aria-label="Stampa documenti">
-          <div class="pwhd">
-            <b>Stampa ${i + 1} di ${jobs.length} — ${esc(job.name)}</b>
-            ${title ? `<span class="pwtit">${esc(title)}</span>` : ""}
-            <span class="dest">→ ${esc(job.printer)}</span>
-          </div>
-          ${err ? `<div class="pwerr">${esc(err)}</div>` : ""}
-          <div class="pwbody"><div class="pwmsg">Carico il PDF…</div></div>
-          <div class="pwft">
-            ${viewer
-              ? `<button class="pwbtn re grande" id="pwtab" title="Apre il documento in una scheda: da lì Ctrl+P">↗&nbsp; Apri e stampa</button>`
-              : `<button class="pwbtn re" id="pwre" title="Riapre la finestra di stampa del browser">🖨&nbsp; Stampa</button>`}
-            <button class="pwbtn next" id="pwnext" title="${i + 1 < jobs.length ? "Passa al documento successivo" : "Chiude: hai stampato tutto"}">${nextLbl}</button>
-            ${viewer ? "" : `<button class="pwbtn ghost" id="pwtab" title="Se la stampa non parte, aprilo in una scheda">↗&nbsp; Scheda</button>`}
-            ${viewer && ultimaDiag ? `<button class="pwbtn ghost" id="pwdiag" title="Copia com'è fatto il visualizzatore (senza numeri), da mandare a chi fa il pannello">⧉&nbsp; Diagnosi</button>` : ""}
-            <button class="pwbtn exit" id="pwexit" title="Chiude senza stampare il resto (Esc)">✕&nbsp; Chiudi</button>
-            <div class="pwhint">${viewer
-              ? `Questo documento non si lascia stampare da qui: <b style="display:inline">↗ Apri e stampa</b>, poi Ctrl+P → <b style="display:inline">${esc(job.printer)}</b>`
-              : `Scegli <b style="display:inline">${esc(job.printer)}</b> nel dialogo`}</div>
-          </div>
+      const msg = viewer
+        ? `Questo documento non si lascia stampare da qui: <b>↗ Apri e stampa</b>, poi Ctrl+P → <b>${esc(job.printer)}</b>, e qui «→ Avanti».`
+        : err ? "Questo documento non è stato scaricato. Risolvi il problema qui sopra e riprova la stampa dal pannello."
+          : scheda && scheda.banco ? "Banco di prova: niente dialogo di stampa. Il documento è pronto (↗ Scheda per vederlo)."
+            : scheda && scheda.nonParte ? `La finestra di stampa non si è aperta? <b>🖨 Stampa</b> la riapre — scegli <b>${esc(job.printer)}</b>.`
+              : `Scegli <b>${esc(job.printer)}</b> nel dialogo di stampa.`;
+      pc.hidden = false;
+      pc.style.cssText = angolo();
+      pc.innerHTML = `
+        <div class="pwhd"><b>Stampa ${i + 1} di ${jobs.length} — ${esc(job.name)}</b><span class="dest">→ ${esc(job.printer)}</span></div>
+        ${title ? `<div class="pwtit">${esc(title)}</div>` : ""}
+        ${err ? `<div class="pwerr">${esc(err)}</div>` : ""}
+        <div class="pwmsg">${msg}</div>
+        <div class="pwft">
+          ${viewer
+            ? `<button class="pwbtn re grande" id="pwtab" title="Apre il documento in una scheda: da lì Ctrl+P">↗&nbsp; Apri e stampa</button>`
+            : `<button class="pwbtn re" id="pwre" title="Riapre la finestra di stampa del browser">🖨&nbsp; Stampa</button>`}
+          <button class="pwbtn next" id="pwnext" title="${i + 1 < jobs.length ? "Passa al documento successivo" : "Chiude: hai stampato tutto"}">${nextLbl}</button>
+          ${viewer ? "" : `<button class="pwbtn ghost" id="pwtab" title="Se la stampa non parte, aprilo in una scheda">↗&nbsp; Scheda</button>`}
+          ${viewer && ultimaDiag ? `<button class="pwbtn ghost" id="pwdiag" title="Copia com'è fatto il visualizzatore (senza numeri), da mandare a chi fa il pannello">⧉&nbsp; Diagnosi</button>` : ""}
+          <button class="pwbtn exit" id="pwexit" title="Chiude senza stampare il resto (Esc)">✕&nbsp; Chiudi</button>
         </div>`;
-      root.querySelector("#pwre")?.addEventListener("click", tryPrint);
-      root.querySelector("#pwnext").onclick = advance;
-      root.querySelector("#pwexit").onclick = cleanup;
-      root.querySelector("#pwtab").onclick = () => openTab(job.url, "_blank"); // user-activated → not popup-blocked
-      root.querySelector("#pwdiag")?.addEventListener("click", async () => {
-        const b = root.querySelector("#pwdiag");
+      pc.querySelector("#pwre")?.addEventListener("click", () => { if (cur && cur.f.isConnected) stampa(cur); });
+      pc.querySelector("#pwnext").onclick = advance;
+      pc.querySelector("#pwexit").onclick = () => chiudi(false);
+      pc.querySelector("#pwtab").onclick = () => openTab(job.url, "_blank"); // user-activated → not popup-blocked
+      pc.querySelector("#pwdiag")?.addEventListener("click", async () => {
+        const b = pc.querySelector("#pwdiag");
         segnaCopia(b, await copiaTesto(diagnosiTesto(ultimaDiag)));
       });
+      ps.hidden = true;
+      wrap.dataset.stato = "mano";
+      if (panel && panel.collapsed) {
+        panel.segnala({ tag, badge: conto(), tono: "warn", daStampa: true, onTap: () => comandi(), onStop: () => chiudi(false),
+          testo: viewer ? "Apri e stampa: serve un tuo clic" : err ? "Documento non scaricato" : "Stampa: serve un tuo clic" });
+      }
+    };
+
+    const chiudi = (finito) => {
+      if (chiuso) return;
+      chiuso = true;
+      wizardOpen = false;
+      ctlDoc?.abort();
+      staccaStampa();
+      clearTimeout(timer);
+      clearTimeout(nienteDialogo);
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      window.removeEventListener("keydown", onKey, true);
+      wrap.remove();
+      if (panel) {
+        // finito: la pill lo dice per qualche secondo, poi torna quella di sempre
+        if (finito && panel.collapsed) {
+          panel.segnala({ tag, testo: tuttiChiesti ? "✓ Stampato" : "✓ Stampa finita", tono: "ok" }, { ms: 4000, poi: () => panel.chiudiGiro() });
+        } else if (panel.striscia && panel.striscia.daStampa) panel.segnala(null);
+      }
+      onClose?.();
+    };
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); chiudi(false); } };
+    window.addEventListener("keydown", onKey, true);
+
+    // La stampa del documento in corso: il dialogo del browser, dalla cornice
+    // nascosta. Nel banco di prova non c'è dialogo: si dice, e si va avanti a mano.
+    const stampa = (c) => {
+      c.printed = true;
+      c.apertoIl = Date.now();
+      attempts++;
+      wrap.dataset.printAttempts = String(attempts);
+      if (DEMO) { comandi({ banco: true }); return; }
+      wrap.dataset.stato = "stampo";
+      if (pc.hidden) stato(`Stampo ${cosaStampo(jobs[i])}`);
+      clearTimeout(nienteDialogo);
+      nienteDialogo = setTimeout(() => { if (cur === c && !c.avanzato && !chiuso) comandi({ nonParte: true }); }, NIENTE_DIALOGO_MS);
+      try { c.f.contentWindow.print(); }
+      catch { clearTimeout(nienteDialogo); comandi({ nonParte: true }); }
     };
 
     const advance = () => {
       clearTimeout(timer);
+      clearTimeout(nienteDialogo);
       staccaStampa();
+      if (!cur || !cur.printed) tuttiChiesti = false;
+      cur = null;
+      ctlDoc?.abort();
       if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
+      root.querySelector("iframe.pf")?.remove();
       i++;
-      if (i >= jobs.length) return cleanup();
+      if (i >= jobs.length) return chiudi(true);
       load();
     };
 
     const load = async () => {
-      render();
+      const mio = ++gen;
+      const job = jobs[i];
+      scheda = null;
+      pc.hidden = true;
+      cur = null;
+      ctlDoc = new AbortController();
+      const segnale = ctlDoc.signal;
+      // quello che si sta stampando, leggibile da fuori (il banco di prova e i test)
+      wrap.dataset.doc = `Stampa ${i + 1} di ${jobs.length} — ${job.name}`;
+      wrap.dataset.printer = job.printer;
+      wrap.dataset.stato = "carico";
+      stato(`Aspetto ${cosaStampo(job)}…`);
       try {
         // un modulo di consenso è un file dell'estensione, non una pagina del
         // gestionale: si prende così com'è, senza la catena same-origin
-        const { blob, via } = jobs[i].diretto
-          ? { blob: await (await fetch(jobs[i].url, { signal: abbandona.signal })).blob(), via: "estensione" }
-          : await fetchPdf(jobs[i].url, { signal: abbandona.signal });
-        panel?.log(`${now()}  ${jobs[i].name}: PDF ottenuto${via ? " via " + via : ""}`);
+        const { blob, via } = job.diretto
+          ? { blob: await (await fetch(job.url, { signal: segnale })).blob(), via: "estensione" }
+          : await fetchPdf(job.url, { signal: segnale });
+        if (mio !== gen || chiuso) return;
+        panel?.log(`${now()}  ${job.name}: PDF ottenuto${via ? " via " + via : ""}`);
         blobUrl = URL.createObjectURL(blob);
-        const body = root.querySelector(".pwbody");
-        body.innerHTML = `<iframe title="Anteprima PDF"></iframe>`;
-        const f = body.querySelector("iframe");
-        let printed = false;   // il dialogo di stampa è stato chiesto per QUESTO documento
-        let apertoIl = 0;      // quando: un dialogo che si chiude subito non si è mai aperto
-        let avanzato = false;  // al documento dopo si passa una volta sola
+        const f = document.createElement("iframe");
+        f.className = "pf";
+        f.title = `Stampa — ${job.name}`;
+        f.setAttribute("aria-hidden", "true");
+        f.tabIndex = -1;
+        const c = cur = { f, printed: false, apertoIl: 0, avanzato: false };
         // Chiuso il dialogo di stampa si passa al documento dopo da soli: è
         // quello che il medico farebbe premendo «→ Avanti», e con
         // l'etichettatrice davanti non ha una mano libera. Il browser non dice
         // se ha stampato o annullato — dice solo che il dialogo si è chiuso —
         // quindi si va avanti in tutt'e due i casi, una volta sola per
         // documento. Un dialogo che si chiude PRIMA di essersi aperto davvero
-        // (stampa non disponibile) non conta: sarebbe una corsa a vuoto fino
-        // in fondo alla coda.
+        // (stampa non disponibile) non fa saltare niente: mostra i comandi.
         const dopoStampa = () => {
-          if (avanzato || !root.contains(f)) return;
-          if (!printed || Date.now() - apertoIl < 500) return;
-          avanzato = true;
+          if (c.avanzato || cur !== c || !f.isConnected || !c.printed) return;
+          clearTimeout(nienteDialogo);
+          if (Date.now() - c.apertoIl < 500) { comandi({ nonParte: true }); return; }
+          c.avanzato = true;
           staccaStampa();
-          panel?.log(`${now()}  ${jobs[i].name}: finestra di stampa chiusa, passo al documento dopo`);
+          panel?.log(`${now()}  ${job.name}: finestra di stampa chiusa, passo al documento dopo`);
           clearTimeout(timer);
           timer = setTimeout(advance, 300);
         };
+        const dialogo = () => { if (cur === c) clearTimeout(nienteDialogo); };   // il dialogo c'è
         staccaStampa();   // resti del documento precedente
         window.addEventListener("afterprint", dopoStampa);
+        window.addEventListener("beforeprint", dialogo);
         staccaStampa = () => {
           window.removeEventListener("afterprint", dopoStampa);
-          try { f.contentWindow?.removeEventListener("afterprint", dopoStampa); } catch { /* cornice già andata */ }
+          window.removeEventListener("beforeprint", dialogo);
+          try {
+            f.contentWindow?.removeEventListener("afterprint", dopoStampa);
+            f.contentWindow?.removeEventListener("beforeprint", dialogo);
+          } catch { /* cornice già andata */ }
         };
         // il cronometro va SEMPRE dentro `timer`, e la stampa parte solo se
-        // quella cornice è ancora quella a schermo: «Avanti» ne lasciava uno
+        // quella cornice è ancora quella in corso: «Avanti» ne lasciava uno
         // orfano, che stampava il documento dopo al posto di questo
-        const once = () => { if (!printed && root.contains(f)) { printed = true; apertoIl = Date.now(); tryPrint(); } };
+        const once = () => { if (!c.printed && cur === c && f.isConnected) stampa(c); };
         f.addEventListener("load", () => {
-          try { f.contentWindow?.addEventListener("afterprint", dopoStampa); } catch { /* cornice già andata */ }
+          try {
+            f.contentWindow?.addEventListener("afterprint", dopoStampa);
+            f.contentWindow?.addEventListener("beforeprint", dialogo);
+          } catch { /* cornice già andata */ }
           clearTimeout(timer); timer = setTimeout(once, 350);
         });
         timer = setTimeout(once, 1500); // headless/viewer-less fallback
-        f.src = blobUrl;
+        f.src = blobUrl;      // prima di inserirla: un solo «load», quello del PDF
+        root.appendChild(f);
+        wrap.dataset.stato = "pronto";
       } catch (e) {
-        if (e?.name === "AbortError") return;
+        if (e?.name === "AbortError" || mio !== gen || chiuso) return;
         // This endpoint is a viewer we can't safely turn into a Blob. Don't
         // auto-open (a popup after the async fetch is blocked for lack of user
         // activation) — offer a big button the doctor clicks, which carries
         // activation and always opens the tab. The sequence still advances.
-        const job = jobs[i];
         // Non tutto quello che fallisce è «un visualizzatore»: una sessione
         // scaduta, un HTTP 500 o una risposta fuori dall'ospedale finivano
         // sotto quella scritta, e «Apri e stampa» apriva la pagina di login.
@@ -7655,12 +8037,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           if (panel) panel.diagnosi = ultimaDiag;
         }
         panel?.log(`${now()}  ${job.name}: PDF non catturato — ${suo ? `visualizzatore${e.diag ? " [" + e.diag + "]" : ""}` : `${e?.head || e?.message || e}`}`);
-        render(suo
-          ? `Anteprima non catturabile per questo documento (è un visualizzatore).${e?.diag ? " [" + e.diag + "]" : ""}`
-          : `${e?.head || "Non riuscito"}${e?.body ? " — " + e.body : ""}`, true);
-        root.querySelector(".pwbody").innerHTML = suo
-          ? `<div class="pwmsg">Premi <b>↗ Apri ${esc(job.name)}</b> qui sotto, poi <b>Ctrl+P → ${esc(job.printer)}</b>,<br>torna qui e premi «→ Avanti».</div>`
-          : `<div class="pwmsg">Questo documento non è stato scaricato. Risolvi il problema qui sopra e riprova la stampa dal pannello.</div>`;
+        comandi({
+          viewer: suo,
+          err: suo ? `Questo documento non si lascia catturare (è un visualizzatore).${e?.diag ? " [" + e.diag + "]" : ""}`
+            : `${e?.head || "Non riuscito"}${e?.body ? " — " + e.body : ""}`,
+        });
       }
     };
 
@@ -7730,7 +8111,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (!jobs.length) return false;
     if (wizardOpen) return false;   // keep the flag: these jobs must not vanish behind another wizard
     tabStore.set("print.v1", null);
-    openPrintWizard(jobs, { panel, title: ids.length > 1 ? `${ids.length} richieste appena confermate.` : "Richiesta appena confermata." });
+    openPrintWizard(jobs, { panel, tag: "Confermata", title: ids.length > 1 ? `${ids.length} richieste appena confermate.` : "Richiesta appena confermata." });
     return true;
   }
 
@@ -7858,10 +8239,23 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     panel.restoreUi(); // same tab + same episode → quesito/selezione/vista tornano come prima
     // Quello che è stato deciso in sottofondo si dice sulla pagina dove il
     // medico atterra — che può essere il carrello, non solo quella del paziente.
+    // Con la striscia si atterra come pill (un giro in sottofondo non apre mai
+    // la finestra da solo); un errore porta con sé il resoconto, che si apre
+    // con un tocco.
     const av = tabStore.get(AVVISO, null);
     if (av) {
       tabStore.set(AVVISO, null);
-      if (Date.now() - (av.ts || 0) < CONFIRM_FLAG_TTL) { panel.message = av.testo; panel.collapsed = false; }
+      if (Date.now() - (av.ts || 0) < CONFIRM_FLAG_TTL) {
+        if (av.testo) panel.message = av.testo;
+        if (av.giro) {
+          panel.runState = av.giro.stato || "fail";
+          panel.runPatient = av.giro.paziente || "";
+          panel.runData = { steps: Array.isArray(av.giro.steps) ? av.giro.steps : [], added: [],
+            lastListUrl: av.giro.listUrl || null, finishedListUrl: null };
+        }
+        if (av.striscia) { panel.collapsed = true; panel.striscia = av.striscia; }
+        else panel.collapsed = false;
+      }
     }
     panel.render();
     // Un giro rimasto a metà viene prima di tutto: ha esami ancora da mandare,
@@ -7904,7 +8298,13 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         // abandoned confirmation can never turn into a navigation loop
         if (pending.q.autoConfirm && !pending.next.nav) { goToQueued(pending); return; }
       } else {
-        maybeAutoPrint(panel); // nothing left to confirm → print everything at once
+        // nothing left to confirm → print everything at once
+        const partita = maybeAutoPrint(panel);
+        // confermata, ma la pagina non elenca ancora i suoi fogli: la striscia
+        // non resta a dire «aspetto» per sempre
+        if (!partita && panel.striscia && panel.striscia.attesaStampa) {
+          panel.segnala({ ...panel.striscia, attesaStampa: false, tono: "ok", testo: "Etichette non ancora in pagina" }, { ms: 15000 });
+        }
       }
     } else {
       panel.render();
@@ -7916,7 +8316,13 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (rin.length) panel.log(`${now()}  ATTENZIONE: su questa pagina ${rin.length} codici portano un nome diverso da quello noto — ${rin.slice(0, 4).join(" · ")}`);
       panel.render(); // pick up anything just learned
       armPrintOnConfirm(model, findEpisodeId(document, location.href)); // native Conferma → print handoff
-      if (!ripresa) maybeAutoConfirm(panel);   // prima si finisce di mandare gli esami
+      if (!ripresa) {   // prima si finisce di mandare gli esami
+        const cliccato = maybeAutoConfirm(panel);
+        // si aspettava la conferma e un controllo ha detto di no: tocca al medico
+        if (!cliccato && panel.striscia && panel.striscia.attesaConferma) {
+          panel.segnala({ tag: "Conferma sospesa", testo: "Controlla il carrello e premi tu Conferma", tono: "warn", paziente: panel.striscia.paziente || "" });
+        }
+      }
     }
     if (pageType === "crea") {
       // Mirror a quesito the server (triage) already filled in, so the panel
