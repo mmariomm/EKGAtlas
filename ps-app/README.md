@@ -8,9 +8,10 @@ sola pagina, verificando ogni passaggio prima del successivo.
 > **In sintesi per il medico**: dalla pagina del paziente scrivi il quesito, tocchi i profili
 > e gli esami, premi un bottone. La richiesta viene creata, gli esami aggiunti e
 > verificati uno a uno nel carrello, e atterri sulla pagina esami reale per premere **Conferma**
-> (o lasci che la prema lui, subito: il tuo click su «+ Conferma» è la decisione). Dopo la conferma parte da
-> solo il **wizard di stampa**: PDF etichette con la finestra di stampa già aperta
-> (etichettatrice), poi PDF lista esami (stampante normale).
+> (o lasci che la prema lui, subito: il tuo click su «+ Conferma» è la decisione). Dopo la conferma
+> si apre da solo il **dialogo di stampa** del browser: etichette (etichettatrice), poi lista
+> esami (stampante normale). Intanto il pannello resta una **striscia nell'angolo** che dice a
+> che punto è; se qualcosa va storto diventa rossa e ti lascia sul carrello, da finire a mano.
 
 ---
 
@@ -58,7 +59,7 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
      incolla il testo copiato nel campo **URL** → nominalo `PS Assist`.
   3. Su ogni pagina SA4PSO, **un click sul preferito** fa comparire il pannello. Unica
      differenza dall'estensione: dopo un cambio pagina (es. dopo la Conferma) va ricliccato —
-     conferma, ripresa del giro e wizard di stampa ripartono al click, perché i passaggi di
+     conferma, ripresa del giro e stampa ripartono al click, perché i passaggi di
      consegna vivono nella scheda. Per lo stesso motivo qui il browser continua ad avvisare
      prima di lasciare una pagina mentre il giro sta mandando: senza un click nessuno lo
      riprenderebbe.
@@ -79,8 +80,9 @@ gestionale sotto, si riduce alla pill: la finestra lo copre quasi tutto, apposta
 
 **Si apre da solo solo quando serve.** Una pagina raggiunta cliccando nel gestionale mostra la
 pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha aperta il pannello
-(un paziente scelto dall'elenco, Richieste…) o quando ha qualcosa da dirti (un giro finito, un
-avviso). **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
+(un paziente scelto dall'elenco, Richieste…) o quando ha qualcosa da dirti (un avviso). Un
+**giro di esami** no: dalla spedizione alle etichette parla la striscia nell'angolo, e la
+finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
 «✓ Copiato · incolla». Nel menu **⋯**: **Al centro** e **Affianca a destra** (una colonna, col
 gestionale accanto), poi Registro e versione.
 
@@ -215,17 +217,31 @@ posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; e
    rilegge il carrello dal server, salta quello che c'è già, manda il resto. L'esame che era
    **in volo** nell'istante del cambio pagina **non viene mai rimandato**: si cerca in
    carrello, e se non c'è il giro si ferma e te lo dice (una provetta in più al laboratorio non
-   è un dettaglio). Finito, la pagina **non** te la porta via: il carrello lo apri col bottone,
-   e le etichette partono quando torni sulla scheda di quel paziente.
+   è un dettaglio). Finito un giro **ripreso**, la pagina **non** te la porta via: il carrello
+   lo apri col bottone, e le etichette partono quando torni sulla scheda di quel paziente.
    Un tocco sulla striscia apre il pannello intero (passi + Registro), il quadratino rosso
    ferma tutto. **Esc** ferma il giro solo col pannello aperto: da quando gira in sottofondo, un
    Esc dato al gestionale (una tendina, un campo) non deve fermare gli esami. Se intanto sei sulla scheda di un altro paziente la striscia diventa **ambra** e
    lo scrive: gli esami restano quelli di chi li hai ordinati.
-4. **Crea e aggiungi N esami** → ricevuta + bottone **✓ CONFERMA → stampa**; oppure
-   **+ Conferma 🖨** che fa tutto da solo e conferma **subito**: il click è la decisione, e la
+4. **Crea e aggiungi N esami** → si atterra sul carrello del gestionale con la striscia
+   «✓ N esami in carrello · Conferma dal gestionale»: premi **Conferma** lì (le etichette
+   partono lo stesso), o tocca la striscia per la ricevuta col bottone **✓ CONFERMA → stampa**.
+   Oppure **+ Conferma 🖨** che fa tutto da solo e conferma **subito**: il click è la decisione, e la
    conferma parte solo se ogni controllo passa — episodio, richiesta, nome dell'ultimo esame, e
    **carrello identico alla ricevuta** (un avanzo di un tentativo precedente la **sospende** e
-   la lascia a te).
+   la lascia a te: striscia ambra «Conferma sospesa», sul carrello). La finestra **non si apre
+   mai da sola**: la striscia dice «Confermo…» → «Confermata · Aspetto le etichette…» →
+   «Stampo le etichette» → «Aspetto la lista esami…» → «✓ Stampato», poi torna la pill.
+   **Se qualcosa va storto, si finisce a mano nel gestionale.** La striscia diventa **rossa** —
+   «Errore · completa a mano» / «Mancano: PTT POC, Troponina» — e la scheda va sul **carrello**
+   della richiesta: una semplice lettura dell'elenco, niente inviato, niente confermato. Lì vedi
+   gli esami già scelti e aggiungi il resto. Un tocco sulla striscia: il motivo intero e gli
+   elenchi «Nel carrello» / «Da aggiungere a mano». Sessione scaduta, episodio che non torna o
+   un'altra scheda al lavoro: solo la striscia rossa, la pagina resta quella.
+   **Una riga che la pagina non mostra** (l'elenco a volte arriva monco) non ferma il giro: se il
+   codice di quell'esame è noto e il suo «aggiungi» è già stato visto su un link vero, lo si
+   manda col codice salvato (nel Registro: «riga assente nella pagina») e lo si controlla, stretto,
+   in carrello. Vedi le regole 3 e 4.
    Selezionando laboratorio **e** radiologia il bottone diventa **Crea 2 richieste** e il pannello
    le costruisce e le porta entrambe a conferma, con **una sola** stampa finale. Questa è
    l'unica che **non** va in sottofondo: le due richieste vivono nella memoria del pannello, e
@@ -317,7 +333,7 @@ mostrare (solo referti di laboratorio e nessun prelievo), gli Esiti dicono «Nes
   Un referto che non si lascia salvare (pallino rosso, il motivo al passaggio del mouse e nel
   Registro) resta apribile con un tocco; **⧉ Copia diagnosi** copia com'è fatto il visualizzatore
   che l'ha impedito — senza numeri né valori dei campi — da mandare a chi fa il pannello. Lo
-  stesso bottone (**⧉ Diagnosi**) compare nella finestra di stampa quando un documento non si
+  stesso bottone (**⧉ Diagnosi**) compare fra i comandi della stampa quando un documento non si
   lascia catturare.
 
 > Perché i referti restano fuori dalla tabella dei Valori: referto e prelievo sono due cose
@@ -374,7 +390,7 @@ Animali**, **Antitetano**, **TAC cmdc**, **Emotrasfusione** (il pacchetto trasfu
 consenso informato, richiesta emocomponenti, dichiarazione del medico in urgenza).
 Le **deleghe per il ritiro** — **Ritiro esami**, **Ritiro referto RX**, **Ritiro cartella e CD**
 — non sono consensi: si danno a chi va a casa, e stanno in cima alla schermata **Dimissioni**.
-Un tocco apre il PDF e la finestra di stampa, come per la lista esami; un modulo di più pagine
+Un tocco apre direttamente il dialogo di stampa, come per la lista esami; un modulo di più pagine
 dice **quanta carta esce** prima che tu prema Stampa.
 
 I file stanno nella cartella `extension/consensi/`: **niente rete, niente server**. Si aprono anche
@@ -556,35 +572,43 @@ foglio i motivi per **tornare in Pronto Soccorso**.
 
 ## Stampa etichette e lista esami
 
-Dopo la **Conferma** (manuale o automatica) si apre da solo il wizard di stampa, in sequenza,
-raggruppando per stampante:
+Dopo la **Conferma** (manuale o automatica) la stampa parte da sola, in sequenza, raggruppando
+per stampante — **senza finestre davanti**: ogni PDF va in una cornice nascosta e si apre
+direttamente il **dialogo di stampa** del browser. A che punto è lo dice la striscia
+(«Aspetto le etichette…», «Stampo le etichette», «Aspetto la lista esami…», «✓ Stampato»);
+senza pannello, o col pannello aperto, un riquadrino nello stesso angolo.
 
 1. **Tutte le etichette provette** — i PDF dell'icona col codice a barre
    (`RcsStampaEtichetteLISHMIMU.do`, che porta al PDF servito da
-   `uploaddownloadservlet.rra2`), con la finestra di stampa già aperta → **etichettatrice**;
+   `uploaddownloadservlet.rra2`) → **etichettatrice**;
 2. poi **tutte le liste esami** — i PDF di "Stampa Richiesta" (`jasperservlet`, URL sempre letto
    dalla pagina perché `BRANCA` cambia per riga) → **stampante normale**;
-3. per la **radiologia**, la riga ha l'icona stampante "Stampa Prenotazione Esterna": il wizard
-   stampa quel PDF → **stampante normale**.
+3. per la **radiologia**, la riga ha l'icona stampante "Stampa Prenotazione Esterna": si stampa
+   quel PDF → **stampante normale**.
 
-**Non serve una mano libera**: quando la finestra di stampa del browser si chiude, il wizard
-**passa da solo al documento dopo** — come se avessi premuto «→ Avanti» — e sull'ultimo si chiude.
-Il browser dice soltanto che il dialogo si è chiuso, non se hai stampato o annullato: si va avanti
-in tutt'e due i casi, e i bottoni restano lì se vuoi guidare a mano. Un dialogo che si chiude
-all'istante (stampa non disponibile su quel PC) **non** fa saltare la coda.
+**Non serve una mano libera**: quando la finestra di stampa del browser si chiude, si **passa da
+solo al documento dopo** — come se avessi premuto «→ Avanti» — e dopo l'ultimo la striscia dice
+«✓ Stampato». Il browser dice soltanto che il dialogo si è chiuso, non se hai stampato o
+annullato: si va avanti in tutt'e due i casi.
+
+**I comandi compaiono solo quando serve una mano**, in un riquadro compatto vicino alla pill (mai
+una finestra davanti): documento che non si lascia catturare (**↗ Apri e stampa**, poi Ctrl+P),
+PDF non arrivato, o dialogo che non si apre — si chiude all'istante, o non dà segni per qualche
+secondo (**🖨 Stampa** lo riapre). Ci sono i soliti: 🖨 Stampa · → Avanti · ↗ Scheda · ✕ Chiudi
+(e ⧉ Diagnosi per un visualizzatore). Un tocco sulla striscia li mostra comunque; **Esc** o **✕**
+annullano la stampa e fermano davvero la ricerca del PDF.
 
 **Righe multiple**: quando gli esami di una richiesta appartengono a laboratori diversi (POC +
 Urgenze, ecc.) il LIS la divide in **più righe** — stessa `RICHIESTA_ID`, `RICHIESTA_PROG` 1, 2… —
-ognuna col suo PDF etichette e il suo foglio. Il wizard le stampa **tutte** ("Etichette — riga 1",
+ognuna col suo PDF etichette e il suo foglio. Si stampano **tutte** ("Etichette — riga 1",
 "Etichette — riga 2", poi le liste), mai solo l'ultima.
 
-Sul campo, dopo la Conferma il gestionale **torna alla pagina del paziente**: è lì che il wizard
-parte da solo (e se un'installazione mostrasse una pagina intermedia, parte lì se ha i link,
+Sul campo, dopo la Conferma il gestionale **torna alla pagina del paziente**: è lì che la stampa
+parte da sola (e se un'installazione mostrasse una pagina intermedia, parte lì se ha i link,
 altrimenti aspetta il ritorno sul paziente). Dalla pagina paziente puoi anche **ristampare
 qualsiasi richiesta**
 (sezione **Stampa**: ogni richiesta è elencata con **data e ora** e, sotto, la **lista compatta
-degli esami** che contiene). Ogni passo ha: Riapri stampa · Salta · Apri in una scheda ·
-Annulla (Esc).
+degli esami** che contiene).
 
 **Laboratorio + radiologia insieme**: se confermi una richiesta di laboratorio e poi una di
 radiologia prima di tornare alla pagina del paziente, la stampa parte **una volta sola** e in
@@ -596,7 +620,7 @@ No: nessuna pagina web può impostare la destinazione
 di stampa — è una barriera del browser, non un permesso mancante. Quello che si può fare senza
 essere amministratori:
 
-- Chrome **ricorda l'ultima stampante usata**, quindi il wizard raggruppa i documenti per
+- Chrome **ricorda l'ultima stampante usata**, quindi la stampa raggruppa i documenti per
   destinazione (tutte le etichette, poi tutte le liste): al massimo **due cambi per paziente**,
   non uno per foglio.
 - **Collegamento con `--kiosk-printing`** (si crea senza admin: tasto destro sull'icona di Chrome
@@ -604,7 +628,7 @@ essere amministratori:
   Da quella finestra Chrome stampa **senza dialogo** sulla stampante predefinita di Windows di
   quel profilo. Ha senso solo se quella finestra la usi per le sole etichette — la lista la
   stamperesti da una finestra normale. Fragile, ma funziona.
-- Se le liste su carta non ti servono, salta il secondo passo del wizard: resta **un solo**
+- Se le liste su carta non ti servono, annulla il secondo dialogo: resta **un solo**
   dialogo per paziente.
 
 ---
@@ -683,7 +707,8 @@ esami → conferma → stampa; e sulla seconda scheda, risultati e referti.
 
 Il flusso completo dell'ordine: quesito, profili, esami, «Crea e aggiungi» con
 la verifica esame per esame, il carrello che compare **nella pagina vera**, la
-Conferma nativa, il wizard di stampa. E gli **Esiti**: i valori letti dalla
+Conferma nativa, la stampa (qui senza dialogo del browser: i comandi nell'angolo
+dicono quale documento è pronto). E gli **Esiti**: i valori letti dalla
 finestra Risultati vera, i referti salvati e riaperti. Anche la tabella **Valori**:
 «Storico Dati Clinici» ricostruisce, sull'altra scheda, una tabella multi-prelievo
 dalla sua forma (`test/fixtures/storico.mjs`, esami inventati: di quella pagina non
@@ -760,6 +785,15 @@ stessi flussi dei test di prodotto.
    l'altro parola per parola. Una riga estranea non conta e il motore si ferma lo stesso.
    E se il server risponde all'inserimento con **una pagina che non è l'elenco**, l'esame è
    entrato lo stesso: si rilegge il carrello (mai un secondo invio) invece di fermarsi al buio.
+   Un esame mandato **col codice salvato** (regola 3) ha la verifica **stretta**: vale solo la
+   riga col suo codice **e** il suo nome (stesso nome, stesso mnemonico LIS, o l'uno dentro
+   l'altro). Lo stesso codice con un altro nome è un altro esame entrato al suo posto: stop,
+   «Il codice X oggi è «Y»: è entrato in carrello, toglilo».
+   **Dopo uno stop si finisce a mano.** La scheda va sul carrello della richiesta — una semplice
+   lettura dell'elenco, quello che il gestionale stesso mostra — senza inviare né confermare
+   niente, e il giro non riparte. Non ci va dopo un episodio che non torna, una sessione
+   scaduta o un'altra scheda al lavoro (lì resta la striscia rossa), né se il giro ripreso ti ha
+   trovato sulla pagina di un altro paziente.
 2. **Mai il paziente sbagliato**: l'EPISODIO_ID viene fissato all'avvio e ogni pagina ricevuta è
    verificata **dal contenuto che il server dichiara** (non dall'URL richiesto); se manca o non
    corrisponde, stop prima di qualunque invio.
@@ -772,9 +806,20 @@ stessi flussi dei test di prodotto.
    finisce nel Registro, e il controllo del nome vivo resta comunque l'ultimo cancello prima di
    ogni invio. Se il nome non corrisponde a nulla si ferma e **dice cosa offre quella richiesta**,
    invece di un rifiuto muto.
+   **Una riga che la pagina non mostra** (l'elenco a volte arriva monco: la riga c'è, ma non si
+   vede) è l'unico caso in cui un numero salvato si usa: SOLO se né il codice né il nome sono
+   sull'elenco vivo, il codice sta nel catalogo di **quella** risorsa col nome scelto, non ha mai
+   mostrato un altro nome, e il suo «aggiungi» è già stato visto su un **link vero** (per ogni
+   risorsa si impara lo schema dei parametri; per ogni codice i valori di riga, `BRANCA`).
+   Il link si fa da un «aggiungi» vero della pagina cambiando solo `PRESTAZIONE` e `BRANCA`; se
+   la pagina non ne ha, dall'elenco di adesso con lo schema imparato. Richiesta, episodio e
+   risorsa vengono **sempre** dalla pagina di adesso, mai dalla memoria. Nel Registro: «riga
+   assente nella pagina: uso il codice salvato».
 4. **Mai l'esame sbagliato**: prima di ogni invio il nome dell'esame sulla riga viva della pagina
    deve coincidere con quello selezionato — se l'ospedale rinumera un codice, il motore si ferma
-   e lo dice, invece di ordinare un esame diverso con tutte le spie verdi.
+   e lo dice, invece di ordinare un esame diverso con tutte le spie verdi. Col codice salvato
+   (regola 3) una riga viva non c'è e questo controllo non si può fare: al suo posto la verifica
+   dopo l'invio è stretta (regola 1), e un nome diverso ferma tutto e chiede di togliere la riga.
 5. **La Conferma è sempre un click reale** sulla pagina visibile (il flusso di stampa etichette
    resta quello nativo), è opt-in e **immediata**: nessun conto alla rovescia, perché il tuo
    click su «+ Conferma» è già la decisione — ma scatta **solo** se il carrello coincide con la
@@ -789,9 +834,10 @@ stessi flussi dei test di prodotto.
    scheda del medico. Se il server **vieta di essere incorniciato**, il
    documento non è leggibile: il programma se ne accorge e torna alla pagina
    visibile, come prima. Ogni intoppo — cornice rifiutata, controllo che dice
-   di no, stato incerto — finisce sulla pagina vera col motivo scritto, e la
-   conferma resta al medico. C'è un test che prova che in quel caso la
-   richiesta viene confermata **una volta sola**.
+   di no, stato incerto — finisce sulla pagina vera col motivo scritto (la
+   striscia ambra lo annuncia, un tocco lo apre), e la conferma resta al
+   medico. C'è un test che prova che in quel caso la richiesta viene
+   confermata **una volta sola**.
    **Non poter controllare non è come aver controllato**: se la ricevuta manca o è di un'altra
    richiesta, la conferma automatica **si sospende** invece di partire lo stesso. (Fino alla
    3.20 quel caso saltava il controllo e confermava — la Conferma nativa invia la richiesta
@@ -815,7 +861,8 @@ stessi flussi dei test di prodotto.
     apre in una scheda e lo stampi da lì. (Il contatore stava dentro la funzione ricorsiva, così
     ogni livello ripartiva da zero e il tetto vero era 6+6×6 = **43 richieste**. Lo stesso
     difetto era rimasto nel service worker, per i referti, ed è corretto anche lì. Ora è uno solo,
-    passato ai livelli sotto.) Chiudere la finestra di stampa **ferma davvero** la caccia.
+    passato ai livelli sotto.) Annullare la stampa (Esc, ✕) **ferma davvero** la caccia; «→ Avanti»
+    ferma quella del documento che salti.
 13. **Un paziente alla volta**: per ordinare devi essere sulla sua pagina, e ogni dato salvato
     (valori, referti, registro, code di conferma) è legato al suo episodio — letto sotto un altro
     episodio semplicemente non esiste.
@@ -865,23 +912,22 @@ prima fase usa **solo** "Crea richiesta e aggiungi" — mai il bottone con confe
    non insistere, usa la pagina nativa.
 2. **Primo run minimo.** Un solo esame economico e comunque indicato (es. glucosio POC) su un
    paziente che ha già bisogno del prelievo. Quesito reale. **Non toccare il browser** finché non
-   compare il banner verde (5–20 secondi; se provi a chiudere la scheda durante il run, il
-   browser ti avvisa).
+   atterri sul carrello con la striscia «✓ 1 esame in carrello» (5–20 secondi).
 3. **Verifica il nome, non il conteggio.** Sulla pagina esami leggi la riga nel carrello: il
    **nome** deve corrispondere esattamente al chip scelto. (Il motore fa già questo controllo da
    solo prima di ogni invio e si ferma se un codice ha cambiato nome.)
-5. **Conferma manuale nativa.** Premi tu Conferma: si apre il wizard di stampa — verifica che il
-   PDF etichette sia della **richiesta giusta** e che le etichette riportino il **paziente
-   giusto**, scegli l'etichettatrice, poi "Stampata — avanti" e stampa la lista sulla stampante
-   normale. (Il wizard si può sempre chiudere con Esc e rifare dalla sezione "Stampa".)
+5. **Conferma manuale nativa.** Premi tu Conferma: si apre il dialogo di stampa delle etichette —
+   verifica nell'anteprima del browser che il PDF sia della **richiesta giusta** e che le
+   etichette riportino il **paziente giusto**, scegli l'etichettatrice; chiuso il dialogo si apre
+   quello della lista, sulla stampante normale. (Esc annulla; si rifà dalla sezione "Stampa".)
 6. **Controllo incrociato in EHR.** Riapri l'episodio: esattamente UNA richiesta nuova, 1 esame,
    quesito/medico/urgenza corretti, nessuna bozza doppia.
 7. **Run multiplo con cambio risorsa.** Profilo con POC + Urgenze (es. Base PS + Epatico):
    ripeti i punti 3–5 riga per riga.
-8. **Esercitazione di interruzione.** Lancia un run e premi INTERROMPI (o Esc) a metà; leggi il
-   messaggio e controlla il carrello col bottone "Apri il carrello e controlla". Regola
-   permanente: **dopo qualsiasi banner rosso mai rilanciare** — si apre il carrello, si sistema a
-   mano, si controllano le bozze sull'episodio.
+8. **Esercitazione di interruzione.** Lancia un run e premi il quadratino rosso a metà; tocca la
+   striscia, leggi il messaggio e controlla il carrello col bottone "Apri il carrello e
+   controlla". Regola permanente: **dopo qualsiasi striscia rossa mai rilanciare** — sei già sul
+   carrello: si sistema a mano, si controllano le bozze sull'episodio.
 9. **Radiologia (solo dopo qualche giorno di laboratorio pulito).** Prima apertura nativa di
    "Richieste Radiologia" (apprendimento del catalogo), poi un solo RX torace dal pannello, con
    verifica in radiologia che la richiesta sia arrivata unica e con il quesito giusto.
@@ -929,7 +975,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 67 scenari e2e + 49 sull'estensione + 45 sul banco + storico + il cancello privacy
+npm test           # 70 scenari e2e + 49 sull'estensione + 47 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
@@ -940,8 +986,10 @@ dal server (hard-stop con **un solo** invio e step successivi mai partiti), **co
 ambiguità), **cambio episodio a metà run** (zero invii sul paziente sbagliato), quesito
 pre-compilato non sovrascritto, aggiunte dalla pagina esami con cambio risorsa, rifiuto live di
 esami di risorsa sbagliata (CTA disabilitato con motivo), quesito mancante (CTA disabilitato,
-si riattiva scrivendo), apprendimento radiologia end-to-end, STOP, e la stampa: wizard manuale
-con sequenza etichette→lista e download singoli, **richiesta divisa su due laboratori → 4 PDF
+si riattiva scrivendo), apprendimento radiologia end-to-end, STOP, il giro in sottofondo **senza
+mai la finestra** fino alle etichette, l'errore a metà (striscia rossa, carrello, zero invii
+dopo), la **riga assente** ordinata col codice salvato e il codice salvato che porta un altro
+esame (stop), e la stampa: sequenza manuale etichette→lista e download singoli, **richiesta divisa su due laboratori → 4 PDF
 (PROG 1 e 2, tutte le righe, BRANCA passato intatto dal DOM)**, **prenotazione radiologica**,
 auto-apertura sulla pagina post-conferma, attesa-e-ripartenza al ritorno sulla pagina paziente,
 wrapper HTML seguito fino al PDF, conferma manuale nativa che arma la stampa, e i referti:
