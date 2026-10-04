@@ -168,6 +168,22 @@ posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; e
    La **radiologia ha il suo**: casella «Quesito RX» nel gruppo RX. Se è vuota, la richiesta di
    radiologia prende quello sopra; se è scritta, il laboratorio usa quello sopra e la radiologia
    il suo.
+   **Tre quesiti sono pacchetti di esami**, sempre i primi chip (anche se l'elenco dei quesiti
+   salvato non li ha): un tocco scrive il quesito **e** spunta gli esami che servono quasi sempre.
+   - **Dolore toracico** — base (emocromo POC, EGA venosa NEW, creatinina POC), PT e PTT POC,
+     troponina US.
+   - **Dispnea** — base ma con l'**EGA arteriosa NEW** (non la venosa), PT e PTT POC, D-dimero POC,
+     troponina US, NT-proBNP.
+   - **Dolore addominale** — base, EGA venosa, epatico e pancreatico (bilirubina, GPT, GOT,
+     GAMMA GT, lipasi), PT e PTT del laboratorio centrale («Fantoli», cioè Urgenze: non il POC).
+
+   Il chip scelto è **acceso**. Toccarne **un altro** cambia pacchetto: se ne vanno solo gli
+   esami che aveva messo il pacchetto di prima — **quelli che hai scelto tu restano** (anche uno
+   che il pacchetto avrebbe messo e c'era già). Toccare **di nuovo** il chip acceso toglie il
+   quesito e il suo pacchetto. Un quesito normale (Febbre, Trauma…) scrive solo il quesito, come
+   sempre, e lascia andare il pacchetto: gli esami restano, ora sono tuoi. Un esame del pacchetto
+   che **non c'è nel catalogo di questa macchina** non viene aggiunto e il pannello lo dice, una
+   volta, nel banner e nel Registro: non si inventa mai un codice.
 2. Gli esami stanno in **gruppi per laboratorio** — **POC**, **Lab centrale** (le «Urgenze» e il
    laboratorio centrale: per chi ordina sono lo stesso posto), **RX** — e ogni gruppo ha **in
    testa i suoi profili rapidi**: Base PS e Coag POC sotto POC, Epatico e Coag sotto Lab
@@ -274,12 +290,13 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
 - Quando la scheda viene (anche) dal portale, sotto la tabella compare: *«Con lo storico del
   portale, letto per NOME · identità confermata dal paziente da cui l'hai aperta / dal codice fiscale / dal nome»*.
 
-**Referti** è la lista dei documenti (ECG, RX, TC, visite…), una riga ciascuno, come sempre. I
-referti di **laboratorio** stanno tutti insieme sotto una riga **Laboratorio**, **chiusa**: quello
-che dicono è già nella tabella qui sopra, e in mezzo agli altri facevano perdere l'ECG e la
-radiologia. Un tocco sulla riga li apre — restano documenti da aprire come prima, ognuno con
-**data e ora della richiesta**; il gruppo chiuso dice quanti sono e di quando è l'ultimo. Aperto o
-chiuso, resta com'era anche dopo che la pagina si ricarica.
+**Referti** è la lista dei documenti (ECG, RX, TC, visite…), una riga ciascuno, ognuno con
+**data e ora della richiesta**, il più recente in cima. I referti di **laboratorio** (LIS) **non
+ci sono**: quello che dicono è già nella tabella dei Valori, e in mezzo agli altri facevano perdere
+l'ECG e la radiologia. Né il conteggio «Referti (n)», né il numero sulla scheda **Esiti**, né
+**⬇ Salva referti** e **↻ Resetta** li contano o li toccano — agiscono solo sui referti che
+vedi. Se di un paziente non resta niente da
+mostrare (solo referti di laboratorio e nessun prelievo), gli Esiti dicono «Nessun esito per questo paziente».
 - **RIS ›** — referti di **radiologia** (RX, TC, ecografia, RMN) ed **ECG**: si aprono **dentro il
   pannello, come testo**. Il testo lo legge **pdf.js** — il lettore PDF di Firefox, dentro
   l'estensione, caricato nella scheda solo quando apri un referto: legge quello che legge Firefox
@@ -294,9 +311,9 @@ chiuso, resta com'era anche dopo che la pagina si ricarica.
   rimanda il referto (solo l'indirizzo del server, niente del paziente) — e il documento **si apre
   lo stesso, con lo stesso tocco**. **⧉ Copia diagnosi** ora c'è per **ogni** referto non letto,
   non solo per i visualizzatori HTML.
-- **LIS/AMB ↗** — gli altri referti (PDF): si aprono in una scheda e, con l'estensione, il
+- **AMB, consulenze… ↗** — gli altri referti (PDF): si aprono in una scheda e, con l'estensione, il
   documento che apri **viene tenuto** (pallino verde) — la volta dopo si apre all'istante, senza
-  toccare il server. **⬇ Salva referti** li prende tutti in una volta, **↻ Resetta** svuota.
+  toccare il server. **⬇ Salva referti** prende tutti quelli in elenco in una volta, **↻ Resetta** svuota.
   Un referto che non si lascia salvare (pallino rosso, il motivo al passaggio del mouse e nel
   Registro) resta apribile con un tocco; **⧉ Copia diagnosi** copia com'è fatto il visualizzatore
   che l'ha impedito — senza numeri né valori dei campi — da mandare a chi fa il pannello. Lo
@@ -901,7 +918,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 67 scenari e2e in Chromium reale (+ storico e referti)
+└── test/                ← simulatore SA4PSO + 70 scenari e2e in Chromium reale (+ storico e referti)
 ```
 
 Sviluppo:

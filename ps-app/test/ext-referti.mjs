@@ -28,6 +28,19 @@ let failures = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) failures++; };
 
 const mock = createMock({});
+// Gli Esiti non mostrano più i referti di laboratorio (LIS). Il banco ne ha due
+// e uno di radiologia (RIS): uno dei due LIS si traveste da consulenza (stesso
+// id, un altro sistema), così c'è anche un documento «da aprire» che non è
+// né laboratorio né radiologia. Il mock non si tocca: si cambia la pagina al volo.
+{
+  const h = mock.handle;
+  mock.handle = (req) => {
+    const out = h(req);
+    return Buffer.isBuffer(out.body) && /html/.test(out.headers["content-type"] || "")
+      ? { ...out, body: Buffer.from(out.body.toString("latin1").replace(/REFERTO_SISTEMA=HL7LIS(&REFERTO_ID=bbbb2222)/g, "REFERTO_SISTEMA=HL7CONS$1"), "latin1") }
+      : out;
+  };
+}
 const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
@@ -57,19 +70,24 @@ await page.waitForSelector("#psassist-host", { state: "attached", timeout: 15000
 // the saved documents live behind the Esiti tab
 await page.locator('#psassist-host [data-seg="esiti"]').click();
 await page.waitForSelector('#psassist-host [data-esito]', { timeout: 10000 });
-// i referti di laboratorio stanno in un gruppo chiuso: qui li vogliamo in elenco
-const gruppo = page.locator("#psassist-host #reflab");
-if (await gruppo.count()) { await gruppo.click(); await page.waitForTimeout(200); }
+// i referti di laboratorio non sono negli Esiti: né il gruppo, né le righe
+check(await page.locator("#psassist-host #reflab").count() === 0
+  && await page.locator('#psassist-host [data-esito][data-kind="referto"]').count() === 2,
+  "negli Esiti restano solo i referti che non sono di laboratorio (2)");
 
 const saveBtn = page.locator("#psassist-host #refsave");
 check(await saveBtn.count() === 1, "il bottone «Salva referti» compare solo nell'estensione");
 await saveBtn.click();
 await page.waitForFunction(
-  () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length === 3,
+  () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length === 2,
   { timeout: 30000 },
 ).catch(() => {});
 const saved = await page.locator("#psassist-host .rdot.saved").count();
-check(saved === 3, `3 referti salvati dal service worker (got ${saved})`);
+check(saved === 2, `2 referti salvati dal service worker (got ${saved})`);
+// «Salva referti» agisce solo su quelli che si vedono: il referto di
+// laboratorio nascosto non viene nemmeno scaricato
+check(mock.state.requests.filter((q) => q.url.includes("aaaa1111")).length === 0,
+  "e il referto di laboratorio, che non si vede, non viene scaricato");
 
 const before = mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect")).length;
 const [popup] = await Promise.all([

@@ -174,6 +174,19 @@
     "Dolore toracico", "Dolore addominale", "Dispnea", "Febbre",
     "Trauma", "Sincope", "Vertigini", "Cefalea",
   ];
+  // Quesito = pacchetto di esami: toccare il chip scrive il quesito E spunta
+  // gli esami che per quel quesito servono quasi sempre. Stanno sempre in
+  // testa ai chip, anche se l'elenco dei quesiti salvato non li ha. Un esame
+  // che in questa macchina non esiste nel catalogo si salta e si dice.
+  // «PT PTT Fantoli» = il laboratorio non-POC, cioè URGENZE (181 PT, 54 PTT).
+  const PACCHETTI = [
+    // base, coagulazione POC, troponina US
+    { q: "Dolore toracico", items: [[RES.POC, "320"], [RES.POC, "325"], [RES.POC, "176"], [RES.POC, "220"], [RES.POC, "134"], [RES.POC, "324"]] },
+    // base ma con l'EGA ARTERIOSA (326, non la venosa 325), coag POC, D-dimero, troponina, proBNP
+    { q: "Dispnea", items: [[RES.POC, "320"], [RES.POC, "326"], [RES.POC, "176"], [RES.POC, "220"], [RES.POC, "134"], [RES.POC, "101"], [RES.POC, "324"], [RES.URGENZE, "297"]] },
+    // base, epatico e pancreatico (bili reflex, GPT, GOT, GGT, lipasi), PT PTT Fantoli
+    { q: "Dolore addominale", items: [[RES.POC, "320"], [RES.POC, "325"], [RES.POC, "176"], [RES.URGENZE, "16"], [RES.URGENZE, "228"], [RES.URGENZE, "53"], [RES.URGENZE, "167"], [RES.URGENZE, "34"], [RES.URGENZE, "181"], [RES.URGENZE, "54"]] },
+  ];
 
   // Embedded catalog: every exam extracted from the saved lab pages
   // (code → label per resource). Radiology lists aren't in the saved pages;
@@ -2979,6 +2992,9 @@
     .chip.q { background: transparent; border-style: dashed; color: #35506B; }
     .chip.q:hover { border-color: #0B5CAD; color: #0B5CAD; }
     .chip.q { padding: 3px 8px; font-size: 11px; min-height: 22px; }
+    /* il quesito che porta un pacchetto di esami: bordo pieno; acceso, come un profilo */
+    .chip.q.pk { border-style: solid; border-color: #9DBFDE; color: #16232E; font-weight: 600; }
+    .chip.q.pk.on { background: #EAF2FA; border-color: #0B5CAD; color: #16232E; }
     .qrow { display: flex; gap: 8px; align-items: flex-start; }
     .qrow input { flex: 1 1 52%; min-width: 0; }
     .qchips { flex: 1 1 48%; display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; }
@@ -3103,18 +3119,6 @@
     .seg .n { margin-left: 5px; font-weight: 600; color: #5B6B7A; font-variant-numeric: tabular-nums; }
     .rgo { flex: 0 0 auto; color: #8296A9; font-size: 12px; }
     .dlist, .mlist { display: flex; flex-direction: column; gap: 4px; }
-    /* Il gruppo dei referti di laboratorio: una riga di separazione che si
-       apre. Sta in mezzo all'elenco, quindi non deve sembrare un bottone
-       d'azione — è la riga stessa a essere toccabile. */
-    .gruppo { display: flex; align-items: center; gap: 8px; width: 100%; margin: 8px 0 3px; padding: 3px 2px;
-              border: 0; background: transparent; font: inherit; cursor: pointer; text-align: left;
-              font-size: 10.5px; color: #5B6B7A; text-transform: uppercase; letter-spacing: .06em; }
-    .gruppo:hover { color: #0B5CAD; }
-    .gruppo:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; border-radius: 4px; }
-    .gruppo .gfr { flex: 0 0 auto; color: #0B5CAD; font-weight: 800; }
-    .gruppo .gnome { flex: 0 0 auto; font-weight: 800; }
-    .gruppo .gmeta { flex: 1 1 auto; text-transform: none; letter-spacing: 0; color: #5B6B7A; font-size: 10.5px; }
-    .gruppo::after { content: ""; flex: 0 0 auto; width: 12px; height: 1px; background: #E3E8EF; }
     .dsep { display: flex; align-items: center; gap: 8px; margin: 8px 2px 3px; font-size: 10.5px;
             color: #5B6B7A; text-transform: uppercase; letter-spacing: .06em; }
     .dsep::after { content: ""; flex: 1 1 auto; height: 1px; background: #E3E8EF; }
@@ -3618,6 +3622,8 @@
     constructor(pageType) {
       this.pageType = pageType;
       this.selected = new Map(); // "res:code" -> {res, code, label}
+      this.pacchetto = "";       // il quesito-pacchetto attivo («Dispnea»), o ""
+      this.pkgDa = new Set();    // gli esami che ha messo LUI (non quelli scelti a mano)
       const saved = tabStore.get("log." + (findEpisodeId(document, location.href) || "x"), null);
       this.logLines = saved && Date.now() - (saved.ts || 0) < 2 * 3600e3 ? saved.lines || [] : [];
       this.runState = null; // null | 'running' | 'done' | 'fail' | 'stopped'
@@ -3646,7 +3652,6 @@
       this.storicoDaConfermare = false; // c'è, ma serve il codice fiscale per dire che è suo
       this.portale = "";                // indirizzo del portale aggiunto dal medico
       this.soloAlterati = false;        // valori: show only what is out of range
-      this.refLabAperti = false;        // i referti di laboratorio: chiusi finché non servono
       this.nColEsiti = 0;               // colonne della tabella degli Esiti: decide la larghezza
       this.mostraNomi = false;          // the unexpected-name list, open or closed
       this.mostraArch = false;          // l'elenco degli archiviati, aperto o chiuso
@@ -3799,7 +3804,8 @@
         sel: [...this.selected.values()].map((i) => [i.res, i.code, i.label]),
         acq: this.acq || "",
         eoSel: this.eoSel || "",
-        refLab: !!this.refLabAperti,
+        pk: this.pacchetto || "",
+        pkDa: [...this.pkgDa],
         ts: Date.now(),
       });
     }
@@ -3822,8 +3828,11 @@
       this._q = s.q || store.get("lastQ", "") || "";
       this._qrx = s.qrx || "";
       this.eoSel = s.eoSel || "";
-      this.refLabAperti = !!s.refLab;   // il gestionale ricarica a ogni click: il gruppo resta com'era
       this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
+      // il gestionale ricarica a ogni click: il pacchetto attivo e gli esami
+      // che ha messo restano com'erano
+      this.pacchetto = PACCHETTI.some((p) => p.q === s.pk) ? s.pk : "";
+      this.pkgDa = new Set(this.pacchetto ? (s.pkDa || []).filter((k) => this.selected.has(k)) : []);
       this.acq = s.acq || "";
       // A page load decides the view, not the stored one: opening a patient
       // lands on Esiti — quello che si va a fare, nove volte su dieci, è
@@ -3837,6 +3846,7 @@
       this._q = "";
       this._qrx = "";
       this.selected.clear();
+      this.pacchetto = ""; this.pkgDa.clear();
       this.persistUi();
     }
 
@@ -3846,6 +3856,7 @@
     toggle(res, code) {
       if (this.acq) this.acFocus = true; // stay in the search box
       const k = this.key(res, code);
+      this.pkgDa.delete(k);   // toccato a mano: da qui in poi è tuo, non del pacchetto
       if (this.selected.has(k)) this.selected.delete(k);
       else this.selected.set(k, { res, code, label: examLabel(res, code), display: displayLabel(res, code) });
       this.persistUi();
@@ -3856,9 +3867,56 @@
       const allOn = items.every(([r, c]) => this.isSel(r, c));
       for (const [r, c] of items) {
         const k = this.key(r, c);
+        this.pkgDa.delete(k);   // toccato a mano: non è più del pacchetto
         if (allOn) this.selected.delete(k);
         else this.selected.set(k, { res: r, code: c, label: examLabel(r, c), display: displayLabel(r, c) });
       }
+      this.persistUi();
+      this.render();
+    }
+
+    // ---- quesito = pacchetto di esami ----
+    // Un chip-pacchetto scrive il quesito E spunta il suo pacchetto. Si
+    // ricorda quali esami ha messo LUI (pkgDa): cambiando pacchetto, o
+    // toccando di nuovo il chip, se ne vanno solo quelli — gli esami che c'erano
+    // già (scelti a mano, o di un profilo) restano. Un chip normale scrive solo
+    // il quesito, come sempre; se c'era un pacchetto lo lascia andare e i suoi
+    // esami restano, ora «a mano».
+    pacchettoDi(q) {
+      const t = String(q || "").trim().toLowerCase();
+      return PACCHETTI.find((p) => p.q.toLowerCase() === t) || null;
+    }
+    scegliQuesito(q) {
+      const p = this.pacchettoDi(q);
+      const prima = this.pkgDa;
+      let mancano = [];
+      if (!p) {
+        this._q = q;
+        this.pacchetto = ""; this.pkgDa = new Set();
+      } else if (this.pacchetto === p.q) {
+        // di nuovo il pacchetto attivo: via quesito e pacchetto
+        for (const k of prima) this.selected.delete(k);
+        this._q = ""; this.pacchetto = ""; this.pkgDa = new Set();
+      } else {
+        const cat = fullCatalog();
+        const nuovo = new Set();
+        for (const [r, c] of p.items) {
+          const k = this.key(r, c);
+          if (!cat[r]?.items?.[c]) { mancano.push(DISPLAY[k] || `esame ${c} (${RES_SHORT[r] || r})`); continue; }
+          if (!this.selected.has(k)) {
+            this.selected.set(k, { res: r, code: c, label: examLabel(r, c), display: displayLabel(r, c) });
+            nuovo.add(k);
+          } else if (prima.has(k)) nuovo.add(k);   // lo aveva messo il pacchetto di prima: resta del pacchetto
+        }
+        for (const k of prima) if (!nuovo.has(k)) this.selected.delete(k);
+        this.pacchetto = p.q; this.pkgDa = nuovo; this._q = p.q;
+      }
+      // quello che manca dal catalogo si dice una volta sola, qui e nel Registro
+      if (mancano.length) {
+        const nota = `«${p.q}»: non ho aggiunto ${mancano.join(", ")} — ${mancano.length === 1 ? "non è" : "non sono"} nel catalogo di questo computer.`;
+        this.log(`${now()}  ${nota}`);
+        this.message = this._notaPk = nota;
+      } else if (this._notaPk && this.message === this._notaPk) { this.message = null; this._notaPk = ""; }
       this.persistUi();
       this.render();
     }
@@ -4241,7 +4299,7 @@
                 <div class="seg" role="tablist">
                   ${this.pageType === "patient" && this.view !== "home" ? `
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
-                  <button class="${this.view === "esiti" || this.view === "referto" ? "on" : ""}" data-seg="esiti">Esiti${this.esiti.length ? ` <span class="n">${this.esiti.length}</span>` : ""}</button>`
+                  <button class="${this.view === "esiti" || this.view === "referto" ? "on" : ""}" data-seg="esiti">Esiti${this.nEsiti() ? ` <span class="n">${this.nEsiti()}</span>` : ""}</button>`
                   : `<button class="${inHome || !section ? "on" : ""}" data-seg="home">Pazienti</button>`}
                   <button class="${this.view === "eo" ? "on" : ""}" data-seg="eo" title="Esame obiettivo da copiare">EO</button>
                   <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi">Consensi</button>
@@ -5116,7 +5174,8 @@
         const extra = this.viewPrint();
         return `${extra}<div class="hint" style="margin:2px 0 0">Apri un paziente per creare richieste.</div>`;
       }
-      const quesiti = store.get("quesiti", QUESITI_DEFAULT).slice(0, 8);
+      // i tre pacchetti sempre in testa, poi gli ultimi quesiti usati
+      const quesiti = [...PACCHETTI.map((p) => p.q), ...store.get("quesiti", QUESITI_DEFAULT).filter((q) => !this.pacchettoDi(q))].slice(0, 6);
       const canOneClick = this.pageType === "patient" || this.pageType === "crea";
 
       // Receipt banner: the moment of decision on the landing page must show
@@ -5142,7 +5201,12 @@
           <div class="lbl">Quesito diagnostico</div>
           <div class="qrow">
             <input id="q" type="text" placeholder="Es. dolore toracico in atto…" value="${esc(this._q || "")}">
-            <div class="qchips">${quesiti.slice(0, 6).map((q) => `<button class="chip q" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
+            <div class="qchips">${quesiti.map((q) => {
+              const pk = this.pacchettoDi(q);
+              if (!pk) return `<button class="chip q" data-q="${esc(q)}">${esc(q)}</button>`;
+              const on = this.pacchetto === pk.q;
+              return `<button class="chip q pk ${on ? "on" : ""}" data-q="${esc(q)}" aria-pressed="${on}" title="${on ? "Tocca di nuovo per togliere quesito e pacchetto" : "Scrive il quesito e spunta: "}${esc(on ? "" : pk.items.map(([r, c]) => displayLabel(r, c)).join(", "))}">${esc(q)}</button>`;
+            }).join("")}</div>
           </div>
         </div>` : "";
 
@@ -5249,6 +5313,18 @@
         </div>`;
     }
 
+    // I referti che gli Esiti mostrano: quelli di laboratorio no — dicono quello
+    // che la tabella dei Valori dice già, e in mezzo agli altri facevano
+    // perdere l'ECG e la radiologia. Salvare, resettare e contare guardano
+    // solo questi.
+    refertiMostrati() {
+      return this.esiti.filter((e) => e.kind === "referto" && refertoTipo(e) !== "lab");
+    }
+    // Quanti esiti ci sono da guardare: prelievi e referti mostrati.
+    nEsiti() {
+      return this.esiti.filter((e) => e.kind === "valori").length + this.refertiMostrati().length;
+    }
+
     // Values are fetched once per accesso and kept for the tab, so reopening
     // is instant; ↻ pulls them again while the lab is still completing.
     // ESITI — one chronological list: values we can read, and reported PDFs.
@@ -5293,7 +5369,7 @@
       const cached = this.refCache || {};
       const busy = this.refBusy || {};
       const prelievi = this.esiti.filter((e) => e.kind === "valori");
-      const referti = this.esiti.filter((e) => e.kind === "referto");
+      const referti = this.refertiMostrati();
       const st = this.datiEsiti();
       this.nColEsiti = st ? st.date.length : 0;
       // con l'estensione e il link dello storico, il portale è una fonte anche
@@ -5301,7 +5377,7 @@
       const conPortale = this.conPortale();
       // la tabella del portale è arrivata: allora non c'è più niente «da leggere»
       const dalPortale = !!(this.storico && (this.storico.periodo || this.storico.paziente?.idMPI));
-      if (!this.esiti.length && !st && !conPortale) return `<div class="hint">Nessun esito per questo paziente.</div>`;
+      if (!prelievi.length && !referti.length && !st && !conPortale) return `<div class="hint">Nessun esito per questo paziente.</div>`;
 
       // ---- valori: cosa è cambiato dall'ultima lettura, colonna per colonna
       // si parte dalle COLONNE della tabella: ognuna porta l'accesso da cui
@@ -5371,28 +5447,14 @@
             <span class="rgo">${(tipo === "rx" || tipo === "ecg") && busy[e.id] === undefined ? "›" : "Apri referto ↗"}</span>
           </button>`;
       };
-      // I referti del laboratorio dicono quello che la tabella qui sopra dice
-      // già, e in mezzo agli altri fanno perdere l'ECG e la radiologia. Stanno
-      // insieme, chiusi, con la data e l'ora della richiesta su ogni riga: si
-      // aprono quando servono, e restano documenti da aprire come prima.
-      const lab = referti.filter((e) => refertoTipo(e) === "lab");
-      const altri = referti.filter((e) => refertoTipo(e) !== "lab");
       const docs = referti.length ? `
         <div class="sec">
           <div class="lbl">Referti (${referti.length})
             ${hasExt() && nSaved < referti.length ? `<button class="mini" id="refsave"${this._salvaRef ? " disabled" : ""}>${this._salvaRef ? "salvo…" : "Salva referti"}</button>` : ""}
-            ${(nSaved || open.size) ? `<button class="mini" id="refreset">↻ Resetta</button>` : ""}
+            ${(nSaved || referti.some((e) => open.has(e.id))) ? `<button class="mini" id="refreset">↻ Resetta</button>` : ""}
             ${this.diagnosi ? `<button class="mini" id="refdiag" title="Copia com'è fatto il visualizzatore che non si è lasciato leggere (senza numeri), da mandare a chi fa il pannello">⧉ Copia diagnosi</button>` : ""}
           </div>
-          ${altri.length ? `<div class="rlist">${altri.map(riga).join("")}</div>` : ""}
-          ${lab.length ? `
-            <button class="gruppo" id="reflab" aria-expanded="${this.refLabAperti ? "true" : "false"}"
-                    title="I valori sono già nella tabella qui sopra: qui ci sono i documenti firmati">
-              <span class="gfr">${this.refLabAperti ? "▾" : "▸"}</span>
-              <span class="gnome">Laboratorio</span>
-              <span class="gmeta">${esc(String(lab.length))} referti${lab[0]?.when ? ` · ultimo ${esc(lab[0].when)}` : ""}</span>
-            </button>
-            ${this.refLabAperti ? `<div class="rlist">${lab.map(riga).join("")}</div>` : ""}` : ""}
+          <div class="rlist">${referti.map(riga).join("")}</div>
         </div>` : "";
       return valori + docs;
     }
@@ -5711,8 +5773,9 @@
     }
 
     async refreshRefCache() {
-      if (!hasExt() || !this.esiti.length) return;
-      const r = await ask({ t: "listRef", ep: this.episodeId, ids: this.esiti.filter((e) => e.kind === "referto").map((e) => e.id) });
+      const ids = this.refertiMostrati().map((e) => e.id);
+      if (!hasExt() || !ids.length) return;
+      const r = await ask({ t: "listRef", ep: this.episodeId, ids });
       if (r && r.ok) { this.refCache = r.cached || {}; this.render(); }
     }
 
@@ -5721,7 +5784,7 @@
       this._salvaRef = true;
       try {
       this.refBusy = this.refBusy || {};
-      const todo = this.esiti.filter((e) => e.kind === "referto" && !(this.refCache || {})[e.id]);
+      const todo = this.refertiMostrati().filter((e) => !(this.refCache || {})[e.id]);
       for (const e of todo) this.refBusy[e.id] = true;
       this.render();
       for (const e of todo) {
@@ -6614,7 +6677,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#storfiltro")?.addEventListener("click", filtra);
       $("#avvnomi")?.addEventListener("click", () => { this.mostraNomi = !this.mostraNomi; this.render(); });
       $("#valreset")?.addEventListener("click", () => this.resetValori());
-      $("#reflab")?.addEventListener("click", () => { this.refLabAperti = !this.refLabAperti; this.persistUi(); this.render(); });
       $("#refdiag")?.addEventListener("click", async () => {
         const b = this.root.querySelector("#refdiag");
         segnaCopia(b, await copiaTesto(diagnosiTesto(this.diagnosi)));
@@ -6851,7 +6913,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const qrxEl = $("#qrx");
       qrxEl?.addEventListener("input", () => { this._qrx = qrxEl.value; this.persistUi(); this.refreshCommit(); });
       this.root.querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () => {
-        qEl.value = b.getAttribute("data-q"); this._q = qEl.value; this.persistUi(); this.refreshCommit(); qEl.focus();
+        const q = b.getAttribute("data-q");
+        // un pacchetto (o un pacchetto da lasciare) cambia anche gli esami: si ridisegna
+        if (this.pacchettoDi(q) || this.pacchetto) { this.scegliQuesito(q); this.root.querySelector("#q")?.focus(); return; }
+        qEl.value = q; this._q = qEl.value; this.persistUi(); this.refreshCommit(); qEl.focus();
       }));
       this.root.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => this.togglePreset(PRESETS[+b.getAttribute("data-preset")])));
       this.root.querySelectorAll(".chip[data-code], .opt[data-code]").forEach((b) => b.addEventListener("click", () => this.toggle(b.getAttribute("data-res"), b.getAttribute("data-code"))));

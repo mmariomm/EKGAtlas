@@ -127,15 +127,23 @@ async function selectExams(page, labels) {
   }
 }
 
-// I referti di laboratorio stanno in un gruppo chiuso: chi li vuole in elenco
-// lo apre, come farebbe il medico. Lo stato resta anche dopo un ricaricamento.
-async function apriRefertiLab(page) {
-  const g = page.locator("#psassist-host #reflab");
-  if (await g.count() && (await g.getAttribute("aria-expanded")) !== "true") {
-    await g.click();
-    await page.waitForTimeout(200);
-  }
+// Gli Esiti non mostrano più i referti di laboratorio (la tabella dei Valori
+// dice già tutto). Il banco ne ha due (LIS) e uno di radiologia (RIS): per
+// provare i documenti «da aprire» — né laboratorio né radiologia — uno dei due
+// LIS si traveste da consulenza (stesso id, un altro sistema). Il mock non si
+// tocca: si cambia la pagina mentre passa.
+function conPagina(mock, cambia) {   // le pagine HTML del mock passano da qui (il corpo è win1252: si legge come latin1)
+  const h = mock.handle;
+  mock.handle = (req) => {
+    const out = h(req);
+    return Buffer.isBuffer(out.body) && /html/.test(out.headers["content-type"] || "")
+      ? { ...out, body: Buffer.from(cambia(out.body.toString("latin1")), "latin1") }
+      : out;
+  };
+  return mock;
 }
+const conConsulenza = (mock) => conPagina(mock, (html) =>
+  html.replace(/REFERTO_SISTEMA=HL7LIS(&REFERTO_ID=bbbb2222)/g, "REFERTO_SISTEMA=HL7CONS$1"));
 
 async function shot(page, name) {
   if (!SHOTS) return;
@@ -1399,7 +1407,7 @@ async function scenarioContinuity(browser) {
 
 async function scenarioReferti(browser) {
   const scen = "referti";
-  const mock = createMock({});
+  const mock = conConsulenza(createMock({}));
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
@@ -1407,22 +1415,24 @@ async function scenarioReferti(browser) {
   await page.waitForSelector("#psassist-host [data-esito]");
 
   const refs = page.locator('#psassist-host [data-esito][data-kind="referto"]');
-  // chiusi, in elenco resta solo quello che NON è laboratorio
-  const primaChiusi = await refs.allInnerTexts();
-  check(scen, primaChiusi.length === 1 && /TC ENCEFALO/.test(primaChiusi[0]),
-    `i referti di laboratorio stanno in un gruppo chiuso (in elenco: ${primaChiusi.map((t) => t.replace(/\s+/g, " ").slice(0, 24)).join(" · ") || "niente"})`);
-  await apriRefertiLab(page);
+  // i referti di laboratorio non ci sono più: né il gruppo, né le righe. Restano
+  // gli altri, e il link-archivio senza REFERTO_ID è ignorato come prima.
   const rows = await refs.allInnerTexts();
-  check(scen, rows.length === 3, `3 referti, il link-archivio senza REFERTO_ID è ignorato (got ${rows.length})`);
-  // dentro il gruppo il più recente resta in cima
-  const primoLab = () => page.locator('#psassist-host [data-esito][data-kind="referto"]').nth(1);
-  check(scen, /22\/08 07:45/.test(rows[1]) && /EMOGASANALISI/.test(rows[1]), `più recente in cima nel gruppo (got: ${rows[1]?.replace(/\s+/g, " ").slice(0, 40)})`);
-  check(scen, /↗/.test(rows[1]), "il referto dichiara che si apre in una scheda");
+  check(scen, rows.length === 2, `restano i referti che non sono di laboratorio (got ${rows.length}: ${rows.map((t) => t.replace(/\s+/g, " ").slice(0, 24)).join(" · ")})`);
+  check(scen, (await page.locator("#psassist-host #reflab").count()) === 0 && !/Laboratorio/i.test(await $panel(page, ".sec").last().innerText()),
+    "nessun gruppo «Laboratorio» negli Esiti");
+  check(scen, !rows.some((t) => /EMOCROMOCITOMETRICO/.test(t)), "il referto LIS vero non è in elenco");
+  check(scen, /referti \(2\)/i.test(await $panel(page, ".sec .lbl:has-text('Referti')").innerText()), "l'intestazione conta solo quelli mostrati");
+  // il più recente in cima
+  const consulenza = () => page.locator('#psassist-host [data-esito][data-kind="referto"]').nth(0);
+  check(scen, /22\/08 07:45/.test(rows[0]) && /EMOGASANALISI/.test(rows[0]), `più recente in cima (got: ${rows[0]?.replace(/\s+/g, " ").slice(0, 40)})`);
+  check(scen, /TC ENCEFALO/.test(rows[1]), "e sotto la TC");
+  check(scen, /↗/.test(rows[0]), "il referto dichiara che si apre in una scheda");
   check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "nessuno ancora aperto");
 
   const [popup] = await Promise.all([
     page.waitForEvent("popup", { timeout: 8000 }),
-    primoLab().click(),
+    consulenza().click(),
   ]);
   // the tab is opened blank and then navigated, so wait for the real URL
   await popup.waitForURL(/Sa4ViewerExtRedirect/, { timeout: 8000 }).catch(() => {});
@@ -1438,7 +1448,7 @@ async function scenarioReferti(browser) {
   check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 1, "lo stato resiste al refresh");
 
   const before = context.pages().length, reqBefore = hits(mock, "bbbb2222");
-  await primoLab().click();
+  await consulenza().click();
   await page.waitForTimeout(700);
   check(scen, context.pages().length === before && hits(mock, "bbbb2222") === reqBefore,
     "riclick torna alla scheda già aperta, senza ricaricare");
@@ -1446,6 +1456,25 @@ async function scenarioReferti(browser) {
   await $panel(page, "#refreset").click();
   await page.waitForTimeout(400);
   check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "Resetta azzera lo stato");
+  await context.close();
+}
+
+async function scenarioSoloLabEsiti(browser) {
+  const scen = "esiti-senza-lab";
+  // un paziente che ha SOLO referti di laboratorio: negli Esiti non c'è niente
+  // da mostrare, e lo dice (non una pagina vuota con un conto che non torna)
+  const mock = conPagina(createMock({}), (html) =>
+    html.replace(/<tr><td class="AFCDataTD" title="[^"]*TC ENCEFALO[\s\S]*?<\/tr>/, ""));
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForSelector("#psassist-host .hint", { timeout: 10000 });
+  check(scen, (await page.locator('#psassist-host [data-esito][data-kind="referto"]').count()) === 0
+    && /Nessun esito/.test(await $panel(page, ".bd").innerText()),
+    "solo referti di laboratorio: «Nessun esito», niente righe");
+  check(scen, !/Esiti\s*\d/.test((await $panel(page, '[data-seg="esiti"]').innerText()).replace(/\s+/g, " ")),
+    "e la scheda Esiti non porta un numero");
   await context.close();
 }
 
@@ -1475,6 +1504,167 @@ async function scenarioQuesitoRx(browser) {
   const rx = rich.find((r) => r.cart.has("35"));
   check(scen, lab && lab.quesito === "dolore toracico", `laboratorio col suo quesito (got ${lab && JSON.stringify(lab.quesito)})`);
   check(scen, rx && rx.quesito === "sospetto PNX", `radiologia col quesito RX (got ${rx && JSON.stringify(rx.quesito)})`);
+  await context.close();
+}
+
+async function scenarioQuesitoPacchetti(browser) {
+  const scen = "pacchetti";
+  // quesito = pacchetto di esami: il chip scrive il quesito E spunta gli esami
+  const P = (c) => `${RES.POC}:${c}`, U = (c) => `${RES.URGENZE}:${c}`;
+  const TORACICO = [P(320), P(325), P(176), P(220), P(134), P(324)].sort();
+  const DISPNEA = [P(320), P(326), P(176), P(220), P(134), P(101), P(324), U(297)].sort();
+  const ADDOME = [P(320), P(325), P(176), U(16), U(228), U(53), U(167), U(34), U(181), U(54)].sort();
+  // le versioni NEW degli emogas esistono anche sul server (senza, il motore ordina le vecchie)
+  const mock = createMock({ nuoveVersioni: { 3: "325", 166: "326" } });
+  const { context, page } = await newPage(browser, mock);
+  // l'elenco dei quesiti salvato dal medico NON ha i tre pacchetti
+  await context.addInitScript(() => {
+    try {
+      if (!localStorage.getItem("psassist:quesiti")) {
+        localStorage.setItem("psassist:quesiti", JSON.stringify(["Febbre", "Trauma", "Cefalea", "Sincope"]));
+        localStorage.setItem("psassist:quesiti.ts", String(Date.now()));
+      }
+    } catch { /* niente */ }
+  });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+
+  const selezione = () => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot
+    .querySelectorAll("[data-unsel]")].map((b) => b.getAttribute("data-unsel")).sort());
+  const chip = (q) => $panel(page, `.chip.q[data-q="${q}"]`);
+  const acceso = async (q) => (await chip(q).getAttribute("aria-pressed")) === "true" && /\bon\b/.test(await chip(q).getAttribute("class"));
+  const quesito = () => $panel(page, "#q").inputValue();
+  const uguali = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const mostra = (a) => a.map((k) => k.replace(RES.POC + ":", "P").replace(RES.URGENZE + ":", "U")).join(",");
+
+  // ---- i tre pacchetti sono sempre in testa, anche se la lista salvata non li ha
+  const chips = (await $panel(page, ".qchips .chip.q").allInnerTexts()).map((t) => t.trim());
+  check(scen, uguali(chips.slice(0, 3), ["Dolore toracico", "Dispnea", "Dolore addominale"]),
+    `i tre pacchetti sono i primi chip (got ${chips.join(" · ")})`);
+  check(scen, uguali(chips.slice(3), ["Febbre", "Trauma", "Cefalea"]),
+    "e dopo vengono i quesiti salvati dal medico");
+  check(scen, (await selezione()).length === 0 && !(await acceso("Dolore toracico")), "all'inizio niente è scelto");
+
+  // ---- Dolore toracico: base, PT PTT POC, troponina
+  await chip("Dolore toracico").click();
+  let sel = await selezione();
+  check(scen, uguali(sel, TORACICO), `«Dolore toracico» sceglie esattamente i suoi esami (got ${mostra(sel)})`);
+  check(scen, (await quesito()) === "Dolore toracico", `e scrive il quesito (got ${JSON.stringify(await quesito())})`);
+  check(scen, await acceso("Dolore toracico") && !(await acceso("Dispnea")) && !(await acceso("Dolore addominale")),
+    "il chip scelto è acceso, gli altri no");
+  check(scen, /^Crea e aggiungi 6 esami/.test(await $panel(page, "#go").innerText()) && !(await $panel(page, "#go").isDisabled()),
+    "e il bottone è pronto, con il quesito già scritto");
+
+  // ---- un esame scelto a mano resta quando si cambia pacchetto
+  await $panel(page, `.opt[data-res="${RES.POC}"][data-code="30"]`).click();     // glucosio POC
+  await $panel(page, `.opt[data-res="${RES.URGENZE}"][data-code="293"]`).click(); // PCR
+  await chip("Dispnea").click();
+  sel = await selezione();
+  check(scen, uguali(sel, [...DISPNEA, P(30), U(293)].sort()),
+    `cambiando pacchetto: quelli del vecchio se ne vanno, quelli scelti a mano restano (got ${mostra(sel)})`);
+  check(scen, sel.includes(P(326)) && !sel.includes(P(325)),
+    "«Dispnea» ha l'EGA arteriosa e NON la venosa");
+  check(scen, (await quesito()) === "Dispnea" && await acceso("Dispnea") && !(await acceso("Dolore toracico")),
+    "il quesito e il chip acceso seguono il pacchetto");
+
+  // ---- il pacchetto attivo e gli esami che ha messo sopravvivono al cambio pagina
+  await page.reload();
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await richieste(page);
+  check(scen, uguali(await selezione(), [...DISPNEA, P(30), U(293)].sort()) && await acceso("Dispnea"),
+    "dopo il ricaricamento la scelta e il chip acceso sono rimasti");
+
+  await chip("Dolore addominale").click();
+  sel = await selezione();
+  check(scen, uguali(sel, [...ADDOME, P(30), U(293)].sort()),
+    `anche dopo il ricaricamento il cambio toglie solo il suo (got ${mostra(sel)})`);
+  check(scen, sel.includes(U(181)) && sel.includes(U(54)) && !sel.includes(P(220)),
+    "«PT PTT Fantoli» è il laboratorio non-POC (Urgenze), non il POC");
+
+  // ---- toccarlo di nuovo toglie quesito e pacchetto, non gli esami a mano
+  await chip("Dolore addominale").click();
+  sel = await selezione();
+  check(scen, uguali(sel, [P(30), U(293)].sort()), `di nuovo: via il pacchetto, restano i due scelti a mano (got ${mostra(sel)})`);
+  check(scen, (await quesito()) === "" && !(await acceso("Dolore addominale")), "e il quesito è vuoto, il chip spento");
+
+  // ---- un esame che il pacchetto trova già scelto a mano non se ne va con lui
+  await $panel(page, `.opt[data-res="${RES.POC}"][data-code="325"]`).click();   // EGA venosa a mano
+  await chip("Dolore toracico").click();
+  check(scen, uguali(await selezione(), [...TORACICO, P(30), U(293)].sort()), "il pacchetto aggiunge solo quello che manca");
+  await chip("Dolore toracico").click();
+  sel = await selezione();
+  check(scen, uguali(sel, [P(30), P(325), U(293)].sort()),
+    `togliendolo resta anche l'EGA venosa scelta a mano prima (got ${mostra(sel)})`);
+
+  // ---- un esame del pacchetto tolto a mano non torna da solo
+  const togli = (k) => page.evaluate((x) => document.getElementById("psassist-host").shadowRoot.querySelector(`[data-unsel="${x}"]`).click(), k);
+  await chip("Dispnea").click();
+  await togli(U(297));
+  sel = await selezione();
+  check(scen, !sel.includes(U(297)), "un esame del pacchetto si può togliere a mano");
+  await chip("Dolore addominale").click();
+  sel = await selezione();
+  check(scen, !sel.includes(U(297)) && !sel.includes(P(326)) && sel.includes(U(34)),
+    "e al cambio non resta niente del pacchetto vecchio");
+
+  // ---- un quesito normale scrive solo il quesito: il pacchetto lo lascia andare
+  await chip("Febbre").click();
+  check(scen, (await quesito()) === "Febbre" && !(await acceso("Dolore addominale")),
+    "un chip normale scrive il quesito e spegne il pacchetto");
+  sel = await selezione();
+  check(scen, sel.includes(U(34)) && sel.includes(P(30)), "gli esami restano, ora sono del medico");
+  await chip("Dispnea").click();
+  await chip("Dispnea").click();
+  sel = await selezione();
+  check(scen, sel.includes(U(34)) && sel.includes(P(30)) && !sel.includes(P(326)),
+    "e un pacchetto che arriva dopo, poi tolto, non li porta via");
+
+  // ---- partire: il pacchetto è un ordine vero, col suo quesito
+  for (const k of await selezione()) await togli(k);
+  check(scen, (await selezione()).length === 0, "pulito per l'ordine vero");
+  await chip("Dispnea").click();
+  await $panel(page, "#go").click();
+  for (let i = 0; i < 150; i++) {
+    if (Object.values(mock.state.richieste).some((r) => r.cart.size >= 8)) break;
+    await page.waitForTimeout(200);
+  }
+  const r = Object.values(mock.state.richieste)[0];
+  const cart = r ? [...r.cart.keys()].sort() : [];
+  check(scen, r && r.quesito === "Dispnea", `la richiesta parte col quesito del pacchetto (got ${r && JSON.stringify(r.quesito)})`);
+  check(scen, uguali(cart, ["101", "134", "176", "220", "297", "320", "324", "326"].sort()),
+    `in carrello i suoi otto esami, con l'EGA arteriosa e non la venosa (got ${cart})`);
+  await context.close();
+}
+
+async function scenarioPacchettiCatalogo(browser) {
+  const scen = "pacchetti-catalogo";
+  // un catalogo a cui mancano D-dimero POC (101) e NT-proBNP (297): quelli si
+  // saltano e si dicono, il resto del pacchetto si sceglie lo stesso
+  const mock = createMock({});
+  const { context, page, inject } = await newPage(browser, mock);
+  let src = readFileSync(CONTENT, "utf8");
+  const m = /const EMBEDDED_CATALOG = (\{.*\});\n/.exec(src);
+  const cat = JSON.parse(m[1]);
+  delete cat[RES.POC].items["101"];
+  delete cat[RES.URGENZE].items["297"];
+  src = src.replace(m[0], () => `const EMBEDDED_CATALOG = ${JSON.stringify(cat)};\n`);
+  page.removeListener("load", inject);
+  page.on("load", async () => { try { await page.addScriptTag({ content: src }); } catch { /* navigation race */ } });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+
+  const selezione = () => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot
+    .querySelectorAll("[data-unsel]")].map((b) => b.getAttribute("data-unsel")).sort());
+  await $panel(page, '.chip.q[data-q="Dispnea"]').click();
+  const sel = await selezione();
+  const atteso = ["320", "326", "176", "220", "134", "324"].map((c) => `${RES.POC}:${c}`).sort();
+  check(scen, JSON.stringify(sel) === JSON.stringify(atteso), `si sceglie quello che c'è, senza inventare il resto (got ${sel.length} esami: ${sel.map((k) => k.split(":")[1]).join(",")})`);
+  const avviso = (await $panel(page, ".banner.warn").first().innerText().catch(() => "")).replace(/\s+/g, " ");
+  check(scen, /Dispnea/.test(avviso) && /D-DIMERO POC/.test(avviso) && /NT PRO-BNP/.test(avviso),
+    `il pannello dice cosa non ha aggiunto (got: ${avviso.slice(0, 110) || "niente"})`);
+  await registro(page);
+  const reg = await $panel(page, ".log").innerText();
+  check(scen, (reg.match(/non ho aggiunto/g) || []).length === 1, "e lo scrive una volta sola nel Registro");
   await context.close();
 }
 
@@ -2359,19 +2549,20 @@ async function scenarioNuoviValori(browser) {
 
 async function scenarioRefertoTesto(browser) {
   const scen = "referto-testo";
-  const mock = createMock({});
+  const mock = conConsulenza(createMock({}));
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, '[data-seg="esiti"]').click();
   await page.waitForSelector("#psassist-host [data-esito]", { timeout: 15000 });
 
-  // the radiology row announces it opens INSIDE the panel, the lab one does not
-  await apriRefertiLab(page);
+  // the radiology row announces it opens INSIDE the panel, the other one does not
   const rx = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "TC ENCEFALO" });
   check(scen, /›/.test(await rx.innerText()), "il referto RIS si apre nel pannello");
-  const lis = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "EMOGASANALISI" });
-  check(scen, /Apri referto/.test(await lis.innerText()), "quello di laboratorio resta un documento da aprire");
+  const altro = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "EMOGASANALISI" });
+  check(scen, /Apri referto/.test(await altro.innerText()), "gli altri restano documenti da aprire");
+  check(scen, !(await page.locator("#psassist-host .rrow .rsys").allInnerTexts()).some((t) => /\bLIS\b/.test(t)),
+    "nessun referto di laboratorio (LIS) in elenco");
 
   await rx.click();
   await page.waitForSelector("#psassist-host .reftxt .rt", { timeout: 20000 });
@@ -3003,6 +3194,8 @@ const scenarios = [
   ["wrong resource refused", scenarioWrongResourceRefused],
   ["missing quesito refused", scenarioMissingQuesito],
   ["quesito RX distinto", scenarioQuesitoRx],
+  ["quesito = pacchetto di esami", scenarioQuesitoPacchetti],
+  ["pacchetto: esami fuori catalogo si dicono", scenarioPacchettiCatalogo],
   ["radiology learning loop", scenarioRadiologyLearning],
   ["print wizard manual", scenarioPrintManual],
   ["print multi-lab rows (PROG split)", scenarioPrintMultiLab],
@@ -3021,6 +3214,7 @@ const scenarios = [
   ["ui ergonomics (selbar/drag/scroll)", scenarioUiErgonomics],
   ["continuity + panel confirm button", scenarioContinuity],
   ["referti tabs + reset", scenarioReferti],
+  ["esiti: senza referti di laboratorio", scenarioSoloLabEsiti],
   ["rx singles (torace/addome)", scenarioRxSingles],
   ["lab + rx: two richieste, one flow", scenarioLabPlusRx],
   ["lab + rx manual walk", scenarioLabPlusRxManual],
