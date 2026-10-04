@@ -87,6 +87,19 @@ check(page.url().includes("EPISODIO_ID=700001"), "l'indirizzo porta l'episodio c
 check(await page.locator('#sa4-page form[name="AmbulatorioPSO"]').count() === 1, "è la pagina vera del gestionale, non una ricostruzione");
 check(await page.locator('#sa4-page a[title="Richieste Laboratorio"]').count() >= 1, "coi suoi collegamenti originali");
 
+// ---- il quesito è un pacchetto di esami: scrive il quesito e ne spunta gli esami
+const barraSel = () => $(".selbar").innerText().then((t) => t.replace(/\s+/g, " ")).catch(() => "");
+await $('.chip.q[data-q="Dolore toracico"]').click();
+let bs = await barraSel();
+check(await $("#q").inputValue() === "Dolore toracico" && /6 SELEZIONATI/.test(bs) && /TROPONINA US/.test(bs) && /PT POC/.test(bs),
+  `«Dolore toracico» scrive il quesito e spunta il suo pacchetto (${bs.slice(0, 90)})`);
+await $('.chip.q[data-q="Dispnea"]').click();
+bs = await barraSel();
+check(/8 SELEZIONATI/.test(bs) && /EGA ARTERIOSA NEW/.test(bs) && !/EGA VENOSA NEW/.test(bs) && /NT PRO-BNP/.test(bs),
+  `«Dispnea» ha l'EGA arteriosa e non la venosa (${bs.slice(0, 100)})`);
+await $('.chip.q[data-q="Dispnea"]').click();
+check(await $("#q").inputValue() === "" && await $(".selbar").count() === 0, "ritoccarlo toglie quesito e pacchetto");
+
 // ---- l'ordine completo sulle pagine vere
 await $("#q").fill("dolore toracico, sospetta SCA");
 await $('.chip.preset:has-text("Base PS")').click();
@@ -115,11 +128,12 @@ await page.waitForSelector("#psassist-host [data-seg]", { state: "attached", tim
 check(await page.title() === "BIANCHI ANNA", "il secondo paziente è la seconda scheda salvata");
 await $('[data-seg="esiti"]').click();
 await page.waitForSelector("#psassist-host [data-esito]", { state: "attached", timeout: 20000 });
-// il conteggio è nell'intestazione: in elenco i referti di laboratorio sono
-// raccolti in un gruppo chiuso, quindi le righe visibili sono meno
+// il conteggio è nell'intestazione e conta solo i referti mostrati: quelli di
+// laboratorio non sono negli Esiti
 const titoloRef = await $(".sec .lbl:has-text('Referti')").innerText();
-check(/referti \((\d+)\)/i.test(titoloRef) && Number(/referti \((\d+)\)/i.exec(titoloRef)[1]) >= 4,
-  `gli Esiti arrivano dalla pagina vera (${titoloRef.replace(/\s+/g, " ").trim()})`);
+const nIntest = Number((/referti \((\d+)\)/i.exec(titoloRef) || [])[1] || 0);
+check(nIntest >= 2 && nIntest === await page.locator('#psassist-host [data-esito][data-kind="referto"]').count(),
+  `gli Esiti arrivano dalla pagina vera, e l'intestazione conta le righe che si vedono (${titoloRef.replace(/\s+/g, " ").trim()})`);
 // i valori non si leggono da soli: si chiedono, e arrivano in UNA tabella
 check(await $(".sttab").count() === 0, "prima di chiederli non c'è nessuna tabella");
 await $("#risall").click();
@@ -151,6 +165,28 @@ check(!formula.grezze.some((g) => /granulociti|linfociti/i.test(g)),
 // ---- i prelievi letti sono le colonne di una tabella sola, divisa per gruppo
 check(daFinestra.sezioni.length >= 2 && daFinestra.colonne >= 2,
   `divisi per gruppo, una colonna a prelievo (${daFinestra.sezioni.join(", ")} · ${daFinestra.colonne} colonne)`);
+// ---- le colonne vanno dal più RECENTE al più vecchio, da sinistra a destra, e
+// «ultimo» sta sul più recente. Si legge l'istante di ogni colonna dal suo
+// tooltip (data e ora per esteso), non dall'ordine in cui il programma le ha messe.
+const ordineColonne = () => page.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  const th = [...r.querySelectorAll(".sttab thead th")].slice(1);
+  const quando = (x) => {
+    const m = /(\d\d)\/(\d\d)\/(\d{4}) (\d\d):(\d\d)/.exec(x.getAttribute("title") || "");
+    return m ? Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4], +m[5]) : null;
+  };
+  return { t: th.map(quando), ultima: th.map((x) => x.classList.contains("ultima")),
+           testo: th.map((x) => (x.getAttribute("title") || "").slice(0, 16)) };
+});
+const verificaOrdine = async (dove) => {
+  const o = await ordineColonne();
+  // un prelievo senza data e ora (colonna «?») sta in fondo a destra, per scelta
+  const noti = o.t.filter((x) => x !== null);
+  check(noti.length >= 2 && o.t.slice(0, noti.length).every((x) => x !== null) && noti.every((x, i) => i === 0 || x <= noti[i - 1]),
+    `${dove}: le colonne vanno dal più recente al più vecchio (${o.testo.slice(0, noti.length).join(" → ")}${noti.length < o.t.length ? " · poi «?»" : ""})`);
+  check(o.ultima[0] && o.ultima.slice(1).every((u) => !u), `${dove}: «ultimo» è sulla colonna più recente, e solo lì`);
+};
+await verificaOrdine("tabella dalle finestre Risultati");
 
 // ---- il laboratorio completa il pannello: un valore cambia, un esame compare
 await page.evaluate(() => document.getElementById("psa-lab").click());
@@ -193,20 +229,18 @@ await page.waitForSelector("#psassist-host .sttab", { timeout: 8000 });
 check(await page.locator(`#psassist-host .sttab td[data-cella="${cellaSegnata}"].marca1`).count() === 1,
   "e il segno è ancora lì dopo il cambio pagina");
 
-// ---- i referti di laboratorio stanno insieme e chiusi: l'ECG e la radiologia
-// non si perdono in mezzo. Restano documenti da aprire, con la loro data e ora.
+// ---- i referti di laboratorio negli Esiti non ci sono: la tabella dei Valori dice
+// già tutto, e in mezzo agli altri facevano perdere l'ECG e la radiologia.
+// Restano gli altri referti, documenti da aprire, con la loro data e ora.
 const refertiVisibili = () => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot
   .querySelectorAll('[data-esito][data-kind="referto"]')].map((b) => b.textContent.replace(/\s+/g, " ").trim()));
-const chiusi = await refertiVisibili();
-check(chiusi.length && chiusi.every((t) => !/\bLIS\b/.test(t)),
-  `chiusi, in elenco restano solo gli altri referti (${chiusi.length}: ${chiusi.map((t) => t.slice(0, 22)).join(" · ")})`);
-check(/Laboratorio/i.test(await $("#reflab").innerText()) && /ultimo \d\d\/\d\d \d\d:\d\d/.test(await $("#reflab").innerText()),
-  `il gruppo dice quanti sono e di quando (${(await $("#reflab").innerText()).replace(/\s+/g, " ")})`);
-await $("#reflab").click();
-await page.waitForTimeout(300);
-const aperti = (await refertiVisibili()).filter((t) => /\bLIS\b/.test(t));
-check(aperti.length >= 1 && aperti.every((t) => /^\d\d\/\d\d \d\d:\d\d/.test(t)),
-  `aprendolo compaiono, ognuno con data e ora della richiesta (${aperti.map((t) => t.slice(0, 12)).join(" · ")})`);
+const visibili = await refertiVisibili();
+check(visibili.length >= 2 && visibili.every((t) => !/\bLIS\b/.test(t)),
+  `in elenco restano solo gli altri referti (${visibili.length}: ${visibili.map((t) => t.slice(0, 22)).join(" · ")})`);
+check(await $("#reflab").count() === 0 && !/Laboratorio/i.test(await $(".sec:has(.rrow)").last().innerText()),
+  "e non c'è più nessun gruppo «Laboratorio» da aprire");
+check(visibili.every((t) => /^\d\d\/\d\d \d\d:\d\d/.test(t)),
+  `ogni referto con data e ora (${visibili.map((t) => t.slice(0, 12)).join(" · ")})`);
 
 await $("#refsave").click();
 await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length >= 1, { timeout: 30000 }).catch(() => {});
@@ -262,6 +296,7 @@ check(Math.abs(griglia.larghezza - griglia.colonna) <= 3,
 // nessun prelievo di esempio è di oggi: in cima c'è la data, sotto l'ora
 check(griglia.sotto.length === 3 && griglia.sotto.every((t) => /^\d\d:\d\d$/.test(t)),
   `colonne di altri giorni: data sopra, ora sotto (${griglia.sotto.join(" · ")})`);
+await verificaOrdine("tabella dello storico del portale");
 
 // ---- una schermata mai salvata non è un errore
 await page.locator('#sa4-page a:has-text("Storico Documenti")').first().click().catch(() => {});
