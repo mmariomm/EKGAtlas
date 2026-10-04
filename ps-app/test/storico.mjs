@@ -401,22 +401,22 @@ check(ega.intatta, "una tabella senza righe miste resta quella che è");
 // valori uguali e a volte col nome scritto in due modi; e le colonne possono
 // arrivare dalla più recente. In tabella erano doppioni, e «ultimo» stava
 // sul prelievo più vecchio.
-const DUE = ["03/10/2026 07:33", "03/10/2026 07:23", "02/10/2026 21:35", "02/10/2026 21:32"];
+const DUE = ["11/09/2026 07:40", "11/09/2026 07:10", "10/09/2026 22:15", "10/09/2026 21:50"];
 const doppio = paginaStorico({ date: DUE, esami: [
-  ["EMOCROMO CON FORMULA", "Leucociti", "1202", "WBC", ["", "5.8", "", "8.0"], [0, 0, 0, 0]],
-  ["EMOCROMO CON FORMULA", "Neutrofili", "1202", "NEU", ["", "4.3", "", "5.9"], [0, 0, 0, 0]],
-  ["EMOCROMO CON FORMULA", "Neutrofili %", "1202", "NEU%", ["", "72.9", "", "73.2"], [0, 0, 0, 0]],
-  ["EMOCROMO CON FORMULA", "Linfociti", "1202", "LIN", ["", "1.1", "", "1.5"], [0, 0, 0, 0]],
-  ["EMOCROMO CON FORMULA", "Linfociti %", "1202", "LIN%", ["", "19.1", "", "18.6"], [0, 0, 0, 0]],
-  ["EMOCROMO CON FORMULA", "Emoglobina", "1202", "HB", ["", "123", "", "131"], [0, -1, 0, -1]],
-  ["EMOCROMO CON FORMULA", "MCH Cont. Medio Hgb", "1202", "MCH", ["", "32.7", "", "32.8"], [0, 1, 0, 1]],
-  ["EMOCROMO CON FORMULA", "Piastrine", "1202", "PLT", ["", "179", "", "195"], [0, 0, 0, 0]],
-  ["EMOCROMO", "Leucociti", "1201", "WBC", ["", "5.8", "", "8.0"], [0, 0, 0, 0]],
-  ["EMOCROMO", "Linfociti", "1201", "LIN", ["", "1.1", "", "1.5"], [0, 0, 0, 0]],
-  ["EMOCROMO", "Emoglobina", "1201", "HB", ["", "123.0", "", "131.0"], [0, -1, 0, -1]],
-  ["EMOCROMO", "MCH Cont. Media Hgb", "1201", "MCH", ["", "32.7", "", "32.8"], [0, 1, 0, 1]],
-  ["EMOCROMO", "Piastrine", "1201", "PLT", ["", "178", "", "195"], [0, 0, 0, 0]],
-  ["EMOGASANALISI VENOSA", "Emoglobina", "1800", "HB", ["128", "", "", ""], [0, 0, 0, 0]],
+  ["EMOCROMO CON FORMULA", "Leucociti", "1202", "WBC", ["", "6.1", "", "9.4"], [0, 0, 0, 0]],
+  ["EMOCROMO CON FORMULA", "Neutrofili", "1202", "NEU", ["", "4.0", "", "6.8"], [0, 0, 0, 0]],
+  ["EMOCROMO CON FORMULA", "Neutrofili %", "1202", "NEU%", ["", "65.6", "", "72.3"], [0, 0, 0, 0]],
+  ["EMOCROMO CON FORMULA", "Linfociti", "1202", "LIN", ["", "1.4", "", "1.9"], [0, 0, 0, 0]],
+  ["EMOCROMO CON FORMULA", "Linfociti %", "1202", "LIN%", ["", "23.0", "", "20.2"], [0, 0, 0, 0]],
+  ["EMOCROMO CON FORMULA", "Emoglobina", "1202", "HB", ["", "118", "", "127"], [0, -1, 0, -1]],
+  ["EMOCROMO CON FORMULA", "MCH Cont. Medio Hgb", "1202", "MCH", ["", "30.9", "", "31.1"], [0, 0, 0, 0]],
+  ["EMOCROMO CON FORMULA", "Piastrine", "1202", "PLT", ["", "212", "", "230"], [0, 0, 0, 0]],
+  ["EMOCROMO", "Leucociti", "1201", "WBC", ["", "6.1", "", "9.4"], [0, 0, 0, 0]],
+  ["EMOCROMO", "Linfociti", "1201", "LIN", ["", "1.4", "", "1.9"], [0, 0, 0, 0]],
+  ["EMOCROMO", "Emoglobina", "1201", "HB", ["", "118.0", "", "127.0"], [0, -1, 0, -1]],
+  ["EMOCROMO", "MCH Cont. Media Hgb", "1201", "MCH", ["", "30.9", "", "31.1"], [0, 0, 0, 0]],
+  ["EMOCROMO", "Piastrine", "1201", "PLT", ["", "211", "", "230"], [0, 0, 0, 0]],
+  ["EMOGASANALISI VENOSA", "Emoglobina", "1800", "HB", ["125", "", "", ""], [0, 0, 0, 0]],
 ] });
 const dd = await page.evaluate(([s, h]) => {
   const doc = new DOMParser().parseFromString(h, "text/html");
@@ -442,12 +442,12 @@ check(dd.date.join(" · ") === [...DUE].reverse().join(" · "),
 check(dd.leucociti === 1, `lo stesso analita da due prestazioni, stessi valori: UNA riga già alla lettura (got ${dd.leucociti})`);
 check(dd.vista.includes("Emocromo:GB,Neu,Lin,Hb,MCH,PLT,PLT") && dd.vista.includes("Emogas:Hb"),
   `in tabella ogni analita una volta, l'Hb dell'emogas a parte (got ${dd.vista.join(" · ")})`);
-check(dd.lin.length === 1 && dd.lin[0] === "1.5(18.6%)|-|1.1(19.1%)|-",
+check(dd.lin.length === 1 && dd.lin[0] === "1.9(20.2%)|-|1.4(23.0%)|-",
   `i linfociti: una riga, l'assoluto con la sua percentuale (got ${dd.lin.join(" / ")})`);
-check(dd.mch.length === 1 && dd.mch[0] === "32.8|-|32.7|-" && !dd.ambigue.some((k) => /MCH/.test(k)),
+check(dd.mch.length === 1 && dd.mch[0] === "31.1|-|30.9|-" && !dd.ambigue.some((k) => /MCH/.test(k)),
   `«MCH Cont. Medio Hgb» e «… Media Hgb», stessi valori: una riga, che non va più scritta per esteso (got ${dd.mch.join(" / ")})`);
 check(dd.plt.length === 2,
-  `due piastrine che si contraddicono (178 e 179 nello stesso prelievo) restano due: un valore non ne copre mai un altro (got ${dd.plt.join(" / ")})`);
+  `due piastrine che si contraddicono (211 e 212 nello stesso prelievo) restano due: un valore non ne copre mai un altro (got ${dd.plt.join(" / ")})`);
 check(ega.sezioni.includes("Emocromo:Hb") && ega.sezioni.includes("Emogas:pH,Hb,K") && ega.sezioni.includes("Elettroliti e metabolismo:K"),
   `in tabella: l'Hb dell'emogas sta nell'Emogas, col pH e il suo potassio (got ${ega.sezioni.join(" · ")})`);
 
