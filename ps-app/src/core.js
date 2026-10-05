@@ -2026,6 +2026,8 @@
     if (aperta && aperta.ep === ep) store.set(APERTA, null);
     const posti = store.get("stanza.posti.v1", null);   // e il suo posto nella stanza
     if (posti && posti[ep]) { delete posti[ep]; store.set("stanza.posti.v1", posti); }
+    const prom = store.get(PROM, null);   // e i suoi promemoria
+    if (prom && prom[ep]) { delete prom[ep]; store.set(PROM, prom); }
     if (hasExt()) ask({ t: "delStorico", chiave: pk, ep, nome: nome || "" }).catch(() => {});
     return true;
   }
@@ -2148,6 +2150,129 @@
     delete s[da];
     store.set(segniKey, s);
   }
+
+  // ------------------------------------------------------------ PROMEMORIA
+  // «11:30 tropo», «tra 2h ECG»: un'ora per fare una cosa, per paziente. Si
+  // tiene l'ISTANTE, come il cronometro: ricaricare la pagina non sposta
+  // niente. Per episodio, mai un nome; al massimo 10 a paziente; scadono 12
+  // ore dopo l'ora fissata. Stanno in questo browser e non vanno da nessuna parte.
+  const PROM = "promemoria.v1";
+  const PROM_MAX = 10;
+  const PROM_TTL = 12 * 3600e3;
+  // Il primo orario scritto nel testo; il resto è la cosa da fare. Un'ora:
+  // «11:30», «11.30», «11h30», «11h», «alle 14». Fra quanto: «tra 2h», «+2h»,
+  // «2h», «2h30», «90m», «30 min», «30'», «tra 45 minuti», «2 ore». Con una
+  // cifra «2h» è fra quanto, con due «11h» è un'ora. Un'ora passata da non più
+  // di 2 ore è di oggi (già scaduta); più indietro è di domani: il turno di notte.
+  function leggiPromemoria(testo, ora) {
+    const s = String(testo || "").replace(/\s+/g, " ").trim();
+    const T = "(?<![\\p{L}\\p{N}_])", F = "(?![\\p{L}\\p{N}_])";
+    const FRA = "(?:(?:tra|fra|entro|in|dopo)\\s+|\\+\\s?)", ALLE = "(?:(?:alle|verso\\s+le|per\\s+le|entro\\s+le)(?:\\s+ore)?\\s+|ore\\s+)";
+    const eFra = (p) => new RegExp(`^${FRA}$`, "i").test(p || "");   // «entro le 14» è un'ora, «entro 2h» fra quanto
+    const alle = (h, m) => {
+      if (h > 23 || m > 59) return null;
+      const d = new Date(ora);
+      d.setHours(h, m, 0, 0);
+      if (d.getTime() < ora - 2 * 3600e3) d.setDate(d.getDate() + 1);
+      else if (d.getTime() >= ora + 22 * 3600e3) d.setDate(d.getDate() - 1);
+      return d.getTime();
+    };
+    const fra = (min) => (min >= 1 && min <= 1440 ? Math.floor((ora + min * 60e3) / 60e3) * 60e3 : null);
+    const forme = [
+      // 11:30, 11.30 (e «tra 1:30»: fra un'ora e mezza). Col punto è anche un
+      // numero («K 3.50», «pH 7.30»): cede a ogni altro orario scritto nel testo
+      [`${T}(${FRA}|${ALLE})?(\\d{1,2})([:.])(\\d{2})${F}`, (m) => (+m[4] > 59 ? null : eFra(m[1]) ? fra(+m[2] * 60 + +m[4]) : alle(+m[2], +m[4]))],
+      // 11h, 11h30 · 2h, 2h30, tra 2h
+      [`${T}(${FRA}|${ALLE})?(\\d{1,2}) ?h(?:(\\d{2})(?: ?min| ?m)?)?${F}`, (m) => {
+        const h = +m[2], mm = +(m[3] || 0);
+        if (mm > 59) return null;
+        return (m[1] ? eFra(m[1]) : m[2].length === 1) ? fra(h * 60 + mm) : alle(h, mm);
+      }],
+      // 2 ore, tra 1 ora
+      [`${T}${FRA}?(\\d{1,2}) ?or[ae]${F}`, (m) => fra(+m[1] * 60)],
+      // 90m, 30 min, 30', tra 45 minuti
+      [`${T}${FRA}?(\\d{1,4}) ?(?:minut[io]|min|m|['’′])(?![\\p{L}\\p{N}_'’′])`, (m) => fra(+m[1])],
+      // alle 14, ore 14
+      [`${T}${ALLE}(\\d{1,2})(?![\\p{L}\\p{N}_:'’′]|\\.\\d)`, (m) => alle(+m[1], 0)],
+    ];
+    let primo = null;
+    for (const [re, quando] of forme) {
+      for (const m of s.matchAll(new RegExp(re, "giu"))) {
+        const t = quando(m);
+        if (t == null) continue;
+        const c = { i: m.index, n: m[0].length, t, debole: m[3] === "." ? 1 : 0 };
+        if (!primo || c.debole < primo.debole
+          || (c.debole === primo.debole && (c.i < primo.i || (c.i === primo.i && c.n > primo.n)))) primo = c;
+        break;   // di ogni forma conta la prima che vale
+      }
+    }
+    if (!primo) return null;
+    // il resto è la cosa da fare: senza la punteggiatura rimasta dove stava l'orario
+    const prima = s.slice(0, primo.i).replace(/[\s·:,;\-–—]+$/, ""), dopo = s.slice(primo.i + primo.n).replace(/^[\s·:,;.\-–—]+/, "");
+    const resto = `${prima} ${dopo}`.replace(/^[\s·:,;.\-–—]+|[\s·:,;\-–—]+$/g, "").slice(0, 40).trim();
+    return { t: primo.t, testo: resto || "promemoria" };
+  }
+  // Quanto manca, nel modo più corto: «1h40», «40m», «ora», «−5m».
+  function promTempo(t, ora) {
+    const hm = (min) => (min >= 60 ? `${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, "0") : ""}` : `${min}m`);
+    if (t > ora) return hm(Math.ceil((t - ora) / 60e3));
+    const tardi = Math.floor((ora - t) / 60e3);
+    return tardi < 1 ? "ora" : "−" + hm(tardi);
+  }
+  // oltre la mezz'ora tranquilla; ambra sotto i 30 minuti; rossa sotto i 10, e quando è l'ora
+  const promBanda = (t, ora) => { const m = Math.ceil((t - ora) / 60e3); return m > 30 ? "" : m > 10 ? "amb" : "ros"; };
+  // l'ora fissata, col giorno quando non è oggi: «11:30», «domani 07:30»
+  function promOra(t, ora) {
+    const giorno = (x) => { const d = new Date(x); d.setHours(0, 0, 0, 0); return d.getTime(); };
+    const g = Math.round((giorno(t) - giorno(ora)) / 864e5);
+    return `${g === 1 ? "domani " : g === -1 ? "ieri " : ""}${hhmm(t)}`;
+  }
+  // per esteso, per il passaggio del mouse: «11:30 · tropo · tra 15 min»
+  function promRiga(p, ora) {
+    const parole = (min) => (min >= 60 ? `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ""}` : `${min} min`);
+    const tardi = Math.floor((ora - p.t) / 60e3);
+    const quando = p.t > ora ? "tra " + parole(Math.ceil((p.t - ora) / 60e3)) : tardi < 1 ? "adesso" : "in ritardo di " + parole(tardi);
+    return `${promOra(p.t, ora)}${p.testo ? " · " + p.testo : ""} · ${quando}`;
+  }
+  function promTutti() {
+    const raw = store.get(PROM, {});
+    const tutti = {}, ora = Date.now();
+    let cambiato = false;
+    for (const [ep, l] of Object.entries(raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {})) {
+      const vivi = /^[\w.-]{1,40}$/.test(ep) && Array.isArray(l)
+        ? l.filter((p) => p && typeof p.id === "string" && Number.isFinite(p.t) && typeof p.testo === "string" && ora - p.t <= PROM_TTL).slice(0, PROM_MAX)
+        : [];
+      if (vivi.length !== (Array.isArray(l) ? l.length : -1)) cambiato = true;
+      if (vivi.length) tutti[ep] = vivi;
+    }
+    if (cambiato) store.set(PROM, tutti);
+    return tutti;
+  }
+  // quelli di un paziente, il più vicino per primo
+  const promDi = (ep, tutti = promTutti()) => (ep && tutti[ep] ? [...tutti[ep]].sort((a, b) => a.t - b.t) : []);
+  function promScrivi(ep, l) {
+    const tutti = promTutti();
+    if (l.length) tutti[ep] = l; else delete tutti[ep];
+    return store.set(PROM, tutti);
+  }
+  function promAggiungi(ep, p) {
+    const l = promDi(ep);
+    if (!ep || l.length >= PROM_MAX) return false;
+    l.push({ id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), t: p.t, testo: String(p.testo || "").slice(0, 40), ts: Date.now() });
+    return promScrivi(ep, l);
+  }
+  function promTogli(ep, id) {
+    const l = promDi(ep), p = l.find((x) => x.id === id);
+    return p && promScrivi(ep, l.filter((x) => x !== p)) ? p : null;
+  }
+  // «+15 min»: da quando era fissato, o da adesso se è già passato
+  function promRinvia(ep, id, ms = 15 * 60e3) {
+    const l = promDi(ep), p = l.find((x) => x.id === id);
+    if (!p) return false;
+    p.t = Math.floor((Math.max(p.t, Date.now()) + ms) / 60e3) * 60e3;
+    return promScrivi(ep, l);
+  }
+  const promRimetti = (ep, p) => promScrivi(ep, [...promDi(ep).filter((x) => x.id !== p.id), p]);
 
   // ----------------------------------------------------------------- TEMPI
   // Un cronometro per capire dove va il tempo di un turno. Si tiene solo
@@ -3322,15 +3447,77 @@
     .trow .to { flex: 0 0 auto; color: #5B6B7A; font-size: 10.5px; font-variant-numeric: tabular-nums; }
     .tdel { border: 0; background: transparent; color: #5B6B7A; cursor: pointer; font-size: 12px; padding: 0 2px; }
     .tdel:hover { color: #B3261E; }
-    .notaw { position: relative; padding: 10px 24px 0; }
+    /* la nota e, accanto, i promemoria del paziente con la loro sveglia */
+    .notaw { position: relative; display: flex; align-items: flex-start; gap: 8px; padding: 10px 24px 0; }
+    .notacol { position: relative; flex: 1 1 auto; min-width: 0; }
     .nota { display: block; width: 100%; resize: none; overflow: hidden;
             border: 1px solid transparent; border-radius: 8px; background: #F8FBFE;
             padding: 6px 8px; font: 12.5px/1.45 inherit; color: #16232E; }
     .nota::placeholder { color: #9DB0C2; }
     .nota:hover { border-color: #E3E8EF; }
     .nota:focus { outline: 0; border-color: #9DBFDE; background: #fff; }
-    .notaok { position: absolute; right: 16px; bottom: 4px; font-size: 10px; color: #177245; }
+    .notaok { position: absolute; right: 8px; bottom: 4px; font-size: 10px; color: #177245; }
     .notaok.ko { color: #B3261E; }
+    /* PROMEMORIA. La pill: quanto manca in grassetto, poi la cosa da fare.
+       Tranquilla oltre la mezz'ora, ambra sotto i 30 minuti, rossa sotto i 10
+       e quando è l'ora — solo allora un bagliore lento. */
+    .prslot { display: contents; }
+    .prom { position: relative; z-index: 1; flex: 0 1 auto; min-width: 0; max-width: 180px; display: inline-flex; align-items: baseline; gap: 5px;
+            height: 22px; padding: 0 9px; border: 0; border-radius: 999px; background: #EEF2F6; color: #35506B; cursor: pointer;
+            font-size: 12px; line-height: 22px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .prom b { flex: none; font-weight: 700; }
+    .prom .prl { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .prom .prpiu { flex: none; font-weight: 600; opacity: .7; }
+    .prom:hover { background: #E3E9F0; }
+    .prom:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .prom.amb, .prst.amb { background: #FFF4DB; color: #8A5A00; }
+    .prom.amb:hover { background: #FCEBC4; }
+    .prom.ros, .prst.ros { background: #FDEBEA; color: #B3261E; animation: prBagliore 2.6s ease-in-out infinite; }
+    .prom.ros:hover { background: #FADBD8; }
+    @keyframes prBagliore { 0%, 100% { box-shadow: 0 0 0 0 rgba(179,38,30,0); } 50% { box-shadow: 0 0 0 4px rgba(179,38,30,.13); } }
+    /* nella Stanza solo il tempo, piccolo, in alto a destra */
+    .prst { flex: none; align-self: center; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: #EEF2F6; color: #5B6B7A;
+            font-size: 11px; font-weight: 700; line-height: 16px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .stp1:has(> .prst) .stpn { flex: 1 1 auto; }
+    /* la sveglia della nota: tranquilla, all'estremità della barra */
+    .prbar { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; height: 32px; }
+    .prbar .prom { max-width: 200px; }
+    .prnuovo { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px;
+               background: none; color: #8296A9; cursor: pointer; }
+    .prnuovo:hover { background: #F1F4F7; color: #16232E; }
+    .prnuovo:focus-visible { outline: 2px solid #0B5CAD; outline-offset: -2px; }
+    .prbar:has(.prform) .prnuovo { display: none; }
+    .prbar .prform { flex: 0 1 240px; min-width: 150px; }
+    /* il campo, su una riga: sotto, mentre scrivi, quando sarà */
+    .prform { position: relative; z-index: 2; display: block; }
+    .prin { display: block; width: 100%; height: 30px; padding: 0 10px; border: 1px solid #9DBFDE; border-radius: 8px; background: #fff;
+            font-size: 13px; line-height: 1.3; color: #16232E; }
+    .prin::placeholder { color: #9DB0C2; }
+    .prin:focus { outline: 0; border-color: #0B5CAD; box-shadow: 0 0 0 3px rgba(11,92,173,.12); }
+    .prhint { position: absolute; right: 0; top: calc(100% + 4px); z-index: 3; padding: 2px 8px; border-radius: 6px; background: #fff;
+              box-shadow: 0 2px 10px rgba(9,42,74,.16); font-size: 11.5px; line-height: 18px; color: #35506B; white-space: nowrap;
+              font-variant-numeric: tabular-nums; pointer-events: none; }
+    .prhint:empty { display: none; }
+    .prhint.ko { color: #B3261E; }
+    /* l'elenco di un paziente: ✓ Fatto, +15 min */
+    .prmenu { position: absolute; z-index: 30; width: max-content; min-width: 260px; max-width: min(360px, calc(100vw - 16px)); padding: 4px;
+              border: 1px solid #D9E2EC; border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgba(9,42,74,.16); }
+    .prmhd { padding: 6px 8px 4px; font-size: 12px; color: #5B6B7A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .prmrow { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 3px 4px 3px 8px; }
+    .prmrow + .prmrow { border-top: 1px solid #EEF2F6; }
+    .prmrow .prst { margin-left: 0; }
+    .prmq { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #16232E; }
+    .prmq b { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .prmb { flex: none; min-height: 28px; border: 1px solid #D9E2EC; border-radius: 6px; background: #fff; padding: 2px 9px; cursor: pointer;
+            font-size: 12px; font-weight: 600; color: #16232E; white-space: nowrap; }
+    .prmb:hover { border-color: #9DBFDE; }
+    .prmb.ok:hover { border-color: #BCE0C9; background: #EDF7F0; color: #177245; }
+    .prmb:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    /* sulla pill ridotta, solo quando tocca */
+    .pill .prurg { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px 1px 5px; border-radius: 999px; background: #B3261E;
+                   color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 1.5px #fff; }
+    .pill .prurg svg { width: 12px; height: 12px; }
+    @media (prefers-reduced-motion: reduce) { .prom.ros, .prst.ros { animation: none; } }
     .crow { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; cursor: pointer;
             border: 1px solid #E3E8EF; border-radius: 9px; background: #fff; padding: 10px 11px; font: inherit; }
     .crow:hover { border-color: #9DBFDE; background: #F4F9FD; }
@@ -3434,7 +3621,7 @@
     .stbtn.pri, .stazioni .stbtn.pri { background: #0B5CAD; border-color: #0B5CAD; color: #fff; }
     .stbtn.pri:hover, .stazioni .stbtn.pri:hover { background: #094a8c; border-color: #094a8c; color: #fff; }
     .stazioni button:focus-visible, .stbtn:focus-visible, .stctl:focus-visible, .stp:focus-visible, .stname:focus-visible,
-    .pzrow:has(.pzapri:focus-visible), .pzric:focus-visible, .pzposto:focus-visible, .pzx:focus-visible, .pzarchhd:focus-visible,
+    .pzrow:has(.pzapri:focus-visible), .pzric:focus-visible, .pzposto:focus-visible, .pzx:focus-visible, .pzprom:focus-visible, .pzarchhd:focus-visible,
     .pzsvuota:focus-visible, .pzabtn:focus-visible, .stannulla:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     /* quello che dicono tutti e due: da quanto non lo apri, «questa pagina», i segni */
     .stvisto { flex: none; font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -3452,9 +3639,14 @@
     .pzlista, .pzarch { max-width: 960px; }
     .pzrow { position: relative; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 6px 0 10px;
              border-bottom: 1px solid #EEF2F6; color: #16232E; }
-    .pzapri { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 10px; padding: 0; border: 0; background: none;
+    /* chi è: il nome (che apre), il promemoria accanto, la nota che cede per prima */
+    .pzchi { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+    .pzapri { flex: 0 1 auto; min-width: 0; display: flex; align-items: baseline; padding: 0; border: 0; background: none;
               color: inherit; text-align: left; cursor: pointer; }
     .pzapri::after { content: ""; position: absolute; inset: 0; }   /* tutta la riga */
+    .pzchi .prom { flex-shrink: 6; min-width: 52px; }
+    .pzchi .prform { flex: 1 1 auto; min-width: 140px; max-width: 360px; align-self: center; }
+    .pzchi:has(.prform) .prslot, .pzchi:has(.prform) .pznota { display: none; }
     .pzapri:focus-visible { outline: none; }
     .pzrow:has(.pzapri:focus-visible) { outline-offset: -2px; }
     .pzrow:hover { background: #F7F9FB; }
@@ -3463,7 +3655,7 @@
     .pztr { flex: none; width: 4px; height: 22px; border-radius: 2px; background: var(--tr, transparent); }
     .pznm { flex: none; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
             font-size: 14px; font-weight: 600; }
-    .pznota { flex: 1 1 auto; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #5B6B7A; }
+    .pznota { flex: 1 1 0; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #5B6B7A; }
     /* il posto: sempre largo uguale; il bordo solo sulla riga sotto il mouse */
     .pzposto { position: relative; z-index: 1; flex: 0 0 104px; display: inline-flex; align-items: center; justify-content: space-between;
                min-height: 28px; white-space: nowrap; border: 1px solid transparent; border-radius: 6px; background: none; padding: 2px 8px;
@@ -3480,11 +3672,19 @@
            font-size: 13px; color: #5B6B7A; opacity: 0; }
     .pzrow:hover .pzx, .pzrow:focus-within .pzx { opacity: 1; }
     .pzx:hover { background: #FDF1F0; color: #B3261E; }
-    /* colonna stretta: la nota scende sotto il nome; «visto…» e «questa pagina»
-       li dice solo la voce (la riga di questa pagina è già azzurra) */
+    /* la sveglia, come la ✕: compare passandoci sopra */
+    .pzprom { position: relative; z-index: 1; flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0;
+              border: 0; border-radius: 6px; background: none; cursor: pointer; color: #5B6B7A; opacity: 0; }
+    .pzrow:hover .pzprom, .pzrow:focus-within .pzprom { opacity: 1; }
+    .pzprom:hover { background: #EEF2F6; color: #16232E; }
+    /* colonna stretta: il nome da solo sulla prima riga, sotto il promemoria e
+       la nota; «visto…» e «questa pagina» li dice solo la voce (la riga di
+       questa pagina è già azzurra) */
     @container pzlista (max-width: 560px) {
       .pzrow { gap: 6px; }
-      .pzapri { flex-direction: column; align-items: flex-start; gap: 0; }
+      .pzchi { flex-wrap: wrap; column-gap: 8px; row-gap: 0; }
+      .pzapri, .pzchi .prform { flex-basis: 100%; }
+      .pzchi .prform { max-width: none; }
       .pzrow .stvisto, .pzrow .stqui { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     }
     .pzvuoto { padding: 16px 10px; font-size: 13px; color: #5B6B7A; }
@@ -3613,7 +3813,7 @@
     .stctl { position: absolute; z-index: 4; width: 24px; height: 24px; padding: 0; border: 1px solid #D9E2EC; border-radius: 50%;
              background: #fff; cursor: pointer; font-size: 13px; line-height: 22px; text-align: center; color: #16232E;
              opacity: 0; pointer-events: none; transition: opacity .12s; }
-    .stctl::before, .pzposto::before, .pzric::before, .pzx::before, .pzabtn::before, .stannulla::before { content: ""; position: absolute; inset: -4px; }
+    .stctl::before, .pzposto::before, .pzric::before, .pzx::before, .pzprom::before, .pzabtn::before, .stannulla::before { content: ""; position: absolute; inset: -4px; }
     .strsz::before { content: ""; position: absolute; inset: -8px; }
     .stbed:hover > .stctl, .starea:hover > .stctl, .sel > .stctl, .stbed:focus-within > .stctl, .starea:focus-within > .stctl,
     .starea:hover > .strsz, .starea.sel > .strsz { opacity: 1; pointer-events: auto; }
@@ -3656,7 +3856,7 @@
     @media (pointer: coarse) {
       .stazioni { height: 40px; }
       .stazioni .stseg button, .stbtn, .stazioni .stbtn { min-height: 36px; }
-      .pzx { opacity: 1; }
+      .pzx, .pzprom { opacity: 1; }
       .stctl { width: 32px; height: 32px; line-height: 30px; }
       .stx { top: -16px; right: -16px; }
     }
@@ -3681,6 +3881,8 @@
     altro: ico('<circle cx="3.5" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r=".9" fill="currentColor" stroke="none"/>'),
     crono: ico('<circle cx="8" cy="9" r="5"/><path d="M8 9V6.5M6.5 2h3M12 4.5l1-1"/>'),
     ferma: ico('<rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" stroke="none"/>'),
+    // la sveglia dei promemoria (il cronometro è un'altra cosa)
+    sveglia: ico('<circle cx="8" cy="9" r="5.2"/><path d="M8 6.6V9l1.7 1.1M2.6 4.3l1.9-1.7M13.4 4.3l-1.9-1.7"/>'),
   };
 
   const RADIO_SET = [RES.RX, RES.ECO, RES.RMN, RES.TAC];
@@ -3788,7 +3990,7 @@
       if (titleEl) {
         this._titleObs = new MutationObserver(() => {
           // mai ricostruire una schermata in cui si sta scrivendo
-          const scrive = this.root.activeElement && this.root.activeElement.id === "nota";
+          const scrive = ["nota", "prin"].includes(this.root.activeElement?.id);
           if (this.runState !== "running" && !scrive
               && this.view !== "dimtesto" && this.view !== "dimimport") this.render();
         });
@@ -3796,7 +3998,12 @@
       }
       // the portal page is another tab: coming back here is the moment to look
     // for a table read in the meantime
-    this._visibile = () => { if (!document.hidden && this.pageType === "patient") this.caricaStorico(); };
+    // (e i promemoria rifanno i conti: in una scheda nascosta il tempo non si aggiorna)
+    this._visibile = () => {
+      if (document.hidden) return;
+      this.promTick();
+      if (this.pageType === "patient") this.caricaStorico();
+    };
     document.addEventListener("visibilitychange", this._visibile);
     this._unload = (e) => { e.preventDefault(); e.returnValue = ""; };
       this._esc = (e) => {
@@ -3839,6 +4046,10 @@
       window.addEventListener("pointerdown", this._fuori, true);
       // il fuoco sopravvive al ridisegno: dopo ogni azione resta dov'era
       this.root.addEventListener("focusin", (e) => { const id = e.target && e.target.id; if (id) this._fuocoId = id; });
+      // I promemoria: un tocco sulla pill apre il suo elenco, la sveglia apre
+      // il campo. Ogni 30 secondi le pill rifanno i conti, sul posto.
+      this.root.addEventListener("click", (e) => this.promClic(e));
+      this._promOgni = setInterval(() => this.promTick(), 30e3);
     }
 
     // ---- cross-page continuity -------------------------------------------
@@ -4498,6 +4709,10 @@
       };
       const keepScroll = [...this.root.querySelectorAll(".bd, .list, .rlist, .stcanvas, .strow, .starbody")]
         .filter((el) => el.scrollTop || el.scrollLeft).map((el) => [scorre(el), el.scrollTop, el.scrollLeft]);
+      // un promemoria a metà resta scritto, col cursore dov'era; l'elenco aperto si chiude
+      const pin = this.root.querySelector("#prin");
+      if (pin && this.root.activeElement === pin) { this._promFuoco = true; this._promSel = [pin.selectionStart, pin.selectionEnd]; }
+      this.promChiudiMenu();
 
       let body;
       if (this.runState === "running") body = this.viewRunning();
@@ -4607,7 +4822,7 @@
               ${running ? `<button class="stopmini" id="stopbtn" title="Interrompi (Esc)">⏹</button>` : ""}
             </div>
           ` : this.collapsed ? `
-            <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}</button>
+            <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}${this.promUrgente()}</button>
           ` : `
             <div class="card${inStanza ? " stanza" : ""}" role="dialog" aria-label="${esc(APP)}" tabindex="-1">
               <div class="hd" id="draghd" title="Trascina per spostare · doppio clic per rimetterla al centro">
@@ -4652,6 +4867,7 @@
               ${!this.runState ? this.selbarHtml() : ""}
               </div>
               <div class="bd"><div class="bdi">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div></div>
+              ${this.inPazienti() ? "" : this.stanzaSnack()}
               ${["n", "s", "e", "w", "ne", "nw", "se", "sw"].map((d) => `<div class="rz rz-${d}" data-rz="${d}"></div>`).join("")}
               <div class="rsz" id="rsz" data-rz="se" title="Trascina per ridimensionare · doppio click per la misura di partenza"></div>
 
@@ -4837,7 +5053,7 @@
         p, ...nomi.get(p.ep), nota: notaDi(p, pazienti), qui: p.ep === qui, prec: precedenti.has(p.ep),
         spento: precedenti.has(p.ep) || ora - (p.ts || 0) > 12 * 3600e3, posto: posti[p.ep] || null,
       }]));
-      return { pazienti, sala, posti, perLetto, info, qui };
+      return { pazienti, sala, posti, perLetto, info, qui, prom: promTutti() };
     }
     nomePosto(m, i) {
       const v = i && i.posto;
@@ -4883,20 +5099,26 @@
         lista.unshift({ p: { ep: m.qui, name: patientName, ts: Date.now() }, breve: patientName, lungo: patientName || "paziente",
                         coda: "", omonimo: false, nota: "", qui: true, prec: false, spento: false, posto: null });
       }
-      // la riga intera apre il paziente: il suo bottone (nome e nota) la copre
-      // tutta, e gli altri comandi stanno sopra — niente bottoni dentro bottoni
+      // la riga intera apre il paziente: il bottone del nome la copre tutta, e
+      // gli altri comandi stanno sopra — niente bottoni dentro bottoni. Accanto
+      // al nome il promemoria più vicino; la sveglia compare passandoci sopra.
       const riga = (i) => {
         const { p } = i, posto = this.nomePosto(m, i), tr = p.triage ? " t-" + p.triage.toLowerCase() : "";
         return `
         <div class="pzrow${i.qui ? " qui" : ""}${i.prec ? " prec" : ""}">
           <i class="pztr${tr}" aria-hidden="true"></i>
-          <button type="button" class="pzapri" data-go="esiti" data-ep="${esc(p.ep)}" title="${esc(this.pazTitolo(m, i) + "\nUn tocco apre gli esiti")}">
-            <span class="pznm">${i.omonimo ? `<b class="stom" aria-label="attenzione, stesso cognome di un altro paziente">⚠</b>` : ""}${esc(i.lungo)}${i.coda ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</span>${p.triage ? `<span class="stsr">, triage ${esc(p.triage)}</span>` : ""}
+          <div class="pzchi">
+            <button type="button" class="pzapri" data-go="esiti" data-ep="${esc(p.ep)}" title="${esc(this.pazTitolo(m, i) + "\nUn tocco apre gli esiti")}">
+              <span class="pznm">${i.omonimo ? `<b class="stom" aria-label="attenzione, stesso cognome di un altro paziente">⚠</b>` : ""}${esc(i.lungo)}${i.coda ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</span>${p.triage ? `<span class="stsr">, triage ${esc(p.triage)}</span>` : ""}
+            </button>
+            <span class="prslot" data-promslot="${esc(p.ep)}">${this.promPill(p.ep, m.prom)}</span>
             <span class="pznota">${esc(i.nota)}</span>
-          </button>
+            ${this._promIn?.ep === p.ep && this._promIn.dove === "lista" ? this.promCampo() : ""}
+          </div>
           ${this.pazStato(i)}
           ${conSala && !i.prec && m.info.has(p.ep) ? `<button type="button" class="pzposto" data-posto="${esc(p.ep)}" aria-haspopup="menu" title="${posto ? `In ${esc(posto)}: cambia posto` : "Non ha un posto nella stanza: scegline uno"}"><span class="pzpn">${esc(posto || "—")}</span><span aria-hidden="true">&nbsp;▾</span></button>` : ""}
           <button type="button" class="pzric" data-go="richieste" data-ep="${esc(p.ep)}" title="Richieste per ${esc(i.lungo)}">Richieste</button>
+          ${i.prec ? "" : `<button type="button" class="pzprom" data-promnuovo="${esc(p.ep)}" data-dove="lista" title="Promemoria: un'ora per fare una cosa (es. 11:30 tropo)" aria-label="Promemoria per ${esc(i.lungo)}">${ICO.sveglia}</button>`}
           ${m.info.has(p.ep) ? `<button type="button" class="pzx" data-parch="${esc(p.ep)}" title="Togli dall'elenco: va negli archiviati (si può annullare). Nel gestionale non cambia niente." aria-label="Togli ${esc(i.lungo)} dall'elenco">✕</button>` : ""}
         </div>`;
       };
@@ -4912,7 +5134,7 @@
       const archivio = lista.length || archiviati.length ? `
         <button type="button" class="pzarchhd" id="archtog" aria-expanded="${this.mostraArch ? "true" : "false"}">Archiviati${archiviati.length ? ` <span class="stn">${archiviati.length}</span>` : ""}<span aria-hidden="true">${this.mostraArch ? "▾" : "▸"}</span></button>
         ${this.mostraArch ? `<div class="pzarch">${archiviati.map(rigaArch).join("")}
-          <div class="pzhint">${archiviati.length ? "🗑 cancella tutto di quel paziente: scheda clinica, referti tenuti e nota. Non si torna indietro." : "Nessun paziente archiviato."}</div>
+          <div class="pzhint">${archiviati.length ? "🗑 cancella tutto di quel paziente: scheda clinica, referti tenuti, nota e promemoria. Non si torna indietro." : "Nessun paziente archiviato."}</div>
           <button type="button" class="pzsvuota" id="stsvuota" title="Toglie tutti i pazienti dall'elenco e dalla stanza. Per 8 secondi si può annullare.">Svuota l'elenco</button>
         </div>` : ""}` : "";
       return `
@@ -4931,7 +5153,7 @@
       const stato = i.prec ? `<span class="sttag">episodio precedente</span>` : i.qui ? `<span class="stqui">questa pagina</span>` : "";
       const sotto = `${i.coda && inLetto ? `<span class="stcoda">${esc(i.coda.replace(/^ · /, ""))}</span>` : ""}${stato}${inLetto ? "" : nota}`;
       return `<div class="${cls}" data-stp="${esc(p.ep)}" role="button" tabindex="${edit ? -1 : 0}"${i.prec ? "" : ' aria-haspopup="menu"'} title="${esc(this.pazTitolo(m, i, true))}" aria-label="${esc(i.lungo + i.coda)}${p.triage ? `, triage ${esc(p.triage)}` : ""}${i.qui ? ", questa pagina" : i.prec ? ", episodio precedente" : ""}">
-        <span class="stp1">${i.omonimo ? `<b class="stom" aria-hidden="true">⚠</b>` : ""}<b class="stpn">${esc(i.breve)}${i.coda && !inLetto ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</b></span>${
+        <span class="stp1">${i.omonimo ? `<b class="stom" aria-hidden="true">⚠</b>` : ""}<b class="stpn">${esc(i.breve)}${i.coda && !inLetto ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</b>${this.promMini(p.ep, m.prom)}</span>${
         sotto ? `<span class="stp2">${sotto}</span>` : ""}${inLetto ? nota : ""}</div>`;
     }
     // il letto vuoto: un letto a tratto, appena accennato
@@ -5110,7 +5332,7 @@
     }
     // Esc appartiene a chi lo sta usando: il menu «Sposta in…» o un trascinamento
     // (il gestore di Esc della finestra lo chiede prima di ridurre il pannello)
-    escLocale() { return !!(this._stanzaPresa || this._stanzaMenu?.menu?.isConnected); }
+    escLocale() { return !!(this._stanzaPresa || this._stanzaMenu?.menu?.isConnected || this._promMenu?.menu?.isConnected); }
     // Un solo gesto alla volta. Tocco o trascinamento? Sotto i 5px col mouse
     // (10 col dito) è un tocco, per quanto duri; oltre la soglia, un
     // trascinamento. Tenere premuto col dito (mezzo secondo): «Sposta in…».
@@ -5266,9 +5488,10 @@
       this.stanzaAnnullabile(testo, foto);
       this.render();
     }
-    // la fotografia di prima, per «Annulla»
+    // la fotografia di prima, per «Annulla» (con l'elenco, anche i promemoria)
     stanzaFoto(conPazienti) {
-      return { sala: store.get("stanza.v1", null), posti: store.get("stanza.posti.v1", null), pazienti: conPazienti ? store.get("patients.v1", null) : undefined };
+      return { sala: store.get("stanza.v1", null), posti: store.get("stanza.posti.v1", null), pazienti: conPazienti ? store.get("patients.v1", null) : undefined,
+               prom: conPazienti ? store.get(PROM, null) : undefined };
     }
     stanzaAnnullabile(testo, foto) {
       clearTimeout(this._stanzaAnnT);
@@ -5280,9 +5503,13 @@
       if (!a) return;
       clearTimeout(this._stanzaAnnT);
       this._stanzaAnn = null;
-      store.set("stanza.v1", a.foto.sala);
-      store.set("stanza.posti.v1", a.foto.posti);
-      if (a.foto.pazienti !== undefined) store.set("patients.v1", a.foto.pazienti);
+      if (typeof a.foto === "function") a.foto();   // un passo solo da disfare: il promemoria fatto torna
+      else {
+        store.set("stanza.v1", a.foto.sala);
+        store.set("stanza.posti.v1", a.foto.posti);
+        if (a.foto.pazienti !== undefined) store.set("patients.v1", a.foto.pazienti);
+        if (a.foto.prom !== undefined) store.set(PROM, a.foto.prom);
+      }
       this.render();
     }
     // «Sposta in…»: i letti vuoti, poi quelli occupati (chi c'è va in «Da
@@ -5358,7 +5585,9 @@
     stanzaSvuota() {
       const foto = this.stanzaFoto(true);
       forgetPatients();
-      store.set("stanza.posti.v1", {});   // anche i posti: l'elenco riparte da zero
+      store.set("stanza.posti.v1", {});   // anche i posti e i promemoria: l'elenco riparte da zero
+      store.set(PROM, {});
+      this._promIn = null;
       this.mostraArch = false;
       this.stanzaAnnullabile("Elenco svuotato", foto);
       this.render();
@@ -6028,16 +6257,244 @@
       segnaChiave(this.episodeId, k);
       return k;
     }
+    // La nota, e alla sua destra i promemoria di questo paziente: le pill e
+    // una sveglia tranquilla che apre il campo, lì dov'è.
     notaHtmlPaziente() {
       const k = this.chiaveNota();
       if (!k) return "";
-      const t = leggiNota(k);
+      const t = leggiNota(k), ep = this.epDiQuesta();
       return `<div class="notaw">
-        <textarea class="nota" id="nota" rows="2" spellcheck="false"
-          placeholder="Nota su questo paziente — si salva mentre scrivi"
-          aria-label="Nota su questo paziente">${esc(t)}</textarea>
-        <span class="notaok" id="notaok" aria-live="polite"></span>
+        <div class="notacol">
+          <textarea class="nota" id="nota" rows="2" spellcheck="false"
+            placeholder="Nota su questo paziente — si salva mentre scrivi"
+            aria-label="Nota su questo paziente">${esc(t)}</textarea>
+          <span class="notaok" id="notaok" aria-live="polite"></span>
+        </div>
+        ${ep ? `<div class="prbar">
+          <span class="prslot" data-promslot="${esc(ep)}">${this.promPill(ep)}</span>
+          <button type="button" class="prnuovo" data-promnuovo="${esc(ep)}" data-dove="barra" title="Promemoria: un'ora per fare una cosa (es. 11:30 tropo)" aria-label="Promemoria">${ICO.sveglia}</button>
+          ${this._promIn?.ep === ep && this._promIn.dove === "barra" ? this.promCampo() : ""}
+        </div>` : ""}
       </div>`;
+    }
+
+    // ============================================================ PROMEMORIA
+    // La pill di un paziente: quanto manca al più vicino, in grassetto, la cosa
+    // da fare, e «+1» se ce ne sono altri. Per esteso nel passaggio del mouse.
+    promPill(ep, tutti) {
+      const l = promDi(ep, tutti);
+      if (!l.length) return "";
+      const s = this.promStato(l);
+      return `<button type="button" class="${s.cls}" data-prom="${esc(ep)}" aria-haspopup="dialog" title="${esc(s.title)}" aria-label="${esc(s.label)}">${s.html}</button>`;
+    }
+    promStato(l, ora = Date.now()) {
+      const p = l[0], b = promBanda(p.t, ora), altri = l.length - 1;
+      return {
+        cls: "prom" + (b ? " " + b : ""),
+        title: `${l.map((x) => promRiga(x, ora)).join("\n")}\nUn tocco: fatto, o 15 minuti in più`,
+        label: `Promemoria: ${promRiga(p, ora)}${altri ? ` e ${altri === 1 ? "un altro" : `altri ${altri}`}` : ""}`,
+        html: `<b>${esc(promTempo(p.t, ora))}</b><span class="prl">${esc(p.testo)}</span>${altri ? `<span class="prpiu">+${altri}</span>` : ""}`,
+      };
+    }
+    // nella Stanza: solo il tempo, piccolo
+    promMini(ep, tutti) {
+      const l = promDi(ep, tutti);
+      if (!l.length) return "";
+      const ora = Date.now(), b = promBanda(l[0].t, ora);
+      return `<span class="prst${b ? " " + b : ""}" data-promt="${esc(ep)}" title="${esc(l.map((x) => promRiga(x, ora)).join("\n"))}">${esc(promTempo(l[0].t, ora))}</span>`;
+    }
+    // Sulla pill ridotta, e solo quando tocca: il promemoria più urgente fra
+    // i pazienti in elenco, a 10 minuti o meno, o già passato. Nient'altro.
+    promUrgente(ora = Date.now()) {
+      const tutti = promTutti();
+      if (!Object.keys(tutti).length) return "";
+      const arch = new Set(pazientiArchiviati().map((p) => p.ep)), nomi = new Map(tuttiPazienti().map((p) => [p.ep, p.name]));
+      const urgenti = Object.entries(tutti).filter(([ep]) => !arch.has(ep))
+        .flatMap(([ep, l]) => l.map((p) => ({ ...p, ep }))).filter((p) => promBanda(p.t, ora) === "ros").sort((a, b) => a.t - b.t);
+      if (!urgenti.length) return "";
+      const chi = (p) => `${nomi.get(p.ep) || (p.ep === this.epDiQuesta() && this.nomePaziente()) || "episodio " + p.ep} · ${p.testo}`;
+      return `<span class="prurg" title="${esc(urgenti.map(chi).join("\n"))}">${ICO.sveglia}${esc(promTempo(urgenti[0].t, ora))}</span>`;
+    }
+    // Ogni 30 secondi le pill dei promemoria rifanno i conti SUL POSTO: niente
+    // ridisegno, così non si ruba il fuoco e non si disturba chi scrive.
+    promTick() {
+      const ora = Date.now(), tutti = promTutti();
+      for (const ep of new Set([...this.root.querySelectorAll("[data-promslot]")].map((s) => s.getAttribute("data-promslot")))) this.promMetti(ep, tutti, ora);
+      for (const el of this.root.querySelectorAll("[data-promt]")) {
+        const l = promDi(el.getAttribute("data-promt"), tutti);
+        if (!l.length) { el.remove(); continue; }
+        const b = promBanda(l[0].t, ora);
+        el.className = "prst" + (b ? " " + b : "");
+        el.textContent = promTempo(l[0].t, ora);
+        el.title = l.map((x) => promRiga(x, ora)).join("\n");
+      }
+      for (const el of this.root.querySelectorAll(".prmenu .prst[data-pt]")) {
+        const t = +el.getAttribute("data-pt"), b = promBanda(t, ora);
+        el.className = "prst" + (b ? " " + b : "");
+        el.textContent = promTempo(t, ora);
+      }
+      const pill = this.root.querySelector("#expand.pill:not(.run)");
+      if (pill) {
+        const prima = pill.querySelector(".prurg"), ora2 = this.promUrgente(ora);
+        if (prima) prima.outerHTML = ora2;
+        else if (ora2) pill.insertAdjacentHTML("beforeend", ora2);
+      }
+      const pin = this.root.querySelector("#prin");
+      if (pin && !this._promIn?.err) this.promSuggerisci(pin);
+    }
+    // la pill di un paziente rifatta sul posto: l'elemento resta lo stesso
+    promMetti(ep, tutti = promTutti(), ora = Date.now()) {
+      const l = promDi(ep, tutti);
+      for (const slot of this.root.querySelectorAll(`[data-promslot="${CSS.escape(ep)}"]`)) {
+        const pill = slot.querySelector(".prom");
+        if (!l.length) { if (pill !== this.root.activeElement) slot.textContent = ""; continue; }
+        if (!pill) { slot.innerHTML = this.promPill(ep, tutti); continue; }
+        const s = this.promStato(l, ora);
+        pill.className = s.cls; pill.title = s.title; pill.setAttribute("aria-label", s.label); pill.innerHTML = s.html;
+      }
+    }
+    promClic(e) {
+      const pill = e.target.closest?.("[data-prom]");
+      if (pill) {
+        const aperto = this._promMenu?.anchor === pill && this._promMenu.menu.isConnected;
+        return aperto ? this.promChiudiMenu(true) : this.promMenu(pill.getAttribute("data-prom"), pill);
+      }
+      const sveglia = e.target.closest?.("[data-promnuovo]");
+      if (sveglia) this.promApri(sveglia.getAttribute("data-promnuovo"), sveglia.getAttribute("data-dove"), sveglia);
+    }
+    // Il campo si apre lì dove si è toccata la sveglia, senza ridisegnare: la
+    // riga della Lista (al posto della nota) o la barra della nota.
+    promCampo() {
+      const b = this._promIn || {};
+      return `<span class="prform"><input type="text" class="prin" id="prin" value="${esc(b.testo || "")}" maxlength="80" spellcheck="false" autocomplete="off"
+        placeholder="es. 11:30 tropo · tra 2h ECG" aria-label="Promemoria: un orario e cosa fare" aria-describedby="prhint"><span class="prhint${b.err ? " ko" : ""}" id="prhint" aria-live="polite">${esc(b.err || "")}</span></span>`;
+    }
+    promApri(ep, dove, sveglia) {
+      const b = this._promIn;
+      if (b && b.ep === ep && b.dove === dove && this.root.querySelector("#prin")) return this.promChiudi(true);   // di nuovo la sveglia: si chiude
+      this.root.querySelector(".prform")?.remove();
+      const box = dove === "barra" ? sveglia.closest(".prbar") : sveglia.closest(".pzrow")?.querySelector(".pzchi");
+      if (!box) return;
+      this._promIn = { ep, dove, testo: "", err: "" };
+      box.insertAdjacentHTML("beforeend", this.promCampo());
+      this._promFuoco = true;
+      this.promLega();
+    }
+    // gli ascoltatori del campo (aperto ora, o ridisegnato mentre era aperto)
+    promLega() {
+      const inp = this.root.querySelector("#prin");
+      if (!inp || inp._legato) return;
+      inp._legato = true;
+      if (this._promFuoco) {
+        this._promFuoco = false;
+        inp.focus({ preventScroll: true });
+        const [a, z] = this._promSel || [inp.value.length, inp.value.length];
+        inp.setSelectionRange(a, z);
+        this._promSel = null;
+      }
+      this.promSuggerisci(inp);
+      inp.addEventListener("input", () => {
+        if (this._promIn) { this._promIn.testo = inp.value; this._promIn.err = ""; }
+        this.promSuggerisci(inp);
+      });
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); this.promSalva(inp, true); }
+        else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.promChiudi(true); }
+      });
+      // uscendo col mouse NON si ridisegna: il clic che ha tolto il fuoco deve
+      // arrivare. Se c'è un orario si salva, come la nota; senza, il campo resta.
+      inp.addEventListener("blur", (e) => {
+        if (!inp.isConnected || !this._promIn || !document.hasFocus()) return;   // un'altra finestra non è un'uscita dal campo
+        if (e.relatedTarget?.closest?.("[data-promnuovo]")?.getAttribute("data-promnuovo") === this._promIn.ep) return;   // la sveglia: la chiude lei
+        this.promSalva(inp, false);
+      });
+    }
+    // sotto il campo, mentre si scrive: quando sarà
+    promSuggerisci(inp) {
+      const h = inp.parentElement?.querySelector(".prhint");
+      if (!h) return;
+      const b = this._promIn;
+      if (b?.err) { h.textContent = b.err; h.classList.add("ko"); return; }
+      const p = inp.value.trim() ? leggiPromemoria(inp.value, Date.now()) : null;
+      h.classList.remove("ko");
+      h.textContent = p ? promRiga({ t: p.t, testo: "" }, Date.now()) : "";
+    }
+    promSalva(inp, tasto) {
+      const b = this._promIn;
+      if (!b) return;
+      if (!inp.value.trim()) return this.promChiudi(tasto);
+      const p = leggiPromemoria(inp.value, Date.now());
+      const errore = !p ? "Scrivi un orario: 11:30, o tra 2h"
+        : promDi(b.ep).length >= PROM_MAX ? `Al massimo ${PROM_MAX} promemoria per paziente`
+        : !promAggiungi(b.ep, p) ? "Non salvato: la memoria del browser è piena o bloccata" : "";
+      if (errore) { b.err = errore; this.promSuggerisci(inp); return; }
+      this.promMetti(b.ep);
+      this.promChiudi(tasto);
+    }
+    promChiudi(fuoco) {
+      const b = this._promIn;
+      this._promIn = null;
+      this.root.querySelector(".prform")?.remove();
+      if (fuoco && b) this.root.querySelector(`[data-promnuovo="${CSS.escape(b.ep)}"]`)?.focus();
+    }
+    // L'elenco di un paziente, sotto la sua pill: per ognuno ✓ Fatto (si
+    // annulla per 8 secondi) e +15 min. Esc, o un clic fuori, lo chiudono.
+    promMenu(ep, anchor) {
+      this.promChiudiMenu();
+      const l = promDi(ep), wrap = this.root.querySelector(".wrap");
+      if (!l.length || !wrap || !anchor?.isConnected) return;
+      const ora = Date.now(), p0 = tuttiPazienti().find((x) => x.ep === ep);
+      const nome = p0?.name || (ep === this.epDiQuesta() ? this.nomePaziente() : "");
+      const riga = (p) => {
+        const b = promBanda(p.t, ora);
+        return `<div class="prmrow"><span class="prst${b ? " " + b : ""}" data-pt="${p.t}">${esc(promTempo(p.t, ora))}</span>
+          <span class="prmq" title="${esc(promRiga(p, ora))}"><b>${esc(promOra(p.t, ora))}</b> ${esc(p.testo)}</span>
+          <button type="button" class="prmb ok" data-pfatto="${esc(p.id)}" title="Fatto: lo tolgo (si può annullare)">✓ Fatto</button>
+          <button type="button" class="prmb" data-prinvia="${esc(p.id)}" title="Rimanda di 15 minuti">+15 min</button></div>`;
+      };
+      wrap.insertAdjacentHTML("beforeend", `<div class="prmenu" role="dialog" aria-label="Promemoria${nome ? " di " + esc(nome) : ""}">
+        <div class="prmhd">Promemoria${nome ? ` · ${esc(nome)}` : ""}</div>${l.map(riga).join("")}</div>`);
+      const menu = wrap.lastElementChild;
+      // sotto la pill; se sotto non c'è posto, sopra; sempre dentro lo schermo
+      const wr = wrap.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+      let y = ar.bottom + 6;
+      if (y + menu.offsetHeight > innerHeight - 8) y = Math.max(8, ar.top - 6 - menu.offsetHeight);
+      menu.style.left = Math.max(8, Math.min(ar.left, innerWidth - menu.offsetWidth - 8)) - wr.left + "px";
+      menu.style.top = y - wr.top + "px";
+      menu.addEventListener("click", (e) => {
+        const f = e.target.closest("[data-pfatto]"), r = e.target.closest("[data-prinvia]");
+        if (f) this.promFatto(ep, f.getAttribute("data-pfatto"));
+        else if (r) { promRinvia(ep, r.getAttribute("data-prinvia")); this.promDopo(ep); }
+      });
+      menu.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.promChiudiMenu(true); } });
+      // col Tab fuori dall'elenco si chiude (verso la sua pill no: la pill lo chiude da sé)
+      menu.addEventListener("focusout", (e) => { if (e.relatedTarget && !menu.contains(e.relatedTarget) && e.relatedTarget !== anchor) this.promChiudiMenu(); });
+      const fuori = (e) => { const via = e.composedPath(); if (!via.includes(menu) && !via.includes(anchor)) this.promChiudiMenu(); };
+      window.addEventListener("pointerdown", fuori, true);
+      this._promMenu = { menu, anchor, ep, fuori };
+      menu.querySelector("button")?.focus({ preventScroll: true });
+    }
+    promChiudiMenu(ritorna) {
+      const a = this._promMenu;
+      if (!a) return;
+      this._promMenu = null;
+      window.removeEventListener("pointerdown", a.fuori, true);
+      a.menu.remove();
+      if (ritorna && a.anchor?.isConnected) a.anchor.focus();
+    }
+    // ✓ Fatto: via, e «Annulla» per 8 secondi
+    promFatto(ep, id) {
+      const p = promTogli(ep, id);
+      if (p) this.stanzaAnnullabile(`Fatto: ${p.testo}`, () => promRimetti(ep, p));
+      this.promDopo(ep);
+    }
+    // dopo ✓ o +15 si ridisegna; l'elenco resta aperto finché c'è qualcosa
+    promDopo(ep) {
+      this.promChiudiMenu();
+      this.render();
+      const a = this.root.querySelector(`[data-prom="${CSS.escape(ep)}"]`);
+      if (a && promDi(ep).length) this.promMenu(ep, a);
+      else this.root.querySelector(`[data-promnuovo="${CSS.escape(ep)}"]`)?.focus();
     }
 
     // l'impronta del codice fiscale di QUESTO episodio, presa dai prelievi
@@ -7332,6 +7789,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#refsave")?.addEventListener("click", () => this.saveAllReferti());
       $("#copylog")?.addEventListener("click", (e) => { e.preventDefault(); this.copyLog(); });
       this.bindStanza();
+      this.promLega();   // il campo di un promemoria rimasto aperto
     }
 
     // Patch only the commit zone while the doctor types (a full re-render

@@ -311,6 +311,16 @@ check(griglia.sotto.length === 3 && griglia.sotto.every((t) => /^\d\d:\d\d$/.tes
   `colonne di altri giorni: data sopra, ora sotto (${griglia.sotto.join(" · ")})`);
 await verificaOrdine("tabella dello storico del portale");
 
+// ---- un promemoria dalla nota: la pill accanto, poi nella Lista accanto al nome (e niente in rete: lo dice il conto in fondo)
+await $(".prbar .prnuovo").click();
+await $("#prin").fill("tra 20 min EGA");
+await $("#prin").press("Enter");
+const pillNota = (await $(".prbar .prom").innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+check(pillNota === "20m EGA" && await $(".prbar .prom.amb").count() === 1, `un promemoria dalla nota: la pill accanto, ambra sotto la mezz'ora (${pillNota})`);
+await $("#back").click();
+const pillLista = (await $('.pzrow:has([data-ep="700001"]) .prom').innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+check(pillLista === "20m EGA", `e nella Lista, accanto al nome (${pillLista})`);
+
 // ---- una schermata mai salvata non è un errore
 await page.locator('#sa4-page a:has-text("Storico Documenti")').first().click().catch(() => {});
 await page.waitForTimeout(600);

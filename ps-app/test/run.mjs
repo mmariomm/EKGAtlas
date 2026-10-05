@@ -20,6 +20,20 @@ readFileSync(CONTENT); // fail fast if not built
 const SHOTS = process.env.TEST_SHOTS_DIR || "";
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
+// Una funzione pura presa dal sorgente com'è (come in valori.mjs): una tabella
+// di casi non ha bisogno del browser.
+const SORGENTE = readFileSync(join(root, "src/core.js"), "utf8");
+function prendi(nome) {
+  const i = SORGENTE.indexOf(`function ${nome}(`);
+  if (i < 0) throw new Error("non trovata: " + nome);
+  let livello = 0;
+  for (let k = SORGENTE.indexOf("{", i); k < SORGENTE.length; k++) {
+    if (SORGENTE[k] === "{") livello++;
+    else if (SORGENTE[k] === "}" && !--livello) return new Function(`${SORGENTE.slice(i, k + 1)}\nreturn ${nome};`)();
+  }
+  throw new Error("incompleta: " + nome);
+}
+
 let failures = 0;
 const results = [];
 function check(scen, cond, msg) {
@@ -2851,10 +2865,10 @@ async function scenarioStanza(browser) {
     const r = document.getElementById("psassist-host").shadowRoot;
     const riga = [...r.querySelectorAll(".pzrow")].find((x) => /BIANCHI/.test(x.textContent));
     const nm = riga.querySelector(".pznm"), nota = riga.querySelector(".pznota"), visto = riga.querySelector(".stvisto");
-    return { col: getComputedStyle(riga.querySelector(".pzapri")).flexDirection, tagliati: [...r.querySelectorAll(".pznm")].filter((n) => n.scrollWidth > n.clientWidth + 1).length,
+    return { col: getComputedStyle(riga.querySelector(".pzchi")).flexWrap, tagliati: [...r.querySelectorAll(".pznm")].filter((n) => n.scrollWidth > n.clientWidth + 1).length,
              sotto: nota.getBoundingClientRect().top >= nm.getBoundingClientRect().bottom - 1, visto: Math.round(visto.getBoundingClientRect().width), alta: Math.round(riga.getBoundingClientRect().height) };
   });
-  check(scen, stretta.col === "column" && stretta.sotto && stretta.tagliati === 0 && stretta.visto <= 1 && stretta.alta <= 48,
+  check(scen, stretta.col === "wrap" && stretta.sotto && stretta.tagliati === 0 && stretta.visto <= 1 && stretta.alta <= 48,
     `colonna stretta: la nota sotto il nome, nessun nome tagliato, «visto» via, la riga resta una riga (got: ${JSON.stringify(stretta)})`);
   await menu("#wincentra");
   await ritocca("999001", { name: "ROSSI MARIO", pk: "" });
@@ -3171,6 +3185,202 @@ async function scenarioTempi(browser) {
   check(scen, /Visita ed esami/.test(riga) && /5m/.test(riga), `fermandolo resta durata e titolo (got ${riga})`);
   check(scen, /ROSSI MARIO/.test(riga), "e il paziente su cui stavi");
   check(scen, (await $panel(page, ".tchip.off").count()) === 1, "e il cronometro torna spento");
+  await context.close();
+}
+
+// Promemoria: «11:30 tropo», e accanto al nome una pill che dice quanto manca.
+// Prima l'orario letto dal testo (la funzione com'è nel sorgente, caso per
+// caso); poi nel browser vero, con l'orologio finto: il campo della nota e
+// quello della Lista, i colori che cambiano col tempo SENZA ridisegnare (né
+// rubare il fuoco a chi scrive), ✓ Fatto con Annulla, +15 min, la pill
+// ridotta, la Stanza, 🗑 e «Svuota l'elenco». E nessuna richiesta di rete.
+async function scenarioPromemoria(browser) {
+  const scen = "promemoria";
+  const leggi = prendi("leggiPromemoria"), tempo = prendi("promTempo");
+  const alle = (g, h, m) => new Date(2026, 9, g, h, m).getTime();
+  const dieci = alle(5, 10, 0);
+  const casi = [
+    ["11:30 tropo", alle(5, 11, 30), "tropo"], ["11.30 tropo", alle(5, 11, 30), "tropo"], ["11h30 tropo", alle(5, 11, 30), "tropo"],
+    ["tropo 11h", alle(5, 11, 0), "tropo"], ["alle 14 consulenza", alle(5, 14, 0), "consulenza"],
+    ["tra 2h ECG", alle(5, 12, 0), "ECG"], ["+2h ECG", alle(5, 12, 0), "ECG"], ["2h ECG", alle(5, 12, 0), "ECG"],
+    ["2h30 emocromo", alle(5, 12, 30), "emocromo"], ["90m lattati", alle(5, 11, 30), "lattati"], ["30 min EGA", alle(5, 10, 30), "EGA"],
+    ["30' EGA", alle(5, 10, 30), "EGA"], ["tra 45 minuti rivalutare", alle(5, 10, 45), "rivalutare"], ["tra 2 ore RX", alle(5, 12, 0), "RX"],
+    ["entro le 14:30 dimissione", alle(5, 14, 30), "dimissione"], ["entro 2h RX", alle(5, 12, 0), "RX"],
+    ["08:30 tropo", alle(5, 8, 30), "tropo"],    // passata da un'ora e mezza: oggi, già scaduta
+    ["07:30 tropo", alle(6, 7, 30), "tropo"],    // passata da più di 2 ore: domani (il turno di notte)
+    ["11:30", alle(5, 11, 30), "promemoria"], ["ECG alle 11:30, poi tra 2h", alle(5, 11, 30), "ECG poi tra 2h"],
+    ["K 3.50 ricontrollo tra 2h", alle(5, 12, 0), "K 3.50 ricontrollo"],   // un numero col punto cede a un orario vero
+    ["tropo", null], ["morfina 2 mg", null], ["25:00 tropo", null], ["tra 30h tropo", null], ["", null],
+  ];
+  const sbagliati = casi.filter(([s, t, testo]) => {
+    const r = leggi(s, dieci);
+    return t === null ? r !== null : !r || r.t !== t || r.testo !== testo;
+  }).map(([s]) => `${s} → ${JSON.stringify(leggi(s, dieci))}`);
+  check(scen, !sbagliati.length, `l'orario si legge dal testo: ${casi.length} casi alle 10:00, assoluti, fra quanto, passati e rifiutati (sbagliati: ${sbagliati.join(" | ") || "nessuno"})`);
+  const notte = leggi("00:30 tropo", alle(5, 23, 30)), mezzanotte = leggi("23:30 tropo", alle(6, 1, 0));
+  check(scen, notte?.t === alle(6, 0, 30) && mezzanotte?.t === alle(5, 23, 30),
+    "a cavallo della mezzanotte: alle 23:30 «00:30» è fra un'ora, all'1:00 «23:30» è di un'ora e mezza fa");
+  check(scen, leggi("tra 1h " + "x".repeat(60), dieci).testo.length === 40, "la cosa da fare si tiene corta: 40 caratteri");
+  const tempi = [[100, "1h40"], [40, "40m"], [0, "ora"], [-5, "−5m"], [-80, "−1h20"]].map(([m, atteso]) => [tempo(dieci + m * 60e3, dieci), atteso]);
+  check(scen, tempi.every(([a, b]) => a === b), `quanto manca, corto: ${tempi.map(([a]) => a).join(" · ")}`);
+
+  // ---- nel browser, con l'orologio finto: parte da adesso, e il tempo lo si fa correre a mano
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.clock.install();
+  // (con l'orologio avanti, una pagina può partire dalla pill: la si riapre)
+  const apri = async () => {
+    await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
+    if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
+    await page.waitForSelector("#psassist-host .card", { state: "attached" });
+  };
+  await page.goto(mock.patientUrl.replace("999001", "999002"));
+  await apri();
+  await page.goto(mock.patientUrl);
+  await apri();
+  await page.waitForSelector("#psassist-host .prnuovo", { state: "attached" });
+  await page.waitForLoadState("load");
+  let richieste = 0;
+  page.on("request", () => { richieste++; });
+  const archivio = () => page.evaluate(() => JSON.parse(localStorage.getItem("psassist:promemoria.v1") || "{}"));
+  const pill = (dove) => $panel(page, `${dove} .prom`);
+  const testoPill = async (dove) => ((await pill(dove).count()) ? (await pill(dove).first().innerText()).replace(/\s+/g, " ").trim() : "");
+  const banda = (dove) => pill(dove).first().evaluate((b) => (b.classList.contains("ros") ? "rossa" : b.classList.contains("amb") ? "ambra" : "quieta"));
+
+  // la sveglia della nota apre il campo; senza un orario non si salva niente
+  await $panel(page, ".prbar .prnuovo").click();
+  check(scen, await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id === "prin"),
+    "la sveglia accanto alla nota apre un campo su una riga, col cursore dentro");
+  check(scen, (await $panel(page, "#prin").getAttribute("placeholder")) === "es. 11:30 tropo · tra 2h ECG", "con l'esempio di cosa scrivere");
+  await $panel(page, "#prin").fill("tropo");
+  await $panel(page, "#prin").press("Enter");
+  check(scen, /Scrivi un orario: 11:30, o tra 2h/.test(await $panel(page, ".prhint.ko").innerText()) && !Object.keys(await archivio()).length,
+    "senza un orario non si salva: il campo lo dice");
+  await $panel(page, "#prin").fill("tra 45m EGA");
+  check(scen, /tra 45 min/.test(await $panel(page, ".prhint").innerText()), `mentre scrivi dice quando sarà (got: ${await $panel(page, ".prhint").innerText()})`);
+  await $panel(page, "#prin").press("Enter");
+  const salvati = (await archivio())["999001"] || [];
+  check(scen, salvati.length === 1 && salvati[0].testo === "EGA" && !/ROSSI/.test(JSON.stringify(await archivio())),
+    "Invio salva: per episodio, con l'ora e la cosa da fare, mai il nome");
+  check(scen, (await $panel(page, "#prin").count()) === 0 && (await testoPill(".prbar")) === "45m EGA" && (await banda(".prbar")) === "quieta",
+    `il campo si chiude e la pill accanto alla nota dice quanto manca, tranquilla (got: ${await testoPill(".prbar")})`);
+  // Esc chiude il campo, e basta: il pannello resta aperto
+  await $panel(page, ".prbar .prnuovo").click();
+  await $panel(page, "#prin").fill("tra 1h x");
+  await page.keyboard.press("Escape");
+  check(scen, (await $panel(page, "#prin").count()) === 0 && (await $panel(page, ".card").count()) === 1 && ((await archivio())["999001"] || []).length === 1,
+    "Esc chiude il campo senza salvare, e il pannello resta aperto");
+
+  // il tempo passa: la pill cambia colore SUL POSTO, e chi scrive la nota non se ne accorge
+  await page.evaluate(() => { document.getElementById("psassist-host").shadowRoot.querySelector(".prbar .prom").__stessa = 1; });
+  await $panel(page, "#nota").click();
+  await page.keyboard.type("rivalutare");
+  await page.clock.fastForward("20:00");
+  const dopo20 = { testo: await testoPill(".prbar"), banda: await banda(".prbar"),
+    stessa: await pill(".prbar").evaluate((b) => b.__stessa === 1),
+    fuoco: await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id || ""),
+    nota: await $panel(page, "#nota").inputValue() };
+  check(scen, dopo20.testo === "25m EGA" && dopo20.banda === "ambra", `a 25 minuti: ambra (got: ${dopo20.testo}, ${dopo20.banda})`);
+  check(scen, dopo20.stessa && dopo20.fuoco === "nota" && dopo20.nota === "rivalutare",
+    `aggiornata sul posto: stesso elemento, il fuoco resta nella nota e il testo è intatto (${JSON.stringify(dopo20)})`);
+  await page.keyboard.type(" alle 14");
+  check(scen, (await $panel(page, "#nota").inputValue()) === "rivalutare alle 14", "e si continua a scrivere");
+  // ridotto: niente sulla pill finché manca più di 10 minuti
+  await $panel(page, "#collapse").click();
+  check(scen, (await $panel(page, "#expand .prurg").count()) === 0, "a 25 minuti la pill ridotta non dice niente");
+  await page.clock.fastForward("17:00");
+  const segno = (await $panel(page, "#expand .prurg").count()) ? (await $panel(page, "#expand .prurg").innerText()).trim() : "";
+  const segnoTip = segno ? await $panel(page, "#expand .prurg").getAttribute("title") : "";
+  check(scen, segno === "8m" && /ROSSI MARIO · EGA/.test(segnoTip),
+    `a 8 minuti la pill ridotta mette un segno rosso, «8m», col paziente nel passaggio del mouse (got: «${segno}» · ${segnoTip})`);
+  check(scen, (await $panel(page, "#expand").innerText()).replace(/\s+/g, " ").trim() === "ROSSI MARIO 8m", "e nient'altro sulla pill");
+  await $panel(page, "#expand").click();
+  await $panel(page, ".prbar .prom").waitFor();
+  const rossa = { testo: await testoPill(".prbar"), banda: await banda(".prbar"), anima: await pill(".prbar").evaluate((b) => getComputedStyle(b).animationName) };
+  check(scen, rossa.testo === "8m EGA" && rossa.banda === "rossa" && rossa.anima === "prBagliore",
+    `a 8 minuti: rossa, con un bagliore lento (got: ${JSON.stringify(rossa)})`);
+  await page.clock.fastForward("11:00");
+  check(scen, (await testoPill(".prbar")) === "−3m EGA" && (await banda(".prbar")) === "rossa", `passata da 3 minuti: «−3m», rossa (got: ${await testoPill(".prbar")})`);
+
+  // un tocco sulla pill: l'elenco, con +15 min e ✓ Fatto (che si annulla)
+  await pill(".prbar").click();
+  await $panel(page, ".prmenu").waitFor();
+  check(scen, /Promemoria · ROSSI MARIO/.test(await $panel(page, ".prmhd").innerText()) && (await $panel(page, ".prmenu .prmrow").count()) === 1,
+    "un tocco sulla pill apre l'elenco dei suoi promemoria");
+  await $panel(page, ".prmenu [data-prinvia]").click();
+  check(scen, (await testoPill(".prbar")) === "15m EGA" && (await banda(".prbar")) === "ambra" && (await $panel(page, ".prmenu").count()) === 1,
+    `+15 min: fra un quarto d'ora da adesso (era già passato), e l'elenco resta aperto (got: ${await testoPill(".prbar")})`);
+  await $panel(page, ".prmenu [data-pfatto]").click();
+  const fatto = { pill: await pill(".prbar").count(), elenco: await $panel(page, ".prmenu").count(), salvati: Object.keys(await archivio()).length,
+    avviso: (await $panel(page, ".stsnack").count()) ? (await $panel(page, ".stsnack").innerText()).replace(/\s+/g, " ") : "" };
+  check(scen, !fatto.pill && !fatto.elenco && !fatto.salvati && /Fatto: EGA/.test(fatto.avviso) && /Annulla/.test(fatto.avviso),
+    `✓ Fatto lo toglie, e per 8 secondi «Annulla» (got: ${JSON.stringify(fatto)})`);
+  await $panel(page, ".stannulla").click();
+  check(scen, /^1[45]m EGA$/.test(await testoPill(".prbar")) && ((await archivio())["999001"] || []).length === 1, "Annulla: torna com'era");
+
+  // la Lista: la pill subito dopo il nome; la sveglia compare passandoci sopra
+  await $panel(page, "#back").click();
+  await $panel(page, ".pzlista").waitFor();
+  const riga = (ep) => $panel(page, `.pzrow:has([data-ep="${ep}"])`);
+  const dopoNome = await riga("999001").evaluate((r) => {
+    const nm = r.querySelector(".pznm").getBoundingClientRect(), p = r.querySelector(".prom")?.getBoundingClientRect();
+    return !!p && (p.left - nm.right < 24 || (p.top >= nm.bottom - 2 && Math.abs(p.left - nm.left) < 4));
+  });
+  check(scen, /^1[45]m EGA$/.test(await testoPill('.pzrow:has([data-ep="999001"])')) && dopoNome,
+    `nella Lista la pill sta accanto al nome (got: ${await testoPill('.pzrow:has([data-ep="999001"])')})`);
+  const tip = await pill('.pzrow:has([data-ep="999001"])').getAttribute("title");
+  check(scen, /^\d\d:\d\d · EGA · tra 1[45] min/.test(tip), `per esteso nel passaggio del mouse (got: ${tip.split("\n")[0]})`);
+  const opacita = () => riga("999002").locator(".pzprom").evaluate((b) => getComputedStyle(b).opacity);
+  await page.mouse.move(5, 5);
+  const primaS = await opacita();
+  await riga("999002").hover();
+  check(scen, primaS === "0" && (await opacita()) === "1", `la sveglia della riga compare solo passandoci sopra, come la ✕ (${primaS} → ${await opacita()})`);
+  await riga("999002").locator(".pzprom").click();
+  check(scen, (await riga("999002").locator("#prin").count()) === 1, "e apre lo stesso campo, dentro la riga");
+  await $panel(page, "#prin").fill("tra 2h ECG");
+  await $panel(page, "#prin").press("Enter");
+  check(scen, (await testoPill('.pzrow:has([data-ep="999002"])')) === "2h ECG", `salvato dalla Lista (got: ${await testoPill('.pzrow:has([data-ep="999002"])')})`);
+  // uscendo col mouse si salva, e il clic che ha tolto il fuoco arriva lo stesso
+  await riga("999001").hover();
+  await riga("999001").locator(".pzprom").click();
+  await $panel(page, "#prin").fill("tra 3h tropo");
+  await $panel(page, "#archtog").click();
+  check(scen, /^1[45]m EGA \+1$/.test(await testoPill('.pzrow:has([data-ep="999001"])')) && (await $panel(page, ".pzarch").count()) === 1,
+    `uscendo dal campo col mouse si salva, e il clic arriva (Archiviati aperto); due promemoria: il più vicino, «+1» (got: ${await testoPill('.pzrow:has([data-ep="999001"])')})`);
+
+  // la Stanza: solo il tempo, piccolo
+  await $panel(page, '[data-pazvista="stanza"]').click();
+  const mini = $panel(page, '.stp[data-stp="999001"] .prst');
+  check(scen, (await mini.count()) === 1 && /^1[45]m$/.test((await mini.innerText()).trim()) && (await mini.evaluate((s) => s.classList.contains("amb"))),
+    "nella Stanza il paziente porta solo il tempo, piccolo, ambra");
+  await $panel(page, '[data-pazvista="lista"]').click();
+  check(scen, richieste === 0, `scrivere, rimandare, fare e annullare: nessuna richiesta di rete (${richieste})`);
+
+  // restano dopo un ricarico; 🗑 li cancella con il paziente; «Svuota l'elenco» anche, e si annulla
+  await page.reload();
+  await apri();
+  await page.waitForSelector("#psassist-host .prbar .prom", { state: "attached" });
+  check(scen, /^1[45]m EGA \+1$/.test(await testoPill(".prbar")), "ricaricata la pagina, sono ancora lì");
+  // 12 ore dopo l'ora fissata un promemoria se ne va da solo
+  await page.evaluate(() => {
+    const k = "psassist:promemoria.v1", t = JSON.parse(localStorage.getItem(k));
+    t["999001"].push({ id: "vecchio", t: Date.now() - 13 * 3600e3, testo: "vecchio", ts: Date.now() - 14 * 3600e3 });
+    localStorage.setItem(k, JSON.stringify(t));
+  });
+  await page.clock.fastForward("00:30");
+  const restano = ((await archivio())["999001"] || []).map((p) => p.testo);
+  check(scen, restano.length === 2 && !restano.includes("vecchio"), `12 ore dopo l'ora fissata se ne va da solo (${restano.join(", ")})`);
+  await $panel(page, "#back").click();
+  await riga("999002").hover();
+  await riga("999002").locator(".pzx").click();
+  if (!(await $panel(page, ".pzarch").count())) await $panel(page, "#archtog").click();
+  await $panel(page, '[data-del="999002"]').click();
+  await $panel(page, '[data-del="999002"]').click();
+  check(scen, !(await archivio())["999002"] && ((await archivio())["999001"] || []).length === 2, "🗑 cancella anche i suoi promemoria (gli altri restano)");
+  await $panel(page, "#stsvuota").click();
+  check(scen, !Object.keys(await archivio()).length, "«Svuota l'elenco» toglie anche i promemoria");
+  await $panel(page, ".stannulla").click();
+  check(scen, ((await archivio())["999001"] || []).length === 2, "e Annulla li rimette");
   await context.close();
 }
 
@@ -3736,6 +3946,7 @@ const scenarios = [
   ["referto RX letto come testo", scenarioRefertoTesto],
   ["nomi inattesi e righe non lette", scenarioNomiInattesi],
   ["cronometro: parte, sopravvive al cambio pagina, si ferma", scenarioTempi],
+  ["promemoria: «11:30 tropo» accanto al nome", scenarioPromemoria],
   ["fogli di dimissione: copia, modifica, export", scenarioDimissioni],
   ["EO: copia il generale, la tendina copia il caso", scenarioEo],
   ["rilancio su pagina esami: nessun doppio ordine", scenarioRilancioPaginaEsami],
