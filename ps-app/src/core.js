@@ -2553,6 +2553,11 @@
       // ---- 2. add each exam, verifying every add ------------------------
       let model = examModel(doc, url);
       learnFrom(model);
+      // «↻ Riprova» lavora sul carrello della richiesta di prima e su nessun
+      // altro: un elenco di un'altra richiesta non si tocca.
+      if (plan.richiestaId && String(model.richiestaId) !== String(plan.richiestaId)) {
+        throw new StopError("Non è il carrello della richiesta di prima", "Nessun esame inviato.");
+      }
       state.richiestaId = model.richiestaId;
       const noteList = () => { const u = model.listUrl(model.res); if (u) state.lastListUrl = u; };
       noteList();
@@ -2951,8 +2956,12 @@
       // visto in carrello adesso: è da CONTROLLARE, non da rifare — chi lo
       // aggiungesse a mano lo ordinerebbe due volte. «Mancano» sono solo
       // quelli mai partiti.
-      const controllare = fuori.filter((x) => x.inviato || x.soloVerifica);
+      // (quelli da controllare di un errore prima, lasciati fuori da «Riprova»,
+      // restano in elenco: non sono spariti, sono ancora da guardare)
+      const controllare = [...fuori.filter((x) => x.inviato || x.soloVerifica), ...(plan.daControllare || [])];
       const mancanoIt = fuori.filter((x) => !controllare.includes(x));
+      state.mancanti = mancanoIt;          // per «↻ Riprova i mancanti»: questi soli si mandano
+      state.daControllare = controllare;   // …e questi mai
       // il carrello su cui atterrare: quello del laboratorio del primo esame da fare a mano
       const primo = mancanoIt[0] || controllare[0] || null;
       state.resMancante = primo ? primo.res : null;
@@ -2983,6 +2992,29 @@
       }
       return state;
     }
+  }
+
+  // Che cosa rifà «↻ Riprova i mancanti» dopo un errore: gli esami mai
+  // partiti, sulla STESSA richiesta e nello stesso modo (revisione, o conferma
+  // automatica e stampa). Quelli già in carrello vanno con loro solo per
+  // essere ritrovati — mai rimandati — così ricevuta e conferma parlano della
+  // richiesta intera; quelli «da controllare» (mandati e non visti) restano
+  // fuori. Se la richiesta non era ancora nata, è un giro nuovo dalla pagina
+  // del paziente. Mai per una catena lab+radiologia: a metà non si riprende.
+  function ricettaRiprova(state, plan) {
+    if (!plan || plan.hold || !plan.episodeId) return null;
+    const nudo = (i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label,
+      ...(i.resCat ? { resCat: i.resCat } : {}) });
+    const mancanti = (state.mancanti || []).map(nudo);
+    if (!mancanti.length) return null;
+    const suo = plan.examUrl || plan.listUrl;
+    const rid = state.richiestaId || (suo ? param(suo, "RICHIESTA_ID") : null);
+    if (!rid && plan.startPage !== "patient" && plan.startPage !== "crea") return null;
+    return {
+      ep: String(plan.episodeId), rid: rid ? String(rid) : null, autoConfirm: !!plan.autoConfirm,
+      paziente: plan.patientName || "", patientUrl: plan.patientUrl || "",
+      verdi: (state.added || []).map(nudo), mancanti, controllare: (state.daControllare || []).map(nudo),
+    };
   }
 
   // La pianta della Stanza: una griglia di celle tutte uguali, 40 × 24. Un
@@ -4077,6 +4109,7 @@
       this.runState = "running"; this.runData = state; this.stopFn = state.stop;
       clearTimeout(this._tStriscia); this.striscia = null;
       this.carrelloDaAprire = null;
+      this.riprova = null; this.consegnaErrore = null;
       this.runRipreso = !!(plan && plan.startPage === "ripresa");
       // Il giro sopravvive al cambio pagina: riprende da dov'era. Si avvisa
       // prima di uscire solo dove riprendere non si può — le catene
@@ -4341,15 +4374,22 @@
       const vai = !!listUrl && !msg.restaQui && (!this.runRipreso || (!!qui && qui === plan?.episodeId));
       // quello che è in carrello resta da confermare: lo si tiene d'occhio
       if (vai && state.added.length) ricordaDaConfermare(state.richiestaId, plan?.episodeId, listUrl, state.added.length);
+      // «↻ Riprova i mancanti»: mai dopo una sessione scaduta, un episodio che
+      // non torna o un'altra scheda al lavoro
+      this.riprova = msg.restaQui ? null : ricettaRiprova(state, plan);
+      const consegna = () => tabStore.set(AVVISO, {
+        ts: Date.now(), testo: msg, striscia,
+        giro: { stato: "fail", paziente: this.runPatient || "", listUrl,
+          steps: (state.steps || []).map(({ label, status, note }) => ({ label, status, note })) },
+        ...(this.riprova ? { riprova: this.riprova } : {}),
+      });
+      // anche «Apri il carrello» porta con sé il resoconto: lì compare «Riprova»
+      this.consegnaErrore = listUrl && this.riprova ? consegna : null;
       this.segnala(striscia);
       this.render();
       if (vai) {
         state.lastListUrl = listUrl;   // anche «Apri il carrello» del resoconto porta lì
-        this.vaiSeLibero(listUrl, { striscia, prima: () => tabStore.set(AVVISO, {
-          ts: Date.now(), testo: msg, striscia,
-          giro: { stato: "fail", paziente: this.runPatient || "", listUrl,
-            steps: (state.steps || []).map(({ label, status, note }) => ({ label, status, note })) },
-        }) });
+        this.vaiSeLibero(listUrl, { striscia, prima: consegna });
       }
     }
     stopped(state, msg, plan) {
@@ -4366,10 +4406,65 @@
     }
     stop() { this.stopFn?.(); }
 
+    // «↻ Riprova i mancanti» si mostra solo dov'è sicuro: sul carrello di
+    // QUELLA richiesta (il motore rilegge il carrello dal server: quelli già
+    // entrati li ritrova e non li rimanda), o sulla pagina del paziente se la
+    // richiesta non era ancora nata. Altrove si apre prima il carrello.
+    riprovaQui() {
+      const r = this.riprova;
+      if (!r || this.runState !== "fail" || !(r.mancanti || []).length) return false;
+      if (findEpisodeId(document, location.href) !== r.ep) return false;
+      if (r.rid) return this.pageType === "exam" && param(location.href, "RICHIESTA_ID") === r.rid;
+      return this.pageType === "patient" && !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
+    }
+    riprovaMancanti() {
+      const r = this.riprova;
+      if (!this.riprovaQui()) return;
+      this.dimenticaErrore();
+      // senza richiesta: un giro normale, col quesito e gli esami del pannello
+      if (!r.rid) { this.view = "richieste"; this.launch(r.autoConfirm); return; }
+      const nomi = (l) => l.map((x) => x.display || shortLabel(x.label)).join(", ");
+      const fuori = r.controllare || [];
+      this.startPlan({
+        startPage: "exam", examDoc: document, examUrl: location.href, richiestaId: r.rid,
+        autoConfirm: r.autoConfirm, patientName: r.paziente, patientUrl: r.patientUrl,
+        // quelli già in carrello si cercano soltanto: mai un secondo invio
+        items: [...(r.verdi || []).map((x) => ({ ...x, soloVerifica: true, giaFatto: true })), ...r.mancanti.map((x) => ({ ...x }))],
+        daControllare: fuori.map((x) => ({ ...x })),   // fuori dal giro, ma se va storto di nuovo restano in elenco
+      });
+      this.log(`${now()}  ↻ riprovo i mancanti: ${nomi(r.mancanti)}${
+        fuori.length ? ` — non rimando quelli da controllare: ${nomi(fuori)}` : ""}`);
+    }
+    // Via l'errore: la pill torna quella di sempre, e il passaggio di
+    // consegne verso il carrello (e «Riprova») si dimentica.
+    dimenticaErrore() {
+      this.runState = null; this.runData = null; this.message = null;
+      this.carrelloDaAprire = null; this.consegnaErrore = null; this.riprova = null;
+      clearTimeout(this._tStriscia); this.striscia = null;
+      tabStore.set(AVVISO, null);
+    }
+    // «Annulla»: si torna alle Richieste col quesito e gli esami scelti,
+    // com'erano. La richiesta rimasta a metà non la si sorveglia più: l'hai
+    // lasciata tu, e ricordartela fra due minuti vorrebbe dire confermarla
+    // accanto a quella che rifai da capo.
+    annulla() {
+      const u = this.runData?.lastListUrl;
+      const rid = this.riprova?.rid || this.runData?.richiestaId || (u ? param(u, "RICHIESTA_ID") : null);
+      this.dimenticaErrore();
+      if (rid) confermataProvata(rid);
+      this.restoreUi();
+      // (sulla lista del PS, dove non si ordina, si resta sui Pazienti)
+      this.view = this.defaultView() === "home" ? "home" : "richieste"; this.viewId = null;
+      this.persistUi();
+      this.render();
+    }
+
     // ---- run starters ----
     startPlan(base) {
       if (this.runState === "running") return;
-      const items = [...this.selected.values()];
+      // Copie: il motore traduce codici e risorse per la sede, e la selezione
+      // del medico deve restare la sua (dopo un errore, «Annulla» la ritrova).
+      const items = base.items || [...this.selected.values()].map((i) => ({ ...i }));
       if (!items.length) return;
       const episodeId = findEpisodeId(document, location.href);
       if (!episodeId) { // fail-closed: never order on an unidentifiable episode
@@ -4382,10 +4477,10 @@
       tabStore.set("receipt.v1", null);
       // Pin the patient this run belongs to: the running/result views show
       // THIS name, never whatever the page title becomes later.
-      this.runPatient = (document.title || "").trim();
+      this.runPatient = base.patientName || (document.title || "").trim();
       const plan = { quesito: (this._q || "").trim(), items, episodeId, patientName: this.runPatient, ...base,
         // la pagina che elenca le richieste confermate: serve a provare una conferma
-        patientUrl: this.pageType === "patient" ? location.href : "" };
+        patientUrl: base.patientUrl || (this.pageType === "patient" ? location.href : "") };
       if ((this._q || "").trim()) rememberQuesito((this._q || "").trim());
       if (plan.legs && plan.legs.length > 1) this.runChain(plan);
       else runPlan(plan, this); // fire and forget; the engine drives the UI via callbacks
@@ -6820,6 +6915,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const listUrl = this.runData?.finishedListUrl || this.runData?.lastListUrl;
       // già sul carrello di quella richiesta (ci ha portato l'errore): niente bottone per andarci
       const giaQui = !!listUrl && this.pageType === "exam" && param(listUrl, "RICHIESTA_ID") === param(location.href, "RICHIESTA_ID");
+      // dopo un errore: rifare i mancanti si può solo dov'è sicuro (riprovaQui)
+      const riprova = this.riprovaQui() ? this.riprova.mancanti.length : 0;
+      // un errore si annulla; un giro che riprenderà da solo no (lì resta «Torna al pannello»)
+      const annulla = this.runState === "fail" && !tabStore.get(CORSA, null);
       // Fermato a metà: che cosa c'è già in carrello e che cosa va aggiunto a
       // mano dal gestionale — l'elenco che serve per finire.
       const nel = (typeof m === "object" && m.nel) || [], mancano = (typeof m === "object" && m.mancano) || [];
@@ -6829,7 +6928,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           nel.map((x) => `<span class="chip nel">${esc(x)}</span>`).join("") || `<span class="hint">nessuno</span>`}</div></div>
         ${controllare.length ? `<div class="sec"><div class="lbl">Da controllare nel carrello (${controllare.length})</div><div class="chips">${
           controllare.map((x) => `<span class="chip controlla">${esc(x)}</span>`).join("")}</div>
-          <div class="hint">Mandati, ma non visti in carrello: guarda se ci sono prima di aggiungerli — mai due volte.</div></div>` : ""}
+          <div class="hint">${riprova ? "Mandati, ma non visti in carrello: «Riprova» non li rimanda — guardali nel carrello prima."
+            : "Mandati, ma non visti in carrello: guarda se ci sono prima di aggiungerli — mai due volte."}</div></div>` : ""}
         <div class="sec"><div class="lbl">Da aggiungere a mano (${mancano.length})</div><div class="chips">${
           mancano.map((x) => `<span class="chip manca">${esc(x)}</span>`).join("") || `<span class="hint">nessuno</span>`}</div></div>` : "";
       return `
@@ -6839,9 +6939,13 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         <div class="sec"><div class="steps">${steps}</div></div>
         <details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
         <div class="commit">
-          ${(listUrl || this.carrelloDaAprire) && !giaQui && (!ok || this.runRipreso || this.carrelloDaAprire) ? `<button class="btn primary" id="openlist">${
+          ${riprova ? `<button class="btn primary" id="riprova" title="${this.riprova.rid
+            ? "Manda solo gli esami mai partiti, in questa stessa richiesta: quelli già in carrello non si rimandano"
+            : "Nessuna richiesta era nata: rifà il giro da capo, con gli stessi esami"}">↻ Riprova i mancanti (${riprova})</button>`
+            : (listUrl || this.carrelloDaAprire) && !giaQui && (!ok || this.runRipreso || this.carrelloDaAprire) ? `<button class="btn primary" id="openlist">${
             ok ? "Apri il carrello" : "Apri il carrello e controlla"}</button>` : ""}
-          <button class="btn ghost" id="reset">Torna al pannello</button>
+          ${annulla ? `<button class="btn ghost" id="annulla" title="Lascia questo giro: torni alle Richieste col quesito e gli esami scelti">Annulla</button>`
+            : `<button class="btn ghost" id="reset">Torna al pannello</button>`}
         </div>
       `;
     }
@@ -6995,10 +7099,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (pill) this.attachDrag(pill);
       $("#stopbtn")?.addEventListener("click", () => this.stop());
       $("#reset")?.addEventListener("click", () => { this.runState = null; this.runData = null; this.message = null; this.carrelloDaAprire = null; this.render(); });
+      $("#annulla")?.addEventListener("click", () => this.annulla());
+      $("#riprova")?.addEventListener("click", () => this.riprovaMancanti());
       $("#openlist")?.addEventListener("click", () => {
         if (this.carrelloDaAprire) return this.carrelloDaAprire();   // la navigazione rimandata, col suo passaggio di consegne
         const u = this.runData?.finishedListUrl || this.runData?.lastListUrl;
-        if (u) nav(u);
+        if (!u) return;
+        if (this.runState === "fail") this.consegnaErrore?.();   // il resoconto (e «Riprova») viaggia col carrello
+        nav(u);
       });
 
       $("#back")?.addEventListener("click", () => this.setView(
@@ -7352,7 +7460,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const problems = this.computeProblems();
       const blocking = autoConfirm ? problems.confirm : problems.go;
       if (blocking.length) { this.message = blocking[0]; this.render(); return; }
-      const items = [...this.selected.values()];
+      const items = [...this.selected.values()].map((i) => ({ ...i }));   // copie (vedi startPlan)
       if (!items.length) return;
 
       const base = { autoConfirm };
@@ -7961,17 +8069,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // printer selection is not possible from a web page on Windows, so this is
   // the most automatic legal flow. Chrome's dialog remembers recent
   // destinations, so switching printer is one click.
-  // Niente finestra davanti: il PDF va in una cornice NASCOSTA (c'è, perché il
-  // visualizzatore PDF di Chrome deve caricarsi, ma non si vede) e si apre
-  // subito il dialogo di stampa del browser. A che punto è lo dice la pill —
-  // o, senza pannello (o col pannello aperto), un riquadrino nello stesso
-  // angolo. Un riquadro coi comandi compare solo quando serve una mano:
-  // documento non catturabile, PDF non arrivato, dialogo che non si apre.
+  // Mentre un PDF arriva non c'è niente davanti: a che punto è lo dice la pill
+  // — o, senza pannello (o col pannello aperto), un riquadrino nell'angolo.
+  // Arrivato il PDF compare la scheda di sempre: il PDF in anteprima e la
+  // stampante su cui va. È il controllo di un'occhiata, e dice quale
+  // stampante scegliere. Da quella cornice, visibile, si apre subito il
+  // dialogo di stampa; chiuso il dialogo si passa da soli al documento dopo,
+  // e la scheda si toglie finché quello non arriva.
   let wizardOpen = false;
-  // Nessun segno dal dialogo di stampa entro questo tempo: si mostrano i
-  // comandi. Se il dialogo invece è aperto, il riquadro gli resta sotto e
-  // sparisce quando si chiude.
-  const NIENTE_DIALOGO_MS = 5000;
   const cosaStampo = (job) => /^etichett/i.test(job.name) ? "le etichette"
     : /^lista esami/i.test(job.name) ? "la lista esami"
     : /^prenotazione/i.test(job.name) ? "la prenotazione RX"
@@ -7994,130 +8099,112 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     let attempts = 0;
     let blobUrl = null;
     let timer = null;
-    let nienteDialogo = null;
     let gen = 0;               // il caricamento in corso: uno saltato non deve stampare al posto del dopo
     // Chiudere (✕, Esc) deve fermare davvero la caccia al PDF: senza questo il
     // medico annullava, la catena continuava a chiedere al server, e una
     // seconda stampa poteva partire mentre la prima era ancora in giro.
     // Anche «Avanti» ferma quella del documento che si salta.
     let ctlDoc = null;
-    let cur = null;            // il documento in stampa: { f, printed, apertoIl, avanzato }
-    let scheda = null;         // perché servono i comandi: { viewer, err, nonParte, banco }
+    let cur = null;            // il documento in anteprima: { f, printed, apertoIl, avanzato }
     let tuttiChiesti = true;   // ogni documento ha avuto la sua stampa
     let chiuso = false;
     let staccaStampa = () => {};   // toglie l'ascolto del dialogo di stampa del documento in corso
 
     const CSS = `${COLORS}
-      /* la cornice del PDF: c'è (il visualizzatore deve caricarsi), non si vede */
-      .pf { position: fixed; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; pointer-events: none; }
-      .ps, .pc { position: fixed; z-index: 2147483647; color: #16232E; }
-      .ps[hidden], .pc[hidden] { display: none; }
-      .ps { display: flex; align-items: center; gap: 8px; max-width: min(380px, 82vw); background: #0B5CAD; color: #fff;
-            border-radius: 12px; padding: 7px 8px 7px 11px; font-size: 12px; box-shadow: 0 4px 14px rgba(9,42,74,.22); cursor: pointer; }
+      .ps[hidden], .back[hidden], .pw[hidden] { display: none; }
+      /* mentre il PDF arriva, senza pill: un riquadrino nell'angolo */
+      .ps { position: fixed; top: 10px; right: 10px; z-index: 2147483647; display: flex; align-items: center; gap: 8px;
+            max-width: min(380px, 82vw); background: #0B5CAD; color: #fff; border-radius: 12px; padding: 7px 8px 7px 11px;
+            font-size: 12px; box-shadow: 0 4px 14px rgba(9,42,74,.22); cursor: pointer; }
       .ps .dot { width: 8px; height: 8px; border-radius: 50%; background: #7FD1A8; flex: none; animation: psaPulse 1.2s ease-in-out infinite; }
       .ps .pst { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .ps .psx { border: 0; background: rgba(255,255,255,.18); color: #fff; border-radius: 999px; width: 24px; height: 24px; cursor: pointer; flex: none; }
-      .pc { width: min(420px, 92vw); background: #fff; border: 1px solid #D9E2EC; border-radius: 14px; overflow: hidden;
-            box-shadow: 0 12px 32px rgba(9,42,74,.22); font-size: 13px; }
-      .pwhd { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #0B5CAD; color: #fff; flex-wrap: wrap; }
-      .pwhd b { font-size: 13px; }
-      .pwhd .dest { margin-left: auto; background: #FFF7E6; color: #8a4b03; border-radius: 999px; padding: 2px 10px; font-weight: 700; font-size: 11.5px; }
-      .pwtit { padding: 6px 12px 0; font-size: 11.5px; color: #5B6B7A; }
-      .pwmsg { padding: 10px 12px 0; color: #35506B; font-size: 12.5px; }
-      .pwmsg b { display: inline; }
-      .pwft { padding: 10px 12px 12px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-      .pwbtn { border: 0; border-radius: 9px; padding: 8px 11px; font-weight: 700; font-size: 12.5px; cursor: pointer; }
+      /* arrivato il PDF: la scheda al centro, il PDF in anteprima */
+      .back { position: fixed; inset: 0; background: rgba(9,42,74,.45); z-index: 2147483646; }
+      .pw { position: fixed; top: 4vh; left: 50%; transform: translateX(-50%); z-index: 2147483647;
+            width: min(720px, 94vw); background: #fff; border-radius: 16px; overflow: hidden;
+            box-shadow: 0 18px 48px rgba(9,42,74,.4); font-size: 13.5px; color: #16232E;
+            display: flex; flex-direction: column; max-height: 92vh; }
+      .pwhd { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 12px 16px; background: #0B5CAD; color: #fff; }
+      .pwhd b { font-size: 14.5px; }
+      .pwhd .pwtit { font-size: 12px; opacity: .85; }
+      .pwhd .dest { margin-left: auto; background: #FFF7E6; color: #8a4b03; border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 12.5px; }
+      .pwbody { flex: 1; min-height: 320px; background: #E8EEF4; }
+      .pwbody iframe { width: 100%; height: 56vh; border: 0; display: block; background: #fff; }
+      .pwmsg { padding: 40px 20px; text-align: center; color: #5B6B7A; }
+      .pwft { padding: 12px 16px; display: flex; gap: 8px; align-items: center; border-top: 1px solid #E3E8EF; flex-wrap: wrap; }
+      .pwbtn { border: 0; border-radius: 10px; padding: 11px 16px; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+      .pwbtn:disabled { opacity: .45; cursor: default; }
       .pwbtn.next { background: #177245; color: #fff; }
       .pwbtn.next:hover { background: #125c37; }
       .pwbtn.re { background: #0B5CAD; color: #fff; }
-      .pwbtn.re:hover { background: #094a8c; }
+      .pwbtn.re:hover:enabled { background: #094a8c; }
       .pwbtn.ghost { background: #F4F8FB; color: #16232E; border: 1px solid #C4D0DC; }
       .pwbtn.exit { background: transparent; color: #B3261E; border: 1px solid #E9BAB6; margin-left: auto; }
       /* quando la cattura non riesce, l'unica strada che funziona si vede */
-      .pwbtn.grande { font-size: 13.5px; padding: 10px 16px; box-shadow: 0 3px 12px rgba(11,92,173,.35); }
-      .pwerr { margin: 10px 12px 0; background: #FBEBEA; border: 1px solid #E9BAB6; color: #7c1a14; border-radius: 9px; padding: 8px 10px; font-size: 12px; }
+      .pwbtn.grande { font-size: 15px; padding: 13px 22px; box-shadow: 0 3px 12px rgba(11,92,173,.35); }
+      .pwhint { width: 100%; font-size: 11.5px; color: #5B6B7A; }
+      .pwerr { margin: 12px 16px 0; background: #FBEBEA; border: 1px solid #E9BAB6; color: #7c1a14; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
     `;
-    root.innerHTML = `<style>${CSS}</style><div class="ps" role="status" hidden></div><div class="pc" role="dialog" aria-label="Stampa documenti" hidden></div>`;
-    const ps = root.querySelector(".ps");
-    const pc = root.querySelector(".pc");
+    root.innerHTML = `<style>${CSS}</style><div class="ps" role="status" hidden></div><div class="back" hidden></div>
+      <div class="pw" role="dialog" aria-label="Stampa documenti" hidden><div class="pwhd"></div><div class="pwguaio"></div><div class="pwbody"></div><div class="pwft"></div></div>`;
+    const ps = root.querySelector(".ps"), back = root.querySelector(".back"), pw = root.querySelector(".pw");
+    const testa = pw.querySelector(".pwhd"), guaio = pw.querySelector(".pwguaio"), corpo = pw.querySelector(".pwbody"), piede = pw.querySelector(".pwft");
 
-    // Il riquadro sta nell'angolo della pill: sotto se la pill è in alto,
-    // sopra se è in basso, allineato al suo lato. Senza pill, in alto a destra.
-    const angolo = () => {
-      const p = panel && panel.collapsed && panel.root ? panel.root.querySelector("#expand") : null;
-      const r = p ? p.getBoundingClientRect() : null;
-      const W = window.innerWidth || 1000, H = window.innerHeight || 800;
-      if (!r || !r.width) return "top:10px;right:10px;";
-      const x = r.left + r.width / 2 > W / 2 ? `right:${Math.max(8, Math.round(W - r.right))}px;` : `left:${Math.max(8, Math.round(r.left))}px;`;
-      const y = r.top + r.height / 2 < H / 2 ? `top:${Math.round(r.bottom + 8)}px;` : `bottom:${Math.max(8, Math.round(H - r.top + 8))}px;`;
-      return x + y;
-    };
     const conto = () => (jobs.length > 1 ? `${Math.min(i + 1, jobs.length)}/${jobs.length}` : "");
+    // La scheda (col velo) si vede o no. Il riquadrino serve solo senza pill,
+    // e solo quando la scheda non c'è.
+    const vedi = (si) => {
+      pw.hidden = back.hidden = !si;
+      if (!(panel && panel.collapsed)) ps.hidden = si;
+    };
     // A che punto è: nella pill se il pannello è ridotto, altrimenti nel
-    // riquadrino. Un tocco lì mostra i comandi; ✕ (o Esc) annulla.
+    // riquadrino. Un tocco lì mostra la scheda; ✕ (o Esc) annulla.
     const stato = (testo, tono = "run") => {
       wrap.dataset.testo = testo;
       if (panel && panel.collapsed) {
         ps.hidden = true;
-        panel.segnala({ tag, badge: conto(), testo, tono, daStampa: true, onTap: () => comandi(), onStop: () => chiudi(false) });
+        panel.segnala({ tag, badge: conto(), testo, tono, daStampa: true, onTap: () => vedi(true), onStop: () => chiudi(false) });
         return;
       }
-      ps.hidden = !pc.hidden;   // coi comandi a vista il riquadrino non serve
-      ps.style.cssText = angolo();
+      ps.hidden = !pw.hidden;
       ps.innerHTML = `<span class="dot"></span><span class="pst"><b>${esc(tag)}${conto() ? " " + esc(conto()) : ""}</b> · ${esc(testo)}</span><button class="psx" title="Annulla la stampa (Esc)" aria-label="Annulla la stampa">✕</button>`;
       ps.querySelector(".psx").onclick = (e) => { e.stopPropagation(); chiudi(false); };
-      ps.onclick = () => comandi();
+      ps.onclick = () => vedi(true);
     };
+    const nota = (html) => { const h = piede.querySelector(".pwhint"); if (h) h.innerHTML = html; };
+    // nel banco di prova il dialogo non c'è: si dice, e si va avanti a mano
+    const scegli = () => (DEMO ? "Banco di prova: niente dialogo di stampa. Il documento è qui sopra; «→ Avanti» passa al prossimo."
+      : `Scegli <b>${esc(jobs[i].printer)}</b> nel dialogo di stampa.`);
 
-    // I comandi di sempre, compatti nell'angolo — mai una finestra modale.
-    // Si mostrano da soli solo quando serve una mano; un tocco sulla pill li
-    // mostra comunque.
-    const comandi = (s) => {
-      if (chiuso) return;
-      if (s) scheda = s;
+    // Testata e comandi della scheda: quale documento, su quale stampante, e
+    // i bottoni di sempre. Un verbo per pulsante, un'icona per verbo (prima ce
+    // n'erano cinque, e «Avanti» e «Salta» facevano la stessa cosa). Il corpo
+    // — l'anteprima — non si tocca: rimettere la cornice la ricaricherebbe.
+    const comandi = ({ err = "", viewer = false } = {}) => {
       const job = jobs[i];
-      if (!job) return;
-      const viewer = !!(scheda && scheda.viewer);
-      const err = scheda && scheda.err;
-      // Un verbo per pulsante, un'icona per verbo. Prima ce n'erano cinque e
-      // due («Avanti» e «Salta») facevano esattamente la stessa cosa.
       const nextLbl = i + 1 < jobs.length ? `→ Avanti (${i + 2} di ${jobs.length})` : "✓ Fine";
-      const msg = viewer
-        ? `Questo documento non si lascia stampare da qui: <b>↗ Apri e stampa</b>, poi Ctrl+P → <b>${esc(job.printer)}</b>, e qui «→ Avanti».`
-        : err ? "Questo documento non è stato scaricato. Risolvi il problema qui sopra e riprova la stampa dal pannello."
-          : scheda && scheda.banco ? "Banco di prova: niente dialogo di stampa. Il documento è pronto (↗ Scheda per vederlo)."
-            : scheda && scheda.nonParte ? `La finestra di stampa non si è aperta? <b>🖨 Stampa</b> la riapre — scegli <b>${esc(job.printer)}</b>.`
-              : `Scegli <b>${esc(job.printer)}</b> nel dialogo di stampa.`;
-      pc.hidden = false;
-      pc.style.cssText = angolo();
-      pc.innerHTML = `
-        <div class="pwhd"><b>Stampa ${i + 1} di ${jobs.length} — ${esc(job.name)}</b><span class="dest">→ ${esc(job.printer)}</span></div>
-        ${title ? `<div class="pwtit">${esc(title)}</div>` : ""}
-        ${err ? `<div class="pwerr">${esc(err)}</div>` : ""}
-        <div class="pwmsg">${msg}</div>
-        <div class="pwft">
-          ${viewer
-            ? `<button class="pwbtn re grande" id="pwtab" title="Apre il documento in una scheda: da lì Ctrl+P">↗&nbsp; Apri e stampa</button>`
-            : `<button class="pwbtn re" id="pwre" title="Riapre la finestra di stampa del browser">🖨&nbsp; Stampa</button>`}
-          <button class="pwbtn next" id="pwnext" title="${i + 1 < jobs.length ? "Passa al documento successivo" : "Chiude: hai stampato tutto"}">${nextLbl}</button>
-          ${viewer ? "" : `<button class="pwbtn ghost" id="pwtab" title="Se la stampa non parte, aprilo in una scheda">↗&nbsp; Scheda</button>`}
-          ${viewer && ultimaDiag ? `<button class="pwbtn ghost" id="pwdiag" title="Copia com'è fatto il visualizzatore (senza numeri), da mandare a chi fa il pannello">⧉&nbsp; Diagnosi</button>` : ""}
-          <button class="pwbtn exit" id="pwexit" title="Chiude senza stampare il resto (Esc)">✕&nbsp; Chiudi</button>
-        </div>`;
-      pc.querySelector("#pwre")?.addEventListener("click", () => { if (cur && cur.f.isConnected) stampa(cur); });
-      pc.querySelector("#pwnext").onclick = advance;
-      pc.querySelector("#pwexit").onclick = () => chiudi(false);
-      pc.querySelector("#pwtab").onclick = () => openTab(job.url, "_blank"); // user-activated → not popup-blocked
-      pc.querySelector("#pwdiag")?.addEventListener("click", async () => {
-        const b = pc.querySelector("#pwdiag");
+      testa.innerHTML = `<b>Stampa ${i + 1} di ${jobs.length} — ${esc(job.name)}</b>${title ? `<span class="pwtit">${esc(title)}</span>` : ""}<span class="dest">→ ${esc(job.printer)}</span>`;
+      guaio.innerHTML = err ? `<div class="pwerr">${esc(err)}</div>` : "";
+      piede.innerHTML = `
+        ${viewer
+          ? `<button class="pwbtn re grande" id="pwtab" title="Apre il documento in una scheda: da lì Ctrl+P">↗&nbsp; Apri e stampa</button>`
+          : `<button class="pwbtn re" id="pwre" title="Riapre la finestra di stampa del browser" ${cur ? "" : "disabled"}>🖨&nbsp; Stampa</button>`}
+        <button class="pwbtn next" id="pwnext" title="${i + 1 < jobs.length ? "Passa al documento successivo" : "Chiude: hai stampato tutto"}">${nextLbl}</button>
+        ${viewer ? "" : `<button class="pwbtn ghost" id="pwtab" title="Se la stampa non parte, aprilo in una scheda">↗&nbsp; Scheda</button>`}
+        ${viewer && ultimaDiag ? `<button class="pwbtn ghost" id="pwdiag" title="Copia com'è fatto il visualizzatore (senza numeri), da mandare a chi fa il pannello">⧉&nbsp; Diagnosi</button>` : ""}
+        <button class="pwbtn exit" id="pwexit" title="Chiude senza stampare il resto (Esc)">✕&nbsp; Chiudi</button>
+        <div class="pwhint">${viewer
+          ? `Questo documento non si lascia stampare da qui: <b>↗ Apri e stampa</b>, poi Ctrl+P → <b>${esc(job.printer)}</b>, e qui «→ Avanti».`
+          : err ? "" : scegli()}</div>`;
+      piede.querySelector("#pwre")?.addEventListener("click", () => { if (cur && cur.f.isConnected) stampa(cur); });
+      piede.querySelector("#pwnext").onclick = advance;
+      piede.querySelector("#pwexit").onclick = () => chiudi(false);
+      piede.querySelector("#pwtab").onclick = () => openTab(job.url, "_blank"); // user-activated → not popup-blocked
+      piede.querySelector("#pwdiag")?.addEventListener("click", async () => {
+        const b = piede.querySelector("#pwdiag");
         segnaCopia(b, await copiaTesto(diagnosiTesto(ultimaDiag)));
       });
-      ps.hidden = true;
-      wrap.dataset.stato = "mano";
-      if (panel && panel.collapsed) {
-        panel.segnala({ tag, badge: conto(), tono: "warn", daStampa: true, onTap: () => comandi(), onStop: () => chiudi(false),
-          testo: viewer ? "Apri e stampa: serve un tuo clic" : err ? "Documento non scaricato" : "Stampa: serve un tuo clic" });
-      }
     };
 
     const chiudi = (finito) => {
@@ -8127,7 +8214,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       ctlDoc?.abort();
       staccaStampa();
       clearTimeout(timer);
-      clearTimeout(nienteDialogo);
       if (blobUrl) URL.revokeObjectURL(blobUrl);
       window.removeEventListener("keydown", onKey, true);
       wrap.remove();
@@ -8149,31 +8235,35 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); chiudi(false); } };
     window.addEventListener("keydown", onKey, true);
 
-    // La stampa del documento in corso: il dialogo del browser, dalla cornice
-    // nascosta. Nel banco di prova non c'è dialogo: si dice, e si va avanti a mano.
+    // Il dialogo non si è aperto (o si è chiuso all'istante: stampa non
+    // disponibile su quel PC): non si salta niente, «🖨 Stampa» lo riapre.
+    const nonParte = () => {
+      wrap.dataset.stato = "mano";
+      nota(`La finestra di stampa non si è aperta? <b>🖨 Stampa</b> la riapre — scegli <b>${esc(jobs[i].printer)}</b>.`);
+      stato("Stampa: serve un tuo clic", "warn");
+    };
+    // La stampa del documento in anteprima: il dialogo del browser, dalla sua
+    // cornice (nel banco di prova non c'è: la scheda lo dice già).
     const stampa = (c) => {
       c.printed = true;
       c.apertoIl = Date.now();
       attempts++;
       wrap.dataset.printAttempts = String(attempts);
-      if (DEMO) { comandi({ banco: true }); return; }
+      if (DEMO) { wrap.dataset.stato = "mano"; return; }
       wrap.dataset.stato = "stampo";
-      if (pc.hidden) stato(`Stampo ${cosaStampo(jobs[i])}`);
-      clearTimeout(nienteDialogo);
-      nienteDialogo = setTimeout(() => { if (cur === c && !c.avanzato && !chiuso) comandi({ nonParte: true }); }, NIENTE_DIALOGO_MS);
+      nota(scegli());
+      stato(`Stampo ${cosaStampo(jobs[i])}`);
       try { c.f.contentWindow.print(); }
-      catch { clearTimeout(nienteDialogo); comandi({ nonParte: true }); }
+      catch { nonParte(); }
     };
 
     const advance = () => {
       clearTimeout(timer);
-      clearTimeout(nienteDialogo);
       staccaStampa();
       if (!cur || !cur.printed) tuttiChiesti = false;
       cur = null;
       ctlDoc?.abort();
       if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
-      root.querySelector("iframe.pf")?.remove();
       i++;
       if (i >= jobs.length) return chiudi(true);
       load();
@@ -8182,8 +8272,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const load = async () => {
       const mio = ++gen;
       const job = jobs[i];
-      scheda = null;
-      pc.hidden = true;
       cur = null;
       ctlDoc = new AbortController();
       const segnale = ctlDoc.signal;
@@ -8191,6 +8279,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       wrap.dataset.doc = `Stampa ${i + 1} di ${jobs.length} — ${job.name}`;
       wrap.dataset.printer = job.printer;
       wrap.dataset.stato = "carico";
+      // Mentre arriva il PDF, niente davanti: la scheda si toglie (via anche
+      // l'anteprima di prima) e la si vede solo chiedendola con un tocco.
+      vedi(false);
+      corpo.innerHTML = `<div class="pwmsg">Carico il PDF…</div>`;
+      comandi();
       stato(`Aspetto ${cosaStampo(job)}…`);
       try {
         // un modulo di consenso è un file dell'estensione, non una pagina del
@@ -8202,10 +8295,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         panel?.log(`${now()}  ${job.name}: PDF ottenuto${via ? " via " + via : ""}`);
         blobUrl = URL.createObjectURL(blob);
         const f = document.createElement("iframe");
-        f.className = "pf";
-        f.title = `Stampa — ${job.name}`;
-        f.setAttribute("aria-hidden", "true");
-        f.tabIndex = -1;
+        f.title = `Anteprima — ${job.name}`;
         const c = cur = { f, printed: false, apertoIl: 0, avanzato: false };
         // Chiuso il dialogo di stampa si passa al documento dopo da soli: è
         // quello che il medico farebbe premendo «→ Avanti», e con
@@ -8213,44 +8303,37 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         // se ha stampato o annullato — dice solo che il dialogo si è chiuso —
         // quindi si va avanti in tutt'e due i casi, una volta sola per
         // documento. Un dialogo che si chiude PRIMA di essersi aperto davvero
-        // (stampa non disponibile) non fa saltare niente: mostra i comandi.
+        // (stampa non disponibile) non fa saltare niente: lo dice la scheda.
         const dopoStampa = () => {
           if (c.avanzato || cur !== c || !f.isConnected || !c.printed) return;
-          clearTimeout(nienteDialogo);
-          if (Date.now() - c.apertoIl < 500) { comandi({ nonParte: true }); return; }
+          if (Date.now() - c.apertoIl < 500) { nonParte(); return; }
           c.avanzato = true;
           staccaStampa();
           panel?.log(`${now()}  ${job.name}: finestra di stampa chiusa, passo al documento dopo`);
           clearTimeout(timer);
           timer = setTimeout(advance, 300);
         };
-        const dialogo = () => { if (cur === c) clearTimeout(nienteDialogo); };   // il dialogo c'è
         staccaStampa();   // resti del documento precedente
         window.addEventListener("afterprint", dopoStampa);
-        window.addEventListener("beforeprint", dialogo);
         staccaStampa = () => {
           window.removeEventListener("afterprint", dopoStampa);
-          window.removeEventListener("beforeprint", dialogo);
-          try {
-            f.contentWindow?.removeEventListener("afterprint", dopoStampa);
-            f.contentWindow?.removeEventListener("beforeprint", dialogo);
-          } catch { /* cornice già andata */ }
+          try { f.contentWindow?.removeEventListener("afterprint", dopoStampa); } catch { /* cornice già andata */ }
         };
         // il cronometro va SEMPRE dentro `timer`, e la stampa parte solo se
-        // quella cornice è ancora quella in corso: «Avanti» ne lasciava uno
-        // orfano, che stampava il documento dopo al posto di questo
+        // quella cornice è ancora quella in anteprima: «Avanti» ne lasciava
+        // uno orfano, che stampava il documento dopo al posto di questo
         const once = () => { if (!c.printed && cur === c && f.isConnected) stampa(c); };
         f.addEventListener("load", () => {
-          try {
-            f.contentWindow?.addEventListener("afterprint", dopoStampa);
-            f.contentWindow?.addEventListener("beforeprint", dialogo);
-          } catch { /* cornice già andata */ }
+          try { f.contentWindow?.addEventListener("afterprint", dopoStampa); } catch { /* cornice già andata */ }
           clearTimeout(timer); timer = setTimeout(once, 350);
         });
         timer = setTimeout(once, 1500); // headless/viewer-less fallback
         f.src = blobUrl;      // prima di inserirla: un solo «load», quello del PDF
-        root.appendChild(f);
+        corpo.replaceChildren(f);
+        comandi();            // «🖨 Stampa» adesso ha un documento
         wrap.dataset.stato = "pronto";
+        vedi(true);
+        stato(`Stampo ${cosaStampo(job)}`);
       } catch (e) {
         if (e?.name === "AbortError" || mio !== gen || chiuso) return;
         // This endpoint is a viewer we can't safely turn into a Blob. Don't
@@ -8266,11 +8349,17 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           if (panel) panel.diagnosi = ultimaDiag;
         }
         panel?.log(`${now()}  ${job.name}: PDF non catturato — ${suo ? `visualizzatore${e.diag ? " [" + e.diag + "]" : ""}` : `${e?.head || e?.message || e}`}`);
+        corpo.innerHTML = suo
+          ? `<div class="pwmsg">Premi <b>↗ Apri e stampa</b> qui sotto, poi <b>Ctrl+P → ${esc(job.printer)}</b>,<br>torna qui e premi «→ Avanti».</div>`
+          : `<div class="pwmsg">Questo documento non è stato scaricato. Risolvi il problema qui sopra e riprova la stampa dal pannello.</div>`;
         comandi({
           viewer: suo,
           err: suo ? `Questo documento non si lascia catturare (è un visualizzatore).${e?.diag ? " [" + e.diag + "]" : ""}`
             : `${e?.head || "Non riuscito"}${e?.body ? " — " + e.body : ""}`,
         });
+        wrap.dataset.stato = "mano";
+        vedi(true);
+        stato(suo ? "Apri e stampa: serve un tuo clic" : "Documento non scaricato", "warn");
       }
     };
 
@@ -8490,6 +8579,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           panel.runPatient = av.giro.paziente || "";
           panel.runData = { steps: Array.isArray(av.giro.steps) ? av.giro.steps : [], added: [],
             lastListUrl: av.giro.listUrl || null, finishedListUrl: null };
+          if (av.riprova && Array.isArray(av.riprova.mancanti)) panel.riprova = av.riprova;
         }
         if (av.striscia) { panel.collapsed = true; panel.striscia = av.striscia; }
         else panel.collapsed = false;

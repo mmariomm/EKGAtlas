@@ -238,13 +238,15 @@ await paziente.locator('#psassist-host [data-seg="consensi"]').click();
 await paziente.waitForSelector("#psassist-host [data-cons]", { timeout: 8000 });
 await paziente.locator('#psassist-host [data-cons="antitetano"]').click();
 await paziente.waitForSelector("#psassist-print iframe", { timeout: 15000 });
-// nessuna anteprima: il PDF sta in una cornice nascosta, e il documento in stampa lo dice data-doc
+// arrivato il PDF, la scheda lo mostra in anteprima (e il dialogo di stampa parte da lì)
 const pdf = await paziente.evaluate(() => {
   const w = document.getElementById("psassist-print");
-  return { src: w.shadowRoot.querySelector("iframe")?.getAttribute("src") || "",
+  const f = w.shadowRoot.querySelector(".pw:not([hidden]) .pwbody iframe");
+  return { src: f?.getAttribute("src") || "", alta: f ? Math.round(f.getBoundingClientRect().height) : 0,
            testa: w.dataset.doc || "" };
 });
 check(pdf.src.startsWith("blob:"), `il PDF si apre da locale (got ${pdf.src.slice(0, 24)}…)`);
+check(pdf.alta >= 200, `e si vede in anteprima (got ${pdf.alta} px)`);
 check(/Antitetano/.test(pdf.testa), `con il titolo corto giusto (got: ${pdf.testa.slice(0, 60)})`);
 check(mock.state.requests.length === primaRete, "e senza una singola richiesta al gestionale");
 
