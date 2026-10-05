@@ -119,16 +119,24 @@ check(await page.locator('#sa4-page form[name="Prestazioni"]').count() === 1, "s
 await $("#confirmnow").click();
 await page.waitForFunction(() => document.title === "ROSSI MARIO", { timeout: 30000 }).catch(() => {});
 check(await page.title() === "ROSSI MARIO", "dopo la Conferma si torna alla scheda del paziente");
-// la stampa non ha finestra: il PDF va in una cornice nascosta (al lavoro si
-// apre il dialogo del browser); nel banco il dialogo non c'è, e lo dicono i
-// comandi compatti nell'angolo
+// arrivato il PDF compare la scheda: il PDF in anteprima e la stampante su cui
+// va (al lavoro si apre anche il dialogo del browser; nel banco il dialogo non c'è)
 await page.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 }).catch(() => {});
 const passo = await page.evaluate(() => document.getElementById("psassist-print")?.dataset.doc || "");
 check(!!passo, "e parte la stampa");
 check(/etichett/i.test(passo), `che comincia dalle etichette (${passo.slice(0, 50)})`);
-await page.waitForSelector("#psassist-print .pc:not([hidden]) .pwhd", { state: "attached", timeout: 15000 }).catch(() => {});
-check(/etichett/i.test(await page.locator("#psassist-print .pwhd").innerText().catch(() => "")),
-  "e i comandi nell'angolo dicono quale documento");
+await page.waitForSelector("#psassist-print .pw:not([hidden]) .pwbody iframe", { state: "attached", timeout: 15000 }).catch(() => {});
+const scheda = await page.evaluate(() => {
+  const r = document.getElementById("psassist-print")?.shadowRoot;
+  const f = r?.querySelector(".pw:not([hidden]) .pwbody iframe");
+  return { testa: r?.querySelector(".pw:not([hidden]) .pwhd")?.textContent?.replace(/\s+/g, " ").trim() || "",
+           alta: f ? Math.round(f.getBoundingClientRect().height) : 0,
+           nota: r?.querySelector(".pwhint")?.textContent || "" };
+});
+check(/etichett/i.test(scheda.testa) && /→ etichettatrice/.test(scheda.testa),
+  `la scheda dice quale documento e su quale stampante (${scheda.testa.slice(0, 70)})`);
+check(scheda.alta >= 200, `e mostra il PDF in anteprima (${scheda.alta} px)`);
+check(/Banco di prova/.test(scheda.nota), `nel banco dice che il dialogo non c'è (${scheda.nota.slice(0, 50)})`);
 await page.keyboard.press("Escape");
 await page.waitForTimeout(300);
 
