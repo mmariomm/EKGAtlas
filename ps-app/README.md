@@ -103,12 +103,13 @@ La stessa gente in due viste, **Lista | Stanza**: l'interruttore sta in fondo al
 schede e si ricorda l'ultima scelta.
 
 **Lista** — i pazienti su cui hai lavorato nel turno, **una riga per paziente**: la striscia del
-**triage**, il nome (un tocco sulla riga apre gli Esiti), la nota in grigio, **visto 20 min fa** —
+**triage**, il nome (un tocco sulla riga apre gli Esiti), accanto il **promemoria** più vicino
+(«15m tropo»), la nota in grigio, **visto 20 min fa** —
 in ambra dopo 3 ore —, oppure **questa pagina** per quello aperto, che è il primo; poi **dove sta**
 nella stanza («Box 3 ▾», o «—»: un tocco e lo sposti), **Richieste** (in azzurro sulla riga sotto il
-mouse), e passandoci sopra la **✕** per toglierlo dall'elenco. Il nome non si taglia mai per primo:
-nella colonna stretta la nota scende sotto il nome e «visto…» si toglie. In fondo, chiusi, gli
-**Archiviati** e **Svuota l'elenco**.
+mouse), e passandoci sopra la **sveglia** per un promemoria e la **✕** per toglierlo dall'elenco. Il
+nome non si taglia mai per primo: nella colonna stretta promemoria e nota scendono sotto il nome e
+«visto…» si toglie. In fondo, chiusi, gli **Archiviati** e **Svuota l'elenco**.
 
 **Stanza** — una mappa minima della stanza, per vedere a colpo d'occhio **dove sta ogni paziente**:
 i **letti** (uno per paziente) e le **aree** senza letto — corridoio, attesa, poltrone — dove ne
@@ -155,7 +156,26 @@ da **12 ore** diventa grigio, dov'è.
 
 **Il triage** è il colore che l'intestazione della scheda mostra quando la apri (ROSSO, ARANCIONE,
 AZZURRO, VERDE, BIANCO): una striscia a sinistra del nome, la stessa in Lista e in Stanza (nel letto
-la porta il letto), e basta — nella Stanza il colore vuol dire solo triage.
+la porta il letto), e basta — nella Stanza il colore vuol dire solo triage. L'unica eccezione è il
+tempo di un promemoria, piccolo in alto a destra, che si fa ambra e rosso quando si avvicina.
+
+**Promemoria.** Un'ora per fare una cosa, per paziente: «11:30 tropo», «tra 2h ECG». Si scrive in
+un campo su una riga, che si apre dalla **sveglia** accanto alla nota del paziente o da quella che
+compare passando su una riga della Lista (come la ✕): **Invio** salva, **Esc** chiude; uscendo dal
+campo col mouse si salva, come la nota. L'orario è il **primo** scritto nel testo — un'ora,
+«11:30», «11.30», «11h30», «11h», «alle 14», o fra quanto, «tra 2h», «+2h», «2h30», «90m», «30 min»,
+«30'», «tra 45 minuti» — e il resto è la cosa da fare. Con una cifra «2h» è fra quanto, con due
+«11h» è un'ora; un numero col punto («K 3.50») cede a qualunque altro orario scritto. Un'ora passata
+da non più di 2 ore è di oggi (già scaduta), più indietro è di domani: il turno di notte. Mentre
+scrivi, sotto il campo, dice quando sarà; senza un orario non salva e lo dice. Accanto al nome, in
+Lista e sulla pagina del paziente, una pill dice quanto manca al più vicino — «15m tropo», «1h40»,
+«ora», «−5m», con «+1» se ce n'è un altro —, per esteso al passaggio del mouse: tranquilla oltre la
+mezz'ora, **ambra** sotto i 30 minuti, **rossa** sotto i 10 e quando è l'ora, con un bagliore lento
+(fermo se il sistema chiede meno movimento). Un tocco sulla pill apre i suoi promemoria: **✓ Fatto**
+(si annulla per 8 secondi) e **+15 min** (da quando era fissato, o da adesso se è già passato).
+Ridotto il pannello, la pill mette un segno rosso — «8m» — solo quando un promemoria è a 10 minuti
+o è passato, col paziente nel passaggio del mouse. I tempi si rifanno da soli ogni 30 secondi, sul
+posto: niente si ridisegna sotto chi scrive.
 
 Tutto resta **solo in questo browser** (`localStorage`), niente va in rete; un altro PC o un altro
 profilo Chrome ha la sua stanza. La **stanza disegnata** (`stanza.v1`: celle intere della griglia,
@@ -163,7 +183,10 @@ così a ogni misura è la stessa) resta come i fogli di dimissione: è un modell
 pazienti. **Chi sta dove** (`stanza.posti.v1`) sono solo numeri di episodio, mai nomi. La pagina di
 login **non** li cancella: chi viene riaperto dopo una sessione scaduta ritrova il suo letto (il
 posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; eliminare un paziente
-(🗑) toglie anche il suo.
+(🗑) toglie anche il suo. I **promemoria** (`promemoria.v1`) sono per episodio: l'ora e la cosa da
+fare, mai un nome; al massimo 10 a paziente, scadono 12 ore dopo l'ora fissata. Nemmeno loro li
+cancella la pagina di login — una sessione scaduta non deve far perdere la troponina delle 11:30 —;
+«Svuota l'elenco» e 🗑 sì.
 
 ### Richieste
 1. **Quesito diagnostico** — casella su una riga, suggerimenti a fianco; l'ultimo resta scritto.
@@ -375,8 +398,8 @@ davvero niente, nemmeno un referto.
 Nell'elenco **Pazienti** ogni scheda ha **Dimesso ✓**: il paziente esce dall'elenco principale e
 finisce fra gli **Archiviati** (in fondo, con il conteggio). Da lì lo si può **↩ riportare** fra gli
 attivi, oppure **🗑 eliminare** — e eliminare vuol dire *tutto quello che il programma sa di lui*:
-la scheda clinica, i referti tenuti, il testo dei referti letti, la nota, e i dati per episodio di
-quella scheda del browser. Chiede conferma una volta e non si torna indietro. L'elenco tiene un
+la scheda clinica, i referti tenuti, il testo dei referti letti, la nota, i promemoria e i dati per
+episodio di quella scheda del browser. Chiede conferma una volta e non si torna indietro. L'elenco tiene un
 giorno e sessanta pazienti: un turno è di dodici ore.
 
 ### Nota sul paziente
@@ -384,7 +407,7 @@ Sotto il nome, una **nota** di due righe che cresce con quello che scrivi. Non c
 **si salva mentre scrivi** (e comunque quando esci dal campo), e compare un «salvata» che scompare
 da sé. È legata al paziente — codice fiscale quando il pannello lo conosce, altrimenti il nome —
 resta cambiando pagina, e scade dopo 24 ore come i dati clinici. Vive nel browser di quel computer:
-non esce da lì.
+non esce da lì. Alla sua destra, i **promemoria** del paziente e la loro sveglia (vedi *Pazienti*).
 
 ### Modificare i fogli in fretta: `dist/dimissioni.html`
 Una **pagina sola**, senza server: si apre col doppio clic e dentro ci sono già gli otto fogli in
@@ -913,7 +936,11 @@ stessi flussi dei test di prodotto.
     episodio semplicemente non esiste.
 14. **Dove finisce il contenuto clinico, detto con precisione.** Dei pazienti *conosciuti*
     restano solo nome, episodio, indirizzo della pagina e colore del triage, al massimo 60 e per 24 ore, con
-    **svuota** a mano e **🗑** per cancellare tutto di uno. Ma valori e testi dei referti letti in un turno stanno nel
+    **svuota** a mano e **🗑** per cancellare tutto di uno. I **promemoria** stanno nel `localStorage`
+    (`promemoria.v1`) per episodio: l'ora e la cosa da fare («tropo»), mai un nome; al massimo 10 a
+    paziente, scadono 12 ore dopo l'ora fissata, la pagina di login non li tocca (sopravvivono a una
+    sessione scaduta, come il posto nella stanza), **svuota** e **🗑** li tolgono, e non vanno da
+    nessuna parte: non c'è una richiesta, né una notifica fuori dal pannello. Ma valori e testi dei referti letti in un turno stanno nel
     `sessionStorage` della scheda: **Chrome lo tiene anche su disco**, nel profilo, per poter
     ripristinare le schede — muore chiudendo la scheda, non prima. I PDF salvati stanno nella
     memoria dell'estensione (su disco), scadono dopo 8 ore, massimo 25, e si azzerano alla
@@ -921,7 +948,7 @@ stessi flussi dei test di prodotto.
     stanno nella memoria dell'estensione, quindi **su disco**: un turno dura dodici ore e non si
     può perdere tutto chiudendo il browser. Scadono da sole **24 ore** dopo l'ultima lettura, al
     massimo 200 pazienti, e **🗑** su un paziente archiviato le cancella subito — schede, referti
-    tenuti e nota. La pagina di login cancella il resto — ma il `sessionStorage` è
+    tenuti, nota e promemoria. La pagina di login cancella il resto — ma il `sessionStorage` è
     **per scheda**: pulisce la scheda in cui è comparso il login, non le altre schede aperte.
     Su un PC condiviso: usa un profilo Chrome tuo e chiudi il browser a fine turno.
 15. **Niente parte da solo, e niente si inventa.** Aprire la pagina di un paziente non legge
