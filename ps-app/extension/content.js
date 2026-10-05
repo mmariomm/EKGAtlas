@@ -3777,6 +3777,9 @@
     .stmap:not(.edit) .stbed.occ { cursor: grab; touch-action: none; }
     .stbedin { position: absolute; inset: 6px 8px 6px 14px; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
     .stbed .stname { flex: none; font-size: 12px; font-weight: 400; line-height: 16px; color: #5B6B7A; }
+    /* nel letto il promemoria sta sulla riga del nome del letto: quella del paziente resta tutta sua */
+    .stbedhd { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; }
+    .stbedhd .stname { flex: 0 1 auto; min-width: 0; }
     .stglifo { flex: none; margin: auto; }
     .stbed .stp { flex: 1 1 auto; min-height: 0; gap: 0; padding: 0; border: 0; border-radius: 0; background: none; }
     .stbed .stp2 .stcoda { font-size: 12px; }
@@ -5153,7 +5156,7 @@
       const stato = i.prec ? `<span class="sttag">episodio precedente</span>` : i.qui ? `<span class="stqui">questa pagina</span>` : "";
       const sotto = `${i.coda && inLetto ? `<span class="stcoda">${esc(i.coda.replace(/^ · /, ""))}</span>` : ""}${stato}${inLetto ? "" : nota}`;
       return `<div class="${cls}" data-stp="${esc(p.ep)}" role="button" tabindex="${edit ? -1 : 0}"${i.prec ? "" : ' aria-haspopup="menu"'} title="${esc(this.pazTitolo(m, i, true))}" aria-label="${esc(i.lungo + i.coda)}${p.triage ? `, triage ${esc(p.triage)}` : ""}${i.qui ? ", questa pagina" : i.prec ? ", episodio precedente" : ""}">
-        <span class="stp1">${i.omonimo ? `<b class="stom" aria-hidden="true">⚠</b>` : ""}<b class="stpn">${esc(i.breve)}${i.coda && !inLetto ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</b>${this.promMini(p.ep, m.prom)}</span>${
+        <span class="stp1">${i.omonimo ? `<b class="stom" aria-hidden="true">⚠</b>` : ""}<b class="stpn">${esc(i.breve)}${i.coda && !inLetto ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</b>${inLetto ? "" : this.promMini(p.ep, m.prom)}</span>${
         sotto ? `<span class="stp2">${sotto}</span>` : ""}${inLetto ? nota : ""}</div>`;
     }
     // il letto vuoto: un letto a tratto, appena accennato
@@ -5200,7 +5203,8 @@
         return `<div class="${cls}" data-letto="${esc(l.id)}" data-drop="letto:${esc(l.id)}"${i ? ` data-occ="${esc(i.breve + i.coda)}" data-occep="${esc(i.p.ep)}"` : ""} role="group"
           aria-label="${esc(l.nome)}: ${i ? esc(i.lungo + i.coda) : "vuoto"}"${edit ? "" : ` title="${esc(l.nome)}${i ? "" : " — trascina qui un paziente"}"`}
           style="${celle(l.c, l.r, PIANTA.lw, PIANTA.lh)}">
-          <div class="stbedin">${this.stanzaNome("letto", l)}${i ? this.stanzaChip(m, i, true) : this.stanzaGlifo(28, "stglifo")}</div>
+          <div class="stbedin">${i ? `<div class="stbedhd">${this.stanzaNome("letto", l)}${this.promMini(i.p.ep, m.prom)}</div>${this.stanzaChip(m, i, true)}`
+            : this.stanzaNome("letto", l) + this.stanzaGlifo(28, "stglifo")}</div>
           ${edit ? this.stanzaCtl("letto", l) : ""}
         </div>`;
       };
