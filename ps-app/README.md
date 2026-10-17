@@ -452,8 +452,10 @@ Un elenco di **esami obiettivi da incollare in cartella**, scritti dal medico e 
   paziente entra qui (è un controllo del collaudo).
 
 I testi stanno in `src/eo.json` e sono compilati dentro l'estensione: **zero richieste al server**.
-In questa versione **non si modificano dal pannello** — per cambiarli si modifica quel file e si
-ricompila (`npm run build`).
+**✎ li riscrive dal pannello**, come i fogli di dimissione: accanto all'EO generale e accanto al
+caso scelto. La tua versione resta su questo computer e si copia al posto dell'originale; un
+**•** accanto al nome (anche nella tendina) dice che è riscritto da te, **⟳** che nel frattempo è
+cambiato l'originale. **↺ Originale** (due tocchi) torna al testo di partenza.
 
 ### Consensi
 Sei moduli da firmare, dentro l'estensione: **Emocolture**, **HIV Dipendente**, **Lesioni

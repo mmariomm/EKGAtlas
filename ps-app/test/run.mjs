@@ -3837,6 +3837,49 @@ async function scenarioEo(browser) {
   // i modelli non sono dati di nessuno: nessun nome di paziente in giro
   const testo = await $panel(page, ".sec").innerText();
   check(scen, !/ROSSI|MARIO/.test(testo), "nessun dato di paziente in questa schermata");
+
+  // ---- ✎ riscrive un testo dell'EO, e un punto dice che è tuo
+  const scrivi = (v) => page.evaluate((v) => {
+    const t = document.getElementById("psassist-host").shadowRoot.querySelector("#eoarea");
+    t.value = v; t.dispatchEvent(new Event("input", { bubbles: true }));
+  }, v);
+  check(scen, (await $panel(page, '.drow [data-eoedit="base"]').count()) === 1 && (await $panel(page, "#eoedit").count()) === 1,
+    "✎ accanto all'EO generale e accanto al caso scelto");
+  await $panel(page, '[data-eoedit="base"]').click();
+  await page.waitForSelector("#psassist-host #eoarea", { timeout: 8000 });
+  check(scen, (await $panel(page, '[data-seg="eo"].on').count()) === 1 && (await $panel(page, "#back").count()) === 1,
+    "l'editor sta nella scheda EO, con ‹ per tornare");
+  await scrivi("Vigile, orientato — versione mia.");
+  await $panel(page, "#eosave").click();
+  await page.waitForSelector('#psassist-host [data-eocopy="base"]', { timeout: 8000 });
+  check(scen, (await $panel(page, '[data-eocopy="base"] .dmod').count()) === 1 && /salvato/.test(await $panel(page, ".bd").innerText()),
+    "salvato: un punto accanto al nome, e basta");
+  await $panel(page, '[data-eocopy="base"]').click();
+  await page.waitForTimeout(300);
+  check(scen, /versione mia/.test(await page.evaluate(() => navigator.clipboard.readText())), "e si copia la versione riscritta");
+  await riapriDopoCopia(page);
+  // un caso riscritto porta il punto anche nella tendina
+  await $panel(page, "#eoedit").click();
+  await page.waitForSelector("#psassist-host #eoarea", { timeout: 8000 });
+  await scrivi("Nistagmo assente. Mia aggiunta.");
+  await $panel(page, "#eosave").click();
+  await page.waitForSelector("#psassist-host #eocaso", { timeout: 8000 });
+  const voce = await page.locator('#psassist-host #eocaso option[value="caso:vertigine"]').innerText();
+  check(scen, / •$/.test(voce.trim()), `nella tendina il caso riscritto ha il punto (got ${voce.trim()})`);
+  await page.reload();
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="eo"]').click();
+  await page.waitForSelector('#psassist-host [data-eocopy="base"]', { timeout: 10000 });
+  check(scen, (await $panel(page, '[data-eocopy="base"] .dmod').count()) === 1, "le modifiche restano dopo un ricaricamento");
+  // ↺ Originale chiede conferma, poi rimette il testo di partenza
+  await $panel(page, '[data-eoedit="base"]').click();
+  await page.waitForSelector("#psassist-host #eoreset", { timeout: 8000 });
+  await $panel(page, "#eoreset").click();
+  await page.waitForTimeout(150);
+  check(scen, /Confermi/.test(await $panel(page, "#eoreset").innerText()), "↺ Originale chiede conferma");
+  await $panel(page, "#eoreset").click();
+  await page.waitForSelector('#psassist-host [data-eocopy="base"]', { timeout: 8000 });
+  check(scen, (await $panel(page, '[data-eocopy="base"] .dmod').count()) === 0, "e torna l'originale, senza punto");
   await context.close();
 }
 

@@ -2038,7 +2038,7 @@
     forgetQuesiti();
     try {
       for (const k of Object.keys(sessionStorage)) {
-        if (k.startsWith(NS) && /(^|\.)(ris|visto|reftxt|log|refopen|receipt|confirm|queue|print|ui|afterNav|dimdraft|storico|corsa)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
+        if (k.startsWith(NS) && /(^|\.)(ris|visto|reftxt|log|refopen|receipt|confirm|queue|print|ui|afterNav|dimdraft|eodraft|storico|corsa)\b/.test(k.slice(NS.length))) sessionStorage.removeItem(k);
       }
     } catch { /* blocked storage: nothing to clear */ }
     store.set(APERTA, null);    // porta un nome: se ne va col turno
@@ -2362,12 +2362,37 @@
 
   // EO — un elenco piatto chiave→voce, così una riga o una tendina copiano
   // allo stesso modo. I testi sono quelli scritti dal medico, verbatim.
+  // Il medico li può riscrivere (✎), come i fogli di dimissione: la sua
+  // versione sta in "eo.v1" e ricorda da quale originale è partita, così se
+  // l'originale cambia glielo si dice.
+  const eoKey = "eo.v1";
   function eoVoci() {
     const out = {};
     if (EO.base && EO.base.testo) out.base = { nome: EO.base.nome || "EO generale", meta: EO.base.meta || "", testo: EO.base.testo, gruppo: "base" };
     for (const v of EO.casi || []) if (v && v.k && v.testo) out["caso:" + v.k] = { nome: v.nome || v.k, testo: v.testo, gruppo: "casi" };
     for (const v of EO.frasi || []) if (v && v.k && v.testo) out["frase:" + v.k] = { nome: v.nome || v.k, testo: v.testo, gruppo: "frasi" };
+    const mie = store.get(eoKey, {}) || {};
+    for (const [k, v] of Object.entries(out)) {
+      const m = Object.prototype.hasOwnProperty.call(mie, k) && dimValido(mie[k]) ? mie[k] : null;
+      v.originale = v.testo;
+      if (!m) continue;
+      v.testo = m.testo; v.modificato = true;
+      v.aggiornato = !!(m.base && m.base !== impronta(v.originale));
+    }
     return out;
+  }
+  function salvaEo(k, testo) {
+    const v = eoVoci()[k];
+    if (!v) return false;
+    const mie = store.get(eoKey, {}) || {};
+    if (testo.trim() === v.originale.trim()) delete mie[k];   // tornato com'era: niente da ricordare
+    else mie[k] = { testo, base: impronta(v.originale) };
+    return store.set(eoKey, mie);
+  }
+  function ripristinaEo(k) {
+    const mie = store.get(eoKey, {}) || {};
+    delete mie[k];
+    return store.set(eoKey, mie);
   }
 
   function learnedCatalog() { return store.get("catalog.v1", {}); }
@@ -4046,7 +4071,7 @@
           // mai ricostruire una schermata in cui si sta scrivendo
           const scrive = ["nota", "prin"].includes(this.root.activeElement?.id);
           if (this.runState !== "running" && !scrive
-              && this.view !== "dimtesto" && this.view !== "dimimport") this.render();
+              && this.view !== "dimtesto" && this.view !== "dimimport" && this.view !== "eotesto") this.render();
         });
         this._titleObs.observe(titleEl, { childList: true, characterData: true, subtree: true });
       }
@@ -4838,6 +4863,7 @@
       else if (this.view === "referto") body = this.viewReferto();
       else if (this.view === "dimissioni") body = this.viewDimissioni();
       else if (this.view === "dimtesto") body = this.viewDimTesto();
+      else if (this.view === "eotesto") body = this.viewEoTesto();
       else if (this.view === "dimimport") body = this.viewDimImport();
       else if (this.view === "consensi") body = this.viewConsensi();
       else if (this.view === "eo") body = this.viewEo();
@@ -4845,7 +4871,7 @@
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
       else body = this.viewHome(patientName, ep);
       // la stanza è una mappa: prende tutta la finestra che resta
-      const inStanza = !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "tempi", "richieste"].includes(this.view)
+      const inStanza = !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "richieste"].includes(this.view)
         && this.pazVista() === "stanza";
 
       const running = this.runState === "running";
@@ -4884,7 +4910,7 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", tempi: "Tempi" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi" }[this.view] || "";
       // the discharge sheets are templates: no episode belongs in that header
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
       // accanto al nome, l'episodio: di chi sono i dati, sempre a colpo d'occhio
@@ -4892,7 +4918,7 @@
       // Il titolo è il paziente, e solo lui: dove non c'è, niente titolo — lo
       // dice la scheda accesa, e sulla lista PS la scheda Pazienti fa anche da ‹.
       // Il ‹ resta sul paziente, e dentro un referto o un foglio di dimissione.
-      const indietro = !!section && (sulPaziente || ["referto", "dimtesto", "dimimport"].includes(this.view));
+      const indietro = !!section && (sulPaziente || ["referto", "dimtesto", "dimimport", "eotesto"].includes(this.view));
       const titolo = this.runState || (sulPaziente && !inHome) ? who : "";
       // Aperto: una finestra al centro, l'85% dello schermo (o come l'hai
       // lasciata tu). Ridotto: la pill, dove l'hai messa (in alto a destra
@@ -4946,6 +4972,7 @@
                 ${indietro ? `<button class="iconbtn" id="back" title="${
                   this.view === "referto" ? "Torna agli esiti"
                   : this.view === "dimtesto" || this.view === "dimimport" ? "Torna ai fogli di dimissione"
+                  : this.view === "eotesto" ? "Torna all'esame obiettivo"
                   : "Tutti i pazienti"}" aria-label="Indietro">${ICO.indietro}</button>` : `<span class="logo">${LOGO_BLU}</span>`}${titolo ? `<b class="who">${esc(titolo)}</b>` : ""}
                 ${sub ? `<span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>` : ""}
                 <span class="hsp"></span>
@@ -4976,7 +5003,7 @@
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
                   <button class="${this.view === "esiti" || this.view === "referto" ? "on" : ""}" data-seg="esiti">Esiti${this.nEsiti() ? ` <span class="n">${this.nEsiti()}</span>` : ""}</button>`
                   : `<button class="${inHome || !section ? "on" : ""}" data-seg="home">Pazienti</button>`}
-                  <button class="${this.view === "eo" ? "on" : ""}" data-seg="eo" title="Esame obiettivo da copiare">EO</button>
+                  <button class="${this.view === "eo" || this.view === "eotesto" ? "on" : ""}" data-seg="eo" title="Esame obiettivo da copiare">EO</button>
                   <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi">Consensi</button>
                   <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
                   ${(inHome || !section) && this.stanzaAzioni ? `<span class="segdx">${this.stanzaAzioni()}</span>` : ""}
@@ -5041,7 +5068,7 @@
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {
-      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "tempi", "richieste"].includes(this.view);
+      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "richieste"].includes(this.view);
     }
     // Le azioni dei Pazienti, in fondo alla fila delle schede: Lista | Stanza,
     // e basta. In Modifica, al suo posto, + Letto, + Area e Fine. Si entra in
@@ -6703,7 +6730,7 @@
       // si ridisegna solo se è cambiato qualcosa, e mai sopra una schermata in
       // cui si sta scrivendo: tornare su questa scheda non deve costare il cursore
       if ((this.storico?.letto || 0) + "|" + this.storicoAltri === prima) return;
-      if (this.view === "dimtesto" || this.view === "dimimport") return;
+      if (this.view === "dimtesto" || this.view === "dimimport" || this.view === "eotesto") return;
       if (this.root.activeElement && this.root.activeElement.id === "nota") return;
       this.render();
     }
@@ -7065,7 +7092,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const l = Object.entries(voci).filter(([, v]) => v.gruppo === gruppo);
         if (!l.length) return "";
         return `<optgroup label="${esc(etichetta)}">${l.map(([k, v]) =>
-          `<option value="${esc(k)}"${k === sel ? " selected" : ""}>${esc(v.nome)}</option>`).join("")}</optgroup>`;
+          `<option value="${esc(k)}"${k === sel ? " selected" : ""}>${esc(v.nome)}${v.modificato ? " •" : ""}</option>`).join("")}</optgroup>`;
       };
       if (!base && !Object.keys(voci).length) return `<div class="hint">Modelli di EO non disponibili in questa versione.</div>`;
       return `
@@ -7075,9 +7102,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
             <div class="drow">
               <button class="dcopia" data-eocopy="base" title="Copia negli appunti l'esame obiettivo generale"
                       aria-label="Copia l'esame obiettivo generale">
-                <span class="dnome">${esc(base.nome)}</span>
+                <span class="dnome">${esc(base.nome)}${base.aggiornato ? `<span class="dmod agg" title="L'originale è cambiato dopo la tua modifica">⟳</span>` : base.modificato ? `<span class="dmod" title="Testo modificato da te">•</span>` : ""}</span>
                 <span class="dmeta">${esc(base.meta)}</span><span class="dico">⧉</span>
               </button>
+              <button class="dbtn" data-eoedit="base" title="Riscrivi l'esame obiettivo generale" aria-label="Modifica l'esame obiettivo generale">✎</button>
             </div>` : ""}
           <div class="lbl">Aggiungi per caso</div>
           <select class="res" id="eocaso" aria-label="Aggiunta di esame obiettivo da copiare">
@@ -7089,10 +7117,35 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
             <button class="dcopia" data-eocopy="${esc(sel)}" id="eoricopia" title="Copia di nuovo questo testo">
               <span class="dnome">Copia di nuovo</span><span class="dico">⧉</span>
             </button>
+            <button class="dbtn" data-eoedit="${esc(sel)}" id="eoedit" title="Riscrivi questo testo" aria-label="Modifica questo testo">✎</button>
           </div>
           <div class="eotxt" id="eotxt" ${scelta ? "" : "hidden"}>${esc(scelta ? scelta.testo : "")}</div>
-          <div class="hint">Prima l'EO generale, poi l'aggiunta del caso: due incollate. I testi restano
-            uguali per tutti i pazienti — quello che riguarda questo paziente si scrive in cartella.</div>
+          <div class="hint">Prima l'EO generale, poi l'aggiunta del caso: due incollate. ✎ riscrive un testo per
+            le volte successive (• = riscritto da te). Restano uguali per tutti i pazienti — quello che
+            riguarda questo paziente si scrive in cartella.</div>
+        </div>`;
+    }
+
+    // Riscrivere un testo dell'EO: come un foglio di dimissione. La bozza si
+    // tiene a ogni tasto, perché il gestionale ridisegna la pagina sotto le mani.
+    eoDraftKey(k) { return "eodraft." + k; }
+    viewEoTesto() {
+      const k = this.viewId;
+      const v = eoVoci()[k];
+      if (!v) return `<div class="hint">Testo non disponibile.</div>`;
+      const bozza = tabStore.get(this.eoDraftKey(k), null);
+      const testo = bozza && typeof bozza.testo === "string" ? bozza.testo : v.testo;
+      return `
+        <div class="sec">
+          <div class="lbl">${esc(v.nome)}
+            <button class="mini" id="eocopia" title="Copia questo testo senza salvarlo">⧉ Copia</button>
+            <button class="mini" id="eosave" title="Tieni questo testo per le prossime volte">✓ Salva</button>
+            ${v.modificato ? `<button class="mini" id="eoreset" title="Butta le tue modifiche e riprendi l'originale">↺ Originale</button>` : ""}
+          </div>
+          ${v.aggiornato ? `<div class="banner warn">L'originale di questo testo è stato aggiornato dopo la tua modifica: con ↺ Originale prendi la versione nuova.</div>` : ""}
+          ${testo !== v.testo ? `<div class="banner ok">Bozza non salvata, ripresa da dove l'avevi lasciata.</div>` : ""}
+          <textarea class="dedit" id="eoarea" spellcheck="false" aria-label="Testo di ${esc(v.nome)}">${esc(testo)}</textarea>
+          <div class="hint">Salva tiene questo testo per le prossime volte. Qui non vanno dati del paziente: è un modello.</div>
         </div>`;
     }
 
@@ -7605,6 +7658,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#back")?.addEventListener("click", () => this.setView(
         this.view === "referto" ? "esiti"
         : this.view === "dimtesto" || this.view === "dimimport" ? "dimissioni"
+        : this.view === "eotesto" ? "eo"
         : "home"));
       this.root.querySelectorAll("[data-seg]").forEach((b) => b.addEventListener("click", () => this.setView(b.getAttribute("data-seg"))));
       $("#archtog")?.addEventListener("click", () => { this.mostraArch = !this.mostraArch; this.render(); });
@@ -7709,11 +7763,47 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         if (txt) { txt.textContent = v ? v.testo : ""; txt.hidden = !v; }
         if (riga) riga.hidden = !v;
         if (btn) btn.setAttribute("data-eocopy", k || "");
+        this.root.querySelector("#eoedit")?.setAttribute("data-eoedit", k || "");
         if (!v) return;
         this.persistUi();
         if (btn) { const ok = await copiaTesto(v.testo); eoFatto(btn, ok); this.dopoCopia(ok); }
       });
       this.root.querySelectorAll("[data-dedit]").forEach((b) => b.addEventListener("click", () => this.setView("dimtesto", b.getAttribute("data-dedit"))));
+      // EO: ✎ apre il testo, che si riscrive come un foglio di dimissione
+      this.root.querySelectorAll("[data-eoedit]").forEach((b) => b.addEventListener("click", () => {
+        const k = b.getAttribute("data-eoedit");
+        if (k && eoVoci()[k]) this.setView("eotesto", k);
+      }));
+      const eoArea = this.root.querySelector("#eoarea");
+      if (eoArea) eoArea.addEventListener("input", () => tabStore.set(this.eoDraftKey(this.viewId), { ts: Date.now(), testo: eoArea.value }));
+      $("#eocopia")?.addEventListener("click", async () => {
+        const ok = await copiaTesto(eoArea ? eoArea.value : "");
+        segnaCopia(this.root.querySelector("#eocopia"), ok);
+        this.dopoCopia(ok);
+      });
+      $("#eosave")?.addEventListener("click", () => {
+        const v = eoVoci()[this.viewId];
+        if (!eoArea || !v) return;
+        if (!eoArea.value.trim()) { this.message = "Il testo è vuoto: non lo salvo."; this.render(); return; }
+        const scritto = salvaEo(this.viewId, eoArea.value);
+        tabStore.set(this.eoDraftKey(this.viewId), null);
+        this.setView("eo", null, scritto
+          ? { ok: `«${v.nome}» salvato: sarà questo il testo copiato d'ora in poi.` }
+          : `«${v.nome}» NON salvato: la memoria di questo browser è piena o bloccata.`);
+      });
+      $("#eoreset")?.addEventListener("click", (ev) => {
+        const b = ev.currentTarget, v = eoVoci()[this.viewId] || {};
+        // un tocco non deve poter buttare un testo scritto dal medico
+        if (b.dataset.sicuro !== "1") {
+          const etichetta = b.textContent;
+          b.dataset.sicuro = "1"; b.textContent = "Confermi?";
+          setTimeout(() => { if (b.isConnected && b.dataset.sicuro === "1") { b.dataset.sicuro = ""; b.textContent = etichetta; } }, 4000);
+          return;
+        }
+        const scritto = ripristinaEo(this.viewId);
+        tabStore.set(this.eoDraftKey(this.viewId), null);
+        this.setView("eo", null, scritto ? { ok: `«${v.nome || "Testo"}» riportato all'originale.` } : "Non ripristinato: la memoria di questo browser è bloccata.");
+      });
       // every keystroke goes into the tab's draft: a re-render, a page change
       // or a mis-click can no longer throw away a rewritten sheet
       const area = this.root.querySelector("#dimarea");
