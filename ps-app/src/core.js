@@ -2327,9 +2327,15 @@
     return (h >>> 0).toString(36);
   }
   const dimValido = (v) => !!(v && typeof v.testo === "string" && v.testo.trim());
+  // un foglio nuovo, prima di avere un nome: la chiave dell'editor vuoto
+  const DIM_NUOVO = "+nuovo";
   function dimissioni() {
     const mie = store.get(dimKey, {});
     const out = {};
+    // i fogli scritti dal medico vengono per primi: li ha voluti lui
+    for (const [k, v] of Object.entries(mie)) {
+      if (!DIMISSIONI[k] && dimValido(v)) out[k] = { nome: (v.nome || k), testo: v.testo, originale: "", modificato: true, mio: true };
+    }
     for (const [k, v] of Object.entries(DIMISSIONI)) {
       const m = dimValido(mie[k]) ? mie[k] : null;
       out[k] = {
@@ -2338,9 +2344,6 @@
         // the shipped text moved AFTER this doctor forked it
         aggiornato: !!(m && m.base && m.base !== impronta(v.testo)),
       };
-    }
-    for (const [k, v] of Object.entries(mie)) {
-      if (!out[k] && dimValido(v)) out[k] = { nome: (v.nome || k), testo: v.testo, originale: "", modificato: true, mio: true };
     }
     return out;
   }
@@ -3407,6 +3410,22 @@
     .dmeta { flex: 0 0 auto; font-size: 10.5px; color: #5B6B7A; }
     .dico { flex: 0 0 auto; font-size: 13px; color: #6E8398; }
     .dmod { color: #0B5CAD; font-weight: 800; margin-left: 5px; }
+    .dtuo { margin-left: 7px; padding: 1px 7px; border-radius: 999px; background: #EAF2FA; color: #0B5CAD;
+            font-size: 10.5px; font-weight: 600; vertical-align: 1px; }
+    /* in fondo all'elenco, un foglio da scrivere: tratteggiato, come un posto libero */
+    .dnuovo { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 38px; margin-top: 2px; padding: 8px 11px;
+              border: 1px dashed #C4D0DC; border-radius: 9px; background: transparent; cursor: pointer; text-align: left;
+              font: inherit; font-size: 12.5px; font-weight: 600; color: #5B6B7A; transition: border-color .12s, color .12s, background-color .12s; }
+    .dnuovo:hover { border-color: #0B5CAD; color: #0B5CAD; background: #F4F9FD; }
+    .dnuovo:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .dplus { font-size: 17px; font-weight: 400; line-height: 1; }
+    /* il nome del foglio tuo: un titolo che si scrive, non un modulo */
+    .dhd { display: flex; align-items: center; gap: 6px; max-width: 820px; margin-bottom: 10px; }
+    .dhd .mini { float: none; flex: none; white-space: nowrap; }
+    .dhd input.dtit { flex: 1 1 auto; width: auto; min-width: 0; border: 0; border-bottom: 1px solid #D9E2EC; border-radius: 0;
+                      background: transparent; padding: 6px 2px; font: inherit; font-size: 16px; font-weight: 600; color: #16232E; }
+    .dhd input.dtit:focus, .dhd input.dtit:focus-visible { outline: none; border-bottom-color: #0B5CAD; }
+    .dhd input.dtit::placeholder { color: #A3B2C2; font-weight: 400; }
     .dmod.agg { color: #A2600A; }
     .dbtn { flex: 0 0 auto; min-width: 38px; border: 1px solid #E3E8EF; border-radius: 9px;
             background: #F8FBFE; color: #35506B; font-size: 13px; cursor: pointer; }
@@ -6872,13 +6891,13 @@
       const righe = chiavi.map((k) => {
         const d = tutte[k];
         let sep = "";
-        if (!d.rivisto && !stacco && chiavi.some((x) => tutte[x].rivisto)) {
+        if (!d.mio && !d.rivisto && !stacco && chiavi.some((x) => tutte[x].rivisto)) {
           stacco = true;
           sep = `<div class="dsep"><span>non ancora rivisti</span></div>`;
         }
         const n = d.testo.split("\n").filter((r) => r.trim()).length;
-        const segno = d.aggiornato
-          ? `<span class="dmod agg" title="L'originale è cambiato dopo la tua modifica">⟳</span>`
+        const segno = d.mio ? `<span class="dtuo" title="Un foglio scritto da te">tuo</span>`
+          : d.aggiornato ? `<span class="dmod agg" title="L'originale è cambiato dopo la tua modifica">⟳</span>`
           : d.modificato ? `<span class="dmod" title="Testo modificato da te">•</span>` : "";
         return `${sep}
         <div class="drow">
@@ -6904,8 +6923,10 @@
             <button class="mini" id="dimexport" title="Salva i tuoi testi in un file JSON">⬇ JSON</button>
             <button class="mini" id="dimimport" title="Rimetti i testi di un JSON esportato">⤒ Importa</button>
           </div>
-          <div class="dlist">${righe}</div>
-          <div class="hint">Clic sulla riga per copiare il foglio, ✎ per modificarlo una volta per tutte. Le modifiche restano su questo computer.</div>
+          <div class="dlist">${righe}
+            <button type="button" class="dnuovo" id="dimnuovo" title="Scrivi un foglio tuo: resta in cima all'elenco, su questo computer"><span class="dplus" aria-hidden="true">+</span>Nuovo foglio di dimissione</button>
+          </div>
+          <div class="hint">Clic sulla riga per copiare il foglio, ✎ per modificarlo una volta per tutte. Le modifiche e i fogli tuoi restano su questo computer.</div>
         </div>`;
     }
 
@@ -6915,21 +6936,32 @@
     dimDraftKey(k) { return "dimdraft." + k; }
     viewDimTesto() {
       const k = this.viewId;
-      const d = dimissioni()[k];
+      // un foglio nuovo non è ancora nell'elenco: nasce vuoto, nome compreso
+      const nuovo = k === DIM_NUOVO;
+      const d = nuovo ? { nome: "", testo: "", mio: true, nuovo: true } : dimissioni()[k];
       if (!d) return `<div class="hint">Testo non disponibile.</div>`;
       const bozza = tabStore.get(this.dimDraftKey(k), null);
       const testo = bozza && typeof bozza.testo === "string" ? bozza.testo : d.testo;
+      const nome = bozza && typeof bozza.nome === "string" ? bozza.nome : d.nome;
+      const bottoni = `
+            <button class="mini" id="dimcopy" title="Copia questo testo senza salvarlo">⧉ Copia</button>
+            <button class="mini" id="dimsave" title="${nuovo ? "Aggiungi questo foglio ai tuoi" : "Tieni questo testo per le prossime dimissioni"}">✓ Salva</button>
+            ${d.modificato && !nuovo ? `<button class="mini" id="dimreset" title="${d.mio ? "Elimina questo foglio" : "Butta le tue modifiche e riprendi l'originale"}">${d.mio ? "✕ Elimina" : "↺ Originale"}</button>` : ""}`;
+      // i fogli tuoi si possono anche rinominare; quelli del pannello no
+      const testa = d.mio
+        ? `<div class="dhd"><input class="dtit" id="dimnome" type="text" maxlength="60" value="${esc(nome)}" spellcheck="false" autocomplete="off"
+             placeholder="Nome del foglio — es. Lombalgia acuta" aria-label="Nome del foglio">${bottoni}</div>`
+        : `<div class="lbl">${esc(d.nome)}${bottoni}</div>`;
       return `
         <div class="sec">
-          <div class="lbl">${esc(d.nome)}
-            <button class="mini" id="dimcopy" title="Copia questo testo senza salvarlo">⧉ Copia</button>
-            <button class="mini" id="dimsave" title="Tieni questo testo per le prossime dimissioni">✓ Salva</button>
-            ${d.modificato ? `<button class="mini" id="dimreset" title="${d.mio ? "Elimina questo foglio" : "Butta le tue modifiche e riprendi l'originale"}">${d.mio ? "✕ Elimina" : "↺ Originale"}</button>` : ""}
-          </div>
+          ${testa}
           ${d.aggiornato ? `<div class="banner warn">L'originale di questo foglio è stato aggiornato dopo la tua modifica: con ↺ Originale prendi la versione nuova.</div>` : ""}
-          ${testo !== d.testo ? `<div class="banner ok">Bozza non salvata, ripresa da dove l'avevi lasciata.</div>` : ""}
-          <textarea class="dedit" id="dimarea" spellcheck="false" aria-label="Testo del foglio ${esc(d.nome)}">${esc(testo)}</textarea>
-          <div class="hint">Salva tiene questo testo per le prossime volte. Per un foglio su misura per QUESTO paziente, modifica e usa ⧉ Copia senza salvare: qui non vanno dati del paziente.</div>
+          ${!nuovo && (testo !== d.testo || nome !== d.nome) ? `<div class="banner ok">Bozza non salvata, ripresa da dove l'avevi lasciata.</div>` : ""}
+          <textarea class="dedit" id="dimarea" spellcheck="false" aria-label="Testo del foglio ${esc(nome || "nuovo")}"
+            placeholder="Le indicazioni per chi va a casa: terapia, controlli, quando tornare. Niente dati del paziente: è un modello.">${esc(testo)}</textarea>
+          <div class="hint">${nuovo
+            ? "✓ Salva lo aggiunge ai tuoi fogli, in cima all'elenco. Resta su questo computer (⬇ JSON per portarlo su un altro)."
+            : "Salva tiene questo testo per le prossime volte. Per un foglio su misura per QUESTO paziente, modifica e usa ⧉ Copia senza salvare: qui non vanno dati del paziente."}</div>
         </div>`;
     }
 
@@ -7685,7 +7717,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // every keystroke goes into the tab's draft: a re-render, a page change
       // or a mis-click can no longer throw away a rewritten sheet
       const area = this.root.querySelector("#dimarea");
-      if (area) area.addEventListener("input", () => tabStore.set(this.dimDraftKey(this.viewId), { ts: Date.now(), testo: area.value }));
+      const inNome = this.root.querySelector("#dimnome");
+      const bozza = () => tabStore.set(this.dimDraftKey(this.viewId), { ts: Date.now(), testo: area ? area.value : "", ...(inNome ? { nome: inNome.value } : {}) });
+      if (area) area.addEventListener("input", bozza);
+      if (inNome) {
+        inNome.addEventListener("input", bozza);
+        inNome.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); area?.focus(); } });
+        if (!inNome.value && !this.root.activeElement) inNome.focus();   // un foglio nuovo comincia dal nome
+      }
+      $("#dimnuovo")?.addEventListener("click", () => this.setView("dimtesto", DIM_NUOVO));
       $("#dimcopy")?.addEventListener("click", async () => {
         const b = this.root.querySelector("#dimcopy");
         let ok = false;
@@ -7694,16 +7734,28 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.dopoCopia(ok);
       });
       $("#dimsave")?.addEventListener("click", () => {
-        const d = dimissioni()[this.viewId];
+        const nuovo = this.viewId === DIM_NUOVO;
+        const tutte = dimissioni();
+        const d = nuovo ? { nome: "", mio: true } : tutte[this.viewId];
         if (!area || !d) return;
-        if (!area.value.trim()) { this.message = "Il testo è vuoto: non lo salvo."; this.render(); return; }
-        const scritto = salvaDimissione(this.viewId, d.nome, area.value);
+        const nome = inNome ? inNome.value.replace(/\s+/g, " ").trim().slice(0, 60) : d.nome;
+        const no = (m) => { bozza(); this.message = m; this.render(); };
+        if (!nome) return no("Dai un nome al foglio: è quello che vedrai nell'elenco.");
+        if (!area.value.trim()) return no("Il testo è vuoto: non lo salvo.");
+        // due righe con lo stesso nome, nell'elenco, non si distinguono
+        if (Object.entries(tutte).some(([k, x]) => k !== this.viewId && x.nome.trim().toLowerCase() === nome.toLowerCase())) {
+          return no(`C'è già un foglio «${nome}»: scegli un altro nome.`);
+        }
+        let k = this.viewId;
+        if (nuovo) do k = "mio-" + Math.random().toString(36).slice(2, 8); while (tutte[k] || DIMISSIONI[k]);
+        const scritto = salvaDimissione(k, nome, area.value);
         tabStore.set(this.dimDraftKey(this.viewId), null);
-        this.log(`${now()}  foglio di dimissione «${d.nome}» aggiornato`);
+        this.log(`${now()}  foglio di dimissione «${nome}» ${nuovo ? "aggiunto" : "aggiornato"}`);
         // never say "saved" when the browser refused to write it
-        this.setView("dimissioni", null, scritto
-          ? { ok: `«${d.nome}» salvato: sarà questo il testo copiato d'ora in poi.` }
-          : `«${d.nome}» NON salvato: la memoria di questo browser è piena o bloccata.`);
+        this.setView("dimissioni", null, !scritto
+          ? `«${nome}» NON salvato: la memoria di questo browser è piena o bloccata.`
+          : nuovo ? { ok: `«${nome}» aggiunto ai tuoi fogli, in cima all'elenco.` }
+          : { ok: `«${nome}» salvato: sarà questo il testo copiato d'ora in poi.` });
       });
       $("#dimreset")?.addEventListener("click", (ev) => {
         const b = ev.currentTarget;
@@ -7719,9 +7771,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const nome = d.nome || this.viewId;
         const scritto = ripristinaDimissione(this.viewId);
         tabStore.set(this.dimDraftKey(this.viewId), null);
-        this.setView("dimissioni", null, scritto
-          ? { ok: `«${nome}» riportato al testo originale.` }
-          : `«${nome}» non ripristinato: la memoria di questo browser è bloccata.`);
+        this.setView("dimissioni", null, !scritto
+          ? `«${nome}» non ${d.mio ? "eliminato" : "ripristinato"}: la memoria di questo browser è bloccata.`
+          : d.mio ? { ok: `«${nome}» eliminato.` } : { ok: `«${nome}» riportato al testo originale.` });
       });
       $("#dimexport")?.addEventListener("click", async () => {
         const tutte = dimissioni();

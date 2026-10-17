@@ -620,6 +620,11 @@ foglio i motivi per **tornare in Pronto Soccorso**.
   serve, e leggerlo qui costerebbe solo uno scroll.
 - **Un tocco sulla riga copia tutto il foglio** negli appunti, pronto da incollare nel verbale. Il
   bersaglio è la riga intera, non un'icona da 13 px.
+- **+ Nuovo foglio di dimissione**, in fondo all'elenco: un nome (*Lombalgia acuta*) e il testo, ✓ Salva.
+  I **fogli tuoi** stanno in cima, col segno *tuo*; si copiano come gli altri, ✎ li riscrive o li
+  rinomina, ✕ Elimina li toglie (chiede conferma). Due fogli con lo stesso nome non si possono
+  avere: nell'elenco non si distinguerebbero. Come tutti i fogli sono **modelli**, senza dati del
+  paziente, e restano su questo computer (⬇ JSON per portarli su un altro).
 - **✎** apre il testo in grande e lo riscrive **per le volte successive**: le modifiche restano su
   quel computer (`localStorage`) — **sopravvivono al logout, alla chiusura del browser e agli
   aggiornamenti del programma**, perché sono tue e non dati di un paziente. Non finiscono nel

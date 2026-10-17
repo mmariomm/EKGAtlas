@@ -4002,6 +4002,57 @@ async function scenarioDimissioni(browser) {
     "una chiave __proto__ nel JSON non viene scritta");
   check(scen, Object.keys(dopoImport).length === 2, "i fogli identici all'originale non diventano miei");
   check(scen, await page.evaluate(() => ({}).veleno === undefined), "e il prototipo della pagina resta intatto");
+
+  // ---- un foglio tuo: «+ Nuovo foglio» in fondo all'elenco
+  const scrivi = (sel, v) => page.evaluate(([sel, v]) => {
+    const el = document.getElementById("psassist-host").shadowRoot.querySelector(sel);
+    el.value = v; el.dispatchEvent(new Event("input", { bubbles: true }));
+  }, [sel, v]);
+  check(scen, (await $panel(page, ".dlist > .dnuovo:last-child").count()) === 1, "in fondo all'elenco c'è «+ Nuovo foglio di dimissione»");
+  await $panel(page, "#dimnuovo").click();
+  await page.waitForSelector("#psassist-host #dimnome", { timeout: 8000 });
+  check(scen, await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id === "dimnome"),
+    "il foglio nuovo comincia dal nome, già col cursore lì");
+  await scrivi("#dimarea", "VERTIGINE PAROSSISTICA\nEvitare i movimenti bruschi del capo.");
+  await $panel(page, "#dimsave").click();
+  await page.waitForTimeout(200);
+  check(scen, /Dai un nome/.test(await $panel(page, ".bd").innerText()) && /Evitare i movimenti/.test(await $panel(page, "#dimarea").inputValue()),
+    "senza nome non si salva, e il testo scritto resta");
+  await scrivi("#dimnome", "Colica renale");
+  await $panel(page, "#dimsave").click();
+  await page.waitForTimeout(200);
+  check(scen, /C'è già un foglio «Colica renale»/.test(await $panel(page, ".bd").innerText()), "un nome già in elenco non si ripete");
+  await scrivi("#dimnome", "Vertigine parossistica");
+  await $panel(page, "#dimsave").click();
+  await page.waitForSelector("#psassist-host .drow", { timeout: 8000 });
+  const primo = await $panel(page, ".drow").first().innerText();
+  check(scen, /Vertigine parossistica/.test(primo) && /tuo/.test(primo) && /aggiunto ai tuoi fogli/.test(await $panel(page, ".bd").innerText()),
+    `salvato, è il primo dell'elenco col segno «tuo» (got ${primo.replace(/\s+/g, " ")})`);
+  await page.reload();
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="dimissioni"]').click();
+  await page.waitForSelector("#psassist-host .drow", { timeout: 10000 });
+  await $panel(page, ".drow .dcopia").first().click();
+  await page.waitForTimeout(300);
+  check(scen, /VERTIGINE PAROSSISTICA/.test(await page.evaluate(() => navigator.clipboard.readText())),
+    "dopo un ricaricamento c'è ancora, e si copia come gli altri");
+  await riapriDopoCopia(page);
+  // rinominarlo, e poi eliminarlo (due tocchi)
+  await $panel(page, ".drow .dbtn").first().click();
+  await page.waitForSelector("#psassist-host #dimnome", { timeout: 8000 });
+  await scrivi("#dimnome", "Vertigine (VPPB)");
+  await $panel(page, "#dimsave").click();
+  await page.waitForSelector("#psassist-host .drow", { timeout: 8000 });
+  check(scen, /Vertigine \(VPPB\)/.test(await $panel(page, ".drow").first().innerText()), "un foglio tuo si rinomina");
+  await $panel(page, ".drow .dbtn").first().click();
+  await page.waitForSelector("#psassist-host #dimreset", { timeout: 8000 });
+  await $panel(page, "#dimreset").click();
+  await page.waitForTimeout(150);
+  check(scen, /Elimino/.test(await $panel(page, "#dimreset").innerText()), "eliminarlo chiede conferma");
+  await $panel(page, "#dimreset").click();
+  await page.waitForSelector("#psassist-host .drow", { timeout: 8000 });
+  check(scen, !/Vertigine/.test(await $panel(page, ".dlist").innerText()) && /eliminato/.test(await $panel(page, ".bd").innerText()),
+    "e al secondo tocco se ne va");
   await context.close();
 }
 
