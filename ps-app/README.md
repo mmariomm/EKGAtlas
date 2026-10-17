@@ -114,36 +114,48 @@ nome non si taglia mai per primo: nella colonna stretta promemoria e nota scendo
 «visto…» si toglie. In fondo, chiusi, gli **Archiviati** e **Svuota l'elenco**.
 
 **Stanza** — una mappa minima della stanza, per vedere a colpo d'occhio **dove sta ogni paziente**:
-i **letti** (uno per paziente) e le **aree** senza letto — corridoio, attesa, poltrone — dove ne
-stanno quanti servono. A sinistra **Da sistemare**: chi non ha ancora un posto. Un paziente nuovo
-arriva lì da solo, e nessuno sparisce: se il suo letto viene tolto, torna lì. Nella finestra
+i **letti** e le **sedie** (un paziente ciascuno) e le **aree** senza letto — corridoio, attesa —
+dove ne stanno quanti servono. A sinistra **Da sistemare**: chi non ha ancora un posto. Un paziente
+nuovo arriva lì da solo, e nessuno sparisce: se il suo letto viene tolto, torna lì. Nella finestra
 stretta «Da sistemare» scende in fondo, su una riga che scorre.
 
-La stanza è una **griglia di celle uguali** (40 × 24; un letto ne prende 5 × 4): allargando o
+**La stanza di partenza è quella del PS**, dallo schizzo del medico: da sinistra l'**OBI** (quattro
+letti in fila, OBI 4, 3, 2, 1), l'**OSS** (OSS 1 e 2 sopra, OSS 4 e 3 sotto) e la **Sala attesa**,
+alta, a destra; la **Sala attesa 2** sotto l'OBI. Le tre stanze sono divise da due celle vuote,
+senza muri. Si vede finché non c'è una stanza salvata e si salva al primo cambiamento; una stanza
+salvata non viene mai sostituita. Se togli tutto, torna questa.
+
+La stanza è una **griglia di celle uguali** (40 × 24; un letto ne prende 5 × 4, una sedia 4 × 3): allargando o
 stringendo la finestra cresce o cala tutta insieme, in scala, e **niente si sovrappone** — nemmeno
 affiancata o alla misura minima, dove semmai la mappa scorre (sotto i 20 px una cella non porta più
 un nome leggibile): di lato anche con la rotella, e il bordo sfuma dalla parte dove c'è altro. Dopo
 uno spostamento la mappa resta dov'era. Fuori da Modifica si vede solo il
 pezzo disegnato, così anche una stanza piccola riempie la mappa. Il testo non cambia misura: in un
 letto piccolo sparisce prima la nota, poi tutto tranne il nome del paziente, che se è lungo va a
-capo invece di perdere l'iniziale (quello del letto resta nel passaggio del mouse). Un letto vuoto è solo il suo nome e un letto disegnato appena.
+capo invece di perdere l'iniziale (quello del letto resta nel passaggio del mouse). Un letto vuoto è solo il suo nome e un letto disegnato appena; una sedia vuota, il suo nome e una sedia.
+
+La **sedia** è un letto più piccolo e fa tutto quello che fa un letto: un paziente, e chi arriva
+prende il posto di chi c'era (che va in «Da sistemare»); **Sposta in…**, il tocco che apre il
+paziente, il nome, la ×.
 
 - **Portare un paziente**: lo prendi e lo lasci su un letto, su un'area o in «Da sistemare»
   (col dito: soglia di 10 px); ti segue il suo nome, accanto al puntatore, mai sopra il letto che
   miri. Su un letto occupato **il nuovo prende il letto e chi c'era va in «Da sistemare»** —
   passandoci sopra lo dice: «ROSSI M. → Da sistemare». Premuto e lasciato senza trascinare, per
-  quanto a lungo, **apre il paziente**, come le righe dell'elenco.
+  quanto a lungo, **apre il paziente**, come le righe dell'elenco. Un letto o una sedia occupati
+  sono il loro paziente da un bordo all'altro: si prende e si tocca dovunque, anche sul nome.
 - **Sposta in…**, senza trascinare: tasto destro sul paziente, dito tenuto premuto, Maiusc+F10 (o
-  il tasto menu), oppure il «posto» della Lista. Prima i letti vuoti, poi quelli occupati («al posto
-  di ROSSI M.»), le aree, «Da sistemare» e, a parte, **Togli dall'elenco** (come la ✕); frecce,
-  Invio, Esc.
+  il tasto menu), oppure il «posto» della Lista. Prima i letti e le sedie vuoti, per nome, poi
+  quelli occupati («al posto di ROSSI M.»), le aree, «Da sistemare» e, a parte, **Togli
+  dall'elenco** (come la ✕); frecce, Invio, Esc.
 - **Niente conferme: si annulla.** Ogni spostamento, un letto o un'area eliminati, «Togli
   dall'elenco», «svuota» e la ✕ mostrano per 8 secondi, in fondo, «… · **Annulla**».
-- **Modifica** serve a disegnare la stanza, di solito una volta sola. Ci entri da **Disegna la
-  stanza** (a stanza vuota) o dal menu **⋯ → Modifica la stanza**; la fila delle schede diventa la
-  sua barra: **+ Letto**, **+ Area** e **Fine**. Si vede la pianta intera, coi puntini, e letti e
-  aree si trascinano di cella in cella; uno nuovo va nel primo posto libero (se non ce n'è, lo
-  dice), col nome che segue l'ultimo: dopo «Box 1», «Box 2». Dove un oggetto finirebbe sopra un altro diventa **rosso**, e lasciato lì torna dov'era.
+- **Modifica** serve a ritoccare la stanza, di solito una volta sola. Ci entri dal menu **⋯ →
+  Modifica la stanza**; la fila delle schede diventa la sua barra: **+ Letto**, **+ Sedia**,
+  **+ Area** e **Fine**, su una riga anche nella colonna di «Affianca». Si vede la pianta intera,
+  coi puntini, e letti, sedie e aree si trascinano di cella in cella; uno nuovo va nel primo posto
+  libero (se non ce n'è, lo dice), col nome che segue l'ultimo del suo tipo: dopo «Box 1», «Box 2»;
+  la prima sedia è «Sedia 1». Dove un oggetto finirebbe sopra un altro diventa **rosso**, e lasciato lì torna dov'era.
   Un tocco sul **nome** lo cambia (Invio salva, Esc lascia com'era); sull'oggetto scelto la **×** lo
   toglie; l'angolo in basso a destra allarga un'area. In Modifica i pazienti stanno fermi, in
   grigio; **Fine** (o Esc) e si torna a spostarli.
@@ -181,8 +193,9 @@ posto: niente si ridisegna sotto chi scrive.
 
 Tutto resta **solo in questo browser** (`localStorage`), niente va in rete; un altro PC o un altro
 profilo Chrome ha la sua stanza. La **stanza disegnata** (`stanza.v1`: celle intere della griglia,
-così a ogni misura è la stessa) resta come i fogli di dimissione: è un modello, non contiene
-pazienti. **Chi sta dove** (`stanza.posti.v1`) sono solo numeri di episodio, mai nomi. La pagina di
+così a ogni misura è la stessa; la sedia è un letto con `forma: "sedia"`) resta come i fogli di
+dimissione: è un modello, non contiene pazienti. Finché non c'è, si vede quella del PS, coi suoi id
+fissi («obi1»…): chi è messo in OBI 1 ci resta anche prima che la stanza sia salvata. **Chi sta dove** (`stanza.posti.v1`) sono solo numeri di episodio, mai nomi. La pagina di
 login **non** li cancella: chi viene riaperto dopo una sessione scaduta ritrova il suo letto (il
 posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; eliminare un paziente
 (🗑) toglie anche il suo. I **promemoria** (`promemoria.v1`) sono per episodio: l'ora e la cosa da

@@ -2885,8 +2885,38 @@ async function scenarioStanza(browser) {
   await $panel(page, "#menubtn").click();
   await $panel(page, '[data-pazvista="stanza"]').click();
   await $panel(page, ".stmap").waitFor({ timeout: 10000 });
-  check(scen, /^Disegna la stanza$/.test(await $panel(page, "#stdisegna").innerText()) && (await $panel(page, ".stvuota small").count()) === 0,
-    "stanza vuota: il titolo e il bottone «Disegna la stanza», nient'altro");
+  // Senza una stanza salvata, quella del PS, dallo schizzo del medico: da
+  // sinistra OBI 4·3·2·1, OSS 1·2 sopra OSS 4·3, la Sala attesa alta a
+  // destra; la Sala attesa 2 sotto l'OBI. Le stanze divise da spazio vuoto.
+  const pianta = () => page.evaluate(() => Object.fromEntries([...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".stmap [data-letto], .stmap [data-area]")]
+    .map((el) => { const r = el.getBoundingClientRect(); return [el.querySelector(".stname").textContent, { x: r.left, y: r.top, r: r.right, b: r.bottom }]; })));
+  const p0 = await pianta();
+  check(scen, Object.keys(p0).sort().join() === "OBI 1,OBI 2,OBI 3,OBI 4,OSS 1,OSS 2,OSS 3,OSS 4,Sala attesa,Sala attesa 2"
+    && (await $panel(page, ".stbed").count()) === 8 && (await $panel(page, ".starea").count()) === 2 && (await archivio("stanza.v1")) === null,
+    `senza una stanza salvata, quella del PS: 8 letti e 2 aree, non ancora salvata (got: ${Object.keys(p0).join(", ")})`);
+  const inFila = (...n) => n.every((k, i) => !i || (Math.abs(p0[k].y - p0[n[0]].y) < 1 && p0[k].x > p0[n[i - 1]].r));
+  const sotto = (a, b) => Math.abs(p0[a].x - p0[b].x) < 1 && p0[b].y > p0[a].b;
+  const fraLetti = p0["OBI 3"].x - p0["OBI 4"].r, fraStanze = [p0["OSS 1"].x - p0["OBI 1"].r, p0["Sala attesa"].x - p0["OSS 2"].r];
+  check(scen, inFila("OBI 4", "OBI 3", "OBI 2", "OBI 1", "OSS 1", "OSS 2") && sotto("OSS 1", "OSS 4") && sotto("OSS 2", "OSS 3")
+    && Math.abs(p0["Sala attesa"].y - p0["OBI 4"].y) < 1 && p0["Sala attesa"].b > p0["OSS 3"].b && Math.abs(p0["Sala attesa 2"].b - p0["Sala attesa"].b) < 1
+    && Math.abs(p0["Sala attesa 2"].x - p0["OBI 4"].x) < 1 && Math.abs(p0["Sala attesa 2"].r - p0["OBI 1"].r) < 1 && p0["Sala attesa 2"].y > p0["OBI 1"].b
+    && fraStanze.every((g) => Math.abs(g - fraStanze[0]) < 1 && g > 5 * fraLetti),
+    `come nello schizzo: OBI 4·3·2·1, OSS 1·2 sopra 4·3, Sala attesa a destra, Sala attesa 2 sotto l'OBI; fra le stanze spazio vuoto (${Math.round(fraLetti)} → ${fraStanze.map(Math.round).join(", ")}px)`);
+  // all'85% ci sta tutta, senza scorrere; affiancata e alla misura minima niente si sovrappone
+  const scorre = () => page.evaluate(() => { const c = document.getElementById("psassist-host").shadowRoot.querySelector(".stcanvas"); return c.scrollWidth > c.clientWidth + 1 || c.scrollHeight > c.clientHeight + 1; });
+  const b85 = await sovrapposti();
+  check(scen, b85.oggetti === 10 && b85.n === 0 && !(await scorre()), `all'85% la stanza del PS ci sta tutta, senza scorrere, e nessuno sopra un altro (${b85.n}; il letto ${b85.w}px)`);
+  await menu("#winaffianca");
+  const bAff = await sovrapposti();
+  check(scen, bAff.oggetti === 10 && bAff.n === 0, `«Affianca a destra»: nessuno sopra un altro (${bAff.n}; il più stretto ${bAff.w}px)`);
+  const rsz0 = await $panel(page, "#rsz").boundingBox();
+  await page.mouse.move(rsz0.x + rsz0.width / 2, rsz0.y + rsz0.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rsz0.x - 700, rsz0.y - 900, { steps: 8 });
+  await page.mouse.up();
+  const bMin = await sovrapposti(), wMin0 = await $panel(page, ".card").boundingBox();
+  check(scen, wMin0.width <= 382 && bMin.oggetti === 10 && bMin.n === 0, `alla misura minima (${Math.round(wMin0.width)}×${Math.round(wMin0.height)}): nessuno sopra un altro (${bMin.n})`);
+  await menu("#wincentra");
   check(scen, (await $panel(page, ".ststato").count()) === 0 && (await $panel(page, ".stazioni button").count()) === 2,
     "niente riga di suggerimenti sopra la mappa; nelle schede ancora solo Lista | Stanza");
   const fila1 = await alta(".seg");
@@ -2902,23 +2932,102 @@ async function scenarioStanza(browser) {
   check(scen, /Modifica la stanza/.test(await $panel(page, "#stmodmenu").innerText()), "nella Stanza il menu ⋯ offre «Modifica la stanza»");
   await $panel(page, "#menubtn").click();
 
-  // Modifica: al posto di Lista | Stanza, + Letto, + Area e Fine; la pianta intera, coi puntini
-  await $panel(page, "#stdisegna").click();
-  check(scen, (await $panel(page, "#stpiuletto").count()) === 1 && (await $panel(page, "#stpiuarea").count()) === 1 && (await $panel(page, "#stfine.pri").count()) === 1
-    && (await $panel(page, ".stazioni [data-pazvista]").count()) === 0 && (await $panel(page, ".stazioni .pri").count()) === 1,
-    "in Modifica, al posto di Lista | Stanza: + Letto, + Area e Fine (solo Fine in blu)");
+  // Modifica: al posto di Lista | Stanza, + Letto, + Sedia, + Area e Fine; la pianta intera, coi puntini
+  await menu("#stmodmenu");
+  check(scen, (await page.locator("#psassist-host .stazioni button").evaluateAll((l) => l.map((b) => b.id).join())) === "stpiuletto,stpiusedia,stpiuarea,stfine"
+    && (await $panel(page, "#stfine.pri").count()) === 1 && (await $panel(page, ".stazioni .pri").count()) === 1,
+    "in Modifica, al posto di Lista | Stanza: + Letto, + Sedia, + Area e Fine (solo Fine in blu)");
   check(scen, await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id === "stpiuletto"), "e il fuoco va su + Letto");
   const fila2 = await alta(".seg");
   check(scen, fila0 === fila1 && fila1 === fila2 && (await alta(".stazioni")) === 32,
     `la fila delle schede non cambia altezza: Lista, Stanza, Modifica (${fila0}, ${fila1}, ${fila2}px)`);
   const griglia = () => stile(".stplan", "backgroundImage");
-  check(scen, /radial-gradient/.test(await griglia()) && /Comincia con \+ Letto/.test(await $panel(page, ".stvuota").innerText()) && (await $panel(page, ".stvuota small").count()) === 0,
-    "in Modifica la pianta mostra i puntini, e la stanza vuota dice da dove cominciare");
-  await $panel(page, "#stpiuletto").click();
-  await $panel(page, ".stbed").waitFor();
-  // il letto nuovo si battezza subito; Esc tiene il nome proposto
-  await $panel(page, ".stnomein").press("Escape");
-  check(scen, (await $panel(page, ".stbed .stname").textContent()) === "Letto 1", "Esc lascia il nome proposto");
+  check(scen, /radial-gradient/.test(await griglia()), "in Modifica la pianta mostra i puntini");
+  // la barra non va mai a capo, nemmeno nella colonna stretta di «Affianca» (a 1280 e a 1366)
+  for (const larga of [1280, 1366]) {
+    await page.setViewportSize({ width: larga, height: larga === 1366 ? 768 : 900 });
+    await menu("#winaffianca");
+    const barra = await page.evaluate(() => {
+      const r = document.getElementById("psassist-host").shadowRoot, s = r.querySelector(".seg.modifica").getBoundingClientRect();
+      const b = [...r.querySelectorAll(".stazioni button")].map((x) => x.getBoundingClientRect());
+      return { righe: new Set(b.map((x) => Math.round(x.top))).size, dentro: b.every((x) => x.left >= s.left && x.right <= s.right + 0.5), w: Math.round(s.width) };
+    });
+    check(scen, barra.righe === 1 && barra.dentro && (await alta(".seg")) === fila2 && (await alta(".stazioni")) === 32,
+      `«Affianca» a ${larga}: + Letto, + Sedia, + Area e Fine su una riga, dentro la colonna (${barra.w}px)`);
+    await menu("#wincentra");
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  // + Sedia: un letto più piccolo (4 × 3 celle), col nome che segue «Sedia 1, 2…»; il
+  // primo cambiamento salva la stanza del PS, con le sue celle
+  await $panel(page, "#stpiusedia").click();
+  await $panel(page, ".stnomein").press("Enter");
+  const s0 = await archivio("stanza.v1"), sedia = s0.letti.find((l) => l.forma === "sedia");
+  check(scen, s0.letti.filter((l) => !l.forma).map((l) => `${l.nome} ${l.c},${l.r}`).join(" · ") === "OBI 4 0,0 · OBI 3 5,0 · OBI 2 10,0 · OBI 1 15,0 · OSS 1 22,0 · OSS 2 27,0 · OSS 3 27,4 · OSS 4 22,4"
+    && s0.aree.map((a) => `${a.nome} ${a.c},${a.r} ${a.w}×${a.h}`).join(" · ") === "Sala attesa 34,0 6×11 · Sala attesa 2 0,6 20×5",
+    "al primo cambiamento la stanza del PS si salva, celle intere sulla griglia");
+  const uM = (await $panel(page, ".stplan").boundingBox()).width / 40;
+  const sediaEl = $panel(page, `[data-letto="${sedia?.id}"]`), sb0 = await sediaEl.boundingBox();
+  check(scen, sedia?.nome === "Sedia 1" && Object.keys(sedia).sort().join() === "c,forma,id,nome,r" && `${sedia.c},${sedia.r}` === "21,9"
+    && Math.abs(sb0.width - (4 * uM - 6)) < 1.5 && Math.abs(sb0.height - (3 * uM - 6)) < 1.5 && (await sediaEl.getAttribute("class")).includes("stbed sedia"),
+    `+ Sedia: «Sedia 1», 4 × 3 celle, nel primo posto libero (got: ${JSON.stringify(sedia)}, ${Math.round(sb0.width)}×${Math.round(sb0.height)}px)`);
+  check(scen, (await sovrapposti()).n === 0 && (await sediaEl.locator("svg.stglifo").getAttribute("viewBox")) === "0 0 20 20" && await sediaEl.locator("svg.stglifo").isVisible()
+    && (await $panel(page, '[data-letto="obi1"] svg.stglifo').getAttribute("viewBox")) === "0 0 30 20",
+    "la sedia vuota: il suo nome e una sedia accennata (non un letto); niente sopra un altro");
+  await $panel(page, "#stfine").click();
+
+  // la sedia tiene un paziente, come un letto: «Sposta in…» la mette fra i letti vuoti, per nome
+  await chip(".sttray", "999001").click({ button: "right" });
+  await $panel(page, ".stmenu").waitFor();
+  const vociS = (await page.locator("#psassist-host .stmenu .stmi").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+  check(scen, vociS.join(" | ") === "OBI 1 vuoto | OBI 2 vuoto | OBI 3 vuoto | OBI 4 vuoto | OSS 1 vuoto | OSS 2 vuoto | OSS 3 vuoto | OSS 4 vuoto | Sedia 1 vuoto | Sala attesa | Sala attesa 2 | Da sistemare qui ora | Togli dall'elenco",
+    `«Sposta in…»: letti e sedie vuoti per nome, poi le aree (got: ${vociS.join(" | ")})`);
+  await $panel(page, `.stmenu [data-dove="letto:${sedia.id}"]`).click();
+  check(scen, (await chip(`[data-letto="${sedia.id}"]`, "999001").count()) === 1 && /^ROSSI MARIO · …9001 in Sedia 1$/.test(await avviso()),
+    `scelta «Sedia 1», ci va (got: ${await avviso()})`);
+  await portaSu(chip(".sttray", "999002"), sediaEl);
+  check(scen, (await chip(`[data-letto="${sedia.id}"]`, "999002").count()) === 1 && (await chip(".sttray", "999001").count()) === 1
+    && /^ROSSI MARIO · …9002 in Sedia 1 · ROSSI MARIO · …9001 da sistemare$/.test(await avviso()),
+    `portato sulla sedia occupata: il nuovo ci si siede, chi c'era va in «Da sistemare» (got: ${await avviso()})`);
+  await chip(".sttray", "999001").click({ button: "right" });
+  await $panel(page, ".stmenu").waitFor();
+  const vociO = (await page.locator("#psassist-host .stmenu .stmi").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+  check(scen, vociO[8] === "Sedia 1 al posto di ROSSI MARIO · …9002" && vociO.slice(0, 8).every((v) => / vuoto$/.test(v)),
+    `e occupata sta con i letti occupati (got: ${vociO[8]})`);
+  await page.keyboard.press("Escape");
+  // un tocco dovunque sul posto occupato apre il paziente; trascinato da dovunque, il paziente si sposta
+  const sb = await sediaEl.boundingBox();
+  await page.mouse.click(sb.x + 5, sb.y + sb.height - 5);
+  await $panel(page, '[data-seg="esiti"].on').waitFor({ timeout: 5000 }).catch(() => {});
+  check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1, "un tocco sull'angolo della sedia occupata apre il paziente (i suoi Esiti)");
+  await $panel(page, "#back").click();
+  await $panel(page, ".stmap").waitFor({ timeout: 10000 });
+  const ob = await $panel(page, '[data-letto="obi1"]').boundingBox();
+  await page.mouse.move(sb.x + 5, sb.y + sb.height - 5);
+  await page.mouse.down();
+  await page.mouse.move(ob.x + ob.width / 2, ob.y + ob.height / 2, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  check(scen, (await chip('[data-letto="obi1"]', "999002").count()) === 1, "preso dall'angolo della sedia, il paziente va in OBI 1");
+  await $panel(page, ".stannulla").click();
+  await page.reload();
+  await alleStanze();
+  check(scen, (await chip(`[data-letto="${sedia.id}"]`, "999002").count()) === 1 && (await sediaEl.getAttribute("class")).includes("sedia"),
+    "ricaricando la sedia resta, col suo paziente");
+
+  // una stanza salvata vuota è come nessuna: torna quella del PS; una stanza
+  // salvata, anche di un letto solo, resta quella
+  await page.evaluate(() => localStorage.setItem("psassist:stanza.v1", JSON.stringify({ letti: [], aree: [] })));
+  await page.reload();
+  await alleStanze();
+  check(scen, (await $panel(page, ".stbed").count()) === 8 && (await $panel(page, ".starea").count()) === 2 && (await $panel(page, ".sttray .stp").count()) === 2,
+    "una stanza salvata vuota: torna quella del PS (e chi era sulla sedia, che non c'è più, torna «Da sistemare»)");
+  await page.evaluate(() => localStorage.setItem("psassist:stanza.v1", JSON.stringify({ letti: [{ id: "uno", c: 0, r: 0, nome: "Letto 1" }], aree: [] })));
+  await page.reload();
+  await alleStanze();
+  check(scen, (await $panel(page, ".stbed").count()) === 1 && (await $panel(page, ".starea").count()) === 0 && (await archivio("stanza.v1")).letti.length === 1,
+    "una stanza salvata non si sostituisce: un letto solo, e resta quello");
+  await menu("#stmodmenu");
   await $panel(page, ".stbed .stname").click();
   await $panel(page, ".stnomein").fill("Box 1");
   await $panel(page, ".stnomein").press("Enter");
@@ -2936,7 +3045,11 @@ async function scenarioStanza(browser) {
   // dal menu ⋯ si torna in Modifica, e il menu si chiude
   await menu("#stmodmenu");
   check(scen, (await $panel(page, ".menu").count()) === 0 && (await $panel(page, "#stfine").count()) === 1, "⋯ → «Modifica la stanza»: si torna a disegnare, e il menu si chiude");
-  for (let k = 0; k < 5; k++) {
+  // il letto nuovo si battezza subito; Esc tiene il nome proposto
+  await $panel(page, "#stpiuletto").click();
+  await $panel(page, ".stnomein").press("Escape");
+  check(scen, (await $panel(page, ".stnomein").count()) === 0 && (await archivio("stanza.v1")).letti[1]?.nome === "Box 2", "Esc lascia il nome proposto: «Box 2»");
+  for (let k = 0; k < 4; k++) {
     await $panel(page, "#stpiuletto").click();
     await $panel(page, ".stnomein").press("Enter");
   }
@@ -3198,6 +3311,12 @@ async function scenarioStanza(browser) {
   check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1, "premuto mezzo secondo e lasciato fermo: apre il paziente (i suoi Esiti)");
   await $panel(page, "#back").click();
   await $panel(page, ".stmap").waitFor({ timeout: 10000 });
+  // …e così un tocco sul nome del letto: tutto il letto occupato è il suo paziente
+  await (await letto("Box 5")).locator(".stname").click();
+  await $panel(page, '[data-seg="esiti"].on').waitFor({ timeout: 5000 }).catch(() => {});
+  check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1, "un tocco sul nome del letto occupato apre il suo paziente");
+  await $panel(page, "#back").click();
+  await $panel(page, ".stmap").waitFor({ timeout: 10000 });
 
   // stesso paziente (stesso codice fiscale), due episodi: il più vecchio è «episodio precedente»
   await ritocca("999001", { ts: Date.now() });
@@ -3229,20 +3348,26 @@ async function scenarioStanza(browser) {
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await page.evaluate(() => {
     const letti = [];
-    for (let r = 0; r < 24; r += 4) for (let c = 0; c < 40; c += 5) letti.push({ id: `p${c}-${r}`, c, r, nome: `L${letti.length + 1}` });
-    letti.push({ id: "vecchio", x: 0.5, y: 0.5, rot: 90, nome: "Vecchio" }, { id: "sopra", c: 1, r: 1, nome: "Sopra" },
+    // l'ultimo angolo, 4 × 3 celle, a una sedia: lì un letto uscirebbe dalla pianta
+    for (let r = 0; r < 24; r += 4) for (let c = 0; c < 40; c += 5) if (c + r < 55) letti.push({ id: `p${c}-${r}`, c, r, nome: `L${letti.length + 1}` });
+    letti.push({ id: "sgabello", c: 36, r: 21, forma: "sgabello", nome: "Sgabello" }, { id: "sedia", c: 36, r: 21, forma: "sedia", nome: "S" },
+      { id: "vecchio", x: 0.5, y: 0.5, rot: 90, nome: "Vecchio" }, { id: "sopra", c: 1, r: 1, nome: "Sopra" }, { id: "sediasopra", c: 1, r: 1, forma: "sedia", nome: "Sopra" },
       { id: "fuori", c: 38, r: 0, nome: "Fuori" }, { id: "mezzo", c: 2.5, r: 0, nome: "Mezzo" });
     localStorage.setItem("psassist:stanza.v1", JSON.stringify({ letti, aree: [{ id: "piccola", c: 0, r: 0, w: 4, h: 3, nome: "Piccola" }] }));
   });
   await page.reload();
   await alleStanze();
-  const disegnati = await page.locator("#psassist-host .stbed").evaluateAll((l) => l.map((b) => b.getAttribute("data-letto")));
-  check(scen, disegnati.length === 48 && !disegnati.some((d) => ["vecchio", "sopra", "fuori", "mezzo"].includes(d)) && (await $panel(page, ".starea").count()) === 0,
-    `la stanza salvata si ripulisce: fuori pianta, sopra un altro, a mezza cella o nel formato vecchio non si disegna (${disegnati.length} letti)`);
+  const disegnati = await page.locator("#psassist-host .stbed").evaluateAll((l) => l.map((b) => b.getAttribute("data-letto") + (b.classList.contains("sedia") ? "/s" : "")));
+  check(scen, disegnati.length === 48 && disegnati.includes("sedia/s") && disegnati.filter((d) => d.endsWith("/s")).length === 1
+    && !disegnati.some((d) => ["vecchio", "sopra", "sediasopra", "fuori", "mezzo", "sgabello"].includes(d)) && (await $panel(page, ".starea").count()) === 0,
+    `la stanza salvata si ripulisce: fuori pianta (un letto dove ci sta solo una sedia), sopra un altro, a mezza cella o nel formato vecchio non si disegna (${disegnati.length} posti)`);
   await menu("#stmodmenu");
   await $panel(page, "#stpiuletto").click();
   check(scen, /La stanza è piena: togli o sposta qualcosa\./.test(await $panel(page, ".banner").innerText().catch(() => "")) && (await $panel(page, ".stbed").count()) === 48,
     "stanza piena: + Letto lo dice, e non mette niente sopra");
+  await $panel(page, "#stpiusedia").click();
+  check(scen, /La stanza è piena/.test(await $panel(page, ".banner").innerText().catch(() => "")) && (await $panel(page, ".stbed").count()) === 48,
+    "e così + Sedia");
   await context.close();
 }
 
