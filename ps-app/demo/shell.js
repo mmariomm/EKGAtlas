@@ -581,7 +581,7 @@
       <h3>Cosa funziona</h3>
       <ul>
         <li>Lista PS → apri un assistito → il pannello parte su <b>Richieste</b>.</li>
-        <li>Quesito, profili, esami, «Crea e aggiungi»: la richiesta si crea e gli esami finiscono nel carrello della pagina vera.</li>
+        <li>Quesito, profili, esami, «Conferma e stampa» (o «solo carrello»): la richiesta si crea e gli esami finiscono nel carrello della pagina vera.</li>
         <li><b>Esiti</b>: valori dentro il pannello, anteprima a due righe, referti in una finta scheda, «Salva referti» e pallini verdi.</li>
         <li>I collegamenti del gestionale portano alle altre pagine salvate.</li>
       </ul>
