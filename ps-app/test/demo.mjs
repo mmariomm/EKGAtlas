@@ -263,7 +263,8 @@ check(await $("#reflab").count() === 0 && !/Laboratorio/i.test(await $(".sec:has
 check(visibili.every((t) => /^\d\d\/\d\d \d\d:\d\d/.test(t)),
   `ogni referto con data e ora (${visibili.map((t) => t.slice(0, 12)).join(" · ")})`);
 
-await $("#refsave").click();
+await $("#menubtn").click();
+await $("#refsave").click();   // «Salva i referti» sta nel menu ⋯
 await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length >= 1, { timeout: 30000 }).catch(() => {});
 check(await $(".rdot.saved").count() >= 1, "i referti si salvano col ponte estensione");
 await $('[data-esito][data-kind="referto"]').first().click();
