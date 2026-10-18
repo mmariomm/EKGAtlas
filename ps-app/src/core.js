@@ -3178,7 +3178,7 @@
         // di quello che è andato storto e il resto si vede solo espandendo
         const restavano = plan.items.filter((x) => !state.added.includes(x)).length - 1;
         ui.failed(state, { head: err.head, body: `${err.body || ""}${
-          restavano > 0 ? ` Restavano ${restavano === 1 ? "1 altro esame" : restavano + " altri esami"} da mandare.` : ""}`,
+          restavano > 0 ? (restavano === 1 ? " Restava 1 altro esame da mandare." : ` Restavano ${restavano} altri esami da mandare.`) : ""}`,
           ...liste, restaQui: !!err.restaQui, sessione: !!err.sessione }, plan);
       } else {
         // La pagina che muore mentre navighi arriva qui come una fetch fallita:
