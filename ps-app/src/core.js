@@ -562,6 +562,18 @@
   // An abbreviation this program has NOT been taught is a guess, and a guess
   // that looks like a known sigla is how a doctor reads the wrong analyte.
   // Everywhere a guess is shown it is marked, and counted.
+  // «x10» da solo non dice niente: il gestionale perde l'esponente. Per i
+  // conteggi cellulari l'unità è una sola in tutti i laboratori italiani —
+  // globuli bianchi e piastrine ×10⁹/L (= 10³/µL), globuli rossi ×10¹²/L — e si
+  // scrive per esteso SOLO se l'unità è proprio «x10» nuda e l'analita è una
+  // di queste sigle curate. Altrimenti resta com'è: mai un'ipotesi.
+  const ESPONENTI_CONTEGGI = { GB: 9, Neu: 9, Lin: 9, Mon: 9, Eos: 9, Bas: 9, Altre: 9, PLT: 9, GR: 12 };
+  function unitaChiara(um, nome) {
+    const u = String(um || "").trim();
+    if (!/^[x×*]\s?10$/i.test(u)) return u;
+    const e = ESPONENTI_CONTEGGI[sigla(nome)];
+    return e ? "×10" + String(e).replace(/\d/g, (c) => "⁰¹²³⁴⁵⁶⁷⁸⁹"[c]) + "/L" : u;
+  }
   const siglaCurata = (nome) => SIGLE.some(([re]) => re.test(scomponi(nome).resto));
   // Peggio di un nome che non conosciamo: due nomi DIVERSI che nello stesso
   // prelievo escono con la stessa abbreviazione («PTT secondi» e «PTT Ratio»,
@@ -2219,6 +2231,16 @@
     const tardi = Math.floor((ora - t) / 60e3);
     return tardi < 1 ? "ora" : "−" + hm(tardi);
   }
+  // «FERRARI LUCA» → «Ferrari», «DE LUCA GIOVANNI» → «De Luca», «D'ANGELO M» → «D'Angelo»:
+  // il cognome (con le sue particelle) in minuscolo con le iniziali maiuscole
+  const PARTICELLE_COGNOME = new Set(["DE", "DI", "DA", "DEL", "DELLA", "DELLE", "DELLO", "DEI", "DEGLI", "DAL", "DALLA", "DALLE", "DALLO",
+    "LA", "LO", "LE", "LI", "SAN", "SANTA", "SANTO", "VAN", "VON", "MC", "MAC", "DOS", "DAS", "DU"]);
+  function cognomeTitolo(nome) {
+    const w = String(nome || "").trim().split(/\s+/).filter(Boolean);
+    let i = 0;
+    while (i < w.length - 2 && PARTICELLE_COGNOME.has(w[i].toUpperCase())) i++;
+    return w.slice(0, i + 1).join(" ").toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+  }
   // oltre la mezz'ora tranquilla; ambra sotto i 30 minuti; rossa sotto i 10, e quando è l'ora
   const promBanda = (t, ora) => { const m = Math.ceil((t - ora) / 60e3); return m > 30 ? "" : m > 10 ? "amb" : "ros"; };
   // l'ora fissata, col giorno quando non è oggi: «11:30», «domani 07:30»
@@ -3204,6 +3226,7 @@
 
   const COLORS = `
     :host { all: initial; }
+    [hidden] { display: none !important; }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
     .wrap { position: fixed; top: 10px; right: 10px; z-index: 2147483647; color: #16232E; }
     .pill { display: flex; align-items: center; gap: 8px; background: #0B5CAD; color: #fff; border: 0; border-radius: 999px;
@@ -3428,12 +3451,15 @@
                     padding: 12px 10px 10px; font-size: 13px; font-weight: 400; color: #5B6B7A; cursor: pointer; }
     .seg > button:hover { color: #16232E; }
     .seg > button.on { color: #16232E; font-weight: 600; border-bottom-color: #0B5CAD; }
+    /* la scheda accesa è in grassetto, ma occupa già la larghezza del grassetto:
+       cambiando schermata le altre non si spostano di lato */
+    .seg > button[data-t] { display: inline-flex; flex-direction: column; align-items: center; }
+    .seg > button[data-t]::after { content: attr(data-t); font-weight: 600; height: 0; overflow: hidden; visibility: hidden; }
     .segdx { margin-left: auto; align-self: center; display: flex; align-items: center; gap: 6px; padding: 9px 0 3px; }
     /* in Modifica la fila resta com'è (stessa altezza, stesse righe di testo) ma non va mai a capo */
     .seg.modifica { flex-wrap: nowrap; }
     .segtit { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 12px 0 10px;
               border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 13px; font-weight: 600; line-height: normal; color: #16232E; }
-    .seg .n { margin-left: 5px; font-weight: 600; color: #5B6B7A; font-variant-numeric: tabular-nums; }
     .rgo { flex: 0 0 auto; color: #8296A9; font-size: 12px; }
     .dlist, .mlist { display: flex; flex-direction: column; gap: 4px; }
     .dsep { display: flex; align-items: center; gap: 8px; margin: 8px 2px 3px; font-size: 10.5px;
@@ -3487,12 +3513,30 @@
     /* a name we were never taught: shown in full, and underlined so it can
        never be mistaken for one of the curated sigle */
     .sttab th.stn.grezza { text-decoration: underline dotted #C08A2E; text-underline-offset: 2px; }
-    .avvnomi { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #7a4b03;
-               background: #FFF7E6; border: 1px solid #E5C588; border-radius: 8px; padding: 5px 9px; margin-bottom: 6px; }
-    .avvnomi .avvi { flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%; background: #E5C588;
-                     color: #4d2f02; font-weight: 800; font-size: 11px; text-align: center; line-height: 16px; }
-    .avvnomi .avvb { margin-left: auto; border: 0; background: transparent; color: #7a4b03; font: inherit;
-                     font-weight: 700; cursor: pointer; text-decoration: underline; }
+    /* un avviso discreto, non un riquadro: una riga piccola sopra la tabella */
+    .avvnomi { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #7a4b03; padding: 0 2px; margin-bottom: 5px; }
+    .avvnomi .avvi { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%; background: #E5C588;
+                     color: #4d2f02; font-weight: 800; font-size: 10px; text-align: center; line-height: 14px; }
+    .avvnomi .avvb { border: 0; background: transparent; color: #7a4b03; font: inherit;
+                     font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; }
+    .infochip { float: right; margin-right: 6px; font-size: 10.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: #7a4b03;
+                background: #FFF7E6; border-radius: 999px; padding: 1px 8px; cursor: help; }
+    .infochip:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    /* senza valori letti: un solo bottone, grande, al posto della tabella */
+    .carica { display: flex; justify-content: center; padding: 22px 0 14px; }
+    .grande { border: 0; border-radius: 12px; background: #0B5CAD; color: #fff; font: inherit; font-size: 16px; font-weight: 700;
+              padding: 15px 38px; min-width: 240px; cursor: pointer; box-shadow: 0 6px 18px rgba(11,92,173,.28); }
+    .grande:hover { background: #094a8c; }
+    .grande:disabled { background: #7FA6CB; box-shadow: none; cursor: default; }
+    .grande:focus-visible { outline: 3px solid #9DBFDE; outline-offset: 2px; }
+    /* Valori e Referti: fianco a fianco quando la FINESTRA è larga (non lo
+       schermo: dentro l'Affianca resta una colonna sola) */
+    .esiti { container: esiti / inline-size; }
+    @container esiti (min-width: 880px) {
+      .esgrid.due { display: grid; grid-template-columns: minmax(0, max-content) minmax(300px, 1fr); column-gap: 28px; align-items: start; }
+      .esgrid.due .stwrap { width: fit-content; max-width: 100%; }
+      .esgrid.due > .sec { min-width: 0; }
+    }
     .avvlista { white-space: pre-wrap; font-size: 11px; line-height: 1.45; color: #5B6B7A;
                 background: #FFFDF7; border: 1px solid #EEDFC0; border-radius: 8px; padding: 6px 9px; margin-bottom: 6px; }
     .archhd { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 8px; cursor: pointer;
@@ -3611,7 +3655,16 @@
     /* sulla pill ridotta, solo quando tocca */
     .pill .prurg { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px 1px 5px; border-radius: 999px; background: #B3261E;
                    color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 1.5px #fff; }
-    .pill .prurg svg { width: 12px; height: 12px; }
+    .pill .prurg svg { width: 12px; height: 12px; flex: none; }
+    .pill .prurg { cursor: pointer; max-width: 260px; }
+    .pill .prurg:hover { background: #8f1e18; }
+    .pill .prurg:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    .pill .prurgt { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .pill .prurgp { opacity: .85; }
+    .prmini { min-width: 0; width: max-content; }
+    .prmini .prmhd { padding: 6px 8px 2px; color: #16232E; }
+    .prmini .prmrow { min-height: 36px; padding: 2px 4px 4px 4px; gap: 6px; }
+    .prmini .prmq { font-size: 12.5px; color: #35506B; }
     @media (prefers-reduced-motion: reduce) { .prom.ros, .prst.ros { animation: none; } }
     .crow { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; cursor: pointer;
             border: 1px solid #E3E8EF; border-radius: 9px; background: #fff; padding: 10px 11px; font: inherit; }
@@ -4024,11 +4077,18 @@
   // cambia misura. Di partenza al centro, all'85%. Mai più piccola di così,
   // e un pezzo d'intestazione resta sempre a portata di mano.
   const FINESTRA = { x: 0.075, y: 0.075, w: 0.85, h: 0.85 };
+  // Su uno schermo grande l'85% è una lenzuolata: di partenza la finestra non
+  // supera questa larghezza (sempre al centro). Quella che hai spostato o
+  // ridimensionato, e «Affianca», restano come le hai messe.
+  const FINESTRA_MAX_PX = 1150;
   const AFFIANCA = { x: 0.63, y: 0.02, w: 0.36, h: 0.96 };   // una colonna a destra: il gestionale resta visibile
   const eAffiancata = (w) => !!w && ["x", "y", "w", "h"].every((k) => Math.abs(w[k] - AFFIANCA[k]) < 0.005);
+  const geometriaPropria = (win) => !!win && [win.x, win.y, win.w, win.h].every(Number.isFinite);
   function geometriaFinestra(win) {
-    const g = win && [win.x, win.y, win.w, win.h].every(Number.isFinite) ? win : FINESTRA;
     const vw = window.innerWidth || 1000, vh = window.innerHeight || 800;
+    const mia = geometriaPropria(win);
+    const wMax = Math.min(FINESTRA.w, FINESTRA_MAX_PX / vw);
+    const g = mia ? win : { ...FINESTRA, w: wMax, x: (1 - wMax) / 2 };
     const w = Math.min(1, Math.max(380 / vw, g.w)), h = Math.min(1, Math.max(320 / vh, g.h));
     const x = Math.min(Math.max(g.x, 120 / vw - w), 1 - 120 / vw);
     const y = Math.min(Math.max(g.y, 0), 1 - 44 / vh);
@@ -4151,6 +4211,10 @@
       // I promemoria: un tocco sulla pill apre il suo elenco, la sveglia apre
       // il campo. Ogni 30 secondi le pill rifanno i conti, sul posto.
       this.root.addEventListener("click", (e) => this.promClic(e));
+      this.root.addEventListener("keydown", (e) => {
+        const segno = e.target.closest?.("[data-prurg]");
+        if (segno && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); this.promClic({ target: segno }); }
+      });
       this._promOgni = setInterval(() => this.promTick(), 30e3);
     }
 
@@ -4193,13 +4257,13 @@
       this.view = v; this.viewId = id || null; this.persistUi(); this.render();
       if (v === "esiti") this.caricaStorico();   // letto sul portale intanto? e l'identità è cambiata?
     }
-    // Il cronometro si vede da ogni schermata, altrimenti ci si dimentica di
-    // fermarlo — ed è l'unica cosa che lo rende utile. Un tocco sul tempo
-    // apre la scheda, un tocco su ⏹ lo ferma: fermarlo non deve costare due
-    // passaggi.
+    // Il cronometro si vede da ogni schermata MENTRE corre, altrimenti ci si
+    // dimentica di fermarlo — ed è l'unica cosa che lo rende utile. Un tocco sul
+    // tempo apre la scheda, un tocco su ⏹ lo ferma: fermarlo non deve costare
+    // due passaggi. Fermo non occupa posto: «Tempi» sta nel menu ⋯.
     chipTempo() {
       const t = tempoInCorso();
-      if (!t) return `<span class="tchip off"><button id="tapri" title="Cronometro: misura quanto ti prende un'attività" aria-label="Cronometro">${ICO.crono}</button></span>`;
+      if (!t) return "";
       return `<span class="tchip on"><button id="tapri" title="${esc(t.titolo)}${t.paz ? " · " + esc(t.paz) : ""} — apri i tempi"><i class="tdot"></i>${esc(mmss(durata(t)))}</button><button id="tstop" title="Ferma il cronometro" aria-label="Ferma il cronometro">${ICO.ferma}</button></span>`;
     }
 
@@ -4955,7 +5019,11 @@
           : "";
       } else {
         const g = geometriaFinestra(this.win);
-        posStyle = `left:${g.x * 100}vw;top:${g.y * 100}vh;width:${g.w * 100}vw;height:${g.h * 100}vh;right:auto;`;
+        // di partenza (niente geometria tua) la misura segue lo schermo anche
+        // se il browser cambia misura: il tetto è in CSS, non nel conto di adesso
+        posStyle = geometriaPropria(this.win)
+          ? `left:${g.x * 100}vw;top:${g.y * 100}vh;width:${g.w * 100}vw;height:${g.h * 100}vh;right:auto;`
+          : `left:max(${FINESTRA.x * 100}vw,calc((100vw - ${FINESTRA_MAX_PX}px) / 2));top:${g.y * 100}vh;width:min(${FINESTRA.w * 100}vw,${FINESTRA_MAX_PX}px);height:${g.h * 100}vh;right:auto;`;
       }
       // i valori e la stanza si leggono in larghezza; il resto su una colonna comoda
 
@@ -5003,12 +5071,16 @@
                 <span class="menuw">
                   <button class="iconbtn" id="menubtn" title="Altro" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
                   ${this.menuAperto ? `<div class="menu" role="menu">
-                    ${this.win ? `<button role="menuitem" id="wincentra" title="La finestra al centro, all'85% dello schermo">Al centro</button>` : ""}
+                    ${this.win ? `<button role="menuitem" id="wincentra" title="La finestra al centro, nella misura di partenza">Al centro</button>` : ""}
                     ${eAffiancata(this.win) ? "" : `<button role="menuitem" id="winaffianca" title="Una colonna a destra: il gestionale resta visibile a sinistra">Affianca a destra</button>`}
                     ${inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">Modifica la stanza</button>` : ""}
                     <hr>
+                    <button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">Tempi</button>
+                    ${this.view === "dimissioni" ? `<button role="menuitem" id="dimexport" title="Salva i tuoi testi in un file JSON (e negli appunti)">Esporta i fogli (JSON)</button>
+                    <button role="menuitem" id="dimimport" title="Rimetti i testi di un JSON esportato">Importa i fogli…</button>` : ""}
+                    ${this.refertiDaSalvare().length ? `<button role="menuitem" id="refsave" title="Tiene una copia di tutti i referti in elenco, così si aprono subito la volta dopo">Salva i referti</button>` : ""}
                     <button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${this.showLog ? "Nascondi il registro" : "Registro"}</button>
-                    ${(typeof chrome !== "undefined" && chrome.runtime?.id) ? `<button role="menuitem" id="extreload" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">Ricarica estensione</button>` : ""}
+                    ${(typeof chrome !== "undefined" && chrome.runtime?.id) && !this.giroInCorso() ? `<button role="menuitem" id="extreload" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">Ricarica estensione</button>` : ""}
                     <div class="mver">${esc(APP)} ${VERSION}</div>
                   </div>` : ""}
                 </span>
@@ -5023,12 +5095,12 @@
                 </div>` : !this.runState ? `
                 <div class="seg" role="tablist">
                   ${this.pageType === "patient" && this.view !== "home" ? `
-                  <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste">Richieste</button>
-                  <button class="${this.view === "esiti" || this.view === "referto" ? "on" : ""}" data-seg="esiti">Esiti${this.nEsiti() ? ` <span class="n">${this.nEsiti()}</span>` : ""}</button>`
-                  : `<button class="${inHome || !section ? "on" : ""}" data-seg="home">Pazienti</button>`}
-                  <button class="${this.view === "eo" || this.view === "eotesto" ? "on" : ""}" data-seg="eo" title="Esame obiettivo da copiare">EO</button>
-                  <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi">Consensi</button>
-                  <button class="${inDim ? "on" : ""}" data-seg="dimissioni">Dimissioni</button>
+                  <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste" data-t="Richieste">Richieste</button>
+                  <button class="${this.view === "esiti" || this.view === "referto" ? "on" : ""}" data-seg="esiti" data-t="Esiti">Esiti</button>`
+                  : `<button class="${inHome || !section ? "on" : ""}" data-seg="home" data-t="Pazienti">Pazienti</button>`}
+                  <button class="${this.view === "eo" || this.view === "eotesto" ? "on" : ""}" data-seg="eo" data-t="EO" title="Esame obiettivo da copiare">EO</button>
+                  <button class="${this.view === "consensi" ? "on" : ""}" data-seg="consensi" data-t="Consensi">Consensi</button>
+                  <button class="${inDim ? "on" : ""}" data-seg="dimissioni" data-t="Dimissioni">Dimissioni</button>
                   ${(inHome || !section) && this.stanzaAzioni ? `<span class="segdx">${this.stanzaAzioni()}</span>` : ""}
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
@@ -6081,9 +6153,16 @@
       if (tabella || this.conPortale()) return [];
       return this.esiti.filter((e) => e.kind === "referto" && refertoTipo(e) === "lab");
     }
-    // Quanti esiti ci sono da guardare: prelievi e referti mostrati.
-    nEsiti() {
-      return this.esiti.filter((e) => e.kind === "valori").length + this.refertiMostrati().length + this.refertiLab().length;
+    // I referti che «Salva i referti» (nel menu ⋯, solo estensione) può ancora
+    // tenere: sulla schermata Esiti, quelli non ancora salvati.
+    refertiDaSalvare() {
+      if (this.view !== "esiti" || !hasExt() || this.runState) return [];
+      return this.refertiMostrati().filter((e) => !(this.refCache || {})[e.id]);
+    }
+    // Un giro di esami che sta mandando (o che riprende dopo un cambio pagina):
+    // ricaricare l'estensione adesso lo ucciderebbe a metà.
+    giroInCorso() {
+      return this.runState === "running" || !!tabStore.get(CORSA, null);
     }
 
     // Values are fetched once per accesso and kept for the tab, so reopening
@@ -6167,25 +6246,36 @@
       const t = st ? this.tabellaStorico(st, nov, leggiSegni(this.chiaveNota())) : null;
       const chi = st ? [st.paziente?.cognome, st.paziente?.nome].filter(Boolean).join(" ") : "";
       const sotto = this._sotto;
+      // «Carica i valori» / «Aggiorna»: una volta sola. Senza tabella è il
+      // bottone grande al posto della tabella; con la tabella è un piccolo
+      // «Aggiorna» nella riga del titolo.
+      const puoiLeggere = !!(vivi || conPortale);
+      const primaLettura = conPortale ? !dalPortale : daLeggere === vivi;
+      const etLeggi = ra ? `↻ ${ra.done}/${ra.total}…` : sotto ? "↻ storico…" : primaLettura ? "⭳ Carica i valori" : "↻ Aggiorna";
+      const titLeggi = sotto ? "Leggo lo storico del portale in una scheda di sottofondo: si chiude da sola."
+        : primaLettura ? `Legge i valori${conPortale ? ": lo storico del portale — tutti i prelievi, refertati e no — in una scheda di sottofondo, e le finestre Risultati del gestionale se serve" : " dal gestionale, un prelievo alla volta"}${
+          daLeggere && !conPortale ? ` (${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"})` : ""}`
+        : "Rilegge tutti i prelievi ancora aperti, uno alla volta";
+      const grande = puoiLeggere && !t;
+      // letti ma senza data e ora: il perché sta nel passaggio del mouse, non in due righe
+      const infoSenzaData = senzaData.length ? `<span class="infochip" tabindex="0" title="${esc(
+        `Di ${senzaData.length === 1 ? "un prelievo" : `${senzaData.length} prelievi`} la pagina non dà data e ora, né nel campo nascosto né nella riga: ${
+          senzaData.length === 1 ? "è la colonna" : "sono le colonne"} ?, in fondo a destra (${senzaData.map((e) => shortLabel(e.label)).join(", ")}). I valori ci sono tutti; il Registro dice cosa c'era scritto al posto dell'ora.`)}">? ${
+        senzaData.length === 1 ? "1 senza ora" : `${senzaData.length} senza ora`}</span>` : "";
       const valori = prelievi.length || st || conPortale ? `
         <div class="sec">
           <div class="lbl">Valori${t ? ` (${righeTabella(st.righe).length} esami · ${t.nCol} prelievi)` : ""}
-            ${vivi || conPortale ? `<button class="mini" id="risall" ${ra || sotto ? "disabled" : ""} title="Legge i valori dal gestionale, un prelievo alla volta${conPortale ? ", e lo storico del portale in una scheda di sottofondo" : ""}">${
-              ra ? `↻ ${ra.done}/${ra.total}…` : sotto ? "↻ storico…" : (conPortale ? !dalPortale : daLeggere === vivi) ? "⭳ Carica i valori" : "↻ Aggiorna"}</button>` : ""}
+            ${puoiLeggere && !grande ? `<button class="mini" id="risall" ${ra || sotto ? "disabled" : ""} title="${esc(titLeggi)}">${esc(etLeggi)}</button>` : ""}
             ${t ? `<button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>` : ""}
             ${t || prelievi.some((e) => tabStore.get(this.risKey(e.id), null)) ? `<button class="mini" id="valreset" title="Dimentica i valori letti e la scheda in archivio di questo paziente: ⭳ Carica i valori li rilegge da zero">↺ Reset</button>` : ""}
+            ${infoSenzaData}
           </div>
+          ${grande ? `<div class="carica"><button type="button" class="grande" id="risall" ${ra || sotto ? "disabled" : ""} title="${esc(titLeggi)}">${esc(etLeggi)}</button></div>` : ""}
           ${nNov ? `<div class="newbar"><span>${nNov} ${nNov === 1 ? "valore nuovo" : "valori nuovi"} dall'ultima lettura</span><button id="letto" type="button">Letto</button></div>` : ""}
-          ${sotto ? `<div class="hint">Leggo lo storico del portale in una scheda di sottofondo: si chiude da sola.</div>` : ""}
-          ${daLeggere && !ra && !conPortale ? `<div class="hint">${daLeggere} ${daLeggere === 1 ? "prelievo ancora da leggere" : "prelievi ancora da leggere"}: <b>⭳ Carica i valori</b>.</div>` : ""}
-          ${conPortale && !dalPortale && !sotto && !ra && !this.notaPortale ? `<div class="hint"><b>⭳ Carica i valori</b> legge lo storico del portale — tutti i prelievi, refertati e no — in una scheda di sottofondo.</div>` : ""}
           ${this.notaPortale && !sotto ? `<div class="hint">Storico del portale non letto: ${esc(this.notaPortale)}. ${
             vivi ? "I prelievi arrivano dalle finestre Risultati." : ""} Si può aprire dal link «Storico Dati Clinici»: si legge da solo.</div>` : ""}
           ${rotti.length ? `<div class="hint">${rotti.length === 1 ? "Un prelievo non si è lasciato leggere" : `${rotti.length} prelievi non si sono lasciati leggere`} (${
             esc(rotti.map((e) => e.when).filter(Boolean).join(", "))}): il Registro dice perché, <b>↻ Aggiorna</b> riprova.</div>` : ""}
-          ${senzaData.length ? `<div class="hint">Di ${senzaData.length === 1 ? "un prelievo" : `${senzaData.length} prelievi`} la pagina non dà data e ora, né nel campo nascosto né nella riga: ${
-            senzaData.length === 1 ? "è la colonna" : "sono le colonne"} <b>?</b>, in fondo a destra (${
-            esc(senzaData.map((e) => shortLabel(e.label)).join(", "))}). I valori ci sono tutti; il Registro dice cosa c'era scritto al posto dell'ora.</div>` : ""}
           ${t ? `${this.avvisoNomi(righeTabella(st.righe), st.scartate)}${t.nRighe ? t.html
             : `<div class="hint">Tutti i valori sono in range: con «solo alterati» non resta niente da mostrare.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
           ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Con lo storico del portale, letto per <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
@@ -6212,7 +6302,6 @@
       const docs = referti.length ? `
         <div class="sec">
           <div class="lbl">Referti (${referti.length})
-            ${hasExt() && nSaved < referti.length ? `<button class="mini" id="refsave"${this._salvaRef ? " disabled" : ""}>${this._salvaRef ? "salvo…" : "Salva referti"}</button>` : ""}
             ${(nSaved || referti.some((e) => open.has(e.id))) ? `<button class="mini" id="refreset">↻ Resetta</button>` : ""}
             ${this.diagnosi ? `<button class="mini" id="refdiag" title="Copia com'è fatto il visualizzatore che non si è lasciato leggere (senza numeri), da mandare a chi fa il pannello">⧉ Copia diagnosi</button>` : ""}
           </div>
@@ -6224,7 +6313,10 @@
           <summary class="lbl" title="Referti del laboratorio: senza la tabella dei Valori, i risultati finali sono qui">Laboratorio (${lab.length})</summary>
           <div class="rlist">${lab.map(riga).join("")}</div>
         </details>` : "";
-      return valori + docs + docsLab;
+      // Valori e Referti fianco a fianco quando il pannello è abbastanza largo
+      // (lo dice il CSS, sulla larghezza del contenitore: la finestra, non lo
+      // schermo); stretto, uno sotto l'altro.
+      return `<div class="esiti"><div class="esgrid${valori && docs ? " due" : ""}">${valori}${docs}</div>${docsLab}</div>`;
     }
 
     // L'indirizzo del portale clinico. Stava scritto dentro il programma: se
@@ -6258,7 +6350,7 @@
 
       const rigaEsame = (r) => {
         const p = provenienze(r, simboli);
-        const um = (r.valori.find((v) => v && v.um) || {}).um || "";
+        const um = unitaChiara((r.valori.find((v) => v && v.um) || {}).um || "", r.nome);
         const celle = col.map((c) => {
           const v = r.valori[c.i] || { v: "", stato: 0 };
           if (!v.v) return `<td class="vuoto">·</td>`;
@@ -6482,16 +6574,113 @@
       return `<span class="prst${b ? " " + b : ""}" data-promt="${esc(ep)}" title="${esc(l.map((x) => promRiga(x, ora)).join("\n"))}">${esc(promTempo(l[0].t, ora))}</span>`;
     }
     // Sulla pill ridotta, e solo quando tocca: il promemoria più urgente fra
-    // i pazienti in elenco, a 10 minuti o meno, o già passato. Nient'altro.
-    promUrgente(ora = Date.now()) {
+    // i pazienti in elenco, a 10 minuti o meno, o già passato. Se è di un
+    // altro paziente lo dice — «−3m Ferrari · RX polso» — perché accanto al
+    // nome di chi hai davanti un tempo muto si legge come suo. Un tocco: ✓ Fatto,
+    // +15′ o Apri (il paziente).
+    promUrgenti(ora = Date.now()) {
       const tutti = promTutti();
-      if (!Object.keys(tutti).length) return "";
-      const arch = new Set(pazientiArchiviati().map((p) => p.ep)), nomi = new Map(tuttiPazienti().map((p) => [p.ep, p.name]));
-      const urgenti = Object.entries(tutti).filter(([ep]) => !arch.has(ep))
-        .flatMap(([ep, l]) => l.map((p) => ({ ...p, ep }))).filter((p) => promBanda(p.t, ora) === "ros").sort((a, b) => a.t - b.t);
-      if (!urgenti.length) return "";
-      const chi = (p) => `${nomi.get(p.ep) || (p.ep === this.epDiQuesta() && this.nomePaziente()) || "episodio " + p.ep} · ${p.testo}`;
-      return `<span class="prurg" title="${esc(urgenti.map(chi).join("\n"))}">${ICO.sveglia}${esc(promTempo(urgenti[0].t, ora))}</span>`;
+      if (!Object.keys(tutti).length) return [];
+      const arch = new Set(pazientiArchiviati().map((p) => p.ep)), noti = new Map(tuttiPazienti().map((p) => [p.ep, p]));
+      return Object.entries(tutti).filter(([ep]) => !arch.has(ep))
+        .flatMap(([ep, l]) => l.map((p) => ({ ...p, ep, nome: noti.get(ep)?.name || (ep === this.epDiQuesta() && this.nomePaziente()) || "" })))
+        .filter((p) => promBanda(p.t, ora) === "ros").sort((a, b) => a.t - b.t);
+    }
+    promUrgenteTesto(u, ora = Date.now()) {
+      const chi = u.ep === this.epDiQuesta() ? "" : cognomeTitolo(u.nome) || "ep. " + u.ep;
+      return `${promTempo(u.t, ora)}${chi ? " " + chi : ""} · ${u.testo}`;
+    }
+    promUrgente(ora = Date.now()) {
+      const urg = this.promUrgenti(ora);
+      if (!urg.length) return "";
+      const u = urg[0], piu = urg.length - 1;
+      const dove = (p) => `${p.nome || "episodio " + p.ep} · ${p.testo}`;
+      const tit = `${urg.map(dove).join("\n")}\nUn tocco: fatto, 15 minuti in più, o apri il paziente`;
+      return `<span class="prurg" role="button" tabindex="0" data-prurg="${esc(u.ep)}" data-prid="${esc(u.id)}" aria-haspopup="menu" title="${esc(tit)}" aria-label="${
+        esc("Promemoria urgente: " + this.promUrgenteTesto(u, ora))}">${ICO.sveglia}<span class="prurgt">${esc(this.promUrgenteTesto(u, ora))}</span>${piu ? `<span class="prurgp">+${piu}</span>` : ""}</span>`;
+    }
+    // Il segno sulla pill ridotta rifatto SUL POSTO (il tempo che passa, un
+    // promemoria fatto): lo stesso elemento finché è lo stesso promemoria,
+    // così il suo menu aperto non perde l'àncora.
+    promSegno(ora = Date.now()) {
+      const pill = this.root.querySelector("#expand.pill:not(.run)");
+      if (!pill) return;
+      const prima = pill.querySelector(".prurg"), nuovo = this.promUrgente(ora);
+      const m = this._promMenu;
+      if (!nuovo) {
+        prima?.remove();
+        if (m && m.urg && !m.annulla) this.promChiudiMenu();
+        return;
+      }
+      const t = document.createElement("template");
+      t.innerHTML = nuovo;
+      const n = t.content.firstElementChild;
+      if (prima && prima.getAttribute("data-prid") === n.getAttribute("data-prid") && prima.getAttribute("data-prurg") === n.getAttribute("data-prurg")) {
+        prima.title = n.title; prima.setAttribute("aria-label", n.getAttribute("aria-label"));
+        prima.innerHTML = n.innerHTML;
+        return;
+      }
+      if (m && m.urg && !m.annulla) this.promChiudiMenu();
+      if (prima) prima.replaceWith(n); else pill.appendChild(n);
+    }
+    // ✓ Fatto · +15′ · Apri, per il promemoria del segno sulla pill
+    promMenuSegno(anchor) {
+      this.promChiudiMenu();
+      const ep = anchor.getAttribute("data-prurg"), id = anchor.getAttribute("data-prid");
+      const wrap = this.root.querySelector(".wrap"), u = this.promUrgenti().find((x) => x.ep === ep && x.id === id);
+      if (!u || !wrap) return;
+      const mio = ep === this.epDiQuesta(), noto = tuttiPazienti().find((x) => x.ep === ep);
+      wrap.insertAdjacentHTML("beforeend", `<div class="prmenu prmini" role="menu" aria-label="${esc("Promemoria: " + this.promUrgenteTesto(u))}">
+        <div class="prmhd" title="${esc(promRiga(u, Date.now()))}"><b>${esc(this.promUrgenteTesto(u))}</b></div>
+        <div class="prmrow">
+          <button type="button" role="menuitem" class="prmb ok" data-pu="fatto" title="Fatto: lo tolgo (si può annullare)">✓ Fatto</button>
+          <button type="button" role="menuitem" class="prmb" data-pu="piu" title="Rimanda di 15 minuti">+15′</button>
+          ${mio || noto?.url ? `<button type="button" role="menuitem" class="prmb" data-pu="apri" title="${mio ? "Apri il pannello" : "Apri " + esc(u.nome || "il paziente")}">Apri</button>` : ""}
+        </div></div>`);
+      const menu = wrap.lastElementChild;
+      this.promPosiziona(menu, anchor, wrap);
+      const chiudi = (ritorna) => this.promChiudiMenu(ritorna);
+      menu.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-pu]");
+        if (!b) return;
+        const az = b.getAttribute("data-pu");
+        if (az === "fatto") {
+          const p = promTogli(ep, id);
+          if (!p) return chiudi();
+          // sulla pill ridotta non c'è dove mostrare «Annulla»: lo porta il menu, 8 secondi
+          menu.innerHTML = `<div class="prmrow"><span class="prmq">Fatto: ${esc(p.testo)}</span><button type="button" class="prmb" data-pu="annulla">Annulla</button></div>`;
+          menu.dataset.fatto = JSON.stringify(p);
+          this._promMenu.annulla = true;
+          this._promMenu.timer = setTimeout(() => { if (this._promMenu?.menu === menu) chiudi(); }, 8000);
+          menu.querySelector("button")?.focus({ preventScroll: true });
+          this.promSegno();
+          // senza il segno la pill si stringe (e si sposta, ancorata a destra): il menu la segue
+          const pill = this.root.querySelector("#expand");
+          if (pill) this.promPosiziona(menu, pill, wrap);
+        } else if (az === "annulla") {
+          try { promRimetti(ep, JSON.parse(menu.dataset.fatto)); } catch { /* niente */ }
+          chiudi(); this.promSegno();
+        } else if (az === "piu") {
+          promRinvia(ep, id); chiudi(); this.promSegno();
+        } else if (az === "apri") {
+          chiudi();
+          if (mio) this.apri(); else this.apriPaziente(ep, "esiti");
+        }
+      });
+      menu.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); chiudi(true); } });
+      menu.addEventListener("focusout", (e) => { if (e.relatedTarget && !menu.contains(e.relatedTarget) && e.relatedTarget !== anchor) chiudi(); });
+      const fuori = (e) => { const via = e.composedPath(); if (!via.includes(menu) && !via.includes(anchor)) chiudi(); };
+      window.addEventListener("pointerdown", fuori, true);
+      this._promMenu = { menu, anchor, ep, fuori, urg: true };
+      menu.querySelector("button")?.focus({ preventScroll: true });
+    }
+    // sotto l'àncora; se sotto non c'è posto, sopra; sempre dentro lo schermo
+    promPosiziona(menu, anchor, wrap) {
+      const wr = wrap.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+      let y = ar.bottom + 6;
+      if (y + menu.offsetHeight > innerHeight - 8) y = Math.max(8, ar.top - 6 - menu.offsetHeight);
+      menu.style.left = Math.max(8, Math.min(ar.left, innerWidth - menu.offsetWidth - 8)) - wr.left + "px";
+      menu.style.top = y - wr.top + "px";
     }
     // Ogni 30 secondi le pill dei promemoria rifanno i conti SUL POSTO: niente
     // ridisegno, così non si ruba il fuoco e non si disturba chi scrive.
@@ -6511,12 +6700,7 @@
         el.className = "prst" + (b ? " " + b : "");
         el.textContent = promTempo(t, ora);
       }
-      const pill = this.root.querySelector("#expand.pill:not(.run)");
-      if (pill) {
-        const prima = pill.querySelector(".prurg"), ora2 = this.promUrgente(ora);
-        if (prima) prima.outerHTML = ora2;
-        else if (ora2) pill.insertAdjacentHTML("beforeend", ora2);
-      }
+      this.promSegno(ora);
       const pin = this.root.querySelector("#prin");
       if (pin && !this._promIn?.err) this.promSuggerisci(pin);
     }
@@ -6532,6 +6716,11 @@
       }
     }
     promClic(e) {
+      const segno = e.target.closest?.("[data-prurg]");
+      if (segno) {
+        const aperto = this._promMenu?.anchor === segno && this._promMenu.menu.isConnected;
+        return aperto ? this.promChiudiMenu(true) : this.promMenuSegno(segno);
+      }
       const pill = e.target.closest?.("[data-prom]");
       if (pill) {
         const aperto = this._promMenu?.anchor === pill && this._promMenu.menu.isConnected;
@@ -6634,11 +6823,7 @@
         <div class="prmhd">Promemoria${nome ? ` · ${esc(nome)}` : ""}</div>${l.map(riga).join("")}</div>`);
       const menu = wrap.lastElementChild;
       // sotto la pill; se sotto non c'è posto, sopra; sempre dentro lo schermo
-      const wr = wrap.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
-      let y = ar.bottom + 6;
-      if (y + menu.offsetHeight > innerHeight - 8) y = Math.max(8, ar.top - 6 - menu.offsetHeight);
-      menu.style.left = Math.max(8, Math.min(ar.left, innerWidth - menu.offsetWidth - 8)) - wr.left + "px";
-      menu.style.top = y - wr.top + "px";
+      this.promPosiziona(menu, anchor, wrap);
       menu.addEventListener("click", (e) => {
         const f = e.target.closest("[data-pfatto]"), r = e.target.closest("[data-prinvia]");
         if (f) this.promFatto(ep, f.getAttribute("data-pfatto"));
@@ -6656,6 +6841,7 @@
       const a = this._promMenu;
       if (!a) return;
       this._promMenu = null;
+      clearTimeout(a.timer);
       window.removeEventListener("pointerdown", a.fuori, true);
       a.menu.remove();
       if (ritorna && a.anchor?.isConnected) a.anchor.focus();
@@ -6975,18 +7161,14 @@
       return `
         ${ritiro.length ? `
         <div class="sec">
-          <div class="lbl">Moduli per il ritiro (${ritiro.length})</div>
+          <div class="lbl" title="${esc(this.notaModuli())}">Moduli per il ritiro (${ritiro.length})</div>
           <div class="mlist">${ritiro.map((c) => this.rigaModulo(c)).join("")}</div>
         </div>` : ""}
         <div class="sec">
-          <div class="lbl">Fogli di dimissione (${chiavi.length})
-            <button class="mini" id="dimexport" title="Salva i tuoi testi in un file JSON">⬇ JSON</button>
-            <button class="mini" id="dimimport" title="Rimetti i testi di un JSON esportato">⤒ Importa</button>
-          </div>
+          <div class="lbl">Fogli di dimissione (${chiavi.length})</div>
           <div class="dlist">${righe}
             <button type="button" class="dnuovo" id="dimnuovo" title="Scrivi un foglio tuo: resta in cima all'elenco, su questo computer"><span class="dplus" aria-hidden="true">+</span>Nuovo foglio di dimissione</button>
           </div>
-          <div class="hint">Clic sulla riga per copiare il foglio, ✎ per modificarlo una volta per tutte. Le modifiche e i fogli tuoi restano su questo computer.</div>
         </div>`;
     }
 
@@ -7106,10 +7288,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
               <input id="tlib" placeholder="…oppure scrivilo" maxlength="60" aria-label="Attività">
               <button class="mini" id="tavvia">▶ Avvia</button>
             </div>`}
-          <div class="lbl">Registrati (${chiusi.length})${chiusi.length ? `<button class="mini" id="texp">⬇ Esporta</button><span class="ttot">totale ${esc(mmss(tot))}</span>` : ""}</div>
+          <div class="lbl" title="Si salva l'istante di inizio, non i secondi passati: ricaricare la pagina o riavviare il browser non cambia il conto. Restano una settimana, su questo computer.">Registrati (${chiusi.length})${chiusi.length ? `<button class="mini" id="texp">⬇ Esporta</button><span class="ttot">totale ${esc(mmss(tot))}</span>` : ""}</div>
           <div class="tlist">${righe || `<div class="hint">Ancora niente. Avvia un cronometro qui sopra.</div>`}</div>
-          <div class="hint">Non si salvano i secondi passati, si salva l'istante di inizio: ricaricare
-            la pagina o riavviare il browser non cambia il conto. Restano una settimana, su questo computer.</div>
         </div>`;
     }
 
@@ -7140,7 +7320,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
               </button>
               <button class="dbtn" data-eoedit="base" title="Riscrivi l'esame obiettivo generale" aria-label="Modifica l'esame obiettivo generale">✎</button>
             </div>` : ""}
-          <div class="lbl">Aggiungi per caso</div>
+          <div class="lbl" title="Prima l'EO generale, poi l'aggiunta del caso: due incollate. ✎ riscrive un testo per le volte successive (• = riscritto da te). I testi sono uguali per tutti i pazienti: quello che riguarda questo paziente si scrive in cartella.">Aggiungi per caso</div>
           <select class="res" id="eocaso" aria-label="Aggiunta di esame obiettivo da copiare">
             <option value="">Scegli: si copia da sé…</option>
             ${opz("casi", "Casi")}
@@ -7153,9 +7333,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
             <button class="dbtn" data-eoedit="${esc(sel)}" id="eoedit" title="Riscrivi questo testo" aria-label="Modifica questo testo">✎</button>
           </div>
           <div class="eotxt" id="eotxt" ${scelta ? "" : "hidden"}>${esc(scelta ? scelta.testo : "")}</div>
-          <div class="hint">Prima l'EO generale, poi l'aggiunta del caso: due incollate. ✎ riscrive un testo per
-            le volte successive (• = riscritto da te). Restano uguali per tutti i pazienti — quello che
-            riguarda questo paziente si scrive in cartella.</div>
         </div>`;
     }
 
@@ -7204,9 +7381,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const consensi = CONSENSI.filter((c) => !c.gruppo);
       return `
         <div class="sec">
-          <div class="lbl">Moduli di consenso (${consensi.length})</div>
+          <div class="lbl" title="${esc(this.notaModuli())}">Moduli di consenso (${consensi.length})</div>
           <div class="dlist">${consensi.map((c) => this.rigaModulo(c)).join("")}</div>
-          <div class="hint">${esc(this.notaModuli())}</div>
         </div>`;
     }
 
@@ -7302,14 +7478,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // tabella: non meritano un avviso a ogni emocromo, solo l'elenco «quali»
       if (!inattesi.length && !persi.length) return "";
       const pezzi = [];
-      if (inattesi.length) pezzi.push(`${inattesi.length} ${inattesi.length === 1 ? "nome non in elenco" : "nomi non in elenco"}: scritti per esteso`);
+      if (inattesi.length) pezzi.push(`${inattesi.length} ${inattesi.length === 1 ? "nome non in elenco" : "nomi non in elenco"}`);
       if (persi.length) pezzi.push(`${persi.length} ${persi.length === 1 ? "riga non letta" : "righe non lette"}`);
       const elenco = [
         inattesi.length ? "Non in elenco: " + inattesi.join(", ") : "",
         doppi.length ? "Stessa abbreviazione: " + doppi.join(", ") : "",
         persi.length ? "Non lette: " + persi.map((x) => `${x.nome} = ${x.valore}`).join(" · ") : "",
       ].filter(Boolean).join("\n");
-      return `<div class="avvnomi" title="${esc(elenco)}">
+      return `<div class="avvnomi" title="${esc((inattesi.length ? "Scritti per esteso e sottolineati: di questi non conosco la sigla.\n" : "") + elenco)}">
           <span class="avvi">!</span><span>${esc(pezzi.join(" · "))}</span>
           <button class="avvb" id="avvnomi" type="button">${this.mostraNomi ? "nascondi" : "quali"}</button>
         </div>${this.mostraNomi ? `<div class="avvlista">${esc(elenco)}</div>` : ""}`;
@@ -7565,7 +7741,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // la finestra al centro.
     attachDrag(el) {
       el.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0 || e.target.closest(".iconbtn, .tchip, .menuw, button:not(#expand), input, a, [data-rz]")) return;
+        if (e.button !== 0 || e.target.closest(".iconbtn, .tchip, .menuw, button:not(#expand), input, a, [data-rz], [data-prurg]")) return;
         try { el.setPointerCapture(e.pointerId); } catch { /* niente */ }
         const wrap = this.root.querySelector(".wrap");
         const r = wrap.getBoundingClientRect();
@@ -7648,7 +7824,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
 
     bind() {
       const $ = (s) => this.root.querySelector(s);
-      $("#expand")?.addEventListener("click", () => {
+      $("#expand")?.addEventListener("click", (e) => {
+        if (e.target.closest?.("[data-prurg]")) return;   // il segno del promemoria ha il suo menu
         // aprire la striscia di un giro in corso è un gesto di adesso, non una
         // preferenza: finito il giro il pannello torna com'era
         if (this.runState === "running") { this.collapsed = false; this.render(); return; }
@@ -7921,11 +8098,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           file = true;
         } catch { /* clipboard below */ }
         appunti = await copiaTesto(testo);
-        const b = this.root.querySelector("#dimexport");
-        if (b) {
-          b.textContent = file && appunti ? "✓ file + appunti" : file ? "✓ dimissioni.json" : appunti ? "✓ negli appunti" : "✗ non riuscito";
-          setTimeout(() => { if (b.isConnected) b.textContent = "⬇ JSON"; }, 2500);
-        }
+        this.menuAperto = false;
+        this.message = file || appunti
+          ? { ok: file && appunti ? "Fogli salvati: dimissioni.json e negli appunti." : file ? "Fogli salvati: dimissioni.json." : "Fogli negli appunti." }
+          : "Esportazione non riuscita.";
+        this.render();
       });
       const nota = this.root.querySelector("#nota");
       if (nota) {
@@ -7952,6 +8129,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         nota.addEventListener("blur", () => { clearTimeout(attesa); scriviNota(this.chiaveNota(), nota.value); });
       }
       $("#tapri")?.addEventListener("click", () => this.setView("tempi"));
+      $("#tempimenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("tempi"); });
       const ferma = () => { fermaTempo(); this.render(); };
       $("#tstop")?.addEventListener("click", ferma);
       $("#tstop2")?.addEventListener("click", ferma);
@@ -7975,7 +8153,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         openPrintWizard([{ name: c.nome, printer: "stampante normale", url, diretto: true }],
           { title: c.nome, panel: this });
       }));
-      $("#dimimport")?.addEventListener("click", () => this.setView("dimimport"));
+      $("#dimimport")?.addEventListener("click", () => { this.menuAperto = false; this.setView("dimimport"); });
       $("#dimimpok")?.addEventListener("click", () => {
         const ta = this.root.querySelector("#dimimparea");
         const testo = (ta && ta.value || "").trim();
@@ -8033,6 +8211,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         live.confirmButton?.click();
       });
       $("#extreload")?.addEventListener("click", () => {
+        if (this.giroInCorso()) return;   // un giro a metà non si uccide
         try { chrome.runtime.sendMessage("psassist-reload"); } catch { /* not the extension build */ }
       });
       const qEl = $("#q");
@@ -8073,7 +8252,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.openEsito(b.getAttribute("data-esito"))));
       $("#refreset")?.addEventListener("click", () => this.resetReferti());
       $("#reflab")?.addEventListener("toggle", (e) => { this.labAperto = e.target.open; });
-      $("#refsave")?.addEventListener("click", () => this.saveAllReferti());
+      $("#refsave")?.addEventListener("click", () => { this.menuAperto = false; this.saveAllReferti(); });
       $("#copylog")?.addEventListener("click", (e) => { e.preventDefault(); this.copyLog(); });
       this.bindStanza();
       this.promLega();   // il campo di un promemoria rimasto aperto

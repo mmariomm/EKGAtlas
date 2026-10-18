@@ -75,8 +75,11 @@ check(await page.locator("#psassist-host #reflab").count() === 0
   && await page.locator('#psassist-host [data-esito][data-kind="referto"]').count() === 2,
   "negli Esiti restano solo i referti che non sono di laboratorio (2)");
 
+// «Salva i referti» non è un comando di tutti i giorni: sta nel menu ⋯
+await page.locator("#psassist-host #menubtn").click();
 const saveBtn = page.locator("#psassist-host #refsave");
-check(await saveBtn.count() === 1, "il bottone «Salva referti» compare solo nell'estensione");
+check(await saveBtn.count() === 1, "«Salva i referti» sta nel menu ⋯, e compare solo nell'estensione");
+check(await page.locator("#psassist-host .sec .lbl #refsave").count() === 0, "e non è più un bottone nella riga dei Referti");
 await saveBtn.click();
 await page.waitForFunction(
   () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length === 2,

@@ -42,7 +42,8 @@ quesito, esami selezionati, sezioni aperte e posizione tornano come li hai lasci
 stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
 
 **Aggiornare a una nuova versione**: sostituisci i file nella STESSA cartella dell'estensione e
-premi **"⟳ ricarica estensione"** nel piè di pagina del pannello (o ⟳ in `chrome://extensions`).
+premi **Ricarica estensione** nel menu **⋯** del pannello (o ⟳ in `chrome://extensions`): non c'è
+mentre un giro di esami sta mandando, perché lo ucciderebbe a metà.
 Un'estensione non pacchettizzata non può scaricarsi gli aggiornamenti da sola, e PS Assist non
 contatterà mai server esterni per controllare le versioni — sarebbe contro la regola «nessun dato
 lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica, fatto.
@@ -73,10 +74,12 @@ lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica,
 ## Uso quotidiano
 
 **Due forme, un tocco per passare dall'una all'altra.** Aperto, il pannello è una **finestra al
-centro che prende l'85% dello schermo**: intestazione e schede restano ferme, scorre solo il
+centro che prende l'85% dello schermo, ma mai più larga di 1150 px** (su uno schermo grande sarebbe
+una lenzuolata): intestazione e schede restano ferme, e non si spostano di lato cambiando schermata; scorre solo il
 contenuto, che sta su una colonna comoda da leggere (valori e stanza usano tutta la larghezza).
 La sposti dall'intestazione, la ridimensioni da **qualsiasi bordo o angolo**; **doppio clic**
-sull'intestazione o sull'angolo la rimette al centro, all'85%. **—** la riduce alla **pill**, che
+sull'intestazione o sull'angolo la rimette al centro, nella misura di partenza. Una finestra che
+hai spostato o ridimensionato, e **Affianca**, restano come le hai messe. **—** la riduce alla **pill**, che
 resta dove la trascini; un tocco sulla pill riapre la finestra dove l'avevi lasciata. Per usare il
 gestionale sotto, si riduce alla pill: la finestra lo copre quasi tutto, apposta.
 
@@ -86,7 +89,10 @@ pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha a
 **giro di esami** no: dalla spedizione alle etichette parla la striscia nell'angolo, e la
 finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
 «✓ Copiato · incolla». Nel menu **⋯**: **Al centro** e **Affianca a destra** (una colonna, col
-gestionale accanto), poi Registro e versione.
+gestionale accanto), **Tempi** (il cronometro), poi — solo dove servono — **Esporta i fogli (JSON)** e
+**Importa i fogli…** (in Dimissioni) e **Salva i referti** (negli Esiti, solo con l'estensione), il
+Registro, **Ricarica estensione** e la versione. Il cronometro compare in intestazione **solo mentre corre**
+(un tocco sul tempo apre la scheda, ⏹ lo ferma).
 
 Il pannello ha cinque schermate, in **una fila di schede** sempre in cima e nell'ordine in cui si
 lavora: **Richieste · Esiti · EO · Consensi · Dimissioni** (sulla lista del pronto soccorso, dove
@@ -188,8 +194,12 @@ Lista e sulla pagina del paziente, una pill dice quanto manca al più vicino —
 mezz'ora, **ambra** sotto i 30 minuti, **rossa** sotto i 10 e quando è l'ora, con un bagliore lento
 (fermo se il sistema chiede meno movimento). Un tocco sulla pill apre i suoi promemoria: **✓ Fatto**
 (si annulla per 8 secondi) e **+15 min** (da quando era fissato, o da adesso se è già passato).
-Ridotto il pannello, la pill mette un segno rosso — «8m» — solo quando un promemoria è a 10 minuti
-o è passato, col paziente nel passaggio del mouse. I tempi si rifanno da soli ogni 30 secondi, sul
+Ridotto il pannello, la pill mette un segno rosso solo quando un promemoria è a 10 minuti
+o è passato — sempre **con la cosa da fare**: «8m · tropo» se è di chi hai davanti, **«−3m Ferrari · RX polso»**
+se è di un altro paziente (il suo cognome: un tempo muto accanto al nome di chi guardi si leggerebbe come
+suo; il nome intero è nel passaggio del mouse). Un tocco sul segno apre un menu minuscolo: **✓ Fatto**
+(sulla pill non c'è dove mostrare l'«Annulla»: lo porta il menu, per 8 secondi), **+15′** e **Apri**
+(carica la pagina di quel paziente, con la finestra aperta). I tempi si rifanno da soli ogni 30 secondi, sul
 posto: niente si ridisegna sotto chi scrive.
 
 Tutto resta **solo in questo browser** (`localStorage`), niente va in rete; un altro PC o un altro
@@ -341,12 +351,17 @@ fondo **Altri** — i dettagli più sotto), una colonna per prelievo, **il più 
 data e ora per esteso e **gli esami** compresi in quella richiesta.
 
 - I nomi sono in **sigla** (`Hb`, `GB`, `PLT`…), con l'**unità fra parentesi accanto al nome**
-  (`GB (x10³/µL)`) e il **range nel tooltip del valore**.
+  (`GB (×10⁹/L)`) e il **range nel tooltip del valore**. Il gestionale scrive «x10» e perde l'esponente:
+  per i conteggi cellulari — globuli bianchi e formula, piastrine ×10⁹/L, globuli rossi ×10¹²/L — si scrive per
+  esteso; ogni altra unità «x10» nuda resta com'è, mai un'ipotesi.
 - La **formula leucocitaria** è una riga per cellula: il valore **assoluto** e fra parentesi la
   **percentuale** — `Neu 4.0 (56%)`. Il laboratorio le manda in coppia («Granulociti» e
   «Granulociti %»), che prima erano due righe con lo stesso nome. Il fuori range è quello
   dell'assoluto; una percentuale che arriva da sola resta da sola. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
-  vale per un'abbreviazione ambigua — e una riga d'avviso in cima dice **quali**.
+  vale per un'abbreviazione ambigua — e una riga piccola in cima dice **quanti** (**quali** apre l'elenco).
+- **Valori e Referti fianco a fianco** quando la finestra è abbastanza larga (misurata sul contenitore,
+  non sullo schermo: dentro la finestra da 1150 px sì, nella colonna di «Affianca» no): la tabella a
+  sinistra, i referti in una colonna accanto; stretto, uno sotto l'altro.
 - La tabella è **larga quanto i suoi numeri**, non quanto il pannello: se allarghi la finestra i
   valori restano **accanto ai nomi** invece di allontanarsene, e sono allineati a sinistra
   (incolonnati dalle cifre tabulari).
@@ -355,7 +370,9 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   **parziale** (il laboratorio non ha finito — c'è una riga che lo ricorda sotto la tabella). Quando lo stesso
   analita arriva da esami diversi — l'emocromo del POC e quello del laboratorio, per dire — chi
   non è «il solito» porta un **asterisco o una croce**, spiegati nella legenda sotto la tabella.
-- **⭳ Carica i valori** legge i prelievi non ancora letti; fatta la prima lettura diventa
+- **⭳ Carica i valori** legge i prelievi non ancora letti: finché non c'è una tabella è **un solo
+  bottone grande** al posto della tabella (i dettagli — quanti prelievi, da dove — sono nel passaggio
+  del mouse, non in una riga che ripete le stesse parole); fatta la prima lettura diventa il piccolo
   **↻ Aggiorna**, che rilegge **tutti** i prelievi ancora aperti, a passo lento e uno alla volta.
   Con l'estensione il bottone legge **lo storico del portale**, in una scheda di sottofondo che si
   chiude da sola (vedi *Da dove viene la tabella*): lì ci sono **tutti** i valori del laboratorio,
@@ -367,7 +384,7 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   restano).
 - Di un prelievo il gestionale può **non dare data e ora** (né nel campo nascosto della riga, né
   a video). Quei valori **non spariscono**: diventano la colonna **?**, in fondo a destra, con
-  «ora ignota» sotto e il motivo nel tooltip. Una riga sotto i bottoni lo dice, e il Registro
+  «ora ignota» sotto e il motivo nel tooltip. Un piccolo «? 1 senza ora» nella riga del titolo lo dice (il perché è nel passaggio del mouse), e il Registro
   elenca ogni prelievo letto con la colonna in cui è finito.
 - **Un tocco su un valore lo segna**: giallo; un secondo tocco arancio; un terzo lo spegne. I segni
   sono tuoi, restano col paziente (24 ore, come la nota) e sopravvivono al cambio di pagina.
@@ -375,9 +392,8 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   un valore cambiato ha **sfondo azzurro**, e lo stesso vale per un analita comparso da zero. In
   cima compare **«N valori nuovi dall'ultima lettura»** con un bottone **Letto** che spegne i
   marchi. La prima lettura di un prelievo è sempre il riferimento: non è mai un muro di marchi.
-- Un avviso dice quanti prelievi mancano ancora (**«N prelievi ancora da leggere»**: ⭳ Carica i
-  valori) e quali non si sono lasciati leggere (il **Registro** dice perché; **↻ Aggiorna**
-  riprova).
+- Un avviso dice quali prelievi non si sono lasciati leggere (il **Registro** dice perché; **↻ Aggiorna**
+  riprova). Quanti ne mancano da leggere lo dice il passaggio del mouse su **⭳ Carica i valori**.
 - La tabella mette insieme due cose: i prelievi letti **in questa scheda del browser** — sempre,
   anche col bookmarklet e senza estensione — e, quando è di questo paziente, la **scheda
   clinica** che l'estensione tiene in archivio (la tabella del portale, e i prelievi letti in
@@ -392,10 +408,10 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
 **data e ora della richiesta**, il più recente in cima. I referti di **laboratorio** (LIS) **non
 ci sono** quando la tabella dei Valori li può mostrare — c'è una tabella, o c'è da dove leggerla
 (estensione e portale): lì quello che dicono è già nei Valori, e in mezzo agli altri facevano
-perdere l'ECG e la radiologia. Né il conteggio «Referti (n)» né **⬇ Salva referti** e **↻ Resetta**
+perdere l'ECG e la radiologia. Né il conteggio «Referti (n)» né **Salva i referti** e **↻ Resetta**
 li contano o li toccano. **Senza tabella e senza portale** (il bookmarklet, per dire) i referti di
 laboratorio sono l'unico posto dove si vedono i risultati finali: allora restano, **chiusi** sotto
-**«Laboratorio (N)»** in fondo agli Esiti — un tocco li apre — e la scheda **Esiti** li conta. Un
+**«Laboratorio (N)»** in fondo agli Esiti — un tocco li apre. La scheda **Esiti** non porta nessun numero. Un
 esito finale non sparisce mai: «Nessun esito per questo paziente» compare solo quando non c'è
 davvero niente, nemmeno un referto.
 - **RIS ›** — referti di **radiologia** (RX, TC, ecografia, RMN) ed **ECG**: si aprono **dentro il
@@ -414,7 +430,7 @@ davvero niente, nemmeno un referto.
   non solo per i visualizzatori HTML.
 - **AMB, consulenze… ↗** — gli altri referti (PDF): si aprono in una scheda e, con l'estensione, il
   documento che apri **viene tenuto** (pallino verde) — la volta dopo si apre all'istante, senza
-  toccare il server. **⬇ Salva referti** prende tutti quelli in elenco in una volta, **↻ Resetta** svuota.
+  toccare il server. **Salva i referti** (menu **⋯**, solo con l'estensione) prende tutti quelli in elenco in una volta, **↻ Resetta** svuota.
   Un referto che non si lascia salvare (pallino rosso, il motivo al passaggio del mouse e nel
   Registro) resta apribile con un tocco; **⧉ Copia diagnosi** copia com'è fatto il visualizzatore
   che l'ha impedito — senza numeri né valori dei campi — da mandare a chi fa il pannello. Lo
@@ -447,7 +463,7 @@ Una **pagina sola**, senza server: si apre col doppio clic e dentro ci sono già
 servizio. Clicchi un titolo o un testo e scrivi — nessun tasto «modifica», nessuna schermata.
 **+ Nuovo foglio**, **↑ ↓** per riordinare, **🗑** per buttarne uno (chiede conferma).
 **⬇ Salva** scarica `dimissioni.json` *e* lo copia negli appunti, nella forma esatta che il pannello
-importa con **⤒ Importa**: si passa da lì e i fogli nuovi sono in servizio. Il lavoro a metà resta
+importa con **Importa i fogli…** (menu **⋯**, in Dimissioni): si passa da lì e i fogli nuovi sono in servizio. Il lavoro a metà resta
 nel browser, quindi chiudere la pagina non costa niente; **↺ Originali** rimette i testi spediti.
 La pagina sta nello zip e si rigenera con `npm run editor`.
 
@@ -460,9 +476,11 @@ Un elenco di **esami obiettivi da incollare in cartella**, scritti dal medico e 
   (rettale rifiutata, neuro poco collaborante, NEXUS, segni d'allarme spiegati). **Sceglierne uno lo
   copia da sé**: nessun secondo passaggio.
 - Il testo scelto **resta scritto sotto la tendina**, così si vede cosa è finito negli appunti, e
-  **⧉ Copia di nuovo** lo ripete senza doverlo riscegliere. La scelta sopravvive al cambio schermata.
+  **⧉ Copia di nuovo** (che compare **solo dopo una scelta**) lo ripete senza doverlo riscegliere. La
+  scelta sopravvive al cambio schermata.
 - Si usa in due incollate: prima l'EO generale, poi l'aggiunta del caso. I testi sono **uguali per
-  tutti i pazienti** — quello che riguarda *questo* paziente si scrive in cartella. Nessun dato di
+  tutti i pazienti** — quello che riguarda *questo* paziente si scrive in cartella (lo dice il passaggio
+  del mouse su «Aggiungi per caso»: in fondo alla schermata non c'è nessun paragrafo). Nessun dato di
   paziente entra qui (è un controllo del collaudo).
 
 I testi stanno in `src/eo.json` e sono compilati dentro l'estensione: **zero richieste al server**.
@@ -478,7 +496,8 @@ consenso informato, richiesta emocomponenti, dichiarazione del medico in urgenza
 Le **deleghe per il ritiro** — **Ritiro esami**, **Ritiro referto RX**, **Ritiro cartella e CD**
 — non sono consensi: si danno a chi va a casa, e stanno in cima alla schermata **Dimissioni**.
 Un tocco apre direttamente il dialogo di stampa, come per la lista esami; un modulo di più pagine
-dice **quanta carta esce** prima che tu prema Stampa.
+dice **quanta carta esce** prima che tu prema Stampa. (Che i moduli stanno dentro l'estensione e che non
+esce nessuna richiesta è nel passaggio del mouse sul titolo dell'elenco, non in un paragrafo.)
 
 I file stanno nella cartella `extension/consensi/`: **niente rete, niente server**. Si aprono anche
 se il gestionale è lento o giù, e per stamparli non esce una singola richiesta dal computer (è un
@@ -640,7 +659,7 @@ foglio i motivi per **tornare in Pronto Soccorso**.
   I **fogli tuoi** stanno in cima, col segno *tuo*; si copiano come gli altri, ✎ li riscrive o li
   rinomina, ✕ Elimina li toglie (chiede conferma). Due fogli con lo stesso nome non si possono
   avere: nell'elenco non si distinguerebbero. Come tutti i fogli sono **modelli**, senza dati del
-  paziente, e restano su questo computer (⬇ JSON per portarli su un altro).
+  paziente, e restano su questo computer (**Esporta i fogli (JSON)**, nel menu **⋯**, per portarli su un altro).
 - **✎** apre il testo in grande e lo riscrive **per le volte successive**: le modifiche restano su
   quel computer (`localStorage`) — **sopravvivono al logout, alla chiusura del browser e agli
   aggiornamenti del programma**, perché sono tue e non dati di un paziente. Non finiscono nel
@@ -656,7 +675,8 @@ foglio i motivi per **tornare in Pronto Soccorso**.
 - **↺ Originale** chiede conferma prima di buttare il tuo testo. Se una nuova versione del
   programma corregge un foglio che tu avevi modificato, quel foglio si marca **⟳** e l'editor te lo
   dice: una correzione di dosaggio non può restare invisibile a chi ha personalizzato il testo.
-- **⬇ JSON** salva i tuoi testi in un file (e negli appunti); **⤒ Importa** li rimette da una
+- **Esporta i fogli (JSON)** — nel menu **⋯**, solo in Dimissioni — salva i tuoi testi in un file (e negli appunti);
+  **Importa i fogli…** li rimette da una
   schermata dove incolli il JSON — entrano **solo i testi diversi dagli originali**, così un
   ripristino non congela per sempre gli altri sette.
 
@@ -1007,7 +1027,7 @@ stessi flussi dei test di prodotto.
     quando li chiedi — aprendo un prelievo, o con **⭳ Carica i valori** che li prende tutti, uno
     alla volta, insieme allo storico del portale aperto in sottofondo dal link della pagina —
     e un prelievo che ha già fallito non si ritenta da solo. Un referto che apri non
-    viene riletto per tenerne una copia: per quello c'è **⬇ Salva referti**. E la tabella
+    viene riletto per tenerne una copia: per quello c'è **Salva i referti** (menu ⋯). E la tabella
     multi-prelievo viene **letta dalla pagina che hai davanti**, non chiesta all'API che la
     riempie — una chiamata diretta a quel servizio arriverebbe senza l'`Origin` della sua app,
     cioè come una cosa diversa da te che clicchi, e non è quello che questo programma fa.
@@ -1019,7 +1039,7 @@ stessi flussi dei test di prodotto.
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
-> davvero condiviso, non usare **⬇ Salva referti** (i PDF resterebbero su disco fino a 8 ore).
+> davvero condiviso, non usare **Salva i referti** (i PDF resterebbero su disco fino a 8 ore).
 
 ---
 
@@ -1090,7 +1110,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 80 scenari e2e in Chromium reale (+ storico e referti)
+└── test/                ← simulatore SA4PSO + 84 scenari e2e in Chromium reale (+ storico e referti)
 ```
 
 Sviluppo:
@@ -1101,7 +1121,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 80 scenari e2e + 52 sull'estensione + 59 sul banco + storico + il cancello privacy
+npm test           # 84 scenari e2e + 53 sull'estensione + 59 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
