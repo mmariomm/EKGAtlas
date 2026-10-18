@@ -107,23 +107,29 @@ un altro **carica la sua pagina**: il pannello non mostra mai i dati di un pazie
 quello che hai davanti. Il pannello parte da qui solo sulla lista del pronto soccorso, dove non c'è
 un paziente aperto; sulla scheda di un paziente parte dagli **Esiti**.
 
-La stessa gente in due viste, **Lista | Stanza**: l'interruttore sta in fondo alla fila delle
-schede e si ricorda l'ultima scelta.
+**Una vista sola: sopra la lista, sotto la stanza.** Nella lista c'è chi non ha ancora un posto;
+nella stanza, chi ce l'ha. Metti un paziente al suo posto e la sua riga se ne va: la lista si
+accorcia e la stanza sale e si allarga. La lista prende quello che le serve, al massimo poco meno
+di metà, poi scorre dentro; vuota, non c'è proprio, e la stanza arriva fin sotto le schede. Un
+paziente nuovo arriva nella lista da solo, e nessuno sparisce: se il suo letto viene tolto, torna
+lì. In fondo, chiusi, gli **Archiviati** e **Svuota l'elenco**.
 
-**Lista** — i pazienti su cui hai lavorato nel turno, **una riga per paziente**: la striscia del
-**triage**, il nome (un tocco sulla riga apre gli Esiti), accanto il **promemoria** più vicino
-(«15m tropo»), la nota in grigio, **visto 20 min fa** —
-in ambra dopo 3 ore —, oppure **questa pagina** per quello aperto, che è il primo; poi **dove sta**
-nella stanza («Box 3 ▾», o «—»: un tocco e lo sposti), **Richieste** (in azzurro sulla riga sotto il
-mouse), e passandoci sopra la **sveglia** per un promemoria e la **✕** per toglierlo dall'elenco. Il
-nome non si taglia mai per primo: nella colonna stretta promemoria e nota scendono sotto il nome e
-«visto…» si toglie. In fondo, chiusi, gli **Archiviati** e **Svuota l'elenco**.
+**La lista** — **una riga per paziente**: la striscia del **triage**, il nome (un tocco sulla riga
+apre gli Esiti), accanto il **promemoria** più vicino («15m tropo»), la nota in grigio, **visto 20
+min fa** — in ambra dopo 3 ore —, oppure **questa pagina** per quello aperto, che è il primo; poi
+**▾**, per metterlo nella stanza senza trascinarlo, e passandoci sopra la **sveglia** per un
+promemoria e la **✕** per toglierlo dall'elenco. L'**episodio precedente** sta in fondo, in grigio,
+e nella stanza non va. Il nome non si taglia mai per primo: nella colonna stretta promemoria e nota
+scendono sotto il nome e «visto…» si toglie.
 
-**Stanza** — una mappa minima della stanza, per vedere a colpo d'occhio **dove sta ogni paziente**:
-i **letti** e le **sedie** (un paziente ciascuno) e le **aree** senza letto — corridoio, attesa —
-dove ne stanno quanti servono. A sinistra **Da sistemare**: chi non ha ancora un posto. Un paziente
-nuovo arriva lì da solo, e nessuno sparisce: se il suo letto viene tolto, torna lì. Nella finestra
-stretta «Da sistemare» scende in fondo, su una riga che scorre.
+**La stanza** — una mappa minima, per vedere a colpo d'occhio **dove sta ogni paziente**: i
+**letti** e le **sedie** (un paziente ciascuno) e le **aree** senza letto — corridoio, attesa —
+dove ne stanno quanti servono. Chi ha un promemoria porta il tempo, piccolo, accanto al nome del
+letto: un tocco apre i suoi promemoria, come la pill della lista.
+
+**Cercare: basta scrivere.** Una lettera, con i Pazienti davanti e il cursore fuori da un campo, apre
+un filtro sopra la lista, già con quella lettera: la lista tiene solo chi torna, nella stanza gli
+altri si spengono. **Invio** apre il paziente se ne torna uno solo; **Esc** (o la ✕) lo toglie.
 
 **La stanza di partenza è quella del PS**, dallo schizzo del medico: da sinistra l'**OBI** (quattro
 letti in fila, OBI 4, 3, 2, 1), l'**OSS** (OSS 1 e 2 sopra, OSS 4 e 3 sotto) e la **Sala attesa**,
@@ -133,63 +139,69 @@ salvata non viene mai sostituita. Se togli tutto, la stanza resta vuota, con **D
 «o riprendi la pianta del PS».
 
 La stanza è una **griglia di celle uguali** (40 × 24; un letto ne prende 5 × 4, una sedia 4 × 3): allargando o
-stringendo la finestra cresce o cala tutta insieme, in scala, e **niente si sovrappone** — nemmeno
+stringendo la finestra — o accorciandosi la lista — cresce o cala tutta insieme, in scala, e **niente si sovrappone** — nemmeno
 affiancata o alla misura minima, dove semmai la mappa scorre (sotto i 20 px una cella non porta più
 un nome leggibile): di lato anche con la rotella, e il bordo sfuma dalla parte dove c'è altro. Dopo
 uno spostamento la mappa resta dov'era. Fuori da Modifica si vede solo il
-pezzo disegnato, così anche una stanza piccola riempie la mappa. Il testo non cambia misura: in un
+pezzo disegnato, in alto, subito sotto la lista: anche una stanza piccola riempie la mappa. Il testo non cambia misura: in un
 letto piccolo sparisce prima la nota, poi tutto tranne il nome del paziente, che se è lungo va a
-capo invece di perdere l'iniziale (quello del letto resta nel passaggio del mouse). Un letto vuoto è solo il suo nome e un letto disegnato appena; una sedia vuota, il suo nome e una sedia.
+capo invece di perdere l'iniziale (quello del letto resta nel passaggio del mouse); a capo va anche
+nelle aree. Un letto vuoto è solo il suo nome e un letto disegnato appena; una sedia vuota, il suo nome e una sedia.
 
 La **sedia** è un letto più piccolo e fa tutto quello che fa un letto: un paziente, e chi arriva
-prende il posto di chi c'era (che va in «Da sistemare»); **Sposta in…**, il tocco che apre il
+prende il posto di chi c'era (che torna in lista); **Sposta in…**, il tocco che apre il
 paziente, il nome, la ×.
 
-- **Portare un paziente**: lo prendi e lo lasci su un letto, su un'area o in «Da sistemare»
-  (col dito: soglia di 10 px); ti segue il suo nome, accanto al puntatore, mai sopra il letto che
-  miri. Su un letto occupato **il nuovo prende il letto e chi c'era va in «Da sistemare»** —
-  passandoci sopra lo dice: «ROSSI M. → Da sistemare». Premuto e lasciato senza trascinare, per
-  quanto a lungo, **apre il paziente**, come le righe dell'elenco. Un letto o una sedia occupati
-  sono il loro paziente da un bordo all'altro: si prende e si tocca dovunque, anche sul nome.
-- **Sposta in…**, senza trascinare: tasto destro sul paziente, dito tenuto premuto, Maiusc+F10 (o
-  il tasto menu), oppure il «posto» della Lista. Prima i letti e le sedie vuoti, per nome, poi
-  quelli occupati («al posto di ROSSI M.»), le aree, «Da sistemare» e, a parte, **Togli
-  dall'elenco** (come la ✕); frecce, Invio, Esc.
+- **Portare un paziente**: prendi la sua riga e la lasci su un letto, una sedia o un'area; dalla
+  stanza lo porti altrove, o di nuovo nella lista (col dito: soglia di 10 px). Ti segue il suo
+  nome, accanto al puntatore, mai sopra il letto che miri. Preso dalla stanza, in cima compare
+  **Rimetti in lista**, anche quando la lista è vuota: lasciato lì (o sulla lista) torna in lista e il
+  letto resta vuoto. Su un letto occupato **il nuovo prende il letto e chi c'era torna in lista** —
+  passandoci sopra lo dice: «ROSSI M. → in lista». Premuto e lasciato senza trascinare, per quanto
+  a lungo, **apre il paziente**. Un letto o una sedia occupati sono il loro paziente da un bordo
+  all'altro: si prende e si tocca dovunque, anche sul nome.
+- **Sposta in…**, senza trascinare: tasto destro sul paziente (nella stanza o sulla sua riga), dito
+  tenuto premuto, Maiusc+F10 (o il tasto menu), oppure il ▾ della riga. Prima i letti e le sedie
+  vuoti, per nome, poi quelli occupati («al posto di ROSSI M.»), le aree, **Rimetti in lista** per
+  chi ha già un posto e, a parte, **Promemoria…** e **Togli dall'elenco** — la sveglia e la ✕ di chi,
+  stando nella stanza, non ha più la sua riga; frecce, Invio, Esc.
 - **Niente conferme: si annulla.** Ogni spostamento, un letto o un'area eliminati, «Togli
   dall'elenco», «svuota» e la ✕ mostrano per 8 secondi, in fondo, «… · **Annulla**».
 - **Modifica** serve a ritoccare la stanza, di solito una volta sola. Ci entri dal menu **⋯ →
-  Modifica la stanza**; la fila delle schede diventa la sua barra: **+ Letto**, **+ Sedia**,
-  **+ Area** e **Fine**, su una riga anche nella colonna di «Affianca». Si vede la pianta intera,
-  coi puntini, e letti, sedie e aree si trascinano di cella in cella; uno nuovo va nel primo posto
+  Modifica la stanza**; la lista si toglie di mezzo, così si vede la pianta intera, e la fila delle
+  schede diventa la sua barra: **+ Letto**, **+ Sedia**, **+ Area** e **Fine**, su una riga anche
+  nella colonna di «Affianca». La pianta ha i puntini, e letti, sedie e aree si trascinano di cella
+  in cella; uno nuovo va nel primo posto
   libero (se non ce n'è, lo dice), col nome che segue l'ultimo del suo tipo: dopo «Box 1», «Box 2»;
   la prima sedia è «Sedia 1». Dove un oggetto finirebbe sopra un altro diventa **rosso**, e lasciato lì torna dov'era.
   Un tocco sul **nome** lo cambia (Invio salva, Esc lascia com'era); sull'oggetto scelto la **×** lo
-  toglie; l'angolo in basso a destra allarga un'area. In Modifica i pazienti stanno fermi, in
-  grigio; **Fine** (o Esc) e si torna a spostarli.
+  toglie (chi c'era torna in lista); l'angolo in basso a destra allarga un'area. In Modifica i
+  pazienti stanno fermi, in grigio; **Fine** (o Esc) e la lista torna.
 
 **Per non sbagliare paziente.** Due pazienti in elenco con lo **stesso cognome** portano **⚠** e il
 nome intero; con lo **stesso nome e cognome**, anche le ultime cifre dell'episodio: «ROSSI MARIO ·
 …9001». Passando col mouse su un paziente: nome intero, episodio, quando l'hai aperto, da quando sta
 nel suo posto, il triage, la nota. Lo **stesso paziente** (stesso codice fiscale) con due episodi:
-il più vecchio è **episodio precedente**, in grigio, fuori dalla stanza. Il posto **non scade**:
+il più vecchio è **episodio precedente**, in grigio, in fondo alla lista: nella stanza non va. Il posto **non scade**:
 resta finché non sposti il paziente, non lo togli dall'elenco o dall'elenco non esce; se non lo apri
 da **12 ore** diventa grigio, dov'è.
 
 **Il triage** è il colore che l'intestazione della scheda mostra quando la apri (ROSSO, ARANCIONE,
-AZZURRO, VERDE, BIANCO): una striscia a sinistra del nome, la stessa in Lista e in Stanza (nel letto
-la porta il letto), e basta — nella Stanza il colore vuol dire solo triage. L'unica eccezione è il
+AZZURRO, VERDE, BIANCO): una striscia a sinistra del nome, la stessa nella lista e nella stanza (nel
+letto la porta il letto), e basta — nella stanza il colore vuol dire solo triage. L'unica eccezione è il
 tempo di un promemoria, piccolo in alto a destra, che si fa ambra e rosso quando si avvicina.
 
 **Promemoria.** Un'ora per fare una cosa, per paziente: «11:30 tropo», «tra 2h ECG». Si scrive in
 un campo su una riga, che si apre dalla **sveglia** accanto alla nota del paziente o da quella che
-compare passando su una riga della Lista (come la ✕): **Invio** salva, **Esc** chiude; uscendo dal
+compare passando su una riga della lista (come la ✕); per chi sta nella stanza, dal suo menu,
+**Promemoria…**, in una piccola finestra sotto di lui: **Invio** salva, **Esc** chiude; uscendo dal
 campo col mouse si salva, come la nota. L'orario è il **primo** scritto nel testo — un'ora,
 «11:30», «11.30», «11h30», «11h», «alle 14», o fra quanto, «tra 2h», «+2h», «2h30», «90m», «30 min»,
 «30'», «tra 45 minuti» — e il resto è la cosa da fare. Con una cifra «2h» è fra quanto, con due
 «11h» è un'ora; un numero col punto («K 3.50») cede a qualunque altro orario scritto. Un'ora passata
 da non più di 2 ore è di oggi (già scaduta), più indietro è di domani: il turno di notte. Mentre
-scrivi, sotto il campo, dice quando sarà; senza un orario non salva e lo dice. Accanto al nome, in
-Lista e sulla pagina del paziente, una pill dice quanto manca al più vicino — «15m tropo», «1h40»,
+scrivi, sotto il campo, dice quando sarà; senza un orario non salva e lo dice. Accanto al nome, nella
+lista e sulla pagina del paziente, una pill dice quanto manca al più vicino — «15m tropo», «1h40»,
 «ora», «−5m», con «+1» se ce n'è un altro —, per esteso al passaggio del mouse: tranquilla oltre la
 mezz'ora, **ambra** sotto i 30 minuti, **rossa** sotto i 10 e quando è l'ora, con un bagliore lento
 (fermo se il sistema chiede meno movimento). Un tocco sulla pill apre i suoi promemoria: **✓ Fatto**
