@@ -58,7 +58,8 @@
  *    «+ Conferma» is the decision): a native click on the EHR's own button,
  *    only when the cart equals the receipt of this run. Confirmed = proven
  *    by the EHR's page, never assumed.
- * 4. The quesito diagnostico is only written when the server field is empty.
+ * 4. The quesito diagnostico pre-filled by triage is kept, unless the doctor
+ *    typed his own in the panel (not a chip): then his text is written.
  * 5. Stop/Esc aborts in-flight work immediately (AbortController).
  * 6. No request ever leaves the hospital origin.
  */
@@ -2547,7 +2548,9 @@
   //   creaForm:  (crea only) the LIVE form element to serialize,
   //   examDoc/examUrl: (exam only) the live page — used ONLY to find the
   //              list URL, which is then re-read from the server,
-  //   quesito:   text used only if the server field is empty,
+  //   quesito:   text written if the server field is empty — or over the
+  //              triage's, when quesitoMio (typed by the doctor in #q),
+  //   quesitoMio: the doctor typed the quesito himself (not a chip/package),
   //   items:     [{res, code, label}],
   //   autoConfirm: boolean,
   //   episodeId: pinned patient episode,
@@ -2591,6 +2594,8 @@
       steps: [], added: [], stop: () => ctrl.abort(),
       finishedListUrl: null, lastListUrl: null, richiestaId: null,
     };
+    // quale quesito è partito (una ripresa lo porta con sé dall'appunto)
+    if (plan.qinfo) state.quesito = plan.qinfo;
     ui.beginRun(state, plan);
     const log = (msg) => ui.log(`${now()}  ${msg}`);
     // Any fetched page that is a login page means the session died mid-flow.
@@ -2658,16 +2663,24 @@
         else { form = doc.querySelector('form[name="RICHIESTACrea"]'); base = url; }
         if (!form) throw new StopError("form RICHIESTACrea non trovato");
 
+        // Il quesito del triage resta, di norma. Ma se il medico ha scritto
+        // il suo nel pannello — a mano, non un chip né un pacchetto — vale il
+        // suo: l'ha deciso lui, e ignorarlo in silenzio era il difetto.
         const quesitoEl = form.elements.namedItem("QUESITO_DIAGNOSTICO");
         if (quesitoEl) {
           const existing = (quesitoEl.value || "").trim();
-          if (!existing) {
-            const q = (plan.quesito || "").trim();
+          const q = (plan.quesito || "").trim();
+          const mio = !!plan.quesitoMio && !!q && q !== existing;
+          if (!existing || mio) {
             if (!q) throw new StopError("Quesito diagnostico mancante", "Scrivilo nel pannello e riprova. Nessuna richiesta creata.");
             quesitoEl.value = q;
             scrittura.nostri.add(quesitoEl);   // scritto da noi: non è il medico che sta scrivendo
+            state.quesito = existing ? { fonte: "tuo", sopra: true } : { fonte: "tuo" };
+            // (nessun testo fra virgolette: il Registro si copia, e il quesito non deve uscire)
+            if (existing) log("quesito del triage sostituito col tuo, scritto nel pannello");
           } else {
             state.quesitoKept = existing;
+            state.quesito = { fonte: "triage", testo: existing.slice(0, 80) };
             log(`quesito del triage mantenuto: "${existing.slice(0, 60)}"`);
           }
         }
@@ -2751,8 +2764,11 @@
       // da cui il pannello riparte, e l'unica che non muore con la pagina.
       // …con la risorsa di catalogo di partenza: serve al ritorno alla versione
       // vecchia in una sede che la «- NEW» non ce l'ha
+      // (e la chiave della selezione da cui è nato: dopo un errore «Chiudi»
+      // lascia scelti solo quelli che mancano davvero)
       const nudo = (i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label,
-        ...(i.resCat ? { resCat: i.resCat } : {}) });
+        ...(i.resCat ? { resCat: i.resCat } : {}), ...(i.chiave ? { chiave: i.chiave } : {}),
+        ...(i.alPostoDi ? { alPostoDi: i.alPostoDi } : {}) });
       const salvaCorsa = (inVolo, resto) => {
         if (!plan.riprendibile) return;
         // Un esame che è già passato di qui non torna mai fra quelli «da
@@ -2767,7 +2783,7 @@
           : null);
         const scritto = tabStore.set(CORSA, {
           ts: Date.now(), ep: plan.episodeId, paziente: plan.patientName || "",
-          autoConfirm: !!plan.autoConfirm, quesito: plan.quesito || "",
+          autoConfirm: !!plan.autoConfirm, quesito: plan.quesito || "", qinfo: state.quesito || null,
           rid: state.richiestaId || null, listUrl: state.lastListUrl || null,
           riprese: plan.riprese || 0,
           // «in volo» resta in volo finché non lo si ritrova: se scivolasse fra
@@ -2894,6 +2910,13 @@
             log(eNuovo(scelto.label)
               ? `questa sede ha la versione nuova: «${scelto.label}» al posto di «${it.label}»`
               : `qui la versione «- NEW» non c'è: uso «${scelto.label}»`);
+            // Tornare alla vecchia non si dice solo nel Registro: la ricevuta
+            // mostra quella che è entrata, «al posto di EGA VENOSA NEW».
+            if (!eNuovo(scelto.label)) {
+              it.alPostoDi = it.display || shortLabel(it.label);
+              it.display = shortLabel(scelto.label);
+              st.label = it.display;
+            }
             it.code = scelto.code; it.label = scelto.label;
           }
         }
@@ -3038,7 +3061,7 @@
           it.code = verified.code;
           it.label = verified.label;
         }
-        done(st, "nel carrello ✓");
+        done(st, it.alPostoDi ? `nel carrello ✓ · al posto di ${it.alPostoDi}` : "nel carrello ✓");
         log(`aggiunto ✓ ${nm}`);
         state.added.push(it);
         salvaCorsa(null, items.slice(i + 1));
@@ -3059,9 +3082,10 @@
       // verified accounting (including exams on other resources).
       if (!plan.hold) tabStore.set("receipt.v1", {
         richiestaId: model.richiestaId, episodeId: plan.episodeId, ts: Date.now(),
-        quesitoKept: state.quesitoKept || null,
+        quesitoKept: state.quesitoKept || null, quesito: state.quesito || null,
         carrelli: state.carrelli || {},
-        items: state.added.map((i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label })),
+        items: state.added.map((i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label,
+          ...(i.alPostoDi ? { alPostoDi: i.alPostoDi } : {}) })),
       });
       // Radiology is deliberately excluded from auto-confirm (README, collaudo
       // step 8-9): a booking must always be a human click.
@@ -3157,7 +3181,8 @@
   function ricettaRiprova(state, plan) {
     if (!plan || plan.hold || !plan.episodeId) return null;
     const nudo = (i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label,
-      ...(i.resCat ? { resCat: i.resCat } : {}) });
+      ...(i.resCat ? { resCat: i.resCat } : {}), ...(i.chiave ? { chiave: i.chiave } : {}),
+      ...(i.alPostoDi ? { alPostoDi: i.alPostoDi } : {}) });
     const mancanti = (state.mancanti || []).map(nudo);
     if (!mancanti.length) return null;
     const suo = plan.examUrl || plan.listUrl;
@@ -3168,6 +3193,17 @@
       paziente: plan.patientName || "", patientUrl: plan.patientUrl || "",
       verdi: (state.added || []).map(nudo), mancanti, controllare: (state.daControllare || []).map(nudo),
     };
+  }
+
+  // Quale quesito è partito davvero, in una riga: quello del triage (che di
+  // norma resta) o il tuo. Va nella ricevuta e nella striscia finale.
+  function quesitoDetto(qi) {
+    if (!qi || !qi.fonte) return "";
+    if (qi.fonte === "triage") {
+      const t = String(qi.testo || "").replace(/\s+/g, " ").trim();
+      return t ? `Quesito del triage: "${t.length > 60 ? t.slice(0, 59) + "…" : t}"` : "Quesito del triage";
+    }
+    return qi.sopra ? "Quesito: il tuo, al posto del triage" : "Quesito: il tuo";
   }
 
   // La pianta della Stanza: una griglia di celle tutte uguali, 40 × 24. Un
@@ -3229,6 +3265,9 @@
     .pill .l2 { font-size: 11.5px; font-weight: 500; opacity: .93; max-width: 100%;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .pill .tick { font-size: 13px; font-weight: 800; }
+    /* quale quesito è partito: una riga piccola sotto il resoconto */
+    .pill .l3 { font-size: 10.5px; font-weight: 500; opacity: .8; max-width: 100%;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .stopmini { border: 0; border-radius: 999px; width: 30px; height: 30px; cursor: pointer; font-size: 12px;
                 background: #B3261E; color: #fff; box-shadow: 0 6px 20px rgba(9,42,74,.35); }
     .stopmini:hover { background: #8f1e18; }
@@ -3308,6 +3347,7 @@
     /* il quesito che porta un pacchetto di esami: bordo pieno; acceso, come un profilo */
     .chip.q.pk { border-style: solid; border-color: #9DBFDE; color: #16232E; font-weight: 600; }
     .chip.q.pk.on { background: #EAF2FA; border-color: #0B5CAD; color: #16232E; }
+    .chip.q.pk .pkn { font-weight: 500; color: #5B6B7A; }
     .qrow { display: flex; gap: 8px; align-items: flex-start; }
     .qrow input { flex: 1 1 52%; min-width: 0; }
     .qchips { flex: 1 1 48%; display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; }
@@ -3333,6 +3373,20 @@
     .chip.nel { background: #EDF7F0; border-color: #BCE0C9; color: #124F31; cursor: default; }
     .chip.manca { background: #FBEBEA; border-color: #E9BAB6; color: #7c1a14; cursor: default; font-weight: 600; }
     .chip.controlla { background: #FFF7E6; border-color: #F0D49A; color: #8a4b03; cursor: default; font-weight: 600; }
+    /* l'emogas entrato nella versione di sempre: «al posto di EGA VENOSA NEW» */
+    .chip .alposto { margin-left: 6px; font-size: 10.5px; font-weight: 500; color: #5B6B7A; }
+    /* un'azione secondaria scritta, non un bottone: «solo carrello», «+ aggiungi» */
+    .lnk { border: 0; background: transparent; padding: 2px 4px; font: inherit; font-size: 12.5px; font-weight: 600; color: #0B5CAD;
+           cursor: pointer; text-decoration: underline; text-decoration-color: #9DBFDE; text-underline-offset: 3px; white-space: nowrap; }
+    .lnk:hover:enabled { color: #094a8c; text-decoration-color: currentColor; }
+    .lnk:disabled { color: #93A3B3; text-decoration: none; cursor: default; }
+    .btnrow .lnk { flex: 0 0 auto; align-self: center; margin-left: 6px; }
+    .lnk.piu { display: inline-block; margin: -4px 0 12px; padding-left: 0; }
+    /* una richiesta ancora da confermare: una riga, non un allarme */
+    .daconf { display: flex; align-items: center; gap: 8px; max-width: 820px; margin: 0 0 12px; font-size: 12px; color: #7a4b03; }
+    .daconf .ddot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: #E5A83B; }
+    .daconf .lnk { font-size: 12px; padding: 0; margin-left: auto; }
+    .acsec .ac { margin-top: 0; }
     .btn { display: block; width: 100%; border: 0; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; }
     .btn + .btn { margin-top: 7px; }
     .btnrow { display: flex; gap: 7px; }
@@ -3366,6 +3420,7 @@
     .banner.err { background: #FBEBEA; color: #7c1a14; border: 1px solid #E9BAB6; }
     .banner.ok { background: #EDF7F0; color: #124F31; border: 1px solid #BCE0C9; }
     .banner.warn { background: #FFF7E6; color: #7a4b03; border: 1px solid #E5C588; }
+    .banner .qline { display: block; margin-top: 3px; font-size: 11.5px; opacity: .85; }
     .ac { position: relative; margin-top: 8px; }
     .ac input { width: 100%; }
     .acdrop { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 5; background: #fff;
@@ -3388,12 +3443,22 @@
     .log { font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; color: #35506B; background: #F8FAFC;
            border: 1px solid #E3E8EF; border-radius: 8px; padding: 8px; max-height: 130px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
     details.reg summary { cursor: pointer; font-size: 11.5px; color: #5B6B7A; margin: 8px 0 6px; }
+    /* il resoconto: passi e Registro insieme, chiusi sotto «Dettagli» */
+    details.dett { max-width: 820px; margin-bottom: 8px; }
+    details.dett > summary { cursor: pointer; font-size: 11.5px; font-weight: 600; color: #5B6B7A; margin: 2px 0 8px; }
+    details.dett .reghd { font-size: 11.5px; color: #5B6B7A; margin: 10px 0 6px; }
     details.reflab > summary { cursor: pointer; }
     /* l'angolo per ridimensionare: in basso a destra, come in ogni finestra, e
        come lì senza disegno (il bordo tondo lo tagliava): lo dice il cursore */
     .rsz { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 7; touch-action: none; }
     .commit { position: sticky; bottom: -1px; margin: 0 -24px -14px; padding: 10px 24px 14px; background: #fff;
               border-top: 1px solid #EEF2F6; box-shadow: 0 -10px 14px -12px rgba(9,42,74,.25); }
+    /* i bottoni stanno in fondo alla finestra anche quando c'è poco sopra
+       (ricevuta, resoconto): non a metà, con la loro ombra in mezzo al bianco */
+    .bdi:has(> .commit) { min-height: 100%; display: flex; flex-direction: column; }
+    .bdi > .commit { margin-top: auto; }
+    .bdi > .lnk { align-self: flex-start; }
+    .commit > .btn { max-width: 820px; }
     .rlist { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
     .rrow { display: flex; align-items: center; gap: 8px; border: 1px solid #E3E8EF; background: #fff; border-radius: 8px;
             padding: 7px 9px; font-size: 12px; cursor: pointer; text-align: left; width: 100%; color: #16232E; }
@@ -4041,6 +4106,11 @@
       this.selected = new Map(); // "res:code" -> {res, code, label}
       this.pacchetto = "";       // il quesito-pacchetto attivo («Dispnea»), o ""
       this.pkgDa = new Set();    // gli esami che ha messo LUI (non quelli scelti a mano)
+      // il quesito l'ha scritto il medico, a mano, nella casella: allora vale
+      // il suo anche sopra quello del triage. Un chip o un pacchetto no.
+      this.quesitoMio = false;
+      this.aggiungi = false;     // sulla ricevuta: la griglia degli esami aperta con «+ aggiungi»
+      this.tieneDopoErrore = null; // dopo un errore: le chiavi degli esami che mancano davvero
       const saved = tabStore.get("log." + (findEpisodeId(document, location.href) || "x"), null);
       this.logLines = saved && Date.now() - (saved.ts || 0) < 2 * 3600e3 ? saved.lines || [] : [];
       this.runState = null; // null | 'running' | 'done' | 'fail' | 'stopped'
@@ -4230,6 +4300,7 @@
       if (!k) return;
       tabStore.set(k, {
         q: this._q || "",
+        qMio: !!this.quesitoMio,
         qrx: this._qrx || "",
         sel: [...this.selected.values()].map((i) => [i.res, i.code, i.label]),
         acq: this.acq || "",
@@ -4251,11 +4322,13 @@
       const s = k ? tabStore.get(k, null) : null;
       if (!s || Date.now() - (s.ts || 0) > 6 * 3600e3) {
         this._q = store.get("lastQ", "") || ""; // keep the last quesito typed
+        this.quesitoMio = false;   // l'ultimo quesito di un altro giro: non scritto per questo paziente
         this._qrx = "";
         this.view = this.defaultView() === "home" ? "home" : (this.view || this.defaultView());
         return;
       }
       this._q = s.q || store.get("lastQ", "") || "";
+      this.quesitoMio = !!(s.q && s.qMio);
       this._qrx = s.qrx || "";
       this.eoSel = s.eoSel || "";
       this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
@@ -4274,6 +4347,7 @@
     }
     clearOrderUi() { // after a successful run the order is placed: start clean
       this._q = "";
+      this.quesitoMio = false;
       this._qrx = "";
       this.selected.clear();
       this.pacchetto = ""; this.pkgDa.clear();
@@ -4320,6 +4394,7 @@
       const p = this.pacchettoDi(q);
       const prima = this.pkgDa;
       let mancano = [];
+      this.quesitoMio = false;   // l'ha scritto un chip, non il medico: il triage resta
       if (!p) {
         this._q = q;
         this.pacchetto = ""; this.pkgDa = new Set();
@@ -4390,7 +4465,8 @@
       this.runState = "running"; this.runData = state; this.stopFn = state.stop;
       clearTimeout(this._tStriscia); this.striscia = null;
       this.carrelloDaAprire = null;
-      this.riprova = null; this.consegnaErrore = null;
+      this.riprova = null; this.consegnaErrore = null; this.tieneDopoErrore = null;
+      this.aggiungi = false;
       this.runRipreso = !!(plan && plan.startPage === "ripresa");
       // Il giro sopravvive al cambio pagina: riprende da dov'era. Si avvisa
       // prima di uscire solo dove riprendere non si può — le catene
@@ -4414,16 +4490,17 @@
       if (!plan || !plan.episodeId || plan.episodeId === this.episodeId) this.clearOrderUi();
       this.runState = "done"; this.runData = state;
       const n = state.added.length;
+      // (quale quesito è partito lo dice la sua riga, sotto: viewResult)
       this.message = {
         head: `✓ ${n} ${n === 1 ? "esame" : "esami"} in carrello, ${n === 1 ? "verificato" : "verificati"}`,
-        body: state.quesitoKept ? "Quesito del triage mantenuto." : "",
+        body: "",
       };
       // In sottofondo la finestra non si apre mai da sola: dalla spedizione
       // alle etichette parla la striscia, e un tocco la apre con la ricevuta.
       // (Solo la catena lab+radiologia, plan.hold, resta sotto gli occhi.)
       this.cartTag = `✓ ${n} ${n === 1 ? "esame" : "esami"} in carrello`;
       const daConfermare = !!tabStore.get("confirm.v1", null);
-      this.segnala({ tag: this.cartTag, tono: daConfermare ? "run" : "ok",
+      this.segnala({ tag: this.cartTag, tono: daConfermare ? "run" : "ok", quesito: quesitoDetto(state.quesito),
         testo: daConfermare ? "Confermo…" : plan.startPage === "ripresa" ? "Il carrello è pronto: aprilo quando vuoi" : "Apro il carrello…" });
       this.render();
       if (state.finishedListUrl) this.chiudiRichiesta(state.finishedListUrl, plan, state);
@@ -4505,6 +4582,7 @@
       const rid = state?.richiestaId || param(listUrl, "RICHIESTA_ID");
       const n = state?.added?.length || 0;
       const chi = this.runPatient || "";
+      const quesito = quesitoDetto(state?.quesito);   // quale è partito: una riga nella striscia finale
       const consegna = (striscia, testo) => tabStore.set(AVVISO, {
         ts: Date.now(), striscia: { paziente: chi, ...striscia }, ...(testo ? { testo } : {}),
       });
@@ -4522,7 +4600,7 @@
         // Revisione: si va sul carrello, e lì la Conferma è quella del
         // gestionale (il suo clic arma comunque la stampa delle etichette).
         const str = daConfermare ? { tag, testo: "Confermo…", tono: "run", attesaConferma: true }
-          : { tag, testo: "Conferma dal gestionale", tono: "ok" };
+          : { tag, testo: "Conferma dal gestionale", tono: "ok", quesito };
         this.vaiSeLibero(listUrl, { ms: 400, striscia: daConfermare ? { tag, testo: "Conferma da fare", tono: "warn" } : str,
           prima: () => { consegna(str); } });
         return;
@@ -4561,7 +4639,7 @@
         // Confermata, ma i fogli non sono partiti (un'altra stampa in corso):
         // restano armati, e partono dalla sua scheda. Niente si ricarica.
         this.message = { head: `✓ ${confermatiTesto(fine)}`, body: "Le etichette partono dalla sua scheda." };
-        this.segnala({ tag: "Confermata", testo: confermatiTesto(fine), tono: "ok" });
+        this.segnala({ tag: "Confermata", testo: confermatiTesto(fine), tono: "ok", quesito });
         this.render();
         return;
       }
@@ -4610,6 +4688,16 @@
       window.removeEventListener("beforeunload", this._unload);
       this.runState = "fail"; this.runData = state; this.message = msg;
       const riprenderà = !!tabStore.get(CORSA, null);
+      // Quali esami della selezione mancano ancora davvero: mai partiti, in
+      // questa richiesta o nelle gambe della catena che non sono partite.
+      // «Chiudi» lascia scelti solo quelli — quelli già nel carrello no, né i
+      // «da controllare». Senza la chiave di ognuno (un giro di prima di
+      // questa versione) non si toglie niente: meglio come prima che a caso.
+      {
+        const gamba = plan && plan.legs && plan.legLabel ? plan.legs.findIndex((l) => l.label === plan.legLabel) : -1;
+        const mancano = [...(state.mancanti || []), ...(gamba >= 0 ? plan.legs.slice(gamba + 1).flatMap((l) => l.items || []) : [])];
+        this.tieneDopoErrore = mancano.every((x) => x && x.chiave) ? mancano.map((x) => x.chiave) : null;
+      }
       // La catena lab+radiologia resta sotto gli occhi, com'è sempre stata.
       if (plan && plan.hold) {
         if (this.collapsed && !riprenderà) { this.collapsed = false; store.set("collapsed", false); }
@@ -4660,7 +4748,7 @@
       this.riprova = msg.restaQui ? null : ricettaRiprova(state, plan);
       const consegna = () => tabStore.set(AVVISO, {
         ts: Date.now(), testo: msg, striscia,
-        giro: { stato: "fail", paziente: this.runPatient || "", listUrl,
+        giro: { stato: "fail", paziente: this.runPatient || "", listUrl, tiene: this.tieneDopoErrore,
           steps: (state.steps || []).map(({ label, status, note }) => ({ label, status, note })) },
         ...(this.riprova ? { riprova: this.riprova } : {}),
       });
@@ -4721,19 +4809,25 @@
     dimenticaErrore() {
       this.runState = null; this.runData = null; this.message = null;
       this.carrelloDaAprire = null; this.consegnaErrore = null; this.riprova = null;
+      this.tieneDopoErrore = null;
       clearTimeout(this._tStriscia); this.striscia = null;
       tabStore.set(AVVISO, null);
     }
-    // «Annulla»: si torna alle Richieste col quesito e gli esami scelti,
-    // com'erano. La richiesta rimasta a metà non la si sorveglia più: l'hai
-    // lasciata tu, e ricordartela fra due minuti vorrebbe dire confermarla
-    // accanto a quella che rifai da capo.
-    annulla() {
-      const u = this.runData?.lastListUrl;
-      const rid = this.riprova?.rid || this.runData?.richiestaId || (u ? param(u, "RICHIESTA_ID") : null);
+    // «Chiudi» (era «Annulla», ma non annullava niente): via il resoconto, la
+    // pill torna quella di sempre, e si torna alle Richieste col quesito. La
+    // richiesta rimasta a metà è ancora lì nel gestionale, da confermare: il
+    // promemoria resta, e le Richieste lo dicono in una riga. Restano scelti
+    // solo gli esami che mancano davvero — quelli già nel suo carrello non si
+    // offrono di nuovo, così il conto sul bottone è quello vero.
+    chiudiErrore() {
+      const tiene = this.tieneDopoErrore;
       this.dimenticaErrore();
-      if (rid) confermataProvata(rid);
       this.restoreUi();
+      if (Array.isArray(tiene)) {
+        const resta = new Set(tiene);
+        for (const k of [...this.selected.keys()]) if (!resta.has(k)) this.selected.delete(k);
+        for (const k of [...this.pkgDa]) if (!this.selected.has(k)) this.pkgDa.delete(k);
+      }
       // (sulla lista del PS, dove non si ordina, si resta sui Pazienti)
       this.view = this.defaultView() === "home" ? "home" : "richieste"; this.viewId = null;
       this.persistUi();
@@ -4744,8 +4838,8 @@
     startPlan(base) {
       if (this.runState === "running") return;
       // Copie: il motore traduce codici e risorse per la sede, e la selezione
-      // del medico deve restare la sua (dopo un errore, «Annulla» la ritrova).
-      const items = base.items || [...this.selected.values()].map((i) => ({ ...i }));
+      // del medico deve restare la sua (dopo un errore, «Chiudi» la ritrova).
+      const items = base.items || [...this.selected.entries()].map(([k, i]) => ({ ...i, chiave: k }));
       if (!items.length) return;
       const episodeId = findEpisodeId(document, location.href);
       if (!episodeId) { // fail-closed: never order on an unidentifiable episode
@@ -4759,7 +4853,7 @@
       // Pin the patient this run belongs to: the running/result views show
       // THIS name, never whatever the page title becomes later.
       this.runPatient = base.patientName || (document.title || "").trim();
-      const plan = { quesito: (this._q || "").trim(), items, episodeId, patientName: this.runPatient, ...base,
+      const plan = { quesito: (this._q || "").trim(), quesitoMio: !!this.quesitoMio, items, episodeId, patientName: this.runPatient, ...base,
         // la pagina che elenca le richieste confermate: serve a provare una conferma
         patientUrl: base.patientUrl || (this.pageType === "patient" ? location.href : "") };
       if ((this._q || "").trim()) rememberQuesito((this._q || "").trim());
@@ -4777,7 +4871,7 @@
         const st = await runPlan({
           ...plan, hold: true, continuation: i > 0,
           entryUrl: leg.entryUrl, items: leg.items, legLabel: leg.label,
-          quesito: leg.quesito ?? plan.quesito,
+          quesito: leg.quesito ?? plan.quesito, quesitoMio: leg.quesitoMio ?? plan.quesitoMio,
         }, this);
         if (this.runState !== "running" || !st || !st.richiestaId) return; // failed/stopped: stop here
         done.push({
@@ -4786,7 +4880,9 @@
           count: st.added.length,
           lastCode: st.added.length ? st.added[st.added.length - 1].code : null,
           lastLabel: st.added.length ? st.added[st.added.length - 1].label : null,
-          added: st.added.map((x) => ({ res: x.res, code: x.code, label: x.label, display: x.display || x.label })),
+          added: st.added.map((x) => ({ res: x.res, code: x.code, label: x.label, display: x.display || x.label,
+            ...(x.alPostoDi ? { alPostoDi: x.alPostoDi } : {}) })),
+          quesito: st.quesito || null,
         });
       }
       if (!done.length) return;
@@ -4797,10 +4893,16 @@
       this.runState = "done";
       const total = done.reduce((n, d) => n + d.count, 0);
       this.message = { head: `✓ ${done.length} richieste, ${total} esami verificati`, body: "" };
+      // il resoconto elenca gli esami di tutte e due le richieste, non solo dell'ultima
+      // …e il quesito solo se è lo stesso per tutte e due (la radiologia può avere il suo)
+      if (this.runData) {
+        this.runData.addedTutti = done.flatMap((d) => d.added);
+        this.runData.quesito = done.every((d) => JSON.stringify(d.quesito) === JSON.stringify(done[0].quesito)) ? done[0].quesito : null;
+      }
       // hand the rest of the walk to the pages we are about to land on
       const first = done[0];
       tabStore.set("queue.v1", { episodeId: plan.episodeId, autoConfirm: !!plan.autoConfirm, ts: Date.now(), items: done });
-      tabStore.set("receipt.v1", { richiestaId: first.rid, episodeId: plan.episodeId, ts: Date.now(), items: first.added, carrelli: first.carrelli || {} });
+      tabStore.set("receipt.v1", { richiestaId: first.rid, episodeId: plan.episodeId, ts: Date.now(), items: first.added, carrelli: first.carrelli || {}, quesito: first.quesito || null });
       if (plan.autoConfirm && first.lastCode && first.kind !== "radio") {
         tabStore.set("confirm.v1", { richiestaId: first.rid, episodeId: plan.episodeId, lastCode: first.lastCode, lastLabel: first.lastLabel, count: first.count, ts: Date.now() });
       }
@@ -4970,6 +5072,7 @@
                   <span class="l1"><b class="who">${esc(strWho)}</b>${this.striscia.tag ? ` <span class="tag">${esc(this.striscia.tag)}</span>` : ""}${
                     this.striscia.badge ? ` <span class="badge">${esc(this.striscia.badge)}</span>` : ""}</span>
                   <span class="l2">${esc(this.striscia.testo || "")}</span>
+                  ${this.striscia.quesito ? `<span class="l3">${esc(this.striscia.quesito)}</span>` : ""}
                 </span>
               </button>
               ${this.striscia.azione ? `<button class="strazione" id="strazione" title="${esc(this.striscia.azione.titolo || "")}">${esc(this.striscia.azione.label)}</button>` : ""}
@@ -5930,6 +6033,7 @@
 
       // Receipt banner: the moment of decision on the landing page must show
       // the full verified accounting, not just what this list happens to show.
+      // …e quale quesito è partito, in una riga: quello del triage o il tuo.
       let receiptSec = "";
       let receipt = null;
       let live = null;
@@ -5938,11 +6042,29 @@
         receipt = freshReceipt(live.richiestaId);
         if (receipt) {
           const n = receipt.items.length;
-          const byRes = {};
-          for (const i of receipt.items) (byRes[i.res] = byRes[i.res] || []).push(i);
+          const qd = quesitoDetto(receipt.quesito);
           receiptSec = `
-            <div class="banner ok"><b>✓ ${n} ${n === 1 ? "esame" : "esami"} in carrello, ${n === 1 ? "verificato" : "verificati"}</b></div>
-            ${live.confirmButton ? `<button class="btn confirm" id="confirmnow" style="margin-bottom:12px">✓ CONFERMA → stampa</button>` : ""}`;
+            <div class="banner ok"><b>✓ ${n} ${n === 1 ? "esame" : "esami"} in carrello, ${n === 1 ? "verificato" : "verificati"}</b>${
+              qd ? `<span class="qline">${esc(qd)}</span>` : ""}</div>`;
+        }
+      }
+
+      // Una richiesta di questo paziente mandata e non ancora confermata (dopo
+      // «Chiudi», o lasciata in revisione): una riga discreta, e un tocco porta
+      // al suo carrello. Quella della ricevuta qui sopra lo dice già da sé.
+      let daConfSec = "";
+      {
+        const sua = this.pageType === "exam" ? param(location.href, "RICHIESTA_ID") : null;
+        const aperte = nonConfermateQui().filter((x) => !(receipt && x.rid === String(receipt.richiestaId)));
+        const x = aperte[0];
+        if (x) {
+          let u = "";
+          try { u = x.listUrl && new URL(x.listUrl).origin === location.origin && !/[?&](Insert|Delete)=/.test(x.listUrl) ? x.listUrl : ""; } catch { u = ""; }
+          const qui = !!sua && sua === x.rid;
+          const quanti = x.n ? ` (${x.n} ${x.n === 1 ? "esame" : "esami"})` : "";
+          daConfSec = `<div class="daconf"><i class="ddot"></i><span>${qui ? `Questa richiesta${quanti} è ancora da confermare` : `Richiesta delle ${esc(hhmm(x.ts))}${quanti} ancora da confermare`}${
+            aperte.length > 1 ? ` · e altre ${aperte.length - 1}` : ""}</span>${
+            !qui && u ? `<button class="lnk" id="apridaconf" data-url="${esc(u)}">apri il carrello</button>` : ""}</div>`;
         }
       }
 
@@ -5955,26 +6077,53 @@
               const pk = this.pacchettoDi(q);
               if (!pk) return `<button class="chip q" data-q="${esc(q)}">${esc(q)}</button>`;
               const on = this.pacchetto === pk.q;
-              return `<button class="chip q pk ${on ? "on" : ""}" data-q="${esc(q)}" aria-pressed="${on}" title="${on ? "Tocca di nuovo per togliere quesito e pacchetto" : "Scrive il quesito e spunta: "}${esc(on ? "" : pk.items.map(([r, c]) => displayLabel(r, c)).join(", "))}">${esc(q)}</button>`;
+              // quanti esami porta: quelli che questo computer ha in catalogo
+              const quanti = pk.items.filter(([r, c]) => cat[r]?.items?.[c]).length;
+              return `<button class="chip q pk ${on ? "on" : ""}" data-q="${esc(q)}" aria-pressed="${on}" title="${on ? "Tocca di nuovo per togliere quesito e pacchetto" : "Scrive il quesito e spunta: "}${esc(on ? "" : pk.items.map(([r, c]) => displayLabel(r, c)).join(", "))}">${esc(q)}<span class="pkn">&nbsp;· ${quanti}</span></button>`;
             }).join("")}</div>
           </div>
         </div>` : "";
 
       // On the exam page show what is already in the cart on THIS resource,
-      // plus (from the receipt) what was verified on other resources.
+      // plus (from the receipt) what was verified on other resources. Un
+      // emogas entrato nella versione di sempre perché qui la «- NEW» non c'è
+      // lo dice accanto al nome: «al posto di EGA VENOSA NEW».
       let cartSec = "";
       if (this.pageType === "exam" && live) {
         const inCart = live.exams.filter((e) => e.isDel);
         const here = new Set(inCart.map((e) => e.code));
         const elsewhere = receipt ? receipt.items.filter((i) => i.res !== live.res && !here.has(i.code)) : [];
+        const alPosto = (res, code) => (receipt ? receipt.items.find((i) => String(i.res) === String(res) && String(i.code) === String(code)) : null)?.alPostoDi || "";
+        const nota = (al) => (al ? `<small class="alposto">al posto di ${esc(al)}</small>` : "");
         cartSec = `
           <div class="sec">
             <div class="lbl">Già nel carrello — ${esc(live.res ? risorsaCorta(live.res) : "?")} (${inCart.length})</div>
             <div class="chips">
-              ${inCart.map((e) => `<span class="chip cart">${esc(shortLabel(e.label))}</span>`).join("") || `<span class="hint">Ancora nessun esame su questa risorsa.</span>`}
-              ${elsewhere.map((i) => `<span class="chip ghosted" title="verificato su ${esc(risorsaCorta(i.res))}">${esc(i.display || shortLabel(i.label))} · ${esc(risorsaCorta(i.res))} ✓</span>`).join("")}
+              ${inCart.map((e) => `<span class="chip cart">${esc(shortLabel(e.label))}${nota(alPosto(live.res, e.code))}</span>`).join("") || `<span class="hint">Ancora nessun esame su questa risorsa.</span>`}
+              ${elsewhere.map((i) => `<span class="chip ghosted" title="verificato su ${esc(risorsaCorta(i.res))}">${esc(i.display || shortLabel(i.label))} · ${esc(risorsaCorta(i.res))} ✓${nota(i.alPostoDi)}</span>`).join("")}
             </div>
           </div>`;
+      }
+
+      const pendingSec = this.pending ? `
+        <button class="btn confirm" id="goqueued" style="margin-bottom:12px">→ Conferma ${esc(this.pending.next.kind === "radio" ? "la radiologia" : "il laboratorio")} (${this.pending.next.count})</button>` : "";
+      const n = this.selected.size;
+      // La Conferma del gestionale, dalla ricevuta: il bottone che conclude.
+      const confermaOra = receipt && live && live.confirmButton
+        ? `<div class="btnrow"><button class="btn primary" id="confirmnow" title="Preme la Conferma del gestionale per questa richiesta, poi parte la stampa">Conferma e stampa</button></div>` : "";
+
+      // La ricevuta mostra il carrello e un bottone solo. La griglia degli
+      // esami resta dietro «+ aggiungi»: aggiungere ancora è l'eccezione.
+      if (receipt && !this.aggiungi && !n) {
+        const nota = this.notaHtml();
+        return `
+          ${pendingSec}
+          ${daConfSec}
+          ${receiptSec}
+          ${cartSec}
+          <button class="lnk piu" id="aggiungi" title="Aggiungi altri esami a questa richiesta">+ aggiungi</button>
+          ${nota || confermaOra ? `<div class="commit">${nota}${confermaOra}</div>` : ""}
+        `;
       }
 
       // Un gruppo per laboratorio, col suo nome corto: dentro, prima i
@@ -6000,40 +6149,38 @@
         ${g.profili.length ? `<div class="gchips">${g.profili.join("")}</div>` : ""}
         ${g.esami.join("")}`).join("");
 
-      const n = this.selected.size;
-      const nTxt = n === 0 ? "esami" : n === 1 ? "1 esame" : `${n} esami`;
+      // Un bottone solo: «Conferma e stampa · N esami». «solo carrello» (che
+      // si ferma sul carrello e lascia la Conferma a te) è un link accanto.
+      const nTxt = n === 1 ? "1 esame" : `${n} esami`;
       const twoLegs = this.pageType === "patient" &&
         [...this.selected.values()].some((i) => RADIO_SET.includes(i.res)) &&
         [...this.selected.values()].some((i) => !RADIO_SET.includes(i.res));
-      const goLabel = this.pageType === "exam" ? `Aggiungi ${nTxt}`
-        : twoLegs ? `Crea 2 richieste · ${nTxt}` : `Crea e aggiungi ${nTxt}`;
-      const confirmLabel = `Conferma e stampa`;
+      const confirmLabel = !n ? "Conferma e stampa" : twoLegs ? `Conferma e stampa · 2 richieste, ${nTxt}` : `Conferma e stampa · ${nTxt}`;
 
       const problems = this.computeProblems();
-
-      const pendingSec = this.pending ? `
-        <button class="btn confirm" id="goqueued" style="margin-bottom:12px">→ Conferma ${esc(this.pending.next.kind === "radio" ? "la radiologia" : "il laboratorio")} (${this.pending.next.count})</button>` : "";
+      // sulla ricevuta, finché non scegli niente, il bottone resta la Conferma del gestionale
+      const bottoni = !n && confermaOra ? confermaOra : `
+          <div class="btnrow">
+            <button class="btn primary" id="goconfirm" title="Aggiunge e verifica gli esami, preme Conferma e avvia la stampa" ${n && !problems.confirm.length ? "" : "disabled"}>${esc(confirmLabel)}</button>
+            <button class="lnk" id="go" title="Aggiunge e verifica gli esami e si ferma sul carrello: la Conferma la premi tu nel gestionale" ${n && !problems.go.length ? "" : "disabled"}>solo carrello</button>
+          </div>`;
       return `
         ${pendingSec}
+        ${daConfSec}
         ${receiptSec}
         ${quesitoSec}
         ${cartSec}
+        <div class="sec acsec">${this.viewBrowse(cat)}</div>
         <div class="sec">
           <div class="lbl">Esami</div>
           <div class="grid">${singles}</div>
-          ${this.viewBrowse(cat)}
         </div>
         ${this.viewPrint()}
 
         <div class="commit">
           ${this.notaHtml()}
-          <div class="idline">Richiesta per <b>${esc(patientName)}</b>${ep ? ` · episodio <b>${esc(ep)}</b>` : ""}</div>
           <div id="problems">${problems.go[0] ? `<div class="problem">${esc(problems.go[0])}</div>` : ""}</div>
-          <div class="btnrow">
-            <button class="btn primary" id="go" ${n && !problems.go.length ? "" : "disabled"}>${esc(goLabel)}</button>
-            <button class="btn confirm" id="goconfirm" title="Come il bottone a sinistra, e in più preme Conferma SUBITO — non si annulla — e avvia la stampa guidata" ${n && !problems.confirm.length ? "" : "disabled"}>${esc(confirmLabel)}</button>
-          </div>
-
+          ${bottoni}
         </div>
       `;
     }
@@ -7443,6 +7590,22 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
             if (perAlias || L.includes(q)) hits.push({ res, code, label, perAlias, poc: ePoc(label) || ePoc(v.label) });
           }
         }
+        // Le Urgenze sono un sottomenu del laboratorio centrale: lo stesso
+        // esame stava due volte, identico, una riga per ciascuno. Una sola:
+        // quella delle Urgenze, come la ordinano i pacchetti («PT PTT
+        // Fantoli» = Urgenze) — o quella già scelta, se è l'altra.
+        {
+          const uno = new Map();
+          for (const h of hits) {
+            const k = `${risorsaCorta(h.res, cat)}|${normEsame(h.label)}`;
+            const c = uno.get(k);
+            const meglio = !c || (this.isSel(h.res, h.code) && !this.isSel(c.res, c.code))
+              || (this.isSel(h.res, h.code) === this.isSel(c.res, c.code) && ordineRisorsa(h.res, cat) < ordineRisorsa(c.res, cat));
+            if (meglio) uno.set(k, h);
+          }
+          const tenuti = new Set(uno.values());
+          for (let i = hits.length - 1; i >= 0; i--) if (!tenuti.has(hits[i])) hits.splice(i, 1);
+        }
         // prima il nome che il medico intendeva, e fra quelli il laboratorio
         // prima del POC; poi chi comincia con quello che ha scritto
         const rango = (h) => (h.perAlias ? 0 : 1) * 10 + (h.poc ? 1 : 0);
@@ -7480,6 +7643,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       `;
     }
 
+    // Il resoconto, corto: il motivo, gli elenchi che servono per finire
+    // (Mancano / Da controllare / Nel carrello) e un'azione sola — «↻ Riprova
+    // i mancanti» o «Apri il carrello» — più «Chiudi». I passi e il Registro
+    // stanno insieme sotto «Dettagli», chiuso: si aprono quando servono.
     viewResult() {
       const ok = this.runState === "done";
       const cls = ok ? "ok" : this.runState === "stopped" ? "warn" : "err";
@@ -7496,34 +7663,40 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const giaQui = !!listUrl && this.pageType === "exam" && param(listUrl, "RICHIESTA_ID") === param(location.href, "RICHIESTA_ID");
       // dopo un errore: rifare i mancanti si può solo dov'è sicuro (riprovaQui)
       const riprova = this.riprovaQui() ? this.riprova.mancanti.length : 0;
-      // un errore si annulla; un giro che riprenderà da solo no (lì resta «Torna al pannello»)
-      const annulla = this.runState === "fail" && !tabStore.get(CORSA, null);
-      // Fermato a metà: che cosa c'è già in carrello e che cosa va aggiunto a
-      // mano dal gestionale — l'elenco che serve per finire.
+      // un errore si chiude; un giro che riprenderà da solo no (lì resta «Torna al pannello»)
+      const chiudi = this.runState === "fail" && !tabStore.get(CORSA, null);
+      // quale quesito è partito, in una riga (giro riuscito)
+      const qd = ok ? quesitoDetto(this.runData?.quesito) : "";
+      // Fermato a metà: che cosa manca, che cosa va guardato e che cosa c'è
+      // già in carrello — l'elenco che serve per finire.
       const nel = (typeof m === "object" && m.nel) || [], mancano = (typeof m === "object" && m.mancano) || [];
       const controllare = (typeof m === "object" && m.controllare) || [];
-      const liste = !ok && (nel.length || mancano.length || controllare.length) ? `
-        <div class="sec"><div class="lbl">Nel carrello (${nel.length})</div><div class="chips">${
-          nel.map((x) => `<span class="chip nel">${esc(x)}</span>`).join("") || `<span class="hint">nessuno</span>`}</div></div>
-        ${controllare.length ? `<div class="sec"><div class="lbl">Da controllare nel carrello (${controllare.length})</div><div class="chips">${
-          controllare.map((x) => `<span class="chip controlla">${esc(x)}</span>`).join("")}</div>
-          <div class="hint">${riprova ? "Mandati, ma non visti in carrello: «Riprova» non li rimanda — guardali nel carrello prima."
-            : "Mandati, ma non visti in carrello: guarda se ci sono prima di aggiungerli — mai due volte."}</div></div>` : ""}
-        <div class="sec"><div class="lbl">Da aggiungere a mano (${mancano.length})</div><div class="chips">${
-          mancano.map((x) => `<span class="chip manca">${esc(x)}</span>`).join("") || `<span class="hint">nessuno</span>`}</div></div>` : "";
+      const gruppo = (lbl, chips, extra = "") => chips.length
+        ? `<div class="sec"><div class="lbl">${lbl} (${chips.length})</div><div class="chips">${chips.join("")}</div>${extra}</div>` : "";
+      const nomi = (l, c) => l.map((x) => `<span class="chip ${c}">${esc(x)}</span>`);
+      const alPosto = (x) => (x.alPostoDi ? `<small class="alposto">al posto di ${esc(x.alPostoDi)}</small>` : "");
+      const liste = ok
+        ? gruppo("Nel carrello", (this.runData?.addedTutti || this.runData?.added || []).map((x) => `<span class="chip nel">${esc(x.display || shortLabel(x.label))}${alPosto(x)}</span>`))
+        : gruppo("Mancano", nomi(mancano, "manca"))
+          + gruppo("Da controllare", nomi(controllare, "controlla"), `<div class="hint">${riprova
+            ? "Mandati, ma non visti in carrello: «Riprova» non li rimanda — guardali nel carrello prima."
+            : "Mandati, ma non visti in carrello: guarda se ci sono prima di aggiungerli — mai due volte."}</div>`)
+          + gruppo("Nel carrello", nomi(nel, "nel"));
       return `
-        ${this.runPatient ? `<div class="idline" style="margin-top:0">Operazione per <b>${esc(this.runPatient)}</b></div>` : ""}
-        <div class="banner ${cls}">${head ? `<b>${esc(head)}</b>` : ""}${esc(bodyTxt || "")}</div>
+        <div class="banner ${cls}">${head ? `<b>${esc(head)}</b>` : ""}${esc(bodyTxt || "")}${qd ? `<span class="qline">${esc(qd)}</span>` : ""}</div>
         ${liste}
-        <div class="sec"><div class="steps">${steps}</div></div>
-        <details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
+        <details class="dett"><summary>Dettagli</summary>
+          <div class="steps">${steps}</div>
+          <div class="reghd">Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></div>
+          <div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div>
+        </details>
         <div class="commit">
           ${riprova ? `<button class="btn primary" id="riprova" title="${this.riprova.rid
             ? "Manda solo gli esami mai partiti, in questa stessa richiesta: quelli già in carrello non si rimandano"
             : "Nessuna richiesta era nata: rifà il giro da capo, con gli stessi esami"}">↻ Riprova i mancanti (${riprova})</button>`
             : (listUrl || this.carrelloDaAprire) && !giaQui && (!ok || this.runRipreso || this.carrelloDaAprire) ? `<button class="btn primary" id="openlist">${
             ok ? "Apri il carrello" : "Apri il carrello e controlla"}</button>` : ""}
-          ${annulla ? `<button class="btn ghost" id="annulla" title="Lascia questo giro: torni alle Richieste col quesito e gli esami scelti">Annulla</button>`
+          ${chiudi ? `<button class="btn ghost" id="chiudi" title="Chiude il resoconto e torna alle Richieste: restano scelti solo gli esami che mancano. La richiesta a metà resta da confermare.">Chiudi</button>`
             : `<button class="btn ghost" id="reset">Torna al pannello</button>`}
         </div>
       `;
@@ -7678,7 +7851,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (pill) this.attachDrag(pill);
       $("#stopbtn")?.addEventListener("click", () => this.stop());
       $("#reset")?.addEventListener("click", () => { this.runState = null; this.runData = null; this.message = null; this.carrelloDaAprire = null; this.render(); });
-      $("#annulla")?.addEventListener("click", () => this.annulla());
+      $("#chiudi")?.addEventListener("click", () => this.chiudiErrore());
       $("#riprova")?.addEventListener("click", () => this.riprovaMancanti());
       $("#openlist")?.addEventListener("click", () => {
         if (this.carrelloDaAprire) return this.carrelloDaAprire();   // la navigazione rimandata, col suo passaggio di consegne
@@ -8032,18 +8205,23 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const live = examModel(document, location.href);
         live.confirmButton?.click();
       });
+      // la ricevuta tiene la griglia chiusa: «+ aggiungi» la apre
+      $("#aggiungi")?.addEventListener("click", () => { this.aggiungi = true; this.render(); });
+      // la richiesta ancora da confermare: un tocco porta al suo carrello (una lettura)
+      $("#apridaconf")?.addEventListener("click", (e) => { const u = e.currentTarget.getAttribute("data-url"); if (u) nav(u); });
       $("#extreload")?.addEventListener("click", () => {
         try { chrome.runtime.sendMessage("psassist-reload"); } catch { /* not the extension build */ }
       });
       const qEl = $("#q");
-      qEl?.addEventListener("input", () => { this._q = qEl.value; this.persistUi(); this.refreshCommit(); });
+      // scritto a mano nella casella: è il quesito del medico, e vale anche sopra quello del triage
+      qEl?.addEventListener("input", () => { this._q = qEl.value; this.quesitoMio = true; this.persistUi(); this.refreshCommit(); });
       const qrxEl = $("#qrx");
       qrxEl?.addEventListener("input", () => { this._qrx = qrxEl.value; this.persistUi(); this.refreshCommit(); });
       this.root.querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () => {
         const q = b.getAttribute("data-q");
         // un pacchetto (o un pacchetto da lasciare) cambia anche gli esami: si ridisegna
         if (this.pacchettoDi(q) || this.pacchetto) { this.scegliQuesito(q); this.root.querySelector("#q")?.focus(); return; }
-        qEl.value = q; this._q = qEl.value; this.persistUi(); this.refreshCommit(); qEl.focus();
+        qEl.value = q; this._q = qEl.value; this.quesitoMio = false; this.persistUi(); this.refreshCommit(); qEl.focus();
       }));
       this.root.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => this.togglePreset(PRESETS[+b.getAttribute("data-preset")])));
       this.root.querySelectorAll(".chip[data-code], .opt[data-code]").forEach((b) => b.addEventListener("click", () => this.toggle(b.getAttribute("data-res"), b.getAttribute("data-code"))));
@@ -8097,30 +8275,32 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const problems = this.computeProblems();
       const blocking = autoConfirm ? problems.confirm : problems.go;
       if (blocking.length) { this.message = blocking[0]; this.render(); return; }
-      const items = [...this.selected.values()].map((i) => ({ ...i }));   // copie (vedi startPlan)
+      const items = [...this.selected.entries()].map(([k, i]) => ({ ...i, chiave: k }));   // copie (vedi startPlan)
       if (!items.length) return;
 
-      const base = { autoConfirm };
+      const base = { autoConfirm, quesitoMio: !!this.quesitoMio };
       if (this.pageType === "patient") {
         const lab = items.filter((i) => !RADIO_SET.includes(i.res));
         const radio = items.filter((i) => RADIO_SET.includes(i.res));
         const legs = [];
-        // ognuna col suo quesito: la radiologia ha il suo, se è scritto
-        const q = (this._q || "").trim(), qrx = (this._qrx || "").trim() || q;
-        if (lab.length) legs.push({ kind: "lab", label: "laboratorio", items: lab, entryUrl: this.entry?.labUrl, quesito: q });
-        if (radio.length) legs.push({ kind: "radio", label: "radiologia", items: radio, entryUrl: this.entry?.radioUrl, quesito: qrx });
+        // ognuna col suo quesito: la radiologia ha il suo, se è scritto. Il
+        // quesito RX si scrive solo a mano (non ha chip): scritto, è del medico
+        const q = (this._q || "").trim(), suoRx = (this._qrx || "").trim(), qrx = suoRx || q;
+        if (lab.length) legs.push({ kind: "lab", label: "laboratorio", items: lab, entryUrl: this.entry?.labUrl, quesito: q, quesitoMio: !!this.quesitoMio });
+        if (radio.length) legs.push({ kind: "radio", label: "radiologia", items: radio, entryUrl: this.entry?.radioUrl, quesito: qrx, quesitoMio: suoRx ? true : !!this.quesitoMio });
         if (legs.some((l) => !l.entryUrl)) { this.message = "Link di apertura richiesta non trovato su questa pagina."; this.render(); return; }
         base.startPage = "patient";
         base.legs = legs;
         base.entryUrl = legs[0].entryUrl;
         base.items = legs[0].items;
         base.quesito = legs[0].quesito;
+        base.quesitoMio = legs[0].quesitoMio;
       } else if (this.pageType === "crea") {
         const form = document.forms.namedItem("RICHIESTACrea");
         if (!form) { this.message = "Form della richiesta non trovato."; this.render(); return; }
         base.startPage = "crea";
         // una richiesta di radiologia prende il quesito RX, se è scritto
-        if (items.every((i) => RADIO_SET.includes(i.res)) && (this._qrx || "").trim()) base.quesito = this._qrx.trim();
+        if (items.every((i) => RADIO_SET.includes(i.res)) && (this._qrx || "").trim()) { base.quesito = this._qrx.trim(); base.quesitoMio = true; }
         base.creaForm = form;
         base.creaUrl = location.href;
       } else {
@@ -8291,7 +8471,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     panel.log(`${now()}  ── riprendo il giro dopo il cambio pagina: ${items.length} da sistemare ──`);
     runPlan({
       startPage: "ripresa", listUrl: c.listUrl, items,
-      episodeId: c.ep, autoConfirm: !!c.autoConfirm, quesito: c.quesito || "",
+      episodeId: c.ep, autoConfirm: !!c.autoConfirm, quesito: c.quesito || "", qinfo: c.qinfo || null,
       patientName: c.paziente || "", riprese: (c.riprese || 0) + 1,
     }, panel);
     return true;
@@ -8405,7 +8585,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const prec = tabStore.get("print.v1", null);
       const fresco = prec && prec.episodeId === (ep || "") && Date.now() - (prec.ts || 0) < PRINT_FLAG_TTL;
       tabStore.set("print.v1", { ids: [...new Set([...(fresco ? prec.ids || [] : []), model.richiestaId])], episodeId: ep || "", ts: Date.now(),
-        n: { ...(fresco ? prec.n || {} : {}), [model.richiestaId]: receipt.items.length } });
+        n: { ...(fresco ? prec.n || {} : {}), [model.richiestaId]: receipt.items.length },
+        q: { ...(fresco ? prec.q || {} : {}), ...(receipt.quesito ? { [model.richiestaId]: receipt.quesito } : {}) } });
       const q = tabStore.get("queue.v1", null);
       if (q && q.items) {
         const restano = q.items.filter((it) => it.rid !== model.richiestaId);
@@ -8861,6 +9042,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           // fai altro — quanti esami, a che ora — e se i fogli non sono usciti
           // tutti (annullato, saltato, non scaricato), «Ristampa» li rifà.
           panel.segnala({ tag: tutto ? "Stampato" : "Stampa non finita", testo: confermatiTesto(fine), tono: "ok",
+            quesito: quesitoDetto(fine.quesito),
             azione: tutto ? null : { label: "Ristampa", titolo: "Stampa di nuovo etichette e lista esami", fn: () => openPrintWizard(jobs, opzioni) } });
         } else if (finito && panel.collapsed) {
           // una stampa chiesta a mano: la pill lo dice per qualche secondo
@@ -9021,8 +9203,13 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // quanti esami: lo sa la ricevuta di questa richiesta; senza, il conto non si inventa
       const rc = tabStore.get("receipt.v1", null);
       const n = { ...(fresco ? prev.n || {} : {}) };
-      if (rc && rc.richiestaId === model.richiestaId && Array.isArray(rc.items)) n[model.richiestaId] = rc.items.length;
-      tabStore.set("print.v1", { ids, episodeId, ts: Date.now(), n });
+      // …e quale quesito è partito: lo ripete il resoconto finale
+      const qs = { ...(fresco ? prev.q || {} : {}) };
+      if (rc && rc.richiestaId === model.richiestaId && Array.isArray(rc.items)) {
+        n[model.richiestaId] = rc.items.length;
+        if (rc.quesito) qs[model.richiestaId] = rc.quesito;
+      }
+      tabStore.set("print.v1", { ids, episodeId, ts: Date.now(), n, q: qs });
     };
     for (const name of ["Update", "Update1"]) {
       const b = model.form.elements.namedItem(name);
@@ -9042,7 +9229,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
 
   function goToQueued(entry, vai = nav) {
     const { q, next } = entry;
-    tabStore.set("receipt.v1", { richiestaId: next.rid, episodeId: q.episodeId, ts: Date.now(), items: next.added || [], carrelli: next.carrelli || {} });
+    tabStore.set("receipt.v1", { richiestaId: next.rid, episodeId: q.episodeId, ts: Date.now(), items: next.added || [], carrelli: next.carrelli || {}, quesito: next.quesito || null });
     if (q.autoConfirm && next.lastCode && next.kind !== "radio") {
       tabStore.set("confirm.v1", { richiestaId: next.rid, episodeId: q.episodeId, lastCode: next.lastCode, lastLabel: next.lastLabel, count: next.count, ts: Date.now() });
     }
@@ -9073,7 +9260,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     tabStore.set("print.v1", null);
     // il resoconto che resta sulla pill: quanti esami, e quando
     const conti = ids.map((id) => (flag.n || {})[id]);
-    const fine = { n: conti.every((x) => x > 0) ? conti.reduce((a, b) => a + b, 0) : 0, ts: flag.ts || Date.now() };
+    const fine = { n: conti.every((x) => x > 0) ? conti.reduce((a, b) => a + b, 0) : 0, ts: flag.ts || Date.now(),
+      quesito: ids.map((id) => (flag.q || {})[id]).find(Boolean) || null };
     openPrintWizard(jobs, { panel, tag: "Confermata", fine, title: ids.length > 1 ? `${ids.length} richieste appena confermate.` : "Richiesta appena confermata." });
     return true;
   }
@@ -9217,6 +9405,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           panel.runData = { steps: Array.isArray(av.giro.steps) ? av.giro.steps : [], added: [],
             lastListUrl: av.giro.listUrl || null, finishedListUrl: null };
           if (av.riprova && Array.isArray(av.riprova.mancanti)) panel.riprova = av.riprova;
+          panel.tieneDopoErrore = Array.isArray(av.giro.tiene) ? av.giro.tiene.map(String) : null;
         }
         if (av.striscia) { panel.collapsed = true; panel.striscia = av.striscia; }
         else panel.collapsed = false;
@@ -9291,7 +9480,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // Mirror a quesito the server (triage) already filled in, so the panel
       // never suggests overwriting it.
       const pageQ = document.forms.namedItem("RICHIESTACrea")?.elements?.namedItem("QUESITO_DIAGNOSTICO");
-      if (pageQ && pageQ.value.trim()) { panel._q = pageQ.value; panel.render(); }
+      if (pageQ && pageQ.value.trim()) { panel._q = pageQ.value; panel.quesitoMio = false; panel.render(); }
     }
   }
 

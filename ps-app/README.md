@@ -8,7 +8,7 @@ sola pagina, verificando ogni passaggio prima del successivo.
 > **In sintesi per il medico**: dalla pagina del paziente scrivi il quesito, tocchi i profili
 > e gli esami, premi un bottone. La richiesta viene creata, gli esami aggiunti e
 > verificati uno a uno nel carrello, e atterri sulla pagina esami reale per premere **Conferma**
-> (o lasci che la prema lui, subito: il tuo click su «+ Conferma» è la decisione). Dopo la conferma
+> (o lasci che la prema lui, subito: il tuo click su «Conferma e stampa» è la decisione). Dopo la conferma
 > ogni foglio compare **in anteprima**, con la stampante su cui va, e si apre da solo il
 > **dialogo di stampa** del browser: etichette (etichettatrice), poi lista esami (stampante
 > normale). Intanto il pannello resta una **striscia nell'angolo** che dice a che punto è; se
@@ -209,8 +209,15 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    La **radiologia ha il suo**: casella «Quesito RX» nel gruppo RX. Se è vuota, la richiesta di
    radiologia prende quello sopra; se è scritta, il laboratorio usa quello sopra e la radiologia
    il suo.
+   **Il quesito del triage resta, a meno che non scrivi il tuo.** Se il triage ha già compilato il
+   quesito della richiesta, di norma parte quello. Ma se nella casella del pannello il quesito
+   l'hai **scritto tu, a mano**, vince il tuo (vale anche per il «Quesito RX»). Un chip o un
+   pacchetto che riscrive la casella non conta come scritto a mano: lì resta il triage. La
+   ricevuta e la striscia finale dicono quale è partito, in una riga: «Quesito del triage:
+   "…"» oppure «Quesito: il tuo». (Il «⧉ Copia» del Registro il quesito lo omette, come sempre.)
    **Tre quesiti sono pacchetti di esami**, sempre i primi chip (anche se l'elenco dei quesiti
-   salvato non li ha): un tocco scrive il quesito **e** spunta gli esami che servono quasi sempre.
+   salvato non li ha), e ognuno dice quanti esami porta — «Dolore toracico · 6»: un tocco scrive
+   il quesito **e** spunta gli esami che servono quasi sempre.
    - **Dolore toracico** — base (emocromo POC, EGA venosa NEW, creatinina POC), PT e PTT POC,
      troponina US.
    - **Dispnea** — base ma con l'**EGA arteriosa NEW** (non la venosa), PT e PTT POC, D-dimero POC,
@@ -235,11 +242,14 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    quasi sempre se ne vuole uno solo), **PT POC** e **PTT POC** (la coagulazione che i pacchetti
    mettono: qui si vede e si toglie) e **SARSCOV**
    (tampone antigenico SARS-CoV-2, laboratorio centrale), griglia compatta a
-   due colonne per laboratorio (POC / Lab centrale / RX). Per tutto il resto: **«altri esami…»** con
-   menu a tendina su tutti i laboratori. I selezionati restano in alto, una riga per laboratorio,
-   con la ✕ al passaggio del mouse.
+   due colonne per laboratorio (POC / Lab centrale / RX). Per tutto il resto: **«altri esami…»**,
+   subito sotto il quesito, con menu a tendina su tutti i laboratori. Lo stesso esame delle
+   Urgenze e del laboratorio centrale (le Urgenze ne sono un sottomenu) è **una riga sola**,
+   quella delle Urgenze — la stessa che usano i pacchetti. I selezionati restano in alto, una
+   riga per laboratorio, con la ✕ al passaggio del mouse.
    In una sede che la versione **- NEW** non ce l'ha ancora, il pannello ordina **quella di
-   sempre** e lo scrive nel Registro: un codice nuovo non deve far fallire un ordine.
+   sempre** e lo scrive nel Registro — e nella ricevuta, accanto all'esame: «EMOGASANALISI VENOSA
+   POC *al posto di EGA VENOSA NEW*». Un codice nuovo non deve far fallire un ordine.
    **La seconda sede (OSG)** non ha il laboratorio «Urgenze»: POC e un laboratorio unico. Gli
    esami della colonna Urgenze vanno nella risorsa di questa sede che ha **lo stesso esame** —
    stesso nome o stesso mnemonico LIS — e **mai** in un POC (un altro strumento, un'altra
@@ -264,19 +274,22 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    ferma tutto. **Esc** ferma il giro solo col pannello aperto: da quando gira in sottofondo, un
    Esc dato al gestionale (una tendina, un campo) non deve fermare gli esami. Se intanto sei sulla scheda di un altro paziente la striscia diventa **ambra** e
    lo scrive: gli esami restano quelli di chi li hai ordinati.
-4. **Crea e aggiungi N esami** → si atterra sul carrello del gestionale con la striscia
-   «✓ N esami in carrello · Conferma dal gestionale»: premi **Conferma** lì (le etichette
-   partono lo stesso), o tocca la striscia per la ricevuta col bottone **✓ CONFERMA → stampa**.
-   Oppure **+ Conferma 🖨** che fa tutto da solo e conferma **subito**: il click è la decisione, e la
-   conferma parte solo se ogni controllo passa — episodio, richiesta, nome dell'ultimo esame, e
+4. **Un bottone solo: Conferma e stampa · N esami.** Fa tutto da solo e conferma **subito**: il
+   click è la decisione, e la conferma parte solo se ogni controllo passa — episodio,
+   richiesta, nome dell'ultimo esame, e
    **carrello identico alla ricevuta** (un avanzo di un tentativo precedente la **sospende** e
    la lascia a te: striscia ambra «Conferma sospesa», sul carrello). La finestra del pannello
    **non si apre mai da sola**: la striscia dice «Confermo…» → «Confermata · Aspetto le
    etichette…»; arrivate, le etichette compaiono **in anteprima** con la stampante su cui vanno
    e si apre il dialogo di stampa (vedi «Stampa etichette e lista esami») → «Aspetto la lista
    esami…» → e alla fine il **resoconto, che resta** finché non fai altro: «Stampato · 6 esami
-   confermati 14:32». Se la stampa è stata annullata o un foglio non è uscito, accanto c'è un
-   **Ristampa** tranquillo.
+   confermati 14:32», con sotto la riga del quesito. Se la stampa è stata annullata o un foglio
+   non è uscito, accanto c'è un **Ristampa** tranquillo.
+   Accanto al bottone c'è un link, **solo carrello**: aggiunge e verifica gli esami e si atterra
+   sul carrello del gestionale con la striscia «✓ N esami in carrello · Conferma dal
+   gestionale»: premi **Conferma** lì (le etichette partono lo stesso), o tocca la striscia per
+   la **ricevuta** — il carrello e un bottone solo, **Conferma e stampa**. La griglia degli esami
+   lì sta dietro un piccolo **+ aggiungi**.
    **«Confermata» solo con una prova**: una pagina dello stesso episodio che elenca i fogli da
    stampare di quella richiesta. Se dopo il clic arriva altro — un errore del server, di nuovo
    il carrello, niente — il pannello legge **una volta** la pagina del paziente (una lettura, mai
@@ -296,13 +309,14 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    sul **carrello** della richiesta, sul laboratorio del **primo esame rimasto fuori**: una
    semplice lettura dell'elenco, niente inviato, niente confermato. **Mancano** sono gli esami
    mai partiti: li aggiungi tu. **Da controllare** sono quelli mandati ma non visti in carrello:
-   guarda se ci sono prima di aggiungerli — mai due volte. Un tocco sulla striscia: il motivo
-   intero e gli elenchi «Nel carrello» / «Da controllare» / «Da aggiungere a mano». Sessione
-   scaduta, episodio che non torna o un'altra scheda al lavoro: solo la striscia rossa, la
-   pagina resta quella.
+   guarda se ci sono prima di aggiungerli — mai due volte. Un tocco sulla striscia: il
+   resoconto, corto — il motivo, gli elenchi «Mancano» / «Da controllare» / «Nel carrello», **un'azione
+   sola** (↻ Riprova i mancanti, o Apri il carrello) e **Chiudi**; i passi e il Registro stanno
+   insieme sotto **Dettagli**, chiuso. Sessione scaduta, episodio che non torna o un'altra
+   scheda al lavoro: solo la striscia rossa, la pagina resta quella.
    **…oppure si riprova, solo quello che manca.** Sul carrello di quella richiesta il resoconto
    ha **↻ Riprova i mancanti (N)**: manda **solo** gli esami mai partiti, sulla **stessa**
-   richiesta e come il primo giro — in revisione atterra sul carrello, con **+ Conferma 🖨**
+   richiesta e come il primo giro — in revisione atterra sul carrello, con **Conferma e stampa**
    conferma e stampa la richiesta intera, una volta sola. Il motore rilegge il carrello dal
    server: quelli già entrati li ritrova e **non li rimanda** (e se intanto ne hai tolto uno a
    mano, non lo rimette); quelli **da controllare** restano fuori, in elenco — guardali nel
@@ -311,10 +325,13 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    giro normale dalla pagina del paziente. Niente «Riprova» se non manca niente (solo «da
    controllare»), dopo una sessione scaduta, un episodio che non torna, un'altra scheda al
    lavoro, né per la coppia laboratorio + radiologia.
-   **Annulla** toglie l'errore — la pill torna quella di sempre — e ti riporta alle Richieste
-   col quesito e gli esami come li avevi scelti, pronti per rifare da capo. La richiesta
-   lasciata a metà non viene più ricordata: rifacendo da capo non la confermeresti accanto a
-   quella nuova.
+   **Chiudi** (era «Annulla», ma non annullava niente) toglie il resoconto — la pill torna
+   quella di sempre — e ti riporta alle Richieste col quesito. La richiesta lasciata a metà è
+   **ancora lì** nel gestionale, da confermare: il promemoria «non confermata» resta, e le
+   Richieste lo dicono in una riga discreta — «Richiesta delle 14:32 (4 esami) ancora da
+   confermare», con «apri il carrello» accanto. Restano scelti **solo gli esami che mancano davvero**:
+   quelli già nel suo carrello (e i «da controllare») non si offrono di nuovo, così il conto sul
+   bottone è quello vero.
    **Mentre scrivi, la pagina non cambia da sola.** Ogni salto di pagina deciso dal pannello
    (errore → carrello, revisione → carrello, conferma sospesa) prima guarda: se hai il cursore
    in un campo del gestionale, hai cambiato un campo, o hai premuto un tasto negli ultimi 15
@@ -324,7 +341,7 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    mnemonico LIS fra parentesi se il nome ne ha uno, se no il nome — una sola lettura. Se la riga
    compare, passa per la strada di sempre (nome vivo controllato, un invio solo); se no, l'esame
    finisce fra i «Mancano» e lo aggiungi a mano. Vedi le regole 3 e 4.
-   Selezionando laboratorio **e** radiologia il bottone diventa **Crea 2 richieste** e il pannello
+   Selezionando laboratorio **e** radiologia il bottone diventa **Conferma e stampa · 2 richieste** e il pannello
    le costruisce e le porta entrambe a conferma, con **una sola** stampa finale. Questa è
    l'unica che **non** va in sottofondo: le due richieste vivono nella memoria del pannello, e
    a metà non si riprendono — lì il browser avvisa ancora prima di cambiare pagina.
@@ -804,7 +821,7 @@ esami → conferma → stampa; e sulla seconda scheda, risultati e referti.
 
 ### Cosa funziona
 
-Il flusso completo dell'ordine: quesito, profili, esami, «Crea e aggiungi» con
+Il flusso completo dell'ordine: quesito, profili, esami, «Conferma e stampa» (o «solo carrello») con
 la verifica esame per esame, il carrello che compare **nella pagina vera**, la
 Conferma nativa, la stampa (qui senza dialogo del browser: la scheda mostra il PDF
 e la stampante su cui va). E gli **Esiti**: i valori letti dalla
@@ -932,7 +949,7 @@ stessi flussi dei test di prodotto.
    ritrovata con la ricerca del gestionale (regola 3): ogni invio parte da una riga viva.
 5. **La Conferma è sempre un click reale** sulla pagina visibile (il flusso di stampa etichette
    resta quello nativo), è opt-in e **immediata**: nessun conto alla rovescia, perché il tuo
-   click su «+ Conferma» è già la decisione — ma scatta **solo** se il carrello coincide con la
+   click su «Conferma e stampa» è già la decisione — ma scatta **solo** se il carrello coincide con la
    ricevuta di ciò che è stato appena aggiunto; ogni differenza la sospende con un messaggio.
    **La pagina della Conferma può essere invisibile.** Viene caricata davvero —
    stessa sessione, stesso modulo, stesso bottone — dentro una cornice nascosta
@@ -961,7 +978,12 @@ stessi flussi dei test di prodotto.
    richiesta, la conferma automatica **si sospende** invece di partire lo stesso. (Fino alla
    3.20 quel caso saltava il controllo e confermava — la Conferma nativa invia la richiesta
    *intera*, quindi era la strada per confermare l'avanzo di un tentativo precedente.)
-6. **Il quesito non viene mai sovrascritto**: se il triage l'ha già compilato, resta il suo.
+6. **Il quesito del triage non si sovrascrive per sbaglio**: se il triage l'ha già compilato,
+   resta il suo — anche se la casella del pannello ha un quesito messo da un chip, da un
+   pacchetto o rimasto dal giro di prima. Lo sostituisce **solo** un quesito che il medico ha
+   scritto a mano nel pannello (il campo scritto da noi è segnato come nostro: non blocca i
+   salti di pagina come farebbe uno scritto dal medico). La ricevuta e la striscia finale dicono
+   quale è partito. (Fino alla 3.49 il quesito del pannello veniva ignorato in silenzio.)
 7. **Sessione scaduta riconosciuta**: se compare la pagina di login, stop con messaggio chiaro
    (che dice anche se l'ultimo esame è in stato ambiguo).
 8. **Un run non muore in silenzio**: chiudere o cambiare pagina durante un run fa scattare
@@ -1110,7 +1132,8 @@ consumato al reload, carrello "in ritardo" (verifica con riletture, un solo invi
 dal server (hard-stop con **un solo** invio e step successivi mai partiti), **codice rinumerato**
 (rifiuto prima dell'invio), sessione scaduta prima e **durante** un inserimento (messaggio di
 ambiguità), **cambio episodio a metà run** (zero invii sul paziente sbagliato), quesito
-pre-compilato non sovrascritto, aggiunte dalla pagina esami con cambio risorsa, rifiuto live di
+del triage tenuto se non lo tocchi — anche dopo un chip — e sostituito dal tuo se l'hai scritto
+(con la riga che dice quale è partito), aggiunte dalla pagina esami con cambio risorsa, rifiuto live di
 esami di risorsa sbagliata (CTA disabilitato con motivo), quesito mancante (CTA disabilitato,
 si riattiva scrivendo), apprendimento radiologia end-to-end, STOP, il giro in sottofondo **senza
 mai la finestra** fino alle etichette (col resoconto che resta e il «Ristampa»), l'errore a metà
@@ -1119,8 +1142,12 @@ invii dopo), **↻ Riprova i mancanti** (partono solo quelli mai partiti, contan
 inserimenti: mai i «da controllare», mai quelli già in carrello o tolti a mano; nello stesso
 modo del primo giro — una conferma sola, alla fine — o in revisione sul carrello; due errori
 di fila, coi «da controllare» ancora in elenco; lontano dal carrello prima «Apri il carrello»;
-senza richiesta nata, un giro normale) e **Annulla** (quesito
-ed esami restano, la pill torna normale, la richiesta lasciata non si ricorda più), la conferma
+senza richiesta nata, un giro normale) e **Chiudi** (il quesito resta, restano scelti solo i
+mancanti e il bottone li conta giusti, la pill torna normale, la richiesta lasciata a metà resta
+sorvegliata e la riga in Richieste lo dice), il resoconto corto (gli elenchi, un'azione sola,
+passi e Registro sotto «Dettagli»), la ricevuta con un bottone solo e la griglia dietro
+«+ aggiungi», l'emogas tornato alla versione di sempre detto nella ricevuta, «altri esami…»
+senza doppioni Urgenze/centrale, la conferma
 **senza prova** (HTTP 500 o carrello ripresentato: ambra, mai verde, mai riconfermata), la conferma interrotta da un cambio pagina (la pagina dopo avvisa, passato il
 tempo), il medico che scrive nel gestionale (nessun salto di pagina, la pill dice di toccare), la
 **riga assente** ritrovata con la ricerca del gestionale — o, se nascosta davvero, nessun invio e
