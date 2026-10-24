@@ -13,7 +13,9 @@ sola pagina, verificando ogni passaggio prima del successivo.
 > **dialogo di stampa** del browser: etichette (etichettatrice), poi lista esami (stampante
 > normale). Intanto il pannello resta una **striscia nell'angolo** che dice a che punto è; se
 > qualcosa va storto diventa rossa e ti lascia sul carrello: lo finisci a mano, o **↻ Riprova i
-> mancanti**.
+> mancanti**, o **Svuota il carrello e ricomincia**. Con l'estensione gli esami li manda una
+> **scheda di sottofondo** che si apre e si chiude da sola: tu cambi pagina quando vuoi, la
+> striscia ti segue, e le etichette si stampano nella scheda dove sei.
 
 ---
 
@@ -43,7 +45,8 @@ stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
 
 **Aggiornare a una nuova versione**: sostituisci i file nella STESSA cartella dell'estensione e
 premi **Ricarica estensione** nel menu **⋯** del pannello (o ⟳ in `chrome://extensions`): non c'è
-mentre un giro di esami sta mandando, perché lo ucciderebbe a metà.
+mentre un giro di esami sta mandando — anche in una scheda di sottofondo, o mentre le sue
+etichette aspettano di essere stampate —, perché lo ucciderebbe a metà.
 Un'estensione non pacchettizzata non può scaricarsi gli aggiornamenti da sola, e PS Assist non
 contatterà mai server esterni per controllare le versioni — sarebbe contro la regola «nessun dato
 lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica, fatto.
@@ -302,6 +305,52 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    ferma tutto. **Esc** ferma il giro solo col pannello aperto: da quando gira in sottofondo, un
    Esc dato al gestionale (una tendina, un campo) non deve fermare gli esami. Se intanto sei sulla scheda di un altro paziente la striscia diventa **ambra** e
    lo scrive: gli esami restano quelli di chi li hai ordinati.
+   **Con l'estensione il giro va in una scheda di sottofondo.** «Conferma e stampa» (e «solo
+   carrello») non mandano gli esami dalla tua scheda: l'estensione apre **una seconda scheda,
+   accanto e dietro**, sulla pagina vera del paziente — lo stesso indirizzo da cui il giro
+   partirebbe (o il carrello della richiesta, per «Riprova» e «Svuota») — e lì il motore di
+   sempre fa tutto: crea, aggiunge, verifica, conferma con la prova, prende i fogli. Che sia
+   «la scheda dell'ordine» lo sa chiedendolo al service worker col **numero della scheda**:
+   nell'indirizzo non c'è niente che il gestionale vedrebbe. La tua scheda è libera da subito:
+   cambi pagina, apri un altro paziente, e il giro non si ferma né riparte. **Ogni scheda del
+   gestionale** mostra la stessa striscia — il paziente, «esame 3 di 6», il passo, poi
+   «Confermata · Aspetto le etichette…» —; un tocco apre il **tuo** pannello (la scheda resta
+   tua, anche per ordinare a un altro paziente), ⏹ ferma l'ordine.
+   **Le etichette si stampano dove sei**: l'anteprima e il dialogo di stampa compaiono nella
+   scheda del gestionale che hai davanti (quella da cui sei partito, se è lei), **una volta
+   sola** — le consegna il service worker, a una scheda alla volta. La scheda di stampa dice
+   **di chi sono** («ROSSI MARIO · richiesta appena confermata»), anche la striscia: puoi essere
+   sulla pagina di un altro. Se davanti non hai nessuna scheda del gestionale aspettano, e
+   partono appena ci torni (mezz'ora; poi si stampano dalla sua pagina, sezione Stampa).
+   Finito, **la scheda dell'ordine si chiude da sola** — se non ci sei mai andato sopra:
+   allora è tua, e resta, come quella del portale.
+   **Un secondo ordine mentre uno gira aspetta in coda** — la striscia dice «+1 in coda» — e
+   parte quando il primo ha finito o si è fermato (sulla sua striscia, «In coda», ✕ lo toglie).
+   **Se va storto**, la striscia diventa rossa in ogni scheda, col motivo corto e che cosa
+   manca, e accanto **apri la scheda**: porta sulla scheda dell'ordine, rimasta aperta sul
+   carrello col resoconto intero (Riprova, Svuota, Chiudi). Le azioni si fanno lì. ✕ chiude
+   l'avviso. Quello che resta da fare a mano senza errori — «solo carrello», conferma sospesa
+   o non verificata — passa alla tua scheda: la striscia lo dice, **apri il carrello** lo apre
+   lì con la ricevuta, e la scheda dell'ordine si chiude.
+   **Niente sparisce zitto, anche qui.** Chiusa a metà la scheda dell'ordine, la tua striscia
+   dice «Scheda chiusa · 2 esami non mandati: …» e «Da controllare» per quello che era in volo
+   (mai fra i non mandati); la sessione scaduta lo dice; una scheda che non parte entro 45
+   secondi, o che non dice niente da tre minuti, diventa un avviso rosso; col browser chiuso
+   vale il segno di sempre (la prima pagina utile dice cosa è rimasto a metà).
+   **Quando non va in sottofondo**: col bookmarklet, sulla pagina «Nuova richiesta» (il suo
+   modulo vivo non si porta altrove), per la coppia laboratorio + radiologia, se l'indirizzo del
+   paziente non si riapre così com'è, o se la scheda non si apre: il giro lo fa la tua pagina,
+   esattamente come prima. Niente ordine perso: la tua pagina parte solo quando il service
+   worker ha detto di no, mai se la risposta è andata persa (lì la striscia dice di guardare il
+   carrello prima di rifarlo).
+   **Chrome e le schede nascoste.** Chrome rallenta le schede che non si vedono: i timer non
+   scattano più di una volta al secondo, e dopo **5 minuti** di scheda nascosta possono
+   aspettare fino a un minuto. Nel giro diventano almeno di un secondo le pause del motore
+   (250 ms fra un invio e l'altro, 1,2 s prima di ogni verifica): un ordine di sei esami ci mette
+   qualche secondo in più. Non rallentano le richieste al server, la pagina della conferma
+   (aspetta il caricamento, non un timer) e le scadenze, contate sull'orologio. Un ordine dura
+   molto meno di 5 minuti, e la scheda è segnata perché la memoria del browser non la scarichi.
+   Le etichette non le aspetta la scheda nascosta: arrivano e si stampano nella tua, davanti.
 4. **Un bottone solo: Conferma e stampa · N esami.** Fa tutto da solo e conferma **subito**: il
    click è la decisione, e la conferma parte solo se ogni controllo passa — episodio,
    richiesta, nome dell'ultimo esame, e
@@ -353,6 +402,20 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    giro normale dalla pagina del paziente. Niente «Riprova» se non manca niente (solo «da
    controllare»), dopo una sessione scaduta, un episodio che non torna, un'altra scheda al
    lavoro, né per la coppia laboratorio + radiologia.
+   **…o si svuota il carrello e si ricomincia.** Sul carrello di quella richiesta il resoconto
+   ha anche, più discreto, **Svuota il carrello e ricomincia**: il primo tocco chiede («Svuoto 4
+   esami?»), il secondo fa. Prima legge la pagina del paziente (una lettura): se la richiesta
+   risulta **confermata, non tocca niente**. Poi, per ogni sezione del carrello che ha righe,
+   segue il link **«Svuota carrello» del gestionale** — preso dalla pagina esami di quella
+   richiesta, e solo se porta la sua RICHIESTA_ID e il suo EPISODIO_ID (e la sua sezione);
+   una sezione senza «Svuota» si toglie riga per riga, coi suoi «Elimina». Poi **rilegge ogni
+   sezione dal server**: vuoto, rimette **tutta la selezione di partenza** nella stessa
+   richiesta e va avanti come il primo giro — conferma e stampa, o solo carrello. Se resta
+   anche una riga: stop, il resoconto dice cosa resta, **niente viene rimesso** e niente
+   «Riprova»: si finisce a mano. Il promemoria «non confermata» segue il carrello vero: vuoto
+   si toglie, torna col primo esame rimesso. Vale con e senza estensione (anche col
+   bookmarklet); con l'estensione, nella scheda dell'ordine. «↻ Riprova i mancanti» resta
+   com'era.
    **Chiudi** (era «Annulla», ma non annullava niente) toglie il resoconto — la pill torna
    quella di sempre — e ti riporta alle Richieste col quesito. La richiesta lasciata a metà è
    **ancora lì** nel gestionale, da confermare: il promemoria «non confermata» resta, e le
@@ -731,7 +794,9 @@ aperto, un riquadrino in alto a destra). **Arrivato il PDF compare la scheda**, 
 prima: il PDF **in anteprima**, a vista — un'occhiata dice che è la richiesta giusta — e in
 testa la **stampante su cui va** («→ etichettatrice», «→ stampante normale»); da quella scheda
 si apre subito il **dialogo di stampa** del browser. Alla fine la striscia dice «Stampato · 6
-esami confermati 14:32», e **resta** finché non fai altro.
+esami confermati 14:32», e **resta** finché non fai altro. Quando l'ordine l'ha fatto la scheda di
+sottofondo (con l'estensione), tutto questo succede nella scheda del gestionale **dove sei**,
+anche se è quella di un altro paziente: la scheda e la striscia dicono di chi sono i fogli.
 
 1. **Tutte le etichette provette** — i PDF dell'icona col codice a barre
    (`RcsStampaEtichetteLISHMIMU.do`, che porta al PDF servito da
@@ -959,6 +1024,18 @@ stessi flussi dei test di prodotto.
    di una ripresa: mai un secondo invio, e se qualcuno li ha tolti non si rimettono — e i «da
    controllare» non ci sono proprio. Il motore controlla che l'elenco riletto sia di **quella**
    richiesta (`RICHIESTA_ID`): se no, stop prima di qualunque invio.
+   **Svuotare il carrello lo fa il gestionale, e si dimostra.** «Svuota il carrello e
+   ricomincia» c'è solo sul carrello di quella richiesta, con due tocchi. Si segue il link
+   «Svuota carrello» della pagina (`Delete=Elimina`, `MVPG=RcsRichiestaCarrelloSvuota`, **senza**
+   `PRESTAZIONE` — per questo il lettore dell'elenco non lo scambia mai per un esame) solo se la
+   sua `RICHIESTA_ID` e il suo `EPISODIO_ID` sono quelli della richiesta, e la `RISORSA_ID`
+   quella della sezione; una sezione che non ce l'ha si toglie riga per riga coi suoi
+   «Elimina» (con `PRESTAZIONE`). Mai una richiesta confermata (prima si legge la pagina del
+   paziente, e il carrello deve avere ancora la sua Conferma), mai un'altra richiesta (ogni
+   pagina riletta deve essere di quella `RICHIESTA_ID` e di quell'episodio), il presidio prima
+   di ogni invio. Poi ogni sezione si rilegge dal server: una riga rimasta, e niente si rimette
+   — lo dice e si finisce a mano. La selezione rimessa è quella **di partenza**, non i numeri in
+   cui il motore l'aveva tradotta (un esame a riflesso torna quello scelto).
    **Nessun salto di pagina sopra chi scrive.** Ogni navigazione decisa dal programma (errore
    → carrello, revisione → carrello, conferma sospesa o rifiutata dalla cornice) passa da un
    solo controllo: cursore in un campo del gestionale, un campo cambiato, un tasto premuto
@@ -1037,6 +1114,19 @@ stessi flussi dei test di prodotto.
    telemetria; preferenze e catalogo appreso restano nel browser.
 10. **Due schede, due pazienti, zero interferenze**: i passaggi di consegna tra pagina e pagina
    (ricevuta e conferma automatica) vivono nella singola scheda (sessionStorage).
+   **La scheda dell'ordine.** Con l'estensione il giro lo fa una scheda di sottofondo, e tutti
+   i controlli di sempre sono suoi: episodio, sessione, presidio prima di ogni invio, carrello
+   identico alla ricevuta, «Confermata» solo con la prova, l'esame in volo mai rimandato. Chi
+   è la scheda dell'ordine lo sa il service worker, per numero di scheda (`storage.session`,
+   che muore col browser e non sta su disco: il paziente, gli esami, a che punto è); la scheda
+   parte **una volta sola**, anche se si ricarica, e un motore solo alla volta: un secondo
+   ordine aspetta in coda. La scheda del medico non manda niente: se la risposta del service
+   worker si perde chiede se l'ordine c'è, e parte da sé solo su un no esplicito — mai due
+   motori sullo stesso ordine. Le etichette le consegna il service worker a **una** scheda,
+   quella che il medico ha davanti, segnandola prima di consegnarle: non si stampano mai due
+   volte (e una scheda che le ha già stampate non le ristampa). Gli indirizzi dei PDF sono
+   quelli letti dalla pagina del gestionale, mai costruiti, e la scheda che li riceve li
+   accetta solo dalla sua origine. Nessun permesso nuovo per l'estensione.
 11. Codifica **windows-1252 identica byte per byte** a quella del browser (verificato contro
     Chromium reale, accenti e simboli inclusi).
 12. **Stampe solo dai link della pagina**: gli URL dei PDF non vengono mai costruiti a mano
@@ -1155,7 +1245,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 84 scenari e2e in Chromium reale (+ storico e referti)
+└── test/                ← simulatore SA4PSO + 87 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo)
 ```
 
 Sviluppo:
@@ -1166,7 +1256,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 84 scenari e2e + 53 sull'estensione + 59 sul banco + storico + il cancello privacy
+npm test           # 87 scenari e2e + 123 sull'estensione (69 sull'ordine in sottofondo) + 59 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
@@ -1187,7 +1277,19 @@ modo del primo giro — una conferma sola, alla fine — o in revisione sul carr
 di fila, coi «da controllare» ancora in elenco; lontano dal carrello prima «Apri il carrello»;
 senza richiesta nata, un giro normale) e **Chiudi** (il quesito resta, restano scelti solo i
 mancanti e il bottone li conta giusti, la pill torna normale, la richiesta lasciata a metà resta
-sorvegliata e la riga in Richieste lo dice), il resoconto corto (gli elenchi, un'azione sola,
+sorvegliata e la riga in Richieste lo dice), **Svuota il carrello e ricomincia** (due tocchi; il
+«Svuota carrello» del gestionale con la richiesta e l'episodio giusti, l'altra richiesta già
+confermata intatta, la pagina del paziente letta prima, ogni sezione riletta vuota prima di
+rimettere, la selezione intera rimessa e confermata una volta; il «Svuota» che lascia le righe o
+risponde HTTP 500 → stop, niente rimesso, niente «Riprova»; senza «Svuota» in pagina, riga per
+riga coi suoi «Elimina», e il promemoria che segue il carrello vero), e **la scheda dell'ordine**
+con l'estensione vera (`test/ext-ordine.mjs`: la scheda dietro, il medico subito su un altro
+paziente con la striscia che racconta, la conferma provata, la stampa una volta sola nella sua
+scheda col nome giusto, la scheda che si chiude da sola — o resta se ci sei andato sopra;
+l'errore rosso con «apri la scheda» e lì il resoconto; «Svuota e ricomincia» nella scheda
+dell'ordine; la scheda chiusa a metà, con i non mandati e l'esame in volo da controllare; due
+ordini in coda; la sessione scaduta; la scheda che non si apre → la pagina manda come sempre),
+il resoconto corto (gli elenchi, un'azione sola,
 passi e Registro sotto «Dettagli»), la ricevuta con un bottone solo e la griglia dietro
 «+ aggiungi», l'emogas tornato alla versione di sempre detto nella ricevuta, «altri esami…»
 senza doppioni Urgenze/centrale, la conferma
