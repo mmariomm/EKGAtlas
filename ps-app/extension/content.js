@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.50.0";
+  const VERSION = "3.51.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2297,6 +2297,56 @@
   }
   const promRimetti = (ep, p) => promScrivi(ep, [...promDi(ep).filter((x) => x.id !== p.id), p]);
 
+  // ------------------------------------------------------------ RIFERIMENTI
+  // La tabella del medico, i «can't-miss killers»: per sintomo, cosa
+  // escludere per primo. Testo suo, in inglese come l'ha scritta; la terza
+  // voce sono solo parole per trovarla scrivendo in italiano.
+  const RIFERIMENTI = {
+    ancora: "Don't anchor the DDx — lethal DDx for this complaint? · actively excluded (not assumed)? · every vital explained?",
+    gruppi: [
+      { titolo: "Can't-miss killers — by complaint, rule out first", voci: [
+        ["Chest pain", "ACS · PE · dissection · tamponade · tension PTX · Boerhaave", "dolore toracico torace petto"],
+        ["Dyspnoea", "PE · APE/SCAPE · tension PTX · anaphylaxis · sepsis · near-fatal asthma", "dispnea affanno respiro"],
+        ["Headache", "SAH · meningitis · mass/↑ICP · CVST · GCA · carotid/vertebral dissection · pituitary apoplexy · CO · angle-closure glaucoma", "cefalea mal di testa"],
+        ["Back pain", "AAA · dissection · cord compression · epidural abscess · epidural haematoma", "lombalgia dorsalgia schiena mal di schiena"],
+        ["Abdo pain", "AAA · mesenteric ischaemia · ectopic · perforation · strangulated obstruction", "dolore addominale addome pancia"],
+        ["Syncope", "PE · SAH · AAA · malignant arrhythmia · ectopic · AS · HCM (exertional = flag)", "sincope svenimento"],
+        ["Palpitations", "WPW + pre-excited AF · long QT · Brugada · ARVC · HCM", "palpitazioni cardiopalmo"],
+        ["Sore throat / neck", "Ludwig's · epiglottitis · retropharyngeal abscess · carotid dissection · Lemierre's", "mal di gola faringodinia collo"],
+        ["Unilateral leg", "DVT · acute limb ischaemia · nec fasc · compartment syndrome", "gamba arto inferiore edema"],
+        ["Fever + rash", "meningococcaemia · sepsis · nec fasc · toxic shock", "febbre esantema rash petecchie"],
+        ["Altered mental state", "hypoglycaemia · hypoxia · sepsis/CNS · stroke · tox · ↑ICP · non-convulsive status · Wernicke", "alterazione coscienza confusione stato mentale"],
+        ["Vomiting", "strangulated obstruction · DKA (incl. euglycaemic) · ↑ICP · bowel ischaemia", "vomito"],
+        ["♀ pain / bleeding", "ectopic until proven otherwise · haemorrhage", "donna gravidanza metrorragia sanguinamento"],
+        ["Overdose", "TCA · salicylates · toxic alcohols · paracetamol (silent) · CCB/BB · CO", "intossicazione sovradosaggio"],
+        ["Traveller (febrile)", "malaria · typhoid · viral haemorrhagic fever · sepsis", "viaggiatore viaggio febbre"],
+      ] },
+      { titolo: "Benign labels that hide killers", freccia: true, voci: [
+        ["Gastroenteritis", "surgical abdomen · DKA · inferior MI · Addisonian", "gastroenterite"],
+        ["Mechanical back pain", "leaking AAA · epidural abscess", "lombalgia meccanica"],
+        ["Anxiety / hypervent.", "PE", "ansia iperventilazione"],
+        ["Renal colic >50", "ruptured AAA", "colica renale"],
+        ["Muscular chest pain", "ACS", "dolore toracico muscolare"],
+        ["Simple faint", "exertional/structural (AS, HCM, arrhythmia)", "sincope vasovagale"],
+        ["UTI (elderly)", "urosepsis / source unproven", "infezione urinaria anziano"],
+      ] },
+      { titolo: "Who reweights the list", freccia: true, voci: [
+        ["Pregnant", "ectopic · PE · pre-eclampsia · dissection", "gravidanza incinta"],
+        ["Immunocompromised", "atypical/late · neutropenic sepsis = emergency", "immunodepresso"],
+        ["Anticoagulated", "ICH · epidural haematoma · occult bleed", "anticoagulato tao doac"],
+        ["Elderly", "atypical MI · silent sepsis · delirium = presentation", "anziano"],
+        ["IV drug user", "endocarditis · septic emboli · abscess", "tossicodipendente"],
+        ["Traveller", "malaria · typhoid · VHF", "viaggiatore viaggio"],
+      ] },
+    ],
+    piede: "Same complaint, different killer list — who is this patient reweights everything.",
+  };
+  // il filtro: tutte le parole scritte devono esserci (in inglese o in italiano)
+  const rifCombacia = (testo, q) => {
+    const t = testo.toLowerCase();
+    return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => t.includes(w));
+  };
+
   // ----------------------------------------------------------------- TEMPI
   // Un cronometro per capire dove va il tempo di un turno. Si tiene solo
   // l'ISTANTE DI INIZIO, mai i secondi passati: così ricaricare la pagina o
@@ -3634,6 +3684,21 @@
     .tbig { font: 800 20px/1 inherit; color: #124F31; font-variant-numeric: tabular-nums; }
     .tlab { flex: 1 1 auto; font-size: 12px; color: #35506B; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .tpres { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+    .rif { max-width: 820px; }
+    .rifanc { font-size: 12px; color: #35506B; background: #F4F8FB; border-left: 3px solid #0B5CAD;
+              border-radius: 0 8px 8px 0; padding: 8px 11px; margin-bottom: 10px; line-height: 1.45; }
+    #riffiltro { width: 100%; box-sizing: border-box; border: 1px solid #D9E2EC; border-radius: 8px; padding: 8px 10px;
+                 font: 13px/1.3 inherit; color: #16232E; margin-bottom: 4px; }
+    #riffiltro:focus { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .rifg { margin-top: 12px; }
+    .rift { border-top: 1px solid #EDF1F6; }
+    .rifr { display: grid; grid-template-columns: minmax(120px, 170px) 1fr; gap: 12px; padding: 6px 2px;
+            border-bottom: 1px solid #EDF1F6; font-size: 12.5px; line-height: 1.45; }
+    .rifr b { color: #16232E; font-weight: 700; }
+    .rifr span { color: #35506B; }
+    .rifr i { font-style: normal; color: #9AAABB; }
+    .rifvuoto { font-size: 12px; color: #8296A9; padding: 10px 2px; }
+    .rifpiede { font-size: 11.5px; color: #5B6B7A; font-style: italic; margin-top: 12px; }
     .tpre { border: 1px solid #C4D0DC; background: #fff; color: #16232E; border-radius: 999px;
             padding: 7px 12px; font: 600 12px/1 inherit; cursor: pointer; }
     .tpre:hover { border-color: #0B5CAD; color: #0B5CAD; background: #F4F8FB; }
@@ -4242,7 +4307,7 @@
       if (titleEl) {
         this._titleObs = new MutationObserver(() => {
           // mai ricostruire una schermata in cui si sta scrivendo
-          const scrive = ["nota", "prin"].includes(this.root.activeElement?.id);
+          const scrive = ["nota", "prin", "riffiltro"].includes(this.root.activeElement?.id);
           if (this.runState !== "running" && !scrive
               && this.view !== "dimtesto" && this.view !== "dimimport" && this.view !== "eotesto") this.render();
         });
@@ -5077,6 +5142,7 @@
       else if (this.view === "consensi") body = this.viewConsensi();
       else if (this.view === "eo") body = this.viewEo();
       else if (this.view === "tempi") body = this.viewTempi();
+      else if (this.view === "riferimenti") body = this.viewRiferimenti();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
       else body = this.viewHome(patientName, ep);
       // i Pazienti (la lista sopra, la stanza sotto) prendono tutta la finestra che resta
@@ -5118,7 +5184,7 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", riferimenti: "Riferimenti" }[this.view] || "";
       // the discharge sheets are templates: no episode belongs in that header
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
       // accanto al nome, l'episodio: di chi sono i dati, sempre a colpo d'occhio
@@ -5198,6 +5264,7 @@
                     ${inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">Modifica la stanza</button>` : ""}
                     <hr>
                     <button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">Tempi</button>
+                    <button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">Riferimenti</button>
                     ${this.view === "dimissioni" ? `<button role="menuitem" id="dimexport" title="Salva i tuoi testi in un file JSON (e negli appunti)">Esporta i fogli (JSON)</button>
                     <button role="menuitem" id="dimimport" title="Rimetti i testi di un JSON esportato">Importa i fogli…</button>` : ""}
                     ${this.refertiDaSalvare().length ? `<button role="menuitem" id="refsave" title="Tiene una copia di tutti i referti in elenco, così si aprono subito la volta dopo">Salva i referti</button>` : ""}
@@ -5293,7 +5360,7 @@
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {
-      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "richieste"].includes(this.view);
+      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "riferimenti", "richieste"].includes(this.view);
     }
     // In fondo alla fila delle schede, solo in Modifica: + Letto, + Sedia,
     // + Area e Fine. Si entra in Modifica dal menu «⋯».
@@ -6562,7 +6629,7 @@
           ${t ? `${this.avvisoNomi(righeTabella(st.righe), st.scartate)}${t.nRighe ? t.html
             : `<div class="hint">Tutti i valori sono in range: con «solo alterati» non resta niente da mostrare.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
           ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Con lo storico del portale, letto per <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
-            : this.storicoAltri ? `<div class="hint">In memoria c'è lo storico di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non lo mostro.</div>`
+            : this.storicoAltri ? `<div class="hint">Lo storico appena letto dal portale è di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non lo mostro.</div>`
             : this.storicoDaConfermare ? `<div class="hint">C'è uno storico letto per un paziente con questo nome. Per essere sicuri
               che sia il suo serve il codice fiscale, che sta nella finestra Risultati: <b>⭳ Carica i valori</b> e comparirà.</div>` : ""}
           ${this.htmlPortale()}
@@ -6722,14 +6789,21 @@
         && indice.some((v) => v.cf && !v.ep && combaciaNome(titolo, v.paziente));
 
       if (!scelta) {
-        const altri = [...new Set(indice.map((v) => [v.paziente?.cognome, v.paziente?.nome].filter(Boolean).join(" "))
-          .filter(Boolean))];
-        // se la scheda porta QUESTO nome non è «di un altro paziente»: manca
-        // solo la prova che sia sua, e quella la si dice diversamente
-        this.storicoAltri = this.storicoDaConfermare ? ""
-          : altri.length
-            ? (altri.length === 1 ? altri[0] : `${altri.length} pazienti (${altri.slice(0, 2).join(", ")}…)`)
-            : "un paziente che la pagina non nomina";
+        // Le schede degli altri pazienti in memoria sono la norma: ognuno visto
+        // nelle ultime 24 ore ha la sua, e dirlo a ogni paziente nuovo suonava
+        // come uno scambio di pazienti. Lo si dice solo quando dal portale è
+        // appena arrivato uno storico (dieci minuti) che non è di questo
+        // paziente: è lì che il medico se lo aspettava, e deve sapere perché
+        // non c'è. Se la scheda porta QUESTO nome non è «di un altro
+        // paziente»: manca solo la prova che sia sua, e si dice diversamente.
+        const dalPortale = (v) => !!(v.paziente?.idMPI || v.paziente?.cognome);
+        // (una scheda senza codice fiscale col suo stesso nome non è «di un
+        // altro»: non la si può attribuire, ma nemmeno accusare)
+        const appena = indice.filter((v) => dalPortale(v) && Date.now() - (v.letto || 0) < 10 * 60e3
+            && !(!v.cf && combaciaNome(titolo, v.paziente)))
+          .sort((a, b) => (b.letto || 0) - (a.letto || 0))[0];
+        this.storicoAltri = this.storicoDaConfermare || !appena ? ""
+          : [appena.paziente.cognome, appena.paziente.nome].filter(Boolean).join(" ") || "un paziente che la pagina non nomina";
         return null;
       }
       const pieno = await ask({ t: "getStorico", chiave: scelta.chiave });
@@ -7275,7 +7349,7 @@
       // cui si sta scrivendo: tornare su questa scheda non deve costare il cursore
       if ((this.storico?.letto || 0) + "|" + this.storicoAltri === prima) return;
       if (this.view === "dimtesto" || this.view === "dimimport" || this.view === "eotesto") return;
-      if (this.root.activeElement && this.root.activeElement.id === "nota") return;
+      if (this.root.activeElement && ["nota", "riffiltro"].includes(this.root.activeElement.id)) return;
       this.render();
     }
 
@@ -7583,6 +7657,43 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       setTimeout(() => URL.revokeObjectURL(u), 60000);
       this.message = { ok: file ? "Tempi esportati: file nei download, e aperti in una scheda." : "Tempi aperti in una scheda: da lì Ctrl+S o Ctrl+P." };
       this.render();
+    }
+
+    // Riferimenti: la tabella dei «can't-miss killers», da consultare al
+    // volo. Scrivendo si filtra (anche in italiano: «cefalea», «sincope»).
+    viewRiferimenti() {
+      const q = this.rifFiltro || "";
+      const gruppi = RIFERIMENTI.gruppi.map((g) => {
+        const righe = g.voci.map(([chi, cosa, ita]) => `
+          <div class="rifr" data-rif="${esc([chi, cosa, ita].join(" "))}"${q && !rifCombacia([chi, cosa, ita].join(" "), q) ? " hidden" : ""}>
+            <b>${esc(chi)}</b><span>${g.freccia ? `<i aria-hidden="true">→</i> ` : ""}${esc(cosa)}</span>
+          </div>`).join("");
+        return `<div class="rifg"><div class="lbl">${esc(g.titolo)}</div><div class="rift">${righe}</div></div>`;
+      }).join("");
+      return `
+        <div class="sec rif">
+          <div class="rifanc">${esc(RIFERIMENTI.ancora)}</div>
+          <input id="riffiltro" type="search" autocomplete="off" spellcheck="false" value="${esc(q)}"
+                 placeholder="Filtra: chest, cefalea, sincope, anziano…" aria-label="Filtra i riferimenti">
+          ${gruppi}
+          <div class="rifvuoto" hidden>Niente per «<span></span>».</div>
+          <div class="rifpiede">${esc(RIFERIMENTI.piede)}</div>
+        </div>`;
+    }
+    // filtra senza ridisegnare: il campo tiene il cursore
+    rifFiltra() {
+      const q = this.rifFiltro || "";
+      let quante = 0;
+      this.root.querySelectorAll(".rifg").forEach((g) => {
+        let qui = 0;
+        g.querySelectorAll(".rifr").forEach((r) => {
+          const si = !q || rifCombacia(r.getAttribute("data-rif") || "", q);
+          r.hidden = !si; if (si) qui++;
+        });
+        g.hidden = !qui; quante += qui;
+      });
+      const vuoto = this.root.querySelector(".rifvuoto");
+      if (vuoto) { vuoto.hidden = !!quante; vuoto.querySelector("span").textContent = q; }
     }
 
     viewTempi() {
@@ -8481,6 +8592,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }
       $("#tapri")?.addEventListener("click", () => this.setView("tempi"));
       $("#tempimenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("tempi"); });
+      $("#rifmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("riferimenti"); this.root.querySelector("#riffiltro")?.focus(); });
+      $("#riffiltro")?.addEventListener("input", (e) => { this.rifFiltro = e.target.value; this.rifFiltra(); });
       const ferma = () => { fermaTempo(); this.render(); };
       $("#tstop")?.addEventListener("click", ferma);
       $("#tstop2")?.addEventListener("click", ferma);

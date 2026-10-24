@@ -89,10 +89,16 @@ pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha a
 **giro di esami** no: dalla spedizione alle etichette parla la striscia nell'angolo, e la
 finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
 «✓ Copiato · incolla». Nel menu **⋯**: **Al centro** e **Affianca a destra** (una colonna, col
-gestionale accanto), **Tempi** (il cronometro), poi — solo dove servono — **Esporta i fogli (JSON)** e
+gestionale accanto), **Tempi** (il cronometro), **Riferimenti** (i *can't-miss killers*), poi — solo dove servono — **Esporta i fogli (JSON)** e
 **Importa i fogli…** (in Dimissioni) e **Salva i referti** (negli Esiti, solo con l'estensione), il
 Registro, **Ricarica estensione** e la versione. Il cronometro compare in intestazione **solo mentre corre**
 (un tocco sul tempo apre la scheda, ⏹ lo ferma).
+
+**Riferimenti** (menu ⋯) è la tabella del medico, i *can't-miss killers*, nel suo inglese: in cima
+«Don't anchor the DDx…», poi tre tabelle — **per sintomo, cosa escludere per primo**; le
+**etichette benigne che nascondono un killer**; **chi cambia la lista** (gravidanza,
+immunodepresso, anticoagulato, anziano…). Il cursore è già nel filtro: si scrive in inglese o in
+italiano («cefalea», «sincope», «anziano») e restano solo le righe che servono.
 
 Il pannello ha cinque schermate, in **una fila di schede** sempre in cima e nell'ordine in cui si
 lavora: **Richieste · Esiti · EO · Consensi · Dimissioni** (sulla lista del pronto soccorso, dove
@@ -432,6 +438,11 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   larghezza e altezza — mai più stretto di come l'hai già ridimensionato a mano.
 - Quando la scheda viene (anche) dal portale, sotto la tabella compare: *«Con lo storico del
   portale, letto per NOME · identità confermata dal paziente da cui l'hai aperta / dal codice fiscale / dal nome»*.
+- In memoria c'è **una scheda per ogni paziente visto nelle ultime 24 ore**: è normale, e quelle
+  degli altri non si mostrano mai. Se ne parla solo quando dal portale è **appena arrivato** (10
+  minuti) uno storico che non è di questo paziente: *«Lo storico appena letto dal portale è di
+  NOME, non di questo paziente: non lo mostro»* — di solito il portale era rimasto su un altro.
+  Prima lo diceva su ogni paziente ancora senza scheda, e sembrava uno scambio di pazienti.
 
 **Referti** è la lista dei documenti (ECG, RX, TC, visite…), una riga ciascuno, ognuno con
 **data e ora della richiesta**, il più recente in cima. I referti di **laboratorio** (LIS) **non

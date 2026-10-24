@@ -214,12 +214,29 @@ const senza = await paziente.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
   return { colonne: r.querySelectorAll(".sttab thead th").length - 1,
            testo: r.querySelector(".sttab")?.textContent?.replace(/\s+/g, " ") || "",
-           avviso: (/In memoria[^.]{0,80}/.exec(r.textContent.replace(/\s+/g, " ")) || [""])[0] };
+           avviso: (/Lo storico appena letto[^.]{0,80}/.exec(r.textContent.replace(/\s+/g, " ")) || [""])[0] };
 });
 check(!/10\.4|11\.8|13\.2/.test(senza.testo) && senza.colonne <= 2,
   `di un paziente senza scheda non si mostrano i valori di un altro (got ${senza.colonne} colonne: ${senza.testo.slice(0, 60)})`);
 check(/non di questo paziente/.test(senza.avviso) && /ROSSI MARIO/.test(senza.avviso),
-  `e il pannello dice cosa ha in memoria (got: ${senza.avviso})`);
+  `e il pannello dice di chi è lo storico appena letto (got: ${senza.avviso})`);
+
+// …ma solo appena letto: le schede degli altri pazienti in memoria sono la
+// norma, e dirlo su ogni paziente nuovo suonava come uno scambio di pazienti
+{
+  const sw = ctx.serviceWorkers()[0];
+  await sw.evaluate(() => chrome.storage.local.get("storicoArch").then((o) => {
+    const a = o.storicoArch || {};
+    for (const r of Object.values(a)) r.letto = Date.now() - 30 * 60e3;
+    return chrome.storage.local.set({ storicoArch: a });
+  }));
+  await paziente.locator('#psassist-host [data-seg="richieste"]').click();
+  await paziente.waitForTimeout(200);
+  await paziente.locator('#psassist-host [data-seg="esiti"]').click();
+  await paziente.waitForTimeout(1200);
+  const zitto = await paziente.evaluate(() => document.getElementById("psassist-host").shadowRoot.textContent.replace(/\s+/g, " "));
+  check(!/non di questo paziente/.test(zitto), "uno storico di un altro letto mezz'ora fa non si nomina più: niente avviso");
+}
 
 // ---- i moduli di consenso vengono dall'estensione, non dalla rete -------
 const primaRete = mock.state.requests.length;

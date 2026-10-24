@@ -4967,6 +4967,30 @@ async function scenarioMenuAltro(browser) {
   await $panel(page, '[data-seg="esiti"]').click();
   await menu();
   check(scen, !(await voce("dimexport")) && !(await voce("dimimport")) && !(await voce("refsave")), "nelle altre schermate quelle voci non ci sono (e «Salva i referti» c'è solo con l'estensione)");
+
+  // Riferimenti: la tabella dei can't-miss killers, dal ⋯, filtrabile anche in italiano
+  check(scen, await voce("rifmenu"), "«Riferimenti» sta nel menu ⋯");
+  await $panel(page, "#rifmenu").click();
+  await $panel(page, ".rifr").first().waitFor();
+  const visibili = () => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rifr")]
+    .filter((r) => !r.hidden && !r.closest(".rifg")?.hidden).map((r) => r.querySelector("b").textContent));
+  const tutte = await visibili();
+  check(scen, tutte.length === 28 && tutte.includes("Chest pain") && tutte.includes("Gastroenteritis") && tutte.includes("Anticoagulated"),
+    `tre tabelle: per sintomo, etichette benigne, chi cambia la lista (got ${tutte.length} righe)`);
+  check(scen, /Don.t anchor the DDx/.test(await $panel(page, ".rifanc").innerText()),
+    "in cima il promemoria contro l'ancoraggio");
+  check(scen, await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id === "riffiltro"), "il cursore è già nel filtro");
+  await page.keyboard.type("cefalea");
+  check(scen, JSON.stringify(await visibili()) === JSON.stringify(["Headache"]), "«cefalea» trova Headache");
+  await $panel(page, "#riffiltro").fill("");
+  await page.keyboard.type("elderly");
+  const anz = await visibili();
+  check(scen, anz.includes("Elderly") && anz.includes("UTI (elderly)") && anz.length === 2, `«elderly» trova le righe in inglese (got: ${anz.join(", ")})`);
+  await $panel(page, "#riffiltro").fill("");
+  await page.keyboard.type("zzz");
+  check(scen, (await visibili()).length === 0 && await $panel(page, ".rifvuoto").isVisible(), "niente trovato: lo dice");
+  await $panel(page, "#riffiltro").fill("");
+  await menu();
   await chiudi();
   await context.close();
 
@@ -5079,7 +5103,7 @@ const scenarios = [
   ["pill ridotta: il promemoria di un altro paziente dice di chi è", scenarioPillAltroPaziente],
   ["finestra: tetto di 1150 px, schede ferme", scenarioFinestraLarga],
   ["esiti: referti accanto ai valori, bottone grande, unità", scenarioEsitiLayout],
-  ["menu ⋯: tempi, comandi rari, niente paragrafi, ricarica", scenarioMenuAltro],
+  ["menu ⋯: tempi, riferimenti, comandi rari, niente paragrafi, ricarica", scenarioMenuAltro],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],
   ["stop button", scenarioStopButton],
