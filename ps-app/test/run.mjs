@@ -1268,6 +1268,169 @@ async function scenarioRiprovaSenzaRichiesta(browser) {
 // Il gestionale ricarica la pagina a ogni click, e il motore muore con lei.
 // Il giro però è annotato passo per passo: riprende da dov'era, su qualunque
 // pagina, e quello che era IN VOLO si cerca in carrello — mai rimandato.
+// «Svuota il carrello e ricomincia» (anche col bookmarklet, nella pagina):
+// dopo l'errore, sul carrello di QUELLA richiesta. Un tocco chiede («Svuoto 2
+// esami?»), il secondo svuota col «Svuota carrello» del gestionale — il link
+// della pagina, con la RICHIESTA_ID e l'EPISODIO_ID della richiesta —, rilegge
+// ogni sezione dal server per dimostrare che è vuoto, e rimette tutta la
+// selezione: conferma e stampa, come il primo giro. Un'altra richiesta (già
+// confermata) non si tocca, e prima di svuotare si guarda che QUESTA non sia
+// confermata (una lettura della pagina del paziente).
+const svuotaRe = /[?&]Delete=Elimina(&|$)/;
+const richiesteDelete = (mock, da = 0) => mock.state.requests.slice(da).filter((q) => svuotaRe.test(q.url) || q.params.Delete === "Elimina");
+async function scenarioSvuota(browser) {
+  const scen = "svuota";
+  const mock = createMock({ seedConfirmed: true });
+  let rotta = true;
+  const { context, page } = await newPage(browser, mock, {
+    riscrivi: (u, html) => (rotta ? html.replace(/PROCALCITONINA \(1690\)/g, "ANTITROMBINA III (1450)") : html),
+  });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("febbre");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, "#goconfirm").click();
+  await errore(page);
+  const rid = Object.keys(mock.state.richieste).find((r) => r !== "699999");
+  rotta = false;
+  await apriStriscia(page);
+  const b = $panel(page, "#svuota");
+  check(scen, (await b.count()) === 1 && /^Svuota il carrello e ricomincia$/.test((await b.innerText()).trim()),
+    "sul carrello della richiesta, nel resoconto: «Svuota il carrello e ricomincia»");
+  check(scen, (await $panel(page, "#riprova").count()) === 1, "e «↻ Riprova i mancanti» resta com'era");
+  const n0 = mock.state.requests.length;
+  await b.click();
+  const chiede = (await b.innerText()).trim();
+  check(scen, chiede === "Svuoto 2 esami?", `il primo tocco chiede (got: ${chiede})`);
+  check(scen, mock.state.requests.length === n0, "e non manda niente");
+  await shot(page, "svuota-armato");
+  await b.click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 });
+  const dopo = mock.state.requests.slice(n0);
+  const del = richiesteDelete(mock, n0);
+  check(scen, del.length >= 1 && del.every((q) => !q.params.PRESTAZIONE && q.params.MVPG === "RcsRichiestaCarrelloSvuota"
+    && q.params.RICHIESTA_ID === rid && q.params.EPISODIO_ID === "999001"),
+  `svuotato col «Svuota carrello» del gestionale, di quella richiesta e di quell'episodio (got ${del.map((q) => `${q.params.MVPG}/${q.params.RICHIESTA_ID}/${q.params.PRESTAZIONE || "-"}`).join(", ")})`);
+  check(scen, mock.state.richieste["699999"].cart.has("320"), "l'altra richiesta (confermata) non si tocca");
+  const iDel = dopo.findIndex((q) => q.params.Delete === "Elimina");
+  const iPaz = dopo.findIndex((q) => q.method === "GET" && q.params.MVPG === "PsoEpisodioClinicoAmbulatorio");
+  check(scen, iPaz >= 0 && iPaz < iDel, "prima di svuotare, una lettura della pagina del paziente: la richiesta non è confermata");
+  const iIns = dopo.findIndex((q) => q.params.Insert === "Inserisci");
+  const prove = dopo.slice(iDel + 1, iIns).filter((q) => q.method === "GET" && q.params.MVPG === "RcsRichiestaPrestazioniRicercaErogatore" && !q.params.Delete);
+  const sezioni = new Set(prove.map((q) => q.params.RISORSA_ID));
+  check(scen, iIns > iDel && sezioni.size >= 3, `prima di rimettere, ogni sezione riletta dal server: vuota (got ${[...sezioni].join(", ")})`);
+  const rimessi = dopo.filter((q) => q.params.Insert === "Inserisci").map((q) => q.params.PRESTAZIONE).sort();
+  check(scen, JSON.stringify(rimessi) === JSON.stringify(["159", "320", "324"]), `poi rimette tutta la selezione (got ${rimessi.join(", ")})`);
+  check(scen, Object.keys(mock.state.richieste).length === 2, "nella stessa richiesta: nessuna richiesta nuova");
+  const conf = confermePost(mock);
+  check(scen, conf.length === 1 && conf[0].params.RICHIESTA_ID === rid && mock.state.richieste[rid].confirmed === true,
+    `e come il primo giro, conferma — una volta (got ${conf.length})`);
+  const carrello = [...mock.state.richieste[rid].cart.keys()].sort();
+  check(scen, JSON.stringify(carrello) === JSON.stringify(["159", "320", "324"]), `confermati i tre, una volta ciascuno (got ${carrello})`);
+  check(scen, /Etichette provette/.test(await docStampa(page)), "e la stampa parte");
+  const reg = await registroDi(page);
+  check(scen, /col «Svuota carrello» del gestionale/.test(reg) && /carrello vuoto/.test(reg), "il Registro dice come ha svuotato e che l'ha visto vuoto");
+  const sorvegliate = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
+  check(scen, !sorvegliate.some((x) => x.rid === rid), "confermata con la prova: il promemoria se ne va");
+  await page.keyboard.press("Escape");
+  await context.close();
+}
+
+// Quando il carrello NON si svuota (il server risponde ma lascia le righe,
+// oppure risponde con un errore): stop, si dice cosa resta, e niente si
+// rimette — si finisce a mano. Niente «Riprova» né «Svuota» da soli.
+async function scenarioSvuotaNonVuoto(browser) {
+  const scen = "svuota-non-vuoto";
+  for (const modo of ["resta", "errore"]) {
+    const mock = createMock({ mislabel: { 159: "ANTITROMBINA III (1450)" } });
+    // il «Svuota» arriva al server ma non toglie niente (o risponde HTTP 500)
+    let tentativi = 0;
+    const h = mock.handle;
+    mock.handle = (req) => {
+      const u = new URL(req.url);
+      if (u.searchParams.get("Delete") === "Elimina" && !u.searchParams.get("PRESTAZIONE")) {
+        tentativi++;
+        if (modo === "errore") return { status: 500, headers: { "content-type": "text/html" }, body: Buffer.from("<html><body>errore</body></html>") };
+        u.searchParams.delete("Delete");
+        u.searchParams.set("MVPG", "RcsRichiestaPrestazioniRicercaErogatore");
+        return h({ ...req, url: u.href });
+      }
+      return h(req);
+    };
+    const { context, page } = await newPage(browser, mock);
+    await page.goto(mock.patientUrl);
+    await richieste(page);
+    await $panel(page, "#q").fill("febbre");
+    await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+    await $panel(page, '.opt[title*="TROPONINA"]').click();
+    await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+    await $panel(page, "#go").click();
+    await errore(page);
+    const rid = Object.keys(mock.state.richieste)[0];
+    await apriStriscia(page);
+    const n0 = mock.state.requests.length;
+    await $panel(page, "#svuota").click();
+    await $panel(page, "#svuota").click();
+    const rossa = await striscia(page, /Errore · completa a mano/, 30000).catch(() => "");
+    await page.waitForTimeout(800);
+    const ins = mock.state.requests.slice(n0).filter((q) => q.params.Insert === "Inserisci");
+    check(scen, tentativi >= 1 && ins.length === 0, `${modo}: provato col «Svuota», e niente rimesso (got ${tentativi} svuota, ${ins.length} invii)`);
+    check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "320,324", `${modo}: il carrello è com'era`);
+    await apriStriscia(page);
+    const card = (await $panel(page, ".card").innerText()).replace(/\s+/g, " ");
+    check(scen, modo === "resta" ? /non si è svuotato/.test(card) && /Restano: EMOCROMO/.test(card) && /TROPONINA/.test(card)
+      : /HTTP 500/.test(card) && /svuotato in parte/.test(card),
+    `${modo}: il resoconto dice cosa resta (got: ${card.slice(0, 160)})`);
+    check(scen, (await $panel(page, "#svuota").count()) === 0 && (await $panel(page, "#riprova").count()) === 0,
+      `${modo}: niente «Svuota» né «Riprova» da soli: si finisce a mano`);
+    check(scen, /Errore/.test(rossa), `${modo}: striscia rossa (got: ${rossa})`);
+    await context.close();
+  }
+}
+
+// Una sezione senza «Svuota carrello» in pagina: le sue righe si tolgono una
+// per una, ciascuna col suo «Elimina» (PRESTAZIONE sempre presente), poi la
+// prova e la selezione rimessa — qui «solo carrello»: si atterra sul carrello,
+// niente si conferma da solo.
+async function scenarioSvuotaRigaPerRiga(browser) {
+  const scen = "svuota-riga";
+  const mock = createMock({});
+  let rotta = true;
+  const { context, page } = await newPage(browser, mock, {
+    riscrivi: (u, html) => html.replace(/<a [^>]*MVPG=RcsRichiestaCarrelloSvuota[^>]*>Svuota carrello<\/a>/g, "")
+      .replace(/PROCALCITONINA \(1690\)/g, (m) => (rotta ? "ANTITROMBINA III (1450)" : m)),
+  });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("febbre");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, "#go").click();
+  await errore(page);
+  rotta = false;
+  const rid = Object.keys(mock.state.richieste)[0];
+  await apriStriscia(page);
+  const n0 = mock.state.requests.length;
+  await $panel(page, "#svuota").click();
+  await $panel(page, "#svuota").click();
+  const fine = await striscia(page, /Conferma dal gestionale/, 40000).catch(() => "");
+  const del = richiesteDelete(mock, n0);
+  check(scen, del.length === 2 && del.every((q) => q.params.PRESTAZIONE && q.params.RICHIESTA_ID === rid)
+    && del.map((q) => q.params.PRESTAZIONE).sort().join(",") === "320,324",
+  `niente «Svuota» in pagina: una riga alla volta, col suo «Elimina» (got ${del.map((q) => q.params.PRESTAZIONE || "SVUOTA").join(", ")})`);
+  const rimessi = mock.state.requests.slice(n0).filter((q) => q.params.Insert === "Inserisci").map((q) => q.params.PRESTAZIONE).sort();
+  check(scen, JSON.stringify(rimessi) === JSON.stringify(["159", "320", "324"]), `poi rimette la selezione (got ${rimessi.join(", ")})`);
+  check(scen, !!fine && confermePost(mock).length === 0 && mock.state.richieste[rid].confirmed === false,
+    `«solo carrello» come il primo giro: si atterra sul carrello, niente confermato (got: ${fine || "niente"})`);
+  const sorvegliate = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
+  const s = sorvegliate.find((x) => x.rid === rid);
+  check(scen, !!s && s.n === 3, `il promemoria «non confermata» segue il carrello vero: 3 esami (got ${JSON.stringify(s)})`);
+  await context.close();
+}
+
 async function scenarioRipresa(browser) {
   const scen = "ripresa";
   const mock = createMock({});
@@ -5084,6 +5247,9 @@ const scenarios = [
   ["errore due volte: «↻ Riprova» di nuovo, i «da controllare» restano", scenarioRiprovaDueVolte],
   ["errore: «Chiudi» tiene il promemoria e solo i mancanti", scenarioChiudi],
   ["errore senza richiesta: «↻ Riprova» è un giro normale", scenarioRiprovaSenzaRichiesta],
+  ["errore: «Svuota il carrello e ricomincia» — Svuota del gestionale, provato vuoto, rimesso, confermato", scenarioSvuota],
+  ["errore: «Svuota il carrello» non riuscito — stop, niente rimesso", scenarioSvuotaNonVuoto],
+  ["errore: «Svuota il carrello» senza Svuota in pagina — riga per riga", scenarioSvuotaRigaPerRiga],
   ["riga assente in pagina: la ricerca del gestionale", scenarioRigaCercata],
   ["conferma interrotta dalla navigazione: la pagina dopo avvisa", scenarioConfermaInterrotta],
   ["navigazione automatica: non si porta via chi scrive", scenarioNonMangiaLaScrittura],

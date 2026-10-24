@@ -537,6 +537,365 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// L'ORDINE IN UNA SCHEDA DI SOTTOFONDO. «Conferma e stampa» (e «solo
+// carrello») non mandano gli esami dalla scheda del medico: li manda una
+// seconda scheda, aperta qui accanto e dietro, sulla pagina vera del paziente
+// (o sul carrello della richiesta) — lo stesso indirizzo da cui il motore
+// partirebbe. Lì il content script chiede chi è (per numero di scheda, mai un
+// segno nell'indirizzo che il gestionale vedrebbe), e fa girare il motore di
+// sempre dall'inizio alla fine. Il medico intanto va dove vuole: ogni scheda
+// del gestionale mostra la striscia leggendo `ordini` (storage.session).
+// Le etichette si stampano nella scheda dove sta il medico: le consegna questo
+// service worker, una volta sola. Finito, la scheda di sottofondo si chiude —
+// se il medico non ci è mai andato sopra: allora è sua, come quella del portale.
+// Un secondo ordine mentre uno gira aspetta in coda, nell'ordine in cui arriva.
+const ORD = "ordini";
+const ORD_PIANO = (id) => "ordine:" + id;
+const SA4 = "https://smarthealth.multimedica.it";
+const ATTIVI = new Set(["avvio", "corre"]);          // occupano la coda: un motore alla volta
+const AVVIO_MAX = 45e3;       // la scheda non ha detto «parto»: non partirà
+const MUTO_MAX = 180e3;       // un giro che non dice niente da tre minuti è fermo
+const STAMPA_MAX = 30 * 60e3; // etichette che nessuno è tornato a prendere
+const ORD_TTL = 12 * 3600e3;
+let codaOrd = Promise.resolve();
+const inFilaOrd = (fn) => (codaOrd = codaOrd.then(fn, fn));
+// Le schede del gestionale leggono lo stato dell'ordine da sole, e ascoltano
+// quando cambia: storage.session, che muore col browser, non sta su disco.
+try { chrome.storage.session.setAccessLevel?.({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" })?.catch?.(() => {}); } catch { /* Chrome vecchio: niente ordini in sottofondo */ }
+const sulGestionale = (u) => { try { return new URL(u).origin === SA4; } catch { return false; } };
+// solo l'indirizzo di una pagina da LEGGERE: mai quello di un modulo inviato,
+// di un inserimento o di una cancellazione
+const leggibileOrd = (u) => {
+  try {
+    const x = new URL(u);
+    return x.origin === SA4 && /\/menuPsoEpisodio\.do$/i.test(x.pathname) && !/[?&](ccsForm|Insert|Delete|Update)=/i.test(x.search);
+  } catch { return false; }
+};
+const ordLeggi = async () => { const l = (await chrome.storage.session.get(ORD))[ORD]; return Array.isArray(l) ? l : []; };
+const ordScrivi = (l) => chrome.storage.session.set({ [ORD]: l });
+const corto = (s, n = 160) => String(s == null ? "" : s).slice(0, n);
+const nomi = (a) => (Array.isArray(a) ? a.slice(0, 30).map((x) => corto(x, 60)) : []);
+
+// la scheda nasce vuota, si annota per quale ordine è, POI va sulla pagina:
+// così la risposta a «chi sono?» c'è sempre prima del content script
+async function ordApri(rec, l) {
+  const op = rec.opener != null ? await chrome.tabs.get(rec.opener).catch(() => null) : null;
+  const dove = op && sulGestionale(op.url) ? { openerTabId: op.id, index: op.index + 1, windowId: op.windowId } : {};
+  const vuota = { url: "about:blank", active: false };
+  const t = await chrome.tabs.create({ ...vuota, ...dove }).catch(() => chrome.tabs.create(vuota));
+  rec.worker = t.id; rec.stato = "avvio"; rec.agg = Date.now(); rec.suo = false;
+  await ordScrivi(l);
+  try { await chrome.tabs.update(t.id, { url: rec.url }); }
+  catch (e) { await chrome.tabs.remove(t.id).catch(() => {}); rec.worker = null; throw e; }
+  // la memoria del browser non deve buttarla via a metà giro
+  chrome.tabs.update(t.id, { autoDiscardable: false }).catch(() => {});
+}
+// La prossima in coda, se nessun motore sta girando. Se la sua scheda non si
+// apre, quell'ordine non parte e lo si dice: niente è stato mandato.
+async function ordAvanti(l) {
+  for (;;) {
+    if (l.some((x) => ATTIVI.has(x.stato))) return;
+    const next = l.find((x) => x.stato === "coda");
+    if (!next) return;
+    try { await ordApri(next, l); return; }
+    catch {
+      next.stato = "errore"; next.agg = Date.now(); next.worker = null;
+      next.vista = { tag: "Non partito", testo: "La scheda per l'ordine non si è aperta: niente inviato", tono: "err" };
+      await ordScrivi(l);
+    }
+  }
+}
+// Finito il lavoro della scheda: si chiude, se il medico non ci è mai andato
+// sopra. Quella su cui è andato è sua.
+async function ordChiudiScheda(rec) {
+  if (rec.worker == null) return;
+  const t = await chrome.tabs.get(rec.worker).catch(() => null);
+  if (t && !rec.suo && !t.active) await chrome.tabs.remove(t.id).catch(() => {});
+  rec.worker = null;
+}
+// Le etichette vanno dove sta il medico: la scheda da cui è partito l'ordine
+// se ci sta guardando, se no la scheda del gestionale davanti agli occhi
+// (finestra in primo piano prima). Nessuna scheda del gestionale davanti: si
+// aspetta che ce ne sia una. Si consegna a una scheda alla volta, segnandola
+// prima: lo stesso ordine non si stampa mai due volte.
+async function ordConsegnaStampa(l) {
+  for (const rec of l.filter((x) => x.stato === "stampa" && x.stampa && !x.stampa.presa)) {
+    const cand = [];
+    const op = rec.opener != null ? await chrome.tabs.get(rec.opener).catch(() => null) : null;
+    if (op && op.active && sulGestionale(op.url)) cand.push(op.id);
+    for (const q of [{ active: true, lastFocusedWindow: true }, { active: true }]) {
+      for (const t of await chrome.tabs.query(q).catch(() => [])) if (sulGestionale(t.url) && !cand.includes(t.id)) cand.push(t.id);
+    }
+    for (const id of cand) {
+      rec.stampa.presa = id; rec.stampa.presaTs = Date.now();
+      await ordScrivi(l);
+      const r = await chrome.tabs.sendMessage(id, { t: "psassistStampa", id: rec.id, paziente: rec.paziente, stampa: rec.stampa }).catch(() => null);
+      if (r && r.ok) { l.splice(l.indexOf(rec), 1); await chrome.storage.session.remove(ORD_PIANO(rec.id)); break; }
+      rec.stampa.presa = null;
+    }
+    await ordScrivi(l);
+  }
+}
+// Il giro di controllo: schede sparite, schede che non partono o non parlano
+// più, etichette che nessuno ha preso, ordini vecchi. Lo chiede ogni scheda
+// del gestionale ogni pochi secondi finché c'è un ordine aperto: il service
+// worker può addormentarsi, le schede no.
+async function ordControlla(l) {
+  const ora = Date.now();
+  for (const rec of [...l]) {
+    const t = rec.worker != null ? await chrome.tabs.get(rec.worker).catch(() => null) : null;
+    if (rec.worker != null && (!t || t.discarded)) {
+      if (ATTIVI.has(rec.stato)) {
+        rec.stato = "chiusa"; rec.agg = ora;
+        rec.vista = { tag: "Scheda chiusa", testo: "", tono: "err" };
+      }
+      rec.worker = null; rec.workerChiuso = true;
+    } else if (rec.stato === "avvio" && ora - rec.agg > AVVIO_MAX) {
+      rec.stato = "errore"; rec.agg = ora;
+      rec.vista = { tag: "Non partito", testo: "La scheda dell'ordine non ha risposto: niente inviato", tono: "err" };
+      await ordChiudiScheda(rec);
+    } else if (rec.stato === "corre" && ora - rec.agg > MUTO_MAX) {
+      rec.stato = "chiusa"; rec.agg = ora;
+      rec.vista = { tag: "Ordine fermo", testo: "La scheda dell'ordine non risponde da tre minuti", tono: "err" };
+    } else if (rec.stato === "stampa" && rec.stampa && rec.stampa.presa && ora - (rec.stampa.presaTs || 0) > 20e3) {
+      rec.stampa.presa = null;   // consegna rimasta a metà (il service worker si è fermato): si riprova
+    } else if (rec.stato === "stampa" && ora - rec.agg > STAMPA_MAX) {
+      rec.stato = "avviso"; rec.agg = ora; rec.stampa = null;
+      rec.vista = { tag: "Confermata", testo: "Le etichette si stampano dalla sua pagina, sezione Stampa", tono: "ok" };
+    } else if (!ATTIVI.has(rec.stato) && rec.stato !== "coda" && ora - rec.agg > ORD_TTL) {
+      l.splice(l.indexOf(rec), 1);
+      await chrome.storage.session.remove(ORD_PIANO(rec.id));
+    }
+  }
+  await ordScrivi(l);
+  await ordAvanti(l);
+  await ordConsegnaStampa(l);
+}
+const ordGiro = () => inFilaOrd(async () => { await ordControlla(await ordLeggi()); });
+
+chrome.tabs.onRemoved.addListener((id) => {
+  inFilaOrd(async () => {
+    const l = await ordLeggi();
+    let tocca = false;
+    for (const rec of l) {
+      if (rec.opener === id) { rec.opener = null; tocca = true; }
+      if (rec.worker !== id) continue;
+      tocca = true;
+      rec.worker = null; rec.workerChiuso = true;
+      // chiusa a metà giro: la scheda del medico dirà cosa non è partito
+      if (ATTIVI.has(rec.stato)) { rec.stato = "chiusa"; rec.agg = Date.now(); rec.vista = { tag: "Scheda chiusa", testo: "", tono: "err" }; }
+    }
+    if (!tocca) return;
+    await ordScrivi(l);
+    await ordAvanti(l);
+  }).catch(() => {});
+});
+// il medico è andato sulla scheda di sottofondo: da qui è sua, non si chiude
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  inFilaOrd(async () => {
+    const l = await ordLeggi();
+    const rec = l.find((x) => x.worker === tabId);
+    if (rec && !rec.suo) { rec.suo = true; await ordScrivi(l); }
+    if (l.some((x) => x.stato === "stampa")) await ordConsegnaStampa(l);
+  }).catch(() => {});
+});
+// una pagina del gestionale appena caricata davanti agli occhi: le etichette in attesa vanno lì
+chrome.tabs.onUpdated.addListener((id, info, tab) => {
+  if (info.status !== "complete" || !tab || !tab.active || !sulGestionale(tab.url)) return;
+  inFilaOrd(async () => { const l = await ordLeggi(); if (l.some((x) => x.stato === "stampa")) await ordConsegnaStampa(l); }).catch(() => {});
+});
+chrome.windows?.onFocusChanged?.addListener(() => {
+  inFilaOrd(async () => { const l = await ordLeggi(); if (l.some((x) => x.stato === "stampa")) await ordConsegnaStampa(l); }).catch(() => {});
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (!msg || typeof msg !== "object" || typeof msg.t !== "string" || !msg.t.startsWith("ordin")) return;
+  const tab = sender && sender.tab;
+  const daGestionale = !!tab && sulGestionale(sender.url);
+  if (!daGestionale) return reply({ ok: false, no: true, why: "non dal gestionale" }), true;
+  const fai = (fn) => { inFilaOrd(fn).catch((e) => reply({ ok: false, why: corto(e && e.message || e, 80) })); return true; };
+
+  // un ordine nuovo, dalla scheda del medico
+  if (msg.t === "ordineNuovo") return fai(async () => {
+    const j = msg.job || {};
+    const id = corto(j.id, 40);
+    let ep = "";
+    try { ep = new URL(j.url).searchParams.get("EPISODIO_ID") || ""; } catch { /* sotto */ }
+    if (!id || !leggibileOrd(j.url) || !ep || ep !== String(j.ep || "") || !j.piano || typeof j.piano !== "object") {
+      return reply({ ok: false, no: true, why: "pagina di partenza inattesa" });
+    }
+    const l = await ordLeggi();
+    if (l.some((x) => x.id === id)) return reply({ ok: true, id, ordini: l });
+    const rec = {
+      id, ep, paziente: corto(j.paziente, 60), n: Number(j.n) || 0, autoConfirm: !!j.autoConfirm, url: j.url,
+      rid: j.rid ? corto(j.rid, 20) : null, opener: tab.id, worker: null, suo: false,
+      stato: "coda", ts: Date.now(), agg: Date.now(), vista: null,
+      resto: { mancano: nomi(j.nomi), controllare: [], nel: [] },
+    };
+    await chrome.storage.session.set({ [ORD_PIANO(id)]: j.piano });
+    l.push(rec);
+    if (l.some((x) => ATTIVI.has(x.stato))) {
+      await ordScrivi(l);
+      return reply({ ok: true, id, coda: true, ordini: l });
+    }
+    try { await ordApri(rec, l); }
+    catch (e) {
+      // la scheda non si apre: l'ordine lo manda la pagina del medico, come sempre
+      l.splice(l.indexOf(rec), 1);
+      await ordScrivi(l);
+      await chrome.storage.session.remove(ORD_PIANO(id));
+      return reply({ ok: false, no: true, why: "la scheda di sottofondo non si apre: " + corto(e && e.message || e, 60) });
+    }
+    reply({ ok: true, id, ordini: l });
+  });
+  // la risposta di prima è andata persa? c'è o non c'è
+  if (msg.t === "ordineEsiste") return fai(async () => {
+    const l = await ordLeggi();
+    reply({ ok: true, c: l.some((x) => x.id === msg.id), ordini: l });
+  });
+  // «chi sono?»: la scheda di sottofondo di un ordine, o una scheda qualunque
+  if (msg.t === "ordineChi") return fai(async () => {
+    const l = await ordLeggi();
+    const mio = l.find((x) => x.worker === tab.id);
+    if (!mio) return reply({ ok: true, ordini: l });
+    const piano = (await chrome.storage.session.get(ORD_PIANO(mio.id)))[ORD_PIANO(mio.id)] || null;
+    reply({ ok: true, ordini: l, lavoro: { ...mio, piano } });
+  });
+  // la scheda di sottofondo parte: una volta sola, anche se si ricarica
+  if (msg.t === "ordineParto") return fai(async () => {
+    const l = await ordLeggi();
+    const rec = l.find((x) => x.id === msg.id && x.worker === tab.id);
+    if (!rec || rec.stato !== "avvio") return reply({ ok: false });
+    rec.stato = "corre"; rec.agg = Date.now();
+    await ordScrivi(l);
+    reply({ ok: true });
+  });
+  // a che punto è (solo dalla sua scheda)
+  if (msg.t === "ordineAggiorna") return fai(async () => {
+    const l = await ordLeggi();
+    const rec = l.find((x) => x.id === msg.id && x.worker === tab.id);
+    if (!rec) return reply({ ok: false });
+    const STATI = ["corre", "errore", "interrotto", "avviso"];
+    // le etichette già consegnate non tornano indietro a «corre»
+    if (rec.stato === "stampa") return reply({ ok: false });
+    if (STATI.includes(msg.stato)) rec.stato = msg.stato;
+    if (msg.vista && typeof msg.vista === "object") {
+      const v = msg.vista;
+      rec.vista = { tag: corto(v.tag, 60), badge: corto(v.badge, 30), testo: corto(v.testo), tono: corto(v.tono, 6),
+        quesito: corto(v.quesito, 90), ferma: !!v.ferma, sessione: !!v.sessione };
+    }
+    if (msg.resto && typeof msg.resto === "object") {
+      rec.resto = { mancano: nomi(msg.resto.mancano), controllare: nomi(msg.resto.controllare), nel: nomi(msg.resto.nel) };
+    }
+    if (msg.rid) rec.rid = corto(msg.rid, 20);
+    if (msg.listUrl && leggibileOrd(msg.listUrl)) rec.listUrl = msg.listUrl;
+    // il passaggio di consegne per la scheda del medico: il carrello da aprire
+    // (un indirizzo da leggere, mai un invio) e quello che la pagina deve dire
+    if (msg.consegna === null) rec.consegna = null;
+    else if (msg.consegna && typeof msg.consegna === "object" && leggibileOrd(msg.consegna.url)) {
+      const c = msg.consegna;
+      const s = JSON.stringify(c);
+      if (s.length < 60000) rec.consegna = JSON.parse(s);
+    }
+    rec.agg = Date.now();
+    // finito il suo lavoro (un avviso per il medico): la scheda si chiude e
+    // parte il prossimo; dopo un errore resta, col resoconto intero
+    if (rec.stato === "avviso") await ordChiudiScheda(rec);
+    await ordScrivi(l);
+    await ordAvanti(l);
+    reply({ ok: true });
+  });
+  // le etichette pronte: le stampa la scheda dove sta il medico
+  if (msg.t === "ordineStampa") return fai(async () => {
+    const l = await ordLeggi();
+    const rec = l.find((x) => x.id === msg.id && x.worker === tab.id);
+    if (!rec) return reply({ ok: false });
+    const jobs = (Array.isArray(msg.jobs) ? msg.jobs : []).slice(0, 12)
+      .filter((j) => j && sulGestionale(j.url) && typeof j.name === "string")
+      .map((j) => ({ name: corto(j.name, 60), printer: corto(j.printer, 30), url: String(j.url) }));
+    if (!jobs.length) return reply({ ok: false });
+    const f = msg.fine || {};
+    rec.stampa = { jobs, fine: { n: Number(f.n) || 0, ts: Number(f.ts) || Date.now(), quesito: f.quesito || null }, presa: null };
+    rec.stato = "stampa"; rec.agg = Date.now();
+    rec.vista = { tag: "Confermata", testo: "Aspetto le etichette…", tono: "run" };
+    await ordChiudiScheda(rec);
+    await ordScrivi(l);
+    reply({ ok: true });
+    await ordAvanti(l);
+    await ordConsegnaStampa(l);
+  });
+  // «apri la scheda»: il medico va sulla scheda dell'ordine (da lì è sua)
+  if (msg.t === "ordineApri") return fai(async () => {
+    const l = await ordLeggi();
+    const rec = l.find((x) => x.id === msg.id);
+    const t = rec && rec.worker != null ? await chrome.tabs.get(rec.worker).catch(() => null) : null;
+    if (!t) return reply({ ok: false, chiusa: true });
+    rec.suo = true;
+    await ordScrivi(l);
+    await chrome.tabs.update(t.id, { active: true });
+    // la finestra in primo piano, se si può (senza aspettarla: non deve fermare il resto)
+    try { chrome.windows.update(t.windowId, { focused: true }).catch(() => {}); } catch { /* niente */ }
+    // …e là si apre il resoconto
+    chrome.tabs.sendMessage(t.id, { t: "psassistMostra", id: rec.id }).catch(() => {});
+    reply({ ok: true });
+  });
+  // ⏹: un ordine in coda si toglie; uno che gira si ferma, dalla sua scheda
+  if (msg.t === "ordineFerma") return fai(async () => {
+    const l = await ordLeggi();
+    const rec = l.find((x) => x.id === msg.id);
+    if (!rec) return reply({ ok: false });
+    if (rec.stato === "coda") {
+      l.splice(l.indexOf(rec), 1);
+      await chrome.storage.session.remove(ORD_PIANO(rec.id));
+      await ordScrivi(l);
+      return reply({ ok: true, tolto: true });
+    }
+    if (rec.worker == null) return reply({ ok: false });
+    const r = await chrome.tabs.sendMessage(rec.worker, { t: "psassistFerma", id: rec.id }).catch(() => null);
+    reply({ ok: !!(r && r.ok) });
+  });
+  // il medico ha letto (✕, o «Chiudi» nella scheda dell'ordine): via
+  if (msg.t === "ordineChiudi") return fai(async () => {
+    const l = await ordLeggi();
+    const rec = l.find((x) => x.id === msg.id);
+    if (!rec || ATTIVI.has(rec.stato)) return reply({ ok: false });
+    if (rec.worker !== tab.id) await ordChiudiScheda(rec);
+    l.splice(l.indexOf(rec), 1);
+    await chrome.storage.session.remove(ORD_PIANO(rec.id));
+    await ordScrivi(l);
+    reply({ ok: true, ordini: l });
+    await ordAvanti(l);
+  });
+  // la scheda dell'ordine ha finito sotto gli occhi del medico (ci era andato
+  // sopra): non c'è niente da dire alle altre schede
+  if (msg.t === "ordineFatto") return fai(async () => {
+    const l = await ordLeggi();
+    const rec = l.find((x) => x.id === msg.id && x.worker === tab.id);
+    if (!rec) return reply({ ok: false });
+    if (!rec.suo) await ordChiudiScheda(rec);
+    l.splice(l.indexOf(rec), 1);
+    await chrome.storage.session.remove(ORD_PIANO(rec.id));
+    await ordScrivi(l);
+    reply({ ok: true });
+    await ordAvanti(l);
+  });
+  // la pagina di login: gli ordini (che portano un nome) se ne vanno col turno
+  if (msg.t === "ordiniDimentica") return fai(async () => {
+    const l = await ordLeggi();
+    const resta = l.filter((x) => ATTIVI.has(x.stato));
+    for (const rec of l) if (!resta.includes(rec)) { await ordChiudiScheda(rec); await chrome.storage.session.remove(ORD_PIANO(rec.id)); }
+    await ordScrivi(resta);
+    reply({ ok: true });
+  });
+  if (msg.t === "ordineControlla") return fai(async () => {
+    const l = await ordLeggi();
+    await ordControlla(l);
+    reply({ ok: true, ordini: l });
+  });
+  reply({ ok: false });
+});
+
 // Lo script sul portale scelto dal medico va rimesso a ogni avvio: le
 // registrazioni dinamiche sopravvivono, ma se il permesso è stato revocato
 // vanno tolte, e un doppione fa fallire register().
