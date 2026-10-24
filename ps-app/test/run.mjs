@@ -1997,6 +1997,58 @@ async function scenarioPrintAvanzaDaSolo(browser) {
   await context.close();
 }
 
+// In Chrome vero il PDF lo stampa il visore, che «afterprint» non lo manda a
+// nessuno: si guarda il fuoco. Il dialogo aperto se lo prende, chiuso lo
+// rende — e lì si va avanti da soli. Qui il fuoco lo si muove a mano.
+async function scenarioPrintAvanzaFuoco(browser) {
+  const scen = "print-avanza-fuoco";
+  const mock = createMock({ seedConfirmed: true });
+  const { context, page } = await newPage(browser, mock);
+  await context.addInitScript(() => { window.__fuoco = true; Document.prototype.hasFocus = function () { return window.__fuoco; }; });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await page.locator('#psassist-host [data-print="699999"]').first().click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  const titolo = () => docStampa(page);
+  const attesi = (n) => page.waitForFunction(
+    (k) => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= k, n, { timeout: 25000 });
+  const fuoco = (v) => page.evaluate((x) => { window.__fuoco = x; }, v);
+  await attesi(1);
+  await page.waitForTimeout(1200);
+  check(scen, /Stampa 1 di 2/.test(await titolo()), `col fuoco sempre qui (nessun dialogo) non si salta niente (got ${await titolo()})`);
+  await fuoco(false);                 // il dialogo si apre
+  await page.waitForTimeout(700);
+  check(scen, /Stampa 1 di 2/.test(await titolo()), "a dialogo aperto si aspetta");
+  await page.waitForTimeout(300);
+  await fuoco(true);                  // …e si chiude
+  await page.waitForFunction(() => /Stampa 2 di 2/.test(document.getElementById("psassist-print")?.dataset.doc || ""),
+    null, { timeout: 8000 }).catch(() => {});
+  check(scen, /Stampa 2 di 2/.test(await titolo()), `chiuso il dialogo, il documento dopo arriva da solo (got ${await titolo()})`);
+  await attesi(2);
+  await fuoco(false);
+  await page.waitForTimeout(800);
+  await fuoco(true);
+  await page.waitForSelector("#psassist-print", { state: "detached", timeout: 8000 }).catch(() => {});
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "e dopo l'ultimo la stampa si chiude da sola");
+  await context.close();
+
+  // il fuoco già fuori quando parte la stampa (un'altra finestra davanti):
+  // tornare nella pagina non è la prova che il dialogo si sia chiuso
+  const mock2 = createMock({ seedConfirmed: true });
+  const b = await newPage(browser, mock2);
+  await b.context.addInitScript(() => { window.__fuoco = false; Document.prototype.hasFocus = function () { return window.__fuoco; }; });
+  await b.page.goto(mock2.patientUrl);
+  await richieste(b.page);
+  await b.page.locator('#psassist-host [data-print="699999"]').first().click();
+  await b.page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  await b.page.waitForFunction(() => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= 1, null, { timeout: 25000 });
+  await b.page.waitForTimeout(600);
+  await b.page.evaluate(() => { window.__fuoco = true; });
+  await b.page.waitForTimeout(1200);
+  check(scen, /Stampa 1 di 2/.test(await docStampa(b.page)), "senza fuoco alla partenza, tornare nella pagina non fa saltare il documento");
+  await b.context.close();
+}
+
 async function scenarioPrintViewerVariants(browser) {
   // Un visualizzatore che NOMINA il PDF nella pagina: si prende da lì.
   {
@@ -5068,6 +5120,7 @@ const scenarios = [
   ["print upload-servlet viewer (field URL)", scenarioPrintUploadViewer],
   ["print meta-refresh viewer (apici nell'indirizzo)", scenarioPrintMetaViewer],
   ["print: chiuso il dialogo si passa al documento dopo", scenarioPrintAvanzaDaSolo],
+  ["print: il dialogo chiuso si vede dal fuoco, e si va avanti", scenarioPrintAvanzaFuoco],
   ["print viewer variants (frameset / id-only)", scenarioPrintViewerVariants],
   ["print hard viewer → tab fallback", scenarioPrintHardViewer],
   ["ui ergonomics (selbar/drag/scroll)", scenarioUiErgonomics],

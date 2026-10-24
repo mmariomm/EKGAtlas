@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.51.0";
+  const VERSION = "3.51.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -9543,7 +9543,25 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       nota(scegli());
       stato(`Stampo ${cosaStampo(jobs[i])}`);
       try { c.f.contentWindow.print(); }
-      catch { nonParte(); }
+      catch { nonParte(); return; }
+      guardaDialogo(c);
+    };
+    // Il PDF lo stampa il visore di Chrome, e quel visore «afterprint» non lo
+    // manda né alla cornice né alla pagina: in Chrome vero si restava ad
+    // aspettare «→ Avanti». Il dialogo di stampa però, finché è aperto, si
+    // prende il fuoco: fuoco perso dopo la stampa = dialogo aperto, fuoco
+    // tornato = dialogo chiuso, e si va avanti da soli. Solo se il fuoco c'era
+    // quando è partita la stampa: altrimenti un dialogo non si distingue da
+    // un'altra finestra, e resta «→ Avanti» (o l'afterprint, dove arriva).
+    const guardaDialogo = (c) => {
+      clearInterval(c.vigile);
+      if (!document.hasFocus()) return;
+      let aperto = false;
+      c.vigile = setInterval(() => {
+        if (cur !== c || c.avanzato || !c.f.isConnected) { clearInterval(c.vigile); return; }
+        if (!document.hasFocus()) aperto = true;
+        else if (aperto) { clearInterval(c.vigile); c.dopo?.(); }
+      }, 250);
     };
 
     const advance = () => {
@@ -9585,7 +9603,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         blobUrl = URL.createObjectURL(blob);
         const f = document.createElement("iframe");
         f.title = `Anteprima — ${job.name}`;
-        const c = cur = { f, printed: false, apertoIl: 0, avanzato: false };
+        const c = cur = { f, printed: false, apertoIl: 0, avanzato: false, vigile: 0, dopo: null };
         // Chiuso il dialogo di stampa si passa al documento dopo da soli: è
         // quello che il medico farebbe premendo «→ Avanti», e con
         // l'etichettatrice davanti non ha una mano libera. Il browser non dice
@@ -9602,9 +9620,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           clearTimeout(timer);
           timer = setTimeout(advance, 300);
         };
+        c.dopo = dopoStampa;
         staccaStampa();   // resti del documento precedente
         window.addEventListener("afterprint", dopoStampa);
         staccaStampa = () => {
+          clearInterval(c.vigile);
           window.removeEventListener("afterprint", dopoStampa);
           try { f.contentWindow?.removeEventListener("afterprint", dopoStampa); } catch { /* cornice già andata */ }
         };

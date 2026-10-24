@@ -744,8 +744,13 @@ esami confermati 14:32», e **resta** finché non fai altro.
 **Non serve una mano libera**: quando la finestra di stampa del browser si chiude, si **passa da
 solo al documento dopo** — come se avessi premuto «→ Avanti»: la scheda si toglie finché quel
 documento non arriva, poi torna con la sua anteprima — e dopo l'ultimo la scheda se ne va e la
-striscia dice «Stampato · N esami confermati HH:MM». Il browser dice soltanto che il dialogo si è
-chiuso, non se hai stampato o annullato: si va avanti in tutt'e due i casi. Un dialogo che si
+striscia dice «Stampato · N esami confermati HH:MM». Come si sa che il dialogo si è chiuso: il
+PDF lo stampa il visore di Chrome, che l'evento «afterprint» non lo manda a nessuno (in Chrome
+vero si restava ad aspettare «→ Avanti»). Il dialogo, finché è aperto, **si prende il fuoco della
+pagina**: fuoco perso dopo la stampa = dialogo aperto, fuoco tornato = chiuso, e si va avanti (lo
+si guarda ogni ¼ di secondo; «afterprint», dove arriva, vale lo stesso). Solo se il fuoco c'era
+quando la stampa è partita: con un'altra finestra davanti un dialogo non si distingue, e resta
+«→ Avanti». Il browser non dice se hai stampato o annullato: si va avanti in tutt'e due i casi. Un dialogo che si
 chiude all'istante (stampa non disponibile su quel PC) **non** fa saltare la coda: la scheda lo
 dice, e **🖨 Stampa** lo riapre. Se la stampa l'hai annullata (Esc, ✕) o un documento non è
 uscito, il resoconto resta lo stesso — la richiesta è confermata — con accanto un **Ristampa**
@@ -1155,7 +1160,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 84 scenari e2e in Chromium reale (+ storico e referti)
+└── test/                ← simulatore SA4PSO + 85 scenari e2e in Chromium reale (+ storico e referti)
 ```
 
 Sviluppo:
@@ -1166,7 +1171,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 84 scenari e2e + 53 sull'estensione + 59 sul banco + storico + il cancello privacy
+npm test           # 85 scenari e2e + 53 sull'estensione + 59 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
