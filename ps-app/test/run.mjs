@@ -4095,10 +4095,12 @@ async function scenarioPromemoria(browser) {
   const tempi = [[100, "1h40"], [40, "40m"], [0, "ora"], [-5, "−5m"], [-80, "−1h20"]].map(([m, atteso]) => [tempo(dieci + m * 60e3, dieci), atteso]);
   check(scen, tempi.every(([a, b]) => a === b), `quanto manca, corto: ${tempi.map(([a]) => a).join(" · ")}`);
 
-  // ---- nel browser, con l'orologio finto: parte da adesso, e il tempo lo si fa correre a mano
+  // ---- nel browser, con l'orologio finto: parte dalle 10 di mattina (da
+  // «adesso», dopo le 23:15 «tra 45m» cadeva domani e il test falliva), e il
+  // tempo lo si fa correre a mano
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
-  await page.clock.install();
+  await page.clock.install({ time: new Date(2026, 9, 5, 10, 0) });
   // (con l'orologio avanti, una pagina può partire dalla pill: la si riapre)
   const apri = async () => {
     await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
