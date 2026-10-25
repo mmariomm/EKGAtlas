@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.51.1";
+  const VERSION = "3.52.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -283,9 +283,12 @@
     document.addEventListener("input", cambia, true);
     document.addEventListener("change", cambia, true);
   }
-  // perché adesso non si cambia pagina ("" = si può)
-  function staScrivendo() {
+  // perché adesso non si cambia pagina ("" = si può). `adesso`: sta scrivendo
+  // in questo momento (il cursore in un campo, un tasto da poco) — quello che
+  // un dialogo di stampa interromperebbe; un campo cambiato e lasciato no.
+  function staScrivendo(adesso = false) {
     if (scrittura.toccato && eCampo(document.activeElement)) return "cursore in un campo";
+    if (adesso) return Date.now() - scrittura.tasto < TASTO_MS ? "un tasto premuto da poco" : "";
     if (scrittura.cambiato) return "un campo modificato";
     // il testo scritto prima che il programma arrivasse (il bookmarklet si clicca dopo)
     for (const t of document.querySelectorAll("textarea")) {
@@ -1901,6 +1904,71 @@
     };
   }
 
+  // Che cosa c'è ancora nel carrello di questa sezione: le righe dell'elenco
+  // col loro «Elimina» (codice e nome) e, nelle pagine vere, le righe della
+  // tabella «Carrello Prestazioni» (RICHIESTA_PRESTAZIONE_PROG, senza
+  // PRESTAZIONE) che l'elenco non mostra già. Il «Svuota carrello» non ha né
+  // l'una né l'altra: non è una riga.
+  function righeVive(doc, m) {
+    const out = m.exams.filter((e) => e.isDel).map((e) => ({ res: m.res, code: String(e.code), label: e.label }));
+    const visti = new Set(out.map(nomeRiga));
+    for (const a of doc.querySelectorAll('a[href*="Delete=Elimina"]')) {
+      let p;
+      try { p = new URL(a.getAttribute("href"), location.href).searchParams; } catch { continue; }
+      if (p.has("PRESTAZIONE") || !p.has("RICHIESTA_PRESTAZIONE_PROG")) continue;
+      const r = { res: m.res, code: null, label: (a.closest("tr")?.textContent || "").replace(/\s+/g, " ").trim().replace(/^\d+-\d+\s*/, "") };
+      if (!visti.has(nomeRiga(r))) { visti.add(nomeRiga(r)); out.push(r); }
+    }
+    return out;
+  }
+  const nomeRiga = (r) => (r.code ? DISPLAY[`${r.res}:${r.code}`] : "") || shortLabel(r.label) || "una riga senza nome";
+  const righeCarrello = (doc, m) => righeVive(doc, m).map(nomeRiga);
+  // Il carrello vero di una richiesta, sezione per sezione, riletto dal
+  // server (solo letture): ogni pagina dev'essere di quella richiesta, di
+  // quell'episodio e di quella sezione — e non la pagina di accesso.
+  async function leggiSezione(model0, res, { rid, ep, signal, cosa = "Niente toccato" }) {
+    const u = model0.listUrl(res);
+    if (!u) throw new StopError("Non ritrovo il carrello della richiesta", "Controllalo a mano.");
+    const r = await fetchDoc(u, { signal });
+    if (classify(r.doc) === "login") {
+      const e = restaQui(new StopError("Sessione scaduta durante l'operazione", `${cosa}. Rifai l'accesso e controlla il carrello.`));
+      e.sessione = true;
+      throw e;
+    }
+    assertSameEpisode(r.doc, ep, "carrello");
+    if (classify(r.doc) !== "exam") throw new StopError("Non ritrovo il carrello della richiesta", "Controllalo a mano.");
+    const m = examModel(r.doc, r.url);
+    if (String(m.richiestaId) !== String(rid)) throw restaQui(new StopError("Non è il carrello di questa richiesta", "Mi fermo qui."));
+    if (m.res !== res) throw new StopError(`Non apro la sezione ${risorsaCorta(res)} del carrello`, "Controllalo a mano.");
+    return { res, m, doc: r.doc, url: r.url, righe: righeVive(r.doc, m) };
+  }
+  async function leggiCarrello(model0, opz) {
+    const sezioni = [];
+    for (const res of new Set([model0.res, ...model0.resOptions.map((o) => o.value)].filter(Boolean))) sezioni.push(await leggiSezione(model0, res, opz));
+    return { sezioni, righe: sezioni.flatMap((s) => s.righe) };
+  }
+  // Che cosa rimette «Svuota il carrello e ricomincia»: la selezione di
+  // partenza e, in più, ogni riga del carrello vero che non ne fa parte
+  // (aggiunta a mano, o rimasta da un giro di prima) — per codice, col nome
+  // del catalogo, che dev'essere quello che la riga porta oggi: svuotare non
+  // deve mai far sparire un esame. Una riga che non si saprebbe rimettere
+  // ferma tutto prima di togliere qualunque cosa. (`nostri`: con quale codice
+  // sono entrati gli esami del giro — un riflesso ne cambia il numero.)
+  function daRimettere(righe, sel, nostri = [], cat = fullCatalog()) {
+    const noti = [...sel, ...nostri];
+    const suo = (r) => noti.some((x) => (String(x.res) === String(r.res) && String(x.code) === String(r.code)) || stessoNomeVivo(x.label, r.label));
+    const extra = [], ignoti = [];
+    for (const r of righe) {
+      if (suo(r)) continue;
+      const label = r.code ? (cat[r.res]?.items || {})[r.code] : "";
+      if (label && stessoNomeVivo(label, r.label)) {
+        const it = { res: r.res, code: r.code, label, display: displayLabel(r.res, r.code) };
+        extra.push(it); noti.push(it);
+      } else ignoti.push(nomeRiga(r));
+    }
+    return { items: [...sel, ...extra], extra, ignoti };
+  }
+
   const agoLabel = (ts) => {
     const min = Math.max(0, Math.round((Date.now() - (ts || 0)) / 60000));
     if (min < 1) return "adesso";
@@ -2515,6 +2583,11 @@
   // (POCT1502)" — identifies an exam far better than its numeric code
   const mnemonico = (label) => { const m = /\(([A-Z0-9._-]{3,})\)\s*$/i.exec(String(label || "").trim()); return m ? m[1].toUpperCase() : ""; };
   const normEsame = (s) => String(s || "").replace(/\s+/g, " ").trim().toUpperCase();
+  // Lo stesso esame su una riga viva: lo stesso nome (la tipografia non conta:
+  // i trattini cambiano da una sede all'altra) o lo stesso mnemonico LIS. Mai
+  // per somiglianza. È il cancello prima di ogni invio (regola 4).
+  const nomeVivo = (s) => String(s || "").replace(/[–—‐‑‒−]/g, "-").replace(/\s+/g, " ").trim().toUpperCase();
+  const stessoNomeVivo = (a, b) => (!!nomeVivo(a) && nomeVivo(a) === nomeVivo(b)) || (!!mnemonico(a) && mnemonico(a) === mnemonico(b));
 
   // Dove va un esame in QUESTA sede. Le risorse cambiano numero da una sede
   // all'altra (e si riconoscono per nome), ma una sede può anche non avere
@@ -2689,19 +2762,171 @@
     const pace = () => sleep(PACE_MS, signal);
 
     plan.items = applyExclusions(plan.items, log);
+    // La selezione del medico com'era, prima che il motore traduca codici e
+    // risorse per la sede (o che un esame a riflesso entri con un altro
+    // numero): è quella che «Svuota il carrello e ricomincia» rimette.
+    // Viaggia con il giro: «Riprova» e la ripresa dopo un cambio pagina la portano.
+    const nudoSel = (i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label,
+      ...(i.resCat ? { resCat: i.resCat } : {}), ...(i.chiave ? { chiave: i.chiave } : {}) });
+    if (!Array.isArray(plan.originali) || !plan.originali.length) {
+      // (un giro ripreso o rifatto senza la selezione di partenza non la sa: niente «Svuota»)
+      const parziale = plan.startPage === "ripresa" || plan.items.some((i) => i.soloVerifica) || (plan.daControllare || []).length > 0;
+      plan.originali = parziale ? null : plan.items.map(nudoSel);
+    }
 
     // Pre-build the visible step list.
     const legTag = plan.legLabel ? ` (${plan.legLabel})` : "";
     const riprende = plan.startPage === "ripresa";
+    // dal carrello di una richiesta già nata (dopo «Svuota il carrello»): niente da creare
+    const daCarrello = plan.startPage === "carrello";
     const sOpen = plan.startPage === "patient" ? step("Apro la nuova richiesta" + legTag) : null;
-    const sRipresa = riprende ? step("Riprendo la richiesta da dov'ero") : null;
-    const sCrea = plan.startPage !== "exam" && !riprende ? step("Compilo quesito e creo la richiesta" + legTag) : null;
+    const sRipresa = riprende ? step("Riprendo la richiesta da dov'ero") : daCarrello ? step("Apro il carrello della richiesta") : null;
+    const sCrea = plan.startPage !== "exam" && !riprende && !daCarrello ? step("Compilo quesito e creo la richiesta" + legTag) : null;
+    const sSvuota = plan.svuota ? step("Svuoto il carrello") : null;
+    const sVuoto = plan.svuota ? step("Controllo che sia vuoto") : null;
     const itemSteps = new Map();
     // i passi-esame si contano a parte: la striscia dice «esame 2 di 6», non i passi
     for (const it of plan.items) { const s = step(it.display || it.label); s.esame = true; itemSteps.set(it, s); }
     const sEnd = step(riprende && !plan.autoConfirm ? "Chiudo: il carrello è pronto"
       : plan.autoConfirm ? "Passo alla pagina esami per la conferma" : "Passo alla pagina esami per la revisione");
     ui.renderRun(state);
+
+    // Svuotare il carrello di UNA richiesta, quella del giro, e dimostrarlo.
+    // Col link «Svuota carrello» del gestionale — un'azione sola, niente che
+    // resta indietro — preso dalla pagina esami della richiesta e seguito solo
+    // se porta la sua RICHIESTA_ID e il suo EPISODIO_ID (e, quando c'è, la
+    // RISORSA_ID della sezione: nelle pagine vere svuota una sezione alla
+    // volta, quindi si segue per ogni sezione che ha righe). Una sezione senza
+    // «Svuota» si toglie riga per riga coi suoi «Elimina» (PRESTAZIONE sempre
+    // presente). Mai una richiesta confermata: prima si legge la pagina del
+    // paziente, e se la elenca fra quelle coi fogli da stampare non si tocca
+    // niente. Prima di togliere qualunque cosa si legge il carrello vero: quello
+    // che c'è e non è della selezione si rimette anche lui, e una riga che non
+    // si saprebbe rimettere ferma tutto lì. Poi OGNI sezione si rilegge dal
+    // server: se c'è ancora una riga, stop — si dice cosa resta e non si
+    // rimette niente.
+    const svuotaCarrello = async (model0) => {
+      const rid = String(plan.richiestaId || ""), ep = String(plan.episodeId || "");
+      if (!rid || String(model0.richiestaId) !== rid) throw new StopError("Non so quale carrello svuotare", "Niente toccato.");
+      state.svuotando = true;
+      running(sSvuota, "controllo che non sia confermata…");
+      const pu = [plan.patientUrl, (tuttiPazienti().find((p) => p.ep === ep) || {}).url].find(leggibilePagina);
+      if (!pu) throw new StopError("Non riesco a controllare che la richiesta non sia confermata", "Non svuoto niente.");
+      const pz = await fetchDoc(pu, { signal });
+      guardSession(pz.doc, "Niente svuotato");
+      assertSameEpisode(pz.doc, ep, "pagina del paziente");
+      if (classify(pz.doc) !== "patient") throw new StopError("Non ritrovo la pagina del paziente", "Non svuoto niente.");
+      if (printModel(pz.doc, pz.url)[rid]) throw new StopError("Questa richiesta risulta già confermata", "Una richiesta confermata non si svuota: non tocco niente.");
+      if (!model0.confirmButton) throw new StopError("Il carrello non ha più la Conferma", "Forse è già confermata: non svuoto niente.");
+      const leggi = (res, cosa) => leggiSezione(model0, res, { rid, ep, signal, cosa });
+      // il carrello vero, tutte le sezioni: che cosa si toglie, e che cosa si rimette
+      running(sSvuota, "leggo il carrello…");
+      const { sezioni, righe } = await leggiCarrello(model0, { rid, ep, signal, cosa: "Niente svuotato" });
+      state.inCarrello = righe.map(nomeRiga);
+      const piano = daRimettere(righe, plan.items, plan.nostri || []);
+      if (piano.ignoti.length) {
+        throw new StopError(`Non saprei rimettere ${piano.ignoti.map((x) => `«${x}»`).join(", ")}`,
+          "È nel carrello ma non so ordinarlo da qui: non svuoto niente.");
+      }
+      for (const it of piano.extra) {
+        log(`nel carrello c'è anche «${it.display}», fuori dalla selezione: lo rimetto con gli altri`);
+        plan.items.push(it);
+        const s = { label: it.display, status: "pending", note: "", esame: true };
+        state.steps.splice(state.steps.indexOf(sEnd), 0, s);
+        itemSteps.set(it, s);
+      }
+      if (piano.extra.length) plan.originali = [...(plan.originali || []), ...piano.extra.map(nudoSel)];
+      // il link «Svuota» di questa sezione, e solo se è suo
+      const linkSvuota = (d, base, res) => {
+        for (const a of d.querySelectorAll('a[href*="Delete=Elimina"]')) {
+          let u; try { u = new URL(a.getAttribute("href"), base); } catch { continue; }
+          const p = u.searchParams;
+          if (u.origin !== location.origin || p.get("Delete") !== "Elimina" || p.get("MVPG") !== "RcsRichiestaCarrelloSvuota") continue;
+          if (p.has("PRESTAZIONE") || p.has("RICHIESTA_PRESTAZIONE_PROG") || p.has("Insert")) continue;
+          if (p.get("RICHIESTA_ID") !== rid || p.get("EPISODIO_ID") !== ep) continue;
+          if (p.has("RISORSA_ID") && p.get("RISORSA_ID") !== res) continue;
+          return u.href;
+        }
+        return null;
+      };
+      // l'«Elimina» di una riga: il suo esame, la sua richiesta, la sua sezione
+      const eliminaDi = (e, res) => {
+        let u; try { u = new URL(e.href); } catch { return null; }
+        const p = u.searchParams;
+        if (u.origin !== location.origin || !e.isDel || p.get("Delete") !== "Elimina" || p.has("Insert")) return null;
+        if (p.get("PRESTAZIONE") !== String(e.code) || p.get("RICHIESTA_ID") !== rid || p.get("RISORSA_ID") !== res) return null;
+        if (p.has("EPISODIO_ID") && p.get("EPISODIO_ID") !== ep) return null;
+        return u.href;
+      };
+      const presidio = () => {
+        if (!presidioLibero(rid, token)) {
+          throw restaQui(new StopError("Un'altra scheda sta lavorando su questa richiesta", "Da qui non svuoto niente."));
+        }
+        segnaPresidio(rid, token);
+      };
+      // Da qui non si sa più che cosa c'è nel carrello finché non si rimette:
+      // se la scheda muore adesso, la prima pagina utile dice di controllare.
+      store.set(APERTA, { ts: Date.now(), ep, paziente: plan.patientName || "", rid, quanti: 0, forse: plan.items.length });
+      let tolti = 0;
+      for (const { res, m: m0, doc: d, url: u, righe: suo } of sezioni) {
+        let m = m0;
+        const prima = suo.map(nomeRiga);
+        if (!prima.length) continue;
+        presidio();
+        state.tolgo = true;
+        const sv = linkSvuota(d, u, res);
+        if (sv) {
+          running(sSvuota, `svuoto ${risorsaCorta(res)} (${prima.length})…`);
+          log(`svuoto ${risorsaCorta(res)} col «Svuota carrello» del gestionale: ${prima.join(", ")}`);
+          const r = await fetchDoc(sv, { signal });
+          guardSession(r.doc, "Il carrello potrebbe essere svuotato o no");
+          assertSameEpisode(r.doc, ep, "svuota carrello");
+          tolti += prima.length;
+          await pace();
+          continue;
+        }
+        // niente «Svuota» in questa sezione: una riga alla volta, rileggendo
+        // il carrello dopo ognuna (ogni link porta il suo stato)
+        log(`${risorsaCorta(res)}: nessun «Svuota carrello» in pagina — tolgo le righe una per una`);
+        for (let giro = 0; giro < prima.length + 2; giro++) {
+          const e = m.exams.find((x) => x.isDel && eliminaDi(x, res));
+          if (!e) break;
+          presidio();
+          running(sSvuota, `tolgo ${shortLabel(e.label)}…`);
+          log(`tolgo «${shortLabel(e.label)}» col suo «Elimina»`);
+          const r = await fetchDoc(eliminaDi(e, res), { signal });
+          guardSession(r.doc, `«${shortLabel(e.label)}» potrebbe essere tolto o no`);
+          assertSameEpisode(r.doc, ep, "elimina esame");
+          tolti++;
+          await pace();
+          ({ m } = await leggi(res, "Il carrello potrebbe essere svuotato in parte"));
+        }
+      }
+      done(sSvuota, tolti ? `${tolti} ${tolti === 1 ? "tolto" : "tolti"}` : "era già vuoto");
+      // la prova: ogni sezione riletta dal server, e vuota
+      running(sVuoto);
+      const restano = [];
+      let primo = null;
+      for (const { res } of sezioni) {
+        const l = await leggi(res, "Il carrello potrebbe essere svuotato in parte");
+        for (const n of righeCarrello(l.doc, l.m)) restano.push(sezioni.length > 1 ? `${n} (${risorsaCorta(res)})` : n);
+        if (res === model0.res) primo = l;
+        await pace();
+      }
+      if (restano.length) {
+        state.rimasti = restano;
+        throw new StopError("Il carrello non si è svuotato", `Restano: ${restano.join(", ")}. Non rimetto niente: finiscilo a mano.`);
+      }
+      if (!primo) throw new StopError("Non ritrovo la sezione del carrello da cui ripartire", "Il carrello è vuoto: rimetti gli esami a mano.");
+      done(sVuoto, "vuoto ✓");
+      log(`carrello vuoto su ${sezioni.length === 1 ? "1 sezione" : `tutte le ${sezioni.length} sezioni`}, riletto dal server: rimetto ${plan.items.length} esami`);
+      // un carrello vuoto non ha niente da confermare: il promemoria torna
+      // quando rientra il primo esame
+      confermataProvata(rid);
+      state.svuotando = false;
+      state.svuotato = true;
+      return { model: primo.m, doc: primo.doc, url: primo.url };
+    };
 
     try {
       // ---- 1. reach the exam page --------------------------------------
@@ -2715,7 +2940,7 @@
         done(sOpen);
       }
 
-      if (riprende) {
+      if (riprende || daCarrello) {
         // Non si crea niente e non si manda niente: si rilegge l'elenco della
         // richiesta che era già aperta, e da lì si continua.
         running(sRipresa);
@@ -2800,6 +3025,10 @@
       const noteList = () => { const u = model.listUrl(model.res); if (u) state.lastListUrl = u; };
       noteList();
       if (!state.lastListUrl) throw new StopError("Impossibile ricostruire l'indirizzo dell'elenco esami", "Nessun esame inviato.");
+      // «Svuota il carrello e ricomincia»: prima il carrello di QUESTA
+      // richiesta si vuota e si dimostra vuoto, poi si rimette tutta la
+      // selezione, come il primo giro.
+      if (plan.svuota) ({ model, doc, url } = await svuotaCarrello(model));
       const offered = new Set(model.resOptions.map((o) => o.value));
       if (offered.size) {
         const cat = fullCatalog();
@@ -2847,17 +3076,26 @@
         // mandare»: resta fra i fatti, e alla ripresa si cerca in carrello.
         const rimasti = resto || [];
         segnaPresidio(state.richiestaId, token);
-        const restano = rimasti.filter((x) => !x.soloVerifica).length + (inVolo ? 1 : 0);
         // Il segno condiviso: se questa scheda muore, la prima pagina utile —
-        // anche in un'altra scheda — dirà che un giro è rimasto a metà.
-        store.set(APERTA, restano
-          ? { ts: Date.now(), ep: plan.episodeId, paziente: plan.patientName || "", rid: state.richiestaId || null, quanti: restano }
+        // anche in un'altra scheda — dirà che un giro è rimasto a metà: quanti
+        // non sono partiti, e quanti sono da controllare (quello in volo:
+        // mai fra i «non mandati»).
+        const mai = rimasti.filter((x) => !x.soloVerifica).length;
+        const forse = inVolo ? 1 : rimasti.filter((x) => x.soloVerifica && !x.giaFatto).length;
+        store.set(APERTA, mai || forse
+          ? { ts: Date.now(), ep: plan.episodeId, paziente: plan.patientName || "", rid: state.richiestaId || null, quanti: mai, forse }
           : null);
         const scritto = tabStore.set(CORSA, {
           ts: Date.now(), ep: plan.episodeId, paziente: plan.patientName || "",
           autoConfirm: !!plan.autoConfirm, quesito: plan.quesito || "", qinfo: state.quesito || null,
           rid: state.richiestaId || null, listUrl: state.lastListUrl || null,
           riprese: plan.riprese || 0,
+          // il giro di un ordine in sottofondo: si riprende solo nella sua
+          // scheda, e solo finché il service worker lo conosce
+          ...(LAVORO ? { ordine: LAVORO.id } : {}),
+          // la selezione di partenza (per «Svuota il carrello»)
+          ...(plan.originali ? { originali: plan.originali } : {}),
+          ...(plan.patientUrl ? { patientUrl: plan.patientUrl } : {}),
           // «in volo» resta in volo finché non lo si ritrova: se scivolasse fra
           // i fatti, alla ripresa dopo passerebbe per uno che qualcuno ha tolto
           // dal carrello — e un esame mai partito sparirebbe in silenzio.
@@ -3048,13 +3286,11 @@
         // so does the odd word ("EMOGASANALISI MISTA" vs "CAPILLARE", same
         // POC2117). Typography is never a rename, and neither is a different
         // wording carrying the SAME LIS mnemonic — anything else still stops.
-        const norm = (s) => s.replace(/[–—‐‑‒−]/g, "-").replace(/\s+/g, " ").trim().toUpperCase();
-        if (!/^esame \d+$/i.test(it.label) && norm(link.label) !== norm(it.label)) {
-          const mioMn = mnemonico(it.label), suoMn = mnemonico(link.label);
-          if (!mioMn || mioMn !== suoMn) {
+        if (!/^esame \d+$/i.test(it.label) && nomeVivo(link.label) !== nomeVivo(it.label)) {
+          if (!stessoNomeVivo(link.label, it.label)) {
             throw new StopError(`Il codice ${it.code} oggi si chiama «${link.label}»`, `Selezionato come «${nm}» — non inviato.`);
           }
-          log(`stesso esame, nome diverso in questa sede: «${link.label}» (${suoMn})`);
+          log(`stesso esame, nome diverso in questa sede: «${link.label}» (${mnemonico(link.label)})`);
         }
 
         // ---- the one and only send of this exam -----------------------
@@ -3073,6 +3309,10 @@
         const prima = new Set(model.exams.filter((e) => e.isDel).map((e) => e.code));
         salvaCorsa(it, items.slice(i + 1));   // da qui è IN VOLO: non si rimanda
         it.inviato = true;   // da qui, se non si vede in carrello, è «da controllare» — mai «manca»
+        // …e così lo sa anche il service worker, PRIMA che parta (si aspetta
+        // la sua risposta): se questa scheda muore adesso, quell'esame è da
+        // guardare, non da rifare
+        if (LAVORO) await ui.annunciaLavoro?.();
         ({ doc, url } = await fetchDoc(link.href, { signal }));
         guardSession(doc, `«${nm}» potrebbe essere stato aggiunto o no`);
         assertSameEpisode(doc, plan.episodeId, "conferma inserimento");
@@ -3136,6 +3376,10 @@
         done(st, it.alPostoDi ? `nel carrello ✓ · al posto di ${it.alPostoDi}` : "nel carrello ✓");
         log(`aggiunto ✓ ${nm}`);
         state.added.push(it);
+        // Da qui la richiesta ha un esame in carrello: è da confermare, e lo
+        // resta anche se questa scheda muore adesso. Il promemoria segue il
+        // carrello vero, esame per esame (solo numeri).
+        ricordaDaConfermare(state.richiestaId, plan.episodeId, state.lastListUrl, state.added.length);
         salvaCorsa(null, items.slice(i + 1));
         // Il carrello di QUESTA risorsa come lo vediamo adesso. La Conferma
         // nativa invia la richiesta INTERA, comprese le righe che stanno sul
@@ -3209,16 +3453,23 @@
       // restano in elenco: non sono spariti, sono ancora da guardare)
       const controllare = [...fuori.filter((x) => x.inviato || x.soloVerifica), ...(plan.daControllare || [])];
       const mancanoIt = fuori.filter((x) => !controllare.includes(x));
-      state.mancanti = mancanoIt;          // per «↻ Riprova i mancanti»: questi soli si mandano
-      state.daControllare = controllare;   // …e questi mai
+      // Fermato mentre svuotava il carrello: che cosa c'è dentro adesso lo
+      // sa solo il carrello. Niente «Mancano» (si aggiungerebbe un esame che
+      // magari è ancora lì), niente «Riprova» né «Svuota» da soli: si dice
+      // cosa resta, se lo si è visto, e si finisce a mano.
+      const aMeta = !!state.svuotando;
+      state.mancanti = aMeta ? [] : mancanoIt;          // per «↻ Riprova i mancanti»: questi soli si mandano
+      state.daControllare = aMeta ? [] : controllare;   // …e questi mai
       // il carrello su cui atterrare: quello del laboratorio del primo esame da fare a mano
-      const primo = mancanoIt[0] || controllare[0] || null;
+      const primo = aMeta ? null : mancanoIt[0] || controllare[0] || null;
       state.resMancante = primo ? primo.res : null;
-      const liste = {
-        nel: state.added.map(nomeDi),
-        mancano: mancanoIt.map(nomeDi),
-        controllare: controllare.map(nomeDi),
-      };
+      // (fermato prima di togliere qualunque cosa: il carrello è com'era, e si dice cosa c'è)
+      const liste = aMeta
+        ? { nel: state.rimasti || (state.tolgo ? [] : state.inCarrello || []), mancano: [], controllare: [], niente: true }
+        : { nel: state.added.map(nomeDi), mancano: mancanoIt.map(nomeDi), controllare: controllare.map(nomeDi) };
+      if (aMeta && state.tolgo && err instanceof StopError && !state.rimasti) {
+        err.body = `${err.body ? err.body + " " : ""}Il carrello potrebbe essere svuotato in parte: controllalo e finiscilo a mano.`;
+      }
       if (signal.aborted || err?.name === "AbortError") {
         log("■ interrotto dall'utente");
         ui.stopped(state, { head: "Interrotto", body: "L'ultimo esame inviato potrebbe essere in carrello: controlla.", ...liste }, plan);
@@ -3226,7 +3477,7 @@
         log(`⚠ ${err.message}`);
         // quanti esami restavano fuori: senza questo, il messaggio parla solo
         // di quello che è andato storto e il resto si vede solo espandendo
-        const restavano = plan.items.filter((x) => !state.added.includes(x)).length - 1;
+        const restavano = aMeta ? 0 : plan.items.filter((x) => !state.added.includes(x)).length - 1;
         ui.failed(state, { head: err.head, body: `${err.body || ""}${
           restavano > 0 ? (restavano === 1 ? " Restava 1 altro esame da mandare." : ` Restavano ${restavano} altri esami da mandare.`) : ""}`,
           ...liste, restaQui: !!err.restaQui, sessione: !!err.sessione }, plan);
@@ -3256,14 +3507,22 @@
       ...(i.resCat ? { resCat: i.resCat } : {}), ...(i.chiave ? { chiave: i.chiave } : {}),
       ...(i.alPostoDi ? { alPostoDi: i.alPostoDi } : {}) });
     const mancanti = (state.mancanti || []).map(nudo);
-    if (!mancanti.length) return null;
     const suo = plan.examUrl || plan.listUrl;
     const rid = state.richiestaId || (suo ? param(suo, "RICHIESTA_ID") : null);
+    // «Svuota il carrello e ricomincia»: c'è una richiesta nata, qualcosa
+    // nel suo carrello (entrato o da controllare) e la selezione di partenza
+    const nelCarrello = (state.added || []).length + (state.daControllare || []).length;
+    const tutti = Array.isArray(plan.originali) ? plan.originali.map(nudo) : [];
+    const svuotabile = !!rid && tutti.length > 0 && nelCarrello > 0 && leggibilePagina(state.lastListUrl || "");
+    if (!mancanti.length && !svuotabile) return null;
     if (!rid && plan.startPage !== "patient" && plan.startPage !== "crea") return null;
     return {
       ep: String(plan.episodeId), rid: rid ? String(rid) : null, autoConfirm: !!plan.autoConfirm,
       paziente: plan.patientName || "", patientUrl: plan.patientUrl || "",
       verdi: (state.added || []).map(nudo), mancanti, controllare: (state.daControllare || []).map(nudo),
+      ...(svuotabile ? { tutti, listUrl: state.lastListUrl, nCarrello: nelCarrello } : {}),
+      ...(state.quesito ? { qinfo: state.quesito } : {}),
+      ...(plan.originali ? { originali: plan.originali.map(nudo) } : {}),
     };
   }
 
@@ -3277,6 +3536,23 @@
     }
     return qi.sopra ? "Quesito: il tuo, al posto del triage" : "Quesito: il tuo";
   }
+
+  // «Mancano: … · Da controllare: …», una frase sola e la stessa ovunque: la
+  // striscia di questa scheda, quella delle altre, il resoconto passato di
+  // mano. Mancano = mai partiti (da aggiungere); da controllare = mandati e non
+  // visti in carrello (da guardare, mai da rimandare). Dopo uno svuotamento
+  // fermato, quello che c'è ancora nel carrello.
+  function testoResto(r) {
+    const l = (k) => (r && Array.isArray(r[k]) ? r[k] : []);
+    return [l("mancano").length ? `Mancano: ${l("mancano").join(", ")}` : "",
+      l("controllare").length ? `Da controllare: ${l("controllare").join(", ")}` : "",
+      r && r.niente && l("nel").length ? `Nel carrello: ${l("nel").join(", ")}` : ""].filter(Boolean).join(" · ");
+  }
+  // «ROSSI MARIO» → «ROSSI M.»: di chi sono, in poco spazio (il nome intero sta sopra)
+  const nomeCorto = (n) => {
+    const p = String(n || "").trim().split(/\s+/).filter(Boolean);
+    return p.length < 2 ? p.join(" ") || "un altro paziente" : `${p.slice(0, -1).join(" ")} ${p[p.length - 1][0]}.`;
+  };
 
   // La pianta della Stanza: una griglia di celle tutte uguali, 40 × 24. Un
   // letto prende 5 × 4 celle, una sedia 4 × 3, un'area almeno 5 × 3. Si
@@ -3472,6 +3748,8 @@
     .btn.confirm:hover { background: #ffefd0; }
     .btn.ghost { background: #F4F8FB; color: #16232E; border: 1px solid #C4D0DC; }
     .btn.ghost:hover { border-color: #0B5CAD; }
+    /* «Svuoto 4 esami?»: il secondo tocco svuota davvero */
+    .btn.ghost.armato { background: #FBEBEA; color: #7c1a14; border-color: #B3261E; }
     .btn.stop { background: #B3261E; color: #fff; }
     .btn.stop:hover { background: #941e18; }
     .btn:disabled { background: #EDF1F5; color: #93A3B3; border: 1px solid #E3E8EF; cursor: default; opacity: 1; }
@@ -4210,10 +4488,30 @@
     store.set("quesiti.ts", 0);
   }
   const hasExt = () => { try { return !!(chrome && chrome.runtime && chrome.runtime.id); } catch { return false; } };
+  // (nessuna risposta = `perso`: il service worker non l'ha detta, non ha detto di no)
   const ask = (msg) => new Promise((res) => {
-    try { chrome.runtime.sendMessage(msg, (r) => { void chrome.runtime.lastError; res(r || { ok: false }); }); }
-    catch { res({ ok: false }); }
+    try { chrome.runtime.sendMessage(msg, (r) => { void chrome.runtime.lastError; res(r || { ok: false, perso: true }); }); }
+    catch { res({ ok: false, perso: true }); }
   });
+  // Solo l'indirizzo di una pagina da LEGGERE di questo ospedale: mai quello di
+  // un modulo inviato, di un inserimento o di una cancellazione.
+  const leggibilePagina = (x) => {
+    try { return !!x && new URL(x).origin === location.origin && !/[?&](ccsForm|Insert|Delete|Update)=/i.test(x); }
+    catch { return false; }
+  };
+
+  // ------------------------------------------- l'ordine in sottofondo
+  // Con l'estensione «Conferma e stampa» non manda gli esami da questa
+  // scheda: li manda una seconda scheda, aperta dal service worker accanto e
+  // dietro, sulla pagina vera del paziente. Quella scheda, quando nasce, chiede
+  // al service worker chi è (per numero di scheda: nell'indirizzo non c'è
+  // niente che il gestionale vedrebbe) e, se è lei, fa girare il motore di
+  // sempre. LAVORO è quell'ordine, finché gira; null in ogni altra scheda.
+  // La scheda dell'ordine esegue e basta: ogni esito — anche quello da finire
+  // a mano — lo passa alle schede del medico, poi si slega.
+  let LAVORO = null;
+  // quelli che la scheda del medico tiene d'occhio (e per cui chiede al service worker)
+  const ORDINE_APERTO = new Set(["coda", "avvio", "corre", "stampa"]);
 
   function freshReceipt(richiestaId) {
     const r = tabStore.get("receipt.v1", null);
@@ -4280,6 +4578,10 @@
       // un errore da finire a mano — detto dalla striscia nell'angolo:
       // {tag, testo, tono: ok|run|warn|err, badge?, paziente?, onTap?, onStop?}
       this.striscia = null;
+      // Gli ordini che girano nelle schede di sottofondo (dal service worker):
+      // ogni scheda del gestionale ne mostra la striscia.
+      this.ordini = [];
+      this._lavoroChiuso = false;   // la scheda di sottofondo ha già detto l'ultima parola
       this.acq = "";           // catalog search text
       this.esiti = [];                  // risultati + referti, newest first
       this.storico = null;              // the portal's multi-day table, if it is THIS patient's
@@ -4612,7 +4914,10 @@
       // a chained second richiesta keeps the first one's steps on screen
       if (plan && plan.continuation && this.runData && this.runData.steps) state.steps.unshift(...this.runData.steps);
       this.runState = "running"; this.runData = state; this.stopFn = state.stop;
+      this.pianoGiro = plan || null; this._lavoroChiuso = false;
       clearTimeout(this._tStriscia); this.striscia = null;
+      // un salto di pagina deciso dal giro di prima non parte più sopra questo
+      clearTimeout(this._tVai); clearTimeout(this._tRiprendi);
       this.carrelloDaAprire = null;
       this.riprova = null; this.consegnaErrore = null; this.tieneDopoErrore = null;
       this.aggiungi = false;
@@ -4671,7 +4976,9 @@
       };
       const ora = staScrivendo();
       if (ora) { aspetta(ora); return false; }
-      setTimeout(() => {
+      // il cronometro si tiene: un giro che parte intanto lo spegne (beginRun)
+      clearTimeout(this._tVai);
+      this._tVai = setTimeout(() => {
         const poi = staScrivendo();   // nel frattempo ha cominciato a scrivere?
         if (poi) aspetta(poi); else vai();
       }, ms);
@@ -4735,10 +5042,20 @@
       const consegna = (striscia, testo) => tabStore.set(AVVISO, {
         ts: Date.now(), striscia: { paziente: chi, ...striscia }, ...(testo ? { testo } : {}),
       });
+      // Nella scheda di un ordine quello che resta da fare a mano non si fa
+      // qui: lo stesso passaggio di consegne va alle schede del medico, dove
+      // un tocco apre il carrello (con la ricevuta). Questa scheda si slega.
+      const alMedico = (vista, striscia, testo) => this.consegnaLavoro(
+        { ...vista, ...(vista.tono === "ok" && quesito ? { quesito } : {}) },
+        { url: listUrl, avviso: { striscia: { paziente: chi, ...striscia }, ...(testo ? { testo } : {}) }, receipt: tabStore.get("receipt.v1", null) });
       // da qui la richiesta è da confermare: finché una pagina del paziente
       // non la mostra confermata, la si tiene d'occhio (solo numeri)
       ricordaDaConfermare(rid, ep, listUrl, n);
       if (!daConfermare || DEMO) {
+        if (LAVORO) {
+          return alMedico({ tag, testo: "Conferma dal gestionale", tono: "ok" },
+            { tag, testo: "Conferma dal gestionale", tono: "ok", quesito });
+        }
         // Un giro ripreso vuol dire che stavi facendo altro: la pagina non te
         // la porto via. Il carrello è pronto, ci vai col bottone.
         if (plan && plan.startPage === "ripresa") {
@@ -4787,6 +5104,8 @@
       if (esito === "confermata") {
         // Confermata, ma i fogli non sono partiti (un'altra stampa in corso):
         // restano armati, e partono dalla sua scheda. Niente si ricarica.
+        // (Dalla scheda di un ordine non partono da soli: lo si dice.)
+        if (LAVORO) return this.consegnaLavoro({ tag: "Confermata", testo: `${confermatiTesto(fine)} · etichette dalla sua pagina, Stampa`, tono: "ok", quesito });
         this.message = { head: `✓ ${confermatiTesto(fine)}`, body: "Le etichette partono dalla sua scheda." };
         this.segnala({ tag: "Confermata", testo: confermatiTesto(fine), tono: "ok", quesito });
         this.render();
@@ -4798,6 +5117,7 @@
         // un tocco apre il carrello, e lì decide il medico.
         tabStore.set("confirm.v1", null);
         const str = { tag: "Non confermata", testo: "Controlla il carrello e premi tu Conferma", tono: "warn" };
+        if (LAVORO) return alMedico({ tag: "Non confermata", testo: "controlla il carrello e premi tu Conferma", tono: "warn" }, str);
         this.message = { head: "Conferma non verificata", body: "Il gestionale non mostra questa richiesta fra le confermate: apri il carrello, controlla e premi tu Conferma." };
         this.segnala({ tag: "Non confermata", testo: "tocca per il carrello", titolo: "tocca per il carrello", tono: "warn", paziente: chi,
           onTap: () => { consegna(str); nav(listUrl); } });
@@ -4816,21 +5136,29 @@
         const aMano = esito === "rifiutata";
         this.message = { head: this.message?.head || "", body: aMano ? "Conferma da fare a mano: apri il carrello." : testo };
         const dopo = aMano ? { tag, testo: "Conferma dal gestionale", tono: "ok" } : sospesa;
-        this.segnala({ tag: aMano ? tag : sospesa.tag, tono: "warn", paziente: chi, titolo: "tocca per il carrello",
-          testo: `${aMano ? "Conferma da fare a mano" : "Controlla il carrello"} · tocca per il carrello`,
+        const vista = { tag: aMano ? tag : sospesa.tag, tono: "warn",
+          testo: `${aMano ? "Conferma da fare a mano" : "Controlla il carrello"} · tocca per il carrello` };
+        if (LAVORO) return alMedico({ ...vista, testo: aMano ? "Conferma da fare a mano" : "Controlla il carrello" }, dopo, aMano ? null : testo);
+        this.segnala({ ...vista, paziente: chi, titolo: "tocca per il carrello",
           onTap: () => { consegna(dopo, aMano ? null : testo); nav(listUrl); } });
         this.render();
         return;
       }
       if (esito === "sospesa") {
+        if (LAVORO) return alMedico({ tag: sospesa.tag, testo: "controlla il carrello e premi tu Conferma", tono: "warn" }, sospesa, testo);
         this.vaiSeLibero(listUrl, { ms: 0, striscia: { ...sospesa, testo: "" }, prima: () => { consegna(sospesa, testo); } });
       } else {
         // cornice vietata: la conferma la fa la pagina vera, appena caricata.
         // Se non si può partire adesso, la conferma resta al medico.
+        // (Nella scheda di un ordine ci va lei: conferma e stampa continuano
+        // da quella pagina, e le etichette arrivano lo stesso al medico.)
         const confermo = { tag, testo: "Confermo…", tono: "run", attesaConferma: true };
         const parte = this.vaiSeLibero(listUrl, { ms: 0, striscia: { tag, testo: "Conferma da fare a mano", tono: "warn" },
           prima: () => { consegna(tabStore.get("confirm.v1", null) ? confermo : { tag, testo: "Conferma dal gestionale", tono: "ok" }); } });
-        if (!parte) tabStore.set("confirm.v1", null);
+        if (!parte) {
+          tabStore.set("confirm.v1", null);
+          if (LAVORO) alMedico({ tag, testo: "Conferma da fare a mano", tono: "warn" }, { tag, testo: "Conferma dal gestionale", tono: "ok" });
+        }
       }
     }
     failed(state, msg, plan) {
@@ -4857,6 +5185,10 @@
       if (riprenderà) {
         this.segnala({ tag: "Giro interrotto", testo: "Riprende alla prossima pagina", tono: "warn", paziente: this.runPatient || "" });
         this.render();
+        // Nella scheda di un ordine nessuno cambia pagina: la si ricarica (un
+        // indirizzo da leggere), e il giro riparte da dov'era — l'esame in
+        // volo si cerca, mai si rimanda. Il tetto delle riprese vale anche qui.
+        if (LAVORO && leggibilePagina(location.href)) this._tRiprendi = setTimeout(() => location.reload(), 2000);
         return;
       }
       // Errore in sottofondo: la finestra NON si apre. La striscia diventa
@@ -4866,9 +5198,7 @@
       // semplice lettura dell'elenco: niente si manda, niente si conferma. Lì
       // il medico vede gli esami già scelti e aggiunge il resto a mano.
       tabStore.set("confirm.v1", null);
-      const mancano = msg.mancano || [], controllare = msg.controllare || [];
-      const cosa = [mancano.length ? `Mancano: ${mancano.join(", ")}` : "", controllare.length ? `Da controllare: ${controllare.join(", ")}` : ""]
-        .filter(Boolean).join(" · ");
+      const cosa = testoResto(msg);
       const striscia = msg.sessione
         ? { tag: "Sessione scaduta", testo: "Rifai l'accesso, poi controlla il carrello", tono: "err", paziente: this.runPatient || "" }
         : { tag: "Errore · completa a mano", testo: cosa || msg.head, tono: "err", paziente: this.runPatient || "" };
@@ -4884,23 +5214,31 @@
           listUrl = u.href;
         }
       } catch { listUrl = null; }
+      // «↻ Riprova i mancanti» (e «Svuota il carrello»): mai dopo una sessione
+      // scaduta, un episodio che non torna, un'altra scheda al lavoro — né
+      // dopo uno svuotamento non riuscito: lì si finisce a mano
+      this.riprova = msg.restaQui || msg.niente ? null : ricettaRiprova(state, plan);
+      // quello che la pagina del carrello dovrà dire: il resoconto e «Riprova»
+      const avviso = {
+        testo: msg, striscia,
+        giro: { stato: "fail", paziente: this.runPatient || "", listUrl, tiene: this.tieneDopoErrore,
+          steps: (state.steps || []).map(({ label, status, note }) => ({ label, status, note })) },
+        ...(this.riprova ? { riprova: this.riprova } : {}),
+      };
+      const consegna = () => tabStore.set(AVVISO, { ts: Date.now(), ...avviso });
+      // Nella scheda di un ordine la pagina non si muove: il resoconto intero
+      // va alle schede del medico, e lì «apri il carrello» lo apre.
+      if (LAVORO) {
+        return this.consegnaLavoro({ tag: msg.sessione ? "Sessione scaduta" : "Errore", tono: "err", sessione: !!msg.sessione,
+          testo: msg.sessione ? "Rifai l'accesso, poi controlla il carrello" : msg.head || "completa a mano", quesito: cosa },
+        listUrl && !msg.restaQui ? { url: listUrl, avviso } : null, "errore");
+      }
       // Mai sul carrello dopo un episodio che non torna o la sessione scaduta
       // (restaQui), né se il giro ripreso ti ha trovato sulla scheda di un
       // altro paziente: quella pagina non te la porto via.
       // (epDiQuesta: la lista del PS non è la pagina di nessun paziente)
       const qui = this.epDiQuesta();
       const vai = !!listUrl && !msg.restaQui && (!this.runRipreso || (!!qui && qui === plan?.episodeId));
-      // quello che è in carrello resta da confermare: lo si tiene d'occhio
-      if (vai && state.added.length) ricordaDaConfermare(state.richiestaId, plan?.episodeId, listUrl, state.added.length);
-      // «↻ Riprova i mancanti»: mai dopo una sessione scaduta, un episodio che
-      // non torna o un'altra scheda al lavoro
-      this.riprova = msg.restaQui ? null : ricettaRiprova(state, plan);
-      const consegna = () => tabStore.set(AVVISO, {
-        ts: Date.now(), testo: msg, striscia,
-        giro: { stato: "fail", paziente: this.runPatient || "", listUrl, tiene: this.tieneDopoErrore,
-          steps: (state.steps || []).map(({ label, status, note }) => ({ label, status, note })) },
-        ...(this.riprova ? { riprova: this.riprova } : {}),
-      });
       // anche «Apri il carrello» porta con sé il resoconto: lì compare «Riprova»
       this.consegnaErrore = listUrl && this.riprova ? consegna : null;
       this.segnala(striscia);
@@ -4919,11 +5257,368 @@
         return;
       }
       // fermato dal medico: lo dice la striscia, un tocco apre il resoconto
-      this.segnala({ tag: "Interrotto", testo: "L'ultimo esame potrebbe essere in carrello: controlla", tono: "warn", paziente: this.runPatient || "" });
+      const striscia = { tag: "Interrotto", testo: "L'ultimo esame potrebbe essere in carrello: controlla", tono: "warn", paziente: this.runPatient || "" };
+      if (LAVORO) {
+        const u = leggibilePagina(state.lastListUrl) ? state.lastListUrl : "";
+        return this.consegnaLavoro({ tag: "Interrotto", testo: striscia.testo, tono: "warn", quesito: testoResto(msg) },
+          u ? { url: u, avviso: { testo: msg, striscia, giro: { stato: "stopped", paziente: this.runPatient || "", listUrl: u,
+            steps: (state.steps || []).map(({ label, status, note }) => ({ label, status, note })) } } } : null, "interrotto");
+      }
+      this.segnala(striscia);
       this.render();
     }
     stop() { this.stopFn?.(); }
 
+    // ================================================ L'ORDINE IN SOTTOFONDO
+    // ---- nella scheda dell'ordine ------------------------------------------
+    // Che cosa deve dire la striscia delle altre schede mentre il giro va: lo
+    // stesso che dice la striscia di questa — chi, «esame 3 di 6», il passo —
+    // e che cosa è già entrato, che cosa è partito, che cosa manca ancora.
+    vistaLavoro() {
+      const st = this.runData;
+      const nomeDi = (x) => x.display || shortLabel(x.label);
+      const m = this.message && typeof this.message === "object" ? this.message : {};
+      let resto = null;
+      if (Array.isArray(m.mancano) || Array.isArray(m.nel)) resto = { mancano: m.mancano || [], controllare: m.controllare || [], nel: m.nel || [] };
+      else if (st) {
+        const dentro = st.added || [];
+        const fuori = (st.ordine || this.pianoGiro?.items || []).filter((x) => !dentro.includes(x) && !x.tolto);
+        // mentre si svuota il carrello, niente è sicuro: tutto da controllare
+        const forse = (x) => !!st.svuotando || x.inviato || x.soloVerifica;
+        resto = { nel: dentro.map(nomeDi), controllare: fuori.filter(forse).map(nomeDi), mancano: fuori.filter((x) => !forse(x)).map(nomeDi) };
+      }
+      const dove = { ...(st?.richiestaId ? { rid: String(st.richiestaId) } : {}), ...(st?.lastListUrl ? { listUrl: st.lastListUrl } : {}), ...(resto ? { resto } : {}) };
+      if (this.runState === "running") {
+        const { badgeEsami, fase } = this.statoGiro();
+        return { stato: "corre", vista: { badge: badgeEsami, testo: fase, tono: "run", ferma: true }, ...dove };
+      }
+      if (this.runState === "fail" && tabStore.get(CORSA, null)) return { stato: "corre", vista: { tag: "Giro interrotto", testo: "riprendo da dov'ero…", tono: "warn" }, ...dove };
+      const s = this.striscia;
+      if (s) return { stato: "corre", vista: { tag: s.tag || "", badge: s.badge || "", testo: s.testo || "", tono: s.tono || "run", quesito: s.quesito || "" }, ...dove };
+      return null;
+    }
+    // A che punto è, per le altre schede (a ogni ridisegno, solo se cambia).
+    // La risposta porta il ⏹ che questa scheda non ha ricevuto direttamente.
+    pubblicaLavoro() {
+      if (!LAVORO || this._lavoroChiuso || !hasExt()) return this._annuncio;
+      const v = this.vistaLavoro();
+      if (!v) return this._annuncio;
+      const firma = JSON.stringify(v);
+      if (firma === this._ultimaVista) return this._annuncio;
+      this._ultimaVista = firma;
+      return (this._annuncio = ask({ t: "ordineAggiorna", id: LAVORO.id, ...v }).then((r) => { if (r && r.ferma) this.fermaLavoro(); return r; }));
+    }
+    // Prima di ogni invio il service worker deve sapere quale esame parte: se
+    // questa scheda muore adesso, quell'esame è «da controllare», mai «non mandato».
+    annunciaLavoro() { this.render(); return this.pubblicaLavoro(); }
+    // L'ultima parola della scheda di un ordine: com'è finita e, se c'è da fare
+    // a mano, il carrello da aprire con quello che la pagina deve dire. Va alle
+    // schede del medico; poi questa scheda si slega (il service worker la
+    // chiude, se il medico non la sta guardando proprio adesso).
+    async consegnaLavoro(vista, consegna = null, stato = "avviso") {
+      if (!LAVORO || this._lavoroChiuso) return false;   // l'ultima parola si dice una volta
+      const v = this.vistaLavoro() || {};
+      this._lavoroChiuso = true;
+      const m = { t: "ordineAggiorna", id: LAVORO.id, stato, vista, ...(consegna ? { consegna } : {}),
+        ...(v.resto ? { resto: v.resto } : {}), ...(v.rid ? { rid: v.rid } : {}), ...(v.listUrl ? { listUrl: v.listUrl } : {}) };
+      // il service worker che si sta svegliando può perdere la prima: una volta ancora
+      if ((await ask(m)).perso) await ask(m);
+      this.slegaLavoro();
+      return true;
+    }
+    // L'ordine è finito: da qui è una scheda qualunque, e del giro non tiene
+    // niente — l'esito lo mostra la striscia, come in tutte le altre.
+    slegaLavoro() {
+      if (!LAVORO) return;
+      LAVORO = null;
+      if (this.runState === "running") this.stop();
+      this.dimenticaErrore();
+      this.runPatient = null; this._firmaOrdine = "";
+      this.stripOrdine();
+      this.render();
+    }
+    // ⏹ dalla scheda del medico. Il giro che manda si ferma; una conferma
+    // automatica non ancora cliccata non parte; un giro che stava per
+    // riprendere non riprende. Quello che è già andato non si ferma più:
+    // allora si dice di no, e il fermo resta segnato al service worker.
+    fermaLavoro() {
+      if (!LAVORO) return false;
+      if (this.runState === "running") { this.stop(); return true; }
+      if (tabStore.get("confirm.v1", null)) {
+        tabStore.set("confirm.v1", null);
+        this.log(`${now()}  ⏹ dalla scheda del medico: la conferma automatica non parte`);
+        return true;
+      }
+      const c = tabStore.get(CORSA, null);
+      if (!c) return false;
+      clearTimeout(this._tRiprendi);
+      tabStore.set(CORSA, null);
+      store.set(APERTA, null);   // fermato: lo dice la striscia del medico
+      this.log(`${now()}  ⏹ dalla scheda del medico: il giro non riprende`);
+      // (che cosa manca e che cosa è da controllare lo sa già il service worker: l'ultima parola prima della pagina)
+      this.consegnaLavoro({ tag: "Interrotto", testo: "Fermato fra una pagina e l'altra: controlla il carrello", tono: "warn" },
+        leggibilePagina(c.listUrl) ? { url: c.listUrl } : null, "interrotto");
+      return true;
+    }
+    // La scheda di sottofondo è appena nata: si controlla che sia la pagina
+    // giusta (lo stesso episodio, il link per la richiesta, o il carrello di
+    // quella richiesta), si dice al service worker «parto» — una volta sola,
+    // anche se la pagina si ricarica — e si fa girare il motore di sempre.
+    async avviaLavoro() {
+      const L = LAVORO, p = L && L.piano;
+      const no = (testo) => this.consegnaLavoro({ tag: "Non partito", testo, tono: "err" }, null, "errore");
+      if (!p || !Array.isArray(p.items) || !p.items.length) return no("L'ordine non è arrivato a questa scheda: niente inviato");
+      if (!this.episodeId || this.episodeId !== String(p.episodeId)) return no("La scheda ha aperto un altro paziente: niente inviato");
+      let base;
+      if (p.startPage === "patient") {
+        const entry = this.pageType === "patient" ? (p.kind === "radio" ? this.entry?.radioUrl : this.entry?.labUrl) : "";
+        if (!entry) return no("Sulla pagina del paziente manca il link della richiesta: niente inviato");
+        base = { ...p, entryUrl: entry };
+      } else {
+        const rid = String(p.richiestaId || param(L.url, "RICHIESTA_ID") || "");
+        if (this.pageType !== "exam" || !rid || param(location.href, "RICHIESTA_ID") !== rid) return no("La scheda non ha aperto il carrello della richiesta: niente inviato");
+        base = p.startPage === "exam" ? { ...p, examDoc: document, examUrl: location.href } : { ...p };
+      }
+      const r = await ask({ t: "ordineParto", id: L.id });
+      if (!r || !r.ok) return;   // già partita (la pagina si è ricaricata: il giro va avanti da sé), o fermata
+      this.log(`${now()}  ── scheda di sottofondo: l'ordine per ${p.patientName || "il paziente"} parte da qui ──`);
+      this.startPlan({ ...base, dalLavoro: true });
+    }
+
+    // ---- nella scheda del medico -------------------------------------------
+    // Si può dare l'ordine a una scheda di sottofondo? Con l'estensione, un
+    // giro solo (la coppia laboratorio + radiologia resta qui), e da una
+    // pagina che si riapre così com'è: quella del paziente o il carrello
+    // della richiesta — l'indirizzo da cui il motore partirebbe, mai uno
+    // costruito. La pagina «Nuova richiesta» ha il suo modulo vivo: resta qui.
+    urlLavoro(plan) {
+      if (!hasExt() || DEMO || LAVORO || !this.ordiniOk) return "";
+      const ep = String(plan.episodeId || "");
+      const ok = (u) => (leggibilePagina(u) && param(u, "EPISODIO_ID") === ep ? u : "");
+      if (plan.startPage === "patient") {
+        // l'indirizzo di questa pagina; se non si riapre così com'è (una
+        // pagina arrivata da un modulo), il link della pagina a se stessa
+        const se = [...document.querySelectorAll('a[href*="MVPG=PsoEpisodioClinicoAmbulatorio"]')].map((a) => {
+          try { const u = new URL(a.getAttribute("href"), location.href); u.hash = ""; return u; } catch { return null; }
+        }).find((u) => u && [...u.searchParams.keys()].every((k) => k === "MVPG" || k === "EPISODIO_ID")
+          && u.searchParams.get("MVPG") === "PsoEpisodioClinicoAmbulatorio");
+        return ok(plan.patientUrl) || ok(se ? se.href : "") || ok((tuttiPazienti().find((p) => p.ep === ep) || {}).url);
+      }
+      if (plan.startPage === "exam") {
+        const m = examModel(plan.examDoc || document, plan.examUrl || location.href);
+        return m.richiestaId ? ok(m.listUrl(m.res)) : "";
+      }
+      if (plan.startPage === "carrello") return ok(plan.listUrl);
+      return "";
+    }
+    async delega(plan, url) {
+      const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+      const pulito = (i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label,
+        ...(i.chiave ? { chiave: i.chiave } : {}), ...(i.resCat ? { resCat: i.resCat } : {}), ...(i.alPostoDi ? { alPostoDi: i.alPostoDi } : {}),
+        ...(i.soloVerifica ? { soloVerifica: true } : {}), ...(i.giaFatto ? { giaFatto: true } : {}) });
+      const n = plan.items.length;
+      const piano = {
+        startPage: plan.startPage, items: plan.items.map(pulito), quesito: plan.quesito || "", quesitoMio: !!plan.quesitoMio,
+        autoConfirm: !!plan.autoConfirm, episodeId: plan.episodeId, patientName: plan.patientName || "",
+        patientUrl: plan.startPage === "patient" ? url : plan.patientUrl || "",
+        kind: plan.legs && plan.legs[0] ? plan.legs[0].kind : "",
+        ...(plan.richiestaId ? { richiestaId: String(plan.richiestaId) } : {}),
+        ...(plan.daControllare ? { daControllare: plan.daControllare.map(pulito) } : {}),
+        ...(plan.svuota ? { svuota: true } : {}), ...(plan.listUrl ? { listUrl: plan.listUrl } : {}),
+        ...(plan.originali ? { originali: plan.originali.map(pulito) } : {}), ...(plan.nostri ? { nostri: plan.nostri.map(pulito) } : {}),
+        ...(plan.qinfo ? { qinfo: plan.qinfo } : {}),
+      };
+      const chi = plan.patientName || "";
+      this._delegando = true;
+      this.message = null;
+      this.collapsed = true;
+      this.segnala({ paziente: chi, badge: n === 1 ? "1 esame" : `${n} esami`, testo: "Apro la scheda dell'ordine…", tono: "run", daOrdine: true });
+      const job = { id, ep: String(plan.episodeId), paziente: chi, n, autoConfirm: !!plan.autoConfirm, url,
+        rid: plan.richiestaId || param(url, "RICHIESTA_ID") || null, nomi: plan.items.map((i) => i.display || shortLabel(i.label)), piano };
+      // Una risposta persa (il service worker che si sveglia) si richiede con
+      // lo stesso numero: il service worker lo riconosce, l'ordine è uno.
+      let r = { ok: false };
+      for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineNuovo", job });
+      this._delegando = false;
+      if (r.ok) {
+        this.log(`${now()}  ordine di ${n} ${n === 1 ? "esame" : "esami"} per ${chi || "il paziente"} dato a una scheda di sottofondo${r.coda ? ", in coda" : ""}`);
+        // l'ordine è partito: la selezione qui riparte pulita
+        if (!plan.episodeId || plan.episodeId === this.episodeId) this.clearOrderUi();
+        this.ordiniAggiorna(r.ordini || this.ordini);
+        this.render();
+        return;
+      }
+      if (!r.no) {
+        // il service worker non risponde: non si sa, e da qui non si manda niente
+        this.segnala({ tag: "Ordine incerto", testo: "Non so se è partito: guarda il carrello prima di rifarlo", tono: "warn", paziente: chi,
+          onStop: () => this.segnala(null) });
+        return;
+      }
+      // niente scheda di sottofondo (non si apre, o la pagina non va): l'ordine lo manda questa pagina, come sempre
+      this.log(`${now()}  scheda di sottofondo non disponibile (${r.why || "?"}): mando da questa pagina`);
+      if (this.striscia && this.striscia.daOrdine) this.segnala(null);
+      runPlan(plan, this);
+    }
+    // Gli ordini dal service worker. La scheda di un ordine guarda solo il
+    // suo: finito, si slega; un ⏹ segnato, lo esegue. Le altre mostrano la striscia.
+    ordiniAggiorna(l) {
+      this.ordini = Array.isArray(l) ? l.filter((x) => x && x.id) : [];
+      if (LAVORO) {
+        const mio = this.ordini.find((x) => x.id === LAVORO.id);
+        if (!mio || mio.worker == null) return this.slegaLavoro();   // (un ordine finito non ha più scheda)
+        if (mio.ferma && !LAVORO.ferma) { LAVORO.ferma = true; this.fermaLavoro(); }
+        return;
+      }
+      this.stripOrdine();
+    }
+    // Una striscia sola. Prima le etichette pronte (si stampano adesso), poi
+    // quello che chiede te (un errore, una scheda chiusa a metà, un carrello
+    // da confermare), poi quello che sta girando; quanti aspettano in coda,
+    // nel numerino. È solo una vista: non scrive niente (le azioni, sì).
+    stripOrdine() {
+      const l = this.ordini;
+      const DA_LEGGERE = ["errore", "chiusa", "avviso", "interrotto"];
+      const fuoco = l.find((x) => x.stato === "stampa") || l.find((x) => DA_LEGGERE.includes(x.stato))
+        || l.find((x) => x.stato === "avvio" || x.stato === "corre") || l.find((x) => x.stato === "coda");
+      const mia = !!(this.striscia && this.striscia.daOrdine);
+      if (!fuoco) {
+        if (mia && !this._delegando) { this.segnala(null); this.sorvegliaConferme(); }
+        return;
+      }
+      // questa scheda ha già la sua da dire: un giro suo, una stampa, un errore
+      if (this.runState || (this.striscia && !mia && (this.striscia.daStampa || this.striscia.tono === "err"))) return;
+      const v = fuoco.vista || {}, r = fuoco.resto || { mancano: [], controllare: [], nel: [] };
+      const coda = l.filter((x) => x.stato === "coda" && x !== fuoco).length;
+      const id = fuoco.id;
+      // Un tocco sulla striscia apre il TUO pannello, come sempre: questa
+      // scheda resta tua, anche per ordinare a un altro paziente. Le azioni
+      // dell'ordine stanno nel bottoncino accanto.
+      const alCarrello = fuoco.consegna || leggibilePagina(fuoco.listUrl)
+        ? { azione: { label: "apri il carrello", titolo: "Apre qui il carrello della richiesta, col resoconto (una lettura: niente si manda)", fn: () => this.ordineCarrello(fuoco) } } : {};
+      const letto = { onStop: () => { this.lettoOrdine(fuoco); ask({ t: "ordineChiudi", id }).then((x) => { if (x && x.ordini) this.ordiniAggiorna(x.ordini); }); },
+        titoloStop: "Chiudi l'avviso" };
+      const ferma = { onStop: () => ask({ t: "ordineFerma", id }).then((x) => { if (x && x.tolto) ask({ t: "ordineControlla" }).then((y) => y && y.ordini && this.ordiniAggiorna(y.ordini)); }), ferma: true };
+      const esami = (k) => (k === 1 ? "1 esame" : `${k} esami`);
+      let s;
+      if (fuoco.stato === "coda") {
+        const prima = l.find((x) => x !== fuoco && (x.stato === "avvio" || x.stato === "corre"));
+        s = { tag: "In coda", badge: esami(fuoco.n || 0), testo: prima ? `parte dopo l'ordine di ${prima.paziente || "un altro paziente"}` : "parte fra poco",
+          tono: "run", ...ferma, ferma: false, titoloStop: "Togli dalla coda" };
+      } else if (fuoco.stato === "avvio") {
+        s = { badge: esami(fuoco.n || 0), testo: "Apro la scheda dell'ordine…", tono: "run", ...ferma };
+      } else if (fuoco.stato === "corre" && fuoco.muto) {
+        // la scheda c'è ma non risponde: niente è detto perso — tutto quello
+        // che non si è visto in carrello è da controllare
+        s = { tag: "Ordine fermo", testo: "La scheda dell'ordine non risponde: ⏹ la chiude", tono: "err", ...ferma,
+          quesito: testoResto({ controllare: [...r.mancano, ...r.controllare] }) };
+      } else if (fuoco.stato === "corre" && fuoco.ferma) {
+        s = { tag: "Fermo chiesto", testo: "la scheda dell'ordine si ferma appena risponde", tono: "warn" };
+      } else if (fuoco.stato === "corre") {
+        s = { tag: v.tag || "", badge: v.badge || "", testo: v.testo || "…", tono: v.tono || "run", quesito: v.quesito || "",
+          ...(v.ferma ? ferma : {}) };
+      } else if (fuoco.stato === "stampa") {
+        // Le etichette pronte. Sulla pagina di un altro paziente il dialogo
+        // non si apre da solo: un tocco le stampa. Altrove partono da sole
+        // (non mentre scrivi), e il tocco c'è lo stesso.
+        const altro = !!this.epDiQuesta() && this.epDiQuesta() !== String(fuoco.ep);
+        s = { tag: "Confermata", testo: altro ? `Etichette di ${nomeCorto(fuoco.paziente)} pronte` : "Etichette pronte", tono: "run",
+          ...(fuoco.ferma ? { quesito: "⏹ arrivato tardi: era già confermata" } : {}),
+          azione: { label: "Stampa", titolo: "Stampa adesso le etichette, in questa scheda", fn: () => ask({ t: "ordineStampaQui", id }) } };
+      } else if (fuoco.stato === "errore") {
+        s = { tag: v.tag || "Errore", testo: v.testo || "completa a mano", quesito: v.quesito || testoResto(r), tono: "err", ...alCarrello, ...letto };
+      } else if (fuoco.stato === "chiusa") {
+        // la scheda dell'ordine è stata chiusa a metà: che cosa non è partito
+        const k = r.mancano.length;
+        s = { tag: v.tag || "Scheda chiusa", testo: k ? `${k === 1 ? "1 esame non mandato" : `${k} esami non mandati`}: ${r.mancano.join(", ")}` : (v.testo || "controlla il carrello"),
+          quesito: testoResto({ controllare: r.controllare }), tono: "err", ...alCarrello, ...letto };
+      } else if (fuoco.stato === "interrotto") {
+        s = { tag: "Interrotto", testo: v.testo || "controlla il carrello", quesito: v.quesito || testoResto(r), tono: "warn", ...alCarrello, ...letto };
+      } else {
+        s = { tag: v.tag || "", testo: v.testo || "", tono: v.tono || "ok", quesito: v.quesito || "", ...(fuoco.consegna ? alCarrello : {}), ...letto };
+      }
+      s.paziente = fuoco.paziente || "";
+      s.daOrdine = id;
+      if (coda) s.badge = `${s.badge ? s.badge + " · " : ""}+${coda} in coda`;
+      // la stessa striscia di prima: niente ridisegno
+      const firma = JSON.stringify(s);
+      if (mia && firma === this._firmaOrdine) return;
+      this._firmaOrdine = firma;
+      this.segnala(s);
+    }
+    // L'avviso di un ordine è letto (✕, o il carrello aperto): il segno
+    // condiviso «giro rimasto a metà» di quella richiesta lo diceva già lui.
+    lettoOrdine(o) {
+      const a = store.get(APERTA, null);
+      if (a && ((o.rid && String(a.rid || "") === String(o.rid)) || a.ep === o.ep)) store.set(APERTA, null);
+    }
+    // Il carrello della richiesta, in QUESTA scheda: una lettura, mai un
+    // invio, col passaggio di consegne che la pagina deve mostrare (la
+    // ricevuta, il resoconto e «Riprova»). L'avviso così è letto: via.
+    ordineCarrello(o) {
+      const c = o.consegna || null;
+      const u = c && leggibilePagina(c.url) ? c.url : leggibilePagina(o.listUrl) ? o.listUrl : "";
+      if (!u) return;
+      if (c && c.avviso) tabStore.set(AVVISO, { ...c.avviso, ts: Date.now() });
+      if (c && c.receipt) tabStore.set("receipt.v1", { ...c.receipt, ts: Date.now() });
+      this.lettoOrdine(o);
+      ask({ t: "ordineChiudi", id: o.id });
+      nav(u);
+    }
+
+    // ---- «Svuota il carrello e ricomincia» ---------------------------------
+    // Dopo un errore, sul carrello di QUELLA richiesta: si vuota il carrello
+    // (col «Svuota carrello» del gestionale), si dimostra vuoto rileggendolo
+    // dal server, e si rimette tutta la selezione di partenza — più quello che
+    // nel carrello c'era già (aggiunto a mano, o da un giro di prima) — nella
+    // stessa richiesta, come il primo giro: conferma e stampa, o solo carrello.
+    svuotaQui() {
+      const r = this.riprova;
+      if (!r || this.runState !== "fail" || !r.rid || !(r.tutti || []).length || !r.nCarrello) return false;
+      if (findEpisodeId(document, location.href) !== r.ep) return false;
+      return this.pageType === "exam" && param(location.href, "RICHIESTA_ID") === r.rid;
+    }
+    // Il primo tocco legge il carrello vero, tutte le sezioni (solo letture),
+    // e dice che cosa toglierà, per nome: «Svuoto 3 esami: EMOCROMO POC,
+    // TROPONINA US, PCR?». Il secondo fa. Una riga che non si saprebbe
+    // rimettere lo dice subito, e non si svuota.
+    async svuotaChiedi() {
+      const r = this.riprova;
+      if (!this.svuotaQui() || this._svuota) return;
+      const io = this._svuota = { testo: "Leggo il carrello…", legge: true };
+      this.render();
+      let fatto = { testo: "", ok: false };
+      try {
+        const { righe } = await leggiCarrello(examModel(document, location.href), { rid: r.rid, ep: r.ep });
+        const { ignoti } = daRimettere(righe, r.tutti, [...(r.verdi || []), ...(r.controllare || [])]);
+        const nomi = righe.map(nomeRiga);
+        fatto = ignoti.length ? { testo: `Non svuoto: non saprei rimettere ${ignoti.map((x) => `«${x}»`).join(", ")}` }
+          : !righe.length ? { testo: `Il carrello è vuoto: rimetto ${r.tutti.length === 1 ? "1 esame" : `${r.tutti.length} esami`}?`, ok: true }
+            : { testo: `Svuoto ${nomi.length === 1 ? "1 esame" : `${nomi.length} esami`}: ${nomi.join(", ")}?`, ok: true };
+      } catch (e) {
+        fatto = { testo: `Non riesco a leggere il carrello: ${e?.head || e?.message || e}` };
+      }
+      if (this._svuota !== io) return;
+      const ora = this._svuota = fatto;
+      this.render();
+      setTimeout(() => { if (this._svuota === ora) { this._svuota = null; this.render(); } }, 8000);
+    }
+    svuotaERicomincia() {
+      const r = this.riprova;
+      if (!this.svuotaQui()) return;
+      const live = examModel(document, location.href);
+      const listUrl = (live.richiestaId === r.rid && live.listUrl(live.res)) || r.listUrl;
+      this.dimenticaErrore();
+      this.log(`${now()}  ↺ svuoto il carrello della richiesta e rimetto la selezione: ${r.tutti.map((x) => x.display || shortLabel(x.label)).join(", ")}`);
+      this.startPlan({
+        startPage: "carrello", listUrl, richiestaId: r.rid, svuota: true,
+        autoConfirm: r.autoConfirm, patientName: r.paziente, patientUrl: r.patientUrl,
+        ...(r.qinfo ? { qinfo: r.qinfo } : {}),
+        originali: r.tutti.map((x) => ({ ...x })),
+        items: r.tutti.map((x) => ({ ...x })),
+        // con quale codice sono entrati quelli di questo giro (un riflesso ne cambia il numero)
+        nostri: [...(r.verdi || []), ...(r.controllare || [])].map((x) => ({ ...x })),
+      });
+    }
     // «↻ Riprova i mancanti» si mostra solo dov'è sicuro: sul carrello di
     // QUELLA richiesta (il motore rilegge il carrello dal server: quelli già
     // entrati li ritrova e non li rimanda), o sulla pagina del paziente se la
@@ -4958,7 +5653,7 @@
     dimenticaErrore() {
       this.runState = null; this.runData = null; this.message = null;
       this.carrelloDaAprire = null; this.consegnaErrore = null; this.riprova = null;
-      this.tieneDopoErrore = null;
+      this.tieneDopoErrore = null; this._svuota = null;
       clearTimeout(this._tStriscia); this.striscia = null;
       tabStore.set(AVVISO, null);
     }
@@ -4985,7 +5680,14 @@
 
     // ---- run starters ----
     startPlan(base) {
-      if (this.runState === "running") return;
+      if (this.runState === "running" || this._delegando) return;
+      // La scheda di un ordine che gira fa solo quell'ordine: un altro, da
+      // qui, si confonderebbe col suo (le etichette, l'esito).
+      if (LAVORO && !base.dalLavoro) {
+        this.message = `Questa scheda sta finendo l'ordine di ${LAVORO.paziente || "un paziente"}: aspetta un momento, o ordina da un'altra scheda.`;
+        this.render();
+        return;
+      }
       // Copie: il motore traduce codici e risorse per la sede, e la selezione
       // del medico deve restare la sua (dopo un errore, «Chiudi» la ritrova).
       const items = base.items || [...this.selected.entries()].map(([k, i]) => ({ ...i, chiave: k }));
@@ -5006,7 +5708,11 @@
         // la pagina che elenca le richieste confermate: serve a provare una conferma
         patientUrl: base.patientUrl || (this.pageType === "patient" ? location.href : "") };
       if ((this._q || "").trim()) rememberQuesito((this._q || "").trim());
-      if (plan.legs && plan.legs.length > 1) this.runChain(plan);
+      if (plan.legs && plan.legs.length > 1) { this.runChain(plan); return; }
+      // Con l'estensione il giro lo fa una scheda di sottofondo: questa resta
+      // libera. Se la scheda non si apre, lo fa questa pagina, come sempre.
+      const dove = this.urlLavoro(plan);
+      if (dove) this.delega(plan, dove);
       else runPlan(plan, this); // fire and forget; the engine drives the UI via callbacks
     }
 
@@ -5149,24 +5855,12 @@
       const inStanza = this.inPazienti();
 
       const running = this.runState === "running";
-      // a che punto è, in ESAMI (non in passi): «esame 2 di 6»
-      // (si contano quelli già passati: l'ordine in cui vanno non è quello della lista)
-      const esami = (this.runData?.steps || []).filter((s) => s.esame);
-      const passati = esami.filter((s) => s.status !== "pending" && s.status !== "running").length;
-      const badgeEsami = !esami.length ? "" : esami.some((s) => s.status === "running") ? `esame ${passati + 1} di ${esami.length}`
-        : passati ? `${passati} di ${esami.length}` : `${esami.length} ${esami.length === 1 ? "esame" : "esami"}`;
+      const { badgeEsami, fase } = this.statoGiro();
       // The panel is titled by the PATIENT it is acting on — collapsed too.
       // Dove un paziente non c'è (la lista del PS) il titolo della pagina è
       // «PRONTO SOCCORSO - LISTA»: quello non va mai dove va un nome.
       const sulPaziente = !!this.epDiQuesta();
       const who = (this.runState && this.runPatient) || (sulPaziente ? patientName : "") || APP;
-      // Mentre il giro va avanti il pannello è una striscia: chi, a che punto,
-      // e che cosa sta facendo adesso. Il gestionale resta usabile sotto.
-      const passo = (this.runData?.steps || []).find((s) => s.status === "running");
-      const fase = running
-        ? (passo ? `${passo.label}${passo.note ? " · " + passo.note : ""}` : "…")
-        : typeof this.message === "string" ? this.message
-          : (this.message?.ok || this.message?.head || this.message?.body || "");
       // Sei su un'altra scheda: il giro continua (le richieste portano il loro
       // episodio), ma va detto a chiare lettere di chi sono gli esami.
       const altrove = !!(this.runState && this.runPatient && patientName && this.runPatient !== patientName);
@@ -5229,7 +5923,9 @@
                 </span>
               </button>
               ${this.striscia.azione ? `<button class="strazione" id="strazione" title="${esc(this.striscia.azione.titolo || "")}">${esc(this.striscia.azione.label)}</button>` : ""}
-              ${this.striscia.onStop ? `<button class="stopmini" id="strstop" title="Annulla (Esc)">✕</button>` : ""}
+              ${this.striscia.onStop ? (this.striscia.ferma
+                ? `<button class="stopmini" id="strstop" title="Ferma l'ordine">⏹</button>`
+                : `<button class="stopmini" id="strstop" title="${esc(this.striscia.titoloStop || "Annulla (Esc)")}">✕</button>`) : ""}
             </div>
           ` : this.collapsed && this.runState ? `
             <div class="strip">
@@ -5312,6 +6008,25 @@
         const f = this.root.getElementById ? this.root.getElementById(this._fuocoId) : null;
         if (f && !/^(INPUT|TEXTAREA)$/.test(f.tagName)) f.focus({ preventScroll: true });
       }
+      this.pubblicaLavoro();   // la scheda di sottofondo racconta a che punto è
+    }
+
+    // A che punto è il giro, in ESAMI (non in passi): «esame 2 di 6» — e che
+    // cosa sta facendo adesso. Lo dice la striscia di questa scheda e, dalla
+    // scheda di sottofondo, quella di tutte le altre.
+    // (si contano quelli già passati: l'ordine in cui vanno non è quello della lista)
+    statoGiro() {
+      const running = this.runState === "running";
+      const esami = (this.runData?.steps || []).filter((s) => s.esame);
+      const passati = esami.filter((s) => s.status !== "pending" && s.status !== "running").length;
+      const badgeEsami = !esami.length ? "" : esami.some((s) => s.status === "running") ? `esame ${passati + 1} di ${esami.length}`
+        : passati ? `${passati} di ${esami.length}` : `${esami.length} ${esami.length === 1 ? "esame" : "esami"}`;
+      const passo = (this.runData?.steps || []).find((s) => s.status === "running");
+      const fase = running
+        ? (passo ? `${passo.label}${passo.note ? " · " + passo.note : ""}` : "…")
+        : typeof this.message === "string" ? this.message
+          : (this.message?.ok || this.message?.head || this.message?.body || "");
+      return { badgeEsami, fase };
     }
 
     // HOME — the patients this shift. Picking one of the OTHERS navigates to
@@ -6512,7 +7227,9 @@
     // Un giro di esami che sta mandando (o che riprende dopo un cambio pagina):
     // ricaricare l'estensione adesso lo ucciderebbe a metà.
     giroInCorso() {
-      return this.runState === "running" || !!tabStore.get(CORSA, null);
+      // (anche un ordine che manda o aspetta le etichette in un'altra scheda)
+      return this.runState === "running" || !!tabStore.get(CORSA, null)
+        || this.ordini.some((x) => ORDINE_APERTO.has(x.stato));
     }
 
     // Values are fetched once per accesso and kept for the tab, so reopening
@@ -8161,6 +8878,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
             : "Nessuna richiesta era nata: rifà il giro da capo, con gli stessi esami"}">↻ Riprova i mancanti (${riprova})</button>`
             : (listUrl || this.carrelloDaAprire) && !giaQui && (!ok || this.runRipreso || this.carrelloDaAprire) ? `<button class="btn primary" id="openlist">${
             ok ? "Apri il carrello" : "Apri il carrello e controlla"}</button>` : ""}
+          ${this.svuotaQui() ? `<button class="btn ghost${this._svuota?.ok ? " armato" : ""}" id="svuota" ${this._svuota && !this._svuota.ok ? "disabled" : ""} title="Toglie dal carrello tutti gli esami di questa richiesta col «Svuota carrello» del gestionale, controlla che sia vuoto e rimette tutto: la selezione e quello che c'era già">${esc(this._svuota?.testo || "Svuota il carrello e ricomincia")}</button>` : ""}
           ${chiudi ? `<button class="btn ghost" id="chiudi" title="Chiude il resoconto e torna alle Richieste: restano scelti solo gli esami che mancano. La richiesta a metà resta da confermare.">Chiudi</button>`
             : `<button class="btn ghost" id="reset">Torna al pannello</button>`}
         </div>
@@ -8174,6 +8892,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (this.collapsed) return;
       this.collapsed = true; this.menuAperto = false; this.stanzaEdit = false;
       store.set("collapsed", true);
+      // la striscia di un ordine in sottofondo torna subito, non al prossimo aggiornamento
+      if (!LAVORO && this.ordini.length) { this._firmaOrdine = ""; this.stripOrdine(); }
       this.render();
       this.root.querySelector("#expand")?.focus({ preventScroll: true });
     }
@@ -8316,7 +9036,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const pill = $("#expand");
       if (pill) this.attachDrag(pill);
       $("#stopbtn")?.addEventListener("click", () => this.stop());
-      $("#reset")?.addEventListener("click", () => { this.runState = null; this.runData = null; this.message = null; this.carrelloDaAprire = null; this.render(); });
+      $("#reset")?.addEventListener("click", () => {
+        this.runState = null; this.runData = null; this.message = null; this.carrelloDaAprire = null; this.render();
+      });
+      // «Svuota il carrello e ricomincia»: un tocco legge il carrello e chiede, il secondo fa
+      $("#svuota")?.addEventListener("click", () => (this._svuota?.ok ? this.svuotaERicomincia() : this.svuotaChiedi()));
       $("#chiudi")?.addEventListener("click", () => this.chiudiErrore());
       $("#riprova")?.addEventListener("click", () => this.riprovaMancanti());
       $("#openlist")?.addEventListener("click", () => {
@@ -8915,6 +9639,18 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }
       return false;
     }
+    // Il giro di un ordine in sottofondo riprende solo nella sua scheda e solo
+    // finché il service worker lo conosce. Una scheda ripristinata dopo che il
+    // browser è caduto (l'appunto sopravvive, l'ordine no), o la copia di una
+    // scheda duplicata, non lo finisce di nascosto: lo lascia, e il segno
+    // condiviso «giro rimasto a metà» resta per la prima pagina del medico.
+    if (c.ordine && !(LAVORO && LAVORO.id === c.ordine)) {
+      tabStore.set(CORSA, null);
+      panel.log(`${now()}  l'appunto è di un ordine che non c'è più: non lo riprendo`);
+      panel.message = `Il giro di esami su ${c.paziente || "un paziente"} si era fermato a metà (era una scheda d'ordine): non lo riprendo. Apri il carrello e controlla.`;
+      panel.render();
+      return false;
+    }
     if (!presidioLibero(c.rid, null)) {
       // Qualcuno ci sta già lavorando: quasi sempre questa stessa scheda
       // duplicata, che si è portata dietro l'appunto. Non si manda niente e non
@@ -8943,23 +9679,32 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       startPage: "ripresa", listUrl: c.listUrl, items,
       episodeId: c.ep, autoConfirm: !!c.autoConfirm, quesito: c.quesito || "", qinfo: c.qinfo || null,
       patientName: c.paziente || "", riprese: (c.riprese || 0) + 1,
+      ...(Array.isArray(c.originali) ? { originali: c.originali } : {}),
+      ...(c.patientUrl ? { patientUrl: c.patientUrl } : {}),
     }, panel);
     return true;
   }
 
+  // «2 esami non sono stati mandati, 1 è da controllare»: il segno di un giro
+  // rimasto a metà, detto giusto — quello in volo non è mai «non mandato».
+  const contoRimasto = (quanti, forse) => [
+    quanti ? (quanti === 1 ? "1 esame non è stato mandato" : `${quanti} esami non sono stati mandati`) : "",
+    forse ? (forse === 1 ? `1 ${quanti ? "" : "esame "}è da controllare` : `${forse} ${quanti ? "" : "esami "}sono da controllare`) : "",
+  ].filter(Boolean).join(", ").replace(/\s+/g, " ");
   // Un giro rimasto a metà che NESSUNO riprenderà (scheda chiusa, browser
   // caduto, sessione scaduta): l'appunto vive nella scheda e se n'è andato con
-  // lei, ma il segno condiviso no. Lo si dice, una volta, e lo si toglie.
-  function avvisaGiroAbbandonato(panel) {
+  // lei, ma il segno condiviso no. Lo si dice, una volta, e lo si toglie —
+  // a meno che lo dica già la striscia di un ordine di quel paziente.
+  function avvisaGiroAbbandonato(panel, ordini = []) {
     const a = store.get(APERTA, null);
-    if (!a || !a.quanti) return false;
+    if (!a || !(a.quanti || a.forse)) return false;
     const eta = Date.now() - (a.ts || 0);
     if (eta > APERTA_TTL) { store.set(APERTA, null); return false; }
     // fresco = c'è una scheda che ci sta ancora lavorando: non è abbandonato
     if (eta < 60e3 || tabStore.get(CORSA, null)) return false;
+    if (ordini.some((x) => x.ep === a.ep)) return false;
     store.set(APERTA, null);
-    panel.message = `Un giro di esami su ${a.paziente || "un paziente"} è rimasto a metà: ${
-      a.quanti === 1 ? "1 esame non è stato mandato" : `${a.quanti} esami non sono stati mandati`}. Apri la sua richiesta e controlla.`;
+    panel.message = `Un giro di esami su ${a.paziente || "un paziente"} è rimasto a metà: ${contoRimasto(a.quanti, a.forse)}. Apri la sua richiesta e controlla.`;
     panel.collapsed = false;   // un avviso chiuso nella pill non lo legge nessuno
     panel.render();
     return true;
@@ -9395,6 +10140,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     let ctlDoc = null;
     let cur = null;            // il documento in anteprima: { f, printed, apertoIl, avanzato }
     let tuttiChiesti = true;   // ogni documento ha avuto la sua stampa
+    let daSola = false;        // si è andati avanti da soli, a dialogo chiuso: stampato o annullato, non si sa
     let chiuso = false;
     let staccaStampa = () => {};   // toglie l'ascolto del dialogo di stampa del documento in corso
 
@@ -9507,16 +10253,20 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       wrap.remove();
       if (panel) {
         const tutto = finito && tuttiChiesti;
+        // «Stampato» solo se il medico è andato avanti lui, documento per
+        // documento: chiuso il dialogo il browser non dice se ha stampato o
+        // annullato, e allora è «Stampa finita», con «Ristampa» accanto.
+        const certo = tutto && !daSola;
         if (fine) {
           // Una richiesta confermata: la pill ne resta il resoconto finché non
           // fai altro — quanti esami, a che ora — e se i fogli non sono usciti
           // tutti (annullato, saltato, non scaricato), «Ristampa» li rifà.
-          panel.segnala({ tag: tutto ? "Stampato" : "Stampa non finita", testo: confermatiTesto(fine), tono: "ok",
+          panel.segnala({ tag: certo ? "Stampato" : tutto ? "Stampa finita" : "Stampa non finita", testo: confermatiTesto(fine), tono: "ok",
             quesito: quesitoDetto(fine.quesito),
-            azione: tutto ? null : { label: "Ristampa", titolo: "Stampa di nuovo etichette e lista esami", fn: () => openPrintWizard(jobs, opzioni) } });
+            azione: certo ? null : { label: "Ristampa", titolo: "Stampa di nuovo etichette e lista esami", fn: () => openPrintWizard(jobs, opzioni) } });
         } else if (finito && panel.collapsed) {
           // una stampa chiesta a mano: la pill lo dice per qualche secondo
-          panel.segnala({ tag, testo: tuttiChiesti ? "✓ Stampato" : "✓ Stampa finita", tono: "ok" }, { ms: 4000, poi: () => panel.chiudiGiro() });
+          panel.segnala({ tag, testo: certo ? "✓ Stampato" : "✓ Stampa finita", tono: "ok" }, { ms: 4000, poi: () => panel.chiudiGiro() });
         } else if (panel.striscia && panel.striscia.daStampa) panel.segnala(null);
       }
       onClose?.();
@@ -9614,7 +10364,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const dopoStampa = () => {
           if (c.avanzato || cur !== c || !f.isConnected || !c.printed) return;
           if (Date.now() - c.apertoIl < 500) { nonParte(); return; }
-          c.avanzato = true;
+          c.avanzato = true; daSola = true;
           staccaStampa();
           panel?.log(`${now()}  ${job.name}: finestra di stampa chiusa, passo al documento dopo`);
           clearTimeout(timer);
@@ -9746,14 +10496,99 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     ];
     ids.forEach(confermataProvata);   // in pagina coi suoi fogli: confermata, non c'è più da sorvegliarla
     if (!jobs.length) return false;
-    if (wizardOpen) return false;   // keep the flag: these jobs must not vanish behind another wizard
-    tabStore.set("print.v1", null);
     // il resoconto che resta sulla pill: quanti esami, e quando
     const conti = ids.map((id) => (flag.n || {})[id]);
     const fine = { n: conti.every((x) => x > 0) ? conti.reduce((a, b) => a + b, 0) : 0, ts: flag.ts || Date.now(),
       quesito: ids.map((id) => (flag.q || {})[id]).find(Boolean) || null };
+    // La scheda di un ordine non stampa: le etichette si stampano dove sta il
+    // medico. Le consegna il service worker, a una scheda sola (gli indirizzi
+    // sono quelli letti da questa pagina) — e solo quelle della richiesta
+    // dell'ordine, per il suo paziente: una conferma fatta qui a mano per un
+    // altro paziente si stampa qui, come sempre.
+    if (LAVORO && String(flag.episodeId || here) === String(LAVORO.ep)) {
+      tabStore.set("print.v1", null);
+      if (panel) panel._lavoroChiuso = true;   // da qui la scheda non racconta più niente: l'ordine è delle etichette
+      ask({ t: "ordineStampa", id: LAVORO.id, jobs: jobs.map(({ name, printer, url: u }) => ({ name, printer, url: u })), fine })
+        .then((r) => {
+          if (r && r.ok) return panel?.slegaLavoro();
+          // il service worker non la vuole (ordine sparito): si stampa qui, come sempre
+          panel?.log(`${now()}  consegna delle etichette non riuscita: le stampo da questa scheda`);
+          if (!wizardOpen) openPrintWizard(jobs, { panel, tag: "Confermata", fine, title: "Richiesta appena confermata." });
+        });
+      panel?.segnala({ tag: "Confermata", testo: "Etichette pronte: si stampano dove sei", tono: "ok" });
+      return true;
+    }
+    if (wizardOpen) return false;   // keep the flag: these jobs must not vanish behind another wizard
+    tabStore.set("print.v1", null);
     openPrintWizard(jobs, { panel, tag: "Confermata", fine, title: ids.length > 1 ? `${ids.length} richieste appena confermate.` : "Richiesta appena confermata." });
     return true;
+  }
+
+  // Le etichette di un ordine fatto in sottofondo arrivano qui, dalla scheda
+  // dell'ordine attraverso il service worker: i link sono quelli che quella
+  // scheda ha letto dalla pagina del gestionale (mai costruiti), e la stampa è
+  // quella di sempre. Una volta sola: lo stesso ordine non si stampa due volte,
+  // nemmeno da due schede (il segno sta nella memoria condivisa). Da sola,
+  // non sopra chi scrive e non sulla pagina di un altro paziente: lì si dice
+  // di no, la striscia dice di chi sono, e un tocco («Stampa», `forza`) le stampa.
+  function stampaOrdine(panel, m) {
+    if (document.visibilityState === "hidden") return { ok: false, why: "nascosta" };
+    const fatti = store.get("ordini.stampati", []);
+    const giaFatti = Array.isArray(fatti) ? fatti : [];
+    if (giaFatti.includes(m.id)) return { ok: true, gia: true };
+    if (wizardOpen) return { ok: false, why: "occupata" };
+    if (!m.forza) {
+      if (staScrivendo(true)) return { ok: false, why: "scrive" };
+      const qui = panel ? panel.epDiQuesta() : findEpisodeId(document, location.href);
+      if (qui && qui !== String(m.ep || "")) return { ok: false, why: "altro paziente" };
+    }
+    const st = m.stampa || {};
+    const jobs = (Array.isArray(st.jobs) ? st.jobs : []).filter((j) => {
+      try { return j && typeof j.name === "string" && new URL(j.url, location.href).origin === location.origin; } catch { return false; }
+    }).map((j) => ({ name: j.name, printer: j.printer || "stampante normale", url: new URL(j.url, location.href).href }));
+    if (!jobs.length) return { ok: false, why: "niente da stampare" };
+    store.set("ordini.stampati", [...giaFatti, String(m.id)].slice(-30));
+    const nome = String(m.paziente || "").slice(0, 60);
+    // Si può essere sulla pagina di un altro paziente: la striscia della
+    // stampa porta il nome di chi sono le etichette, e la scheda lo scrive.
+    const conNome = panel ? new Proxy(panel, {
+      get(t, k) {
+        if (k === "segnala") return (s, o) => t.segnala(s ? { paziente: nome, ...s } : s, o);
+        const v = t[k];
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+      set(t, k, v) { t[k] = v; return true; },
+    }) : null;
+    panel?.log(`${now()}  etichette dell'ordine per ${nome || "un paziente"}: le stampo qui`);
+    openPrintWizard(jobs, { panel: conNome, tag: "Confermata", fine: st.fine || null,
+      title: `${nome ? nome + " · " : ""}richiesta appena confermata.` });
+    return { ok: true };
+  }
+  // Una scheda del gestionale ascolta gli ordini in sottofondo: le etichette
+  // da stampare, e — se è la scheda di un ordine — ⏹ e «ci sei?». Lo stato
+  // degli ordini arriva da storage.session (onChanged) e, ogni pochi secondi
+  // finché un ordine gira o aspetta la stampa, da una domanda al service
+  // worker: è anche lì che si accorge di una scheda chiusa o ferma.
+  function ascoltaOrdini(panel) {
+    try {
+      chrome.runtime.onMessage.addListener((m, _s, reply) => {
+        if (!m || typeof m !== "object") return;
+        if (m.t === "psassistStampa") { reply(stampaOrdine(panel, m)); return; }
+        if (!panel || !LAVORO || m.id !== LAVORO.id) return;
+        if (m.t === "psassistVivo") { reply({ ok: true }); return; }
+        if (m.t === "psassistFerma") reply({ ok: panel.fermaLavoro() });
+      });
+      if (panel) {
+        chrome.storage.onChanged.addListener((ch, area) => {
+          if (area === "session" && ch.ordini) panel.ordiniAggiorna(ch.ordini.newValue || []);
+        });
+      }
+    } catch { /* niente estensione */ }
+    if (!panel) return;
+    setInterval(() => {
+      if (!LAVORO && !panel.ordini.some((x) => ORDINE_APERTO.has(x.stato))) return;
+      ask({ t: "ordineControlla" }).then((r) => { if (r && r.ok && Array.isArray(r.ordini)) panel.ordiniAggiorna(r.ordini); });
+    }, 4000);
   }
 
   // ==================================================================== BOOT
@@ -9836,6 +10671,22 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }, 1500);
       return;
     }
+    // Con l'estensione, per prima cosa: questa scheda è quella di un ordine
+    // in sottofondo? Lo sa il service worker, dal numero della scheda. (Una
+    // risposta che non arriva vale «no»: la scheda parte come sempre.)
+    if (hasExt() && !DEMO) {
+      let fatto = false;
+      const via = (r) => { if (fatto) return; fatto = true; bootGestionale(r && r.ok ? r : null); };
+      ask({ t: "ordineChi" }).then(via);
+      setTimeout(() => via(null), 3000);
+      return;
+    }
+    bootGestionale(null);
+  }
+
+  function bootGestionale(chi) {
+    if (document.getElementById("psassist-host")) return;
+    LAVORO = chi && chi.lavoro ? chi.lavoro : null;
     scadenzaQuesiti();
     const pageType = classify(document);
     if (pageType === "login") {
@@ -9844,13 +10695,26 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // dopo il nuovo accesso non ne resterebbe traccia. Senza nomi: questa
       // pagina la può avere davanti chiunque.
       const c = tabStore.get(CORSA, null);
-      const restavano = c ? (c.restanti || []).length + (c.involo ? 1 : 0) : 0;
+      // (anche un giro di un'altra scheda, o di un browser chiuso a metà: il
+      // segno condiviso lo sa, e dopo il nuovo accesso non ci sarebbe più)
+      const a = store.get(APERTA, null);
+      const fresca = !!a && Date.now() - (a.ts || 0) < APERTA_TTL;
+      const mai = c ? (c.restanti || []).length : fresca ? a.quanti || 0 : 0;
+      const forse = c ? (c.involo ? 1 : 0) : fresca ? a.forse || 0 : 0;
+      // Gli ordini in sottofondo restano — le etichette da stampare, gli
+      // avvisi —: dopo il nuovo accesso la striscia li dice ancora. Qui solo
+      // quanti sono, senza nomi. La scheda di un ordine lo dice alle altre.
+      const aperti = LAVORO ? 0 : (chi?.ordini || []).length;
+      if (LAVORO) ask({ t: "ordineAggiorna", id: LAVORO.id, stato: "errore", vista: { tag: "Sessione scaduta", testo: "Rifai l'accesso, poi controlla il carrello", tono: "err", sessione: true } });
       forgetAll();
-      if (restavano) {
+      if (mai || forse || aperti) {
         const d = document.createElement("div");
         d.id = "psassist-avviso-login";
         d.style.cssText = "position:fixed;left:12px;bottom:12px;z-index:2147483647;max-width:min(520px,92vw);background:#B3261E;color:#fff;border-radius:10px;padding:10px 12px;font:13px/1.45 -apple-system,'Segoe UI',Roboto,Arial,sans-serif;box-shadow:0 6px 20px rgba(9,42,74,.35)";
-        d.textContent = `PS Assist: la sessione è scaduta mentre mandava gli esami — ${restavano === 1 ? "1 esame non è partito" : restavano + " esami non sono partiti"}. Rientra e controlla il carrello dell'ultima richiesta.`;
+        d.textContent = "PS Assist: " + [
+          mai || forse ? `la sessione è scaduta mentre mandava gli esami — ${contoRimasto(mai, forse)}. Rientra e controlla il carrello dell'ultima richiesta.` : "",
+          aperti ? `${mai || forse ? "E c'è" : "La sessione è scaduta con"} ${aperti === 1 ? "1 ordine di esami ancora aperto" : `${aperti} ordini di esami ancora aperti`} (etichette da stampare, o un avviso): rientra, e la striscia ${aperti === 1 ? "lo mostra" : "li mostra"}.` : "",
+        ].filter(Boolean).join(" ");
         document.documentElement.appendChild(d);
       }
       return;
@@ -9858,11 +10722,13 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (pageType === "other") {
       // e.g. the post-confirm label page: no panel, but a pending print
       // handoff starts here when the page lists the richiesta's print links.
+      if (chi) ascoltaOrdini(null);   // e le etichette di un ordine in sottofondo, se il medico è qui
       nonConfermateQui();   // le richieste che questa pagina mostra confermate non vanno più sorvegliate
       maybeAutoPrint(null);
       return;
     }
     const panel = new Panel(pageType);
+    if (chi) { panel.ordiniOk = true; ascoltaOrdini(panel); }
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       panel.esiti = esitiModel(document, location.href);
@@ -9902,18 +10768,26 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }
     }
     panel.render();
+    // La scheda di un ordine fermato col ⏹ mentre cambiava pagina: non
+    // riprende, non conferma — lo dice alle altre e si slega.
+    if (LAVORO && LAVORO.ferma) panel.fermaLavoro();
     // Un giro rimasto a metà viene prima di tutto: ha esami ancora da mandare,
     // e riprende da qualunque pagina del gestionale — anche da quella di un
     // altro paziente, perché le richieste portano il loro episodio con sé.
     const ripresa = riprendiCorsa(panel);
-    if (!ripresa) avvisaGiroAbbandonato(panel);
+    // (un ordine in sottofondo di quel paziente lo racconta già la sua striscia)
+    if (!ripresa && !LAVORO) avvisaGiroAbbandonato(panel, chi?.ordini || []);
     osservaScrittura();
     if (!ripresa) panel.sorvegliaConferme(true);
+    if (chi) panel.ordiniAggiorna(chi.ordini || []);
+    // la scheda di sottofondo appena aperta: l'ordine parte da qui
+    if (LAVORO && LAVORO.stato === "avvio" && !ripresa) panel.avviaLavoro();
     if (pageType === "patient") {
       // this patient is now one the panel knows (name + episode + page only)
       // only a page that can actually order is a patient: the ER worklist
       // classifies the same way but its episode belongs to someone in the list
-      if (panel.entry && (panel.entry.labUrl || panel.entry.radioUrl)) {
+      // (la scheda di un ordine non è il medico che apre il paziente: niente «visto adesso»)
+      if (panel.entry && (panel.entry.labUrl || panel.entry.radioUrl) && !LAVORO) {
         rememberPatient(panel.episodeId, (document.title || "").trim(), location.href, triageDi(document));
         // Il portale clinico si apre da QUESTO link, sulla pagina di QUESTO
         // paziente: quel clic è l'identità, ed è esatta. Si annota qui, prima
@@ -9962,7 +10836,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const cliccato = maybeAutoConfirm(panel);
         // si aspettava la conferma e un controllo ha detto di no: tocca al medico
         if (!cliccato && panel.striscia && panel.striscia.attesaConferma) {
-          panel.segnala({ tag: "Conferma sospesa", testo: "Controlla il carrello e premi tu Conferma", tono: "warn", paziente: panel.striscia.paziente || "" });
+          const sospesa = { tag: "Conferma sospesa", testo: "Controlla il carrello e premi tu Conferma", tono: "warn", paziente: panel.striscia.paziente || "" };
+          // nella scheda di un ordine: lo si passa alle schede del medico
+          const qui = model.richiestaId && model.listUrl(model.res);
+          if (LAVORO) {
+            panel.consegnaLavoro({ tag: "Conferma sospesa", testo: "controlla il carrello e premi tu Conferma", tono: "warn" },
+              leggibilePagina(qui) ? { url: qui, avviso: { striscia: sospesa, ...(typeof panel.message === "string" && panel.message ? { testo: panel.message } : {}) },
+                receipt: tabStore.get("receipt.v1", null) } : null);
+          } else panel.segnala(sospesa);
         }
       }
     }
