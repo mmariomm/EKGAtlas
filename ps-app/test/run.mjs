@@ -4578,7 +4578,19 @@ async function scenarioEo(browser) {
   const clip = await page.evaluate(() => navigator.clipboard.readText());
   check(scen, /^Vigile, orientato, eupnoico/.test(clip), "l'EO generale si copia con un tocco");
   check(scen, /Cute: integra, non lesioni, non esantemi\.$/.test(clip.trim()), "fino all'ultima riga");
+  check(scen, clip.trim().split("\n").length === 5 && /^Arti inferiori:/m.test(clip), `va a capo dove serve: 5 righe (got ${clip.trim().split("\n").length})`);
   check(scen, await riapriDopoCopia(page), "copiato, la finestra si toglie di mezzo: la pill dice di incollare");
+
+  // in cima, prima dell'EO generale, l'EO del medico: «Mio solito base», breve, su tre righe
+  const basi = await page.locator("#psassist-host .drow:not(.eoazione) [data-eocopy] .dnome").allInnerTexts();
+  check(scen, basi.length === 2 && /^Mio solito base/.test(basi[0]) && /^EO generale/.test(basi[1]), `due EO di base, prima il tuo (got ${basi.join(" | ")})`);
+  await $panel(page, '[data-eocopy="base:solito"]').click();
+  await page.waitForTimeout(300);
+  const solito = await page.evaluate(() => navigator.clipboard.readText());
+  check(scen, solito === "Vigile, lucido, orientato, collaborante. Eupnoico in AA. Cute normocromica, non sudata.\nToni cardiaci ritmici, pause libere.\nTorace MV normotrasmesso, no rpa.",
+    `«Mio solito base» si copia così com'è, su tre righe (got ${JSON.stringify(solito)})`);
+  await riapriDopoCopia(page);
+  check(scen, (await $panel(page, '[data-eoedit="base:solito"]').count()) === 1, "e si riscrive col suo ✎, come gli altri");
 
   // la tendina ha i casi e le frasi, e sceglierne uno copia subito
   const opzioni = await page.locator("#psassist-host #eocaso option").allInnerTexts();

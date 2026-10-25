@@ -577,7 +577,9 @@ La pagina sta nello zip e si rigenera con `npm run editor`.
 ### EO
 Un elenco di **esami obiettivi da incollare in cartella**, scritti dal medico e tenuti verbatim.
 
-- **EO generale**: un tocco e l'esame obiettivo completo, tutto negativo, è negli appunti.
+- **Mio solito base** (in cima, breve, su tre righe) ed **EO generale** (completo, tutto negativo,
+  su cinque righe: generale · torace e cuore · addome · arti · neuro e cute): un tocco e il testo
+  è negli appunti, con gli a capo.
 - **Aggiungi per caso**: una tendina con nove quadri (*dolore toracico, dispnea, dolore addominale,
   cefalea, trauma/caduta, sincope, lombalgia, vertigine, pediatrico*) e quattro **frasi pronte**
   (rettale rifiutata, neuro poco collaborante, NEXUS, segni d'allarme spiegati). **Sceglierne uno lo

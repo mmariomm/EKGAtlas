@@ -2,8 +2,12 @@
   "base": {
     "nome": "EO generale",
     "meta": "completo, tutto negativo",
-    "testo": "Vigile, orientato, eupnoico, normocolorito, ben perfuso, apiretico. Non segni di distress. Torace: MV normotrasmesso bilateralmente, non rumori patologici aggiunti. Cuore: toni ritmici, validi, non soffi. Polsi periferici presenti e simmetrici. Addome: piano, trattabile, non dolente né dolorabile, peristalsi presente, Blumberg e Murphy negativi, Giordano negativo bilateralmente. Non masse, non organomegalie. Arti inferiori: non edemi, non segni di TVP, polpacci indolori. Neuro: non deficit focali, forza e sensibilità conservate ai 4 arti, non segni meningei. Cute: integra, non lesioni, non esantemi."
+    "testo": "Vigile, orientato, eupnoico, normocolorito, ben perfuso, apiretico. Non segni di distress.\nTorace: MV normotrasmesso bilateralmente, non rumori patologici aggiunti. Cuore: toni ritmici, validi, non soffi. Polsi periferici presenti e simmetrici.\nAddome: piano, trattabile, non dolente né dolorabile, peristalsi presente, Blumberg e Murphy negativi, Giordano negativo bilateralmente. Non masse, non organomegalie.\nArti inferiori: non edemi, non segni di TVP, polpacci indolori.\nNeuro: non deficit focali, forza e sensibilità conservate ai 4 arti, non segni meningei. Cute: integra, non lesioni, non esantemi."
   },
+  "basi": [
+    { "k": "solito", "nome": "Mio solito base", "meta": "breve",
+      "testo": "Vigile, lucido, orientato, collaborante. Eupnoico in AA. Cute normocromica, non sudata.\nToni cardiaci ritmici, pause libere.\nTorace MV normotrasmesso, no rpa." }
+  ],
   "casi": [
     { "k": "toracico", "nome": "Dolore toracico",
       "testo": "Dolore non riproducibile alla palpazione della parete / riproducibile. Toni validi, non sfregamenti. Polsi radiali e femorali simmetrici, PA comparativa agli arti superiori [dx/sx]. Non turgore giugulare. Non edemi. Polpacci indolori simmetrici." },

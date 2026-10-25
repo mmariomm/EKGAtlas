@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.52.0";
+  const VERSION = "3.52.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2509,6 +2509,9 @@
   const eoKey = "eo.v1";
   function eoVoci() {
     const out = {};
+    // gli EO di base, uno per riga in cima: prima quelli del medico («Mio
+    // solito base»), poi l'EO generale
+    for (const v of EO.basi || []) if (v && v.k && v.testo) out["base:" + v.k] = { nome: v.nome || v.k, meta: v.meta || "", testo: v.testo, gruppo: "base" };
     if (EO.base && EO.base.testo) out.base = { nome: EO.base.nome || "EO generale", meta: EO.base.meta || "", testo: EO.base.testo, gruppo: "base" };
     for (const v of EO.casi || []) if (v && v.k && v.testo) out["caso:" + v.k] = { nome: v.nome || v.k, testo: v.testo, gruppo: "casi" };
     for (const v of EO.frasi || []) if (v && v.k && v.testo) out["frase:" + v.k] = { nome: v.nome || v.k, testo: v.testo, gruppo: "frasi" };
@@ -3859,6 +3862,8 @@
             color: #5B6B7A; text-transform: uppercase; letter-spacing: .06em; }
     .dsep::after { content: ""; flex: 1 1 auto; height: 1px; background: #E3E8EF; }
     .drow { display: flex; align-items: stretch; gap: 5px; }
+    .sec > .drow + .drow { margin-top: 6px; }
+    .sec > .drow + .lbl { margin-top: 14px; }
     /* Copying is what this list is FOR: the target is the whole row, not a
        13px glyph at its edge. The pencil stays a button of its own. */
     .dcopia { flex: 1 1 auto; display: flex; align-items: center; gap: 8px; min-width: 0; text-align: left;
@@ -8451,7 +8456,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // scritta qui perché si veda cosa è finito negli appunti.
     viewEo() {
       const voci = eoVoci();
-      const base = voci.base;
+      const basi = Object.entries(voci).filter(([, v]) => v.gruppo === "base");
       const sel = voci[this.eoSel] ? this.eoSel : "";
       const scelta = sel ? voci[sel] : null;
       const opz = (gruppo, etichetta) => {
@@ -8460,19 +8465,19 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         return `<optgroup label="${esc(etichetta)}">${l.map(([k, v]) =>
           `<option value="${esc(k)}"${k === sel ? " selected" : ""}>${esc(v.nome)}${v.modificato ? " •" : ""}</option>`).join("")}</optgroup>`;
       };
-      if (!base && !Object.keys(voci).length) return `<div class="hint">Modelli di EO non disponibili in questa versione.</div>`;
+      if (!Object.keys(voci).length) return `<div class="hint">Modelli di EO non disponibili in questa versione.</div>`;
       return `
         <div class="sec">
           <div class="lbl">Esame obiettivo</div>
-          ${base ? `
+          ${basi.map(([k, b]) => `
             <div class="drow">
-              <button class="dcopia" data-eocopy="base" title="Copia negli appunti l'esame obiettivo generale"
-                      aria-label="Copia l'esame obiettivo generale">
-                <span class="dnome">${esc(base.nome)}${base.aggiornato ? `<span class="dmod agg" title="L'originale è cambiato dopo la tua modifica">⟳</span>` : base.modificato ? `<span class="dmod" title="Testo modificato da te">•</span>` : ""}</span>
-                <span class="dmeta">${esc(base.meta)}</span><span class="dico">⧉</span>
+              <button class="dcopia" data-eocopy="${esc(k)}" title="Copia negli appunti: ${esc(b.nome)}"
+                      aria-label="Copia ${esc(b.nome)}">
+                <span class="dnome">${esc(b.nome)}${b.aggiornato ? `<span class="dmod agg" title="L'originale è cambiato dopo la tua modifica">⟳</span>` : b.modificato ? `<span class="dmod" title="Testo modificato da te">•</span>` : ""}</span>
+                <span class="dmeta">${esc(b.meta)}</span><span class="dico">⧉</span>
               </button>
-              <button class="dbtn" data-eoedit="base" title="Riscrivi l'esame obiettivo generale" aria-label="Modifica l'esame obiettivo generale">✎</button>
-            </div>` : ""}
+              <button class="dbtn" data-eoedit="${esc(k)}" title="Riscrivi: ${esc(b.nome)}" aria-label="Modifica ${esc(b.nome)}">✎</button>
+            </div>`).join("")}
           <div class="lbl" title="Prima l'EO generale, poi l'aggiunta del caso: due incollate. ✎ riscrive un testo per le volte successive (• = riscritto da te). I testi sono uguali per tutti i pazienti: quello che riguarda questo paziente si scrive in cartella.">Aggiungi per caso</div>
           <select class="res" id="eocaso" aria-label="Aggiunta di esame obiettivo da copiare">
             <option value="">Scegli: si copia da sé…</option>
