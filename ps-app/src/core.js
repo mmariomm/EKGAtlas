@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.52.1";
+  const VERSION = "3.52.2";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1169,7 +1169,7 @@
       }],
     }));
     if (!righe.length) return null;
-    return { paziente: { idMPI: "", cognome: "", nome: (document.title || "").trim() },
+    return { paziente: { idMPI: "", cognome: "", nome: nomeInPagina() },
              // le righe che il lettore ha rifiutato viaggiano con la tabella:
              // in Esiti si devono vedere, non solo nella finestra di origine
              cf: cf || "", periodo: "", date, righe,
@@ -2030,7 +2030,8 @@
 
   function tuttiPazienti() {
     const list = store.get("patients.v1", []);
-    const fresh = Array.isArray(list) ? list.filter((p) => p && p.ep && Date.now() - (p.ts || 0) < PATIENTS_TTL) : [];
+    const fresh = Array.isArray(list) ? list.filter((p) => p && p.ep && Date.now() - (p.ts || 0) < PATIENTS_TTL)
+      .map((p) => (p.name && NON_NOME.test(p.name) ? { ...p, name: "" } : p)) : [];
     return fresh.sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, PATIENTS_MAX);
   }
   const knownPatients = () => tuttiPazienti().filter((p) => !p.arch);
@@ -2046,6 +2047,78 @@
     }
     return "";
   }
+  // Chi è il paziente di QUESTA pagina lo dice il riquadro in testa alla
+  // scheda — episodio, NOME, nascita, codice fiscale, motivo — quello col
+  // colore del triage. Il titolo della scheda del browser NON è un nome: su
+  // molte pagine il gestionale ci scrive «ROSSI MARIO», su altre «Pronto
+  // Soccorso» o «PRONTO SOCCORSO - LISTA», e prenderlo per un nome faceva
+  // entrare in elenco un paziente chiamato «Pronto Soccorso». Il titolo resta
+  // solo un ripiego, dove il riquadro non c'è, e solo se sembra un nome.
+  const NON_NOME = /pronto\s*soccorso|\blista\b|sa4pso|gestionale/i;
+  const pareNome = (t) => !!t && t.length >= 3 && t.length <= 80 && !/\d/.test(t) && /[a-z]/i.test(t) && !NON_NOME.test(t);
+  function riquadroPaziente(doc) {
+    for (const el of doc.querySelectorAll("td[title]")) {
+      if (TRIAGE_COLORI.includes((el.getAttribute("title") || "").trim()) && !el.closest(".myRiepilogo") && el.querySelector("font")) return el;
+    }
+    return null;
+  }
+  function nomeInPagina(doc = document) {
+    const r = riquadroPaziente(doc);
+    if (r) {
+      // il nome è la riga scritta più grande del riquadro
+      let nome = null, max = 0;
+      for (const f of r.querySelectorAll("font")) {
+        const m = /font-size:\s*(\d+)%/i.exec(f.getAttribute("style") || "");
+        if (m && Number(m[1]) > max) { max = Number(m[1]); nome = f; }
+      }
+      const t = (nome?.textContent || "").replace(/\s+/g, " ").trim();
+      if (pareNome(t)) return t;
+    }
+    const t = (doc.title || "").replace(/\s+/g, " ").trim();
+    return pareNome(t) ? t : "";
+  }
+  // Accanto al codice fiscale, nel riquadro in testa alla scheda, un'icona
+  // che lo copia. È la sola cosa che il pannello aggiunge alla pagina del
+  // gestionale: piccola, del colore del testo, e il suo clic non arriva al
+  // doppio clic del riquadro (che riporta alla home dell'episodio).
+  const CF_UNO = /\b[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]\b/;
+  const ICO_COPIA = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+  const ICO_FATTO = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>';
+  function iconaCf(doc = document) {
+    const r = riquadroPaziente(doc);
+    if (!r || r.querySelector(".psassist-cf")) return;
+    const giro = doc.createTreeWalker(r, NodeFilter.SHOW_TEXT);
+    for (let n = giro.nextNode(); n; n = giro.nextNode()) {
+      const m = CF_UNO.exec((n.nodeValue || "").toUpperCase());
+      if (!m) continue;
+      const cf = m[0];
+      const dopo = n.splitText(m.index + cf.length);
+      const b = doc.createElement("span");
+      b.className = "psassist-cf";
+      b.setAttribute("role", "button");
+      b.tabIndex = 0;
+      b.title = "Copia il codice fiscale";
+      b.setAttribute("aria-label", "Copia il codice fiscale");
+      b.style.cssText = "display:inline-flex;align-items:center;vertical-align:-2px;margin-left:7px;cursor:pointer;opacity:.85;line-height:0";
+      b.innerHTML = ICO_COPIA;
+      let t = 0;
+      const copia = async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const ok = await copiaTesto(cf);
+        b.innerHTML = ok ? ICO_FATTO : ICO_COPIA;
+        b.title = ok ? "Copiato" : "Non copiato: riprova";
+        clearTimeout(t);
+        t = setTimeout(() => { b.innerHTML = ICO_COPIA; b.title = "Copia il codice fiscale"; }, 1600);
+      };
+      b.addEventListener("click", copia);
+      b.addEventListener("dblclick", (e) => e.stopPropagation());
+      b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") copia(e); });
+      b.addEventListener("mouseenter", () => { b.style.opacity = "1"; });
+      b.addEventListener("mouseleave", () => { b.style.opacity = ".85"; });
+      n.parentNode.insertBefore(b, dopo);
+      return;
+    }
+  }
   function rememberPatient(ep, name, url, triage) {
     if (!ep) return;
     const prima = tuttiPazienti().find((p) => p.ep === ep);
@@ -2056,7 +2129,7 @@
       : prima?.triage ? { triage: prima.triage, triageTs: prima.triageTs || 0 } : {};
     // riaprire un paziente archiviato lo riporta fra i vivi: se sei sulla sua
     // pagina, è di lui che ti stai occupando
-    list.unshift({ ep, name: (name || "").trim().slice(0, 60), url: url || "", ts: Date.now(),
+    list.unshift({ ep, name: ((name || "").trim() || prima?.name || "").slice(0, 60), url: url || "", ts: Date.now(),
                    pk: prima?.pk || "", ...tr });
     store.set("patients.v1", list.slice(0, PATIENTS_MAX));
   }
@@ -5708,7 +5781,7 @@
       tabStore.set("receipt.v1", null);
       // Pin the patient this run belongs to: the running/result views show
       // THIS name, never whatever the page title becomes later.
-      this.runPatient = base.patientName || (document.title || "").trim();
+      this.runPatient = base.patientName || nomeInPagina();
       const plan = { quesito: (this._q || "").trim(), quesitoMio: !!this.quesitoMio, items, episodeId, patientName: this.runPatient, ...base,
         // la pagina che elenca le richieste confermate: serve a provare una conferma
         patientUrl: base.patientUrl || (this.pageType === "patient" ? location.href : "") };
@@ -5825,7 +5898,7 @@
     }
 
     render() {
-      const patientName = (document.title || "").trim();
+      const patientName = nomeInPagina();
       const ep = findEpisodeId(document, location.href);
       // keep every scroll position across re-renders (chip toggles must not
       // bounce the panel back to the top), sideways too: dopo un paziente
@@ -7498,7 +7571,7 @@
       const r = await ask({ t: "getStorico" });
       const indice = (r && r.ok && r.indice) || [];
       if (!indice.length) { this.storicoAltri = ""; return null; }
-      const titolo = (document.title || "").trim();
+      const titolo = nomeInPagina();
       const mio = this.cfEpisodio();
       const scelta = scegliScheda(indice, mio, titolo, this.episodeId);
       this.storicoVia = scelta && scelta.ep && String(scelta.ep) === String(this.episodeId)
@@ -7540,7 +7613,7 @@
       if (!chiave || chiave === "nome:") return;
       segnaChiave(this.episodeId, chiave);
       const vuota = {
-        paziente: { idMPI: "", cognome: "", nome: (document.title || "").trim() },
+        paziente: { idMPI: "", cognome: "", nome: nomeInPagina() },
         cf: this.cfEpisodio() || "", periodo: "", date: [], righe: [], scartate: [], letto: Date.now(),
       };
       await mettiInScheda(chiave, null, (vecchio) => {
@@ -7574,7 +7647,7 @@
     // una scheda a un paziente che non esiste.
     nomePaziente() {
       const puoOrdinare = !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
-      return this.pageType === "patient" && puoOrdinare ? (document.title || "").trim() : "";
+      return this.pageType === "patient" && puoOrdinare ? nomeInPagina() : "";
     }
 
     // La chiave del paziente di questa pagina: una sola, usata dalla nota,
@@ -8817,7 +8890,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           <span class="ic">${s.status === "ok" ? "✓" : s.status === "running" ? "⟳" : s.status === "fail" ? "✕" : s.status === "skipped" ? "–" : "·"}</span>
           <span>${esc(s.label)}</span><small>${esc(s.note || "")}</small>
         </div>`).join("");
-      const qui = (document.title || "").trim();
+      const qui = nomeInPagina();
       return `
         ${this.runPatient ? `<div class="idline" style="margin-top:0">Operazione per <b>${esc(this.runPatient)}</b></div>` : ""}
         ${this.runPatient && qui && qui !== this.runPatient ? `<div class="banner warn">Stai guardando <b>${esc(qui)}</b>: questi esami sono di <b>${esc(this.runPatient)}</b> e vanno alla sua richiesta.</div>` : ""}
@@ -10793,7 +10866,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // classifies the same way but its episode belongs to someone in the list
       // (la scheda di un ordine non è il medico che apre il paziente: niente «visto adesso»)
       if (panel.entry && (panel.entry.labUrl || panel.entry.radioUrl) && !LAVORO) {
-        rememberPatient(panel.episodeId, (document.title || "").trim(), location.href, triageDi(document));
+        rememberPatient(panel.episodeId, nomeInPagina(), location.href, triageDi(document));
+        iconaCf(document);
         // Il portale clinico si apre da QUESTO link, sulla pagina di QUESTO
         // paziente: quel clic è l'identità, ed è esatta. Si annota qui, prima
         // che la scheda si apra, così di là la tabella sa di chi è senza

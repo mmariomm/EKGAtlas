@@ -187,6 +187,27 @@ const rosso = await p3.waitForSelector("#psassist-host .rrow.err", { state: "att
 check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.test(rosso) && /sguardo sì \(blob 0/.test(rosso) && !/abc123/.test(rosso),
   `senza PDF: il motivo e la pagina del portale, senza il token (got: ${String(rosso).slice(0, 220)})`);
 
+// Lo sguardo sul portale tocca solo le richieste ASINCRONE: una sincrona (il
+// portale ne manda una a logout.jsp mentre la pagina si chiude, e Chrome la
+// rifiuta) va dritta alla send del browser — il rifiuto non passa più da
+// portale-pdf.js e non finisce fra gli errori dell'estensione.
+{
+  const pp = await ctx.newPage();
+  await pp.setContent("<html><body>portale</body></html>");
+  await pp.addScriptTag({ path: join(root, "extension/portale-pdf.js") });
+  const x = await pp.evaluate(() => {
+    const own = (o) => Object.prototype.hasOwnProperty.call(o, "send");
+    const a = new XMLHttpRequest(); a.open("GET", "http://10.11.0.151:9080/x");
+    const s = new XMLHttpRequest(); s.open("GET", "http://10.11.0.151:9080/x", false);
+    const r = new XMLHttpRequest(); r.open("GET", "http://10.11.0.151:9080/x"); r.open("GET", "http://10.11.0.151:9080/x", false);   // riaperta sincrona
+    return { nativa: /\[native code\]/.test(XMLHttpRequest.prototype.send.toString()),
+             asincrona: own(a), sincrona: own(s), riaperta: own(r) };
+  });
+  check(x.nativa && x.asincrona && !x.sincrona && !x.riaperta,
+    `richieste sincrone del portale: la send del browser, senza passare da qui (${JSON.stringify(x)})`);
+  await pp.close();
+}
+
 await ctx.close();
 rmSync(PROFILE, { recursive: true, force: true });
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nEXTENSION CHECKS PASSED");

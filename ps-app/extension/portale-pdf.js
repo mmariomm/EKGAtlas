@@ -58,8 +58,23 @@
       return p;
     };
   }
+  // Solo le richieste ASINCRONE passano di qui: una sincrona non può portare
+  // un PDF (in una pagina non le si può chiedere un arraybuffer), e il portale
+  // ne manda una mentre la pagina si chiude (logout.jsp), che Chrome rifiuta
+  // («Synchronous XHR in page dismissal»). Con send cambiata per tutte, quel
+  // rifiuto passava da questo file e finiva fra gli errori dell'estensione;
+  // così la richiesta sincrona va dritta alla send del browser.
   const manda = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.send = function () {
+  const apre = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (_metodo, _url, asincrona) {
+    try {
+      const sincrona = arguments.length >= 3 && !asincrona;   // come il browser: un terzo argomento falso = sincrona
+      if (sincrona) delete this.send;
+      else if (!Object.prototype.hasOwnProperty.call(this, "send")) Object.defineProperty(this, "send", { value: guardaXhr, configurable: true, writable: true });
+    } catch { /* niente */ }
+    return apre.apply(this, arguments);
+  };
+  const guardaXhr = function () {
     try {
       this.addEventListener("load", () => {
         try {

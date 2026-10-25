@@ -558,6 +558,16 @@ la scheda clinica, i referti tenuti, il testo dei referti letti, la nota, i prom
 episodio di quella scheda del browser. Chiede conferma una volta e non si torna indietro. L'elenco tiene un
 giorno e sessanta pazienti: un turno è di dodici ore.
 
+**Il nome viene dal riquadro del paziente**, quello colorato in testa alla scheda (episodio, nome,
+nascita, codice fiscale, motivo): la sua riga più grande. **Non dal titolo della scheda del
+browser**: il gestionale ci scrive il nome su certe pagine e «Pronto Soccorso» su altre, e quel
+titolo era entrato in elenco come se fosse un paziente. Il titolo vale solo come ripiego, dove il
+riquadro non c'è, e solo se sembra un nome (niente cifre, niente «Pronto Soccorso», «Lista»…); un
+«Pronto Soccorso» già in memoria si mostra come «paziente» finché non riapri la sua pagina.
+Nel riquadro, **accanto al codice fiscale**, c'è un'icona ⧉: un clic lo copia negli appunti (✓ per
+un attimo). È l'unica cosa che il pannello aggiunge alla pagina del gestionale, e il suo clic non
+fa scattare il doppio clic del riquadro.
+
 ### Nota sul paziente
 Sotto il nome, una **nota** di due righe che cresce con quello che scrivi. Non c'è un tasto Salva:
 **si salva mentre scrivi** (e comunque quando esci dal campo), e compare un «salvata» che scompare
@@ -1269,7 +1279,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 90 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo)
+└── test/                ← simulatore SA4PSO + 91 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo)
 ```
 
 Sviluppo:
@@ -1280,7 +1290,7 @@ npm install        # solo playwright, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 90 scenari e2e + 160 sull'estensione (106 sull'ordine in sottofondo) + 59 sul banco + storico + il cancello privacy
+npm test           # 91 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 59 sul banco + storico + il cancello privacy
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
@@ -1352,5 +1362,9 @@ sono **anonimizzate**: nessun dato di pazienti reali in questo repo.
   ricostruita dai parametri dei link `AFCDataLink` (mai da `response.url`).
 - Il link "svuota carrello" ha `Delete=Elimina` **senza** `PRESTAZIONE`: un esame è "nel carrello"
   solo se il suo link ha *entrambi*.
+- `extension/portale-pdf.js` (nel mondo della pagina del portale) guarda solo le XHR **asincrone**:
+  la sua `send` sta sulla singola richiesta, non sul prototipo. Il portale manda una XHR sincrona a
+  `logout.jsp` mentre la pagina si chiude, Chrome la rifiuta («Synchronous XHR in page dismissal»),
+  e con la `send` cambiata per tutte quell'errore della pagina finiva fra gli errori dell'estensione.
 - Il form Conferma contiene `MVPG=RcsStampaEtichetteLIS` nascosto: confermare via fetch
   ingoierebbe la stampa etichette — per questo la conferma è un click nativo.

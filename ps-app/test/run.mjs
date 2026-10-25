@@ -2345,6 +2345,77 @@ async function scenarioPrintAvanzaFuoco(browser) {
   await b.context.close();
 }
 
+// Chi è il paziente lo dice il riquadro in testa alla scheda, non il titolo
+// della scheda del browser: su certe pagine il gestionale ci scrive «Pronto
+// Soccorso», e quello diventava un paziente. Nel riquadro, accanto al codice
+// fiscale, un'icona lo copia. (Dati inventati.)
+async function scenarioNomeDalRiquadro(browser) {
+  const scen = "nome-riquadro";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  // in memoria, da prima: un «Pronto Soccorso» preso per un nome
+  await context.addInitScript(() => {
+    if (!localStorage.getItem("psassist:patients.v1")) localStorage.setItem("psassist:patients.v1",
+      JSON.stringify([{ ep: "999777", name: "Pronto Soccorso", url: "", ts: Date.now() - 60e3 }]));
+    document.addEventListener("DOMContentLoaded", () => {
+      if (!/PsoEpisodioClinicoAmbulatorio/.test(location.href) || !/EPISODIO_ID=999001/.test(location.href)) return;
+      document.title = "Pronto Soccorso";
+      const t = document.createElement("table");
+      t.setAttribute("ondblclick", "window.__home = (window.__home || 0) + 1");
+      t.innerHTML = '<tbody><tr><td align="left" title="ROSSO"><font style="font-size: 120%; font-weight: bolder;">Episodio 2026/99999</font><br>'
+        + '<font style="font-size: 150%; font-weight: bolder;">BIANCHI ANNA</font><br>'
+        + '<font style="font-size: 120%; font-weight: bolder;">01/01/1980 (46) F<br>BNCNNA80A41F205X</font><br>'
+        + '<font style="font-size: 140%; font-weight: bolder;">DOLORE TORACICO</font></td></tr></tbody>';
+      document.body.prepend(t);
+    });
+  });
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host .card", { state: "attached" });
+  await page.waitForTimeout(300);
+  const pazienti = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]"));
+  const qui = pazienti.find((p) => p.ep === "999001");
+  check(scen, qui && qui.name === "BIANCHI ANNA", `il nome viene dal riquadro, non dal titolo «Pronto Soccorso» (got ${qui && qui.name})`);
+  check(scen, /BIANCHI ANNA/.test(await $panel(page, ".hd .who").innerText()), "e il pannello porta quel nome");
+
+  // l'icona accanto al codice fiscale: lo copia, e il suo clic non arriva al doppio clic del riquadro
+  const icona = page.locator("td[title=ROSSO] .psassist-cf");
+  check(scen, (await icona.count()) === 1, "accanto al codice fiscale c'è un'icona");
+  const dopo = await page.evaluate(() => {
+    const b = document.querySelector("td[title=ROSSO] .psassist-cf");
+    return (b.previousSibling?.nodeValue || "").trim();
+  });
+  check(scen, dopo.endsWith("BNCNNA80A41F205X"), `subito dopo il codice fiscale (got «${dopo}»)`);
+  await page.evaluate(() => navigator.clipboard.writeText("vuoto"));
+  await icona.dblclick();
+  await page.waitForTimeout(200);
+  check(scen, (await page.evaluate(() => navigator.clipboard.readText())) === "BNCNNA80A41F205X", "un clic e il codice fiscale è negli appunti");
+  check(scen, !(await page.evaluate(() => window.__home || 0)), "e il doppio clic sull'icona non riporta alla home dell'episodio");
+  check(scen, (await page.locator("td[title=ROSSO] .psassist-cf").count()) === 1, "una sola icona, anche dopo i ridisegni");
+
+  // il «Pronto Soccorso» già in memoria non si mostra come un nome
+  // (il clic sull'icona è un clic fuori dal pannello: si è ridotto a pill)
+  if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
+  await $panel(page, "#back").click();
+  await page.waitForSelector("#psassist-host .pzrow", { timeout: 5000 }).catch(() => {});
+  const righe = (await page.locator("#psassist-host .pzrow .pznm").allInnerTexts()).join(" | ");
+  check(scen, righe && !/Pronto Soccorso/i.test(righe), `nell'elenco nessun paziente si chiama «Pronto Soccorso» (got ${righe})`);
+  await context.close();
+
+  // senza riquadro, un titolo che non è un nome non entra come nome
+  const mock2 = createMock({});
+  const b = await newPage(browser, mock2);
+  await b.context.addInitScript(() => {
+    document.addEventListener("DOMContentLoaded", () => { if (/PsoEpisodioClinicoAmbulatorio/.test(location.href)) document.title = "Pronto Soccorso"; });
+  });
+  await b.page.goto(mock2.patientUrl);
+  await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
+  await b.page.waitForTimeout(300);
+  const p2 = (await b.page.evaluate(() => JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]"))).find((p) => p.ep === "999001");
+  check(scen, p2 && p2.name === "", `senza riquadro, «Pronto Soccorso» nel titolo non è un nome (got ${p2 && JSON.stringify(p2.name)})`);
+  await b.context.close();
+}
+
 async function scenarioPrintViewerVariants(browser) {
   // Un visualizzatore che NOMINA il PDF nella pagina: si prende da lì.
   {
@@ -4469,7 +4540,8 @@ async function scenarioRilancioPaginaEsami(browser) {
 // dimenticato sarebbe passato in silenzio.
 async function scenarioNomeConHtml(browser) {
   const scen = "html-nel-nome";
-  const CATTIVO = 'ROSSI <img src=x onerror="window.__bucato=1"> "MARIO" & Co';
+  // (senza cifre: un titolo con una cifra non è un nome, e non arriverebbe nemmeno al pannello)
+  const CATTIVO = 'ROSSI <img src=x onerror="window.__bucato=true"> "MARIO" & Co';
   const mock = createMock({ name: CATTIVO });
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
@@ -5466,6 +5538,7 @@ const scenarios = [
   ["prelievi refertati: restano colonne della tabella", scenarioValoriRefertati],
   ["resize + copy log", scenarioResizeAndLog],
   ["home: patient pills", scenarioHomePills],
+  ["nome dal riquadro del paziente, non dal titolo; icona del codice fiscale", scenarioNomeDalRiquadro],
   ["stanza: la mappa della stanza", scenarioStanza],
   ["finestra: pill, Esc, clic fuori, affianca, copia", scenarioFinestra],
   ["pill ridotta: il promemoria di un altro paziente dice di chi è", scenarioPillAltroPaziente],
