@@ -103,6 +103,16 @@ async function errore(page, { su = /RcsRichiestaPrestazioniRicercaErogatore/, ti
   if (su) await page.waitForURL(su, { timeout });
   return striscia(page, /Errore · completa a mano|Sessione scaduta/, timeout);
 }
+// «Svuota il carrello e ricomincia»: il primo tocco legge il carrello vero
+// (solo letture) e chiede, coi nomi; si aspetta che lo dica
+async function armaSvuota(page) {
+  await page.locator("#psassist-host #svuota").click();
+  const h = await page.waitForFunction(() => {
+    const t = (document.getElementById("psassist-host")?.shadowRoot?.querySelector("#svuota")?.innerText || "").trim();
+    return /^(Svuoto|Il carrello è vuoto|Non )/.test(t) ? t : false;
+  }, null, { timeout: 15000 });
+  return h.jsonValue();
+}
 async function newPage(browser, mock, opts = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   if (opts.finestra !== "centro") await colonna(context);
@@ -340,7 +350,8 @@ const lentiStampa = (u) => (/RcsStampaEtichetteLISHMIMU|jasperservlet/.test(u) ?
 // Il giro in sottofondo con la conferma: dalla spedizione alle etichette la
 // finestra NON si apre mai. Parla la striscia — «Confermo…», «Confermata»,
 // «Aspetto le etichette…», «Stampo le etichette», e alla fine il resoconto
-// che RESTA: «Stampato · 2 esami confermati 14:32». Mentre un PDF arriva non
+// che RESTA: «Stampa finita · 2 esami confermati 14:32» (chiuso il dialogo non
+// si sa se ha stampato o annullato: mai «Stampato», e «Ristampa» c'è). Mentre un PDF arriva non
 // c'è niente davanti alla pagina; arrivato, la scheda lo mostra in anteprima
 // con la stampante su cui va, e da lì si apre il dialogo di stampa.
 async function scenarioAutoConfirm(browser) {
@@ -381,7 +392,7 @@ async function scenarioAutoConfirm(browser) {
     `poi ricompare, con la lista in anteprima (got: ${await anteprima(page) || "niente"})`);
   await avanti(page);
   await page.waitForSelector("#psassist-print", { state: "detached", timeout: 8000 });
-  const resoconto = await striscia(page, /Stampato/, 5000).catch(() => "");
+  const resoconto = await striscia(page, /Stampa finita/, 5000).catch(() => "");
   await page.waitForTimeout(200);
   const reg = await registrato(page);
   const tutto = reg.testi.join(" | ");
@@ -397,13 +408,14 @@ async function scenarioAutoConfirm(browser) {
   check(scen, /Confermata/.test(tutto) && /Aspetto le etichette/.test(tutto), "poi «Confermata · Aspetto le etichette…»");
   check(scen, /Stampo le etichette/.test(tutto) && /Aspetto la lista esami/.test(tutto) && /Stampo la lista esami/.test(tutto),
     "poi le etichette e la lista, una dopo l'altra");
-  check(scen, /Stampato/.test(resoconto) && /2 esami confermati \d\d:\d\d/.test(resoconto),
-    `e alla fine il resoconto: «Stampato · 2 esami confermati HH:MM» (got: ${resoconto})`);
+  check(scen, /Stampa finita/.test(resoconto) && !/Stampato/.test(resoconto) && /2 esami confermati \d\d:\d\d/.test(resoconto),
+    `e alla fine il resoconto: «Stampa finita · 2 esami confermati HH:MM», mai «Stampato» (got: ${resoconto})`);
   check(scen, /Quesito: il tuo/.test(resoconto), `con una riga per il quesito che è partito (got: ${resoconto})`);
   await page.waitForTimeout(6000);
   const resta = (await $panel(page, ".pill.run").innerText().catch(() => "")).replace(/\s+/g, " ");
   check(scen, /2 esami confermati/.test(resta), `e il resoconto resta finché non fai altro, non svanisce (got: ${resta})`);
-  check(scen, (await $panel(page, "#strazione").count()) === 0, "stampato tutto: niente «Ristampa»");
+  check(scen, (await $panel(page, "#strazione").innerText().catch(() => "")).trim() === "Ristampa",
+    "andati avanti da soli (stampato o annullato, non si sa): «Ristampa» c'è sempre");
   const sorvegliate = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
   check(scen, Array.isArray(sorvegliate) && !sorvegliate.some((x) => x.rid === rid), "confermata con la prova: non resta fra quelle da sorvegliare");
   await context.close();
@@ -1301,10 +1313,9 @@ async function scenarioSvuota(browser) {
     "sul carrello della richiesta, nel resoconto: «Svuota il carrello e ricomincia»");
   check(scen, (await $panel(page, "#riprova").count()) === 1, "e «↻ Riprova i mancanti» resta com'era");
   const n0 = mock.state.requests.length;
-  await b.click();
-  const chiede = (await b.innerText()).trim();
-  check(scen, chiede === "Svuoto 2 esami?", `il primo tocco chiede (got: ${chiede})`);
-  check(scen, mock.state.requests.length === n0, "e non manda niente");
+  const chiede = await armaSvuota(page);
+  check(scen, chiede === "Svuoto 2 esami: EMOCROMO POC, TROPONINA US?", `il primo tocco legge il carrello e chiede, coi nomi (got: ${chiede})`);
+  check(scen, !mock.state.requests.slice(n0).some((q) => q.params.Delete || q.params.Insert || q.method !== "GET"), "e non manda niente: solo letture");
   await shot(page, "svuota-armato");
   await b.click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 });
@@ -1371,7 +1382,7 @@ async function scenarioSvuotaNonVuoto(browser) {
     const rid = Object.keys(mock.state.richieste)[0];
     await apriStriscia(page);
     const n0 = mock.state.requests.length;
-    await $panel(page, "#svuota").click();
+    await armaSvuota(page);
     await $panel(page, "#svuota").click();
     const rossa = await striscia(page, /Errore · completa a mano/, 30000).catch(() => "");
     await page.waitForTimeout(800);
@@ -1414,7 +1425,7 @@ async function scenarioSvuotaRigaPerRiga(browser) {
   const rid = Object.keys(mock.state.richieste)[0];
   await apriStriscia(page);
   const n0 = mock.state.requests.length;
-  await $panel(page, "#svuota").click();
+  await armaSvuota(page);
   await $panel(page, "#svuota").click();
   const fine = await striscia(page, /Conferma dal gestionale/, 40000).catch(() => "");
   const del = richiesteDelete(mock, n0);
@@ -1428,6 +1439,128 @@ async function scenarioSvuotaRigaPerRiga(browser) {
   const sorvegliate = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
   const s = sorvegliate.find((x) => x.rid === rid);
   check(scen, !!s && s.n === 3, `il promemoria «non confermata» segue il carrello vero: 3 esami (got ${JSON.stringify(s)})`);
+  await context.close();
+}
+
+// «Svuota il carrello e ricomincia» non toglie mai un esame che poi non
+// rimette. Qui nel carrello c'è un EMOCROMO di un «solo carrello» di prima;
+// dalla ricevuta «+ aggiungi» TROPONINA e PROCALCITONINA, che oggi si chiama
+// in un altro modo: errore. Svuotare legge prima il carrello vero, tutte le
+// sezioni, dice coi nomi che cosa toglie, e rimette anche l'EMOCROMO.
+async function scenarioSvuotaExtra(browser) {
+  const scen = "svuota-extra";
+  const mock = createMock({});
+  let rotta = false;
+  const { context, page } = await newPage(browser, mock, {
+    riscrivi: (u, html) => (rotta ? html.replace(/PROCALCITONINA \(1690\)/g, "ANTITROMBINA III (1450)") : html),
+  });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("febbre");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, "#go").click();
+  await atterraCarrello(page);
+  const rid = Object.keys(mock.state.richieste)[0];
+  await apriStriscia(page);
+  await $panel(page, "#aggiungi").click();
+  rotta = true;
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, "#go").click();
+  await errore(page);
+  rotta = false;
+  check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "320,324", "nel carrello: l'EMOCROMO di prima e la TROPONINA");
+  await apriStriscia(page);
+  const n0 = mock.state.requests.length;
+  const chiede = await armaSvuota(page);
+  check(scen, chiede === "Svuoto 2 esami: EMOCROMO POC, TROPONINA US?",
+    `il primo tocco conta il carrello vero, non solo questo giro, e dice i nomi (got: ${chiede})`);
+  check(scen, !mock.state.requests.slice(n0).some((q) => q.params.Delete || q.params.Insert), "e intanto solo letture");
+  await $panel(page, "#svuota").click();
+  const fine = await striscia(page, /Conferma dal gestionale/, 40000).catch(() => "");
+  const carrello = [...mock.state.richieste[rid].cart.keys()].sort().join(",");
+  check(scen, carrello === "159,320,324", `svuotato e rimesso: tutti e tre, niente perso (got ${carrello} · ${fine || "niente"})`);
+  const rimessi = mock.state.requests.slice(n0).filter((q) => q.params.Insert === "Inserisci").map((q) => q.params.PRESTAZIONE).sort();
+  check(scen, rimessi.join(",") === "159,320,324", `una volta ciascuno (got ${rimessi.join(", ")})`);
+  const reg = await registroDi(page);
+  check(scen, /c'è anche «EMOCROMO POC», fuori dalla selezione: lo rimetto/.test(reg), "il Registro dice che l'EMOCROMO c'era già, e che torna");
+  await context.close();
+
+  // Una riga del carrello che non si saprebbe rimettere (qui il catalogo di
+  // questo browser non la conosce): non si svuota niente, e lo si dice.
+  const mock2 = createMock({});
+  const b = await newPage(browser, mock2, {
+    riscrivi: (u, html) => html.replace(/PROCALCITONINA \(1690\)/g, "ANTITROMBINA III (1450)"),
+  });
+  await b.page.goto(mock2.patientUrl);
+  await richieste(b.page);
+  await $panel(b.page, "#q").fill("febbre");
+  await $panel(b.page, '.opt[title*="TROPONINA"]').click();
+  await $panel(b.page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(b.page, "#go").click();
+  await errore(b.page);
+  const rid2 = Object.keys(mock2.state.richieste)[0];
+  mock2.state.richieste[rid2].cart.set("222", "00660001P");   // TROPONINA I POC, messa a mano: nel carrello e nell'elenco
+  await b.page.evaluate(() => {   // …ma non in quello che questo browser sa
+    const k = "psassist:catalog.v1";
+    const c = JSON.parse(localStorage.getItem(k) || "{}");
+    for (const r of Object.values(c)) if (r && r.items) delete r.items["222"];
+    localStorage.setItem(k, JSON.stringify(c));
+  });
+  await apriStriscia(b.page);
+  const n1 = mock2.state.requests.length;
+  const no = await armaSvuota(b.page);
+  check(scen, /^Non svuoto: non saprei rimettere «TROPONINA I POC»/.test(no) && (await $panel(b.page, "#svuota").isDisabled()),
+    `una riga che non si saprebbe rimettere: non si svuota, e il bottone lo dice (got: ${no})`);
+  await b.page.waitForTimeout(500);
+  check(scen, !mock2.state.requests.slice(n1).some((q) => q.params.Delete || q.params.Insert), "niente tolto, niente mandato");
+  await b.context.close();
+}
+
+// Un salto di pagina deciso da un giro (l'errore porta sul carrello) non
+// parte più sopra il giro dopo. Qui il salto aspetta 3 secondi invece di 0,3
+// (perché il medico faccia in tempo), «Riprova» parte subito e l'invio è
+// lento: prima, il salto rimasto in canna ammazzava «Riprova» a metà.
+async function scenarioSaltoSpento(browser) {
+  const scen = "salto-spento";
+  const mock = createMock({});
+  let rotta = false;
+  const { context, page } = await newPage(browser, mock, {
+    riscrivi: (u, html) => (rotta ? html.replace(/PROCALCITONINA \(1690\)/g, "ANTITROMBINA III (1450)") : html),
+    ritardo: (u) => (!rotta && /Insert=Inserisci/.test(u) && /PRESTAZIONE=159/.test(u) ? 4000 : 0),
+  });
+  await context.addInitScript(() => {
+    const st = window.setTimeout;
+    window.setTimeout = (f, ms, ...a) => st(f, ms === 300 ? 3000 : ms, ...a);
+  });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("febbre");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, "#go").click();
+  await atterraCarrello(page);
+  await apriStriscia(page);
+  await $panel(page, "#aggiungi").click();
+  rotta = true;
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, "#go").click();
+  await striscia(page, /Errore · completa a mano/, 20000);
+  rotta = false;
+  const rid = Object.keys(mock.state.richieste)[0];
+  let salti = 0;
+  page.on("framenavigated", (f) => { if (f === page.mainFrame()) salti++; });
+  await apriStriscia(page);
+  await $panel(page, "#riprova").click();
+  await striscia(page, /Conferma dal gestionale/, 40000).catch(() => "");
+  await page.waitForTimeout(3500);
+  const reg = await registroDi(page);
+  check(scen, !/riprendo il giro dopo il cambio pagina/.test(reg) && salti === 1,
+    `«Riprova» va fino in fondo senza che il salto di prima gli porti via la pagina (${salti} salti${/riprendo il giro/.test(reg) ? ", ripreso dopo un cambio pagina" : ""})`);
+  check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "159,320,324" && mock.state.insertCount[`${rid}:159`] === 1,
+    "e nel carrello ci sono tutti, la PROCALCITONINA una volta");
+  const ora = (await $panel(page, ".pill.run").innerText().catch(() => "")).replace(/\s+/g, " ");
+  check(scen, !/Errore/.test(ora), `e la pagina non torna all'errore di prima (got: ${ora})`);
   await context.close();
 }
 
@@ -5252,6 +5385,8 @@ const scenarios = [
   ["errore: «Svuota il carrello e ricomincia» — Svuota del gestionale, provato vuoto, rimesso, confermato", scenarioSvuota],
   ["errore: «Svuota il carrello» non riuscito — stop, niente rimesso", scenarioSvuotaNonVuoto],
   ["errore: «Svuota il carrello» senza Svuota in pagina — riga per riga", scenarioSvuotaRigaPerRiga],
+  ["errore: «Svuota il carrello» rimette anche quello che c'era già, e lo dice per nome", scenarioSvuotaExtra],
+  ["errore: il salto sul carrello non parte sopra «Riprova»", scenarioSaltoSpento],
   ["riga assente in pagina: la ricerca del gestionale", scenarioRigaCercata],
   ["conferma interrotta dalla navigazione: la pagina dopo avvisa", scenarioConfermaInterrotta],
   ["navigazione automatica: non si porta via chi scrive", scenarioNonMangiaLaScrittura],
