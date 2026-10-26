@@ -4,6 +4,8 @@
  * Two jobs:
  *  1. reload the extension on request (the panel's "⟳ ricarica estensione");
  *  2. fetch and cache referto PDFs.
+ * (plus the background tabs of orders and values, and — in ponte-sw.js — the
+ * end-to-end-encrypted bridge to the doctor's iPhone)
  *
  * Why the PDFs are fetched HERE and not in the panel: a referto opens a viewer
  * that lives on ANOTHER internal host and shows the file as a blob: of that
@@ -754,7 +756,8 @@ function ordMessaggio(msg, sender, reply) {
   if (msg.t === "ordineChi") return fai(async () => {
     const l = await ordLeggi();
     const mio = l.find((x) => x.worker === tab.id && ATTIVI.has(x.stato));
-    if (!mio) return reply({ ok: true, ordini: l });
+    // (o la scheda che il ponte ha aperto per i valori di un paziente: ponte-sw.js)
+    if (!mio) return reply({ ok: true, ordini: l, ...ponteLavoroDi(tab.id) });
     const piano = (await chrome.storage.session.get(ORD_PIANO(mio.id)))[ORD_PIANO(mio.id)] || null;
     reply({ ok: true, ordini: l, lavoro: { ...mio, piano } });
   });
@@ -898,3 +901,8 @@ async function riallineaPortale() {
 const riallinea = () => { riallineaPortale().catch(() => {}); };
 chrome.runtime.onStartup?.addListener(riallinea);
 chrome.runtime.onInstalled?.addListener(riallinea);
+
+// Il ponte verso l'iPhone (ponte-sw.js): una presa cifrata da un capo
+// all'altro verso il sito del ponte, e i comandi del telefono eseguiti dalle
+// schede del gestionale. Sta in file suoi; vede le costanti qui sopra.
+importScripts("ponte-cripto.js", "ponte-sw.js");

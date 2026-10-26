@@ -1,0 +1,16 @@
+{
+  "name": "PS Assist sull'iPhone",
+  "short_name": "PS Assist",
+  "description": "Il pannello del pronto soccorso, dal telefono: passa dal PC dell'ospedale, cifrato da un capo all'altro.",
+  "lang": "it",
+  "start_url": "/ponte/",
+  "scope": "/ponte/",
+  "display": "browser",
+  "background_color": "#F4F8FB",
+  "theme_color": "#0B5CAD",
+  "icons": [
+    { "src": "icona-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icona-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icona.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

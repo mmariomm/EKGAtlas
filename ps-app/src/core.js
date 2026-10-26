@@ -5987,7 +5987,7 @@
       // i valori e la stanza si leggono in larghezza; il resto su una colonna comoda
 
       this.root.innerHTML = `
-        <style>${COLORS}</style>
+        <style>${COLORS}${PONTE_CSS}</style>
         <div class="wrap${ridotto ? "" : " win"}" style="${posStyle}">
           ${this.collapsed && !running && this.striscia ? `
             <div class="strip">
@@ -6029,6 +6029,7 @@
                   : "Tutti i pazienti"}" aria-label="Indietro">${ICO.indietro}</button>` : `<span class="logo">${LOGO_BLU}</span>`}${titolo ? `<b class="who">${esc(titolo)}</b>` : ""}
                 ${sub ? `<span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>` : ""}
                 <span class="hsp"></span>
+                ${ponteSpia()}
                 ${this.chipTempo()}
                 <span class="menuw">
                   <button class="iconbtn" id="menubtn" title="Altro" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
@@ -6037,6 +6038,7 @@
                     ${eAffiancata(this.win) ? "" : `<button role="menuitem" id="winaffianca" title="Una colonna a destra: il gestionale resta visibile a sinistra">Affianca a destra</button>`}
                     ${inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">Modifica la stanza</button>` : ""}
                     <hr>
+                    ${hasExt() && !DEMO ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete"><span class="mico">${ICO_TEL}</span>iPhone</button>` : ""}
                     <button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">Tempi</button>
                     <button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">Riferimenti</button>
                     ${this.view === "dimissioni" ? `<button role="menuitem" id="dimexport" title="Salva i tuoi testi in un file JSON (e negli appunti)">Esporta i fogli (JSON)</button>
@@ -6075,6 +6077,7 @@
 
             </div>
           `}
+          ${this.collapsed ? ponteSpia() : ""}
         </div>`;
       this.bind();
       for (const [sel, top, left] of keepScroll) {
@@ -9154,6 +9157,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.render();
       }));
       $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.menuAperto = false; this.render(); });
+      // il ponte: la pagina dell'iPhone, e «Scollega» dall'intestazione
+      $("#pontemenu")?.addEventListener("click", () => { this.menuAperto = false; this.render(); ask({ t: "ponteApri" }); });
+      $("#ponteoff")?.addEventListener("click", (e) => { e.stopPropagation(); ask({ t: "ponteScollega" }); });
       $("#risall")?.addEventListener("click", () => this.caricaValori());
       // «Letto»: da qui in poi le novità si contano da adesso, per tutti i prelievi
       $("#letto")?.addEventListener("click", () => {
@@ -10669,6 +10675,260 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }, 4000);
   }
 
+  // =================================================================== PONTE
+  // Il pannello sull'iPhone (ps-app/ponte/README.md). La presa cifrata sta
+  // nel service worker (ponte-sw.js); qui, in una scheda del gestionale, si
+  // eseguono i comandi del telefono col codice di sempre — elenco, esiti,
+  // ordine, nota, promemoria — e ogni scheda dice, nell'intestazione, che una
+  // sessione è aperta. Niente qui manda dati fuori dall'ospedale: le risposte
+  // vanno al service worker, che le cifra per il telefono.
+  let PANNELLO = null;       // il pannello di questa pagina (per il Registro)
+  let PONTE_STATO = null;    // lo stato del ponte (storage.session), per l'intestazione
+  let PONTE_VALORI = null;   // questa scheda l'ha aperta il ponte per «Aggiorna i valori» di { ep }
+  const ICO_TEL = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="4.4" y="1.4" width="7.2" height="13.2" rx="1.7"/><path d="M7 12.1h2"/></svg>';
+  const PONTE_CSS = `
+    .pontespia { display: inline-flex; align-items: center; gap: 7px; margin-top: 6px; padding: 4px 4px 4px 11px; border-radius: 999px;
+                 background: #16232E; color: #fff; font-size: 12px; font-weight: 700; white-space: nowrap; box-shadow: 0 4px 14px rgba(9,42,74,.28); }
+    .wrap:not(.win) > .pontespia { display: flex; width: max-content; margin-left: auto; }
+    .hd .pontespia { margin: 0; box-shadow: none; }
+    .pontespia .pdot { width: 8px; height: 8px; border-radius: 50%; background: #7FD1A8; animation: psaPulse 1.6s ease-in-out infinite; }
+    .pontespia button { border: 0; border-radius: 999px; background: #fff; color: #16232E; padding: 4px 10px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+    .pontespia button:hover { background: #E3E9F0; }
+    .menu button .mico { display: inline-flex; vertical-align: -2px; margin-right: 6px; }
+  `;
+  // «iPhone collegato · Scollega»: finché una sessione è aperta, in ogni
+  // scheda, a pannello aperto o ridotto. Chi passa davanti al PC lo vede.
+  const ponteSpia = () => (PONTE_STATO && PONTE_STATO.sessione ? `<div class="pontespia" role="status" title="Il medico sta usando il pannello dall'iPhone: ogni comando finisce nel Registro">
+      <span class="pdot"></span>${ICO_TEL}<span>iPhone collegato</span><button type="button" id="ponteoff" title="Chiude la sessione dell'iPhone">Scollega</button></div>` : "");
+
+  const pontePaziente = (ep) => tuttiPazienti().find((p) => p.ep === ep) || null;
+  // l'indirizzo della sua pagina, come il gestionale l'ha dato: solo da leggere, e di quell'episodio
+  const ponteUrlPaziente = (p) => (p && leggibilePagina(p.url) && param(p.url, "EPISODIO_ID") === p.ep
+    && /\/menuPsoEpisodio\.do$/i.test(new URL(p.url).pathname) ? p.url : "");
+  // la chiave della nota, come la legge la riga del paziente (notaDi): col
+  // codice fiscale; senza, il nome — mai se c'è un omonimo fra gli attivi
+  function ponteChiaveNota(p) {
+    if (String(p.pk || "").startsWith("cf:")) return p.pk;
+    const n = normNome(p.name);
+    if (!n || knownPatients().some((x) => x.ep !== p.ep && normNome(x.name) === n)) return "";
+    return p.pk || "nome:" + n;
+  }
+
+  // L'elenco, come la vista Pazienti: chi è in lista e chi è nella stanza (col
+  // suo posto), il triage, la nota, i promemoria; gli episodi precedenti in fondo.
+  function pontePazienti() {
+    const m = PANNELLO.pazModello();
+    return [...m.info.values()].map((i) => ({
+      ep: i.p.ep, nome: i.lungo, breve: i.breve + i.coda, omonimo: !!i.omonimo, triage: i.p.triage || "",
+      posto: PANNELLO.nomePosto(m, i), nota: i.nota || "", prec: !!i.prec, spento: !!i.spento, visto: i.p.ts || 0,
+      prom: promDi(i.p.ep, m.prom).map((x) => ({ id: x.id, t: x.t, testo: x.testo })),
+      ordina: !!ponteUrlPaziente(i.p),
+    }));
+  }
+  // Quello che serve al telefono per ordinare: i quesiti (prima i tre
+  // pacchetti, con quanti esami portano su questo computer), i profili e gli
+  // esami della griglia, per laboratorio. Gli stessi filtri del pannello: un
+  // esame che questo catalogo non ha non compare.
+  function ponteCatalogo() {
+    const cat = fullCatalog();
+    const c = (r, k) => !!cat[r]?.items?.[k];
+    const nomi = {}, rx = [];
+    const chiave = (r, k) => { const x = `${r}:${k}`; nomi[x] = displayLabel(r, k); if (RADIO_SET.includes(r)) rx.push(x); return x; };
+    const gruppi = [];
+    const gruppo = (r) => {
+      const nome = RES_SHORT[r] || r;
+      let g = gruppi.find((x) => x.nome === nome);
+      if (!g) gruppi.push(g = { nome, rx: RADIO_SET.includes(r), profili: [], esami: [] });
+      return g;
+    };
+    for (const p of PRESETS) if (p.items.every(([r, k]) => c(r, k))) gruppo(p.items[0][0]).profili.push({ nome: p.name, esami: p.items.map(([r, k]) => chiave(r, k)) });
+    for (const [r, k] of SINGLES) if (c(r, k)) gruppo(r).esami.push(chiave(r, k));
+    const pacchetti = PACCHETTI.map((p) => ({ q: p.q, esami: p.items.filter(([r, k]) => c(r, k)).map(([r, k]) => chiave(r, k)) }));
+    const quesiti = [...PACCHETTI.map((p) => p.q), ...store.get("quesiti", QUESITI_DEFAULT)
+      .filter((q) => !PACCHETTI.some((p) => p.q.toLowerCase() === String(q).toLowerCase()))].slice(0, 6);
+    return { quesiti, pacchetti, gruppi, nomi, rx: [...new Set(rx)] };
+  }
+  // La tabella dei Valori, in dati: colonne (il prelievo più recente a
+  // sinistra, l'ora se è di oggi, se no la data) e righe per sezione, coi
+  // nomi e le unità del pannello. Un valore: [testo, fuori range ±1, parziale, %].
+  function ponteTabella(st) {
+    const col = st.date.map((d, i) => ({ ...d, i })).reverse();
+    const righe = righeTabella(st.righe);
+    const ambS = sigleAmbigue(righe);
+    const inatteso = (r) => !siglaCurata(r.nome) || ambS.has(chiaveAmbigua(r));
+    const d0 = new Date();
+    const oggi = `${String(d0.getDate()).padStart(2, "0")}/${String(d0.getMonth() + 1).padStart(2, "0")}/${d0.getFullYear()}`;
+    return {
+      colonne: col.map((c) => ({ cima: c.ignota ? "?" : c.data === oggi ? c.ora || "oggi" : c.data.slice(0, 5), sotto: c.ignota ? "ora ignota" : c.data === oggi ? "" : c.ora || "" })),
+      gruppi: raggruppaStorico(righe).map((g) => ({ nome: g.nome, righe: g.righe.map((r) => ({
+        nome: inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome),
+        um: unitaChiara((r.valori.find((v) => v && v.um) || {}).um || "", r.nome),
+        valori: col.map((c) => { const v = r.valori[c.i]; return v && v.v ? [v.v, v.stato || 0, v.parziale ? 1 : 0, v.pct || ""] : null; }),
+      })) })),
+    };
+  }
+  // Gli esiti di un paziente: la tabella che il PC ha di lui (la sua scheda
+  // clinica, scelta con la regola d'identità del pannello) e i referti della
+  // sua pagina — letta una volta, solo lettura, e solo se è del suo episodio —
+  // col testo di quelli già letti.
+  async function ponteEsiti(p) {
+    const url = ponteUrlPaziente(p);
+    let referti = [], nota = "";
+    if (url) {
+      try {
+        const { doc, url: fin } = await fetchDoc(url, {});
+        if (classify(doc) === "login") return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true };
+        if (findEpisodeId(doc, fin) !== p.ep) return { ok: false, errore: "La pagina del paziente sul PC è di un altro episodio: non mostro niente" };
+        referti = esitiModel(doc, fin).filter((e) => e.kind === "referto");
+      } catch (e) { nota = `Referti non letti: ${e?.head || e?.message || e}`; }
+    } else nota = "Per i referti, apri una volta il paziente sul PC";
+    let st = null;
+    const testi = new Map();
+    if (hasExt()) {
+      const r = await ask({ t: "getStorico" });
+      const indice = (r && r.ok && r.indice) || [];
+      const mio = String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "";
+      const scelta = scegliScheda(indice, mio, p.name, p.ep);
+      const leggi = async (chiave) => { const x = await ask({ t: "getStorico", chiave }); return x && x.ok ? x.dati : null; };
+      if (scelta) st = await leggi(scelta.chiave);
+      // I testi dei referti si cercano per numero di referto, quello della
+      // pagina di QUESTO paziente: un referto letto prima che il codice
+      // fiscale fosse noto sta nella scheda col suo nome.
+      const perNome = "nome:" + normNome(p.name);
+      const altra = perNome !== "nome:" && (!scelta || scelta.chiave !== perNome) && indice.some((v) => v.chiave === perNome) ? await leggi(perNome) : null;
+      for (const s of [altra, st]) for (const x of (s && s.referti) || []) if (x && x.id && x.testo) testi.set(x.id, x.testo);
+    }
+    const dati = st && st.righe && st.righe.length ? normalizzaStorico(st) : null;
+    const tabella = dati && dati.righe.length ? ponteTabella(dati) : null;
+    let resta = 400000;   // il telefono riceve un messaggio solo, mai oltre 1 MB
+    const lista = referti.filter((e) => refertoTipo(e) !== "lab" || !tabella).map((e) => {
+      const t = testi.get(e.id) || "";
+      const sta = !!t && t.length <= resta;
+      if (sta) resta -= t.length;
+      return { id: e.id, quando: e.when, sistema: e.sistema, titolo: shortLabel(e.label), tipo: refertoTipo(e), testo: sta ? t : "", lungo: !!t && !sta };
+    });
+    return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, referti: lista, nota }, registro: `esiti di ${p.name}` };
+  }
+  // L'ordine: lo stesso giro di «Conferma e stampa», dato alla scheda di
+  // sottofondo dalla pagina del paziente — tutti i controlli di sempre. Il
+  // laboratorio si conferma da solo; la radiologia resta sul carrello, come
+  // dal pannello (la sua conferma è sempre del medico). Il numero dell'ordine
+  // lo dà il service worker: chiesto due volte, l'ordine è uno.
+  async function ponteOrdina(p, a) {
+    const url = ponteUrlPaziente(p);
+    if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: per ordinare serve la sua pagina` };
+    const quesito = String(a.quesito || "").replace(/\s+/g, " ").trim();
+    if (!quesito) return { ok: false, errore: "Scrivi il quesito diagnostico" };
+    const cat = fullCatalog();
+    const items = [];
+    for (const k of new Set(a.esami || [])) {
+      const [res, code] = k.split(":");
+      if (!cat[res]?.items?.[code]) return { ok: false, errore: `Un esame non è nel catalogo di questo PC: niente inviato` };
+      items.push({ res, code, label: examLabel(res, code), display: displayLabel(res, code), chiave: k });
+    }
+    if (!items.length) return { ok: false, errore: "Scegli almeno un esame" };
+    const gambe = [["lab", items.filter((i) => !RADIO_SET.includes(i.res))], ["radio", items.filter((i) => RADIO_SET.includes(i.res))]].filter(([, l]) => l.length);
+    const ordini = [];
+    for (const [kind, l] of gambe) {
+      const id = `${a.id}${kind === "radio" ? "r" : "l"}`, autoConfirm = kind === "lab";
+      const job = { id, ep: p.ep, paziente: p.name, n: l.length, autoConfirm, url, rid: null, nomi: l.map((i) => i.display),
+        piano: { startPage: "patient", items: l, quesito, quesitoMio: !!a.mio, autoConfirm, episodeId: p.ep, patientName: p.name, patientUrl: url, kind } };
+      let r = { ok: false };
+      for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineNuovo", job });
+      if (!r.ok) {
+        const perche = r.no ? r.why || "rifiutato" : "il service worker non risponde: guarda il carrello prima di rifarlo";
+        if (!ordini.length) return { ok: false, errore: `Ordine non partito: ${perche}` };
+        return { ok: true, dati: { ordini, avviso: `La radiologia non è partita: ${perche}` }, registro: `ordine per ${p.name}: la radiologia non è partita` };
+      }
+      ordini.push({ id, ep: p.ep, paziente: p.name, n: l.length, rx: kind === "radio" });
+    }
+    rememberQuesito(quesito);
+    const n = items.length;
+    return { ok: true, dati: { ordini }, registro: `ordine di ${n} ${n === 1 ? "esame" : "esami"} per ${p.name} (${items.map((i) => i.display).join(", ")})` };
+  }
+  // Un comando del telefono, eseguito qui. `no`: questa scheda non può (il
+  // service worker prova la prossima).
+  async function ponteEsegui(m) {
+    if (classify(document) === "login") return { no: "login" };
+    if (LAVORO || PONTE_VALORI) return { no: "lavoro" };
+    if (!PANNELLO) return { no: "pannello" };
+    const a = m.args || {}, cmd = m.cmd;
+    const fatto = (r) => {
+      if (r && r.registro) PANNELLO.log(`${now()}  iPhone · ${r.registro}`);
+      if (r && r.ok && ["nota", "promemoria", "fatto"].includes(cmd) && !PANNELLO.root.activeElement) PANNELLO.render();
+      return r;
+    };
+    if (cmd === "pazienti") return fatto({ ok: true, dati: pontePazienti(), registro: "elenco dei pazienti" });
+    if (cmd === "richieste") return fatto({ ok: true, dati: ponteCatalogo(), registro: "catalogo degli esami" });
+    const p = a.ep ? pontePaziente(a.ep) : null;
+    if (!p) return { ok: false, errore: "Questo paziente non è più nell'elenco del PC" };
+    const riga = () => pontePazienti().find((x) => x.ep === p.ep) || null;
+    if (cmd === "esiti") return fatto(await ponteEsiti(p));
+    if (cmd === "aggiornaValori") {
+      const url = ponteUrlPaziente(p);
+      if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+      return fatto({ ok: true, dati: { url, paziente: p.name }, registro: `aggiorna i valori di ${p.name}` });
+    }
+    if (cmd === "nota") {
+      const k = ponteChiaveNota(p);
+      if (!k) return { ok: false, errore: "Due pazienti con questo nome: la nota scrivila dal PC" };
+      if (!scriviNota(k, String(a.testo || ""))) return { ok: false, errore: "Nota non salvata: la memoria del browser del PC è piena o bloccata" };
+      return fatto({ ok: true, dati: riga(), registro: `nota di ${p.name}` });
+    }
+    if (cmd === "promemoria") {
+      const x = leggiPromemoria(a.testo, Date.now());
+      if (!x) return { ok: false, errore: "Scrivi anche l'ora: «11:30 tropo», «tra 2h ECG»" };
+      if (promDi(p.ep).length >= PROM_MAX) return { ok: false, errore: `Già ${PROM_MAX} promemoria per questo paziente` };
+      if (!promAggiungi(p.ep, x)) return { ok: false, errore: "Promemoria non salvato: la memoria del browser del PC è piena o bloccata" };
+      return fatto({ ok: true, dati: riga(), registro: `promemoria per ${p.name}: ${promRiga(x, Date.now())}` });
+    }
+    if (cmd === "fatto") {
+      const via = promTogli(p.ep, String(a.pid || ""));
+      if (!via) return { ok: false, errore: "Promemoria non trovato: forse è già fatto", dati: riga() };
+      return fatto({ ok: true, dati: riga(), registro: `promemoria fatto per ${p.name}: ${via.testo}` });
+    }
+    if (cmd === "ordina") return fatto(await ponteOrdina(p, a));
+    return { ok: false, errore: "Comando sconosciuto" };
+  }
+  // In ogni scheda del gestionale: i comandi, e lo stato per l'intestazione.
+  // Finché un iPhone è associato le schede tengono sveglio il service worker
+  // (se Chrome l'ha fermato, la presa si riapre).
+  function ponteAscolta() {
+    if (!hasExt() || DEMO || ponteAscolta.fatto) return;
+    ponteAscolta.fatto = true;
+    try {
+      chrome.runtime.onMessage.addListener((m, _s, reply) => {
+        if (!m || m.t !== "ponteEsegui") return;
+        ponteEsegui(m).then(reply, (e) => reply({ ok: false, errore: `Errore sul PC: ${e?.head || e?.message || e}` }));
+        return true;
+      });
+      const segui = (s) => {
+        const prima = !!(PONTE_STATO && PONTE_STATO.sessione);
+        PONTE_STATO = s || null;
+        if (prima !== !!(PONTE_STATO && PONTE_STATO.sessione) && PANNELLO && !PANNELLO.root.activeElement) PANNELLO.render();
+      };
+      chrome.storage.session.get("ponte").then((o) => segui(o.ponte)).catch(() => {});
+      chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && ch.ponte) segui(ch.ponte.newValue); });
+      setInterval(() => { if (PONTE_STATO && PONTE_STATO.accoppiato) ask({ t: "ponteSveglia" }); }, 30e3);
+    } catch { /* niente estensione */ }
+  }
+  // La scheda aperta dal ponte per «Aggiorna i valori»: il «⭳ Carica i valori»
+  // di sempre, e poi lo dice al service worker (che la chiude).
+  async function ponteValoriQui(panel) {
+    const v = PONTE_VALORI;
+    let esito;
+    if (!panel || panel.pageType !== "patient" || panel.episodeId !== v.ep || !panel.nomePaziente()) {
+      esito = { ok: false, testo: "la scheda ha aperto un'altra pagina: niente letto" };
+    } else {
+      try {
+        panel.log(`${now()}  ── iPhone: «Aggiorna i valori» per ${panel.nomePaziente()} ──`);
+        await panel.caricaValori();
+        esito = { ok: true, testo: "letti" };
+      } catch (e) { esito = { ok: false, testo: `non letti: ${e?.head || e?.message || e}` }; }
+    }
+    ask({ t: "ponteValoriFatto", ...esito });
+  }
+
   // ==================================================================== BOOT
   // The extension runs on two applications: SA4PSO, and the clinical portal
   // where the multi-day table lives. Everything below the storico reader is
@@ -10765,6 +11025,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   function bootGestionale(chi) {
     if (document.getElementById("psassist-host")) return;
     LAVORO = chi && chi.lavoro ? chi.lavoro : null;
+    PONTE_VALORI = chi && chi.ponteValori ? chi.ponteValori : null;
+    ponteAscolta();
     scadenzaQuesiti();
     const pageType = classify(document);
     if (pageType === "login") {
@@ -10784,6 +11046,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // quanti sono, senza nomi. La scheda di un ordine lo dice alle altre.
       const aperti = LAVORO ? 0 : (chi?.ordini || []).length;
       if (LAVORO) ask({ t: "ordineAggiorna", id: LAVORO.id, stato: "errore", vista: { tag: "Sessione scaduta", testo: "Rifai l'accesso, poi controlla il carrello", tono: "err", sessione: true } });
+      if (PONTE_VALORI) ask({ t: "ponteValoriFatto", ok: false, testo: "il gestionale chiede di rifare l'accesso" });
       forgetAll();
       if (mai || forse || aperti) {
         const d = document.createElement("div");
@@ -10801,11 +11064,13 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // e.g. the post-confirm label page: no panel, but a pending print
       // handoff starts here when the page lists the richiesta's print links.
       if (chi) ascoltaOrdini(null);   // e le etichette di un ordine in sottofondo, se il medico è qui
+      if (PONTE_VALORI) ponteValoriQui(null);
       nonConfermateQui();   // le richieste che questa pagina mostra confermate non vanno più sorvegliate
       maybeAutoPrint(null);
       return;
     }
     const panel = new Panel(pageType);
+    PANNELLO = panel;
     if (chi) { panel.ordiniOk = true; ascoltaOrdini(panel); }
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
@@ -10865,7 +11130,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // only a page that can actually order is a patient: the ER worklist
       // classifies the same way but its episode belongs to someone in the list
       // (la scheda di un ordine non è il medico che apre il paziente: niente «visto adesso»)
-      if (panel.entry && (panel.entry.labUrl || panel.entry.radioUrl) && !LAVORO) {
+      if (panel.entry && (panel.entry.labUrl || panel.entry.radioUrl) && !LAVORO && !PONTE_VALORI) {
         rememberPatient(panel.episodeId, nomeInPagina(), location.href, triageDi(document));
         iconaCf(document);
         // Il portale clinico si apre da QUESTO link, sulla pagina di QUESTO
@@ -10891,6 +11156,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       panel.render();
       panel.refreshRefCache();
       panel.caricaStorico();
+      // (la scheda dei valori del ponte legge e basta: niente conferme né stampe da qui)
+      if (PONTE_VALORI) { ponteValoriQui(panel); return; }
       if (ripresa) return;   // il giro ripreso arriva da sé a conferma e stampa
       if (pending) {
         // auto-continue once per richiesta; afterwards it is a button, so an
@@ -10905,6 +11172,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }
     } else {
       panel.render();
+      if (PONTE_VALORI) ponteValoriQui(panel);   // non è la pagina del paziente: lo dice e basta
     }
     if (pageType === "exam") {
       const model = examModel(document, location.href);

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>PS Assist — iPhone</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --blu: #0B5CAD; --testo: #16232E; --grigio: #5B6B7A; --bordo: #D9E2EC; --fondo: #F4F8FB;
+          --verde: #177245; --verdef: #EDF7F0; --ambra: #8A5A00; --ambraf: #FFF4DB; --rosso: #B3261E; --rossof: #FDF3F2; }
+  * { box-sizing: border-box; }
+  body { font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: var(--testo); background: var(--fondo); margin: 0; padding: 32px 24px; }
+  .box { max-width: 640px; margin: 0 auto; background: #fff; border: 1px solid var(--bordo); border-radius: 14px; padding: 24px 26px 26px;
+         box-shadow: 0 8px 26px rgba(9,42,74,.12); }
+  h1 { font-size: 19px; margin: 0 0 4px; display: flex; align-items: center; gap: 9px; }
+  h1 svg { color: var(--blu); }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--grigio); margin: 26px 0 8px; }
+  .sub { color: var(--grigio); font-size: 13px; margin: 0 0 18px; }
+  .stato { border-radius: 12px; padding: 14px 16px; background: var(--fondo); border: 1px solid var(--bordo); }
+  .stato.ok { background: var(--verdef); border-color: #BCE0C9; }
+  .stato.vivo { background: #16232E; border-color: #16232E; color: #fff; }
+  .stato.warn { background: var(--ambraf); border-color: #F0D9A8; }
+  .stato b { font-size: 15px; }
+  .stato .riga { display: block; margin-top: 3px; font-size: 13px; opacity: .85; }
+  .azioni { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  button { border: 0; border-radius: 10px; background: var(--blu); color: #fff; padding: 10px 18px; font: inherit; font-weight: 700; cursor: pointer; }
+  button:hover { background: #094a8c; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.quiet { background: #fff; color: var(--testo); border: 1px solid #C4D0DC; }
+  button.quiet:hover { background: var(--fondo); }
+  button.via { background: transparent; color: var(--rosso); border: 1px solid #E9BAB6; }
+  button.via:hover { background: var(--rossof); }
+  .qrsec { margin-top: 16px; display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; border: 1px solid var(--bordo); border-radius: 12px; padding: 16px; }
+  .qrsec[hidden] { display: none; }
+  #qr svg { display: block; width: 236px; height: 236px; }
+  .qrsec p { margin: 0 0 8px; }
+  .hint { font-size: 12.5px; color: var(--grigio); }
+  label { display: block; font-size: 12px; font-weight: 700; color: #35506B; margin: 12px 0 6px; }
+  input { width: 100%; border: 1px solid #C4D0DC; border-radius: 9px; padding: 10px 12px; font: inherit; }
+  .riga-input { display: flex; gap: 8px; } .riga-input input { flex: 1; }
+  .msg { margin-top: 10px; border-radius: 9px; padding: 9px 12px; font-size: 13px; }
+  .msg:empty { display: none; }
+  .msg.ok { background: var(--verdef); border: 1px solid #BCE0C9; color: #124F31; }
+  .msg.ko { background: var(--rossof); border: 1px solid #E9BAB6; color: #8A1F19; }
+  details { margin-top: 22px; border-top: 1px solid #E6EBF0; padding-top: 14px; }
+  summary { cursor: pointer; font-weight: 700; }
+  a { color: var(--blu); font-weight: 700; }
+  ol { margin: 0; padding: 0; list-style: none; font-size: 12.5px; max-height: 260px; overflow: auto; }
+  ol li { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid #F0F3F6; }
+  ol li time { color: var(--grigio); font-variant-numeric: tabular-nums; flex: none; }
+  .vuoto { color: var(--grigio); font-size: 12.5px; }
+  @media (max-width: 560px) { .qrsec { grid-template-columns: 1fr; justify-items: center; } }
+</style></head><body>
+<main class="box">
+  <h1><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="4.4" y="1.4" width="7.2" height="13.2" rx="1.7"/><path d="M7 12.1h2"/></svg>Il pannello sull'iPhone</h1>
+  <p class="sub">Elenco dei pazienti, esiti, ordini, note e promemoria dal telefono, mentre sei lontano dal PC. Tutto passa da qui, cifrato da un capo all'altro.</p>
+
+  <section id="stato" class="stato" aria-live="polite"></section>
+
+  <section id="qrsec" class="qrsec" hidden>
+    <div id="qr" role="img" aria-label="Codice QR per associare l'iPhone"></div>
+    <div>
+      <p><b>Inquadralo con la fotocamera dell'iPhone</b> e tocca il link: si apre il pannello, già collegato.</p>
+      <p>Vale fino alle <b id="qrscade"></b>. Basta una volta: poi, durante il turno, apri il pannello dall'iPhone e basta.</p>
+      <p class="hint">Chi inquadra questo codice entra fino a quell'ora: non lasciarlo sullo schermo.</p>
+      <button class="quiet" id="qrvia" type="button">Nascondi il QR</button>
+    </div>
+  </section>
+
+  <div class="azioni">
+    <button id="associa" type="button">Associa l'iPhone</button>
+    <button id="scollega" class="quiet" type="button" hidden>Scollega</button>
+    <button id="revoca" class="via" type="button" hidden>Revoca l'iPhone</button>
+  </div>
+  <div id="m" class="msg"></div>
+
+  <details id="impostazioni">
+    <summary>Indirizzo del ponte</summary>
+    <label for="host">Il sito del ponte (il sito EKG Atlas: il ponte sta sotto /ponte/)</label>
+    <div class="riga-input"><input id="host" placeholder="https://nome.workers.dev" autocomplete="off" spellcheck="false"><button id="salva" type="button">Salva</button></div>
+    <p class="hint">Da questo PC esce solo una connessione cifrata verso quel sito (HTTPS, porta 443). Il sito passa i messaggi e basta: non li legge e non li tiene.</p>
+  </details>
+
+  <p class="hint" style="margin-top:18px"><a href="ponte-prova.html" target="_blank" rel="noopener">Prova la rete</a> — controlla da questo PC, in un minuto, che il ponte si raggiunge e regge.</p>
+
+  <h2>Registro del ponte</h2>
+  <ol id="registro"></ol>
+</main>
+<script src="qr.js"></script>
+<script src="ponte.js"></script>
+</body></html>

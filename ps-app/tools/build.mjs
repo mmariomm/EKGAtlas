@@ -3,12 +3,13 @@
  * Build PS Assist: injects the verified catalog into src/core.js and emits
  *   extension/content.js               (MV3 content script)
  *   bookmarklet/…bookmarklet.txt       (same core as a javascript: URL)
+ *   extension/ponte-cripto.js          (copy of ../public/ponte/cripto.js)
  * The userscript vehicle was retired in 3.2: extension (primary) plus
  * bookmarklet (locked-down PCs) cover every machine with one build less
  * to test, document and support.
  * Run:  node tools/build.mjs
  */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,6 +35,10 @@ const built = core
   .replace(PLACEHOLDER_EO, () => JSON.stringify(eo));
 
 writeFileSync(join(root, "extension/content.js"), built);
+
+// Il ponte verso l'iPhone: la cifratura è UNA, servita al telefono dal sito
+// (public/ponte/cripto.js) e copiata qui tale e quale per il service worker.
+copyFileSync(join(root, "../public/ponte/cripto.js"), join(root, "extension/ponte-cripto.js"));
 
 // Bookmarklet: the same core as a javascript: URL, for locked-down PCs where
 // neither Developer Mode nor a userscript manager is available. One click on
