@@ -19,6 +19,11 @@ npm run shots      # 390×844 screenshot walk (visual audit)
 npm run deploy     # Cloudflare (wrangler)
 ```
 
+The same Worker also serves, under `/ponte/` only, the end-to-end-encrypted
+phone bridge of PS Assist (static app in `public/ponte/`, relay in
+`worker/ponte*.js`; see `ps-app/ponte/README.md`). It stores nothing and carries
+only ciphertext; the rest of the site is routed exactly as before.
+
 ## What's inside
 
 - **20 pattern cards** — see it (commit your read first) · why (≤3 lines +

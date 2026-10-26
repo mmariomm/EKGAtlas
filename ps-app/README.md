@@ -49,7 +49,8 @@ mentre un giro di esami sta mandando — anche in una scheda di sottofondo, o me
 etichette aspettano di essere stampate —, perché lo ucciderebbe a metà.
 Un'estensione non pacchettizzata non può scaricarsi gli aggiornamenti da sola, e PS Assist non
 contatterà mai server esterni per controllare le versioni — sarebbe contro la regola «nessun dato
-lascia l'ospedale». Le nuove versioni arrivano come zip: sostituisci, ricarica, fatto.
+lascia l'ospedale» (che ha una sola eccezione, voluta, accesa dal medico e cifrata da un capo
+all'altro: il **Ponte** verso l'iPhone, più sotto). Le nuove versioni arrivano come zip: sostituisci, ricarica, fatto.
 
 ### E se non posso? (PC bloccato dall'IT, niente admin)
 
@@ -92,7 +93,7 @@ pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha a
 **giro di esami** no: dalla spedizione alle etichette parla la striscia nell'angolo, e la
 finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
 «✓ Copiato · incolla». Nel menu **⋯**: **Al centro** e **Affianca a destra** (una colonna, col
-gestionale accanto), **Tempi** (il cronometro), **Riferimenti** (i *can't-miss killers*), poi — solo dove servono — **Esporta i fogli (JSON)** e
+gestionale accanto), **iPhone** (il Ponte, solo con l'estensione), **Tempi** (il cronometro), **Riferimenti** (i *can't-miss killers*), poi — solo dove servono — **Esporta i fogli (JSON)** e
 **Importa i fogli…** (in Dimissioni) e **Salva i referti** (negli Esiti, solo con l'estensione), il
 Registro, **Ricarica estensione** e la versione. Il cronometro compare in intestazione **solo mentre corre**
 (un tocco sul tempo apre la scheda, ⏹ lo ferma).
@@ -799,6 +800,25 @@ foglio i motivi per **tornare in Pronto Soccorso**.
   schermata dove incolli il JSON — entrano **solo i testi diversi dagli originali**, così un
   ripristino non congela per sempre gli altri sette.
 
+### Il pannello sull'iPhone (Ponte)
+
+Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con
+**↻ Aggiorna i valori**), **un ordine** (lo stesso «Conferma e stampa», con tutti i suoi controlli),
+**la nota** e **i promemoria**. Tutto succede sul PC, col gestionale aperto e il codice di sempre: il
+telefono manda una domanda, una scheda del gestionale la esegue e risponde. Passa da un ripetitore
+sul sito EKG Atlas (`/ponte/`) che non può leggere niente: cifrato da un capo all'altro, nessun dato
+su nessun server.
+
+- **Una volta per turno**: ⋯ → **iPhone** → **Associa l'iPhone**, e si inquadra il QR con la
+  fotocamera. Vale 14 ore; **Revoca l'iPhone** lo chiude prima.
+- **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
+  Scollega»**, e ogni comando va nel **Registro**. Dopo **20 minuti senza comandi** la sessione si
+  chiude da sola; dal telefono si riapre con un tocco.
+- **Prova la rete** (⋯ → iPhone): dal PC dell'ospedale, in un minuto, dice se il ponte si raggiunge.
+
+Come funziona, la messa in servizio (va col deploy del sito EKG Atlas), che cosa vede l'IT e che
+cosa protegge e che cosa no: [`ponte/README.md`](ponte/README.md).
+
 ---
 
 ## Stampa etichette e lista esami
@@ -977,6 +997,12 @@ XHR, WebSocket, EventSource, beacon — e nel file offline lo impone anche una
 La suite conta le richieste di rete di un'intera sessione: **una sola, la pagina
 stessa**.
 
+Nel pannello vero la regola è la stessa, con **una sola eccezione, esplicita**:
+il Ponte verso l'iPhone. È spento finché il medico non lo configura e non associa
+il telefono; parla con un host solo (il sito del ponte, `wss://…/ponte/ws`); e
+quello che passa è cifrato da un capo all'altro, illeggibile anche per quel sito
+(vedi [`ponte/README.md`](ponte/README.md)). Nel banco di prova il Ponte non c'è.
+
 ### Perché non invecchia
 
 `dist/demo.html` è **generato** da `extension/content.js` (il pannello che si
@@ -1145,6 +1171,14 @@ stessi flussi dei test di prodotto.
    a una delle **due origini dell'ospedale** — SA4PSO e il portale clinico interno da cui
    arrivano i referti e si legge la tabella multi-prelievo. Nessun altro indirizzo, nessuna
    telemetria; preferenze e catalogo appreso restano nel browser.
+   **Un'eccezione sola, voluta e dichiarata: il Ponte verso l'iPhone.** Spento finché il medico
+   non scrive l'indirizzo del ponte e non associa il telefono col QR; allora il service worker
+   tiene **una** presa (WSS, 443) verso **un** host, il sito del ponte, e ci passano solo messaggi
+   cifrati da un capo all'altro (AES-256-GCM, chiavi da HKDF, la chiave del QR mai a un server):
+   il sito li inoltra al telefono e non li può leggere né li tiene. Le richieste al gestionale
+   restano quelle di sempre, fatte dalle sue schede. Revoca, scadenza a 14 ore, sessione che si
+   chiude dopo 20 minuti senza comandi, la spia «iPhone collegato» e il Registro:
+   [`ponte/README.md`](ponte/README.md).
 10. **Due schede, due pazienti, zero interferenze**: i passaggi di consegna tra pagina e pagina
    (ricevuta e conferma automatica) vivono nella singola scheda (sessionStorage).
    **La scheda dell'ordine.** Con l'estensione il giro lo fa una scheda di sottofondo, e tutti
@@ -1272,7 +1306,11 @@ ps-app/
 ├── test/fixtures/       ← la tabella dello storico ricostruita dalla sua forma (dati inventati)
 ├── extension/           ← estensione MV3 pronta da caricare (content.js è generato)
 ├── extension/pdfjs/     ← pdf.js 3.11.174 di Mozilla (Apache-2.0), preso tale e quale: legge i referti
-├── tools/build.mjs      ← genera extension/content.js e il bookmarklet
+├── extension/ponte-*    ← il Ponte verso l'iPhone: la presa nel service worker, la pagina «iPhone»,
+│                          la prova della rete; qr.js è il codificatore QR di Project Nayuki (MIT)
+├── ponte/               ← il Ponte: README, il ripetitore Node per test e prove (stessa logica di
+│                          ../worker/ponte-logica.js); l'app del telefono sta in ../public/ponte/
+├── tools/build.mjs      ← genera extension/content.js, il bookmarklet e extension/ponte-cripto.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
 ├── esempi-gestionale/   ← pagine vere del gestionale, contenuti inventati (+ come)
@@ -1286,11 +1324,12 @@ Sviluppo:
 
 ```bash
 cd ps-app
-npm install        # solo playwright, solo per i test
-npm run build      # rigenera extension/content.js + bookmarklet dopo modifiche a src/
+npm install        # solo playwright e ws, solo per i test
+npm run build      # rigenera extension/content.js + bookmarklet (+ ponte-cripto.js) dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
 npm test           # 91 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 59 sul banco + storico + il cancello privacy
+                   # + il Ponte: 44 controlli senza browser (cifratura, ripetitore, Worker) e 79 dal vivo (test/ext-ponte.mjs)
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del

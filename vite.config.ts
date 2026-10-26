@@ -27,8 +27,11 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest,json}'],
         // Recordings are heavy (the quiz bank alone is ~24 MB): never precache
         // them — cache each strip the first time the learner meets it.
-        globIgnores: ['**/recordings/**'],
+        // /ponte/ is another app on the same Worker (PS Assist's phone
+        // bridge, with its own service worker): this one stays out of it.
+        globIgnores: ['**/recordings/**', 'ponte/**'],
         navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/ponte\//],
         runtimeCaching: [
           {
             urlPattern: /\/recordings\/.*\.json$/,
