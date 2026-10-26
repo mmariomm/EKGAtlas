@@ -3733,6 +3733,8 @@
                cursor: pointer; border-radius: 8px; padding: 0; }
     .iconbtn:hover { background: #F1F4F7; color: #16232E; }
     .iconbtn:focus-visible { outline: 2px solid #0B5CAD; outline-offset: -2px; }
+    #stautow { display: contents; }
+    .stauto.ko { color: #B3261E; background: #FBEBEA; }
     .menuw { position: relative; }
     .menu { position: absolute; right: 0; top: 40px; z-index: 20; min-width: 200px; background: #fff; border: 1px solid #E3E8EF;
             border-radius: 10px; box-shadow: 0 12px 32px rgba(9,42,74,.16); padding: 6px; cursor: default; }
@@ -4544,6 +4546,7 @@
     ferma: ico('<rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" stroke="none"/>'),
     // la sveglia dei promemoria (il cronometro è un'altra cosa)
     sveglia: ico('<circle cx="8" cy="9" r="5.2"/><path d="M8 6.6V9l1.7 1.1M2.6 4.3l1.9-1.7M13.4 4.3l-1.9-1.7"/>'),
+    stampante: ico('<path d="M4.5 6V2.5h7V6"/><rect x="2" y="6" width="12" height="5.5" rx="1.2"/><path d="M4.5 9.5h7v4h-7z"/>'),
   };
 
   const RADIO_SET = [RES.RX, RES.ECO, RES.RMN, RES.TAC];
@@ -4660,6 +4663,8 @@
       // ogni scheda del gestionale ne mostra la striscia.
       this.ordini = [];
       this._lavoroChiuso = false;   // la scheda di sottofondo ha già detto l'ultima parola
+      // la stampa automatica, dalla memoria dell'estensione: { s: { attiva, etichette, a4 }, esito }
+      this.stampaAuto = null;
       this.acq = "";           // catalog search text
       this.esiti = [];                  // risultati + referti, newest first
       this.storico = null;              // the portal's multi-day table, if it is THIS patient's
@@ -4800,6 +4805,40 @@
       const t = tempoInCorso();
       if (!t) return "";
       return `<span class="tchip on"><button id="tapri" title="${esc(t.titolo)}${t.paz ? " · " + esc(t.paz) : ""} — apri i tempi"><i class="tdot"></i>${esc(mmss(durata(t)))}</button><button id="tstop" title="Ferma il cronometro" aria-label="Ferma il cronometro">${ICO.ferma}</button></span>`;
+    }
+    // La stampa automatica: le due stampanti scelte (allora si può accendere e spegnere)…
+    stampaPronta() {
+      const s = this.stampaAuto && this.stampaAuto.s;
+      return !!(s && s.etichette && s.a4);
+    }
+    // …e, accesa, una stampantina in intestazione che dice dove vanno i fogli —
+    // rossa se l'ultimo non è uscito. Un tocco apre le impostazioni.
+    chipStampa() {
+      if (!this.stampaPronta() || this.stampaAuto.s.attiva === false) return "";
+      const { s, esito } = this.stampaAuto;
+      const ko = !!esito && esito.ok === false;
+      const titolo = `Stampa automatica attiva: etichette su ${s.etichette}, A4 su ${s.a4}${ko ? ` · l'ultima stampa non è uscita: ${esito.why}` : ""}`;
+      return `<button class="iconbtn stauto${ko ? " ko" : ""}" id="stauto" title="${esc(titolo)}" aria-label="${esc(titolo)}">${ICO.stampante}</button>`;
+    }
+    // Le scelte stanno nella memoria dell'estensione: si leggono e si seguono
+    // (cambiano dalle impostazioni, dal menu ⋯, e a ogni stampa automatica).
+    // Cambia solo la stampantina, al suo posto: niente ridisegno sopra chi scrive.
+    seguiStampa() {
+      const leggi = () => chrome.storage.local.get(["stampa", "stampaEsito"]).then((o) => {
+        this.stampaAuto = { s: o.stampa || null, esito: o.stampaEsito || null };
+        const w = this.root.querySelector("#stautow");
+        if (w) w.innerHTML = this.chipStampa();
+      }).catch(() => {});
+      try {
+        leggi();
+        chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && (ch.stampa || ch.stampaEsito)) leggi(); });
+      } catch { /* senza la memoria dell'estensione la stampa automatica non c'è: il pannello sì */ }
+    }
+    async apriStampanti() {
+      this.menuAperto = false;
+      const r = await ask({ t: "apriImpostazioni" });
+      if (!(r && r.ok)) this.message = "Non riesco ad aprire le impostazioni: aprile da chrome://extensions → PS Assist → Dettagli → Opzioni.";
+      this.render();
     }
 
     // the inline banner: a string is something that went wrong, {ok} is a
@@ -5599,8 +5638,10 @@
         // non si apre da solo: un tocco le stampa. Altrove partono da sole
         // (non mentre scrivi), e il tocco c'è lo stesso.
         const altro = !!this.epDiQuesta() && this.epDiQuesta() !== String(fuoco.ep);
+        // (fogli che la stampa automatica non è riuscita a stampare: perché)
+        const motivo = (fuoco.stampa?.jobs || []).map((j) => j.motivo).find(Boolean);
         s = { tag: "Confermata", testo: altro ? `Etichette di ${nomeCorto(fuoco.paziente)} pronte` : "Etichette pronte", tono: "run",
-          ...(fuoco.ferma ? { quesito: "⏹ arrivato tardi: era già confermata" } : {}),
+          ...(fuoco.ferma ? { quesito: "⏹ arrivato tardi: era già confermata" } : motivo ? { quesito: `Stampa automatica non riuscita: ${motivo}` } : {}),
           azione: { label: "Stampa", titolo: "Stampa adesso le etichette, in questa scheda", fn: () => ask({ t: "ordineStampaQui", id }) } };
       } else if (fuoco.stato === "errore") {
         s = { tag: v.tag || "Errore", testo: v.testo || "completa a mano", quesito: v.quesito || testoResto(r), tono: "err", ...alCarrello, ...letto };
@@ -5612,7 +5653,9 @@
       } else if (fuoco.stato === "interrotto") {
         s = { tag: "Interrotto", testo: v.testo || "controlla il carrello", quesito: v.quesito || testoResto(r), tono: "warn", ...alCarrello, ...letto };
       } else {
-        s = { tag: v.tag || "", testo: v.testo || "", tono: v.tono || "ok", quesito: v.quesito || "", ...(fuoco.consegna ? alCarrello : {}), ...letto };
+        // («Stampato» dalla stampa automatica: i fogli restano per «Ristampa», qui)
+        const ristampa = fuoco.stampa ? { azione: { label: "Ristampa", titolo: "Stampa di nuovo etichette e lista esami, in questa scheda", fn: () => ask({ t: "ordineStampaQui", id }) } } : {};
+        s = { tag: v.tag || "", testo: v.testo || "", tono: v.tono || "ok", quesito: v.quesito || "", ...(fuoco.consegna ? alCarrello : ristampa), ...letto };
       }
       s.paziente = fuoco.paziente || "";
       s.daOrdine = id;
@@ -6030,6 +6073,7 @@
                 ${sub ? `<span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>` : ""}
                 <span class="hsp"></span>
                 ${ponteSpia()}
+                <span id="stautow">${this.chipStampa()}</span>
                 ${this.chipTempo()}
                 <span class="menuw">
                   <button class="iconbtn" id="menubtn" title="Altro" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
@@ -6045,6 +6089,10 @@
                     <button role="menuitem" id="dimimport" title="Rimetti i testi di un JSON esportato">Importa i fogli…</button>` : ""}
                     ${this.refertiDaSalvare().length ? `<button role="menuitem" id="refsave" title="Tiene una copia di tutti i referti in elenco, così si aprono subito la volta dopo">Salva i referti</button>` : ""}
                     <button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${this.showLog ? "Nascondi il registro" : "Registro"}</button>
+                    ${hasExt() ? `<button role="menuitem" id="stampanti" title="Quale stampante è l'etichettatrice e quale l'A4, per la stampa automatica">Stampanti</button>` : ""}
+                    ${this.stampaPronta() ? (this.stampaAuto.s.attiva === false
+                      ? `<button role="menuitem" id="stautosw" title="Ogni foglio va da solo alla sua stampante, senza dialogo">Stampa automatica: spenta · Accendi</button>`
+                      : `<button role="menuitem" id="stautosw" title="I fogli tornano a passare dal dialogo di stampa">Stampa automatica: attiva · Spegni</button>`) : ""}
                     ${(typeof chrome !== "undefined" && chrome.runtime?.id) && !this.giroInCorso() ? `<button role="menuitem" id="extreload" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">Ricarica estensione</button>` : ""}
                     <div class="mver">${esc(APP)} ${VERSION}</div>
                   </div>` : ""}
@@ -9486,6 +9534,17 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#aggiungi")?.addEventListener("click", () => { this.aggiungi = true; this.render(); });
       // la richiesta ancora da confermare: un tocco porta al suo carrello (una lettura)
       $("#apridaconf")?.addEventListener("click", (e) => { const u = e.currentTarget.getAttribute("data-url"); if (u) nav(u); });
+      // la stampa automatica: le impostazioni (anche dalla stampantina in
+      // intestazione, che si ridisegna da sola: l'ascolto sta sul suo posto) e l'interruttore
+      $("#stampanti")?.addEventListener("click", () => this.apriStampanti());
+      $("#stautow")?.addEventListener("click", (e) => { if (e.target.closest("#stauto")) this.apriStampanti(); });
+      $("#stautosw")?.addEventListener("click", () => {
+        const s = { ...this.stampaAuto.s, attiva: this.stampaAuto.s.attiva === false };
+        this.stampaAuto = { ...this.stampaAuto, s };
+        this.menuAperto = false;
+        chrome.storage.local.set({ stampa: s }).catch(() => {});
+        this.render();
+      });
       $("#extreload")?.addEventListener("click", () => {
         if (this.giroInCorso()) return;   // un giro a metà non si uccide
         try { chrome.runtime.sendMessage("psassist-reload"); } catch { /* not the extension build */ }
@@ -10182,10 +10241,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
 
   // ============================================================ PRINT WIZARD
   // Sequential printing of the richiesta PDFs: labels first (label printer),
-  // then the exam list (normal printer). True silent printing with per-job
-  // printer selection is not possible from a web page on Windows, so this is
-  // the most automatic legal flow. Chrome's dialog remembers recent
-  // destinations, so switching printer is one click.
+  // then the exam list (normal printer). A web page cannot pick a printer or
+  // skip the dialog: that takes the Windows helper (stampa automatica, above).
+  // Without it this is the most automatic legal flow; Chrome's dialog
+  // remembers recent destinations, so switching printer is one click.
   // Mentre un PDF arriva non c'è niente davanti: a che punto è lo dice la pill
   // — o, senza pannello (o col pannello aperto), un riquadrino nell'angolo.
   // Arrivato il PDF compare la scheda di sempre: il PDF in anteprima e la
@@ -10201,6 +10260,28 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
 
   // «6 esami confermati 14:32»: il resoconto che resta sulla pill
   const confermatiTesto = (fine) => `${fine.n ? `${fine.n} ${fine.n === 1 ? "esame confermato" : "esami confermati"}` : "Richiesta confermata"} ${hhmm(fine.ts || Date.now())}`;
+
+  // La STAMPA AUTOMATICA. Con l'aiutante di Windows installato (la cartella
+  // stampa/ dello zip) e le due stampanti scelte nelle impostazioni, ogni
+  // foglio va da solo alla sua: le etichette all'etichettatrice, il resto
+  // (liste, prenotazioni, consensi) all'A4. Niente dialogo. Il PDF è quello di
+  // sempre (fetchPdf); lo porta all'aiutante il service worker, che risponde
+  // solo dopo che SumatraPDF l'ha mandato alla stampante. Spenta, non
+  // configurata, col bookmarklet: il dialogo di sempre.
+  const tipoFoglio = (job) => (job.printer === "etichettatrice" ? "etichette" : "a4");
+  // le scelte del medico, se la stampa automatica è accesa: { etichette, a4 } (i nomi delle stampanti)
+  async function stampaAutomatica() {
+    if (!hasExt()) return null;
+    try {
+      const s = (await chrome.storage.local.get("stampa")).stampa;
+      return s && s.attiva !== false && s.etichette && s.a4 ? s : null;
+    } catch { return null; }
+  }
+  // un foglio all'aiutante: { ok, stampante } o { ok: false, why }
+  async function stampaInSilenzio(blob, job) {
+    const r = await ask({ t: "stampaPdf", tipo: tipoFoglio(job), pdf: bufB64(await blob.arrayBuffer()) });
+    return r && r.ok ? r : { ok: false, why: (r && r.why) || "il service worker non ha risposto" };
+  }
   function openPrintWizard(jobs, opzioni = {}) {
     const { title = "", onClose, panel = null, tag = "Stampa", fine = null } = opzioni;
     let ultimaDiag = null;   // l'ultimo visualizzatore non catturato, per «⧉ Diagnosi»
@@ -10227,6 +10308,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     let daSola = false;        // si è andati avanti da soli, a dialogo chiuso: stampato o annullato, non si sa
     let chiuso = false;
     let staccaStampa = () => {};   // toglie l'ascolto del dialogo di stampa del documento in corso
+    let automatiche = 0;       // fogli usciti con la stampa automatica: l'aiutante l'ha confermato
 
     const CSS = `${COLORS}
       .ps[hidden], .back[hidden], .pw[hidden] { display: none; }
@@ -10263,6 +10345,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       .pwbtn.grande { font-size: 15px; padding: 13px 22px; box-shadow: 0 3px 12px rgba(11,92,173,.35); }
       .pwhint { width: 100%; font-size: 11.5px; color: #5B6B7A; }
       .pwerr { margin: 12px 16px 0; background: #FBEBEA; border: 1px solid #E9BAB6; color: #7c1a14; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
+      .pwavv { margin: 12px 16px 0; background: #FFF7E6; border: 1px solid #F0D49A; color: #6b3d02; border-radius: 10px; padding: 8px 12px; font-size: 12.5px; }
     `;
     root.innerHTML = `<style>${CSS}</style><div class="ps" role="status" hidden></div><div class="back" hidden></div>
       <div class="pw" role="dialog" aria-label="Stampa documenti" hidden><div class="pwhd"></div><div class="pwguaio"></div><div class="pwbody"></div><div class="pwft"></div></div>`;
@@ -10299,22 +10382,25 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // i bottoni di sempre. Un verbo per pulsante, un'icona per verbo (prima ce
     // n'erano cinque, e «Avanti» e «Salta» facevano la stessa cosa). Il corpo
     // — l'anteprima — non si tocca: rimettere la cornice la ricaricherebbe.
-    const comandi = ({ err = "", viewer = false } = {}) => {
+    // `avviso`: una riga che dice perché questo documento passa dal dialogo
+    // (la stampa automatica non ci è riuscita).
+    const comandi = ({ err = "", viewer = false, avviso = "" } = {}) => {
       const job = jobs[i];
+      const auto = !!(cur && cur.auto);   // la stampa automatica sta stampando: nessun dialogo
       const nextLbl = i + 1 < jobs.length ? `→ Avanti (${i + 2} di ${jobs.length})` : "✓ Fine";
-      testa.innerHTML = `<b>Stampa ${i + 1} di ${jobs.length} — ${esc(job.name)}</b>${title ? `<span class="pwtit">${esc(title)}</span>` : ""}<span class="dest">→ ${esc(job.printer)}</span>`;
-      guaio.innerHTML = err ? `<div class="pwerr">${esc(err)}</div>` : "";
+      testa.innerHTML = `<b>Stampa ${i + 1} di ${jobs.length} — ${esc(job.name)}</b>${title ? `<span class="pwtit">${esc(title)}</span>` : ""}<span class="dest">→ ${esc(auto ? cur.dove : job.printer)}</span>`;
+      guaio.innerHTML = err ? `<div class="pwerr">${esc(err)}</div>` : avviso ? `<div class="pwavv">${esc(avviso)}</div>` : "";
       piede.innerHTML = `
         ${viewer
           ? `<button class="pwbtn re grande" id="pwtab" title="Apre il documento in una scheda: da lì Ctrl+P">↗&nbsp; Apri e stampa</button>`
-          : `<button class="pwbtn re" id="pwre" title="Riapre la finestra di stampa del browser" ${cur ? "" : "disabled"}>🖨&nbsp; Stampa</button>`}
+          : `<button class="pwbtn re" id="pwre" title="Riapre la finestra di stampa del browser" ${cur && !auto ? "" : "disabled"}>🖨&nbsp; Stampa</button>`}
         <button class="pwbtn next" id="pwnext" title="${i + 1 < jobs.length ? "Passa al documento successivo" : "Chiude: hai stampato tutto"}">${nextLbl}</button>
         ${viewer ? "" : `<button class="pwbtn ghost" id="pwtab" title="Se la stampa non parte, aprilo in una scheda">↗&nbsp; Scheda</button>`}
         ${viewer && ultimaDiag ? `<button class="pwbtn ghost" id="pwdiag" title="Copia com'è fatto il visualizzatore (senza numeri), da mandare a chi fa il pannello">⧉&nbsp; Diagnosi</button>` : ""}
         <button class="pwbtn exit" id="pwexit" title="Chiude senza stampare il resto (Esc)">✕&nbsp; Chiudi</button>
         <div class="pwhint">${viewer
           ? `Questo documento non si lascia stampare da qui: <b>↗ Apri e stampa</b>, poi Ctrl+P → <b>${esc(job.printer)}</b>, e qui «→ Avanti».`
-          : err ? "" : scegli()}</div>`;
+          : err ? "" : auto ? `Stampa automatica su <b>${esc(cur.dove)}</b>: nessun dialogo.` : scegli()}</div>`;
       piede.querySelector("#pwre")?.addEventListener("click", () => { if (cur && cur.f.isConnected) stampa(cur); });
       piede.querySelector("#pwnext").onclick = advance;
       piede.querySelector("#pwexit").onclick = () => chiudi(false);
@@ -10337,17 +10423,22 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       wrap.remove();
       if (panel) {
         const tutto = finito && tuttiChiesti;
-        // «Stampato» solo se il medico è andato avanti lui, documento per
-        // documento: chiuso il dialogo il browser non dice se ha stampato o
+        // «Stampato» solo se lo si sa: l'aiutante della stampa automatica l'ha
+        // confermato, o il medico è andato avanti lui, documento per
+        // documento. Chiuso il dialogo il browser non dice se ha stampato o
         // annullato, e allora è «Stampa finita», con «Ristampa» accanto.
         const certo = tutto && !daSola;
         if (fine) {
           // Una richiesta confermata: la pill ne resta il resoconto finché non
           // fai altro — quanti esami, a che ora — e se i fogli non sono usciti
           // tutti (annullato, saltato, non scaricato), «Ristampa» li rifà.
+          // Con la stampa automatica c'è sempre: un'etichetta inceppata si
+          // vede solo davanti alla stampante.
           panel.segnala({ tag: certo ? "Stampato" : tutto ? "Stampa finita" : "Stampa non finita", testo: confermatiTesto(fine), tono: "ok",
             quesito: quesitoDetto(fine.quesito),
-            azione: certo ? null : { label: "Ristampa", titolo: "Stampa di nuovo etichette e lista esami", fn: () => openPrintWizard(jobs, opzioni) } });
+            // (un foglio che la stampa automatica non aveva fatto uscire, ristampato, ci riprova)
+            azione: certo && !automatiche ? null : { label: "Ristampa", titolo: "Stampa di nuovo etichette e lista esami",
+              fn: () => openPrintWizard(jobs.map(({ motivo, ...j }) => j), opzioni) } });
         } else if (finito && panel.collapsed) {
           // una stampa chiesta a mano: la pill lo dice per qualche secondo
           panel.segnala({ tag, testo: certo ? "✓ Stampato" : "✓ Stampa finita", tono: "ok" }, { ms: 4000, poi: () => panel.chiudiGiro() });
@@ -10434,10 +10525,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           : await fetchPdf(job.url, { signal: segnale });
         if (mio !== gen || chiuso) return;
         panel?.log(`${now()}  ${job.name}: PDF ottenuto${via ? " via " + via : ""}`);
+        // la stampa automatica, se è accesa — non per un foglio che altrove non ci è già riuscito
+        const auto = job.motivo ? null : await stampaAutomatica();
+        if (mio !== gen || chiuso) return;
         blobUrl = URL.createObjectURL(blob);
         const f = document.createElement("iframe");
         f.title = `Anteprima — ${job.name}`;
-        const c = cur = { f, printed: false, apertoIl: 0, avanzato: false, vigile: 0, dopo: null };
+        const c = cur = { f, printed: false, apertoIl: 0, avanzato: false, vigile: 0, dopo: null,
+          auto: !!auto, dove: auto ? auto[tipoFoglio(job)] : "", caricata: false };
         // Chiuso il dialogo di stampa si passa al documento dopo da soli: è
         // quello che il medico farebbe premendo «→ Avanti», e con
         // l'etichettatrice davanti non ha una mano libera. Il browser non dice
@@ -10468,15 +10563,43 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const once = () => { if (!c.printed && cur === c && f.isConnected) stampa(c); };
         f.addEventListener("load", () => {
           try { f.contentWindow?.addEventListener("afterprint", dopoStampa); } catch { /* cornice già andata */ }
-          clearTimeout(timer); timer = setTimeout(once, 350);
+          c.caricata = true;
+          if (!c.auto) { clearTimeout(timer); timer = setTimeout(once, 350); }
         });
-        timer = setTimeout(once, 1500); // headless/viewer-less fallback
+        if (!c.auto) timer = setTimeout(once, 1500); // headless/viewer-less fallback
         f.src = blobUrl;      // prima di inserirla: un solo «load», quello del PDF
         corpo.replaceChildren(f);
-        comandi();            // «🖨 Stampa» adesso ha un documento
+        // («🖨 Stampa» adesso ha un documento)
+        comandi(job.motivo ? { avviso: `Stampa automatica non riuscita: ${job.motivo}. Dal dialogo, stavolta.` } : {});
         wrap.dataset.stato = "pronto";
         vedi(true);
         stato(`Stampo ${cosaStampo(job)}`);
+        if (!c.auto) return;
+        // La stampa automatica: l'anteprima resta un attimo, l'aiutante dice
+        // se il foglio è uscito. Uscito: «Stampato su …» e il documento dopo,
+        // da soli. Non uscito: il dialogo di sempre per QUESTO documento, col
+        // motivo in una riga; i documenti dopo riprovano la stampa automatica.
+        wrap.dataset.stato = "automatica";
+        stato(`Stampo ${cosaStampo(job)} su ${c.dove}…`);
+        const r = await stampaInSilenzio(blob, job);
+        if (cur !== c || chiuso) return;
+        if (r.ok) {
+          c.printed = c.avanzato = true;
+          automatiche++;
+          wrap.dataset.stato = "stampato";
+          wrap.dataset.stampante = r.stampante;
+          panel?.log(`${now()}  ${job.name}: stampato su ${r.stampante}, senza dialogo`);
+          nota(`✓ Stampato su <b>${esc(r.stampante)}</b>.`);
+          stato(`Stampato su ${r.stampante}`, "ok");
+          clearTimeout(timer);
+          timer = setTimeout(advance, 1500);
+          return;
+        }
+        panel?.log(`${now()}  ${job.name}: stampa automatica non riuscita (${r.why}): passo dal dialogo`);
+        c.auto = false;
+        comandi({ avviso: `Stampa automatica non riuscita: ${r.why}. Dal dialogo, stavolta.` });
+        clearTimeout(timer);
+        timer = setTimeout(once, c.caricata ? 350 : 1500);
       } catch (e) {
         if (e?.name === "AbortError" || mio !== gen || chiuso) return;
         // This endpoint is a viewer we can't safely turn into a Blob. Don't
@@ -10584,21 +10707,17 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const conti = ids.map((id) => (flag.n || {})[id]);
     const fine = { n: conti.every((x) => x > 0) ? conti.reduce((a, b) => a + b, 0) : 0, ts: flag.ts || Date.now(),
       quesito: ids.map((id) => (flag.q || {})[id]).find(Boolean) || null };
-    // La scheda di un ordine non stampa: le etichette si stampano dove sta il
-    // medico. Le consegna il service worker, a una scheda sola (gli indirizzi
-    // sono quelli letti da questa pagina) — e solo quelle della richiesta
-    // dell'ordine, per il suo paziente: una conferma fatta qui a mano per un
-    // altro paziente si stampa qui, come sempre.
+    // La scheda di un ordine non apre il dialogo di stampa: lì non c'è
+    // nessuno. Le etichette si stampano dove sta il medico — le consegna il
+    // service worker, a una scheda sola (gli indirizzi sono quelli letti da
+    // questa pagina) — o, con la stampa automatica, escono da qui (vedi
+    // consegnaFogli). Solo quelle della richiesta dell'ordine, per il suo
+    // paziente: una conferma fatta qui a mano per un altro paziente si stampa
+    // qui, come sempre.
     if (LAVORO && String(flag.episodeId || here) === String(LAVORO.ep)) {
       tabStore.set("print.v1", null);
       if (panel) panel._lavoroChiuso = true;   // da qui la scheda non racconta più niente: l'ordine è delle etichette
-      ask({ t: "ordineStampa", id: LAVORO.id, jobs: jobs.map(({ name, printer, url: u }) => ({ name, printer, url: u })), fine })
-        .then((r) => {
-          if (r && r.ok) return panel?.slegaLavoro();
-          // il service worker non la vuole (ordine sparito): si stampa qui, come sempre
-          panel?.log(`${now()}  consegna delle etichette non riuscita: le stampo da questa scheda`);
-          if (!wizardOpen) openPrintWizard(jobs, { panel, tag: "Confermata", fine, title: "Richiesta appena confermata." });
-        });
+      consegnaFogli(panel, LAVORO.id, jobs, fine);
       panel?.segnala({ tag: "Confermata", testo: "Etichette pronte: si stampano dove sei", tono: "ok" });
       return true;
     }
@@ -10606,6 +10725,37 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     tabStore.set("print.v1", null);
     openPrintWizard(jobs, { panel, tag: "Confermata", fine, title: ids.length > 1 ? `${ids.length} richieste appena confermate.` : "Richiesta appena confermata." });
     return true;
+  }
+
+  // I fogli di un ordine fatto in sottofondo, dalla sua scheda. Con la stampa
+  // automatica escono da qui: senza dialogo e senza nessuno davanti — il
+  // medico può essere altrove, anche lontano (l'ordine arriva dal telefono) —
+  // e senza toccare la scheda dove lavora. Uno alla volta, una volta sola (il
+  // segno della stampa è già consumato); intanto le schede del medico leggono
+  // a che punto è. Quello che non esce, e tutto senza stampa automatica, lo
+  // consegna il service worker alla scheda dove sta il medico, col motivo: lì
+  // passa dal dialogo di sempre. Usciti tutti, l'ordine finisce «Stampato».
+  async function consegnaFogli(panel, id, jobs, fine) {
+    const auto = await stampaAutomatica();
+    const fogli = [];
+    for (const job of jobs) {
+      if (!auto) { fogli.push(job); continue; }
+      ask({ t: "ordineAggiorna", id, vista: { tag: "Confermata", testo: `Stampo ${cosaStampo(job)} su ${auto[tipoFoglio(job)]}…`, tono: "run" } });
+      let r;
+      try { r = await stampaInSilenzio((await fetchPdf(job.url, {})).blob, job); }
+      catch (e) { r = { ok: false, why: `il PDF non è arrivato (${e?.head || e?.message || e})` }; }
+      panel?.log(`${now()}  ${job.name}: ${r.ok ? `stampato su ${r.stampante}, senza dialogo` : `stampa automatica non riuscita (${r.why})`}`);
+      fogli.push(r.ok ? { ...job, fatto: true } : { ...job, motivo: r.why });
+    }
+    const r = await ask({ t: "ordineStampa", id, fine,
+      jobs: fogli.map(({ name, printer, url, fatto, motivo }) => ({ name, printer, url, fatto, motivo })),
+      vista: { testo: confermatiTesto(fine), quesito: quesitoDetto(fine.quesito) } });
+    if (r && r.ok) return panel?.slegaLavoro();
+    // il service worker non li vuole (ordine sparito): quelli rimasti si stampano qui, come sempre
+    const restano = fogli.filter((j) => !j.fatto);
+    if (!restano.length) return;
+    panel?.log(`${now()}  consegna delle etichette non riuscita: le stampo da questa scheda`);
+    if (!wizardOpen) openPrintWizard(restano, { panel, tag: "Confermata", fine, title: "Richiesta appena confermata." });
   }
 
   // Le etichette di un ordine fatto in sottofondo arrivano qui, dalla scheda
@@ -10629,7 +10779,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const st = m.stampa || {};
     const jobs = (Array.isArray(st.jobs) ? st.jobs : []).filter((j) => {
       try { return j && typeof j.name === "string" && new URL(j.url, location.href).origin === location.origin; } catch { return false; }
-    }).map((j) => ({ name: j.name, printer: j.printer || "stampante normale", url: new URL(j.url, location.href).href }));
+    }).map((j) => ({ name: j.name, printer: j.printer || "stampante normale", url: new URL(j.url, location.href).href,
+      ...(j.motivo ? { motivo: String(j.motivo).slice(0, 160) } : {}) }));   // (la stampa automatica non ci è riuscita: si dice perché)
     if (!jobs.length) return { ok: false, why: "niente da stampare" };
     store.set("ordini.stampati", [...giaFatti, String(m.id)].slice(-30));
     const nome = String(m.paziente || "").slice(0, 60);
@@ -11072,6 +11223,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const panel = new Panel(pageType);
     PANNELLO = panel;
     if (chi) { panel.ordiniOk = true; ascoltaOrdini(panel); }
+    if (hasExt()) panel.seguiStampa();
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       panel.esiti = esitiModel(document, location.href);

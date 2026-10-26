@@ -15,7 +15,10 @@ sola pagina, verificando ogni passaggio prima del successivo.
 > qualcosa va storto diventa rossa e ti lascia sul carrello: lo finisci a mano, o **↻ Riprova i
 > mancanti**, o **Svuota il carrello e ricomincia**. Con l'estensione gli esami li manda una
 > **scheda di sottofondo** che si apre e si chiude da sola: tu cambi pagina quando vuoi, la
-> striscia ti segue, e le etichette si stampano nella scheda dove sei.
+> striscia ti segue, e le etichette si stampano nella scheda dove sei. Con la **stampa
+> automatica** (Windows, cartella `stampa/`, senza amministratore) niente dialogo: ogni foglio
+> va da solo alla sua stampante — etichette all'etichettatrice, il resto all'A4 — anche se
+> l'ordine parte dal telefono e davanti al PC non c'è nessuno.
 
 ---
 
@@ -51,6 +54,12 @@ Un'estensione non pacchettizzata non può scaricarsi gli aggiornamenti da sola, 
 contatterà mai server esterni per controllare le versioni — sarebbe contro la regola «nessun dato
 lascia l'ospedale» (che ha una sola eccezione, voluta, accesa dal medico e cifrata da un capo
 all'altro: il **Ponte** verso l'iPhone, più sotto). Le nuove versioni arrivano come zip: sostituisci, ricarica, fatto.
+
+**Stampa automatica** (facoltativa, Windows, niente admin): etichette all'etichettatrice e il resto
+all'A4, senza dialogo. Si installa una volta dalla cartella `stampa` dello zip — tre passi in
+[`stampa/README.md`](stampa/README.md) — e si sceglie dal pannello, menu **⋯ → Stampanti**.
+Tieni l'estensione sempre nella stessa cartella: spostandola cambia il suo ID, e `installa.cmd`
+va rilanciato.
 
 ### E se non posso? (PC bloccato dall'IT, niente admin)
 
@@ -95,7 +104,8 @@ finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Co
 «✓ Copiato · incolla». Nel menu **⋯**: **Al centro** e **Affianca a destra** (una colonna, col
 gestionale accanto), **iPhone** (il Ponte, solo con l'estensione), **Tempi** (il cronometro), **Riferimenti** (i *can't-miss killers*), poi — solo dove servono — **Esporta i fogli (JSON)** e
 **Importa i fogli…** (in Dimissioni) e **Salva i referti** (negli Esiti, solo con l'estensione), il
-Registro, **Ricarica estensione** e la versione. Il cronometro compare in intestazione **solo mentre corre**
+Registro, **Stampanti** e — scelte le due stampanti — **Stampa automatica: attiva · Spegni** (vedi
+«Stampa automatica»), **Ricarica estensione** e la versione. Il cronometro compare in intestazione **solo mentre corre**
 (un tocco sul tempo apre la scheda, ⏹ lo ferma).
 
 **Riferimenti** (menu ⋯) è la tabella del medico, i *can't-miss killers*, nel suo inglese: in cima
@@ -615,7 +625,8 @@ Animali**, **Antitetano**, **TAC cmdc**, **Emotrasfusione** (il pacchetto trasfu
 consenso informato, richiesta emocomponenti, dichiarazione del medico in urgenza).
 Le **deleghe per il ritiro** — **Ritiro esami**, **Ritiro referto RX**, **Ritiro cartella e CD**
 — non sono consensi: si danno a chi va a casa, e stanno in cima alla schermata **Dimissioni**.
-Un tocco apre direttamente il dialogo di stampa, come per la lista esami; un modulo di più pagine
+Un tocco apre direttamente il dialogo di stampa, come per la lista esami (con la stampa
+automatica va dritto all'A4, senza dialogo); un modulo di più pagine
 dice **quanta carta esce** prima che tu prema Stampa. (Che i moduli stanno dentro l'estensione e che non
 esce nessuna richiesta è nel passaggio del mouse sul titolo dell'elenco, non in un paragrafo.)
 
@@ -834,7 +845,9 @@ si apre subito il **dialogo di stampa** del browser. Alla fine la striscia dice 
 l'ha fatto la scheda di sottofondo (con l'estensione), tutto questo succede nella scheda del
 gestionale **dove sei** — la finestra in primo piano —, e la scheda e la striscia dicono di chi
 sono i fogli. Mai mentre scrivi; e sulla pagina di un **altro** paziente il dialogo non parte da
-solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco.
+solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco. Così è senza la **stampa
+automatica**; con lei il dialogo non c'è, e i fogli di un ordine in sottofondo escono dalla
+scheda dell'ordine (vedi «Stampa automatica», più sotto).
 
 1. **Tutte le etichette provette** — i PDF dell'icona col codice a barre
    (`RcsStampaEtichetteLISHMIMU.do`, che porta al PDF servito da
@@ -854,7 +867,8 @@ pagina**: fuoco perso dopo la stampa = dialogo aperto, fuoco tornato = chiuso, e
 si guarda ogni ¼ di secondo; «afterprint», dove arriva, vale lo stesso). Solo se il fuoco c'era
 quando la stampa è partita: con un'altra finestra davanti un dialogo non si distingue, e resta
 «→ Avanti». Il browser non dice se hai stampato o annullato: si va avanti in tutt'e due i casi,
-e per questo la fine dice «Stampa finita», mai «Stampato», con **Ristampa** accanto. Un dialogo che si
+e per questo la fine dice «Stampa finita», mai «Stampato», con **Ristampa** accanto («Stampato»
+lo dice la stampa automatica, che lo sa). Un dialogo che si
 chiude all'istante (stampa non disponibile su quel PC) **non** fa saltare la coda: la scheda lo
 dice, e **🖨 Stampa** lo riapre. Se la stampa l'hai annullata (Esc, ✕) o un documento non è
 uscito, il resoconto resta lo stesso — la richiesta è confermata — con accanto un **Ristampa**
@@ -882,11 +896,49 @@ degli esami** che contiene).
 radiologia prima di tornare alla pagina del paziente, la stampa parte **una volta sola** e in
 sequenza: tutte le etichette → tutte le liste → la prenotazione RX.
 
-### Si può scegliere la stampante?
+### Stampa automatica: ogni foglio alla sua stampante, senza dialogo
 
-No: nessuna pagina web può impostare la destinazione
-di stampa — è una barriera del browser, non un permesso mancante. Quello che si può fare senza
-essere amministratori:
+Una pagina web non può scegliere la stampante né saltare il dialogo: è una barriera del
+browser. Per questo c'è un piccolo **aiutante per Windows**, la cartella `stampa/` dello zip:
+si installa **una volta, senza amministratore** (doppio clic su `installa.cmd`, tre passi in
+[`stampa/README.md`](stampa/README.md)), e poi nel pannello, menu **⋯ → Stampanti**, si sceglie
+quale stampante è l'**Etichettatrice** e quale l'**A4** (di partenza, la predefinita di
+Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
+
+- **le etichette vanno all'etichettatrice, tutto il resto all'A4** — liste esami, prenotazioni
+  RX, i moduli dei Consensi —, da soli, **senza dialogo**. La scheda della stampa compare lo
+  stesso, con l'anteprima e la stampante vera in testa («→ Zebra ZD421»), dice **«Stampato su
+  Zebra ZD421»** e passa da sola al foglio dopo. Alla fine la striscia dice **«Stampato · 6 esami
+  confermati 14:32»** — «Stampato», non più «Stampa finita»: l'aiutante risponde solo dopo che
+  il foglio è arrivato alla coda di stampa di Windows —, con **Ristampa** accanto (un'etichetta
+  inceppata si vede solo davanti alla stampante).
+- **Un ordine in sottofondo stampa dalla sua scheda.** I fogli escono dalla scheda dell'ordine,
+  appena la conferma è provata: non serve una scheda del gestionale davanti, né il fuoco, né un
+  clic — l'ordine può arrivare dal telefono con il PC da solo, con il medico su un altro paziente
+  o senza nessuna scheda del gestionale aperta. Intanto ogni scheda del gestionale lo racconta
+  («Stampo le etichette su Zebra…»), e alla fine dice **«Stampato · 2 esami confermati»** col
+  nome del paziente, **Ristampa** (un tocco: si ristampa lì) e ✕. Una volta sola: la scheda
+  dell'ordine stampa ogni foglio una volta, e il service worker non consegna a nessun altro un
+  foglio già uscito.
+- **Un foglio che non esce passa dal dialogo di sempre, lui solo**, con una riga che dice perché
+  («Stampa automatica non riuscita: la stampante non esiste. Dal dialogo, stavolta.»): aiutante
+  non installato, stampante sparita, SumatraPDF che si lamenta, tempo scaduto. Il foglio dopo
+  riprova da solo. In un ordine in sottofondo, quel foglio — e solo quello — arriva alla scheda
+  dove sei, come le etichette di prima, col motivo sulla striscia.
+- **Si vede che è accesa**: in intestazione, accanto al menu **⋯**, una stampantina; passandoci
+  sopra, «Stampa automatica attiva: etichette su Zebra ZD421, A4 su HP LaserJet». Diventa
+  **rossa** se l'ultimo foglio non è uscito, e lo dice. Un tocco apre le Stampanti.
+- **Si spegne con un tocco**: menu **⋯ → Stampa automatica: attiva · Spegni** (e «spenta ·
+  Accendi»), o l'interruttore nella pagina Stampanti. Spenta, tutto torna esattamente com'era:
+  il dialogo, «Stampa finita». Senza aiutante, o col preferito (bookmarklet), lo stesso.
+- **In Windows non resta acceso niente.** Nessun programma che gira, nessuna icona: Chrome avvia
+  l'aiutante solo per il secondo in cui stampa un foglio, e l'aiutante esce appena ha risposto.
+  Non c'è niente da chiudere; per spegnere la stampa automatica c'è l'interruttore.
+
+### Si può scegliere la stampante senza l'aiutante?
+
+No: nessuna pagina web può impostare la destinazione di stampa. Senza la stampa automatica,
+quello che si può fare senza essere amministratori:
 
 - Chrome **ricorda l'ultima stampante usata**, quindi la stampa raggruppa i documenti per
   destinazione (tutte le etichette, poi tutte le liste): al massimo **due cambi per paziente**,
@@ -895,7 +947,7 @@ essere amministratori:
   → Proprietà → aggiungi `--kiosk-printing --user-data-dir="%LOCALAPPDATA%\\ChromeEtichette"`).
   Da quella finestra Chrome stampa **senza dialogo** sulla stampante predefinita di Windows di
   quel profilo. Ha senso solo se quella finestra la usi per le sole etichette — la lista la
-  stamperesti da una finestra normale. Fragile, ma funziona.
+  stamperesti da una finestra normale. Fragile: è il ripiego se l'IT blocca l'aiutante.
 - Se le liste su carta non ti servono, annulla il secondo dialogo: resta **un solo**
   dialogo per paziente.
 
@@ -1170,7 +1222,8 @@ stessi flussi dei test di prodotto.
 9. **Niente esce dall'ospedale**: ogni richiesta è bloccata a livello di codice se non è diretta
    a una delle **due origini dell'ospedale** — SA4PSO e il portale clinico interno da cui
    arrivano i referti e si legge la tabella multi-prelievo. Nessun altro indirizzo, nessuna
-   telemetria; preferenze e catalogo appreso restano nel browser.
+   telemetria; preferenze e catalogo appreso restano nel browser. (Con la stampa automatica il
+   PDF va all'aiutante **su questo PC**, che non usa la rete: regola 17.)
    **Un'eccezione sola, voluta e dichiarata: il Ponte verso l'iPhone.** Spento finché il medico
    non scrive l'indirizzo del ponte e non associa il telefono col QR; allora il service worker
    tiene **una** presa (WSS, 443) verso **un** host, il sito del ponte, e ci passano solo messaggi
@@ -1194,7 +1247,8 @@ stessi flussi dei test di prodotto.
    ripristinata dopo un browser caduto, o duplicata, non riprende niente. Le etichette le
    consegna il service worker a **una** scheda (quella davanti, nella finestra in primo piano),
    una volta sola, coi link letti dalla pagina del gestionale e accettati solo dalla sua origine.
-   Nessun permesso nuovo per l'estensione.
+   Nessun permesso nuovo per l'estensione. (Con la stampa automatica i fogli li stampa la scheda
+   dell'ordine, e al service worker arriva solo quello che non è uscito: regola 17.)
 11. Codifica **windows-1252 identica byte per byte** a quella del browser (verificato contro
     Chromium reale, accenti e simboli inclusi).
 12. **Stampe solo dai link della pagina**: gli URL dei PDF non vengono mai costruiti a mano
@@ -1239,6 +1293,22 @@ stessi flussi dei test di prodotto.
     **⧉ Copia senza salvare** — chi vuole un foglio su misura non è mai costretto a salvarlo — e
     un salvataggio rifiutato dal browser (memoria piena o bloccata) viene **detto**, mai spacciato
     per riuscito.
+17. **La stampa automatica fa una cosa sola, e lo dice.** L'unico permesso in più è
+    `nativeMessaging`: parlare con **un** programma di questo PC, `it.psassist.stampa`, che
+    l'utente ha installato lui (una chiave in HKCU, niente amministratore) e che accetta solo
+    questa estensione. A lui va **solo** il PDF che la pagina ha già preso dal gestionale coi
+    controlli di sempre, e il nome della stampante scelta per quel tipo di foglio; lo porta il
+    service worker, mai la pagina del gestionale, e solo da una scheda del gestionale. L'aiutante
+    ripete i controlli (è un PDF? non è enorme? quella stampante esiste?), stampa con SumatraPDF,
+    cancella il file temporaneo e risponde: non usa la rete, non esegue altro, e nel suo registro
+    scrive cosa e dove, mai il contenuto. Chrome lo avvia per ogni foglio e lo chiude subito: in
+    Windows non resta acceso niente. **Una volta sola**: in un ordine in sottofondo ogni foglio lo
+    stampa la scheda dell'ordine, una volta, dopo la conferma provata (il segno della stampa è già
+    consumato); al service worker passa l'elenco dei fogli col loro esito, e lui consegna alla
+    scheda del medico **solo** quelli non usciti. «Stampato» solo con la risposta dell'aiutante;
+    ogni errore — non installato, ID cambiato, stampante sparita, SumatraPDF, tempo scaduto —
+    rimanda **quel** foglio al dialogo di sempre, col motivo scritto. Spenta (l'interruttore), non
+    configurata, o col preferito, il percorso è quello di prima, identico.
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
@@ -1313,11 +1383,12 @@ ps-app/
 ├── tools/build.mjs      ← genera extension/content.js, il bookmarklet e extension/ponte-cripto.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
+├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 (SumatraPDF lo scarica installa.cmd)
 ├── esempi-gestionale/   ← pagine vere del gestionale, contenuti inventati (+ come)
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 91 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo)
+└── test/                ← simulatore SA4PSO + 91 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo, stampa automatica)
 ```
 
 Sviluppo:
@@ -1328,7 +1399,7 @@ npm install        # solo playwright e ws, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet (+ ponte-cripto.js) dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 91 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 59 sul banco + storico + il cancello privacy
+npm test           # 91 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 53 sulla stampa automatica (+ 21 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
                    # + il Ponte: 44 controlli senza browser (cifratura, ripetitore, Worker) e 79 dal vivo (test/ext-ponte.mjs)
 ```
 
@@ -1371,6 +1442,17 @@ mandata», con la coda ferma; due ordini in coda; la sessione scaduta; la pagina
 tiene le etichette; il browser che cade; le etichette che aspettano chi scrive e vanno nella
 finestra in primo piano; la stessa domanda due volte; nessun giro di controllo con un avviso solo;
 la scheda che non si apre → la pagina manda come sempre),
+la **stampa automatica** (`test/ext-stampa.mjs`: l'estensione vera con un finto aiutante
+registrato come «native messaging host» del profilo di prova — senza aiutante il dialogo di
+sempre; la pagina Stampanti, da «non installata» all'elenco, l'A4 predefinita, le pagine di
+prova e l'ID; etichette → etichettatrice e lista → A4 senza dialogo, una volta sola, e i consensi
+all'A4; un foglio che non esce → il dialogo col motivo, lui solo; l'aiutante sparito o
+installato per un altro ID; l'interruttore e la stampantina rossa; l'ordine in sottofondo
+stampato dalla sua scheda senza più nessuna scheda del gestionale aperta, «Stampato · 2 esami
+confermati» e «Ristampa»; il foglio dell'ordine che non esce, che arriva al medico col motivo, e
+lui solo) e l'aiutante stesso (`test/stampa-host.mjs`, con PowerShell 7 se c'è: il filo a pezzi,
+i controlli, un SumatraPDF finto, il temporaneo cancellato, il registro senza contenuto, e
+`installa.ps1` che trova PS Assist nei profili di Chrome e di Edge),
 il resoconto corto (gli elenchi, un'azione sola,
 passi e Registro sotto «Dettagli»), la ricevuta con un bottone solo e la griglia dietro
 «+ aggiungi», l'emogas tornato alla versione di sempre detto nella ricevuta, «altri esami…»

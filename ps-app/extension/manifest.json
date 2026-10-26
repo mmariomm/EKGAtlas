@@ -39,7 +39,8 @@
   "permissions": [
     "storage",
     "unlimitedStorage",
-    "scripting"
+    "scripting",
+    "nativeMessaging"
   ],
   "options_ui": {
     "page": "portale.html",

@@ -800,29 +800,46 @@ function ordMessaggio(msg, sender, reply) {
     reply({ ok: true, ferma: !!rec.ferma && ATTIVI.has(rec.stato) });
     await ordAvanti(l);
   });
-  // le etichette pronte, solo da un ordine che gira: le stampa la scheda dove sta il medico
+  // I fogli della richiesta confermata, solo da un ordine che gira. Quelli che
+  // la stampa automatica ha già fatto uscire dalla scheda dell'ordine (`fatto`)
+  // non si stampano più: se sono tutti, l'ordine finisce con «Stampato» e
+  // tiene i fogli solo per «Ristampa», un tocco del medico. Gli altri — tutti,
+  // senza stampa automatica — li stampa la scheda dove sta il medico, col
+  // motivo se la stampa automatica non ci è riuscita.
   if (msg.t === "ordineStampa") return fai(async () => {
     const l = await ordLeggi();
     const rec = suo(l);
     if (!rec || rec.stato !== "corre") return reply({ ok: false });
     const jobs = (Array.isArray(msg.jobs) ? msg.jobs : []).slice(0, 12)
       .filter((j) => j && sulGestionale(j.url) && typeof j.name === "string")
-      .map((j) => ({ name: corto(j.name, 60), printer: corto(j.printer, 30), url: String(j.url) }));
+      .map((j) => ({ name: corto(j.name, 60), printer: corto(j.printer, 30), url: String(j.url),
+        ...(j.fatto ? { fatto: true } : j.motivo ? { motivo: corto(j.motivo, 160) } : {}) }));
     if (!jobs.length) return reply({ ok: false });
     const f = msg.fine || {};
-    rec.stampa = { jobs, fine: { n: Number(f.n) || 0, ts: Number(f.ts) || Date.now(), quesito: f.quesito || null } };
-    rec.stato = "stampa"; rec.agg = Date.now();
-    rec.vista = { tag: "Confermata", testo: "Etichette pronte", tono: "run" };
+    const fine = { n: Number(f.n) || 0, ts: Number(f.ts) || Date.now(), quesito: f.quesito || null };
+    const restano = jobs.filter((j) => !j.fatto);
+    rec.agg = Date.now();
+    if (restano.length) {
+      rec.stampa = { jobs: restano, fine };
+      rec.stato = "stampa";
+      rec.vista = { tag: "Confermata", testo: "Etichette pronte", tono: "run" };
+    } else {
+      const v = msg.vista || {};
+      rec.stampa = { jobs: jobs.map(({ fatto, ...j }) => j), fine };
+      rec.stato = "avviso";
+      rec.vista = { tag: "Stampato", testo: corto(v.testo), tono: "ok", quesito: corto(v.quesito, 90) };
+    }
     await ordSlega(rec);
     await ordScrivi(l);
     reply({ ok: true });
     await ordAvanti(l);
     await ordConsegnaStampa(l);
   });
-  // «Stampa» sulla striscia: le etichette in attesa, qui e adesso (un tocco del medico)
+  // «Stampa» sulla striscia: le etichette in attesa, qui e adesso (un tocco del
+  // medico); o «Ristampa» di un ordine già stampato dalla stampa automatica
   if (msg.t === "ordineStampaQui") return fai(async () => {
     const l = await ordLeggi();
-    const rec = l.find((x) => x.id === msg.id && x.stato === "stampa" && x.stampa);
+    const rec = l.find((x) => x.id === msg.id && (x.stato === "stampa" || x.stato === "avviso") && x.stampa);
     reply({ ok: !!rec && await ordDai(l, rec, tab.id, true) });
   });
   // ⏹: un ordine in coda si toglie; uno che parte non parte; uno che gira si
@@ -872,6 +889,100 @@ function ordMessaggio(msg, sender, reply) {
   reply({ ok: false });
 }
 chrome.runtime.onMessage.addListener(ordMessaggio);
+
+// ---------------------------------------------------------------------------
+// LA STAMPA AUTOMATICA. Con l'aiutante di Windows installato (la cartella
+// `stampa/`: installa.cmd, niente amministratore) e le due stampanti scelte
+// nelle impostazioni, i fogli non passano dal dialogo di stampa: il PDF che la
+// pagina ha già preso arriva qui, e da qui all'aiutante (native messaging),
+// che lo stampa con SumatraPDF sulla stampante di quel foglio e dice se l'ha
+// mandato. Chrome avvia l'aiutante per ogni domanda e lo chiude appena ha
+// risposto: in Windows non resta acceso niente. Spenta con l'interruttore, non
+// installata o con un errore, il foglio passa dal dialogo di sempre.
+// Le scelte del medico stanno in storage.local: `stampa` = { attiva, etichette,
+// a4 } (i nomi delle stampanti); `stampaEsito` = com'è andata l'ultima.
+const OSPITE = "it.psassist.stampa";
+const STAMPA_PDF_MAX = 25 * 1024 * 1024;   // come l'aiutante
+// le parole di Chrome, dette per il medico
+function ospiteErrore(e) {
+  const m = String(e && e.message || e);
+  if (/not found/i.test(m)) return "l'aiutante di stampa non è installato su questo PC";
+  if (/forbidden/i.test(m)) return "Chrome non permette di usare l'aiutante di stampa (un altro ID dell'estensione, o una regola dell'IT): rilancia installa.cmd";
+  if (/exited|communicating/i.test(m)) return "l'aiutante di stampa si è chiuso senza rispondere";
+  return m.slice(0, 120);
+}
+async function ospite(msg, ms) {
+  let tid;
+  try {
+    const r = await Promise.race([chrome.runtime.sendNativeMessage(OSPITE, msg),
+      new Promise((_, no) => { tid = setTimeout(() => no(new Error("l'aiutante di stampa non ha risposto in tempo")), ms); })]);
+    return r && typeof r === "object" ? r : { ok: false, why: "l'aiutante di stampa non ha risposto" };
+  } catch (e) { return { ok: false, why: ospiteErrore(e) }; }
+  finally { clearTimeout(tid); }
+}
+// Un foglio all'aiutante (che aspetta SumatraPDF al massimo un minuto), e
+// l'esito annotato: l'indicatore del pannello diventa rosso se non è uscito.
+async function stampaPdf(tipo, pdf, stampante) {
+  const r = await ospite({ t: "stampa", tipo, stampante, pdf }, 75e3);
+  const esito = r.ok ? { ok: true, stampante: corto(r.stampante || stampante, 80), ts: Date.now() }
+    : { ok: false, why: corto(r.why || "non riuscita", 160), stampante: corto(stampante, 80), ts: Date.now() };
+  await chrome.storage.local.set({ stampaEsito: esito }).catch(() => {});
+  return esito;
+}
+// La pagina di prova, fatta qui: un PDF minimo con tre righe, nella misura del
+// foglio (un'etichetta di 50×25 mm, o un A4).
+function paginaDiProva(tipo, stampante) {
+  const etichetta = tipo === "etichette";
+  const [w, h] = etichetta ? [142, 71] : [595, 842];
+  // (Helvetica, solo ASCII; su un'etichetta ci stanno una trentina di lettere)
+  const ascii = (s) => String(s).normalize("NFD").replace(/[^\x20-\x7E]/g, "").slice(0, etichetta ? 34 : 60).replace(/[()\\]/g, "\\$&");
+  const righe = [`PS Assist: prova ${etichetta ? "etichette" : "A4"}`, ascii(stampante), ascii(new Date().toLocaleString("it-IT"))];
+  const [x, y, passo, corpo] = etichetta ? [8, 50, 14, 9] : [56, 770, 22, 16];
+  const testo = righe.map((r, i) => `BT /F1 ${i ? corpo - 2 : corpo} Tf ${x} ${y - i * passo} Td (${r}) Tj ET`).join("\n");
+  const oggetti = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${testo.length} >>\nstream\n${testo}\nendstream`,
+  ];
+  let pdf = "%PDF-1.4\n";
+  const dove = oggetti.map((o, i) => { const at = pdf.length; pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; return at; });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${oggetti.length + 1}\n0000000000 65535 f \n${dove.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`
+    + `trailer\n<< /Size ${oggetti.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return btoa(pdf);
+}
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (!msg || typeof msg !== "object" || !["stampaPdf", "stampaStato", "stampaProva"].includes(msg.t)) return;
+  const tipo = msg.tipo === "etichette" ? "etichette" : "a4";
+  // un foglio da una pagina del gestionale: sulla stampante che il medico ha scelto per quel tipo
+  if (msg.t === "stampaPdf") {
+    if (!sulGestionale(sender && sender.url)) return reply({ ok: false, why: "non dal gestionale" }), true;
+    (async () => {
+      const s = (await chrome.storage.local.get("stampa")).stampa || {};
+      if (s.attiva === false || !s.etichette || !s.a4) return reply({ ok: false, why: "la stampa automatica è spenta" });
+      if (typeof msg.pdf !== "string" || msg.pdf.length > STAMPA_PDF_MAX / 3 * 4 + 4) return reply({ ok: false, why: "PDF troppo grande" });
+      reply(await stampaPdf(tipo, msg.pdf, s[tipo]));
+    })().catch((e) => reply({ ok: false, why: corto(e && e.message || e, 120) }));
+    return true;
+  }
+  // il resto, solo dalla pagina delle impostazioni
+  if (!String(sender && sender.url || "").startsWith(chrome.runtime.getURL(""))) return reply({ ok: false }), true;
+  if (msg.t === "stampaStato") {
+    (async () => {
+      const p = await ospite({ t: "ping" }, 20e3);
+      if (!p.ok) return reply(p);
+      const s = await ospite({ t: "stampanti" }, 30e3);
+      reply(s.ok ? { ok: true, versione: corto(p.versione, 10), stampanti: (Array.isArray(s.stampanti) ? s.stampanti : []).map((x) => corto(x, 120)), predefinita: corto(s.predefinita, 120) }
+        : s);
+    })();
+    return true;
+  }
+  const stampante = corto(msg.stampante, 120);
+  stampaPdf(tipo, paginaDiProva(tipo, stampante), stampante).then(reply);
+  return true;
+});
 
 // Lo script sul portale scelto dal medico va rimesso a ogni avvio: le
 // registrazioni dinamiche sopravvivono, ma se il permesso è stato revocato
