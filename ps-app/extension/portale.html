@@ -1,24 +1,69 @@
 <!doctype html>
-<html lang="it"><head><meta charset="utf-8"><title>PS Assist — portale clinico</title>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PS Assist — impostazioni</title>
 <style>
   body { font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #16232E;
          background: #F4F8FB; margin: 0; padding: 32px 24px; }
-  .box { max-width: 620px; margin: 0 auto; background: #fff; border: 1px solid #D9E2EC;
+  .box { max-width: 620px; margin: 0 auto 22px; background: #fff; border: 1px solid #D9E2EC;
          border-radius: 14px; padding: 22px 24px 26px; box-shadow: 0 8px 26px rgba(9,42,74,.12); }
   h1 { font-size: 18px; margin: 0 0 4px; } .sub { color: #5B6B7A; font-size: 13px; margin: 0 0 20px; }
   label { display: block; font-size: 12px; font-weight: 700; color: #35506B; margin-bottom: 6px; }
-  input { width: 100%; box-sizing: border-box; border: 1px solid #C4D0DC; border-radius: 9px;
-          padding: 10px 12px; font: inherit; }
+  input, select { width: 100%; box-sizing: border-box; border: 1px solid #C4D0DC; border-radius: 9px;
+          padding: 10px 12px; font: inherit; background: #fff; color: inherit; }
   button { margin-top: 14px; border: 0; border-radius: 10px; background: #0B5CAD; color: #fff;
            padding: 11px 20px; font: inherit; font-weight: 700; cursor: pointer; }
   button:hover { background: #094a8c; }
+  button:disabled { opacity: .45; cursor: default; }
   button.via { background: transparent; color: #B3261E; border: 1px solid #E9BAB6; margin-left: 8px; }
+  button.sec { background: #F4F8FB; color: #16232E; border: 1px solid #C4D0DC; font-weight: 600; padding: 9px 14px; }
+  button.sec:hover:enabled { border-color: #0B5CAD; }
   .msg { margin-top: 16px; border-radius: 9px; padding: 10px 12px; font-size: 13px; display: none; }
   .msg.ok { background: #EDF7F0; border: 1px solid #BCE0C9; color: #124F31; display: block; }
   .msg.ko { background: #FDF3F2; border: 1px solid #E9BAB6; color: #8A1F19; display: block; }
   .hint { font-size: 12.5px; color: #5B6B7A; margin-top: 18px; }
   code { background: #F4F8FB; border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
+  /* la stampa automatica */
+  .stato { display: inline-block; border-radius: 999px; padding: 5px 12px; font-weight: 700; font-size: 13px;
+           background: #EEF1F4; color: #35506B; }
+  .stato.ok { background: #EDF7F0; color: #124F31; } .stato.ko { background: #FDF3F2; color: #8A1F19; }
+  .stato.warn { background: #FFF7E6; color: #6b3d02; }
+  .perche { font-size: 12.5px; color: #8A1F19; margin: 6px 0 0; }
+  .interr { display: flex; align-items: center; gap: 10px; margin: 18px 0 4px; font-size: 14px; font-weight: 700; color: #16232E; cursor: pointer; }
+  .interr input { width: 20px; height: 20px; margin: 0; accent-color: #177245; }
+  .riga { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-top: 14px; }
+  .riga button { margin-top: 0; }
+  details { margin-top: 18px; font-size: 13px; } summary { cursor: pointer; font-weight: 700; color: #35506B; }
+  details ol { padding-left: 20px; margin: 8px 0 0; } details li { margin: 4px 0; }
+  .idriga { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .idriga button { margin-top: 0; padding: 5px 12px; }
+  @media (max-width: 520px) { body { padding: 16px; } .box { padding: 18px 16px 22px; } .riga { grid-template-columns: 1fr; } }
 </style></head><body>
+<div class="box" id="stampa">
+  <h1>Stampa automatica</h1>
+  <p class="sub">Etichette all'etichettatrice, liste esami e moduli all'A4: ogni foglio va da solo alla sua stampante, senza il dialogo di stampa.</p>
+  <span id="sst" class="stato">Stampa automatica: controllo…</span>
+  <p id="sperche" class="perche" hidden></p>
+  <label class="interr"><input type="checkbox" id="sauto" disabled> Stampa automatica</label>
+  <div class="riga">
+    <div><label for="setic">Etichettatrice</label><select id="setic" disabled></select></div>
+    <button class="sec" id="sprovaetic" data-prova="etichette" disabled>Stampa una pagina di prova</button>
+  </div>
+  <div class="riga">
+    <div><label for="sa4">A4</label><select id="sa4" disabled></select></div>
+    <button class="sec" id="sprovaa4" data-prova="a4" disabled>Stampa una pagina di prova</button>
+  </div>
+  <div id="sm" class="msg"></div>
+  <details id="sinst">
+    <summary>Come si installa (una volta, senza amministratore)</summary>
+    <ol>
+      <li>Dallo zip di PS Assist copia la cartella <code>stampa</code> in una tua cartella, per esempio <code>Documenti\PS Assist stampa</code>.</li>
+      <li>Doppio clic su <code>installa.cmd</code>. Scarica SumatraPDF (se manca) e dice a Chrome dov'è l'aiutante. Se chiede l'ID, incolla quello qui sotto.</li>
+      <li>Torna qui e premi «Ricontrolla»: scegli l'etichettatrice e l'A4, e stampa una pagina di prova.</li>
+    </ol>
+    <p class="hint">In Windows non resta acceso niente: l'aiutante parte solo per il secondo in cui stampa. Per toglierla: l'interruttore qui sopra, o <code>disinstalla.cmd</code>.</p>
+  </details>
+  <p class="hint idriga">ID di questa estensione: <code id="sid"></code><button class="sec" id="sidcopia">Copia</button></p>
+  <button class="sec" id="sric">Ricontrolla</button>
+</div>
 <div class="box">
   <h1>Indirizzo del portale clinico</h1>
   <p class="sub">Serve una volta sola. Il pannello comparirà sulla pagina con la tabella dello storico.</p>
@@ -31,4 +76,5 @@
     Attuale: <code id="cur">nessuno</code></p>
 </div>
 <script src="portale.js"></script>
+<script type="module" src="stampanti.js"></script>
 </body></html>
