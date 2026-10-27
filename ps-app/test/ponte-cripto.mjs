@@ -2,8 +2,7 @@
 /*
  * Il ponte, senza browser: la cifratura (HKDF, AES-GCM, numeri d'ordine,
  * dati autenticati, il codice dell'associazione), la logica del ripetitore,
- * il Worker del sito con un ambiente finto (e su quale nome risponde), la
- * configurazione di Cloudflare, e il service worker del PC (ponte-sw.js) in
+ * il Worker del sito con un ambiente finto, la configurazione di Cloudflare, e il service worker del PC (ponte-sw.js) in
  * una vm, con un telefono finto: le regole della sessione una per una.
  *   node test/ponte-cripto.mjs
  */
@@ -96,7 +95,7 @@ check(P.leggiFrammento("#k=abc&scade=1") === null && P.leggiFrammento("#k=" + P.
 
 console.log("\nponte: la logica del ripetitore");
 const L = await import(join(root, "../worker/ponte-logica.js"));
-const { Stanza, PONTE, leggiStanza, intestazioniApp, instrada } = L;
+const { Stanza, PONTE, leggiStanza, intestazioniApp } = L;
 check(leggiStanza("https://x/ponte/ws?r=" + a.stanza + "&ruolo=pc").ok && !leggiStanza("https://x/ponte/ws?r=zz&ruolo=pc").ok
   && !leggiStanza("https://x/ponte/ws?r=" + a.stanza + "&ruolo=altro").ok, "la stanza è 32 cifre esadecimali, il ruolo pc o tel");
 const finto = () => {
@@ -150,19 +149,6 @@ check(!("eco" in L) && !("intestazioniSalute" in L) && !/eco|salute/i.test(Objec
 check(/connect-src 'self' wss:\/\/ekg\.example\.dev;/.test(intestazioniApp("https://ekg.example.dev/ponte/")["content-security-policy"]),
   "l'app del telefono può parlare solo col suo sito");
 
-console.log("\nponte: su quale nome risponde (instrada)");
-const via = (u, h) => instrada(u, h);
-check(via("https://ekg.example.dev/ponte/app.js", "") === "ponte" && via("https://ekg.example.dev/", "") === "sito"
-  && via("https://ekg.example.dev/ponte", "") === "ponte", "senza PONTE_HOSTNAME: com'era, /ponte/ sul sito e il resto al sito");
-check(via("https://ponte.example.dev/ponte/", "ponte.example.dev") === "ponte" && via("https://ponte.example.dev/", "ponte.example.dev") === "ponte"
-  && via("https://ponte.example.dev/index.html", "Ponte.Example.Dev ") === "ponte", "col nome del ponte: su quel nome risponde SOLO il ponte (anche «/» e «/index.html»)");
-check(via("https://ekg.example.dev/ponte/", "ponte.example.dev") === "niente" && via("https://ekg.example.dev/ponte/ws?r=x", "ponte.example.dev") === "niente"
-  && via("https://ekg.example.dev/ponte", "ponte.example.dev") === "niente", "…e il sito non serve più /ponte/ (404)");
-check(via("https://ekg.example.dev/", "ponte.example.dev") === "sito" && via("https://ekg.example.dev/ponteggi", "ponte.example.dev") === "sito",
-  "…mentre il resto del sito resta com'è");
-check(via("https://ps-ponte.x.workers.dev/qualcosa", "*") === "ponte" && via("https://altro.dev/", "*") === "ponte",
-  "«*» (il Worker a parte): ogni nome è il ponte");
-
 console.log("\nponte: il Worker del sito (con un ambiente finto)");
 // «cloudflare:workers» esiste solo su Cloudflare: qui una classe vuota
 register("data:text/javascript," + encodeURIComponent(`
@@ -201,26 +187,6 @@ r = await chiedi("/ponte/ws?r=nonvalida&ruolo=pc", { headers: { upgrade: "websoc
 check(r.status === 400 && chiamate.length === n0, "/ponte/ws con una stanza non valida: 400, e nessun Durable Object svegliato");
 r = await chiedi("/ponte/ws?r=" + a.stanza + "&ruolo=tel", { headers: { upgrade: "websocket" } });
 check(chiamate.at(-1)[0] === "stanza" && chiamate.at(-1)[1] === a.stanza, "/ponte/ws: alla stanza giusta (un Durable Object per stanza)");
-// col nome a sé
-const conNome = ambiente({ PONTE_HOSTNAME: "ponte.example.dev" });
-n0 = chiamate.length;
-r = await chiedi("/ponte/", {}, conNome);
-check(r.status === 404 && chiamate.length === n0, "con PONTE_HOSTNAME: il sito non serve l'app del telefono (404)");
-r = await chiedi("/ponte/ws?r=" + a.stanza + "&ruolo=tel", { headers: { upgrade: "websocket" } }, conNome);
-check(r.status === 404 && chiamate.length === n0, "…né la presa");
-r = await chiedi("/", {}, conNome);
-check(r.status === 200 && chiamate.at(-1)[1] === "/", "…e il sito resta il sito");
-r = await chiedi("/ponte/app.js", {}, conNome, "https://ponte.example.dev");
-check(r.status === 200 && chiamate.at(-1)[1] === "/ponte/app.js" && /default-src 'self'/.test(r.headers.get("content-security-policy") || ""),
-  "sul nome del ponte: l'app del telefono");
-r = await chiedi("/ponte/ws?r=" + a.stanza + "&ruolo=pc", { headers: { upgrade: "websocket" } }, conNome, "https://ponte.example.dev");
-check(chiamate.at(-1)[0] === "stanza", "…e la presa");
-n0 = chiamate.length;
-r = await chiedi("/", {}, conNome, "https://ponte.example.dev");
-check(r.status === 302 && r.headers.get("location") === "https://ponte.example.dev/ponte/" && chiamate.length === n0, "«/» sul nome del ponte porta all'app");
-r = await chiedi("/index.html", {}, conNome, "https://ponte.example.dev");
-const r2 = await chiedi("/api/metrics", { method: "POST", body: "{}" }, conNome, "https://ponte.example.dev");
-check(r.status === 404 && r2.status === 404 && chiamate.length === n0, "nessuna pagina del sito (né le metriche) sul nome del ponte: l'app che tiene la chiave non divide l'origine");
 
 console.log("\nponte: la configurazione di Cloudflare");
 const jsonc = (t) => JSON.parse(t.replace(/^\s*\/\/.*$/gm, "").replace(/\s\/\/ .*$/gm, ""));
@@ -228,20 +194,15 @@ const cfg = jsonc(readFileSync(join(root, "../wrangler.jsonc"), "utf8"));
 check(cfg.main === "worker/index.js" && cfg.migrations.some((m) => (m.new_sqlite_classes || []).includes("PonteStanza"))
   && cfg.assets.not_found_handling === "single-page-application", "wrangler.jsonc: il Worker, il Durable Object su SQLite, il sito resta una SPA");
 check(cfg.observability.logs && cfg.observability.logs.invocation_logs === false, "nessuna riga di log per richiesta: l'indirizzo della presa porta la stanza");
-check(cfg.vars && cfg.vars.PONTE_HOSTNAME === "", "PONTE_HOSTNAME c'è, vuoto: finché non lo si scrive, il ponte sta su /ponte/ del sito");
-const rwf = cfg.assets.run_worker_first;
-check(Array.isArray(rwf) && rwf[0] === "/*" && ["!/assets/*", "!/recordings/*", "!/icons/*"].every((x) => rwf.includes(x)),
-  "il Worker passa davanti a ogni pagina (così sul nome del ponte non c'è il sito), non ai file pesanti del sito");
-let cfgP = {};
-try { cfgP = jsonc(leggi("../wrangler.ponte.jsonc")); } catch { /* manca: il controllo sotto fallisce */ }
-check(cfgP.main === cfg.main && cfgP.vars?.PONTE_HOSTNAME === "*" && cfgP.assets?.run_worker_first === true && cfgP.name !== cfg.name
-  && cfgP.observability?.logs?.invocation_logs === false && cfgP.durable_objects?.bindings[0].class_name === "PonteStanza",
-  "wrangler.ponte.jsonc: lo stesso Worker pubblicato a parte, solo ponte («*»), senza log per richiesta");
+check(JSON.stringify(cfg.assets.run_worker_first) === '["/ponte/*","/api/*"]',
+  "il Worker si sveglia solo per /ponte/ e /api/: le pagine del sito arrivano dai file statici");
+check(!cfg.vars?.PONTE_HOSTNAME && !leggiSe("../wrangler.ponte.jsonc") && !("instrada" in L) && !/PONTE_HOSTNAME/.test(leggi("../worker/index.js")),
+  "un Worker solo, quello del sito sul suo workers.dev: niente nome a sé, niente Worker a parte");
 
 console.log("\nponte: l'indirizzo fissato nella build");
 const { origineDelPonte } = await import(join(root, "ponte/host.mjs"));
-check(origineDelPonte("ponte.example.org\n") === "https://ponte.example.org" && origineDelPonte("# commento\nhttps://ponte.example.org/qualcosa") === "https://ponte.example.org"
-  && origineDelPonte("# solo commenti\n\n") === "", "ponte/host.txt: un nome, o un indirizzo https, diventa l'origine; vuoto, «da configurare»");
+check(origineDelPonte("ekg-atlas.esempio.workers.dev\n") === "https://ekg-atlas.esempio.workers.dev" && origineDelPonte("# commento\nhttps://ekg-atlas.esempio.workers.dev/ponte/") === "https://ekg-atlas.esempio.workers.dev"
+  && origineDelPonte("# solo commenti\n\n") === "", "ponte/host.txt: il nome del Worker, o un indirizzo https, diventa l'origine; vuoto, «da configurare»");
 const prova = (t) => errore((async () => origineDelPonte(t))());
 check(await prova("http://ponte.example.org") !== "nessuno" && await prova("ponte example") !== "nessuno",
   "un indirizzo non https, o storto, ferma la build");
@@ -352,14 +313,13 @@ const kDalQr = (qr) => P.leggiFrammento(new URL(qr).hash).k;
 const DEV = P.b64u(P.casuale(16)), DEV2 = P.b64u(P.casuale(16));
 await blocco(async () => {
   const pc = await pcFinto({ locale: { "ponte.coppia": { k: "vecchia", scade: Date.now() + 3600e3 } } });
-  check(pc.pt().relay === "spento" && !pc.prese.length && !("ponte.coppia" in pc.locale), "senza associazione il PC non apre niente (e una chiave rimasta su disco da prima se ne va)");
+  check(pc.pt().relay === "spento" && !pc.prese.length && !("ponte.coppia" in pc.locale), "senza associazione il PC non apre niente (e una chiave rovinata su disco se ne va)");
   const r1 = await pc.pagina({ t: "ponteAssocia" });
   await sospendi(30);
   const k = r1 && r1.qr ? kDalQr(r1.qr) : null;
   check(!!k && r1.qr.startsWith("https://ponte.example.org/ponte/#k=") && pc.presa()?.url === `wss://ponte.example.org/ponte/ws?r=${(await P.chiaviCoppia(k)).stanza}&ruolo=pc`,
     "«Associa»: il QR porta al ponte fissato nella build, e il PC entra nella stanza di quella chiave");
   check(r1.codice === await P.codice(k), `accanto al QR, il codice dell'associazione (${r1.codice})`);
-  check(!!pc.sessione["ponte.coppia"] && !("ponte.coppia" in pc.locale), "la chiave sta in storage.session (memoria): mai su disco");
   check((await pc.pagina({ t: "ponteStato" })).qr === r1.qr, "nei primi due minuti «Mostra il QR» rivede lo stesso QR");
   pc.salta(3 * 60e3);
   check((await pc.pagina({ t: "ponteStato" })).qr === "", "dopo due minuti non si rivede più (serve un QR nuovo)");
@@ -380,12 +340,23 @@ await blocco(async () => {
   check(!!t1.canale && !!pc.pt().attesa, "il telefono saluta (col suo numero): il PC risponde al suo saluto");
   const c1 = await t1.manda({ id: 1, cmd: "ciao" });
   check(c1[0] && c1[0].ok && !!pc.pt().sessione, "il primo messaggio apre la sessione");
-  check(pc.sessione["ponte.coppia"].dev === DEV && pc.sessione["ponte.coppia"].usata === true, "l'associazione è legata a quel telefono");
+  check(pc.locale["ponte.coppia"].dev === DEV && pc.locale["ponte.coppia"].usata === true, "l'associazione è legata a quel telefono");
   check((await pc.pagina({ t: "ponteStato" })).qr === "", "e il QR non si rivede più, nemmeno nei due minuti");
   const intruso = await telFinto(pc, k, DEV2);
   check(!intruso.canale && intruso.risposta && intruso.risposta.no && !pc.pt().attesa,
     "un altro telefono con lo stesso QR: il PC dice di no (e nessuna sessione nuova)");
   check(/altro telefono/.test(pc.pt().registro.map((x) => x.testo).join("\n")), "e il registro del ponte lo dice");
+
+  // il browser si chiude e si riapre: storage.session è vuoto, storage.local (il disco) no
+  const pcR = await pcFinto({ locale: structuredClone(pc.locale) });
+  await sospendi(30);
+  check(!!pcR.pt().coppia && pcR.presa()?.url === pc.presa().url, "il browser chiuso e riaperto: l'associazione c'è ancora (storage.local), e il PC rientra nella sua stanza");
+  const tR = await telFinto(pcR, k, DEV);
+  check(!!tR.canale && (await tR.manda({ id: 1, cmd: "ciao" })).some((x) => x.re === 1 && x.ok), "lo stesso telefono riapre, senza QR");
+  check(!(await telFinto(pcR, k, DEV2)).canale, "un altro telefono no, nemmeno dopo");
+  pcR.salta(14 * 3600e3);
+  await pcR.ev("ponteControlla()");
+  check(!pcR.pt().coppia && !("ponte.coppia" in pcR.locale) && pcR.presa().readyState === 3, "alla scadenza delle 14 ore la chiave se ne va anche dal disco, e la presa si chiude");
 
   // la pagina del telefono si ricarica mentre la sessione vecchia è viva
   for (let i = 2; i <= 6; i++) await t1.manda({ id: i, cmd: "pazienti" });
@@ -451,7 +422,7 @@ await blocco(async () => {
   check(pc.presa() === viva, "col «pong» resta quella");
   pc.ev("PONTE_ATTESA.pong = 10e3");
 
-  // il gestionale torna alla pagina d'accesso: via la sessione e l'associazione
+  // il gestionale torna alla pagina d'accesso: via la sessione, non l'associazione
   const t4 = await telFinto(pc, k, DEV);
   await t4.manda({ id: 1, cmd: "ciao" });
   check(!!pc.pt().sessione, "(una sessione aperta)");
@@ -460,8 +431,10 @@ await blocco(async () => {
   await fineL;
   await sospendi(30);
   const evL = await t4.leggi(pc.tira());
-  check(!pc.pt().sessione && !pc.sessione["ponte.coppia"] && !pc.pt().coppia, "una scheda del gestionale alla pagina d'accesso: sessione chiusa e associazione revocata");
+  check(!pc.pt().sessione && pc.locale["ponte.coppia"]?.k === P.b64u(k) && !!pc.pt().coppia, "una scheda del gestionale alla pagina d'accesso: la sessione si chiude, l'associazione resta");
   check(evL.some((x) => x.evento === "fine" && x.perche === "login" && /pagina d'accesso/.test(x.testo)), "e il telefono lo sa, con la frase");
+  const t5 = await telFinto(pc, k, DEV);
+  check((await t5.manda({ id: 1, cmd: "ciao" })).some((x) => x.re === 1 && x.ok), "rientrati nel gestionale, lo stesso telefono riapre: la stessa associazione, niente QR nuovo");
 });
 await blocco(async () => {
   // «Aggiorna i valori»: la scheda annotata in storage.session; il service

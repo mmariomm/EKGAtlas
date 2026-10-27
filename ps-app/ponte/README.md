@@ -7,7 +7,7 @@ dell'ospedale, con l'estensione e le pagine del gestionale di sempre; il telefon
 cifrato.
 
 ```
- iPhone (Safari)                il sito del ponte (Cloudflare)           PC dell'ospedale (Chrome)
+ iPhone (Safari)                il Worker di EKG Atlas (workers.dev)     PC dell'ospedale (Chrome)
  /ponte/  app  ── wss:443 ──►   /ponte/ws  ripetitore  ◄── wss:443 ──   estensione (service worker)
                                (un Durable Object per stanza:            │ chrome.tabs.sendMessage
                                 passa byte cifrati, non li legge,        ▼
@@ -33,11 +33,11 @@ E nessun link vale più di 14 ore, qualunque scadenza porti.
 **Durante il turno.** Apri il pannello dall'iPhone: si collega da solo, niente QR. L'elenco si rilegge
 da solo ogni volta che torni sull'app («Aggiornato alle 14:32»). Vedi:
 
-- **Pazienti** — come la vista Pazienti del PC: chi è in lista, chi è nella stanza (col suo posto),
-  gli episodi precedenti in fondo, la striscia del triage, la nota, il promemoria più vicino. Il nome
-  non si tronca mai: il posto e il promemoria vanno a capo.
-- **Il paziente** — in testa il nome intero, l'anno di nascita (dal codice fiscale della sua pagina)
-  e il posto: «ROSSI MARIO · 1960 · OBI 2». Sotto, subito, le schede **Esiti** e **Richieste** (resta
+- **Pazienti** — in una carta sola chi è in lista e chi è nella stanza (col suo posto), gli episodi
+  precedenti a parte; la striscia del triage, la nota, il promemoria più vicino. Il nome non si tronca
+  mai: il posto e il promemoria vanno a capo.
+- **Il paziente** — in testa il nome intero, l'età e il posto: «ROSSI MARIO · 77 anni · OBI 2» (su
+  un episodio precedente lo dice sotto). Sotto, subito, le schede **Esiti** e **Richieste** (resta
   quella che hai scelto l'ultima volta); la nota e i promemoria stanno chiusi finché non servono
   («+ Nota», «+ Promemoria»).
 - **Esiti** — la tabella dei Valori che il PC ha per quel paziente, con l'ora in cui il PC li ha letti
@@ -45,14 +45,14 @@ da solo ogni volta che torni sull'app («Aggiornato alle 14:32»). Vedi:
   nella testata: «07:28 · parziale»), e i referti, col testo di quelli già letti sul PC. **↻ Aggiorna
   i valori** fa sul PC il «⭳ Carica i valori» di sempre, in una scheda di sottofondo che si chiude da
   sola, e porta qui il risultato.
-- **Richieste** — il quesito (i tre pacchetti in testa, con quanti esami portano), i profili e gli
-  esami della griglia. Il bottone chiede conferma **col nome intero, l'anno e il posto** («Ordino
-  2 esami per ROSSI MARIO · 1960 · OBI 2? Tocca di nuovo»); un secondo tocco entro 800 ms (un doppio
+- **Richieste** — il quesito (i tre pacchetti in testa), i profili e gli esami della griglia. Il
+  bottone chiede conferma **col nome intero, l'età e il posto** («Ordino 2 esami per ROSSI MARIO ·
+  77 anni · OBI 2? Tocca di nuovo»); un secondo tocco entro 800 ms (un doppio
   tocco per sbaglio) non conta. Poi l'ordine fa sul PC il giro di sempre — la scheda dell'ordine,
   tutti i controlli, la conferma provata. Il telefono dice a che punto è («esame 2 di 6») e come
   finisce, con le stesse parole della striscia del PC (`pubblico`, scritto da `bg.js`). Un ordine
-  finito male resta in fondo alla lista («Ordine non completo · BIANCHI ANNA — tocca per vedere»)
-  finché non lo chiudi con ✕. Sul PC la striscia dell'ordine dice **«dall'iPhone»**. La radiologia, come
+  finito male resta in fondo alla lista («Ordine non completo · BIANCHI ANNA»: toccalo e sei sul
+  paziente) finché non lo chiudi con ✕. Sul PC la striscia dell'ordine dice **«dall'iPhone»**. La radiologia, come
   dal pannello, resta nel carrello: la sua conferma è del medico, sul PC. Su un episodio precedente
   non si ordina («Episodio precedente: per ordinare apri quello di oggi»); a un paziente dimesso sul
   PC non arriva niente («Dimesso sul PC: niente inviato»).
@@ -64,7 +64,9 @@ da solo ogni volta che torni sull'app («Aggiornato alle 14:32»). Vedi:
   («11:30 tropo», «tra 2h ECG»): gli stessi del pannello. **✓ Fatto** aspetta 5 secondi, con
   **Annulla**, prima di toglierlo dal PC.
 
-Di notte l'app è scura, come il telefono. Ogni bottone è grande almeno 44 punti.
+Di notte l'app è scura, come il telefono. Ogni bottone è grande almeno 44 punti. Sul telefono c'è
+solo quello che serve: niente etichette di sezione, conteggi o testi di contorno (vedi «L'app del
+telefono», più sotto).
 
 **Sul PC si vede.** Finché una sessione è aperta, in ogni scheda del gestionale — pannello aperto o
 ridotto a pill — c'è **«iPhone collegato · Scollega»**: chi passa davanti al PC lo sa, e con un tocco
@@ -74,14 +76,13 @@ chiuse, comandi, un altro telefono rifiutato).
 
 **La sessione finisce** dopo **20 minuti senza comandi del medico** (quello che l'app chiede da sé —
 rileggere l'elenco, gli ordini — non conta), con «Scollega» sul PC, alla scadenza dell'associazione,
-con la revoca, se l'estensione si riavvia, o se **una scheda del gestionale torna alla pagina
-d'accesso**: allora si chiude anche l'associazione, perché chi rientra può essere un altro medico, e
-gli ordini dal telefono partirebbero col suo nome. Il telefono lo dice («Sessione chiusa · 20 minuti
-senza comandi», «Il gestionale sul PC è tornato alla pagina d'accesso») e cancella dalla sua memoria
-tutto quello che sapeva dei pazienti, avvisi compresi; **Riapri** ne apre un'altra con un tocco,
-senza QR. **Revoca l'iPhone** (sulla pagina ⋯ → iPhone, due tocchi) e la chiave di quel telefono non
-apre più niente: per rientrare serve un QR nuovo. Anche **chiudere il browser** del PC chiude
-l'associazione: la chiave sta solo nella sua memoria.
+con la revoca, se l'estensione o il browser si riavviano, o se **una scheda del gestionale torna
+alla pagina d'accesso** (senza il gestionale il ponte non fa niente). Il telefono lo dice («Sessione
+chiusa · 20 minuti senza comandi», «Il gestionale sul PC è tornato alla pagina d'accesso») e cancella
+dalla sua memoria tutto quello che sapeva dei pazienti, avvisi compresi; **Riapri** ne apre un'altra
+con un tocco, senza QR. L'associazione resta: rientrato nel gestionale, o riaperto il browser del PC,
+il telefono riprende con la stessa chiave. **Revoca l'iPhone** (sulla pagina ⋯ → iPhone, due tocchi)
+e la chiave di quel telefono non apre più niente: per rientrare serve un QR nuovo.
 
 Il pannello aperto su un altro telefono o in un'altra scheda prende il posto di questo, che si ferma
 («Aperto su un altro dispositivo · Riprendi qui») e non fa a gara per riprenderselo.
@@ -92,11 +93,11 @@ lui e si sblocca già col suo Face ID; basta avere la chiave del QR.
 ## Messa in servizio (una volta)
 
 **1. L'indirizzo del ponte** si scrive una volta, in `ps-app/ponte/host.txt` (una riga, il nome del
-sito: `ponte.example.org`), e `npm run dist` lo fissa nell'estensione (`extension/ponte-host.js`,
-generato da `tools/build.mjs`). Nessuna pagina lo può cambiare: non c'è un campo da riempire, e chi
-passa davanti al PC non può mandare il telefono altrove. Con `host.txt` vuoto la pagina ⋯ → iPhone
-dice «Ponte da configurare». (Per le prove, e solo verso questo PC, `chrome.storage.local`
-`"ponte.host"` può dire `http://localhost:…`: vedi «Provare in casa».)
+Worker di EKG Atlas: `ekg-atlas.<account>.workers.dev`), e `npm run dist` lo fissa nell'estensione
+(`extension/ponte-host.js`, generato da `tools/build.mjs`). Nessuna pagina lo può cambiare: non c'è un
+campo da riempire, e chi passa davanti al PC non può mandare il telefono altrove. Con `host.txt` vuoto
+(com'è adesso) la pagina ⋯ → iPhone dice «Ponte da configurare». (Per le prove, e solo verso questo
+PC, `chrome.storage.local` `"ponte.host"` può dire `http://localhost:…`: vedi «Provare in casa».)
 
 **2. Il ponte si pubblica con il sito EKG Atlas**, nello stesso Worker di Cloudflare:
 
@@ -106,48 +107,18 @@ npm install
 npm run deploy        # = vite build + wrangler deploy (sito + ponte)
 ```
 
-**Meglio su un nome suo.** L'app del telefono tiene la chiave nella memoria del suo sito: se divide
-l'origine con le pagine di EKG Atlas, un errore o una dipendenza compromessa del sito potrebbe
-leggerla. Il Worker sceglie chi risponde col nome della richiesta (`instrada`, in
-`worker/ponte-logica.js`), secondo `PONTE_HOSTNAME` (`wrangler.jsonc`, `vars`):
-
-- **vuoto** (com'è oggi): il ponte sta su `/ponte/` del sito, come prima;
-- **un nome** (`ponte.example.org`): su quel nome risponde **solo** il ponte — l'app del telefono
-  (`/ponte/…`) e la presa (`/ponte/ws`), `/` porta a `/ponte/`, il resto è un 404 —, e il sito non
-  serve più `/ponte/` (404). Così l'app che tiene la chiave non divide l'origine con nessuna pagina;
-- **`*`**: ogni nome è il ponte (è il Worker a parte, qui sotto).
-
-Le due strade, a seconda che il sito abbia un dominio suo:
-
-- **A. Un sottodominio sullo stesso Worker** (il sito ha un dominio su Cloudflare): Cloudflare →
-  Workers → `ekg-atlas` → Domini e route → **Aggiungi un dominio personalizzato** `ponte.<dominio>`;
-  poi `PONTE_HOSTNAME = "ponte.<dominio>"` in `wrangler.jsonc`, `ponte/host.txt` =
-  `ponte.<dominio>`, `npm run deploy` e `npm run dist`.
-- **B. Un Worker a parte** (il sito sta solo su `*.workers.dev`, o non si vuole toccarlo):
-  `wrangler.ponte.jsonc` pubblica lo stesso codice come Worker `ps-ponte`, con `PONTE_HOSTNAME = "*"`:
-
-  ```bash
-  npm run build && npx wrangler deploy -c wrangler.ponte.jsonc
-  ```
-
-  Risponde su `ps-ponte.<account>.workers.dev` (o su un dominio aggiunto a lui). Poi il sito prende
-  `PONTE_HOSTNAME = "ps-ponte.<account>.workers.dev"` (così smette di servire `/ponte/`), e
-  `ponte/host.txt` = quel nome. Il Durable Object del sito resta dichiarato (toglierlo vorrebbe una
-  migrazione `deleted_classes`), ma non si sveglia più.
-
-In tutti i casi chi può pubblicare quel Worker (l'account Cloudflare, il repository) può anche
-servire un'app diversa: il nome a sé toglie di mezzo il sito, non chi pubblica.
+Risponde sull'indirizzo `workers.dev` del Worker, lo stesso del sito: niente dominio personalizzato,
+niente secondo Worker.
 
 Che cosa entra nel deploy:
 
 | File | Che cosa |
 |---|---|
-| `worker/index.js` | l'ingresso del Worker: `instrada` decide fra ponte, sito (`worker/metrics.js`, il gestore di sempre) e 404 |
+| `worker/index.js` | l'ingresso del Worker: `/ponte/…` al ponte, il resto a `worker/metrics.js` (il gestore di sempre) |
 | `worker/ponte.js` | il ripetitore: il Durable Object `PonteStanza` (`/ponte/ws`) e i file dell'app del telefono, solo quelli, con le loro intestazioni di sicurezza |
-| `worker/ponte-logica.js` | la logica del ripetitore, senza Cloudflare (la stanza, il ruolo, i file dell'app, chi risponde a quale nome): la stessa che usa il ripetitore Node dei test |
+| `worker/ponte-logica.js` | la logica del ripetitore, senza Cloudflare (la stanza, il ruolo, i file dell'app): la stessa che usa il ripetitore Node dei test |
 | `public/ponte/` | l'app del telefono (`index.html`, `app.js`, `app.css`, `cripto.js`, `sw.js`, manifest, icone): Vite la copia in `dist/ponte/` |
-| `wrangler.jsonc` | `main: worker/index.js`; il binding `PONTE` e la migrazione `new_sqlite_classes` (Durable Object su SQLite: va anche col piano gratuito); `PONTE_HOSTNAME`; `run_worker_first` per ogni pagina (`/*`) tranne i file pesanti del sito (`/assets/*`, `/recordings/*`, `/icons/*`): così sul nome del ponte nessuna pagina del sito arriva dai file statici; i log senza una riga per richiesta (`invocation_logs: false`) |
-| `wrangler.ponte.jsonc` | lo stesso Worker pubblicato a parte, solo ponte (strada B) |
+| `wrangler.jsonc` | `main: worker/index.js`; il binding `PONTE` e la migrazione `new_sqlite_classes` (Durable Object su SQLite: va anche col piano gratuito); `run_worker_first` solo per `/ponte/*` e `/api/*`: le pagine del sito arrivano dai file statici senza svegliare il Worker; i log senza una riga per richiesta (`invocation_logs: false`) |
 | `vite.config.ts` | il service worker del sito resta fuori da `/ponte/` (né in cache né nel suo ripiego di navigazione) |
 
 Il sito resta com'era: le sue pagine, il ripiego SPA e `POST /api/metrics` (stessi codici di
@@ -156,19 +127,14 @@ del sito. Nell'app pubblica c'è **solo codice**: nessun dato di nessun paziente
 
 **Contro gli abusi.** Il Worker rifiuta una stanza malformata (non 32 cifre esadecimali, o un ruolo
 che non è `pc`/`tel`) prima di svegliare un Durable Object, e il ripetitore chiude una presa che
-manda più di 1200 messaggi al minuto o oltre 1 MB. Se serve di più — uno script che apre prese a
-raffica consuma la quota giornaliera del piano gratuito, che è la stessa di `/api/metrics` —, una
-regola di Cloudflare, facoltativa (vale su un dominio del proprio account, non su `*.workers.dev`):
-Sicurezza → WAF → **Regole di limitazione della frequenza** → «Se il percorso URI inizia con
-`/ponte/`», contando per IP, **30 richieste in 10 secondi** → Blocca (sul piano gratuito il blocco
-dura 10 secondi: basta a fermare uno script). Un telefono e un PC veri si ricollegano ogni tanto, mai
-trenta volte in dieci secondi.
+manda più di 1200 messaggi al minuto o oltre 1 MB. (Uno script che apre prese a raffica consuma la
+quota giornaliera del piano gratuito, la stessa di `/api/metrics`; una regola di limitazione della
+frequenza di Cloudflare vorrebbe un dominio proprio: su `workers.dev` non c'è.)
 
 > Un telefono che aveva già aperto EKG Atlas **prima** di questo deploy ha in memoria il service
 > worker vecchio del sito, che risponde a ogni pagina con EKG Atlas: la prima volta che si apre il QR
 > può comparire EKG Atlas invece del pannello. Il service worker del sito si aggiorna da solo in quel
-> momento: si inquadra di nuovo il QR (o si ricarica) e da lì in poi va. (Su un nome a sé del ponte
-> il problema non c'è.)
+> momento: si inquadra di nuovo il QR (o si ricarica) e da lì in poi va.
 
 **Prova la rete** (⋯ → iPhone → «Prova la rete», o `extension/ponte-prova.html`): dal PC
 dell'ospedale, con l'estensione vera, sulla strada vera del ponte. Entra in una stanza di prova — un
@@ -180,7 +146,7 @@ blocco **«Per l'IT»**, da mandare così com'è.
 
 ## Che cosa vede l'IT
 
-Dal Chrome del PC esce **una** connessione: una WebSocket su HTTPS, `wss://<sito del ponte>/ponte/ws`,
+Dal Chrome del PC esce **una** connessione: una WebSocket su HTTPS, `wss://ekg-atlas.<account>.workers.dev/ponte/ws`,
 **TCP 443**, solo in uscita, che deve passare il proxy (l'upgrade a WebSocket). È lunga — fino a 14
 ore — con un battito ogni **20 secondi** (un piccolo «ping»): non va chiusa per inattività né per
 durata. Nessuna porta in entrata, nessun UDP, nessun altro host. Dentro il TLS i messaggi sono cifrati
@@ -196,8 +162,9 @@ al telefono **solo nel frammento** del QR: `https://<sito>/ponte/#k=<base64url>&
 frammento non viaggia mai verso un server. L'app lo legge, lo toglie dalla barra e dalla
 cronologia, e tiene `K`, la scadenza (al massimo 14 ore da quando l'ha letto) e un numero casuale suo
 (`dev`) nel `localStorage` di Safari: è l'unica cosa che resta sul telefono. Sul PC `K` sta in
-`chrome.storage.session` — in memoria, mai su disco: muore col browser — fino alla scadenza, alla
-revoca o alla pagina d'accesso del gestionale. Il QR si rivede solo nei primi due minuti e prima che
+`chrome.storage.local` (`ponte.coppia`) fino alla scadenza o alla revoca: regge il browser chiuso e
+riaperto, come dura il turno; la pagina d'accesso del gestionale chiude la sessione, non
+l'associazione. Il QR si rivede solo nei primi due minuti e prima che
 un telefono entri; il primo che entra lega l'associazione al suo `dev` (`ponte.coppia.dev`), e il PC
 risponde «no» al saluto di ogni altro.
 
@@ -248,7 +215,7 @@ importato da `bg.js` dentro un `try`: un errore nel ponte spegne il ponte, non g
 o le stampe): da Chrome 116 una WebSocket che parla almeno ogni 30 secondi lo tiene sveglio (qui ogni
 20), ed è la strada indicata da Chrome; un documento «offscreen» vorrebbe un permesso nuovo per la
 stessa cosa. Se Chrome lo ferma lo stesso, le schede del gestionale lo risvegliano entro 30 secondi
-(`ponteSveglia`) e la presa si riapre con la chiave rimasta in `storage.session` — la sessione no: si
+(`ponteSveglia`) e la presa si riapre con la chiave rimasta in `storage.local` — la sessione no: si
 riapre dal telefono. I dati dei pazienti stanno dove stavano (il `localStorage` del gestionale,
 l'archivio dell'estensione) e il motore sta nel content script: il service worker passa ogni comando
 decifrato a **una** scheda viva del gestionale (prima quella davanti al medico; mai la scheda di un
@@ -266,9 +233,10 @@ stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),
 con tutti i controlli del motore — episodio, richiesta, presidio, carrello identico alla ricevuta,
 conferma provata. Niente ordini né promemoria su un episodio precedente, niente comandi per un
-paziente dimesso (archiviato) sul PC. Gli esiti leggono una volta la pagina del paziente (solo
-lettura, e solo se è del suo episodio: da lì anche l'anno di nascita, dal codice fiscale del
-riquadro, mai salvato) e la sua scheda clinica scelta con la stessa regola d'identità del pannello,
+paziente dimesso (archiviato) sul PC. L'età la annota il pannello quando il medico apre la pagina
+del paziente (`patients.v1`, `eta`): dalla testata della scheda («17/05/1949 (77) M»), se no dal
+codice fiscale; il numero, mai la data. Gli esiti leggono una volta la pagina del paziente (solo
+lettura, e solo se è del suo episodio) e la sua scheda clinica scelta con la stessa regola d'identità del pannello,
 con l'ora in cui il PC l'ha letta; i testi dei referti si prendono per numero di referto, quello della
 pagina di quel paziente. «Aggiorna i valori» annota la sua scheda di sottofondo in `storage.session`
 (`ponte.valori`): anche se il service worker si ferma a metà, la si riconosce, scade e si chiude; il
@@ -289,7 +257,11 @@ Serve dell'app del telefono solo i suoi file (`FILE_APP`). Niente su disco (solo
 pulizia), niente nei log: il Durable Object usa l'ibernazione delle WebSocket e il battito lo risponde
 Cloudflare senza svegliarlo.
 
-**L'app del telefono** (`public/ponte/`): niente framework; solo il suo codice (CSP `default-src
+**L'app del telefono** (`public/ponte/`): meno è meglio (Jakub Krehel). Un elemento resta solo se
+migliora quello che il medico fa: chi è il paziente, quando il PC ha letto i valori, a che punto è un
+ordine, perché un bottone non va. Niente etichette di sezione («In lista», «Esami», «Referti»),
+conteggi, piedi o testi di contorno; lo stato del collegamento compare solo quando manca. Niente
+framework; solo il suo codice (CSP `default-src
 'self'`, la rete solo verso il suo sito). I dati dei pazienti stanno nella memoria della pagina: mai
 in `localStorage`, IndexedDB o nelle cache; il suo service worker tiene solo i file dell'app. Il
 manifest ha `display: "browser"`: sull'iPhone le app «a tutto schermo» della schermata Home hanno una
@@ -312,12 +284,10 @@ capo (e, se c'è un'associazione ancora buona con un'altra chiave, chiede prima)
   minuti, si toglie da solo appena l'iPhone entra, e dopo il primo telefono non apre a nessun altro.
   Nel dubbio, Revoca.
 - **PC sbloccato e incustodito**: dà già tutto il gestionale a chi si siede. Il ponte aggiunge che una
-  sessione aperta si vede e si chiude con un tocco; il QR di prima non si rivede; la chiave muore col
-  browser e con la pagina d'accesso del gestionale (fine turno, un altro medico che entra).
-- **Chi serve l'app del telefono la può cambiare.** La chiave e i dati decifrati stanno in una pagina
-  che arriva dal sito del ponte: chi può pubblicare quel sito (l'account Cloudflare, il repository, le
-  dipendenze della build) potrebbe servire un'app che li legge. Su un nome a sé (`PONTE_HOSTNAME`) la
-  pagina non divide l'origine con EKG Atlas e le sue dipendenze; il resto resta.
+  sessione aperta si vede e si chiude con un tocco; il QR di prima non si rivede. La chiave vale fino
+  alla scadenza, anche col browser chiuso e riaperto: se nel gestionale rientra un altro medico, il
+  telefono associato lavora col suo accesso. A fine turno, **Revoca l'iPhone**.
+- **L'app del telefono divide l'origine con EKG Atlas**: chi può cambiare il sito (l'account Cloudflare, il repository, una sua dipendenza) può leggere la chiave e i dati decifrati; il medico lo accetta.
 - **Niente segretezza «in avanti»**: le chiavi di sessione vengono da K e da numeri che viaggiano
   cifrati con chiavi derivate da K. Chi registrasse il traffico di un giorno *e* poi rubasse K di
   quel giorno (dal PC o dal telefono) potrebbe decifrarlo. K vive al massimo 14 ore; uno scambio
@@ -335,7 +305,7 @@ Nell'estensione, dalla console del suo service worker (`chrome://extensions` →
 worker»): `chrome.storage.local.set({ "ponte.host": "http://localhost:8787" }).then(ponteAvvia)` —
 vale solo un indirizzo `http://localhost` o `127.0.0.1` —, poi ⋯ → iPhone → «Associa l'iPhone», e il
 link del QR in un browser. I test: `node test/ponte-cripto.mjs` (cifratura, logica del ripetitore, il
-Worker con un ambiente finto e su quale nome risponde, la configurazione di Cloudflare, e il service
+Worker con un ambiente finto, la configurazione di Cloudflare, e il service
 worker del PC in una vm con un telefono finto) e `node test/ext-ponte.mjs` (tutto vero: estensione,
 gestionale simulato, ripetitore Node, l'app in formato iPhone in un secondo browser, con la sua rete
 fra lei e il ripetitore per perdere messaggi), entrambi in `npm test`.

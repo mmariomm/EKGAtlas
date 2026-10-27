@@ -27,7 +27,7 @@
   // Le chiusure decise qui; quelle del PC portano la loro frase.
   const PERCHE = { inattivo: "20 minuti senza comandi", "chiusa dall'iPhone": "Chiusa da questo telefono", riavvio: "L'estensione sul PC si è riavviata" };
   // dopo queste la chiave di questo telefono non apre più niente
-  const FINITE = new Set(["nuova associazione", "revocata", "scaduta", "login"]);
+  const FINITE = new Set(["nuova associazione", "revocata", "scaduta"]);
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const hhmm = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
@@ -35,13 +35,11 @@
   const quanto = (t) => { const ora = Date.now(); if (t > ora) return minuti(Math.ceil((t - ora) / 60e3)); const r = Math.floor((ora - t) / 60e3); return r < 1 ? "ora" : "−" + minuti(r); };
   const fa = (t) => { const m = Math.floor((Date.now() - t) / 60e3); return m < 1 ? "adesso" : m < 60 ? `${m} min fa` : `${Math.floor(m / 60)} h fa`; };
   const banda = (t) => { const m = Math.ceil((t - Date.now()) / 60e3); return m > 30 ? "" : m > 10 ? "amb" : "ros"; };
-  // chi è, senza troncare niente: nome, anno di nascita (dalla sua pagina, con gli esiti), posto — «ROSSI MARIO · 1960 · OBI 2»
-  const chi = (p) => [p.nome, (S.esiti.get(p.ep) || {}).anno, p.posto].filter(Boolean).join(" · ");
+  // chi è, senza troncare niente: nome, età, posto — «ROSSI MARIO · 77 anni · OBI 2»
+  const chi = (p) => [p.nome, Number.isInteger(p.eta) ? (p.eta === 1 ? "1 anno" : `${p.eta} anni`) : "", p.posto].filter(Boolean).join(" · ");
   const ICO = {
     indietro: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
     altro: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>',
-    vai: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
-    logo: '<svg width="28" height="28" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#0B5CAD"/><path d="M32 17v30M17 32h30" stroke="#fff" stroke-width="8" stroke-linecap="round"/></svg>',
     croce: '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     pc: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
     lucchetto: '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
@@ -331,7 +329,6 @@
     S.occupato.add("valori" + ep); render();
     try {
       S.esiti.set(ep, await chiedi("aggiornaValori", { ep }, ATTESA_VALORI));
-      avviso("Valori aggiornati dal PC");
     } catch (e) { errore(e); }
     S.occupato.delete("valori" + ep); render();
   }
@@ -461,20 +458,21 @@
     render();
   }
   function zitto() { clearTimeout(tAvviso); S.avviso = null; }
-  const statoPc = () => (!S.ws || S.ws.readyState !== 1 ? `<span class="statopc amb"><i></i>Ricollego…</span>`
-    : S.pari === false ? `<span class="statopc amb"><i></i>PC assente</span>` : `<span class="statopc"><i></i>PC</span>`);
+  // il collegamento si dice solo quando manca
+  const statoPc = () => (!S.ws || S.ws.readyState !== 1 ? `<span class="statopc"><i></i>Ricollego…</span>`
+    : S.pari === false ? `<span class="statopc"><i></i>PC assente</span>` : "");
   function testata() {
     if (S.fase !== "pronta") return "";
     const suPaz = S.vista.nome === "paziente", p = suPaz ? paziente(S.vista.ep) : null;
-    const sx = suPaz ? `<button class="ico" data-a="indietro" aria-label="Tutti i pazienti">${ICO.indietro}</button>` : `<span class="logo">${ICO.logo}</span>`;
-    const tit = p ? `<b>${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(chi(p))}</b><small>${[p.triage && p.triage.toLowerCase(), "ep. " + p.ep].filter(Boolean).map(esc).join(" · ")}</small>`
-      : suPaz ? `<b>Paziente</b>` : `<b>Pazienti</b><small>${S.aggiornato ? `Aggiornato alle ${hhmm(S.aggiornato)}` : S.occupato.has("lista") ? "Leggo l'elenco dal PC…" : ""}</small>`;
+    const sx = suPaz ? `<button class="ico" data-a="indietro" aria-label="Tutti i pazienti">${ICO.indietro}</button>` : "";
+    const tit = p ? `<b>${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(chi(p))}</b>${p.prec ? "<small>Episodio precedente</small>" : ""}`
+      : suPaz ? "" : S.aggiornato ? `<small>Aggiornato alle ${hhmm(S.aggiornato)}</small>` : "";
     return `<header class="top">${sx}<div class="tit">${tit}</div>${statoPc()}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
       ${S.menu ? `<div class="menu" role="menu">
         ${suPaz ? "" : `<button data-a="aggiornaLista">Aggiorna l'elenco</button>`}
         <button data-a="esci">Chiudi la sessione</button>
         <button class="via" data-a="dimentica">Dimentica questo PC</button>
-        <div class="info">Associato fino alle ${hhmm(S.coppia.scade)} · codice ${esc(S.codice)}. La sessione si chiude da sola dopo 20 minuti senza comandi.</div>
+        <div class="info">Associato fino alle ${hhmm(S.coppia.scade)} · codice ${esc(S.codice)}</div>
       </div>` : ""}</header>`;
   }
   function piena(icona, titolo, testo, extra = "", amb = false) {
@@ -485,7 +483,7 @@
     const scade = S.coppia ? `<div class="piccolo">Associato fino alle ${hhmm(S.coppia.scade)} · codice ${esc(S.codice)}</div>` : "";
     switch (S.fase) {
       case "senza":
-        return piena(ICO.croce, "PS Assist sull'iPhone", `<p>Il pannello del pronto soccorso, dal telefono. Si associa una volta per turno, dal PC.</p>${PASSI}`);
+        return piena(ICO.croce, "PS Assist sull'iPhone", PASSI);
       case "finita": {
         const sc = S.perche === "scaduta";
         return piena(ICO.lucchetto, sc ? "Associazione scaduta" : "Associazione chiusa",
@@ -503,20 +501,20 @@
           `<button class="grande" data-a="sostituisci">Usa il codice ${esc(S.nuova.codice)}</button><button class="grande quiet" data-a="tieni">Tieni quella di adesso</button>`, true);
       case "avvio":
       case "collego":
-        return `<main><div class="piena"><div class="giro"></div><h1>Mi collego al PC…</h1><p>Attraverso il ponte, cifrato da un capo all'altro.</p>${scade}</div></main>`;
+        return `<main><div class="piena"><div class="giro"></div><h1>Mi collego al PC…</h1></div></main>`;
       case "pc":
         if (S.pari === null && !(S.ws && S.ws.readyState === 1)) {
           return piena(ICO.pc, "Non raggiungo il ponte", "<p>Controlla la connessione del telefono: riprovo da solo.</p>",
             `<button class="grande" data-a="riapri">Riprova</button>${scade}`, true);
         }
         return piena(ICO.pc, "Il PC non risponde", `<p>${S.pari ? "Il PC è sul ponte ma non risponde: riprovo da solo." : "Sul PC dell'ospedale deve essere aperto Chrome col pannello: lo aspetto, e riprovo da solo."}</p>
-          <p>Se sul PC c'è un QR nuovo, o il browser è stato chiuso, inquadra il QR nuovo.</p>`,
+          <p>Se sul PC c'è un QR nuovo, inquadra quello.</p>`,
           `<button class="grande" data-a="riapri">Riprova</button>${scade}`, true);
       case "altrove":
         return piena(ICO.pc, "Aperto su un altro dispositivo", "<p>Il pannello è aperto su un altro telefono o in un'altra scheda: qui si è fermato.</p>",
           `<button class="grande" data-a="riapri">Riprendi qui</button>${scade}`);
       case "chiusa":
-        return piena(ICO.lucchetto, "Sessione chiusa", `<p>${esc(S.testoFine)}.</p><p>I dati dei pazienti non sono più su questo telefono.</p>`,
+        return piena(ICO.lucchetto, "Sessione chiusa", `<p>${esc(S.testoFine)}.</p>`,
           `<button class="grande" data-a="riapri">Riapri</button>${scade}`);
       default: return "";
     }
@@ -529,8 +527,7 @@
   function rigaPaz(p) {
     return `<button class="paz t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" data-a="paz" data-ep="${esc(p.ep)}">
       <span class="tr"></span><span class="cor"><span class="r1"><span class="nome">${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(p.breve || p.nome)}</span>${
-        p.posto ? `<span class="posto">${esc(p.posto)}</span>` : ""}${promPill(p)}</span>${p.nota ? `<span class="nota">${esc(p.nota)}</span>` : ""}</span>
-      <span class="vai">${ICO.vai}</span></button>`;
+        p.posto ? `<span class="posto">${esc(p.posto)}</span>` : ""}${promPill(p)}</span>${p.nota ? `<span class="nota">${esc(p.nota)}</span>` : ""}</span></button>`;
   }
   // Un ordine, con le parole del PC. Sulla lista, in fondo: quello che corre,
   // o uno finito male (finché non lo si chiude con ✕).
@@ -539,8 +536,7 @@
     const male = o.fine && (o.tono === "err" || o.tono === "warn");
     const titolo = barra ? `${male ? "Ordine non completo" : o.titolo || ""} · ${o.paziente || ""}` : o.titolo || "";
     const testo = barra && male ? [o.titolo, o.testo].filter(Boolean).join(" · ") : o.testo || "";
-    const quanti = /\besam/i.test(`${o.titolo} ${o.testo}`) ? "" : o.n === 1 ? "1 esame" : o.n ? `${o.n} esami` : "";
-    const meta = barra ? (male ? "Tocca per vedere" : "") : [quanti, o.rx ? "radiologia" : "", hhmm(o.ts || Date.now())].filter(Boolean).join(" · ");
+    const meta = barra ? "" : hhmm(o.ts || Date.now());
     return `<div class="ord ${esc(o.tono || "run")}${barra ? " ordbar" : ""}" role="status"${barra ? ` data-a="paz" data-ep="${esc(o.ep)}"` : ""}>
       <span class="seg-o">${segno}</span>
       <span class="c"><b>${esc(titolo)}</b>${testo ? `<span>${esc(testo)}</span>` : ""}${!barra && o.dettaglio ? `<small>${esc(o.dettaglio)}</small>` : ""}${meta ? `<small>${esc(meta)}</small>` : ""}</span>
@@ -555,19 +551,20 @@
       }
       return `<main><div class="carica"><div class="giro"></div></div></main>`;
     }
+    // chi è in lista, poi chi è nella stanza (il posto lo dice), e gli episodi precedenti a parte
     const vivi = S.pazienti.filter((p) => !p.prec);
-    const inLista = vivi.filter((p) => !p.posto), inStanza = vivi.filter((p) => p.posto).sort((a, b) => a.posto.localeCompare(b.posto, "it", { numeric: true }));
+    const inStanza = vivi.filter((p) => p.posto).sort((a, b) => a.posto.localeCompare(b.posto, "it", { numeric: true }));
     const prec = S.pazienti.filter((p) => p.prec);
-    const blocco = (titolo, l) => (l.length ? `<div class="lbl">${esc(titolo)} <span class="n">${l.length}</span></div><div class="carta">${l.map(rigaPaz).join("")}</div>` : "");
+    const carta = (l) => (l.length ? `<div class="carta">${l.map(rigaPaz).join("")}</div>` : "");
     const visibili = [...S.ordini.values()].filter((o) => !S.nascosti.has(o.id) && (!o.fine || o.tono === "err" || o.tono === "warn")).sort((a, b) => (b.ts || 0) - (a.ts || 0));
     const barra = visibili.find((o) => o.fine) || visibili[0];
-    return `<main>${S.pazienti.length ? blocco("In lista", inLista) + blocco("Nella stanza", inStanza) + blocco("Episodi precedenti", prec)
+    return `<main>${S.pazienti.length ? carta([...vivi.filter((p) => !p.posto), ...inStanza]) + (prec.length ? `<div class="lbl">Episodi precedenti</div>${carta(prec)}` : "")
       : `<div class="vuoto">Nessun paziente nell'elenco del PC.<br>Si riempie aprendo i pazienti nel gestionale.</div>`}
       ${barra ? ordineHtml(barra, true) : ""}</main>`;
   }
   function tabellaHtml(t) {
     const col = t.colonne;
-    const testa = `<tr><th class="nm">Esame</th>${col.map((c, i) => `<th class="${i === 0 && c.cima !== "?" ? "ult" : ""}">${esc(c.cima)}${c.sotto ? `<small>${esc(c.sotto)}</small>` : ""}${
+    const testa = `<tr><th class="nm"></th>${col.map((c, i) => `<th class="${i === 0 && c.cima !== "?" ? "ult" : ""}">${esc(c.cima)}${c.sotto ? `<small>${esc(c.sotto)}</small>` : ""}${
       c.parziale ? `<small class="parz">parziale</small>` : ""}</th>`).join("")}</tr>`;
     const corpo = t.gruppi.map((g) => `<tr class="sez"><th class="nm" colspan="1">${esc(g.nome)}</th><td colspan="${col.length}"></td></tr>${g.righe.map((r) =>
       `<tr><th class="nm">${esc(r.nome)}${r.um ? ` <small>(${esc(r.um)})</small>` : ""}</th>${r.valori.map((v) => (!v ? `<td class="vuota">·</td>`
@@ -580,12 +577,12 @@
     if (!e) return carica ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto">Esiti non caricati.</div>`;
     // quando li ha letti il PC: dopo un'ora, in ambra
     const letti = e.tabella && e.letto ? `<small class="letti${Date.now() - e.letto > 60 * 60e3 ? " amb" : ""}">Letti sul PC alle ${hhmm(e.letto)} · ${fa(e.letto)}</small>` : "";
-    const valori = `<div class="carta"><div class="sezt"><div class="tv"><b>Valori</b>${letti}</div>
+    const valori = `<div class="carta"><div class="sezt"><div class="tv">${letti}</div>
         <button class="agg" data-a="valori" ${legge ? "disabled" : ""}>${legge ? "Leggo sul PC…" : "↻ Aggiorna i valori"}</button></div>
-      ${e.tabella ? tabellaHtml(e.tabella) : `<div class="vuoto stretto">${legge ? "Il PC sta leggendo i valori: qualche minuto al massimo." : "Il PC non ha ancora letto valori per questo paziente. «Aggiorna i valori» li legge adesso, sul PC."}</div>`}</div>`;
-    const referti = e.referti.length ? `<div class="lbl">Referti <span class="n">${e.referti.length}</span></div><div class="carta">${e.referti.map((r) => {
+      ${e.tabella ? tabellaHtml(e.tabella) : legge ? "" : `<div class="vuoto stretto">Il PC non ha ancora letto valori per questo paziente.</div>`}</div>`;
+    const referti = e.referti.length ? `<div class="carta">${e.referti.map((r) => {
       const aperto = S.aperti.has(r.id);
-      return `<button class="ref" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span><span class="s">${esc(r.sistema || "")}</span></span>${
+      return `<button class="ref" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span></span>${
         aperto ? (r.testo ? `<div class="testo">${esc(r.testo)}</div>` : `<div class="manca">${r.lungo ? "Testo troppo lungo per il telefono: leggilo sul PC." : "Testo non ancora letto sul PC: aprilo una volta dal pannello (Esiti), poi è qui."}</div>`) : ""}</button>`;
     }).join("")}</div>` : "";
     return `${valori}${referti}${e.nota ? `<p class="piede">${esc(e.nota)}</p>` : ""}`;
@@ -599,15 +596,14 @@
     const quesiti = c.quesiti.map((q) => {
       const pk = c.pacchetti.find((x) => x.q === q);
       const on = pk && s.pacchetto === pk.q;
-      return `<button class="chip${on ? " on" : ""}" data-a="quesito" data-q="${esc(q)}" aria-pressed="${!!on}">${esc(q)}${pk ? `<span class="n"> · ${pk.esami.length}</span>` : ""}</button>`;
+      return `<button class="chip${on ? " on" : ""}" data-a="quesito" data-q="${esc(q)}" aria-pressed="${!!on}">${esc(q)}</button>`;
     }).join("");
     const gruppi = c.gruppi.map((g) => `<div class="gruppo"><h3>${esc(g.nome)}</h3>${g.profili.length ? `<div class="chips">${g.profili.map((pr, i) => {
       const on = pr.esami.every((k) => s.esami.has(k));
       return `<button class="chip${on ? " on" : ""}" data-a="profilo" data-g="${esc(g.nome)}" data-i="${i}">${esc(pr.nome)}</button>`;
-    }).join("")}</div>` : ""}<div class="griglia">${g.esami.map((k) => `<button class="esame${s.esami.has(k) ? " on" : ""}" data-a="esame" data-k="${esc(k)}"><span class="box">✓</span>${esc(c.nomi[k] || k)}</button>`).join("")}</div>${
-      g.rx ? `<p class="rxnota">La radiologia arriva nel carrello: la conferma resta del PC.</p>` : ""}</div>`).join("");
+    }).join("")}</div>` : ""}<div class="griglia">${g.esami.map((k) => `<button class="esame${s.esami.has(k) ? " on" : ""}" data-a="esame" data-k="${esc(k)}"><span class="box">✓</span>${esc(c.nomi[k] || k)}</button>`).join("")}</div></div>`).join("");
     return `<div class="carta q-w"><input id="quesito" type="text" enterkeyhint="done" autocomplete="off" placeholder="Quesito diagnostico" value="${esc(s.q)}"><div class="chips">${quesiti}</div></div>
-      <div class="lbl">Esami</div><div class="carta">${gruppi}</div>`;
+      <div class="carta">${gruppi}</div>`;
   }
   function ctaHtml(p) {
     if (S.scheda !== "richieste" || !S.catalogo || !p.ordina || p.prec) return "";
@@ -629,10 +625,9 @@
     const bozza = S.bozze.has(p.ep) ? S.bozze.get(p.ep) : p.nota || "";
     const aperta = S.notaAperta === p.ep, promAperto = S.promAperto === p.ep;
     const proms = [...(p.prom || [])].sort((a, b) => a.t - b.t);
-    const stato = S.occupato.has("nota" + p.ep) ? "salvo…" : "si salva quando esci dal campo";
-    const nota = aperta ? `<div class="nota-w"><textarea id="nota" rows="3" placeholder="Nota su questo paziente" aria-label="Nota">${esc(bozza)}</textarea><div class="salva">${esc(stato)}</div></div>`
+    const nota = aperta ? `<div class="nota-w"><textarea id="nota" rows="3" placeholder="Nota su questo paziente" aria-label="Nota">${esc(bozza)}</textarea></div>`
       : bozza ? `<button class="notatxt" data-a="nota" aria-label="Modifica la nota">${esc(bozza)}</button>` : "";
-    const righe = proms.map((x) => `<div class="promr"><span class="quando ${banda(x.t)}">${hhmm(x.t)}</span><span class="cosa">${esc(x.testo)}<small>${esc(quanto(x.t))}</small></span>${
+    const righe = proms.map((x) => `<div class="promr"><span class="quando ${banda(x.t)}">${hhmm(x.t)}</span><span class="cosa">${esc(x.testo)}</span>${
       S.fatti.has(x.id) ? `<span class="fattoin">Fatto</span><button class="btnmini" data-a="annulla" data-pid="${esc(x.id)}" ${S.occupato.has("fatto" + x.id) ? "disabled" : ""}>Annulla</button>`
         : `<button class="btnmini ok" data-a="fatto" data-pid="${esc(x.id)}">✓ Fatto</button>`}</div>`).join("");
     const add = promAperto ? `<div class="addprom"><input id="promin" type="text" enterkeyhint="done" autocomplete="off" placeholder="«11:30 tropo», «tra 2h ECG»" value="${esc(S.promTesto)}">

@@ -29,21 +29,6 @@ export const altroRuolo = (r) => (r === "pc" ? "tel" : "pc");
 export const FILE_APP = new Set(["", "app.js", "app.css", "cripto.js", "sw.js", "manifest.webmanifest",
   "icona.svg", "icona-180.png", "icona-192.png", "icona-512.png"].map((f) => "/ponte/" + f));
 
-// Chi risponde a una richiesta: «ponte» (l'app del telefono e la presa),
-// «sito» (EKG Atlas, com'era) o «niente» (404). Con un nome a sé per il ponte
-// (PONTE_HOSTNAME) il ponte sta SOLO lì, e lì non c'è nient'altro: l'app che
-// tiene la chiave non divide l'origine con nessun'altra pagina. «*»: questo
-// Worker è solo il ponte, su ogni nome (il Worker a parte,
-// wrangler.ponte.jsonc). Vuoto: tutto come prima, /ponte/ sul sito.
-export function instrada(url, ponteHost) {
-  const u = url instanceof URL ? url : new URL(url);
-  const host = String(ponteHost || "").trim().toLowerCase();
-  const suPonte = u.pathname === "/ponte" || u.pathname.startsWith("/ponte/");
-  if (!host) return suPonte ? "ponte" : "sito";
-  if (host === "*" || u.hostname.toLowerCase() === host) return "ponte";
-  return suPonte ? "niente" : "sito";
-}
-
 // /ponte/ws?r=<stanza>&ruolo=pc|tel
 export function leggiStanza(url) {
   const u = url instanceof URL ? url : new URL(url);

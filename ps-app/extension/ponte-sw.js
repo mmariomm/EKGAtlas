@@ -14,10 +14,10 @@
  * un nome, un esame, un valore. Il suo indirizzo è fissato nella build
  * (ponte-host.js, da ponte/host.txt): nessuna pagina lo cambia.
  *
- * La chiave sta in storage.session: in memoria, mai su disco, e muore col
- * browser. Il QR si rivede solo nei primi due minuti e solo finché nessun
- * telefono è entrato; il primo che entra è quello dell'associazione, e un
- * altro telefono con lo stesso QR non entra.
+ * La chiave sta in storage.local fino alla sua scadenza (14 ore): un turno,
+ * anche se il browser si chiude e si riapre. Il QR si rivede solo nei primi
+ * due minuti e solo finché nessun telefono è entrato; il primo che entra è
+ * quello dell'associazione, e un altro telefono con lo stesso QR non entra.
  *
  * Perché la presa sta nel service worker: da Chrome 116 una WebSocket che
  * manda o riceve almeno ogni 30 secondi lo tiene sveglio (qui un battito ogni
@@ -30,13 +30,14 @@
  * La sessione finisce dopo 20 minuti senza comandi del medico, con «Scollega»
  * sul PC, con la revoca, alla scadenza dell'associazione (14 ore), col riavvio
  * dell'estensione, o quando una scheda del gestionale torna alla pagina
- * d'accesso (e allora anche l'associazione). Mentre è aperta, ogni scheda del
- * gestionale lo dice nell'intestazione del pannello: «iPhone collegato · Scollega».
+ * d'accesso (l'associazione no: rientrati nel gestionale, il telefono riapre).
+ * Mentre è aperta, ogni scheda del gestionale lo dice nell'intestazione del
+ * pannello: «iPhone collegato · Scollega».
  */
 /* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto */
 
 const PONTE_HOST_PROVA = "ponte.host";      // storage.local: solo per le prove, e solo verso questo PC
-const PONTE_COPPIA = "ponte.coppia";        // storage.session: { k, scade, creata, usata, dev, nTel }
+const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, scade, creata, usata, dev, nTel }
 const PONTE_STATO = "ponte";                // storage.session: quello che le pagine mostrano
 const PONTE_ORDINI = "ponte.ordini";        // storage.session: gli ordini partiti dal telefono
 const PONTE_VALORI = "ponte.valori";        // storage.session: le schede aperte per «Aggiorna i valori»
@@ -96,7 +97,7 @@ function ponteScriviStato() {
 }
 async function ponteScriviCoppia(c) {
   pt.coppia = c;
-  await chrome.storage.session.set({ [PONTE_COPPIA]: c });
+  await chrome.storage.local.set({ [PONTE_COPPIA]: c });
 }
 
 // L'indirizzo del ponte viene dalla build. Per le prove, e solo verso questo
@@ -118,22 +119,25 @@ let ponteFilaAvvio = Promise.resolve();
 const ponteAvvia = () => (ponteFilaAvvio = ponteFilaAvvio.then(ponteAvviaOra, ponteAvviaOra));
 async function ponteAvviaOra() {
   pt.host = await ponteIndirizzo();
-  let c = (await chrome.storage.session.get(PONTE_COPPIA))[PONTE_COPPIA] || null;
+  let c = (await chrome.storage.local.get(PONTE_COPPIA))[PONTE_COPPIA] || null;
   if (c && ponteOra() >= c.scade) {
-    await chrome.storage.session.remove(PONTE_COPPIA);
+    await chrome.storage.local.remove(PONTE_COPPIA);
     ponteNota(`Associazione con l'iPhone scaduta alle ${hhmmPonte(c.scade)}`);
     c = null;
   }
-  if (!c) { pt.coppia = null; pt.k = null; pt.chiavi = null; pt.codice = ""; pt.chiaviDi = ""; }
-  else {
-    if (pt.chiaviDi !== c.k) {
+  if (c && pt.chiaviDi !== c.k) {
+    try {
       pt.k = PonteCripto.daB64u(c.k);
       pt.chiavi = await PonteCripto.chiaviCoppia(pt.k);
       pt.codice = await PonteCripto.codice(pt.k);
       pt.chiaviDi = c.k;
+    } catch {   // una chiave rovinata su disco non tiene fermo il ponte per sempre
+      await chrome.storage.local.remove(PONTE_COPPIA);
+      c = null;
     }
-    pt.coppia = c;
   }
+  if (!c) { pt.coppia = null; pt.k = null; pt.chiavi = null; pt.codice = ""; pt.chiaviDi = ""; }
+  else pt.coppia = c;
   if (pt.host && pt.coppia) ponteConnetti();
   else ponteStacca();
   await ponteScriviStato();
@@ -213,7 +217,7 @@ async function ponteControlla() {
   if (pt.coppia && ora >= pt.coppia.scade) {
     const scade = pt.coppia.scade;
     await ponteFine("scaduta");
-    await chrome.storage.session.remove(PONTE_COPPIA);
+    await chrome.storage.local.remove(PONTE_COPPIA);
     ponteNota(`Associazione con l'iPhone scaduta alle ${hhmmPonte(scade)}`);
     await ponteAvvia();
     return;
@@ -322,10 +326,10 @@ async function ponteFine(perche) {
   try { ponteManda(await s.canale.cifra({ evento: "fine", perche, testo: pt.fine.testo })); } catch { /* la presa è giù: lo saprà dal «riparti» */ }
   await ponteScriviStato();
 }
-// Revoca, QR nuovo, gestionale alla pagina d'accesso: la chiave se ne va.
+// Revoca: la chiave se ne va.
 async function ponteVia(perche, nota) {
   await ponteFine(perche);
-  await chrome.storage.session.remove(PONTE_COPPIA);
+  await chrome.storage.local.remove(PONTE_COPPIA);
   ponteNota(nota);
   await ponteAvvia();
 }
@@ -584,15 +588,10 @@ function ponteDaPagina(msg, sender, reply) {
   };
   if (msg.t === "ponteSveglia" && (estensione || gestionale)) return fai(async () => { await ponteAvvia(); return { ok: true }; });
   if (msg.t === "ponteScollega" && (estensione || gestionale)) return fai(async () => { await ponteFine("scollegata dal PC"); return { ok: true }; });
-  // Una scheda del gestionale è sulla pagina d'accesso: la sessione del
-  // gestionale è finita, e con lei il ponte — chi rientra può essere un altro
-  // medico, e gli ordini dal telefono partirebbero col suo nome.
-  if (msg.t === "ponteLogin" && gestionale) {
-    return fai(async () => {
-      if (pt.coppia) await ponteVia("login", "Gestionale alla pagina d'accesso: associazione con l'iPhone chiusa (serve un QR nuovo)");
-      return { ok: true };
-    });
-  }
+  // Una scheda del gestionale è sulla pagina d'accesso: senza il gestionale
+  // il ponte non fa niente, e la sessione si chiude. L'associazione resta:
+  // rientrati nel gestionale, il telefono riapre con un tocco, senza QR.
+  if (msg.t === "ponteLogin" && gestionale) return fai(async () => { await ponteFine("login"); return { ok: true }; });
   if (msg.t === "ponteApri" && gestionale) {
     return fai(async () => {
       const t = sender.tab;
@@ -631,10 +630,8 @@ chrome.runtime.onMessage.addListener(ponteDaPagina);
 chrome.runtime.onStartup?.addListener(() => { ponteAvvia().catch(() => {}); });
 
 // All'avvio del service worker: una sessione di prima non c'è più (le sue
-// chiavi stavano in memoria). Lo si dice, e la presa si riapre. (La chiave
-// dell'associazione, fino alla 3.52, stava su disco: via anche da lì.)
+// chiavi stavano in memoria). Lo si dice, e la presa si riapre.
 const ponteCaricato = (async () => {
-  await chrome.storage.local.remove("ponte.coppia").catch(() => {});
   const s = (await chrome.storage.session.get(PONTE_STATO))[PONTE_STATO];
   pt.registro = Array.isArray(s && s.registro) ? s.registro : [];
   if (s && s.sessione) {

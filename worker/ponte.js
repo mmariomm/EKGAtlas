@@ -4,7 +4,6 @@
  *   /ponte/ws?r=<stanza>&ruolo=pc|tel   la presa: un Durable Object per stanza
  *   /ponte/…                            l'app del telefono, i suoi file da dist/ponte/
  *                                       (solo quelli: un altro indirizzo è un 404)
- * (Su quale nome risponde lo decide worker/index.js: PONTE_HOSTNAME.)
  *
  * Il Durable Object usa l'ibernazione delle WebSocket: fra un messaggio e
  * l'altro non resta niente in memoria, e il battito («ping» → «pong») lo
@@ -64,7 +63,6 @@ export async function ponteFetch(request, env) {
     if (!r.ok) return new Response(r.perche, { status: r.stato });
     return env.PONTE.get(env.PONTE.idFromName(r.stanza)).fetch(request);
   }
-  if (p === "/" || p === "/ponte") return Response.redirect(new URL("/ponte/", url).href, 302);
   const h = new Headers(intestazioniApp(url));
   if (!FILE_APP.has(p)) return new Response("non trovato", { status: 404, headers: h });
   // l'app del telefono: i file di dist/ponte/, con le sue intestazioni

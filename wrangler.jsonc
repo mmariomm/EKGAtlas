@@ -11,19 +11,13 @@
       "invocation_logs": false
     }
   },
-  "vars": {
-    // the bridge's own hostname (ps-app/ponte/README.md); empty: /ponte/ on the site
-    "PONTE_HOSTNAME": ""
-  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": [
-      "/*",
-      "!/assets/*",
-      "!/recordings/*",
-      "!/icons/*"
+      "/ponte/*",
+      "/api/*"
     ]
   },
   "durable_objects": {

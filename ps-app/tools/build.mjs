@@ -42,7 +42,7 @@ writeFileSync(join(root, "extension/content.js"), built);
 // (public/ponte/cripto.js) e copiata qui tale e quale per il service worker.
 copyFileSync(join(root, "../public/ponte/cripto.js"), join(root, "extension/ponte-cripto.js"));
 // …e il suo indirizzo, fissato qui una volta per tutte: nessuna pagina lo può
-// cambiare. ponte/host.txt vuoto = ponte non configurato (lo dice la pagina iPhone).
+// cambiare. ponte/host.txt vuoto = ponte da configurare (lo dice la pagina iPhone).
 let ponteHost;
 try { ponteHost = origineDelPonte(readFileSync(join(root, "ponte/host.txt"), "utf8")); }
 catch (e) { console.error(e.message); process.exit(1); }
@@ -57,4 +57,4 @@ mkdirSync(join(root, "bookmarklet"), { recursive: true });
 const bookmarklet = "javascript:" + encodeURIComponent("void " + built);
 writeFileSync(join(root, "bookmarklet/ps-assist.bookmarklet.txt"), bookmarklet);
 
-console.log(`built v${version}: extension/content.js (${built.length} bytes), bookmarklet (${Math.round(bookmarklet.length / 1024)} KB), ponte: ${ponteHost || "non configurato"}`);
+console.log(`built v${version}: extension/content.js (${built.length} bytes), bookmarklet (${Math.round(bookmarklet.length / 1024)} KB), ponte: ${ponteHost || "da configurare"}`);

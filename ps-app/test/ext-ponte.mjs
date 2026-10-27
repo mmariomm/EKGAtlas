@@ -10,8 +10,8 @@
  * senza comandi, «Scollega», un altro dispositivo, la pagina ricaricata, il
  * battito, la revoca, la scadenza, la pagina d'accesso del gestionale, i
  * messaggi ripetuti o manomessi, nessun gestionale aperto, il service worker
- * che si riavvia — e il ripetitore che non vede mai niente in chiaro. In
- * fondo, la prova della rete, e l'app al buio.
+ * che si riavvia, il browser chiuso e riaperto — e il ripetitore che non vede
+ * mai niente in chiaro. In fondo, la prova della rete, e l'app al buio.
  *   node test/ext-ponte.mjs
  */
 import { chromium } from "playwright";
@@ -50,6 +50,8 @@ const relay = await avviaRelay({ osserva: (b) => inoltrati.push(b) });
 
 // ---- il gestionale: ROSSI MARIO (con i prelievi da leggere) e BIANCHI ANNA --
 const CF_A = "RSSMRA60A01F205Z", CF_B = "BNCNNA75C41F205K";
+// l'età di BIANCHI (nata il 1/3/1975), che la sua testata non dice: dal codice fiscale
+const ETA_B = new Date().getFullYear() - 1975 - (new Date().getMonth() < 2 ? 1 : 0);
 let A, B;
 const nuovi = () => {
   A = createMock({ withResults: true, cf: CF_A });
@@ -64,10 +66,15 @@ const quale = (url) => {
 };
 let lento = 0;
 let login = false;   // il gestionale risponde con la pagina d'accesso (sessione scaduta)
-// la testata della scheda del paziente, com'è nel gestionale: il triage e il nome
-const riquadro = (nome, triage, ep, cf) => `<table><tr><td title="${triage}"><font style="font-size:80%">${ep}</font> <font style="font-size:150%">${nome}</font> <font style="font-size:80%">nato il 01/01/1960 · ${cf}</font></td></tr></table>`;
+// la testata della scheda del paziente, com'è nel gestionale: il triage, il
+// nome e, in corpo 120%, la data di nascita con l'età — di ROSSI 77 anni
+// (non i 66 del suo codice fiscale: conta la testata); quella di BIANCHI non la dice
+const riquadro = (nome, triage, ep, cf, nascita) => `<table><tr><td title="${triage}"><font style="font-size: 120%; font-weight: bolder; ">${ep}</font><br><font style="font-size: 150%; font-weight: bolder; ">${nome}</font><br>${
+  nascita ? `<font style="font-size: 120%; font-weight: bolder; ">${nascita}</font><br>` : ""}<font style="font-size: 120%; font-weight: bolder; ">${cf}</font></td></tr></table>`;
 const LOGIN = `<html><head><title>Accesso</title></head><body><form name="Login" method="post" action="login.do"><input name="username"><input type="password" name="password"><input type="submit" value="Accedi"></form></body></html>`;
 
+// il browser del PC (una funzione: lo si chiude e lo si riapre, con lo stesso profilo)
+async function apriBrowser() {
 const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
@@ -98,18 +105,21 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   while (out.status === 302 && h++ < 5) out = mock.handle({ method: "GET", url: new URL(out.headers.location, u).href });
   if (/html/.test(out.headers["content-type"] || "") && /MVPG=PsoEpisodioClinicoAmbulatorio|^[^?]*\?EPISODIO_ID/.test(u)) {
     const m = quale(u), rossi = m === A;
-    const html = Buffer.from(out.body).toString("latin1").replace("<body>", "<body>" + riquadro(rossi ? "ROSSI MARIO" : "BIANCHI ANNA", rossi ? "ARANCIONE" : "VERDE", m.state.episodeId, rossi ? CF_A : CF_B));
+    const html = Buffer.from(out.body).toString("latin1").replace("<body>", "<body>" + riquadro(rossi ? "ROSSI MARIO" : "BIANCHI ANNA", rossi ? "ARANCIONE" : "VERDE", m.state.episodeId, rossi ? CF_A : CF_B, rossi ? "17/05/1949 (77) M" : ""));
     out = { ...out, body: Buffer.from(html, "latin1") };
   }
   try { await r.fulfill({ status: out.status, headers: out.headers, body: out.body }); } catch { /* scheda chiusa intanto */ }
 });
-let sw = ctx.serviceWorkers()[0];
-if (!sw) sw = await ctx.waitForEvent("serviceworker", { timeout: 15000 });
+return ctx;
+}
+let ctx = await apriBrowser();
+const swDi = async (c) => c.serviceWorkers().find((w) => w.url().endsWith("bg.js")) || c.waitForEvent("serviceworker", { timeout: 15000 });
+let sw = await swDi(ctx);
 const extId = new URL(sw.url()).host;
 const EXTURL = (f) => `chrome-extension://${extId}/${f}`;
 const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`);
 const statoPonte = () => sw.evaluate(() => chrome.storage.session.get("ponte").then((o) => o.ponte || null));
-const coppiaPc = () => sw.evaluate(() => Promise.all([chrome.storage.local.get("ponte.coppia"), chrome.storage.session.get("ponte.coppia")]).then(([l, s]) => ({ disco: l["ponte.coppia"] || null, memoria: s["ponte.coppia"] || null })));
+const coppiaPc = () => sw.evaluate(() => chrome.storage.local.get("ponte.coppia").then((o) => o["ponte.coppia"] || null));
 const registroPonte = async () => ((await statoPonte())?.registro || []).map((x) => x.testo).join("\n");
 const nuovaPagina = (timeout = 15000) => ctx.waitForEvent("page", { timeout }).catch(() => null);
 async function suPagina(p, url) {
@@ -164,6 +174,11 @@ sezione("il PC: il gestionale aperto, il ponte, il QR");
 const doc = await ctx.newPage();
 await suPagina(doc, A.patientUrl);
 await suPagina(doc, B.patientUrl);
+const pazPc = () => doc.evaluate(() => localStorage.getItem("psassist:patients.v1") || "[]");
+const etaPc = async () => Object.fromEntries(JSON.parse(await pazPc()).map((p) => [p.name, p.eta]));
+await finche(async () => (await etaPc())["BIANCHI ANNA"] != null, 8000);
+check((await etaPc())["ROSSI MARIO"] === 77 && (await etaPc())["BIANCHI ANNA"] === ETA_B && !/\d{1,2}\/\d{1,2}\/\d{4}/.test(await pazPc()),
+  `aperta la sua pagina, del paziente resta l'età — dalla testata (ROSSI 77), se no dal codice fiscale (BIANCHI ${ETA_B}) —, mai la data di nascita`);
 // ROSSI sta nel letto OBI 2 della stanza (un posto messo dal medico); BIANCHI
 // ha anche un episodio di stanotte (stesso codice fiscale); VERDI è in lista
 // (senza la sua pagina)
@@ -205,7 +220,7 @@ check(Math.abs(scade1 - Date.now() - 14 * 3600e3) < 60e3, "l'associazione vale 1
 const codice1 = (await ponte.locator("#qrcodice").innerText()).trim();
 check(codice1 === await P.codice(K1), `accanto al QR, il codice dell'associazione: ${codice1}`);
 const cp = await coppiaPc();
-check(!cp.disco && cp.memoria && cp.memoria.k === P.b64u(K1), "sul PC la chiave sta in memoria (storage.session), non su disco");
+check(cp && cp.k === P.b64u(K1) && cp.scade === scade1, "sul PC la chiave sta in storage.local, con la sua scadenza (regge il browser chiuso: più sotto)");
 check(await finche(async () => (await statoPonte())?.relay === "su", 10000), "il PC è collegato al ponte");
 check(relay.prese().pc === 1, "sul ripetitore: una presa del PC");
 await ponte.locator("#qrvia").click();
@@ -227,7 +242,8 @@ const salvato = await tel.evaluate(() => Object.keys(localStorage).map((k) => [k
 const sv = salvato.length === 1 ? JSON.parse(salvato[0][1]) : {};
 check(salvato.length === 1 && salvato[0][0] === "psassist.ponte.v1" && Object.keys(sv).sort().join() === "dev,k,scade" && !/ROSSI|BIANCHI/.test(salvato[0][1]),
   "sul telefono resta solo la chiave, la scadenza e il numero del telefono: nient'altro");
-check(/Nella stanza/i.test(lista) && /OBI 2/.test(lista) && /In lista/i.test(lista) && /Episodi precedenti/i.test(lista), `la lista, la stanza (ROSSI in OBI 2) e gli episodi precedenti (${lista.replace(/\s+/g, " ").slice(0, 200)})`);
+check(/OBI 2/.test(lista) && JSON.stringify(await tel.locator(".lbl").evaluateAll((l) => l.map((x) => x.textContent))) === '["Episodi precedenti"]',
+  `i pazienti in una carta sola (ROSSI col suo posto, OBI 2), gli episodi precedenti a parte; niente «In lista», «Nella stanza» né conteggi (${lista.replace(/\s+/g, " ").slice(0, 200)})`);
 check(await tel.locator(".paz.t-arancione").count() === 1 && await tel.locator(".paz.t-verde").count() >= 1, "la striscia del triage: ROSSI arancione, BIANCHI verde");
 check(/Aggiornato alle \d\d:\d\d/.test(lista) && !/Dal PC del pronto soccorso/.test(lista), "in testa «Aggiornato alle …»; niente piede che ripete la testata");
 const nomi = await tel.locator(".paz .nome").evaluateAll((l) => l.map((x) => { const s = getComputedStyle(x); return { taglia: s.textOverflow === "ellipsis" || s.whiteSpace === "nowrap", pieno: x.scrollWidth <= x.clientWidth + 1 }; }));
@@ -286,8 +302,8 @@ await tel2.close();
 // ===========================================================================
 sezione("nota e promemoria dal telefono");
 await tocca(tel, '.paz[data-ep="999001"]');
-const testa = await aspettaTel(tel, /Valori/, 20000);
-check(/ROSSI MARIO · 1960 · OBI 2/.test(testa), "in testa il nome intero, l'anno di nascita (dal codice fiscale della sua pagina) e il posto: «ROSSI MARIO · 1960 · OBI 2»");
+const testa = await aspettaTel(tel, /Aggiorna i valori/, 20000);
+check(await tel.locator(".top .tit").innerText() === "ROSSI MARIO · 77 anni · OBI 2", `in testa il nome intero, l'età e il posto, e nient'altro: «ROSSI MARIO · 77 anni · OBI 2» (${(await tel.locator(".top .tit").innerText()).replace(/\n/g, " / ")})`);
 check(await tel.evaluate(() => { const s = document.querySelector(".seg"), n = document.querySelector(".note"); return !!s && !!n && !!(s.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING); }),
   "le schede Esiti/Richieste vengono prima della nota");
 check(await tel.locator("#nota").count() === 0 && await tel.locator('[data-a="nota"]:has-text("+ Nota")').count() === 1, "la nota vuota è chiusa: «+ Nota»");
@@ -342,7 +358,7 @@ const vistoPrima = await doc.evaluate(() => (JSON.parse(localStorage.getItem("ps
 await tocca(tel, '[data-a="indietro"]');
 await aspettaTel(tel, /BIANCHI A\./);
 await tocca(tel, '.paz[data-ep="999001"]');
-const es0 = await aspettaTel(tel, /Referti/i, 20000);
+const es0 = await aspettaTel(tel, /TC ENCEFALO/, 20000);
 check(/non ha ancora letto valori/.test(es0), "prima di leggerli: «Il PC non ha ancora letto valori»");
 check(/TC ENCEFALO/.test(es0), "i referti della pagina del paziente, letti sul PC");
 await tocca(tel, '.ref:has-text("TC ENCEFALO")');
@@ -351,7 +367,7 @@ const nasceValori = nuovaPagina(20000);
 await tocca(tel, '[data-a="valori"]');
 const schedaValori = await nasceValori;
 check(!!schedaValori, "«Aggiorna i valori»: sul PC si apre una scheda di sottofondo");
-const es1 = await aspettaTel(tel, /Valori aggiornati/, 90000);
+const es1 = await aspettaTel(tel, /Letti sul PC alle/, 90000);
 check(/Hb/.test(es1) && /80↓/.test(es1), `la tabella arriva sul telefono: Hb 80↓ (got: ${(es1.match(/Hb[^\n]*/) || [""])[0]})`);
 check(/Letti sul PC alle \d\d:\d\d · adesso/.test(es1) && await tel.locator(".letti.amb").count() === 0, "con l'ora in cui il PC li ha letti: «Letti sul PC alle … · adesso»");
 check(await tel.locator(".val thead th:has(small.parz)").count() >= 1 && /parziale/.test(await tel.locator(".val thead").innerText()),
@@ -389,7 +405,7 @@ await tocca(tel, "#ordina");
 await tocca(tel, "#ordina");   // il secondo tocco di un doppio tocco, subito dopo
 await sospendi(400);
 const armato = await tel.locator("#ordina").innerText();
-check(/Ordino 2 esami per ROSSI MARIO · 1960 · OBI 2\? Tocca di nuovo/.test(armato), `il primo tocco chiede conferma, col nome intero, l'anno e il posto (${armato})`);
+check(/Ordino 2 esami per ROSSI MARIO · 77 anni · OBI 2\? Tocca di nuovo/.test(armato), `il primo tocco chiede conferma, col nome intero, l'età e il posto (${armato})`);
 check(Object.keys(A.state.richieste).length === 0, "un doppio tocco (il secondo entro 800 ms) non conferma: niente è partito");
 await shot(tel, "tel-3-ordine-conferma");
 const nasceOrdine = nuovaPagina(20000);
@@ -428,6 +444,7 @@ await tocca(tel, '[data-a="indietro"]');
 await tocca(tel, '.paz[data-ep="999002"]');
 await aspettaTel(tel, /Dolore toracico/, 15000);
 check(await tel.locator('[data-a="scheda"][data-s="richieste"].on').count() === 1, "l'ultima scheda scelta (Richieste) resta quella, anche per un altro paziente");
+check(await tel.locator(".top .tit").innerText() === `BIANCHI ANNA · ${ETA_B} anni`, `l'età che la testata non dice viene dal codice fiscale: «BIANCHI ANNA · ${ETA_B} anni»`);
 await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');
 await tel.locator("#quesito").fill("controllo");
 await tocca(tel, "#ordina"); await sospendi(900); await tocca(tel, "#ordina");
@@ -449,7 +466,7 @@ const perso = await aspettaTel(tel, /Non so se l'ordine è partito/, 75000);
 check(/Non so se l'ordine è partito/.test(perso), "risposta persa: dopo l'attesa, «Non so se l'ordine è partito…»");
 check(await finche(async () => relay.entrate().tel > prese0, 5000), "e la presa che non risponde si rifà");
 check(await tel.locator(".esame.on").count() === 0, "la selezione se ne va anche qui");
-check(await finche(async () => Object.keys(B.state.richieste).length === 2 && /EMOCROMO|esame/.test(await tel.locator(".ord").first().innerText().catch(() => "")), 30000),
+check(await finche(async () => Object.keys(B.state.richieste).length === 2 && (await tel.locator(".ord").count()) >= 2, 30000),
   "l'ordine partito davvero compare sul telefono appena la rete torna");
 await finche(ordiniFiniti, 60000);
 check(Object.keys(B.state.richieste).length === 2, "e nessun ordine doppio");
@@ -463,8 +480,8 @@ const male = { id: "telmaleprova1l", ep: "999002", paziente: "BIANCHI ANNA", n: 
 await sw.evaluate((m) => chrome.storage.session.get("ordini").then((o) => chrome.storage.session.set({ ordini: [...(o.ordini || []), m] })), male);
 await tocca(tel, '[data-a="indietro"]');
 const barra = await aspettaTel(tel, /Ordine non completo/, 10000);
-check(/Ordine non completo · BIANCHI ANNA/.test(barra) && /Ordine fermo · Mancano: TROPONINA US/.test(barra) && /Tocca per vedere/.test(barra),
-  "in fondo alla lista: «Ordine non completo · BIANCHI ANNA», con le parole di bg.js");
+check(/Ordine non completo · BIANCHI ANNA/.test(barra) && /Ordine fermo · Mancano: TROPONINA US/.test(barra) && !/Tocca per vedere/.test(barra),
+  "in fondo alla lista: «Ordine non completo · BIANCHI ANNA», con le parole di bg.js (e nient'altro)");
 await shot(tel, "tel-6b-ordine-non-completo");
 await sw.evaluate((id) => chrome.storage.session.get("ordini").then((o) => chrome.storage.session.set({ ordini: (o.ordini || []).filter((x) => x.id !== id) })), male.id);
 await sospendi(1500);
@@ -478,8 +495,10 @@ await aspettaTel(tel, /Richieste/, 10000);
 sezione("episodio precedente, paziente dimesso");
 await tocca(tel, '[data-a="indietro"]');
 await tocca(tel, '.paz[data-ep="998002"]');
-check(/Episodio precedente: per ordinare apri quello di oggi/.test(await aspettaTel(tel, /Episodio precedente/, 15000)) && await tel.locator("#ordina").count() === 0,
+check(/Episodio precedente: per ordinare apri quello di oggi/.test(await aspettaTel(tel, /per ordinare apri quello di oggi/, 15000)) && await tel.locator("#ordina").count() === 0,
   "un episodio precedente si legge, ma non si ordina");
+check(await tel.locator(".top .tit").innerText() === `BIANCHI ANNA · ${ETA_B} anni\nEpisodio precedente`,
+  `in testa lo dice, e l'età (mai vista la sua pagina: dal codice fiscale che il PC conosce) (${(await tel.locator(".top .tit").innerText()).replace(/\n/g, " / ")})`);
 await tocca(tel, '[data-a="indietro"]');
 await tocca(tel, '.paz[data-ep="999003"]');
 await aspettaTel(tel, /VERDI LUCA/, 15000);
@@ -502,7 +521,7 @@ sezione("i messaggi ripetuti o manomessi non passano");
 const daTel = () => inoltrati.filter((b) => b[1] === 3);
 // una nota, catturata per strada, poi un'altra: rimandare la prima non la rimette
 await tocca(tel, '.paz[data-ep="999001"]');
-await aspettaTel(tel, /Valori/, 15000);
+await aspettaTel(tel, /Aggiorna i valori/, 15000);
 const noteSulPc = () => doc.evaluate(() => Object.values(JSON.parse(localStorage.getItem("psassist:note.v1") || "{}")).map((n) => n.t));
 const prima = daTel().length;
 await tocca(tel, '[data-a="nota"]');
@@ -576,7 +595,7 @@ await aspettaTel(tel, /ROSSI M\./, 15000);
 sezione("«Scollega» sul PC");
 await finche(async () => (await $panel(doc, "#ponteoff").count()) === 1, 8000);
 await tocca(tel, '.paz[data-ep="999001"]');
-await aspettaTel(tel, /Valori/, 15000);
+await aspettaTel(tel, /Aggiorna i valori/, 15000);
 await tocca(tel, '[data-a="nota"]');
 await tel.locator("#nota").fill("nota C");
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
@@ -629,8 +648,8 @@ await finche(async () => versioni.some((v) => v.scriptURL.endsWith("bg.js") && v
 const errStop = await cdp.send("ServiceWorker.stopWorker", { versionId: versioni.find((v) => v.scriptURL.endsWith("bg.js")).versionId }).then(() => "", (e) => e.message);
 await pag.close();
 check(!errStop && await finche(async () => relay.prese().pc === 0, 10000), `fermato il service worker, la sua presa sul ponte cade${errStop ? ` (${errStop})` : ""}`);
-check(await finche(async () => relay.prese().pc === 1, 45000), "le schede del gestionale lo svegliano, e si ricollega da solo al ponte (la chiave è rimasta, in memoria)");
-sw = ctx.serviceWorkers().find((w) => w.url().endsWith("bg.js")) || sw;
+check(await finche(async () => relay.prese().pc === 1, 45000), "le schede del gestionale lo svegliano, e si ricollega da solo al ponte (la chiave è rimasta)");
+sw = await swDi(ctx).catch(() => sw);
 check(!(await sw.evaluate(() => self.__vecchio).catch(() => true)) && !(await statoPonte())?.sessione, "è un service worker nuovo: la sessione di prima non c'è più, le sue chiavi stavano in memoria");
 check(/estensione sul PC si è riavviata/.test(await aspettaTel(tel, /Sessione chiusa/, 15000)), "il telefono lo scopre appena il PC torna sul ponte: «L'estensione sul PC si è riavviata»");
 // il «riparti» che l'ha chiusa, catturato per strada
@@ -695,25 +714,42 @@ await avanti(14 * 3600e3 + 60e3);
 await orologio();
 check(/scaduta/.test(await aspettaTel(tel, /scaduta/, 10000)), "passate le 14 ore: «Associazione scaduta» sul telefono");
 const cpScad = await coppiaPc();
-check(!cpScad.disco && !cpScad.memoria && !(await statoPonte())?.accoppiato, "e sul PC la chiave non c'è più");
+check(!cpScad && !(await statoPonte())?.accoppiato, "e sul PC la chiave non c'è più, nemmeno su disco");
 await shot(tel, "tel-10-scaduta");
-// una scheda del gestionale torna alla pagina d'accesso: chi rientra può essere un altro medico
+// una scheda del gestionale torna alla pagina d'accesso: la sessione si chiude, l'associazione resta
 await ponte2.reload();
 await ponte2.waitForSelector("#stato b");
 await ponte2.locator("#associa").click();
 await ponte2.waitForSelector("#qr svg", { timeout: 8000 });
 const url3 = await qrUrl();
+const K3 = P.b64u(P.leggiFrammento(new URL(url3).hash).k);
 await tel.goto(url3);
 await aspettaTel(tel, /ROSSI M\./, 15000);
 login = true;
 await doc2.goto(A.patientUrl);
 login = false;
 const accesso = await aspettaTel(tel, /pagina d'accesso/, 15000);
-check(/Associazione chiusa/.test(accesso) && /Il gestionale sul PC è tornato alla pagina d'accesso/.test(accesso),
-  "una scheda del gestionale alla pagina d'accesso: il telefono è fuori, «Il gestionale sul PC è tornato alla pagina d'accesso»");
-const cpLogin = await coppiaPc();
-check(!cpLogin.memoria && await tel.evaluate(() => localStorage.length) === 0, "e l'associazione non c'è più, né sul PC né sul telefono");
+check(/Sessione chiusa/.test(accesso) && /Il gestionale sul PC è tornato alla pagina d'accesso/.test(accesso) && !/ROSSI/.test(accesso),
+  "una scheda del gestionale alla pagina d'accesso: la sessione si chiude, «Il gestionale sul PC è tornato alla pagina d'accesso», via i pazienti");
+check((await coppiaPc())?.k === K3 && (await chiaveTel(tel))?.k === K3, "l'associazione resta, sul PC e sul telefono");
 await shot(tel, "tel-11-pagina-accesso");
+// rientrato nel gestionale (la pagina d'accesso ha svuotato l'elenco del PC: i pazienti si riaprono)
+await suPagina(doc2, A.patientUrl);
+await suPagina(doc2, B.patientUrl);
+await tocca(tel, '[data-a="riapri"]');
+check(/ROSSI M\./.test(await aspettaTel(tel, /ROSSI M\./, 15000)) && (await coppiaPc())?.k === K3, "rientrati nel gestionale, «Riapri»: di nuovo l'elenco, con la stessa associazione e senza QR nuovo");
+
+// ===========================================================================
+sezione("il browser del PC si chiude e si riapre");
+await ctx.close();
+ctx = await apriBrowser();
+sw = await swDi(ctx);
+check((await coppiaPc())?.k === K3, "riaperto il browser, l'associazione c'è ancora: sta su disco (storage.local) fino alla scadenza");
+check(/estensione sul PC si è riavviata/.test(await aspettaTel(tel, /Sessione chiusa/, 30000)), "il telefono sa che la sessione di prima è finita: «L'estensione sul PC si è riavviata»");
+const doc3 = await ctx.newPage();
+await suPagina(doc3, A.worklistUrl);
+await tocca(tel, '[data-a="riapri"]');
+check(/ROSSI M\./.test(await aspettaTel(tel, /ROSSI M\./, 20000)), "«Riapri»: di nuovo l'elenco, senza QR nuovo");
 
 // ===========================================================================
 sezione("il ripetitore non vede niente in chiaro");

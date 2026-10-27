@@ -1,3 +1,3 @@
-# Il nome del sito del ponte, per esempio: ponte.example.org
-# Una riga sola, senza percorso. Vuoto: il ponte non è configurato.
+# L'indirizzo del ponte: il Worker di EKG Atlas sul suo workers.dev, per esempio
+# ekg-atlas.<account>.workers.dev. Una riga sola, senza percorso. Vuoto: ponte da configurare.
 # Si scrive una volta, poi `npm run dist` (ponte/README.md, «Messa in servizio»).

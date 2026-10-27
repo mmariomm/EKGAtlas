@@ -817,17 +817,16 @@ Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** d
 **↻ Aggiorna i valori** e l'ora in cui il PC li ha letti), **un ordine** (lo stesso «Conferma e
 stampa», con tutti i suoi controlli), **la nota** e **i promemoria**. Tutto succede sul PC, col
 gestionale aperto e il codice di sempre: il telefono manda una domanda, una scheda del gestionale la
-esegue e risponde. Passa da un ripetitore sul sito del ponte (lo stesso Worker di EKG Atlas, meglio
-su un nome suo) che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
-server.
+esegue e risponde. Passa da un ripetitore nel Worker di EKG Atlas (sul suo indirizzo `workers.dev`)
+che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun server.
 
 - **Una volta per turno**: ⋯ → **iPhone** → **Associa l'iPhone**, e si inquadra il QR con la
   fotocamera (accanto, un codice di sei cifre: lo stesso compare sul telefono). Vale 14 ore e per un
-  telefono solo, il primo che entra; il QR si rivede solo nei primi due minuti. **Revoca l'iPhone**
-  lo chiude prima; anche chiudere il browser, o una scheda del gestionale che torna alla pagina
-  d'accesso.
-- **Ordinare dal telefono**: la conferma porta nome intero, anno di nascita e posto («Ordino 2 esami
-  per ROSSI MARIO · 1960 · OBI 2? Tocca di nuovo»); un doppio tocco non conferma; se la rete perde
+  telefono solo, il primo che entra; il QR si rivede solo nei primi due minuti. Regge il browser
+  chiuso e riaperto; una scheda del gestionale alla pagina d'accesso chiude la sessione, non
+  l'associazione. **Revoca l'iPhone** la chiude prima.
+- **Ordinare dal telefono**: la conferma porta nome intero, età e posto («Ordino 2 esami per ROSSI
+  MARIO · 77 anni · OBI 2? Tocca di nuovo»); un doppio tocco non conferma; se la rete perde
   la risposta il telefono dice «Non so se l'ordine è partito» e non lo rifà alla cieca (lo stesso
   ordine rimandato parte una volta sola). Niente ordini su un episodio precedente o per un paziente
   dimesso sul PC. Sul PC la striscia dice «dall'iPhone».
@@ -839,7 +838,7 @@ server.
   copiare ha un blocco «Per l'IT».
 
 Come funziona, la messa in servizio (l'indirizzo si fissa una volta in `ponte/host.txt`; il ponte va
-col deploy del sito EKG Atlas, su un nome suo o in un Worker a parte), che cosa vede l'IT e che cosa
+col deploy del sito EKG Atlas), che cosa vede l'IT e che cosa
 protegge e che cosa no: [`ponte/README.md`](ponte/README.md).
 
 ---
@@ -1240,11 +1239,11 @@ stessi flussi dei test di prodotto.
    **Un'eccezione sola, voluta e dichiarata: il Ponte verso l'iPhone.** Spento finché la build non
    ha l'indirizzo del ponte (`ponte/host.txt`: nessuna pagina lo cambia) e il medico non associa il
    telefono col QR; allora il service worker
-   tiene **una** presa (WSS, 443) verso **un** host, il sito del ponte, e ci passano solo messaggi
+   tiene **una** presa (WSS, 443) verso **un** host, il Worker di EKG Atlas, e ci passano solo messaggi
    cifrati da un capo all'altro (AES-256-GCM, chiavi da HKDF, la chiave del QR mai a un server):
    il sito li inoltra al telefono e non li può leggere né li tiene. Le richieste al gestionale
-   restano quelle di sempre, fatte dalle sue schede. La chiave sta in memoria (`storage.session`),
-   mai su disco, e vale per un telefono solo. Revoca, scadenza a 14 ore, sessione che si
+   restano quelle di sempre, fatte dalle sue schede. La chiave sta in `storage.local` fino alla
+   scadenza, e vale per un telefono solo. Revoca, scadenza a 14 ore, sessione che si
    chiude dopo 20 minuti senza comandi, la spia «iPhone collegato» e il Registro:
    [`ponte/README.md`](ponte/README.md).
 10. **Due schede, due pazienti, zero interferenze**: i passaggi di consegna tra pagina e pagina
