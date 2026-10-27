@@ -33,8 +33,6 @@
   .riga button { margin-top: 0; }
   details { margin-top: 18px; font-size: 13px; } summary { cursor: pointer; font-weight: 700; color: #35506B; }
   details ol { padding-left: 20px; margin: 8px 0 0; } details li { margin: 4px 0; }
-  .idriga { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-  .idriga button { margin-top: 0; padding: 5px 12px; }
   @media (max-width: 520px) { body { padding: 16px; } .box { padding: 18px 16px 22px; } .riga { grid-template-columns: 1fr; } }
 </style></head><body>
 <div class="box" id="stampa">
@@ -48,6 +46,11 @@
     <button class="sec" id="sprovaetic" data-prova="etichette" disabled>Stampa una pagina di prova</button>
   </div>
   <div class="riga">
+    <div><label for="sruota">Etichette più larghe che alte</label><select id="sruota" disabled>
+      <option value="no">non girarle (Zebra, ZDesigner, TSC, Citizen)</option>
+      <option value="auto">girale di 90° (altre etichettatrici)</option></select></div>
+  </div>
+  <div class="riga">
     <div><label for="sa4">A4</label><select id="sa4" disabled></select></div>
     <button class="sec" id="sprovaa4" data-prova="a4" disabled>Stampa una pagina di prova</button>
   </div>
@@ -55,13 +58,12 @@
   <details id="sinst">
     <summary>Come si installa (una volta, senza amministratore)</summary>
     <ol>
-      <li>Dallo zip di PS Assist copia la cartella <code>stampa</code> in una tua cartella, per esempio <code>Documenti\PS Assist stampa</code>.</li>
-      <li>Doppio clic su <code>installa.cmd</code>. Scarica SumatraPDF (se manca) e dice a Chrome dov'è l'aiutante. Se chiede l'ID, incolla quello qui sotto.</li>
-      <li>Torna qui e premi «Ricontrolla»: scegli l'etichettatrice e l'A4, e stampa una pagina di prova.</li>
+      <li>Prima avvisa l'IT (che cosa vede, e che cosa chiedere: <code>stampa\README.md</code>).</li>
+      <li>Estrai lo zip di PS Assist (tasto destro, «Estrai tutto…») e nella cartella <code>stampa</code> fai doppio clic su <code>installa.cmd</code>. Copia l'aiutante e SumatraPDF in <code>%LOCALAPPDATA%\PSAssist\stampa</code> e lo dice a Chrome e a Edge; se qualcosa lo blocca, dice in una riga che cosa chiedere all'IT.</li>
+      <li>Torna qui e premi «Ricontrolla»: scegli l'etichettatrice e l'A4, e stampa una pagina di prova. Poi un'etichetta vera, con «Ristampa», e leggi il suo codice a barre col lettore del laboratorio.</li>
     </ol>
     <p class="hint">In Windows non resta acceso niente: l'aiutante parte solo per il secondo in cui stampa. Per toglierla: l'interruttore qui sopra, o <code>disinstalla.cmd</code>.</p>
   </details>
-  <p class="hint idriga">ID di questa estensione: <code id="sid"></code><button class="sec" id="sidcopia">Copia</button></p>
   <button class="sec" id="sric">Ricontrolla</button>
 </div>
 <div class="box">

@@ -1,11 +1,15 @@
 // La stampa automatica, nella pagina delle impostazioni. Le stampanti le chiede
 // il service worker all'aiutante di Windows (native messaging); le scelte
-// stanno in chrome.storage.local, `stampa` = { attiva, etichette, a4 }, e si
-// salvano appena fatte. L'A4, finché non la scegli, è la predefinita di
+// stanno in chrome.storage.local, `stampa` = { attiva, etichette, a4, ruota },
+// e si salvano appena fatte. L'A4, finché non la scegli, è la predefinita di
 // Windows; scelte tutte e due, la stampa automatica è accesa (l'interruttore
-// la spegne). (Un modulo: i nomi qui non toccano quelli di portale.js.)
+// la spegne). `ruota`: se SumatraPDF può girare un'etichetta più larga che
+// alta — di partenza no per Zebra, ZDesigner, TSC e Citizen, sì per le altre.
+// (Un modulo: i nomi qui non toccano quelli di portale.js.)
 const $ = (id) => document.getElementById(id);
 const sel = { etichette: $("setic"), a4: $("sa4") };
+// come in bg.js: la rotazione scelta, o quella di partenza per quel nome
+const ruotaDi = (s) => (s.ruota === "no" || s.ruota === "auto" ? s.ruota : /zebra|zdesigner|tsc|citizen/i.test(s.etichette || "") ? "no" : "auto");
 let stampanti = [];   // quelle dell'aiutante; [] = aiutante non raggiungibile
 let motivo = "";      // perché, se non è raggiungibile
 
@@ -19,11 +23,11 @@ async function mostra() {
   const pronta = !!(s.etichette && s.a4);
   const persa = stampanti.length ? [s.etichette, s.a4].find((x) => x && !stampanti.includes(x)) : "";
   const [testo, tono, perche] = !stampanti.length
-    ? (/non è installato/.test(motivo) ? ["non installata", "", ""] : ["errore", "ko", motivo])
+    ? (/non è installato/.test(motivo) ? ["non installata", "", motivo] : ["errore", "ko", motivo])
     : persa ? ["errore", "ko", `La stampante «${persa}» non c'è più su questo PC: scegline un'altra.`]
     : !pronta ? ["scegli le due stampanti", "warn", ""]
     : s.attiva === false ? ["spenta", "", "I fogli passano dal dialogo di stampa, come prima."]
-    : ["attiva", "ok", e && e.ok === false ? `L'ultima stampa non è uscita: ${e.why}` : ""];
+    : ["attiva", "ok", e && e.ok === false ? `L'ultima stampa ${e.esito === "sconosciuto" ? "ha un esito sconosciuto" : "non è uscita"}: ${e.why}` : ""];
   $("sst").textContent = `Stampa automatica: ${testo}`;
   $("sst").className = "stato " + tono;
   $("sperche").textContent = perche;
@@ -39,6 +43,8 @@ async function mostra() {
   for (const b of document.querySelectorAll("[data-prova]")) b.disabled = !stampanti.length || !sel[b.dataset.prova].value;
   $("sauto").checked = pronta && s.attiva !== false;
   $("sauto").disabled = !pronta || !stampanti.length;
+  $("sruota").value = ruotaDi(s);
+  $("sruota").disabled = !stampanti.length || !s.etichette;
   $("sinst").open = !stampanti.length;
 }
 
@@ -53,23 +59,21 @@ async function controlla() {
   await mostra();
 }
 
-for (const [tipo, el] of Object.entries(sel)) el.addEventListener("change", () => salva({ [tipo]: el.value }));
+// (un'altra etichettatrice: la rotazione torna quella di partenza per il suo nome)
+for (const [tipo, el] of Object.entries(sel)) el.addEventListener("change", () => salva({ [tipo]: el.value, ...(tipo === "etichette" ? { ruota: undefined } : {}) }));
+$("sruota").addEventListener("change", () => salva({ ruota: $("sruota").value }));
 $("sauto").addEventListener("change", () => salva({ attiva: $("sauto").checked }));
 for (const b of document.querySelectorAll("[data-prova]")) {
   b.addEventListener("click", async () => {
     const tipo = b.dataset.prova, stampante = sel[tipo].value;
     b.disabled = true;
     dice(`Mando la pagina di prova a ${stampante}…`, true);
-    const r = await chrome.runtime.sendMessage({ t: "stampaProva", tipo, stampante }).catch(() => null);
-    dice(r && r.ok ? `Pagina di prova mandata a ${r.stampante}: controlla che sia uscita.` : `Non riuscita: ${(r && r.why) || "nessuna risposta"}`, !!(r && r.ok));
+    const r = await chrome.runtime.sendMessage({ t: "stampaProva", tipo, stampante, ...(tipo === "etichette" ? { ruota: $("sruota").value } : {}) }).catch(() => null);
+    dice(r && r.ok ? `Pagina di prova ${r.esito === "stampato" ? "stampata su" : "mandata a"} ${r.stampante}: controlla che sia uscita${tipo === "etichette" ? ", dritta e intera" : ""}.`
+      : `${r && r.esito === "sconosciuto" ? "Esito sconosciuto" : "Non riuscita"}: ${(r && r.why) || "nessuna risposta"}`, !!(r && r.ok));
     b.disabled = false;
   });
 }
-$("sid").textContent = chrome.runtime.id;
-$("sidcopia").addEventListener("click", async () => {
-  try { await navigator.clipboard.writeText(chrome.runtime.id); $("sidcopia").textContent = "Copiato"; }
-  catch { $("sidcopia").textContent = "Selezionalo e copialo"; }
-});
 $("sric").addEventListener("click", controlla);
 // le scelte cambiano anche dal menu ⋯ del pannello, e a ogni stampa (l'esito)
 chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && (ch.stampa || ch.stampaEsito)) mostra(); });

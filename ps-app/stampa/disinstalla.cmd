@@ -1,11 +1,8 @@
 @echo off
 rem PS Assist - toglie la stampa automatica per questo utente: le due chiavi
-rem nel registro dell'utente e il file che indicano a Chrome e a Edge.
-reg delete "HKCU\Software\Google\Chrome\NativeMessagingHosts\it.psassist.stampa" /f >nul 2>&1
-reg delete "HKCU\Software\Microsoft\Edge\NativeMessagingHosts\it.psassist.stampa" /f >nul 2>&1
-del "%~dp0it.psassist.stampa.json" >nul 2>&1
-echo.
-echo Fatto. La stampa automatica e' tolta: PS Assist torna al dialogo di stampa.
-echo Ora puoi cancellare questa cartella (con dentro SumatraPDF.exe).
+rem nel registro dell'utente, la cartella %LOCALAPPDATA%\PSAssist (l'aiutante,
+rem SumatraPDF, il registro delle stampe) e i fogli temporanei rimasti. Lo fa
+rem installa.ps1, e controlla che sia andato via tutto.
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0installa.ps1" -Togli
 echo.
 pause
