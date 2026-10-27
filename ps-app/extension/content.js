@@ -69,13 +69,16 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.53.1";
+  const VERSION = "3.53.2";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
   const PACE_MS = 250;           // gentle pause between consecutive requests
-  const VERIFY_RECHECKS = 3;     // list re-reads before declaring an add lost
-  const VERIFY_WAIT_MS = 1200;   // pause before each verify re-read
+  // Le riletture dell'elenco prima di dire che un esame non è entrato, e la
+  // pausa prima di ciascuna: un gestionale carico mette l'esame in carrello
+  // anche dopo 5–10 secondi. Rileggere costa una lettura; non c'è mai un secondo invio.
+  const VERIFY_WAITS = [1200, 2000, 3000, 5000, 8000];
+  const VERIFY_RECHECKS = VERIFY_WAITS.length;
   const CONFIRM_FLAG_TTL = 120e3;// ms an auto-confirm handoff stays valid
   // un messaggio che deve sopravvivere al cambio di pagina: quello che si è
   // deciso in sottofondo va detto sulla pagina dove il medico arriva
@@ -3287,7 +3290,7 @@
           let riga = null;
           for (let attempt = 1; !riga && attempt <= VERIFY_RECHECKS; attempt++) {
             running(st, `controllo il carrello ${attempt}/${VERIFY_RECHECKS}…`);
-            await sleep(VERIFY_WAIT_MS, signal);
+            await sleep(VERIFY_WAITS[attempt - 1], signal);
             ({ doc, url } = await fetchDoc(model.listUrl(it.res || model.res) || state.lastListUrl, { signal }));
             guardSession(doc, `«${nm}» potrebbe essere stato aggiunto o no`);
             assertSameEpisode(doc, plan.episodeId, "verifica carrello");
@@ -3478,7 +3481,7 @@
         let verified = classify(doc) === "exam" && !cercato && entrato();
         for (let attempt = 1; !verified && attempt <= VERIFY_RECHECKS; attempt++) {
           running(st, `verifica ${attempt}/${VERIFY_RECHECKS}…`);
-          await sleep(VERIFY_WAIT_MS, signal);
+          await sleep(VERIFY_WAITS[attempt - 1], signal);
           ({ doc, url } = await fetchDoc(model.listUrl(it.res || model.res) || state.lastListUrl, { signal }));
           guardSession(doc, `«${nm}» potrebbe essere stato aggiunto o no`);
           assertSameEpisode(doc, plan.episodeId, "verifica carrello");

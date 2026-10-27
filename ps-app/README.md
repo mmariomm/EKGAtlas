@@ -1486,7 +1486,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 96 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo, stampa automatica)
+└── test/                ← simulatore SA4PSO + 97 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo, stampa automatica)
 ```
 
 Sviluppo:
@@ -1499,7 +1499,7 @@ npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che 
 npm run demo       # rigenera dist/demo.html (il banco di prova)
 npm run dist       # al rilascio: build, fogli di dimissione, dist/ps-assist-latest.zip (con stampa/, senza SumatraPDF)
 npm run verifica-build   # al rilascio, dopo dist e il commit: build fresca = build committata? zip e versioni giusti?
-npm test           # 96 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 111 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
+npm test           # 97 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 111 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
                    # + il Ponte: 120 controlli senza browser (cifratura, ripetitore, Worker) e 166 dal vivo (test/ext-ponte.mjs)
 ```
 
