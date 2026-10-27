@@ -24,4 +24,4 @@ execFileSync("zip", ["-q", "-r", "dist/ps-assist-latest.zip",
   "extension", "bookmarklet", "stampa", "README.md", "dist/demo.html", "dist/dimissioni.html",
   "-x", "stampa/.*", "stampa/SumatraPDF*", "stampa/it.psassist.stampa.json"], { cwd: root });
 writeFileSync(join(root, "dist/VERSION.txt"), version + "\n");
-console.log(`dist refreshed: ps-assist-latest.zip @ v${version}`);
+console.log(`dist refreshed: ps-assist-latest.zip @ v${version} — dopo il commit: npm run verifica-build`);
