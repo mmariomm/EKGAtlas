@@ -497,7 +497,7 @@ await blocco(async () => {
   check(!!visto && visto.ordine.titolo === "In coda" && visto.ordine.tono === "run", "l'ordine nato dopo l'attesa arriva al telefono, con le parole di bg.js (pubblico)");
   const lista = await t.manda({ id: 3, cmd: "ordini" });
   check(lista[0] && lista[0].dati.some((o) => o.id === "tel" + oid + "l"), "ed è nella lista degli ordini");
-  // sparisce da «ordini» (etichette prese da una scheda, ✕): resta com'era l'ultima volta
+  // sparisce da «ordini» mentre le etichette aspettavano: una scheda del PC le ha prese
   const ses = (await pc.ev("chrome").storage.session.get("ordini")).ordini;
   ses[0].stato = "stampa"; ses[0].pubblico = { tono: "ok", titolo: "Confermata", testo: "Etichette pronte sul PC", dettaglio: "Quesito: il tuo" };
   await pc.ev("chrome").storage.session.set({ ordini: ses });
@@ -506,8 +506,8 @@ await blocco(async () => {
   await sospendi(60);
   const ev2 = await t.leggi(pc.tira());
   const ultimo = ev2.filter((x) => x.evento === "ordine").at(-1);
-  check(ultimo && ultimo.ordine.titolo === "Confermata" && ultimo.ordine.testo === "Etichette pronte sul PC" && ultimo.ordine.fine === true,
-    "sparito da «ordini» dopo la conferma: il telefono tiene l'ultimo stato che ha visto");
+  check(ultimo && ultimo.ordine.titolo === "Confermata" && ultimo.ordine.testo === "Etichette prese in stampa sul PC" && ultimo.ordine.tono === "ok" && ultimo.ordine.fine === true,
+    "sparito da «ordini» mentre le etichette aspettavano: «Etichette prese in stampa sul PC», finito e verde");
   check(ultimo && !/il tuo/.test(ultimo.ordine.dettaglio), `e mai «Quesito: il tuo», la frase del PC (${ultimo && ultimo.ordine.dettaglio})`);
   // un ordine partito in tempo: il PC sa il quesito scritto sul telefono, e lo dice al posto di «il tuo»
   pc.ev("PONTE_ATTESA.ordina = 25e3");

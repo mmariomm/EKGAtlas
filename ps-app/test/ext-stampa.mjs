@@ -659,7 +659,8 @@ if (await prova("un ordine dal telefono: le etichette aspettano un tocco al PC, 
   await shot(doc, "telefono-aspetta-un-tocco");
   await $panel(doc, "#strazione").click();
   await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 15000 }).catch(() => {});
-  check((await stampe(doc)).length === 1 && !(await ordine("telprova1")), "un tocco: il dialogo, e l'ordine non c'è più fra quelli aperti");
+  check(await finche(async () => (await stampe(doc)).length === 1 && !(await ordine("telprova1")), 15000),
+    "un tocco: il dialogo, e l'ordine non c'è più fra quelli aperti");
   await chiudiStampa(doc);
   // con la stampa automatica e l'etichettatrice che non va
   installa(true);
