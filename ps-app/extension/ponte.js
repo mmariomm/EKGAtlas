@@ -1,17 +1,13 @@
-// La pagina «iPhone» dell'estensione: l'indirizzo del ponte, il QR per
-// associare il telefono (una volta per turno), a che punto è la sessione,
-// «Scollega», «Revoca», e il registro del ponte. La chiave sta nel service
-// worker: questa pagina la vede solo dentro il QR, e solo quando lo chiedi.
+// La pagina «iPhone» dell'estensione: il QR per associare il telefono (una
+// volta per turno), a che punto è la sessione, «Scollega», «Revoca», e il
+// registro del ponte. La chiave sta nel service worker: questa pagina la vede
+// solo dentro il QR, e il QR solo nei primi due minuti, prima che un telefono
+// entri. L'indirizzo del ponte è fissato nella build (ponte/host.txt).
 /* global qrcodegen */
 const $ = (id) => document.getElementById(id);
 const hhmm = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 const chiedi = (m) => chrome.runtime.sendMessage(m).catch(() => null);
 const dice = (testo, ok) => { $("m").textContent = testo || ""; $("m").className = "msg " + (ok ? "ok" : "ko"); };
-const PERCHE = {
-  inattivo: "20 minuti senza comandi", "scollegata dal PC": "«Scollega» sul PC", revocata: "associazione revocata",
-  scaduta: "associazione scaduta", "nuova associazione": "nuovo QR", "chiusa dall'iPhone": "chiusa dall'iPhone",
-  "messaggi non validi": "messaggi non validi, scartati", riavvio: "estensione riavviata", "indirizzo cambiato": "indirizzo del ponte cambiato",
-};
 let qrVisibile = false;
 let armata = "";          // «Revoca» chiede conferma: il secondo tocco fa
 let tArmata = 0;
@@ -24,18 +20,22 @@ function disegnaQr(url) {
   $("qr").innerHTML = `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect width="${n}" height="${n}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
 }
 
-function righeStato(s) {
-  const fine = s.fine ? `Ultima sessione chiusa alle ${hhmm(s.fine.ts)}: ${PERCHE[s.fine.perche] || s.fine.perche}.` : "";
+function righeStato(s, codice) {
+  const fine = s.fine ? `Ultima sessione chiusa alle ${hhmm(s.fine.ts)} — ${s.fine.testo || s.fine.perche}.` : "";
   const ponte = { su: s.telefono ? "Collegato al ponte · il pannello è aperto sull'iPhone." : "Collegato al ponte: aspetta l'iPhone.",
     collego: "Mi collego al ponte…", giu: "Il ponte non risponde: riprovo da solo. Se dura, «Prova la rete».", spento: "" }[s.relay] || "";
-  if (!s.host) return { cls: "warn", testa: "Il ponte non è configurato", righe: ["Scrivi qui sotto l'indirizzo del sito del ponte: una volta sola."] };
+  if (!s.host) {
+    return { cls: "warn", testa: "Ponte da configurare", righe: [
+      "In questa versione di PS Assist manca l'indirizzo del ponte: si scrive una volta in ponte/host.txt, prima di preparare lo zip (ponte/README.md)."] };
+  }
   if (!s.accoppiato) return { cls: "", testa: "Nessun iPhone associato", righe: ["«Associa l'iPhone» mostra un QR: lo inquadri col telefono e sei dentro fino a fine turno.", fine] };
+  const cod = codice ? ` · codice ${codice}` : "";
   if (s.sessione) {
     return { cls: "vivo", testa: "iPhone collegato", righe: [
       `Dalle ${hhmm(s.sessione.dal)} · ultimo comando alle ${hhmm(s.sessione.ultimo)} · si chiude da sola dopo 20 minuti senza comandi.`,
-      `Associato fino alle ${hhmm(s.scade)}. Ogni comando finisce nel Registro.`] };
+      `Associato fino alle ${hhmm(s.scade)}${cod}. Ogni comando finisce nel Registro.`] };
   }
-  return { cls: s.relay === "su" ? "ok" : "warn", testa: `iPhone associato fino alle ${hhmm(s.scade)}`, righe: [ponte, fine] };
+  return { cls: s.relay === "su" ? "ok" : "warn", testa: `iPhone associato fino alle ${hhmm(s.scade)}${cod}`, righe: [ponte, fine] };
 }
 
 async function aggiorna() {
@@ -46,22 +46,22 @@ async function aggiorna() {
     return;
   }
   const s = r.stato;
-  if (document.activeElement !== $("host")) $("host").value = s.host || "";
-  if (!s.host) $("impostazioni").open = true;
-  const v = righeStato(s);
+  const v = righeStato(s, r.codice);
   $("stato").className = "stato " + v.cls;
   $("stato").replaceChildren(Object.assign(document.createElement("b"), { textContent: v.testa }),
     ...v.righe.filter(Boolean).map((t) => Object.assign(document.createElement("span"), { className: "riga", textContent: t })));
-  // il telefono è entrato: il QR non serve più sullo schermo
+  // il telefono è entrato, o sono passati i due minuti: il QR non si mostra più
   if (s.sessione || !r.qr) qrVisibile = false;
   $("qrsec").hidden = !qrVisibile;
-  if (qrVisibile) { disegnaQr(r.qr); $("qrscade").textContent = hhmm(s.scade); }
+  if (qrVisibile) { disegnaQr(r.qr); $("qrscade").textContent = hhmm(s.scade); $("qrcodice").textContent = r.codice || ""; }
   $("associa").disabled = !s.host;
   $("associa").hidden = qrVisibile;   // col QR davanti, lo nasconde il suo bottone
-  $("associa").textContent = s.accoppiato ? "Mostra il QR" : "Associa l'iPhone";
+  // il QR di prima si rivede solo se si può ancora; se no, uno nuovo (e l'iPhone di prima esce)
+  $("associa").textContent = !s.accoppiato ? "Associa l'iPhone" : r.qr ? "Mostra il QR" : "Nuovo QR (l'iPhone di prima esce)";
   $("scollega").hidden = !s.sessione;
   $("revoca").hidden = !s.accoppiato;
   $("revoca").textContent = armata === "revoca" ? "Revoco? L'iPhone non entrerà più" : "Revoca l'iPhone";
+  $("dove").textContent = s.host ? `(${new URL(s.host).host})` : "";
   const reg = [...(s.registro || [])].reverse();
   $("registro").replaceChildren(...(reg.length ? reg.map((x) => {
     const li = document.createElement("li");
@@ -73,7 +73,7 @@ async function aggiorna() {
 $("associa").addEventListener("click", async () => {
   dice("");
   const r0 = await chiedi({ t: "ponteStato" });
-  if (r0 && r0.ok && r0.stato.accoppiato) { qrVisibile = true; return aggiorna(); }
+  if (r0 && r0.ok && r0.stato.accoppiato && r0.qr) { qrVisibile = true; return aggiorna(); }
   const r = await chiedi({ t: "ponteAssocia" });
   if (!r || !r.ok) return dice((r && r.why) || "Non riuscito: l'estensione non risponde.", false);
   qrVisibile = true;
@@ -97,14 +97,6 @@ $("revoca").addEventListener("click", async () => {
   dice(r && r.ok ? "Revocata: l'iPhone non entra più. Per riassociarlo serve un QR nuovo." : "Non riuscito.", !!(r && r.ok));
   aggiorna();
 });
-$("salva").addEventListener("click", async () => {
-  const r = await chiedi({ t: "ponteHost", host: $("host").value });
-  if (!r || !r.ok) return dice((r && r.why) || "Non riuscito.", false);
-  dice(r.host ? `Salvato: ${r.host}` : "Indirizzo tolto: il ponte è spento.", true);
-  $("host").blur();
-  aggiorna();
-});
-$("host").addEventListener("keydown", (e) => { if (e.key === "Enter") $("salva").click(); });
 
 chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && ch.ponte) aggiorna(); });
 setInterval(aggiorna, 15000);

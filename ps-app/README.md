@@ -814,21 +814,32 @@ foglio i motivi per **tornare in Pronto Soccorso**.
 ### Il pannello sull'iPhone (Ponte)
 
 Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con
-**↻ Aggiorna i valori**), **un ordine** (lo stesso «Conferma e stampa», con tutti i suoi controlli),
-**la nota** e **i promemoria**. Tutto succede sul PC, col gestionale aperto e il codice di sempre: il
-telefono manda una domanda, una scheda del gestionale la esegue e risponde. Passa da un ripetitore
-sul sito EKG Atlas (`/ponte/`) che non può leggere niente: cifrato da un capo all'altro, nessun dato
-su nessun server.
+**↻ Aggiorna i valori** e l'ora in cui il PC li ha letti), **un ordine** (lo stesso «Conferma e
+stampa», con tutti i suoi controlli), **la nota** e **i promemoria**. Tutto succede sul PC, col
+gestionale aperto e il codice di sempre: il telefono manda una domanda, una scheda del gestionale la
+esegue e risponde. Passa da un ripetitore nel Worker di EKG Atlas (sul suo indirizzo `workers.dev`)
+che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun server.
 
 - **Una volta per turno**: ⋯ → **iPhone** → **Associa l'iPhone**, e si inquadra il QR con la
-  fotocamera. Vale 14 ore; **Revoca l'iPhone** lo chiude prima.
+  fotocamera (accanto, un codice di sei cifre: lo stesso compare sul telefono). Vale 14 ore e per un
+  telefono solo, il primo che entra; il QR si rivede solo nei primi due minuti. Regge il browser
+  chiuso e riaperto; una scheda del gestionale alla pagina d'accesso chiude la sessione, non
+  l'associazione. **Revoca l'iPhone** la chiude prima.
+- **Ordinare dal telefono**: la conferma porta nome intero, età e posto («Ordino 2 esami per ROSSI
+  MARIO · 77 anni · OBI 2? Tocca di nuovo»); un doppio tocco non conferma; se la rete perde
+  la risposta il telefono dice «Non so se l'ordine è partito» e non lo rifà alla cieca (lo stesso
+  ordine rimandato parte una volta sola). Niente ordini su un episodio precedente o per un paziente
+  dimesso sul PC. Sul PC la striscia dice «dall'iPhone».
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
-  Scollega»**, e ogni comando va nel **Registro**. Dopo **20 minuti senza comandi** la sessione si
-  chiude da sola; dal telefono si riapre con un tocco.
-- **Prova la rete** (⋯ → iPhone): dal PC dell'ospedale, in un minuto, dice se il ponte si raggiunge.
+  Scollega»**, e ogni comando va nel **Registro**. Dopo **20 minuti senza comandi** del medico la
+  sessione si chiude da sola; dal telefono si riapre con un tocco.
+- **Prova la rete** (⋯ → iPhone): dal PC dell'ospedale, sulla presa vera del ponte, in pochi secondi
+  dice se si raggiunge e quanto ci mette; «Tieni aperto 15 minuti» dice se e perché cade; il testo da
+  copiare ha un blocco «Per l'IT».
 
-Come funziona, la messa in servizio (va col deploy del sito EKG Atlas), che cosa vede l'IT e che
-cosa protegge e che cosa no: [`ponte/README.md`](ponte/README.md).
+Come funziona, la messa in servizio (l'indirizzo si fissa una volta in `ponte/host.txt`; il ponte va
+col deploy del sito EKG Atlas), che cosa vede l'IT e che cosa
+protegge e che cosa no: [`ponte/README.md`](ponte/README.md).
 
 ---
 
@@ -1050,8 +1061,9 @@ La suite conta le richieste di rete di un'intera sessione: **una sola, la pagina
 stessa**.
 
 Nel pannello vero la regola è la stessa, con **una sola eccezione, esplicita**:
-il Ponte verso l'iPhone. È spento finché il medico non lo configura e non associa
-il telefono; parla con un host solo (il sito del ponte, `wss://…/ponte/ws`); e
+il Ponte verso l'iPhone. È spento finché la build non ha il suo indirizzo
+(`ponte/host.txt`) e il medico non associa il telefono; parla con un host solo
+(il sito del ponte, `wss://…/ponte/ws`, fissato nella build); e
 quello che passa è cifrato da un capo all'altro, illeggibile anche per quel sito
 (vedi [`ponte/README.md`](ponte/README.md)). Nel banco di prova il Ponte non c'è.
 
@@ -1224,12 +1236,14 @@ stessi flussi dei test di prodotto.
    arrivano i referti e si legge la tabella multi-prelievo. Nessun altro indirizzo, nessuna
    telemetria; preferenze e catalogo appreso restano nel browser. (Con la stampa automatica il
    PDF va all'aiutante **su questo PC**, che non usa la rete: regola 17.)
-   **Un'eccezione sola, voluta e dichiarata: il Ponte verso l'iPhone.** Spento finché il medico
-   non scrive l'indirizzo del ponte e non associa il telefono col QR; allora il service worker
-   tiene **una** presa (WSS, 443) verso **un** host, il sito del ponte, e ci passano solo messaggi
+   **Un'eccezione sola, voluta e dichiarata: il Ponte verso l'iPhone.** Spento finché la build non
+   ha l'indirizzo del ponte (`ponte/host.txt`: nessuna pagina lo cambia) e il medico non associa il
+   telefono col QR; allora il service worker
+   tiene **una** presa (WSS, 443) verso **un** host, il Worker di EKG Atlas, e ci passano solo messaggi
    cifrati da un capo all'altro (AES-256-GCM, chiavi da HKDF, la chiave del QR mai a un server):
    il sito li inoltra al telefono e non li può leggere né li tiene. Le richieste al gestionale
-   restano quelle di sempre, fatte dalle sue schede. Revoca, scadenza a 14 ore, sessione che si
+   restano quelle di sempre, fatte dalle sue schede. La chiave sta in `storage.local` fino alla
+   scadenza, e vale per un telefono solo. Revoca, scadenza a 14 ore, sessione che si
    chiude dopo 20 minuti senza comandi, la spia «iPhone collegato» e il Registro:
    [`ponte/README.md`](ponte/README.md).
 10. **Due schede, due pazienti, zero interferenze**: i passaggi di consegna tra pagina e pagina
@@ -1378,9 +1392,11 @@ ps-app/
 ├── extension/pdfjs/     ← pdf.js 3.11.174 di Mozilla (Apache-2.0), preso tale e quale: legge i referti
 ├── extension/ponte-*    ← il Ponte verso l'iPhone: la presa nel service worker, la pagina «iPhone»,
 │                          la prova della rete; qr.js è il codificatore QR di Project Nayuki (MIT)
-├── ponte/               ← il Ponte: README, il ripetitore Node per test e prove (stessa logica di
-│                          ../worker/ponte-logica.js); l'app del telefono sta in ../public/ponte/
-├── tools/build.mjs      ← genera extension/content.js, il bookmarklet e extension/ponte-cripto.js
+├── ponte/               ← il Ponte: README, host.txt (il suo indirizzo, fissato nella build), il
+│                          ripetitore Node per test e prove (stessa logica di ../worker/ponte-logica.js);
+│                          l'app del telefono sta in ../public/ponte/
+├── tools/build.mjs      ← genera extension/content.js, il bookmarklet, extension/ponte-cripto.js e
+│                          extension/ponte-host.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
 ├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 (SumatraPDF lo scarica installa.cmd)
@@ -1396,7 +1412,7 @@ Sviluppo:
 ```bash
 cd ps-app
 npm install        # solo playwright e ws, solo per i test
-npm run build      # rigenera extension/content.js + bookmarklet (+ ponte-cripto.js) dopo modifiche a src/
+npm run build      # rigenera extension/content.js + bookmarklet (+ ponte-cripto.js, ponte-host.js) dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
 npm test           # 91 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 53 sulla stampa automatica (+ 21 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy

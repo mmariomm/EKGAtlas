@@ -19,7 +19,10 @@
  * [testo cifrato]. I primi 10 byte sono dati autenticati (AAD): il tipo e il
  * numero d'ordine non si cambiano senza che la decifratura fallisca.
  * Il numero d'ordine cresce sempre: un messaggio ripetuto o arrivato dopo uno
- * più nuovo si scarta.
+ * più nuovo si scarta — deciso DOPO averlo decifrato, mai dalla testata da
+ * sola (chi non ha le chiavi non può far scartare niente).
+ * Da K, anche un codice di sei cifre (`codice`): si legge accanto al QR sul
+ * PC e sul telefono, ed è lo stesso solo se la chiave è la stessa.
  */
 (function () {
   "use strict";
@@ -102,7 +105,7 @@
     const ct = new Uint8Array(await subtle.encrypt({ name: "AES-GCM", iv, additionalData: t }, chiave, enc.encode(JSON.stringify(oggetto))));
     return unisci(t, iv, ct);
   }
-  // Un errore con un codice: chi riceve conta i messaggi scartati, e il perché.
+  // Un errore con un codice: chi riceve sa perché il messaggio è scartato.
   const sbaglio = (codice) => Object.assign(new Error("messaggio scartato: " + codice), { codice });
   async function apri(chiave, frame, tipoAtteso) {
     const b = frame instanceof Uint8Array ? frame : new Uint8Array(frame);
@@ -131,9 +134,8 @@
     cifra(oggetto) { return this._inFila(() => sigilla(this.chiaveOut, this.tipoOut, ++this.seqOut, oggetto)); }
     decifra(frame) {
       return this._inFila(async () => {
-        const h = leggiTestata(frame);
-        if (h && h.tipo === this.tipoIn && h.seq <= this.seqIn) throw sbaglio("ripetuto");
         const r = await apri(this.chiaveIn, frame, this.tipoIn);
+        if (r.seq <= this.seqIn) throw sbaglio("ripetuto");
         this.seqIn = r.seq;
         return r.dati;
       });
@@ -154,9 +156,15 @@
     } catch { return null; }
   }
   const frammento = (k, scade) => `k=${b64u(k)}&scade=${scade}`;
+  // Il codice dell'associazione: sei cifre da K, «482 913».
+  async function codice(k) {
+    const b = await hkdf(k, SALE, "codice", 4);
+    const t = String(new DataView(b.buffer).getUint32(0) % 1e6).padStart(6, "0");
+    return `${t.slice(0, 3)} ${t.slice(3)}`;
+  }
 
   globalThis.PonteCripto = {
     VERSIONE, TIPO, casuale, b64u, daB64u, chiaviCoppia, chiaviSessione,
-    sigilla, apri, leggiTestata, Canale, canaleTel, canalePc, leggiFrammento, frammento,
+    sigilla, apri, leggiTestata, Canale, canaleTel, canalePc, leggiFrammento, frammento, codice,
   };
 })();

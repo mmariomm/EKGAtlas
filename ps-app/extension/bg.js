@@ -757,7 +757,7 @@ function ordMessaggio(msg, sender, reply) {
     const l = await ordLeggi();
     const mio = l.find((x) => x.worker === tab.id && ATTIVI.has(x.stato));
     // (o la scheda che il ponte ha aperto per i valori di un paziente: ponte-sw.js)
-    if (!mio) return reply({ ok: true, ordini: l, ...ponteLavoroDi(tab.id) });
+    if (!mio) return reply({ ok: true, ordini: l, ...(typeof ponteLavoroDi === "function" ? await ponteLavoroDi(tab.id) : {}) });
     const piano = (await chrome.storage.session.get(ORD_PIANO(mio.id)))[ORD_PIANO(mio.id)] || null;
     reply({ ok: true, ordini: l, lavoro: { ...mio, piano } });
   });
@@ -1015,5 +1015,7 @@ chrome.runtime.onInstalled?.addListener(riallinea);
 
 // Il ponte verso l'iPhone (ponte-sw.js): una presa cifrata da un capo
 // all'altro verso il sito del ponte, e i comandi del telefono eseguiti dalle
-// schede del gestionale. Sta in file suoi; vede le costanti qui sopra.
-importScripts("ponte-cripto.js", "ponte-sw.js");
+// schede del gestionale. Sta in file suoi; vede le costanti qui sopra. Un
+// errore lì dentro spegne il ponte, non il resto: ordini, referti, stampe.
+try { importScripts("ponte-host.js", "ponte-cripto.js", "ponte-sw.js"); }
+catch (e) { console.error("PS Assist: il ponte verso l'iPhone non parte", e); }

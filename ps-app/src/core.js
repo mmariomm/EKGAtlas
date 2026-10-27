@@ -2018,10 +2018,10 @@
 
   // ------------------------------------------------------- KNOWN PATIENTS
   // I pazienti su cui si è lavorato, per ritrovarli dalla schermata iniziale:
-  // nome, episodio, indirizzo della pagina e il colore di triage che la sua
-  // intestazione mostra. Un turno è di dodici ore e i
-  // pazienti sono più di dodici, quindi l'elenco tiene un giorno e non ha un
-  // limite che dia fastidio. Qui non entra MAI altro contenuto clinico (né esami,
+  // nome, episodio, indirizzo della pagina, il colore di triage e l'età che la
+  // sua intestazione mostra (il numero, mai la data di nascita). Un turno è di
+  // dodici ore e i pazienti sono più di dodici, quindi l'elenco tiene un giorno
+  // e non ha un limite che dia fastidio. Qui non entra MAI altro contenuto clinico (né esami,
   // né valori, né quesito): quello sta nella scheda, che è un'altra cosa.
   // Chi viene dimesso si ARCHIVIA: esce dall'elenco principale e resta negli
   // archiviati, da dove si può riportare indietro o cancellare del tutto.
@@ -2119,7 +2119,33 @@
       return;
     }
   }
-  function rememberPatient(ep, name, url, triage) {
+  // L'età: la riga in corpo 120% del riquadro la dice dopo la data di nascita
+  // («17/05/1949 (77) M»); se no, dal codice fiscale. Si tiene solo il numero,
+  // mai la data.
+  function etaDaCf(cf) {
+    if (!/^[A-Z]{6}[\dLMNPQRSTUV]{2}[A-Z][\dLMNPQRSTUV]{2}/.test(cf)) return null;
+    const n = (t) => Number(t.replace(/[LMNPQRSTUV]/g, (c) => "LMNPQRSTUV".indexOf(c)));
+    const mese = "ABCDEHLMPRST".indexOf(cf[8]), giorno = n(cf.slice(9, 11)) % 40, oggi = new Date();
+    if (mese < 0 || !giorno) return null;
+    // il secolo non c'è: nato nel 2000 e qualcosa, o cent'anni prima
+    const eta = oggi.getFullYear() - 2000 - n(cf.slice(6, 8)) - (oggi.getMonth() < mese || (oggi.getMonth() === mese && oggi.getDate() < giorno) ? 1 : 0);
+    return eta < 0 ? eta + 100 : eta;
+  }
+  function etaInPagina(doc = document) {
+    const r = riquadroPaziente(doc);
+    if (!r) return null;
+    // riga per riga (fra un <br> e l'altro il testo si attaccherebbe)
+    const righe = [];
+    const giro = doc.createTreeWalker(r, NodeFilter.SHOW_TEXT);
+    for (let n = giro.nextNode(); n; n = giro.nextNode()) righe.push([n.parentElement?.closest("font")?.getAttribute("style") || "", (n.nodeValue || "").toUpperCase()]);
+    for (const [stile, t] of righe) {
+      const m = /font-size:\s*120%/i.test(stile) && /\b\d{1,2}\/\d{1,2}\/\d{4}\s*\((\d{1,3})\)/.exec(t);
+      if (m) return Number(m[1]);
+    }
+    const cf = righe.map(([, t]) => CF_UNO.exec(t)).find(Boolean);
+    return cf ? etaDaCf(cf[0]) : null;
+  }
+  function rememberPatient(ep, name, url, triage, eta) {
     if (!ep) return;
     const prima = tuttiPazienti().find((p) => p.ep === ep);
     const list = tuttiPazienti().filter((p) => p.ep !== ep);
@@ -2127,10 +2153,11 @@
     // resta quello di prima
     const tr = TRIAGE_COLORI.includes(triage) ? { triage, triageTs: Date.now() }
       : prima?.triage ? { triage: prima.triage, triageTs: prima.triageTs || 0 } : {};
+    const anni = Number.isInteger(eta) && eta >= 0 && eta < 130 ? eta : prima?.eta;
     // riaprire un paziente archiviato lo riporta fra i vivi: se sei sulla sua
     // pagina, è di lui che ti stai occupando
     list.unshift({ ep, name: ((name || "").trim() || prima?.name || "").slice(0, 60), url: url || "", ts: Date.now(),
-                   pk: prima?.pk || "", ...tr });
+                   pk: prima?.pk || "", ...tr, ...(Number.isInteger(anni) ? { eta: anni } : {}) });
     store.set("patients.v1", list.slice(0, PATIENTS_MAX));
   }
   // la chiave della scheda clinica, annotata quando la conosciamo, così
@@ -5658,6 +5685,7 @@
         s = { tag: v.tag || "", testo: v.testo || "", tono: v.tono || "ok", quesito: v.quesito || "", ...(fuoco.consegna ? alCarrello : ristampa), ...letto };
       }
       s.paziente = fuoco.paziente || "";
+      if (String(id).startsWith("tel")) s.badge = s.badge ? `${s.badge} · dall'iPhone` : "dall'iPhone";
       s.daOrdine = id;
       if (coda) s.badge = `${s.badge ? s.badge + " · " : ""}+${coda} in coda`;
       // la stessa striscia di prima: niente ridisegno
@@ -10872,8 +10900,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     return [...m.info.values()].map((i) => ({
       ep: i.p.ep, nome: i.lungo, breve: i.breve + i.coda, omonimo: !!i.omonimo, triage: i.p.triage || "",
       posto: PANNELLO.nomePosto(m, i), nota: i.nota || "", prec: !!i.prec, spento: !!i.spento, visto: i.p.ts || 0,
+      eta: Number.isInteger(i.p.eta) ? i.p.eta : String(i.p.pk || "").startsWith("cf:") ? etaDaCf(i.p.pk.slice(3)) : null,
       prom: promDi(i.p.ep, m.prom).map((x) => ({ id: x.id, t: x.t, testo: x.testo })),
-      ordina: !!ponteUrlPaziente(i.p),
+      ordina: !!ponteUrlPaziente(i.p) && !i.prec,
     }));
   }
   // Quello che serve al telefono per ordinare: i quesiti (prima i tre
@@ -10910,7 +10939,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const d0 = new Date();
     const oggi = `${String(d0.getDate()).padStart(2, "0")}/${String(d0.getMonth() + 1).padStart(2, "0")}/${d0.getFullYear()}`;
     return {
-      colonne: col.map((c) => ({ cima: c.ignota ? "?" : c.data === oggi ? c.ora || "oggi" : c.data.slice(0, 5), sotto: c.ignota ? "ora ignota" : c.data === oggi ? "" : c.ora || "" })),
+      colonne: col.map((c) => ({ cima: c.ignota ? "?" : c.data === oggi ? c.ora || "oggi" : c.data.slice(0, 5), sotto: c.ignota ? "ora ignota" : c.data === oggi ? "" : c.ora || "",
+        parziale: righe.some((r) => r.valori[c.i] && r.valori[c.i].v && r.valori[c.i].parziale) })),
       gruppi: raggruppaStorico(righe).map((g) => ({ nome: g.nome, righe: g.righe.map((r) => ({
         nome: inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome),
         um: unitaChiara((r.valori.find((v) => v && v.um) || {}).um || "", r.nome),
@@ -10958,7 +10988,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (sta) resta -= t.length;
       return { id: e.id, quando: e.when, sistema: e.sistema, titolo: shortLabel(e.label), tipo: refertoTipo(e), testo: sta ? t : "", lungo: !!t && !sta };
     });
-    return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, referti: lista, nota }, registro: `esiti di ${p.name}` };
+    // quando il PC li ha letti: sul telefono si vede quanto sono vecchi
+    return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, letto: tabella ? Number(st.letto) || 0 : 0, referti: lista, nota }, registro: `esiti di ${p.name}` };
   }
   // L'ordine: lo stesso giro di «Conferma e stampa», dato alla scheda di
   // sottofondo dalla pagina del paziente — tutti i controlli di sempre. Il
@@ -11013,6 +11044,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (cmd === "richieste") return fatto({ ok: true, dati: ponteCatalogo(), registro: "catalogo degli esami" });
     const p = a.ep ? pontePaziente(a.ep) : null;
     if (!p) return { ok: false, errore: "Questo paziente non è più nell'elenco del PC" };
+    // dimesso sul PC (archiviato): dal telefono non si tocca più
+    if (p.arch) return { ok: false, errore: "Dimesso sul PC: niente inviato", dimesso: true };
+    // un episodio precedente si legge, ma non si ordina e non si promemora
+    if ((cmd === "ordina" || cmd === "promemoria") && PANNELLO.pazModello().info.get(p.ep)?.prec) {
+      return { ok: false, errore: `Episodio precedente: ${cmd === "ordina" ? "per ordinare" : "per un promemoria"} apri quello di oggi` };
+    }
     const riga = () => pontePazienti().find((x) => x.ep === p.ep) || null;
     if (cmd === "esiti") return fatto(await ponteEsiti(p));
     if (cmd === "aggiornaValori") {
@@ -11198,6 +11235,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const aperti = LAVORO ? 0 : (chi?.ordini || []).length;
       if (LAVORO) ask({ t: "ordineAggiorna", id: LAVORO.id, stato: "errore", vista: { tag: "Sessione scaduta", testo: "Rifai l'accesso, poi controlla il carrello", tono: "err", sessione: true } });
       if (PONTE_VALORI) ask({ t: "ponteValoriFatto", ok: false, testo: "il gestionale chiede di rifare l'accesso" });
+      // e la sessione del ponte verso l'iPhone si chiude (l'associazione resta: rientrati, il telefono riapre)
+      if (hasExt() && !DEMO) ask({ t: "ponteLogin" });
       forgetAll();
       if (mai || forse || aperti) {
         const d = document.createElement("div");
@@ -11283,7 +11322,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // classifies the same way but its episode belongs to someone in the list
       // (la scheda di un ordine non è il medico che apre il paziente: niente «visto adesso»)
       if (panel.entry && (panel.entry.labUrl || panel.entry.radioUrl) && !LAVORO && !PONTE_VALORI) {
-        rememberPatient(panel.episodeId, nomeInPagina(), location.href, triageDi(document));
+        rememberPatient(panel.episodeId, nomeInPagina(), location.href, triageDi(document), etaInPagina(document));
         iconaCf(document);
         // Il portale clinico si apre da QUESTO link, sulla pagina di QUESTO
         // paziente: quel clic è l'identità, ed è esatta. Si annota qui, prima
