@@ -21,24 +21,30 @@ funzionare col dialogo di stampa.
 
 ## Installare (una volta)
 
-1. **Estrai** lo zip di PS Assist: tasto destro, «Estrai tutto…». Da dentro lo zip
+1. **Sblocca ed estrai** lo zip di PS Assist: tasto destro sullo zip → **Proprietà** → spunta
+   **Annulla blocco** → OK; poi tasto destro → «Estrai tutto…». (Senza «Annulla blocco», Windows
+   ferma `installa.cmd` con «Windows ha protetto il PC».) Da dentro lo zip
    `installa.cmd` non parte, e lo dice («Estrai prima lo zip»). La cartella estratta può stare
    dove vuoi, anche in Download: quello che serve viene copiato in
    `%LOCALAPPDATA%\PSAssist\stampa` (non in Documenti, che in ospedale spesso sta su un server o
    su OneDrive).
 2. Doppio clic su **`installa.cmd`** nella cartella `stampa`. Non chiede l'amministratore.
+   - Guarda prima se un criterio di gruppo impone gli script firmati (`AllSigned`): lì nessuno
+     script di PS Assist parte, e lo dice, con che cosa chiedere all'IT.
    - Toglie alla cartella il segno «scaricato da Internet» (`Unblock-File`), che bloccherebbe
      gli script.
-   - Copia `host.cmd`, `host.ps1` e `installa.ps1` in `%LOCALAPPDATA%\PSAssist\stampa`.
+   - Copia `host.cmd`, `host.ps1`, `installa.ps1` e `disinstalla.cmd` in
+     `%LOCALAPPDATA%\PSAssist\stampa`.
    - **SumatraPDF**: se lì c'è già quello giusto, resta. Se no lo prende da
      `SumatraPDF-3.6.1-64.zip`, se lo trova in questa cartella o in Download (scaricato col
      browser: utile se il proxy blocca PowerShell). Solo se non lo trova lo scarica dal sito
      ufficiale. In ogni caso controlla l'impronta SHA-256, e un file diverso non lo usa.
-   - Guarda i **blocchi noti** (PowerShell in modalità limitata, criteri sugli script, criteri di
-     Chrome e di Edge sugli aiutanti, il prompt dei comandi vietato, SumatraPDF che non parte).
-     Per ognuno scrive una riga in italiano e che cosa chiedere all'IT.
+   - Guarda i **blocchi noti** (PowerShell in modalità limitata, criteri di Chrome e di Edge
+     sugli aiutanti, il prompt dei comandi vietato, SumatraPDF che non arriva o non parte) e li
+     dice **tutti insieme**, ognuno in una riga in italiano con che cosa chiedere all'IT: un
+     elenco solo da inoltrare.
    - Scrive il «manifest» dell'aiutante e le due chiavi nel registro dell'utente (HKCU) che lo
-     indicano a Chrome e a Edge.
+     indicano a Chrome e a Edge (solo con SumatraPDF al suo posto).
 
    Finisce con **«Fatto»** o con **«Non riuscito:»** e il motivo. Rilanciato (per esempio da
    uno zip più nuovo), aggiorna la copia.
@@ -105,16 +111,17 @@ caricala di nuovo con **Carica estensione non pacchettizzata**, scegliendo la ca
   `\`, che romperebbero la riga di comando.
 - Lo scrive in un file temporaneo dal nome casuale e lo manda alla stampante con **SumatraPDF**
   (`-print-to "<stampante>" -silent`: le etichette alla loro misura vera, l'A4 adattato al
-  foglio). Poi guarda la coda di Windows per 4 secondi, **cancella il file** e dice com'è
-  andata. Tutto entro 35 secondi; l'estensione ne aspetta al massimo 90.
+  foglio). Poi guarda la coda di Windows — 10 secondi per un'etichetta (un'etichettatrice di
+  rete è lenta), 4 per l'A4 —, **cancella il file** e dice com'è andata. Tutto entro 35
+  secondi; l'estensione ne aspetta al massimo 90.
 - **L'esito, detto per quello che si sa:**
 
   | Esito | Che cosa vuol dire | Che cosa fa PS Assist |
   |---|---|---|
   | «Stampato su Zebra ZD421 alle 14:32» | il foglio è uscito dalla coda di Windows, senza errori | il foglio dopo |
-  | «Mandato a Zebra ZD421» | dopo 4 secondi è ancora nella coda: Windows l'ha preso, non si sa se è uscito | il foglio dopo, e lo dice |
-  | Non riuscito | non è partito niente: aiutante non installato o bloccato, stampante sparita, spenta o offline (anche un foglio fermo in errore o in pausa: si toglie dalla coda), PDF non valido, SumatraPDF che dice di no | **quel** foglio passa dal dialogo di stampa, con una riga che dice perché |
-  | «Esito della stampa sconosciuto · Ristampa» | nessuna risposta, tempo scaduto, SumatraPDF fermato a metà: il foglio **può essere uscito** | **mai** un secondo foglio da solo: controlla la stampante, e se non c'è, **Ristampa** |
+  | «Mandato a Zebra ZD421» | finita l'attesa è ancora nella coda: Windows l'ha preso, non si sa se è uscito | il foglio dopo, e lo dice in ambra |
+  | Non riuscito | non è partito niente: aiutante non installato o bloccato, stampante sparita, spenta o offline (anche un foglio fermo in errore o in pausa prima di stampare: si toglie dalla coda), PDF non valido, SumatraPDF che dice di no | **quel** foglio passa dal dialogo di stampa, con una riga che dice perché |
+  | «Esito della stampa sconosciuto» | nessuna risposta, tempo scaduto, SumatraPDF fermato a metà, la stampante fermata in errore **mentre stampava** (`Printing`, o una pagina già stampata: una parte può essere uscita, o restare nella memoria della stampante e uscire dopo): il foglio **può essere uscito** | **mai** un secondo foglio da solo: controlla la stampante, e se non c'è, **Ristampa** |
 
 - Risponde anche a due domande: «ci sei?» (la versione) e «che stampanti ci sono?».
 - **Non** fa nient'altro: non usa la rete, non esegue altri programmi, non legge altri file.
@@ -129,7 +136,8 @@ caricala di nuovo con **Carica estensione non pacchettizzata**, scegliendo la ca
 
 ## Togliere
 
-Doppio clic su **`disinstalla.cmd`** (nella cartella estratta dallo zip). Lo fa PowerShell, non
+Doppio clic su **`disinstalla.cmd`**: quello in `%LOCALAPPDATA%\PSAssist\stampa` (lo zip non
+serve più), o quello della cartella estratta dallo zip. Lo fa PowerShell, non
 `reg.exe`: toglie le due chiavi del registro dell'utente, la cartella `%LOCALAPPDATA%\PSAssist`
 (l'aiutante, SumatraPDF e le sue impostazioni, il registro delle stampe) e i fogli temporanei
 `psassist-*.pdf` rimasti. Poi **controlla**: dice «Fatto» solo se non resta niente, se no dice che
@@ -149,6 +157,8 @@ cosa resta. Dopo puoi cancellare la cartella dello zip. PS Assist torna al dialo
   passa per stdin, il file temporaneo vive il tempo della stampa. `-ExecutionPolicy Bypass` vale
   solo per quel processo, e non scavalca un criterio di gruppo.
 - **All'installazione**, da `installa.cmd`: `powershell.exe -NoLogo -NoProfile -Command
+  "Get-ExecutionPolicy -Scope MachinePolicy; Get-ExecutionPolicy -Scope UserPolicy"` (un
+  criterio che impone gli script firmati?), `powershell.exe -NoLogo -NoProfile -Command
   "Get-ChildItem -LiteralPath '<cartella>' | Unblock-File"`, poi `powershell.exe -NoLogo
   -NoProfile -ExecutionPolicy Bypass -File installa.ps1`, che copia i file, se serve scarica lo
   zip di SumatraPDF (`Invoke-WebRequest` da `www.sumatrapdfreader.org`, che rimanda a
@@ -156,8 +166,8 @@ cosa resta. Dopo puoi cancellare la cartella dello zip. PS Assist torna al dialo
   SumatraPDF su un file che non c'è (`-print-to "PS Assist prova" -silent
   "%TEMP%\psassist-nessuno.pdf"`: esce subito, non stampa niente).
 - **I file**, tutti in `%LOCALAPPDATA%\PSAssist\stampa`: `host.cmd`, `host.ps1` (lo script,
-  leggibile in pochi minuti), `installa.ps1`, `it.psassist.stampa.json` e **`SumatraPDF.exe`**
-  portable 3.6.1, 64 bit:
+  leggibile in pochi minuti), `installa.ps1`, `disinstalla.cmd`, `it.psassist.stampa.json` e
+  **`SumatraPDF.exe`** portable 3.6.1, 64 bit:
   - `SumatraPDF.exe`: SHA-256 `719F689B34F47BE8CA105CE8484948474DAFDE0E106BAB599E4A89326070C3D0`,
     firmato Authenticode «Krzysztof Kowalczyk» (certificato Certum);
   - lo zip da cui viene, `SumatraPDF-3.6.1-64.zip`: SHA-256
@@ -174,15 +184,18 @@ cosa resta. Dopo puoi cancellare la cartella dello zip. PS Assist torna al dialo
 
 ## Cosa chiedere all'IT (inoltrabile così com'è)
 
-1. **Programma.** Consentire (AppLocker/WDAC) `SumatraPDF.exe` 3.6.1: firmato «Krzysztof
-   Kowalczyk» (Certum), SHA-256 `719F689B34F47BE8CA105CE8484948474DAFDE0E106BAB599E4A89326070C3D0`,
-   nella cartella `%LOCALAPPDATA%\PSAssist\stampa`. In alternativa, installarlo voi in
-   `C:\Program Files` (allora `host.ps1` va ritoccato per trovarlo lì).
-2. **Script PowerShell.** Consentire `host.ps1` e `installa.ps1` di quella cartella in modalità
-   FullLanguage (regola per hash o per percorso, oppure firmarli con il certificato aziendale),
-   anche se un criterio di gruppo impone `AllSigned` o `RemoteSigned`.
+1. **La cartella.** Consentire (AppLocker/WDAC, regola per percorso o per hash) la cartella
+   `%LOCALAPPDATA%\PSAssist\stampa` **intera**: `host.cmd`, `host.ps1`, `installa.ps1`,
+   `disinstalla.cmd` e `SumatraPDF.exe` 3.6.1 (firmato «Krzysztof Kowalczyk», Certum, SHA-256
+   `719F689B34F47BE8CA105CE8484948474DAFDE0E106BAB599E4A89326070C3D0`). Le regole sugli script
+   valgono anche per i `.cmd`: senza `host.cmd` ogni stampa finisce «l'aiutante di stampa si è
+   chiuso senza rispondere».
+2. **Script PowerShell.** `host.ps1` e `installa.ps1` di quella cartella in modalità
+   FullLanguage, anche se un criterio di gruppo impone `AllSigned` (o firmarli con il
+   certificato aziendale).
 3. **Chrome/Edge.** Se `NativeMessagingUserLevelHosts` è disattivato o `NativeMessagingBlocklist`
-   contiene `*`: aggiungere `it.psassist.stampa` a `NativeMessagingAllowlist`. Se necessario,
+   (nei modelli di criteri vecchi `NativeMessagingBlacklist`) contiene `*`: aggiungere
+   `it.psassist.stampa` a `NativeMessagingAllowlist`. Se necessario,
    registrarlo in HKLM, cioè `HKLM\SOFTWARE\Google\Chrome\NativeMessagingHosts\it.psassist.stampa`
    (e la chiave equivalente sotto `Microsoft\Edge`), con il percorso del file
    `it.psassist.stampa.json`.
@@ -199,25 +212,30 @@ cosa resta. Dopo puoi cancellare la cartella dello zip. PS Assist torna al dialo
    `98B33A518D42986856D225064B0CD2D3643ECF78CBF84AB873D26CC51877A544`), che arriva da
    `www.sumatrapdfreader.org` e poi da `files.sumatrapdfreader.org`.
 7. **Ponte (rete), solo se si usa l'iPhone.** Consentire dal browser una WebSocket in uscita verso
-   `wss://<sito>/ponte/ws` (TCP 443), con l'upgrade WebSocket attraverso il proxy. È una
-   connessione lunga (fino a 14 ore) con un battito ogni 20 secondi. Va lasciata senza un limite
-   di durata inferiore a un'ora e, se possibile, esclusa dall'ispezione TLS: il contenuto è
-   comunque cifrato da un capo all'altro.
+   `wss://ekg-atlas.whirly.workers.dev/ponte/ws` (TCP 443), con l'upgrade WebSocket attraverso
+   il proxy. È un indirizzo `*.workers.dev` (Cloudflare): molti filtri web lo bloccano per
+   categoria, va consentito questo nome. È una connessione lunga (fino a 14 ore) con un battito
+   ogni 20 secondi. Va lasciata senza un limite di durata inferiore a un'ora e, se possibile,
+   esclusa dall'ispezione TLS: il contenuto è comunque cifrato da un capo all'altro.
 
 ## Se non funziona: i blocchi noti
 
-`installa.cmd` li cerca da solo e li dice, uno per riga, col numero da chiedere all'IT qui sopra.
+`installa.cmd` li cerca da solo e li dice tutti insieme, uno per riga, con che cosa chiedere
+all'IT (i punti qui sopra).
 
-- **PowerShell in modalità limitata** (AppLocker/WDAC con regole sugli script), o un criterio che
-  impone `AllSigned`: l'aiutante non partirebbe, o non potrebbe rispondere. → punto 2.
+- **Un criterio che impone `AllSigned`**: nessuno script di PS Assist parte. `installa.cmd` lo
+  dice prima di cominciare. → punto 2.
+- **PowerShell in modalità limitata** (AppLocker/WDAC con regole sugli script): l'aiutante non
+  potrebbe rispondere. → punti 1 e 2.
 - **Chrome o Edge che non accettano aiutanti dell'utente** (`NativeMessagingUserLevelHosts`
   disattivato, o `NativeMessagingBlocklist` con `*`): la pagina Stampanti dice «non installata»
   (o «Chrome non permette di usare l'aiutante di stampa») anche dopo «Fatto», e la stampantina
   lo ripete. Si vede in `chrome://policy`. → punto 3.
 - **Il prompt dei comandi vietato anche agli script** (`DisableCMD` = 1). → punto 4.
 - **SumatraPDF che non parte** dalla cartella dell'utente. → punto 1.
-- **Il download bloccato** dal proxy: `installa.cmd` lo dice, coi due indirizzi e l'impronta.
-  Scarica lo zip col browser, lascialo in Download e rilancia `installa.cmd`. → punto 6.
+- **Il download bloccato** dal proxy: `installa.cmd` lo dice, coi due indirizzi e l'impronta,
+  insieme agli altri blocchi. Scarica lo zip col browser, lascialo in Download e rilancia
+  `installa.cmd`. → punto 6.
 - **L'antivirus che ferma l'aiutante a metà**: la stampa dice «l'aiutante di stampa si è chiuso
   senza rispondere» con **esito sconosciuto** (il foglio può essere uscito), o «non è partito
   (Windows l'ha bloccato)». → punto 5.

@@ -12,7 +12,8 @@
 #   ok:true,  esito "stampato"     il foglio è uscito dalla coda di Windows
 #   ok:true,  esito "mandato"      è nella coda di Windows, e lì è rimasto
 #   ok:false, esito "fallito"      non è uscito niente (stampante spenta o sparita, PDF rotto…)
-#   ok:false, esito "sconosciuto"  SumatraPDF è partito e non ha finito: può essere uscito
+#   ok:false, esito "sconosciuto"  può essere uscito (SumatraPDF non ha finito, la stampante
+#                                  si è fermata mentre stampava)
 # Tutto entro 35 secondi dall'avvio (l'estensione ne aspetta 90). Non usa la
 # rete, non esegue altro che SumatraPDF.exe di questa cartella, e annota solo in
 # %LOCALAPPDATA%\PSAssist\stampa.log (mai il contenuto, mai nomi).
@@ -24,7 +25,9 @@ $VERSIONE = '2'
 $MAX_MESSAGGIO = 40MB    # il PDF in base64 e poco altro
 $MAX_PDF = 25MB
 $TETTO_S = 35            # tutto il lavoro di una stampa; con l'avvio di PowerShell, sotto i 40
-$CODA_S = 4              # dopo SumatraPDF, quanto si guarda la coda di Windows
+# dopo SumatraPDF, quanto si guarda la coda di Windows: un'etichettatrice di
+# rete ci mette di più, e «stampato» deve essere l'esito di tutti i giorni
+$CODA_S = @{ etichette = 10; a4 = 4 }
 $SUMATRA = Join-Path $PSScriptRoot 'SumatraPDF.exe'
 $base = $env:LOCALAPPDATA
 if (-not $base) { $base = [IO.Path]::GetTempPath() }
@@ -120,7 +123,10 @@ function Misura([byte[]]$byte) {
 
 # Il foglio è nella coda di Windows (SumatraPDF lo chiama col percorso del
 # file). Uscito dalla coda: stampato. Fermo in errore, offline o in pausa: lo si
-# toglie, e non è uscito niente. Ancora lì quando il tempo finisce: mandato, e basta.
+# toglie, e non è uscito niente — a meno che stesse già stampando: un pezzo
+# può essere uscito, o restare nella memoria della stampante e uscire dopo
+# (sconosciuto: mai un secondo foglio da solo). Ancora lì quando il tempo
+# finisce: mandato, e basta.
 function Coda([string]$nome, [string]$file, [datetime]$fino) {
   $chiave = [IO.Path]::GetFileNameWithoutExtension($file)
   do {
@@ -130,6 +136,9 @@ function Coda([string]$nome, [string]$file, [datetime]$fino) {
     if ($miei | Where-Object { [string]$_.JobStatus -match 'Error|Offline|Paused' }) {
       $tolto = $true
       foreach ($j in $miei) { try { Remove-PrintJob -InputObject $j } catch { $tolto = $false } }
+      if ($miei | Where-Object { [string]$_.JobStatus -match 'Printing' -or $_.PagesPrinted -gt 0 }) {
+        Esito 'sconosciuto' ('la stampante «{0}» si è fermata mentre stampava: il foglio può essere uscito, o uscire quando riparte' -f $nome)
+      }
       if ($tolto) { Esito 'fallito' ('la stampante «{0}» risulta spenta o offline: il foglio è stato tolto dalla coda' -f $nome) }
       Esito 'sconosciuto' ('la stampante «{0}» risulta spenta o offline, e il foglio non si toglie dalla coda: può uscire quando torna accesa' -f $nome)
     }
@@ -153,7 +162,8 @@ function Stampa($d, [string]$pdf64) {
   $file = Join-Path $TEMP ('psassist-{0}.pdf' -f [guid]::NewGuid().ToString('N'))
   [IO.File]::WriteAllBytes($file, $byte)
   try {
-    $attesa = [math]::Max(5, [math]::Floor($TETTO_S - $CODA_S - ((Get-Date) - $INIZIO).TotalSeconds))
+    $coda = $CODA_S[[string]$d.tipo]
+    $attesa = [math]::Max(5, [math]::Floor($TETTO_S - $coda - ((Get-Date) - $INIZIO).TotalSeconds))
     $si = New-Object Diagnostics.ProcessStartInfo
     $si.FileName = $SUMATRA
     $si.Arguments = '-print-to "{0}" -print-settings "{1}" -silent "{2}"' -f $nome, $opzioni, $file
@@ -174,7 +184,7 @@ function Stampa($d, [string]$pdf64) {
     # SumatraPDF 3.6.1 esce col numero dei file che non ha stampato: 1, qui.
     # Un foglio che non riesce a stampare lo toglie dalla coda: non è uscito niente.
     if ($p.ExitCode -ne 0) { Esito 'fallito' ('SumatraPDF non è riuscito a stampare il foglio{0}' -f $(if ($p.ExitCode -ne 1) { " (codice $($p.ExitCode))" } else { '' })) }
-    $esito = Coda $nome $file ((Get-Date).AddSeconds($CODA_S))
+    $esito = Coda $nome $file ((Get-Date).AddSeconds($coda))
   } finally {
     Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
   }

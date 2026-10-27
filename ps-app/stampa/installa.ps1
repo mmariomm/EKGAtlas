@@ -3,8 +3,10 @@
 # SumatraPDF portable vanno in %LOCALAPPDATA%\PSAssist\stampa, e una chiave nel
 # registro dell'utente (HKCU) dice a Chrome e a Edge dov'è. Rilanciarlo
 # aggiorna la copia. Si lancia con un doppio clic su installa.cmd; si toglie
-# con disinstalla.cmd. Prima di tutto guarda i blocchi noti, e per ognuno dice
-# in una riga che cosa chiedere all'IT.
+# con disinstalla.cmd (anche quello copiato in %LOCALAPPDATA%\PSAssist\stampa).
+# Guarda i blocchi noti e li dice tutti insieme, ognuno in una riga con che
+# cosa chiedere all'IT. (Un criterio che impone gli script firmati non lascia
+# partire nemmeno questo script: lo guarda prima installa.cmd.)
 param([switch]$Togli)
 
 $ErrorActionPreference = 'Stop'
@@ -23,6 +25,8 @@ $ZIP_NOME = 'SumatraPDF-3.6.1-64.zip'
 $ZIP_URL = "https://www.sumatrapdfreader.org/dl/rel/3.6.1/$ZIP_NOME"
 $ZIP_SHA256 = '98B33A518D42986856D225064B0CD2D3643ECF78CBF84AB873D26CC51877A544'
 $EXE_SHA256 = '719F689B34F47BE8CA105CE8484948474DAFDE0E106BAB599E4A89326070C3D0'
+# AppLocker e WDAC guardano anche i .cmd: la regola va sulla cartella intera
+$CARTELLA_IT = "consentire (AppLocker/WDAC) la cartella $DOVE intera: host.cmd, host.ps1, installa.ps1, disinstalla.cmd, SumatraPDF.exe (regola per percorso o per hash)"
 
 function Fine([bool]$ok, [string]$testo) {
   Write-Host ''
@@ -35,7 +39,7 @@ function Fine([bool]$ok, [string]$testo) {
 # l'aiutante non potrebbe nemmeno rispondere a Chrome.
 if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
   Write-Host "PowerShell su questo PC è in modalità limitata ($($ExecutionContext.SessionState.LanguageMode)): una regola dell'IT blocca gli script, e l'aiutante di stampa non potrebbe rispondere."
-  Write-Host "  Da chiedere all'IT: consentire host.ps1 e installa.ps1 della cartella $DOVE in modalità FullLanguage (regola per hash o per percorso, o firmarli col certificato aziendale)."
+  Write-Host "  Da chiedere all'IT: $CARTELLA_IT, con gli script in modalità FullLanguage."
   Fine $false 'PowerShell in modalità limitata.'
 }
 
@@ -59,10 +63,37 @@ if ($Togli) {
 Write-Host "Copio l'aiutante in $DOVE..."
 $null = New-Item -ItemType Directory -Path $DOVE -Force
 if ($QUI -ne $DOVE) {
-  foreach ($f in 'host.cmd', 'host.ps1', 'installa.ps1') { Copy-Item -LiteralPath (Join-Path $QUI $f) -Destination $DOVE -Force }
+  foreach ($f in 'host.cmd', 'host.ps1', 'installa.ps1', 'disinstalla.cmd') { Copy-Item -LiteralPath (Join-Path $QUI $f) -Destination $DOVE -Force }
 }
 
-# 2. SumatraPDF: c'è già, giusto; o dallo zip (in questa cartella o in
+# 2. I blocchi noti, ognuno in una riga con quello che va chiesto all'IT:
+# tutti, anche se SumatraPDF non arriva, così l'IT ha un elenco solo.
+$blocchi = @()
+function Blocco([string]$cosa, [string]$it) { $script:blocchi += [pscustomobject]@{ cosa = $cosa; it = $it } }
+function Valore([string]$chiave, [string]$nome) { try { (Get-ItemProperty -Path $chiave -Name $nome -ErrorAction Stop).$nome } catch { $null } }
+function Elenco([string]$chiave) {
+  try { @((Get-ItemProperty -Path $chiave -ErrorAction Stop).PSObject.Properties | Where-Object { $_.Name -match '^\d+$' } | ForEach-Object { [string]$_.Value }) } catch { @() }
+}
+foreach ($b in @(@{ nome = 'Chrome'; chiave = 'Google\Chrome' }, @{ nome = 'Edge'; chiave = 'Microsoft\Edge' })) {
+  foreach ($radice in 'HKLM:', 'HKCU:') {
+    $pol = "$radice\SOFTWARE\Policies\$($b.chiave)"
+    if ((Valore $pol 'NativeMessagingUserLevelHosts') -eq 0) {
+      Blocco "$($b.nome) non accetta aiutanti installati dall'utente (criterio NativeMessagingUserLevelHosts disattivato)" "registrare $NOME in HKLM\SOFTWARE\$($b.chiave)\NativeMessagingHosts\$NOME col percorso di $DOVE\$NOME.json, o permettere gli aiutanti dell'utente"
+    }
+    # (i nomi di prima dei criteri, che i modelli di criteri vecchi usano ancora)
+    $no = @(Elenco "$pol\NativeMessagingBlocklist") + @(Elenco "$pol\NativeMessagingBlacklist")
+    if (($no -contains '*' -or $no -contains $NOME) -and (@(Elenco "$pol\NativeMessagingAllowlist") + @(Elenco "$pol\NativeMessagingWhitelist")) -notcontains $NOME) {
+      Blocco "$($b.nome) vieta gli aiutanti (criterio NativeMessagingBlocklist)" "aggiungere $NOME a NativeMessagingAllowlist"
+    }
+  }
+}
+foreach ($radice in 'HKCU:', 'HKLM:') {
+  if ((Valore "$radice\SOFTWARE\Policies\Microsoft\Windows\System" 'DisableCMD') -eq 1) {
+    Blocco 'il prompt dei comandi è vietato anche agli script (criterio DisableCMD = 1): Chrome avvia l''aiutante con cmd.exe' "impostare DisableCMD = 2 (vieta il prompt, lascia gli script), o nessun criterio"
+  }
+}
+
+# 3. SumatraPDF: c'è già, giusto; o dallo zip (in questa cartella o in
 # Download, se l'hai scaricato col browser); o, solo se manca, dal sito.
 function Giusto([string]$f, [string]$sha) { (Test-Path -LiteralPath $f) -and (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash -eq $sha }
 $exe = Join-Path $DOVE 'SumatraPDF.exe'
@@ -91,8 +122,7 @@ if (-not (Giusto $exe $EXE_SHA256)) {
       Write-Host "SumatraPDF: $($_.Exception.Message)."
       Write-Host "Scaricalo col browser: $ZIP_URL (passa anche da files.sumatrapdfreader.org)."
       Write-Host "Lascia $ZIP_NOME in Download (o in questa cartella) e rilancia installa.cmd: lo uso se l'impronta SHA-256 è $ZIP_SHA256."
-      Write-Host "  Da chiedere all'IT, se il proxy lo blocca: www.sumatrapdfreader.org e files.sumatrapdfreader.org, o lo zip qui sopra."
-      Fine $false 'manca SumatraPDF.exe.'
+      Blocco "manca SumatraPDF.exe: $($_.Exception.Message)" "se il proxy lo blocca, consentire www.sumatrapdfreader.org e files.sumatrapdfreader.org, o darmi $ZIP_NOME (SHA-256 $ZIP_SHA256)"
     } finally {
       if ($zip -eq "$tmp.zip") { Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue }
       Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
@@ -100,59 +130,33 @@ if (-not (Giusto $exe $EXE_SHA256)) {
   }
 }
 
-# 3. I blocchi noti, ognuno in una riga con quello che va chiesto all'IT.
-$blocchi = @()
-function Blocco([string]$cosa, [string]$it) { $script:blocchi += [pscustomobject]@{ cosa = $cosa; it = $it } }
-function Valore([string]$chiave, [string]$nome) { try { (Get-ItemProperty -Path $chiave -Name $nome -ErrorAction Stop).$nome } catch { $null } }
-function Elenco([string]$chiave) {
-  try { @((Get-ItemProperty -Path $chiave -ErrorAction Stop).PSObject.Properties | Where-Object { $_.Name -match '^\d+$' } | ForEach-Object { [string]$_.Value }) } catch { @() }
-}
-foreach ($p in (Get-ExecutionPolicy -List)) {
-  if ($p.Scope -in 'MachinePolicy', 'UserPolicy' -and $p.ExecutionPolicy -in 'AllSigned', 'Restricted') {
-    Blocco "un criterio di gruppo ($($p.Scope)) impone «$($p.ExecutionPolicy)»: host.ps1, che non è firmato, non parte" "firmare host.ps1 e installa.ps1 col certificato aziendale, o consentirli per hash o per percorso ($DOVE)"
+if (Giusto $exe $EXE_SHA256) {
+  # SumatraPDF parte davvero? (un file che non c'è: deve uscire subito, senza stampare niente)
+  try {
+    $prova = Start-Process -FilePath $exe -ArgumentList '-print-to', '"PS Assist prova"', '-silent', ('"{0}"' -f (Join-Path ([IO.Path]::GetTempPath()) 'psassist-nessuno.pdf')) -PassThru -WindowStyle Hidden
+    if (-not $prova.WaitForExit(15000)) { try { $prova.Kill() } catch { }; throw 'non ha finito in 15 secondi' }
+  } catch {
+    Blocco "SumatraPDF.exe non parte da $DOVE ($($_.Exception.Message))" "$CARTELLA_IT; SumatraPDF.exe 3.6.1, firmato «Krzysztof Kowalczyk», SHA-256 $EXE_SHA256"
   }
-}
-foreach ($b in @(@{ nome = 'Chrome'; chiave = 'Google\Chrome' }, @{ nome = 'Edge'; chiave = 'Microsoft\Edge' })) {
-  foreach ($radice in 'HKLM:', 'HKCU:') {
-    $pol = "$radice\SOFTWARE\Policies\$($b.chiave)"
-    if ((Valore $pol 'NativeMessagingUserLevelHosts') -eq 0) {
-      Blocco "$($b.nome) non accetta aiutanti installati dall'utente (criterio NativeMessagingUserLevelHosts disattivato)" "registrare $NOME in HKLM\SOFTWARE\$($b.chiave)\NativeMessagingHosts\$NOME col percorso di $DOVE\$NOME.json, o permettere gli aiutanti dell'utente"
-    }
-    $no = Elenco "$pol\NativeMessagingBlocklist"
-    if (($no -contains '*' -or $no -contains $NOME) -and (Elenco "$pol\NativeMessagingAllowlist") -notcontains $NOME) {
-      Blocco "$($b.nome) vieta gli aiutanti (criterio NativeMessagingBlocklist)" "aggiungere $NOME a NativeMessagingAllowlist"
-    }
-  }
-}
-foreach ($radice in 'HKCU:', 'HKLM:') {
-  if ((Valore "$radice\SOFTWARE\Policies\Microsoft\Windows\System" 'DisableCMD') -eq 1) {
-    Blocco 'il prompt dei comandi è vietato anche agli script (criterio DisableCMD = 1): Chrome avvia l''aiutante con cmd.exe' "impostare DisableCMD = 2 (vieta il prompt, lascia gli script), o nessun criterio"
-  }
-}
-# SumatraPDF parte davvero? (un file che non c'è: deve uscire subito, senza stampare niente)
-try {
-  $prova = Start-Process -FilePath $exe -ArgumentList '-print-to', '"PS Assist prova"', '-silent', ('"{0}"' -f (Join-Path ([IO.Path]::GetTempPath()) 'psassist-nessuno.pdf')) -PassThru -WindowStyle Hidden
-  if (-not $prova.WaitForExit(15000)) { try { $prova.Kill() } catch { }; throw 'non ha finito in 15 secondi' }
-} catch {
-  Blocco "SumatraPDF.exe non parte da $DOVE ($($_.Exception.Message))" "consentire (AppLocker/WDAC, antivirus) SumatraPDF.exe 3.6.1, firmato «Krzysztof Kowalczyk», SHA-256 $EXE_SHA256"
-}
 
-# 4. Il «manifest» dell'aiutante, nella copia, e la chiave che lo indica a
-# Chrome e a Edge (solo per questo utente).
-$json = Join-Path $DOVE "$NOME.json"
-$manifest = [ordered]@{
-  name = $NOME
-  description = 'PS Assist: stampa automatica'
-  path = 'host.cmd'
-  type = 'stdio'
-  allowed_origins = @("chrome-extension://$ID/")
+  # 4. Il «manifest» dell'aiutante, nella copia, e la chiave che lo indica a
+  # Chrome e a Edge (solo per questo utente). Senza SumatraPDF no: Chrome
+  # crederebbe di avere un aiutante che non può stampare.
+  $json = Join-Path $DOVE "$NOME.json"
+  $manifest = [ordered]@{
+    name = $NOME
+    description = 'PS Assist: stampa automatica'
+    path = 'host.cmd'
+    type = 'stdio'
+    allowed_origins = @("chrome-extension://$ID/")
+  }
+  [IO.File]::WriteAllText($json, ($manifest | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+  foreach ($k in $CHIAVI) { $null = New-Item -Path $k -Value $json -Force }
 }
-[IO.File]::WriteAllText($json, ($manifest | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
-foreach ($k in $CHIAVI) { $null = New-Item -Path $k -Value $json -Force }
 
 if ($blocchi.Count) {
   Write-Host ''
-  Write-Host 'Installata, ma qui la stampa automatica non può funzionare finché l''IT non toglie questi blocchi:' -ForegroundColor Yellow
+  Write-Host 'Qui la stampa automatica non può funzionare finché l''IT non toglie questi blocchi:' -ForegroundColor Yellow
   foreach ($x in $blocchi) { Write-Host "- $($x.cosa)."; Write-Host "  Da chiedere all'IT: $($x.it)." }
   Fine $false ('{0} da togliere (qui sopra). PS Assist intanto usa il dialogo di stampa.' -f $(if ($blocchi.Count -eq 1) { '1 blocco' } else { "$($blocchi.Count) blocchi" }))
 }
