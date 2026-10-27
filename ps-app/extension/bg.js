@@ -600,12 +600,13 @@ const allaScheda = (id, m, ms = 5000) => Promise.race([chrome.tabs.sendMessage(i
 
 // la scheda nasce vuota, si annota per quale ordine è, POI va sulla pagina:
 // così la risposta a «chi sono?» c'è sempre prima del content script
-async function ordApri(rec, l) {
+// (`stato`: «stampo» per la scheda che dà solo i PDF di una stampa, ordineFogli)
+async function ordApri(rec, l, stato = "avvio") {
   const op = rec.opener != null ? await chrome.tabs.get(rec.opener).catch(() => null) : null;
   const dove = op && sulGestionale(op.url) ? { openerTabId: op.id, index: op.index + 1, windowId: op.windowId } : {};
   const vuota = { url: "about:blank", active: false };
   const t = await chrome.tabs.create({ ...vuota, ...dove }).catch(() => chrome.tabs.create(vuota));
-  rec.worker = t.id; rec.stato = "avvio"; rec.agg = Date.now();
+  rec.worker = t.id; rec.stato = stato; rec.agg = Date.now();
   await ordScrivi(l);
   try { await chrome.tabs.update(t.id, { url: rec.url }); }
   catch (e) { await chrome.tabs.remove(t.id).catch(() => {}); rec.worker = null; throw e; }
@@ -690,6 +691,13 @@ async function ordControlla(l) {
       // due motori insieme. Se risponde, era solo lenta.
       const r = await allaScheda(rec.worker, { t: "psassistVivo", id: rec.id });
       if (r && r.ok) { rec.agg = ora; delete rec.muto; } else rec.muto = true;
+    } else if (rec.stato === "stampo" && rec.pronta === false && ora - rec.agg > AVVIO_MAX) {
+      // la scheda dei PDF non ha mai detto «ci sono»: i fogli non partono
+      rec.interrotta = rec.interrotta || "la scheda dell'ordine non ha dato il foglio";
+    } else if (rec.stato === "stampo" && rec.pronta === false && ora - rec.agg > 6000 && !rec.ricarico) {
+      // …dopo qualche secondo zitta (la pagina non si è caricata): la si ricarica, una volta
+      rec.ricarico = true;
+      chrome.tabs.update(rec.worker, { url: rec.url }).catch(() => {});
     } else if (rec.stato === "stampa" && ora - rec.agg > STAMPA_MAX) {
       rec.stato = "avviso"; rec.agg = ora; rec.stampa = null; delete rec.fogli;
       // (non le ha prese nessuno: non stampate, e lo si dice in ambra — mai un verde)
@@ -754,8 +762,10 @@ function ordPubblico(rec, l = []) {
     case "stampo": {
       const i = rec.inVolo != null ? rec.inVolo : f.findIndex((x) => x.stato === "attesa");
       const ora = f[i];
-      if (rec.ferma || rec.interrotta) return P("warn", "Confermata", "Fermo la stampa: finisce il foglio in corso", st.riassunto);
-      return P("run", "Confermata", ora ? `Stampo ${/^etichett/i.test(ora.name) ? "le etichette" : /^lista/i.test(ora.name) ? "la lista esami" : `«${ora.name}»`}${ora.stampante ? ` su ${ora.stampante}` : ""}…` : "Stampo…",
+      // («Confermata»; una ristampa dalla scheda del medico, «Stampa»)
+      const tag = st.tag || "Confermata";
+      if (rec.ferma || rec.interrotta) return P("warn", tag, "Fermo la stampa: finisce il foglio in corso", st.riassunto);
+      return P("run", tag, ora ? `Stampo ${/^etichett/i.test(ora.name) ? "le etichette" : /^lista/i.test(ora.name) ? "la lista esami" : `«${ora.name}»`}${ora.stampante ? ` su ${ora.stampante}` : ""}…` : "Stampo…",
         f.length > 1 ? `foglio ${i + 1} di ${f.length}` : "", st.riassunto);
     }
     case "stampa": {
@@ -795,15 +805,26 @@ function ordPubblico(rec, l = []) {
   }
 }
 
-// LA STAMPA DOPO LA CONFERMA, senza dialogo: la fa il service worker, foglio
-// per foglio, e ogni passo sta scritto nell'ordine (storage.session) PRIMA di
-// farlo. Un foglio è «mandato» all'aiutante prima che parta: se qui qualcosa
-// muore, al riavvio quel foglio è «sconosciuto» — mai rimandato. La scheda
-// dell'ordine dà solo i PDF (li prende lei, dalla pagina del gestionale, coi
-// controlli di sempre). Ricaricata, chiusa, o col ⏹: i fogli che restano non
-// partono, e l'ordine finisce «Confermata · stampa interrotta → Ristampa».
+// LA STAMPA SENZA DIALOGO: la fa il service worker, foglio per foglio, e ogni
+// passo sta scritto nell'ordine (storage.session) PRIMA di farlo. Un foglio è
+// «mandato» all'aiutante prima che parta: se qui qualcosa muore, al riavvio
+// quel foglio è «sconosciuto» — mai rimandato. Lo stesso motore per i fogli di
+// un ordine in sottofondo e per quelli che chiede la scheda del medico
+// (ordineFogli). La scheda dell'ordine dà solo i PDF (li prende lei, dalla
+// pagina del gestionale, coi controlli di sempre); un consenso è un file
+// nostro. Ricaricata, chiusa, o col ⏹: i fogli che restano non partono, e
+// l'ordine finisce «Stampa interrotta → Ristampa».
 const STAMPO_VIVI = new Set();   // gli ordini che QUESTO service worker sta stampando
 const statoOrd = (l, id) => l.find((x) => x.id === id && x.stato === "stampo");
+// i fogli di una stampa, ognuno con la stampante su cui andrà (se la stampa automatica è accesa)
+const fogliNuovi = (jobs, s) => jobs.map((j) => {
+  const tipo = j.printer === "etichettatrice" ? "etichette" : "a4";
+  return { name: j.name, tipo, stato: "attesa", stampante: s ? corto(s[tipo], 80) : "", why: "" };
+});
+// il resoconto di una conferma (quanti esami, quando), per la scheda che stampa dal dialogo
+const fineDi = (f) => ({ n: Number(f && f.n) || 0, ts: Number(f && f.ts) || Date.now(), quesito: (f && f.quesito) || null });
+const pdfNostro = (u) => fetch(u).then((r) => r.arrayBuffer()).then((b) => ({ ok: true, pdf: b64(b) }))
+  .catch((e) => ({ ok: false, why: corto(e && e.message || e, 80) }));
 async function ordStampaFogli(id) {
   if (STAMPO_VIVI.has(id)) return;
   STAMPO_VIVI.add(id);
@@ -814,6 +835,8 @@ async function ordStampaFogli(id) {
         const l = await ordLeggi();
         const rec = statoOrd(l, id);
         if (!rec) return null;
+        // la scheda dei PDF non c'è ancora: si comincia quando dice «ci sono» (ordineChi)
+        if (rec.pronta === false && !rec.ferma && !rec.interrotta) return null;
         if (rec.inVolo != null) {   // mandato da un service worker che non c'è più: com'è andata non si sa
           const f = rec.fogli[rec.inVolo];
           if (f && f.stato === "mandato") Object.assign(f, { stato: "sconosciuto", why: "la risposta dell'aiutante si è persa" });
@@ -821,18 +844,20 @@ async function ordStampaFogli(id) {
           await ordScrivi(l);
         }
         const i = rec.fogli.findIndex((f) => f.stato === "attesa");
-        const s = i < 0 || rec.ferma || rec.interrotta || rec.worker == null ? null : await stampaScelte();
+        const job = rec.stampa.jobs[i] || {};
+        const senza = i >= 0 && !job.diretto && rec.worker == null;   // nessuno che dia il PDF
+        const s = i < 0 || rec.ferma || rec.interrotta || senza ? null : await stampaScelte();
         if (!s) {
-          if (i >= 0 && !rec.interrotta) rec.interrotta = rec.ferma ? "fermata col ⏹" : rec.worker == null ? "la scheda dell'ordine si è chiusa" : "stampa automatica spenta";
+          if (i >= 0 && !rec.interrotta) rec.interrotta = rec.ferma ? "fermata col ⏹" : senza ? "la scheda dell'ordine si è chiusa" : "stampa automatica spenta";
           await ordStampoFine(l, rec);
           return null;
         }
         const f = rec.fogli[i];
-        return { i, url: rec.stampa.jobs[i].url, worker: rec.worker, tipo: f.tipo, stampante: s[f.tipo], ruota: ruotaDi(s) };
+        return { i, url: job.url, diretto: !!job.diretto, worker: rec.worker, tipo: f.tipo, stampante: s[f.tipo], ruota: ruotaDi(s) };
       });
       if (!passo) return;
-      // 2. il PDF, dalla scheda dell'ordine
-      const pdf = await allaScheda(passo.worker, { t: "psassistPdf", id, url: passo.url }, 30e3);
+      // 2. il PDF, dalla scheda dell'ordine (un consenso, dall'estensione)
+      const pdf = passo.diretto ? await pdfNostro(passo.url) : await allaScheda(passo.worker, { t: "psassistPdf", id, url: passo.url }, 30e3);
       // 3. il foglio segnato «mandato» prima di mandarlo
       const va = await inFilaOrd(async () => {
         const l = await ordLeggi();
@@ -841,6 +866,7 @@ async function ordStampaFogli(id) {
         const f = rec.fogli[passo.i];
         if (!pdf) rec.interrotta = rec.interrotta || "la scheda dell'ordine non ha dato il foglio";
         else if (!pdf.ok || typeof pdf.pdf !== "string") Object.assign(f, { stato: "fallito", why: `il PDF non è arrivato (${corto(pdf.why, 80)})` });
+        else if (pdf.pdf.length > STAMPA_PDF_MAX / 3 * 4 + 4) Object.assign(f, { stato: "fallito", why: "PDF troppo grande" });
         else { Object.assign(f, { stato: "mandato", stampante: corto(passo.stampante, 80) }); rec.inVolo = passo.i; }
         rec.agg = Date.now();
         await ordScrivi(l);
@@ -938,6 +964,15 @@ function ordMessaggio(msg, sender, reply) {
   // «chi sono?»: la scheda di sottofondo di un ordine che gira, o una scheda qualunque
   if (msg.t === "ordineChi") return fai(async () => {
     const l = await ordLeggi();
+    // la scheda aperta per dare i PDF di una stampa (ordineFogli), appena
+    // nata: niente pannello, e si comincia (la prossima volta è una ricarica)
+    const nata = l.find((x) => x.worker === tab.id && x.stato === "stampo" && x.pronta === false);
+    if (nata) {
+      nata.pronta = true; nata.agg = Date.now();
+      await ordScrivi(l);
+      reply({ ok: true, ordini: l, fogli: true });
+      return void ordStampaFogli(nata.id);
+    }
     // la scheda di un ordine che sta stampando è ripartita (ricaricata, un'altra
     // pagina): i fogli che restano non li dà più nessuno
     const ricarica = l.find((x) => x.worker === tab.id && x.stato === "stampo" && !x.interrotta);
@@ -1005,12 +1040,11 @@ function ordMessaggio(msg, sender, reply) {
       .filter((j) => j && sulGestionale(j.url) && typeof j.name === "string")
       .map((j) => ({ name: corto(j.name, 60), printer: corto(j.printer, 30), url: String(j.url) }));
     if (!jobs.length) return reply({ ok: false });
-    const f = msg.fine || {};
-    rec.stampa = { jobs, fine: { n: Number(f.n) || 0, ts: Number(f.ts) || Date.now(), quesito: f.quesito || null }, riassunto: corto(msg.riassunto, 80), quesito: corto(msg.quesito, 90) };
-    rec.fogli = jobs.map((j) => ({ name: j.name, tipo: j.printer === "etichettatrice" ? "etichette" : "a4", stato: "attesa", stampante: "", why: "" }));
+    const auto = await stampaScelte();
+    rec.stampa = { jobs, fine: fineDi(msg.fine), riassunto: corto(msg.riassunto, 80), quesito: corto(msg.quesito, 90) };
+    rec.fogli = fogliNuovi(jobs, auto);
     rec.agg = Date.now();
     await chrome.storage.session.set({ [ORD_FOGLI]: [...presi, rec.id].slice(-100) });
-    const auto = await stampaScelte();
     rec.stato = auto ? "stampo" : "stampa";
     if (!auto) await ordSlega(rec);
     await ordScrivi(l);
@@ -1018,6 +1052,45 @@ function ordMessaggio(msg, sender, reply) {
     if (auto) ordStampaFogli(rec.id);
     await ordAvanti(l);
     await ordConsegnaStampa(l);
+  });
+  // Una stampa chiesta dalla scheda del medico — dopo una conferma,
+  // «Ristampa», «Stampa l'ultima richiesta», un consenso —, con la stampa
+  // automatica accesa: la fa lo stesso motore (ordStampaFogli), con le stesse
+  // parole, e niente davanti al medico. I PDF li dà una scheda aperta qui
+  // dietro sulla pagina del paziente (`url`, solo da leggere: niente
+  // pannello, poi si chiude), così il medico può andare dove vuole subito.
+  // Non coda: una stampa non aspetta un ordine che gira. La stessa domanda due
+  // volte (la risposta persa) è una stampa sola. Spenta, o la scheda che non
+  // si apre: no, e la pagina usa il dialogo di sempre.
+  if (msg.t === "ordineFogli") return fai(async () => {
+    const j = msg.job || {};
+    const id = corto(j.id, 40);
+    const visti = (await chrome.storage.session.get(ORD_VISTI))[ORD_VISTI] || [];
+    if (id && visti.includes(id)) return reply({ ok: true, id, ordini: await ordLeggi() });
+    const nostro = (u) => String(u).startsWith(chrome.runtime.getURL("consensi/"));
+    const jobs = (Array.isArray(j.jobs) ? j.jobs : []).slice(0, 12)
+      .filter((x) => x && typeof x.name === "string" && (sulGestionale(x.url) || nostro(x.url)))
+      .map((x) => ({ name: corto(x.name, 60), printer: corto(x.printer, 30), url: String(x.url), ...(nostro(x.url) ? { diretto: true } : {}) }));
+    const diretti = jobs.every((x) => x.diretto);   // solo consensi: nessuna scheda da aprire
+    const auto = await stampaScelte();
+    if (!id || id.startsWith("tel") || !jobs.length || (!diretti && !leggibileOrd(j.url)) || !auto) return reply({ ok: false, no: true });
+    const l = await ordLeggi();
+    // gli stessi fogli che si stanno già stampando (un doppio clic): una stampa sola
+    const firma = (xs) => xs.map((x) => x.url).join(" ");
+    const stessi = l.find((x) => x.stato === "stampo" && x.stampa && firma(x.stampa.jobs) === firma(jobs));
+    if (stessi) return reply({ ok: true, id: stessi.id, ordini: l });
+    const rec = { id, ep: corto(j.ep, 20), paziente: corto(j.paziente, 60), n: 0, url: diretti ? null : j.url, opener: tab.id, worker: null,
+      stato: "stampo", pronta: diretti, ts: Date.now(), agg: Date.now(), vista: null, resto: { mancano: [], controllare: [], nel: [] },
+      stampa: { jobs, tag: j.tag === "Confermata" ? "Confermata" : "Stampa", fine: j.fine ? fineDi(j.fine) : null, riassunto: corto(j.riassunto, 80), quesito: corto(j.quesito, 90) },
+      fogli: fogliNuovi(jobs, auto) };
+    l.push(rec);
+    if (!diretti) {
+      try { await ordApri(rec, l, "stampo"); }
+      catch { await togli(l, rec); await ordScrivi(l); return reply({ ok: false, no: true }); }
+    } else await ordScrivi(l);
+    await chrome.storage.session.set({ [ORD_VISTI]: [...visti, id].slice(-100) });
+    reply({ ok: true, id, ordini: l });
+    if (diretti) ordStampaFogli(id);
   });
   // «Stampa» sulla striscia: le etichette in attesa, qui e adesso (un tocco del
   // medico); o «Ristampa» di un ordine già stampato dalla stampa automatica
@@ -1183,18 +1256,12 @@ async function stampaVerifica() {
   else if (prima && prima.nonInstallata) await chrome.storage.local.remove("stampaEsito");
 }
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
-  if (!msg || typeof msg !== "object" || !["stampaPdf", "stampaStato", "stampaProva", "stampaVerifica"].includes(msg.t)) return;
+  if (!msg || typeof msg !== "object" || !["stampaStato", "stampaProva", "stampaVerifica"].includes(msg.t)) return;
   const tipo = msg.tipo === "etichette" ? "etichette" : "a4";
-  // un foglio da una pagina del gestionale: sulla stampante che il medico ha scelto per quel tipo
-  if (msg.t === "stampaPdf" || msg.t === "stampaVerifica") {
+  // (i fogli dei pazienti non arrivano da qui: li stampa ordStampaFogli)
+  if (msg.t === "stampaVerifica") {
     if (!sulGestionale(sender && sender.url)) return reply({ ok: false, why: "non dal gestionale" }), true;
-    if (msg.t === "stampaVerifica") { stampaVerifica().catch(() => {}).finally(() => reply({ ok: true })); return true; }
-    (async () => {
-      const s = await stampaScelte();
-      if (!s) return reply({ ok: false, esito: "fallito", why: "la stampa automatica è spenta" });
-      if (typeof msg.pdf !== "string" || msg.pdf.length > STAMPA_PDF_MAX / 3 * 4 + 4) return reply({ ok: false, esito: "fallito", why: "PDF troppo grande" });
-      reply(await stampaPdf(tipo, msg.pdf, s[tipo], ruotaDi(s)));
-    })().catch((e) => reply({ ok: false, esito: "sconosciuto", why: corto(e && e.message || e, 120) }));
+    stampaVerifica().catch(() => {}).finally(() => reply({ ok: true }));
     return true;
   }
   // il resto, solo dalla pagina delle impostazioni

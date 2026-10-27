@@ -34,7 +34,7 @@ const mock = createMock({ withResults: true });
 const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
   executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
-  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
+  args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, ...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)],
 });
 // aperto, il pannello è una finestra all'85% che copre la pagina: qui i test
 // cliccano anche la pagina, quindi parte come colonna a destra
