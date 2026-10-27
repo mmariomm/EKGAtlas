@@ -457,7 +457,7 @@ if (await prova("ordine in sottofondo: stampa la scheda dell'ordine, col medico 
   await doc.close();
   const davanti = await sw.evaluate(() => chrome.tabs.query({ active: true }).then((t) => t.map((x) => x.url || "")));
   check(!davanti.some((u) => /smarthealth/.test(u)), `davanti non c'è nessuna scheda del gestionale (got ${davanti.join(" | ")})`);
-  const rec = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.pubblico?.titolo === "Stampato"), 60000);
+  const rec = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || "")), 60000);
   const rid = Object.keys(A.state.richieste).find((r) => r !== "699999");
   const l = lavori();
   const n = rec ? rec.stampa.jobs.length : 0;
@@ -468,9 +468,9 @@ if (await prova("ordine in sottofondo: stampa la scheda dell'ordine, col medico 
   const aperte = worker.isClosed() ? null : await stampe(worker);
   check(aperte === null || aperte.length === 0, "nessuna finestra di stampa aperta, nemmeno nella scheda dell'ordine");
   check(await aspettaChiusa(worker), "fatto il suo lavoro, la scheda dell'ordine si chiude");
-  check(!!rec && /^Stampato su Zebra ZD421 e HP LaserJet A4 alle \d\d:\d\d$/.test(rec.pubblico.testo) && /2 esami confermati/.test(rec.pubblico.dettaglio)
+  check(!!rec && rec.pubblico.titolo === "Stampato su Zebra ZD421 e HP LaserJet A4" && /^2 esami confermati alle \d\d:\d\d$/.test(rec.pubblico.testo)
     && rec.fogli.every((f) => f.stato === "stampato"),
-  `l'ordine dice «Stampato su Zebra ZD421 e HP LaserJet A4 alle HH:MM», foglio per foglio (got ${JSON.stringify(rec && rec.pubblico)})`);
+  `l'ordine dice «Stampato su Zebra ZD421 e HP LaserJet A4 · 2 esami confermati alle HH:MM», foglio per foglio (got ${JSON.stringify(rec && rec.pubblico)})`);
   await sospendi(3000);
   check(lavori().length === n, "e niente si stampa una seconda volta");
   // il medico torna e riapre il gestionale (su BIANCHI): lì trova com'è andata
@@ -549,13 +549,12 @@ if (await prova("l'aiutante che non risponde in tempo: esito sconosciuto, niente
   await nasce;
   await suPagina(doc, B.patientUrl);
   const rec = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli), 60000);
-  check(!!rec && rec.pubblico.titolo === "Confermata" && rec.pubblico.testo === "Esito della stampa sconosciuto · Ristampa" && rec.fogli.every((f) => f.stato === "sconosciuto")
-    && /controlla Zebra ZD421 e HP LaserJet A4/.test(rec.pubblico.dettaglio),
-  `ordine in sottofondo: «Confermata · Esito della stampa sconosciuto · Ristampa» (got ${JSON.stringify(rec && rec.pubblico)})`);
+  check(!!rec && rec.pubblico.titolo === "Esito della stampa sconosciuto" && /^controlla Zebra ZD421 e HP LaserJet A4: /.test(rec.pubblico.testo) && rec.fogli.every((f) => f.stato === "sconosciuto"),
+    `ordine in sottofondo: «Esito della stampa sconosciuto · controlla Zebra ZD421 e HP LaserJet A4: …» (got ${JSON.stringify(rec && rec.pubblico)})`);
   await sospendi(5000);
   check(lavori().length === 2 && (await stampe(doc)).length === 0, `e nessun dialogo: ogni foglio è uscito una volta, dall'aiutante (got ${lavori().length} fogli, ${(await stampe(doc)).length} dialoghi)`);
   const str = await striscia(doc, /Esito della stampa sconosciuto/, 8000);
-  check(/ROSSI MARIO/.test(str) && (await azione(doc)) === "Ristampa", `la striscia: «Esito della stampa sconosciuto · Ristampa», con «Ristampa» (got ${str})`);
+  check(/ROSSI MARIO/.test(str) && (await azione(doc)) === "Ristampa", `la striscia: «Esito della stampa sconosciuto», con «Ristampa» (got ${str})`);
   await pazienza(0);
 }
 
@@ -577,9 +576,9 @@ if (await prova("la scheda dell'ordine ricaricata o chiusa mentre stampa: «stam
     `intanto: «Confermata · Stampo le etichette su Zebra ZD421…», «foglio 1 di 2» (got ${JSON.stringify(primo && primo.pubblico)})`);
   await worker.reload().catch(() => {});
   const fine = await finche(async () => (await ordini()).find((x) => x.id === primo.id && x.stato === "avviso"), 30000);
-  check(!!fine && fine.pubblico.titolo === "Confermata" && fine.pubblico.testo === "Stampa interrotta → Ristampa" && /ricaricata/.test(fine.pubblico.dettaglio)
+  check(!!fine && fine.pubblico.titolo === "Stampa interrotta" && /^non usciti: Lista/.test(fine.pubblico.testo) && /ricaricata · 1 esame confermato/.test(fine.pubblico.dettaglio)
     && fine.fogli[0].stato === "stampato" && fine.fogli[1].stato === "attesa",
-  `ricaricata: «Confermata · Stampa interrotta → Ristampa», il foglio partito stampato, l'altro mai mandato (got ${JSON.stringify(fine && [fine.pubblico, fine.fogli.map((f) => f.stato)])})`);
+  `ricaricata: «Stampa interrotta», confermata, il foglio partito stampato, l'altro mai mandato (got ${JSON.stringify(fine && [fine.pubblico, fine.fogli.map((f) => f.stato)])})`);
   await sospendi(2000);
   check(lavori().length === 1 && (await stampe(doc)).length === 0, `un foglio solo all'aiutante, nessun dialogo (got ${lavori().length})`);
   check(await aspettaChiusa(worker), "e la scheda dell'ordine si chiude");
@@ -587,13 +586,13 @@ if (await prova("la scheda dell'ordine ricaricata o chiusa mentre stampa: «stam
   nasce = nuovaPagina();
   await ordina(doc, ["EMOCROMOCITOMETRICO"]);
   await nasce;
-  const secondo = await finche(async () => (await ordini()).find((x) => x.id !== primo.id && x.stato === "avviso" && x.pubblico?.titolo === "Stampato"), 60000);
+  const secondo = await finche(async () => (await ordini()).find((x) => x.id !== primo.id && x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || "")), 60000);
   check(!!secondo && secondo.paziente === "BIANCHI ANNA", "un secondo ordine parte e finisce «Stampato»: la coda non resta bloccata");
   // «Ristampa» dell'ordine interrotto: solo il foglio che non è uscito
   await suPagina(doc, B.patientUrl);
   azzeraLavori();
   const str = await striscia(doc, /Stampa interrotta/, 8000);
-  check(/ROSSI MARIO/.test(str) && (await azione(doc)) === "Ristampa", `la striscia: «Stampa interrotta → Ristampa», e «Ristampa» (got ${str})`);
+  check(/ROSSI MARIO/.test(str) && (await azione(doc)) === "Ristampa", `la striscia: «Stampa interrotta», e «Ristampa» (got ${str})`);
   await shot(doc, "stampa-interrotta");
   await $panel(doc, "#strazione").click();
   await finche(() => lavori().length === 1, 20000);
@@ -609,8 +608,8 @@ if (await prova("la scheda dell'ordine ricaricata o chiusa mentre stampa: «stam
   const terzo = await finche(async () => (await ordini()).find((x) => x.stato === "stampo" && x.inVolo === 0), 60000);
   await worker.close();
   const chiusa = await finche(async () => (await ordini()).find((x) => x.id === terzo.id && x.stato !== "stampo"), 30000);
-  check(!!chiusa && chiusa.stato === "avviso" && chiusa.pubblico.testo === "Stampa interrotta → Ristampa" && /si è chiusa/.test(chiusa.pubblico.dettaglio),
-    `chiusa a metà stampa: «Stampa interrotta → Ristampa», non «Scheda chiusa» (got ${JSON.stringify(chiusa && [chiusa.stato, chiusa.pubblico])})`);
+  check(!!chiusa && chiusa.stato === "avviso" && chiusa.pubblico.titolo === "Stampa interrotta" && /si è chiusa/.test(chiusa.pubblico.dettaglio),
+    `chiusa a metà stampa: «Stampa interrotta», non «Scheda chiusa» (got ${JSON.stringify(chiusa && [chiusa.stato, chiusa.pubblico])})`);
 }
 
 // ---- 11. ⏹ mentre stampa ----------------------------------------------------
@@ -629,8 +628,8 @@ if (await prova("⏹ sulla striscia mentre il service worker stampa: il foglio i
   await shot(doc, "stampo-col-fermo");
   await $panel(doc, "#strstop").click();
   const fine = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli), 30000);
-  check(!!fine && fine.pubblico.testo === "Stampa interrotta → Ristampa" && /fermata col ⏹/.test(fine.pubblico.dettaglio) && fine.fogli[1].stato === "attesa",
-    `«Stampa interrotta → Ristampa», fermata col ⏹ (got ${JSON.stringify(fine && fine.pubblico)})`);
+  check(!!fine && fine.pubblico.titolo === "Stampa interrotta" && /fermata col ⏹/.test(fine.pubblico.dettaglio) && fine.fogli[1].stato === "attesa",
+    `«Stampa interrotta», fermata col ⏹ (got ${JSON.stringify(fine && fine.pubblico)})`);
   await sospendi(1500);
   check(lavori().length === 1, `uscito solo il foglio che era già partito (got ${lavori().length})`);
 }
@@ -649,13 +648,14 @@ if (await prova("un ordine dal telefono: le etichette aspettano un tocco al PC, 
   await nasce;
   if (process.env.PSA_DEBUG) setTimeout(async () => console.log(JSON.stringify(await ordini())), 20000);
   const rec = await finche(async () => (await ordini()).find((x) => x.id === "telprova1" && x.stato === "stampa"), 60000);
-  check(!!rec && rec.pubblico.tono === "warn" && rec.pubblico.testo === "Etichette NON stampate: aspettano qualcuno al PC",
-    `confermata: «Etichette NON stampate: aspettano qualcuno al PC» (got ${JSON.stringify(rec && rec.pubblico)})`);
+  check(!!rec && rec.pubblico.tono === "warn" && rec.pubblico.titolo === "Etichette NON stampate" && rec.pubblico.tel?.testo === "aspettano qualcuno al PC",
+    `confermata: «Etichette NON stampate», e al telefono «aspettano qualcuno al PC» (got ${JSON.stringify(rec && rec.pubblico)})`);
   await sospendi(4000);
   check((await stampe(doc)).length === 0 && (await ordine("telprova1"))?.stato === "stampa",
     "sulla pagina di quel paziente, davanti: il dialogo NON si apre da solo");
-  const str = await striscia(doc, /aspettano qualcuno al PC/, 8000);
-  check(/dall'iPhone/.test(str) && (await azione(doc)) === "Stampa", `la striscia dice che viene dall'iPhone, e «Stampa» (got ${str})`);
+  const str = await striscia(doc, /Etichette NON stampate/, 8000);
+  check((str.match(/dall'iPhone/g) || []).length === 1 && (await azione(doc)) === "Stampa", `la striscia dice che viene dall'iPhone (una volta), e «Stampa» (got ${str})`);
+  check(/tocca Stampa/.test(str) && !/aspettano qualcuno|sulla striscia/.test(str), `e sul PC dice la frase del PC, non quella del telefono (got ${str})`);
   await shot(doc, "telefono-aspetta-un-tocco");
   await $panel(doc, "#strazione").click();
   await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 15000 }).catch(() => {});
@@ -669,8 +669,9 @@ if (await prova("un ordine dal telefono: le etichette aspettano un tocco al PC, 
   await azzeraStampe(doc);
   await ordineTel("telprova2");
   const rotta = await finche(async () => (await ordini()).find((x) => x.id === "telprova2" && x.stato === "stampa"), 60000);
-  check(!!rotta && rotta.pubblico.testo === "Etichette NON stampate: Zebra ZD421 ha dato errore" && /spenta o offline · aspettano qualcuno al PC/.test(rotta.pubblico.dettaglio),
-    `l'etichettatrice spenta: «Etichette NON stampate: Zebra ZD421 ha dato errore» (got ${JSON.stringify(rotta && rotta.pubblico)})`);
+  check(!!rotta && rotta.pubblico.titolo === "Etichette NON stampate" && rotta.pubblico.testo === "la stampante «Zebra ZD421» risulta spenta o offline"
+    && rotta.pubblico.tel?.testo === "aspettano qualcuno al PC" && /spenta o offline/.test(rotta.pubblico.tel?.dettaglio),
+  `l'etichettatrice spenta: «Etichette NON stampate · la stampante «Zebra ZD421» risulta spenta o offline» (got ${JSON.stringify(rotta && rotta.pubblico)})`);
   await sospendi(3000);
   check((await stampe(doc)).length === 0 && lavori().filter((x) => x.ok).length === 1, "la lista è uscita; le etichette aspettano, nessun dialogo da solo");
   // nessuno le prende per mezz'ora: l'ordine si chiude in ambra, «NON stampate» — mai un verde
@@ -681,7 +682,7 @@ if (await prova("un ordine dal telefono: le etichette aspettano un tocco al PC, 
     await new Promise((res) => ordMessaggio({ t: "ordineControlla" }, { tab: { id: 0 }, url: "https://smarthealth.multimedica.it/sa4pso/" }, res));
     return ((await chrome.storage.session.get("ordini")).ordini || []).find((x) => x.id === "telprova2");
   });
-  check(!!scade && scade.stato === "avviso" && scade.pubblico.tono === "warn" && /^Etichette NON stampate/.test(scade.pubblico.testo),
+  check(!!scade && scade.stato === "avviso" && scade.pubblico.tono === "warn" && scade.pubblico.titolo === "Etichette NON stampate",
     `etichette che nessuno prende per mezz'ora: «Etichette NON stampate», in ambra (got ${JSON.stringify(scade && scade.pubblico)})`);
   await sw.evaluate(() => ordMessaggio({ t: "ordineChiudi", id: "telprova2" }, { tab: { id: 0 }, url: "https://smarthealth.multimedica.it/sa4pso/" }, () => {}));
   // e quando esce: «Stampato su…», e chi preleva va avvisato
@@ -689,8 +690,9 @@ if (await prova("un ordine dal telefono: le etichette aspettano un tocco al PC, 
   await nessunOrdine();
   await ordineTel("telprova3");
   const ok = await finche(async () => (await ordini()).find((x) => x.id === "telprova3" && x.stato === "avviso"), 60000);
-  check(!!ok && /^Stampato su Zebra ZD421 e HP LaserJet A4 alle/.test(ok.pubblico.testo) && /avvisa chi preleva/.test(ok.pubblico.dettaglio),
-    `uscite: «Stampato su Zebra ZD421 … alle HH:MM · avvisa chi preleva» (got ${JSON.stringify(ok && ok.pubblico)})`);
+  check(!!ok && ok.pubblico.titolo === "Stampato su Zebra ZD421 e HP LaserJet A4" && /alle \d\d:\d\d$/.test(ok.pubblico.testo) && /avvisa chi preleva/.test(ok.pubblico.dettaglio),
+    `uscite: «Stampato su Zebra ZD421 e HP LaserJet A4 · … alle HH:MM · avvisa chi preleva» (got ${JSON.stringify(ok && ok.pubblico)})`);
+  check(!!ok && !/il tuo/.test(ok.pubblico.dettaglio), `e col quesito vero, non «Quesito: il tuo» (got ${ok && ok.pubblico.dettaglio})`);
 }
 
 // ---- 13. «Mandato»: nella coda di Windows, non si sa se uscito --------------
@@ -703,13 +705,18 @@ if (await prova("il foglio rimasto nella coda di Windows: «Mandato a», non «S
   const e = await aspettaScheda(doc, "s.stato === 'mandato' && /Etichette/.test(s.doc)");
   const s1 = await scheda(doc);
   check(!!e && s1.dialoghi === 0 && /Mandato a Zebra ZD421: è nella coda di Windows/.test(s1.nota), `etichette: «Mandato a Zebra ZD421», non «Stampato» (got ${JSON.stringify(s1)})`);
+  check(!!e && !/✓/.test(s1.nota), `e senza il ✓ di «Stampato» (got ${s1.nota})`);
   await doc.waitForSelector("#psassist-print", { state: "detached", timeout: 15000 }).catch(() => {});
   const nasce = nuovaPagina();
   await ordina(doc, ["TROPONINA"]);
   await nasce;
   const rec = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli), 60000);
-  check(!!rec && rec.pubblico.titolo === "Mandato" && /^Mandato a Zebra ZD421 alle \d\d:\d\d$/.test(rec.pubblico.testo) && /stampato su HP LaserJet A4/.test(rec.pubblico.dettaglio),
-    `ordine in sottofondo: «Mandato a Zebra ZD421 alle HH:MM», e la lista «stampato su HP LaserJet A4» (got ${JSON.stringify(rec && rec.pubblico)})`);
+  check(!!rec && rec.pubblico.titolo === "Mandato a Zebra ZD421" && /alle \d\d:\d\d$/.test(rec.pubblico.testo) && /stampato su HP LaserJet A4/.test(rec.pubblico.dettaglio),
+    `ordine in sottofondo: «Mandato a Zebra ZD421 · … alle HH:MM», e la lista «stampato su HP LaserJet A4» (got ${JSON.stringify(rec && rec.pubblico)})`);
+  check(!!rec && rec.pubblico.tono === "warn", `«Mandato» in ambra, non col verde di «Stampato» (got ${rec && rec.pubblico.tono})`);
+  const str = await striscia(doc, /Mandato a Zebra ZD421/, 8000);
+  const segno = await doc.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.className + " " + document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run .tick")?.textContent);
+  check(/warn/.test(segno) && !/✓/.test(segno), `sulla striscia: ambra, senza ✓ (got ${segno} · ${str})`);
 }
 
 // ---- 14. la stampantina dice «non installata» se l'aiutante non c'è più ----
@@ -794,11 +801,67 @@ if (await prova("il service worker che riparte a metà stampa: il foglio in volo
   }, [PDF, A.patientUrl]);
   const fine = await finche(async () => (await ordini()).find((x) => x.id === "riparte1" && x.stato === "avviso"), 30000);
   check(!!fine && fine.fogli[0].stato === "sconosciuto" && /si è persa/.test(fine.fogli[0].why) && fine.fogli[1].stato === "stampato"
-    && fine.pubblico.testo === "Esito della stampa sconosciuto · Ristampa",
-  `ripreso: le etichette in volo «sconosciuto», la lista stampata, «Esito della stampa sconosciuto · Ristampa» (got ${JSON.stringify(fine && [fine.fogli.map((f) => f.stato), fine.pubblico])})`);
+    && fine.pubblico.titolo === "Esito della stampa sconosciuto",
+  `ripreso: le etichette in volo «sconosciuto», la lista stampata, «Esito della stampa sconosciuto» (got ${JSON.stringify(fine && [fine.fogli.map((f) => f.stato), fine.pubblico])})`);
   await sospendi(1000);
   check(lavori().length === 1 && lavori()[0].tipo === "a4", `all'aiutante solo la lista: il foglio in volo non si rimanda (got ${JSON.stringify(lavori().map((x) => x.tipo))})`);
   check(await aspettaChiusa(w), "e la scheda dell'ordine si chiude");
+}
+
+// ---- 17. la striscia del PC: la cosa più seria, poi la più nuova ------------
+// (un «Stampato» non copre un errore arrivato dopo, né l'ordine che gira; le
+// etichette di un ordine dal telefono aspettano un tocco senza coprire il
+// resto; e il «Stampato» dopo due minuti se ne va da solo)
+if (await prova("la striscia: la cosa più seria, poi la più nuova; un «Stampato» se ne va da solo")) {
+  await scelte(null);
+  await suPagina(doc, A.patientUrl);
+  if (await $panel(doc, ".card").count()) await $panel(doc, "#collapse").click();
+  const w = await ctx.newPage();   // una scheda qualunque, per l'ordine che parte
+  const ora = Date.now();
+  const etichette = { name: "Etichette provette", printer: "etichettatrice", url: A.patientUrl };
+  const stampato = (agg) => ({ id: "pcok00001", ep: "999001", paziente: "ROSSI MARIO", n: 2, stato: "avviso", ts: agg, agg, worker: null, vista: null,
+    resto: { mancano: [], controllare: [], nel: [] }, stampa: { jobs: [etichette], fine: { n: 2, ts: agg }, riassunto: "2 esami confermati" },
+    fogli: [{ name: "Etichette provette", tipo: "etichette", stato: "stampato", stampante: "Zebra ZD421", why: "" }] });
+  const errore = { id: "pcerr0001", ep: "999002", paziente: "BIANCHI ANNA", n: 3, stato: "errore", ts: ora, agg: ora, worker: null,
+    vista: { tag: "Errore", testo: "TROPONINA non inserita: completa a mano", tono: "err" }, resto: { mancano: ["TROPONINA"], controllare: [], nel: [] } };
+  const tel = { id: "telAAAAAAAAl", ep: "999001", paziente: "ROSSI MARIO", n: 2, stato: "stampa", ts: ora - 60e3, agg: ora - 60e3, worker: null, vista: null,
+    resto: { mancano: [], controllare: [], nel: [] }, stampa: { jobs: [etichette], fine: { n: 2, ts: ora }, riassunto: "2 esami confermati" } };
+  const wid = await sw.evaluate(() => chrome.tabs.query({}).then((l) => l.find((t) => !/smarthealth/.test(t.url || ""))?.id));
+  const parte = { id: "pcrun0001", ep: "999002", paziente: "BIANCHI ANNA", n: 3, stato: "avvio", ts: ora, agg: ora, worker: wid, vista: null,
+    resto: { mancano: [], controllare: [], nel: [] } };
+  const scrivi = (l) => sw.evaluate((x) => ordScrivi(x), l);
+  await scrivi([stampato(ora - 60e3), errore]);
+  let s = await striscia(doc, /completa a mano/, 8000);
+  check(/BIANCHI ANNA/.test(s), `un «Stampato» più vecchio e un errore dopo: la striscia dice l'errore (got ${s || await striscia(doc, /./, 1000)})`);
+  await scrivi([tel, errore]);
+  s = await striscia(doc, /completa a mano/, 8000);
+  check(/BIANCHI ANNA/.test(s), `le etichette di un ordine dal telefono non coprono un errore (got ${s || await striscia(doc, /./, 1000)})`);
+  await scrivi([tel, parte]);
+  s = await striscia(doc, /Apro la scheda dell'ordine/, 8000);
+  check(/BIANCHI ANNA/.test(s), `né l'ordine che parte (got ${s || await striscia(doc, /./, 1000)})`);
+  await scrivi([stampato(ora - 150e3)]);
+  await sospendi(2500);
+  check(!(await striscia(doc, /Stampato/, 500)), "un «Stampato» di più di due minuti fa non sta più sulla striscia (la Ristampa resta nella sezione Stampa)");
+  await scrivi([stampato(Date.now() - 2 * 60e3 + 4000)]);
+  check(/Stampato su Zebra ZD421/.test(await striscia(doc, /Stampato/, 3000)), "un «Stampato» appena finito sì…");
+  await sospendi(5500);
+  check(!(await striscia(doc, /Stampato/, 500)), "…e dopo due minuti se ne va da solo");
+  await nessunOrdine();
+  await w.close();
+  // dal vero: due ordini di fila dalla stessa scheda, stampati senza dialogo
+  installa(true);
+  await scelte(ATTIVA);
+  await suPagina(doc, A.patientUrl);
+  let nasce = nuovaPagina();
+  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA"]);
+  await nasce;
+  const uno = await striscia(doc, /Stampato su/, 60000);
+  check(/2 esami confermati/.test(uno), `il primo ordine: «Stampato su …», 2 esami (got ${uno})`);
+  nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  const due = await striscia(doc, /1 esame confermato alle/, 60000);
+  check(/Stampato su/.test(due) && !/2 esami/.test(due), `il secondo, dalla stessa scheda: la striscia lo segue fino al suo «Stampato» (got ${due || await striscia(doc, /./, 1000)})`);
 }
 
 await ctx.close();

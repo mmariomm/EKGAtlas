@@ -20,7 +20,8 @@ function disegnaQr(url) {
   $("qr").innerHTML = `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect width="${n}" height="${n}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
 }
 
-function righeStato(s, codice) {
+// (col QR davanti, il codice e l'ora di fine li dice il QR: una volta sola)
+function righeStato(s, codice, qr) {
   const fine = s.fine ? `Ultima sessione chiusa alle ${hhmm(s.fine.ts)} — ${s.fine.testo || s.fine.perche}.` : "";
   const ponte = { su: s.telefono ? "Collegato al ponte · il pannello è aperto sull'iPhone." : "Collegato al ponte: aspetta l'iPhone.",
     collego: "Mi collego al ponte…", giu: "Il ponte non risponde: riprovo da solo. Se dura, «Prova la rete».", spento: "" }[s.relay] || "";
@@ -35,7 +36,7 @@ function righeStato(s, codice) {
       `Dalle ${hhmm(s.sessione.dal)} · ultimo comando alle ${hhmm(s.sessione.ultimo)} · si chiude da sola dopo 20 minuti senza comandi.`,
       `Associato fino alle ${hhmm(s.scade)}${cod}. Ogni comando finisce nel Registro.`] };
   }
-  return { cls: s.relay === "su" ? "ok" : "warn", testa: `iPhone associato fino alle ${hhmm(s.scade)}${cod}`, righe: [ponte, fine] };
+  return { cls: s.relay === "su" ? "ok" : "warn", testa: qr ? "iPhone associato" : `iPhone associato fino alle ${hhmm(s.scade)}${cod}`, righe: [ponte, fine] };
 }
 
 async function aggiorna() {
@@ -46,12 +47,12 @@ async function aggiorna() {
     return;
   }
   const s = r.stato;
-  const v = righeStato(s, r.codice);
+  // il telefono è entrato, o sono passati i due minuti: il QR non si mostra più
+  if (s.sessione || !r.qr) qrVisibile = false;
+  const v = righeStato(s, r.codice, qrVisibile);
   $("stato").className = "stato " + v.cls;
   $("stato").replaceChildren(Object.assign(document.createElement("b"), { textContent: v.testa }),
     ...v.righe.filter(Boolean).map((t) => Object.assign(document.createElement("span"), { className: "riga", textContent: t })));
-  // il telefono è entrato, o sono passati i due minuti: il QR non si mostra più
-  if (s.sessione || !r.qr) qrVisibile = false;
   $("qrsec").hidden = !qrVisibile;
   if (qrVisibile) { disegnaQr(r.qr); $("qrscade").textContent = hhmm(s.scade); $("qrcodice").textContent = r.codice || ""; }
   $("associa").disabled = !s.host;

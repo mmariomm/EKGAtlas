@@ -219,7 +219,7 @@ const GEST = "https://smarthealth.multimedica.it/sa4pso/";
 // schede del gestionale che rispondono come dice `scheda`. `sessione` è
 // storage.session: lo stesso oggetto dato a un secondo PC finto è il service
 // worker che riparte.
-async function pcFinto({ sessione = {}, locale = {}, scheda = null } = {}) {
+async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null } = {}) {
   const prese = [], comandi = [], schede = [], tolte = [], ascolta = { msg: [], cambi: [], via: [] };
   class Presa {
     constructor(url) { this.url = url; this.readyState = 0; this.inviati = []; prese.push(this); setTimeout(() => { if (this.readyState === 0) { this.readyState = 1; this.onopen?.(); } }, 0); }
@@ -240,8 +240,8 @@ async function pcFinto({ sessione = {}, locale = {}, scheda = null } = {}) {
     storage: { local: area(locale, "local"), session: area(sessione, "session"), onChanged: { addListener: (f) => ascolta.cambi.push(f) } },
     runtime: { onMessage: { addListener: (f) => ascolta.msg.push(f) }, onStartup: { addListener() {} }, getURL: (p) => "chrome-extension://abc/" + p },
     tabs: {
-      query: async () => [davanti],
-      sendMessage: async (id, m) => { comandi.push(m); return scheda ? scheda(m, sessione) : { ok: true, dati: [] }; },
+      query: async () => gest || [davanti],
+      sendMessage: async (id, m) => { comandi.push({ ...m, scheda: id }); return scheda ? scheda(m, sessione, id) : { ok: true, dati: [] }; },
       create: async (o) => { const t = { id: 90 + schede.length, active: false, ...o }; schede.push(t); return t; },
       update: async () => ({}),
       get: async (id) => schede.find((t) => t.id === id) || null,
@@ -506,22 +506,103 @@ await blocco(async () => {
   await sospendi(60);
   const ev2 = await t.leggi(pc.tira());
   const ultimo = ev2.filter((x) => x.evento === "ordine").at(-1);
-  check(ultimo && ultimo.ordine.titolo === "Confermata" && ultimo.ordine.testo === "Etichette prese in stampa sul PC" && ultimo.ordine.tono === "ok" && ultimo.ordine.fine === true,
-    "sparito da «ordini» mentre le etichette aspettavano: «Etichette prese in stampa sul PC», finito e verde");
+  check(ultimo && ultimo.ordine.titolo === "Etichette prese in stampa sul PC" && !ultimo.ordine.testo && ultimo.ordine.tono === "ok" && ultimo.ordine.fine === true,
+    "sparito da «ordini» mentre le etichette aspettavano: «Etichette prese in stampa sul PC» (il titolo è com'è andata), finito e verde");
   check(ultimo && !/il tuo/.test(ultimo.ordine.dettaglio), `e mai «Quesito: il tuo», la frase del PC (${ultimo && ultimo.ordine.dettaglio})`);
-  // un ordine partito in tempo: il PC sa il quesito scritto sul telefono, e lo dice al posto di «il tuo»
+  // le parole sono quelle di bg.js, e dove il telefono dice altro (`tel`), le sue
   pc.ev("PONTE_ATTESA.ordina = 25e3");
   crea = null;
   const r2 = await t.manda({ id: 4, cmd: "ordina", ep: "1", oid: "veloce12", esami: ["lab:A1"], quesito: "dolore toracico" });
   await crea; await sospendi(60);
   const ses2 = (await pc.ev("chrome").storage.session.get("ordini")).ordini;
   const mio = ses2.find((x) => x.id === "telveloce12l");
-  mio.stato = "avviso"; mio.pubblico = { tono: "ok", titolo: "Confermata", testo: "Etichette uscite", dettaglio: "Quesito: il tuo" };
+  mio.stato = "avviso";
+  mio.pubblico = { tono: "warn", titolo: "Esito della stampa sconosciuto", testo: "controlla Zebra ZD421: SumatraPDF non ha finito", dettaglio: "Quesito: «dolore toracico»",
+    tel: { tono: "warn", titolo: "Etichette forse stampate", testo: "guarda Zebra ZD421 prima di ristamparle dal PC", dettaglio: "1 esame confermato" } };
   await pc.ev("chrome").storage.session.set({ ordini: ses2 });
   await sospendi(80);
   const ev3 = (await t.leggi(pc.tira())).filter((x) => x.evento === "ordine" && x.ordine.id === "telveloce12l").at(-1);
-  check(r2.some((x) => x.re === 4 && x.ok) && ev3 && ev3.ordine.dettaglio === "Quesito: «dolore toracico»" && ev3.ordine.fine === true,
-    `al posto di «Quesito: il tuo», il quesito vero (${ev3 && ev3.ordine.dettaglio})`);
+  check(r2.some((x) => x.re === 4 && x.ok) && ev3 && ev3.ordine.titolo === "Etichette forse stampate" && ev3.ordine.testo === "guarda Zebra ZD421 prima di ristamparle dal PC"
+    && ev3.ordine.dettaglio === "1 esame confermato" && ev3.ordine.tono === "warn" && ev3.ordine.fine === true,
+  `al telefono le parole di bg.js per il telefono (pubblico.tel), non quelle del PC (${ev3 && JSON.stringify([ev3.ordine.titolo, ev3.ordine.testo])})`);
+  const sw = EXT("ponte-sw.js");
+  check(!/PONTE_TITOLI|PONTE_TONI|ponteResto|quesiti|il tuo/.test(sw),
+    "ponte-sw.js non riscrive niente: niente parole sue per un ordine senza «pubblico», niente «Quesito: il tuo» da sostituire (lo fa bg.js)");
+});
+await blocco(async () => {
+  // Un ordine o un promemoria non si rimanda alla scheda dopo quando la prima
+  // tace oltre l'attesa: può averlo fatto lei, e sarebbero due.
+  const gest = [
+    { id: 7, url: GEST + "menuPsoEpisodio.do?EPISODIO_ID=1", active: true, windowId: 1, index: 0 },
+    { id: 8, url: GEST + "menuPsoEpisodio.do?EPISODIO_ID=2", active: false, windowId: 1, index: 1 },
+  ];
+  const fatti = [];
+  const scheda = async (m, _s, id) => {
+    if (!["promemoria", "ordina", "nota"].includes(m.cmd)) return { ok: true, dati: [] };
+    if (id === 7) await sospendi(300);   // una scheda occupata, o rallentata da Chrome
+    fatti.push(`${m.cmd}@${id}`);
+    return { ok: true, dati: m.cmd === "ordina" ? { ordini: [] } : { ep: "1" } };
+  };
+  const pc = await pcFinto({ scheda, gest });
+  const k = kDalQr((await pc.pagina({ t: "ponteAssocia" })).qr);
+  await sospendi(30);
+  const t = await telFinto(pc, k, DEV);
+  await t.manda({ id: 1, cmd: "ciao" });
+  pc.ev("PONTE_ATTESA.altro = 80; PONTE_ATTESA.ordina = 80");
+  const r = (await t.manda({ id: 2, cmd: "promemoria", ep: "1", testo: "11:30 tropo" })).find((x) => x.re === 2);
+  check(r && r.ok === false && r.incerto === true && /guarda i promemoria prima di rifarlo/.test(r.errore),
+    `il promemoria: la scheda tace oltre l'attesa → «non si sa», e lo si dice (${r && r.errore})`);
+  await t.manda({ id: 3, cmd: "ordina", ep: "1", oid: "unavolta12", esami: ["lab:A1"], quesito: "q" });
+  await sospendi(500);
+  const a = (cmd) => pc.comandi.filter((m) => m.cmd === cmd).map((m) => m.scheda);
+  check(JSON.stringify(a("promemoria")) === "[7]" && JSON.stringify(a("ordina")) === "[7]" && JSON.stringify(fatti) === '["promemoria@7","ordina@7"]',
+    `e non va alla scheda dopo: un promemoria, un ordine, una scheda sola (${JSON.stringify(fatti)})`);
+  // una nota si può rifare: la scheda dopo la scrive (la stessa nota due volte è una nota)
+  await t.manda({ id: 4, cmd: "nota", ep: "1", testo: "x" });
+  await sospendi(400);
+  check(JSON.stringify(a("nota")) === "[7,8]", `una nota sì, alla scheda dopo (${JSON.stringify(a("nota"))})`);
+});
+await blocco(async () => {
+  // Le parole di un ordine (ordPubblico, in bg.js): il titolo è com'è andata,
+  // l'ora una volta, il PC e il telefono ognuno con le sue.
+  const ovunque = () => new Proxy(function () {}, { get: (_, k) => (k === "then" ? undefined : ovunque()), apply: () => ovunque() });
+  const ctx = vm.createContext({ chrome: ovunque(), console: { error() {}, log() {}, warn() {} }, setTimeout, clearTimeout, setInterval: () => 0, URL,
+    importScripts: () => {}, self: ovunque(), fetch: ovunque() });
+  vm.runInContext(EXT("bg.js"), ctx);
+  const ora = new Date(2026, 9, 27, 14, 32).getTime();
+  const fogli = (...l) => l.map(([tipo, stato, stampante, why = ""]) => ({ name: tipo === "etichette" ? "Etichette provette" : "Lista esami", tipo, stato, stampante, why }));
+  const rec = (id, stato, f, extra = {}) => ({ id, ep: "1", paziente: "ROSSI MARIO", stato, agg: ora, fogli: f, quesito: id.startsWith("tel") ? "dolore toracico" : "",
+    stampa: { jobs: f.map((x) => ({ name: x.name })), riassunto: "2 esami confermati", quesito: "Quesito: il tuo" }, ...extra });
+  const pub = (r) => vm.runInContext(`ordPubblico(${JSON.stringify(r)})`, ctx);
+  const tutto = (p) => [p.titolo, p.testo, p.dettaglio].join(" | ");
+  const ok = pub(rec("pc1", "avviso", fogli(["etichette", "stampato", "Zebra ZD421"], ["a4", "stampato", "HP LaserJet A4"])));
+  check(ok.tono === "ok" && ok.titolo === "Stampato su Zebra ZD421 e HP LaserJet A4" && ok.testo === "2 esami confermati alle 14:32" && (tutto(ok).match(/14:32/g) || []).length === 1 && !ok.tel,
+    `stampato: il titolo è com'è andata («Stampato su Zebra ZD421 e HP LaserJet A4»), l'ora una volta (${tutto(ok)})`);
+  const telOk = pub(rec("telabc12345l", "avviso", fogli(["etichette", "stampato", "Zebra ZD421"])));
+  check(/Quesito: «dolore toracico»/.test(telOk.dettaglio) && !/il tuo/.test(tutto(telOk)) && /avvisa chi preleva/.test(telOk.dettaglio),
+    `un ordine dal telefono dice il quesito vero, non «Quesito: il tuo» (${telOk.dettaglio})`);
+  check(/Quesito: il tuo/.test(ok.dettaglio), "(uno del PC resta com'era: «Quesito: il tuo»)");
+  const mandato = pub(rec("pc2", "avviso", fogli(["etichette", "mandato", "Zebra ZD421"], ["a4", "stampato", "HP LaserJet A4"])));
+  check(mandato.tono === "warn" && mandato.titolo === "Mandato a Zebra ZD421" && /nella coda di Windows/.test(mandato.dettaglio),
+    `«Mandato»: in ambra, mai il verde di «Stampato» — è solo nella coda di Windows (${mandato.tono}: ${tutto(mandato)})`);
+  const ignoto = pub(rec("telabc12345l", "avviso", fogli(["etichette", "sconosciuto", "Zebra ZD421", "SumatraPDF non ha finito in 24 secondi: il foglio può essere uscito lo stesso"], ["a4", "stampato", "HP LaserJet A4"])));
+  check(ignoto.tono === "warn" && ignoto.titolo === "Esito della stampa sconosciuto" && /controlla Zebra ZD421: SumatraPDF non ha finito/.test(ignoto.testo),
+    `esito sconosciuto, sul PC: che cosa controllare, e perché (${tutto(ignoto)})`);
+  check(ignoto.tel && ignoto.tel.titolo === "Etichette forse stampate" && ignoto.tel.testo === "guarda Zebra ZD421 prima di ristamparle dal PC" && !/SumatraPDF|Ristampa/.test(tutto(ignoto.tel)),
+    `…e sul telefono: «Etichette forse stampate: guarda Zebra ZD421 prima di ristamparle dal PC», senza gergo (${ignoto.tel && tutto(ignoto.tel)})`);
+  const aspetta = pub(rec("telabc12345l", "stampa", fogli(["etichette", "attesa", ""])));
+  check(aspetta.titolo === "Etichette NON stampate" && aspetta.testo === "tocca Stampa" && !/aspettano qualcuno/.test(tutto(aspetta))
+    && aspetta.tel && aspetta.tel.testo === "aspettano qualcuno al PC" && !/tocca Stampa|striscia/.test(tutto(aspetta.tel)),
+  `le etichette di un ordine dal telefono: il PC dice «tocca Stampa», il telefono «aspettano qualcuno al PC» — ognuno la sua (${tutto(aspetta)} // ${aspetta.tel && tutto(aspetta.tel)})`);
+  const rotta = pub(rec("telabc12345l", "stampa", fogli(["etichette", "fallito", "Zebra ZD421", "la stampante (o il suo driver) ha dato errore"], ["a4", "stampato", "HP LaserJet A4"])));
+  check((tutto(rotta).match(/ha dato errore/g) || []).length === 1 && !/aspettano qualcuno/.test(tutto(rotta)) && /aspettano qualcuno al PC/.test(tutto(rotta.tel)),
+    `un'etichetta che non esce: il perché una volta sola, non «Zebra ZD421 ha dato errore · la stampante ha dato errore» (${tutto(rotta)})`);
+  const spenta = pub(rec("pc3", "stampa", fogli(["etichette", "fallito", "Zebra ZD421", "la stampante «Zebra ZD421» risulta spenta o offline"])));
+  check(spenta.titolo === "Etichette NON stampate" && spenta.testo === "la stampante «Zebra ZD421» risulta spenta o offline" && !spenta.tel,
+    `…e il perché vero, non «ha dato errore» per una stampante spenta (${tutto(spenta)})`);
+  const interrotta = pub(rec("pc4", "avviso", fogli(["etichette", "stampato", "Zebra ZD421"], ["a4", "attesa", ""]), { interrotta: "la scheda dell'ordine si è chiusa" }));
+  check(interrotta.titolo === "Stampa interrotta" && /non usciti: Lista esami/.test(interrotta.testo) && /si è chiusa · 2 esami confermati/.test(interrotta.dettaglio),
+    `stampa interrotta: il titolo lo dice, non «Confermata» (${tutto(interrotta)})`);
 });
 await blocco(async () => {
   // un errore nel ponte non ferma il service worker

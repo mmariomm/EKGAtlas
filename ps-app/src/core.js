@@ -98,6 +98,7 @@
   // non deve sparire in silenzio: questo lo dice alla prima pagina utile.
   const APERTA = "corsa.aperta.v1";
   const APERTA_TTL = 30 * 60e3;
+  const OK_STRISCIA = 2 * 60e3;  // un ordine finito bene resta sulla striscia due minuti
 
   // Resources ("Risorsa" dropdown values) — verified in the saved pages.
   const RES = {
@@ -3729,7 +3730,7 @@
     .pill .col { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.3; }
     .pill .l1 { display: flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; }
     .pill .l1 .who { max-width: 150px; }
-    .pill .tag { font-weight: 700; white-space: nowrap; }
+    .pill .tag { font-weight: 700; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .pill .l2 { font-size: 11.5px; font-weight: 500; opacity: .93; max-width: 100%;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .pill .tick { font-size: 13px; font-weight: 800; }
@@ -5638,17 +5639,26 @@
       }
       this.stripOrdine();
     }
-    // Una striscia sola. Prima le etichette pronte (si stampano adesso), poi
-    // quello che chiede te (un errore, una scheda chiusa a metà, un carrello
-    // da confermare), poi quello che sta girando; quanti aspettano in coda,
-    // nel numerino. Le parole sono quelle dell'ordine (`pubblico`, le scrive il
-    // service worker: le stesse sul telefono); qui ci sono i bottoni. È solo
-    // una vista: non scrive niente (le azioni, sì).
+    // Una striscia sola: la cosa più seria, e fra due pari la più nuova. Un
+    // errore, poi un avviso da leggere (un carrello da confermare, una stampa
+    // da controllare), le etichette pronte qui, quello che gira, la coda, le
+    // etichette di un ordine dal telefono (aspettano un tocco, ma non coprono
+    // il resto) e per ultimo un «Stampato», che dopo due minuti se ne va da
+    // solo (la Ristampa resta nella sezione Stampa del paziente). Quanti
+    // aspettano in coda, nel numerino. Le parole sono quelle dell'ordine
+    // (`pubblico`, le scrive il service worker: le stesse sul telefono); qui ci
+    // sono i bottoni. È solo una vista: non scrive niente (le azioni, sì).
     stripOrdine() {
-      const l = this.ordini;
-      const DA_LEGGERE = ["errore", "chiusa", "avviso", "interrotto"];
-      const fuoco = l.find((x) => x.stato === "stampa") || l.find((x) => DA_LEGGERE.includes(x.stato))
-        || l.find((x) => ["avvio", "corre", "stampo"].includes(x.stato)) || l.find((x) => x.stato === "coda");
+      const tel = (x) => String(x.id).startsWith("tel");
+      const grado = (x) => {
+        const t = x.pubblico && x.pubblico.tono;
+        return t === "err" ? 0 : x.stato === "stampa" ? (tel(x) ? 5 : 2) : t === "warn" ? 1
+          : ["avvio", "corre", "stampo"].includes(x.stato) ? 3 : x.stato === "coda" ? 4 : 6;
+      };
+      const l = this.ordini.filter((x) => grado(x) < 6 || Date.now() - (x.agg || 0) < OK_STRISCIA);
+      const fuoco = [...l].sort((a, b) => grado(a) - grado(b) || (b.agg || 0) - (a.agg || 0))[0];
+      clearTimeout(this._tOk);
+      if (fuoco && grado(fuoco) === 6) this._tOk = setTimeout(() => this.stripOrdine(), OK_STRISCIA - (Date.now() - (fuoco.agg || 0)) + 500);
       const mia = !!(this.striscia && this.striscia.daOrdine);
       if (!fuoco) {
         if (mia && !this._delegando) { this.segnala(null); this.sorvegliaConferme(); }
@@ -5691,16 +5701,16 @@
         s = { ...s, ...(fuoco.consegna ? alCarrello : ristampa), ...letto };
       } else s = { ...s, ...alCarrello, ...letto };   // errore, scheda chiusa, interrotto
       // (un ordine partito dal telefono lo dice: chi preleva va avvisato)
-      if (String(id).startsWith("tel")) s.badge = s.badge ? `${s.badge} · dall'iPhone` : "dall'iPhone";
+      if (tel(fuoco)) s.badge = s.badge ? `${s.badge} · dall'iPhone` : "dall'iPhone";
       s.paziente = fuoco.paziente || "";
-      if (String(id).startsWith("tel")) s.badge = s.badge ? `${s.badge} · dall'iPhone` : "dall'iPhone";
       s.daOrdine = id;
       if (coda) s.badge = `${s.badge ? s.badge + " · " : ""}+${coda} in coda`;
-      // la stessa striscia di prima: niente ridisegno
+      // la stessa striscia di prima, ancora lì: niente ridisegno
       const firma = JSON.stringify(s);
-      if (mia && firma === this._firmaOrdine) return;
+      if (mia && firma === this._firmaOrdine && this.striscia === this._strisciaOrdine) return;
       this._firmaOrdine = firma;
       this.segnala(s);
+      this._strisciaOrdine = this.striscia;
     }
     // L'avviso di un ordine è letto (✕, o il carrello aperto): il segno
     // condiviso «giro rimasto a metà» di quella richiesta lo diceva già lui.
@@ -10306,7 +10316,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     : `«${job.name}»`;
 
   // «6 esami confermati 14:32»: il resoconto che resta sulla pill
-  const confermatiTesto = (fine) => `${fine.n ? `${fine.n} ${fine.n === 1 ? "esame confermato" : "esami confermati"}` : "Richiesta confermata"} ${hhmm(fine.ts || Date.now())}`;
+  // (per l'ordine in sottofondo senza l'ora: la dice com'è finita la stampa)
+  const confermati = (fine) => (fine.n ? `${fine.n} ${fine.n === 1 ? "esame confermato" : "esami confermati"}` : "Richiesta confermata");
+  const confermatiTesto = (fine) => `${confermati(fine)} ${hhmm(fine.ts || Date.now())}`;
 
   // La STAMPA AUTOMATICA. Con l'aiutante di Windows installato (la cartella
   // stampa/ dello zip) e le due stampanti scelte nelle impostazioni, ogni
@@ -10485,8 +10497,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           // tutti (annullato, saltato, non scaricato), «Ristampa» li rifà.
           // Con la stampa automatica c'è sempre: un'etichetta inceppata si
           // vede solo davanti alla stampante.
+          // («Mandato» è solo nella coda di Windows: in ambra, mai il verde di «Stampato»)
           panel.segnala({ tag: ignoti ? "Esito sconosciuto" : !tutto ? "Stampa non finita" : mandati ? "Mandato" : certo ? "Stampato" : "Stampa finita",
-            testo: confermatiTesto(fine), tono: ignoti ? "warn" : "ok",
+            testo: confermatiTesto(fine), tono: ignoti || (tutto && mandati) ? "warn" : "ok",
             quesito: ignoti ? "Esito della stampa sconosciuto: controlla la stampante · Ristampa" : quesitoDetto(fine.quesito),
             // (un foglio che la stampa automatica non aveva fatto uscire, ristampato, ci riprova)
             azione: certo && !automatiche ? null : { label: "Ristampa", titolo: "Stampa di nuovo etichette e lista esami",
@@ -10494,7 +10507,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         } else if (finito && panel.collapsed) {
           // una stampa chiesta a mano: la pill lo dice per qualche secondo
           panel.segnala(ignoti ? { tag, testo: "Esito della stampa sconosciuto: controlla la stampante", tono: "warn" }
-            : { tag, testo: mandati ? "✓ Mandato" : certo ? "✓ Stampato" : "✓ Stampa finita", tono: "ok" }, { ms: ignoti ? 15000 : 4000, poi: () => panel.chiudiGiro() });
+            : { tag, testo: mandati ? "Mandato: è nella coda di Windows" : certo ? "✓ Stampato" : "✓ Stampa finita", tono: mandati ? "warn" : "ok" }, { ms: ignoti ? 15000 : 4000, poi: () => panel.chiudiGiro() });
         } else if (panel.striscia && panel.striscia.daStampa) panel.segnala(null);
       }
       onClose?.();
@@ -10648,9 +10661,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           wrap.dataset.stampante = r.stampante;
           const detto = r.esito === "stampato" ? `Stampato su ${r.stampante}` : r.esito === "mandato" ? `Mandato a ${r.stampante}` : `Esito sconosciuto su ${r.stampante}`;
           panel?.log(`${now()}  ${job.name}: ${detto[0].toLowerCase()}${detto.slice(1)}, senza dialogo${r.why ? ` (${r.why})` : ""}`);
-          if (r.ok) nota(`✓ ${r.esito === "stampato" ? "Stampato su" : "Mandato a"} <b>${esc(r.stampante)}</b>${r.esito === "mandato" ? ": è nella coda di Windows" : ""}.`);
+          if (r.ok) nota(`${r.esito === "stampato" ? "✓ Stampato su" : "Mandato a"} <b>${esc(r.stampante)}</b>${r.esito === "mandato" ? ": è nella coda di Windows" : ""}.`);
           else comandi({ avviso: `Esito della stampa sconosciuto: ${r.why}. Controlla ${r.stampante}; se non è uscito, «Ristampa».` });
-          stato(detto, r.ok ? "ok" : "warn");
+          stato(detto, r.esito === "stampato" ? "ok" : "warn");
           clearTimeout(timer);
           timer = setTimeout(advance, r.ok ? 1500 : 4000);
           return;
@@ -10802,7 +10815,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // (psassistPdf); se no li consegna alla scheda dove sta il medico. Una volta
   // sola: il segno della stampa è già consumato.
   async function consegnaFogli(panel, id, jobs, fine) {
-    const m = { t: "ordineStampa", id, fine, riassunto: confermatiTesto(fine), quesito: quesitoDetto(fine.quesito),
+    const m = { t: "ordineStampa", id, fine, riassunto: confermati(fine), quesito: quesitoDetto(fine.quesito),
       jobs: jobs.map(({ name, printer, url }) => ({ name, printer, url })) };
     let r = await ask(m);
     if (r.perso) r = await ask(m);   // il service worker che si sveglia può perdere la prima (la seconda è la stessa)
@@ -10935,7 +10948,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   function pontePazienti() {
     const m = PANNELLO.pazModello();
     return [...m.info.values()].map((i) => ({
-      ep: i.p.ep, nome: i.lungo, breve: i.breve + i.coda, omonimo: !!i.omonimo, triage: i.p.triage || "",
+      // (due con lo stesso nome: il nome porta il segno che li distingue, «· …9001», anche nella conferma)
+      ep: i.p.ep, nome: i.lungo + i.coda, breve: i.breve + i.coda, omonimo: !!i.omonimo, triage: i.p.triage || "",
       posto: PANNELLO.nomePosto(m, i), nota: i.nota || "", prec: !!i.prec, spento: !!i.spento, visto: i.p.ts || 0,
       eta: Number.isInteger(i.p.eta) ? i.p.eta : String(i.p.pk || "").startsWith("cf:") ? etaDaCf(i.p.pk.slice(3)) : null,
       prom: promDi(i.p.ep, m.prom).map((x) => ({ id: x.id, t: x.t, testo: x.testo })),

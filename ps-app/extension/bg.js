@@ -553,11 +553,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 // suo lavoro la scheda si slega dall'ordine e si chiude; se il medico la sta
 // guardando proprio in quel momento resta, come una scheda qualunque.
 // Un secondo ordine mentre uno gira aspetta in coda, nell'ordine in cui arriva.
-// Ogni ordine porta `pubblico` = { tono, titolo, testo, dettaglio }: com'è,
-// detto per chi legge — la striscia del PC e il telefono dicono quello, e lo
-// scrive una funzione sola (ordPubblico) a ogni scrittura. `stato` resta il
-// passo della macchina: coda → avvio → corre → (stampo) → stampa | avviso,
-// o errore / chiusa / interrotto.
+// Ogni ordine porta `pubblico` = { tono, titolo, testo, dettaglio, tel? }: com'è,
+// detto per chi legge — la striscia del PC e il telefono dicono quello (il
+// telefono, dove serve, `tel`), e lo scrive una funzione sola (ordPubblico) a
+// ogni scrittura. `stato` resta il passo della macchina: coda → avvio → corre
+// → (stampo) → stampa | avviso, o errore / chiusa / interrotto.
 const ORD = "ordini";
 const ORD_PIANO = (id) => "ordine:" + id;
 const ORD_VISTI = "ordiniVisti";   // gli ordini già accettati: uno chiesto due volte parte una volta
@@ -693,7 +693,7 @@ async function ordControlla(l) {
     } else if (rec.stato === "stampa" && ora - rec.agg > STAMPA_MAX) {
       rec.stato = "avviso"; rec.agg = ora; rec.stampa = null; delete rec.fogli;
       // (non le ha prese nessuno: non stampate, e lo si dice in ambra — mai un verde)
-      rec.vista = { tag: "Confermata", testo: "Etichette NON stampate: si stampano dalla sua pagina, sezione Stampa", tono: "warn" };
+      rec.vista = { tag: "Etichette NON stampate", testo: "si stampano dalla sua pagina, sezione Stampa", tono: "warn" };
     }
   }
   if (JSON.stringify(l) !== prima) await ordScrivi(l);
@@ -718,22 +718,29 @@ chrome.tabs.onRemoved.addListener((id) => {
   }).catch(() => {});
 });
 // Com'è l'ordine, per chi legge: la striscia di ogni scheda del gestionale e
-// il telefono dicono questo, con le stesse parole. Sui fogli si dice solo
-// quello che si sa: «Stampato» se Windows l'ha fatto uscire dalla coda,
-// «Mandato» se è nella coda, «NON stampate» se non è partito niente,
+// il telefono dicono questo, con le stesse parole — salvo quello che il
+// telefono dice a modo suo (`tel`: «aspettano qualcuno al PC», non «tocca
+// Stampa»). Il titolo è com'è andata. Sui fogli si dice solo quello che si
+// sa: «Stampato» se Windows l'ha fatto uscire dalla coda, «Mandato» (in
+// ambra) se è nella coda, «NON stampate» se non è partito niente,
 // «sconosciuto» se l'aiutante non ha detto com'è andata.
 const ORA = (ts) => { const d = new Date(ts || Date.now()); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 const usciti = (f) => f.stato === "stampato" || f.stato === "mandato";
 function ordPubblico(rec, l = []) {
   const v = rec.vista || {}, r = rec.resto || {}, f = Array.isArray(rec.fogli) ? rec.fogli : [];
-  const P = (tono, titolo, testo = "", ...dettaglio) => ({ tono, titolo: corto(titolo, 60), testo: corto(testo, 200), dettaglio: corto(dettaglio.filter(Boolean).join(" · "), 240) });
+  // «Quesito: il tuo» è la frase della scheda dell'ordine: per un ordine dal telefono, si dice quale
+  const vero = (s) => (rec.quesito ? s.replace(/Quesito: il tuo(, al posto del triage)?/g, () => `Quesito: «${rec.quesito}»`) : s);
+  const P = (tono, titolo, testo = "", ...dettaglio) => ({ tono, titolo: corto(titolo, 80), testo: corto(testo, 200), dettaglio: corto(vero(dettaglio.filter(Boolean).join(" · ")), 240) });
+  const alTel = (pc, telefono) => (dalTelefono(rec) ? { ...pc, tel: telefono } : pc);
   const tono = (t, d) => (["run", "ok", "warn", "err"].includes(t) ? t : d);
   const lista = (k) => (Array.isArray(r[k]) ? r[k] : []);
   const resto = [lista("mancano").length ? `Mancano: ${lista("mancano").join(", ")}` : "", lista("controllare").length ? `Da controllare: ${lista("controllare").join(", ")}` : ""].filter(Boolean).join(" · ");
   const st = rec.stampa || {};
   const tel = dalTelefono(rec) ? "avvisa chi preleva" : "";
   const dove = (xs) => [...new Set(xs.map((x) => x.stampante).filter(Boolean))].join(" e ") || "la stampante";
-  const cosa = (xs) => (xs.some((x) => x.tipo === "etichette") ? "Etichette NON stampate" : "Fogli NON stampati");
+  const etichette = (xs) => xs.some((x) => x.tipo === "etichette");
+  const cosa = (xs) => (etichette(xs) ? "Etichette NON stampate" : "Fogli NON stampati");
+  const alle = `${st.riassunto ? st.riassunto + " " : ""}alle ${ORA(rec.agg)}`;
   switch (rec.stato) {
     case "coda": {
       const prima = l.find((x) => x !== rec && ATTIVI.has(x.stato));
@@ -752,10 +759,14 @@ function ordPubblico(rec, l = []) {
         f.length > 1 ? `foglio ${i + 1} di ${f.length}` : "", st.riassunto);
     }
     case "stampa": {
-      // le etichette aspettano una scheda del gestionale (il dialogo di stampa)
+      // le etichette aspettano una scheda del gestionale (il dialogo di stampa);
+      // per un ordine dal telefono, un tocco su «Stampa»
       const rotti = f.filter((x) => x.stato === "fallito");
-      if (rotti.length) return P("warn", "Confermata", `${cosa(rotti)}: ${dove(rotti)} ha dato errore`, rotti[0].why, dalTelefono(rec) ? "aspettano qualcuno al PC" : "", st.riassunto);
-      if (dalTelefono(rec)) return P("warn", "Confermata", "Etichette NON stampate: aspettano qualcuno al PC", "sul PC: «Stampa» sulla striscia", st.riassunto);
+      if (rotti.length) {
+        return alTel(P("warn", cosa(rotti), rotti[0].why || `${dove(rotti)} ha dato errore`, st.riassunto),
+          P("warn", cosa(rotti), "aspettano qualcuno al PC", rotti[0].why, st.riassunto));
+      }
+      if (dalTelefono(rec)) return alTel(P("warn", "Etichette NON stampate", "tocca Stampa", st.riassunto), P("warn", "Etichette NON stampate", "aspettano qualcuno al PC", st.riassunto));
       return P("run", "Confermata", "Etichette pronte", st.riassunto, st.quesito);
     }
     case "errore": return P("err", v.tag || "Errore", v.testo || "completa a mano", v.quesito || resto);
@@ -768,13 +779,18 @@ function ordPubblico(rec, l = []) {
     default: {
       if (!f.length) return P(tono(v.tono, "ok"), v.tag || "Fatto", v.testo, v.quesito);
       // com'è finita la stampa senza dialogo, foglio per foglio
+      // (il perché tecnico resta sul PC; il telefono dice che cosa guardare)
       const ignoti = f.filter((x) => x.stato === "sconosciuto"), non = f.filter((x) => !usciti(x) && x.stato !== "sconosciuto");
-      if (ignoti.length) return P("warn", "Confermata", "Esito della stampa sconosciuto · Ristampa", `controlla ${dove(ignoti)}: ${ignoti[0].why || "l'aiutante non ha detto com'è andata"}`, st.riassunto);
-      if (non.length) return P("warn", "Confermata", "Stampa interrotta → Ristampa", `non usciti: ${non.map((x) => x.name).join(", ")}`, rec.interrotta, st.riassunto);
+      if (ignoti.length) {
+        return alTel(P("warn", "Esito della stampa sconosciuto", `controlla ${dove(ignoti)}: ${ignoti[0].why || "l'aiutante non ha detto com'è andata"}`, st.riassunto),
+          P("warn", etichette(ignoti) ? "Etichette forse stampate" : "Fogli forse stampati",
+            `guarda ${dove(ignoti)} prima di ristamparl${etichette(ignoti) ? "e" : "i"} dal PC`, st.riassunto));
+      }
+      if (non.length) return P("warn", "Stampa interrotta", `non usciti: ${non.map((x) => x.name).join(", ")}`, rec.interrotta, st.riassunto);
       const stampati = f.filter((x) => x.stato === "stampato"), mandati = f.filter((x) => x.stato === "mandato");
-      if (!mandati.length) return P("ok", "Stampato", `Stampato su ${dove(stampati)} alle ${ORA(rec.agg)}`, st.riassunto, st.quesito, tel);
-      return P("ok", "Mandato", `Mandato a ${dove(mandati)} alle ${ORA(rec.agg)}`, "è nella coda di Windows: controlla che sia uscito",
-        stampati.length ? `stampato su ${dove(stampati)}` : "", st.riassunto, tel);
+      if (!mandati.length) return P("ok", `Stampato su ${dove(stampati)}`, alle, st.quesito, tel);
+      return P("warn", `Mandato a ${dove(mandati)}`, alle, "è nella coda di Windows: controlla che sia uscito",
+        stampati.length ? `stampato su ${dove(stampati)}` : "", tel);
     }
   }
 }
@@ -898,6 +914,8 @@ function ordMessaggio(msg, sender, reply) {
     const rec = {
       id, ep, paziente: corto(j.paziente, 60), n: Number(j.n) || 0, autoConfirm: !!j.autoConfirm, url: j.url,
       rid: j.rid ? corto(j.rid, 20) : null, opener: tab.id, worker: null,
+      // (il quesito scritto sul telefono: lo dice ordPubblico al posto di «il tuo»)
+      quesito: id.startsWith("tel") ? corto(String(j.piano.quesito || "").replace(/\s+/g, " ").trim(), 90) : "",
       stato: "coda", ts: Date.now(), agg: Date.now(), vista: null,
       resto: { mancano: nomi(j.nomi), controllare: [], nel: [] },
     };

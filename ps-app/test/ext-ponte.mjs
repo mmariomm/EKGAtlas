@@ -203,8 +203,8 @@ await $panel(doc, "#pontemenu").click();
 const ponte = await nasce;
 check(!!ponte && ponte.url() === EXTURL("ponte.html"), `⋯ → iPhone apre la pagina del ponte (got ${ponte && ponte.url()})`);
 await ponte.waitForSelector("#stato b");
-check(/Ponte da configurare/.test(await ponte.locator("#stato").innerText()) && await ponte.locator("#associa").isDisabled(),
-  "con ponte/host.txt vuoto: «Ponte da configurare», e niente da associare");
+check(/\(ekg-atlas\.whirly\.workers\.dev\)/.test(await ponte.locator("#dove").innerText()) && !(await ponte.locator("#associa").isDisabled()) && /Nessun iPhone associato/.test(await ponte.locator("#stato").innerText()),
+  `l'indirizzo del ponte è quello fissato nella build (ponte/host.txt): ekg-atlas.whirly.workers.dev (${await ponte.locator("#dove").innerText()})`);
 check(await ponte.locator("input").count() === 0, "l'indirizzo del ponte non si scrive in nessuna pagina: niente campo");
 // (per le prove, e solo verso questo PC: il ripetitore locale)
 await sw.evaluate((u) => chrome.storage.local.set({ "ponte.host": u }).then(() => ponteAvvia()), relay.url);
@@ -219,6 +219,9 @@ const scade1 = Number(/scade=(\d+)/.exec(url1)[1]);
 check(Math.abs(scade1 - Date.now() - 14 * 3600e3) < 60e3, "l'associazione vale 14 ore");
 const codice1 = (await ponte.locator("#qrcodice").innerText()).trim();
 check(codice1 === await P.codice(K1), `accanto al QR, il codice dell'associazione: ${codice1}`);
+const pagina = `${await ponte.locator("#stato").innerText()}\n${await ponte.locator("#qrsec").innerText()}`;
+check(pagina.split(codice1).length === 2 && (pagina.match(/fino alle \d\d:\d\d/g) || []).length === 1 && /^\d\d:\d\d$/.test(await ponte.locator("#qrscade").innerText()),
+  `il codice e l'ora di fine una volta sola, accanto al QR (${(await ponte.locator("#stato").innerText()).replace(/\n/g, " / ")})`);
 const cp = await coppiaPc();
 check(cp && cp.k === P.b64u(K1) && cp.scade === scade1, "sul PC la chiave sta in storage.local, con la sua scadenza (regge il browser chiuso: più sotto)");
 check(await finche(async () => (await statoPonte())?.relay === "su", 10000), "il PC è collegato al ponte");
@@ -419,8 +422,9 @@ check(await finche(async () => /dall'iPhone/.test(await $panel(doc, ".strip").in
 await tel.evaluate(() => window.scrollTo(0, 0));
 await shot(tel, "tel-4-ordine-in-corso");
 // (un ordine dal telefono non apre da solo il dialogo sul PC: davanti può non esserci nessuno)
-const fatto = await aspettaTel(tel, /aspettano qualcuno al PC|Etichette pronte sul PC/, 60000);
-check(/Confermata/.test(fatto) && /aspettano qualcuno al PC|Etichette pronte sul PC/.test(fatto), "e alla fine «Confermata», e le etichette aspettano qualcuno al PC");
+const fatto = await aspettaTel(tel, /aspettano qualcuno al PC/, 60000);
+check(/Etichette NON stampate/.test(fatto) && /aspettano qualcuno al PC/.test(fatto) && !/tocca Stampa|sulla striscia/.test(fatto),
+  "e alla fine «Etichette NON stampate · aspettano qualcuno al PC» (la frase del telefono, non quella del PC)");
 const rid = Object.keys(A.state.richieste)[0];
 check(A.state.richieste[rid]?.confirmed === true && Object.values(A.state.insertCount).every((n) => n === 1) && Object.keys(A.state.insertCount).length === 2,
   `confermata, ogni esame mandato una volta (${JSON.stringify(A.state.insertCount)})`);
@@ -434,8 +438,16 @@ check(/Etichette prese in stampa sul PC/.test(await aspettaTel(tel, /Etichette p
   "e il telefono lo sa: «Etichette prese in stampa sul PC», non «Ordine non completo»");
 const carta = await tel.locator(".ord").first().innerText();
 check(!/Quesito: il tuo/.test(carta) && (carta.match(/2 esami/g) || []).length <= 1, `la carta dell'ordine: niente «Quesito: il tuo», niente «2 esami» ripetuto (${carta.replace(/\s+/g, " ")})`);
+check(await tel.locator(".ord").first().locator(".c b").innerText() === "Etichette prese in stampa sul PC" && (carta.match(/\d\d:\d\d/g) || []).length === 1,
+  `il titolo della carta è com'è andata, e l'ora c'è una volta (${carta.replace(/\s+/g, " ")})`);
 await shot(tel, "tel-5-ordine-confermato");
 await tel.emulateMedia({ colorScheme: "dark" }); await shot(tel, "tel-5-ordine-confermato-buio"); await tel.emulateMedia({ colorScheme: "light" });
+// finito bene, dopo due minuti se ne va da solo: le carte verdi non si ammucchiano
+await tel.evaluate(() => { window.__oraVera = Date.now; const v = Date.now; Date.now = () => v() + 3 * 60e3; });
+await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
+const dopoDue = await testoTel(tel);
+await tel.evaluate(() => { Date.now = window.__oraVera; });
+check(!/Etichette prese in stampa sul PC/.test(dopoDue), "un ordine finito bene, dopo due minuti, se ne va da solo: le carte verdi non si ammucchiano");
 await doc.keyboard.press("Escape").catch(() => {});
 lento = 0;
 check(/iPhone · ordine di 2 esami per ROSSI MARIO/.test(await registroPc(doc)), "l'ordine è nel Registro del PC");
@@ -477,6 +489,27 @@ check(await finche(async () => Object.keys(B.state.richieste).length === 2 && (a
 await finche(ordiniFiniti, 60000);
 check(Object.keys(B.state.richieste).length === 2, "e nessun ordine doppio");
 await shot(tel, "tel-6-ordine-incerto");
+// La risposta si perde, ma la presa cade e si rifà subito: l'ordine è già lì
+// sopra. Niente allarme rosso che dice il contrario, e il bottone non aspetta.
+await tel.waitForSelector(".avviso", { state: "detached", timeout: 10000 }).catch(() => {});
+await tel.evaluate(() => {
+  window.__avvisi = [];
+  new MutationObserver(() => { const a = document.querySelector(".avviso"); if (a && !window.__avvisi.includes(a.textContent)) window.__avvisi.push(a.textContent); })
+    .observe(document.getElementById("app"), { childList: true, subtree: true });
+});
+await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');
+await tel.locator("#quesito").fill("controllo serale");
+const richiesteB = Object.keys(B.state.richieste).length, carte0 = await tel.locator(".ord").count();
+rete.perdi = rete.ultima;
+await tocca(tel, "#ordina"); await sospendi(900); await tocca(tel, "#ordina");
+const tPerso = Date.now();
+check(await finche(async () => Object.keys(B.state.richieste).length > richiesteB, 30000), "(la risposta si perde; l'ordine nasce sul PC)");
+await sospendi(1500);
+check(/Mando l'ordine al PC/.test(await tel.locator("#ordina").innerText()), "(il bottone aspetta la risposta)");
+rete.prese.get(rete.perdi).ws.close({ code: 1001, reason: "rete" });   // la presa cade: il telefono si ricollega
+const visto = await finche(async () => !/Mando l'ordine al PC/.test(await tel.locator("#ordina").innerText().catch(() => "")) && (await tel.locator(".ord").count()) > carte0, 15000);
+check(visto, `ricollegato, il telefono vede l'ordine nato sul PC, e il bottone non aspetta più la risposta persa (${await tel.locator("#ordina").innerText().catch(() => "")})`);
+await finche(ordiniFiniti, 60000);
 
 // ===========================================================================
 sezione("un ordine finito male resta sulla lista, con le parole di bg.js");
@@ -489,6 +522,17 @@ const barra = await aspettaTel(tel, /Ordine non completo/, 10000);
 check(/Ordine non completo · BIANCHI ANNA/.test(barra) && /Ordine fermo · Mancano: TROPONINA US/.test(barra) && !/Tocca per vedere/.test(barra),
   "in fondo alla lista: «Ordine non completo · BIANCHI ANNA», con le parole di bg.js (e nient'altro)");
 await shot(tel, "tel-6b-ordine-non-completo");
+// sulla pagina di un altro paziente lo si vede lo stesso, in testa (in fondo c'è il bottone dell'ordine)
+await tocca(tel, '.paz[data-ep="999001"]');
+const suRossi = await aspettaTel(tel, /Ordine non completo/, 10000);
+check(/Ordine non completo · BIANCHI ANNA/.test(suRossi) && await tel.locator("main > .ordbar:first-child").count() === 1,
+  "l'ordine finito male si vede anche dalla pagina di un altro paziente, in testa");
+await tocca(tel, '.ordbar[data-a="paz"]');
+await aspettaTel(tel, /Esiti/, 10000);
+check(await tel.locator(".top .tit").innerText() === `BIANCHI ANNA · ${ETA_B} anni` && await tel.locator(".ordbar").count() === 0 && /Ordine fermo/.test(await testoTel(tel)),
+  "toccato: si è sul suo paziente, dove l'ordine ha la sua carta (e niente barra)");
+await tocca(tel, '[data-a="indietro"]');
+await aspettaTel(tel, /Ordine non completo/, 10000);
 await sw.evaluate((id) => chrome.storage.session.get("ordini").then((o) => chrome.storage.session.set({ ordini: (o.ordini || []).filter((x) => x.id !== id) })), male.id);
 await sospendi(1500);
 check(/Ordine non completo/.test(await testoTel(tel)), "tolto dal PC (✕ là): sul telefono resta com'era l'ultima volta, finché non lo si chiude");
@@ -523,6 +567,35 @@ await tocca(tel, '[data-a="indietro"]');
 check(!/VERDI/.test(await aspettaTel(tel, /ROSSI M\./, 10000)), "e dall'elenco del telefono se ne va");
 
 // ===========================================================================
+sezione("due pazienti con lo stesso nome");
+const omonimo = (si) => doc.evaluate((si) => {
+  const K = "psassist:patients.v1";
+  const l = JSON.parse(localStorage.getItem(K) || "[]").filter((p) => p.ep !== "999004");
+  if (si) l.push({ ep: "999004", name: "ROSSI MARIO", url: "", ts: Date.now() - 30 * 60e3, pk: "", triage: "VERDE" });
+  localStorage.setItem(K, JSON.stringify(l));
+}, si);
+await omonimo(true);
+await tocca(tel, '[data-a="menu"]');
+await tocca(tel, '[data-a="aggiornaLista"]');
+const due = await aspettaTel(tel, /…9004/, 10000);
+check(/ROSSI MARIO · …9001/.test(due) && /ROSSI MARIO · …9004/.test(due), "(nell'elenco: «⚠ ROSSI MARIO · …9001» e «⚠ ROSSI MARIO · …9004»)");
+await tocca(tel, '.paz[data-ep="999001"]');
+await aspettaTel(tel, /Richieste/, 10000);
+const testaOm = await tel.locator(".top .tit").innerText();
+check(testaOm === "⚠ ROSSI MARIO · …9001 · 77 anni · OBI 2", `in testa il segno che li distingue, come nell'elenco: «⚠ ROSSI MARIO · …9001 · 77 anni · OBI 2» (${testaOm})`);
+await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
+await aspettaTel(tel, /Dolore toracico/, 10000);
+await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');
+await tel.locator("#quesito").fill("omonimo");
+await tocca(tel, "#ordina");
+const armOm = await tel.locator("#ordina").innerText();
+check(/^⚠ Ordino 1 esame per ROSSI MARIO · …9001 · 77 anni · OBI 2\? Tocca di nuovo$/.test(armOm), `e la conferma comincia col ⚠, col segno anche lì (${armOm})`);
+await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');   // non si conferma: via la scelta
+await omonimo(false);
+await tocca(tel, '[data-a="indietro"]');
+check(/ROSSI M\./.test(await aspettaTel(tel, /ROSSI M\./, 10000)), "(l'omonimo non c'è più)");
+
+// ===========================================================================
 sezione("i messaggi ripetuti o manomessi non passano");
 const daTel = () => inoltrati.filter((b) => b[1] === 3);
 // una nota, catturata per strada, poi un'altra: rimandare la prima non la rimette
@@ -552,6 +625,12 @@ await tocca(tel, '[data-a="indietro"]');
 check(/ROSSI M\./.test(await aspettaTel(tel, /ROSSI M\./, 10000)) && !/Sessione chiusa/.test(await testoTel(tel)), "e il telefono continua");
 
 // ===========================================================================
+// (passato il tempo in cui la risposta persa sarebbe scaduta: nessun allarme)
+await sospendi(Math.max(0, tPerso + 63e3 - Date.now()));
+const avvisi = await tel.evaluate(() => window.__avvisi || []);
+check(!avvisi.some((x) => /Non so se l'ordine/.test(x)), `e la risposta persa di un ordine già visto non accende mai «Non so se l'ordine è partito» (${JSON.stringify(avvisi)})`);
+
+// ===========================================================================
 sezione("la pagina del telefono si ricarica (iOS la butta via in sottofondo)");
 await tel.reload();
 check(/ROSSI M\./.test(await aspettaTel(tel, /ROSSI M\./, 15000)), "ricaricata: di nuovo dentro subito, senza QR (la sessione di prima non la blocca)");
@@ -569,6 +648,17 @@ const lettiPrima = ((await registroPc(doc)).match(/iPhone · elenco dei pazienti
 await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 check(await finche(async () => ((await registroPc(doc)).match(/iPhone · elenco dei pazienti/g) || []).length > lettiPrima, 10000),
   "tornati sull'app, l'elenco si rilegge da solo");
+// …e sulla pagina di un paziente, i suoi esiti (un referto arrivato intanto), senza contare come un comando del medico
+await tocca(tel, '.paz[data-ep="999001"]');
+await aspettaTel(tel, /Aggiorna i valori/, 15000);
+await sospendi(800);
+const esitiLetti = async () => ((await registroPc(doc)).match(/iPhone · esiti di ROSSI MARIO/g) || []).length;
+const esiti0 = await esitiLetti(), ultimo0 = await sw.evaluate(() => pt.sessione && pt.sessione.ultimo);
+await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+check(await finche(async () => (await esitiLetti()) > esiti0, 10000), "tornati sull'app sulla pagina di un paziente, i suoi esiti si rileggono da soli");
+check(await sw.evaluate(() => pt.sessione && pt.sessione.ultimo) === ultimo0, "e non tengono aperta la sessione: li chiede l'app, non il medico");
+await tocca(tel, '[data-a="indietro"]');
+await aspettaTel(tel, /ROSSI M\./, 10000);
 
 // ===========================================================================
 sezione("20 minuti senza comandi");

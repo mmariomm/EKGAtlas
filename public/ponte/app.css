@@ -205,6 +205,8 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .ord .c small { display: block; font-size: 12.5px; color: var(--grigio); margin-top: 3px; }
 .ord .x { flex: none; border: 0; background: none; color: var(--grigio); font-size: 18px; width: 44px; height: 44px; margin: -10px -12px -10px 0; border-radius: 10px; }
 .ordbar { position: fixed; left: var(--sx); right: var(--dx); bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 14; margin: 0; box-shadow: 0 10px 30px var(--ombra); }
+/* sulla pagina di un paziente sta in testa: in fondo c'è il bottone dell'ordine */
+.ordbar:first-child { position: static; margin-bottom: 10px; box-shadow: none; }
 
 .avviso { position: fixed; left: var(--sx); right: var(--dx); bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 30; background: var(--scuro); color: #fff;
           border-radius: 12px; padding: 12px 14px; font-size: 14.5px; box-shadow: 0 12px 30px var(--ombra); }

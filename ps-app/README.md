@@ -834,10 +834,12 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   chiuso e riaperto; una scheda del gestionale alla pagina d'accesso chiude la sessione, non
   l'associazione. **Revoca l'iPhone** la chiude prima.
 - **Ordinare dal telefono**: la conferma porta nome intero, età e posto («Ordino 2 esami per ROSSI
-  MARIO · 77 anni · OBI 2? Tocca di nuovo»); un doppio tocco non conferma; se la rete perde
+  MARIO · 77 anni · OBI 2? Tocca di nuovo»; due pazienti con lo stesso nome: «⚠ Ordino … per ROSSI
+  MARIO · …9001 · …», col segno dell'elenco); un doppio tocco non conferma; se la rete perde
   la risposta il telefono dice «Non so se l'ordine è partito» e non lo rifà alla cieca (lo stesso
-  ordine rimandato parte una volta sola). Niente ordini su un episodio precedente o per un paziente
-  dimesso sul PC. Sul PC la striscia dice «dall'iPhone».
+  ordine rimandato parte una volta sola), a meno che non lo veda già nato sul PC. Niente ordini su un episodio precedente o per un paziente
+  dimesso sul PC. Un ordine finito male si vede da ogni pagina del telefono, finché non lo chiudi.
+  Sul PC la striscia dice «dall'iPhone».
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
   Scollega»**, e ogni comando va nel **Registro**. Dopo **20 minuti senza comandi** del medico la
   sessione si chiude da sola; dal telefono si riapre con un tocco.
@@ -867,8 +869,8 @@ sono i fogli. Mai mentre scrivi; e sulla pagina di un **altro** paziente il dial
 solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco. **Un ordine partito dall'iPhone non
 apre mai da solo il dialogo**: davanti al PC può non esserci nessuno, e un dialogo aperto su uno
 schermo che nessuno guarda è un'etichetta non stampata che sembra stampata. La striscia lo dice
-(«dall'iPhone · Etichette NON stampate: aspettano qualcuno al PC»), il telefono pure, e un tocco
-su **Stampa** nella striscia del PC le stampa. Così è senza la **stampa automatica**; con lei il
+(«Etichette NON stampate · dall'iPhone · tocca Stampa»), il telefono pure («aspettano qualcuno al
+PC»), e un tocco su **Stampa** nella striscia del PC le stampa. Così è senza la **stampa automatica**; con lei il
 dialogo non c'è, e i fogli di un ordine in sottofondo li stampa il service worker (vedi «Stampa
 automatica», più sotto).
 
@@ -941,16 +943,17 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   secondo la coda di stampa di Windows:
   - **«Stampato su Zebra ZD421»** (alla fine «Stampato · 6 esami confermati 14:32»): il foglio è
     uscito dalla coda senza errori — stampato, per quanto Windows può dire;
-  - **«Mandato a Zebra ZD421»**: è ancora nella coda; Windows l'ha preso, non si sa se è uscito;
-  - **«Esito della stampa sconosciuto · Ristampa»**: l'aiutante non ha risposto, il tempo è
-    scaduto (lui ha 35 secondi, l'estensione ne aspetta 90), SumatraPDF è stato fermato a metà.
-    Il foglio **può essere uscito**: non riparte mai da solo, né dal dialogo. Si controlla la
-    stampante, e se non c'è, **Ristampa**.
+  - **«Mandato a Zebra ZD421»**, in ambra: finita l'attesa (10 secondi per un'etichetta, 4 per
+    l'A4) è ancora nella coda; Windows l'ha preso, non si sa se è uscito;
+  - **«Esito della stampa sconosciuto»**, con **Ristampa**: l'aiutante non ha risposto, il tempo
+    è scaduto (lui ha 35 secondi, l'estensione ne aspetta 90), SumatraPDF è stato fermato a metà,
+    o la stampante si è fermata in errore **mentre stampava**. Il foglio **può essere uscito**:
+    non riparte mai da solo, né dal dialogo. Si controlla la stampante, e se non c'è, **Ristampa**.
 - **Un foglio che non è partito passa dal dialogo di sempre, lui solo**, con una riga che dice
   perché («Stampa automatica non riuscita: la stampante «Zebra ZD421» risulta spenta o offline.
   Dal dialogo, stavolta.»). Solo per un no detto prima di stampare: aiutante non installato o
   bloccato, stampante sparita, spenta o offline (prima di stampare, o ferma in errore o in pausa
-  nella coda: il foglio si toglie), PDF non valido, SumatraPDF che dice di no. Il foglio dopo
+  nella coda prima di cominciare: il foglio si toglie), PDF non valido, SumatraPDF che dice di no. Il foglio dopo
   riprova da solo.
 - **Un ordine in sottofondo lo stampa il service worker**, appena la conferma è provata: non
   serve una scheda del gestionale davanti, né il fuoco, né un clic — l'ordine può arrivare dal
@@ -959,16 +962,21 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   sempre); lui scrive nell'ordine, foglio per foglio, che cosa sta per mandare **prima** di
   mandarlo, e poi com'è andata. Intanto ogni scheda del gestionale lo racconta («Confermata ·
   Stampo le etichette su Zebra ZD421… · foglio 1 di 2», con ⏹), e alla fine dice **«Stampato su
-  Zebra ZD421 e HP LaserJet alle 14:32 · 2 esami confermati»** col nome del paziente,
-  **Ristampa** (un tocco: si ristampa lì) e ✕. Una volta sola: ogni foglio parte una volta, e
+  Zebra ZD421 e HP LaserJet · 2 esami confermati alle 14:32»** col nome del paziente,
+  **Ristampa** (un tocco: si ristampa lì) e ✕; dopo due minuti un «Stampato» se ne va da solo
+  (la Ristampa resta nella sezione **Stampa** del paziente). Una volta sola: ogni foglio parte una volta, e
   uno mandato da un service worker che poi è ripartito è «sconosciuto», mai rimandato. Se la
   scheda dell'ordine si ricarica o si chiude a metà, o premi ⏹, i fogli che restano non partono e
-  l'ordine finisce **«Confermata · Stampa interrotta → Ristampa»** (la richiesta è confermata:
-  mai «Scheda chiusa · controlla il carrello»); **Ristampa** rifà i fogli non usciti. Un foglio
+  l'ordine finisce **«Stampa interrotta»**, con **Ristampa** (la richiesta è confermata, e lo
+  dice: mai «Scheda chiusa · controlla il carrello»); **Ristampa** rifà i fogli non usciti. Un foglio
   che non è partito per un no detto arriva alla scheda dove sei, come le etichette di prima, col
   motivo sulla striscia; per un ordine dal telefono aspetta un tocco su **Stampa** («Etichette NON
-  stampate: Zebra ZD421 ha dato errore»). Uscite, la striscia di un ordine dal telefono aggiunge
+  stampate · la stampante «Zebra ZD421» risulta spenta o offline»). Uscite, la striscia di un ordine dal telefono aggiunge
   «avvisa chi preleva».
+- **La striscia è una sola**, e dice la cosa più seria, fra due pari la più nuova: un errore, un
+  avviso da leggere, le etichette pronte qui, l'ordine che gira, la coda, le etichette di un
+  ordine dal telefono (aspettano un tocco, ma non coprono il resto), e per ultimo un «Stampato».
+  Un ordine finito bene non copre mai quello che è venuto dopo.
 - **Si vede che è accesa**: in intestazione, accanto al menu **⋯**, una stampantina; passandoci
   sopra, «Stampa automatica attiva: etichette su Zebra ZD421, A4 su HP LaserJet». Diventa
   **rossa** se l'ultimo foglio non è uscito o ha un esito sconosciuto, e lo dice; con accanto
@@ -1365,16 +1373,18 @@ stessi flussi dei test di prodotto.
     (`attesa`, `mandato`, `stampato`, `fallito`, `sconosciuto`), scritto **prima** di mandarlo; un
     foglio che era in volo quando il service worker è ripartito è «sconosciuto», mai rimandato. La
     scheda dell'ordine dà solo i PDF: se si ricarica o si chiude, o col ⏹, i fogli che restano non
-    partono («Confermata · Stampa interrotta → Ristampa»). **Tre esiti, detti per quello che sono**:
-    «stampato» solo se Windows l'ha fatto uscire dalla coda, «mandato» se è ancora lì;
+    partono («Stampa interrotta», con Ristampa). **Tre esiti, detti per quello che sono**:
+    «stampato» solo se Windows l'ha fatto uscire dalla coda, «mandato» (in ambra) se è ancora lì;
     **«sconosciuto»** — nessuna risposta, tempo scaduto (l'aiutante ha 35 secondi, l'estensione
     ne aspetta 90: i tempi sono annidati, e l'estensione non smette mai di aspettare prima che
-    l'aiutante abbia finito), SumatraPDF fermato — non riparte **mai** da solo: si dice, con
+    l'aiutante abbia finito), SumatraPDF fermato, la stampante fermata in errore mentre stampava
+    — non riparte **mai** da solo: si dice, con
     «Ristampa». Solo un no detto prima di stampare (non installato, stampante sparita, spenta o
     offline, PDF non valido, SumatraPDF che rifiuta) rimanda **quel** foglio al dialogo di
     sempre, col motivo scritto; e mai da solo per un ordine dal telefono, che aspetta un tocco al
     PC. Le parole le scrive una funzione sola nel service worker (`ordPubblico`, a ogni
-    scrittura dell'ordine): la striscia del PC e il telefono dicono le stesse. Spenta
+    scrittura dell'ordine): la striscia del PC e il telefono dicono le stesse, salvo dove il
+    telefono ha la sua (`tel`: «aspettano qualcuno al PC», non «tocca Stampa»). Spenta
     (l'interruttore), non configurata, o col preferito, il percorso è quello di prima, identico.
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo

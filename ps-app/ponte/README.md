@@ -31,13 +31,16 @@ Un link del ponte che toglierebbe un'associazione ancora buona **chiede prima**,
 E nessun link vale più di 14 ore, qualunque scadenza porti.
 
 **Durante il turno.** Apri il pannello dall'iPhone: si collega da solo, niente QR. L'elenco si rilegge
-da solo ogni volta che torni sull'app («Aggiornato alle 14:32»). Vedi:
+da solo ogni volta che torni sull'app («Aggiornato alle 14:32»), e se eri su un paziente anche i suoi
+esiti (un referto arrivato intanto): riletture che l'app fa da sé, e che non tengono aperta la
+sessione. Vedi:
 
 - **Pazienti** — in una carta sola chi è in lista e chi è nella stanza (col suo posto), gli episodi
   precedenti a parte; la striscia del triage, la nota, il promemoria più vicino. Il nome non si tronca
   mai: il posto e il promemoria vanno a capo.
 - **Il paziente** — in testa il nome intero, l'età e il posto: «ROSSI MARIO · 77 anni · OBI 2» (su
-  un episodio precedente lo dice sotto). Sotto, subito, le schede **Esiti** e **Richieste** (resta
+  un episodio precedente lo dice sotto; due pazienti con lo stesso nome hanno il ⚠ e il segno che li
+  distingue, come nell'elenco: «⚠ ROSSI MARIO · …9001 · 77 anni · OBI 2»). Sotto, subito, le schede **Esiti** e **Richieste** (resta
   quella che hai scelto l'ultima volta); la nota e i promemoria stanno chiusi finché non servono
   («+ Nota», «+ Promemoria»).
 - **Esiti** — la tabella dei Valori che il PC ha per quel paziente, con l'ora in cui il PC li ha letti
@@ -47,18 +50,25 @@ da solo ogni volta che torni sull'app («Aggiornato alle 14:32»). Vedi:
   sola, e porta qui il risultato.
 - **Richieste** — il quesito (i tre pacchetti in testa), i profili e gli esami della griglia. Il
   bottone chiede conferma **col nome intero, l'età e il posto** («Ordino 2 esami per ROSSI MARIO ·
-  77 anni · OBI 2? Tocca di nuovo»); un secondo tocco entro 800 ms (un doppio
-  tocco per sbaglio) non conta. Poi l'ordine fa sul PC il giro di sempre — la scheda dell'ordine,
+  77 anni · OBI 2? Tocca di nuovo»; per un omonimo «⚠ Ordino …», col segno); un secondo tocco entro
+  800 ms (un doppio tocco per sbaglio) non conta. Poi l'ordine fa sul PC il giro di sempre — la scheda dell'ordine,
   tutti i controlli, la conferma provata. Il telefono dice a che punto è («esame 2 di 6») e come
-  finisce, con le stesse parole della striscia del PC (`pubblico`, scritto da `bg.js`). Un ordine
-  finito male resta in fondo alla lista («Ordine non completo · BIANCHI ANNA»: toccalo e sei sul
-  paziente) finché non lo chiudi con ✕. Sul PC la striscia dell'ordine dice **«dall'iPhone»**. La radiologia, come
+  finisce, con le parole che `bg.js` scrive per la striscia del PC (`pubblico`) — tranne dove al
+  telefono serve un'altra frase: «aspettano qualcuno al PC» invece di «tocca Stampa», «Etichette
+  forse stampate: guarda Zebra ZD421 prima di ristamparle dal PC» invece del perché tecnico. Il
+  titolo della carta è com'è andata («Stampato su Zebra ZD421», «Mandato a Zebra ZD421» in ambra),
+  l'ora c'è una volta, e una carta finita bene se ne va da sola dopo due minuti. Un ordine
+  finito male resta in fondo alla lista, e in testa alla pagina di ogni altro paziente
+  («Ordine non completo · BIANCHI ANNA»: toccalo e sei sul paziente), finché non lo chiudi con ✕.
+  Sul PC la striscia dell'ordine dice **«dall'iPhone»**. La radiologia, come
   dal pannello, resta nel carrello: la sua conferma è del medico, sul PC. Su un episodio precedente
   non si ordina («Episodio precedente: per ordinare apri quello di oggi»); a un paziente dimesso sul
   PC non arriva niente («Dimesso sul PC: niente inviato»).
 - **Se la rete perde la risposta** (ascensore, 5G): il telefono non sa se l'ordine è partito, e lo
   dice — «Non so se l'ordine è partito: controlla qui sopra prima di rifarlo». La selezione se ne va
-  e il bottone aspetta che il PC dica a che punto sono gli ordini. L'ordine ha un numero fatto dal
+  e il bottone aspetta che il PC dica a che punto sono gli ordini. Se intanto il telefono si è
+  ricollegato e vede l'ordine nato sul PC, il bottone smette di aspettare e l'allarme non c'è: lo
+  dice già la carta. L'ordine ha un numero fatto dal
   telefono quando arma «Conferma»: rimandato, è lo stesso ordine, e il PC lo manda una volta sola.
 - **Nota e promemoria** — la nota del paziente (si salva uscendo dal campo) e i promemoria
   («11:30 tropo», «tra 2h ECG»): gli stessi del pannello. **✓ Fatto** aspetta 5 secondi, con
@@ -93,10 +103,10 @@ lui e si sblocca già col suo Face ID; basta avere la chiave del QR.
 ## Messa in servizio (una volta)
 
 **1. L'indirizzo del ponte** si scrive una volta, in `ps-app/ponte/host.txt` (una riga, il nome del
-Worker di EKG Atlas: `ekg-atlas.<account>.workers.dev`), e `npm run dist` lo fissa nell'estensione
+Worker di EKG Atlas: `ekg-atlas.whirly.workers.dev`), e `npm run dist` lo fissa nell'estensione
 (`extension/ponte-host.js`, generato da `tools/build.mjs`). Nessuna pagina lo può cambiare: non c'è un
 campo da riempire, e chi passa davanti al PC non può mandare il telefono altrove. Con `host.txt` vuoto
-(com'è adesso) la pagina ⋯ → iPhone dice «Ponte da configurare». (Per le prove, e solo verso questo
+la pagina ⋯ → iPhone dice «Ponte da configurare». (Per le prove, e solo verso questo
 PC, `chrome.storage.local` `"ponte.host"` può dire `http://localhost:…`: vedi «Provare in casa».)
 
 **2. Il ponte si pubblica con il sito EKG Atlas**, nello stesso Worker di Cloudflare:
@@ -146,8 +156,9 @@ blocco **«Per l'IT»**, da mandare così com'è.
 
 ## Che cosa vede l'IT
 
-Dal Chrome del PC esce **una** connessione: una WebSocket su HTTPS, `wss://ekg-atlas.<account>.workers.dev/ponte/ws`,
-**TCP 443**, solo in uscita, che deve passare il proxy (l'upgrade a WebSocket). È lunga — fino a 14
+Dal Chrome del PC esce **una** connessione: una WebSocket su HTTPS, `wss://ekg-atlas.whirly.workers.dev/ponte/ws`,
+**TCP 443**, solo in uscita, che deve passare il proxy (l'upgrade a WebSocket). È un indirizzo
+`*.workers.dev` (Cloudflare): molti filtri web lo bloccano per categoria, e va consentito questo nome. È lunga — fino a 14
 ore — con un battito ogni **20 secondi** (un piccolo «ping»): non va chiusa per inattività né per
 durata. Nessuna porta in entrata, nessun UDP, nessun altro host. Dentro il TLS i messaggi sono cifrati
 una seconda volta, da un capo all'altro (AES-256-GCM): si può **escludere dall'ispezione TLS** senza
@@ -158,7 +169,7 @@ il medico usa il pannello.
 ## Come è fatto
 
 **La chiave.** `K`, 32 byte casuali, nasce nel service worker del PC a ogni «Associa l'iPhone». Va
-al telefono **solo nel frammento** del QR: `https://<sito>/ponte/#k=<base64url>&scade=<ms>` — il
+al telefono **solo nel frammento** del QR: `https://ekg-atlas.whirly.workers.dev/ponte/#k=<base64url>&scade=<ms>` — il
 frammento non viaggia mai verso un server. L'app lo legge, lo toglie dalla barra e dalla
 cronologia, e tiene `K`, la scadenza (al massimo 14 ore da quando l'ha letto) e un numero casuale suo
 (`dev`) nel `localStorage` di Safari: è l'unica cosa che resta sul telefono. Sul PC `K` sta in
@@ -222,8 +233,8 @@ decifrato a **una** scheda viva del gestionale (prima quella davanti al medico; 
 ordine o dei valori in sottofondo), che lo esegue col codice di sempre (`src/core.js`, sezione PONTE)
 e risponde. Nessuna scheda del gestionale: «Apri il gestionale sul PC». Gestionale sulla pagina
 d'accesso: «Gestionale da riaprire». Una scheda che tace oltre l'attesa può star lavorando ancora: per
-un ordine la risposta è «non si sa», mai un no, e l'ordine che nasce lo stesso arriva al telefono.
-Mai un silenzio.
+un ordine la risposta è «non si sa», mai un no, e l'ordine che nasce lo stesso arriva al telefono; un
+ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un silenzio.
 
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
 `aggiornaValori(ep)`, `richieste` (il catalogo), `ordina(ep, oid, esami, quesito, mio)`, `nota(ep,
@@ -243,9 +254,9 @@ pagina di quel paziente. «Aggiorna i valori» annota la sua scheda di sottofond
 telefono aspetta 200 secondi, più del caso peggiore del PC.
 
 **Gli ordini, raccontati.** Il service worker guarda passare gli ordini del telefono in `ordini`
-(`storage.session`) e li racconta con le parole che `bg.js` scrive per tutti in ogni record
-(`pubblico: {tono, titolo, testo, dettaglio}`); senza `pubblico`, il nome del suo stato e la vista
-della striscia. Al posto di «Quesito: il tuo» dice il quesito scritto sul telefono. Un ordine che
+(`storage.session`) e li racconta con le parole che `bg.js` scrive in ogni record (`pubblico:
+{tono, titolo, testo, dettaglio}`, e `pubblico.tel` dove il telefono dice un'altra frase); non
+riscrive niente. Al posto di «Quesito: il tuo» `bg.js` dice il quesito scritto sul telefono. Un ordine che
 sparisce da `ordini` (le etichette prese da una scheda del PC, ✕ sul PC, tolto dalla coda) resta sul
 telefono com'era l'ultima volta, finché non lo si chiude; sparito prima della conferma, «Da
 controllare».

@@ -21,6 +21,7 @@
   const TEMPO = 30e3;
   const INATTIVO = 20 * 60e3;        // come sul PC: 20 minuti senza comandi del medico e la sessione è finita
   const DURATA_MAX = 14 * 3600e3;    // un link non vale più di un turno, qualunque ora porti
+  const VERDE_MAX = 2 * 60e3;        // un ordine finito bene se ne va da solo, come sulla striscia del PC
   const BATTITO = 20e3, PONG = 10e3; // la presa parla ogni 20 secondi; senza «pong» in 10 è morta
   const ATTESA_VALORI = 200e3;       // «Aggiorna i valori»: il PC, al peggio, ci mette 10 + 150 + 30 secondi
   const TRIAGE = { ROSSO: "rosso", ARANCIONE: "arancione", AZZURRO: "azzurro", VERDE: "verde", BIANCO: "bianco" };
@@ -54,10 +55,11 @@
     pazienti: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ordini: new Map(), nascosti: new Set(),
     vista: { nome: "lista", ep: "" }, scheda: "esiti", sel: new Map(), bloccati: new Map(), aperti: new Set(),
     occupato: new Set(), bozze: new Map(), notaAperta: "", promAperto: "", promTesto: "", fatti: new Map(), menu: false, arma: null, avviso: null,
+    inviati: new Map(),  // ep → oid dell'ordine che sta andando al PC (il bottone aspetta)
   };
   function svuota() {
     S.pazienti = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
-    S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.bozze.clear(); S.promTesto = ""; S.arma = null;
+    S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.bozze.clear(); S.promTesto = ""; S.arma = null;
     S.notaAperta = ""; S.promAperto = "";
     for (const t of S.fatti.values()) clearTimeout(t);
     S.fatti.clear();
@@ -156,7 +158,7 @@
     if (pari && !S.canale && !S.saluto && (S.fase === "collego" || S.fase === "pc")) saluta();
     else if (pari && S.canale) {
       aggiornaOrdini();   // tornati in linea: a che punto sono gli ordini
-      if (S.rinfresca) { S.rinfresca = false; aggiornaLista(true); }
+      if (S.rinfresca) { S.rinfresca = false; rileggi(); }
     }
     if (!pari && !S.canale && S.fase === "collego") S.fase = "pc";
     render();
@@ -279,7 +281,7 @@
     try {
       const [pazienti, catalogo, ordini] = await Promise.all([chiedi("pazienti", {}, TEMPO, true), chiedi("richieste", {}, TEMPO, true), chiedi("ordini", {}, TEMPO, true)]);
       S.pazienti = pazienti; S.catalogo = catalogo; S.aggiornato = Date.now(); S.erroreLista = "";
-      for (const o of ordini || []) if (!S.ordini.has(o.id) || !S.ordini.get(o.id).fine) S.ordini.set(o.id, o);
+      for (const o of ordini || []) if (!S.ordini.has(o.id) || !S.ordini.get(o.id).fine) ordineVisto(o);
     } catch (e) { S.erroreLista = e.message; }
     S.occupato.delete("lista"); render();
   }
@@ -299,12 +301,18 @@
   }
   // Un ordine visto (risposta, evento o lista): se è quello della selezione
   // in attesa, la selezione ha fatto il suo — via, e niente secondo ordine.
+  // L'ordine nato davvero sul PC («tel»+oid, con la sua l o r) finisce anche
+  // l'attesa del bottone: la risposta può essersi persa per strada.
+  const nato = (o, oid) => o.id === `tel${oid}l` || o.id === `tel${oid}r`;
   function ordineVisto(o) {
     // l'ordine vero prende il posto della carta «in preparazione» che il PC aveva dato
     for (const [id, x] of S.ordini) if (x.segnaposto && id !== o.id && o.id.startsWith(id)) S.ordini.delete(id);
+    const prima = S.ordini.get(o.id);
+    o.finito = (prima && prima.finito) || (o.fine && o.tono === "ok" ? Date.now() : 0);   // (quando il telefono l'ha visto finire bene)
     S.ordini.set(o.id, o);
     for (const [ep, s] of S.sel) if (s.oid && o.id.startsWith("tel" + s.oid)) { S.sel.delete(ep); if (S.arma && S.arma.ep === ep) S.arma = null; }
     for (const [ep, oid] of S.bloccati) if (o.id.startsWith("tel" + oid)) S.bloccati.delete(ep);
+    for (const [ep, oid] of S.inviati) if (nato(o, oid)) S.inviati.delete(ep);
   }
   const paziente = (ep) => (S.pazienti || []).find((p) => p.ep === ep) || null;
   function aggiornaRiga(riga) {
@@ -319,11 +327,17 @@
     render();
     caricaEsiti(ep);
   }
-  async function caricaEsiti(ep) {
+  async function caricaEsiti(ep, auto = false) {
     if (S.occupato.has("esiti" + ep)) return;
     S.occupato.add("esiti" + ep); render();
-    try { S.esiti.set(ep, await chiedi("esiti", { ep }, 40e3)); } catch (e) { errore(e); }
+    try { S.esiti.set(ep, await chiedi("esiti", { ep }, 40e3, auto)); } catch (e) { if (!auto) errore(e); }
     S.occupato.delete("esiti" + ep); render();
+  }
+  // Tornati sull'app: l'elenco e, sulla pagina di un paziente, i suoi esiti
+  // (un referto arrivato intanto). Li chiede l'app da sé: non tengono aperta la sessione.
+  function rileggi() {
+    aggiornaLista(true);
+    if (S.vista.nome === "paziente") caricaEsiti(S.vista.ep, true);
   }
   async function aggiornaValori(ep) {
     S.occupato.add("valori" + ep); render();
@@ -426,7 +440,7 @@
     if (ora - S.arma.ts < 800) return;   // un doppio tocco per sbaglio è un tocco solo
     S.arma = null;
     const oid = s.oid;
-    S.occupato.add("ordina" + ep); render();
+    S.inviati.set(ep, oid); render();
     try {
       const d = await chiedi("ordina", { ep, oid, esami: [...s.esami], quesito: s.q.trim(), mio: s.mio }, 60e3);
       for (const o of d.ordini || []) {
@@ -436,7 +450,8 @@
       if (d.avviso) avviso(d.avviso, "err");
       window.scrollTo(0, 0);
     } catch (e) {
-      if (e.tempo || e.incerto) {
+      if ([...S.ordini.values()].some((o) => nato(o, oid))) S.sel.delete(ep);   // è lì sopra: niente allarme
+      else if (e.tempo || e.incerto) {
         // Non si sa se è partito: la selezione se ne va e il bottone aspetta
         // la lista degli ordini dal PC. Mai un secondo ordine alla cieca.
         S.sel.delete(ep);
@@ -446,7 +461,8 @@
         aggiornaOrdini();
       } else errore(e);
     }
-    S.occupato.delete("ordina" + ep); render();
+    if (S.inviati.get(ep) === oid) S.inviati.delete(ep);
+    render();
   }
 
   // --------------------------------------------------------------- disegno
@@ -529,20 +545,31 @@
       <span class="tr"></span><span class="cor"><span class="r1"><span class="nome">${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(p.breve || p.nome)}</span>${
         p.posto ? `<span class="posto">${esc(p.posto)}</span>` : ""}${promPill(p)}</span>${p.nota ? `<span class="nota">${esc(p.nota)}</span>` : ""}</span></button>`;
   }
-  // Un ordine, con le parole del PC. Sulla lista, in fondo: quello che corre,
-  // o uno finito male (finché non lo si chiude con ✕).
+  // Un ordine, con le parole del PC: il titolo è com'è andata, l'ora una volta.
+  // In una barra: quello che corre, o uno finito male (finché non lo si chiude
+  // con ✕); «Ordine non completo» se non è stato confermato tutto.
   function ordineHtml(o, barra = false) {
     const segno = o.tono === "err" || o.tono === "warn" ? "!" : o.tono === "ok" ? "✓" : "";
-    const male = o.fine && (o.tono === "err" || o.tono === "warn");
-    const titolo = barra ? `${male ? "Ordine non completo" : o.titolo || ""} · ${o.paziente || ""}` : o.titolo || "";
-    const testo = barra && male ? [o.titolo, o.testo].filter(Boolean).join(" · ") : o.testo || "";
-    const meta = barra ? "" : hhmm(o.ts || Date.now());
+    const male = o.fine && (o.tono === "err" || o.tono === "warn"), monco = male && (o.tono === "err" || o.stato !== "avviso");
+    const titolo = barra ? `${monco ? "Ordine non completo" : o.titolo || ""} · ${o.paziente || ""}` : o.titolo || "";
+    const testo = barra && monco ? [o.titolo, o.testo].filter(Boolean).join(" · ") : o.testo || "";
+    const meta = barra || /\balle \d/.test(`${o.titolo} ${o.testo}`) ? "" : hhmm(o.ts || Date.now());
     return `<div class="ord ${esc(o.tono || "run")}${barra ? " ordbar" : ""}" role="status"${barra ? ` data-a="paz" data-ep="${esc(o.ep)}"` : ""}>
       <span class="seg-o">${segno}</span>
       <span class="c"><b>${esc(titolo)}</b>${testo ? `<span>${esc(testo)}</span>` : ""}${!barra && o.dettaglio ? `<small>${esc(o.dettaglio)}</small>` : ""}${meta ? `<small>${esc(meta)}</small>` : ""}</span>
       ${o.fine ? `<button class="x" data-a="nascondi" data-id="${esc(o.id)}" aria-label="Chiudi">✕</button>` : ""}</div>`;
   }
-  const ordiniDi = (ep) => [...S.ordini.values()].filter((o) => o.ep === ep && !S.nascosti.has(o.id)).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  // (un ordine finito bene se ne va da solo dopo due minuti: le carte non si ammucchiano)
+  const ordiniDi = (ep) => [...S.ordini.values()].filter((o) => o.ep === ep && !S.nascosti.has(o.id) && !(o.finito && Date.now() - o.finito > VERDE_MAX))
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  // La barra degli ordini: sulla lista, in fondo, quello che corre o uno finito
+  // male; sulla pagina di un paziente, in testa, uno finito male di un altro.
+  function barraOrdini(qui = "") {
+    const l = [...S.ordini.values()].filter((o) => !S.nascosti.has(o.id) && o.ep !== qui && (!o.fine || o.tono === "err" || o.tono === "warn"))
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    const b = l.find((o) => o.fine) || (qui ? null : l[0]);
+    return b ? ordineHtml(b, true) : "";
+  }
   function vistaLista() {
     if (!S.pazienti) {
       if (S.erroreLista && !S.occupato.has("lista")) {
@@ -556,11 +583,9 @@
     const inStanza = vivi.filter((p) => p.posto).sort((a, b) => a.posto.localeCompare(b.posto, "it", { numeric: true }));
     const prec = S.pazienti.filter((p) => p.prec);
     const carta = (l) => (l.length ? `<div class="carta">${l.map(rigaPaz).join("")}</div>` : "");
-    const visibili = [...S.ordini.values()].filter((o) => !S.nascosti.has(o.id) && (!o.fine || o.tono === "err" || o.tono === "warn")).sort((a, b) => (b.ts || 0) - (a.ts || 0));
-    const barra = visibili.find((o) => o.fine) || visibili[0];
     return `<main>${S.pazienti.length ? carta([...vivi.filter((p) => !p.posto), ...inStanza]) + (prec.length ? `<div class="lbl">Episodi precedenti</div>${carta(prec)}` : "")
       : `<div class="vuoto">Nessun paziente nell'elenco del PC.<br>Si riempie aprendo i pazienti nel gestionale.</div>`}
-      ${barra ? ordineHtml(barra, true) : ""}</main>`;
+      ${barraOrdini()}</main>`;
   }
   function tabellaHtml(t) {
     const col = t.colonne;
@@ -610,9 +635,10 @@
     const s = selDi(p.ep), n = s.esami.size, c = S.catalogo;
     const rx = [...s.esami].some((k) => c.rx.includes(k)), lab = [...s.esami].some((k) => !c.rx.includes(k));
     const nTxt = n === 1 ? "1 esame" : `${n} esami`;
-    const occupato = S.occupato.has("ordina" + p.ep), bloccato = S.bloccati.has(p.ep);
+    const occupato = S.inviati.has(p.ep), bloccato = S.bloccati.has(p.ep);
     const armato = S.arma && S.arma.ep === p.ep;
-    const etichetta = occupato ? "Mando l'ordine al PC…" : bloccato ? "Controllo gli ordini sul PC…" : armato ? `Ordino ${nTxt} per ${chi(p)}? Tocca di nuovo`
+    // (due pazienti con lo stesso cognome: il ⚠ anche qui, e il nome col suo segno)
+    const etichetta = occupato ? "Mando l'ordine al PC…" : bloccato ? "Controllo gli ordini sul PC…" : armato ? `${p.omonimo ? "⚠ " : ""}Ordino ${nTxt} per ${chi(p)}? Tocca di nuovo`
       : !n ? "Scegli gli esami" : lab ? `Conferma e stampa · ${nTxt}` : `Metti in carrello · ${nTxt}`;
     const perche = bloccato ? "Prima di un altro ordine, il PC dice se quello di prima è partito"
       : n && !s.q.trim() ? "Scrivi il quesito diagnostico" : rx && lab ? "Due richieste: il laboratorio si conferma da solo, la radiologia resta nel carrello del PC" : "";
@@ -640,7 +666,7 @@
     if (!p) return `<main><div class="vuoto">Questo paziente non è più nell'elenco del PC.</div></main>`;
     const ordini = ordiniDi(p.ep).map((o) => ordineHtml(o)).join("");
     const tab = (s, t) => `<button class="${S.scheda === s ? "on" : ""}" data-a="scheda" data-s="${s}" role="tab" aria-selected="${S.scheda === s}">${t}</button>`;
-    return `<main><div class="seg" role="tablist">${tab("esiti", "Esiti")}${tab("richieste", "Richieste")}</div>
+    return `<main>${barraOrdini(p.ep)}<div class="seg" role="tablist">${tab("esiti", "Esiti")}${tab("richieste", "Richieste")}</div>
       ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : vistaRichieste(p)}</main>${ctaHtml(p)}`;
   }
 
@@ -740,7 +766,7 @@
     collega();
     batti();
     if (S.canale && S.fase === "pronta") {
-      if (S.ws && S.ws.readyState === 1 && S.pari) { aggiornaLista(true); aggiornaOrdini(); } else S.rinfresca = true;
+      if (S.ws && S.ws.readyState === 1 && S.pari) { rileggi(); aggiornaOrdini(); } else S.rinfresca = true;
     }
     render();
   });

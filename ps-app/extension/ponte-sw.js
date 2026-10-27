@@ -67,7 +67,6 @@ const pt = {
   ripartito: 0, rifiuto: 0, fine: null, registro: [],
   valori: new Map(),   // scheda → { ep, risolvi, promessa }: chi aspetta «Aggiorna i valori», qui
   inVolo: new Map(),   // "tel"+oid → l'ordine che una scheda sta ancora preparando
-  quesiti: new Map(),  // "tel"+oid → il quesito scritto sul telefono (per dirlo al posto di «il tuo»)
   fila: Promise.resolve(),
 };
 
@@ -384,8 +383,6 @@ async function ponteOrdina(d) {
   const suoi = (l) => l.filter((m) => m.id === a.id + "l" || m.id === a.id + "r");
   const gia = pt.inVolo.get(a.id);
   if (gia) return { ok: true, dati: { ordini: [gia] } };
-  pt.quesiti.set(a.id, a.quesito || "");
-  if (pt.quesiti.size > 20) pt.quesiti.delete(pt.quesiti.keys().next().value);
   const sp = { id: a.id, ep: a.ep || "", paziente: "", n: (a.esami || []).length, ts: ponteOra(), stato: "invio", tono: "run",
     titolo: "In preparazione", testo: "Il PC prepara l'ordine", dettaglio: "", fine: false, segnaposto: true };
   pt.inVolo.set(a.id, sp);
@@ -412,7 +409,10 @@ async function ponteSchede() {
   return tutte.sort((a, b) => peso(b) - peso(a) || (b.lastAccessed || 0) - (a.lastAccessed || 0));
 }
 // Una scheda che tace oltre l'attesa può star lavorando ancora: la risposta
-// è «incerto» (per un ordine: non si sa se è partito), mai un no.
+// è «incerto» (per un ordine: non si sa se è partito), mai un no. Un ordine o
+// un promemoria non si rimanda alla scheda dopo: quella di prima può averlo
+// fatto, e sarebbero due.
+const PONTE_UNA_VOLTA = new Set(["ordina", "promemoria"]);
 async function ponteSuScheda(cmd, args) {
   const tempo = PONTE_ATTESA[cmd] || PONTE_ATTESA.altro;
   const schede = await ponteSchede();
@@ -422,8 +422,10 @@ async function ponteSuScheda(cmd, args) {
     const r = await Promise.race([chrome.tabs.sendMessage(t.id, { t: "ponteEsegui", cmd, args }).catch(() => null), attendi(tempo, { no: "tempo" })]);
     if (r && !r.no) return r;
     no.add(r ? r.no : "assente");
+    if (no.has("tempo") && PONTE_UNA_VOLTA.has(cmd)) break;
   }
   const incerto = no.has("tempo") ? { incerto: true } : {};
+  if (incerto.incerto && cmd === "promemoria") return { ok: false, errore: "Il gestionale sul PC tarda: guarda i promemoria prima di rifarlo", incerto: true };
   if (no.has("login")) return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true, ...incerto };
   if (no.has("pannello") && !incerto.incerto) return { ok: false, errore: "Sul PC apri la lista del pronto soccorso o un paziente, nel gestionale" };
   return { ok: false, errore: "Il gestionale sul PC non risponde: ricarica la sua pagina", ...incerto };
@@ -503,17 +505,12 @@ chrome.tabs.onRemoved.addListener((id) => { ponteValoriFine(id, { ok: false, tes
 // ------------------------------------------- gli ordini partiti dal telefono
 // L'ordine fa il giro di sempre (scheda di sottofondo, controlli, conferma,
 // etichette): qui lo si guarda passare in `ordini` e si racconta al telefono
-// con le parole che bg.js scrive per tutti (`pubblico`). Un ordine che sparisce
-// da `ordini` (etichette prese da una scheda, ✕ sul PC) resta com'era l'ultima volta.
+// con le parole che bg.js scrive (`pubblico`, e `pubblico.tel` dove il telefono
+// dice altro). Un ordine che sparisce da `ordini` (etichette prese da una
+// scheda, ✕ sul PC) resta com'era l'ultima volta.
 const PONTE_FINALI = new Set(["avviso", "errore", "chiusa", "interrotto"]);
-// (solo per un ordine senza `pubblico`: il nome del suo stato, come sulla striscia del PC)
-const PONTE_TITOLI = { coda: "In coda", avvio: "Parte", corre: "In corso", stampo: "Confermata", stampa: "Confermata",
-  avviso: "Fatto", errore: "Errore", chiusa: "Scheda chiusa", interrotto: "Interrotto" };
-const PONTE_TONI = { stampa: "ok", errore: "err", chiusa: "err", interrotto: "warn" };
-const ponteResto = (r) => [r && r.mancano && r.mancano.length ? `Mancano: ${r.mancano.join(", ")}` : "",
-  r && r.controllare && r.controllare.length ? `Da controllare: ${r.controllare.join(", ")}` : ""].filter(Boolean).join(" · ");
 function ponteStatoOrdine(m, rec) {
-  const base = { id: m.id, ep: m.ep, paziente: m.paziente, n: m.n, rx: m.rx, ts: m.ts, quesito: m.quesito };
+  const base = { id: m.id, ep: m.ep, paziente: m.paziente, n: m.n, rx: m.rx, ts: m.ts };
   if (!rec) {
     if (m.stato === "coda") return { ...base, stato: "tolto", tono: "warn", titolo: "Tolto dalla coda", testo: "Tolto dalla coda sul PC: niente inviato", dettaglio: "", fine: true };
     // sparito prima della conferma: non si sa che cosa è entrato
@@ -521,18 +518,12 @@ function ponteStatoOrdine(m, rec) {
       return { ...base, stato: "perso", tono: "warn", titolo: "Da controllare", testo: "L'ordine non risulta più sul PC: guarda il carrello prima di rifarlo", dettaglio: "", fine: true };
     }
     // etichette in attesa che spariscono: una scheda del PC le ha prese per stamparle
-    if (m.stato === "stampa") return { ...base, stato: "preso", tono: "ok", titolo: "Confermata", testo: "Etichette prese in stampa sul PC", dettaglio: "", fine: true };
+    if (m.stato === "stampa") return { ...base, stato: "preso", tono: "ok", titolo: "Etichette prese in stampa sul PC", testo: "", dettaglio: "", fine: true };
     return { ...m, fine: true };
   }
-  const p = rec.pubblico && typeof rec.pubblico === "object" ? rec.pubblico : null, v = rec.vista || {};
-  const tono = p && ["run", "ok", "warn", "err"].includes(p.tono) ? p.tono
-    : rec.stato === "avviso" ? (["err", "warn"].includes(v.tono) ? v.tono : "ok") : rec.muto ? "warn" : PONTE_TONI[rec.stato] || "run";
-  const titolo = (p ? p.titolo : v.tag || v.badge) || PONTE_TITOLI[rec.stato] || "";
-  // «Quesito: il tuo» è la frase del PC: qui si dice quale
-  const dettaglio = String((p ? p.dettaglio : v.quesito || ponteResto(rec.resto)) || "")
-    .replace(/Quesito: il tuo/g, m.quesito ? `Quesito: «${corto(m.quesito, 80)}»` : "Quesito scritto sul telefono");
-  return { ...base, stato: rec.stato, tono, titolo: corto(titolo, 80), testo: corto((p ? p.testo : v.testo) || "", 200),
-    dettaglio: corto(dettaglio, 200), fine: PONTE_FINALI.has(rec.stato) };
+  const p = { ...rec.pubblico, ...(rec.pubblico && rec.pubblico.tel) };
+  return { ...base, stato: rec.stato, tono: p.tono || "run", titolo: corto(p.titolo, 80), testo: corto(p.testo, 200),
+    dettaglio: corto(p.dettaglio, 240), fine: PONTE_FINALI.has(rec.stato) };
 }
 async function ponteOrdiniMemo() {
   const l = (await chrome.storage.session.get(PONTE_ORDINI))[PONTE_ORDINI];
@@ -545,9 +536,8 @@ async function ponteOrdiniTel() {
 }
 let ponteFilaOrdini = Promise.resolve();
 const ponteInFilaOrdini = (fn) => (ponteFilaOrdini = ponteFilaOrdini.then(fn, fn));
-// (il quesito: quello che il telefono ha mandato con quell'ordine, se il PC lo sa ancora)
 const ponteMemo = (o) => ({ id: o.id, ep: corto(o.ep, 40), paziente: corto(o.paziente, 60), n: Number(o.n) || 0,
-  rx: !!o.rx || /r$/.test(o.id), quesito: corto(pt.quesiti.get(o.id.replace(/[lr]$/, "")) || "", 300), ts: ponteOra(), stato: "", fine: false });
+  rx: !!o.rx || /r$/.test(o.id), ts: ponteOra(), stato: "", fine: false });
 function ponteSegnaOrdini(nuovi) {
   return ponteInFilaOrdini(async () => {
     const memo = await ponteOrdiniMemo();
