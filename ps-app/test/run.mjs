@@ -699,6 +699,25 @@ async function scenarioLagVerify(browser) {
   await context.close();
 }
 
+async function scenarioLagVerifyLento(browser) {
+  const scen = "lag-verify-lento";
+  // il gestionale carico: la riga dell'emocromo compare in carrello solo dopo
+  // parecchie riletture dell'elenco
+  const mock = createMock({ lagRenders: { 320: 6 } });   // 3 riletture in 4 secondi non bastavano
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("controllo");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, "#go").click();
+  await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 60000 });
+  const fine = await striscia(page, /Conferma dal gestionale|completa a mano/, 60000);
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, /Conferma dal gestionale/.test(fine) && mock.state.insertCount[`${rid}:320`] === 1,
+    `un carrello lento: l'esame si ritrova rileggendo più a lungo, mandato una volta sola (got: ${fine})`);
+  await context.close();
+}
+
 async function scenarioNeverVisible(browser) {
   const scen = "hard-stop";
   const mock = createMock({ neverAdd: ["320"] }); // server "loses" the add
@@ -5714,6 +5733,7 @@ const scenarios = [
   ["auto-confirm bloccata da un avanzo su un'altra risorsa", scenarioAutoConfirmAltraRisorsa],
   ["conferma fallita sul server: niente stampa", scenarioConfirmPostFails],
   ["delayed cart visibility", scenarioLagVerify],
+  ["delayed cart visibility, slow server", scenarioLagVerifyLento],
   ["lost add → hard stop", scenarioNeverVisible],
   ["renamed code → refuse before send", scenarioLabelMismatch],
   ["session expiry", scenarioSessionExpiry],

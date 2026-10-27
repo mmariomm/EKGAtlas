@@ -1140,8 +1140,8 @@ stessi flussi dei test di prodotto.
 ## Perché è robusto (regole di sicurezza nel codice)
 
 1. **Mai doppi ordini**: l'URL di inserimento di un esame viene richiesto **al massimo una volta**.
-   La verifica rilegge l'elenco "pulito" (senza parametri di inserimento); se dopo 3 verifiche
-   l'esame non compare, il motore **si ferma** e ti dice esattamente cosa controllare.
+   La verifica rilegge l'elenco "pulito" (senza parametri di inserimento); se dopo 5 verifiche
+   (circa 19 secondi: un gestionale carico mostra l'esame anche dopo 5–10) l'esame non compare, il motore **si ferma** e ti dice esattamente cosa controllare.
    Vale anche **fra una corsa e l'altra**: partendo da una pagina esami il motore **rilegge
    l'elenco dal server** invece di fidarsi di quello che hai sullo schermo. Gli inserimenti
    viaggiano in background, quindi dopo una corsa interrotta la pagina mostra ancora il carrello
