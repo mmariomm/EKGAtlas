@@ -4,15 +4,26 @@
   "main": "worker/index.js",
   "compatibility_date": "2026-06-07",
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      // no per-request log lines: a bridge URL carries its room id
+      "invocation_logs": false
+    }
+  },
+  "vars": {
+    // the bridge's own hostname (ps-app/ponte/README.md); empty: /ponte/ on the site
+    "PONTE_HOSTNAME": ""
   },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": [
-      "/ponte/*",
-      "/api/*"
+      "/*",
+      "!/assets/*",
+      "!/recordings/*",
+      "!/icons/*"
     ]
   },
   "durable_objects": {

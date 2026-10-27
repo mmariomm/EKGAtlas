@@ -1,31 +1,43 @@
 #!/usr/bin/env node
 /*
  * Il ponte, senza browser: la cifratura (HKDF, AES-GCM, numeri d'ordine,
- * dati autenticati), la logica del ripetitore e il Worker del sito con un
- * ambiente finto.
+ * dati autenticati, il codice dell'associazione), la logica del ripetitore,
+ * il Worker del sito con un ambiente finto (e su quale nome risponde), la
+ * configurazione di Cloudflare, e il service worker del PC (ponte-sw.js) in
+ * una vm, con un telefono finto: le regole della sessione una per una.
  *   node test/ponte-cripto.mjs
  */
 import { readFileSync } from "node:fs";
 import { register } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { webcrypto } from "node:crypto";
+import vm from "node:vm";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 let fail = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
 const errore = async (p) => { try { await p; return "nessuno"; } catch (e) { return e.codice || e.message; } };
+const sospendi = (ms) => new Promise((r) => setTimeout(r, ms));
+const leggi = (f) => readFileSync(join(root, f), "utf8");
+const leggiSe = (f) => { try { return leggi(f); } catch { return ""; } };
+// un blocco che si rompe a metà è un controllo fallito, non la fine della prova
+const blocco = (fn) => fn().catch((e) => check(false, `blocco interrotto: ${e && e.message || e}`));
 
 await import(join(root, "../public/ponte/cripto.js"));
 const P = globalThis.PonteCripto;
 
 console.log("\nponte: la cifratura");
-check(readFileSync(join(root, "extension/ponte-cripto.js"), "utf8") === readFileSync(join(root, "../public/ponte/cripto.js"), "utf8"),
+check(leggi("extension/ponte-cripto.js") === leggi("../public/ponte/cripto.js"),
   "l'estensione e il telefono usano lo stesso file (extension/ponte-cripto.js = public/ponte/cripto.js)");
 const K = P.casuale(32), K2 = P.casuale(32);
 const a = await P.chiaviCoppia(K), a2 = await P.chiaviCoppia(new Uint8Array(K)), b = await P.chiaviCoppia(K2);
 check(/^[0-9a-f]{32}$/.test(a.stanza) && a.stanza === a2.stanza && a.stanza !== b.stanza,
   `la stanza viene da K (stessa K, stessa stanza; un'altra K, un'altra): ${a.stanza}`);
 check(await errore(P.chiaviCoppia(P.casuale(31))) !== "nessuno", "una chiave che non è di 32 byte non vale");
+const cod = await P.codice(K);
+check(/^\d{3} \d{3}$/.test(cod) && cod === await P.codice(new Uint8Array(K)) && cod !== await P.codice(K2),
+  `il codice dell'associazione: sei cifre da K, uguali sul PC e sul telefono solo con la stessa chiave (${cod})`);
 
 // il saluto, nei due versi, con le sue chiavi
 const s1 = await P.sigilla(a.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: "abc" });
@@ -51,6 +63,12 @@ const altra = P.canalePc(await P.chiaviSessione(K, P.casuale(16), nP));
 check(await errore(altra.decifra(await sTel.cifra({ id: 6 }))) === "chiave", "un'altra sessione (un altro numero casuale) ha chiavi sue");
 check(await errore(P.canalePc(await P.chiaviSessione(K2, nT, nP)).decifra(await sTel.cifra({ id: 7 }))) === "chiave",
   "un'altra associazione con gli stessi numeri: niente");
+// «ripetuto» si decide DOPO aver decifrato: il primo messaggio (n. 1) di una
+// sessione nuova, arrivato alla sessione vecchia (già al n. 7), non è «ripetuto»
+// ma «non è mio» — e chi lo riceve prova la sessione nuova
+const nuovaTel = P.canaleTel(await P.chiaviSessione(K, P.casuale(16), nP));
+check(await errore(sPc.decifra(await nuovaTel.cifra({ id: 1, cmd: "ciao" }))) === "chiave",
+  "il n. 1 di un'altra sessione non passa per «ripetuto» (solo un messaggio decifrato può esserlo)");
 
 // manomissioni: testata (AAD), testo cifrato, versione
 const buono = await sTel.cifra({ id: 8, cmd: "nota", testo: "ROSSI" });
@@ -77,7 +95,8 @@ check(P.leggiFrammento("#k=abc&scade=1") === null && P.leggiFrammento("#k=" + P.
   "un frammento monco o sbagliato non vale");
 
 console.log("\nponte: la logica del ripetitore");
-const { Stanza, PONTE, leggiStanza, eco, intestazioniApp } = await import(join(root, "../worker/ponte-logica.js"));
+const L = await import(join(root, "../worker/ponte-logica.js"));
+const { Stanza, PONTE, leggiStanza, intestazioniApp, instrada } = L;
 check(leggiStanza("https://x/ponte/ws?r=" + a.stanza + "&ruolo=pc").ok && !leggiStanza("https://x/ponte/ws?r=zz&ruolo=pc").ok
   && !leggiStanza("https://x/ponte/ws?r=" + a.stanza + "&ruolo=altro").ok, "la stanza è 32 cifre esadecimali, il ruolo pc o tel");
 const finto = () => {
@@ -126,9 +145,23 @@ const finto = () => {
   const vive = st.pulisci([p2, p3], PONTE.inattivoMs + 1000);
   check(vive === 1 && io.chiusi.some(([n, c]) => n === "p2" && c === 4002), "una presa muta da troppo si chiude (4002), l'altra resta");
 }
-check(eco("x".repeat(10)) === "x".repeat(10) && eco("x".repeat(PONTE.ecoMax + 1)) === null, "la prova della rete rimanda solo messaggi piccoli");
+check(!("eco" in L) && !("intestazioniSalute" in L) && !/eco|salute/i.test(Object.keys(PONTE).join()),
+  "niente più prova d'eco né «salute»: il ripetitore fa solo il ripetitore");
 check(/connect-src 'self' wss:\/\/ekg\.example\.dev;/.test(intestazioniApp("https://ekg.example.dev/ponte/")["content-security-policy"]),
   "l'app del telefono può parlare solo col suo sito");
+
+console.log("\nponte: su quale nome risponde (instrada)");
+const via = (u, h) => instrada(u, h);
+check(via("https://ekg.example.dev/ponte/app.js", "") === "ponte" && via("https://ekg.example.dev/", "") === "sito"
+  && via("https://ekg.example.dev/ponte", "") === "ponte", "senza PONTE_HOSTNAME: com'era, /ponte/ sul sito e il resto al sito");
+check(via("https://ponte.example.dev/ponte/", "ponte.example.dev") === "ponte" && via("https://ponte.example.dev/", "ponte.example.dev") === "ponte"
+  && via("https://ponte.example.dev/index.html", "Ponte.Example.Dev ") === "ponte", "col nome del ponte: su quel nome risponde SOLO il ponte (anche «/» e «/index.html»)");
+check(via("https://ekg.example.dev/ponte/", "ponte.example.dev") === "niente" && via("https://ekg.example.dev/ponte/ws?r=x", "ponte.example.dev") === "niente"
+  && via("https://ekg.example.dev/ponte", "ponte.example.dev") === "niente", "…e il sito non serve più /ponte/ (404)");
+check(via("https://ekg.example.dev/", "ponte.example.dev") === "sito" && via("https://ekg.example.dev/ponteggi", "ponte.example.dev") === "sito",
+  "…mentre il resto del sito resta com'è");
+check(via("https://ps-ponte.x.workers.dev/qualcosa", "*") === "ponte" && via("https://altro.dev/", "*") === "ponte",
+  "«*» (il Worker a parte): ogni nome è il ponte");
 
 console.log("\nponte: il Worker del sito (con un ambiente finto)");
 // «cloudflare:workers» esiste solo su Cloudflare: qui una classe vuota
@@ -139,33 +172,401 @@ register("data:text/javascript," + encodeURIComponent(`
   }`));
 const worker = (await import(join(root, "../worker/index.js"))).default;
 const chiamate = [];
-const env = {
-  ASSETS: { fetch: async (req) => { chiamate.push(["assets", new URL(req.url).pathname]); return new Response("file", { status: 200, headers: { "content-type": "text/html" } }); } },
+const ambiente = (extra = {}) => ({
+  ASSETS: { fetch: async (req) => { chiamate.push(["assets", new URL(req.url).pathname]); return new Response("file", { status: 200, headers: { "content-type": "text/html", etag: "x" } }); } },
   PONTE: {
     idFromName: (n) => ({ nome: n }),
     get: (id) => ({ fetch: async () => { chiamate.push(["stanza", id.nome]); return new Response("stanza"); } }),
   },
-};
-const chiedi = (path, init) => worker.fetch(new Request("https://ekg.example.dev" + path, init), env, {});
+  ...extra,
+});
+const chiedi = (path, init, env = ambiente(), host = "https://ekg.example.dev") => worker.fetch(new Request(host + path, init), env, {});
 let r = await chiedi("/");
 check(r.status === 200 && chiamate.at(-1)[1] === "/" && !r.headers.get("content-security-policy"), "il sito: «/» va ai file statici, come prima, senza intestazioni nuove");
 r = await chiedi("/api/metrics", { method: "POST", body: JSON.stringify({ e: "visit", i: "x" }) });
 check(r.status === 204, "POST /api/metrics: il gestore delle metriche di sempre (204)");
 r = await chiedi("/ponte/");
 check(chiamate.at(-1)[1] === "/ponte/" && /frame-ancestors 'none'/.test(r.headers.get("content-security-policy") || "")
-  && r.headers.get("referrer-policy") === "no-referrer", "/ponte/: i file dell'app, con le sue intestazioni di sicurezza");
-r = await chiedi("/ponte/salute");
-check(r.status === 200 && (await r.text()) === "ok" && r.headers.get("access-control-allow-origin") === "*", "/ponte/salute: «ok», leggibile dalla prova della rete");
+  && r.headers.get("referrer-policy") === "no-referrer" && r.headers.get("etag") === "x", "/ponte/: i file dell'app, con le sue intestazioni di sicurezza");
+let n0 = chiamate.length;
+r = await chiedi("/ponte/manca.js");
+check(r.status === 404 && chiamate.length === n0, "un file che l'app non ha, sotto /ponte/: 404, mai la pagina del sito");
+for (const via2 of ["/ponte/eco", "/ponte/salute"]) {
+  r = await chiedi(via2, { headers: { upgrade: "websocket" } });
+  check(r.status === 404 && chiamate.length === n0, `${via2}: non c'è più (404)`);
+}
 r = await chiedi("/ponte/ws?r=" + a.stanza + "&ruolo=pc");
 check(r.status === 426, "/ponte/ws senza WebSocket: 426");
 r = await chiedi("/ponte/ws?r=nonvalida&ruolo=pc", { headers: { upgrade: "websocket" } });
-check(r.status === 400, "/ponte/ws con una stanza non valida: 400, e nessun Durable Object");
+check(r.status === 400 && chiamate.length === n0, "/ponte/ws con una stanza non valida: 400, e nessun Durable Object svegliato");
 r = await chiedi("/ponte/ws?r=" + a.stanza + "&ruolo=tel", { headers: { upgrade: "websocket" } });
 check(chiamate.at(-1)[0] === "stanza" && chiamate.at(-1)[1] === a.stanza, "/ponte/ws: alla stanza giusta (un Durable Object per stanza)");
-const cfg = readFileSync(join(root, "../wrangler.jsonc"), "utf8");
-check(/"main": "worker\/index\.js"/.test(cfg) && /"run_worker_first": \[\s*"\/ponte\/\*",\s*"\/api\/\*"\s*\]/.test(cfg) && /"new_sqlite_classes": \[\s*"PonteStanza"/.test(cfg)
-  && /"not_found_handling": "single-page-application"/.test(cfg),
-  "wrangler.jsonc: il Worker passa davanti solo per /ponte/* (e /api/*, dove c'era già), il Durable Object è SQLite, il sito resta una SPA");
+// col nome a sé
+const conNome = ambiente({ PONTE_HOSTNAME: "ponte.example.dev" });
+n0 = chiamate.length;
+r = await chiedi("/ponte/", {}, conNome);
+check(r.status === 404 && chiamate.length === n0, "con PONTE_HOSTNAME: il sito non serve l'app del telefono (404)");
+r = await chiedi("/ponte/ws?r=" + a.stanza + "&ruolo=tel", { headers: { upgrade: "websocket" } }, conNome);
+check(r.status === 404 && chiamate.length === n0, "…né la presa");
+r = await chiedi("/", {}, conNome);
+check(r.status === 200 && chiamate.at(-1)[1] === "/", "…e il sito resta il sito");
+r = await chiedi("/ponte/app.js", {}, conNome, "https://ponte.example.dev");
+check(r.status === 200 && chiamate.at(-1)[1] === "/ponte/app.js" && /default-src 'self'/.test(r.headers.get("content-security-policy") || ""),
+  "sul nome del ponte: l'app del telefono");
+r = await chiedi("/ponte/ws?r=" + a.stanza + "&ruolo=pc", { headers: { upgrade: "websocket" } }, conNome, "https://ponte.example.dev");
+check(chiamate.at(-1)[0] === "stanza", "…e la presa");
+n0 = chiamate.length;
+r = await chiedi("/", {}, conNome, "https://ponte.example.dev");
+check(r.status === 302 && r.headers.get("location") === "https://ponte.example.dev/ponte/" && chiamate.length === n0, "«/» sul nome del ponte porta all'app");
+r = await chiedi("/index.html", {}, conNome, "https://ponte.example.dev");
+const r2 = await chiedi("/api/metrics", { method: "POST", body: "{}" }, conNome, "https://ponte.example.dev");
+check(r.status === 404 && r2.status === 404 && chiamate.length === n0, "nessuna pagina del sito (né le metriche) sul nome del ponte: l'app che tiene la chiave non divide l'origine");
+
+console.log("\nponte: la configurazione di Cloudflare");
+const jsonc = (t) => JSON.parse(t.replace(/^\s*\/\/.*$/gm, "").replace(/\s\/\/ .*$/gm, ""));
+const cfg = jsonc(readFileSync(join(root, "../wrangler.jsonc"), "utf8"));
+check(cfg.main === "worker/index.js" && cfg.migrations.some((m) => (m.new_sqlite_classes || []).includes("PonteStanza"))
+  && cfg.assets.not_found_handling === "single-page-application", "wrangler.jsonc: il Worker, il Durable Object su SQLite, il sito resta una SPA");
+check(cfg.observability.logs && cfg.observability.logs.invocation_logs === false, "nessuna riga di log per richiesta: l'indirizzo della presa porta la stanza");
+check(cfg.vars && cfg.vars.PONTE_HOSTNAME === "", "PONTE_HOSTNAME c'è, vuoto: finché non lo si scrive, il ponte sta su /ponte/ del sito");
+const rwf = cfg.assets.run_worker_first;
+check(Array.isArray(rwf) && rwf[0] === "/*" && ["!/assets/*", "!/recordings/*", "!/icons/*"].every((x) => rwf.includes(x)),
+  "il Worker passa davanti a ogni pagina (così sul nome del ponte non c'è il sito), non ai file pesanti del sito");
+let cfgP = {};
+try { cfgP = jsonc(leggi("../wrangler.ponte.jsonc")); } catch { /* manca: il controllo sotto fallisce */ }
+check(cfgP.main === cfg.main && cfgP.vars?.PONTE_HOSTNAME === "*" && cfgP.assets?.run_worker_first === true && cfgP.name !== cfg.name
+  && cfgP.observability?.logs?.invocation_logs === false && cfgP.durable_objects?.bindings[0].class_name === "PonteStanza",
+  "wrangler.ponte.jsonc: lo stesso Worker pubblicato a parte, solo ponte («*»), senza log per richiesta");
+
+console.log("\nponte: l'indirizzo fissato nella build");
+const { origineDelPonte } = await import(join(root, "ponte/host.mjs"));
+check(origineDelPonte("ponte.example.org\n") === "https://ponte.example.org" && origineDelPonte("# commento\nhttps://ponte.example.org/qualcosa") === "https://ponte.example.org"
+  && origineDelPonte("# solo commenti\n\n") === "", "ponte/host.txt: un nome, o un indirizzo https, diventa l'origine; vuoto, «da configurare»");
+const prova = (t) => errore((async () => origineDelPonte(t))());
+check(await prova("http://ponte.example.org") !== "nessuno" && await prova("ponte example") !== "nessuno",
+  "un indirizzo non https, o storto, ferma la build");
+const fisso = /const PONTE_HOST_FISSO = (".*?");/.exec(leggiSe("extension/ponte-host.js"));
+check(!!fisso && JSON.parse(fisso[1]) === origineDelPonte(leggi("ponte/host.txt")), `extension/ponte-host.js è quello di ponte/host.txt (${fisso && fisso[1]})`);
+check(!/id="host"|id="salva"/.test(leggi("extension/ponte.html")) && !/ponteOrigine|ponteHost\b|indirizzo cambiato/.test(leggi("extension/ponte-sw.js") + leggi("extension/ponte.js")),
+  "nessuna pagina può cambiare l'indirizzo del ponte: niente campo, niente «salva»");
+
+// ===========================================================================
+console.log("\nponte: il service worker del PC (ponte-sw.js in una vm, con un telefono finto)");
+const EXT = (f) => leggi("extension/" + f);
+const GEST = "https://smarthealth.multimedica.it/sa4pso/";
+// Un PC finto: chrome.* in memoria, una WebSocket finta che registra, le
+// schede del gestionale che rispondono come dice `scheda`. `sessione` è
+// storage.session: lo stesso oggetto dato a un secondo PC finto è il service
+// worker che riparte.
+async function pcFinto({ sessione = {}, locale = {}, scheda = null } = {}) {
+  const prese = [], comandi = [], schede = [], tolte = [], ascolta = { msg: [], cambi: [], via: [] };
+  class Presa {
+    constructor(url) { this.url = url; this.readyState = 0; this.inviati = []; prese.push(this); setTimeout(() => { if (this.readyState === 0) { this.readyState = 1; this.onopen?.(); } }, 0); }
+    send(d) { this.inviati.push(d); }
+    close() { this.readyState = 3; }
+  }
+  const area = (obj, nome) => ({
+    get: async (k) => { const o = {}; for (const x of k == null ? Object.keys(obj) : [].concat(k)) if (x in obj) o[x] = structuredClone(obj[x]); return o; },
+    set: async (o) => {
+      const ch = {};
+      for (const [k, v] of Object.entries(o)) { ch[k] = { oldValue: obj[k], newValue: structuredClone(v) }; obj[k] = structuredClone(v); }
+      for (const f of ascolta.cambi) f(ch, nome);
+    },
+    remove: async (k) => { for (const x of [].concat(k)) delete obj[x]; },
+  });
+  const davanti = { id: 7, url: GEST + "menuPsoEpisodio.do?EPISODIO_ID=1", active: true, windowId: 1, index: 0 };
+  const chrome = {
+    storage: { local: area(locale, "local"), session: area(sessione, "session"), onChanged: { addListener: (f) => ascolta.cambi.push(f) } },
+    runtime: { onMessage: { addListener: (f) => ascolta.msg.push(f) }, onStartup: { addListener() {} }, getURL: (p) => "chrome-extension://abc/" + p },
+    tabs: {
+      query: async () => [davanti],
+      sendMessage: async (id, m) => { comandi.push(m); return scheda ? scheda(m, sessione) : { ok: true, dati: [] }; },
+      create: async (o) => { const t = { id: 90 + schede.length, active: false, ...o }; schede.push(t); return t; },
+      update: async () => ({}),
+      get: async (id) => schede.find((t) => t.id === id) || null,
+      remove: async (id) => { tolte.push(id); },
+      onRemoved: { addListener: (f) => ascolta.via.push(f) },
+    },
+    windows: { getLastFocused: async () => null },
+  };
+  const ctx = vm.createContext({
+    chrome, WebSocket: Presa, crypto: webcrypto, TextEncoder, TextDecoder, btoa, atob, URL, URLSearchParams, console, structuredClone,
+    setTimeout, clearTimeout, setInterval: () => 0, __salto: 0,
+    ordLeggi: async () => sessione.ordini || [], sulGestionale: (u) => String(u || "").startsWith(GEST), leggibileOrd: () => true,
+    corto: (s, n = 160) => String(s == null ? "" : s).slice(0, n),
+  });
+  vm.runInContext('const PONTE_HOST_FISSO = "https://ponte.example.org";' + "\nDate.now = ((v) => () => v() + globalThis.__salto)(Date.now);", ctx);
+  vm.runInContext(EXT("ponte-cripto.js"), ctx);
+  vm.runInContext(EXT("ponte-sw.js"), ctx);
+  const ev = (codice) => vm.runInContext(codice, ctx);
+  await ev("ponteCaricato");
+  await sospendi(20);
+  const presa = () => prese.at(-1);
+  const pc = {
+    ctx, ev, prese, presa, comandi, schede, tolte, sessione, locale,
+    pt: () => ev("pt"),
+    chiudiScheda: (id) => { for (const f of ascolta.via) f(id); },
+    salta: (ms) => { ctx.__salto += ms; },
+    // dal ripetitore al PC (e la fila del PC finita)
+    consegna: async (u8) => { presa().onmessage({ data: u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) }); await sospendi(15); await ev("pt.fila"); await sospendi(15); },
+    testo: async (t) => { presa().onmessage({ data: t }); await sospendi(15); await ev("pt.fila"); },
+    // quello che il PC ha mandato da allora, in binario
+    tira: () => prese.flatMap((p) => p.inviati.splice(0)).filter((x) => typeof x !== "string").map((x) => new Uint8Array(x)),
+    // una pagina dell'estensione (o una scheda del gestionale) che chiede
+    pagina: (m, sender = { url: "chrome-extension://abc/ponte.html" }) => new Promise((ok) => {
+      let fatto = false;
+      for (const f of ascolta.msg) f(m, sender, (x) => { if (!fatto) { fatto = true; ok(x); } });
+      setTimeout(() => { if (!fatto) ok(undefined); }, 3000);
+    }),
+  };
+  return pc;
+}
+// Un telefono finto: saluta col suo numero, apre la sessione, chiede.
+async function telFinto(pc, k, dev) {
+  const ch = await P.chiaviCoppia(k);
+  const nTel = P.casuale(16);
+  const saluto = await P.sigilla(ch.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: P.b64u(nTel), dev });
+  await pc.consegna(saluto);
+  let r = null;
+  for (const f of pc.tira()) { try { const x = (await P.apri(ch.salutoPc, f, P.TIPO.SALUTO_PC)).dati; if (x.eco === P.b64u(nTel)) r = x; } catch { /* altro */ } }
+  const t = { ch, nTel: P.b64u(nTel), risposta: r, canale: r && r.n ? P.canaleTel(await P.chiaviSessione(k, nTel, P.daB64u(r.n))) : null };
+  // un comando, e quello che torna (le risposte e gli eventi cifrati; il resto com'è)
+  t.leggi = async (frames) => {
+    const out = [];
+    for (const x of frames) { try { out.push(await t.canale.decifra(x)); } catch { out.push({ grezzo: x }); } }
+    return out;
+  };
+  // (il PC risponde quando ha finito: si aspetta la sua risposta, o un saluto, al massimo un secondo e mezzo)
+  t.manda = async (obj) => {
+    await pc.consegna(await t.canale.cifra(obj));
+    const out = [];
+    for (const t0 = Date.now(); Date.now() - t0 < 1500; await sospendi(10)) {
+      out.push(...await t.leggi(pc.tira()));
+      if (out.some((x) => x.re === obj.id || x.grezzo)) break;
+    }
+    return out;
+  };
+  return t;
+}
+const kDalQr = (qr) => P.leggiFrammento(new URL(qr).hash).k;
+const DEV = P.b64u(P.casuale(16)), DEV2 = P.b64u(P.casuale(16));
+await blocco(async () => {
+  const pc = await pcFinto({ locale: { "ponte.coppia": { k: "vecchia", scade: Date.now() + 3600e3 } } });
+  check(pc.pt().relay === "spento" && !pc.prese.length && !("ponte.coppia" in pc.locale), "senza associazione il PC non apre niente (e una chiave rimasta su disco da prima se ne va)");
+  const r1 = await pc.pagina({ t: "ponteAssocia" });
+  await sospendi(30);
+  const k = r1 && r1.qr ? kDalQr(r1.qr) : null;
+  check(!!k && r1.qr.startsWith("https://ponte.example.org/ponte/#k=") && pc.presa()?.url === `wss://ponte.example.org/ponte/ws?r=${(await P.chiaviCoppia(k)).stanza}&ruolo=pc`,
+    "«Associa»: il QR porta al ponte fissato nella build, e il PC entra nella stanza di quella chiave");
+  check(r1.codice === await P.codice(k), `accanto al QR, il codice dell'associazione (${r1.codice})`);
+  check(!!pc.sessione["ponte.coppia"] && !("ponte.coppia" in pc.locale), "la chiave sta in storage.session (memoria): mai su disco");
+  check((await pc.pagina({ t: "ponteStato" })).qr === r1.qr, "nei primi due minuti «Mostra il QR» rivede lo stesso QR");
+  pc.salta(3 * 60e3);
+  check((await pc.pagina({ t: "ponteStato" })).qr === "", "dopo due minuti non si rivede più (serve un QR nuovo)");
+  pc.salta(-3 * 60e3);
+  check((await pc.pagina({ t: "ponteStato" }, { url: GEST + "x", tab: { id: 7 } })).ok === false, "una scheda del gestionale non ha il QR");
+  pc.locale["ponte.host"] = "https://altro.example.org";
+  await pc.ev("ponteAvvia()");
+  check(pc.pt().host === "https://ponte.example.org", "un indirizzo scritto in storage.local non cambia il ponte…");
+  pc.locale["ponte.host"] = "http://localhost:8787";
+  await pc.ev("ponteAvvia()");
+  check(pc.pt().host === "http://localhost:8787", "…a meno che sia questo PC (http://localhost: le prove)");
+  delete pc.locale["ponte.host"];
+  await pc.ev("ponteAvvia()");
+  await sospendi(30);
+
+  // il primo telefono che entra è quello dell'associazione
+  const t1 = await telFinto(pc, k, DEV);
+  check(!!t1.canale && !!pc.pt().attesa, "il telefono saluta (col suo numero): il PC risponde al suo saluto");
+  const c1 = await t1.manda({ id: 1, cmd: "ciao" });
+  check(c1[0] && c1[0].ok && !!pc.pt().sessione, "il primo messaggio apre la sessione");
+  check(pc.sessione["ponte.coppia"].dev === DEV && pc.sessione["ponte.coppia"].usata === true, "l'associazione è legata a quel telefono");
+  check((await pc.pagina({ t: "ponteStato" })).qr === "", "e il QR non si rivede più, nemmeno nei due minuti");
+  const intruso = await telFinto(pc, k, DEV2);
+  check(!intruso.canale && intruso.risposta && intruso.risposta.no && !pc.pt().attesa,
+    "un altro telefono con lo stesso QR: il PC dice di no (e nessuna sessione nuova)");
+  check(/altro telefono/.test(pc.pt().registro.map((x) => x.testo).join("\n")), "e il registro del ponte lo dice");
+
+  // la pagina del telefono si ricarica mentre la sessione vecchia è viva
+  for (let i = 2; i <= 6; i++) await t1.manda({ id: i, cmd: "pazienti" });
+  const t2 = await telFinto(pc, k, DEV);
+  const c2 = await t2.manda({ id: 1, cmd: "ciao" });
+  check(c2[0] && c2[0].ok && pc.pt().sessione && pc.pt().sessione.n === 1, "il telefono ricaricato apre subito una sessione nuova (il suo n. 1 non è «ripetuto»)");
+  // il vecchio canale non vale più
+  const vecchio = await t1.manda({ id: 7, cmd: "pazienti" });
+  check(!vecchio.some((x) => x.re === 7), "e la sessione vecchia non risponde più");
+
+  // messaggi non validi: si ignorano, la sessione resta
+  for (let i = 0; i < 6; i++) await pc.consegna(new Uint8Array([1, 3, 0, 0, 0, 0, 0, 0, 0, 99 + i, ...P.casuale(40)]));
+  check(!!pc.pt().sessione && (await t2.manda({ id: 2, cmd: "pazienti" })).some((x) => x.re === 2 && x.ok),
+    "sei messaggi non validi di fila (chi non ha le chiavi): ignorati, la sessione resta e risponde");
+
+  // i 20 minuti: contano solo i comandi del medico
+  pc.pt().sessione.ultimo = Date.now() - 19 * 60e3;
+  await t2.manda({ id: 3, cmd: "ordini" });
+  await t2.manda({ id: 4, cmd: "pazienti", auto: true });
+  check(Date.now() - pc.pt().sessione.ultimo > 18 * 60e3, "«ordini» e i comandi che l'app manda da sé non tengono aperta la sessione");
+  await t2.manda({ id: 5, cmd: "pazienti" });
+  check(Date.now() - pc.pt().sessione.ultimo < 5000, "un comando del medico sì");
+  pc.pt().sessione.ultimo = Date.now() - 21 * 60e3;
+  await t2.manda({ id: 6, cmd: "ordini" });
+  await pc.ev("ponteControlla()");
+  check(!pc.pt().sessione && pc.pt().fine && pc.pt().fine.perche === "inattivo", "20 minuti senza comandi del medico: chiusa, anche se l'app ha chiesto «ordini»");
+
+  // l'ordine: il numero lo dà il telefono
+  const t3 = await telFinto(pc, k, DEV);
+  await t3.manda({ id: 1, cmd: "ciao" });
+  pc.comandi.length = 0;
+  const senza = await t3.manda({ id: 2, cmd: "ordina", ep: "1", esami: ["lab:A1"], quesito: "q" });
+  check(senza[0] && senza[0].ok === false && !pc.comandi.length, "un ordine senza numero (oid) non arriva a nessuna scheda");
+  await t3.manda({ id: 3, cmd: "ordina", ep: "1", oid: "abcDEF12_-", esami: ["lab:A1", "lab:../x"], quesito: "q".repeat(500), url: "https://male/", piano: {} });
+  await t3.manda({ id: 4, cmd: "ordina", ep: "1", oid: "abcDEF12_-", esami: ["lab:A1"], quesito: "q" });
+  const ord = pc.comandi.filter((m) => m.cmd === "ordina");
+  check(ord.length === 2 && ord.every((m) => m.args.id === "telabcDEF12_-"), "la stessa conferma due volte: lo stesso ordine, «tel»+oid (e bg.js lo manda una volta: ordiniVisti)");
+  check(JSON.stringify(ord[0].args.esami) === '["lab:A1"]' && ord[0].args.quesito.length === 300 && !("url" in ord[0].args) && !("piano" in ord[0].args),
+    "gli argomenti dell'ordine passano solo controllati");
+  await t3.manda({ id: 5, cmd: "ordina", ep: "1", oid: "x<y>", esami: ["lab:A1"], quesito: "q" });
+  check(pc.comandi.filter((m) => m.cmd === "ordina").length === 2, "un oid storto non passa");
+
+  // «riparti»: legato alla sessione di cui parla
+  await t3.manda({ id: 6, cmd: "esci" });
+  check(!pc.pt().sessione, "«esci»: sessione chiusa");
+  const dopo = await t3.manda({ id: 7, cmd: "pazienti" });
+  let rip = null;
+  for (const x of dopo) if (x.grezzo) { try { rip = (await P.apri(t3.ch.salutoPc, x.grezzo, P.TIPO.SALUTO_PC)).dati; } catch { /* altro */ } }
+  check(rip && rip.riparti && rip.eco === t3.nTel && /Chiusa dall'iPhone/.test(rip.testo || ""),
+    "dati per una sessione che non c'è: «riparti», col numero del saluto di QUELLA sessione (un altro telefono, o la stessa ripetuta dopo, lo ignora) e la frase");
+
+  // il battito: senza «pong» la presa si rifà
+  const prima = pc.prese.length, morta = pc.presa();
+  pc.ev("PONTE_ATTESA.pong = 40; ponteBattito()");
+  check(morta.inviati.includes("ping"), "il battito: un «ping»");
+  await sospendi(120);
+  check(pc.prese.length === prima + 1 && morta.readyState === 3, "nessun «pong» entro l'attesa: la presa vecchia si chiude, se ne apre un'altra");
+  const viva = pc.presa();
+  await sospendi(20);
+  pc.ev("ponteBattito()");
+  await pc.testo("pong");
+  await sospendi(80);
+  check(pc.presa() === viva, "col «pong» resta quella");
+  pc.ev("PONTE_ATTESA.pong = 10e3");
+
+  // il gestionale torna alla pagina d'accesso: via la sessione e l'associazione
+  const t4 = await telFinto(pc, k, DEV);
+  await t4.manda({ id: 1, cmd: "ciao" });
+  check(!!pc.pt().sessione, "(una sessione aperta)");
+  check((await pc.pagina({ t: "ponteLogin" }, { url: "https://altro.example/", tab: { id: 3 } })).ok === false && !!pc.pt().sessione, "«pagina d'accesso» da chi non è il gestionale: niente");
+  const fineL = pc.pagina({ t: "ponteLogin" }, { url: GEST + "login.do", tab: { id: 7 } });
+  await fineL;
+  await sospendi(30);
+  const evL = await t4.leggi(pc.tira());
+  check(!pc.pt().sessione && !pc.sessione["ponte.coppia"] && !pc.pt().coppia, "una scheda del gestionale alla pagina d'accesso: sessione chiusa e associazione revocata");
+  check(evL.some((x) => x.evento === "fine" && x.perche === "login" && /pagina d'accesso/.test(x.testo)), "e il telefono lo sa, con la frase");
+});
+await blocco(async () => {
+  // «Aggiorna i valori»: la scheda annotata in storage.session; il service
+  // worker riparte a metà, e lei si chiude lo stesso, alla sua ora
+  const sessione = {};
+  const scheda = (m) => (m.cmd === "aggiornaValori" ? { ok: true, dati: { url: GEST + "menuPsoEpisodio.do?EPISODIO_ID=1", paziente: "ROSSI" } } : { ok: true, dati: [] });
+  const pc = await pcFinto({ sessione, scheda });
+  const k = kDalQr((await pc.pagina({ t: "ponteAssocia" })).qr);
+  await sospendi(30);
+  const t = await telFinto(pc, k, DEV);
+  await t.manda({ id: 1, cmd: "ciao" });
+  t.manda({ id: 2, cmd: "aggiornaValori", ep: "1" });   // non torna: la scheda non finisce mai
+  await sospendi(80);
+  const id = pc.schede[0] && pc.schede[0].id;
+  check(!!id && sessione["ponte.valori"] && sessione["ponte.valori"][id] && sessione["ponte.valori"][id].ep === "1", "la scheda dei valori è annotata in storage.session");
+  check((await pc.ev(`ponteLavoroDi(${id})`)).ponteValori.ep === "1", "e lei sa chi è (per bg.js: «chi sono?»)");
+  const pc2 = await pcFinto({ sessione, scheda });   // il service worker riparte: niente in memoria
+  pc2.schede.push({ id, active: false });
+  await pc2.ev("ponteControlla()");
+  check(!pc2.tolte.includes(id), "ripartito, la scheda resta finché ha tempo");
+  pc2.salta(160e3);
+  await pc2.ev("ponteControlla()");
+  check(pc2.tolte.includes(id) && !(sessione["ponte.valori"] || {})[id], "passato il tempo, il service worker nuovo la riconosce e la chiude");
+  // il medico chiude la scheda dei valori: il telefono lo sa subito, e l'appunto se ne va
+  const t2 = await telFinto(pc2, kDalQr((await pc2.pagina({ t: "ponteAssocia" })).qr), DEV);
+  await t2.manda({ id: 1, cmd: "ciao" });
+  const chiusa = t2.manda({ id: 2, cmd: "aggiornaValori", ep: "1" });
+  await sospendi(80);
+  const id2 = pc2.schede.at(-1).id;
+  pc2.chiudiScheda(id2);
+  const r2 = (await chiusa).find((x) => x.re === 2);
+  check(r2 && r2.ok === false && /^Valori non aggiornati: .*chiusa/.test(r2.errore) &&!(sessione["ponte.valori"] || {})[id2],
+    `chiusa la scheda dei valori: il telefono lo sa subito (${r2 && r2.errore}), e l'appunto se ne va`);
+});
+await blocco(async () => {
+  // la scheda tarda oltre l'attesa: «non si sa», e l'ordine che nasce lo stesso arriva al telefono
+  const oid = "lento123";
+  let crea = null;
+  const scheda = async (m, sessione) => {
+    if (m.cmd !== "ordina") return { ok: true, dati: [] };
+    crea = sospendi(120).then(async () => {
+      const l = [...(sessione.ordini || []), { id: m.args.id + "l", ep: "1", paziente: "ROSSI MARIO", n: 1, stato: "coda", ts: Date.now(), pubblico: { tono: "run", titolo: "In coda", testo: "parte fra poco", dettaglio: "" } }];
+      await pc.ev("chrome").storage.session.set({ ordini: l });
+    });
+    await crea;
+    return { ok: true, dati: { ordini: [{ id: m.args.id + "l", ep: "1", paziente: "ROSSI MARIO", n: 1 }] } };
+  };
+  const pc = await pcFinto({ scheda });
+  const k = kDalQr((await pc.pagina({ t: "ponteAssocia" })).qr);
+  await sospendi(30);
+  const t = await telFinto(pc, k, DEV);
+  await t.manda({ id: 1, cmd: "ciao" });
+  pc.ev("PONTE_ATTESA.ordina = 30");
+  const r = await t.manda({ id: 2, cmd: "ordina", ep: "1", oid, esami: ["lab:A1"], quesito: "q" });
+  const risp = r.find((x) => x.re === 2);
+  check(risp && risp.ok === false && risp.incerto === true, "la scheda tace oltre l'attesa: la risposta è «non si sa» (incerto), mai un no");
+  await crea; await sospendi(80);
+  const ev = await t.leggi(pc.tira());
+  const visto = ev.find((x) => x.evento === "ordine" && x.ordine.id === "tel" + oid + "l");
+  check(!!visto && visto.ordine.titolo === "In coda" && visto.ordine.tono === "run", "l'ordine nato dopo l'attesa arriva al telefono, con le parole di bg.js (pubblico)");
+  const lista = await t.manda({ id: 3, cmd: "ordini" });
+  check(lista[0] && lista[0].dati.some((o) => o.id === "tel" + oid + "l"), "ed è nella lista degli ordini");
+  // sparisce da «ordini» (etichette prese da una scheda, ✕): resta com'era l'ultima volta
+  const ses = (await pc.ev("chrome").storage.session.get("ordini")).ordini;
+  ses[0].stato = "stampa"; ses[0].pubblico = { tono: "ok", titolo: "Confermata", testo: "Etichette pronte sul PC", dettaglio: "Quesito: il tuo" };
+  await pc.ev("chrome").storage.session.set({ ordini: ses });
+  await sospendi(60);
+  await pc.ev("chrome").storage.session.set({ ordini: [] });
+  await sospendi(60);
+  const ev2 = await t.leggi(pc.tira());
+  const ultimo = ev2.filter((x) => x.evento === "ordine").at(-1);
+  check(ultimo && ultimo.ordine.titolo === "Confermata" && ultimo.ordine.testo === "Etichette pronte sul PC" && ultimo.ordine.fine === true,
+    "sparito da «ordini» dopo la conferma: il telefono tiene l'ultimo stato che ha visto");
+  check(ultimo && !/il tuo/.test(ultimo.ordine.dettaglio), `e mai «Quesito: il tuo», la frase del PC (${ultimo && ultimo.ordine.dettaglio})`);
+  // un ordine partito in tempo: il PC sa il quesito scritto sul telefono, e lo dice al posto di «il tuo»
+  pc.ev("PONTE_ATTESA.ordina = 25e3");
+  crea = null;
+  const r2 = await t.manda({ id: 4, cmd: "ordina", ep: "1", oid: "veloce12", esami: ["lab:A1"], quesito: "dolore toracico" });
+  await crea; await sospendi(60);
+  const ses2 = (await pc.ev("chrome").storage.session.get("ordini")).ordini;
+  const mio = ses2.find((x) => x.id === "telveloce12l");
+  mio.stato = "avviso"; mio.pubblico = { tono: "ok", titolo: "Confermata", testo: "Etichette uscite", dettaglio: "Quesito: il tuo" };
+  await pc.ev("chrome").storage.session.set({ ordini: ses2 });
+  await sospendi(80);
+  const ev3 = (await t.leggi(pc.tira())).filter((x) => x.evento === "ordine" && x.ordine.id === "telveloce12l").at(-1);
+  check(r2.some((x) => x.re === 4 && x.ok) && ev3 && ev3.ordine.dettaglio === "Quesito: «dolore toracico»" && ev3.ordine.fine === true,
+    `al posto di «Quesito: il tuo», il quesito vero (${ev3 && ev3.ordine.dettaglio})`);
+});
+await blocco(async () => {
+  // un errore nel ponte non ferma il service worker
+  const ovunque = () => new Proxy(function () {}, { get: (_, k) => (k === "then" ? undefined : ovunque()), apply: () => ovunque() });
+  const ctx = vm.createContext({ chrome: ovunque(), console: { error() {}, log() {}, warn() {} }, setTimeout, clearTimeout, setInterval: () => 0, URL,
+    importScripts: () => { throw new Error("ponte rotto"); }, self: ovunque(), fetch: ovunque() });
+  let rotto = "";
+  try { vm.runInContext(EXT("bg.js"), ctx); } catch (e) { rotto = e.message; }
+  check(!rotto, `un errore nel codice del ponte non ferma bg.js (ordini, referti, stampe)${rotto ? ": " + rotto : ""}`);
+});
+await blocco(async () => {
+  // il telefono aspetta «Aggiorna i valori» almeno quanto il PC, al peggio
+  const n = (re, t) => Number(re.exec(t)[1]);
+  const sw = EXT("ponte-sw.js"), app = leggi("../public/ponte/app.js");
+  const pcMax = n(/PONTE_VALORI_MAX = ([\d.e]+);/, sw) + n(/esiti: ([\d.e]+)/, sw) + n(/altro: ([\d.e]+)/, sw);
+  const tel = n(/ATTESA_VALORI = ([\d.e]+);/, app);
+  check(tel >= pcMax && tel <= pcMax + 30e3, `«Aggiorna i valori»: il telefono aspetta ${tel / 1000} s, il PC al peggio ${pcMax / 1000} s`);
+});
 
 console.log(fail ? `\nPONTE-CRIPTO: ${fail} CHECK FALLITI\n` : "\nPONTE-CRIPTO: TUTTO OK\n");
 process.exit(fail ? 1 : 0);

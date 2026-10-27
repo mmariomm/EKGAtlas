@@ -4,6 +4,7 @@
  *   extension/content.js               (MV3 content script)
  *   bookmarklet/…bookmarklet.txt       (same core as a javascript: URL)
  *   extension/ponte-cripto.js          (copy of ../public/ponte/cripto.js)
+ *   extension/ponte-host.js            (the bridge's address, from ponte/host.txt)
  * The userscript vehicle was retired in 3.2: extension (primary) plus
  * bookmarklet (locked-down PCs) cover every machine with one build less
  * to test, document and support.
@@ -12,6 +13,7 @@
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { origineDelPonte } from "../ponte/host.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const core = readFileSync(join(root, "src/core.js"), "utf8");
@@ -39,6 +41,13 @@ writeFileSync(join(root, "extension/content.js"), built);
 // Il ponte verso l'iPhone: la cifratura è UNA, servita al telefono dal sito
 // (public/ponte/cripto.js) e copiata qui tale e quale per il service worker.
 copyFileSync(join(root, "../public/ponte/cripto.js"), join(root, "extension/ponte-cripto.js"));
+// …e il suo indirizzo, fissato qui una volta per tutte: nessuna pagina lo può
+// cambiare. ponte/host.txt vuoto = ponte non configurato (lo dice la pagina iPhone).
+let ponteHost;
+try { ponteHost = origineDelPonte(readFileSync(join(root, "ponte/host.txt"), "utf8")); }
+catch (e) { console.error(e.message); process.exit(1); }
+writeFileSync(join(root, "extension/ponte-host.js"),
+  `// Generato da tools/build.mjs da ponte/host.txt: non si modifica a mano.\nconst PONTE_HOST_FISSO = ${JSON.stringify(ponteHost)};\n`);
 
 // Bookmarklet: the same core as a javascript: URL, for locked-down PCs where
 // neither Developer Mode nor a userscript manager is available. One click on
@@ -48,4 +57,4 @@ mkdirSync(join(root, "bookmarklet"), { recursive: true });
 const bookmarklet = "javascript:" + encodeURIComponent("void " + built);
 writeFileSync(join(root, "bookmarklet/ps-assist.bookmarklet.txt"), bookmarklet);
 
-console.log(`built v${version}: extension/content.js (${built.length} bytes), bookmarklet (${Math.round(bookmarklet.length / 1024)} KB)`);
+console.log(`built v${version}: extension/content.js (${built.length} bytes), bookmarklet (${Math.round(bookmarklet.length / 1024)} KB), ponte: ${ponteHost || "non configurato"}`);

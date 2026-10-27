@@ -5658,6 +5658,7 @@
         s = { tag: v.tag || "", testo: v.testo || "", tono: v.tono || "ok", quesito: v.quesito || "", ...(fuoco.consegna ? alCarrello : ristampa), ...letto };
       }
       s.paziente = fuoco.paziente || "";
+      if (String(id).startsWith("tel")) s.badge = s.badge ? `${s.badge} · dall'iPhone` : "dall'iPhone";
       s.daOrdine = id;
       if (coda) s.badge = `${s.badge ? s.badge + " · " : ""}+${coda} in coda`;
       // la stessa striscia di prima: niente ridisegno
@@ -10853,6 +10854,19 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       <span class="pdot"></span>${ICO_TEL}<span>iPhone collegato</span><button type="button" id="ponteoff" title="Chiude la sessione dell'iPhone">Scollega</button></div>` : "");
 
   const pontePaziente = (ep) => tuttiPazienti().find((p) => p.ep === ep) || null;
+  // L'anno di nascita, dal codice fiscale nel riquadro della pagina del
+  // paziente (le cifre 7 e 8; con l'omocodia anche lettere): per distinguere
+  // due ROSSI MARIO anche sul telefono. Letto lì e mai salvato (il pannello
+  // del codice fiscale tiene solo l'impronta). Il secolo lo dice la data di
+  // nascita del riquadro, se c'è; se no, il più vicino nel passato.
+  function annoDiNascita(doc) {
+    const t = (riquadroPaziente(doc)?.textContent || "").toUpperCase();
+    const cf = CF_UNO.exec(t);
+    if (!cf) return "";
+    const yy = cf[0].slice(6, 8).replace(/[LMNPQRSTUV]/g, (c) => "LMNPQRSTUV".indexOf(c));
+    const data = new RegExp(`\\b\\d{1,2}/\\d{1,2}/((?:19|20)${yy})\\b`).exec(t);
+    return data ? data[1] : String(Number(yy) > new Date().getFullYear() % 100 ? 1900 + Number(yy) : 2000 + Number(yy));
+  }
   // l'indirizzo della sua pagina, come il gestionale l'ha dato: solo da leggere, e di quell'episodio
   const ponteUrlPaziente = (p) => (p && leggibilePagina(p.url) && param(p.url, "EPISODIO_ID") === p.ep
     && /\/menuPsoEpisodio\.do$/i.test(new URL(p.url).pathname) ? p.url : "");
@@ -10873,7 +10887,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       ep: i.p.ep, nome: i.lungo, breve: i.breve + i.coda, omonimo: !!i.omonimo, triage: i.p.triage || "",
       posto: PANNELLO.nomePosto(m, i), nota: i.nota || "", prec: !!i.prec, spento: !!i.spento, visto: i.p.ts || 0,
       prom: promDi(i.p.ep, m.prom).map((x) => ({ id: x.id, t: x.t, testo: x.testo })),
-      ordina: !!ponteUrlPaziente(i.p),
+      ordina: !!ponteUrlPaziente(i.p) && !i.prec,
     }));
   }
   // Quello che serve al telefono per ordinare: i quesiti (prima i tre
@@ -10910,7 +10924,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const d0 = new Date();
     const oggi = `${String(d0.getDate()).padStart(2, "0")}/${String(d0.getMonth() + 1).padStart(2, "0")}/${d0.getFullYear()}`;
     return {
-      colonne: col.map((c) => ({ cima: c.ignota ? "?" : c.data === oggi ? c.ora || "oggi" : c.data.slice(0, 5), sotto: c.ignota ? "ora ignota" : c.data === oggi ? "" : c.ora || "" })),
+      colonne: col.map((c) => ({ cima: c.ignota ? "?" : c.data === oggi ? c.ora || "oggi" : c.data.slice(0, 5), sotto: c.ignota ? "ora ignota" : c.data === oggi ? "" : c.ora || "",
+        parziale: righe.some((r) => r.valori[c.i] && r.valori[c.i].v && r.valori[c.i].parziale) })),
       gruppi: raggruppaStorico(righe).map((g) => ({ nome: g.nome, righe: g.righe.map((r) => ({
         nome: inatteso(r) ? String(r.nome).replace(/\s+/g, " ").trim() : sigla(r.nome),
         um: unitaChiara((r.valori.find((v) => v && v.um) || {}).um || "", r.nome),
@@ -10924,13 +10939,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // col testo di quelli già letti.
   async function ponteEsiti(p) {
     const url = ponteUrlPaziente(p);
-    let referti = [], nota = "";
+    let referti = [], nota = "", anno = "";
     if (url) {
       try {
         const { doc, url: fin } = await fetchDoc(url, {});
         if (classify(doc) === "login") return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true };
         if (findEpisodeId(doc, fin) !== p.ep) return { ok: false, errore: "La pagina del paziente sul PC è di un altro episodio: non mostro niente" };
         referti = esitiModel(doc, fin).filter((e) => e.kind === "referto");
+        anno = annoDiNascita(doc);
       } catch (e) { nota = `Referti non letti: ${e?.head || e?.message || e}`; }
     } else nota = "Per i referti, apri una volta il paziente sul PC";
     let st = null;
@@ -10958,7 +10974,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (sta) resta -= t.length;
       return { id: e.id, quando: e.when, sistema: e.sistema, titolo: shortLabel(e.label), tipo: refertoTipo(e), testo: sta ? t : "", lungo: !!t && !sta };
     });
-    return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, referti: lista, nota }, registro: `esiti di ${p.name}` };
+    // quando il PC li ha letti: sul telefono si vede quanto sono vecchi
+    return { ok: true, dati: { ep: p.ep, paziente: p.name, anno, tabella, letto: tabella ? Number(st.letto) || 0 : 0, referti: lista, nota }, registro: `esiti di ${p.name}` };
   }
   // L'ordine: lo stesso giro di «Conferma e stampa», dato alla scheda di
   // sottofondo dalla pagina del paziente — tutti i controlli di sempre. Il
@@ -11013,6 +11030,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (cmd === "richieste") return fatto({ ok: true, dati: ponteCatalogo(), registro: "catalogo degli esami" });
     const p = a.ep ? pontePaziente(a.ep) : null;
     if (!p) return { ok: false, errore: "Questo paziente non è più nell'elenco del PC" };
+    // dimesso sul PC (archiviato): dal telefono non si tocca più
+    if (p.arch) return { ok: false, errore: "Dimesso sul PC: niente inviato", dimesso: true };
+    // un episodio precedente si legge, ma non si ordina e non si promemora
+    if ((cmd === "ordina" || cmd === "promemoria") && PANNELLO.pazModello().info.get(p.ep)?.prec) {
+      return { ok: false, errore: `Episodio precedente: ${cmd === "ordina" ? "per ordinare" : "per un promemoria"} apri quello di oggi` };
+    }
     const riga = () => pontePazienti().find((x) => x.ep === p.ep) || null;
     if (cmd === "esiti") return fatto(await ponteEsiti(p));
     if (cmd === "aggiornaValori") {
@@ -11198,6 +11221,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const aperti = LAVORO ? 0 : (chi?.ordini || []).length;
       if (LAVORO) ask({ t: "ordineAggiorna", id: LAVORO.id, stato: "errore", vista: { tag: "Sessione scaduta", testo: "Rifai l'accesso, poi controlla il carrello", tono: "err", sessione: true } });
       if (PONTE_VALORI) ask({ t: "ponteValoriFatto", ok: false, testo: "il gestionale chiede di rifare l'accesso" });
+      // e il ponte verso l'iPhone si chiude, associazione compresa: chi rientra può essere un altro medico
+      if (hasExt() && !DEMO) ask({ t: "ponteLogin" });
       forgetAll();
       if (mai || forse || aperti) {
         const d = document.createElement("div");

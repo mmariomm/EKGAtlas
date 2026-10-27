@@ -1,0 +1,52 @@
+// Il ponte di PS Assist come Worker a parte, per quando il sito non ha un
+// dominio suo a cui aggiungere un nome per il ponte (ps-app/ponte/README.md,
+// «Messa in servizio»). Lo stesso codice del sito (worker/index.js) e la
+// stessa build: con PONTE_HOSTNAME «*» questo Worker serve SOLO l'app del
+// telefono (/ponte/…) e la presa (/ponte/ws), su ogni suo nome; tutto il resto
+// è un 404. Si pubblica, dalla radice del repository:
+//   npm run build && npx wrangler deploy -c wrangler.ponte.jsonc
+// e poi il sito (wrangler.jsonc) prende PONTE_HOSTNAME = il nome di questo
+// Worker, così non serve più /ponte/ lui.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ps-ponte",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-06-07",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      // no per-request log lines: a bridge URL carries its room id
+      "invocation_logs": false
+    }
+  },
+  "vars": {
+    "PONTE_HOSTNAME": "*"
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // every request reaches the Worker first: only the phone app's files are served
+    "run_worker_first": true
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PONTE",
+        "class_name": "PonteStanza"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "ponte-v1",
+      "new_sqlite_classes": [
+        "PonteStanza"
+      ]
+    }
+  ],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}

@@ -18,13 +18,31 @@ export const PONTE = {
   frameMax: 1 << 20,          // un messaggio non supera 1 MB
   alMinuto: 1200,             // messaggi per minuto per presa, oltre si chiude
   inattivoMs: 15 * 60e3,      // una presa che tace da tanto (nemmeno il battito) si chiude
-  ecoMax: 4096,               // la prova della rete rimanda solo messaggi piccoli
-  ecoDurataMs: 120e3,         // e per poco
 };
 export const PING = "ping";
 export const PONG = "pong";
 const RUOLI = new Set(["pc", "tel"]);
 export const altroRuolo = (r) => (r === "pc" ? "tel" : "pc");
+
+// I file dell'app del telefono, e solo questi: un altro indirizzo sotto
+// /ponte/ è un 404, mai la pagina del sito. (Gli stessi del suo sw.js.)
+export const FILE_APP = new Set(["", "app.js", "app.css", "cripto.js", "sw.js", "manifest.webmanifest",
+  "icona.svg", "icona-180.png", "icona-192.png", "icona-512.png"].map((f) => "/ponte/" + f));
+
+// Chi risponde a una richiesta: «ponte» (l'app del telefono e la presa),
+// «sito» (EKG Atlas, com'era) o «niente» (404). Con un nome a sé per il ponte
+// (PONTE_HOSTNAME) il ponte sta SOLO lì, e lì non c'è nient'altro: l'app che
+// tiene la chiave non divide l'origine con nessun'altra pagina. «*»: questo
+// Worker è solo il ponte, su ogni nome (il Worker a parte,
+// wrangler.ponte.jsonc). Vuoto: tutto come prima, /ponte/ sul sito.
+export function instrada(url, ponteHost) {
+  const u = url instanceof URL ? url : new URL(url);
+  const host = String(ponteHost || "").trim().toLowerCase();
+  const suPonte = u.pathname === "/ponte" || u.pathname.startsWith("/ponte/");
+  if (!host) return suPonte ? "ponte" : "sito";
+  if (host === "*" || u.hostname.toLowerCase() === host) return "ponte";
+  return suPonte ? "niente" : "sito";
+}
 
 // /ponte/ws?r=<stanza>&ruolo=pc|tel
 export function leggiStanza(url) {
@@ -97,12 +115,6 @@ export class Stanza {
   }
 }
 
-// La prova della rete: rimanda indietro quello che riceve, piccolo e per poco.
-export function eco(dati) {
-  if (byteDi(dati) > PONTE.ecoMax) return null;
-  return dati;
-}
-
 // Le intestazioni dell'app del telefono: solo il suo codice, e la rete solo
 // verso questo stesso sito (la presa del ponte compresa).
 export function intestazioniApp(url) {
@@ -115,4 +127,3 @@ export function intestazioniApp(url) {
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
   };
 }
-export const intestazioniSalute = { "access-control-allow-origin": "*", "cache-control": "no-store", "content-type": "text/plain; charset=utf-8" };

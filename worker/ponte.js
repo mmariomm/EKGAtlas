@@ -2,9 +2,9 @@
  * PS Assist · Ponte — il ripetitore, su Cloudflare (stesso Worker del sito).
  *
  *   /ponte/ws?r=<stanza>&ruolo=pc|tel   la presa: un Durable Object per stanza
- *   /ponte/eco                          la prova della rete (rimanda quello che riceve)
- *   /ponte/salute                       «ok», per la prova della rete
- *   /ponte/…                            l'app del telefono, file statici da dist/ponte/
+ *   /ponte/…                            l'app del telefono, i suoi file da dist/ponte/
+ *                                       (solo quelli: un altro indirizzo è un 404)
+ * (Su quale nome risponde lo decide worker/index.js: PONTE_HOSTNAME.)
  *
  * Il Durable Object usa l'ibernazione delle WebSocket: fra un messaggio e
  * l'altro non resta niente in memoria, e il battito («ping» → «pong») lo
@@ -13,7 +13,7 @@
  * da un capo all'altro e qui passano come byte.
  */
 import { DurableObject } from "cloudflare:workers";
-import { Stanza, PONTE, PING, PONG, leggiStanza, eco, intestazioniApp, intestazioniSalute } from "./ponte-logica.js";
+import { Stanza, PONTE, PING, PONG, FILE_APP, leggiStanza, intestazioniApp } from "./ponte-logica.js";
 
 const APERTA = 1;   // WebSocket.OPEN
 
@@ -54,35 +54,21 @@ export class PonteStanza extends DurableObject {
   }
 }
 
-// La prova della rete: una presa che rimanda indietro, piccola e per due minuti.
-function presaEco() {
-  const { 0: client, 1: server } = new WebSocketPair();
-  server.accept();
-  const fine = setTimeout(() => { try { server.close(1000, "fine prova"); } catch { /* già chiusa */ } }, PONTE.ecoDurataMs);
-  server.addEventListener("message", (e) => {
-    if (e.data === PING) { server.send(PONG); return; }
-    const r = eco(e.data);
-    if (r == null) server.close(1009, "troppo grande");
-    else server.send(r);
-  });
-  server.addEventListener("close", () => clearTimeout(fine));
-  return new Response(null, { status: 101, webSocket: client });
-}
-
 export async function ponteFetch(request, env) {
   const url = new URL(request.url);
   const p = url.pathname;
-  if (p === "/ponte/ws" || p === "/ponte/eco") {
+  if (p === "/ponte/ws") {
     if ((request.headers.get("upgrade") || "").toLowerCase() !== "websocket") return new Response("serve una WebSocket", { status: 426 });
-    if (p === "/ponte/eco") return presaEco();
+    // una stanza che non può esistere non sveglia nessun Durable Object
     const r = leggiStanza(url);
     if (!r.ok) return new Response(r.perche, { status: r.stato });
     return env.PONTE.get(env.PONTE.idFromName(r.stanza)).fetch(request);
   }
-  if (p === "/ponte/salute") return new Response("ok", { headers: intestazioniSalute });
+  if (p === "/" || p === "/ponte") return Response.redirect(new URL("/ponte/", url).href, 302);
+  const h = new Headers(intestazioniApp(url));
+  if (!FILE_APP.has(p)) return new Response("non trovato", { status: 404, headers: h });
   // l'app del telefono: i file di dist/ponte/, con le sue intestazioni
   const risposta = await env.ASSETS.fetch(request);
-  const h = new Headers(risposta.headers);
-  for (const [k, v] of Object.entries(intestazioniApp(url))) h.set(k, v);
+  for (const [k, v] of risposta.headers) if (!h.has(k)) h.set(k, v);
   return new Response(risposta.body, { status: risposta.status, statusText: risposta.statusText, headers: h });
 }

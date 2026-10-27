@@ -1,0 +1,3 @@
+# Il nome del sito del ponte, per esempio: ponte.example.org
+# Una riga sola, senza percorso. Vuoto: il ponte non è configurato.
+# Si scrive una volta, poi `npm run dist` (ponte/README.md, «Messa in servizio»).

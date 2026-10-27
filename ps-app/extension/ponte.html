@@ -30,16 +30,12 @@
   .qrsec[hidden] { display: none; }
   #qr svg { display: block; width: 236px; height: 236px; }
   .qrsec p { margin: 0 0 8px; }
+  .codice { font: 700 22px/1.2 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .08em; }
   .hint { font-size: 12.5px; color: var(--grigio); }
-  label { display: block; font-size: 12px; font-weight: 700; color: #35506B; margin: 12px 0 6px; }
-  input { width: 100%; border: 1px solid #C4D0DC; border-radius: 9px; padding: 10px 12px; font: inherit; }
-  .riga-input { display: flex; gap: 8px; } .riga-input input { flex: 1; }
   .msg { margin-top: 10px; border-radius: 9px; padding: 9px 12px; font-size: 13px; }
   .msg:empty { display: none; }
   .msg.ok { background: var(--verdef); border: 1px solid #BCE0C9; color: #124F31; }
   .msg.ko { background: var(--rossof); border: 1px solid #E9BAB6; color: #8A1F19; }
-  details { margin-top: 22px; border-top: 1px solid #E6EBF0; padding-top: 14px; }
-  summary { cursor: pointer; font-weight: 700; }
   a { color: var(--blu); font-weight: 700; }
   ol { margin: 0; padding: 0; list-style: none; font-size: 12.5px; max-height: 260px; overflow: auto; }
   ol li { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid #F0F3F6; }
@@ -57,8 +53,9 @@
     <div id="qr" role="img" aria-label="Codice QR per associare l'iPhone"></div>
     <div>
       <p><b>Inquadralo con la fotocamera dell'iPhone</b> e tocca il link: si apre il pannello, già collegato.</p>
-      <p>Vale fino alle <b id="qrscade"></b>. Basta una volta: poi, durante il turno, apri il pannello dall'iPhone e basta.</p>
-      <p class="hint">Chi inquadra questo codice entra fino a quell'ora: non lasciarlo sullo schermo.</p>
+      <p>Codice <span class="codice" id="qrcodice"></span> — lo stesso compare sul telefono.</p>
+      <p>Vale fino alle <b id="qrscade"></b>, e solo per il primo telefono che entra. Basta una volta: poi, durante il turno, apri il pannello dall'iPhone e basta.</p>
+      <p class="hint">Il QR si può rivedere solo nei primi due minuti, prima che un telefono entri: dopo, «Associa» ne fa uno nuovo.</p>
       <button class="quiet" id="qrvia" type="button">Nascondi il QR</button>
     </div>
   </section>
@@ -70,14 +67,7 @@
   </div>
   <div id="m" class="msg"></div>
 
-  <details id="impostazioni">
-    <summary>Indirizzo del ponte</summary>
-    <label for="host">Il sito del ponte (il sito EKG Atlas: il ponte sta sotto /ponte/)</label>
-    <div class="riga-input"><input id="host" placeholder="https://nome.workers.dev" autocomplete="off" spellcheck="false"><button id="salva" type="button">Salva</button></div>
-    <p class="hint">Da questo PC esce solo una connessione cifrata verso quel sito (HTTPS, porta 443). Il sito passa i messaggi e basta: non li legge e non li tiene.</p>
-  </details>
-
-  <p class="hint" style="margin-top:18px"><a href="ponte-prova.html" target="_blank" rel="noopener">Prova la rete</a> — controlla da questo PC, in un minuto, che il ponte si raggiunge e regge.</p>
+  <p class="hint" style="margin-top:18px"><a href="ponte-prova.html" target="_blank" rel="noopener">Prova la rete</a> — controlla da questo PC che il ponte si raggiunge e regge. <span id="dove"></span></p>
 
   <h2>Registro del ponte</h2>
   <ol id="registro"></ol>

@@ -29,15 +29,16 @@
 </style></head><body>
 <main class="box">
   <h1>Prova della rete per il ponte</h1>
-  <p class="sub">Da questo PC, con le stesse strade che userebbe l'estensione. Dura poco più di un minuto e non manda nessun dato di pazienti.</p>
+  <p class="sub">Da questo PC, sulla strada vera del ponte: una stanza di prova, vuota, aperta e buttata. Pochi secondi; nessun dato di pazienti.</p>
   <div id="esito" class="esito" aria-live="polite">Prova in corso…</div>
   <ul id="righe"></ul>
   <div class="azioni">
     <button id="copia" type="button" disabled>Copia il risultato</button>
     <button id="ancora" class="quiet" type="button" disabled>Rifai la prova</button>
+    <button id="lunga" class="quiet" type="button" disabled>Tieni aperto 15 minuti</button>
     <span id="copiato" class="hint" style="margin:0"></span>
   </div>
-  <p class="hint">Il ponte usa una sola strada: una connessione cifrata (WSS, porta 443) verso il sito del ponte, come una qualunque pagina web. UDP non serve.</p>
+  <p class="hint">Il ponte usa una sola strada: una WebSocket cifrata (WSS, porta 443) verso il suo sito, aperta a lungo, con un battito ogni 20 secondi. «Tieni aperto 15 minuti» la prova così, e dice quando e perché cade.</p>
 </main>
 <script src="ponte-prova.js"></script>
 </body></html>
