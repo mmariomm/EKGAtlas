@@ -11,7 +11,8 @@ sola pagina, verificando ogni passaggio prima del successivo.
 > (o lasci che la prema lui, subito: il tuo click su «Conferma e stampa» è la decisione). Dopo la conferma
 > ogni foglio compare **in anteprima**, con la stampante su cui va, e si apre da solo il
 > **dialogo di stampa** del browser: etichette (etichettatrice), poi lista esami (stampante
-> normale). Intanto il pannello resta una **striscia nell'angolo** che dice a che punto è; se
+> normale) — con la **stampa automatica** niente anteprima né dialogo: escono da sole, e la
+> striscia dice dove. Intanto il pannello resta una **striscia nell'angolo** che dice a che punto è; se
 > qualcosa va storto diventa rossa e ti lascia sul carrello: lo finisci a mano, o **↻ Riprova i
 > mancanti**, o **Svuota il carrello e ricomincia**. Con l'estensione gli esami li manda una
 > **scheda di sottofondo** che si apre e si chiude da sola: tu cambi pagina quando vuoi, la
@@ -381,7 +382,9 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    esami…» → e alla fine il **resoconto, che resta** finché non fai altro: «Stampa finita · 6
    esami confermati 14:32», con sotto la riga del quesito, e accanto un **Ristampa** tranquillo
    (chiuso il dialogo, il browser non dice se hai stampato o annullato). «Stampato», senza
-   Ristampa, solo se sei andato avanti tu, «→ Avanti», documento per documento.
+   Ristampa, solo se sei andato avanti tu, «→ Avanti», documento per documento. Con la
+   **stampa automatica** non c'è né anteprima né dialogo: «Confermata · Stampo le etichette su
+   Zebra ZD421… · foglio 1 di 2», poi «Stampato su …» (vedi «Stampa automatica»).
    Accanto al bottone c'è un link, **solo carrello**: aggiunge e verifica gli esami e si atterra
    sul carrello del gestionale con la striscia «✓ N esami in carrello · Conferma dal
    gestionale»: premi **Conferma** lì (le etichette partono lo stesso), o tocca la striscia per
@@ -877,9 +880,9 @@ solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco. **Un ordine part
 apre mai da solo il dialogo**: davanti al PC può non esserci nessuno, e un dialogo aperto su uno
 schermo che nessuno guarda è un'etichetta non stampata che sembra stampata. La striscia lo dice
 («Etichette NON stampate · dall'iPhone · tocca Stampa»), il telefono pure («aspettano qualcuno al
-PC»), e un tocco su **Stampa** nella striscia del PC le stampa. Così è senza la **stampa automatica**; con lei il
-dialogo non c'è, e i fogli di un ordine in sottofondo li stampa il service worker (vedi «Stampa
-automatica», più sotto).
+PC»), e un tocco su **Stampa** nella striscia del PC le stampa. Così è senza la **stampa automatica**; con lei
+non c'è né la scheda né il dialogo: tutti i fogli li stampa il service worker, e la striscia
+dice a che punto è (vedi «Stampa automatica», più sotto).
 
 1. **Tutte le etichette provette** — i PDF dell'icona col codice a barre
    (`RcsStampaEtichetteLISHMIMU.do`, che porta al PDF servito da
@@ -942,10 +945,14 @@ quale stampante è l'**Etichettatrice** e quale l'**A4** (di partenza, la predef
 Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
 
 - **le etichette vanno all'etichettatrice, tutto il resto all'A4** — liste esami, prenotazioni
-  RX, i moduli dei Consensi —, da soli, **senza dialogo**. La scheda della stampa compare lo
-  stesso, con l'anteprima e la stampante vera in testa («→ Zebra ZD421»), dice com'è andata e
-  passa da sola al foglio dopo. Alla fine la striscia lo riassume, con **Ristampa** accanto
-  (un'etichetta inceppata si vede solo davanti alla stampante).
+  RX, i moduli dei Consensi —, da soli, **senza dialogo e senza niente davanti**: né la scheda
+  della stampa né l'anteprima. Dopo una conferma, con «Ristampa», «Stampa l'ultima richiesta» o
+  un consenso, la striscia dice «Stampo le etichette su Zebra ZD421… · foglio 1 di 2», poi
+  com'è andata, con **Ristampa** accanto (un'etichetta inceppata si vede solo davanti alla
+  stampante). **Puoi andare subito su un altro paziente**, o chiudere la scheda: la stampa la
+  fa il service worker, coi PDF che gli dà una scheda aperta dietro sulla pagina del paziente
+  (senza pannello; finito, si chiude), e nessun foglio si perde né esce due volte. È lo stesso
+  motore dell'ordine in sottofondo (qui sotto), con le stesse parole.
 - **Si dice solo quello che si sa.** L'aiutante, dopo aver mandato il foglio, guarda per qualche
   secondo la coda di stampa di Windows:
   - **«Stampato su Zebra ZD421»** (alla fine «Stampato · 6 esami confermati 14:32»): il foglio è
@@ -960,8 +967,9 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   perché («Stampa automatica non riuscita: la stampante «Zebra ZD421» risulta spenta o offline.
   Dal dialogo, stavolta.»). Solo per un no detto prima di stampare: aiutante non installato o
   bloccato, stampante sparita, spenta o offline (prima di stampare, o ferma in errore o in pausa
-  nella coda prima di cominciare: il foglio si toglie), PDF non valido, SumatraPDF che dice di no. Il foglio dopo
-  riprova da solo.
+  nella coda prima di cominciare: il foglio si toglie), PDF non valido, SumatraPDF che dice di no. Gli altri
+  fogli escono da soli; quello arriva, finiti loro, alla scheda dove sei — solo allora compare
+  un'anteprima. Un esito sconosciuto non passa mai dal dialogo da solo.
 - **Un ordine in sottofondo lo stampa il service worker**, appena la conferma è provata: non
   serve una scheda del gestionale davanti, né il fuoco, né un clic — l'ordine può arrivare dal
   telefono con il PC da solo, con il medico su un altro paziente o senza nessuna scheda del
@@ -1375,19 +1383,25 @@ stessi flussi dei test di prodotto.
 17. **La stampa automatica fa una cosa sola, e lo dice.** L'unico permesso in più è
     `nativeMessaging`: parlare con **un** programma di questo PC, `it.psassist.stampa`, che
     l'utente ha installato lui (una chiave in HKCU, niente amministratore) e che accetta solo
-    questa estensione. A lui va **solo** il PDF che la pagina ha già preso dal gestionale coi
-    controlli di sempre, e il nome della stampante scelta per quel tipo di foglio; lo porta il
-    service worker, mai la pagina del gestionale, e solo da una scheda del gestionale. L'aiutante
+    questa estensione. A lui va **solo** il PDF che una scheda del gestionale ha preso coi
+    controlli di sempre (o un modulo dei Consensi, dall'estensione), e il nome della stampante
+    scelta per quel tipo di foglio; lo porta il service worker, mai la pagina. L'aiutante
     ripete i controlli (è un PDF? non è enorme? quella stampante esiste, ed è accesa?), stampa con
     SumatraPDF, guarda la coda di Windows, cancella il file temporaneo e risponde: non usa la
     rete, non esegue altro, e nel suo registro scrive cosa e dove, mai il contenuto. Chrome lo
     avvia per ogni foglio e lo chiude subito: in Windows non resta acceso niente. L'aiutante
     accetta solo l'ID fisso di PS Assist (la `"key"` del manifest), scritto in `installa.ps1`.
-    **Una volta sola**: in un ordine in sottofondo la stampa dopo la conferma provata è un passo
-    dell'ordine, tenuto dal service worker in `storage.session`. Ogni foglio ha il suo esito
+    **Una volta sola, e un motore solo**: ogni stampa automatica è un ordine tenuto dal service
+    worker in `storage.session` — in un ordine in sottofondo la stampa dopo la conferma provata è
+    un suo passo; una stampa chiesta dalla scheda del medico (dopo una conferma, «Ristampa», un
+    consenso) è un ordine che fa solo quello, e la stessa domanda arrivata due volte è una stampa
+    sola. Ogni foglio ha il suo esito
     (`attesa`, `mandato`, `stampato`, `fallito`, `sconosciuto`), scritto **prima** di mandarlo; un
     foglio che era in volo quando il service worker è ripartito è «sconosciuto», mai rimandato. La
-    scheda dell'ordine dà solo i PDF: se si ricarica o si chiude, o col ⏹, i fogli che restano non
+    scheda dell'ordine dà solo i PDF — per una stampa dalla scheda del medico è una scheda che il
+    service worker apre dietro sulla pagina del paziente (un indirizzo da leggere, mai un modulo,
+    letto dalla pagina e non costruito), senza pannello; i consensi sono file dell'estensione:
+    se si ricarica o si chiude, o col ⏹, i fogli che restano non
     partono («Stampa interrotta», con Ristampa). **Tre esiti, detti per quello che sono**:
     «stampato» solo se Windows l'ha fatto uscire dalla coda, «mandato» (in ambra) se è ancora lì;
     **«sconosciuto»** — nessuna risposta, tempo scaduto (l'aiutante ha 35 secondi, l'estensione
@@ -1499,8 +1513,9 @@ npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che 
 npm run demo       # rigenera dist/demo.html (il banco di prova)
 npm run dist       # al rilascio: build, fogli di dimissione, dist/ps-assist-latest.zip (con stampa/, senza SumatraPDF)
 npm run verifica-build   # al rilascio, dopo dist e il commit: build fresca = build committata? zip e versioni giusti?
-npm test           # 96 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 111 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
+npm test           # 96 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 123 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
                    # + il Ponte: 120 controlli senza browser (cifratura, ripetitore, Worker) e 166 dal vivo (test/ext-ponte.mjs)
+                   # (Chromium che va in crash aprendo un PDF, in un contenitore Linux: PSA_CHROMIUM_ARGS=--disable-features=PdfOopif)
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
@@ -1546,7 +1561,9 @@ la **stampa automatica** (`test/ext-stampa.mjs`: l'estensione vera con un finto 
 registrato come «native messaging host» del profilo di prova — senza aiutante il dialogo di
 sempre; la pagina Stampanti, da «non installata» all'elenco, l'A4 predefinita, le pagine di
 prova nella misura dell'etichetta, la rotazione, e l'ID fisso; etichette → etichettatrice e lista
-→ A4 senza dialogo, una volta sola, e i consensi all'A4; un foglio che non esce → il dialogo col
+→ A4 senza dialogo né anteprima (le stampa il service worker, coi PDF da una scheda aperta
+dietro), una volta sola anche chiesta due volte, e i consensi all'A4; una conferma nella scheda del
+medico che va subito su un altro paziente; una richiesta fatta a mano, che non stampa; un foglio che non esce → il dialogo col
 motivo, lui solo; l'aiutante sparito, che non parte o vietato per quell'ID; l'interruttore e la
 stampantina rossa; l'ordine in sottofondo stampato dal service worker senza più nessuna scheda
 del gestionale aperta, «Stampato su … alle HH:MM · 2 esami confermati» e «Ristampa»; il foglio dell'ordine che non esce, che arriva al medico col motivo, e

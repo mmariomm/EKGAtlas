@@ -22,7 +22,7 @@ function chromiumPath() {
 let failures = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) failures++; };
 
-const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath() });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath(), args: [...(process.env.PSA_CHROMIUM_ARGS || "").split(/\s+/).filter(Boolean)] });
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 // aperto, il pannello è una finestra all'85% che copre la pagina: qui i test
 // cliccano anche la pagina, quindi parte come colonna a destra
