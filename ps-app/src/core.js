@@ -2848,7 +2848,9 @@
     // Un giro solo si riprende dopo un cambio pagina; una catena
     // lab+radiologia no: le sue due gambe vivono nella memoria del pannello,
     // e a metà non si riprendono. Lì si avvisa prima di uscire, come sempre.
-    plan.riprendibile = !plan.hold;
+    // Nemmeno «Svuota» dalla riga di una richiesta da confermare: non ha niente
+    // da annotare, quindi niente da riprendere — si avvisa prima di uscire.
+    plan.riprendibile = !plan.hold && !plan.soloSvuota;
     const token = Math.random().toString(36).slice(2);   // questo motore, per il presidio
     // La pagina che se ne va porta via il motore: il presidio si molla subito,
     // o la pagina dopo crederebbe che ci sia ancora qualcuno a lavorare.
@@ -2906,7 +2908,7 @@
     const itemSteps = new Map();
     // i passi-esame si contano a parte: la striscia dice «esame 2 di 6», non i passi
     for (const it of plan.items) { const s = step(it.display || it.label); s.esame = true; itemSteps.set(it, s); }
-    const sEnd = step(riprende && !plan.autoConfirm ? "Chiudo: il carrello è pronto"
+    const sEnd = plan.soloSvuota ? null : step(riprende && !plan.autoConfirm ? "Chiudo: il carrello è pronto"
       : plan.autoConfirm ? "Passo alla pagina esami per la conferma" : "Passo alla pagina esami per la revisione");
     ui.renderRun(state);
 
@@ -2942,7 +2944,8 @@
       running(sSvuota, "leggo il carrello…");
       const { sezioni, righe } = await leggiCarrello(model0, { rid, ep, signal, cosa: "Niente svuotato" });
       state.inCarrello = righe.map(nomeRiga);
-      const piano = daRimettere(righe, plan.items, plan.nostri || []);
+      // (con niente da rimettere, niente che non si saprebbe rimettere)
+      const piano = plan.soloSvuota ? { extra: [], ignoti: [] } : daRimettere(righe, plan.items, plan.nostri || []);
       if (piano.ignoti.length) {
         throw new StopError(`Non saprei rimettere ${piano.ignoti.map((x) => `«${x}»`).join(", ")}`,
           "È nel carrello ma non so ordinarlo da qui: non svuoto niente.");
@@ -3038,7 +3041,8 @@
       }
       if (!primo) throw new StopError("Non ritrovo la sezione del carrello da cui ripartire", "Il carrello è vuoto: rimetti gli esami a mano.");
       done(sVuoto, "vuoto ✓");
-      log(`carrello vuoto su ${sezioni.length === 1 ? "1 sezione" : `tutte le ${sezioni.length} sezioni`}, riletto dal server: rimetto ${plan.items.length} esami`);
+      log(`carrello vuoto su ${sezioni.length === 1 ? "1 sezione" : `tutte le ${sezioni.length} sezioni`}, riletto dal server: ${
+        plan.soloSvuota ? "niente da rimettere" : `rimetto ${plan.items.length} esami`}`);
       // un carrello vuoto non ha niente da confermare: il promemoria torna
       // quando rientra il primo esame
       confermataProvata(rid);
@@ -3149,6 +3153,17 @@
       // richiesta si vuota e si dimostra vuoto, poi si rimette tutta la
       // selezione, come il primo giro.
       if (plan.svuota) ({ model, doc, url } = await svuotaCarrello(model));
+      if (plan.soloSvuota) {
+        // «Svuota» dalla riga di una richiesta da confermare: niente da
+        // rimettere. Vuoto e provato, la richiesta è già dimenticata.
+        tabStore.set(CORSA, null);
+        store.set(APERTA, null);
+        liberaPresidio(token);
+        window.removeEventListener("pagehide", mollaPresidio);
+        state.finishedListUrl = model.listUrl(model.res);
+        ui.svuotato(state, plan);
+        return state;
+      }
       const offered = new Set(model.resOptions.map((o) => o.value));
       if (offered.size) {
         const cat = fullCatalog();
@@ -3859,6 +3874,12 @@
     .daconf { display: flex; align-items: center; gap: 8px; max-width: 820px; margin: 0 0 12px; font-size: 12px; color: #7a4b03; }
     .daconf .ddot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: #E5A83B; }
     .daconf .lnk { font-size: 12px; padding: 0; margin-left: auto; }
+    /* sul suo carrello: «Conferma e stampa» · «Svuota», a due tocchi */
+    .daconf.az { flex-wrap: wrap; }
+    .daconf .dcaz { margin-left: auto; display: flex; gap: 12px; }
+    .daconf .dcaz .lnk { margin-left: 0; }
+    .daconf .lnk.chiede { white-space: normal; text-align: right; }
+    .daconf .lnk.chiede.via:enabled { color: #9B1C14; text-decoration-color: #E2A6A0; }
     .acsec .ac { margin-top: 0; }
     .btn { display: block; width: 100%; border: 0; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; }
     .btn + .btn { margin-top: 7px; }
@@ -5088,7 +5109,7 @@
       clearTimeout(this._tVai); clearTimeout(this._tRiprendi);
       this.carrelloDaAprire = null;
       this.riprova = null; this.consegnaErrore = null; this.tieneDopoErrore = null;
-      this.aggiungi = false;
+      this.aggiungi = false; this._daconf = null;
       this.runRipreso = !!(plan && plan.startPage === "ripresa");
       // Il giro sopravvive al cambio pagina: riprende da dov'era. Si avvisa
       // prima di uscire solo dove riprendere non si può — le catene
@@ -5126,6 +5147,21 @@
         testo: daConfermare ? "Confermo…" : plan.startPage === "ripresa" ? "Il carrello è pronto: aprilo quando vuoi" : "Apro il carrello…" });
       this.render();
       if (state.finishedListUrl) this.chiudiRichiesta(state.finishedListUrl, plan, state);
+    }
+
+    // «Svuota» dalla riga di una richiesta da confermare: il carrello è vuoto,
+    // provato, e la richiesta dimenticata. La pagina si rilegge (una lettura,
+    // l'elenco pulito) per mostrare il carrello vero, e la striscia lo dice.
+    svuotato(state, plan) {
+      window.removeEventListener("beforeunload", this._unload);
+      this.runState = null; this.runData = null; this.message = null;
+      const n = (state.inCarrello || []).length;
+      const str = { tag: "Carrello svuotato", testo: `${n === 1 ? "1 esame tolto" : `${n} esami tolti`} · niente da confermare`,
+        tono: "ok", paziente: this.runPatient || plan.patientName || "" };
+      this.segnala(str);
+      this.render();
+      const u = state.finishedListUrl;
+      if (leggibilePagina(u)) this.vaiSeLibero(u, { striscia: str, prima: () => tabStore.set(AVVISO, { ts: Date.now(), striscia: str }) });
     }
 
     // OGNI navigazione decisa dal programma passa di qui. Se il medico sta
@@ -5786,6 +5822,91 @@
         nostri: [...(r.verdi || []), ...(r.controllare || [])].map((x) => ({ ...x })),
       });
     }
+    // ---- La richiesta ancora da confermare, sul suo carrello ----------------
+    // Riaperta più tardi (dopo «Chiudi», un ricarico, da un'altra scheda) la
+    // richiesta non ha più né la ricevuta né il resoconto di un errore: la sua
+    // riga ha «Conferma e stampa» e «Svuota», a due tocchi come «Svuota il
+    // carrello e ricomincia». Il primo legge il carrello vero, tutte le
+    // sezioni (solo letture), e dice per nome che cosa farà; il secondo lo fa.
+    // Solo se la pagina ha la Conferma del gestionale: senza, la richiesta è
+    // forse già confermata, e il motore non svuoterebbe comunque.
+    daConfQui() {
+      if (this.pageType !== "exam" || this.runState || this._delegando) return null;
+      const rid = param(location.href, "RICHIESTA_ID"), ep = findEpisodeId(document, location.href);
+      const live = examModel(document, location.href);
+      if (!rid || !ep || String(live.richiestaId) !== rid || !live.confirmButton) return null;
+      return nonConfermateQui().some((x) => x.rid === rid) ? { rid, ep, live } : null;
+    }
+    daConfAzioni() {
+      const q = this.daConfQui();
+      if (!q) return "";
+      const a = this._daconf && this._daconf.rid === q.rid && !this._daconf.vuoto ? this._daconf : null;
+      const titoli = {
+        dcconferma: "Preme la Conferma del gestionale per questa richiesta, poi parte la stampa. Il primo tocco legge il carrello e dice che cosa conferma",
+        dcsvuota: "Toglie dal carrello tutti gli esami di questa richiesta col «Svuota carrello» del gestionale, controlla che sia vuoto e la dimentica. Il primo tocco legge il carrello e dice che cosa toglie",
+      };
+      const lnk = (id, testo, cls = "") => `<button class="lnk${cls}" id="${id}" title="${esc(titoli[id])}"${a && !a.ok ? " disabled" : ""}>${esc(testo)}</button>`;
+      // armata (o mentre legge), l'altra si toglie di mezzo: la domanda sta da sola
+      if (a) return `<span class="dcaz">${lnk(a.cosa === "conferma" ? "dcconferma" : "dcsvuota", a.testo, ` chiede${a.cosa === "svuota" ? " via" : ""}`)}</span>`;
+      return `<span class="dcaz">${lnk("dcconferma", "Conferma e stampa")}${lnk("dcsvuota", "Svuota")}</span>`;
+    }
+    async daConfTocco(cosa) {
+      const a = this._daconf;
+      if (a && a.cosa === cosa && a.ok) return cosa === "conferma" ? this.daConfConferma(a) : this.daConfSvuota(a);
+      if (a && !a.vuoto) return;   // legge, o ha detto di no: si aspetta che torni a capo
+      const q = this.daConfQui();
+      if (!q) return;
+      const io = this._daconf = { rid: q.rid, cosa, testo: "Leggo il carrello…" };
+      this.render();
+      let fatto;
+      try {
+        const nomi = (await leggiCarrello(q.live, { rid: q.rid, ep: q.ep })).righe.map(nomeRiga);
+        const conto = nomi.length === 1 ? "1 esame" : `${nomi.length} esami`;
+        // la pagina del paziente: il motore la legge prima di svuotare (che non sia confermata)
+        const pu = [(tuttiPazienti().find((p) => p.ep === q.ep) || {}).url].find(leggibilePagina);
+        if (!nomi.length) {
+          // vuoto, riletto dal server: niente da confermare, il promemoria non serve più
+          confermataProvata(q.rid);
+          this.log(`${now()}  la richiesta da confermare ha il carrello vuoto: non la sorveglio più`);
+          fatto = { testo: "Il carrello è vuoto: niente da confermare", vuoto: true };
+        } else if (cosa === "svuota" && !pu) fatto = { testo: "Non svuoto: apri prima la pagina del paziente" };
+        else fatto = { testo: `${cosa === "conferma" ? "Confermo" : "Svuoto"} ${conto}: ${nomi.join(", ")}?`, ok: true, nomi, pu };
+      } catch (e) {
+        fatto = { testo: `Non riesco a leggere il carrello: ${e?.head || e?.message || e}` };
+      }
+      if (this._daconf !== io) return;
+      const ora = this._daconf = { ...io, ...fatto };
+      this.render();
+      setTimeout(() => { if (this._daconf === ora) { this._daconf = null; this.render(); } }, 8000);
+    }
+    // «Confermo 1 esame: PCR?» — sì: il clic vero sulla Conferma della pagina,
+    // come quello della ricevuta. La richiesta è di PS Assist (è fra quelle da
+    // confermare), quindi il gancio sul bottone arma la stampa.
+    daConfConferma(a) {
+      const q = this.daConfQui();
+      if (!q || q.rid !== a.rid) { this._daconf = null; this.render(); return; }
+      const ora = this._daconf = { rid: q.rid, cosa: "conferma", testo: "Confermo…" };
+      this.render();
+      // (la pagina se ne va col modulo; se restasse, la riga torna a capo)
+      setTimeout(() => { if (this._daconf === ora) { this._daconf = null; this.render(); } }, 8000);
+      this.log(`${now()}  conferma della richiesta rimasta da confermare: ${a.nomi.length} ${a.nomi.length === 1 ? "esame" : "esami"} · ${a.nomi.join(" · ")} · click nativo su Conferma`);
+      q.live.confirmButton.click();
+      // quanti esami: qui non c'è ricevuta, lo dice la lettura del primo tocco
+      const p = tabStore.get("print.v1", null);
+      if (p && (p.ids || []).includes(q.rid)) tabStore.set("print.v1", { ...p, n: { ...(p.n || {}), [q.rid]: a.nomi.length } });
+    }
+    // «Svuoto 1 esame: PCR?» — sì: il motore di «Svuota il carrello e
+    // ricomincia», con niente da rimettere. Gira in questa scheda (è corto, e
+    // non si riprende): provato vuoto, la richiesta si dimentica.
+    daConfSvuota(a) {
+      const q = this.daConfQui();
+      this._daconf = null;
+      if (!q || q.rid !== a.rid) { this.render(); return; }
+      this.log(`${now()}  ↺ svuoto il carrello della richiesta rimasta da confermare: ${a.nomi.join(", ")} — niente da rimettere`);
+      this.startPlan({ startPage: "carrello", listUrl: q.live.listUrl(q.live.res), richiestaId: q.rid,
+        svuota: true, soloSvuota: true, items: [], autoConfirm: false, patientUrl: a.pu });
+    }
+
     // «↻ Riprova i mancanti» si mostra solo dov'è sicuro: sul carrello di
     // QUELLA richiesta (il motore rilegge il carrello dal server: quelli già
     // entrati li ritrova e non li rimanda), o sulla pagina del paziente se la
@@ -5858,7 +5979,7 @@
       // Copie: il motore traduce codici e risorse per la sede, e la selezione
       // del medico deve restare la sua (dopo un errore, «Chiudi» la ritrova).
       const items = base.items || [...this.selected.entries()].map(([k, i]) => ({ ...i, chiave: k }));
-      if (!items.length) return;
+      if (!items.length && !base.soloSvuota) return;   // («Svuota» dalla riga non rimette niente)
       const episodeId = findEpisodeId(document, location.href);
       if (!episodeId) { // fail-closed: never order on an unidentifiable episode
         this.message = "Episodio non identificabile su questa pagina: usa la pagina nativa.";
@@ -5878,7 +5999,9 @@
       if (plan.legs && plan.legs.length > 1) { this.runChain(plan); return; }
       // Con l'estensione il giro lo fa una scheda di sottofondo: questa resta
       // libera. Se la scheda non si apre, lo fa questa pagina, come sempre.
-      const dove = this.urlLavoro(plan);
+      // («Svuota» dalla riga di una richiesta da confermare resta qui: è corto,
+      // e un ordine senza esami da mandare non è un ordine.)
+      const dove = plan.soloSvuota ? "" : this.urlLavoro(plan);
       if (dove) this.delega(plan, dove);
       else runPlan(plan, this); // fire and forget; the engine drives the UI via callbacks
     }
@@ -7217,19 +7340,27 @@
       // Una richiesta di questo paziente mandata e non ancora confermata (dopo
       // «Chiudi», o lasciata in revisione): una riga discreta, e un tocco porta
       // al suo carrello. Quella della ricevuta qui sopra lo dice già da sé.
+      // Sul SUO carrello (la prima, se ce ne sono altre) la riga ha le sue due
+      // azioni, «Conferma e stampa» e «Svuota»: riaperta più tardi la
+      // richiesta non ha più né ricevuta né resoconto, e senza di loro era un
+      // vicolo cieco — i bottoni del gestionale stanno sotto la finestra.
       let daConfSec = "";
       {
         const sua = this.pageType === "exam" ? param(location.href, "RICHIESTA_ID") : null;
         const aperte = nonConfermateQui().filter((x) => !(receipt && x.rid === String(receipt.richiestaId)));
-        const x = aperte[0];
+        const x = aperte.find((y) => y.rid === sua) || aperte[0];
         if (x) {
           let u = "";
           try { u = x.listUrl && new URL(x.listUrl).origin === location.origin && !/[?&](Insert|Delete)=/.test(x.listUrl) ? x.listUrl : ""; } catch { u = ""; }
           const qui = !!sua && sua === x.rid;
           const quanti = x.n ? ` (${x.n} ${x.n === 1 ? "esame" : "esami"})` : "";
-          daConfSec = `<div class="daconf"><i class="ddot"></i><span>${qui ? `Questa richiesta${quanti} è ancora da confermare` : `Richiesta delle ${esc(hhmm(x.ts))}${quanti} ancora da confermare`}${
+          const az = qui ? this.daConfAzioni() : "";
+          daConfSec = `<div class="daconf${az ? " az" : ""}"><i class="ddot"></i><span>${qui ? `Questa richiesta${quanti} è ancora da confermare` : `Richiesta delle ${esc(hhmm(x.ts))}${quanti} ancora da confermare`}${
             aperte.length > 1 ? ` · e altre ${aperte.length - 1}` : ""}</span>${
-            !qui && u ? `<button class="lnk" id="apridaconf" data-url="${esc(u)}">apri il carrello</button>` : ""}</div>`;
+            az || (!qui && u ? `<button class="lnk" id="apridaconf" data-url="${esc(u)}">apri il carrello</button>` : "")}</div>`;
+        } else if (this._daconf?.vuoto && this._daconf.rid === sua) {
+          // letta vuota dal server e dimenticata: la riga lo dice, poi se ne va
+          daConfSec = `<div class="daconf"><i class="ddot"></i><span>${esc(this._daconf.testo)}</span></div>`;
         }
       }
 
@@ -9585,6 +9716,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#aggiungi")?.addEventListener("click", () => { this.aggiungi = true; this.render(); });
       // la richiesta ancora da confermare: un tocco porta al suo carrello (una lettura)
       $("#apridaconf")?.addEventListener("click", (e) => { const u = e.currentTarget.getAttribute("data-url"); if (u) nav(u); });
+      // …e sul suo carrello, le sue due azioni (a due tocchi)
+      $("#dcconferma")?.addEventListener("click", () => this.daConfTocco("conferma"));
+      $("#dcsvuota")?.addEventListener("click", () => this.daConfTocco("svuota"));
       // la stampa automatica: le impostazioni (anche dalla stampantina in
       // intestazione, che si ridisegna da sola: l'ascolto sta sul suo posto) e l'interruttore
       $("#stampanti")?.addEventListener("click", () => this.apriStampanti());

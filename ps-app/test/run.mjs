@@ -1212,6 +1212,8 @@ async function scenarioChiudi(browser) {
   const riga = (await $panel(page, ".daconf").innerText().catch(() => "")).replace(/\s+/g, " ");
   check(scen, /ancora da confermare/.test(riga) && /2 esami/.test(riga),
     `una riga discreta: quella richiesta è ancora da confermare (got: ${riga || "niente"})`);
+  check(scen, (await $panel(page, "#dcconferma").count()) === 1 && (await $panel(page, "#dcsvuota").count()) === 1,
+    "e sul suo carrello, senza più il resoconto, la riga ha «Conferma e stampa» e «Svuota»");
   const tab = await page.evaluate(() => ({
     avviso: sessionStorage.getItem("psassist:avviso.v1"),
     ui: JSON.parse(sessionStorage.getItem("psassist:ui.999001") || "{}"),
@@ -1515,6 +1517,169 @@ async function scenarioSvuotaExtra(browser) {
   await b.page.waitForTimeout(500);
   check(scen, !mock2.state.requests.slice(n1).some((q) => q.params.Delete || q.params.Insert), "niente tolto, niente mandato");
   await b.context.close();
+}
+
+// La richiesta lasciata da confermare («solo carrello», un errore chiuso con
+// «Chiudi», una conferma interrotta) e il suo carrello riaperto più tardi: da
+// un'altra scheda, dopo un ricarico. Lì non ci sono né la ricevuta né il
+// resoconto di un errore, e la riga «Questa richiesta è ancora da confermare»
+// non aveva niente da toccare — i bottoni del gestionale stavano sotto la
+// finestra: un vicolo cieco. Ora la riga ha due azioni, a due tocchi come
+// «Svuota il carrello e ricomincia»: il primo legge il carrello vero (tutte le
+// sezioni, solo letture) e dice coi nomi che cosa farà, il secondo lo fa.
+async function richiestaDaConfermare(browser, esami, opts = {}) {
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock, opts);
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("febbre");
+  for (const e of esami) await $panel(page, `.opt[title*="${e}"]`).click();
+  await $panel(page, "#go").click();
+  await atterraCarrello(page);
+  return { mock, context, page, rid: Object.keys(mock.state.richieste)[0], listUrl: page.url() };
+}
+// un'altra scheda dello stesso browser: la memoria condivisa sì, quella della scheda no
+async function altraScheda(context, url, res) {
+  const p = await context.newPage();
+  p.on("load", async () => { try { await p.addScriptTag({ path: CONTENT }); } catch { /* navigation race */ } });
+  const u = new URL(url);
+  if (res) u.searchParams.set("RISORSA_ID", res);
+  await p.goto(u.href);
+  await p.waitForSelector("#psassist-host .daconf", { timeout: 10000 });
+  return p;
+}
+// un tocco su un'azione della riga, e quello che dice dopo
+async function toccaRiga(page, sel, re = /\?$|^Non |vuoto/) {
+  await $panel(page, sel).click();
+  const h = await page.waitForFunction(([s, src]) => {
+    const t = (document.getElementById("psassist-host")?.shadowRoot?.querySelector(s)?.innerText || "").replace(/\s+/g, " ").trim();
+    return new RegExp(src).test(t) ? t : false;
+  }, [sel, re.source], { timeout: 15000 });
+  return h.jsonValue();
+}
+const sorvegliate = (page) => page.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
+
+// Riaperta sulla risorsa dove la richiesta non ha esami (nella foto: RX (0),
+// l'esame sta nel laboratorio): «Svuota» la svuota col «Svuota carrello» del
+// gestionale, la dimostra vuota rileggendola, non rimette niente, e la
+// richiesta si dimentica: la riga se ne va.
+async function scenarioBloccatoSvuota(browser) {
+  const scen = "bloccato-svuota";
+  const { mock, context, rid, listUrl } = await richiestaDaConfermare(browser, ["EMOCROMOCITOMETRICO"]);
+  const p2 = await altraScheda(context, listUrl, RES.CENTRAL);
+  const riga = (await $panel(p2, ".daconf").innerText()).replace(/\s+/g, " ");
+  const sezioni = (await $panel(p2, ".sec .lbl").allInnerTexts()).join(" | ");
+  check(scen, /Questa richiesta \(1 esame\) è ancora da confermare/.test(riga) && /Già nel carrello — Lab centrale \(0\)/i.test(sezioni),
+    `riaperta da un'altra scheda, sulla risorsa senza esami: la riga c'è (got: ${riga} · ${sezioni})`);
+  check(scen, (await $panel(p2, "#dcconferma").count()) === 1 && (await $panel(p2, "#dcsvuota").count()) === 1,
+    "e non è un vicolo cieco: sulla riga, «Conferma e stampa» e «Svuota»");
+  await shot(p2, "bloccato-riga");
+  const n0 = mock.state.requests.length;
+  const chiede = await toccaRiga(p2, "#dcsvuota");
+  check(scen, chiede === "Svuoto 1 esame: EMOCROMO POC?", `il primo tocco legge il carrello vero e chiede, coi nomi (got: ${chiede})`);
+  const letture = mock.state.requests.slice(n0);
+  check(scen, letture.length >= 3 && letture.every((q) => q.method === "GET" && !q.params.Delete && !q.params.Insert),
+    `e intanto solo letture, una per sezione (got ${letture.length})`);
+  check(scen, (await $panel(p2, "#dcconferma").count()) === 0, "armata, l'altra azione si toglie di mezzo");
+  await shot(p2, "bloccato-svuota-armato");
+  const n1 = mock.state.requests.length;
+  await $panel(p2, "#dcsvuota").click();
+  const fine = await striscia(p2, /Carrello svuotato/, 30000).catch(() => "");
+  const dopo = mock.state.requests.slice(n1);
+  const del = richiesteDelete(mock, n1);
+  check(scen, del.length >= 1 && del.every((q) => !q.params.PRESTAZIONE && q.params.MVPG === "RcsRichiestaCarrelloSvuota"
+    && q.params.RICHIESTA_ID === rid && q.params.EPISODIO_ID === "999001"),
+  `svuotata col «Svuota carrello» del gestionale, quella richiesta e quell'episodio (got ${del.map((q) => `${q.params.MVPG}/${q.params.RICHIESTA_ID}/${q.params.PRESTAZIONE || "-"}`).join(", ")})`);
+  const iPaz = dopo.findIndex((q) => q.method === "GET" && q.params.MVPG === "PsoEpisodioClinicoAmbulatorio");
+  const iDel = dopo.findIndex((q) => q.params.Delete === "Elimina");
+  check(scen, iPaz >= 0 && iPaz < iDel, "prima di svuotare, una lettura della pagina del paziente: non è confermata");
+  check(scen, mock.state.richieste[rid].cart.size === 0 && !dopo.some((q) => q.params.Insert) && confermePost(mock).length === 0,
+    "il carrello è vuoto: niente rimesso, niente confermato");
+  check(scen, /1 esame tolto/.test(fine), `la striscia lo dice (got: ${fine || "niente"})`);
+  check(scen, !(await sorvegliate(p2)).some((x) => x.rid === rid), "la richiesta si dimentica: non c'è più niente da confermare");
+  check(scen, new URL(p2.url()).searchParams.get("RICHIESTA_ID") === rid && !/[?&](Delete|Insert)=/.test(p2.url()),
+    "e la pagina è il carrello, riletto (una lettura): vuoto anche lì");
+  await apriStriscia(p2);
+  check(scen, (await $panel(p2, ".daconf").count()) === 0, "la riga se ne va");
+  check(scen, /Già nel carrello — Lab centrale \(0\)/i.test((await $panel(p2, ".sec .lbl").allInnerTexts()).join(" | ")), "e il pannello mostra il carrello vero");
+  await context.close();
+}
+
+// Riaperta sulla risorsa dove la richiesta ha il suo esame, dopo un ricarico
+// (la ricevuta è scaduta): «Conferma e stampa» preme la Conferma del
+// gestionale per QUELLA richiesta, una volta, e la stampa parte. Solo se la
+// pagina la Conferma ce l'ha: senza, la riga resta com'era.
+async function scenarioBloccatoConferma(browser) {
+  const scen = "bloccato-conferma";
+  let senzaConferma = false;
+  const { mock, page, context, rid } = await richiestaDaConfermare(browser, ["EMOCROMOCITOMETRICO"], {
+    riscrivi: (u, html) => (senzaConferma ? html.replace(/<input type="submit" name="Update1?" value="Conferma">/g, "") : html),
+  });
+  const ricarica = async () => {
+    await page.evaluate(() => sessionStorage.removeItem("psassist:receipt.v1"));   // passati i due minuti
+    await page.reload();
+    await page.waitForSelector("#psassist-host .daconf", { timeout: 10000 });
+  };
+  senzaConferma = true;
+  await ricarica();
+  check(scen, (await $panel(page, "#dcconferma").count()) === 0 && (await $panel(page, "#dcsvuota").count()) === 0,
+    "una pagina senza la Conferma del gestionale: niente azioni sulla riga");
+  senzaConferma = false;
+  await ricarica();
+  const sezioni = (await $panel(page, ".sec .lbl").allInnerTexts()).join(" | ");
+  check(scen, /Già nel carrello — POC \(1\)/i.test(sezioni) && (await $panel(page, "#dcconferma").count()) === 1,
+    `ricaricata, sulla risorsa del suo esame: «Conferma e stampa» sulla riga (got: ${sezioni})`);
+  const n0 = mock.state.requests.length;
+  const chiede = await toccaRiga(page, "#dcconferma");
+  check(scen, chiede === "Confermo 1 esame: EMOCROMO POC?", `il primo tocco legge il carrello vero e chiede, coi nomi (got: ${chiede})`);
+  check(scen, mock.state.requests.slice(n0).every((q) => q.method === "GET" && !q.params.Delete && !q.params.Insert) && confermePost(mock).length === 0,
+    "e intanto solo letture: niente confermato");
+  await shot(page, "bloccato-conferma-armato");
+  await $panel(page, "#dcconferma").click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 });
+  const conf = confermePost(mock);
+  check(scen, conf.length === 1 && conf[0].params.RICHIESTA_ID === rid && mock.state.richieste[rid].confirmed === true,
+    `il secondo preme la Conferma del gestionale, per quella richiesta, una volta (got ${conf.length})`);
+  check(scen, /Etichette provette/.test(await docStampa(page)), "e la stampa parte: la richiesta è sua");
+  check(scen, !(await sorvegliate(page)).some((x) => x.rid === rid), "confermata con la prova: il promemoria se ne va");
+  check(scen, Object.keys(mock.state.insertCount).length === 1, "e niente mandato due volte");
+  await page.keyboard.press("Escape");
+  await context.close();
+
+  // Il carrello svuotato a mano nel gestionale: la riga lo legge vuoto, non
+  // conferma niente, e smette di sorvegliare la richiesta.
+  const b = await richiestaDaConfermare(browser, ["EMOCROMOCITOMETRICO"]);
+  b.mock.state.richieste[b.rid].cart.clear();
+  const p2 = await altraScheda(b.context, b.listUrl);
+  await $panel(p2, "#dcconferma").click();
+  const riga = await p2.waitForFunction(() => {
+    const t = (document.getElementById("psassist-host")?.shadowRoot?.querySelector(".daconf")?.innerText || "").replace(/\s+/g, " ").trim();
+    return /vuoto/.test(t) ? t : false;
+  }, null, { timeout: 15000 }).then((h) => h.jsonValue()).catch(() => "");
+  check(scen, riga === "Il carrello è vuoto: niente da confermare" && (await $panel(p2, "#dcconferma, #dcsvuota").count()) === 0
+    && confermePost(b.mock).length === 0 && !(await sorvegliate(p2)).some((x) => x.rid === b.rid),
+  `svuotato a mano: «vuoto, niente da confermare», niente confermato, il promemoria se ne va (got: ${riga || "niente"})`);
+  await b.context.close();
+}
+
+// E aggiungere esami lì funziona come sempre: la PCT sulla risorsa senza
+// esami, «Conferma e stampa · 1 esame», e la richiesta si conferma intera.
+async function scenarioBloccatoAggiungi(browser) {
+  const scen = "bloccato-aggiungi";
+  const { mock, context, rid, listUrl } = await richiestaDaConfermare(browser, ["EMOCROMOCITOMETRICO"]);
+  const p2 = await altraScheda(context, listUrl, RES.URGENZE);
+  await $panel(p2, '.opt[title*="PROCALCITONINA"]').click();
+  const cta = (await $panel(p2, "#goconfirm").innerText()).replace(/\s+/g, " ").trim();
+  check(scen, cta === "Conferma e stampa · 1 esame" && !(await $panel(p2, "#goconfirm").isDisabled()), `si sceglie e si manda (got: ${cta})`);
+  await $panel(p2, "#goconfirm").click();
+  await p2.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 });
+  check(scen, mock.state.insertCount[`${rid}:159`] === 1 && mock.state.insertCount[`${rid}:320`] === 1 && Object.keys(mock.state.richieste).length === 1,
+    `la PCT entra nella stessa richiesta, una volta; l'EMOCROMO non si rimanda (${JSON.stringify(mock.state.insertCount)})`);
+  check(scen, confermePost(mock).length === 1 && mock.state.richieste[rid].confirmed === true
+    && [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "159,320", "e la richiesta si conferma, una volta, con tutti e due");
+  check(scen, !(await sorvegliate(p2)).some((x) => x.rid === rid), "niente più da confermare");
+  await p2.keyboard.press("Escape");
+  await context.close();
 }
 
 // Un salto di pagina deciso da un giro (l'errore porta sul carrello) non
@@ -5534,6 +5699,9 @@ const scenarios = [
   ["errore: «Svuota il carrello» non riuscito — stop, niente rimesso", scenarioSvuotaNonVuoto],
   ["errore: «Svuota il carrello» senza Svuota in pagina — riga per riga", scenarioSvuotaRigaPerRiga],
   ["errore: «Svuota il carrello» rimette anche quello che c'era già, e lo dice per nome", scenarioSvuotaExtra],
+  ["carrello bloccato: la richiesta da confermare si svuota dalla sua riga", scenarioBloccatoSvuota],
+  ["carrello bloccato: la richiesta da confermare si conferma dalla sua riga", scenarioBloccatoConferma],
+  ["carrello bloccato: aggiungere esami lì funziona", scenarioBloccatoAggiungi],
   ["errore: il salto sul carrello non parte sopra «Riprova»", scenarioSaltoSpento],
   ["riga assente in pagina: la ricerca del gestionale", scenarioRigaCercata],
   ["conferma interrotta dalla navigazione: la pagina dopo avvisa", scenarioConfermaInterrotta],

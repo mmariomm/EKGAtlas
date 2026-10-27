@@ -446,6 +446,13 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    confermare», con «apri il carrello» accanto. Restano scelti **solo gli esami che mancano davvero**:
    quelli già nel suo carrello (e i «da controllare») non si offrono di nuovo, così il conto sul
    bottone è quello vero.
+   **Sul suo carrello la riga ha due azioni**, anche riaperto più tardi (un ricarico, un'altra
+   scheda: niente ricevuta né resoconto, e prima era un vicolo cieco): **Conferma e stampa** e
+   **Svuota**, a due tocchi. Il primo legge il carrello vero, tutte le sezioni, e chiede coi nomi
+   — «Confermo 1 esame: PCR?», «Svuoto 1 esame: PCR?» —; il secondo fa (dopo 8 secondi si torna
+   a capo). Conferma preme la Conferma del gestionale, e la stampa parte; Svuota svuota come
+   «Svuota il carrello», senza rimettere niente, e la richiesta si dimentica; un carrello letto
+   già vuoto si dimentica e basta. Solo se la pagina ha la Conferma.
    **Mentre scrivi, la pagina non cambia da sola.** Ogni salto di pagina deciso dal pannello
    (errore → carrello, revisione → carrello, conferma sospesa) prima guarda: se hai il cursore
    in un campo del gestionale, hai cambiato un campo, o hai premuto un tasto negli ultimi 15
@@ -1205,6 +1212,14 @@ stessi flussi dei test di prodotto.
    mano. La selezione rimessa è quella **di partenza**, non i numeri in cui il motore l'aveva
    tradotta (un esame a riflesso torna quello scelto, e la riga in cui è entrato non si rimette
    una seconda volta).
+   **«Svuota» sulla riga di una richiesta da confermare** è lo stesso percorso, con niente da
+   rimettere (e quindi nessuna riga «che non si saprebbe rimettere»): pagina del paziente,
+   carrello vero, «Svuota carrello» del gestionale, ogni sezione riletta vuota; solo allora la
+   richiesta esce dal promemoria. Gira nella scheda del medico, non in sottofondo (non c'è niente
+   da mandare), e non si riprende: cambiando pagina a metà il browser avvisa. Finito, la pagina
+   rilegge il carrello (l'elenco pulito, mai un indirizzo con `Delete`). Il suo **«Conferma e
+   stampa»** è il clic nativo della regola 5, dopo una lettura del carrello che dice che cosa
+   conferma.
    **Nessun salto di pagina sopra chi scrive.** Ogni navigazione decisa dal programma (errore
    → carrello, revisione → carrello, conferma sospesa o rifiutata dalla cornice) passa da un
    solo controllo: cursore in un campo del gestionale, un campo cambiato, un tasto premuto
@@ -1471,7 +1486,7 @@ ps-app/
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 93 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo, stampa automatica)
+└── test/                ← simulatore SA4PSO + 96 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo, stampa automatica)
 ```
 
 Sviluppo:
@@ -1484,7 +1499,7 @@ npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che 
 npm run demo       # rigenera dist/demo.html (il banco di prova)
 npm run dist       # al rilascio: build, fogli di dimissione, dist/ps-assist-latest.zip (con stampa/, senza SumatraPDF)
 npm run verifica-build   # al rilascio, dopo dist e il commit: build fresca = build committata? zip e versioni giusti?
-npm test           # 93 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 111 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
+npm test           # 96 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 111 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
                    # + il Ponte: 120 controlli senza browser (cifratura, ripetitore, Worker) e 166 dal vivo (test/ext-ponte.mjs)
 ```
 
