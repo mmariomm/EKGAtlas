@@ -341,7 +341,10 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    resta, una scheda qualunque, solo se la stai guardando in quel momento. Le etichette si
    stampano dove sei (sotto); «solo carrello», una conferma sospesa o non verificata, un ⏹, **un
    errore** diventano in ogni scheda una striscia con **apri il carrello**: lo apre lì, con la
-   ricevuta o col resoconto intero (Riprova, Svuota, Chiudi). ✕ chiude l'avviso.
+   ricevuta o col resoconto intero (Riprova, Svuota, Chiudi). ✕ chiude l'avviso. Con l'esito
+   arriva anche il **Registro** della scheda dell'ordine (le sue ultime righe): si aggiunge al
+   Registro di quel paziente nella tua scheda, sotto «il Registro della scheda dell'ordine», e
+   «⧉ Copia» lo copia — il perché di una conferma sospesa o non verificata non muore più con lei.
    **Le etichette non ti saltano addosso.** Vanno nella scheda del gestionale che hai davanti
    (la finestra in primo piano), **una volta sola**, e dicono **di chi sono**. Sulla pagina di
    quel paziente, o sulla lista, il dialogo parte da solo — ma non mentre scrivi (cursore in un
@@ -392,8 +395,9 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    lì sta dietro un piccolo **+ aggiungi**.
    **«Confermata» solo con una prova**: una pagina dello stesso episodio che elenca i fogli da
    stampare di quella richiesta. Se dopo il clic arriva altro — un errore del server, di nuovo
-   il carrello, niente — il pannello legge **una volta** la pagina del paziente (una lettura, mai
-   un invio); se nemmeno lì la richiesta risulta, la striscia è **ambra**, «Non confermata ·
+   il carrello, niente — il pannello legge la pagina del paziente (solo letture, mai un invio),
+   e se non la elenca ancora la rilegge dopo 2, 4 e 8 secondi: il gestionale può metterci un
+   po'. Se nemmeno così la richiesta risulta, la striscia è **ambra**, «Non confermata ·
    tocca per il carrello», mai verde. Niente viene riconfermato da solo: un tocco apre il
    carrello, e lì decidi tu.
    **Nessuna richiesta dimenticata.** Prima della conferma in sottofondo (e alla fine di un giro
@@ -1202,7 +1206,11 @@ stessi flussi dei test di prodotto.
    rilegge dal server; quelli già entrati vanno con lui **solo da cercare** — come l'«in volo»
    di una ripresa: mai un secondo invio, e se qualcuno li ha tolti non si rimettono — e i «da
    controllare» non ci sono proprio. Il motore controlla che l'elenco riletto sia di **quella**
-   richiesta (`RICHIESTA_ID`): se no, stop prima di qualunque invio.
+   richiesta (`RICHIESTA_ID`): se no, stop prima di qualunque invio. E ogni rilettura di
+   verifica vale solo se è l'elenco di quella richiesta e di quella risorsa: un altro elenco
+   non dice niente del nostro carrello — si conta il tentativo, lo si scrive nel Registro, e
+   la rilettura dopo torna sul nostro (prima, quell'elenco diventava il modello e da lì
+   partivano anche le riletture seguenti).
    **Svuotare il carrello lo fa il gestionale, e si dimostra.** «Svuota il carrello e
    ricomincia» c'è solo sul carrello di quella richiesta, con due tocchi. Si segue il link
    «Svuota carrello» della pagina (`Delete=Elimina`, `MVPG=RcsRichiestaCarrelloSvuota`, **senza**
@@ -1274,8 +1282,14 @@ stessi flussi dei test di prodotto.
    (`allow-forms allow-same-origin`, mai `allow-scripts` né
    `allow-top-navigation`), così il codice della pagina non può portarsi via la
    scheda del medico. Se il server **vieta di essere incorniciato**, il
-   documento non è leggibile: il programma se ne accorge e torna alla pagina
-   visibile, come prima. Ogni intoppo — cornice rifiutata, controllo che dice
+   documento non è leggibile: il programma se ne accorge subito (la pagina
+   d'errore della cornice non si lascia leggere) e torna alla pagina
+   visibile, come prima. **La scheda di un ordine in sottofondo non usa la
+   cornice**: è già lei la pagina che nessuno guarda, e va sul carrello vero a
+   premere lì la Conferma (la strada della cornice vietata). Una cornice
+   dentro una scheda nascosta Chrome la carica col contagocce, e scadeva prima
+   che il server avesse finito: «Non confermata» per una richiesta confermata.
+   Ogni intoppo — cornice rifiutata, controllo che dice
    di no, stato incerto — finisce sulla pagina vera col motivo scritto (la
    striscia ambra lo annuncia, un tocco lo apre), e la conferma resta al
    medico. C'è un test che prova che in quel caso la richiesta viene
@@ -1283,10 +1297,17 @@ stessi flussi dei test di prodotto.
    **Confermata vuol dire provata.** Dopo il clic vale come prova solo una pagina dello stesso
    episodio che elenca i fogli da stampare di **quella** richiesta (`RICHIESTA_ID`). Un HTTP
    500, il carrello che ricompare, il tempo scaduto, la cornice sparita: «incerta». Allora si
-   legge UNA volta la pagina del paziente (GET, mai un invio): se la elenca, è confermata e i
-   fogli si prendono da lì; se no la striscia è ambra, «Non confermata · tocca per il
-   carrello», e nessuna seconda conferma parte da sola. Se la pagina se ne va mentre la cornice
-   lavora, la conferma automatica muore con lei. In ogni caso la richiesta resta annotata (solo
+   legge la pagina del paziente (GET, mai un invio) e, se non la elenca ancora, la si rilegge
+   dopo 2, 4 e 8 secondi — il LIS può metterci un po' a registrarla: se la elenca, è
+   confermata e i fogli si prendono da lì; se no la striscia è ambra, «Non confermata · tocca
+   per il carrello», e nessuna seconda conferma parte da sola.
+   **Ogni no dice perché.** Ogni controllo che ferma la conferma automatica scrive nel
+   Registro quale è stato. Un carrello a cui manca una riga che deve avere (l'ultimo esame, o
+   meno righe di quelle aggiunte su quella risorsa: l'elenco monco che la verifica
+   dell'inserimento conosce già) si **ricarica** — dopo 2, 4 e 8 secondi, una lettura
+   dell'elenco pulito — e i controlli ripartono da capo; solo dopo si sospende. Una riga in
+   più, una ricevuta che manca, un'altra richiesta: si sospende subito.
+   Se la pagina se ne va mentre la cornice lavora, la conferma automatica muore con lei. In ogni caso la richiesta resta annotata (solo
    numeri) finché una pagina del paziente non la mostra confermata: dopo 2 minuti la striscia
    lo dice.
    **Non poter controllare non è come aver controllato**: se la ricevuta manca o è di un'altra
@@ -1330,7 +1351,17 @@ stessi flussi dei test di prodotto.
    sola**, un motore alla volta; la coda non va avanti finché la scheda di prima esiste. La
    scheda del medico non manda niente: una risposta persa si richiede con lo stesso numero, e
    parte da sé solo su un no esplicito. L'appunto della scheda porta il numero dell'ordine:
-   ripristinata dopo un browser caduto, o duplicata, non riprende niente. Le etichette le
+   ripristinata dopo un browser caduto, o duplicata, non riprende niente. **Nessun ordine
+   resta «in corso» per sempre**: se la scheda dell'ordine si ricarica (lo fa il gestionale da
+   sé, o un clic del medico su di lei) quando il giro è già finito ma l'ultima parola non è
+   ancora detta, niente da riprendere e nessuna conferma armata, cerca la prova della
+   Conferma se era partita da lì (solo letture), se no dice «Da controllare · apri il
+   carrello» — e l'ordine finisce, la coda va avanti. Il ⏹ c'è finché l'ordine è in corso e
+   lo finisce sempre, tranne quando la Conferma è già partita: allora arriva la prova, o le
+   etichette. **Il Registro della scheda dell'ordine** (le ultime 40 righe) viaggia con la sua
+   ultima parola, e le schede del medico lo aggiungono al Registro di quel paziente, segnato
+   «dalla scheda dell'ordine»: è lì il perché di com'è andata, e «⧉ Copia» lo copia (col
+   quesito omesso, come sempre). Le etichette le
    consegna il service worker a **una** scheda (quella davanti, nella finestra in primo piano),
    una volta sola, coi link letti dalla pagina del gestionale e accettati solo dalla sua origine.
    Nessun permesso nuovo per l'estensione. (Con la stampa automatica i fogli li stampa il
@@ -1514,6 +1545,7 @@ npm run demo       # rigenera dist/demo.html (il banco di prova)
 npm run dist       # al rilascio: build, fogli di dimissione, dist/ps-assist-latest.zip (con stampa/, senza SumatraPDF)
 npm run verifica-build   # al rilascio, dopo dist e il commit: build fresca = build committata? zip e versioni giusti?
 npm test           # 97 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 123 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
+                   # + l'ordine in una scheda DAVVERO nascosta: Chrome senza Playwright, CDP grezzo (test/ext-nascosta.mjs; serve openssl)
                    # + il Ponte: 120 controlli senza browser (cifratura, ripetitore, Worker) e 166 dal vivo (test/ext-ponte.mjs)
                    # (Chromium che va in crash aprendo un PDF, in un contenitore Linux: PSA_CHROMIUM_ARGS=--disable-features=PdfOopif)
 ```

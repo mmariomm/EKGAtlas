@@ -54,7 +54,8 @@ const quale = (url) => {
 // le risposte lente servono a VEDERE il giro mentre va, e a navigare durante
 let lento = 0;
 let arrivati = 0;   // gli inserimenti arrivati al «server» (prima della risposta lenta)
-let riscrivi = null;   // (url, html) → html: il server che si comporta in modo strano
+let riscrivi = null;   // (url, html, req) → html: il server che si comporta in modo strano
+let intercetta = null;   // async (route, req, url) → true se la richiesta l'ha presa lui (non arriva al «server»)
 let pazienteLento = 0;   // la pagina di ROSSI che arriva lenta (la scheda dell'ordine che si apre)
 const sospendi = (ms) => new Promise((res) => setTimeout(res, ms));
 const ctx = await chromium.launchPersistentContext(PROFILE, {
@@ -91,6 +92,7 @@ await ctx.addInitScript(() => {
 await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   const req = r.request();
   const u = req.url();
+  if (intercetta && await intercetta(r, req, u)) return;
   if (/Insert=Inserisci/.test(u)) arrivati++;
   if (lento && /Insert=Inserisci/.test(u)) await sospendi(lento);
   if (pazienteLento && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(u) && /EPISODIO_ID=999001/.test(u)) await sospendi(pazienteLento);
@@ -99,7 +101,7 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   let h = 0;
   while (out.status === 302 && h++ < 5) out = mock.handle({ method: "GET", url: new URL(out.headers.location, u).href });
   if (riscrivi && /html/.test(out.headers["content-type"] || "")) {
-    out = { ...out, body: Buffer.from(riscrivi(u, Buffer.from(out.body).toString("latin1")), "latin1") };
+    out = { ...out, body: Buffer.from(riscrivi(u, Buffer.from(out.body).toString("latin1"), req), "latin1") };
   }
   try { await r.fulfill({ status: out.status, headers: out.headers, body: out.body }); } catch { /* scheda chiusa intanto */ }
 });
@@ -314,7 +316,11 @@ if (prova("la scheda dell'ordine che stai guardando quando finisce resta — una
   check((await ordini()).length === 0, "e l'ordine è finito: non è legato a nessuna scheda");
   // una scheda qualunque: ricaricata, non riparte niente
   const n0 = inviati(A).length;
-  await worker.reload();
+  // (la Conferma l'ha premuta lei, sulla pagina vera: il gestionale risponde con un
+  // redirect alla pagina del paziente, che qui il banco segue da sé lasciando
+  // l'indirizzo del modulo — ricaricare quello lo rimanderebbe. Si ricarica quello vero.)
+  if (/ccsForm=/.test(worker.url())) await worker.goto(A.patientUrl);
+  else await worker.reload();
   await worker.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
   await worker.waitForTimeout(2500);
   check(inviati(A).length === n0 && conferme(A).length === 1, "ricaricata, non manda niente: non è più la scheda di un ordine");
@@ -418,7 +424,7 @@ if (prova("errore mentre guardi la scheda dell'ordine — resta, slegata, e lì 
   check(/BIANCHI ANNA/.test(t) && !/ROSSI/.test(t), `le etichette di BIANCHI portano il nome di BIANCHI (got: ${t || "niente"})`);
   check(conferme(B).length === 1 && conferme(A).length === 0, "una conferma, di BIANCHI; quella di ROSSI resta da fare");
   const l2 = await ordini();
-  check(l2.some((x) => x.paziente === "ROSSI MARIO" && x.stato === "errore"), `e l'avviso rosso di ROSSI resta: nessuno l'ha letto (got ${l2.map((x) => `${x.paziente}:${x.stato}`).join(", ")})`);
+  check(l2.some((x) => x.paziente === "ROSSI MARIO" && x.stato === "errore"), `e l'avviso rosso di ROSSI resta: nessuno l'ha letto (got ${l2.map((x) => `${x.paziente}:${x.stato}:${x.vista?.tag || ""}`).join(", ")})`);
   await chiudiStampa(w);
   if (w2) await aspettaChiusa(w2);
   await w.close();
@@ -803,6 +809,167 @@ if (prova("con solo un avviso aperto nessuna scheda chiede niente, e niente si r
   });
   check(conto.giri === 0 && conto.scritte === 0, `dieci secondi con un avviso aperto: nessun giro di controllo, nessuna scrittura (got ${JSON.stringify(conto)})`);
   await $panel(doc, "#strstop").click().catch(() => {});
+}
+
+// ---- 17. la conferma nella scheda dell'ordine: la pagina vera, con pazienza
+// La scheda dell'ordine è già una pagina che nessuno guarda: conferma sul
+// carrello vero, col suo bottone (una cornice dentro una scheda nascosta
+// Chrome la carica col contagocce — quello si prova con Chrome vero, non qui).
+// Il carrello che arriva senza la riga dell'ultimo esame (l'elenco monco o in
+// ritardo che la verifica dell'inserimento conosce già) si rilegge, mai un
+// secondo clic; se manca sempre, la conferma si sospende, e il perché arriva
+// nel Registro del medico: la scheda dell'ordine si chiude, il suo Registro no.
+const registroDi = (p, ep = "999001") => p.evaluate((e) => (JSON.parse(sessionStorage.getItem("psassist:log." + e) || "{}").lines || []).join("\n"), ep);
+const senzaRiga = (code, quante) => {
+  const st = { n: 0 };
+  st.fn = (u, html, req) => {
+    // solo le pagine del carrello caricate come pagine (le letture del motore no)
+    if (st.n >= quante || req.resourceType() !== "document" || !/MVPG=RcsRichiestaPrestazioniRicercaErogatore/.test(u) || !/EPISODIO_ID=999001/.test(u)) return html;
+    const via = html.replace(new RegExp(`<tr><td><a class="AFCDataLink" href="[^"]*Delete=Elimina[^"]*PRESTAZIONE=${code}[^"]*">[^<]*</a></td></tr>`, "g"), "");
+    if (via !== html) st.n++;
+    return via;
+  };
+  return st;
+};
+if (prova("il carrello della conferma arriva senza l'ultimo esame — si rilegge; se manca sempre, il perché arriva al medico")) {
+  nuovi();
+  lento = 0;
+  await suPagina(doc, A.patientUrl);
+  const una = senzaRiga("320", 1);
+  riscrivi = una.fn;
+  let nasce = nuovaPagina();
+  await ordina(doc, ["EMOCROMOCITOMETRICO"]);
+  let w = await nasce;
+  await suPagina(doc, B.patientUrl);
+  const pronte = await striscia(doc, /Etichette di ROSSI M\. pronte/, 60000).catch(() => "");
+  let rid = Object.keys(A.state.richieste)[0];
+  check(una.n === 1 && !!pronte && A.state.richieste[rid]?.confirmed === true && conferme(A).length === 1,
+    `il carrello arrivato una volta senza EMOCROMO: si rilegge, poi confermata — un clic solo (got: ${una.n} pagine monche · ${pronte || "niente"} · ${conferme(A).length} conferme)`);
+  check(/auto-conferma: «EMOCROMO[^»]*» \(320\) non è nel carrello di questa pagina — rileggo il carrello/.test(await registroDi(doc)),
+    "e il Registro del medico dice perché ha riletto (lo scrive la scheda dell'ordine)");
+  await aspettaChiusa(w);
+  await nessunOrdine();
+  // …e se manca sempre: sospesa, col perché
+  nuovi();
+  await doc.evaluate(() => sessionStorage.removeItem("psassist:log.999001"));   // (da BIANCHI: il Registro di ROSSI riparte vuoto)
+  await suPagina(doc, A.patientUrl);
+  const sempre = senzaRiga("320", 99);
+  riscrivi = sempre.fn;
+  nasce = nuovaPagina();
+  await ordina(doc, ["EMOCROMOCITOMETRICO"]);
+  w = await nasce;
+  await suPagina(doc, B.patientUrl);
+  const sospesa = await striscia(doc, /ROSSI MARIO.*Conferma sospesa/, 60000).catch(() => "");
+  rid = Object.keys(A.state.richieste)[0];
+  check(!!sospesa && sempre.n === 4 && conferme(A).length === 0 && A.state.richieste[rid]?.confirmed === false,
+    `manca sempre: 3 riletture, poi «Conferma sospesa», niente confermato (got: ${sempre.n} pagine monche · ${sospesa || "niente"})`);
+  const reg = await registroDi(doc);
+  check(/── il Registro della scheda dell'ordine ──/.test(reg) && /» .*auto-conferma sospesa: «EMOCROMO[^»]*» \(320\) non è nel carrello di questa pagina/.test(reg),
+    `il Registro del medico (⧉ Copia) ha le righe della scheda dell'ordine, col controllo che ha detto no (got: ${reg.split("\n").filter((l) => /auto-conferma|scheda dell'ordine/.test(l)).join(" | ").slice(0, 300) || "niente"})`);
+  check(!/BIANCHI/.test(reg), "e nel Registro di ROSSI non entra il nome di nessun altro");
+  check(await aspettaChiusa(w), "la scheda dell'ordine si chiude");
+  riscrivi = null;
+  await nessunOrdine();
+}
+
+// ---- 18. dopo la Conferma la richiesta compare in ritardo ---------------
+// Il gestionale può metterci qualche secondo a elencare la richiesta appena
+// confermata coi suoi fogli: la pagina del paziente si rilegge (solo letture)
+// prima di dire «non confermata», e la Conferma non riparte mai.
+if (prova("dopo la Conferma la pagina del paziente la elenca in ritardo — si rilegge, mai un secondo clic")) {
+  nuovi();
+  lento = 0;
+  await suPagina(doc, A.patientUrl);
+  let tolte = 0;
+  riscrivi = (u, html) => {
+    const rid = Object.keys(A.state.richieste)[0];
+    if (!rid || !A.state.richieste[rid].confirmed || tolte >= 2 || !/EPISODIO_ID=999001/.test(u)) return html;
+    const via = html.replace(/<tr><td>Richiesta \d+<\/td><td>[\s\S]*?<\/td><\/tr>/g, "");
+    if (via !== html) tolte++;
+    return via;
+  };
+  const nasce = nuovaPagina();
+  await ordina(doc, ["EMOCROMOCITOMETRICO"]);
+  const w = await nasce;
+  await suPagina(doc, B.patientUrl);
+  const pronte = await striscia(doc, /Etichette di ROSSI M\. pronte|Non confermata/, 60000).catch(() => "");
+  check(tolte === 2 && /Etichette di ROSSI M\. pronte/.test(pronte), `elencata solo alla terza lettura: confermata, etichette pronte (got: ${tolte} pagine senza · ${pronte || "niente"})`);
+  check(conferme(A).length === 1, `una Conferma sola (got ${conferme(A).length})`);
+  check(/la pagina del paziente non la elenca ancora: la rileggo fra 2 s/.test(await registroDi(doc)), "e il Registro del medico dice che ha riletto");
+  await aspettaChiusa(w);
+  riscrivi = null;
+  await nessunOrdine();
+}
+
+// ---- 19. la scheda dell'ordine si ricarica mentre conferma --------------
+// (il gestionale lo fa da sé, o un clic del medico su quella scheda). La
+// Conferma premuta non è arrivata al server, il giro è finito: l'ordine non
+// resta «in corso» per sempre — cerca la prova, poi lo dice e finisce — e la
+// coda va avanti.
+if (prova("la scheda dell'ordine si ricarica mentre conferma — l'ordine finisce, la coda va avanti")) {
+  nuovi();
+  lento = 0;
+  await suPagina(doc, A.patientUrl);
+  let w = null, fatto = false;
+  intercetta = async (r, req, u) => {
+    if (fatto || req.method() !== "POST" || !/ccsForm=Prestazioni/.test(u) || !/EPISODIO_ID=999001/.test(u)) return false;
+    fatto = true;
+    w?.reload().catch(() => {});
+    await r.abort().catch(() => {});
+    return true;
+  };
+  const nasce = nuovaPagina();
+  await ordina(doc, ["EMOCROMOCITOMETRICO"]);
+  w = await nasce;
+  await suPagina(doc, B.patientUrl);
+  await ordina(doc, ["TROPONINA"], { quesito: "dispnea" });   // in coda dietro ROSSI
+  const ok = await finche(async () => conferme(B).length === 1, 70000);
+  const l = await ordini();
+  const r = l.find((x) => x.paziente === "ROSSI MARIO");
+  check(fatto && !!r && r.stato !== "corre" && /Non confermata/.test(r.vista?.tag || ""),
+    `la Conferma persa con la ricarica: l'ordine di ROSSI finisce, «Non confermata» (got: ${r ? `${r.stato} · ${r.vista?.tag} · ${r.vista?.testo}` : "niente"})`);
+  check(ok && conferme(A).length === 0, `e la coda va avanti: BIANCHI parte e si conferma (got ${conferme(B).length} conferme di BIANCHI, ${conferme(A).length} di ROSSI · ${(await ordini()).map((x) => `${x.paziente}:${x.stato}:${x.vista?.tag || ""}`).join(", ")})`);
+  check(!!r?.consegna && /RICHIESTA_ID=/.test(r.consegna.url || ""), "con «apri il carrello» della sua richiesta");
+  check(await aspettaChiusa(w, 10000), "e la scheda di ROSSI si chiude");
+  intercetta = null;
+  await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 20000 }).catch(() => {});
+  await chiudiStampa(doc);
+  await nessunOrdine();
+}
+
+// ---- 20. ⏹ su una scheda d'ordine che aspetta: finisce lì ----------------
+// La scheda dell'ordine sta per ricaricare il carrello (gli mancava una riga)
+// e il medico, passato di lì, ha il cursore in un suo campo: lei non cambia
+// pagina sopra di lui, e aspetta. ⏹ c'è, e la chiude: la coda non resta
+// ferma dietro una scheda che aspetta.
+if (prova("⏹ su una scheda d'ordine che aspetta — l'ordine finisce, la coda va avanti")) {
+  nuovi();
+  lento = 0;
+  await suPagina(doc, A.patientUrl);
+  riscrivi = senzaRiga("320", 1).fn;
+  const nasce = nuovaPagina();
+  await ordina(doc, ["EMOCROMOCITOMETRICO"]);
+  const w = await nasce;
+  await suPagina(doc, B.patientUrl);
+  await ordina(doc, ["TROPONINA"], { quesito: "dispnea" });   // in coda dietro ROSSI
+  // sul carrello, nei 2 secondi prima di ricaricarlo: un clic e un tasto in un suo campo
+  await w.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 40000 }).catch(() => {});
+  await w.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 }).catch(() => {});
+  await w.click('input[name="s_PRESTAZIONE"]').catch(() => {});
+  await w.keyboard.type("a").catch(() => {});
+  const aspetta = await striscia(doc, /ROSSI MARIO.*tocca per il carrello/, 20000).catch(() => "");
+  check(!!aspetta && conferme(A).length === 0, `col cursore nel suo campo la scheda dell'ordine non ricarica il carrello: aspetta (got: ${aspetta || "niente"})`);
+  const bottone = (await $panel(doc, "#strstop").innerText().catch(() => "")).trim();
+  check(bottone === "⏹", `e ⏹ c'è (got «${bottone}» · ${JSON.stringify((await ordini()).map((x) => [x.paziente, x.stato, x.vista && x.vista.tag]))})`);
+  await $panel(doc, "#strstop").click();
+  const fermo = await striscia(doc, /ROSSI MARIO.*Interrotto/, 15000).catch(() => "");
+  check(!!fermo && conferme(A).length === 0, `⏹: «Interrotto», niente confermato (got: ${fermo || "niente"})`);
+  check(await finche(async () => conferme(B).length === 1, 40000), "e la coda va avanti: BIANCHI si conferma");
+  await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 20000 }).catch(() => {});
+  await chiudiStampa(doc);
+  if (!w.isClosed()) await w.close();
+  riscrivi = null;
+  await nessunOrdine();
 }
 
 // ---- 16. la scheda non si apre: l'ordine lo manda la pagina, come sempre ---

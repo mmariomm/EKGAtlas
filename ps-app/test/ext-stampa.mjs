@@ -666,7 +666,10 @@ if (await prova("la scheda dell'ordine ricaricata o chiusa mentre stampa: «stam
     `confermata: il service worker stampa, e il foglio è segnato «mandato» prima di partire (got ${JSON.stringify(primo && primo.fogli.map((f) => f.stato))})`);
   check(!!primo && primo.pubblico.titolo === "Confermata" && /^Stampo le etichette su Zebra ZD421…$/.test(primo.pubblico.testo) && /foglio 1 di 2/.test(primo.pubblico.dettaglio),
     `intanto: «Confermata · Stampo le etichette su Zebra ZD421…», «foglio 1 di 2» (got ${JSON.stringify(primo && primo.pubblico)})`);
-  await worker.reload().catch(() => {});
+  // (la Conferma l'ha premuta la scheda dell'ordine sulla pagina vera: il gestionale risponde
+  // con un redirect alla pagina del paziente, che qui il banco segue da sé lasciando
+  // l'indirizzo del modulo — ricaricare quello lo rimanderebbe. Si ricarica quello vero.)
+  await (/ccsForm=/.test(worker.url()) ? worker.goto(A.patientUrl) : worker.reload()).catch(() => {});
   const fine = await finche(async () => (await ordini()).find((x) => x.id === primo.id && x.stato === "avviso"), 30000);
   check(!!fine && fine.pubblico.titolo === "Stampa interrotta" && /^non usciti: Lista/.test(fine.pubblico.testo) && /ricaricata · 1 esame confermato/.test(fine.pubblico.dettaglio)
     && fine.fogli[0].stato === "stampato" && fine.fogli[1].stato === "attesa",

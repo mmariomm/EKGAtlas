@@ -594,6 +594,10 @@ const ordScrivi = (l) => { for (const r of l) r.pubblico = ordPubblico(r, l); re
 const corto = (s, n = 160) => String(s == null ? "" : s).slice(0, n);
 const nomi = (a) => (Array.isArray(a) ? a.slice(0, 30).map((x) => corto(x, 60)) : []);
 const togli = async (l, rec) => { l.splice(l.indexOf(rec), 1); await chrome.storage.session.remove(ORD_PIANO(rec.id)); };
+// Il Registro della scheda dell'ordine, con la sua ultima parola: la scheda si
+// chiude, le schede del medico lo aggiungono al loro (le righe di sempre, già
+// dentro il gestionale: qui solo testo corto, e solo finché c'è l'ordine)
+const registroDi = (rec, msg) => { if (Array.isArray(msg.registro)) rec.registro = msg.registro.slice(-40).map((s) => corto(s, 240)); };
 // Un messaggio a una scheda, con una risposta entro pochi secondi o niente: una
 // scheda bloccata non deve fermare la fila degli ordini (null = non ha risposto).
 const allaScheda = (id, m, ms = 5000) => Promise.race([chrome.tabs.sendMessage(id, m).catch(() => null), new Promise((r) => setTimeout(() => r(null), ms))]);
@@ -1016,6 +1020,7 @@ function ordMessaggio(msg, sender, reply) {
       const s = JSON.stringify(msg.consegna);
       if (s.length < 60000) rec.consegna = JSON.parse(s);
     }
+    registroDi(rec, msg);
     rec.agg = Date.now(); delete rec.muto;
     if (!ATTIVI.has(rec.stato)) await ordSlega(rec);
     await ordScrivi(l);
@@ -1042,6 +1047,7 @@ function ordMessaggio(msg, sender, reply) {
     if (!jobs.length) return reply({ ok: false });
     const auto = await stampaScelte();
     rec.stampa = { jobs, fine: fineDi(msg.fine), riassunto: corto(msg.riassunto, 80), quesito: corto(msg.quesito, 90) };
+    registroDi(rec, msg);
     rec.fogli = fogliNuovi(jobs, auto);
     rec.agg = Date.now();
     await chrome.storage.session.set({ [ORD_FOGLI]: [...presi, rec.id].slice(-100) });

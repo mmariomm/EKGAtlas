@@ -131,12 +131,12 @@ async function newPage(browser, mock, opts = {}) {
     while (out.status === 302 && hops++ < 5) {
       out = mock.handle({ method: "GET", url: new URL(out.headers.location, req.url()).href });
     }
-    // opts.riscrivi(url, html) → html: il server che si comporta in modo
+    // opts.riscrivi(url, html, req) → html: il server che si comporta in modo
     // strano (un elenco monco, un nome cambiato) si simula QUI, riscrivendo la
     // risposta, senza toccare il mock
     if (opts.riscrivi && /html/.test(out.headers["content-type"] || "")) {
       const html = Buffer.from(out.body).toString("latin1");
-      out = { ...out, body: Buffer.from(opts.riscrivi(req.url(), html), "latin1") };
+      out = { ...out, body: Buffer.from(opts.riscrivi(req.url(), html, req), "latin1") };
     }
     // (una risposta lenta può arrivare quando la pagina — o la cornice — non c'è più)
     try { await route.fulfill({ status: out.status, headers: out.headers, body: out.body }); } catch { /* andata */ }
@@ -467,10 +467,13 @@ async function scenarioCorniceVietata(browser) {
   await richieste(page);
   await $panel(page, "#q").fill("dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();
+  const t0 = Date.now();
   await $panel(page, "#goconfirm").click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 });
   const rid = Object.keys(mock.state.richieste)[0];
   check(scen, mock.state.richieste[rid].confirmed === true, "la richiesta viene confermata lo stesso");
+  // la pagina d'errore della cornice vietata si riconosce subito, non allo scadere dei 25 secondi
+  check(scen, Date.now() - t0 < 15000, `senza aspettare la cornice per niente (got ${((Date.now() - t0) / 1000).toFixed(1)} s)`);
   const conferme = mock.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni"));
   check(scen, conferme.length === 1, `e una volta sola, mai due (got ${conferme.length})`);
   check(scen, /Etichette provette/.test(await docStampa(page)), "e la stampa parte");
@@ -613,6 +616,49 @@ async function scenarioConfirmPostFails(browser) {
   }
 }
 
+// La conferma in cornice, con pazienza. (1) La pagina del paziente elenca la
+// richiesta appena confermata solo dalla terza lettura (il LIS ci mette un
+// po'): si rilegge prima di dire «non confermata», mai un secondo clic.
+// (2) Il carrello caricato nella cornice arriva una volta senza la riga
+// dell'ultimo esame: lo si ricarica e i controlli ripartono — un clic solo.
+async function scenarioConfermaPaziente(browser) {
+  for (const caso of ["prova-in-ritardo", "carrello-monco-una-volta"]) {
+    const scen = `conferma-${caso}`;
+    const mock = createMock({});
+    let alterate = 0;
+    const riscrivi = caso === "prova-in-ritardo"
+      ? (u, html) => {
+        const rid = Object.keys(mock.state.richieste)[0];
+        if (!rid || !mock.state.richieste[rid].confirmed || alterate >= 2) return html;
+        const via = html.replace(/<tr><td>Richiesta \d+<\/td><td>[\s\S]*?<\/td><\/tr>/g, "");
+        if (via !== html) alterate++;
+        return via;
+      }
+      : (u, html, req) => {
+        if (alterate || req.resourceType() !== "document" || !req.frame().parentFrame() || !/MVPG=RcsRichiestaPrestazioniRicercaErogatore/.test(u)) return html;
+        const via = html.replace(/<tr><td><a class="AFCDataLink" href="[^"]*Delete=Elimina[^"]*PRESTAZIONE=324[^"]*">[^<]*<\/a><\/td><\/tr>/g, "");
+        if (via !== html) alterate++;
+        return via;
+      };
+    const { context, page } = await newPage(browser, mock, { riscrivi });
+    await page.goto(mock.patientUrl);
+    await richieste(page);
+    await $panel(page, "#q").fill("dolore toracico");
+    await $panel(page, '.opt[title*="TROPONINA"]').click();
+    await $panel(page, "#goconfirm").click();
+    const ok = await page.waitForSelector("#psassist-print", { state: "attached", timeout: 50000 }).then(() => true).catch(() => false);
+    const rid = Object.keys(mock.state.richieste)[0];
+    const conferme = mock.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni"));
+    check(scen, alterate === (caso === "prova-in-ritardo" ? 2 : 1) && ok && mock.state.richieste[rid].confirmed === true,
+      `${caso === "prova-in-ritardo" ? "elencata solo alla terza lettura" : "carrello monco una volta"}: confermata, e la stampa parte (got ${alterate} pagine alterate · stampa ${ok})`);
+    check(scen, conferme.length === 1, `un clic solo su Conferma (got ${conferme.length})`);
+    const reg = await registroDi(page);
+    check(scen, caso === "prova-in-ritardo" ? /non la elenca ancora: la rileggo fra 2 s/.test(reg) : /\(324\) non è nel carrello di questa pagina — rileggo il carrello/.test(reg),
+      "e il Registro dice perché ha riletto");
+    await context.close();
+  }
+}
+
 async function scenarioAltroPresidio(browser) {
   const scen = "altro-presidio";
   // Same hospital group, another site: resources and exam codes are numbered
@@ -696,6 +742,70 @@ async function scenarioLagVerify(browser) {
   const rid = Object.keys(mock.state.richieste)[0];
   check(scen, mock.state.insertCount[`${rid}:320`] === 1, "verifica in ritardo NON causa un secondo Insert");
   check(scen, mock.state.richieste[rid].cart.has("320"), "esame nel carrello");
+  await context.close();
+}
+
+// Una rilettura di verifica risponde con l'elenco di un'ALTRA richiesta dello
+// stesso episodio (lì l'esame non c'è). Prima quell'elenco diventava il
+// modello, e anche le riletture dopo andavano sull'altra richiesta: «non
+// risulta nel carrello» per un esame che c'era. Si conta il tentativo e si
+// rilegge il nostro.
+async function scenarioVerificaAltroElenco(browser) {
+  const scen = "verifica-altro-elenco";
+  const mock = createMock({ lagRenders: { 320: 2 } });
+  let falsata = 0;
+  const { context, page } = await newPage(browser, mock, {
+    riscrivi: (u, html) => {
+      if (falsata || !/MVPG=RcsRichiestaPrestazioniRicercaErogatore/.test(u) || /Insert=/.test(u)) return html;
+      const rid = new URL(u).searchParams.get("RICHIESTA_ID");
+      if (!mock.state.insertCount[`${rid}:320`]) return html;
+      falsata++;
+      const altra = String(Number(rid) + 7);
+      mock.state.allocated[altra] = mock.state.allocated[rid];
+      mock.state.richieste[altra] = { quesito: "altra", cart: new Map(), confirmed: false };
+      return html.replace(new RegExp(`RICHIESTA_ID=${rid}`, "g"), `RICHIESTA_ID=${altra}`)
+        .replace(/<tr><td><a class="AFCDataLink" href="[^"]*Delete=Elimina[^"]*PRESTAZIONE=320[^"]*">[^<]*<\/a><\/td><\/tr>/g, "");
+    },
+  });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("controllo");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, "#go").click();
+  const fine = await striscia(page, /Conferma dal gestionale|completa a mano/, 60000).catch(() => "");
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, falsata === 1 && /Conferma dal gestionale/.test(fine), `l'elenco dell'altra richiesta non si usa: verificato sul nostro (got: ${falsata} · ${fine || "niente"})`);
+  check(scen, mock.state.insertCount[`${rid}:320`] === 1 && mock.state.richieste[rid].cart.has("320"), "un invio solo, ed è in carrello");
+  check(scen, !mock.state.requests.some((q) => q.params.RICHIESTA_ID === String(Number(rid) + 7)), "e nessuna rilettura va sull'altra richiesta");
+  check(scen, /è tornato l'elenco di un'altra richiesta o risorsa/.test(await registroDi(page)), "il Registro lo dice");
+  await context.close();
+}
+
+// La riga «Elimina» di un esame in carrello porta RICHIESTA_PRESTAZIONE_PROG
+// (nelle pagine vere sì, nel simulatore no: la si aggiunge). Se è il primo
+// link dell'elenco, da lì nasce l'indirizzo di ogni rilettura: non deve
+// portarselo dietro.
+async function scenarioElencoSenzaProg(browser) {
+  const scen = "elenco-senza-prog";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock, {
+    riscrivi: (u, html) => html.replace(/(href="[^"]*Delete=Elimina[^"]*)(&PRESTAZIONE=\d+")/g, "$1&RICHIESTA_PRESTAZIONE_PROG=9$2"),
+  });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("dispnea");
+  // l'emogas venosa (codice 3) è la prima riga dell'elenco del POC: entrata, il primo link è il suo «Elimina»
+  await $panel(page, "#acq").fill("EMOGASANALISI VENOSA POC (");
+  await $panel(page, '.acitem:has-text("EMOGASANALISI VENOSA POC (")').first().click();
+  await $panel(page, "#acq").fill("");
+  await $panel(page, ".opt[title*=\"EMOCROMOCITOMETRICO\"]").click();
+  await $panel(page, "#go").click();
+  await atterraCarrello(page, 30000).catch(() => {});
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.richieste[rid]?.cart.has("3") && mock.state.richieste[rid]?.cart.has("320"), "i due esami in carrello");
+  const conProg = mock.state.requests.filter((q) => "RICHIESTA_PRESTAZIONE_PROG" in q.params);
+  check(scen, conProg.length === 0 && !/RICHIESTA_PRESTAZIONE_PROG/.test(page.url()),
+    `nessuna rilettura (né il carrello finale) porta RICHIESTA_PRESTAZIONE_PROG (got ${conProg.length}: ${conProg.slice(0, 2).map((q) => q.params.MVPG).join(", ")})`);
   await context.close();
 }
 
@@ -5728,12 +5838,15 @@ const scenarios = [
   ["altro presidio: risorse e codici diversi", scenarioAltroPresidio],
   ["risorsa sconosciuta: stop diagnostico", scenarioPresidioSconosciuto],
   ["cornice vietata dal server: si torna alla pagina", scenarioCorniceVietata],
+  ["conferma in cornice con pazienza: la prova in ritardo, il carrello monco", scenarioConfermaPaziente],
   ["auto-confirm bloccata su carrello diverso", scenarioAutoConfirmMismatch],
   ["auto-confirm bloccata senza ricevuta", scenarioAutoConfirmSenzaRicevuta],
   ["auto-confirm bloccata da un avanzo su un'altra risorsa", scenarioAutoConfirmAltraRisorsa],
   ["conferma fallita sul server: niente stampa", scenarioConfirmPostFails],
   ["delayed cart visibility", scenarioLagVerify],
   ["delayed cart visibility, slow server", scenarioLagVerifyLento],
+  ["verifica: l'elenco di un'altra richiesta non si usa", scenarioVerificaAltroElenco],
+  ["elenco riletto senza RICHIESTA_PRESTAZIONE_PROG", scenarioElencoSenzaProg],
   ["lost add → hard stop", scenarioNeverVisible],
   ["renamed code → refuse before send", scenarioLabelMismatch],
   ["session expiry", scenarioSessionExpiry],
