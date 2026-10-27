@@ -7357,7 +7357,8 @@
           const az = qui ? this.daConfAzioni() : "";
           daConfSec = `<div class="daconf${az ? " az" : ""}"><i class="ddot"></i><span>${qui ? `Questa richiesta${quanti} è ancora da confermare` : `Richiesta delle ${esc(hhmm(x.ts))}${quanti} ancora da confermare`}${
             aperte.length > 1 ? ` · e altre ${aperte.length - 1}` : ""}</span>${
-            az || (!qui && u ? `<button class="lnk" id="apridaconf" data-url="${esc(u)}">apri il carrello</button>` : "")}</div>`;
+            // (sulla sua pagina ma su una sezione senza la Conferma: il carrello dov'è)
+            az || (u && (!qui || param(u, "RISORSA_ID") !== param(location.href, "RISORSA_ID")) ? `<button class="lnk" id="apridaconf" data-url="${esc(u)}">apri il carrello</button>` : "")}</div>`;
         } else if (this._daconf?.vuoto && this._daconf.rid === sua) {
           // letta vuota dal server e dimenticata: la riga lo dice, poi se ne va
           daConfSec = `<div class="daconf"><i class="ddot"></i><span>${esc(this._daconf.testo)}</span></div>`;
