@@ -1484,8 +1484,8 @@ npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che 
 npm run demo       # rigenera dist/demo.html (il banco di prova)
 npm run dist       # al rilascio: build, fogli di dimissione, dist/ps-assist-latest.zip (con stampa/, senza SumatraPDF)
 npm run verifica-build   # al rilascio, dopo dist e il commit: build fresca = build committata? zip e versioni giusti?
-npm test           # 93 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 98 sulla stampa automatica (+ 51 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
-                   # + il Ponte: 44 controlli senza browser (cifratura, ripetitore, Worker) e 79 dal vivo (test/ext-ponte.mjs)
+npm test           # 93 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 111 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
+                   # + il Ponte: 120 controlli senza browser (cifratura, ripetitore, Worker) e 166 dal vivo (test/ext-ponte.mjs)
 ```
 
 I test coprono: percorso felice (con e senza redirect PRG, con verifica **byte-per-byte** del
