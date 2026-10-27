@@ -848,6 +848,21 @@
     const seen = new Set();
     return jobs.filter((j) => !seen.has(j.url) && seen.add(j.url));
   }
+  // Le richieste che la pagina sa stampare (cioè confermate), la più recente per prima.
+  const richiesteStampabili = (map) => Object.keys(map).sort((a, b) => (printMeta(map, b).ts - printMeta(map, a).ts) || Number(b) - Number(a));
+  // I fogli di più richieste in un giro solo: tutte le etichette, poi il resto.
+  const fogliDi = (map, ids) => {
+    const all = ids.map((id) => printJobsFor(map, id));
+    return [...all.flatMap((j) => j.filter((x) => x.printer === "etichettatrice")), ...all.flatMap((j) => j.filter((x) => x.printer !== "etichettatrice"))];
+  };
+  // «Stampa l'ultima richiesta»: la più recente, e con lei quella di prima se è
+  // di pochi minuti prima — il laboratorio e la radiologia dello stesso ordine.
+  const ULTIMA_INSIEME = 5 * 60e3;
+  function ultimeRichieste(map) {
+    const [a, b] = richiesteStampabili(map);
+    const ta = a ? printMeta(map, a).ts : 0, tb = b ? printMeta(map, b).ts : 0;
+    return !a ? [] : ta && tb && ta - tb <= ULTIMA_INSIEME ? [a, b] : [a];
+  }
   // Compact description of what a richiesta will print, e.g. "2× etichette + 2× liste".
   function printLabelFor(map, rid) {
     const rows = printRowsFor(map, rid);
@@ -3098,6 +3113,7 @@
         throw new StopError("Non è il carrello della richiesta di prima", "Nessun esame inviato.");
       }
       state.richiestaId = model.richiestaId;
+      segnaNostra(model.richiestaId);   // da qui la sua Conferma nativa arma la stampa
       const noteList = () => { const u = model.listUrl(model.res); if (u) state.lastListUrl = u; };
       noteList();
       if (!state.lastListUrl) throw new StopError("Impossibile ricostruire l'indirizzo dell'elenco esami", "Nessun esame inviato.");
@@ -3810,6 +3826,7 @@
     .lnk:disabled { color: #93A3B3; text-decoration: none; cursor: default; }
     .btnrow .lnk { flex: 0 0 auto; align-self: center; margin-left: 6px; }
     .lnk.piu { display: inline-block; margin: -4px 0 12px; padding-left: 0; }
+    .lnk.ultima { display: block; margin: -2px 0 6px; padding-left: 0; }
     /* una richiesta ancora da confermare: una riga, non un allarme */
     .daconf { display: flex; align-items: center; gap: 8px; max-width: 820px; margin: 0 0 12px; font-size: 12px; color: #7a4b03; }
     .daconf .ddot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: #E5A83B; }
@@ -7300,8 +7317,10 @@
     viewPrint() {
       if (this.pageType !== "patient") return "";
       const map = printModel(document, location.href);
-      const rids = Object.keys(map).sort((a, b) => (printMeta(map, b).ts - printMeta(map, a).ts) || Number(b) - Number(a));
+      const rids = richiesteStampabili(map);
       if (!rids.length) return "";
+      // (con una richiesta sola, la sua riga basta)
+      const ultime = rids.length > 1 ? ultimeRichieste(map) : [];
       const receipt = freshReceipt(null);
       const hot = receipt && map[receipt.richiestaId] ? receipt.richiestaId : null;
       const rows = rids.slice(0, 6).map((rid) => {
@@ -7315,6 +7334,7 @@
       return `
         <div class="sec">
           <div class="lbl">Stampa</div>
+          ${ultime.length ? `<button class="lnk ultima" id="stultima" title="${esc(ultime.map((r) => printMeta(map, r).when || "richiesta " + r).join(" e "))}">Stampa l'ultima richiesta</button>` : ""}
           <div class="rlist">${rows}</div>
 
         </div>`;
@@ -9577,6 +9597,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const jobs = printJobsFor(printModel(document, location.href), rid);
         if (jobs.length) openPrintWizard(jobs, { panel: this, title: `Richiesta ${rid}.` });
       }));
+      $("#stultima")?.addEventListener("click", () => {
+        const map = printModel(document, location.href);
+        const ids = ultimeRichieste(map);
+        const jobs = fogliDi(map, ids);
+        if (jobs.length) openPrintWizard(jobs, { panel: this, title: `${ids.length > 1 ? "Richieste" : "Richiesta"} ${ids.join(" e ")}.` });
+      });
       this.root.querySelectorAll("[data-esito]").forEach((b) => b.addEventListener("click", () =>
         this.openEsito(b.getAttribute("data-esito"))));
       $("#refreset")?.addEventListener("click", () => this.resetReferti());
@@ -10638,13 +10664,24 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     load();
   }
 
+  // Le richieste di PS Assist: quelle su cui il motore ha lavorato in questa
+  // scheda (NOSTRE), quelle in cui ha mandato esami (daConfermare, in ogni
+  // scheda), quella della sua ricevuta. Una richiesta fatta tutta a mano nel
+  // gestionale non è fra queste: confermata col suo bottone, non stampa niente da sola.
+  const NOSTRE = "richieste.nostre.v1";
+  const segnaNostra = (rid) => { if (rid) tabStore.set(NOSTRE, [...(tabStore.get(NOSTRE, []) || []).filter((x) => x !== String(rid)), String(rid)].slice(-20)); };
+  const richiestaNostra = (rid) => !!rid && ((tabStore.get(NOSTRE, []) || []).includes(String(rid))
+    || daConfermare().some((x) => x.rid === String(rid)) || String(tabStore.get("receipt.v1", null)?.richiestaId || "") === String(rid));
+
   // Post-confirm print handoff: armed when the native Conferma button is
-  // clicked (both by the doctor and by the auto-confirm countdown), consumed
-  // by the first subsequent page that lists this richiesta's print links —
-  // the post-confirm page if it has them, otherwise the patient page.
+  // clicked (both by the doctor and by the auto-confirm countdown) on a
+  // richiesta of PS Assist, consumed by the first subsequent page that lists
+  // this richiesta's print links — the post-confirm page if it has them,
+  // otherwise the patient page.
   function armPrintOnConfirm(model, episodeId) {
     if (!model.form || !model.richiestaId) return;
     const arm = () => {
+      if (!richiestaNostra(model.richiestaId)) return;
       const q = tabStore.get("queue.v1", null);
       if (q && q.items) { // this richiesta is done: drop it from the walk
         const left = q.items.filter((it) => it.rid !== model.richiestaId);
@@ -10702,11 +10739,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (!ids.length) return false; // this page doesn't list them yet — keep waiting
     // group by printer ACROSS the confirmed richieste: labels, then lists,
     // then radiology bookings — one uninterrupted flow
-    const all = ids.map((id) => printJobsFor(map, id));
-    const jobs = [
-      ...all.flatMap((j) => j.filter((x) => x.printer === "etichettatrice")),
-      ...all.flatMap((j) => j.filter((x) => x.printer !== "etichettatrice")),
-    ];
+    const jobs = fogliDi(map, ids);
     ids.forEach(confermataProvata);   // in pagina coi suoi fogli: confermata, non c'è più da sorvegliarla
     if (!jobs.length) return false;
     // il resoconto che resta sulla pill: quanti esami, e quando
