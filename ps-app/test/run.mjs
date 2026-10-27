@@ -1926,6 +1926,32 @@ async function scenarioExamPageManual(browser) {
   await context.close();
 }
 
+// Una richiesta fatta tutta a mano nel gestionale — creata, un esame aggiunto
+// dalla sua lista, la sua Conferma — non è di PS Assist: dopo, niente stampa da sola.
+async function scenarioConfermaTuttaAMano(browser) {
+  const scen = "tutta-a-mano";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await page.click('a[title="Richieste Laboratorio"]');
+  await page.fill('form[name="RICHIESTACrea"] textarea[name="QUESITO_DIAGNOSTICO"]', "febbre");
+  await page.click('form[name="RICHIESTACrea"] input[name="Update"]');
+  await page.waitForSelector('form[name="Prestazioni"]', { timeout: 20000 });
+  await page.click('a.AFCDataLink[href*="Insert=Inserisci"][href*="PRESTAZIONE=320&"]');
+  await page.waitForFunction(() => /Delete=/.test(document.body.innerHTML), null, { timeout: 15000 });
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, mock.state.richieste[rid].cart.has("320"), "l'esame aggiunto a mano, dalla lista del gestionale");
+  await page.click('form[name="Prestazioni"] input[name="Update"]');
+  await page.waitForSelector('a[title="Richieste Laboratorio"]', { timeout: 20000 });
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.waitForTimeout(2500);
+  check(scen, mock.state.richieste[rid].confirmed === true && confermePost(mock).length === 1, "confermata dal gestionale, una volta");
+  check(scen, (await page.locator("#psassist-print").count()) === 0, "e la stampa non si apre da sola");
+  await context.close();
+}
+
 async function scenarioWrongResourceRefused(browser) {
   const scen = "wrong-res";
   const mock = createMock({ prefilledQuesito: "x" });
@@ -2481,6 +2507,44 @@ async function scenarioPrintMergedFlow(browser) {
   check(scen, /2 di 3 — Lista esami/.test(heads[1]), `poi la lista esami (got: ${heads[1]})`);
   check(scen, /3 di 3 — Prenotazione esterna/.test(heads[2]), `infine la RX, nello stesso flusso (got: ${heads[2]})`);
   check(scen, (await page.locator("#psassist-print").count()) === 0, "una sola stampa per entrambe le richieste");
+  await context.close();
+}
+
+// «Stampa l'ultima richiesta», nella sezione Stampa: la più recente; e con lei
+// quella di pochi minuti prima (laboratorio + RX dello stesso ordine).
+async function scenarioStampaUltima(browser) {
+  const scen = "stampa-ultima";
+  const mock = createMock({ seedConfirmed: true, seedConfirmedRadio: true });
+  const { context, page } = await newPage(browser, mock);
+  // l'ora di ogni richiesta, come la scrive il gestionale accanto ai suoi fogli
+  const ore = (o) => page.evaluate((o) => {
+    for (const td of document.querySelectorAll("td")) {
+      const rid = (/^Richiesta (\d+)$/.exec(td.textContent.trim()) || [])[1];
+      if (rid && o[rid]) td.innerHTML = `Richiesta ${rid}<input type="hidden" name="DATA_ORD" value="${o[rid]}">`;
+    }
+  }, o);
+  const giro = async () => {
+    await page.locator("#psassist-host #stultima").click();
+    await page.waitForSelector("#psassist-print", { state: "attached", timeout: 15000 });
+    const heads = [];
+    for (let k = 0; k < 4 && (await page.locator("#psassist-print").count()); k++) { heads.push(await docStampa(page)); await avanti(page); }
+    return heads;
+  };
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  const testo = (await page.locator("#psassist-host #stultima").innerText().catch(() => "")).trim();
+  check(scen, testo === "Stampa l'ultima richiesta" && (await page.locator('#psassist-host [data-print]').count()) === 2,
+    `nella sezione Stampa, sopra l'elenco che resta (got «${testo}»)`);
+  await page.locator("#psassist-host #stultima").scrollIntoViewIfNeeded().catch(() => {});
+  await shot(page, "stampa-ultima-richiesta");
+  await ore({ 699999: "2026-10-27 14:33:00.0", 699998: "2026-10-27 14:31:00.0" });
+  let h = await giro();
+  check(scen, h.length === 3 && /1 di 3 — Etichette/.test(h[0]) && /Lista esami/.test(h[1]) && /3 di 3 — Prenotazione esterna/.test(h[2]),
+    `due richieste a due minuti l'una dall'altra: tutt'e due, prima le etichette (got ${h.join(" | ")})`);
+  await ore({ 699999: "2026-10-27 14:33:00.0", 699998: "2026-10-27 09:05:00.0" });
+  h = await giro();
+  check(scen, h.length === 2 && /1 di 2 — Etichette/.test(h[0]) && /2 di 2 — Lista esami/.test(h[1]),
+    `la RX di stamattina no: solo l'ultima (got ${h.join(" | ")})`);
   await context.close();
 }
 
@@ -5489,6 +5553,8 @@ const scenarios = [
   ["expiry on the insert itself", scenarioExpiryOnInsert],
   ["quesito del triage: resta, a meno che non scrivi il tuo", scenarioPrefilledQuesito],
   ["manual add on exam page", scenarioExamPageManual],
+  ["richiesta tutta a mano: la Conferma del gestionale non stampa", scenarioConfermaTuttaAMano],
+  ["stampa l'ultima richiesta", scenarioStampaUltima],
   ["wrong resource refused", scenarioWrongResourceRefused],
   ["missing quesito refused", scenarioMissingQuesito],
   ["quesito RX distinto", scenarioQuesitoRx],

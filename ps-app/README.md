@@ -56,10 +56,18 @@ lascia l'ospedale» (che ha una sola eccezione, voluta, accesa dal medico e cifr
 all'altro: il **Ponte** verso l'iPhone, più sotto). Le nuove versioni arrivano come zip: sostituisci, ricarica, fatto.
 
 **Stampa automatica** (facoltativa, Windows, niente admin): etichette all'etichettatrice e il resto
-all'A4, senza dialogo. Si installa una volta dalla cartella `stampa` dello zip — tre passi in
-[`stampa/README.md`](stampa/README.md) — e si sceglie dal pannello, menu **⋯ → Stampanti**.
-Tieni l'estensione sempre nella stessa cartella: spostandola cambia il suo ID, e `installa.cmd`
-va rilanciato.
+all'A4, senza dialogo. Prima si avvisa l'IT, poi si installa una volta dalla cartella `stampa`
+dello zip estratto — i passi in [`stampa/README.md`](stampa/README.md) — e si sceglie dal
+pannello, menu **⋯ → Stampanti**.
+
+**L'ID dell'estensione è fisso**: `jhhlgabilanhhnncahahclcjbefaofij`, in Chrome e in Edge, da
+qualunque cartella (viene dalla `"key"` del manifest). Spostare la cartella non rompe niente.
+**Una volta sola**, passando da una versione che non l'aveva (fino alla 3.52), l'ID cambia e la
+memoria dell'estensione ricomincia da zero: vanno rifatte le stampanti, l'indirizzo del portale
+(col suo permesso) e, se lo usi, il Ponte; l'archivio delle schede cliniche e i referti salvati
+si ricostruiscono rileggendo i pazienti. Quello che sta nella pagina del gestionale (pazienti,
+stanza, promemoria) resta. Se dopo ⟳ in `chrome://extensions` l'ID non è quello, rimuovi PS
+Assist e caricala di nuovo («Carica estensione non pacchettizzata»).
 
 ### E se non posso? (PC bloccato dall'IT, niente admin)
 
@@ -856,9 +864,13 @@ si apre subito il **dialogo di stampa** del browser. Alla fine la striscia dice 
 l'ha fatto la scheda di sottofondo (con l'estensione), tutto questo succede nella scheda del
 gestionale **dove sei** — la finestra in primo piano —, e la scheda e la striscia dicono di chi
 sono i fogli. Mai mentre scrivi; e sulla pagina di un **altro** paziente il dialogo non parte da
-solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco. Così è senza la **stampa
-automatica**; con lei il dialogo non c'è, e i fogli di un ordine in sottofondo escono dalla
-scheda dell'ordine (vedi «Stampa automatica», più sotto).
+solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco. **Un ordine partito dall'iPhone non
+apre mai da solo il dialogo**: davanti al PC può non esserci nessuno, e un dialogo aperto su uno
+schermo che nessuno guarda è un'etichetta non stampata che sembra stampata. La striscia lo dice
+(«dall'iPhone · Etichette NON stampate: aspettano qualcuno al PC»), il telefono pure, e un tocco
+su **Stampa** nella striscia del PC le stampa. Così è senza la **stampa automatica**; con lei il
+dialogo non c'è, e i fogli di un ordine in sottofondo li stampa il service worker (vedi «Stampa
+automatica», più sotto).
 
 1. **Tutte le etichette provette** — i PDF dell'icona col codice a barre
    (`RcsStampaEtichetteLISHMIMU.do`, che porta al PDF servito da
@@ -898,10 +910,14 @@ ognuna col suo PDF etichette e il suo foglio. Si stampano **tutte** ("Etichette 
 
 Sul campo, dopo la Conferma il gestionale **torna alla pagina del paziente**: è lì che la stampa
 parte da sola (e se un'installazione mostrasse una pagina intermedia, parte lì se ha i link,
-altrimenti aspetta il ritorno sul paziente). Dalla pagina paziente puoi anche **ristampare
-qualsiasi richiesta**
-(sezione **Stampa**: ogni richiesta è elencata con **data e ora** e, sotto, la **lista compatta
-degli esami** che contiene).
+altrimenti aspetta il ritorno sul paziente). **Solo per le richieste di PS Assist**: quelle in cui
+il pannello ha mandato esami (o che ha aperto lui), confermate dal pannello o col bottone del
+gestionale. Una richiesta fatta tutta a mano nel gestionale, confermata col suo bottone, non
+stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta** (sezione
+**Stampa**: ogni richiesta è elencata con **data e ora** e, sotto, la **lista compatta degli
+esami** che contiene) e, sopra l'elenco, **Stampa l'ultima richiesta**: la più recente, e con
+lei quella di pochi minuti prima (laboratorio e radiologia dello stesso ordine), etichette
+prima. Con la stampa automatica, senza dialogo.
 
 **Laboratorio + radiologia insieme**: se confermi una richiesta di laboratorio e poi una di
 radiologia prima di tornare alla pagina del paziente, la stampa parte **una volta sola** e in
@@ -918,27 +934,52 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
 
 - **le etichette vanno all'etichettatrice, tutto il resto all'A4** — liste esami, prenotazioni
   RX, i moduli dei Consensi —, da soli, **senza dialogo**. La scheda della stampa compare lo
-  stesso, con l'anteprima e la stampante vera in testa («→ Zebra ZD421»), dice **«Stampato su
-  Zebra ZD421»** e passa da sola al foglio dopo. Alla fine la striscia dice **«Stampato · 6 esami
-  confermati 14:32»** — «Stampato», non più «Stampa finita»: l'aiutante risponde solo dopo che
-  il foglio è arrivato alla coda di stampa di Windows —, con **Ristampa** accanto (un'etichetta
-  inceppata si vede solo davanti alla stampante).
-- **Un ordine in sottofondo stampa dalla sua scheda.** I fogli escono dalla scheda dell'ordine,
-  appena la conferma è provata: non serve una scheda del gestionale davanti, né il fuoco, né un
-  clic — l'ordine può arrivare dal telefono con il PC da solo, con il medico su un altro paziente
-  o senza nessuna scheda del gestionale aperta. Intanto ogni scheda del gestionale lo racconta
-  («Stampo le etichette su Zebra…»), e alla fine dice **«Stampato · 2 esami confermati»** col
-  nome del paziente, **Ristampa** (un tocco: si ristampa lì) e ✕. Una volta sola: la scheda
-  dell'ordine stampa ogni foglio una volta, e il service worker non consegna a nessun altro un
-  foglio già uscito.
-- **Un foglio che non esce passa dal dialogo di sempre, lui solo**, con una riga che dice perché
-  («Stampa automatica non riuscita: la stampante non esiste. Dal dialogo, stavolta.»): aiutante
-  non installato, stampante sparita, SumatraPDF che si lamenta, tempo scaduto. Il foglio dopo
-  riprova da solo. In un ordine in sottofondo, quel foglio — e solo quello — arriva alla scheda
-  dove sei, come le etichette di prima, col motivo sulla striscia.
+  stesso, con l'anteprima e la stampante vera in testa («→ Zebra ZD421»), dice com'è andata e
+  passa da sola al foglio dopo. Alla fine la striscia lo riassume, con **Ristampa** accanto
+  (un'etichetta inceppata si vede solo davanti alla stampante).
+- **Si dice solo quello che si sa.** L'aiutante, dopo aver mandato il foglio, guarda per qualche
+  secondo la coda di stampa di Windows:
+  - **«Stampato su Zebra ZD421»** (alla fine «Stampato · 6 esami confermati 14:32»): il foglio è
+    uscito dalla coda senza errori — stampato, per quanto Windows può dire;
+  - **«Mandato a Zebra ZD421»**: è ancora nella coda; Windows l'ha preso, non si sa se è uscito;
+  - **«Esito della stampa sconosciuto · Ristampa»**: l'aiutante non ha risposto, il tempo è
+    scaduto (lui ha 35 secondi, l'estensione ne aspetta 90), SumatraPDF è stato fermato a metà.
+    Il foglio **può essere uscito**: non riparte mai da solo, né dal dialogo. Si controlla la
+    stampante, e se non c'è, **Ristampa**.
+- **Un foglio che non è partito passa dal dialogo di sempre, lui solo**, con una riga che dice
+  perché («Stampa automatica non riuscita: la stampante «Zebra ZD421» risulta spenta o offline.
+  Dal dialogo, stavolta.»). Solo per un no detto prima di stampare: aiutante non installato o
+  bloccato, stampante sparita, spenta o offline (prima di stampare, o ferma in errore o in pausa
+  nella coda: il foglio si toglie), PDF non valido, SumatraPDF che dice di no. Il foglio dopo
+  riprova da solo.
+- **Un ordine in sottofondo lo stampa il service worker**, appena la conferma è provata: non
+  serve una scheda del gestionale davanti, né il fuoco, né un clic — l'ordine può arrivare dal
+  telefono con il PC da solo, con il medico su un altro paziente o senza nessuna scheda del
+  gestionale aperta. La scheda dell'ordine gli dà i PDF (letti dalla pagina, coi controlli di
+  sempre); lui scrive nell'ordine, foglio per foglio, che cosa sta per mandare **prima** di
+  mandarlo, e poi com'è andata. Intanto ogni scheda del gestionale lo racconta («Confermata ·
+  Stampo le etichette su Zebra ZD421… · foglio 1 di 2», con ⏹), e alla fine dice **«Stampato su
+  Zebra ZD421 e HP LaserJet alle 14:32 · 2 esami confermati»** col nome del paziente,
+  **Ristampa** (un tocco: si ristampa lì) e ✕. Una volta sola: ogni foglio parte una volta, e
+  uno mandato da un service worker che poi è ripartito è «sconosciuto», mai rimandato. Se la
+  scheda dell'ordine si ricarica o si chiude a metà, o premi ⏹, i fogli che restano non partono e
+  l'ordine finisce **«Confermata · Stampa interrotta → Ristampa»** (la richiesta è confermata:
+  mai «Scheda chiusa · controlla il carrello»); **Ristampa** rifà i fogli non usciti. Un foglio
+  che non è partito per un no detto arriva alla scheda dove sei, come le etichette di prima, col
+  motivo sulla striscia; per un ordine dal telefono aspetta un tocco su **Stampa** («Etichette NON
+  stampate: Zebra ZD421 ha dato errore»). Uscite, la striscia di un ordine dal telefono aggiunge
+  «avvisa chi preleva».
 - **Si vede che è accesa**: in intestazione, accanto al menu **⋯**, una stampantina; passandoci
   sopra, «Stampa automatica attiva: etichette su Zebra ZD421, A4 su HP LaserJet». Diventa
-  **rossa** se l'ultimo foglio non è uscito, e lo dice. Un tocco apre le Stampanti.
+  **rossa** se l'ultimo foglio non è uscito o ha un esito sconosciuto, e lo dice; con accanto
+  **«non installata»** se l'aiutante non c'è più (lo si chiede all'aiutante al più ogni mezz'ora,
+  aprendo il pannello). Un tocco apre le Stampanti.
+- **Le etichette dritte**: SumatraPDF gira di 90° le pagine più larghe che alte, e coi driver
+  Zebra, ZDesigner, TSC e Citizen l'etichetta uscirebbe di traverso. Nelle Stampanti,
+  «Etichette più larghe che alte: non girarle / girale di 90°» (di partenza «non girarle» per
+  quei nomi). La pagina di prova delle etichette ha la misura di un'etichetta. **Prima di usarla
+  sui pazienti**, ristampa un'etichetta vera e leggi il suo codice a barre col lettore del
+  laboratorio.
 - **Si spegne con un tocco**: menu **⋯ → Stampa automatica: attiva · Spegni** (e «spenta ·
   Accendi»), o l'interruttore nella pagina Stampanti. Spenta, tutto torna esattamente com'era:
   il dialogo, «Stampa finita». Senza aiutante, o col preferito (bookmarklet), lo stesso.
@@ -1261,8 +1302,9 @@ stessi flussi dei test di prodotto.
    ripristinata dopo un browser caduto, o duplicata, non riprende niente. Le etichette le
    consegna il service worker a **una** scheda (quella davanti, nella finestra in primo piano),
    una volta sola, coi link letti dalla pagina del gestionale e accettati solo dalla sua origine.
-   Nessun permesso nuovo per l'estensione. (Con la stampa automatica i fogli li stampa la scheda
-   dell'ordine, e al service worker arriva solo quello che non è uscito: regola 17.)
+   Nessun permesso nuovo per l'estensione. (Con la stampa automatica i fogli li stampa il
+   service worker, coi PDF che gli dà la scheda dell'ordine; alla scheda del medico arriva solo
+   un foglio che non è partito: regola 17.)
 11. Codifica **windows-1252 identica byte per byte** a quella del browser (verificato contro
     Chromium reale, accenti e simboli inclusi).
 12. **Stampe solo dai link della pagina**: gli URL dei PDF non vengono mai costruiti a mano
@@ -1313,16 +1355,27 @@ stessi flussi dei test di prodotto.
     questa estensione. A lui va **solo** il PDF che la pagina ha già preso dal gestionale coi
     controlli di sempre, e il nome della stampante scelta per quel tipo di foglio; lo porta il
     service worker, mai la pagina del gestionale, e solo da una scheda del gestionale. L'aiutante
-    ripete i controlli (è un PDF? non è enorme? quella stampante esiste?), stampa con SumatraPDF,
-    cancella il file temporaneo e risponde: non usa la rete, non esegue altro, e nel suo registro
-    scrive cosa e dove, mai il contenuto. Chrome lo avvia per ogni foglio e lo chiude subito: in
-    Windows non resta acceso niente. **Una volta sola**: in un ordine in sottofondo ogni foglio lo
-    stampa la scheda dell'ordine, una volta, dopo la conferma provata (il segno della stampa è già
-    consumato); al service worker passa l'elenco dei fogli col loro esito, e lui consegna alla
-    scheda del medico **solo** quelli non usciti. «Stampato» solo con la risposta dell'aiutante;
-    ogni errore — non installato, ID cambiato, stampante sparita, SumatraPDF, tempo scaduto —
-    rimanda **quel** foglio al dialogo di sempre, col motivo scritto. Spenta (l'interruttore), non
-    configurata, o col preferito, il percorso è quello di prima, identico.
+    ripete i controlli (è un PDF? non è enorme? quella stampante esiste, ed è accesa?), stampa con
+    SumatraPDF, guarda la coda di Windows, cancella il file temporaneo e risponde: non usa la
+    rete, non esegue altro, e nel suo registro scrive cosa e dove, mai il contenuto. Chrome lo
+    avvia per ogni foglio e lo chiude subito: in Windows non resta acceso niente. L'aiutante
+    accetta solo l'ID fisso di PS Assist (la `"key"` del manifest), scritto in `installa.ps1`.
+    **Una volta sola**: in un ordine in sottofondo la stampa dopo la conferma provata è un passo
+    dell'ordine, tenuto dal service worker in `storage.session`. Ogni foglio ha il suo esito
+    (`attesa`, `mandato`, `stampato`, `fallito`, `sconosciuto`), scritto **prima** di mandarlo; un
+    foglio che era in volo quando il service worker è ripartito è «sconosciuto», mai rimandato. La
+    scheda dell'ordine dà solo i PDF: se si ricarica o si chiude, o col ⏹, i fogli che restano non
+    partono («Confermata · Stampa interrotta → Ristampa»). **Tre esiti, detti per quello che sono**:
+    «stampato» solo se Windows l'ha fatto uscire dalla coda, «mandato» se è ancora lì;
+    **«sconosciuto»** — nessuna risposta, tempo scaduto (l'aiutante ha 35 secondi, l'estensione
+    ne aspetta 90: i tempi sono annidati, e l'estensione non smette mai di aspettare prima che
+    l'aiutante abbia finito), SumatraPDF fermato — non riparte **mai** da solo: si dice, con
+    «Ristampa». Solo un no detto prima di stampare (non installato, stampante sparita, spenta o
+    offline, PDF non valido, SumatraPDF che rifiuta) rimanda **quel** foglio al dialogo di
+    sempre, col motivo scritto; e mai da solo per un ordine dal telefono, che aspetta un tocco al
+    PC. Le parole le scrive una funzione sola nel service worker (`ordPubblico`, a ogni
+    scrittura dell'ordine): la striscia del PC e il telefono dicono le stesse. Spenta
+    (l'interruttore), non configurata, o col preferito, il percorso è quello di prima, identico.
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
@@ -1350,7 +1403,10 @@ prima fase usa **solo** "Crea richiesta e aggiungi" — mai il bottone con confe
    («→ etichettatrice») e si apre il dialogo di stampa — verifica nell'anteprima che il PDF sia
    della **richiesta giusta** e che le etichette riportino il **paziente giusto**, scegli
    l'etichettatrice; chiuso il dialogo arriva la lista, sulla stampante normale. (Esc annulla;
-   si rifà dalla sezione "Stampa".)
+   si rifà dalla sezione "Stampa".) **Con la stampa automatica**, prima di questo passo:
+   dalla sezione "Stampa" di un paziente già confermato **ristampa un'etichetta vera** e leggi
+   il suo codice a barre col lettore del laboratorio — dritta, intera, leggibile; se no, cambia
+   «Etichette più larghe che alte» nelle Stampanti e riprova.
 6. **Controllo incrociato in EHR.** Riapri l'episodio: esattamente UNA richiesta nuova, 1 esame,
    quesito/medico/urgenza corretti, nessuna bozza doppia.
 7. **Run multiplo con cambio risorsa.** Profilo con POC + Urgenze (es. Base PS + Epatico):
@@ -1399,12 +1455,13 @@ ps-app/
 │                          extension/ponte-host.js
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 (SumatraPDF lo scarica installa.cmd)
+├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 (SumatraPDF lo prende installa.cmd: non sta nello zip)
+├── tools/verifica-build.mjs ← al rilascio: la build, lo zip e la versione committati sono quelli di adesso
 ├── esempi-gestionale/   ← pagine vere del gestionale, contenuti inventati (+ come)
 ├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 ├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
-└── test/                ← simulatore SA4PSO + 91 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo, stampa automatica)
+└── test/                ← simulatore SA4PSO + 93 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo, stampa automatica)
 ```
 
 Sviluppo:
@@ -1415,7 +1472,9 @@ npm install        # solo playwright e ws, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet (+ ponte-cripto.js, ponte-host.js) dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run demo       # rigenera dist/demo.html (il banco di prova)
-npm test           # 91 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 53 sulla stampa automatica (+ 21 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
+npm run dist       # al rilascio: build, fogli di dimissione, dist/ps-assist-latest.zip (con stampa/, senza SumatraPDF)
+npm run verifica-build   # al rilascio, dopo dist e il commit: build fresca = build committata? zip e versioni giusti?
+npm test           # 93 scenari e2e + 161 sull'estensione (106 sull'ordine in sottofondo) + 98 sulla stampa automatica (+ 51 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
                    # + il Ponte: 44 controlli senza browser (cifratura, ripetitore, Worker) e 79 dal vivo (test/ext-ponte.mjs)
 ```
 
@@ -1461,14 +1520,23 @@ la scheda che non si apre → la pagina manda come sempre),
 la **stampa automatica** (`test/ext-stampa.mjs`: l'estensione vera con un finto aiutante
 registrato come «native messaging host» del profilo di prova — senza aiutante il dialogo di
 sempre; la pagina Stampanti, da «non installata» all'elenco, l'A4 predefinita, le pagine di
-prova e l'ID; etichette → etichettatrice e lista → A4 senza dialogo, una volta sola, e i consensi
-all'A4; un foglio che non esce → il dialogo col motivo, lui solo; l'aiutante sparito o
-installato per un altro ID; l'interruttore e la stampantina rossa; l'ordine in sottofondo
-stampato dalla sua scheda senza più nessuna scheda del gestionale aperta, «Stampato · 2 esami
-confermati» e «Ristampa»; il foglio dell'ordine che non esce, che arriva al medico col motivo, e
-lui solo) e l'aiutante stesso (`test/stampa-host.mjs`, con PowerShell 7 se c'è: il filo a pezzi,
-i controlli, un SumatraPDF finto, il temporaneo cancellato, il registro senza contenuto, e
-`installa.ps1` che trova PS Assist nei profili di Chrome e di Edge),
+prova nella misura dell'etichetta, la rotazione, e l'ID fisso; etichette → etichettatrice e lista
+→ A4 senza dialogo, una volta sola, e i consensi all'A4; un foglio che non esce → il dialogo col
+motivo, lui solo; l'aiutante sparito, che non parte o vietato per quell'ID; l'interruttore e la
+stampantina rossa; l'ordine in sottofondo stampato dal service worker senza più nessuna scheda
+del gestionale aperta, «Stampato su … alle HH:MM · 2 esami confermati» e «Ristampa»; il foglio dell'ordine che non esce, che arriva al medico col motivo, e
+lui solo; l'aiutante che non risponde in tempo → «esito sconosciuto», mai il dialogo; la scheda
+dell'ordine ricaricata, chiusa o fermata col ⏹ mentre il service worker stampa → «Stampa
+interrotta → Ristampa», e la coda che va avanti; il service worker ripartito a metà, col foglio in
+volo «sconosciuto»; la consegna dei fogli ripetuta, che stampa una volta; gli ordini dal telefono
+che non aprono mai da soli il dialogo; «Mandato a»; la stampantina «non installata»; l'ID fisso)
+e l'aiutante stesso (`test/stampa-host.mjs`, con PowerShell 7 se c'è, avviato come lo avvia
+`host.cmd` e con stdin aperto come lo tiene Chrome: il filo a pezzi, i controlli, la stampante
+offline o dal nome impossibile, un SumatraPDF finto con la rotazione giusta, la coda di Windows
+— uscito, rimasto, fermo in errore —, SumatraPDF che non finisce → «sconosciuto» entro 40
+secondi, i temporanei cancellati, il registro senza contenuto; e `installa.ps1`: la copia in
+`%LOCALAPPDATA%`, l'ID fisso, SumatraPDF dallo zip in Download, ogni blocco noto detto in
+italiano, il disinstalla che controlla),
 il resoconto corto (gli elenchi, un'azione sola,
 passi e Registro sotto «Dettagli»), la ricevuta con un bottone solo e la griglia dietro
 «+ aggiungi», l'emogas tornato alla versione di sempre detto nella ricevuta, «altri esami…»

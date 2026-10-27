@@ -418,14 +418,20 @@ check(/esame \d di 2/.test(corre), "sul telefono: a che punto è, «esame N di 2
 check(await finche(async () => /dall'iPhone/.test(await $panel(doc, ".strip").innerText().catch(() => "")), 15000), "sul PC la striscia dell'ordine dice «dall'iPhone»");
 await tel.evaluate(() => window.scrollTo(0, 0));
 await shot(tel, "tel-4-ordine-in-corso");
-const fatto = await aspettaTel(tel, /Confermata/, 60000);
-check(/Confermata/.test(fatto), "e alla fine «Confermata»");
+// (un ordine dal telefono non apre da solo il dialogo sul PC: davanti può non esserci nessuno)
+const fatto = await aspettaTel(tel, /aspettano qualcuno al PC|Etichette pronte sul PC/, 60000);
+check(/Confermata/.test(fatto) && /aspettano qualcuno al PC|Etichette pronte sul PC/.test(fatto), "e alla fine «Confermata», e le etichette aspettano qualcuno al PC");
 const rid = Object.keys(A.state.richieste)[0];
 check(A.state.richieste[rid]?.confirmed === true && Object.values(A.state.insertCount).every((n) => n === 1) && Object.keys(A.state.insertCount).length === 2,
   `confermata, ogni esame mandato una volta (${JSON.stringify(A.state.insertCount)})`);
 check(A.state.richieste[rid]?.quesito === "dolore toracico atipico", "col quesito scritto sul telefono");
-await sospendi(1500);
-check((await doc.evaluate(() => JSON.parse(localStorage.getItem("__psaStampe") || "[]"))).length <= 1, "le etichette non si stampano mai due volte");
+await doc.waitForTimeout(2500);
+check((await doc.evaluate(() => JSON.parse(localStorage.getItem("__psaStampe") || "[]"))).length === 0, "sul PC il dialogo di stampa non si apre da solo");
+await doc.locator("#psassist-host #strazione").click();   // «Stampa», sulla striscia del PC
+check(await finche(async () => (await doc.evaluate(() => JSON.parse(localStorage.getItem("__psaStampe") || "[]"))).length === 1, 10000),
+  "un tocco su «Stampa» nella striscia del PC: le etichette si stampano lì, come sempre");
+check(/Etichette prese in stampa sul PC/.test(await aspettaTel(tel, /Etichette prese in stampa sul PC/, 15000)),
+  "e il telefono lo sa: «Etichette prese in stampa sul PC», non «Ordine non completo»");
 const carta = await tel.locator(".ord").first().innerText();
 check(!/Quesito: il tuo/.test(carta) && (carta.match(/2 esami/g) || []).length <= 1, `la carta dell'ordine: niente «Quesito: il tuo», niente «2 esami» ripetuto (${carta.replace(/\s+/g, " ")})`);
 await shot(tel, "tel-5-ordine-confermato");

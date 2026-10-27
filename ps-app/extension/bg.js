@@ -553,11 +553,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 // suo lavoro la scheda si slega dall'ordine e si chiude; se il medico la sta
 // guardando proprio in quel momento resta, come una scheda qualunque.
 // Un secondo ordine mentre uno gira aspetta in coda, nell'ordine in cui arriva.
+// Ogni ordine porta `pubblico` = { tono, titolo, testo, dettaglio }: com'è,
+// detto per chi legge — la striscia del PC e il telefono dicono quello, e lo
+// scrive una funzione sola (ordPubblico) a ogni scrittura. `stato` resta il
+// passo della macchina: coda → avvio → corre → (stampo) → stampa | avviso,
+// o errore / chiusa / interrotto.
 const ORD = "ordini";
 const ORD_PIANO = (id) => "ordine:" + id;
 const ORD_VISTI = "ordiniVisti";   // gli ordini già accettati: uno chiesto due volte parte una volta
+const ORD_FOGLI = "ordiniFogli";   // gli ordini di cui il service worker ha già i fogli: consegnati due volte, si stampano una
 const SA4 = "https://smarthealth.multimedica.it";
 const ATTIVI = new Set(["avvio", "corre"]);          // occupano la coda: un motore alla volta
+// (e «stampo»: confermata, il service worker stampa i fogli senza dialogo; la
+// scheda dell'ordine dà solo i PDF, e la coda intanto va avanti)
 const AVVIO_MAX = 45e3;       // la scheda non ha detto «parto»: non partirà
 const MUTO_MAX = 180e3;       // tre minuti senza una parola: si chiede alla scheda se c'è
 const STAMPA_MAX = 30 * 60e3; // etichette che nessuno è tornato a prendere
@@ -581,13 +589,14 @@ const ordLeggi = async () => {
   const l = (await chrome.storage.session.get(ORD))[ORD];
   return (Array.isArray(l) ? l : []).filter((x) => ATTIVI.has(x.stato) || x.stato === "coda" || Date.now() - (x.agg || 0) <= ORD_TTL);
 };
-const ordScrivi = (l) => chrome.storage.session.set({ [ORD]: l });
+// a ogni scrittura, per ogni ordine, che cosa dire a chi guarda
+const ordScrivi = (l) => { for (const r of l) r.pubblico = ordPubblico(r, l); return chrome.storage.session.set({ [ORD]: l }); };
 const corto = (s, n = 160) => String(s == null ? "" : s).slice(0, n);
 const nomi = (a) => (Array.isArray(a) ? a.slice(0, 30).map((x) => corto(x, 60)) : []);
 const togli = async (l, rec) => { l.splice(l.indexOf(rec), 1); await chrome.storage.session.remove(ORD_PIANO(rec.id)); };
 // Un messaggio a una scheda, con una risposta entro pochi secondi o niente: una
 // scheda bloccata non deve fermare la fila degli ordini (null = non ha risposto).
-const allaScheda = (id, m) => Promise.race([chrome.tabs.sendMessage(id, m).catch(() => null), new Promise((r) => setTimeout(() => r(null), 5000))]);
+const allaScheda = (id, m, ms = 5000) => Promise.race([chrome.tabs.sendMessage(id, m).catch(() => null), new Promise((r) => setTimeout(() => r(null), ms))]);
 
 // la scheda nasce vuota, si annota per quale ordine è, POI va sulla pagina:
 // così la risposta a «chi sono?» c'è sempre prima del content script
@@ -635,16 +644,21 @@ async function ordSlega(rec) {
 // (non mentre lui scrive, non da sola sulla pagina di un altro paziente):
 // se dice di no si riprova dopo. Lo stesso ordine non si stampa mai due
 // volte: va via da `ordini` appena una scheda l'ha preso, e le schede si
-// segnano quelli già stampati.
-async function ordDai(l, rec, tabId, forza) {
-  const r = await allaScheda(tabId, { t: "psassistStampa", id: rec.id, ep: rec.ep, paziente: rec.paziente, stampa: rec.stampa, forza: !!forza });
+// segnano quelli già stampati. (`jobs`: solo quei fogli — «Ristampa» rifà
+// quelli non usciti.)
+async function ordDai(l, rec, tabId, forza, jobs = null) {
+  const stampa = jobs ? { ...rec.stampa, jobs } : rec.stampa;
+  const r = await allaScheda(tabId, { t: "psassistStampa", id: rec.id, ep: rec.ep, paziente: rec.paziente, stampa, forza: !!forza });
   if (!(r && r.ok)) return false;
   await togli(l, rec);
   await ordScrivi(l);
   return true;
 }
+// (un ordine dal telefono non apre mai da solo il dialogo di stampa: davanti
+// al PC può non esserci nessuno. Aspetta un tocco su «Stampa», e lo dice.)
+const dalTelefono = (rec) => String(rec.id).startsWith("tel");
 async function ordConsegnaStampa(l) {
-  const pronte = l.filter((x) => x.stato === "stampa" && x.stampa);
+  const pronte = l.filter((x) => x.stato === "stampa" && x.stampa && !dalTelefono(x));
   if (!pronte.length) return;
   const cand = [];
   for (const q of [{ active: true, lastFocusedWindow: true }, { active: true }]) {
@@ -665,6 +679,7 @@ async function ordControlla(l) {
     if (rec.worker != null && (!t || t.discarded)) {
       rec.worker = null;
       if (ATTIVI.has(rec.stato)) { rec.stato = "chiusa"; rec.agg = ora; rec.vista = { tag: "Scheda chiusa", testo: "", tono: "err" }; }
+      if (rec.stato === "stampo") rec.interrotta = rec.interrotta || "la scheda dell'ordine si è chiusa";
     } else if (rec.stato === "avvio" && ora - rec.agg > AVVIO_MAX) {
       rec.stato = "errore"; rec.agg = ora;
       rec.vista = { tag: "Non partito", testo: "La scheda dell'ordine non ha risposto: niente inviato", tono: "err" };
@@ -676,11 +691,14 @@ async function ordControlla(l) {
       const r = await allaScheda(rec.worker, { t: "psassistVivo", id: rec.id });
       if (r && r.ok) { rec.agg = ora; delete rec.muto; } else rec.muto = true;
     } else if (rec.stato === "stampa" && ora - rec.agg > STAMPA_MAX) {
-      rec.stato = "avviso"; rec.agg = ora; rec.stampa = null;
-      rec.vista = { tag: "Confermata", testo: "Le etichette si stampano dalla sua pagina, sezione Stampa", tono: "ok" };
+      rec.stato = "avviso"; rec.agg = ora; rec.stampa = null; delete rec.fogli;
+      // (non le ha prese nessuno: non stampate, e lo si dice in ambra — mai un verde)
+      rec.vista = { tag: "Confermata", testo: "Etichette NON stampate: si stampano dalla sua pagina, sezione Stampa", tono: "warn" };
     }
   }
   if (JSON.stringify(l) !== prima) await ordScrivi(l);
+  // una stampa che questo service worker non sta facendo (si è riavviato): la riprende
+  for (const rec of l) if (rec.stato === "stampo" && !STAMPO_VIVI.has(rec.id)) ordStampaFogli(rec.id);
   await ordAvanti(l);
   await ordConsegnaStampa(l);
 }
@@ -693,10 +711,157 @@ chrome.tabs.onRemoved.addListener((id) => {
     rec.worker = null;
     // chiusa a metà giro: le schede del medico diranno cosa non è partito
     if (ATTIVI.has(rec.stato)) { rec.stato = "chiusa"; rec.agg = Date.now(); rec.vista = { tag: "Scheda chiusa", testo: "", tono: "err" }; }
+    // chiusa mentre si stampa: la richiesta è confermata, i fogli rimasti non partono
+    if (rec.stato === "stampo") rec.interrotta = rec.interrotta || "la scheda dell'ordine si è chiusa";
     await ordScrivi(l);
     await ordAvanti(l);
   }).catch(() => {});
 });
+// Com'è l'ordine, per chi legge: la striscia di ogni scheda del gestionale e
+// il telefono dicono questo, con le stesse parole. Sui fogli si dice solo
+// quello che si sa: «Stampato» se Windows l'ha fatto uscire dalla coda,
+// «Mandato» se è nella coda, «NON stampate» se non è partito niente,
+// «sconosciuto» se l'aiutante non ha detto com'è andata.
+const ORA = (ts) => { const d = new Date(ts || Date.now()); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+const usciti = (f) => f.stato === "stampato" || f.stato === "mandato";
+function ordPubblico(rec, l = []) {
+  const v = rec.vista || {}, r = rec.resto || {}, f = Array.isArray(rec.fogli) ? rec.fogli : [];
+  const P = (tono, titolo, testo = "", ...dettaglio) => ({ tono, titolo: corto(titolo, 60), testo: corto(testo, 200), dettaglio: corto(dettaglio.filter(Boolean).join(" · "), 240) });
+  const tono = (t, d) => (["run", "ok", "warn", "err"].includes(t) ? t : d);
+  const lista = (k) => (Array.isArray(r[k]) ? r[k] : []);
+  const resto = [lista("mancano").length ? `Mancano: ${lista("mancano").join(", ")}` : "", lista("controllare").length ? `Da controllare: ${lista("controllare").join(", ")}` : ""].filter(Boolean).join(" · ");
+  const st = rec.stampa || {};
+  const tel = dalTelefono(rec) ? "avvisa chi preleva" : "";
+  const dove = (xs) => [...new Set(xs.map((x) => x.stampante).filter(Boolean))].join(" e ") || "la stampante";
+  const cosa = (xs) => (xs.some((x) => x.tipo === "etichette") ? "Etichette NON stampate" : "Fogli NON stampati");
+  switch (rec.stato) {
+    case "coda": {
+      const prima = l.find((x) => x !== rec && ATTIVI.has(x.stato));
+      return P("run", "In coda", prima ? `parte dopo l'ordine di ${prima.paziente || "un altro paziente"}` : "parte fra poco");
+    }
+    case "avvio": return P("run", "Parte", "Apro la scheda dell'ordine…");
+    case "corre":
+      if (rec.muto) return P("err", "Ordine fermo", "La scheda dell'ordine non risponde: ⏹ la chiude", [...lista("mancano"), ...lista("controllare")].length ? `Da controllare: ${[...lista("mancano"), ...lista("controllare")].join(", ")}` : "");
+      if (rec.ferma) return P("warn", "Fermo chiesto", "la scheda dell'ordine si ferma appena risponde");
+      return P(tono(v.tono, "run"), v.badge || v.tag || "In corso", [v.tag && v.badge ? v.tag : "", v.testo].filter(Boolean).join(" · ") || "…", v.quesito);
+    case "stampo": {
+      const i = rec.inVolo != null ? rec.inVolo : f.findIndex((x) => x.stato === "attesa");
+      const ora = f[i];
+      if (rec.ferma || rec.interrotta) return P("warn", "Confermata", "Fermo la stampa: finisce il foglio in corso", st.riassunto);
+      return P("run", "Confermata", ora ? `Stampo ${/^etichett/i.test(ora.name) ? "le etichette" : /^lista/i.test(ora.name) ? "la lista esami" : `«${ora.name}»`}${ora.stampante ? ` su ${ora.stampante}` : ""}…` : "Stampo…",
+        f.length > 1 ? `foglio ${i + 1} di ${f.length}` : "", st.riassunto);
+    }
+    case "stampa": {
+      // le etichette aspettano una scheda del gestionale (il dialogo di stampa)
+      const rotti = f.filter((x) => x.stato === "fallito");
+      if (rotti.length) return P("warn", "Confermata", `${cosa(rotti)}: ${dove(rotti)} ha dato errore`, rotti[0].why, dalTelefono(rec) ? "aspettano qualcuno al PC" : "", st.riassunto);
+      if (dalTelefono(rec)) return P("warn", "Confermata", "Etichette NON stampate: aspettano qualcuno al PC", "sul PC: «Stampa» sulla striscia", st.riassunto);
+      return P("run", "Confermata", "Etichette pronte", st.riassunto, st.quesito);
+    }
+    case "errore": return P("err", v.tag || "Errore", v.testo || "completa a mano", v.quesito || resto);
+    case "chiusa": {
+      const k = lista("mancano").length;
+      return P("err", v.tag || "Scheda chiusa", k ? `${k === 1 ? "1 esame non mandato" : `${k} esami non mandati`}: ${lista("mancano").join(", ")}` : v.testo || "controlla il carrello",
+        lista("controllare").length ? `Da controllare: ${lista("controllare").join(", ")}` : "");
+    }
+    case "interrotto": return P("warn", "Interrotto", v.testo || "controlla il carrello", v.quesito || resto);
+    default: {
+      if (!f.length) return P(tono(v.tono, "ok"), v.tag || "Fatto", v.testo, v.quesito);
+      // com'è finita la stampa senza dialogo, foglio per foglio
+      const ignoti = f.filter((x) => x.stato === "sconosciuto"), non = f.filter((x) => !usciti(x) && x.stato !== "sconosciuto");
+      if (ignoti.length) return P("warn", "Confermata", "Esito della stampa sconosciuto · Ristampa", `controlla ${dove(ignoti)}: ${ignoti[0].why || "l'aiutante non ha detto com'è andata"}`, st.riassunto);
+      if (non.length) return P("warn", "Confermata", "Stampa interrotta → Ristampa", `non usciti: ${non.map((x) => x.name).join(", ")}`, rec.interrotta, st.riassunto);
+      const stampati = f.filter((x) => x.stato === "stampato"), mandati = f.filter((x) => x.stato === "mandato");
+      if (!mandati.length) return P("ok", "Stampato", `Stampato su ${dove(stampati)} alle ${ORA(rec.agg)}`, st.riassunto, st.quesito, tel);
+      return P("ok", "Mandato", `Mandato a ${dove(mandati)} alle ${ORA(rec.agg)}`, "è nella coda di Windows: controlla che sia uscito",
+        stampati.length ? `stampato su ${dove(stampati)}` : "", st.riassunto, tel);
+    }
+  }
+}
+
+// LA STAMPA DOPO LA CONFERMA, senza dialogo: la fa il service worker, foglio
+// per foglio, e ogni passo sta scritto nell'ordine (storage.session) PRIMA di
+// farlo. Un foglio è «mandato» all'aiutante prima che parta: se qui qualcosa
+// muore, al riavvio quel foglio è «sconosciuto» — mai rimandato. La scheda
+// dell'ordine dà solo i PDF (li prende lei, dalla pagina del gestionale, coi
+// controlli di sempre). Ricaricata, chiusa, o col ⏹: i fogli che restano non
+// partono, e l'ordine finisce «Confermata · stampa interrotta → Ristampa».
+const STAMPO_VIVI = new Set();   // gli ordini che QUESTO service worker sta stampando
+const statoOrd = (l, id) => l.find((x) => x.id === id && x.stato === "stampo");
+async function ordStampaFogli(id) {
+  if (STAMPO_VIVI.has(id)) return;
+  STAMPO_VIVI.add(id);
+  try {
+    for (;;) {
+      // 1. il prossimo foglio, o la fine
+      const passo = await inFilaOrd(async () => {
+        const l = await ordLeggi();
+        const rec = statoOrd(l, id);
+        if (!rec) return null;
+        if (rec.inVolo != null) {   // mandato da un service worker che non c'è più: com'è andata non si sa
+          const f = rec.fogli[rec.inVolo];
+          if (f && f.stato === "mandato") Object.assign(f, { stato: "sconosciuto", why: "la risposta dell'aiutante si è persa" });
+          rec.inVolo = null;
+          await ordScrivi(l);
+        }
+        const i = rec.fogli.findIndex((f) => f.stato === "attesa");
+        const s = i < 0 || rec.ferma || rec.interrotta || rec.worker == null ? null : await stampaScelte();
+        if (!s) {
+          if (i >= 0 && !rec.interrotta) rec.interrotta = rec.ferma ? "fermata col ⏹" : rec.worker == null ? "la scheda dell'ordine si è chiusa" : "stampa automatica spenta";
+          await ordStampoFine(l, rec);
+          return null;
+        }
+        const f = rec.fogli[i];
+        return { i, url: rec.stampa.jobs[i].url, worker: rec.worker, tipo: f.tipo, stampante: s[f.tipo], ruota: ruotaDi(s) };
+      });
+      if (!passo) return;
+      // 2. il PDF, dalla scheda dell'ordine
+      const pdf = await allaScheda(passo.worker, { t: "psassistPdf", id, url: passo.url }, 30e3);
+      // 3. il foglio segnato «mandato» prima di mandarlo
+      const va = await inFilaOrd(async () => {
+        const l = await ordLeggi();
+        const rec = statoOrd(l, id);
+        if (!rec) return false;
+        const f = rec.fogli[passo.i];
+        if (!pdf) rec.interrotta = rec.interrotta || "la scheda dell'ordine non ha dato il foglio";
+        else if (!pdf.ok || typeof pdf.pdf !== "string") Object.assign(f, { stato: "fallito", why: `il PDF non è arrivato (${corto(pdf.why, 80)})` });
+        else { Object.assign(f, { stato: "mandato", stampante: corto(passo.stampante, 80) }); rec.inVolo = passo.i; }
+        rec.agg = Date.now();
+        await ordScrivi(l);
+        return rec.inVolo === passo.i;
+      });
+      if (!va) continue;
+      // 4. all'aiutante (fino a 90 secondi: lui finisce in 40), poi com'è andata
+      const r = await stampaPdf(passo.tipo, pdf.pdf, passo.stampante, passo.ruota);
+      await inFilaOrd(async () => {
+        const l = await ordLeggi();
+        const rec = statoOrd(l, id);
+        if (!rec || rec.inVolo !== passo.i) return;
+        Object.assign(rec.fogli[passo.i], { stato: r.esito, stampante: corto(r.stampante, 80), why: r.why || "" });
+        rec.inVolo = null; rec.agg = Date.now();
+        await ordScrivi(l);
+      });
+    }
+  } finally { STAMPO_VIVI.delete(id); }
+}
+// Finita la stampa. Un foglio che non è partito per un motivo detto
+// (stampante spenta o sparita, PDF che non arriva) passa dal dialogo di
+// sempre, lui solo: nella scheda dove sta il medico, o — un ordine dal
+// telefono — quando qualcuno al PC tocca «Stampa». Tutto il resto finisce qui,
+// con «Ristampa»: anche un esito sconosciuto, che non si ristampa da solo.
+async function ordStampoFine(l, rec) {
+  rec.agg = Date.now();
+  rec.inVolo = null;
+  const rotti = rec.stampa.jobs.map((j, i) => ({ ...j, motivo: rec.fogli[i].why })).filter((_, i) => rec.fogli[i].stato === "fallito");
+  if (rotti.length && !rec.interrotta) { rec.stato = "stampa"; rec.stampa = { ...rec.stampa, jobs: rotti }; }
+  else rec.stato = "avviso";
+  delete rec.ferma;
+  await ordSlega(rec);
+  await ordScrivi(l);
+  await ordAvanti(l);
+  await ordConsegnaStampa(l);
+}
+
 // il medico è su un'altra scheda, in un'altra finestra, o su una pagina appena
 // caricata: le etichette in attesa vanno lì
 const ordStampaOra = () => inFilaOrd(async () => { await ordConsegnaStampa(await ordLeggi()); }).catch(() => {});
@@ -755,6 +920,10 @@ function ordMessaggio(msg, sender, reply) {
   // «chi sono?»: la scheda di sottofondo di un ordine che gira, o una scheda qualunque
   if (msg.t === "ordineChi") return fai(async () => {
     const l = await ordLeggi();
+    // la scheda di un ordine che sta stampando è ripartita (ricaricata, un'altra
+    // pagina): i fogli che restano non li dà più nessuno
+    const ricarica = l.find((x) => x.worker === tab.id && x.stato === "stampo" && !x.interrotta);
+    if (ricarica) { ricarica.interrotta = "la scheda dell'ordine si è ricaricata"; await ordScrivi(l); }
     const mio = l.find((x) => x.worker === tab.id && ATTIVI.has(x.stato));
     // (o la scheda che il ponte ha aperto per i valori di un paziente: ponte-sw.js)
     if (!mio) return reply({ ok: true, ordini: l, ...(typeof ponteLavoroDi === "function" ? await ponteLavoroDi(tab.id) : {}) });
@@ -800,38 +969,35 @@ function ordMessaggio(msg, sender, reply) {
     reply({ ok: true, ferma: !!rec.ferma && ATTIVI.has(rec.stato) });
     await ordAvanti(l);
   });
-  // I fogli della richiesta confermata, solo da un ordine che gira. Quelli che
-  // la stampa automatica ha già fatto uscire dalla scheda dell'ordine (`fatto`)
-  // non si stampano più: se sono tutti, l'ordine finisce con «Stampato» e
-  // tiene i fogli solo per «Ristampa», un tocco del medico. Gli altri — tutti,
-  // senza stampa automatica — li stampa la scheda dove sta il medico, col
-  // motivo se la stampa automatica non ci è riuscita.
+  // I fogli della richiesta confermata (la conferma è provata), solo da un
+  // ordine che gira: i link letti dalla pagina, mai costruiti. Con la stampa
+  // automatica li stampa il service worker (ordStampaFogli), senza dialogo e
+  // senza nessuno davanti; se no — o per un foglio che non parte — li stampa
+  // la scheda dove sta il medico. La scheda dell'ordine resta legata finché i
+  // PDF servono (li prende lei); poi si slega e si chiude. La stessa consegna
+  // due volte (la prima risposta si è persa, e la scheda la rimanda) è un sì:
+  // un no, e la scheda dell'ordine li stamperebbe lei, una seconda volta.
   if (msg.t === "ordineStampa") return fai(async () => {
     const l = await ordLeggi();
+    const presi = (await chrome.storage.session.get(ORD_FOGLI))[ORD_FOGLI] || [];
+    if (presi.includes(msg.id)) return reply({ ok: true, gia: true });
     const rec = suo(l);
     if (!rec || rec.stato !== "corre") return reply({ ok: false });
     const jobs = (Array.isArray(msg.jobs) ? msg.jobs : []).slice(0, 12)
       .filter((j) => j && sulGestionale(j.url) && typeof j.name === "string")
-      .map((j) => ({ name: corto(j.name, 60), printer: corto(j.printer, 30), url: String(j.url),
-        ...(j.fatto ? { fatto: true } : j.motivo ? { motivo: corto(j.motivo, 160) } : {}) }));
+      .map((j) => ({ name: corto(j.name, 60), printer: corto(j.printer, 30), url: String(j.url) }));
     if (!jobs.length) return reply({ ok: false });
     const f = msg.fine || {};
-    const fine = { n: Number(f.n) || 0, ts: Number(f.ts) || Date.now(), quesito: f.quesito || null };
-    const restano = jobs.filter((j) => !j.fatto);
+    rec.stampa = { jobs, fine: { n: Number(f.n) || 0, ts: Number(f.ts) || Date.now(), quesito: f.quesito || null }, riassunto: corto(msg.riassunto, 80), quesito: corto(msg.quesito, 90) };
+    rec.fogli = jobs.map((j) => ({ name: j.name, tipo: j.printer === "etichettatrice" ? "etichette" : "a4", stato: "attesa", stampante: "", why: "" }));
     rec.agg = Date.now();
-    if (restano.length) {
-      rec.stampa = { jobs: restano, fine };
-      rec.stato = "stampa";
-      rec.vista = { tag: "Confermata", testo: "Etichette pronte", tono: "run" };
-    } else {
-      const v = msg.vista || {};
-      rec.stampa = { jobs: jobs.map(({ fatto, ...j }) => j), fine };
-      rec.stato = "avviso";
-      rec.vista = { tag: "Stampato", testo: corto(v.testo), tono: "ok", quesito: corto(v.quesito, 90) };
-    }
-    await ordSlega(rec);
+    await chrome.storage.session.set({ [ORD_FOGLI]: [...presi, rec.id].slice(-100) });
+    const auto = await stampaScelte();
+    rec.stato = auto ? "stampo" : "stampa";
+    if (!auto) await ordSlega(rec);
     await ordScrivi(l);
-    reply({ ok: true });
+    reply({ ok: true, stampo: !!auto });
+    if (auto) ordStampaFogli(rec.id);
     await ordAvanti(l);
     await ordConsegnaStampa(l);
   });
@@ -840,7 +1006,11 @@ function ordMessaggio(msg, sender, reply) {
   if (msg.t === "ordineStampaQui") return fai(async () => {
     const l = await ordLeggi();
     const rec = l.find((x) => x.id === msg.id && (x.stato === "stampa" || x.stato === "avviso") && x.stampa);
-    reply({ ok: !!rec && await ordDai(l, rec, tab.id, true) });
+    // «Ristampa» dopo la stampa senza dialogo: i fogli non usciti (o non si
+    // sa); se sono usciti tutti, tutti — un'etichetta inceppata
+    const f = rec && rec.stato === "avviso" && Array.isArray(rec.fogli) ? rec.fogli : [];
+    const non = f.length ? rec.stampa.jobs.filter((_, i) => f[i] && !usciti(f[i])) : [];
+    reply({ ok: !!rec && await ordDai(l, rec, tab.id, true, non.length ? non : null) });
   });
   // ⏹: un ordine in coda si toglie; uno che parte non parte; uno che gira si
   // ferma, dalla sua scheda — e se adesso non risponde (fra una pagina e
@@ -863,6 +1033,14 @@ function ordMessaggio(msg, sender, reply) {
       reply({ ok: true });
       return ordAvanti(l);
     }
+    // la stampa dopo la conferma: il foglio in corso finisce, gli altri non partono
+    if (rec.stato === "stampo") {
+      rec.ferma = true;
+      await ordScrivi(l);
+      reply({ ok: true });
+      if (!STAMPO_VIVI.has(rec.id)) ordStampaFogli(rec.id);
+      return;
+    }
     if (rec.stato !== "corre") return reply({ ok: false });
     const r = await allaScheda(rec.worker, { t: "psassistFerma", id: rec.id });
     if (r && r.ok) return reply({ ok: true });
@@ -875,7 +1053,7 @@ function ordMessaggio(msg, sender, reply) {
   if (msg.t === "ordineChiudi") return fai(async () => {
     const l = await ordLeggi();
     const rec = l.find((x) => x.id === msg.id);
-    if (!rec || ATTIVI.has(rec.stato)) return reply({ ok: false });
+    if (!rec || ATTIVI.has(rec.stato) || rec.stato === "stampo") return reply({ ok: false });
     await togli(l, rec);
     await ordScrivi(l);
     reply({ ok: true, ordini: l });
@@ -895,49 +1073,68 @@ chrome.runtime.onMessage.addListener(ordMessaggio);
 // `stampa/`: installa.cmd, niente amministratore) e le due stampanti scelte
 // nelle impostazioni, i fogli non passano dal dialogo di stampa: il PDF che la
 // pagina ha già preso arriva qui, e da qui all'aiutante (native messaging),
-// che lo stampa con SumatraPDF sulla stampante di quel foglio e dice se l'ha
-// mandato. Chrome avvia l'aiutante per ogni domanda e lo chiude appena ha
-// risposto: in Windows non resta acceso niente. Spenta con l'interruttore, non
-// installata o con un errore, il foglio passa dal dialogo di sempre.
+// che lo stampa con SumatraPDF sulla stampante di quel foglio e dice com'è
+// andata: «stampato» (uscito dalla coda di Windows), «mandato» (è nella coda),
+// «fallito» (non è partito niente), «sconosciuto» (può essere uscito). Chrome
+// avvia l'aiutante per ogni domanda e lo chiude appena ha risposto: in Windows
+// non resta acceso niente. Spenta con l'interruttore, non installata, o un
+// foglio che non è partito per un motivo detto: quel foglio passa dal dialogo
+// di sempre. Un esito sconosciuto no — il foglio può essere uscito —: si dice,
+// con «Ristampa».
 // Le scelte del medico stanno in storage.local: `stampa` = { attiva, etichette,
-// a4 } (i nomi delle stampanti); `stampaEsito` = com'è andata l'ultima.
+// a4, ruota } (i nomi delle stampanti); `stampaEsito` = com'è andata l'ultima.
 const OSPITE = "it.psassist.stampa";
 const STAMPA_PDF_MAX = 25 * 1024 * 1024;   // come l'aiutante
-// le parole di Chrome, dette per il medico
+const STAMPA_ATTESA = 90e3;   // l'aiutante finisce entro 40 secondi; oltre questi, l'esito è sconosciuto
+// le parole di Chrome, dette per il medico; `ignoto`: l'aiutante può aver stampato
 function ospiteErrore(e) {
   const m = String(e && e.message || e);
-  if (/not found/i.test(m)) return "l'aiutante di stampa non è installato su questo PC";
-  if (/forbidden/i.test(m)) return "Chrome non permette di usare l'aiutante di stampa (un altro ID dell'estensione, o una regola dell'IT): rilancia installa.cmd";
-  if (/exited|communicating/i.test(m)) return "l'aiutante di stampa si è chiuso senza rispondere";
-  return m.slice(0, 120);
+  if (/not found/i.test(m)) return { why: "l'aiutante di stampa non è installato su questo PC (appena installato? guarda chrome://policy: un criterio dell'IT può vietarlo)", nonInstallata: true };
+  if (/forbidden/i.test(m)) return { why: "Chrome non permette di usare l'aiutante di stampa (una regola dell'IT, o un'installazione vecchia): rilancia installa.cmd" };
+  if (/failed to start/i.test(m)) return { why: "l'aiutante di stampa non è partito (Windows l'ha bloccato): rilancia installa.cmd, che dice perché" };
+  if (/exited|communicating/i.test(m)) return { why: "l'aiutante di stampa si è chiuso senza rispondere", ignoto: true };
+  return { why: m.slice(0, 120), ignoto: true };
 }
 async function ospite(msg, ms) {
   let tid;
   try {
     const r = await Promise.race([chrome.runtime.sendNativeMessage(OSPITE, msg),
       new Promise((_, no) => { tid = setTimeout(() => no(new Error("l'aiutante di stampa non ha risposto in tempo")), ms); })]);
-    return r && typeof r === "object" ? r : { ok: false, why: "l'aiutante di stampa non ha risposto" };
-  } catch (e) { return { ok: false, why: ospiteErrore(e) }; }
+    return r && typeof r === "object" ? r : { ok: false, why: "l'aiutante di stampa non ha risposto", ignoto: true };
+  } catch (e) { return { ok: false, ...ospiteErrore(e) }; }
   finally { clearTimeout(tid); }
 }
-// Un foglio all'aiutante (che aspetta SumatraPDF al massimo un minuto), e
-// l'esito annotato: l'indicatore del pannello diventa rosso se non è uscito.
-async function stampaPdf(tipo, pdf, stampante) {
-  const r = await ospite({ t: "stampa", tipo, stampante, pdf }, 75e3);
-  const esito = r.ok ? { ok: true, stampante: corto(r.stampante || stampante, 80), ts: Date.now() }
-    : { ok: false, why: corto(r.why || "non riuscita", 160), stampante: corto(stampante, 80), ts: Date.now() };
-  await chrome.storage.local.set({ stampaEsito: esito }).catch(() => {});
-  return esito;
+// le scelte del medico, se la stampa automatica è accesa
+async function stampaScelte() {
+  const s = (await chrome.storage.local.get("stampa")).stampa || {};
+  return s.attiva !== false && s.etichette && s.a4 ? s : null;
+}
+// SumatraPDF gira ogni etichetta più larga che alta: coi driver delle
+// etichettatrici (Zebra, ZDesigner, TSC, Citizen) uscirebbe di traverso, e per
+// loro di partenza no. Si cambia nelle impostazioni.
+const ruotaDi = (s, nome = s.etichette) => (s.ruota === "no" || s.ruota === "auto" ? s.ruota : /zebra|zdesigner|tsc|citizen/i.test(nome || "") ? "no" : "auto");
+// Un foglio all'aiutante, e l'esito annotato: l'indicatore del pannello
+// diventa rosso se non è uscito (o non si sa).
+async function stampaPdf(tipo, pdf, stampante, ruota = "auto") {
+  const r = await ospite({ t: "stampa", tipo, stampante, ruota, pdf }, STAMPA_ATTESA);
+  const esito = r.ok ? (r.esito === "stampato" ? "stampato" : "mandato")
+    : r.esito === "fallito" || r.esito === "sconosciuto" ? r.esito : r.ignoto ? "sconosciuto" : "fallito";
+  const e = { ok: !!r.ok, esito, stampante: corto(r.stampante || stampante, 80), ts: Date.now(),
+    ...(r.ok ? {} : { why: corto(r.why || "non riuscita", 200) }), ...(r.nonInstallata ? { nonInstallata: true } : {}) };
+  const pagina = Array.isArray(r.pagina) && r.pagina.length === 2 && r.pagina.every((x) => Number(x) >= 40 && Number(x) <= 1200) ? r.pagina.map(Number) : null;
+  await chrome.storage.local.set({ stampaEsito: e, ...(r.ok && tipo === "etichette" && pagina ? { stampaMisura: pagina } : {}) }).catch(() => {});
+  return e;
 }
 // La pagina di prova, fatta qui: un PDF minimo con tre righe, nella misura del
-// foglio (un'etichetta di 50×25 mm, o un A4).
-function paginaDiProva(tipo, stampante) {
+// foglio — per le etichette quella dell'ultima etichetta vera (l'aiutante la
+// dice), se no 50×25 mm; o un A4.
+function paginaDiProva(tipo, stampante, misura) {
   const etichetta = tipo === "etichette";
-  const [w, h] = etichetta ? [142, 71] : [595, 842];
+  const [w, h] = etichetta ? (Array.isArray(misura) ? misura : [142, 71]) : [595, 842];
   // (Helvetica, solo ASCII; su un'etichetta ci stanno una trentina di lettere)
   const ascii = (s) => String(s).normalize("NFD").replace(/[^\x20-\x7E]/g, "").slice(0, etichetta ? 34 : 60).replace(/[()\\]/g, "\\$&");
   const righe = [`PS Assist: prova ${etichetta ? "etichette" : "A4"}`, ascii(stampante), ascii(new Date().toLocaleString("it-IT"))];
-  const [x, y, passo, corpo] = etichetta ? [8, 50, 14, 9] : [56, 770, 22, 16];
+  const [x, y, passo, corpo] = etichetta ? [8, h - 21, 14, 9] : [56, 770, 22, 16];
   const testo = righe.map((r, i) => `BT /F1 ${i ? corpo - 2 : corpo} Tf ${x} ${y - i * passo} Td (${r}) Tj ET`).join("\n");
   const oggetti = [
     "<< /Type /Catalog /Pages 2 0 R >>",
@@ -953,18 +1150,33 @@ function paginaDiProva(tipo, stampante) {
     + `trailer\n<< /Size ${oggetti.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   return btoa(pdf);
 }
+// «C'è ancora?» L'aiutante tolto (disinstalla.cmd) non si vede finché un foglio
+// non fallisce: una volta ogni mezz'ora, aprendo il pannello, glielo si chiede.
+// Se non c'è Chrome lo dice subito, senza avviare niente.
+const VERIFICA_OGNI = 30 * 60e3;
+async function stampaVerifica() {
+  if (!(await stampaScelte())) return;
+  const k = "stampaVerificata";
+  if (Date.now() - ((await chrome.storage.session.get(k))[k] || 0) < VERIFICA_OGNI) return;
+  await chrome.storage.session.set({ [k]: Date.now() });
+  const p = await ospite({ t: "ping" }, 20e3);
+  const prima = (await chrome.storage.local.get("stampaEsito")).stampaEsito;
+  if (!p.ok) await chrome.storage.local.set({ stampaEsito: { ok: false, esito: "fallito", why: corto(p.why, 200), ts: Date.now(), ...(p.nonInstallata ? { nonInstallata: true } : {}) } });
+  else if (prima && prima.nonInstallata) await chrome.storage.local.remove("stampaEsito");
+}
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
-  if (!msg || typeof msg !== "object" || !["stampaPdf", "stampaStato", "stampaProva"].includes(msg.t)) return;
+  if (!msg || typeof msg !== "object" || !["stampaPdf", "stampaStato", "stampaProva", "stampaVerifica"].includes(msg.t)) return;
   const tipo = msg.tipo === "etichette" ? "etichette" : "a4";
   // un foglio da una pagina del gestionale: sulla stampante che il medico ha scelto per quel tipo
-  if (msg.t === "stampaPdf") {
+  if (msg.t === "stampaPdf" || msg.t === "stampaVerifica") {
     if (!sulGestionale(sender && sender.url)) return reply({ ok: false, why: "non dal gestionale" }), true;
+    if (msg.t === "stampaVerifica") { stampaVerifica().catch(() => {}).finally(() => reply({ ok: true })); return true; }
     (async () => {
-      const s = (await chrome.storage.local.get("stampa")).stampa || {};
-      if (s.attiva === false || !s.etichette || !s.a4) return reply({ ok: false, why: "la stampa automatica è spenta" });
-      if (typeof msg.pdf !== "string" || msg.pdf.length > STAMPA_PDF_MAX / 3 * 4 + 4) return reply({ ok: false, why: "PDF troppo grande" });
-      reply(await stampaPdf(tipo, msg.pdf, s[tipo]));
-    })().catch((e) => reply({ ok: false, why: corto(e && e.message || e, 120) }));
+      const s = await stampaScelte();
+      if (!s) return reply({ ok: false, esito: "fallito", why: "la stampa automatica è spenta" });
+      if (typeof msg.pdf !== "string" || msg.pdf.length > STAMPA_PDF_MAX / 3 * 4 + 4) return reply({ ok: false, esito: "fallito", why: "PDF troppo grande" });
+      reply(await stampaPdf(tipo, msg.pdf, s[tipo], ruotaDi(s)));
+    })().catch((e) => reply({ ok: false, esito: "sconosciuto", why: corto(e && e.message || e, 120) }));
     return true;
   }
   // il resto, solo dalla pagina delle impostazioni
@@ -980,7 +1192,11 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     return true;
   }
   const stampante = corto(msg.stampante, 120);
-  stampaPdf(tipo, paginaDiProva(tipo, stampante), stampante).then(reply);
+  (async () => {
+    const o = await chrome.storage.local.get(["stampa", "stampaMisura"]);
+    const ruota = ruotaDi({ ...(o.stampa || {}), ...(msg.ruota ? { ruota: msg.ruota } : {}) }, stampante);
+    reply(await stampaPdf(tipo, paginaDiProva(tipo, stampante, o.stampaMisura), stampante, ruota));
+  })().catch((e) => reply({ ok: false, why: corto(e && e.message || e, 120) }));
   return true;
 });
 

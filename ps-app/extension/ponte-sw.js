@@ -520,6 +520,8 @@ function ponteStatoOrdine(m, rec) {
     if (["", "avvio", "corre"].includes(m.stato || "")) {
       return { ...base, stato: "perso", tono: "warn", titolo: "Da controllare", testo: "L'ordine non risulta più sul PC: guarda il carrello prima di rifarlo", dettaglio: "", fine: true };
     }
+    // etichette in attesa che spariscono: una scheda del PC le ha prese per stamparle
+    if (m.stato === "stampa") return { ...base, stato: "preso", tono: "ok", titolo: "Confermata", testo: "Etichette prese in stampa sul PC", dettaglio: "", fine: true };
     return { ...m, fine: true };
   }
   const p = rec.pubblico && typeof rec.pubblico === "object" ? rec.pubblico : null, v = rec.vista || {};
