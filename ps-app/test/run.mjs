@@ -1449,7 +1449,7 @@ async function scenarioChiudi(browser) {
   check(scen, (await $panel(page, "#chiudi").count()) === 0 && /1 SELEZIONATI/.test(sel) && /PROCALCITONINA/.test(sel) && !/EMOCROMO|TROPONINA/.test(sel),
     `restano scelti solo quelli che mancano: la PCT, non i due già in carrello (got: ${sel})`);
   const cta = (await $panel(page, "#goconfirm").innerText().catch(() => "")).replace(/\s+/g, " ").trim();
-  check(scen, cta === "Conferma e stampa · 1 esame", `e il conto sul bottone è quello vero (got: ${cta || "niente"})`);
+  check(scen, cta === "Conferma per ROSSI M. · 1 esame", `e il conto sul bottone è quello vero (got: ${cta || "niente"})`);
   const riga = (await $panel(page, ".daconf").innerText().catch(() => "")).replace(/\s+/g, " ");
   check(scen, /ancora da confermare/.test(riga) && /2 esami/.test(riga),
     `una riga discreta: quella richiesta è ancora da confermare (got: ${riga || "niente"})`);
@@ -1911,7 +1911,7 @@ async function scenarioBloccatoAggiungi(browser) {
   const p2 = await altraScheda(context, listUrl, RES.URGENZE);
   await $panel(p2, '.opt[title*="PROCALCITONINA"]').click();
   const cta = (await $panel(p2, "#goconfirm").innerText()).replace(/\s+/g, " ").trim();
-  check(scen, cta === "Conferma e stampa · 1 esame" && !(await $panel(p2, "#goconfirm").isDisabled()), `si sceglie e si manda (got: ${cta})`);
+  check(scen, cta === "Conferma per ROSSI M. · 1 esame" && !(await $panel(p2, "#goconfirm").isDisabled()), `si sceglie e si manda (got: ${cta})`);
   await $panel(p2, "#goconfirm").click();
   await p2.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 });
   check(scen, mock.state.insertCount[`${rid}:159`] === 1 && mock.state.insertCount[`${rid}:320`] === 1 && Object.keys(mock.state.richieste).length === 1,
@@ -2465,6 +2465,8 @@ async function scenarioPrintManual(browser) {
   check(scen, /Stampa 1 di 2 — Etichette provette/.test(vista) && /→ etichettatrice/.test(vista),
     `arrivate: la scheda col PDF in anteprima e la stampante da scegliere (got: ${vista || "niente"})`);
   check(scen, (await $wiz(page, ".ps:not([hidden])").count()) === 0, "e il riquadrino si toglie di mezzo");
+  const testaStampa = await $wiz(page, ".pwhd .pwtit").innerText().catch(() => "");
+  check(scen, /^ROSSI M\. · Richiesta 699999/.test(testaStampa), `la scheda di stampa dice di chi sono i fogli (got: ${testaStampa || "niente"})`);
   await page.waitForTimeout(1800); // fallback print attempt fires even without a PDF viewer
   check(scen, Number(await page.locator("#psassist-print").getAttribute("data-print-attempts")) >= 1, "print dialog richiesto automaticamente");
   check(scen, hits(mock, "RcsStampaEtichetteLISHMIMU.do") === 1, "PDF etichette scaricato una volta");
@@ -3070,8 +3072,8 @@ async function scenarioUiErgonomics(browser) {
   check(scen, (await $panel(page, ".btnrow #go").count()) === 1 && (await $panel(page, ".btnrow #goconfirm").count()) === 1,
     "CTA su una sola riga");
   const cta = (await $panel(page, "#goconfirm").innerText()).trim();
-  check(scen, cta === "Conferma e stampa · 6 esami" && /\bprimary\b/.test(await $panel(page, "#goconfirm").getAttribute("class")),
-    `un bottone primario: «Conferma e stampa · N esami» (got: ${cta})`);
+  check(scen, cta === "Conferma per ROSSI M. · 6 esami" && /\bprimary\b/.test(await $panel(page, "#goconfirm").getAttribute("class")),
+    `un bottone primario, che dice per chi: «Conferma per ROSSI M. · N esami» (got: ${cta})`);
   check(scen, (await $panel(page, "#go").innerText()).trim() === "solo carrello" && /\blnk\b/.test(await $panel(page, "#go").getAttribute("class"))
     && (await $panel(page, ".commit .btn").count()) === 1,
     "«solo carrello» è un link scritto, non un secondo bottone");
@@ -3153,9 +3155,9 @@ async function scenarioContinuity(browser) {
   await page.waitForSelector("#psassist-host #confirmnow", { timeout: 5000 });
   check(scen, (await page.locator("#psassist-host .selbar").count()) === 0, "dopo l'ordine la selezione riparte pulita");
   // la ricevuta: il carrello e un bottone solo; la griglia sta dietro «+ aggiungi»
-  check(scen, (await $panel(page, "#confirmnow").innerText()).trim() === "Conferma e stampa" && /\bprimary\b/.test(await $panel(page, "#confirmnow").getAttribute("class"))
+  check(scen, (await $panel(page, "#confirmnow").innerText()).trim() === "Conferma per ROSSI M." && /\bprimary\b/.test(await $panel(page, "#confirmnow").getAttribute("class"))
     && (await $panel(page, ".btn").count()) === 1 && (await $panel(page, "#goconfirm, #go").count()) === 0,
-    "la ricevuta ha un bottone solo: «Conferma e stampa»");
+    "la ricevuta ha un bottone solo: «Conferma per ROSSI M.»");
   check(scen, (await $panel(page, ".grid").count()) === 0 && (await $panel(page, ".chip.cart").count()) >= 1 && (await $panel(page, "#aggiungi").count()) === 1,
     "solo il carrello: la griglia degli esami sta dietro «+ aggiungi»");
   check(scen, /Quesito: il tuo/.test(await $panel(page, ".banner.ok").innerText()), "e la ricevuta dice quale quesito è partito");
@@ -3163,7 +3165,7 @@ async function scenarioContinuity(browser) {
   check(scen, (await $panel(page, ".grid").count()) === 1 && (await $panel(page, "#confirmnow").count()) === 1,
     "«+ aggiungi» apre la griglia, e finché non scegli niente il bottone resta la Conferma");
   await $panel(page, '.opt[title*="GLUCOSIO"]').click();
-  check(scen, (await $panel(page, "#confirmnow").count()) === 0 && (await $panel(page, "#goconfirm").innerText()).trim() === "Conferma e stampa · 1 esame",
+  check(scen, (await $panel(page, "#confirmnow").count()) === 0 && (await $panel(page, "#goconfirm").innerText()).trim() === "Conferma per ROSSI M. · 1 esame",
     "scelto un esame, il bottone è quello che lo aggiunge: sempre uno solo");
   await $panel(page, '.opt[title*="GLUCOSIO"]').click();
   await $panel(page, "#confirmnow").click();
@@ -3334,8 +3336,8 @@ async function scenarioQuesitoPacchetti(browser) {
   check(scen, (await quesito()) === "Dolore toracico", `e scrive il quesito (got ${JSON.stringify(await quesito())})`);
   check(scen, await acceso("Dolore toracico") && !(await acceso("Dispnea")) && !(await acceso("Dolore addominale")),
     "il chip scelto è acceso, gli altri no");
-  check(scen, (await $panel(page, "#goconfirm").innerText()).trim() === "Conferma e stampa · 6 esami" && !(await $panel(page, "#goconfirm").isDisabled()),
-    "e il bottone è pronto, con il quesito già scritto: «Conferma e stampa · 6 esami»");
+  check(scen, (await $panel(page, "#goconfirm").innerText()).trim() === "Conferma per ROSSI M. · 6 esami" && !(await $panel(page, "#goconfirm").isDisabled()),
+    "e il bottone è pronto, con il quesito già scritto: «Conferma per ROSSI M. · 6 esami»");
   // la coagulazione del pacchetto si vede anche nella griglia degli esami singoli
   const coag = (c) => $panel(page, `.opt[data-res="${RES.POC}"][data-code="${c}"]`);
   check(scen, (await coag(220).count()) === 1 && (await coag(134).count()) === 1
@@ -3472,7 +3474,7 @@ async function scenarioLabPlusRx(browser) {
   await $panel(page, "#q").fill("dispnea e dolore toracico");
   await $panel(page, '.opt[title*="TROPONINA"]').click();   // POC
   await $panel(page, '.opt[title*="RX TORACE ("]').first().click(); // RX
-  check(scen, /^Conferma e stampa · 2 richieste, \d+ esami$/.test((await $panel(page, "#goconfirm").innerText()).trim()), "il bottone annuncia due richieste");
+  check(scen, /^Conferma per ROSSI M\. · 2 richieste, \d+ esami$/.test((await $panel(page, "#goconfirm").innerText()).trim()), "il bottone annuncia due richieste");
   await $panel(page, "#goconfirm").click();
 
   // the lab richiesta confirms itself; the RADIOLOGY one never does (README,
@@ -4594,6 +4596,14 @@ async function scenarioNuoviValori(browser) {
   check(scen, (await page.locator("#psassist-host .sttab td.agg.fuori, #psassist-host .sttab td.nuovo.fuori").count()) === 2,
     "un valore nuovo fuori range resta anche fuori range");
 
+  // nella riga dei Pazienti, il pallino: rosso, perché fra i valori nuovi non
+  // ancora letti ce n'è uno fuori range (lo stesso segno della tabella)
+  await $panel(page, "#back").click();
+  await page.waitForSelector("#psassist-host .pzrow.qui .esst", { timeout: 5000 });
+  check(scen, (await $panel(page, ".pzrow.qui .esdot.ros").count()) === 1, "Pazienti: il pallino rosso, valori nuovi fuori range non ancora letti");
+  await $panel(page, ".pzrow.qui .pzapri").click();
+  await page.waitForSelector("#psassist-host #letto", { timeout: 5000 });
+
   // «Letto»: da qui in poi le novità si contano da adesso, per tutti i prelievi
   await $panel(page, "#letto").click();
   await page.waitForTimeout(300);
@@ -4602,6 +4612,9 @@ async function scenarioNuoviValori(browser) {
   check(scen, (await page.locator("#psassist-host .newbar").count()) === 0, "e la striscia sparisce con loro");
   check(scen, (await page.locator("#psassist-host .sttab tbody tr:not(.stsez)").count()) === 5,
     "i valori restano tutti in tabella: si spegne il marchio, non la riga");
+  await $panel(page, "#back").click();
+  await page.waitForSelector("#psassist-host .pzrow.qui .esst", { timeout: 5000 });
+  check(scen, (await $panel(page, ".pzrow.qui .esdot").count()) === 0, "e con «Letto» il pallino dei Pazienti si spegne");
   await context.close();
 }
 
@@ -5920,6 +5933,227 @@ async function scenarioMenuAltro(browser) {
   await b.context.close();
 }
 
+// ---------------------------------------------------------------- onda 1
+// La pagina vera del paziente elenca ogni richiesta (anche quelle fatte a
+// mano) in una riga con TIPO=RICH: l'icona del tipo col RICHIESTA_ID, l'ora
+// (DATA_ORD), gli esami (DESCRIZIONE_TITLE) e lo stato — REFERTO, oppure
+// «Erogata» con la finestra Visualizza Risultati, oppure niente (vedi
+// esempi-gestionale/paziente-*.html). Il mock non le ha: le aggiunge qui il
+// test, riscrivendo la pagina mentre passa (il mock non si tocca).
+const due = (n) => String(n).padStart(2, "0");
+// le ore delle richieste si fissano una volta, all'inizio: la pagina riletta dopo ha le stesse
+let T0 = Date.now();   // (ogni scenario la rifissa al suo inizio)
+const faMin = (min) => new Date(T0 - min * 60e3);
+// il tempo che aspetta si conta al momento del disegno: può essere scattato un minuto
+const tAttesa = (min) => { const t = (m) => (m < 60 ? `${m}′` : `${Math.floor(m / 60)}h${m % 60 ? due(m % 60) : ""}`); return `(?:${t(min)}|${t(min + 1)}|${t(min + 2)})`; };
+const somiglia = (testo, schema) => new RegExp(`^${schema}$`).test(testo || "");
+const dataOrd = (min) => { const d = faMin(min); return `${d.getFullYear()}-${due(d.getMonth() + 1)}-${due(d.getDate())} ${due(d.getHours())}:${due(d.getMinutes())}:00`; };
+const oraDi = (min) => { const d = faMin(min); return `${due(d.getHours())}:${due(d.getMinutes())}`; };
+function rigaRich({ rid, tipo, min, esami, stato = "" }) {
+  const icona = { lab: "Laboratorio", rx: "Radiologia", cons: "Consulenze" }[tipo];
+  const st = stato === "referto" ? `<a title="REFERTO" href="#" onclick="window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*TEST00001&REFERTO_SISTEMA=HL7${tipo === "lab" ? "LIS" : "RIS"}&REFERTO_ID=rr${rid}','x')"><img alt="referto"></a>`
+    : stato === "risultati" ? `<img title="Erogata" alt=""><a href="#" title="Visualizza Risultati" onclick="window.open('/sa4rcs/restrict/RcsAccessiRisultatiElenco.do?RCS_ACCESSO_ID=2026${rid}','x');"><img title="Visualizza Risultati" alt=""></a>`
+    : stato === "immagine" ? `<a title="IMMAGINE" href="#"><img alt=""></a>`
+    : stato ? `<img title="${stato}" alt="">` : "";
+  return `<tr id="RICH"><td><a href="javascript:void(0)" onclick="window.open('/sa4rcs/restrict/RcsSession.do?RICHIESTA_ID=${rid}&amp;RICHIESTA_PROG=1','x');"><img title="${icona}" alt=""></a></td>
+    <td>${oraDi(min)}</td>
+    <td class="AFCDataTD" title="${esami}">${st} ${esami}<input type="hidden" name="TIPO" value="RICH"><input type="hidden" name="DATA_ORD" value="${dataOrd(min)}"><input type="hidden" name="NOMINATIVO" value="OPERATORE PROVA"><input type="hidden" name="DESCRIZIONE_TITLE" value="${esami}"></td></tr>`;
+}
+// il riquadro in testa alla scheda: nome, «nascita (età) sesso», codice fiscale (inventato)
+const RIQUADRO = `<table><tr><td title="ARANCIONE"><font style="font-size: 120%; font-weight: bolder; ">Box</font><br><font style="font-size: 150%; font-weight: bolder; ">ROSSI MARIO</font><br><font style="font-size: 120%; font-weight: bolder; ">17/05/1958 (68) M<br>RSSMRA58E17Z999Y</font></td></tr></table>`;
+const ALLERGIE = (nega, testo) => `<table><tr><td class="AFCDataTD">Allergie Nega/Non riferisce <input id="ALLERGIE_NEGA" class="AFCInput" value="1" type="checkbox" name="ALLERGIE_NEGA"${nega ? " checked" : ""}></td>
+  <td class="AFCDataTD"><textarea id="ALLERGIE" class="AFCTextarea" rows="3" name="ALLERGIE">${testo}</textarea></td></tr></table>`;
+const ATTENZIONE = `<table><tr><td class="AFCDataTD"></td></tr><tr><td class="AFCColumnTD" align="center">Attenzione</td></tr><tr><td class="AFCDataTD"><img title="Codice" alt="">&nbsp;&nbsp;<a class="AFCDataLink" href="#">Paziente in terapia anticoagulante</a> <br><img title="Codice" alt="">&nbsp;&nbsp;<a class="AFCDataLink" href="#">Rischio cadute</a> <br></td></tr></table>`;
+function conScheda(mock, extra) {
+  return conPagina(mock, (html) => (/title="Richieste Laboratorio"/.test(html) ? html.replace("</body>", `${extra()}</body>`) : html));
+}
+const testoPanel = (page, sel) => page.evaluate((s) => {
+  const el = document.getElementById("psassist-host")?.shadowRoot?.querySelector(s);
+  return el ? el.textContent.replace(/\s+/g, " ").trim() : null;
+}, sel);
+
+// 1 · stato su ogni riga e letto; 2 · «Aperti» in Dimissioni; 5 · identificativi e allergie; 7 · «già fatto» sulle Richieste
+async function scenarioStatoEsami(browser) {
+  const scen = "stato-esami";
+  T0 = Date.now();
+  // tabelle pure: le soglie e la scrittura del tempo
+  let banda = null, tempo = null;
+  try { banda = prendi("bandaAttesa"); tempo = prendi("attesaTesto"); } catch { /* prima dell'onda 1 non c'erano */ }
+  check(scen, !!banda && [banda(59, [60, 120]), banda(60, [60, 120]), banda(119, [60, 120]), banda(120, [60, 120])].join(",") === ",amb,amb,ros",
+    "soglie: sotto la prima neutro, dalla prima ambra, dalla seconda rosso");
+  check(scen, !!tempo && [tempo(50), tempo(80), tempo(120)].join(",") === "50′,1h20,2h", "il tempo: «50′», «1h20», «2h»");
+
+  let tropoFatta = false;
+  const mock = conScheda(createMock({ noReferti: true }), () => `${RIQUADRO}${ALLERGIE(false, "amoxicillina (orticaria)")}${ATTENZIONE}<table>
+    ${rigaRich({ rid: 880101, tipo: "lab", min: 130, esami: "0-324 TROPONINA ULTRASENSIBILE (POC3001)", stato: tropoFatta ? "referto" : "" })}
+    ${rigaRich({ rid: 880102, tipo: "lab", min: 50, esami: "0-320 EMOCROMOCITOMETRICO URGENTE (POCT1502); 0-176 CREATININEMIA (POC1206)", stato: "risultati" })}
+    ${rigaRich({ rid: 880103, tipo: "rx", min: 100, esami: "69-28 RX ADDOME SENZA CONTRASTO (A692)", stato: "immagine" })}
+    ${rigaRich({ rid: 880104, tipo: "cons", min: 40, esami: "8-6 ELETTROCARDIOGRAMMA (84)", stato: "referto" })}
+    ${rigaRich({ rid: 880105, tipo: "cons", min: 35, esami: "8-8 PRIMA VISITA CARDIOLOGICA (A8100)" })}
+    ${rigaRich({ rid: 880106, tipo: "lab", min: 20, esami: "0-101 D-DIMERO POC (POC1405)", stato: "Annullata" })}
+  </table>`);
+  // dal gestionale: si arriva come pill, il pannello lo apre il medico
+  const { context, page } = await newPage(browser, mock, { pill: true });
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+  await $panel(page, "#expand").click();
+  await page.waitForSelector("#psassist-host .card", { timeout: 5000 });
+
+  // 5 · intestazione: nome, età e sesso, episodio; sotto, Allergie e Attenzione parola per parola
+  const sub = await testoPanel(page, ".hd .sub");
+  check(scen, sub === "68 M · ep. 999001", `intestazione: «68 M · ep. 999001» accanto al nome (got: ${sub})`);
+  const all = await testoPanel(page, ".idriga .idall");
+  check(scen, all === "Allergie: amoxicillina (orticaria)" && (await $panel(page, ".idriga .idall.ros").count()) === 1,
+    `le allergie del gestionale, parola per parola e in rosso (got: ${all})`);
+  const att = await testoPanel(page, ".idriga .idatt");
+  check(scen, att === "Attenzione: Paziente in terapia anticoagulante · Rischio cadute", `il riquadro Attenzione, com'è (got: ${att})`);
+
+  // 2 · Dimissioni: l'episodio resta in testa, e la riga «Aperti»
+  await $panel(page, '[data-seg="dimissioni"]').click();
+  const subDim = await testoPanel(page, ".hd .sub");
+  check(scen, subDim === "68 M · ep. 999001", `in Dimissioni il paziente non sparisce dall'intestazione (got: ${subDim})`);
+  const aperti = await testoPanel(page, ".aperti");
+  check(scen, !!aperti && aperti.startsWith("Aperti:") && aperti.includes(`Troponina ultrasensibile (${oraDi(130)})`)
+    && aperti.includes(`RX addome senza contrasto non refertato (${oraDi(100)})`) && /letto alle \d\d:\d\d$/.test(aperti)
+    && !/Emocromo|Creatininemia|Elettrocardiogramma|D-dimero|Visita/i.test(aperti),
+    `«Aperti»: solo quello che aspetta, con l'ora della richiesta, e quando è stato letto (got: ${aperti})`);
+  await shot(page, "onda1-dimissioni");
+  // copiare un foglio: il toast dice di chi
+  await page.locator("#psassist-host [data-dcopy]").first().click();
+  await page.waitForSelector("#psassist-host #expand", { state: "attached", timeout: 4000 });
+  const toast = await testoPanel(page, "#expand");
+  check(scen, /✓ Copiato · ROSSI M\./.test(toast || ""), `«✓ Copiato · ROSSI M.» (got: ${toast})`);
+  await $panel(page, "#expand").click();
+  await page.waitForSelector("#psassist-host .card", { timeout: 5000 });
+
+  // 7 · Richieste: accanto all'esame, quando è già stato fatto o da quanto aspetta
+  await richieste(page);
+  const suff = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot, o = {};
+    for (const b of r.querySelectorAll(".opt")) o[b.querySelector(".nm").textContent.trim()] = b.querySelector(".ult")?.textContent.trim() || "";
+    return o;
+  });
+  check(scen, somiglia(suff["TROPONINA US"], `in attesa ${tAttesa(130)}`), `troponina: «in attesa 2h10» (got: ${suff["TROPONINA US"]})`);
+  check(scen, suff["EMOCROMO POC"] === oraDi(50) && suff["CREATININA POC"] === oraDi(50),
+    `emocromo e creatinina: l'ora della richiesta già tornata (got: ${suff["EMOCROMO POC"]}, ${suff["CREATININA POC"]})`);
+  check(scen, somiglia(suff["RX ADDOME"], `in attesa ${tAttesa(100)}`) && suff["D-DIMERO POC"] === "" && suff["PCR"] === "",
+    `l'RX aspetta; un esame annullato o mai chiesto non dice niente (got: ${suff["RX ADDOME"]}, «${suff["D-DIMERO POC"]}», «${suff["PCR"]}»)`);
+  // il pacchetto spunta come sempre: il suffisso mostra il doppione, non lo toglie
+  await $panel(page, '.chip.q.pk:has-text("Dolore toracico")').click();
+  const tropo = page.locator('#psassist-host .opt:has(.nm:text-is("TROPONINA US"))');
+  check(scen, /\bon\b/.test(await tropo.getAttribute("class")) && somiglia((await tropo.locator(".ult").innerText()).trim(), `in attesa ${tAttesa(130)}`),
+    "«Dolore toracico» spunta la troponina lo stesso, col suo «in attesa» accanto");
+  const cta = (await $panel(page, "#goconfirm").innerText()).trim();
+  check(scen, cta === "Conferma per ROSSI M. · 68 M · 6 esami", `il bottone che conferma dice per chi (got: ${cta})`);
+  await shot(page, "onda1-richieste");
+
+  // 1 · Pazienti: la riga di questo paziente
+  await $panel(page, "#back").click();
+  await page.waitForSelector("#psassist-host .pzrow .esst", { timeout: 5000 });
+  const riga = await testoPanel(page, ".pzrow.qui .esst");
+  check(scen, somiglia(riga, `Lab 2/3 ⏳${tAttesa(130)} · ECG ✓ · RX 0/1 ⏳${tAttesa(100)}`),
+    `la riga: «Lab 2/3 ⏳2h10 · ECG ✓ · RX 0/1 ⏳1h40» — la visita no, l'annullato no (got: ${riga})`);
+  check(scen, (await $panel(page, ".pzrow.qui .esst .esatt.ros").count()) === 1 && (await $panel(page, ".pzrow.qui .esst .esatt.amb").count()) === 1,
+    "il laboratorio oltre 2 h è rosso, l'RX oltre 90′ ambra");
+  check(scen, (await $panel(page, ".pzrow.qui .esdot").count()) === 0, "alla prima lettura niente è «nuovo»");
+  const alto = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".pzrow.qui").getBoundingClientRect().height);
+  check(scen, alto <= 46, `e la riga resta una riga (${Math.round(alto)} px)`);
+
+  // arriva il referto della troponina mentre il medico è altrove: la pagina riletta (ridotta, non guardata)
+  tropoFatta = true;
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+  await page.goto(mock.worklistUrl);
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+  await $panel(page, "#expand").click();
+  await page.waitForSelector("#psassist-host .pzrow .esst", { timeout: 5000 });
+  const riga2 = await testoPanel(page, '.pzrow:has([data-ep="999001"]) .esst');
+  check(scen, somiglia(riga2, `Lab 3/3 · ECG ✓ · RX 0/1 ⏳${tAttesa(100)} ●`) && (await $panel(page, '.pzrow:has([data-ep="999001"]) .esdot:not(.ros)').count()) === 1,
+    `il risultato arrivato dopo l'ultimo sguardo agli Esiti porta il pallino (got: ${riga2})`);
+  await shot(page, "onda1-pazienti");
+  // nel letto, la stessa riga corta
+  await page.evaluate(() => localStorage.setItem("psassist:stanza.posti.v1", JSON.stringify({ 999001: { tipo: "letto", id: "obi1", ts: Date.now() } })));
+  await page.reload();
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+  await $panel(page, "#expand").click();
+  await page.waitForSelector('#psassist-host [data-letto="obi1"] .esst', { timeout: 5000 });
+  const letto = await testoPanel(page, '[data-letto="obi1"] .esst');
+  check(scen, somiglia(letto, `RX ${tAttesa(100)} ●`), `nel letto, corta: solo quello che aspetta (got: ${letto})`);
+  await shot(page, "onda1-letto");
+
+  // letto più di mezz'ora fa: grigio, «letto alle…»
+  const vecchio = Date.now() - 31 * 60e3;
+  await page.evaluate((t) => {
+    const s = JSON.parse(localStorage.getItem("psassist:stato.v1"));
+    s["999001"].letto = t;
+    localStorage.setItem("psassist:stato.v1", JSON.stringify(s));
+  }, vecchio);
+  await page.reload();
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+  await $panel(page, "#expand").click();
+  await page.waitForSelector('#psassist-host [data-letto="obi1"] .esst', { timeout: 5000 });
+  const tit = await $panel(page, '[data-letto="obi1"] .esst.vecchio').getAttribute("title", { timeout: 2000 }).catch(() => "");
+  const hm = new Date(vecchio);
+  check(scen, (tit || "").includes(`letto alle ${due(hm.getHours())}:${due(hm.getMinutes())}`), `vecchio di 31′: grigio, «letto alle…» nel passaggio del mouse (got: ${JSON.stringify(tit)})`);
+  // il paziente nell'intestazione porta anche il suo posto
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+  await $panel(page, "#expand").click();
+  await page.waitForSelector("#psassist-host .card", { timeout: 5000 });
+  const subPosto = await testoPanel(page, ".hd .sub");
+  check(scen, subPosto === "68 M · ep. 999001 · OBI 1", `e il posto, in fondo: «… · OBI 1» (got: ${subPosto})`);
+  await shot(page, "onda1-intestazione");
+  await context.close();
+
+  // allergie: «nega» e «non lette», mai «nessuna»
+  const mockNega = conScheda(createMock({ noReferti: true }), () => `${RIQUADRO}${ALLERGIE(true, "")}`);
+  const a = await newPage(browser, mockNega);
+  await a.page.goto(mockNega.patientUrl);
+  await a.page.waitForSelector("#psassist-host .card", { timeout: 5000 });
+  const nega = await testoPanel(a.page, ".idriga");
+  check(scen, nega === "Allergie: nega", `«Nega/Non riferisce» spuntato: «Allergie: nega» (got: ${nega})`);
+  await a.context.close();
+  const mockNo = createMock({ noReferti: true });
+  const b = await newPage(browser, mockNo);
+  await b.page.goto(mockNo.patientUrl);
+  await b.page.waitForSelector("#psassist-host .card", { timeout: 5000 });
+  const nonLette = await testoPanel(b.page, ".idriga");
+  check(scen, nonLette === "Allergie: non lette", `campo assente: «Allergie: non lette», mai «nessuna» (got: ${nonLette})`);
+  // e senza richieste lette, nessuna riga di stato inventata (niente 0/0)
+  await $panel(b.page, "#back").click();
+  await b.page.waitForSelector("#psassist-host .pzrow", { timeout: 5000 });
+  check(scen, (await $panel(b.page, ".pzrow .esst").count()) === 0, "niente di noto: niente riga (mai un finto 0/0)");
+  await b.context.close();
+}
+
+// Gli esami messi in carrello da qui contano come «in attesa, ordinati da qui»
+// finché la pagina del paziente non elenca la loro richiesta.
+async function scenarioStatoOrdiniNostri(browser) {
+  const scen = "stato-ordini";
+  const mock = createMock({ noReferti: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("controllo");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
+  await $panel(page, "#goconfirm").click();
+  await striscia(page, /confermat|Stampa|etichette/i, 40000).catch(() => "");
+  const st = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["999001"] || null);
+  const nostri = (st && st.nostri) || [];
+  check(scen, nostri.length === 1 && nostri[0].esami.length === 2 && /^\d+$/.test(nostri[0].rid),
+    `il giro annota i suoi esami, col numero della richiesta (got: ${JSON.stringify(nostri)})`);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host .card", { timeout: 5000 });
+  await $panel(page, "#back").click();
+  await page.waitForSelector("#psassist-host .pzrow .esst", { timeout: 5000 });
+  const riga = await testoPanel(page, ".pzrow.qui .esst");
+  const tit = await $panel(page, ".pzrow.qui .esst").getAttribute("title");
+  check(scen, /^Lab 0\/2 ⏳\d+′$/.test(riga || "") && /ordinato da qui/.test(tit || ""),
+    `«Lab 0/2 ⏳0′», e il passaggio del mouse dice «ordinato da qui» (got: ${riga})`);
+  await context.close();
+}
+
 // -------------------------------------------------------------------- main
 const browser = await (async () => {
   try { return await chromium.launch(); }
@@ -6028,6 +6262,8 @@ const scenarios = [
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],
   ["stop button", scenarioStopButton],
+  ["stato esami: riga, letto, Aperti, identificativi, allergie, già fatto", scenarioStatoEsami],
+  ["stato esami: gli ordini partiti da qui", scenarioStatoOrdiniNostri],
 ];
 
 // `node test/run.mjs riflesso` gira solo gli scenari che contengono la parola:

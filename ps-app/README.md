@@ -128,6 +128,15 @@ lavora: **Richieste · Esiti · EO · Consensi · Dimissioni** (sulla lista del 
 non c'è un paziente: **Pazienti · EO · Consensi · Dimissioni**). Il paziente + episodio stanno nell'intestazione (anche da minimizzato). Sulla pagina «Storico dati clinici»
 del portale clinico non c'è pannello: solo una striscia che dice cosa ha letto.
 
+**Due identificativi, su ogni scheda.** L'intestazione dice `ROSSI MARIO · 68 M · ep. 700001 · OBI 1`
+— nome, età e sesso (dal riquadro del paziente, se no dal codice fiscale), episodio, posto nella
+stanza — anche in **Dimissioni**. Sotto, una riga sola, solo quando c'è qualcosa: le **Allergie**
+del gestionale parola per parola, in rosso (`Allergie: nega` se è spuntato «Nega/Non
+riferisce»; `Allergie: non lette` se la pagina non le ha lette — mai «nessuna») e il riquadro
+**Attenzione**, com'è. Le azioni che escono dal pannello nominano il paziente: «**Conferma per
+ROSSI M. · 68 M · 6 esami**», «✓ Copiato · ROSSI M.», e la stampa («Stampa 1 di 3 — Etichette ·
+ROSSI M. · 68 M»).
+
 ### Pazienti (‹ in alto a sinistra)
 
 Aprire un paziente **dal gestionale** porta ai suoi **Esiti**, perché è quasi sempre quello che si
@@ -150,6 +159,26 @@ min fa** — in ambra dopo 3 ore —, oppure **questa pagina** per quello aperto
 promemoria e la **✕** per toglierlo dall'elenco. L'**episodio precedente** sta in fondo, in grigio,
 e nella stanza non va. Il nome non si taglia mai per primo: nella colonna stretta promemoria e nota
 scendono sotto il nome e «visto…» si toglie.
+
+**Lo stato degli esami**, su ogni riga e su ogni letto: `Lab 3/6 ⏳50′ · ECG ✓ · RX ⏳1h20 ●` —
+per tipo, tornati su chiesti, e se qualcosa aspetta da quanto aspetta il più vecchio: neutro, poi
+**ambra**, poi **rosso** (laboratorio 60′/120′, ECG 15′/30′, imaging 90′/180′: le soglie stanno
+in cima alla sezione «STATO ESAMI» di `src/core.js`). Il **●** dice che è arrivato qualcosa da
+quando hai guardato i suoi Esiti — **rosso** se fra i valori nuovi non ancora segnati «Letto» ce
+n'è uno fuori range. Un tipo mai chiesto non c'è; se non si sa niente non c'è niente (mai un
+finto 0/0). Nel letto, corto: solo quello che aspetta («RX 1h20 ●»), o ✓. Letto più di mezz'ora
+fa diventa grigio, e il passaggio del mouse dice «letto alle 11:02» ed esame per esame.
+Da dove viene: dalla **pagina del paziente**, quando si apre (dal gestionale, dal pannello, da un
+ordine in sottofondo) — ogni richiesta, anche **quelle fatte a mano**, è una riga del gestionale
+con l'ora, gli esami e lo stato: un **REFERTO** o la finestra **Visualizza Risultati** = tornato
+(anche se qualche valore è ancora parziale), niente = in attesa, annullata = fuori dal conto;
+le consulenze non contano, l'ECG sì — e dagli **esami che PS Assist ha messo in carrello**, che
+contano «in attesa, ordinati da qui» finché la pagina non elenca la loro richiesta (stesso
+numero). Una richiesta ancora da confermare non è un ordine. Ordine e risultato si legano solo
+per riga o per numero di richiesta, mai per nome e ora. Niente si legge da solo e niente si
+chiede al server: si aggiorna quando la pagina del paziente si apre (↻ del gestionale compreso).
+Il limite: un paziente che non apri da un po' ha lo stato di quando l'hai aperto — per questo il
+grigio.
 
 **La stanza** — una mappa minima, per vedere a colpo d'occhio **dove sta ogni paziente**: i
 **letti** e le **sedie** (un paziente ciascuno) e le **aree** senza letto — corridoio, attesa —
@@ -243,7 +272,10 @@ suo; il nome intero è nel passaggio del mouse). Un tocco sul segno apre un menu
 (carica la pagina di quel paziente, con la finestra aperta). I tempi si rifanno da soli ogni 30 secondi, sul
 posto: niente si ridisegna sotto chi scrive.
 
-Tutto resta **solo in questo browser** (`localStorage`), niente va in rete; un altro PC o un altro
+Tutto resta **solo in questo browser** (`localStorage`), niente va in rete; lo **stato degli
+esami** (`stato.v1`) è per episodio — ore, nomi di esami, mai il nome del paziente —, scade in 24
+ore, se ne va con 🗑 e «Svuota l'elenco»; le allergie lette lì dentro se ne vanno anche alla pagina
+di login; un altro PC o un altro
 profilo Chrome ha la sua stanza. La **stanza disegnata** (`stanza.v1`: celle intere della griglia,
 così a ogni misura è la stessa; la sedia è un letto con `forma: "sedia"`) resta come i fogli di
 dimissione: è un modello, non contiene pazienti. Finché non c'è, si vede quella del PS, coi suoi id
@@ -308,6 +340,11 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    vedono solo le risorse della sede in cui sei (prima ogni esame usciva due volte, una per
    sede), e i nomi di reparto funzionano: **PCR** trova «PROTEINA C REATTIVA» (prima trovava
    solo «PCR POC»), e così PCT, EGA, GGT, AST/ALT, BNP, tropo — il laboratorio prima del POC.
+   Accanto a ogni esame, in grigio, **quando è già stato fatto** in questo episodio (l'ora della
+   richiesta tornata: `TROPONINA US · 11:40, 14:30`) o **da quanto aspetta**
+   (`EMOCROMO POC · in attesa 40′`) — stessa fonte dello stato dei Pazienti, stesso nome del
+   catalogo; niente quando non si sa, e «letto 11:02» se la lettura è vecchia. Un pacchetto
+   come «Dolore toracico» spunta come sempre: il suffisso fa vedere il doppione, non lo toglie.
 3. **Mentre manda, puoi fare altro.** Partito il giro il pannello si fa piccolo: una
    **striscia** in un angolo con il nome del paziente, a che punto è — in esami, «esame 3 di 6»,
    non in passi — e che cosa sta
@@ -374,7 +411,7 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    (aspetta il caricamento, non un timer) e le scadenze, contate sull'orologio. Un ordine dura
    molto meno di 5 minuti, e la scheda è segnata perché la memoria del browser non la scarichi.
    Le etichette non le aspetta la scheda nascosta: arrivano e si stampano nella tua, davanti.
-4. **Un bottone solo: Conferma e stampa · N esami.** Fa tutto da solo e conferma **subito**: il
+4. **Un bottone solo: Conferma per ROSSI M. · 68 M · N esami.** Fa tutto da solo e conferma **subito**: il
    click è la decisione, e la conferma parte solo se ogni controllo passa — episodio,
    richiesta, nome dell'ultimo esame, e
    **carrello identico alla ricevuta** (un avanzo di un tentativo precedente la **sospende** e
@@ -798,7 +835,14 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   sinistra), su una tabella ricostruita con esami inventati.
 
 ### Dimissioni
-In cima, i **moduli per il ritiro** da dare a chi va a casa — Ritiro esami, Ritiro referto RX,
+In cima, **una riga sola con quello che è ancora aperto**, solo quando c'è qualcosa:
+`Aperti: Troponina ultrasensibile (14:30) · RX torace non refertato (13:05) · promemoria «ricontrollare K» · letto alle 15:10`
+— esami in attesa con l'ora della richiesta, referti non arrivati o arrivati e non visti,
+promemoria, valori segnati da te o nuovi fuori range non ancora letti. Non blocca niente, dice di
+quando è la lettura, e copre quello che il pannello sa (la pagina del paziente e gli ordini partiti
+da qui: «ordinati da qui» se la pagina non è stata letta).
+
+Poi i **moduli per il ritiro** da dare a chi va a casa — Ritiro esami, Ritiro referto RX,
 Ritiro cartella e CD: un tocco e parte la stampa, come per i consensi.
 
 Poi nove **fogli di dimissione** pronti — i **cinque rivisti dal medico** stanno in cima, poi una riga

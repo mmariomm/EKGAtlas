@@ -2176,7 +2176,7 @@
     const cf = righe.map(([, t]) => CF_UNO.exec(t)).find(Boolean);
     return cf ? etaDaCf(cf[0]) : null;
   }
-  function rememberPatient(ep, name, url, triage, eta) {
+  function rememberPatient(ep, name, url, triage, eta, sesso) {
     if (!ep) return;
     const prima = tuttiPazienti().find((p) => p.ep === ep);
     const list = tuttiPazienti().filter((p) => p.ep !== ep);
@@ -2188,7 +2188,8 @@
     // riaprire un paziente archiviato lo riporta fra i vivi: se sei sulla sua
     // pagina, è di lui che ti stai occupando
     list.unshift({ ep, name: ((name || "").trim() || prima?.name || "").slice(0, 60), url: url || "", ts: Date.now(),
-                   pk: prima?.pk || "", ...tr, ...(Number.isInteger(anni) ? { eta: anni } : {}) });
+                   pk: prima?.pk || "", ...tr, ...(Number.isInteger(anni) ? { eta: anni } : {}),
+                   ...(sesso === "M" || sesso === "F" ? { sesso } : prima?.sesso ? { sesso: prima.sesso } : {}) });
     store.set("patients.v1", list.slice(0, PATIENTS_MAX));
   }
   // la chiave della scheda clinica, annotata quando la conosciamo, così
@@ -2240,6 +2241,8 @@
     if (posti && posti[ep]) { delete posti[ep]; store.set("stanza.posti.v1", posti); }
     const prom = store.get(PROM, null);   // e i suoi promemoria
     if (prom && prom[ep]) { delete prom[ep]; store.set(PROM, prom); }
+    const stato = store.get(STATO, null);   // e lo stato dei suoi esami
+    if (stato && stato[ep]) { delete stato[ep]; store.set(STATO, stato); }
     if (hasExt()) ask({ t: "delStorico", chiave: pk, ep, nome: nome || "" }).catch(() => {});
     return true;
   }
@@ -2254,6 +2257,7 @@
       }
     } catch { /* blocked storage: nothing to clear */ }
     store.set(APERTA, null);    // porta un nome: se ne va col turno
+    dimenticaAnagrafiche();     // le allergie lette: testo clinico, se ne vanno col turno
     store.set(PRESIDIO, null);
     // I posti nella stanza NO: sono solo numeri di episodio, e chi viene
     // riaperto dopo una sessione scaduta deve ritrovare il suo letto.
@@ -2292,6 +2296,270 @@
   // nel banco di prova non c'è un'estensione: la pagina finta serve un PDF
   const urlConsenso = (c) => (DEMO ? "/consensi/" + c.file
     : (hasExt() ? chrome.runtime.getURL("consensi/" + c.file) : ""));
+
+  // ============================================================ STATO ESAMI
+  // Quello che il pannello sa degli esami di un paziente, per la riga dei
+  // Pazienti, il letto, la riga «Aperti» delle Dimissioni e il suffisso grigio
+  // delle Richieste. Viene da due posti soli, e da nient'altro:
+  //  1. la pagina del paziente quando è aperta (dal medico, dal pannello, da
+  //     un ordine in sottofondo): ogni richiesta del gestionale è una riga
+  //     con TIPO=RICH — anche quelle fatte a mano —, l'ora (DATA_ORD), gli
+  //     esami (DESCRIZIONE_TITLE), il tipo (l'icona: Laboratorio, Radiologia,
+  //     Consulenze → ECG solo se l'esame è un elettrocardiogramma) e lo stato:
+  //     un REFERTO, o la finestra «Visualizza Risultati», vuol dire «tornato»;
+  //     niente dei due, «in attesa»; un'icona che dice annullata/revocata la
+  //     toglie dal conto;
+  //  2. gli esami che PS Assist ha messo in carrello (il giro finito), per
+  //     numero di richiesta: finché la pagina del paziente non elenca quella
+  //     richiesta contano come «ordinati da qui, in attesa».
+  // Un ordine e il suo risultato si legano solo così: stessa riga del
+  // gestionale, o stesso numero di richiesta. Mai per nome e ora a occhio.
+  // Al server non si chiede niente: si aggiorna quando la pagina si apre.
+  // Solo numeri di episodio, ore e nomi di esami: mai il nome del paziente.
+  //
+  // Quanto può aspettare un esame prima di farsi ambra e poi rosso (minuti
+  // dall'ora della richiesta). Li tara il medico, qui.
+  const ATTESA_LAB = [60, 120];
+  const ATTESA_ECG = [15, 30];
+  const ATTESA_IMG = [90, 180];
+  const ATTESA = { lab: ATTESA_LAB, ecg: ATTESA_ECG, img: ATTESA_IMG };
+  // letto più di mezz'ora fa: grigio, «letto alle 11:02»
+  const STATO_VECCHIO = 30 * 60e3;
+  const STATO = "stato.v1";
+  const STATO_TTL = 24 * 3600e3;
+  const TIPI_ESAME = [["lab", "Lab"], ["ecg", "ECG"], ["img", "RX"]];
+  const ANNULLATA = /annullat|revocat|cancellat|rifiutat|non\s+esegu|sospes/i;
+  // «0-324 TROPONINA ULTRASENSIBILE (POC3001)» → «TROPONINA ULTRASENSIBILE (POC3001)»: il nome del catalogo
+  const nomeEsame = (s) => String(s || "").replace(/ /g, " ").replace(/^\s*\d+-\d+\s+/, "").replace(/\s+/g, " ").trim();
+  const chiaveEsame = (s) => nomeEsame(s).toUpperCase();
+  // istanteDa() scrive l'ora del gestionale come se fosse UTC: qui serve l'istante vero
+  const istanteLocale = (dt) => {
+    if (!dt || !dt.ts) return 0;
+    const d = new Date(dt.ts);
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes()).getTime();
+  };
+  function tipoEsame(label, icone, sistema) {
+    const l = chiaveEsame(label), t = icone.join(" ");
+    if (/ELETTROCARDIOGRAMM|\bECG\b/.test(l)) return "ecg";
+    if (/radiolog/i.test(t)) return "img";
+    if (/laborator/i.test(t)) return "lab";
+    if (/consulen/i.test(t)) return "";
+    const s = String(sistema || "").toUpperCase();
+    if (s.includes("RIS") || /\bRX\b|RADIOGRAF|\bTC\b|\bTAC\b|ECOGRAF|RISONANZA|\bRMN\b/.test(l)) return "img";
+    if (s.includes("LIS")) return "lab";
+    return "";
+  }
+  // Le richieste che la pagina del paziente elenca. Una riga per richiesta
+  // (o per prelievo, per le finestre Risultati), coi suoi esami e il loro tipo.
+  function richiestePagina(doc) {
+    const out = [], righe = new Set(), chiavi = new Set();
+    const ancore = doc.querySelectorAll('input[name="TIPO"][value="RICH"], a[title="Visualizza Risultati"]');
+    for (const el of ancore) {
+      const tr = el.closest("tr");
+      if (!tr || righe.has(tr)) continue;
+      righe.add(tr);
+      const cella = el.closest("td");
+      const descr = cella?.querySelector('input[name="DESCRIZIONE_TITLE"]')?.value || cella?.getAttribute("title") || "";
+      const nomi = descr.split(";").map(nomeEsame).filter(Boolean);
+      if (!nomi.length) continue;
+      const stati = [...(cella?.querySelectorAll("img[title]") || [])].map((x) => x.getAttribute("title") || "");
+      if (stati.some((t) => ANNULLATA.test(t))) continue;
+      const prima = tr.querySelector(":scope > td");
+      const icone = prima && prima !== cella ? [...prima.querySelectorAll("[title]")].map((x) => x.getAttribute("title") || "") : [];
+      const ref = [...tr.querySelectorAll('a[title="REFERTO"]')].find((a) => /REFERTO_ID=/.test(a.getAttribute("onclick") || a.getAttribute("href") || ""));
+      const ris = tr.querySelector('a[title="Visualizza Risultati"]');
+      const sistema = (/REFERTO_SISTEMA=([^&'"]+)/.exec(ref?.getAttribute("onclick") || "") || [])[1] || "";
+      const rid = (/RICHIESTA_ID=(\d+)/.exec(prima?.innerHTML || "") || [])[1] || "";
+      const accesso = (/RCS_ACCESSO_ID=(\d+)/.exec(ris?.getAttribute("onclick") || "") || [])[1] || "";
+      const esami = nomi.map((n) => [tipoEsame(n, icone, sistema), n]).filter(([t]) => t);
+      if (!esami.length) continue;
+      const ts = istanteLocale(istanteRiga(tr));
+      const k = rid ? `r${rid}:${nomi.join("|")}` : accesso ? `a${accesso}` : `t${ts}:${nomi.join("|")}`;
+      if (chiavi.has(k)) continue;
+      chiavi.add(k);
+      out.push({ k, rid, ts, esami, fatto: ref ? "referto" : ris ? "risultati" : "" });
+    }
+    return out;
+  }
+  // Allergie e Attenzione del gestionale, parola per parola. Senza il campo
+  // in pagina: non lette — mai «nessuna».
+  function allergiePagina(doc) {
+    const ta = doc.querySelector('textarea[name="ALLERGIE"]');
+    const nega = doc.querySelector('input[name="ALLERGIE_NEGA"]');
+    if (!ta && !nega) return null;
+    const testo = String(ta ? ta.value : "").replace(/\s*\n\s*/g, " · ").replace(/\s+/g, " ").trim();
+    return { nega: !!(nega && nega.checked), testo };
+  }
+  function attenzionePagina(doc) {
+    const tit = [...doc.querySelectorAll("td.AFCColumnTD")].find((td) => td.textContent.replace(/\s+/g, " ").trim() === "Attenzione");
+    if (!tit) return null;
+    const td = tit.closest("tr")?.nextElementSibling?.querySelector("td");
+    if (!td) return [];
+    const righe = [""];
+    const giro = doc.createTreeWalker(td, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    for (let n = giro.nextNode(); n; n = giro.nextNode()) {
+      if (n.nodeType === 1 && n.tagName === "BR") righe.push("");
+      else if (n.nodeType === 3) righe[righe.length - 1] += n.nodeValue;
+    }
+    return righe.map((r) => r.replace(/\s+/g, " ").trim()).filter(Boolean);
+  }
+  // L'età e il sesso: la riga in corpo 120% del riquadro («17/05/1949 (77) M»),
+  // se no il codice fiscale (giorno oltre 40: femmina).
+  function sessoDaCf(cf) {
+    if (!/^[A-Z]{6}[\dLMNPQRSTUV]{2}[A-Z][\dLMNPQRSTUV]{2}/.test(cf || "")) return "";
+    const g = Number(cf.slice(9, 11).replace(/[LMNPQRSTUV]/g, (c) => "LMNPQRSTUV".indexOf(c)));
+    return g > 40 ? "F" : g ? "M" : "";
+  }
+  function anagraficaPagina(doc = document) {
+    const r = riquadroPaziente(doc);
+    const eta = etaInPagina(doc);
+    if (!r) return { eta, sesso: "" };
+    // riga per riga: fra un <br> e l'altro il testo si attaccherebbe («M» e il codice fiscale)
+    const pezzi = [], giro = doc.createTreeWalker(r, NodeFilter.SHOW_TEXT);
+    for (let n = giro.nextNode(); n; n = giro.nextNode()) pezzi.push(n.nodeValue || "");
+    const t = pezzi.join(" ").replace(/\s+/g, " ").toUpperCase();
+    const m = /\b\d{1,2}\/\d{1,2}\/\d{4}\s*\(\d{1,3}\)\s*([MF])\b/.exec(t);
+    const cf = CF_UNO.exec(t);
+    return { eta, sesso: m ? m[1] : cf ? sessoDaCf(cf[0]) : "" };
+  }
+
+  function statoTutti() {
+    const s = store.get(STATO, {});
+    const tutti = s && typeof s === "object" && !Array.isArray(s) ? s : {};
+    const ora = Date.now();
+    let pulito = false;
+    for (const k of Object.keys(tutti)) if (!tutti[k] || ora - (tutti[k].agg || 0) > STATO_TTL) { delete tutti[k]; pulito = true; }
+    if (pulito) store.set(STATO, tutti);
+    return tutti;
+  }
+  const statoDi = (ep) => (ep ? statoTutti()[ep] || null : null);
+  function scriviStato(ep, cambia) {
+    if (!ep) return false;
+    const tutti = statoTutti();
+    const s = cambia({ ...(tutti[ep] || {}) });
+    if (!s) return false;
+    tutti[ep] = { ...s, agg: Date.now() };
+    const tieni = Object.entries(tutti).sort((a, b) => (b[1].agg || 0) - (a[1].agg || 0)).slice(0, PATIENTS_MAX);
+    return store.set(STATO, Object.fromEntries(tieni));
+  }
+  // La pagina del paziente letta adesso. Un risultato che c'è adesso e prima
+  // no porta l'ora in cui è stato visto: è «nuovo» finché il medico non guarda
+  // gli Esiti. La prima lettura di un paziente è il riferimento: niente nuovi.
+  function leggiStatoPagina(ep, doc = document) {
+    const righe = richiestePagina(doc), all = allergiePagina(doc), att = attenzionePagina(doc);
+    return scriviStato(ep, (s) => {
+      const ora = Date.now(), primaVolta = !s.letto;
+      const prima = new Map((s.righe || []).map((r) => [r.k, r]));
+      s.righe = righe.slice(0, 80).map((r) => {
+        const p = prima.get(r.k);
+        return { ...r, quando: r.fatto ? (p && p.fatto ? p.quando || 0 : primaVolta ? 0 : ora) : 0 };
+      });
+      s.letto = ora;
+      if (all || att) s.anag = { allergie: all, attenzione: att, ts: ora };
+      return s;
+    });
+  }
+  // Gli esami appena messi in carrello da PS Assist, con il numero della richiesta.
+  function segnaOrdineNostro(ep, rid, items) {
+    const esami = (items || []).map((it) => {
+      const label = nomeEsame(it.label || examLabel(it.res, it.code));
+      return [RADIO_SET.includes(it.res) ? "img" : /ELETTROCARDIOGRAMM|\bECG\b/i.test(label) ? "ecg" : "lab", label];
+    }).filter(([, l]) => l);
+    if (!ep || !esami.length) return false;
+    return scriviStato(ep, (s) => {
+      const l = (s.nostri || []).filter((o) => !rid || o.rid !== String(rid));
+      l.push({ ts: Date.now(), rid: rid ? String(rid) : "", esami });
+      s.nostri = l.slice(-20);
+      return s;
+    });
+  }
+  // Fine turno (pagina di login): le allergie se ne vanno, il resto no — come
+  // i promemoria, sono solo episodi, ore e nomi di esami.
+  function dimenticaAnagrafiche() {
+    const tutti = statoTutti();
+    let tolte = 0;
+    for (const s of Object.values(tutti)) if (s.anag) { delete s.anag; tolte++; }
+    if (tolte) store.set(STATO, tutti);
+  }
+
+  // Tutti gli esami noti di un paziente, uno per voce, e il conto per tipo.
+  function statoEsami(s, ora = Date.now()) {
+    if (!s) return null;
+    const pagina = new Set((s.righe || []).map((r) => r.rid).filter(Boolean));
+    const aperte = new Set(daConfermare().map((x) => x.rid));   // ancora da confermare: non sono ordini
+    const esami = [];
+    for (const r of s.righe || []) for (const [tipo, label] of r.esami || []) {
+      esami.push({ tipo, label, ts: r.ts || 0, fatto: r.fatto || "", quando: r.quando || 0, qui: false });
+    }
+    let ultimoNostro = 0;
+    for (const o of s.nostri || []) {
+      if (o.rid && (pagina.has(o.rid) || aperte.has(o.rid))) continue;
+      ultimoNostro = Math.max(ultimoNostro, o.ts || 0);
+      for (const [tipo, label] of o.esami || []) esami.push({ tipo, label, ts: o.ts || 0, fatto: "", quando: 0, qui: true });
+    }
+    if (!esami.length) return null;
+    const tipi = {};
+    for (const e of esami) {
+      const t = (tipi[e.tipo] = tipi[e.tipo] || { n: 0, fatti: 0, attesa: 0, pendenti: 0 });
+      t.n++;
+      if (e.fatto) t.fatti++;
+      else { t.pendenti++; if (e.ts && (!t.attesa || e.ts < t.attesa)) t.attesa = e.ts; }
+    }
+    const visto = Math.max(s.esitiVisto || 0, 0);
+    const nuovi = esami.filter((e) => e.fatto && e.quando && e.quando > visto);
+    const v = s.valori || {};
+    const letto = s.letto || ultimoNostro;
+    return {
+      esami, tipi, nuovi, valoriNuovi: v.nuovi || 0, valoriFuori: v.fuori || 0,
+      nuovo: !!nuovi.length || (v.nuovi || 0) > 0, rosso: (v.fuori || 0) > 0,
+      // la pagina del paziente non è mai stata letta: si sa solo quello che è partito da qui
+      letto, vecchio: !!letto && ora - letto > STATO_VECCHIO, soloQui: !s.letto,
+    };
+  }
+  // «ROSSI MARIO» → «ROSSI M.» (il cognome si porta dietro le particelle: DE LUCA A.)
+  function nomeBreve(nome) {
+    const w = String(nome || "").trim().split(/\s+/).filter(Boolean);
+    let i = 0;
+    while (i < w.length - 2 && PARTICELLE_COGNOME.has(w[i].toUpperCase())) i++;
+    const cognome = w.slice(0, i + 1).join(" "), resto = w.slice(i + 1);
+    return !cognome ? "" : resto.length ? `${cognome} ${resto[0][0].toUpperCase()}.` : cognome;
+  }
+  // «50′», «1h20», «2h»
+  function attesaTesto(min) { return min < 60 ? `${min}′` : `${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, "0") : ""}`; }
+  // neutro sotto la prima soglia, ambra da lì, rosso dalla seconda
+  function bandaAttesa(min, [amb, ros]) { return min >= ros ? "ros" : min >= amb ? "amb" : ""; }
+  const attesaBanda = (tipo, min) => bandaAttesa(min, ATTESA[tipo] || ATTESA_LAB);
+  const minDa = (ts, ora) => Math.max(0, Math.floor((ora - ts) / 60e3));
+  // «RX ADDOME SENZA CONTRASTO (A692)» → «RX addome senza contrasto»: le sigle restano sigle
+  const frase = (label) => {
+    const w = shortLabel(nomeEsame(label)).split(" ").map((x, i) => (x.length <= 3 && /^[A-Z0-9-]+$/.test(x) ? x : i ? x.toLowerCase() : x[0] + x.slice(1).toLowerCase()));
+    return w.join(" ");
+  };
+  // La riga di stato: «Lab 3/6 ⏳50′ · ECG ✓ · RX ⏳1h20 ●». Corta (il letto):
+  // solo quello che aspetta, «Lab 50′ · RX 1h20 ●», o ✓ se è tornato tutto.
+  function statoHtml(st, { breve = false, ora = Date.now() } = {}) {
+    if (!st) return "";
+    const pezzi = [];
+    for (const [t, nome] of TIPI_ESAME) {
+      const x = st.tipi[t];
+      if (!x) continue;
+      const min = x.attesa ? minDa(x.attesa, ora) : null;
+      const timer = x.pendenti ? (min == null ? "" : `<i class="esatt${attesaBanda(t, min) ? " " + attesaBanda(t, min) : ""}">${breve ? "" : "⏳"}${attesaTesto(min)}</i>`) : "";
+      if (breve) { if (x.pendenti) pezzi.push(`<span class="esp">${nome}${timer ? " " + timer : ""}</span>`); continue; }
+      pezzi.push(`<span class="esp">${nome} ${x.n === 1 && x.fatti === 1 ? "✓" : `${x.fatti}/${x.n}`}${timer ? " " + timer : ""}</span>`);
+    }
+    if (breve && !pezzi.length) pezzi.push("✓");
+    const titolo = [
+      ...st.esami.map((e) => `${frase(e.label)}: ${e.fatto ? `${e.fatto === "referto" ? "refertato" : "risultati"}${e.ts ? ` (richiesta ${hhmm(e.ts)})` : ""}`
+        : `in attesa${e.ts ? ` da ${attesaTesto(minDa(e.ts, ora))} (richiesta ${hhmm(e.ts)})` : ""}`}${e.qui ? " · ordinato da qui" : ""}`),
+      st.nuovi.length ? `● nuovo da quando hai guardato gli Esiti: ${st.nuovi.map((e) => frase(e.label)).join(", ")}` : "",
+      st.valoriNuovi ? `${st.valoriNuovi} ${st.valoriNuovi === 1 ? "valore nuovo" : "valori nuovi"} non ancora letti${st.valoriFuori ? `, ${st.valoriFuori} fuori range` : ""}` : "",
+      st.soloQui ? "Solo gli esami ordinati da qui: la pagina del paziente non è ancora stata letta" : "",
+      st.letto ? `letto alle ${hhmm(st.letto)}` : "",
+    ].filter(Boolean).join("\n");
+    const dot = st.nuovo ? `<b class="esdot${st.rosso ? " ros" : ""}" aria-label="${st.rosso ? "nuovo, fuori range" : "nuovo"}">●</b>` : "";
+    return `<span class="esst${breve ? " breve" : ""}${st.vecchio ? " vecchio" : ""}" title="${esc(titolo)}">${pezzi.join(" · ")}${dot ? " " + dot : ""}</span>`;
+  }
 
   // ------------------------------------------------------------------ NOTA
   // Una nota per paziente, sotto il suo nome. Si scrive e basta: non c'è un
@@ -4379,6 +4647,30 @@
     /* quello che dicono tutti e due: da quanto non lo apri, «questa pagina», i segni */
     .stvisto { flex: none; font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .stvisto.amb { padding: 0 7px; border-radius: 999px; background: #FFF4DB; color: #8A5A00; }
+    /* lo stato degli esami: «Lab 3/6 ⏳50′ · ECG ✓ · RX ⏳1h20 ●» — il colore solo sul tempo che aspetta */
+    .esst { flex: none; font-size: 12px; color: #35506B; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .esst .esatt { font-style: normal; }
+    .esst .esatt.amb { padding: 0 4px; border-radius: 4px; background: #FFF4DB; color: #8A5A00; }
+    .esst .esatt.ros { padding: 0 4px; border-radius: 4px; background: #FBEBEA; color: #9B1C14; font-weight: 600; }
+    .esst .esdot { font-size: 10px; color: #0B5CAD; vertical-align: 1px; }
+    .esst .esdot.ros { color: #B3261E; }
+    .esst.vecchio, .esst.vecchio .esdot { color: #9AA8B5; }
+    .esst.vecchio .esatt.amb, .esst.vecchio .esatt.ros { background: none; color: inherit; font-weight: 400; }
+    .stp2 .esst { flex: 0 1 auto; font-size: 11.5px; min-width: 0; white-space: normal; }
+    .esst .esp { white-space: nowrap; }
+    /* sotto il nome: le allergie e l'Attenzione del gestionale, parola per parola */
+    .idriga { flex: none; display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 0 20px 8px; background: #fff; font-size: 12.5px; line-height: 1.35; }
+    .idall.ros { color: #B3261E; font-weight: 600; }
+    .idall.nl { color: #8A5A00; }
+    .idall.nega { color: #5B6B7A; }
+    .idatt { color: #7a4b03; }
+    /* Dimissioni: quello che è ancora aperto, una riga */
+    .aperti { max-width: 820px; margin: 0 0 12px; font-size: 12.5px; line-height: 1.45; color: #35506B; }
+    .aperti b { font-weight: 600; color: #16232E; }
+    .aperti .apl { color: #8494A3; }
+    /* Richieste: quando è già stato fatto, in grigio accanto al nome */
+    .opt .ult { flex: none; margin-left: auto; padding-left: 4px; font-size: 11px; font-weight: 400; color: #8494A3; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .opt .ult.vecchio { color: #A9B5C1; }
     .stqui { flex: none; font-size: 12px; font-weight: 600; color: #0B5CAD; white-space: nowrap; }
     .sttag { flex: none; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #5B6B7A; white-space: nowrap; }
     .stom { flex: none; margin-right: 5px; font-weight: 400; color: #8A5A00; }
@@ -5176,6 +5468,8 @@
     }
     renderRun(state) { this.runData = state; this.render(); }
     finished(state, plan) {
+      // quello che è entrato in carrello, per lo stato degli esami (riga dei Pazienti, Dimissioni)
+      segnaOrdineNostro((plan && plan.episodeId) || this.episodeId, state.richiestaId, state.added);
       if (plan.hold) { this.runData = state; this.render(); return; } // the chain finishes for us
       window.removeEventListener("beforeunload", this._unload);
       // L'ordine è partito: la prossima pagina riparte pulita. Ma se il giro
@@ -6229,10 +6523,14 @@
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
       const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", riferimenti: "Riferimenti" }[this.view] || "";
-      // the discharge sheets are templates: no episode belongs in that header
+      // (i fogli di dimissione sono modelli, ma chi va a casa è questo paziente:
+      // l'intestazione lo dice anche lì)
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
-      // accanto al nome, l'episodio: di chi sono i dati, sempre a colpo d'occhio
-      const sub = sulPaziente && !inHome && !inDim && ep ? `ep. ${esc(ep)}` : "";
+      // accanto al nome, il secondo identificativo: età e sesso, l'episodio e
+      // il posto — su ogni scheda, Dimissioni comprese: di chi sono i dati, e
+      // per chi sono le azioni, sempre a colpo d'occhio
+      const idp = sulPaziente && !inHome && !this.runState ? this.idPaz() : null;
+      const sub = idp ? [idp.es, ep ? `ep. ${ep}` : "", idp.posto].filter(Boolean).map(esc).join(" · ") : "";
       // Il titolo è il paziente, e solo lui: dove non c'è, niente titolo — lo
       // dice la scheda accesa, e sulla lista PS la scheda Pazienti fa anche da ‹.
       // Il ‹ resta sul paziente, e dentro un referto o un foglio di dimissione.
@@ -6328,6 +6626,7 @@
                 </span>
                 <button class="iconbtn" id="collapse" title="Riduci alla pill (Esc)" aria-label="Riduci">${ICO.riduci}</button>
               </div>
+              ${idp ? this.avvisiPaz(idp.ep || ep) : ""}
               ${running && this.runData?.steps?.length ? `<div class="pbar"><i style="width:${Math.round((this.runData.steps.filter((x) => x.status === "ok").length / this.runData.steps.length) * 100)}%"></i></div>` : ""}
               <div class="cap">
               ${!this.runState && this.pageType === "patient" && !inHome ? this.notaHtmlPaziente() : ""}
@@ -6620,6 +6919,7 @@
               <span class="pznm">${i.omonimo ? `<b class="stom" aria-label="attenzione, stesso cognome di un altro paziente">⚠</b>` : ""}${esc(i.lungo)}${i.coda ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</span>${p.triage ? `<span class="stsr">, triage ${esc(p.triage)}</span>` : ""}
             </button>
             <span class="prslot" data-promslot="${esc(p.ep)}">${this.promPill(p.ep, m.prom)}</span>
+            ${i.prec ? "" : this.statoPaz(p.ep)}
             <span class="pznota">${esc(i.nota)}</span>
             ${this._promIn?.ep === p.ep && this._promIn.dove === "lista" ? this.promCampo() : ""}
           </div>
@@ -6668,7 +6968,8 @@
       const cls = ["stp", i.qui && "qui", i.prec && "prec", i.spento && "spento", !inLetto && p.triage && "tri t-" + p.triage.toLowerCase()].filter(Boolean).join(" ");
       const nota = i.nota ? `<span class="stnota">${esc(i.nota)}</span>` : "";
       const stato = i.prec ? `<span class="sttag">episodio precedente</span>` : i.qui ? `<span class="stqui">questa pagina</span>` : "";
-      const sotto = `${i.coda && inLetto ? `<span class="stcoda">${esc(i.coda.replace(/^ · /, ""))}</span>` : ""}${stato}${inLetto ? "" : nota}`;
+      const es = i.prec ? "" : this.statoPaz(p.ep, true);   // gli esami, in breve: «Lab 50′ · RX 1h20 ●»
+      const sotto = `${i.coda && inLetto ? `<span class="stcoda">${esc(i.coda.replace(/^ · /, ""))}</span>` : ""}${stato}${es}${inLetto ? "" : nota}`;
       return `<div class="${cls}" data-stp="${esc(p.ep)}" data-cerca="${esc(normNome(i.lungo))}" role="button" tabindex="${edit ? -1 : 0}"${i.prec ? "" : ' aria-haspopup="menu"'} title="${esc(this.pazTitolo(m, i, true))}" aria-label="${esc(i.lungo + i.coda)}${p.triage ? `, triage ${esc(p.triage)}` : ""}${i.qui ? ", questa pagina" : i.prec ? ", episodio precedente" : ""}">
         <span class="stp1">${i.omonimo ? `<b class="stom" aria-hidden="true">⚠</b>` : ""}<b class="stpn">${esc(i.breve)}${i.coda && !inLetto ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</b>${inLetto ? "" : this.promMini(p.ep, m.prom)}</span>${
         sotto ? `<span class="stp2">${sotto}</span>` : ""}${inLetto ? nota : ""}</div>`;
@@ -7108,7 +7409,7 @@
     // la fotografia di prima, per «Annulla» (con l'elenco, anche i promemoria)
     stanzaFoto(conPazienti) {
       return { sala: store.get("stanza.v1", null), posti: store.get("stanza.posti.v1", null), pazienti: conPazienti ? store.get("patients.v1", null) : undefined,
-               prom: conPazienti ? store.get(PROM, null) : undefined };
+               prom: conPazienti ? store.get(PROM, null) : undefined, stato: conPazienti ? store.get(STATO, null) : undefined };
     }
     stanzaAnnullabile(testo, foto) {
       clearTimeout(this._stanzaAnnT);
@@ -7126,6 +7427,7 @@
         store.set("stanza.posti.v1", a.foto.posti);
         if (a.foto.pazienti !== undefined) store.set("patients.v1", a.foto.pazienti);
         if (a.foto.prom !== undefined) store.set(PROM, a.foto.prom);
+        if (a.foto.stato !== undefined) store.set(STATO, a.foto.stato);
       }
       this.render();
     }
@@ -7213,6 +7515,7 @@
       forgetPatients();
       store.set("stanza.posti.v1", {});   // anche i posti e i promemoria: l'elenco riparte da zero
       store.set(PROM, {});
+      store.set(STATO, {});
       this._promIn = null;
       this.mostraArch = false;
       this.stanzaAnnullabile("Elenco svuotato", foto);
@@ -7466,8 +7769,10 @@
         <button class="btn confirm" id="goqueued" style="margin-bottom:12px">→ Conferma ${esc(this.pending.next.kind === "radio" ? "la radiologia" : "il laboratorio")} (${this.pending.next.count})</button>` : "";
       const n = this.selected.size;
       // La Conferma del gestionale, dalla ricevuta: il bottone che conclude.
+      // Il bottone che fa uscire gli esami dice per chi: «Conferma per ROSSI M. · 68 M · 6 esami»
+      const perChi = this.idBreve();
       const confermaOra = receipt && live && live.confirmButton
-        ? `<div class="btnrow"><button class="btn primary" id="confirmnow" title="Preme la Conferma del gestionale per questa richiesta, poi parte la stampa">Conferma e stampa</button></div>` : "";
+        ? `<div class="btnrow"><button class="btn primary" id="confirmnow" title="Preme la Conferma del gestionale per questa richiesta, poi parte la stampa">${esc(perChi ? `Conferma per ${perChi}` : "Conferma e stampa")}</button></div>` : "";
 
       // La ricevuta mostra il carrello e un bottone solo. La griglia degli
       // esami resta dietro «+ aggiungi»: aggiungere ancora è l'eccezione.
@@ -7493,10 +7798,13 @@
         const on = p.items.every(([r, c]) => this.isSel(r, c));
         gruppo(p.items[0][0]).profili.push(`<button class="chip preset ${on ? "on" : ""}" data-preset="${i}">${esc(p.name)}</button>`);
       });
+      // accanto al nome, in grigio, quando è già stato fatto (l'ora della
+      // richiesta) o da quanto aspetta: un doppione si vede prima di spuntarlo
+      const ultimi = this.ultimiEsami();
       for (const [r, c] of SINGLES) {
         if (!cat[r]?.items?.[c]) continue;
-        const on = this.isSel(r, c);
-        gruppo(r).esami.push(`<button class="opt ${on ? "on" : ""}" data-res="${esc(r)}" data-code="${esc(c)}" title="${esc(examLabel(r, c))} — ${esc(RES_SHORT[r] || r)}"><span class="box">✓</span><span class="nm">${esc(displayLabel(r, c))}</span></button>`);
+        const on = this.isSel(r, c), ult = this.suffissoEsame(ultimi, examLabel(r, c));
+        gruppo(r).esami.push(`<button class="opt ${on ? "on" : ""}" data-res="${esc(r)}" data-code="${esc(c)}" title="${esc(examLabel(r, c))} — ${esc(RES_SHORT[r] || r)}${ult ? `\n${esc(ult.titolo)}` : ""}"><span class="box">✓</span><span class="nm">${esc(displayLabel(r, c))}</span>${ult ? ult.html : ""}</button>`);
       }
       const qrxHtml = canOneClick
         ? `<input id="qrx" class="qrx" type="text" placeholder="Quesito RX — se vuoto, quello sopra" value="${esc(this._qrx || "")}">` : "";
@@ -7512,7 +7820,7 @@
       const twoLegs = this.pageType === "patient" &&
         [...this.selected.values()].some((i) => RADIO_SET.includes(i.res)) &&
         [...this.selected.values()].some((i) => !RADIO_SET.includes(i.res));
-      const confirmLabel = !n ? "Conferma e stampa" : twoLegs ? `Conferma e stampa · 2 richieste, ${nTxt}` : `Conferma e stampa · ${nTxt}`;
+      const confirmLabel = `${perChi ? `Conferma per ${perChi}` : "Conferma e stampa"}${!n ? "" : twoLegs ? ` · 2 richieste, ${nTxt}` : ` · ${nTxt}`}`;
 
       const problems = this.computeProblems();
       // sulla ricevuta, finché non scegli niente, il bottone resta la Conferma del gestionale
@@ -7641,6 +7949,18 @@
       this.render();
     }
 
+    // Gli Esiti sotto gli occhi del medico (la finestra aperta): da qui in poi
+    // niente è più «nuovo» nella riga dei Pazienti. I valori nuovi non ancora
+    // segnati «Letto» restano, e dicono quanti sono fuori range (il pallino rosso).
+    segnaEsitiVisti(nuovi, fuori) {
+      const ep = this.epDiQuesta();
+      if (!ep) return;
+      const guarda = !this.collapsed && !this.runState, ora = Date.now();
+      const s = statoDi(ep) || {};
+      const v = s.valori || {};
+      if (v.nuovi === nuovi && v.fuori === fuori && (!guarda || ora - (s.esitiVisto || 0) < 15e3)) return;
+      scriviStato(ep, (x) => ({ ...x, valori: { nuovi, fuori }, ...(guarda ? { esitiVisto: ora } : {}) }));
+    }
     viewEsiti() {
       const open = new Set(tabStore.get(this.refKey(), []));
       const cached = this.refCache || {};
@@ -7661,13 +7981,17 @@
       // si parte dalle COLONNE della tabella: ognuna porta l'accesso da cui
       // viene, così due prelievi allo stesso minuto non si rubano i marchi
       const nov = new Map();
-      let nNov = 0;
+      let nNov = 0, nFuori = 0;
       for (const d of st ? st.date : []) {
         if (!d.id) continue;
         const v = tabStore.get(this.risKey(d.id), null);
         const n = v && v.rows ? this.novita(d.id, v.rows) : null;
-        if (n && n.size) { nov.set(chiaveCol(d), n); nNov += n.size; }
+        if (n && n.size) {
+          nov.set(chiaveCol(d), n); nNov += n.size;
+          nFuori += v.rows.filter((r) => n.has(valKey(r.nome)) && outOfRange(r.valore, r.range)).length;
+        }
       }
+      this.segnaEsitiVisti(nNov, nFuori);
       const vivi = prelievi.filter((e) => !e.storico).length;
       const daLeggere = this.daLeggere().length;
       const rotti = prelievi.filter((e) => this.rottiTab.has(e.id));
@@ -7937,6 +8261,81 @@
     // paziente: sulla lista del reparto quel titolo è «PRONTO SOCCORSO -
     // LISTA», e prenderlo per un nome è come attribuire una nota, un tempo o
     // una scheda a un paziente che non esiste.
+    // ============================================================ IDENTITÀ
+    // Chi è il paziente di questa pagina, con il secondo identificativo:
+    // nome, età e sesso, episodio, posto. Le azioni che escono dal pannello
+    // (Conferma, Copia, Stampa) lo nominano: «ROSSI M. · 68 M».
+    idPaz() {
+      const ep = this.epDiQuesta() || (this.pageType !== "patient" ? this.episodeId || "" : "");
+      const p = ep ? tuttiPazienti().find((x) => x.ep === ep) : null;
+      const nome = this.nomePaziente() || (this.pageType !== "patient" && ep ? nomeInPagina() : "") || p?.name || "";
+      const an = anagraficaPagina(document);
+      const eta = Number.isInteger(an.eta) ? an.eta : p?.eta;
+      const es = [Number.isInteger(eta) ? String(eta) : "", an.sesso || p?.sesso || ""].filter(Boolean).join(" ");
+      return { ep, nome, breve: nomeBreve(nome), es, posto: ep ? this.postoDi(ep) : "" };
+    }
+    // «ROSSI M. · 68 M», o «» se il nome non c'è
+    idBreve() {
+      const i = this.idPaz();
+      return i.breve ? [i.breve, i.es].filter(Boolean).join(" · ") : "";
+    }
+    postoDi(ep) {
+      const raw = store.get("stanza.posti.v1", {});
+      const v = raw && typeof raw === "object" ? raw[ep] : null;
+      if (!v) return "";
+      const sala = this.stanzaSala();
+      return ((v.tipo === "letto" ? sala.letti : sala.aree) || []).find((o) => o.id === v.id)?.nome || "";
+    }
+    // Allergie e Attenzione del gestionale, sotto il nome, parola per parola:
+    // dalla pagina se ci sono, se no da quella del paziente letta poco fa. Mai
+    // «nessuna»: non lette è non lette.
+    avvisiPaz(ep) {
+      const qui = this.pageType === "patient" ? { allergie: allergiePagina(document), attenzione: attenzionePagina(document) } : null;
+      const st = statoDi(ep);
+      const a = qui && (qui.allergie || qui.attenzione) ? qui : st && st.anag ? st.anag : null;
+      const all = a && a.allergie;
+      const pezzi = [];
+      if (!all) pezzi.push(`<span class="idall nl">Allergie: non lette</span>`);
+      else if (all.nega) pezzi.push(`<span class="idall nega" title="Allergie, dal gestionale: Nega/Non riferisce">Allergie: nega</span>`);
+      else if (all.testo) pezzi.push(`<span class="idall ros" title="Allergie, dal gestionale">Allergie: ${esc(all.testo)}</span>`);
+      const att = (a && a.attenzione) || [];
+      if (att.length) pezzi.push(`<span class="idatt" title="Attenzione, dal gestionale">Attenzione: ${esc(att.join(" · "))}</span>`);
+      return pezzi.length ? `<div class="idriga">${pezzi.join("")}</div>` : "";
+    }
+    // Per le Richieste: esame per esame (il nome del catalogo, identico), le
+    // ore delle richieste già tornate e la più vecchia ancora in attesa.
+    ultimiEsami() {
+      const st = this.episodeId ? statoEsami(statoDi(this.episodeId)) : null;
+      const m = new Map();
+      if (!st) return m;
+      for (const e of st.esami) {
+        const k = chiaveEsame(e.label), x = m.get(k) || { fatti: [], attesa: 0, inAttesa: false, fatto: false };
+        if (e.fatto) { x.fatto = true; if (e.ts) x.fatti.push(e.ts); }
+        else { x.inAttesa = true; if (e.ts && (!x.attesa || e.ts < x.attesa)) x.attesa = e.ts; }
+        m.set(k, x);
+      }
+      m.vecchio = st.vecchio; m.letto = st.letto;
+      return m;
+    }
+    // «· 11:40, 14:30», «· in attesa 40′»; letto da più di mezz'ora: «· letto 11:02»
+    suffissoEsame(m, label) {
+      const x = m.get(chiaveEsame(label));
+      if (!x) return null;
+      const ora = Date.now(), pezzi = [];
+      if (x.fatti.length) pezzi.push(x.fatti.sort((a, b) => a - b).slice(-3).map(hhmm).join(", "));
+      else if (x.fatto) pezzi.push("fatto");
+      if (x.inAttesa) pezzi.push(x.attesa && !m.vecchio ? `in attesa ${attesaTesto(minDa(x.attesa, ora))}` : "in attesa");
+      if (m.vecchio && m.letto) pezzi.push(`letto ${hhmm(m.letto)}`);
+      const testo = pezzi.join(" · ");
+      const titolo = `${x.fatti.length ? `Già fatto: richieste delle ${x.fatti.map(hhmm).join(", ")}` : x.fatto ? "Già fatto" : ""}${
+        x.inAttesa ? `${x.fatti.length || x.fatto ? " · " : ""}in attesa${x.attesa ? ` dalle ${hhmm(x.attesa)}` : ""}` : ""}${m.letto ? ` · letto alle ${hhmm(m.letto)}` : ""}`;
+      return { html: `<span class="ult${m.vecchio ? " vecchio" : ""}">${esc(testo)}</span>`, titolo };
+    }
+    // la riga di stato degli esami di un paziente (Pazienti, letto)
+    statoPaz(ep, breve = false) {
+      return statoHtml(statoEsami(statoDi(ep)), { breve });
+    }
+
     nomePaziente() {
       const puoOrdinare = !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
       return this.pageType === "patient" && puoOrdinare ? nomeInPagina() : "";
@@ -8614,6 +9013,33 @@
 
     // The list shows only WHAT, never the text: at discharge the doctor knows
     // which sheet he wants, and reading it here would only cost him a scroll.
+    // «Aperti»: prima di scrivere la dimissione, una riga sola con quello che
+    // è ancora aperto — esami in attesa (con l'ora della richiesta), referti
+    // non arrivati o non visti, promemoria, valori segnati o nuovi fuori
+    // range. Solo quando c'è qualcosa, non blocca niente, e dice di quando è
+    // la lettura. Copre quello che il pannello sa: la pagina del paziente e
+    // gli ordini partiti da qui («ordinati da qui» se la pagina non l'ha letta).
+    apertiHtml() {
+      const ep = this.epDiQuesta();
+      if (!ep) return "";
+      const st = statoEsami(statoDi(ep));
+      const voci = [];
+      if (st) {
+        for (const e of st.esami.filter((x) => !x.fatto).sort((a, b) => (a.ts || 0) - (b.ts || 0))) {
+          voci.push(`${frase(e.label)}${e.tipo === "lab" ? "" : " non refertato"}${e.ts ? ` (${hhmm(e.ts)})` : ""}`);
+        }
+        for (const e of st.nuovi) if (e.tipo !== "lab") voci.push(`${frase(e.label)}: referto da leggere`);
+      }
+      for (const p of promDi(ep)) voci.push(`promemoria «${p.testo || hhmm(p.t)}»`);
+      const segnati = Object.keys(leggiSegni(this.chiaveNota())).length;
+      if (segnati) voci.push(segnati === 1 ? "1 valore segnato" : `${segnati} valori segnati`);
+      if (st && st.valoriFuori) voci.push(`${st.valoriFuori === 1 ? "1 valore nuovo" : `${st.valoriFuori} valori nuovi`} fuori range, non letti`);
+      if (!voci.length) return "";
+      const MAX = 8, vedi = voci.length > MAX ? [...voci.slice(0, MAX - 1), `e altri ${voci.length - MAX + 1}`] : voci;
+      const coda = [st && st.soloQui && st.esami.length ? "ordinati da qui" : "", st && st.letto ? `letto alle ${hhmm(st.letto)}` : ""].filter(Boolean);
+      return `<div class="aperti" role="status" title="${esc(voci.join("\n"))}"><b>Aperti:</b> ${vedi.map(esc).join(" · ")}${
+        coda.length ? ` <span class="apl">· ${esc(coda.join(" · "))}</span>` : ""}</div>`;
+    }
     viewDimissioni() {
       const tutte = dimissioni();
       const chiavi = Object.keys(tutte);
@@ -8645,6 +9071,7 @@
       // le deleghe per il ritiro si danno a chi va a casa: stanno qui, in cima
       const ritiro = CONSENSI.filter((c) => c.gruppo === "ritiro");
       return `
+        ${this.apertiHtml()}
         ${ritiro.length ? `
         <div class="sec">
           <div class="lbl" title="${esc(this.notaModuli())}">Moduli per il ritiro (${ritiro.length})</div>
@@ -9281,7 +9708,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (!ok || this.collapsed || this.runState) return;
       setTimeout(() => {
         if (this.collapsed || this.runState) return;
-        this.avvisoPill = "✓ Copiato · incolla";
+        // di chi è quello che stai per incollare: «✓ Copiato · ROSSI M.»
+        const chi = this.idPaz().breve;
+        this.avvisoPill = chi ? `✓ Copiato · ${chi}` : "✓ Copiato · incolla";
         this.riduci();
         setTimeout(() => { if (this.avvisoPill) { this.avvisoPill = ""; if (this.collapsed) this.render(); } }, 5000);
       }, 650);
@@ -9955,6 +10384,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const { doc, url } = await fetchDoc(u);
         if (classify(doc) === "login" || findEpisodeIdInDoc(doc) !== ep) break;
         if (printModel(doc, url)[rid]) {
+          leggiStatoPagina(ep, doc);   // la pagina letta comunque: lo stato degli esami si aggiorna
           panel?.log(`${now()}  la pagina del paziente la elenca coi suoi fogli: confermata`);
           return { doc, url };
         }
@@ -10630,6 +11060,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     let ultimaDiag = null;   // l'ultimo visualizzatore non catturato, per «⧉ Diagnosi»
     if (wizardOpen || !jobs.length) return;
     wizardOpen = true;
+    // di chi sono i fogli: «ROSSI M. · 68 M», sulla striscia e in testa alla scheda
+    const { chi, testata } = (() => {
+      const ep = String(opzioni.ep || ""), p = ep ? tuttiPazienti().find((x) => x.ep === ep) : null;
+      const nome = opzioni.paziente || p?.name || "", b = nomeBreve(nome);
+      const es = [Number.isInteger(p?.eta) ? String(p.eta) : "", p?.sesso || ""].filter(Boolean).join(" ");
+      const c = b ? [b, es].filter(Boolean).join(" · ") : "";
+      // un titolo che porta già il nome intero lo tiene, con età e sesso accanto
+      const t = nome && title.includes(nome) ? title.replace(nome, [nome, es].filter(Boolean).join(" · ")) : [c, title].filter(Boolean).join(" · ");
+      return { chi: c, testata: t };
+    })();
 
     const wrap = document.createElement("div");
     wrap.id = "psassist-print";
@@ -10711,7 +11151,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         return;
       }
       ps.hidden = !pw.hidden;
-      ps.innerHTML = `<span class="dot"></span><span class="pst"><b>${esc(tag)}${conto() ? " " + esc(conto()) : ""}</b> · ${esc(testo)}</span><button class="psx" title="Annulla la stampa (Esc)" aria-label="Annulla la stampa">✕</button>`;
+      ps.innerHTML = `<span class="dot"></span><span class="pst"><b>${esc(tag)}${conto() ? " " + esc(conto()) : ""}</b>${chi ? ` · ${esc(chi)}` : ""} · ${esc(testo)}</span><button class="psx" title="Annulla la stampa (Esc)" aria-label="Annulla la stampa">✕</button>`;
       ps.querySelector(".psx").onclick = (e) => { e.stopPropagation(); chiudi(false); };
       ps.onclick = () => vedi(true);
     };
@@ -10729,7 +11169,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const comandi = ({ err = "", viewer = false, avviso = "" } = {}) => {
       const job = jobs[i];
       const nextLbl = i + 1 < jobs.length ? `→ Avanti (${i + 2} di ${jobs.length})` : "✓ Fine";
-      testa.innerHTML = `<b>Stampa ${i + 1} di ${jobs.length} — ${esc(job.name)}</b>${title ? `<span class="pwtit">${esc(title)}</span>` : ""}<span class="dest">→ ${esc(job.printer)}</span>`;
+      testa.innerHTML = `<b>Stampa ${i + 1} di ${jobs.length} — ${esc(job.name)}</b>${testata ? `<span class="pwtit">${esc(testata)}</span>` : ""}<span class="dest">→ ${esc(job.printer)}</span>`;
       guaio.innerHTML = err ? `<div class="pwerr">${esc(err)}</div>` : avviso ? `<div class="pwavv">${esc(avviso)}</div>` : "";
       piede.innerHTML = `
         ${viewer
@@ -11617,6 +12057,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       panel.esiti = esitiModel(document, location.href);
+      // le richieste che la pagina elenca, con il loro stato: per la riga dei
+      // Pazienti, le Dimissioni e le Richieste (solo la pagina del paziente,
+      // non la lista del PS, che porta l'episodio del primo in elenco)
+      if (panel.episodeId && (panel.entry.labUrl || panel.entry.radioUrl)) leggiStatoPagina(panel.episodeId, document);
       // Se una riga di prelievo non si lascia leggere, il Registro lo dice
       // subito e con le sue parole: senza questo, un prelievo che non diventa
       // una colonna è indistinguibile da un prelievo che non esiste. Quando
@@ -11675,7 +12119,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // classifies the same way but its episode belongs to someone in the list
       // (la scheda di un ordine non è il medico che apre il paziente: niente «visto adesso»)
       if (panel.entry && (panel.entry.labUrl || panel.entry.radioUrl) && !LAVORO && !PONTE_VALORI) {
-        rememberPatient(panel.episodeId, nomeInPagina(), location.href, triageDi(document), etaInPagina(document));
+        const an = anagraficaPagina(document);
+        rememberPatient(panel.episodeId, nomeInPagina(), location.href, triageDi(document), an.eta, an.sesso);
         iconaCf(document);
         // Il portale clinico si apre da QUESTO link, sulla pagina di QUESTO
         // paziente: quel clic è l'identità, ed è esatta. Si annota qui, prima
