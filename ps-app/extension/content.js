@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.55.0";
+  const VERSION = "3.56.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -777,6 +777,9 @@
   // che non torna (quel carrello potrebbe essere di un altro paziente), la
   // sessione scaduta, un'altra scheda al lavoro sulla stessa richiesta.
   const restaQui = (err) => { err.restaQui = true; return err; };
+  // Uno stop dopo il quale il giro ritenta da solo, una volta: un elenco
+  // venuto male (la riga che non si vede, l'elenco di un'altra risorsa).
+  const ritentabile = (err) => { err.ritentabile = true; return err; };
 
   // Patient page: entry links to open a new richiesta.
   function patientModel(doc, baseUrl) {
@@ -2912,8 +2915,12 @@
     const riprende = plan.startPage === "ripresa";
     // dal carrello di una richiesta già nata (dopo «Svuota il carrello»): niente da creare
     const daCarrello = plan.startPage === "carrello";
+    // il ritentativo da solo dopo un elenco venuto male: lo dice la striscia
+    const daSolo = daCarrello && !!plan.ritentato;
+    const nMai = plan.items.filter((i) => !i.soloVerifica).length;
     const sOpen = plan.startPage === "patient" ? step("Apro la nuova richiesta" + legTag) : null;
-    const sRipresa = riprende ? step("Riprendo la richiesta da dov'ero") : daCarrello ? step("Apro il carrello della richiesta") : null;
+    const sRipresa = riprende ? step("Riprendo la richiesta da dov'ero")
+      : daCarrello ? step(daSolo ? `Riprovo ${nMai === 1 ? "1 esame" : `${nMai} esami`}…` : "Apro il carrello della richiesta") : null;
     const sCrea = plan.startPage !== "exam" && !riprende && !daCarrello ? step("Compilo quesito e creo la richiesta" + legTag) : null;
     const sSvuota = plan.svuota ? step("Svuoto il carrello") : null;
     const sVuoto = plan.svuota ? step("Controllo che sia vuoto") : null;
@@ -3079,6 +3086,7 @@
         // Non si crea niente e non si manda niente: si rilegge l'elenco della
         // richiesta che era già aperta, e da lì si continua.
         running(sRipresa);
+        if (daSolo) await sleep(VERIFY_WAITS[0], signal);   // un attimo all'elenco, come prima di una verifica
         ({ doc, url } = await fetchDoc(plan.listUrl, { signal }));
         guardSession(doc, "Nessun esame inviato");
         assertSameEpisode(doc, plan.episodeId, "elenco esami");
@@ -3246,6 +3254,7 @@
           autoConfirm: !!plan.autoConfirm, quesito: plan.quesito || "", qinfo: state.quesito || null,
           rid: state.richiestaId || null, listUrl: state.lastListUrl || null,
           riprese: plan.riprese || 0,
+          ...(plan.ritentato ? { ritentato: true } : {}),   // il ritentativo da solo c'è già stato
           // il giro di un ordine in sottofondo: si riprende solo nella sua
           // scheda, e solo finché il service worker lo conosce
           ...(LAVORO ? { ordine: LAVORO.id } : {}),
@@ -3283,7 +3292,7 @@
           assertSameEpisode(doc, plan.episodeId, "elenco esami");
           model = examModel(doc, url);
           learnFrom(model);
-          if (model.res !== it.res) throw new StopError(`Cambio risorsa fallito (${risorsaCorta(it.res)})`, "Nessun ordine inviato per questo esame.");
+          if (model.res !== it.res) throw ritentabile(new StopError(`Cambio risorsa fallito (${risorsaCorta(it.res)})`, "Nessun ordine inviato per questo esame."));
           noteList();
         }
 
@@ -3432,9 +3441,9 @@
         }
         if (!link) {
           const gia = model.inCart(it.code) || giaCercando;
-          throw new StopError(`«${nm}» non è nell'elenco di ${risorsaCorta(it.res)}`,
+          throw ritentabile(new StopError(`«${nm}» non è nell'elenco di ${risorsaCorta(it.res)}`,
             gia ? "Risulta già nel carrello: controlla a mano."
-              : riletto ? "Non c'è nemmeno con la ricerca del gestionale: non inviato. Aggiungilo a mano." : "Non inviato. Completa a mano.");
+              : riletto ? "Non c'è nemmeno con la ricerca del gestionale: non inviato. Aggiungilo a mano." : "Non inviato. Completa a mano."));
         }
         // Anti wrong-exam guardrail: the LIVE row label must match what the
         // doctor picked. If the hospital ever renumbers a code, every other
@@ -3644,7 +3653,7 @@
         const restavano = aMeta ? 0 : plan.items.filter((x) => !state.added.includes(x)).length - 1;
         ui.failed(state, { head: err.head, body: `${err.body || ""}${
           restavano > 0 ? (restavano === 1 ? " Restava 1 altro esame da mandare." : ` Restavano ${restavano} altri esami da mandare.`) : ""}`,
-          ...liste, restaQui: !!err.restaQui, sessione: !!err.sessione }, plan);
+          ...liste, restaQui: !!err.restaQui, sessione: !!err.sessione, ritentabile: !!err.ritentabile }, plan);
       } else {
         // La pagina che muore mentre navighi arriva qui come una fetch fallita:
         // il giro annotato è ancora lì, e riprende da solo alla pagina dopo.
@@ -3687,6 +3696,7 @@
       ...(svuotabile ? { tutti, listUrl: state.lastListUrl, nCarrello: nelCarrello } : {}),
       ...(state.quesito ? { qinfo: state.quesito } : {}),
       ...(plan.originali ? { originali: plan.originali.map(nudo) } : {}),
+      ...(plan.ritentato ? { ritentato: true } : {}),   // una volta per ordine: da qui «Riprova» è solo del medico
     };
   }
 
@@ -5449,6 +5459,15 @@
       // scaduta, un episodio che non torna, un'altra scheda al lavoro — né
       // dopo uno svuotamento non riuscito: lì si finisce a mano
       this.riprova = msg.restaQui || msg.niente ? null : ricettaRiprova(state, plan);
+      // «Se manca un esame, riprova a mandarlo una volta»: da solo, UNA volta
+      // per ordine, dopo un elenco venuto male, e solo se niente è «da
+      // controllare» (un esame mandato e non visto non si rischia due volte).
+      // È «↻ Riprova i mancanti» com'è, qui, prima dell'ultima parola — mai
+      // dalla pagina di un altro paziente.
+      const r = this.riprova;
+      if (r && msg.ritentabile && !r.ritentato && r.rid && r.mancanti.length && !r.controllare.length
+        && leggibilePagina(listUrl) && this.epDiQuesta() === r.ep) return this.riprovaMancanti(listUrl);
+      if (plan && plan.ritentato) this.log(`${now()}  ritentato una volta da solo: da qui decidi tu`);
       // quello che la pagina del carrello dovrà dire: il resoconto e «Riprova»
       const avviso = {
         testo: msg, striscia,
@@ -5650,7 +5669,7 @@
         ...(plan.daControllare ? { daControllare: plan.daControllare.map(pulito) } : {}),
         ...(plan.svuota ? { svuota: true } : {}), ...(plan.listUrl ? { listUrl: plan.listUrl } : {}),
         ...(plan.originali ? { originali: plan.originali.map(pulito) } : {}), ...(plan.nostri ? { nostri: plan.nostri.map(pulito) } : {}),
-        ...(plan.qinfo ? { qinfo: plan.qinfo } : {}),
+        ...(plan.qinfo ? { qinfo: plan.qinfo } : {}), ...(plan.ritentato ? { ritentato: true } : {}),
       };
       const chi = plan.patientName || "";
       this._delegando = true;
@@ -5955,22 +5974,26 @@
       if (r.rid) return this.pageType === "exam" && param(location.href, "RICHIESTA_ID") === r.rid;
       return this.pageType === "patient" && !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
     }
-    riprovaMancanti() {
+    // (daSolo: l'elenco del carrello da cui ritenta il giro stesso, una volta)
+    riprovaMancanti(daSolo = "") {
       const r = this.riprova;
-      if (!this.riprovaQui()) return;
+      if (!daSolo && !this.riprovaQui()) return;
       this.dimenticaErrore();
       // senza richiesta: un giro normale, col quesito e gli esami del pannello
       if (!r.rid) { this.view = "richieste"; this.launch(r.autoConfirm); return; }
       const nomi = (l) => l.map((x) => x.display || shortLabel(x.label)).join(", ");
       const fuori = r.controllare || [];
       this.startPlan({
-        startPage: "exam", examDoc: document, examUrl: location.href, richiestaId: r.rid,
-        autoConfirm: r.autoConfirm, patientName: r.paziente, patientUrl: r.patientUrl,
+        ...(daSolo ? { startPage: "carrello", listUrl: daSolo } : { startPage: "exam", examDoc: document, examUrl: location.href }),
+        richiestaId: r.rid, autoConfirm: r.autoConfirm, patientName: r.paziente, patientUrl: r.patientUrl,
         // quelli già in carrello si cercano soltanto: mai un secondo invio
         items: [...(r.verdi || []).map((x) => ({ ...x, soloVerifica: true, giaFatto: true })), ...r.mancanti.map((x) => ({ ...x }))],
         daControllare: fuori.map((x) => ({ ...x })),   // fuori dal giro, ma se va storto di nuovo restano in elenco
+        ...(r.originali ? { originali: r.originali.map((x) => ({ ...x })) } : {}),   // per «Svuota», se si ferma ancora
+        ...(r.qinfo ? { qinfo: r.qinfo } : {}),
+        ...(daSolo || r.ritentato ? { ritentato: true } : {}), ...(LAVORO ? { dalLavoro: true } : {}),
       });
-      this.log(`${now()}  ↻ riprovo i mancanti: ${nomi(r.mancanti)}${
+      this.log(`${now()}  ↻ riprovo ${daSolo ? "da solo, una volta, " : ""}i mancanti: ${nomi(r.mancanti)}${
         fuori.length ? ` — non rimando quelli da controllare: ${nomi(fuori)}` : ""}`);
     }
     // Via l'errore: la pill torna quella di sempre, e il passaggio di
@@ -10090,7 +10113,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     runPlan({
       startPage: "ripresa", listUrl: c.listUrl, items,
       episodeId: c.ep, autoConfirm: !!c.autoConfirm, quesito: c.quesito || "", qinfo: c.qinfo || null,
-      patientName: c.paziente || "", riprese: (c.riprese || 0) + 1,
+      patientName: c.paziente || "", riprese: (c.riprese || 0) + 1, ...(c.ritentato ? { ritentato: true } : {}),
       ...(Array.isArray(c.originali) ? { originali: c.originali } : {}),
       ...(c.patientUrl ? { patientUrl: c.patientUrl } : {}),
     }, panel);
