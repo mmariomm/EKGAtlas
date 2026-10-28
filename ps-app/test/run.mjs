@@ -962,7 +962,9 @@ async function scenarioRigaCercata(browser) {
   check(scen, /riletto con la ricerca del gestionale/.test(await registroDi(page)), "il Registro lo dice");
   await context.close();
 
-  // …la riga non c'è nemmeno con la ricerca: niente si manda, la PCT «manca»
+  // …la riga non c'è nemmeno con la ricerca: niente si manda, la PCT «manca».
+  // L'elenco poteva essere venuto male: il giro ritenta da solo, UNA volta, e
+  // anche lì niente — si ferma come sempre, e «↻ Riprova» resta al medico.
   const scen2 = "riga-assente";
   const mock2 = createMock({});
   const b = await newPage(browser, mock2, { riscrivi: (u, h) => togliRiga("159")(h) });
@@ -977,12 +979,29 @@ async function scenarioRigaCercata(browser) {
   check(scen2, /Mancano: PROCALCITONINA/.test(rossa), `striscia rossa: «Mancano: PROCALCITONINA» (got: ${rossa})`);
   check(scen2, !mock2.state.requests.some((q) => q.params.Insert === "Inserisci" && q.params.PRESTAZIONE === "159"),
     "nessun indirizzo d'inserimento per la PCT è stato chiesto");
-  check(scen2, mock2.state.requests.filter((q) => q.params.s_PRESTAZIONE).length === 1, "cercata una volta sola");
+  const cercate = () => mock2.state.requests.filter((q) => q.params.s_PRESTAZIONE).length;
+  check(scen2, cercate() === 2, `cercata una volta per giro: il giro e il suo unico ritentativo da solo (got ${cercate()})`);
+  check(scen2, mock2.state.insertCount[`${rid2}:320`] === 1, `l'EMOCROMO già entrato si ritrova, mai rimandato (${JSON.stringify(mock2.state.insertCount)})`);
   check(scen2, mock2.state.richieste[rid2].confirmed === false
     && !mock2.state.requests.some((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni")), "e niente confermato");
   check(scen2, new URL(b.page.url()).searchParams.get("RISORSA_ID") === RES.URGENZE, "la scheda è sul carrello del laboratorio della PCT");
+  const n2 = mock2.state.requests.length;
+  await b.page.waitForTimeout(3000);
+  check(scen2, mock2.state.requests.length === n2, "e un terzo giro da solo non parte");
+  check(scen2, /ritentato una volta da solo/.test(await registroDi(b.page)), "il Registro dice «ritentato una volta da solo»");
   await apriStriscia(b.page);
   check(scen2, /ricerca del gestionale/.test(await $panel(b.page, ".banner.err").innerText()), "e il motivo dice che è stata cercata");
+  const bottoni = await b.page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".commit button")].map((x) => x.id));
+  check(scen2, ["riprova", "svuota", "chiudi"].every((x) => bottoni.includes(x)),
+    `il resoconto di sempre: «↻ Riprova i mancanti», «Svuota il carrello e ricomincia», «Chiudi» (got ${bottoni.join(",")})`);
+  // «↻ Riprova» del medico: un giro suo, e se si ferma ancora, niente da solo
+  const ricarica = b.page.waitForEvent("load", { timeout: 40000 });
+  await $panel(b.page, "#riprova").click();
+  await ricarica;
+  await striscia(b.page, /Errore · completa a mano/, 20000).catch(() => "");
+  await b.page.waitForTimeout(3000);
+  check(scen2, cercate() === 3 && !mock2.state.insertCount[`${rid2}:159`],
+    `«↻ Riprova» del medico cerca ancora, una volta, e non ritenta più da solo (got ${cercate()} ricerche)`);
   await b.context.close();
 
   // …la ricerca la mostra, ma il suo codice oggi porta un altro nome: il
@@ -1005,6 +1024,99 @@ async function scenarioRigaCercata(browser) {
 }
 
 const confermePost = (mock) => mock.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni"));
+
+// «Se conferma e manca un esame, riprova a mandarlo una volta.» Un giro che si
+// ferma con esami mai partiti — per un elenco venuto male, e con niente «da
+// controllare» — ritenta da solo, UNA volta: è «↻ Riprova i mancanti» com'è
+// (carrello riletto dal server, quelli già entrati solo cercati, partono i mai
+// partiti, la conferma del primo giro). Qui la riga della PCT manca una volta
+// sola — anche alla ricerca del gestionale — e poi c'è.
+async function scenarioRiprovaDaSolo(browser) {
+  const scen = "riprova-da-solo";
+  const mock = createMock({});
+  let monca = true;
+  const { context, page } = await newPage(browser, mock, { riscrivi: (u, h) => {
+    if (!monca) return h;
+    if (new URL(u).searchParams.get("s_PRESTAZIONE")) monca = false;   // dopo la ricerca l'elenco torna intero
+    return togliRiga("159")(h);
+  } });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("febbre");
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, "#goconfirm").click();
+  const riprovo = await striscia(page, /Riprovo 1 esame/, 25000).catch(() => "");
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 }).catch(() => {});
+  const rid = Object.keys(mock.state.richieste)[0];
+  check(scen, /Riprovo 1 esame…/.test(riprovo), `la striscia lo dice, per poco: «Riprovo 1 esame…» (got: ${riprovo || "niente"})`);
+  check(scen, mock.state.insertCount[`${rid}:320`] === 1 && mock.state.insertCount[`${rid}:159`] === 1 && Object.keys(mock.state.insertCount).length === 2,
+    `ogni esame mandato una volta: l'EMOCROMO già entrato si ritrova, parte la PCT (${JSON.stringify(mock.state.insertCount)})`);
+  check(scen, Object.keys(mock.state.richieste).length === 1 && confermePost(mock).length === 1 && mock.state.richieste[rid].confirmed === true,
+    `stessa richiesta, confermata una volta, come il primo giro (got ${confermePost(mock).length} conferme)`);
+  check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "159,320", "confermati EMOCROMO e PCT");
+  const reg = await registroDi(page);
+  check(scen, /riprovo da solo, una volta, i mancanti: PROCALCITONINA/.test(reg) && /già presente ✓ EMOCROMO/.test(reg),
+    "il Registro dice che ha ritentato da solo, e che l'EMOCROMO l'ha solo ritrovato");
+  await page.keyboard.press("Escape");
+  await context.close();
+
+  // …ma con un esame «da controllare» (mandato e non visto) niente da solo: il
+  // medico guarda prima — mai il rischio di un doppio. La TROPONINA parte e il
+  // server non la prende; al «↻ Riprova» del medico la riga della PCT arriva
+  // monca (un elenco venuto male), ma la TROPONINA è ancora da controllare.
+  const scen2 = "riprova-da-solo-da-controllare";
+  const mock2 = createMock({ neverAdd: ["324"] });
+  let monca2 = false;
+  const b = await newPage(browser, mock2, { riscrivi: (u, h) => (monca2 ? togliRiga("159")(h) : h) });
+  await b.page.goto(mock2.patientUrl);
+  await richieste(b.page);
+  await $panel(b.page, "#q").fill("dolore toracico");
+  await $panel(b.page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(b.page, '.opt[title*="TROPONINA"]').click();
+  await $panel(b.page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(b.page, "#goconfirm").click();
+  await errore(b.page, { timeout: 40000 });
+  const rid2 = Object.keys(mock2.state.richieste)[0];
+  monca2 = true;
+  await apriStriscia(b.page);
+  const ricarica = b.page.waitForEvent("load", { timeout: 40000 });
+  await $panel(b.page, "#riprova").click();
+  await ricarica;
+  const rossa2 = await striscia(b.page, /Errore · completa a mano/, 20000).catch(() => "");
+  const n2 = mock2.state.requests.length;
+  await b.page.waitForTimeout(3000);
+  check(scen2, /Mancano: PROCALCITONINA/.test(rossa2) && /Da controllare: TROPONINA/.test(rossa2),
+    `fermo di nuovo: la PCT manca, la TROPONINA è da controllare (got: ${rossa2 || "niente"})`);
+  check(scen2, mock2.state.requests.length === n2 && mock2.state.requests.filter((q) => q.params.s_PRESTAZIONE).length === 1,
+    "niente ritentativo da solo: una ricerca sola, e poi più niente");
+  check(scen2, !mock2.state.insertCount[`${rid2}:159`] && mock2.state.insertCount[`${rid2}:324`] === 1 && confermePost(mock2).length === 0,
+    `la PCT mai mandata, la TROPONINA una volta sola, niente confermato (${JSON.stringify(mock2.state.insertCount)})`);
+  check(scen2, !/da solo/.test(await registroDi(b.page)), "e il Registro non parla di ritentativi");
+  await b.context.close();
+
+  // …e niente da solo dopo una sessione scaduta: lì si rifà l'accesso.
+  const scen3 = "riprova-da-solo-sessione";
+  const mock3 = createMock({});
+  const c = await newPage(browser, mock3, {
+    // la sessione muore proprio sulla ricerca della PCT
+    ritardo: (u) => { if (new URL(u).searchParams.get("s_PRESTAZIONE")) mock3.state.expireAfter = mock3.state.requests.length; return 0; },
+    riscrivi: (u, h) => togliRiga("159")(h),
+  });
+  await c.page.goto(mock3.patientUrl);
+  await richieste(c.page);
+  await $panel(c.page, "#q").fill("febbre");
+  await $panel(c.page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await $panel(c.page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(c.page, "#goconfirm").click();
+  const rossa3 = await errore(c.page, { su: null });
+  const n3 = mock3.state.requests.length;
+  await c.page.waitForTimeout(3000);
+  check(scen3, /Sessione scaduta/.test(rossa3), `«Sessione scaduta» (got: ${rossa3})`);
+  check(scen3, mock3.state.requests.length === n3 && mock3.state.requests.filter((q) => q.params.s_PRESTAZIONE).length === 1
+    && !/da solo/.test(await registroDi(c.page)), "nessun ritentativo da solo");
+  await c.context.close();
+}
 
 // Il medico clicca nel gestionale mentre la cornice sta ancora confermando: la
 // pagina se ne va, e la conferma automatica con lei — non riparte da sola più
@@ -5833,6 +5945,7 @@ const scenarios = [
   ["carrello bloccato: aggiungere esami lì funziona", scenarioBloccatoAggiungi],
   ["errore: il salto sul carrello non parte sopra «Riprova»", scenarioSaltoSpento],
   ["riga assente in pagina: la ricerca del gestionale", scenarioRigaCercata],
+  ["un esame mai partito: si riprova da solo, una volta", scenarioRiprovaDaSolo],
   ["conferma interrotta dalla navigazione: la pagina dopo avvisa", scenarioConfermaInterrotta],
   ["navigazione automatica: non si porta via chi scrive", scenarioNonMangiaLaScrittura],
   ["altro presidio: risorse e codici diversi", scenarioAltroPresidio],

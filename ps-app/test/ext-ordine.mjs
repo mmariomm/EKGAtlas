@@ -997,6 +997,82 @@ if (prova("se la scheda di sottofondo non si apre, manda la pagina")) {
   await sw.evaluate(() => { chrome.tabs.create = self.__creaVera; });
 }
 
+// ---- un esame mai partito per un elenco venuto male: si riprova da solo --
+// La scheda dell'ordine ritenta UNA volta, lì, prima di dire l'ultima parola:
+// il carrello riletto, l'EMOCROMO già entrato solo ritrovato, parte la PCT, e
+// conferma come il primo giro. Il medico vede «Riprovo 1 esame…», poi le
+// etichette. (La riga della PCT manca una volta sola, anche alla ricerca.)
+const togliRiga = (codice) => (h) => h.replace(
+  new RegExp(`<tr><td><a class="AFCDataLink" href="[^"]*Insert=Inserisci[^"]*[?&]PRESTAZIONE=${codice}&[^"]*">[^<]*</a></td></tr>`, "g"), "");
+if (prova("un esame mai partito per un elenco venuto male — la scheda dell'ordine riprova da sola, una volta")) {
+  nuovi();
+  lento = 0;
+  let monca = true;
+  riscrivi = (u, h) => {
+    if (!monca) return h;
+    if (new URL(u).searchParams.get("s_PRESTAZIONE")) monca = false;   // dopo la ricerca l'elenco torna intero
+    return togliRiga("159")(h);
+  };
+  await suPagina(doc, A.patientUrl);
+  await azzeraStampe(doc);
+  const s0 = (await strisce(doc)).length;
+  const nasce = nuovaPagina();
+  await ordina(doc, ["EMOCROMOCITOMETRICO", "PROCALCITONINA"], { quesito: "febbre" });
+  const w = await nasce;
+  await suPagina(doc, B.patientUrl);
+  const pronte = await striscia(doc, /Etichette di ROSSI M\. pronte/, 45000).catch(() => "");
+  const rid = Object.keys(A.state.richieste)[0];
+  const viste = (await strisce(doc)).slice(s0);
+  check(!!pronte, `alla fine le etichette di ROSSI, pronte (got: ${pronte || "niente"})`);
+  check(viste.some((t) => /ROSSI MARIO.*Riprovo 1 esame…/.test(t)) && !viste.some((t) => /Errore/.test(t)),
+    `intanto la tua striscia ha detto «Riprovo 1 esame…», e mai un errore (got ${viste.filter((t) => /Riprovo|Errore/.test(t)).join(" | ") || "niente"})`);
+  check(A.state.insertCount[`${rid}:320`] === 1 && A.state.insertCount[`${rid}:159`] === 1 && Object.keys(A.state.insertCount).length === 2,
+    `ogni esame mandato una volta (${JSON.stringify(A.state.insertCount)})`);
+  check(Object.keys(A.state.richieste).length === 1 && conferme(A).length === 1 && A.state.richieste[rid].confirmed === true,
+    `stessa richiesta, confermata una volta (got ${conferme(A).length})`);
+  check(await aspettaChiusa(w), "e la scheda dell'ordine si chiude da sola");
+  riscrivi = null;
+  await nessunOrdine();
+}
+
+// ---- ritentato da solo e fermo di nuovo: il resoconto di sempre, a te ----
+if (prova("ritentato da solo e fermo di nuovo — il resoconto arriva a te, «Riprova» resta tuo")) {
+  nuovi();
+  lento = 0;
+  riscrivi = (u, h) => togliRiga("159")(h);
+  await suPagina(doc, A.patientUrl);
+  await azzeraStampe(doc);
+  const s0 = (await strisce(doc)).length;
+  const nasce = nuovaPagina();
+  await ordina(doc, ["EMOCROMOCITOMETRICO", "PROCALCITONINA"], { quesito: "febbre" });
+  const w = await nasce;
+  await suPagina(doc, B.patientUrl);
+  const rossa = await striscia(doc, /ROSSI MARIO.*Errore/, 45000).catch(() => "");
+  const rid = Object.keys(A.state.richieste)[0];
+  const cercate = () => A.state.requests.filter((q) => q.params.s_PRESTAZIONE).length;
+  check(/Mancano: PROCALCITONINA/.test(rossa) && (await $panel(doc, ".pill.run.err").count()) === 1,
+    `la striscia rossa di sempre: «Mancano: PROCALCITONINA» (got: ${rossa || "niente"})`);
+  check((await strisce(doc)).slice(s0).some((t) => /ROSSI MARIO.*Riprovo 1 esame…/.test(t)), "prima, «Riprovo 1 esame…»");
+  check(cercate() === 2 && !A.state.insertCount[`${rid}:159`] && A.state.insertCount[`${rid}:320`] === 1 && conferme(A).length === 0,
+    `il giro e il suo unico ritentativo: la PCT mai mandata, l'EMOCROMO una volta, niente confermato (${cercate()} ricerche · ${JSON.stringify(A.state.insertCount)})`);
+  check(await aspettaChiusa(w), "la scheda dell'ordine si chiude: il resoconto è passato a te");
+  const n0 = A.state.requests.length;
+  await doc.waitForTimeout(2500);
+  check(A.state.requests.length === n0, "e poi più niente: un terzo giro da solo non parte");
+  const reg = await doc.evaluate(() => (JSON.parse(sessionStorage.getItem("psassist:log.999001") || "{}").lines || []).join("\n"));
+  check(/ritentato una volta da solo/.test(reg), "il Registro dell'ordine, nel tuo: «ritentato una volta da solo»");
+  await $panel(doc, "#strazione").click();
+  await doc.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 15000 });
+  await doc.waitForSelector("#psassist-host .pill.run", { timeout: 10000 });
+  await $panel(doc, ".pill.run").click();
+  await doc.waitForSelector("#psassist-host .card #riprova", { timeout: 10000 }).catch(() => {});
+  const bottoni = await doc.evaluate(() => [...(document.getElementById("psassist-host")?.shadowRoot?.querySelectorAll(".commit button") || [])].map((b) => b.id));
+  check(["riprova", "svuota", "chiudi"].every((b) => bottoni.includes(b)),
+    `sul carrello il resoconto di sempre: «↻ Riprova i mancanti», «Svuota…», «Chiudi» (got ${bottoni.join(",")})`);
+  riscrivi = null;
+  await $panel(doc, "#chiudi").click().catch(() => {});
+}
+
 await ctx.close();
 rmSync(PROFILE, { recursive: true, force: true });
 console.log(fail ? `\nORDINE-ESTENSIONE: ${fail} CHECK FALLITI\n` : "\nORDINE-ESTENSIONE: TUTTO OK\n");

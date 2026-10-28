@@ -428,7 +428,9 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
    viaggia con lui, e lì compare «Riprova». Se la richiesta non era ancora nata, «Riprova» è un
    giro normale dalla pagina del paziente. Niente «Riprova» se non manca niente (solo «da
    controllare»), dopo una sessione scaduta, un episodio che non torna, un'altra scheda al
-   lavoro, né per la coppia laboratorio + radiologia.
+   lavoro, né per la coppia laboratorio + radiologia. **Una volta lo fa da solo:** un esame
+   rimasto fuori da un elenco venuto male, con niente «da controllare», si riprova subito — la
+   striscia dice «Riprovo 1 esame…» — e il resoconto arriva solo se si ferma ancora.
    **…o si svuota il carrello e si ricomincia.** Sul carrello di quella richiesta il resoconto
    ha anche, più discreto, **Svuota il carrello e ricomincia**. Il primo tocco **legge il carrello
    vero**, tutte le sezioni (solo letture), e chiede coi nomi: «Svuoto 3 esami: EMOCROMO POC,
@@ -1200,7 +1202,7 @@ stessi flussi dei test di prodotto.
    ci va dopo un episodio che non torna, una sessione scaduta o un'altra scheda al lavoro (lì
    resta la striscia rossa), né se il giro ripreso ti ha trovato sulla pagina di un altro
    paziente.
-   **Riparte solo quello che manca, e solo se lo chiedi.** «↻ Riprova i mancanti» c'è soltanto
+   **Riparte solo quello che manca.** «↻ Riprova i mancanti» c'è soltanto
    sul carrello di quella stessa richiesta (o, se la richiesta non era nata, sulla pagina del
    paziente: lì è un giro nuovo e normale). È un giro dalla pagina esami, quindi il carrello si
    rilegge dal server; quelli già entrati vanno con lui **solo da cercare** — come l'«in volo»
@@ -1211,6 +1213,9 @@ stessi flussi dei test di prodotto.
    non dice niente del nostro carrello — si conta il tentativo, lo si scrive nel Registro, e
    la rilettura dopo torna sul nostro (prima, quell'elenco diventava il modello e da lì
    partivano anche le riletture seguenti).
+   **Una volta per ordine lo fa da solo**, e solo dopo un elenco venuto male, con esami mai
+   partiti e niente «da controllare»: è questo stesso «Riprova» (dal carrello riletto), mai un
+   secondo invio — e se si ferma ancora, decide il medico.
    **Svuotare il carrello lo fa il gestionale, e si dimostra.** «Svuota il carrello e
    ricomincia» c'è solo sul carrello di quella richiesta, con due tocchi. Si segue il link
    «Svuota carrello» della pagina (`Delete=Elimina`, `MVPG=RcsRichiestaCarrelloSvuota`, **senza**
