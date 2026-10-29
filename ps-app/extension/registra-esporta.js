@@ -2,7 +2,8 @@
  * PS Assist — il registratore, «Ferma e scarica»: la pagina che prende quello
  * che il service worker ha tenuto (registra.js), legge il testo dei PDF con la
  * stessa strada del pannello (registra-pdf.js), anonimizza e controlla
- * (registra-anonimo.js) e, solo se il controllo passa, scarica lo zip. Tutto
+ * (registra-anonimo.js) e scarica lo zip — se il controllo trova qualcosa,
+ * scarica lo stesso ma lo dice qui e in cima a riepilogo.txt. Tutto
  * qui, su questo PC: lo zip si scarica come un file qualunque, e lo manda il
  * medico.
  */
@@ -80,19 +81,6 @@
     const vocabolario = await (await fetch(chrome.runtime.getURL("registra-vocabolario.json"))).json();
     const raccolta = { versione: st.versione, inizio: st.inizio, fine: st.fine, comeFinita: st.comeFinita, origini: st.origini, pagine, flusso, pdf, schede };
     const r = RegistraAnonimo.anonimizza(raccolta, { vocabolario });
-    if (!r.gate.ok) {
-      // niente si scrive: si dice quanti punti e dove, mai i valori
-      dici(`Non esporto: restano dati veri in ${r.gate.punti} punti`, "ko");
-      const ul = $("dove");
-      ul.hidden = false;
-      for (const [file, cat] of Object.entries(r.gate.dove).slice(0, 30)) {
-        const li = document.createElement("li");
-        li.textContent = `${file}: ${Object.entries(cat).map(([k, n]) => `${k} ×${n}`).join(", ")}`;
-        ul.appendChild(li);
-      }
-      esito({ ok: false, punti: r.gate.punti, dove: r.gate.dove });
-      return;
-    }
     const zip = RegistraAnonimo.creaZip(r.files, new Date(st.inizio));
     const d = new Date(st.inizio), p2 = (n) => String(n).padStart(2, "0");
     const nome = `psassist-registrazione-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.zip`;
@@ -101,12 +89,25 @@
     scarica();
     $("ancora").hidden = false;
     $("ancora").addEventListener("click", scarica);
-    dici(`Scaricato: ${nome} (${Math.max(1, Math.round(zip.length / 1024))} KB) — ${r.riepilogo.pagine} pagine, ${r.riepilogo.richieste} richieste, ${r.riepilogo.pdf} PDF. `
-      + "È nella cartella Download: è quello da mandare. Quando l'hai mandato, cancella la registrazione da questo PC.", "ok");
+    const fatto = `Scaricato: ${nome} (${Math.max(1, Math.round(zip.length / 1024))} KB) — ${r.riepilogo.pagine} pagine, ${r.riepilogo.richieste} richieste, ${r.riepilogo.pdf} PDF. `
+      + "È nella cartella Download: è quello da mandare. Quando l'hai mandato, cancella la registrazione da questo PC.";
+    if (r.gate.ok) dici(fatto, "ok");
+    else {
+      // lo zip esce lo stesso: l'avviso dice quanti e dove (file e tipo), mai i valori —
+      // è anche in cima a riepilogo.txt
+      dici(`Attenzione: restano ${r.gate.punti} dati da controllare. ${fatto.replace("è quello da mandare", "guarda questi punti prima di mandarlo")}`, "ko");
+      const ul = $("dove");
+      ul.hidden = false;
+      for (const [file, cat] of Object.entries(r.gate.dove).slice(0, 30)) {
+        const li = document.createElement("li");
+        li.textContent = `${file}: ${Object.entries(cat).map(([k, n]) => `${k} ×${n}`).join(", ")}`;
+        ul.appendChild(li);
+      }
+    }
     $("riep").hidden = false;
     $("riep").textContent = r.files["riepilogo.txt"];
     await chrome.storage.local.set({ registra: { ...st, esportata: Date.now() } });
-    esito({ ok: true, nome, byte: zip.length });
+    esito({ ok: true, nome, byte: zip.length, controllo: r.gate.ok, punti: r.gate.punti, dove: r.gate.dove });
   } catch (e) {
     dici(`Non esporto: qualcosa è andato storto (${String(e && e.message || e).slice(0, 120)}). La registrazione resta su questo PC.`, "ko");
     esito({ ok: false, why: String(e && e.message || e) });

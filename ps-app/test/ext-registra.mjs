@@ -252,6 +252,17 @@ check(resto.pagine === 0 && resto.flusso === 0 && resto.pdf.length === 0 && !(aw
 await doc.bringToFront();
 check(await voce(doc) === "Registra", "e il menu torna a «Registra»");
 
+// ---- 7. dopo 60 minuti si ferma da sola ----------------------------------------
+await $panel(doc, "#regmenu").click();
+await finche(async () => (await stato())?.stato === "rec", 8000);
+await sw.evaluate(() => chrome.storage.local.get("registra").then((o) => chrome.storage.local.set({ registra: { ...o.registra, scade: Date.now() - 1000 } })));
+await suPagina(doc, A.patientUrl);   // una richiesta qualunque: il registratore si accorge dell'ora
+const scaduta = await finche(async () => (await stato())?.stato === "fermo", 8000);
+const st60 = await stato();
+check(scaduta && st60.comeFinita === "dopo 60 minuti" && await $panel(doc, ".recchip").count() === 0, `dopo 60 minuti si ferma da sola (${st60 && st60.comeFinita})`);
+check(await voce(doc) === "Scarica la registrazione", "e il menu offre «Scarica la registrazione»");
+await doc.keyboard.press("Escape");
+
 await ctx.close();
 srv.close();
 rmSync(PROFILE, { recursive: true, force: true });

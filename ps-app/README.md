@@ -1205,8 +1205,10 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   lunghezza; episodi, richieste, referti → altri numeri, sempre gli stessi (i collegamenti
   restano); ospedale e fornitore → `OSPEDALE ESEMPIO`. Dei PDF viaggia solo il testo anonimizzato.
 - **Il controllo**: prima di scrivere lo zip si rilegge tutto cercando quello che è stato visto
-  di vero (codici fiscali, nomi, date di nascita, episodi). Basta un punto e **non si esporta
-  niente**: «Non esporto: restano dati veri in N punti», con i file e il tipo, mai i valori.
+  di vero (codici fiscali, nomi, date di nascita, episodi). Se resta qualcosa lo zip si scarica
+  **lo stesso**, ma la pagina dice «Attenzione: restano N dati da controllare» e lo stesso
+  avviso apre `riepilogo.txt`, con il file e il tipo di dato di ognuno — mai il valore:
+  **controlla quei punti prima di mandarlo**.
 - **Come mandarlo**: lo zip è nella cartella Download, e lo mandi tu: nient’altro parte da solo.
   Poi **Cancella la registrazione da questo PC** nella stessa pagina (comunque si cancella da sola
   dopo 12 ore, e a ogni nuova registrazione).

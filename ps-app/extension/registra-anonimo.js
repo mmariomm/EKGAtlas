@@ -20,8 +20,9 @@
  *   collegati.
  *
  * Poi il CANCELLO: tutto quello che uscirebbe si rilegge cercando quello che è
- * stato visto di vero (nomi, date di nascita, codici fiscali, episodi). Basta un
- * punto e non si esporta niente.
+ * stato visto di vero (nomi, date di nascita, codici fiscali, episodi). Se resta
+ * qualcosa lo zip esce comunque (scelta del medico), ma con l'avviso in cima al
+ * riepilogo e nella pagina: quanti, in quale file, di che tipo — mai il valore.
  *
  * Gira nella pagina dell'estensione (registra.html) e in Node per i test: non
  * usa il DOM, solo stringhe.
@@ -828,7 +829,16 @@
       riletti, schede: tabNum.size, conteggi, icone: [...icone].sort(), iconeNuove: [...iconeNuove].sort(),
       sfasamento: undefined,
     };
+    // Il controllo NON blocca (scelta del medico): se qualcosa resta, lo zip
+    // esce lo stesso, con l'avviso in cima al riepilogo — dove (file e tipo di
+    // dato), mai il valore — e lo stesso avviso nella pagina dello scarico.
+    const avvisoDi = (gate) => (gate.ok ? [] : [
+      `ATTENZIONE: restano ${gate.punti} dati da controllare — prima di mandarlo guarda questi punti:`,
+      ...Object.entries(gate.dove).map(([f, c]) => `  - ${f}: ${Object.entries(c).filter(([k]) => k !== "valori").map(([k, n]) => `${k} ×${n}`).join(", ")}`),
+      "",
+    ]);
     const riepilogo = (gate) => [
+      ...avvisoDi(gate),
       "PS Assist — registrazione anonimizzata",
       `Versione dell'estensione: ${riepilogoDati.versione}`,
       `Durata: ${riepilogoDati.durata} min (${riepilogoDati.comeFinita})`,
@@ -843,7 +853,7 @@
       `Icone usate (repertorio di esempi-gestionale): ${riepilogoDati.icone.join(", ") || "nessuna"}`,
       `Icone fuori repertorio (solo il nome): ${riepilogoDati.iconeNuove.join(", ") || "nessuna"}`,
       "",
-      `Controllo prima dell'esportazione: ${gate.ok ? "superato, nessun dato vero trovato" : `NON superato: ${gate.punti} punti`}`,
+      `Controllo prima dell'esportazione: ${gate.ok ? "superato, nessun dato vero trovato" : `restano ${gate.punti} dati da controllare (elencati in cima)`}`,
       "",
       "Note:",
       "  - Le date recenti sono spostate tutte dello stesso numero di giorni (non scritto da nessuna parte);",
@@ -860,11 +870,17 @@
     for (const { cat, orig } of nomiVisti.values()) {
       sensibili[cat].push(orig);
     }
+    // (opz.aggiungi: file messi fra quelli in uscita prima del controllo — solo per i test)
+    Object.assign(files, opz.aggiungi || {});
     const prova = { ...files, "riepilogo.txt": riepilogo({ ok: true, punti: 0 }) };
     const gate = cancello(prova, sensibili, { finti: [...finti.values()], diagnosi: opz.diagnosi });
     files["riepilogo.txt"] = riepilogo(gate);
     // nessuna stringa vera nel riepilogo stesso: si ricontrolla
-    if (gate.ok) { const g2 = cancello({ "riepilogo.txt": files["riepilogo.txt"] }, sensibili, { finti: [...finti.values()] }); if (!g2.ok) Object.assign(gate, g2); }
+    const g2 = cancello({ "riepilogo.txt": files["riepilogo.txt"] }, sensibili, { finti: [...finti.values()] });
+    if (!g2.ok) {
+      gate.ok = false; gate.punti += g2.punti; Object.assign(gate.dove, g2.dove);
+      files["riepilogo.txt"] = riepilogo(gate);
+    }
     return { files, gate, conteggi, riepilogo: riepilogoDati, ...(opz.diagnosi ? { sensibili } : {}) };
   }
 

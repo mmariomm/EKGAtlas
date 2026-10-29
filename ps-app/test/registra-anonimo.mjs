@@ -177,11 +177,21 @@ check(/nomi di pazienti: [1-9]/.test(riep) && /codici fiscali: [1-9]/.test(riep)
 // ------------------------------------------------------------- il cancello
 const sensibili = { nomi: [P1.nome, P2.nome], cf: [P1.cf], nascita: [P1.nato], id: [P1.ep] };
 const c1 = cancello({ ...r.files, "pagine/099-x.html": r.files["pagine/001-PsoLista.html"] + "<p>RSSMRA80A01H501U</p>" }, sensibili);
-check(!c1.ok && c1.punti === 1 && c1.dove["pagine/099-x.html"]["codice fiscale"] === 1, `un codice fiscale piantato blocca l'esportazione (${c1.punti} punto)`);
+check(!c1.ok && c1.punti === 1 && c1.dove["pagine/099-x.html"]["codice fiscale"] === 1, `un codice fiscale piantato fa scattare il controllo (${c1.punti} punto)`);
 const c2 = cancello({ a: "<td>Verdone&nbsp;Carlo</td>", b: "?q=VERDONE+CARLO", c: "nato il 12-03-1950", d: "ep 120595 ok", e: "1205951 no" }, sensibili);
 check(!c2.ok && c2.punti === 4 && !c2.dove.e, `il cancello vede i nomi anche in minuscolo, con &nbsp; o +, le date con altri separatori, gli episodi (${c2.punti} punti)`);
 check(!JSON.stringify(c2).includes("VERDONE") && !JSON.stringify(c2).includes("120595"), "e dice dove e quanti, mai i valori");
 check(cancello(r.files, sensibili).ok, "l'uscita vera, ricontrollata dal di fuori, è pulita");
+// Il controllo non blocca: se resta qualcosa lo zip esce lo stesso, con
+// l'avviso in cima al riepilogo — quanti, dove e di che tipo, mai il valore.
+const r3 = anonimizza(raccolta, { vocabolario, sfasamento: 30, aggiungi: { "pagine/099-piantata.html": `<p>RSSMRA80A01H501U</p><p>${P1.nome}</p>` } });
+const riep3 = r3.files["riepilogo.txt"];
+check(!r3.gate.ok && r3.gate.punti === 2 && Object.keys(r3.files).length === Object.keys(r.files).length + 1,
+  `un codice fiscale e un nome piantati: i file escono lo stesso, e il controllo li conta (${r3.gate.punti} punti)`);
+check(/^ATTENZIONE: restano 2 dati da controllare/.test(riep3) && /pagine\/099-piantata\.html: codice fiscale ×1, nome ×1/.test(riep3)
+  && /Controllo prima dell'esportazione: restano 2 dati da controllare/.test(riep3),
+  `l'avviso è in cima a riepilogo.txt, con file e tipo (${riep3.split("\n").slice(0, 2).join(" | ")})`);
+check(!/RSSMRA80A01H501U|VERDONE/.test(riep3), "e senza i valori");
 
 // --------------------------------------------------------------- lo zip
 const zip = creaZip({ "a.txt": "ciao", "pagine/001-x.html": "<p>è</p>" });
