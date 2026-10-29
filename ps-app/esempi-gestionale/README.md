@@ -1,9 +1,9 @@
 # esempi-gestionale — pagine del gestionale, senza nessun dato reale
 
 Queste sono le pagine **vere** di SA4PSO (struttura, classi, stile, icone) con
-**tutto il contenuto sostituito da dati inventati**. Servono al banco di prova
-(`dist/demo.html`) per far girare il pannello sulle schermate autentiche senza
-avere accesso al gestionale — e senza che nulla di reale esca da qui.
+**tutto il contenuto sostituito da dati inventati**. Servono alle prove
+automatiche (`test/sa4pso-mock.mjs`) per far girare il pannello sulle schermate
+autentiche senza avere accesso al gestionale — e senza che nulla di reale esca da qui.
 
 | file | cos'è |
 |---|---|
@@ -51,5 +51,4 @@ fornitore, e **ogni indirizzo esterno**: le pagine non possono chiamare nulla.
 utenza, un codice fiscale, un identificativo vero, un indirizzo interno, un
 `http://` o un `<script>`. Va eseguito a ogni modifica (`npm run esempi`).
 
-> Le pagine si guardano dal banco di prova, non da sole: fuori di lì mancano il
-> foglio di stile e le icone, che stanno nei due file `_`.
+> Da sole le pagine non hanno il foglio di stile e le icone: stanno nei due file `_`.
