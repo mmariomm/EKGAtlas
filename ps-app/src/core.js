@@ -7080,7 +7080,7 @@
                       ? `<button role="menuitem" id="stautosw" title="Ogni foglio va da solo alla sua stampante, senza dialogo">Stampa automatica: spenta · Accendi</button>`
                       : `<button role="menuitem" id="stautosw" title="I fogli tornano a passare dal dialogo di stampa">Stampa automatica: attiva · Spegni</button>`) : ""}
                     ${this.giroInCorso() ? "" : this.resetArmato() ? `<button role="menuitem" id="resetpaz" class="mrischio">Cancello tutto? Tocca di nuovo</button>`
-                      : `<button role="menuitem" id="resetpaz" title="Pazienti, valori, referti, «Da fare», ordini finiti. Restano stampanti, portale, iPhone e i tuoi modelli">Reset dati pazienti</button>`}
+                      : `<button role="menuitem" id="resetpaz">Reset dati pazienti</button>`}
                     ${(typeof chrome !== "undefined" && chrome.runtime?.id) && !this.giroInCorso() ? `<button role="menuitem" id="extreload" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">Ricarica estensione</button>` : ""}
                     <div class="mver">${esc(APP)} ${VERSION}</div>
                   </div>` : ""}

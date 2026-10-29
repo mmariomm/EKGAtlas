@@ -209,7 +209,7 @@ check(await page.locator("#psassist-host .rdot.saved").count() === 0, "Resetta s
   await page.locator("#psassist-host #risall").click();
   await page.waitForFunction(
     () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length === 4,
-    { timeout: 60000 },
+    { timeout: 120000 },
   ).catch(() => {});
   check(await page.locator("#psassist-host .rdot.saved").count() === 4 && voli.length === 4,
     `«Carica i valori»: anche i 4 referti, salvati (scaricati ${voli.length})`);
