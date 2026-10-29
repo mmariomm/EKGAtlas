@@ -99,11 +99,14 @@ export const BANCO = {
           ] },
       ],
     },
-    // BIANCHI ANNA: le sue pagine salvate hanno già i prelievi; qui solo
-    // l'allergia e due cose da fare
+    // BIANCHI ANNA: le sue pagine salvate hanno già i prelievi; qui
+    // l'allergia, parametri di adesso nella norma e due cose da fare
     "700003": {
       nascita: "01/04/1992", sesso: "F",
       allergie: "FANS (broncospasmo)",
+      vitali: [
+        { min: -40, testo: "GCS: <b>15</b> / FREQUENZA RESPIRATORIA: <b>16</b> / SATURIMETRIA: <b>98</b> / F.C. R. AR.: <b>78</b> / SISTOLICA (MAX): <b>122</b> / DIASTOLICA(min): <b>74</b> / T.C. TIMP/ASC: <b>36.6</b>" },
+      ],
     },
   },
   // «Da fare», alla prima apertura del banco (e dopo ⌫ Azzera): `min` = fra quanto
