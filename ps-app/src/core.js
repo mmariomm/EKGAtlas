@@ -4845,6 +4845,7 @@
     .dfhd { padding: 6px 6px 4px; font-size: 12px; color: #5B6B7A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .dfhd b { color: #16232E; }
     .dfl { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; }
+    .dfl:empty { display: none; }
     .dfi { display: flex; align-items: center; gap: 6px; min-height: 38px; padding: 2px 4px 2px 0; border-radius: 6px; background: #fff; }
     .dfi + .dfi { box-shadow: inset 0 1px 0 #EEF2F6; }
     .dfi.presa { position: relative; z-index: 2; box-shadow: 0 6px 18px rgba(9,42,74,.18); }
@@ -4868,7 +4869,6 @@
              font-size: 11.5px; font-weight: 600; color: #16232E; white-space: nowrap; }
     .dfpiu:hover { border-color: #9DBFDE; }
     .dfpiu:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
-    .dfvuota { padding: 8px 6px; font-size: 12.5px; color: #5B6B7A; }
     .dfadd { position: relative; margin-top: 6px; }
     .dfin { display: block; width: 100%; height: 32px; padding: 0 10px; border: 1px solid #D9E2EC; border-radius: 8px; background: #F8FBFE;
             font-size: 13px; color: #16232E; }
@@ -5025,7 +5025,10 @@
     .stp2 .esst { flex: 0 1 auto; font-size: 11.5px; min-width: 0; white-space: normal; }
     .esst .esp { white-space: nowrap; }
     /* sotto il nome: le allergie e l'Attenzione del gestionale, parola per parola */
-    .idriga { flex: none; display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 0 20px 8px; background: #fff; font-size: 12.5px; line-height: 1.35; }
+    /* una riga sola: un testo lungo finisce coi puntini, e intero nel passaggio del mouse */
+    .idriga { flex: none; display: flex; gap: 14px; padding: 0 20px 8px; background: #fff; font-size: 12.5px; line-height: 1.35; min-width: 0; }
+    .idriga > span { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .idriga > .idall { flex-shrink: 0; max-width: 60%; }
     .idall.ros { color: #B3261E; font-weight: 600; }
     .idall.nl { color: #8A5A00; }
     .idall.nega { color: #5B6B7A; }
@@ -8723,9 +8726,9 @@
       const pezzi = [];
       if (!all) pezzi.push(`<span class="idall nl">Allergie: non lette</span>`);
       else if (all.nega) pezzi.push(`<span class="idall nega" title="Allergie, dal gestionale: Nega/Non riferisce">Allergie: nega</span>`);
-      else if (all.testo) pezzi.push(`<span class="idall ros" title="Allergie, dal gestionale">Allergie: ${esc(all.testo)}</span>`);
+      else if (all.testo) pezzi.push(`<span class="idall ros" title="${esc("Allergie: " + all.testo)}">Allergie: ${esc(all.testo)}</span>`);
       const att = (a && a.attenzione) || [];
-      if (att.length) pezzi.push(`<span class="idatt" title="Attenzione, dal gestionale">Attenzione: ${esc(att.join(" · "))}</span>`);
+      if (att.length) pezzi.push(`<span class="idatt" title="${esc("Attenzione: " + att.join(" · "))}">Attenzione: ${esc(att.join(" · "))}</span>`);
       return pezzi.length ? `<div class="idriga">${pezzi.join("")}</div>` : "";
     }
     // Per le Richieste: esame per esame (il nome del catalogo, identico), le
@@ -8997,7 +9000,7 @@
         <div class="dfhd"><b>Da fare</b>${nome ? `<span> · ${esc(nome)}</span>` : ""}</div>
         <ul class="dfl" aria-label="Voci: Alt+↑ e Alt+↓ le spostano"></ul>
         <div class="dfadd"><input type="text" class="dfin" id="dfin" maxlength="160" autocomplete="off" spellcheck="false" value="${esc(testo)}"
-          placeholder="+ Aggiungi… (con un'ora è un promemoria)" aria-label="Aggiungi: una cosa da fare; con un'ora (11:30 tropo, tra 2h ECG) è un promemoria" aria-describedby="dfhint">
+          placeholder="Aggiungi…" title="Con un'ora (11:30 tropo, tra 2h ECG) è un promemoria" aria-label="Aggiungi: una cosa da fare; con un'ora (11:30 tropo, tra 2h ECG) è un promemoria" aria-describedby="dfhint">
           <span class="dfhint" id="dfhint" aria-live="polite"></span></div>
         <span class="dfsr" aria-live="polite"></span>
       </div>`);
@@ -9077,7 +9080,7 @@
       const d = this._df, ul = d?.pop?.querySelector(".dfl");
       if (!ul || this._dfPresa) return;
       const l = dfDi(d.ep, tutti);
-      const html = l.length ? l.map((x) => this.dfVoce(x, ora)).join("") : `<li class="dfvuota">Niente da fare. Scrivi qui sotto, una cosa per riga.</li>`;
+      const html = l.length ? l.map((x) => this.dfVoce(x, ora)).join("") : "";
       if (ul._firma === html) return;   // niente di cambiato: il fuoco resta dov'è
       // rifatta: il fuoco torna sulla stessa voce, se c'è ancora
       const f = this.root.activeElement?.closest?.(".dfi")?.getAttribute("data-id"), suCk = !!this.root.activeElement?.classList?.contains("dfck");

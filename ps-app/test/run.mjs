@@ -4833,7 +4833,8 @@ async function scenarioPromemoria(browser) {
   await $panel(page, ".dfpop").waitFor();
   check(scen, (await fuocoId()) === "dfin" && /Da fare · ROSSI MARIO/.test(await $panel(page, ".dfhd").innerText()),
     "un tocco apre la lista sotto l'icona, col nome del paziente e il cursore nel campo");
-  check(scen, (await $panel(page, "#dfin").getAttribute("placeholder")) === "+ Aggiungi… (con un'ora è un promemoria)", "il campo su una riga, con l'esempio");
+  check(scen, (await $panel(page, "#dfin").getAttribute("placeholder")) === "Aggiungi…" && (await $panel(page, ".dfl li").count()) === 0,
+    "vuota: solo il campo su una riga, «Aggiungi…», senza frasi");
   await $panel(page, "#dfin").fill("chiamare la figlia");
   await $panel(page, "#dfin").press("Enter");
   // un valore clinico col punto non è un'ora: nessun promemoria, nemmeno nel suggerimento
@@ -6158,6 +6159,15 @@ async function scenarioStatoEsami(browser) {
     `le allergie del gestionale, parola per parola e in rosso (got: ${all})`);
   const att = await testoPanel(page, ".idriga .idatt");
   check(scen, att === "Attenzione: Paziente in terapia anticoagulante · Rischio cadute", `il riquadro Attenzione, com'è (got: ${att})`);
+  // una riga sola, anche quando il testo è lungo: i puntini, e il testo intero nel passaggio del mouse
+  const riga1 = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot, g = r.querySelector(".idriga"), a = r.querySelector(".idriga .idatt");
+    a.textContent = "Attenzione: " + "Paziente in terapia anticoagulante · Rischio cadute · ".repeat(6);
+    const alta = Math.round(g.getBoundingClientRect().height), riga = parseFloat(getComputedStyle(g).lineHeight) || 17;
+    return { alta, riga, taglia: getComputedStyle(a).textOverflow, tit: r.querySelector(".idriga .idall").getAttribute("title") };
+  });
+  check(scen, riga1.alta <= riga1.riga * 1.5 + 10 && riga1.taglia === "ellipsis" && riga1.tit === "Allergie: amoxicillina (orticaria)",
+    `allergie e Attenzione in una riga sola, coi puntini; intere nel passaggio del mouse (${riga1.alta} px · ${riga1.taglia})`);
 
   // 2 · Dimissioni: l'episodio resta in testa, e la riga «Aperti»
   await $panel(page, '[data-seg="dimissioni"]').click();
