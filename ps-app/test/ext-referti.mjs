@@ -171,7 +171,7 @@ check(testaVisore.includes(esamePdf) && testaVisore.includes(quandoPdf) && /ROSS
 if (process.env.PSA_SCREEN) await page.screenshot({ path: process.env.PSA_SCREEN }).catch(() => {});
 check(mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect")).length === before,
   "nessuna richiesta al server all'apertura di un referto salvato");
-await visore.locator("#vchiudi").click();
+await visore.locator("#vchiudi").click({ timeout: 3000 }).catch(() => {});
 await page.waitForTimeout(300);
 check(await visore.count() === 0 && await page.locator('#psassist-host [data-esito][data-kind="referto"]').count() === 4,
   "✕ chiude il visore e si resta negli Esiti");
@@ -231,7 +231,7 @@ check(await page.locator("#psassist-host .rdot.saved").count() === 0, "Resetta s
   await pC.waitForTimeout(5000);
   check(voli.length === dopo, `già salvati: non si riscaricano, qui né in un'altra scheda (got ${voli.length - dopo} in più)`);
   await pC.close();
-  await page.locator("#psassist-host #refreset").click();   // il portale, qui sotto, parte senza copie
+  await page.locator("#psassist-host #refreset").click({ timeout: 3000 }).catch(() => {});   // il portale, qui sotto, parte senza copie
   await page.waitForTimeout(1200);
 }
 
@@ -399,7 +399,7 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   await pAltra.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
   const semina = ([ns, via, resta, scheda]) => {
     const valore = { "quesiti.ts": Date.now(), "quesiti": ["x"], "daConfermare.v1": [], "lastQ": "x", "corsa.aperta.v1": null, "corsa.presidio.v1": null,
-      "stato.v1": { "999": {} } };
+      "stato.v1": { "999": { agg: Date.now() } } };
     for (const k of via) {
       if (k === "patients.v1") { if (localStorage.getItem(ns + k) === null) throw new Error("l'elenco dei pazienti dovrebbe esserci già"); continue; }
       localStorage.setItem(ns + k, JSON.stringify(k in valore ? valore[k] : {}));
@@ -422,11 +422,11 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   }, [VIA_EXT, RESTA_EXT, VIA_SESS, RESTA_SESS]);
 
   await pR.locator("#psassist-host #menubtn").click();
-  await pR.locator("#psassist-host #resetpaz").click();
+  await pR.locator("#psassist-host #resetpaz").click({ timeout: 3000 }).catch(() => {});
   const chiede = await pR.locator("#psassist-host #resetpaz").innerText().catch(() => "");
   const ancora = await pR.evaluate((k) => localStorage.getItem(k), NS + "patients.v1");
   check(/Cancello tutto\? Tocca di nuovo/.test(chiede) && ancora !== null, `un tocco chiede soltanto (got: ${chiede})`);
-  await pR.locator("#psassist-host #resetpaz").click();
+  await pR.locator("#psassist-host #resetpaz").click({ timeout: 3000 }).catch(() => {});
   await pR.waitForSelector("#psassist-host .banner.ok", { timeout: 5000 }).catch(() => {});
   check(/^Fatto/.test(await pR.locator("#psassist-host .banner.ok").innerText().catch(() => "")), "il secondo tocco cancella, e dice «Fatto»");
   await pR.waitForTimeout(800);

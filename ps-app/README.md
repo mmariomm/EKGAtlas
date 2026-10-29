@@ -570,8 +570,9 @@ colonna a destra; stretta (Affianca), prima ECG e Imaging, che sono brevi, poi i
 - **Refertati**: una riga per referto, con data e ora, la prima frase che dice qualcosa
   (le conclusioni, se ci sono) e «nuovo» finché non l'hai aperto. Un tocco apre il **testo lì
   sotto** (un secondo tocco lo richiude), con **⧉ Copia** (ora, esame e paziente in testa, per il
-  diario) e **↗ PDF**; **↗ PDF** c'è anche su ogni riga, a un tocco: la copia salvata se c'è,
-  altrimenti il documento del gestionale. Dell'**ECG** si mostra **solo il referto scritto** del
+  diario) e **↗ PDF**; **↗ PDF** c'è anche su ogni riga, a un tocco: la copia salvata si apre
+  nel **visore** dell'estensione (paziente · esame · data in testa, ✕ o Esc e si torna agli Esiti;
+  mai un referto di un altro paziente), altrimenti il documento del gestionale. Dell'**ECG** si mostra **solo il referto scritto** del
   cardiologo, mai le misure o le frasi della macchina; un tracciato senza referto scritto dice
   «Solo il tracciato della macchina». Gli altri documenti (consulenze…) stanno in **Altri
   documenti**, e si aprono nella loro scheda.
@@ -615,7 +616,8 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   chiude da sola (vedi *Da dove viene la tabella*): lì ci sono **tutti** i valori del laboratorio,
   refertati e no, con una pagina sola. Le finestre Risultati — una richiesta per prelievo — si
   leggono **solo se il portale non si può leggere** (niente estensione, niente link, o non ha
-  risposto: il pannello dice perché).
+  risposto: il pannello dice perché). Poi, con l'estensione, salva i **referti** non ancora salvati
+  (ECG, immagini, visite: mai il laboratorio — vedi *Salvare è una decisione del medico*).
   **solo alterati** / **tutti** filtra le righe; **↺ Reset** dimentica i valori letti e la scheda
   in archivio di questo paziente, e **⭳ Carica i valori** li rilegge da zero (i tuoi segni
   restano).
@@ -665,9 +667,11 @@ o una richiesta in attesa.
   prova il **service worker**; se neanche lui, il pallino è rosso col motivo — e il documento **si
   apre lo stesso, con lo stesso tocco**.
 - **Salvare è una decisione del medico.** Un PDF non si salva **mai** da solo: lo prende un tocco
-  sul referto (il testo è lì sotto, e la copia resta: pallino verde) o **⭳ Salva i referti**, che
-  prende tutti quelli non ancora salvati — **due alla volta al massimo**, gli altri in fila («in
-  fila» sulla loro riga) — e di ognuno legge subito il testo. **Il testo dei PDF già salvati si
+  sul referto (il testo è lì sotto, e la copia resta: pallino verde), **⭳ Salva i referti** o
+  **⭳ Carica i valori** (dopo i valori), che prendono tutti quelli non ancora salvati — ECG,
+  immagini, visite e consulenze, **mai il laboratorio** — **due alla volta al massimo**, con una
+  breve pausa a caso prima di ognuno, gli altri in fila («in fila» sulla loro riga) — e di ognuno
+  legge subito il testo. Quelli già salvati non si riscaricano. **Il testo dei PDF già salvati si
   legge sempre**, appena apri gli Esiti, dalla copia su questo computer: nessuna richiesta.
   **↺** (accanto a «Salva») dimentica le copie e il loro testo. Un referto che non si lascia
   salvare (pallino rosso, il motivo al passaggio del mouse e nel Registro) resta apribile con un
@@ -691,6 +695,14 @@ attivi, oppure **🗑 eliminare** — e eliminare vuol dire *tutto quello che il
 la scheda clinica, i referti tenuti, il testo dei referti letti, «Da fare» e i dati per
 episodio di quella scheda del browser. Chiede conferma una volta e non si torna indietro. L'elenco tiene un
 giorno e sessanta pazienti: un turno è di dodici ore.
+
+**⋯ → Reset dati pazienti** (quando il pannello si incastra): due tocchi («Cancello tutto? Tocca di
+nuovo»), poi «Fatto». Via **tutto** quello che sa dei pazienti e del turno — elenco e posti nella
+stanza, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
+cliniche, ordini finiti, richieste da confermare, quesiti, la memoria di ogni scheda aperta, gli
+ordini che ricorda il Ponte; dei Tempi resta la durata, non il paziente. **Restano**: stampanti e
+stampa automatica, indirizzo del portale, associazione con l'iPhone, fogli di dimissione ed EO,
+la stanza, la finestra. Non c'è mentre un ordine è in corso.
 
 **Il nome viene dal riquadro del paziente**, quello colorato in testa alla scheda (episodio, nome,
 nascita, codice fiscale, motivo): la sua riga più grande. **Non dal titolo della scheda del
@@ -1185,7 +1197,8 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
   → suo endpoint PDF) e a salvare i byte nella memoria dell'estensione, su questa macchina.
   Solo con l'**estensione**: il bookmarklet non può farlo. Se un referto non è
   salvabile resta senza pallino e il **motivo** compare passandoci sopra col mouse (e nel Registro).
-  Scadono in **8 ore**, massimo 25, e si azzerano alla chiusura del browser; **↻ Resetta** subito.
+  Scadono in **8 ore**, massimo 25, e si azzerano alla chiusura del browser; **↺** negli Esiti, o
+  **⋯ → Reset dati pazienti**, subito.
 
 > **Da configurare una volta**: l'host del visualizzatore è dichiarato in
 > `extension/manifest.json` → `host_permissions` (oggi `http://10.11.0.151:9080/*`). Se nella tua
@@ -1444,14 +1457,17 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
     massimo 200 pazienti, e **🗑** su un paziente archiviato le cancella subito — schede, referti
     tenuti, «Da fare». La pagina di login cancella il resto — ma il `sessionStorage` è
     **per scheda**: pulisce la scheda in cui è comparso il login, non le altre schede aperte.
+    **⋯ → Reset dati pazienti** toglie tutto questo in una volta, in tutte le schede aperte.
     Su un PC condiviso: usa un profilo Chrome tuo e chiudi il browser a fine turno.
 15. **Niente parte da solo, e niente si inventa.** Aprire la pagina di un paziente non legge
     **nessun** valore: cliccare un paziente non è chiedere il laboratorio. I valori si leggono
     quando li chiedi — aprendo un prelievo, o con **⭳ Carica i valori** che li prende tutti, uno
     alla volta, insieme allo storico del portale aperto in sottofondo dal link della pagina —
     e un prelievo che ha già fallito non si ritenta da solo. **Un PDF non si salva mai da
-    solo**: lo prende un tocco sul referto o **⭳ Salva i referti** negli Esiti, due alla volta al
-    massimo (gli altri in fila, e la riga in cima dice a che punto è); il testo dei PDF già
+    solo**: lo prende un tocco sul referto, **⭳ Salva i referti** o **⭳ Carica i valori** negli
+    Esiti (mai il laboratorio), due alla volta al massimo con una pausa a caso prima di ognuno (gli
+    altri in fila, e la riga in cima dice a che punto è), dal link del gestionale o dal portale
+    come sempre, col controllo d'identità della regola 18; il testo dei PDF già
     salvati si legge invece sempre, dalla copia su questo computer, senza chiedere niente. E la tabella
     multi-prelievo viene **letta dalla pagina che hai davanti**, non chiesta all'API che la
     riempie — una chiamata diretta a quel servizio arriverebbe senza l'`Origin` della sua app,
@@ -1509,7 +1525,7 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
-> davvero condiviso, non usare **⭳ Salva i referti** né aprire i referti (i PDF resterebbero su disco fino a 8 ore).
+> davvero condiviso, non usare **⭳ Salva i referti** né **⭳ Carica i valori**, né aprire i referti (i PDF resterebbero su disco fino a 8 ore), e a fine turno **⋯ → Reset dati pazienti**.
 
 ---
 
