@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.58.0";
+  const VERSION = "3.59.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -4675,24 +4675,19 @@
     .grande:hover { background: #094a8c; }
     .grande:disabled { background: #7FA6CB; box-shadow: none; cursor: default; }
     .grande:focus-visible { outline: 3px solid #9DBFDE; outline-offset: 2px; }
-    /* Valori e Referti: fianco a fianco quando la FINESTRA è larga (non lo
-       schermo: dentro l'Affianca resta una colonna sola) */
+    /* misurata sulla FINESTRA, non sullo schermo: dentro l'Affianca è stretta */
     .esiti { container: esiti / inline-size; }
-    @container esiti (min-width: 880px) {
-      .esgrid.due { display: grid; grid-template-columns: minmax(0, max-content) minmax(300px, 1fr); column-gap: 28px; align-items: start; }
-      .esgrid.due .stwrap { width: fit-content; max-width: 100%; }
-      .esgrid.due > .sec { min-width: 0; }
-    }
     /* WORKUP (gli Esiti): Lab · ECG · Imaging, ognuno col suo colore sul bordo
        e nel titolo. Il rosso è SOLO dei valori fuori range; l'ambra di ciò che
        aspetta; il blu (l'accento) dei comandi e di «nuovo». */
     .wu { --wu-lab: #0E7468; --wu-ecg: #5B50B8; --wu-img: #8A4A8F; --wu-altri: #5B6B7A;
           --wu-wait: #8A5A00; --wu-wait-bg: #FFF6E0; --wu-new: #0B5CAD; --wu-new-bg: #EAF2FA; --wu-bad: #B3261E; }
-    .wu .esgrid { display: flex; flex-direction: column; }
-    .wu .wucol { order: -1; min-width: 0; }   /* stretto: ECG e Imaging, brevi, prima della tabella */
-    @container esiti (min-width: 880px) {
-      .wu .esgrid.due { display: grid; }
-      .wu .wucol { order: 0; }
+    /* Il Lab sempre per primo, a tutta larghezza; sotto ECG e Imaging, affiancati se c'è posto */
+    .wu .esgrid { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+    .wu .wucol { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; min-width: 0; }
+    @container esiti (min-width: 760px) {
+      .wu .wucol { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+      .wu .wucol > .wualtri { grid-column: 1 / -1; }
     }
     .wusum { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 0 14px; padding: 8px 12px;
              border: 1px solid #E3E8EF; border-radius: 10px; background: #F8FBFE; }
@@ -4710,15 +4705,19 @@
     .wutools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
     .wutools .mini { float: none; }
     .wuprog { font-size: 11.5px; font-weight: 600; color: #35506B; }
-    .wusec { --wu-c: #5B6B7A; border-left: 3px solid var(--wu-c); padding-left: 12px; margin-bottom: 18px; min-width: 0; }
+    /* ogni sezione: il suo colore sul bordo e, appena accennato, sul fondo */
+    .wusec { --wu-c: #5B6B7A; border-left: 3px solid var(--wu-c); border-radius: 0 10px 10px 0; padding: 9px 12px 10px;
+             margin: 0; min-width: 0; background: color-mix(in srgb, var(--wu-c) 5%, #fff); }
+    .wulab .stwrap { width: fit-content; max-width: 100%; background: #fff; }
     .wulab { --wu-c: var(--wu-lab); } .wuecg { --wu-c: var(--wu-ecg); } .wuimg { --wu-c: var(--wu-img); } .wualtri { --wu-c: var(--wu-altri); }
+    .wuh { display: flow-root; }   /* i bottoni a destra restano nella riga del titolo */
     .wuh .wut { color: var(--wu-c); font-weight: 800; }
     .wucnt { color: #8397A8; font-weight: 600; letter-spacing: 0; }
     .wuvuoto { font-size: 12px; color: #8397A8; }
     .wuwaits { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
     .wuwait { display: flex; align-items: baseline; gap: 7px; min-width: 0; font-size: 12px; color: #35506B;
               background: var(--wu-wait-bg); border-radius: 7px; padding: 4px 9px; }
-    .wuwait b { color: var(--wu-wait); font-variant-numeric: tabular-nums; }
+    .wuwait b { flex: none; white-space: nowrap; color: var(--wu-wait); font-variant-numeric: tabular-nums; }
     .wuclock { font-size: 11px; }
     .wuwlab { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .wuwq { flex: 0 0 auto; color: #8397A8; font-size: 11px; }
@@ -4846,6 +4845,7 @@
     .dfhd { padding: 6px 6px 4px; font-size: 12px; color: #5B6B7A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .dfhd b { color: #16232E; }
     .dfl { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; }
+    .dfl:empty { display: none; }
     .dfi { display: flex; align-items: center; gap: 6px; min-height: 38px; padding: 2px 4px 2px 0; border-radius: 6px; background: #fff; }
     .dfi + .dfi { box-shadow: inset 0 1px 0 #EEF2F6; }
     .dfi.presa { position: relative; z-index: 2; box-shadow: 0 6px 18px rgba(9,42,74,.18); }
@@ -4869,7 +4869,6 @@
              font-size: 11.5px; font-weight: 600; color: #16232E; white-space: nowrap; }
     .dfpiu:hover { border-color: #9DBFDE; }
     .dfpiu:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
-    .dfvuota { padding: 8px 6px; font-size: 12.5px; color: #5B6B7A; }
     .dfadd { position: relative; margin-top: 6px; }
     .dfin { display: block; width: 100%; height: 32px; padding: 0 10px; border: 1px solid #D9E2EC; border-radius: 8px; background: #F8FBFE;
             font-size: 13px; color: #16232E; }
@@ -4914,7 +4913,6 @@
     .cpag { flex: 0 0 auto; font-size: 10px; color: #8a4b03; background: #FFF3DB; border-radius: 999px; padding: 1px 7px; font-weight: 700; }
     .linkbtn { border: 0; background: transparent; color: #0B5CAD; font: inherit; font-weight: 700;
                text-decoration: underline; cursor: pointer; padding: 0; }
-    .portok { color: #177245; font-weight: 700; }
 
     /* La tabella scorre dentro la sua cornice, non col pannello: solo così
        l'intestazione (sticky) resta sotto gli occhi con venti analiti. */
@@ -5026,7 +5024,10 @@
     .stp2 .esst { flex: 0 1 auto; font-size: 11.5px; min-width: 0; white-space: normal; }
     .esst .esp { white-space: nowrap; }
     /* sotto il nome: le allergie e l'Attenzione del gestionale, parola per parola */
-    .idriga { flex: none; display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 0 20px 8px; background: #fff; font-size: 12.5px; line-height: 1.35; }
+    /* una riga sola: un testo lungo finisce coi puntini, e intero nel passaggio del mouse */
+    .idriga { flex: none; display: flex; gap: 14px; padding: 0 20px 8px; background: #fff; font-size: 12.5px; line-height: 1.35; min-width: 0; }
+    .idriga > span { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .idriga > .idall { flex-shrink: 0; max-width: 60%; }
     .idall.ros { color: #B3261E; font-weight: 600; }
     .idall.nl { color: #8A5A00; }
     .idall.nega { color: #5B6B7A; }
@@ -6990,6 +6991,7 @@
                     <button role="menuitem" id="dimimport" title="Rimetti i testi di un JSON esportato">Importa i fogli…</button>` : ""}
                     <button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${this.showLog ? "Nascondi il registro" : "Registro"}</button>
                     ${hasExt() ? `<button role="menuitem" id="stampanti" title="Quale stampante è l'etichettatrice e quale l'A4, per la stampa automatica">Stampanti</button>` : ""}
+                    ${hasExt() && !DEMO ? `<button role="menuitem" id="portapri" title="L'indirizzo del portale clinico, se il pannello non compare sulla pagina dello storico">Indirizzo del portale</button>` : ""}
                     ${this.stampaPronta() ? (this.stampaAuto.s.attiva === false
                       ? `<button role="menuitem" id="stautosw" title="Ogni foglio va da solo alla sua stampante, senza dialogo">Stampa automatica: spenta · Accendi</button>`
                       : `<button role="menuitem" id="stautosw" title="I fogli tornano a passare dal dialogo di stampa">Stampa automatica: attiva · Spegni</button>`) : ""}
@@ -7309,7 +7311,7 @@
         </div>`;
       const righe = lista.map(riga).join("");
       if (righe) return `${filtro}<div class="pzcoda" data-drop="tray" role="group" aria-label="In lista, senza un posto: ${lista.length}"><div class="pzvuoto pzfnone" hidden></div>${righe}</div>`;
-      return filtro + (m.pazienti.length ? "" : `<div class="pzvuoto">Nessun paziente ancora: chi apri arriva qui.</div>`);
+      return filtro + (m.pazienti.length ? "" : `<div class="pzvuoto">Nessun paziente.</div>`);
     }
     // in fondo, chiusi: gli archiviati e «Svuota l'elenco» (che si annulla)
     pazArchivio(m) {
@@ -8309,7 +8311,7 @@
       this.storico = null; this.storicoAltri = ""; this.storicoDaConfermare = false;
       this.esiti = esitiModel(document, location.href);   // le righe «già letti» se ne vanno coi loro valori
       this.log(`${now()}  valori azzerati: si rileggono da zero`);
-      this.message = { ok: "Valori dimenticati: ⭳ Carica i valori li rilegge da zero." };
+      this.message = { ok: "Valori dimenticati." };
       this.render();
     }
 
@@ -8393,7 +8395,7 @@
       const rigaAttesa = (x) => `<div class="wuwait" title="${esc(`Chiesto ${x.when || "(ora ignota)"}: ${x.esami.join(", ")}${x.parziale ? " — risultati parziali nella finestra Risultati" : " — non ancora refertato"}`)}">
           <span class="wuclock" aria-hidden="true">⏳</span><b>${esc(attesaDa(x.ts) || x.when || "—")}</b>
           <span class="wuwlab">${esc(x.esami.join(", "))}</span>
-          <span class="wuwq">${x.parziale ? "parziale" : "richiesto"}${x.when ? ` ${esc(x.when.slice(-5))}` : ""}</span>
+          <span class="wuwq">${x.parziale ? "parziale" : "richiesto"}${x.when && attesaDa(x.ts) ? ` ${esc(x.when.slice(-5))}` : ""}</span>
         </div>`;
       const valori = `
         <section class="sec wusec wulab" aria-label="Laboratorio">
@@ -8405,18 +8407,15 @@
           </div>
           ${grande ? `<div class="carica"><button type="button" class="grande" id="risall" ${ra || sotto ? "disabled" : ""} title="${esc(titLeggi)}">${esc(etLeggi)}</button></div>` : ""}
           ${attesaLab.length ? `<div class="wuwaits">${attesaLab.map(rigaAttesa).join("")}</div>` : ""}
-          ${this.notaPortale && !sotto ? `<div class="hint">Storico del portale non letto: ${esc(this.notaPortale)}. ${
-            vivi ? "I prelievi arrivano dalle finestre Risultati." : ""} Si può aprire dal link «Storico Dati Clinici»: si legge da solo.</div>` : ""}
-          ${rotti.length ? `<div class="hint">${rotti.length === 1 ? "Un prelievo non si è lasciato leggere" : `${rotti.length} prelievi non si sono lasciati leggere`} (${
-            esc(rotti.map((e) => e.when).filter(Boolean).join(", "))}): il Registro dice perché, <b>↻ Aggiorna</b> riprova.</div>` : ""}
+          ${this.notaPortale && !sotto ? `<div class="hint" title="Si legge da solo aprendo il link «Storico Dati Clinici»">Storico del portale non letto: ${esc(this.notaPortale)}.</div>` : ""}
+          ${rotti.length ? `<div class="hint" title="Il Registro dice perché">${rotti.length === 1 ? "1 prelievo non letto" : `${rotti.length} prelievi non letti`} (${
+            esc(rotti.map((e) => e.when).filter(Boolean).join(", "))}): <b>↻ Aggiorna</b> riprova.</div>` : ""}
           ${t ? `${this.avvisoNomi(righeTabella(st.righe), st.scartate)}${t.nRighe ? t.html
-            : `<div class="hint">Tutti i valori sono in range: con «solo alterati» non resta niente da mostrare.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
-          ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Con lo storico del portale, letto per <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
-            : this.storicoAltri ? `<div class="hint">Lo storico appena letto dal portale è di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non lo mostro.</div>`
-            : this.storicoDaConfermare ? `<div class="hint">C'è uno storico letto per un paziente con questo nome. Per essere sicuri
-              che sia il suo serve il codice fiscale, che sta nella finestra Risultati: <b>⭳ Carica i valori</b> e comparirà.</div>` : ""}
-          ${this.htmlPortale()}
-          ${!t && !grande && !attesaLab.length && !prelievi.length && !conPortale ? `<div class="wuvuoto">${lab.length ? "I risultati sono nei referti del laboratorio, in fondo." : "Nessun valore."}</div>` : ""}
+            : `<div class="hint">Tutti nel range.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
+          ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Storico del portale di <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
+            : this.storicoAltri ? `<div class="hint">Storico del portale di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non mostrato.</div>`
+            : this.storicoDaConfermare ? `<div class="hint" title="Il codice fiscale sta nella finestra Risultati">Storico del portale con questo nome: serve il codice fiscale, <b>⭳ Carica i valori</b>.</div>` : ""}
+          ${!t && !grande && !attesaLab.length && !prelievi.length && !conPortale ? `<div class="wuvuoto">${lab.length ? "Nei referti del laboratorio, in fondo." : "Nessun valore."}</div>` : ""}
         </section>`;
 
       // ---- ECG e Imaging: i referti, uno per riga; il testo si apre lì sotto
@@ -8505,21 +8504,7 @@
               nRefNuovi ? `${nRefNuovi} ${nRefNuovi === 1 ? "referto non ancora aperto" : "referti non ancora aperti"}` : ""].filter(Boolean).join(" · "))} — un tocco: visti">${nNuovi} ${nNuovi === 1 ? "nuovo" : "nuovi"}</button>` : ""}</div>
           ${strumenti ? `<div class="wutools">${strumenti}</div>` : ""}
         </div>`;
-      return `<div class="esiti wu">${sommario}<div class="esgrid due">${valori}<div class="wucol">${sezione("ecg", "ECG", "wuecg")}${sezione("rx", "Imaging", "wuimg")}${docAltri}</div></div>${docsLab}</div>`;
-    }
-
-    // L'indirizzo del portale clinico. Stava scritto dentro il programma: se
-    // l'ospedale lo cambia, o se è diverso da un presidio all'altro, il
-    // pannello non compare di là e da qui non si può capire perché. Ora lo
-    // aggiunge il medico, una volta: Chrome chiede il permesso per quel sito
-    // e lo script si registra lì.
-    htmlPortale() {
-      if (!hasExt() || DEMO) return "";   // nel banco non c'è un portale da autorizzare
-      // Il permesso lo chiede la pagina delle impostazioni: da qui non si può,
-      // perché Chrome vuole un gesto e il gesto non arriva fin là.
-      return `<div class="hint">Il pannello non compare sulla pagina dello storico?
-        <button class="linkbtn" id="portapri">Aggiungi l'indirizzo del portale</button>${
-        this.portale ? ` <span class="portok">✓ ${esc(this.portale)}</span>` : ""}</div>`;
+      return `<div class="esiti wu">${sommario}<div class="esgrid">${valori}<div class="wucol">${sezione("ecg", "ECG", "wuecg")}${sezione("rx", "Imaging", "wuimg")}${docAltri}</div></div>${docsLab}</div>`;
     }
 
     // The multi-day table: exams down, draws across, newest first. It is read
@@ -8599,8 +8584,13 @@
     // scritta, non solo in un tooltip che su un portatile non si vede.
     piedeStorico(st, legenda) {
       const parz = st.righe.some((r) => r.valori.some((v) => v.parziale));
-      return `${legenda.map((l) => `<div class="hint"><b>${esc(l.segno)}</b> fatto con <b>${esc(l.esame)}</b> (sul valore c'è scritto con cosa gli altri)</div>`).join("")}${
-        parz ? `<div class="hint"><i>In corsivo</i>: valore ancora <b>parziale</b>, il laboratorio non ha finito.</div>` : ""}`;
+      // una riga sola; l'elenco intero degli esami nel passaggio del mouse
+      const pezzi = legenda.map((l) => {
+        const tutti = String(l.esame).split(/,\s*/).filter(Boolean);
+        return `<span title="${esc("fatto con " + l.esame)}"><b>${esc(l.segno)}</b> con ${esc(tutti[0] || l.esame)}${tutti.length > 1 ? ` +${tutti.length - 1}` : ""}</span>`;
+      });
+      if (parz) pezzi.push(`<span title="Il laboratorio non ha finito"><i>corsivo</i>: parziale</span>`);
+      return pezzi.length ? `<div class="hint stleg">${pezzi.join(" · ")}</div>` : "";
     }
 
     // The table read on the portal page comes back through the extension. It
@@ -8724,9 +8714,9 @@
       const pezzi = [];
       if (!all) pezzi.push(`<span class="idall nl">Allergie: non lette</span>`);
       else if (all.nega) pezzi.push(`<span class="idall nega" title="Allergie, dal gestionale: Nega/Non riferisce">Allergie: nega</span>`);
-      else if (all.testo) pezzi.push(`<span class="idall ros" title="Allergie, dal gestionale">Allergie: ${esc(all.testo)}</span>`);
+      else if (all.testo) pezzi.push(`<span class="idall ros" title="${esc("Allergie: " + all.testo)}">Allergie: ${esc(all.testo)}</span>`);
       const att = (a && a.attenzione) || [];
-      if (att.length) pezzi.push(`<span class="idatt" title="Attenzione, dal gestionale">Attenzione: ${esc(att.join(" · "))}</span>`);
+      if (att.length) pezzi.push(`<span class="idatt" title="${esc("Attenzione: " + att.join(" · "))}">Attenzione: ${esc(att.join(" · "))}</span>`);
       return pezzi.length ? `<div class="idriga">${pezzi.join("")}</div>` : "";
     }
     // Per le Richieste: esame per esame (il nome del catalogo, identico), le
@@ -8998,7 +8988,7 @@
         <div class="dfhd"><b>Da fare</b>${nome ? `<span> · ${esc(nome)}</span>` : ""}</div>
         <ul class="dfl" aria-label="Voci: Alt+↑ e Alt+↓ le spostano"></ul>
         <div class="dfadd"><input type="text" class="dfin" id="dfin" maxlength="160" autocomplete="off" spellcheck="false" value="${esc(testo)}"
-          placeholder="+ Aggiungi… (con un'ora è un promemoria)" aria-label="Aggiungi: una cosa da fare; con un'ora (11:30 tropo, tra 2h ECG) è un promemoria" aria-describedby="dfhint">
+          placeholder="Aggiungi…" title="Con un'ora (11:30 tropo, tra 2h ECG) è un promemoria" aria-label="Aggiungi: una cosa da fare; con un'ora (11:30 tropo, tra 2h ECG) è un promemoria" aria-describedby="dfhint">
           <span class="dfhint" id="dfhint" aria-live="polite"></span></div>
         <span class="dfsr" aria-live="polite"></span>
       </div>`);
@@ -9078,7 +9068,7 @@
       const d = this._df, ul = d?.pop?.querySelector(".dfl");
       if (!ul || this._dfPresa) return;
       const l = dfDi(d.ep, tutti);
-      const html = l.length ? l.map((x) => this.dfVoce(x, ora)).join("") : `<li class="dfvuota">Niente da fare. Scrivi qui sotto, una cosa per riga.</li>`;
+      const html = l.length ? l.map((x) => this.dfVoce(x, ora)).join("") : "";
       if (ul._firma === html) return;   // niente di cambiato: il fuoco resta dov'è
       // rifatta: il fuoco torna sulla stessa voce, se c'è ancora
       const f = this.root.activeElement?.closest?.(".dfi")?.getAttribute("data-id"), suCk = !!this.root.activeElement?.classList?.contains("dfck");
@@ -9627,13 +9617,11 @@
       return `
         <div class="sec">
           ${testa}
-          ${d.aggiornato ? `<div class="banner warn">L'originale di questo foglio è stato aggiornato dopo la tua modifica: con ↺ Originale prendi la versione nuova.</div>` : ""}
-          ${!nuovo && (testo !== d.testo || nome !== d.nome) ? `<div class="banner ok">Bozza non salvata, ripresa da dove l'avevi lasciata.</div>` : ""}
+          ${d.aggiornato ? `<div class="banner warn">L'originale è cambiato dopo la tua modifica: ↺ Originale per la versione nuova.</div>` : ""}
+          ${!nuovo && (testo !== d.testo || nome !== d.nome) ? `<div class="banner ok">Bozza non salvata.</div>` : ""}
           <textarea class="dedit" id="dimarea" spellcheck="false" aria-label="Testo del foglio ${esc(nome || "nuovo")}"
-            placeholder="Le indicazioni per chi va a casa: terapia, controlli, quando tornare. Niente dati del paziente: è un modello.">${esc(testo)}</textarea>
-          <div class="hint">${nuovo
-            ? "✓ Salva lo aggiunge ai tuoi fogli, in cima all'elenco. Resta su questo computer (⬇ JSON per portarlo su un altro)."
-            : "Salva tiene questo testo per le prossime volte. Per un foglio su misura per QUESTO paziente, modifica e usa ⧉ Copia senza salvare: qui non vanno dati del paziente."}</div>
+            placeholder="Terapia, controlli, quando tornare">${esc(testo)}</textarea>
+          <div class="hint">Niente dati del paziente: è un modello.</div>
         </div>`;
     }
 
@@ -9756,7 +9744,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
               <button class="mini" id="tavvia">▶ Avvia</button>
             </div>`}
           <div class="lbl" title="Si salva l'istante di inizio, non i secondi passati: ricaricare la pagina o riavviare il browser non cambia il conto. Restano una settimana, su questo computer.">Registrati (${chiusi.length})${chiusi.length ? `<button class="mini" id="texp">⬇ Esporta</button><span class="ttot">totale ${esc(mmss(tot))}</span>` : ""}</div>
-          <div class="tlist">${righe || `<div class="hint">Ancora niente. Avvia un cronometro qui sopra.</div>`}</div>
+          <div class="tlist">${righe}</div>
         </div>`;
     }
 
@@ -9789,7 +9777,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
             </div>`).join("")}
           <div class="lbl" title="Prima l'EO generale, poi l'aggiunta del caso: due incollate. ✎ riscrive un testo per le volte successive (• = riscritto da te). I testi sono uguali per tutti i pazienti: quello che riguarda questo paziente si scrive in cartella.">Aggiungi per caso</div>
           <select class="res" id="eocaso" aria-label="Aggiunta di esame obiettivo da copiare">
-            <option value="">Scegli: si copia da sé…</option>
+            <option value="">Scegli…</option>
             ${opz("casi", "Casi")}
             ${opz("frasi", "Frasi pronte")}
           </select>
@@ -9819,10 +9807,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
             <button class="mini" id="eosave" title="Tieni questo testo per le prossime volte">✓ Salva</button>
             ${v.modificato ? `<button class="mini" id="eoreset" title="Butta le tue modifiche e riprendi l'originale">↺ Originale</button>` : ""}
           </div>
-          ${v.aggiornato ? `<div class="banner warn">L'originale di questo testo è stato aggiornato dopo la tua modifica: con ↺ Originale prendi la versione nuova.</div>` : ""}
-          ${testo !== v.testo ? `<div class="banner ok">Bozza non salvata, ripresa da dove l'avevi lasciata.</div>` : ""}
+          ${v.aggiornato ? `<div class="banner warn">L'originale è cambiato dopo la tua modifica: ↺ Originale per la versione nuova.</div>` : ""}
+          ${testo !== v.testo ? `<div class="banner ok">Bozza non salvata.</div>` : ""}
           <textarea class="dedit" id="eoarea" spellcheck="false" aria-label="Testo di ${esc(v.nome)}">${esc(testo)}</textarea>
-          <div class="hint">Salva tiene questo testo per le prossime volte. Qui non vanno dati del paziente: è un modello.</div>
+          <div class="hint">Niente dati del paziente: è un modello.</div>
         </div>`;
     }
 
@@ -10389,9 +10377,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#apripdf")?.addEventListener("click", () => { if (this.espanso) this.openReferto(this.espanso); });
       this.root.querySelectorAll("[data-pdf]").forEach((b) => b.addEventListener("click", () => this.openReferto(b.getAttribute("data-pdf"))));
       $("#portapri")?.addEventListener("click", async () => {
+        this.menuAperto = false;
         const r = await ask({ t: "apriImpostazioni" }).catch(() => null);
         this.message = r && r.ok
-          ? { ok: "Si è aperta la pagina delle impostazioni: incolla lì l'indirizzo del portale." }
+          ? { ok: "Incolla l'indirizzo del portale nella pagina che si è aperta." }
           : "Non riesco ad aprire le impostazioni: aprile da chrome://extensions → PS Assist → Dettagli → Opzioni.";
         this.render();
       });
