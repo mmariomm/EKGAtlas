@@ -4675,24 +4675,19 @@
     .grande:hover { background: #094a8c; }
     .grande:disabled { background: #7FA6CB; box-shadow: none; cursor: default; }
     .grande:focus-visible { outline: 3px solid #9DBFDE; outline-offset: 2px; }
-    /* Valori e Referti: fianco a fianco quando la FINESTRA è larga (non lo
-       schermo: dentro l'Affianca resta una colonna sola) */
+    /* misurata sulla FINESTRA, non sullo schermo: dentro l'Affianca è stretta */
     .esiti { container: esiti / inline-size; }
-    @container esiti (min-width: 880px) {
-      .esgrid.due { display: grid; grid-template-columns: minmax(0, max-content) minmax(300px, 1fr); column-gap: 28px; align-items: start; }
-      .esgrid.due .stwrap { width: fit-content; max-width: 100%; }
-      .esgrid.due > .sec { min-width: 0; }
-    }
     /* WORKUP (gli Esiti): Lab · ECG · Imaging, ognuno col suo colore sul bordo
        e nel titolo. Il rosso è SOLO dei valori fuori range; l'ambra di ciò che
        aspetta; il blu (l'accento) dei comandi e di «nuovo». */
     .wu { --wu-lab: #0E7468; --wu-ecg: #5B50B8; --wu-img: #8A4A8F; --wu-altri: #5B6B7A;
           --wu-wait: #8A5A00; --wu-wait-bg: #FFF6E0; --wu-new: #0B5CAD; --wu-new-bg: #EAF2FA; --wu-bad: #B3261E; }
-    .wu .esgrid { display: flex; flex-direction: column; }
-    .wu .wucol { order: -1; min-width: 0; }   /* stretto: ECG e Imaging, brevi, prima della tabella */
-    @container esiti (min-width: 880px) {
-      .wu .esgrid.due { display: grid; }
-      .wu .wucol { order: 0; }
+    /* Il Lab sempre per primo, a tutta larghezza; sotto ECG e Imaging, affiancati se c'è posto */
+    .wu .esgrid { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+    .wu .wucol { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; min-width: 0; }
+    @container esiti (min-width: 640px) {
+      .wu .wucol { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+      .wu .wucol > .wualtri { grid-column: 1 / -1; }
     }
     .wusum { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 0 14px; padding: 8px 12px;
              border: 1px solid #E3E8EF; border-radius: 10px; background: #F8FBFE; }
@@ -4710,15 +4705,19 @@
     .wutools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
     .wutools .mini { float: none; }
     .wuprog { font-size: 11.5px; font-weight: 600; color: #35506B; }
-    .wusec { --wu-c: #5B6B7A; border-left: 3px solid var(--wu-c); padding-left: 12px; margin-bottom: 18px; min-width: 0; }
+    /* ogni sezione: il suo colore sul bordo e, appena accennato, sul fondo */
+    .wusec { --wu-c: #5B6B7A; border-left: 3px solid var(--wu-c); border-radius: 0 10px 10px 0; padding: 9px 12px 10px;
+             margin: 0; min-width: 0; background: color-mix(in srgb, var(--wu-c) 5%, #fff); }
+    .wulab .stwrap { width: fit-content; max-width: 100%; background: #fff; }
     .wulab { --wu-c: var(--wu-lab); } .wuecg { --wu-c: var(--wu-ecg); } .wuimg { --wu-c: var(--wu-img); } .wualtri { --wu-c: var(--wu-altri); }
+    .wuh { display: flow-root; }   /* i bottoni a destra restano nella riga del titolo */
     .wuh .wut { color: var(--wu-c); font-weight: 800; }
     .wucnt { color: #8397A8; font-weight: 600; letter-spacing: 0; }
     .wuvuoto { font-size: 12px; color: #8397A8; }
     .wuwaits { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
     .wuwait { display: flex; align-items: baseline; gap: 7px; min-width: 0; font-size: 12px; color: #35506B;
               background: var(--wu-wait-bg); border-radius: 7px; padding: 4px 9px; }
-    .wuwait b { color: var(--wu-wait); font-variant-numeric: tabular-nums; }
+    .wuwait b { flex: none; white-space: nowrap; color: var(--wu-wait); font-variant-numeric: tabular-nums; }
     .wuclock { font-size: 11px; }
     .wuwlab { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .wuwq { flex: 0 0 auto; color: #8397A8; font-size: 11px; }
@@ -8393,7 +8392,7 @@
       const rigaAttesa = (x) => `<div class="wuwait" title="${esc(`Chiesto ${x.when || "(ora ignota)"}: ${x.esami.join(", ")}${x.parziale ? " — risultati parziali nella finestra Risultati" : " — non ancora refertato"}`)}">
           <span class="wuclock" aria-hidden="true">⏳</span><b>${esc(attesaDa(x.ts) || x.when || "—")}</b>
           <span class="wuwlab">${esc(x.esami.join(", "))}</span>
-          <span class="wuwq">${x.parziale ? "parziale" : "richiesto"}${x.when ? ` ${esc(x.when.slice(-5))}` : ""}</span>
+          <span class="wuwq">${x.parziale ? "parziale" : "richiesto"}${x.when && attesaDa(x.ts) ? ` ${esc(x.when.slice(-5))}` : ""}</span>
         </div>`;
       const valori = `
         <section class="sec wusec wulab" aria-label="Laboratorio">
@@ -8505,7 +8504,7 @@
               nRefNuovi ? `${nRefNuovi} ${nRefNuovi === 1 ? "referto non ancora aperto" : "referti non ancora aperti"}` : ""].filter(Boolean).join(" · "))} — un tocco: visti">${nNuovi} ${nNuovi === 1 ? "nuovo" : "nuovi"}</button>` : ""}</div>
           ${strumenti ? `<div class="wutools">${strumenti}</div>` : ""}
         </div>`;
-      return `<div class="esiti wu">${sommario}<div class="esgrid due">${valori}<div class="wucol">${sezione("ecg", "ECG", "wuecg")}${sezione("rx", "Imaging", "wuimg")}${docAltri}</div></div>${docsLab}</div>`;
+      return `<div class="esiti wu">${sommario}<div class="esgrid">${valori}<div class="wucol">${sezione("ecg", "ECG", "wuecg")}${sezione("rx", "Imaging", "wuimg")}${docAltri}</div></div>${docsLab}</div>`;
     }
 
     // L'indirizzo del portale clinico. Stava scritto dentro il programma: se
