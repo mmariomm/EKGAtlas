@@ -305,11 +305,11 @@ const griglia = await page.evaluate(() => {
            larghezza: Math.round(r.querySelector(".card").getBoundingClientRect().width),
            colonna: Math.round(window.innerWidth * 0.39),
            dentroEsiti: !!r.querySelector(".sec .sttab"),
-           chi: (/Con lo storico del portale[^.]*\./.exec(r.textContent.replace(/\s+/g, " ")) || [""])[0],
+           chi: (/Storico del portale di[^.]*\./.exec(r.textContent.replace(/\s+/g, " ")) || [""])[0],
            sotto: [...r.querySelectorAll(".sttab thead th .sth")].map((t) => t.textContent.trim()) };
 });
 check(griglia.dentroEsiti, "tornando sul paziente lo storico è DENTRO gli Esiti, senza una schermata a parte");
-check(/letto per ROSSI MARIO/.test(griglia.chi), `e la schermata dice per chi è stato letto (${griglia.chi.slice(0, 80)})`);
+check(/di ROSSI MARIO/.test(griglia.chi), `e la schermata dice per chi è stato letto (${griglia.chi.slice(0, 80)})`);
 check(griglia.righe === 10 && griglia.rosse === 6, `la tabella con i suoi fuori range (${griglia.righe} righe, ${griglia.rosse} rosse)`);
 check(griglia.sezioni >= 4, `divisa in sezioni (${griglia.sezioni})`);
 // la finestra la decide chi la usa: lo storico non la ridimensiona

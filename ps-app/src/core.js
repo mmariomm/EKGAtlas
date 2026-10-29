@@ -4913,7 +4913,6 @@
     .cpag { flex: 0 0 auto; font-size: 10px; color: #8a4b03; background: #FFF3DB; border-radius: 999px; padding: 1px 7px; font-weight: 700; }
     .linkbtn { border: 0; background: transparent; color: #0B5CAD; font: inherit; font-weight: 700;
                text-decoration: underline; cursor: pointer; padding: 0; }
-    .portok { color: #177245; font-weight: 700; }
 
     /* La tabella scorre dentro la sua cornice, non col pannello: solo così
        l'intestazione (sticky) resta sotto gli occhi con venti analiti. */
@@ -6992,6 +6991,7 @@
                     <button role="menuitem" id="dimimport" title="Rimetti i testi di un JSON esportato">Importa i fogli…</button>` : ""}
                     <button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${this.showLog ? "Nascondi il registro" : "Registro"}</button>
                     ${hasExt() ? `<button role="menuitem" id="stampanti" title="Quale stampante è l'etichettatrice e quale l'A4, per la stampa automatica">Stampanti</button>` : ""}
+                    ${hasExt() && !DEMO ? `<button role="menuitem" id="portapri" title="L'indirizzo del portale clinico, se il pannello non compare sulla pagina dello storico">Indirizzo del portale</button>` : ""}
                     ${this.stampaPronta() ? (this.stampaAuto.s.attiva === false
                       ? `<button role="menuitem" id="stautosw" title="Ogni foglio va da solo alla sua stampante, senza dialogo">Stampa automatica: spenta · Accendi</button>`
                       : `<button role="menuitem" id="stautosw" title="I fogli tornano a passare dal dialogo di stampa">Stampa automatica: attiva · Spegni</button>`) : ""}
@@ -7311,7 +7311,7 @@
         </div>`;
       const righe = lista.map(riga).join("");
       if (righe) return `${filtro}<div class="pzcoda" data-drop="tray" role="group" aria-label="In lista, senza un posto: ${lista.length}"><div class="pzvuoto pzfnone" hidden></div>${righe}</div>`;
-      return filtro + (m.pazienti.length ? "" : `<div class="pzvuoto">Nessun paziente ancora: chi apri arriva qui.</div>`);
+      return filtro + (m.pazienti.length ? "" : `<div class="pzvuoto">Nessun paziente.</div>`);
     }
     // in fondo, chiusi: gli archiviati e «Svuota l'elenco» (che si annulla)
     pazArchivio(m) {
@@ -8311,7 +8311,7 @@
       this.storico = null; this.storicoAltri = ""; this.storicoDaConfermare = false;
       this.esiti = esitiModel(document, location.href);   // le righe «già letti» se ne vanno coi loro valori
       this.log(`${now()}  valori azzerati: si rileggono da zero`);
-      this.message = { ok: "Valori dimenticati: ⭳ Carica i valori li rilegge da zero." };
+      this.message = { ok: "Valori dimenticati." };
       this.render();
     }
 
@@ -8407,18 +8407,15 @@
           </div>
           ${grande ? `<div class="carica"><button type="button" class="grande" id="risall" ${ra || sotto ? "disabled" : ""} title="${esc(titLeggi)}">${esc(etLeggi)}</button></div>` : ""}
           ${attesaLab.length ? `<div class="wuwaits">${attesaLab.map(rigaAttesa).join("")}</div>` : ""}
-          ${this.notaPortale && !sotto ? `<div class="hint">Storico del portale non letto: ${esc(this.notaPortale)}. ${
-            vivi ? "I prelievi arrivano dalle finestre Risultati." : ""} Si può aprire dal link «Storico Dati Clinici»: si legge da solo.</div>` : ""}
-          ${rotti.length ? `<div class="hint">${rotti.length === 1 ? "Un prelievo non si è lasciato leggere" : `${rotti.length} prelievi non si sono lasciati leggere`} (${
-            esc(rotti.map((e) => e.when).filter(Boolean).join(", "))}): il Registro dice perché, <b>↻ Aggiorna</b> riprova.</div>` : ""}
+          ${this.notaPortale && !sotto ? `<div class="hint" title="Si legge da solo aprendo il link «Storico Dati Clinici»">Storico del portale non letto: ${esc(this.notaPortale)}.</div>` : ""}
+          ${rotti.length ? `<div class="hint" title="Il Registro dice perché">${rotti.length === 1 ? "1 prelievo non letto" : `${rotti.length} prelievi non letti`} (${
+            esc(rotti.map((e) => e.when).filter(Boolean).join(", "))}): <b>↻ Aggiorna</b> riprova.</div>` : ""}
           ${t ? `${this.avvisoNomi(righeTabella(st.righe), st.scartate)}${t.nRighe ? t.html
-            : `<div class="hint">Tutti i valori sono in range: con «solo alterati» non resta niente da mostrare.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
-          ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Con lo storico del portale, letto per <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
-            : this.storicoAltri ? `<div class="hint">Lo storico appena letto dal portale è di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non lo mostro.</div>`
-            : this.storicoDaConfermare ? `<div class="hint">C'è uno storico letto per un paziente con questo nome. Per essere sicuri
-              che sia il suo serve il codice fiscale, che sta nella finestra Risultati: <b>⭳ Carica i valori</b> e comparirà.</div>` : ""}
-          ${this.htmlPortale()}
-          ${!t && !grande && !attesaLab.length && !prelievi.length && !conPortale ? `<div class="wuvuoto">${lab.length ? "I risultati sono nei referti del laboratorio, in fondo." : "Nessun valore."}</div>` : ""}
+            : `<div class="hint">Tutti nel range.</div>`}${this.piedeStorico(st, t.legenda)}` : ""}
+          ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Storico del portale di <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
+            : this.storicoAltri ? `<div class="hint">Storico del portale di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non mostrato.</div>`
+            : this.storicoDaConfermare ? `<div class="hint" title="Il codice fiscale sta nella finestra Risultati">Storico del portale con questo nome: serve il codice fiscale, <b>⭳ Carica i valori</b>.</div>` : ""}
+          ${!t && !grande && !attesaLab.length && !prelievi.length && !conPortale ? `<div class="wuvuoto">${lab.length ? "Nei referti del laboratorio, in fondo." : "Nessun valore."}</div>` : ""}
         </section>`;
 
       // ---- ECG e Imaging: i referti, uno per riga; il testo si apre lì sotto
@@ -8510,20 +8507,6 @@
       return `<div class="esiti wu">${sommario}<div class="esgrid">${valori}<div class="wucol">${sezione("ecg", "ECG", "wuecg")}${sezione("rx", "Imaging", "wuimg")}${docAltri}</div></div>${docsLab}</div>`;
     }
 
-    // L'indirizzo del portale clinico. Stava scritto dentro il programma: se
-    // l'ospedale lo cambia, o se è diverso da un presidio all'altro, il
-    // pannello non compare di là e da qui non si può capire perché. Ora lo
-    // aggiunge il medico, una volta: Chrome chiede il permesso per quel sito
-    // e lo script si registra lì.
-    htmlPortale() {
-      if (!hasExt() || DEMO) return "";   // nel banco non c'è un portale da autorizzare
-      // Il permesso lo chiede la pagina delle impostazioni: da qui non si può,
-      // perché Chrome vuole un gesto e il gesto non arriva fin là.
-      return `<div class="hint">Il pannello non compare sulla pagina dello storico?
-        <button class="linkbtn" id="portapri">Aggiungi l'indirizzo del portale</button>${
-        this.portale ? ` <span class="portok">✓ ${esc(this.portale)}</span>` : ""}</div>`;
-    }
-
     // The multi-day table: exams down, draws across, newest first. It is read
     // from the portal page, never asked to the server.
     // UNA sola tabella, per il pannello e per il testo copiato: due
@@ -8601,8 +8584,13 @@
     // scritta, non solo in un tooltip che su un portatile non si vede.
     piedeStorico(st, legenda) {
       const parz = st.righe.some((r) => r.valori.some((v) => v.parziale));
-      return `${legenda.map((l) => `<div class="hint"><b>${esc(l.segno)}</b> fatto con <b>${esc(l.esame)}</b> (sul valore c'è scritto con cosa gli altri)</div>`).join("")}${
-        parz ? `<div class="hint"><i>In corsivo</i>: valore ancora <b>parziale</b>, il laboratorio non ha finito.</div>` : ""}`;
+      // una riga sola; l'elenco intero degli esami nel passaggio del mouse
+      const pezzi = legenda.map((l) => {
+        const tutti = String(l.esame).split(/,\s*/).filter(Boolean);
+        return `<span title="${esc("fatto con " + l.esame)}"><b>${esc(l.segno)}</b> con ${esc(tutti[0] || l.esame)}${tutti.length > 1 ? ` +${tutti.length - 1}` : ""}</span>`;
+      });
+      if (parz) pezzi.push(`<span title="Il laboratorio non ha finito"><i>corsivo</i>: parziale</span>`);
+      return pezzi.length ? `<div class="hint stleg">${pezzi.join(" · ")}</div>` : "";
     }
 
     // The table read on the portal page comes back through the extension. It
@@ -9629,13 +9617,11 @@
       return `
         <div class="sec">
           ${testa}
-          ${d.aggiornato ? `<div class="banner warn">L'originale di questo foglio è stato aggiornato dopo la tua modifica: con ↺ Originale prendi la versione nuova.</div>` : ""}
-          ${!nuovo && (testo !== d.testo || nome !== d.nome) ? `<div class="banner ok">Bozza non salvata, ripresa da dove l'avevi lasciata.</div>` : ""}
+          ${d.aggiornato ? `<div class="banner warn">L'originale è cambiato dopo la tua modifica: ↺ Originale per la versione nuova.</div>` : ""}
+          ${!nuovo && (testo !== d.testo || nome !== d.nome) ? `<div class="banner ok">Bozza non salvata.</div>` : ""}
           <textarea class="dedit" id="dimarea" spellcheck="false" aria-label="Testo del foglio ${esc(nome || "nuovo")}"
-            placeholder="Le indicazioni per chi va a casa: terapia, controlli, quando tornare. Niente dati del paziente: è un modello.">${esc(testo)}</textarea>
-          <div class="hint">${nuovo
-            ? "✓ Salva lo aggiunge ai tuoi fogli, in cima all'elenco. Resta su questo computer (⬇ JSON per portarlo su un altro)."
-            : "Salva tiene questo testo per le prossime volte. Per un foglio su misura per QUESTO paziente, modifica e usa ⧉ Copia senza salvare: qui non vanno dati del paziente."}</div>
+            placeholder="Terapia, controlli, quando tornare">${esc(testo)}</textarea>
+          <div class="hint">Niente dati del paziente: è un modello.</div>
         </div>`;
     }
 
@@ -9758,7 +9744,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
               <button class="mini" id="tavvia">▶ Avvia</button>
             </div>`}
           <div class="lbl" title="Si salva l'istante di inizio, non i secondi passati: ricaricare la pagina o riavviare il browser non cambia il conto. Restano una settimana, su questo computer.">Registrati (${chiusi.length})${chiusi.length ? `<button class="mini" id="texp">⬇ Esporta</button><span class="ttot">totale ${esc(mmss(tot))}</span>` : ""}</div>
-          <div class="tlist">${righe || `<div class="hint">Ancora niente. Avvia un cronometro qui sopra.</div>`}</div>
+          <div class="tlist">${righe}</div>
         </div>`;
     }
 
@@ -9791,7 +9777,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
             </div>`).join("")}
           <div class="lbl" title="Prima l'EO generale, poi l'aggiunta del caso: due incollate. ✎ riscrive un testo per le volte successive (• = riscritto da te). I testi sono uguali per tutti i pazienti: quello che riguarda questo paziente si scrive in cartella.">Aggiungi per caso</div>
           <select class="res" id="eocaso" aria-label="Aggiunta di esame obiettivo da copiare">
-            <option value="">Scegli: si copia da sé…</option>
+            <option value="">Scegli…</option>
             ${opz("casi", "Casi")}
             ${opz("frasi", "Frasi pronte")}
           </select>
@@ -9821,10 +9807,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
             <button class="mini" id="eosave" title="Tieni questo testo per le prossime volte">✓ Salva</button>
             ${v.modificato ? `<button class="mini" id="eoreset" title="Butta le tue modifiche e riprendi l'originale">↺ Originale</button>` : ""}
           </div>
-          ${v.aggiornato ? `<div class="banner warn">L'originale di questo testo è stato aggiornato dopo la tua modifica: con ↺ Originale prendi la versione nuova.</div>` : ""}
-          ${testo !== v.testo ? `<div class="banner ok">Bozza non salvata, ripresa da dove l'avevi lasciata.</div>` : ""}
+          ${v.aggiornato ? `<div class="banner warn">L'originale è cambiato dopo la tua modifica: ↺ Originale per la versione nuova.</div>` : ""}
+          ${testo !== v.testo ? `<div class="banner ok">Bozza non salvata.</div>` : ""}
           <textarea class="dedit" id="eoarea" spellcheck="false" aria-label="Testo di ${esc(v.nome)}">${esc(testo)}</textarea>
-          <div class="hint">Salva tiene questo testo per le prossime volte. Qui non vanno dati del paziente: è un modello.</div>
+          <div class="hint">Niente dati del paziente: è un modello.</div>
         </div>`;
     }
 
@@ -10391,9 +10377,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#apripdf")?.addEventListener("click", () => { if (this.espanso) this.openReferto(this.espanso); });
       this.root.querySelectorAll("[data-pdf]").forEach((b) => b.addEventListener("click", () => this.openReferto(b.getAttribute("data-pdf"))));
       $("#portapri")?.addEventListener("click", async () => {
+        this.menuAperto = false;
         const r = await ask({ t: "apriImpostazioni" }).catch(() => null);
         this.message = r && r.ok
-          ? { ok: "Si è aperta la pagina delle impostazioni: incolla lì l'indirizzo del portale." }
+          ? { ok: "Incolla l'indirizzo del portale nella pagina che si è aperta." }
           : "Non riesco ad aprire le impostazioni: aprile da chrome://extensions → PS Assist → Dettagli → Opzioni.";
         this.render();
       });

@@ -104,7 +104,7 @@ const tab = await paziente.evaluate(() => {
     // la provenienza: il segno sulla cella e la riga che lo spiega
     segni: r.querySelectorAll(".sttab .prov").length,
     legenda: [...r.querySelectorAll(".hint")].map((h) => h.textContent.replace(/\s+/g, " ").trim())
-      .filter((t) => /^\* fatto con/.test(t)),
+      .filter((t) => /^\* con /.test(t)),
   };
 });
 // dieci analiti dal portale + quelli letti dalla finestra Risultati del
@@ -126,7 +126,7 @@ check(tab.sezioni.includes("Emocromo") && tab.sezioni.includes("Organi"),
 const parz = await paziente.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
   return { celle: r.querySelectorAll(".sttab td.parz").length,
-           nota: /ancora parziale/.test(r.textContent) };
+           nota: /corsivo: parziale/.test(r.textContent) };
 });
 check(parz.celle >= 1 && parz.nota, `i valori parziali sono marcati e spiegati (got ${parz.celle} celle)`);
 check(chiamatePortale === 1, "e nessuna richiesta in più al portale per mostrarla");
@@ -189,7 +189,7 @@ const suoi = await paziente.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
   return { testo: r.querySelector(".sttab").textContent.replace(/\s+/g, " "),
            hint: [...r.querySelectorAll(".sec .hint")].map((h) => h.textContent.replace(/\s+/g, " ").trim())
-             .find((t) => /Con lo storico del portale/.test(t)) || "" };
+             .find((t) => /Storico del portale di/.test(t)) || "" };
 });
 check(!/1\.1|1\.2|1\.3/.test(suoi.testo),
   `i valori dell'omonimo col codice fiscale diverso non compaiono (got: ${suoi.testo.slice(0, 60)})`);
@@ -214,7 +214,7 @@ const senza = await paziente.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
   return { colonne: r.querySelectorAll(".sttab thead th").length - 1,
            testo: r.querySelector(".sttab")?.textContent?.replace(/\s+/g, " ") || "",
-           avviso: (/Lo storico appena letto[^.]{0,80}/.exec(r.textContent.replace(/\s+/g, " ")) || [""])[0] };
+           avviso: (/Storico del portale di [^.]{0,80}/.exec(r.textContent.replace(/\s+/g, " ")) || [""])[0] };
 });
 check(!/10\.4|11\.8|13\.2/.test(senza.testo) && senza.colonne <= 2,
   `di un paziente senza scheda non si mostrano i valori di un altro (got ${senza.colonne} colonne: ${senza.testo.slice(0, 60)})`);
@@ -274,8 +274,11 @@ await paziente.keyboard.press("Escape");   // la stampa del consenso è ancora a
 await paziente.waitForTimeout(300);
 await paziente.locator('#psassist-host [data-seg="esiti"]').click();
 await paziente.waitForTimeout(400);
-check((await paziente.locator("#psassist-host #portapri").count()) === 1,
-  "negli Esiti c'è come aggiungere l'indirizzo del portale");
+// un'impostazione rara: sta nel menu ⋯, non negli Esiti di tutti i giorni
+check((await paziente.locator("#psassist-host #portapri").count()) === 0, "negli Esiti nessuna riga sull'indirizzo del portale");
+await paziente.locator("#psassist-host #menubtn").click();
+check((await paziente.locator("#psassist-host .menu #portapri").count()) === 1,
+  "l'indirizzo del portale si aggiunge dal menu ⋯");
 // Il permesso NON si può chiedere da qui: chrome.permissions.request vuole un
 // gesto dell'utente, e un gesto non sopravvive al salto verso il service
 // worker. Il pulsante apre la pagina delle impostazioni, dove il gesto è vero.

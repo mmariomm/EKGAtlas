@@ -676,7 +676,7 @@
       <ul>
         <li>Lista PS → apri un assistito → il pannello parte su <b>Richieste</b>.</li>
         <li>Quesito, profili, esami, «Conferma e stampa» (o «solo carrello»): la richiesta si crea e gli esami finiscono nel carrello della pagina vera.</li>
-        <li><b>Esiti</b>: valori dentro il pannello, anteprima a due righe, referti in una finta scheda, «Salva referti» e pallini verdi.</li>
+        <li><b>Esiti</b>: ROSSI MARIO ha valori, attese, ECG e RX col testo e un referto di un altro paziente.</li>
         <li>I collegamenti del gestionale portano alle altre pagine salvate.</li>
       </ul>
       <h3>Cosa no, di proposito</h3>
