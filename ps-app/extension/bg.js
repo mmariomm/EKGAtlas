@@ -553,6 +553,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     }).catch(() => reply({ ok: false }));
     return true;
   }
+
+  // «Reset dati pazienti» (⋯): schede cliniche, referti salvati, schede dietro
+  // finite, chi aprì lo storico, ordini finiti e quello che il ponte ne
+  // ricorda. Restano stampanti, portale, associazione col telefono, e un
+  // ordine che non ha finito.
+  if (msg.t === "resetPazienti") {
+    (async () => {
+      await inFila(async () => {
+        const all = await chrome.storage.local.get(null);
+        await chrome.storage.local.remove(Object.keys(all).filter((k) => k === ARCH || k.startsWith("ref:")));
+      });
+      const s = await chrome.storage.session.get(null);
+      await chrome.storage.session.remove(Object.keys(s).filter((k) => k === "apertura" || (k.startsWith("sotto:") && !inCorso(s[k]))));
+      const p = s["ponte.ordini"];
+      if (Array.isArray(p)) await chrome.storage.session.set({ "ponte.ordini": p.filter((m) => m && !m.fine) });
+      await inFilaOrd(async () => {
+        const l = await ordLeggi();
+        const aperto = new Set(["coda", "avvio", "corre", "stampo", "stampa"]);
+        for (const rec of l.filter((x) => !aperto.has(x.stato))) await togli(l, rec);
+        await ordScrivi(l);
+      });
+      reply({ ok: true });
+    })().catch(() => reply({ ok: false }));
+    return true;
+  }
 });
 
 // ---------------------------------------------------------------------------
