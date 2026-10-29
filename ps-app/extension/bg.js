@@ -239,6 +239,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
 
+  // un referto la cui copia si è rivelata di un altro paziente: via, solo quello
+  if (msg.t === "delRef") {
+    chrome.storage.local.get(KEY(msg.id)).then(async (o) => {
+      const hit = o[KEY(msg.id)];
+      if (hit && String(msg.ep || "") === String(hit.ep || "")) await chrome.storage.local.remove(KEY(msg.id));
+      reply({ ok: true });
+    }).catch(() => reply({ ok: false }));
+    return true;
+  }
+
   if (msg.t === "listRef") {
     prune().then(() => chrome.storage.local.get(null)).then((all) => {
       const want = Array.isArray(msg.ids) ? new Set(msg.ids) : null;
@@ -287,7 +297,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     // condiviso «apertura» non si tocca — è quello del clic del medico, e una
     // scheda del portale aperta a mano deve continuare a trovarci il suo.
     sottoGet(_sender.tab && _sender.tab.id).then(async (s) => {
-      if (s) return reply({ ok: true, ep: s.ep, nome: s.nome, ts: s.ts, sotto: true, cosa: s.cosa || "storico" });
+      // (per un referto, anche con chi confrontarlo e cosa si è chiesto: la
+      // scheda del portale tiene il PDF di QUESTO paziente, non il primo che vede)
+      if (s) return reply({ ok: true, ep: s.ep, nome: s.nome, ts: s.ts, sotto: true, cosa: s.cosa || "storico",
+        ...(s.cosa === "referto" ? { cfImp: s.cfImp || "", nascita: s.nascita || "", titolo: s.titolo || "" } : {}) });
       const a = (await chrome.storage.session.get("apertura")).apertura;
       reply(a && Date.now() - (a.ts || 0) < 20 * 60e3 ? { ok: true, ...a } : { ok: false });
     }).catch(() => reply({ ok: false }));
@@ -349,7 +362,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       const t = await chrome.tabs.create({ ...vuota, openerTabId: da.id, index: da.index + 1, windowId: da.windowId })
         .catch(() => chrome.tabs.create(vuota));
       await sottoSet(t.id, { opener: da.id, cosa: "referto", id, ep: String(msg.ep || ""), pk: String(msg.pk || ""),
-        nome: "", ts: Date.now(), esito: "attesa" });
+        nome: String(msg.nome || "").slice(0, 60), cfImp: String(msg.cfImp || "").slice(0, 16),
+        nascita: String(msg.nascita || "").slice(0, 10), titolo: String(msg.titolo || "").slice(0, 80),
+        ts: Date.now(), esito: "attesa" });
       await chrome.tabs.update(t.id, { url: u.href });
       setTimeout(() => sottoControlla().catch(() => {}), SOTTO_MAX + 500);
       reply({ ok: true, tabId: t.id });
@@ -377,7 +392,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     sottoGet(tid).then(async (s) => {
       if (!inCorso(s) || s.cosa !== "referto") return reply({ ok: false });
       await sottoSet(tid, { ...s, diag: String(msg.diag || "").slice(0, 700) });
-      await sottoFine(tid, "nonTrovato");
+      // «altro»: il portale ha mostrato solo PDF di un altro paziente, e nessuno si tiene
+      await sottoFine(tid, msg.esito === "altro" ? "altro" : "nonTrovato");
       reply({ ok: true });
     }).catch(() => reply({ ok: false }));
     return true;

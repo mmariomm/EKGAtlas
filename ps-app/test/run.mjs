@@ -9,6 +9,7 @@
  */
 import { chromium } from "playwright";
 import { createMock, RES, OSG } from "./sa4pso-mock.mjs";
+import { pdfSemplice, RIGHE_ECG, RIGHE_ALTRO } from "./pdf-difficili.mjs";
 import { readFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -3199,12 +3200,13 @@ async function scenarioReferti(browser) {
     && /Laboratorio \(1\)/i.test(await gruppo.locator("summary").innerText())
     && /EMOCROMOCITOMETRICO/.test(await gruppo.locator("[data-esito]").evaluate((e) => e.textContent)),   // chiuso: innerText è vuoto
     "senza tabella dei valori il referto di laboratorio resta, chiuso sotto «Laboratorio (1)»");
-  check(scen, /referti \(2\)/i.test(await $panel(page, ".sec .lbl:has-text('Referti')").innerText()), "l'intestazione conta solo quelli mostrati");
-  // il più recente in cima
-  const consulenza = () => page.locator('#psassist-host [data-esito][data-kind="referto"]').nth(0);
-  check(scen, /22\/08 07:45/.test(rows[0]) && /EMOGASANALISI/.test(rows[0]), `più recente in cima (got: ${rows[0]?.replace(/\s+/g, " ").slice(0, 40)})`);
-  check(scen, /TC ENCEFALO/.test(rows[1]), "e sotto la TC");
-  check(scen, /↗/.test(rows[0]), "il referto dichiara che si apre in una scheda");
+  // ognuno nella sua sezione: la TC in Imaging, la consulenza in «Altri documenti»
+  check(scen, /imaging \(1\)/i.test(await $panel(page, ".wuimg .lbl").innerText())
+    && /altri documenti \(1\)/i.test(await $panel(page, ".wualtri .lbl").innerText()), "ogni sezione conta i suoi");
+  const consulenza = () => page.locator('#psassist-host .wualtri [data-esito][data-kind="referto"]').first();
+  check(scen, /TC ENCEFALO/.test(rows[0]) && /22\/08 07:45/.test(rows[1]) && /EMOGASANALISI/.test(rows[1]),
+    `la TC in Imaging, la consulenza negli altri documenti (got: ${rows.map((t) => t.replace(/\s+/g, " ").slice(0, 30)).join(" · ")})`);
+  check(scen, /↗/.test(rows[1]), "il documento senza testo dichiara che si apre in una scheda");
   check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "nessuno ancora aperto");
 
   const [popup] = await Promise.all([
@@ -3554,7 +3556,7 @@ async function scenarioRisultati(browser) {
   await $panel(page, "#risall").click();
   await attendiTabella(page, 2);
   const lbl = (await $panel(page, ".sec .lbl").first().innerText()).replace(/\s+/g, " ");
-  check(scen, /valori \(4 esami · 2 prelievi\)/i.test(lbl), `l'intestazione conta esami e prelievi (got: ${lbl.slice(0, 40)})`);
+  check(scen, /lab \(4 esami · 2 prelievi\)/i.test(lbl), `l'intestazione conta esami e prelievi (got: ${lbl.slice(0, 40)})`);
 
   const tab = await page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot;
@@ -4566,7 +4568,7 @@ async function scenarioNuoviValori(browser) {
   await attendiTabella(page, 2);
   check(scen, (await page.locator("#psassist-host .sttab td.nuovo, #psassist-host .sttab td.agg").count()) === 0,
     "alla prima lettura nulla è «nuovo»: quella lettura È il riferimento");
-  check(scen, (await page.locator("#psassist-host .newbar").count()) === 0, "e non c'è niente da annunciare");
+  check(scen, !/valor/.test(await $panel(page, "#letto").getAttribute("title").catch(() => "")), "e non c'è niente da annunciare sui valori");
 
   // the laboratory completes the panel: one value moves, one analyte appears
   mock.state.hbNuova = "92";
@@ -4577,8 +4579,9 @@ async function scenarioNuoviValori(browser) {
     { timeout: 20000 },
   );
   await attendiTabella(page, 2, 20000);
-  check(scen, /2 valori nuovi dall'ultima lettura/.test(await $panel(page, ".newbar").innerText()),
-    "la striscia annuncia quanti sono");
+  check(scen, /2 valori nuovi dall'ultima lettura/.test(await $panel(page, "#letto").getAttribute("title"))
+    && /^3 nuovi$/.test((await $panel(page, ".wusum #letto").innerText()).trim()),
+    "la riga in cima annuncia quanti sono (2 valori e il referto non ancora aperto)");
   const marcate = await page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot;
     const sigla = (td) => td.closest("tr").cells[0].firstChild.textContent.trim();
@@ -4609,7 +4612,7 @@ async function scenarioNuoviValori(browser) {
   await page.waitForTimeout(300);
   check(scen, (await page.locator("#psassist-host .sttab td.nuovo, #psassist-host .sttab td.agg").count()) === 0,
     "«Letto» spegne i marchi: sono stati visti");
-  check(scen, (await page.locator("#psassist-host .newbar").count()) === 0, "e la striscia sparisce con loro");
+  check(scen, (await page.locator("#psassist-host #letto").count()) === 0, "e il «nuovi» sparisce con loro");
   check(scen, (await page.locator("#psassist-host .sttab tbody tr:not(.stsez)").count()) === 5,
     "i valori restano tutti in tabella: si spegne il marchio, non la riga");
   await $panel(page, "#back").click();
@@ -4629,9 +4632,9 @@ async function scenarioRefertoTesto(browser) {
 
   // the radiology row announces it opens INSIDE the panel, the other one does not
   const rx = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "TC ENCEFALO" });
-  check(scen, /›/.test(await rx.innerText()), "il referto RIS si apre nel pannello");
+  check(scen, /▸/.test(await rx.innerText()), "il referto RIS si apre nel pannello, lì sotto");
   const altro = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "EMOGASANALISI" });
-  check(scen, /Apri referto/.test(await altro.innerText()), "gli altri restano documenti da aprire");
+  check(scen, /↗/.test(await altro.innerText()) && !/▸/.test(await altro.innerText()), "gli altri restano documenti da aprire");
   check(scen, !(await page.locator("#psassist-host .sec:not(.reflab) .rrow .rsys").allInnerTexts()).some((t) => /\bLIS\b/.test(t)),
     "nessun referto di laboratorio (LIS) fra gli altri: sta nel suo gruppo");
 
@@ -4646,7 +4649,10 @@ async function scenarioRefertoTesto(browser) {
   await $panel(page, "#copytxt").click();
   await page.waitForTimeout(250);
   const clip = await page.evaluate(() => navigator.clipboard.readText());
-  check(scen, /Ombra cardiaca nei limiti/.test(clip), "si copia per il diario");
+  check(scen, /Ombra cardiaca nei limiti/.test(clip) && /^\d\d\/\d\d \d\d:\d\d · TC ENCEFALO · ROSSI MARIO\n/.test(clip),
+    `si copia per il diario, con ora, esame e paziente (got: ${clip.split("\n")[0]})`);
+  check(scen, /intestazione non verificata/.test(await $panel(page, ".wuitem.aperto").innerText()),
+    "un referto senza codice fiscale né nome e data di nascita si mostra, ma «intestazione non verificata»");
 
   // and the PDF is always one tap away
   const [popup] = await Promise.all([
@@ -4654,9 +4660,10 @@ async function scenarioRefertoTesto(browser) {
     $panel(page, "#apripdf").click(),
   ]);
   check(scen, !!popup, "il PDF resta a un tocco di distanza");
-  await $panel(page, "#back").click();
-  await page.waitForSelector("#psassist-host [data-esito]", { timeout: 8000 });
-  check(scen, (await page.locator("#psassist-host [data-esito]").count()) > 0, "‹ torna agli esiti");
+  await rx.click();
+  await page.waitForTimeout(200);
+  check(scen, (await page.locator("#psassist-host .reftxt").count()) === 0 && (await page.locator("#psassist-host [data-esito]").count()) > 0,
+    "un secondo tocco lo richiude: si resta negli esiti");
   await context.close();
 }
 
@@ -5770,6 +5777,108 @@ async function scenarioFinestraLarga(browser) {
 // Esiti: i Referti accanto ai Valori quando la finestra è larga (misurata sul
 // contenitore, non sullo schermo), sotto quando è stretta. Il bottone grande,
 // le spiegazioni nei tooltip, niente numero sulla scheda, l'unità per esteso.
+// Il Workup (gli Esiti): in cima una riga coi valori fuori range per primi e
+// quanti sono nuovi; sotto tre sezioni distinte — Lab, ECG, Imaging — ognuna
+// con le sue cose in attesa (da quanto) e i suoi referti; ogni referto ha il
+// suo «↗ PDF» a un tocco, e il testo si apre lì sotto.
+async function scenarioWorkup(browser) {
+  const scen = "workup";
+  // un'ora e venti fa, scritta come la scrive il gestionale
+  const d = new Date(Date.now() - 80 * 60e3);
+  const p2 = (n) => String(n).padStart(2, "0");
+  const fa80 = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:00.0`;
+  const rich = (icona, desc) => `<tr id="RICH"><td class="AFCDataTD"><a class="myButtonList" href="#"><img title="${icona}" src="x.png"></a></td>
+    <td class="AFCDataTD">controllo</td><td class="AFCDataTD" title="${desc}">${desc}<input type="hidden" name="TIPO" value="RICH">
+    <input type="hidden" name="DATA_ORD" value="${fa80}"><input type="hidden" name="DESCRIZIONE_TITLE" value="${desc}"></td></tr>`;
+  // due referti in più: un ECG (in orizzontale, testo ruotato, col codice
+  // fiscale del paziente e il referto scritto sotto le misure della macchina)
+  // e una radiografia intestata a un altro paziente. Tutto inventato.
+  const refRiga = (sis, id, quando, nome) => `<tr><td class="AFCDataTD" title="${nome}"><a href="#" title="REFERTO" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*TEST00001&REFERTO_SISTEMA=${sis}&REFERTO_ID=${id}','${sis}')"><img alt="referto"></a>
+    ${nome}<input type="hidden" name="DATA_ORD" value="${quando}"><input type="hidden" name="DESCRIZIONE_TITLE" value="${nome}"></td></tr>`;
+  const ECG_ID = "ffff6666-0000-0000-0000-000000000006", ALTRO_ID = "abab7777-0000-0000-0000-000000000007";
+  const mock = conPagina(conConsulenza(createMock({ withResults: true })), (html) => html.includes("Storico Dati Clinici")
+    ? html.replace("</body>", `<table>${rich("Radiologia", "69-140 RX TORACE (A6900)")}${rich("Consulenze", "8-6 ELETTROCARDIOGRAMMA (84)")}</table>
+        <table>${refRiga("HL7AMB", ECG_ID, "2026-08-22 05:00:00.0", "8-6 ELETTROCARDIOGRAMMA (84)")}${refRiga("HL7RIS", ALTRO_ID, "2026-08-22 05:30:00.0", "69-150 RX BACINO (A6910)")}</table></body>`)
+    : html);
+  {
+    const h = mock.handle;
+    const pdfDi = { [ECG_ID]: pdfSemplice(RIGHE_ECG, { ruotato: true }), [ALTRO_ID]: pdfSemplice(RIGHE_ALTRO) };
+    mock.handle = (req) => {
+      const id = (/REFERTO_ID=([\w-]+)/.exec(req.url) || [])[1];
+      return id && pdfDi[id] && /Sa4ViewerExtRedirect/.test(req.url)
+        ? { status: 200, headers: { "content-type": "application/pdf" }, body: pdfDi[id] } : h(req);
+    };
+  }
+  const { context, page } = await newPage(browser, mock, { finestra: "centro" });
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForSelector("#psassist-host .wu", { timeout: 10000 });
+
+  // tre sezioni, sempre, ognuna col suo nome
+  const titoli = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wusec .wut")].map((t) => t.textContent));
+  check(scen, ["Lab", "ECG", "Imaging"].every((t) => titoli.includes(t)), `tre sezioni distinte: Lab, ECG, Imaging (got: ${titoli.join(" · ")})`);
+  // in attesa: da quanto, nella sua sezione
+  const attesaRx = await $panel(page, ".wuimg .wuwait").innerText().catch(() => "");
+  check(scen, /RX TORACE/.test(attesaRx) && /1h2\d/.test(attesaRx) && /richiesto/.test(attesaRx),
+    `l'RX chiesto e non refertato sta in Imaging, con da quanto aspetta (got: ${attesaRx.replace(/\s+/g, " ")})`);
+  check(scen, /ELETTROCARDIOGRAMMA/.test(await $panel(page, ".wuecg .wuwait").innerText().catch(() => "")), "e l'ECG in attesa nella sezione ECG");
+  check(scen, /TC ENCEFALO/.test(await $panel(page, ".wuimg .rlist").innerText()), "la TC refertata è in Imaging");
+
+  // i valori: la riga in cima mette per primi quelli fuori range
+  await $panel(page, "#risall").click();
+  await attendiTabella(page, 2);
+  const somm = (await $panel(page, ".wusumv").innerText()).replace(/\s+/g, " ").trim();
+  check(scen, /^Hb 80↓/.test(somm), `in cima, per primi, i valori fuori range dell'ultimo prelievo (got: ${somm})`);
+  check(scen, (await $panel(page, ".wusumv .wuval").first().evaluate((e) => getComputedStyle(e).color)) === "rgb(179, 38, 30)",
+    "in rosso c'è solo il valore");
+  check(scen, (await $panel(page, ".wuh .wut").evaluateAll((l) => l.map((e) => getComputedStyle(e).color))).every((c) => c !== "rgb(179, 38, 30)" && c !== "rgb(11, 92, 173)"),
+    "i colori delle sezioni non sono né il rosso dei valori né il blu dei comandi");
+  check(scen, /\b1 nuovo\b|\b\d+ nuovi\b/.test(somm) && /nuovo/.test(await $panel(page, ".wuimg .rrow").first().innerText()),
+    "il referto mai aperto è «nuovo», e la riga in cima lo conta");
+
+  // ↗ PDF: un tocco, da ogni riga
+  check(scen, (await $panel(page, "[data-pdf]").count()) === (await $panel(page, '[data-esito][data-kind="referto"]').count()),
+    "ogni referto ha il suo «↗ PDF»");
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup", { timeout: 8000 }).catch(() => null),
+    $panel(page, ".wuimg [data-pdf]").first().click(),
+  ]);
+  check(scen, !!popup, "«↗ PDF» apre il documento con un tocco");
+  if (popup) await popup.close().catch(() => {});
+  // il testo si apre lì, sotto la sua riga — e il referto non è più «nuovo»
+  await $panel(page, '.wuimg [data-esito]:has-text("TC ENCEFALO")').click();
+  await page.waitForSelector("#psassist-host .wuimg .wuitem.aperto .reftxt .rt", { timeout: 20000 });
+  check(scen, (await $panel(page, ".wuimg .wuitem.aperto .rt").count()) > 2, "il testo del referto si apre in linea, nella sua sezione");
+  check(scen, !/nuovo/.test(await $panel(page, '.wuimg .rrow:has-text("TC ENCEFALO")').innerText()), "aperto, non è più «nuovo»");
+  check(scen, /non focolai/i.test(await $panel(page, '.wuimg .rrow:has-text("TC ENCEFALO") .wuex').innerText().catch(() => "")),
+    "e da chiuso ne resta l'anteprima sulla riga");
+
+  // ECG: del PDF (in orizzontale) si mostra solo il referto scritto, e
+  // l'intestazione è verificata (il codice fiscale è quello dei prelievi)
+  await $panel(page, `[data-esito="${ECG_ID}"]`).click();
+  await page.waitForSelector("#psassist-host .wuecg .wuitem.aperto .reftxt .rt", { timeout: 20000 }).catch(() => {});
+  const ecg = await $panel(page, ".wuecg .wuitem.aperto").innerText().catch(() => "");
+  check(scen, /Ritmo sinusale a 72\/min\. Non alterazioni della ripolarizzazione\./.test(ecg) && !/bpm|QTc|automatica|mm\/s/.test(ecg),
+    `ECG: solo il referto scritto, niente misure né frasi della macchina (got: ${ecg.replace(/\s+/g, " ").slice(0, 140)})`);
+  check(scen, !/intestazione non verificata/.test(ecg), "ECG col codice fiscale del paziente: intestazione verificata, nessun avviso");
+  // la radiografia di un altro paziente: il testo non si vede, da nessuna parte
+  await $panel(page, `[data-esito="${ALTRO_ID}"]`).click();
+  await page.waitForSelector("#psassist-host .wuimg .wuitem.aperto .wualtro", { timeout: 20000 }).catch(() => {});
+  const altro = await $panel(page, ".wuimg .wuitem.aperto").innerText().catch(() => "");
+  check(scen, /Referto di un altro paziente: non mostrato/.test(altro) && !/BIANCHI|focolai a carattere/i.test(altro),
+    `un PDF con un altro codice fiscale: «referto di un altro paziente: non mostrato» (got: ${altro.replace(/\s+/g, " ").slice(0, 120)})`);
+  check(scen, (await $panel(page, `.wuimg [data-esito="${ALTRO_ID}"] .wuex`).innerText().catch(() => "")) === "di un altro paziente: non mostrato",
+    "e nemmeno l'anteprima sulla riga");
+  await $panel(page, `[data-esito="${ECG_ID}"]`).click();
+  await page.waitForTimeout(200);
+  await shot(page, "workup-chiaro");
+  // (il pannello non ha un tema scuro: con il sistema in scuro resta com'è)
+  if (SHOTS) { await page.emulateMedia({ colorScheme: "dark" }); await shot(page, "workup-scuro"); await page.emulateMedia({ colorScheme: "light" }); }
+  await context.close();
+}
+
 async function scenarioEsitiLayout(browser) {
   const scen = "esiti-layout";
   const mock = createMock({ withResults: true });
@@ -5802,7 +5911,7 @@ async function scenarioEsitiLayout(browser) {
   const geo = () => page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot;
     const rect = (s) => { const e = r.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width }; };
-    const secs = [...r.querySelectorAll(".esgrid > .sec")].map((e) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; });
+    const secs = [".esgrid > .wulab", ".esgrid > .wucol"].map((s) => r.querySelector(s)).filter(Boolean).map((e) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; });
     return { due: !!r.querySelector(".esgrid.due"), secs, esiti: rect(".esiti"), tabella: rect(".sttab"), cornice: rect(".stwrap"), riga: rect(".rrow") };
   });
   const g1 = await geo();
@@ -5811,7 +5920,7 @@ async function scenarioEsitiLayout(browser) {
   } else {
     check(scen, g1.esiti.w >= 880, `la finestra a 1366 ha un contenitore largo abbastanza (${Math.round(g1.esiti.w)} px)`);
     check(scen, g1.secs.length === 2 && g1.secs[1].l >= g1.secs[0].r - 1 && Math.abs(g1.secs[0].t - g1.secs[1].t) < 4,
-      `i Referti stanno in una colonna accanto ai Valori, alla stessa altezza (${g1.secs.map((s) => `${Math.round(s.l)}→${Math.round(s.r)}`).join(" | ")})`);
+      `ECG e Imaging stanno in una colonna accanto al Lab, alla stessa altezza (${g1.secs.map((s) => `${Math.round(s.l)}→${Math.round(s.r)}`).join(" | ")})`);
     check(scen, g1.riga && g1.riga.w >= 280, `e la colonna dei referti è leggibile (${Math.round(g1.riga.w)} px)`);
   }
   // stretta, in colonna (Affianca): uno sotto l'altro
@@ -5819,13 +5928,13 @@ async function scenarioEsitiLayout(browser) {
   await $panel(page, "#winaffianca").click();
   await page.waitForTimeout(200);
   const g2 = await geo();
-  check(scen, g2.secs.length === 2 && g2.secs[1].t >= g2.secs[0].b - 1 && Math.abs(g2.secs[0].l - g2.secs[1].l) < 4,
-    `nella colonna di «Affianca» i Referti scendono sotto i Valori (${g2.secs.map((s) => `${Math.round(s.t)}↓${Math.round(s.b)}`).join(" | ")})`);
+  check(scen, g2.secs.length === 2 && g2.secs[0].t >= g2.secs[1].b - 1 && Math.abs(g2.secs[0].l - g2.secs[1].l) < 4,
+    `nella colonna di «Affianca» ECG e Imaging, brevi, vengono prima e il Lab scende sotto (${g2.secs.map((s) => `${Math.round(s.t)}↓${Math.round(s.b)}`).join(" | ")})`);
   // largo il contenitore, non lo schermo: a 1920 ma con la colonna, resta stretto
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.waitForTimeout(200);
   const g3 = await geo();
-  check(scen, g3.secs.length === 2 && g3.secs[1].t >= g3.secs[0].b - 1, "uno schermo grande non basta: conta la larghezza della finestra");
+  check(scen, g3.secs.length === 2 && g3.secs[0].t >= g3.secs[1].b - 1, "uno schermo grande non basta: conta la larghezza della finestra");
   await context.close();
 }
 
@@ -6258,6 +6367,7 @@ const scenarios = [
   ["pill ridotta: il promemoria di un altro paziente dice di chi è", scenarioPillAltroPaziente],
   ["finestra: tetto di 1150 px, schede ferme", scenarioFinestraLarga],
   ["esiti: referti accanto ai valori, bottone grande, unità", scenarioEsitiLayout],
+  ["esiti: il workup — fuori range in cima, Lab · ECG · Imaging, attese, ↗ PDF", scenarioWorkup],
   ["menu ⋯: tempi, riferimenti, comandi rari, niente paragrafi, ricarica", scenarioMenuAltro],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],

@@ -323,3 +323,52 @@ export const RIGHE_ESEMPIO = [
   "Conclusioni: quadro nei limiti della norma per l'età.",
   "Temperatura corporea 37,5° - non è stata rilevata febbre.",
 ];
+
+// Un PDF semplice (Helvetica, una parola per pezzo di testo), in orizzontale:
+// dritto (pagina 842×595), o come un
+// ECG in orizzontale: pagina A4 verticale con /Rotate 90 e il testo scritto
+// ruotato di 90° («0 1 -1 0 x y Tm»), come fanno gli elettrocardiografi. Ogni
+// parola è un pezzo a sé, così le righe si ricompongono solo se si legge la
+// matrice intera: con il solo punto (x, y) le parole di righe diverse che
+// stanno alla stessa altezza finiscono nella stessa riga.
+export function pdfSemplice(righe, { ruotato = false } = {}) {
+  const pezzi = [];
+  righe.forEach((riga, k) => {
+    let avanti = 0;
+    for (const parola of riga.split(/ +/).filter(Boolean)) {
+      const s = `(${escapaStringaPdf(parola)})`;
+      pezzi.push(ruotato
+        ? `BT /F1 10 Tf 0 1 -1 0 ${80 + k * 16} ${60 + avanti} Tm ${s} Tj ET`
+        : `BT /F1 10 Tf 1 0 0 1 ${60 + avanti} ${560 - k * 16} Tm ${s} Tj ET`);
+      avanti += parola.length * 8 + 6;   // Helvetica 10: nessuna lettera è più larga di 8
+    }
+  });
+  const contenuto = Buffer.from(pezzi.join("\n"), "latin1");
+  const objs = [
+    obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+    obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+    obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox ${ruotato ? "[0 0 595 842] /Rotate 90" : "[0 0 842 595]"} /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>`),
+    obj(4, `<< /Length ${contenuto.length} >>`, contenuto),
+    obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"),
+  ];
+  return assemblaPdfClassico(objs, 1, "", "1.4");
+}
+
+// Un ECG finto, come lo stampa un elettrocardiografo con sopra il referto
+// scritto del cardiologo. Nomi e codici fiscali sono inventati.
+export const RIGHE_ECG = [
+  "ELETTROCARDIOGRAMMA A 12 DERIVAZIONI",
+  "Paziente: ROSSI MARIO Nato il 01/01/1980 SMPRSS80A01F205X",
+  "FC 72 bpm PR 160 ms QRS 90 ms QT/QTc 380/410 ms",
+  "Ritmo sinusale - ECG nei limiti (interpretazione automatica, non confermato)",
+  "25 mm/s 10 mm/mV 0.05-150 Hz",
+  "Referto:",
+  "Ritmo sinusale a 72/min. Non alterazioni della ripolarizzazione.",
+  "Il medico DOTTORE ESEMPIO",
+];
+// un referto intestato a un altro paziente (nome e codice fiscale inventati)
+export const RIGHE_ALTRO = [
+  "RADIOGRAFIA TORACE 2 PROIEZIONI",
+  "Paziente: BIANCHI ANNA Nata il 02/02/1950 BNCNNA50B42F205Z",
+  "Non focolai a carattere broncopneumonico.",
+];

@@ -112,7 +112,7 @@ pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha a
 finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
 «✓ Copiato · incolla». Nel menu **⋯**: **Al centro** e **Affianca a destra** (una colonna, col
 gestionale accanto), **iPhone** (il Ponte, solo con l'estensione), **Tempi** (il cronometro), **Riferimenti** (i *can't-miss killers*), poi — solo dove servono — **Esporta i fogli (JSON)** e
-**Importa i fogli…** (in Dimissioni) e **Salva i referti** (negli Esiti, solo con l'estensione), il
+**Importa i fogli…** (in Dimissioni), il
 Registro, **Stampanti** e — scelte le due stampanti — **Stampa automatica: attiva · Spegni** (vedi
 «Stampa automatica»), **Ricarica estensione** e la versione. Il cronometro compare in intestazione **solo mentre corre**
 (un tocco sul tempo apre la scheda, ⏹ lo ferma).
@@ -515,9 +515,34 @@ cancella la pagina di login — una sessione scaduta non deve far perdere la tro
 5. **Stampa**: ogni richiesta con data, ora e la lista compatta degli esami.
 
 ### Esiti
-Due sezioni, una sotto l'altra: **Valori** e **Referti**.
+Il **Workup**, come in Epic: **Lab · ECG · Imaging** in un posto solo, tre sezioni distinte, ognuna
+col suo colore sul bordo e nel titolo (il rosso resta **solo** dei valori fuori range; l'ambra è di
+ciò che aspetta; il blu dei comandi e di «nuovo»). Larga, il Lab a sinistra e ECG e Imaging in una
+colonna a destra; stretta (Affianca), prima ECG e Imaging, che sono brevi, poi il Lab.
 
-**Valori** è un'unica tabella: gli analiti in riga, raggruppati per sezione fissa (*Emocromo,
+- **In cima, una riga**: i valori **fuori range** dell'ultimo prelievo di ciascun esame, i più
+  gravi per primi (K, Na, Hb, troponina, lattati, pH…), la troponina con la misura precedente e la
+  sua ora — `K 5.9↑ · Hb 9.1↓ · Trop 48↑ (12 alle 11:40) · 3 nuovi` —; oltre i sei, «+N». **«N
+  nuovi»** conta i valori cambiati dall'ultima lettura e i referti mai aperti: un tocco li segna
+  visti. A destra **⭳ Salva i referti (N)** (solo con l'estensione) e, mentre salva, «Salvo i
+  referti 2/5…».
+- **In attesa**: in ogni sezione, ciò che è stato chiesto e non è ancora refertato — dalle righe
+  del diario della pagina senza l'icona del referto — con **da quanto** aspetta (`⏳ 1h20 RX
+  TORACE · richiesto 13:10`), «parziale» per un esame di laboratorio già nella finestra Risultati.
+- **Refertati**: una riga per referto, con data e ora, la prima frase che dice qualcosa
+  (le conclusioni, se ci sono) e «nuovo» finché non l'hai aperto. Un tocco apre il **testo lì
+  sotto** (un secondo tocco lo richiude), con **⧉ Copia** (ora, esame e paziente in testa, per il
+  diario) e **↗ PDF**; **↗ PDF** c'è anche su ogni riga, a un tocco: la copia salvata se c'è,
+  altrimenti il documento del gestionale. Dell'**ECG** si mostra **solo il referto scritto** del
+  cardiologo, mai le misure o le frasi della macchina; un tracciato senza referto scritto dice
+  «Solo il tracciato della macchina». Gli altri documenti (consulenze…) stanno in **Altri
+  documenti**, e si aprono nella loro scheda.
+- **Di chi è il referto**: prima di mostrare un testo, il codice fiscale scritto nel PDF (o nome e
+  data di nascita) si confronta col paziente. Non torna: «Referto di un altro paziente: non
+  mostrato». Nel PDF non c'è niente da confrontare: il testo si mostra con **«intestazione non
+  verificata»**.
+
+**Lab** è un'unica tabella: gli analiti in riga, raggruppati per sezione fissa (*Emocromo,
 Coagulazione, Biochim, Organi, Elettroliti e metabolismo, Emogas, Urine e altri liquidi*, e in
 fondo **Altri** — i dettagli più sotto), una colonna per prelievo, **il più recente a sinistra**
 (marcato «ultimo»). In cima a ogni colonna: **solo l'ora** se il prelievo è di oggi, **la data**
@@ -533,9 +558,9 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   «Granulociti %»), che prima erano due righe con lo stesso nome. Il fuori range è quello
   dell'assoluto; una percentuale che arriva da sola resta da sola. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
   vale per un'abbreviazione ambigua — e una riga piccola in cima dice **quanti** (**quali** apre l'elenco).
-- **Valori e Referti fianco a fianco** quando la finestra è abbastanza larga (misurata sul contenitore,
+- **Lab, ECG e Imaging fianco a fianco** quando la finestra è abbastanza larga (misurata sul contenitore,
   non sullo schermo: dentro la finestra da 1150 px sì, nella colonna di «Affianca» no): la tabella a
-  sinistra, i referti in una colonna accanto; stretto, uno sotto l'altro.
+  sinistra, ECG e Imaging in una colonna accanto; stretto, uno sotto l'altro.
 - La tabella è **larga quanto i suoi numeri**, non quanto il pannello: se allarghi la finestra i
   valori restano **accanto ai nomi** invece di allontanarsene, e sono allineati a sinistra
   (incolonnati dalle cifre tabulari).
@@ -563,9 +588,10 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
 - **Un tocco su un valore lo segna**: giallo; un secondo tocco arancio; un terzo lo spegne. I segni
   sono tuoi, restano col paziente (24 ore, come la nota) e sopravvivono al cambio di pagina.
 - **Cosa è cambiato dall'ultima volta che hai guardato**: dopo un **↻ Aggiorna**, in quel prelievo
-  un valore cambiato ha **sfondo azzurro**, e lo stesso vale per un analita comparso da zero. In
-  cima compare **«N valori nuovi dall'ultima lettura»** con un bottone **Letto** che spegne i
-  marchi. La prima lettura di un prelievo è sempre il riferimento: non è mai un muro di marchi.
+  un valore cambiato ha **sfondo azzurro**, e lo stesso vale per un analita comparso da zero. Lo
+  conta **«N nuovi»** nella riga in cima (il passaggio del mouse dice «N valori nuovi dall'ultima
+  lettura»): un tocco spegne i marchi. La prima lettura di un prelievo è sempre il riferimento:
+  non è mai un muro di marchi.
 - Un avviso dice quali prelievi non si sono lasciati leggere (il **Registro** dice perché; **↻ Aggiorna**
   riprova). Quanti ne mancano da leggere lo dice il passaggio del mouse su **⭳ Carica i valori**.
 - La tabella mette insieme due cose: i prelievi letti **in questa scheda del browser** — sempre,
@@ -583,38 +609,36 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   NOME, non di questo paziente: non lo mostro»* — di solito il portale era rimasto su un altro.
   Prima lo diceva su ogni paziente ancora senza scheda, e sembrava uno scambio di pazienti.
 
-**Referti** è la lista dei documenti (ECG, RX, TC, visite…), una riga ciascuno, ognuno con
-**data e ora della richiesta**, il più recente in cima. I referti di **laboratorio** (LIS) **non
-ci sono** quando la tabella dei Valori li può mostrare — c'è una tabella, o c'è da dove leggerla
-(estensione e portale): lì quello che dicono è già nei Valori, e in mezzo agli altri facevano
-perdere l'ECG e la radiologia. Né il conteggio «Referti (n)» né **Salva i referti** e **↻ Resetta**
-li contano o li toccano. **Senza tabella e senza portale** (il bookmarklet, per dire) i referti di
-laboratorio sono l'unico posto dove si vedono i risultati finali: allora restano, **chiusi** sotto
-**«Laboratorio (N)»** in fondo agli Esiti — un tocco li apre. La scheda **Esiti** non porta nessun numero. Un
-esito finale non sparisce mai: «Nessun esito per questo paziente» compare solo quando non c'è
-davvero niente, nemmeno un referto.
-- **RIS ›** — referti di **radiologia** (RX, TC, ecografia, RMN) ed **ECG**: si aprono **dentro il
-  pannello, come testo**. Il testo lo legge **pdf.js** — il lettore PDF di Firefox, dentro
-  l'estensione, caricato nella scheda solo quando apri un referto: legge quello che legge Firefox
-  (PDF cifrati, oggetti compressi, font di ogni tipo). Senza estensione resta il lettore interno,
-  più semplice. Leggi il referto senza cambiare scheda, lo copi per il diario con **⧉ Copia**, e
-  il PDF resta a un tocco (**↗ PDF**). I referti sono **PDF di testo, mai immagini**: se il testo
-  non esce è uno sbaglio del lettore, non del referto — il PDF **si tiene** lo stesso (pallino
-  verde) e si apre, e **⧉ Copia diagnosi** dice com'è fatto quel PDF (versione, cifratura, font,
-  filtri: **mai il contenuto**), per correggerlo. Se il pannello non lo legge, al tocco ci prova anche il **service
-  worker** (che raggiunge il server del portale, dove la pagina del gestionale non arriva). Se
-  neanche lui, il pallino è rosso col motivo — e il motivo dice **su quale server** il gestionale
-  rimanda il referto (solo l'indirizzo del server, niente del paziente) — e il documento **si apre
-  lo stesso, con lo stesso tocco**. **⧉ Copia diagnosi** ora c'è per **ogni** referto non letto,
-  non solo per i visualizzatori HTML.
-- **AMB, consulenze… ↗** — gli altri referti (PDF): si aprono in una scheda e, con l'estensione, il
-  documento che apri **viene tenuto** (pallino verde) — la volta dopo si apre all'istante, senza
-  toccare il server. **Salva i referti** (menu **⋯**, solo con l'estensione) prende tutti quelli in elenco in una volta, **↻ Resetta** svuota.
-  Un referto che non si lascia salvare (pallino rosso, il motivo al passaggio del mouse e nel
-  Registro) resta apribile con un tocco; **⧉ Copia diagnosi** copia com'è fatto il visualizzatore
-  che l'ha impedito — senza numeri né valori dei campi — da mandare a chi fa il pannello. Lo
-  stesso bottone (**⧉ Diagnosi**) compare fra i comandi della stampa quando un documento non si
-  lascia catturare.
+**I referti di laboratorio** (LIS) **non ci sono** quando la tabella del Lab li può mostrare — c'è
+una tabella, o c'è da dove leggerla (estensione e portale): lì quello che dicono è già nei valori.
+**Senza tabella e senza portale** (il bookmarklet, per dire) sono l'unico posto dove si vedono i
+risultati finali: allora restano, **chiusi** sotto **«Laboratorio (N)»** in fondo agli Esiti — un
+tocco li apre. La scheda **Esiti** non porta nessun numero. Un esito finale non sparisce mai:
+«Nessun esito per questo paziente» compare solo quando non c'è davvero niente, nemmeno un referto
+o una richiesta in attesa.
+
+- **Il testo** lo legge **pdf.js** — il lettore PDF di Firefox, dentro l'estensione, caricato nella
+  scheda solo quando serve: legge quello che legge Firefox (PDF cifrati, oggetti compressi, font di
+  ogni tipo, **testo ruotato** come negli ECG in orizzontale). Senza estensione resta il lettore
+  interno, più semplice (anche lui legge il testo ruotato). I referti sono **PDF di testo, mai
+  immagini**: se il testo non esce è uno sbaglio del lettore, non del referto — il PDF **si tiene**
+  lo stesso e si apre, e **⧉ Diagnosi** (nella riga in cima) dice com'è fatto quel PDF (versione,
+  cifratura, font, filtri: **mai il contenuto**), per correggerlo. Se il pannello non lo legge ci
+  prova il **service worker**; se neanche lui, il pallino è rosso col motivo — e il documento **si
+  apre lo stesso, con lo stesso tocco**.
+- **Salvare è una decisione del medico.** Un PDF non si salva **mai** da solo: lo prende un tocco
+  sul referto (il testo è lì sotto, e la copia resta: pallino verde) o **⭳ Salva i referti**, che
+  prende tutti quelli non ancora salvati — **due alla volta al massimo**, gli altri in fila («in
+  fila» sulla loro riga) — e di ognuno legge subito il testo. **Il testo dei PDF già salvati si
+  legge sempre**, appena apri gli Esiti, dalla copia su questo computer: nessuna richiesta.
+  **↺** (accanto a «Salva») dimentica le copie e il loro testo. Un referto che non si lascia
+  salvare (pallino rosso, il motivo al passaggio del mouse e nel Registro) resta apribile con un
+  tocco.
+- **ECG e radiologia nel portale**: se il gestionale rimanda il referto al portale clinico, lo
+  stesso link si apre in una scheda dietro; là la pagina mostra il PDF e lo script del portale ne
+  passa una copia. Il portale può mostrarne più d'uno (quello rimasto aperto prima, poi il tuo):
+  si tiene quello di **questo paziente** e dell'esame chiesto, mai semplicemente il primo; se sono
+  tutti di un altro, nessuno, e il pallino rosso lo dice.
 
 > Perché i referti restano fuori dalla tabella dei Valori: referto e prelievo sono due cose
 > diverse per il gestionale (un referto per documento, un accesso per prelievo, senza una chiave
@@ -1450,8 +1474,10 @@ stessi flussi dei test di prodotto.
     **nessun** valore: cliccare un paziente non è chiedere il laboratorio. I valori si leggono
     quando li chiedi — aprendo un prelievo, o con **⭳ Carica i valori** che li prende tutti, uno
     alla volta, insieme allo storico del portale aperto in sottofondo dal link della pagina —
-    e un prelievo che ha già fallito non si ritenta da solo. Un referto che apri non
-    viene riletto per tenerne una copia: per quello c'è **Salva i referti** (menu ⋯). E la tabella
+    e un prelievo che ha già fallito non si ritenta da solo. **Un PDF non si salva mai da
+    solo**: lo prende un tocco sul referto o **⭳ Salva i referti** negli Esiti, due alla volta al
+    massimo (gli altri in fila, e la riga in cima dice a che punto è); il testo dei PDF già
+    salvati si legge invece sempre, dalla copia su questo computer, senza chiedere niente. E la tabella
     multi-prelievo viene **letta dalla pagina che hai davanti**, non chiesta all'API che la
     riempie — una chiamata diretta a quel servizio arriverebbe senza l'`Origin` della sua app,
     cioè come una cosa diversa da te che clicchi, e non è quello che questo programma fa.
@@ -1495,10 +1521,20 @@ stessi flussi dei test di prodotto.
     scrittura dell'ordine): la striscia del PC e il telefono dicono le stesse, salvo dove il
     telefono ha la sua (`tel`: «aspettano qualcuno al PC», non «tocca Stampa»). Spenta
     (l'interruttore), non configurata, o col preferito, il percorso è quello di prima, identico.
+18. **Il testo di un referto si mostra solo se è di questo paziente.** Ogni testo letto da un PDF
+    passa da `identitaReferto`: il codice fiscale scritto nel PDF contro quello del paziente (il
+    riquadro della scheda, o l'impronta di quello dei prelievi), o — senza codice — nome **e**
+    data di nascita. Se non torna: «Referto di un altro paziente: non mostrato», niente
+    anteprima, niente copia, niente scheda clinica, e la copia salvata del PDF si cancella. Se il
+    PDF non porta un'intestazione da confrontare si mostra, con **«intestazione non
+    verificata»**. Il controllo si rifà a ogni disegno (il codice fiscale può arrivare dopo il
+    testo). Nella scheda del portale aperta per un referto non si tiene il primo PDF che passa:
+    si raccolgono quelli che la pagina mostra e si tiene quello di questo paziente (e, a parità,
+    dell'esame chiesto); se sono tutti di un altro, nessuno.
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
-> davvero condiviso, non usare **Salva i referti** (i PDF resterebbero su disco fino a 8 ore).
+> davvero condiviso, non usare **⭳ Salva i referti** né aprire i referti (i PDF resterebbero su disco fino a 8 ore).
 
 ---
 
@@ -1593,7 +1629,7 @@ npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che 
 npm run demo       # rigenera dist/demo.html (il banco di prova)
 npm run dist       # al rilascio: build, fogli di dimissione, dist/ps-assist-latest.zip (con stampa/, senza SumatraPDF)
 npm run verifica-build   # al rilascio, dopo dist e il commit: build fresca = build committata? zip e versioni giusti?
-npm test           # 101 scenari e2e + 184 sull'estensione (129 sull'ordine in sottofondo, 6 con la scheda davvero nascosta) + 123 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
+npm test           # 102 scenari e2e + 194 sull'estensione (129 sull'ordine in sottofondo, 6 con la scheda davvero nascosta) + 123 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
                    # + l'ordine in una scheda DAVVERO nascosta: Chrome senza Playwright, CDP grezzo (test/ext-nascosta.mjs; serve openssl)
                    # + il Ponte: 120 controlli senza browser (cifratura, ripetitore, Worker) e 166 dal vivo (test/ext-ponte.mjs)
                    # (Chromium che va in crash aprendo un PDF, in un contenitore Linux: PSA_CHROMIUM_ARGS=--disable-features=PdfOopif)
@@ -1660,6 +1696,13 @@ offline o dal nome impossibile, un SumatraPDF finto con la rotazione giusta, la 
 secondi, i temporanei cancellati, il registro senza contenuto; e `installa.ps1`: la copia in
 `%LOCALAPPDATA%`, l'ID fisso, SumatraPDF dallo zip in Download, ogni blocco noto detto in
 italiano, il disinstalla che controlla),
+il **Workup** degli Esiti (i valori fuori range in cima, Lab · ECG · Imaging, le richieste in
+attesa con da quanto, «↗ PDF» su ogni riga, il testo che si apre lì sotto) e i **referti**
+(`test/pdftesto.mjs` e `test/ext-referti.mjs`, solo PDF finti: il testo ruotato di un ECG in
+orizzontale letto in ordine da pdf.js e dal lettore di casa, dell'ECG solo il referto scritto, il
+codice fiscale — o nome e data di nascita — che torna, che non torna o che manca, il portale che
+mostra prima il referto di un altro paziente, il testo dei salvati letto senza richieste, mai più
+di due scaricamenti insieme e niente salvato da solo),
 il resoconto corto (gli elenchi, un'azione sola,
 passi e Registro sotto «Dettagli»), la ricevuta con un bottone solo e la griglia dietro
 «+ aggiungi», l'emogas tornato alla versione di sempre detto nella ricevuta, «altri esami…»
