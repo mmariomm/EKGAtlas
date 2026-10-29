@@ -4796,6 +4796,8 @@
     .tchip.on button:first-child { border-radius: 7px 0 0 7px; border-right: 0; font-variant-numeric: tabular-nums; }
     .tchip.on button:last-child { border-radius: 0 7px 7px 0; }
     .tchip.on button { color: #16232E; }
+    .recchip { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; background: #B3261E; color: #fff;
+               font-size: 10.5px; font-weight: 800; letter-spacing: .04em; white-space: nowrap; margin: 0 4px; }
     .tnow { display: flex; align-items: center; gap: 10px; background: #EDF7F0; border: 1px solid #BCE0C9;
             border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
     .tbig { font: 800 20px/1 inherit; color: #124F31; font-variant-numeric: tabular-nums; }
@@ -5687,6 +5689,20 @@
         // l'aiutante c'è ancora? (al più ogni mezz'ora lo chiede il service worker)
         ask({ t: "stampaVerifica" });
       } catch { /* senza la memoria dell'estensione la stampa automatica non c'è: il pannello sì */ }
+    }
+    // ⋯ → Registra (registra.js): finché registra, «● REC» sulla pill e in
+    // intestazione; il menu dice Registra, Ferma e scarica, o Scarica.
+    chipRec() {
+      const r = this.reg;
+      return r && r.stato === "rec" && Date.now() < r.scade ? `<span class="recchip" title="Registrazione in corso: ⋯ → Ferma e scarica">● REC</span>` : "";
+    }
+    seguiRec() {
+      const leggi = () => chrome.storage.local.get("registra").then((o) => {
+        const prima = this.chipRec();
+        this.reg = o.registra || null;
+        if (this.chipRec() !== prima) this.render();
+      }).catch(() => {});
+      try { leggi(); chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && ch.registra) leggi(); }); } catch { /* niente */ }
     }
     async apriStampanti() {
       this.menuAperto = false;
@@ -7028,7 +7044,7 @@
               ${running ? `<button class="stopmini" id="stopbtn" title="Interrompi (Esc)">⏹</button>` : ""}
             </div>
           ` : this.collapsed ? `
-            <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}${this.promUrgente()}</button>
+            <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}${this.chipRec()}${this.promUrgente()}</button>
           ` : `
             <div class="card${inStanza ? " stanza" : ""}" role="dialog" aria-label="${esc(APP)}" tabindex="-1">
               <div class="hd" id="draghd" title="Trascina per spostare · doppio clic per rimetterla al centro">
@@ -7042,7 +7058,7 @@
                 <span class="hsp"></span>
                 ${ponteSpia()}
                 <span id="stautow">${this.chipStampa()}</span>
-                ${this.chipTempo()}
+                ${this.chipRec()}${this.chipTempo()}
                 <span class="menuw">
                   <button class="iconbtn" id="menubtn" title="Altro" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
                   ${this.menuAperto ? `<div class="menu" role="menu">
@@ -7057,6 +7073,9 @@
                     <button role="menuitem" id="dimimport" title="Rimetti i testi di un JSON esportato">Importa i fogli…</button>` : ""}
                     <button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${this.showLog ? "Nascondi il registro" : "Registro"}</button>
                     ${hasExt() ? `<button role="menuitem" id="stampanti" title="Quale stampante è l'etichettatrice e quale l'A4, per la stampa automatica">Stampanti</button>` : ""}
+                    ${hasExt() ? `<button role="menuitem" id="regmenu" title="Registra le pagine, le richieste e i PDF di questa sessione, anonimizzati in uno zip che resta su questo PC finché non lo mandi tu">${
+                      this.reg && this.reg.stato === "rec" ? (this.chipRec() ? "Ferma e scarica" : "Scarica la registrazione")
+                      : this.reg && this.reg.stato === "fermo" && !this.reg.esportata ? "Scarica la registrazione" : "Registra"}</button>` : ""}
                     ${hasExt() ? `<button role="menuitem" id="portapri" title="L'indirizzo del portale clinico, se il pannello non compare sulla pagina dello storico">Indirizzo del portale</button>` : ""}
                     ${this.stampaPronta() ? (this.stampaAuto.s.attiva === false
                       ? `<button role="menuitem" id="stautosw" title="Ogni foglio va da solo alla sua stampante, senza dialogo">Stampa automatica: spenta · Accendi</button>`
@@ -10764,6 +10783,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // la stampa automatica: le impostazioni (anche dalla stampantina in
       // intestazione, che si ridisegna da sola: l'ascolto sta sul suo posto) e l'interruttore
       $("#stampanti")?.addEventListener("click", () => this.apriStampanti());
+      $("#regmenu")?.addEventListener("click", async () => {
+        this.menuAperto = false;
+        const r = this.reg;
+        const t = r && r.stato === "rec" ? "registraFerma" : r && r.stato === "fermo" && !r.esportata ? "registraScarica" : "registraVia";
+        const x = await ask({ t });
+        this.message = !(x && x.ok) ? "Il registratore non risponde: ricarica l'estensione e riprova."
+          : t === "registraVia" ? { ok: "Registro questa sessione (al più 60 minuti): resta su questo PC. Quando hai finito: ⋯ → Ferma e scarica." } : "";
+        this.render();
+      });
       $("#stautow")?.addEventListener("click", (e) => { if (e.target.closest("#stauto")) this.apriStampanti(); });
       $("#stautosw")?.addEventListener("click", () => {
         const s = { ...this.stampaAuto.s, attiva: this.stampaAuto.s.attiva === false };
@@ -12746,7 +12774,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const panel = new Panel(pageType);
     PANNELLO = panel;
     if (chi) { panel.ordiniOk = true; ascoltaOrdini(panel); }
-    if (hasExt()) panel.seguiStampa();
+    if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); }
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       panel.esiti = esitiModel(document, location.href);

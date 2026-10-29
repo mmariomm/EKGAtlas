@@ -1191,6 +1191,46 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
 > `extension/manifest.json` → `host_permissions` (oggi `http://10.11.0.151:9080/*`). Se nella tua
 > sede è un altro indirizzo, cambialo lì e ricarica l'estensione.
 
+## Registra (una sessione vera, anonimizzata)
+
+Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costruire una
+«palestra» che si comporti come il gestionale. Solo con l'**estensione**.
+
+- **⋯ → Registra** fa partire; la pill e l'intestazione mostrano **● REC**. Lavori come sempre.
+  **⋯ → Ferma e scarica** ferma e scarica `psassist-registrazione-AAAAMMGG-HHMM.zip` (dopo
+  **60 minuti** si ferma da sola: il menu allora dice **Scarica la registrazione**).
+- **Cosa si registra**, solo sul gestionale e sul portale: ogni pagina che apri, in ogni scheda
+  e finestra (il DOM com'è dopo il caricamento, senza il pannello); il flusso delle richieste,
+  solo *osservato* (`chrome.webRequest`: metodo, indirizzo, stato, rinvii, tempi, tipo, scheda,
+  e quali le ha fatte l'estensione); il **testo** dei PDF (referti, etichette), con pagine e misura.
+  Nessuna richiesta in più al server per le pagine; per un PDF che l'estensione non ha già in
+  mano, **una** rilettura dalla cache del browser (`force-cache`) dello stesso indirizzo appena
+  aperto — il riepilogo lo dice.
+- **Cosa non esce mai**: finché non scarichi, tutto resta nella memoria dell'estensione su questo
+  PC (IndexedDB). Allo scarico la pagina della registrazione **anonimizza qui**, con lo stesso
+  metodo di `tools/esempi.mjs`: ogni testo diventa inventato a meno che sia vocabolario del
+  programma (compare per almeno **due pazienti diversi**, o nelle pagine di esempio, o nel
+  catalogo); nomi → nomi finti sempre uguali per la stessa persona; personale e utenti →
+  `OPERATORE n` / `UTENTEn`; codici fiscali, date di nascita, tessere, telefoni, indirizzi, email
+  tolti; anamnesi, esame obiettivo, diario, note, allergie → testo inventato della stessa
+  lunghezza; episodi, richieste, referti → altri numeri, sempre gli stessi (i collegamenti
+  restano); ospedale e fornitore → `OSPEDALE ESEMPIO`. Dei PDF viaggia solo il testo anonimizzato.
+- **Il controllo**: prima di scrivere lo zip si rilegge tutto cercando quello che è stato visto
+  di vero (codici fiscali, nomi, date di nascita, episodi). Se resta qualcosa lo zip si scarica
+  **lo stesso**, ma la pagina dice «Attenzione: restano N dati da controllare» e lo stesso
+  avviso apre `riepilogo.txt`, con il file e il tipo di dato di ognuno — mai il valore:
+  **controlla quei punti prima di mandarlo**.
+- **Come mandarlo**: lo zip è nella cartella Download, e lo mandi tu: nient’altro parte da solo.
+  Poi **Cancella la registrazione da questo PC** nella stessa pagina (comunque si cancella da sola
+  dopo 12 ore, e a ogni nuova registrazione).
+- Dentro: `pagine/NNN-<tipo>.html`, `flusso.json`, `pdf/NNN.json`, `riepilogo.txt` (cosa è stato
+  registrato, quante sostituzioni per tipo, l'esito del controllo, la versione, le icone usate).
+- **Limiti**: il metodo è a rifiuto di partenza, ma riconosce le persone dalla forma (nomi in
+  maiuscolo, «Dott. …», campi del personale): un nome scritto in modo insolito *dentro una frase
+  condivisa da più pazienti* potrebbe sfuggire — per questo, prima di mandarlo, **dai
+  un'occhiata** a `riepilogo.txt` e a qualche pagina. Le schede di sottofondo aperte dal
+  pannello appaiono come schede qualunque. Permesso nuovo: `webRequest` (solo osservare).
+
 ---
 
 ## Perché è robusto (regole di sicurezza nel codice)
@@ -1581,8 +1621,10 @@ ps-app/
 ├── ponte/               ← il Ponte: README, host.txt (il suo indirizzo, fissato nella build), il
 │                          ripetitore Node per test e prove (stessa logica di ../worker/ponte-logica.js);
 │                          l'app del telefono sta in ../public/ponte/
-├── tools/build.mjs      ← genera extension/content.js, il bookmarklet, extension/ponte-cripto.js e
-│                          extension/ponte-host.js
+├── extension/registra*  ← ⋯ → Registra: registra.js (service worker), registra-pagina.js (nella pagina),
+│                          registra.html/-esporta.js (lo scarico), registra-anonimo.js (anonimizza e controlla)
+├── tools/build.mjs      ← genera extension/content.js, il bookmarklet, extension/ponte-cripto.js,
+│                          extension/ponte-host.js, extension/registra-pdf.js e registra-vocabolario.json
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
 ├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 (SumatraPDF lo prende installa.cmd: non sta nello zip)

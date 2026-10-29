@@ -27,6 +27,17 @@
     },
     {
       "matches": [
+        "https://smarthealth.multimedica.it/*",
+        "http://10.11.0.151/*"
+      ],
+      "js": [
+        "registra-pagina.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
         "http://10.11.0.151/clin-port/*"
       ],
       "js": [
@@ -41,7 +52,8 @@
     "storage",
     "unlimitedStorage",
     "scripting",
-    "nativeMessaging"
+    "nativeMessaging",
+    "webRequest"
   ],
   "options_ui": {
     "page": "portale.html",

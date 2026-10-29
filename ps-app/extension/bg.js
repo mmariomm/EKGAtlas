@@ -1313,10 +1313,16 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 async function registraPortale(pattern) {
   try { await chrome.scripting.unregisterContentScripts({ ids: ["portale"] }); } catch { /* non c'era */ }
   try { await chrome.scripting.unregisterContentScripts({ ids: ["portale-pdf"] }); } catch { /* non c'era */ }
+  try { await chrome.scripting.unregisterContentScripts({ ids: ["portale-registra"] }); } catch { /* non c'era */ }
   if (!pattern) return;
   await chrome.scripting.registerContentScripts([{
     id: "portale", matches: [pattern], js: ["content.js"], runAt: "document_idle", persistAcrossSessions: true,
   }]);
+  // il registratore (⋯ → Registra) guarda anche le pagine del portale
+  await chrome.scripting.registerContentScripts([{
+    id: "portale-registra", matches: [pattern], js: ["registra-pagina.js"], runAt: "document_start", allFrames: true,
+    persistAcrossSessions: true,
+  }]).catch(() => {});
   // il PDF del referto lo vede solo chi sta nel mondo della pagina (vedi portale-pdf.js)
   await chrome.scripting.registerContentScripts([{
     id: "portale-pdf", matches: [pattern], js: ["portale-pdf.js"], runAt: "document_start", allFrames: true,
@@ -1335,6 +1341,11 @@ async function riallineaPortale() {
 const riallinea = () => { riallineaPortale().catch(() => {}); };
 chrome.runtime.onStartup?.addListener(riallinea);
 chrome.runtime.onInstalled?.addListener(riallinea);
+
+// Il registratore (⋯ → Registra, registra.js): osserva e basta, e solo mentre
+// il medico registra. Sta in un file suo; un errore lì non tocca il resto.
+try { importScripts("registra.js"); }
+catch (e) { console.error("PS Assist: il registratore non parte", e); }
 
 // Il ponte verso l'iPhone (ponte-sw.js): una presa cifrata da un capo
 // all'altro verso il sito del ponte, e i comandi del telefono eseguiti dalle
