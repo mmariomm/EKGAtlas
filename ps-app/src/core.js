@@ -4685,7 +4685,7 @@
     /* Il Lab sempre per primo, a tutta larghezza; sotto ECG e Imaging, affiancati se c'è posto */
     .wu .esgrid { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
     .wu .wucol { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; min-width: 0; }
-    @container esiti (min-width: 640px) {
+    @container esiti (min-width: 760px) {
       .wu .wucol { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
       .wu .wucol > .wualtri { grid-column: 1 / -1; }
     }

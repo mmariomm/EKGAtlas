@@ -336,6 +336,52 @@ await page.locator('#sa4-page a:has-text("Storico Documenti")').first().click().
 await page.waitForTimeout(600);
 check(!/errore|error/i.test(await page.locator("#sa4-page").innerText()), "una schermata mai salvata mostra una pagina di cortesia");
 
+// ---- i dati di prova del banco (tools/banco-fixtures.mjs): ROSSI MARIO ha
+// tutto quello che serve per provare gli Esiti — valori con la troponina che
+// sale, attese con da quanto, ECG e RX col testo, un referto di un altro
+await page.locator("#psa-wipe").click();   // ⌫ Azzera: si riparte puliti
+await page.waitForTimeout(500);
+await apri("?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=700001");
+await riapri();
+await $('[data-seg="esiti"]').click();
+await page.waitForSelector("#psassist-host .wu", { timeout: 20000 });
+const attesa = async (sez) => (await $(`${sez} .wuwait`).allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+const [aLab, aEcg, aImg] = [await attesa(".wulab"), await attesa(".wuecg"), await attesa(".wuimg")];
+check(aLab.some((t) => /^⏳ \d+′ TROPONINA US richiesto/.test(t)) && aLab.some((t) => /parziale/.test(t)),
+  `in attesa nel Lab, con da quanto: la troponina chiesta e un prelievo parziale (${aLab.join(" | ").slice(0, 110)})`);
+check(aEcg.some((t) => /^⏳ \d+′ ELETTROCARDIOGRAMMA/.test(t)) && aImg.some((t) => /^⏳ 1h\d\d TC TORACE/.test(t)),
+  `e l'ECG e la TC che aspettano, ognuno nella sua sezione (${aEcg[0] || "—"} · ${aImg[0] || "—"})`);
+await $("#risall").click();
+await attendiTabella(30000);
+const somm = (await $(".wusumv").innerText()).replace(/\s+/g, " ").trim();
+check(/^Trop 412↑ \(38 alle \d\d:\d\d\)/.test(somm), `i valori: in cima la troponina che sale, con la precedente (${somm.slice(0, 60)})`);
+const tab = await page.evaluate(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  return { colonne: r.querySelectorAll(".sttab thead th").length - 1, rosse: r.querySelectorAll(".sttab td.fuori").length,
+           parziali: r.querySelectorAll(".sttab td.parz").length };
+});
+check(tab.colonne === 3 && tab.rosse >= 5 && tab.parziali >= 1,
+  `una tabella di tre prelievi, coi fuori range e i parziali (${tab.colonne} colonne · ${tab.rosse} rosse · ${tab.parziali} parziali)`);
+const ECG_ID = "dddd0201-0000-0000-0000-000000000201", RX_ID = "dddd0202-0000-0000-0000-000000000202", ALTRO_ID = "dddd0203-0000-0000-0000-000000000203";
+check(/nuovo/.test(await $(`[data-esito="${ECG_ID}"]`).innerText()), "l'ECG appena arrivato è «nuovo»");
+const testoDi = async (id, sel = ".reftxt .rt") => {
+  await $(`[data-esito="${id}"]`).click();
+  await page.waitForSelector(`#psassist-host .wuitem.aperto ${sel}`, { timeout: 20000 }).catch(() => {});
+  return (await $(".wuitem.aperto").innerText().catch(() => "")).replace(/\s+/g, " ");
+};
+const ecg = await testoDi(ECG_ID);
+check(/Sottoslivellamento ST di 1 mm in V4-V6/.test(ecg) && !/QTc|automatica/.test(ecg) && !/intestazione non verificata/.test(ecg),
+  `l'ECG si legge lì: solo il referto scritto, intestazione verificata (${ecg.slice(0, 90)})`);
+const rx = await testoDi(RX_ID);
+check(/non reperti acuti/.test(rx) && !/intestazione non verificata/.test(rx), `e così l'RX torace (${rx.slice(0, 70)})`);
+const altro = await testoDi(ALTRO_ID, ".wualtro");
+check(/Referto di un altro paziente: non mostrato/.test(altro) && !/bacino in proiezione|VERDI/i.test(altro),
+  `un PDF intestato a un altro: «referto di un altro paziente: non mostrato» (${altro.slice(0, 80)})`);
+await $(`[data-pdf="${RX_ID}"]`).click();   // «↗ PDF»
+await page.waitForSelector(".psa-tab iframe", { timeout: 20000 }).catch(() => {});
+check(await page.locator(".psa-tab iframe").count() === 1, "«↗ PDF» apre il referto nella finta scheda");
+await page.locator(".psa-tab header button").click().catch(() => {});
+
 // ---- il punto di tutto
 check(leaks.length === 0, `nessuna richiesta esce dalla pagina (${leaks.slice(0, 2).join(" ").slice(0, 90) || "0 richieste"})`);
 const refused = await page.evaluate(async () => {

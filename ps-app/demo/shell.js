@@ -343,12 +343,9 @@
       }
       return pdf200(PSA_PDF.referto({
         paziente: pazienteCorrente.nome, cf: pazienteCorrente.cf, episodio: pazienteCorrente.ep, titolo,
-        righe: [
-          "Esito: nella norma per i parametri considerati.",
-          "Nota: documento generato dal banco di prova, contenuto inventato.",
-          "",
-          `Identificativo documento: ${id || "-"}`,
-        ],
+        righe: /ELETTROCARDIOGRAMM/i.test(titolo)
+          ? ["Referto", "Ritmo sinusale a 68/min. Non alterazioni della ripolarizzazione.", "Il medico DOTTORE ESEMPIO 2"]
+          : ["Conclusioni: nella norma per i parametri considerati.", "", `Identificativo documento: ${id || "-"}`],
       }));
     }
     if (/RcsAccessiRisultatiElenco\.do/i.test(path)) {

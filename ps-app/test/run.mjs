@@ -5789,8 +5789,9 @@ async function scenarioFinestraLarga(browser) {
   await c2.context.close();
 }
 
-// Esiti: i Referti accanto ai Valori quando la finestra è larga (misurata sul
-// contenitore, non sullo schermo), sotto quando è stretta. Il bottone grande,
+// Esiti: il Lab sempre per primo; ECG e Imaging sotto, affiancati quando la
+// finestra è larga (misurata sul contenitore, non sullo schermo), uno sotto
+// l'altro quando è stretta; un fondo appena colorato per sezione. Il bottone grande,
 // le spiegazioni nei tooltip, niente numero sulla scheda, l'unità per esteso.
 // Il Workup (gli Esiti): in cima una riga coi valori fuori range per primi e
 // quanti sono nuovi; sotto tre sezioni distinte — Lab, ECG, Imaging — ognuna
@@ -5922,34 +5923,60 @@ async function scenarioEsitiLayout(browser) {
   const um = await $panel(page, ".sttab tbody th.stn").evaluateAll((l) => l.map((t) => t.textContent.replace(/\s+/g, " ").trim()));
   check(scen, um.includes("GB (×10⁹/L)") && !um.some((t) => /\(x10\)/.test(t)), `«x10» diventa ×10⁹/L per i globuli bianchi (got: ${um.slice(0, 4).join(" | ")})`);
 
-  // la geometria: valori e referti sono due colonne se c'è posto
+  // la geometria: il Lab SEMPRE per primo, a tutta larghezza; sotto ECG e
+  // Imaging, affiancati se la finestra è larga, uno sotto l'altro se no
   const geo = () => page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot;
-    const rect = (s) => { const e = r.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width }; };
-    const secs = [".esgrid > .wulab", ".esgrid > .wucol"].map((s) => r.querySelector(s)).filter(Boolean).map((e) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; });
-    return { due: !!r.querySelector(".esgrid.due"), secs, esiti: rect(".esiti"), tabella: rect(".sttab"), cornice: rect(".stwrap"), riga: rect(".rrow") };
+    const box = (s) => { const e = r.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom, w: b.width }; };
+    const ordine = [...r.querySelectorAll(".wusec .wut")].map((t) => t.textContent);
+    return { lab: box(".wulab"), ecg: box(".wuecg"), img: box(".wuimg"), esiti: box(".esiti"), riga: box(".wuimg .rrow"), ordine };
   });
+  const labPrima = (g, dove) => {
+    check(scen, g.ordine[0] === "Lab" && g.ordine.indexOf("ECG") < g.ordine.indexOf("Imaging"),
+      `${dove}: nell'ordine di lettura prima il Lab, poi ECG, poi Imaging (${g.ordine.join(" · ")})`);
+    check(scen, g.lab && g.ecg && g.img && g.lab.b <= Math.min(g.ecg.t, g.img.t) + 1,
+      `${dove}: il Lab sta sopra ECG e Imaging (${g.lab && Math.round(g.lab.b)} ≤ ${g.ecg && Math.round(g.ecg.t)})`);
+    check(scen, g.lab && g.esiti && g.lab.w >= g.esiti.w - 2, `${dove}: il Lab a tutta larghezza (${g.lab && Math.round(g.lab.w)} di ${g.esiti && Math.round(g.esiti.w)} px)`);
+  };
   const g1 = await geo();
-  if (!g1.due) {
-    check(scen, false, `con valori e referti la griglia è a due colonne (non c'è: ${JSON.stringify(g1.secs)})`);
-  } else {
-    check(scen, g1.esiti.w >= 880, `la finestra a 1366 ha un contenitore largo abbastanza (${Math.round(g1.esiti.w)} px)`);
-    check(scen, g1.secs.length === 2 && g1.secs[1].l >= g1.secs[0].r - 1 && Math.abs(g1.secs[0].t - g1.secs[1].t) < 4,
-      `ECG e Imaging stanno in una colonna accanto al Lab, alla stessa altezza (${g1.secs.map((s) => `${Math.round(s.l)}→${Math.round(s.r)}`).join(" | ")})`);
-    check(scen, g1.riga && g1.riga.w >= 280, `e la colonna dei referti è leggibile (${Math.round(g1.riga.w)} px)`);
-  }
-  // stretta, in colonna (Affianca): uno sotto l'altro
+  labPrima(g1, "a 1366");
+  check(scen, Math.abs(g1.ecg.t - g1.img.t) < 2 && g1.img.l >= g1.ecg.r - 1,
+    `a 1366 ECG e Imaging affiancati sotto il Lab (${Math.round(g1.ecg.l)}→${Math.round(g1.ecg.r)} | ${Math.round(g1.img.l)}→${Math.round(g1.img.r)})`);
+  check(scen, g1.riga && g1.riga.w >= 280, `e le righe dei referti restano leggibili (${g1.riga && Math.round(g1.riga.w)} px)`);
+  // ogni sezione: un fondo appena colorato del suo colore — diverso dalle
+  // altre, quasi bianco (mai più forte dei valori), e mai rosso
+  const fondi = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    const lum = (c) => {
+      // color-mix() torna come «color(srgb r g b)», 0–1
+      const k = /^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/.exec(c);
+      const m = k ? [c, ...k.slice(1, 4).map((x) => String(Number(x) * 255)), k[4]] : /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/.exec(c);
+      if (!m || (m[4] !== undefined && Number(m[4]) === 0)) return null;
+      const f = (x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+      return { rgb: [m[1], m[2], m[3]].map(Number), L: 0.2126 * f(+m[1]) + 0.7152 * f(+m[2]) + 0.0722 * f(+m[3]) };
+    };
+    return [".wulab", ".wuecg", ".wuimg"].map((s) => { const c = getComputedStyle(r.querySelector(s)).backgroundColor; return { s, c, ...(lum(c) || {}) }; });
+  });
+  const contrasto = (L) => 1.05 / (L + 0.05);   // contro il bianco
+  check(scen, fondi.every((f) => f.L != null && f.c !== "rgb(255, 255, 255)") && new Set(fondi.map((f) => f.c)).size === 3,
+    `ogni sezione ha il suo fondo (${fondi.map((f) => f.c).join(" · ")})`);
+  check(scen, fondi.every((f) => f.L != null && contrasto(f.L) < 1.12),
+    `fondi appena accennati: contrasto col bianco sotto 1,12 (${fondi.map((f) => f.L != null ? contrasto(f.L).toFixed(3) : "?").join(" · ")})`);
+  check(scen, fondi.every((f) => f.rgb && !(f.rgb[0] > f.rgb[1] + 6 && f.rgb[0] > f.rgb[2] + 6)), "e nessuno tende al rosso, che resta dei valori fuori range");
+  await shot(page, "esiti-largo");
+  // stretta, in colonna (Affianca): una colonna sola, il Lab sempre in cima
   await $panel(page, "#menubtn").click();
   await $panel(page, "#winaffianca").click();
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(300);
   const g2 = await geo();
-  check(scen, g2.secs.length === 2 && g2.secs[0].t >= g2.secs[1].b - 1 && Math.abs(g2.secs[0].l - g2.secs[1].l) < 4,
-    `nella colonna di «Affianca» ECG e Imaging, brevi, vengono prima e il Lab scende sotto (${g2.secs.map((s) => `${Math.round(s.t)}↓${Math.round(s.b)}`).join(" | ")})`);
+  labPrima(g2, "nella colonna di «Affianca»");
+  check(scen, g2.img.t >= g2.ecg.b - 1 && Math.abs(g2.ecg.l - g2.img.l) < 2, "e ECG e Imaging uno sotto l'altro");
+  await shot(page, "esiti-stretto");
   // largo il contenitore, non lo schermo: a 1920 ma con la colonna, resta stretto
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.waitForTimeout(200);
   const g3 = await geo();
-  check(scen, g3.secs.length === 2 && g3.secs[0].t >= g3.secs[1].b - 1, "uno schermo grande non basta: conta la larghezza della finestra");
+  check(scen, g3.img.t >= g3.ecg.b - 1 && g3.lab.b <= g3.ecg.t + 1, "uno schermo grande non basta: conta la larghezza della finestra");
   await context.close();
 }
 
@@ -6516,7 +6543,7 @@ const scenarios = [
   ["finestra: pill, Esc, clic fuori, affianca, copia", scenarioFinestra],
   ["pill ridotta: il promemoria di un altro paziente dice di chi è", scenarioPillAltroPaziente],
   ["finestra: tetto di 1150 px, schede ferme", scenarioFinestraLarga],
-  ["esiti: referti accanto ai valori, bottone grande, unità", scenarioEsitiLayout],
+  ["esiti: il Lab per primo, un fondo per sezione, bottone grande, unità", scenarioEsitiLayout],
   ["esiti: il workup — fuori range in cima, Lab · ECG · Imaging, attese, ↗ PDF", scenarioWorkup],
   ["menu ⋯: tempi, riferimenti, comandi rari, niente paragrafi, ricarica", scenarioMenuAltro],
   ["no-patient page has no exams", scenarioNoPatientPage],
