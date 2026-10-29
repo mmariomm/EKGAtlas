@@ -1,0 +1,102 @@
+/*
+ * PS Assist — il registratore, «Ferma e scarica»: la pagina che prende quello
+ * che il service worker ha tenuto (registra.js), legge il testo dei PDF con la
+ * stessa strada del pannello (registra-pdf.js), anonimizza e controlla
+ * (registra-anonimo.js) e, solo se il controllo passa, scarica lo zip. Tutto
+ * qui, su questo PC: lo zip si scarica come un file qualunque, e lo manda il
+ * medico.
+ */
+(async () => {
+  const $ = (id) => document.getElementById(id);
+  const dici = (testo, tono = "") => { const s = $("stato"); s.textContent = testo; s.className = "msg " + tono; };
+  const PREFISSI = ["regp:", "regf:", "regd:"];
+  const cancella = async () => {
+    const tutto = await chrome.storage.local.get(null);
+    await chrome.storage.local.remove([...Object.keys(tutto).filter((k) => PREFISSI.some((p) => k.startsWith(p))), "registra"]);
+  };
+  $("cancella").addEventListener("click", async () => {
+    await cancella().catch(() => {});
+    $("ancora").hidden = true; $("cancella").hidden = true;
+    dici("Registrazione cancellata da questo PC.", "ok");
+  });
+  const esito = (x) => { window.__registra = x; document.documentElement.dataset.esito = x.ok ? "ok" : "no"; };
+
+  try {
+    const tutto = await chrome.storage.local.get(null);
+    const st = tutto.registra;
+    if (!st) { dici("Su questo PC non c'è nessuna registrazione."); esito({ ok: false, why: "nessuna" }); return; }
+    if (st.stato === "rec" && Date.now() < st.scade) {
+      dici("La registrazione è ancora in corso: fermala dal pannello (⋯ → Ferma e scarica).");
+      esito({ ok: false, why: "in corso" }); return;
+    }
+    $("azioni").hidden = false;
+    const pagine = [], flusso = [], note = [], schede = [], grezzi = [];
+    for (const [k, v] of Object.entries(tutto)) {
+      if (k.startsWith("regp:")) pagine.push(v);
+      else if (k.startsWith("regf:")) { flusso.push(...(v.flusso || [])); note.push(...(v.note || [])); schede.push(...(v.schede || [])); }
+      else if (k.startsWith("regd:")) grezzi.push(v);
+    }
+    // le richieste del pannello (content.js): stesso indirizzo e metodo, un
+    // attimo dopo che il pannello l'ha chiesta
+    note.sort((a, b) => a.ts - b.ts);
+    for (const r of flusso.sort((a, b) => a.inizio - b.inizio)) {
+      if (r.estensione || r.registratore) continue;
+      const i = note.findIndex((n) => n.url === r.url && n.metodo === r.metodo && r.inizio - n.ts > -1500 && r.inizio - n.ts < 8000);
+      if (i >= 0) { r.estensione = true; note.splice(i, 1); }
+    }
+    // i PDF: il testo, le pagine, la misura — i byte non vanno oltre questa pagina
+    const pdf = [];
+    for (const [i, d] of grezzi.sort((a, b) => a.ts - b.ts).entries()) {
+      dici(`Leggo il testo dei PDF: ${i + 1} di ${grezzi.length}…`);
+      const bin = atob(d.b64 || "");
+      const u8 = new Uint8Array(bin.length);
+      for (let j = 0; j < bin.length; j++) u8[j] = bin.charCodeAt(j);
+      const o = { url: d.url, ts: d.ts, scheda: d.scheda, origine: d.origine, righe: [], lettore: null, pagine: null, misura: null };
+      try { const t = await RegistraPdf.testoPdf(u8.buffer); o.righe = t.righe || []; o.lettore = t.lettore || null; if (!o.righe.length && t.motivo) o.errore = t.motivo; }
+      catch (e) { o.errore = String(e && e.message || e).slice(0, 80); }
+      try {
+        const doc = await globalThis.pdfjsLib.getDocument({ data: u8.slice(), isEvalSupported: false, disableFontFace: true, useSystemFonts: false,
+          useWorkerFetch: false, disableAutoFetch: true, disableStream: true, verbosity: 0 }).promise;
+        o.pagine = doc.numPages;
+        const v = (await doc.getPage(1)).view;
+        o.misura = [Math.round(v[2] - v[0]), Math.round(v[3] - v[1])];
+        Promise.resolve(doc.destroy()).catch(() => {});
+      } catch { /* pagine e misura restano sconosciute */ }
+      pdf.push(o);
+    }
+    dici("Anonimizzo…");
+    const vocabolario = await (await fetch(chrome.runtime.getURL("registra-vocabolario.json"))).json();
+    const raccolta = { versione: st.versione, inizio: st.inizio, fine: st.fine, comeFinita: st.comeFinita, origini: st.origini, pagine, flusso, pdf, schede };
+    const r = RegistraAnonimo.anonimizza(raccolta, { vocabolario });
+    if (!r.gate.ok) {
+      // niente si scrive: si dice quanti punti e dove, mai i valori
+      dici(`Non esporto: restano dati veri in ${r.gate.punti} punti`, "ko");
+      const ul = $("dove");
+      ul.hidden = false;
+      for (const [file, cat] of Object.entries(r.gate.dove).slice(0, 30)) {
+        const li = document.createElement("li");
+        li.textContent = `${file}: ${Object.entries(cat).map(([k, n]) => `${k} ×${n}`).join(", ")}`;
+        ul.appendChild(li);
+      }
+      esito({ ok: false, punti: r.gate.punti, dove: r.gate.dove });
+      return;
+    }
+    const zip = RegistraAnonimo.creaZip(r.files, new Date(st.inizio));
+    const d = new Date(st.inizio), p2 = (n) => String(n).padStart(2, "0");
+    const nome = `psassist-registrazione-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.zip`;
+    const url = URL.createObjectURL(new Blob([zip], { type: "application/zip" }));
+    const scarica = () => { const a = document.createElement("a"); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); };
+    scarica();
+    $("ancora").hidden = false;
+    $("ancora").addEventListener("click", scarica);
+    dici(`Scaricato: ${nome} (${Math.max(1, Math.round(zip.length / 1024))} KB) — ${r.riepilogo.pagine} pagine, ${r.riepilogo.richieste} richieste, ${r.riepilogo.pdf} PDF. `
+      + "È nella cartella Download: è quello da mandare. Quando l'hai mandato, cancella la registrazione da questo PC.", "ok");
+    $("riep").hidden = false;
+    $("riep").textContent = r.files["riepilogo.txt"];
+    await chrome.storage.local.set({ registra: { ...st, esportata: Date.now() } });
+    esito({ ok: true, nome, byte: zip.length });
+  } catch (e) {
+    dici(`Non esporto: qualcosa è andato storto (${String(e && e.message || e).slice(0, 120)}). La registrazione resta su questo PC.`, "ko");
+    esito({ ok: false, why: String(e && e.message || e) });
+  }
+})();

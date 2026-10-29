@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PS Assist — registrazione</title>
+<style>
+  body { font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #16232E;
+         background: #F4F8FB; margin: 0; padding: 32px 24px; }
+  .box { max-width: 620px; margin: 0 auto 22px; background: #fff; border: 1px solid #D9E2EC;
+         border-radius: 14px; padding: 22px 24px 26px; box-shadow: 0 8px 26px rgba(9,42,74,.12); }
+  h1 { font-size: 18px; margin: 0 0 4px; } .sub { color: #5B6B7A; font-size: 13px; margin: 0 0 18px; }
+  button { margin-top: 14px; border: 0; border-radius: 10px; background: #0B5CAD; color: #fff;
+           padding: 11px 20px; font: inherit; font-weight: 700; cursor: pointer; }
+  button:hover { background: #094a8c; }
+  button.via { background: transparent; color: #B3261E; border: 1px solid #E9BAB6; margin-left: 8px; }
+  .msg { margin-top: 6px; border-radius: 9px; padding: 10px 12px; font-size: 13.5px; background: #EEF1F4; color: #35506B; }
+  .msg.ok { background: #EDF7F0; border: 1px solid #BCE0C9; color: #124F31; }
+  .msg.ko { background: #FDF3F2; border: 1px solid #E9BAB6; color: #8A1F19; }
+  ul { margin: 8px 0 0; padding-left: 20px; font-size: 12.5px; color: #5B6B7A; }
+  pre { white-space: pre-wrap; font-size: 12px; color: #35506B; background: #F4F8FB; border: 1px solid #E3E8EF; border-radius: 9px; padding: 10px 12px; max-height: 320px; overflow: auto; }
+  @media (max-width: 520px) { body { padding: 16px; } .box { padding: 18px 16px 22px; } }
+</style></head><body>
+<div class="box">
+  <h1>Registrazione</h1>
+  <p class="sub">Le pagine, le richieste e il testo dei PDF di questa sessione, anonimizzati qui, su questo PC. Non parte niente verso nessuno: lo zip lo mandi tu.</p>
+  <div id="stato" class="msg" role="status">Preparo la registrazione…</div>
+  <ul id="dove" hidden></ul>
+  <div id="azioni" hidden>
+    <button id="ancora" hidden>Scarica di nuovo</button><button id="cancella" class="via">Cancella la registrazione da questo PC</button>
+  </div>
+  <pre id="riep" hidden></pre>
+</div>
+<script src="pdfjs/pdf.min.js"></script>
+<script src="pdfjs/pdf.worker.min.js"></script>
+<script src="registra-pdf.js"></script>
+<script src="registra-anonimo.js"></script>
+<script src="registra-esporta.js"></script>
+</body></html>
