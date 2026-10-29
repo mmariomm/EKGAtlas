@@ -13,7 +13,7 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { pdfCifrato, pdfOggettiCompressi, pdfKerning, RIGHE_ESEMPIO } from "./pdf-difficili.mjs";
+import { pdfCifrato, pdfOggettiCompressi, pdfKerning, RIGHE_ESEMPIO, pdfSemplice, RIGHE_ECG, RIGHE_ALTRO } from "./pdf-difficili.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const core = readFileSync(join(root, "src/core.js"), "utf8");
@@ -32,7 +32,9 @@ const src = "async " + grab("estraiTestoPdf");   // declared `async function` in
 // pdf.js prima, il lettore di casa se pdf.js non ne cava niente
 const srcTutto = [
   "const hasExt = () => false; const ask = async () => ({ ok: false }); let pdfjsInArrivo = null;",
-  src, grab("pdfjsPronto"), grab("righeDaPezzi"), "async " + grab("testoPdfjs"), "async " + grab("testoPdf"), grab("pdfDiag"),
+  src, grab("pdfjsPronto"), grab("righeDaPezzi"), grab("righeDritte"), "async " + grab("testoPdfjs"), "async " + grab("testoPdf"), grab("pdfDiag"),
+  // di chi è un referto, il referto scritto di un ECG, quale PDF tenere, la fila degli scaricamenti
+  grab("impronta"), grab("identitaReferto"), grab("refertoScrittoEcg"), grab("scegliPdfReferto"), grab("codaLimitata"),
 ].join("\n");
 
 function chromiumPath() {
@@ -142,6 +144,84 @@ check(/ObjStm [1-9]/.test((await leggi(pdfOggettiCompressi(RIGHE_ESEMPIO))).diag
 const ripiego = await leggi(pdfCid(RIGHE));
 check(ripiego.lettore === "lettore di casa" && ripiego.righe.length === RIGHE.length,
   `se pdf.js non ne cava niente, resta il lettore di casa (${ripiego.lettore}, ${ripiego.righe.length} righe${ripiego.motivo ? `; ${ripiego.motivo}` : ""})`);
+
+// ---- un ECG in orizzontale: il testo è scritto ruotato di 90° -------------------
+console.log("\nECG in orizzontale (testo ruotato)");
+const uguali = (a, b) => a.length === b.length && a.every((x, i) => norm(x) === norm(b[i]));
+const dritto = await leggi(pdfSemplice(RIGHE_ECG));
+check(uguali(dritto.righe, RIGHE_ECG), `dritto: righe in ordine (${dritto.lettore}, ${dritto.righe.length}/${RIGHE_ECG.length}; got: ${dritto.righe.join(" | ").slice(0, 400)})`);
+const ruotato = await leggi(pdfSemplice(RIGHE_ECG, { ruotato: true }));
+check(ruotato.lettore === "pdf.js" && uguali(ruotato.righe, RIGHE_ECG),
+  `ruotato, con pdf.js: le righe si leggono in ordine, parola per parola (got: ${ruotato.righe.slice(0, 3).join(" | ").slice(0, 140)})`);
+check(uguali(ruotato.casa, RIGHE_ECG), `ruotato, col lettore di casa: anche (got: ${ruotato.casa.slice(0, 3).join(" | ").slice(0, 140)})`);
+
+// tutto il resto è logica pura: gira nella stessa pagina, sugli stessi pezzi
+const prova = (fn, arg) => page.evaluate(async ({ src, fn, arg }) => {
+  // eslint-disable-next-line no-eval
+  eval(src);
+  // eslint-disable-next-line no-eval
+  return await eval(`(${fn})`)(arg);
+}, { src: srcTutto, fn: fn.toString(), arg });
+
+console.log("\nECG: solo il referto scritto");
+const ecg = await prova((r) => refertoScrittoEcg(r), ruotato.righe);
+check(!ecg.soloMacchina && ecg.righe.length === 1 && /^Ritmo sinusale a 72\/min\. Non alterazioni/.test(ecg.righe[0]),
+  `del PDF ruotato resta solo il referto del cardiologo (got: ${JSON.stringify(ecg.righe).slice(0, 120)})`);
+const soloTracciato = await prova((r) => refertoScrittoEcg(r), RIGHE_ECG.slice(0, 5));
+check(soloTracciato.soloMacchina && !soloTracciato.righe.length, "un tracciato senza referto scritto: niente testo (misure e frasi della macchina no)");
+const scritto = await prova((r) => refertoScrittoEcg(r), ["Visita cardiologica", "Ritmo sinusale, non alterazioni acute."]);
+check(!scritto.soloMacchina && scritto.righe.length === 2, "un documento scritto senza misure resta com'è");
+const conclusioni = await prova((r) => refertoScrittoEcg(r), ["PR 160 ms", "Conclusioni: fibrillazione atriale a 110 bpm", "Dott. Esempio"]);
+check(conclusioni.righe.length === 1 && /fibrillazione atriale a 110 bpm/.test(conclusioni.righe[0]),
+  `«Conclusioni:» sulla stessa riga, fino alla firma (got: ${JSON.stringify(conclusioni.righe)})`);
+
+console.log("\nil referto è di questo paziente?");
+const ROSSI = { cf: "SMPRSS80A01F205X", nome: "ROSSI MARIO", nascita: "01/01/1980" };
+const id = (righe, paz) => prova(({ righe, paz }) => identitaReferto(righe, paz), { righe, paz });
+check((await id(RIGHE_ECG, ROSSI)).esito === "ok", "stesso codice fiscale: ok");
+check((await id(RIGHE_ECG, { cfImp: await prova(() => impronta("SMPRSS80A01F205X")), nome: "ROSSI MARIO" })).esito === "ok",
+  "stesso codice fiscale anche quando del paziente si conosce solo l'impronta");
+check((await id(RIGHE_ALTRO, ROSSI)).esito === "altro", "un altro codice fiscale: è di un altro paziente");
+check((await id(RIGHE_ESEMPIO, ROSSI)).esito === "ignota", "nessuna intestazione: «non verificata»");
+check((await id(["Paziente: ROSSI MARIO", "Nato il 01/01/1980", "Esame"], ROSSI)).esito === "ok", "nome e data di nascita: ok");
+check((await id(["Paziente: ROSSI MARIO", "Nato il 03/03/1970"], ROSSI)).esito === "altro", "stesso nome, un'altra data di nascita: un altro paziente");
+check((await id(["Paziente: BIANCHI ANNA", "Esame"], { nome: "ROSSI MARIO" })).esito === "altro", "un altro nome scritto come paziente: un altro paziente");
+check((await id(["Paziente collaborante.", "Esame nei limiti."], { nome: "ROSSI MARIO" })).esito === "ignota", "«Paziente collaborante» nel testo non è un nome");
+check((await id(["ROSSI MARIO"], { nome: "ROSSI MARIO" })).esito === "ignota", "il nome da solo non basta");
+check((await id(["BNCNNA50B42F205Z"], { nome: "ROSSI MARIO", nascita: "01/01/1980" })).esito === "altro",
+  "il codice fiscale del paziente non si sa ancora, ma la data di nascita dentro quello del referto è un'altra");
+// fino in fondo: dal PDF al verdetto
+const pdfAltro = await leggi(pdfSemplice(RIGHE_ALTRO));
+check((await id(pdfAltro.righe, ROSSI)).esito === "altro", "un PDF intestato a un altro paziente: riconosciuto dal suo testo");
+
+console.log("\nquale PDF tenere fra quelli che il portale mostra");
+const scegli = (cand, chi) => prova(({ cand, chi }) => scegliPdfReferto(cand, chi), { cand, chi });
+const giusto = { righe: RIGHE_ECG }, sbagliato = { righe: RIGHE_ALTRO }, anonimo = { righe: RIGHE_ESEMPIO };
+check((await scegli([sbagliato, giusto], ROSSI)).i === 1, "prima uno di un altro paziente, poi il suo: si tiene il suo");
+check((await scegli([giusto, anonimo], ROSSI)).i === 0, "quello col suo codice fiscale batte quello senza intestazione");
+const solo = await scegli([sbagliato], ROSSI);
+check(solo.i === -1 && solo.altri === 1, "solo PDF di altri: nessuno");
+check((await scegli([anonimo, { righe: ["TC ENCEFALO", "Non lesioni."] }], { ...ROSSI, titolo: "TC ENCEFALO (A69846)" })).i === 1,
+  "a parità d'identità, quello che nomina l'esame chiesto");
+
+console.log("\nal massimo due scaricamenti insieme");
+const fila = await prova(async () => {
+  const metti = codaLimitata(2);
+  let ora = 0, max = 0;
+  const partiti = [];
+  const lavori = [1, 2, 3, 4, 5].map((n) => metti(async () => {
+    partiti.push(n); ora++; max = Math.max(max, ora);
+    await new Promise((r) => setTimeout(r, 40));
+    ora--;
+    if (n === 3) throw new Error("rotto");
+    return n;
+  }).catch((e) => e.message));
+  const esiti = await Promise.all(lavori);
+  return { max, partiti, esiti, stato: metti.stato() };
+});
+check(fila.max === 2, `mai più di due insieme (got ${fila.max})`);
+check(fila.partiti.join() === "1,2,3,4,5" && fila.esiti.join() === "1,2,rotto,4,5" && fila.stato.attivi === 0 && fila.stato.inCoda === 0,
+  `tutti in ordine, anche dopo uno che si rompe (got ${JSON.stringify(fila)})`);
 
 await browser.close();
 console.log(fail ? `\nPDF-TESTO: ${fail} CHECK FALLITI\n` : "\nPDF-TESTO: TUTTO OK\n");

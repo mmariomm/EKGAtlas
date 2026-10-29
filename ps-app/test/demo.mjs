@@ -149,10 +149,11 @@ await page.waitForSelector("#psassist-host [data-esito]", { state: "attached", t
 // il conteggio è nell'intestazione e conta solo i referti dell'elenco: quelli
 // di laboratorio, finché la tabella dei valori non c'è, stanno a parte, chiusi
 // sotto «Laboratorio (N)» — e se ne vanno quando la tabella arriva (più sotto)
-const titoloRef = await $(".sec .lbl:has-text('Referti')").innerText();
-const nIntest = Number((/referti \((\d+)\)/i.exec(titoloRef) || [])[1] || 0);
-check(nIntest >= 2 && nIntest === await page.locator('#psassist-host .sec:not(.reflab) [data-esito][data-kind="referto"]').count(),
-  `gli Esiti arrivano dalla pagina vera, e l'intestazione conta le righe che si vedono (${titoloRef.replace(/\s+/g, " ").trim()})`);
+const contiSezioni = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wucol .wucnt")]
+  .map((c) => Number((/\((\d+)\)/.exec(c.textContent) || [])[1] || 0)));
+const nIntest = contiSezioni.reduce((a, b) => a + b, 0);
+check(nIntest >= 2 && nIntest === await page.locator('#psassist-host .wucol [data-esito][data-kind="referto"]').count(),
+  `gli Esiti arrivano dalla pagina vera, e ogni sezione conta le righe che si vedono (${contiSezioni.join(" + ")})`);
 check(await $("#reflab").count() === 0 || /laboratorio \(\d+\)/i.test(await $("#reflab summary").innerText()),
   "senza tabella, i referti di laboratorio stanno a parte, in «Laboratorio (N)»");
 // i valori non si leggono da soli: si chiedono, e arrivano in UNA tabella
@@ -216,17 +217,17 @@ await attendiTabella(30000);
 const novita = await page.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
   const sigla = (td) => td.closest("tr").cells[0].firstChild.textContent.trim();
-  return { striscia: r.querySelector(".newbar")?.textContent?.replace(/\s+/g, " ").trim() || "",
+  return { striscia: r.querySelector(".wusum #letto")?.getAttribute("title") || "",
            agg: [...new Set([...r.querySelectorAll(".sttab td.agg")].map(sigla))],
            nuovi: [...new Set([...r.querySelectorAll(".sttab td.nuovo")].map(sigla))] };
 });
-check(/valori nuovi dall'ultima lettura/.test(novita.striscia), `dopo ↻ Aggiorna la striscia annuncia le novità (${novita.striscia.slice(0, 50)})`);
+check(/valori nuovi dall'ultima lettura/.test(novita.striscia), `dopo ↻ Aggiorna la riga in cima annuncia le novità (${novita.striscia.slice(0, 50)})`);
 check(novita.agg.includes("Hb") && novita.nuovi.includes("Na"),
   `il valore cambiato e l'analita comparso sono marcati (agg: ${novita.agg.join(",")} · nuovi: ${novita.nuovi.join(",")})`);
 await $("#letto").click();
 await page.waitForTimeout(400);
-check(await $(".sttab td.agg, .sttab td.nuovo").count() === 0 && await $(".newbar").count() === 0,
-  "«Letto» spegne i marchi e la striscia");
+check(await $(".sttab td.agg, .sttab td.nuovo").count() === 0 && await $("#letto").count() === 0,
+  "«N nuovi» (un tocco: visti) spegne i marchi, e se ne va");
 
 // ---- un tocco su un valore lo segna: giallo, arancio, poi via — e resta col paziente
 const cellaHb = () => page.locator("#psassist-host .sttab td[data-cella]").first();
@@ -263,11 +264,10 @@ check(await $("#reflab").count() === 0 && !/Laboratorio/i.test(await $(".sec:has
 check(visibili.every((t) => /^\d\d\/\d\d \d\d:\d\d/.test(t)),
   `ogni referto con data e ora (${visibili.map((t) => t.slice(0, 12)).join(" · ")})`);
 
-await $("#menubtn").click();
-await $("#refsave").click();   // «Salva i referti» sta nel menu ⋯
+await $(".wusum #refsave").click();   // «⭳ Salva i referti» sta nella riga in cima agli Esiti
 await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length >= 1, { timeout: 30000 }).catch(() => {});
 check(await $(".rdot.saved").count() >= 1, "i referti si salvano col ponte estensione");
-await $('[data-esito][data-kind="referto"]').first().click();
+await $("[data-pdf]").first().click();   // «↗ PDF»
 await page.waitForSelector(".psa-tab iframe", { timeout: 20000 });
 check(await page.locator(".psa-tab iframe").count() === 1, "e si aprono nella finta scheda");
 await page.locator(".psa-tab header button").click();
