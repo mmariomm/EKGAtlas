@@ -6,10 +6,9 @@
     "test": "test"
   },
   "scripts": {
-    "test": "node tools/verifica-esempi.mjs && node test/valori.mjs && node test/pdftesto.mjs && node test/storico.mjs && node test/editor.mjs && node test/ponte-cripto.mjs && node test/run.mjs && node test/ext-referti.mjs && node test/ext-storico.mjs && node test/ext-ordine.mjs && node test/ext-nascosta.mjs && node test/ext-ponte.mjs && node test/stampa-host.mjs && node test/ext-stampa.mjs && node tools/demo.mjs && node test/demo.mjs",
+    "test": "node tools/verifica-esempi.mjs && node test/valori.mjs && node test/pdftesto.mjs && node test/storico.mjs && node test/editor.mjs && node test/ponte-cripto.mjs && node test/run.mjs && node test/ext-referti.mjs && node test/ext-storico.mjs && node test/ext-ordine.mjs && node test/ext-nascosta.mjs && node test/ext-ponte.mjs && node test/stampa-host.mjs && node test/ext-stampa.mjs",
     "build": "node tools/build.mjs",
     "dist": "npm run build && node tools/editor.mjs && node tools/dist.mjs",
-    "demo": "node tools/build.mjs && node tools/demo.mjs",
     "esempi": "node tools/esempi.mjs && node tools/verifica-esempi.mjs",
     "editor": "node tools/editor.mjs",
     "verifica-build": "node tools/verifica-build.mjs"

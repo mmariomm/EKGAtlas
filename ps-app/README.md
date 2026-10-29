@@ -157,11 +157,14 @@ apre gli Esiti), il **cuore** dei parametri vitali e lo stato degli esami, l'ico
 numero delle cose aperte e, accanto in grigio, la prima (il post-it), **visto 20 min fa** — in ambra
 dopo 3 ore —, oppure **questa pagina** per quello aperto, che è il primo; poi **▾**, per metterlo
 nella stanza senza trascinarlo, e passandoci sopra la **✕** per toglierlo dall'elenco (e, per chi non
-ha niente da fare, l'icona vuota). L'**episodio precedente** sta in fondo, in grigio, e nella stanza
-non va. Il nome non si taglia mai per primo: nella colonna stretta il resto scende sotto il nome e
-«visto…» si toglie.
+ha niente da fare, l'icona vuota). **Ogni cosa ha la sua colonna, uguale per tutte le righe**: il
+nome, il cuore, Lab, ECG, RX, Da fare, il post-it — il Lab sta sempre allo stesso posto, e una
+colonna che nessuno usa non occupa niente. Cede per primo il post-it, poi il nome; i pezzetti degli
+esami mai. L'**episodio precedente** sta in fondo, in grigio, e nella stanza non va. Nella colonna
+stretta (affiancata) il nome sta da solo sulla prima riga, il resto scende sotto, con le stesse
+colonne, e «visto…» si toglie.
 
-**Il cuore dei parametri vitali** apre la riga di stato, nella lista, nel letto e nell'intestazione
+**Il cuore dei parametri vitali** apre la riga di stato, nella lista, nel letto (solo l'icona) e nell'intestazione
 accanto agli identificativi: **♥ rosso** se un parametro da solo è nella fascia rossa del NEWS2 —
 SpO2 ≤91 (una soglia per tutti), FR ≤8 o ≥25, PAS ≤90 o ≥220, FC ≤40 o ≥131, T ≤35,0, coscienza
 non A all'ACVPU o GCS <15 — o se il NEWS2 fa 7 o più; **♥ ambra** per NEWS2 5–6; niente altrimenti.
@@ -175,14 +178,24 @@ resta fermo. Dopo **4 ore** senza una riga più nuova diventa vuoto, con le ore:
 solo quando la pagina del paziente si apre, come lo stato degli esami: un paziente mai aperto non
 ha cuore.
 
-**Lo stato degli esami**, su ogni riga e su ogni letto: `Lab 3/6 ⏳50′ · ECG ✓ · RX ⏳1h20 ●` —
-per tipo, tornati su chiesti, e se qualcosa aspetta da quanto aspetta il più vecchio: neutro, poi
+**Lo stato degli esami**, su ogni riga: `Lab 3/6 50′` `ECG ✓` `RX 0/1 1h20 ●` — un pezzetto per
+tipo, sempre in quest'ordine e ognuno **tinto col colore della sua sezione negli Esiti** (Lab
+verde, ECG viola, Imaging magenta); dentro, tornati su chiesti, e se qualcosa aspetta da quanto aspetta il più vecchio: neutro, poi
 **ambra**, poi **rosso** (laboratorio 60′/120′, ECG 15′/30′, imaging 90′/180′: le soglie stanno
-in cima alla sezione «STATO ESAMI» di `src/core.js`). Il **●** dice che è arrivato qualcosa da
-quando hai guardato i suoi Esiti — **rosso** se fra i valori nuovi non ancora segnati «Letto» ce
-n'è uno fuori range. Un tipo mai chiesto non c'è; se non si sa niente non c'è niente (mai un
-finto 0/0). Nel letto, corto: solo quello che aspetta («RX 1h20 ●»), o ✓. Letto più di mezz'ora
-fa diventa grigio, e il passaggio del mouse dice «letto alle 11:02» ed esame per esame.
+in cima alla sezione «STATO ESAMI» di `src/core.js`). Il **●**, dentro il pezzetto del suo tipo,
+dice che è arrivato qualcosa da quando hai guardato i suoi Esiti — nel Lab **rosso** se fra i
+valori nuovi non ancora segnati «Letto» ce n'è uno fuori range. Un tipo mai chiesto non c'è; se
+non si sa niente non c'è niente (mai un finto 0/0). In un'area, corto: solo quello che aspetta, o
+✓. Letto più di mezz'ora fa diventa grigio, e il passaggio del mouse dice «letto alle 11:02» ed
+esame per esame.
+
+**Nel letto, solo nome ed età** — niente righe di stato tagliate a metà. In alto a destra, sulla
+riga del letto, il **cuore** (solo l'icona) e **un pallino solo**, se c'è qualcosa: **rosso** per
+un esame oltre la seconda soglia, valori nuovi fuori range o un promemoria passato; **ambra** oltre
+la prima soglia o a 15 minuti da un promemoria; **blu** per un risultato nuovo; un **cerchio
+grigio** se qualcosa aspetta e basta. Il resto — esame per esame, il cuore, la prima cosa da fare —
+nel passaggio del mouse, e tutto nella riga della lista. Se il letto è piccolo, prima se ne vanno
+il nome del letto e i segni; il nome del paziente mai, e senza puntini.
 Da dove viene: dalla **pagina del paziente**, quando si apre (dal gestionale, dal pannello, da un
 ordine in sottofondo) — ogni richiesta, anche **quelle fatte a mano**, è una riga del gestionale
 con l'ora, gli esami e lo stato: un **REFERTO** o la finestra **Visualizza Risultati** = tornato
@@ -197,9 +210,9 @@ grigio.
 
 **La stanza** — una mappa minima, per vedere a colpo d'occhio **dove sta ogni paziente**: i
 **letti** e le **sedie** (un paziente ciascuno) e le **aree** senza letto — corridoio, attesa —
-dove ne stanno quanti servono. Chi ha qualcosa da fare porta l'icona **Da fare** col numero accanto
-al nome del letto, e la prima cosa da fare sotto il suo nome: un tocco sull'icona apre la sua lista,
-come nella riga.
+dove ne stanno quanti servono. Nelle aree chi ha qualcosa da fare porta l'icona **Da fare** col
+numero accanto al nome, e la prima cosa da fare sotto: un tocco sull'icona apre la sua lista, come
+nella riga; nel letto c'è il pallino, e la lista si apre dal menu (**Da fare…**).
 
 **Cercare: basta scrivere.** Una lettera, con i Pazienti davanti e il cursore fuori da un campo, apre
 un filtro sopra la lista, già con quella lettera: la lista tiene solo chi torna, nella stanza gli
@@ -218,9 +231,8 @@ affiancata o alla misura minima, dove semmai la mappa scorre (sotto i 20 px una 
 un nome leggibile): di lato anche con la rotella, e il bordo sfuma dalla parte dove c'è altro. Dopo
 uno spostamento la mappa resta dov'era. Fuori da Modifica si vede solo il
 pezzo disegnato, in alto, subito sotto la lista: anche una stanza piccola riempie la mappa. Il testo non cambia misura: in un
-letto piccolo sparisce prima il post-it, poi tutto tranne il nome del paziente, che se è lungo va a
-capo invece di perdere l'iniziale (quello del letto resta nel passaggio del mouse); a capo va anche
-nelle aree. Un letto vuoto è solo il suo nome e un letto disegnato appena; una sedia vuota, il suo nome e una sedia.
+letto piccolo sparisce prima il nome del letto, coi segni, e il nome del paziente, se è lungo, va a
+capo (dopo l'apostrofo, in DELL'ACQUA) invece di perdere l'iniziale; a capo va anche nelle aree. Un letto vuoto è solo il suo nome e un letto disegnato appena; una sedia vuota, il suo nome e una sedia.
 
 La **sedia** è un letto più piccolo e fa tutto quello che fa un letto: un paziente, e chi arriva
 prende il posto di chi c'era (che torna in lista); **Sposta in…**, il tocco che apre il
@@ -275,7 +287,7 @@ fondo, un campo su una riga: si scrive e **Invio** aggiunge, in fondo alla lista
 spunta** e la voce è fatta: barrata, resta al suo posto **5 minuti** (un altro tocco la riapre), poi
 se ne va. L'ordine lo decidi tu: si **trascina** dalla maniglia ⋮⋮ (col mouse o col dito), o da
 tastiera **Alt+↑ / Alt+↓** sulla spunta. La **prima voce aperta** è il post-it: si legge sulla riga
-e nel letto. L'icona dice **quante** sono aperte e cambia colore quando un promemoria si avvicina:
+e nelle aree (nel letto, nel passaggio del mouse). L'icona dice **quante** sono aperte e cambia colore quando un promemoria si avvicina:
 **ambra dai 15 minuti prima**, **rossa quando l'ora è passata** (con un bagliore lento, fermo se il
 sistema chiede meno movimento); il passaggio del mouse le dice tutte. **Esc**, o un clic fuori, la
 chiude: non c'è niente da salvare, ogni gesto è già salvato.
@@ -692,7 +704,7 @@ fa scattare il doppio clic del riquadro.
 
 ### Nota sul paziente
 Non c'è più un campo a parte: la nota è la **prima voce di Da fare** (vedi *Pazienti*), il post-it
-che si legge sulla riga e nel letto. Quelle scritte prima sono diventate voci da sole, sul paziente
+che si legge sulla riga. Quelle scritte prima sono diventate voci da sole, sul paziente
 giusto: per codice fiscale, o per nome solo se in elenco non c'è un omonimo — una nota di chi non è
 in elenco aspetta lì finché scade.
 
@@ -880,8 +892,7 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   browser e al logout** — un turno è di dodici ore e i pazienti sono più di dodici — e **scadono da
   sole 24 ore** dopo l'ultima lettura. Su un PC condiviso: profilo Chrome tuo, e chiudi a fine turno.
 - Il portale si apre in un'altra scheda: **non serve ricaricare** la pagina del paziente, basta
-  tornarci sopra. Nel **banco di prova** il giro c'è tutto (link «Storico Dati Clinici» in basso a
-  sinistra), su una tabella ricostruita con esami inventati.
+  tornarci sopra.
 
 ### Dimissioni
 In cima, **una riga sola con quello che è ancora aperto**, solo quando c'è qualcosa:
@@ -1179,71 +1190,6 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
 > **Da configurare una volta**: l'host del visualizzatore è dichiarato in
 > `extension/manifest.json` → `host_permissions` (oggi `http://10.11.0.151:9080/*`). Se nella tua
 > sede è un altro indirizzo, cambialo lì e ricarica l'estensione.
-
----
-
-## Banco di prova (provare senza ospedale)
-
-Una pagina sola con dentro **le schermate vere del gestionale** e sopra **il
-pannello vero** — la stessa build dell'estensione. Serve per provare e far
-crescere l'interfaccia da casa, senza accesso a SA4PSO.
-
-- **Online**: il link del banco di prova (nel messaggio di consegna), da qualsiasi browser.
-- **Offline**: `dist/demo.html` è dentro lo zip — doppio click, funziona senza rete.
-
-### Cosa c'è dentro
-
-Le pagine sono quelle salvate dal gestionale — struttura, classi, foglio di
-stile e icone originali — con **tutto il contenuto sostituito da dati
-inventati** (vedi `esempi-gestionale/README.md`: gli originali erano cartelle
-cliniche complete e non stanno in questo repository). Si passa dall'una all'altra
-come nel programma: lista PS → scheda paziente → nuova richiesta → catalogo
-esami → conferma → stampa; e sulla seconda scheda, risultati e referti.
-
-### Cosa funziona
-
-Il flusso completo dell'ordine: quesito, profili, esami, «Conferma e stampa» (o «solo carrello») con
-la verifica esame per esame, il carrello che compare **nella pagina vera**, la
-Conferma nativa, la stampa (qui senza dialogo del browser: la scheda mostra il PDF
-e la stampante su cui va). E gli **Esiti**: i valori letti dalla
-finestra Risultati vera, i referti salvati e riaperti. Anche la tabella **Valori**:
-«Storico Dati Clinici» ricostruisce, sull'altra scheda, una tabella multi-prelievo
-dalla sua forma (`test/fixtures/storico.mjs`, esami inventati: di quella pagina non
-esiste una copia salvata qui); tornando sul paziente il pannello la ritrova già
-unita ai suoi Esiti.
-
-Di proposito **non** funziona il resto: gli script del gestionale sono rimossi
-(schede e menu interni non si aprono), le schermate mai salvate mostrano una
-pagina di cortesia invece di un errore, la stampa mostra il PDF ma non apre il
-dialogo, e i PDF sono fogli vuoti.
-
-### Niente esce dalla pagina
-
-Non è una promessa, è una barriera: le richieste allo stesso indirizzo le serve
-il simulatore in memoria, **tutto il resto viene rifiutato** — qualsiasi host,
-XHR, WebSocket, EventSource, beacon — e nel file offline lo impone anche una
-`Content-Security-Policy` che vieta al browser di raggiungere qualunque host.
-La suite conta le richieste di rete di un'intera sessione: **una sola, la pagina
-stessa**.
-
-Nel pannello vero la regola è la stessa, con **una sola eccezione, esplicita**:
-il Ponte verso l'iPhone. È spento finché la build non ha il suo indirizzo
-(`ponte/host.txt`) e il medico non associa il telefono; parla con un host solo
-(il sito del ponte, `wss://…/ponte/ws`, fissato nella build); e
-quello che passa è cifrato da un capo all'altro, illeggibile anche per quel sito
-(vedi [`ponte/README.md`](ponte/README.md)). Nel banco di prova il Ponte non c'è.
-
-### Perché non invecchia
-
-`dist/demo.html` è **generato** da `extension/content.js` (il pannello che si
-installa) e da `esempi-gestionale/` (le pagine): `npm run demo` e ogni
-`npm run dist` lo riallineano da soli, e la barra nera stampa quale build stai
-provando. Una suite dedicata (`node test/demo.mjs`) ripercorre nel banco gli
-stessi flussi dei test di prodotto.
-
-> Il pannello, fuori dall'host dell'ospedale, accetta i ganci del banco
-> (navigazione, schede, stampa); **su `smarthealth.multimedica.it` quei ganci non
-> esistono nemmeno**, quindi nulla servito dal gestionale può dirottarlo.
 
 ---
 
@@ -1642,9 +1588,7 @@ ps-app/
 ├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 (SumatraPDF lo prende installa.cmd: non sta nello zip)
 ├── tools/verifica-build.mjs ← al rilascio: la build, lo zip e la versione committati sono quelli di adesso
 ├── esempi-gestionale/   ← pagine vere del gestionale, contenuti inventati (+ come)
-├── demo/                ← guscio del banco di prova (css + il browser finto)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
-├── tools/demo.mjs       ← assembla dist/demo.html: pannello vero + pagine vere
 └── test/                ← simulatore SA4PSO + 105 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo, stampa automatica)
 ```
 
@@ -1655,10 +1599,9 @@ cd ps-app
 npm install        # solo playwright e ws, solo per i test
 npm run build      # rigenera extension/content.js + bookmarklet (+ ponte-cripto.js, ponte-host.js) dopo modifiche a src/
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
-npm run demo       # rigenera dist/demo.html (il banco di prova)
 npm run dist       # al rilascio: build, fogli di dimissione, dist/ps-assist-latest.zip (con stampa/, senza SumatraPDF)
 npm run verifica-build   # al rilascio, dopo dist e il commit: build fresca = build committata? zip e versioni giusti?
-npm test           # 105 scenari e2e + 194 sull'estensione (129 sull'ordine in sottofondo, 6 con la scheda davvero nascosta) + 123 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + 59 sul banco + storico + il cancello privacy
+npm test           # 105 scenari e2e + 194 sull'estensione (129 sull'ordine in sottofondo, 6 con la scheda davvero nascosta) + 123 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + storico + il cancello privacy
                    # + l'ordine in una scheda DAVVERO nascosta: Chrome senza Playwright, CDP grezzo (test/ext-nascosta.mjs; serve openssl)
                    # + il Ponte: 120 controlli senza browser (cifratura, ripetitore, Worker) e 166 dal vivo (test/ext-ponte.mjs)
                    # (Chromium che va in crash aprendo un PDF, in un contenitore Linux: PSA_CHROMIUM_ARGS=--disable-features=PdfOopif)

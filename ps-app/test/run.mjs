@@ -4215,7 +4215,8 @@ async function scenarioStanza(browser) {
   await aiPazienti(".stmap");
   const lungo = await page.evaluate(() => {
     const n = document.getElementById("psassist-host").shadowRoot.querySelector('.stbed .stp[data-stp="999001"] .stpn');
-    return { t: n.textContent.trim(), tagliato: n.scrollWidth > n.clientWidth + 1 || n.scrollHeight > n.clientHeight + 1, righe: Math.round(n.clientHeight / 18) };
+    const b = n.closest(".stp1").getBoundingClientRect();
+    return { t: n.textContent.trim(), tagliato: [...n.getClientRects()].some((x) => x.bottom > b.bottom + 0.5 || x.right > b.right + 0.5), righe: new Set([...n.getClientRects()].map((x) => Math.round(x.top))).size };
   });
   check(scen, lungo.t === "D'ALESSANDRO M." && !lungo.tagliato,
     `nel letto il nome lungo va a capo, intero, invece di perdere l'iniziale (got: ${JSON.stringify(lungo)})`);
@@ -4379,23 +4380,25 @@ async function scenarioStanza(browser) {
   const taglio = () => page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot;
     const taglia = (n) => n.scrollWidth > n.clientWidth + 1 || n.scrollHeight > n.clientHeight + 1;
-    return [...r.querySelectorAll(".pznm, .stmap .stpn")].filter(taglia).map((n) => n.textContent);
+    // nel letto il nome è in linea, dentro la sua riga di due: si guarda dove cadono le sue righe
+    const fuori = (n) => { const b = n.closest(".stp1").getBoundingClientRect(); return [...n.getClientRects()].some((x) => x.bottom > b.bottom + 0.5 || x.right > b.right + 0.5); };
+    return [...[...r.querySelectorAll(".pznm, .starea .stpn")].filter(taglia), ...[...r.querySelectorAll(".stbed .stpn")].filter(fuori)].map((n) => n.textContent);
   });
   const stretta = await page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot;
     const riga = [...r.querySelectorAll(".pzrow")].find((x) => /DELL.ACQUA/.test(x.textContent));
     const nm = riga.querySelector(".pznm"), nota = riga.querySelector(".dfpost"), visto = riga.querySelector(".stvisto");
-    return { col: getComputedStyle(riga.querySelector(".pzchi")).flexWrap, sotto: nota.getBoundingClientRect().top >= nm.getBoundingClientRect().bottom - 1,
+    return { sotto: nota.getBoundingClientRect().top >= nm.getBoundingClientRect().bottom - 1,
              visto: Math.round(visto.getBoundingClientRect().width), alta: Math.round(riga.getBoundingClientRect().height) };
   });
   const tagliatiL = await taglio();
-  check(scen, stretta.col === "wrap" && stretta.sotto && !tagliatiL.length && stretta.visto <= 1 && stretta.alta <= 48,
-    `colonna stretta: nella lista il post-it sotto il nome, «visto» via, la riga resta una riga, nessun nome tagliato (got: ${JSON.stringify(stretta)} ${tagliatiL.join(", ")})`);
+  check(scen, stretta.sotto && !tagliatiL.length && stretta.visto <= 1 && stretta.alta <= 66,
+    `colonna stretta: nella lista il nome da solo, il post-it sotto, «visto» via, due righe al massimo, nessun nome tagliato (got: ${JSON.stringify(stretta)} ${tagliatiL.join(", ")})`);
   await riga("999001").locator("[data-posto]").click();
   await $panel(page, '.stmenu [data-dove^="letto:"]').first().click();
   const nelLettoStretto = await page.evaluate(() => {
     const n = document.getElementById("psassist-host").shadowRoot.querySelector('.stbed .stp[data-stp="999001"] .stpn');
-    return { t: n.textContent.trim(), righe: Math.round(n.clientHeight / 18) };
+    return { t: n.textContent.trim(), righe: new Set([...n.getClientRects()].map((x) => Math.round(x.top))).size };
   });
   const tagliatiS = await taglio();
   check(scen, nelLettoStretto.t === "DELL'ACQUA A." && nelLettoStretto.righe === 2 && !tagliatiS.length,
@@ -4932,12 +4935,15 @@ async function scenarioPromemoria(browser) {
     "dalla riga si apre la sua lista, e la riga si aggiorna da sola");
   await shot(page, "onda3-dafare-riga");
 
-  // nella stanza: il letto porta l'icona e il post-it; dal suo menu «Da fare…»
+  // nella stanza il letto è piccolo: niente icona né post-it, un pallino solo
+  // (che le cose da fare le dice al passaggio del mouse); dal suo menu «Da fare…»
   await riga("999001").locator("[data-posto]").click();
   await $panel(page, '.stmenu [data-dove="letto:obi1"]').click();
   const letto = $panel(page, '[data-letto="obi1"]');
-  check(scen, (await letto.locator(".dfic").innerText()).trim() === "2" && (await letto.locator(".dfpost").innerText()).trim() === "chiamare la figlia",
-    "nel letto: l'icona col numero accanto al nome del letto, e il post-it sotto il paziente");
+  const pallino = { n: await letto.locator(".dfic, .dfpost").count(), cls: await letto.locator(".stseg").getAttribute("class").catch(() => ""),
+    tit: (await letto.locator(".stseg").getAttribute("title").catch(() => "")) || "" };
+  check(scen, pallino.n === 0 && /\bstseg\b/.test(pallino.cls || "") && /da fare: chiamare la figlia/.test(pallino.tit) && /da fare: \d\d:\d\d tropo/.test(pallino.tit),
+    `nel letto: niente icona né post-it, un pallino; passandoci sopra le cose da fare (got: ${JSON.stringify(pallino)})`);
   await letto.locator(".stp").click({ button: "right" });
   await $panel(page, ".stmenu").waitFor();
   check(scen, (await $panel(page, '.stmenu [data-dove="dafare"]').innerText()).replace(/\s+/g, " ").trim() === "Da fare… 2", "nel suo menu, «Da fare…» col numero");
@@ -4946,7 +4952,7 @@ async function scenarioPromemoria(browser) {
   check(scen, (await $panel(page, ".dfpop .dfi").count()) === 2, "e apre la stessa lista");
   await page.keyboard.press("Escape");
   await page.clock.fastForward("45:00");   // 11:31: la troponina è scaduta
-  check(scen, (await letto.locator(".dfic.ros").count()) === 1, "il promemoria scaduto fa rossa l'icona anche nel letto");
+  check(scen, (await letto.locator(".stseg.ros").count()) === 1, "il promemoria scaduto fa rosso il pallino del letto (da solo, senza ridisegno)");
   check(scen, richieste === 0, `scrivere, spuntare, spostare: nessuna richiesta di rete (${richieste})`);
 
   // ---- la nota e i promemoria di prima (3.57) diventano voci, una volta sola
@@ -6212,13 +6218,19 @@ async function scenarioStatoEsami(browser) {
   await $panel(page, "#back").click();
   await page.waitForSelector("#psassist-host .pzrow .esst", { timeout: 5000 });
   const riga = await testoPanel(page, ".pzrow.qui .esst");
-  check(scen, somiglia(riga, `Lab 2/3 ⏳${tAttesa(130)} · ECG ✓ · RX 0/1 ⏳${tAttesa(100)}`),
-    `la riga: «Lab 2/3 ⏳2h10 · ECG ✓ · RX 0/1 ⏳1h40» — la visita no, l'annullato no (got: ${riga})`);
-  check(scen, (await $panel(page, ".pzrow.qui .esst .esatt.ros").count()) === 1 && (await $panel(page, ".pzrow.qui .esst .esatt.amb").count()) === 1,
-    "il laboratorio oltre 2 h è rosso, l'RX oltre 90′ ambra");
+  check(scen, somiglia(riga, `Lab 2/3 ${tAttesa(130)} ECG ✓ RX 0/1 ${tAttesa(100)}`),
+    `la riga, un pezzetto per tipo: «Lab 2/3 2h10» «ECG ✓» «RX 0/1 1h40» — la visita no, l'annullato no (got: ${riga})`);
+  check(scen, (await $panel(page, ".pzrow.qui .es-lab .esatt.ros").count()) === 1 && (await $panel(page, ".pzrow.qui .es-img .esatt.amb").count()) === 1
+    && (await $panel(page, ".pzrow.qui .esatt.ros, .pzrow.qui .esatt.amb").count()) === 2,
+    "il laboratorio oltre 2 h è rosso, l'RX oltre 90′ ambra, ognuno dentro il suo pezzetto");
+  const pezzi = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".pzrow.qui .esp")]
+    .map((e) => ({ c: e.className, x: Math.round(e.getBoundingClientRect().left), col: getComputedStyle(e.querySelector(".esn")).color, bg: getComputedStyle(e).backgroundColor })));
+  check(scen, pezzi.map((p) => p.c).join() === "esp es-lab,esp es-ecg,esp es-img" && pezzi[0].x < pezzi[1].x && pezzi[1].x < pezzi[2].x
+    && pezzi.map((p) => p.col).join(" ") === "rgb(14, 116, 104) rgb(91, 80, 184) rgb(138, 74, 143)" && new Set(pezzi.map((p) => p.bg)).size === 3,
+    `Lab, ECG, RX in quest'ordine, ognuno tinto col colore della sua sezione negli Esiti (got: ${JSON.stringify(pezzi)})`);
   check(scen, (await $panel(page, ".pzrow.qui .esdot").count()) === 0, "alla prima lettura niente è «nuovo»");
   const alto = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".pzrow.qui").getBoundingClientRect().height);
-  check(scen, alto <= 46, `e la riga resta una riga (${Math.round(alto)} px)`);
+  check(scen, alto <= 48, `e la riga resta compatta: nella colonna stretta il nome, sotto i pezzetti (${Math.round(alto)} px)`);
 
   // arriva il referto della troponina mentre il medico è altrove: la pagina riletta (ridotta, non guardata)
   tropoFatta = true;
@@ -6229,17 +6241,25 @@ async function scenarioStatoEsami(browser) {
   await $panel(page, "#expand").click();
   await page.waitForSelector("#psassist-host .pzrow .esst", { timeout: 5000 });
   const riga2 = await testoPanel(page, '.pzrow:has([data-ep="999001"]) .esst');
-  check(scen, somiglia(riga2, `Lab 3/3 · ECG ✓ · RX 0/1 ⏳${tAttesa(100)} ●`) && (await $panel(page, '.pzrow:has([data-ep="999001"]) .esdot:not(.ros)').count()) === 1,
-    `il risultato arrivato dopo l'ultimo sguardo agli Esiti porta il pallino (got: ${riga2})`);
+  check(scen, somiglia(riga2, `Lab 3/3 ● ECG ✓ RX 0/1 ${tAttesa(100)}`) && (await $panel(page, '.pzrow:has([data-ep="999001"]) .es-lab .esdot:not(.ros)').count()) === 1
+    && (await $panel(page, '.pzrow:has([data-ep="999001"]) .esdot').count()) === 1,
+    `il risultato arrivato dopo l'ultimo sguardo agli Esiti porta il pallino, dentro il pezzetto del suo tipo (got: ${riga2})`);
   await shot(page, "onda1-pazienti");
-  // nel letto, la stessa riga corta
+  // nel letto: nome ed età, e un pallino solo (qui ambra: l'RX aspetta da più di 90′; il nuovo conta meno)
   await page.evaluate(() => localStorage.setItem("psassist:stanza.posti.v1", JSON.stringify({ 999001: { tipo: "letto", id: "obi1", ts: Date.now() } })));
   await page.reload();
   await page.waitForSelector("#psassist-host #expand", { state: "attached" });
   await $panel(page, "#expand").click();
-  await page.waitForSelector('#psassist-host [data-letto="obi1"] .esst', { timeout: 5000 });
-  const letto = await testoPanel(page, '[data-letto="obi1"] .esst');
-  check(scen, somiglia(letto, `RX ${tAttesa(100)} ●`), `nel letto, corta: solo quello che aspetta (got: ${letto})`);
+  await page.waitForSelector('#psassist-host [data-letto="obi1"] .stseg', { timeout: 5000 });
+  const letto = await page.evaluate(() => {
+    const b = document.getElementById("psassist-host").shadowRoot.querySelector('[data-letto="obi1"]'), g = b.querySelector(".stseg");
+    return { nome: b.querySelector(".stp1").textContent.replace(/\s+/g, " ").trim(), esami: b.querySelectorAll(".esst, .esp, .dfpost").length, cls: g.className, tit: g.title,
+             punti: (b.textContent.match(/…/g) || []).length + [...b.querySelectorAll("*")].filter((e) => getComputedStyle(e).textOverflow === "ellipsis" && e.scrollWidth > e.clientWidth + 1).length };
+  });
+  check(scen, letto.nome === "ROSSI M. 68" && letto.esami === 0 && letto.punti === 0,
+    `nel letto il nome e l'età, e basta: niente stato degli esami, niente puntini (got: ${JSON.stringify(letto)})`);
+  check(scen, /\bamb\b/.test(letto.cls) && somiglia(letto.tit.split("\n")[0], `RX in attesa da ${tAttesa(100)}`) && /nuovo: Troponina/i.test(letto.tit),
+    `e un pallino solo, ambra: l'RX aspetta da 1h40; il passaggio del mouse dice perché, e cosa è nuovo (got: ${JSON.stringify(letto.tit)})`);
   await shot(page, "onda1-letto");
 
   // letto più di mezz'ora fa: grigio, «letto alle…»
@@ -6252,10 +6272,11 @@ async function scenarioStatoEsami(browser) {
   await page.reload();
   await page.waitForSelector("#psassist-host #expand", { state: "attached" });
   await $panel(page, "#expand").click();
-  await page.waitForSelector('#psassist-host [data-letto="obi1"] .esst', { timeout: 5000 });
-  const tit = await $panel(page, '[data-letto="obi1"] .esst.vecchio').getAttribute("title", { timeout: 2000 }).catch(() => "");
+  await page.waitForSelector('#psassist-host [data-letto="obi1"] .stp', { timeout: 5000 });
+  const tit = await $panel(page, '[data-letto="obi1"] .stp').getAttribute("title", { timeout: 2000 }).catch(() => "");
   const hm = new Date(vecchio);
-  check(scen, (tit || "").includes(`letto alle ${due(hm.getHours())}:${due(hm.getMinutes())}`), `vecchio di 31′: grigio, «letto alle…» nel passaggio del mouse (got: ${JSON.stringify(tit)})`);
+  check(scen, (tit || "").includes(`letto alle ${due(hm.getHours())}:${due(hm.getMinutes())}`) && /RX addome[^:\n]*: in attesa/i.test(tit || ""),
+    `vecchio di 31′: nel passaggio del mouse del letto esame per esame, e «letto alle…» (got: ${JSON.stringify(tit)})`);
   // il paziente nell'intestazione porta anche il suo posto
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host #expand", { state: "attached" });
@@ -6310,8 +6331,117 @@ async function scenarioStatoOrdiniNostri(browser) {
   await page.waitForSelector("#psassist-host .pzrow .esst", { timeout: 5000 });
   const riga = await testoPanel(page, ".pzrow.qui .esst");
   const tit = await $panel(page, ".pzrow.qui .esst").getAttribute("title");
-  check(scen, /^Lab 0\/2 ⏳\d+′$/.test(riga || "") && /ordinato da qui/.test(tit || ""),
-    `«Lab 0/2 ⏳0′», e il passaggio del mouse dice «ordinato da qui» (got: ${riga})`);
+  check(scen, /^Lab 0\/2 \d+′$/.test(riga || "") && /ordinato da qui/.test(tit || ""),
+    `«Lab 0/2 0′», e il passaggio del mouse dice «ordinato da qui» (got: ${riga})`);
+  await context.close();
+}
+
+// La lista dei Pazienti a colonne, e il letto con nome ed età. Il medico:
+// «i lab, rx etc sono tutti confusi insieme»; e sui letti «una miriade di
+// "..." e non si vede nulla». Dieci pazienti seminati (lo stato degli esami,
+// i parametri, «Da fare», i posti), alle misure vere dello schermo: 1366×768 e
+// 1920×1080, la finestra all'85% e affiancata.
+async function scenarioListaLetti(browser) {
+  const scen = "lista-letti";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock, { finestra: "centro" });
+  const semina = () => page.evaluate(() => {
+    const ora = Date.now(), m = 60e3;
+    const P = [
+      ["999001", "ROSSI MARIO", "arancione", 68], ["999002", "BIANCHI ANNA MARIA", "azzurro", 82],
+      ["999003", "DELL'ACQUA GIOVANNI BATTISTA", "verde", 45], ["999004", "ESPOSITO LUCIA", "rosso", 91],
+      ["999005", "FERRARI PAOLO", "verde", 33], ["999006", "DE LUCA ANTONIETTA", "bianco", 77],
+      ["999007", "COLOMBO GIUSEPPE", "arancione", 59], ["999008", "RICCI FRANCESCA", "azzurro", 24],
+      ["999009", "MARINO SALVATORE", "verde", 71], ["999010", "GRECO ELENA", "verde", 50],
+    ];
+    localStorage.setItem("psassist:patients.v1", JSON.stringify(P.map(([ep, name, triage, eta], i) => ({ ep, name, url: "", ts: ora - (i * 25 + 5) * m, pk: "", triage, triageTs: ora, eta }))));
+    const r = (k, min, fatto, esami, quando = 0) => ({ k, rid: k, ts: ora - min * m, fatto, quando, esami });
+    const L = (n) => ["lab", n], E = ["ecg", "ELETTROCARDIOGRAMMA"], X = (n) => ["img", n];
+    const vit = (p, min = 20) => ({ p, ts: ora - min * m });
+    const S = {
+      999001: { righe: [r("a", 130, "", [L("TROPONINA"), L("EMOCROMO")]), r("b", 140, "referto", [E]), r("c", 100, "", [X("RX TORACE")])], vit: vit({ fr: 26, spo2: 90, fc: 118, pas: 95, t: 38.6 }) },
+      999002: { righe: [r("a", 40, "", [L("EMOCROMO"), L("PCR")]), r("b", 30, "referto", [L("CREATININA")], ora - 2 * m)], valori: { nuovi: 3, fuori: 1 }, vit: vit({ fr: 24, spo2: 93, fc: 110, pas: 100, t: 38.2 }) },
+      999003: { righe: [r("a", 70, "", [E]), r("b", 200, "", [X("TC CRANIO SENZA MDC")])], vit: vit({ fr: 22, spo2: 94, fc: 105, pas: 105, t: 37.9 }) },
+      999004: { righe: [r("a", 20, "referto", [L("EMOCROMO"), L("PCR")], ora - 1 * m), r("b", 15, "", [E])], vit: vit({ fr: 30, spo2: 86, fc: 135, pas: 85, t: 39.4 }) },
+      999005: { righe: [r("a", 90, "referto", [X("RX POLSO DX")], ora - 10 * m)] },
+      999006: { righe: [r("a", 180, "", [L("TROPONINA")]), r("c", 160, "", [X("ECOGRAFIA ADDOME")])] },
+      999007: { righe: [r("a", 10, "", [E]), r("b", 10, "", [L("EMOGAS")])], vit: vit({ fr: 21, spo2: 95, fc: 112, pas: 100, t: 37.5 }, 300) },
+      999008: { righe: [r("a", 60, "referto", [L("BETA HCG")], ora - 5 * m)] },
+      999009: { righe: [r("a", 125, "", [L("EMOCROMO")]), r("b", 125, "referto", [E]), r("c", 95, "", [X("RX TORACE")])], valori: { nuovi: 1, fuori: 0 } },
+    };
+    for (const s of Object.values(S)) Object.assign(s, { agg: ora, letto: ora - 2 * m, esitiVisto: ora - 30 * m });
+    localStorage.setItem("psassist:stato.v1", JSON.stringify(S));
+    const df = (ep, l) => l.map((x, i) => ({ id: ep + i, testo: x[0], t: x[1] == null ? null : ora + x[1] * m, fatto: null, ord: i, ts: ora }));
+    localStorage.setItem("psassist:dafare.v1", JSON.stringify({
+      999002: df("999002", [["RX torace", null]]),
+      999004: df("999004", [["emocolture x2 prima dell'antibiotico", -5], ["chiamare la figlia", null]]),
+      999009: df("999009", [["ricontrollare il potassio e poi chiamare la famiglia per il ricovero in medicina, con la lettera per il curante", null]]),
+    }));
+    localStorage.setItem("psassist:stanza.posti.v1", JSON.stringify({
+      999001: { tipo: "letto", id: "obi1", ts: ora }, 999004: { tipo: "letto", id: "obi2", ts: ora }, 999006: { tipo: "letto", id: "obi3", ts: ora },
+      999003: { tipo: "letto", id: "oss1", ts: ora }, 999007: { tipo: "letto", id: "oss3", ts: ora },
+    }));
+    localStorage.removeItem("psassist:win.v1");
+  });
+  const misura = () => page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot, x = (e) => Math.round(e.getBoundingClientRect().left);
+    const righe = [...r.querySelectorAll(".pzcoda .pzrow")].map((w) => ({
+      nome: w.querySelector(".pznm").textContent.trim(),
+      tipi: [...w.querySelectorAll(".esp")].map((e) => e.className.replace("esp es-", "")),
+      x: Object.fromEntries([["lab", ".es-lab"], ["ecg", ".es-ecg"], ["img", ".es-img"], ["df", ".dfslot:has(.dfic:not(.vuota))"], ["post", ".dfpslot"]]
+        .map(([k, s]) => [k, w.querySelector(s) ? x(w.querySelector(s)) : null])),
+      chipTagliato: [...w.querySelectorAll(".esp")].some((e) => e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > w.getBoundingClientRect().right),
+      post: (() => { const p = w.querySelector(".dfpost"); return p ? { taglia: p.scrollWidth > p.clientWidth + 1, ell: getComputedStyle(p).textOverflow } : null; })(),
+    }));
+    const letti = [...r.querySelectorAll(".stbed.occ")].map((b) => {
+      const B = b.getBoundingClientRect(), p1 = b.querySelector(".stp1"), P = p1.getBoundingClientRect(), n = b.querySelector(".stpn"), eta = b.querySelector(".steta");
+      const dentro = (q) => q.top >= P.top - 0.5 && q.bottom <= P.bottom + 0.5 && q.right <= P.right + 0.5;
+      const sg = b.querySelector(".stsegni"), G = sg && sg.offsetParent ? sg.getBoundingClientRect() : null, N = b.querySelector(".stname").getBoundingClientRect();
+      return { letto: b.dataset.letto, w: Math.round(B.width), h: Math.round(B.height), nome: n.textContent.trim(),
+        nomeIntero: [...n.getClientRects()].every(dentro), eta: eta ? eta.textContent : "", etaVista: !!eta && [...eta.getClientRects()].every(dentro),
+        puntini: (b.textContent.match(/…|\.\.\./g) || []).length + [...b.querySelectorAll("*")].filter((e) => getComputedStyle(e).textOverflow === "ellipsis" && e.scrollWidth > e.clientWidth + 1).length,
+        segni: b.querySelectorAll(".stseg").length, cuori: b.querySelectorAll(".cuore").length, esami: b.querySelectorAll(".esst, .esp, .dfpost, .dfic").length,
+        segniDentro: !G || (G.right <= B.right && G.top >= B.top && (!N.width || N.right <= G.left + 0.5)) };
+    });
+    return { righe, letti };
+  });
+  for (const [w, h] of [[1366, 768], [1920, 1080]]) {
+    for (const aff of [false, true]) {
+      const dove = `${w}×${h}${aff ? " affiancata" : ""}`;
+      await page.setViewportSize({ width: w, height: h });
+      await page.goto(mock.worklistUrl);
+      await page.waitForSelector("#psassist-host", { state: "attached" });
+      await semina();
+      await page.reload();
+      await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
+      if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
+      await $panel(page, ".pzcoda").waitFor({ timeout: 8000 });
+      if (aff) { await $panel(page, "#menubtn").click(); await $panel(page, "#winaffianca").click(); await page.waitForTimeout(200); }
+      const { righe, letti } = await misura();
+      // la lista: Lab, ECG, RX sempre in quest'ordine, e ognuno nella sua colonna, uguale per tutte le righe
+      const ordine = righe.every((r) => r.tipi.join() === ["lab", "ecg", "img"].filter((t) => r.tipi.includes(t)).join());
+      const colonne = ["lab", "ecg", "img", "df", "post"].map((k) => new Set(righe.map((r) => r.x[k]).filter((v) => v != null)).size);
+      check(scen, righe.length === 5 && ordine && colonne.every((n) => n <= 1),
+        `${dove}: nella lista Lab · ECG · RX in quest'ordine, e ogni pezzetto — e «Da fare» e il post-it — nella stessa colonna in tutte le righe (colonne diverse: ${colonne.join(", ")}; ${righe.map((r) => r.tipi.join("+")).join(" | ")})`);
+      const lungo = righe.find((r) => /MARINO/.test(r.nome));
+      check(scen, !righe.some((r) => r.chipTagliato) && lungo?.post?.taglia && lungo.post.ell === "ellipsis",
+        `${dove}: il post-it lungo cede per ultimo, coi puntini; i pezzetti degli esami mai (got: ${JSON.stringify(lungo?.post)})`);
+      // il letto: nome ed età, un cuore e un pallino al massimo, niente puntini
+      const male = letti.filter((l) => !l.nomeIntero || l.puntini || l.segni > 1 || l.cuori > 1 || l.esami || !l.segniDentro
+        || (!/DELL/.test(l.nome) && !l.etaVista));
+      check(scen, letti.length === 5 && !male.length,
+        `${dove}: nel letto (${letti[0]?.w}×${letti[0]?.h}px) il nome intero e l'età, al massimo il cuore e un pallino, mai «…» (male: ${JSON.stringify(male)})`);
+      await shot(page, `lista3-${w}${aff ? "-affianca" : ""}`);
+    }
+  }
+  // i pallini: ROSSI (lab oltre 2 h) rosso, ESPOSITO (promemoria passato) rosso, COLOMBO (aspetta da 10′) grigio
+  const pallino = (l) => page.evaluate((l) => document.getElementById("psassist-host").shadowRoot.querySelector(`[data-letto="${l}"] .stseg`)?.className || "", l);
+  check(scen, /\bros\b/.test(await pallino("obi1")) && /\bros\b/.test(await pallino("obi2")) && /\batt\b/.test(await pallino("oss3")),
+    `un pallino per letto: rosso per un esame in ritardo o un promemoria passato, grigio se qualcosa aspetta e basta (got: ${await pallino("obi1")}, ${await pallino("obi2")}, ${await pallino("oss3")})`);
+  // il passaggio del mouse del letto dice tutto: età, esami, prima cosa da fare
+  const tit = (await $panel(page, '[data-letto="obi2"] .stp').getAttribute("title")) || "";
+  check(scen, /ESPOSITO LUCIA, 91 anni/.test(tit) && /Elettrocardiogramma: in attesa/i.test(tit) && /Da fare: emocolture/.test(tit),
+    `il passaggio del mouse del letto: chi è con l'età, esame per esame, la prima cosa da fare (got: ${JSON.stringify(tit.split("\n").slice(0, 2))})`);
   await context.close();
 }
 
@@ -6395,18 +6525,22 @@ async function scenarioVitali(browser) {
   await $panel(page, "#back").click();
   await page.waitForSelector("#psassist-host .pzrow.qui .cuore", { timeout: 5000 });
   const ordine = await page.evaluate(() => {
-    const r = document.getElementById("psassist-host").shadowRoot.querySelector(".pzrow.qui"), c = r.querySelector(".cuore"), e = r.querySelector(".esst");
+    const r = document.getElementById("psassist-host").shadowRoot.querySelector(".pzrow.qui"), c = r.querySelector(".cuore"), e = r.querySelector(".esst .esp");
     return !!c && !!e && !!(c.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING) && c.getBoundingClientRect().right <= e.getBoundingClientRect().left + 1;
   });
   check(scen, ordine, "nella riga dei Pazienti il cuore apre la riga di stato, prima degli esami");
-  // nel letto: in testa alla riga sotto il nome
+  // nel letto: in alto a destra, solo l'icona, prima del pallino
   await page.evaluate(() => localStorage.setItem("psassist:stanza.posti.v1", JSON.stringify({ 999001: { tipo: "letto", id: "obi1", ts: Date.now() } })));
   await page.reload();
   await page.waitForSelector("#psassist-host .card", { timeout: 8000 });
   if (!(await $panel(page, ".stmap").count())) await $panel(page, "#back").click();
   await page.waitForSelector('#psassist-host [data-letto="obi1"] .cuore', { timeout: 5000 });
-  const primoLetto = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector('[data-letto="obi1"] .stp2')?.firstElementChild?.classList.contains("cuore"));
-  check(scen, primoLetto, "nel letto il cuore viene per primo, sotto il nome");
+  const primoLetto = await page.evaluate(() => {
+    const b = document.getElementById("psassist-host").shadowRoot.querySelector('[data-letto="obi1"]'), c = b.querySelector(".stsegni")?.firstElementChild;
+    const rc = c?.getBoundingClientRect(), rn = b.querySelector(".stname").getBoundingClientRect(), rb = b.getBoundingClientRect();
+    return !!c && c.classList.contains("cuore") && c.textContent === "♥" && Math.abs(rc.top + rc.height / 2 - (rn.top + rn.height / 2)) < 3 && rb.right - rc.right < 40;
+  });
+  check(scen, primoLetto, "nel letto il cuore, solo l'icona, in alto a destra sulla riga del nome del letto");
   await shot(page, "onda3-cuore-letto");
   // una riga più nuova, normale: il triage non conta più
   righe = [rigaVami(40, "FREQUENZA RESPIRATORIA: <b>18</b> / SATURIMETRIA: <b>82</b>"), rigaVami(10, "ACVPU: <b>A - Alert</b> / FREQUENZA RESPIRATORIA: <b>16</b> / SATURIMETRIA: <b>97</b> / F.C. R. AR.: <b>80</b> / SISTOLICA (MAX): <b>130</b> / T.C. TIMP/ASC: <b>36,6</b>")];
@@ -6436,9 +6570,9 @@ async function scenarioVitali(browser) {
   if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
   await page.waitForSelector('#psassist-host [data-letto="obi1"] .cuore', { timeout: 5000 });
   const vecchio = await $panel(page, '[data-letto="obi1"] .cuore').evaluate((c) => ({ cls: c.className, t: c.textContent, tit: c.title }));
-  check(scen, /\bvecchio\b/.test(vecchio.cls) && /\bros\b/.test(vecchio.cls) && vecchio.t === "♡ 5h" && !/\bpulsa\b/.test(vecchio.cls)
+  check(scen, /\bvecchio\b/.test(vecchio.cls) && /\bros\b/.test(vecchio.cls) && vecchio.t === "♡" && !/\bpulsa\b/.test(vecchio.cls)
     && /Parametri misurati (ieri )?alle \d\d:\d\d/.test(vecchio.tit) && /da 5 ore/.test(vecchio.tit),
-    `più di 4 ore senza una riga nuova: vuoto, «♡ 5h», l'ora della lettura nel passaggio del mouse (got: ${JSON.stringify(vecchio)})`);
+    `più di 4 ore senza una riga nuova: vuoto — nel letto solo l'icona «♡» —, le ore e l'ora della lettura nel passaggio del mouse (got: ${JSON.stringify(vecchio)})`);
   // chi chiede meno movimento: nemmeno l'impulso
   await page.emulateMedia({ reducedMotion: "reduce" });
   await semina({ spo2: 85 }, 2);
@@ -6561,6 +6695,7 @@ const scenarios = [
   ["stop button", scenarioStopButton],
   ["stato esami: riga, letto, Aperti, identificativi, allergie, già fatto", scenarioStatoEsami],
   ["stato esami: gli ordini partiti da qui", scenarioStatoOrdiniNostri],
+  ["pazienti: un pezzetto per tipo in colonne fisse, nel letto nome ed età", scenarioListaLetti],
   ["vitali: il cuore dai parametri della pagina, soglie NEWS2, niente lampeggio", scenarioVitali],
 ];
 
