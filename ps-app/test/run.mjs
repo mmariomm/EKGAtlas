@@ -5354,7 +5354,7 @@ async function scenarioDimissioni(browser) {
     "il foglio la cui versione originale è cambiata è segnalato");
   await page.locator('#psassist-host [data-dedit="cistite"]').click();
   await page.waitForSelector("#psassist-host #dimarea", { timeout: 8000 });
-  check(scen, /originale di questo foglio è stato aggiornato/i.test(await $panel(page, ".bd").innerText()),
+  check(scen, /originale è cambiato dopo la tua modifica/i.test(await $panel(page, ".bd").innerText()),
     "e l'editor lo spiega");
 
   // a blank sheet is never saved as if it were a text
