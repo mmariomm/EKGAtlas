@@ -94,8 +94,11 @@
     /(?<![\d/])0\d{1,3}[\s./-]\d{5,8}(?![\d/])/g,                                  // fisso, con separatore
     /(?:\btel\.?|\btelefono|\bcell\.?|\bcellulare|\brecapito|\bfax)\s*:?\s*(\+?\d[\d\s./-]{5,16}\d)/gi,
   ];
-  const TESSERA_RE = [/(?<!\d)80\d{18}(?!\d)/g, /(?:tessera(?:\s+sanitaria)?|\bT\.?S\.?|\bTEAM)\s*(?:n\.?|nr\.?|:)?\s*([A-Z0-9]{8,20})\b/gi];
-  const INDIRIZZO_RE = /\b(?:via|viale|v\.le|piazza|p\.zza|p\.za|piazzale|corso|c\.so|largo|vicolo|strada|localit[aà]|loc\.|frazione|fraz\.)\s+[A-Za-zÀ-ÿ'’. ]{2,40}?(?:,?\s*(?:n\.?\s*)?\d{1,4}\s?[a-zA-Z]?)?(?=$|[,;<\n()]|\s{2}|\s-\s)/gi;
+  const TESSERA_RE = [/(?<!\d)80\d{18}(?!\d)/g, /(?:[Tt]essera(?:\s+[Ss]anitaria)?|TESSERA(?:\s+SANITARIA)?|\bT\.S\.|\bTEAM)\s*(?:n\.?|nr\.?|N\.?|:)?\s*((?=[A-Z0-9]*\d{6})[A-Z0-9]{8,20})\b/g];
+  // un indirizzo: la via col suo nome (con la maiuscola) e il numero civico —
+  // «per via orale» e «terapia in corso» no
+  const PAROLA_VIA = "(?:(?:d[aei]|del|della|dello|dei|degli|delle|d['’])\\s*)?[A-ZÀ-Ù][\\wÀ-ÿ'’.]*";
+  const INDIRIZZO_RE = new RegExp(`\\b(?:[Vv]ia|VIA|[Vv]iale|VIALE|[Vv]\\.le|[Pp]iazza|PIAZZA|[Pp]\\.zza|[Pp]\\.za|[Pp]iazzale|PIAZZALE|[Cc]orso|CORSO|[Cc]\\.so|[Ll]argo|LARGO|[Vv]icolo|VICOLO|[Ss]trada|STRADA)\\s+(?:${PAROLA_VIA}\\s+){0,4}${PAROLA_VIA},?\\s*(?:n\\.?\\s*)?\\d{1,4}\\s?[a-zA-Z]?(?![\\w/])`, "g");
   const CAP_RE = /(?<!\d)\d{5}\s+[A-ZÀ-Ù][A-Za-zÀ-ÿ' ]{1,30}\s*\(\s*[A-Z]{2}\s*\)/g;
   const IP_RE = /\b(?:10|172|192)\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g;
   const DATA_RE = /(?<![\d/.-])(\d{1,2})([/.-])(\d{1,2})\2(\d{4}|\d{2})(?![\d/])/g;
@@ -579,7 +582,7 @@
           const v = decodifica(a.v);
           let nv;
           if (p.nome === "img" && K === "src") {
-            const name = decURI(v.split(/[?#]/)[0].split(/[/\\]/).pop() || "");
+            const name = decURI(v.split(/[?#]/)[0].split(/[/\\]/).pop() || "").replace(/^icona:/, "");
             if (/^data:/i.test(v)) nv = /^data:image\//i.test(v) && v.length <= IMG_DATA_MAX ? v : (conta.immagini++, "");
             else if (LOGHI.test(name)) { togli = true; nv = ""; }
             else if (ICONE.has(name)) { icone.add(name); nv = `icona:${name}`; }

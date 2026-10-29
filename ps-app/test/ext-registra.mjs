@@ -170,12 +170,12 @@ const [popup] = await Promise.all([
 await popup.waitForLoadState("load", { timeout: 15000 }).catch(() => {});
 check(/\/sa4\/restrict2\/documenti\/4471\/contenuto\.pdf$/.test(popup.url()), `il referto si apre in una finestra nuova, dopo i rinvii (${popup.url()})`);
 // il registratore rilegge il PDF una volta dalla cache (2,5 s dopo)
-await finche(() => sw.evaluate(() => chrome.storage.local.get(null).then((o) => Object.keys(o).some((k) => k.startsWith("regd:") && /documenti/.test(o[k].url)))), 15000);
+await finche(() => sw.evaluate(() => regConta().then((c) => c.pdf.some((u) => /documenti/.test(u)))), 15000);
 await doc.waitForTimeout(1500);
 
 // ---- 4. ⋯ → Ferma e scarica -----------------------------------------------
 if (process.env.REG_GREZZO) {   // per capire un cancello che non passa: i dati grezzi (del simulatore) in un file
-  const g = await sw.evaluate(() => chrome.storage.local.get(null));
+  const g = await sw.evaluate(() => regTutto().then((l) => l.map((x) => (x.byte ? { ...x, byte: x.byte.length } : x))));
   (await import("node:fs")).writeFileSync(process.env.REG_GREZZO, JSON.stringify(g));
 }
 await doc.bringToFront();
@@ -239,6 +239,18 @@ for (const [cosa, v] of [["ROSSI MARIO", /ROSSI(?:\s|&nbsp;|\+|%20)+MARIO/i], ["
 const riep = leggi("riepilogo.txt");
 check(/Controllo prima dell'esportazione: superato/.test(riep) && /riletti UNA volta dalla cache/.test(riep), "il riepilogo: controllo superato, e la rilettura dalla cache è detta");
 console.log("\n----- riepilogo.txt -----\n" + riep + "-------------------------");
+
+// ---- 6. il grezzo resta solo nell'estensione, e si cancella ---------------------
+const chiavi = await sw.evaluate(() => chrome.storage.local.get(null).then((o) => Object.keys(o)));
+check(!chiavi.some((k) => /^reg[pfd]:/.test(k)) && (await sw.evaluate(() => regConta())).pagine > 0,
+  "il grezzo sta nell'IndexedDB dell'estensione, non in storage.local (che il resto legge per intero)");
+await pagina.bringToFront();
+await pagina.locator("#cancella").click();
+await pagina.waitForFunction(() => /cancellata/.test(document.getElementById("stato").textContent), null, { timeout: 5000 }).catch(() => {});
+const resto = await sw.evaluate(() => regConta());
+check(resto.pagine === 0 && resto.flusso === 0 && resto.pdf.length === 0 && !(await stato()), "«Cancella la registrazione da questo PC» toglie tutto");
+await doc.bringToFront();
+check(await voce(doc) === "Registra", "e il menu torna a «Registra»");
 
 await ctx.close();
 srv.close();

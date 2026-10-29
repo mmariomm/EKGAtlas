@@ -9,10 +9,25 @@
 (async () => {
   const $ = (id) => document.getElementById(id);
   const dici = (testo, tono = "") => { const s = $("stato"); s.textContent = testo; s.className = "msg " + tono; };
-  const PREFISSI = ["regp:", "regf:", "regd:"];
+  // il grezzo sta in IndexedDB (vedi registra.js), lo stato in storage.local
+  const db = () => new Promise((ok, no) => {
+    const r = indexedDB.open("psassist-registra", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("grezzi", { autoIncrement: true });
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => no(r.error);
+  });
+  const tx = async (modo, fn) => {
+    const d = await db();
+    return new Promise((ok, no) => {
+      const t = d.transaction("grezzi", modo);
+      const out = fn(t.objectStore("grezzi"));
+      t.oncomplete = () => { ok(out && "result" in out ? out.result : undefined); d.close(); };
+      t.onerror = t.onabort = () => { no(t.error); d.close(); };
+    });
+  };
   const cancella = async () => {
-    const tutto = await chrome.storage.local.get(null);
-    await chrome.storage.local.remove([...Object.keys(tutto).filter((k) => PREFISSI.some((p) => k.startsWith(p))), "registra"]);
+    await tx("readwrite", (s) => { s.clear(); });
+    await chrome.storage.local.remove("registra");
   };
   $("cancella").addEventListener("click", async () => {
     await cancella().catch(() => {});
@@ -22,8 +37,7 @@
   const esito = (x) => { window.__registra = x; document.documentElement.dataset.esito = x.ok ? "ok" : "no"; };
 
   try {
-    const tutto = await chrome.storage.local.get(null);
-    const st = tutto.registra;
+    const st = (await chrome.storage.local.get("registra")).registra;
     if (!st) { dici("Su questo PC non c'è nessuna registrazione."); esito({ ok: false, why: "nessuna" }); return; }
     if (st.stato === "rec" && Date.now() < st.scade) {
       dici("La registrazione è ancora in corso: fermala dal pannello (⋯ → Ferma e scarica).");
@@ -31,10 +45,10 @@
     }
     $("azioni").hidden = false;
     const pagine = [], flusso = [], note = [], schede = [], grezzi = [];
-    for (const [k, v] of Object.entries(tutto)) {
-      if (k.startsWith("regp:")) pagine.push(v);
-      else if (k.startsWith("regf:")) { flusso.push(...(v.flusso || [])); note.push(...(v.note || [])); schede.push(...(v.schede || [])); }
-      else if (k.startsWith("regd:")) grezzi.push(v);
+    for (const v of await tx("readonly", (s) => s.getAll())) {
+      if (v.tipo === "pagina") pagine.push(v);
+      else if (v.tipo === "flusso") { flusso.push(...(v.flusso || [])); note.push(...(v.note || [])); schede.push(...(v.schede || [])); }
+      else if (v.tipo === "pdf") grezzi.push(v);
     }
     // le richieste del pannello (content.js): stesso indirizzo e metodo, un
     // attimo dopo che il pannello l'ha chiesta
@@ -48,9 +62,7 @@
     const pdf = [];
     for (const [i, d] of grezzi.sort((a, b) => a.ts - b.ts).entries()) {
       dici(`Leggo il testo dei PDF: ${i + 1} di ${grezzi.length}…`);
-      const bin = atob(d.b64 || "");
-      const u8 = new Uint8Array(bin.length);
-      for (let j = 0; j < bin.length; j++) u8[j] = bin.charCodeAt(j);
+      const u8 = new Uint8Array(d.byte || []);
       const o = { url: d.url, ts: d.ts, scheda: d.scheda, origine: d.origine, righe: [], lettore: null, pagine: null, misura: null };
       try { const t = await RegistraPdf.testoPdf(u8.buffer); o.righe = t.righe || []; o.lettore = t.lettore || null; if (!o.righe.length && t.motivo) o.errore = t.motivo; }
       catch (e) { o.errore = String(e && e.message || e).slice(0, 80); }

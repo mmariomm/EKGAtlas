@@ -25,7 +25,6 @@
 const REG = "registra";                 // lo stato, in storage.local: lo legge anche il pannello (● REC)
 const REG_DURATA = 60 * 60e3;
 const REG_TTL = 12 * 3600e3;
-const REG_PREFISSI = ["regp:", "regf:", "regd:"];
 const REG_PAGINA_MAX = 8e6;             // un DOM più grande di così non è una pagina del gestionale
 const REG_PDF_MAX = 15 * 1024 * 1024;
 const REG_PDF_N = 200;
@@ -35,7 +34,6 @@ let regStato = null;
 let regCaricato = false;
 let regPortale = "";
 const regAttiva = (s = regStato) => !!s && s.stato === "rec" && Date.now() < s.scade;
-const regChiave = (p) => p + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
 const regNostra = (url) => {
   try { const o = new URL(url).origin; return o === SA4 || ALLOWED_ORIGINS.has(o) || (!!regPortale && o === regPortale); }
   catch { return false; }
@@ -63,9 +61,37 @@ chrome.storage.onChanged.addListener((ch, area) => {
   if (ch.portale) regPortale = ch.portale.newValue || "";
 });
 
+// Il grezzo (pagine, flusso, PDF) sta in IndexedDB, non in storage.local: là
+// lo leggerebbe per intero ogni get(null) del resto dell'estensione, e un'ora
+// di pagine pesa decine di MB. Stessa origine dell'estensione: lo legge anche
+// registra.html. Ogni voce: { tipo: "pagina" | "flusso" | "pdf", ... }.
+const REG_DB = "psassist-registra", REG_ST = "grezzi";
+let regDbP = null;
+const regDb = () => (regDbP = regDbP || new Promise((ok, no) => {
+  const r = indexedDB.open(REG_DB, 1);
+  r.onupgradeneeded = () => r.result.createObjectStore(REG_ST, { autoIncrement: true });
+  r.onsuccess = () => ok(r.result);
+  r.onerror = () => { regDbP = null; no(r.error); };
+}));
+const regTx = async (modo, fn) => {
+  const db = await regDb();
+  return new Promise((ok, no) => {
+    const tx = db.transaction(REG_ST, modo);
+    const out = fn(tx.objectStore(REG_ST));
+    tx.oncomplete = () => ok(out && "result" in out ? out.result : undefined);
+    tx.onerror = tx.onabort = () => no(tx.error);
+  });
+};
+const regMetti = (voce) => regTx("readwrite", (s) => { s.add(voce); });
+// (anche per i test: quanto c'è, e tutto)
+const regConta = () => regTx("readonly", (s) => s.getAll()).then((l) => ({
+  pagine: l.filter((x) => x.tipo === "pagina").length, flusso: l.filter((x) => x.tipo === "flusso").reduce((n, x) => n + x.flusso.length, 0),
+  pdf: l.filter((x) => x.tipo === "pdf").map((x) => x.url),
+}));
+const regTutto = () => regTx("readonly", (s) => s.getAll());
+
 async function regCancella() {
-  const tutte = await chrome.storage.local.get(null);
-  await chrome.storage.local.remove(Object.keys(tutte).filter((k) => REG_PREFISSI.some((p) => k.startsWith(p))));
+  await regTx("readwrite", (s) => { s.clear(); }).catch(() => {});
   await chrome.storage.local.remove(REG);
   regStato = null;
 }
@@ -86,7 +112,7 @@ async function regScarica() {
   const b = regBuf;
   if (!b.flusso.length && !b.note.length && !b.schede.length) return;
   regBuf = { flusso: [], note: [], schede: [] };
-  await chrome.storage.local.set({ [regChiave("regf:")]: b });
+  await regMetti({ tipo: "flusso", ...b });
 }
 const REG_FILTRO = { urls: ["http://*/*", "https://*/*"] };
 const regQuando = (fn) => (d) => {
@@ -150,18 +176,12 @@ chrome.tabs.onCreated.addListener((tab) => {
 });
 
 // ------------------------------------------------------------- i PDF
-const regB64 = (buf) => {
-  const bytes = new Uint8Array(buf);
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  return btoa(s);
-};
 const regEPdf = (buf) => buf && buf.byteLength > 4 && String.fromCharCode(...new Uint8Array(buf, 0, 5)) === "%PDF-";
 async function regTieniPdf(url, buf, origine, scheda) {
   if (!regAttiva() || !regEPdf(buf) || buf.byteLength > REG_PDF_MAX || regPdfN >= REG_PDF_N) return false;
   if (regPdfVisti.has(url)) return true;
   regPdfVisti.add(url); regPdfN++;
-  await chrome.storage.local.set({ [regChiave("regd:")]: { url, ts: Date.now(), scheda: scheda ?? null, origine, b64: regB64(buf) } });
+  await regMetti({ tipo: "pdf", url, ts: Date.now(), scheda: scheda ?? null, origine, byte: new Uint8Array(buf.slice(0)) });
   return true;
 }
 const REG_SCRIVE = /[?&](ccsForm|Insert|Delete|Update|Update1|Conferma)=/i;
@@ -246,11 +266,11 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (html.length > REG_PAGINA_MAX || regPagineN >= REG_PAGINE_N) return { ok: false, why: "troppo" };
     regPagineN++;
     const t = sender.tab;
-    await chrome.storage.local.set({ [regChiave("regp:")]: {
+    await regMetti({ tipo: "pagina",
       url: String(sender.url || msg.url || ""), titolo: String(msg.titolo || "").slice(0, 300), html, ts: Number(msg.ts) || Date.now(),
       scheda: t.id, frame: sender.frameId || 0, alto: !sender.frameId, motivo: msg.motivo === "uscita" ? "uscita" : "caricata",
       finestra: t.windowId, apertaDa: t.openerTabId ?? null,
-    } });
+    });
     return { ok: true };
   });
   if (msg.t === "regRichiesta") {
