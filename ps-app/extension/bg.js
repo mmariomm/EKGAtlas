@@ -574,6 +574,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
         for (const rec of l.filter((x) => !aperto.has(x.stato))) await togli(l, rec);
         await ordScrivi(l);
       });
+      // e la registrazione, che ha le pagine vere dei pazienti
+      if (typeof regCancella === "function") await regCancella().catch(() => {});
       reply({ ok: true });
     })().catch(() => reply({ ok: false }));
     return true;
