@@ -97,7 +97,7 @@ const regQuando = (fn) => (d) => {
   regPronto.then(() => { if (regAttiva()) fn(d); });
 };
 chrome.webRequest.onBeforeRequest.addListener(regQuando((d) => {
-  if (!regNostra(d.url) || regInVolo.has(d.requestId)) return;
+  if (!regNostra(d.url) || regInVolo.has(d.requestId) || /\/favicon\.ico(?:$|\?)/i.test(d.url)) return;
   const iniziatore = String(d.initiator || "");
   const r = {
     metodo: d.method, url: d.url, tipo: d.type, scheda: d.tabId, frame: d.frameId, inizio: d.timeStamp, rinvii: [],

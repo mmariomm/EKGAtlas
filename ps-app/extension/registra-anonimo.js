@@ -202,6 +202,7 @@
     let idN = 0;
     const registraId = (v) => {
       v = String(v || "").trim();
+      if (!/\d/.test(v)) return;                             // senza cifre non è il numero di un caso
       if (!v || v.length < 4 || CODICI.has(v)) return;
       if (/^\d+$/.test(v) && v.length < 5) return;          // un progressivo, una risorsa: non un caso
       if (/^\d+$/.test(v) && Number(v) === 0) return;
@@ -641,7 +642,7 @@
       if (q) for (const pp of q[1].split(/&amp;|&/)) {
         const i = pp.indexOf("=");
         if (i < 0) continue;
-        const k = pp.slice(0, i).toUpperCase(), v = decURI(pp.slice(i + 1));
+        const k = pp.slice(0, i).toUpperCase(), v = decURI(pp.slice(i + 1).split(/['"\s<>()]/)[0]);
         if (STRUTTURA.has(k) || !v) continue;
         if (PARAM_CF.test(k)) { if (v.length >= 11) visto.cf.add(v.toUpperCase()); continue; }
         if (PARAM_ID.test(k)) registraId(v);
@@ -667,7 +668,7 @@
             if (a.v == null) continue;
             const K = a.k.toLowerCase(), v = decodifica(a.v);
             if (ATTR_URL.has(K) || K.startsWith("on") || K === "content") {
-              idDaUrl(v);
+              if (!K.startsWith("on") && !/^javascript:/i.test(v)) idDaUrl(v);
               for (const m of v.matchAll(/['"]([^'"]*\?[^'"]*)['"]/g)) idDaUrl(m[1]);
               const e = paramDi(v, "EPISODIO_ID");
               if (p.multi && riga >= 0 && e && !unitaRighe[riga]) unitaRighe[riga] = e;
@@ -843,11 +844,11 @@
       if (cat === "nomi" && cogn.length >= 4 && !PAROLE_STATICHE.has(cogn)) sensibili.nomi.push(cogn);
     }
     const prova = { ...files, "riepilogo.txt": riepilogo({ ok: true, punti: 0 }) };
-    const gate = cancello(prova, sensibili, { finti: [...finti.values()] });
+    const gate = cancello(prova, sensibili, { finti: [...finti.values()], diagnosi: opz.diagnosi });
     files["riepilogo.txt"] = riepilogo(gate);
     // nessuna stringa vera nel riepilogo stesso: si ricontrolla
     if (gate.ok) { const g2 = cancello({ "riepilogo.txt": files["riepilogo.txt"] }, sensibili, { finti: [...finti.values()] }); if (!g2.ok) Object.assign(gate, g2); }
-    return { files, gate, conteggi, riepilogo: riepilogoDati };
+    return { files, gate, conteggi, riepilogo: riepilogoDati, ...(opz.diagnosi ? { sensibili } : {}) };
   }
 
   // ======================================================================
@@ -886,7 +887,7 @@
         for (const e of l) {
           let ok = true;
           for (let j = 1; j < e.parole.length; j++) if (w[i + j] !== e.parole[j]) { ok = false; break; }
-          if (ok) segna(file, e.cat);
+          if (ok) { segna(file, e.cat); if (opz.diagnosi) (dove[file].valori = dove[file].valori || []).push(e.parole.join(" ")); }
         }
       }
     }
