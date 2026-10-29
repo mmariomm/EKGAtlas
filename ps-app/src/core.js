@@ -11567,8 +11567,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     root.getElementById("vchiudi").focus();
     const pag = root.querySelector(".vpag");
     (async () => {
-      doc = await lib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false, disableFontFace: true,
-        useSystemFonts: false, useWorkerFetch: false, disableAutoFetch: true, disableStream: true, verbosity: 0 }).promise;
+      // (i font: quelli del PDF, o — se non ci sono — quelli di sistema, per disegnare)
+      doc = await lib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false, disableFontFace: false,
+        useSystemFonts: true, useWorkerFetch: false, disableAutoFetch: true, disableStream: true, verbosity: 0 }).promise;
       const dpr = window.devicePixelRatio || 1;
       for (let n = 1; n <= doc.numPages && host.isConnected; n++) {
         const p = await doc.getPage(n);

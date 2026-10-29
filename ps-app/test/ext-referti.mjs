@@ -49,6 +49,9 @@ const rigaRis = (id, quando, nome) => `<tr><td class="AFCDataTD" title="${nome}"
 }
 // quanti referti si scaricano INSIEME: ogni risposta del documento tarda un po'
 let inVolo = 0, maxInVolo = 0;
+let voli = [];   // { id, da, a }: quando ogni scaricamento parte e finisce
+const RIGHE_ECO = ["ECOGRAFIA ADDOME COMPLETO", "Fegato di dimensioni ed ecostruttura nei limiti.",
+  "Colecisti alitiasica. Reni in sede, non dilatazione delle vie escretrici.", "Conclusioni: ecografia addominale nei limiti."];
 const eDoc = (u) => /Sa4ViewerExtRedirect\.do/.test(u) && /REFERTO_ID=/.test(u);
 const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
@@ -67,7 +70,17 @@ await ctx.addInitScript(() => {
 const route = async (r) => {
   const req = r.request();
   const doc = eDoc(req.url());
-  if (doc) { inVolo++; maxInVolo = Math.max(maxInVolo, inVolo); await new Promise((ok) => setTimeout(ok, 700)); inVolo--; }
+  if (doc) {
+    const v = { id: new URL(req.url()).searchParams.get("REFERTO_ID"), da: Date.now(), a: 0 };
+    voli.push(v);
+    inVolo++; maxInVolo = Math.max(maxInVolo, inVolo); await new Promise((ok) => setTimeout(ok, 700)); inVolo--;
+    v.a = Date.now();
+    // l'ecografia con un font vero (Helvetica): il visore la deve disegnare
+    if (v.id && v.id.startsWith("eeee5555")) {
+      mock.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });   // (contata come le altre)
+      return r.fulfill({ status: 200, headers: { "content-type": "application/pdf" }, body: pdfSemplice(RIGHE_ECO) });
+    }
+  }
   let out = mock.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });
   let h = 0;
   while (out.status === 302 && h++ < 5) out = mock.handle({ method: "GET", url: new URL(out.headers.location, req.url()).href });
@@ -131,18 +144,96 @@ check(/Non focolai/.test(await pS.locator("#psassist-host .wuitem.aperto .reftxt
 check(mock.state.requests.filter((q) => eDoc(q.url)).length === richiestePrima, "nessuna richiesta al server per leggere i salvati");
 await pS.close();
 
+// «↗ PDF» su un referto salvato: il visore dell'estensione, sopra la pagina,
+// col PDF della copia su questo computer — niente scheda nuova, niente server
 const before = mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect")).length;
-const [popup] = await Promise.all([
-  page.waitForEvent("popup", { timeout: 10000 }),
-  page.locator("#psassist-host [data-pdf]").first().click(),
-]);
-check(popup.url().startsWith("blob:"), `«↗ PDF» apre il referto salvato da locale (got ${popup.url().slice(0, 22)}…)`);
+let popupVisore = false;
+page.once("popup", () => { popupVisore = true; });
+const rigaPdf = page.locator('#psassist-host .wuline:has([data-pdf]):has-text("ECOGRAFIA ADDOME")').first();
+const esamePdf = (await rigaPdf.locator(".rlab").innerText()).trim();
+const quandoPdf = (await rigaPdf.locator(".rwhen").innerText()).trim();
+await rigaPdf.locator("[data-pdf]").click();
+const visore = page.locator("#psassist-visore");
+await visore.locator("canvas").first().waitFor({ timeout: 15000 }).catch(() => {});
+await page.waitForTimeout(800);
+const testaVisore = await visore.locator(".vtit").innerText().catch(() => "");
+const disegnato = await page.evaluate(() => {
+  const c = document.getElementById("psassist-visore")?.shadowRoot.querySelector("canvas");
+  if (!c) return 0;
+  const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+  let scuri = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i] < 128 && d[i + 3] > 0) scuri++;
+  return scuri;
+});
+check(disegnato > 50 && !popupVisore, `«↗ PDF» su un salvato: il PDF nel visore dell'estensione, non in una scheda (pixel scritti ${disegnato})`);
+check(testaVisore.includes(esamePdf) && testaVisore.includes(quandoPdf) && /ROSSI/i.test(testaVisore),
+  `in testa paziente · esame · data (got: ${testaVisore})`);
+if (process.env.PSA_SCREEN) await page.screenshot({ path: process.env.PSA_SCREEN }).catch(() => {});
 check(mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect")).length === before,
   "nessuna richiesta al server all'apertura di un referto salvato");
+await visore.locator("#vchiudi").click();
+await page.waitForTimeout(300);
+check(await visore.count() === 0 && await page.locator('#psassist-host [data-esito][data-kind="referto"]').count() === 4,
+  "✕ chiude il visore e si resta negli Esiti");
+
+// un referto salvato ma di un altro paziente: il visore non lo mostra mai
+{
+  const idAltro = await rigaPdf.locator("[data-pdf]").getAttribute("data-pdf");
+  const ep = new URL(mock.patientUrl).searchParams.get("EPISODIO_ID");
+  const pM = await ctx.newPage();
+  await pM.addInitScript(([k]) => { try { sessionStorage.setItem(k, JSON.stringify({ ts: Date.now(), altro: true })); } catch { /* niente */ } },
+    [`psassist:reftxt.${ep}.${idAltro}`]);
+  await pM.goto(mock.patientUrl);
+  await pM.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await pM.locator('#psassist-host [data-seg="esiti"]').click();
+  await pM.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length >= 1, { timeout: 15000 }).catch(() => {});
+  let popupM = false;
+  pM.on("popup", () => { popupM = true; });
+  await pM.locator(`#psassist-host [data-pdf="${idAltro}"]`).click();
+  await pM.waitForTimeout(1500);
+  const banner = await pM.locator("#psassist-host .banner").innerText().catch(() => "");
+  check(await pM.locator("#psassist-visore").count() === 0 && !popupM && /altro paziente/.test(banner),
+    `un salvato di un altro paziente non si apre nel visore (got: ${banner || "niente"})`);
+  await pM.close();
+}
 
 await page.locator("#psassist-host #refreset").click();
 await page.waitForTimeout(1200);
 check(await page.locator("#psassist-host .rdot.saved").count() === 0, "Resetta svuota i salvataggi");
+
+// «⭳ Carica i valori» prende anche i referti: solo quelli che non sono di
+// laboratorio, due alla volta al massimo, con una pausa prima di ognuno, e
+// mai uno già salvato
+{
+  voli = []; maxInVolo = 0;
+  await page.locator("#psassist-host #risall").click();
+  await page.waitForFunction(
+    () => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length === 4,
+    { timeout: 60000 },
+  ).catch(() => {});
+  check(await page.locator("#psassist-host .rdot.saved").count() === 4 && voli.length === 4,
+    `«Carica i valori»: anche i 4 referti, salvati (scaricati ${voli.length})`);
+  check(!voli.some((v) => v.id === "aaaa1111") && mock.state.requests.filter((q) => q.url.includes("aaaa1111")).length === 0,
+    "mai quello di laboratorio");
+  check(maxInVolo === 2, `al massimo due insieme (got ${maxInVolo})`);
+  const da = voli.map((v) => v.da).sort((x, y) => x - y), a = voli.map((v) => v.a).sort((x, y) => x - y);
+  const pause = [da[2] - a[0], da[3] - a[1]];
+  check(pause.every((p) => p >= 450), `una pausa prima del prossimo, non a raffica (ms: ${pause.join(", ")})`);
+  await page.waitForTimeout(1500);
+  const dopo = voli.length;
+  await page.locator("#psassist-host #risall").click();
+  await page.waitForTimeout(4000);
+  const pC = await ctx.newPage();
+  await pC.goto(mock.patientUrl);
+  await pC.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await pC.locator('#psassist-host [data-seg="esiti"]').click();
+  await pC.locator("#psassist-host #risall").click();
+  await pC.waitForTimeout(5000);
+  check(voli.length === dopo, `già salvati: non si riscaricano, qui né in un'altra scheda (got ${voli.length - dopo} in più)`);
+  await pC.close();
+  await page.locator("#psassist-host #refreset").click();   // il portale, qui sotto, parte senza copie
+  await page.waitForTimeout(1200);
+}
 
 // ---- un referto (RIS/ECG) che il gestionale manda al portale -----------------
 // Com'è davvero (dalla diagnosi di un ECG): il link del gestionale risponde
@@ -282,6 +373,85 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   check(x.nativa && x.asincrona && !x.sincrona && !x.riaperta,
     `richieste sincrone del portale: la send del browser, senza passare da qui (${JSON.stringify(x)})`);
   await pp.close();
+}
+
+// ---- ⋯ → «Reset dati pazienti» ----------------------------------------------
+// Ogni chiave per nome: quelle dei pazienti e del turno se ne vanno, le
+// impostazioni e i modelli del medico restano.
+{
+  const NS = "psassist:";
+  const ep = new URL(mock.patientUrl).searchParams.get("EPISODIO_ID");
+  const VIA_LOCALE = ["patients.v1", "stanza.posti.v1", "stato.v1", "dafare.v1", "promemoria.v1", "note.v1", "segni.v1",
+    "refVisti.v1", "refPortale", "daConfermare.v1", "quesiti", "quesiti.ts", "lastQ", "corsa.aperta.v1", "corsa.presidio.v1"];
+  const RESTA_LOCALE = { "win.v1": null, "pillpos.v1": { left: 40, top: 40 }, "collapsed": false, "stanza.v1": null, "catalog.v1": null,
+    "dimissioni.v1": { prova: { testo: "modello del medico" } }, "eo.v1": { prova: "EO del medico" }, "ordini.stampati": ["o1"], "attesaConferma.ms": 120000 };
+  const VIA_SCHEDA = [`ris.${ep}.zz`, `visto.${ep}.zz`, `reftxt.${ep}.zz`, `log.${ep}`, `ui.${ep}`, "receipt.v1", "confirm.v1", "queue.v1",
+    "print.v1", "cuori.v1", "richieste.nostre.v1", "registriOrdini.v1", "avviso.v1", "dimdraft.x", "eodraft.x"];
+  const VIA_EXT = ["ref:zz", "storicoArch"], RESTA_EXT = ["portale", "stampa", "stampaEsito", "stampaMisura", "ponte.coppia", "ponte.host"];
+  const VIA_SESS = ["apertura", "sotto:999", "ordine:o-fine"], RESTA_SESS = ["ponte", "ordiniVisti", "ordiniFogli", "stampaVerificata"];
+
+  const pR = await ctx.newPage();
+  await pR.goto(mock.patientUrl);
+  await pR.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await pR.locator('#psassist-host [data-seg="esiti"]').click();
+  const pAltra = await ctx.newPage();   // un'altra scheda: anche la sua memoria se ne va
+  await pAltra.goto(mock.patientUrl);
+  await pAltra.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  const semina = ([ns, via, resta, scheda]) => {
+    const valore = { "quesiti.ts": Date.now(), "quesiti": ["x"], "daConfermare.v1": [], "lastQ": "x", "corsa.aperta.v1": null, "corsa.presidio.v1": null,
+      "stato.v1": { "999": {} } };
+    for (const k of via) {
+      if (k === "patients.v1") { if (localStorage.getItem(ns + k) === null) throw new Error("l'elenco dei pazienti dovrebbe esserci già"); continue; }
+      localStorage.setItem(ns + k, JSON.stringify(k in valore ? valore[k] : {}));
+    }
+    for (const [k, v] of Object.entries(resta)) if (v !== null) localStorage.setItem(ns + k, JSON.stringify(v));
+    localStorage.setItem(ns + "tempi.v1", JSON.stringify([{ id: "t1", titolo: "Visita ed esami", paz: "ROSSI MARIO", ep: "1", inizio: Date.now() - 6e4, fine: Date.now() }]));
+    for (const k of scheda) sessionStorage.setItem(ns + k, JSON.stringify({ ts: Date.now() }));
+  };
+  await pR.evaluate(semina, [NS, VIA_LOCALE, RESTA_LOCALE, VIA_SCHEDA]);
+  await pAltra.evaluate(([ns, k]) => sessionStorage.setItem(ns + k, "{}"), [NS, `reftxt.${ep}.zz`]);
+  const prima = await pR.evaluate(([ns, ks]) => Object.fromEntries(ks.map((k) => [k, localStorage.getItem(ns + k)])), [NS, Object.keys(RESTA_LOCALE)]);
+  const [sw] = ctx.serviceWorkers();
+  await sw.evaluate(async ([viaE, restaE, viaS, restaS]) => {
+    const o = {};
+    for (const k of [...viaE, ...restaE]) o[k] = k === "portale" ? "http://10.11.0.151:9080" : { prova: k };
+    await chrome.storage.local.set(o);
+    const s = { ordini: [{ id: "o-fine", stato: "errore", agg: Date.now(), paziente: "ROSSI MARIO" }], "ponte.ordini": [{ id: "tel1", paziente: "ROSSI MARIO", ts: Date.now(), fine: true }] };
+    for (const k of [...viaS, ...restaS]) s[k] = k === "sotto:999" ? { esito: "letto" } : k === "ordiniVisti" || k === "ordiniFogli" ? ["o-fine"] : { prova: k };
+    await chrome.storage.session.set(s);
+  }, [VIA_EXT, RESTA_EXT, VIA_SESS, RESTA_SESS]);
+
+  await pR.locator("#psassist-host #menubtn").click();
+  await pR.locator("#psassist-host #resetpaz").click();
+  const chiede = await pR.locator("#psassist-host #resetpaz").innerText().catch(() => "");
+  const ancora = await pR.evaluate((k) => localStorage.getItem(k), NS + "patients.v1");
+  check(/Cancello tutto\? Tocca di nuovo/.test(chiede) && ancora !== null, `un tocco chiede soltanto (got: ${chiede})`);
+  await pR.locator("#psassist-host #resetpaz").click();
+  await pR.waitForSelector("#psassist-host .banner.ok", { timeout: 5000 }).catch(() => {});
+  check(/^Fatto/.test(await pR.locator("#psassist-host .banner.ok").innerText().catch(() => "")), "il secondo tocco cancella, e dice «Fatto»");
+  await pR.waitForTimeout(800);
+
+  const loc = await pR.evaluate(([ns, ks]) => Object.fromEntries(ks.map((k) => [k, localStorage.getItem(ns + k)])), [NS, [...VIA_LOCALE, ...Object.keys(RESTA_LOCALE), "tempi.v1"]]);
+  // (stato.v1: la pagina aperta lo riscrive subito per il suo paziente — degli altri niente)
+  const rimasti = VIA_LOCALE.filter((k) => loc[k] !== null && !(k === "stato.v1" && !/"999"/.test(loc[k])));
+  check(!rimasti.length, `localStorage: via ${VIA_LOCALE.join(", ")} (rimasti: ${rimasti.join(", ") || "nessuno"})`);
+  const cambiati = Object.keys(RESTA_LOCALE).filter((k) => loc[k] !== prima[k]);
+  check(!cambiati.length, `localStorage: restano ${Object.keys(RESTA_LOCALE).join(", ")} (cambiati: ${cambiati.join(", ") || "nessuno"})`);
+  const tempi = JSON.parse(loc["tempi.v1"] || "[]");
+  check(tempi.length === 1 && !("paz" in tempi[0]) && !("ep" in tempi[0]), "Tempi: restano i tempi, senza il paziente");
+  const scheda = await pR.evaluate(([ns, ks]) => ks.filter((k) => sessionStorage.getItem(ns + k) !== null), [NS, VIA_SCHEDA]);
+  check(!scheda.length, `la memoria di questa scheda: via (rimasti: ${scheda.join(", ") || "nessuno"})`);
+  const altra = await pAltra.evaluate((k) => sessionStorage.getItem(k), `${NS}reftxt.${ep}.zz`);
+  check(altra === null, "e quella delle altre schede aperte");
+  const ext = await sw.evaluate(async () => ({ l: await chrome.storage.local.get(null), s: await chrome.storage.session.get(null) }));
+  const viaExt = [...VIA_EXT.filter((k) => k in ext.l), ...VIA_SESS.filter((k) => k in ext.s)];
+  check(!viaExt.length && !Object.keys(ext.l).some((k) => k.startsWith("ref:")), `estensione: via referti salvati, schede cliniche, ${VIA_SESS.join(", ")} (rimasti: ${viaExt.join(", ") || "nessuno"})`);
+  check(!(ext.s.ordini || []).length && !(ext.s["ponte.ordini"] || []).length, "via gli ordini finiti, anche quelli che ricordava il ponte");
+  const persi = [...RESTA_EXT.filter((k) => !(k in ext.l)), ...RESTA_SESS.filter((k) => !(k in ext.s))];
+  check(!persi.length, `estensione: restano ${[...RESTA_EXT, ...RESTA_SESS].join(", ")} (persi: ${persi.join(", ") || "nessuno"})`);
+  check(await pR.locator("#psassist-host .rdot.saved").count() === 0, "negli Esiti, nessun referto più salvato");
+  await sw.evaluate(async (ks) => { await chrome.storage.local.remove(ks); await chrome.storage.session.remove(["ponte", "stampaVerificata"]); }, RESTA_EXT);
+  await pR.close(); await pAltra.close();
 }
 
 await ctx.close();
