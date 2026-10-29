@@ -63,12 +63,12 @@ window.PSA_PDF = (function () {
     return out;
   }
 
-  const testata = (titolo, paziente, episodio) => [
+  const testata = (titolo, paziente, episodio, cf) => [
     { t: "rect", x: 0, y: 782, w: 595, h: 60, g: 0.93 },
     { t: "text", x: 40, y: 812, size: 15, bold: true, s: "OSPEDALE ESEMPIO - Pronto Soccorso" },
     { t: "text", x: 40, y: 794, size: 10, g: 0.35, s: "Documento del banco di prova - dati inventati" },
     { t: "text", x: 40, y: 752, size: 13, bold: true, s: titolo },
-    { t: "text", x: 40, y: 734, size: 10.5, s: `Assistito: ${paziente}    Episodio: ${episodio}` },
+    { t: "text", x: 40, y: 734, size: 10.5, s: `Assistito: ${paziente}${cf ? `    C.F. ${cf}` : ""}    Episodio: ${episodio}` },
     { t: "line", x: 40, y: 726, x2: 555, g: 0.7 },
   ];
 
@@ -108,8 +108,8 @@ window.PSA_PDF = (function () {
       return build(items);
     },
     // what opens when a referto is clicked
-    referto({ paziente, episodio, titolo, righe }) {
-      const items = testata("Referto", paziente, episodio);
+    referto({ paziente, episodio, titolo, righe, cf }) {
+      const items = testata("Referto", paziente, episodio, cf);
       items.push({ t: "text", x: 40, y: 706, size: 11, bold: true, s: titolo || "Esame" });
       let y = 682;
       (righe || []).forEach((r) => {

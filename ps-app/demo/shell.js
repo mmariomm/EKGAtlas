@@ -55,6 +55,93 @@
   const PAZIENTI = E.pazienti;   // tools/demo.mjs: the two saved cards, with their codice fiscale
   const byEp = (ep) => PAZIENTI.find((p) => p.ep === ep);
 
+  // ------------------------------------------------------- dati di prova
+  // tools/banco-fixtures.mjs: quello che le pagine salvate non hanno (valori,
+  // attese, referti col testo). Le ore si contano dall'apertura del banco.
+  const B = E.banco || { pazienti: {}, dafare: {} };
+  const T0 = Date.now();
+  const p2 = (n) => String(n).padStart(2, "0");
+  const alle = (min) => new Date(T0 + min * 60e3);
+  const dataOrd = (d) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:00.0`;
+  const dataIt = (d) => `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  const attr = (x) => String(x).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  const prelievoBanco = (id) => {
+    for (const [ep, f] of Object.entries(B.pazienti)) for (const pr of f.prelievi || []) if (pr.id === id) return { ep, pr };
+    return null;
+  };
+  const refertoBanco = (id) => {
+    for (const [ep, f] of Object.entries(B.pazienti)) for (const r of f.referti || []) if (r.id === id) return { ep, r };
+    return null;
+  };
+  // the rows a diary would carry for them, in the application's own shape
+  function diarioBanco(ep) {
+    const f = B.pazienti[ep];
+    if (!f) return "";
+    const tipo = (icona, richiesta) => `<td class="AFCDataTD" valign="top" width="1%" nowrap="" align="center"><a class="myButtonList" href="javascript:void(0)" onclick="window.open(&#39;/sa4rcs/restrict/RcsSession.do?RICHIESTA_ID=${richiesta}&#39;,&#39;Apri Prestazioni&#39;);"><img style="border-style: none" title="${icona}" src="icona:${{ Laboratorio: "laboratorio.png", Radiologia: "radiologia.png", Consulenze: "consulenza.png" }[icona] || "blank.gif"}" width="18" heigth="18"></a></td>`;
+    const campi = (d, desc) => `<input value="RICH" type="hidden" name="TIPO"><input value="${dataOrd(d)}" type="hidden" name="DATA_ORD"><input value="DOTTORE ESEMPIO 1" type="hidden" name="NOMINATIVO"><input value="${attr(desc)}" type="hidden" name="DESCRIZIONE_TITLE">`;
+    const ora = (d) => `<td class="AFCDataTD" valign="top" width="1%" nowrap="" align="center">${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}</td>`;
+    const firma = `<td class="AFCDataTD" valign="top" width="1%" nowrap="" align="center">UTENTE1</td>`;
+    const referto = (sis, id) => `<a href="#" title="REFERTO" onclick="javascript:window.open(&#39;../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=ESEMPIO&amp;REFERTO_SISTEMA=${sis}&amp;REFERTO_ID=${id}&#39;,&#39;${sis}&#39;)"><img src="icona:referto.gif" title="Referto" width="18" heigth="18"></a> `;
+    const righe = [];
+    for (const v of f.vitali || []) {
+      const d = alle(v.min);
+      righe.push([v.min, `<tr id="VAMI"><td class="AFCDataTD" valign="top" width="1%" nowrap="" align="center"><img style="border-style: none" title="Misurazioni" src="icona:misurazione.png" width="18" heigth="18"></td>${ora(d)}
+        <td class="AFCDataTD" title="" valign="top">${v.testo}<input value="VAMI" type="hidden" name="TIPO"><input value="${dataOrd(d)}" type="hidden" name="DATA_ORD"></td>${firma}</tr>`]);
+    }
+    for (const pr of f.prelievi || []) {
+      const d = alle(pr.min), desc = pr.esami.join("; ");
+      righe.push([pr.min, `<tr id="RICH">${tipo("Laboratorio", pr.richiesta)}${ora(d)}
+        <td class="AFCDataTD" title="${attr(desc)}" valign="top">${pr.referto ? referto("HL7LIS", pr.referto) : ""}<a class="AFCDataLink" href="#" onclick="window.open(&#39;/sa4rcs/restrict/RcsAccessiRisultatiElenco.do?RCS_ACCESSO_ID=${pr.id}&#39;,&#39;*ESEMPIO01&#39;);" title="Visualizza Risultati"><img title="Visualizza Risultati" src="icona:diaweb.gif" width="18" heigth="18"></a> ${attr(desc)}${campi(d, desc)}</td>${firma}</tr>`]);
+    }
+    for (const r of f.richieste || []) {
+      const d = alle(r.min), desc = r.esami.join("; ");
+      righe.push([r.min, `<tr id="RICH">${tipo(r.icona, r.richiesta)}${ora(d)}
+        <td class="AFCDataTD" title="${attr(desc)}" valign="top">${attr(desc)}${campi(d, desc)}</td>${firma}</tr>`]);
+    }
+    for (const r of f.referti || []) {
+      const d = alle(r.min);
+      righe.push([r.min, `<tr id="RICH">${tipo(r.icona, r.richiesta)}${ora(d)}
+        <td class="AFCDataTD" title="${attr(r.esame)}" valign="top">${referto(r.sistema, r.id)}${attr(r.esame)}${campi(d, r.esame)}</td>${firma}</tr>`]);
+    }
+    return righe.sort((a, b) => b[0] - a[0]).map((x) => x[1]).join("\n");
+  }
+  // the patient box, allergies and Attenzione of a saved page carry
+  // placeholders: the banco writes its own invented patient there
+  function paginaBanco(html, paz) {
+    const f = B.pazienti[paz.ep];
+    if (!f) return html;
+    const nato = /^(\d\d)\/(\d\d)\/(\d{4})$/.exec(f.nascita || "");
+    const oggi = new Date(T0), mese = oggi.getMonth() + 1;
+    const eta = nato ? oggi.getFullYear() - +nato[3] - (mese < +nato[2] || (mese === +nato[2] && oggi.getDate() < +nato[1]) ? 1 : 0) : paz.eta;
+    html = html.replace(/(<td align="left" title="[A-Z]+"><font style="font-size: 120%[^>]*>[\s\S]*?<\/font><br><font style="font-size: 150%[^>]*>)[\s\S]*?(<\/font><br><font style="font-size: 120%[^>]*>)[\s\S]*?(<\/font>)/,
+      `$1${paz.nome}$2${f.nascita} (${eta}) ${f.sesso}<br>${paz.cf}$3`);
+    if (f.allergie) {
+      html = html.replace(/(<textarea[^>]*name="ALLERGIE"[^>]*>)[\s\S]*?(<\/textarea>)/, `$1${attr(f.allergie)}$2`)
+        .replace(/(<img[^>]*title=")[^"]*("[^>]*src="icona:allergia\.png")/, `$1${attr(f.allergie)}$2`);
+    }
+    if (f.attenzione) html = html.replace(/(MVPG=PsoEpisodioDiario[^>]*>)[^<]*esempio[^<]*(<\/a>)/, `$1${attr(f.attenzione)}$2`);
+    const righe = diarioBanco(paz.ep);
+    if (righe) html = html.replace(/<tr id="(?:RICH|EPDI|VAMI|EPTE|EPME|VAIP)">/, (m) => righe + "\n" + m);
+    return html;
+  }
+  // the Risultati window of a banco draw, in the saved window's own shape
+  function risultatiBanco(pr) {
+    const valori = labCompletato && pr.completato ? pr.completato : pr.valori;
+    const quando = dataIt(alle(pr.min + 15));
+    const righe = valori.map(([nome, v, um, range, stato]) => `
+            <tr>
+              <td class="AFCDataTD" width="1%" nowrap="">${nome}&nbsp;</td>
+              <td class="AFCDataTD" nowrap="">${v}</td>
+              <td class="AFCDataTD" width="1%" nowrap="">${um}</td>
+              <td class="AFCDataTD" width="1%" nowrap="">${range}</td>
+              <td class="AFCDataTD" width="1%" nowrap="">${stato}</td>
+              <td class="AFCDataTD" width="1%" nowrap="">${quando}</td>
+            </tr>`).join("");
+    return pagina("risultati-1")
+      .replace(/RCS_ACCESSO_ID=\d+/g, "RCS_ACCESSO_ID=" + pr.id)
+      .replace(/(Data<\/a>\s*<\/td>\s*<\/tr>)[\s\S]*?(<\/tbody>\s*<\/table>\s*<\/td>)/, `$1${righe}\n          $2`);
+  }
+
   // resource id → the saved catalogue for that laboratory / radiology
   const CATALOGHI = {
     "00660001P": "esami-poc", "00130001P": "esami-centrale", "00720001P": "esami-urgenze",
@@ -230,12 +317,20 @@
     }
     if (/Sa4ViewerExtRedirect\.do|refertostream|uploaddownloadservlet/i.test(path)) {
       const id = q.get("REFERTO_ID") || "";
+      const fb = refertoBanco(id);
+      if (fb) {
+        const suo = byEp(fb.ep) || pazienteCorrente, di = fb.r.di;
+        return pdf200(PSA_PDF.referto({
+          paziente: di ? di.nome : suo.nome, cf: di ? di.cf : suo.cf, episodio: di ? "-" : suo.ep,
+          titolo: fb.r.esame.replace(/^\d+-\d+\s+/, ""), righe: fb.r.righe,
+        }));
+      }
       const titolo = etichettaReferto(id);
       // radiology reports carry readable text, like the real RIS ones: the
       // panel shows them inside itself
       if (/RIS/i.test(q.get("REFERTO_SISTEMA") || "") || /\bTC\b|RX|RADIOGRAF|ECOGRAF/i.test(titolo)) {
         return pdf200(PSA_PDF.referto({
-          paziente: pazienteCorrente.nome, episodio: pazienteCorrente.ep, titolo,
+          paziente: pazienteCorrente.nome, cf: pazienteCorrente.cf, episodio: pazienteCorrente.ep, titolo,
           righe: [
             "Quesito Diagnostico: dolore addominale",
             titolo,
@@ -247,7 +342,7 @@
         }));
       }
       return pdf200(PSA_PDF.referto({
-        paziente: pazienteCorrente.nome, episodio: pazienteCorrente.ep, titolo,
+        paziente: pazienteCorrente.nome, cf: pazienteCorrente.cf, episodio: pazienteCorrente.ep, titolo,
         righe: [
           "Esito: nella norma per i parametri considerati.",
           "Nota: documento generato dal banco di prova, contenuto inventato.",
@@ -258,13 +353,14 @@
     }
     if (/RcsAccessiRisultatiElenco\.do/i.test(path)) {
       const id = q.get("RCS_ACCESSO_ID") || "";
-      let html = pagina(id.endsWith("2") ? "risultati-2" : "risultati-1");
+      const fb = prelievoBanco(id);
+      let html = fb ? risultatiBanco(fb.pr) : pagina(id.endsWith("2") ? "risultati-2" : "risultati-1");
       // the real window names the patient, codice fiscale beside the name:
       // the saved copy was anonymised, the banco puts its own patient back
       html = html.replace(/<strong>UTENTE1<\/strong>UTENTE1/, `<strong>${pazienteCorrente.nome}</strong> ${pazienteCorrente.cf}`);
       // "il laboratorio ha completato": one value moves and one analyte
       // appears, so ↻ Aggiorna has something real to mark
-      if (labCompletato) {
+      if (labCompletato && !fb) {
         html = html.replace(/(Emoglobina[\s\S]{0,200}?class="AFCDataTD"[^>]*>)\s*80\s*</i, "$192<")
           .replace(/<\/table>/i, `<tr>
             <td class="AFCDataTD">Sodio&nbsp;</td><td class="AFCDataTD">128</td><td class="AFCDataTD">mmol/L</td>
@@ -327,7 +423,7 @@
     if (mvpg === "PsoLista" || (!mvpg && !ep)) return html200(listaPS());
     if (mvpg === "PsoEpisodioClinicoAmbulatorio" || ep) {
       pazienteCorrente = byEp(ep) || pazienteCorrente;
-      let html = pagina(pazienteCorrente.pagina);
+      let html = paginaBanco(pagina(pazienteCorrente.pagina), pazienteCorrente);
       // A confirmed richiesta must appear among the printable ones, or the
       // print flow would have nothing of ours to print: the saved page already
       // carries a row group (labels + list, one per laboratory), so it is
@@ -363,7 +459,8 @@
     if (/^(blob:|data:)/i.test(raw)) return origFetch(input, init);
     let u; try { u = new URL(raw, location.href); } catch { throw outside("richiesta", raw); }
     if (u.origin !== location.origin) throw outside("richiesta", u.href);
-    if (latency) await sleep(latency);
+    // a referto takes a little longer: «in fila» (two at a time) can be seen
+    if (latency) await sleep(latency * (/Sa4ViewerExtRedirect/i.test(u.pathname) ? 5 : 1));
     const { out, final } = answer(u.href, init);
     const res = new Response(out.body, { status: out.status, headers: out.headers });
     Object.defineProperty(res, "url", { value: final });
@@ -600,6 +697,20 @@
     box.querySelector(".close").focus();
   }
 
+  // «Da fare»: qualche voce di prova, solo se non ce n'è nessuna
+  function semina() {
+    try {
+      const k = "psassist:dafare.v1";
+      if (localStorage.getItem(k)) return;
+      const tutti = {}, ora = Date.now();
+      for (const [ep, l] of Object.entries(B.dafare || {})) {
+        tutti[ep] = l.map((x, i) => ({ id: `banco${ep}${i}`, testo: x.testo, t: x.min != null ? Math.floor((ora + x.min * 60e3) / 60e3) * 60e3 : null,
+          fatto: null, ord: i, ts: ora }));
+      }
+      localStorage.setItem(k, JSON.stringify(tutti));
+    } catch (e) { /* niente memoria: niente voci di prova */ }
+  }
+
   function harness() {
     const bar = document.createElement("div");
     bar.className = "psa-bar";
@@ -629,6 +740,7 @@
     bar.querySelector("#psa-wipe").addEventListener("click", () => {
       try { localStorage.clear(); sessionStorage.clear(); } catch (e) { /* private mode */ }
       refs.clear(); carrelli = new Map(); labCompletato = false;
+      semina();
       for (const t of [...tabs.values()]) t.close();
       navigate(BASE + "?MVPG=PsoLista");
     });
@@ -639,6 +751,7 @@
   stile.textContent = E.css || "";
   document.head.appendChild(stile);
   coreSrc = decodeB64("psa-core");
+  semina();
   harness();
   // a reload keeps the page you were on: the query is the real location
   render(location.search && location.search.length > 1 ? BASE + location.search : BASE + "?MVPG=PsoLista");

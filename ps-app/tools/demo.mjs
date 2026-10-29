@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paginaStorico } from "../test/fixtures/storico.mjs";
+import { BANCO } from "./banco-fixtures.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(root, p), "utf8");
@@ -59,6 +60,7 @@ const ESEMPI = {
   pagine,
   pazienti: PAZIENTI,
   icone: JSON.parse(readFileSync(join(esempiDir, "_icone.json"), "utf8")),
+  banco: BANCO,   // i dati di prova che le pagine salvate non hanno (tools/banco-fixtures.mjs)
   css: scope(readFileSync(join(esempiDir, "_stile.css"), "utf8"), "#sa4-page"),
 };
 
