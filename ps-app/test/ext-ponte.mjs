@@ -304,6 +304,10 @@ await tel2.close();
 
 // ===========================================================================
 sezione("nota e promemoria dal telefono");
+// sul PC nota e promemoria sono voci di «Da fare», per episodio: la nota è la prima
+// aperta senza ora, i promemoria quelle aperte con l'ora (una spuntata resta 5 minuti, barrata)
+const daFarePc = (ep = "999001") => doc.evaluate((e) => (JSON.parse(localStorage.getItem("psassist:dafare.v1") || "{}")[e] || []).filter((x) => !x.fatto), ep);
+const notePc = () => doc.evaluate(() => Object.values(JSON.parse(localStorage.getItem("psassist:dafare.v1") || "{}")).flat().filter((x) => x.t == null && !x.fatto).map((x) => x.testo));
 await tocca(tel, '.paz[data-ep="999001"]');
 const testa = await aspettaTel(tel, /Aggiorna i valori/, 20000);
 check(await tel.locator(".top .tit").innerText() === "ROSSI MARIO · 77 anni · OBI 2", `in testa il nome intero, l'età e il posto, e nient'altro: «ROSSI MARIO · 77 anni · OBI 2» (${(await tel.locator(".top .tit").innerText()).replace(/\n/g, " / ")})`);
@@ -314,12 +318,13 @@ await tocca(tel, '[data-a="nota"]');
 await tel.locator("#nota").fill("dolore dalle 6, allergico a PCN");
 await tocca(tel, '[data-a="promApri"]');   // uscire dal campo salva la nota
 await aspettaTel(tel, /Nota salvata sul PC/, 10000);
-const noteSuPc = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:note.v1") || "{}"));
-check(Object.values(noteSuPc).some((n) => n.t === "dolore dalle 6, allergico a PCN"), "la nota arriva sul PC, dove il pannello la legge");
+const noteSuPc = await daFarePc();
+check(noteSuPc.length === 1 && noteSuPc[0].testo === "dolore dalle 6, allergico a PCN" && noteSuPc[0].t === null,
+  `la nota arriva sul PC: la prima voce di «Da fare», senza ora (got: ${JSON.stringify(noteSuPc.map((x) => [x.testo, x.t]))})`);
 await tel.locator("#promin").fill("tra 2h tropo");
 await tocca(tel, '[data-a="prom"]');
 await finche(async () => (await tel.locator(".promr").count()) === 1, 10000);
-const prom = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:promemoria.v1") || "{}")["999001"] || []);
+const prom = (await daFarePc()).filter((x) => x.t != null);
 check(prom.length === 1 && prom[0].testo === "tropo" && Math.abs(prom[0].t - Date.now() - 2 * 3600e3) < 120e3, "il promemoria «tra 2h tropo» è sul PC, per quel paziente");
 await tocca(tel, '[data-a="promApri"]');
 await tel.locator("#promin").fill("ECG");
@@ -328,7 +333,7 @@ check(/Scrivi anche l'ora/.test(await aspettaTel(tel, /Scrivi anche l'ora/, 8000
 await tel.locator("#promin").fill("11:30 ecg di controllo");
 await tocca(tel, '[data-a="prom"]');
 await finche(async () => (await tel.locator(".promr").count()) === 2, 10000);
-const promPc = () => doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:promemoria.v1") || "{}")["999001"] || []);
+const promPc = async () => (await daFarePc()).filter((x) => x.t != null);
 const pid = await tel.locator(".promr").nth(0).locator("[data-pid]").getAttribute("data-pid");
 await tel.locator(`[data-a="fatto"][data-pid="${pid}"]`).click();
 check(/Fatto\s*Annulla/.test(await tel.locator(".promr").nth(0).innerText()), "«✓ Fatto»: per 5 secondi «Fatto · Annulla»");
@@ -562,7 +567,7 @@ await tocca(tel, '[data-a="nota"]');
 await tel.locator("#nota").fill("nota dopo la dimissione");
 await tocca(tel, '[data-a="promApri"]');
 check(/Dimesso sul PC: niente inviato/.test(await aspettaTel(tel, /Dimesso sul PC/, 10000)), "dimesso sul PC: «Dimesso sul PC: niente inviato»");
-check(!Object.values(await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:note.v1") || "{}"))).some((n) => /dimissione/.test(n.t)), "e la nota non arriva");
+check(!(await notePc()).some((t) => /dimissione/.test(t)), "e la nota non arriva");
 await tocca(tel, '[data-a="indietro"]');
 check(!/VERDI/.test(await aspettaTel(tel, /ROSSI M\./, 10000)), "e dall'elenco del telefono se ne va");
 
@@ -601,7 +606,7 @@ const daTel = () => inoltrati.filter((b) => b[1] === 3);
 // una nota, catturata per strada, poi un'altra: rimandare la prima non la rimette
 await tocca(tel, '.paz[data-ep="999001"]');
 await aspettaTel(tel, /Aggiorna i valori/, 15000);
-const noteSulPc = () => doc.evaluate(() => Object.values(JSON.parse(localStorage.getItem("psassist:note.v1") || "{}")).map((n) => n.t));
+const noteSulPc = () => notePc();
 const prima = daTel().length;
 await tocca(tel, '[data-a="nota"]');
 await tel.locator("#nota").fill("nota A");
@@ -612,6 +617,8 @@ await tocca(tel, '[data-a="nota"]');
 await tel.locator("#nota").fill("nota B");
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
 await finche(async () => (await noteSulPc()).includes("nota B"), 10000);
+const senzaOra = (await daFarePc()).filter((x) => x.t == null).map((x) => x.testo);
+check(senzaOra.join("|") === "nota B", `la nota riscritta dal telefono cambia la stessa voce di «Da fare», non ne aggiunge un'altra (got: ${senzaOra.join(" | ")})`);
 // qualcuno sulla strada (fra il telefono e il ripetitore) che rimanda quello che vuole
 const versoPc = (frames) => { const p = rete.prese.get(rete.ultima); for (const f of frames) p.server.send(Buffer.from(f)); };
 const manomesso = Buffer.from(fNotaA); manomesso[9] ^= 0x7f; manomesso[manomesso.length - 2] ^= 1;

@@ -320,15 +320,16 @@ check(griglia.sotto.length === 3 && griglia.sotto.every((t) => /^\d\d:\d\d$/.tes
   `colonne di altri giorni: data sopra, ora sotto (${griglia.sotto.join(" · ")})`);
 await verificaOrdine("tabella dello storico del portale");
 
-// ---- un promemoria dalla nota: la pill accanto, poi nella Lista accanto al nome (e niente in rete: lo dice il conto in fondo)
-await $(".prbar .prnuovo").click();
-await $("#prin").fill("tra 20 min EGA");
-await $("#prin").press("Enter");
-const pillNota = (await $(".prbar .prom").innerText().catch(() => "")).replace(/\s+/g, " ").trim();
-check(pillNota === "20m EGA" && await $(".prbar .prom.amb").count() === 1, `un promemoria dalla nota: la pill accanto, ambra sotto la mezz'ora (${pillNota})`);
+// ---- un promemoria in «Da fare», dall'icona dell'intestazione; poi nella Lista accanto al nome (e niente in rete: lo dice il conto in fondo)
+await $(".hd .dfic").click();
+await $("#dfin").fill("tra 10 min EGA");
+await $("#dfin").press("Enter");
+await page.keyboard.press("Escape");
+const icona = (await $(".hd .dfic").innerText().catch(() => "")).trim();
+check(icona === "1" && await $(".hd .dfic.amb").count() === 1, `un promemoria in «Da fare»: l'icona conta 1, ambra a 10 minuti (${icona})`);
 await $("#back").click();
-const pillLista = (await $('.pzrow:has([data-ep="700001"]) .prom').innerText().catch(() => "")).replace(/\s+/g, " ").trim();
-check(pillLista === "20m EGA", `e nella Lista, accanto al nome (${pillLista})`);
+const postLista = (await $('.pzrow:has([data-ep="700001"]) .dfpost').innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+check(/^\d\d:\d\d EGA$/.test(postLista), `e nella Lista, accanto al nome: l'ora e la cosa da fare (${postLista})`);
 
 // ---- una schermata mai salvata non è un errore
 await page.locator('#sa4-page a:has-text("Storico Documenti")').first().click().catch(() => {});

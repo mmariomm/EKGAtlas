@@ -3771,10 +3771,11 @@ async function scenarioHomePills(browser) {
   check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1,
     "su una pagina paziente si apre sugli Esiti, non sull'elenco");
   check(scen, (await $panel(page, "#q").count()) === 0, "e non sulle Richieste: ordinare è un tocco più in là");
-  // una nota su questo paziente: nell'elenco comparirà accanto al nome
-  await $panel(page, "#nota").fill("allergico a penicillina\nrivalutare ore 14");
-  await $panel(page, "#nota").press("Tab");
-  await page.waitForTimeout(300);
+  // una cosa da fare per questo paziente: nell'elenco comparirà accanto al nome
+  await $panel(page, ".hd .dfic").click();
+  await $panel(page, "#dfin").fill("allergico a penicillina, rivalutare");
+  await $panel(page, "#dfin").press("Enter");
+  await page.keyboard.press("Escape");
 
   await page.goto(mock.patientUrl.replace("999001", "999002"));
   await page.waitForSelector("#psassist-host", { state: "attached" });
@@ -3794,12 +3795,13 @@ async function scenarioHomePills(browser) {
   check(scen, (await page.locator("#psassist-host .pzrow .stom").count()) === 2, "e portano il ⚠ dello stesso cognome");
   const tip = (await righe.nth(1).locator(".pzapri").getAttribute("title")) || "";
   check(scen, /episodio 999001 · aperto (ieri )?\d\d:\d\d/.test(tip), `al passaggio del mouse: episodio e ora di apertura (got: ${tip.split("\n").slice(0, 2).join(" / ")})`);
-  const desc = (await page.locator("#psassist-host .pzrow .pznota").allInnerTexts()).join("");
   // I due episodi del simulatore hanno lo stesso nome e nessun codice fiscale:
-  // per il programma potrebbero essere due persone. La nota scritta «per
-  // nome» NON si mostra: sul paziente sbagliato sarebbe peggio di niente.
-  check(scen, desc === "",
-    `due pazienti attivi con lo stesso nome e senza codice fiscale: la nota non si mostra nell'elenco (got: ${desc})`);
+  // per il programma potrebbero essere due persone. «Da fare» è per EPISODIO:
+  // il post-it sta solo sulla riga di chi l'ha avuto, mai sull'omonimo.
+  const post = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".pzrow")]
+    .map((r) => `${r.querySelector(".pzapri")?.getAttribute("data-ep")}:${r.querySelector(".dfpost")?.textContent || ""}`));
+  check(scen, post.join(" | ") === "999002: | 999001:allergico a penicillina, rivalutare",
+    `due pazienti con lo stesso nome: il post-it solo su quello giusto, per episodio (got: ${post.join(" | ")})`);
   check(scen, (await righe.first().boundingBox()).height <= 48, "e la riga resta una riga");
   // la ✕ per toglierlo dall'elenco compare solo passandoci sopra
   const opacitaX = () => page.evaluate(() => getComputedStyle(document.getElementById("psassist-host").shadowRoot.querySelectorAll(".pzrow .pzx")[1]).opacity);
@@ -4035,7 +4037,7 @@ async function scenarioStanza(browser) {
   await riga("999001").click({ button: "right" });
   await $panel(page, ".stmenu").waitFor();
   const vociS = (await page.locator("#psassist-host .stmenu .stmi").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
-  check(scen, vociS.join(" | ") === "OBI 1 vuoto | OBI 2 vuoto | OBI 3 vuoto | OBI 4 vuoto | OSS 1 vuoto | OSS 2 vuoto | OSS 3 vuoto | OSS 4 vuoto | Sedia 1 vuoto | Sala attesa | Sala attesa 2 | Promemoria… | Togli dall'elenco",
+  check(scen, vociS.join(" | ") === "OBI 1 vuoto | OBI 2 vuoto | OBI 3 vuoto | OBI 4 vuoto | OSS 1 vuoto | OSS 2 vuoto | OSS 3 vuoto | OSS 4 vuoto | Sedia 1 vuoto | Sala attesa | Sala attesa 2 | Da fare… | Togli dall'elenco",
     `tasto destro su una riga: «Sposta in…», letti e sedie vuoti per nome, poi le aree; «Rimetti in lista» no, ci sta già (got: ${vociS.join(" | ")})`);
   const hl = await alta(".pzcoda"), hm = await alta(".stcanvas");
   await $panel(page, `.stmenu [data-dove="letto:${sedia.id}"]`).click();
@@ -4274,14 +4276,14 @@ async function scenarioStanza(browser) {
   await portaSu(chip(".stbed", "999001"), await letto("Box 1"));
   check(scen, (await $panel(page, ".stsnack").count()) === 0, "lasciato dov'era: niente cambia, niente da annullare");
 
-  // «Sposta in…» col tasto destro: i letti vuoti, quelli occupati, le aree, «Rimetti in lista»; in fondo «Promemoria…» e «Togli dall'elenco»
+  // «Sposta in…» col tasto destro: i letti vuoti, quelli occupati, le aree, «Rimetti in lista»; in fondo «Da fare…» e «Togli dall'elenco»
   await chip(".starea", "999002").click({ button: "right" });
   await $panel(page, ".stmenu").waitFor();
   const voci = (await page.locator("#psassist-host .stmenu .stmi").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
   check(scen, voci.length === 10 && voci.slice(0, 5).every((v) => /^Box [2-6] vuoto$/.test(v)) && /^Box 1 al posto di ROSSI MARIO · …9001$/.test(voci[5])
-    && /^Corridoio qui ora/.test(voci[6]) && voci[7] === "Rimetti in lista" && voci[8] === "Promemoria…" && voci[9] === "Togli dall'elenco"
-    && (await $panel(page, '.stmenu .stmsep + [data-dove="tray"]').count()) === 1 && (await $panel(page, '.stmenu .stmsep + [data-dove="prom"]').count()) === 1,
-    `tasto destro nella stanza: letti, aree, «Rimetti in lista» e, a parte, «Promemoria…» e «Togli dall'elenco» (got: ${voci.slice(4).join(" | ")})`);
+    && /^Corridoio qui ora/.test(voci[6]) && voci[7] === "Rimetti in lista" && voci[8] === "Da fare…" && voci[9] === "Togli dall'elenco"
+    && (await $panel(page, '.stmenu .stmsep + [data-dove="tray"]').count()) === 1 && (await $panel(page, '.stmenu .stmsep + [data-dove="dafare"]').count()) === 1,
+    `tasto destro nella stanza: letti, aree, «Rimetti in lista» e, a parte, «Da fare…» e «Togli dall'elenco» (got: ${voci.slice(4).join(" | ")})`);
   await $panel(page, '.stmenu [data-dove="tray"]').click();
   check(scen, (await riga("999002").count()) === 1 && (await chip(".starea", "999002").count()) === 0 && (await $panel(page, ".stmenu").count()) === 0
     && /^ROSSI MARIO · …9002 in lista$/.test(await avviso()),
@@ -4372,7 +4374,7 @@ async function scenarioStanza(browser) {
   check(scen, (await $panel(page, "#pzcerca").count()) === 0, "tornando ai Pazienti il filtro non c'è più");
 
   // nella colonna stretta niente si taglia: nella lista il nome sta da solo sulla prima riga
-  // (la nota sotto, «visto…» via); nella stanza va a capo
+  // (il post-it sotto, «visto…» via); nella stanza va a capo
   await menu("#winaffianca");
   const taglio = () => page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot;
@@ -4382,13 +4384,13 @@ async function scenarioStanza(browser) {
   const stretta = await page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot;
     const riga = [...r.querySelectorAll(".pzrow")].find((x) => /DELL.ACQUA/.test(x.textContent));
-    const nm = riga.querySelector(".pznm"), nota = riga.querySelector(".pznota"), visto = riga.querySelector(".stvisto");
+    const nm = riga.querySelector(".pznm"), nota = riga.querySelector(".dfpost"), visto = riga.querySelector(".stvisto");
     return { col: getComputedStyle(riga.querySelector(".pzchi")).flexWrap, sotto: nota.getBoundingClientRect().top >= nm.getBoundingClientRect().bottom - 1,
              visto: Math.round(visto.getBoundingClientRect().width), alta: Math.round(riga.getBoundingClientRect().height) };
   });
   const tagliatiL = await taglio();
   check(scen, stretta.col === "wrap" && stretta.sotto && !tagliatiL.length && stretta.visto <= 1 && stretta.alta <= 48,
-    `colonna stretta: nella lista la nota sotto il nome, «visto» via, la riga resta una riga, nessun nome tagliato (got: ${JSON.stringify(stretta)} ${tagliatiL.join(", ")})`);
+    `colonna stretta: nella lista il post-it sotto il nome, «visto» via, la riga resta una riga, nessun nome tagliato (got: ${JSON.stringify(stretta)} ${tagliatiL.join(", ")})`);
   await riga("999001").locator("[data-posto]").click();
   await $panel(page, '.stmenu [data-dove^="letto:"]').first().click();
   const nelLettoStretto = await page.evaluate(() => {
@@ -4403,7 +4405,7 @@ async function scenarioStanza(browser) {
   await menu("#wincentra");
   await ritocca("999001", { name: "ROSSI MARIO", pk: "" });
   await ritocca("999002", { name: "ROSSI MARIO" });
-  await page.evaluate(() => localStorage.removeItem("psassist:note.v1"));
+  await page.evaluate(() => { localStorage.removeItem("psassist:note.v1"); localStorage.removeItem("psassist:dafare.v1"); });
   await page.reload();
   await aiPazienti(".stmap");
 
@@ -4760,12 +4762,12 @@ async function scenarioTempi(browser) {
 // rubare il fuoco a chi scrive), ✓ Fatto con Annulla, +15 min, la pill
 // ridotta, la Stanza, 🗑 e «Svuota l'elenco». E nessuna richiesta di rete.
 async function scenarioPromemoria(browser) {
-  const scen = "promemoria";
+  const scen = "da fare";
   const leggi = prendi("leggiPromemoria"), tempo = prendi("promTempo");
   const alle = (g, h, m) => new Date(2026, 9, g, h, m).getTime();
   const dieci = alle(5, 10, 0);
   const casi = [
-    ["11:30 tropo", alle(5, 11, 30), "tropo"], ["11.30 tropo", alle(5, 11, 30), "tropo"], ["11h30 tropo", alle(5, 11, 30), "tropo"],
+    ["alle 11.30 tropo", alle(5, 11, 30), "tropo"], ["ore 15.30 consulenza", alle(5, 15, 30), "consulenza"], ["h 9.10 EGA", alle(5, 9, 10), "EGA"], ["15:30 RX", alle(5, 15, 30), "RX"], ["tra 30 min EGA", alle(5, 10, 30), "EGA"], ["+30′ EGA", alle(5, 10, 30), "EGA"], ["11:30 tropo", alle(5, 11, 30), "tropo"], ["11h30 tropo", alle(5, 11, 30), "tropo"],
     ["tropo 11h", alle(5, 11, 0), "tropo"], ["alle 14 consulenza", alle(5, 14, 0), "consulenza"],
     ["tra 2h ECG", alle(5, 12, 0), "ECG"], ["+2h ECG", alle(5, 12, 0), "ECG"], ["2h ECG", alle(5, 12, 0), "ECG"],
     ["2h30 emocromo", alle(5, 12, 30), "emocromo"], ["90m lattati", alle(5, 11, 30), "lattati"], ["30 min EGA", alle(5, 10, 30), "EGA"],
@@ -4775,7 +4777,7 @@ async function scenarioPromemoria(browser) {
     ["07:30 tropo", alle(6, 7, 30), "tropo"],    // passata da più di 2 ore: domani (il turno di notte)
     ["11:30", alle(5, 11, 30), "promemoria"], ["ECG alle 11:30, poi tra 2h", alle(5, 11, 30), "ECG poi tra 2h"],
     ["K 3.50 ricontrollo tra 2h", alle(5, 12, 0), "K 3.50 ricontrollo"],   // un numero col punto cede a un orario vero
-    ["tropo", null], ["morfina 2 mg", null], ["25:00 tropo", null], ["tra 30h tropo", null], ["", null],
+    ["tropo", null], ["11.30 tropo", null], ["Hb 9.10", null], ["Hb 9.10 ricontrollare", null], ["K 5.30", null], ["K 5,30 da ripetere", null], ["9,10", null], ["PA 120/80", null], ["pH 7.30", null], ["morfina 2 mg", null], ["25:00 tropo", null], ["tra 30h tropo", null], ["", null],
   ];
   const sbagliati = casi.filter(([s, t, testo]) => {
     const r = leggi(s, dieci);
@@ -4785,17 +4787,18 @@ async function scenarioPromemoria(browser) {
   const notte = leggi("00:30 tropo", alle(5, 23, 30)), mezzanotte = leggi("23:30 tropo", alle(6, 1, 0));
   check(scen, notte?.t === alle(6, 0, 30) && mezzanotte?.t === alle(5, 23, 30),
     "a cavallo della mezzanotte: alle 23:30 «00:30» è fra un'ora, all'1:00 «23:30» è di un'ora e mezza fa");
-  check(scen, leggi("tra 1h " + "x".repeat(60), dieci).testo.length === 40, "la cosa da fare si tiene corta: 40 caratteri");
+  check(scen, leggi("tra 1h " + "x".repeat(60), dieci).testo.length === 40 && leggi("tra 1h " + "x".repeat(200), dieci, 120).testo.length === 120,
+    "la cosa da fare si tiene corta: 40 caratteri per il telefono, 120 nella lista");
   const tempi = [[100, "1h40"], [40, "40m"], [0, "ora"], [-5, "−5m"], [-80, "−1h20"]].map(([m, atteso]) => [tempo(dieci + m * 60e3, dieci), atteso]);
   check(scen, tempi.every(([a, b]) => a === b), `quanto manca, corto: ${tempi.map(([a]) => a).join(" · ")}`);
+  const banda = prendi("promBanda");
+  const bande = [16, 15, 1, 0, -1].map((m) => banda(dieci + m * 60e3, dieci) || "quieta");
+  check(scen, bande.join(",") === "quieta,amb,amb,ros,ros", `il colore dell'icona: ambra dai 15′ prima, rossa scaduto (${bande.join(", ")})`);
 
-  // ---- nel browser, con l'orologio finto: parte dalle 10 di mattina (da
-  // «adesso», dopo le 23:15 «tra 45m» cadeva domani e il test falliva), e il
-  // tempo lo si fa correre a mano
+  // ---- nel browser, con l'orologio finto alle 10 di mattina
   const mock = createMock({});
   const { context, page } = await newPage(browser, mock);
   await page.clock.install({ time: new Date(2026, 9, 5, 10, 0) });
-  // (con l'orologio avanti, una pagina può partire dalla pill: la si riapre)
   const apri = async () => {
     await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
     if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
@@ -4805,177 +4808,184 @@ async function scenarioPromemoria(browser) {
   await apri();
   await page.goto(mock.patientUrl);
   await apri();
-  await page.waitForSelector("#psassist-host .prnuovo", { state: "attached" });
+  await page.waitForSelector("#psassist-host .hd .dfic", { state: "attached" });
   await page.waitForLoadState("load");
   let richieste = 0;
   page.on("request", () => { richieste++; });
-  const archivio = () => page.evaluate(() => JSON.parse(localStorage.getItem("psassist:promemoria.v1") || "{}"));
-  const pill = (dove) => $panel(page, `${dove} .prom`);
-  const testoPill = async (dove) => ((await pill(dove).count()) ? (await pill(dove).first().innerText()).replace(/\s+/g, " ").trim() : "");
-  const banda = (dove) => pill(dove).first().evaluate((b) => (b.classList.contains("ros") ? "rossa" : b.classList.contains("amb") ? "ambra" : "quieta"));
+  const archivio = () => page.evaluate(() => JSON.parse(localStorage.getItem("psassist:dafare.v1") || "{}"));
+  const voci = async (ep = "999001") => ((await archivio())[ep] || []).map((x) => x.testo);
+  const icona = (dove) => $panel(page, `${dove} .dfic`).first();
+  const testoIcona = async (dove) => ((await icona(dove).count()) ? (await icona(dove).innerText()).replace(/\s+/g, " ").trim() : null);
+  const colore = (dove) => icona(dove).evaluate((b) => (b.classList.contains("ros") ? "rossa" : b.classList.contains("amb") ? "ambra" : "quieta"));
+  const fuocoId = () => page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id || "");
+  const voceLi = (testo) => $panel(page, `.dfpop .dfi:has(.dftx:text-is("${testo}"))`);
 
-  // la sveglia della nota apre il campo; senza un orario non si salva niente
-  await $panel(page, ".prbar .prnuovo").click();
-  check(scen, await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id === "prin"),
-    "la sveglia accanto alla nota apre un campo su una riga, col cursore dentro");
-  check(scen, (await $panel(page, "#prin").getAttribute("placeholder")) === "es. 11:30 tropo · tra 2h ECG", "con l'esempio di cosa scrivere");
-  await $panel(page, "#prin").fill("tropo");
-  await $panel(page, "#prin").press("Enter");
-  check(scen, /Scrivi un orario: 11:30, o tra 2h/.test(await $panel(page, ".prhint.ko").innerText()) && !Object.keys(await archivio()).length,
-    "senza un orario non si salva: il campo lo dice");
-  await $panel(page, "#prin").fill("tra 45m EGA");
-  check(scen, /tra 45 min/.test(await $panel(page, ".prhint").innerText()), `mentre scrivi dice quando sarà (got: ${await $panel(page, ".prhint").innerText()})`);
-  await $panel(page, "#prin").press("Enter");
-  const salvati = (await archivio())["999001"] || [];
-  check(scen, salvati.length === 1 && salvati[0].testo === "EGA" && !/ROSSI/.test(JSON.stringify(await archivio())),
-    "Invio salva: per episodio, con l'ora e la cosa da fare, mai il nome");
-  check(scen, (await $panel(page, "#prin").count()) === 0 && (await testoPill(".prbar")) === "45m EGA" && (await banda(".prbar")) === "quieta",
-    `il campo si chiude e la pill accanto alla nota dice quanto manca, tranquilla (got: ${await testoPill(".prbar")})`);
-  // Esc chiude il campo, e basta: il pannello resta aperto
-  await $panel(page, ".prbar .prnuovo").click();
-  await $panel(page, "#prin").fill("tra 1h x");
+  // la nota separata non c'è più: nell'intestazione, accanto agli identificativi, l'icona
+  check(scen, (await $panel(page, "#nota").count()) === 0 && (await $panel(page, ".notaw").count()) === 0, "il campo della nota non c'è più");
+  const vicino = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot, s = r.querySelector(".hd .sub")?.getBoundingClientRect(), i = r.querySelector(".hd .dfic")?.getBoundingClientRect();
+    return !!s && !!i && i.left >= s.right - 1 && i.left - s.right < 40 && Math.abs((i.top + i.bottom) / 2 - (s.top + s.bottom) / 2) < 8;
+  });
+  check(scen, vicino && (await testoIcona(".hd")) === "" && (await $panel(page, ".hd .dfic.vuota").count()) === 1,
+    "nell'intestazione, subito dopo gli identificativi, l'icona «Da fare», vuota");
+  // un tocco: la lista si apre lì, col cursore nel campo
+  await icona(".hd").click();
+  await $panel(page, ".dfpop").waitFor();
+  check(scen, (await fuocoId()) === "dfin" && /Da fare · ROSSI MARIO/.test(await $panel(page, ".dfhd").innerText()),
+    "un tocco apre la lista sotto l'icona, col nome del paziente e il cursore nel campo");
+  check(scen, (await $panel(page, "#dfin").getAttribute("placeholder")) === "+ Aggiungi… (con un'ora è un promemoria)", "il campo su una riga, con l'esempio");
+  await $panel(page, "#dfin").fill("chiamare la figlia");
+  await $panel(page, "#dfin").press("Enter");
+  // un valore clinico col punto non è un'ora: nessun promemoria, nemmeno nel suggerimento
+  await $panel(page, "#dfin").fill("Hb 9.10 ricontrollare");
+  check(scen, (await $panel(page, ".dfhint").innerText().catch(() => "")).trim() === "", "«Hb 9.10 ricontrollare»: nessun orario letto dentro un valore");
+  await $panel(page, "#dfin").fill("tra 45m EGA");
+  const hint =await $panel(page, ".dfhint").innerText();
+  check(scen, /promemoria: .*tra 45 min/.test(hint), `con un'ora, mentre scrivi dice quando sarà (got: ${hint})`);
+  await $panel(page, "#dfin").press("Enter");
+  await $panel(page, "#dfin").fill("tropo 11:30");
+  await $panel(page, "#dfin").press("Enter");
+  const tre = (await archivio())["999001"] || [];
+  check(scen, tre.map((x) => x.testo).join("|") === "chiamare la figlia|EGA|tropo" && tre[0].t === null && tre[1].t === alle(5, 10, 45) && tre[2].t === alle(5, 11, 30)
+    && !/ROSSI/.test(JSON.stringify(await archivio())),
+    `Invio aggiunge in fondo: una cosa da fare senza ora, due promemoria con l'ora; per episodio, mai il nome (got: ${JSON.stringify(tre.map((x) => [x.testo, x.t]))})`);
+  check(scen, (await $panel(page, ".dfpop .dfi").count()) === 3 && (await fuocoId()) === "dfin" && (await $panel(page, "#dfin").inputValue()) === "",
+    "le voci compaiono subito, e il campo resta pronto per la prossima");
+  check(scen, (await testoIcona(".hd")) === "3" && (await colore(".hd")) === "quieta", `l'icona conta le voci aperte: «3», tranquilla (got: ${await testoIcona(".hd")})`);
+  const ore = await $panel(page, ".dfpop .dft").allInnerTexts();
+  check(scen, ore.join(",") === "10:45,11:30", `un promemoria mostra la sua ora (got: ${ore.join(", ")})`);
+  await shot(page, "onda3-dafare-aperta");
+
+  // riordinare: trascinando la maniglia, e da tastiera (Alt+↑/↓)
+  const grip = await voceLi("tropo").locator(".dfgrip").boundingBox(), primo = await voceLi("chiamare la figlia").boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y - 8, { steps: 4 });
+  await page.mouse.move(grip.x + grip.width / 2, primo.y + 4, { steps: 6 });
+  await page.mouse.up();
+  check(scen, (await voci()).join("|") === "tropo|chiamare la figlia|EGA", `trascinata in cima, l'ordine si salva (got: ${(await voci()).join(" | ")})`);
+  await voceLi("chiamare la figlia").locator(".dfck").focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  check(scen, (await voci()).join("|") === "chiamare la figlia|tropo|EGA"
+    && await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.closest(".dfi")?.querySelector(".dftx")?.textContent === "chiamare la figlia"),
+    `Alt+↑ la sposta su di uno, e il fuoco la segue (got: ${(await voci()).join(" | ")})`);
+  check(scen, /Spostata: 1ª/.test(await $panel(page, ".dfsr").innerText()), "e lo dice a chi usa il lettore di schermo");
   await page.keyboard.press("Escape");
-  check(scen, (await $panel(page, "#prin").count()) === 0 && (await $panel(page, ".card").count()) === 1 && ((await archivio())["999001"] || []).length === 1,
-    "Esc chiude il campo senza salvare, e il pannello resta aperto");
+  check(scen, (await $panel(page, ".dfpop").count()) === 0 && (await $panel(page, ".card").count()) === 1
+    && await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.classList.contains("dfic")),
+    "Esc chiude la lista (il pannello resta aperto) e il fuoco torna sull'icona");
 
-  // il tempo passa: la pill cambia colore SUL POSTO, e chi scrive la nota non se ne accorge
-  await page.evaluate(() => { document.getElementById("psassist-host").shadowRoot.querySelector(".prbar .prom").__stessa = 1; });
-  await $panel(page, "#nota").click();
-  await page.keyboard.type("rivalutare");
-  await page.clock.fastForward("20:00");
-  const dopo20 = { testo: await testoPill(".prbar"), banda: await banda(".prbar"),
-    stessa: await pill(".prbar").evaluate((b) => b.__stessa === 1),
-    fuoco: await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id || ""),
-    nota: await $panel(page, "#nota").inputValue() };
-  check(scen, dopo20.testo === "25m EGA" && dopo20.banda === "ambra", `a 25 minuti: ambra (got: ${dopo20.testo}, ${dopo20.banda})`);
-  check(scen, dopo20.stessa && dopo20.fuoco === "nota" && dopo20.nota === "rivalutare",
-    `aggiornata sul posto: stesso elemento, il fuoco resta nella nota e il testo è intatto (${JSON.stringify(dopo20)})`);
-  await page.keyboard.type(" alle 14");
-  check(scen, (await $panel(page, "#nota").inputValue()) === "rivalutare alle 14", "e si continua a scrivere");
-  // ridotto: niente sulla pill finché manca più di 10 minuti
+  // il tempo passa: ambra 15 minuti prima, rossa scaduto — sul posto, stesso elemento
+  await page.evaluate(() => { document.getElementById("psassist-host").shadowRoot.querySelector(".hd .dfic").__stessa = 1; });
+  await page.clock.fastForward("29:00");   // 10:29: l'EGA è fra 16 minuti
+  const a29 = await colore(".hd");
+  await page.clock.fastForward("02:00");   // 10:31: fra 14
+  const a31 = { colore: await colore(".hd"), stessa: await icona(".hd").evaluate((b) => b.__stessa === 1), tit: await icona(".hd").getAttribute("title") };
+  check(scen, a29 === "quieta" && a31.colore === "ambra" && a31.stessa && /EGA · tra 14 min/.test(a31.tit),
+    `a 16′ tranquilla, a 14′ ambra, rifatta sul posto, e il passaggio del mouse le dice tutte (got: ${a29} → ${JSON.stringify(a31)})`);
+  await page.clock.fastForward("15:00");   // 10:46: scaduto
+  const scaduto = { colore: await colore(".hd"), anima: await icona(".hd").evaluate((b) => getComputedStyle(b).animationName) };
+  check(scen, scaduto.colore === "rossa" && scaduto.anima === "prBagliore", `scaduto: rossa, col bagliore lento di sempre (got: ${JSON.stringify(scaduto)})`);
+  // la sveglia sulla pill ridotta continua a suonare, sulla voce con l'ora
   await $panel(page, "#collapse").click();
-  check(scen, (await $panel(page, "#expand .prurg").count()) === 0, "a 25 minuti la pill ridotta non dice niente");
-  await page.clock.fastForward("17:00");
   const segno = (await $panel(page, "#expand .prurg").count()) ? (await $panel(page, "#expand .prurg").innerText()).trim() : "";
-  const segnoTip = segno ? await $panel(page, "#expand .prurg").getAttribute("title") : "";
-  check(scen, segno === "8m · EGA" && /ROSSI MARIO · EGA/.test(segnoTip),
-    `a 8 minuti la pill ridotta mette un segno rosso, «8m · EGA» (è di chi hai davanti), col paziente nel passaggio del mouse (got: «${segno}» · ${segnoTip})`);
-  check(scen, (await $panel(page, "#expand").innerText()).replace(/\s+/g, " ").trim() === "ROSSI MARIO 8m · EGA", "e nient'altro sulla pill");
+  check(scen, segno === "−1m · EGA", `ridotto, la pill porta la sveglia del promemoria scaduto (got: «${segno}»)`);
   await $panel(page, "#expand").click();
-  await $panel(page, ".prbar .prom").waitFor();
-  const rossa = { testo: await testoPill(".prbar"), banda: await banda(".prbar"), anima: await pill(".prbar").evaluate((b) => getComputedStyle(b).animationName) };
-  check(scen, rossa.testo === "8m EGA" && rossa.banda === "rossa" && rossa.anima === "prBagliore",
-    `a 8 minuti: rossa, con un bagliore lento (got: ${JSON.stringify(rossa)})`);
-  await page.clock.fastForward("11:00");
-  check(scen, (await testoPill(".prbar")) === "−3m EGA" && (await banda(".prbar")) === "rossa", `passata da 3 minuti: «−3m», rossa (got: ${await testoPill(".prbar")})`);
+  await page.waitForSelector("#psassist-host .card", { state: "attached" });
 
-  // un tocco sulla pill: l'elenco, con +15 min e ✓ Fatto (che si annulla)
-  await pill(".prbar").click();
-  await $panel(page, ".prmenu").waitFor();
-  check(scen, /Promemoria · ROSSI MARIO/.test(await $panel(page, ".prmhd").innerText()) && (await $panel(page, ".prmenu .prmrow").count()) === 1,
-    "un tocco sulla pill apre l'elenco dei suoi promemoria");
-  await $panel(page, ".prmenu [data-prinvia]").click();
-  check(scen, (await testoPill(".prbar")) === "15m EGA" && (await banda(".prbar")) === "ambra" && (await $panel(page, ".prmenu").count()) === 1,
-    `+15 min: fra un quarto d'ora da adesso (era già passato), e l'elenco resta aperto (got: ${await testoPill(".prbar")})`);
-  await $panel(page, ".prmenu [data-pfatto]").click();
-  const fatto = { pill: await pill(".prbar").count(), elenco: await $panel(page, ".prmenu").count(), salvati: Object.keys(await archivio()).length,
-    avviso: (await $panel(page, ".stsnack").count()) ? (await $panel(page, ".stsnack").innerText()).replace(/\s+/g, " ") : "" };
-  check(scen, !fatto.pill && !fatto.elenco && !fatto.salvati && /Fatto: EGA/.test(fatto.avviso) && /Annulla/.test(fatto.avviso),
-    `✓ Fatto lo toglie, e per 8 secondi «Annulla» (got: ${JSON.stringify(fatto)})`);
-  await $panel(page, ".stannulla").click();
-  check(scen, /^1[45]m EGA$/.test(await testoPill(".prbar")) && ((await archivio())["999001"] || []).length === 1, "Annulla: torna com'era");
+  // spuntare: barrata, resta 5 minuti (si può togliere la spunta), poi se ne va
+  await icona(".hd").click();
+  await $panel(page, ".dfpop").waitFor();
+  await voceLi("EGA").locator(".dfck").click();
+  const spunta = { classe: await voceLi("EGA").evaluate((li) => li.classList.contains("fatto")), aria: await voceLi("EGA").locator(".dfck").getAttribute("aria-checked"),
+    barrata: await voceLi("EGA").locator(".dftx").evaluate((t) => getComputedStyle(t).textDecorationLine) };
+  check(scen, spunta.classe && spunta.aria === "true" && spunta.barrata === "line-through" && (await testoIcona(".hd")) === "2" && (await colore(".hd")) === "quieta",
+    `la spunta tonda: barrata, al suo posto; l'icona conta 2 e torna tranquilla (got: ${JSON.stringify(spunta)}, «${await testoIcona(".hd")}»)`);
+  await voceLi("tropo").locator(".dfck").click();
+  await voceLi("tropo").locator(".dfck").click();
+  check(scen, (await voceLi("tropo").locator(".dfck").getAttribute("aria-checked")) === "false" && (await testoIcona(".hd")) === "2", "un secondo tocco toglie la spunta");
+  await page.clock.fastForward("04:30");
+  check(scen, (await voceLi("EGA").count()) === 1 && (await voci()).includes("EGA"), "dopo 4 minuti e mezzo la voce fatta c'è ancora");
+  await page.clock.fastForward("01:00");
+  check(scen, (await voceLi("EGA").count()) === 0 && !(await voci()).includes("EGA") && (await $panel(page, ".dfpop .dfi").count()) === 2,
+    `passati i 5 minuti se ne va, dalla lista aperta e dalla memoria (got: ${(await voci()).join(" | ")})`);
+  await page.keyboard.press("Escape");
 
-  // la Lista: la pill subito dopo il nome; la sveglia compare passandoci sopra
+  // la Lista: l'icona col numero e il post-it (la prima voce aperta) sulla riga
   await $panel(page, "#back").click();
   await $panel(page, ".pzcoda").waitFor();
   const riga = (ep) => $panel(page, `.pzrow:has([data-ep="${ep}"])`);
-  const dopoNome = await riga("999001").evaluate((r) => {
-    const nm = r.querySelector(".pznm").getBoundingClientRect(), p = r.querySelector(".prom")?.getBoundingClientRect();
-    return !!p && (p.left - nm.right < 24 || (p.top >= nm.bottom - 2 && Math.abs(p.left - nm.left) < 4));
-  });
-  check(scen, /^1[45]m EGA$/.test(await testoPill('.pzrow:has([data-ep="999001"])')) && dopoNome,
-    `nella Lista la pill sta accanto al nome (got: ${await testoPill('.pzrow:has([data-ep="999001"])')})`);
-  const tip = await pill('.pzrow:has([data-ep="999001"])').getAttribute("title");
-  check(scen, /^\d\d:\d\d · EGA · tra 1[45] min/.test(tip), `per esteso nel passaggio del mouse (got: ${tip.split("\n")[0]})`);
-  const opacita = () => riga("999002").locator(".pzprom").evaluate((b) => getComputedStyle(b).opacity);
+  const r1 = { n: await testoIcona('.pzrow:has([data-ep="999001"])'), post: (await riga("999001").locator(".dfpost").innerText()).trim() };
+  check(scen, r1.n === "2" && r1.post === "chiamare la figlia", `sulla riga: l'icona dice 2, e la prima cosa da fare si legge accanto (got: ${JSON.stringify(r1)})`);
+  const opacita = () => riga("999002").locator(".dfic").evaluate((b) => getComputedStyle(b).opacity);
   await page.mouse.move(5, 5);
-  const primaS = await opacita();
+  const prima = await opacita();
   await riga("999002").hover();
-  check(scen, primaS === "0" && (await opacita()) === "1", `la sveglia della riga compare solo passandoci sopra, come la ✕ (${primaS} → ${await opacita()})`);
-  await riga("999002").locator(".pzprom").click();
-  check(scen, (await riga("999002").locator("#prin").count()) === 1, "e apre lo stesso campo, dentro la riga");
-  await $panel(page, "#prin").fill("tra 2h ECG");
-  await $panel(page, "#prin").press("Enter");
-  check(scen, (await testoPill('.pzrow:has([data-ep="999002"])')) === "2h ECG", `salvato dalla Lista (got: ${await testoPill('.pzrow:has([data-ep="999002"])')})`);
-  // uscendo col mouse si salva, e il clic che ha tolto il fuoco arriva lo stesso
-  await riga("999001").hover();
-  await riga("999001").locator(".pzprom").click();
-  await $panel(page, "#prin").fill("tra 3h tropo");
-  await $panel(page, "#archtog").click();
-  check(scen, /^1[45]m EGA \+1$/.test(await testoPill('.pzrow:has([data-ep="999001"])')) && (await $panel(page, ".pzarch").count()) === 1,
-    `uscendo dal campo col mouse si salva, e il clic arriva (Archiviati aperto); due promemoria: il più vicino, «+1» (got: ${await testoPill('.pzrow:has([data-ep="999001"])')})`);
+  check(scen, prima === "0" && (await opacita()) === "1", `chi non ha niente da fare: l'icona compare passandoci sopra, come la ✕ (${prima} → ${await opacita()})`);
+  await riga("999002").locator(".dfic").click();
+  await $panel(page, ".dfpop").waitFor();
+  await $panel(page, "#dfin").fill("RX torace");
+  await $panel(page, "#dfin").press("Enter");
+  await page.keyboard.press("Escape");
+  check(scen, (await testoIcona('.pzrow:has([data-ep="999002"])')) === "1" && (await riga("999002").locator(".dfpost").innerText()).trim() === "RX torace",
+    "dalla riga si apre la sua lista, e la riga si aggiorna da sola");
+  await shot(page, "onda3-dafare-riga");
 
-  // nella stanza: solo il tempo, piccolo, accanto al nome del letto; un tocco apre i suoi promemoria
+  // nella stanza: il letto porta l'icona e il post-it; dal suo menu «Da fare…»
   await riga("999001").locator("[data-posto]").click();
   await $panel(page, '.stmenu [data-dove="letto:obi1"]').click();
-  const mini = $panel(page, '[data-letto="obi1"] .prst[data-promt="999001"]');
-  check(scen, (await mini.count()) === 1 && /^1[45]m$/.test((await mini.innerText()).trim()) && (await mini.evaluate((s) => s.classList.contains("amb"))),
-    "nella stanza il paziente porta solo il tempo, piccolo, ambra");
-  await mini.click();
-  await $panel(page, ".prmenu").waitFor({ timeout: 3000 }).catch(() => {});
-  check(scen, (await $panel(page, ".prmenu .prmrow").count()) === 2 && /Promemoria · ROSSI MARIO/.test(await $panel(page, ".prmhd").innerText()),
-    "e un tocco sul tempo apre i suoi promemoria, con ✓ Fatto e +15 min, come la pill della lista");
-  await page.keyboard.press("Escape");
-  // chi sta nella stanza non ha più la sua riga: sveglia e ✕ sono nel suo menu
-  await $panel(page, '[data-letto="obi1"] .stp').click({ button: "right" });
+  const letto = $panel(page, '[data-letto="obi1"]');
+  check(scen, (await letto.locator(".dfic").innerText()).trim() === "2" && (await letto.locator(".dfpost").innerText()).trim() === "chiamare la figlia",
+    "nel letto: l'icona col numero accanto al nome del letto, e il post-it sotto il paziente");
+  await letto.locator(".stp").click({ button: "right" });
   await $panel(page, ".stmenu").waitFor();
-  check(scen, /^Promemoria… 1[45]m$/.test((await $panel(page, '.stmenu [data-dove="prom"]').innerText()).replace(/\s+/g, " ").trim())
-    && (await $panel(page, '.stmenu [data-dove="togli"]').count()) === 1,
-    "nel menu del paziente nella stanza: «Promemoria…» (col più vicino) e «Togli dall'elenco»");
-  await $panel(page, '.stmenu [data-dove="prom"]').click();
-  check(scen, (await $panel(page, ".prpop #prin").count()) === 1 && await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id === "prin"),
-    "«Promemoria…» apre il campo sotto il paziente, col cursore dentro");
-  await $panel(page, "#prin").fill("tra 40 min ECG");
-  await $panel(page, "#prin").press("Enter");
-  check(scen, (await $panel(page, ".prpop").count()) === 0 && ((await archivio())["999001"] || []).length === 3
-    && /^1[45]m$/.test((await mini.innerText()).trim())
-    && await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.getAttribute("data-stp") === "999001"),
-    "Invio salva: il terzo promemoria c'è, il più vicino resta quello sul letto, e il fuoco torna al paziente");
-  await $panel(page, '[data-letto="obi1"] .stp').click({ button: "right" });
-  await $panel(page, '.stmenu [data-dove="prom"]').click();
-  await $panel(page, "#prin").press("Escape");
-  check(scen, (await $panel(page, ".prpop").count()) === 0 && ((await archivio())["999001"] || []).length === 3, "Esc chiude il campo, senza niente di nuovo");
-  // si rimette in lista: la pill torna sulla sua riga
-  await $panel(page, '[data-letto="obi1"] .stp').click({ button: "right" });
-  await $panel(page, '.stmenu [data-dove="tray"]').click();
-  check(scen, /^1[45]m EGA \+2$/.test(await testoPill('.pzrow:has([data-ep="999001"])')), `rimesso in lista, la pill torna sulla riga (got: ${await testoPill('.pzrow:has([data-ep="999001"])')})`);
-  check(scen, richieste === 0, `scrivere, rimandare, fare e annullare: nessuna richiesta di rete (${richieste})`);
+  check(scen, (await $panel(page, '.stmenu [data-dove="dafare"]').innerText()).replace(/\s+/g, " ").trim() === "Da fare… 2", "nel suo menu, «Da fare…» col numero");
+  await $panel(page, '.stmenu [data-dove="dafare"]').click();
+  await $panel(page, ".dfpop").waitFor();
+  check(scen, (await $panel(page, ".dfpop .dfi").count()) === 2, "e apre la stessa lista");
+  await page.keyboard.press("Escape");
+  await page.clock.fastForward("45:00");   // 11:31: la troponina è scaduta
+  check(scen, (await letto.locator(".dfic.ros").count()) === 1, "il promemoria scaduto fa rossa l'icona anche nel letto");
+  check(scen, richieste === 0, `scrivere, spuntare, spostare: nessuna richiesta di rete (${richieste})`);
 
-  // restano dopo un ricarico; 🗑 li cancella con il paziente; «Svuota l'elenco» anche, e si annulla
+  // ---- la nota e i promemoria di prima (3.57) diventano voci, una volta sola
+  await page.evaluate(() => {
+    const pk = "psassist:patients.v1", pz = JSON.parse(localStorage.getItem(pk) || "[]");
+    for (const p of pz) if (p.ep === "999002") { p.name = "BIANCHI ANNA"; p.pk = "cf:BNCNNA80A41F205X"; }
+    localStorage.setItem(pk, JSON.stringify(pz));
+    const ora = Date.now();
+    localStorage.setItem("psassist:note.v1", JSON.stringify({
+      "cf:BNCNNA80A41F205X": { t: "allergica alla penicillina\nrivalutare con gli esami", ts: ora - 3600e3 },
+      "nome:NESSUNO IN ELENCO": { t: "di chi?", ts: ora },
+    }));
+    localStorage.setItem("psassist:promemoria.v1", JSON.stringify({ 999002: [{ id: "pvecchio", t: ora + 30 * 60e3, testo: "RX polso", ts: ora }] }));
+  });
   await page.reload();
   await apri();
-  await page.waitForSelector("#psassist-host .prbar .prom", { state: "attached" });
-  check(scen, /^1[45]m EGA \+2$/.test(await testoPill(".prbar")), "ricaricata la pagina, sono ancora lì");
-  // 12 ore dopo l'ora fissata un promemoria se ne va da solo
-  await page.evaluate(() => {
-    const k = "psassist:promemoria.v1", t = JSON.parse(localStorage.getItem(k));
-    t["999001"].push({ id: "vecchio", t: Date.now() - 13 * 3600e3, testo: "vecchio", ts: Date.now() - 14 * 3600e3 });
-    localStorage.setItem(k, JSON.stringify(t));
-  });
-  await page.clock.fastForward("00:30");
-  const restano = ((await archivio())["999001"] || []).map((p) => p.testo);
-  check(scen, restano.length === 3 && !restano.includes("vecchio"), `12 ore dopo l'ora fissata se ne va da solo (${restano.join(", ")})`);
-  await $panel(page, "#back").click();
+  await $panel(page, ".pzcoda").waitFor().catch(() => {});
+  const mig = await page.evaluate(() => ({
+    d: JSON.parse(localStorage.getItem("psassist:dafare.v1") || "{}")["999002"] || [],
+    note: JSON.parse(localStorage.getItem("psassist:note.v1") || "{}"), vecchi: localStorage.getItem("psassist:promemoria.v1"),
+  }));
+  check(scen, mig.d.map((x) => x.testo).join("|") === "allergica alla penicillina · rivalutare con gli esami|RX torace|RX polso" && mig.d[0].t === null && mig.d[2].t > 0 && mig.d[2].id === "pvecchio",
+    `migrazione: la nota è la prima voce, senza ora; il promemoria una voce con l'ora (got: ${JSON.stringify(mig.d.map((x) => [x.testo, x.t]))})`);
+  check(scen, !mig.note["cf:BNCNNA80A41F205X"] && !!mig.note["nome:NESSUNO IN ELENCO"] && mig.vecchi === null,
+    "la nota portata via non resta indietro; quella di nessuno in elenco aspetta; i promemoria vecchi se ne vanno");
+  if (!(await $panel(page, ".pzcoda").count())) { await page.goto(mock.worklistUrl); await apri(); }
+  const r2 = { n: await testoIcona('.pzrow:has([data-ep="999002"])'), post: ((await riga("999002").locator(".dfpost").innerText().catch(() => "")) || "").trim() };
+  check(scen, r2.n === "3" && r2.post === "allergica alla penicillina · rivalutare con gli esami", `e la nota è il post-it della riga (got: ${JSON.stringify(r2)})`);
+
+  // restano dopo un ricarico; 🗑 le cancella con il paziente; «Svuota l'elenco» anche, e si annulla
   await riga("999002").hover();
   await riga("999002").locator(".pzx").click();
   if (!(await $panel(page, ".pzarch").count())) await $panel(page, "#archtog").click();
   await $panel(page, '[data-del="999002"]').click();
   await $panel(page, '[data-del="999002"]').click();
-  check(scen, !(await archivio())["999002"] && ((await archivio())["999001"] || []).length === 3, "🗑 cancella anche i suoi promemoria (gli altri restano)");
+  check(scen, !(await archivio())["999002"] && ((await archivio())["999001"] || []).length === 2, "🗑 cancella anche il suo «Da fare» (gli altri restano)");
   await $panel(page, "#stsvuota").click();
-  check(scen, !Object.keys(await archivio()).length, "«Svuota l'elenco» toglie anche i promemoria");
+  check(scen, !Object.keys(await archivio()).length, "«Svuota l'elenco» toglie anche «Da fare»");
   await $panel(page, ".stannulla").click();
-  check(scen, ((await archivio())["999001"] || []).length === 3, "e Annulla li rimette");
+  check(scen, ((await archivio())["999001"] || []).length === 2, "e Annulla lo rimette");
   await context.close();
 }
 
@@ -5623,10 +5633,15 @@ async function scenarioPillAltroPaziente(browser) {
     for (const p of pz) if (p.ep === "999002") p.name = "BIANCHI ANNA";
     localStorage.setItem(pk, JSON.stringify(pz));
     const ora = Date.now(), t = {};
-    for (const [ep, min, testo] of l) (t[ep] = t[ep] || []).push({ id: "p" + ep + testo.length, t: ora + min * 60e3, testo, ts: ora });
-    localStorage.setItem("psassist:promemoria.v1", JSON.stringify(t));
+    for (const [ep, min, testo] of l) (t[ep] = t[ep] || []).push({ id: "p" + ep + testo.length, t: ora + min * 60e3, testo, fatto: null, ord: (t[ep] || []).length, ts: ora });
+    localStorage.setItem("psassist:dafare.v1", JSON.stringify(t));
   }, lista);
-  const archivio = () => page.evaluate(() => JSON.parse(localStorage.getItem("psassist:promemoria.v1") || "{}"));
+  // i promemoria ancora da fare (una voce spuntata resta 5 minuti, barrata: non conta)
+  const archivio = () => page.evaluate(() => {
+    const d = JSON.parse(localStorage.getItem("psassist:dafare.v1") || "{}"), o = {};
+    for (const [ep, l] of Object.entries(d)) { const a = l.filter((x) => x.t != null && !x.fatto); if (a.length) o[ep] = a; }
+    return o;
+  });
   const alPill = async () => {   // la pagina si ridisegna col nuovo stato, e si riduce alla pill
     await page.reload();
     await apri();
@@ -6263,6 +6278,141 @@ async function scenarioStatoOrdiniNostri(browser) {
   await context.close();
 }
 
+// ---------------------------------------------------------------- onda 3
+// Il cuore dei parametri vitali: dalle righe <tr id="VAMI"> della pagina del
+// paziente (l'ora, poi «ETICHETTA: <b>valore</b>»), come nelle pagine salvate
+// di esempi-gestionale/. Il mock non le ha: il test le aggiunge alla pagina.
+const rigaVami = (min, testo) => `<tr id="VAMI"><td><a href="#"></a></td><td>${oraDi(min)}</td><td class="AFCDataTD">${testo}<input type="hidden" name="TIPO" value="VAMI"><input type="hidden" name="DATA_ORD" value="${dataOrd(min)}"></td><td class="AFCDataTD" title="OPERATORE"><b>OPERATORE</b></td></tr>`;
+// le righe dei parametri di una pagina salvata, com'erano (senza le icone: «icona:» non è un indirizzo)
+const vamiSalvate = (nome) => {
+  const html = readFileSync(join(root, "esempi-gestionale", nome), "utf8");
+  return `<table>${(html.match(/<tr id="VAMI">[\s\S]*?<\/tr>/g) || []).join("").replace(/<img[^>]*>/g, "")}</table>`;
+};
+async function scenarioVitali(browser) {
+  const scen = "vitali";
+  T0 = Date.now();
+  // ---- le soglie, su una tabella: NEWS2, rosso da solo, ambra 5–6
+  const news2 = prendi("news2");
+  const casi = [
+    [{ spo2: 91 }, "ros"], [{ spo2: 92 }, ""], [{ fr: 8 }, "ros"], [{ fr: 9 }, ""], [{ fr: 25 }, "ros"], [{ fr: 24 }, ""],
+    [{ pas: 90 }, "ros"], [{ pas: 91 }, ""], [{ pas: 220 }, "ros"], [{ pas: 219 }, ""], [{ fc: 40 }, "ros"], [{ fc: 41 }, ""],
+    [{ fc: 131 }, "ros"], [{ fc: 130 }, ""], [{ t: 35 }, "ros"], [{ t: 35.1 }, ""], [{ acvpu: "V" }, "ros"], [{ gcs: 14 }, "ros"],
+    [{ acvpu: "A", gcs: 15 }, ""], [{ fr: 21, spo2: 94, fc: 105, t: 38.5 }, "amb"], [{ fr: 22, spo2: 93, fc: 95, t: 36 }, "amb"],
+    [{ fr: 22, spo2: 92, fio2: 28, fc: 115 }, "ros"], [{ fr: 16, spo2: 95, fc: 50, pas: 149, t: 36, gcs: 15 }, ""],
+  ];
+  const sbagliati = casi.filter(([p, atteso]) => news2(p).livello !== atteso).map(([p, a]) => `${JSON.stringify(p)} → «${news2(p).livello}» (atteso «${a}»)`);
+  check(scen, !sbagliati.length, `rosso per un parametro in fascia rossa (SpO2 ≤91, FR ≤8/≥25, PAS ≤90/≥220, FC ≤40/≥131, T ≤35, non A / GCS <15) o NEWS2 ≥7; ambra 5–6: ${casi.length} casi (sbagliati: ${sbagliati.join(" | ") || "nessuno"})`);
+  const sette = news2({ fr: 22, spo2: 92, fio2: 28, fc: 115 });
+  check(scen, sette.punti === 8 && !sette.rossi.length, `NEWS2 8 senza un parametro rosso da solo: rosso lo stesso (${JSON.stringify(sette)})`);
+  const pochi = news2({ spo2: 97 });
+  check(scen, pochi.punti === 0 && ["FR", "PA", "FC", "T", "coscienza", "O2 (FiO2)"].every((x) => pochi.mancano.includes(x)), `quello che manca non si inventa: si dice (${pochi.mancano.join(", ")})`);
+
+  // ---- la pagina salvata, letta com'è (alle 23:00 di quel giorno)
+  for (const [nome, ora, atteso] of [
+    ["paziente-1.html", new Date(2026, 3, 16, 23, 0), { ts: new Date(2026, 3, 16, 22, 44).getTime(), p: { gcs: 15, fr: 16, spo2: 95, fc: 50, pas: 149, pad: 57, t: 36 }, righe: 8, cuore: "" }],
+    ["paziente-2.html", new Date(2026, 6, 10, 22, 0), { ts: new Date(2026, 6, 10, 21, 37).getTime(), p: { gcs: 15, fr: 20, spo2: 94, fc: 57, pas: 133, pad: 73, t: 32.9 }, righe: 10, cuore: "ros" }],
+  ]) {
+    const mockS = conScheda(createMock({ noReferti: true }), () => `${RIQUADRO}${vamiSalvate(nome)}`);
+    const s = await newPage(browser, mockS);
+    await s.page.clock.install({ time: ora });
+    await s.page.goto(mockS.patientUrl);
+    await s.page.waitForSelector("#psassist-host .card", { timeout: 8000 });
+    const vit = await s.page.evaluate(() => JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["999001"]?.vit || null);
+    const ok = vit && vit.ts === atteso.ts && vit.righe === atteso.righe && JSON.stringify(Object.entries(vit.p).sort()) === JSON.stringify(Object.entries(atteso.p).sort());
+    check(scen, !!ok, `${nome}: l'ultima riga con l'ora, coi suoi parametri (le righe senza ora, il dolore, la diuresi, «RITMICO» non contano) (got: ${JSON.stringify(vit)})`);
+    const cuore = await s.page.evaluate(() => { const c = document.getElementById("psassist-host").shadowRoot.querySelector(".hd .cuore"); return c ? (c.classList.contains("ros") ? "ros" : "amb") : ""; });
+    check(scen, cuore === atteso.cuore, `${nome}: ${atteso.cuore ? "T 32,9 → cuore rosso nell'intestazione" : "NEWS2 3 → nessun cuore"} (got: «${cuore}»)`);
+    if (atteso.cuore) {
+      const tit = await $panel(s.page, ".hd .cuore").getAttribute("title");
+      check(scen, /Parametro critico: T 32,9/.test(tit) && /Parametri misurati alle 21:37/.test(tit) && /coscienza/.test(tit) === false,
+        `il passaggio del mouse dice perché e di quando (got: ${tit})`);
+    }
+    await s.context.close();
+  }
+
+  // ---- il triage conta finché è l'unica riga
+  let righe = [rigaVami(40, "ACVPU: <b>A - Alert</b> / FREQUENZA RESPIRATORIA: <b>18</b> / SATURIMETRIA: <b>82</b> / F.C. R. AR.: <b>90</b>")];
+  const mock = conScheda(createMock({ noReferti: true }), () => `${RIQUADRO}<table>${rigaRich({ rid: 880201, tipo: "lab", min: 30, esami: "0-324 TROPONINA ULTRASENSIBILE (POC3001)" })}</table><table>${righe.join("")}</table>`);
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host .hd .cuore", { timeout: 8000 });
+  const c1 = await page.evaluate(() => {
+    const c = document.getElementById("psassist-host").shadowRoot.querySelector(".hd .cuore");
+    const s = getComputedStyle(c);
+    return { cls: c.className, testo: c.textContent, tit: c.title, aria: c.getAttribute("aria-label"), anima: s.animationName, volte: s.animationIterationCount, durata: s.animationDuration };
+  });
+  check(scen, /\bros\b/.test(c1.cls) && c1.testo === "♥" && /SpO2 82/.test(c1.tit) && /critici/.test(c1.aria),
+    `solo il triage, SpO2 82: cuore rosso accanto agli identificativi (got: ${JSON.stringify(c1)})`);
+  check(scen, /Non in quella riga \(non contati\): O2 \(FiO2\), PA, T$/.test(c1.tit), `e dice cosa la riga non ha (got: ${c1.tit.split("\n").at(-1)})`);
+  check(scen, /\bpulsa\b/.test(c1.cls) && c1.anima === "cuorePulsa" && c1.volte === "1" && c1.durata === "1s",
+    `niente lampeggio: un impulso solo, di un secondo, quando compare (got: ${c1.anima} × ${c1.volte}, ${c1.durata})`);
+  await page.waitForTimeout(1200);
+  await page.locator('#psassist-host [data-seg="richieste"]').click();
+  await page.locator('#psassist-host [data-seg="esiti"]').click();
+  const c2 = await page.evaluate(() => { const c = document.getElementById("psassist-host").shadowRoot.querySelector(".hd .cuore"); return { cls: c.className, anima: getComputedStyle(c).animationName }; });
+  check(scen, !/\bpulsa\b/.test(c2.cls) && c2.anima === "none", `poi fermo: ridisegnato non pulsa più (got: ${JSON.stringify(c2)})`);
+  await page.reload();
+  await page.waitForSelector("#psassist-host .hd .cuore", { timeout: 8000 });
+  check(scen, !(await $panel(page, ".hd .cuore.pulsa").count()), "e nemmeno ricaricando la pagina (lo stesso cuore, già visto)");
+  // nella lista: in testa alla riga di stato, prima degli esami
+  await $panel(page, "#back").click();
+  await page.waitForSelector("#psassist-host .pzrow.qui .cuore", { timeout: 5000 });
+  const ordine = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot.querySelector(".pzrow.qui"), c = r.querySelector(".cuore"), e = r.querySelector(".esst");
+    return !!c && !!e && !!(c.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING) && c.getBoundingClientRect().right <= e.getBoundingClientRect().left + 1;
+  });
+  check(scen, ordine, "nella riga dei Pazienti il cuore apre la riga di stato, prima degli esami");
+  // nel letto: in testa alla riga sotto il nome
+  await page.evaluate(() => localStorage.setItem("psassist:stanza.posti.v1", JSON.stringify({ 999001: { tipo: "letto", id: "obi1", ts: Date.now() } })));
+  await page.reload();
+  await page.waitForSelector("#psassist-host .card", { timeout: 8000 });
+  if (!(await $panel(page, ".stmap").count())) await $panel(page, "#back").click();
+  await page.waitForSelector('#psassist-host [data-letto="obi1"] .cuore', { timeout: 5000 });
+  const primoLetto = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector('[data-letto="obi1"] .stp2')?.firstElementChild?.classList.contains("cuore"));
+  check(scen, primoLetto, "nel letto il cuore viene per primo, sotto il nome");
+  await shot(page, "onda3-cuore-letto");
+  // una riga più nuova, normale: il triage non conta più
+  righe = [rigaVami(40, "FREQUENZA RESPIRATORIA: <b>18</b> / SATURIMETRIA: <b>82</b>"), rigaVami(10, "ACVPU: <b>A - Alert</b> / FREQUENZA RESPIRATORIA: <b>16</b> / SATURIMETRIA: <b>97</b> / F.C. R. AR.: <b>80</b> / SISTOLICA (MAX): <b>130</b> / T.C. TIMP/ASC: <b>36,6</b>")];
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host .card", { timeout: 8000 });
+  check(scen, (await $panel(page, ".cuore").count()) === 0, "una riga più nuova e normale: il cuore se ne va (il triage contava solo da solo)");
+
+  // ---- ambra, e vecchio («♡ 5h»): dallo stato letto, senza crawling
+  const semina = (p, minFa) => page.evaluate(([p, minFa]) => {
+    const k = "psassist:stato.v1", s = JSON.parse(localStorage.getItem(k) || "{}");
+    s["999001"] = { ...(s["999001"] || {}), vit: { ts: Date.now() - minFa * 60e3, p, righe: 2 }, agg: Date.now() };
+    localStorage.setItem(k, JSON.stringify(s));
+  }, [p, minFa]);
+  await page.goto(mock.worklistUrl);
+  await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
+  // (la lista PS non rilegge il paziente: lo stato è quello seminato)
+  await semina({ fr: 21, spo2: 94, fc: 105, t: 38.5, acvpu: "A" }, 20);
+  await page.reload();
+  await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
+  if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
+  await page.waitForSelector('#psassist-host [data-letto="obi1"] .cuore', { timeout: 5000 });
+  const amb = await $panel(page, '[data-letto="obi1"] .cuore').evaluate((c) => ({ cls: c.className, t: c.textContent, tit: c.title }));
+  check(scen, /\bamb\b/.test(amb.cls) && amb.t === "♥" && /^NEWS2 5 \(5–6\)/.test(amb.tit), `NEWS2 5: cuore ambra (got: ${JSON.stringify(amb)})`);
+  await semina({ spo2: 88, fr: 18 }, 5 * 60 + 10);
+  await page.reload();
+  await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
+  if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
+  await page.waitForSelector('#psassist-host [data-letto="obi1"] .cuore', { timeout: 5000 });
+  const vecchio = await $panel(page, '[data-letto="obi1"] .cuore').evaluate((c) => ({ cls: c.className, t: c.textContent, tit: c.title }));
+  check(scen, /\bvecchio\b/.test(vecchio.cls) && /\bros\b/.test(vecchio.cls) && vecchio.t === "♡ 5h" && !/\bpulsa\b/.test(vecchio.cls)
+    && /Parametri misurati (ieri )?alle \d\d:\d\d/.test(vecchio.tit) && /da 5 ore/.test(vecchio.tit),
+    `più di 4 ore senza una riga nuova: vuoto, «♡ 5h», l'ora della lettura nel passaggio del mouse (got: ${JSON.stringify(vecchio)})`);
+  // chi chiede meno movimento: nemmeno l'impulso
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await semina({ spo2: 85 }, 2);
+  await page.reload();
+  await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
+  if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
+  await page.waitForSelector('#psassist-host [data-letto="obi1"] .cuore.pulsa', { timeout: 5000 });
+  check(scen, (await $panel(page, '[data-letto="obi1"] .cuore').evaluate((c) => getComputedStyle(c).animationName)) === "none", "con «riduci il movimento» nemmeno l'impulso");
+  await context.close();
+}
+
 // -------------------------------------------------------------------- main
 const browser = await (async () => {
   try { return await chromium.launch(); }
@@ -6346,7 +6496,7 @@ const scenarios = [
   ["referto RX letto come testo", scenarioRefertoTesto],
   ["nomi inattesi e righe non lette", scenarioNomiInattesi],
   ["cronometro: parte, sopravvive al cambio pagina, si ferma", scenarioTempi],
-  ["promemoria: «11:30 tropo» accanto al nome", scenarioPromemoria],
+  ["da fare: una lista per paziente, i promemoria dentro, il post-it sulla riga", scenarioPromemoria],
   ["fogli di dimissione: copia, modifica, export", scenarioDimissioni],
   ["EO: copia il generale, la tendina copia il caso", scenarioEo],
   ["rilancio su pagina esami: nessun doppio ordine", scenarioRilancioPaginaEsami],
@@ -6374,6 +6524,7 @@ const scenarios = [
   ["stop button", scenarioStopButton],
   ["stato esami: riga, letto, Aperti, identificativi, allergie, già fatto", scenarioStatoEsami],
   ["stato esami: gli ordini partiti da qui", scenarioStatoOrdiniNostri],
+  ["vitali: il cuore dai parametri della pagina, soglie NEWS2, niente lampeggio", scenarioVitali],
 ];
 
 // `node test/run.mjs riflesso` gira solo gli scenari che contengono la parola:

@@ -71,8 +71,10 @@ sessione. Vedi:
   dice già la carta. L'ordine ha un numero fatto dal
   telefono quando arma «Conferma»: rimandato, è lo stesso ordine, e il PC lo manda una volta sola.
 - **Nota e promemoria** — la nota del paziente (si salva uscendo dal campo) e i promemoria
-  («11:30 tropo», «tra 2h ECG»): gli stessi del pannello. **✓ Fatto** aspetta 5 secondi, con
-  **Annulla**, prima di toglierlo dal PC.
+  («11:30 tropo», «tra 2h ECG»): sul PC sono voci di **Da fare**, la lista del pannello. La nota è
+  la prima voce aperta senza ora (scritta cambia quella, o ne fa una in cima; vuota la toglie), i
+  promemoria le voci aperte con l'ora. **✓ Fatto** aspetta 5 secondi, con **Annulla**, prima di
+  spuntarlo sul PC.
 
 Di notte l'app è scura, come il telefono. Ogni bottone è grande almeno 44 punti. Sul telefono c'è
 solo quello che serve: niente etichette di sezione, conteggi o testi di contorno (vedi «L'app del

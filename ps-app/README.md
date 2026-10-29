@@ -67,7 +67,7 @@ qualunque cartella (viene dalla `"key"` del manifest). Spostare la cartella non 
 memoria dell'estensione ricomincia da zero: vanno rifatte le stampanti, l'indirizzo del portale
 (col suo permesso) e, se lo usi, il Ponte; l'archivio delle schede cliniche e i referti salvati
 si ricostruiscono rileggendo i pazienti. Quello che sta nella pagina del gestionale (pazienti,
-stanza, promemoria) resta. Se dopo ⟳ in `chrome://extensions` l'ID non è quello, rimuovi PS
+stanza, «Da fare») resta. Se dopo ⟳ in `chrome://extensions` l'ID non è quello, rimuovi PS
 Assist e caricala di nuovo («Carica estensione non pacchettizzata»).
 
 ### E se non posso? (PC bloccato dall'IT, niente admin)
@@ -153,12 +153,27 @@ paziente nuovo arriva nella lista da solo, e nessuno sparisce: se il suo letto v
 lì. In fondo, chiusi, gli **Archiviati** e **Svuota l'elenco**.
 
 **La lista** — **una riga per paziente**: la striscia del **triage**, il nome (un tocco sulla riga
-apre gli Esiti), accanto il **promemoria** più vicino («15m tropo»), la nota in grigio, **visto 20
-min fa** — in ambra dopo 3 ore —, oppure **questa pagina** per quello aperto, che è il primo; poi
-**▾**, per metterlo nella stanza senza trascinarlo, e passandoci sopra la **sveglia** per un
-promemoria e la **✕** per toglierlo dall'elenco. L'**episodio precedente** sta in fondo, in grigio,
-e nella stanza non va. Il nome non si taglia mai per primo: nella colonna stretta promemoria e nota
-scendono sotto il nome e «visto…» si toglie.
+apre gli Esiti), il **cuore** dei parametri vitali e lo stato degli esami, l'icona **Da fare** col
+numero delle cose aperte e, accanto in grigio, la prima (il post-it), **visto 20 min fa** — in ambra
+dopo 3 ore —, oppure **questa pagina** per quello aperto, che è il primo; poi **▾**, per metterlo
+nella stanza senza trascinarlo, e passandoci sopra la **✕** per toglierlo dall'elenco (e, per chi non
+ha niente da fare, l'icona vuota). L'**episodio precedente** sta in fondo, in grigio, e nella stanza
+non va. Il nome non si taglia mai per primo: nella colonna stretta il resto scende sotto il nome e
+«visto…» si toglie.
+
+**Il cuore dei parametri vitali** apre la riga di stato, nella lista, nel letto e nell'intestazione
+accanto agli identificativi: **♥ rosso** se un parametro da solo è nella fascia rossa del NEWS2 —
+SpO2 ≤91 (una soglia per tutti), FR ≤8 o ≥25, PAS ≤90 o ≥220, FC ≤40 o ≥131, T ≤35,0, coscienza
+non A all'ACVPU o GCS <15 — o se il NEWS2 fa 7 o più; **♥ ambra** per NEWS2 5–6; niente altrimenti.
+Viene dalle righe dei parametri della **pagina del paziente** (`<tr id="VAMI">`: l'ora, poi
+«SATURIMETRIA: **96**» e così via; ci sono anche quelli del triage): conta **la riga più recente**
+che porta un parametro, quindi il triage solo finché è l'unica; un parametro che quella riga non ha
+non si prende da una riga più vecchia e non si inventa — si conta su quello che c'è, e il passaggio
+del mouse dice il perché, l'ora della riga e cosa non è stato misurato. **Non lampeggia**: quando
+compare fa un impulso solo, di un secondo (nemmeno quello se il sistema chiede meno movimento), poi
+resta fermo. Dopo **4 ore** senza una riga più nuova diventa vuoto, con le ore: **«♡ 5h»**. Si legge
+solo quando la pagina del paziente si apre, come lo stato degli esami: un paziente mai aperto non
+ha cuore.
 
 **Lo stato degli esami**, su ogni riga e su ogni letto: `Lab 3/6 ⏳50′ · ECG ✓ · RX ⏳1h20 ●` —
 per tipo, tornati su chiesti, e se qualcosa aspetta da quanto aspetta il più vecchio: neutro, poi
@@ -182,8 +197,9 @@ grigio.
 
 **La stanza** — una mappa minima, per vedere a colpo d'occhio **dove sta ogni paziente**: i
 **letti** e le **sedie** (un paziente ciascuno) e le **aree** senza letto — corridoio, attesa —
-dove ne stanno quanti servono. Chi ha un promemoria porta il tempo, piccolo, accanto al nome del
-letto: un tocco apre i suoi promemoria, come la pill della lista.
+dove ne stanno quanti servono. Chi ha qualcosa da fare porta l'icona **Da fare** col numero accanto
+al nome del letto, e la prima cosa da fare sotto il suo nome: un tocco sull'icona apre la sua lista,
+come nella riga.
 
 **Cercare: basta scrivere.** Una lettera, con i Pazienti davanti e il cursore fuori da un campo, apre
 un filtro sopra la lista, già con quella lettera: la lista tiene solo chi torna, nella stanza gli
@@ -202,7 +218,7 @@ affiancata o alla misura minima, dove semmai la mappa scorre (sotto i 20 px una 
 un nome leggibile): di lato anche con la rotella, e il bordo sfuma dalla parte dove c'è altro. Dopo
 uno spostamento la mappa resta dov'era. Fuori da Modifica si vede solo il
 pezzo disegnato, in alto, subito sotto la lista: anche una stanza piccola riempie la mappa. Il testo non cambia misura: in un
-letto piccolo sparisce prima la nota, poi tutto tranne il nome del paziente, che se è lungo va a
+letto piccolo sparisce prima il post-it, poi tutto tranne il nome del paziente, che se è lungo va a
 capo invece di perdere l'iniziale (quello del letto resta nel passaggio del mouse); a capo va anche
 nelle aree. Un letto vuoto è solo il suo nome e un letto disegnato appena; una sedia vuota, il suo nome e una sedia.
 
@@ -221,7 +237,7 @@ paziente, il nome, la ×.
 - **Sposta in…**, senza trascinare: tasto destro sul paziente (nella stanza o sulla sua riga), dito
   tenuto premuto, Maiusc+F10 (o il tasto menu), oppure il ▾ della riga. Prima i letti e le sedie
   vuoti, per nome, poi quelli occupati («al posto di ROSSI M.»), le aree, **Rimetti in lista** per
-  chi ha già un posto e, a parte, **Promemoria…** e **Togli dall'elenco** — la sveglia e la ✕ di chi,
+  chi ha già un posto e, a parte, **Da fare…** e **Togli dall'elenco** — l'icona e la ✕ di chi,
   stando nella stanza, non ha più la sua riga; frecce, Invio, Esc.
 - **Niente conferme: si annulla.** Ogni spostamento, un letto o un'area eliminati, «Togli
   dall'elenco», «svuota» e la ✕ mostrano per 8 secondi, in fondo, «… · **Annulla**».
@@ -239,38 +255,46 @@ paziente, il nome, la ×.
 **Per non sbagliare paziente.** Due pazienti in elenco con lo **stesso cognome** portano **⚠** e il
 nome intero; con lo **stesso nome e cognome**, anche le ultime cifre dell'episodio: «ROSSI MARIO ·
 …9001». Passando col mouse su un paziente: nome intero, episodio, quando l'hai aperto, da quando sta
-nel suo posto, il triage, la nota. Lo **stesso paziente** (stesso codice fiscale) con due episodi:
+nel suo posto, il triage, la prima cosa da fare. Lo **stesso paziente** (stesso codice fiscale) con due episodi:
 il più vecchio è **episodio precedente**, in grigio, in fondo alla lista: nella stanza non va. Il posto **non scade**:
 resta finché non sposti il paziente, non lo togli dall'elenco o dall'elenco non esce; se non lo apri
 da **12 ore** diventa grigio, dov'è.
 
 **Il triage** è il colore che l'intestazione della scheda mostra quando la apri (ROSSO, ARANCIONE,
 AZZURRO, VERDE, BIANCO): una striscia a sinistra del nome, la stessa nella lista e nella stanza (nel
-letto la porta il letto), e basta — nella stanza il colore vuol dire solo triage. L'unica eccezione è il
-tempo di un promemoria, piccolo in alto a destra, che si fa ambra e rosso quando si avvicina.
+letto la porta il letto), e basta — nella stanza il colore vuol dire solo triage. Le uniche eccezioni
+sono il cuore dei parametri vitali e l'icona **Da fare**, piccola in alto a destra, che si fa ambra e
+rossa quando un promemoria si avvicina.
 
-**Promemoria.** Un'ora per fare una cosa, per paziente: «11:30 tropo», «tra 2h ECG». Si scrive in
-un campo su una riga, che si apre dalla **sveglia** accanto alla nota del paziente o da quella che
-compare passando su una riga della lista (come la ✕); per chi sta nella stanza, dal suo menu,
-**Promemoria…**, in una piccola finestra sotto di lui: **Invio** salva, **Esc** chiude; uscendo dal
-campo col mouse si salva, come la nota. L'orario è il **primo** scritto nel testo — un'ora,
-«11:30», «11.30», «11h30», «11h», «alle 14», o fra quanto, «tra 2h», «+2h», «2h30», «90m», «30 min»,
-«30'», «tra 45 minuti» — e il resto è la cosa da fare. Con una cifra «2h» è fra quanto, con due
-«11h» è un'ora; un numero col punto («K 3.50») cede a qualunque altro orario scritto. Un'ora passata
-da non più di 2 ore è di oggi (già scaduta), più indietro è di domani: il turno di notte. Mentre
-scrivi, sotto il campo, dice quando sarà; senza un orario non salva e lo dice. Accanto al nome, nella
-lista e sulla pagina del paziente, una pill dice quanto manca al più vicino — «15m tropo», «1h40»,
-«ora», «−5m», con «+1» se ce n'è un altro —, per esteso al passaggio del mouse: tranquilla oltre la
-mezz'ora, **ambra** sotto i 30 minuti, **rossa** sotto i 10 e quando è l'ora, con un bagliore lento
-(fermo se il sistema chiede meno movimento). Un tocco sulla pill apre i suoi promemoria: **✓ Fatto**
-(si annulla per 8 secondi) e **+15 min** (da quando era fissato, o da adesso se è già passato).
-Ridotto il pannello, la pill mette un segno rosso solo quando un promemoria è a 10 minuti
-o è passato — sempre **con la cosa da fare**: «8m · tropo» se è di chi hai davanti, **«−3m Ferrari · RX polso»**
-se è di un altro paziente (il suo cognome: un tempo muto accanto al nome di chi guardi si leggerebbe come
-suo; il nome intero è nel passaggio del mouse). Un tocco sul segno apre un menu minuscolo: **✓ Fatto**
-(sulla pill non c'è dove mostrare l'«Annulla»: lo porta il menu, per 8 secondi), **+15′** e **Apri**
-(carica la pagina di quel paziente, con la finestra aperta). I tempi si rifanno da soli ogni 30 secondi, sul
-posto: niente si ridisegna sotto chi scrive.
+**Da fare.** Una lista sola per paziente, a **spunte tonde**: le cose da fare e — con un'ora scritta
+dentro — i promemoria. Al posto della nota e dei promemoria di prima: la **nota** è diventata la
+prima voce senza ora, i **promemoria** voci con l'ora (la prima apertura dopo l'aggiornamento li porta
+lì da soli). Si apre **lì dov'è**, senza un'altra scheda, dall'icona **Da fare** dell'intestazione
+(accanto agli identificativi) o della riga, o dal menu di chi sta nella stanza (**Da fare…**). In
+fondo, un campo su una riga: si scrive e **Invio** aggiunge, in fondo alla lista. **Un tocco sulla
+spunta** e la voce è fatta: barrata, resta al suo posto **5 minuti** (un altro tocco la riapre), poi
+se ne va. L'ordine lo decidi tu: si **trascina** dalla maniglia ⋮⋮ (col mouse o col dito), o da
+tastiera **Alt+↑ / Alt+↓** sulla spunta. La **prima voce aperta** è il post-it: si legge sulla riga
+e nel letto. L'icona dice **quante** sono aperte e cambia colore quando un promemoria si avvicina:
+**ambra dai 15 minuti prima**, **rossa quando l'ora è passata** (con un bagliore lento, fermo se il
+sistema chiede meno movimento); il passaggio del mouse le dice tutte. **Esc**, o un clic fuori, la
+chiude: non c'è niente da salvare, ogni gesto è già salvato.
+
+**Con un'ora è un promemoria.** L'orario è il **primo** scritto nel testo, e solo nelle forme che
+non si confondono con un valore: un'ora coi due punti, «11:30»; col punto solo dopo «alle», «ore» o
+«h» — «alle 9.10», «ore 15.30» —; «11h30», «11h», «alle 14»; o fra quanto, «tra 2h», «+2h», «2h30»,
+«90m», «30 min», «30'», «+30′», «tra 45 minuti». Il resto è la cosa da fare. Con una cifra «2h» è
+fra quanto, con due «11h» è un'ora. Un numero col punto o la virgola da solo — «Hb 9.10», «K 5,30»,
+«PA 120/80» — **non diventa mai un promemoria**: resta una cosa da fare. Un'ora passata da non più di 2 ore
+è di oggi (già scaduta), più indietro è di domani: il turno di notte. Mentre scrivi, sotto il campo,
+dice quando sarà. Nella lista il promemoria porta la sua ora e **+15′** (da quando era fissato, o da
+adesso se è già passato). Ridotto il pannello, la pill mette un segno rosso quando un promemoria è a
+10 minuti o è passato — sempre **con la cosa da fare**: «8m · tropo» se è di chi hai davanti,
+**«−3m Ferrari · RX polso»** se è di un altro paziente (il suo cognome: un tempo muto accanto al nome
+di chi guardi si leggerebbe come suo; il nome intero è nel passaggio del mouse). Un tocco sul segno
+apre un menu minuscolo: **✓ Fatto** (sulla pill non c'è dove mostrare l'«Annulla»: lo porta il menu,
+per 8 secondi), **+15′** e **Apri** (carica la pagina di quel paziente, con la finestra aperta). I
+colori si rifanno da soli ogni 30 secondi, sul posto: niente si ridisegna sotto chi scrive.
 
 Tutto resta **solo in questo browser** (`localStorage`), niente va in rete; lo **stato degli
 esami** (`stato.v1`) è per episodio — ore, nomi di esami, mai il nome del paziente —, scade in 24
@@ -282,10 +306,12 @@ dimissione: è un modello, non contiene pazienti. Finché non c'è, si vede quel
 fissi («obi1»…): chi è messo in OBI 1 ci resta anche prima che la stanza sia salvata. **Chi sta dove** (`stanza.posti.v1`) sono solo numeri di episodio, mai nomi. La pagina di
 login **non** li cancella: chi viene riaperto dopo una sessione scaduta ritrova il suo letto (il
 posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; eliminare un paziente
-(🗑) toglie anche il suo. I **promemoria** (`promemoria.v1`) sono per episodio: l'ora e la cosa da
-fare, mai un nome; al massimo 10 a paziente, scadono 12 ore dopo l'ora fissata. Nemmeno loro li
+(🗑) toglie anche il suo. **Da fare** (`dafare.v1`) è per episodio: la cosa da fare e l'ora se c'è,
+mai un nome; al massimo 15 voci aperte a paziente; una voce con l'ora scade 12 ore dopo l'ora
+fissata, una senza 24 ore dopo l'ultima modifica, una spuntata 5 minuti dopo. Nemmeno queste le
 cancella la pagina di login — una sessione scaduta non deve far perdere la troponina delle 11:30 —;
-«Svuota l'elenco» e 🗑 sì.
+«Svuota l'elenco» e 🗑 sì. I **parametri vitali** letti (l'ultima riga: ora e valori, mai un nome)
+stanno con lo stato degli esami, in `stato.v1`, e se ne vanno con lui.
 
 ### Richieste
 1. **Quesito diagnostico** — casella su una riga, suggerimenti a fianco; l'ultimo resta scritto.
@@ -586,7 +612,7 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   «ora ignota» sotto e il motivo nel tooltip. Un piccolo «? 1 senza ora» nella riga del titolo lo dice (il perché è nel passaggio del mouse), e il Registro
   elenca ogni prelievo letto con la colonna in cui è finito.
 - **Un tocco su un valore lo segna**: giallo; un secondo tocco arancio; un terzo lo spegne. I segni
-  sono tuoi, restano col paziente (24 ore, come la nota) e sopravvivono al cambio di pagina.
+  sono tuoi, restano col paziente (24 ore, come una voce di «Da fare» senza ora) e sopravvivono al cambio di pagina.
 - **Cosa è cambiato dall'ultima volta che hai guardato**: dopo un **↻ Aggiorna**, in quel prelievo
   un valore cambiato ha **sfondo azzurro**, e lo stesso vale per un analita comparso da zero. Lo
   conta **«N nuovi»** nella riga in cima (il passaggio del mouse dice «N valori nuovi dall'ultima
@@ -650,7 +676,7 @@ o una richiesta in attesa.
 Nell'elenco **Pazienti** ogni scheda ha **Dimesso ✓**: il paziente esce dall'elenco principale e
 finisce fra gli **Archiviati** (in fondo, con il conteggio). Da lì lo si può **↩ riportare** fra gli
 attivi, oppure **🗑 eliminare** — e eliminare vuol dire *tutto quello che il programma sa di lui*:
-la scheda clinica, i referti tenuti, il testo dei referti letti, la nota, i promemoria e i dati per
+la scheda clinica, i referti tenuti, il testo dei referti letti, «Da fare» e i dati per
 episodio di quella scheda del browser. Chiede conferma una volta e non si torna indietro. L'elenco tiene un
 giorno e sessanta pazienti: un turno è di dodici ore.
 
@@ -665,11 +691,10 @@ un attimo). È l'unica cosa che il pannello aggiunge alla pagina del gestionale,
 fa scattare il doppio clic del riquadro.
 
 ### Nota sul paziente
-Sotto il nome, una **nota** di due righe che cresce con quello che scrivi. Non c'è un tasto Salva:
-**si salva mentre scrivi** (e comunque quando esci dal campo), e compare un «salvata» che scompare
-da sé. È legata al paziente — codice fiscale quando il pannello lo conosce, altrimenti il nome —
-resta cambiando pagina, e scade dopo 24 ore come i dati clinici. Vive nel browser di quel computer:
-non esce da lì. Alla sua destra, i **promemoria** del paziente e la loro sveglia (vedi *Pazienti*).
+Non c'è più un campo a parte: la nota è la **prima voce di Da fare** (vedi *Pazienti*), il post-it
+che si legge sulla riga e nel letto. Quelle scritte prima sono diventate voci da sole, sul paziente
+giusto: per codice fiscale, o per nome solo se in elenco non c'è un omonimo — una nota di chi non è
+in elenco aspetta lì finché scade.
 
 ### Modificare i fogli in fretta: `dist/dimissioni.html`
 Una **pagina sola**, senza server: si apre col doppio clic e dentro ci sono già gli otto fogli in
@@ -860,9 +885,9 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
 
 ### Dimissioni
 In cima, **una riga sola con quello che è ancora aperto**, solo quando c'è qualcosa:
-`Aperti: Troponina ultrasensibile (14:30) · RX torace non refertato (13:05) · promemoria «ricontrollare K» · letto alle 15:10`
+`Aperti: Troponina ultrasensibile (14:30) · RX torace non refertato (13:05) · Da fare: 2 · letto alle 15:10`
 — esami in attesa con l'ora della richiesta, referti non arrivati o arrivati e non visti,
-promemoria, valori segnati da te o nuovi fuori range non ancora letti. Non blocca niente, dice di
+quante cose sono ancora in «Da fare», valori segnati da te o nuovi fuori range non ancora letti. Non blocca niente, dice di
 quando è la lettura, e copre quello che il pannello sa (la pagina del paziente e gli ordini partiti
 da qui: «ordinati da qui» se la pagina non è stata letta).
 
@@ -907,7 +932,10 @@ foglio i motivi per **tornare in Pronto Soccorso**.
 
 Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con
 **↻ Aggiorna i valori** e l'ora in cui il PC li ha letti), **un ordine** (lo stesso «Conferma e
-stampa», con tutti i suoi controlli), **la nota** e **i promemoria**. Tutto succede sul PC, col
+stampa», con tutti i suoi controlli), **la nota** e **i promemoria** — sul PC sono **Da fare**: la
+nota del telefono è la prima voce aperta senza ora (scriverla cambia quella, o ne fa una in cima;
+vuota la toglie; un'ora scritta dentro non la fa diventare un promemoria), i promemoria sono le voci
+con l'ora (✓ Fatto le spunta). Tutto succede sul PC, col
 gestionale aperto e il codice di sempre: il telefono manda una domanda, una scheda del gestionale la
 esegue e risponde. Passa da un ripetitore nel Worker di EKG Atlas (sul suo indirizzo `workers.dev`)
 che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun server.
@@ -1455,10 +1483,11 @@ stessi flussi dei test di prodotto.
     episodio semplicemente non esiste.
 14. **Dove finisce il contenuto clinico, detto con precisione.** Dei pazienti *conosciuti*
     restano solo nome, episodio, indirizzo della pagina e colore del triage, al massimo 60 e per 24 ore, con
-    **svuota** a mano e **🗑** per cancellare tutto di uno. I **promemoria** stanno nel `localStorage`
-    (`promemoria.v1`) per episodio: l'ora e la cosa da fare («tropo»), mai un nome; al massimo 10 a
-    paziente, scadono 12 ore dopo l'ora fissata, la pagina di login non li tocca (sopravvivono a una
-    sessione scaduta, come il posto nella stanza), **svuota** e **🗑** li tolgono, e non vanno da
+    **svuota** a mano e **🗑** per cancellare tutto di uno. **Da fare** sta nel `localStorage`
+    (`dafare.v1`) per episodio: la cosa da fare («tropo») e l'ora se c'è, mai un nome; al massimo 15
+    voci aperte a paziente, scadono 12 ore dopo l'ora fissata (24 dall'ultima modifica senza ora, 5
+    minuti dopo la spunta), la pagina di login non le tocca (sopravvivono a una
+    sessione scaduta, come il posto nella stanza), **svuota** e **🗑** le tolgono, e non vanno da
     nessuna parte: non c'è una richiesta, né una notifica fuori dal pannello. Ma valori e testi dei referti letti in un turno stanno nel
     `sessionStorage` della scheda: **Chrome lo tiene anche su disco**, nel profilo, per poter
     ripristinare le schede — muore chiudendo la scheda, non prima. I PDF salvati stanno nella
@@ -1467,7 +1496,7 @@ stessi flussi dei test di prodotto.
     stanno nella memoria dell'estensione, quindi **su disco**: un turno dura dodici ore e non si
     può perdere tutto chiudendo il browser. Scadono da sole **24 ore** dopo l'ultima lettura, al
     massimo 200 pazienti, e **🗑** su un paziente archiviato le cancella subito — schede, referti
-    tenuti, nota e promemoria. La pagina di login cancella il resto — ma il `sessionStorage` è
+    tenuti, «Da fare». La pagina di login cancella il resto — ma il `sessionStorage` è
     **per scheda**: pulisce la scheda in cui è comparso il login, non le altre schede aperte.
     Su un PC condiviso: usa un profilo Chrome tuo e chiudi il browser a fine turno.
 15. **Niente parte da solo, e niente si inventa.** Aprire la pagina di un paziente non legge

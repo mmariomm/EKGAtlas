@@ -2523,6 +2523,104 @@
     return { eta, sesso: m ? m[1] : cf ? sessoDaCf(cf[0]) : "" };
   }
 
+  // ======================================================= PARAMETRI VITALI
+  // Il cuore accanto al nome: dalle righe dei parametri vitali della pagina
+  // del paziente (`<tr id="VAMI">`: l'ora, poi «ETICHETTA: <b>valore</b>» uno
+  // dopo l'altro). Anche quelli del triage stanno lì. Conta la riga più
+  // recente che porta almeno un parametro (il triage, quindi, solo finché è
+  // l'unica); un parametro che quella riga non ha NON si prende da una riga
+  // più vecchia e non si inventa: si conta su quello che c'è e il passaggio
+  // del mouse dice cosa manca. Si legge solo quando la pagina è aperta.
+  //
+  // Rosso: un parametro da solo nella fascia rossa NEWS2 (3 punti) — SpO2 ≤91
+  // (una soglia per tutti), FR ≤8 o ≥25, PAS ≤90 o ≥220, FC ≤40 o ≥131,
+  // T ≤35,0, coscienza: ACVPU diverso da A o GCS <15 — oppure NEWS2 ≥7.
+  // Ambra: NEWS2 5–6. Altrimenti niente. Dopo 4 ore senza una riga più nuova
+  // il cuore resta, vuoto: «♡ 5h».
+  const VIT_VECCHIO = 4 * 3600e3;
+  const VIT_ETICHETTE = [
+    ["acvpu", /^ACVPU$/], ["gcs", /^GCS$/], ["fio2", /^FIO2$/],
+    ["fr", /^(FREQUENZARESPIRATORIA|FR|FREQRESP|ATTIRESPIRATORI)$/],
+    ["spo2", /^(SATURIMETRIA|SPO2|SATO2|SATURAZIONE)$/],
+    ["fc", /^(FCRAR|FC|FREQUENZACARDIACA|POLSOFC)$/],
+    ["pas", /^(SISTOLICAMAX|SISTOLICA|PAS|PASISTOLICA)$/], ["pad", /^(DIASTOLICAMIN|DIASTOLICA|PAD|PADIASTOLICA)$/],
+    ["t", /^(TCTIMPASC|TC|TEMPERATURA|TEMP)$/],
+  ];
+  // valori fuori da questi limiti sono un errore di battitura, non un paziente
+  const VIT_LIMITI = { gcs: [3, 15], fio2: [21, 100], fr: [1, 80], spo2: [40, 100], fc: [15, 300], pas: [40, 300], pad: [15, 200], t: [25, 45] };
+  function vitaliRiga(tr) {
+    const p = {};
+    for (const b of tr.querySelectorAll("td b")) {
+      // l'etichetta è il testo fra il valore di prima (o l'inizio) e questo
+      let et = "";
+      for (let n = b.previousSibling; n && !(n.nodeType === 1 && n.tagName === "B"); n = n.previousSibling) et = (n.textContent || "") + et;
+      et = (et.split(/\s\/\s/).pop() || "").replace(/:\s*$/, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const chi = VIT_ETICHETTE.find(([, re]) => re.test(et))?.[0];
+      if (!chi || chi in p) continue;
+      const v = b.textContent.replace(/\s+/g, " ").trim();
+      if (chi === "acvpu") { const m = /^([ACVPU])(?![A-Z])/i.exec(v); if (m) p.acvpu = m[1].toUpperCase(); continue; }
+      if (!/^\d{1,3}(?:[.,]\d{1,2})?$/.test(v)) continue;
+      const n = Number(v.replace(",", ".")), [lo, hi] = VIT_LIMITI[chi];
+      if (n >= lo && n <= hi) p[chi] = n;
+    }
+    return ["fr", "spo2", "fc", "pas", "t", "acvpu", "gcs"].some((k) => k in p) ? p : null;
+  }
+  function vitaliPagina(doc) {
+    let ultima = null, righe = 0;
+    for (const tr of doc.querySelectorAll('tr[id="VAMI"]')) {
+      const p = vitaliRiga(tr);
+      const ts = p ? istanteLocale(istanteRiga(tr)) : 0;
+      if (!p || !ts) continue;   // senza l'ora non si sa se è l'ultima: non conta
+      righe++;
+      if (!ultima || ts > ultima.ts) ultima = { ts, p };
+    }
+    return ultima ? { ...ultima, righe } : null;
+  }
+  // NEWS2 su quello che c'è: i punti, i parametri in fascia rossa (3 punti da
+  // soli), quelli che la riga non ha. Coscienza: ACVPU diverso da A, o GCS <15.
+  function news2(p) {
+    const fasce = {
+      fr: ["FR", (v) => (v <= 8 ? 3 : v <= 11 ? 1 : v <= 20 ? 0 : v <= 24 ? 2 : 3)],
+      spo2: ["SpO2", (v) => (v <= 91 ? 3 : v <= 93 ? 2 : v <= 95 ? 1 : 0)],
+      fio2: ["O2 (FiO2)", (v) => (v > 21 ? 2 : 0)],
+      pas: ["PA", (v) => (v <= 90 ? 3 : v <= 100 ? 2 : v <= 110 ? 1 : v <= 219 ? 0 : 3)],
+      fc: ["FC", (v) => (v <= 40 ? 3 : v <= 50 ? 1 : v <= 90 ? 0 : v <= 110 ? 1 : v <= 130 ? 2 : 3)],
+      t: ["T", (v) => (v <= 35 ? 3 : v <= 36 ? 1 : v <= 38 ? 0 : v <= 39 ? 1 : 2)],
+    };
+    let punti = 0;
+    const rossi = [], mancano = [];
+    for (const [k, [nome, f]] of Object.entries(fasce)) {
+      if (p[k] == null) { mancano.push(nome); continue; }
+      const n = f(p[k]);
+      punti += n;
+      if (n === 3) rossi.push(k);
+    }
+    if (p.acvpu == null && p.gcs == null) mancano.push("coscienza");
+    else if ((p.acvpu && p.acvpu !== "A") || (p.gcs != null && p.gcs < 15)) { punti += 3; rossi.push(p.acvpu && p.acvpu !== "A" ? "acvpu" : "gcs"); }
+    return { punti, rossi, mancano, livello: rossi.length || punti >= 7 ? "ros" : punti >= 5 ? "amb" : "" };
+  }
+  // Il cuore di un paziente, o null: rosso, ambra, e vuoto se la riga ha più di 4 ore
+  function cuoreDi(vit, ora = Date.now()) {
+    if (!vit || !vit.p || !vit.ts) return null;
+    const n = news2(vit.p);
+    if (!n.livello) return null;
+    const eta = Math.max(0, ora - vit.ts), vecchio = eta > VIT_VECCHIO, p = vit.p;
+    const num = (v) => String(v).replace(".", ",");
+    const testo = {
+      fr: p.fr != null && `FR ${p.fr}`, spo2: p.spo2 != null && `SpO2 ${p.spo2}`, fio2: p.fio2 > 21 && `FiO2 ${p.fio2}`,
+      fc: p.fc != null && `FC ${p.fc}`, pas: p.pas != null && `PA ${p.pas}${p.pad != null ? "/" + p.pad : ""}`,
+      t: p.t != null && `T ${num(p.t)}`, acvpu: p.acvpu && p.acvpu !== "A" && `ACVPU ${p.acvpu}`, gcs: p.gcs != null && `GCS ${p.gcs}`,
+    };
+    const tutti = Object.values(testo).filter(Boolean), rossi = n.rossi.map((k) => testo[k]).filter(Boolean);
+    const titolo = [
+      n.rossi.length ? `Parametro critico: ${rossi.join(" · ")} · NEWS2 ${n.punti}` : `NEWS2 ${n.punti} (${n.livello === "ros" ? "7 o più" : "5–6"})`,
+      `Parametri misurati ${promOra(vit.ts, ora).replace(/^(?:(\S+) )?(\d)/, (m, g, c) => (g ? g + " alle " : "alle ") + c)}: ${tutti.join(" · ")}`,
+      n.mancano.length ? `Non in quella riga (non contati): ${n.mancano.join(", ")}` : "",
+      vecchio ? `Nessuna riga più nuova da ${Math.floor(eta / 3600e3)} ore` : "",
+    ].filter(Boolean).join("\n");
+    return { livello: n.livello, punti: n.punti, vecchio, ore: Math.floor(eta / 3600e3), ts: vit.ts, titolo, chiave: `${vit.ts}|${n.livello}` };
+  }
+
   function statoTutti() {
     const s = store.get(STATO, {});
     const tutti = s && typeof s === "object" && !Array.isArray(s) ? s : {};
@@ -2546,7 +2644,7 @@
   // no porta l'ora in cui è stato visto: è «nuovo» finché il medico non guarda
   // gli Esiti. La prima lettura di un paziente è il riferimento: niente nuovi.
   function leggiStatoPagina(ep, doc = document) {
-    const righe = richiestePagina(doc), all = allergiePagina(doc), att = attenzionePagina(doc);
+    const righe = richiestePagina(doc), all = allergiePagina(doc), att = attenzionePagina(doc), vit = vitaliPagina(doc);
     return scriviStato(ep, (s) => {
       const ora = Date.now(), primaVolta = !s.letto;
       const prima = new Map((s.righe || []).map((r) => [r.k, r]));
@@ -2556,6 +2654,7 @@
       });
       s.letto = ora;
       if (all || att) s.anag = { allergie: all, attenzione: att, ts: ora };
+      if (vit) s.vit = vit;   // una pagina senza righe dei parametri non cancella le ultime lette
       return s;
     });
   }
@@ -2662,41 +2761,12 @@
   }
 
   // ------------------------------------------------------------------ NOTA
-  // Una nota per paziente, sotto il suo nome. Si scrive e basta: non c'è un
-  // tasto Salva, si salva mentre scrivi. Sta nel browser di questo computer,
-  // legata al paziente (codice fiscale quando c'è, altrimenti il nome), e
-  // scade dopo 24 ore come i dati clinici letti.
+  // Fino alla 3.57 c'era una nota per paziente (codice fiscale, o il nome),
+  // che scadeva dopo 24 ore. Ora è la prima voce di «Da fare» (dfMigra la
+  // porta lì): qui resta solo la chiave, per leggere quelle rimaste e per
+  // toglierle con il paziente. La stessa scadenza vale per i segni sui valori.
   const noteKey = "note.v1";
   const NOTA_TTL = 24 * 3600e3;
-  function noteTutte() {
-    const n = store.get(noteKey, {});
-    const ora = Date.now();
-    let pulito = false;
-    for (const k of Object.keys(n)) if (ora - (n[k]?.ts || 0) > NOTA_TTL) { delete n[k]; pulito = true; }
-    if (pulito) store.set(noteKey, n);
-    return n;
-  }
-  const leggiNota = (chiave) => (chiave ? (noteTutte()[chiave]?.t || "") : "");
-  // la nota di un paziente dell'elenco, su una riga: la chiave è quella
-  // annotata sulla sua pagina (codice fiscale), o il nome
-  // La nota di un paziente dell'elenco o della stanza. Col codice fiscale
-  // (pk «cf:…») si legge SOLO quella: il nome è di chiunque si chiami così.
-  // Senza codice fiscale, il nome — ma mai se fra i pazienti attivi c'è un
-  // omonimo: la nota sul paziente sbagliato è peggio di nessuna nota.
-  const notaDi = (p, attivi = knownPatients()) => {
-    const pulisci = (t) => String(t || "").replace(/\s*\n+\s*/g, " · ").trim();
-    if (p.pk && String(p.pk).startsWith("cf:")) return pulisci(leggiNota(p.pk));
-    const n = normNome(p.name);
-    if (!n || attivi.some((x) => x.ep !== p.ep && normNome(x.name) === n)) return "";
-    return pulisci(leggiNota(p.pk || "nome:" + n));
-  };
-  function scriviNota(chiave, testo) {
-    if (!chiave) return false;
-    const n = noteTutte();
-    if (String(testo).trim()) n[chiave] = { t: String(testo).slice(0, 4000), ts: Date.now() };
-    else delete n[chiave];
-    return store.set(noteKey, n);
-  }
 
   // ----------------------------------------------------------------- SEGNI
   // Un valore toccato si evidenzia: giallo, al secondo tocco arancio, al
@@ -2731,23 +2801,37 @@
     store.set(segniKey, s);
   }
 
-  // ------------------------------------------------------------ PROMEMORIA
-  // «11:30 tropo», «tra 2h ECG»: un'ora per fare una cosa, per paziente. Si
+  // --------------------------------------------------------------- DA FARE
+  // Una lista sola per paziente, a spunte tonde: le cose da fare, e — con
+  // un'ora scritta dentro («11:30 tropo», «tra 2h ECG») — i promemoria. Si
   // tiene l'ISTANTE, come il cronometro: ricaricare la pagina non sposta
-  // niente. Per episodio, mai un nome; al massimo 10 a paziente; scadono 12
-  // ore dopo l'ora fissata. Stanno in questo browser e non vanno da nessuna parte.
-  const PROM = "promemoria.v1";
-  const PROM_MAX = 10;
-  const PROM_TTL = 12 * 3600e3;
-  // Il primo orario scritto nel testo; il resto è la cosa da fare. Un'ora:
-  // «11:30», «11.30», «11h30», «11h», «alle 14». Fra quanto: «tra 2h», «+2h»,
-  // «2h», «2h30», «90m», «30 min», «30'», «tra 45 minuti», «2 ore». Con una
+  // niente. La prima voce aperta è il post-it della riga e del letto; l'ordine
+  // lo decide il medico (trascinando). Una voce spuntata resta 5 minuti, poi se
+  // ne va. Per episodio, mai un nome; al massimo 15 aperte; una con l'ora
+  // scade 12 ore dopo l'ora fissata, una senza 24 ore dopo l'ultima modifica.
+  // Stanno in questo browser e non vanno da nessuna parte.
+  // Fino alla 3.57 c'erano la nota (per paziente) e i promemoria (per
+  // episodio): la prima lettura li porta qui (dfMigra) — la nota come prima
+  // voce senza ora, i promemoria come voci con l'ora.
+  const PROM = "dafare.v1";                  // { ep: [{ id, testo, t|null, fatto|null, ord, ts }] }
+  const PROM_VECCHI = "promemoria.v1";
+  const PROM_MAX = 15;                       // voci aperte per paziente
+  const PROM_TTL = 12 * 3600e3;              // una voce con l'ora, dopo l'ora fissata
+  const DF_TTL = 24 * 3600e3;                // una voce senza ora, dopo l'ultima modifica
+  const DF_FATTO = 5 * 60e3;                 // una voce spuntata resta 5 minuti
+  const DF_LUNGO = 120;                      // una riga sola: la cosa da fare si tiene corta
+  // Il primo orario scritto nel testo; il resto è la cosa da fare. Solo le
+  // forme che non si confondono con un valore: un'ora coi due punti «11:30»,
+  // col punto solo dopo «alle», «ore» o «h» («alle 9.10», «ore 15.30»),
+  // «11h30», «11h», «alle 14». Fra quanto: «tra 2h», «+2h», «2h», «2h30»,
+  // «90m», «30 min», «30'», «+30′», «tra 45 minuti», «2 ore». Un numero col
+  // punto o la virgola da solo («Hb 9.10», «K 5,30») non è mai un'ora. Con una
   // cifra «2h» è fra quanto, con due «11h» è un'ora. Un'ora passata da non più
   // di 2 ore è di oggi (già scaduta); più indietro è di domani: il turno di notte.
-  function leggiPromemoria(testo, ora) {
+  function leggiPromemoria(testo, ora, max = 40) {
     const s = String(testo || "").replace(/\s+/g, " ").trim();
     const T = "(?<![\\p{L}\\p{N}_])", F = "(?![\\p{L}\\p{N}_])";
-    const FRA = "(?:(?:tra|fra|entro|in|dopo)\\s+|\\+\\s?)", ALLE = "(?:(?:alle|verso\\s+le|per\\s+le|entro\\s+le)(?:\\s+ore)?\\s+|ore\\s+)";
+    const FRA = "(?:(?:tra|fra|entro|in|dopo)\\s+|\\+\\s?)", ALLE = "(?:(?:alle|verso\\s+le|per\\s+le|entro\\s+le)(?:\\s+ore)?\\s+|ore\\s+|h\\s?)";
     const eFra = (p) => new RegExp(`^${FRA}$`, "i").test(p || "");   // «entro le 14» è un'ora, «entro 2h» fra quanto
     const alle = (h, m) => {
       if (h > 23 || m > 59) return null;
@@ -2759,9 +2843,10 @@
     };
     const fra = (min) => (min >= 1 && min <= 1440 ? Math.floor((ora + min * 60e3) / 60e3) * 60e3 : null);
     const forme = [
-      // 11:30, 11.30 (e «tra 1:30»: fra un'ora e mezza). Col punto è anche un
-      // numero («K 3.50», «pH 7.30»): cede a ogni altro orario scritto nel testo
-      [`${T}(${FRA}|${ALLE})?(\\d{1,2})([:.])(\\d{2})${F}`, (m) => (+m[4] > 59 ? null : eFra(m[1]) ? fra(+m[2] * 60 + +m[4]) : alle(+m[2], +m[4]))],
+      // 11:30 (e «tra 1:30»: fra un'ora e mezza). Col punto è anche un numero
+      // («Hb 9.10», «K 5.30»): un'ora solo dopo «alle», «ore» o «h»
+      [`${T}(${FRA}|${ALLE})?(\\d{1,2})([:.])(\\d{2})${F}`, (m) => (+m[4] > 59 || (m[3] === "." && !(m[1] && !eFra(m[1]))) ? null
+        : eFra(m[1]) ? fra(+m[2] * 60 + +m[4]) : alle(+m[2], +m[4]))],
       // 11h, 11h30 · 2h, 2h30, tra 2h
       [`${T}(${FRA}|${ALLE})?(\\d{1,2}) ?h(?:(\\d{2})(?: ?min| ?m)?)?${F}`, (m) => {
         const h = +m[2], mm = +(m[3] || 0);
@@ -2789,7 +2874,7 @@
     if (!primo) return null;
     // il resto è la cosa da fare: senza la punteggiatura rimasta dove stava l'orario
     const prima = s.slice(0, primo.i).replace(/[\s·:,;\-–—]+$/, ""), dopo = s.slice(primo.i + primo.n).replace(/^[\s·:,;.\-–—]+/, "");
-    const resto = `${prima} ${dopo}`.replace(/^[\s·:,;.\-–—]+|[\s·:,;\-–—]+$/g, "").slice(0, 40).trim();
+    const resto = `${prima} ${dopo}`.replace(/^[\s·:,;.\-–—]+|[\s·:,;\-–—]+$/g, "").slice(0, max).trim();
     return { t: primo.t, testo: resto || "promemoria" };
   }
   // Quanto manca, nel modo più corto: «1h40», «40m», «ora», «−5m».
@@ -2809,8 +2894,11 @@
     while (i < w.length - 2 && PARTICELLE_COGNOME.has(w[i].toUpperCase())) i++;
     return w.slice(0, i + 1).join(" ").toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
   }
-  // oltre la mezz'ora tranquilla; ambra sotto i 30 minuti; rossa sotto i 10, e quando è l'ora
-  const promBanda = (t, ora) => { const m = Math.ceil((t - ora) / 60e3); return m > 30 ? "" : m > 10 ? "amb" : "ros"; };
+  // Il colore dell'icona «Da fare»: tranquilla; ambra dai 15 minuti prima;
+  // rossa quando l'ora è passata (scaduto).
+  function promBanda(t, ora) { return t <= ora ? "ros" : t - ora <= 15 * 60e3 ? "amb" : ""; }
+  // La sveglia sulla pill ridotta, quella di sempre: a 10 minuti, o passata.
+  const promAllarme = (t, ora) => Math.ceil((t - ora) / 60e3) <= 10;
   // l'ora fissata, col giorno quando non è oggi: «11:30», «domani 07:30»
   function promOra(t, ora) {
     const giorno = (x) => { const d = new Date(x); d.setHours(0, 0, 0, 0); return d.getTime(); };
@@ -2824,45 +2912,156 @@
     const quando = p.t > ora ? "tra " + parole(Math.ceil((p.t - ora) / 60e3)) : tardi < 1 ? "adesso" : "in ritardo di " + parole(tardi);
     return `${promOra(p.t, ora)}${p.testo ? " · " + p.testo : ""} · ${quando}`;
   }
-  function promTutti() {
-    const raw = store.get(PROM, {});
-    const tutti = {}, ora = Date.now();
-    let cambiato = false;
-    for (const [ep, l] of Object.entries(raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {})) {
-      const vivi = /^[\w.-]{1,40}$/.test(ep) && Array.isArray(l)
-        ? l.filter((p) => p && typeof p.id === "string" && Number.isFinite(p.t) && typeof p.testo === "string" && ora - p.t <= PROM_TTL).slice(0, PROM_MAX)
+  const dfId = () => "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const dfValida = (x) => x && typeof x.id === "string" && typeof x.testo === "string"
+    && (x.t == null || Number.isFinite(x.t)) && (x.fatto == null || Number.isFinite(x.fatto));
+  // Le voci di tutti, ognuna nel suo ordine; quelle scadute e quelle spuntate
+  // da più di 5 minuti se ne vanno qui, alla lettura.
+  function dfTutti(ora = Date.now()) {
+    let raw = store.get(PROM, {});
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) raw = {};
+    let cambiato = dfMigra(raw, ora);
+    const tutti = {};
+    for (const [ep, l] of Object.entries(raw)) {
+      const vive = /^[\w.-]{1,40}$/.test(ep) && Array.isArray(l)
+        ? l.filter((x) => dfValida(x) && !(x.fatto && ora - x.fatto > DF_FATTO)
+            && (x.t != null ? ora - x.t <= PROM_TTL : ora - (x.ts || 0) <= DF_TTL))
         : [];
-      if (vivi.length !== (Array.isArray(l) ? l.length : -1)) cambiato = true;
-      if (vivi.length) tutti[ep] = vivi;
+      if (vive.length !== (Array.isArray(l) ? l.length : -1)) cambiato = true;
+      vive.sort((x, y) => (x.ord ?? 0) - (y.ord ?? 0));
+      if (vive.length) tutti[ep] = vive.map((x, i) => ({ id: x.id, testo: x.testo, t: x.t ?? null, fatto: x.fatto ?? null, ord: i, ts: x.ts || ora }));
     }
     if (cambiato) store.set(PROM, tutti);
     return tutti;
   }
-  // quelli di un paziente, il più vicino per primo
-  const promDi = (ep, tutti = promTutti()) => (ep && tutti[ep] ? [...tutti[ep]].sort((a, b) => a.t - b.t) : []);
-  function promScrivi(ep, l) {
-    const tutti = promTutti();
-    if (l.length) tutti[ep] = l; else delete tutti[ep];
+  // La nota (per paziente) e i promemoria (per episodio) di prima: la nota
+  // diventa la prima voce, senza ora, dell'episodio più recente di quel
+  // paziente; i promemoria, voci con l'ora. Una nota che non si sa di chi sia
+  // (un omonimo, un paziente non in elenco) resta dov'era, finché scade.
+  function dfMigra(raw, ora) {
+    const vecchi = store.get(PROM_VECCHI, null), note = store.get(noteKey, null);
+    const conNote = !!note && typeof note === "object" && Object.keys(note).length > 0;
+    if (!vecchi && !conNote) return false;
+    const voce = (testo, t, ts) => ({ id: dfId(), testo, t, fatto: null, ord: 0, ts: ts || ora });
+    let cambiato = false;
+    if (vecchi && typeof vecchi === "object") {
+      for (const [ep, l] of Object.entries(vecchi)) {
+        if (!/^[\w.-]{1,40}$/.test(ep) || !Array.isArray(l)) continue;
+        const qui = Array.isArray(raw[ep]) ? raw[ep] : [];
+        for (const p of l) {
+          if (!p || !Number.isFinite(p.t) || typeof p.testo !== "string" || qui.some((x) => x.id === p.id)) continue;
+          qui.push({ ...voce(p.testo, p.t, p.ts), id: typeof p.id === "string" ? p.id : dfId(), ord: qui.length + 1000 });
+        }
+        if (qui.length) { raw[ep] = qui; cambiato = true; }
+      }
+    }
+    if (vecchi) store.del(PROM_VECCHI);
+    if (conNote) {
+      const pazienti = tuttiPazienti(), attivi = pazienti.filter((p) => !p.arch);
+      let tolte = false;
+      for (const [k, n] of Object.entries(note)) {
+        const testo = String(n?.t || "").replace(/\s*\n+\s*/g, " · ").trim();
+        if (!testo || ora - (n.ts || 0) > NOTA_TTL) continue;
+        let suoi;
+        if (k.startsWith("cf:")) suoi = pazienti.filter((p) => p.pk === k);
+        else {
+          const nome = k.replace(/^nome:/, "");
+          if (attivi.filter((p) => normNome(p.name) === nome).length > 1) continue;   // un omonimo: non si attribuisce
+          suoi = pazienti.filter((p) => !String(p.pk || "").startsWith("cf:") && normNome(p.name) === nome);
+        }
+        const p = [...suoi].sort((a, b) => (!!a.arch - !!b.arch) || (b.ts || 0) - (a.ts || 0))[0];
+        if (!p) continue;
+        const qui = Array.isArray(raw[p.ep]) ? raw[p.ep] : [];
+        qui.unshift({ ...voce(testo.slice(0, 500), null, n.ts), ord: -1e6 });
+        raw[p.ep] = qui;
+        delete note[k];
+        tolte = cambiato = true;
+      }
+      if (tolte) store.set(noteKey, note);
+    }
+    return cambiato;
+  }
+  // tutte le voci di un paziente, nel suo ordine (anche quelle appena spuntate)
+  const dfDi = (ep, tutti = dfTutti()) => (ep && tutti[ep] ? tutti[ep].map((x) => ({ ...x })) : []);
+  const dfAperte = (ep, tutti) => dfDi(ep, tutti).filter((x) => !x.fatto);
+  function dfScrivi(ep, l) {
+    if (!ep) return false;
+    const tutti = dfTutti();
+    if (l.length) tutti[ep] = l.map((x, i) => ({ ...x, ord: i })); else delete tutti[ep];
     return store.set(PROM, tutti);
   }
-  function promAggiungi(ep, p) {
-    const l = promDi(ep);
-    if (!ep || l.length >= PROM_MAX) return false;
-    l.push({ id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), t: p.t, testo: String(p.testo || "").slice(0, 40), ts: Date.now() });
-    return promScrivi(ep, l);
+  // Una voce nuova, in fondo (la prima resta il post-it). Con un'ora scritta
+  // dentro è un promemoria; senza, una cosa da fare. null: troppe, o vuota.
+  function dfAggiungi(ep, testo, { t, inCima = false, max = DF_LUNGO } = {}) {
+    const s = String(testo || "").replace(/\s+/g, " ").trim();
+    const l = dfDi(ep);
+    if (!ep || !s || l.filter((x) => !x.fatto).length >= PROM_MAX) return null;
+    let quando = t ?? null, cosa = s;
+    if (t === undefined) {
+      const p = leggiPromemoria(s, Date.now(), DF_LUNGO);
+      if (p) { quando = p.t; cosa = p.testo; }
+    }
+    const x = { id: dfId(), testo: cosa.slice(0, max), t: quando, fatto: null, ord: 0, ts: Date.now() };
+    if (inCima) l.unshift(x); else l.push(x);
+    return dfScrivi(ep, l) ? x : null;
   }
+  // spuntata (o tolta la spunta): resta al suo posto, barrata, 5 minuti
+  function dfSpunta(ep, id, si = true) {
+    const l = dfDi(ep), x = l.find((v) => v.id === id);
+    if (!x) return null;
+    x.fatto = si ? Date.now() : null;
+    x.ts = Date.now();
+    return dfScrivi(ep, l) ? x : null;
+  }
+  // in un altro posto della lista: `a` è l'indice nuovo
+  function dfSposta(ep, id, a) {
+    const l = dfDi(ep), i = l.findIndex((v) => v.id === id);
+    if (i < 0) return false;
+    const [x] = l.splice(i, 1);
+    l.splice(Math.max(0, Math.min(l.length, a)), 0, x);
+    return dfScrivi(ep, l);
+  }
+  function dfCambia(ep, id, testo) {
+    const l = dfDi(ep), x = l.find((v) => v.id === id);
+    if (!x) return false;
+    x.testo = String(testo).slice(0, 500); x.ts = Date.now();
+    return dfScrivi(ep, l);
+  }
+  const dfTogli = (ep, id) => dfScrivi(ep, dfDi(ep).filter((x) => x.id !== id));
+  // Il post-it: la prima voce aperta, nell'ordine del medico
+  const dfPrima = (ep, tutti) => dfAperte(ep, tutti)[0] || null;
+  // La «nota» del telefono è la prima voce aperta SENZA ora (vedi il Ponte)
+  const dfNota = (ep, tutti) => dfAperte(ep, tutti).find((x) => x.t == null) || null;
+
+  // I promemoria sono le voci aperte con un'ora: le stesse funzioni di prima,
+  // così la sveglia sulla pill, il +15′ e il telefono restano quelli.
+  function promTutti(tutti = dfTutti()) {
+    const out = {};
+    for (const [ep, l] of Object.entries(tutti)) {
+      const p = l.filter((x) => x.t != null && !x.fatto).map((x) => ({ id: x.id, t: x.t, testo: x.testo, ts: x.ts }));
+      if (p.length) out[ep] = p;
+    }
+    return out;
+  }
+  // quelli di un paziente, il più vicino per primo
+  const promDi = (ep, tutti = promTutti()) => (ep && tutti[ep] ? [...tutti[ep]].sort((a, b) => a.t - b.t) : []);
+  const promAggiungi = (ep, p) => !!dfAggiungi(ep, String(p.testo || "").slice(0, 40), { t: p.t });
+  // ✓ Fatto: spuntato (se ne va fra 5 minuti; «Annulla» toglie la spunta)
   function promTogli(ep, id) {
-    const l = promDi(ep), p = l.find((x) => x.id === id);
-    return p && promScrivi(ep, l.filter((x) => x !== p)) ? p : null;
+    const x = dfDi(ep).find((v) => v.id === id && v.t != null && !v.fatto);
+    return x && dfSpunta(ep, id, true) ? { id: x.id, t: x.t, testo: x.testo, ts: x.ts } : null;
   }
   // «+15 min»: da quando era fissato, o da adesso se è già passato
   function promRinvia(ep, id, ms = 15 * 60e3) {
-    const l = promDi(ep), p = l.find((x) => x.id === id);
+    const l = dfDi(ep), p = l.find((x) => x.id === id && x.t != null);
     if (!p) return false;
     p.t = Math.floor((Math.max(p.t, Date.now()) + ms) / 60e3) * 60e3;
-    return promScrivi(ep, l);
+    return dfScrivi(ep, l);
   }
-  const promRimetti = (ep, p) => promScrivi(ep, [...promDi(ep).filter((x) => x.id !== p.id), p]);
+  function promRimetti(ep, p) {
+    if (dfDi(ep).some((x) => x.id === p.id)) return !!dfSpunta(ep, p.id, false);
+    return !!dfAggiungi(ep, p.testo, { t: p.t });
+  }
 
   // ------------------------------------------------------------ RIFERIMENTI
   // La tabella del medico, i «can't-miss killers»: per sintomo, cosa
@@ -4608,75 +4807,84 @@
     .trow .to { flex: 0 0 auto; color: #5B6B7A; font-size: 10.5px; font-variant-numeric: tabular-nums; }
     .tdel { border: 0; background: transparent; color: #5B6B7A; cursor: pointer; font-size: 12px; padding: 0 2px; }
     .tdel:hover { color: #B3261E; }
-    /* la nota e, accanto, i promemoria del paziente con la loro sveglia */
-    .notaw { position: relative; display: flex; align-items: flex-start; gap: 8px; padding: 10px 24px 0; }
-    .notacol { position: relative; flex: 1 1 auto; min-width: 0; }
-    .nota { display: block; width: 100%; resize: none; overflow: hidden;
-            border: 1px solid transparent; border-radius: 8px; background: #F8FBFE;
-            padding: 6px 8px; font: 12.5px/1.45 inherit; color: #16232E; }
-    .nota::placeholder { color: #9DB0C2; }
-    .nota:hover { border-color: #E3E8EF; }
-    .nota:focus { outline: 0; border-color: #9DBFDE; background: #fff; }
-    .notaok { position: absolute; right: 8px; bottom: 4px; font-size: 10px; color: #177245; }
-    .notaok.ko { color: #B3261E; }
-    /* PROMEMORIA. La pill: quanto manca in grassetto, poi la cosa da fare.
-       Tranquilla oltre la mezz'ora, ambra sotto i 30 minuti, rossa sotto i 10
-       e quando è l'ora — solo allora un bagliore lento. */
-    .prslot { display: contents; }
-    .prom { position: relative; z-index: 1; flex: 0 1 auto; min-width: 0; max-width: 180px; display: inline-flex; align-items: baseline; gap: 5px;
-            height: 22px; padding: 0 9px; border: 0; border-radius: 999px; background: #EEF2F6; color: #35506B; cursor: pointer;
-            font-size: 12px; line-height: 22px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .prom b { flex: none; font-weight: 700; }
-    .prom .prl { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .prom .prpiu { flex: none; font-weight: 600; opacity: .7; }
-    .prom:hover { background: #E3E9F0; }
-    .prom:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
-    .prom.amb, .prst.amb { background: #FFF4DB; color: #8A5A00; }
-    .prom.amb:hover { background: #FCEBC4; }
-    .prom.ros, .prst.ros { background: #FDEBEA; color: #B3261E; animation: prBagliore 2.6s ease-in-out infinite; }
-    .prom.ros:hover { background: #FADBD8; }
+    /* DA FARE. L'icona: le spunte tonde e quante voci sono aperte. Tranquilla;
+       ambra 15 minuti prima di un promemoria; rossa quando è passato (solo
+       allora un bagliore lento: il movimento vuol dire «è l'ora»). */
+    .dfslot, .dfpslot { display: contents; }
+    .dfic { position: relative; z-index: 1; flex: none; display: inline-flex; align-items: center; gap: 3px; height: 24px; min-width: 28px;
+            padding: 0 7px 0 6px; border: 0; border-radius: 999px; background: #EEF2F6; color: #35506B; cursor: pointer;
+            font: inherit; font-size: 12px; font-weight: 700; line-height: 24px; white-space: nowrap; font-variant-numeric: tabular-nums; align-self: center; }
+    .dfic svg { width: 14px; height: 14px; flex: none; }
+    .dfic b { font: inherit; letter-spacing: 0; }   /* (anche nell'intestazione, dove i <b> sono grandi) */
+    .dfic:hover { background: #E3E9F0; color: #16232E; }
+    .dfic:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .dfic.vuota { justify-content: center; padding: 0; width: 28px; background: none; color: #8296A9; }
+    .dfic.vuota:hover { background: #EEF2F6; color: #16232E; }
+    .dfic.amb { background: #FFF4DB; color: #8A5A00; }
+    .dfic.amb:hover { background: #FCEBC4; }
+    .dfic.ros { background: #FDEBEA; color: #B3261E; animation: prBagliore 2.6s ease-in-out infinite; }
+    .dfic.ros:hover { background: #FADBD8; }
     @keyframes prBagliore { 0%, 100% { box-shadow: 0 0 0 0 rgba(179,38,30,0); } 50% { box-shadow: 0 0 0 4px rgba(179,38,30,.13); } }
-    /* nella Stanza solo il tempo, piccolo, in alto a destra */
-    .prst { flex: none; align-self: center; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: #EEF2F6; color: #5B6B7A;
-            font-size: 11px; font-weight: 700; line-height: 16px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    /* nella stanza il tempo si tocca: apre i suoi promemoria, come la pill della lista */
-    button.prst { position: relative; z-index: 1; border: 0; font-family: inherit; cursor: pointer; }
-    button.prst:hover { box-shadow: inset 0 0 0 1px rgba(53,80,107,.18); }
-    button.prst:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
-    /* il campo di un promemoria per chi sta nella stanza: sopra la mappa, sotto il paziente */
-    .prpop { position: absolute; z-index: 30; width: 300px; max-width: calc(100vw - 16px); padding: 4px 8px 8px; border: 1px solid #D9E2EC;
+    /* il post-it: la prima voce aperta, in grigio, che cede per prima */
+    .dfpost { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #5B6B7A; }
+    .dfpost b { font-weight: 600; color: #35506B; font-variant-numeric: tabular-nums; }
+    /* nell'intestazione, accanto agli identificativi: il cuore e l'icona */
+    .hdpaz { flex: none; display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; }
+    /* IL CUORE dei parametri vitali: rosso o ambra, fermo. Un impulso solo, da
+       un secondo, quando compare; vuoto («♡ 5h») se la riga ha più di 4 ore. */
+    .cuore { flex: none; display: inline-block; font-size: 14px; line-height: 1; font-weight: 700; cursor: default; }
+    .cuore.ros { color: #C62828; }
+    .cuore.amb { color: #B26A00; }
+    .cuore.vecchio { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .cuore.pulsa { animation: cuorePulsa 1s ease-out 1; }
+    @keyframes cuorePulsa { 0% { transform: scale(1); } 30% { transform: scale(1.35); } 100% { transform: scale(1); } }
+    .pzchi .cuore, .stp2 .cuore { align-self: center; }
+    @media (prefers-reduced-motion: reduce) { .cuore.pulsa, .dfic.ros { animation: none; } }
+    /* la lista: una piccola finestra sotto l'icona */
+    .dfpop { position: absolute; z-index: 30; width: 340px; max-width: calc(100vw - 16px); padding: 4px 6px 8px; border: 1px solid #D9E2EC;
              border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgba(9,42,74,.16); }
-    .prpop .prmhd { padding: 4px 2px 6px; }
-    .prpop .prhint { position: static; display: block; margin-top: 6px; padding: 0 2px; box-shadow: none; white-space: normal; }
-    .prpop .prhint:empty { display: none; }
-    .stp1:has(> .prst) .stpn { flex: 1 1 auto; }
-    /* la sveglia della nota: tranquilla, all'estremità della barra */
-    .prbar { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; height: 32px; }
-    .prbar .prom { max-width: 200px; }
-    .prnuovo { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px;
-               background: none; color: #8296A9; cursor: pointer; }
-    .prnuovo:hover { background: #F1F4F7; color: #16232E; }
-    .prnuovo:focus-visible { outline: 2px solid #0B5CAD; outline-offset: -2px; }
-    .prbar:has(.prform) .prnuovo { display: none; }
-    .prbar .prform { flex: 0 1 240px; min-width: 150px; }
-    /* il campo, su una riga: sotto, mentre scrivi, quando sarà */
-    .prform { position: relative; z-index: 2; display: block; }
-    .prin { display: block; width: 100%; height: 30px; padding: 0 10px; border: 1px solid #9DBFDE; border-radius: 8px; background: #fff;
-            font-size: 13px; line-height: 1.3; color: #16232E; }
-    .prin::placeholder { color: #9DB0C2; }
-    .prin:focus { outline: 0; border-color: #0B5CAD; box-shadow: 0 0 0 3px rgba(11,92,173,.12); }
-    .prhint { position: absolute; right: 0; top: calc(100% + 4px); z-index: 3; padding: 2px 8px; border-radius: 6px; background: #fff;
-              box-shadow: 0 2px 10px rgba(9,42,74,.16); font-size: 11.5px; line-height: 18px; color: #35506B; white-space: nowrap;
-              font-variant-numeric: tabular-nums; pointer-events: none; }
-    .prhint:empty { display: none; }
-    .prhint.ko { color: #B3261E; }
-    /* l'elenco di un paziente: ✓ Fatto, +15 min */
+    .dfhd { padding: 6px 6px 4px; font-size: 12px; color: #5B6B7A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dfhd b { color: #16232E; }
+    .dfl { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; }
+    .dfi { display: flex; align-items: center; gap: 6px; min-height: 38px; padding: 2px 4px 2px 0; border-radius: 6px; background: #fff; }
+    .dfi + .dfi { box-shadow: inset 0 1px 0 #EEF2F6; }
+    .dfi.presa { position: relative; z-index: 2; box-shadow: 0 6px 18px rgba(9,42,74,.18); }
+    .dfl.trascino, .dfl.trascino * { cursor: grabbing !important; }
+    .dfgrip { flex: none; width: 16px; text-align: center; color: #B4C2CF; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+              font-size: 13px; letter-spacing: -2px; line-height: 30px; }
+    .dfi:hover .dfgrip { color: #5B6B7A; }
+    .dfck { flex: none; position: relative; width: 20px; height: 20px; padding: 0; border: 1.6px solid #8296A9; border-radius: 50%; background: #fff; cursor: pointer; }
+    .dfck::before { content: ""; position: absolute; inset: -9px; }
+    .dfck:hover { border-color: #177245; }
+    .dfck:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 2px; }
+    .dfi.fatto .dfck { border-color: #177245; background: #177245; }
+    .dfi.fatto .dfck::after { content: ""; position: absolute; left: 5.5px; top: 2px; width: 5px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+    .dftx { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.35; color: #16232E; }
+    .dfi.fatto .dftx { text-decoration: line-through; color: #8296A9; }
+    .dft { flex: none; padding: 0 6px; border-radius: 999px; background: #EEF2F6; color: #35506B; font-size: 11.5px; font-weight: 700; line-height: 18px; font-variant-numeric: tabular-nums; }
+    .dft.amb { background: #FFF4DB; color: #8A5A00; }
+    .dft.ros { background: #FDEBEA; color: #B3261E; }
+    .dfi.fatto .dft { background: none; color: #9AA8B5; font-weight: 400; }
+    .dfpiu { flex: none; min-height: 26px; border: 1px solid #D9E2EC; border-radius: 6px; background: #fff; padding: 0 7px; cursor: pointer;
+             font-size: 11.5px; font-weight: 600; color: #16232E; white-space: nowrap; }
+    .dfpiu:hover { border-color: #9DBFDE; }
+    .dfpiu:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .dfvuota { padding: 8px 6px; font-size: 12.5px; color: #5B6B7A; }
+    .dfadd { position: relative; margin-top: 6px; }
+    .dfin { display: block; width: 100%; height: 32px; padding: 0 10px; border: 1px solid #D9E2EC; border-radius: 8px; background: #F8FBFE;
+            font-size: 13px; color: #16232E; }
+    .dfin::placeholder { color: #8296A9; }
+    .dfin:focus { outline: 0; border-color: #0B5CAD; background: #fff; box-shadow: 0 0 0 3px rgba(11,92,173,.12); }
+    .dfhint { display: block; padding: 4px 4px 0; font-size: 11.5px; line-height: 16px; color: #35506B; font-variant-numeric: tabular-nums; }
+    .dfhint:empty { display: none; }
+    .dfhint.ko { color: #B3261E; }
+    .dfsr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    /* il menu minuscolo della sveglia sulla pill ridotta: ✓ Fatto, +15′, Apri */
     .prmenu { position: absolute; z-index: 30; width: max-content; min-width: 260px; max-width: min(360px, calc(100vw - 16px)); padding: 4px;
               border: 1px solid #D9E2EC; border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgba(9,42,74,.16); }
     .prmhd { padding: 6px 8px 4px; font-size: 12px; color: #5B6B7A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .prmrow { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 3px 4px 3px 8px; }
     .prmrow + .prmrow { border-top: 1px solid #EEF2F6; }
-    .prmrow .prst { margin-left: 0; }
     .prmq { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #16232E; }
     .prmq b { font-weight: 600; font-variant-numeric: tabular-nums; }
     .prmb { flex: none; min-height: 28px; border: 1px solid #D9E2EC; border-radius: 6px; background: #fff; padding: 2px 9px; cursor: pointer;
@@ -4697,7 +4905,6 @@
     .prmini .prmhd { padding: 6px 8px 2px; color: #16232E; }
     .prmini .prmrow { min-height: 36px; padding: 2px 4px 4px 4px; gap: 6px; }
     .prmini .prmq { font-size: 12.5px; color: #35506B; }
-    @media (prefers-reduced-motion: reduce) { .prom.ros, .prst.ros { animation: none; } }
     .crow { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; cursor: pointer;
             border: 1px solid #E3E8EF; border-radius: 9px; background: #fff; padding: 10px 11px; font: inherit; }
     .crow:hover { border-color: #9DBFDE; background: #F4F9FD; }
@@ -4802,7 +5009,7 @@
     .stbtn.pri, .stazioni .stbtn.pri { background: #0B5CAD; border-color: #0B5CAD; color: #fff; }
     .stbtn.pri:hover, .stazioni .stbtn.pri:hover { background: #094a8c; border-color: #094a8c; color: #fff; }
     .stazioni button:focus-visible, .stbtn:focus-visible, .stctl:focus-visible, .stp:focus-visible, .stname:focus-visible,
-    .pzrow:has(.pzapri:focus-visible), .pzmetti:focus-visible, .pzx:focus-visible, .pzprom:focus-visible, .pzarchhd:focus-visible,
+    .pzrow:has(.pzapri:focus-visible), .pzmetti:focus-visible, .pzx:focus-visible, .pzarchhd:focus-visible,
     .pzsvuota:focus-visible, .pzabtn:focus-visible, .pzfx:focus-visible, .stannulla:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     /* quello che dicono tutti e due: da quanto non lo apri, «questa pagina», i segni */
     .stvisto { flex: none; font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -4862,9 +5069,6 @@
     .pzapri { flex: 0 1 auto; min-width: 0; display: flex; align-items: baseline; padding: 0; border: 0; background: none;
               color: inherit; text-align: left; cursor: pointer; }
     .pzapri::after { content: ""; position: absolute; inset: 0; }   /* tutta la riga */
-    .pzchi .prom { flex-shrink: 6; min-width: 52px; }
-    .pzchi .prform { flex: 1 1 auto; min-width: 140px; max-width: 360px; align-self: center; }
-    .pzchi:has(.prform) .prslot, .pzchi:has(.prform) .pznota { display: none; }
     .pzapri:focus-visible { outline: none; }
     .pzrow:has(.pzapri:focus-visible) { outline-offset: -2px; }
     .pzrow:hover { background: #F7F9FB; }
@@ -4873,7 +5077,9 @@
     .pztr { flex: none; width: 4px; height: 22px; border-radius: 2px; background: var(--tr, transparent); }
     .pznm { flex: none; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
             font-size: 14px; font-weight: 600; }
-    .pznota { flex: 1 1 0; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #5B6B7A; }
+    .pzchi .dfpost { flex: 1 1 0; max-width: 100%; }
+    /* l'icona «Da fare» vuota, come la ✕: compare passandoci sopra */
+    .pzrow:not(:hover):not(:focus-within) .dfic.vuota { opacity: 0; }
     /* ▾: metterlo nella stanza senza trascinare. Sempre lì, quieto; il bordo
        sulla riga sotto il mouse */
     .pzmetti { position: relative; z-index: 1; flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0;
@@ -4884,19 +5090,13 @@
            font-size: 13px; color: #5B6B7A; opacity: 0; }
     .pzrow:hover .pzx, .pzrow:focus-within .pzx { opacity: 1; }
     .pzx:hover { background: #FDF1F0; color: #B3261E; }
-    /* la sveglia, come la ✕: compare passandoci sopra */
-    .pzprom { position: relative; z-index: 1; flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0;
-              border: 0; border-radius: 6px; background: none; cursor: pointer; color: #5B6B7A; opacity: 0; }
-    .pzrow:hover .pzprom, .pzrow:focus-within .pzprom { opacity: 1; }
-    .pzprom:hover { background: #EEF2F6; color: #16232E; }
     /* colonna stretta: il nome da solo sulla prima riga, sotto il promemoria e
        la nota; «visto…» e «questa pagina» li dice solo la voce (la riga di
        questa pagina è già azzurra) */
     @container pzlista (max-width: 560px) {
       .pzrow { gap: 6px; }
       .pzchi { flex-wrap: wrap; column-gap: 8px; row-gap: 0; }
-      .pzapri, .pzchi .prform { flex-basis: 100%; }
-      .pzchi .prform { max-width: none; }
+      .pzapri { flex-basis: 100%; }
       .pzrow .stvisto, .pzrow .stqui { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     }
     .pzvuoto { padding: 14px 24px; font-size: 13px; color: #5B6B7A; }
@@ -4977,7 +5177,13 @@
     .stp1 { display: flex; align-items: baseline; min-width: 0; }
     .stpn { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: 600; line-height: 18px; color: #16232E; }
     .stp2 { display: flex; align-items: baseline; gap: 6px; min-width: 0; line-height: 16px; }
-    .stnota { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #5B6B7A; }
+    .stp2 .dfpost { flex: 0 1 auto; }
+    /* nel letto e nell'area l'icona c'è solo con qualcosa da fare (il menu ha «Da fare…») */
+    .stmap .dfic { height: 20px; line-height: 20px; font-size: 11px; padding: 0 6px 0 5px; }
+    .stmap .dfic svg { width: 12px; height: 12px; }
+    .stmap .dfic.vuota, .stmap.edit .dfic { display: none; }
+    .stp1 .dfslot .dfic { margin-left: 6px; }
+    .stp1:has(.dfic:not(.vuota)) .stpn { flex: 1 1 auto; }
     .stp.spento { opacity: .55; }
     .stp.prec { cursor: pointer; }
     .stp.via { opacity: .3; }
@@ -5004,11 +5210,11 @@
     .stbed .stp2 .stcoda { font-size: 12px; }
     .stbed .stpn { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .stbed .stqui, .stbed .sttag { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .stbed .stnota { flex: 0 1 auto; min-height: 0; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    .stbed .dfpost { flex: 0 1 auto; min-height: 0; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
                      font-size: 12px; line-height: 16px; }
-    @container stbed (max-height: 94px) { .stbed .stnota { -webkit-line-clamp: 1; } }
-    @container stbed (max-height: 70px) { .stbed .stnota { display: none; } }
-    @container stbed (max-width: 110px) { .stbed .stnota { display: none; } }
+    @container stbed (max-height: 94px) { .stbed .dfpost { -webkit-line-clamp: 1; } }
+    @container stbed (max-height: 70px) { .stbed .dfpost { display: none; } }
+    @container stbed (max-width: 110px) { .stbed .dfpost { display: none; } }
     @container stbed (max-height: 62px) {
       .stmap:not(.edit) .stbed.occ .stname, .stbed .stp2, .stbed:not(.sedia) .stglifo { display: none; }
       .stmap.edit .stbed .stp { display: none; }   /* in Modifica conta il nome del letto */
@@ -5030,7 +5236,6 @@
     .starbody .stpn { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     /* Modifica: i pazienti si fermano; l'oggetto scelto (o sotto il mouse) mostra la × e, l'area, l'angolo */
     .stmap.edit .stp { opacity: .4; pointer-events: none; }
-    .stmap.edit .prst { pointer-events: none; }
     .stmap.edit .stbed, .stmap.edit .starea { cursor: move; touch-action: none; }
     .stmap.edit .stbed { background: #F7F9FB; }   /* i puntini non passano dentro il letto */
     .stmap.edit .stbed.occ { background: #fff; }
@@ -5041,7 +5246,7 @@
     .stctl { position: absolute; z-index: 4; width: 24px; height: 24px; padding: 0; border: 1px solid #D9E2EC; border-radius: 50%;
              background: #fff; cursor: pointer; font-size: 13px; line-height: 22px; text-align: center; color: #16232E;
              opacity: 0; pointer-events: none; transition: opacity .12s; }
-    .stctl::before, .pzmetti::before, .pzx::before, .pzprom::before, .pzabtn::before, .stannulla::before { content: ""; position: absolute; inset: -4px; }
+    .stctl::before, .pzmetti::before, .pzx::before, .pzabtn::before, .stannulla::before { content: ""; position: absolute; inset: -4px; }
     .strsz::before { content: ""; position: absolute; inset: -8px; }
     .stbed:hover > .stctl, .starea:hover > .stctl, .sel > .stctl, .stbed:focus-within > .stctl, .starea:focus-within > .stctl,
     .starea:hover > .strsz, .starea.sel > .strsz { opacity: 1; pointer-events: auto; }
@@ -5077,7 +5282,7 @@
     @media (pointer: coarse) {
       .stazioni { height: 40px; }
       .stbtn, .stazioni .stbtn { min-height: 36px; }
-      .pzx, .pzprom { opacity: 1; }
+      .pzx, .pzrow .dfic.vuota { opacity: 1; }
       .stctl { width: 32px; height: 32px; line-height: 30px; }
       .stx { top: -16px; right: -16px; }
     }
@@ -5104,6 +5309,8 @@
     ferma: ico('<rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" stroke="none"/>'),
     // la sveglia dei promemoria (il cronometro è un'altra cosa)
     sveglia: ico('<circle cx="8" cy="9" r="5.2"/><path d="M8 6.6V9l1.7 1.1M2.6 4.3l1.9-1.7M13.4 4.3l-1.9-1.7"/>'),
+    // «Da fare»: due spunte tonde e le loro righe
+    dafare: ico('<circle cx="4" cy="4.5" r="2.2"/><circle cx="4" cy="11.5" r="2.2"/><path d="M8.5 4.5h5.5M8.5 11.5h5.5"/>'),
     stampante: ico('<path d="M4.5 6V2.5h7V6"/><rect x="2" y="6" width="12" height="5.5" rx="1.2"/><path d="M4.5 9.5h7v4h-7z"/>'),
   };
 
@@ -5262,7 +5469,7 @@
       if (titleEl) {
         this._titleObs = new MutationObserver(() => {
           // mai ricostruire una schermata in cui si sta scrivendo
-          const scrive = ["nota", "prin", "riffiltro"].includes(this.root.activeElement?.id);
+          const scrive = ["dfin", "riffiltro"].includes(this.root.activeElement?.id);
           if (this.runState !== "running" && !scrive
               && this.view !== "dimtesto" && this.view !== "dimimport" && this.view !== "eotesto") this.render();
         });
@@ -5280,7 +5487,12 @@
     this._unload = (e) => { e.preventDefault(); e.returnValue = ""; };
       this._esc = (e) => {
         if (e.key !== "Escape") return;
-        if (this.escLocale && this.escLocale()) return;   // la stanza lo usa per sé (menu, trascinamento)
+        if (this.escLocale && this.escLocale()) {   // la stanza lo usa per sé (menu, trascinamento)
+          // la lista «Da fare» aperta, col fuoco altrove: Esc chiude lei, non la finestra
+          const d = this._df;
+          if (d?.pop?.isConnected && !this._dfPresa && !(e.composedPath ? e.composedPath() : []).includes(d.pop)) { e.preventDefault(); this.dfChiudi(true); }
+          return;
+        }
         // una stampa in corso (Esc la annulla) e il conto alla rovescia della conferma: l'Esc è loro
         if (document.getElementById("psassist-print") || document.getElementById("psassist-confirm")) return;
         // Solo col pannello aperto: da quando il giro va in sottofondo, un Esc
@@ -6635,9 +6847,10 @@
       };
       const keepScroll = [...this.root.querySelectorAll(".bd, .list, .rlist, .stcanvas, .pzcoda, .pzpiede, .starbody")]
         .filter((el) => el.scrollTop || el.scrollLeft).map((el) => [scorre(el), el.scrollTop, el.scrollLeft]);
-      // un promemoria a metà resta scritto, col cursore dov'era; l'elenco aperto si chiude
-      const pin = this.root.querySelector("#prin");
-      if (pin && this.root.activeElement === pin) { this._promFuoco = true; this._promSel = [pin.selectionStart, pin.selectionEnd]; }
+      // la lista «Da fare» aperta si riapre uguale (dfRiattacca), con quello che
+      // si stava scrivendo e il cursore dov'era; il menu della sveglia si chiude
+      const din = this.root.querySelector("#dfin");
+      if (din && this._df) { this._df.inFuoco = this.root.activeElement === din; this._df.sel = [din.selectionStart, din.selectionEnd]; }
       this.promChiudiMenu();
 
       let body;
@@ -6758,6 +6971,7 @@
                   : this.view === "eotesto" ? "Torna all'esame obiettivo"
                   : "Tutti i pazienti"}" aria-label="Indietro">${ICO.indietro}</button>` : `<span class="logo">${LOGO_BLU}</span>`}${titolo ? `<b class="who">${esc(titolo)}</b>` : ""}
                 ${sub ? `<span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>` : ""}
+                ${idp && this.epDiQuesta() ? `<span class="hdpaz">${this.cuoreHtml(this.epDiQuesta())}${this.dfSlot(this.epDiQuesta(), undefined, "testa")}</span>` : ""}
                 <span class="hsp"></span>
                 ${ponteSpia()}
                 <span id="stautow">${this.chipStampa()}</span>
@@ -6788,7 +7002,6 @@
               ${idp ? this.avvisiPaz(idp.ep || ep) : ""}
               ${running && this.runData?.steps?.length ? `<div class="pbar"><i style="width:${Math.round((this.runData.steps.filter((x) => x.status === "ok").length / this.runData.steps.length) * 100)}%"></i></div>` : ""}
               <div class="cap">
-              ${!this.runState && this.pageType === "patient" && !inHome ? this.notaHtmlPaziente() : ""}
               ${!this.runState && inStanza && this.stanzaEdit ? `
                 <div class="seg modifica" role="toolbar" aria-label="Modifica la stanza">
                   <b class="segtit">Modifica la stanza</b><span class="segdx">${this.stanzaAzioni()}</span>
@@ -7015,10 +7228,11 @@
       const nomi = this.stanzaNomi(pazienti, precedenti);
       const qui = this.epDiQuesta(), ora = Date.now();
       const info = new Map(pazienti.map((p) => [p.ep, {
-        p, ...nomi.get(p.ep), nota: notaDi(p, pazienti), qui: p.ep === qui, prec: precedenti.has(p.ep),
+        p, ...nomi.get(p.ep), qui: p.ep === qui, prec: precedenti.has(p.ep),
         spento: precedenti.has(p.ep) || ora - (p.ts || 0) > 12 * 3600e3, posto: posti[p.ep] || null,
       }]));
-      return { pazienti, sala, posti, perLetto, info, qui, prom: promTutti() };
+      const df = dfTutti();
+      return { pazienti, sala, posti, perLetto, info, qui, df, prom: promTutti(df) };
     }
     nomePosto(m, i) {
       const v = i && i.posto;
@@ -7030,7 +7244,7 @@
       return min < 1 ? "visto adesso" : min < 60 ? `visto ${min} min fa` : `visto ${Math.floor(min / 60)} h fa`;
     }
     // Il passaggio del mouse dice tutto: chi è, quale episodio, quando l'hai
-    // aperto, da quando sta dove sta, il triage, la nota.
+    // aperto, da quando sta dove sta, il triage, la prima cosa da fare.
     pazTitolo(m, i, mappa) {
       const { p } = i, posto = this.nomePosto(m, i);
       return [
@@ -7038,7 +7252,7 @@
         `episodio ${p.ep} · aperto ${this.oraDi(p.ts)}`,
         posto && `in ${posto} dalle ${this.oraDi(i.posto.ts)}`,
         p.triage && `triage all'apertura: ${p.triage}`,
-        i.nota && `Nota: ${i.nota}`,
+        m.df && dfPrima(p.ep, m.df) && `Da fare: ${dfPrima(p.ep, m.df).testo}${dfAperte(p.ep, m.df).length > 1 ? ` (+${dfAperte(p.ep, m.df).length - 1})` : ""}`,
         i.omonimo && "⚠ stesso cognome di un altro paziente in elenco",
         i.prec && "Episodio precedente: di questo paziente c'è un episodio più recente",
         mappa && (i.prec ? "Un tocco lo apre" : "Un tocco apre gli esiti · trascinalo, o tasto destro: Sposta in…"),
@@ -7051,8 +7265,9 @@
       return `<span class="stvisto${Date.now() - (i.p.ts || 0) > 3 * 3600e3 ? " amb" : ""}">${this.vistoFa(i.p.ts)}</span>`;
     }
     // LISTA — chi non ha ancora un posto, una riga per paziente: triage, nome,
-    // il promemoria più vicino, la nota, da quanto non lo apri; ▾ lo mette
-    // nella stanza senza trascinarlo, e passandoci sopra la sveglia e la ✕.
+    // il cuore e lo stato degli esami, «Da fare» (quante, e la prima: il
+    // post-it), da quanto non lo apri; ▾ lo mette nella stanza senza
+    // trascinarlo, e passandoci sopra la ✕.
     // Chi è su questa pagina per primo, l'episodio precedente in fondo.
     viewLista(m, patientName) {
       const canOrder = !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
@@ -7063,7 +7278,7 @@
       // paziente è esattamente ciò che questo programma promette di non fare.
       if (m.qui && canOrder && !m.info.has(m.qui)) {
         lista.unshift({ p: { ep: m.qui, name: patientName, ts: Date.now() }, breve: patientName, lungo: patientName || "paziente",
-                        coda: "", omonimo: false, nota: "", qui: true, prec: false, spento: false, posto: null });
+                        coda: "", omonimo: false, qui: true, prec: false, spento: false, posto: null });
       }
       // la riga intera apre il paziente: il bottone del nome la copre tutta, e
       // gli altri comandi stanno sopra — niente bottoni dentro bottoni. Si
@@ -7077,13 +7292,10 @@
             <button type="button" class="pzapri" data-go="esiti" data-ep="${esc(p.ep)}"${mobile ? ' aria-haspopup="menu"' : ""} title="${esc(this.pazTitolo(m, i, mobile))}">
               <span class="pznm">${i.omonimo ? `<b class="stom" aria-label="attenzione, stesso cognome di un altro paziente">⚠</b>` : ""}${esc(i.lungo)}${i.coda ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</span>${p.triage ? `<span class="stsr">, triage ${esc(p.triage)}</span>` : ""}
             </button>
-            <span class="prslot" data-promslot="${esc(p.ep)}">${this.promPill(p.ep, m.prom)}</span>
             ${i.prec ? "" : this.statoPaz(p.ep)}
-            <span class="pznota">${esc(i.nota)}</span>
-            ${this._promIn?.ep === p.ep && this._promIn.dove === "lista" ? this.promCampo() : ""}
+            ${i.prec ? "" : this.dfSlot(p.ep, m.df, "lista") + this.dfPostSlot(p.ep, m.df)}
           </div>
           ${this.pazStato(i)}
-          ${i.prec ? "" : `<button type="button" class="pzprom" data-promnuovo="${esc(p.ep)}" data-dove="lista" title="Promemoria: un'ora per fare una cosa (es. 11:30 tropo)" aria-label="Promemoria per ${esc(i.lungo)}">${ICO.sveglia}</button>`}
           ${mobile ? `<button type="button" class="pzmetti" data-posto="${esc(p.ep)}" aria-haspopup="menu" title="Mettilo nella stanza: scegli il letto, la sedia o l'area" aria-label="Metti ${esc(i.lungo)} nella stanza">${ico('<path d="m4.5 6.5 3.5 3.5 3.5-3.5"/>')}</button>` : ""}
           ${vero ? `<button type="button" class="pzx" data-parch="${esc(p.ep)}" title="Togli dall'elenco: va negli archiviati (si può annullare). Nel gestionale non cambia niente." aria-label="Togli ${esc(i.lungo)} dall'elenco">✕</button>` : ""}
         </div>`;
@@ -7113,25 +7325,27 @@
       return `<div class="pzpiede">
         <button type="button" class="pzarchhd" id="archtog" aria-expanded="${this.mostraArch ? "true" : "false"}">Archiviati${archiviati.length ? ` <span class="stn">${archiviati.length}</span>` : ""}<span aria-hidden="true">${this.mostraArch ? "▾" : "▸"}</span></button>
         ${this.mostraArch ? `<div class="pzarch">${archiviati.map(rigaArch).join("")}
-          <div class="pzhint">${archiviati.length ? "🗑 cancella tutto di quel paziente: scheda clinica, referti tenuti, nota e promemoria. Non si torna indietro." : "Nessun paziente archiviato."}</div>
+          <div class="pzhint">${archiviati.length ? "🗑 cancella tutto di quel paziente: scheda clinica, referti tenuti, «Da fare». Non si torna indietro." : "Nessun paziente archiviato."}</div>
           <button type="button" class="pzsvuota" id="stsvuota" title="Toglie tutti i pazienti dall'elenco e dalla stanza. Per 8 secondi si può annullare.">Svuota l'elenco</button>
         </div>` : ""}</div>`;
     }
     // Il paziente nella Stanza: striscia del triage, nome (⚠ se un altro ha
-    // lo stesso cognome), e sotto «questa pagina» (o «episodio precedente») e
-    // la nota. Da quanto non lo apri lo dice la lista; qui, dopo 12 ore, il
+    // lo stesso cognome), e sotto il cuore, «questa pagina» (o «episodio
+    // precedente»), gli esami e la prima cosa da fare. Da quanto non lo apri lo dice la lista; qui, dopo 12 ore, il
     // grigio. Nel letto la striscia la porta il letto, il nome sta su una riga
     // e l'episodio che lo distingue scende accanto allo stato: non si taglia mai.
     stanzaChip(m, i, inLetto) {
       const { p } = i, edit = !!this.stanzaEdit;
       const cls = ["stp", i.qui && "qui", i.prec && "prec", i.spento && "spento", !inLetto && p.triage && "tri t-" + p.triage.toLowerCase()].filter(Boolean).join(" ");
-      const nota = i.nota ? `<span class="stnota">${esc(i.nota)}</span>` : "";
+      // il post-it (la prima cosa da fare): nel letto su una riga sua, nell'area accanto allo stato
+      const post = i.prec ? "" : this.dfPostSlot(p.ep, m.df);
       const stato = i.prec ? `<span class="sttag">episodio precedente</span>` : i.qui ? `<span class="stqui">questa pagina</span>` : "";
-      const es = i.prec ? "" : this.statoPaz(p.ep, true);   // gli esami, in breve: «Lab 50′ · RX 1h20 ●»
-      const sotto = `${i.coda && inLetto ? `<span class="stcoda">${esc(i.coda.replace(/^ · /, ""))}</span>` : ""}${stato}${es}${inLetto ? "" : nota}`;
+      // in testa il cuore; poi gli esami, in breve: «Lab 50′ · RX 1h20 ●»
+      const cuore = i.prec ? "" : this.cuoreHtml(p.ep), es = i.prec ? "" : statoHtml(statoEsami(statoDi(p.ep)), { breve: true });
+      const sotto = `${cuore}${i.coda && inLetto ? `<span class="stcoda">${esc(i.coda.replace(/^ · /, ""))}</span>` : ""}${stato}${es}${inLetto ? "" : post}`;
       return `<div class="${cls}" data-stp="${esc(p.ep)}" data-cerca="${esc(normNome(i.lungo))}" role="button" tabindex="${edit ? -1 : 0}"${i.prec ? "" : ' aria-haspopup="menu"'} title="${esc(this.pazTitolo(m, i, true))}" aria-label="${esc(i.lungo + i.coda)}${p.triage ? `, triage ${esc(p.triage)}` : ""}${i.qui ? ", questa pagina" : i.prec ? ", episodio precedente" : ""}">
-        <span class="stp1">${i.omonimo ? `<b class="stom" aria-hidden="true">⚠</b>` : ""}<b class="stpn">${esc(i.breve)}${i.coda && !inLetto ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</b>${inLetto ? "" : this.promMini(p.ep, m.prom)}</span>${
-        sotto ? `<span class="stp2">${sotto}</span>` : ""}${inLetto ? nota : ""}</div>`;
+        <span class="stp1">${i.omonimo ? `<b class="stom" aria-hidden="true">⚠</b>` : ""}<b class="stpn">${esc(i.breve)}${i.coda && !inLetto ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</b>${inLetto || i.prec ? "" : this.dfSlot(p.ep, m.df, "area")}</span>${
+        sotto ? `<span class="stp2">${sotto}</span>` : ""}${inLetto ? post : ""}</div>`;
     }
     // il letto (o la sedia) vuoto: a tratto, appena accennato
     stanzaGlifo(w, cls, sedia) {
@@ -7180,7 +7394,7 @@
         return `<div class="${cls}" data-letto="${esc(l.id)}" data-drop="letto:${esc(l.id)}"${i ? ` data-occ="${esc(i.breve + i.coda)}" data-occep="${esc(i.p.ep)}" data-cerca="${esc(normNome(i.lungo))}"` : ""} role="group"
           aria-label="${esc(l.nome)}: ${i ? esc(i.lungo + i.coda) : "vuoto"}"${edit ? "" : ` title="${esc(l.nome)}${i ? "" : " — trascina qui un paziente"}"`}
           style="${celle(l.c, l.r, w, h)}">
-          <div class="stbedin">${i ? `<div class="stbedhd">${this.stanzaNome("letto", l)}${this.promMini(i.p.ep, m.prom)}</div>${this.stanzaChip(m, i, true)}`
+          <div class="stbedin">${i ? `<div class="stbedhd">${this.stanzaNome("letto", l)}${i.prec ? "" : this.dfSlot(i.p.ep, m.df, "letto")}</div>${this.stanzaChip(m, i, true)}`
             : this.stanzaNome("letto", l) + this.stanzaGlifo(sedia ? 24 : 28, "stglifo", sedia)}</div>
           ${edit ? this.stanzaCtl("letto", l) : ""}
         </div>`;
@@ -7282,7 +7496,7 @@
           }
         });
         box.addEventListener("contextmenu", (e) => {
-          if (this.stanzaEdit || e.target.closest("input, .prform")) return;
+          if (this.stanzaEdit || e.target.closest("input")) return;
           const riga = e.target.closest(".pzrow[data-riga]");
           if (riga) { e.preventDefault(); return this.stanzaMenu(riga.getAttribute("data-riga"), riga.querySelector("[data-posto]") || riga); }
           const chip = e.target.closest(".stp[data-stp]") || e.target.closest(".stbed.occ")?.querySelector(".stp[data-stp]");
@@ -7320,12 +7534,6 @@
           inp.addEventListener("blur", () => { if (inp.isConnected) this.stanzaChiudiNome(inp, true); });
         }
       }
-      // un promemoria a metà per chi sta nella stanza: il ridisegno non lo perde
-      const pi = this._promIn;
-      if (pi?.dove === "stanza") {
-        const chip = $(`.stmap .stp[data-stp="${CSS.escape(pi.ep)}"]`);
-        if (chip && !this.stanzaEdit) this.promPop(pi.ep, chip); else this.promChiudi();
-      }
       if (this._stanzaFocus) { const f = $(this._stanzaFocus); this._stanzaFocus = null; f?.focus(); }
     }
     // Il filtro. Una lettera scritta con i Pazienti davanti — e il cursore
@@ -7337,7 +7545,7 @@
       const esc = e.key === "Escape";
       if (!esc && !/^\p{L}$/u.test(e.key || "")) return;
       if (this.collapsed || this.stanzaEdit || this.menuAperto || this._stanzaPresa || this._stanzaMenu?.menu?.isConnected || this._promMenu?.menu?.isConnected
-          || this._promPop || !this.root.querySelector(".pzunita")) return;
+          || this._df || !this.root.querySelector(".pzunita")) return;
       const via = e.composedPath ? e.composedPath() : [], t = via[0];
       // dal pannello, o da nessuna parte (la finestra copre la pagina): mai da un elemento del gestionale
       if (!via.includes(this.host) && t && t !== document.body && t !== document.documentElement && t !== document) return;
@@ -7390,7 +7598,7 @@
     // Esc appartiene a chi lo sta usando: il menu «Sposta in…» o un trascinamento
     // (il gestore di Esc della finestra lo chiede prima di ridurre il pannello)
     escLocale() {
-      return !!(this._stanzaPresa || this._stanzaMenu?.menu?.isConnected || this._promMenu?.menu?.isConnected
+      return !!(this._stanzaPresa || this._stanzaMenu?.menu?.isConnected || this._promMenu?.menu?.isConnected || this._df?.pop?.isConnected || this._dfPresa
         || (this._filtro != null && !this.collapsed && !this.stanzaEdit && !!this.root.querySelector("#pzcerca")));   // il filtro: lo toglie filtroTasto
     }
     // Un solo gesto alla volta. Tocco o trascinamento? Sotto i 5px col mouse
@@ -7442,7 +7650,7 @@
       // una riga della lista si prende dal nome (cioè da tutta la riga): gli
       // altri suoi comandi restano i loro, e un tocco la apre come sempre
       const riga = !this.stanzaEdit && e.target.closest(".pzrow[data-riga]");
-      if (riga) return e.target.closest("button:not(.pzapri), input, .prform") ? undefined : this.stanzaTrascinaPaziente(e, box, riga, true);
+      if (riga) return e.target.closest("button:not(.pzapri), input") ? undefined : this.stanzaTrascinaPaziente(e, box, riga, true);
       if (e.target.closest("button, input, .stsnack, .pzrow, .pzfiltro, .pzpiede")) return;
       const map = box.querySelector(".stmap");
       if (!this.stanzaEdit) {
@@ -7592,8 +7800,8 @@
     }
     // «Sposta in…»: i letti e le sedie vuoti, per nome, poi quelli occupati
     // (chi c'è torna in lista), le aree; per chi ha già un posto «Rimetti in
-    // lista»; in fondo, a parte, «Promemoria…» e «Togli dall'elenco» (come la
-    // sveglia e la ✕ della riga, che chi sta nella stanza non ha più). Col
+    // lista»; in fondo, a parte, «Da fare…» e «Togli dall'elenco» (come
+    // l'icona e la ✕ della riga, che chi sta nella stanza non ha più). Col
     // tasto destro, tenendo premuto col dito, con Maiusc+F10 o dal ▾ della
     // riga. Frecce, Invio, Esc.
     stanzaMenu(ep, anchor) {
@@ -7614,7 +7822,7 @@
         }),
         m.sala.aree.map((a) => voce("area:" + a.id, a.nome, inArea(a) ? `${inArea(a)} ${inArea(a) === 1 ? "paziente" : "pazienti"}` : "", attuale("area", a.id))),
         qui ? [voce("tray", "Rimetti in lista", "")] : [],
-        [voce("prom", "Promemoria…", promDi(ep, m.prom).length ? promTempo(promDi(ep, m.prom)[0].t, Date.now()) : ""), voce("togli", "Togli dall'elenco", "")],
+        [voce("dafare", "Da fare…", dfAperte(ep, m.df).length ? String(dfAperte(ep, m.df).length) : ""), voce("togli", "Togli dall'elenco", "")],
       ].filter((g) => g.length);
       const titolo = `Sposta ${i.breve + i.coda} in…`;
       wrap.insertAdjacentHTML("beforeend", `<div class="stmenu" role="menu" aria-label="${esc(titolo)}"><div class="stmenuhd" aria-hidden="true">${esc(titolo)}</div>${
@@ -7633,11 +7841,8 @@
         this.stanzaChiudiMenu();
         const dove = b.getAttribute("data-dove");
         if (dove === "togli") return this.stanzaArchivia(ep);
-        if (dove === "prom") {
-          // in lista il campo si apre nella sua riga; nella stanza, sotto il paziente
-          const sveglia = this.root.querySelector(`.pzrow [data-promnuovo="${CSS.escape(ep)}"]`);
-          return sveglia ? this.promApri(ep, "lista", sveglia) : this.promApri(ep, "stanza", anchor);
-        }
+        // «Da fare…»: la lista sotto la sua icona (nella riga, o nel letto), o sotto il paziente
+        if (dove === "dafare") return this.dfApri(ep, this.dfAncora(ep) || anchor);
         // il fuoco segue il paziente: nel posto nuovo, o sulla sua riga
         this._stanzaFocus = dove === "tray" ? `.pzrow[data-riga="${CSS.escape(ep)}"] .pzapri` : `.stmap .stp[data-stp="${CSS.escape(ep)}"]`;
         this.stanzaSposta(ep, dove);
@@ -7675,7 +7880,7 @@
       store.set("stanza.posti.v1", {});   // anche i posti e i promemoria: l'elenco riparte da zero
       store.set(PROM, {});
       store.set(STATO, {});
-      this._promIn = null;
+      this.dfChiudi();
       this.mostraArch = false;
       this.stanzaAnnullabile("Elenco svuotato", foto);
       this.render();
@@ -8553,9 +8758,9 @@
         x.inAttesa ? `${x.fatti.length || x.fatto ? " · " : ""}in attesa${x.attesa ? ` dalle ${hhmm(x.attesa)}` : ""}` : ""}${m.letto ? ` · letto alle ${hhmm(m.letto)}` : ""}`;
       return { html: `<span class="ult${m.vecchio ? " vecchio" : ""}">${esc(testo)}</span>`, titolo };
     }
-    // la riga di stato degli esami di un paziente (Pazienti, letto)
+    // la riga di stato di un paziente (Pazienti, letto): in testa il cuore dei parametri vitali, poi gli esami
     statoPaz(ep, breve = false) {
-      return statoHtml(statoEsami(statoDi(ep)), { breve });
+      return this.cuoreHtml(ep) + statoHtml(statoEsami(statoDi(ep)), { breve });
     }
 
     nomePaziente() {
@@ -8573,71 +8778,62 @@
       return n ? "nome:" + n : "";
     }
     // La chiave passa da «nome:» a «cf:» nel momento in cui i valori portano
-    // il codice fiscale. La nota scritta prima deve SEGUIRE il paziente, non
-    // restare indietro (e non riaffiorare su un omonimo): la si sposta.
+    // il codice fiscale. I segni fatti prima devono SEGUIRE il paziente, non
+    // restare indietro (e non riaffiorare su un omonimo): li si sposta.
     chiaveNota() {
       const k = this.chiavePaz();
       if (!k.startsWith("cf:")) return k;
       const vecchia = "nome:" + normNome(this.nomePaziente());
-      const tutte = noteTutte();
-      if (!tutte[k] && tutte[vecchia] && vecchia !== "nome:") {
-        scriviNota(k, tutte[vecchia].t);
-        scriviNota(vecchia, "");
-        this.log(`${now()}  nota spostata sul codice fiscale del paziente`);
-      } else if (tutte[vecchia] && vecchia !== "nome:") {
-        scriviNota(vecchia, "");   // già migrata: la copia vecchia non deve restare in giro
-      }
       if (vecchia !== "nome:") migraSegni(vecchia, k);
       // «elimina paziente» deve trovare anche questa chiave, con o senza estensione
       segnaChiave(this.episodeId, k);
       return k;
     }
-    // La nota, e alla sua destra i promemoria di questo paziente: le pill e
-    // una sveglia tranquilla che apre il campo, lì dov'è.
-    notaHtmlPaziente() {
-      const k = this.chiaveNota();
-      if (!k) return "";
-      const t = leggiNota(k), ep = this.epDiQuesta();
-      return `<div class="notaw">
-        <div class="notacol">
-          <textarea class="nota" id="nota" rows="2" spellcheck="false"
-            placeholder="Nota su questo paziente — si salva mentre scrivi"
-            aria-label="Nota su questo paziente">${esc(t)}</textarea>
-          <span class="notaok" id="notaok" aria-live="polite"></span>
-        </div>
-        ${ep ? `<div class="prbar">
-          <span class="prslot" data-promslot="${esc(ep)}">${this.promPill(ep)}</span>
-          <button type="button" class="prnuovo" data-promnuovo="${esc(ep)}" data-dove="barra" title="Promemoria: un'ora per fare una cosa (es. 11:30 tropo)" aria-label="Promemoria">${ICO.sveglia}</button>
-          ${this._promIn?.ep === ep && this._promIn.dove === "barra" ? this.promCampo() : ""}
-        </div>` : ""}
-      </div>`;
+    // ============================================================== DA FARE
+    // L'icona «Da fare» di un paziente: le spunte tonde e quante voci sono
+    // aperte; ambra 15 minuti prima di un promemoria, rossa quando è passato.
+    // Un tocco apre la lista lì dov'è. Il passaggio del mouse le dice tutte.
+    dfIcona(ep, tutti = dfTutti(), dove = "lista", ora = Date.now()) {
+      const aperte = dfAperte(ep, tutti), n = aperte.length;
+      const prossimo = aperte.filter((x) => x.t != null).sort((a, b) => a.t - b.t)[0];
+      const b = prossimo ? promBanda(prossimo.t, ora) : "";
+      const riga = (x) => (x.t != null ? promRiga(x, ora) : x.testo);
+      const tit = n ? `Da fare (${n}):\n${aperte.map(riga).join("\n")}` : "Da fare: niente — un tocco per aggiungere";
+      const det = `${n ? `${n} ${n === 1 ? "aperta" : "aperte"}` : "niente"}${prossimo ? ` · ${promRiga(prossimo, ora)}` : ""}`;
+      return `<button type="button" class="dfic${b ? " " + b : ""}${n ? "" : " vuota"}" data-df="${esc(ep)}" data-dove="${esc(dove)}" aria-haspopup="dialog" aria-expanded="${
+        this._df?.ep === ep && this._df.dove === dove ? "true" : "false"}" title="${esc(tit)}" aria-label="${esc("Da fare: " + det)}">${ICO.dafare}${n ? `<b>${n}</b>` : ""}</button>`;
+    }
+    // Il post-it: la prima voce aperta, nell'ordine scelto dal medico
+    dfPost(ep, tutti = dfTutti()) {
+      const x = dfPrima(ep, tutti);
+      return x ? `<span class="dfpost">${x.t != null ? `<b>${esc(hhmm(x.t))}</b> ` : ""}${esc(x.testo)}</span>` : "";
+    }
+    // l'icona, e il post-it, ognuno nel suo posto: si rifanno da soli (dfMetti)
+    dfSlot(ep, tutti, dove) {
+      return `<span class="dfslot" data-dfslot="${esc(ep)}" data-dove="${esc(dove)}">${this.dfIcona(ep, tutti, dove)}</span>`;
+    }
+    dfPostSlot(ep, tutti) {
+      return `<span class="dfpslot" data-dfp="${esc(ep)}">${this.dfPost(ep, tutti)}</span>`;
+    }
+    // Il cuore dei parametri vitali (vedi PARAMETRI VITALI): rosso o ambra,
+    // vuoto con le ore se la riga è vecchia. Un impulso solo, la prima volta
+    // che compare in questa scheda; poi fermo.
+    cuoreHtml(ep, ora = Date.now()) {
+      const c = cuoreDi(statoDi(ep)?.vit, ora);
+      if (!c) return "";
+      // l'impulso dura un secondo da quando il cuore è comparso: un ridisegno
+      // in quel secondo lo continua (il ritardo negativo), non lo ricomincia
+      let pulsa = -1;
+      if (!c.vecchio) {
+        const visti = tabStore.get("cuori.v1", {}) || {}, v = visti[ep], adesso = Date.now();
+        if (!v || v.k !== c.chiave) { visti[ep] = { k: c.chiave, t: adesso }; tabStore.set("cuori.v1", visti); pulsa = 0; }
+        else if (adesso - v.t < 1000) pulsa = Math.max(0, adesso - v.t);
+      }
+      const cosa = c.livello === "ros" ? "parametri vitali critici" : "parametri vitali: NEWS2 5–6";
+      return `<span class="cuore ${c.livello}${c.vecchio ? " vecchio" : ""}${pulsa >= 0 ? " pulsa" : ""}"${pulsa > 0 ? ` style="animation-delay:-${pulsa}ms"` : ""} role="img" aria-label="${
+        esc(cosa + (c.vecchio ? `, misurati ${c.ore} ore fa` : ""))}" title="${esc(c.titolo)}">${c.vecchio ? `♡ ${c.ore}h` : "♥"}</span>`;
     }
 
-    // ============================================================ PROMEMORIA
-    // La pill di un paziente: quanto manca al più vicino, in grassetto, la cosa
-    // da fare, e «+1» se ce ne sono altri. Per esteso nel passaggio del mouse.
-    promPill(ep, tutti) {
-      const l = promDi(ep, tutti);
-      if (!l.length) return "";
-      const s = this.promStato(l);
-      return `<button type="button" class="${s.cls}" data-prom="${esc(ep)}" aria-haspopup="dialog" title="${esc(s.title)}" aria-label="${esc(s.label)}">${s.html}</button>`;
-    }
-    promStato(l, ora = Date.now()) {
-      const p = l[0], b = promBanda(p.t, ora), altri = l.length - 1;
-      return {
-        cls: "prom" + (b ? " " + b : ""),
-        title: `${l.map((x) => promRiga(x, ora)).join("\n")}\nUn tocco: fatto, o 15 minuti in più`,
-        label: `Promemoria: ${promRiga(p, ora)}${altri ? ` e ${altri === 1 ? "un altro" : `altri ${altri}`}` : ""}`,
-        html: `<b>${esc(promTempo(p.t, ora))}</b><span class="prl">${esc(p.testo)}</span>${altri ? `<span class="prpiu">+${altri}</span>` : ""}`,
-      };
-    }
-    // nella Stanza: solo il tempo, piccolo; un tocco apre i suoi promemoria, come la pill
-    promMini(ep, tutti) {
-      const l = promDi(ep, tutti);
-      if (!l.length) return "";
-      const ora = Date.now(), b = promBanda(l[0].t, ora);
-      return `<button type="button" class="prst${b ? " " + b : ""}" data-promt="${esc(ep)}" data-prom="${esc(ep)}" aria-haspopup="dialog" title="${esc(l.map((x) => promRiga(x, ora)).join("\n"))}">${esc(promTempo(l[0].t, ora))}</button>`;
-    }
     // Sulla pill ridotta, e solo quando tocca: il promemoria più urgente fra
     // i pazienti in elenco, a 10 minuti o meno, o già passato. Se è di un
     // altro paziente lo dice — «−3m Ferrari · RX polso» — perché accanto al
@@ -8649,7 +8845,7 @@
       const arch = new Set(pazientiArchiviati().map((p) => p.ep)), noti = new Map(tuttiPazienti().map((p) => [p.ep, p]));
       return Object.entries(tutti).filter(([ep]) => !arch.has(ep))
         .flatMap(([ep, l]) => l.map((p) => ({ ...p, ep, nome: noti.get(ep)?.name || (ep === this.epDiQuesta() && this.nomePaziente()) || "" })))
-        .filter((p) => promBanda(p.t, ora) === "ros").sort((a, b) => a.t - b.t);
+        .filter((p) => promAllarme(p.t, ora)).sort((a, b) => a.t - b.t);
     }
     promUrgenteTesto(u, ora = Date.now()) {
       const chi = u.ep === this.epDiQuesta() ? "" : cognomeTitolo(u.nome) || "ep. " + u.ep;
@@ -8747,38 +8943,30 @@
       menu.style.left = Math.max(8, Math.min(ar.left, innerWidth - menu.offsetWidth - 8)) - wr.left + "px";
       menu.style.top = y - wr.top + "px";
     }
-    // Ogni 30 secondi le pill dei promemoria rifanno i conti SUL POSTO: niente
-    // ridisegno, così non si ruba il fuoco e non si disturba chi scrive.
+    // Ogni 30 secondi le icone «Da fare» rifanno i conti SUL POSTO (il colore,
+    // le voci spuntate da 5 minuti che se ne vanno): niente ridisegno, così
+    // non si ruba il fuoco e non si disturba chi scrive.
     promTick() {
-      const ora = Date.now(), tutti = promTutti();
-      for (const ep of new Set([...this.root.querySelectorAll("[data-promslot]")].map((s) => s.getAttribute("data-promslot")))) this.promMetti(ep, tutti, ora);
-      for (const el of this.root.querySelectorAll("[data-promt]")) {
-        const l = promDi(el.getAttribute("data-promt"), tutti);
-        if (!l.length) { el.remove(); continue; }
-        const b = promBanda(l[0].t, ora);
-        el.className = "prst" + (b ? " " + b : "");
-        el.textContent = promTempo(l[0].t, ora);
-        el.title = l.map((x) => promRiga(x, ora)).join("\n");
-      }
-      for (const el of this.root.querySelectorAll(".prmenu .prst[data-pt]")) {
-        const t = +el.getAttribute("data-pt"), b = promBanda(t, ora);
-        el.className = "prst" + (b ? " " + b : "");
-        el.textContent = promTempo(t, ora);
-      }
+      const ora = Date.now(), tutti = dfTutti(ora);
+      const eps = new Set([...this.root.querySelectorAll("[data-dfslot], [data-dfp]")].map((s) => s.getAttribute("data-dfslot") || s.getAttribute("data-dfp")));
+      for (const ep of eps) this.dfMetti(ep, tutti, ora);
+      if (this._df?.pop?.isConnected) this.dfLista(tutti, ora);
       this.promSegno(ora);
-      const pin = this.root.querySelector("#prin");
-      if (pin && !this._promIn?.err) this.promSuggerisci(pin);
     }
-    // la pill di un paziente rifatta sul posto: l'elemento resta lo stesso
-    promMetti(ep, tutti = promTutti(), ora = Date.now()) {
-      const l = promDi(ep, tutti);
-      for (const slot of this.root.querySelectorAll(`[data-promslot="${CSS.escape(ep)}"]`)) {
-        const pill = slot.querySelector(".prom");
-        if (!l.length) { if (pill !== this.root.activeElement) slot.textContent = ""; continue; }
-        if (!pill) { slot.innerHTML = this.promPill(ep, tutti); continue; }
-        const s = this.promStato(l, ora);
-        pill.className = s.cls; pill.title = s.title; pill.setAttribute("aria-label", s.label); pill.innerHTML = s.html;
+    // l'icona e il post-it di un paziente rifatti sul posto, dappertutto
+    dfMetti(ep, tutti = dfTutti(), ora = Date.now()) {
+      const e = CSS.escape(ep);
+      for (const slot of this.root.querySelectorAll(`[data-dfslot="${e}"]`)) {
+        const dove = slot.getAttribute("data-dove") || "lista", b = slot.querySelector(".dfic");
+        const t = document.createElement("template");
+        t.innerHTML = this.dfIcona(ep, tutti, dove, ora);
+        const n = t.content.firstElementChild;
+        if (!b) { slot.replaceChildren(n); continue; }
+        // lo stesso bottone: il fuoco (e l'àncora della lista aperta) restano
+        b.className = n.className; b.title = n.title; b.setAttribute("aria-label", n.getAttribute("aria-label"));
+        b.setAttribute("aria-expanded", n.getAttribute("aria-expanded")); b.innerHTML = n.innerHTML;
       }
+      for (const slot of this.root.querySelectorAll(`[data-dfp="${e}"]`)) slot.innerHTML = this.dfPost(ep, tutti);
     }
     promClic(e) {
       const segno = e.target.closest?.("[data-prurg]");
@@ -8786,163 +8974,198 @@
         const aperto = this._promMenu?.anchor === segno && this._promMenu.menu.isConnected;
         return aperto ? this.promChiudiMenu(true) : this.promMenuSegno(segno);
       }
-      const pill = e.target.closest?.("[data-prom]");
-      if (pill) {
-        const aperto = this._promMenu?.anchor === pill && this._promMenu.menu.isConnected;
-        return aperto ? this.promChiudiMenu(true) : this.promMenu(pill.getAttribute("data-prom"), pill);
+      const ic = e.target.closest?.("[data-df]");
+      if (ic && !ic.closest(".dfpop")) {
+        e.stopPropagation?.();
+        const ep = ic.getAttribute("data-df");
+        const aperto = this._df && this._df.ep === ep && this._df.anchor === ic && this._df.pop.isConnected;
+        return aperto ? this.dfChiudi(true) : this.dfApri(ep, ic);
       }
-      const sveglia = e.target.closest?.("[data-promnuovo]");
-      if (sveglia) this.promApri(sveglia.getAttribute("data-promnuovo"), sveglia.getAttribute("data-dove"), sveglia);
     }
-    // Il campo si apre lì dove si è toccata la sveglia, senza ridisegnare: la
-    // riga della lista (al posto della nota) o la barra della nota; per chi sta
-    // nella stanza, una piccola finestra sotto di lui (promPop).
-    promCampo() {
-      const b = this._promIn || {};
-      return `<span class="prform"><input type="text" class="prin" id="prin" value="${esc(b.testo || "")}" maxlength="80" spellcheck="false" autocomplete="off"
-        placeholder="es. 11:30 tropo · tra 2h ECG" aria-label="Promemoria: un orario e cosa fare" aria-describedby="prhint"><span class="prhint${b.err ? " ko" : ""}" id="prhint" aria-live="polite">${esc(b.err || "")}</span></span>`;
-    }
-    promApri(ep, dove, sveglia) {
-      const b = this._promIn;
-      if (b && b.ep === ep && b.dove === dove && this.root.querySelector("#prin")) return this.promChiudi(true);   // di nuovo la sveglia: si chiude
-      this.promChiudi();
-      if (dove === "stanza") {   // chi sta nella stanza non ha una riga: il campo sta sotto di lui
-        this._promIn = { ep, dove, testo: "", err: "" };
-        this._promFuoco = true;
-        if (!this.promPop(ep, sveglia)) this._promIn = null;
-        return this.promLega();
-      }
-      const box = dove === "barra" ? sveglia.closest(".prbar") : sveglia.closest(".pzrow")?.querySelector(".pzchi");
-      if (!box) return;
-      this._promIn = { ep, dove, testo: "", err: "" };
-      box.insertAdjacentHTML("beforeend", this.promCampo());
-      this._promFuoco = true;
-      this.promLega();
-    }
-    // Il campo per un paziente della stanza, in una piccola finestra sotto di
-    // lui (sopra, se sotto non c'è posto). Un clic fuori salva, se c'è un
-    // orario; altrimenti chiude.
-    promPop(ep, anchor) {
-      const wrap = this.root.querySelector(".wrap");
-      if (this._promPop) { window.removeEventListener("pointerdown", this._promPop.fuori, true); this._promPop.pop.remove(); this._promPop = null; }
-      if (!wrap || !anchor?.isConnected) return null;
-      const p = tuttiPazienti().find((x) => x.ep === ep), nome = p?.name || "";
-      wrap.insertAdjacentHTML("beforeend", `<div class="prpop" role="dialog" aria-label="Promemoria${nome ? " per " + esc(nome) : ""}"><div class="prmhd">Promemoria${nome ? ` · ${esc(nome)}` : ""}</div>${this.promCampo()}</div>`);
-      const pop = wrap.lastElementChild;
-      const wr = wrap.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
-      let y = ar.bottom + 6;
-      if (y + pop.offsetHeight + 28 > innerHeight - 8) y = Math.max(8, ar.top - 6 - pop.offsetHeight - 28);
-      pop.style.left = Math.max(8, Math.min(ar.left, innerWidth - pop.offsetWidth - 8)) - wr.left + "px";
-      pop.style.top = y - wr.top + "px";
-      const fuori = (e) => {
-        if (e.composedPath().includes(pop)) return;
-        const inp = pop.querySelector("#prin");
-        if (inp && inp.value.trim() && !this._promIn?.err) { this.promSalva(inp, false); if (this._promIn) return; }
-        this.promChiudi();
-      };
-      window.addEventListener("pointerdown", fuori, true);
-      this._promPop = { pop, fuori };
-      return pop;
-    }
-    // gli ascoltatori del campo (aperto ora, o ridisegnato mentre era aperto)
-    promLega() {
-      const inp = this.root.querySelector("#prin");
-      if (!inp || inp._legato) return;
-      inp._legato = true;
-      if (this._promFuoco) {
-        this._promFuoco = false;
-        inp.focus({ preventScroll: true });
-        const [a, z] = this._promSel || [inp.value.length, inp.value.length];
-        inp.setSelectionRange(a, z);
-        this._promSel = null;
-      }
-      this.promSuggerisci(inp);
-      inp.addEventListener("input", () => {
-        if (this._promIn) { this._promIn.testo = inp.value; this._promIn.err = ""; }
-        this.promSuggerisci(inp);
-      });
-      inp.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") { e.preventDefault(); this.promSalva(inp, true); }
-        else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.promChiudi(true); }
-      });
-      // uscendo col mouse NON si ridisegna: il clic che ha tolto il fuoco deve
-      // arrivare. Se c'è un orario si salva, come la nota; senza, il campo resta.
-      inp.addEventListener("blur", (e) => {
-        if (!inp.isConnected || !this._promIn || !document.hasFocus()) return;   // un'altra finestra non è un'uscita dal campo
-        if (e.relatedTarget?.closest?.("[data-promnuovo]")?.getAttribute("data-promnuovo") === this._promIn.ep) return;   // la sveglia: la chiude lei
-        this.promSalva(inp, false);
-      });
-    }
-    // sotto il campo, mentre si scrive: quando sarà
-    promSuggerisci(inp) {
-      const h = inp.parentElement?.querySelector(".prhint");
-      if (!h) return;
-      const b = this._promIn;
-      if (b?.err) { h.textContent = b.err; h.classList.add("ko"); return; }
-      const p = inp.value.trim() ? leggiPromemoria(inp.value, Date.now()) : null;
-      h.classList.remove("ko");
-      h.textContent = p ? promRiga({ t: p.t, testo: "" }, Date.now()) : "";
-    }
-    promSalva(inp, tasto) {
-      const b = this._promIn;
-      if (!b) return;
-      if (!inp.value.trim()) return this.promChiudi(tasto);
-      const p = leggiPromemoria(inp.value, Date.now());
-      const errore = !p ? "Scrivi un orario: 11:30, o tra 2h"
-        : promDi(b.ep).length >= PROM_MAX ? `Al massimo ${PROM_MAX} promemoria per paziente`
-        : !promAggiungi(b.ep, p) ? "Non salvato: la memoria del browser è piena o bloccata" : "";
-      if (errore) { b.err = errore; this.promSuggerisci(inp); return; }
-      this.promMetti(b.ep);
-      if (b.dove === "stanza") {
-        // nella stanza il tempo sta accanto al nome (del letto, o del paziente
-        // nell'area): rifatto sul posto, senza ridisegnare
-        const ep = CSS.escape(b.ep);
-        this.root.querySelectorAll(`.stmap [data-promt="${ep}"]`).forEach((el) => el.remove());
-        (this.root.querySelector(`.stmap .stbed[data-occep="${ep}"] .stbedhd`) || this.root.querySelector(`.stmap .stp[data-stp="${ep}"] .stp1`))
-          ?.insertAdjacentHTML("beforeend", this.promMini(b.ep));
-      }
-      this.promChiudi(tasto);
-    }
-    promChiudi(fuoco) {
-      const b = this._promIn, pp = this._promPop;
-      this._promIn = null;
-      this._promPop = null;
-      if (pp) { window.removeEventListener("pointerdown", pp.fuori, true); pp.pop.remove(); }
-      this.root.querySelector(".prform")?.remove();
-      if (fuoco && b) this.root.querySelector(b.dove === "stanza" ? `.stmap .stp[data-stp="${CSS.escape(b.ep)}"]` : `[data-promnuovo="${CSS.escape(b.ep)}"]`)?.focus();
-    }
-    // L'elenco di un paziente, sotto la sua pill: per ognuno ✓ Fatto (si
-    // annulla per 8 secondi) e +15 min. Esc, o un clic fuori, lo chiudono.
-    promMenu(ep, anchor) {
+    // La lista, in una piccola finestra sotto l'icona (sopra, se sotto non
+    // c'è posto): le voci con la spunta tonda, il loro orario se ce l'hanno, e
+    // in fondo il campo su una riga per aggiungerne una. Esc, o un clic
+    // fuori, la chiudono; niente si salva a parte: ogni gesto è già salvato.
+    dfApri(ep, anchor, { fuoco = true, testo = "" } = {}) {
+      this.dfChiudi();
       this.promChiudiMenu();
-      const l = promDi(ep), wrap = this.root.querySelector(".wrap");
-      if (!l.length || !wrap || !anchor?.isConnected) return;
-      const ora = Date.now(), p0 = tuttiPazienti().find((x) => x.ep === ep);
+      this.stanzaChiudiMenu?.();
+      const wrap = this.root.querySelector(".wrap");
+      if (!ep || !wrap || !anchor?.isConnected) return;
+      const p0 = tuttiPazienti().find((x) => x.ep === ep);
       const nome = p0?.name || (ep === this.epDiQuesta() ? this.nomePaziente() : "");
-      const riga = (p) => {
-        const b = promBanda(p.t, ora);
-        return `<div class="prmrow"><span class="prst${b ? " " + b : ""}" data-pt="${p.t}">${esc(promTempo(p.t, ora))}</span>
-          <span class="prmq" title="${esc(promRiga(p, ora))}"><b>${esc(promOra(p.t, ora))}</b> ${esc(p.testo)}</span>
-          <button type="button" class="prmb ok" data-pfatto="${esc(p.id)}" title="Fatto: lo tolgo (si può annullare)">✓ Fatto</button>
-          <button type="button" class="prmb" data-prinvia="${esc(p.id)}" title="Rimanda di 15 minuti">+15 min</button></div>`;
-      };
-      wrap.insertAdjacentHTML("beforeend", `<div class="prmenu" role="dialog" aria-label="Promemoria${nome ? " di " + esc(nome) : ""}">
-        <div class="prmhd">Promemoria${nome ? ` · ${esc(nome)}` : ""}</div>${l.map(riga).join("")}</div>`);
-      const menu = wrap.lastElementChild;
-      // sotto la pill; se sotto non c'è posto, sopra; sempre dentro lo schermo
-      this.promPosiziona(menu, anchor, wrap);
-      menu.addEventListener("click", (e) => {
-        const f = e.target.closest("[data-pfatto]"), r = e.target.closest("[data-prinvia]");
-        if (f) this.promFatto(ep, f.getAttribute("data-pfatto"));
-        else if (r) { promRinvia(ep, r.getAttribute("data-prinvia")); this.promDopo(ep); }
-      });
-      menu.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.promChiudiMenu(true); } });
-      // col Tab fuori dall'elenco si chiude (verso la sua pill no: la pill lo chiude da sé)
-      menu.addEventListener("focusout", (e) => { if (e.relatedTarget && !menu.contains(e.relatedTarget) && e.relatedTarget !== anchor) this.promChiudiMenu(); });
-      const fuori = (e) => { const via = e.composedPath(); if (!via.includes(menu) && !via.includes(anchor)) this.promChiudiMenu(); };
+      wrap.insertAdjacentHTML("beforeend", `<div class="dfpop" role="dialog" aria-label="Da fare${nome ? " · " + esc(nome) : ""}">
+        <div class="dfhd"><b>Da fare</b>${nome ? `<span> · ${esc(nome)}</span>` : ""}</div>
+        <ul class="dfl" aria-label="Voci: Alt+↑ e Alt+↓ le spostano"></ul>
+        <div class="dfadd"><input type="text" class="dfin" id="dfin" maxlength="160" autocomplete="off" spellcheck="false" value="${esc(testo)}"
+          placeholder="+ Aggiungi… (con un'ora è un promemoria)" aria-label="Aggiungi: una cosa da fare; con un'ora (11:30 tropo, tra 2h ECG) è un promemoria" aria-describedby="dfhint">
+          <span class="dfhint" id="dfhint" aria-live="polite"></span></div>
+        <span class="dfsr" aria-live="polite"></span>
+      </div>`);
+      const pop = wrap.lastElementChild;
+      const fuori = (ev) => { const via = ev.composedPath(); if (!via.includes(pop) && !via.includes(this._df?.anchor)) this.dfChiudi(); };
       window.addEventListener("pointerdown", fuori, true);
-      this._promMenu = { menu, anchor, ep, fuori };
-      menu.querySelector("button")?.focus({ preventScroll: true });
+      this._df = { ep, dove: anchor.getAttribute("data-dove") || "", pop, anchor, fuori, testo };
+      anchor.setAttribute("aria-expanded", "true");
+      this.dfLista();
+      this.promPosiziona(pop, anchor, wrap);
+      const inp = pop.querySelector("#dfin");
+      // per riaprirla uguale dopo un ridisegno: il fuoco era qui dentro?
+      pop.addEventListener("focusin", () => { if (this._df?.pop === pop) this._df.inFuoco = true; });
+      pop.addEventListener("focusout", (ev) => { if (this._df?.pop === pop && ev.relatedTarget && !pop.contains(ev.relatedTarget)) this._df.inFuoco = false; });
+      pop.addEventListener("click", (ev) => {
+        const ck = ev.target.closest(".dfck"), piu = ev.target.closest("[data-dfpiu]");
+        if (ck) {
+          const li = ck.closest(".dfi"), id = li.getAttribute("data-id"), si = ck.getAttribute("aria-checked") !== "true";
+          dfSpunta(ep, id, si);
+          this.dfDopo(id, si ? "Fatta: se ne va fra 5 minuti" : "Di nuovo da fare");
+        } else if (piu) {
+          promRinvia(ep, piu.getAttribute("data-dfpiu"));
+          this.dfDopo(piu.getAttribute("data-dfpiu"), "Rimandata di 15 minuti");
+        }
+      });
+      pop.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); return this.dfChiudi(true); }
+        const li = ev.target.closest?.(".dfi");
+        if (li && ev.altKey && (ev.key === "ArrowUp" || ev.key === "ArrowDown")) {
+          ev.preventDefault();
+          const l = dfDi(ep), i = l.findIndex((x) => x.id === li.getAttribute("data-id")), a = i + (ev.key === "ArrowUp" ? -1 : 1);
+          if (i < 0 || a < 0 || a >= l.length) return;
+          dfSposta(ep, l[i].id, a);
+          this.dfDopo(l[i].id, `Spostata: ${a + 1}ª di ${l.length}`);
+        }
+      });
+      // trascinare dalla maniglia ⋮⋮, col mouse o col dito
+      pop.addEventListener("pointerdown", (ev) => { const g = ev.target.closest(".dfgrip"); if (g) this.dfTrascina(ev, g.closest(".dfi")); });
+      inp.addEventListener("input", () => { if (this._df) this._df.testo = inp.value; this.dfSuggerisci(inp); });
+      inp.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter") return;
+        ev.preventDefault();
+        if (!inp.value.trim()) return;
+        const x = dfAggiungi(ep, inp.value);
+        const h = pop.querySelector(".dfhint");
+        if (!x) {
+          h.textContent = dfAperte(ep).length >= PROM_MAX ? `Al massimo ${PROM_MAX} voci aperte per paziente` : "Non salvata: la memoria del browser è piena o bloccata";
+          h.classList.add("ko");
+          return;
+        }
+        inp.value = ""; this._df.testo = "";
+        this.dfDopo(null, x.t != null ? `Aggiunta, alle ${promOra(x.t, Date.now())}` : "Aggiunta");
+      });
+      this.dfSuggerisci(inp);
+      if (fuoco) { inp.focus({ preventScroll: true }); inp.setSelectionRange(inp.value.length, inp.value.length); }
+    }
+    // sotto il campo, mentre si scrive: se c'è un'ora, quando sarà
+    dfSuggerisci(inp) {
+      const h = inp.parentElement?.querySelector(".dfhint");
+      if (!h) return;
+      const p = inp.value.trim() ? leggiPromemoria(inp.value, Date.now(), DF_LUNGO) : null;
+      h.classList.remove("ko");
+      h.textContent = p ? `promemoria: ${promRiga({ t: p.t, testo: "" }, Date.now())}` : "";
+    }
+    dfVoce(x, ora) {
+      const b = x.t != null && !x.fatto ? promBanda(x.t, ora) : "";
+      return `<li class="dfi${x.fatto ? " fatto" : ""}" data-id="${esc(x.id)}">
+        <span class="dfgrip" aria-hidden="true" title="Trascina per spostarla (o Alt+↑ / Alt+↓)">⋮⋮</span>
+        <button type="button" class="dfck" role="checkbox" aria-checked="${x.fatto ? "true" : "false"}" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+          aria-label="${esc(x.testo + (x.t != null ? ", alle " + promOra(x.t, ora) : ""))}" title="${x.fatto ? "Fatta: un tocco la riapre (se ne va fra 5 minuti)" : "Un tocco quando è fatta"}"></button>
+        <span class="dftx">${esc(x.testo)}</span>
+        ${x.t != null ? `<span class="dft${b ? " " + b : ""}" title="${esc(promRiga(x, ora))}">${esc(promOra(x.t, ora))}</span>` : ""}
+        ${x.t != null && !x.fatto ? `<button type="button" class="dfpiu" data-dfpiu="${esc(x.id)}" title="Rimanda di 15 minuti" aria-label="Rimanda ${esc(x.testo)} di 15 minuti">+15′</button>` : ""}
+      </li>`;
+    }
+    dfLista(tutti = dfTutti(), ora = Date.now()) {
+      const d = this._df, ul = d?.pop?.querySelector(".dfl");
+      if (!ul || this._dfPresa) return;
+      const l = dfDi(d.ep, tutti);
+      const html = l.length ? l.map((x) => this.dfVoce(x, ora)).join("") : `<li class="dfvuota">Niente da fare. Scrivi qui sotto, una cosa per riga.</li>`;
+      if (ul._firma === html) return;   // niente di cambiato: il fuoco resta dov'è
+      // rifatta: il fuoco torna sulla stessa voce, se c'è ancora
+      const f = this.root.activeElement?.closest?.(".dfi")?.getAttribute("data-id"), suCk = !!this.root.activeElement?.classList?.contains("dfck");
+      ul.innerHTML = html;
+      ul._firma = html;
+      if (f) (ul.querySelector(`.dfi[data-id="${CSS.escape(f)}"] ${suCk ? ".dfck" : ".dfpiu"}`) || ul.querySelector(`.dfi[data-id="${CSS.escape(f)}"] .dfck`) || d.pop.querySelector("#dfin"))?.focus({ preventScroll: true });
+    }
+    // dopo un gesto: la lista, l'icona e il post-it rifatti, il fuoco dov'era
+    dfDopo(id, detto) {
+      const d = this._df;
+      if (!d) return;
+      const tutti = dfTutti();
+      this.dfLista(tutti);
+      this.dfMetti(d.ep, tutti);
+      const sr = d.pop.querySelector(".dfsr");
+      if (sr && detto) sr.textContent = detto;
+      const f = id ? d.pop.querySelector(`.dfi[data-id="${CSS.escape(id)}"] .dfck`) : d.pop.querySelector("#dfin");
+      (f || d.pop.querySelector("#dfin"))?.focus({ preventScroll: true });
+    }
+    // Trascinare una voce: oltre i 4 px (10 col dito) la voce segue il
+    // puntatore e le altre le fanno posto; lasciata, l'ordine si salva. Esc,
+    // o un annullo del browser, la rimettono dov'era.
+    dfTrascina(e, li) {
+      const d = this._df;
+      if (!d || !li || e.button !== 0) return;
+      e.preventDefault();
+      const ul = li.parentElement, id = li.getAttribute("data-id"), y0 = e.clientY, soglia = e.pointerType === "mouse" ? 4 : 10;
+      let partito = false;
+      this._dfPresa = true;
+      const mm = (ev) => {
+        if (!partito && Math.abs(ev.clientY - y0) < soglia) return;
+        ev.preventDefault();
+        if (!partito) { partito = true; li.classList.add("presa"); ul.classList.add("trascino"); }
+        const altre = [...ul.querySelectorAll(".dfi")].filter((x) => x !== li);
+        const prima = altre.find((x) => { const r = x.getBoundingClientRect(); return ev.clientY < r.top + r.height / 2; });
+        if (prima) { if (li.nextElementSibling !== prima) ul.insertBefore(li, prima); } else if (ul.lastElementChild !== li) ul.appendChild(li);
+      };
+      const fine = (salva) => {
+        window.removeEventListener("pointermove", mm, true);
+        window.removeEventListener("pointerup", su, true);
+        window.removeEventListener("pointercancel", via, true);
+        window.removeEventListener("keydown", kd, true);
+        this._dfPresa = false;
+        li.classList.remove("presa"); ul.classList.remove("trascino");
+        if (!partito) return;
+        const a = [...ul.querySelectorAll(".dfi")].indexOf(li);
+        if (salva) dfSposta(d.ep, id, a);
+        ul._firma = "";   // l'ordine sullo schermo l'ha cambiato il trascinamento: si rifà comunque
+        this.dfDopo(id, salva ? `Spostata: ${a + 1}ª` : "");
+      };
+      const su = () => fine(true), via = () => fine(false);
+      const kd = (ev) => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); fine(false); } };
+      window.addEventListener("pointermove", mm, true);
+      window.addEventListener("pointerup", su, true);
+      window.addEventListener("pointercancel", via, true);
+      window.addEventListener("keydown", kd, true);
+    }
+    dfChiudi(ritorna) {
+      const d = this._df;
+      if (!d) return;
+      this._df = null;
+      window.removeEventListener("pointerdown", d.fuori, true);
+      d.pop.remove();
+      const a = d.anchor?.isConnected ? d.anchor : this.root.querySelector(`[data-df="${CSS.escape(d.ep)}"][data-dove="${CSS.escape(d.dove)}"]`);
+      a?.setAttribute("aria-expanded", "false");
+      if (ritorna) a?.focus();
+    }
+    // il pannello si è ridisegnato con la lista aperta: si riapre, uguale, sotto la sua icona
+    dfRiattacca() {
+      const d = this._df;
+      if (!d || d.pop.isConnected) return;
+      const scriveva = !this.root.activeElement && d.inFuoco;
+      window.removeEventListener("pointerdown", d.fuori, true);
+      this._df = null;
+      const a = this.dfAncora(d.ep, d.dove);
+      if (!a || this.collapsed) return;
+      this.dfApri(d.ep, a, { fuoco: scriveva, testo: d.testo || "" });
+      const inp = scriveva && d.sel ? this.root.querySelector("#dfin") : null;
+      if (inp) inp.setSelectionRange(...d.sel);
+    }
+    // sotto cosa si apre la lista di un paziente: la sua icona dove si vede
+    // (quella chiesta, se c'è), se no il paziente nella stanza
+    dfAncora(ep, dove = "") {
+      const e = CSS.escape(ep), vede = (el) => !!el && el.getClientRects().length > 0;
+      const ic = [...this.root.querySelectorAll(`[data-df="${e}"]`)].filter(vede);
+      return ic.find((x) => x.getAttribute("data-dove") === dove) || ic[0]
+        || [...this.root.querySelectorAll(`.stmap .stp[data-stp="${e}"]`)].find(vede) || null;
     }
     promChiudiMenu(ritorna) {
       const a = this._promMenu;
@@ -8952,20 +9175,6 @@
       window.removeEventListener("pointerdown", a.fuori, true);
       a.menu.remove();
       if (ritorna && a.anchor?.isConnected) a.anchor.focus();
-    }
-    // ✓ Fatto: via, e «Annulla» per 8 secondi
-    promFatto(ep, id) {
-      const p = promTogli(ep, id);
-      if (p) this.stanzaAnnullabile(`Fatto: ${p.testo}`, () => promRimetti(ep, p));
-      this.promDopo(ep);
-    }
-    // dopo ✓ o +15 si ridisegna; l'elenco resta aperto finché c'è qualcosa
-    promDopo(ep) {
-      this.promChiudiMenu();
-      this.render();
-      const a = this.root.querySelector(`[data-prom="${CSS.escape(ep)}"]`);
-      if (a && promDi(ep).length) this.promMenu(ep, a);
-      else this.root.querySelector(`[data-promnuovo="${CSS.escape(ep)}"]`)?.focus();
     }
 
     // l'impronta del codice fiscale di QUESTO episodio, presa dai prelievi
@@ -9057,7 +9266,7 @@
       // cui si sta scrivendo: tornare su questa scheda non deve costare il cursore
       if ((this.storico?.letto || 0) + "|" + this.storicoAltri === prima) return;
       if (this.view === "dimtesto" || this.view === "dimimport" || this.view === "eotesto") return;
-      if (this.root.activeElement && ["nota", "riffiltro"].includes(this.root.activeElement.id)) return;
+      if (this.root.activeElement && ["dfin", "riffiltro"].includes(this.root.activeElement.id)) return;
       this.render();
     }
 
@@ -9337,7 +9546,8 @@
         }
         for (const e of st.nuovi) if (e.tipo !== "lab") voci.push(`${frase(e.label)}: referto da leggere`);
       }
-      for (const p of promDi(ep)) voci.push(`promemoria «${p.testo || hhmm(p.t)}»`);
+      const daFare = dfAperte(ep).length;
+      if (daFare) voci.push(`Da fare: ${daFare}`);
       const segnati = Object.keys(leggiSegni(this.chiaveNota())).length;
       if (segnati) voci.push(segnati === 1 ? "1 valore segnato" : `${segnati} valori segnati`);
       if (st && st.valoriFuori) voci.push(`${st.valoriFuori === 1 ? "1 valore nuovo" : `${st.valoriFuori} valori nuovi`} fuori range, non letti`);
@@ -10385,30 +10595,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           : "Esportazione non riuscita.";
         this.render();
       });
-      const nota = this.root.querySelector("#nota");
-      if (nota) {
-        const cresci = () => {
-          nota.style.height = "auto";
-          nota.style.height = Math.min(nota.scrollHeight, 160) + "px";
-        };
-        cresci();
-        let attesa = null;
-        nota.addEventListener("input", () => {
-          cresci();
-          clearTimeout(attesa);
-          attesa = setTimeout(() => {
-            const ok = scriviNota(this.chiaveNota(), nota.value);
-            const spia = this.root.querySelector("#notaok");
-            if (spia) {
-              spia.textContent = ok ? "salvata" : "NON salvata";
-              spia.classList.toggle("ko", !ok);
-              setTimeout(() => { if (spia.isConnected) spia.textContent = ""; }, 1400);
-            }
-          }, 500);
-        });
-        // uscire dal campo salva subito: non si perde una riga per un clic
-        nota.addEventListener("blur", () => { clearTimeout(attesa); scriviNota(this.chiaveNota(), nota.value); });
-      }
       $("#tapri")?.addEventListener("click", () => this.setView("tempi"));
       $("#tempimenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("tempi"); });
       $("#rifmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("riferimenti"); this.root.querySelector("#riffiltro")?.focus(); });
@@ -10564,7 +10750,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#refsave")?.addEventListener("click", () => this.saveAllReferti());
       $("#copylog")?.addEventListener("click", (e) => { e.preventDefault(); this.copyLog(); });
       this.bindStanza();
-      this.promLega();   // il campo di un promemoria rimasto aperto
+      this.dfRiattacca();   // la lista «Da fare» rimasta aperta
     }
 
     // Patch only the commit zone while the doctor types (a full re-render
@@ -12110,23 +12296,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // l'indirizzo della sua pagina, come il gestionale l'ha dato: solo da leggere, e di quell'episodio
   const ponteUrlPaziente = (p) => (p && leggibilePagina(p.url) && param(p.url, "EPISODIO_ID") === p.ep
     && /\/menuPsoEpisodio\.do$/i.test(new URL(p.url).pathname) ? p.url : "");
-  // la chiave della nota, come la legge la riga del paziente (notaDi): col
-  // codice fiscale; senza, il nome — mai se c'è un omonimo fra gli attivi
-  function ponteChiaveNota(p) {
-    if (String(p.pk || "").startsWith("cf:")) return p.pk;
-    const n = normNome(p.name);
-    if (!n || knownPatients().some((x) => x.ep !== p.ep && normNome(x.name) === n)) return "";
-    return p.pk || "nome:" + n;
-  }
-
   // L'elenco, come la vista Pazienti: chi è in lista e chi è nella stanza (col
-  // suo posto), il triage, la nota, i promemoria; gli episodi precedenti in fondo.
+  // suo posto), il triage, la nota e i promemoria — cioè «Da fare»: la nota è
+  // la prima voce aperta senza ora, i promemoria quelle con l'ora (il telefono
+  // non ha la lista intera) —; gli episodi precedenti in fondo.
   function pontePazienti() {
     const m = PANNELLO.pazModello();
     return [...m.info.values()].map((i) => ({
       // (due con lo stesso nome: il nome porta il segno che li distingue, «· …9001», anche nella conferma)
       ep: i.p.ep, nome: i.lungo + i.coda, breve: i.breve + i.coda, omonimo: !!i.omonimo, triage: i.p.triage || "",
-      posto: PANNELLO.nomePosto(m, i), nota: i.nota || "", prec: !!i.prec, spento: !!i.spento, visto: i.p.ts || 0,
+      posto: PANNELLO.nomePosto(m, i), nota: dfNota(i.p.ep, m.df)?.testo || "", prec: !!i.prec, spento: !!i.spento, visto: i.p.ts || 0,
       eta: Number.isInteger(i.p.eta) ? i.p.eta : String(i.p.pk || "").startsWith("cf:") ? etaDaCf(i.p.pk.slice(3)) : null,
       prom: promDi(i.p.ep, m.prom).map((x) => ({ id: x.id, t: x.t, testo: x.testo })),
       ordina: !!ponteUrlPaziente(i.p) && !i.prec,
@@ -12284,16 +12463,20 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
       return fatto({ ok: true, dati: { url, paziente: p.name }, registro: `aggiorna i valori di ${p.name}` });
     }
+    // La nota del telefono è la prima voce aperta senza ora di «Da fare»:
+    // scritta, cambia quella (o, se non c'è, ne fa una in cima: il post-it);
+    // vuota, la toglie. Mai un'ora letta dentro: una nota resta una nota.
     if (cmd === "nota") {
-      const k = ponteChiaveNota(p);
-      if (!k) return { ok: false, errore: "Due pazienti con questo nome: la nota scrivila dal PC" };
-      if (!scriviNota(k, String(a.testo || ""))) return { ok: false, errore: "Nota non salvata: la memoria del browser del PC è piena o bloccata" };
+      const testo = String(a.testo || "").replace(/\s*\n+\s*/g, " · ").replace(/\s+/g, " ").trim().slice(0, 500);
+      const n = dfNota(p.ep);
+      const ok = n ? (testo ? dfCambia(p.ep, n.id, testo) : dfTogli(p.ep, n.id)) : !testo || !!dfAggiungi(p.ep, testo, { t: null, inCima: true, max: 500 });
+      if (!ok) return { ok: false, errore: n || dfAperte(p.ep).length < PROM_MAX ? "Nota non salvata: la memoria del browser del PC è piena o bloccata" : `Già ${PROM_MAX} cose da fare per questo paziente` };
       return fatto({ ok: true, dati: riga(), registro: `nota di ${p.name}` });
     }
     if (cmd === "promemoria") {
       const x = leggiPromemoria(a.testo, Date.now());
       if (!x) return { ok: false, errore: "Scrivi anche l'ora: «11:30 tropo», «tra 2h ECG»" };
-      if (promDi(p.ep).length >= PROM_MAX) return { ok: false, errore: `Già ${PROM_MAX} promemoria per questo paziente` };
+      if (dfAperte(p.ep).length >= PROM_MAX) return { ok: false, errore: `Già ${PROM_MAX} cose da fare per questo paziente` };
       if (!promAggiungi(p.ep, x)) return { ok: false, errore: "Promemoria non salvato: la memoria del browser del PC è piena o bloccata" };
       return fatto({ ok: true, dati: riga(), registro: `promemoria per ${p.name}: ${promRiga(x, Date.now())}` });
     }
