@@ -700,7 +700,7 @@ giorno e sessanta pazienti: un turno è di dodici ore.
 nuovo»), poi «Fatto». Via **tutto** quello che sa dei pazienti e del turno — elenco e posti nella
 stanza, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
 cliniche, ordini finiti, richieste da confermare, quesiti, la memoria di ogni scheda aperta, gli
-ordini che ricorda il Ponte; dei Tempi resta la durata, non il paziente. **Restano**: stampanti e
+ordini che ricorda il Ponte, la registrazione; dei Tempi resta la durata, non il paziente. **Restano**: stampanti e
 stampa automatica, indirizzo del portale, associazione con l'iPhone, fogli di dimissione ed EO,
 la stanza, la finestra. Non c'è mentre un ordine è in corso.
 
