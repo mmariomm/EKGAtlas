@@ -1789,6 +1789,7 @@
   // Al massimo due scaricamenti di referti insieme, per tutta la scheda: un
   // tocco su un referto e «Salva» passano dalla stessa fila.
   const scaricaRef = codaLimitata(2);
+  const PAUSA_REF = [600, 1600];   // ms prima di ogni scaricamento in fila: mai a raffica
 
   function refertoTipo(e) {
     const l = String(e.label || "").toUpperCase();
@@ -2351,6 +2352,22 @@
     // I posti nella stanza NO: sono solo numeri di episodio, e chi viene
     // riaperto dopo una sessione scaduta deve ritrovare il suo letto.
     try { if (typeof chrome !== "undefined" && chrome.runtime?.id) chrome.runtime.sendMessage({ t: "clearRef" }, () => void chrome.runtime.lastError); } catch { /* not the extension build */ }
+  }
+  // «Reset dati pazienti» (⋯): via tutto quello che si sa dei pazienti e del
+  // turno, qui e nella memoria di questa scheda. Restano le impostazioni
+  // (finestra, stanza, catalogo, stampe già fatte) e i modelli del medico.
+  const RESET_VIA = () => ["patients.v1", "stanza.posti.v1", STATO, PROM, PROM_VECCHI, noteKey, segniKey, "refVisti.v1",
+    "refPortale", DA_CONFERMARE, "quesiti", "quesiti.ts", "lastQ", APERTA, PRESIDIO];
+  function azzeraScheda() {
+    try { for (const k of Object.keys(sessionStorage)) if (k.startsWith(NS)) sessionStorage.removeItem(k); } catch { /* niente */ }
+  }
+  function azzeraPazienti() {
+    for (const k of RESET_VIA()) store.del(k);
+    const t = store.get(tempiKey, null);   // i tempi restano, senza chi
+    if (Array.isArray(t)) store.set(tempiKey, t.map(({ paz, ep, ...x }) => x));
+    azzeraScheda();
+    // le altre schede puliscono la loro (vedi «storage» all'avvio)
+    try { localStorage.setItem(NS + "reset.v1", String(Date.now())); localStorage.removeItem(NS + "reset.v1"); } catch { /* niente */ }
   }
 
   // The doctor's edits live in localStorage under their own key. They are
@@ -4435,6 +4452,7 @@
                    font-size: 13px; color: #16232E; cursor: pointer; }
     .menu button:hover, .menu button:focus-visible { background: #F1F4F7; outline: none; }
     .menu hr { border: 0; border-top: 1px solid #EEF2F6; margin: 5px 4px; }
+    .menu button.mrischio { color: #B3261E; font-weight: 700; }
     .menu .mver { padding: 6px 10px 4px; font-size: 12px; color: #5B6B7A; }
     .pbar { flex: 0 0 auto; height: 3px; background: #E3E8EF; }
     .pbar i { display: block; height: 100%; background: #0B5CAD; transition: width .25s ease; }
@@ -5561,7 +5579,7 @@
           return;
         }
         // una stampa in corso (Esc la annulla) e il conto alla rovescia della conferma: l'Esc è loro
-        if (document.getElementById("psassist-print") || document.getElementById("psassist-confirm")) return;
+        if (document.getElementById("psassist-print") || document.getElementById("psassist-confirm") || document.getElementById("psassist-visore")) return;
         // Solo col pannello aperto: da quando il giro va in sottofondo, un Esc
         // dato al gestionale (una tendina, un campo) non deve fermare gli
         // esami. Dalla striscia si ferma col quadratino rosso.
@@ -5591,7 +5609,7 @@
           return;
         }
         if (this.collapsed || this.runState === "running") return;
-        if (via.some((x) => x.id === "psassist-print" || x.id === "psassist-confirm")) return;   // le nostre finestre di stampa e conferma
+        if (via.some((x) => x.id === "psassist-print" || x.id === "psassist-confirm" || x.id === "psassist-visore")) return;   // le nostre finestre: stampa, conferma, visore
         this.riduci();
       };
       window.addEventListener("pointerdown", this._fuori, true);
@@ -7061,6 +7079,8 @@
                     ${this.stampaPronta() ? (this.stampaAuto.s.attiva === false
                       ? `<button role="menuitem" id="stautosw" title="Ogni foglio va da solo alla sua stampante, senza dialogo">Stampa automatica: spenta · Accendi</button>`
                       : `<button role="menuitem" id="stautosw" title="I fogli tornano a passare dal dialogo di stampa">Stampa automatica: attiva · Spegni</button>`) : ""}
+                    ${this.giroInCorso() ? "" : this.resetArmato() ? `<button role="menuitem" id="resetpaz" class="mrischio">Cancello tutto? Tocca di nuovo</button>`
+                      : `<button role="menuitem" id="resetpaz" title="Pazienti, valori, referti, «Da fare», ordini finiti. Restano stampanti, portale, iPhone e i tuoi modelli">Reset dati pazienti</button>`}
                     ${(typeof chrome !== "undefined" && chrome.runtime?.id) && !this.giroInCorso() ? `<button role="menuitem" id="extreload" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">Ricarica estensione</button>` : ""}
                     <div class="mver">${esc(APP)} ${VERSION}</div>
                   </div>` : ""}
@@ -9486,10 +9506,11 @@
       this.log(`${now()}  ${shortLabel(e.label)}: referto non letto (${why})`);
     }
 
-    // «⭳ Salva i referti»: quelli non ancora salvati, due alla volta, e di
-    // ognuno si legge subito il testo (dalla copia appena presa). Il pannello
-    // non salva MAI da solo: lo decide il medico, con questo bottone o con un
-    // tocco su un referto.
+    // «⭳ Salva i referti» e «⭳ Carica i valori»: quelli non ancora salvati
+    // (mai il laboratorio), due alla volta con una pausa a caso prima di
+    // ognuno, e di ognuno si legge subito il testo (dalla copia appena presa).
+    // Il pannello non salva MAI da solo: lo decide il medico, con uno di
+    // questi bottoni o con un tocco su un referto.
     async saveAllReferti() {
       if (!hasExt() || this._salva) return;   // due clic non sono due salvataggi
       const todo = this.refertiMostrati().filter((e) => !(this.refCache || {})[e.id]
@@ -9497,8 +9518,9 @@
       if (!todo.length) return;
       this._salva = { fatti: 0, totale: todo.length };
       this.refBusy = this.refBusy || {};
+      const pausa = () => sleep(PAUSA_REF[0] + Math.random() * (PAUSA_REF[1] - PAUSA_REF[0]));
       try {
-        await Promise.all(todo.map((e) => this.inFila(e, () => this.scaricaReferto(e)).then(async (r) => {
+        await Promise.all(todo.map((e) => this.inFila(e, () => pausa().then(() => this.scaricaReferto(e))).then(async (r) => {
           if (!r.salvato) {
             this.refBusy[e.id] = r.perche || "non salvato";
             this.log(`${now()}  referto non salvato (${shortLabel(e.label)}): ${this.refBusy[e.id]}`);
@@ -9516,6 +9538,13 @@
         this._salva = null;
         this.render();
       }
+    }
+
+    // dopo i valori, i referti: i già salvati (anche da un'altra scheda) no
+    async caricaReferti() {
+      if (!hasExt() || this._salva) return;
+      await this.refreshRefCache().catch(() => {});
+      return this.saveAllReferti();
     }
 
     txtKey(id) { return `reftxt.${this.episodeId || "x"}.${id}`; }
@@ -9947,6 +9976,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if ((this.refCache || {})[id] && hasExt()) {          // saved copy → instant, no server
         const got = await ask({ t: "getRef", id, ep: this.episodeId });
         if (got && got.ok && got.data) {
+          if (await this.vediReferto(r, bufDaB64(got.data))) return;
           const bin = atob(got.data);
           const arr = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
@@ -9970,6 +10000,41 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // Qui prima si rileggeva il PDF per tenerne una copia: una seconda
       // richiesta per un documento che è già sullo schermo del medico. Per
       // tenerne una copia c'è «⬇ Salva referti», che è una cosa che si chiede.
+    }
+
+    // Un referto salvato si apre nel visore dell'estensione, dalla copia su
+    // questo computer: anche senza testo, mai di un altro paziente.
+    async vediReferto(e, buf) {
+      let t = this.testoDi(e);
+      if (!t) {
+        const l = await this.leggiTesto(e, buf).catch(() => null);
+        t = l && l.altro ? { stato: "altro" } : this.testoDi(e);
+      }
+      if (t && t.stato === "altro") {
+        this.message = "Referto di un altro paziente: non mostrato.";
+        this.render();
+        return true;
+      }
+      const lib = await pdfjsPronto().catch(() => null);
+      if (!lib) return false;
+      return apriVisore(lib, buf, [this.nomePaziente(), shortLabel(e.label), e.when].filter(Boolean).join(" · "));
+    }
+
+    resetArmato() { return Date.now() - (this._resetArmato || 0) < 6000; }
+    async resetDatiPazienti() {
+      if (this.giroInCorso()) return;
+      azzeraPazienti();
+      if (hasExt()) await ask({ t: "resetPazienti" }).catch(() => null);
+      this.dimenticaTutto();
+      this.message = { ok: "Fatto." };
+      this.render();
+    }
+    // quello che il pannello tiene in mente, oltre la memoria
+    dimenticaTutto() {
+      this.storico = null; this.storicoAltri = ""; this.storicoDaConfermare = false; this.notaPortale = "";
+      this.refCache = {}; this.refBusy = {}; this.espanso = null; this.diagnosi = null;
+      this.rottiTab.clear(); this.logLines = [];
+      this.esiti = esitiModel(document, location.href);
     }
 
     async resetReferti() {
@@ -10392,7 +10457,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // nel pannello certi aggiornamenti aspettano — la spia del Ponte, per esempio)
       $("#strazione")?.addEventListener("click", (e) => { this._fuocoId = null; e.currentTarget.blur(); this.striscia?.azione?.fn?.(); });
       $("#collapse")?.addEventListener("click", () => this.riduci());
-      $("#menubtn")?.addEventListener("click", (e) => { e.stopPropagation(); this.menuAperto = !this.menuAperto; this.render(); });
+      $("#menubtn")?.addEventListener("click", (e) => { e.stopPropagation(); this.menuAperto = !this.menuAperto; this._resetArmato = 0; this.render(); });
+      // due tocchi: il primo chiede, il secondo (entro pochi secondi) cancella
+      $("#resetpaz")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!this.resetArmato()) { this._resetArmato = Date.now(); this.render(); return; }
+        this._resetArmato = 0; this.menuAperto = false;
+        this.resetDatiPazienti();
+      });
       // due posizioni pronte: al centro (85%), o in colonna a destra col gestionale visibile
       const metti = (g) => { this.win = g; store.set("win.v1", g); this.menuAperto = false; this.render(); };
       $("#wincentra")?.addEventListener("click", () => metti(null));
@@ -10452,7 +10524,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // il ponte: la pagina dell'iPhone, e «Scollega» dall'intestazione
       $("#pontemenu")?.addEventListener("click", () => { this.menuAperto = false; this.render(); ask({ t: "ponteApri" }); });
       $("#ponteoff")?.addEventListener("click", (e) => { e.stopPropagation(); ask({ t: "ponteScollega" }); });
-      $("#risall")?.addEventListener("click", () => this.caricaValori());
+      $("#risall")?.addEventListener("click", () => this.caricaValori().catch(() => {}).then(() => this.caricaReferti()));
       // «Letto»: da qui in poi le novità si contano da adesso, per tutti i prelievi
       $("#letto")?.addEventListener("click", () => {
         for (const e of this.esiti) if (e.kind === "valori") this.marcaLetto(e.id);
@@ -11454,6 +11526,63 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (!lib) pdfjsInArrivo = null;   // si riprova al prossimo referto
       return lib;
     });
+  }
+
+  // Il visore dei referti salvati: il PDF disegnato da pdf.js sopra la pagina,
+  // chi · esame · quando in testa. ✕ (o Esc) e si torna agli Esiti.
+  function apriVisore(lib, buf, titolo) {
+    document.getElementById("psassist-visore")?.remove();
+    const host = document.createElement("div");
+    host.id = "psassist-visore";
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `<style>
+      :host { all: initial; }
+      * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+      .vfondo { position: fixed; inset: 0; z-index: 2147483647; background: rgba(9,42,74,.45); display: flex; padding: 2vh 2vw; }
+      .vis { display: flex; flex-direction: column; width: min(980px, 100%); margin: 0 auto; background: #fff;
+             border-radius: 12px; overflow: hidden; box-shadow: 0 12px 40px rgba(9,42,74,.35); }
+      .vhd { display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 16px; border-bottom: 1px solid #D9E2EC; color: #16232E; }
+      .vtit { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .vx { border: 0; background: #EEF3F8; color: #16232E; border-radius: 8px; width: 34px; height: 34px; font-size: 15px; cursor: pointer; }
+      .vx:hover { background: #DCE6F0; }
+      .vpag { flex: 1; overflow: auto; background: #E9EEF3; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+      canvas { display: block; max-width: 100%; background: #fff; box-shadow: 0 2px 8px rgba(9,42,74,.18); }
+      .verr { color: #B3261E; font-size: 13px; }
+    </style>
+    <div class="vfondo"><div class="vis" role="dialog" aria-modal="true" aria-label="${esc(titolo)}">
+      <div class="vhd"><b class="vtit" title="${esc(titolo)}">${esc(titolo)}</b><button class="vx" id="vchiudi" title="Chiudi (Esc)" aria-label="Chiudi">✕</button></div>
+      <div class="vpag"></div>
+    </div></div>`;
+    document.documentElement.appendChild(host);
+    let doc = null;
+    const tasto = (ev) => { if (ev.key === "Escape") { ev.stopPropagation(); ev.preventDefault(); chiudi(); } };
+    const chiudi = () => {
+      window.removeEventListener("keydown", tasto, true);
+      host.remove();
+      if (doc) Promise.resolve(doc.destroy()).catch(() => {});
+    };
+    window.addEventListener("keydown", tasto, true);
+    root.getElementById("vchiudi").addEventListener("click", chiudi);
+    root.querySelector(".vfondo").addEventListener("click", (ev) => { if (ev.target === ev.currentTarget) chiudi(); });
+    root.getElementById("vchiudi").focus();
+    const pag = root.querySelector(".vpag");
+    (async () => {
+      doc = await lib.getDocument({ data: new Uint8Array(buf).slice(), isEvalSupported: false, disableFontFace: true,
+        useSystemFonts: false, useWorkerFetch: false, disableAutoFetch: true, disableStream: true, verbosity: 0 }).promise;
+      const dpr = window.devicePixelRatio || 1;
+      for (let n = 1; n <= doc.numPages && host.isConnected; n++) {
+        const p = await doc.getPage(n);
+        const largo = Math.max(320, pag.clientWidth - 28);
+        const vp = p.getViewport({ scale: (largo / p.getViewport({ scale: 1 }).width) * dpr });
+        const c = document.createElement("canvas");
+        c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+        c.style.width = `${Math.floor(vp.width / dpr)}px`;
+        c.setAttribute("aria-label", `Pagina ${n}`);
+        pag.appendChild(c);
+        await p.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+      }
+    })().catch(() => { if (host.isConnected) pag.insertAdjacentHTML("beforeend", `<div class="verr">PDF non disegnato.</div>`); });
+    return true;
   }
 
   // Pezzi di testo con la loro posizione → righe: stessa linea di base, stessa
@@ -12745,6 +12874,13 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
     const panel = new Panel(pageType);
     PANNELLO = panel;
+    // «Reset dati pazienti» da un'altra scheda: anche questa dimentica (non a metà di un giro)
+    window.addEventListener("storage", (ev) => {
+      if (ev.key !== NS + "reset.v1" || !ev.newValue || panel.giroInCorso()) return;
+      azzeraScheda();
+      panel.dimenticaTutto();
+      panel.render();
+    });
     if (chi) { panel.ordiniOk = true; ascoltaOrdini(panel); }
     if (hasExt()) panel.seguiStampa();
     if (pageType === "patient") {
