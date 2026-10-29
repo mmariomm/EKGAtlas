@@ -30,11 +30,11 @@
   "use strict";
 
   // ------------------------------------------------------------ elenchi
-  const MARCHI = [/multimedica/i, /\birccs\b/i, /finmatica/i, /dedalus/i, /smarthealth/i, /\bAFC\s?2003/i,
+  const MARCHI = [/multimedica/i, /\birccs\b/i, /Sei connesso come/i, /finmatica/i, /dedalus/i, /smarthealth/i, /\bAFC\s?2003/i,
     /\bDEA\s+I\s+LIVELLO/i, /tutti i diritti riservati/i, /java\.net\.InetAddress/i, /\bPS Assist\b/i];
   // Le frasi del programma in maiuscolo portano sempre una di queste parole: un
   // nome di persona no (vedi tools/esempi.mjs).
-  const PAROLE_APP = /\b(PRONTO|SOCCORSO|LABORATORIO|ANALISI|RADIOLOGIA|TRIAGE|SCHEDA|SCHEDE|CODICE|ESAME|ESAMI|VISITA|REPARTO|AREA|URGENZE|URGENTE|POC|SSG|RX|TC|TAC|ECOGRAFIA|RISONANZA|MAGNETICA|NUCLEARE|OSPEDALE|ESEMPIO|ALLERGIE|ANAMNESI|IMMAGINE|SELEZIONA|MEDICO|UTENTE|RICHIESTA|RICHIESTE|REFERTO|REFERTI|STAMPA|LISTA|PAZIENTI|ETICHETTE|CARRELLO|CONFERMA|ELENCO|DATI|CLINICI|STORICO|OBI|ATTESA|DIMISSIONE|DIMESSO|RICOVERO|BIANCO|VERDE|GIALLO|ROSSO|AZZURRO|ARANCIONE|NERO)\b/;
+  const PAROLE_APP = /\b(PRONTO|SOCCORSO|LABORATORIO|ANALISI|RADIOLOGIA|TRIAGE|SCHEDA|SCHEDE|CODICE|ESAME|ESAMI|VISITA|REPARTO|AREA|URGENZE|URGENTE|POC|SSG|RX|TC|TAC|ECOGRAFIA|RISONANZA|MAGNETICA|NUCLEARE|OSPEDALE|ESEMPIO|ALLERGIE|ANAMNESI|IMMAGINE|SELEZIONA|MEDICO|UTENTE|RICHIESTA|RICHIESTE|REFERTO|REFERTI|STAMPA|LISTA|PAZIENTI|ETICHETTE|CARRELLO|CONFERMA|ELENCO|DATI|CLINICI|STORICO|OBI|ATTESA|DIMISSIONE|DIMESSO|RICOVERO|BIANCO|VERDE|GIALLO|ROSSO|ROSSA|AZZURRO|ARANCIONE|NERO|OSSERVAZIONE|BREVE|INTENSIVA|SHOCK|BOX|ACUTI|AMBULATORIO|TRATTAMENTO|RIVALUTAZIONE|PRESA|CARICO|CONSULENZA|REFERTATO|ESEGUITO|ESEGUITA|CONFERMATA|PRENOTATA|ANNULLATA|IN|CORSO|NUOVO|NUOVA|TOTALE|MOTIVO|ACCESSO|ARRIVO|AMBULANZA|BARELLA|SEDIA|LETTO|POSTO|NOTE|DATA|ORA|SESSO|NATO|NATA|PER|CON)\b/;
   // i campi che contengono una persona per definizione (personale, firmatari)
   const CAMPI_PERSONA = /^(NOMINATIVO|MEDICO|MEDICO_\w+|\w+_MEDICO|UTENTE|\w+_UTENTE|OPERATORE|\w+_OPERATORE|FIRMA|RICHIEDENTE|COMPILATORE|INFERMIERE|ESECUTORE|REFERTANTE)$/i;
   // i campi di testo libero: diventano testo inventato della stessa lunghezza
@@ -105,8 +105,13 @@
   const ISO_RE = /(?<!\d)(\d{4})-(\d{2})-(\d{2})(?=$|[T\s"'<.,;:)]|$)/g;
   const NOSO_RE = /(?<![\w/])((?:PS-)?20\d{2})\/(\d{3,7})(?![\w/])/g;
   const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
-  // un nome preceduto (o seguito) da chi è: «Sig. ROSSI MARIO», «nato il», «Dott. Bianchi»
-  const NOME_KW = /(?:\bsig\.?(?:ra)?|\bsignor[ae]?|\bpaziente|\bpz\.?|\bassistit[oa]|\bnominativo|\bcognome e nome|\bcognome|\bmedico|\bdott\.?(?:ssa)?|\bdr\.?(?:ssa)?|\bprof\.?(?:ssa)?|\binf\.?|\binfermier[ae]|\boperatore|\bconnesso come(?:[^:]{0,30}:)?)\s*:?\s*([A-ZÀ-Ù][A-Za-zÀ-ÿ'’]+(?:\s+[A-ZÀ-Ù][A-Za-zÀ-ÿ'’]+){0,3})/g;
+  // un nome preceduto da chi è: «Sig. ROSSI MARIO», «Paziente: …», «Dott. Bianchi» — la
+  // parola chiave in minuscolo, Maiuscola o MAIUSCOLO; il nome sempre con le iniziali grandi
+  const KW = ["sig.ra", "sig.", "sig", "signora", "signore", "signor", "paziente", "pz.", "assistito", "assistita", "nominativo",
+    "cognome e nome", "cognome", "medico", "dott.ssa", "dott.", "dott", "dr.ssa", "dr.", "dr", "prof.ssa", "prof.", "prof", "inf.",
+    "infermiere", "infermiera", "operatore"];
+  const kwRe = (w) => { const e = w.replace(/\./g, "\\."); return `[${e[0].toUpperCase()}${e[0]}]${e.slice(1)}|${e.toUpperCase()}`; };
+  const NOME_KW = new RegExp(`(?<![A-Za-zÀ-ÿ])(?:(?:${KW.map(kwRe).join("|")}|[Cc]onnesso come(?:[^:]{0,30}:)?)(?![A-Za-zÀ-ÿ])\\s*:?\\s*)+([A-ZÀ-Ù][A-Za-zÀ-ÿ'’]+(?:\\s+[A-ZÀ-Ù][A-Za-zÀ-ÿ'’]+){0,3})`, "g");
   const KW_PERSONALE = /dott|dr\b|dr\.|prof|inf|medico|operatore|connesso/i;
   const NATO_RE = /([A-ZÀ-Ù][A-ZÀ-Ù'’]+(?:\s+[A-ZÀ-Ù][A-ZÀ-Ù'’]+){1,3})\s*,?\s*nat[oa]\b/g;
   const haCF = (t) => { CF_RE.lastIndex = 0; const r = CF_RE.test(t); CF_RE.lastIndex = 0; return r; };
@@ -289,7 +294,7 @@
       for (const m of t.matchAll(NOSO_RE)) registraId(m[0]);
       for (const m of t.matchAll(NOME_KW)) {
         const nome = m[1].trim();
-        if (!paroleApp(nome) && !tutteStatiche(nome) && !/^(Il|La|Lo|Gli|Le|Del|Della|Di|Da|In|Con|Per|Non|Nel|Nella)\b/.test(nome)) registraNome(nome, KW_PERSONALE.test(m[0]) ? "personale" : "nomi");
+        if (!paroleApp(nome) && !tutteStatiche(nome) && !/^(il|la|lo|gli|le|un|una|del|della|di|da|in|con|per|non|nel|nella|e|ed|al|alla)\b/i.test(nome)) registraNome(nome, KW_PERSONALE.test(m[0]) ? "personale" : "nomi");
       }
       for (const m of t.matchAll(NATO_RE)) if (formaNome(m[1])) registraNome(m[1], "nomi");
       const k = t.trim();
