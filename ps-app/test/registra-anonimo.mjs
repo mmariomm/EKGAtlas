@@ -152,6 +152,28 @@ check(/Controllo prima dell'esportazione: superato/.test(riep) && r.gate.ok, `il
 check(/nomi di pazienti: [1-9]/.test(riep) && /codici fiscali: [1-9]/.test(riep) && /date di nascita: [1-9]/.test(riep) && /identificativi rimappati: [1-9]/.test(riep)
   && /testi liberi: [1-9]/.test(riep) && /Icone usate[^\n]*valida2\.gif/.test(riep) && /Versione dell'estensione: 9\.9\.9/.test(riep), "il riepilogo conta le sostituzioni per tipo e dice le icone");
 
+// ------------------------------------- di quale paziente è una pagina
+// Una lista senza EPISODIO_ID vista DOPO il paziente 1 nella stessa scheda non
+// è del paziente 1: il disturbo del paziente 2 che compare lì e nella scheda
+// del paziente 2 non diventa «vocabolario». Una finestra dei risultati aperta
+// da una scheda è del paziente di quella scheda: le voci di laboratorio
+// comuni a due pazienti restano.
+{
+  const pag = (url, html, ts, scheda, apertaDa = null) => ({ url: G + url, html, ts: T0 + ts, scheda, alto: true, apertaDa });
+  const ris = (v) => `<table><tr><td>Leucociti</td><td>${v}</td></tr><tr><td>Emoglobina glicata</td><td>${v}</td></tr></table>`;
+  const r2 = anonimizza({ inizio: T0, origini: { gestionale: G }, pagine: [
+    pag("/x.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=120001", "<p>Pagina del primo</p>", 1000, 1),
+    pag("/x.do?MVPG=PsoListaArea", "<table><tr><td>Dolore addominale da ieri sera</td><td>OBI</td></tr></table>", 2000, 1),
+    pag("/x.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=120002", "<p>Dolore addominale da ieri sera</p>", 3000, 2),
+    pag("/r.do?RCS_ACCESSO_ID=7", ris("6.1"), 3500, 3, 2),
+    pag("/x.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=120001", "<p>Pagina del primo</p>", 4000, 1),
+    pag("/r.do?RCS_ACCESSO_ID=8", ris("7.2"), 4500, 4, 1),
+  ] }, { vocabolario, sfasamento: 30 });
+  const tutto2 = Object.values(r2.files).join("\n");
+  check(!/Dolore addominale/.test(tutto2), "la lista vista dopo un paziente non è sua: il disturbo di un altro non diventa vocabolario");
+  check((tutto2.match(/Emoglobina glicata/g) || []).length === 2, "la finestra dei risultati è del paziente che l'ha aperta: le voci comuni a due pazienti restano");
+}
+
 // ------------------------------------------------------------- il cancello
 const sensibili = { nomi: [P1.nome, P2.nome], cf: [P1.cf], nascita: [P1.nato], id: [P1.ep] };
 const c1 = cancello({ ...r.files, "pagine/099-x.html": r.files["pagine/001-PsoLista.html"] + "<p>RSSMRA80A01H501U</p>" }, sensibili);

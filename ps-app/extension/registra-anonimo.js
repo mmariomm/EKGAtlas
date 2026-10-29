@@ -206,7 +206,7 @@
     const registraId = (v) => {
       v = String(v || "").trim();
       if (!/\d/.test(v)) return;                             // senza cifre non è il numero di un caso
-      if (!v || v.length < 4 || CODICI.has(v)) return;
+      if (!v || v.length < 5 || CODICI.has(v)) return;
       if (/^\d+$/.test(v) && v.length < 5) return;          // un progressivo, una risorsa: non un caso
       if (/^\d+$/.test(v) && Number(v) === 0) return;
       idOriginali.add(v);
@@ -623,22 +623,31 @@
     const richiestaEp = new Map();
     const tuttiUrl = [...pagine.map((p) => p.url), ...flusso.flatMap((r) => [r.url, ...(r.rinvii || []).map((x) => x.a)])];
     for (const u of tuttiUrl) { const e = paramDi(u, "EPISODIO_ID"), r = paramDi(u, "RICHIESTA_ID"); if (e && r) richiestaEp.set(r, e); }
-    // l'unità di ogni pagina: il suo episodio, o quello dell'ultima pagina della stessa scheda
-    const ultimaUnita = new Map();
+    // L'unità («di quale paziente») di ogni pagina: il suo episodio (o quello
+    // della sua richiesta, o il suo assistito), o l'unico episodio che nomina.
+    // Una finestra nuova (risultati, referto) è del paziente della pagina che
+    // l'ha aperta; un riquadro, della pagina che lo contiene. Mai «la pagina di
+    // prima nella stessa scheda»: la lista del PS vista dopo un paziente non è
+    // di quel paziente.
+    const ultimaAlta = new Map(), apertaDa = new Map();
+    for (const s of raccolta.schede || []) if (s.apertaDa != null) apertaDa.set(s.id, s.apertaDa);
+    for (const p of pagine) if (p.apertaDa != null && !apertaDa.has(p.scheda)) apertaDa.set(p.scheda, p.apertaDa);
+    const unitaDiScheda = (scheda, ts) => {
+      let u = "";
+      for (const p of pagine) { if (p.ts > ts) break; if (p.scheda === scheda && p.alto !== false && p.unita !== undefined) u = p.unita; }
+      return u;
+    };
+    const visteSchede = new Set();
     for (const p of pagine) {
       let u = paramDi(p.url, "EPISODIO_ID") || (richiestaEp.get(paramDi(p.url, "RICHIESTA_ID")) || "") || (paramDi(p.url, "ASSISTITO_ID") ? "A:" + paramDi(p.url, "ASSISTITO_ID") : "");
       const eps = episodiIn(p.html);
       p.multi = !u && eps.size >= 2;
       if (!u && eps.size === 1) u = [...eps][0];
-      if (!u && !p.multi) u = ultimaUnita.get(p.scheda) || ultimaUnita.get(p.apertaDa) || "";
-      if (u) ultimaUnita.set(p.scheda, u);
+      if (!u && !p.multi && p.alto === false) u = ultimaAlta.get(p.scheda) || "";
+      else if (!u && !p.multi && !visteSchede.has(p.scheda) && apertaDa.has(p.scheda)) u = unitaDiScheda(apertaDa.get(p.scheda), p.ts);
+      if (p.alto !== false) { ultimaAlta.set(p.scheda, u); visteSchede.add(p.scheda); }
       p.unita = u;
     }
-    const unitaDiScheda = (scheda, ts) => {
-      let u = "";
-      for (const p of pagine) { if (p.ts > ts) break; if (p.scheda === scheda && p.unita) u = p.unita; }
-      return u;
-    };
     // gli identificativi: dagli indirizzi, dai campi, dalle pagine
     const idDaUrl = (u) => {
       const q = /\?([^#]*)/.exec(String(u || ""));
@@ -717,7 +726,7 @@
       delete p.pezzi;
     }
     for (const d of pdf) {
-      const u = d.unita || unitaDiScheda(d.scheda, d.ts) || "";
+      const u = d.unita || unitaDiScheda(d.scheda, d.ts) || (apertaDa.has(d.scheda) ? unitaDiScheda(apertaDa.get(d.scheda), d.ts) : "");
       d.unitaVista = u;
       for (const r of d.righe || []) { osservaStringa(r, u); scopri(r); }
     }
@@ -773,7 +782,7 @@
     // Quello che è stato visto di vero e sostituito in un punto, sostituito
     // anche dove fosse sfuggito (uno script, un nome di finestra, un CSS).
     const escRe = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const SEP = "(?:\\s|&nbsp;|\\+|%20|_)+";
+    const SEP = "(?:[^A-Za-z0-9À-ÿ&%]|&nbsp;|%[0-9A-Fa-f]{2})+";
     const nomiRe = [...nomiVisti.values()].map((x) => x.orig).sort((a, b) => b.length - a.length)
       .map((o) => o.split(/\s+/).map(escRe).join(SEP));
     const reNomi = nomiRe.length ? new RegExp(`(?<![A-Za-zÀ-ÿ])(?:${nomiRe.join("|")})(?![A-Za-zÀ-ÿ])`, "gi") : null;
@@ -782,12 +791,14 @@
     for (const v of visto.email) letterali.set(v, () => "utente@esempio.it");
     for (const v of [...visto.telefoni, ...visto.tessere]) if (v.length >= 6) letterali.set(v, () => v.replace(/\d/g, "0"));
     for (const v of visto.nascita) letterali.set(v, () => date(v));
-    for (const v of idOriginali) if (!/^\d+$/.test(v) && v.length >= 6) letterali.set(v, () => fintoId(v));
+    const idAlfa = [...idOriginali].filter((v) => !/^\d+$/.test(v)).sort((a, b) => b.length - a.length);
+    const reIdAlfa = idAlfa.length ? new RegExp(`(?<![A-Za-z0-9])(?:${idAlfa.map(escRe).join("|")})(?![A-Za-z0-9])`, "g") : null;
     const reLett = letterali.size ? new RegExp([...letterali.keys()].sort((a, b) => b.length - a.length).map(escRe).join("|"), "g") : null;
     const ripulisci = (s) => {
       let t = s;
-      if (reNomi) t = t.replace(reNomi, (m) => nomeFinto(m.replace(/&nbsp;|\+|%20|_/g, " "), (nomiVisti.get(norma(m)) || {}).cat));
+      if (reNomi) t = t.replace(reNomi, (m) => nomeFinto(m.replace(/&nbsp;|%[0-9A-Fa-f]{2}|[^A-Za-z0-9À-ÿ]+/g, " ").trim(), (nomiVisti.get(norma(m.replace(/&nbsp;|%[0-9A-Fa-f]{2}/g, " "))) || {}).cat));
       if (reLett) t = t.replace(reLett, (m) => letterali.get(m)());
+      if (reIdAlfa) t = t.replace(reIdAlfa, (m) => fintoId(m));
       t = t.replace(/(?<![\dA-Za-z])\d{5,}(?![\dA-Za-z])/g, (d) => (idOriginali.has(d) ? fintoId(d) : d));
       return t;
     };
@@ -843,8 +854,6 @@
       email: [...visto.email], telefoni: [...visto.telefoni], tessere: [...visto.tessere] };
     for (const { cat, orig } of nomiVisti.values()) {
       sensibili[cat].push(orig);
-      const cogn = MAIUSC(orig).split(/\s+/)[0];
-      if (cat === "nomi" && cogn.length >= 4 && !PAROLE_STATICHE.has(cogn)) sensibili.nomi.push(cogn);
     }
     const prova = { ...files, "riepilogo.txt": riepilogo({ ok: true, punti: 0 }) };
     const gate = cancello(prova, sensibili, { finti: [...finti.values()], diagnosi: opz.diagnosi });
