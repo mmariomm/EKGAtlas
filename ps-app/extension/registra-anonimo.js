@@ -711,7 +711,7 @@
       let s = String(u == null ? "" : u).trim();
       if (!s) return s;
       if (/^\/\//.test(s)) s = "https:" + s;
-      if (/^#/.test(s)) return /^#[\w-]{0,40}$/.test(s) ? s : "#";
+      if (/^#/.test(s)) return /^#\/?[\w-]{0,40}(?:\/[\w-]{1,40}){0,6}$/.test(s) ? s : "#";
       if (/^javascript:/i.test(s)) return "javascript:" + anonJs(s.slice(11));
       if (/^data:/i.test(s)) return /^data:image\//i.test(s) && s.length <= IMG_DATA_MAX ? s : (conta.immagini++, "data:,");
       if (/^(mailto|tel):/i.test(s)) return /^mailto/i.test(s) ? "mailto:utente@esempio.it" : "tel:000";
@@ -749,7 +749,7 @@
           return nv === v ? p : `${k}=${encURI(nv)}`;
         }).join("&");
       }
-      if (frag && !/^#[\w-]{0,40}$/.test(frag)) frag = "#";
+      if (frag && !/^#\/?[\w-]{0,40}(?:\/[\w-]{1,40}){0,6}$/.test(frag)) frag = "#";
       return pre + percorso + query + frag;
     }
 
@@ -1049,16 +1049,17 @@
       try { u = new URL(String(p.url)); } catch { return "siss"; }
       if (p.forma) return "siss-accesso";
       if (/^\/menusiss/i.test(u.pathname) || u.origin === "https://dcss.cgi.crs.lombardia.it") return "siss-menu";
-      const html = String(p.html || ""), i = html.indexOf("cdk-overlay-container");
+      const html = String(p.html || "").replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, ""), i = html.indexOf("cdk-overlay-container");
       const dialogo = i >= 0 && /mat-dialog-container|mat-mdc-dialog-container/.test(html.slice(i)) ? html.slice(i) : "";
       const strada = (u.pathname + u.hash).toLowerCase();
       if (/Stampa\s*RE\b/.test(dialogo) || (/Stampa\s*RE\b/.test(html) && !dialogo)) return "siss-registrata";
       if (/>\s*Anteprima\b/i.test(dialogo) || /anteprima|preview/.test(strada)) return "siss-anteprima";
-      if (/stampa|print/.test(strada)) return "siss-stampa";
+      // (anche la pagina del lettore PDF di Chrome, che contiene il PDF della stampa)
+      if (/stamp[ae]|print/.test(strada) || /<embed\b[^>]*application\/pdf/i.test(html)) return "siss-stampa";
       if (/patient-identify/.test(strada)) return "siss-patient-identify";
       if (/editing/.test(strada)) return "siss-editing";
       if (/dashboard/.test(strada)) return "siss-dashboard";
-      const seg = u.pathname.split("/").filter(Boolean).pop() || "";
+      const seg = (u.pathname.split("/").filter(Boolean).pop() || "").replace(/\.html?$/i, "");
       return /^[a-z][a-z-]{1,40}$/i.test(seg) ? "siss-" + seg.toLowerCase() : "siss-pagina";
     };
     const tabNum = new Map();

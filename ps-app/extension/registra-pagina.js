@@ -111,7 +111,7 @@
     const tipo = String(el.type || el.getAttribute("type") || "").toLowerCase();
     if (tipo === "password") return true;
     if (/one-time-code|current-password|new-password/i.test(el.getAttribute("autocomplete") || "")) return true;
-    return CRED.test(etichettaDi(el));
+    return CRED.test(etichettaDi(el).replace(/([a-z0-9])([A-Z])/g, "$1 $2"));   // anche «pinCarta»
   };
 
   // ---------------------------------------------------- la pagina vista
@@ -179,7 +179,7 @@
         const cred = moduli(c);
         // una pagina d'accesso, o un dialogo con un campo di credenziali: solo la forma
         // (e tutto quello che sul SISS non è il menu operatore o il Prescrittivo Regionale)
-        const accesso = !SISS_APP.test(location.pathname) || ACCESSO.test(location.pathname + location.hash) || !!document.querySelector('input[type="password"]');
+        const accesso = !SISS_APP.test(location.pathname) || ACCESSO.test(location.pathname + location.hash);
         if (accesso) { forma(c); extra.forma = true; }
         else if (cred) for (const p of c.querySelectorAll(".cdk-overlay-pane")) if (p.querySelector("[data-psa-escluso]")) { forma(p); extra.forma = true; }
         if (cred) extra.credenziali = cred;
@@ -295,8 +295,9 @@
     const root = ospite.attachShadow({ mode: "open" });
     root.innerHTML = `<style>${globalThis.__psaPillCss || ""}
       .pill .dot.rec { background: #FF8A80; }
+      .pill .slot { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; }   /* dove sta il logo */
       .menu[hidden] { display: none; }</style>
-      <div class="wrap"><button class="pill" id="expand" title="PS Assist sta registrando questa sessione — tocca per fermare" aria-haspopup="menu" aria-expanded="false"><span class="dot rec"></span> <span class="who">Registrando…</span></button>
+      <div class="wrap"><button class="pill" id="expand" title="PS Assist sta registrando questa sessione — tocca per fermare" aria-haspopup="menu" aria-expanded="false"><span class="slot"><span class="dot rec"></span></span> <span class="who">Registrando…</span></button>
       <div class="menu" role="menu" hidden><button role="menuitem" id="regferma">Ferma e scarica</button></div></div>`;
     const btn = root.getElementById("expand"), menu = root.querySelector(".menu");
     btn.addEventListener("click", (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; btn.setAttribute("aria-expanded", String(!menu.hidden)); });

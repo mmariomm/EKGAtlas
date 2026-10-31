@@ -145,7 +145,7 @@ chrome.webRequest.onBeforeRequest.addListener(regQuando((d) => {
   const fd = d.requestBody && d.requestBody.formData;
   if (fd) {
     r.corpo = {};
-    for (const [k, v] of Object.entries(fd).slice(0, 200)) r.corpo[k] = REG_CRED.test(k) ? ["(credenziale: non registrata)"] : (Array.isArray(v) ? v : [v]).slice(0, 20).map((x) => String(x).slice(0, 2000));
+    for (const [k, v] of Object.entries(fd).slice(0, 200)) r.corpo[k] = REG_CRED.test(k.replace(/([a-z0-9])([A-Z])/g, "$1 $2")) ? ["(credenziale: non registrata)"] : (Array.isArray(v) ? v : [v]).slice(0, 20).map((x) => String(x).slice(0, 2000));
   }
   if (regSiss(d.url)) r.siss = true;
   regInVolo.set(d.requestId, r);
