@@ -1212,7 +1212,11 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
 - **⋯ → Registra** fa partire; la pill e l'intestazione mostrano **● REC**. Lavori come sempre.
   **⋯ → Ferma e scarica** ferma e scarica `psassist-registrazione-AAAAMMGG-HHMM.zip` (dopo
   **60 minuti** si ferma da sola: il menu allora dice **Scarica la registrazione**).
-- **Cosa si registra**, solo sul gestionale e sul portale: ogni pagina che apri, in ogni scheda
+- **Dove il pannello non c'è** (il SISS, il portale, le finestre del referto) mentre registri
+  compare la pill **● Registrando…**: è la stessa pill del pannello ridotto, nello stesso posto in
+  alto a destra (solo nella finestra principale, mai nei riquadri). Un clic → **Ferma e scarica**,
+  come dal menu ⋯. Sul gestionale resta il ● REC del pannello, senza una seconda pill.
+- **Cosa si registra**, solo sul gestionale, sul portale e sul SISS: ogni pagina che apri, in ogni scheda
   e finestra (il DOM com'è dopo il caricamento, senza il pannello); il flusso delle richieste,
   solo *osservato* (`chrome.webRequest`: metodo, indirizzo, stato, rinvii, tempi, tipo, scheda,
   e quali le ha fatte l'estensione); il **testo** dei PDF (referti, etichette), con pagine e misura.
@@ -1238,11 +1242,51 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   dopo 12 ore, e a ogni nuova registrazione).
 - Dentro: `pagine/NNN-<tipo>.html`, `flusso.json`, `pdf/NNN.json`, `riepilogo.txt` (cosa è stato
   registrato, quante sostituzioni per tipo, l'esito del controllo, la versione, le icone usate).
+
+### Registra sul SISS (Prescrittivo Regionale)
+
+Per vedere com'è fatta davvero una ricetta: identificazione del paziente, compilazione, Anteprima /
+Salva / Registra, e il PDF di **Stampa RE**.
+
+- **Dove**: le due origini del SISS, esatte e solo `https` — il menu operatore
+  (`https://dcss.cgi.crs.lombardia.it`, `/menusiss/`) e il Prescrittivo Regionale
+  (`https://operatorisiss.servizirl.it`, `/prescrittivoRegionale/`). Sono in `host_permissions` e
+  nel content script del registratore: **all'aggiornamento Chrome chiede una volta** il permesso
+  per questi due siti (accettalo, o il SISS non si registra). Sul SISS **il pannello di PS Assist
+  non c'è**: solo `registra-pagina.js`, che non fa niente finché non registri, e la pill
+  ● Registrando… mentre registri.
+- **Le viste**: il Prescrittivo è un'app che cambia vista senza ricaricare la pagina. Si fotografa
+  il DOM al caricamento, a ogni cambio di vista (pushState/replaceState, popstate, hashchange), quando
+  si apre o si chiude un dialogo (Anteprima, l'esito di Registra, le tendine) e dopo 800 ms di
+  quiete dopo un cambiamento vero; mai due istantanee uguali, al più 15 al minuto. Con i **valori dei
+  campi** (testi, tendine, caselle, radio), anonimizzati come tutto il resto. Nello zip:
+  `pagine/NNN-siss-<vista>.html` — `siss-menu`, `siss-patient-identify`, `siss-editing`,
+  `siss-anteprima`, `siss-registrata`, `siss-stampa`, `siss-accesso`.
+- **Le richieste**: le chiamate alle API del SISS (XHR/fetch) con metodo, indirizzo, stato, rinvii e
+  tempi, solo osservate; mai un corpo di risposta. Il PDF di Stampa RE: testo anonimizzato, pagine e
+  misura; una rilettura dalla cache solo se non è già in mano, e **mai** se il server l'ha mandato
+  `no-store` (sarebbe una seconda stampa: il riepilogo lo dice). Gli host fuori dal SISS che le sue
+  pagine chiamano non si registrano: il riepilogo ne dice solo il nome.
+- **Le credenziali, mai**: password, PIN, OTP, codice di sblocco (per tipo, nome, etichetta o
+  `autocomplete`) — il valore non si legge nemmeno, e nei moduli inviati quei campi non si tengono.
+  Una pagina d'accesso (smart card, login, o il SISS fuori dalle due app) si registra **solo nella
+  forma**: tag e struttura, senza testo né valori; un dialogo con un campo così, idem.
+- **Anonimizzazione in più**: banner dell'operatore («Operatore: … Ruolo: …», «<Nome> Medico») →
+  `OPERATORE n`; banner del paziente («Cognome: … Nome: … Sesso: … Data di nascita: …», «Id personale:
+  … Tessera: … Id MPI: …») → stessa forma con valori finti, gli stessi nei campi, nei dialoghi e nel
+  promemoria; NRE, codice di autenticazione / PIN ricetta, numero di protocollo, contatore PAI, Id MPI,
+  tessera → altri della stessa forma, sempre gli stessi (anche negli indirizzi delle API). **Restano**
+  le parole dell'app (etichette, pulsanti, voci di menu, priorità), i farmaci (AIC e descrizione), le
+  prestazioni, le esenzioni.
+- `riepilogo.txt` ha una sezione **SISS**: le viste viste, le istantanee per motivo, le richieste al
+  SISS, se c'è il PDF di Stampa RE, i campi di credenziali esclusi, gli host fuori.
 - **Limiti**: il metodo è a rifiuto di partenza, ma riconosce le persone dalla forma (nomi in
   maiuscolo, «Dott. …», campi del personale): un nome scritto in modo insolito *dentro una frase
   condivisa da più pazienti* potrebbe sfuggire — per questo, prima di mandarlo, **dai
   un'occhiata** a `riepilogo.txt` e a qualche pagina. Le schede di sottofondo aperte dal
-  pannello appaiono come schede qualunque. Permesso nuovo: `webRequest` (solo osservare).
+  pannello appaiono come schede qualunque. Permessi: `webRequest` (solo osservare) e, per il SISS,
+  i due siti qui sopra. Se le API del Prescrittivo stanno su un altro host, il registratore non le
+  vede: il riepilogo ne dice il nome, e si aggiunge.
 
 ---
 
@@ -1637,10 +1681,11 @@ ps-app/
 ├── ponte/               ← il Ponte: README, host.txt (il suo indirizzo, fissato nella build), il
 │                          ripetitore Node per test e prove (stessa logica di ../worker/ponte-logica.js);
 │                          l'app del telefono sta in ../public/ponte/
-├── extension/registra*  ← ⋯ → Registra: registra.js (service worker), registra-pagina.js (nella pagina),
+├── extension/registra*  ← ⋯ → Registra: registra.js (service worker), registra-pagina.js (nella pagina,
+│                          anche sul SISS), registra-pill.js (la pill: regole CSS da core.js),
 │                          registra.html/-esporta.js (lo scarico), registra-anonimo.js (anonimizza e controlla)
 ├── tools/build.mjs      ← genera extension/content.js, il bookmarklet, extension/ponte-cripto.js,
-│                          extension/ponte-host.js, extension/registra-pdf.js e registra-vocabolario.json
+│                          extension/ponte-host.js, extension/registra-pdf.js, registra-pill.js e registra-vocabolario.json
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
 ├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 (SumatraPDF lo prende installa.cmd: non sta nello zip)
