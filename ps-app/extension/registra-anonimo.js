@@ -50,10 +50,82 @@
     "AREA_ID", "STATO", "CODICE_TRIAGE", "PRESIDIO", "PRESIDIO_ID", "SEDE", "EROGATORE",
   ]);
   // parametri che identificano un caso: si rimappano, sempre allo stesso modo
-  const PARAM_ID = /(^|_)ID$|^ID_|TOKEN|SESSION|^NOSOLOGICO|^PRATICA|^ACCESSO|_ACCESSO$|^EPISODIO|^ASSISTITO|^PAZIENTE|^REFERTO|^RICHIESTA|^RCS_|^PRENOTAZIONE|^BARCODE|^CAMPIONE|^ORDINE|^DOCUMENTO/i;
-  const PARAM_CF = /^(CF|COD_?FISC\w*|CODICE_FISCALE)$/i;
+  const PARAM_ID = /(^|_)ID$|^ID_|TOKEN|SESSION|^NOSOLOGICO|^PRATICA|^ACCESSO|_ACCESSO$|^EPISODIO|^ASSISTITO|^PAZIENTE|^REFERTO|^RICHIESTA|^RCS_|^PRENOTAZIONE|^BARCODE|^CAMPIONE|^ORDINE|^DOCUMENTO|^NRE$|MPI|^PAI|PROTOCOL|^AUTH|^PATIENT|^TESSERA|^SSN$|^TEAM$|^ID[A-Z]|PRESCRIPTION/i;
+  const PARAM_CF = /^(CF|COD_?FISC\w*|CODICE_?FISCALE|FISCAL_?CODE|TAX_?CODE|ID_?CARD)$/i;
+  // le credenziali: mai, da nessuna parte (password, PIN, OTP, codice di sblocco)
+  const CRED_RE = /(?:^|[^a-z])(?:pin|otp|password|passwd|pwd|passcode|puk|sblocco)(?:[^a-z]|$)|codice\s+di\s+sblocco|one[\s_-]?time|j_password/i;
+  // (anche nei nomi scritti a cammello: «pinCarta», «otpCode»)
+  const credenziale = (s) => CRED_RE.test(String(s || "").replace(/([a-z0-9])([A-Z])/g, "$1 $2"));
   const LOGHI = /HMIMU_logo|Logo-GF|dds_logo|logo_/i;
   const IMG_DATA_MAX = 8 * 1024;   // un'icona sì, una fotografia o un codice a barre no
+
+  // ------------------------------------------------------------- il SISS
+  // Il menu operatore e il Prescrittivo Regionale: le due origini (anche in
+  // manifest.json) e i loro nomi finti nello zip.
+  const SISS_ORIGINI = { "https://dcss.cgi.crs.lombardia.it": "https://menusiss.esempio", "https://operatorisiss.servizirl.it": "https://prescrittivo.esempio" };
+  // Le parole dell'app (etichette, pulsanti, voci di menu, priorità): restano.
+  // Solo interfaccia — nessun dato di nessuno.
+  const SISS_TESTI = [
+    "Esci dal SISS", "Apri menù", "Chiudi menù", "Servizi Socio Sanitari", "Servizi Socio Sanitari Operatore", "Operatore", "Ruolo", "close", "Menu",
+    "Prescrittivo Regionale (PRREG) Produzione", "Emergenza Urgenza On Line", "EMPR Monitoraggio missioni in arrivo", "Fascicolo Sanitario Elettronico",
+    "ScreenUp - Gestione Screening", "Erogazione Ambulatoriale", "Anagrafe", "Anagrafe Cittadino", "Certificati", "Certificati di Malattia (INPS)",
+    "Certificati di infortunio (INAIL - INFOINAIL)", "Comunicazione di Inizio Ricovero (INPS)", "Privacy", "Consenso al Trattamento FSE", "Altri Servizi",
+    "SistemaPerson@ - Malattie Professionali e Infortuni", "Segnalazione Malattie Professionali", "Dati Codificati", "Segnalazione Malattie infettive - SMI",
+    "Ticket Tracking", "Nuova Gestione Sostituzioni MMG/PLS", "SMAF", "SMAF - Sistema Modulare Acquisizione Flussi", "Prenotazioni",
+    "Home", "Nuova Prescrizione", "Sede di lavoro", "Prescrittivo Regionale", "Logout", "ID Personale (CF/STP/TEAM/Altro)", "Cognome", "Nome", "Sesso",
+    "Data nascita", "Data di nascita", "Tessera", "Id personale", "Id MPI", "Nazione TEAM", "Open calendar", "Ricerca su AR/ANA",
+    "La ricerca su ANA avviene solo in presenza del codice fiscale. Senza CF, la ricerca avviene solo su NAR.", "Cancella", "Cerca",
+    "Cambia struttura di lavoro", "Prescrizione medica", "Storico paziente", "Assistiti SSN", "Tipo ricetta", "Specialistica/Farmaceutica",
+    "Tipo prescrizione", "Contatore PAI", "N° protocollo", "lista esenzioni", "Esenzioni", "Priorità", "Programmabile - Da eseguire entro 120gg",
+    "Quesito diagnostico testuale", "lista quesiti", "Quesito diagnostico codificato", "Oscuramento", "Anonimizzazione", "Stampa iniziali",
+    "Visita in Urgenza", "Ric. Interna", "Suggerita", "Ospedaliera", "Ricerca specialistica/farmaco", "Modelli di ricetta", "Ricerca avanzata",
+    "Nessuna prestazione specialistica o farmaco selezionati", "Anteprima", "Salva", "Registra", "Compila i dati per il tipo ricetta selezionato",
+    "Elimina esenzione", "Utilizza esenzioni associate al paziente",
+    "Indica se la prescrizione deriva da un suggerimento di uno specialista o da indicazioni della struttura di ricovero",
+    "Indica se la prescrizione è stata compilata in occasione di visita urgente", "Indica se le prestazioni devono essere erogate nella stessa struttura",
+    "Indica se la prescrizione contiene una indicazione di ricovero", "Applica l'esenzione a tutte le prestazioni", "Codice farmaco",
+    "Descrizione farmaco", "Note cuf", "Quantità", "Classe", "Generico", "Ripetibile", "Sostituibile", "Non sostituibile", "Note trattamento",
+    "Elimina tutti i farmaci", "Prescrivibile elettronicamente", "Elimina il farmaco", "Stampa RE", "Stampa promemoria", "Chiudi", "Annulla",
+    "Conferma", "Indietro", "Ricetta registrata", "Prescrizione registrata", "U - Urgente", "B - Breve", "D - Differibile", "P - Programmabile",
+  ];
+  const SISS_PAROLE = new Set([
+    ...SISS_TESTI.flatMap((t) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().split(/[^A-Z0-9']+/)).filter((w) => w.length >= 1 && !/\d/.test(w)),
+    ..."NRE SERVIZIO SANITARIO NAZIONALE L DELL ALL NELL SULL PIN OTP PASSWORD SBLOCCO CARTA SMART CARD ACCESSO ACCEDI ENTRA UTENTE CODICE RICETTA RICETTE PRESCRIZIONE PRESCRIZIONI REGISTRATA REGISTRATE REGISTRATO REGISTRAZIONE CORRETTAMENTE AVVENUTA SALVATA SALVATO BOZZA BOZZE STAMPA STAMPATA PROMEMORIA ELETTRONICA DEMATERIALIZZATA ROSSA FARMACO FARMACI PRESTAZIONE PRESTAZIONI SPECIALISTICA SPECIALISTICHE FARMACEUTICA URGENTE URGENZA BREVE DIFFERIBILE PROGRAMMABILE ENTRO GIORNI GG ORE ESEGUIRE ESEGUITA ESENZIONE ESENZIONI ESENTE NON CODICE CODICI AUTENTICAZIONE NUMERO ERRORE ATTENZIONE AVVISO OK SI NO ASSISTITO ASSISTITA ASSISTITI MEDICO MEDICI PRESCRITTORE DATA ORA QUANTITA CLASSE NOTA NOTE AIC ATC PRINCIPIO ATTIVO CONFEZIONE CONFEZIONI DESCRIZIONE TIPO TIPOLOGIA PRIORITA QUESITO DIAGNOSTICO DIAGNOSI ICD9 CM REGIONE LOMBARDIA REGIONALE SSN SSR SISS ASST ATS ASL STRUTTURA EROGATORE EROGAZIONE PAZIENTE PAZIENTI STORICO NUOVA NUOVO MODIFICA ELIMINA AGGIUNGI SELEZIONA SELEZIONATO SELEZIONATI RISULTATI RICERCA NESSUN NESSUNA TROVATO TROVATI ESITO OPERAZIONE COMPLETATA CONFERMA CONFERMARE VUOI PROCEDERE CONTINUA ANNULLARE CHIUDERE INIZIALI DOPPIO DIRITTO IL LO LA LE GLI I UN UNA UNO DI DA DEL DELLA DELLE DEI DEGLI DELLO AL ALLA AI ALLE IN SU PER CON E ED O OD SE CHE SOLO TUTTI TUTTE TUTTO".split(" "),
+  ]);
+  // le etichette che portano un dato da sostituire, e che dato
+  const SISS_ETICHETTE = [
+    ["Cognome e nome / iniziali dell'assistito", "nominativo"], ["Cognome e nome dell'assistito", "nominativo"], ["Cognome e nome del medico", "operatore"],
+    ["Cognome e nome", "nominativo"], ["Nominativo", "nominativo"], ["Assistito", "nominativo"], ["Cognome", "cognome"], ["Nome", "nome"],
+    ["Sesso", "sesso"], ["Data di nascita", "nascita"], ["Data nascita", "nascita"], ["Nato il", "nascita"], ["Nata il", "nascita"],
+    ["Luogo di nascita", "luogo"], ["Comune di nascita", "luogo"], ["Comune di residenza", "luogo"], ["Residenza", "luogo"], ["Indirizzo", "luogo"],
+    ["Codice fiscale del medico", "cf"], ["Id personale", "cf"], ["Codice fiscale", "cf"], ["C.F.", "cf"], ["Tessera sanitaria", "tessera"], ["N. tessera", "tessera"],
+    ["Tessera", "tessera"], ["Numero TEAM", "tessera"], ["Nazione TEAM", "nazione"], ["Id MPI", "id"], ["NRE", "id"], ["N.R.E.", "id"],
+    ["Numero ricetta elettronica", "id"], ["Numero ricetta", "id"], ["N. ricetta", "id"], ["Ricetta n.", "id"], ["Codice ricetta", "id"],
+    ["Codice di autenticazione", "id"], ["Codice autenticazione", "id"], ["PIN ricetta", "id"], ["N° protocollo", "id"], ["N. protocollo", "id"],
+    ["Numero protocollo", "id"], ["Protocollo", "id"], ["Contatore PAI", "id"], ["Medico prescrittore", "operatore"], ["Prescrittore", "operatore"],
+    ["Operatore", "operatore"], ["Medico", "operatore"], ["Ruolo", "ruolo"], ["Sede di lavoro", "sede"], ["Struttura di lavoro", "sede"], ["Struttura", "sede"],
+  ];
+  const escReS = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const SISS_ETI_RE = new RegExp(`(?<![A-Za-zÀ-ÿ])(${SISS_ETICHETTE.map(([e]) => escReS(e)).join("|")})\\s*:`, "gi");
+  const SISS_ETI_SOLA = new RegExp(`^(${SISS_ETICHETTE.map(([e]) => escReS(e)).join("|")})\\s*:$`, "i");
+  const catEtichetta = (e) => { const k = MAIUSCm(e); const x = SISS_ETICHETTE.find(([l]) => MAIUSCm(l) === k); return x ? x[1] : null; };
+  function MAIUSCm(s) { return String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim(); }
+  // i campi dei moduli del SISS (formcontrolname, name o id), e che dato portano
+  const SISS_CAMPI = [
+    [/^(patientLastName|lastName|cognome\w*|surname|familyName)$/i, "cognome"], [/^(patientFirstName|firstName|nome|givenName)$/i, "nome"],
+    [/^(idCard|idPersonale|personalId|codiceFiscale|fiscalCode|cf|taxCode)$/i, "cf"], [/^(idSsn|tessera\w*|team\w*|ssn|cardNumber)$/i, "tessera"],
+    [/^(birthDate|dataNascita|dateOfBirth|dob)$/i, "nascita"],
+    [/^(paiCounter|protocolNumber|protocollo\w*|nre|prescriptionNumber|authCode|authenticationCode|codiceAutenticazione|pinRicetta|idMpi|mpi)$/i, "id"],
+    [/^(diagnosticQuestionText|quesito\w*Testo|note\w*|\w*Notes?|treatmentNotes?)$/i, "libero"], [/^(quantity|quantita\w*)$/i, "numero"],
+  ];
+  const campoSiss = (n) => { for (const [re, c] of SISS_CAMPI) if (re.test(n || "")) return c; return null; };
+  // il vocabolario del catalogo: farmaci (AIC e descrizione), prestazioni, esenzioni
+  const AIC_RE = /^0\d{8}$/;
+  const FARMACO_RE = /^(?:0\d{8}\s+)?[A-Z0-9][A-Z0-9 *+.,'%/()-]{2,90}$/;
+  const FARMACO_SEGNO = /\*|\d(?:[.,]\d+)?\s?(?:MG|MCG|G|ML|UI|%)(?![A-Z])|(?<![A-Z])(?:CPR|CPS|BUST|FL|FLAC|SCIR|GTT|COMPR|CAPS|SOSP|OS|IM|EV|SC|RIV|INIET|SIR|CREMA|POM|GEL|SUPP|FIALE?|CP)(?![A-Z])/;
+  const PRESTAZIONE_RE = /^\d{2}\.\d{1,2}(?:\.\d{1,2})?(?:\.[A-Z0-9]{1,3})?(?:\s*[-–]?\s*[A-Z][A-Z0-9 ,.'()/+-]{2,90})?$/;
+  const ESENZIONE_RE = /^(?:E\d{2}|\d{3}(?:\.\d{1,4})?|[A-Z]{1,2}\d{2,4}|0[A-Z]\d{2}|RF\d{4})$/;
+  const NRE_RE = /(?<![A-Z0-9])\d{4}[A-Z]\d{10}(?![A-Z0-9])/g;
 
   const COGNOMI = ["ROSSI", "BIANCHI", "COLOMBO", "RICCI", "MARINO", "GRECO", "BRUNO", "GALLO", "CONTI", "COSTA",
     "GIORDANO", "MANCINI", "RIZZO", "LOMBARDI", "MORETTI", "BARBIERI", "FONTANA", "SANTORO", "MARIANI", "RINALDI"];
@@ -201,6 +273,15 @@
     // il vero visto, per il cancello: categoria → Set(stringhe originali)
     const visto = { nomi: new Set(), personale: new Set(), cf: new Set(), nascita: new Set(), tessere: new Set(), telefoni: new Set(), email: new Set(), id: new Set() };
 
+    // il SISS: le sue pagine (e i suoi PDF) hanno un vocabolario loro, e dati loro
+    const sissOrig = new Set([...(origini.siss || []), ...Object.keys(SISS_ORIGINI)]);
+    const isSiss = (u) => { try { return sissOrig.has(new URL(String(u)).origin); } catch { return false; } };
+    let sissOra = false;                   // si sta trattando una pagina, o un PDF, del SISS
+    const codiciSiss = new Set();          // AIC dei farmaci: codici, non casi
+    const catalogoSiss = new Set();        // la descrizione accanto a un codice (farmaco, prestazione)
+    const parolePersona = new Map();       // MAIUSC(parola) → { pieno, i, cognome }: dal banner del paziente e dai campi
+    const SISS_STATICO = new Set(SISS_TESTI);
+
     // ------------------------------------------------ chi è chi (unità)
     const paramDi = (u, k) => { const m = new RegExp(`[?&;]${k}=([^&#"'\\s]*)`, "i").exec(u || ""); return m ? decodeURIComponent(m[1]).trim() : ""; };
     const episodiIn = (html) => new Set([...String(html).matchAll(/EPISODIO_ID(?:=|"\s+value=")(\d{3,})/gi)].map((m) => m[1]));
@@ -212,7 +293,7 @@
     const registraId = (v) => {
       v = String(v || "").trim();
       if (!/\d/.test(v)) return;                             // senza cifre non è il numero di un caso
-      if (!v || v.length < 5 || CODICI.has(v)) return;
+      if (!v || v.length < 5 || CODICI.has(v) || codiciSiss.has(v)) return;
       if (/^\d+$/.test(v) && v.length < 5) return;          // un progressivo, una risorsa: non un caso
       if (/^\d+$/.test(v) && Number(v) === 0) return;
       idOriginali.add(v);
@@ -236,6 +317,13 @@
       idFinti.set(v, f);
       return f;
     };
+    // i numeri del SISS (NRE, codice di autenticazione, protocollo, contatore
+    // PAI, Id MPI, tessera): casi anche se corti, sempre rimappati
+    const registraSegreto = (v) => {
+      v = String(v || "").trim();
+      if (v.length < 4 || v.length > 40 || !/\d/.test(v) || codiciSiss.has(v) || CODICI.has(v)) return;
+      idOriginali.add(v);
+    };
     const remapId = (v) => { const t = String(v); if (!t) return t; registraId(t); if (!idOriginali.has(t)) return t; conta.id++; visto.id.add(t); return fintoId(t); };
     // le cifre lunghe di un testo che sono identificativi già visti
     const remapCifre = (s) => String(s).replace(/(?<!\d)\d{5,}(?!\d)/g, (d) => (idOriginali.has(d) ? (conta.id++, visto.id.add(d), fintoId(d)) : d))
@@ -257,6 +345,7 @@
       const t = pulisci(s).replace(/\s+/g, " ").trim();
       if (t.length < 4 || !/\s/.test(t) && cat !== "personale") return;
       if (MARCHI.some((re) => re.test(t))) return;
+      if (sissOra && (SISS_STATICO.has(t) || tuttoSiss(t))) return;
       const k = norma(t);
       const prima = nomiVisti.get(k);
       if (!prima || (prima.cat === "nomi" && cat === "personale")) nomiVisti.set(k, { cat, orig: t });
@@ -293,6 +382,7 @@
       for (const m of t.matchAll(DATA_RE)) { const y = m[4].length === 2 ? 1900 + Number(m[4]) : Number(m[4]); if (m[4].length === 4 && y < annoRif - 1 && valida(m[1], m[3], y)) visto.nascita.add(m[0]); }
       for (const m of t.matchAll(ISO_RE)) { if (Number(m[1]) < annoRif - 1 && valida(m[3], m[2], Number(m[1]))) visto.nascita.add(m[0]); }
       for (const m of t.matchAll(NOSO_RE)) registraId(m[0]);
+      for (const m of t.matchAll(NRE_RE)) registraSegreto(m[0]);
       for (const m of t.matchAll(NOME_KW)) {
         const nome = m[1].trim();
         if (!paroleApp(nome) && !tutteStatiche(nome) && !/^(il|la|lo|gli|le|un|una|del|della|di|da|in|con|per|non|nel|nella|e|ed|al|alla)\b/i.test(nome)) registraNome(nome, KW_PERSONALE.test(m[0]) ? "personale" : "nomi");
@@ -383,6 +473,7 @@
       t = t.replace(CAP_RE, () => { conta.indirizzi++; return "00000 CITTÀ ESEMPIO (XX)"; });
       t = t.replace(IP_RE, "127.0.0.1");
       t = t.replace(NOSO_RE, (all) => (idOriginali.has(all) ? (conta.id++, visto.id.add(all), fintoId(all)) : all));
+      t = t.replace(NRE_RE, (v) => (idOriginali.has(v) ? (conta.id++, visto.id.add(v), fintoId(v)) : v));
       t = remapCifre(t);
       t = date(t);
       return t;
@@ -398,11 +489,141 @@
       for (const v of nomiVisti.values()) if (MAIUSC(t).includes(MAIUSC(v.orig))) conta[v.cat === "personale" ? "personale" : "nomi"]++;
     };
 
+    // ------------------------------------------------------------ il SISS
+    // «Cognome: … Nome: … Sesso: … Data di nascita: …», «Operatore: … Ruolo: …»:
+    // le etichette in una riga, e il valore di ognuna fino alla successiva
+    const valoriEtichette = (t) => {
+      const ms = [...t.matchAll(SISS_ETI_RE)];
+      return { pre: ms.length ? t.slice(0, ms[0].index) : t, parti: ms.map((m, i) => {
+        const da = m.index + m[0].length, a = i + 1 < ms.length ? ms[i + 1].index : t.length;
+        return { cat: catEtichetta(m[1]), inizio: m.index, fineEt: da, fine: a, valore: t.slice(da, a).trim() };
+      }) };
+    };
+    const tuttoSiss = (t) => { const w = MAIUSC(t).split(/[^A-Z0-9]+/).filter(Boolean); return !!w.length && w.every((x) => SISS_PAROLE.has(x)); };
+    // il valore che ci si aspetta dopo un'etichetta (su due nodi diversi del DOM)
+    const valoreAtteso = (cat, v) => {
+      if (!v || SISS_ETI_SOLA.test(v) || SISS_STATICO.has(v)) return false;
+      if (/^(cognome|nome|nominativo|operatore)$/.test(cat)) return /^[A-Za-zÀ-ÿ'’. -]{2,60}$/.test(v) && !tuttoSiss(v);
+      if (cat === "nascita") return /^\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}$|^\d{4}-\d{2}-\d{2}$/.test(v);
+      if (/^(cf|tessera|id)$/.test(cat)) return /^[A-Z0-9][A-Z0-9 /.-]{2,30}$/i.test(v) && /\d/.test(v);
+      if (cat === "sesso") return /^[MF]$/i.test(v);
+      return v.length <= 80;
+    };
+    const personaSiss = (cog, nom) => {
+      const ok = (x) => /^[A-Za-zÀ-ÿ'’ -]{2,40}$/.test(x) && !tuttoSiss(x);
+      cog = ok(cog = pulisci(cog || "").replace(/\s+/g, " ").trim()) ? cog : "";
+      nom = ok(nom = pulisci(nom || "").replace(/\s+/g, " ").trim()) ? nom : "";
+      if (!cog && !nom) return;
+      const pieno = [cog, nom].filter(Boolean).join(" ");
+      if (/\s/.test(pieno)) registraNome(pieno, "nomi");
+      const nc = cog ? cog.split(" ").length : 0;
+      pieno.split(" ").forEach((w, i) => {
+        const k = MAIUSC(w);
+        if (k.length < 2) return;
+        paroleDiNomi.add(k);
+        const prima = parolePersona.get(k);
+        if (!prima || (!/\s/.test(prima.pieno) && /\s/.test(pieno))) parolePersona.set(k, { pieno, i, cognome: i < nc });
+      });
+    };
+    const finteParole = new Map();
+    const parolaFinta = (w) => {
+      const e = parolePersona.get(MAIUSC(w));
+      if (!e) return w;
+      let f = /\s/.test(e.pieno) ? (nomeFinto(e.pieno, "nomi").split(" ")[e.i] || "") : "";
+      if (!f) {
+        const k = MAIUSC(w);
+        if (!finteParole.has(k)) {
+          const l = e.cognome ? COGNOMI : NOMI;
+          let j = hash(k) % l.length;
+          while (paroleDiNomi.has(l[j]) && j < 1e4) j++;
+          finteParole.set(k, l[j % l.length]);
+        }
+        f = finteParole.get(k);
+        conta.nomi++;
+      }
+      return stile(w, MAIUSC(w) === MAIUSC(f) ? "ESEMPIO" : f);
+    };
+    const parolePersonaFinte = (v) => v.split(/(\s+)/).map((w) => (parolePersona.has(MAIUSC(w)) ? parolaFinta(w) : w)).join("");
+    // le scoperte, su un testo del SISS
+    const scopriSiss = (raw) => {
+      const t = pulisci(raw).replace(/\s+/g, " ").trim();
+      if (!t || t.length > 600) return;
+      const { parti } = valoriEtichette(t);
+      let cog = "", nom = "";
+      for (const x of parti) scopriValore(x.cat, x.valore, (c, v) => { if (c === "cognome") cog = v; else nom = v; });
+      if (cog || nom) personaSiss(cog, nom);
+      // «Elena Rossi Medico»: chi lavora, col suo ruolo
+      const r = /^(.+?)\s+(Medico|MEDICO|Infermiere|INFERMIERE|Farmacista|FARMACISTA|Specialista|SPECIALISTA)$/.exec(t);
+      if (r && formaNome(r[1])) registraNome(r[1], "personale");
+    };
+    function scopriValore(cat, v, persona) {
+      v = String(v || "").trim();
+      if (!v || !valoreAtteso(cat, v)) return;
+      if (cat === "cognome" || cat === "nome") persona(cat, v);
+      else if (cat === "nominativo") { if (/\s/.test(v)) registraNome(v, "nomi"); personaSiss(v, ""); }
+      else if (cat === "operatore") registraNome(v, "personale");
+      else if (cat === "cf") { if (/^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/i.test(v)) visto.cf.add(v.toUpperCase()); else registraSegreto(v); }
+      else if (cat === "tessera") { visto.tessere.add(v); registraSegreto(v); }
+      else if (cat === "id") registraSegreto(v);
+    }
+    // da tenere: le parole dell'app e il catalogo (farmaci, prestazioni, esenzioni)
+    const tieniSiss = (t) => {
+      if (nomiVisti.has(norma(t)) || MARCHI.some((re) => re.test(t)) || haCF(t) || idOriginali.has(t)) return false;
+      if (MAIUSC(t).split(/[^A-Z']+/).some((w) => parolePersona.has(w))) return false;
+      if (SISS_STATICO.has(t) || catalogoSiss.has(t) || codiciSiss.has(t)) return true;
+      if (AIC_RE.test(t) || ESENZIONE_RE.test(t) || PRESTAZIONE_RE.test(t)) return true;
+      if (FARMACO_RE.test(t) && FARMACO_SEGNO.test(t)) return true;
+      const w = MAIUSC(t).split(/[^A-Z0-9]+/).filter(Boolean);
+      if (!w.length) return false;
+      // «Prescrittivo Regionale» ha la forma di un nome: allora solo parole del SISS
+      const nome = formaNome(t);
+      // (un numero già riconosciuto come caso, l'NRE: restano nella frase, e motivi() li sostituisce)
+      return w.every((x) => SISS_PAROLE.has(x) || (!nome && PAROLE_STATICHE.has(x)) || /^\d{1,3}(?:GG|G|H|ORE)?$/.test(x) || idOriginali.has(x) || /^\d{4}[A-Z]\d{10}$/.test(x));
+    };
+    // il valore di un'etichetta, sostituito
+    function valoreFinto(cat, v) {
+      if (!v) return v;
+      if (cat === "cognome" || cat === "nome") return parolePersonaFinte(v);
+      if (cat === "nominativo") return nomiVisti.has(norma(v)) ? nomeFinto(v, "nomi") : parolePersona.has(MAIUSC(v)) ? parolePersonaFinte(v) : nomeFinto(v, "nomi");
+      if (cat === "operatore") return nomeFinto(v, "personale");
+      if (cat === "sesso") return /^[MF]$/i.test(v) ? v : "";
+      if (cat === "nascita") { const d = date(v); return d !== v ? d : ""; }
+      if (cat === "luogo") { conta.indirizzi++; return "COMUNE ESEMPIO"; }
+      if (cat === "cf") { if (/^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/i.test(v)) return cfFinto(v.toUpperCase()); registraSegreto(v); return idOriginali.has(v) ? remapId(v) : (conta.id++, "ESEMPIO"); }
+      if (cat === "tessera" || cat === "id") {
+        registraSegreto(v);
+        if (cat === "tessera") conta.tessere++;
+        return idOriginali.has(v) ? (conta.id++, visto.id.add(v), fintoId(v)) : /\d/.test(v) ? v.replace(/\d/g, "0") : trattaStringa(v);
+      }
+      if (cat === "nazione") return /^[A-Z]{2,3}$/.test(v) ? v : "";
+      if (cat === "ruolo") return tieniSiss(v) ? v : "RUOLO";
+      if (cat === "sede") return tieniSiss(v) ? v : (conta.testo++, "STRUTTURA ESEMPIO");
+      return trattaStringa(v);
+    }
+    const trattaSiss = (t) => {
+      if (parolePersona.has(MAIUSC(t))) return parolaFinta(t);
+      const { pre, parti } = valoriEtichette(t);
+      if (parti.length) {
+        let out = pre.trim() ? pre.replace(pre.trim(), trattaStringa(pre.trim())) : pre;
+        for (const x of parti) {
+          const pezzo = t.slice(x.fineEt, x.fine);
+          const lead = /^\s*/.exec(pezzo)[0], trail = /\s*$/.exec(pezzo)[0];
+          out += t.slice(x.inizio, x.fineEt) + (x.valore ? lead + valoreFinto(x.cat, x.valore) + trail : pezzo);
+        }
+        return out;
+      }
+      const r = /^(.+?)(\s+)(Medico|MEDICO|Infermiere|INFERMIERE|Farmacista|FARMACISTA|Specialista|SPECIALISTA)$/.exec(t);
+      if (r && (formaNome(r[1]) || nomiVisti.has(norma(r[1])))) return nomeFinto(r[1], "personale") + r[2] + r[3];
+      if (tieniSiss(t)) { conta.tenute++; return motivi(t); }
+      return null;
+    };
+
     // --------------------------------------- un testo: il cuore della regola
     function trattaStringa(core, ctx = {}) {
       const t = pulisci(core).trim();
       if (!t) return core;
       if (soloPunteggiatura(t)) return core;
+      if (sissOra) { const b = trattaSiss(t); if (b != null) return b; }
       if (idOriginali.has(t)) return remapId(t);
       if (MARCHI.some((re) => re.test(t))) { conta.testo++; return neutro(t); }
       const nv = nomiVisti.get(norma(t));
@@ -465,6 +686,8 @@
     // ----------------------------------------------------------- indirizzi
     const origineFinta = (o, modo) => {
       if (o === gestionale) return modo === "flusso" ? "https://gestionale.esempio" : "";
+      if (SISS_ORIGINI[o]) return SISS_ORIGINI[o];
+      if (sissOrig.has(o)) return "https://siss.esempio";
       if (portali.has(o)) return "http://portale.esempio";
       if (/^https?:\/\/(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/.test(o)) return "http://127.0.0.1";
       return null;
@@ -472,6 +695,7 @@
     const valoreParam = (k, v) => {
       const K = k.toUpperCase();
       if (!v) return v;
+      if (credenziale(k)) return "";
       if (STRUTTURA.has(K)) return v;
       if (PARAM_CF.test(K)) return cfFinto(v.toUpperCase());
       if (PARAM_ID.test(K)) return remapId(v);
@@ -556,15 +780,53 @@
       "autocomplete", "multiple", "hidden", "lang", "dir", "scope", "usemap", "shape", "frameborder", "scrolling", "marginwidth",
       "marginheight", "noresize", "clear", "hspace", "vspace", "start", "span", "wrap", "cols", "rows", "role", "xmlns", "valuetype",
       "text", "link", "vlink", "alink", "leftmargin", "topmargin", "rules", "frame", "accept", "step", "min", "max", "pattern", "draggable",
-      "contenteditable", "spellcheck", "nonce", "integrity", "crossorigin", "async", "defer", "noshade", "compact", "datetime"]);
+      "contenteditable", "spellcheck", "nonce", "integrity", "crossorigin", "async", "defer", "noshade", "compact", "datetime",
+      // Angular e i suoi componenti: nomi di campi e stato, non dati
+      "formcontrolname", "formgroupname", "formarrayname", "data-psa-escluso", "aria-controls", "aria-describedby", "aria-labelledby", "aria-owns",
+      "aria-activedescendant", "aria-expanded", "aria-selected", "aria-checked", "aria-disabled", "aria-hidden", "aria-haspopup", "aria-invalid",
+      "aria-required", "aria-autocomplete", "aria-multiselectable", "aria-orientation", "aria-live", "aria-atomic", "aria-busy", "aria-modal",
+      "aria-pressed", "aria-readonly", "aria-level", "aria-posinset", "aria-setsize", "aria-sort", "aria-current", "ng-version"]);
+    const attrDi = (attrs, n) => { const a = attrs.find((x) => x.k.toLowerCase() === n); return a && a.v != null ? decodifica(a.v) : ""; };
+    // un campo di credenziali (password, PIN, OTP): il valore non esce mai, da nessuna pagina
+    const campoCredenziale = (attrs) => !!attrs.find((x) => x.k.toLowerCase() === "data-psa-escluso") || /^password$/i.test(attrDi(attrs, "type"))
+      || credenziale(["name", "id", "formcontrolname", "autocomplete", "placeholder", "aria-label"].map((n) => attrDi(attrs, n)).join(" "))
+      || /one-time-code|current-password|new-password/i.test(attrDi(attrs, "autocomplete"));
+    function valoreCampoSiss(nome, v, attrs) {
+      const c = campoSiss(nome), t = v.trim();
+      if (c === "libero") { conta.liberi++; contaDentro(t); return sintetico(t); }
+      if (c === "numero") return /^\d{1,3}$/.test(t) ? t : numeroFinto(t);
+      if (c === "cognome" || c === "nome") {
+        const r = parolePersonaFinte(t);
+        return r !== t ? r : (conta.nomi++, stile(t, pick(c === "cognome" ? COGNOMI : NOMI, t)));
+      }
+      if (c) return valoreFinto(c, t);
+      // le ricerche nel catalogo (farmaco, prestazione, esenzione, quesito codificato): restano, se non c'è dentro una persona
+      const etichetta = `${attrDi(attrs, "placeholder")} ${attrDi(attrs, "aria-label")} ${attrDi(attrs, "role")}`;
+      if (/combobox|ricerca|cerca|esenzion|quesit|farmac|prestazion|specialistic/i.test(etichetta)) {
+        const persona = nomiVisti.has(norma(t)) || haCF(t) || formaNome(t) || MAIUSC(t).split(/[^A-Z']+/).some((w) => parolePersona.has(w));
+        if (!persona && t.length <= 120) { conta.tenute++; return motivi(t); }
+      }
+      return trattaStringa(t);
+    }
     const icone = new Set(), iconeNuove = new Set();
-    function trattaPagina(html, unitaPagina) {
+    function trattaPagina(html, unitaPagina, siss = false) {
+      sissOra = siss;
+      try { return trattaPagina0(html, unitaPagina, siss); } finally { sissOra = false; }
+    }
+    function trattaPagina0(html, unitaPagina, siss) {
       const out = [];
-      let select = null, inputNome = null;
+      let select = null, inputNome = null, etiSiss = null, credArea = false;
       for (const p of pezzi(String(html))) {
         if (p.k === "doctype") { out.push(p.s); continue; }
         if (p.k === "testo") {
           if (select && CAMPI_PERSONA.test(select)) { const t = decodifica(p.s); out.push(t.trim() ? escTesto(t.replace(t.trim(), /Seleziona/i.test(t) ? t.trim() : nomeFinto(t.trim(), "personale"))) : p.s); }
+          else if (siss) {
+            // l'etichetta in un nodo e il valore nel successivo: «Cognome:» «ROSSI»
+            const t = decodifica(p.s), d = pulisci(t).replace(/\s+/g, " ").trim();
+            if (d && SISS_ETI_SOLA.test(d)) { etiSiss = catEtichetta(d.replace(/\s*:$/, "")); out.push(testoConSpazi(p.s)); }
+            else if (d && etiSiss && valoreAtteso(etiSiss, d)) { out.push(escTesto(t.replace(t.trim(), valoreFinto(etiSiss, t.trim())))); etiSiss = null; }
+            else { if (d) etiSiss = null; out.push(testoConSpazi(p.s)); }
+          }
           else out.push(testoConSpazi(p.s));
           continue;
         }
@@ -572,7 +834,7 @@
         if (p.k === "corpo") {
           if (p.nome === "script") out.push(anonJs(p.s));
           else if (p.nome === "style") out.push(anonCss(p.s));
-          else if (p.nome === "textarea") { const t = decodifica(p.s); out.push(t.trim() ? (conta.liberi++, contaDentro(t), escTesto(sintetico(t.trim()))) : p.s); }
+          else if (p.nome === "textarea") { const t = decodifica(p.s); out.push(credArea ? "" : t.trim() ? (conta.liberi++, contaDentro(t), escTesto(sintetico(t.trim()))) : p.s); }
           else if (p.nome === "noscript" || p.nome === "xmp") out.push("");
           else out.push(testoConSpazi(p.s));
           continue;
@@ -580,7 +842,9 @@
         // un tag
         const nomeAttr = (p.attrs.find((a) => a.k.toLowerCase() === "name") || {}).v || "";
         if (p.nome === "select") select = nomeAttr;
-        if (p.nome === "input" || p.nome === "textarea" || p.nome === "select") inputNome = nomeAttr;
+        if (p.nome === "input" || p.nome === "textarea" || p.nome === "select") inputNome = siss ? nomeAttr || attrDi(p.attrs, "formcontrolname") || attrDi(p.attrs, "id") : nomeAttr;
+        const cred = (p.nome === "input" || p.nome === "textarea") && campoCredenziale(p.attrs);
+        if (p.nome === "textarea") credArea = cred;
         let togli = false;
         const attrs = p.attrs.map((a) => {
           const K = a.k.toLowerCase();
@@ -603,8 +867,10 @@
           } else if (ATTR_STRUTTURA.has(K)) nv = remapCifre(v);
           else if (K === "value") {
             const N = (inputNome || "").toUpperCase();
-            if (p.nome === "option" && select && CAMPI_PERSONA.test(select)) nv = /^\d{1,6}$/.test(v) ? v : nomeFinto(v, "personale");
+            if (cred) nv = "";
+            else if (p.nome === "option" && select && CAMPI_PERSONA.test(select)) nv = /^\d{1,6}$/.test(v) ? v : nomeFinto(v, "personale");
             else if (!v.trim()) nv = v;
+            else if (siss && p.nome === "input" && !/^(checkbox|radio|hidden)$/i.test(attrDi(p.attrs, "type"))) nv = valoreCampoSiss(inputNome, v, p.attrs);
             else if (p.nome === "input" && STRUTTURA.has(N)) nv = v;
             else if (p.nome === "input" && CAMPI_PERSONA.test(N)) nv = nomeFinto(v, "personale");
             else if (p.nome === "input" && PARAM_CF.test(N)) nv = cfFinto(v.toUpperCase());
@@ -645,7 +911,10 @@
     };
     const visteSchede = new Set();
     for (const p of pagine) {
+      p.siss = isSiss(p.url);
       let u = paramDi(p.url, "EPISODIO_ID") || (richiestaEp.get(paramDi(p.url, "RICHIESTA_ID")) || "") || (paramDi(p.url, "ASSISTITO_ID") ? "A:" + paramDi(p.url, "ASSISTITO_ID") : "");
+      // sul SISS il paziente è quello del suo banner (o del campo dell'identificazione)
+      if (!u && p.siss) { const m = new RegExp(CF_RE.source).exec(decodifica(String(p.html))); if (m) u = "S:" + m[0]; }
       const eps = episodiIn(p.html);
       p.multi = !u && eps.size >= 2;
       if (!u && eps.size === 1) u = [...eps][0];
@@ -668,6 +937,9 @@
       }
       for (const seg of String(u || "").split(/[?#]/)[0].split("/")) if (/^\d{5,}$/.test(seg) || /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(seg)) registraId(seg);
     };
+    // i codici AIC dei farmaci sulle pagine e nei PDF del SISS: codici, non casi
+    for (const p of pagine) if (p.siss) for (const m of decodifica(String(p.html)).matchAll(/>\s*(0\d{8})\s*</g)) codiciSiss.add(m[1]);
+    for (const d of pdf) if (isSiss(d.url)) for (const r of d.righe || []) { const m = /^\s*(0\d{8})\s+[A-Z]/.exec(r); if (m) codiciSiss.add(m[1]); }
     for (const u of tuttiUrl) idDaUrl(u);
     for (const r of flusso) for (const [k, v] of Object.entries(r.corpo || {})) { const K = k.toUpperCase(); if (!STRUTTURA.has(K) && PARAM_ID.test(K)) registraId(String(v)); }
     for (const p of pagine) {
@@ -713,8 +985,28 @@
     }
     // le parole: chi le dice, e cosa c'è dentro
     for (const p of pagine) {
+      sissOra = p.siss;
+      let eti = null, dopoCodice = false, cog = "", nom = "";
+      const persona = (c, v) => { if (c === "cognome") cog = v; else nom = v; };
       for (const pz of p.pezzi) {
         const unita = p.multi ? (pz.riga >= 0 ? p.unitaRighe[pz.riga] : "") : p.unita;
+        if (p.siss && pz.k === "testo") {
+          const t = decodifica(pz.s), d = pulisci(t).replace(/\s+/g, " ").trim();
+          scopriSiss(t);
+          if (d && SISS_ETI_SOLA.test(d)) eti = catEtichetta(d.replace(/\s*:$/, ""));
+          else if (d) {
+            if (eti) scopriValore(eti, d, persona);
+            eti = null;
+            // la descrizione accanto al codice di un farmaco o di una prestazione
+            if (dopoCodice && d.length <= 120 && /^[A-Z0-9]/.test(d) && !nomiVisti.has(norma(d))) catalogoSiss.add(d);
+            dopoCodice = AIC_RE.test(d) || /^\d{2}\.\d{1,2}(?:\.\d{1,2})?$/.test(d);
+          }
+        }
+        if (p.siss && pz.k === "tag" && pz.nome === "input" && !campoCredenziale(pz.attrs)) {
+          const c = campoSiss(attrDi(pz.attrs, "name") || attrDi(pz.attrs, "formcontrolname") || attrDi(pz.attrs, "id"));
+          const val = attrDi(pz.attrs, "value").trim();
+          if (c && val) scopriValore(c, val, persona);
+        }
         if (pz.k === "testo" || (pz.k === "corpo" && pz.nome === "title")) { const t = decodifica(pz.s); osservaStringa(t, unita); scopri(t); }
         else if (pz.k === "corpo" && pz.nome === "textarea") scopri(decodifica(pz.s));
         else if (pz.k === "corpo" && pz.nome === "script") pezziJs(pz.s, (s) => { scopri(s); return s; });
@@ -726,15 +1018,20 @@
             if (ATTR_URL.has(K) || K.startsWith("on")) { scopri(decURI(v)); continue; }
             osservaStringa(v, unita);
             scopri(v);
+            if (p.siss) scopriSiss(v);
           }
         }
       }
+      if (cog || nom) personaSiss(cog, nom);
       delete p.pezzi;
+      sissOra = false;
     }
     for (const d of pdf) {
       const u = d.unita || unitaDiScheda(d.scheda, d.ts) || (apertaDa.has(d.scheda) ? unitaDiScheda(apertaDa.get(d.scheda), d.ts) : "");
       d.unitaVista = u;
-      for (const r of d.righe || []) { osservaStringa(r, u); scopri(r); }
+      sissOra = isSiss(d.url);
+      for (const r of d.righe || []) { osservaStringa(r, u); scopri(r); if (sissOra) scopriSiss(r); }
+      sissOra = false;
     }
     for (const r of flusso) { scopri(decURI(r.url || "")); for (const v of Object.values(r.corpo || {})) scopri(String(v)); }
 
@@ -746,29 +1043,56 @@
       const base = String(u || "").split(/[?#]/)[0].split("/").filter(Boolean).pop() || "pagina";
       return base.replace(/\.[a-z0-9]+$/i, "").replace(/[^\w-]/g, "").slice(0, 60) || "pagina";
     };
+    // il nome di una vista del SISS, da un elenco fisso: mai un testo della pagina
+    const vistaSiss = (p) => {
+      let u;
+      try { u = new URL(String(p.url)); } catch { return "siss"; }
+      if (p.forma) return "siss-accesso";
+      if (/^\/menusiss/i.test(u.pathname) || u.origin === "https://dcss.cgi.crs.lombardia.it") return "siss-menu";
+      const html = String(p.html || ""), i = html.indexOf("cdk-overlay-container");
+      const dialogo = i >= 0 && /mat-dialog-container|mat-mdc-dialog-container/.test(html.slice(i)) ? html.slice(i) : "";
+      const strada = (u.pathname + u.hash).toLowerCase();
+      if (/Stampa\s*RE\b/.test(dialogo) || (/Stampa\s*RE\b/.test(html) && !dialogo)) return "siss-registrata";
+      if (/>\s*Anteprima\b/i.test(dialogo) || /anteprima|preview/.test(strada)) return "siss-anteprima";
+      if (/stampa|print/.test(strada)) return "siss-stampa";
+      if (/patient-identify/.test(strada)) return "siss-patient-identify";
+      if (/editing/.test(strada)) return "siss-editing";
+      if (/dashboard/.test(strada)) return "siss-dashboard";
+      const seg = u.pathname.split("/").filter(Boolean).pop() || "";
+      return /^[a-z][a-z-]{1,40}$/i.test(seg) ? "siss-" + seg.toLowerCase() : "siss-pagina";
+    };
     const tabNum = new Map();
     const scheda = (id) => { if (id == null || id < 0) return null; if (!tabNum.has(id)) tabNum.set(id, tabNum.size + 1); return tabNum.get(id); };
     const sec = (ms) => Math.round((Number(ms) || 0) / 100) / 10;
     const elencoPagine = [];
     pagine.forEach((p, i) => {
       const nnn = String(i + 1).padStart(3, "0");
-      const tipo = tipoDi(p.url);
+      const tipo = p.siss ? vistaSiss(p) : tipoDi(p.url);
       const nome = `pagine/${nnn}-${tipo}.html`;
-      const corpo = trattaPagina(p.html, p.unita);
+      const corpo = trattaPagina(p.html, p.unita, p.siss);
       const url = anonUrl(p.url, "flusso");
       const testa = `<!-- PS Assist, registrazione anonimizzata: pagina ${nnn} · ${url.replace(/--/g, "- -")} · +${sec(p.ts - inizio)} s · scheda ${scheda(p.scheda) ?? "?"}${p.alto === false ? " · riquadro" : ""} · ${p.motivo || "caricata"} -->\n`;
       files[nome] = testa + corpo;
-      elencoPagine.push({ file: nome, tipo, url, t: sec(p.ts - inizio), scheda: scheda(p.scheda), riquadro: p.alto === false, motivo: p.motivo || "caricata", titolo: trattaStringa(p.titolo || "") });
+      sissOra = p.siss;
+      const titolo = trattaStringa(p.titolo || "");
+      sissOra = false;
+      elencoPagine.push({ file: nome, tipo, url, t: sec(p.ts - inizio), scheda: scheda(p.scheda), riquadro: p.alto === false, motivo: p.motivo || "caricata", titolo,
+        ...(p.siss ? { siss: true, ...(p.forma ? { forma: true } : {}), ...(p.credenziali ? { credenziali: p.credenziali } : {}) } : {}) });
     });
     const da = (r) => (r.registratore ? "registratore" : r.estensione ? "estensione" : "pagina");
-    const corpoFinto = (c) => { if (!c) return undefined; const o = {}; for (const [k, v] of Object.entries(c)) o[k] = Array.isArray(v) ? v.map((x) => valoreParam(k, String(x))) : valoreParam(k, String(v)); return o; };
+    const corpoFinto = (c) => {
+      if (!c) return undefined;
+      const o = {};
+      for (const [k, v] of Object.entries(c)) o[k] = credenziale(k) ? ["(credenziale: non registrata)"] : Array.isArray(v) ? v.map((x) => valoreParam(k, String(x))) : valoreParam(k, String(v));
+      return o;
+    };
     const richieste = flusso.map((r) => ({
       metodo: r.metodo, url: anonUrl(r.url, "flusso"), tipo: r.tipo, scheda: scheda(r.scheda), riquadro: r.frame > 0 || undefined,
       da: da(r), inizio: sec(r.inizio - inizio), fine: r.fine != null ? sec(r.fine - inizio) : null,
       durata: r.fine != null ? sec(r.fine - r.inizio) : null, stato: r.stato ?? null, contenuto: r.contenuto || undefined,
       daCache: r.daCache || undefined, errore: r.errore || undefined, corpo: corpoFinto(r.corpo),
       rinvii: (r.rinvii || []).map((x) => ({ stato: x.stato, a: anonUrl(x.a, "flusso"), t: sec(x.t - inizio) })),
-      pdf: r.pdf || undefined,
+      pdf: r.pdf || undefined, siss: r.siss || isSiss(r.url) || undefined, nonRiletto: r.nonRiletto || undefined,
     }));
     const schede = (raccolta.schede || []).map((s) => ({ scheda: scheda(s.id), apertaDa: scheda(s.apertaDa), finestra: s.finestra, popup: !!s.popup || undefined, t: sec(s.ts - inizio) }));
     const elencoPdf = [];
@@ -777,7 +1101,7 @@
       const o = {
         url: anonUrl(d.url, "flusso"), t: sec(d.ts - inizio), scheda: scheda(d.scheda), da: d.origine || "pagina",
         pagine: d.pagine ?? null, misura: d.misura || null, lettore: d.lettore || null,
-        righe: (d.righe || []).map((r) => trattaStringa(r)), ...(d.errore ? { errore: String(d.errore).slice(0, 120) } : {}),
+        righe: (d.righe || []).map((r) => { sissOra = isSiss(d.url); try { return trattaStringa(r); } finally { sissOra = false; } }), ...(d.errore ? { errore: String(d.errore).slice(0, 120) } : {}),
       };
       files[`pdf/${nnn}.json`] = JSON.stringify(o, null, 1);
       elencoPdf.push({ file: `pdf/${nnn}.json`, url: o.url, t: o.t, pagine: o.pagine, righe: o.righe.length, da: o.da });
@@ -799,10 +1123,13 @@
     for (const v of visto.nascita) letterali.set(v, () => date(v));
     const idAlfa = [...idOriginali].filter((v) => !/^\d+$/.test(v)).sort((a, b) => b.length - a.length);
     const reIdAlfa = idAlfa.length ? new RegExp(`(?<![A-Za-z0-9])(?:${idAlfa.map(escRe).join("|")})(?![A-Za-z0-9])`, "g") : null;
+    const parolePers = [...parolePersona.keys()].filter((w) => w.length >= 3).sort((a, b) => b.length - a.length);
+    const rePers = parolePers.length ? new RegExp(`(?<![A-Za-zÀ-ÿ])(?:${parolePers.map(escRe).join("|")})(?![A-Za-zÀ-ÿ])`, "gi") : null;
     const reLett = letterali.size ? new RegExp([...letterali.keys()].sort((a, b) => b.length - a.length).map(escRe).join("|"), "g") : null;
     const ripulisci = (s) => {
       let t = s;
       if (reNomi) t = t.replace(reNomi, (m) => nomeFinto(m.replace(/&nbsp;|%[0-9A-Fa-f]{2}|[^A-Za-z0-9À-ÿ]+/g, " ").trim(), (nomiVisti.get(norma(m.replace(/&nbsp;|%[0-9A-Fa-f]{2}/g, " "))) || {}).cat));
+      if (rePers) t = t.replace(rePers, (m) => (parolePersona.has(MAIUSC(m)) ? parolaFinta(m) : m));
       if (reLett) t = t.replace(reLett, (m) => letterali.get(m)());
       if (reIdAlfa) t = t.replace(reIdAlfa, (m) => fintoId(m));
       t = t.replace(/(?<![\dA-Za-z])\d{5,}(?![\dA-Za-z])/g, (d) => (idOriginali.has(d) ? fintoId(d) : d));
@@ -821,6 +1148,29 @@
     for (const p of elencoPagine) perTipo[p.tipo] = (perTipo[p.tipo] || 0) + 1;
     const dellEstensione = richieste.filter((r) => r.da === "estensione").length;
     const riletti = pdf.filter((d) => d.origine === "rilettura").length;
+    // il SISS, a parte: che viste, quante richieste, se c'è il PDF della ricetta
+    const pagSiss = pagine.filter((p) => p.siss), rqSiss = richieste.filter((r) => r.siss), pdfSiss = pdf.filter((d) => isSiss(d.url));
+    const sezioneSiss = () => {
+      if (!pagSiss.length && !rqSiss.length && !pdfSiss.length) return [];
+      const conta1 = (l) => { const o = {}; for (const x of l) o[x] = (o[x] || 0) + 1; return Object.entries(o).map(([k, v]) => `${k} ${v}`).join(", ") || "nessuna"; };
+      const fuori = new Set();
+      for (const p of pagSiss) for (const o of p.fuori || []) {
+        if (!/^https?:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(o)) continue;
+        const f = origineFinta(o.toLowerCase(), "flusso");
+        fuori.add(f != null ? f : MARCHI.some((re) => re.test(o)) ? "un host dell'ospedale" : o.toLowerCase());
+      }
+      const nonRiletti = rqSiss.filter((r) => r.pdf && r.nonRiletto).length;
+      return [
+        "SISS (menu operatore e Prescrittivo Regionale):",
+        `  Viste: ${conta1(elencoPagine.filter((x) => x.siss).map((x) => x.tipo))}`,
+        `  Istantanee: ${pagSiss.length} (${conta1(pagSiss.map((p) => p.motivo || "caricata"))})`,
+        `  Richieste al SISS: ${rqSiss.length} (XHR/fetch ${rqSiss.filter((r) => /xmlhttprequest|fetch/.test(r.tipo || "")).length}, rinvii ${rqSiss.reduce((n, r) => n + r.rinvii.length, 0)}, errori ${rqSiss.filter((r) => r.errore).length}, PDF ${rqSiss.filter((r) => r.pdf).length})`,
+        `  PDF «Stampa RE»: ${pdfSiss.length ? `sì — ${pdfSiss.length} (testo letto in ${pdfSiss.filter((d) => (d.righe || []).length).length})` : "no"}${nonRiletti ? `; ${nonRiletti} aperti ma non riletti (il server non li lascia in cache)` : ""}`,
+        `  Credenziali (password, PIN, OTP): mai registrate — campi esclusi ${pagSiss.reduce((n, p) => n + (Number(p.credenziali) || 0), 0)}; pagine o dialoghi solo nella forma: ${pagSiss.filter((p) => p.forma).length}`,
+        `  Host fuori dal SISS chiamati dalle sue pagine (non registrati): ${[...fuori].sort().join(", ") || "nessuno"}`,
+        "",
+      ];
+    };
     const riepilogoDati = {
       versione: raccolta.versione || "?", durata: Math.round((Number(raccolta.fine || Date.now()) - inizio) / 60000),
       comeFinita: raccolta.comeFinita || "fermata a mano", pagine: elencoPagine.length, perTipo,
@@ -847,6 +1197,7 @@
       `Richieste: ${riepilogoDati.richieste} (dell'estensione ${dellEstensione}, rinvii ${riepilogoDati.rinvii}, errori ${riepilogoDati.errori})`,
       `PDF: ${riepilogoDati.pdf} (testo letto in ${riepilogoDati.pdfLetti}; riletti una volta dalla cache del browser: ${riletti})`,
       "",
+      ...sezioneSiss(),
       "Sostituzioni:",
       ...Object.entries(conteggi).map(([k, v]) => `  ${k}: ${v}`),
       "",
@@ -870,6 +1221,7 @@
     for (const { cat, orig } of nomiVisti.values()) {
       sensibili[cat].push(orig);
     }
+    for (const [w, e] of parolePersona) if (e.cognome && w.length >= 4) sensibili.nomi.push(w);
     // (opz.aggiungi: file messi fra quelli in uscita prima del controllo — solo per i test)
     Object.assign(files, opz.aggiungi || {});
     const prova = { ...files, "riepilogo.txt": riepilogo({ ok: true, punti: 0 }) };
