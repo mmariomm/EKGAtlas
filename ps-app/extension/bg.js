@@ -1347,7 +1347,7 @@ async function registraPortale(pattern) {
   }]);
   // il registratore (⋯ → Registra) guarda anche le pagine del portale
   await chrome.scripting.registerContentScripts([{
-    id: "portale-registra", matches: [pattern], js: ["registra-pagina.js"], runAt: "document_start", allFrames: true,
+    id: "portale-registra", matches: [pattern], js: ["registra-pill.js", "registra-pagina.js"], runAt: "document_start", allFrames: true,
     persistAcrossSessions: true,
   }]).catch(() => {});
   // il PDF del referto lo vede solo chi sta nel mondo della pagina (vedi portale-pdf.js)

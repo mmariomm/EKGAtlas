@@ -28,9 +28,12 @@
     {
       "matches": [
         "https://smarthealth.multimedica.it/*",
-        "http://10.11.0.151/*"
+        "http://10.11.0.151/*",
+        "https://dcss.cgi.crs.lombardia.it/*",
+        "https://operatorisiss.servizirl.it/*"
       ],
       "js": [
+        "registra-pill.js",
         "registra-pagina.js"
       ],
       "run_at": "document_start",
@@ -65,7 +68,9 @@
   ],
   "host_permissions": [
     "https://smarthealth.multimedica.it/*",
-    "http://10.11.0.151/*"
+    "http://10.11.0.151/*",
+    "https://dcss.cgi.crs.lombardia.it/*",
+    "https://operatorisiss.servizirl.it/*"
   ],
   "web_accessible_resources": [
     {

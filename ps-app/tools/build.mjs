@@ -76,6 +76,32 @@ writeFileSync(join(root, "extension/ponte-host.js"),
     "",
   ].join("\n"));
 
+  // La pill del registratore fuori dal gestionale (SISS, portale, pagine senza
+  // il pannello): la STESSA pill del pannello ridotto — le stesse regole CSS,
+  // prese da COLORS in core.js così come sono, non ricopiate a mano.
+  {
+    const a = core.indexOf("const COLORS = `"), b = core.indexOf("\n  `;", a);
+    const css = core.slice(a, b);
+    const regola = (sel) => {
+      const i = css.indexOf(`\n    ${sel} {`);
+      if (i < 0) { console.error("registra-pill: regola non trovata in COLORS: " + sel); process.exit(1); }
+      let depth = 0, end = i;
+      for (let k = css.indexOf("{", i); k < css.length; k++) {
+        if (css[k] === "{") depth++;
+        else if (css[k] === "}") { depth--; if (!depth) { end = k + 1; break; } }
+      }
+      return css.slice(i + 1, end).replace(/\s*\n\s*/g, " ").trim();
+    };
+    const SEL = [":host", "[hidden]", "*", ".wrap", ".pill", ".pill:active", ".pill:hover", ".pill .dot", ".recchip",
+      ".menu", ".menu button", ".menu button:hover, .menu button:focus-visible", "@keyframes psaPulse"];
+    writeFileSync(join(root, "extension/registra-pill.js"), [
+      "// Generato da tools/build.mjs da src/core.js: non si modifica a mano.",
+      "// Le regole della pill del pannello (COLORS), per la pill «● Registrando…» del registratore.",
+      `globalThis.__psaPillCss = ${JSON.stringify(SEL.map(regola).join("\n"))};`,
+      "",
+    ].join("\n"));
+  }
+
   const dir = join(root, "esempi-gestionale");
   const FINTI = /^(ROSSI MARIO|BIANCHI ANNA|COLOMBO LUIGI|RICCI GIULIA|UTENTE\d*|OSPEDALE ESEMPIO|software di esempio|SMPRSS80A01F205X|(DOTTORE ESEMPIO|MEDICO DI TURNO|SPECIALISTA ESEMPIO)( \d+)?|\w+ di esempio|paziente|esempio|reparto|controllo|valore|esame|scheda|nota|dato|campo|voce|prova)$/;
   const PAROLE_FINTE = new Set(["ROSSI", "MARIO", "BIANCHI", "ANNA", "COLOMBO", "LUIGI", "RICCI", "GIULIA", "DOTTORE", "SPECIALISTA"]);

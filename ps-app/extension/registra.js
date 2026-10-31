@@ -20,6 +20,11 @@
  * controlla, e scarica lo zip. Non parte niente verso nessuno. Dopo 60 minuti
  * la registrazione si ferma da sola; una registrazione mai scaricata si
  * cancella da sola dopo 12 ore.
+ * Anche il SISS (il menu operatore e il Prescrittivo Regionale, REG_SISS): lì
+ * il pannello non c'è — solo registra-pagina.js, e solo mentre si registra —
+ * e il flusso è lo stesso, osservato: XHR e fetch delle sue API, rinvii, tempi,
+ * il PDF di «Stampa RE». Mai un corpo di risposta; dei moduli inviati mai un
+ * campo di credenziali (password, PIN, OTP).
  * Vede le costanti di bg.js (SA4, ALLOWED_ORIGINS): è caricato da lì.
  */
 const REG = "registra";                 // lo stato, in storage.local: lo legge anche il pannello (● REC)
@@ -30,12 +35,19 @@ const REG_PDF_MAX = 15 * 1024 * 1024;
 const REG_PDF_N = 200;
 const REG_PAGINE_N = 1500;
 
+// il SISS: due origini esatte, solo https (anche in manifest.json)
+const REG_SISS = new Set(["https://dcss.cgi.crs.lombardia.it", "https://operatorisiss.servizirl.it"]);
+const regSiss = (url) => { try { return REG_SISS.has(new URL(url).origin); } catch { return false; } };
+// i campi che non si registrano mai, neanche nel grezzo
+const REG_CRED = /(?:^|[^a-z])(?:pin|otp|password|passwd|pwd|passcode|puk|sblocco)(?:[^a-z]|$)|one[\s_-]?time|j_password/i;
+const REG_MOTIVI = new Set(["caricata", "uscita", "rotta", "overlay", "quiete"]);
+
 let regStato = null;
 let regCaricato = false;
 let regPortale = "";
 const regAttiva = (s = regStato) => !!s && s.stato === "rec" && Date.now() < s.scade;
 const regNostra = (url) => {
-  try { const o = new URL(url).origin; return o === SA4 || ALLOWED_ORIGINS.has(o) || (!!regPortale && o === regPortale); }
+  try { const o = new URL(url).origin; return o === SA4 || ALLOWED_ORIGINS.has(o) || REG_SISS.has(o) || (!!regPortale && o === regPortale); }
   catch { return false; }
 };
 
@@ -131,7 +143,11 @@ chrome.webRequest.onBeforeRequest.addListener(regQuando((d) => {
     registratore: regRilettura.has(d.url) || undefined,
   };
   const fd = d.requestBody && d.requestBody.formData;
-  if (fd) { r.corpo = {}; for (const [k, v] of Object.entries(fd).slice(0, 200)) r.corpo[k] = (Array.isArray(v) ? v : [v]).slice(0, 20).map((x) => String(x).slice(0, 2000)); }
+  if (fd) {
+    r.corpo = {};
+    for (const [k, v] of Object.entries(fd).slice(0, 200)) r.corpo[k] = REG_CRED.test(k) ? ["(credenziale: non registrata)"] : (Array.isArray(v) ? v : [v]).slice(0, 20).map((x) => String(x).slice(0, 2000));
+  }
+  if (regSiss(d.url)) r.siss = true;
   regInVolo.set(d.requestId, r);
 }), REG_FILTRO, ["requestBody"]);
 chrome.webRequest.onBeforeRedirect.addListener(regQuando((d) => {
@@ -145,6 +161,10 @@ chrome.webRequest.onHeadersReceived.addListener(regQuando((d) => {
   r.stato = d.statusCode;
   if (ct) r.contenuto = ct.split(";")[0].trim().toLowerCase().slice(0, 60);
   if (/pdf/i.test(ct)) r.pdf = true;
+  // un PDF del SISS che il browser non tiene in cache: rileggerlo vorrebbe
+  // dire chiederlo di nuovo al server regionale (una stampa in più) — no
+  const cc = ((d.responseHeaders || []).find((h) => /^cache-control$/i.test(h.name)) || {}).value || "";
+  if (r.siss && /no-store/i.test(cc)) r.nonInCache = true;
 }), REG_FILTRO, ["responseHeaders"]);
 chrome.webRequest.onCompleted.addListener(regQuando((d) => {
   const r = regInVolo.get(d.requestId);
@@ -154,7 +174,8 @@ chrome.webRequest.onCompleted.addListener(regQuando((d) => {
   if (r.url !== d.url) r.finale = d.url;
   regAccoda("flusso", r);
   // un PDF aperto: se nessuno ne ha già i byte, una rilettura dalla cache
-  if (r.pdf && !r.registratore && d.statusCode >= 200 && d.statusCode < 300) {
+  if (r.pdf && r.nonInCache) r.nonRiletto = "non in cache";
+  else if (r.pdf && !r.registratore && d.statusCode >= 200 && d.statusCode < 300) {
     const u = d.url;
     setTimeout(() => regRileggi(u, r).catch(() => {}), 2500);
   }
@@ -225,7 +246,7 @@ async function regAvvia() {
   const ora = Date.now();
   regStato = {
     stato: "rec", inizio: ora, scade: ora + REG_DURATA, versione: chrome.runtime.getManifest().version,
-    origini: { gestionale: SA4, portale: o.portale || "", altri: [...ALLOWED_ORIGINS].filter((x) => x !== SA4) },
+    origini: { gestionale: SA4, portale: o.portale || "", altri: [...ALLOWED_ORIGINS].filter((x) => x !== SA4), siss: [...REG_SISS] },
   };
   await chrome.storage.local.set({ [REG]: regStato });
   clearTimeout(regScadenza);
@@ -266,10 +287,17 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (html.length > REG_PAGINA_MAX || regPagineN >= REG_PAGINE_N) return { ok: false, why: "troppo" };
     regPagineN++;
     const t = sender.tab;
+    // un'app a viste (il SISS) cambia indirizzo senza ricaricare: vale quello
+    // che dice la pagina, se è della stessa origine
+    let url = String(sender.url || msg.url || "");
+    try { if (msg.url && new URL(String(msg.url)).origin === new URL(url).origin) url = String(msg.url); } catch { /* resta quello del mittente */ }
+    const fuori = Array.isArray(msg.fuori) ? msg.fuori.map(String).filter((x) => /^https?:\/\/[\w.-]+(?::\d+)?$/.test(x)).slice(0, 20) : [];
     await regMetti({ tipo: "pagina",
-      url: String(sender.url || msg.url || ""), titolo: String(msg.titolo || "").slice(0, 300), html, ts: Number(msg.ts) || Date.now(),
-      scheda: t.id, frame: sender.frameId || 0, alto: !sender.frameId, motivo: msg.motivo === "uscita" ? "uscita" : "caricata",
+      url, titolo: String(msg.titolo || "").slice(0, 300), html, ts: Number(msg.ts) || Date.now(),
+      scheda: t.id, frame: sender.frameId || 0, alto: !sender.frameId, motivo: REG_MOTIVI.has(msg.motivo) ? msg.motivo : "caricata",
       finestra: t.windowId, apertaDa: t.openerTabId ?? null,
+      ...(msg.forma ? { forma: true } : {}), ...(Number(msg.credenziali) > 0 ? { credenziali: Math.min(99, Number(msg.credenziali)) } : {}),
+      ...(fuori.length ? { fuori } : {}),
     });
     return { ok: true };
   });
