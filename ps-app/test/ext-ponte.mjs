@@ -190,7 +190,7 @@ await doc.evaluate(({ CF_B, bUrl }) => {
   l.push({ ep: "998002", name: "BIANCHI ANNA", url: bUrl.replace("EPISODIO_ID=999002", "EPISODIO_ID=998002"), ts: ora - 5 * 3600e3, pk: "cf:" + CF_B, triage: "VERDE" });
   l.push({ ep: "999003", name: "VERDI LUCA", url: "", ts: ora - 40 * 60e3, pk: "", triage: "AZZURRO" });
   localStorage.setItem(K, JSON.stringify(l));
-  localStorage.setItem("psassist:stanza.posti.v1", JSON.stringify({ 999001: { tipo: "letto", id: "obi2", ts: ora } }));
+  localStorage.setItem("psassist:stanza.ps.posti.v1", JSON.stringify({ 999001: { tipo: "letto", id: "obi2", ts: ora } }));
 }, { CF_B, bUrl: B.patientUrl });
 await suPagina(doc, A.worklistUrl);   // il medico lascia il PC sulla lista
 

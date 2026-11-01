@@ -225,6 +225,22 @@ senza muri. Si vede finché non c'è una stanza salvata e si salva al primo camb
 salvata non viene mai sostituita. Se togli tutto, la stanza resta vuota, con **Disegna la stanza** e
 «o riprendi la pianta del PS».
 
+**Le aree.** La lista è divisa per area — **Alta intensità · OBI · Bassa · Codici minori** (un'area
+che il programma non riconosce tiene il suo nome) —, ognuna sotto un filo col suo titolo; chi non ha
+ancora un'area sta in cima. Chi sta in un'area lo dice **la lista di quell'area nel gestionale**,
+quando la apri: chi c'è entra (anche mai aperto), chi non c'è più ne esce; una lista filtrata
+aggiunge e basta. Niente si legge da solo. Il **titolo** apre la lista dell'area: se non è la tua,
+passa da **PsoPsoImposta**, sceglie l'area nella tendina e preme **Conferma** — quello che faresti a
+mano. **Ogni area ha la sua mappa**, e si vede quella dell'area in cui lavori: l'**Alta** dallo
+schizzo del medico — in basso il **Box**, i letti **3, 2, 1** e la **Rossa** (Box e Rossa: un letto
+nella sua cornice), sopra le **sedie** (tre in fila, la quarta sopra la Rossa), in alto a sinistra le
+due barelle di **Attesa barellati** —; le altre quella del PS. Ognuna si ritocca con **Modifica**.
+
+**La lista smart** (tutto il pronto soccorso, nella sua finestra): un tocco su una riga apre il
+paziente. Conosciuto — nome e data di nascita, uno solo — la sua cartella, nella scheda del
+gestionale; se no si passa alla sua area e lo si apre dalla sua lista, col link della sua riga. Due
+uguali: la lista dell'area, e scegli tu. Un indirizzo d'episodio non si costruisce mai.
+
 La stanza è una **griglia di celle uguali** (40 × 24; un letto ne prende 5 × 4, una sedia 4 × 3): allargando o
 stringendo la finestra — o accorciandosi la lista — cresce o cala tutta insieme, in scala, e **niente si sovrappone** — nemmeno
 affiancata o alla misura minima, dove semmai la mappa scorre (sotto i 20 px una cella non porta più
@@ -312,10 +328,16 @@ Tutto resta **solo in questo browser** (`localStorage`), niente va in rete; lo *
 esami** (`stato.v1`) è per episodio — ore, nomi di esami, mai il nome del paziente —, scade in 24
 ore, se ne va con 🗑 e «Svuota l'elenco»; le allergie lette lì dentro se ne vanno anche alla pagina
 di login; un altro PC o un altro
-profilo Chrome ha la sua stanza. La **stanza disegnata** (`stanza.v1`: celle intere della griglia,
-così a ogni misura è la stessa; la sedia è un letto con `forma: "sedia"`) resta come i fogli di
-dimissione: è un modello, non contiene pazienti. Finché non c'è, si vede quella del PS, coi suoi id
-fissi («obi1»…): chi è messo in OBI 1 ci resta anche prima che la stanza sia salvata. **Chi sta dove** (`stanza.posti.v1`) sono solo numeri di episodio, mai nomi. La pagina di
+profilo Chrome ha la sua stanza. La **stanza disegnata**, una per mappa (`stanza.ps.v1`,
+`stanza.alta.v1`: celle intere della griglia, così a ogni misura è la stessa; la sedia è un letto
+con `forma: "sedia"`, il Box `"box"`, la barella `"barella"`) resta come i fogli di dimissione: è un
+modello, non contiene pazienti. Finché non c'è, si vede quella di partenza, coi suoi id fissi
+(«obi1», «rossa»…): chi è messo in OBI 1 ci resta anche prima che la stanza sia salvata. La stanza
+di prima (`stanza.v1`, `stanza.posti.v1`) diventa da sola quella del PS, coi suoi posti. **Chi sta
+dove** (`stanza.ps.posti.v1`, `stanza.alta.posti.v1`) sono solo numeri di episodio, mai nomi;
+**chi sta in quale area** (`aree.v1`) anche; le opzioni dell'area lette in PsoPsoImposta
+(`aree.opzioni.v1`) sono un'impostazione. Della data di nascita l'elenco tiene solo un'impronta,
+per riconoscere le righe della lista smart. La pagina di
 login **non** li cancella: chi viene riaperto dopo una sessione scaduta ritrova il suo letto (il
 posto aspetta al massimo un giorno). «Svuota l'elenco» toglie anche i posti; eliminare un paziente
 (🗑) toglie anche il suo. **Da fare** (`dafare.v1`) è per episodio: la cosa da fare e l'ora se c'è,
@@ -694,15 +716,15 @@ finisce fra gli **Archiviati** (in fondo, con il conteggio). Da lì lo si può *
 attivi, oppure **🗑 eliminare** — e eliminare vuol dire *tutto quello che il programma sa di lui*:
 la scheda clinica, i referti tenuti, il testo dei referti letti, «Da fare» e i dati per
 episodio di quella scheda del browser. Chiede conferma una volta e non si torna indietro. L'elenco tiene un
-giorno e sessanta pazienti: un turno è di dodici ore.
+giorno e centocinquanta pazienti: un turno è di dodici ore.
 
 **⋯ → Reset dati pazienti** (quando il pannello si incastra): due tocchi («Cancello tutto? Tocca di
-nuovo»), poi «Fatto». Via **tutto** quello che sa dei pazienti e del turno — elenco e posti nella
-stanza, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
+nuovo»), poi «Fatto». Via **tutto** quello che sa dei pazienti e del turno — elenco, aree e posti
+nelle stanze, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
 cliniche, ordini finiti, richieste da confermare, quesiti, la memoria di ogni scheda aperta, gli
 ordini che ricorda il Ponte, la registrazione; dei Tempi resta la durata, non il paziente. **Restano**: stampanti e
 stampa automatica, indirizzo del portale, associazione con l'iPhone, fogli di dimissione ed EO,
-la stanza, la finestra. Non c'è mentre un ordine è in corso.
+le stanze, le opzioni delle aree, la finestra. Non c'è mentre un ordine è in corso.
 
 **Il nome viene dal riquadro del paziente**, quello colorato in testa alla scheda (episodio, nome,
 nascita, codice fiscale, motivo): la sua riga più grande. **Non dal titolo della scheda del
@@ -1707,6 +1729,7 @@ npm run verifica-build   # al rilascio, dopo dist e il commit: build fresca = bu
 npm test           # 106 scenari e2e + 194 sull'estensione (129 sull'ordine in sottofondo, 6 con la scheda davvero nascosta) + 123 sulla stampa automatica (+ 60 sull'aiutante di Windows, con PowerShell 7: PWSH=…) + storico + il cancello privacy
                    # + l'ordine in una scheda DAVVERO nascosta: Chrome senza Playwright, CDP grezzo (test/ext-nascosta.mjs; serve openssl)
                    # + il Ponte: 120 controlli senza browser (cifratura, ripetitore, Worker) e 166 dal vivo (test/ext-ponte.mjs)
+                   # + le aree, su pagine sintetiche: sezioni, PsoPsoImposta, mappa dell'Alta, lista smart (test/aree.mjs)
                    # (Chromium che va in crash aprendo un PDF, in un contenitore Linux: PSA_CHROMIUM_ARGS=--disable-features=PdfOopif)
 ```
 

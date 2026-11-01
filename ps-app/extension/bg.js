@@ -307,6 +307,37 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     return true;
   }
 
+  // Un clic su una riga della lista smart (una finestra sua): la cartella, o la
+  // pagina dell'area, si apre nella scheda del gestionale da cui la finestra è
+  // nata — o nell'ultima usata — e la si porta davanti. Solo pagine da aprire
+  // del menu o la cartella: mai un modulo.
+  if (msg.t === "apriNelGestionale") {
+    (async () => {
+      const da = _sender.tab;
+      let u;
+      try { u = new URL(String(msg.url || "")); } catch { return reply({ ok: false, why: "link non valido" }); }
+      const mvpg = u.searchParams.get("MVPG") || "";
+      if (!da || u.origin !== "https://smarthealth.multimedica.it" || !/^\/sa4pso\/restrict\/menuPso(Episodio)?\.do$/.test(u.pathname)
+          || /[?&](ccsForm|Insert|Delete|Update)=/i.test(u.search) || !["PsoEpisodioClinicoAmbulatorio", "PsoPazientiAmbulatorio", "PsoPsoImposta"].includes(mvpg)) {
+        return reply({ ok: false, why: "link inatteso" });
+      }
+      const ordini = await ordLeggi().catch(() => []);
+      const lavoro = new Set((ordini || []).map((x) => x && x.worker).filter((x) => x != null));
+      const buona = (t) => !!t && t.id !== da.id && !lavoro.has(t.id) && /^https:\/\/smarthealth\.multimedica\.it\/sa4pso\//.test(t.url || "")
+        && !/MVPG=PsoPazientiSmart/.test(t.url || "");
+      let t = da.openerTabId != null ? await chrome.tabs.get(da.openerTabId).catch(() => null) : null;
+      if (!buona(t)) {
+        const tutte = await chrome.tabs.query({ url: "https://smarthealth.multimedica.it/sa4pso/*" }).catch(() => []);
+        t = tutte.filter(buona).sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0] || null;
+      }
+      if (!t) return reply({ ok: false, why: "nessuna scheda del gestionale" });
+      await chrome.tabs.update(t.id, { url: u.href, active: true });
+      await chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
+      reply({ ok: true, tabId: t.id });
+    })().catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 80) }));
+    return true;
+  }
+
   if (msg.t === "apriStoricoSotto") {
     (async () => {
       const da = _sender.tab;
