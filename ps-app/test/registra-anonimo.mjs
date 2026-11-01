@@ -193,6 +193,109 @@ check(/^ATTENZIONE: restano 2 dati da controllare/.test(riep3) && /pagine\/099-p
   `l'avviso è in cima a riepilogo.txt, con file e tipo (${riep3.split("\n").slice(0, 2).join(" | ")})`);
 check(!/RSSMRA80A01H501U|VERDONE/.test(riep3), "e senza i valori");
 
+// --------------------------------------- le liste del PS e le aree (Ambulatorio, Smart, Imposta)
+// Le pagine di elenco hanno più pazienti per pagina e un sacco di etichette del
+// programma: «Linea Attività», le linguette «Fast Track (0)», il pulsante «Elenco
+// Smart». Un'etichetta con due parole in maiuscolo/iniziali ha la forma di un
+// nome: non deve diventare un nome finto (e il controllo non deve poi trovare
+// quel «nome» nei campi `LINEA_ATTIVITA`). Le aree e le risorse (`00010001P`,
+// «AREA …», «CODICI MINORI», «OBI…») sono il vocabolario della funzione «aree»:
+// restano, anche se compaiono una volta sola. Il personale dei menu no.
+{
+  const PZ = [
+    { nome: "ALBANESE TITO", nato: "14/02/1951", eta: 75, ep: "150101", ass: "770101", prat: "2026/881001", motivo: "DOLORE TORACICO", utente: "GALSIL", dist: "oppressione retrosternale da due ore", ref: "5b1e2f10-aaaa-4bbb-8ccc-100000000001", area: "AREA DELTA" },
+    { nome: "CARRARO IDA", nato: "03/11/1944", eta: 81, ep: "150102", ass: "770102", prat: "2026/881002", motivo: "CADUTA ACCIDENTALE", utente: "PEGMAR", dist: "caduta dal letto con trauma al polso", ref: "5b1e2f10-aaaa-4bbb-8ccc-100000000002", area: "CODICI MINORI - OBI" },
+    { nome: "BELLINI GINO", nato: "27/08/1938", eta: 87, ep: "150103", ass: "770103", prat: "2026/881003", motivo: "FEBBRE ALTA", utente: "GALSIL", dist: "febbre da tre giorni con tosse produttiva", ref: "5b1e2f10-aaaa-4bbb-8ccc-100000000003", area: "FAST TRACK" },
+  ];
+  const STAFF = ["FERRANTE ELIO", "GALLINI SILVIA", "PEGORARO MARTA"];
+  const intest = `<!DOCTYPE html><html><head><title>Pronto Soccorso</title></head><body>
+  <table class="AFCHeaderTable"><tr class="AFCHeaderTR"><td class="SA4HeaderBarTDnoBold"><a class="SA4HeaderBarLink" title="Verbali Firmati" href="#"
+   onclick="javascript:window.open('/sa4siss/restrict/menuSiss.do?MVPG=SissMultiElencoVerbaliPS&amp;RISORSA_ID=00010001P','Verbali Firmati');">Verbali Firmati</a></td></tr></table>`;
+  const filtro = `<form name="PazientiFiltro" method="post" action="menuPso.do?ccsForm=PazientiFiltro:Edit&amp;MVPG=PsoPazientiAmbulatorio"><table><tr>
+    <td class="AFCFieldCaptionTD" align="right">Assistito </td>
+    <td class="AFCFieldCaptionTD"><input class="AFCInput" value="" name="s_ASSISTITO"></td>
+    <td class="AFCFieldCaptionTD" name="LINEA_ATTIVITA" style="display: none;">Linea Attività </td>
+    <td class="AFCFieldCaptionTD" name="LINEA_ATTIVITA" style="display: none;"><select name="s_LINEA_ATTIVITA" onchange="submit();"><option selected="" value="">Tutte</option></select></td>
+    <td nowrap="" align="center"><a class="shiny-button" href="?MVPG=PsoPazientiTriage">Triage</a>
+      <a class="shiny-button-selected" href="?MVPG=PsoPazientiAmbulatorio">Ambulatorio (3)</a>
+      <a class="shiny-button" href="?MVPG=PsoPazientiConsulenze">Consulenze (0)</a>
+      <a class="shiny-button" href="?MVPG=PsoPazientiFastTrack">Fast Track (0)</a>
+      <a class="shiny-button" href="?MVPG=PsoPazientiMedicoCarico">Medico Carico (1)</a></td>
+    <td class="AFCFieldCaptionTD"><a href="#" title="Elenco Smart" class="myButtonList" onclick="window.open('menuPso.do?MVPG=PsoPazientiSmart','Elenco Smart');"><img src="../Themes/AFC/images/elenco_smart.png" title="Elenco Smart"></a></td>
+  </tr></table></form>`;
+  const linguetta = (p, colore = "ARANCIONE") => `<a style="text-decoration: none" href="menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&amp;EPISODIO_ID=${p.ep}" title="Apri Episodio"><div class="myLinguetta" style=" border=1; background-color: ORANGE; color: White; "><table cellpadding="3" cellspacing="0" width="100%"><tbody><tr><td nowrap="" width="1%"><img style="border-style: none" title="${colore}" src="../Themes/AFC/images/2.gif" width="18" heigth="18"></td><td nowrap="" width="40%" title="${colore}"><strong>${p.nome}</strong><br>${p.nato}(${p.eta})<small> ${p.utente}</small></td><td width="50%" align="left" title="${p.dist}"><strong>${p.motivo}</strong><br>${p.dist}</td></tr></tbody></table></div></a>`;
+  const bottoni = (p) => `<a href="#" title="Referto di ${p.nome}" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=${p.ass}&amp;REFERTO_SISTEMA=HL7AMB&amp;REFERTO_ID=${p.ref}','HL7AMB')"><img src="../Themes/AFC/images/referto.gif" title="${p.dist}"></a>
+    <a name="" href="?MVPG=PsoEpisodioDiario&amp;EPISODIO_ID=${p.ep}&amp;homePage=PsoPazientiAmbulatorio" title="Note di ${p.nome}" onclick="apriNote('${p.nome}', '${p.nato}'); return false;"><img src="../Themes/AFC/images/note.gif"></a>`;
+  const ambulatorio = `${intest}${filtro}<table>${PZ.map((p) => `<tr><td class="AFCDataTD" name="EPISODIO">${p.motivo}<br>&nbsp;</td><td class="AFCDataTD">${linguetta(p)}</td><td class="AFCDataTD">${bottoni(p)}</td><td class="AFCDataTD" name="MEDICO">${STAFF[0]}</td></tr>`).join("")}</table></body></html>`;
+  const percorso = `<select class="AFCSelect" name="s_PERCORSO"><option selected="" value="">Tutti</option><option value="1">AREA DELTA</option><option value="4">AREA GAMMA - BASSA INTENSITA'</option><option value="9">CODICI MINORI - OBI</option><option value="12">FAST TRACK</option></select>`;
+  const smart = `${intest}${filtro}<div>${percorso}</div><table>${PZ.map((p) => `<tr><td class="AFCDataTD">${p.prat}</td><td class="AFCDataTD">${linguetta(p, "VERDE")}</td><td class="AFCDataTD">${p.area}</td><td class="AFCDataTD">${bottoni(p)}</td></tr>`).join("")}</table></body></html>`;
+  const imposta = `${intest}<div align="center"><font style="font-size: 130%">OSPEDALE DEL MARE</font><br><font style="font-size: 110%; font-weight: bolder;">AREA ZETA - BASSA INTENSITA'</font>
+    <form method="post" action="menuPso.do?ccsForm=ContestoImposta:Edit&amp;MVPG=PsoPsoImposta"><select class="AFCSelect" name="RISORSA_ID">
+      <option value="00010001P" selected="">AREA ALTA INTENSITA'</option><option value="00090001P">CODICI MINORI</option><option value="00170001P">OBI MEDICA</option><option value="00230001P">AREA ZETA - BASSA INTENSITA'</option><option value="00310001P">FAST TRACK</option></select>
+      <select class="AFCSelect" name="USERNAME" onchange="document.forms['LoginUtenti'].submit();"><option value="GALSIL">${STAFF[1]}</option><option value="PEGMAR">${STAFF[2]}</option><option value="FERELI">${STAFF[0]}</option></select>
+    </form></div></body></html>`;
+  const T1 = Date.UTC(2026, 9, 30, 9, 0, 0);
+  const mk = (url, html, ts, scheda = 21) => ({ url: `${G}/sa4pso/restrict/${url}`, html, ts: T1 + ts, scheda, alto: true });
+  const rl = anonimizza({ inizio: T1, origini: { gestionale: G }, pagine: [
+    mk("menuPso.do?MVPG=PsoPazientiAmbulatorio", ambulatorio, 1000),
+    mk("menuPso.do?MVPG=PsoPazientiSmart", smart, 5000),
+    mk("menuPso.do?MVPG=PsoPsoImposta", imposta, 9000),
+    mk("menuPso.do?MVPG=PsoPazientiAmbulatorio", ambulatorio, 13000),
+  ] }, { vocabolario, sfasamento: 30, diagnosi: true });
+  if (process.env.MOSTRA_LISTE) { for (const [k, v] of Object.entries(rl.files)) console.log("=== " + k + "\n" + v); process.exit(0); }
+  const fl = Object.fromEntries(Object.entries(rl.files).filter(([n]) => n.startsWith("pagine/")));
+  const amb = fl["pagine/001-PsoPazientiAmbulatorio.html"], sm = fl["pagine/002-PsoPazientiSmart.html"], imp = fl["pagine/003-PsoPsoImposta.html"];
+  const tuttoL = Object.values(fl).join("\n");
+  // i nomi veri non escono, in nessuna forma: linguetta, tooltip, onclick, utenti
+  for (const v of ["ALBANESE", "CARRARO", "BELLINI", "GALSIL", "PEGMAR", "FERRANTE", "GALLINI", "PEGORARO", "SILVIA", "14/02/1951", "03/11/1944", "27/08/1938",
+    "oppressione retrosternale", "tosse produttiva", "5b1e2f10-aaaa", "881001", "150101", "770101"]) {
+    check(!tuttoL.toUpperCase().includes(v.toUpperCase()), `liste: «${v}» non esce`);
+  }
+  check(rl.gate.ok && rl.gate.punti === 0, `liste: il cancello trova 0 punti (${rl.gate.punti}: ${JSON.stringify(rl.gate.dove)})`);
+  // …e fra i «nomi» visti non c'è nessuna etichetta del programma
+  const senzaAccenti = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
+  const nomiVisti = (rl.sensibili.nomi || []).concat(rl.sensibili.personale || []).map(senzaAccenti);
+  for (const eti of ["Linea Attività", "Fast Track", "Elenco Smart", "Verbali Firmati", "Medico Carico", "CODICI MINORI", "OBI MEDICA", "AREA DELTA"]) {
+    check(!nomiVisti.some((n) => n.includes(senzaAccenti(eti))), `liste: «${eti}» non è registrata come nome`);
+  }
+  // le etichette restano
+  check(/>Linea Attività\s*<\/td>/.test(amb) && /name="LINEA_ATTIVITA"/.test(amb) && /name="s_LINEA_ATTIVITA"/.test(amb), "liste: «Linea Attività» e i campi LINEA_ATTIVITA restano");
+  check(/>Fast Track \(0\)</.test(amb) && />Consulenze \(0\)</.test(amb) && />Ambulatorio \(3\)</.test(amb) && />Triage</.test(amb) && />Medico Carico \(1\)</.test(amb), "liste: le linguette («Ambulatorio (3)», «Fast Track (0)»…) restano");
+  check(/title="Elenco Smart"/.test(amb) && /'Elenco Smart'/.test(amb) && />Verbali Firmati</.test(amb), "liste: pulsanti e menu del programma restano (title, onclick, testo)");
+  check(/icona:elenco_smart\.png/.test(amb), "liste: l'icona del pulsante resta (nome del file)");
+  check(/title="ARANCIONE"/.test(amb) && /title="VERDE"/.test(sm), "liste: i colori del triage restano");
+  check(/<td class="AFCDataTD">AREA DELTA<\/td>/.test(sm) && /<td class="AFCDataTD">CODICI MINORI - OBI<\/td>/.test(sm) && /<td class="AFCDataTD">FAST TRACK<\/td>/.test(sm), "Smart: la cella dell'area resta (anche se compare una volta sola)");
+  check(/<option value="1">AREA DELTA<\/option>/.test(sm) && /<option value="4">AREA GAMMA - BASSA INTENSITA'<\/option>/.test(sm) && /<option value="9">CODICI MINORI - OBI<\/option>/.test(sm) && /<option value="12">FAST TRACK<\/option>/.test(sm),
+    "Smart: le voci di s_PERCORSO restano");
+  // i pazienti sono sostituiti, con la forma
+  const ling = [...sm.matchAll(/<strong>([^<]+)<\/strong><br>(\d\d\/\d\d\/\d{4})\((\d+)\)<small> ([^<]+)<\/small>/g)];
+  check(ling.length === 3 && ling.every((m) => /^[A-Z]+ [A-Z]+$/.test(m[1]) && /^UTENTE\d+$/.test(m[4])) && new Set(ling.map((m) => m[1])).size === 3,
+    `Smart: nome finto, data di nascita (età) e utente nella linguetta (${ling.map((m) => `${m[1]} ${m[2]}(${m[3]}) ${m[4]}`).join("; ")})`);
+  check(/Sa4ViewerExtRedirect\.do\?ASSISTITO_ID=[^&']+&REFERTO_SISTEMA=HL7AMB&REFERTO_ID=0000e5e0-/.test(amb.replace(/&amp;/g, "&")), "liste: nell'onclick l'assistito e il referto sono id finti");
+  // PsoPsoImposta: risorse e aree restano, il personale no
+  check(["00010001P", "00090001P", "00170001P", "00230001P", "00310001P"].every((id) => imp.includes(`<option value="${id}"`)), "Imposta: gli id di risorsa (^\\d{8}P$) restano nelle option di RISORSA_ID");
+  check(/<option value="00010001P" selected="">AREA ALTA INTENSITA'<\/option>/.test(imp) && />CODICI MINORI<\/option>/.test(imp) && />OBI MEDICA<\/option>/.test(imp) && />AREA ZETA - BASSA INTENSITA'<\/option>/.test(imp) && />FAST TRACK<\/option>/.test(imp),
+    "Imposta: le etichette delle risorse restano (AREA…, CODICI MINORI, OBI, FAST TRACK)");
+  check(/INTENSITA'<\/font>/.test(imp) && !/OSPEDALE DEL MARE/.test(imp), "Imposta: il nome dell'area nell'intestazione resta, quello dell'ospedale no");
+  const utenti = /<select[^>]*name="USERNAME"[\s\S]*?<\/select>/.exec(imp)[0];
+  check(!/GALLINI|PEGORARO|FERRANTE/.test(utenti) && (utenti.match(/<option /g) || []).length === 3, `Imposta: i nomi del personale in USERNAME sono sostituiti (${utenti.replace(/\s+/g, " ").slice(0, 160)})`);
+  check(!/value="(GALSIL|PEGMAR|FERELI)"/.test(utenti), "Imposta: e anche le loro sigle");
+  check(/Controllo prima dell'esportazione: superato/.test(rl.files["riepilogo.txt"]), "liste: il riepilogo dice «superato»");
+
+  // …ma un nome vero, per quanto abbia la forma di un'etichetta, resta un nome:
+  // la linguetta di un paziente dentro un link senza episodio nell'indirizzo, la
+  // cella di intestazione che compare in una pagina sola, un nome in un'area
+  // (le aree dei pazienti non esistono: «AREA» è l'inizio di un'etichetta, non una scusa)
+  const rn = anonimizza({ inizio: T1, origini: { gestionale: G }, pagine: [
+    mk("menuPso.do?MVPG=PsoPazientiAmbulatorio", `<html><body><table><tr><td class="AFCFieldCaptionTD">Zucchi Angelo</td></tr></table>
+      <a href="menuPso.do?MVPG=PsoPazientiSmart"><div class="myLinguetta"><strong>VASSALLO NINO</strong><br>09/09/1940(86)</div></a>
+      <a href="menuPso.do?MVPG=PsoPazientiSmart&amp;MEDICO=CORSINI">Corsini Dario</a>
+      <a href="#" onclick="logoutUserApiManager(this,null)">Fabbri Ornella</a></body></html>`, 1000),
+  ] }, { vocabolario, sfasamento: 30 });
+  const tuttoN = Object.values(rn.files).filter((c, i) => Object.keys(rn.files)[i].startsWith("pagine/")).join("\n");
+  check(!/VASSALLO|NINO|ZUCCHI|ANGELO|CORSINI|DARIO|FABBRI|ORNELLA|09\/09\/1940/i.test(tuttoN), `un nome non diventa «etichetta»: linguetta senza episodio, intestazione di una pagina sola, link con parametri, utente (${tuttoN.match(/VASSALLO|ZUCCHI|CORSINI|FABBRI/gi)})`);
+}
+
 // --------------------------------------------------------------- lo zip
 const zip = creaZip({ "a.txt": "ciao", "pagine/001-x.html": "<p>è</p>" });
 const dir = mkdtempSync(join(tmpdir(), "psa-zip-"));

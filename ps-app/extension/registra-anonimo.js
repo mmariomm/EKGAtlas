@@ -192,6 +192,48 @@
   const isExam = (s) => /^\d+-\d+\s+\S/.test(String(s).trim());
   const soloPunteggiatura = (t) => /^[\s|·•\-–—:/,.;()[\]*+_=#!?'"«»°%&]+$/.test(t);
 
+  // ----------------------------------------- aree, risorse, etichette
+  // Il vocabolario delle AREE del PS (funzione «aree»): gli id di risorsa
+  // (`00010001P`), i nomi delle aree («AREA ALTA INTENSITA'», «CODICI MINORI»,
+  // «FAST TRACK», «OBI…») e i colori del triage. Restano anche se compaiono una
+  // volta sola: non sono di nessun paziente. Hanno la forma di un nome (due
+  // parole in maiuscolo) o di una sigla utente (ROSSO, AZZURRO): senza questo
+  // elenco diventerebbero un nome finto.
+  const RISORSA_RE = /^\d{8}P$/;
+  const COLORI_TRIAGE = /^(?:CODICE\s+)?(?:ROSSO|ARANCIONE|AZZURRO|VERDE|BIANCO|GIALLO|NERO|BLU)$/i;
+  const OBI_PAROLE = /^(?:\d+|[A-Z]*(?:ICA|ICO|IVA|ALE|ILE)|BREVE|DI|E|A|IN|PS|OBI|AREA|CODICI|MINORI|FAST|TRACK)$/;
+  const areaVoce = (s) => {
+    const t = String(s).replace(/ /g, " ").trim().replace(/\s*\(\s*\d+\s*\)$/, "");
+    if (!t || t.length > 60) return false;
+    if (RISORSA_RE.test(t) || COLORI_TRIAGE.test(t)) return true;
+    if (!/^[A-Za-zÀ-ÿ0-9 '’.,/()+-]+$/.test(t) || t.split(/\s+/).length > 7) return false;
+    const MAI = !/[a-z]/.test(t);
+    if (/^(?:fast\s+track|codici\s+minori)\b/i.test(t) || (MAI && /\b(?:CODICI\s+MINORI|FAST\s+TRACK)\b/.test(t))) return true;
+    if (MAI) {
+      if (/^AREA\s+\S/.test(t) || /INTENSIT[AÀ]/.test(t)) return true;
+      if (/\bOBI\b/.test(t)) return t.split(/[^A-ZÀ-Ù0-9']+/).filter(Boolean).every((w) => OBI_PAROLE.test(w));
+      return false;
+    }
+    return /^Area(?:\s+(?:[A-ZÀ-Ù][\wÀ-ÿ'’.]*|-|e|di|a))+$/.test(t);
+  };
+  // I select che portano risorse, aree, percorsi, servizi: le loro voci sono
+  // il vocabolario del programma (mai personale: USERNAME & co. no).
+  const SELECT_STRUTTURA = /^(?:s_)?(?:RISORSA_ID|RISORSE|PERCORSO|LINEA_ATTIVITA|SERVIZIO_ID|AREA|AREA_ID)$/i;
+  // Un indirizzo di sola navigazione: MVPG (o ccsForm) e parametri della macchina,
+  // nessun caso, nessuna persona.
+  const soloNavigazione = (u) => {
+    const ind = String(u || "").replace(/&amp;/g, "&").match(/[^'"\s()]*MVPG=[^'"\s()]*/gi);
+    if (!ind) return false;
+    for (const x of ind) for (const pp of x.split(/[?&;]/)) {
+      const i = pp.indexOf("=");
+      if (i < 0 || i === pp.length - 1) continue;
+      const K = pp.slice(0, i).toUpperCase();
+      if (STRUTTURA.has(K) || /^(?:MVPG|CCSFORM|TOPAGE|RETURNPAGE|HOMEPAGE)$/.test(K) || /(?:ORDER|DIR)$/.test(K)) continue;
+      return false;
+    }
+    return true;
+  };
+
   // ------------------------------------------------------- HTML a pezzi
   const TAG_RE = /<(\/?)([a-zA-Z][^\s/>]*)((?:\s*[^\s=/>]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?)*)\s*(\/?)>/y;
   const ATTR_RE = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
@@ -293,7 +335,7 @@
     const registraId = (v) => {
       v = String(v || "").trim();
       if (!/\d/.test(v)) return;                             // senza cifre non è il numero di un caso
-      if (!v || v.length < 5 || CODICI.has(v) || codiciSiss.has(v)) return;
+      if (!v || v.length < 5 || CODICI.has(v) || codiciSiss.has(v) || RISORSA_RE.test(v)) return;   // (le risorse sono vocabolario)
       if (/^\d+$/.test(v) && v.length < 5) return;          // un progressivo, una risorsa: non un caso
       if (/^\d+$/.test(v) && Number(v) === 0) return;
       idOriginali.add(v);
@@ -338,6 +380,18 @@
       if (unita) testi.get(k).add(unita);
     };
 
+    // ------------------------------------------ le etichette del programma
+    // Le parole che il programma mette su pulsanti, linguette, intestazioni di
+    // colonna, voci di select (aree, percorsi, servizi): non di un paziente, e
+    // non nomi di persona anche quando hanno due parole con le iniziali grandi
+    // («Linea Attività», «Fast Track», «Elenco Smart»). Si riconoscono dal
+    // posto (un link di sola navigazione, un'intestazione, la voce di un select
+    // di risorse) e dal nome che il programma gli ha già dato nella pagina (il
+    // campo LINEA_ATTIVITA, l'icona elenco_smart.png).
+    const ETI = new Set(), STRUT = new Set();
+    const chiaveEti = (t) => norma(String(t).replace(/\s*\(\s*\d+\s*\)\s*$/, "").replace(/\s*\*\s*$/, ""));
+    const etichetta = (t) => { const k = chiaveEti(pulisci(t)); return k.trim().length >= 3 && (ETI.has(k) || STRUT.has(k)); };
+
     // ------------------------------------------------------- persone
     const nomiVisti = new Map();     // NORMA(originale) → { cat: "nomi"|"personale", orig }
     const paroleDiNomi = new Set();
@@ -356,17 +410,18 @@
     // COGNOME NOME in maiuscolo, o Nome Cognome con le iniziali: non frasi del programma
     const formaNome = (s) => {
       const t = pulisci(s).trim();
+      if (areaVoce(t) || etichetta(t)) return false;     // un'area, un'etichetta del programma: non una persona
       if (/^[A-ZÀ-Ù'’]+(?:\s+[A-ZÀ-Ù'’]+){1,3}$/.test(t)) return !paroleApp(t) && !tutteStatiche(t);
       if (/^[A-ZÀ-Ù][a-zà-ÿ'’]+(?:\s+[A-ZÀ-Ù][a-zà-ÿ'’]+){1,2}$/.test(t)) return !paroleApp(t) && !MAIUSC(t).split(/\s+/).some((w) => PAROLE_STATICHE.has(w));
       return false;
     };
-    const utente = (t) => /^[A-Z]{5,7}$/.test(t) && !PAROLE_STATICHE.has(t) && !paroleApp(t) && !STATICO.has(t);
+    const utente = (t) => /^[A-Z]{5,7}$/.test(t) && !areaVoce(t) && !PAROLE_STATICHE.has(t) && !paroleApp(t) && !STATICO.has(t);
     const negato = (t) => MARCHI.some((re) => re.test(t)) || formaNome(t) || utente(t) || haCF(t);
     const vocabolo = (s) => {
       const k = pulisci(s).trim();
       if (!k) return true;
       if (negato(k) || nomiVisti.has(norma(k))) return false;
-      if (STATICO.has(k) || isExam(k) || CODICI.has(k)) return true;
+      if (STATICO.has(k) || isExam(k) || CODICI.has(k) || areaVoce(k) || etichetta(k)) return true;
       const u = testi.get(k);
       return !!u && u.size >= 2;
     };
@@ -815,7 +870,7 @@
     }
     function trattaPagina0(html, unitaPagina, siss) {
       const out = [];
-      let select = null, inputNome = null, etiSiss = null, credArea = false;
+      let select = null, inputNome = null, etiSiss = null, credArea = false, contesto = false;
       for (const p of pezzi(String(html))) {
         if (p.k === "doctype") { out.push(p.s); continue; }
         if (p.k === "testo") {
@@ -830,7 +885,7 @@
           else out.push(testoConSpazi(p.s));
           continue;
         }
-        if (p.k === "fine") { if (p.nome === "select") select = null; out.push(`</${p.nome}>`); continue; }
+        if (p.k === "fine") { if (p.nome === "select") select = null; else if (p.nome === "form") contesto = false; out.push(`</${p.nome}>`); continue; }
         if (p.k === "corpo") {
           if (p.nome === "script") out.push(anonJs(p.s));
           else if (p.nome === "style") out.push(anonCss(p.s));
@@ -842,6 +897,8 @@
         // un tag
         const nomeAttr = (p.attrs.find((a) => a.k.toLowerCase() === "name") || {}).v || "";
         if (p.nome === "select") select = nomeAttr;
+        if (p.nome === "form") contesto = /ccsForm=ContestoImposta/i.test(attrDi(p.attrs, "action"));
+        const selStrutt = !!select && (SELECT_STRUTTURA.test(select) || (contesto && !CAMPI_PERSONA.test(select) && !/USER/i.test(select)));
         if (p.nome === "input" || p.nome === "textarea" || p.nome === "select") inputNome = siss ? nomeAttr || attrDi(p.attrs, "formcontrolname") || attrDi(p.attrs, "id") : nomeAttr;
         const cred = (p.nome === "input" || p.nome === "textarea") && campoCredenziale(p.attrs);
         if (p.nome === "textarea") credArea = cred;
@@ -870,6 +927,7 @@
             if (cred) nv = "";
             else if (p.nome === "option" && select && CAMPI_PERSONA.test(select)) nv = /^\d{1,6}$/.test(v) ? v : nomeFinto(v, "personale");
             else if (!v.trim()) nv = v;
+            else if (p.nome === "option" && selStrutt && /^[\w.-]{1,16}$/.test(v.trim()) && !credenziale(v)) nv = v;      // le risorse, i percorsi, i servizi: id del programma
             else if (siss && p.nome === "input" && !/^(checkbox|radio|hidden)$/i.test(attrDi(p.attrs, "type"))) nv = valoreCampoSiss(inputNome, v, p.attrs);
             else if (p.nome === "input" && STRUTTURA.has(N)) nv = v;
             else if (p.nome === "input" && CAMPI_PERSONA.test(N)) nv = nomeFinto(v, "personale");
@@ -983,6 +1041,58 @@
       }
       p.unitaRighe = unitaRighe;
     }
+    // le etichette del programma, dalla forma delle pagine (prima delle parole,
+    // così non diventano nomi): link di sola navigazione, intestazioni, voci
+    // dei select di risorse; e i nomi che il programma dà ai suoi campi
+    const didascalie = new Map();       // chiave → in quante pagine sta in una cella di intestazione
+    const etichettaBuona = (raw) => {
+      const t = pulisci(decodifica(String(raw))).replace(/\s+/g, " ").trim();
+      return t.length >= 2 && t.length <= 40 && /^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 '’.,/()*&:+-]*$/.test(t) && !/\d{5,}/.test(t) && !haCF(t) && !haEmail(t)
+        && !MARCHI.some((re) => re.test(t)) && !credenziale(t) && !new RegExp(DATA_RE.source).test(t) ? t : "";
+    };
+    const sicura = (raw) => { const t = etichettaBuona(raw); if (t) ETI.add(chiaveEti(t)); };
+    for (const p of pagine) {
+      const celle = [], viste = new Set();
+      let nav = false, testoDi = null, select = null, contesto = false;
+      for (const pz of p.pezzi) {
+        if (pz.k === "tag") {
+          const get = (n) => { const a = pz.attrs.find((x) => x.k.toLowerCase() === n); return a && a.v != null ? decodifica(a.v) : ""; };
+          // (un link con dentro una tabella, un a capo, un grassetto è una linguetta di un paziente, non un'etichetta)
+          if (nav && /^(?:table|div|strong|br|small|tr|td|th|p|ul|li)$/.test(pz.nome)) nav = false;
+          for (const k of ["name", "id"]) {
+            const v = get(k).replace(/^s_/i, "");
+            if (/^[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+$/.test(v)) STRUT.add(chiaveEti(v));
+          }
+          if (pz.nome === "img") {
+            const f = decURI(get("src").split(/[?#]/)[0].split(/[/\\]/).pop() || "").replace(/^icona:/, "").replace(/\.[a-z]+$/i, "");
+            if (/^[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+$/.test(f)) STRUT.add(chiaveEti(f));
+            if (nav) { sicura(get("title")); sicura(get("alt")); }
+          } else if (pz.nome === "a") {
+            nav = soloNavigazione(get("href")) || soloNavigazione(get("onclick"));
+            if (nav) sicura(get("title"));
+          } else if (pz.nome === "td" || pz.nome === "th") celle.push(pz.nome === "th" || /Caption|Column|Header/.test(get("class")));
+          else if (pz.nome === "form") contesto = /ccsForm=ContestoImposta/i.test(get("action"));
+          else if (pz.nome === "select") select = get("name");
+          else if (pz.nome === "input" && /^(?:submit|button|reset)$/i.test(get("type"))) sicura(get("value"));
+          else if (/^(?:label|legend|button|caption|option)$/.test(pz.nome) || (pz.nome === "font" && /HeaderFont/.test(get("class")))) testoDi = pz.nome;
+        } else if (pz.k === "fine") {
+          if (pz.nome === "a") nav = false;
+          else if (pz.nome === "td" || pz.nome === "th") celle.pop();
+          else if (pz.nome === "form") contesto = false;
+          else if (pz.nome === "select") select = null;
+          else if (testoDi === pz.nome) testoDi = null;
+        } else if (pz.k === "testo") {
+          const k = etichettaBuona(pz.s) && chiaveEti(etichettaBuona(pz.s));
+          if (!k) continue;
+          const strutt = select && (SELECT_STRUTTURA.test(select) || (contesto && !CAMPI_PERSONA.test(select) && !/USER/i.test(select)));
+          if (nav || (testoDi && testoDi !== "option") || (testoDi === "option" && strutt)) ETI.add(k);
+          else if (celle.length && celle[celle.length - 1] && !viste.has(k)) { viste.add(k); didascalie.set(k, (didascalie.get(k) || 0) + 1); }
+        }
+      }
+    }
+    // (una cella di intestazione che si ripete in più pagine: un'etichetta, non il dato di un caso)
+    for (const [k, n] of didascalie) if (n >= 2) ETI.add(k);
+
     // le parole: chi le dice, e cosa c'è dentro
     for (const p of pagine) {
       sissOra = p.siss;
