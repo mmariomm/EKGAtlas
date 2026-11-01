@@ -168,12 +168,12 @@ colonne, e «visto…» si toglie.
 accanto agli identificativi: **♥ rosso** se un parametro da solo è nella fascia rossa del NEWS2 —
 SpO2 ≤91 (una soglia per tutti), FR ≤8 o ≥25, PAS ≤90 o ≥220, FC ≤40 o ≥131, T ≤35,0, coscienza
 non A all'ACVPU o GCS <15 — o se il NEWS2 fa 7 o più; **♥ ambra** per NEWS2 5–6; niente altrimenti.
-Accanto al cuore, i parametri fuori norma (al massimo due, il più lontano prima: «♥ SpO2 88»); nel letto solo l'icona.
+Accanto al cuore il NEWS2 e i parametri fuori norma (al massimo due, il più lontano prima: «♥ NEWS 7 · SpO2 88»); nel letto solo l'icona.
+Il passaggio del mouse elenca le righe dei parametri con l'ora, l'ultima in alto.
 Viene dalle righe dei parametri della **pagina del paziente** (`<tr id="VAMI">`: l'ora, poi
 «SATURIMETRIA: **96**» e così via; ci sono anche quelli del triage): conta **la riga più recente**
 che porta un parametro, quindi il triage solo finché è l'unica; un parametro che quella riga non ha
-non si prende da una riga più vecchia e non si inventa — si conta su quello che c'è, e il passaggio
-del mouse dice il perché, l'ora della riga e cosa non è stato misurato. **Non lampeggia**: quando
+non si prende da una riga più vecchia e non si inventa — si conta su quello che c'è. **Non lampeggia**: quando
 compare fa un impulso solo, di un secondo (nemmeno quello se il sistema chiede meno movimento), poi
 resta fermo. Dopo **4 ore** senza una riga più nuova diventa vuoto, con le ore: **«♡ 5h»**. Si legge
 solo quando la pagina del paziente si apre, come lo stato degli esami: un paziente mai aperto non

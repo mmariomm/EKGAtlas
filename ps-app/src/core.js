@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.62.1";
+  const VERSION = "3.62.2";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2842,14 +2842,18 @@
   }
   function vitaliPagina(doc) {
     let ultima = null, righe = 0;
+    const tutte = [];
     for (const tr of doc.querySelectorAll('tr[id="VAMI"]')) {
       const p = vitaliRiga(tr);
       const ts = p ? istanteLocale(istanteRiga(tr)) : 0;
       if (!p || !ts) continue;   // senza l'ora non si sa se è l'ultima: non conta
       righe++;
+      tutte.push({ ts, p });
       if (!ultima || ts > ultima.ts) ultima = { ts, p };
     }
-    return ultima ? { ...ultima, righe } : null;
+    // e le righe, dall'ultima indietro (al massimo 12), per il passaggio del mouse
+    const storia = tutte.sort((a, b) => b.ts - a.ts).slice(0, 12);
+    return ultima ? { ...ultima, righe, storia } : null;
   }
   // NEWS2 su quello che c'è: i punti, i parametri in fascia rossa (3 punti da
   // soli), quelli che la riga non ha. Coscienza: ACVPU diverso da A, o GCS <15.
@@ -2875,23 +2879,27 @@
     else if ((p.acvpu && p.acvpu !== "A") || (p.gcs != null && p.gcs < 15)) { const k = p.acvpu && p.acvpu !== "A" ? "acvpu" : "gcs"; punti += 3; per[k] = 3; rossi.push(k); }
     return { punti, rossi, mancano, per, livello: rossi.length || punti >= 7 ? "ros" : punti >= 5 ? "amb" : "" };
   }
+  // i parametri di una riga, scritti come si leggono
+  function vitTesto(p) {
+    const num = (v) => String(v).replace(".", ",");
+    return {
+      fr: p.fr != null && `FR ${p.fr}`, spo2: p.spo2 != null && `SpO2 ${p.spo2}`, fio2: p.fio2 > 21 && `FiO2 ${p.fio2}`,
+      fc: p.fc != null && `FC ${p.fc}`, pas: p.pas != null && `PA ${p.pas}${p.pad != null ? "/" + p.pad : ""}`,
+      t: p.t != null && `T ${num(p.t)}`, acvpu: p.acvpu && p.acvpu !== "A" && `ACVPU ${p.acvpu}`, gcs: p.gcs != null && `GCS ${p.gcs}`,
+    };
+  }
   // Il cuore di un paziente, o null: rosso, ambra, e vuoto se la riga ha più di 4 ore
   function cuoreDi(vit, ora = Date.now()) {
     if (!vit || !vit.p || !vit.ts) return null;
     const n = news2(vit.p);
     if (!n.livello) return null;
-    const eta = Math.max(0, ora - vit.ts), vecchio = eta > VIT_VECCHIO, p = vit.p;
-    const num = (v) => String(v).replace(".", ",");
-    const testo = {
-      fr: p.fr != null && `FR ${p.fr}`, spo2: p.spo2 != null && `SpO2 ${p.spo2}`, fio2: p.fio2 > 21 && `FiO2 ${p.fio2}`,
-      fc: p.fc != null && `FC ${p.fc}`, pas: p.pas != null && `PA ${p.pas}${p.pad != null ? "/" + p.pad : ""}`,
-      t: p.t != null && `T ${num(p.t)}`, acvpu: p.acvpu && p.acvpu !== "A" && `ACVPU ${p.acvpu}`, gcs: p.gcs != null && `GCS ${p.gcs}`,
-    };
-    const tutti = Object.values(testo).filter(Boolean), rossi = n.rossi.map((k) => testo[k]).filter(Boolean);
+    const eta = Math.max(0, ora - vit.ts), vecchio = eta > VIT_VECCHIO;
+    const testo = vitTesto(vit.p), rossi = n.rossi.map((k) => testo[k]).filter(Boolean);
+    // il passaggio del mouse: il NEWS2, poi le righe misurate, l'ultima in alto
+    const storia = (Array.isArray(vit.storia) && vit.storia.length ? vit.storia : [{ ts: vit.ts, p: vit.p }]).filter((r) => r && r.ts && r.p);
     const titolo = [
-      n.rossi.length ? `Parametro critico: ${rossi.join(" · ")} · NEWS2 ${n.punti}` : `NEWS2 ${n.punti} (${n.livello === "ros" ? "7 o più" : "5–6"})`,
-      `Parametri misurati ${promOra(vit.ts, ora).replace(/^(?:(\S+) )?(\d)/, (m, g, c) => (g ? g + " alle " : "alle ") + c)}: ${tutti.join(" · ")}`,
-      n.mancano.length ? `Non in quella riga (non contati): ${n.mancano.join(", ")}` : "",
+      `NEWS2 ${n.punti}${rossi.length ? ` · critico: ${rossi.join(" · ")}` : ""}`,
+      ...storia.map((r) => `${promOra(r.ts, ora)}  ${Object.values(vitTesto(r.p)).filter(Boolean).join(" · ")}`),
       vecchio ? `Nessuna riga più nuova da ${Math.floor(eta / 3600e3)} ore` : "",
     ].filter(Boolean).join("\n");
     // accanto al cuore, i parametri fuori norma: i più lontani prima, al massimo due
@@ -9296,7 +9304,7 @@
       const cosa = c.livello === "ros" ? "parametri vitali critici" : "parametri vitali: NEWS2 5–6";
       return `<span class="cuore ${c.livello}${c.vecchio ? " vecchio" : ""}${pulsa >= 0 ? " pulsa" : ""}"${pulsa > 0 ? ` style="animation-delay:-${pulsa}ms"` : ""} role="img" aria-label="${
         esc(cosa + (c.vecchio ? `, misurati ${c.ore} ore fa` : ""))}" title="${esc(c.titolo)}">${c.vecchio ? (soloIcona ? "♡" : `♡ ${c.ore}h`) : "♥"}${
-        c.fuori.length && !soloIcona ? `<span class="cuorev">${esc(c.fuori.join(" · "))}</span>` : ""}</span>`;
+        soloIcona ? "" : `<span class="cuorev">${esc([`NEWS ${c.punti}`, ...c.fuori].join(" · "))}</span>`}</span>`;
     }
 
     // Sulla pill ridotta, e solo quando tocca: il promemoria più urgente fra

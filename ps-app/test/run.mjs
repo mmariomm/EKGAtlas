@@ -6491,10 +6491,13 @@ async function scenarioVitali(browser) {
     check(scen, cuore === atteso.cuore, `${nome}: ${atteso.cuore ? "T 32,9 → cuore rosso nell'intestazione" : "NEWS2 3 → nessun cuore"} (got: «${cuore}»)`);
     if (atteso.cuore) {
       const tit = await $panel(s.page, ".hd .cuore").getAttribute("title");
-      check(scen, /Parametro critico: T 32,9/.test(tit) && /Parametri misurati alle 21:37/.test(tit) && /coscienza/.test(tit) === false,
-        `il passaggio del mouse dice perché e di quando (got: ${tit})`);
+      // (l'ora, e «ieri» prima: le righe vanno all'indietro)
+      const righeT = tit.split("\n"), ore = righeT.slice(1).map((r) => { const m = /^(ieri )?(\d\d):(\d\d)  /.exec(r); return m ? (m[1] ? "0" : "1") + m[2] + m[3] : ""; });
+      check(scen, righeT[0] === "NEWS2 4 · critico: T 32,9" && /^21:37  .*T 32,9/.test(righeT[1]) && righeT.length - 1 === atteso.righe
+        && ore.every((o, i) => o && (i === 0 || o <= ore[i - 1])),
+        `il passaggio del mouse: il NEWS2, poi tutte le righe con l'ora, l'ultima in alto (got: ${JSON.stringify(righeT)})`);
       const acc = await $panel(s.page, ".hd .cuore .cuorev").textContent();
-      check(scen, acc === "T 32,9 · SpO2 94", `accanto al cuore i parametri fuori norma, il più lontano prima (got: «${acc}»)`);
+      check(scen, acc === "NEWS 4 · T 32,9 · SpO2 94", `accanto al cuore i parametri fuori norma, il più lontano prima (got: «${acc}»)`);
     }
     await s.context.close();
   }
@@ -6510,9 +6513,8 @@ async function scenarioVitali(browser) {
     const s = getComputedStyle(c);
     return { cls: c.className, testo: c.textContent, tit: c.title, aria: c.getAttribute("aria-label"), anima: s.animationName, volte: s.animationIterationCount, durata: s.animationDuration };
   });
-  check(scen, /\bros\b/.test(c1.cls) && c1.testo === "♥SpO2 82" && /SpO2 82/.test(c1.tit) && /critici/.test(c1.aria),
+  check(scen, /\bros\b/.test(c1.cls) && c1.testo === "♥NEWS 3 · SpO2 82" && /SpO2 82/.test(c1.tit) && /critici/.test(c1.aria),
     `solo il triage, SpO2 82: cuore rosso accanto agli identificativi (got: ${JSON.stringify(c1)})`);
-  check(scen, /Non in quella riga \(non contati\): O2 \(FiO2\), PA, T$/.test(c1.tit), `e dice cosa la riga non ha (got: ${c1.tit.split("\n").at(-1)})`);
   check(scen, /\bpulsa\b/.test(c1.cls) && c1.anima === "cuorePulsa" && c1.volte === "1" && c1.durata === "1s",
     `niente lampeggio: un impulso solo, di un secondo, quando compare (got: ${c1.anima} × ${c1.volte}, ${c1.durata})`);
   await page.waitForTimeout(1200);
@@ -6565,7 +6567,7 @@ async function scenarioVitali(browser) {
   if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
   await page.waitForSelector('#psassist-host [data-letto="obi1"] .cuore', { timeout: 5000 });
   const amb = await $panel(page, '[data-letto="obi1"] .cuore').evaluate((c) => ({ cls: c.className, t: c.textContent, tit: c.title }));
-  check(scen, /\bamb\b/.test(amb.cls) && amb.t === "♥" && /^NEWS2 5 \(5–6\)/.test(amb.tit), `NEWS2 5: cuore ambra (got: ${JSON.stringify(amb)})`);
+  check(scen, /\bamb\b/.test(amb.cls) && amb.t === "♥" && /^NEWS2 5\n\d\d:\d\d  FR 21 · SpO2 94 · FC 105 · T 38,5$/.test(amb.tit), `NEWS2 5: cuore ambra (got: ${JSON.stringify(amb)})`);
   await semina({ spo2: 88, fr: 18 }, 5 * 60 + 10);
   await page.reload();
   await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
@@ -6573,7 +6575,7 @@ async function scenarioVitali(browser) {
   await page.waitForSelector('#psassist-host [data-letto="obi1"] .cuore', { timeout: 5000 });
   const vecchio = await $panel(page, '[data-letto="obi1"] .cuore').evaluate((c) => ({ cls: c.className, t: c.textContent, tit: c.title }));
   check(scen, /\bvecchio\b/.test(vecchio.cls) && /\bros\b/.test(vecchio.cls) && vecchio.t === "♡" && !/\bpulsa\b/.test(vecchio.cls)
-    && /Parametri misurati (ieri )?alle \d\d:\d\d/.test(vecchio.tit) && /da 5 ore/.test(vecchio.tit),
+    && /\n(ieri )?\d\d:\d\d  FR 18 · SpO2 88\n/.test(vecchio.tit) && /da 5 ore/.test(vecchio.tit),
     `più di 4 ore senza una riga nuova: vuoto — nel letto solo l'icona «♡» —, le ore e l'ora della lettura nel passaggio del mouse (got: ${JSON.stringify(vecchio)})`);
   // chi chiede meno movimento: nemmeno l'impulso
   await page.emulateMedia({ reducedMotion: "reduce" });
