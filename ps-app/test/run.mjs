@@ -6493,6 +6493,8 @@ async function scenarioVitali(browser) {
       const tit = await $panel(s.page, ".hd .cuore").getAttribute("title");
       check(scen, /Parametro critico: T 32,9/.test(tit) && /Parametri misurati alle 21:37/.test(tit) && /coscienza/.test(tit) === false,
         `il passaggio del mouse dice perché e di quando (got: ${tit})`);
+      const acc = await $panel(s.page, ".hd .cuore .cuorev").textContent();
+      check(scen, acc === "T 32,9 · SpO2 94", `accanto al cuore i parametri fuori norma, il più lontano prima (got: «${acc}»)`);
     }
     await s.context.close();
   }
@@ -6508,7 +6510,7 @@ async function scenarioVitali(browser) {
     const s = getComputedStyle(c);
     return { cls: c.className, testo: c.textContent, tit: c.title, aria: c.getAttribute("aria-label"), anima: s.animationName, volte: s.animationIterationCount, durata: s.animationDuration };
   });
-  check(scen, /\bros\b/.test(c1.cls) && c1.testo === "♥" && /SpO2 82/.test(c1.tit) && /critici/.test(c1.aria),
+  check(scen, /\bros\b/.test(c1.cls) && c1.testo === "♥SpO2 82" && /SpO2 82/.test(c1.tit) && /critici/.test(c1.aria),
     `solo il triage, SpO2 82: cuore rosso accanto agli identificativi (got: ${JSON.stringify(c1)})`);
   check(scen, /Non in quella riga \(non contati\): O2 \(FiO2\), PA, T$/.test(c1.tit), `e dice cosa la riga non ha (got: ${c1.tit.split("\n").at(-1)})`);
   check(scen, /\bpulsa\b/.test(c1.cls) && c1.anima === "cuorePulsa" && c1.volte === "1" && c1.durata === "1s",

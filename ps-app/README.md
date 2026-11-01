@@ -168,6 +168,7 @@ colonne, e «visto…» si toglie.
 accanto agli identificativi: **♥ rosso** se un parametro da solo è nella fascia rossa del NEWS2 —
 SpO2 ≤91 (una soglia per tutti), FR ≤8 o ≥25, PAS ≤90 o ≥220, FC ≤40 o ≥131, T ≤35,0, coscienza
 non A all'ACVPU o GCS <15 — o se il NEWS2 fa 7 o più; **♥ ambra** per NEWS2 5–6; niente altrimenti.
+Accanto al cuore, i parametri fuori norma (al massimo due, il più lontano prima: «♥ SpO2 88»); nel letto solo l'icona.
 Viene dalle righe dei parametri della **pagina del paziente** (`<tr id="VAMI">`: l'ora, poi
 «SATURIMETRIA: **96**» e così via; ci sono anche quelli del triage): conta **la riga più recente**
 che porta un parametro, quindi il triage solo finché è l'unica; un parametro che quella riga non ha

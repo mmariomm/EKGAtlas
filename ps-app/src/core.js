@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.62.0";
+  const VERSION = "3.62.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -2863,16 +2863,17 @@
       t: ["T", (v) => (v <= 35 ? 3 : v <= 36 ? 1 : v <= 38 ? 0 : v <= 39 ? 1 : 2)],
     };
     let punti = 0;
-    const rossi = [], mancano = [];
+    const rossi = [], mancano = [], per = {};
     for (const [k, [nome, f]] of Object.entries(fasce)) {
       if (p[k] == null) { mancano.push(nome); continue; }
       const n = f(p[k]);
       punti += n;
+      if (n) per[k] = n;
       if (n === 3) rossi.push(k);
     }
     if (p.acvpu == null && p.gcs == null) mancano.push("coscienza");
-    else if ((p.acvpu && p.acvpu !== "A") || (p.gcs != null && p.gcs < 15)) { punti += 3; rossi.push(p.acvpu && p.acvpu !== "A" ? "acvpu" : "gcs"); }
-    return { punti, rossi, mancano, livello: rossi.length || punti >= 7 ? "ros" : punti >= 5 ? "amb" : "" };
+    else if ((p.acvpu && p.acvpu !== "A") || (p.gcs != null && p.gcs < 15)) { const k = p.acvpu && p.acvpu !== "A" ? "acvpu" : "gcs"; punti += 3; per[k] = 3; rossi.push(k); }
+    return { punti, rossi, mancano, per, livello: rossi.length || punti >= 7 ? "ros" : punti >= 5 ? "amb" : "" };
   }
   // Il cuore di un paziente, o null: rosso, ambra, e vuoto se la riga ha più di 4 ore
   function cuoreDi(vit, ora = Date.now()) {
@@ -2893,7 +2894,9 @@
       n.mancano.length ? `Non in quella riga (non contati): ${n.mancano.join(", ")}` : "",
       vecchio ? `Nessuna riga più nuova da ${Math.floor(eta / 3600e3)} ore` : "",
     ].filter(Boolean).join("\n");
-    return { livello: n.livello, punti: n.punti, vecchio, ore: Math.floor(eta / 3600e3), ts: vit.ts, titolo, chiave: `${vit.ts}|${n.livello}` };
+    // accanto al cuore, i parametri fuori norma: i più lontani prima, al massimo due
+    const fuori = Object.entries(n.per).sort((x, y) => y[1] - x[1]).map(([k]) => testo[k]).filter(Boolean).slice(0, 2);
+    return { livello: n.livello, punti: n.punti, vecchio, fuori, ore: Math.floor(eta / 3600e3), ts: vit.ts, titolo, chiave: `${vit.ts}|${n.livello}` };
   }
 
   function statoTutti() {
@@ -5188,6 +5191,8 @@
     .cuore.ros { color: #C62828; }
     .cuore.amb { color: #B26A00; }
     .cuore.vecchio { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .cuorev { margin-left: 4px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .cuore.vecchio .cuorev { color: #5B6B78; }
     .cuore.pulsa { animation: cuorePulsa 1s ease-out 1; }
     @keyframes cuorePulsa { 0% { transform: scale(1); } 30% { transform: scale(1.35); } 100% { transform: scale(1); } }
     .pzchi .cuore, .stp2 .cuore { align-self: center; }
@@ -9290,7 +9295,8 @@
       }
       const cosa = c.livello === "ros" ? "parametri vitali critici" : "parametri vitali: NEWS2 5–6";
       return `<span class="cuore ${c.livello}${c.vecchio ? " vecchio" : ""}${pulsa >= 0 ? " pulsa" : ""}"${pulsa > 0 ? ` style="animation-delay:-${pulsa}ms"` : ""} role="img" aria-label="${
-        esc(cosa + (c.vecchio ? `, misurati ${c.ore} ore fa` : ""))}" title="${esc(c.titolo)}">${c.vecchio ? (soloIcona ? "♡" : `♡ ${c.ore}h`) : "♥"}</span>`;
+        esc(cosa + (c.vecchio ? `, misurati ${c.ore} ore fa` : ""))}" title="${esc(c.titolo)}">${c.vecchio ? (soloIcona ? "♡" : `♡ ${c.ore}h`) : "♥"}${
+        c.fuori.length && !soloIcona ? `<span class="cuorev">${esc(c.fuori.join(" · "))}</span>` : ""}</span>`;
     }
 
     // Sulla pill ridotta, e solo quando tocca: il promemoria più urgente fra
