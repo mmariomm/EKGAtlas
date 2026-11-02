@@ -7,7 +7,11 @@
 # Guarda i blocchi noti e li dice tutti insieme, ognuno in una riga con che
 # cosa chiedere all'IT. (Un criterio che impone gli script firmati non lascia
 # partire nemmeno questo script: lo guarda prima installa.cmd.)
-param([switch]$Togli)
+# Copia anche l'estensione dello zip in %LOCALAPPDATA%\PSAssist\estensione: caricata
+# da lì (una volta, in chrome://extensions), ⋯ → «Aggiorna app» la aggiorna con un
+# tocco attraverso l'aiutante, che tiene la versione di prima in estensione.prima
+# (con -Ripristina, cioè ripristina.cmd, torna quella).
+param([switch]$Togli, [switch]$Ripristina)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -18,6 +22,7 @@ $NOME = 'it.psassist.stampa'
 $ID = 'jhhlgabilanhhnncahahclcjbefaofij'
 $CASA = Join-Path $env:LOCALAPPDATA 'PSAssist'
 $DOVE = Join-Path $CASA 'stampa'
+$EST = Join-Path $CASA 'estensione'
 $CHIAVI = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$NOME", "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\$NOME"
 # SumatraPDF portable, 64 bit, 3.6.1: le impronte sono quelle di questa versione,
 # e un file diverso non si usa.
@@ -54,7 +59,24 @@ if ($Togli) {
   $resta = @($CHIAVI | Where-Object { Test-Path -Path $_ }) + @(if (Test-Path -LiteralPath $CASA) { $CASA }) +
     @(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Filter 'psassist-*.pdf' -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
   if ($resta.Count) { Fine $false ("resta ancora: {0}. Chiudi Chrome e Edge e rilancia disinstalla.cmd." -f ($resta -join ', ')) }
-  Fine $true "La stampa automatica è tolta: PS Assist torna al dialogo di stampa. Ora puoi cancellare la cartella dello zip."
+  Fine $true "La stampa automatica è tolta: PS Assist torna al dialogo di stampa. Ora puoi cancellare la cartella dello zip. (Se caricavi l'estensione da $EST, toglila anche da chrome://extensions.)"
+}
+
+function Versione([string]$v) { $x = $null; if ([version]::TryParse($v, [ref]$x)) { $x } else { [version]'0.0' } }
+function VersioneIn([string]$dir) { try { [string](Get-Content -LiteralPath (Join-Path $dir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { '' } }
+
+# ---- ripristinare (ripristina.cmd) -------------------------------------------
+# La versione di prima dell'ultimo «Aggiorna app»: estensione.prima torna
+# estensione. Quella di prima non si tocca finché non è al suo posto.
+if ($Ripristina) {
+  $prima = Join-Path $CASA 'estensione.prima'
+  $v = VersioneIn $prima
+  if (-not $v) { Fine $false "non c'è una versione di prima da rimettere ($prima)." }
+  try {
+    if (Test-Path -LiteralPath $EST) { Remove-Item -LiteralPath $EST -Recurse -Force }
+    Rename-Item -LiteralPath $prima -NewName 'estensione'
+  } catch { Fine $false "la cartella $EST è in uso ($($_.Exception.Message)): chiudi Chrome e Edge e rilancia ripristina.cmd." }
+  Fine $true "Rimessa la $v in $EST. In chrome://extensions premi ⟳ su PS Assist (o chiudi e riapri Chrome)."
 }
 
 # ---- installare --------------------------------------------------------------
@@ -63,7 +85,21 @@ if ($Togli) {
 Write-Host "Copio l'aiutante in $DOVE..."
 $null = New-Item -ItemType Directory -Path $DOVE -Force
 if ($QUI -ne $DOVE) {
-  foreach ($f in 'host.cmd', 'host.ps1', 'installa.ps1', 'disinstalla.cmd') { Copy-Item -LiteralPath (Join-Path $QUI $f) -Destination $DOVE -Force }
+  foreach ($f in 'host.cmd', 'host.ps1', 'installa.ps1', 'disinstalla.cmd', 'ripristina.cmd') { Copy-Item -LiteralPath (Join-Path $QUI $f) -Destination $DOVE -Force }
+}
+# L'estensione dello zip (la cartella extension accanto a questa), se non è più
+# vecchia di quella già installata; installata.json dice all'estensione che
+# gira da qui, e che «Aggiorna app» può scambiare questa cartella.
+$zipEst = Join-Path (Split-Path $QUI) 'extension'
+$vZip = VersioneIn $zipEst
+if ($vZip -and $QUI -ne $DOVE) {
+  $vOra = VersioneIn $EST
+  if ((Versione $vZip) -ge (Versione $vOra)) {
+    Write-Host "Copio l'estensione ($vZip) in $EST..."
+    $null = New-Item -ItemType Directory -Path $EST -Force
+    Get-ChildItem -LiteralPath $zipEst | Copy-Item -Destination $EST -Recurse -Force
+    [IO.File]::WriteAllText((Join-Path $EST 'installata.json'), '{"da":"installa.cmd"}', (New-Object Text.UTF8Encoding $false))
+  } else { Write-Host "Lascio l'estensione $vOra in ${EST}: lo zip ha la $vZip, più vecchia." }
 }
 
 # 2. I blocchi noti, ognuno in una riga con quello che va chiesto all'IT:
@@ -154,6 +190,10 @@ if (Giusto $exe $EXE_SHA256) {
   foreach ($k in $CHIAVI) { $null = New-Item -Path $k -Value $json -Force }
 }
 
+if (VersioneIn $EST) {
+  Write-Host ''
+  Write-Host "Una volta sola: in chrome://extensions «Carica estensione non pacchettizzata» → $EST (non la cartella dello zip). Da lì ⋯ → «Aggiorna app» la aggiorna con un tocco."
+}
 if ($blocchi.Count) {
   Write-Host ''
   Write-Host 'Qui la stampa automatica non può funzionare finché l''IT non toglie questi blocchi:' -ForegroundColor Yellow

@@ -19,8 +19,9 @@ rmSync(zip, { force: true });
 // stampa/ è l'aiutante della stampa automatica, così com'è, con SumatraPDF.exe
 // (ufficiale 3.6.1, GPLv3: col suo LEGGIMI e la licenza; installa.ps1 ne
 // controlla l'impronta). Le impostazioni di SumatraPDF e il manifest li crea installa.cmd sul PC.
+// (E installata.json, nella copia dell'estensione: mai nello zip.)
 execFileSync("zip", ["-q", "-r", "dist/ps-assist-latest.zip",
   "extension", "bookmarklet", "stampa", "README.md", "dist/dimissioni.html",
-  "-x", "stampa/.*", "stampa/SumatraPDF-settings.txt", "stampa/it.psassist.stampa.json"], { cwd: root });
+  "-x", "stampa/.*", "stampa/SumatraPDF-settings.txt", "stampa/it.psassist.stampa.json", "extension/installata.json"], { cwd: root });
 writeFileSync(join(root, "dist/VERSION.txt"), version + "\n");
 console.log(`dist refreshed: ps-assist-latest.zip @ v${version} — dopo il commit: npm run verifica-build`);

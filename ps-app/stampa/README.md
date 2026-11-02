@@ -33,8 +33,11 @@ funzionare col dialogo di stampa.
      script di PS Assist parte, e lo dice, con che cosa chiedere all'IT.
    - Toglie alla cartella il segno «scaricato da Internet» (`Unblock-File`), che bloccherebbe
      gli script.
-   - Copia `host.cmd`, `host.ps1`, `installa.ps1` e `disinstalla.cmd` in
+   - Copia `host.cmd`, `host.ps1`, `installa.ps1`, `disinstalla.cmd` e `ripristina.cmd` in
      `%LOCALAPPDATA%\PSAssist\stampa`.
+   - Copia l'estensione dello zip in `%LOCALAPPDATA%\PSAssist\estensione` (mai indietro: una più
+     nuova già lì resta), e alla fine dice di caricarla **una volta** da lì in `chrome://extensions`
+     («Carica estensione non pacchettizzata»). Da lì **⋯ → «Aggiorna app»** la aggiorna con un tocco.
    - **SumatraPDF**: è già in questa cartella (`SumatraPDF.exe`, l'ufficiale 3.6.1, software
      libero GPLv3: vedi `SumatraPDF-LEGGIMI.txt`), quindi non si scarica niente. Se mancasse, lo
      prende da `SumatraPDF-3.6.1-64.zip` in questa cartella o in Download, e solo alla fine dal
@@ -124,7 +127,17 @@ caricala di nuovo con **Carica estensione non pacchettizzata**, scegliendo la ca
   | «Esito della stampa sconosciuto» | nessuna risposta, tempo scaduto, SumatraPDF fermato a metà, la stampante fermata in errore **mentre stampava** (`Printing`, o una pagina già stampata: una parte può essere uscita, o restare nella memoria della stampante e uscire dopo): il foglio **può essere uscito** | **mai** un secondo foglio da solo: controlla la stampante, e se non c'è, **Ristampa** |
 
 - Risponde anche a due domande: «ci sei?» (la versione) e «che stampanti ci sono?».
-- **Non** fa nient'altro: non usa la rete, non esegue altri programmi, non legge altri file.
+- **«Aggiorna app»** (⋯): dice che versione c'è in `%LOCALAPPDATA%\PSAssist\estensione`, e riceve
+  lo zip nuovo, che ha scaricato **Chrome** (l'aiutante non usa la rete). Lo apre in
+  `%TEMP%\psassist-agg-*`, controlla che sia di PS Assist (la stessa chiave nel manifest) e più
+  nuovo, mette la cartella vecchia in `estensione.prima` (una sola) e la nuova al suo posto, e
+  rinnova i suoi file (SumatraPDF solo se l'impronta è quella attesa). Se la versione nuova non
+  parte: doppio clic su **`ripristina.cmd`**, poi ⟳ su PS Assist in `chrome://extensions`.
+- **Dove scrive, e basta:** in `%LOCALAPPDATA%\PSAssist` (`estensione`, `estensione.prima`,
+  `stampa`, il registro delle stampe), in `%TEMP%` (`psassist-*`, tolti sempre, anche quando va
+  storto) e le due chiavi HKCU qui sotto.
+- **Non** fa nient'altro: non usa la rete, non esegue altri programmi, non legge altri file
+  (fuori dai suoi e dalla cartella dell'estensione).
   Annota soltanto, in `%LOCALAPPDATA%\PSAssist\stampa.log`, *che cosa* è uscito e *dove*
   («stampa etichette -> Zebra ZD421: stampato (12 KB, 1.4 s, 50x25 mm, noscale,disable-auto-rotation)»)
   — mai il contenuto, mai un nome di paziente; a 256 KB ricomincia, tenendo solo il file
@@ -139,7 +152,8 @@ caricala di nuovo con **Carica estensione non pacchettizzata**, scegliendo la ca
 Doppio clic su **`disinstalla.cmd`**: quello in `%LOCALAPPDATA%\PSAssist\stampa` (lo zip non
 serve più), o quello della cartella estratta dallo zip. Lo fa PowerShell, non
 `reg.exe`: toglie le due chiavi del registro dell'utente, la cartella `%LOCALAPPDATA%\PSAssist`
-(l'aiutante, SumatraPDF e le sue impostazioni, il registro delle stampe) e i fogli temporanei
+(l'aiutante, SumatraPDF e le sue impostazioni, il registro delle stampe, `estensione` ed
+`estensione.prima`: se Chrome la caricava da lì, toglila anche da `chrome://extensions`) e i fogli temporanei
 `psassist-*.pdf` rimasti. Poi **controlla**: dice «Fatto» solo se non resta niente, se no dice che
 cosa resta. Dopo puoi cancellare la cartella dello zip. PS Assist torna al dialogo di stampa.
 
@@ -173,7 +187,8 @@ cosa resta. Dopo puoi cancellare la cartella dello zip. PS Assist torna al dialo
   - lo zip da cui viene, `SumatraPDF-3.6.1-64.zip`: SHA-256
     `98B33A518D42986856D225064B0CD2D3643ECF78CBF84AB873D26CC51877A544`.
 
-  Accanto, `%LOCALAPPDATA%\PSAssist\stampa.log` (cosa e dove, mai il contenuto).
+  Accanto, `%LOCALAPPDATA%\PSAssist\stampa.log` (cosa e dove, mai il contenuto), e
+  `estensione` / `estensione.prima` (PS Assist e la sua versione di prima, per «Aggiorna app»).
 - **Due chiavi nel registro dell'utente**, una per browser:
   `HKCU\Software\Google\Chrome\NativeMessagingHosts\it.psassist.stampa` e
   `HKCU\Software\Microsoft\Edge\NativeMessagingHosts\it.psassist.stampa`. Il valore predefinito
