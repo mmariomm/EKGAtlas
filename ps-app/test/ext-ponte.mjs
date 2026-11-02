@@ -1292,6 +1292,149 @@ sezione("«Stampa un PDF» dal telefono, sull'A4 del PC");
 }
 
 // ===========================================================================
+sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
+{
+  // Un telefono con la rete vera di Chromium (non la strada finta di prima), la
+  // stessa chiave e lo stesso numero: la rete la cambia il protocollo DevTools
+  // (Network.emulateNetworkConditions), il ripetitore taglia le prese. Le prese
+  // che l'app apre si contano, con l'ora.
+  const chiave = await chiaveTel(tel);
+  const vCtx = await telBrowser.newContext(IPHONE);
+  await vCtx.addInitScript(() => {
+    const W = window.WebSocket;
+    window.__prese = [];
+    window.WebSocket = class extends W { constructor(u, p) { super(u, p); window.__prese.push(Date.now()); } };
+  });
+  const v = await vCtx.newPage();
+  await v.goto(relay.url + "/ponte/");
+  await v.evaluate((c) => localStorage.setItem("psassist.ponte.v1", c), JSON.stringify(chiave));
+  await v.reload();
+  await aspettaTel(v, /ROSSI M\./, 20000);
+  const cdp = await vCtx.newCDPSession(v);
+  await cdp.send("Network.enable");
+  const reteV = (o = {}) => cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1, ...o });
+  const pill = () => v.evaluate(() => document.querySelector(".statopc")?.textContent || "").catch(() => "");
+  const grigi = () => v.locator("#app .nopc").count();
+  await tocca(v, '.paz[data-ep="999001"]');
+  await aspettaTel(v, /RX TORACE/, 20000);
+
+  // 1. l'ascensore: niente rete. Quello che c'è resta; quello che va chiesto al PC, in grigio
+  const p0 = await v.evaluate(() => window.__prese.length);
+  await reteV({ offline: true });
+  await finche(async () => /Senza rete/.test(await pill()), 5000);
+  const offline = await v.evaluate(() => ({ valori: document.querySelector('[data-a="valori"]')?.classList.contains("nopc"), testo: document.getElementById("app").innerText }));
+  check(offline.valori && await grigi() >= 2 && /RX TORACE/.test(offline.testo) && /Senza rete/.test(await pill()),
+    `senza rete: in testa «Senza rete», gli esiti in memoria restano, e quello che va chiesto al PC è in grigio (${await grigi()} in grigio)`);
+  // la presa di prima è morta senza dirlo: il battito se ne accorge, e i tentativi si diradano
+  await sospendi(40000);
+  const ore = (await v.evaluate(() => window.__prese)).slice(p0);
+  const passi = ore.slice(1).map((t, i) => t - ore[i]);
+  check(ore.length >= 4 && ore.length <= 12 && passi[0] < 1500 && Math.max(...passi) <= 15500 && Math.max(...passi) >= 6000,
+    `senza rete i tentativi si diradano: il primo subito, poi sempre più radi, mai oltre 15 s (${ore.length} prese in 40 s; ${passi.map((x) => (x / 1000).toFixed(1)).join(" · ")} s)`);
+  // 2. fuori dall'ascensore: la rete torna, la presa si rifà subito, i bottoni tornano da soli
+  let t0 = Date.now();
+  await reteV();
+  const tornata = await finche(async () => !(await pill()) && relay.prese().tel === 1, 10000);
+  const dt = Date.now() - t0;
+  check(tornata && dt < 3000, `tornata la rete, il telefono si ricollega subito, senza aspettare il prossimo tentativo (${dt} ms)`);
+  check(await finche(async () => (await grigi()) === 0, 5000), "e quello che era in grigio torna da solo");
+  // 3. la presa tagliata (il ripetitore, un proxy, il passaggio dal wifi al 5G)
+  const e0 = relay.entrate().tel;
+  t0 = Date.now();
+  relay.taglia("tel");
+  const rifatta = await finche(async () => relay.entrate().tel > e0 && relay.prese().tel === 1 && !(await pill()), 10000);
+  check(rifatta && Date.now() - t0 < 3000, `la presa tagliata si rifà da sola, subito (${Date.now() - t0} ms)`);
+
+  // 4. un promemoria la cui risposta si perde: la presa cade mentre il PC lo
+  // scrive, il telefono lo rimanda col suo numero — sul PC uno solo
+  await sw.evaluate(() => {
+    self.__vere = { scheda: ponteSuScheda, comando: ponteComando, pdf: ponteDaiPdf };
+    self.__arrivi = []; self.__pezzi = [];
+    globalThis.ponteSuScheda = async (cmd, a) => { if (cmd === "promemoria") await attendi(3000); return self.__vere.scheda(cmd, a); };
+    globalThis.ponteComando = (s, d) => { if (d && d.cmd === "promemoria") self.__arrivi.push(d.rq); return self.__vere.comando(s, d); };
+    globalThis.ponteDaiPdf = async (s, d) => { self.__pezzi.push(d.i); if (d.i === 1 && self.__pezzi.length === 2) await attendi(2000); return self.__vere.pdf(s, d); };
+  });
+  const emogas = () => doc3.evaluate(() => (JSON.parse(localStorage.getItem("psassist:dafare.v1") || "{}")["999001"] || []).filter((x) => !x.fatto && /emogas/.test(x.testo)).length);
+  await tocca(v, '[data-a="promApri"]');
+  await v.locator("#promin").fill("tra 3h emogas");
+  await tocca(v, '[data-a="prom"]');
+  await finche(() => sw.evaluate(() => self.__arrivi.length === 1), 10000);
+  await reteV({ offline: true });
+  relay.taglia("tel");
+  await sospendi(5000);   // intanto il PC l'ha scritto, e la sua risposta non trova il telefono
+  await reteV();
+  const visto = await finche(async () => (await v.locator('.promr:has-text("emogas")').count()) === 1, 20000);
+  const arrivi = await sw.evaluate(() => self.__arrivi);
+  check(visto && arrivi.length >= 2 && new Set(arrivi).size === 1 && await emogas() === 1,
+    `la presa cade mentre il PC scrive un promemoria: il telefono lo rimanda col suo numero (${arrivi.length} arrivi), sul PC ce n'è uno solo, e il telefono lo mostra`);
+
+  // 5. un PDF tagliato a metà strada riprende da dove era, non da capo
+  const idRef = await v.locator('.ref:has-text("TC ENCEFALO")').first().getAttribute("data-id");
+  const pdf = Buffer.concat([refertoRxPdf(["RADIOLOGIA - ripresa"]), Buffer.alloc(1200000, 0x43)]);
+  await sw.evaluate(([k, data]) => chrome.storage.local.set({ [k]: { ep: "999001", data, ts: Date.now() } }), ["ref:" + idRef, pdf.toString("base64")]);
+  await tocca(v, '[data-a="indietro"]'); await aspettaTel(v, /BIANCHI A\./);
+  await tocca(v, '.paz[data-ep="999001"]');
+  await finche(async () => (await v.locator('.refw:has-text("TC ENCEFALO") .pdf').count()) === 1, 20000);
+  // (il PC tarda col secondo pezzo: intanto la rete se ne va, e la sua risposta si perde)
+  const e1 = relay.entrate().tel;
+  const [popup] = await Promise.all([v.waitForEvent("popup", { timeout: 15000 }), tocca(v, '.refw:has-text("TC ENCEFALO") .pdf')]);
+  await finche(() => sw.evaluate(() => self.__pezzi.includes(1)), 20000);
+  await reteV({ offline: true });
+  relay.taglia("tel");
+  await sospendi(3000);
+  await reteV();
+  const arrivato = await finche(() => /^blob:/.test(popup.url()), 60000);
+  const pezzi = await sw.evaluate(() => self.__pezzi);
+  check(arrivato && relay.entrate().tel > e1 && pezzi.filter((i) => i === 0).length === 1 && pezzi.filter((i) => i === 1).length >= 2 && Math.max(...pezzi) === Math.ceil(pdf.length * 4 / 3 / 520000) - 1,
+    `un PDF tagliato a metà strada: ripreso dal pezzo dove era (non da capo), ricomposto e aperto (pezzi chiesti al PC: ${pezzi.join(",")})`);
+  await popup.close();
+  await sw.evaluate((k) => chrome.storage.local.remove(k), "ref:" + idRef);
+
+  // 6. una rete lenta (1500 ms, 50 kbit/s): elenco, esiti e un ordine arrivano, senza falsi allarmi
+  await v.waitForSelector(".avviso", { state: "detached", timeout: 10000 }).catch(() => {});
+  await v.evaluate(() => {
+    window.__allarmi = [];
+    new MutationObserver(() => {
+      for (const a of document.querySelectorAll(".avviso.err, .statopc")) if (!window.__allarmi.includes(a.textContent)) window.__allarmi.push(a.textContent);
+    }).observe(document.getElementById("app"), { childList: true, subtree: true });
+  });
+  await reteV({ latency: 1500, downloadThroughput: 50e3 / 8, uploadThroughput: 50e3 / 8 });
+  const e2 = relay.entrate().tel, ric0 = Object.keys(B.state.richieste).length;
+  const elenchi = async () => ((await registroPc(doc3)).match(/iPhone · elenco dei pazienti/g) || []).length;
+  // (un paziente nuovo sul PC: quando il telefono lo mostra, l'elenco è arrivato)
+  const gialli = (si) => doc3.evaluate((si) => {
+    const K = "psassist:patients.v1";
+    const l = JSON.parse(localStorage.getItem(K) || "[]").filter((p) => p.ep !== "999005");
+    if (si) l.push({ ep: "999005", name: "GIALLI PIETRO", url: "", ts: Date.now() - 10 * 60e3, pk: "", triage: "VERDE" });
+    localStorage.setItem(K, JSON.stringify(l));
+  }, si);
+  await gialli(true);
+  const el0 = await elenchi();
+  await tocca(v, '[data-a="indietro"]');
+  const elenco = await finche(async () => (await elenchi()) > el0 && /GIALLI/.test(await testoTel(v)), 30000);
+  await tocca(v, '.paz[data-ep="999002"]');
+  const esitiB = /Aggiorna i valori/.test(await aspettaTel(v, /Aggiorna i valori/, 40000));
+  await tocca(v, '[data-a="scheda"][data-s="richieste"]');
+  await aspettaTel(v, /Dol th/, 10000);
+  await tocca(v, '[data-a="esame"]:has-text("TROPONINA US")');
+  await v.locator("#quesito").fill("rete lenta");
+  await tocca(v, "#ordina"); await sospendi(900); await tocca(v, "#ordina");
+  const ordinato = await finche(async () => Object.keys(B.state.richieste).length > ric0
+    && /aspettano qualcuno al PC|Stampat|Mandat|Etichette/.test(await v.locator(".ord").first().innerText().catch(() => "")), 120000);
+  const allarmi = await v.evaluate(() => window.__allarmi);
+  check(elenco && esitiB && ordinato && !allarmi.length && relay.entrate().tel === e2 && Object.keys(B.state.richieste).length === ric0 + 1,
+    `rete lenta (1500 ms, 50 kbit/s): l'elenco, gli esiti di BIANCHI e un ordine arrivano, senza un allarme e senza rifare la presa (${allarmi.join(" | ") || "nessun allarme"})`);
+  await reteV();
+  await gialli(false);
+  await finche(ordiniFiniti, 60000);
+
+  await sw.evaluate(() => { globalThis.ponteSuScheda = self.__vere.scheda; globalThis.ponteComando = self.__vere.comando; globalThis.ponteDaiPdf = self.__vere.pdf; });
+  await vCtx.close();
+  await tocca(tel, '[data-a="riapri"]');
+  await aspettaTel(tel, /ROSSI M\./, 20000);
+}
+
+// ===========================================================================
 sezione("«Scansiona il QR» dentro l'app");
 {
   // un QR in un video finto per la fotocamera di Chromium (y4m, in grigio)

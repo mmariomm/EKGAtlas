@@ -563,6 +563,30 @@ await blocco(async () => {
   check(JSON.stringify(a("nota")) === "[7,8]", `una nota sì, alla scheda dopo (${JSON.stringify(a("nota"))})`);
 });
 await blocco(async () => {
+  // Una scrittura rimandata dopo una presa caduta (stesso rq, messaggio nuovo):
+  // mentre va e quando è finita, il PC non la rifà — risponde com'è andata.
+  const fatti = [];
+  const scheda = async (m) => {
+    if (m.cmd !== "promemoria") return { ok: true, dati: [] };
+    await sospendi(300);
+    fatti.push(m.args.testo);
+    return { ok: true, dati: { ep: "1", n: fatti.length } };
+  };
+  const pc = await pcFinto({ scheda });
+  const k = kDalQr((await pc.pagina({ t: "ponteAssocia" })).qr);
+  await sospendi(30);
+  const t = await telFinto(pc, k, DEV);
+  await t.manda({ id: 1, cmd: "ciao" });
+  const prom = (id) => ({ id, cmd: "promemoria", ep: "1", testo: "11:30 tropo", rq: "rqprova12345" });
+  await pc.consegna(await t.canale.cifra(prom(2)));     // la prima: la scheda ci mette 300 ms
+  const r3 = (await t.manda(prom(3))).find((x) => x.re === 3);   // rimandata mentre va
+  await sospendi(400);
+  const r4 = (await t.manda(prom(4))).find((x) => x.re === 4);   // rimandata a cose fatte
+  const r5 = (await t.manda({ ...prom(5), rq: "rqaltra12345" })).find((x) => x.re === 5);
+  check(r3 && r3.ok && r3.dati.n === 1 && r4 && r4.ok && r4.dati.n === 1 && r5 && r5.dati.n === 2 && fatti.length === 2,
+    `una scrittura rimandata col suo numero (rq), mentre va o a cose fatte: fatta una volta, e la risposta di quella volta (${fatti.length} fatte; un numero nuovo è un'altra)`);
+});
+await blocco(async () => {
   // Le parole di un ordine (ordPubblico, in bg.js): il titolo è com'è andata,
   // l'ora una volta, il PC e il telefono ognuno con le sue.
   const ovunque = () => new Proxy(function () {}, { get: (_, k) => (k === "then" ? undefined : ovunque()), apply: () => ovunque() });

@@ -263,6 +263,20 @@ morta anche se sembra aperta (un proxy che la lascia cadere senza dirlo), e se n
 telefono la rifà anche quando una risposta non arriva in tempo. Una presa chiusa dal ripetitore perché
 un'altra dello stesso ruolo ha preso il suo posto (codice 4001) non si riapre da sola.
 
+**Una rete che va e viene** (ascensore, 5G, wifi↔5G, rete lenta). Il telefono tiene una presa sola:
+caduta, la riapre dopo mezzo secondo e poi sempre più di rado, fino a 15 secondi (con un po' di
+caso); subito quando torna la rete (`online`) o l'app (`visibilitychange`, `pageshow`). Una presa che
+non si apre in 12 secondi si rifà; il «pong» aspetta anche i byte già per strada, contati a 50 kbit/s,
+come le attese dei pezzi di PDF. Quello che resta senza risposta si rimanda da solo sulla presa nuova:
+le letture si rifanno, le scritture (ordine, nota, promemoria, «Fatto», cartella, i pezzi di «Stampa
+un PDF») portano un numero (`rq`) che il PC ricorda per la sessione, e rimandate non si rifanno: il PC
+risponde com'è andata. Passato il tempo il telefono dice che non sa («Non so se il promemoria è
+salvato: aspetto il PC»), continua a rimandarla per 10 minuti e, quando il PC risponde, lo dice. Un PDF,
+nei due versi, riprende dal pezzo dove era, e si lascia perdere dopo un tempo che cresce con la misura.
+Senza rete la testata dice «Senza rete», quello che il telefono ha in memoria resta e quello che va
+chiesto al PC è in grigio, finché il collegamento non torna. L'app stessa si apre dalla sua copia se la
+rete non risponde in 3 secondi. Sul telefono non resta niente di più.
+
 **I 20 minuti** contano solo i comandi del medico: quelli che l'app manda da sé (`auto`, e `ciao`,
 `ordini`) non tengono aperta la sessione, né sul PC né sul telefono.
 

@@ -24,6 +24,13 @@
   const DURATA_MAX = 14 * 3600e3;    // un link non vale più di un turno, qualunque ora porti
   const VERDE_MAX = 2 * 60e3;        // un ordine finito bene se ne va da solo, come sulla striscia del PC
   const BATTITO = 20e3, PONG = 10e3; // la presa parla ogni 20 secondi; senza «pong» in 10 è morta
+  // La rete del telefono (ascensore, 5G, wifi↔5G): ogni attesa conta anche i
+  // byte per strada, alla velocità più bassa per cui si aspetta (~50 kbit/s).
+  const RETE_MIN = 6e3;              // byte al secondo
+  const perRete = (byte) => Math.ceil(byte / RETE_MIN * 1e3);
+  const RIPROVA_MAX = 15e3;          // fra un tentativo di presa e l'altro, al massimo
+  const APRI_MAX = 12e3;             // una presa che non si apre in 12 secondi si rifà
+  const TARDI_MAX = 10 * 60e3;       // una scrittura di cui non si sa: la si rimanda a ogni ritorno della rete, per 10 minuti
   const ATTESA_VALORI = 200e3;       // «Aggiorna i valori»: il PC, al peggio, ci mette 10 + 150 + 30 secondi
   const ATTESA_CARTELLA = 110e3;     // salvare la cartella: il PC, al peggio, 10 + 3 + 60 secondi (e la rete)
   // la cartella del paziente, coi nomi del modulo del gestionale
@@ -120,19 +127,28 @@
   }
 
   // ---------------------------------------------------------------- la presa
+  // Una presa sola alla volta. Caduta, si riprova presto e poi sempre più di
+  // rado (fino a 15 secondi, con un po' di caso: tanti telefoni non tornano
+  // tutti insieme); subito quando la rete torna o l'app torna davanti.
+  const inLinea = () => navigator.onLine !== false;
+  const pronto = () => !!S.canale && !!S.ws && S.ws.readyState === 1 && S.pari === true && inLinea();
   function collega() {
     if (!S.chiavi || (S.ws && S.ws.readyState <= 1)) return;
     clearTimeout(S.tRiprova);
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ponte/ws?r=${S.chiavi.stanza}&ruolo=tel`);
     ws.binaryType = "arraybuffer";
     S.ws = ws;
+    // (una rete lenta o sparita può lasciarla «in apertura» per minuti)
+    const tApri = setTimeout(() => { if (S.ws === ws && ws.readyState === 0) try { ws.close(); } catch { /* già chiusa */ } }, APRI_MAX);
     let fila = Promise.resolve();
     ws.onmessage = (e) => {
       if (S.ws !== ws) return;
-      if (e.data === "pong") { clearTimeout(S.tPong); S.tPong = 0; return; }
+      clearTimeout(S.tPong); S.tPong = 0;   // qualunque cosa arrivi, la presa è viva
+      if (e.data === "pong") return;
       fila = fila.then(() => ricevi(e.data)).catch(() => {});
     };
     ws.onclose = (e) => {
+      clearTimeout(tApri);
       if (S.ws !== ws) return;
       S.ws = null; S.pari = null; S.saluto = null;
       clearTimeout(S.tPong); S.tPong = 0;
@@ -140,21 +156,27 @@
       // un altro telefono (o un'altra scheda) ha preso il posto di questo: niente tiro alla fune
       if (e && e.code === 4001) return altrove();
       if (S.fase === "collego" && S.tentativi >= 1) S.fase = "pc";   // il ponte stesso non risponde
-      if (document.visibilityState === "visible") {
-        const ms = [800, 2000, 4000, 8000, 15000][Math.min(S.tentativi++, 4)];
-        S.tRiprova = setTimeout(collega, ms);
-      }
+      if (document.visibilityState === "visible") riprova();
       render();
     };
-    ws.onopen = () => { if (S.ws === ws) { S.tentativi = 0; batti(); } };
+    ws.onopen = () => { clearTimeout(tApri); if (S.ws === ws) { S.tentativi = 0; batti(); } };
+  }
+  function riprova() {
+    clearTimeout(S.tRiprova);
+    const b = Math.min(RIPROVA_MAX, 600 * 2 ** Math.min(S.tentativi++, 6));
+    S.tRiprova = setTimeout(collega, Math.round(b / 2 + Math.random() * b / 2));
   }
   // Il battito: se il «pong» non torna, la presa è morta anche se sembra
   // aperta (una rete che la lascia cadere senza dirlo): se ne apre un'altra.
+  // Su una rete lenta il «pong» arriva dopo quello che è già per strada (un
+  // pezzo di PDF): lo si aspetta anche per quello.
   function batti() {
     const ws = S.ws;
     if (!ws || ws.readyState !== 1 || S.tPong) return;
     ws.send("ping");
-    S.tPong = setTimeout(() => { S.tPong = 0; if (S.ws === ws) rifai(); }, PONG);
+    let strada = ws.bufferedAmount;
+    for (const a of S.attese.values()) if (!a.scaduta) strada += a.grosso || 0;
+    S.tPong = setTimeout(() => { S.tPong = 0; if (S.ws === ws) rifai(); }, PONG + perRete(strada));
   }
   function rifai() {
     const ws = S.ws;
@@ -169,6 +191,7 @@
     S.pari = pari;
     if (pari && !S.canale && !S.saluto && (S.fase === "collego" || S.fase === "pc")) saluta();
     else if (pari && S.canale) {
+      rimanda();          // le domande rimaste senza risposta: di nuovo (il PC non rifà una scrittura)
       aggiornaOrdini();   // tornati in linea: a che punto sono gli ordini
       if (S.rinfresca) { S.rinfresca = false; rileggi(); }
     }
@@ -226,33 +249,74 @@
       if (!a) return;
       S.attese.delete(d.re);
       clearTimeout(a.t);
-      if (d.ok) a.si(d.dati);
-      else a.no(Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso,
-        ricarica: Array.isArray(d.cambiati) || Array.isArray(d.chiusi) ? [...(d.cambiati || []), ...(d.chiusi || [])] : null }));
+      if (a.scaduta) a.tardi(d);   // la risposta di una scrittura di cui non si sapeva: adesso si sa
+      else if (d.ok) a.si(d.dati);
+      else a.no(errDa(d));
       return;
     }
     if (d.evento === "fine") return chiusa(d.perche, d.testo);
     if (d.evento === "ordine" && d.ordine) { ordineVisto(d.ordine); render(); return; }
     if (d.evento === "avviso") avviso(d.testo);
   }
+  const errDa = (d) => Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso,
+    ricarica: Array.isArray(d.cambiati) || Array.isArray(d.chiusi) ? [...(d.cambiati || []), ...(d.chiusi || [])] : null });
   // Un comando al PC. `auto`: lo manda l'app da sé (non il medico), e non
-  // tiene aperta la sessione — né qui né sul PC.
-  function chiedi(cmd, args = {}, tempo = TEMPO, auto = false) {
+  // tiene aperta la sessione — né qui né sul PC. `tempo`: quanto può volerci,
+  // il PC e la rete (un pezzo grande ci mette di più). Una domanda rimasta
+  // senza risposta quando la presa cade si rimanda da sola appena torna.
+  //   o.rq     una scrittura: il suo numero, e il PC la fa una volta sola anche
+  //            se arriva due volte. Senza rete aspetta lei (le letture no:
+  //            si rileggono al ritorno).
+  //   o.tardi  passato il tempo, la risposta che arriva dopo va qui (la
+  //            scrittura si rimanda ancora, per 10 minuti)
+  //   o.grosso quanti byte porta la risposta (per il battito, su una rete lenta)
+  function chiedi(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
     return new Promise((si, no) => {
       if (!S.canale) { no(new Error("Sessione chiusa")); return; }
+      if (!o.rq && !pronto()) {
+        S.rinfresca = true;
+        no(Object.assign(new Error(inLinea() ? "Il PC non è raggiungibile" : "Senza rete"), { offline: true }));
+        return;
+      }
       if (!auto) S.ultimo = Date.now();
       const id = ++S.id;
-      const t = setTimeout(() => {
-        S.attese.delete(id);
-        const assente = S.pari === false;
-        no(Object.assign(new Error(assente ? "Il PC non è raggiungibile" : "Il PC non ha risposto in tempo"), { tempo: true }));
-        if (!assente) rifai();   // una risposta che non arriva: la presa può essere morta
-      }, tempo);
-      S.attese.set(id, { si, no, t });
-      S.canale.cifra({ id, cmd, ...args, ...(auto ? { auto: true } : {}) }).then((f) => {
-        if (!manda(f)) { clearTimeout(t); S.attese.delete(id); no(new Error("Non collegato al ponte: riprovo a collegarmi")); collega(); }
-      }, (e) => { clearTimeout(t); S.attese.delete(id); no(e); });
+      const a = { msg: { id, cmd, ...args, ...(auto ? { auto: true } : {}), ...(o.rq ? { rq: o.rq } : {}) }, si, no, tardi: o.tardi || null, grosso: o.grosso || 0, inviata: false, scaduta: false };
+      a.t = setTimeout(() => scaduta(id), tempo);
+      S.attese.set(id, a);
+      if (pronto()) spedisci(a);
     });
+  }
+  function spedisci(a) {
+    const c = S.canale;
+    // (ancora in sospeso — o «esci», che parte anche se la sessione qui è già chiusa)
+    c.cifra(a.msg).then((f) => { if ((S.attese.get(a.msg.id) === a || a.msg.cmd === "esci") && manda(f)) a.inviata = true; },
+      (e) => { if (S.attese.get(a.msg.id) === a) { clearTimeout(a.t); S.attese.delete(a.msg.id); if (!a.scaduta) a.no(e); } });
+  }
+  // la presa nuova (o il PC tornato): le domande in sospeso, di nuovo — cifrate
+  // di nuovo, con lo stesso numero
+  function rimanda() { for (const a of S.attese.values()) spedisci(a); }
+  function scaduta(id) {
+    const a = S.attese.get(id);
+    if (!a || a.scaduta) { if (a) S.attese.delete(id); return; }
+    const assente = S.pari === false || !inLinea();
+    if (!a.inviata) {
+      // mai partita: si sa che il PC non l'ha
+      S.attese.delete(id);
+      a.no(Object.assign(new Error(inLinea() ? "Il PC non è raggiungibile: niente mandato" : "Senza rete: niente mandato al PC"), { nonInviata: true }));
+      return;
+    }
+    if (a.tardi) { a.scaduta = true; a.t = setTimeout(() => scaduta(id), TARDI_MAX); } else S.attese.delete(id);
+    a.no(Object.assign(new Error(assente ? "Il PC non è raggiungibile" : "Il PC non ha risposto in tempo"), { tempo: true, inviata: true }));
+    if (!assente) rifai();   // una risposta che non arriva: la presa può essere morta
+  }
+  // Una scrittura: un numero suo, e la risposta che arriva tardi la chiude
+  // lo stesso — `si` con i dati del PC, o l'errore.
+  const nuovoRq = () => P.b64u(P.casuale(12));
+  function scrivi(cmd, args, tempo, si, frase) {
+    return chiedi(cmd, args, tempo, false, { rq: nuovoRq(), tardi: (d) => {
+      if (d.ok) { si(d.dati); if (frase) avviso(frase); } else errore(errDa(d));
+      render();
+    } });
   }
   // La sessione è finita: niente dati dei pazienti restano qui.
   function chiusa(perche, testo) {
@@ -323,6 +387,7 @@
 
   // ------------------------------------------------------------- i comandi
   function errore(e) {
+    if (e.offline) return;   // senza rete lo dice già la testata; si rilegge al ritorno
     avviso(e.message, "err");
     if (e.dimesso) aggiornaLista(true);   // dimesso sul PC: dall'elenco se ne va
   }
@@ -339,7 +404,7 @@
     if (!S.catalogo) return carica();
     S.occupato.add("lista"); render();
     try { S.pazienti = await chiedi("pazienti", {}, TEMPO, auto); S.aggiornato = Date.now(); S.erroreLista = ""; }
-    catch (e) { if (S.pazienti) { if (!auto) avviso(e.message, "err"); } else S.erroreLista = e.message; }
+    catch (e) { if (S.pazienti) { if (!auto) errore(e); } else S.erroreLista = e.message; }
     S.occupato.delete("lista"); render();
   }
   async function aggiornaOrdini() {
@@ -399,14 +464,19 @@
     if (!l.length || S.occupato.has("csalva" + ep)) return;
     S.cstato.delete(ep);
     S.occupato.add("csalva" + ep); render();
-    try {
-      cartellaDalPc(ep, await chiedi("cartellaSalva", { ep, campi: Object.fromEntries(l.map(([n, x]) => [n, { prima: x.base, dopo: x.testo }])) }, ATTESA_CARTELLA));
-      for (const [n] of l) S.cbozze.get(ep)?.delete(n);
-      avviso("Salvato");
-    } catch (e) {
+    // (com'è andata, subito o — persa la risposta — quando il PC risponde)
+    const salvata = (c) => { cartellaDalPc(ep, c); for (const [n, x] of l) if (S.cbozze.get(ep)?.get(n)?.testo === x.testo) S.cbozze.get(ep).delete(n); S.cstato.delete(ep); };
+    const no = (e) => {
       if (e.dati) cartellaDalPc(ep, e.dati);
       S.cstato.set(ep, { testo: e.message, ricarica: e.ricarica });
       if (e.dimesso) aggiornaLista(true);
+    };
+    try {
+      salvata(await chiedi("cartellaSalva", { ep, campi: Object.fromEntries(l.map(([n, x]) => [n, { prima: x.base, dopo: x.testo }])) }, ATTESA_CARTELLA, false,
+        { rq: nuovoRq(), tardi: (d) => { if (d.ok) { salvata(d.dati); avviso("Salvato"); } else no(errDa(d)); render(); } }));
+      avviso("Salvato");
+    } catch (e) {
+      no(e.inviata ? Object.assign(new Error("Non so se è salvato: aspetto il PC"), { ricarica: null }) : e);
     }
     S.occupato.delete("csalva" + ep); render();
   }
@@ -442,6 +512,19 @@
   // da un blob: in memoria. Mai su disco, mai da un indirizzo di rete: il
   // blob si revoca quando la finestra si chiude, a ogni nuovo PDF, uscendo.
   const PDF_MAX = 15e6;
+  const PEZZO_B64 = 4 * 130000;      // caratteri base64 in un pezzo, nei due versi (sotto il tetto del ripetitore)
+  // Un pezzo di un PDF che viaggia: se la rete cade, si riprende da questo
+  // pezzo (non da capo) appena torna; oltre `fine` si lascia perdere, e lo si dice.
+  const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function pezzo(fai, fine, tardi) {
+    for (;;) {
+      try { return await fai(); } catch (e) {
+        if (!(e.tempo || e.offline || e.nonInviata) || !S.canale) throw e;
+        if (Date.now() >= fine) throw Object.assign(new Error(tardi), { tempo: !!e.tempo || !!e.inviata });
+        while (!pronto() && S.canale && Date.now() < fine) await pausa(400);
+      }
+    }
+  }
   function chiudiPdf() {
     if (!pdfAperto) return;
     clearInterval(pdfAperto.t);
@@ -458,8 +541,9 @@
     try {
       const parti = [];
       let n = 1, size = 0, tot = 0;
+      const entro = Date.now() + 120e3 + perRete(misura * 4 / 3);
       for (let i = 0; i < n; i++) {
-        const d = await chiedi("pdf", { ep, ref: id, i }, 40e3);
+        const d = await pezzo(() => chiedi("pdf", { ep, ref: id, i }, 40e3 + perRete(PEZZO_B64), false, { grosso: PEZZO_B64 }), entro, "PDF non arrivato: la rete è troppo lenta, riprova");
         if (!d || d.i !== i || typeof d.b !== "string" || !Number.isSafeInteger(d.n) || d.n < 1 || d.n > 64 || !Number.isSafeInteger(d.size) || d.size < 1 || d.size > PDF_MAX
           || (i && (d.n !== n || d.size !== size))) throw new Error("PDF non arrivato bene: riprova");
         if (!i) { n = d.n; size = d.size; }
@@ -484,7 +568,7 @@
   // controlla e lo stampa sull'A4 senza dialogo, una volta sola per richiesta
   // (`rid`). Qui si dice com'è andata, con le parole del PC.
   const $pdf = document.getElementById("pdfin");
-  const PEZZO = 130000 * 3;          // byte per messaggio (≈ 520 KB in base64): sotto il tetto del ripetitore
+  const PEZZO = PEZZO_B64 / 4 * 3;   // byte per messaggio (≈ 520 KB in base64)
   const ATTESA_STAMPA = 130e3;       // il PC aspetta la stampante fino a 110 secondi
   const b64 = (u) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
   async function stampaPdf(file) {
@@ -496,16 +580,23 @@
     if (String.fromCharCode(...u.subarray(0, 4)) !== "%PDF") return fine("err", "Non è un PDF");
     render();
     const rid = P.b64u(P.casuale(12)), n = Math.max(1, Math.ceil(u.length / PEZZO));
+    // ogni pezzo col suo numero (rid-i): rimandato dopo una presa caduta, il PC non lo prende due volte
+    const entro = Date.now() + ATTESA_STAMPA + 120e3 + perRete(u.length * 4 / 3);
+    let ultimo = false;   // l'ultimo pezzo è partito: da lì il PC può stampare
     try {
       let d = null;
       for (let i = 0; i < n && !(d && d.fine); i++) {
+        ultimo = i === n - 1;
         S.stampa.titolo = i === n - 1 ? "Stampo sul PC…" : `Invio… ${Math.round(i / n * 100)}%`; render();
-        d = await chiedi("stampa", { rid, i, n, size: u.length, b: b64(u.subarray(i * PEZZO, (i + 1) * PEZZO)) }, i === n - 1 ? ATTESA_STAMPA : 40e3);
+        const b = b64(u.subarray(i * PEZZO, (i + 1) * PEZZO));
+        d = await pezzo(() => chiedi("stampa", { rid, i, n, size: u.length, b }, (i === n - 1 ? ATTESA_STAMPA : 40e3) + perRete(b.length), false, { rq: `${rid}-${i}` }),
+          entro, "Il PC non ha risposto in tempo");
       }
       fine(d.tono || "warn", d.titolo || "Mandato al PC", d.testo);
     } catch (e) {
       if (!S.canale) { S.stampa = null; return; }
-      if (e.tempo) fine("warn", "Non so se è stampato", "guarda la stampante del PC prima di rifarlo");
+      if (e.tempo && ultimo) fine("warn", "Non so se è stampato", "guarda la stampante del PC prima di rifarlo");
+      else if (e.tempo || e.nonInviata) fine("err", "PDF NON stampato", "la rete non ha retto: riprova");
       else fine("err", e.message);
     }
   }
@@ -593,16 +684,18 @@
     if (S.notaAperta === ep) S.notaAperta = "";
     if (testo == null || !p || testo === p.nota) { S.bozze.delete(ep); render(); return; }
     S.occupato.add("nota" + ep); render();
-    try { aggiornaRiga(await chiedi("nota", { ep, testo })); S.bozze.delete(ep); avviso("Nota salvata sul PC"); }
-    catch (e) { errore(e); }
+    const salvata = (riga) => { aggiornaRiga(riga); if (S.bozze.get(ep) === testo) S.bozze.delete(ep); };
+    try { salvata(await scrivi("nota", { ep, testo }, TEMPO, salvata, "Nota salvata sul PC")); avviso("Nota salvata sul PC"); }
+    catch (e) { if (e.inviata) avviso("Non so se la nota è salvata: aspetto il PC", "err"); else errore(e); }
     S.occupato.delete("nota" + ep); render();
   }
   async function aggiungiProm(ep) {
     const testo = S.promTesto.trim();
     if (!testo) return;
     S.occupato.add("prom" + ep); render();
-    try { aggiornaRiga(await chiedi("promemoria", { ep, testo })); S.promTesto = ""; S.promAperto = ""; }
-    catch (e) { errore(e); }
+    const salvato = (riga) => { aggiornaRiga(riga); if (S.promTesto.trim() === testo) { S.promTesto = ""; S.promAperto = ""; } };
+    try { salvato(await scrivi("promemoria", { ep, testo }, TEMPO, salvato, "Promemoria salvato sul PC")); }
+    catch (e) { if (e.inviata) avviso("Non so se il promemoria è salvato: aspetto il PC", "err"); else errore(e); }
     S.occupato.delete("prom" + ep); render();
   }
   // «✓ Fatto» aspetta 5 secondi, con «Annulla»: un tocco sbagliato non toglie
@@ -611,8 +704,8 @@
     if (S.fatti.has(pid)) return;
     S.fatti.set(pid, setTimeout(async () => {
       S.occupato.add("fatto" + pid); render();
-      try { aggiornaRiga(await chiedi("fatto", { ep, pid })); }
-      catch (e) { if (e.dati) aggiornaRiga(e.dati); errore(e); }
+      try { aggiornaRiga(await scrivi("fatto", { ep, pid }, TEMPO, aggiornaRiga, "Promemoria fatto sul PC")); }
+      catch (e) { if (e.dati) aggiornaRiga(e.dati); if (e.inviata) avviso("Non so se il promemoria è fatto: aspetto il PC", "err"); else errore(e); }
       S.fatti.delete(pid);
       S.occupato.delete("fatto" + pid); render();
     }, 5000));
@@ -682,11 +775,19 @@
     S.arma = null;
     const oid = s.oid;
     S.inviati.set(ep, oid); render();
-    try {
-      const d = await chiedi("ordina", { ep, oid, esami: [...s.esami], quesito: s.q.trim(), mio: s.mio }, 60e3);
-      for (const o of d.ordini || []) {
+    const nuovi = (d) => {
+      for (const o of (d && d.ordini) || []) {
         if (!S.ordini.has(o.id)) ordineVisto(o.titolo ? o : { ...o, stato: "avvio", tono: "run", titolo: "Parte", testo: "Apro la scheda dell'ordine sul PC…", fine: false, ts: Date.now() });
       }
+    };
+    try {
+      // (persa la risposta, quella che arriva dopo dice com'è andata: il bottone smette di aspettare)
+      const d = await chiedi("ordina", { ep, oid, esami: [...s.esami], quesito: s.q.trim(), mio: s.mio }, 60e3, false, { rq: nuovoRq(), tardi: (r) => {
+        if (r.ok) nuovi(r.dati); else avviso(r.errore || "Ordine non partito", "err");
+        if (S.bloccati.get(ep) === oid) S.bloccati.delete(ep);
+        render();
+      } });
+      nuovi(d);
       S.sel.delete(ep);
       if (d.avviso) avviso(d.avviso, "err");
       window.scrollTo(0, 0);
@@ -716,8 +817,10 @@
   }
   function zitto() { clearTimeout(tAvviso); S.avviso = null; }
   // il collegamento si dice solo quando manca
-  const statoPc = () => (!S.ws || S.ws.readyState !== 1 ? `<span class="statopc"><i></i>Ricollego…</span>`
-    : S.pari === false ? `<span class="statopc"><i></i>PC assente</span>` : "");
+  const statoPc = () => {
+    const t = !inLinea() ? "Senza rete" : !S.ws || S.ws.readyState !== 1 ? "Ricollego…" : S.pari === false ? "PC assente" : "";
+    return t ? `<span class="statopc" role="status"><i></i>${t}</span>` : "";
+  };
   function testata() {
     if (S.fase !== "pronta") return "";
     const suPaz = S.vista.nome === "paziente", p = suPaz ? paziente(S.vista.ep) : null;
@@ -973,8 +1076,10 @@
     try { $app.innerHTML = testata() + corpo + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}" role="alert">${esc(S.avviso.testo)}</div>` : ""); }
     finally { disegno = false; }
     for (const t of $app.querySelectorAll(".cc textarea")) alza(t);
-    // PC assente: in grigio quello che va chiesto al PC, e i pazienti che il telefono non ha in memoria
-    if (S.fase === "pronta" && S.pari === false) {
+    // Senza rete, o senza PC: in grigio quello che va chiesto al PC, e i
+    // pazienti che il telefono non ha in memoria; il resto si guarda come prima.
+    // Tornato il collegamento, tornano da soli.
+    if (S.fase === "pronta" && !pronto()) {
       for (const el of $app.querySelectorAll("button[data-a]")) {
         const a = el.dataset.a;
         const serve = SERVE_PC.has(a) && !(a === "aggiornaLista" && el.closest(".piena")) || (a === "paz" && !S.esiti.has(el.dataset.ep));
@@ -1089,16 +1194,30 @@
     else if (e.target.id === "cambio") { e.preventDefault(); cambia(); }
   });
   // Tornati sull'app (iOS chiude le prese delle pagine in sottofondo): ci si
-  // ricollega, si prova subito la presa, e l'elenco si rilegge da solo.
-  document.addEventListener("visibilitychange", () => {
+  // ricollega subito, si prova la presa, e l'elenco si rilegge da solo.
+  function davanti() {
     if (document.visibilityState !== "visible" || !S.chiavi || scadenze() || S.fase === "altrove") return;
+    S.tentativi = 0;
     collega();
     batti();
     if (S.canale && S.fase === "pronta") {
       if (S.ws && S.ws.readyState === 1 && S.pari) { rileggi(); aggiornaOrdini(); } else S.rinfresca = true;
     }
     render();
+  }
+  document.addEventListener("visibilitychange", davanti);
+  window.addEventListener("pageshow", (e) => { if (e.persisted) davanti(); });
+  // La rete torna (fuori dall'ascensore, dal wifi al 5G): la presa di prima è
+  // quasi sempre morta senza saperlo — se ne apre subito un'altra, e quello
+  // che aspettava riparte. Senza rete: lo dice la testata, e si aspetta.
+  window.addEventListener("online", () => {
+    if (!S.chiavi || S.fase === "altrove" || ["senza", "finita", "rifiutato", "conferma"].includes(S.fase)) return;
+    S.tentativi = 0;
+    if (S.canale && S.fase === "pronta") S.rinfresca = true;
+    rifai();
+    render();
   });
+  window.addEventListener("offline", () => { batti(); render(); });   // la presa di prima regge? il battito lo dice
   // L'associazione ha un'ora: passata, la chiave se ne va da sola. E la
   // regola dei 20 minuti vale anche qui: un'app lasciata in sottofondo non
   // tiene in memoria i pazienti finché il PC non glielo dice.
