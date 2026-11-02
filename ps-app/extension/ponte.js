@@ -35,7 +35,7 @@ function righeStato(s, codice, qr) {
   if (s.sessione) {
     return { cls: "vivo", testa: "iPhone collegato", righe: [
       cam,
-      `Dalle ${hhmm(s.sessione.dal)} · ultimo comando alle ${hhmm(s.sessione.ultimo)} · si chiude da sola dopo 20 minuti senza comandi.`,
+      `Dalle ${hhmm(s.sessione.dal)} · ultimo comando alle ${hhmm(s.sessione.ultimo)} · si chiude da sola dopo 3 minuti senza comandi.`,
       `Associato fino alle ${hhmm(s.scade)}${cod}. Ogni comando finisce nel Registro.`] };
   }
   return { cls: s.relay === "su" ? "ok" : "warn", testa: qr ? "iPhone associato" : `iPhone associato fino alle ${hhmm(s.scade)}${cod}`, righe: [cam, ponte, fine] };

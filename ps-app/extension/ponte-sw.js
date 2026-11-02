@@ -27,7 +27,7 @@
  * telefono ne apre una nuova: lo sveglia la prima pagina del gestionale che
  * chiede (ponteSveglia).
  *
- * La sessione finisce dopo 20 minuti senza comandi del medico, con «Scollega»
+ * La sessione finisce dopo 3 minuti senza comandi del medico, con «Scollega»
  * sul PC, con la revoca, alla scadenza dell'associazione (14 ore), col riavvio
  * dell'estensione, o quando una scheda del gestionale torna alla pagina
  * d'accesso (l'associazione no: rientrati nel gestionale, il telefono riapre).
@@ -44,7 +44,8 @@ const PONTE_VALORI = "ponte.valori";        // storage.session: le schede aperte
 const PONTE_CARTELLE = "ponte.cartelle";    // storage.session: le schede aperte per salvare la cartella (solo { ep, ts })
 const PONTE_CARTELLA = "ponte.cartella";    // storage.session: l'ultima lettura della cartella di ogni paziente (memoria, mai disco)
 const PONTE_DURATA = 14 * 3600e3;           // un'associazione dura un turno lungo
-const PONTE_INATTIVO = 20 * 60e3;           // senza comandi del medico, la sessione si chiude
+const PONTE_INATTIVO = 3 * 60e3;            // senza comandi del medico, la sessione si chiude (il telefono si ricollega in un attimo)
+const PONTE_ORDINE_MAX = 30e3;              // un ordine vale 30 secondi dal tocco sul telefono: arrivato dopo, non si fa
 const PONTE_BATTITO = 20e3;                 // la presa parla almeno ogni 20 secondi
 const PONTE_QR_MAX = 2 * 60e3;              // il QR si rivede solo per poco
 const PONTE_SALUTO_MAX = 2 * 60e3;          // un saluto senza seguito si dimentica
@@ -65,7 +66,7 @@ const PONTE_CAMBIO_BLOCCO = 10 * 60e3;
 const PONTE_ATTESA = { ordina: 25e3, esiti: 30e3, cartella: 30e3, altro: 10e3, pong: 10e3 };
 // Perché una sessione finisce: la frase, la stessa qui, sulla pagina iPhone e sul telefono.
 const PONTE_PERCHE = {
-  inattivo: "20 minuti senza comandi", "scollegata dal PC": "Chiusa dal PC con «Scollega»",
+  inattivo: "3 minuti senza comandi", "scollegata dal PC": "Chiusa dal PC con «Scollega»",
   revocata: "Associazione revocata dal PC", scaduta: "Associazione scaduta", "nuova associazione": "Sul PC c'è un QR nuovo",
   "chiusa dall'iPhone": "Chiusa dall'iPhone", riavvio: "L'estensione sul PC si è riavviata",
   login: "Il gestionale sul PC è tornato alla pagina d'accesso",
@@ -222,7 +223,7 @@ function ponteBattito() {
 }
 setInterval(ponteBattito, PONTE_BATTITO);
 
-// Scadenze: la sessione dopo 20 minuti senza comandi, l'associazione alla sua
+// Scadenze: la sessione dopo 3 minuti senza comandi, l'associazione alla sua
 // ora, un saluto rimasto a metà, una scheda dei valori che non ha finito.
 // (Con un nome: i test la chiamano con l'orologio avanti.)
 async function ponteControlla() {
@@ -288,8 +289,9 @@ async function ponteSaluto(b) {
   }
   const nPc = PonteCripto.casuale(16);
   pt.attesa = { canale: PonteCripto.canalePc(await PonteCripto.chiaviSessione(pt.k, nTel, nPc)), ts: ponteOra(), dev: m.dev, nTel: m.n };
+  // (con l'ora del PC: il telefono ne tiene lo scarto, e un ordine porta l'ora del tocco sull'orologio del PC)
   ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0,
-    { v: 1, n: PonteCripto.b64u(nPc), eco: m.n, scade: pt.coppia.scade }));
+    { v: 1, n: PonteCripto.b64u(nPc), eco: m.n, scade: pt.coppia.scade, ora: ponteOra() }));
 }
 // «Cancella e riassocia»: la richiesta è un saluto (cifrato con la chiave del QR:
 // senza, non si apre e non arriva qui) che porta il codice. Il codice si controlla
@@ -409,7 +411,8 @@ async function ponteComando(s, d) {
   if (!d.auto && !PONTE_DA_SE.has(d.cmd)) s.ultimo = ponteOra();
   s.n++;
   const rispondi = (r) => ponteInvia(s, { re: d.id, ...r });
-  if (d.cmd === "esci") { await rispondi({ ok: true }); return ponteFine("chiusa dall'iPhone"); }
+  // (il telefono che chiude per i 3 minuti e si riapre subito: il suo saluto nuovo, se è già qui, resta)
+  if (d.cmd === "esci") { await rispondi({ ok: true }); const a = pt.attesa; await ponteFine("chiusa dall'iPhone"); if (a && pt.coppia) pt.attesa = a; return; }
   // Una scrittura porta il suo numero (rq): rimandata dal telefono dopo una
   // presa caduta, non si rifà — si risponde com'è andata, o, se sta ancora
   // andando, quando finisce. Le letture si rifanno e basta.
@@ -429,7 +432,18 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "ciao") return { ok: true, dati: { scade: pt.coppia.scade, inattivoMin: PONTE_INATTIVO / 60e3 } };
     if (d.cmd === "ordini") return { ok: true, dati: await ponteOrdiniTel() };
     if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d); return await ponteOffriPdf(s, await ponteAggiornaValori(a), a.ep); }
-    if (d.cmd === "ordina") return await ponteOrdina(d);
+    if (d.cmd === "ordina") {
+      // Un ordine arrivato più di 30 secondi dopo il tocco (rimasto in una presa
+      // morta, ritardato per strada, rimandato tardi) non si fa: il telefono l'ha
+      // già dato per scaduto. `nato` è l'ora del tocco, già sull'orologio del PC.
+      const eta = ponteOra() - d.nato;
+      if (!Number.isFinite(d.nato) || eta > PONTE_ORDINE_MAX || eta < -PONTE_ORDINE_MAX) {
+        ponteNota("iPhone · un ordine arrivato tardi: scaduto, non fatto");
+        await ponteScriviStato();
+        return { ok: false, scaduto: true, errore: "Scaduta: non inviata" };
+      }
+      return await ponteOrdina(d);
+    }
     if (d.cmd === "pdf") return await ponteDaiPdf(s, d);
     if (d.cmd === "stampa") return await ponteStampa(s, d);
     if (d.cmd === "cartella") return await ponteCartella(ponteArgomenti(d));

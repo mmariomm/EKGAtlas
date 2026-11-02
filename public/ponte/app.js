@@ -20,7 +20,7 @@
   const CHIAVE = "psassist.ponte.v1";
   const TEMPO = 30e3;
   let pdfAperto = null;              // il PDF di un referto aperto sul telefono: { url (blob:), w, t }
-  const INATTIVO = 20 * 60e3;       // come sul PC: 20 minuti senza comandi del medico e la sessione è finita
+  const INATTIVO = 3 * 60e3;        // come sul PC: 3 minuti senza comandi del medico e la sessione è finita
   const DURATA_MAX = 14 * 3600e3;    // un link non vale più di un turno, qualunque ora porti
   const VERDE_MAX = 2 * 60e3;        // un ordine finito bene se ne va da solo, come sulla striscia del PC
   const BATTITO = 20e3, PONG = 10e3; // la presa parla ogni 20 secondi; senza «pong» in 10 è morta
@@ -38,7 +38,7 @@
   const uguale = (a, b) => String(a ?? "").replace(/\s+/g, " ").trim() === String(b ?? "").replace(/\s+/g, " ").trim();
   const TRIAGE = { ROSSO: "rosso", ARANCIONE: "arancione", AZZURRO: "azzurro", VERDE: "verde", BIANCO: "bianco" };
   // Le chiusure decise qui; quelle del PC portano la loro frase.
-  const PERCHE = { inattivo: "20 minuti senza comandi", "chiusa dall'iPhone": "Chiusa da questo telefono", riavvio: "L'estensione sul PC si è riavviata" };
+  const PERCHE = { inattivo: "3 minuti senza comandi", "chiusa dall'iPhone": "Chiusa da questo telefono", riavvio: "L'estensione sul PC si è riavviata" };
   // dopo queste la chiave di questo telefono non apre più niente
   const FINITE = new Set(["nuova associazione", "revocata", "scaduta"]);
 
@@ -63,6 +63,8 @@
   const S = {
     coppia: null, chiavi: null, codice: "", nuova: null, ws: null, pari: null, tentativi: 0, tRiprova: 0, tPong: 0,
     saluto: null, canale: null, nSessione: "", attese: new Map(), id: 0, ultimo: 0,
+    scarto: 0,           // l'orologio del PC meno quello del telefono, misurato al saluto (in memoria)
+    coda: new Map(),     // oid → un ordine toccato senza collegamento: { ep, oid, quando, paziente, n, sel, stato: "coda" | "scaduta" }
     fase: "avvio", perche: "", testoFine: "", scaduta: 0,
     pazienti: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ordini: new Map(), nascosti: new Set(),
     vista: { nome: "lista", ep: "" }, scheda: "esiti", sel: new Map(), bloccati: new Map(), aperti: new Set(),
@@ -78,7 +80,7 @@
   function svuota() {
     S.pazienti = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.bozze.clear(); S.promTesto = ""; S.arma = null;
-    S.notaAperta = ""; S.promAperto = ""; S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear();
+    S.notaAperta = ""; S.promAperto = ""; S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
     chiudiPdf();
     for (const t of S.fatti.values()) clearTimeout(t);
     S.fatti.clear();
@@ -200,7 +202,7 @@
   }
   async function saluta() {
     const n = P.casuale(16);
-    const mio = { n: P.b64u(n), byte: n };
+    const mio = { n: P.b64u(n), byte: n, t0: Date.now() };
     S.saluto = mio;
     manda(await P.sigilla(S.chiavi.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: mio.n, dev: S.coppia.dev }));
     setTimeout(() => {
@@ -234,6 +236,9 @@
       S.cambio = null;
       S.nSessione = mio.n;
       S.ultimo = Date.now();
+      // l'ora del PC, a metà fra il saluto e la risposta: un orologio del telefono
+      // avanti o indietro non cambia quando un ordine scade
+      if (Number.isFinite(m.ora)) S.scarto = Math.round(m.ora - (mio.t0 + Date.now()) / 2);
       // (senza aspettare qui: la risposta passa da questa stessa fila)
       chiedi("ciao", {}, TEMPO, true).then((d) => {
         if (d && d.scade > 0 && d.scade < S.coppia.scade) { S.coppia.scade = d.scade; salva(S.coppia); }
@@ -258,7 +263,7 @@
     if (d.evento === "ordine" && d.ordine) { ordineVisto(d.ordine); render(); return; }
     if (d.evento === "avviso") avviso(d.testo);
   }
-  const errDa = (d) => Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso,
+  const errDa = (d) => Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso, scaduta: !!d.scaduto,
     ricarica: Array.isArray(d.cambiati) || Array.isArray(d.chiusi) ? [...(d.cambiati || []), ...(d.chiusi || [])] : null });
   // Un comando al PC. `auto`: lo manda l'app da sé (non il medico), e non
   // tiene aperta la sessione — né qui né sul PC. `tempo`: quanto può volerci,
@@ -270,6 +275,8 @@
   //   o.tardi  passato il tempo, la risposta che arriva dopo va qui (la
   //            scrittura si rimanda ancora, per 10 minuti)
   //   o.grosso quanti byte porta la risposta (per il battito, su una rete lenta)
+  //   o.scade  (un ordine) l'ora oltre la quale, se non è ancora partita, non parte più
+  //   o.partita quando parte davvero (la prima volta)
   function chiedi(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
     return new Promise((si, no) => {
       if (!S.canale) { no(new Error("Sessione chiusa")); return; }
@@ -280,8 +287,14 @@
       }
       if (!auto) S.ultimo = Date.now();
       const id = ++S.id;
-      const a = { msg: { id, cmd, ...args, ...(auto ? { auto: true } : {}), ...(o.rq ? { rq: o.rq } : {}) }, si, no, tardi: o.tardi || null, grosso: o.grosso || 0, inviata: false, scaduta: false };
+      const a = { msg: { id, cmd, ...args, ...(auto ? { auto: true } : {}), ...(o.rq ? { rq: o.rq } : {}) }, si, no, tardi: o.tardi || null, grosso: o.grosso || 0,
+        inviata: false, scaduta: false, scade: o.scade || 0, partita: o.partita || null };
       a.t = setTimeout(() => scaduta(id), tempo);
+      if (a.scade) setTimeout(() => {
+        if (a.inviata || S.attese.get(id) !== a) return;
+        clearTimeout(a.t); S.attese.delete(id);
+        no(Object.assign(new Error("Scaduta: non inviata"), { scaduta: true }));
+      }, Math.max(0, a.scade - Date.now()));
       S.attese.set(id, a);
       if (pronto()) spedisci(a);
     });
@@ -289,7 +302,12 @@
   function spedisci(a) {
     const c = S.canale;
     // (ancora in sospeso — o «esci», che parte anche se la sessione qui è già chiusa)
-    c.cifra(a.msg).then((f) => { if ((S.attese.get(a.msg.id) === a || a.msg.cmd === "esci") && manda(f)) a.inviata = true; },
+    if (a.scade && !a.inviata && Date.now() >= a.scade) return;   // scaduta prima di partire: non parte più
+    c.cifra(a.msg).then((f) => {
+      if (!(S.attese.get(a.msg.id) === a || a.msg.cmd === "esci") || (a.scade && !a.inviata && Date.now() >= a.scade) || !manda(f)) return;
+      if (!a.inviata && a.partita) a.partita();
+      a.inviata = true;
+    },
       (e) => { if (S.attese.get(a.msg.id) === a) { clearTimeout(a.t); S.attese.delete(a.msg.id); if (!a.scaduta) a.no(e); } });
   }
   // la presa nuova (o il PC tornato): le domande in sospeso, di nuovo — cifrate
@@ -349,7 +367,7 @@
     if (!S.ws || S.ws.readyState !== 1) { c.errore = "Non collegato: riprova"; collega(); render(); return; }
     c.occupato = true; c.errore = ""; render();
     const n = P.casuale(16);
-    const mio = { n: P.b64u(n), byte: n, cambio: true };
+    const mio = { n: P.b64u(n), byte: n, cambio: true, t0: Date.now() };
     S.saluto = mio;
     manda(await P.sigilla(S.chiavi.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: mio.n, dev: S.coppia.dev, cambio: c.testo.trim().slice(0, 12) }));
     setTimeout(() => {
@@ -773,8 +791,20 @@
     }
     if (ora - S.arma.ts < 800) return;   // un doppio tocco per sbaglio è un tocco solo
     S.arma = null;
-    const oid = s.oid;
+    const oid = s.oid, quando = Date.now();
+    // Senza collegamento l'ordine aspetta in coda — «In coda · 0:24» — e parte
+    // appena torna. Se non parte entro 30 secondi dal tocco scade: non si
+    // rimanda più, e il PC non lo farebbe comunque (porta l'ora del tocco,
+    // sull'orologio del PC). Toccata la carta, si riarma.
+    const info = { ep, oid, quando, paziente: p.nome, n: s.esami.size, stato: "coda",
+      sel: { q: s.q, mio: s.mio, esami: [...s.esami], pacchetto: s.pacchetto, pkgDa: [...s.pkgDa] } };
+    if (!pronto()) { S.coda.set(oid, info); contaCoda(); }
     S.inviati.set(ep, oid); render();
+    const scaduto = () => {
+      S.coda.set(oid, { ...info, stato: "scaduta" });
+      S.sel.delete(ep);
+      if (S.bloccati.get(ep) === oid) S.bloccati.delete(ep);
+    };
     const nuovi = (d) => {
       for (const o of (d && d.ordini) || []) {
         if (!S.ordini.has(o.id)) ordineVisto(o.titolo ? o : { ...o, stato: "avvio", tono: "run", titolo: "Parte", testo: "Apro la scheda dell'ordine sul PC…", fine: false, ts: Date.now() });
@@ -782,17 +812,21 @@
     };
     try {
       // (persa la risposta, quella che arriva dopo dice com'è andata: il bottone smette di aspettare)
-      const d = await chiedi("ordina", { ep, oid, esami: [...s.esami], quesito: s.q.trim(), mio: s.mio }, 60e3, false, { rq: nuovoRq(), tardi: (r) => {
-        if (r.ok) nuovi(r.dati); else avviso(r.errore || "Ordine non partito", "err");
-        if (S.bloccati.get(ep) === oid) S.bloccati.delete(ep);
-        render();
-      } });
+      const d = await chiedi("ordina", { ep, oid, esami: [...s.esami], quesito: s.q.trim(), mio: s.mio, nato: Math.round(quando + S.scarto) }, 60e3, false, {
+        rq: nuovoRq(), scade: quando + CODA_MAX,
+        partita: () => { if (S.coda.delete(oid)) render(); },
+        tardi: (r) => {
+          if (r.ok) nuovi(r.dati); else if (r.scaduto) scaduto(); else avviso(r.errore || "Ordine non partito", "err");
+          if (S.bloccati.get(ep) === oid) S.bloccati.delete(ep);
+          render();
+        } });
       nuovi(d);
       S.sel.delete(ep);
       if (d.avviso) avviso(d.avviso, "err");
       window.scrollTo(0, 0);
     } catch (e) {
       if ([...S.ordini.values()].some((o) => nato(o, oid))) S.sel.delete(ep);   // è lì sopra: niente allarme
+      else if (e.scaduta) scaduto();   // non partito in tempo, o arrivato al PC troppo tardi: non fatto
       else if (e.tempo || e.incerto) {
         // Non si sa se è partito: la selezione se ne va e il bottone aspetta
         // la lista degli ordini dal PC. Mai un secondo ordine alla cieca.
@@ -803,9 +837,39 @@
         aggiornaOrdini();
       } else errore(e);
     }
+    S.coda.get(oid)?.stato === "coda" && S.coda.delete(oid);
     if (S.inviati.get(ep) === oid) S.inviati.delete(ep);
     render();
   }
+  const CODA_MAX = 30e3;
+  let tCoda = 0;   // il conto alla rovescia delle carte «In coda»
+  function contaCoda() {
+    if (tCoda) return;
+    tCoda = setInterval(() => {
+      if (![...S.coda.values()].some((c) => c.stato === "coda")) { clearInterval(tCoda); tCoda = 0; }
+      render();
+    }, 1000);
+  }
+  // «Scaduta: non inviata», toccata: la scelta di prima torna, e il bottone chiede di nuovo conferma (un ordine nuovo)
+  function riarma(oid) {
+    const c = S.coda.get(oid);
+    if (!c || c.stato !== "scaduta") return;
+    S.coda.delete(oid);
+    S.sel.set(c.ep, { ...c.sel, esami: new Set(c.sel.esami), pkgDa: new Set(c.sel.pkgDa), oid: "" });
+    S.scheda = "richieste";
+    if (S.vista.nome !== "paziente" || S.vista.ep !== c.ep) apriPaziente(c.ep);
+    ordina(c.ep);
+  }
+  function codaHtml(c, lista) {
+    const chi = lista ? ` · ${c.paziente || ""}` : "", cosa = c.n === 1 ? "1 esame" : `${c.n} esami`;
+    if (c.stato === "coda") {
+      const r = Math.max(0, Math.ceil((c.quando + CODA_MAX - Date.now()) / 1000));
+      return `<div class="ord run coda" role="status"><span class="seg-o"></span><span class="c"><b>In coda · 0:${String(r).padStart(2, "0")}${esc(chi)}</b><span>${cosa}: parte appena torna il collegamento</span></span></div>`;
+    }
+    return `<div class="ord warn coda" role="status" data-a="riarma" data-oid="${esc(c.oid)}"><span class="seg-o">!</span><span class="c"><b>Scaduta: non inviata${esc(chi)}</b><span>${cosa} · tocca per riarmarlo</span></span>
+      <button class="x" data-a="codaVia" data-oid="${esc(c.oid)}" aria-label="Chiudi">✕</button></div>`;
+  }
+  const codaDi = (ep) => [...S.coda.values()].filter((c) => !ep || c.ep === ep).map((c) => codaHtml(c, !ep)).join("");
 
   // --------------------------------------------------------------- disegno
   let tAvviso = 0;
@@ -884,6 +948,9 @@
         return piena(ICO.pc, "Aperto su un altro dispositivo", "<p>Il pannello è aperto su un altro telefono o in un'altra scheda: qui si è fermato.</p>",
           `<button class="grande" data-a="riapri">Riprendi qui</button>${scansiona(true)}${scade}`);
       case "chiusa":
+        // (chiusa per i 3 minuti, con l'app in sottofondo: al ritorno si riapre da sola, e
+        // questa schermata non si vede nemmeno per un attimo)
+        if (S.perche === "inattivo" && document.visibilityState !== "visible") return `<main><div class="piena"><div class="giro"></div></div></main>`;
         return piena(ICO.lucchetto, "Sessione chiusa", `<p>${esc(S.testoFine)}.</p>`,
           `<button class="grande" data-a="riapri">Riapri</button>${scade}`);
       default: return "";
@@ -945,7 +1012,7 @@
     const inStanza = vivi.filter((p) => p.posto).sort((a, b) => a.posto.localeCompare(b.posto, "it", { numeric: true }));
     const prec = S.pazienti.filter((p) => p.prec);
     const carta = (l) => (l.length ? `<div class="carta">${l.map(rigaPaz).join("")}</div>` : "");
-    return `<main>${stampaHtml()}${S.pazienti.length ? carta([...vivi.filter((p) => !p.posto), ...inStanza]) + (prec.length ? `<div class="lbl">Episodi precedenti</div>${carta(prec)}` : "")
+    return `<main>${stampaHtml()}${codaDi("")}${S.pazienti.length ? carta([...vivi.filter((p) => !p.posto), ...inStanza]) + (prec.length ? `<div class="lbl">Episodi precedenti</div>${carta(prec)}` : "")
       : `<div class="vuoto">Nessun paziente nell'elenco del PC.<br>Si riempie aprendo i pazienti nel gestionale.</div>`}
       ${barraOrdini()}</main>`;
   }
@@ -1003,7 +1070,7 @@
     const occupato = S.inviati.has(p.ep), bloccato = S.bloccati.has(p.ep);
     const armato = S.arma && S.arma.ep === p.ep;
     // (due pazienti con lo stesso cognome: il ⚠ anche qui, e il nome col suo segno)
-    const etichetta = occupato ? "Mando l'ordine al PC…" : bloccato ? "Controllo gli ordini sul PC…" : armato ? `${p.omonimo ? "⚠ " : ""}Ordino ${nTxt} per ${chi(p)}? Tocca di nuovo`
+    const etichetta = occupato ? (S.coda.has(S.inviati.get(p.ep)) ? "In coda…" : "Mando l'ordine al PC…") : bloccato ? "Controllo gli ordini sul PC…" : armato ? `${p.omonimo ? "⚠ " : ""}Ordino ${nTxt} per ${chi(p)}? Tocca di nuovo`
       : !n ? "Scegli gli esami" : `Conferma e stampa · ${nTxt}`;
     const perche = bloccato ? "Prima di un altro ordine, il PC dice se quello di prima è partito"
       : n && !s.q.trim() ? "Scrivi il quesito diagnostico" : rx && lab ? "Due richieste, laboratorio e radiologia: il PC le conferma e le stampa tutte e due" : "";
@@ -1029,7 +1096,7 @@
   function vistaPaziente() {
     const p = paziente(S.vista.ep);
     if (!p) return `<main><div class="vuoto">Questo paziente non è più nell'elenco del PC.</div></main>`;
-    const ordini = ordiniDi(p.ep).map((o) => ordineHtml(o)).join("");
+    const ordini = codaDi(p.ep) + ordiniDi(p.ep).map((o) => ordineHtml(o)).join("");
     const tab = (s, t) => `<button class="${S.scheda === s ? "on" : ""}" data-a="scheda" data-s="${s}" role="tab" aria-selected="${S.scheda === s}">${t}</button>`;
     return `<main>${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("esiti", "Esiti")}${tab("richieste", "Richieste")}${tab("cartella", "Cartella")}</div>
       ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : vistaRichieste(p)}</main>${ctaHtml(p)}`;
@@ -1065,7 +1132,8 @@
   // pressione e rilascio): mentre si preme, aspetta.
   let premuto = 0, rinviato = false, disegno = false;
   // le azioni che senza il PC non vanno
-  const SERVE_PC = new Set(["valori", "pdf", "ordina", "aggiornaLista", "stampaPdf", "prom", "fatto", "nota", "promApri", "csalva", "cricarica", "crileggi"]);
+  // (l'ordine no: senza collegamento va in coda)
+  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "prom", "fatto", "nota", "promApri", "csalva", "cricarica", "crileggi"]);
   function render() {
     if (premuto) { rinviato = true; return; }
     // il cursore resta dov'era: un ridisegno non deve rubare il campo a chi scrive
@@ -1153,6 +1221,8 @@
       if (pr) { togglaProfilo(ep, pr.esami); S.arma = null; render(); }
     }
     else if (a === "ordina") ordina(ep);
+    else if (a === "riarma") riarma(b.dataset.oid);
+    else if (a === "codaVia") { S.coda.delete(b.dataset.oid); render(); }
     else if (a === "nota") { S.notaAperta = ep; render(); fuocoSu("nota"); }
     else if (a === "promApri") { S.promAperto = ep; render(); fuocoSu("promin"); }
     else if (a === "prom") aggiungiProm(ep);
@@ -1196,7 +1266,11 @@
   // Tornati sull'app (iOS chiude le prese delle pagine in sottofondo): ci si
   // ricollega subito, si prova la presa, e l'elenco si rilegge da solo.
   function davanti() {
-    if (document.visibilityState !== "visible" || !S.chiavi || scadenze() || S.fase === "altrove") return;
+    if (document.visibilityState !== "visible" || !S.chiavi || S.fase === "altrove") return;
+    // chiusa per i 3 minuti senza comandi (adesso, o mentre l'app era in
+    // sottofondo): si riapre da sola, senza passare da «Sessione chiusa»
+    if (scadenze() && !(S.fase === "chiusa" && S.perche === "inattivo")) return;
+    if (S.fase === "chiusa" && S.perche === "inattivo") { riapri(); return; }
     S.tentativi = 0;
     collega();
     batti();
@@ -1219,7 +1293,7 @@
   });
   window.addEventListener("offline", () => { batti(); render(); });   // la presa di prima regge? il battito lo dice
   // L'associazione ha un'ora: passata, la chiave se ne va da sola. E la
-  // regola dei 20 minuti vale anche qui: un'app lasciata in sottofondo non
+  // regola dei 3 minuti vale anche qui: un'app lasciata in sottofondo non
   // tiene in memoria i pazienti finché il PC non glielo dice.
   function scadenze() {
     if (S.coppia && S.coppia.scade <= Date.now()) { S.scaduta = S.coppia.scade; if (S.canale) chiusa("scaduta"); else { S.perche = "scaduta"; dimentica("finita"); } return true; }

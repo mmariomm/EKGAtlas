@@ -1147,8 +1147,8 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   scheda di sottofondo, e rilegge. Mai sopra un testo cambiato sul PC o non ancora salvato in una
   scheda; la pagina aperta di quel paziente dice «Aggiornato dal telefono · Ricarica».
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
-  Scollega»**, e ogni comando va nel **Registro**. Dopo **20 minuti senza comandi** del medico la
-  sessione si chiude da sola; dal telefono si riapre con un tocco.
+  Scollega»**, e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
+  sessione si chiude da sola; tornando sull'app si riapre da sola.
 - **Prova la rete** (⋯ → iPhone): dal PC dell'ospedale, sulla presa vera del ponte, in pochi secondi
   dice se si raggiunge e quanto ci mette; «Tieni aperto 15 minuti» dice se e perché cade; il testo da
   copiare ha un blocco «Per l'IT».
@@ -1691,7 +1691,7 @@ Salva / Registra, e il PDF di **Stampa RE**.
    il sito li inoltra al telefono e non li può leggere né li tiene. Le richieste al gestionale
    restano quelle di sempre, fatte dalle sue schede. La chiave sta in `storage.local` fino alla
    scadenza, e vale per un telefono solo. Revoca, scadenza a 14 ore, sessione che si
-   chiude dopo 20 minuti senza comandi, la spia «iPhone collegato» e il Registro:
+   chiude dopo 3 minuti senza comandi, la spia «iPhone collegato» e il Registro:
    [`ponte/README.md`](ponte/README.md).
    **E una seconda, per gli aggiornamenti (⋯ → «Aggiorna app»):** il service worker legge
    `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (una volta al giorno e aprendo il ⋯) e,

@@ -299,6 +299,8 @@ async function telFinto(pc, k, dev) {
   };
   // (il PC risponde quando ha finito: si aspetta la sua risposta, o un saluto, al massimo un secondo e mezzo)
   t.manda = async (obj) => {
+    // (un ordine porta l'ora del tocco, sull'orologio del PC: come il telefono vero)
+    if (obj.cmd === "ordina" && !("nato" in obj)) obj = { ...obj, nato: Date.now() + pc.ctx.__salto };
     await pc.consegna(await t.canale.cifra(obj));
     const out = [];
     for (const t0 = Date.now(); Date.now() - t0 < 1500; await sospendi(10)) {
@@ -372,17 +374,18 @@ await blocco(async () => {
   check(!!pc.pt().sessione && (await t2.manda({ id: 2, cmd: "pazienti" })).some((x) => x.re === 2 && x.ok),
     "sei messaggi non validi di fila (chi non ha le chiavi): ignorati, la sessione resta e risponde");
 
-  // i 20 minuti: contano solo i comandi del medico
-  pc.pt().sessione.ultimo = Date.now() - 19 * 60e3;
+  // i 3 minuti: contano solo i comandi del medico
+  pc.pt().sessione.ultimo = Date.now() - 2.5 * 60e3;
   await t2.manda({ id: 3, cmd: "ordini" });
   await t2.manda({ id: 4, cmd: "pazienti", auto: true });
-  check(Date.now() - pc.pt().sessione.ultimo > 18 * 60e3, "«ordini» e i comandi che l'app manda da sé non tengono aperta la sessione");
+  check(Date.now() - pc.pt().sessione.ultimo > 2 * 60e3, "«ordini» e i comandi che l'app manda da sé non tengono aperta la sessione");
   await t2.manda({ id: 5, cmd: "pazienti" });
   check(Date.now() - pc.pt().sessione.ultimo < 5000, "un comando del medico sì");
-  pc.pt().sessione.ultimo = Date.now() - 21 * 60e3;
+  pc.pt().sessione.ultimo = Date.now() - 3.5 * 60e3;
   await t2.manda({ id: 6, cmd: "ordini" });
   await pc.ev("ponteControlla()");
-  check(!pc.pt().sessione && pc.pt().fine && pc.pt().fine.perche === "inattivo", "20 minuti senza comandi del medico: chiusa, anche se l'app ha chiesto «ordini»");
+  check(!pc.pt().sessione && pc.pt().fine && pc.pt().fine.perche === "inattivo" && pc.pt().fine.testo === "3 minuti senza comandi",
+    "3 minuti senza comandi del medico: chiusa, anche se l'app ha chiesto «ordini»");
 
   // l'ordine: il numero lo dà il telefono
   const t3 = await telFinto(pc, k, DEV);
@@ -585,6 +588,17 @@ await blocco(async () => {
   const r5 = (await t.manda({ ...prom(5), rq: "rqaltra12345" })).find((x) => x.re === 5);
   check(r3 && r3.ok && r3.dati.n === 1 && r4 && r4.ok && r4.dati.n === 1 && r5 && r5.dati.n === 2 && fatti.length === 2,
     `una scrittura rimandata col suo numero (rq), mentre va o a cose fatte: fatta una volta, e la risposta di quella volta (${fatti.length} fatte; un numero nuovo è un'altra)`);
+  // un ordine vale 30 secondi dal tocco (sull'orologio del PC): arrivato dopo, o senza l'ora, non si fa — e rimandato, nemmeno
+  const ordina = (id, rq, nato) => ({ id, cmd: "ordina", ep: "1", oid: "scade" + rq, esami: ["lab:A1"], quesito: "q", rq: "rqordine" + rq, ...(nato === undefined ? {} : { nato }) });
+  const tardi = (await t.manda(ordina(6, "tardi1", Date.now() - 31e3))).find((x) => x.re === 6);
+  const tardi2 = (await t.manda(ordina(7, "tardi1", Date.now()))).find((x) => x.re === 7);
+  const futuro = (await t.manda(ordina(8, "futuro", Date.now() + 5 * 60e3))).find((x) => x.re === 8);
+  const senzaOra = (await t.manda({ ...ordina(9, "senza"), nato: null })).find((x) => x.re === 9);
+  const ordiniFatti = pc.comandi.filter((m) => m.cmd === "ordina").length;
+  const inTempo = (await t.manda(ordina(10, "intempo", Date.now() - 25e3))).find((x) => x.re === 10);
+  check([tardi, tardi2, futuro, senzaOra].every((r) => r && r.ok === false && r.scaduto === true && r.errore === "Scaduta: non inviata") && ordiniFatti === 0
+    && pc.comandi.filter((m) => m.cmd === "ordina").length === 1 && inTempo && inTempo.ok,
+    "un ordine arrivato più di 30 secondi dopo il tocco (o con un'ora che non torna): «Scaduta: non inviata», a nessuna scheda — rimandato, nemmeno; a 25 secondi, sì");
 });
 await blocco(async () => {
   // Le parole di un ordine (ordPubblico, in bg.js): il titolo è com'è andata,
