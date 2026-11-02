@@ -187,6 +187,8 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .chip { min-height: 44px; min-width: 44px; border: 1px solid var(--campo); background: var(--carta); border-radius: 999px; padding: 0 13px; font-size: 14px; font-weight: 600; }
 .chip.on { background: var(--azione); border-color: var(--azione); color: #fff; }
+.chip.prof { display: inline-flex; align-items: center; gap: 6px; border-radius: 10px; border-style: dashed; }
+.chip.prof .pila { flex: none; opacity: .8; }
 .gruppo { padding: 2px 14px 12px; }
 .gruppo + .gruppo { border-top: 1px solid var(--linea); }
 .gruppo h3 { font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--grigio); margin: 10px 0 0; }

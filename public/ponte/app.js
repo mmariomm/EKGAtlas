@@ -687,6 +687,8 @@
   function piena(icona, titolo, testo, extra = "", amb = false) {
     return `<main><div class="piena"><div class="tondo${amb ? " amb" : ""}">${icona}</div><h1>${esc(titolo)}</h1>${testo}${extra}</div></main>`;
   }
+  // un profilo è un gruppo di esami: l'icona di una pila, perché non sembri un esame
+  const ICO_PROFILO = `<svg class="pila" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 1.5 1.5 5 8 8.5 14.5 5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M1.5 8 8 11.5 14.5 8M1.5 11 8 14.5 14.5 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
   const PASSI = `<ol class="passi"><li>Sul PC, nel pannello: <b>⋯ → iPhone</b>.</li><li><b>Associa l'iPhone</b>: compare un QR.</li><li>Inquadralo con <b>Scansiona il QR</b>.</li></ol>`;
   // senza un'associazione buona: il QR si inquadra da qui (e, se la fotocamera non c'è, perché)
   const scansiona = (quiet = false) => `<button class="grande${quiet ? " quiet" : ""}" data-a="scansiona">Scansiona il QR</button>${
@@ -827,14 +829,15 @@
     if (p.prec) return `<div class="vuoto">Episodio precedente: per ordinare apri quello di oggi.</div>`;
     if (!p.ordina) return `<div class="vuoto">Per ordinare, il PC deve aver aperto almeno una volta la pagina di questo paziente.</div>`;
     const s = selDi(p.ep);
-    const quesiti = c.quesiti.map((q) => {
-      const pk = c.pacchetti.find((x) => x.q === q);
-      const on = pk && s.pacchetto === pk.q;
-      return `<button class="chip${on ? " on" : ""}" data-a="quesito" data-q="${esc(q)}" aria-pressed="${!!on}">${esc(q)}</button>`;
+    // sul telefono solo i quesiti che sono un pacchetto di esami, coi nomi corti (in una riga)
+    const BREVE = { "dolore toracico": "Dol th", "dolore addominale": "Dol add" };
+    const quesiti = c.quesiti.filter((q) => c.pacchetti.some((x) => x.q === q && x.esami.length)).map((q) => {
+      const on = s.pacchetto === q;
+      return `<button class="chip${on ? " on" : ""}" data-a="quesito" data-q="${esc(q)}" aria-pressed="${!!on}" aria-label="${esc(q)}">${esc(BREVE[q.toLowerCase()] || q)}</button>`;
     }).join("");
     const gruppi = c.gruppi.map((g) => `<div class="gruppo"><h3>${esc(g.nome)}</h3>${g.profili.length ? `<div class="chips">${g.profili.map((pr, i) => {
       const on = pr.esami.every((k) => s.esami.has(k));
-      return `<button class="chip${on ? " on" : ""}" data-a="profilo" data-g="${esc(g.nome)}" data-i="${i}">${esc(pr.nome)}</button>`;
+      return `<button class="chip prof${on ? " on" : ""}" data-a="profilo" data-g="${esc(g.nome)}" data-i="${i}">${ICO_PROFILO}${esc(pr.nome)}</button>`;
     }).join("")}</div>` : ""}<div class="griglia">${g.esami.map((k) => `<button class="esame${s.esami.has(k) ? " on" : ""}" data-a="esame" data-k="${esc(k)}">${esc(c.nomi[k] || k)}</button>`).join("")}</div></div>`).join("");
     return `<div class="carta q-w"><input id="quesito" type="text" enterkeyhint="done" autocomplete="off" placeholder="Quesito diagnostico" value="${esc(s.q)}"><div class="chips">${quesiti}</div></div>
       <div class="carta">${gruppi}</div>`;
