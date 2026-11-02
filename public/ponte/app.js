@@ -885,6 +885,8 @@
   // Un ridisegno sotto il dito ruberebbe il tocco (il bottone sparisce fra
   // pressione e rilascio): mentre si preme, aspetta.
   let premuto = 0, rinviato = false, disegno = false;
+  // le azioni che senza il PC non vanno
+  const SERVE_PC = new Set(["valori", "pdf", "ordina", "aggiornaLista", "stampaPdf", "prom", "fatto", "nota", "promApri"]);
   function render() {
     if (premuto) { rinviato = true; return; }
     // il cursore resta dov'era: un ridisegno non deve rubare il campo a chi scrive
@@ -894,6 +896,14 @@
     disegno = true;   // (un campo tolto dal ridisegno non è un campo lasciato)
     try { $app.innerHTML = testata() + corpo + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}" role="alert">${esc(S.avviso.testo)}</div>` : ""); }
     finally { disegno = false; }
+    // PC assente: in grigio quello che va chiesto al PC, e i pazienti che il telefono non ha in memoria
+    if (S.fase === "pronta" && S.pari === false) {
+      for (const el of $app.querySelectorAll("button[data-a]")) {
+        const a = el.dataset.a;
+        const serve = SERVE_PC.has(a) && !(a === "aggiornaLista" && el.closest(".piena")) || (a === "paz" && !S.esiti.has(el.dataset.ep));
+        if (serve) { el.setAttribute("aria-disabled", "true"); el.classList.add("nopc"); }
+      }
+    }
     if (fuoco) {
       const el = document.getElementById(fuoco.id);
       if (el) { el.focus({ preventScroll: true }); try { el.setSelectionRange(fuoco.a, fuoco.b); } catch { /* non un campo di testo */ } }
