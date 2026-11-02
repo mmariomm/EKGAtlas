@@ -2938,7 +2938,7 @@
   // turno, qui e nella memoria di questa scheda. Restano le impostazioni
   // (finestra, stanze, le opzioni delle aree, catalogo, stampe già fatte) e i
   // modelli del medico; chi sta in quale area se ne va.
-  const RESET_VIA = () => ["patients.v1", ...TUTTI_I_POSTI(), "stanza.posti.v1", AREE, AREA_VAI, STATO, PROM, PROM_VECCHI, noteKey, segniKey, "refVisti.v1",
+  const RESET_VIA = () => ["patients.v1", ...TUTTI_I_POSTI(), "stanza.posti.v1", AREE, AREA_VAI, SMART_SYNC, DIMESSI, STATO, PROM, PROM_VECCHI, noteKey, segniKey, "refVisti.v1",
     "refPortale", DA_CONFERMARE, "quesiti", "quesiti.ts", "lastQ", APERTA, PRESIDIO];
   function azzeraScheda() {
     try { for (const k of Object.keys(sessionStorage)) if (k.startsWith(NS)) sessionStorage.removeItem(k); } catch { /* niente */ }
@@ -5996,8 +5996,12 @@
     .stseg.ros { background: #B3261E; } .stseg.amb { background: #D08A00; } .stseg.nuovo { background: #0B5CAD; }
     .stseg.att { box-shadow: inset 0 0 0 1.5px #8296A9; }
     .stbed.occ:not(:has(.stsegni :is(.cuore, .stseg))) .stbedhd { padding-right: 0; }
-    @container stbed (max-height: 62px) {
-      .stmap:not(.edit) .stbed.occ .stname, .stbed .stsegni, .stbed:not(.sedia) .stglifo { display: none; }
+    /* piccolo (le mappe stanno sempre nel loro spazio): via il nome del letto, il cuore e il pallino restano */
+    @container stbed (max-height: 72px) {
+      .stmap:not(.edit) .stbed.occ .stname, .stbed:not(.sedia) .stglifo { display: none; }
+      .stmap:not(.edit) .stbed.occ:has(.stsegni :is(.cuore, .stseg)) .stp1::before { content: ""; float: right; width: 24px; height: 14px; }
+      .stmap:not(.edit) .stbed.occ .stp1 { max-height: 48px; line-height: 16px; }
+      .stbed .stsegni { gap: 4px; }
       .stmap.edit .stbed .stp { display: none; }   /* in Modifica conta il nome del letto */
     }
     /* la sedia: un letto più piccolo, il suo glifo ci sta sempre */
@@ -8803,7 +8807,7 @@
         el.classList.add("over");
         const altro = el.getAttribute("data-occep");
         if (!altro || altro === ep) return;
-        el.insertAdjacentHTML("beforeend", `<span class="stfuori">${esc(el.getAttribute("data-occ") || "")} → in lista</span>`);
+        el.insertAdjacentHTML("beforeend", `<span class="stfuori">${esc(el.getAttribute("data-occ") || "")} → senza posto</span>`);
         // tutta dentro la mappa: se sporge da un lato, si sposta verso l'altro
         const lab = el.lastElementChild, cv = (el.closest(".stcanvas") || box).getBoundingClientRect(), lr = lab.getBoundingClientRect();
         const dx = Math.max(0, cv.left + 4 - lr.left) - Math.max(0, lr.right - cv.right + 4);

@@ -145,24 +145,41 @@ un altro **carica la sua pagina**: il pannello non mostra mai i dati di un pazie
 quello che hai davanti. Il pannello parte da qui solo sulla lista del pronto soccorso, dove non c'è
 un paziente aperto; sulla scheda di un paziente parte dagli **Esiti**.
 
-**Una vista sola: sopra la lista, sotto la stanza.** Nella lista c'è chi non ha ancora un posto;
-nella stanza, chi ce l'ha. Metti un paziente al suo posto e la sua riga se ne va: la lista si
-accorcia e la stanza sale e si allarga. La lista prende quello che le serve, al massimo poco meno
-di metà, poi scorre dentro; vuota, non c'è proprio, e la stanza arriva fin sotto le schede. Un
-paziente nuovo arriva nella lista da solo, e nessuno sparisce: se il suo letto viene tolto, torna
-lì. In fondo, chiusi, gli **Archiviati** e **Svuota l'elenco**.
+**Il tabellone: in alto le mappe, sotto la lista.** In cima **Alta | Bassa | Entrambe** (i nomi
+delle due mappe) e un piccolo **⟳**. *Entrambe*: le due mappe affiancate se lo spazio è largo, una
+sopra l'altra se no; sempre in scala, **mai da scorrere di lato**. La scelta resta; finché non ne
+fai una, si vede la mappa dell'area in cui lavori. Sotto le mappe, la **lista**: **tutti** quelli
+della vista, chi ha un posto (col nome del posto) e chi no — prima chi non ce l'ha. La lista prende
+quello che le serve, al massimo poco meno di metà, poi scorre dentro. In fondo, chiusi, gli
+**Archiviati** e **Svuota l'elenco**.
 
-**La lista** — **una riga per paziente**: la striscia del **triage**, il nome (un tocco sulla riga
-apre gli Esiti), il **cuore** dei parametri vitali e lo stato degli esami, l'icona **Da fare** col
-numero delle cose aperte e, accanto in grigio, la prima (il post-it), **visto 20 min fa** — in ambra
-dopo 3 ore —, oppure **questa pagina** per quello aperto, che è il primo; poi **▾**, per metterlo
-nella stanza senza trascinarlo, e passandoci sopra la **✕** per toglierlo dall'elenco (e, per chi non
-ha niente da fare, l'icona vuota). **Ogni cosa ha la sua colonna, uguale per tutte le righe**: il
-nome, il cuore, Lab, ECG, RX, Da fare, il post-it — il Lab sta sempre allo stesso posto, e una
-colonna che nessuno usa non occupa niente. Cede per primo il post-it, poi il nome; i pezzetti degli
-esami mai. L'**episodio precedente** sta in fondo, in grigio, e nella stanza non va. Nella colonna
-stretta (affiancata) il nome sta da solo sulla prima riga, il resto scende sotto, con le stesse
-colonne, e «visto…» si toglie.
+**Chi va dove** lo dicono l'area e il triage, sullo stesso elenco (non sono liste diverse):
+**Alta** = l'area Alta + l'OBI **rosso** o **arancione**; **Bassa** = Bassa, Codici minori e l'OBI
+**azzurro, verde o bianco**. L'OBI senza triage sta in tutt'e due, con la **striscia grigia**, e così
+chi non ha ancora un'area (o ne ha una che il programma non conosce): nessuno sparisce. *Entrambe*:
+tutti. Chi sta in un letto di una mappa si vede nella lista di quella mappa anche se l'area dice
+l'altra.
+
+**La riga** dice poco, sempre nello stesso posto: la striscia del **triage**, **nome ed età**, il
+**posto**, **da quanto è in PS** (l'ingresso, dalla lista dell'area o dalla smart: «3h40»), il
+**cuore** dei parametri vitali e tre segni, **Lab · ECG · RX**, ognuno col suo stato: **grigio** =
+chiesto e in attesa, col tempo dalla richiesta («Lab 50′»); **arancio** = tornato in parte («RX
+1/2»); **blu** = tornato tutto («Lab ✓»); mai chiesto = niente. Poi l'icona **Da fare** col numero
+delle cose aperte, **▾** per scegliere il posto senza trascinare e, passandoci sopra, la **✕** per
+toglierlo dall'elenco. **Niente valori e niente testo** nella riga (nemmeno il post-it): quelli
+nella scheda che si apre passando sul nome. Ogni cosa ha la sua colonna, uguale per tutte le righe;
+una colonna che nessuno usa non occupa niente. L'**episodio precedente** sta in fondo, in grigio, e
+nella stanza non va. Nella colonna stretta il nome sta da solo sulla prima riga, il resto sotto.
+
+**La scheda al passaggio.** Il mouse fermo un quarto di secondo **sul nome** (nella riga) o **sul
+letto** apre una scheda da leggere — non prende il clic (sotto, il clic apre il paziente come
+sempre; ▾ e «Sposta in…» restano), non copre mai il suo letto, si chiude uscendo. Righe solo se
+hanno qualcosa, in quest'ordine: `▌ROSSI MARIO 79 M · Rossa · 3h40` · `♥ NEWS 8 · SpO2 88 · FC 132`
+(i parametri fuori norma) · i **valori fuori range** dell'ultimo prelievo, `K 5,9↑ Hb 9,1↓` · **ECG**
+(`✓ 10:02 «le prime parole del referto»`, o `⏳ 40′`) · **RX** (`RX addome ⏳ 40′`, `RX torace ✓
+«…»`). Valori e referti scritti vengono dalla scheda clinica del paziente (estensione), solo da
+quest'ingresso in PS (o dalle ultime 24 ore), con la stessa regola d'identità degli Esiti. Passando
+su una riga, il suo letto si accende (e viceversa).
 
 **Il cuore dei parametri vitali** apre la riga di stato, nella lista, nel letto (solo l'icona) e nell'intestazione
 accanto agli identificativi: **♥ rosso** se un parametro da solo è nella fascia rossa del NEWS2 —
@@ -232,22 +249,52 @@ ancora un'area sta in cima. Chi sta in un'area lo dice **la lista di quell'area 
 quando la apri: chi c'è entra (anche mai aperto), chi non c'è più ne esce; una lista filtrata
 aggiunge e basta. Niente si legge da solo. Il **titolo** apre la lista dell'area: se non è la tua,
 passa da **PsoPsoImposta**, sceglie l'area nella tendina e preme **Conferma** — quello che faresti a
-mano. **Ogni area ha la sua mappa**, e si vede quella dell'area in cui lavori: l'**Alta** dallo
+mano. **Due mappe**: l'**Alta**, dallo
 schizzo del medico — in basso il **Box**, i letti **3, 2, 1** e la **Rossa** (Box e Rossa: un letto
 nella sua cornice), sopra le **sedie** (tre in fila, la quarta sopra la Rossa), in alto a sinistra le
-due barelle di **Attesa barellati** —; le altre quella del PS. Ognuna si ritocca con **Modifica**.
+due barelle di **Attesa barellati** —, e la **Bassa**, quella del PS (OBI, OSS, sale d'attesa).
+Ognuna si ritocca con **Modifica** (una alla volta: quella della vista; con *Entrambe*, quella
+dell'area). Un paziente ha un posto solo: messo in una mappa, lascia l'altra.
+
+**Segue il gestionale** (⋯, acceso di norma). Ogni lista non filtrata che apri aggiorna chi sta in
+quale area, come sempre. In più, **ogni 10 minuti** (finché una scheda del gestionale è aperta) e
+subito col **⟳**, il pannello rilegge la **lista smart** — tutto il PS, ogni area col suo nome e il
+triage, senza cambiare area. La apre **col suo link**, quello dell'icona `elenco_smart.png` della
+lista dell'area (`window.open('…menuPsoSmart.do?MVPG=PsoPazientiSmart&PAZIENTI_FILTRO=…')`, annotato
+quando lo si vede: mai un indirizzo inventato; finché non c'è, il ⟳ lo dice), in una **scheda dietro**
+aperta dal service worker come quelle dei referti: legge, e si chiude; il medico resta dov'è. Della
+smart contano le schede dei pazienti di cui il medico risponde — **Ambulatorio** (dove stanno anche
+gli OBI) e un'eventuale **OBI** —, non l'attesa del triage né «tutti»: aperta su un'altra, passa
+all'Ambulatorio col link della sua scheda. Le righe non hanno episodio: chi si riconosce (nome e
+impronta della nascita, uno solo) prende area e triage della riga; chi no **entra lo stesso**, con
+l'impronta per chiave, area e triage — aprirlo passa dalla sua area e dalla sua lista, come un tocco
+sulla smart; quando la lista della sua area (o la sua pagina) dà l'episodio, posto, «Da fare» e area
+passano a lui.
+
+**Dimesso.** Chi manca da una lettura **intera e riconosciuta** — la smart non filtrata, con le righe
+quante dicono le sue schede, o la lista intera di un'area — è **archiviato** e il suo letto si
+svuota, con «**ROSSI M. dimesso · Annulla**» per 8 secondi (Annulla lo rimette, al suo letto se è
+ancora libero, e per 3 ore non si riarchivia da solo). **Mai** da una lista filtrata o monca, da una
+pagina di login o d'errore, da una lista vuota, né quando in un colpo se ne andrebbe **più del 30%**:
+allora niente, e nessun avviso. Chi è stato dimesso da qui e ricompare in un elenco torna fra i vivi.
 
 **La lista smart** (tutto il pronto soccorso, nella sua finestra): un tocco su una riga apre il
 paziente. Conosciuto — nome e data di nascita, uno solo — la sua cartella, nella scheda del
 gestionale; se no si passa alla sua area e lo si apre dalla sua lista, col link della sua riga. Due
 uguali: la lista dell'area, e scegli tu. Un indirizzo d'episodio non si costruisce mai.
+**Prima il fuoco, poi la pagina**: le pagine del gestionale si ricaricano da sole quando la loro scheda
+prende il fuoco (`<body onfocus="refreshOnFocus()">`), e portare davanti la scheda *insieme* alla
+navigazione faceva ricaricare la lista di prima sopra PsoPsoImposta — si atterrava sulla lista, senza
+area cambiata né paziente aperto. Ora la scheda si porta davanti, si aspetta un attimo, poi si naviga
+(e se la pagina ricaricata ha già ripreso il passaggio da sé, non si naviga una seconda volta). E se
+si atterra comunque sulla lista dell'area di prima col passaggio a metà, lo si riprende da
+PsoPsoImposta, una volta; un «Conferma» perso si ripreme una volta. Il rinvio di PsoPazienti (dopo
+«Conferma», 302 a una pagina che rimanda alla lista) si aspetta.
 
-La stanza è una **griglia di celle uguali** (40 × 24; un letto ne prende 5 × 4, una sedia 4 × 3): allargando o
-stringendo la finestra — o accorciandosi la lista — cresce o cala tutta insieme, in scala, e **niente si sovrappone** — nemmeno
-affiancata o alla misura minima, dove semmai la mappa scorre (sotto i 20 px una cella non porta più
-un nome leggibile): di lato anche con la rotella, e il bordo sfuma dalla parte dove c'è altro. Dopo
-uno spostamento la mappa resta dov'era. Fuori da Modifica si vede solo il
-pezzo disegnato, in alto, subito sotto la lista: anche una stanza piccola riempie la mappa. Il testo non cambia misura: in un
+Le mappe sono **griglie di celle uguali** (40 × 24; un letto ne prende 5 × 4, una sedia 4 × 3): allargando o
+stringendo la finestra — o allungandosi la lista — crescono o calano tutte insieme, in scala, e **niente si sovrappone**;
+non si scorrono mai, né di lato né in giù: a qualunque misura stanno nel loro spazio. Fuori da Modifica si vede solo il
+pezzo disegnato: anche una stanza piccola riempie la mappa. Il testo non cambia misura: in un
 letto piccolo sparisce prima il nome del letto, coi segni, e il nome del paziente, se è lungo, va a
 capo (dopo l'apostrofo, in DELL'ACQUA) invece di perdere l'iniziale; a capo va anche nelle aree. Un letto vuoto è solo il suo nome e un letto disegnato appena; una sedia vuota, il suo nome e una sedia.
 
@@ -303,8 +350,8 @@ lì da soli). Si apre **lì dov'è**, senza un'altra scheda, dall'icona **Da far
 fondo, un campo su una riga: si scrive e **Invio** aggiunge, in fondo alla lista. **Un tocco sulla
 spunta** e la voce è fatta: barrata, resta al suo posto **5 minuti** (un altro tocco la riapre), poi
 se ne va. L'ordine lo decidi tu: si **trascina** dalla maniglia ⋮⋮ (col mouse o col dito), o da
-tastiera **Alt+↑ / Alt+↓** sulla spunta. La **prima voce aperta** è il post-it: si legge sulla riga
-e nelle aree (nel letto, nel passaggio del mouse). L'icona dice **quante** sono aperte e cambia colore quando un promemoria si avvicina:
+tastiera **Alt+↑ / Alt+↓** sulla spunta. La **prima voce aperta** è il post-it: si legge nelle aree
+della stanza (nella riga del tabellone c'è solo quante sono). L'icona dice **quante** sono aperte e cambia colore quando un promemoria si avvicina:
 **ambra dai 15 minuti prima**, **rossa quando l'ora è passata** (con un bagliore lento, fermo se il
 sistema chiede meno movimento); il passaggio del mouse le dice tutte. **Esc**, o un clic fuori, la
 chiude: non c'è niente da salvare, ogni gesto è già salvato.
@@ -347,6 +394,14 @@ fissata, una senza 24 ore dopo l'ultima modifica, una spuntata 5 minuti dopo. Ne
 cancella la pagina di login — una sessione scaduta non deve far perdere la troponina delle 11:30 —;
 «Svuota l'elenco» e 🗑 sì. I **parametri vitali** letti (l'ultima riga: ora e valori, mai un nome)
 stanno con lo stato degli esami, in `stato.v1`, e se ne vanno con lui.
+Il **tabellone**: la vista scelta (`tabellone.vista.v1`: `alta`, `bassa`, `entrambe`), «segue il
+gestionale» (`segue.v1`, `false` se spento) e il link della lista smart (`smart.url.v1`, com'era
+nella pagina) sono impostazioni e restano; l'ultima lettura della smart (`smart.sync.v1`: quando,
+com'è andata, quante righe) e l'ultima uscita da annullare (`dimessi.v1`: episodi, «COGNOME N.» e i
+posti da rimettere) se ne vanno con «Reset dati pazienti». Chi è noto solo dalla smart sta in
+`patients.v1` con una chiave fatta dall'impronta (`sm…`), `smart: true`; l'ingresso in PS è
+`arrivo` (un istante, mai una data di nascita). Nella scheda dietro, le schede della smart già
+lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
 
 ### Richieste
 1. **Quesito diagnostico** — casella su una riga, suggerimenti a fianco; l'ultimo resta scritto.

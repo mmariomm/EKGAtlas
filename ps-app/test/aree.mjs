@@ -231,7 +231,7 @@ await blocco(async () => {
 console.log("Il titolo di un'area");
 await blocco(async () => {
   const srv = server();
-  const { context, page } = await contesto(srv);
+  const { context, page } = await contesto(srv, { seed: { "tabellone.vista.v1": "entrambe" } });
   srv.s.area = "bassa";
   await page.goto(URL_LISTA);
   await pannello(page);
