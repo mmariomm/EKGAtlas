@@ -34,7 +34,7 @@
  * Mentre è aperta, ogni scheda del gestionale lo dice nell'intestazione del
  * pannello: «iPhone collegato · Scollega».
  */
-/* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL */
+/* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL, stampaScelte, stampaDalTel, stampaTelVista */
 
 const PONTE_HOST_PROVA = "ponte.host";      // storage.local: solo per le prove, e solo verso questo PC
 const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, scade, creata, usata, dev, nTel, cambiata?, errori?, blocco?, cambi? }
@@ -402,6 +402,7 @@ async function ponteComando(s, d) {
     if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d); return rispondi(await ponteOffriPdf(s, await ponteAggiornaValori(a), a.ep)); }
     if (d.cmd === "ordina") return rispondi(await ponteOrdina(d));
     if (d.cmd === "pdf") return rispondi(await ponteDaiPdf(s, d));
+    if (d.cmd === "stampa") return rispondi(await ponteStampa(s, d));
     if (["pazienti", "esiti", "richieste", "nota", "promemoria", "fatto"].includes(d.cmd)) {
       const a = ponteArgomenti(d);
       const r = await ponteSuScheda(d.cmd, a);
@@ -454,6 +455,72 @@ async function ponteDaiPdf(s, d) {
   if (d.i >= n) return { ok: false, errore: "Il PDF non è più sul PC" };
   if (d.i === 0) { ponteNota("iPhone · un referto PDF aperto sul telefono"); await ponteScriviStato(); }
   return { ok: true, dati: { size, n, i: d.i, b: b.slice(d.i * PONTE_PDF_PEZZO, (d.i + 1) * PONTE_PDF_PEZZO) } };
+}
+
+// Un PDF dall'iPhone da stampare qui, sull'A4 (⋯ → «Stampa un PDF»): arriva a
+// pezzi dentro la sessione cifrata, come i referti ma al contrario (`stampa`:
+// rid, i, n, size, b). Si ricompone in memoria — solo qui, solo per questa
+// sessione —, si controlla (la misura, «%PDF», 15 MB al massimo) e va al
+// motore della stampa senza dialogo di bg.js (stampaDalTel): lo stesso
+// giornale, una richiesta (rid) una stampa. Senza la stampa automatica, no:
+// davanti al PC può non esserci nessuno. Il telefono sente com'è andata con
+// le parole del motore; il registro del ponte lo annota.
+const PONTE_STAMPA_ATTESA = 110e3;   // l'aiutante di stampa risponde entro 90 secondi
+async function ponteStampa(s, d) {
+  const male = { ok: false, errore: "PDF non arrivato bene: riprova" };
+  const rid = typeof d.rid === "string" && /^[\w-]{8,24}$/.test(d.rid) ? d.rid : "";
+  const { i, n, size, b } = d;
+  if (!rid || ![i, n, size].every(Number.isSafeInteger) || i < 0 || n < 1 || n > 64 || i >= n || size < 1 || typeof b !== "string") return male;
+  const no = (errore) => { s.stampe.delete(rid); ponteNota(`PDF dall'iPhone rifiutato: ${errore}`); ponteScriviStato(); return { ok: false, errore }; };
+  s.stampe = s.stampe || new Map();
+  if (i === 0) {
+    // già chiesta (la risposta si era persa): com'è andata, e niente seconda stampa
+    if (await stampaTelVista(rid)) { const { nota, ...p } = ponteStampaParole(await ponteStampaEsito(rid, 0)); return { ok: true, dati: p }; }
+    if (size > PONTE_PDF_MAX) return no("PDF troppo grande: oltre 15 MB");
+    let testa = "";
+    try { testa = atob(b.slice(0, 8)); } catch { /* sotto */ }
+    if (!testa.startsWith("%PDF")) return no("Non è un PDF: niente stampato");
+    if (!(await stampaScelte())) return no("Sul PC la stampa automatica non è impostata");
+    s.stampe.clear();   // una alla volta
+    s.stampe.set(rid, { n, size, parti: [], lun: 0 });
+  }
+  const c = s.stampe.get(rid);
+  if (!c || c.n !== n || c.size !== size || c.parti.length !== i || b.length > PONTE_PDF_PEZZO || (i < n - 1 && b.length % 4)
+    || !/^[A-Za-z0-9+/]*={0,2}$/.test(b) || (c.lun += b.length) > Math.ceil(PONTE_PDF_MAX / 3) * 4) { s.stampe.delete(rid); return male; }
+  c.parti.push(b);
+  if (i < n - 1) return { ok: true, dati: { i } };
+  s.stampe.delete(rid);
+  const pdf = c.parti.join("");
+  c.parti = null;
+  if (ponteMisura(pdf) !== size) return male;
+  const r = await stampaDalTel(rid, pdf);
+  if (!r.ok) return no(corto(r.why, 120));
+  const rec = await ponteStampaEsito(rid, PONTE_STAMPA_ATTESA);
+  const { nota, ...p } = ponteStampaParole(rec);
+  if (!r.gia && nota) { ponteNota(nota); await ponteScriviStato(); }
+  return { ok: true, dati: p };
+}
+// il foglio nel giornale delle stampe (bg.js), appena non si stampa più — o dopo `attesa`
+async function ponteStampaEsito(rid, attesa) {
+  const id = "pdftel" + rid, t0 = ponteOra();
+  for (;;) {
+    const rec = (await ordLeggi()).find((x) => x.id === id) || null;
+    if (!rec || rec.stato !== "stampo" || ponteOra() - t0 >= attesa) return rec;
+    await attendi(400);
+  }
+}
+// com'è andata, con le parole del motore (`pubblico`): «Stampato su …», «Mandato a …» (in ambra), l'errore
+function ponteStampaParole(rec) {
+  const f = (rec && rec.fogli && rec.fogli[0]) || {}, p = (rec && rec.pubblico) || {};
+  const dove = corto(f.stampante, 80) || "la stampante";
+  const testo = [p.testo, p.dettaglio].filter(Boolean).join(" · ");
+  if (!rec) return { fine: true, tono: "warn", titolo: "Già mandato al PC", testo: "guarda la stampante prima di rifarlo", nota: "" };
+  if (rec.stato === "stampo") return { fine: true, tono: "run", titolo: "Stampo sul PC…", testo: `guarda ${dove}`, nota: "PDF dall'iPhone: la stampa tarda" };
+  if (f.stato === "stampato") return { fine: true, tono: "ok", titolo: p.titolo, testo, nota: `PDF dall'iPhone stampato su ${dove}` };
+  if (f.stato === "mandato") return { fine: true, tono: "warn", titolo: p.titolo, testo, nota: `PDF dall'iPhone mandato a ${dove}` };
+  if (f.stato === "sconosciuto") return { fine: true, tono: "warn", titolo: p.titolo, testo, nota: `PDF dall'iPhone: esito della stampa sconosciuto (${dove})` };
+  const why = corto(f.why || rec.interrotta || p.testo, 200);
+  return { fine: true, tono: "err", titolo: "PDF NON stampato", testo: why, nota: `PDF dall'iPhone NON stampato: ${why}` };
 }
 
 // L'ordine. Il numero lo fa il telefono quando arma «Conferma» (oid): la

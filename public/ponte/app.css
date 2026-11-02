@@ -226,3 +226,13 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .carica { display: flex; justify-content: center; padding: 26px; }
 .carica .giro { margin: 0; width: 26px; height: 26px; }
 @media (prefers-reduced-motion: reduce) { .giro, .ord.run .seg-o { animation-duration: 3s; } }
+
+/* --- «Scansiona il QR»: la fotocamera a tutto schermo, un quadrato dove mettere il QR --- */
+.piena .errcod { margin: 12px 0 0; color: var(--rosso); font-weight: 650; max-width: 330px; }
+.scan { position: fixed; inset: 0; z-index: 50; background: #000; }
+.scan video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan .guida { position: absolute; left: 50%; top: 50%; width: min(72vw, 72vh, 320px); aspect-ratio: 1; transform: translate(-50%, -50%);
+               border: 3px solid #fff; border-radius: 22px; box-shadow: 0 0 0 100vmax rgba(0,0,0,.45); }
+.scan .x { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: var(--dx); color: #fff; background: rgba(0,0,0,.4); font-size: 20px; border-radius: 50%; }
+/* il campo del file («Stampa un PDF»): c'è, ma non si vede — lo apre il menu */
+.via-schermo { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; left: -100px; }

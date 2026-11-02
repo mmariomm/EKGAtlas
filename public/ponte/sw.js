@@ -3,7 +3,7 @@
 // pazienti non passano mai di qui: viaggiano cifrati sulla presa del ponte e
 // restano nella memoria della pagina.
 const CASSA = "ponte-guscio-1";
-const GUSCIO = ["./", "app.js", "app.css", "cripto.js", "manifest.webmanifest", "icona.svg", "icona-180.png", "icona-192.png", "icona-512.png"];
+const GUSCIO = ["./", "app.js", "app.css", "cripto.js", "jsqr.min.js", "manifest.webmanifest", "icona.svg", "icona-180.png", "icona-192.png", "icona-512.png"];
 const DEL_GUSCIO = new Set(GUSCIO.map((f) => new URL(f, self.registration.scope).pathname));
 
 self.addEventListener("install", (e) => {

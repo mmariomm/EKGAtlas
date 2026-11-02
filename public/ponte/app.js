@@ -58,11 +58,13 @@
     occupato: new Set(), bozze: new Map(), notaAperta: "", promAperto: "", promTesto: "", fatti: new Map(), menu: false, arma: null, avviso: null,
     inviati: new Map(),  // ep → oid dell'ordine che sta andando al PC (il bottone aspetta)
     cambio: null,        // «Cancella e riassocia», sulla schermata «associato a un altro telefono»
+    camera: "",          // «Scansiona il QR»: perché la fotocamera non c'è
+    stampa: null,        // «Stampa un PDF»: { tono, titolo, testo, fine, ts }
   };
   function svuota() {
     S.pazienti = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.bozze.clear(); S.promTesto = ""; S.arma = null;
-    S.notaAperta = ""; S.promAperto = "";
+    S.notaAperta = ""; S.promAperto = ""; S.stampa = null;
     chiudiPdf();
     for (const t of S.fatti.values()) clearTimeout(t);
     S.fatti.clear();
@@ -428,6 +430,114 @@
     S.occupato.delete("pdf" + id); render();
   }
   window.addEventListener("pagehide", chiudiPdf);
+  // «Stampa un PDF» (⋯): il file scelto va al PC a pezzi, dentro la stessa
+  // sessione cifrata (come i referti, al contrario); il PC lo ricompone, lo
+  // controlla e lo stampa sull'A4 senza dialogo, una volta sola per richiesta
+  // (`rid`). Qui si dice com'è andata, con le parole del PC.
+  const $pdf = document.getElementById("pdfin");
+  const PEZZO = 130000 * 3;          // byte per messaggio (≈ 520 KB in base64): sotto il tetto del ripetitore
+  const ATTESA_STAMPA = 130e3;       // il PC aspetta la stampante fino a 110 secondi
+  const b64 = (u) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+  async function stampaPdf(file) {
+    if (!file || (S.stampa && !S.stampa.fine) || !S.canale) return;
+    const fine = (tono, titolo, testo = "") => { S.stampa = { tono, titolo, testo, fine: true, ts: Date.now() }; render(); };
+    if (file.size > PDF_MAX) return fine("err", "PDF troppo grande: oltre 15 MB");
+    S.stampa = { tono: "run", titolo: "Invio…", testo: "", fine: false, ts: Date.now() };
+    const u = new Uint8Array(await file.arrayBuffer());
+    if (String.fromCharCode(...u.subarray(0, 4)) !== "%PDF") return fine("err", "Non è un PDF");
+    render();
+    const rid = P.b64u(P.casuale(12)), n = Math.max(1, Math.ceil(u.length / PEZZO));
+    try {
+      let d = null;
+      for (let i = 0; i < n && !(d && d.fine); i++) {
+        S.stampa.titolo = i === n - 1 ? "Stampo sul PC…" : `Invio… ${Math.round(i / n * 100)}%`; render();
+        d = await chiedi("stampa", { rid, i, n, size: u.length, b: b64(u.subarray(i * PEZZO, (i + 1) * PEZZO)) }, i === n - 1 ? ATTESA_STAMPA : 40e3);
+      }
+      fine(d.tono || "warn", d.titolo || "Mandato al PC", d.testo);
+    } catch (e) {
+      if (!S.canale) { S.stampa = null; return; }
+      if (e.tempo) fine("warn", "Non so se è stampato", "guarda la stampante del PC prima di rifarlo");
+      else fine("err", e.message);
+    }
+  }
+  $pdf.addEventListener("change", () => { const f = $pdf.files[0]; $pdf.value = ""; stampaPdf(f); });
+
+  // ------------------------------------------------- il QR, inquadrato qui
+  // L'app della schermata Home dell'iPhone ha una memoria sua, separata da
+  // Safari: il QR inquadrato con la Fotocamera si apre in Safari, e la chiave
+  // qui non arriva. Così si inquadra anche da qui: la fotocamera nella pagina,
+  // un decodificatore (jsqr.min.js, caricato solo adesso), e un link del ponte
+  // di questo stesso sito fa la strada di un link aperto (la pagina riparte col
+  // frammento: le regole di sempre, «Usa il codice …» compreso). La
+  // fotocamera si spegne appena letto il codice o chiusa la vista.
+  let scan = null;   // { el, video, stream, t }
+  function linkDelPonte(testo) {
+    try {
+      const u = new URL(testo);
+      return u.origin === location.origin && u.pathname === "/ponte/" && !u.search && P.leggiFrammento(u.hash) ? u : null;
+    } catch { return null; }
+  }
+  const decodificatore = () => (window.jsQR ? Promise.resolve() : new Promise((ok, no) => {
+    const s = document.createElement("script");
+    s.src = "jsqr.min.js"; s.onload = ok; s.onerror = no;
+    document.head.append(s);
+  }));
+  const senzaCamera = () => { S.camera = "Fotocamera non disponibile: inquadra il QR con la Fotocamera dell'iPhone"; render(); };
+  async function apriScan() {
+    if (scan) return;
+    S.camera = "";
+    const md = navigator.mediaDevices;
+    if (!md || !md.getUserMedia) return senzaCamera();
+    const el = document.createElement("div");
+    el.className = "scan";
+    el.innerHTML = `<video playsinline muted></video><div class="guida" aria-hidden="true"></div><button class="ico x" aria-label="Chiudi">✕</button>`;
+    const s = { el, video: el.querySelector("video"), stream: null, t: 0 };
+    scan = s;
+    el.querySelector(".x").addEventListener("click", chiudiScan);
+    document.body.append(el);
+    try {
+      const [stream] = await Promise.all([md.getUserMedia({ video: { facingMode: "environment" }, audio: false }), decodificatore()]);
+      if (scan !== s) { for (const t of stream.getTracks()) t.stop(); return; }
+      s.stream = stream;
+      s.video.srcObject = stream;
+      await s.video.play().catch(() => {});
+      leggiFotogrammi(s);
+    } catch { if (scan === s) { chiudiScan(); senzaCamera(); } }
+  }
+  function leggiFotogrammi(s) {
+    const tela = document.createElement("canvas"), g = tela.getContext("2d", { willReadFrequently: true });
+    const giro = () => {
+      if (scan !== s) return;
+      const v = s.video;
+      if (v.readyState >= 2 && v.videoWidth) {
+        const f = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));
+        tela.width = Math.round(v.videoWidth * f); tela.height = Math.round(v.videoHeight * f);
+        g.drawImage(v, 0, 0, tela.width, tela.height);
+        const img = g.getImageData(0, 0, tela.width, tela.height);
+        const c = window.jsQR(img.data, img.width, img.height);
+        const u = c && linkDelPonte(c.data);   // (un QR di un altro sito, o non del ponte: si ignora)
+        if (u) {
+          chiudiScan();
+          history.replaceState(null, "", u.pathname + u.hash);
+          location.reload();
+          return;
+        }
+      }
+      s.t = setTimeout(giro, 150);
+    };
+    giro();
+  }
+  function chiudiScan() {
+    const s = scan;
+    scan = null;
+    if (!s) return;
+    clearTimeout(s.t);
+    if (s.stream) for (const t of s.stream.getTracks()) t.stop();
+    s.video.srcObject = null;
+    s.el.remove();
+  }
+  window.addEventListener("pagehide", chiudiScan);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") chiudiScan(); });
   async function salvaNota(ep) {
     const testo = S.bozze.get(ep);
     const p = paziente(ep);
@@ -568,6 +678,7 @@
     return `<header class="top">${sx}<div class="tit">${tit}</div>${statoPc()}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
       ${S.menu ? `<div class="menu" role="menu">
         ${suPaz ? "" : `<button data-a="aggiornaLista">Aggiorna l'elenco</button>`}
+        <button data-a="stampaPdf">Stampa un PDF</button>
         <button data-a="esci">Chiudi la sessione</button>
         <button class="via" data-a="dimentica">Dimentica questo PC</button>
         <div class="info">Associato fino alle ${hhmm(S.coppia.scade)} · codice ${esc(S.codice)}</div>
@@ -576,24 +687,27 @@
   function piena(icona, titolo, testo, extra = "", amb = false) {
     return `<main><div class="piena"><div class="tondo${amb ? " amb" : ""}">${icona}</div><h1>${esc(titolo)}</h1>${testo}${extra}</div></main>`;
   }
-  const PASSI = `<ol class="passi"><li>Sul PC, nel pannello: <b>⋯ → iPhone</b>.</li><li><b>Associa l'iPhone</b>: compare un QR.</li><li>Inquadralo con la <b>fotocamera</b> e tocca il link.</li></ol>`;
+  const PASSI = `<ol class="passi"><li>Sul PC, nel pannello: <b>⋯ → iPhone</b>.</li><li><b>Associa l'iPhone</b>: compare un QR.</li><li>Inquadralo con <b>Scansiona il QR</b>.</li></ol>`;
+  // senza un'associazione buona: il QR si inquadra da qui (e, se la fotocamera non c'è, perché)
+  const scansiona = (quiet = false) => `<button class="grande${quiet ? " quiet" : ""}" data-a="scansiona">Scansiona il QR</button>${
+    S.camera ? `<p class="errcod" role="alert">${esc(S.camera)}</p>` : ""}`;
   function schermata() {
     const scade = S.coppia ? `<div class="piccolo">Associato fino alle ${hhmm(S.coppia.scade)} · codice ${esc(S.codice)}</div>` : "";
     switch (S.fase) {
       case "senza":
-        return piena(ICO.croce, "PS Assist sull'iPhone", PASSI);
+        return piena(ICO.croce, "PS Assist sull'iPhone", PASSI, scansiona());
       case "finita": {
         const sc = S.perche === "scaduta";
         return piena(ICO.lucchetto, sc ? "Associazione scaduta" : "Associazione chiusa",
           `<p>${esc(sc ? `L'associazione con il PC è finita${S.scaduta ? ` alle ${hhmm(S.scaduta)}` : ""}.` : `${S.testoFine}.`)}</p>
-           <p>Per rientrare serve un QR nuovo: sul PC <b>⋯ → iPhone → Associa l'iPhone</b>.</p>`, "", true);
+           <p>Per rientrare serve un QR nuovo: sul PC <b>⋯ → iPhone → Associa l'iPhone</b>.</p>`, scansiona(), true);
       }
       case "rifiutato": {
         const c = S.cambio || { testo: "", errore: "", occupato: false };
         return piena(ICO.lucchetto, "Il PC è associato a un altro telefono", "",
           `<div class="cambio"><input id="cambio" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off" enterkeyhint="go" placeholder="Codice" aria-label="Codice" value="${esc(c.testo)}">
            <button class="grande" data-a="cambia"${c.occupato ? " disabled" : ""}>Cancella e riassocia</button>
-           ${c.errore ? `<p class="errcod" role="alert">${esc(c.errore)}</p>` : ""}</div>`, true);
+           ${c.errore ? `<p class="errcod" role="alert">${esc(c.errore)}</p>` : ""}</div>${scansiona(true)}`, true);
       }
       case "conferma":
         return piena(ICO.lucchetto, "Un'altra associazione?",
@@ -656,6 +770,14 @@
     const b = l.find((o) => o.fine) || (qui ? null : l[0]);
     return b ? ordineHtml(b, true) : "";
   }
+  // «Stampa un PDF»: a che punto è, poi com'è andata (finita bene, se ne va da sola come un ordine)
+  function stampaHtml() {
+    const x = S.stampa;
+    if (!x || (x.fine && x.tono === "ok" && Date.now() - x.ts > VERDE_MAX)) return "";
+    const segno = x.tono === "err" || x.tono === "warn" ? "!" : x.tono === "ok" ? "✓" : "";
+    return `<div class="ord ${esc(x.tono)} stampa" role="status"><span class="seg-o">${segno}</span><span class="c"><b>${esc(x.titolo)}</b>${x.testo ? `<span>${esc(x.testo)}</span>` : ""}</span>${
+      x.fine ? `<button class="x" data-a="stampaVia" aria-label="Chiudi">✕</button>` : ""}</div>`;
+  }
   function vistaLista() {
     if (!S.pazienti) {
       if (S.erroreLista && !S.occupato.has("lista")) {
@@ -669,7 +791,7 @@
     const inStanza = vivi.filter((p) => p.posto).sort((a, b) => a.posto.localeCompare(b.posto, "it", { numeric: true }));
     const prec = S.pazienti.filter((p) => p.prec);
     const carta = (l) => (l.length ? `<div class="carta">${l.map(rigaPaz).join("")}</div>` : "");
-    return `<main>${S.pazienti.length ? carta([...vivi.filter((p) => !p.posto), ...inStanza]) + (prec.length ? `<div class="lbl">Episodi precedenti</div>${carta(prec)}` : "")
+    return `<main>${stampaHtml()}${S.pazienti.length ? carta([...vivi.filter((p) => !p.posto), ...inStanza]) + (prec.length ? `<div class="lbl">Episodi precedenti</div>${carta(prec)}` : "")
       : `<div class="vuoto">Nessun paziente nell'elenco del PC.<br>Si riempie aprendo i pazienti nel gestionale.</div>`}
       ${barraOrdini()}</main>`;
   }
@@ -753,7 +875,7 @@
     if (!p) return `<main><div class="vuoto">Questo paziente non è più nell'elenco del PC.</div></main>`;
     const ordini = ordiniDi(p.ep).map((o) => ordineHtml(o)).join("");
     const tab = (s, t) => `<button class="${S.scheda === s ? "on" : ""}" data-a="scheda" data-s="${s}" role="tab" aria-selected="${S.scheda === s}">${t}</button>`;
-    return `<main>${barraOrdini(p.ep)}<div class="seg" role="tablist">${tab("esiti", "Esiti")}${tab("richieste", "Richieste")}</div>
+    return `<main>${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("esiti", "Esiti")}${tab("richieste", "Richieste")}</div>
       ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : vistaRichieste(p)}</main>${ctaHtml(p)}`;
   }
 
@@ -804,6 +926,9 @@
     else if (a === "sostituisci") { salva(S.nuova); parti(S.nuova); }
     else if (a === "tieni") parti(S.coppia);
     else if (a === "cambia") cambia();
+    else if (a === "scansiona") apriScan();
+    else if (a === "stampaPdf") { render(); $pdf.click(); }
+    else if (a === "stampaVia") { S.stampa = null; render(); }
     else if (a === "paz") apriPaziente(b.dataset.ep);
     else if (a === "indietro") { salvaNota(ep); S.vista = { nome: "lista", ep: "" }; S.arma = null; render(); aggiornaLista(); }
     else if (a === "aggiornaLista") aggiornaLista();

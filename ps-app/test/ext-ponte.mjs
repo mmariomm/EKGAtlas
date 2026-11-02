@@ -10,7 +10,8 @@
  * senza comandi, «Scollega», un altro dispositivo, la pagina ricaricata, il
  * battito, la revoca, la scadenza, la pagina d'accesso del gestionale, i
  * messaggi ripetuti o manomessi, nessun gestionale aperto, il service worker
- * che si riavvia, il browser chiuso e riaperto — e il ripetitore che non vede
+ * che si riavvia, il browser chiuso e riaperto, «Stampa un PDF» sull'A4 del
+ * PC, «Scansiona il QR» con una fotocamera finta — e il ripetitore che non vede
  * mai niente in chiaro. In fondo, la prova della rete, e l'app al buio.
  *   node test/ext-ponte.mjs
  */
@@ -19,7 +20,8 @@ import { createMock, refertoRxPdf } from "./sa4pso-mock.mjs";
 import { avviaRelay } from "../ponte/relay-node.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { rmSync, existsSync, statSync, mkdirSync } from "node:fs";
+import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from "node:fs";
+import vm from "node:vm";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 await import(join(root, "../public/ponte/cripto.js"));
@@ -138,14 +140,14 @@ const telCtx = await telBrowser.newContext(IPHONE);
 // La rete del telefono: ogni presa passa di qui. `perdi` = il numero di una
 // presa di cui si perdono i messaggi cifrati dal PC (le risposte); `muta` =
 // una presa che non porta più niente in nessun verso, nemmeno il «pong».
-const rete = { n: 0, prese: new Map(), ultima: 0, perdi: 0, muta: 0, dalPc: [] };
+const rete = { n: 0, prese: new Map(), ultima: 0, perdi: 0, muta: 0, dalPc: [], alPc: [] };
 const chiusura = (code, reason) => (code === 1000 || (code >= 3000 && code <= 4999) ? { code, reason } : {});
 await telCtx.routeWebSocket(/\/ponte\/ws/, (ws) => {
   const n = ++rete.n;
   const server = ws.connectToServer();
   rete.prese.set(n, { ws, server });
   rete.ultima = n;
-  ws.onMessage((m) => { if (rete.muta !== n) server.send(m); });
+  ws.onMessage((m) => { if (typeof m !== "string") rete.alPc.push(Buffer.from(m)); if (rete.muta !== n) server.send(m); });
   server.onMessage((m) => {
     if (rete.muta === n) return;
     if (typeof m !== "string") rete.dalPc.push(Buffer.from(m));
@@ -283,8 +285,9 @@ const altro = await altroCtx.newPage();
 await altro.goto(url1);
 check(/associato a un altro telefono/.test(await aspettaTel(altro, /associato a un altro telefono/, 15000)), "un altro telefono con lo stesso QR: «Il PC è associato a un altro telefono»");
 check(await altro.evaluate(() => localStorage.length) === 1, "…e la sua chiave la tiene (serve a «Cancella e riassocia», più sotto)");
-check(await altro.locator('[data-a="cambia"]').innerText() === "Cancella e riassocia" && await altro.locator("#app button").count() === 1 && await altro.locator("#app input").count() === 1
-  && !/Revoca/.test(await testoTel(altro)), "su quella schermata: un bottone «Cancella e riassocia» e un campo per il codice, nient'altro (niente spiegazioni)");
+check(await altro.locator('[data-a="cambia"]').innerText() === "Cancella e riassocia" && await altro.locator("#app input").count() === 1
+  && JSON.stringify(await altro.locator("#app button").allInnerTexts()) === '["Cancella e riassocia","Scansiona il QR"]' && await altro.locator(".grande.quiet[data-a=scansiona]").count() === 1
+  && !/Revoca/.test(await testoTel(altro)), "su quella schermata: «Cancella e riassocia» col campo per il codice, e sotto, più quieto, «Scansiona il QR»; nient'altro (niente spiegazioni)");
 await shot(altro, "tel-2-cancella-e-riassocia");
 check(/Un altro telefono ha provato a entrare/.test(await registroPonte()), "il registro del ponte lo dice");
 await altroCtx.close();
@@ -311,7 +314,11 @@ sezione("«Cancella e riassocia»: un secondo telefono, col codice");
 const dev0 = (await chiaveTel(tel)).dev;
 const cp0 = await coppiaPc();
 const nuovoTel = async () => { const c = await telBrowser.newContext(IPHONE); return { c, p: await c.newPage() }; };
-const scrivi = async (t, codice) => { await t.locator("#cambio").fill(codice); await tocca(t, '[data-a="cambia"]'); };
+// (prima la risposta di prima: arrivando, svuota il campo — e il codice nuovo andrebbe perso)
+const scrivi = async (t, codice) => {
+  await finche(() => t.locator('[data-a="cambia"]').isEnabled().catch(() => false), 10000);
+  await t.locator("#cambio").fill(codice); await tocca(t, '[data-a="cambia"]');
+};
 const sbagliati = async () => (await coppiaPc())?.errori || 0;
 const orologioPc = (ms) => sw.evaluate((x) => { self.__oraVera = self.__oraVera || Date.now; const v = self.__oraVera; Date.now = () => v() + x; }, ms);
 const orologioVero = () => sw.evaluate(() => { if (self.__oraVera) Date.now = self.__oraVera; });
@@ -1031,6 +1038,196 @@ const doc3 = await ctx.newPage();
 await suPagina(doc3, A.worklistUrl);
 await tocca(tel, '[data-a="riapri"]');
 check(/ROSSI M\./.test(await aspettaTel(tel, /ROSSI M\./, 20000)), "«Riapri»: di nuovo l'elenco, senza QR nuovo");
+
+// ===========================================================================
+sezione("«Stampa un PDF» dal telefono, sull'A4 del PC");
+{
+  // il finto aiutante di stampa (lo stesso di ext-stampa.mjs): annota i fogli invece di stamparli
+  const FINTO = join("/tmp", "psa-ponte-finto-" + process.pid);
+  mkdirSync(FINTO, { recursive: true });
+  const comportati = (extra = {}) => writeFileSync(join(FINTO, "config.json"), JSON.stringify({ stampanti: ["Zebra ZD421", "HP LaserJet A4"], predefinita: "HP LaserJet A4", ...extra }));
+  const lavori = () => (existsSync(join(FINTO, "lavori.jsonl")) ? readFileSync(join(FINTO, "lavori.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
+  const lanciatore = join(FINTO, "ospite.sh");
+  writeFileSync(lanciatore, `#!/bin/sh\nPSA_FINTO='${FINTO}' exec '${process.execPath}' '${join(root, "test/ospite-finto.mjs")}' "$@"\n`);
+  chmodSync(lanciatore, 0o755);
+  comportati();
+  mkdirSync(join(PROFILE, "NativeMessagingHosts"), { recursive: true });
+  writeFileSync(join(PROFILE, "NativeMessagingHosts", "it.psassist.stampa.json"),
+    JSON.stringify({ name: "it.psassist.stampa", description: "finto", path: lanciatore, type: "stdio", allowed_origins: [`chrome-extension://${extId}/`] }));
+  const SEGNO = "QJXV5518 FOGLIO DAL TELEFONO";
+  // tre pezzi: il PDF vero, e dietro un riempitivo (i pezzi sono da ~390 KB)
+  const pdf = Buffer.concat([refertoRxPdf(["Foglio di prova", SEGNO]), Buffer.alloc(900000, 0x42)]);
+  // (le parole della carta della stampa, tutte quelle che passano)
+  await tel.evaluate(() => {
+    window.__stampa = [];
+    new MutationObserver(() => { const b = document.querySelector(".stampa b"); if (b && window.__stampa.at(-1) !== b.textContent) window.__stampa.push(b.textContent); })
+      .observe(document.getElementById("app"), { childList: true, subtree: true });
+  });
+  const scegli = async (file) => {
+    await tocca(tel, '[data-a="menu"]');
+    const [fc] = await Promise.all([tel.waitForEvent("filechooser", { timeout: 8000 }), tocca(tel, '[data-a="stampaPdf"]')]);
+    await fc.setFiles(file);
+  };
+  const carta = async (re, ms = 30000) => (await finche(async () => re.test(await tel.locator(".stampa").innerText().catch(() => "")), ms)) ? tel.locator(".stampa").innerText() : "";
+  const comePdf = { name: "foglio.pdf", mimeType: "application/pdf", buffer: pdf };
+
+  // 1. senza la stampa automatica: no, e il PDF non parte nemmeno (il PC lo dice al primo pezzo)
+  const a0 = rete.alPc.length;
+  await scegli(comePdf);
+  const senza = await carta(/stampa automatica/, 15000);
+  check(/Sul PC la stampa automatica non è impostata/.test(senza) && await tel.locator(".stampa.err").count() === 1 && rete.alPc.slice(a0).filter((x) => x.length > 1e5).length === 1 && !lavori().length,
+    `senza la stampa automatica sul PC: «Sul PC la stampa automatica non è impostata», e il resto del PDF non parte (${rete.alPc.slice(a0).filter((x) => x.length > 1e5).length} pezzi)`);
+  await tocca(tel, '[data-a="stampaVia"]');
+
+  // 2. un file che non è un PDF: il telefono non lo manda
+  const a1 = rete.alPc.length;
+  await scegli({ name: "nota.pdf", mimeType: "application/pdf", buffer: Buffer.from("non sono un PDF") });
+  check(/Non è un PDF/.test(await carta(/Non è un PDF/, 8000)) && rete.alPc.length === a1, "un file che non comincia con «%PDF»: «Non è un PDF», e non parte niente");
+  await tocca(tel, '[data-a="stampaVia"]');
+
+  // 3. con la stampa automatica: a pezzi, cifrato, fino all'A4
+  await sw.evaluate(() => chrome.storage.local.set({ stampa: { attiva: true, etichette: "Zebra ZD421", a4: "HP LaserJet A4" } }));
+  const n0 = inoltrati.length, a2 = rete.alPc.length;
+  await scegli(comePdf);
+  const fatto = await carta(/Stampato su/, 40000);
+  check(/Stampato su HP LaserJet A4/.test(fatto) && await tel.locator(".stampa.ok").count() === 1, `il telefono: «Stampato su HP LaserJet A4», in verde (${fatto.replace(/\s+/g, " ")})`);
+  const visti = await tel.evaluate(() => window.__stampa);
+  check(visti.some((t) => /^Invio… \d+%$/.test(t)), `mentre va, «Invio… 40%» (${visti.join(" → ")})`);
+  const l1 = lavori();
+  check(l1.length === 1 && l1[0].tipo === "a4" && l1[0].stampante === "HP LaserJet A4" && l1[0].byte === pdf.length, `sul PC: un foglio, sull'A4, intero (${JSON.stringify(l1.map((x) => [x.tipo, x.stampante, x.byte]))})`);
+  check(/PDF dall'iPhone stampato su HP LaserJet A4/.test(await registroPonte()), "il registro del ponte: «PDF dall'iPhone stampato su HP LaserJet A4»");
+  await shot(tel, "tel-stampa-1-stampato");
+  const visto = inoltrati.slice(n0), tutto = Buffer.concat(visto);
+  const pezzi = ["%PDF", "JVBERi", "endstream", SEGNO, pdf.subarray(400, 440).toString("latin1"), pdf.subarray(300, 330).toString("base64").slice(4, 36)];
+  const trovati = pezzi.filter((x) => tutto.includes(Buffer.from(x, "latin1")) || tutto.includes(Buffer.from(x, "utf16le")));
+  check(rete.alPc.length - a2 >= 3 && !trovati.length, `sul ripetitore (${visto.length} messaggi, ${tutto.length} byte) niente «%PDF», niente del suo testo (trovati: ${trovati.length})`);
+  const memoria = await sw.evaluate(async () => ({ tel: PDF_TEL.size, s: JSON.stringify(await chrome.storage.session.get(null)), l: JSON.stringify(await chrome.storage.local.get(null)) }));
+  const b64 = pdf.subarray(0, 600).toString("base64").slice(0, 200);
+  check(memoria.tel === 0 && !memoria.s.includes(b64) && !memoria.l.includes(b64), "stampato, sul PC il PDF non c'è più: né in memoria né in storage");
+  const rec = (await sw.evaluate(() => chrome.storage.session.get("ordini").then((o) => o.ordini || []))).find((x) => /^pdftel/.test(x.id));
+  check(!!rec && rec.paziente === "PDF dall'iPhone" && rec.stato === "avviso" && !rec.stampa, "nel giornale delle stampe: «PDF dall'iPhone», finito, e senza «Ristampa» (il PDF non c'è più)");
+
+  // 4. rimandato: i messaggi ripetuti per strada, o la stessa richiesta col suo numero — una stampa sola
+  versoPc(rete.alPc.slice(a2));
+  await sospendi(2500);
+  const rid = rec ? rec.id.slice(6) : "";
+  const rifatta = await sw.evaluate(([rid, b]) => ponteStampa({}, { rid, i: 0, n: 1, size: b.length * 3 / 4, b }), [rid, pdf.subarray(0, 3000).toString("base64")]);
+  await sospendi(1500);
+  check(lavori().length === 1 && rifatta.ok && /Stampato su HP LaserJet A4/.test(rifatta.dati.titolo),
+    `la richiesta ripetuta per strada, o rimandata col suo numero: com'è andata, e nessuna seconda stampa (fogli: ${lavori().length})`);
+
+  // 5. il PC controlla da sé: un file che non è un PDF, o oltre 15 MB, no
+  const nonPdf = await sw.evaluate(() => ponteStampa({}, { rid: "nonpdf12345", i: 0, n: 1, size: 12, b: btoa("ciao, niente") }));
+  const grosso = await sw.evaluate(() => ponteStampa({}, { rid: "grosso12345", i: 0, n: 40, size: 15e6 + 1, b: btoa("%PDF-1.4 x") }));
+  check(!nonPdf.ok && /Non è un PDF/.test(nonPdf.errore) && !grosso.ok && /troppo grande/.test(grosso.errore) && lavori().length === 1,
+    `sul PC: un file che non è un PDF, o oltre 15 MB, è rifiutato (${nonPdf.errore} / ${grosso.errore})`);
+
+  // 6. finito nella coda di Windows: «Mandato a …», in ambra
+  comportati({ esito: { "HP LaserJet A4": "mandato" } });
+  await tocca(tel, '[data-a="stampaVia"]');
+  await scegli({ ...comePdf, buffer: refertoRxPdf(["Foglio corto"]) });
+  const mandato = await carta(/Mandato a/, 40000);
+  check(/Mandato a HP LaserJet A4/.test(mandato) && /coda di Windows/.test(mandato) && await tel.locator(".stampa.warn").count() === 1 && lavori().length === 2,
+    `nella coda di Windows: «Mandato a HP LaserJet A4», in ambra (${mandato.replace(/\s+/g, " ")})`);
+  await shot(tel, "tel-stampa-2-mandato");
+  comportati();
+  await tocca(tel, '[data-a="stampaVia"]');
+  await sw.evaluate(() => chrome.storage.local.remove(["stampa", "stampaEsito"]));
+  rmSync(FINTO, { recursive: true, force: true });
+}
+
+// ===========================================================================
+sezione("«Scansiona il QR» dentro l'app");
+{
+  // un QR in un video finto per la fotocamera di Chromium (y4m, in grigio)
+  const qrDi = (() => { const c = vm.createContext({}); vm.runInContext(readFileSync(join(EXT, "qr.js"), "utf8"), c); return c.qrcodegen; })();
+  const video = (testo, file) => {
+    const q = qrDi.QrCode.encodeText(testo, qrDi.QrCode.Ecc.MEDIUM), W = 640, H = 480, px = 8, lato = (q.size + 8) * px;
+    const y = Buffer.alloc(W * H, 235), x0 = (W - lato) / 2 | 0, y0 = (H - lato) / 2 | 0;
+    for (let r = 0; r < q.size; r++) for (let c = 0; c < q.size; c++) if (q.getModule(c, r)) {
+      for (let dy = 0; dy < px; dy++) y.fill(16, (y0 + (r + 4) * px + dy) * W + x0 + (c + 4) * px, (y0 + (r + 4) * px + dy) * W + x0 + (c + 5) * px);
+    }
+    const uv = Buffer.alloc(W * H / 2, 128), fot = Buffer.concat([Buffer.from("FRAME\n"), y, uv]);
+    writeFileSync(file, Buffer.concat([Buffer.from(`YUV4MPEG2 W${W} H${H} F10:1 Ip A1:1 C420jpeg\n`), fot, fot]));
+    return file;
+  };
+  // un telefono con la fotocamera finta, e una chiave scaduta (o niente)
+  const VID = join("/tmp", `psa-ponte-qr-${process.pid}.y4m`);
+  const conCamera = async (testo) => {
+    const b = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
+      args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-video-capture=${video(testo, VID)}`] });
+    const c = await b.newContext({ ...IPHONE, permissions: ["camera"] });
+    await c.addInitScript((k) => {
+      if (!sessionStorage.getItem("__giaScaduta")) {
+        sessionStorage.setItem("__giaScaduta", "1");
+        localStorage.setItem("psassist.ponte.v1", JSON.stringify({ k, scade: Date.now() - 3600e3, dev: "telefonoscaduto0001" }));
+      }
+      // (la fotocamera, vista da fuori: le sue tracce, e quante volte si spegne)
+      const gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      window.__tracce = [];
+      navigator.mediaDevices.getUserMedia = async (v) => { const s = await gum(v); window.__tracce.push(...s.getTracks()); return s; };
+      const stop = MediaStreamTrack.prototype.stop;
+      MediaStreamTrack.prototype.stop = function () { sessionStorage.setItem("__spenta", String(Number(sessionStorage.getItem("__spenta") || 0) + 1)); return stop.call(this); };
+    }, P.b64u(P.casuale(32)));
+    const p = await c.newPage();
+    await p.goto(relay.url + "/ponte/");
+    return { b, p };
+  };
+  // il file del decodificatore: servito, con la fotocamera permessa solo a questo sito
+  const fileQr = await fetch(relay.url + "/ponte/jsqr.min.js");
+  check(fileQr.status === 200 && /jsQR 1\.4\.0/.test(await fileQr.text()) && fileQr.headers.get("permissions-policy") === "camera=(self), microphone=(), geolocation=()",
+    "il decodificatore (jsQR 1.4.0) è un file dell'app; la fotocamera è permessa a lei sola, microfono e posizione a nessuno");
+
+  // 1. la fotocamera che non c'è: una riga, e la strada di prima
+  const nudoCtx = await telBrowser.newContext(IPHONE);
+  const nudo = await nudoCtx.newPage();
+  await nudo.goto(relay.url + "/ponte/");
+  await aspettaTel(nudo, /Scansiona il QR/, 10000);
+  check(await nudo.locator("#app .grande").count() === 1 && await nudo.locator('.grande[data-a="scansiona"]').count() === 1, "senza associazione: un bottone solo, «Scansiona il QR»");
+  await tocca(nudo, '[data-a="scansiona"]');
+  check(/Fotocamera non disponibile: inquadra il QR con la Fotocamera dell'iPhone/.test(await aspettaTel(nudo, /Fotocamera non disponibile/, 10000)) && await nudo.locator(".scan").count() === 0,
+    "senza fotocamera: «Fotocamera non disponibile: inquadra il QR con la Fotocamera dell'iPhone»");
+  await shot(nudo, "tel-qr-1-senza-fotocamera");
+  await nudoCtx.close();
+
+  // il PC fa un QR nuovo
+  const pqr = await ctx.newPage();
+  await pqr.goto(EXTURL("ponte.html"));
+  await pqr.waitForSelector("#stato b");
+  await pqr.locator("#associa").click();
+  await pqr.waitForSelector("#qr svg", { timeout: 8000 });
+  const url4 = await qrUrl();
+  const K4 = P.b64u(P.leggiFrammento(new URL(url4).hash).k);
+
+  // 2. il QR di un altro sito (con una chiave e tutto): si ignora; ✕ spegne la fotocamera
+  const fuori = await conCamera(url4.replace(relay.url, "https://altro.example.org"));
+  check(/Associazione scaduta/.test(await aspettaTel(fuori.p, /Associazione scaduta/, 10000)) && await fuori.p.locator('.grande[data-a="scansiona"]').count() === 1,
+    "un telefono con l'associazione scaduta: «Scansiona il QR»");
+  await shot(fuori.p, "tel-qr-2-scaduta");
+  await tocca(fuori.p, '[data-a="scansiona"]');
+  const vivo = await finche(() => fuori.p.evaluate(() => { const v = document.querySelector(".scan video"); return !!v && v.readyState >= 2 && !v.paused; }), 10000);
+  await sospendi(2500);
+  check(vivo && await fuori.p.locator(".scan .guida").count() === 1 && await fuori.p.evaluate(() => localStorage.length) === 0 && /Associazione scaduta/.test(await testoTel(fuori.p)),
+    "la fotocamera nella pagina, col quadrato: un QR di un altro sito si ignora (nessuna chiave, si resta lì)");
+  await shot(fuori.p, "tel-qr-3-fotocamera");
+  await tocca(fuori.p, ".scan .x");
+  check(await fuori.p.locator(".scan").count() === 0 && await fuori.p.evaluate(() => window.__tracce.length > 0 && window.__tracce.every((t) => t.readyState === "ended")),
+    "✕: la vista si chiude e la fotocamera si spegne");
+  await fuori.b.close();
+
+  // 3. il QR nuovo del PC, inquadrato dentro l'app: l'elenco
+  const dentro = await conCamera(url4);
+  await aspettaTel(dentro.p, /Associazione scaduta/, 10000);
+  await tocca(dentro.p, '[data-a="scansiona"]');
+  const elenco = await aspettaTel(dentro.p, /ROSSI M\./, 25000);
+  check(/ROSSI M\./.test(elenco) && (await chiaveTel(dentro.p))?.k === K4 && !(await dentro.p.evaluate(() => location.hash)),
+    "inquadrato dentro l'app il QR nuovo del PC: la chiave nuova, e l'elenco (il frammento non resta nell'indirizzo)");
+  check(Number(await dentro.p.evaluate(() => sessionStorage.getItem("__spenta"))) >= 1, "letto il codice, la fotocamera si spegne");
+  await shot(dentro.p, "tel-qr-4-elenco");
+  await dentro.b.close();
+  await pqr.close();
+  rmSync(VID, { force: true });
+}
 
 // ===========================================================================
 sezione("il ripetitore non vede niente in chiaro");

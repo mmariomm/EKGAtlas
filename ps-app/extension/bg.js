@@ -1061,6 +1061,36 @@ const pdfSalvato = async (u) => {
   if (!hit || String(hit.ep || "") !== m[2] || Date.now() - (hit.ts || 0) > REF_TTL || typeof hit.data !== "string") return { ok: false, why: "la copia non è più su questo computer" };
   return { ok: true, pdf: hit.data };
 };
+// Un PDF dall'iPhone (ponte-sw.js, ⋯ → «Stampa un PDF»): sull'A4, con questo
+// motore e questo giornale — una richiesta, una stampa: rimandata, non si
+// ristampa. Il PDF sta solo qui in memoria finché il foglio non è partito,
+// poi via (dopo un riavvio del service worker non c'è più: il foglio non
+// parte, mai due volte). Mai un dialogo: senza la stampa automatica, no.
+const PDF_TEL = new Map();   // id → il PDF, in base64
+const PDF_TEL_URL = /^psassist-tel:(pdftel[\w-]{8,24})$/;
+const pdfTelId = (rid) => "pdftel" + rid;
+const daTelPdf = (rec) => String(rec.id).startsWith("pdftel");
+const pdfDalTel = (u) => { const b = PDF_TEL.get(PDF_TEL_URL.exec(u)[1]); return b ? { ok: true, pdf: b } : { ok: false, why: "non è più in memoria" }; };
+const stampaTelVista = async (rid) => ((await chrome.storage.session.get(ORD_VISTI))[ORD_VISTI] || []).includes(pdfTelId(rid));
+function stampaDalTel(rid, pdf) {
+  return inFilaOrd(async () => {
+    const id = pdfTelId(rid);
+    const visti = (await chrome.storage.session.get(ORD_VISTI))[ORD_VISTI] || [];
+    if (visti.includes(id)) return { ok: true, id, gia: true };
+    const auto = await stampaScelte();
+    if (!auto) return { ok: false, why: "Sul PC la stampa automatica non è impostata" };
+    // (vista PRIMA di esistere: se qui qualcosa muore, rimandata non stampa)
+    await chrome.storage.session.set({ [ORD_VISTI]: [...visti, id].slice(-100) });
+    const jobs = [{ name: "PDF dall'iPhone", printer: "a4", url: "psassist-tel:" + id, diretto: true }];
+    const l = await ordLeggi();
+    l.push({ id, ep: "", paziente: "PDF dall'iPhone", n: 0, url: null, opener: null, worker: null, stato: "stampo", pronta: true, ts: Date.now(), agg: Date.now(),
+      vista: null, resto: { mancano: [], controllare: [], nel: [] }, stampa: { jobs, tag: "Stampa", fine: null, riassunto: "", quesito: "" }, fogli: fogliNuovi(jobs, auto) });
+    PDF_TEL.set(id, pdf);
+    await ordScrivi(l);
+    ordStampaFogli(id);
+    return { ok: true, id };
+  });
+}
 async function ordStampaFogli(id) {
   if (STAMPO_VIVI.has(id)) return;
   STAMPO_VIVI.add(id);
@@ -1093,7 +1123,7 @@ async function ordStampaFogli(id) {
       });
       if (!passo) return;
       // 2. il PDF, dalla scheda dell'ordine (un consenso, dall'estensione)
-      const pdf = passo.diretto ? await (REF_STAMPA.test(passo.url) ? pdfSalvato(passo.url) : pdfNostro(passo.url))
+      const pdf = passo.diretto ? await (REF_STAMPA.test(passo.url) ? pdfSalvato(passo.url) : PDF_TEL_URL.test(passo.url) ? pdfDalTel(passo.url) : pdfNostro(passo.url))
         : await allaScheda(passo.worker, { t: "psassistPdf", id, url: passo.url }, 30e3);
       // 3. il foglio segnato «mandato» prima di mandarlo
       const va = await inFilaOrd(async () => {
@@ -1121,7 +1151,7 @@ async function ordStampaFogli(id) {
         await ordScrivi(l);
       });
     }
-  } finally { STAMPO_VIVI.delete(id); }
+  } finally { STAMPO_VIVI.delete(id); PDF_TEL.delete(id); }
 }
 // Finita la stampa. Un foglio che non è partito per un motivo detto
 // (stampante spenta o sparita, PDF che non arriva) passa dal dialogo di
@@ -1132,8 +1162,10 @@ async function ordStampoFine(l, rec) {
   rec.agg = Date.now();
   rec.inVolo = null;
   const rotti = rec.stampa.jobs.map((j, i) => ({ ...j, motivo: rec.fogli[i].why })).filter((_, i) => rec.fogli[i].stato === "fallito");
-  if (rotti.length && !rec.interrotta) { rec.stato = "stampa"; rec.stampa = { ...rec.stampa, jobs: rotti }; }
+  if (rotti.length && !rec.interrotta && !daTelPdf(rec)) { rec.stato = "stampa"; rec.stampa = { ...rec.stampa, jobs: rotti }; }
   else rec.stato = "avviso";
+  // (il PDF dall'iPhone non c'è più: niente dialogo, niente «Ristampa»)
+  if (daTelPdf(rec)) rec.stampa = null;
   delete rec.ferma;
   await ordSlega(rec);
   await ordScrivi(l);

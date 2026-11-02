@@ -29,6 +29,12 @@ codice sbagliato dice «Codice sbagliato» e non cambia niente. Sul PC la pagina
 telefono è entrato; dopo, «Associa» ne fa uno nuovo (e il telefono di prima esce). Conviene
 aggiungerlo alla schermata Home (Condividi → Aggiungi alla schermata Home): l'icona riapre il pannello.
 
+Il QR si inquadra anche **dall'app**: senza un'associazione buona (nessuna, scaduta, chiusa, revocata,
+o un altro telefono al suo posto) c'è **«Scansiona il QR»**, che apre la fotocamera nella pagina. Serve
+all'app della schermata Home, che ha una memoria sua: il QR letto con la Fotocamera si apre in Safari,
+e lì la chiave non arriva. Senza fotocamera: «Fotocamera non disponibile: inquadra il QR con la
+Fotocamera dell'iPhone».
+
 Un link del ponte che toglierebbe un'associazione ancora buona **chiede prima**, coi due codici
 («Usa il codice 482 913» o «Tieni quella di adesso»): il codice giusto è quello accanto al QR, sul PC.
 E nessun link vale più di 14 ore, qualunque scadenza porti.
@@ -87,6 +93,11 @@ sessione. Vedi:
   la prima voce aperta senza ora (scritta cambia quella, o ne fa una in cima; vuota la toglie), i
   promemoria le voci aperte con l'ora. **✓ Fatto** aspetta 5 secondi, con **Annulla**, prima di
   spuntarlo sul PC.
+- **Stampa un PDF** (⋯) — un PDF del telefono esce dalla stampante A4 del PC, con la stampa
+  automatica (mai un dialogo: davanti al PC può non esserci nessuno; senza, «Sul PC la stampa
+  automatica non è impostata»). Mentre va, «Invio… 40%»; poi le parole del PC: «Stampato su HP
+  LaserJet A4», «Mandato a …» in ambra, o l'errore. Al massimo 15 MB. Sul PC il registro del ponte
+  dice «PDF dall'iPhone stampato su …».
 
 Di notte l'app è scura, come il telefono. Ogni bottone è grande almeno 44 punti. Sul telefono c'è
 solo quello che serve: niente etichette di sezione, conteggi o testi di contorno (vedi «L'app del
@@ -141,7 +152,7 @@ Che cosa entra nel deploy:
 | `worker/index.js` | l'ingresso del Worker: `/ponte/…` al ponte, il resto a `worker/metrics.js` (il gestore di sempre) |
 | `worker/ponte.js` | il ripetitore: il Durable Object `PonteStanza` (`/ponte/ws`) e i file dell'app del telefono, solo quelli, con le loro intestazioni di sicurezza |
 | `worker/ponte-logica.js` | la logica del ripetitore, senza Cloudflare (la stanza, il ruolo, i file dell'app): la stessa che usa il ripetitore Node dei test |
-| `public/ponte/` | l'app del telefono (`index.html`, `app.js`, `app.css`, `cripto.js`, `sw.js`, manifest, icone): Vite la copia in `dist/ponte/` |
+| `public/ponte/` | l'app del telefono (`index.html`, `app.js`, `app.css`, `cripto.js`, `jsqr.min.js`, `sw.js`, manifest, icone): Vite la copia in `dist/ponte/` |
 | `wrangler.jsonc` | `main: worker/index.js`; il binding `PONTE` e la migrazione `new_sqlite_classes` (Durable Object su SQLite: va anche col piano gratuito); `run_worker_first` solo per `/ponte/*` e `/api/*`: le pagine del sito arrivano dai file statici senza svegliare il Worker; i log senza una riga per richiesta (`invocation_logs: false`) |
 | `vite.config.ts` | il service worker del sito resta fuori da `/ponte/` (né in cache né nel suo ripiego di navigazione) |
 
@@ -262,8 +273,8 @@ ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un si
 
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
 `aggiornaValori(ep)`, `richieste` (il catalogo), `ordina(ep, oid, esami, quesito, mio)`, `nota(ep,
-testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, più `ciao`/`esci`/`ordini` per la sessione e lo
-stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
+testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`,
+più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
 `ordineNuovo` come «Conferma e stampa», col numero `"tel" + oid` (l'`oid` lo fa il telefono quando
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),
 con tutti i controlli del motore — episodio, richiesta, presidio, carrello identico alla ricevuta,
@@ -276,6 +287,17 @@ con l'ora in cui il PC l'ha letta; i testi dei referti si prendono per numero di
 pagina di quel paziente. «Aggiorna i valori» annota la sua scheda di sottofondo in `storage.session`
 (`ponte.valori`): anche se il service worker si ferma a metà, la si riconosce, scade e si chiude; il
 telefono aspetta 200 secondi, più del caso peggiore del PC.
+
+**Un PDF da stampare.** `stampa` è `pdf` al contrario: il telefono manda il file a pezzi (~390 KB,
+una risposta per pezzo) con un numero suo, `rid`. Il primo pezzo dice già di no se il file non comincia
+con «%PDF», se supera 15 MB o se la stampa automatica è spenta: il resto non parte. Il PC ricompone in
+memoria, controlla la misura e lo passa a `stampaDalTel` in `bg.js`: lo stesso motore e lo stesso
+giornale delle stampe senza dialogo (il foglio «mandato» prima di partire, `ordiniVisti`), sull'A4.
+Lo stesso `rid` rimandato risponde com'è andata e non stampa di nuovo. Il PDF sta solo nella memoria
+del service worker finché il foglio non è partito (sul disco va solo il file temporaneo dell'aiutante
+di stampa, come per ogni foglio); un riavvio a metà lo perde, e il foglio non parte. Finito, nel
+giornale resta «PDF dall'iPhone» con l'esito, senza «Ristampa». La risposta all'ultimo pezzo arriva
+a foglio stampato (fino a 110 secondi): le parole sono quelle di `pubblico`.
 
 **Gli ordini, raccontati.** Il service worker guarda passare gli ordini del telefono in `ordini`
 (`storage.session`) e li racconta con le parole che `bg.js` scrive in ogni record (`pubblico:
@@ -304,6 +326,13 @@ memoria separata da Safari, dove il QR — che la fotocamera apre in Safari — 
 così l'icona riapre Safari, con la chiave. Un QR nuovo inquadrato con l'app già aperta riparte da
 capo (e, se c'è un'associazione ancora buona con un'altra chiave, chiede prima).
 
+**«Scansiona il QR»** apre la fotocamera nella pagina (`getUserMedia`, la fotocamera posteriore; la
+`Permissions-Policy` la permette solo a quest'app, il microfono e la posizione a nessuno) e legge i
+fotogrammi con **jsQR 1.4.0** (Apache 2.0, `jsqr.min.js`, caricato solo lì). Vale solo un link di
+questo stesso sito su `/ponte/#k=…&scade=…` (un QR di un altro sito si ignora), e fa la strada di un
+link aperto: le stesse regole, «Usa il codice …» compreso. La fotocamera si spegne appena letto il
+codice, o chiusa la vista (✕).
+
 ## Che cosa protegge, e che cosa no
 
 - **I dati dei pazienti non stanno su nessun server.** Il ripetitore passa byte cifrati e non ne
@@ -331,6 +360,9 @@ capo (e, se c'è un'associazione ancora buona con un'altra chiave, chiede prima)
   quel giorno (dal PC o dal telefono) potrebbe decifrarlo. K vive al massimo 14 ore; uno scambio
   ECDH per sessione lo eviterebbe, al prezzo di altro codice.
 - **Per scelta del medico non c'è Face ID dentro l'app**: possedere la chiave basta.
+- **Un PDF da stampare** passa cifrato come tutto il resto, e chi ha il telefono sbloccato può far
+  uscire fogli dalla stampante A4 del PC (uno per richiesta, al massimo 15 MB): il registro del ponte
+  lo dice.
 
 ## Provare in casa
 
