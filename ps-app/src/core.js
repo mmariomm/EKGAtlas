@@ -2320,7 +2320,7 @@
   const AREE_OPZ = "aree.opzioni.v1";  // le opzioni di PsoPsoImposta: {k: {id, label}} — un'impostazione, resta
   const AREA_VAI = "area.vai.v1";      // un passaggio d'area in corso: {k, chi?, ts, premuto?}
   const AREA_VAI_MS = 45e3;
-  const AREE_ORDINE = ["alta", "obi", "bassa", "minori"];
+  const AREE_ORDINE = ["alta", "bassa", "obi", "minori"];
   const AREE_TITOLO = { alta: "Alta intensità", obi: "OBI", bassa: "Bassa", minori: "Codici minori" };
   const spazi = (t) => String(t || "").replace(/\s+/g, " ").trim();
   function chiaveArea(label) {
