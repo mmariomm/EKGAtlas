@@ -89,6 +89,7 @@
   // deciso in sottofondo va detto sulla pagina dove il medico arriva
   const AVVISO = "avviso.v1";
   const PRINT_FLAG_TTL = 180e3;  // ms a post-confirm print handoff stays valid
+  const RILEGGI_STAMPA = 4000;   // una richiesta nuova che la pagina non elenca ancora: una rilettura, dopo
   const QUEUE_TTL = 30 * 60e3;   // ms a still-unconfirmed richiesta keeps reminding
   // Il giro in corso, annotato passo per passo. Il gestionale ricarica la
   // pagina a ogni click e il motore muore con lei: così invece riprende da
@@ -108,9 +109,18 @@
   const APERTA_TTL = 30 * 60e3;
   const OK_STRISCIA = 2 * 60e3;  // un ordine finito bene resta sulla striscia due minuti
   const RIGA_FATTA = 4000;       // …la riga di un foglio stampato, pochi secondi
-  // I nomi delle righe sotto la striscia, tutti qui: «Et POC», «Fg RX»,
-  // «Rich Lab · 3/6», «Et anag ×3». (Cambiarli è cambiare questa tabella.)
-  const NOMI_RIGA = { etichette: "Et", foglio: "Fg", richiesta: "Rich", anagrafica: "Et anag", POC: "POC", Lab: "Lab", RX: "RX" };
+  // I nomi delle righe sotto la striscia, tutti qui: un'icona (ICO) e
+  // l'erogatore — [etichetta] POC, [foglio] RX, [braccialetto] ×3, «Lab · 3/6»
+  // —, con le parole intere per chi legge lo schermo («Etichette POC»).
+  // (Cambiarli è cambiare questa tabella.)
+  const NOMI_RIGA = {
+    et: { ico: "etichetta", parole: "Etichette" },
+    fg: { ico: "foglio", parole: "Lista esami" },
+    fgRX: { ico: "foglio", parole: "Prenotazione" },
+    anag: { ico: "bracciale", parole: "Etichetta anagrafica" },
+    richiesta: { parole: "Richiesta" },
+    chi: { POC: "POC", Lab: "Lab", RX: "RX" },   // (due laboratori: «Urg» e «Lab», dal nome della risorsa)
+  };
   const COPIE_MAX = 10;          // le copie dell'etichetta anagrafica, a tocchi
 
   // Resources ("Risorsa" dropdown values) — verified in the saved pages.
@@ -924,8 +934,7 @@
     for (const j of jobs) {
       if (!j.pre) continue;
       const c = j.pre === "Fg" && j.rx ? "RX" : chi(j.res);
-      const nome = NOMI_RIGA[c] || c;
-      j.breve = `${NOMI_RIGA[j.pre === "Et" ? "etichette" : "foglio"]}${nome ? " " + nome : ""}`;
+      j.breve = `${j.pre === "Et" ? "et" : "fg"}:${c || ""}`;
     }
     return jobs;
   }
@@ -942,6 +951,11 @@
     const seen = new Set();
     return nomiCorti(jobs.filter((j) => !seen.has(j.url) && seen.add(j.url)));
   }
+  // Le richieste che la pagina del paziente sa già stampare, PRIMA di un giro:
+  // dopo la Conferma il gestionale fa una richiesta per erogatore (POC, lab
+  // centrale…), ognuna col suo RICHIESTA_ID — i fogli da stampare sono quelli
+  // delle richieste nuove, mai quelli di una che c'era già.
+  const fotoRichieste = (doc, url) => { try { return Object.keys(printModel(doc, url)).slice(0, 200); } catch { return []; } };
   // Le richieste che la pagina sa stampare (cioè confermate), la più recente per prima.
   const richiesteStampabili = (map) => Object.keys(map).sort((a, b) => (printMeta(map, b).ts - printMeta(map, a).ts) || Number(b) - Number(a));
   // I fogli di più richieste in un giro solo: tutte le etichette, poi il resto.
@@ -4276,6 +4290,10 @@
     // Nemmeno «Svuota» dalla riga di una richiesta da confermare: non ha niente
     // da annotare, quindi niente da riprendere — si avvisa prima di uscire.
     plan.riprendibile = !plan.hold && !plan.soloSvuota;
+    // (le richieste che la pagina del paziente stampa già: la foto prima del giro)
+    if (!plan.prima && plan.startPage === "patient" && classify(document) === "patient" && String(findEpisodeId(document, location.href) || "") === String(plan.episodeId || "")) {
+      plan.prima = fotoRichieste(document, location.href);
+    }
     const token = Math.random().toString(36).slice(2);   // questo motore, per il presidio
     // La pagina che se ne va porta via il motore: il presidio si molla subito,
     // o la pagina dopo crederebbe che ci sia ancora qualcuno a lavorare.
@@ -4677,6 +4695,7 @@
           // la selezione di partenza (per «Svuota il carrello»)
           ...(plan.originali ? { originali: plan.originali } : {}),
           ...(plan.patientUrl ? { patientUrl: plan.patientUrl } : {}),
+          ...(plan.prima ? { prima: plan.prima } : {}),
           // «in volo» resta in volo finché non lo si ritrova: se scivolasse fra
           // i fatti, alla ripresa dopo passerebbe per uno che qualcuno ha tolto
           // dal carrello — e un esame mai partito sparirebbe in silenzio.
@@ -4988,7 +5007,7 @@
       if (!plan.hold) tabStore.set("receipt.v1", {
         richiestaId: model.richiestaId, episodeId: plan.episodeId, ts: Date.now(),
         quesitoKept: state.quesitoKept || null, quesito: state.quesito || null,
-        carrelli: state.carrelli || {},
+        carrelli: state.carrelli || {}, ...(plan.prima ? { prima: plan.prima } : {}),
         items: state.added.map((i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label,
           ...(i.alPostoDi ? { alPostoDi: i.alPostoDi } : {}) })),
       });
@@ -5250,7 +5269,9 @@
     .pjob { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 6px; row-gap: 2px;
             background: #fff; border: 1px solid #C4D0DC; border-radius: 8px; padding: 3px 4px 4px 8px;
             font-size: 11.5px; font-weight: 700; color: #0B2A4A; box-shadow: 0 4px 14px rgba(9,42,74,.14); }
-    .pjob .pjn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 18px; line-height: 18px; }
+    .pjob .pjn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 18px; line-height: 18px;
+                 display: inline-flex; align-items: center; gap: 4px; }
+    .pjob .pjn svg { width: 13px; height: 13px; flex: none; }
     .pjob .pjbar { grid-column: 1 / -1; height: 3px; background: #E3EAF1; border-radius: 2px; overflow: hidden; }
     .pjob .pjbar i { display: block; height: 100%; background: #0B5CAD; transition: width .4s ease; }
     .pjob.ok .pjbar i { background: #1E8A4C; }
@@ -6405,6 +6426,9 @@
   // computer all'altro (il ▶ diventava un quadratino nero).
   const ico = (d) => `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const ICO = {
+    // le righe di stampa: l'etichetta (un cartellino) e il foglio A4
+    etichetta: ico('<path d="M2.5 4.5h6.8l4.2 3.5-4.2 3.5H2.5z"/><circle cx="5.3" cy="8" r=".9"/>'),
+    foglio: ico('<path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9.2 1.8V5h3.3M6.2 8.3h4.1M6.2 10.8h4.1"/>'),
     indietro: ico('<path d="M10 3 5 8l5 5"/>'),
     riduci: ico('<path d="M3.5 8h9"/>'),
     altro: ico('<circle cx="3.5" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r=".9" fill="currentColor" stroke="none"/>'),
@@ -6419,6 +6443,19 @@
     bracciale: ico('<path d="M4.5 10.6C2.9 10.3 2 9.6 2 8.6 2 6.6 4.7 5 8 5s6 1.6 6 3.6c0 1-.9 1.7-2.5 2"/><rect x="4.5" y="8.4" width="7" height="4.6" rx="1.1"/><path d="M6.5 10.7h3"/>'),
   };
 
+  // Il nome di una riga sotto la striscia, da NOMI_RIGA: l'html (icona +
+  // erogatore) e le parole intere (aria-label). `b`: «et:POC», «fg:RX», «anag».
+  function nomeFoglio(b, copie = 0) {
+    const [k, chi = ""] = String(b || "").split(":");
+    const N = NOMI_RIGA[k === "fg" && chi === "RX" ? "fgRX" : k];
+    if (!N) return { nome: String(b || ""), html: esc(b) };   // (un nome d'altri tempi: com'è)
+    const dopo = k === "anag" ? (copie > 1 ? `×${copie}` : "") : (NOMI_RIGA.chi[chi] || chi);
+    return { nome: `${N.parole}${dopo ? " " + dopo : ""}`, html: `${ICO[N.ico]}${dopo ? `<span>${esc(dopo)}</span>` : ""}` };
+  }
+  function nomeRichiesta(chi, k, n) {
+    const c = NOMI_RIGA.chi[chi] || chi;
+    return { nome: `${NOMI_RIGA.richiesta.parole}${c ? " " + c : ""} · ${k}/${n}`, html: esc(`${c ? c + " · " : ""}${k}/${n}`) };
+  }
   // L'etichetta anagrafica aspetta le etichette di un ordine che stampa le sue
   // (come nel service worker): quale ordine, se c'è.
   const braccialeJob = (x) => /[?&]REPORT=PsoBraccialettoHMIMU(&|$)/.test(String((x && x.url) || ""));
@@ -6812,7 +6849,7 @@
       if (w) w.innerHTML = this.braccialeDentro();
       if (!t) return;
       this._bracInvio = true;
-      const jobs = Array.from({ length: t.n }, (_, k) => ({ name: t.n > 1 ? `Etichetta anagrafica ${k + 1}/${t.n}` : "Etichetta anagrafica", breve: NOMI_RIGA.anagrafica, printer: "etichettatrice", url: t.url }));
+      const jobs = Array.from({ length: t.n }, (_, k) => ({ name: t.n > 1 ? `Etichetta anagrafica ${k + 1}/${t.n}` : "Etichetta anagrafica", breve: "anag", printer: "etichettatrice", url: t.url }));
       // (un tocco di lato: il pannello resta com'è, sotto la pill compare solo la sua riga)
       try { await avviaStampa(jobs, { panel: this, ep: t.ep, paziente: this.nomePaziente(), url: location.href, resta: true }); }
       finally { this._bracInvio = false; }
@@ -7766,17 +7803,17 @@
       let prossima = 0;
       for (const o of [...l].sort((a, b) => (a.ts || 0) - (b.ts || 0))) {
         const v = o.vista || {};
-        const chi = `${NOMI_RIGA.richiesta}${o.kind === "radio" ? " " + NOMI_RIGA.RX : o.kind === "lab" ? " " + NOMI_RIGA.Lab : ""}`;
+        const chi = o.kind === "radio" ? "RX" : o.kind === "lab" ? "Lab" : "";
         if ((o.stato === "avvio" || (o.stato === "corre" && !o.muto)) && !o.ferma) {
           const [k, n] = Array.isArray(v.prog) ? v.prog : [0, o.n || 0];
-          righe.push({ k: `r:${o.id}`, nome: `${chi} · ${k}/${n}`, p: n ? Math.max(0.04, k / n) : 0.04,
+          righe.push({ k: `r:${o.id}`, ...nomeRichiesta(chi, k, n), p: n ? Math.max(0.04, k / n) : 0.04,
             x: o.stato === "avvio" || v.ferma ? `f:${o.id}` : "" });
         } else if (o.confermata) {
           // confermata (provata): verde, pochi secondi
           const resta = o.confermata + RIGA_FATTA - ora;
           if (resta > 0) {
             prossima = prossima ? Math.min(prossima, resta) : resta;
-            righe.push({ k: `r:${o.id}`, nome: `${chi} · ${o.n || 0}/${o.n || 0}`, p: 1, ok: true, ico: "fatto" });
+            righe.push({ k: `r:${o.id}`, ...nomeRichiesta(chi, o.n || 0, o.n || 0), p: 1, ok: true, ico: "fatto" });
           }
         }
         const fogli = Array.isArray(o.fogli) ? o.fogli : [];
@@ -7795,7 +7832,7 @@
             if (resta <= 0) continue;
             prossima = prossima ? Math.min(prossima, resta) : resta;
           }
-          righe.push({ k: `${o.id}:b`, nome: `${NOMI_RIGA.anagrafica}${vive.length > 1 ? ` ×${vive.length}` : ""}`, attende,
+          righe.push({ k: `${o.id}:b`, ...nomeFoglio("anag", vive.length), attende,
             p: tutte || rotte.length ? 1 : attende ? 0 : Math.max(0.04, (fatte.length + (invio.length ? 0.7 : st(["prendo"]).length ? 0.35 : 0)) / vive.length),
             ok: tutte, err: !!rotte.length && !presto.length && !invio.length,
             x: !invio.length && presto.length && !fatte.length ? `t:${o.id}:${presto.map(({ i }) => i).join(",")}` : "",
@@ -7811,7 +7848,7 @@
             if (resta <= 0) return;
             prossima = prossima ? Math.min(prossima, resta) : resta;
           }
-          righe.push({ k: `${o.id}:${i}`, nome: f.breve || (f.tipo === "etichette" ? "Et" : "Fg"),
+          righe.push({ k: `${o.id}:${i}`, ...(f.breve ? nomeFoglio(f.breve) : { nome: f.name || "", html: `${ICO[f.tipo === "etichette" ? "etichetta" : "foglio"]}` }),
             p: { attesa: 0.04, prendo: 0.35, invio: 0.7 }[f.stato] ?? 1, ok: fatto, err: rotto,
             x: f.stato === "attesa" || f.stato === "prendo" ? `t:${o.id}:${i}` : "", ico: f.stato === "invio" ? "pulsa" : fatto ? "fatto" : "",
             rist: rotto && o.stato !== "stampo" && o.stampa ? o.id : "" });
@@ -7823,7 +7860,7 @@
       if (!Array.isArray(righe) || !righe.length) return "";
       return `<div class="pjobs">${righe.map((r) => `
         <div class="pjob${r.ok ? " ok" : ""}${r.err ? " err" : ""}" data-riga="${esc(r.k)}">
-          <span class="pjn">${esc(r.nome)}</span>${
+          <span class="pjn" aria-label="${esc(r.nome)}" title="${esc(r.nome)}">${r.html != null ? r.html : esc(r.nome)}</span>${
             r.rist ? `<button class="pjrist" data-pjrist="${esc(r.rist)}">Ristampa</button>`
             : r.ico === "pulsa" ? `<span class="pjico pulsa" title="Alla stampante">${ICO.stampante}</span>`
             : r.ico === "fatto" ? `<span class="pjico fatto" title="Fatto">✓</span>`
@@ -7835,8 +7872,7 @@
     rigaGiro() {
       const { passati, tot } = this.statoGiro();
       const g = this.pianoGiro && this.pianoGiro.legLabel;
-      const chi = `${NOMI_RIGA.richiesta}${g === "radiologia" ? " " + NOMI_RIGA.RX : g === "laboratorio" ? " " + NOMI_RIGA.Lab : ""}`;
-      return { k: "giro", nome: `${chi} · ${passati}/${tot}`, p: tot ? Math.max(0.04, passati / tot) : 0.04, x: "giro" };
+      return { k: "giro", ...nomeRichiesta(g === "radiologia" ? "RX" : g === "laboratorio" ? "Lab" : "", passati, tot), p: tot ? Math.max(0.04, passati / tot) : 0.04, x: "giro" };
     }
     // ✕ su una riga: quella sola
     rigaTocco(x) {
@@ -8097,7 +8133,8 @@
       this.runPatient = base.patientName || nomeInPagina();
       const plan = { quesito: (this._q || "").trim(), quesitoMio: !!this.quesitoMio, items, episodeId, patientName: this.runPatient, ...base,
         // la pagina che elenca le richieste confermate: serve a provare una conferma
-        patientUrl: base.patientUrl || (this.pageType === "patient" ? location.href : "") };
+        patientUrl: base.patientUrl || (this.pageType === "patient" ? location.href : ""),
+        ...(this.pageType === "patient" && !base.prima ? { prima: fotoRichieste(document, location.href) } : {}) };
       if ((this._q || "").trim()) rememberQuesito((this._q || "").trim());
       if (plan.legs && plan.legs.length > 1) { this.runChain(plan); return; }
       // Con l'estensione il giro lo fa una scheda di sottofondo: questa resta
@@ -8131,6 +8168,7 @@
           added: st.added.map((x) => ({ res: x.res, code: x.code, label: x.label, display: x.display || x.label,
             ...(x.alPostoDi ? { alPostoDi: x.alPostoDi } : {}) })),
           quesito: st.quesito || null,
+          ...(plan.prima ? { prima: plan.prima } : {}),
         });
       }
       if (!done.length) return;
@@ -8150,7 +8188,7 @@
       // hand the rest of the walk to the pages we are about to land on
       const first = done[0];
       tabStore.set("queue.v1", { episodeId: plan.episodeId, autoConfirm: !!plan.autoConfirm, ts: Date.now(), items: done });
-      tabStore.set("receipt.v1", { richiestaId: first.rid, episodeId: plan.episodeId, ts: Date.now(), items: first.added, carrelli: first.carrelli || {}, quesito: first.quesito || null });
+      tabStore.set("receipt.v1", { richiestaId: first.rid, episodeId: plan.episodeId, ts: Date.now(), items: first.added, carrelli: first.carrelli || {}, quesito: first.quesito || null, ...(first.prima ? { prima: first.prima } : {}) });
       if (plan.autoConfirm && first.lastCode) {
         tabStore.set("confirm.v1", { richiestaId: first.rid, episodeId: plan.episodeId, lastCode: first.lastCode, lastLabel: first.lastLabel, count: first.count, ts: Date.now() });
       }
@@ -13231,6 +13269,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       patientName: c.paziente || "", riprese: (c.riprese || 0) + 1, ...(c.ritentato ? { ritentato: true } : {}),
       ...(Array.isArray(c.originali) ? { originali: c.originali } : {}),
       ...(c.patientUrl ? { patientUrl: c.patientUrl } : {}),
+      ...(Array.isArray(c.prima) ? { prima: c.prima } : {}),
     }, panel);
     return true;
   }
@@ -13363,11 +13402,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // Quando la pagina non è quella davanti agli occhi, la stampa va armata
     // qui: il gancio sul bottone vive solo sulla pagina vera.
     if (doc !== document) {
-      const prec = tabStore.get("print.v1", null);
-      const fresco = prec && prec.episodeId === (ep || "") && Date.now() - (prec.ts || 0) < PRINT_FLAG_TTL;
-      tabStore.set("print.v1", { ids: [...new Set([...(fresco ? prec.ids || [] : []), model.richiestaId])], episodeId: ep || "", ts: Date.now(),
-        n: { ...(fresco ? prec.n || {} : {}), [model.richiestaId]: receipt.items.length },
-        q: { ...(fresco ? prec.q || {} : {}), ...(receipt.quesito ? { [model.richiestaId]: receipt.quesito } : {}) } });
+      segnoStampa(ep || "", model.richiestaId, receipt);
       const q = tabStore.get("queue.v1", null);
       if (q && q.items) {
         const restano = q.items.filter((it) => it.rid !== model.richiestaId);
@@ -14312,6 +14347,25 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // richiesta of PS Assist, consumed by the first subsequent page that lists
   // this richiesta's print links — the post-confirm page if it has them,
   // otherwise the patient page.
+  // Il segno della stampa per una richiesta appena confermata (lab e radiologia
+  // dello stesso giro finiscono in UNA stampa). Dalla sua ricevuta: quanti
+  // esami, quale quesito, quanti erogatori (le righe da stampare che si
+  // aspettano) e la foto delle richieste che la pagina aveva prima del giro.
+  function segnoStampa(episodeId, rid, rc) {
+    const prev = tabStore.get("print.v1", null);
+    const p = prev && prev.episodeId === (episodeId || "") && Date.now() - (prev.ts || 0) < PRINT_FLAG_TTL ? prev : {};
+    const suo = rc && String(rc.richiestaId) === String(rid) && Array.isArray(rc.items) ? rc : null;
+    const n = { ...(p.n || {}) }, q = { ...(p.q || {}) }, attesi = { ...(p.attesi || {}) };
+    let prima = Array.isArray(p.prima) ? p.prima : null;
+    if (suo) {
+      // quanti esami: lo sa la ricevuta di questa richiesta; senza, il conto non si inventa
+      n[rid] = suo.items.length;
+      if (suo.quesito) q[rid] = suo.quesito;
+      attesi[rid] = new Set(suo.items.map((i) => i.res)).size || 1;
+      if (Array.isArray(suo.prima)) prima = [...new Set([...(prima || []), ...suo.prima.map(String)])];
+    }
+    tabStore.set("print.v1", { ids: [...new Set([...(p.ids || []), rid])], episodeId: episodeId || "", ts: Date.now(), n, q, attesi, ...(prima ? { prima } : {}) });
+  }
   function armPrintOnConfirm(model, episodeId) {
     if (!model.form || !model.richiestaId) return;
     const arm = () => {
@@ -14321,19 +14375,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const left = q.items.filter((it) => it.rid !== model.richiestaId);
         tabStore.set("queue.v1", left.length ? { ...q, items: left, ts: Date.now() } : null);
       }
-      const prev = tabStore.get("print.v1", null);
-      const fresco = prev && prev.episodeId === episodeId && Date.now() - (prev.ts || 0) < PRINT_FLAG_TTL;
-      const ids = [...new Set([...(fresco ? prev.ids || [] : []), model.richiestaId])]; // lab + radiology land in ONE flow
-      // quanti esami: lo sa la ricevuta di questa richiesta; senza, il conto non si inventa
-      const rc = tabStore.get("receipt.v1", null);
-      const n = { ...(fresco ? prev.n || {} : {}) };
-      // …e quale quesito è partito: lo ripete il resoconto finale
-      const qs = { ...(fresco ? prev.q || {} : {}) };
-      if (rc && rc.richiestaId === model.richiestaId && Array.isArray(rc.items)) {
-        n[model.richiestaId] = rc.items.length;
-        if (rc.quesito) qs[model.richiestaId] = rc.quesito;
-      }
-      tabStore.set("print.v1", { ids, episodeId, ts: Date.now(), n, q: qs });
+      segnoStampa(episodeId, model.richiestaId, tabStore.get("receipt.v1", null));
     };
     for (const name of ["Update", "Update1"]) {
       const b = model.form.elements.namedItem(name);
@@ -14353,7 +14395,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
 
   function goToQueued(entry, vai = nav) {
     const { q, next } = entry;
-    tabStore.set("receipt.v1", { richiestaId: next.rid, episodeId: q.episodeId, ts: Date.now(), items: next.added || [], carrelli: next.carrelli || {}, quesito: next.quesito || null });
+    tabStore.set("receipt.v1", { richiestaId: next.rid, episodeId: q.episodeId, ts: Date.now(), items: next.added || [], carrelli: next.carrelli || {}, quesito: next.quesito || null, ...(next.prima ? { prima: next.prima } : {}) });
     if (q.autoConfirm && next.lastCode) {
       tabStore.set("confirm.v1", { richiestaId: next.rid, episodeId: q.episodeId, lastCode: next.lastCode, lastLabel: next.lastLabel, count: next.count, ts: Date.now() });
     }
@@ -14369,8 +14411,30 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (!here || (flag.episodeId && flag.episodeId !== here)) return false;
     if (Date.now() - (flag.ts || 0) > PRINT_FLAG_TTL) { tabStore.set("print.v1", null); return false; }
     const map = printModel(doc, url);
-    const ids = (flag.ids || [flag.richiestaId]).filter((id) => map[id]);
-    if (!ids.length) return false; // this page doesn't list them yet — keep waiting
+    const proprie = (flag.ids || [flag.richiestaId]).filter((id) => map[id]);
+    if (!proprie.length) return false; // this page doesn't list them yet — keep waiting
+    // Dopo la Conferma il gestionale fa una richiesta per erogatore: si
+    // stampano anche quelle NUOVE sulla pagina (non nella foto di prima del
+    // giro), mai una che c'era già. Senza la foto, come prima: le sue sole.
+    const prima = Array.isArray(flag.prima) ? new Set(flag.prima.map(String)) : null;
+    const ids = [...proprie, ...(prima ? Object.keys(map).filter((id) => !prima.has(id) && !proprie.includes(id)) : [])];
+    // Meno righe di quanti erogatori aveva il giro: una richiesta può comparire
+    // in ritardo. Una rilettura della pagina, poi si stampa quello che c'è.
+    const attese = (flag.ids || []).reduce((k, id) => k + ((flag.attesi || {})[id] || 1), 0);
+    const trovate = ids.reduce((k, id) => k + printRowsFor(map, id).length, 0);
+    const rileggo = prima && trovate < attese && !flag.riletto && !wizardOpen ? urlPaziente(here, url) : "";
+    if (rileggo) {
+      tabStore.set("print.v1", { ...flag, riletto: true });
+      panel?.log(`${now()}  dopo la Conferma: ${trovate} righe da stampare su ${attese} attese — rileggo la pagina fra ${RILEGGI_STAMPA / 1000} s`);
+      setTimeout(async () => {
+        let r = null;
+        try { r = await fetchDoc(rileggo); } catch { r = null; }
+        const ok = r && r.doc && classify(r.doc) !== "login" && findEpisodeIdInDoc(r.doc) === here;
+        try { maybeAutoPrint(panel, ok ? r.doc : doc, ok ? r.url : url); } catch { /* il segno resta: la pagina dopo */ }
+      }, RILEGGI_STAMPA);
+      return true;
+    }
+    if (ids.length > proprie.length) panel?.log(`${now()}  dopo la Conferma: stampo anche ${ids.length - proprie.length === 1 ? "la richiesta nuova" : `le ${ids.length - proprie.length} richieste nuove`} della pagina (una per erogatore)`);
     // group by printer ACROSS the confirmed richieste: labels, then lists,
     // then radiology bookings — one uninterrupted flow
     const jobs = fogliDi(map, ids);

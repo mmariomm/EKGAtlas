@@ -3569,6 +3569,51 @@ async function scenarioPacchettoConRx(browser) {
   await context.close();
 }
 
+// Il gestionale vero, dopo UNA Conferma di un carrello con POC e laboratorio,
+// fa una richiesta per erogatore: ognuna col suo RICHIESTA_ID (PROG 1). Qui la
+// riga del laboratorio della richiesta confermata diventa una richiesta nuova;
+// con `tardi` la pagina la mostra solo alla seconda lettura.
+async function scenarioRichiestePerErogatore(browser, { tardi = false } = {}) {
+  const scen = tardi ? "per-erogatore-tardi" : "per-erogatore";
+  const mock = createMock({ seedConfirmed: true });   // la 699999 c'era già: mai da stampare
+  const SEED = "699999";
+  const confermata = () => Object.keys(mock.state.richieste).find((k) => k !== SEED && mock.state.richieste[k].confirmed);
+  const nuova = (r) => String(Number(r) + 50);
+  let letture = 0;
+  // i fogli della richiesta nuova sono quelli della riga 2 della confermata
+  const h = mock.handle;
+  mock.handle = (req) => {
+    const r = confermata();
+    return h(r ? { ...req, url: req.url.replace(new RegExp(`RICHIESTA_ID=${nuova(r)}&RICHIESTA_PROG=1`), `RICHIESTA_ID=${r}&RICHIESTA_PROG=2`) } : req);
+  };
+  const { context, page } = await newPage(browser, mock, {
+    riscrivi: (url, html) => {
+      const r = confermata();
+      if (!r || !html.includes(`RICHIESTA_ID=${r}&RICHIESTA_PROG=2`)) return html;
+      if (tardi && letture++ === 0) return html.replace(new RegExp(`<a title="Stampa (Richiesta|Etichette)" href="[^"]*RICHIESTA_ID=${r}&RICHIESTA_PROG=2[^"]*"><img[^>]*></a>`, "g"), "");
+      return html.split(`RICHIESTA_ID=${r}&RICHIESTA_PROG=2`).join(`RICHIESTA_ID=${nuova(r)}&RICHIESTA_PROG=1`);
+    },
+  });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("dolore addominale");
+  await $panel(page, `.opt[data-res="${RES.POC}"][data-code="320"]`).click();      // POC
+  await $panel(page, `.opt[data-res="${RES.URGENZE}"][data-code="293"]`).click();  // laboratorio
+  const t0 = Date.now();
+  await $panel(page, "#goconfirm").click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 60000 });
+  const r = confermata();
+  const heads = [];
+  for (let k = 0; k < 4; k++) { heads.push(await docStampa(page)); await avanti(page); }
+  await page.waitForTimeout(500);
+  check(scen, !!r && /1 di 4 — Etichette/.test(heads[0]) && /2 di 4 — Etichette/.test(heads[1]) && /3 di 4 — Lista esami/.test(heads[2]) && /4 di 4 — Lista esami/.test(heads[3]),
+    `la richiesta confermata e quella nuova del laboratorio: tutte e due le etichette, poi tutte e due le liste (got ${heads.join(" | ")})`);
+  const stampati = (id) => mock.state.requests.filter((q) => /RcsStampaEtichetteLISHMIMU|jasperservlet/.test(q.url) && new RegExp(`RICHIESTA_ID=${id}(&|$)`).test(q.url));
+  check(scen, stampati(SEED).length === 0, `la richiesta che c'era già prima del giro non si stampa (got ${stampati(SEED).length} richieste)`);
+  if (tardi) check(scen, letture >= 2, `la richiesta nuova arriva alla seconda lettura della pagina, e si stampa lo stesso (letture ${letture}, ${Math.round((Date.now() - t0) / 1000)} s)`);
+  await context.close();
+}
+
 async function scenarioLabPlusRxManual(browser) {
   const scen = "lab+rx-manuale";
   // same, without auto-confirm: the panel walks the doctor to the second one
@@ -7069,6 +7114,8 @@ const scenarios = [
   ["rx singles (torace/addome)", scenarioRxSingles],
   ["lab + rx: two richieste, one flow", scenarioLabPlusRx],
   ["pacchetto con RX: lab + rx, one flow", scenarioPacchettoConRx],
+  ["print: una richiesta per erogatore dopo la Conferma", (b) => scenarioRichiestePerErogatore(b)],
+  ["print: una richiesta per erogatore, che compare tardi", (b) => scenarioRichiestePerErogatore(b, { tardi: true })],
   ["lab + rx manual walk", scenarioLabPlusRxManual],
   ["valori: una tabella, una colonna per prelievo", scenarioRisultati],
   ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],

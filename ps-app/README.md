@@ -1215,6 +1215,13 @@ stampa e fermano davvero la ricerca del PDF.
 Urgenze, ecc.) il LIS la divide in **più righe** — stessa `RICHIESTA_ID`, `RICHIESTA_PROG` 1, 2… —
 ognuna col suo PDF etichette e il suo foglio. Si stampano **tutte** ("Etichette — riga 1",
 "Etichette — riga 2", poi le liste), mai solo l'ultima.
+**Una richiesta per erogatore.** Il gestionale vero, dopo **una** Conferma di un carrello con POC e
+laboratorio, fa una richiesta per erogatore, ognuna col suo `RICHIESTA_ID`. Per questo, prima di
+ogni giro il pannello fotografa le richieste che la pagina del paziente stampa già (solo i numeri),
+e dopo la Conferma stampa quella confermata **e tutte quelle nuove** della pagina — **mai** una che
+c'era già. Se le righe sono meno degli erogatori del giro (una richiesta che compare in ritardo), la
+pagina si rilegge **una volta**, dopo 4 secondi, e si stampa quello che c'è. Vale anche per la
+radiologia.
 
 Sul campo, dopo la Conferma il gestionale **torna alla pagina del paziente**: è lì che la stampa
 parte da sola (e se un'installazione mostrasse una pagina intermedia, parte lì se ha i link,
@@ -1255,13 +1262,15 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   all'altro non arriva (un errore, la pagina d'accesso, niente), si riprende **una volta, da solo**,
   quando l'altra stampante ha finito — e il service worker lo annota fra gli errori
   («stampa-parallela»): così si vede se il gestionale vero regge due letture insieme.
-- **Sotto la striscia, una riga per foglio** — «Et POC», «Et Lab», «Fg POC», «Fg Lab», «Fg RX» (Et
-  = etichette, Fg = foglio A4; due laboratori nello stesso giro si distinguono, «Et Urg», «Et Lab») —
-  e una per la richiesta che gira, «Rich Lab · 3/6», «Rich RX · 1/1». Ogni riga ha una barretta
+- **Sotto la striscia, una riga per foglio**: un'icona e l'erogatore — il cartellino delle
+  etichette con «POC» o «Lab», il foglio A4 con «POC», «Lab» o «RX», il braccialetto con «×N» (due
+  laboratori nello stesso giro si distinguono, «Urg» e «Lab»); chi legge lo schermo sente le parole
+  intere, «Etichette POC», «Lista esami Lab», «Prenotazione RX», «Etichetta anagrafica» — e una
+  riga, senza icona, per la richiesta che gira, «Lab · 3/6», «RX · 1/1». Ogni riga ha una barretta
   (arriva → alla stampante → fatto) e un piccolo **✕**: toglie **solo quel foglio**, finché aspetta o
   arriva; dato all'aiutante il ✕ diventa una stampantina che respira (dalla coda di Windows non si
   richiama), poi un ✓ verde, e dopo pochi secondi la riga se ne va. Un foglio non uscito resta
-  rosso, con **Ristampa**.
+  rosso, con **Ristampa**. (I nomi stanno tutti in `NOMI_RIGA`, in `src/core.js`.)
 - **Si dice solo quello che si sa.** L'aiutante, dopo aver mandato il foglio, guarda per qualche
   secondo la coda di stampa di Windows:
   - **«Stampato su Zebra ZD421»** (alla fine «Stampato · 6 esami confermati 14:32»): il foglio è
