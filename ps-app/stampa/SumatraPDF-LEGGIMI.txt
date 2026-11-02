@@ -2,7 +2,7 @@ SumatraPDF 3.6.1, portable, 64 bit (SumatraPDF.exe)
 © Krzysztof Kowalczyk e i contributori — https://www.sumatrapdfreader.org
 Software libero, distribuito qui senza modifiche sotto la GNU General Public License v3
 (testo completo in SumatraPDF-GPL-3.0.txt). Il sorgente di questa versione:
-https://github.com/sumatrapdfreader/sumatrapdf/tree/3.6.1rel
+https://github.com/sumatrapdfreader/sumatrapdf (versione 3.6.1)
 È il file ufficiale di SumatraPDF-3.6.1-64.zip (sumatrapdfreader.org/dl/rel/3.6.1/),
 SHA-256 719F689B34F47BE8CA105CE8484948474DAFDE0E106BAB599E4A89326070C3D0:
 installa.ps1 lo controlla e non usa un file diverso.
