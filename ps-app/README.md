@@ -148,8 +148,8 @@ un paziente aperto; sulla scheda di un paziente parte dagli **Esiti**.
 **Il tabellone: in alto le mappe, sotto la lista.** In cima **Alta | Bassa | Entrambe** (i nomi
 delle due mappe) e un piccolo **⟳**. *Entrambe*: le due mappe affiancate se lo spazio è largo, una
 sopra l'altra se no; sempre in scala, **mai da scorrere di lato**. La scelta resta; finché non ne
-fai una, si vede la mappa dell'area in cui lavori. Sotto le mappe, la **lista**: **tutti** quelli
-della vista, chi ha un posto (col nome del posto) e chi no — prima chi non ce l'ha. La lista prende
+fai una, si vede la mappa dell'area in cui lavori. Accanto, **Mappa | Lista** (resta). *Mappa*: sotto le mappe la **lista** ha solo chi **non ha ancora un posto** (gli altri sono sulla mappa).
+*Lista*: niente mappe, **tutti** quelli della vista, per area (Alta, Bassa, OBI, Codici minori) e nell'ordine della lista del gestionale (l'ultima letta intera), col posto in una pillola dopo il nome. La lista prende
 quello che le serve, al massimo poco meno di metà, poi scorre dentro. In fondo, chiusi, gli
 **Archiviati** e **Svuota l'elenco**.
 
@@ -394,7 +394,7 @@ fissata, una senza 24 ore dopo l'ultima modifica, una spuntata 5 minuti dopo. Ne
 cancella la pagina di login — una sessione scaduta non deve far perdere la troponina delle 11:30 —;
 «Svuota l'elenco» e 🗑 sì. I **parametri vitali** letti (l'ultima riga: ora e valori, mai un nome)
 stanno con lo stato degli esami, in `stato.v1`, e se ne vanno con lui.
-Il **tabellone**: la vista scelta (`tabellone.vista.v1`: `alta`, `bassa`, `entrambe`), «segue il
+Il **tabellone**: la vista scelta (`tabellone.vista.v1`: `alta`, `bassa`, `entrambe`) e `tabellone.modo.v1` (`mappa`, `lista`; la riga di ognuno nella lista del gestionale è `n` in `aree.v1`), «segue il
 gestionale» (`segue.v1`, `false` se spento) e il link della lista smart (`smart.url.v1`, com'era
 nella pagina) sono impostazioni e restano; l'ultima lettura della smart (`smart.sync.v1`: quando,
 com'è andata, quante righe) e l'ultima uscita da annullare (`dimessi.v1`: episodi, «COGNOME N.» e i

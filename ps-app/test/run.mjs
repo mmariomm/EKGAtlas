@@ -3915,7 +3915,8 @@ async function scenarioStanza(browser) {
     await trascina(da, t.x + t.width / 2 - (s.x + s.width / 2), t.y + t.height / 2 - (s.y + s.height / 2));
   };
   const chip = (dove, ep) => $panel(page, `${dove} .stp[data-stp="${ep}"]`);
-  // la riga di un paziente che non ha un posto (il tabellone elenca tutti: chi ha un posto ha la riga .haposto)
+  // la riga di un paziente che non ha un posto (in Mappa la lista ha solo loro; in Lista c'è anche chi ha un posto: .haposto)
+  const modo = async (m) => { await $panel(page, `[data-modo="${m}"]`).click(); await page.waitForTimeout(150); };
   const riga = (ep) => $panel(page, `.pzcoda .pzrow[data-riga="${ep}"]:not(.haposto)`);
   const righe = () => page.locator("#psassist-host .pzcoda .pzrow:not(.haposto)").count();
   // nessuno si perde: chi non è nella stanza è nella lista
@@ -4076,8 +4077,10 @@ async function scenarioStanza(browser) {
   check(scen, (await chip(`[data-letto="${sedia.id}"]`, "999001").count()) === 1 && /^ROSSI MARIO · …9001 in Sedia 1$/.test(await avviso())
     && (await riga("999001").count()) === 0 && (await righe()) === 1,
     `scelta «Sedia 1», ci va (got: ${await avviso()})`);
-  check(scen, (await $panel(page, '.pzrow.haposto[data-riga="999001"] .pzposto').innerText()) === "Sedia 1" && (await alta(".pzcoda")) === hl && hm > 0,
-    "la sua riga resta nella lista, col posto");
+  check(scen, (await $panel(page, '.pzrow.haposto[data-riga="999001"]').count()) === 0 && hl > 0 && hm > 0, "in Mappa la sua riga se ne va dalla lista: è sulla mappa");
+  await modo("lista");
+  check(scen, (await $panel(page, '.pzrow.haposto[data-riga="999001"] .pzposto').innerText()) === "Sedia 1", "in Lista c'è, col posto");
+  await modo("mappa");
   await portaSu(riga("999002"), sediaEl);
   check(scen, (await chip(`[data-letto="${sedia.id}"]`, "999002").count()) === 1 && (await riga("999001").count()) === 1
     && /^ROSSI MARIO · …9002 in Sedia 1 · ROSSI MARIO · …9001 senza posto$/.test(await avviso()),
@@ -4217,11 +4220,14 @@ async function scenarioStanza(browser) {
   await portaSu(riga("999001"), await letto("Box 1"));
   check(scen, /^ROSSI MARIO · …9001 in Box 1$/.test(await avviso()), `ogni spostamento si può annullare (got: ${await avviso()})`);
   const hl1 = await alta(".pzcoda"), hc1 = await alta(".stcanvas"), u1 = await cellaDi("Box 1");
-  check(scen, (await riga("999001").count()) === 0 && (await righe()) === 1 && hl1 === hl0 && hc1 === hc0 && Math.abs(u1 - u0) < 0.5,
-    `trascinato dalla lista su Box 1: la sua riga resta (col posto), niente si muove (lista ${hl0} → ${hl1}px, stanza ${hc0} → ${hc1}px, cella ${u0.toFixed(1)} → ${u1.toFixed(1)}px)`);
+  check(scen, (await riga("999001").count()) === 0 && (await righe()) === 1 && hl1 < hl0 && hc1 >= hc0 && u1 >= u0 - 0.5,
+    `trascinato dalla lista su Box 1: la sua riga se ne va, la lista si accorcia e la stanza non cala (lista ${hl0} → ${hl1}px, stanza ${hc0} → ${hc1}px, cella ${u0.toFixed(1)} → ${u1.toFixed(1)}px)`);
   await portaSu(riga("999002"), $panel(page, ".starea"));
   check(scen, (await chip(".stbed", "999001").count()) === 1, "trascinato su Box 1, il paziente è nel letto");
-  check(scen, (await $panel(page, ".pzcoda .pzrow.haposto").count()) === 2, "tutti al loro posto: la lista li elenca lo stesso, col posto");
+  check(scen, (await $panel(page, ".pzcoda .pzrow").count()) === 0, "tutti al loro posto: la lista in Mappa è vuota");
+  await modo("lista");
+  check(scen, (await $panel(page, ".pzcoda .pzrow.haposto").count()) === 2, "in Lista li elenca tutti, col posto");
+  await modo("mappa");
   // nel letto un cognome lungo va a capo invece di perdere l'iniziale
   await ritocca("999001", { name: "D'ALESSANDRO MARIO" });
   await page.reload();
@@ -4371,14 +4377,14 @@ async function scenarioStanza(browser) {
   await page.keyboard.press("Backspace");
   await page.keyboard.type("ros");
   const f3 = await filtro();
-  check(scen, f3.righe === 1 && f3.letto === "1", `«ros»: la riga di DELL'ACQUA si nasconde (resta quella di ROSSI), ROSSI nel letto resta acceso (got: ${JSON.stringify(f3)})`);
+  check(scen, f3.righe === 0 && f3.letto === "1", `«ros»: la riga di DELL'ACQUA si nasconde (ROSSI è sulla mappa, non nella lista), ROSSI nel letto resta acceso (got: ${JSON.stringify(f3)})`);
   // un clic altrove nel pannello (il fuoco esce dal campo) e Esc: si toglie il filtro, non la finestra
   const tc = await box(".stcanvas");
   await page.mouse.click(tc.x + tc.width - 8, tc.y + tc.height - 8);
   const fuoriCampo = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id !== "pzcerca");
   await page.keyboard.press("Escape");
   const f4 = await filtro();
-  check(scen, fuoriCampo && f4.c === null && f4.righe === 2 && f4.letto === "1" && (await $panel(page, ".card").count()) === 1,
+  check(scen, fuoriCampo && f4.c === null && f4.righe === 1 && f4.letto === "1" && (await $panel(page, ".card").count()) === 1,
     `Esc toglie il filtro (anche col fuoco fuori dal campo), e la finestra resta aperta (got: ${JSON.stringify(f4)})`);
   // Invio apre il paziente, ma solo se ne torna uno: «a» ne trova due, «ros» uno
   await page.keyboard.press("a");
@@ -6616,7 +6622,15 @@ async function scenarioListaLetti(browser) {
       if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
       await $panel(page, ".pzcoda").waitFor({ timeout: 8000 });
       if (aff) { await $panel(page, "#menubtn").click(); await $panel(page, "#winaffianca").click(); await page.waitForTimeout(200); }
-      const { righe, letti } = await misura();
+      // i letti stanno sulle mappe, tutti i pazienti nella Lista: due viste, due misure
+      await $panel(page, '[data-modo="mappa"]').click();
+      await page.waitForTimeout(150);
+      const { letti } = await misura();
+      await $panel(page, '[data-modo="lista"]').click();
+      await page.waitForTimeout(150);
+      const { righe } = await misura();
+      await $panel(page, '[data-modo="mappa"]').click();
+      await page.waitForTimeout(150);
       // la lista: Lab, ECG, RX sempre in quest'ordine, e ognuno nella sua colonna, uguale per tutte le righe
       const ordine = righe.every((r) => r.tipi.join() === ["lab", "ecg", "img"].filter((t) => r.tipi.includes(t)).join());
       const colonne = ["lab", "ecg", "img", "df"].map((k) => new Set(righe.map((r) => r.x[k]).filter((v) => v != null)).size);
