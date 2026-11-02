@@ -108,6 +108,10 @@
   const APERTA_TTL = 30 * 60e3;
   const OK_STRISCIA = 2 * 60e3;  // un ordine finito bene resta sulla striscia due minuti
   const RIGA_FATTA = 4000;       // …la riga di un foglio stampato, pochi secondi
+  // I nomi delle righe sotto la striscia, tutti qui: «Et POC», «Fg RX»,
+  // «Rich Lab · 3/6», «Et anag ×3». (Cambiarli è cambiare questa tabella.)
+  const NOMI_RIGA = { etichette: "Et", foglio: "Fg", richiesta: "Rich", anagrafica: "Et anag", POC: "POC", Lab: "Lab", RX: "RX" };
+  const COPIE_MAX = 10;          // le copie dell'etichetta anagrafica, a tocchi
 
   // Resources ("Risorsa" dropdown values) — verified in the saved pages.
   const RES = {
@@ -920,7 +924,8 @@
     for (const j of jobs) {
       if (!j.pre) continue;
       const c = j.pre === "Fg" && j.rx ? "RX" : chi(j.res);
-      j.breve = `${j.pre}${c ? " " + c : ""}`;
+      const nome = NOMI_RIGA[c] || c;
+      j.breve = `${NOMI_RIGA[j.pre === "Et" ? "etichette" : "foglio"]}${nome ? " " + nome : ""}`;
     }
     return jobs;
   }
@@ -5253,6 +5258,10 @@
     .pjob.err .pjbar i { background: #B3261E; }
     .pjx { border: 0; background: transparent; color: #5B6B7B; cursor: pointer; font-size: 11px; width: 18px; height: 18px; border-radius: 50%; padding: 0; }
     .pjx:hover { background: #EEF3F8; color: #B3261E; }
+    /* in coda dietro le etichette di un ordine: la clessidra, che al passaggio è il ✕ */
+    .pjx.att .pjxx, .pjx.att:hover .pjclx { display: none; }
+    .pjx.att:hover .pjxx { display: inline; }
+    .pjx.att .pjclx { font-size: 10px; }
     .pjico { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; color: #0B5CAD; }
     .pjico svg { width: 13px; height: 13px; }
     .pjob.ok { background: #E8F5EC; border-color: #9FD3B3; }
@@ -5799,6 +5808,7 @@
     .hdpaz .brac .bracn { position: absolute; right: -6px; top: -4px; background: #0B5CAD; color: #fff; border-radius: 999px; padding: 0 4px;
                           font-size: 10.5px; font-weight: 700; line-height: 15px; font-variant-numeric: tabular-nums; }
     .hdpaz .brac.pulsa { animation: bracPulsa .45s ease-out; }
+    .hdpaz .brac .bracn.spenta { background: #9DB3C9; }
     @keyframes bracPulsa { 0% { transform: scale(1); } 40% { transform: scale(1.18); background: #E8F0FA; } 100% { transform: scale(1); } }
     /* IL CUORE dei parametri vitali: rosso o ambra, fermo. Un impulso solo, da
        un secondo, quando compare; vuoto («♡ 5h») se la riga ha più di 4 ore. */
@@ -6409,6 +6419,12 @@
     bracciale: ico('<path d="M4.5 10.6C2.9 10.3 2 9.6 2 8.6 2 6.6 4.7 5 8 5s6 1.6 6 3.6c0 1-.9 1.7-2.5 2"/><rect x="4.5" y="8.4" width="7" height="4.6" rx="1.1"/><path d="M6.5 10.7h3"/>'),
   };
 
+  // L'etichetta anagrafica aspetta le etichette di un ordine che stampa le sue
+  // (come nel service worker): quale ordine, se c'è.
+  const braccialeJob = (x) => /[?&]REPORT=PsoBraccialettoHMIMU(&|$)/.test(String((x && x.url) || ""));
+  const braccialeAspetta = (l, rec) => (l || []).find((x) => x !== rec && x.stato === "stampo" && !x.interrotta && !x.ferma
+    && !((x.stampa && x.stampa.jobs) || []).every(braccialeJob)
+    && (x.fogli || []).some((f) => f.tipo === "etichette" && ["attesa", "prendo", "invio"].includes(f.stato))) || null;
   // Il «Stampa Bracciale» del gestionale (l'etichetta anagrafica): il link
   // della pagina, così com'è, e solo se è di QUESTO episodio — mai costruito.
   function linkBracciale(doc, ep, base) {
@@ -6753,7 +6769,7 @@
     // della pagina (senza la stampa automatica si apre in una scheda, come dal
     // gestionale). Con la stampa automatica, all'etichettatrice col motore e il
     // giornale di sempre, e le copie a tocchi: ogni tocco entro un secondo
-    // dall'ultimo è una copia in più (fino a 5, «×2» sul bottone); un secondo
+    // dall'ultimo è una copia in più (fino a 10, «×2» sul bottone); un secondo
     // dopo l'ultimo parte UNA stampa con quelle copie (il PDF preso una volta).
     // Un tocco mentre quella stampa gira non fa niente: il bottone pulsa.
     braccialeHtml() {
@@ -6761,8 +6777,16 @@
       return url ? `<a class="iconbtn brac" id="bracciale" href="${esc(url)}" target="_blank" title="Etichetta anagrafica" aria-label="Etichetta anagrafica">${this.braccialeDentro()}</a>` : "";
     }
     braccialeDentro() {
-      const n = (this._brac && this._brac.n) || 0;
-      return ICO.bracciale + (n > 1 ? `<span class="bracn">×${n}</span>` : "");
+      // (partita e in coda dietro le etichette di un ordine: le sue copie, spente, finché non stampa)
+      const coda = !this._brac && this.braccialeInCoda();
+      const n = (this._brac && this._brac.n) || (coda ? coda.fogli.length : 0);
+      return ICO.bracciale + (n > 1 ? `<span class="bracn${coda ? " spenta" : ""}">×${n}</span>` : "");
+    }
+    braccialeInCoda() {
+      const url = linkBracciale(document, this.epDiQuesta(), location.href);
+      const l = this.ordini || [];
+      return (url && l.find((x) => x.stato === "stampo" && ((x.stampa && x.stampa.jobs) || [])[0]?.url === url
+        && (x.fogli || []).every((f) => f.stato === "attesa" || f.stato === "tolto") && braccialeAspetta(l, x))) || null;
     }
     stampaBracciale(e) {
       const ep = this.epDiQuesta(), url = linkBracciale(document, ep, location.href);
@@ -6771,7 +6795,7 @@
       e.preventDefault();
       const t = this._brac, b = e.currentTarget;
       if (t && t.url === url) {
-        t.n = Math.min(5, t.n + 1);
+        t.n = Math.min(COPIE_MAX, t.n + 1);
         clearTimeout(t.timer);
         t.timer = setTimeout(() => this.braccialeVia(), 1000);
       } else if (this._bracInvio || (this.ordini || []).some((x) => x.stato === "stampo" && ((x.stampa && x.stampa.jobs) || []).some((j) => j.url === url))) {
@@ -6788,7 +6812,7 @@
       if (w) w.innerHTML = this.braccialeDentro();
       if (!t) return;
       this._bracInvio = true;
-      const jobs = Array.from({ length: t.n }, (_, k) => ({ name: t.n > 1 ? `Etichetta anagrafica ${k + 1}/${t.n}` : "Etichetta anagrafica", breve: "Et anag", printer: "etichettatrice", url: t.url }));
+      const jobs = Array.from({ length: t.n }, (_, k) => ({ name: t.n > 1 ? `Etichetta anagrafica ${k + 1}/${t.n}` : "Etichetta anagrafica", breve: NOMI_RIGA.anagrafica, printer: "etichettatrice", url: t.url }));
       // (un tocco di lato: il pannello resta com'è, sotto la pill compare solo la sua riga)
       try { await avviaStampa(jobs, { panel: this, ep: t.ep, paziente: this.nomePaziente(), url: location.href, resta: true }); }
       finally { this._bracInvio = false; }
@@ -7634,6 +7658,8 @@
       }
       this.registriOrdini();
       this.stripOrdine();
+      const w = this.root.querySelector("#bracciale");
+      if (w) w.innerHTML = this.braccialeDentro();
     }
     // Il Registro della scheda di un ordine arriva con la sua ultima parola (la
     // scheda si chiude): si aggiunge, una volta, al Registro di quel paziente
@@ -7740,7 +7766,7 @@
       let prossima = 0;
       for (const o of [...l].sort((a, b) => (a.ts || 0) - (b.ts || 0))) {
         const v = o.vista || {};
-        const chi = o.kind === "radio" ? "Rich RX" : o.kind === "lab" ? "Rich Lab" : "Rich";
+        const chi = `${NOMI_RIGA.richiesta}${o.kind === "radio" ? " " + NOMI_RIGA.RX : o.kind === "lab" ? " " + NOMI_RIGA.Lab : ""}`;
         if ((o.stato === "avvio" || (o.stato === "corre" && !o.muto)) && !o.ferma) {
           const [k, n] = Array.isArray(v.prog) ? v.prog : [0, o.n || 0];
           righe.push({ k: `r:${o.id}`, nome: `${chi} · ${k}/${n}`, p: n ? Math.max(0.04, k / n) : 0.04,
@@ -7755,20 +7781,22 @@
         }
         const fogli = Array.isArray(o.fogli) ? o.fogli : [];
         // l'etichetta anagrafica: N copie dello stesso foglio, una riga sola («Et anag ×3»)
-        const brac = fogli.length && ((o.stampa && o.stampa.jobs) || []).every((j) => /[?&]REPORT=PsoBraccialettoHMIMU(&|$)/.test(String(j.url || "")));
+        const brac = fogli.length && ((o.stampa && o.stampa.jobs) || []).every(braccialeJob);
         if (brac) {
           const vive = fogli.map((f, i) => ({ f, i })).filter(({ f }) => f.stato !== "tolto");
           if (!vive.length) continue;
           const st = (xs) => vive.filter(({ f }) => xs.includes(f.stato));
           const fatte = st(["stampato", "mandato"]), rotte = st(["fallito", "sconosciuto"]), invio = st(["invio"]), presto = st(["attesa", "prendo"]);
           const tutte = fatte.length === vive.length;
+          // aspetta che escano le etichette di un ordine che stampa: barra vuota, la clessidra (✕ al passaggio)
+          const attende = presto.length === vive.length && !!braccialeAspetta(l, o);
           if (tutte) {
             const resta = Math.max(...fatte.map(({ f }) => f.ts || o.agg || 0)) + RIGA_FATTA - ora;
             if (resta <= 0) continue;
             prossima = prossima ? Math.min(prossima, resta) : resta;
           }
-          righe.push({ k: `${o.id}:b`, nome: `Et anag${vive.length > 1 ? ` ×${vive.length}` : ""}`,
-            p: tutte || rotte.length ? 1 : Math.max(0.04, (fatte.length + (invio.length ? 0.7 : st(["prendo"]).length ? 0.35 : 0)) / vive.length),
+          righe.push({ k: `${o.id}:b`, nome: `${NOMI_RIGA.anagrafica}${vive.length > 1 ? ` ×${vive.length}` : ""}`, attende,
+            p: tutte || rotte.length ? 1 : attende ? 0 : Math.max(0.04, (fatte.length + (invio.length ? 0.7 : st(["prendo"]).length ? 0.35 : 0)) / vive.length),
             ok: tutte, err: !!rotte.length && !presto.length && !invio.length,
             x: !invio.length && presto.length && !fatte.length ? `t:${o.id}:${presto.map(({ i }) => i).join(",")}` : "",
             ico: invio.length ? "pulsa" : tutte ? "fatto" : "",
@@ -7799,7 +7827,7 @@
             r.rist ? `<button class="pjrist" data-pjrist="${esc(r.rist)}">Ristampa</button>`
             : r.ico === "pulsa" ? `<span class="pjico pulsa" title="Alla stampante">${ICO.stampante}</span>`
             : r.ico === "fatto" ? `<span class="pjico fatto" title="Fatto">✓</span>`
-            : r.x ? `<button class="pjx" data-pjx="${esc(r.x)}" title="Togli solo questo" aria-label="Togli ${esc(r.nome)}">✕</button>` : ""}
+            : r.x ? `<button class="pjx${r.attende ? " att" : ""}" data-pjx="${esc(r.x)}" title="${r.attende ? "Aspetta le etichette in stampa · togli" : "Togli solo questo"}" aria-label="Togli ${esc(r.nome)}">${r.attende ? `<span class="pjclx">⌛</span><span class="pjxx">✕</span>` : "✕"}</button>` : ""}
           <span class="pjbar"><i style="width:${Math.round(Math.min(1, r.p) * 100)}%"></i></span>
         </div>`).join("")}</div>`;
     }
@@ -7807,7 +7835,7 @@
     rigaGiro() {
       const { passati, tot } = this.statoGiro();
       const g = this.pianoGiro && this.pianoGiro.legLabel;
-      const chi = g === "radiologia" ? "Rich RX" : g === "laboratorio" ? "Rich Lab" : "Rich";
+      const chi = `${NOMI_RIGA.richiesta}${g === "radiologia" ? " " + NOMI_RIGA.RX : g === "laboratorio" ? " " + NOMI_RIGA.Lab : ""}`;
       return { k: "giro", nome: `${chi} · ${passati}/${tot}`, p: tot ? Math.max(0.04, passati / tot) : 0.04, x: "giro" };
     }
     // ✕ su una riga: quella sola

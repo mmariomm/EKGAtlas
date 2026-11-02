@@ -1074,6 +1074,8 @@ function ordPubblico(rec, l = []) {
             `guarda ${dove(ignoti)} prima di ristamparl${etichette(ignoti) ? "e" : "i"} dal PC`, st.riassunto));
       }
       if (non.length) return P("warn", "Stampa interrotta", `non usciti: ${non.map((x) => x.name).join(", ")}`, rec.interrotta, st.riassunto);
+      // (tutto tolto col ✕: non è uscito niente, e lo ha voluto il medico)
+      if (f.every((x) => x.stato === "tolto")) return P("ok", "Niente stampato", "tolto col ✕");
       const stampati = f.filter((x) => x.stato === "stampato"), mandati = f.filter((x) => x.stato === "mandato");
       if (soloBracciale(rec)) return mandati.length ? P("warn", `Mandata a ${dove(mandati)}`, alle, "è nella coda di Windows: controlla che sia uscita")
         : P("ok", `Etichetta stampata su ${dove(stampati)}`, alle);

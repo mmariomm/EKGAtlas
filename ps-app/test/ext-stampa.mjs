@@ -109,7 +109,8 @@ await ctx.addInitScript(() => {
       for (const el of r.querySelectorAll(".pjob")) {
         const v = { n: (el.querySelector(".pjn")?.textContent || "").trim(), x: !!el.querySelector(".pjx"),
           ico: el.querySelector(".pjico.pulsa") ? "pulsa" : el.querySelector(".pjico.fatto") ? "fatto" : "",
-          ok: el.classList.contains("ok"), err: el.classList.contains("err"), w: el.querySelector(".pjbar i")?.style.width || "" };
+          ok: el.classList.contains("ok"), err: el.classList.contains("err"), w: el.querySelector(".pjbar i")?.style.width || "",
+          att: !!el.querySelector(".pjx.att") };
         const s = JSON.stringify(v);
         if (!visti.has(s)) { visti.add(s); l.push(v); nuovi = true; }
       }
@@ -1232,7 +1233,7 @@ const conBracciale = (...hrefs) => {
 };
 const bottoneBrac = (p) => p.evaluate(() => {
   const b = document.getElementById("psassist-host")?.shadowRoot?.querySelector("#bracciale");
-  return b ? { titolo: b.title, href: b.getAttribute("href"), conto: (b.querySelector(".bracn")?.textContent || "").trim() } : null;
+  return b ? { titolo: b.title, href: b.getAttribute("href"), conto: (b.querySelector(".bracn")?.textContent || "").trim(), spento: !!b.querySelector(".bracn.spenta") } : null;
 });
 const ordiniBrac = async () => (await ordini()).filter((x) => /^Etichetta anagrafica/.test(x.stampa?.jobs?.[0]?.name || ""));
 // (partita una stampa il pannello si riduce alla striscia: per toccare di nuovo lo si riapre)
@@ -1319,25 +1320,60 @@ if (await prova("l'etichetta anagrafica: il bottone accanto al nome, le copie a 
   // non si infila fra le etichette di un ordine che sta stampando: le aspetta, poi esce
   azzeraLavori();
   await nessunOrdine();
-  comportati({ lento: 2500 });
+  comportati({ lento: 5000 });
   const etic = await doc.evaluate(() => new URL(document.querySelector('a[title="Stampa Etichette"]').getAttribute("href"), location.href).href);
-  await sw.evaluate(async (u) => {
+  const ordineEtichette = (id) => sw.evaluate(async ([u, id]) => {
     const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     const jobs = [{ name: "Etichette provette", printer: "etichettatrice", url: u }, { name: "Etichette provette — riga 2", printer: "etichettatrice", url: u + "&x=2" }];
     const l = await ordLeggi();
-    l.push({ id: "ordprova1", ep: "999001", paziente: "ROSSI MARIO", n: 1, url: null, opener: t.id, worker: t.id, stato: "stampo", pronta: true, ts: Date.now(), agg: Date.now(),
+    l.push({ id, ep: "999001", paziente: "ROSSI MARIO", n: 1, url: null, opener: t.id, worker: t.id, stato: "stampo", pronta: true, ts: Date.now(), agg: Date.now(),
       vista: null, resto: { mancano: [], controllare: [], nel: [] }, stampa: { jobs, tag: "Confermata", fine: null, riassunto: "", quesito: "" }, fogli: fogliNuovi(jobs, await stampaScelte()) });
     await ordScrivi(l);
-    ordStampaFogli("ordprova1");
-  }, etic);
+    ordStampaFogli(id);
+  }, [etic, id]);
+  await ordineEtichette("ordprova1");
   await finche(() => lavori().length === 1, 15000);
-  await tocca(doc);
+  await tocca(doc); await sospendi(300); await tocca(doc);
   const attesa = await finche(async () => (await ordiniBrac()).find((x) => /dopo le etichette di ROSSI MARIO/.test(x.pubblico?.testo || "")), 15000);
   check(!!attesa, `mentre l'ordine stampa le sue etichette, l'etichetta anagrafica aspetta, e lo dice (got ${JSON.stringify((await ordini()).map((x) => x.pubblico))})`);
+  const inCoda = await finche(async () => { const b = await bottoneBrac(doc); return b && b.conto === "×2" && b.spento ? b : null; }, 4000);
+  check(!!inCoda, `in coda, il bottone tiene «×2», spento, finché non stampa (got ${JSON.stringify(await bottoneBrac(doc))})`);
+  await azzeraRighe(doc);
+  if (await $panel(doc, "#collapse").count()) await $panel(doc, "#collapse").click();
+  const rigaCoda = await finche(async () => (await righeViste(doc)).find((r) => r.n === "Et anag ×2" && r.att && r.w === "0%"), 4000);
+  check(!!rigaCoda, `e la sua riga sotto la pill: barra vuota, la clessidra al posto del ✕ (got ${JSON.stringify(await righeViste(doc))})`);
   const finita = await finche(async () => (await ordiniBrac()).find((x) => x.stato === "avviso"), 40000);
   const ll = lavori();
-  check(!!finita && ll.length === 3 && ll.every((x) => x.tipo === "etichette") && JSON.stringify(ll.map((x) => JSON.stringify(x.pagina) === "[142,71]")) === "[false,false,true]",
-    `prima le due etichette dell'ordine, poi l'etichetta anagrafica (got ${JSON.stringify(ll.map((x) => x.pagina))})`);
+  check(!!finita && ll.length === 4 && ll.every((x) => x.tipo === "etichette") && JSON.stringify(ll.map((x) => JSON.stringify(x.pagina) === "[142,71]")) === "[false,false,true,true]",
+    `prima le due etichette dell'ordine, poi le due copie dell'etichetta anagrafica (got ${JSON.stringify(ll.map((x) => x.pagina))})`);
+  check(!(await bottoneBrac(doc))?.conto, "stampata: il bottone torna senza numero");
+
+  // in coda, la clessidra è il ✕: toccata, l'etichetta anagrafica non esce (le etichette dell'ordine sì)
+  azzeraLavori();
+  await nessunOrdine();
+  await ordineEtichette("ordprova2");
+  await finche(() => lavori().length === 1, 15000);
+  await tocca(doc);
+  await finche(async () => (await ordiniBrac()).find((x) => /dopo le etichette di/.test(x.pubblico?.testo || "")), 15000);
+  if (await $panel(doc, "#collapse").count()) await $panel(doc, "#collapse").click();
+  await $panel(doc, ".pjx.att").hover().catch(() => {});
+  const visibile = await $panel(doc, ".pjx.att .pjxx").isVisible().catch(() => false);
+  await $panel(doc, ".pjx.att").click().catch(() => {});
+  const via = await finche(async () => (await ordiniBrac()).find((x) => x.stato === "avviso" && x.fogli.every((f) => f.stato === "tolto")), 15000);
+  await finche(async () => (await ordini()).find((x) => x.id === "ordprova2" && x.stato === "avviso"), 20000);
+  await sospendi(1000);
+  check(visibile && !!via && lavori().length === 2 && lavori().every((x) => JSON.stringify(x.pagina) !== "[142,71]"),
+    `al passaggio la clessidra è il ✕, e toglie l'etichetta anagrafica in coda: escono solo le etichette dell'ordine (got ${visibile} · ${lavori().length} fogli)`);
+
+  // fino a dieci copie: l'undicesimo tocco non ne aggiunge
+  azzeraLavori();
+  await nessunOrdine();
+  comportati();
+  for (let k = 0; k < 11; k++) { await tocca(doc); await sospendi(120); }
+  const dieci = (await bottoneBrac(doc))?.conto;
+  const tutte = await finche(async () => (await ordiniBrac()).find((x) => x.stato === "avviso" && x.fogli.length === 10), 60000);
+  await sospendi(1000);
+  check(dieci === "×10" && !!tutte && lavori().length === 10, `undici tocchi: «×10», e dieci copie all'etichettatrice (got «${dieci}» · ${lavori().length})`);
 
   // un'etichettatrice che non va, due copie: una prova sola all'aiutante, al dialogo una volta («2 copie»), e nel registro degli errori senza nomi
   azzeraLavori();
