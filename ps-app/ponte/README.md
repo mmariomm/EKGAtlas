@@ -89,6 +89,15 @@ sessione. Vedi:
   ricollegato e vede l'ordine nato sul PC, il bottone smette di aspettare e l'allarme non c'è: lo
   dice già la carta. L'ordine ha un numero fatto dal
   telefono quando arma «Conferma»: rimandato, è lo stesso ordine, e il PC lo manda una volta sola.
+- **Cartella** — la terza scheda: Anamnesi, Anamnesi remota, Farmaci, Allergie, Esame obiettivo,
+  come li ha letti il PC dalla pagina del paziente («Letto sul PC alle 08:02», in ambra dopo un'ora;
+  **↻ Rileggi** la rilegge). Si scrive un campo solo se la pagina lo lascia scrivere (né `readonly`
+  né `disabled`, né `JPSOReadonly`: l'esame obiettivo di un altro medico, per esempio, si legge e
+  basta). Scritto qualcosa, compare un **Salva** solo, in fondo: «Salvo sul PC…», poi «Salvato» o
+  il perché. Se intanto il testo sul PC è cambiato: «Cambiato sul PC: ricarica», e non parte niente;
+  se il medico ha un testo non salvato in quella pagina sul PC: «Sul PC c'è un testo non salvato in
+  questa pagina». Una pagina di quel paziente aperta sul PC dice «Aggiornato dal telefono ·
+  Ricarica» (non si ricarica da sola).
 - **Nota e promemoria** — la nota del paziente (si salva uscendo dal campo) e i promemoria
   («11:30 tropo», «tra 2h ECG»): sul PC sono voci di **Da fare**, la lista del pannello. La nota è
   la prima voce aperta senza ora (scritta cambia quella, o ne fa una in cima; vuota la toglie), i
@@ -274,7 +283,8 @@ ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un si
 
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
 `aggiornaValori(ep)`, `richieste` (il catalogo), `ordina(ep, oid, esami, quesito, mio)`, `nota(ep,
-testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`,
+testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
+{prima, dopo}})`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`,
 più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
 `ordineNuovo` come «Conferma e stampa», col numero `"tel" + oid` (l'`oid` lo fa il telefono quando
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),
@@ -288,6 +298,21 @@ con l'ora in cui il PC l'ha letta; i testi dei referti si prendono per numero di
 pagina di quel paziente. «Aggiorna i valori» annota la sua scheda di sottofondo in `storage.session`
 (`ponte.valori`): anche se il service worker si ferma a metà, la si riconosce, scade e si chiude; il
 telefono aspetta 200 secondi, più del caso peggiore del PC.
+
+**La cartella.** Il modulo `AmbulatorioPSO` della pagina del paziente (`ANAMNESI`,
+`MALATTIE_PREGRESSE`, `FARMACI_ASSUNTI`, `ALLERGIE`, `ESAME_OBIETTIVO`). Ogni volta che il medico
+apre la pagina, con un iPhone associato, la scheda manda i cinque testi (come la pagina li ha
+caricati) al service worker, che li tiene in `storage.session` (`ponte.cartella`: in memoria, al
+massimo 40 pazienti, via a fine sessione); `cartella` dà quella lettura, o con `rileggi` la pagina
+riletta (una GET, come gli esiti). `cartellaSalva`, tutti o nessuno: prima ogni scheda del gestionale
+dice se ha un testo non salvato nella cartella di quel paziente (se sì, no: il suo «Conferma»
+rimanderebbe il modulo intero coi testi vecchi); poi la pagina si apre in una scheda di sottofondo
+(`ponte.cartelle`, come «Aggiorna i valori», i testi solo nella memoria del service worker), che
+controlla ogni campo — ancora scrivibile, e uguale a `prima` (spazi e a capo normalizzati) —, scrive
+i testi e clicca il **«Conferma»** della pagina (`name="Update"`): il modulo lo manda il browser, mai
+un invio costruito a mano. Ricaricata, la scheda rilegge e verifica campo per campo, e si chiude.
+Rimandato dopo una risposta persa, lo stesso salvataggio trova `prima` cambiato e non parte due
+volte. Nel registro degli errori (`segnaErrore`) solo il perché e i nomi dei campi, mai un testo.
 
 **Un PDF da stampare.** `stampa` è `pdf` al contrario: il telefono manda il file a pezzi (~390 KB,
 una risposta per pezzo) con un numero suo, `rid`. Il primo pezzo dice già di no se il file non comincia

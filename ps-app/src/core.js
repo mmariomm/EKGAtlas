@@ -12510,6 +12510,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // il ponte: la pagina dell'iPhone, e «Scollega» dall'intestazione
       $("#pontemenu")?.addEventListener("click", () => { this.menuAperto = false; this.render(); ask({ t: "ponteApri" }); });
       $("#ponteoff")?.addEventListener("click", (e) => { e.stopPropagation(); ask({ t: "ponteScollega" }); });
+      $("#ponterica")?.addEventListener("click", (e) => { e.stopPropagation(); ponteRicarica(); });
       $("#risall")?.addEventListener("click", () => this.caricaValori().catch(() => {}).then(() => this.caricaReferti()));
       // «Letto»: da qui in poi le novità si contano da adesso, per tutti i prelievi
       $("#letto")?.addEventListener("click", () => {
@@ -14567,6 +14568,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   let PANNELLO = null;       // il pannello di questa pagina (per il Registro)
   let PONTE_STATO = null;    // lo stato del ponte (storage.session), per l'intestazione
   let PONTE_VALORI = null;   // questa scheda l'ha aperta il ponte per «Aggiorna i valori» di { ep }
+  let PONTE_CARTELLA = null; // questa scheda l'ha aperta il ponte per salvare la cartella: { ep, fase, campi }
+  let PONTE_AGG = "";        // l'episodio di questa pagina che il telefono ha appena salvato («Ricarica»)
   const ICO_TEL = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="4.4" y="1.4" width="7.2" height="13.2" rx="1.7"/><path d="M7 12.1h2"/></svg>';
   const PONTE_CSS = `
     .pontespia { display: inline-flex; align-items: center; gap: 7px; margin-top: 6px; padding: 4px 4px 4px 11px; border-radius: 999px;
@@ -14581,7 +14584,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // «iPhone collegato · Scollega»: finché una sessione è aperta, in ogni
   // scheda, a pannello aperto o ridotto. Chi passa davanti al PC lo vede.
   const ponteSpia = () => (PONTE_STATO && PONTE_STATO.sessione ? `<div class="pontespia" role="status" title="Il medico sta usando il pannello dall'iPhone: ogni comando finisce nel Registro">
-      <span class="pdot"></span>${ICO_TEL}<span>iPhone collegato</span><button type="button" id="ponteoff" title="Chiude la sessione dell'iPhone">Scollega</button></div>` : "");
+      <span class="pdot"></span>${ICO_TEL}<span>iPhone collegato</span><button type="button" id="ponteoff" title="Chiude la sessione dell'iPhone">Scollega</button></div>` : "")
+    // la cartella di questa pagina è stata salvata dal telefono: questa pagina è vecchia (mai ricaricata da sola)
+    + (PONTE_AGG ? `<div class="pontespia" role="status" title="Anamnesi, farmaci o allergie salvati dall'iPhone: questa pagina mostra ancora i testi di prima">
+      ${ICO_TEL}<span>Aggiornato dal telefono</span><button type="button" id="ponterica">Ricarica</button></div>` : "");
 
   const pontePaziente = (ep) => tuttiPazienti().find((p) => p.ep === ep) || null;
   // l'indirizzo della sua pagina, come il gestionale l'ha dato: solo da leggere, e di quell'episodio
@@ -14738,7 +14744,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // service worker prova la prossima).
   async function ponteEsegui(m) {
     if (classify(document) === "login") return { no: "login" };
-    if (LAVORO || PONTE_VALORI) return { no: "lavoro" };
+    if (LAVORO || PONTE_VALORI || PONTE_CARTELLA) return { no: "lavoro" };
     if (!PANNELLO) return { no: "pannello" };
     const a = m.args || {}, cmd = m.cmd;
     const fatto = (r) => {
@@ -14753,8 +14759,17 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // dimesso sul PC (archiviato): dal telefono non si tocca più
     if (p.arch) return { ok: false, errore: "Dimesso sul PC: niente inviato", dimesso: true };
     // un episodio precedente si legge, ma non si ordina e non si promemora
-    if ((cmd === "ordina" || cmd === "promemoria") && PANNELLO.pazModello().info.get(p.ep)?.prec) {
-      return { ok: false, errore: `Episodio precedente: ${cmd === "ordina" ? "per ordinare" : "per un promemoria"} apri quello di oggi` };
+    if ((cmd === "ordina" || cmd === "promemoria" || cmd === "cartellaSalva") && PANNELLO.pazModello().info.get(p.ep)?.prec) {
+      return { ok: false, errore: `Episodio precedente: ${cmd === "ordina" ? "per ordinare" : cmd === "cartellaSalva" ? "per scrivere in cartella" : "per un promemoria"} apri quello di oggi` };
+    }
+    if (cmd === "cartella") return fatto(await ponteCartella(p, a));
+    // salvare: qui solo i controlli del paziente e il suo indirizzo; il resto
+    // lo fa la scheda di sottofondo, col «Conferma» della pagina
+    if (cmd === "cartellaSalva") {
+      const url = ponteUrlPaziente(p);
+      if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+      const nomi = (Array.isArray(a.nomi) ? a.nomi : []).map(cartellaNome).join(", ");
+      return fatto({ ok: true, dati: { url, paziente: p.name }, registro: `cartella di ${p.name}: salvo ${nomi}` });
     }
     const riga = () => pontePazienti().find((x) => x.ep === p.ep) || null;
     if (cmd === "esiti") return fatto(await ponteEsiti(p));
@@ -14796,7 +14811,19 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     ponteAscolta.fatto = true;
     try {
       chrome.runtime.onMessage.addListener((m, _s, reply) => {
-        if (!m || m.t !== "ponteEsegui") return;
+        if (!m) return;
+        // prima di salvare dal telefono: un testo non salvato, qui, in quei campi?
+        if (m.t === "ponteCartellaSporca") { reply({ sporchi: cartellaSporca(m.ep, m.nomi) }); return; }
+        // salvato dal telefono: se questa è la sua pagina, lo dice (non si ricarica da sola)
+        if (m.t === "ponteCartellaAggiornata") {
+          if (!LAVORO && !PONTE_VALORI && !PONTE_CARTELLA && PANNELLO && typeof m.ep === "string" && formCartella(document, m.ep)) {
+            PONTE_AGG = m.ep;
+            if (!PANNELLO.root.activeElement) PANNELLO.render();
+          }
+          reply({ ok: true });
+          return;
+        }
+        if (m.t !== "ponteEsegui") return;
         ponteEsegui(m).then(reply, (e) => reply({ ok: false, errore: `Errore sul PC: ${e?.head || e?.message || e}` }));
         return true;
       });
@@ -14825,6 +14852,115 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       } catch (e) { esito = { ok: false, testo: `non letti: ${e?.head || e?.message || e}` }; }
     }
     ask({ t: "ponteValoriFatto", ...esito });
+  }
+
+  // ---- la cartella dal telefono: anamnesi, remota, farmaci, allergie, EO ----
+  // I campi del modulo AmbulatorioPSO della pagina del paziente. Sul telefono
+  // si scrive un campo se e solo se l'ultima lettura della pagina lo dava
+  // scrivibile (presente, né readonly né disabled, né una classe di sola
+  // lettura come JPSOReadonly): la stessa regola per tutti e cinque, e si
+  // ricontrolla sulla scheda che salva. Si salva solo col «Conferma» della
+  // pagina, in una scheda di sottofondo: mai un invio costruito qui.
+  const CARTELLA_CAMPI = [["ANAMNESI", "Anamnesi"], ["MALATTIE_PREGRESSE", "Anamnesi remota"], ["FARMACI_ASSUNTI", "Farmaci"], ["ALLERGIE", "Allergie"], ["ESAME_OBIETTIVO", "Esame obiettivo"]];
+  const cartellaNome = (n) => (CARTELLA_CAMPI.find(([k]) => k === n) || [n, n])[1];
+  const normTesto = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+  const formCartella = (doc, ep) => [...doc.querySelectorAll('form[name="AmbulatorioPSO"]')]
+    .find((f) => !!ep && param(f.getAttribute("action") || "", "EPISODIO_ID") === ep) || null;
+  const cartellaChiusa = (ta) => !ta || ta.readOnly || ta.disabled || ta.hasAttribute("readonly") || ta.hasAttribute("disabled") || /readonly/i.test(ta.className || "");
+  // (i testi come la pagina li ha caricati: defaultValue, non quello che qualcuno sta scrivendo)
+  function cartellaPagina(doc, ep) {
+    const f = formCartella(doc, ep);
+    if (!f) return null;
+    const conferma = !!f.querySelector('input[type="submit"][name="Update"]');
+    const campi = [];
+    for (const [nome] of CARTELLA_CAMPI) {
+      const ta = f.querySelector(`textarea[name="${nome}"]`);
+      if (ta) campi.push({ nome, v: ta.defaultValue, ro: !conferma || cartellaChiusa(ta) });
+    }
+    return campi.length ? { ep, letto: Date.now(), campi } : null;
+  }
+  // Ogni volta che il medico apre la pagina di un paziente: la sua lettura va
+  // al service worker (che la tiene in memoria, solo con un iPhone associato).
+  function cartellaLettaQui(ep) {
+    if (!hasExt() || !ep) return;
+    const c = cartellaPagina(document, ep);
+    if (c) ask({ t: "ponteCartellaLetta", ep, cartella: c }).catch(() => {});
+  }
+  // Il comando `cartella`: l'ultima lettura (data dal service worker), o la
+  // pagina del paziente riletta (solo lettura, e solo se è del suo episodio).
+  async function ponteCartella(p, a) {
+    const m = a.memo;
+    if (!a.rileggi && m && m.ep === p.ep && Array.isArray(m.campi)) return { ok: true, dati: m, registro: `cartella di ${p.name}` };
+    const url = ponteUrlPaziente(p);
+    if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+    const { doc, url: fin } = await fetchDoc(url, {});
+    if (classify(doc) === "login") return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true };
+    if (findEpisodeId(doc, fin) !== p.ep) return { ok: false, errore: "La pagina del paziente sul PC è di un altro episodio: non mostro niente" };
+    const c = cartellaPagina(doc, p.ep);
+    if (!c) return { ok: false, errore: "Nella pagina del paziente sul PC non c'è la cartella" };
+    return { ok: true, dati: c, nuova: true, registro: `cartella di ${p.name} (riletta)` };
+  }
+  // In una scheda del medico: c'è, per questo paziente, un testo cambiato e
+  // non salvato in uno di quei campi? (rispetto a come la pagina l'ha caricato)
+  function cartellaSporca(ep, nomi) {
+    if (LAVORO || PONTE_VALORI || PONTE_CARTELLA) return [];
+    const f = formCartella(document, ep);
+    if (!f) return [];
+    return (Array.isArray(nomi) ? nomi : []).filter((n) => {
+      const ta = f.querySelector(`textarea[name="${n}"]`);
+      return !!ta && normTesto(ta.value) !== normTesto(ta.defaultValue);
+    });
+  }
+  // «Ricarica» sulla pill: la pagina del paziente, con l'indirizzo che il
+  // gestionale ha dato (una GET: mai il modulo inviato di nuovo)
+  function ponteRicarica() {
+    const u = ponteUrlPaziente(pontePaziente(PONTE_AGG));
+    location.assign(u || location.href);
+  }
+  // La scheda aperta dal ponte per salvare. Prima volta («compila»): ogni
+  // campo dev'essere ancora scrivibile e uguale a quello che il telefono ha
+  // visto (`prima`) — se no niente, tutti o nessuno —; poi si scrivono i testi
+  // e si clicca il «Conferma» della pagina. Dopo il ricaricamento («inviato»):
+  // si rilegge la pagina e si dice, campo per campo, se c'è il testo nuovo.
+  async function ponteCartellaQui() {
+    const c = PONTE_CARTELLA;
+    const fine = (esito) => ask({ t: "ponteCartellaFatto", ...esito });
+    if (!c || c.fase === "perso" || !c.campi) return fine({ ok: false, testo: "la scheda non sa più che cosa salvare" });
+    const dopo = c.fase === "inviato";
+    if (classify(document) !== "patient" || findEpisodeId(document, location.href) !== c.ep || !formCartella(document, c.ep)) {
+      return fine({ ok: false, incerto: dopo, testo: dopo ? "dopo «Conferma» il gestionale non ha mostrato la pagina del paziente" : "la scheda ha aperto un'altra pagina: niente salvato" });
+    }
+    const f = formCartella(document, c.ep);
+    const nomi = Object.keys(c.campi);
+    if (dopo) {
+      const letta = cartellaPagina(document, c.ep);
+      const verificati = Object.fromEntries(nomi.map((n) => {
+        const x = letta.campi.find((y) => y.nome === n);
+        return [n, !!x && normTesto(x.v) === normTesto(c.campi[n].dopo)];
+      }));
+      return fine({ ok: nomi.every((n) => verificati[n]), verificati, letta });
+    }
+    const btn = f.querySelector('input[type="submit"][name="Update"]');
+    if (!btn) return fine({ ok: false, testo: "nella pagina non c'è «Conferma»" });
+    const chiusi = [], cambiati = [];
+    for (const n of nomi) {
+      const ta = f.querySelector(`textarea[name="${n}"]`);
+      if (cartellaChiusa(ta)) chiusi.push(n);
+      else if (normTesto(ta.value) !== normTesto(c.campi[n].prima)) cambiati.push(n);
+    }
+    // (niente scritto, niente cliccato: e la lettura fresca va al telefono)
+    if (chiusi.length) return fine({ ok: false, chiusi, testo: "non più modificabile", letta: cartellaPagina(document, c.ep) });
+    if (cambiati.length) return fine({ ok: false, cambiati, testo: "cambiato sul PC", letta: cartellaPagina(document, c.ep) });
+    // il service worker lo annota PRIMA del clic: la pagina che torna si verifica, non si ricompila
+    const via = await ask({ t: "ponteCartellaInvio" });
+    if (!via || !via.ok) return;
+    for (const n of nomi) {
+      const ta = f.querySelector(`textarea[name="${n}"]`);
+      ta.value = c.campi[n].dopo;
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      ta.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    btn.click();   // il «Conferma» della pagina: il modulo lo manda il browser, come sempre
   }
 
   // ==================================================================== BOOT
@@ -15047,6 +15183,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (chi && chi.fogli) return;
     LAVORO = chi && chi.lavoro ? chi.lavoro : null;
     PONTE_VALORI = chi && chi.ponteValori ? chi.ponteValori : null;
+    PONTE_CARTELLA = chi && chi.ponteCartella ? chi.ponteCartella : null;
     ponteAscolta();
     scadenzaQuesiti();
     const pageType = classify(document);
@@ -15068,6 +15205,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const aperti = LAVORO ? 0 : (chi?.ordini || []).length;
       if (LAVORO) ask({ t: "ordineAggiorna", id: LAVORO.id, stato: "errore", vista: { tag: "Sessione scaduta", testo: "Rifai l'accesso, poi controlla il carrello", tono: "err", sessione: true } });
       if (PONTE_VALORI) ask({ t: "ponteValoriFatto", ok: false, testo: "il gestionale chiede di rifare l'accesso" });
+      if (PONTE_CARTELLA) ask({ t: "ponteCartellaFatto", ok: false, incerto: PONTE_CARTELLA.fase === "inviato", testo: "il gestionale chiede di rifare l'accesso" });
       // e la sessione del ponte verso l'iPhone si chiude (l'associazione resta: rientrati, il telefono riapre)
       if (hasExt()) ask({ t: "ponteLogin" });
       forgetAll();
@@ -15087,6 +15225,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // opzioni di PsoPsoImposta; un passaggio d'area a metà va avanti (e la
     // pagina se ne va: niente pannello); la lista smart diventa cliccabile.
     // (La scheda di un ordine in sottofondo non legge niente di tutto questo.)
+    // la scheda che salva la cartella dal telefono: niente pannello, fa quello e basta
+    if (PONTE_CARTELLA) { ponteCartellaQui().catch(() => ask({ t: "ponteCartellaFatto", ok: false, testo: "errore nella scheda" })); return; }
     migraStanza();
     if (!LAVORO && !PONTE_VALORI) {
       smartUrlQui(document, location.href);   // il link della lista smart, quando la pagina lo porta
@@ -15207,6 +15347,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (panel.entry && (panel.entry.labUrl || panel.entry.radioUrl) && !LAVORO && !PONTE_VALORI) {
         const an = anagraficaPagina(document);
         rememberPatient(panel.episodeId, nomeInPagina(), location.href, triageDi(document), an.eta, an.sesso, improntaNascita(nascitaInPagina(document)));
+        cartellaLettaQui(panel.episodeId);   // per il telefono: la cartella come la pagina l'ha caricata
         iconaCf(document);
         // Il portale clinico si apre da QUESTO link, sulla pagina di QUESTO
         // paziente: quel clic è l'identità, ed è esatta. Si annota qui, prima

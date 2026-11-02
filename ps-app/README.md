@@ -1142,6 +1142,10 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   ordine rimandato parte una volta sola), a meno che non lo veda già nato sul PC. Niente ordini su un episodio precedente o per un paziente
   dimesso sul PC. Un ordine finito male si vede da ogni pagina del telefono, finché non lo chiudi.
   Sul PC la striscia dice «dall'iPhone».
+- **Cartella dal telefono**: anamnesi, remota, farmaci, allergie ed esame obiettivo, scrivibili dove
+  la pagina del paziente li lascia scrivere; «Salva» li scrive col «Conferma» della pagina, in una
+  scheda di sottofondo, e rilegge. Mai sopra un testo cambiato sul PC o non ancora salvato in una
+  scheda; la pagina aperta di quel paziente dice «Aggiornato dal telefono · Ricarica».
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
   Scollega»**, e ogni comando va nel **Registro**. Dopo **20 minuti senza comandi** del medico la
   sessione si chiude da sola; dal telefono si riapre con un tocco.

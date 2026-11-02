@@ -204,6 +204,17 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .cta button:disabled, .cta button[aria-disabled="true"] { background: var(--spento); }
 .cta button.arma { background: var(--ambrap); }
 .cta .perche { font-size: 12.5px; color: var(--grigio); text-align: center; margin-top: 6px; }
+.cta .perche.err { color: var(--rosso); font-weight: 650; font-size: 14px; }
+.cta .perche.err:first-child { margin-top: 0; }
+
+/* --- la cartella: un campo sotto l'altro, alto quanto il suo testo ---- */
+.cc { display: block; padding: 8px 14px 10px; border-top: 1px solid var(--linea); }
+.cc > span { display: block; font-size: 12.5px; font-weight: 650; color: var(--grigio); margin-bottom: 4px; }
+.cc textarea { display: block; width: 100%; min-height: 44px; resize: none; overflow: hidden; border: 1px solid var(--campo); border-radius: 10px; background: var(--carta);
+               font-size: 16px; line-height: 1.45; padding: 9px 11px; outline: none; }
+.cc textarea:focus { border-color: var(--blu); }
+/* di sola lettura: niente bordo, fondo grigio — si legge, non si scrive */
+.cc.ro textarea { border-color: transparent; background: var(--fondo); color: var(--testo2); }
 
 /* --- ordini ------------------------------------------------------------ */
 .ord { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; margin-bottom: 10px; background: var(--carta); border: 1px solid var(--bordo); }
