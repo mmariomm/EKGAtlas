@@ -166,8 +166,13 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .val td.vuota { color: var(--campo); }
 .val .pct { color: var(--grigio); font-weight: 500; font-size: 12px; }
 
-.ref { display: block; width: 100%; min-height: 44px; text-align: left; border: 0; background: none; padding: 12px 14px; border-top: 1px solid var(--linea); }
-.ref:first-child { border-top: 0; }
+.refw { position: relative; border-top: 1px solid var(--linea); }
+.refw:first-child { border-top: 0; }
+.ref { display: block; width: 100%; min-height: 44px; text-align: left; border: 0; background: none; padding: 12px 14px; }
+.ref.conpdf { padding-right: 72px; }
+.pdf { position: absolute; right: 10px; top: 0; min-width: 52px; min-height: 44px; border: 0; background: none; color: var(--blu); font-weight: 700; font-size: 13.5px; border-radius: 9px; }
+.pdf:active { background: var(--fondo); }
+.pdf:disabled { color: var(--grigio2); }
 .ref .r1 { display: flex; gap: 10px; align-items: baseline; }
 .ref .q { flex: none; font-size: 13px; color: var(--grigio); font-variant-numeric: tabular-nums; min-width: 82px; }
 .ref .t { flex: 1; font-weight: 600; min-width: 0; }
@@ -180,22 +185,21 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .q-w input { width: 100%; min-height: 44px; border: 1px solid var(--campo); border-radius: 12px; padding: 12px 14px; font-size: 16px; background: var(--carta); }
 .q-w input:focus, .addprom input:focus { outline: 2px solid var(--blu); outline-offset: -1px; border-color: transparent; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.chip { min-height: 44px; border: 1px solid var(--campo); background: var(--carta); border-radius: 999px; padding: 0 14px; font-size: 14.5px; font-weight: 600; }
+.chip { min-height: 44px; min-width: 44px; border: 1px solid var(--campo); background: var(--carta); border-radius: 999px; padding: 0 13px; font-size: 14px; font-weight: 600; }
 .chip.on { background: var(--azione); border-color: var(--azione); color: #fff; }
-.gruppo { padding: 6px 14px 14px; }
+.gruppo { padding: 2px 14px 12px; }
 .gruppo + .gruppo { border-top: 1px solid var(--linea); }
-.gruppo h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--blu); margin: 10px 0 8px; }
-.griglia { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
-.esame { display: flex; align-items: center; gap: 9px; text-align: left; border: 1px solid var(--bordo); background: var(--carta2); border-radius: 12px; padding: 10px 11px; min-height: 48px; font-size: 14.5px; font-weight: 600; }
-.esame .box { flex: none; width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--campo); display: grid; place-items: center; color: transparent; font-size: 13px; }
-.esame.on { border-color: var(--blu); background: var(--blu-chiaro); }
-.esame.on .box { background: var(--azione); border-color: var(--azione); color: #fff; }
+.gruppo h3 { font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--grigio); margin: 10px 0 0; }
+/* gli esami: pillole larghe quanto il nome, che vanno a capo da sole */
+.griglia { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 8px; }
+.esame { min-height: 44px; min-width: 44px; max-width: 100%; border: 1px solid var(--bordo); background: var(--carta2); border-radius: 999px; padding: 6px 13px; font-size: 14px; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.esame.on { background: var(--azione); border-color: var(--azione); color: #fff; }
 
 .cta { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; padding: 10px var(--dx) calc(10px + env(safe-area-inset-bottom)) var(--sx);
        background: var(--vetro); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border-top: 1px solid var(--bordo); }
 .cta .sel { font-size: 13px; color: var(--grigio); margin: 0 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cta button { width: 100%; min-height: 54px; border: 0; border-radius: 14px; background: var(--azione); color: #fff; font-weight: 700; font-size: 17px; padding: 14px; overflow-wrap: anywhere; }
-.cta button:disabled { background: var(--spento); }
+.cta button:disabled, .cta button[aria-disabled="true"] { background: var(--spento); }
 .cta button.arma { background: var(--ambrap); }
 .cta .perche { font-size: 12.5px; color: var(--grigio); text-align: center; margin-top: 6px; }
 

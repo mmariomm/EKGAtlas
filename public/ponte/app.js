@@ -19,7 +19,8 @@
   const $app = document.getElementById("app");
   const CHIAVE = "psassist.ponte.v1";
   const TEMPO = 30e3;
-  const INATTIVO = 20 * 60e3;        // come sul PC: 20 minuti senza comandi del medico e la sessione è finita
+  let pdfAperto = null;              // il PDF di un referto aperto sul telefono: { url (blob:), w, t }
+  const INATTIVO = 20 * 60e3;       // come sul PC: 20 minuti senza comandi del medico e la sessione è finita
   const DURATA_MAX = 14 * 3600e3;    // un link non vale più di un turno, qualunque ora porti
   const VERDE_MAX = 2 * 60e3;        // un ordine finito bene se ne va da solo, come sulla striscia del PC
   const BATTITO = 20e3, PONG = 10e3; // la presa parla ogni 20 secondi; senza «pong» in 10 è morta
@@ -62,6 +63,7 @@
     S.pazienti = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.bozze.clear(); S.promTesto = ""; S.arma = null;
     S.notaAperta = ""; S.promAperto = "";
+    chiudiPdf();
     for (const t of S.fatti.values()) clearTimeout(t);
     S.fatti.clear();
     S.vista = { nome: "lista", ep: "" };
@@ -384,6 +386,48 @@
     } catch (e) { errore(e); }
     S.occupato.delete("valori" + ep); render();
   }
+  // Un referto PDF salvato sul PC: arriva a pezzi dalla stessa sessione
+  // cifrata, si ricompone e si controlla; poi il visore del telefono lo apre
+  // da un blob: in memoria. Mai su disco, mai da un indirizzo di rete: il
+  // blob si revoca quando la finestra si chiude, a ogni nuovo PDF, uscendo.
+  const PDF_MAX = 15e6;
+  function chiudiPdf() {
+    if (!pdfAperto) return;
+    clearInterval(pdfAperto.t);
+    try { URL.revokeObjectURL(pdfAperto.url); } catch { /* già via */ }
+    pdfAperto = null;
+  }
+  async function apriPdf(ep, id, misura) {
+    if (misura > PDF_MAX) { avviso("PDF troppo grande: aprilo sul PC", "err"); return; }
+    if (S.occupato.has("pdf" + id)) return;
+    // la finestra si apre subito, dentro il tocco: dopo l'attesa iOS non la lascerebbe aprire
+    const w = window.open("", "_blank");
+    if (!w) { avviso("Consenti i popup per aprire il PDF", "err"); return; }
+    S.occupato.add("pdf" + id); render();
+    try {
+      const parti = [];
+      let n = 1, size = 0, tot = 0;
+      for (let i = 0; i < n; i++) {
+        const d = await chiedi("pdf", { ep, ref: id, i }, 40e3);
+        if (!d || d.i !== i || typeof d.b !== "string" || !Number.isSafeInteger(d.n) || d.n < 1 || d.n > 64 || !Number.isSafeInteger(d.size) || d.size < 1 || d.size > PDF_MAX
+          || (i && (d.n !== n || d.size !== size))) throw new Error("PDF non arrivato bene: riprova");
+        if (!i) { n = d.n; size = d.size; }
+        const bin = atob(d.b), u = new Uint8Array(bin.length);
+        for (let k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
+        tot += u.length; parti.push(u);
+      }
+      if (tot !== size || String.fromCharCode(...parti[0].subarray(0, 4)) !== "%PDF") throw new Error("PDF non arrivato bene: riprova");
+      chiudiPdf();
+      const url = URL.createObjectURL(new Blob(parti, { type: "application/pdf" }));
+      pdfAperto = { url, w, t: setInterval(() => { if (w.closed) chiudiPdf(); }, 1500) };
+      w.location.href = url;
+    } catch (e) {
+      try { w.close(); } catch { /* ignore */ }
+      errore(e);
+    }
+    S.occupato.delete("pdf" + id); render();
+  }
+  window.addEventListener("pagehide", chiudiPdf);
   async function salvaNota(ep) {
     const testo = S.bozze.get(ep);
     const p = paziente(ep);
@@ -649,8 +693,9 @@
       ${e.tabella ? tabellaHtml(e.tabella) : legge ? "" : `<div class="vuoto stretto">Il PC non ha ancora letto valori per questo paziente.</div>`}</div>`;
     const referti = e.referti.length ? `<div class="carta">${e.referti.map((r) => {
       const aperto = S.aperti.has(r.id);
-      return `<button class="ref" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span></span>${
-        aperto ? (r.testo ? `<div class="testo">${esc(r.testo)}</div>` : `<div class="manca">${r.lungo ? "Testo troppo lungo per il telefono: leggilo sul PC." : "Testo non ancora letto sul PC: aprilo una volta dal pannello (Esiti), poi è qui."}</div>`) : ""}</button>`;
+      return `<div class="refw"><button class="ref${r.pdf ? " conpdf" : ""}" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span></span>${
+        aperto ? (r.testo ? `<div class="testo">${esc(r.testo)}</div>` : `<div class="manca">${r.lungo ? "Testo troppo lungo per il telefono: leggilo sul PC." : "Testo non ancora letto sul PC: aprilo una volta dal pannello (Esiti), poi è qui."}</div>`) : ""}</button>${
+        r.pdf ? `<button class="pdf" data-a="pdf" data-id="${esc(r.id)}" data-n="${Number(r.pdf) || 0}" ${S.occupato.has("pdf" + r.id) ? "disabled" : ""}>PDF</button>` : ""}</div>`;
     }).join("")}</div>` : "";
     return `${valori}${referti}${e.nota ? `<p class="piede">${esc(e.nota)}</p>` : ""}`;
   }
@@ -668,7 +713,7 @@
     const gruppi = c.gruppi.map((g) => `<div class="gruppo"><h3>${esc(g.nome)}</h3>${g.profili.length ? `<div class="chips">${g.profili.map((pr, i) => {
       const on = pr.esami.every((k) => s.esami.has(k));
       return `<button class="chip${on ? " on" : ""}" data-a="profilo" data-g="${esc(g.nome)}" data-i="${i}">${esc(pr.nome)}</button>`;
-    }).join("")}</div>` : ""}<div class="griglia">${g.esami.map((k) => `<button class="esame${s.esami.has(k) ? " on" : ""}" data-a="esame" data-k="${esc(k)}"><span class="box">✓</span>${esc(c.nomi[k] || k)}</button>`).join("")}</div></div>`).join("");
+    }).join("")}</div>` : ""}<div class="griglia">${g.esami.map((k) => `<button class="esame${s.esami.has(k) ? " on" : ""}" data-a="esame" data-k="${esc(k)}">${esc(c.nomi[k] || k)}</button>`).join("")}</div></div>`).join("");
     return `<div class="carta q-w"><input id="quesito" type="text" enterkeyhint="done" autocomplete="off" placeholder="Quesito diagnostico" value="${esc(s.q)}"><div class="chips">${quesiti}</div></div>
       <div class="carta">${gruppi}</div>`;
   }
@@ -685,7 +730,7 @@
     const perche = bloccato ? "Prima di un altro ordine, il PC dice se quello di prima è partito"
       : n && !s.q.trim() ? "Scrivi il quesito diagnostico" : rx && lab ? "Due richieste: il laboratorio si conferma da solo, la radiologia resta nel carrello del PC" : "";
     const nomi = [...s.esami].map((k) => c.nomi[k] || k).join(", ");
-    return `<div class="cta">${n ? `<div class="sel">${esc(nomi)}</div>` : ""}<button id="ordina" data-a="ordina" class="${armato ? "arma" : ""}" ${!n || !s.q.trim() || occupato || bloccato ? "disabled" : ""}>${esc(etichetta)}</button>${
+    return `<div class="cta">${n ? `<div class="sel">${esc(nomi)}</div>` : ""}<button id="ordina" data-a="ordina" class="${armato ? "arma" : ""}" ${occupato || bloccato ? "disabled" : !n || !s.q.trim() ? "aria-disabled=\"true\"" : ""}>${esc(etichetta)}</button>${
       perche ? `<div class="perche">${esc(perche)}</div>` : ""}</div>`;
   }
   // La nota e i promemoria: chiusi finché non servono («+ Nota»).
@@ -747,7 +792,11 @@
   $app.addEventListener("click", (e) => {
     const b = e.target.closest("[data-a]");
     lascia();   // il tocco è arrivato: i ridisegni rimasti in attesa, poi il gesto
-    if (!b || b.disabled) return;
+    if (!b) return;
+    if (b.disabled) return;
+    // il bottone d'ordine è spento perché manca il quesito: il cursore va lì
+    // (aria-disabled e non disabled: un bottone disabled non riceve il tocco)
+    if (b.getAttribute("aria-disabled") === "true") { if (b.id === "ordina" && selDi(S.vista.ep).esami.size && !selDi(S.vista.ep).q.trim()) fuocoSu("quesito"); return; }
     const a = b.dataset.a, ep = S.vista.ep;
     if (a !== "menu" && S.menu) S.menu = false;
     if (a === "menu") { S.menu = !S.menu; render(); }
@@ -767,6 +816,7 @@
     else if (a === "scheda") { S.scheda = b.dataset.s; S.arma = null; render(); }
     else if (a === "valori") aggiornaValori(ep);
     else if (a === "referto") { if (S.aperti.has(b.dataset.id)) S.aperti.delete(b.dataset.id); else S.aperti.add(b.dataset.id); render(); }
+    else if (a === "pdf") apriPdf(ep, b.dataset.id, Number(b.dataset.n));
     else if (a === "quesito") { scegliQuesito(ep, b.dataset.q); S.arma = null; render(); }
     else if (a === "esame") { togglaEsame(ep, b.dataset.k); S.arma = null; render(); }
     else if (a === "profilo") {
