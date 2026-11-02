@@ -5902,6 +5902,114 @@ async function scenarioWorkup(browser) {
   await context.close();
 }
 
+// Aprire un paziente: sugli Esiti se ha qualcosa da guardare, sulle Richieste
+// se no. Fino a tre prelievi il Lab è una griglia di blocchi (uno per sezione,
+// affiancati, nessuna cornice che scorre per conto suo); da quattro la tabella
+// di sempre. Un esame di laboratorio già arrivato in parte non ha orologio.
+async function scenarioAperturaEGriglia(browser) {
+  const scen = "apertura-griglia";
+  const p2 = (n) => String(n).padStart(2, "0");
+  const gestionale = (ms) => { const d = new Date(Date.now() - ms); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:00.0`; };
+  const shotSide = async (page, nome) => { if (process.env.PSA_SIDE) await page.screenshot({ path: join(process.env.PSA_SIDE, nome + ".png") }).catch(() => {}); };
+
+  // 1. niente esiti: si atterra sulle Richieste
+  {
+    const mock = createMock({ noReferti: true });
+    const { context, page } = await newPage(browser, mock, { finestra: "centro" });
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.goto(mock.patientUrl);
+    await page.waitForSelector("#psassist-host .card", { state: "attached" });
+    await page.waitForSelector("#psassist-host .seg", { timeout: 10000 });
+    check(scen, (await $panel(page, '[data-seg="richieste"].on').count()) === 1 && (await $panel(page, "#q").count()) === 1,
+      "un paziente senza esiti si apre sulle Richieste");
+    await shotSide(page, "paz-richieste-default");
+    await context.close();
+  }
+
+  // il Lab con più sezioni (elettroliti, organi, emogas, coagulazione), e N prelievi
+  const piu = (url, html) => /RcsAccessiRisultatiElenco/.test(url) ? html.replace("</table>accesso", `${[
+    ["Sodio", "131", "mmol/L", "135 - 145"], ["Potassio", "5.9", "mmol/L", "3.5 - 5.1"], ["Creatinina", "1.5", "mg/dL", "0.6 - 1.2"],
+    ["pH", "7.31", "", "7.35 - 7.45"], ["pCO2", "48", "mmHg", "35 - 45"], ["Lattati", "2.4", "mmol/L", "0.5 - 2.2"],
+    ["PT INR", "1.1", "", "0.8 - 1.2"], ["Glucosio", "195", "mg/dL", "70 - 110"]].map(([n, v, u, r]) =>
+    `<tr><td class="AFCDataTD">${n}&nbsp;</td><td class="AFCDataTD">${v}</td><td class="AFCDataTD">${u}</td><td class="AFCDataTD">${r}</td><td class="AFCDataTD">definitivo</td><td class="AFCDataTD">23/08/2026 07:47</td></tr>`).join("")}</table>accesso`) : html;
+  const prelievo = (ep, id, when) => `<table><tr><td class="AFCDataTD" title="0-320 EMOCROMOCITOMETRICO URGENTE (POCT1502)">
+    <a class="AFCDataLink" href="menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${ep}#" title="Visualizza Risultati" onclick="window.open('/sa4rcs/restrict/RcsAccessiRisultatiElenco.do?RCS_ACCESSO_ID=${id}','*TEST00001','height=500,width=800');"><img alt="risultati"></a>
+    <input type="hidden" name="DATA_ORD" value="${when}"></td></tr></table>`;
+  // le richieste del diario: una di laboratorio già arrivata in parte, una che aspetta ancora
+  const rich = (icone, desc, when) => `<tr id="RICH"><td class="AFCDataTD">${icone.map((t) => t === "Visualizza Risultati"
+    ? `<a href="#" title="${t}"><img src="x.png"></a>` : `<img title="${t}" src="x.png">`).join("")}</td>
+    <td class="AFCDataTD" title="${desc}">${desc}<input type="hidden" name="TIPO" value="RICH"><input type="hidden" name="DATA_ORD" value="${when}"><input type="hidden" name="DESCRIZIONE_TITLE" value="${desc}"></td></tr>`;
+  const geometria = (page) => page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    const blocchi = [...r.querySelectorAll(".esiti tbody.stblk")].map((b) => { const x = b.getBoundingClientRect(); return { l: Math.round(x.left), t: Math.round(x.top), w: Math.round(x.width) }; });
+    // nessun elemento dentro gli Esiti con una sua barra verticale
+    const scorre = [...r.querySelectorAll(".esiti, .esiti *")].filter((e) => {
+      const s = getComputedStyle(e);
+      return /auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1;
+    }).map((e) => e.className || e.tagName);
+    return { blocchi, scorre, griglia: r.querySelectorAll(".stgriglia").length, tbody: r.querySelectorAll(".esiti .sttab tbody").length };
+  });
+
+  // 2. un prelievo, poi due: la griglia
+  for (const n of [1, 2]) {
+    const mock = createMock({ withResults: true });
+    const ep = new URL(mock.patientUrl).searchParams.get("EPISODIO_ID");
+    conPagina(mock, (html) => {
+      if (!html.includes("Storico Dati Clinici")) return html;
+      if (n === 1) html = html.replace(/<tr>\s*<td class="AFCDataTD"[^>]*>\s*<a[^>]*RCS_ACCESSO_ID=20260010035301[\s\S]*?<\/tr>/, "");
+      return html.replace("</body>", `<table>${rich(["Laboratorio", "Visualizza Risultati"], "0-410 TROPONINA ULTRASENSIBILE; 0-150 CREATININEMIA", gestionale(382 * 60e3))}${
+        rich(["Laboratorio"], "0-600 PROCALCITONINA", gestionale(80 * 60e3))}</table></body>`);
+    });
+    const { context, page } = await newPage(browser, mock, { finestra: "centro", riscrivi: piu });
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.goto(mock.patientUrl);
+    await page.waitForSelector("#psassist-host .card", { state: "attached" });
+    if (n === 1) {
+      check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1, "un paziente con esiti (valori in pagina, referti) si apre sugli Esiti");
+      // orologi onesti: il laboratorio già arrivato in parte non corre
+      const attese = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wulab .wuwait")].map((w) => ({
+        t: w.innerText.replace(/\s+/g, " ").trim(), bg: getComputedStyle(w).backgroundColor, bordo: getComputedStyle(w).borderLeftWidth, h: Math.round(w.getBoundingClientRect().height) })));
+      const parz = attese.find((a) => /TROPONINA/.test(a.t)), att = attese.find((a) => /PROCALCITONINA/.test(a.t));
+      check(scen, !!parz && /^parziale \d\d:\d\d TROPONINA/.test(parz.t) && !/⏳|\dh\d\d/.test(parz.t),
+        `lab arrivato in parte: «parziale HH:MM», nessun orologio (got: ${parz && parz.t})`);
+      check(scen, !!att && /⏳/.test(att.t) && /1h2\d/.test(att.t) && /richiesto/.test(att.t), `quello che aspetta ancora tiene il suo orologio (got: ${att && att.t})`);
+      check(scen, attese.length === 2 && attese.every((a) => (a.bg === "rgba(0, 0, 0, 0)" || a.bg === "transparent") && parseFloat(a.bordo) > 0 && a.h <= 22),
+        `una riga ciascuna, niente fascia gialla, un segno a sinistra (got: ${JSON.stringify(attese.map((a) => [a.bg, a.bordo, a.h]))})`);
+    }
+    await $panel(page, "#risall").click();
+    await attendiTabella(page, n);
+    const g = await geometria(page);
+    const affiancati = g.blocchi.some((a) => g.blocchi.some((b) => b !== a && Math.abs(a.t - b.t) < 3 && b.l >= a.l + a.w - 1));
+    check(scen, g.griglia === 1 && g.blocchi.length >= 3 && affiancati,
+      `${n} ${n === 1 ? "prelievo" : "prelievi"}: una sezione per blocco, affiancati (blocchi ${JSON.stringify(g.blocchi)})`);
+    check(scen, !g.scorre.length, `${n} ${n === 1 ? "prelievo" : "prelievi"}: dentro gli Esiti niente scorre per conto suo (got: ${g.scorre.join(", ") || "niente"})`);
+    const ore = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".esiti tbody.stblk")]
+      .map((b) => [...b.querySelectorAll("tr.stsez td")].length));
+    check(scen, ore.every((k) => k === n), `ogni blocco con le ore dei suoi ${n} prelievi in testa (got: ${ore.join(",")})`);
+    check(scen, (await $panel(page, ".wusum .wuval").count()) >= 1 && (await $panel(page, ".sttab td.fuori").count()) >= 1, "la riga in cima e i fuori range restano");
+    await shotSide(page, n === 1 ? "paz-esiti-1col" : "paz-esiti-2col");
+    await context.close();
+  }
+
+  // 3. quattro prelievi: la tabella di sempre
+  {
+    const mock = createMock({ withResults: true });
+    const ep = new URL(mock.patientUrl).searchParams.get("EPISODIO_ID");
+    conPagina(mock, (html) => html.includes("Storico Dati Clinici")
+      ? html.replace("</body>", `${prelievo(ep, "20260010030001", "2026-08-22 18:05:00.0")}${prelievo(ep, "20260010020001", "2026-08-22 14:40:00.0")}</body>`) : html);
+    const { context, page } = await newPage(browser, mock, { finestra: "centro", riscrivi: piu });
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.goto(mock.patientUrl);
+    await page.waitForSelector("#psassist-host .card", { state: "attached" });
+    await $panel(page, "#risall").click();
+    await attendiTabella(page, 4);
+    const g = await geometria(page);
+    check(scen, g.griglia === 0 && g.blocchi.length === 0 && g.tbody === 1, `4 prelievi: una tabella sola, come prima (griglia ${g.griglia}, tbody ${g.tbody})`);
+    await shotSide(page, "paz-esiti-4col");
+    await context.close();
+  }
+}
+
 async function scenarioEsitiLayout(browser) {
   const scen = "esiti-layout";
   const mock = createMock({ withResults: true });
@@ -6692,6 +6800,7 @@ const scenarios = [
   ["pill ridotta: il promemoria di un altro paziente dice di chi è", scenarioPillAltroPaziente],
   ["finestra: tetto di 1150 px, schede ferme", scenarioFinestraLarga],
   ["esiti: il Lab per primo, un fondo per sezione, bottone grande, unità", scenarioEsitiLayout],
+  ["apertura: Esiti o Richieste, Lab in griglia fino a tre prelievi, orologi onesti", scenarioAperturaEGriglia],
   ["esiti: il workup — fuori range in cima, Lab · ECG · Imaging, attese, ↗ PDF", scenarioWorkup],
   ["menu ⋯: tempi, riferimenti, comandi rari, niente paragrafi, ricarica", scenarioMenuAltro],
   ["no-patient page has no exams", scenarioNoPatientPage],

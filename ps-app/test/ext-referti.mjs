@@ -34,8 +34,11 @@ const mock = createMock({});
 // né laboratorio né radiologia; e si aggiungono due radiologie, così i referti
 // da salvare sono quattro (la fila ne scarica al massimo due insieme). Il mock
 // non si tocca: si cambia la pagina al volo.
-const rigaRis = (id, quando, nome) => `<tr><td class="AFCDataTD" title="${nome}" valign="top"><a href="#" title="REFERTO" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*TEST00001&REFERTO_SISTEMA=HL7RIS&REFERTO_ID=${id}','HL7RIS')"><img alt="referto"></a>
+const rigaRef = (sis, id, quando, nome) => `<tr><td class="AFCDataTD" title="${nome}" valign="top"><a href="#" title="REFERTO" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*TEST00001&REFERTO_SISTEMA=${sis}&REFERTO_ID=${id}','${sis}')"><img alt="referto"></a>
   ${nome}<input type="hidden" name="DATA_ORD" value="${quando}"><input type="hidden" name="DESCRIZIONE_TITLE" value="${nome}"></td></tr>`;
+const rigaRis = (id, quando, nome) => rigaRef("HL7RIS", id, quando, nome);
+// righe in più che la pagina del paziente mostra da un certo momento (ECG nuovi)
+let extra = [];
 {
   const h = mock.handle;
   mock.handle = (req) => {
@@ -43,7 +46,8 @@ const rigaRis = (id, quando, nome) => `<tr><td class="AFCDataTD" title="${nome}"
     return Buffer.isBuffer(out.body) && /html/.test(out.headers["content-type"] || "")
       ? { ...out, body: Buffer.from(out.body.toString("latin1").replace(/REFERTO_SISTEMA=HL7LIS(&REFERTO_ID=bbbb2222)/g, "REFERTO_SISTEMA=HL7CONS$1")
         .replace(/(REFERTO_ID=cccc3333[\s\S]*?<\/tr>)/, `$1${rigaRis("dddd4444-0000-0000-0000-000000000004", "2026-08-22 03:10:00.0", "69-140 RX TORACE (A6900)")}${
-          rigaRis("eeee5555-0000-0000-0000-000000000005", "2026-08-22 04:20:00.0", "69-210 ECOGRAFIA ADDOME (A6921)")}`), "latin1") }
+          rigaRis("eeee5555-0000-0000-0000-000000000005", "2026-08-22 04:20:00.0", "69-210 ECOGRAFIA ADDOME (A6921)")}${
+          extra.map((x) => rigaRef("HL7AMB", x.id, x.quando, "8-6 ELETTROCARDIOGRAMMA (84)")).join("")}`), "latin1") }
       : out;
   };
 }
@@ -91,18 +95,126 @@ await ctx.route("https://smarthealth.multimedica.it/**", route);
 const page = await ctx.newPage();
 await page.goto(mock.patientUrl);
 await page.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-// the saved documents live behind the Esiti tab
-await page.locator('#psassist-host [data-seg="esiti"]').click();
+// un paziente con dei referti si apre sugli Esiti, senza toccare niente
 await page.waitForSelector('#psassist-host [data-esito]', { timeout: 10000 });
+check(await page.locator('#psassist-host [data-seg="esiti"].on').count() === 1, "un paziente con dei referti si apre sugli Esiti");
 // i referti di laboratorio non sono negli Esiti: né il gruppo, né le righe
 const righeRef = '#psassist-host [data-esito][data-kind="referto"]';
 check(await page.locator("#psassist-host #reflab").count() === 0 && await page.locator(righeRef).count() === 4,
   "negli Esiti restano solo i referti che non sono di laboratorio (4)");
-// niente si scarica da solo: aprire gli Esiti non chiede nessun documento
-await page.waitForTimeout(800);
-check(mock.state.requests.filter((q) => eDoc(q.url)).length === 0, "aprire gli Esiti non scarica nessun referto: lo decide il medico");
+
+// ---- aperto il paziente, quello che la pagina mostra e non è ancora qui si
+// carica da sé: i valori e i referti (mai il laboratorio), due alla volta, con
+// la pausa a caso, ognuno una volta sola. Mentre gira, solo «↓ N» accanto a ↻.
+// le righe d'Imaging che mostrano un'anteprima del testo
+const conAnteprima = (p) => p.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wuimg .rrow")]
+  .filter((r) => r.querySelector(".wuex")).map((r) => r.querySelector(".rlab").textContent.trim()));
+const salvati = (p, n) => p.waitForFunction((k) => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".rdot.saved").length === k, n, { timeout: 120000 }).catch(() => {});
+{
+  const mentre = await page.waitForFunction(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    const a = r.querySelector(".wuauto");
+    return a ? { t: a.textContent.trim(), prog: !!r.querySelector(".wuprog"), salva: !!r.querySelector("#refsave"), ricarica: r.querySelector("#risall")?.textContent.trim() || "" } : false;
+  }, null, { timeout: 15000 }).then((h) => h.jsonValue()).catch(() => null);
+  check(!!mentre && /^↓ \d+$/.test(mentre.t) && !mentre.prog && !mentre.salva && mentre.ricarica === "↻",
+    `mentre carica da solo: «↓ N» accanto a ↻, nient'altro (got: ${JSON.stringify(mentre)})`);
+  await salvati(page, 4);
+  check(await page.locator("#psassist-host .rdot.saved").count() === 4, "aprendo il paziente, i 4 referti si salvano da soli");
+  check(maxInVolo === 2, `al massimo due scaricamenti insieme (got ${maxInVolo})`);
+  const scaricatiAuto = mock.state.requests.filter((q) => eDoc(q.url));
+  check(scaricatiAuto.length === 4 && voli.length === 4, `ogni referto scaricato una volta sola (got ${scaricatiAuto.length})`);
+  check(mock.state.requests.filter((q) => q.url.includes("aaaa1111")).length === 0, "e il referto di laboratorio non viene scaricato");
+  const da = voli.map((v) => v.da).sort((x, y) => x - y), a = voli.map((v) => v.a).sort((x, y) => x - y);
+  check([da[2] - a[0], da[3] - a[1]].every((p) => p >= 450), `una pausa prima del prossimo, non a raffica (ms: ${[da[2] - a[0], da[3] - a[1]].join(", ")})`);
+  await page.waitForFunction(() => !document.getElementById("psassist-host").shadowRoot.querySelector(".wuauto"), null, { timeout: 15000 }).catch(() => {});
+  check(await page.locator("#psassist-host .wuauto").count() === 0, "finito, il «↓» se ne va");
+  // il testo si legge da solo solo di ECG e radiografie: TC ed ecografia si
+  // salvano e basta (si aprono nel visore). Il più recente non letto, col suo testo, è aperto
+  await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wuimg .wuex").length >= 1, { timeout: 15000 }).catch(() => {});
+  check(JSON.stringify(await conAnteprima(page)) === JSON.stringify(["RX TORACE"]), `salvati: il testo da solo solo della radiografia, non di TC ed ecografia (got: ${(await conAnteprima(page)).join(", ")})`);
+  const aperto = await page.locator("#psassist-host .wuitem.aperto").innerText().catch(() => "");
+  check(/RX TORACE/.test(aperto) && /Non focolai/.test(aperto) && (await page.locator("#psassist-host .wuitem.aperto").count()) === 1,
+    `il più recente non letto (con testo) è aperto (got: ${aperto.replace(/\s+/g, " ").slice(0, 90)})`);
+}
+
+// un'altra scheda, lo stesso paziente: il testo dei PDF salvati si legge dalla
+// copia su questo computer, senza chiedere niente a nessuno — e niente si riscarica
+{
+  const richiestePrima = mock.state.requests.filter((q) => eDoc(q.url)).length;
+  const pS = await ctx.newPage();
+  await pS.goto(mock.patientUrl);
+  await pS.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await pS.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wuimg .wuex").length >= 1, { timeout: 20000 }).catch(() => {});
+  check(JSON.stringify(await conAnteprima(pS)) === JSON.stringify(["RX TORACE"]), "in una scheda nuova il testo della radiografia salvata c'è già, letto dalla copia");
+  await pS.locator('#psassist-host .wuimg [data-esito]:has-text("TC ENCEFALO")').click();
+  await pS.waitForSelector("#psassist-host .wuitem.aperto .reftxt .rt", { timeout: 10000 }).catch(() => {});
+  check(/Non focolai/.test(await pS.locator("#psassist-host .wuitem.aperto .reftxt").innerText().catch(() => "")), "e si apre lì sotto, al tocco");
+  await pS.waitForTimeout(2500);
+  check(mock.state.requests.filter((q) => eDoc(q.url)).length === richiestePrima && (await pS.locator("#psassist-host .wuauto").count()) === 0,
+    "nessuna richiesta al server: i salvati non si riscaricano, e non c'è niente di nuovo da caricare");
+  await pS.close();
+}
+
+// la pagina mostra un referto nuovo: si carica da solo lui, e solo lui
+{
+  voli = []; maxInVolo = 0;
+  extra = [{ id: "ecg10000-0000-0000-0000-000000000010", quando: "2026-08-22 06:00:00.0" }];
+  const pN = await ctx.newPage();
+  await pN.goto(mock.patientUrl);
+  await pN.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await salvati(pN, 5);
+  await pN.waitForTimeout(2500);
+  check(voli.length === 1 && voli[0].id === extra[0].id, `un referto nuovo in pagina: si scarica lui, gli altri no (got ${voli.map((v) => v.id.slice(0, 8)).join(", ")})`);
+  await pN.close();
+}
+
+// il medico lascia il paziente: chi è ancora in fila non parte più
+{
+  voli = []; maxInVolo = 0;
+  extra = [11, 12, 13, 14, 15, 16].map((n) => ({ id: `ecg${n}000-0000-0000-0000-0000000000${n}`, quando: `2026-08-22 06:${n}:00.0` }));
+  const pL = await ctx.newPage();
+  await pL.goto(mock.patientUrl);
+  await pL.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  for (let t = 0; t < 300 && !voli.length; t++) await new Promise((ok) => setTimeout(ok, 100));   // il primo è partito
+  await pL.goto(mock.worklistUrl);
+  const via = Date.now();
+  await page.waitForTimeout(4000);
+  const dopo = voli.filter((v) => v.da > via + 200);
+  check(voli.length >= 1 && voli.length <= 2 && !dopo.length,
+    `lasciato il paziente il caricamento si ferma: partiti ${voli.length} su 6, dopo l'uscita ${dopo.length}`);
+  await pL.close();
+  extra = [];
+}
+
+// una volta ogni 15 minuti, se la pagina non mostra niente di nuovo: senza le
+// copie (↺), riaprire subito non scarica; passati i 15 minuti sì
+{
+  await page.locator("#psassist-host #refreset").click();
+  await page.waitForTimeout(1200);
+  voli = []; maxInVolo = 0;
+  const pW = await ctx.newPage();
+  await pW.goto(mock.patientUrl);
+  await pW.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await pW.waitForTimeout(4000);
+  check(voli.length === 0 && (await pW.locator("#psassist-host .wuauto").count()) === 0,
+    `riaperto entro i 15 minuti, niente di nuovo in pagina: non riparte (scaricati ${voli.length})`);
+  await pW.evaluate(() => {
+    const k = "psassist:autoCarica.v1", t = JSON.parse(localStorage.getItem(k) || "{}");
+    for (const ep of Object.keys(t)) t[ep].ts -= 16 * 60e3;
+    localStorage.setItem(k, JSON.stringify(t));
+  });
+  await pW.reload();
+  await pW.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await salvati(pW, 4);
+  check(voli.length === 4, `passati i 15 minuti, riparte (scaricati ${voli.length})`);
+  await pW.locator("#psassist-host #refreset").click();   // il «Salva» a mano, qui sotto, parte senza copie
+  await pW.waitForTimeout(1200);
+  await pW.close();
+}
 
 // «Salva i referti» sta negli Esiti, nella riga in cima: non più nel menu ⋯
+voli = []; maxInVolo = 0;
+const giaChiesti = mock.state.requests.filter((q) => eDoc(q.url)).length;
 const saveBtn = page.locator("#psassist-host .wusum #refsave");
 check(await saveBtn.count() === 1 && /\(4\)/.test(await saveBtn.innerText()), "«⭳ Salva i referti (4)» sta nella riga in cima agli Esiti");
 await page.locator("#psassist-host #menubtn").click();
@@ -119,30 +231,15 @@ await page.waitForFunction(
 const saved = await page.locator("#psassist-host .rdot.saved").count();
 check(saved === 4, `4 referti salvati (got ${saved})`);
 check(maxInVolo === 2, `al massimo due scaricamenti insieme, e la fila li usa tutti e due (got ${maxInVolo})`);
-const scaricati = mock.state.requests.filter((q) => eDoc(q.url));
-check(scaricati.length === 4, `ogni referto scaricato una volta sola (got ${scaricati.length})`);
+const scaricati = mock.state.requests.filter((q) => eDoc(q.url)).length - giaChiesti;
+check(scaricati === 4, `ogni referto scaricato una volta sola (got ${scaricati})`);
 // «Salva referti» agisce solo su quelli che si vedono: il referto di
 // laboratorio nascosto non viene nemmeno scaricato
 check(mock.state.requests.filter((q) => q.url.includes("aaaa1111")).length === 0,
   "e il referto di laboratorio, che non si vede, non viene scaricato");
 // salvati, se ne legge subito il testo: l'anteprima è sulla riga
-await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wuimg .wuex").length === 3, { timeout: 15000 }).catch(() => {});
-check(await page.locator("#psassist-host .wuimg .wuex").count() === 3, "salvati, il loro testo si legge subito (l'anteprima sulla riga)");
-
-// un'altra scheda, lo stesso paziente: il testo dei PDF salvati si legge dalla
-// copia su questo computer, senza chiedere niente a nessuno
-const richiestePrima = mock.state.requests.filter((q) => eDoc(q.url)).length;
-const pS = await ctx.newPage();
-await pS.goto(mock.patientUrl);
-await pS.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-await pS.locator('#psassist-host [data-seg="esiti"]').click();
-await pS.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wuimg .wuex").length === 3, { timeout: 20000 }).catch(() => {});
-check(await pS.locator("#psassist-host .wuimg .wuex").count() === 3, "in una scheda nuova il testo dei salvati c'è già, letto dalla copia");
-await pS.locator('#psassist-host .wuimg [data-esito]:has-text("TC ENCEFALO")').click();
-await pS.waitForSelector("#psassist-host .wuitem.aperto .reftxt .rt", { timeout: 10000 }).catch(() => {});
-check(/Non focolai/.test(await pS.locator("#psassist-host .wuitem.aperto .reftxt").innerText().catch(() => "")), "e si apre lì sotto, al tocco");
-check(mock.state.requests.filter((q) => eDoc(q.url)).length === richiestePrima, "nessuna richiesta al server per leggere i salvati");
-await pS.close();
+await page.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wuimg .wuex").length >= 1, { timeout: 15000 }).catch(() => {});
+check(JSON.stringify(await conAnteprima(page)) === JSON.stringify(["RX TORACE"]), "salvati a mano: il testo della radiografia si legge subito (l'anteprima sulla riga)");
 
 // «↗ PDF» su un referto salvato: il visore dell'estensione, sopra la pagina,
 // col PDF della copia su questo computer — niente scheda nuova, niente server
@@ -382,7 +479,7 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   const NS = "psassist:";
   const ep = new URL(mock.patientUrl).searchParams.get("EPISODIO_ID");
   const VIA_LOCALE = ["patients.v1", "stanza.posti.v1", "stanza.ps.posti.v1", "stanza.alta.posti.v1", "aree.v1", "area.vai.v1", "stato.v1", "dafare.v1", "promemoria.v1", "note.v1", "segni.v1",
-    "refVisti.v1", "refPortale", "daConfermare.v1", "quesiti", "quesiti.ts", "lastQ", "corsa.aperta.v1", "corsa.presidio.v1"];
+    "refVisti.v1", "refPortale", "daConfermare.v1", "quesiti", "quesiti.ts", "lastQ", "corsa.aperta.v1", "corsa.presidio.v1", "autoCarica.v1"];
   const RESTA_LOCALE = { "win.v1": null, "pillpos.v1": { left: 40, top: 40 }, "collapsed": false, "stanza.ps.v1": null, "stanza.alta.v1": null, "aree.opzioni.v1": { alta: { id: "00010001P", label: "AREA ALTA INTENSITA'" } }, "catalog.v1": null,
     "dimissioni.v1": { prova: { testo: "modello del medico" } }, "eo.v1": { prova: "EO del medico" }, "ordini.stampati": ["o1"], "attesaConferma.ms": 120000 };
   const VIA_SCHEDA = [`ris.${ep}.zz`, `visto.${ep}.zz`, `reftxt.${ep}.zz`, `log.${ep}`, `ui.${ep}`, "receipt.v1", "confirm.v1", "queue.v1",

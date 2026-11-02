@@ -578,20 +578,42 @@ stanno con lo stato degli esami, in `stato.v1`, e se ne vanno con lui.
 ### Esiti
 Il **Workup**, come in Epic: **Lab · ECG · Imaging** in un posto solo, tre sezioni distinte, ognuna
 col suo colore sul bordo e nel titolo (il rosso resta **solo** dei valori fuori range; l'ambra è di
-ciò che aspetta; il blu dei comandi e di «nuovo»). Larga, il Lab a sinistra e ECG e Imaging in una
-colonna a destra; stretta (Affianca), prima ECG e Imaging, che sono brevi, poi il Lab.
+ciò che aspetta; il blu dei comandi e di «nuovo»). Il Lab per primo, a tutta larghezza; sotto ECG
+e Imaging, affiancati se c'è posto.
+
+**Aprire un paziente** porta sugli **Esiti se ha qualcosa da guardare** — valori, referti in
+pagina o già letti — e sulle **Richieste se non ha ancora niente** (gli Esiti vuoti non servono).
+Vale per la pagina appena aperta e per «apri» dalla lista, dalla mappa o da un promemoria.
+
+**Quello che la pagina mostra e il pannello non ha ancora si carica da solo** (con l'estensione),
+in sottofondo, appena apri il paziente: è **⭳ Carica i valori** senza il tocco — i valori (lo
+storico del portale, o le finestre Risultati) e poi i **referti** che non sono di laboratorio,
+**due alla volta al massimo** con la solita pausa a caso, quelli già salvati mai più, l'identità
+controllata come sempre. Il **testo** si legge da solo **solo di ECG e radiografie** (dell'ECG
+solo il referto scritto del cardiologo: da «Conclusioni» a «Il Medico»); **TC, ecografie, RM,
+visite e consulenze** si salvano e basta, e si aprono nel **visore** (un tocco sulla riga ne
+legge comunque il testo). Una volta **per paziente ogni 15 minuti**, a meno che la pagina non
+mostri una riga nuova (un prelievo, un referto); si ferma se lasci il paziente (chi era in fila
+non parte). Mentre lavora, accanto a **↻** c'è solo un discreto **«↓ 2»** — quanti ne restano —
+e nient'altro. Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
+richiesta da confermare.
 
 - **In cima, una riga**: i valori **fuori range** dell'ultimo prelievo di ciascun esame, i più
   gravi per primi (K, Na, Hb, troponina, lattati, pH…), la troponina con la misura precedente e la
   sua ora — `K 5.9↑ · Hb 9.1↓ · Trop 48↑ (12 alle 11:40) · 3 nuovi` —; oltre i sei, «+N». **«N
   nuovi»** conta i valori cambiati dall'ultima lettura e i referti mai aperti: un tocco li segna
-  visti. A destra **⭳ Salva i referti (N)** (solo con l'estensione) e, mentre salva, «Salvo i
-  referti 2/5…».
+  visti. A destra **⭳ Salva i referti (N)** (solo con l'estensione) e, mentre salva a mano,
+  «Salvo i referti 2/5…».
 - **In attesa**: in ogni sezione, ciò che è stato chiesto e non è ancora refertato — dalle righe
-  del diario della pagina senza l'icona del referto — con **da quanto** aspetta (`⏳ 1h20 RX
-  TORACE · richiesto 13:10`), «parziale» per un esame di laboratorio già nella finestra Risultati.
+  del diario della pagina senza l'icona del referto — una riga sola ciascuna, con un sottile
+  segno ambra a sinistra (niente fascia gialla) e **da quanto** aspetta (`⏳ 1h20 RX TORACE ·
+  richiesto 13:10`). Un esame di laboratorio i cui valori **hanno cominciato ad arrivare** (la
+  finestra Risultati c'è) non aspetta più: **«parziale 15:11»**, in grigio, **senza orologio** —
+  i valori sono già in tabella. Gli orologi di ECG e immagini restano.
 - **Refertati**: una riga per referto, con data e ora, la prima frase che dice qualcosa
-  (le conclusioni, se ci sono) e «nuovo» finché non l'hai aperto. Un tocco apre il **testo lì
+  (le conclusioni, se ci sono) e «nuovo» finché non l'hai aperto. Il più recente **non ancora
+  letto** che ha un testo (ECG, radiografia) è già **aperto**, finché non ne apri o chiudi uno
+  tu. Un tocco apre il **testo lì
   sotto** (un secondo tocco lo richiude), con **⧉ Copia** (ora, esame e paziente in testa, per il
   diario) e **↗ PDF**; **↗ PDF** c'è anche su ogni riga, a un tocco: la copia salvata si apre
   nel **visore** dell'estensione (paziente · esame · data in testa, ✕ o Esc e si torna agli Esiti;
@@ -611,6 +633,13 @@ fondo **Altri** — i dettagli più sotto), una colonna per prelievo, **il più 
 (27/08) con l'ora sotto se è di un altro giorno; **passando il mouse** sull'intestazione si legge
 data e ora per esteso e **gli esami** compresi in quella richiesta.
 
+**Fino a tre prelievi** la tabella lunga e stretta lasciava vuoto il resto del pannello: allora
+**ogni sezione è un blocco** (Emocromo, Coagulazione, Organi, Emogas…) con **le stesse ore in
+testa**, e i blocchi si affiancano finché c'è posto (una griglia, almeno 230 px l'uno, di più con
+due o tre colonne). **Nessuna cornice scorre per conto suo**: scorre il pannello, una volta. Da
+**quattro prelievi** in su resta la tabella unica di sempre. La riga in cima e il rosso dei fuori
+range non cambiano; i referti (ECG, Imaging) stanno sotto il Lab.
+
 - I nomi sono in **sigla** (`Hb`, `GB`, `PLT`…), con l'**unità fra parentesi accanto al nome**
   (`GB (×10⁹/L)`) e il **range nel tooltip del valore**. Il gestionale scrive «x10» e perde l'esponente:
   per i conteggi cellulari — globuli bianchi e formula, piastrine ×10⁹/L, globuli rossi ×10¹²/L — si scrive per
@@ -620,10 +649,10 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   «Granulociti %»), che prima erano due righe con lo stesso nome. Il fuori range è quello
   dell'assoluto; una percentuale che arriva da sola resta da sola. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
   vale per un'abbreviazione ambigua — e una riga piccola in cima dice **quanti** (**quali** apre l'elenco).
-- **Lab, ECG e Imaging fianco a fianco** quando la finestra è abbastanza larga (misurata sul contenitore,
-  non sullo schermo: dentro la finestra da 1150 px sì, nella colonna di «Affianca» no): la tabella a
-  sinistra, ECG e Imaging in una colonna accanto; stretto, uno sotto l'altro.
-- La tabella è **larga quanto i suoi numeri**, non quanto il pannello: se allarghi la finestra i
+- **Il Lab sempre per primo**, a tutta larghezza; sotto, **ECG e Imaging fianco a fianco** quando la
+  finestra è abbastanza larga (misurata sul contenitore, non sullo schermo: dentro la finestra da
+  1150 px sì, nella colonna di «Affianca» no); stretto, uno sotto l'altro.
+- La tabella (da quattro prelievi) è **larga quanto i suoi numeri**, non quanto il pannello: se allarghi la finestra i
   valori restano **accanto ai nomi** invece di allontanarsene, e sono allineati a sinistra
   (incolonnati dalle cifre tabulari).
 - In rosso c'è **solo il valore**, con ↑ ↓: il nome resta a sinistra, sempre nella stessa colonna.
@@ -640,7 +669,8 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   refertati e no, con una pagina sola. Le finestre Risultati — una richiesta per prelievo — si
   leggono **solo se il portale non si può leggere** (niente estensione, niente link, o non ha
   risposto: il pannello dice perché). Poi, con l'estensione, salva i **referti** non ancora salvati
-  (ECG, immagini, visite: mai il laboratorio — vedi *Salvare è una decisione del medico*).
+  (ECG, immagini, visite: mai il laboratorio — vedi *Salvare i referti*). Con l'estensione lo fa
+  già da solo all'apertura del paziente (vedi sopra): il bottone resta per rifarlo subito.
   **solo alterati** / **tutti** filtra le righe; **↺ Reset** dimentica i valori letti e la scheda
   in archivio di questo paziente, e **⭳ Carica i valori** li rilegge da zero (i tuoi segni
   restano).
@@ -689,13 +719,16 @@ o una richiesta in attesa.
   cifratura, font, filtri: **mai il contenuto**), per correggerlo. Se il pannello non lo legge ci
   prova il **service worker**; se neanche lui, il pallino è rosso col motivo — e il documento **si
   apre lo stesso, con lo stesso tocco**.
-- **Salvare è una decisione del medico.** Un PDF non si salva **mai** da solo: lo prende un tocco
-  sul referto (il testo è lì sotto, e la copia resta: pallino verde), **⭳ Salva i referti** o
+- **Salvare i referti.** Prima era solo una decisione del medico; ora, **su sua richiesta**, lo fa
+  anche l'apertura del paziente (vedi in cima agli Esiti). Lo prende l'apertura, un tocco sul
+  referto (il testo è lì sotto, e la copia resta: pallino verde), **⭳ Salva i referti** o
   **⭳ Carica i valori** (dopo i valori), che prendono tutti quelli non ancora salvati — ECG,
   immagini, visite e consulenze, **mai il laboratorio** — **due alla volta al massimo**, con una
-  breve pausa a caso prima di ognuno, gli altri in fila («in fila» sulla loro riga) — e di ognuno
-  legge subito il testo. Quelli già salvati non si riscaricano. **Il testo dei PDF già salvati si
-  legge sempre**, appena apri gli Esiti, dalla copia su questo computer: nessuna richiesta.
+  breve pausa a caso prima di ognuno, gli altri in fila («in fila» sulla loro riga). Di **ECG e
+  radiografie** legge subito il testo; di **TC, ecografie, RM, visite** guarda solo **di chi è**
+  (un PDF intestato a un altro paziente non resta) e lo lascia al visore. Quelli già salvati non
+  si riscaricano. **Il testo di ECG e radiografie già salvati si legge sempre**, appena apri gli
+  Esiti, dalla copia su questo computer: nessuna richiesta.
   **↺** (accanto a «Salva») dimentica le copie e il loro testo. Un referto che non si lascia
   salvare (pallino rosso, il motivo al passaggio del mouse e nel Registro) resta apribile con un
   tocco.
