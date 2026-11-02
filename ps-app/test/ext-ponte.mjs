@@ -15,7 +15,7 @@
  *   node test/ext-ponte.mjs
  */
 import { chromium } from "playwright";
-import { createMock } from "./sa4pso-mock.mjs";
+import { createMock, refertoRxPdf } from "./sa4pso-mock.mjs";
 import { avviaRelay } from "../ponte/relay-node.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -482,6 +482,62 @@ check(/non ha ancora letto valori/.test(es0), "prima di leggerli: «Il PC non ha
 check(/RX TORACE/.test(es0), "i referti della pagina del paziente, letti sul PC");
 await tocca(tel, '.ref:has-text("RX TORACE")');
 check(/Non focolai a carattere broncopneumonico/.test(await aspettaTel(tel, /Non focolai/, 8000)), "il referto già letto sul PC si legge sul telefono, col suo testo");
+
+// ===========================================================================
+sezione("un referto PDF salvato sul PC, sul telefono");
+{
+  const idRef = await tel.locator('.ref:has-text("TC ENCEFALO")').first().getAttribute("data-id");
+  const SEGNO = "ZQXW7731 CAMPIONE PDF";
+  // più di due pezzi: il PDF vero, e dietro un riempitivo (i pezzi sono da ~390 KB)
+  const pdf = Buffer.concat([refertoRxPdf(["RADIOLOGIA - prova", SEGNO, "Non focolai a carattere broncopneumonico."]), Buffer.alloc(900000, 0x41)]);
+  const esa = (x) => [...x].map((c) => c.charCodeAt(0).toString(16).padStart(4, "0")).join("");
+  const seme = (ep) => sw.evaluate(([k, ep, data]) => chrome.storage.local.set({ [k]: { ep, data, ts: Date.now() } }), ["ref:" + idRef, ep, pdf.toString("base64")]);
+  // (gli esiti di prima restano sullo schermo finché non arriva la risposta nuova: si aspetta lei)
+  const riapri = async () => {
+    await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI A\./);
+    const n = inoltrati.length;
+    await tocca(tel, '.paz[data-ep="999001"]'); await aspettaTel(tel, /TC ENCEFALO/, 20000);
+    await finche(() => inoltrati.length >= n + 2, 15000); await sospendi(500);
+  };
+  // la copia sta sotto un altro episodio: non è di questo paziente, non si offre
+  await seme("999002");
+  await riapri();
+  check(await tel.locator(".pdf").count() === 0, "una copia salvata sotto un altro episodio non si offre: niente «PDF»");
+  await seme("999001");
+  await riapri();
+  check(await tel.locator(".pdf").count() === 1, "una copia dello stesso episodio, col testo già letto sul PC: un tasto «PDF» sul referto");
+  const stato = () => tel.evaluate(async () => ({
+    ls: JSON.stringify(Object.entries(localStorage).sort()), ss: JSON.stringify(Object.entries(sessionStorage).sort()),
+    idb: JSON.stringify(((await indexedDB.databases?.()) || []).map((d) => d.name).sort()),
+    cache: JSON.stringify(await Promise.all((await caches.keys()).sort().map(async (k) => [k, (await (await caches.open(k)).keys()).map((r) => r.url).sort()]))),
+  }));
+  const prima = await stato(), n0 = inoltrati.length;
+  // (la pagina non può rileggere un blob: — la sua CSP lo vieta —: si guarda com'è fatto, e quando viene revocato)
+  await tel.evaluate(() => {
+    window.__blob = []; window.__rev = [];
+    const o = URL.createObjectURL.bind(URL), r = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = (b) => { const u = o(b), x = { url: u, type: b.type, size: b.size, testa: "" }; window.__blob.push(x); b.slice(0, 5).text().then((t) => { x.testa = t; }); return u; };
+    URL.revokeObjectURL = (u) => { window.__rev.push(u); r(u); };
+  });
+  const [popup] = await Promise.all([tel.waitForEvent("popup", { timeout: 15000 }), tocca(tel, ".pdf")]);
+  const aperto = await finche(() => /^blob:/.test(popup.url()), 20000);
+  const blob = await tel.evaluate(() => window.__blob);
+  check(aperto && blob.length === 1 && popup.url() === blob[0].url, `il telefono lo mostra nel suo visore, da un blob: in memoria (${popup.url().slice(0, 40)})`);
+  check(blob[0] && blob[0].type === "application/pdf" && blob[0].size === pdf.length, `ricomposto dai pezzi, della misura giusta (${blob[0] && blob[0].size} su ${pdf.length} byte)`);
+  check(await finche(async () => (await tel.evaluate(() => window.__blob[0].testa)) === "%PDF-", 3000), "e comincia come un PDF");
+  const visti = inoltrati.slice(n0), tuttiPdf = Buffer.concat(visti);
+  const nomi = ["%PDF", "JVBERi", "endstream", SEGNO, esa(SEGNO), esa(SEGNO).toUpperCase(), "ROSSI", "MARIO", "ENCEFALO", "RADIOLOGIA", pdf.subarray(2000, 2040).toString("latin1"), pdf.subarray(2000, 2040).toString("base64").slice(4, 40)];
+  const trovati = nomi.filter((x) => tuttiPdf.includes(Buffer.from(x, "latin1")) || tuttiPdf.includes(Buffer.from(x, "utf16le")));
+  check(visti.length >= 6 && !trovati.length, `sul ripetitore (${visti.length} messaggi, ${tuttiPdf.length} byte) niente «%PDF», niente del suo testo, niente del nome (trovati: ${trovati.length})`);
+  const dopo = await stato();
+  check(dopo.ls === prima.ls && dopo.ss === prima.ss && dopo.idb === prima.idb && dopo.cache === prima.cache,
+    "sul telefono non resta niente: localStorage, sessionStorage, IndexedDB e Cache Storage come prima");
+  check(!/pdf|blob/i.test(dopo.cache.replace(/ponte-guscio/g, "")), "e il suo service worker non l'ha messo in cassa");
+  await popup.close();
+  const revocato = await finche(async () => (await tel.evaluate(() => window.__rev)).includes(blob[0].url), 8000);
+  check(revocato, "chiusa la finestra, il blob si revoca");
+  await sw.evaluate((k) => chrome.storage.local.remove(k), "ref:" + idRef);
+}
 const nasceValori = nuovaPagina(20000);
 await tocca(tel, '[data-a="valori"]');
 const schedaValori = await nasceValori;
@@ -513,9 +569,21 @@ lento = 900;
 await doc.evaluate(() => localStorage.setItem("__psaStampe", "[]"));
 await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 await aspettaTel(tel, /Dolore toracico/, 10000);
+// compatte: il catalogo intero in al più due schermi, ogni tasto alto almeno 44 px
+await shot(tel, "tel-richieste");
+if (SHOTS) await tel.screenshot({ path: join(SHOTS, "tel-richieste-tutte.png"), fullPage: true }).catch(() => {});
+const compatte = await tel.evaluate(() => {
+  const c = [...document.querySelectorAll("main .carta")], tasti = [...document.querySelectorAll("main .esame, main .chip")];
+  return { alt: c[c.length - 1].getBoundingClientRect().bottom - c[0].getBoundingClientRect().top, vh: innerHeight, n: document.querySelectorAll("main .esame").length,
+           minAlt: Math.min(...tasti.map((b) => b.getBoundingClientRect().height)) };
+});
+check(compatte.alt <= 2 * compatte.vh, `le Richieste (${compatte.n} esami) stanno in due schermi: ${Math.round(compatte.alt)} px su ${compatte.vh} di altezza`);
+check(compatte.minAlt >= 43.9, `ogni tasto è alto almeno 44 px (il più basso: ${compatte.minAlt})`);
 await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');
 await tocca(tel, '[data-a="esame"]:has-text("EMOCROMO POC")');
 check(await tel.locator("#ordina").isDisabled(), "senza quesito il bottone non parte");
+await tel.locator("#ordina").click({ force: true });
+check(await tel.evaluate(() => document.activeElement && document.activeElement.id) === "quesito", "e toccarlo porta il cursore sul quesito");
 await tel.locator("#quesito").fill("dolore toracico atipico");
 await tel.locator("#quesito").press("Enter");
 check(/Conferma e stampa · 2 esami/.test(await tel.locator("#ordina").innerText()), "«Conferma e stampa · 2 esami»");
@@ -968,7 +1036,7 @@ check(/ROSSI M\./.test(await aspettaTel(tel, /ROSSI M\./, 20000)), "«Riapri»: 
 // ===========================================================================
 sezione("il ripetitore non vede niente in chiaro");
 // (solo parole di almeno 5 lettere: due o tre byte uguali per caso, in tanti byte cifrati, ci sono sempre)
-const segreti = ["ROSSI", "BIANCHI", "MARIO", "VERDI", "TROPONINA", "EMOCROMO", CF_A, CF_B, "999001", "999002", "tropo", "dolore", "allergico", "ENCEFALO", "pazienti", "focolai"];
+const segreti = ["ROSSI", "BIANCHI", "MARIO", "VERDI", "TROPONINA", "EMOCROMO", CF_A, CF_B, "999001", "999002", "tropo", "dolore", "allergico", "ENCEFALO", "pazienti", "focolai", "ZQXW7731"];
 const tutti = Buffer.concat(inoltrati);
 check(inoltrati.length > 30, `(${inoltrati.length} messaggi inoltrati)`);
 check(inoltrati.every((b) => b[0] === 1 && b[1] >= 1 && b[1] <= 4), "ognuno è un messaggio cifrato del ponte (versione 1, tipo 1–4)");
