@@ -171,7 +171,7 @@ const finoA = async (page, re, ms = 10000) => { await page.waitForURL(re, { time
 console.log("Pazienti per area");
 await blocco(async () => {
   const srv = server();
-  const { context, page } = await contesto(srv);
+  const { context, page } = await contesto(srv, { seed: { "tabellone.vista.v1": "entrambe" } });   // (qui conta chi sta in quale area, non quale mappa)
   await page.goto(URL_LISTA);
   await pannello(page);
   await page.waitForTimeout(300);
@@ -434,7 +434,7 @@ await blocco(async () => {
     await pop.click('tr[data-ep="700001"] td:nth-child(4)');
     await finoA(page, /EPISODIO_ID=700001/);
     const aperte = await sw.evaluate(() => globalThis.__aperte);
-    check(/EPISODIO_ID=700001$/.test(page.url()) && /PsoPazientiSmart/.test(pop.url()) && /EPISODIO_ID=700001$/.test(aperte[0] || ""),
+    check(/EPISODIO_ID=700001$/.test(page.url()) && /PsoPazientiSmart/.test(pop.url()) && /EPISODIO_ID=700001$/.test(aperte.find(Boolean) || "") && aperte.filter(Boolean).length === 1,
       `estensione: ROSSI si apre nella scheda del gestionale, dal service worker (got: ${page.url()} · ${JSON.stringify(aperte)})`);
     srv.s.log.length = 0;
     await pop.click('tr[data-ep="700021"] td:nth-child(4)');
