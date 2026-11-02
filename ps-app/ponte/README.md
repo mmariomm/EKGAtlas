@@ -321,9 +321,9 @@ conteggi, piedi o testi di contorno; lo stato del collegamento compare solo quan
 framework; solo il suo codice (CSP `default-src
 'self'`, la rete solo verso il suo sito). I dati dei pazienti stanno nella memoria della pagina: mai
 in `localStorage`, IndexedDB o nelle cache; il suo service worker tiene solo i file dell'app. Il
-manifest ha `display: "browser"`: sull'iPhone le app «a tutto schermo» della schermata Home hanno una
-memoria separata da Safari, dove il QR — che la fotocamera apre in Safari — ha salvato la chiave;
-così l'icona riapre Safari, con la chiave. Un QR nuovo inquadrato con l'app già aperta riparte da
+manifest ha `display: "standalone"`: l'icona della schermata Home apre l'app a tutto schermo, con una
+memoria sua, separata da Safari. Per questo il QR si inquadra **dentro l'app** («Scansiona il QR»):
+la chiave resta lì, e l'icona si ricollega da sola fino alla scadenza. Un QR nuovo inquadrato con l'app già aperta riparte da
 capo (e, se c'è un'associazione ancora buona con un'altra chiave, chiede prima).
 
 **«Scansiona il QR»** apre la fotocamera nella pagina (`getUserMedia`, la fotocamera posteriore; la
