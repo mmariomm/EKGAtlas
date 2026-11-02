@@ -6,7 +6,7 @@
  * sua rete fra lei e il ripetitore (per perdere messaggi, come il 5G).
  * Associazione dal QR (una volta, un telefono solo), elenco, esiti con
  * «Aggiorna i valori», un ordine dal telefono fino alle etichette (il doppio
- * tocco, la risposta persa), nota e promemoria, la spia sul PC, i 20 minuti
+ * tocco, la risposta persa), nota e promemoria, la spia sul PC, i 3 minuti
  * senza comandi, «Scollega», un altro dispositivo, la pagina ricaricata, il
  * battito, la revoca, la scadenza, la pagina d'accesso del gestionale, i
  * messaggi ripetuti o manomessi, nessun gestionale aperto, il service worker
@@ -173,17 +173,26 @@ const IPHONE = {
   userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
 };
 const telCtx = await telBrowser.newContext(IPHONE);
+// l'orologio del telefono avanti o indietro, quando una prova lo chiede (sessionStorage «__salto», in ms)
+const salto = () => { try { const x = Number(sessionStorage.getItem("__salto") || 0); if (x) { const v = Date.now; Date.now = () => v() + x; } } catch { /* about:blank */ } };
+await telCtx.addInitScript(salto);
 // La rete del telefono: ogni presa passa di qui. `perdi` = il numero di una
 // presa di cui si perdono i messaggi cifrati dal PC (le risposte); `muta` =
-// una presa che non porta più niente in nessun verso, nemmeno il «pong».
-const rete = { n: 0, prese: new Map(), ultima: 0, perdi: 0, muta: 0, dalPc: [], alPc: [] };
+// una presa che non porta più niente in nessun verso, nemmeno il «pong»;
+// `ritarda` = quanti millisecondi trattenere i messaggi cifrati verso il PC.
+const rete = { n: 0, prese: new Map(), ultima: 0, perdi: 0, muta: 0, ritarda: 0, dalPc: [], alPc: [] };
 const chiusura = (code, reason) => (code === 1000 || (code >= 3000 && code <= 4999) ? { code, reason } : {});
 await telCtx.routeWebSocket(/\/ponte\/ws/, (ws) => {
   const n = ++rete.n;
   const server = ws.connectToServer();
   rete.prese.set(n, { ws, server });
   rete.ultima = n;
-  ws.onMessage((m) => { if (typeof m !== "string") rete.alPc.push(Buffer.from(m)); if (rete.muta !== n) server.send(m); });
+  ws.onMessage((m) => {
+    if (typeof m !== "string") rete.alPc.push(Buffer.from(m));
+    if (rete.muta === n) return;
+    if (rete.ritarda && typeof m !== "string") setTimeout(() => { try { server.send(m); } catch { /* chiusa intanto */ } }, rete.ritarda);
+    else server.send(m);
+  });
   server.onMessage((m) => {
     if (rete.muta === n) return;
     if (typeof m !== "string") rete.dalPc.push(Buffer.from(m));
@@ -832,7 +841,7 @@ check(await tel.locator(".esame.on").count() === 0, "la selezione se ne va anche
 check(await finche(async () => Object.keys(B.state.richieste).length === 2 && (await tel.locator(".ord").count()) >= 2, 30000),
   "l'ordine partito davvero compare sul telefono appena la rete torna");
 await finche(ordiniFiniti, 60000);
-check(Object.keys(B.state.richieste).length === 2, "e nessun ordine doppio");
+check(Object.keys(B.state.richieste).length === 2, `e nessun ordine doppio (${Object.keys(B.state.richieste).length}; ${(await registroPonte()).split("\n").slice(-3).join(" / ")})`);
 await shot(tel, "tel-6-ordine-incerto");
 // La risposta si perde, ma la presa cade e si rifà subito: l'ordine è già lì
 // sopra. Niente allarme rosso che dice il contrario, e il bottone non aspetta.
@@ -1008,31 +1017,41 @@ await tocca(tel, '[data-a="indietro"]');
 await aspettaTel(tel, /ROSSI M\./, 10000);
 
 // ===========================================================================
-sezione("20 minuti senza comandi");
+sezione("3 minuti senza comandi");
 const avanti = (ms) => sw.evaluate((x) => { self.__oraVera = self.__oraVera || Date.now; const v = self.__oraVera; Date.now = () => v() + x; return ponteControlla(); }, ms);
 const orologio = () => sw.evaluate(() => { if (self.__oraVera) Date.now = self.__oraVera; });
-await avanti(19 * 60e3);
-check(!!(await statoPonte())?.sessione, "a 19 minuti la sessione c'è ancora");
-await avanti(21 * 60e3);
-check(!(await statoPonte())?.sessione, "a 21 minuti senza comandi la sessione è chiusa");
+await avanti(2 * 60e3);
+check(!!(await statoPonte())?.sessione, "a 2 minuti la sessione c'è ancora");
+await avanti(4 * 60e3);
+check(!(await statoPonte())?.sessione, "a 4 minuti senza comandi la sessione è chiusa");
 await orologio();
 const inatt = await aspettaTel(tel, /Sessione chiusa/, 10000);
-check(/20 minuti senza comandi/.test(inatt), "il telefono lo dice: «20 minuti senza comandi»");
+check(/3 minuti senza comandi/.test(inatt) && !/ROSSI/.test(inatt), "il telefono davanti lo dice, «3 minuti senza comandi», e i pazienti non ci sono più");
 await shot(tel, "tel-7-sessione-chiusa");
 check(await finche(async () => (await $panel(doc, ".pontespia").count()) === 0, 8000), "e sul PC la spia si spegne");
-await tocca(tel, '[data-a="riapri"]');
-check(/ROSSI M\./.test(await aspettaTel(tel, /ROSSI M\./, 15000)), "riaperta col tocco, senza QR");
+// (che cosa si vede, da qui in poi: «Sessione chiusa» non deve passare nemmeno per un attimo)
+const guardaChiusa = () => tel.evaluate(() => {
+  window.__chiusa = false;
+  window.__guarda?.disconnect();
+  window.__guarda = new MutationObserver(() => { if (/Sessione chiusa/.test(document.getElementById("app").textContent)) window.__chiusa = true; });
+  window.__guarda.observe(document.getElementById("app"), { childList: true, subtree: true, characterData: true });
+});
+const sessioniNuove = async () => ((await registroPonte()).match(/iPhone ricollegato: sessione nuova|iPhone collegato/g) || []).length;
+const s0 = await sessioniNuove();
+await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));   // tornati sull'app
+check(/ROSSI M\./.test(await aspettaTel(tel, /ROSSI M\./, 15000)) && (await sessioniNuove()) > s0, "tornati sull'app dopo la chiusura: si riapre da sola, senza QR e senza un tocco");
 // l'app lasciata in sottofondo: le riletture da sola non contano come comandi
-await tel.evaluate(() => { const v = Date.now; window.__oraVera = v; Date.now = () => v() + 15 * 60e3; document.dispatchEvent(new Event("visibilitychange")); });
+await guardaChiusa();
+await tel.evaluate(() => { const v = Date.now; window.__oraVera = v; Date.now = () => v() + 2 * 60e3; document.dispatchEvent(new Event("visibilitychange")); });
 await sospendi(1500);
-check(!/Sessione chiusa/.test(await testoTel(tel)), "a 15 minuti, tornati sull'app: l'elenco si rilegge da solo…");
-await tel.evaluate(() => { const v = window.__oraVera; Date.now = () => v() + 21 * 60e3; document.dispatchEvent(new Event("visibilitychange")); });
-const sottofondo = await aspettaTel(tel, /Sessione chiusa/, 5000);
+check(!/Sessione chiusa/.test(await testoTel(tel)), "a 2 minuti, tornati sull'app: l'elenco si rilegge da solo…");
+const s1 = await sessioniNuove(), sess1 = await sw.evaluate(() => pt.sessione && pt.sessione.dal);
+await tel.evaluate(() => { const v = window.__oraVera; Date.now = () => v() + 4 * 60e3; document.dispatchEvent(new Event("visibilitychange")); });
+const riaperta = await finche(async () => (await sessioniNuove()) > s1 && /ROSSI M\./.test(await testoTel(tel)), 15000);
 await tel.evaluate(() => { Date.now = window.__oraVera; });
-check(/20 minuti senza comandi/.test(sottofondo) && !/ROSSI/.test(sottofondo), "…ma non conta: a 21 minuti dall'ultimo comando del medico il telefono chiude da solo, via i pazienti");
-check(await finche(async () => !(await statoPonte())?.sessione, 5000), "e lo dice al PC, che chiude la sessione");
-await tocca(tel, '[data-a="riapri"]');
-await aspettaTel(tel, /ROSSI M\./, 15000);
+check(riaperta && await sw.evaluate(() => pt.sessione && pt.sessione.dal) !== sess1 && /3 minuti senza comandi/.test(await registroPonte()),
+  "…ma non conta: a 4 minuti dall'ultimo comando del medico la sessione di prima è chiusa (via i pazienti), e se ne apre un'altra da sola");
+check(!(await tel.evaluate(() => window.__chiusa)), "e «Sessione chiusa» non si è visto nemmeno per un attimo");
 
 // ===========================================================================
 sezione("«Scollega» sul PC");
@@ -1300,6 +1319,7 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   // che l'app apre si contano, con l'ora.
   const chiave = await chiaveTel(tel);
   const vCtx = await telBrowser.newContext(IPHONE);
+  await vCtx.addInitScript(salto);
   await vCtx.addInitScript(() => {
     const W = window.WebSocket;
     window.__prese = [];
@@ -1348,10 +1368,18 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   // 4. un promemoria la cui risposta si perde: la presa cade mentre il PC lo
   // scrive, il telefono lo rimanda col suo numero — sul PC uno solo
   await sw.evaluate(() => {
-    self.__vere = { scheda: ponteSuScheda, comando: ponteComando, pdf: ponteDaiPdf };
+    self.__vere = { scheda: ponteSuScheda, comando: ponteComando, pdf: ponteDaiPdf, ordina: ponteOrdina };
+    // (gli ordini che il PC fa davvero, per quesito: quanti arrivano alla scheda del gestionale)
+    self.__eseguiti = [];
+    globalThis.ponteOrdina = (d) => { self.__eseguiti.push(d.quesito); return self.__vere.ordina(d); };
     self.__arrivi = []; self.__pezzi = [];
     globalThis.ponteSuScheda = async (cmd, a) => { if (cmd === "promemoria") await attendi(3000); return self.__vere.scheda(cmd, a); };
-    globalThis.ponteComando = (s, d) => { if (d && d.cmd === "promemoria") self.__arrivi.push(d.rq); return self.__vere.comando(s, d); };
+    self.__ordini = [];
+    globalThis.ponteComando = (s, d) => {
+      if (d && d.cmd === "promemoria") self.__arrivi.push(d.rq);
+      if (d && d.cmd === "ordina") self.__ordini.push(d.quesito);
+      return self.__vere.comando(s, d);
+    };
     globalThis.ponteDaiPdf = async (s, d) => { self.__pezzi.push(d.i); if (d.i === 1 && self.__pezzi.length === 2) await attendi(2000); return self.__vere.pdf(s, d); };
   });
   const emogas = () => doc3.evaluate(() => (JSON.parse(localStorage.getItem("psassist:dafare.v1") || "{}")["999001"] || []).filter((x) => !x.fatto && /emogas/.test(x.testo)).length);
@@ -1390,6 +1418,10 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   await popup.close();
   await sw.evaluate((k) => chrome.storage.local.remove(k), "ref:" + idRef);
 
+  // (un ordine dal telefono: quante volte il PC lo fa — la scheda del gestionale lo porta poi fino in fondo, o dice perché no —
+  // e quando il telefono ha la risposta: il bottone non aspetta più)
+  const eseguiti = (q) => sw.evaluate((q) => self.__eseguiti.filter((x) => x === q).length, q);
+  const risposto = async (p) => !/Mando l'ordine al PC|In coda/.test(await p.locator("#ordina").innerText().catch(() => "")) && !(await p.locator(".coda").count());
   // 6. una rete lenta (1500 ms, 50 kbit/s): elenco, esiti e un ordine arrivano, senza falsi allarmi
   await v.waitForSelector(".avviso", { state: "detached", timeout: 10000 }).catch(() => {});
   await v.evaluate(() => {
@@ -1419,18 +1451,109 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   await tocca(v, '[data-a="esame"]:has-text("TROPONINA US")');
   await v.locator("#quesito").fill("rete lenta");
   await tocca(v, "#ordina"); await sospendi(900); await tocca(v, "#ordina");
-  const ordinato = await finche(async () => Object.keys(B.state.richieste).length > ric0
-    && /aspettano qualcuno al PC|Stampat|Mandat|Etichette/.test(await v.locator(".ord").first().innerText().catch(() => "")), 120000);
-  const allarmi = await v.evaluate(() => window.__allarmi);
-  check(elenco && esitiB && ordinato && !allarmi.length && relay.entrate().tel === e2 && Object.keys(B.state.richieste).length === ric0 + 1,
-    `rete lenta (1500 ms, 50 kbit/s): l'elenco, gli esiti di BIANCHI e un ordine arrivano, senza un allarme e senza rifare la presa (${allarmi.join(" | ") || "nessun allarme"})`);
+  const ordinato = await finche(async () => (await eseguiti("rete lenta")) === 1 && await risposto(v), 120000);
+  await sospendi(3000);
+  // (solo gli allarmi della rete: un no della scheda del gestionale è un'altra storia)
+  const allarmi = (await v.evaluate(() => window.__allarmi)).filter((x) => /Non so|in tempo|Ricollego|Senza rete|raggiungibile|PC assente/.test(x));
+  check(elenco && esitiB && ordinato && !allarmi.length && relay.entrate().tel === e2 && await eseguiti("rete lenta") === 1 && Object.keys(B.state.richieste).length <= ric0 + 1,
+    `rete lenta (1500 ms, 50 kbit/s): l'elenco, gli esiti di BIANCHI e un ordine arrivano, senza un allarme e senza rifare la presa (${allarmi.join(" | ") || "nessun allarme"}; elenco ${elenco}, esiti ${esitiB}, ordine ${ordinato}, prese +${relay.entrate().tel - e2}, richieste +${Object.keys(B.state.richieste).length - ric0})`);
   await reteV();
   await gialli(false);
   await finche(ordiniFiniti, 60000);
 
-  await sw.evaluate(() => { globalThis.ponteSuScheda = self.__vere.scheda; globalThis.ponteComando = self.__vere.comando; globalThis.ponteDaiPdf = self.__vere.pdf; });
+  // 7. un ordine toccato senza rete: in coda, col conto alla rovescia; tornata la rete entro 30 secondi, parte, una volta
+  const richB = () => Object.keys(B.state.richieste).length;
+  const arrivatiPc = (q) => sw.evaluate((q) => self.__ordini.filter((x) => x === q).length, q);
+  const ordinaSu = async (p, q) => {
+    await tocca(p, '[data-a="esame"]:has-text("TROPONINA US")');
+    await p.locator("#quesito").fill(q);
+    await tocca(p, "#ordina"); await sospendi(900); await tocca(p, "#ordina");
+  };
+  const coda = () => v.locator(".coda").first().innerText().catch(() => "");
+  await reteV({ offline: true });
+  await finche(async () => /Senza rete/.test(await pill()), 15000);
+  const usabile = await v.locator("#ordina.nopc").count() === 0;
+  const r1 = richB();
+  await ordinaSu(v, "in coda");
+  const c1 = (await finche(async () => /In coda · 0:\d\d/.test(await coda()), 5000)) ? await coda() : "";
+  await sospendi(2500);
+  const c2 = await coda();
+  const sec = (t) => Number((/0:(\d\d)/.exec(t) || [])[1]);
+  await reteV();
+  const partito = await finche(async () => (await eseguiti("in coda")) === 1 && await risposto(v), 60000);
+  await finche(ordiniFiniti, 60000); await sospendi(2000);
+  check(usabile && sec(c1) >= 26 && sec(c2) < sec(c1) && partito && await eseguiti("in coda") === 1 && richB() <= r1 + 1 && await arrivatiPc("in coda") >= 1,
+    `senza rete «Conferma e stampa» resta usabile: l'ordine va in coda («${c1.split("\n")[0]}» → «${c2.split("\n")[0]}»), e tornata la rete parte, una volta sola (usabile ${usabile}, partito ${partito}, fatto sul PC ${await eseguiti("in coda")} volte, richieste +${richB() - r1}, arrivi al PC ${await arrivatiPc("in coda")}; ${(await testoTel(v)).replace(/\s+/g, " ").slice(0, 160)})`);
+
+  // 8. senza rete per più di 30 secondi: scade, non parte più — nemmeno quando la rete torna; toccato, si riarma
+  await reteV({ offline: true });
+  await finche(async () => /Senza rete/.test(await pill()), 15000);
+  const r2 = richB();
+  await ordinaSu(v, "scade senza rete");
+  const scaduta = await finche(async () => /Scaduta: non inviata/.test(await coda()), 40000);
+  await reteV();
+  await finche(async () => !(await pill()), 10000);
+  await sospendi(4000);
+  check(scaduta && richB() === r2 && await arrivatiPc("scade senza rete") === 0 && await eseguiti("scade senza rete") === 0,
+    "senza rete oltre 30 secondi: «Scaduta: non inviata», e tornata la rete non parte (il PC non lo vede mai)");
+  await tocca(v, '.coda[data-a="riarma"]');
+  const riarmato = await v.locator("#ordina").innerText();
+  check(/Ordino 1 esame per BIANCHI ANNA.*Tocca di nuovo/.test(riarmato) && !(await v.locator(".coda").count()),
+    `toccata la carta scaduta, la scelta torna e il bottone chiede di nuovo conferma (${riarmato})`);
+  await tocca(v, '[data-a="esame"]:has-text("TROPONINA US")');   // (non lo conferma: via la scelta)
+
+  // 9. l'orologio del telefono 5 minuti avanti o indietro: l'ordine in coda parte lo stesso, una volta
+  const esiti = [];
+  for (const x of [-5 * 60e3, 5 * 60e3]) {
+    await v.evaluate((x) => sessionStorage.setItem("__salto", String(x)), x);
+    await v.reload();
+    await aspettaTel(v, /BIANCHI A\./, 20000);
+    await tocca(v, '.paz[data-ep="999002"]');
+    await aspettaTel(v, /Aggiorna i valori/, 20000);
+    await tocca(v, '[data-a="scheda"][data-s="richieste"]');
+    await aspettaTel(v, /Dol th/, 10000);
+    await reteV({ offline: true });
+    await finche(async () => /Senza rete/.test(await pill()), 15000);
+    const r = richB(), q = `orologio ${x > 0 ? "avanti" : "indietro"}`;
+    await ordinaSu(v, q);
+    await finche(async () => /In coda/.test(await coda()), 5000);
+    await sospendi(3000);
+    await reteV();
+    const ok = await finche(async () => (await eseguiti(q)) === 1 && await risposto(v), 60000);
+    await finche(ordiniFiniti, 60000); await sospendi(2000);
+    esiti.push(ok && await eseguiti(q) === 1 && richB() <= r + 1);
+  }
+  check(esiti.length === 2 && esiti.every(Boolean), `con l'orologio del telefono 5 minuti indietro o avanti, l'ordine in coda parte lo stesso, una volta (${esiti.join(", ")})`);
+  await v.evaluate(() => sessionStorage.removeItem("__salto"));
+
+  await sw.evaluate(() => { globalThis.ponteSuScheda = self.__vere.scheda; globalThis.ponteComando = self.__vere.comando; globalThis.ponteDaiPdf = self.__vere.pdf; globalThis.ponteOrdina = self.__vere.ordina; });
   await vCtx.close();
   await tocca(tel, '[data-a="riapri"]');
+  await aspettaTel(tel, /ROSSI M\./, 20000);
+
+  // 10. un ordine partito ma trattenuto per strada oltre i 30 secondi (e l'orologio
+  // del telefono 5 minuti avanti): il PC non lo fa, e il telefono lo dice
+  await tel.evaluate(() => sessionStorage.setItem("__salto", String(5 * 60e3)));
+  await tel.reload();
+  await aspettaTel(tel, /BIANCHI A\./, 20000);
+  await tocca(tel, '.paz[data-ep="999002"]');
+  await aspettaTel(tel, /Aggiorna i valori/, 20000);
+  await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
+  await aspettaTel(tel, /Dol th/, 10000);
+  const r3 = Object.keys(B.state.richieste).length;
+  rete.ritarda = 35000;
+  await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');
+  await tel.locator("#quesito").fill("trattenuto");
+  await tocca(tel, "#ordina"); await sospendi(900); await tocca(tel, "#ordina");
+  const tardivo = await finche(async () => /Scaduta: non inviata/.test(await tel.locator(".coda").first().innerText().catch(() => "")), 50000);
+  rete.ritarda = 0;
+  await sospendi(3000);
+  check(tardivo && Object.keys(B.state.richieste).length === r3 && /un ordine arrivato tardi: scaduto, non fatto/.test(await registroPonte())
+    && !/Non so se l'ordine/.test(await testoTel(tel)),
+    "un ordine trattenuto per strada 35 secondi (orologio del telefono 5 minuti avanti): il PC non lo fa, e il telefono dice «Scaduta: non inviata»");
+  await tocca(tel, '.coda [data-a="codaVia"]');
+  await tel.evaluate(() => sessionStorage.removeItem("__salto"));
+  await tel.reload();
   await aspettaTel(tel, /ROSSI M\./, 20000);
 }
 

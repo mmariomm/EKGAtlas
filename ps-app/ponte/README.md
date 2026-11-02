@@ -89,6 +89,13 @@ sessione. Vedi:
   ricollegato e vede l'ordine nato sul PC, il bottone smette di aspettare e l'allarme non c'è: lo
   dice già la carta. L'ordine ha un numero fatto dal
   telefono quando arma «Conferma»: rimandato, è lo stesso ordine, e il PC lo manda una volta sola.
+- **Senza rete** «Conferma e stampa» resta usabile: l'ordine va **in coda** («In coda · 0:24», il conto
+  alla rovescia) e parte appena torna il collegamento. Se non parte entro **30 secondi dal tocco**
+  scade: il telefono non lo rimanda più, la carta dice «Scaduta: non inviata» (toccata, la scelta torna
+  e il bottone chiede di nuovo conferma). Lo controlla anche il PC: l'ordine porta l'ora del tocco
+  sull'orologio del PC (il telefono misura lo scarto fra i due orologi al saluto, e lo tiene in
+  memoria), e arrivato più di 30 secondi dopo — trattenuto per strada, rimandato tardi — non si fa.
+  Uno arrivato in tempo va come sempre.
 - **Cartella** — la terza scheda: Anamnesi, Anamnesi remota, Farmaci, Allergie, Esame obiettivo,
   come li ha letti il PC dalla pagina del paziente («Letto sul PC alle 08:02», in ambra dopo un'ora;
   **↻ Rileggi** la rilegge). Si scrive un campo solo se la pagina lo lascia scrivere (né `readonly`
@@ -119,13 +126,14 @@ la chiude. Ogni comando del telefono finisce nel **Registro** del pannello («iP
 esami per ROSSI MARIO…»), e la pagina ⋯ → iPhone ha il registro del ponte (sessioni aperte e
 chiuse, comandi, un altro telefono rifiutato).
 
-**La sessione finisce** dopo **20 minuti senza comandi del medico** (quello che l'app chiede da sé —
+**La sessione finisce** dopo **3 minuti senza comandi del medico** (quello che l'app chiede da sé —
 rileggere l'elenco, gli ordini — non conta), con «Scollega» sul PC, alla scadenza dell'associazione,
 con la revoca, se l'estensione o il browser si riavviano, o se **una scheda del gestionale torna
 alla pagina d'accesso** (senza il gestionale il ponte non fa niente). Il telefono lo dice («Sessione
-chiusa · 20 minuti senza comandi», «Il gestionale sul PC è tornato alla pagina d'accesso») e cancella
+chiusa · 3 minuti senza comandi», «Il gestionale sul PC è tornato alla pagina d'accesso») e cancella
 dalla sua memoria tutto quello che sapeva dei pazienti, avvisi compresi; **Riapri** ne apre un'altra
-con un tocco, senza QR. L'associazione resta: rientrato nel gestionale, o riaperto il browser del PC,
+con un tocco, senza QR. Chiusa per i 3 minuti, tornando sull'app (o se lo era già in sottofondo) se ne
+apre un'altra da sola, senza passare da «Sessione chiusa»: ricollegarsi è questione di un attimo. L'associazione resta: rientrato nel gestionale, o riaperto il browser del PC,
 il telefono riprende con la stessa chiave. **Revoca l'iPhone** (sulla pagina ⋯ → iPhone, due tocchi)
 e la chiave di quel telefono non apre più niente: per rientrare serve un QR nuovo.
 
@@ -248,7 +256,7 @@ auto?, …}` dal telefono, `{re, ok, dati | errore}` e gli eventi `{evento: "ord
 dall'altra parte?) e risponde `pong` al battito.
 
 **La sessione.** Il telefono manda il saluto (`{v, n: nTel, dev}`), il PC risponde (`{v, n: nPc, eco:
-nTel, scade}`, o `{v, eco, no}` a un telefono che non è quello dell'associazione: il telefono accetta
+nTel, scade, ora}` — `ora` è l'orologio del PC, per lo scarto —, o `{v, eco, no}` a un telefono che non è quello dell'associazione: il telefono accetta
 solo la risposta al *suo* saluto), e il primo messaggio cifrato con le chiavi nuove apre la sessione
 sul PC. Un saluto da solo non chiude la sessione che c'è: la sostituisce solo una sessione nuova che
 ha parlato. Se il PC riceve dati per una sessione che non conosce (il service worker si è riavviato e
@@ -277,7 +285,7 @@ Senza rete la testata dice «Senza rete», quello che il telefono ha in memoria 
 chiesto al PC è in grigio, finché il collegamento non torna. L'app stessa si apre dalla sua copia se la
 rete non risponde in 3 secondi. Sul telefono non resta niente di più.
 
-**I 20 minuti** contano solo i comandi del medico: quelli che l'app manda da sé (`auto`, e `ciao`,
+**I 3 minuti** contano solo i comandi del medico: quelli che l'app manda da sé (`auto`, e `ciao`,
 `ordini`) non tengono aperta la sessione, né sul PC né sul telefono.
 
 **Dove gira.** La presa sta nel **service worker** dell'estensione (`extension/ponte-sw.js`,
@@ -296,7 +304,7 @@ un ordine la risposta è «non si sa», mai un no, e l'ordine che nasce lo stess
 ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un silenzio.
 
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
-`aggiornaValori(ep)`, `richieste` (il catalogo), `ordina(ep, oid, esami, quesito, mio)`, `nota(ep,
+`aggiornaValori(ep)`, `richieste` (il catalogo), `ordina(ep, oid, esami, quesito, mio, nato)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
 {prima, dopo}})`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`,
 più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
@@ -381,7 +389,7 @@ codice, o chiusa la vista (✕).
   non hanno una riga per richiesta (`invocation_logs: false`): l'indirizzo della presa, con la
   stanza, non finisce nella dashboard di Cloudflare.
 - **Telefono perso o rubato sbloccato**, durante le 14 ore: chi lo ha in mano può usare il pannello.
-  Lo limitano lo sblocco del telefono stesso, la scadenza, la sessione che si chiude dopo 20 minuti
+  Lo limitano lo sblocco del telefono stesso, la scadenza, la sessione che si chiude dopo 3 minuti
   senza comandi (l'app da sola non la tiene aperta), la spia sul PC, il Registro, e **Revoca
   l'iPhone** dal PC (la chiave di quel telefono non apre più niente).
 - **Il QR sullo schermo** vale quanto la chiave, ma per poco e per uno: si rivede solo nei primi due
