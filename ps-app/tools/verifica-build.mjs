@@ -4,12 +4,14 @@
  * posto: extension/content.js, extension/ponte-cripto.js, il bookmarklet) e la
  * confronta con l'ultimo commit; poi guarda dentro dist/ps-assist-latest.zip:
  * ogni file dell'estensione e della cartella stampa/ dev'essere quello di
- * adesso, SumatraPDF e il manifest dell'aiutante no, e le versioni devono
+ * adesso (SumatraPDF.exe compreso, e deve essere l'ufficiale 3.6.1), le impostazioni
+ * di SumatraPDF e il manifest dell'aiutante no, e le versioni devono
  * tornare. Non sta in `npm test`: fra un rilascio e l'altro la build
  * committata è vecchia per scelta (si rifà solo al rilascio).
  *   npm run verifica-build     (dopo `npm run dist` e il commit)
  */
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,13 +32,16 @@ if (elenco.length) {
     const p = join(dir, n);
     return statSync(join(root, p)).isDirectory() ? tutti(p) : [p];
   });
-  const devono = [...tutti("extension"), ...tutti("stampa").filter((f) => !/\/(\.|SumatraPDF|it\.psassist\.stampa\.json)/.test(f))];
+  const devono = [...tutti("extension"), ...tutti("stampa").filter((f) => !/\/(\.|SumatraPDF-settings|it\.psassist\.stampa\.json)/.test(f))];
   for (const f of devono) {
     if (!elenco.includes(f)) { guai.push(`nello zip manca ${f}`); continue; }
     const dentro = execFileSync("unzip", ["-p", zip, f], { maxBuffer: 64 << 20 });
     if (Buffer.compare(dentro, readFileSync(join(root, f))) !== 0) guai.push(`nello zip ${f} non è quello di adesso`);
   }
-  for (const f of elenco.filter((x) => /^stampa\/(SumatraPDF|it\.psassist\.stampa\.json)/.test(x))) guai.push(`nello zip non deve esserci ${f}`);
+  for (const f of elenco.filter((x) => /^stampa\/(SumatraPDF-settings|it\.psassist\.stampa\.json)/.test(x))) guai.push(`nello zip non deve esserci ${f}`);
+  // SumatraPDF.exe: quello ufficiale, lo stesso che installa.ps1 accetta
+  const sha = createHash("sha256").update(readFileSync(join(root, "stampa/SumatraPDF.exe"))).digest("hex").toUpperCase();
+  if (sha !== /\$EXE_SHA256 = '([0-9A-F]{64})'/.exec(readFileSync(join(root, "stampa/installa.ps1"), "utf8"))?.[1]) guai.push(`stampa/SumatraPDF.exe non è l'ufficiale 3.6.1 (${sha.slice(0, 12)}…)`);
 }
 const manifest = JSON.parse(readFileSync(join(root, "extension/manifest.json"), "utf8"));
 const core = /const VERSION = "([^"]+)"/.exec(readFileSync(join(root, "src/core.js"), "utf8"))?.[1];

@@ -1,4 +1,4 @@
 # li crea installa.cmd sul PC: non stanno nel repository
-SumatraPDF.exe
+# (SumatraPDF.exe invece sì: viaggia nello zip, col suo LEGGIMI e la licenza)
 SumatraPDF-settings.txt
 it.psassist.stampa.json

@@ -35,10 +35,10 @@ funzionare col dialogo di stampa.
      gli script.
    - Copia `host.cmd`, `host.ps1`, `installa.ps1` e `disinstalla.cmd` in
      `%LOCALAPPDATA%\PSAssist\stampa`.
-   - **SumatraPDF**: se lì c'è già quello giusto, resta. Se no lo prende da
-     `SumatraPDF-3.6.1-64.zip`, se lo trova in questa cartella o in Download (scaricato col
-     browser: utile se il proxy blocca PowerShell). Solo se non lo trova lo scarica dal sito
-     ufficiale. In ogni caso controlla l'impronta SHA-256, e un file diverso non lo usa.
+   - **SumatraPDF**: è già in questa cartella (`SumatraPDF.exe`, l'ufficiale 3.6.1, software
+     libero GPLv3: vedi `SumatraPDF-LEGGIMI.txt`), quindi non si scarica niente. Se mancasse, lo
+     prende da `SumatraPDF-3.6.1-64.zip` in questa cartella o in Download, e solo alla fine dal
+     sito ufficiale. In ogni caso controlla l'impronta SHA-256, e un file diverso non lo usa.
    - Guarda i **blocchi noti** (PowerShell in modalità limitata, criteri di Chrome e di Edge
      sugli aiutanti, il prompt dei comandi vietato, SumatraPDF che non arriva o non parte) e li
      dice **tutti insieme**, ognuno in una riga in italiano con che cosa chiedere all'IT: un
