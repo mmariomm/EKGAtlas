@@ -8406,8 +8406,8 @@
     tabelloneSpia() {
       if (!TABELLONE) return "";
       return TAB_SCHEDE == null ? `<span class="tbspia">…</span>`
-        : TAB_SCHEDE ? `<span class="tbspia" title="Un tocco su un paziente lo apre nella scheda del gestionale; i letti si salvano là">dal gestionale</span>`
-        : `<span class="tbspia no" title="Nessuna scheda del gestionale aperta: qui si guarda soltanto">— gestionale non aperto: solo da guardare</span>`;
+        : TAB_SCHEDE ? `<span class="tbspia"></span>`
+        : `<span class="tbspia no" title="Nessuna scheda del gestionale aperta: qui si guarda soltanto">gestionale chiuso</span>`;
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {

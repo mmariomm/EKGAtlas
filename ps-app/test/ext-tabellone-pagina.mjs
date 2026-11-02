@@ -102,7 +102,9 @@ const EXTURL = (f) => `chrome-extension://${new URL(sw.url()).host}/${f}`;
 const $p = (page, sel) => page.locator(`#psassist-host ${sel}`);
 const lsGest = (page, k) => page.evaluate((k) => JSON.parse(localStorage.getItem("psassist:" + k) || "null"), k);
 const spia = (page) => $p(page, ".tbspia").innerText().catch(() => "");
-const righe = (page) => page.evaluate(() => [...(document.getElementById("psassist-host")?.shadowRoot.querySelectorAll(".pzrow[data-pz]") || [])].map((r) => r.getAttribute("data-pz")));
+// chi c'è sul tabellone: le righe della lista e chi sta in un letto o in un'area (in Mappa la lista ha solo chi non ha un posto)
+const righe = (page) => page.evaluate(() => [...new Set([...(document.getElementById("psassist-host")?.shadowRoot.querySelectorAll(".pzrow[data-pz], .stbed[data-occep], .starbody .stp[data-stp]") || [])]
+  .map((r) => r.getAttribute("data-pz") || r.getAttribute("data-occep") || r.getAttribute("data-stp")))].sort());
 const vista = (page) => page.evaluate(() => document.getElementById("psassist-host")?.shadowRoot.querySelector('.tbseg [aria-checked="true"]')?.getAttribute("data-vista") || "");
 // (senza il permesso «tabs» l'indirizzo della scheda del tabellone non si vede: la si trova fra le pagine nostre)
 const tabelloneDavanti = () => sw.evaluate(async () => { const [c] = await chrome.runtime.getContexts({ contextTypes: ["TAB"], documentUrls: [chrome.runtime.getURL("tabellone.html")] }); return !!c && (await chrome.tabs.get(c.tabId)).active; });
@@ -133,7 +135,7 @@ try {
   const sp = await sw.evaluate(() => chrome.storage.local.get("tabellone.specchio").then((o) => o["tabellone.specchio"]));
   check(!!sp && sp.kv && "patients.v1" in sp.kv && "stanza.alta.posti.v1" in sp.kv && !Object.keys(sp.kv).some((k) => /^(corsa|catalog|win|dimissioni|quesiti)/.test(k)),
     `lo specchio porta solo le chiavi del tabellone (got ${sp ? Object.keys(sp.kv).join(", ") : "niente"})`);
-  check(await finche(async () => /dal gestionale/.test(await spia(tab))), `con il gestionale aperto lo dice (got: ${await spia(tab)})`);
+  check(await finche(async () => (await $p(tab, ".tbspia:not(.no)").count()) === 1 && !(await spia(tab)).trim()), `con il gestionale aperto non dice niente (got: «${await spia(tab)}»)`);
   check((await $p(tab, '.seg [data-seg="eo"]').count()) === 0 && (await $p(tab, "#menubtn").count()) === 0, "solo il tabellone: niente schede EO/Dimissioni, niente ⋯");
   const vistaTab = await tab.evaluate(() => localStorage.length);
   check(vistaTab === 0, `nella memoria della pagina dell'estensione non resta niente (got ${vistaTab} chiavi)`);
@@ -176,7 +178,7 @@ try {
 
   // --- senza gestionale: si guarda soltanto
   await gest.close();
-  check(await finche(async () => /—/.test(await spia(tab)), 8000), `senza gestionale lo dice: «—» (got: ${await spia(tab)})`);
+  check(await finche(async () => /gestionale chiuso/.test(await spia(tab)), 8000), `senza gestionale lo dice: «gestionale chiuso» (got: ${await spia(tab)})`);
   await $p(tab, '.pzrow[data-pz="700003"] .pzmetti').click();
   await $p(tab, '.stmi[data-dove^="letto:a2"]').click();
   await sospendi(1200);
@@ -187,7 +189,7 @@ try {
   check(!/NERI/.test(torna.letto) && /nessuna scheda del gestionale/.test(torna.msg), `un letto senza gestionale non si salva: torna com'era, e lo dice (got: ${JSON.stringify(torna.letto)} · ${torna.msg.slice(0, 80)})`);
   await tab.reload();
   await finche(async () => (await righe(tab)).length === PAZ.length);
-  check((await righe(tab)).length === PAZ.length && /—/.test(await spia(tab)), "riaperta senza gestionale, il tabellone è quello dello specchio, da guardare");
+  check((await righe(tab)).length === PAZ.length && /gestionale chiuso/.test(await spia(tab)), "riaperta senza gestionale, il tabellone è quello dello specchio, da guardare");
 } catch (e) {
   check(false, "si è fermato: " + String(e.message || e).split("\n")[0]);
 }
