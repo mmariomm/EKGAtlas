@@ -480,6 +480,9 @@ if (await prova("un errore su un foglio: quel foglio dal dialogo, col motivo; gl
   await dialogoChiuso(doc);
   await doc.waitForSelector("#psassist-print", { state: "detached", timeout: 8000 }).catch(() => {});
   check(lavori().length === 2 && (await stampe(doc)).length === 1, "la lista non si ristampa, e la scheda si è aperta una volta, per le etichette");
+  const err = ((await sw.evaluate(() => chrome.storage.local.get("errori.v1")))["errori.v1"] || []).filter((x) => x.tipo === "stampa");
+  check(err.some((x) => x.dati.esito === "fallito" && x.dati.tipo === "etichette") && !/ROSSI|MARIO|BIANCHI/.test(JSON.stringify(err)),
+    `il foglio non uscito sta nel registro degli errori, senza nomi (got ${JSON.stringify(err.slice(-1)).slice(0, 160)})`);
 }
 
 // ---- 5. l'aiutante sparito ----------------------------------------------

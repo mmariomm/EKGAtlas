@@ -700,9 +700,13 @@ richiesta da confermare.
   «Solo il tracciato della macchina». Gli altri documenti (consulenze…) stanno in **Altri
   documenti**, e si aprono nella loro scheda.
 - **Di chi è il referto**: prima di mostrare un testo, il codice fiscale scritto nel PDF (o nome e
-  data di nascita) si confronta col paziente. Non torna: «Referto di un altro paziente: non
-  mostrato». Nel PDF non c'è niente da confrontare: il testo si mostra con **«intestazione non
-  verificata»**.
+  data di nascita) si confronta col paziente. Fra i PDF che il portale mostra, quello rimasto
+  aperto di un paziente di prima si scarta in silenzio: è normale. Ma se il PDF **scelto** — da
+  salvare, mostrare nel visore, stampare o mandare al telefono — si rivela di un altro paziente,
+  vuol dire che il pannello ha sbagliato: non si tiene, non si mostra, e lo si dice forte, in
+  rosso, sulla riga e sulla striscia: **«Errore grave: questo PDF è di un altro paziente — non
+  mostrato»**, e nel registro degli errori (sotto). Nel PDF non c'è niente da confrontare: il testo
+  si mostra con **«intestazione non verificata»**.
 
 **Lab** è un'unica tabella: gli analiti in riga, raggruppati per sezione fissa (*Emocromo,
 Coagulazione, Biochim, Organi, Elettroliti e metabolismo, Emogas, Urine e altri liquidi*, e in
@@ -1354,6 +1358,22 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   e finestra (il DOM com'è dopo il caricamento, senza il pannello); il flusso delle richieste,
   solo *osservato* (`chrome.webRequest`: metodo, indirizzo, stato, rinvii, tempi, tipo, scheda,
   e quali le ha fatte l'estensione); il **testo** dei PDF (referti, etichette), con pagine e misura.
+- **Il registro degli errori** (`errori.json` nello zip, e quanti in `riepilogo.txt`): l'estensione
+  annota da sola, in un posto solo (`storage.local`, «errori.v1», al più 500 voci), ogni errore suo
+  — un PDF di un altro paziente (impronte di codice fiscale e data di nascita, mai i dati), un
+  ordine fermato o non confermato, un foglio non stampato o l'aiutante che non risponde, un
+  referto non preso, un errore del Ponte, un'eccezione del pannello o del service worker. Ogni
+  voce: ora, tipo, versione, pagina (solo l'MVPG) e numeri, codici, messaggi del nostro codice —
+  **mai nomi, codici fiscali, date di nascita, testo libero**; nello zip passa dall'anonimizzazione
+  e dal controllo come il resto. Vanno nello zip quelle dall'ultima registrazione scaricata (restano
+  sul PC: si sposta solo il segno). «Reset dati pazienti» non lo cancella. Sugli errori d'ordine
+  più difficili («… non risulta nel carrello», «Conferma non verificata», e il «Riprova i mancanti»
+  con com'è finito) la voce porta la **traccia** del giro, quella che il motore ha già sotto gli
+  occhi (nessuna richiesta in più): l'ordine, ogni esame col suo codice e la sua risorsa, ogni
+  pagina letta o mandata con l'ora, la durata e com'è andata (gli invii, la Conferma, ogni
+  rilettura del carrello con i codici che mostrava, la pagina di accesso, un messaggio del
+  gestionale), la scheda (sottofondo o del medico, visibile o no) e il tempo totale — per dire se
+  è stato il server o il pannello.
   Nessuna richiesta in più al server per le pagine; per un PDF che l'estensione non ha già in
   mano, **una** rilettura dalla cache del browser (`force-cache`) dello stesso indirizzo appena
   aperto — il riepilogo lo dice.

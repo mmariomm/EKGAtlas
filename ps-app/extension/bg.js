@@ -108,6 +108,38 @@ const b64 = (buf) => {
   return btoa(s);
 };
 
+// ---------------------------------------------------------------------------
+// IL REGISTRO DEGLI ERRORI. Uno solo, per il pannello (content.js lo manda qui:
+// «errore») e per il service worker, in storage.local «errori.v1»: al massimo
+// 500 voci, le più vecchie se ne vanno. Ogni voce {ts, tipo, versione, pagina,
+// dati}: pagina è solo l'MVPG; dati solo numeri, codici, impronte, messaggi
+// del nostro codice — mai nomi, codici fiscali, date di nascita, testo libero
+// (chi chiama passa solo quelli, e qui si ripulisce lo stesso). «Registra» lo
+// mette nello zip (errori.json); «Reset dati pazienti» non lo tocca.
+const ERRORI = "errori.v1", ERRORI_MAX = 500;
+let codaErrori = Promise.resolve();
+const pulito = (v, d = 0) => {
+  if (v == null || typeof v === "number" || typeof v === "boolean") return v;
+  if (typeof v === "string") return v.replace(/\b[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]\b/gi, "«CF»")
+    .replace(/\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b/g, "«data»").slice(0, 300);
+  if (d > 5) return null;
+  if (Array.isArray(v)) return v.slice(0, 120).map((x) => pulito(x, d + 1));   // (la traccia di un ordine: fino a 120 passi)
+  if (typeof v === "object") return Object.fromEntries(Object.entries(v).slice(0, 30).map(([k, x]) => [String(k).slice(0, 40), pulito(x, d + 1)]));
+  return null;
+};
+function segnaErrore(tipo, dati = {}, pagina = "") {
+  const voce = { ts: Date.now(), tipo: String(tipo || "?").slice(0, 40), versione: chrome.runtime.getManifest().version,
+    pagina: String(pagina || "").replace(/[^\w-]/g, "").slice(0, 60), dati: pulito(dati) };
+  codaErrori = codaErrori.then(async () => {
+    const l = (await chrome.storage.local.get(ERRORI))[ERRORI] || [];
+    await chrome.storage.local.set({ [ERRORI]: [...(Array.isArray(l) ? l : []), voce].slice(-ERRORI_MAX) });
+  }).catch(() => {});
+  return codaErrori;
+}
+// (un'eccezione non presa nel service worker: messaggio e prime righe della pila)
+self.addEventListener("error", (ev) => segnaErrore("eccezione", { dove: "bg", messaggio: String(ev.message || ev.error || "").slice(0, 200), pila: String(ev.error?.stack || "").split("\n").slice(0, 4).join(" | ") }));
+self.addEventListener("unhandledrejection", (ev) => segnaErrore("eccezione", { dove: "bg", messaggio: String(ev.reason?.message || ev.reason || "").slice(0, 200), pila: String(ev.reason?.stack || "").split("\n").slice(0, 4).join(" | ") }));
+
 const KEY = (id) => "ref:" + id;
 const REF_TTL = 8 * 3600e3;   // a shift: cached documents die with it
 // I dati clinici letti restano un giorno e SOPRAVVIVONO alla chiusura del
@@ -189,6 +221,8 @@ chrome.tabs.onRemoved.addListener((id) => {
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg === "psassist-reload") { chrome.runtime.reload(); return; }
   if (!msg || typeof msg !== "object") return;
+  // un errore dal pannello: nel registro degli errori
+  if (msg.t === "errore") { segnaErrore(msg.tipo, msg.dati, msg.pagina).then(() => reply({ ok: true })); return true; }
 
   // pdf.js, il lettore PDF di Mozilla, sta dentro l'estensione (pdfjs/) e
   // si carica nella scheda solo quando si apre un referto: nel mondo isolato
@@ -1009,7 +1043,10 @@ async function ordStampaFogli(id) {
         if (!rec) return false;
         const f = rec.fogli[passo.i];
         if (!pdf) rec.interrotta = rec.interrotta || "la scheda dell'ordine non ha dato il foglio";
-        else if (!pdf.ok || typeof pdf.pdf !== "string") Object.assign(f, { stato: "fallito", why: `il PDF non è arrivato (${corto(pdf.why, 80)})` });
+        else if (!pdf.ok || typeof pdf.pdf !== "string") {
+          Object.assign(f, { stato: "fallito", why: `il PDF non è arrivato (${corto(pdf.why, 80)})` });
+          segnaErrore("stampa", { ordine: id, foglio: passo.i, esito: "fallito", motivo: f.why });
+        }
         else if (pdf.pdf.length > STAMPA_PDF_MAX / 3 * 4 + 4) Object.assign(f, { stato: "fallito", why: "PDF troppo grande" });
         else { Object.assign(f, { stato: "mandato", stampante: corto(passo.stampante, 80) }); rec.inVolo = passo.i; }
         rec.agg = Date.now();
@@ -1019,6 +1056,7 @@ async function ordStampaFogli(id) {
       if (!va) continue;
       // 4. all'aiutante (fino a 90 secondi: lui finisce in 40), poi com'è andata
       const r = await stampaPdf(passo.tipo, pdf.pdf, passo.stampante, passo.ruota);
+      if (r.esito !== "stampato" && r.esito !== "mandato") segnaErrore("stampa", { ordine: id, foglio: passo.i, tipo: passo.tipo, esito: r.esito, motivo: r.why || "" });
       await inFilaOrd(async () => {
         const l = await ordLeggi();
         const rec = statoOrd(l, id);

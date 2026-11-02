@@ -410,6 +410,7 @@ async function ponteComando(s, d) {
     }
     return rispondi({ ok: false, errore: "Comando sconosciuto" });
   } catch (e) {
+    if (typeof segnaErrore === "function") segnaErrore("ponte", { comando: String(d && d.c || "").slice(0, 30), messaggio: corto(e && e.message || e, 120) });
     return rispondi({ ok: false, errore: "Errore sul PC: " + corto(e && e.message || e, 80) });
   }
 }
@@ -418,9 +419,10 @@ async function ponteComando(s, d) {
 // pannello: storage.local «ref:<id>», solo per l'episodio sotto cui è stata
 // salvata). Il telefono li chiede a pezzi, dentro la stessa sessione cifrata:
 // una risposta per pezzo, ognuna sotto il limite del ripetitore. Si offrono
-// solo i referti di cui il pannello ha già letto il testo — la lettura è dove
-// si scopre che il PDF è di un altro paziente, e quella copia non arriva qui
-// (la sua copia viene tolta, e comunque ogni pezzo la rilegge) —, e si danno
+// solo i referti che il pannello segna `pdf: true` — una copia salvata per
+// questo episodio, non segnata come di un altro paziente (la lettura è dove lo
+// si scopre: quella copia viene tolta, e comunque ogni pezzo la rilegge); vale
+// anche per una TC o una visita, di cui il testo non si legge —, e si danno
 // solo quelli offerti in questa sessione.
 const PONTE_PDF_MAX = 15e6;                  // oltre, «aprilo sul PC»
 const PONTE_PDF_PEZZO = 4 * 130000;          // caratteri base64 per risposta (≈ 390 KB): multiplo di 4
@@ -436,7 +438,10 @@ async function ponteOffriPdf(s, r, ep) {
   if (!r || !r.ok || !r.dati || !Array.isArray(r.dati.referti)) return r;
   s.pdf = s.pdf || new Set();
   for (const x of r.dati.referti) {
-    if (!x || typeof x.id !== "string" || !(x.testo || x.lungo)) continue;
+    if (!x || typeof x.id !== "string") continue;
+    const offri = x.pdf === true;   // il pannello: c'è la copia, e non è di un altro paziente
+    delete x.pdf;
+    if (!offri) continue;
     const b = await ponteCopia(ep, x.id).catch(() => null);
     if (!b) continue;
     s.pdf.add(ep + "|" + x.id);

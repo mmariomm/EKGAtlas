@@ -353,6 +353,11 @@ if (prova("l'errore arriva nella tua scheda, col resoconto intero — e «Svuota
   check(/oggi si chiama/.test(rossa) && /Mancano: PROCALCITONINA/.test(rossa) && (await $panel(doc, ".pill.run.err").count()) === 1,
     `la striscia del medico è rossa, col motivo corto e cosa manca (got: ${rossa || "niente"})`);
   check((await azione(doc)) === "apri il carrello", `e accanto «apri il carrello» (got: ${await azione(doc) || "niente"})`);
+  {
+    const err = ((await sw.evaluate(() => chrome.storage.local.get("errori.v1")))["errori.v1"] || []).filter((x) => x.tipo === "ordine");
+    check(err.some((x) => /oggi si chiama/.test(x.dati.motivo)) && !/ROSSI|MARIO/.test(JSON.stringify(err)),
+      `l'errore dell'ordine sta nel registro degli errori, senza nomi (got ${JSON.stringify(err.slice(-1)).slice(0, 160)})`);
+  }
   await shot(doc, "3b-striscia-rossa");
   check(await aspettaChiusa(w1), "la scheda dell'ordine, che nessuno guardava, si chiude: il resoconto è passato a te");
   const rid = Object.keys(A.state.richieste)[0];
@@ -553,6 +558,30 @@ if (prova("⏹ che non arriva subito — segnato, e la scheda si ferma appena pa
   await $panel(doc, "#strstop").click().catch(() => {});
   await doc.waitForTimeout(300);
   lento = 0;
+}
+
+// ---- 6b. «non risulta nel carrello»: nel registro degli errori, con la traccia
+// di quello che il motore ha visto (per distinguere il server da noi)
+if (prova("non risulta nel carrello: la traccia nel registro degli errori")) {
+  nuovi({ neverAdd: ["324"] });   // il server «perde» la troponina
+  lento = 0;
+  await suPagina(doc, A.patientUrl);
+  await sw.evaluate(() => chrome.storage.local.remove("errori.v1"));
+  await ordina(doc, ["TROPONINA"], { quesito: "febbre" });
+  await striscia(doc, /ROSSI MARIO.*Errore/, 60000).catch(() => "");
+  const cerca = async () => ((await sw.evaluate(() => chrome.storage.local.get("errori.v1")))["errori.v1"] || [])
+    .find((x) => x.tipo === "ordine" && /non risulta nel carrello/.test(x.dati?.motivo || ""));
+  await finche(cerca, 15000);
+  const v = await cerca();
+  const t = v && v.dati.traccia;
+  const insert = t && t.passi.filter((p) => p.insert === "324");
+  const verifiche = t && t.passi.filter((p) => Array.isArray(p.carrello));
+  check(!!t && t.esami.some((e) => e.codice === "324" && e.risorsa) && insert.length === 1 && insert[0].esito === "ok" && insert[0].ms >= 0
+    && verifiche.length >= 3 && verifiche.every((p) => !p.carrello.includes("324")) && t.durata > 0 && t.scheda && typeof t.visibile === "boolean"
+    && !/ROSSI|MARIO/.test(JSON.stringify(v)),
+    `«non risulta nel carrello»: la traccia — esami, l'invio (stato, durata), ogni rilettura col carrello che si vedeva, la scheda, il tempo — senza nomi (got: ${
+      t ? `${insert.length} invio, ${verifiche.length} riletture, ${t.scheda}, ${t.durata} ms` : JSON.stringify(v || {}).slice(0, 120)})`);
+  await $panel(doc, "#strstop").click().catch(() => {});
 }
 
 // ---- 7. due ordini: il secondo in coda -----------------------------------

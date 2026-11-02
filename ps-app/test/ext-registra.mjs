@@ -164,6 +164,9 @@ await doc.waitForTimeout(3000);
 await doc.keyboard.press("Escape").catch(() => {});
 await doc.waitForSelector("#psassist-print", { state: "detached", timeout: 8000 }).catch(() => {});
 
+// un errore nel registro degli errori, durante la registrazione: va nello zip
+await sw.evaluate(() => segnaErrore("verifica", { episodio: "999001", motivo: "errore di verifica" }, "PsoEpisodioClinicoAmbulatorio"));
+
 // ---- 3. un referto: due rinvii, un PDF, una finestra nuova ------------------
 await suPagina(doc, A.patientUrl);
 if (await $panel(doc, ".card").count()) await $panel(doc, "#collapse").click();
@@ -211,6 +214,12 @@ const pdfs = existsSync(join(dir, "pdf")) ? readdirSync(join(dir, "pdf")) : [];
 check(pagine.some((f) => /^\d{3}-PsoLista\.html$/.test(f)), `c'è la lista del PS (${pagine.length} pagine)`);
 check(pagine.filter((f) => /-PsoEpisodioClinicoAmbulatorio\.html$/.test(f)).length >= 2, "ci sono le schede dei pazienti");
 check(pagine.some((f) => /-RcsRichiestaPrestazioniRicercaErogatore\.html$|-PsoRichiestaCreaRcs\.html$/.test(f)), "e le pagine dell'ordine (la scheda di sottofondo)");
+const errJson = JSON.parse(leggi("errori.json") || "{}");
+const ePr = (errJson.errori || []).find((x) => x.tipo === "verifica");
+check(!!ePr && ePr.dati.motivo === "errore di verifica" && ePr.dati.episodio !== "999001" && /Errori dell'estensione: [1-9]/.test(leggi("riepilogo.txt")),
+  `errori.json: il registro degli errori, l'episodio rimappato; il riepilogo li conta (got ${JSON.stringify(ePr || {}).slice(0, 140)})`);
+check(((await sw.evaluate(() => chrome.storage.local.get(["errori.v1", "errori.esportati"]))) || {})["errori.esportati"] >= (ePr ? 1 : 0),
+  "esportati: le voci restano, si sposta solo il segno");
 const flusso = JSON.parse(leggi("flusso.json") || "{}");
 const rq = flusso.richieste || [];
 const ref = rq.find((x) => /Sa4ViewerExtRedirect\.do/.test(x.url) && /HL7RIS/.test(x.url));

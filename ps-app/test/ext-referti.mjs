@@ -85,6 +85,11 @@ const route = async (r) => {
     inVolo++; maxInVolo = Math.max(maxInVolo, inVolo); await new Promise((ok) => setTimeout(ok, 700)); inVolo--;
     v.a = Date.now();
     // l'ecografia con un font vero (Helvetica): il visore la deve disegnare
+    // un ECG il cui PDF è intestato a un altro paziente: l'errore grave
+    if (v.id && v.id.startsWith("ffff9999")) {
+      mock.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });
+      return r.fulfill({ status: 200, headers: { "content-type": "application/pdf" }, body: pdfSemplice(RIGHE_ALTRO) });
+    }
     if (v.id && v.id.startsWith("eeee5555")) {
       mock.handle({ method: req.method(), url: req.url(), bodyBuffer: req.postDataBuffer() });   // (contata come le altre)
       return r.fulfill({ status: 200, headers: { "content-type": "application/pdf" }, body: pdfSemplice(RIGHE_ECO) });
@@ -267,6 +272,30 @@ const finito = (p) => p.waitForFunction(() => { const r = document.getElementByI
   await pO.locator("#psassist-host #refreset").click();   // il «Salva» a mano, qui sotto, parte senza copie
   await pO.waitForTimeout(1200);
   await pO.close(); await pX.close();
+}
+
+// Il PDF scelto è di un altro paziente: errore grave, forte, sulla riga e nel
+// registro degli errori (senza nomi); la copia non resta
+const errori = async () => { const [s] = ctx.serviceWorkers(); return (await s.evaluate(() => chrome.storage.local.get("errori.v1")))["errori.v1"] || []; };
+{
+  const ID_ALTRO = "ffff9999-0000-0000-0000-000000000099";
+  extra = [{ id: ID_ALTRO, quando: "2026-08-22 06:30:00.0" }];
+  const pI = await ctx.newPage();
+  await pI.goto(mock.patientUrl);
+  await pI.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  const grave = await pI.waitForSelector(`#psassist-host [data-esito="${ID_ALTRO}"] .wuex.grave`, { timeout: 60000 }).then((el) => el.textContent()).catch(() => "");
+  const salvato = await pI.locator(`#psassist-host [data-esito="${ID_ALTRO}"] .rdot.saved`).count();
+  const voce = (await errori()).find((x) => x.tipo === "identita" && x.dati && x.dati.referto === ID_ALTRO);
+  const testo = JSON.stringify(voce || {});
+  check(grave === "Errore grave: questo PDF è di un altro paziente — non mostrato" && !salvato,
+    `un PDF scelto di un altro paziente: «Errore grave…» sulla riga, e la copia non resta (got: ${grave || "niente"}${salvato ? ", salvato" : ""})`);
+  check(!!voce && /nome/.test(voce.dati.via) && !/BIANCHI|ANNA|ROSSI|BNCNNA|\d{2}\/\d{2}\/\d{4}/.test(testo),
+    `e nel registro degli errori: episodio, referto, perché — niente nomi né date (got: ${testo.slice(0, 200)})`);
+  extra = [];
+  await finito(pI);
+  await pI.locator("#psassist-host #refreset").click();   // il «Salva» a mano, qui sotto, parte senza copie
+  await pI.waitForTimeout(1200);
+  await pI.close();
 }
 
 // «Salva i referti» sta negli Esiti, nella riga in cima: non più nel menu ⋯
@@ -519,6 +548,10 @@ await p3.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 150
 const rosso = await p3.waitForSelector('#psassist-host .wuitem:has-text("TC ENCEFALO") .rrow.err', { state: "attached", timeout: 120000 }).then((el) => el.getAttribute("title")).catch(() => "");
 check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.test(rosso) && /sguardo sì \(blob 0/.test(rosso) && !/abc123/.test(rosso),
   `senza PDF: il motivo e la pagina del portale, senza il token (got: ${String(rosso).slice(0, 220)})`);
+{
+  const v = (await errori()).find((x) => x.tipo === "referto" && /non si vede da qui/.test(x.dati?.motivo || ""));
+  check(!!v && !/abc123|ROSSI|MARIO/.test(JSON.stringify(v)), `un referto non preso finisce nel registro degli errori, senza token né nomi (got: ${JSON.stringify(v || {}).slice(0, 160)})`);
+}
 
 // Lo sguardo sul portale tocca solo le richieste ASINCRONE: una sincrona (il
 // portale ne manda una a logout.jsp mentre la pagina si chiude, e Chrome la
@@ -553,7 +586,7 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
     "dimissioni.v1": { prova: { testo: "modello del medico" } }, "eo.v1": { prova: "EO del medico" }, "ordini.stampati": ["o1"], "attesaConferma.ms": 120000 };
   const VIA_SCHEDA = [`ris.${ep}.zz`, `visto.${ep}.zz`, `reftxt.${ep}.zz`, `log.${ep}`, `ui.${ep}`, "receipt.v1", "confirm.v1", "queue.v1",
     "print.v1", "cuori.v1", "richieste.nostre.v1", "registriOrdini.v1", "avviso.v1", "dimdraft.x", "eodraft.x"];
-  const VIA_EXT = ["ref:zz", "storicoArch"], RESTA_EXT = ["portale", "stampa", "stampaEsito", "stampaMisura", "ponte.coppia", "ponte.host"];
+  const VIA_EXT = ["ref:zz", "storicoArch"], RESTA_EXT = ["portale", "stampa", "stampaEsito", "stampaMisura", "ponte.coppia", "ponte.host", "errori.v1"];   // (il registro degli errori resta)
   const VIA_SESS = ["apertura", "sotto:999", "ordine:o-fine"], RESTA_SESS = ["ponte", "ordiniVisti", "ordiniFogli", "stampaVerificata"];
 
   const pR = await ctx.newPage();
