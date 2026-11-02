@@ -717,7 +717,7 @@
           `<button class="grande" data-a="sostituisci">Usa il codice ${esc(S.nuova.codice)}</button><button class="grande quiet" data-a="tieni">Tieni quella di adesso</button>`, true);
       case "avvio":
       case "collego":
-        return `<main><div class="piena"><div class="giro"></div><h1>Mi collego al PC…</h1></div></main>`;
+        return `<main><div class="piena"><div class="giro"></div><h1>Mi collego al PC…</h1>${S.coppia ? `<button class="grande quiet" data-a="scansiona">Annulla e scansiona il QR</button>` : ""}</div></main>`;
       case "pc":
         if (S.pari === null && !(S.ws && S.ws.readyState === 1)) {
           return piena(ICO.pc, "Non raggiungo il ponte", "<p>Controlla la connessione del telefono: riprovo da solo.</p>",
