@@ -679,7 +679,6 @@
       ${S.menu ? `<div class="menu" role="menu">
         ${suPaz ? "" : `<button data-a="aggiornaLista">Aggiorna l'elenco</button>`}
         <button data-a="stampaPdf">Stampa un PDF</button>
-        <button data-a="scansiona">Scansiona un QR nuovo</button>
         <button data-a="esci">Chiudi la sessione</button>
         <button class="via" data-a="dimentica">Dimentica questo PC</button>
         <div class="info">Associato fino alle ${hhmm(S.coppia.scade)} · codice ${esc(S.codice)}</div>
@@ -722,11 +721,11 @@
       case "pc":
         if (S.pari === null && !(S.ws && S.ws.readyState === 1)) {
           return piena(ICO.pc, "Non raggiungo il ponte", "<p>Controlla la connessione del telefono: riprovo da solo.</p>",
-            `<button class="grande" data-a="riapri">Riprova</button>${scansiona(true)}${scade}`, true);
+            `<button class="grande" data-a="riapri">Riprova</button>${scansiona()}${scade}`, true);
         }
         return piena(ICO.pc, "Il PC non risponde", `<p>${S.pari ? "Il PC è sul ponte ma non risponde: riprovo da solo." : "Sul PC dell'ospedale deve essere aperto Chrome col pannello: lo aspetto, e riprovo da solo."}</p>
           <p>Se sul PC c'è un QR nuovo, inquadra quello.</p>`,
-          `<button class="grande" data-a="riapri">Riprova</button>${scansiona(true)}${scade}`, true);
+          `<button class="grande" data-a="riapri">Riprova</button>${scansiona()}${scade}`, true);
       case "altrove":
         return piena(ICO.pc, "Aperto su un altro dispositivo", "<p>Il pannello è aperto su un altro telefono o in un'altra scheda: qui si è fermato.</p>",
           `<button class="grande" data-a="riapri">Riprendi qui</button>${scansiona(true)}${scade}`);
