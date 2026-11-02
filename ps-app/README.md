@@ -657,10 +657,19 @@ storico del portale, o le finestre Risultati) e poi i **referti** che non sono d
 **due alla volta al massimo** con la solita pausa a caso, quelli già salvati mai più, l'identità
 controllata come sempre. Il **testo** si legge da solo **solo di ECG e radiografie** (dell'ECG
 solo il referto scritto del cardiologo: da «Conclusioni» a «Il Medico»); **TC, ecografie, RM,
-visite e consulenze** si salvano e basta, e si aprono nel **visore** (un tocco sulla riga ne
-legge comunque il testo). Una volta **per paziente ogni 15 minuti**, a meno che la pagina non
-mostri una riga nuova (un prelievo, un referto); si ferma se lasci il paziente (chi era in fila
-non parte). Mentre lavora, accanto a **↻** c'è solo un discreto **«↓ 2»** — quanti ne restano —
+visite e consulenze** si salvano e basta: un tocco sulla riga li apre nel **visore** (se la
+copia non c'è ancora la prende prima, nella stessa fila), mai il testo nel pannello.
+**Solo quando c'è qualcosa di nuovo**, mai a orario: un **referto** non ancora salvato (salvato
+non cambia più); il **laboratorio** quando la sua **firma** nella pagina cambia. Nelle pagine
+vere una richiesta di laboratorio passa da «Prenotata» a «Erogata» (con «Visualizza Risultati»,
+cioè una finestra Risultati) a «REFERTO» (il referto del LIS): l'icona di stato col suo titolo,
+le finestre Risultati e i referti del laboratorio fanno la firma. Mentre è «Erogata» e i valori
+arrivano uno a uno la riga **non cambia**: allora si ricontrolla quando apri gli **Esiti** di
+quel paziente, al più **ogni 10 minuti**. **Mentre un ordine lavora** — di qualunque paziente:
+il motore che manda, la scheda dell'ordine, una conferma in sospeso, i fogli che vanno in
+stampa — non parte niente di nuovo: quello che è già in volo finisce, il resto aspetta e
+riprende da solo appena l'ordine ha finito. Si ferma se lasci il paziente (chi era in fila non
+parte). Mentre lavora, accanto a **↻** c'è solo un discreto **«↓ 2»** — quanti ne restano —
 e nient'altro. Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
 richiesta da confermare.
 

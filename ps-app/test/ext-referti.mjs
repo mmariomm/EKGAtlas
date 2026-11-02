@@ -37,8 +37,11 @@ const mock = createMock({});
 const rigaRef = (sis, id, quando, nome) => `<tr><td class="AFCDataTD" title="${nome}" valign="top"><a href="#" title="REFERTO" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*TEST00001&REFERTO_SISTEMA=${sis}&REFERTO_ID=${id}','${sis}')"><img alt="referto"></a>
   ${nome}<input type="hidden" name="DATA_ORD" value="${quando}"><input type="hidden" name="DESCRIZIONE_TITLE" value="${nome}"></td></tr>`;
 const rigaRis = (id, quando, nome) => rigaRef("HL7RIS", id, quando, nome);
-// righe in più che la pagina del paziente mostra da un certo momento (ECG nuovi)
-let extra = [];
+// righe in più che la pagina del paziente mostra da un certo momento (ECG nuovi,
+// un referto del laboratorio, una finestra Risultati)
+let extra = [], extraLab = [], extraRis = [];
+const rigaRis2 = (id) => `<tr><td class="AFCDataTD" title="0-320 EMOCROMOCITOMETRICO URGENTE (POCT1502)"><a class="AFCDataLink" href="#" title="Visualizza Risultati" onclick="window.open('/sa4rcs/restrict/RcsAccessiRisultatiElenco.do?RCS_ACCESSO_ID=${id}','*TEST00001','height=500,width=800');"><img alt="risultati"></a>
+  <input type="hidden" name="DATA_ORD" value="2026-08-23 07:28:00.0"></td></tr>`;
 {
   const h = mock.handle;
   mock.handle = (req) => {
@@ -47,7 +50,9 @@ let extra = [];
       ? { ...out, body: Buffer.from(out.body.toString("latin1").replace(/REFERTO_SISTEMA=HL7LIS(&REFERTO_ID=bbbb2222)/g, "REFERTO_SISTEMA=HL7CONS$1")
         .replace(/(REFERTO_ID=cccc3333[\s\S]*?<\/tr>)/, `$1${rigaRis("dddd4444-0000-0000-0000-000000000004", "2026-08-22 03:10:00.0", "69-140 RX TORACE (A6900)")}${
           rigaRis("eeee5555-0000-0000-0000-000000000005", "2026-08-22 04:20:00.0", "69-210 ECOGRAFIA ADDOME (A6921)")}${
-          extra.map((x) => rigaRef("HL7AMB", x.id, x.quando, "8-6 ELETTROCARDIOGRAMMA (84)")).join("")}`), "latin1") }
+          extra.map((x) => rigaRef("HL7AMB", x.id, x.quando, "8-6 ELETTROCARDIOGRAMMA (84)")).join("")}${
+          extraLab.map((id) => rigaRef("HL7LIS", id, "2026-08-22 08:00:00.0", "0-320 EMOCROMOCITOMETRICO URGENTE (POCT1502)")).join("")}${
+          extraRis.map(rigaRis2).join("")}`), "latin1") }
       : out;
   };
 }
@@ -146,9 +151,13 @@ const salvati = (p, n) => p.waitForFunction((k) => document.getElementById("psas
   await pS.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
   await pS.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wuimg .wuex").length >= 1, { timeout: 20000 }).catch(() => {});
   check(JSON.stringify(await conAnteprima(pS)) === JSON.stringify(["RX TORACE"]), "in una scheda nuova il testo della radiografia salvata c'è già, letto dalla copia");
+  // una TC al tocco: il visore sulla copia salvata, nessun testo nel pannello
   await pS.locator('#psassist-host .wuimg [data-esito]:has-text("TC ENCEFALO")').click();
-  await pS.waitForSelector("#psassist-host .wuitem.aperto .reftxt .rt", { timeout: 10000 }).catch(() => {});
-  check(/Non focolai/.test(await pS.locator("#psassist-host .wuitem.aperto .reftxt").innerText().catch(() => "")), "e si apre lì sotto, al tocco");
+  await pS.locator("#psassist-visore canvas").first().waitFor({ timeout: 15000 }).catch(() => {});
+  check((await pS.locator("#psassist-visore").count()) === 1 && /TC ENCEFALO/.test(await pS.locator("#psassist-visore .vtit").innerText().catch(() => ""))
+    && (await pS.locator('#psassist-host .wuitem:has-text("TC ENCEFALO") .reftxt').count()) === 0,
+    "una TC al tocco: il PDF nel visore, nessun testo nel pannello");
+  await pS.locator("#psassist-visore #vchiudi").click().catch(() => {});
   await pS.waitForTimeout(2500);
   check(mock.state.requests.filter((q) => eDoc(q.url)).length === richiestePrima && (await pS.locator("#psassist-host .wuauto").count()) === 0,
     "nessuna richiesta al server: i salvati non si riscaricano, e non c'è niente di nuovo da caricare");
@@ -186,30 +195,78 @@ const salvati = (p, n) => p.waitForFunction((k) => document.getElementById("psas
   extra = [];
 }
 
-// una volta ogni 15 minuti, se la pagina non mostra niente di nuovo: senza le
-// copie (↺), riaprire subito non scarica; passati i 15 minuti sì
+// Niente a orario, solo quello che è nuovo. Le letture del laboratorio si
+// contano dalle aperture dello storico del portale (il «Carica i valori» di qui).
+const storici = () => mock.state.requests.filter((q) => /MODALITA=CLINICA/.test(q.url)).length;
+const finito = (p) => p.waitForFunction(() => { const r = document.getElementById("psassist-host")?.shadowRoot; return r && r.querySelector(".wu") && !r.querySelector(".wuauto"); }, null, { timeout: 60000 }).catch(() => {});
 {
+  // senza le copie (↺) i referti non sono salvati: riaperto, si riprendono; il
+  // laboratorio, la cui riga non è cambiata, no
   await page.locator("#psassist-host #refreset").click();
   await page.waitForTimeout(1200);
   voli = []; maxInVolo = 0;
+  const s0 = storici();
   const pW = await ctx.newPage();
   await pW.goto(mock.patientUrl);
   await pW.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-  await pW.waitForTimeout(4000);
-  check(voli.length === 0 && (await pW.locator("#psassist-host .wuauto").count()) === 0,
-    `riaperto entro i 15 minuti, niente di nuovo in pagina: non riparte (scaricati ${voli.length})`);
-  await pW.evaluate(() => {
-    const k = "psassist:autoCarica.v1", t = JSON.parse(localStorage.getItem(k) || "{}");
-    for (const ep of Object.keys(t)) t[ep].ts -= 16 * 60e3;
-    localStorage.setItem(k, JSON.stringify(t));
-  });
+  await salvati(pW, 4);
+  await finito(pW);
+  check(voli.length === 4 && storici() === s0, `riaperto: i referti non salvati si riprendono, il laboratorio non cambiato no (scaricati ${voli.length}, storici ${storici() - s0})`);
+  // la riga del laboratorio cambia (un referto del LIS in più): si rilegge
+  extraLab = ["lis20000-0000-0000-0000-000000000020"];
   await pW.reload();
   await pW.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-  await salvati(pW, 4);
-  check(voli.length === 4, `passati i 15 minuti, riparte (scaricati ${voli.length})`);
-  await pW.locator("#psassist-host #refreset").click();   // il «Salva» a mano, qui sotto, parte senza copie
+  await finito(pW);
+  check(storici() === s0 + 1, `la firma del laboratorio è cambiata: i valori si rileggono (storici ${storici() - s0})`);
+  // un laboratorio a metà (la finestra Risultati): si ricontrolla aprendo gli Esiti, al più ogni 10 minuti
+  extraRis = ["20260010040701"];
+  await pW.reload();
+  await pW.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await finito(pW);
+  const s1 = storici();
+  await pW.locator('#psassist-host [data-seg="richieste"]').click();
+  await pW.locator('#psassist-host [data-seg="esiti"]').click();
+  await pW.waitForTimeout(2500);
+  check(storici() === s1, `a metà, gli Esiti riaperti entro 10 minuti: non si rilegge (storici ${storici() - s1})`);
+  await pW.evaluate(() => {
+    const k = "psassist:autoCarica.v1", t = JSON.parse(localStorage.getItem(k) || "{}");
+    for (const ep of Object.keys(t)) t[ep].parz -= 11 * 60e3;
+    localStorage.setItem(k, JSON.stringify(t));
+  });
+  await pW.locator('#psassist-host [data-seg="richieste"]').click();
+  await pW.locator('#psassist-host [data-seg="esiti"]').click();
+  await finito(pW);
+  await pW.waitForTimeout(1500);
+  check(storici() === s1 + 1, `passati 10 minuti, gli Esiti aperti ricontrollano il laboratorio a metà (storici ${storici() - s1})`);
+  extraLab = []; extraRis = [];
+  await pW.locator("#psassist-host #refreset").click();   // qui sotto si riparte senza copie
   await pW.waitForTimeout(1200);
   await pW.close();
+}
+
+// Mentre un ordine lavora (qui: un altro paziente, la sua scheda viva) non
+// parte niente; finito l'ordine, riprende da sé
+{
+  voli = []; maxInVolo = 0;
+  const pX = await ctx.newPage();
+  await pX.goto("about:blank");
+  const [sw] = ctx.serviceWorkers();
+  await sw.evaluate(async () => {
+    const t = (await chrome.tabs.query({})).sort((a, b) => b.id - a.id)[0];   // la scheda appena aperta: la «scheda dell'ordine»
+    await chrome.storage.session.set({ ordini: [{ id: "prova-ordine", ep: "999777", paziente: "ALTRO PROVA", stato: "corre", worker: t.id, opener: t.id,
+      n: 1, ts: Date.now(), agg: Date.now(), vista: null, resto: { mancano: [], controllare: [], nel: [] } }] });
+  });
+  const pO = await ctx.newPage();
+  await pO.goto(mock.patientUrl);
+  await pO.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await pO.waitForTimeout(5000);
+  check(voli.length === 0, `un ordine al lavoro: il caricamento da solo non parte (scaricati ${voli.length})`);
+  await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
+  await salvati(pO, 4);
+  check(voli.length === 4, `finito l'ordine, riprende da sé (scaricati ${voli.length})`);
+  await pO.locator("#psassist-host #refreset").click();   // il «Salva» a mano, qui sotto, parte senza copie
+  await pO.waitForTimeout(1200);
+  await pO.close(); await pX.close();
 }
 
 // «Salva i referti» sta negli Esiti, nella riga in cima: non più nel menu ⋯
@@ -388,32 +445,40 @@ await ctx.route("http://10.11.0.151:9080/**", async (r) => {
       }, ${altroPrima ? 1200 : 300});
     </script></body></html>` });
 });
+// Aprendo il paziente i referti non salvati si prendono da soli: la radiografia
+// passa dal portale e il suo testo compare nel pannello.
 const p2 = await ctx.newPage();
 await p2.goto(mock.patientUrl);
 await p2.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-await p2.locator('#psassist-host [data-seg="esiti"]').click();
 await p2.waitForSelector('#psassist-host [data-esito]', { timeout: 10000 });
 const schedePrima = ctx.pages().length;
-await p2.locator('#psassist-host [data-esito][data-kind="referto"]:has-text("TC ENCEFALO")').first().click();
-const letto = await p2.waitForFunction(() => {
+const rxRiga = (p) => p.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
-  return r.querySelectorAll(".reftxt .rt").length > 0 || !!r.querySelector(".rrow.err");
-}, { timeout: 60000 }).then(() => true).catch(() => false);
-const tipsRosso = await p2.locator("#psassist-host .rrow.err").first().getAttribute("title", { timeout: 1000 }).catch(() => null);
-const testo = await p2.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".reftxt")?.textContent || "");
+  const it = [...r.querySelectorAll(".wuimg .wuitem")].find((x) => /RX TORACE/.test(x.querySelector(".rlab")?.textContent || ""));
+  return it ? { testo: it.querySelector(".reftxt")?.textContent || it.querySelector(".wuex")?.textContent || "", rosso: it.querySelector(".rrow.err")?.getAttribute("title") || "" } : {};
+});
+const rxPronta = (p) => p.waitForFunction(() => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  const it = [...r.querySelectorAll(".wuimg .wuitem")].find((x) => /RX TORACE/.test(x.querySelector(".rlab")?.textContent || ""));
+  return !!it && !!(it.querySelector(".wuex") || it.querySelector(".rrow.err"));
+}, null, { timeout: 90000 }).then(() => true).catch(() => false);
+const letto = await rxPronta(p2);
+await finito(p2);
+const rx = await rxRiga(p2);
 await p2.waitForTimeout(800);
 const schedeDopo = ctx.pages().filter((p) => !p.isClosed()).length;
 await p2.locator("#psassist-host #menubtn").click();   // il Registro, dal menu «⋯»
 await p2.locator("#psassist-host #verbtn").click();
 await p2.waitForSelector("#psassist-host .log", { state: "attached", timeout: 5000 }).catch(() => {});
 const registro = await p2.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".log")?.textContent || "");
-check(letto && !tipsRosso && testo.includes(RIGHE_ESEMPIO[0]) && testo.includes(RIGHE_ESEMPIO[1]),
-  `referto del portale: il testo nel pannello (got: ${tipsRosso ? "rosso — " + tipsRosso.slice(0, 160) : testo.slice(0, 60)})`);
+check(letto && !rx.rosso && RIGHE_ESEMPIO.some((r) => String(rx.testo).includes(r)),
+  `referto del portale, preso da solo: il testo nel pannello (got: ${rx.rosso ? "rosso — " + rx.rosso.slice(0, 160) : String(rx.testo).slice(0, 60)})`);
 check(/lo apro nel portale, in una scheda dietro/.test(registro) && /testo letto \(\d+ righe, pdf\.js[;)]/.test(registro),
   `aperto nel portale, letto con pdf.js (${(/testo (?:letto|non letto)[^\n]*/.exec(registro) || ["niente nel registro"])[0].slice(0, 120)})`);
 check(!chi.some((c) => c.startsWith("sw:")) && chi.some((c) => /loginPC\.jsp/.test(c)),
   `al portale ci va la pagina, mai il service worker (${chi.join(", ")})`);
-check(schedeDopo === schedePrima, `la scheda dietro si richiude da sola (schede ${schedePrima} → ${schedeDopo})`);
+check(schedeDopo === schedePrima, `le schede dietro si richiudono da sole (schede ${schedePrima} → ${schedeDopo})`);
+await p2.close();
 
 // Il portale mostra PRIMA il PDF di un altro paziente (rimasto aperto da prima),
 // poi il nostro: si tiene il nostro, non il primo che passa. E se mostra solo
@@ -422,23 +487,20 @@ for (const modo of ["prima", "solo"]) {
   altroPrima = modo;
   const pA = await ctx.newPage();
   await pA.goto(mock.patientUrl);
-  await pA.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-  await pA.locator('#psassist-host [data-seg="esiti"]').click();
-  await pA.waitForSelector('#psassist-host [data-esito]', { timeout: 10000 });
+  await pA.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
+  await finito(pA);
   if (await pA.locator("#psassist-host #refreset").count()) { await pA.locator("#psassist-host #refreset").click(); await pA.waitForTimeout(600); }
-  await pA.locator('#psassist-host [data-esito][data-kind="referto"]:has-text("RX TORACE")').first().click();
-  await pA.waitForFunction(() => {
-    const r = document.getElementById("psassist-host").shadowRoot;
-    return r.querySelectorAll(".wuitem.aperto .reftxt .rt").length > 0 || !!r.querySelector(".rrow.err");
-  }, { timeout: 60000 }).catch(() => {});
-  const t = await pA.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".wuitem.aperto .reftxt")?.textContent || "");
-  const rossoA = await pA.locator("#psassist-host .rrow.err").first().getAttribute("title", { timeout: 1000 }).catch(() => "");
+  await pA.reload();   // senza le copie: si riprendono da sole, dal portale
+  await pA.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
+  await rxPronta(pA);
+  await finito(pA);
+  const r = await rxRiga(pA);
   if (modo === "prima") {
-    check(t.includes(RIGHE_ESEMPIO[0]) && !/BIANCHI|BNCNNA/.test(t),
-      `il portale mostra prima il referto di un altro paziente: si tiene il nostro (got: ${(t || rossoA || "").slice(0, 90)})`);
+    check(!!r.testo && !r.rosso && !/BIANCHI|BNCNNA/.test(r.testo),
+      `il portale mostra prima il referto di un altro paziente: si tiene il nostro (got: ${String(r.testo || r.rosso || "").slice(0, 90)})`);
   } else {
-    check(!t && /un altro paziente/.test(rossoA || ""),
-      `solo il referto di un altro paziente: niente testo, e il perché (got: ${String(t || rossoA).slice(0, 120)})`);
+    check(!r.testo && /un altro paziente/.test(r.rosso || ""),
+      `solo il referto di un altro paziente: niente testo, e il perché (got: ${String(r.testo || r.rosso).slice(0, 120)})`);
   }
   await pA.close();
 }
@@ -449,13 +511,12 @@ altroPrima = "";
 senzaPdf = true;
 const p3 = await ctx.newPage();
 await p3.goto(mock.patientUrl);
-await p3.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-await p3.locator('#psassist-host [data-seg="esiti"]').click();
-await p3.waitForSelector('#psassist-host [data-esito]', { timeout: 10000 });
-if (await p3.locator("#psassist-host #refreset").count()) await p3.locator("#psassist-host #refreset").click();   // via la copia salvata: si riapre il portale
-await p3.waitForTimeout(800);
-await p3.locator('#psassist-host [data-esito][data-kind="referto"]:has-text("TC ENCEFALO")').first().click();
-const rosso = await p3.waitForSelector("#psassist-host .rrow.err", { state: "attached", timeout: 70000 }).then((el) => el.getAttribute("title")).catch(() => "");
+await p3.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
+await finito(p3);
+if (await p3.locator("#psassist-host #refreset").count()) { await p3.locator("#psassist-host #refreset").click(); await p3.waitForTimeout(800); }   // via le copie: si riapre il portale
+await p3.reload();
+await p3.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
+const rosso = await p3.waitForSelector('#psassist-host .wuitem:has-text("TC ENCEFALO") .rrow.err', { state: "attached", timeout: 120000 }).then((el) => el.getAttribute("title")).catch(() => "");
 check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.test(rosso) && /sguardo sì \(blob 0/.test(rosso) && !/abc123/.test(rosso),
   `senza PDF: il motivo e la pagina del portale, senza il token (got: ${String(rosso).slice(0, 220)})`);
 
@@ -502,6 +563,9 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   const pAltra = await ctx.newPage();   // un'altra scheda: anche la sua memoria se ne va
   await pAltra.goto(mock.patientUrl);
   await pAltra.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  // (i referti che le due schede prendono da sole all'apertura: finiti prima di seminare)
+  await finito(pR); await finito(pAltra);
+  await pR.waitForTimeout(1500);
   const semina = ([ns, via, resta, scheda]) => {
     const valore = { "quesiti.ts": Date.now(), "quesiti": ["x"], "daConfermare.v1": [], "lastQ": "x", "corsa.aperta.v1": null, "corsa.presidio.v1": null,
       "stato.v1": { "999": { agg: Date.now() } } };
