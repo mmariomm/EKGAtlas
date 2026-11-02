@@ -37,7 +37,7 @@
 /* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto */
 
 const PONTE_HOST_PROVA = "ponte.host";      // storage.local: solo per le prove, e solo verso questo PC
-const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, scade, creata, usata, dev, nTel }
+const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, scade, creata, usata, dev, nTel, cambiata?, errori?, blocco?, cambi? }
 const PONTE_STATO = "ponte";                // storage.session: quello che le pagine mostrano
 const PONTE_ORDINI = "ponte.ordini";        // storage.session: gli ordini partiti dal telefono
 const PONTE_VALORI = "ponte.valori";        // storage.session: le schede aperte per «Aggiorna i valori»
@@ -48,6 +48,13 @@ const PONTE_QR_MAX = 2 * 60e3;              // il QR si rivede solo per poco
 const PONTE_SALUTO_MAX = 2 * 60e3;          // un saluto senza seguito si dimentica
 const PONTE_VALORI_MAX = 150e3;             // «Aggiorna i valori» non aspetta di più
 const PONTE_FRAME_MAX = (1 << 20) - 4096;   // il ripetitore non passa messaggi più grandi
+// «Cancella e riassocia» (dal telefono che trova il PC già associato): con questo
+// codice il telefono prende il posto di quello di prima. Il codice sta SOLO qui.
+// La vera protezione è la chiave del QR — senza, la richiesta nemmeno si apre:
+// il 93 evita solo un cambio per sbaglio. Sbagliato 5 volte, per 10 minuti niente cambi.
+const PONTE_CODICE_CAMBIO = "93";
+const PONTE_CAMBIO_ERRORI = 5;
+const PONTE_CAMBIO_BLOCCO = 10 * 60e3;
 // quanto si aspetta una scheda del gestionale, e il «pong» (i test li accorciano)
 const PONTE_ATTESA = { ordina: 25e3, esiti: 30e3, altro: 10e3, pong: 10e3 };
 // Perché una sessione finisce: la frase, la stessa qui, sulla pagina iPhone e sul telefono.
@@ -56,6 +63,7 @@ const PONTE_PERCHE = {
   revocata: "Associazione revocata dal PC", scaduta: "Associazione scaduta", "nuova associazione": "Sul PC c'è un QR nuovo",
   "chiusa dall'iPhone": "Chiusa dall'iPhone", riavvio: "L'estensione sul PC si è riavviata",
   login: "Il gestionale sul PC è tornato alla pagina d'accesso",
+  cambiato: "Un altro iPhone ha preso il posto di questo",
 };
 const ponteFrase = (perche) => PONTE_PERCHE[perche] || corto(perche, 80) || "Sessione chiusa";
 
@@ -84,6 +92,7 @@ function pontePubblico() {
   return {
     host: pt.host, accoppiato: !!pt.coppia, scade: pt.coppia ? pt.coppia.scade : 0, relay: pt.relay, telefono: pt.pari,
     sessione: s ? { dal: s.dal, ultimo: s.ultimo, n: s.n } : null, fine: pt.fine, registro: pt.registro.slice(-60),
+    cambiato: (pt.coppia && pt.coppia.cambiata) || 0,   // quando un altro iPhone ha preso il posto del primo
   };
 }
 // (solo quando cambia: le schede lo ascoltano)
@@ -252,20 +261,51 @@ async function ponteSaluto(b) {
   } catch { return; }
   if (m.v !== 1 || nTel.length !== 16 || typeof m.dev !== "string" || !/^[\w-]{16,32}$/.test(m.dev)) return;
   // L'associazione è del primo telefono che è entrato: un altro, anche con lo
-  // stesso QR, si sente dire di no (e il registro lo dice, una volta al minuto).
+  // stesso QR, si sente dire di no (e il registro lo dice, una volta al minuto)
+  // — a meno che chieda «Cancella e riassocia» col codice giusto: allora è lui.
   if (pt.coppia.dev && m.dev !== pt.coppia.dev) {
-    if (ponteOra() - pt.rifiuto > 60e3) {
-      pt.rifiuto = ponteOra();
-      ponteNota("Un altro telefono ha provato a entrare con il QR: rifiutato");
-      await ponteScriviStato();
+    const no = typeof m.cambio === "string" ? await ponteCambio(m) : { no: "altro telefono" };
+    if (no) {
+      if (no.no === "altro telefono" && ponteOra() - pt.rifiuto > 60e3) {
+        pt.rifiuto = ponteOra();
+        ponteNota("Un altro telefono ha provato a entrare con il QR: rifiutato");
+        await ponteScriviStato();
+      }
+      ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0, { v: 1, eco: m.n, ...no }));
+      return;
     }
-    ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0, { v: 1, eco: m.n, no: "altro telefono" }));
-    return;
   }
   const nPc = PonteCripto.casuale(16);
   pt.attesa = { canale: PonteCripto.canalePc(await PonteCripto.chiaviSessione(pt.k, nTel, nPc)), ts: ponteOra(), dev: m.dev, nTel: m.n };
   ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0,
     { v: 1, n: PonteCripto.b64u(nPc), eco: m.n, scade: pt.coppia.scade }));
+}
+// «Cancella e riassocia»: la richiesta è un saluto (cifrato con la chiave del QR:
+// senza, non si apre e non arriva qui) che porta il codice. Il codice si controlla
+// QUI, sul PC. Giusto: il telefono di prima esce come con «Revoca» e un'associazione
+// nuova — la scadenza resta la stessa — e questo è il telefono dell'associazione.
+// Sbagliato: niente cambia; 5 sbagli e per 10 minuti non si cambia più.
+// Ritorna null se il cambio è fatto, se no la risposta da dare.
+async function ponteCambio(m) {
+  const c = pt.coppia, ora = ponteOra();
+  if (c.blocco && ora < c.blocco) return { no: "bloccato", fino: c.blocco };
+  // un saluto già visto (rimandato dal ripetitore) non vale una seconda volta
+  const cambi = (Array.isArray(c.cambi) ? c.cambi : []).slice(-7);
+  if (cambi.includes(m.n)) return { no: "altro telefono" };
+  cambi.push(m.n);
+  if (m.cambio.trim() !== PONTE_CODICE_CAMBIO) {
+    const errori = (c.errori || 0) + 1, blocca = errori >= PONTE_CAMBIO_ERRORI;
+    await ponteScriviCoppia({ ...c, cambi, errori: blocca ? 0 : errori, blocco: blocca ? ora + PONTE_CAMBIO_BLOCCO : 0 });
+    ponteNota(blocca ? `Codice sbagliato ${PONTE_CAMBIO_ERRORI} volte da un altro telefono: niente cambi fino alle ${hhmmPonte(ora + PONTE_CAMBIO_BLOCCO)}`
+      : "Un altro telefono ha provato «Cancella e riassocia» con un codice sbagliato");
+    await ponteScriviStato();
+    return blocca ? { no: "bloccato", fino: ora + PONTE_CAMBIO_BLOCCO } : { no: "codice" };
+  }
+  await ponteFine("cambiato");
+  await ponteScriviCoppia({ ...pt.coppia, cambi, dev: m.dev, usata: true, nTel: m.n, cambiata: ora, errori: 0, blocco: 0 });
+  ponteNota(`iPhone cambiato alle ${hhmmPonte(ora)}: un altro telefono ha preso il posto`);
+  await ponteScriviStato();
+  return null;
 }
 async function ponteDati(b) {
   if (pt.sessione) {

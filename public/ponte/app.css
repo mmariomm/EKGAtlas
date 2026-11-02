@@ -75,6 +75,14 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .grande:active { background: var(--azione2); }
 .grande.quiet { background: var(--carta); color: var(--testo); border: 1px solid var(--campo); box-shadow: none; margin-top: 10px; }
 .piccolo { margin-top: 14px; font-size: 13px; color: var(--grigio2); }
+.grande:disabled { opacity: .5; }
+/* «Cancella e riassocia»: un campo piccolo e un bottone */
+.cambio { display: flex; flex-direction: column; align-items: center; margin-top: 10px; }
+.cambio input { width: 150px; min-height: 48px; border: 1px solid var(--campo); border-radius: 12px; padding: 10px 14px; font-size: 20px; text-align: center;
+                letter-spacing: .12em; background: var(--carta); font-variant-numeric: tabular-nums; }
+.cambio input:focus { outline: 2px solid var(--blu); outline-offset: -1px; border-color: transparent; }
+.cambio .grande { margin-top: 12px; }
+.cambio .errcod { margin: 12px 0 0; color: var(--rosso); font-weight: 650; }
 
 /* --- la lista dei pazienti --------------------------------------------- */
 .lbl { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--grigio); margin: 18px 4px 8px; }
