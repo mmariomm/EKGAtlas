@@ -6711,8 +6711,13 @@
     // sul ⋯, al suo posto; il menu, se è aperto.
     aggNuova() { return !!(this.agg && this.agg.nuova); }
     seguiAggiorna() {
+      // (una lettura che trova le cose come prima cambia solo l'ora: niente da
+      // ridisegnare, e il menu appena aperto non si rifà sotto il dito)
+      const vista = () => this.aggNuova() ? `${this.agg.nuova}|${!!this.agg.puo}|${this.agg.come || ""}` : "";
       const leggi = () => chrome.storage.local.get("aggiorna").then((o) => {
+        const prima = vista();
         this.agg = o.aggiorna || null;
+        if (vista() === prima) return;
         if (this.menuAperto) return this.render();
         const b = this.root.querySelector("#menubtn");
         if (b) { b.classList.toggle("agg", this.aggNuova()); b.title = this.aggNuova() ? `Altro · c'è la versione ${this.agg.nuova}` : "Altro"; }
