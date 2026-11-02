@@ -958,6 +958,16 @@ const fogliNuovi = (jobs, s) => jobs.map((j) => {
 const fineDi = (f) => ({ n: Number(f && f.n) || 0, ts: Number(f && f.ts) || Date.now(), quesito: (f && f.quesito) || null });
 const pdfNostro = (u) => fetch(u).then((r) => r.arrayBuffer()).then((b) => ({ ok: true, pdf: b64(b) }))
   .catch((e) => ({ ok: false, why: corto(e && e.message || e, 80) }));
+// Un referto salvato (la «Stampa» del visore): la copia su questo computer,
+// solo per l'episodio sotto cui è stata salvata — come getRef.
+const REF_STAMPA = /^psassist-ref:([\w-]{1,80})\?ep=(\d{0,20})$/;
+const pdfSalvato = async (u) => {
+  const m = REF_STAMPA.exec(String(u));
+  if (!m) return { ok: false, why: "indirizzo non valido" };
+  const hit = (await chrome.storage.local.get(KEY(m[1])))[KEY(m[1])];
+  if (!hit || String(hit.ep || "") !== m[2] || Date.now() - (hit.ts || 0) > REF_TTL || typeof hit.data !== "string") return { ok: false, why: "la copia non è più su questo computer" };
+  return { ok: true, pdf: hit.data };
+};
 async function ordStampaFogli(id) {
   if (STAMPO_VIVI.has(id)) return;
   STAMPO_VIVI.add(id);
@@ -990,7 +1000,8 @@ async function ordStampaFogli(id) {
       });
       if (!passo) return;
       // 2. il PDF, dalla scheda dell'ordine (un consenso, dall'estensione)
-      const pdf = passo.diretto ? await pdfNostro(passo.url) : await allaScheda(passo.worker, { t: "psassistPdf", id, url: passo.url }, 30e3);
+      const pdf = passo.diretto ? await (REF_STAMPA.test(passo.url) ? pdfSalvato(passo.url) : pdfNostro(passo.url))
+        : await allaScheda(passo.worker, { t: "psassistPdf", id, url: passo.url }, 30e3);
       // 3. il foglio segnato «mandato» prima di mandarlo
       const va = await inFilaOrd(async () => {
         const l = await ordLeggi();
@@ -1202,7 +1213,8 @@ function ordMessaggio(msg, sender, reply) {
     const id = corto(j.id, 40);
     const visti = (await chrome.storage.session.get(ORD_VISTI))[ORD_VISTI] || [];
     if (id && visti.includes(id)) return reply({ ok: true, id, ordini: await ordLeggi() });
-    const nostro = (u) => String(u).startsWith(chrome.runtime.getURL("consensi/"));
+    // un file nostro: un consenso, o la copia di un referto salvato
+    const nostro = (u) => String(u).startsWith(chrome.runtime.getURL("consensi/")) || REF_STAMPA.test(String(u));
     const jobs = (Array.isArray(j.jobs) ? j.jobs : []).slice(0, 12)
       .filter((x) => x && typeof x.name === "string" && (sulGestionale(x.url) || nostro(x.url)))
       .map((x) => ({ name: corto(x.name, 60), printer: corto(x.printer, 30), url: String(x.url), ...(nostro(x.url) ? { diretto: true } : {}) }));

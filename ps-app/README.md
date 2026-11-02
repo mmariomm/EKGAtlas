@@ -431,18 +431,28 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    sempre, e lascia andare il pacchetto: gli esami restano, ora sono tuoi. Un esame del pacchetto
    che **non c'è nel catalogo di questa macchina** non viene aggiunto e il pannello lo dice, una
    volta, nel banner e nel Registro: non si inventa mai un codice.
-2. Gli esami stanno in **gruppi per laboratorio** — **POC**, **Lab centrale** (le «Urgenze» e il
-   laboratorio centrale: per chi ordina sono lo stesso posto), **RX** — e ogni gruppo ha **in
-   testa i suoi profili rapidi**: Base PS e Coag POC sotto POC, Epatico e Coag sotto Lab
-   centrale. Poi gli **esami singoli** — fra questi
+   **Una casella sola, «Quesito o esame…».** Quello che scrivi è il quesito; se somiglia a degli
+   esami del catalogo (tutti i laboratori), sotto compare una tendina: per prima **«Quesito:
+   …»** (Invio: tieni il testo come quesito), poi gli esami. Scelto un esame, nella casella
+   **torna il quesito di prima**; Esc fa lo stesso senza scegliere niente. «altri esami…» non
+   c'è più (resta solo sulla pagina esami, dove un quesito non c'è).
+2. Gli esami stanno in **tre colonne strette** — **POC · Lab · RX** (Lab = le «Urgenze» e il
+   laboratorio centrale: per chi ordina sono lo stesso posto) —, **parole da accendere**:
+   niente caselle, righe di ~24 px, si tocca la riga intera, scelta è **piena** del colore dei
+   comandi. Le uniche etichette sono le tre teste di colonna. La **prima riga di ogni colonna
+   sono i suoi profili**: Base PS e Coag POC in POC, Epatico e Coag in Lab. Un profilo che
+   raccoglie esami che ci sono anche uno per uno è un espansore — **«Epatico ▸»**: il nome
+   prende tutto il profilo, ▸ apre GPT, GOT, GAMMA GT, BILIRUBINA, LIPASI uno per uno (aperto
+   da solo se uno di loro è scelto). Poi gli **esami singoli** — fra questi
    **EGA VENOSA NEW** / **EGA ARTERIOSA NEW** (il laboratorio ha rifatto gli emogas: sono i
-   codici nuovi, e la vecchia versione resta in elenco solo in «altri esami…»), gli **epatici
-   uno per uno** (GPT, GOT, GAMMA GT, BILIRUBINA, LIPASI: il profilo li ordina insieme, ma
-   quasi sempre se ne vuole uno solo), **PT POC** e **PTT POC** (la coagulazione che i pacchetti
-   mettono: qui si vede e si toglie) e **SARSCOV**
-   (tampone antigenico SARS-CoV-2, laboratorio centrale), griglia compatta a
-   due colonne per laboratorio (POC / Lab centrale / RX). Per tutto il resto: **«altri esami…»**,
-   subito sotto il quesito, con menu a tendina su tutti i laboratori. Lo stesso esame delle
+   codici nuovi, e la vecchia versione si trova solo cercandola), **PT POC** e **PTT POC** (la
+   coagulazione che i pacchetti mettono: qui si vede e si toglie) e **SARSCOV** (tampone
+   antigenico SARS-CoV-2, laboratorio centrale). Il **quesito RX** compare nella colonna RX
+   **solo quando un RX è scelto**. La barra **«Conferma per ROSSI M. · N esami»** (piena, ferma
+   in fondo) c'è **solo quando qualcosa è scelto**; **Ctrl+Invio** la preme, e **solo carrello**
+   le sta accanto, piccolo. La **Stampa** delle richieste confermate non sta più qui: è nel
+   menu **⋯ → Stampa le richieste** (e la «Ristampa» sulla striscia dopo un ordine). Per tutto il
+   resto: la casella in cima, con la tendina su tutti i laboratori. Lo stesso esame delle
    Urgenze e del laboratorio centrale (le Urgenze ne sono un sottomenu) è **una riga sola**,
    quella delle Urgenze — la stessa che usano i pacchetti. I selezionati restano in alto, una
    riga per laboratorio, con la ✕ al passaggio del mouse.
@@ -452,14 +462,15 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    **La seconda sede (OSG)** non ha il laboratorio «Urgenze»: POC e un laboratorio unico. Gli
    esami della colonna Urgenze vanno nella risorsa di questa sede che ha **lo stesso esame** —
    stesso nome o stesso mnemonico LIS — e **mai** in un POC (un altro strumento, un'altra
-   provetta): la PCR del bottone finisce nel laboratorio, non fra i POC. In «altri esami…» si
+   provetta): la PCR del bottone finisce nel laboratorio, non fra i POC. Nella tendina si
    vedono solo le risorse della sede in cui sei (prima ogni esame usciva due volte, una per
    sede), e i nomi di reparto funzionano: **PCR** trova «PROTEINA C REATTIVA» (prima trovava
    solo «PCR POC»), e così PCT, EGA, GGT, AST/ALT, BNP, tropo — il laboratorio prima del POC.
-   Accanto a ogni esame, in grigio, **quando è già stato fatto** in questo episodio (l'ora della
-   richiesta tornata: `TROPONINA US · 11:40, 14:30`) o **da quanto aspetta**
-   (`EMOCROMO POC · in attesa 40′`) — stessa fonte dello stato dei Pazienti, stesso nome del
-   catalogo; niente quando non si sa, e «letto 11:02» se la lettura è vecchia. Un pacchetto
+   Accanto a ogni esame, **a colori**, **quando è già stato fatto** in questo episodio (l'ora
+   della richiesta tornata, in verde: `TROPONINA US ✓ 11:40, 14:30`) o **da quanto aspetta**
+   (`EMOCROMO POC ⏳ 40′`, in ambra; **rosso** oltre la seconda soglia del suo tipo, le stesse
+   dei Pazienti) — stessa fonte dello stato dei Pazienti, stesso nome del catalogo; niente
+   quando non si sa, e in grigio con «letto 11:02» se la lettura è vecchia. Un pacchetto
    come «Dolore toracico» spunta come sempre: il suffisso fa vedere il doppione, non lo toglie.
 3. **Mentre manda, puoi fare altro.** Partito il giro il pannello si fa piccolo: una
    **striscia** in un angolo con il nome del paziente, a che punto è — in esami, «esame 3 di 6»,
@@ -503,7 +514,7 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    quel paziente, o sulla lista, il dialogo parte da solo — ma non mentre scrivi (cursore in un
    campo, un tasto da poco: aspettano); sulla pagina di un **altro** paziente non si apre da
    solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco. Senza una scheda del gestionale
-   davanti aspettano (mezz'ora; poi dalla sua pagina, sezione Stampa); la pagina di accesso non
+   davanti aspettano (mezz'ora; poi dalla sua pagina, ⋯ → Stampa le richieste); la pagina di accesso non
    le butta via.
    **Un secondo ordine mentre uno gira aspetta in coda** — la striscia dice «+1 in coda» — e
    parte quando il primo ha finito o si è fermato (sulla sua striscia, «In coda», ✕ lo toglie).
@@ -628,29 +639,54 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    le costruisce e le porta entrambe a conferma, con **una sola** stampa finale. Questa è
    l'unica che **non** va in sottofondo: le due richieste vivono nella memoria del pannello, e
    a metà non si riprendono — lì il browser avvisa ancora prima di cambiare pagina.
-5. **Stampa**: ogni richiesta con data, ora e la lista compatta degli esami.
+5. **Stampa** (menu **⋯ → Stampa le richieste**, non più in fondo alle Richieste): ogni richiesta con data, ora e la lista compatta degli esami.
 
 ### Esiti
 Il **Workup**, come in Epic: **Lab · ECG · Imaging** in un posto solo, tre sezioni distinte, ognuna
 col suo colore sul bordo e nel titolo (il rosso resta **solo** dei valori fuori range; l'ambra è di
-ciò che aspetta; il blu dei comandi e di «nuovo»). Larga, il Lab a sinistra e ECG e Imaging in una
-colonna a destra; stretta (Affianca), prima ECG e Imaging, che sono brevi, poi il Lab.
+ciò che aspetta; il blu dei comandi e di «nuovo»). Il Lab per primo, a tutta larghezza; sotto ECG
+e Imaging, affiancati se c'è posto.
+
+**Aprire un paziente** porta sugli **Esiti se ha qualcosa da guardare** — valori, referti in
+pagina o già letti — e sulle **Richieste se non ha ancora niente** (gli Esiti vuoti non servono).
+Vale per la pagina appena aperta e per «apri» dalla lista, dalla mappa o da un promemoria.
+
+**Quello che la pagina mostra e il pannello non ha ancora si carica da solo** (con l'estensione),
+in sottofondo, appena apri il paziente: è **⭳ Carica i valori** senza il tocco — i valori (lo
+storico del portale, o le finestre Risultati) e poi i **referti** che non sono di laboratorio,
+**due alla volta al massimo** con la solita pausa a caso, quelli già salvati mai più, l'identità
+controllata come sempre. Il **testo** si legge da solo **solo di ECG e radiografie** (dell'ECG
+solo il referto scritto del cardiologo: da «Conclusioni» a «Il Medico»); **TC, ecografie, RM,
+visite e consulenze** si salvano e basta, e si aprono nel **visore** (un tocco sulla riga ne
+legge comunque il testo). Una volta **per paziente ogni 15 minuti**, a meno che la pagina non
+mostri una riga nuova (un prelievo, un referto); si ferma se lasci il paziente (chi era in fila
+non parte). Mentre lavora, accanto a **↻** c'è solo un discreto **«↓ 2»** — quanti ne restano —
+e nient'altro. Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
+richiesta da confermare.
 
 - **In cima, una riga**: i valori **fuori range** dell'ultimo prelievo di ciascun esame, i più
   gravi per primi (K, Na, Hb, troponina, lattati, pH…), la troponina con la misura precedente e la
   sua ora — `K 5.9↑ · Hb 9.1↓ · Trop 48↑ (12 alle 11:40) · 3 nuovi` —; oltre i sei, «+N». **«N
   nuovi»** conta i valori cambiati dall'ultima lettura e i referti mai aperti: un tocco li segna
-  visti. A destra **⭳ Salva i referti (N)** (solo con l'estensione) e, mentre salva, «Salvo i
-  referti 2/5…».
+  visti. A destra **⭳ Salva i referti (N)** (solo con l'estensione) e, mentre salva a mano,
+  «Salvo i referti 2/5…».
 - **In attesa**: in ogni sezione, ciò che è stato chiesto e non è ancora refertato — dalle righe
-  del diario della pagina senza l'icona del referto — con **da quanto** aspetta (`⏳ 1h20 RX
-  TORACE · richiesto 13:10`), «parziale» per un esame di laboratorio già nella finestra Risultati.
+  del diario della pagina senza l'icona del referto — una riga sola ciascuna, con un sottile
+  segno ambra a sinistra (niente fascia gialla) e **da quanto** aspetta (`⏳ 1h20 RX TORACE ·
+  richiesto 13:10`). Un esame di laboratorio i cui valori **hanno cominciato ad arrivare** (la
+  finestra Risultati c'è) non aspetta più: **«parziale 15:11»**, in grigio, **senza orologio** —
+  i valori sono già in tabella. Gli orologi di ECG e immagini restano.
 - **Refertati**: una riga per referto, con data e ora, la prima frase che dice qualcosa
-  (le conclusioni, se ci sono) e «nuovo» finché non l'hai aperto. Un tocco apre il **testo lì
+  (le conclusioni, se ci sono) e «nuovo» finché non l'hai aperto. Il più recente **non ancora
+  letto** che ha un testo (ECG, radiografia) è già **aperto**, finché non ne apri o chiudi uno
+  tu. Un tocco apre il **testo lì
   sotto** (un secondo tocco lo richiude), con **⧉ Copia** (ora, esame e paziente in testa, per il
   diario) e **↗ PDF**; **↗ PDF** c'è anche su ogni riga, a un tocco: la copia salvata si apre
   nel **visore** dell'estensione (paziente · esame · data in testa, ✕ o Esc e si torna agli Esiti;
-  mai un referto di un altro paziente), altrimenti il documento del gestionale. Dell'**ECG** si mostra **solo il referto scritto** del
+  mai un referto di un altro paziente), altrimenti il documento del gestionale. Nel visore, un
+  bottone solo, **Stampa**: con la stampa automatica il PDF va **sull'A4** del medico, dalla
+  copia salvata, con lo stesso motore della lista esami (ogni foglio annotato prima di partire,
+  una volta sola: un doppio tocco è una stampa); senza, il dialogo di stampa del browser. Dell'**ECG** si mostra **solo il referto scritto** del
   cardiologo, mai le misure o le frasi della macchina; un tracciato senza referto scritto dice
   «Solo il tracciato della macchina». Gli altri documenti (consulenze…) stanno in **Altri
   documenti**, e si aprono nella loro scheda.
@@ -666,6 +702,13 @@ fondo **Altri** — i dettagli più sotto), una colonna per prelievo, **il più 
 (27/08) con l'ora sotto se è di un altro giorno; **passando il mouse** sull'intestazione si legge
 data e ora per esteso e **gli esami** compresi in quella richiesta.
 
+**Fino a tre prelievi** la tabella lunga e stretta lasciava vuoto il resto del pannello: allora
+**ogni sezione è un blocco** (Emocromo, Coagulazione, Organi, Emogas…) con **le stesse ore in
+testa**, e i blocchi si affiancano finché c'è posto (una griglia, almeno 230 px l'uno, di più con
+due o tre colonne). **Nessuna cornice scorre per conto suo**: scorre il pannello, una volta. Da
+**quattro prelievi** in su resta la tabella unica di sempre. La riga in cima e il rosso dei fuori
+range non cambiano; i referti (ECG, Imaging) stanno sotto il Lab.
+
 - I nomi sono in **sigla** (`Hb`, `GB`, `PLT`…), con l'**unità fra parentesi accanto al nome**
   (`GB (×10⁹/L)`) e il **range nel tooltip del valore**. Il gestionale scrive «x10» e perde l'esponente:
   per i conteggi cellulari — globuli bianchi e formula, piastrine ×10⁹/L, globuli rossi ×10¹²/L — si scrive per
@@ -675,10 +718,10 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   «Granulociti %»), che prima erano due righe con lo stesso nome. Il fuori range è quello
   dell'assoluto; una percentuale che arriva da sola resta da sola. Un nome fuori elenco è scritto **per esteso** e sottolineato a puntini — lo stesso
   vale per un'abbreviazione ambigua — e una riga piccola in cima dice **quanti** (**quali** apre l'elenco).
-- **Lab, ECG e Imaging fianco a fianco** quando la finestra è abbastanza larga (misurata sul contenitore,
-  non sullo schermo: dentro la finestra da 1150 px sì, nella colonna di «Affianca» no): la tabella a
-  sinistra, ECG e Imaging in una colonna accanto; stretto, uno sotto l'altro.
-- La tabella è **larga quanto i suoi numeri**, non quanto il pannello: se allarghi la finestra i
+- **Il Lab sempre per primo**, a tutta larghezza; sotto, **ECG e Imaging fianco a fianco** quando la
+  finestra è abbastanza larga (misurata sul contenitore, non sullo schermo: dentro la finestra da
+  1150 px sì, nella colonna di «Affianca» no); stretto, uno sotto l'altro.
+- La tabella (da quattro prelievi) è **larga quanto i suoi numeri**, non quanto il pannello: se allarghi la finestra i
   valori restano **accanto ai nomi** invece di allontanarsene, e sono allineati a sinistra
   (incolonnati dalle cifre tabulari).
 - In rosso c'è **solo il valore**, con ↑ ↓: il nome resta a sinistra, sempre nella stessa colonna.
@@ -695,7 +738,8 @@ data e ora per esteso e **gli esami** compresi in quella richiesta.
   refertati e no, con una pagina sola. Le finestre Risultati — una richiesta per prelievo — si
   leggono **solo se il portale non si può leggere** (niente estensione, niente link, o non ha
   risposto: il pannello dice perché). Poi, con l'estensione, salva i **referti** non ancora salvati
-  (ECG, immagini, visite: mai il laboratorio — vedi *Salvare è una decisione del medico*).
+  (ECG, immagini, visite: mai il laboratorio — vedi *Salvare i referti*). Con l'estensione lo fa
+  già da solo all'apertura del paziente (vedi sopra): il bottone resta per rifarlo subito.
   **solo alterati** / **tutti** filtra le righe; **↺ Reset** dimentica i valori letti e la scheda
   in archivio di questo paziente, e **⭳ Carica i valori** li rilegge da zero (i tuoi segni
   restano).
@@ -744,13 +788,16 @@ o una richiesta in attesa.
   cifratura, font, filtri: **mai il contenuto**), per correggerlo. Se il pannello non lo legge ci
   prova il **service worker**; se neanche lui, il pallino è rosso col motivo — e il documento **si
   apre lo stesso, con lo stesso tocco**.
-- **Salvare è una decisione del medico.** Un PDF non si salva **mai** da solo: lo prende un tocco
-  sul referto (il testo è lì sotto, e la copia resta: pallino verde), **⭳ Salva i referti** o
+- **Salvare i referti.** Prima era solo una decisione del medico; ora, **su sua richiesta**, lo fa
+  anche l'apertura del paziente (vedi in cima agli Esiti). Lo prende l'apertura, un tocco sul
+  referto (il testo è lì sotto, e la copia resta: pallino verde), **⭳ Salva i referti** o
   **⭳ Carica i valori** (dopo i valori), che prendono tutti quelli non ancora salvati — ECG,
   immagini, visite e consulenze, **mai il laboratorio** — **due alla volta al massimo**, con una
-  breve pausa a caso prima di ognuno, gli altri in fila («in fila» sulla loro riga) — e di ognuno
-  legge subito il testo. Quelli già salvati non si riscaricano. **Il testo dei PDF già salvati si
-  legge sempre**, appena apri gli Esiti, dalla copia su questo computer: nessuna richiesta.
+  breve pausa a caso prima di ognuno, gli altri in fila («in fila» sulla loro riga). Di **ECG e
+  radiografie** legge subito il testo; di **TC, ecografie, RM, visite** guarda solo **di chi è**
+  (un PDF intestato a un altro paziente non resta) e lo lascia al visore. Quelli già salvati non
+  si riscaricano. **Il testo di ECG e radiografie già salvati si legge sempre**, appena apri gli
+  Esiti, dalla copia su questo computer: nessuna richiesta.
   **↺** (accanto a «Salva») dimentica le copie e il loro testo. Un referto che non si lascia
   salvare (pallino rosso, il motivo al passaggio del mouse e nel Registro) resta apribile con un
   tocco.
@@ -1128,8 +1175,8 @@ parte da sola (e se un'installazione mostrasse una pagina intermedia, parte lì 
 altrimenti aspetta il ritorno sul paziente). **Solo per le richieste di PS Assist**: quelle in cui
 il pannello ha mandato esami (o che ha aperto lui), confermate dal pannello o col bottone del
 gestionale. Una richiesta fatta tutta a mano nel gestionale, confermata col suo bottone, non
-stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta** (sezione
-**Stampa**: ogni richiesta è elencata con **data e ora** e, sotto, la **lista compatta degli
+stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta** (menu **⋯ →
+Stampa le richieste**: ogni richiesta è elencata con **data e ora** e, sotto, la **lista compatta degli
 esami** che contiene) e, sopra l'elenco, **Stampa l'ultima richiesta**: la più recente, e con
 lei quella di pochi minuti prima (laboratorio e radiologia dello stesso ordine), etichette
 prima. Con la stampa automatica, senza dialogo.
@@ -1182,7 +1229,7 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   Stampo le etichette su Zebra ZD421… · foglio 1 di 2», con ⏹), e alla fine dice **«Stampato su
   Zebra ZD421 e HP LaserJet · 2 esami confermati alle 14:32»** col nome del paziente,
   **Ristampa** (un tocco: si ristampa lì) e ✕; dopo due minuti un «Stampato» se ne va da solo
-  (la Ristampa resta nella sezione **Stampa** del paziente). Una volta sola: ogni foglio parte una volta, e
+  (la Ristampa resta nel menu **⋯ → Stampa le richieste** del paziente). Una volta sola: ogni foglio parte una volta, e
   uno mandato da un service worker che poi è ripartito è «sconosciuto», mai rimandato. Se la
   scheda dell'ordine si ricarica o si chiude a metà, o premi ⏹, i fogli che restano non partono e
   l'ordine finisce **«Stampa interrotta»**, con **Ristampa** (la richiesta è confermata, e lo

@@ -83,6 +83,15 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
 await ctx.addInitScript(() => {
   try { if (!localStorage.getItem("psassist:win.v1")) localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.6, y: 0.01, w: 0.39, h: 0.97 })); } catch { /* niente */ }
 });
+// Qui si prova la stampa: il caricamento da solo all'apertura (che apre lo
+// storico del portale in una scheda dietro) si dà per già fatto, o le «schede
+// nuove» che le prove aspettano sarebbero la sua (lo prova ext-referti).
+await ctx.addInitScript(() => {
+  try {
+    const ids = ["aaaa1111-0000-0000-0000-000000000001", "bbbb2222-0000-0000-0000-000000000002", "cccc3333-0000-0000-0000-000000000003"];
+    localStorage.setItem("psassist:autoCarica.v1", JSON.stringify({ 999001: { ts: Date.now() + 864e5, ids }, 999002: { ts: Date.now() + 864e5, ids } }));
+  } catch { /* niente */ }
+});
 // quante volte si è aperta una stampa, in TUTTE le schede del gestionale
 // (la scheda dell'ordine compresa: localStorage è dell'origine)
 await ctx.addInitScript(() => {
@@ -186,6 +195,9 @@ async function apriPannello(page) {
 // la sezione Stampa della pagina del paziente: etichette e lista della richiesta già confermata
 async function ristampaDallaPagina(page, scheda = true) {
   await apriPannello(page);
+  // (le richieste confermate si ristampano dal menu ⋯ → «Stampa le richieste»)
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#stampamenu").click();
   await $panel(page, '[data-print="699999"]').first().click();
   if (scheda) await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
 }
@@ -973,6 +985,33 @@ if (await prova("la striscia: la cosa più seria, poi la più nuova; un «Stampa
   await nasce;
   const due = await striscia(doc, /1 esame confermato alle/, 60000);
   check(/Stampato su/.test(due) && !/2 esami/.test(due), `il secondo, dalla stessa scheda: la striscia lo segue fino al suo «Stampato» (got ${due || await striscia(doc, /./, 1000)})`);
+}
+
+// ---- un referto salvato: «Stampa» nel visore va sull'A4, dalla copia, una volta sola
+if (await prova("un referto salvato: «Stampa» nel visore va sull'A4, una volta")) {
+  installa(true);
+  await scelte(ATTIVA);
+  await suPagina(doc, A.patientUrl);
+  if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  await $panel(doc, '[data-seg="esiti"]').click();
+  const salvato = () => doc.waitForFunction(() => document.getElementById("psassist-host").shadowRoot.querySelector(".rdot.saved"), null, { timeout: 30000 }).then(() => true).catch(() => false);
+  if (!(await $panel(doc, ".rdot.saved").count()) && await $panel(doc, "#refsave").count()) await $panel(doc, "#refsave").click();
+  await salvato();
+  const id = await $panel(doc, ".rrow.saved").first().getAttribute("data-esito").catch(() => "");
+  await $panel(doc, `[data-pdf="${id}"]`).click();
+  const visore = doc.locator("#psassist-visore");
+  await visore.locator("#vstampa").waitFor({ timeout: 15000 }).catch(() => {});
+  await visore.locator("#vstampa").click().catch(() => {});
+  await finche(() => lavori().length === 1, 30000);
+  const l = lavori();
+  check(l.length === 1 && l[0].tipo === "a4" && l[0].stampante === "HP LaserJet A4" && l[0].byte > 500,
+    `«Stampa» nel visore: il PDF salvato all'A4, senza dialogo (got ${JSON.stringify(l.map((x) => `${x.tipo}→${x.stampante} ${x.byte}`))})`);
+  const tasto = (await visore.locator("#vstampa").innerText().catch(() => "")).trim();
+  await visore.locator("#vstampa").click({ timeout: 1000 }).catch(() => {});
+  await sospendi(2500);
+  check(lavori().length === 1 && tasto === "✓ In stampa" && (await stampe(doc)).length === 0,
+    `un foglio solo, nessuna anteprima; il bottone dice «✓ In stampa» (got ${lavori().length} · «${tasto}»)`);
+  await visore.locator("#vchiudi").click().catch(() => {});
 }
 
 await ctx.close();
