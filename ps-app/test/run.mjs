@@ -4794,11 +4794,9 @@ async function scenarioNuoviValori(browser) {
   check(scen, (await page.locator("#psassist-host .sttab td.agg.fuori, #psassist-host .sttab td.nuovo.fuori").count()) === 2,
     "un valore nuovo fuori range resta anche fuori range");
 
-  // nella riga dei Pazienti, il pallino: rosso, perché fra i valori nuovi non
-  // ancora letti ce n'è uno fuori range (lo stesso segno della tabella)
+  // nella riga dei Pazienti niente valori (la riga dice solo lo stato di Lab, ECG, RX): si torna al paziente
   await $panel(page, "#back").click();
-  await page.waitForSelector("#psassist-host .pzrow.qui .esst", { timeout: 5000 });
-  check(scen, (await $panel(page, ".pzrow.qui .esdot.ros").count()) === 1, "Pazienti: il pallino rosso, valori nuovi fuori range non ancora letti");
+  await page.waitForSelector("#psassist-host .pzrow.qui", { timeout: 5000 });
   await $panel(page, ".pzrow.qui .pzapri").click();
   await page.waitForSelector("#psassist-host #letto", { timeout: 5000 });
 
@@ -4810,9 +4808,6 @@ async function scenarioNuoviValori(browser) {
   check(scen, (await page.locator("#psassist-host #letto").count()) === 0, "e il «nuovi» sparisce con loro");
   check(scen, (await page.locator("#psassist-host .sttab tbody tr:not(.stsez)").count()) === 5,
     "i valori restano tutti in tabella: si spegne il marchio, non la riga");
-  await $panel(page, "#back").click();
-  await page.waitForSelector("#psassist-host .pzrow.qui .esst", { timeout: 5000 });
-  check(scen, (await $panel(page, ".pzrow.qui .esdot").count()) === 0, "e con «Letto» il pallino dei Pazienti si spegne");
   await context.close();
 }
 
