@@ -22,7 +22,10 @@ con accanto un **codice di sei cifre** («482 913»): lo inquadri con la **fotoc
 tocchi il link. Si apre il pannello, già collegato; lo stesso codice è nel suo menu ⋯. L'associazione
 vale **14 ore** (l'ora di fine è scritta sul PC e sul telefono) e vale per **quel telefono solo**: il
 primo che entra. Un altro telefono che inquadra lo stesso QR si sente dire «Il PC è associato a un
-altro telefono». Il QR si rivede con «Mostra il QR» solo nei primi due minuti e solo finché nessun
+altro telefono», con **«Cancella e riassocia»**: scrive il codice **93** e quel telefono diventa
+l'associato (il primo esce, come con «Revoca» e un'associazione nuova; la scadenza non si allunga). Il
+codice sbagliato dice «Codice sbagliato» e non cambia niente. Sul PC la pagina ⋯ → iPhone dice
+«iPhone cambiato alle 14:32». Il QR si rivede con «Mostra il QR» solo nei primi due minuti e solo finché nessun
 telefono è entrato; dopo, «Associa» ne fa uno nuovo (e il telefono di prima esce). Conviene
 aggiungerlo alla schermata Home (Condividi → Aggiungi alla schermata Home): l'icona riapre il pannello.
 
@@ -179,7 +182,17 @@ cronologia, e tiene `K`, la scadenza (al massimo 14 ore da quando l'ha letto) e 
 riaperto, come dura il turno; la pagina d'accesso del gestionale chiude la sessione, non
 l'associazione. Il QR si rivede solo nei primi due minuti e prima che
 un telefono entri; il primo che entra lega l'associazione al suo `dev` (`ponte.coppia.dev`), e il PC
-risponde «no» al saluto di ogni altro.
+risponde «no» al saluto di ogni altro — salvo `cambio`, qui sotto.
+
+**«Cancella e riassocia».** Il telefono rifiutato tiene la chiave del QR e può rimandare il saluto con
+un campo in più, `cambio`: il codice scritto dal medico (stesso messaggio cifrato di ogni saluto, con
+`salutoTel`: senza la chiave non si apre e il PC non risponde nemmeno). Il codice si controlla **sul PC**
+(`PONTE_CODICE_CAMBIO` in `ponte-sw.js`, l'unico posto). Giusto: la sessione di prima finisce
+(«Un altro iPhone ha preso il posto di questo»), `ponte.coppia.dev` passa al nuovo telefono, la
+scadenza resta quella, e la risposta è quella di ogni saluto. Sbagliato: `{no: "codice"}`, niente cambia.
+Cinque sbagli di fila: `{no: "bloccato", fino}` per 10 minuti, anche col codice giusto. Un saluto di
+cambio già visto non vale due volte. Il vecchio telefono, se rientra, trova «associato a un altro
+telefono» e può riprendersi il posto allo stesso modo.
 
 **Da K, con HKDF-SHA256** (sale `ps-ponte/1`, WebCrypto, nessuna libreria — `public/ponte/cripto.js`,
 copiato tale e quale in `extension/ponte-cripto.js` da `npm run build`, e un test controlla che
@@ -296,6 +309,9 @@ capo (e, se c'è un'associazione ancora buona con un'altra chiave, chiede prima)
 - **Il QR sullo schermo** vale quanto la chiave, ma per poco e per uno: si rivede solo nei primi due
   minuti, si toglie da solo appena l'iPhone entra, e dopo il primo telefono non apre a nessun altro.
   Nel dubbio, Revoca.
+- **«Cancella e riassocia»**: la vera protezione è la chiave del QR, che ha solo chi l'ha inquadrato;
+  il 93 evita soltanto un cambio per sbaglio (sono due cifre) e non va preso per una password. Un cambio
+  si vede sul PC («iPhone cambiato alle …», nel Registro) e il primo telefono ne esce.
 - **PC sbloccato e incustodito**: dà già tutto il gestionale a chi si siede. Il ponte aggiunge che una
   sessione aperta si vede e si chiude con un tocco; il QR di prima non si rivede. La chiave vale fino
   alla scadenza, anche col browser chiuso e riaperto: se nel gestionale rientra un altro medico, il

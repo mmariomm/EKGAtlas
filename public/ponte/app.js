@@ -56,6 +56,7 @@
     vista: { nome: "lista", ep: "" }, scheda: "esiti", sel: new Map(), bloccati: new Map(), aperti: new Set(),
     occupato: new Set(), bozze: new Map(), notaAperta: "", promAperto: "", promTesto: "", fatti: new Map(), menu: false, arma: null, avviso: null,
     inviati: new Map(),  // ep → oid dell'ordine che sta andando al PC (il bottone aspetta)
+    cambio: null,        // «Cancella e riassocia», sulla schermata «associato a un altro telefono»
   };
   function svuota() {
     S.pazienti = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
@@ -194,8 +195,9 @@
       if (!S.saluto || m.eco !== S.saluto.n) return;   // un saluto vecchio, o non nostro
       const mio = S.saluto;
       S.saluto = null;
-      if (m.no) return dimentica("rifiutato");          // il PC è di un altro telefono
+      if (m.no) return mio.cambio ? cambioNo(m) : rifiuta();   // il PC è di un altro telefono
       S.canale = P.canaleTel(await P.chiaviSessione(S.coppia.k, mio.byte, P.daB64u(m.n)));
+      S.cambio = null;
       S.nSessione = mio.n;
       S.ultimo = Date.now();
       // (senza aspettare qui: la risposta passa da questa stessa fila)
@@ -252,6 +254,42 @@
     zitto();
     S.fase = "chiusa"; S.menu = false;
     render();
+  }
+  // Il PC è di un altro telefono. La chiave del QR resta (serve a «Cancella e
+  // riassocia»); non si prova da sé, e dati non ce ne sono.
+  function rifiuta() {
+    S.canale = null; S.saluto = null; S.nSessione = "";
+    S.cambio = { testo: "", errore: "", occupato: false };
+    S.fase = "rifiutato"; S.menu = false;
+    render();
+  }
+  // «Cancella e riassocia»: un saluto col codice che il medico ha scritto. Il
+  // PC lo controlla (il codice non è qui) e, se è giusto, risponde come a
+  // ogni saluto: da lì la sessione parte da sola, e arriva l'elenco.
+  async function cambia() {
+    const c = S.cambio;
+    if (!c || c.occupato || !S.chiavi) return;
+    if (!c.testo.trim()) { fuocoSu("cambio"); return; }
+    if (!S.ws || S.ws.readyState !== 1) { c.errore = "Non collegato: riprova"; collega(); render(); return; }
+    c.occupato = true; c.errore = ""; render();
+    const n = P.casuale(16);
+    const mio = { n: P.b64u(n), byte: n, cambio: true };
+    S.saluto = mio;
+    manda(await P.sigilla(S.chiavi.salutoTel, P.TIPO.SALUTO_TEL, 0, { v: 1, n: mio.n, dev: S.coppia.dev, cambio: c.testo.trim().slice(0, 12) }));
+    setTimeout(() => {
+      if (S.cambio !== c || !c.occupato) return;
+      if (S.saluto === mio) S.saluto = null;
+      c.occupato = false; c.errore = "Il PC non risponde"; render();
+    }, 8000);
+  }
+  function cambioNo(m) {
+    const c = S.cambio;
+    if (!c) return;
+    c.occupato = false; c.testo = "";
+    c.errore = m.no === "codice" ? "Codice sbagliato"
+      : m.no === "bloccato" && Number.isFinite(m.fino) ? `Troppi tentativi: riprova alle ${hhmm(m.fino)}` : "Il PC è associato a un altro telefono";
+    render();
+    fuocoSu("cambio");
   }
   // Aperto su un altro telefono, o in un'altra scheda: questo si ferma, e
   // riprende solo se il medico lo chiede.
@@ -506,9 +544,13 @@
           `<p>${esc(sc ? `L'associazione con il PC è finita${S.scaduta ? ` alle ${hhmm(S.scaduta)}` : ""}.` : `${S.testoFine}.`)}</p>
            <p>Per rientrare serve un QR nuovo: sul PC <b>⋯ → iPhone → Associa l'iPhone</b>.</p>`, "", true);
       }
-      case "rifiutato":
-        return piena(ICO.lucchetto, "Il PC è associato a un altro telefono",
-          `<p>Questo QR l'ha già usato un altro telefono, e il PC accetta solo quello.</p><p>Se non eri tu: sul PC <b>⋯ → iPhone → Revoca l'iPhone</b>, poi un QR nuovo.</p>`, "", true);
+      case "rifiutato": {
+        const c = S.cambio || { testo: "", errore: "", occupato: false };
+        return piena(ICO.lucchetto, "Il PC è associato a un altro telefono", "",
+          `<div class="cambio"><input id="cambio" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off" enterkeyhint="go" placeholder="Codice" aria-label="Codice" value="${esc(c.testo)}">
+           <button class="grande" data-a="cambia"${c.occupato ? " disabled" : ""}>Cancella e riassocia</button>
+           ${c.errore ? `<p class="errcod" role="alert">${esc(c.errore)}</p>` : ""}</div>`, true);
+      }
       case "conferma":
         return piena(ICO.lucchetto, "Un'altra associazione?",
           `<p>Questo link associa il telefono al PC con il codice <b class="codice">${esc(S.nuova.codice)}</b>.</p>
@@ -712,6 +754,7 @@
     else if (a === "riapri") riapri();
     else if (a === "sostituisci") { salva(S.nuova); parti(S.nuova); }
     else if (a === "tieni") parti(S.coppia);
+    else if (a === "cambia") cambia();
     else if (a === "paz") apriPaziente(b.dataset.ep);
     else if (a === "indietro") { salvaNota(ep); S.vista = { nome: "lista", ep: "" }; S.arma = null; render(); aggiornaLista(); }
     else if (a === "aggiornaLista") aggiornaLista();
@@ -752,12 +795,14 @@
       S.bozze.set(ep, t.value);
       t.style.height = "auto"; t.style.height = t.scrollHeight + "px";
     } else if (t.id === "promin") S.promTesto = t.value;
+    else if (t.id === "cambio" && S.cambio) S.cambio.testo = t.value;
   });
   $app.addEventListener("focusout", (e) => { if (e.target.id === "nota" && !disegno) salvaNota(S.vista.ep); });
   $app.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     if (e.target.id === "promin") { e.preventDefault(); aggiungiProm(S.vista.ep); }
     else if (e.target.id === "quesito") { e.preventDefault(); e.target.blur(); }
+    else if (e.target.id === "cambio") { e.preventDefault(); cambia(); }
   });
   // Tornati sull'app (iOS chiude le prese delle pagine in sottofondo): ci si
   // ricollega, si prova subito la presa, e l'elenco si rilegge da solo.

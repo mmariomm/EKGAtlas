@@ -31,12 +31,14 @@ function righeStato(s, codice, qr) {
   }
   if (!s.accoppiato) return { cls: "", testa: "Nessun iPhone associato", righe: ["«Associa l'iPhone» mostra un QR: lo inquadri col telefono e sei dentro fino a fine turno.", fine] };
   const cod = codice ? ` · codice ${codice}` : "";
+  const cam = s.cambiato ? `iPhone cambiato alle ${hhmm(s.cambiato)}.` : "";   // un altro telefono ha preso il posto del primo
   if (s.sessione) {
     return { cls: "vivo", testa: "iPhone collegato", righe: [
+      cam,
       `Dalle ${hhmm(s.sessione.dal)} · ultimo comando alle ${hhmm(s.sessione.ultimo)} · si chiude da sola dopo 20 minuti senza comandi.`,
       `Associato fino alle ${hhmm(s.scade)}${cod}. Ogni comando finisce nel Registro.`] };
   }
-  return { cls: s.relay === "su" ? "ok" : "warn", testa: qr ? "iPhone associato" : `iPhone associato fino alle ${hhmm(s.scade)}${cod}`, righe: [ponte, fine] };
+  return { cls: s.relay === "su" ? "ok" : "warn", testa: qr ? "iPhone associato" : `iPhone associato fino alle ${hhmm(s.scade)}${cod}`, righe: [cam, ponte, fine] };
 }
 
 async function aggiorna() {
