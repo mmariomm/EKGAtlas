@@ -3330,7 +3330,8 @@ async function scenarioQuesitoPacchetti(browser) {
   const scen = "pacchetti";
   // quesito = pacchetto di esami: il chip scrive il quesito E spunta gli esami
   const P = (c) => `${RES.POC}:${c}`, U = (c) => `${RES.URGENZE}:${c}`;
-  const TORACICO = [P(320), P(325), P(176), P(220), P(134), P(324)].sort();
+  // (con l'RX torace 1 proiezione: una seconda richiesta, di radiologia)
+  const TORACICO = [P(320), P(325), P(176), P(220), P(134), P(324), `${RES.RX}:36`].sort();
   const DISPNEA = [P(320), P(326), P(176), P(220), P(134), P(101), P(324), U(297)].sort();
   const ADDOME = [P(320), P(325), P(176), U(16), U(228), U(53), U(167), U(34), U(181), U(54)].sort();
   // le versioni NEW degli emogas esistono anche sul server (senza, il motore ordina le vecchie)
@@ -3358,7 +3359,7 @@ async function scenarioQuesitoPacchetti(browser) {
 
   // ---- i tre pacchetti sono sempre in testa, anche se la lista salvata non li ha
   const chips = (await $panel(page, ".qchips .chip.q").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
-  check(scen, uguali(chips.slice(0, 3), ["Dolore toracico · 6", "Dispnea · 8", "Dolore addominale · 10"]),
+  check(scen, uguali(chips.slice(0, 3), ["Dolore toracico · 7", "Dispnea · 8", "Dolore addominale · 10"]),
     `i tre pacchetti sono i primi chip, e dicono quanti esami portano (got ${chips.join(" | ")})`);
   check(scen, uguali(chips.slice(3), ["Febbre", "Trauma", "Cefalea"]),
     "e dopo vengono i quesiti salvati dal medico");
@@ -3371,8 +3372,8 @@ async function scenarioQuesitoPacchetti(browser) {
   check(scen, (await quesito()) === "Dolore toracico", `e scrive il quesito (got ${JSON.stringify(await quesito())})`);
   check(scen, await acceso("Dolore toracico") && !(await acceso("Dispnea")) && !(await acceso("Dolore addominale")),
     "il chip scelto è acceso, gli altri no");
-  check(scen, (await $panel(page, "#goconfirm").innerText()).trim() === "Conferma per ROSSI M. · 6 esami" && !(await $panel(page, "#goconfirm").isDisabled()),
-    "e il bottone è pronto, con il quesito già scritto: «Conferma per ROSSI M. · 6 esami»");
+  check(scen, (await $panel(page, "#goconfirm").innerText()).trim() === "Conferma per ROSSI M. · 2 richieste, 7 esami" && !(await $panel(page, "#goconfirm").isDisabled()),
+    "e il bottone è pronto, con il quesito già scritto: «Conferma per ROSSI M. · 2 richieste, 7 esami» (laboratorio e RX)");
   // la coagulazione del pacchetto si vede anche nella griglia degli esami singoli
   const coag = (c) => $panel(page, `.opt[data-res="${RES.POC}"][data-code="${c}"]`);
   check(scen, (await coag(220).count()) === 1 && (await coag(134).count()) === 1
@@ -3512,23 +3513,18 @@ async function scenarioLabPlusRx(browser) {
   check(scen, /^Conferma per ROSSI M\. · 2 richieste, \d+ esami$/.test((await $panel(page, "#goconfirm").innerText()).trim()), "il bottone annuncia due richieste");
   await $panel(page, "#goconfirm").click();
 
-  // the lab richiesta confirms itself; the RADIOLOGY one never does (README,
-  // collaudo 8-9): the panel walks to its exam page and waits for a human
-  await page.waitForFunction(() => {
-    const f = document.forms.namedItem("Prestazioni");
-    return !!f && !!document.querySelector('a[href*="Delete=Elimina"][href*="PRESTAZIONE=35"]');
-  }, { timeout: 60000 });
-  await page.waitForTimeout(600);
-  check(scen, (await page.locator("#psassist-confirm").count()) === 0, "nessun conto alla rovescia sulla radiologia");
-  await page.locator('form[name="Prestazioni"] input[name="Update"]').first().click();   // the human confirms the RX
+  // il laboratorio si conferma da solo, e poi anche la radiologia: stessi
+  // controlli, nessun clic del medico
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 60000 });
+  const confermePost = mock.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni") && q.form && ("Update" in q.form || "Update1" in q.form));
+  check(scen, confermePost.length === 2, `una conferma per richiesta, nessuna di più (got ${confermePost.length})`);
 
   const rich = Object.entries(mock.state.richieste);
   check(scen, rich.length === 2, `due richieste create (got ${rich.length})`);
   const lab = rich.find(([, r]) => r.cart.has("324"));
   const rx = rich.find(([, r]) => r.cart.has("35"));
   check(scen, !!lab && !!rx, "una di laboratorio (troponina) e una di radiologia (RX torace)");
-  check(scen, lab && lab[1].confirmed && rx && rx[1].confirmed, "entrambe confermate (lab da sola, RX dal click umano)");
+  check(scen, lab && lab[1].confirmed && rx && rx[1].confirmed, "entrambe confermate da sole (laboratorio, poi RX)");
   check(scen, lab && lab[1].quesito === "dispnea e dolore toracico" && rx && rx[1].quesito === "dispnea e dolore toracico",
     "stesso quesito su entrambe");
 
@@ -3540,6 +3536,81 @@ async function scenarioLabPlusRx(browser) {
   }
   check(scen, /1 di 3 — Etichette/.test(heads[0]) && /2 di 3 — Lista esami/.test(heads[1]) && /3 di 3 — Prenotazione/.test(heads[2]),
     `un solo flusso: etichette → lista → RX (got ${heads.join(" | ")})`);
+  await context.close();
+}
+
+async function scenarioPacchettoConRx(browser) {
+  const scen = "pacchetto+rx";
+  // «Dolore toracico» porta anche l'RX torace 1 proiezione: due richieste,
+  // confermate tutte e due da sole, e una stampa sola con la prenotazione RX in fondo
+  const mock = createMock({ nuoveVersioni: { 3: "325", 166: "326" } });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, '.chip.q[data-q="Dolore toracico"]').click();
+  check(scen, (await $panel(page, "#qrx").count()) === 1, "con l'RX del pacchetto compare il «Quesito RX»");
+  const cta = (await $panel(page, "#goconfirm").innerText()).trim();
+  check(scen, cta === "Conferma per ROSSI M. · 2 richieste, 7 esami", `il bottone: «Conferma per ROSSI M. · 2 richieste, 7 esami» (got ${cta})`);
+  await $panel(page, "#goconfirm").click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 90000 });
+  const rich = Object.values(mock.state.richieste);
+  const lab = rich.find((r) => r.cart.has("324")), rx = rich.find((r) => r.cart.has("36"));
+  check(scen, rich.length === 2 && lab && rx && lab !== rx, `due richieste: laboratorio e radiologia (got ${rich.length})`);
+  check(scen, lab && JSON.stringify([...lab.cart.keys()].sort()) === JSON.stringify(["134", "176", "220", "320", "324", "325"])
+    && rx && JSON.stringify([...rx.cart.keys()]) === JSON.stringify(["36"]),
+    `nel laboratorio i sei esami, nella radiologia solo l'RX torace 1 proiezione, una volta (got ${lab && [...lab.cart.keys()]} · ${rx && [...rx.cart.keys()]})`);
+  check(scen, lab && lab.quesito === "Dolore toracico" && rx && rx.quesito === "Dolore toracico", "tutte e due col quesito del pacchetto");
+  const conf = mock.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni") && q.form && ("Update" in q.form || "Update1" in q.form));
+  check(scen, lab && lab.confirmed && rx && rx.confirmed && conf.length === 2, `confermate tutte e due, da sole, una volta ciascuna (got ${conf.length} conferme)`);
+  const heads = [];
+  for (let k = 0; k < 3; k++) { heads.push(await docStampa(page)); await avanti(page); }
+  check(scen, /1 di 3 — Etichette/.test(heads[0]) && /2 di 3 — Lista esami/.test(heads[1]) && /3 di 3 — Prenotazione esterna/.test(heads[2]),
+    `una stampa sola: etichette → lista → il foglio della RX per ultimo (got ${heads.join(" | ")})`);
+  await context.close();
+}
+
+// Il gestionale vero, dopo UNA Conferma di un carrello con POC e laboratorio,
+// fa una richiesta per erogatore: ognuna col suo RICHIESTA_ID (PROG 1). Qui la
+// riga del laboratorio della richiesta confermata diventa una richiesta nuova;
+// con `tardi` la pagina la mostra solo alla seconda lettura.
+async function scenarioRichiestePerErogatore(browser, { tardi = false } = {}) {
+  const scen = tardi ? "per-erogatore-tardi" : "per-erogatore";
+  const mock = createMock({ seedConfirmed: true });   // la 699999 c'era già: mai da stampare
+  const SEED = "699999";
+  const confermata = () => Object.keys(mock.state.richieste).find((k) => k !== SEED && mock.state.richieste[k].confirmed);
+  const nuova = (r) => String(Number(r) + 50);
+  let letture = 0;
+  // i fogli della richiesta nuova sono quelli della riga 2 della confermata
+  const h = mock.handle;
+  mock.handle = (req) => {
+    const r = confermata();
+    return h(r ? { ...req, url: req.url.replace(new RegExp(`RICHIESTA_ID=${nuova(r)}&RICHIESTA_PROG=1`), `RICHIESTA_ID=${r}&RICHIESTA_PROG=2`) } : req);
+  };
+  const { context, page } = await newPage(browser, mock, {
+    riscrivi: (url, html) => {
+      const r = confermata();
+      if (!r || !html.includes(`RICHIESTA_ID=${r}&RICHIESTA_PROG=2`)) return html;
+      if (tardi && letture++ === 0) return html.replace(new RegExp(`<a title="Stampa (Richiesta|Etichette)" href="[^"]*RICHIESTA_ID=${r}&RICHIESTA_PROG=2[^"]*"><img[^>]*></a>`, "g"), "");
+      return html.split(`RICHIESTA_ID=${r}&RICHIESTA_PROG=2`).join(`RICHIESTA_ID=${nuova(r)}&RICHIESTA_PROG=1`);
+    },
+  });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("dolore addominale");
+  await $panel(page, `.opt[data-res="${RES.POC}"][data-code="320"]`).click();      // POC
+  await $panel(page, `.opt[data-res="${RES.URGENZE}"][data-code="293"]`).click();  // laboratorio
+  const t0 = Date.now();
+  await $panel(page, "#goconfirm").click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 60000 });
+  const r = confermata();
+  const heads = [];
+  for (let k = 0; k < 4; k++) { heads.push(await docStampa(page)); await avanti(page); }
+  await page.waitForTimeout(500);
+  check(scen, !!r && /1 di 4 — Etichette/.test(heads[0]) && /2 di 4 — Etichette/.test(heads[1]) && /3 di 4 — Lista esami/.test(heads[2]) && /4 di 4 — Lista esami/.test(heads[3]),
+    `la richiesta confermata e quella nuova del laboratorio: tutte e due le etichette, poi tutte e due le liste (got ${heads.join(" | ")})`);
+  const stampati = (id) => mock.state.requests.filter((q) => /RcsStampaEtichetteLISHMIMU|jasperservlet/.test(q.url) && new RegExp(`RICHIESTA_ID=${id}(&|$)`).test(q.url));
+  check(scen, stampati(SEED).length === 0, `la richiesta che c'era già prima del giro non si stampa (got ${stampati(SEED).length} richieste)`);
+  if (tardi) check(scen, letture >= 2, `la richiesta nuova arriva alla seconda lettura della pagina, e si stampa lo stesso (letture ${letture}, ${Math.round((Date.now() - t0) / 1000)} s)`);
   await context.close();
 }
 
@@ -6574,7 +6645,7 @@ async function scenarioStatoEsami(browser) {
   check(scen, /\bon\b/.test(await tropo.getAttribute("class")) && somiglia((await tropo.locator(".ult").innerText()).trim(), `⏳ ${tAttesa(130)}`),
     "«Dolore toracico» spunta la troponina lo stesso, col suo «⏳» accanto");
   const cta = (await $panel(page, "#goconfirm").innerText()).trim();
-  check(scen, cta === "Conferma per ROSSI M. · 68 M · 6 esami", `il bottone che conferma dice per chi (got: ${cta})`);
+  check(scen, cta === "Conferma per ROSSI M. · 68 M · 2 richieste, 7 esami", `il bottone che conferma dice per chi (got: ${cta})`);
   await shot(page, "onda1-richieste");
 
   // 1 · Pazienti: la riga di questo paziente
@@ -7042,6 +7113,9 @@ const scenarios = [
   ["esiti: referti di laboratorio senza tabella → «Laboratorio (N)»", scenarioSoloLabEsiti],
   ["rx singles (torace/addome)", scenarioRxSingles],
   ["lab + rx: two richieste, one flow", scenarioLabPlusRx],
+  ["pacchetto con RX: lab + rx, one flow", scenarioPacchettoConRx],
+  ["print: una richiesta per erogatore dopo la Conferma", (b) => scenarioRichiestePerErogatore(b)],
+  ["print: una richiesta per erogatore, che compare tardi", (b) => scenarioRichiestePerErogatore(b, { tardi: true })],
   ["lab + rx manual walk", scenarioLabPlusRxManual],
   ["valori: una tabella, una colonna per prelievo", scenarioRisultati],
   ["↻ Aggiorna rilegge tutti i prelievi", scenarioAggiornaTutti],

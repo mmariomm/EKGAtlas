@@ -41,12 +41,18 @@ const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, scade, creata
 const PONTE_STATO = "ponte";                // storage.session: quello che le pagine mostrano
 const PONTE_ORDINI = "ponte.ordini";        // storage.session: gli ordini partiti dal telefono
 const PONTE_VALORI = "ponte.valori";        // storage.session: le schede aperte per «Aggiorna i valori»
+const PONTE_CARTELLE = "ponte.cartelle";    // storage.session: le schede aperte per salvare la cartella (solo { ep, ts })
+const PONTE_CARTELLA = "ponte.cartella";    // storage.session: l'ultima lettura della cartella di ogni paziente (memoria, mai disco)
 const PONTE_DURATA = 14 * 3600e3;           // un'associazione dura un turno lungo
 const PONTE_INATTIVO = 20 * 60e3;           // senza comandi del medico, la sessione si chiude
 const PONTE_BATTITO = 20e3;                 // la presa parla almeno ogni 20 secondi
 const PONTE_QR_MAX = 2 * 60e3;              // il QR si rivede solo per poco
 const PONTE_SALUTO_MAX = 2 * 60e3;          // un saluto senza seguito si dimentica
 const PONTE_VALORI_MAX = 150e3;             // «Aggiorna i valori» non aspetta di più
+const PONTE_CARTELLA_MAX = 60e3;            // salvare la cartella: aprire, controllare, «Conferma», rileggere
+// i campi della cartella (modulo AmbulatorioPSO) che il telefono può chiedere di scrivere:
+// se lo sono davvero lo dice la pagina, campo per campo (readonly, disabled)
+const PONTE_CARTELLA_CAMPI = { ANAMNESI: "Anamnesi", MALATTIE_PREGRESSE: "Anamnesi remota", FARMACI_ASSUNTI: "Farmaci", ALLERGIE: "Allergie", ESAME_OBIETTIVO: "Esame obiettivo" };
 const PONTE_FRAME_MAX = (1 << 20) - 4096;   // il ripetitore non passa messaggi più grandi
 // «Cancella e riassocia» (dal telefono che trova il PC già associato): con questo
 // codice il telefono prende il posto di quello di prima. Il codice sta SOLO qui.
@@ -56,7 +62,7 @@ const PONTE_CODICE_CAMBIO = "93";
 const PONTE_CAMBIO_ERRORI = 5;
 const PONTE_CAMBIO_BLOCCO = 10 * 60e3;
 // quanto si aspetta una scheda del gestionale, e il «pong» (i test li accorciano)
-const PONTE_ATTESA = { ordina: 25e3, esiti: 30e3, altro: 10e3, pong: 10e3 };
+const PONTE_ATTESA = { ordina: 25e3, esiti: 30e3, cartella: 30e3, altro: 10e3, pong: 10e3 };
 // Perché una sessione finisce: la frase, la stessa qui, sulla pagina iPhone e sul telefono.
 const PONTE_PERCHE = {
   inattivo: "20 minuti senza comandi", "scollegata dal PC": "Chiusa dal PC con «Scollega»",
@@ -74,6 +80,7 @@ const pt = {
   sessione: null,      // { canale, dal, ultimo, n }
   ripartito: 0, rifiuto: 0, fine: null, registro: [],
   valori: new Map(),   // scheda → { ep, risolvi, promessa }: chi aspetta «Aggiorna i valori», qui
+  cartelle: new Map(), // scheda → { ep, fase, campi, risolvi }: una cartella da salvare (i testi solo qui, in memoria)
   inVolo: new Map(),   // "tel"+oid → l'ordine che una scheda sta ancora preparando
   fila: Promise.resolve(),
 };
@@ -222,6 +229,9 @@ async function ponteControlla() {
   for (const [id, v] of Object.entries(await ponteValoriTutti())) {
     if (ora - v.ts > PONTE_VALORI_MAX + 5e3) await ponteValoriFine(Number(id), { ok: false, testo: "i valori non sono arrivati in tempo" });
   }
+  for (const [id, v] of Object.entries(await ponteCartelleTutte())) {
+    if (ora - v.ts > PONTE_CARTELLA_MAX + 5e3) await ponteCartellaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
+  }
   if (pt.coppia && ora >= pt.coppia.scade) {
     const scade = pt.coppia.scade;
     await ponteFine("scaduta");
@@ -360,6 +370,7 @@ async function ponteFine(perche) {
   pt.attesa = null;
   if (!s) return;
   pt.sessione = null;
+  await chrome.storage.session.remove(PONTE_CARTELLA).catch(() => {});   // le cartelle lette per il telefono: via con la sessione
   pt.fine = { perche, testo: ponteFrase(perche), ts: ponteOra() };
   ponteNota(`Sessione con l'iPhone chiusa — ${pt.fine.testo}`);
   try { ponteManda(await s.canale.cifra({ evento: "fine", perche, testo: pt.fine.testo })); } catch { /* la presa è giù: lo saprà dal «riparti» */ }
@@ -386,6 +397,7 @@ function ponteArgomenti(d) {
   if (Array.isArray(d.esami)) a.esami = d.esami.filter((x) => typeof x === "string" && /^[\w]{1,16}:[\w]{1,16}$/.test(x)).slice(0, 40);
   if ("quesito" in d) a.quesito = ponteTesto(d.quesito, 300);
   if ("mio" in d) a.mio = !!d.mio;
+  if (d.rileggi) a.rileggi = true;
   return a;
 }
 // quelli che l'app manda da sé: non sono il medico, non tengono aperta la sessione
@@ -403,6 +415,8 @@ async function ponteComando(s, d) {
     if (d.cmd === "ordina") return rispondi(await ponteOrdina(d));
     if (d.cmd === "pdf") return rispondi(await ponteDaiPdf(s, d));
     if (d.cmd === "stampa") return rispondi(await ponteStampa(s, d));
+    if (d.cmd === "cartella") return rispondi(await ponteCartella(ponteArgomenti(d)));
+    if (d.cmd === "cartellaSalva") return rispondi(await ponteCartellaSalva(d));
     if (["pazienti", "esiti", "richieste", "nota", "promemoria", "fatto"].includes(d.cmd)) {
       const a = ponteArgomenti(d);
       const r = await ponteSuScheda(d.cmd, a);
@@ -559,6 +573,7 @@ async function ponteOrdina(d) {
 async function ponteSchede() {
   const lavoro = new Set((await ordLeggi()).filter((x) => x.worker != null).map((x) => x.worker));
   for (const id of Object.keys(await ponteValoriTutti())) lavoro.add(Number(id));
+  for (const id of Object.keys(await ponteCartelleTutte())) lavoro.add(Number(id));
   const tutte = (await chrome.tabs.query({}).catch(() => [])).filter((t) => sulGestionale(t.url) && !t.discarded && !lavoro.has(t.id));
   const win = await chrome.windows.getLastFocused().catch(() => null);
   const peso = (t) => (t.active ? 2 : 0) + (win && t.windowId === win.id ? 1 : 0);
@@ -654,9 +669,150 @@ async function ponteValoriFine(id, esito) {
 // bg.js lo chiede quando una scheda domanda «chi sono?»
 async function ponteLavoroDi(tabId) {
   const v = (await ponteValoriTutti())[tabId];
-  return v ? { ponteValori: { ep: v.ep } } : {};
+  if (v) return { ponteValori: { ep: v.ep } };
+  // la scheda della cartella: che cosa salvare (o, se il service worker ha perso il lavoro, niente)
+  const c = pt.cartelle.get(tabId);
+  if (c) return { ponteCartella: { ep: c.ep, fase: c.fase, campi: c.campi } };
+  const a = (await ponteCartelleTutte())[tabId];
+  return a ? { ponteCartella: { ep: a.ep, fase: "perso" } } : {};
 }
 chrome.tabs.onRemoved.addListener((id) => { ponteValoriFine(id, { ok: false, testo: "la scheda dei valori è stata chiusa" }).catch(() => {}); });
+chrome.tabs.onRemoved.addListener((id) => { ponteCartellaFine(id, { ok: false, incerto: pt.cartelle.get(id)?.fase === "inviato", testo: "la scheda è stata chiusa" }).catch(() => {}); });
+
+// ------------------------------------------------- la cartella dal telefono
+// Leggere: l'ultima lettura della pagina del paziente — annotata a ogni sua
+// apertura sul PC, solo con un iPhone associato, in storage.session (in
+// memoria: muore col browser e con la sessione del telefono) — o la pagina
+// riletta da una scheda del medico (solo lettura). Salvare: la pagina del
+// paziente in una scheda di sottofondo, che controlla, scrive e clicca il
+// «Conferma» della pagina, e dopo il ricaricamento rilegge e verifica. Tutti
+// o nessuno: un campo cambiato sul PC, o non più scrivibile, e non parte niente.
+const ponteCartelleMemo = async () => (await chrome.storage.session.get(PONTE_CARTELLA))[PONTE_CARTELLA] || {};
+let ponteFilaCartella = Promise.resolve();
+const ponteCartellaMemoScrivi = (ep, c) => (ponteFilaCartella = ponteFilaCartella.then(async () => {
+  if (!pt.coppia || !c || !Array.isArray(c.campi)) return;
+  const m = await ponteCartelleMemo();
+  m[ep] = { ep, letto: Number(c.letto) || ponteOra(), campi: c.campi.filter((x) => x && PONTE_CARTELLA_CAMPI[x.nome] && typeof x.v === "string")
+    .map((x) => ({ nome: x.nome, v: x.v.slice(0, 20000), ro: !!x.ro })) };
+  // al massimo 40 pazienti, e niente più vecchio di un turno
+  const tieni = Object.values(m).filter((x) => ponteOra() - x.letto < PONTE_DURATA).sort((a, b) => b.letto - a.letto).slice(0, 40);
+  await chrome.storage.session.set({ [PONTE_CARTELLA]: Object.fromEntries(tieni.map((x) => [x.ep, x])) });
+}).catch(() => {}));
+async function ponteCartella(a) {
+  if (!a.ep) return { ok: false, errore: "Paziente non valido" };
+  const memo = a.rileggi ? null : (await ponteCartelleMemo())[a.ep] || null;
+  const r = await ponteSuScheda("cartella", { ...a, memo });
+  if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
+  if (r.ok && r.nuova) await ponteCartellaMemoScrivi(a.ep, r.dati);
+  delete r.nuova;
+  return r;
+}
+const ponteCartelleTutte = async () => (await chrome.storage.session.get(PONTE_CARTELLE))[PONTE_CARTELLE] || {};
+let ponteFilaCartelle = Promise.resolve();
+const ponteCartelleCambia = (fn) => (ponteFilaCartelle = ponteFilaCartelle.then(async () => {
+  const v = await ponteCartelleTutte();
+  const r = fn(v);
+  await chrome.storage.session.set({ [PONTE_CARTELLE]: v });
+  return r;
+}).catch(() => null));
+const ponteCartellaNomi = (l) => l.map((n) => PONTE_CARTELLA_CAMPI[n] || n).join(", ");
+// nel registro degli errori: il perché e i nomi dei campi, mai un testo
+function ponteCartellaErrore(perche, nomi) {
+  if (typeof segnaErrore === "function") segnaErrore("ponte", { comando: "cartellaSalva", perche: corto(perche, 120), campi: nomi.slice(0, 5) });
+}
+async function ponteCartellaSalva(d) {
+  const a = ponteArgomenti(d);
+  const campi = {};
+  for (const [k, v] of Object.entries(d.campi && typeof d.campi === "object" ? d.campi : {})) {
+    if (!PONTE_CARTELLA_CAMPI[k]) return { ok: false, errore: "Campo sconosciuto: niente salvato" };
+    if (!v || typeof v.prima !== "string" || typeof v.dopo !== "string" || v.prima.length > 20000 || v.dopo.length > 20000) return { ok: false, errore: "Testo non valido: niente salvato" };
+    campi[k] = { prima: v.prima, dopo: v.dopo };
+  }
+  const nomi = Object.keys(campi);
+  if (!a.ep || !nomi.length) return { ok: false, errore: "Niente da salvare" };
+  if ([...pt.cartelle.values()].some((c) => c.ep === a.ep)) return { ok: false, errore: "Sto già salvando la cartella di questo paziente" };
+  // il paziente (in elenco, non dimesso, non un episodio precedente) e la sua pagina
+  const r = await ponteSuScheda("cartellaSalva", { ep: a.ep, nomi });
+  if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
+  if (!r.ok) return r;
+  // il medico ha un testo non salvato nella cartella di quel paziente, in una
+  // scheda del PC: no — anche in un altro campo, perché il suo «Conferma»
+  // rimanderebbe il modulo intero, coi testi di prima
+  const sporchi = await ponteCartellaSporche(a.ep, Object.keys(PONTE_CARTELLA_CAMPI));
+  if (sporchi.length) {
+    ponteCartellaErrore("testo non salvato in una scheda del PC", sporchi);
+    ponteNota(`Cartella di ${corto(r.dati.paziente, 40) || "un paziente"} dal telefono: rifiutata, sul PC c'è un testo non salvato`);
+    await ponteScriviStato();
+    return { ok: false, errore: "Sul PC c'è un testo non salvato in questa pagina", sporchi };
+  }
+  const paz = corto(r.dati.paziente, 40) || "un paziente";
+  const e = await ponteCartellaSotto(r.dati.url, a.ep, campi);
+  if (e.ok) {
+    ponteNota(`Cartella di ${paz} dal telefono: salvati ${ponteCartellaNomi(nomi)}`);
+    await ponteScriviStato();
+    await ponteCartellaMemoScrivi(a.ep, e.letta);
+    // le schede di quel paziente aperte sul PC: «Aggiornato dal telefono · Ricarica»
+    for (const t of await ponteSchede()) chrome.tabs.sendMessage(t.id, { t: "ponteCartellaAggiornata", ep: a.ep }).catch(() => {});
+    return { ok: true, dati: { ...e.letta, salvati: nomi } };
+  }
+  const salvati = nomi.filter((n) => e.verificati && e.verificati[n]), mancano = nomi.filter((n) => !salvati.includes(n));
+  const errore = e.cambiati ? "Cambiato sul PC: ricarica"
+    : e.chiusi ? `Sul PC non è più modificabile: ${ponteCartellaNomi(e.chiusi)}`
+    : e.verificati ? `${salvati.length ? `Salvato: ${ponteCartellaNomi(salvati)} · ` : ""}Non salvato sul PC: ${ponteCartellaNomi(mancano)}`
+    : e.incerto ? "Non so se è salvato: guarda la cartella sul PC prima di rifarlo"
+    : `Non salvato: ${e.testo || "la pagina del paziente sul PC non risponde"}`;
+  ponteCartellaErrore(e.cambiati ? "cambiato sul PC" : e.chiusi ? "non più modificabile" : e.verificati ? "verifica: testo diverso" : e.testo || "?",
+    e.cambiati || e.chiusi || (e.verificati ? mancano : nomi));
+  ponteNota(`Cartella di ${paz} dal telefono: ${errore}${e.incerto && e.testo ? ` (${e.testo})` : ""}`);
+  await ponteScriviStato();
+  if (e.letta) await ponteCartellaMemoScrivi(a.ep, e.letta);
+  return { ok: false, errore, ...(e.cambiati ? { cambiati: e.cambiati } : {}), ...(e.chiusi ? { chiusi: e.chiusi } : {}),
+    ...(e.letta ? { dati: e.letta } : {}), ...(e.incerto ? { incerto: true } : {}) };
+}
+// Ogni scheda del gestionale (non quelle di sottofondo) dice se ha, per quel
+// paziente, uno di quei campi cambiato e non salvato. Chi non risponde in 3
+// secondi non ha una pagina viva.
+async function ponteCartellaSporche(ep, nomi) {
+  const lavoro = new Set(Object.keys(await ponteCartelleTutte()).map(Number));
+  const schede = (await chrome.tabs.query({}).catch(() => [])).filter((t) => sulGestionale(t.url) && !t.discarded && !lavoro.has(t.id));
+  const risposte = await Promise.all(schede.map((t) => Promise.race([
+    chrome.tabs.sendMessage(t.id, { t: "ponteCartellaSporca", ep, nomi }).catch(() => null), attendi(3000, null)])));
+  return [...new Set(risposte.flatMap((r) => (r && Array.isArray(r.sporchi) ? r.sporchi.filter((n) => nomi.includes(n)) : [])))];
+}
+// la scheda di sottofondo, come quella di «Aggiorna i valori»: annotata prima
+// di andare sulla pagina (così sa chi è), chiusa alla fine
+async function ponteCartellaSotto(url, ep, campi) {
+  let u;
+  try { u = new URL(url); } catch { return { ok: false, testo: "indirizzo del paziente non valido" }; }
+  if (!leggibileOrd(url) || u.searchParams.get("EPISODIO_ID") !== ep) return { ok: false, testo: "indirizzo del paziente inatteso" };
+  const davanti = (await ponteSchede())[0];
+  const vuota = { url: "about:blank", active: false };
+  const t = await chrome.tabs.create(davanti ? { ...vuota, windowId: davanti.windowId, index: davanti.index + 1 } : vuota)
+    .catch(() => chrome.tabs.create(vuota));
+  let risolvi;
+  const promessa = new Promise((r) => { risolvi = r; });
+  pt.cartelle.set(t.id, { ep, fase: "compila", campi, risolvi });
+  await ponteCartelleCambia((v) => { v[t.id] = { ep, ts: ponteOra() }; });
+  const tempo = setTimeout(() => ponteCartellaFine(t.id, { ok: false, incerto: pt.cartelle.get(t.id)?.fase === "inviato", testo: "la scheda non ha finito in tempo" }), PONTE_CARTELLA_MAX);
+  try {
+    await chrome.tabs.update(t.id, { url: u.href, autoDiscardable: false });
+  } catch {
+    ponteCartellaFine(t.id, { ok: false, testo: "la pagina del paziente sul PC non si apre" });
+  }
+  const esito = await promessa;
+  clearTimeout(tempo);
+  return esito;
+}
+async function ponteCartellaFine(id, esito) {
+  const w = pt.cartelle.get(id);
+  pt.cartelle.delete(id);
+  const c = await ponteCartelleCambia((v) => { const c = v[id]; delete v[id]; return c; });
+  if (!c && !w) return false;
+  const t = await chrome.tabs.get(id).catch(() => null);
+  if (t && !t.active) await chrome.tabs.remove(id).catch(() => {});
+  if (w) w.risolvi(esito);
+  return true;
+}
 
 // ------------------------------------------- gli ordini partiti dal telefono
 // L'ordine fa il giro di sempre (scheda di sottofondo, controlli, conferma,
@@ -746,6 +902,36 @@ function ponteDaPagina(msg, sender, reply) {
       await chrome.tabs.create({ url: chrome.runtime.getURL("ponte.html"), windowId: t.windowId, index: t.index + 1 })
         .catch(() => chrome.tabs.create({ url: chrome.runtime.getURL("ponte.html") }));
       return { ok: true };
+    });
+  }
+  // la pagina di un paziente aperta dal medico: la sua cartella, per il telefono (solo con un iPhone associato)
+  if (msg.t === "ponteCartellaLetta" && gestionale) {
+    return fai(async () => {
+      const c = msg.cartella;
+      if (!pt.coppia || typeof msg.ep !== "string" || !/^[\w.-]{1,40}$/.test(msg.ep) || !c || c.ep !== msg.ep || pt.cartelle.has(sender.tab.id)) return { ok: false };
+      await ponteCartellaMemoScrivi(msg.ep, { ...c, letto: ponteOra() });
+      return { ok: true };
+    });
+  }
+  // la scheda della cartella sta per cliccare «Conferma»: da qui in poi si verifica, non si ricompila
+  if (msg.t === "ponteCartellaInvio" && gestionale) {
+    return fai(async () => {
+      const w = pt.cartelle.get(sender.tab.id);
+      if (!w || w.fase !== "compila") return { ok: false };
+      w.fase = "inviato";
+      return { ok: true };
+    });
+  }
+  if (msg.t === "ponteCartellaFatto" && gestionale) {
+    return fai(async () => {
+      const id = sender.tab.id, w = pt.cartelle.get(id);
+      const nomi = (l) => (Array.isArray(l) && w ? l.filter((n) => w.campi[n]) : []);
+      const esito = { ok: !!msg.ok && !!w && w.fase === "inviato", testo: corto(msg.testo, 120), incerto: !!msg.incerto };
+      if (nomi(msg.cambiati).length) esito.cambiati = nomi(msg.cambiati);
+      if (nomi(msg.chiusi).length) esito.chiusi = nomi(msg.chiusi);
+      if (w && msg.verificati && typeof msg.verificati === "object") esito.verificati = Object.fromEntries(Object.keys(w.campi).map((n) => [n, msg.verificati[n] === true]));
+      if (w && msg.letta && msg.letta.ep === w.ep && Array.isArray(msg.letta.campi)) esito.letta = { ep: w.ep, letto: ponteOra(), campi: msg.letta.campi };
+      return { ok: await ponteCartellaFine(id, esito) };
     });
   }
   if (msg.t === "ponteValoriFatto" && gestionale) {

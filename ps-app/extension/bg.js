@@ -994,6 +994,14 @@ chrome.tabs.onRemoved.addListener((id) => {
 // «sconosciuto» se l'aiutante non ha detto com'è andata.
 const ORA = (ts) => { const d = new Date(ts || Date.now()); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 const usciti = (f) => f.stato === "stampato" || f.stato === "mandato";
+// L'etichetta anagrafica (il «Stampa Bracciale» del gestionale, il suo link),
+// all'etichettatrice: un ordine solo con N fogli dello stesso link (le copie
+// che il medico ha chiesto a tocchi), il PDF preso una volta. Non si infila
+// fra le etichette di un ordine che sta stampando le sue: aspetta che escano.
+const braccialeUrl = (u) => { try { const x = new URL(u); return x.origin === SA4 && x.searchParams.get("REPORT") === "PsoBraccialettoHMIMU"; } catch { return false; } };
+const soloBracciale = (rec) => !!rec.stampa && Array.isArray(rec.stampa.jobs) && rec.stampa.jobs.length > 0 && rec.stampa.jobs.every((j) => braccialeUrl(j.url));
+const etichetteInCorso = (l, rec) => l.find((x) => x !== rec && x.stato === "stampo" && !x.interrotta && !x.ferma && !soloBracciale(x)
+  && (x.fogli || []).some((f) => f.tipo === "etichette" && ["attesa", "prendo", "invio"].includes(f.stato)));
 function ordPubblico(rec, l = []) {
   const v = rec.vista || {}, r = rec.resto || {}, f = Array.isArray(rec.fogli) ? rec.fogli : [];
   // «Quesito: il tuo» è la frase della scheda dell'ordine: per un ordine dal telefono, si dice quale
@@ -1020,13 +1028,21 @@ function ordPubblico(rec, l = []) {
       if (rec.ferma) return P("warn", "Fermo chiesto", "la scheda dell'ordine si ferma appena risponde");
       return P(tono(v.tono, "run"), v.badge || v.tag || "In corso", [v.tag && v.badge ? v.tag : "", v.testo].filter(Boolean).join(" · ") || "…", v.quesito);
     case "stampo": {
-      const i = rec.inVolo != null ? rec.inVolo : f.findIndex((x) => x.stato === "attesa");
-      const ora = f[i];
+      // i fogli che stanno andando alla stampante (le due stampanti lavorano
+      // insieme), se no quelli che arrivano, se no il prossimo
+      const con = f.map((x, i) => ({ x, i })), di = (s) => con.filter(({ x }) => x.stato === s);
+      const ora = [di("invio"), di("prendo"), di("attesa").slice(0, 1)].find((xs) => xs.length) || [];
+      const cosa = ({ x }) => `${/^etichett/i.test(x.name) ? "le etichette" : /^lista/i.test(x.name) ? "la lista esami" : `«${x.name}»`}${x.stampante ? ` su ${x.stampante}` : ""}`;
       // («Confermata»; una ristampa dalla scheda del medico, «Stampa»)
       const tag = st.tag || "Confermata";
       if (rec.ferma || rec.interrotta) return P("warn", tag, "Fermo la stampa: finisce il foglio in corso", st.riassunto);
-      return P("run", tag, ora ? `Stampo ${/^etichett/i.test(ora.name) ? "le etichette" : /^lista/i.test(ora.name) ? "la lista esami" : `«${ora.name}»`}${ora.stampante ? ` su ${ora.stampante}` : ""}…` : "Stampo…",
-        f.length > 1 ? `foglio ${i + 1} di ${f.length}` : "", st.riassunto);
+      const bracc = soloBracciale(rec);
+      const prima = bracc && !di("invio").length ? etichetteInCorso(l, rec) : null;
+      if (prima) return P("run", tag, `L'etichetta anagrafica, dopo le etichette di ${prima.paziente || "un altro ordine"}…`, st.riassunto);
+      if (bracc && ora.length) return P("run", tag, `Stampo l'etichetta anagrafica${ora[0].x.stampante ? ` su ${ora[0].x.stampante}` : ""}…`,
+        f.length > 1 ? `copia ${ora[0].i + 1} di ${f.length}` : "", st.riassunto);
+      return P("run", tag, ora.length ? `Stampo ${ora.map(cosa).join(" e ")}…` : "Stampo…",
+        f.length > 1 && ora.length ? `${ora.length > 1 ? "fogli" : "foglio"} ${ora.map(({ i }) => i + 1).join(" e ")} di ${f.length}` : "", st.riassunto);
     }
     case "stampa": {
       // le etichette aspettano una scheda del gestionale (il dialogo di stampa);
@@ -1050,14 +1066,19 @@ function ordPubblico(rec, l = []) {
       if (!f.length) return P(tono(v.tono, "ok"), v.tag || "Fatto", v.testo, v.quesito);
       // com'è finita la stampa senza dialogo, foglio per foglio
       // (il perché tecnico resta sul PC; il telefono dice che cosa guardare)
-      const ignoti = f.filter((x) => x.stato === "sconosciuto"), non = f.filter((x) => !usciti(x) && x.stato !== "sconosciuto");
+      // (un foglio tolto col suo ✕ l'ha voluto il medico: non è «non uscito»)
+      const ignoti = f.filter((x) => x.stato === "sconosciuto"), non = f.filter((x) => !usciti(x) && x.stato !== "sconosciuto" && x.stato !== "tolto");
       if (ignoti.length) {
         return alTel(P("warn", "Esito della stampa sconosciuto", `controlla ${dove(ignoti)}: ${ignoti[0].why || "l'aiutante non ha detto com'è andata"}`, st.riassunto),
           P("warn", etichette(ignoti) ? "Etichette forse stampate" : "Fogli forse stampati",
             `guarda ${dove(ignoti)} prima di ristamparl${etichette(ignoti) ? "e" : "i"} dal PC`, st.riassunto));
       }
       if (non.length) return P("warn", "Stampa interrotta", `non usciti: ${non.map((x) => x.name).join(", ")}`, rec.interrotta, st.riassunto);
+      // (tutto tolto col ✕: non è uscito niente, e lo ha voluto il medico)
+      if (f.every((x) => x.stato === "tolto")) return P("ok", "Niente stampato", "tolto col ✕");
       const stampati = f.filter((x) => x.stato === "stampato"), mandati = f.filter((x) => x.stato === "mandato");
+      if (soloBracciale(rec)) return mandati.length ? P("warn", `Mandata a ${dove(mandati)}`, alle, "è nella coda di Windows: controlla che sia uscita")
+        : P("ok", `Etichetta stampata su ${dove(stampati)}`, alle);
       if (!mandati.length) return P("ok", `Stampato su ${dove(stampati)}`, alle, st.quesito, tel);
       return P("warn", `Mandato a ${dove(mandati)}`, alle, "è nella coda di Windows: controlla che sia uscito",
         stampati.length ? `stampato su ${dove(stampati)}` : "", tel);
@@ -1067,7 +1088,7 @@ function ordPubblico(rec, l = []) {
 
 // LA STAMPA SENZA DIALOGO: la fa il service worker, foglio per foglio, e ogni
 // passo sta scritto nell'ordine (storage.session) PRIMA di farlo. Un foglio è
-// «mandato» all'aiutante prima che parta: se qui qualcosa muore, al riavvio
+// «invio» (all'aiutante) prima che parta: se qui qualcosa muore, al riavvio
 // quel foglio è «sconosciuto» — mai rimandato. Lo stesso motore per i fogli di
 // un ordine in sottofondo e per quelli che chiede la scheda del medico
 // (ordineFogli). La scheda dell'ordine dà solo i PDF (li prende lei, dalla
@@ -1079,7 +1100,7 @@ const statoOrd = (l, id) => l.find((x) => x.id === id && x.stato === "stampo");
 // i fogli di una stampa, ognuno con la stampante su cui andrà (se la stampa automatica è accesa)
 const fogliNuovi = (jobs, s) => jobs.map((j) => {
   const tipo = j.printer === "etichettatrice" ? "etichette" : "a4";
-  return { name: j.name, tipo, stato: "attesa", stampante: s ? corto(s[tipo], 80) : "", why: "" };
+  return { name: j.name, ...(j.breve ? { breve: j.breve } : {}), tipo, stato: "attesa", stampante: s ? corto(s[tipo], 80) : "", why: "" };
 });
 // il resoconto di una conferma (quanti esami, quando), per la scheda che stampa dal dialogo
 const fineDi = (f) => ({ n: Number(f && f.n) || 0, ts: Number(f && f.ts) || Date.now(), quesito: (f && f.quesito) || null });
@@ -1125,70 +1146,136 @@ function stampaDalTel(rid, pdf) {
     return { ok: true, id };
   });
 }
+// Due corsie, una per stampante: le etichette all'etichettatrice, tutto il
+// resto (liste, prenotazioni RX) all'A4. I PDF delle due si prendono insieme,
+// e ogni foglio parte appena c'è — le due stampanti lavorano insieme —;
+// dentro una corsia, nell'ordine di sempre. Un PDF preso in parallelo che non
+// arriva (un errore, la pagina d'accesso, niente) si riprende UNA volta, da
+// solo, quando l'altra corsia ha finito — e si annota (segnaErrore): il
+// gestionale vero dirà se due letture insieme gli vanno bene.
+// Il giornale, foglio per foglio: «attesa» → «prendo» (il PDF) → «invio»
+// (scritto PRIMA di darlo all'aiutante) → com'è andata; «tolto» col suo ✕.
 async function ordStampaFogli(id) {
   if (STAMPO_VIVI.has(id)) return;
   STAMPO_VIVI.add(id);
+  let copia = null;      // l'etichetta anagrafica: il PDF della prima copia, per le altre
+  let attende = false;   // …che aspetta le etichette di un ordine che stampa: la riprende ordStampoFine
   try {
-    for (;;) {
-      // 1. il prossimo foglio, o la fine
-      const passo = await inFilaOrd(async () => {
-        const l = await ordLeggi();
-        const rec = statoOrd(l, id);
-        if (!rec) return null;
-        // la scheda dei PDF non c'è ancora: si comincia quando dice «ci sono» (ordineChi)
-        if (rec.pronta === false && !rec.ferma && !rec.interrotta) return null;
-        if (rec.inVolo != null) {   // mandato da un service worker che non c'è più: com'è andata non si sa
-          const f = rec.fogli[rec.inVolo];
-          if (f && f.stato === "mandato") Object.assign(f, { stato: "sconosciuto", why: "la risposta dell'aiutante si è persa" });
-          rec.inVolo = null;
+    // 0. com'è rimasto: quello che un service worker di prima stava mandando
+    //    non si sa com'è andato (mai rimandato); quello che prendeva, si riprende
+    const tipi = await inFilaOrd(async () => {
+      const l = await ordLeggi();
+      const rec = statoOrd(l, id);
+      if (!rec) return null;
+      // la scheda dei PDF non c'è ancora: si comincia quando dice «ci sono» (ordineChi)
+      if (rec.pronta === false && !rec.ferma && !rec.interrotta) return null;
+      let cambiato = false;
+      // (il giornale di prima: un foglio solo «in volo», segnato «mandato»)
+      if (rec.inVolo != null) {
+        const f = rec.fogli[rec.inVolo];
+        if (f && f.stato === "mandato") f.stato = "invio";
+        delete rec.inVolo; cambiato = true;
+      }
+      for (const f of rec.fogli) {
+        if (f.stato === "invio") { Object.assign(f, { stato: "sconosciuto", why: "la risposta dell'aiutante si è persa" }); cambiato = true; }
+        else if (f.stato === "prendo") { f.stato = "attesa"; cambiato = true; }
+      }
+      if (cambiato) await ordScrivi(l);
+      return [...new Set(rec.fogli.filter((f) => f.stato === "attesa").map((f) => f.tipo))];
+    });
+    if (!tipi) return;
+    const corsie = new Map(tipi.map((t) => [t, { finita: false, aspetta: false, fatto: null }]));
+    const prendi = (passo) => (passo.diretto ? (REF_STAMPA.test(passo.url) ? pdfSalvato(passo.url) : PDF_TEL_URL.test(passo.url) ? pdfDalTel(passo.url) : pdfNostro(passo.url))
+      : allaScheda(passo.worker, { t: "psassistPdf", id, url: passo.url }, 30e3));
+    const corsia = async (tipo) => {
+      const io = corsie.get(tipo);
+      const altra = ([...corsie].find(([t]) => t !== tipo) || [])[1] || null;
+      for (;;) {
+        // 1. il prossimo foglio di questa corsia (o niente: la corsia ha finito)
+        const passo = await inFilaOrd(async () => {
+          const l = await ordLeggi();
+          const rec = statoOrd(l, id);
+          if (!rec || rec.ferma || rec.interrotta) return null;
+          const i = rec.fogli.findIndex((f) => f.stato === "attesa" && f.tipo === tipo);
+          if (i < 0) return null;
+          if (soloBracciale(rec) && etichetteInCorso(l, rec)) { attende = true; return null; }
+          const job = rec.stampa.jobs[i] || {};
+          const senza = !job.diretto && rec.worker == null;   // nessuno che dia il PDF
+          const s = senza ? null : await stampaScelte();
+          if (!s) {
+            rec.interrotta = senza ? "la scheda dell'ordine si è chiusa" : "stampa automatica spenta";
+            await ordScrivi(l);
+            return null;
+          }
+          rec.fogli[i].stato = "prendo"; rec.agg = Date.now();
           await ordScrivi(l);
+          return { i, url: job.url, diretto: !!job.diretto, worker: rec.worker, tipo, stampante: s[tipo], ruota: ruotaDi(s), bracciale: soloBracciale(rec) };
+        });
+        if (!passo) return;
+        // 2. il PDF (dalla scheda dell'ordine; un consenso, dall'estensione)
+        const insieme = !!altra && !altra.finita && !altra.aspetta;
+        const pdf = passo.bracciale && copia && copia.url === passo.url ? copia.pdf : await prendi(passo);
+        const manca = !pdf || !pdf.ok || typeof pdf.pdf !== "string";
+        if (passo.bracciale && !manca) copia = { url: passo.url, pdf };
+        if (manca && insieme) {
+          // preso insieme all'altro e non arrivato: lo si riprende da solo, una volta
+          segnaErrore("stampa-parallela", { ordine: id, foglio: passo.i, tipo, motivo: corto(pdf ? pdf.why : "nessuna risposta dalla scheda", 120) });
+          await inFilaOrd(async () => {
+            const l = await ordLeggi();
+            const rec = statoOrd(l, id);
+            const f = rec && rec.fogli[passo.i];
+            if (f && f.stato === "prendo") { f.stato = "attesa"; await ordScrivi(l); }
+          });
+          if (!altra.finita && !altra.aspetta) { io.aspetta = true; await altra.fatto; io.aspetta = false; }
+          continue;
         }
-        const i = rec.fogli.findIndex((f) => f.stato === "attesa");
-        const job = rec.stampa.jobs[i] || {};
-        const senza = i >= 0 && !job.diretto && rec.worker == null;   // nessuno che dia il PDF
-        const s = i < 0 || rec.ferma || rec.interrotta || senza ? null : await stampaScelte();
-        if (!s) {
-          if (i >= 0 && !rec.interrotta) rec.interrotta = rec.ferma ? "fermata col ⏹" : senza ? "la scheda dell'ordine si è chiusa" : "stampa automatica spenta";
-          await ordStampoFine(l, rec);
-          return null;
-        }
-        const f = rec.fogli[i];
-        return { i, url: job.url, diretto: !!job.diretto, worker: rec.worker, tipo: f.tipo, stampante: s[f.tipo], ruota: ruotaDi(s) };
-      });
-      if (!passo) return;
-      // 2. il PDF, dalla scheda dell'ordine (un consenso, dall'estensione)
-      const pdf = passo.diretto ? await (REF_STAMPA.test(passo.url) ? pdfSalvato(passo.url) : PDF_TEL_URL.test(passo.url) ? pdfDalTel(passo.url) : pdfNostro(passo.url))
-        : await allaScheda(passo.worker, { t: "psassistPdf", id, url: passo.url }, 30e3);
-      // 3. il foglio segnato «mandato» prima di mandarlo
-      const va = await inFilaOrd(async () => {
-        const l = await ordLeggi();
-        const rec = statoOrd(l, id);
-        if (!rec) return false;
-        const f = rec.fogli[passo.i];
-        if (!pdf) rec.interrotta = rec.interrotta || "la scheda dell'ordine non ha dato il foglio";
-        else if (!pdf.ok || typeof pdf.pdf !== "string") {
-          Object.assign(f, { stato: "fallito", why: `il PDF non è arrivato (${corto(pdf.why, 80)})` });
-          segnaErrore("stampa", { ordine: id, foglio: passo.i, esito: "fallito", motivo: f.why });
-        }
-        else if (pdf.pdf.length > STAMPA_PDF_MAX / 3 * 4 + 4) Object.assign(f, { stato: "fallito", why: "PDF troppo grande" });
-        else { Object.assign(f, { stato: "mandato", stampante: corto(passo.stampante, 80) }); rec.inVolo = passo.i; }
-        rec.agg = Date.now();
-        await ordScrivi(l);
-        return rec.inVolo === passo.i;
-      });
-      if (!va) continue;
-      // 4. all'aiutante (fino a 90 secondi: lui finisce in 40), poi com'è andata
-      const r = await stampaPdf(passo.tipo, pdf.pdf, passo.stampante, passo.ruota);
-      if (r.esito !== "stampato" && r.esito !== "mandato") segnaErrore("stampa", { ordine: id, foglio: passo.i, tipo: passo.tipo, esito: r.esito, motivo: r.why || "" });
-      await inFilaOrd(async () => {
-        const l = await ordLeggi();
-        const rec = statoOrd(l, id);
-        if (!rec || rec.inVolo !== passo.i) return;
-        Object.assign(rec.fogli[passo.i], { stato: r.esito, stampante: corto(r.stampante, 80), why: r.why || "" });
-        rec.inVolo = null; rec.agg = Date.now();
-        await ordScrivi(l);
-      });
-    }
+        // 3. il foglio segnato «invio» prima di mandarlo (tolto col suo ✕ intanto: non parte)
+        const va = await inFilaOrd(async () => {
+          const l = await ordLeggi();
+          const rec = statoOrd(l, id);
+          const f = rec && rec.fogli[passo.i];
+          if (!f || f.stato !== "prendo") return false;
+          // ⏹ o scheda persa mentre il PDF arrivava: finisce solo il foglio già alla stampante
+          if (rec.ferma || rec.interrotta) { f.stato = "attesa"; await ordScrivi(l); return false; }
+          if (!pdf) { f.stato = "attesa"; rec.interrotta = rec.interrotta || "la scheda dell'ordine non ha dato il foglio"; }
+          else if (manca) {
+            Object.assign(f, { stato: "fallito", why: `il PDF non è arrivato (${corto(pdf.why, 80)})` });
+            segnaErrore("stampa", { ordine: id, foglio: passo.i, esito: "fallito", motivo: f.why });
+          }
+          else if (pdf.pdf.length > STAMPA_PDF_MAX / 3 * 4 + 4) Object.assign(f, { stato: "fallito", why: "PDF troppo grande" });
+          else Object.assign(f, { stato: "invio", stampante: corto(passo.stampante, 80) });
+          rec.agg = Date.now(); f.ts = Date.now();
+          await ordScrivi(l);
+          return f.stato === "invio";
+        });
+        if (!va) continue;
+        // 4. all'aiutante (fino a 90 secondi: lui finisce in 40), poi com'è andata
+        const r = await stampaPdf(passo.tipo, pdf.pdf, passo.stampante, passo.ruota);
+        if (r.esito !== "stampato" && r.esito !== "mandato") segnaErrore("stampa", { ordine: id, foglio: passo.i, tipo: passo.tipo, esito: r.esito, motivo: r.why || "", ...(passo.bracciale ? { bracciale: true } : {}) });
+        await inFilaOrd(async () => {
+          const l = await ordLeggi();
+          const rec = statoOrd(l, id);
+          const f = rec && rec.fogli[passo.i];
+          if (!f || f.stato !== "invio") return;
+          Object.assign(f, { stato: r.esito, stampante: corto(r.stampante, 80), why: r.why || "", ts: Date.now() });
+          // (una copia dell'etichetta anagrafica non è partita: le altre non ci riprovano, vanno col dialogo)
+          if (passo.bracciale && r.esito === "fallito") for (const x of rec.fogli) if (x.stato === "attesa") Object.assign(x, { stato: "fallito", why: r.why || "" });
+          rec.agg = Date.now();
+          await ordScrivi(l);
+        });
+      }
+    };
+    for (const [t, c] of corsie) c.fatto = corsia(t).finally(() => { c.finita = true; });
+    await Promise.all([...corsie.values()].map((c) => c.fatto));
+    if (attende) return;
+    // 5. la fine, quando tutte e due hanno finito
+    await inFilaOrd(async () => {
+      const l = await ordLeggi();
+      const rec = statoOrd(l, id);
+      if (!rec) return;
+      if (rec.ferma && !rec.interrotta && rec.fogli.some((f) => f.stato === "attesa")) rec.interrotta = "fermata col ⏹";
+      await ordStampoFine(l, rec);
+    });
   } finally { STAMPO_VIVI.delete(id); PDF_TEL.delete(id); }
 }
 // Finita la stampa. Un foglio che non è partito per un motivo detto
@@ -1198,8 +1285,10 @@ async function ordStampaFogli(id) {
 // con «Ristampa»: anche un esito sconosciuto, che non si ristampa da solo.
 async function ordStampoFine(l, rec) {
   rec.agg = Date.now();
-  rec.inVolo = null;
-  const rotti = rec.stampa.jobs.map((j, i) => ({ ...j, motivo: rec.fogli[i].why })).filter((_, i) => rec.fogli[i].stato === "fallito");
+  delete rec.inVolo;
+  let rotti = rec.stampa.jobs.map((j, i) => ({ ...j, motivo: rec.fogli[i].why })).filter((_, i) => rec.fogli[i].stato === "fallito");
+  // (le copie dell'etichetta anagrafica: al dialogo una volta, con quante erano)
+  if (soloBracciale(rec) && rotti.length > 1) rotti = [{ ...rotti[0], name: "Etichetta anagrafica", motivo: `${rotti[0].motivo}; ${rotti.length} copie` }];
   if (rotti.length && !rec.interrotta && !daTelPdf(rec)) { rec.stato = "stampa"; rec.stampa = { ...rec.stampa, jobs: rotti }; }
   else rec.stato = "avviso";
   // (il PDF dall'iPhone non c'è più: niente dialogo, niente «Ristampa»)
@@ -1207,6 +1296,8 @@ async function ordStampoFine(l, rec) {
   delete rec.ferma;
   await ordSlega(rec);
   await ordScrivi(l);
+  // un'etichetta anagrafica che aspettava queste etichette: ora tocca a lei
+  for (const x of l) if (x !== rec && x.stato === "stampo" && soloBracciale(x) && !STAMPO_VIVI.has(x.id)) ordStampaFogli(x.id);
   await ordAvanti(l);
   await ordConsegnaStampa(l);
 }
@@ -1246,6 +1337,8 @@ function ordMessaggio(msg, sender, reply) {
     if (visti.includes(id)) return reply({ ok: true, id, ordini: l });
     const rec = {
       id, ep, paziente: corto(j.paziente, 60), n: Number(j.n) || 0, autoConfirm: !!j.autoConfirm, url: j.url,
+      // laboratorio o radiologia: la riga «Rich Lab · 3/6», «Rich RX · 1/1» sotto la striscia
+      kind: j.piano.kind === "radio" ? "radio" : j.piano.kind === "lab" ? "lab" : "",
       rid: j.rid ? corto(j.rid, 20) : null, opener: tab.id, worker: null,
       // (il quesito scritto sul telefono: lo dice ordPubblico al posto di «il tuo»)
       quesito: id.startsWith("tel") ? corto(String(j.piano.quesito || "").replace(/\s+/g, " ").trim(), 90) : "",
@@ -1310,7 +1403,9 @@ function ordMessaggio(msg, sender, reply) {
     if (msg.vista && typeof msg.vista === "object") {
       const v = msg.vista;
       rec.vista = { tag: corto(v.tag, 60), badge: corto(v.badge, 30), testo: corto(v.testo), tono: corto(v.tono, 6),
-        quesito: corto(v.quesito, 90), ferma: !!v.ferma, sessione: !!v.sessione };
+        quesito: corto(v.quesito, 90), ferma: !!v.ferma, sessione: !!v.sessione,
+        // (quanti esami sono passati, su quanti: la riga «Richiesta · 3/6» sotto la striscia)
+        ...(Array.isArray(v.prog) && v.prog.length === 2 ? { prog: v.prog.map((x) => Math.max(0, Math.min(99, Number(x) || 0))) } : {}) };
     }
     if (msg.resto && typeof msg.resto === "object") {
       rec.resto = { mancano: nomi(msg.resto.mancano), controllare: nomi(msg.resto.controllare), nel: nomi(msg.resto.nel) };
@@ -1346,13 +1441,14 @@ function ordMessaggio(msg, sender, reply) {
     if (!rec || rec.stato !== "corre") return reply({ ok: false });
     const jobs = (Array.isArray(msg.jobs) ? msg.jobs : []).slice(0, 12)
       .filter((j) => j && sulGestionale(j.url) && typeof j.name === "string")
-      .map((j) => ({ name: corto(j.name, 60), printer: corto(j.printer, 30), url: String(j.url) }));
+      .map((j) => ({ name: corto(j.name, 60), printer: corto(j.printer, 30), url: String(j.url), ...(j.breve ? { breve: corto(j.breve, 12) } : {}) }));
     if (!jobs.length) return reply({ ok: false });
     const auto = await stampaScelte();
     rec.stampa = { jobs, fine: fineDi(msg.fine), riassunto: corto(msg.riassunto, 80), quesito: corto(msg.quesito, 90) };
     registroDi(rec, msg);
     rec.fogli = fogliNuovi(jobs, auto);
     rec.agg = Date.now();
+    rec.confermata = Date.now();   // (la conferma è provata: la riga della richiesta diventa verde)
     await chrome.storage.session.set({ [ORD_FOGLI]: [...presi, rec.id].slice(-100) });
     rec.stato = auto ? "stampo" : "stampa";
     if (!auto) await ordSlega(rec);
@@ -1380,14 +1476,16 @@ function ordMessaggio(msg, sender, reply) {
     const nostro = (u) => String(u).startsWith(chrome.runtime.getURL("consensi/")) || REF_STAMPA.test(String(u));
     const jobs = (Array.isArray(j.jobs) ? j.jobs : []).slice(0, 12)
       .filter((x) => x && typeof x.name === "string" && (sulGestionale(x.url) || nostro(x.url)))
-      .map((x) => ({ name: corto(x.name, 60), printer: corto(x.printer, 30), url: String(x.url), ...(nostro(x.url) ? { diretto: true } : {}) }));
+      .map((x) => ({ name: corto(x.name, 60), printer: corto(x.printer, 30), url: String(x.url), ...(x.breve ? { breve: corto(x.breve, 12) } : {}), ...(nostro(x.url) ? { diretto: true } : {}) }));
     const diretti = jobs.every((x) => x.diretto);   // solo consensi: nessuna scheda da aprire
     const auto = await stampaScelte();
     if (!id || id.startsWith("tel") || !jobs.length || (!diretti && !leggibileOrd(j.url)) || !auto) return reply({ ok: false, no: true });
     const l = await ordLeggi();
     // gli stessi fogli che si stanno già stampando (un doppio clic): una stampa sola
     const firma = (xs) => xs.map((x) => x.url).join(" ");
-    const stessi = l.find((x) => x.stato === "stampo" && x.stampa && firma(x.stampa.jobs) === firma(jobs));
+    // (l'etichetta anagrafica di questo link che si sta già stampando, con qualunque numero di copie: anche)
+    const stessi = l.find((x) => x.stato === "stampo" && x.stampa && (firma(x.stampa.jobs) === firma(jobs)
+      || (soloBracciale(x) && jobs.every((y) => braccialeUrl(y.url)) && x.stampa.jobs[0].url === jobs[0].url)));
     if (stessi) return reply({ ok: true, id: stessi.id, ordini: l });
     const rec = { id, ep: corto(j.ep, 20), paziente: corto(j.paziente, 60), n: 0, url: diretti ? null : j.url, opener: tab.id, worker: null,
       stato: "stampo", pronta: diretti, ts: Date.now(), agg: Date.now(), vista: null, resto: { mancano: [], controllare: [], nel: [] },
@@ -1410,8 +1508,21 @@ function ordMessaggio(msg, sender, reply) {
     // «Ristampa» dopo la stampa senza dialogo: i fogli non usciti (o non si
     // sa); se sono usciti tutti, tutti — un'etichetta inceppata
     const f = rec && rec.stato === "avviso" && Array.isArray(rec.fogli) ? rec.fogli : [];
-    const non = f.length ? rec.stampa.jobs.filter((_, i) => f[i] && !usciti(f[i])) : [];
+    const non = f.length ? rec.stampa.jobs.filter((_, i) => f[i] && !usciti(f[i]) && f[i].stato !== "tolto") : [];
     reply({ ok: !!rec && await ordDai(l, rec, tab.id, true, non.length ? non : null) });
+  });
+  // ✕ sulla riga di un foglio: quello solo non si stampa, gli altri vanno
+  // avanti. Solo finché aspetta o arriva: dato all'aiutante, dalla coda di
+  // Windows non si richiama.
+  if (msg.t === "ordineTogliFoglio") return fai(async () => {
+    const l = await ordLeggi();
+    const rec = statoOrd(l, msg.id);
+    const f = rec && Array.isArray(rec.fogli) ? rec.fogli[Number(msg.i)] : null;
+    if (!f || (f.stato !== "attesa" && f.stato !== "prendo")) return reply({ ok: false });
+    Object.assign(f, { stato: "tolto", ts: Date.now() });
+    rec.agg = Date.now();
+    await ordScrivi(l);
+    reply({ ok: true, ordini: l });
   });
   // ⏹: un ordine in coda si toglie; uno che parte non parte; uno che gira si
   // ferma, dalla sua scheda — e se adesso non risponde (fra una pagina e

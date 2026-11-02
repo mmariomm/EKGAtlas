@@ -187,6 +187,8 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .chip { min-height: 44px; min-width: 44px; border: 1px solid var(--campo); background: var(--carta); border-radius: 999px; padding: 0 13px; font-size: 14px; font-weight: 600; }
 .chip.on { background: var(--azione); border-color: var(--azione); color: #fff; }
+.chip.prof { display: inline-flex; align-items: center; gap: 6px; border-radius: 10px; border-style: dashed; }
+.chip.prof .pila { flex: none; opacity: .8; }
 .gruppo { padding: 2px 14px 12px; }
 .gruppo + .gruppo { border-top: 1px solid var(--linea); }
 .gruppo h3 { font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--grigio); margin: 10px 0 0; }
@@ -202,6 +204,17 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .cta button:disabled, .cta button[aria-disabled="true"] { background: var(--spento); }
 .cta button.arma { background: var(--ambrap); }
 .cta .perche { font-size: 12.5px; color: var(--grigio); text-align: center; margin-top: 6px; }
+.cta .perche.err { color: var(--rosso); font-weight: 650; font-size: 14px; }
+.cta .perche.err:first-child { margin-top: 0; }
+
+/* --- la cartella: un campo sotto l'altro, alto quanto il suo testo ---- */
+.cc { display: block; padding: 8px 14px 10px; border-top: 1px solid var(--linea); }
+.cc > span { display: block; font-size: 12.5px; font-weight: 650; color: var(--grigio); margin-bottom: 4px; }
+.cc textarea { display: block; width: 100%; min-height: 44px; resize: none; overflow: hidden; border: 1px solid var(--campo); border-radius: 10px; background: var(--carta);
+               font-size: 16px; line-height: 1.45; padding: 9px 11px; outline: none; }
+.cc textarea:focus { border-color: var(--blu); }
+/* di sola lettura: niente bordo, fondo grigio — si legge, non si scrive */
+.cc.ro textarea { border-color: transparent; background: var(--fondo); color: var(--testo2); }
 
 /* --- ordini ------------------------------------------------------------ */
 .ord { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; margin-bottom: 10px; background: var(--carta); border: 1px solid var(--bordo); }
@@ -236,3 +249,6 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .scan .x { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: var(--dx); color: #fff; background: rgba(0,0,0,.4); font-size: 20px; border-radius: 50%; }
 /* il campo del file («Stampa un PDF»): c'è, ma non si vede — lo apre il menu */
 .via-schermo { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; left: -100px; }
+
+/* PC assente: quello che va chiesto al PC resta, in grigio, e non si tocca */
+.nopc { opacity: .42; }
