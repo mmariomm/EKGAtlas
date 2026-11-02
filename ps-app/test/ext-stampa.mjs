@@ -88,8 +88,9 @@ await ctx.addInitScript(() => {
 // nuove» che le prove aspettano sarebbero la sua (lo prova ext-referti).
 await ctx.addInitScript(() => {
   try {
-    const ids = ["aaaa1111-0000-0000-0000-000000000001", "bbbb2222-0000-0000-0000-000000000002", "cccc3333-0000-0000-0000-000000000003"];
-    localStorage.setItem("psassist:autoCarica.v1", JSON.stringify({ 999001: { ts: Date.now() + 864e5, ids }, 999002: { ts: Date.now() + 864e5, ids } }));
+    // la firma del laboratorio della pagina del banco (due referti del LIS), già letta
+    const lab = JSON.stringify({ ris: [], ref: ["aaaa1111-0000-0000-0000-000000000001", "bbbb2222-0000-0000-0000-000000000002"], rich: [] });
+    localStorage.setItem("psassist:autoCarica.v1", JSON.stringify({ 999001: { ts: Date.now(), lab, parz: Date.now() }, 999002: { ts: Date.now(), lab, parz: Date.now() } }));
   } catch { /* niente */ }
 });
 // quante volte si è aperta una stampa, in TUTTE le schede del gestionale
@@ -479,6 +480,9 @@ if (await prova("un errore su un foglio: quel foglio dal dialogo, col motivo; gl
   await dialogoChiuso(doc);
   await doc.waitForSelector("#psassist-print", { state: "detached", timeout: 8000 }).catch(() => {});
   check(lavori().length === 2 && (await stampe(doc)).length === 1, "la lista non si ristampa, e la scheda si è aperta una volta, per le etichette");
+  const err = ((await sw.evaluate(() => chrome.storage.local.get("errori.v1")))["errori.v1"] || []).filter((x) => x.tipo === "stampa");
+  check(err.some((x) => x.dati.esito === "fallito" && x.dati.tipo === "etichette") && !/ROSSI|MARIO|BIANCHI/.test(JSON.stringify(err)),
+    `il foglio non uscito sta nel registro degli errori, senza nomi (got ${JSON.stringify(err.slice(-1)).slice(0, 160)})`);
 }
 
 // ---- 5. l'aiutante sparito ----------------------------------------------

@@ -61,8 +61,8 @@ sessione. Vedi:
   sessione cifrata, li ricompone controllando la misura e il «%PDF», e lo apre nel visore del
   telefono da un `blob:` in memoria — mai su disco (né localStorage, né Cache, né IndexedDB), mai da
   un indirizzo di rete, mai nel service worker dell'app; il blob si revoca a finestra chiusa, al PDF
-  dopo, uscendo. Il PC offre solo copie dello stesso episodio, di referti di cui il pannello ha già
-  letto il testo (è lì che si scopre un PDF di un altro paziente, e la copia si toglie), e dà solo
+  dopo, uscendo. Il PC offre solo copie salvate per lo stesso episodio che il pannello non ha segnato
+  come di un altro paziente (è leggendole che lo si scopre, e la copia si toglie) — anche di una TC o di una visita, il cui testo non si legge —, e dà solo
   quelle offerte nella sessione. Oltre 15 MB: «PDF troppo grande: aprilo sul PC».
 - **Richieste** — il quesito (i tre pacchetti in testa), i profili e gli esami, in pillole che vanno
   a capo (alte almeno 44 pt; scelto = pieno). Con quesito mancante il bottone resta spento, ma un

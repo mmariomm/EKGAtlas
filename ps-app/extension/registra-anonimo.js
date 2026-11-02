@@ -1218,6 +1218,10 @@
       elencoPdf.push({ file: `pdf/${nnn}.json`, url: o.url, t: o.t, pagine: o.pagine, righe: o.righe.length, da: o.da });
     });
     files["flusso.json"] = JSON.stringify({ inizio: 0, unita: "secondi dall'inizio", schede, pagine: elencoPagine, pdf: elencoPdf, richieste }, null, 1);
+    // il registro degli errori dell'estensione (dall'ultima registrazione
+    // esportata): i tempi come il flusso, il resto passa dalla ripulitura e dal cancello
+    const errori = (Array.isArray(raccolta.errori) ? raccolta.errori : []).map(({ ts, ...x }) => ({ t: Math.round(((ts || 0) - (raccolta.inizio || 0)) / 1000), ...x }));
+    files["errori.json"] = JSON.stringify({ unita: "secondi dall'inizio della registrazione", errori }, null, 1);
 
     // ------------------------------------------ terza passata: ripulire
     // Quello che è stato visto di vero e sostituito in un punto, sostituito
@@ -1307,6 +1311,7 @@
       `Pagine: ${riepilogoDati.pagine}${Object.keys(perTipo).length ? " — " + Object.entries(perTipo).map(([k, v]) => `${k} ${v}`).join(", ") : ""}`,
       `Richieste: ${riepilogoDati.richieste} (dell'estensione ${dellEstensione}, rinvii ${riepilogoDati.rinvii}, errori ${riepilogoDati.errori})`,
       `PDF: ${riepilogoDati.pdf} (testo letto in ${riepilogoDati.pdfLetti}; riletti una volta dalla cache del browser: ${riletti})`,
+      `Errori dell'estensione: ${errori.length} (errori.json)`,
       "",
       ...sezioneSiss(),
       "Sostituzioni:",

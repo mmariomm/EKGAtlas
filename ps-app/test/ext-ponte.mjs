@@ -107,7 +107,11 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   while (out.status === 302 && h++ < 5) out = mock.handle({ method: "GET", url: new URL(out.headers.location, u).href });
   if (/html/.test(out.headers["content-type"] || "") && /MVPG=PsoEpisodioClinicoAmbulatorio|^[^?]*\?EPISODIO_ID/.test(u)) {
     const m = quale(u), rossi = m === A;
-    const html = Buffer.from(out.body).toString("latin1").replace("<body>", "<body>" + riquadro(rossi ? "ROSSI MARIO" : "BIANCHI ANNA", rossi ? "ARANCIONE" : "VERDE", m.state.episodeId, rossi ? CF_A : CF_B, rossi ? "17/05/1949 (77) M" : ""));
+    // (il referto di radiologia del banco è una TC, il cui testo il PC non legge più da solo
+    // — si apre nel visore —: a ROSSI si aggiunge una radiografia, il cui testo sì)
+    const rx = `<table><tr><td class="AFCDataTD" title="69-140 RX TORACE (A6900)"><a href="#" title="REFERTO" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*TEST00001&REFERTO_SISTEMA=HL7RIS&REFERTO_ID=dddd4444-0000-0000-0000-000000000004','HL7RIS')"><img alt="referto"></a>
+      69-140 RX TORACE (A6900)<input type="hidden" name="DATA_ORD" value="2026-08-22 03:10:00.0"><input type="hidden" name="DESCRIZIONE_TITLE" value="69-140 RX TORACE (A6900)"></td></tr></table>`;
+    const html = Buffer.from(out.body).toString("latin1").replace("</body>", (rossi ? rx : "") + "</body>").replace("<body>", "<body>" + riquadro(rossi ? "ROSSI MARIO" : "BIANCHI ANNA", rossi ? "ARANCIONE" : "VERDE", m.state.episodeId, rossi ? CF_A : CF_B, rossi ? "17/05/1949 (77) M" : ""));
     out = { ...out, body: Buffer.from(html, "latin1") };
   }
   try { await r.fulfill({ status: out.status, headers: out.headers, body: out.body }); } catch { /* scheda chiusa intanto */ }
@@ -470,23 +474,22 @@ check(!(await piccoli(tel)).length, `anche qui ogni bottone almeno 44 px (${JSON
 // ===========================================================================
 sezione("esiti, e «Aggiorna i valori»");
 await doc.bringToFront();
-// sul PC il medico ha letto il referto della TC: il suo testo ora viaggia anche verso il telefono
+// sul PC il referto della radiografia si è letto da solo, aprendo il paziente: il suo testo ora viaggia anche verso il telefono
 await suPagina(doc, A.patientUrl);
 await $panel(doc, "#expand").click();
 await doc.waitForSelector("#psassist-host .card", { timeout: 8000 });
 await $panel(doc, '[data-seg="esiti"]').click();
-await $panel(doc, '[data-esito="cccc3333-0000-0000-0000-000000000003"]').click();
-await doc.waitForSelector("#psassist-host .reftxt", { timeout: 20000 }).catch(() => {});
+await doc.waitForSelector('#psassist-host [data-esito="dddd4444-0000-0000-0000-000000000004"] .wuex', { timeout: 30000 }).catch(() => {});
 await $panel(doc, "#collapse").click();
 await suPagina(doc, A.worklistUrl);
 const vistoPrima = await doc.evaluate(() => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((p) => p.ep === "999001") || {}).ts);
 await tocca(tel, '[data-a="indietro"]');
 await aspettaTel(tel, /BIANCHI A\./);
 await tocca(tel, '.paz[data-ep="999001"]');
-const es0 = await aspettaTel(tel, /TC ENCEFALO/, 20000);
+const es0 = await aspettaTel(tel, /RX TORACE/, 20000);
 check(/non ha ancora letto valori/.test(es0), "prima di leggerli: «Il PC non ha ancora letto valori»");
-check(/TC ENCEFALO/.test(es0), "i referti della pagina del paziente, letti sul PC");
-await tocca(tel, '.ref:has-text("TC ENCEFALO")');
+check(/RX TORACE/.test(es0), "i referti della pagina del paziente, letti sul PC");
+await tocca(tel, '.ref:has-text("RX TORACE")');
 check(/Non focolai a carattere broncopneumonico/.test(await aspettaTel(tel, /Non focolai/, 8000)), "il referto già letto sul PC si legge sul telefono, col suo testo");
 
 // ===========================================================================
@@ -508,10 +511,10 @@ sezione("un referto PDF salvato sul PC, sul telefono");
   // la copia sta sotto un altro episodio: non è di questo paziente, non si offre
   await seme("999002");
   await riapri();
-  check(await tel.locator(".pdf").count() === 0, "una copia salvata sotto un altro episodio non si offre: niente «PDF»");
+  check(await tel.locator('.refw:has-text("TC ENCEFALO") .pdf').count() === 0, "una copia salvata sotto un altro episodio non si offre: niente «PDF»");
   await seme("999001");
   await riapri();
-  check(await tel.locator(".pdf").count() === 1, "una copia dello stesso episodio, col testo già letto sul PC: un tasto «PDF» sul referto");
+  check(await tel.locator('.refw:has-text("TC ENCEFALO") .pdf').count() === 1, "una TC salvata per questo episodio, anche senza testo letto (le TC non si leggono): un tasto «PDF» sul referto");
   const stato = () => tel.evaluate(async () => ({
     ls: JSON.stringify(Object.entries(localStorage).sort()), ss: JSON.stringify(Object.entries(sessionStorage).sort()),
     idb: JSON.stringify(((await indexedDB.databases?.()) || []).map((d) => d.name).sort()),
@@ -525,7 +528,7 @@ sezione("un referto PDF salvato sul PC, sul telefono");
     URL.createObjectURL = (b) => { const u = o(b), x = { url: u, type: b.type, size: b.size, testa: "" }; window.__blob.push(x); b.slice(0, 5).text().then((t) => { x.testa = t; }); return u; };
     URL.revokeObjectURL = (u) => { window.__rev.push(u); r(u); };
   });
-  const [popup] = await Promise.all([tel.waitForEvent("popup", { timeout: 15000 }), tocca(tel, ".pdf")]);
+  const [popup] = await Promise.all([tel.waitForEvent("popup", { timeout: 15000 }), tocca(tel, '.refw:has-text("TC ENCEFALO") .pdf')]);
   const aperto = await finche(() => /^blob:/.test(popup.url()), 20000);
   const blob = await tel.evaluate(() => window.__blob);
   check(aperto && blob.length === 1 && popup.url() === blob[0].url, `il telefono lo mostra nel suo visore, da un blob: in memoria (${popup.url().slice(0, 40)})`);

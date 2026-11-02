@@ -6079,9 +6079,9 @@ async function scenarioWorkup(browser) {
   await $panel(page, `[data-esito="${ALTRO_ID}"]`).click();
   await page.waitForSelector("#psassist-host .wuimg .wuitem.aperto .wualtro", { timeout: 20000 }).catch(() => {});
   const altro = await $panel(page, ".wuimg .wuitem.aperto").innerText().catch(() => "");
-  check(scen, /Referto di un altro paziente: non mostrato/.test(altro) && !/BIANCHI|focolai a carattere/i.test(altro),
-    `un PDF con un altro codice fiscale: «referto di un altro paziente: non mostrato» (got: ${altro.replace(/\s+/g, " ").slice(0, 120)})`);
-  check(scen, (await $panel(page, `.wuimg [data-esito="${ALTRO_ID}"] .wuex`).innerText().catch(() => "")) === "di un altro paziente: non mostrato",
+  check(scen, /Errore grave: questo PDF è di un altro paziente — non mostrato/.test(altro) && !/BIANCHI|focolai a carattere/i.test(altro),
+    `un PDF con un altro codice fiscale: «Errore grave: questo PDF è di un altro paziente — non mostrato» (got: ${altro.replace(/\s+/g, " ").slice(0, 120)})`);
+  check(scen, (await $panel(page, `.wuimg [data-esito="${ALTRO_ID}"] .wuex`).innerText().catch(() => "")) === "Errore grave: questo PDF è di un altro paziente — non mostrato",
     "e nemmeno l'anteprima sulla riga");
   await $panel(page, `[data-esito="${ECG_ID}"]`).click();
   await page.waitForTimeout(200);

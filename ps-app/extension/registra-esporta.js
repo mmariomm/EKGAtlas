@@ -79,7 +79,10 @@
     }
     dici("Anonimizzo…");
     const vocabolario = await (await fetch(chrome.runtime.getURL("registra-vocabolario.json"))).json();
-    const raccolta = { versione: st.versione, inizio: st.inizio, fine: st.fine, comeFinita: st.comeFinita, origini: st.origini, pagine, flusso, pdf, schede };
+    // il registro degli errori, dall'ultima registrazione esportata (le voci restano: si sposta solo il segno)
+    const reg = await chrome.storage.local.get(["errori.v1", "errori.esportati"]);
+    const errori = (Array.isArray(reg["errori.v1"]) ? reg["errori.v1"] : []).filter((x) => x && x.ts > (reg["errori.esportati"] || 0));
+    const raccolta = { versione: st.versione, inizio: st.inizio, fine: st.fine, comeFinita: st.comeFinita, origini: st.origini, pagine, flusso, pdf, schede, errori };
     const r = RegistraAnonimo.anonimizza(raccolta, { vocabolario });
     const zip = RegistraAnonimo.creaZip(r.files, new Date(st.inizio));
     const d = new Date(st.inizio), p2 = (n) => String(n).padStart(2, "0");
@@ -106,7 +109,8 @@
     }
     $("riep").hidden = false;
     $("riep").textContent = r.files["riepilogo.txt"];
-    await chrome.storage.local.set({ registra: { ...st, esportata: Date.now() } });
+    await chrome.storage.local.set({ registra: { ...st, esportata: Date.now() },
+      ...(errori.length ? { "errori.esportati": Math.max(...errori.map((x) => x.ts)) } : {}) });
     esito({ ok: true, nome, byte: zip.length, controllo: r.gate.ok, punti: r.gate.punti, dove: r.gate.dove });
   } catch (e) {
     dici(`Non esporto: qualcosa è andato storto (${String(e && e.message || e).slice(0, 120)}). La registrazione resta su questo PC.`, "ko");
