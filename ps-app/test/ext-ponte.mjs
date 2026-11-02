@@ -105,7 +105,9 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   while (out.status === 302 && h++ < 5) out = mock.handle({ method: "GET", url: new URL(out.headers.location, u).href });
   if (/html/.test(out.headers["content-type"] || "") && /MVPG=PsoEpisodioClinicoAmbulatorio|^[^?]*\?EPISODIO_ID/.test(u)) {
     const m = quale(u), rossi = m === A;
-    const html = Buffer.from(out.body).toString("latin1").replace("<body>", "<body>" + riquadro(rossi ? "ROSSI MARIO" : "BIANCHI ANNA", rossi ? "ARANCIONE" : "VERDE", m.state.episodeId, rossi ? CF_A : CF_B, rossi ? "17/05/1949 (77) M" : ""));
+    // (il referto di radiologia del banco è una TC, il cui testo il PC non legge più da solo
+    // — si apre nel visore —: qui è una radiografia, il cui testo sì)
+    const html = Buffer.from(out.body).toString("latin1").replace(/69-133 TC ENCEFALO \(A69846\)/g, "69-140 RX TORACE (A6900)").replace("<body>", "<body>" + riquadro(rossi ? "ROSSI MARIO" : "BIANCHI ANNA", rossi ? "ARANCIONE" : "VERDE", m.state.episodeId, rossi ? CF_A : CF_B, rossi ? "17/05/1949 (77) M" : ""));
     out = { ...out, body: Buffer.from(html, "latin1") };
   }
   try { await r.fulfill({ status: out.status, headers: out.headers, body: out.body }); } catch { /* scheda chiusa intanto */ }
@@ -463,23 +465,22 @@ check(!(await piccoli(tel)).length, `anche qui ogni bottone almeno 44 px (${JSON
 // ===========================================================================
 sezione("esiti, e «Aggiorna i valori»");
 await doc.bringToFront();
-// sul PC il medico ha letto il referto della TC: il suo testo ora viaggia anche verso il telefono
+// sul PC il referto della radiografia si è letto da solo, aprendo il paziente: il suo testo ora viaggia anche verso il telefono
 await suPagina(doc, A.patientUrl);
 await $panel(doc, "#expand").click();
 await doc.waitForSelector("#psassist-host .card", { timeout: 8000 });
 await $panel(doc, '[data-seg="esiti"]').click();
-await $panel(doc, '[data-esito="cccc3333-0000-0000-0000-000000000003"]').click();
-await doc.waitForSelector("#psassist-host .reftxt", { timeout: 20000 }).catch(() => {});
+await doc.waitForSelector('#psassist-host [data-esito="cccc3333-0000-0000-0000-000000000003"] .wuex', { timeout: 30000 }).catch(() => {});
 await $panel(doc, "#collapse").click();
 await suPagina(doc, A.worklistUrl);
 const vistoPrima = await doc.evaluate(() => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((p) => p.ep === "999001") || {}).ts);
 await tocca(tel, '[data-a="indietro"]');
 await aspettaTel(tel, /BIANCHI A\./);
 await tocca(tel, '.paz[data-ep="999001"]');
-const es0 = await aspettaTel(tel, /TC ENCEFALO/, 20000);
+const es0 = await aspettaTel(tel, /RX TORACE/, 20000);
 check(/non ha ancora letto valori/.test(es0), "prima di leggerli: «Il PC non ha ancora letto valori»");
-check(/TC ENCEFALO/.test(es0), "i referti della pagina del paziente, letti sul PC");
-await tocca(tel, '.ref:has-text("TC ENCEFALO")');
+check(/RX TORACE/.test(es0), "i referti della pagina del paziente, letti sul PC");
+await tocca(tel, '.ref:has-text("RX TORACE")');
 check(/Non focolai a carattere broncopneumonico/.test(await aspettaTel(tel, /Non focolai/, 8000)), "il referto già letto sul PC si legge sul telefono, col suo testo");
 const nasceValori = nuovaPagina(20000);
 await tocca(tel, '[data-a="valori"]');

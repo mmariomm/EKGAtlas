@@ -88,8 +88,9 @@ await ctx.addInitScript(() => {
 // nuove» che le prove aspettano sarebbero la sua (lo prova ext-referti).
 await ctx.addInitScript(() => {
   try {
-    const ids = ["aaaa1111-0000-0000-0000-000000000001", "bbbb2222-0000-0000-0000-000000000002", "cccc3333-0000-0000-0000-000000000003"];
-    localStorage.setItem("psassist:autoCarica.v1", JSON.stringify({ 999001: { ts: Date.now() + 864e5, ids }, 999002: { ts: Date.now() + 864e5, ids } }));
+    // la firma del laboratorio della pagina del banco (due referti del LIS), già letta
+    const lab = JSON.stringify({ ris: [], ref: ["aaaa1111-0000-0000-0000-000000000001", "bbbb2222-0000-0000-0000-000000000002"], rich: [] });
+    localStorage.setItem("psassist:autoCarica.v1", JSON.stringify({ 999001: { ts: Date.now(), lab, parz: Date.now() }, 999002: { ts: Date.now(), lab, parz: Date.now() } }));
   } catch { /* niente */ }
 });
 // quante volte si è aperta una stampa, in TUTTE le schede del gestionale

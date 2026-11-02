@@ -102,6 +102,10 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
 });
 let sw = ctx.serviceWorkers()[0];
 if (!sw) sw = await ctx.waitForEvent("serviceworker", { timeout: 15000 });
+// Qui il referto di radiologia lo apre il MEDICO (il registratore lo rilegge
+// dalla cache): che l'estensione non se lo prenda da sola all'apertura del
+// paziente, una sua copia c'è già (il caricamento da solo lo prova ext-referti).
+await sw.evaluate(() => chrome.storage.local.set({ "ref:cccc3333-0000-0000-0000-000000000003": { data: btoa("%PDF-1.4 copia di prova"), ts: Date.now(), size: 24, ep: "999001", pk: "" } }));
 const stato = () => sw.evaluate(() => chrome.storage.local.get("registra").then((o) => o.registra || null));
 const sospendi = (ms) => new Promise((res) => setTimeout(res, ms));
 async function finche(fn, timeout = 30000) {
