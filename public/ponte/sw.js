@@ -14,12 +14,18 @@ self.addEventListener("activate", (e) => {
     .then((k) => Promise.all(k.filter((x) => x !== CASSA).map((x) => caches.delete(x))))
     .then(() => self.clients.claim()));
 });
-// Prima la rete (un'app aggiornata arriva subito), la copia solo senza rete.
+// Prima la rete (un'app aggiornata arriva subito); la copia senza rete, o
+// con una rete che in 3 secondi non risponde (l'app si apre lo stesso, e la
+// rete, se arriva, aggiorna la copia per la volta dopo).
 self.addEventListener("fetch", (e) => {
   const u = new URL(e.request.url);
   if (e.request.method !== "GET" || u.origin !== self.location.origin || !DEL_GUSCIO.has(u.pathname)) return;
-  e.respondWith(fetch(e.request).then((r) => {
-    if (r.ok && r.type === "basic") { const copia = r.clone(); caches.open(CASSA).then((c) => c.put(u.pathname, copia)); }
+  const rete = fetch(e.request).then((r) => {
+    if (r.ok && r.type === "basic") { const copia = r.clone(); return caches.open(CASSA).then((c) => c.put(u.pathname, copia)).then(() => r, () => r); }
     return r;
-  }).catch(() => caches.match(u.pathname).then((r) => r || Response.error())));
+  });
+  e.waitUntil(rete.catch(() => {}));
+  e.respondWith(caches.match(u.pathname).then((copia) => (copia
+    ? Promise.race([rete.catch(() => copia), new Promise((ok) => setTimeout(() => ok(copia), 3000))])
+    : rete.catch(() => Response.error()))));
 });

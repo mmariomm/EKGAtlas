@@ -180,10 +180,9 @@ function ponteConnetti() {
     if (pt.ws !== ws) return;
     pt.ws = null; pt.relay = "giu"; pt.pari = false;
     clearTimeout(pt.tPong); pt.tPong = 0;
-    // un'altra presa del PC ha preso il posto di questa: non si fa a gara ogni secondo
-    if (ev && ev.code === 4001) pt.tentativi = Math.max(pt.tentativi, 4);
     ponteScriviStato();
-    ponteRiprova();
+    // (un'altra presa del PC ha preso il posto di questa: non si fa a gara ogni secondo)
+    ponteRiprova(ev && ev.code === 4001);
   };
 }
 function ponteStacca() {
@@ -193,11 +192,13 @@ function ponteStacca() {
   pt.relay = pt.host && pt.coppia ? "giu" : "spento";
   if (ws) try { ws.close(1000, "fine"); } catch { /* già chiusa */ }
 }
-function ponteRiprova() {
+// Presto la prima volta, poi sempre più di rado fino a 15 secondi (col caso
+// dentro: un ripetitore che torna non si vede arrivare tutti insieme).
+function ponteRiprova(altrove = false) {
   clearTimeout(pt.tRiprova);
   if (!pt.host || !pt.coppia) return;
-  const ms = [1e3, 2e3, 5e3, 10e3, 30e3][Math.min(pt.tentativi++, 4)];
-  pt.tRiprova = setTimeout(() => ponteAvvia().catch(() => {}), ms);
+  const b = altrove ? 30e3 : Math.min(15e3, 1e3 * 2 ** Math.min(pt.tentativi++, 4));
+  pt.tRiprova = setTimeout(() => ponteAvvia().catch(() => {}), Math.round(b / 2 + Math.random() * b / 2));
 }
 function ponteManda(frame) {
   if (pt.ws && pt.ws.readyState === 1) { pt.ws.send(frame); return true; }
@@ -402,31 +403,47 @@ function ponteArgomenti(d) {
 }
 // quelli che l'app manda da sé: non sono il medico, non tengono aperta la sessione
 const PONTE_DA_SE = new Set(["ciao", "ordini"]);
+const PONTE_RQ_MAX = 40;   // le scritture ricordate per sessione (in memoria, solo qui)
 async function ponteComando(s, d) {
   if (!d || typeof d !== "object" || !Number.isSafeInteger(d.id) || typeof d.cmd !== "string") return;
   if (!d.auto && !PONTE_DA_SE.has(d.cmd)) s.ultimo = ponteOra();
   s.n++;
   const rispondi = (r) => ponteInvia(s, { re: d.id, ...r });
+  if (d.cmd === "esci") { await rispondi({ ok: true }); return ponteFine("chiusa dall'iPhone"); }
+  // Una scrittura porta il suo numero (rq): rimandata dal telefono dopo una
+  // presa caduta, non si rifà — si risponde com'è andata, o, se sta ancora
+  // andando, quando finisce. Le letture si rifanno e basta.
+  const rq = typeof d.rq === "string" && /^[\w-]{8,40}$/.test(d.rq) ? d.rq : "";
+  if (!rq) return rispondi(await ponteRisposta(s, d));
+  s.rq = s.rq || new Map();
+  let r = s.rq.get(rq);
+  if (!r) {
+    r = ponteRisposta(s, d);
+    s.rq.set(rq, r);
+    if (s.rq.size > PONTE_RQ_MAX) s.rq.delete(s.rq.keys().next().value);
+  }
+  return rispondi(await r);
+}
+async function ponteRisposta(s, d) {
   try {
-    if (d.cmd === "ciao") return rispondi({ ok: true, dati: { scade: pt.coppia.scade, inattivoMin: PONTE_INATTIVO / 60e3 } });
-    if (d.cmd === "esci") { await rispondi({ ok: true }); return ponteFine("chiusa dall'iPhone"); }
-    if (d.cmd === "ordini") return rispondi({ ok: true, dati: await ponteOrdiniTel() });
-    if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d); return rispondi(await ponteOffriPdf(s, await ponteAggiornaValori(a), a.ep)); }
-    if (d.cmd === "ordina") return rispondi(await ponteOrdina(d));
-    if (d.cmd === "pdf") return rispondi(await ponteDaiPdf(s, d));
-    if (d.cmd === "stampa") return rispondi(await ponteStampa(s, d));
-    if (d.cmd === "cartella") return rispondi(await ponteCartella(ponteArgomenti(d)));
-    if (d.cmd === "cartellaSalva") return rispondi(await ponteCartellaSalva(d));
+    if (d.cmd === "ciao") return { ok: true, dati: { scade: pt.coppia.scade, inattivoMin: PONTE_INATTIVO / 60e3 } };
+    if (d.cmd === "ordini") return { ok: true, dati: await ponteOrdiniTel() };
+    if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d); return await ponteOffriPdf(s, await ponteAggiornaValori(a), a.ep); }
+    if (d.cmd === "ordina") return await ponteOrdina(d);
+    if (d.cmd === "pdf") return await ponteDaiPdf(s, d);
+    if (d.cmd === "stampa") return await ponteStampa(s, d);
+    if (d.cmd === "cartella") return await ponteCartella(ponteArgomenti(d));
+    if (d.cmd === "cartellaSalva") return await ponteCartellaSalva(d);
     if (["pazienti", "esiti", "richieste", "nota", "promemoria", "fatto"].includes(d.cmd)) {
       const a = ponteArgomenti(d);
       const r = await ponteSuScheda(d.cmd, a);
       if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
-      return rispondi(d.cmd === "esiti" ? await ponteOffriPdf(s, r, a.ep) : r);
+      return d.cmd === "esiti" ? await ponteOffriPdf(s, r, a.ep) : r;
     }
-    return rispondi({ ok: false, errore: "Comando sconosciuto" });
+    return { ok: false, errore: "Comando sconosciuto" };
   } catch (e) {
     if (typeof segnaErrore === "function") segnaErrore("ponte", { comando: String(d && d.c || "").slice(0, 30), messaggio: corto(e && e.message || e, 120) });
-    return rispondi({ ok: false, errore: "Errore sul PC: " + corto(e && e.message || e, 80) });
+    return { ok: false, errore: "Errore sul PC: " + corto(e && e.message || e, 80) };
   }
 }
 
