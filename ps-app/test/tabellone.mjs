@@ -277,13 +277,17 @@ await blocco("Il tabellone: Alta | Bassa | Entrambe, le mappe, la lista sotto", 
   check(m2[0].b <= m2[1].y + 1 && !(await scorre()), "stretta: una sopra l'altra, e niente si scorre di lato");
   if (SHOTS) await page.screenshot({ path: join(SHOTS, "tab-entrambe-stretta.png") });
   await page.setViewportSize({ width: 1280, height: 900 });
-  // ROSSI nella Rossa: c'è nella mappa E nella lista, col suo posto
+  // ROSSI nella Rossa: in Mappa sta sulla mappa e non nella lista; in Lista c'è, col suo posto
+  check((await righe(page)).includes("700011") && !(await righe(page)).includes("700001")
+    && (await $p(page, '.stmap[data-mappa="alta"] [data-letto="rossa"] .stp[data-stp="700001"]').count()) === 1, "Mappa: la lista ha solo chi non ha un posto (ROSSI è nella Rossa, sulla mappa)");
+  await $p(page, '[data-modo="lista"]').click();
+  await page.waitForTimeout(150);
   const rossi = await page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot, riga = r.querySelector('.pzrow[data-pz="700001"]');
-    return { letto: !!r.querySelector('.stmap[data-mappa="alta"] [data-letto="rossa"] .stp[data-stp="700001"]'), posto: riga?.querySelector(".pzposto")?.textContent,
+    return { posto: riga?.querySelector(".pzposto")?.textContent,
       inps: riga?.querySelector(".pzinps")?.textContent, eta: riga?.querySelector(".pzeta")?.textContent, testo: riga?.textContent.replace(/\s+/g, " ") };
   });
-  check(rossi.letto && rossi.posto === "Rossa" && rossi.inps === "3h40" && rossi.eta === "79", `ROSSI: nel letto e nella lista, col posto, il tempo in PS e l'età (got: ${JSON.stringify(rossi)})`);
+  check(rossi.posto === "Rossa" && /^3h4[01]$/.test(rossi.inps) && rossi.eta === "79", `ROSSI: in Lista, col posto, il tempo in PS e l'età (got: ${JSON.stringify(rossi)})`);
   check(!/rivalutare|POTASSIO|referto/i.test(rossi.testo), "nella riga niente valori e niente testo (nemmeno il post-it)");
   // i segni: Lab grigio col tempo, ECG blu, RX arancio; VERDI: Lab blu, ECG grigio
   const segni = await page.evaluate(() => Object.fromEntries(["700001", "700002", "700011"].map((ep) => [ep,
@@ -303,6 +307,99 @@ await blocco("Il tabellone: Alta | Bassa | Entrambe, le mappe, la lista sotto", 
   await page.waitForTimeout(150);
   const posti = { alta: await ls(page, "stanza.alta.posti.v1"), ps: await ls(page, "stanza.ps.posti.v1") };
   check(!posti.alta["700011"] && posti.ps["700011"]?.id === "obi1", "un posto solo: in OBI 1, e l'Alta lo lascia");
+  await context.close();
+});
+
+// --------------------------------------------- 1b. Mappa | Lista
+await blocco("Mappa | Lista: la lista senza mappe, nell'ordine del gestionale", async () => {
+  const srv = server();
+  // l'Alta, come la lista del gestionale la dà: NERI L., ROSSI, VERDI (non per ingresso)
+  const riordina = (pos) => srv.s.pazienti.sort((a, b) => (pos[a.ep] ?? 9) - (pos[b.ep] ?? 9));
+  riordina({ 700003: 0, 700001: 1, 700002: 2 });
+  const seed = semeTabellone();
+  // la Bassa e l'OBI le ha lette una lista di prima (la riga n); FERRARI, ESPOSITO e GIALLI non le ha mai viste in una riga
+  for (const [ep, n] of Object.entries({ 700012: 0, 700011: 1, 700033: 0 })) seed["aree.v1"].membri[ep].n = n;
+  seed["stanza.ps.posti.v1"] = { 700011: { tipo: "letto", id: "obi1", ts: Date.now() - 3600e3 } };
+  seed["tabellone.vista.v1"] = "entrambe";
+  const { context, page } = await contesto(srv, { seed });
+  await page.goto(URL_LISTA);
+  await pannello(page);
+  await page.waitForTimeout(300);
+  const modo = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".tbseg [data-modo]")].map((b) => `${b.getAttribute("data-modo")}${b.getAttribute("aria-checked") === "true" ? "*" : ""}`).join(" "));
+  const sequenza = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".pzcoda > .pzsez, .pzcoda > .pzrow")]
+    .map((e) => (e.classList.contains("pzsez") ? "T:" + e.textContent.trim() : e.getAttribute("data-pz"))).join(","));
+  // Mappa (di partenza): le mappe, e la lista ha solo chi non ha un posto
+  check((await modo(page)) === "mappa* lista", `il controllo Mappa | Lista, di partenza Mappa (got: ${await modo(page)})`);
+  const inMappa = await righe(page);
+  check((await $p(page, ".stmap").count()) === 2 && inMappa.length === 8 && !inMappa.includes("700001") && !inMappa.includes("700011"),
+    `Mappa: le mappe, e la lista senza chi è già su un letto (got: ${inMappa.join(",")})`);
+  check((await $p(page, '.stmap [data-letto="rossa"] .stp[data-stp="700001"]').count()) === 1 && (await $p(page, '.stmap [data-letto="obi1"] .stp[data-stp="700011"]').count()) === 1,
+    "e quelli sono sulle mappe, ognuno al suo letto");
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, "lm-mappa.png") });
+  // Lista: niente mappe, tutti, nell'ordine del gestionale dentro ogni area; le aree Alta, Bassa, OBI, Codici minori; chi non ha un'area, in fondo
+  await $p(page, '[data-modo="lista"]').click();
+  await page.waitForTimeout(150);
+  check((await modo(page)) === "mappa lista*" && (await $p(page, ".stmap").count()) === 0 && (await $p(page, ".pzrimetti").count()) === 0, "Lista: niente mappe");
+  const atteso = "T:Alta intensità,700003,700001,700002,T:Bassa,700012,700011,T:OBI,700033,700032,700031,T:Codici minori,700021,700051";
+  check((await sequenza(page)) === atteso, `Lista: tutti, aree Alta · Bassa · OBI · Codici minori, nell'ordine del gestionale; chi non è mai stato in una lista dopo, per ingresso; senza area in fondo\n      got: ${await sequenza(page)}`);
+  const pill = await page.evaluate(() => Object.fromEntries([...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".pzcoda .pzrow")].map((r) => {
+    const p = r.querySelector(".pzposto"), n = r.querySelector(".pznm"), t = r.querySelector(".pzinps");
+    const pr = p?.getBoundingClientRect(), nr = n.getBoundingClientRect(), tr = t?.getBoundingClientRect();
+    const st = p ? getComputedStyle(p) : null;
+    return [r.getAttribute("data-pz"), p ? { testo: p.textContent, dopoIlNome: !!r.querySelector(".pzapri + .pzposto") && pr.x >= nr.right - 1 && (!tr || pr.right <= tr.x + 1),
+      tonda: parseFloat(st.borderTopLeftRadius) >= 9, sfondo: st.backgroundColor !== "rgba(0, 0, 0, 0)" } : null];
+  })));
+  const conPosto = Object.entries(pill).filter(([, v]) => v).map(([ep, v]) => `${ep}:${v.testo}`).join(" ");
+  check(conPosto === "700001:Rossa 700011:OBI 1" && Object.values(pill).filter(Boolean).every((v) => v.dopoIlNome && v.tonda && v.sfondo),
+    `il posto in una pillola subito dopo il nome, solo per chi ce l'ha (got: ${conPosto})`);
+  // le stesse spunte di sempre, e la scheda al passaggio sul nome
+  const spunte = await page.evaluate(() => { const r = document.getElementById("psassist-host").shadowRoot.querySelector('.pzrow[data-pz="700001"]');
+    return { cuore: !!r.querySelector(".cuore"), esami: [...r.querySelectorAll(".esm")].map((e) => e.textContent).join("|"), df: r.querySelector(".dfic b")?.textContent }; });
+  check(spunte.cuore && spunte.esami === "Lab 50′|ECG ✓|RX 1/2" && spunte.df === "1", `ROSSI: ♥, Lab · ECG · RX e «Da fare», come in Mappa (got: ${JSON.stringify(spunte)})`);
+  const nome = (await rett(page, '.pzrow[data-pz="700001"] .pznm'))[0];
+  await page.mouse.move(nome.x + 10, nome.y + nome.h / 2);
+  await page.waitForTimeout(500);
+  check((await $p(page, ".pzcarta").count()) === 1, "e passando sul nome si apre la scheda");
+  await page.mouse.move(5, 5);
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, "lm-lista.png") });
+  // la scelta resta: ricaricando, e dopo «Reset dati pazienti» (è un'impostazione)
+  check((await ls(page, "tabellone.modo.v1")) === "lista", "la scelta resta (tabellone.modo.v1)");
+  await page.goto(URL_LISTA);
+  await pannello(page);
+  await page.waitForTimeout(300);
+  check((await modo(page)) === "mappa lista*" && (await $p(page, ".stmap").count()) === 0, "ricaricata la pagina, è ancora Lista");
+  // Alta | Bassa | Entrambe vale anche in Lista: Bassa = Bassa, Codici minori e l'OBI azzurro, verde o bianco (più chi non ha ancora un'area)
+  await $p(page, '[data-vista="bassa"]').click();
+  await page.waitForTimeout(150);
+  const bassa = await sequenza(page);
+  check(bassa === "T:Bassa,700012,700011,T:OBI,700033,700032,T:Codici minori,700021,700051", `Lista, vista Bassa: l'instradamento è quello di sempre (got: ${bassa})`);
+  await $p(page, '[data-vista="entrambe"]').click();
+  await page.waitForTimeout(150);
+  // l'ordine viene dall'ultima lista intera letta: una filtrata non lo cambia, una intera sì
+  const nDi = async () => Object.fromEntries(Object.entries((await ls(page, "aree.v1")).membri).map(([ep, v]) => [ep, v.n]));
+  const n0 = await nDi();
+  check(n0["700003"] === 0 && n0["700001"] === 1 && n0["700002"] === 2 && n0["700011"] === 1 && n0["700032"] === undefined,
+    `aree.v1 tiene la riga di ognuno nella lista del gestionale (got: ${JSON.stringify(n0)})`);
+  srv.s.filtro = "VERDI";
+  await page.goto(URL_LISTA);
+  await pannello(page);
+  await page.waitForTimeout(300);
+  check((await nDi())["700002"] === 2 && (await sequenza(page)) === atteso, "una lista filtrata non cambia l'ordine");
+  srv.s.filtro = "";
+  riordina({ 700002: 0, 700001: 1, 700003: 2 });
+  await page.goto(URL_LISTA);
+  await pannello(page);
+  await page.waitForTimeout(300);
+  check((await sequenza(page)).startsWith("T:Alta intensità,700002,700001,700003,T:Bassa"), `la lista del gestionale rimessa in un altro ordine: la Lista la segue (got: ${await sequenza(page)})`);
+  // il reset toglie le aree (e la riga), non la scelta
+  await $p(page, "#menubtn").click();
+  await $p(page, "#resetpaz").click();
+  await $p(page, "#resetpaz").click();
+  await page.waitForTimeout(500);
+  check(!(await ls(page, "aree.v1")) && (await ls(page, "tabellone.modo.v1")) === "lista", "«Reset dati pazienti»: via aree e righe, la scelta Lista resta");
+  await $p(page, '[data-modo="mappa"]').click();
+  await page.waitForTimeout(150);
+  check((await ls(page, "tabellone.modo.v1")) === "mappa" && (await $p(page, ".stmap").count()) >= 1, "e tornando a Mappa, le mappe tornano");
   await context.close();
 });
 
@@ -360,12 +457,13 @@ await blocco("La scheda al passaggio: sul nome e sul letto", async () => {
   await page.waitForTimeout(300);
   await page.waitForTimeout(1800);   // (la prima lettura della smart, chiesta all'avvio, è passata)
   const carta = () => page.evaluate(() => { const c = document.getElementById("psassist-host").shadowRoot.querySelector(".pzcarta"); return c ? [...c.querySelectorAll(".pc")].map((x) => x.textContent.replace(/\s+/g, " ").trim()) : null; });
-  // la riga: lontano dal nome niente scheda (ma riga e letto si accendono insieme)
+  // la riga (in Lista): lontano dal nome niente scheda
+  await $p(page, '[data-modo="lista"]').click();
+  await page.waitForTimeout(200);
   const riga = await rett(page, '.pzrow[data-pz="700001"]'), nome = await rett(page, '.pzrow[data-pz="700001"] .pznm');
   await page.mouse.move(riga[0].r - 120, riga[0].y + riga[0].h / 2);
   await page.waitForTimeout(400);
-  const lega = await page.evaluate(() => !!document.getElementById("psassist-host").shadowRoot.querySelector('.stbed.lega[data-occep="700001"]'));
-  check((await carta()) === null && lega, "sulla riga, fuori dal nome: niente scheda, e il suo letto si accende");
+  check((await carta()) === null, "sulla riga, fuori dal nome: niente scheda");
   await page.mouse.move(nome[0].x + 10, nome[0].y + nome[0].h / 2);
   await page.waitForTimeout(100);
   const presto = await carta();
@@ -384,7 +482,9 @@ await blocco("La scheda al passaggio: sul nome e sul letto", async () => {
   await page.mouse.move(5, 5);
   await page.waitForTimeout(100);
   check((await carta()) === null, "uscendo si chiude");
-  // sul letto: la scheda non copre il letto
+  // sul letto (in Mappa): la scheda non copre il letto
+  await $p(page, '[data-modo="mappa"]').click();
+  await page.waitForTimeout(200);
   const letto = (await rett(page, '[data-letto="rossa"]'))[0];
   await page.mouse.move(letto.x + letto.w / 2, letto.y + letto.h / 2);
   await page.waitForTimeout(700);
@@ -525,7 +625,7 @@ await blocco("Dimesso dalla lista dell'area: «… dimesso · Annulla», e i cas
   await $p(page, ".stannulla").click();
   await page.waitForTimeout(200);
   const dopo = (await ls(page, "patients.v1")).find((p) => p.ep === "700002");
-  check(!dopo.arch && (await ls(page, "stanza.alta.posti.v1"))["700002"]?.id === "a1" && (await righe(page)).includes("700002"), "«Annulla»: di nuovo in lista, al suo letto");
+  check(!dopo.arch && (await ls(page, "stanza.alta.posti.v1"))["700002"]?.id === "a1" && (await $p(page, '[data-letto="a1"][data-occep="700002"]').count()) === 1, "«Annulla»: di nuovo fra i vivi, al suo letto");
   // ricaricata: riportato a mano, per un po' non si riarchivia da solo
   await page.goto(URL_LISTA);
   await pannello(page);
