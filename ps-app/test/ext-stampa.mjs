@@ -764,7 +764,7 @@ if (await prova("la scheda dell'ordine ricaricata o chiusa mentre stampa: «stam
   worker = await nasce;
   const terzo = await finche(async () => (await ordini()).find((x) => x.stato === "stampo" && x.fogli && x.fogli[0].stato === "invio"), 60000);
   await worker.close();
-  const chiusa = await finche(async () => (await ordini()).find((x) => x.id === terzo.id && x.stato !== "stampo"), 30000);
+  const chiusa = await finche(async () => (await ordini()).find((x) => terzo && x.id === terzo.id && x.stato !== "stampo"), 30000);
   check(!!chiusa && chiusa.stato === "avviso" && chiusa.pubblico.titolo === "Stampa interrotta" && /si è chiusa/.test(chiusa.pubblico.dettaglio),
     `chiusa a metà stampa: «Stampa interrotta», non «Scheda chiusa» (got ${JSON.stringify(chiusa && [chiusa.stato, chiusa.pubblico])})`);
 }
