@@ -4859,7 +4859,7 @@
     .rcols .opt.on:hover { background: #094a8c; }
     .rcols .opt.sotto { padding-left: 16px; }
     .rcols .opt .nm { flex: 0 1 auto; min-width: 0; }
-    .rcols .opt .ult { font-size: 11px; }
+    .rcols .opt .ult { font-size: 11px; margin-left: 0; padding-left: 0; }
     .ult .uok { color: #177245; font-weight: 600; }
     .ult .uatt { color: #A15F00; font-weight: 600; }
     .ult .uros { color: #B3261E; font-weight: 700; }
@@ -8650,7 +8650,7 @@
       // «usa come quesito», poi gli esami. Scelto un esame, nella casella
       // torna il quesito di prima.
       const qTesto = (this._q || "").trim();
-      const qHits = canOneClick && this._cerca ? this.cercaEsami(qTesto.toUpperCase(), cat) : [];
+      const qHits = canOneClick && this._cerca ? this.esamiDalQuesito(qTesto, cat) : [];
       const qDrop = qHits.length ? `<div class="acdrop" id="qdrop">
           <button type="button" class="acquesito" id="usaq" title="Tieni il testo come quesito (Invio)">Quesito: «${esc(qTesto)}»</button>
           ${this.vociEsami(qHits, cat)}</div>` : "";
@@ -10795,6 +10795,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       return hits.slice(0, 12).map((h) => `<button class="acitem ${this.isSel(h.res, h.code) ? "on" : ""}" data-res="${esc(h.res)}" data-code="${esc(h.code)}" title="${esc(h.label)}">
             <span class="acnm">${esc(h.label)}</span><span class="actag">${esc(risorsaCorta(h.res, cat))}</span></button>`).join("");
     }
+    // La tendina della casella «Quesito o esame…» si apre solo quando il testo
+    // è l'inizio del nome di un esame (o un nome di reparto, PCR): «dispnea»,
+    // che sta in mezzo a «PANNELLO 5 – DISPNEA», resta un quesito.
+    esamiDalQuesito(testo, cat) {
+      const q = String(testo || "").trim().toUpperCase();
+      const hits = this.cercaEsami(q, cat);
+      return hits.some((h) => h.perAlias || h.label.toUpperCase().startsWith(q)) ? hits : [];
+    }
     // Gli esami di tutto il catalogo che rispondono a quello che si è scritto
     cercaEsami(q, cat) {
       const hits = [];
@@ -11475,7 +11483,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const chiudi = (testo) => { this._q = testo; qEl.value = testo; this._cerca = false; this.persistUi(); this.render(); };
         qEl.addEventListener("input", () => {
           this._q = qEl.value; this.quesitoMio = true; this.persistUi();
-          const ha = this.cercaEsami(this._q.trim().toUpperCase(), fullCatalog()).length > 0;
+          const ha = this.esamiDalQuesito(this._q, fullCatalog()).length > 0;
           if (!ha) this._qBase = this._q;   // non somiglia a un esame: è il quesito
           const aperto = !!this.root.querySelector("#qdrop");
           this._cerca = ha;
@@ -11485,11 +11493,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && this.root.querySelector("#qdrop")) { e.preventDefault(); this._qBase = this._q; this._qFocus = true; chiudi(this._q); }
           else if (e.key === "Escape" && (this.root.querySelector("#qdrop") || qEl.value !== this._qBase)) { e.preventDefault(); e.stopPropagation(); this._qFocus = true; chiudi(this._qBase || ""); }
         });
-        qEl.addEventListener("blur", () => setTimeout(() => {
-          if (this.root.activeElement?.id === "q") return;
+        qEl.addEventListener("blur", () => {
+          if (!qEl.isConnected) return;   // (tolta da un ridisegno: non è il medico che se ne va)
           this._qFocus = false;
-          if (this._cerca) { this._cerca = false; this._qBase = this._q; if (this.root.querySelector("#qdrop")) this.render(); }
-        }, 200));
+          setTimeout(() => {
+            if (this.root.activeElement?.id === "q" || !this._cerca) return;
+            this._cerca = false; this._qBase = this._q;
+            if (this.root.querySelector("#qdrop")) this.render();
+          }, 200);
+        });
         $("#usaq")?.addEventListener("click", () => { this._qBase = this._q; chiudi(this._q); });
         if (this._qFocus) { qEl.focus(); qEl.setSelectionRange(qEl.value.length, qEl.value.length); }
       }

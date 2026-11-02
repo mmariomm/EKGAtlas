@@ -3053,7 +3053,10 @@ async function scenarioUiErgonomics(browser) {
   await $panel(page, ".selbar .selx").first().click();
   check(scen, /5 SELEZIONATI/.test(await $panel(page, ".selbar").innerText()), "✕ al passaggio rimuove il singolo esame");
 
-  // selecting must NOT bounce the scroll back to the top
+  // selecting must NOT bounce the scroll back to the top (le Richieste compatte
+  // stanno in una finestra normale: la si abbassa perché ci sia da scorrere)
+  await page.setViewportSize({ width: 1280, height: 480 });
+  await page.waitForTimeout(200);
   const posPrima = await page.evaluate(() => {
     const bd = document.getElementById("psassist-host").shadowRoot.querySelector(".bd");
     bd.scrollTop = 180;                    // the browser clamps to what fits
@@ -3062,6 +3065,7 @@ async function scenarioUiErgonomics(browser) {
   await $panel(page, '.opt[title*="GLUCOSIO"]').click();
   const st = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".bd").scrollTop);
   check(scen, posPrima > 40 && Math.abs(st - posPrima) <= 2, `lo scroll resta dov'era dopo la selezione (${st} ≈ ${posPrima})`);
+  await page.setViewportSize({ width: 1280, height: 900 });
 
   // drag the header → position saved and restored after reload
   const hd = $panel(page, "#draghd");
@@ -3116,12 +3120,7 @@ async function scenarioUiErgonomics(browser) {
     `e nessun'altra riga doppia (got ${righe.map((x) => x.t).join(" · ")})`);
   await $panel(page, "#q").press("Escape");
 
-  // gli epatici stanno dentro «Epatico ▸»: chiuso, non si vedono; un tocco li apre
-  const epatici = () => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".opt")].some((c) => /\bGPT\b/.test(c.textContent)));
-  const chiusoEpatico = !(await epatici());
-  await $panel(page, '[data-espandi="Epatico"]').click();
-  check(scen, chiusoEpatico && await epatici() && (await $panel(page, '[data-espandi="Epatico"]').getAttribute("aria-expanded")) === "true",
-    "«Epatico ▸» chiuso nasconde gli esami che raccoglie; un tocco li apre");
+  // (gli epatici stanno dentro «Epatico ▸», qui già aperto: il pacchetto ne ha scelto uno)
   // no PANNELLO chips anymore; no PCR / old tropo singles; new tropo present
   const optTxt = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".opt")].map((c) => c.textContent).join("|"));
   const preTxt = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".chip.preset")].map((c) => c.textContent).join("|"));
@@ -3193,11 +3192,11 @@ async function scenarioContinuity(browser) {
   check(scen, (await $panel(page, "#confirmnow").innerText()).trim() === "Conferma per ROSSI M." && /\bprimary\b/.test(await $panel(page, "#confirmnow").getAttribute("class"))
     && (await $panel(page, ".btn").count()) === 1 && (await $panel(page, "#goconfirm, #go").count()) === 0,
     "la ricevuta ha un bottone solo: «Conferma per ROSSI M.»");
-  check(scen, (await $panel(page, ".grid").count()) === 0 && (await $panel(page, ".chip.cart").count()) >= 1 && (await $panel(page, "#aggiungi").count()) === 1,
+  check(scen, (await $panel(page, ".rcols").count()) === 0 && (await $panel(page, ".chip.cart").count()) >= 1 && (await $panel(page, "#aggiungi").count()) === 1,
     "solo il carrello: la griglia degli esami sta dietro «+ aggiungi»");
   check(scen, /Quesito: il tuo/.test(await $panel(page, ".banner.ok").innerText()), "e la ricevuta dice quale quesito è partito");
   await $panel(page, "#aggiungi").click();
-  check(scen, (await $panel(page, ".grid").count()) === 1 && (await $panel(page, "#confirmnow").count()) === 1,
+  check(scen, (await $panel(page, ".rcols").count()) === 1 && (await $panel(page, "#confirmnow").count()) === 1,
     "«+ aggiungi» apre la griglia, e finché non scegli niente il bottone resta la Conferma");
   await $panel(page, '.opt[title*="GLUCOSIO"]').click();
   check(scen, (await $panel(page, "#confirmnow").count()) === 0 && (await $panel(page, "#goconfirm").innerText()).trim() === "Conferma per ROSSI M. · 1 esame",
@@ -3305,9 +3304,9 @@ async function scenarioQuesitoRx(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await richieste(page);
-  await page.waitForSelector("#psassist-host #qrx", { state: "attached" });
   await $panel(page, '.opt[title*="TROPONINA"]').click();   // POC
   await $panel(page, '.opt[title*="RX TORACE ("]').first().click(); // RX
+  await page.waitForSelector("#psassist-host #qrx", { state: "attached" });   // (compare solo con un RX scelto)
   // solo il quesito RX: la radiologia partirebbe, il laboratorio no
   await $panel(page, "#qrx").fill("sospetto PNX");
   check(scen, await $panel(page, "#go").isDisabled(), "senza il quesito del lab non parte");
@@ -5061,7 +5060,7 @@ async function scenarioRilancioPaginaEsami(browser) {
   // «Chiudi»: niente resta scelto — l'emocromo è in carrello, la PCT è da
   // controllare (mandata, mai vista): nessuno dei due si offre di nuovo
   await $panel(page, "#chiudi").click();
-  await page.waitForSelector("#psassist-host #go", { timeout: 8000 });
+  await page.waitForSelector("#psassist-host .rcols", { timeout: 8000 });   // (la barra c'è solo con qualcosa di scelto)
   check(scen, (await $panel(page, ".selbar").count()) === 0 && (await $panel(page, "#goconfirm").count()) === 0,
     "dopo «Chiudi» non resta scelto niente: niente manca davvero");
   // il medico rimette l'emocromo a mano e rilancia da questo carrello
@@ -6056,6 +6055,13 @@ async function scenarioRichiesteCompatte(browser) {
     "niente di scelto: niente barra della Conferma");
   check(scen, (await $panel(page, "[data-print]").count()) === 0 && (await $panel(page, ".lbl").count()) === 0,
     "nelle Richieste niente sezione Stampa, niente etichette sopra le sezioni");
+  // «Epatico ▸»: chiuso nasconde gli esami che raccoglie, un tocco li apre
+  const epatici = () => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".opt")].some((c) => /\bGPT\b/.test(c.textContent)));
+  const chiusoEpatico = !(await epatici());
+  await $panel(page, '[data-espandi="Epatico"]').click();
+  check(scen, chiusoEpatico && await epatici() && (await $panel(page, '[data-espandi="Epatico"]').getAttribute("aria-expanded")) === "true",
+    "«Epatico ▸» chiuso nasconde gli esami che raccoglie; un tocco li apre");
+  await $panel(page, '[data-espandi="Epatico"]').click();
   // il quesito, poi un esame cercato nella stessa casella: torna il quesito
   await q.fill("dolore toracico");
   check(scen, (await $panel(page, "#qdrop").count()) === 0, "un quesito che non somiglia a nessun esame: nessuna tendina");
