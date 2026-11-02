@@ -2315,7 +2315,7 @@
   // un nome che non si riconosce resta il suo. Chi sta in quale area lo dice
   // la LISTA dell'area (PsoPazientiAmbulatorio), ogni volta che il medico la
   // apre: niente si chiede al server da solo.
-  const AREE = "aree.v1";              // { membri: {ep: {k, ts}}, viste: {k: {label, ts}} } — se ne va col reset
+  const AREE = "aree.v1";              // { membri: {ep: {k, ts, n?}}, viste: {k: {label, ts}} } — n: la riga nella lista del gestionale; se ne va col reset
   const AREA_ORA = "area.corrente.v1"; // l'area in testa all'ultima pagina: {k, label, id, ts}
   const AREE_OPZ = "aree.opzioni.v1";  // le opzioni di PsoPsoImposta: {k: {id, label}} — un'impostazione, resta
   const AREA_VAI = "area.vai.v1";      // un passaggio d'area in corso: {k, chi?, ts, premuto?}
@@ -2336,6 +2336,10 @@
   // ogni area ha la sua mappa: l'Alta la sua, tutte le altre quella del PS
   const mappaDiArea = (k) => (k === "alta" ? "alta" : "ps");
   const ordineArea = (k) => (AREE_ORDINE.includes(k) ? AREE_ORDINE.indexOf(k) : AREE_ORDINE.length);
+  // La riga di un paziente nella lista del gestionale (l'ultima lista intera che
+  // l'ha letto): è l'ordine della lista dei Pazienti. Una lista filtrata o monca
+  // non lo cambia; cambiando area, quello di prima non vale più.
+  const rigaDi = (prima, k, n) => (Number.isInteger(n) ? { n } : prima && prima.k === k && Number.isInteger(prima.n) ? { n: prima.n } : {});
   function areeLeggi() {
     const a = store.get(AREE, null), ok = (x) => x && typeof x === "object" && !Array.isArray(x);
     return { membri: ok(a?.membri) ? a.membri : {}, viste: ok(a?.viste) ? a.viste : {} };
@@ -2440,8 +2444,9 @@
     const a = areeLeggi(), usciti = new Set(), list = store.get("patients.v1", []);
     const attivi = new Set((Array.isArray(list) ? list : []).filter((p) => p && p.ep && !p.arch).map((p) => p.ep));
     let membri = 0;
+    const prec = { ...a.membri };   // (la riga di prima, se la lista di adesso è filtrata)
     if (intera) for (const [ep, v] of Object.entries(a.membri)) if (v?.k === testa.k) { delete a.membri[ep]; usciti.add(ep); membri += attivi.has(ep); }
-    for (const r of righe) { a.membri[r.ep] = { k: testa.k, ts: ora }; usciti.delete(r.ep); }
+    righe.forEach((r, n) => { a.membri[r.ep] = { k: testa.k, ts: ora, ...rigaDi(prec[r.ep], testa.k, intera ? n : null) }; usciti.delete(r.ep); });
     a.viste[testa.k] = { label: testa.label, ts: ora };
     store.set(AREE, a);
     // Uscito da una lista intera (e non vuota): dimesso — archiviato, il letto
@@ -2631,6 +2636,9 @@
   const VISTE = ["alta", "bassa", "entrambe"];
   const MAPPA_DI_VISTA = { alta: "alta", bassa: "ps" };
   const NOME_VISTA = { alta: "Alta", bassa: "Bassa", entrambe: "Entrambe" };
+  const MODO = "tabellone.modo.v1";            // "mappa" | "lista" — un'impostazione, resta
+  const MODI = ["mappa", "lista"];
+  const NOME_MODO = { mappa: "Mappa", lista: "Lista" };
   function tabelloniDi(k, triage) {
     if (k === "alta") return ["alta"];
     if (k === "bassa" || k === "minori") return ["bassa"];
@@ -2785,7 +2793,7 @@
     const chiave = (r) => `${normNome(r.nome)}|${r.nato}`;
     for (const r of righe) if (r.nato) quante.set(chiave(r), (quante.get(chiave(r)) || 0) + 1);
     let nuovi = 0;
-    for (const r of righe) {
+    for (const [n, r] of righe.entries()) {
       if (!r.nato || !r.nome) continue;
       const noti = l.filter((p) => normNome(p.name) === normNome(r.nome) && p.nato === r.nato);
       for (const p of noti) presenti.add(p.ep);
@@ -2801,7 +2809,7 @@
       // tornato in un elenco dopo un'uscita decisa da qui: di nuovo fra i vivi
       if (p.arch && p.archAuto) { p.arch = false; p.archTs = 0; delete p.archAuto; }
       presenti.add(p.ep);
-      if (k) { a.membri[p.ep] = { k, ts: ora }; a.viste[k] = { label: spazi(r.area).slice(0, 60), ts: a.viste[k]?.ts || ora }; }
+      if (k) { a.membri[p.ep] = { k, ts: ora, ...rigaDi(a.membri[p.ep], k, intera ? n : null) }; a.viste[k] = { label: spazi(r.area).slice(0, 60), ts: a.viste[k]?.ts || ora }; }
     }
     store.set(AREE, a);
     store.set("patients.v1", l.sort((x, y) => (y.ts || 0) - (x.ts || 0) || vistoTs(y) - vistoTs(x)).slice(0, PATIENTS_MAX));
@@ -5779,7 +5787,11 @@
     .pzcoda .pzchi, .pzcoda .pzchi > .esst { display: contents; }
     .pzcoda .pztr { grid-column: tri; }
     .pzcoda .pzapri { grid-column: nm; justify-self: stretch; max-width: 240px; margin-left: 10px; }
-    .pzcoda .pzposto { grid-column: posto; margin-left: 12px; font-size: 12px; font-weight: 600; color: #35506B; white-space: nowrap; }
+    .pzcoda .pzposto { grid-column: posto; align-self: center; margin-left: 10px; padding: 1px 8px; border-radius: 999px; background: #E9EFF5;
+                       font-size: 12px; font-weight: 600; line-height: 18px; color: #35506B; white-space: nowrap; }
+    /* Lista: niente mappe, la lista prende tutto lo spazio */
+    .pzunita.lista > .pzcoda { flex: 1 1 0; max-height: none; border-top: 0; }
+    .pzunita.lista:not(.edit) .pzrow[data-riga], .pzunita.lista:not(.edit) .pzrow[data-riga] .pzapri { cursor: pointer; }
     .pzcoda .pzinps { grid-column: inps; margin-left: 10px; font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .pzcoda .pzchi > .cuore { grid-column: cuore; margin-left: 10px; }
     .pzcoda .pzchi > .sttag { grid-column: cuore / post; margin-left: 10px; }
@@ -5900,7 +5912,7 @@
 
     /* STANZA: tutto lo spazio che la lista lascia */
     /* TABELLONE: Alta | Bassa | Entrambe, e ⟳ */
-    .tbbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-bottom: 1px solid #E8EDF2; }
+    .tbbar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 14px; border-bottom: 1px solid #E8EDF2; }
     .tbseg { display: inline-flex; padding: 2px; border-radius: 8px; background: #EEF2F6; }
     .tbseg button { min-height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 13px; font-weight: 600; color: #5B6B7A; }
     .tbseg button:hover { color: #16232E; }
@@ -7893,12 +7905,13 @@
       const cerca = this.root.querySelector("#pzcerca");
       if (cerca && this.root.activeElement === cerca) { this._filtroFuoco = true; this._filtroSel = [cerca.selectionStart, cerca.selectionEnd]; }
       else if (this._filtro === "") this._filtro = null;
-      return `<div class="sec"><div class="pzunita${edit ? " edit" : ""}">
+      const lista = this.modoTab() === "lista";
+      return `<div class="sec"><div class="pzunita${edit ? " edit" : ""}${lista ? " lista" : ""}">
         ${edit ? "" : this.tabelloneBarra()}
-        <div class="stmappe"><div class="stmappei${T.ks.length > 1 ? " due" : ""}">${T.ks.map((k) => this.conMappa(k, () => this.viewStanza(T.per.get(k)))).join("")}</div></div>
+        ${lista ? "" : `<div class="stmappe"><div class="stmappei${T.ks.length > 1 ? " due" : ""}">${T.ks.map((k) => this.conMappa(k, () => this.viewStanza(T.per.get(k)))).join("")}</div></div>`}
         ${edit ? "" : this.viewLista(T.lista, patientName)}
         ${edit ? "" : this.pazArchivio(T.lista)}
-        <div class="pzrimetti" data-drop="tray" aria-hidden="true">${ico('<path d="M8 12.5v-9M4 7.5l4-4 4 4"/>')}Togli dal posto</div>
+        ${lista ? "" : `<div class="pzrimetti" data-drop="tray" aria-hidden="true">${ico('<path d="M8 12.5v-9M4 7.5l4-4 4 4"/>')}Togli dal posto</div>`}
         ${this.stanzaSnack()}
       </div></div>`;
     }
@@ -7906,8 +7919,10 @@
     tabelloneBarra() {
       const v = this.vistaTab(), s = store.get(SMART_SYNC, null) || {};
       const gira = !!s.ts && !s.fine && Date.now() - s.ts < 45e3;
+      const m = this.modoTab();
       return `<div class="tbbar"><div class="tbseg" role="radiogroup" aria-label="Mappe">${VISTE.map((x) => `<button type="button" role="radio" data-vista="${x}" aria-checked="${x === v}"${
-        x === v ? ' class="on"' : ""}>${NOME_VISTA[x]}</button>`).join("")}</div>${hasExt() ? `<button type="button" class="tbsync${gira ? " gira" : ""}" id="tbsync" title="Rileggi adesso la lista smart del gestionale${
+        x === v ? ' class="on"' : ""}>${NOME_VISTA[x]}</button>`).join("")}</div><div class="tbseg" role="radiogroup" aria-label="Mappa o lista">${MODI.map((x) => `<button type="button" role="radio" data-modo="${x}" aria-checked="${x === m}"${
+        x === m ? ' class="on"' : ""}>${NOME_MODO[x]}</button>`).join("")}</div>${hasExt() ? `<button type="button" class="tbsync${gira ? " gira" : ""}" id="tbsync" title="Rileggi adesso la lista smart del gestionale${
         s.fine && s.esito === "ok" ? ` (l'ultima: ${hhmm(s.fine)})` : ""}" aria-label="Aggiorna dal gestionale">⟳</button>` : ""}</div>`;
     }
     // Quale vista: quella scelta dal medico; finché non ne ha scelta una,
@@ -7915,6 +7930,11 @@
     vistaTab() {
       const v = store.get(VISTA, null);
       return VISTE.includes(v) ? v : mappaDiArea(store.get(AREA_ORA, null)?.k) === "alta" ? "alta" : "bassa";
+    }
+    // Mappa (le mappe, e sotto chi non ha un posto) o Lista (tutti, senza mappe).
+    // In Modifica la mappa serve: si vede, e finito si torna a com'era.
+    modoTab() {
+      return !this.stanzaEdit && store.get(MODO, null) === "lista" ? "lista" : "mappa";
     }
     // le mappe che si vedono (in Modifica, una sola: quella che si ritocca)
     mappeVisibili() {
@@ -7966,6 +7986,11 @@
     sceglieVista(v) {
       if (!VISTE.includes(v)) return;
       store.set(VISTA, v);
+      this.render();
+    }
+    sceglieModo(m) {
+      if (!MODI.includes(m)) return;
+      store.set(MODO, m);
       this.render();
     }
     // Quello che un'altra scheda (la smart dietro, un'altra lista) ha scritto:
@@ -8331,8 +8356,10 @@
     // Chi è su questa pagina per primo, l'episodio precedente in fondo.
     viewLista(m, patientName) {
       const canOrder = !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
-      // tutti quelli della vista (l'area e il triage): prima chi non ha ancora un posto
-      const lista = [...m.info.values()].filter((i) => i.vista !== false || i.qui).sort((a, b) => b.qui - a.qui || a.prec - b.prec || !!a.posto - !!b.posto);
+      // tutti quelli della vista (l'area e il triage). In Lista, tutti; in Mappa
+      // solo chi non ha ancora un posto: gli altri sono sulla mappa
+      const tutti = [...m.info.values()].filter((i) => i.vista !== false || i.qui).sort((a, b) => b.qui - a.qui || a.prec - b.prec || !!a.posto - !!b.posto);
+      const inLista = this.modoTab() === "lista", lista = inLista ? tutti : tutti.filter((i) => !i.posto);
       // Il nome è quello con cui il paziente è stato conosciuto. Il titolo
       // della pagina si usa solo se non ne abbiamo uno: sulla lista PS quel
       // titolo è «PRONTO SOCCORSO - LISTA», e stamparlo dove va il nome del
@@ -8377,27 +8404,37 @@
             aria-label="Cerca fra i pazienti: la lista si stringe, nella stanza gli altri si spengono">
           <button type="button" class="pzfx" id="pzcercax" title="Togli il filtro (Esc)" aria-label="Togli il filtro">✕</button>
         </div>`;
-      const righe = this.listaPerArea(lista, riga);
+      const righe = this.listaPerArea(lista, riga, tutti, inLista);
       if (righe) return `${filtro}<div class="pzcoda" data-drop="tray" role="group" aria-label="Pazienti: ${lista.length}"><div class="pzvuoto pzfnone" hidden></div>${righe}</div>`;
       return filtro + (m.pazienti.length ? "" : `<div class="pzvuoto">Nessun paziente.</div>`);
     }
-    // La lista per area — Alta intensità · OBI · Bassa · Codici minori, poi le
+    // La lista per area — Alta intensità · Bassa · OBI · Codici minori, poi le
     // aree che il programma non conosce, col loro nome —, ognuna sotto un filo
     // col suo titolo: un tocco apre la sua lista nel gestionale. Ci sono le
     // aree con qualcuno in lista e quelle di cui si è vista la lista; chi non
     // ha ancora un'area sta in cima, senza titolo. Nessuna area vista mai: la
     // lista di sempre.
-    listaPerArea(lista, riga) {
+    // `tutti`: chi è nella vista, posti compresi (in Mappa la lista ne mostra
+    // solo una parte: un'area vuota perché i suoi sono sulla mappa non ha titolo).
+    // In Lista (`ordinata`) ogni area ha solo chi c'è, nell'ordine del gestionale
+    // — la riga dell'ultima lista intera letta; chi non è mai stato in una lista
+    // viene dopo, per ingresso — e chi non ha area sta in fondo.
+    listaPerArea(lista, riga, tutti = lista, ordinata = false) {
       const a = areeLeggi(), k = (i) => a.membri[i.p.ep]?.k || "";
-      if (!Object.keys(a.viste).length && !lista.some(k)) return lista.map(riga).join("");
+      if (!ordinata && !Object.keys(a.viste).length && !tutti.some(k)) return lista.map(riga).join("");
       // (le aree vuote solo se sono della vista: il loro titolo apre la loro lista)
       const v = this.vistaTab(), dellaVista = (c) => v === "entrambe" || (c === "obi" ? true : tabelloniDi(c, "").length === 1 && tabelloniDi(c, "")[0] === v);
-      const chiavi = [...new Set([...Object.keys(a.viste).filter(dellaVista), ...lista.map(k).filter(Boolean)])]
+      const chiavi = [...new Set([...Object.keys(a.viste).filter(dellaVista), ...tutti.map(k).filter(Boolean)])]
         .sort((x, y) => ordineArea(x) - ordineArea(y) || x.localeCompare(y));
       const gruppi = new Map([["", []], ...chiavi.map((c) => [c, []])]);
       for (const i of lista) gruppi.get(k(i)).push(i);
-      return [...gruppi].map(([c, l]) => (c ? `<div class="pzsez"><button type="button" class="pzsezt" data-sez="${esc(c)}" title="Apri la lista dell'area nel gestionale">${
-        esc(titoloArea(c, a.viste[c]?.label))}</button></div>` : "") + l.map(riga).join("")).join("");
+      if (ordinata) {
+        const n = (i) => a.membri[i.p.ep]?.n, sa = (i) => Number.isInteger(n(i)), ingresso = (i) => i.p.arrivo || i.p.ts || Infinity;
+        for (const l of gruppi.values()) l.sort((x, y) => !!x.prec - !!y.prec || (sa(x) && sa(y) ? n(x) - n(y) : sa(y) - sa(x)) || (ingresso(x) - ingresso(y)) || 0);
+      }
+      return (ordinata ? [...chiavi, ""] : ["", ...chiavi]).filter((c) => gruppi.get(c).length || (!ordinata && !tutti.some((i) => k(i) === c && i.posto)))
+        .map((c) => (c ? `<div class="pzsez"><button type="button" class="pzsezt" data-sez="${esc(c)}" title="Apri la lista dell'area nel gestionale">${
+          esc(titoloArea(c, a.viste[c]?.label))}</button></div>` : "") + gruppi.get(c).map(riga).join("")).join("");
     }
     // in fondo, chiusi: gli archiviati e «Svuota l'elenco» (che si annulla)
     pazArchivio(m) {
@@ -8579,6 +8616,7 @@
       this.filtroApplica();
       // Alta | Bassa | Entrambe, e ⟳: la lista smart adesso
       this.root.querySelectorAll("[data-vista]").forEach((b) => b.addEventListener("click", () => this.sceglieVista(b.getAttribute("data-vista"))));
+      this.root.querySelectorAll("[data-modo]").forEach((b) => b.addEventListener("click", () => this.sceglieModo(b.getAttribute("data-modo"))));
       // (il ⟳ gira finché la lettura è in corso: al massimo 45 secondi)
       const giro = store.get(SMART_SYNC, null);
       if ($("#tbsync.gira") && giro?.ts) setTimeout(() => this.root.querySelector("#tbsync")?.classList.remove("gira"), Math.max(0, giro.ts + 45e3 - Date.now()));
@@ -8593,7 +8631,7 @@
         this.render();
       });
       const box = $(".pzunita"), map = $(".stmap");
-      if (box && map) {
+      if (box && (map || box.classList.contains("lista"))) {
         box.addEventListener("pointerdown", (e) => this.stanzaPresa(e, box));
         // la scheda del paziente: passando sul nome (nella riga) o sul letto
         this.cartaLega(box);
@@ -8755,7 +8793,7 @@
       this._rigaMossa = false;
       // una riga della lista si prende dal nome (cioè da tutta la riga): gli
       // altri suoi comandi restano i loro, e un tocco la apre come sempre
-      const riga = !this.stanzaEdit && e.target.closest(".pzrow[data-riga]");
+      const riga = !this.stanzaEdit && this.modoTab() !== "lista" && e.target.closest(".pzrow[data-riga]");   // (in Lista non c'è dove portarlo)
       if (riga) return e.target.closest("button:not(.pzapri), input") ? undefined : this.stanzaTrascinaPaziente(e, box, riga, true);
       if (e.target.closest("button, input, .stsnack, .pzrow, .pzfiltro, .pzpiede")) return;
       const map = box.querySelector(".stmap");
