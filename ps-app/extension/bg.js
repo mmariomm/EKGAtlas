@@ -176,7 +176,7 @@ chrome.tabs.onUpdated.addListener((id, info, tab) => {
   if (info.status !== "complete" || !tab || !sulGestionale(tab.url)) return;
   setTimeout(() => {
     Promise.all([sottoGet(id), chrome.tabs.get(id).catch(() => null)]).then(([s, t]) => {
-      if (s && s.esito === "attesa" && t && t.status === "complete" && sulGestionale(t.url)) return sottoFine(id, "nonportale");
+      if (s && s.esito === "attesa" && s.cosa !== "smart" && t && t.status === "complete" && sulGestionale(t.url)) return sottoFine(id, "nonportale");
     }).catch(() => {});
   }, 4000);
 });
@@ -325,16 +325,71 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       const lavoro = new Set((ordini || []).map((x) => x && x.worker).filter((x) => x != null));
       const buona = (t) => !!t && t.id !== da.id && !lavoro.has(t.id) && /^https:\/\/smarthealth\.multimedica\.it\/sa4pso\//.test(t.url || "")
         && !/MVPG=PsoPazientiSmart/.test(t.url || "");
-      let t = da.openerTabId != null ? await chrome.tabs.get(da.openerTabId).catch(() => null) : null;
+      let t = msg.tabId != null ? await chrome.tabs.get(msg.tabId).catch(() => null) : null;
+      if (!buona(t)) t = da.openerTabId != null ? await chrome.tabs.get(da.openerTabId).catch(() => null) : null;
       if (!buona(t)) {
         const tutte = await chrome.tabs.query({ url: "https://smarthealth.multimedica.it/sa4pso/*" }).catch(() => []);
         t = tutte.filter(buona).sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0] || null;
       }
       if (!t) return reply({ ok: false, why: "nessuna scheda del gestionale" });
-      await chrome.tabs.update(t.id, { url: u.href, active: true });
+      // Prima davanti (soloFuoco), POI la pagina, con una seconda domanda. Le
+      // pagine del gestionale si ricaricano da sole quando prendono il fuoco
+      // (<body onfocus="refreshOnFocus()">): portata davanti insieme alla
+      // navigazione, la scheda ricaricava la lista di prima sopra PsoPsoImposta,
+      // e il passaggio d'area spariva. Fra le due, la smart guarda se la pagina
+      // ricaricata ha già ripreso il passaggio da sé (vedi apriNelGestionale).
       await chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
+      if (msg.soloFuoco) {
+        await chrome.tabs.update(t.id, { active: true });
+        return reply({ ok: true, tabId: t.id });
+      }
+      await chrome.tabs.update(t.id, { url: u.href, active: true });
       reply({ ok: true, tabId: t.id });
     })().catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 80) }));
+    return true;
+  }
+
+  // «Segue il gestionale»: la lista smart, col link che la pagina stessa
+  // porta (l'icona elenco_smart), in una scheda dietro — una sola alla volta.
+  // Là il content script la legge (anche le altre sue schede, coi loro link)
+  // e dice «fatto»; la scheda si chiude. Nessuna richiesta nostra.
+  if (msg.t === "smartSotto") {
+    (async () => {
+      const da = _sender.tab;
+      let u;
+      try { u = new URL(String(msg.url || "")); } catch { return reply({ ok: false, why: "link non valido" }); }
+      let origineMia = "";
+      try { origineMia = new URL(_sender.url).origin; } catch { /* niente */ }
+      if (!da || u.origin !== origineMia || u.origin !== "https://smarthealth.multimedica.it" || u.pathname !== "/sa4pso/restrict/menuPsoSmart.do"
+          || u.searchParams.get("MVPG") !== "PsoPazientiSmart" || [...u.searchParams.keys()].some((k) => !["MVPG", "PAZIENTI_FILTRO"].includes(k))) {
+        return reply({ ok: false, why: "link inatteso" });
+      }
+      await sottoControlla();
+      const vive = Object.entries(await chrome.storage.session.get(null)).filter(([k, s]) => k.startsWith("sotto:") && inCorso(s));
+      if (vive.some(([, s]) => s.cosa === "smart")) return reply({ ok: false, why: "già in corso" });
+      if (vive.length >= 3) return reply({ ok: false, why: "troppe letture in corso" });
+      const vuota = { url: "about:blank", active: false };
+      const t = await chrome.tabs.create({ ...vuota, openerTabId: da.id, index: da.index + 1, windowId: da.windowId })
+        .catch(() => chrome.tabs.create(vuota));
+      await sottoSet(t.id, { opener: da.id, cosa: "smart", ts: Date.now(), esito: "attesa" });
+      await chrome.tabs.update(t.id, { url: u.href });
+      setTimeout(() => sottoControlla().catch(() => {}), SOTTO_MAX + 500);
+      reply({ ok: true, tabId: t.id });
+    })().catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 80) }));
+    return true;
+  }
+  if (msg.t === "smartChi") {
+    sottoGet(_sender.tab && _sender.tab.id).then((s) => reply(inCorso(s) && s.cosa === "smart" ? { ok: true } : { ok: false }))
+      .catch(() => reply({ ok: false }));
+    return true;
+  }
+  if (msg.t === "smartFine") {
+    const tid = _sender.tab && _sender.tab.id;
+    sottoGet(tid).then(async (s) => {
+      if (!inCorso(s) || s.cosa !== "smart") return reply({ ok: false });
+      await sottoFine(tid, msg.esito === "ok" ? "letto" : "altro");
+      reply({ ok: true });
+    }).catch(() => reply({ ok: false }));
     return true;
   }
 

@@ -2283,6 +2283,11 @@
   }
   function rememberPatient(ep, name, url, triage, eta, sesso, nato) {
     if (!ep) return;
+    // noto finora solo dalla lista smart: la sua pagina dà l'episodio (posto, «Da fare» e area lo seguono)
+    if (nato) {
+      const tutti = store.get("patients.v1", []);
+      if (Array.isArray(tutti) && fondiSmart(tutti, ep, name, nato)) store.set("patients.v1", tutti);
+    }
     const prima = tuttiPazienti().find((p) => p.ep === ep);
     const list = tuttiPazienti().filter((p) => p.ep !== ep);
     // il triage è quello letto all'ultima apertura; se la pagina non lo dice,
@@ -2295,7 +2300,8 @@
     list.unshift({ ep, name: ((name || "").trim() || prima?.name || "").slice(0, 60), url: url || "", ts: Date.now(),
                    pk: prima?.pk || "", ...tr, ...(Number.isInteger(anni) ? { eta: anni } : {}),
                    ...(sesso === "M" || sesso === "F" ? { sesso } : prima?.sesso ? { sesso: prima.sesso } : {}),
-                   ...(nato || prima?.nato ? { nato: nato || prima.nato } : {}), ...(prima?.lista ? { lista: prima.lista } : {}) });
+                   ...(nato || prima?.nato ? { nato: nato || prima.nato } : {}), ...(prima?.lista ? { lista: prima.lista } : {}),
+                   ...(prima?.arrivo ? { arrivo: prima.arrivo } : {}) });
     store.set("patients.v1", list.slice(0, PATIENTS_MAX));
     // la sua area, se nessuna lista l'ha ancora detta: quella in testa a questa pagina
     const a = areeLeggi(), ora = store.get(AREA_ORA, null);
@@ -2313,7 +2319,7 @@
   const AREA_ORA = "area.corrente.v1"; // l'area in testa all'ultima pagina: {k, label, id, ts}
   const AREE_OPZ = "aree.opzioni.v1";  // le opzioni di PsoPsoImposta: {k: {id, label}} — un'impostazione, resta
   const AREA_VAI = "area.vai.v1";      // un passaggio d'area in corso: {k, chi?, ts, premuto?}
-  const AREA_VAI_MS = 30e3;
+  const AREA_VAI_MS = 45e3;
   const AREE_ORDINE = ["alta", "obi", "bassa", "minori"];
   const AREE_TITOLO = { alta: "Alta intensità", obi: "OBI", bassa: "Bassa", minori: "Codici minori" };
   const spazi = (t) => String(t || "").replace(/\s+/g, " ").trim();
@@ -2373,6 +2379,18 @@
     const triage = TRIAGE_COLORI.find((c) => c === (cella.getAttribute("title") || "").trim()) || "";
     return name ? { name, nato: m ? m[1] : "", eta: m ? Number(m[2]) : null, triage } : null;
   }
+  // L'ingresso in PS: «21/09/2026 08:54» (la smart) o «08:48» (la lista
+  // dell'area: oggi, o ieri se l'ora non è ancora venuta). 0 se non si legge.
+  function arrivoDa(t, ora = Date.now()) {
+    const s = spazi(t);
+    let m = /(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/.exec(s);
+    if (m) { const d = new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5]).getTime(); return d <= ora + 5 * 60e3 && ora - d < 7 * 864e5 ? d : 0; }
+    m = /^(\d{1,2}):(\d{2})$/.exec(s);
+    if (!m || +m[1] > 23 || +m[2] > 59) return 0;
+    const d = new Date(ora);
+    d.setHours(+m[1], +m[2], 0, 0);
+    return d.getTime() > ora + 5 * 60e3 ? d.getTime() - 864e5 : d.getTime();
+  }
   // Le righe della lista di un'area: ognuna col SUO link alla cartella.
   function righeLista(doc, base) {
     const out = [], visti = new Set();
@@ -2384,7 +2402,7 @@
       const ep = param(url, "EPISODIO_ID"), l = linguettaDi(div);
       if (!ep || !/^[\w.-]{1,40}$/.test(ep) || !l || visti.has(ep)) continue;
       visti.add(ep);
-      out.push({ ep, url, a, ...l });
+      out.push({ ep, url, a, ...l, arrivo: arrivoDa(a.closest("tr")?.querySelector('td[name="INGRESSO"]')?.textContent) });
     }
     return out;
   }
@@ -2419,24 +2437,35 @@
     try { filtro = filtro || [...new URL(url).searchParams].some(([k, v]) => /^s_/.test(k) && v); } catch { /* niente */ }
     const conto = contoLista(doc);
     const intera = !filtro && (conto == null || conto === righe.length);
-    const a = areeLeggi(), usciti = new Set();
-    if (intera) for (const [ep, v] of Object.entries(a.membri)) if (v?.k === testa.k) { delete a.membri[ep]; usciti.add(ep); }
+    const a = areeLeggi(), usciti = new Set(), list = store.get("patients.v1", []);
+    const attivi = new Set((Array.isArray(list) ? list : []).filter((p) => p && p.ep && !p.arch).map((p) => p.ep));
+    let membri = 0;
+    if (intera) for (const [ep, v] of Object.entries(a.membri)) if (v?.k === testa.k) { delete a.membri[ep]; usciti.add(ep); membri += attivi.has(ep); }
     for (const r of righe) { a.membri[r.ep] = { k: testa.k, ts: ora }; usciti.delete(r.ep); }
     a.viste[testa.k] = { label: testa.label, ts: ora };
     store.set(AREE, a);
-    // e fra i pazienti: chi c'era si aggiorna (senza «visto adesso»: non l'hai aperto), chi no entra;
-    // uscito dalla lista, chi c'era solo per la lista (mai aperto) se ne va con lei
-    const list = store.get("patients.v1", []), l = Array.isArray(list) ? list.filter((p) => p && p.ep && !(usciti.has(p.ep) && !p.ts && !p.arch)) : [];
+    // Uscito da una lista intera (e non vuota): dimesso — archiviato, il letto
+    // vuoto, «Annulla» per 8 secondi. Se però se ne andrebbe più del 30% in un
+    // colpo, niente: chi c'era solo per la lista (mai aperto) se ne va con lei,
+    // come sempre, e gli altri restano.
+    const fuori = [...usciti].filter((ep) => attivi.has(ep));
+    const dimetti = !!righe.length && fuori.length > 0 && fuori.length <= membri * DIMESSI_QUOTA;
+    // e fra i pazienti: chi c'era si aggiorna (senza «visto adesso»: non l'hai aperto), chi no entra
+    const l = Array.isArray(list) ? list.filter((p) => p && p.ep && (dimetti || !(usciti.has(p.ep) && !p.ts && !p.arch))) : [];
     for (const r of righe) {
-      const p = l.find((x) => x.ep === r.ep), nato = improntaNascita(r.nato);
-      const tr = r.triage ? { triage: r.triage, triageTs: ora } : {};
+      const nato = improntaNascita(r.nato);
+      fondiSmart(l, r.ep, r.name, nato);   // noto finora solo dalla smart: ecco il suo episodio
+      const p = l.find((x) => x.ep === r.ep);
+      const tr = { ...(r.triage ? { triage: r.triage, triageTs: ora } : {}), ...(r.arrivo ? { arrivo: r.arrivo } : {}) };
       if (p) Object.assign(p, { lista: ora, ...tr, ...(p.name ? {} : { name: r.name }), ...(p.url ? {} : { url: r.url }),
-        ...(nato ? { nato } : {}), ...(Number.isInteger(p.eta) || !Number.isInteger(r.eta) ? {} : { eta: r.eta }) });
+        ...(nato ? { nato } : {}), ...(Number.isInteger(p.eta) || !Number.isInteger(r.eta) ? {} : { eta: r.eta }),
+        ...(p.arch && p.archAuto ? { arch: false, archTs: 0, archAuto: 0 } : {}) });   // dimesso da qui, e invece c'è
       else l.push({ ep: r.ep, name: r.name, url: r.url, ts: 0, lista: ora, pk: "", ...tr, ...(Number.isInteger(r.eta) ? { eta: r.eta } : {}), ...(nato ? { nato } : {}) });
     }
     if (righe.length || l.length !== (Array.isArray(list) ? list.length : 0)) store.set("patients.v1", l.filter((p) => ora - vistoTs(p) < PATIENTS_TTL)
       .sort((x, y) => (y.ts || 0) - (x.ts || 0) || vistoTs(y) - vistoTs(x)).slice(0, PATIENTS_MAX));
-    return { area: testa, righe };
+    const dimessi = dimetti ? dimettiUsciti(fuori, membri) : [];
+    return { area: testa, righe, dimessi };
   }
 
   // Un indirizzo del gestionale da APRIRE come lo apre il medico: il link
@@ -2472,17 +2501,37 @@
     if (!vai || !vai.k || Date.now() - (vai.ts || 0) > AREA_VAI_MS) { if (vai) store.del(AREA_VAI); return false; }
     const sel = doc.querySelector('select[name="RISORSA_ID"]'), btn = doc.getElementById("AGG_RISORSA");
     if (sel && btn && mvpgDi(doc, url) === "PsoPsoImposta") {
-      if (vai.premuto) { store.del(AREA_VAI); return false; }   // già premuto, e siamo ancora qui: non si insiste
       const opz = [...sel.options].filter((o) => o.value && chiaveArea(o.textContent) === vai.k);
       if (opz.length !== 1) { store.del(AREA_VAI); return false; }
-      if (!store.set(AREA_VAI, { ...vai, premuto: Date.now() })) return false;
+      if (vai.premuto) {
+        // Già premuto, e siamo ancora qui. Se la tendina dice già l'area, il
+        // passaggio c'è stato: la sua lista. Se no il «Conferma» si è perso
+        // (la pagina del gestionale si ricarica da sé quando la scheda prende
+        // il fuoco, e un invio a metà muore lì): ancora una volta, una sola.
+        if (sel.value === opz[0].value) {   // (una pagina appena caricata: la tendina è quella del server)
+          if (!store.set(AREA_VAI, { ...vai, ts: Date.now() })) return false;
+          nav(urlMenu("PsoPazientiAmbulatorio"));
+          return true;
+        }
+        if (vai.ripremuto) { store.del(AREA_VAI); return false; }   // due volte, e niente: non si insiste
+      }
+      if (!store.set(AREA_VAI, { ...vai, premuto: Date.now(), ...(vai.premuto ? { ripremuto: 1 } : {}) })) return false;
       sel.value = opz[0].value;
       btn.click();
       return true;
     }
-    if (!eListaArea(doc, url)) return false;   // una pagina di passaggio: si aspetta la lista
-    store.del(AREA_VAI);
+    if (!eListaArea(doc, url)) return false;   // una pagina di passaggio (PsoPazienti, che rimanda alla lista): si aspetta la lista
     const testa = areaInTesta(doc);
+    // Sulla lista dell'area di prima: il passaggio non è mai arrivato al
+    // gestionale — la scheda, prendendo il fuoco, si è ricaricata sopra la
+    // nostra navigazione (refreshOnFocus del gestionale), o l'invio si è perso.
+    // Si riprende da PsoPsoImposta, una volta sola.
+    if (testa && testa.k !== vai.k && !vai.ripreso) {
+      if (!store.set(AREA_VAI, { k: vai.k, ...(vai.chi ? { chi: vai.chi } : {}), ts: Date.now(), ripreso: 1 })) return false;
+      nav(urlMenu("PsoPsoImposta"));
+      return true;
+    }
+    store.del(AREA_VAI);
     if (!testa || testa.k !== vai.k || !vai.chi) return false;
     const trovate = righeLista(doc, url).filter((r) => normNome(r.name) === vai.chi.nome && improntaNascita(r.nato) === vai.chi.nato);
     if (trovate.length !== 1) return false;
@@ -2507,16 +2556,40 @@
       if (!l) continue;
       const celle = [...tr.children], i = celle.indexOf(td);
       const cella = celle.slice(i + 1).find((c) => etichette.has(spazi(c.textContent).toUpperCase())) || celle[i + 3];
-      out.push({ tr, ...l, area: spazi(cella?.textContent).slice(0, 60) });
+      out.push({ tr, ...l, area: spazi(cella?.textContent).slice(0, 60), arrivo: arrivoDa(celle[i + 1]?.textContent) });
     }
     return out;
   }
+  // Prima il fuoco, POI la pagina. Le pagine del gestionale si ricaricano da
+  // sole quando la loro scheda prende il fuoco (<body onfocus="refreshOnFocus()">):
+  // portata davanti insieme alla navigazione, la scheda ricaricava la lista di
+  // prima sopra la nostra, e il passaggio d'area spariva (il medico atterrava
+  // sulla lista, senza area cambiata né paziente aperto). Se nel frattempo la
+  // pagina ricaricata ha già ripreso il passaggio d'area (areaVaiQui), non si
+  // naviga una seconda volta sopra di lei.
   async function apriNelGestionale(url) {
+    const vai0 = JSON.stringify(store.get(AREA_VAI, null));
+    const ripreso = () => vai0 !== "null" && JSON.stringify(store.get(AREA_VAI, null)) !== vai0;
     // con l'estensione: nella scheda del gestionale da cui la finestra è nata (o l'ultima usata), in primo piano
-    if (hasExt()) { const r = await ask({ t: "apriNelGestionale", url }); if (r && r.ok) return "scheda"; }
+    if (hasExt()) {
+      const f = await ask({ t: "apriNelGestionale", url, soloFuoco: true });
+      if (f && f.ok) {
+        await sleep(400);
+        if (ripreso()) return "ripreso";
+        const r = await ask({ t: "apriNelGestionale", url, tabId: f.tabId });
+        if (r && r.ok) return "scheda";
+      }
+    }
     try {
       const o = window.opener;
-      if (o && !o.closed && o.location.origin === location.origin) { o.location.href = url; o.focus(); return "opener"; }
+      if (o && !o.closed && o.location.origin === location.origin) {
+        o.focus();
+        await sleep(400);
+        if (o.closed) return "chiusa";
+        if (ripreso()) return "ripreso";
+        o.location.href = url;
+        return "opener";
+      }
     } catch { /* un'altra origine: qui */ }
     nav(url);
     return "qui";
@@ -2546,6 +2619,244 @@
       });
     }
     return righe.length;
+  }
+
+  // ------------------------------------------------------------ TABELLONE
+  // Due mappe, Alta e Bassa, e una lista sola sotto: chi si vede dove lo
+  // dicono l'area e il triage, sullo stesso elenco. Alta: l'area Alta e l'OBI
+  // rosso o arancione. Bassa: Bassa, Codici minori e l'OBI azzurro, verde o
+  // bianco. L'OBI senza triage, chi non ha ancora un'area, un'area che non si
+  // riconosce: tutt'e due — nessuno sparisce.
+  const VISTA = "tabellone.vista.v1";          // "alta" | "bassa" | "entrambe" — un'impostazione, resta
+  const VISTE = ["alta", "bassa", "entrambe"];
+  const MAPPA_DI_VISTA = { alta: "alta", bassa: "ps" };
+  const NOME_VISTA = { alta: "Alta", bassa: "Bassa", entrambe: "Entrambe" };
+  function tabelloniDi(k, triage) {
+    if (k === "alta") return ["alta"];
+    if (k === "bassa" || k === "minori") return ["bassa"];
+    if (k === "obi" && (triage === "ROSSO" || triage === "ARANCIONE")) return ["alta"];
+    if (k === "obi" && ["AZZURRO", "VERDE", "BIANCO"].includes(triage)) return ["bassa"];
+    return ["alta", "bassa"];
+  }
+  // l'OBI senza triage sta in tutt'e due, con la striscia grigia
+  const triageIgnoto = (k, triage) => k === "obi" && !TRIAGE_COLORI.includes(triage);
+
+  // ------------------------------------------------- SEGUE IL GESTIONALE
+  // La lista smart (tutto il pronto soccorso, ogni area col suo nome e il
+  // colore del triage) si rilegge da sola ogni 10 minuti, finché una scheda
+  // del gestionale è aperta e «segue il gestionale» è acceso — e subito col
+  // ⟳ del tabellone. Si apre come la apre il medico: col SUO link (l'icona
+  // elenco_smart della lista dell'area, annotato quando lo si vede — mai un
+  // indirizzo costruito), in una scheda dietro che si chiude appena letta.
+  const SEGUE = "segue.v1";                    // false: spento (di norma acceso) — un'impostazione
+  const SMART_URL = "smart.url.v1";            // { url, ts } — dalla pagina, mai inventato; un'impostazione
+  const SMART_SYNC = "smart.sync.v1";          // { ts: partita, fine, esito, n, intera, dimessi }
+  const DIMESSI = "dimessi.v1";                // { id, ts, eps, nomi, posti } — l'ultima uscita, per «Annulla»
+  const SMART_OGNI = 10 * 60e3;
+  const SMART_GIRO = "smart.giro.v1";          // (nella scheda dietro) le schede della smart già lette
+  const DIMESSI_MS = 8000;
+  const DIMESSI_QUOTA = 0.3;                   // oltre il 30% in un colpo solo: non si archivia nessuno
+  const NO_DIM_MS = 3 * 3600e3;                // «Annulla» su un dimesso: per 3 ore non si riarchivia da solo
+  const segueAcceso = () => store.get(SEGUE, true) !== false;
+  // il link della lista smart, come lo scrive la lista dell'area: l'icona
+  // elenco_smart.png dentro un <a onclick="window.open('<indirizzo>', …)">
+  function smartLinkDi(doc, base) {
+    let origine = "";
+    try { origine = new URL(base).origin; } catch { return ""; }
+    for (const img of doc.querySelectorAll('img[src*="elenco_smart"]')) {
+      const a = img.closest("a[onclick]");
+      const m = a && /window\.open\(\s*(['"])(.+?)\1/.exec(a.getAttribute("onclick") || "");
+      if (!m) continue;
+      let u;
+      try { u = new URL(m[2].replace(/&amp;/g, "&"), base); } catch { continue; }
+      if (u.origin !== origine || !/\/sa4pso\/restrict\/menuPsoSmart\.do$/.test(u.pathname) || u.searchParams.get("MVPG") !== "PsoPazientiSmart"
+          || [...u.searchParams.keys()].some((k) => !["MVPG", "PAZIENTI_FILTRO"].includes(k))) continue;
+      return u.href;
+    }
+    return "";
+  }
+  function smartUrlQui(doc, url) {
+    const u = smartLinkDi(doc, url);
+    if (u && store.get(SMART_URL, null)?.url !== u) store.set(SMART_URL, { url: u, ts: Date.now() });
+    return u;
+  }
+  // La lista smart letta: le sue schede («Ambulatorio (8)», …: quella scelta
+  // e le altre, coi loro link), le righe, e se è filtrata. Le schede «nostre»
+  // sono quelle dei pazienti di cui il medico risponde: Ambulatorio (e OBI,
+  // dove c'è); l'attesa del triage e «tutti» no.
+  const SCHEDA_NOSTRA = /^(AMBULATORIO|OBI)\b/i;
+  function leggiSmartPagina(doc, url) {
+    if (!eSmart(doc, url) || classify(doc) === "login" || !doc.querySelector(".AFCHeaderTable")) return { ok: false, perche: "non è la lista smart" };
+    let origine = "";
+    try { origine = new URL(url).origin; } catch { return { ok: false, perche: "indirizzo" }; }
+    const schede = [];
+    for (const a of doc.querySelectorAll("a.shiny-button, a.shiny-button-selected")) {
+      if (/window\.close/.test(a.getAttribute("onclick") || "")) continue;   // «Chiudi»
+      const t = spazi(a.textContent), m = /^(.*?)\s*\((\d+)\)$/.exec(t), base = spazi(m ? m[1] : t);
+      let u = "";
+      try {
+        const x = new URL(a.getAttribute("href") || "", url);
+        if (x.origin === origine && x.searchParams.get("MVPG") === "PsoPazientiSmart") u = x.href;
+      } catch { /* niente */ }
+      if (!u || !base) continue;
+      schede.push({ base, n: m ? Number(m[2]) : null, sel: a.classList.contains("shiny-button-selected"), url: u, nostra: SCHEDA_NOSTRA.test(base) });
+    }
+    let filtrata = [...doc.querySelectorAll('input[name^="s_"]')].some((i) => !/^(hidden|submit|button)$/i.test(i.type || "") && spazi(i.value))
+      || [...doc.querySelectorAll('select[name^="s_"]')].some((s) => spazi(s.value));
+    try { filtrata = filtrata || [...new URL(url).searchParams].some(([k, v]) => /^s_/.test(k) && v); } catch { /* niente */ }
+    return { ok: true, schede, sel: schede.find((s) => s.sel) || null, filtrata, righe: righeSmart(doc) };
+  }
+  // un paziente che si conosce solo dalla lista smart: la chiave è l'impronta
+  // (nome e nascita), finché la lista della sua area non dà il suo episodio
+  function chiaveSmart(nome, nato) {
+    let h = 0x811c9dc5;
+    for (const c of `${normNome(nome)}|${nato}`) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0;
+    return "sm" + h.toString(36);
+  }
+  // Chi era noto solo dalla smart ed ecco il suo episodio (la lista della sua
+  // area, o la sua pagina): il posto, «Da fare» e l'area passano a lui.
+  function fondiSmart(l, ep, nome, nato) {
+    if (!nato) return null;
+    const s = l.find((x) => x.smart && x.ep !== ep && normNome(x.name) === normNome(nome) && x.nato === nato);
+    if (!s) return null;
+    const da = s.ep;
+    for (const k of TUTTI_I_POSTI()) {
+      const posti = store.get(k, null);
+      if (posti && posti[da]) { if (!posti[ep]) posti[ep] = posti[da]; delete posti[da]; store.set(k, posti); }
+    }
+    const df = store.get(PROM, null);
+    if (df && df[da]) { df[ep] = [...(df[ep] || []), ...df[da]]; delete df[da]; store.set(PROM, df); }
+    const a = areeLeggi();
+    if (a.membri[da]) { if (!a.membri[ep]) a.membri[ep] = a.membri[da]; delete a.membri[da]; store.set(AREE, a); }
+    if (l.some((x) => x.ep === ep)) l.splice(l.indexOf(s), 1);
+    else { s.ep = ep; delete s.smart; }   // la riga resta, con l'episodio vero (e l'ingresso, il triage)
+    return s;
+  }
+  // Uscire da un elenco intero vuol dire «dimesso»: archiviato (si riporta
+  // con «Annulla», per 8 secondi, o dagli Archiviati), il letto vuoto. Mai da
+  // un elenco filtrato, monco, vuoto o da una pagina di login/errore (chi
+  // chiama lo sa), mai più del 30% in un colpo (allora niente, e zitti), mai
+  // chi il medico ha appena riportato indietro.
+  function dimettiUsciti(eps, su) {
+    const ora = Date.now(), list = store.get("patients.v1", []);
+    if (!Array.isArray(list) || !eps.length || !su || eps.length > su * DIMESSI_QUOTA) return [];
+    const via = list.filter((p) => p && eps.includes(p.ep) && !p.arch && !(ora - (p.noDim || 0) < NO_DIM_MS));
+    if (!via.length) return [];
+    const posti = {};
+    for (const k of TUTTI_I_POSTI()) {
+      const pp = store.get(k, null);
+      if (!pp || typeof pp !== "object") continue;
+      for (const p of via) if (pp[p.ep]) { (posti[k] = posti[k] || {})[p.ep] = pp[p.ep]; delete pp[p.ep]; }
+      if (posti[k]) store.set(k, pp);
+    }
+    for (const p of via) Object.assign(p, { arch: true, archTs: ora, archAuto: ora });
+    store.set("patients.v1", list);
+    const rec = { id: ora.toString(36) + Math.random().toString(36).slice(2, 6), ts: ora, eps: via.map((p) => p.ep), nomi: via.map((p) => nomeCorto(p.name || "")), posti };
+    store.set(DIMESSI, rec);
+    return rec.eps;
+  }
+  // «Annulla»: di nuovo fra i pazienti, al suo posto se è ancora libero
+  function annullaDimessi(rec) {
+    if (!rec || !Array.isArray(rec.eps)) return;
+    const ora = Date.now(), list = store.get("patients.v1", []);
+    if (Array.isArray(list)) {
+      for (const p of list) if (p && rec.eps.includes(p.ep)) { p.arch = false; p.archTs = 0; delete p.archAuto; p.noDim = ora; }
+      store.set("patients.v1", list);
+    }
+    for (const [k, v] of Object.entries(rec.posti || {})) {
+      const pp = store.get(k, {}) || {};
+      for (const [ep, x] of Object.entries(v)) {
+        if (pp[ep] || (x?.tipo === "letto" && Object.values(pp).some((y) => y?.tipo === "letto" && y.id === x.id))) continue;
+        pp[ep] = x;
+      }
+      store.set(k, pp);
+    }
+    if (store.get(DIMESSI, null)?.id === rec.id) store.del(DIMESSI);
+  }
+  // Le righe della smart (di tutte le sue schede nostre) sull'elenco. Chi si
+  // riconosce — nome e impronta della nascita, uno solo — prende l'area e il
+  // triage della riga; chi no entra lo stesso, con la sua chiave d'impronta.
+  // Due righe uguali: nessuno dei due si tocca (non si indovina). Letta tutta
+  // (intera), chi manca è dimesso — con le regole di dimettiUsciti.
+  function applicaSmart(righe, intera) {
+    const ora = Date.now(), list = store.get("patients.v1", []);
+    const l = Array.isArray(list) ? list.filter((p) => p && p.ep && ora - vistoTs(p) < PATIENTS_TTL) : [];
+    const a = areeLeggi(), presenti = new Set(), quante = new Map();
+    const chiave = (r) => `${normNome(r.nome)}|${r.nato}`;
+    for (const r of righe) if (r.nato) quante.set(chiave(r), (quante.get(chiave(r)) || 0) + 1);
+    let nuovi = 0;
+    for (const r of righe) {
+      if (!r.nato || !r.nome) continue;
+      const noti = l.filter((p) => normNome(p.name) === normNome(r.nome) && p.nato === r.nato);
+      for (const p of noti) presenti.add(p.ep);
+      if (quante.get(chiave(r)) > 1 || noti.filter((p) => !p.smart).length > 1) continue;
+      const k = chiaveArea(r.area), tr = TRIAGE_COLORI.includes(r.triage) ? { triage: r.triage, triageTs: ora } : {};
+      let p = noti.find((x) => !x.smart) || noti[0];
+      if (!p) {
+        p = { ep: chiaveSmart(r.nome, r.nato), name: spazi(r.nome).slice(0, 60), url: "", ts: 0, pk: "", nato: r.nato, smart: true };
+        l.push(p);
+        nuovi++;
+      }
+      Object.assign(p, { lista: ora, ...tr, ...(r.arrivo ? { arrivo: r.arrivo } : {}), ...(Number.isInteger(p.eta) || !Number.isInteger(r.eta) ? {} : { eta: r.eta }) });
+      // tornato in un elenco dopo un'uscita decisa da qui: di nuovo fra i vivi
+      if (p.arch && p.archAuto) { p.arch = false; p.archTs = 0; delete p.archAuto; }
+      presenti.add(p.ep);
+      if (k) { a.membri[p.ep] = { k, ts: ora }; a.viste[k] = { label: spazi(r.area).slice(0, 60), ts: a.viste[k]?.ts || ora }; }
+    }
+    store.set(AREE, a);
+    store.set("patients.v1", l.sort((x, y) => (y.ts || 0) - (x.ts || 0) || vistoTs(y) - vistoTs(x)).slice(0, PATIENTS_MAX));
+    // chi manca da una lettura intera: solo chi si potrebbe riconoscere (con l'impronta)
+    let dimessi = [];
+    if (intera && righe.length) {
+      const attivi = l.filter((p) => !p.arch && p.nato);
+      dimessi = dimettiUsciti(attivi.filter((p) => !presenti.has(p.ep)).map((p) => p.ep), attivi.length);
+    }
+    return { righe: righe.length, nuovi, dimessi };
+  }
+  // Nella scheda dietro, aperta dal service worker: la smart si legge, una
+  // scheda nostra dopo l'altra (col SUO link), poi si chiude.
+  async function smartSottoQui() {
+    const fine = (esito, extra = {}) => {
+      const s = store.get(SMART_SYNC, {}) || {};
+      store.set(SMART_SYNC, { ...s, fine: Date.now(), esito, ...extra });
+      tabStore.del(SMART_GIRO);
+      return ask({ t: "smartFine", esito });
+    };
+    const L = leggiSmartPagina(document, location.href);
+    if (!L.ok) return fine(classify(document) === "login" ? "login" : "pagina");
+    const g0 = tabStore.get(SMART_GIRO, null);
+    const giro = g0 && Date.now() - (g0.ts || 0) < 60e3 ? g0 : { ts: Date.now(), letti: {}, salti: 0 };
+    if (L.sel && L.sel.nostra) {
+      giro.letti[L.sel.base] = { n: L.sel.n, filtrata: L.filtrata,
+        righe: L.righe.map((r) => ({ nome: r.name, nato: improntaNascita(r.nato), eta: r.eta, triage: r.triage, area: r.area, arrivo: r.arrivo || 0 })) };
+    }
+    const prossima = L.schede.find((s) => s.nostra && !giro.letti[s.base]);
+    if (prossima && giro.salti < 4) {
+      giro.salti++;
+      tabStore.set(SMART_GIRO, giro);
+      location.href = prossima.url;   // il link della scheda, nella pagina
+      return;
+    }
+    const lette = Object.values(giro.letti);
+    if (!lette.length) return fine("schede");
+    const righe = lette.flatMap((x) => x.righe);
+    const intera = lette.every((x) => !x.filtrata && x.n != null && x.n === x.righe.length);
+    const r = applicaSmart(righe, intera);
+    return fine("ok", { n: r.righe, intera, dimessi: r.dimessi.length });
+  }
+  // Rileggere la smart adesso (⟳) o perché sono passati 10 minuti: lo chiede
+  // il service worker, che apre la scheda dietro e ne tiene una sola.
+  async function smartSync(forza) {
+    if (!hasExt()) return { ok: false, why: "senza estensione" };
+    const u = store.get(SMART_URL, null)?.url;
+    if (!u) return { ok: false, why: "nessun link" };
+    const s = store.get(SMART_SYNC, null) || {}, ora = Date.now();
+    if (!forza && (!segueAcceso() || ora - (s.ts || 0) < SMART_OGNI)) return { ok: false, why: "non ancora" };
+    if (s.ts && !s.fine && ora - s.ts < 45e3) return { ok: false, why: "in corso" };
+    store.set(SMART_SYNC, { ts: ora, fine: 0, esito: "", n: s.n || 0 });
+    const r = await ask({ t: "smartSotto", url: u });
+    if (!r || !r.ok) store.set(SMART_SYNC, { ...(store.get(SMART_SYNC, {}) || {}), fine: Date.now(), esito: (r && r.why) || "estensione" });
+    return r || { ok: false };
   }
 
   // la chiave della scheda clinica, annotata quando la conosciamo, così
@@ -2627,7 +2938,7 @@
   // turno, qui e nella memoria di questa scheda. Restano le impostazioni
   // (finestra, stanze, le opzioni delle aree, catalogo, stampe già fatte) e i
   // modelli del medico; chi sta in quale area se ne va.
-  const RESET_VIA = () => ["patients.v1", ...TUTTI_I_POSTI(), "stanza.posti.v1", AREE, AREA_VAI, STATO, PROM, PROM_VECCHI, noteKey, segniKey, "refVisti.v1",
+  const RESET_VIA = () => ["patients.v1", ...TUTTI_I_POSTI(), "stanza.posti.v1", AREE, AREA_VAI, SMART_SYNC, DIMESSI, STATO, PROM, PROM_VECCHI, noteKey, segniKey, "refVisti.v1",
     "refPortale", DA_CONFERMARE, "quesiti", "quesiti.ts", "lastQ", APERTA, PRESIDIO];
   function azzeraScheda() {
     try { for (const k of Object.keys(sessionStorage)) if (k.startsWith(NS)) sessionStorage.removeItem(k); } catch { /* niente */ }
@@ -3057,6 +3368,23 @@
     if (breve && !pezzi.length) pezzi.push(`<span class="esp">✓</span>`);
     const tutto = breve && st.nuovo ? " " + dot(st.rosso) : "";
     return `<span class="esst${breve ? " breve" : ""}${st.vecchio ? " vecchio" : ""}" title="${esc(statoTitolo(st, ora))}">${pezzi.join(" ")}${tutto}</span>`;
+  }
+  // I tre segni della riga del tabellone: Lab · ECG · RX, ognuno col suo
+  // stato. Grigio: chiesto e ancora in attesa, col tempo dalla richiesta
+  // («Lab 50′»); arancio: tornato in parte; blu: tornato tutto. Mai chiesto:
+  // niente. Nessun valore, nessun testo.
+  function marchiEsami(st, ora = Date.now()) {
+    if (!st) return "";
+    return TIPI_ESAME.map(([t, nome]) => {
+      const x = st.tipi[t];
+      if (!x || !x.n) return "";
+      const stato = !x.fatti ? "att" : x.fatti < x.n ? "parz" : "ok";
+      const min = x.pendenti && x.attesa ? minDa(x.attesa, ora) : null;
+      const dopo = stato === "att" ? (min != null ? ` ${attesaTesto(min)}` : "") : stato === "parz" ? ` ${x.fatti}/${x.n}` : " ✓";
+      const tit = stato === "att" ? `${nome}: chiesto${min != null ? `, in attesa da ${attesaTesto(min)}` : ""}`
+        : stato === "parz" ? `${nome}: tornati ${x.fatti} di ${x.n}` : `${nome}: tornato tutto`;
+      return `<span class="esm es-${t} ${stato}" title="${esc(tit)}"><b>${nome}</b>${dopo}</span>`;
+    }).join("");
   }
   // Il letto è piccolo: nome ed età, e al massimo UN segnale — un pallino.
   // Rosso: un esame oltre la seconda soglia, valori nuovi fuori range, un
@@ -4668,8 +4996,8 @@
   // Una mappa per area (mappaDiArea): ognuna la sua stanza e i suoi posti.
   // La stanza di prima (stanza.v1, stanza.posti.v1) è diventata quella del PS.
   const MAPPE = {
-    ps: { sala: "stanza.ps.v1", posti: "stanza.ps.posti.v1", base: STANZA_PS, nome: "del PS", rimette: "Rimette OBI, OSS e le sale d'attesa" },
-    alta: { sala: "stanza.alta.v1", posti: "stanza.alta.posti.v1", base: STANZA_ALTA, nome: "dell'Alta", rimette: "Rimette Box, letti, Rossa, sedie e barelle" },
+    ps: { k: "ps", vista: "bassa", sala: "stanza.ps.v1", posti: "stanza.ps.posti.v1", base: STANZA_PS, nome: "del PS", rimette: "Rimette OBI, OSS e le sale d'attesa" },
+    alta: { k: "alta", vista: "alta", sala: "stanza.alta.v1", posti: "stanza.alta.posti.v1", base: STANZA_ALTA, nome: "dell'Alta", rimette: "Rimette Box, letti, Rossa, sedie e barelle" },
   };
   const TUTTI_I_POSTI = () => Object.values(MAPPE).map((m) => m.posti);
   function migraStanza() {
@@ -5426,13 +5754,13 @@
                user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .pzunita input { user-select: text; -webkit-user-select: text; }
     .pzcoda { flex: 0 1 auto; max-height: 45%; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
-              padding: 2px max(14px, calc(100% - 1054px)) 6px 14px; border-bottom: 1px solid #E8EDF2; container: pzlista / inline-size; transition: background-color .12s;
-              /* LE COLONNE, uguali per tutte le righe: il nome, il cuore, Lab, ECG, RX,
-                 «Da fare», il post-it (che cede per primo), visto, ▾, ✕. Una colonna che
+              padding: 2px max(14px, calc(100% - 1054px)) 6px 14px; border-top: 1px solid #E8EDF2; container: pzlista / inline-size; transition: background-color .12s;
+              /* LE COLONNE, uguali per tutte le righe: nome ed età, il posto, da quanto
+                 è in PS, il cuore, Lab, ECG, RX, «Da fare», ▾, ✕. Una colonna che
                  nessuno usa non occupa niente. */
               display: grid; align-content: start;
-              grid-template-columns: [tri] auto [nm] minmax(0, max-content) [cuore] auto [lab] auto [ecg] auto [img] auto [df] auto
-                                     [post] minmax(0, 1fr) [visto] auto [metti] auto [x] auto; }
+              grid-template-columns: [tri] auto [nm] minmax(0, max-content) [posto] auto [inps] auto [cuore] auto [lab] auto [ecg] auto [img] auto [df] auto
+                                     [post] minmax(0, 1fr) [metti] auto [x] auto; }
     .pzcoda > .pzvuoto { grid-column: 1 / -1; }
     /* le aree: un filo e il titolo; un tocco apre la sua lista */
     .pzcoda > .pzsez { grid-column: 1 / -1; padding: 8px 0 2px; border-top: 1px solid #D9E2EC; }
@@ -5451,14 +5779,35 @@
     .pzcoda .pzchi, .pzcoda .pzchi > .esst { display: contents; }
     .pzcoda .pztr { grid-column: tri; }
     .pzcoda .pzapri { grid-column: nm; justify-self: stretch; max-width: 240px; margin-left: 10px; }
+    .pzcoda .pzposto { grid-column: posto; margin-left: 12px; font-size: 12px; font-weight: 600; color: #35506B; white-space: nowrap; }
+    .pzcoda .pzinps { grid-column: inps; margin-left: 10px; font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .pzcoda .pzchi > .cuore { grid-column: cuore; margin-left: 10px; }
-    .pzcoda .es-lab { grid-column: lab; margin-left: 10px; }
-    .pzcoda .es-ecg { grid-column: ecg; margin-left: 4px; }
-    .pzcoda .es-img { grid-column: img; margin-left: 4px; }
+    .pzcoda .pzchi > .sttag { grid-column: cuore / post; margin-left: 10px; }
+    .pzcoda .esm.es-lab { grid-column: lab; margin-left: 10px; }
+    .pzcoda .esm.es-ecg { grid-column: ecg; margin-left: 4px; }
+    .pzcoda .esm.es-img { grid-column: img; margin-left: 4px; }
     .pzcoda .dfslot { display: block; grid-column: df; margin-left: 10px; }
-    .pzcoda .dfpslot { display: block; grid-column: post; justify-self: stretch; min-width: 0; margin-left: 8px; overflow: hidden; }
-    .pzcoda .dfpslot .dfpost { display: block; }
-    .pzcoda .pzrow > .stvisto, .pzcoda .pzrow > .stqui, .pzcoda .pzrow > .sttag { grid-column: visto; justify-self: end; margin-left: 10px; }
+    .pzeta { font-weight: 400; color: #5B6B7A; font-variant-numeric: tabular-nums; }
+    /* Lab · ECG · RX: grigio in attesa (col tempo), arancio in parte, blu tutto tornato */
+    .esm { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border-radius: 6px; font-size: 12px;
+           white-space: nowrap; font-variant-numeric: tabular-nums; border: 1px solid transparent; }
+    .esm b { font-weight: 700; }
+    .esm.att { background: #EEF2F6; color: #5B6B7A; }
+    .esm.parz { background: #FFF1E0; color: #A85400; border-color: #F6C990; }
+    .esm.ok { background: #E3EEFB; color: #0B5CAD; border-color: #B8D3F0; }
+    .t-ignoto { --tr: #9AA8B5; }
+    /* la riga e il letto dello stesso paziente, insieme */
+    .pzrow.lega { background: #EEF5FC; }
+    .stbed.lega, .starbody .stp.lega { box-shadow: 0 0 0 2px #6F9FD0; }
+    /* la scheda al passaggio: solo da leggere, il mouse passa attraverso */
+    .pzcarta { position: absolute; z-index: 28; max-width: 340px; padding: 8px 12px; border: 1px solid #D9E2EC; border-radius: 10px; background: #fff;
+               box-shadow: 0 10px 28px rgba(9,42,74,.16); font-size: 12.5px; line-height: 1.45; color: #16232E; pointer-events: none; }
+    .pzcarta .pc { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; }
+    .pzcarta .pc1 { align-items: center; gap: 6px; font-size: 13px; }
+    .pzcarta .pc1 .pztr { height: 16px; }
+    .pzcarta .pcl span { margin-right: 6px; white-space: nowrap; }
+    .pzcarta q { quotes: "«" "»"; color: #35506B; }
+    .pzcarta .cuore { font-size: 13px; }
     .pzcoda .pzmetti { grid-column: metti; margin-left: 6px; }
     .pzcoda .pzx { grid-column: x; margin-left: 2px; }
     .pzcoda > .pzrow:last-child { border-bottom-color: transparent; }
@@ -5499,10 +5848,12 @@
       .pzcoda .esp { height: 20px; }
       .pzcoda .pzchi > .dfslot .dfic { height: 20px; line-height: 20px; }
       .pzcoda .pzchi > *, .pzcoda .pzchi > .esst > * { grid-row: 2; }
-      .pzcoda .pzchi > .pzapri { grid-row: 1; grid-column: nm / visto; max-width: none; }
-      .pzcoda .pzchi > .dfpslot { grid-column: post / metti; }
+      .pzcoda .pzchi > .pzapri { grid-row: 1; grid-column: nm / metti; max-width: none; }
+      .pzcoda .pzchi > .pzposto { grid-column: nm; margin-left: 10px; }
+      .pzcoda .pzchi > .pzinps { grid-column: posto / cuore; margin-left: 10px; }
+      .pzcoda .esm { height: 20px; }
       /* l'icona vuota (compare passandoci sopra) sale accanto al ▾: chi non ha altro resta su una riga */
-      .pzcoda .pzchi > .dfslot:has(.dfic.vuota) { grid-row: 1; grid-column: visto; }
+      .pzcoda .pzchi > .dfslot:has(.dfic.vuota) { grid-row: 1; grid-column: post; justify-self: end; }
       .pzcoda .pztr, .pzcoda .pzmetti, .pzcoda .pzx { grid-row: 1 / 3; }
       .pzrow .stvisto, .pzrow .stqui { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     }
@@ -5521,13 +5872,13 @@
     .pzunita.filtra .pzrow.nofiltro { display: none; }
     .pzunita.filtra .starbody .stp.nofiltro, .pzunita.filtra .stbed.nofiltro { opacity: .25; }
     /* portando un paziente dalla stanza: in cima, «Rimetti in lista» (anche a lista vuota) */
-    .pzrimetti { position: absolute; left: 12px; right: 12px; top: 6px; z-index: 6; display: flex; align-items: center; justify-content: center; gap: 8px;
+    .pzrimetti { position: absolute; left: 12px; right: 12px; bottom: 6px; z-index: 6; display: flex; align-items: center; justify-content: center; gap: 8px;
                  height: 44px; border: 1.5px dashed #6F9FD0; border-radius: 10px; background: rgba(241,246,252,.97); color: #0B5CAD;
                  font-size: 13px; font-weight: 600; box-shadow: 0 6px 18px rgba(9,42,74,.10); visibility: hidden; opacity: 0; transition: opacity .12s; }
     .pzunita.dastanza .pzrimetti { visibility: visible; opacity: 1; }
     /* senza lista la striscia starebbe sopra i letti in cima: la stanza tiene sempre
        libera quella fascia, così mentre si trascina niente si sposta e niente si copre */
-    .pzunita:not(:has(> .pzcoda)) > .stmap:not(.edit) > .stcanvas { padding-top: 50px; }
+    .pzunita:not(.edit):not(:has(> .pzcoda)) > .stmappe > .stmappei { bottom: 50px; }
     .pzrimetti.over { border: 1.5px solid #0B5CAD; background: #E2EEFA; }
     /* in fondo, chiusi: gli archiviati e «Svuota l'elenco», sul grigio della stanza */
     .pzpiede { flex: 0 1 auto; max-height: 40%; overflow-y: auto; padding: 0 14px 4px; background: #F7F9FB; scrollbar-width: thin; }
@@ -5548,19 +5899,37 @@
     .pzsvuota:hover { color: #16232E; }
 
     /* STANZA: tutto lo spazio che la lista lascia */
-    .stmap { position: relative; flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; background: #F7F9FB; }
+    /* TABELLONE: Alta | Bassa | Entrambe, e ⟳ */
+    .tbbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-bottom: 1px solid #E8EDF2; }
+    .tbseg { display: inline-flex; padding: 2px; border-radius: 8px; background: #EEF2F6; }
+    .tbseg button { min-height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 13px; font-weight: 600; color: #5B6B7A; }
+    .tbseg button:hover { color: #16232E; }
+    .tbseg button.on { background: #fff; color: #0B5CAD; box-shadow: 0 1px 2px rgba(9,42,74,.12); }
+    .tbsync { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 16px; color: #5B6B7A; }
+    .tbsync:hover { background: #EEF2F6; color: #0B5CAD; }
+    .tbsync.gira { animation: tbGira 1s linear infinite; color: #0B5CAD; }
+    @keyframes tbGira { to { transform: rotate(360deg); } }
+    /* le mappe: una, o due — affiancate se lo spazio è largo, se no una sopra l'altra */
+    .stmappe { position: relative; flex: 1 1 0; min-height: 120px; container: stmappe / size; }
+    .stmappei { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); }
+    .stmappei.due > .stmap + .stmap { border-top: 1px solid #E8EDF2; }
+    @container stmappe (min-aspect-ratio: 9 / 5) {
+      .stmappei.due { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+      .stmappei.due > .stmap + .stmap { border-top: 0; border-left: 1px solid #E8EDF2; }
+    }
+    .stmap { position: relative; min-height: 0; min-width: 0; display: flex; flex-direction: column; background: #F7F9FB; }
     /* La pianta: celle tutte uguali (--u), le più grandi che ci stanno, fra 20 e
        44px. Tutto si misura in celle: allargando o stringendo la finestra la
        stanza cresce o cala tutta insieme e niente si sovrappone; se non ci sta
        nemmeno a 20px (un nome non si leggerebbe più), scorre. In alto, subito
        sotto la lista: accorciandosi la lista, la stanza sale. */
-    .stcanvas { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; container-type: size;
+    .stcanvas { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; container-type: size;
                 display: grid; place-items: start center; }
     .stcanvas.dx { --sf: linear-gradient(to left, transparent, #000 40px); }
     .stcanvas.sx { --sf: linear-gradient(to right, transparent, #000 40px); }
     .stcanvas.sx.dx { --sf: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); }
     .stcanvas.sx, .stcanvas.dx { -webkit-mask-image: var(--sf); mask-image: var(--sf); }
-    .stplan { position: relative; --u: clamp(20px, min(100cqw / var(--cols), 100cqh / var(--rows)), 44px);
+    .stplan { position: relative; --u: min(44px, 100cqw / var(--cols), 100cqh / var(--rows));
               width: calc(var(--cols) * var(--u)); height: calc(var(--rows) * var(--u)); }
     /* in Modifica la pianta intera, coi puntini agli angoli delle celle (e un
        margine per la × degli oggetti sul bordo) */
@@ -5627,8 +5996,12 @@
     .stseg.ros { background: #B3261E; } .stseg.amb { background: #D08A00; } .stseg.nuovo { background: #0B5CAD; }
     .stseg.att { box-shadow: inset 0 0 0 1.5px #8296A9; }
     .stbed.occ:not(:has(.stsegni :is(.cuore, .stseg))) .stbedhd { padding-right: 0; }
-    @container stbed (max-height: 62px) {
-      .stmap:not(.edit) .stbed.occ .stname, .stbed .stsegni, .stbed:not(.sedia) .stglifo { display: none; }
+    /* piccolo (le mappe stanno sempre nel loro spazio): via il nome del letto, il cuore e il pallino restano */
+    @container stbed (max-height: 72px) {
+      .stmap:not(.edit) .stbed.occ .stname, .stbed:not(.sedia) .stglifo { display: none; }
+      .stmap:not(.edit) .stbed.occ:has(.stsegni :is(.cuore, .stseg)) .stp1::before { content: ""; float: right; width: 24px; height: 14px; }
+      .stmap:not(.edit) .stbed.occ .stp1 { max-height: 48px; line-height: 16px; }
+      .stbed .stsegni { gap: 4px; }
       .stmap.edit .stbed .stp { display: none; }   /* in Modifica conta il nome del letto */
     }
     /* la sedia: un letto più piccolo, il suo glifo ci sta sempre */
@@ -7288,6 +7661,7 @@
       const din = this.root.querySelector("#dfin");
       if (din && this._df) { this._df.inFuoco = this.root.activeElement === din; this._df.sel = [din.selectionStart, din.selectionEnd]; }
       this.promChiudiMenu();
+      this.cartaChiudi();   // la scheda al passaggio non sopravvive al ridisegno
 
       let body;
       if (this.runState === "running") body = this.viewRunning();
@@ -7418,6 +7792,7 @@
                     ${this.win ? `<button role="menuitem" id="wincentra" title="La finestra al centro, nella misura di partenza">Al centro</button>` : ""}
                     ${eAffiancata(this.win) ? "" : `<button role="menuitem" id="winaffianca" title="Una colonna a destra: il gestionale resta visibile a sinistra">Affianca a destra</button>`}
                     ${inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">Modifica la stanza</button>` : ""}
+                    ${inStanza && !this.stanzaEdit && hasExt() ? `<button role="menuitemcheckbox" id="seguesw" aria-checked="${segueAcceso()}" title="Ogni 10 minuti la lista smart del gestionale, letta dietro: chi c'è, l'area, il triage; chi esce è dimesso">${segueAcceso() ? "✓ " : ""}Segue il gestionale</button>` : ""}
                     <hr>
                     ${hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete"><span class="mico">${ICO_TEL}</span>iPhone</button>` : ""}
                     <button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">Tempi</button>
@@ -7508,19 +7883,251 @@
     // si accorcia e la stanza sale; rimesso in lista, il letto torna vuoto.
     // In Modifica la lista si toglie di mezzo: si vede tutta la pianta, e i
     // comandi stanno nella fila delle schede (stanzaAzioni()).
+    // Il TABELLONE: in alto Alta | Bassa | Entrambe (e ⟳), le mappe (due,
+    // affiancate se c'è larghezza, se no una sopra l'altra: sempre in scala,
+    // mai di lato), sotto la lista di tutti quelli della vista — chi ha un
+    // posto e chi no.
     viewHome(patientName) {
-      const m = this.pazModello(), edit = !!this.stanzaEdit;
+      const T = this.pazTabellone(), edit = !!this.stanzaEdit;
       // il filtro aperto resta com'era, col cursore dov'era; vuoto e lasciato, si chiude
       const cerca = this.root.querySelector("#pzcerca");
       if (cerca && this.root.activeElement === cerca) { this._filtroFuoco = true; this._filtroSel = [cerca.selectionStart, cerca.selectionEnd]; }
       else if (this._filtro === "") this._filtro = null;
       return `<div class="sec"><div class="pzunita${edit ? " edit" : ""}">
-        ${edit ? "" : this.viewLista(m, patientName)}
-        ${this.viewStanza(m)}
-        ${edit ? "" : this.pazArchivio(m)}
-        <div class="pzrimetti" data-drop="tray" aria-hidden="true">${ico('<path d="M8 12.5v-9M4 7.5l4-4 4 4"/>')}Rimetti in lista</div>
+        ${edit ? "" : this.tabelloneBarra()}
+        <div class="stmappe"><div class="stmappei${T.ks.length > 1 ? " due" : ""}">${T.ks.map((k) => this.conMappa(k, () => this.viewStanza(T.per.get(k)))).join("")}</div></div>
+        ${edit ? "" : this.viewLista(T.lista, patientName)}
+        ${edit ? "" : this.pazArchivio(T.lista)}
+        <div class="pzrimetti" data-drop="tray" aria-hidden="true">${ico('<path d="M8 12.5v-9M4 7.5l4-4 4 4"/>')}Togli dal posto</div>
         ${this.stanzaSnack()}
       </div></div>`;
+    }
+    // Alta | Bassa | Entrambe, e il ⟳ che rilegge subito la lista smart
+    tabelloneBarra() {
+      const v = this.vistaTab(), s = store.get(SMART_SYNC, null) || {};
+      const gira = !!s.ts && !s.fine && Date.now() - s.ts < 45e3;
+      return `<div class="tbbar"><div class="tbseg" role="radiogroup" aria-label="Mappe">${VISTE.map((x) => `<button type="button" role="radio" data-vista="${x}" aria-checked="${x === v}"${
+        x === v ? ' class="on"' : ""}>${NOME_VISTA[x]}</button>`).join("")}</div>${hasExt() ? `<button type="button" class="tbsync${gira ? " gira" : ""}" id="tbsync" title="Rileggi adesso la lista smart del gestionale${
+        s.fine && s.esito === "ok" ? ` (l'ultima: ${hhmm(s.fine)})` : ""}" aria-label="Aggiorna dal gestionale">⟳</button>` : ""}</div>`;
+    }
+    // Quale vista: quella scelta dal medico; finché non ne ha scelta una,
+    // quella dell'area in cui lavora.
+    vistaTab() {
+      const v = store.get(VISTA, null);
+      return VISTE.includes(v) ? v : mappaDiArea(store.get(AREA_ORA, null)?.k) === "alta" ? "alta" : "bassa";
+    }
+    // le mappe che si vedono (in Modifica, una sola: quella che si ritocca)
+    mappeVisibili() {
+      if (this.stanzaEdit) return [MAPPE[this._mappaEdit] ? this._mappaEdit : MAPPA_DI_VISTA[this.vistaTab()] || mappaDiArea(store.get(AREA_ORA, null)?.k)];
+      const v = this.vistaTab();
+      return v === "entrambe" ? ["alta", "ps"] : [MAPPA_DI_VISTA[v]];
+    }
+    conMappa(k, fn) {
+      const prima = this._mk;
+      this._mk = k;
+      try { return fn(); } finally { this._mk = prima; }
+    }
+    // Il modello del tabellone: una mappa per mappa visibile, e la lista (chi
+    // è nella vista: l'area e il triage) col posto, in qualunque mappa.
+    // Un paziente sta in un posto solo: se due mappe lo dicono, vale l'ultimo.
+    pazTabellone() {
+      const ks = this.mappeVisibili(), per = new Map(ks.map((k) => [k, this.conMappa(k, () => this.pazModello())]));
+      const base = per.get(ks[0]), info = new Map();
+      for (const [ep, i] of base.info) info.set(ep, { ...i, posto: null, mk: "" });
+      for (const k of Object.keys(MAPPE)) {
+        const raw = store.get(MAPPE[k].posti, {}), m = per.get(k);
+        for (const [ep, j] of info) {
+          const v = m ? m.posti[ep] : raw && typeof raw === "object" && !j.prec ? raw[ep] : null;
+          if (v && (!j.posto || (v.ts || 0) > (j.posto.ts || 0))) { j.posto = v; j.mk = k; }
+        }
+      }
+      for (const [k, m] of per) for (const [ep, i] of m.info) {
+        if (!i.posto || info.get(ep)?.mk === k) continue;
+        if (i.posto.tipo === "letto" && m.perLetto[i.posto.id] === ep) delete m.perLetto[i.posto.id];
+        delete m.posti[ep];
+        i.posto = null;
+      }
+      const v = this.vistaTab(), a = areeLeggi();
+      for (const j of info.values()) {
+        const k = a.membri[j.p.ep]?.k || "";
+        j.area = k;
+        j.ignoto = triageIgnoto(k, j.p.triage);
+        j.vista = v === "entrambe" || tabelloniDi(k, j.p.triage).includes(v) || (!!j.posto && MAPPE[j.mk]?.vista === v);
+      }
+      return { ks, per, lista: { ...base, info, nomeDi: (i) => this.nomePostoIn(i) } };
+    }
+    // il nome del posto, in qualunque mappa
+    nomePostoIn(i) {
+      if (!i || !i.posto || !MAPPE[i.mk]) return "";
+      const sala = this.conMappa(i.mk, () => this.stanzaSala());
+      return (i.posto.tipo === "letto" ? sala.letti : sala.aree).find((o) => o.id === i.posto.id)?.nome || "";
+    }
+    // Un tocco sulla scelta: si ricorda (un'impostazione di questo browser)
+    sceglieVista(v) {
+      if (!VISTE.includes(v)) return;
+      store.set(VISTA, v);
+      this.render();
+    }
+    // Quello che un'altra scheda (la smart dietro, un'altra lista) ha scritto:
+    // si ridisegna — ma non sotto un gesto in corso; ci si riprova fra poco.
+    aggiornaDaFuori() {
+      clearTimeout(this._fuoriT);
+      if (this.collapsed || !this.inPazienti()) return;
+      const occupato = this._stanzaPresa || this._stanzaMenu?.menu?.isConnected || this._df?.pop?.isConnected || this.stanzaEdit || this.menuAperto || this._carta
+        || this.root.activeElement?.id === "pzcerca";
+      if (occupato) { this._fuoriT = setTimeout(() => this.aggiornaDaFuori(), 3000); return; }
+      this.cartaChiudi();
+      this.render();
+    }
+    // ------------------------------------------------- la scheda al passaggio
+    // Passando col mouse sul NOME (nella riga) o sul letto, dopo un quarto di
+    // secondo: chi è, dov'è, da quanto è in PS; il cuore coi parametri fuori
+    // norma; i valori fuori range; ECG e RX (lo stato, e le prime parole del
+    // referto scritto). Solo da leggere: non prende il mouse, il clic arriva
+    // sotto. Non copre mai il suo letto. Si chiude uscendo.
+    // La riga e il letto dello stesso paziente si accendono insieme.
+    cartaLega(box) {
+      const bersaglio = (e) => {
+        if (this.stanzaEdit || this._stanzaPresa) return null;
+        const letto = e.target.closest?.(".stbed.occ, .starbody .stp[data-stp]");
+        if (letto) { const ep = letto.getAttribute("data-occep") || letto.getAttribute("data-stp"); return ep ? { ep, el: letto, carta: true } : null; }
+        const riga = e.target.closest?.(".pzrow[data-pz]");
+        if (!riga) return null;
+        const nm = riga.querySelector(".pznm"), r = nm?.getBoundingClientRect();
+        const sulNome = !!r && e.clientX >= r.left - 2 && e.clientX <= r.right + 2 && e.clientY >= r.top - 4 && e.clientY <= r.bottom + 4;
+        return { ep: riga.getAttribute("data-pz"), el: riga, carta: sulNome };
+      };
+      box.addEventListener("pointermove", (e) => {
+        if (e.pointerType && e.pointerType !== "mouse") return;
+        const b = bersaglio(e), cur = this._carta;
+        if (b && cur && cur.ep === b.ep && cur.el === b.el && cur.carta === b.carta) return;
+        this.cartaChiudi();
+        if (!b) return;
+        this.cartaLegaAccendi(b.ep, true);
+        this._carta = { ...b, t: b.carta ? setTimeout(() => this.cartaApri(), 250) : 0 };
+      });
+      box.addEventListener("pointerleave", () => this.cartaChiudi());
+      box.addEventListener("pointerdown", () => this.cartaChiudi(), true);
+    }
+    cartaLegaAccendi(ep, si) {
+      for (const el of this.root.querySelectorAll(".lega")) el.classList.remove("lega");
+      if (!si || !ep) return;
+      const e = CSS.escape(ep);
+      for (const el of this.root.querySelectorAll(`.pzrow[data-pz="${e}"], .stbed[data-occep="${e}"], .starbody .stp[data-stp="${e}"]`)) el.classList.add("lega");
+    }
+    cartaChiudi() {
+      const c = this._carta;
+      this._carta = null;
+      if (c) clearTimeout(c.t);
+      c?.box?.remove();
+      this.root?.querySelector(".pzcarta")?.remove();
+      this.cartaLegaAccendi(null, false);
+    }
+    cartaApri() {
+      const c = this._carta, wrap = this.root.querySelector(".wrap");
+      if (!c || !wrap || !c.el.isConnected) return;
+      const p = tuttiPazienti().find((x) => x.ep === c.ep);
+      if (!p) return;
+      wrap.insertAdjacentHTML("beforeend", `<div class="pzcarta" role="tooltip">${this.cartaHtml(p)}</div>`);
+      c.box = wrap.lastElementChild;
+      this.cartaPosa(c.box, c.el, c.el.classList.contains("pzrow"));
+      // i valori e i referti scritti stanno nella scheda clinica (estensione): arrivano dopo
+      this.cartaStorico(p).then((dati) => {
+        if (this._carta !== c || !c.box?.isConnected || !dati) return;
+        const altro = this.cartaDaStorico(p, dati);
+        if (!altro) return;
+        c.box.innerHTML = this.cartaHtml(p, altro);
+        this.cartaPosa(c.box, c.el, c.el.classList.contains("pzrow"));
+      }).catch(() => {});
+    }
+    // fuori dal suo letto (a destra, a sinistra, sotto, sopra), o sotto/sopra la riga; sempre nella finestra
+    cartaPosa(box, el, riga) {
+      const wr = this.root.querySelector(".wrap").getBoundingClientRect(), ar = el.getBoundingClientRect();
+      const w = box.offsetWidth, h = box.offsetHeight, g = 8, W = innerWidth, H = innerHeight;
+      const lim = (v, a, b) => Math.max(a, Math.min(b, v));
+      const prove = [
+        ...(riga ? [] : [{ x: ar.right + g, y: lim(ar.top, g, H - h - g), ok: ar.right + g + w <= W - g },
+          { x: ar.left - g - w, y: lim(ar.top, g, H - h - g), ok: ar.left - g - w >= g }]),
+        { x: lim(riga ? ar.left + 24 : ar.left, g, W - w - g), y: ar.bottom + g, ok: ar.bottom + g + h <= H - g },
+        { x: lim(riga ? ar.left + 24 : ar.left, g, W - w - g), y: ar.top - g - h, ok: ar.top - g - h >= g },
+      ];
+      const p = prove.find((x) => x.ok) || prove[prove.length - 1];
+      box.style.left = p.x - wr.left + "px";
+      box.style.top = p.y - wr.top + "px";
+    }
+    // la scheda clinica di questo paziente (la stessa regola d'identità degli Esiti e del Ponte)
+    async cartaStorico(p) {
+      if (!hasExt()) return null;
+      const cache = (this._cartaCache = this._cartaCache || new Map()), c = cache.get(p.ep);
+      if (c && Date.now() - c.ts < 30e3) return c.dati;
+      const r = await ask({ t: "getStorico" });
+      const mio = String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "";
+      const scelta = scegliScheda((r && r.ok && r.indice) || [], mio, p.name, p.ep);
+      const x = scelta ? await ask({ t: "getStorico", chiave: scelta.chiave }) : null;
+      const dati = x && x.ok ? x.dati : null;
+      cache.set(p.ep, { ts: Date.now(), dati });
+      return dati;
+    }
+    // Dalla scheda clinica, solo quello di QUESTO passaggio in PS (dall'ingresso,
+    // o dalle ultime 24 ore): i valori fuori range dell'ultimo prelievo di
+    // ciascun esame, e i referti di ECG e RX col loro testo.
+    cartaDaStorico(p, dati) {
+      const da = p.arrivo || Date.now() - 24 * 3600e3, dd = new Date(da);
+      const lim = Date.UTC(dd.getFullYear(), dd.getMonth(), dd.getDate(), dd.getHours(), dd.getMinutes());
+      let lab = [];
+      const st = dati && dati.righe && dati.righe.length ? normalizzaStorico(dati) : null;
+      if (st) {
+        const tieni = st.date.map((d, i) => [d, i]).filter(([d]) => !d.ignota && ordData(d.label) >= lim).map(([, i]) => i);
+        if (tieni.length) lab = fuoriRangeUltimi({ ...st, date: tieni.map((i) => st.date[i]), righe: st.righe.map((r) => ({ ...r, valori: tieni.map((i) => r.valori[i]) })) });
+      }
+      const referti = ((dati && dati.referti) || []).map((x) => ({ ...x, t: arrivoDa(x.quando) })).filter((x) => x.t && x.t >= da - 60e3 && x.testo)
+        .map((x) => ({ ...x, tipo: refertoTipo({ label: x.titolo, sistema: x.sistema }) })).filter((x) => x.tipo === "ecg" || x.tipo === "rx")
+        .sort((a, b) => b.t - a.t);
+      return lab.length || referti.length ? { lab, referti } : null;
+    }
+    cartaHtml(p, altro = null) {
+      const ora = Date.now(), posto = this.postoDi(p.ep), st = statoEsami(statoDi(p.ep), ora);
+      const tr = p.triage ? " t-" + p.triage.toLowerCase() : "";
+      const prime = (testo) => {
+        const w = anteprimaReferto(String(testo || "").split("\n")).split(/\s+/).filter(Boolean);
+        return w.length ? `${w.slice(0, 9).join(" ")}${w.length > 9 ? "…" : ""}` : "";
+      };
+      const riga = (cls, html) => `<div class="pc ${cls}">${html}</div>`;
+      const out = [riga("pc1", `<i class="pztr${tr}" aria-hidden="true"></i><b>${esc(p.name || "paziente")}</b>${
+        [Number.isInteger(p.eta) ? String(p.eta) : "", p.sesso || ""].filter(Boolean).length ? ` ${esc([Number.isInteger(p.eta) ? p.eta : "", p.sesso || ""].filter((x) => x !== "").join(" "))}` : ""}${
+        posto ? ` · ${esc(posto)}` : ""}${p.arrivo ? ` · ${attesaTesto(minDa(p.arrivo, ora))}` : ""}`)];
+      const c = cuoreDi(statoDi(p.ep)?.vit, ora);
+      if (c) out.push(riga("pcv", `<span class="cuore ${c.livello}${c.vecchio ? " vecchio" : ""}" aria-hidden="true">${c.vecchio ? "♡" : "♥"}</span> NEWS ${c.punti}${
+        c.fuori.length ? " · " + esc(c.fuori.join(" · ")) : ""}${c.vecchio ? ` · ${c.ore}h fa` : ""}`));
+      if (altro && altro.lab.length) out.push(riga("pcl", altro.lab.slice(0, 8).map((x) => `<span><b>${esc(x.sigla)}</b> ${esc(x.v)}${x.stato < 0 ? "↓" : "↑"}</span>`).join(" ")));
+      // ECG e RX: lo stato dalla pagina del paziente, il testo dal referto letto
+      const esami = st ? st.esami : [], ref = altro ? altro.referti : [];
+      const attesa = (e) => (e.ts ? ` ${attesaTesto(minDa(e.ts, ora))}` : "");
+      const ecg = esami.filter((e) => e.tipo === "ecg"), rEcg = ref.find((x) => x.tipo === "ecg");
+      if (ecg.length || rEcg) {
+        const aspetta = ecg.filter((e) => !e.fatto).sort((a, b) => (a.ts || 0) - (b.ts || 0))[0];
+        out.push(riga("pce", rEcg || ecg.some((e) => e.fatto)
+          ? `<b>ECG</b> ✓${rEcg ? ` ${hhmm(rEcg.t)} <q>${esc(prime(rEcg.testo))}</q>` : ""}${aspetta ? ` · ⏳${attesa(aspetta)}` : ""}`
+          : `<b>ECG</b> ⏳${attesa(aspetta)}`));
+      }
+      const img = esami.filter((e) => e.tipo === "img"), rRx = ref.filter((x) => x.tipo === "rx");
+      for (const e of img.filter((x) => !x.fatto)) out.push(riga("pcr", `<b>${esc(frase(e.label))}</b> ⏳${attesa(e)}`));
+      if (rRx.length) for (const x of rRx.slice(0, 3)) out.push(riga("pcr", `<b>${esc(frase(x.titolo))}</b> ✓ <q>${esc(prime(x.testo))}</q>`));
+      else for (const e of img.filter((x) => x.fatto)) out.push(riga("pcr", `<b>${esc(frase(e.label))}</b> ✓`));
+      return out.join("");
+    }
+    // «ROSSI M. dimesso · Annulla», per 8 secondi, dove il medico guarda
+    mostraDimessi(avvio) {
+      const rec = store.get(DIMESSI, null);
+      if (!rec || !Array.isArray(rec.eps) || !rec.eps.length || rec.id === this._dimessiVisto) return;
+      const resta = (rec.ts || 0) + DIMESSI_MS - Date.now();
+      if (resta <= 0) return;
+      this._dimessiVisto = rec.id;
+      clearTimeout(this._stanzaAnnT);
+      const nomi = (rec.nomi || []).filter(Boolean);
+      this._stanzaAnn = { testo: `${nomi.join(", ") || "Un paziente"} ${nomi.length > 1 ? "dimessi" : "dimesso"}`, foto: () => annullaDimessi(rec), fino: Date.now() + resta };
+      this._stanzaAnnT = setTimeout(() => { this._stanzaAnn = null; this.root.querySelector(".stsnack")?.remove(); }, resta);
+      if (!avvio) this.render();
     }
 
     // ================================================================ STANZA
@@ -7533,7 +8140,7 @@
     // "stanza.<mappa>.v1" (celle intere della PIANTA, così a ogni misura è la
     // stessa), chi-sta-dove in "stanza.<mappa>.posti.v1" — solo episodi, mai
     // nomi. Una mappa per area (MAPPE): si vede quella dell'area del medico.
-    mappa() { return MAPPE[mappaDiArea(store.get(AREA_ORA, null)?.k)] || MAPPE.ps; }
+    mappa() { return MAPPE[this._mk] || MAPPE[this.mappeVisibili()[0]] || MAPPE.ps; }
     // l'episodio della pagina aperta. La lista del PS non ne ha uno suo: i
     // suoi link portano quello del primo in elenco, che non è «qui».
     epDiQuesta() { return this.episodeId && this.defaultView() !== "home" ? this.episodeId : ""; }
@@ -7542,6 +8149,11 @@
     apriPaziente(ep, go) {
       if (ep && ep === this.epDiQuesta()) return this.setView(go);
       const p = knownPatients().find((x) => x.ep === ep);
+      // noto solo dalla lista smart (nessun link suo): la sua area, e dalla lista il link della sua riga
+      if (p && p.smart && !p.url) {
+        const k = areeLeggi().membri[ep]?.k;
+        return k && p.nato ? apriArea(k, { nome: normNome(p.name), nato: p.nato }) : undefined;
+      }
       if (!p || !p.url) return;
       tabStore.set("afterNav.v1", { ep, view: go, ts: Date.now() }); // open there, on their page
       nav(p.url);
@@ -7719,7 +8331,8 @@
     // Chi è su questa pagina per primo, l'episodio precedente in fondo.
     viewLista(m, patientName) {
       const canOrder = !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
-      const lista = [...m.info.values()].filter((i) => !i.posto).sort((a, b) => b.qui - a.qui || a.prec - b.prec);
+      // tutti quelli della vista (l'area e il triage): prima chi non ha ancora un posto
+      const lista = [...m.info.values()].filter((i) => i.vista !== false || i.qui).sort((a, b) => b.qui - a.qui || a.prec - b.prec || !!a.posto - !!b.posto);
       // Il nome è quello con cui il paziente è stato conosciuto. Il titolo
       // della pagina si usa solo se non ne abbiamo uno: sulla lista PS quel
       // titolo è «PRONTO SOCCORSO - LISTA», e stamparlo dove va il nome del
@@ -7731,19 +8344,28 @@
       // la riga intera apre il paziente: il bottone del nome la copre tutta, e
       // gli altri comandi stanno sopra — niente bottoni dentro bottoni. Si
       // prende e si porta su un letto, una sedia o un'area, come nella stanza.
+      // La riga dice poco, e sempre nello stesso posto: triage, nome ed età, il
+      // posto, da quanto è in PS, il cuore, Lab · ECG · RX (grigio: chiesto e
+      // in attesa, col tempo; arancio: tornato in parte; blu: tornato tutto)
+      // e quante cose ha da fare. Niente valori, niente testo: quelli li dice
+      // la scheda che si apre passando sul nome.
+      const ora = Date.now();
       const riga = (i) => {
-        const { p } = i, tr = p.triage ? " t-" + p.triage.toLowerCase() : "", vero = m.info.has(p.ep), mobile = vero && !i.prec;
+        const { p } = i, tr = p.triage ? " t-" + p.triage.toLowerCase() : i.ignoto ? " t-ignoto" : "", vero = m.info.has(p.ep), mobile = vero && !i.prec;
+        const posto = m.nomeDi ? m.nomeDi(i) : "", inPs = p.arrivo ? attesaTesto(minDa(p.arrivo, ora)) : "";
+        const eta = Number.isInteger(p.eta) ? p.eta : null;
         return `
-        <div class="pzrow${i.qui ? " qui" : ""}${i.prec ? " prec" : ""}"${mobile ? ` data-riga="${esc(p.ep)}"` : ""} data-cerca="${esc(normNome(i.lungo))}">
+        <div class="pzrow${i.qui ? " qui" : ""}${i.prec ? " prec" : ""}${i.posto ? " haposto" : ""}"${mobile ? ` data-riga="${esc(p.ep)}"` : ""} data-pz="${esc(p.ep)}" data-cerca="${esc(normNome(i.lungo))}">
           <i class="pztr${tr}" aria-hidden="true"></i>
           <div class="pzchi">
-            <button type="button" class="pzapri" data-go="esiti" data-ep="${esc(p.ep)}"${mobile ? ' aria-haspopup="menu"' : ""} title="${esc(this.pazTitolo(m, i, mobile))}">
-              <span class="pznm">${i.omonimo ? `<b class="stom" aria-label="attenzione, stesso cognome di un altro paziente">⚠</b>` : ""}${esc(i.lungo)}${i.coda ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</span>${p.triage ? `<span class="stsr">, triage ${esc(p.triage)}</span>` : ""}
+            <button type="button" class="pzapri" data-go="esiti" data-ep="${esc(p.ep)}"${mobile ? ' aria-haspopup="menu"' : ""} aria-label="${esc(this.pazTitolo(m, i, mobile).replace(/\n/g, " · "))}">
+              <span class="pznm">${i.omonimo ? `<b class="stom" aria-label="attenzione, stesso cognome di un altro paziente">⚠</b>` : ""}${esc(i.lungo)}${i.coda ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}${
+                eta != null ? ` <span class="pzeta">${eta}</span>` : ""}</span>${p.triage ? `<span class="stsr">, triage ${esc(p.triage)}</span>` : ""}
             </button>
-            ${i.prec ? "" : this.statoPaz(p.ep)}
-            ${i.prec ? "" : this.dfSlot(p.ep, m.df, "lista") + this.dfPostSlot(p.ep, m.df)}
+            ${posto ? `<span class="pzposto">${esc(posto)}</span>` : ""}
+            ${inPs ? `<span class="pzinps" title="In pronto soccorso dalle ${esc(hhmm(p.arrivo))}">${inPs}</span>` : ""}
+            ${i.prec ? `<span class="sttag">episodio precedente</span>` : this.cuoreHtml(p.ep) + marchiEsami(statoEsami(statoDi(p.ep), ora), ora) + this.dfSlot(p.ep, m.df, "lista")}
           </div>
-          ${this.pazStato(i)}
           ${mobile ? `<button type="button" class="pzmetti" data-posto="${esc(p.ep)}" aria-haspopup="menu" title="Mettilo nella stanza: scegli il letto, la sedia o l'area" aria-label="Metti ${esc(i.lungo)} nella stanza">${ico('<path d="m4.5 6.5 3.5 3.5 3.5-3.5"/>')}</button>` : ""}
           ${vero ? `<button type="button" class="pzx" data-parch="${esc(p.ep)}" title="Togli dall'elenco: va negli archiviati (si può annullare). Nel gestionale non cambia niente." aria-label="Togli ${esc(i.lungo)} dall'elenco">✕</button>` : ""}
         </div>`;
@@ -7756,7 +8378,7 @@
           <button type="button" class="pzfx" id="pzcercax" title="Togli il filtro (Esc)" aria-label="Togli il filtro">✕</button>
         </div>`;
       const righe = this.listaPerArea(lista, riga);
-      if (righe) return `${filtro}<div class="pzcoda" data-drop="tray" role="group" aria-label="In lista, senza un posto: ${lista.length}"><div class="pzvuoto pzfnone" hidden></div>${righe}</div>`;
+      if (righe) return `${filtro}<div class="pzcoda" data-drop="tray" role="group" aria-label="Pazienti: ${lista.length}"><div class="pzvuoto pzfnone" hidden></div>${righe}</div>`;
       return filtro + (m.pazienti.length ? "" : `<div class="pzvuoto">Nessun paziente.</div>`);
     }
     // La lista per area — Alta intensità · OBI · Bassa · Codici minori, poi le
@@ -7768,7 +8390,9 @@
     listaPerArea(lista, riga) {
       const a = areeLeggi(), k = (i) => a.membri[i.p.ep]?.k || "";
       if (!Object.keys(a.viste).length && !lista.some(k)) return lista.map(riga).join("");
-      const chiavi = [...new Set([...Object.keys(a.viste), ...lista.map(k).filter(Boolean)])]
+      // (le aree vuote solo se sono della vista: il loro titolo apre la loro lista)
+      const v = this.vistaTab(), dellaVista = (c) => v === "entrambe" || (c === "obi" ? true : tabelloniDi(c, "").length === 1 && tabelloniDi(c, "")[0] === v);
+      const chiavi = [...new Set([...Object.keys(a.viste).filter(dellaVista), ...lista.map(k).filter(Boolean)])]
         .sort((x, y) => ordineArea(x) - ordineArea(y) || x.localeCompare(y));
       const gruppi = new Map([["", []], ...chiavi.map((c) => [c, []])]);
       for (const i of lista) gruppi.get(k(i)).push(i);
@@ -7808,7 +8432,7 @@
       if (inLetto) {
         const nome = esc(i.breve).replace(/&#39;/g, "&#39;<wbr>");   // DELL'ACQUA va a capo dopo l'apostrofo
         const segni = i.prec ? "" : `<span class="stsegni">${this.cuoreHtml(p.ep, undefined, true)}<span class="stsegslot" data-dfseg="${esc(p.ep)}">${this.segnaleHtml(p.ep, m.df)}</span></span>`;
-        return `<div class="${cls}" data-stp="${esc(p.ep)}" data-cerca="${esc(normNome(i.lungo))}" role="button" tabindex="${edit ? -1 : 0}"${i.prec ? "" : ' aria-haspopup="menu"'} title="${esc(this.pazTitolo(m, i, true))}" aria-label="${etichetta}">
+        return `<div class="${cls}" data-stp="${esc(p.ep)}" data-cerca="${esc(normNome(i.lungo))}" role="button" tabindex="${edit ? -1 : 0}"${i.prec ? "" : ' aria-haspopup="menu"'} aria-label="${etichetta}">
         <span class="stp1">${i.omonimo ? `<b class="stom" aria-hidden="true">⚠</b>` : ""}<b class="stpn">${nome}${i.coda ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</b>${
           Number.isInteger(p.eta) ? ` <span class="steta">${p.eta}</span>` : ""}</span>${segni}</div>`;
       }
@@ -7818,7 +8442,7 @@
       const stato = i.prec ? `<span class="sttag">episodio precedente</span>` : i.qui ? `<span class="stqui">questa pagina</span>` : "";
       const cuore = i.prec ? "" : this.cuoreHtml(p.ep), es = i.prec ? "" : statoHtml(statoEsami(statoDi(p.ep)), { breve: true });
       const sotto = `${cuore}${stato}${es}${post}`;
-      return `<div class="${cls}" data-stp="${esc(p.ep)}" data-cerca="${esc(normNome(i.lungo))}" role="button" tabindex="${edit ? -1 : 0}"${i.prec ? "" : ' aria-haspopup="menu"'} title="${esc(this.pazTitolo(m, i, true))}" aria-label="${etichetta}">
+      return `<div class="${cls}" data-stp="${esc(p.ep)}" data-cerca="${esc(normNome(i.lungo))}" role="button" tabindex="${edit ? -1 : 0}"${i.prec ? "" : ' aria-haspopup="menu"'} aria-label="${etichetta}">
         <span class="stp1">${i.omonimo ? `<b class="stom" aria-hidden="true">⚠</b>` : ""}<b class="stpn">${esc(i.breve)}${i.coda ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</b>${i.prec ? "" : this.dfSlot(p.ep, m.df, "area")}</span>${
         sotto ? `<span class="stp2">${sotto}</span>` : ""}</div>`;
     }
@@ -7868,7 +8492,7 @@
         const cls = ["stbed", l.forma, i && "occ", i?.qui && "qui", i?.p.triage && "tri t-" + i.p.triage.toLowerCase(),
           edit && this._stanzaSel === "letto:" + l.id && "sel"].filter(Boolean).join(" ");
         return `<div class="${cls}" data-letto="${esc(l.id)}" data-drop="letto:${esc(l.id)}"${i ? ` data-occ="${esc(i.breve + i.coda)}" data-occep="${esc(i.p.ep)}" data-cerca="${esc(normNome(i.lungo))}"` : ""} role="group"
-          aria-label="${esc(l.nome)}: ${i ? esc(i.lungo + i.coda) : "vuoto"}"${edit ? "" : ` title="${esc(l.nome)}${i ? "" : " — trascina qui un paziente"}"`}
+          aria-label="${esc(l.nome)}: ${i ? esc(i.lungo + i.coda) : "vuoto"}"${edit || i ? "" : ` title="${esc(l.nome)} — trascina qui un paziente"`}
           style="${celle(l.c, l.r, w, h)}">
           <div class="stbedin">${i ? `<div class="stbedhd">${this.stanzaNome("letto", l)}</div>${this.stanzaChip(m, i, true)}`
             : this.stanzaNome("letto", l) + this.stanzaGlifo(sedia ? 24 : l.forma === "barella" ? 14 : 28, "stglifo", sedia, l.forma === "barella")}</div>
@@ -7887,7 +8511,7 @@
       };
       // chi non ha un posto sta nella lista, sopra (viewLista)
       return `
-        <div class="stmap${edit ? " edit" : ""}" role="region" aria-label="Mappa della stanza">
+        <div class="stmap${edit ? " edit" : ""}" data-mappa="${esc(this.mappa().k)}" role="region" aria-label="Mappa ${esc(NOME_VISTA[this.mappa().vista] || "")}">
           <div class="stcanvas">
             <div class="stplan" style="--cols:${cols};--rows:${rows}">${sala.letti.map(letto).join("")}${sala.aree.map(area).join("")}</div>
             ${sala.letti.length + sala.aree.length ? "" : edit
@@ -7912,6 +8536,9 @@
       // fuoco resta dove si continua.
       const modifica = (si) => () => {
         if (!si) this.stanzaSalvaBozza();
+        // si ritocca una mappa sola: quella della vista (con tutt'e due, quella dell'area)
+        if (si) { const v = this.vistaTab(); this._mappaEdit = v === "entrambe" ? mappaDiArea(store.get(AREA_ORA, null)?.k) : MAPPA_DI_VISTA[v]; }
+        this.cartaChiudi();
         this.stanzaEdit = si; this._stanzaRinomina = null; this._stanzaSel = null; this.menuAperto = false;
         if (si) this._filtro = null;
         this._stanzaFocus = si ? "#stpiuletto" : "#menubtn";
@@ -7950,15 +8577,32 @@
       }
       $("#pzcercax")?.addEventListener("click", () => this.filtroChiudi());
       this.filtroApplica();
+      // Alta | Bassa | Entrambe, e ⟳: la lista smart adesso
+      this.root.querySelectorAll("[data-vista]").forEach((b) => b.addEventListener("click", () => this.sceglieVista(b.getAttribute("data-vista"))));
+      // (il ⟳ gira finché la lettura è in corso: al massimo 45 secondi)
+      const giro = store.get(SMART_SYNC, null);
+      if ($("#tbsync.gira") && giro?.ts) setTimeout(() => this.root.querySelector("#tbsync")?.classList.remove("gira"), Math.max(0, giro.ts + 45e3 - Date.now()));
+      $("#tbsync")?.addEventListener("click", async (e) => {
+        const b = e.currentTarget;
+        b.classList.add("gira");
+        const r = await smartSync(true);
+        if (r && r.ok) return;
+        b.classList.remove("gira");
+        const perche = { "nessun link": "La lista smart non si è ancora vista: aprila una volta dalla lista dell'area", "in corso": "La lista smart si sta già rileggendo" }[r?.why];
+        this.message = perche || `Lista smart non riletta${r?.why ? `: ${r.why}` : ""}`;
+        this.render();
+      });
       const box = $(".pzunita"), map = $(".stmap");
       if (box && map) {
         box.addEventListener("pointerdown", (e) => this.stanzaPresa(e, box));
+        // la scheda del paziente: passando sul nome (nella riga) o sul letto
+        this.cartaLega(box);
         // una riga portata via (o tenuta premuta col dito) non è anche un tocco che apre
         box.addEventListener("click", (e) => { if (this._rigaMossa && e.detail) { this._rigaMossa = false; e.preventDefault(); e.stopPropagation(); } }, true);
-        map.addEventListener("click", (e) => {
+        box.querySelectorAll(".stmap").forEach((mp) => mp.addEventListener("click", (e) => {
           const del = e.target.closest("[data-stdel]");
           if (del) { const [tipo, id] = del.getAttribute("data-stdel").split(":"); this.stanzaElimina(tipo, id); }
-        });
+        }));
         // da tastiera: Invio apre il paziente (o rinomina, in Modifica); Maiusc+F10 o il tasto menu: Sposta in…
         box.addEventListener("keydown", (e) => {
           const riga = e.target.closest?.(".pzapri")?.closest(".pzrow[data-riga]");
@@ -7982,24 +8626,8 @@
           e.preventDefault();
           if (!chip.classList.contains("prec")) this.stanzaMenu(chip.getAttribute("data-stp"), chip);
         });
-        // stretta, la mappa può non starci in larghezza: dove si scorre solo
-        // di lato, la rotella scorre di lato (finché c'è strada), e il bordo
-        // sfuma dalla parte dove c'è altro
-        const diLato = (el) => el?.addEventListener("wheel", (e) => {
-          if (el.scrollWidth <= el.clientWidth || el.scrollHeight > el.clientHeight || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-          if (e.deltaY > 0 ? el.scrollLeft + el.clientWidth >= el.scrollWidth - 1 : el.scrollLeft <= 0) return;
-          el.scrollLeft += e.deltaY;
-          e.preventDefault();
-        }, { passive: false });
-        const tela = map.querySelector(".stcanvas");
-        diLato(tela);
-        const bordi = () => {
-          tela.classList.toggle("sx", tela.scrollLeft > 1);
-          tela.classList.toggle("dx", tela.scrollLeft + tela.clientWidth < tela.scrollWidth - 1);
-        };
-        // anche subito dopo che render() ha rimesso lo scorrimento di prima
-        if (tela) { bordi(); tela.addEventListener("scroll", bordi, { passive: true }); this._bordiStanza = bordi; }
-        const inp = map.querySelector(".stnomein");
+        // (le mappe stanno sempre nel loro spazio, in scala: niente da scorrere di lato)
+        const inp = box.querySelector(".stmap .stnomein");
         if (inp) {
           inp.focus();
           if (this._stanzaRinomina?.seleziona) { inp.select(); this._stanzaRinomina.seleziona = false; }
@@ -8179,9 +8807,9 @@
         el.classList.add("over");
         const altro = el.getAttribute("data-occep");
         if (!altro || altro === ep) return;
-        el.insertAdjacentHTML("beforeend", `<span class="stfuori">${esc(el.getAttribute("data-occ") || "")} → in lista</span>`);
+        el.insertAdjacentHTML("beforeend", `<span class="stfuori">${esc(el.getAttribute("data-occ") || "")} → senza posto</span>`);
         // tutta dentro la mappa: se sporge da un lato, si sposta verso l'altro
-        const lab = el.lastElementChild, cv = box.querySelector(".stcanvas").getBoundingClientRect(), lr = lab.getBoundingClientRect();
+        const lab = el.lastElementChild, cv = (el.closest(".stcanvas") || box).getBoundingClientRect(), lr = lab.getBoundingClientRect();
         const dx = Math.max(0, cv.left + 4 - lr.left) - Math.max(0, lr.right - cv.right + 4);
         if (dx) lab.style.marginLeft = dx + "px";
       };
@@ -8214,7 +8842,7 @@
         lascia: (ev) => {
           const t = bersaglio(ev.clientX, ev.clientY);
           pulisci();
-          if (t) this.stanzaSposta(ep, t.getAttribute("data-drop"));
+          if (t) { const k = t.closest(".stmap")?.getAttribute("data-mappa"); this.stanzaSposta(ep, t.getAttribute("data-drop") + (k ? "@" + k : "")); }
         },
         // la riga si apre col suo clic (anche da tastiera); il paziente nella stanza qui
         tocco: daLista ? null : () => this.apriPaziente(ep, "esiti"),
@@ -8228,34 +8856,46 @@
     // Portare un paziente: sullo stesso posto non succede niente; su un letto
     // occupato il nuovo prende il letto e chi c'era torna in lista — niente
     // scambi, che spostano qualcuno dove non l'hai deciso tu. Si annulla.
+    // `dove`: «letto:id», «area:id» o «tray», con «@mappa» quando le mappe sono
+    // due. Un paziente ha un posto solo: messo in una mappa, lascia l'altra.
     stanzaSposta(ep, dove) {
-      const [tipo, id] = String(dove || "").split(":");
-      const m = this.pazModello(), i = m.info.get(ep);
-      if (!i || i.prec || !["tray", "area", "letto"].includes(tipo)) return;
-      const da = i.posto;
-      if (tipo === "tray" ? !da : da && da.tipo === tipo && da.id === id) return;   // è già lì
-      const kp = this.mappa().posti, raw = store.get(kp, {});
-      const posti = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-      const foto = this.stanzaFoto(), nm = (x) => x.breve + x.coda;
-      const nomeDi = (t, k) => (t === "letto" ? m.sala.letti : m.sala.aree).find((o) => o.id === k)?.nome || "";
-      let testo = `${nm(i)} in ${tipo === "tray" ? "lista" : nomeDi(tipo, id)}`;
-      if (tipo === "tray") delete posti[ep];
-      else posti[ep] = { tipo, id, ts: Date.now() };
+      const [luogo, mk] = String(dove || "").split("@");
+      const [tipo, id] = luogo.split(":");
+      const k = MAPPE[mk] ? mk : this.mappa().k;
+      if (!["tray", "area", "letto"].includes(tipo)) return;
+      const T = this.pazTabellone(), j = T.lista.info.get(ep);
+      const m = T.per.get(k) || this.conMappa(k, () => this.pazModello()), i = m.info.get(ep);
+      if (!i || !j || i.prec) return;
+      const da = j.posto, daQui = da && j.mk === k;
+      if (tipo === "tray" ? !da : daQui && da.tipo === tipo && da.id === id) return;   // è già lì
+      const foto = this.stanzaFoto("posti"), nm = (x) => x.breve + x.coda;
+      const nomeDi = (t, x) => (t === "letto" ? m.sala.letti : m.sala.aree).find((o) => o.id === x)?.nome || "";
+      let testo = tipo === "tray" ? `${nm(i)} senza posto` : `${nm(i)} in ${nomeDi(tipo, id)}`;
+      const tutti = {};
+      for (const kk of Object.keys(MAPPE)) {
+        const raw = store.get(MAPPE[kk].posti, {});
+        tutti[kk] = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+        if (kk !== k || tipo === "tray") delete tutti[kk][ep];
+      }
+      const posti = tutti[k];
+      if (tipo !== "tray") posti[ep] = { tipo, id, ts: Date.now() };
       if (tipo === "letto") {
         // chiunque altro reclami quel letto (anche chi ora non è in elenco) lo lascia
-        for (const [k, v] of Object.entries(posti)) if (k !== ep && v?.tipo === "letto" && v.id === id) delete posti[k];
+        for (const [x, v] of Object.entries(posti)) if (x !== ep && v?.tipo === "letto" && v.id === id) delete posti[x];
         const altro = m.perLetto[id];
-        if (altro && altro !== ep) testo += ` · ${nm(m.info.get(altro))} in lista`;
+        if (altro && altro !== ep) testo += ` · ${nm(m.info.get(altro))} senza posto`;
       }
-      if (!store.set(kp, posti)) { this.message = "Il posto NON è stato salvato: la memoria di questo browser è piena o bloccata."; return this.render(); }
+      if (!Object.keys(MAPPE).every((kk) => store.set(MAPPE[kk].posti, tutti[kk]))) { this.message = "Il posto NON è stato salvato: la memoria di questo browser è piena o bloccata."; return this.render(); }
       this.stanzaAnnullabile(testo, foto);
       this.render();
     }
     // la fotografia di prima, per «Annulla» (con l'elenco, anche i promemoria)
     stanzaFoto(conPazienti) {
       const mp = this.mappa();
-      return { mp, sala: store.get(mp.sala, null), posti: store.get(mp.posti, null), tuttiPosti: conPazienti ? TUTTI_I_POSTI().map((k) => [k, store.get(k, null)]) : undefined, pazienti: conPazienti ? store.get("patients.v1", null) : undefined,
-               prom: conPazienti ? store.get(PROM, null) : undefined, stato: conPazienti ? store.get(STATO, null) : undefined };
+      return { mp, sala: store.get(mp.sala, null), posti: store.get(mp.posti, null), tuttiPosti: conPazienti ? TUTTI_I_POSTI().map((k) => [k, store.get(k, null)]) : undefined,
+               // («posti»: solo i posti, in tutte le mappe)
+               pazienti: conPazienti === true ? store.get("patients.v1", null) : undefined,
+               prom: conPazienti === true ? store.get(PROM, null) : undefined, stato: conPazienti === true ? store.get(STATO, null) : undefined };
     }
     stanzaAnnullabile(testo, foto) {
       clearTimeout(this._stanzaAnnT);
@@ -8288,25 +8928,34 @@
       const aperto = this._stanzaMenu;
       if (aperto && aperto.ep === ep && aperto.menu.isConnected) return;
       this.stanzaChiudiMenu();
-      const m = this.pazModello(), i = m.info.get(ep), wrap = this.root.querySelector(".wrap");
+      const T = this.pazTabellone(), i = T.lista.info.get(ep), wrap = this.root.querySelector(".wrap");
       if (!i || i.prec || !wrap || !anchor?.isConnected) return;
-      const qui = i.posto, attuale = (tipo, id) => !!qui && qui.tipo === tipo && qui.id === id;
+      const qui = i.posto, due = T.ks.length > 1;
       const voce = (dove, testo, det, cur) => `<button type="button" role="menuitem" class="stmi${cur ? " cur" : ""}" data-dove="${esc(dove)}"${cur ? ' aria-disabled="true"' : ""}><span>${esc(testo)}</span><small>${esc(cur ? "qui ora" : det)}</small></button>`;
-      const inArea = (a) => Object.values(m.posti).filter((v) => v.tipo === "area" && v.id === a.id).length;
-      const letti = [...m.sala.letti].sort((a, b) => a.nome.localeCompare(b.nome, "it", { numeric: true }));
-      const gruppi = [
-        letti.filter((l) => !m.perLetto[l.id]).map((l) => voce("letto:" + l.id, l.nome, "vuoto")),
-        letti.filter((l) => m.perLetto[l.id]).map((l) => {
-          const o = m.info.get(m.perLetto[l.id]);
-          return voce("letto:" + l.id, l.nome, "al posto di " + o.breve + o.coda, attuale("letto", l.id));
-        }),
-        m.sala.aree.map((a) => voce("area:" + a.id, a.nome, inArea(a) ? `${inArea(a)} ${inArea(a) === 1 ? "paziente" : "pazienti"}` : "", attuale("area", a.id))),
-        qui ? [voce("tray", "Rimetti in lista", "")] : [],
-        [voce("dafare", "Da fare…", dfAperte(ep, m.df).length ? String(dfAperte(ep, m.df).length) : ""), voce("togli", "Togli dall'elenco", "")],
-      ].filter((g) => g.length);
+      const sezioni = [];
+      // una mappa dopo l'altra (con due mappe, ognuna col suo nome)
+      for (const k of T.ks) {
+        const m = T.per.get(k), suf = due ? "@" + k : "";
+        const attuale = (tipo, id) => !!qui && i.mk === k && qui.tipo === tipo && qui.id === id;
+        const inArea = (a) => Object.values(m.posti).filter((v) => v.tipo === "area" && v.id === a.id).length;
+        const letti = [...m.sala.letti].sort((a, b) => a.nome.localeCompare(b.nome, "it", { numeric: true }));
+        const gruppi = [
+          letti.filter((l) => !m.perLetto[l.id]).map((l) => voce("letto:" + l.id + suf, l.nome, "vuoto")),
+          letti.filter((l) => m.perLetto[l.id]).map((l) => {
+            const o = m.info.get(m.perLetto[l.id]);
+            return voce("letto:" + l.id + suf, l.nome, "al posto di " + o.breve + o.coda, attuale("letto", l.id));
+          }),
+          m.sala.aree.map((a) => voce("area:" + a.id + suf, a.nome, inArea(a) ? `${inArea(a)} ${inArea(a) === 1 ? "paziente" : "pazienti"}` : "", attuale("area", a.id))),
+        ].filter((g) => g.length);
+        if (gruppi.length) sezioni.push((due ? `<div class="stmenuhd stmenumap" aria-hidden="true">${esc(NOME_VISTA[MAPPE[k].vista])}</div>` : "")
+          + gruppi.map((g) => g.join("")).join('<div class="stmsep" role="separator"></div>'));
+      }
+      const df = T.lista.df;
+      const coda = [qui ? [voce("tray", "Togli dal posto", "")] : [],
+        [voce("dafare", "Da fare…", dfAperte(ep, df).length ? String(dfAperte(ep, df).length) : ""), voce("togli", "Togli dall'elenco", "")]].filter((g) => g.length);
       const titolo = `Sposta ${i.breve + i.coda} in…`;
       wrap.insertAdjacentHTML("beforeend", `<div class="stmenu" role="menu" aria-label="${esc(titolo)}"><div class="stmenuhd" aria-hidden="true">${esc(titolo)}</div>${
-        gruppi.map((g) => g.join("")).join('<div class="stmsep" role="separator"></div>')}</div>`);
+        [...sezioni, ...coda.map((g) => g.join(""))].join('<div class="stmsep" role="separator"></div>')}</div>`);
       const menu = wrap.lastElementChild;
       // sotto chi l'ha aperto; se non c'è posto sotto, sopra; sempre dentro lo schermo
       const wr = wrap.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
@@ -8324,7 +8973,7 @@
         // «Da fare…»: la lista sotto la sua icona (nella riga, o nel letto), o sotto il paziente
         if (dove === "dafare") return this.dfApri(ep, this.dfAncora(ep) || anchor);
         // il fuoco segue il paziente: nel posto nuovo, o sulla sua riga
-        this._stanzaFocus = dove === "tray" ? `.pzrow[data-riga="${CSS.escape(ep)}"] .pzapri` : `.stmap .stp[data-stp="${CSS.escape(ep)}"]`;
+        this._stanzaFocus = dove === "tray" ? `.pzrow[data-riga="${CSS.escape(ep)}"] .pzapri` : `.stmap[data-mappa="${CSS.escape(dove.split("@")[1] || this.mappa().k)}"] .stp[data-stp="${CSS.escape(ep)}"]`;
         this.stanzaSposta(ep, dove);
       });
       menu.addEventListener("keydown", (e) => {
@@ -9174,12 +9823,15 @@
       const i = this.idPaz();
       return i.breve ? [i.breve, i.es].filter(Boolean).join(" · ") : "";
     }
+    // il posto, in qualunque mappa (se due lo dicono, l'ultimo)
     postoDi(ep) {
-      const raw = store.get(this.mappa().posti, {});
-      const v = raw && typeof raw === "object" ? raw[ep] : null;
-      if (!v) return "";
-      const sala = this.stanzaSala();
-      return ((v.tipo === "letto" ? sala.letti : sala.aree) || []).find((o) => o.id === v.id)?.nome || "";
+      let meglio = null;
+      for (const k of Object.keys(MAPPE)) {
+        const raw = store.get(MAPPE[k].posti, {}), v = raw && typeof raw === "object" ? raw[ep] : null;
+        if (!v || (meglio && (meglio.posto.ts || 0) >= (v.ts || 0))) continue;
+        if (this.nomePostoIn({ posto: v, mk: k })) meglio = { posto: v, mk: k };
+      }
+      return meglio ? this.nomePostoIn(meglio) : "";
     }
     // Allergie e Attenzione del gestionale, sotto il nome, parola per parola:
     // dalla pagina se ci sono, se no da quella del paziente letta poco fa. Mai
@@ -11225,6 +11877,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.render();
       });
       $("#stautow")?.addEventListener("click", (e) => { if (e.target.closest("#stauto")) this.apriStampanti(); });
+      // «Segue il gestionale» (⋯): acceso di norma; spento, la smart si rilegge solo col ⟳
+      $("#seguesw")?.addEventListener("click", () => {
+        store.set(SEGUE, !segueAcceso());
+        this.menuAperto = false;
+        this.render();
+      });
       $("#stautosw")?.addEventListener("click", () => {
         const s = { ...this.stampaAuto.s, attiva: this.stampaAuto.s.attiva === false };
         this.stampaAuto = { ...this.stampaAuto, s };
@@ -13203,6 +13861,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       let fatto = false;
       const via = (r) => { if (fatto) return; fatto = true; bootGestionale(r && r.ok ? r : null); };
       ascoltaPdf();
+      // la lista smart aperta dietro per «segue il gestionale»: si legge e basta
+      if (eSmart(document, location.href)) {
+        ask({ t: "smartChi" }).then((r) => {
+          if (r && r.ok) { fatto = true; smartSottoQui().catch(() => ask({ t: "smartFine", esito: "errore" })); }
+          else ask({ t: "ordineChi" }).then(via);
+        });
+        setTimeout(() => via(null), 3000);
+        return;
+      }
       ask({ t: "ordineChi" }).then(via);
       setTimeout(() => via(null), 3000);
       return;
@@ -13258,6 +13925,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // (La scheda di un ordine in sottofondo non legge niente di tutto questo.)
     migraStanza();
     if (!LAVORO && !PONTE_VALORI) {
+      smartUrlQui(document, location.href);   // il link della lista smart, quando la pagina lo porta
       leggiAreaPagina(document, location.href);
       if (areaVaiQui(document, location.href)) return;
       smartQui(document, location.href);
@@ -13280,6 +13948,20 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       panel.dimenticaTutto();
       panel.render();
     });
+    // Il tabellone segue il gestionale: quello che ha letto la scheda dietro
+    // (o un'altra scheda) si vede qui, e chi è uscito porta il suo «Annulla».
+    // Ogni 30 secondi si guarda se sono passati 10 minuti dall'ultima lettura.
+    window.addEventListener("storage", (ev) => {
+      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI].includes(ev.key)) return;
+      if (ev.key === NS + DIMESSI) panel.mostraDimessi();
+      panel.aggiornaDaFuori();
+    });
+    panel.mostraDimessi(true);
+    if (hasExt() && !LAVORO && !PONTE_VALORI && !eSmart(document, location.href)) {
+      const tic = () => smartSync(false).then((r) => { if (r && r.ok) panel.aggiornaDaFuori(); }).catch(() => {});
+      setTimeout(tic, 1500);
+      setInterval(tic, 30e3);
+    }
     if (chi) { panel.ordiniOk = true; ascoltaOrdini(panel); }
     if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); }
     if (pageType === "patient") {
