@@ -25,6 +25,10 @@
   const VERDE_MAX = 2 * 60e3;        // un ordine finito bene se ne va da solo, come sulla striscia del PC
   const BATTITO = 20e3, PONG = 10e3; // la presa parla ogni 20 secondi; senza «pong» in 10 è morta
   const ATTESA_VALORI = 200e3;       // «Aggiorna i valori»: il PC, al peggio, ci mette 10 + 150 + 30 secondi
+  const ATTESA_CARTELLA = 110e3;     // salvare la cartella: il PC, al peggio, 10 + 3 + 60 secondi (e la rete)
+  // la cartella del paziente, coi nomi del modulo del gestionale
+  const CARTELLA = [["ANAMNESI", "Anamnesi"], ["MALATTIE_PREGRESSE", "Anamnesi remota"], ["FARMACI_ASSUNTI", "Farmaci"], ["ALLERGIE", "Allergie"], ["ESAME_OBIETTIVO", "Esame obiettivo"]];
+  const uguale = (a, b) => String(a ?? "").replace(/\s+/g, " ").trim() === String(b ?? "").replace(/\s+/g, " ").trim();
   const TRIAGE = { ROSSO: "rosso", ARANCIONE: "arancione", AZZURRO: "azzurro", VERDE: "verde", BIANCO: "bianco" };
   // Le chiusure decise qui; quelle del PC portano la loro frase.
   const PERCHE = { inattivo: "20 minuti senza comandi", "chiusa dall'iPhone": "Chiusa da questo telefono", riavvio: "L'estensione sul PC si è riavviata" };
@@ -57,6 +61,9 @@
     vista: { nome: "lista", ep: "" }, scheda: "esiti", sel: new Map(), bloccati: new Map(), aperti: new Set(),
     occupato: new Set(), bozze: new Map(), notaAperta: "", promAperto: "", promTesto: "", fatti: new Map(), menu: false, arma: null, avviso: null,
     inviati: new Map(),  // ep → oid dell'ordine che sta andando al PC (il bottone aspetta)
+    cartelle: new Map(), // ep → la cartella letta sul PC: { ep, letto, campi: [{ nome, v, ro }] }
+    cbozze: new Map(),   // ep → Map(nome → { base, testo }): quello che il medico ha scritto, e su che cosa
+    cstato: new Map(),   // ep → { testo, ricarica }: com'è andato «Salva», se è andato male
     cambio: null,        // «Cancella e riassocia», sulla schermata «associato a un altro telefono»
     camera: "",          // «Scansiona il QR»: perché la fotocamera non c'è
     stampa: null,        // «Stampa un PDF»: { tono, titolo, testo, fine, ts }
@@ -64,7 +71,7 @@
   function svuota() {
     S.pazienti = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.bozze.clear(); S.promTesto = ""; S.arma = null;
-    S.notaAperta = ""; S.promAperto = ""; S.stampa = null;
+    S.notaAperta = ""; S.promAperto = ""; S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear();
     chiudiPdf();
     for (const t of S.fatti.values()) clearTimeout(t);
     S.fatti.clear();
@@ -220,7 +227,8 @@
       S.attese.delete(d.re);
       clearTimeout(a.t);
       if (d.ok) a.si(d.dati);
-      else a.no(Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso }));
+      else a.no(Object.assign(new Error(d.errore || "Non riuscito sul PC"), { dati: d.dati, incerto: !!d.incerto, dimesso: !!d.dimesso,
+        ricarica: Array.isArray(d.cambiati) || Array.isArray(d.chiusi) ? [...(d.cambiati || []), ...(d.chiusi || [])] : null }));
       return;
     }
     if (d.evento === "fine") return chiusa(d.perche, d.testo);
@@ -368,6 +376,46 @@
     window.scrollTo(0, 0);
     render();
     caricaEsiti(ep);
+    if (S.scheda === "cartella") caricaCartella(ep);
+  }
+  // La cartella: l'ultima lettura del PC (o, con «↻ Rileggi», la pagina riletta)
+  async function caricaCartella(ep, auto = false, rileggi = false) {
+    if (S.occupato.has("cartella" + ep)) return;
+    S.occupato.add("cartella" + ep); render();
+    try { cartellaDalPc(ep, await chiedi("cartella", rileggi ? { ep, rileggi: true } : { ep }, 40e3, auto)); } catch (e) { if (!auto) errore(e); }
+    S.occupato.delete("cartella" + ep); render();
+  }
+  // una lettura nuova: le bozze restano (con la loro base), tranne quelle che il PC ha già così
+  function cartellaDalPc(ep, c) {
+    if (!c || !Array.isArray(c.campi)) return;
+    S.cartelle.set(ep, c);
+    const b = S.cbozze.get(ep);
+    if (b) for (const [n, x] of b) { const v = c.campi.find((y) => y.nome === n); if (v && uguale(v.v, x.testo)) b.delete(n); }
+  }
+  const cambiatiDi = (ep) => [...(S.cbozze.get(ep) || new Map())].filter(([, x]) => x.testo !== x.base);
+  // «Salva»: tutti i campi cambiati insieme, ognuno con il testo da cui il medico è partito (`prima`)
+  async function salvaCartella(ep) {
+    const l = cambiatiDi(ep);
+    if (!l.length || S.occupato.has("csalva" + ep)) return;
+    S.cstato.delete(ep);
+    S.occupato.add("csalva" + ep); render();
+    try {
+      cartellaDalPc(ep, await chiedi("cartellaSalva", { ep, campi: Object.fromEntries(l.map(([n, x]) => [n, { prima: x.base, dopo: x.testo }])) }, ATTESA_CARTELLA));
+      for (const [n] of l) S.cbozze.get(ep)?.delete(n);
+      avviso("Salvato");
+    } catch (e) {
+      if (e.dati) cartellaDalPc(ep, e.dati);
+      S.cstato.set(ep, { testo: e.message, ricarica: e.ricarica });
+      if (e.dimesso) aggiornaLista(true);
+    }
+    S.occupato.delete("csalva" + ep); render();
+  }
+  // «Ricarica» (cambiato sul PC): via le bozze di quei campi, e il testo del PC
+  function ricaricaCartella(ep) {
+    const st = S.cstato.get(ep);
+    for (const n of (st && st.ricarica) || []) S.cbozze.get(ep)?.delete(n);
+    S.cstato.delete(ep);
+    caricaCartella(ep, false, true);
   }
   async function caricaEsiti(ep, auto = false) {
     if (S.occupato.has("esiti" + ep)) return;
@@ -380,6 +428,7 @@
   function rileggi() {
     aggiornaLista(true);
     if (S.vista.nome === "paziente") caricaEsiti(S.vista.ep, true);
+    if (S.vista.nome === "paziente" && S.scheda === "cartella" && !S.occupato.has("csalva" + S.vista.ep)) caricaCartella(S.vista.ep, true);
   }
   async function aggiornaValori(ep) {
     S.occupato.add("valori" + ep); render();
@@ -843,6 +892,7 @@
       <div class="carta">${gruppi}</div>`;
   }
   function ctaHtml(p) {
+    if (S.scheda === "cartella") return ctaCartella(p);
     if (S.scheda !== "richieste" || !S.catalogo || !p.ordina || p.prec) return "";
     const s = selDi(p.ep), n = s.esami.size, c = S.catalogo;
     const rx = [...s.esami].some((k) => c.rx.includes(k)), lab = [...s.esami].some((k) => !c.rx.includes(k));
@@ -878,15 +928,41 @@
     if (!p) return `<main><div class="vuoto">Questo paziente non è più nell'elenco del PC.</div></main>`;
     const ordini = ordiniDi(p.ep).map((o) => ordineHtml(o)).join("");
     const tab = (s, t) => `<button class="${S.scheda === s ? "on" : ""}" data-a="scheda" data-s="${s}" role="tab" aria-selected="${S.scheda === s}">${t}</button>`;
-    return `<main>${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("esiti", "Esiti")}${tab("richieste", "Richieste")}</div>
-      ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : vistaRichieste(p)}</main>${ctaHtml(p)}`;
+    return `<main>${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("esiti", "Esiti")}${tab("richieste", "Richieste")}${tab("cartella", "Cartella")}</div>
+      ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : vistaRichieste(p)}</main>${ctaHtml(p)}`;
+  }
+  // La cartella: i campi della pagina del paziente sul PC, ognuno com'è là.
+  // Si scrive dove il gestionale lascia scrivere; il resto si legge e basta.
+  function vistaCartella(p) {
+    const c = S.cartelle.get(p.ep);
+    const legge = S.occupato.has("cartella" + p.ep), salva = S.occupato.has("csalva" + p.ep);
+    if (!c) return legge ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto">Cartella non letta.</div>`;
+    const b = S.cbozze.get(p.ep) || new Map();
+    const letto = c.letto ? `<small class="letti${Date.now() - c.letto > 60 * 60e3 ? " amb" : ""}">Letto sul PC alle ${hhmm(c.letto)} · ${fa(c.letto)}</small>` : "";
+    const campi = CARTELLA.map(([nome, etichetta]) => {
+      const x = c.campi.find((y) => y.nome === nome);
+      if (!x) return "";
+      const chiuso = x.ro || p.prec;
+      return `<label class="cc${chiuso ? " ro" : ""}"><span>${esc(etichetta)}</span><textarea id="cc-${nome}" rows="1" ${chiuso || salva ? "readonly" : ""} ${chiuso ? 'placeholder="—" tabindex="-1"' : ""} aria-label="${esc(etichetta)}">${
+        esc(b.has(nome) ? b.get(nome).testo : x.v)}</textarea></label>`;
+    }).join("");
+    return `<div class="carta cartella"><div class="sezt"><div class="tv">${letto}</div>
+      <button class="agg" data-a="crileggi" ${legge || salva ? "disabled" : ""}>${legge ? "Leggo sul PC…" : "↻ Rileggi"}</button></div>${campi}</div>`;
+  }
+  // il «Salva» della cartella, in fondo: c'è solo quando c'è qualcosa da salvare (o da dire)
+  function ctaCartella(p) {
+    const st = S.cstato.get(p.ep), salva = S.occupato.has("csalva" + p.ep), n = cambiatiDi(p.ep).length;
+    const perche = st ? `<div class="perche err" role="alert">${esc(st.testo)}</div>` : "";
+    if (st && st.ricarica) return `<div class="cta"><button data-a="cricarica">Ricarica</button>${perche}</div>`;
+    if (!n && !salva) return st ? `<div class="cta">${perche}</div>` : "";
+    return `<div class="cta"><button data-a="csalva" ${salva ? "disabled" : ""}>${salva ? "Salvo sul PC…" : "Salva"}</button>${perche}</div>`;
   }
 
   // Un ridisegno sotto il dito ruberebbe il tocco (il bottone sparisce fra
   // pressione e rilascio): mentre si preme, aspetta.
   let premuto = 0, rinviato = false, disegno = false;
   // le azioni che senza il PC non vanno
-  const SERVE_PC = new Set(["valori", "pdf", "ordina", "aggiornaLista", "stampaPdf", "prom", "fatto", "nota", "promApri"]);
+  const SERVE_PC = new Set(["valori", "pdf", "ordina", "aggiornaLista", "stampaPdf", "prom", "fatto", "nota", "promApri", "csalva", "cricarica", "crileggi"]);
   function render() {
     if (premuto) { rinviato = true; return; }
     // il cursore resta dov'era: un ridisegno non deve rubare il campo a chi scrive
@@ -896,6 +972,7 @@
     disegno = true;   // (un campo tolto dal ridisegno non è un campo lasciato)
     try { $app.innerHTML = testata() + corpo + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}" role="alert">${esc(S.avviso.testo)}</div>` : ""); }
     finally { disegno = false; }
+    for (const t of $app.querySelectorAll(".cc textarea")) alza(t);
     // PC assente: in grigio quello che va chiesto al PC, e i pazienti che il telefono non ha in memoria
     if (S.fase === "pronta" && S.pari === false) {
       for (const el of $app.querySelectorAll("button[data-a]")) {
@@ -916,11 +993,16 @@
   function ritoccaCta() {
     const p = paziente(S.vista.ep);
     const vecchio = document.querySelector(".cta");
-    if (!p || !vecchio) return;
+    if (!p || (!vecchio && S.scheda !== "cartella")) return;
     const t = document.createElement("div");
     t.innerHTML = ctaHtml(p);
-    if (t.firstElementChild) vecchio.replaceWith(t.firstElementChild);
+    const nuovo = t.firstElementChild;
+    if (vecchio && nuovo) vecchio.replaceWith(nuovo);
+    else if (vecchio) vecchio.remove();     // (la cartella: niente più da salvare)
+    else if (nuovo) $app.appendChild(nuovo);
   }
+  // i campi della cartella crescono col testo
+  const alza = (t) => { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; };
   const fuocoSu = (id) => { const el = document.getElementById(id); if (el) el.focus(); };
 
   // --------------------------------------------------------------- i gesti
@@ -951,7 +1033,10 @@
       if (S.canale) chiedi("esci").catch(() => {});
       dimentica("senza");
     }
-    else if (a === "scheda") { S.scheda = b.dataset.s; S.arma = null; render(); }
+    else if (a === "scheda") { S.scheda = b.dataset.s; S.arma = null; render(); if (S.scheda === "cartella") caricaCartella(ep, !!S.cartelle.get(ep)); }
+    else if (a === "csalva") salvaCartella(ep);
+    else if (a === "cricarica") ricaricaCartella(ep);
+    else if (a === "crileggi") caricaCartella(ep, false, true);
     else if (a === "valori") aggiornaValori(ep);
     else if (a === "referto") { if (S.aperti.has(b.dataset.id)) S.aperti.delete(b.dataset.id); else S.aperti.add(b.dataset.id); render(); }
     else if (a === "pdf") apriPdf(ep, b.dataset.id, Number(b.dataset.n));
@@ -982,6 +1067,17 @@
     } else if (t.id === "nota") {
       S.bozze.set(ep, t.value);
       t.style.height = "auto"; t.style.height = t.scrollHeight + "px";
+    } else if (t.id.startsWith("cc-") && !t.readOnly) {
+      // una bozza ricorda da che testo è partita: è quello che il PC deve avere ancora, per salvarla
+      const nome = t.id.slice(3), c = S.cartelle.get(ep), x = c && c.campi.find((y) => y.nome === nome);
+      if (!x || x.ro) return;
+      let b = S.cbozze.get(ep);
+      if (!b) S.cbozze.set(ep, b = new Map());
+      b.set(nome, { base: b.has(nome) ? b.get(nome).base : x.v, testo: t.value });
+      const st = S.cstato.get(ep);
+      if (st && !st.ricarica) S.cstato.delete(ep);
+      alza(t);
+      ritoccaCta();
     } else if (t.id === "promin") S.promTesto = t.value;
     else if (t.id === "cambio" && S.cambio) S.cambio.testo = t.value;
   });

@@ -73,6 +73,27 @@ let login = false;   // il gestionale risponde con la pagina d'accesso (sessione
 // (non i 66 del suo codice fiscale: conta la testata); quella di BIANCHI non la dice
 const riquadro = (nome, triage, ep, cf, nascita) => `<table><tr><td title="${triage}"><font style="font-size: 120%; font-weight: bolder; ">${ep}</font><br><font style="font-size: 150%; font-weight: bolder; ">${nome}</font><br>${
   nascita ? `<font style="font-size: 120%; font-weight: bolder; ">${nascita}</font><br>` : ""}<font style="font-size: 120%; font-weight: bolder; ">${cf}</font></td></tr></table>`;
+// La cartella di ROSSI: il modulo AmbulatorioPSO com'è nella pagina vera (i
+// cinque campi, l'esame obiettivo di sola lettura se l'ha scritto un altro
+// medico, «Conferma»), e il gestionale che lo riceve. Accesa solo nella sua sezione.
+const CART = { on: false, lento: 0, eoRo: true, ignora: "", post: [], campi: {} };
+const CART_NOMI = ["ANAMNESI", "ALLERGIE", "MALATTIE_PREGRESSE", "FARMACI_ASSUNTI", "ESAME_OBIETTIVO"];
+const escH = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const formCartella = (ep) => `<form method="post" name="AmbulatorioPSO" action="menuPsoEpisodio.do?ccsForm=AmbulatorioPSO:Edit&amp;MVPG=PsoEpisodioClinicoAmbulatorio&amp;EPISODIO_ID=${ep}">
+  <table class="AFCFormTABLE"><tr><td class="AFCFieldCaptionTD">Anamnesi</td><td><textarea style="WIDTH: 90%" id="ANAMNESI" class="AFCTextarea" rows="3" name="ANAMNESI">${escH(CART.campi.ANAMNESI)}</textarea></td>
+  <td class="AFCFieldCaptionTD">Allergie<br>Nega/Non riferisce <input id="ALLERGIE_NEGA" class="AFCInput" value="val" type="checkbox" name="ALLERGIE_NEGA"></td>
+  <td><textarea id="ALLERGIE" class="AFCTextarea" rows="3" name="ALLERGIE">${escH(CART.campi.ALLERGIE)}</textarea></td></tr>
+  <tr><td class="AFCFieldCaptionTD">Anamnesi Remota</td><td><textarea id="MALATTIE_PREGRESSE" class="AFCTextarea" rows="4" name="MALATTIE_PREGRESSE">${escH(CART.campi.MALATTIE_PREGRESSE)}</textarea></td>
+  <td class="AFCFieldCaptionTD">Farmaci Assunti</td><td><textarea id="FARMACI_ASSUNTI" class="AFCTextarea" rows="4" name="FARMACI_ASSUNTI">${escH(CART.campi.FARMACI_ASSUNTI)}</textarea></td></tr>
+  <tr><td class="AFCFieldCaptionTD">Esame obiettivo</td><td colspan="3"><textarea style="WIDTH: 95%" id="ESAME_OBIETTIVO" class="${CART.eoRo ? "JPSOReadonly" : "AFCTextarea"}" rows="6" name="ESAME_OBIETTIVO"${CART.eoRo ? ' readonly=""' : ""}>${escH(CART.campi.ESAME_OBIETTIVO)}</textarea></td></tr>
+  <tr><td><input id="ESAMEOBIETTIVOAUTOSAVE" value="N" type="hidden" name="ESAMEOBIETTIVOAUTOSAVE"><input style="WIDTH: 90%" class="AFCInput" value="" maxlength="100" name="PERSONA_RIFERIMENTO"></td>
+  <td colspan="3" align="right"><input class="AFCButton" value="Annulla OBI" type="submit" name="AnnullaOBI" style="display: none;"> <input class="AFCButton" value="Conferma" type="submit" name="Update"></td></tr></table></form>`;
+// (il corpo del modulo, in windows-1252 come lo manda il browser)
+const decodificaModulo = (buf) => Object.fromEntries(Buffer.from(buf || []).toString("latin1").split("&").filter(Boolean).map((kv) => {
+  const d = (s) => s.replace(/\+/g, " ").replace(/%([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  const i = kv.indexOf("=");
+  return i < 0 ? [d(kv), ""] : [d(kv.slice(0, i)), d(kv.slice(i + 1))];
+}));
 const LOGIN = `<html><head><title>Accesso</title></head><body><form name="Login" method="post" action="login.do"><input name="username"><input type="password" name="password"><input type="submit" value="Accedi"></form></body></html>`;
 
 // il browser del PC (una funzione: lo si chiude e lo si riapre, con lo stesso profilo)
@@ -101,8 +122,17 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   const u = req.url();
   if (login && /menuPsoEpisodio\.do/.test(u)) { await r.fulfill({ status: 200, headers: { "content-type": "text/html; charset=windows-1252" }, body: LOGIN }); return; }
   if (lento && /Insert=Inserisci/.test(u)) await sospendi(lento);
+  // «Conferma» della cartella di ROSSI: il gestionale salva i campi (non quello che ignora) e risponde con la pagina del paziente
+  let metodo = req.method();
+  if (CART.on && metodo === "POST" && /ccsForm=AmbulatorioPSO(:|%3A)Edit/i.test(u) && quale(u) === A) {
+    if (CART.lento) await sospendi(CART.lento);
+    const f = decodificaModulo(req.postDataBuffer());
+    CART.post.push(f);
+    for (const n of CART_NOMI) if (n in f && n !== CART.ignora) CART.campi[n] = f[n].replace(/\r\n/g, "\n");
+    metodo = "GET";
+  }
   const mock = quale(u);
-  let out = mock.handle({ method: req.method(), url: u, bodyBuffer: req.postDataBuffer() });
+  let out = metodo !== req.method() ? mock.handle({ method: "GET", url: A.patientUrl }) : mock.handle({ method: req.method(), url: u, bodyBuffer: req.postDataBuffer() });
   let h = 0;
   while (out.status === 302 && h++ < 5) out = mock.handle({ method: "GET", url: new URL(out.headers.location, u).href });
   if (/html/.test(out.headers["content-type"] || "") && /MVPG=PsoEpisodioClinicoAmbulatorio|^[^?]*\?EPISODIO_ID/.test(u)) {
@@ -111,7 +141,9 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
     // — si apre nel visore —: a ROSSI si aggiunge una radiografia, il cui testo sì)
     const rx = `<table><tr><td class="AFCDataTD" title="69-140 RX TORACE (A6900)"><a href="#" title="REFERTO" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*TEST00001&REFERTO_SISTEMA=HL7RIS&REFERTO_ID=dddd4444-0000-0000-0000-000000000004','HL7RIS')"><img alt="referto"></a>
       69-140 RX TORACE (A6900)<input type="hidden" name="DATA_ORD" value="2026-08-22 03:10:00.0"><input type="hidden" name="DESCRIZIONE_TITLE" value="69-140 RX TORACE (A6900)"></td></tr></table>`;
-    const html = Buffer.from(out.body).toString("latin1").replace("</body>", (rossi ? rx : "") + "</body>").replace("<body>", "<body>" + riquadro(rossi ? "ROSSI MARIO" : "BIANCHI ANNA", rossi ? "ARANCIONE" : "VERDE", m.state.episodeId, rossi ? CF_A : CF_B, rossi ? "17/05/1949 (77) M" : ""));
+    let html0 = Buffer.from(out.body).toString("latin1");
+    if (rossi && CART.on) html0 = html0.replace(/<form name="AmbulatorioPSO"[\s\S]*?<\/form>/, formCartella(m.state.episodeId));
+    const html = html0.replace("</body>", (rossi ? rx : "") + "</body>").replace("<body>", "<body>" + riquadro(rossi ? "ROSSI MARIO" : "BIANCHI ANNA", rossi ? "ARANCIONE" : "VERDE", m.state.episodeId, rossi ? CF_A : CF_B, rossi ? "17/05/1949 (77) M" : ""));
     out = { ...out, body: Buffer.from(html, "latin1") };
   }
   try { await r.fulfill({ status: out.status, headers: out.headers, body: out.body }); } catch { /* scheda chiusa intanto */ }
@@ -571,6 +603,126 @@ await tocca(tel, '.paz[data-ep="999001"]');
 const es2 = await aspettaTel(tel, /4 h fa/, 20000);
 check(/Letti sul PC alle \d\d:\d\d · 4 h fa/.test(es2) && await tel.locator(".letti.amb").count() === 1, "letti quattro ore fa: «… · 4 h fa», in ambra (dopo un'ora)");
 await tel.evaluate(() => window.scrollTo(0, 0));
+
+// ===========================================================================
+sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagina");
+{
+  CART.on = true;
+  Object.assign(CART.campi, { ANAMNESI: "Dolore toracico KAPPAZETA da due ore", ALLERGIE: "Nessuna BETALLERG nota", MALATTIE_PREGRESSE: "Ipertensione SIGMAREMOTA",
+    FARMACI_ASSUNTI: "Ramipril OMEGAFARM 5 mg", ESAME_OBIETTIVO: "Vigile TAUOBIETT, eupnoico" });
+  const valoreTel = (n) => tel.locator(`#cc-${n}`).inputValue();
+  const roTel = (n) => tel.locator(`#cc-${n}`).evaluate((t) => t.readOnly);
+  const schedeNuove = [];
+  const contaSchede = (p) => schedeNuove.push(p);
+  ctx.on("page", contaSchede);
+  // «Salva» (passato il messaggio di prima), e «Salvato»
+  const salvaTel = async () => { await tel.waitForSelector(".avviso", { state: "detached", timeout: 8000 }).catch(() => {}); await tocca(tel, '[data-a="csalva"]'); };
+  const salvato = () => finche(async () => (await tel.locator(".avviso").innerText().catch(() => "")) === "Salvato", 60000);
+  const errori = () => sw.evaluate(() => chrome.storage.local.get("errori.v1").then((o) => (o["errori.v1"] || []).filter((x) => x.dati && x.dati.comando === "cartellaSalva")));
+  // il medico apre ROSSI sul PC: la sua cartella, letta lì, è quella che il telefono vede
+  await doc.bringToFront();
+  await suPagina(doc, A.patientUrl);
+  await tocca(tel, '[data-a="scheda"][data-s="cartella"]');
+  const c0 = await aspettaTel(tel, /Letto sul PC alle/, 20000);
+  check(await tel.locator(".seg button").evaluateAll((l) => l.map((b) => b.textContent).join("|")) === "Esiti|Richieste|Cartella", "una terza scheda, «Cartella», accanto a Esiti e Richieste");
+  check(["Anamnesi", "Anamnesi remota", "Farmaci", "Allergie", "Esame obiettivo"].every((x) => c0.includes(x)) && (c0.match(/Letto sul PC alle \d\d:\d\d · adesso/g) || []).length === 1,
+    `i cinque campi, e «Letto sul PC alle … · adesso» una volta (${c0.replace(/\s+/g, " ").slice(0, 160)})`);
+  check(await valoreTel("ANAMNESI") === CART.campi.ANAMNESI && await valoreTel("FARMACI_ASSUNTI") === CART.campi.FARMACI_ASSUNTI && await valoreTel("ESAME_OBIETTIVO") === CART.campi.ESAME_OBIETTIVO,
+    "con i testi della pagina del paziente sul PC");
+  check(await roTel("ESAME_OBIETTIVO") && !(await roTel("ANAMNESI")) && !(await roTel("ALLERGIE")) && await tel.locator(".cc.ro").count() === 1,
+    "l'esame obiettivo che la pagina dà di sola lettura (JPSOReadonly) si legge e basta, gli altri si scrivono");
+  check(await tel.locator(".cta").count() === 0, "senza modifiche, niente «Salva»");
+  check(!(await piccoli(tel)).length, `ogni bottone almeno 44 px (${JSON.stringify(await piccoli(tel))})`);
+
+  // un collega cambia l'anamnesi sul suo PC; il telefono ha ancora quella di prima: «Cambiato sul PC», niente inviato
+  await tel.locator("#cc-ANAMNESI").fill("Dolore toracico KAPPAZETA da due ore, irradiato NUOVAZETA");
+  check(await tel.locator('.cta [data-a="csalva"]').innerText() === "Salva" && await tel.locator(".cta").evaluate((e) => getComputedStyle(e).position) === "fixed",
+    "scritto un campo: un «Salva» solo, fermo in fondo");
+  CART.campi.ANAMNESI = "Anamnesi scritta da un collega";
+  await salvaTel();
+  const c1 = await aspettaTel(tel, /Cambiato sul PC: ricarica/, 40000);
+  check(!!c1 && CART.post.length === 0, `la pagina non ha più il testo da cui il telefono è partito: «Cambiato sul PC: ricarica», e niente inviato (inviati: ${CART.post.length})`);
+  check(await finche(async () => schedeNuove.length === 1 && schedeNuove[0].isClosed(), 10000), "la scheda di sottofondo si è aperta e richiusa");
+  await tocca(tel, '[data-a="cricarica"]');
+  check(await finche(async () => await valoreTel("ANAMNESI") === "Anamnesi scritta da un collega", 20000) && await tel.locator(".cta").count() === 0,
+    "«Ricarica»: il testo del PC al posto della bozza, e niente da salvare");
+
+  // due campi insieme: la scheda di sottofondo li scrive, clicca «Conferma», rilegge
+  CART.lento = 1500;
+  await tel.locator("#cc-ANAMNESI").fill("Dolore toracico NUOVAZETA dalle 6\ncon sudorazione");
+  await tel.locator("#cc-FARMACI_ASSUNTI").fill("Ramipril OMEGAFARM 5 mg, ASA 100");
+  await tel.evaluate(() => { document.activeElement && document.activeElement.blur(); window.scrollTo(0, 0); });
+  await shot(tel, "tel-cartella");
+  await salvaTel();
+  check(/Salvo sul PC…/.test(await aspettaTel(tel, /Salvo sul PC…/, 8000)), "mentre salva: «Salvo sul PC…»");
+  check(await salvato(), `poi «Salvato» (${await tel.locator(".cta").innerText().catch(() => "")} · ${(await registroPonte()).split("\n").slice(-2).join(" / ")})`);
+  CART.lento = 0;
+  const f = CART.post[0] || {};
+  check(CART.post.length === 1 && f.Update === "Conferma" && f.ANAMNESI.replace(/\r\n/g, "\n") === "Dolore toracico NUOVAZETA dalle 6\ncon sudorazione" && f.FARMACI_ASSUNTI === "Ramipril OMEGAFARM 5 mg, ASA 100"
+    && f.MALATTIE_PREGRESSE === "Ipertensione SIGMAREMOTA" && f.ESAME_OBIETTIVO === "Vigile TAUOBIETT, eupnoico" && f.ESAMEOBIETTIVOAUTOSAVE === "N" && !("AnnullaOBI" in f),
+    `un invio solo, il modulo della pagina col suo «Conferma» (Update=Conferma), gli altri campi com'erano (${Object.keys(f).join(",")})`);
+  check(await valoreTel("ANAMNESI") === "Dolore toracico NUOVAZETA dalle 6\ncon sudorazione" && await tel.locator(".cta").count() === 0, "sul telefono, il testo riletto dal PC; niente più da salvare");
+  check(await finche(async () => schedeNuove.length === 2 && schedeNuove[1].isClosed(), 10000), "e la scheda di sottofondo si chiude da sola");
+  const pill = await finche(async () => /Aggiornato dal telefono/.test((await $panel(doc, ".pontespia").allInnerTexts().catch(() => [])).join(" ")), 10000);
+  check(pill && await $panel(doc, "#ponterica").count() === 1, "sul PC, la pagina di ROSSI aperta e ferma: «Aggiornato dal telefono · Ricarica», senza ricaricarsi da sola");
+  check(await doc.locator('textarea[name="ANAMNESI"]').inputValue() === "Dolore toracico KAPPAZETA da due ore", "(la pagina mostra ancora il testo di prima)");
+  await shot(doc, "pc-6-cartella-aggiornata");
+  if (await $panel(doc, "#ponterica").count()) await $panel(doc, "#ponterica").click(); else await doc.reload();
+  await doc.waitForLoadState("load");
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  check(await finche(async () => (await doc.locator('textarea[name="ANAMNESI"]').inputValue().catch(() => "")).includes("NUOVAZETA"), 10000) && await $panel(doc, "#ponterica").count() === 0,
+    "«Ricarica»: la pagina col testo nuovo, e la pill se ne va");
+  const regP = await registroPonte();
+  check(/Cartella di ROSSI MARIO dal telefono: salvati Anamnesi, Farmaci/.test(regP) && !/NUOVAZETA|OMEGAFARM|KAPPAZETA/.test(regP), "nel registro del ponte: i campi salvati, mai i testi");
+
+  // il medico sta scrivendo nella pagina di ROSSI sul PC: dal telefono no
+  await doc.locator('textarea[name="FARMACI_ASSUNTI"]').fill("il medico scrive qui");
+  await tel.locator("#cc-ALLERGIE").fill("Penicillina BETALLERG");
+  await salvaTel();
+  check(!!(await aspettaTel(tel, /Sul PC c'è un testo non salvato in questa pagina/, 30000)) && CART.post.length === 1 && schedeNuove.length === 2,
+    "un testo non salvato nella pagina di ROSSI sul PC (anche in un altro campo: il suo «Conferma» rimanderebbe tutto il modulo): «Sul PC c'è un testo non salvato in questa pagina», niente scheda, niente inviato");
+  await suPagina(doc, A.patientUrl);   // (il medico lascia stare: la pagina come il gestionale l'ha salvata)
+  await salvaTel();
+  check(await salvato() && CART.campi.ALLERGIE === "Penicillina BETALLERG" && CART.post.length === 2, "pagina pulita: lo stesso «Salva» adesso passa");
+
+  // l'esame obiettivo scrivibile, quando la pagina lo dà scrivibile — e se intanto non lo è più, no
+  CART.eoRo = false;
+  await suPagina(doc, A.patientUrl);
+  await tocca(tel, '[data-a="crileggi"]');
+  check(await finche(async () => !(await roTel("ESAME_OBIETTIVO").catch(() => true)), 20000), "l'esame obiettivo che la pagina dà scrivibile si scrive anche dal telefono");
+  await tel.locator("#cc-ESAME_OBIETTIVO").fill("Vigile TAUOBIETT, dispnoico");
+  CART.eoRo = true;   // (un altro medico l'ha scritto intanto: adesso è di sola lettura)
+  await salvaTel();
+  check(!!(await aspettaTel(tel, /Sul PC non è più modificabile: Esame obiettivo/, 40000)) && CART.post.length === 2,
+    "diventato di sola lettura sul PC: «Sul PC non è più modificabile», niente inviato");
+  await tocca(tel, '[data-a="cricarica"]');
+  check(await finche(async () => await roTel("ESAME_OBIETTIVO") && await valoreTel("ESAME_OBIETTIVO") === "Vigile TAUOBIETT, eupnoico", 20000), "«Ricarica»: di nuovo di sola lettura, col testo del PC");
+  CART.eoRo = false;
+  await tocca(tel, '[data-a="crileggi"]');
+  await finche(async () => !(await roTel("ESAME_OBIETTIVO").catch(() => true)), 20000);
+  await tel.locator("#cc-ESAME_OBIETTIVO").fill("Vigile TAUOBIETT, dispnoico");
+  await salvaTel();
+  check(await salvato() && CART.campi.ESAME_OBIETTIVO === "Vigile TAUOBIETT, dispnoico", "scrivibile fino alla fine: salvato con lo stesso «Conferma»");
+
+  // il gestionale non salva un campo: la verifica lo dice, campo per campo
+  CART.ignora = "FARMACI_ASSUNTI";
+  await tel.locator("#cc-FARMACI_ASSUNTI").fill("Ramipril OMEGAFARM 10 mg");
+  await tel.locator("#cc-MALATTIE_PREGRESSE").fill("Ipertensione SIGMAREMOTA, diabete");
+  await salvaTel();
+  check(/Salvato: Anamnesi remota · Non salvato sul PC: Farmaci/.test(await aspettaTel(tel, /Non salvato sul PC/, 60000)),
+    "riletta la pagina dopo «Conferma»: «Salvato: Anamnesi remota · Non salvato sul PC: Farmaci»");
+  CART.ignora = "";
+  const err = await errori();
+  check(err.length >= 4 && err.every((x) => Array.isArray(x.dati.campi) && x.dati.campi.every((n) => CART_NOMI.includes(n))) && !/KAPPAZETA|NUOVAZETA|OMEGAFARM|BETALLERG|SIGMAREMOTA|TAUOBIETT|medico scrive/.test(JSON.stringify(err)),
+    `ogni no nel registro degli errori: il perché e i nomi dei campi, mai un testo (${err.map((x) => x.dati.perche).join(" · ")})`);
+  const memTel = await tel.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
+  check(!/KAPPAZETA|NUOVAZETA|OMEGAFARM|BETALLERG|SIGMAREMOTA|TAUOBIETT/.test(memTel), "sul telefono niente della cartella fuori dalla memoria della pagina");
+  // via la cartella: le sezioni dopo hanno la pagina di sempre
+  ctx.off("page", contaSchede);
+  CART.on = false;
+  await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+  await suPagina(doc, A.worklistUrl);
+}
 
 // ===========================================================================
 sezione("un ordine dal telefono, fino alle etichette");
@@ -1235,7 +1387,7 @@ sezione("«Scansiona il QR» dentro l'app");
 // ===========================================================================
 sezione("il ripetitore non vede niente in chiaro");
 // (solo parole di almeno 5 lettere: due o tre byte uguali per caso, in tanti byte cifrati, ci sono sempre)
-const segreti = ["ROSSI", "BIANCHI", "MARIO", "VERDI", "TROPONINA", "EMOCROMO", CF_A, CF_B, "999001", "999002", "tropo", "dolore", "allergico", "ENCEFALO", "pazienti", "focolai", "ZQXW7731"];
+const segreti = ["ROSSI", "BIANCHI", "MARIO", "VERDI", "TROPONINA", "EMOCROMO", CF_A, CF_B, "999001", "999002", "tropo", "dolore", "allergico", "ENCEFALO", "pazienti", "focolai", "ZQXW7731", "KAPPAZETA", "NUOVAZETA", "OMEGAFARM", "BETALLERG", "SIGMAREMOTA", "TAUOBIETT", "sudorazione", "Penicillina"];
 const tutti = Buffer.concat(inoltrati);
 check(inoltrati.length > 30, `(${inoltrati.length} messaggi inoltrati)`);
 check(inoltrati.every((b) => b[0] === 1 && b[1] >= 1 && b[1] <= 4), "ognuno è un messaggio cifrato del ponte (versione 1, tipo 1–4)");
