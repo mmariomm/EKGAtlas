@@ -107,6 +107,7 @@
   const APERTA = "corsa.aperta.v1";
   const APERTA_TTL = 30 * 60e3;
   const OK_STRISCIA = 2 * 60e3;  // un ordine finito bene resta sulla striscia due minuti
+  const RIGA_FATTA = 4000;       // …la riga di un foglio stampato, pochi secondi
 
   // Resources ("Risorsa" dropdown values) — verified in the saved pages.
   const RES = {
@@ -198,8 +199,9 @@
   // che in questa macchina non esiste nel catalogo si salta e si dice.
   // «PT PTT Fantoli» = il laboratorio non-POC, cioè URGENZE (181 PT, 54 PTT).
   const PACCHETTI = [
-    // base, coagulazione POC, troponina US
-    { q: "Dolore toracico", items: [[RES.POC, "320"], [RES.POC, "325"], [RES.POC, "176"], [RES.POC, "220"], [RES.POC, "134"], [RES.POC, "324"]] },
+    // base, coagulazione POC, troponina US, RX torace 1 proiezione (una
+    // seconda richiesta, di radiologia, confermata come quella del laboratorio)
+    { q: "Dolore toracico", items: [[RES.POC, "320"], [RES.POC, "325"], [RES.POC, "176"], [RES.POC, "220"], [RES.POC, "134"], [RES.POC, "324"], [RES.RX, "36"]] },
     // base ma con l'EGA ARTERIOSA (326, non la venosa 325), coag POC, D-dimero, troponina, proBNP
     { q: "Dispnea", items: [[RES.POC, "320"], [RES.POC, "326"], [RES.POC, "176"], [RES.POC, "220"], [RES.POC, "134"], [RES.POC, "101"], [RES.POC, "324"], [RES.URGENZE, "297"]] },
     // base, epatico e pancreatico (bili reflex, GPT, GOT, GGT, lipasi), PT PTT Fantoli
@@ -891,6 +893,37 @@
       .sort((a, b) => Number(a.prog) - Number(b.prog));
   }
   const printMeta = (map, rid) => (map[rid] && map[rid]._meta) || { ts: 0, when: "", exams: [] };
+  // Il nome corto di un foglio, per le righe sotto la striscia: «Et» (le
+  // etichette) o «Fg» (il foglio A4) e di chi è — «POC», «Lab», «RX» (la
+  // prenotazione). Ogni erogatore ha la sua richiesta: la risorsa la dice la
+  // lista esami (RISORSA_ID). Due laboratori nello stesso giro (Urgenze e
+  // centrale) non si chiamano «Lab» tutti e due: il resto del nome di
+  // ciascuno, il più corto («Urg»), e «Lab» quello che non ha altro.
+  const resRiga = (r) => (r.lista ? param(r.lista, "RISORSA_ID") || "" : "");
+  const tipoRes = (res) => {
+    if (!res) return "";
+    if (RADIO_SET.includes(res)) return "RX";
+    const label = (fullCatalog()[res] || {}).label || "";
+    if (!label) return "";
+    return /\bPOC\b/i.test(label) ? "POC" : "Lab";
+  };
+  const restoNome = (res) => String((fullCatalog()[res] || {}).label || "")
+    .replace(/\s*-\s*[A-Z]{2,4}\s*\(P\)\s*$/i, "").replace(/^LABORATORIO\s+(ANALISI\s*)?/i, "").trim();
+  function nomiCorti(jobs) {
+    const labs = [...new Set(jobs.filter((j) => j.res && tipoRes(j.res) === "Lab").map((j) => j.res))];
+    const chi = (res) => {
+      const t = tipoRes(res);
+      if (t !== "Lab" || labs.length < 2) return t;
+      const r = restoNome(res);
+      return r ? r.charAt(0).toUpperCase() + r.slice(1, 3).toLowerCase() : "Lab";
+    };
+    for (const j of jobs) {
+      if (!j.pre) continue;
+      const c = j.pre === "Fg" && j.rx ? "RX" : chi(j.res);
+      j.breve = `${j.pre}${c ? " " + c : ""}`;
+    }
+    return jobs;
+  }
   // Jobs grouped by printer to minimise switching: every label PDF first
   // (etichettatrice), then every exam-list sheet, then radiology bookings.
   function printJobsFor(map, rid) {
@@ -898,18 +931,18 @@
     const multi = rows.length > 1;
     const tag = (r) => (multi ? ` — riga ${r.prog}` : "");
     const jobs = [];
-    for (const r of rows) if (r.etichette) jobs.push({ name: `Etichette provette${tag(r)}`, printer: "etichettatrice", url: r.etichette });
-    for (const r of rows) if (r.lista) jobs.push({ name: `Lista esami${tag(r)}`, printer: "stampante normale", url: r.lista });
-    for (const r of rows) if (r.prenotazione) jobs.push({ name: `Prenotazione esterna${tag(r)}`, printer: "stampante normale", url: r.prenotazione });
+    for (const r of rows) if (r.etichette) jobs.push({ name: `Etichette provette${tag(r)}`, pre: "Et", res: resRiga(r), printer: "etichettatrice", url: r.etichette });
+    for (const r of rows) if (r.lista) jobs.push({ name: `Lista esami${tag(r)}`, pre: "Fg", res: resRiga(r), printer: "stampante normale", url: r.lista });
+    for (const r of rows) if (r.prenotazione) jobs.push({ name: `Prenotazione esterna${tag(r)}`, pre: "Fg", rx: true, printer: "stampante normale", url: r.prenotazione });
     const seen = new Set();
-    return jobs.filter((j) => !seen.has(j.url) && seen.add(j.url));
+    return nomiCorti(jobs.filter((j) => !seen.has(j.url) && seen.add(j.url)));
   }
   // Le richieste che la pagina sa stampare (cioè confermate), la più recente per prima.
   const richiesteStampabili = (map) => Object.keys(map).sort((a, b) => (printMeta(map, b).ts - printMeta(map, a).ts) || Number(b) - Number(a));
   // I fogli di più richieste in un giro solo: tutte le etichette, poi il resto.
   const fogliDi = (map, ids) => {
     const all = ids.map((id) => printJobsFor(map, id));
-    return [...all.flatMap((j) => j.filter((x) => x.printer === "etichettatrice")), ...all.flatMap((j) => j.filter((x) => x.printer !== "etichettatrice"))];
+    return nomiCorti([...all.flatMap((j) => j.filter((x) => x.printer === "etichettatrice")), ...all.flatMap((j) => j.filter((x) => x.printer !== "etichettatrice"))]);
   };
   // «Stampa l'ultima richiesta»: la più recente, e con lei quella di prima se è
   // di pochi minuti prima — il laboratorio e la radiologia dello stesso ordine.
@@ -4954,10 +4987,9 @@
         items: state.added.map((i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label,
           ...(i.alPostoDi ? { alPostoDi: i.alPostoDi } : {}) })),
       });
-      // Radiology is deliberately excluded from auto-confirm (README, collaudo
-      // step 8-9): a booking must always be a human click.
-      const isRadio = state.added.some((i) => RADIO_SET.includes(i.res));
-      if (plan.autoConfirm && state.added.length && !plan.hold && !isRadio) {
+      // La radiologia si conferma come il laboratorio: stessi controlli (la
+      // riga in carrello, una volta sola, la conferma provata).
+      if (plan.autoConfirm && state.added.length && !plan.hold) {
         tabStore.set("confirm.v1", {
           richiestaId: model.richiestaId, episodeId: plan.episodeId,
           lastCode: last.code, lastLabel: last.label, count: state.added.length, ts: Date.now(),
@@ -5207,6 +5239,29 @@
     .stopmini { border: 0; border-radius: 999px; width: 30px; height: 30px; cursor: pointer; font-size: 12px;
                 background: #B3261E; color: #fff; box-shadow: 0 6px 20px rgba(9,42,74,.35); }
     .stopmini:hover { background: #8f1e18; }
+    /* Sotto la striscia, una riga per foglio (e per la richiesta che gira):
+       il nome corto, una barretta, il ✕ — o la stampantina, se è già dell'aiutante. */
+    .pjobs { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; width: 168px; }
+    .pjob { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 6px; row-gap: 2px;
+            background: #fff; border: 1px solid #C4D0DC; border-radius: 8px; padding: 3px 4px 4px 8px;
+            font-size: 11.5px; font-weight: 700; color: #0B2A4A; box-shadow: 0 4px 14px rgba(9,42,74,.14); }
+    .pjob .pjn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 18px; line-height: 18px; }
+    .pjob .pjbar { grid-column: 1 / -1; height: 3px; background: #E3EAF1; border-radius: 2px; overflow: hidden; }
+    .pjob .pjbar i { display: block; height: 100%; background: #0B5CAD; transition: width .4s ease; }
+    .pjob.ok .pjbar i { background: #1E8A4C; }
+    .pjob.err { border-color: #B3261E; color: #B3261E; }
+    .pjob.err .pjbar i { background: #B3261E; }
+    .pjx { border: 0; background: transparent; color: #5B6B7B; cursor: pointer; font-size: 11px; width: 18px; height: 18px; border-radius: 50%; padding: 0; }
+    .pjx:hover { background: #EEF3F8; color: #B3261E; }
+    .pjico { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; color: #0B5CAD; }
+    .pjico svg { width: 13px; height: 13px; }
+    .pjob.ok { background: #E8F5EC; border-color: #9FD3B3; }
+    .pjico.fatto { color: #1E8A4C; font-size: 13px; font-weight: 800; }
+    /* dall'aiutante, finché stampa: la stampantina respira piano */
+    .pjico.pulsa { animation: psaRespira 1.2s ease-in-out infinite; }
+    @keyframes psaRespira { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+    @media (prefers-reduced-motion: reduce) { .pjico.pulsa { animation: none; } }
+    .pjrist { border: 1px solid #B3261E; background: #fff; color: #B3261E; border-radius: 999px; padding: 0 7px; font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; height: 18px; }
     /* un'azione tranquilla accanto al resoconto («Ristampa») */
     .strazione { border: 1px solid #C4D0DC; background: #fff; color: #0B5CAD; border-radius: 999px; padding: 6px 11px;
                  font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(9,42,74,.18); }
@@ -7339,8 +7394,8 @@
       }
       const dove = { ...(st?.richiestaId ? { rid: String(st.richiestaId) } : {}), ...(st?.lastListUrl ? { listUrl: st.lastListUrl } : {}), ...(resto ? { resto } : {}) };
       if (this.runState === "running") {
-        const { badgeEsami, fase } = this.statoGiro();
-        return { stato: "corre", vista: { badge: badgeEsami, testo: fase, tono: "run", ferma: true }, ...dove };
+        const { badgeEsami, fase, passati, tot } = this.statoGiro();
+        return { stato: "corre", vista: { badge: badgeEsami, testo: fase, tono: "run", ferma: true, prog: [passati, tot] }, ...dove };
       }
       // (finché l'ordine è in corso, il ⏹ c'è sempre: lo finisce, qualunque cosa stia aspettando)
       if (this.runState === "fail" && tabStore.get(CORSA, null)) return { stato: "corre", vista: { tag: "Giro interrotto", testo: "riprendo da dov'ero…", tono: "warn", ferma: true }, ...dove };
@@ -7597,12 +7652,84 @@
       s.paziente = fuoco.paziente || "";
       s.daOrdine = id;
       if (coda) s.badge = `${s.badge ? s.badge + " · " : ""}+${coda} in coda`;
+      // sotto, una riga per foglio (e una per la richiesta che gira)
+      const rg = this.righeOrdini(l);
+      if (rg.righe.length) s.righe = rg.righe;
+      clearTimeout(this._tRighe);
+      if (rg.prossima) this._tRighe = setTimeout(() => this.stripOrdine(), rg.prossima + 150);
       // la stessa striscia di prima, ancora lì: niente ridisegno
       const firma = JSON.stringify(s);
       if (mia && firma === this._firmaOrdine && this.striscia === this._strisciaOrdine) return;
       this._firmaOrdine = firma;
       this.segnala(s);
       this._strisciaOrdine = this.striscia;
+    }
+    // Le righe sotto la striscia: una per la richiesta che gira («Richiesta ·
+    // 3/6»), una per foglio («Et POC», «Fg RX»), ognuna con la sua barretta
+    // (arriva → alla stampante → fatto) e il suo ✕ finché il foglio non è
+    // dell'aiutante. Un foglio fatto se ne va dopo pochi secondi; uno non
+    // uscito resta rosso, con «Ristampa». Solo una vista: le azioni le fa il
+    // service worker (ordineTogliFoglio, ordineFerma, ordineStampaQui).
+    righeOrdini(l) {
+      const righe = [], ora = Date.now();
+      let prossima = 0;
+      for (const o of [...l].sort((a, b) => (a.ts || 0) - (b.ts || 0))) {
+        const v = o.vista || {};
+        const chi = o.kind === "radio" ? "Rich RX" : o.kind === "lab" ? "Rich Lab" : "Rich";
+        if ((o.stato === "avvio" || (o.stato === "corre" && !o.muto)) && !o.ferma) {
+          const [k, n] = Array.isArray(v.prog) ? v.prog : [0, o.n || 0];
+          righe.push({ k: `r:${o.id}`, nome: `${chi} · ${k}/${n}`, p: n ? Math.max(0.04, k / n) : 0.04,
+            x: o.stato === "avvio" || v.ferma ? `f:${o.id}` : "" });
+        } else if (o.confermata) {
+          // confermata (provata): verde, pochi secondi
+          const resta = o.confermata + RIGA_FATTA - ora;
+          if (resta > 0) {
+            prossima = prossima ? Math.min(prossima, resta) : resta;
+            righe.push({ k: `r:${o.id}`, nome: `${chi} · ${o.n || 0}/${o.n || 0}`, p: 1, ok: true, ico: "fatto" });
+          }
+        }
+        (Array.isArray(o.fogli) ? o.fogli : []).forEach((f, i) => {
+          if (f.stato === "tolto") return;
+          const fatto = f.stato === "stampato" || f.stato === "mandato", rotto = f.stato === "fallito" || f.stato === "sconosciuto";
+          if (fatto) {
+            const resta = (f.ts || o.agg || 0) + RIGA_FATTA - ora;
+            if (resta <= 0) return;
+            prossima = prossima ? Math.min(prossima, resta) : resta;
+          }
+          righe.push({ k: `${o.id}:${i}`, nome: f.breve || (f.tipo === "etichette" ? "Et" : "Fg"),
+            p: { attesa: 0.04, prendo: 0.35, invio: 0.7 }[f.stato] ?? 1, ok: fatto, err: rotto,
+            x: f.stato === "attesa" || f.stato === "prendo" ? `t:${o.id}:${i}` : "", ico: f.stato === "invio" ? "pulsa" : fatto ? "fatto" : "",
+            rist: rotto && o.stato !== "stampo" && o.stampa ? o.id : "" });
+        });
+      }
+      return { righe: righe.slice(0, 12), prossima };
+    }
+    righeHtml(righe) {
+      if (!Array.isArray(righe) || !righe.length) return "";
+      return `<div class="pjobs">${righe.map((r) => `
+        <div class="pjob${r.ok ? " ok" : ""}${r.err ? " err" : ""}" data-riga="${esc(r.k)}">
+          <span class="pjn">${esc(r.nome)}</span>${
+            r.rist ? `<button class="pjrist" data-pjrist="${esc(r.rist)}">Ristampa</button>`
+            : r.ico === "pulsa" ? `<span class="pjico pulsa" title="Alla stampante">${ICO.stampante}</span>`
+            : r.ico === "fatto" ? `<span class="pjico fatto" title="Fatto">✓</span>`
+            : r.x ? `<button class="pjx" data-pjx="${esc(r.x)}" title="Togli solo questo" aria-label="Togli ${esc(r.nome)}">✕</button>` : ""}
+          <span class="pjbar"><i style="width:${Math.round(Math.min(1, r.p) * 100)}%"></i></span>
+        </div>`).join("")}</div>`;
+    }
+    // la richiesta che gira in questa scheda (la coppia laboratorio + radiologia)
+    rigaGiro() {
+      const { passati, tot } = this.statoGiro();
+      const g = this.pianoGiro && this.pianoGiro.legLabel;
+      const chi = g === "radiologia" ? "Rich RX" : g === "laboratorio" ? "Rich Lab" : "Rich";
+      return { k: "giro", nome: `${chi} · ${passati}/${tot}`, p: tot ? Math.max(0.04, passati / tot) : 0.04, x: "giro" };
+    }
+    // ✕ su una riga: quella sola
+    rigaTocco(x) {
+      const [k, id, i] = String(x).split(":");
+      const dopo = (r) => { if (r && r.ordini) this.ordiniAggiorna(r.ordini); else ask({ t: "ordineControlla" }).then((y) => y && y.ordini && this.ordiniAggiorna(y.ordini)); };
+      if (k === "giro") return this.stop();
+      if (k === "f") return ask({ t: "ordineFerma", id }).then(dopo);
+      if (k === "t") return ask({ t: "ordineTogliFoglio", id, i: Number(i) }).then(dopo);
     }
     // L'avviso di un ordine è letto (✕, o il carrello aperto): il segno
     // condiviso «giro rimasto a metà» di quella richiesta lo diceva già lui.
@@ -7908,7 +8035,7 @@
       const first = done[0];
       tabStore.set("queue.v1", { episodeId: plan.episodeId, autoConfirm: !!plan.autoConfirm, ts: Date.now(), items: done });
       tabStore.set("receipt.v1", { richiestaId: first.rid, episodeId: plan.episodeId, ts: Date.now(), items: first.added, carrelli: first.carrelli || {}, quesito: first.quesito || null });
-      if (plan.autoConfirm && first.lastCode && first.kind !== "radio") {
+      if (plan.autoConfirm && first.lastCode) {
         tabStore.set("confirm.v1", { richiestaId: first.rid, episodeId: plan.episodeId, lastCode: first.lastCode, lastLabel: first.lastLabel, count: first.count, ts: Date.now() });
       }
       this.render();
@@ -8090,6 +8217,7 @@
                 ? `<button class="stopmini" id="strstop" title="Ferma l'ordine">⏹</button>`
                 : `<button class="stopmini" id="strstop" title="${esc(this.striscia.titoloStop || "Annulla (Esc)")}">✕</button>`) : ""}
             </div>
+            ${this.righeHtml(this.striscia.righe)}
           ` : this.collapsed && this.runState ? `
             <div class="strip">
               <button class="pill run ${altrove ? "alt" : this.runState === "fail" ? "err" : this.runState === "stopped" ? "warn" : ""}" id="expand" title="${esc(who)}${
@@ -8102,6 +8230,7 @@
               </button>
               ${running ? `<button class="stopmini" id="stopbtn" title="Interrompi (Esc)">⏹</button>` : ""}
             </div>
+            ${running ? this.righeHtml([this.rigaGiro()]) : ""}
           ` : linguetta ? `
             <button class="coltab${this.promUrgente() ? " urg" : ""}" id="expand" title="${esc(who)} — ${esc(APP)}: mostra la colonna (F2)" aria-label="Mostra il pannello (F2)"></button>
           ` : this.collapsed ? `
@@ -8219,7 +8348,7 @@
         ? (passo ? `${passo.label}${passo.note ? " · " + passo.note : ""}` : "…")
         : typeof this.message === "string" ? this.message
           : (this.message?.ok || this.message?.head || this.message?.body || "");
-      return { badgeEsami, fase };
+      return { badgeEsami, fase, passati, tot: esami.length };
     }
 
     // HOME — the patients this shift. Picking one of the OTHERS navigates to
@@ -12158,6 +12287,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.apri();
       });
       $("#strstop")?.addEventListener("click", () => this.striscia?.onStop?.());
+      // le righe sotto la striscia: ✕ toglie quella sola, «Ristampa» rifà i fogli non usciti
+      this.root.querySelectorAll("[data-pjx]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); b.disabled = true; this.rigaTocco(b.getAttribute("data-pjx")); }));
+      this.root.querySelectorAll("[data-pjrist]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); ask({ t: "ordineStampaQui", id: b.getAttribute("data-pjrist") }); }));
       // (il bottone non tiene il fuoco, e il pannello non glielo ridà: col fuoco
       // nel pannello certi aggiornamenti aspettano — la spia del Ponte, per esempio)
       $("#strazione")?.addEventListener("click", (e) => { this._fuocoId = null; e.currentTarget.blur(); this.striscia?.azione?.fn?.(); });
@@ -13705,7 +13837,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       paziente: opzioni.paziente || (tuttiPazienti().find((p) => p.ep === ep) || {}).name || "",
       url: urlPaziente(ep, opzioni.url), fine, riassunto: fine ? confermati(fine) : title.replace(/\.$/, ""),
       quesito: fine ? quesitoDetto(fine.quesito) || "" : "",
-      jobs: jobs.map(({ name, printer, url, diretto }) => ({ name, printer, url, ...(diretto ? { diretto: true } : {}) })) };
+      jobs: jobs.map(({ name, printer, url, diretto, breve }) => ({ name, printer, url, ...(breve ? { breve } : {}), ...(diretto ? { diretto: true } : {}) })) };
     let r = { ok: false };
     for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineFogli", job });
     if (r.no) return false;
@@ -14100,7 +14232,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   function goToQueued(entry, vai = nav) {
     const { q, next } = entry;
     tabStore.set("receipt.v1", { richiestaId: next.rid, episodeId: q.episodeId, ts: Date.now(), items: next.added || [], carrelli: next.carrelli || {}, quesito: next.quesito || null });
-    if (q.autoConfirm && next.lastCode && next.kind !== "radio") {
+    if (q.autoConfirm && next.lastCode) {
       tabStore.set("confirm.v1", { richiestaId: next.rid, episodeId: q.episodeId, lastCode: next.lastCode, lastLabel: next.lastLabel, count: next.count, ts: Date.now() });
     }
     tabStore.set("queue.v1", { ...q, items: q.items.map((it, i) => (i ? it : { ...it, nav: true })), ts: Date.now() });
@@ -14156,7 +14288,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // sola: il segno della stampa è già consumato.
   async function consegnaFogli(panel, id, jobs, fine) {
     const m = { t: "ordineStampa", id, fine, riassunto: confermati(fine), quesito: quesitoDetto(fine.quesito), registro: registroLavoro(panel),
-      jobs: jobs.map(({ name, printer, url }) => ({ name, printer, url })) };
+      jobs: jobs.map(({ name, printer, url, breve }) => ({ name, printer, url, ...(breve ? { breve } : {}) })) };
     let r = await ask(m);
     if (r.perso) r = await ask(m);   // il service worker che si sveglia può perdere la prima (la seconda è la stessa)
     if (r && r.ok) return panel?.slegaLavoro();
@@ -14446,8 +14578,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   }
   // L'ordine: lo stesso giro di «Conferma e stampa», dato alla scheda di
   // sottofondo dalla pagina del paziente — tutti i controlli di sempre. Il
-  // laboratorio si conferma da solo; la radiologia resta sul carrello, come
-  // dal pannello (la sua conferma è sempre del medico). Il numero dell'ordine
+  // laboratorio e la radiologia si confermano da soli, due ordini in fila,
+  // come dal pannello. Il numero dell'ordine
   // lo dà il service worker: chiesto due volte, l'ordine è uno.
   async function ponteOrdina(p, a) {
     const url = ponteUrlPaziente(p);
@@ -14465,7 +14597,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const gambe = [["lab", items.filter((i) => !RADIO_SET.includes(i.res))], ["radio", items.filter((i) => RADIO_SET.includes(i.res))]].filter(([, l]) => l.length);
     const ordini = [];
     for (const [kind, l] of gambe) {
-      const id = `${a.id}${kind === "radio" ? "r" : "l"}`, autoConfirm = kind === "lab";
+      const id = `${a.id}${kind === "radio" ? "r" : "l"}`, autoConfirm = true;
       const job = { id, ep: p.ep, paziente: p.name, n: l.length, autoConfirm, url, rid: null, nomi: l.map((i) => i.display),
         piano: { startPage: "patient", items: l, quesito, quesitoMio: !!a.mio, autoConfirm, episodeId: p.ep, patientName: p.name, patientUrl: url, kind } };
       let r = { ok: false };

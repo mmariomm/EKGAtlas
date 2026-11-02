@@ -440,10 +440,11 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    ricevuta e la striscia finale dicono quale è partito, in una riga: «Quesito del triage:
    "…"» oppure «Quesito: il tuo». (Il «⧉ Copia» del Registro il quesito lo omette, come sempre.)
    **Tre quesiti sono pacchetti di esami**, sempre i primi chip (anche se l'elenco dei quesiti
-   salvato non li ha), e ognuno dice quanti esami porta — «Dolore toracico · 6»: un tocco scrive
+   salvato non li ha), e ognuno dice quanti esami porta — «Dolore toracico · 7»: un tocco scrive
    il quesito **e** spunta gli esami che servono quasi sempre.
    - **Dolore toracico** — base (emocromo POC, EGA venosa NEW, creatinina POC), PT e PTT POC,
-     troponina US.
+     troponina US, **RX TORACE 1 PROIEZ.** (una seconda richiesta, di radiologia: il bottone
+     diventa «· 2 richieste», vedi sotto).
    - **Dispnea** — base ma con l'**EGA arteriosa NEW** (non la venosa), PT e PTT POC, D-dimero POC,
      troponina US, NT-proBNP.
    - **Dolore addominale** — base, EGA venosa, epatico e pancreatico (bilirubina, GPT, GOT,
@@ -661,7 +662,10 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    compare, passa per la strada di sempre (nome vivo controllato, un invio solo); se no, l'esame
    finisce fra i «Mancano» e lo aggiungi a mano. Vedi le regole 3 e 4.
    Selezionando laboratorio **e** radiologia il bottone diventa **Conferma e stampa · 2 richieste** e il pannello
-   le costruisce e le porta entrambe a conferma, con **una sola** stampa finale. Questa è
+   le costruisce e le **conferma tutte e due da solo** — prima il laboratorio, poi la radiologia,
+   con gli stessi controlli (la riga in carrello, una volta sola, la conferma provata) —, con
+   **una sola** stampa finale: etichette → liste → la prenotazione RX. Quello che è entrato lo
+   rivedi tu, sulla ricevuta e sui fogli. Questa è
    l'unica che **non** va in sottofondo: le due richieste vivono nella memoria del pannello, e
    a metà non si riprendono — lì il browser avvisa ancora prima di cambiare pagina.
 5. **Stampa** (menu **⋯ → Stampa le richieste**, non più in fondo alle Richieste): ogni richiesta con data, ora e la lista compatta degli esami.
@@ -1241,6 +1245,19 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   fa il service worker, coi PDF che gli dà una scheda aperta dietro sulla pagina del paziente
   (senza pannello; finito, si chiude), e nessun foglio si perde né esce due volte. È lo stesso
   motore dell'ordine in sottofondo (qui sotto), con le stesse parole.
+- **Le due stampanti lavorano insieme.** I PDF delle etichette e quelli dei fogli A4 (liste,
+  prenotazione RX) si prendono insieme, e ogni foglio va alla sua stampante appena c'è; sulla
+  stessa stampante l'ordine è quello di sempre (la lista, poi la RX). Se un PDF preso insieme
+  all'altro non arriva (un errore, la pagina d'accesso, niente), si riprende **una volta, da solo**,
+  quando l'altra stampante ha finito — e il service worker lo annota fra gli errori
+  («stampa-parallela»): così si vede se il gestionale vero regge due letture insieme.
+- **Sotto la striscia, una riga per foglio** — «Et POC», «Et Lab», «Fg POC», «Fg Lab», «Fg RX» (Et
+  = etichette, Fg = foglio A4; due laboratori nello stesso giro si distinguono, «Et Urg», «Et Lab») —
+  e una per la richiesta che gira, «Rich Lab · 3/6», «Rich RX · 1/1». Ogni riga ha una barretta
+  (arriva → alla stampante → fatto) e un piccolo **✕**: toglie **solo quel foglio**, finché aspetta o
+  arriva; dato all'aiutante il ✕ diventa una stampantina che respira (dalla coda di Windows non si
+  richiama), poi un ✓ verde, e dopo pochi secondi la riga se ne va. Un foglio non uscito resta
+  rosso, con **Ristampa**.
 - **Si dice solo quello che si sa.** L'aiutante, dopo aver mandato il foglio, guarda per qualche
   secondo la coda di stampa di Windows:
   - **«Stampato su Zebra ZD421»** (alla fine «Stampato · 6 esami confermati 14:32»): il foglio è
@@ -1835,8 +1852,8 @@ prima fase usa **solo** "Crea richiesta e aggiungi" — mai il bottone con confe
 9. **Radiologia (solo dopo qualche giorno di laboratorio pulito).** Prima apertura nativa di
    "Richieste Radiologia" (apprendimento del catalogo), poi un solo RX torace dal pannello, con
    verifica in radiologia che la richiesta sia arrivata unica e con il quesito giusto.
-10. **Auto-conferma (ultima fase, opzionale; solo laboratorio — la radiologia richiede sempre
-    il tuo click, per codice oltre che per regola).** È **immediata**: primo uso con 1 esame
+10. **Auto-conferma (ultima fase, opzionale; laboratorio e radiologia, con gli stessi
+    controlli).** È **immediata**: primo uso con 1 esame
     restando davanti allo schermo, e ricontrolla etichette e richiesta appena confermata. Per
     provare il blocco di sicurezza: lascia un esame nel carrello da un tentativo interrotto e
     rilancia — la conferma deve **sospendersi** con il messaggio, non partire.
