@@ -1,7 +1,8 @@
 @echo off
 rem PS Assist - toglie la stampa automatica per questo utente: le due chiavi
 rem nel registro dell'utente, la cartella %LOCALAPPDATA%\PSAssist (l'aiutante,
-rem SumatraPDF, il registro delle stampe) e i fogli temporanei rimasti. Lo fa
+rem SumatraPDF, il registro delle stampe, l'estensione e la sua versione di prima)
+rem e i fogli temporanei rimasti. Lo fa
 rem installa.ps1, e controlla che sia andato via tutto.
 rem Si lancia dalla cartella dello zip o da %LOCALAPPDATA%\PSAssist\stampa, che
 rem va via anche lei: per questo si lavora da %TEMP%, e tutto su una riga (cmd

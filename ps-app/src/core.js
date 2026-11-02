@@ -5256,6 +5256,9 @@
     .menu hr { border: 0; border-top: 1px solid #EEF2F6; margin: 5px 4px; }
     .menu button.mrischio { color: #B3261E; font-weight: 700; }
     .menu .mver { padding: 6px 10px 4px; font-size: 12px; color: #5B6B7A; }
+    /* una versione nuova (⋯ → «Aggiorna app»): un puntino sul ⋯ */
+    .iconbtn.agg { position: relative; }
+    .iconbtn.agg::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #D93025; }
     /* Forma: Finestra · Al passaggio · Colonna, in una riga del menu */
     .menu .mforma { display: flex; align-items: center; gap: 2px; padding: 4px 4px 4px 10px; font-size: 12px; color: #5B6B7A; white-space: nowrap; }
     .menu .mforma span { margin-right: 6px; }
@@ -6703,6 +6706,23 @@
         ask({ t: "stampaVerifica" });
       } catch { /* senza la memoria dell'estensione la stampa automatica non c'è: il pannello sì */ }
     }
+    // ⋯ → «Aggiorna app»: c'è una versione nuova (la guarda il service worker,
+    // aggiorna.js, una volta al giorno e a ogni ⋯ aperto). Cambia il puntino
+    // sul ⋯, al suo posto; il menu, se è aperto.
+    aggNuova() { return !!(this.agg && this.agg.nuova); }
+    seguiAggiorna() {
+      const leggi = () => chrome.storage.local.get("aggiorna").then((o) => {
+        this.agg = o.aggiorna || null;
+        if (this.menuAperto) return this.render();
+        const b = this.root.querySelector("#menubtn");
+        if (b) { b.classList.toggle("agg", this.aggNuova()); b.title = this.aggNuova() ? `Altro · c'è la versione ${this.agg.nuova}` : "Altro"; }
+      }).catch(() => {});
+      try {
+        leggi();
+        chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && ch.aggiorna) leggi(); });
+        ask({ t: "aggiornaControlla" });
+      } catch { /* senza la memoria dell'estensione niente aggiornamenti: il pannello sì */ }
+    }
     // ⋯ → Registra (registra.js): finché registra, «● REC» sulla pill e in
     // intestazione; il menu dice Registra, Ferma e scarica, o Scarica.
     chipRec() {
@@ -8103,7 +8123,7 @@
                 <span id="stautow">${this.chipStampa()}</span>
                 ${this.chipRec()}${this.chipTempo()}
                 ${TABELLONE ? "" : `<span class="menuw">
-                  <button class="iconbtn" id="menubtn" title="Altro" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
+                  <button class="iconbtn${this.aggNuova() ? " agg" : ""}" id="menubtn" title="${this.aggNuova() ? `Altro · c'è la versione ${esc(this.agg.nuova)}` : "Altro"}" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
                   ${this.menuAperto ? `<div class="menu" role="menu">
                     <div class="mforma" role="group" aria-label="Forma"><span>Forma</span>${FORME_PANNELLO.map((f) => `<button role="menuitemradio" data-forma="${f}" aria-checked="${f === forma}"${f === forma ? ' class="on"' : ""}>${NOME_FORMA[f]}</button>`).join("")}</div>
                     ${this.win && forma !== "colonna" ? `<button role="menuitem" id="wincentra" title="La finestra al centro, nella misura di partenza">Al centro</button>` : ""}
@@ -8131,6 +8151,8 @@
                     ${this.giroInCorso() ? "" : this.resetArmato() ? `<button role="menuitem" id="resetpaz" class="mrischio">Cancello tutto? Tocca di nuovo</button>`
                       : `<button role="menuitem" id="resetpaz">Reset dati pazienti</button>`}
                     ${(typeof chrome !== "undefined" && chrome.runtime?.id) && !this.giroInCorso() ? `<button role="menuitem" id="extreload" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">Ricarica estensione</button>` : ""}
+                    ${!this.aggNuova() ? "" : this.agg.puo ? `<button role="menuitem" id="aggapp" title="Aggiorna a ${esc(this.agg.nuova)}: la scarica, la installa e la ricarica">Aggiorna app</button>`
+                      : `<div class="mver">${esc(this.agg.come)}</div>`}
                     <div class="mver">${esc(APP)} ${VERSION}</div>
                   </div>` : ""}
                 </span>`}
@@ -12140,7 +12162,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // nel pannello certi aggiornamenti aspettano — la spia del Ponte, per esempio)
       $("#strazione")?.addEventListener("click", (e) => { this._fuocoId = null; e.currentTarget.blur(); this.striscia?.azione?.fn?.(); });
       $("#collapse")?.addEventListener("click", () => this.riduci());
-      $("#menubtn")?.addEventListener("click", (e) => { e.stopPropagation(); this.menuAperto = !this.menuAperto; this._resetArmato = 0; this.render(); });
+      $("#menubtn")?.addEventListener("click", (e) => {
+        e.stopPropagation(); this.menuAperto = !this.menuAperto; this._resetArmato = 0; this.render();
+        if (this.menuAperto && hasExt()) ask({ t: "aggiornaControlla", ora: true });   // c'è una versione nuova?
+      });
       // due tocchi: il primo chiede, il secondo (entro pochi secondi) cancella
       $("#resetpaz")?.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -12571,6 +12596,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.stampaAuto = { ...this.stampaAuto, s };
         this.menuAperto = false;
         chrome.storage.local.set({ stampa: s }).catch(() => {});
+        this.render();
+      });
+      $("#aggapp")?.addEventListener("click", async () => {
+        this.menuAperto = false;
+        if (this.giroInCorso()) { this.message = "Dopo l'ordine in corso."; return this.render(); }
+        this.message = { ok: "Aggiorno l'app…" };
+        this.render();
+        const r = await ask({ t: "aggiorna" });
+        if (r.perso) return;   // l'estensione si sta già ricaricando
+        this.message = r.ok ? { ok: `Aggiornata alla ${r.versione}: ricarica la pagina.` } : r.why || "Aggiornamento non riuscito.";
         this.render();
       });
       $("#extreload")?.addEventListener("click", () => {
@@ -14848,7 +14883,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
     if (chi) { panel.ordiniOk = true; ascoltaOrdini(panel); }
     if (hasExt() && !LAVORO && !PONTE_VALORI) tabelloneAscolta(panel);
-    if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); }
+    if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); panel.seguiAggiorna(); }
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       // la lista di un'area ha, riga per riga, i link per ordinare di ognuno:

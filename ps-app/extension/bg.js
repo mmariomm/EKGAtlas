@@ -1635,6 +1635,11 @@ chrome.runtime.onInstalled?.addListener(riallinea);
 try { importScripts("registra.js"); }
 catch (e) { console.error("PS Assist: il registratore non parte", e); }
 
+// «Aggiorna app» (⋯, aggiorna.js): la versione nuova da GitHub, con un tocco,
+// attraverso l'aiutante di Windows. Un errore lì non tocca il resto.
+try { importScripts("aggiorna.js"); }
+catch (e) { console.error("PS Assist: l'aggiornamento non parte", e); }
+
 // Il ponte verso l'iPhone (ponte-sw.js): una presa cifrata da un capo
 // all'altro verso il sito del ponte, e i comandi del telefono eseguiti dalle
 // schede del gestionale. Sta in file suoi; vede le costanti qui sopra. Un

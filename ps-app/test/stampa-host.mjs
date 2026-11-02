@@ -128,7 +128,7 @@ check(OPZIONI.includes("-InputFormat") && OPZIONI[OPZIONI.indexOf("-InputFormat"
   `host.cmd avvia PowerShell col percorso intero e -InputFormat None (got ${riga.trim()})`);
 {
   const { r, intero, fermato } = await chiedi({ t: "ping" });
-  check(r && r.ok === true && r.versione === "2" && intero && !fermato,
+  check(r && r.ok === true && r.versione === "3" && intero && !fermato,
     `ping → la versione, su stdout solo la risposta, con stdin aperto come lo tiene Chrome (got ${JSON.stringify(r)}${fermato ? ", non ha risposto" : ""})`);
 }
 {
@@ -243,6 +243,81 @@ for (const [cosa, domanda, re] of [
   check(!/PAZIENTE-FINTO|AAAA/.test(testo), "nel registro non c'è niente del contenuto");
 }
 
+// ---- «Aggiorna app»: chi e aggiorna -------------------------------------------
+// %LOCALAPPDATA%\PSAssist\estensione con la versione 1.0.0, e lo zip di una
+// nuova come lo fa tools/dist.mjs (extension/, stampa/), scaricato da Chrome e
+// mandato qui in base64.
+console.log("\naiutante: «Aggiorna app» (chi, aggiorna)");
+{
+  const PSA = join(LOCALE, "PSAssist"), EST = join(PSA, "estensione"), PRIMA = join(PSA, "estensione.prima"), STAMPA = join(PSA, "stampa");
+  const CHIAVE = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAprova";
+  const versioneIn = (d) => { try { return JSON.parse(readFileSync(join(d, "manifest.json"), "utf8")).version; } catch { return ""; } };
+  const agg = () => readdirSync(TMP).filter((f) => /^psassist-agg-/.test(f)).length;
+  let r = (await chiedi({ t: "chi" })).r;
+  check(r && r.ok === true && r.versione === "3" && r.estensione === "" && r.cartella === EST, `chi, senza estensione installata: «estensione» vuota, e la cartella (got ${JSON.stringify(r)})`);
+  mkdirSync(EST, { recursive: true }); mkdirSync(STAMPA, { recursive: true });
+  writeFileSync(join(EST, "manifest.json"), JSON.stringify({ manifest_version: 3, name: "PS Assist — prova", version: "1.0.0", key: CHIAVE }));
+  writeFileSync(join(EST, "content.js"), "// vecchio\n");
+  writeFileSync(join(EST, "installata.json"), '{"da":"installa.cmd"}');
+  writeFileSync(join(STAMPA, "host.ps1"), "# host vecchio\n");
+  writeFileSync(join(STAMPA, "SumatraPDF.exe"), "#!/bin/sh\n# SUMATRA VECCHIO\n");
+  r = (await chiedi({ t: "chi", avviata: "1.0.0" })).r;
+  check(r && r.ok && r.estensione === "1.0.0", `chi: la versione nella cartella installata (got ${JSON.stringify(r)})`);
+  const Z = join(D, "zip-nuovo");
+  const zipDi = (versione, { chiave = CHIAVE, senzaManifest = false, sumatra = "#!/bin/sh\n# SUMATRA NUOVO\n", impronta = null } = {}) => {
+    rmSync(Z, { recursive: true, force: true });
+    mkdirSync(join(Z, "extension", "pdfjs"), { recursive: true }); mkdirSync(join(Z, "stampa"), { recursive: true });
+    if (!senzaManifest) writeFileSync(join(Z, "extension", "manifest.json"), JSON.stringify({ manifest_version: 3, name: "PS Assist — prova", version: versione, key: chiave }));
+    writeFileSync(join(Z, "extension", "content.js"), `// nuovo ${versione}\n`);
+    writeFileSync(join(Z, "extension", "pdfjs", "pdf.min.js"), "// pdfjs\n");
+    writeFileSync(join(Z, "stampa", "host.ps1"), `# host ${versione}\n`);
+    writeFileSync(join(Z, "stampa", "ripristina.cmd"), "@echo off\r\n");
+    writeFileSync(join(Z, "stampa", "SumatraPDF.exe"), sumatra);
+    const sha = impronta || createHash("sha256").update(sumatra).digest("hex").toUpperCase();
+    writeFileSync(join(Z, "stampa", "installa.ps1"), `$EXE_SHA256 = '${sha}'\n`);
+    const f = join(D, "nuovo.zip");
+    rmSync(f, { force: true });
+    spawnSync("zip", ["-q", "-r", f, "extension", "stampa"], { cwd: Z });
+    return readFileSync(f).toString("base64");
+  };
+  for (const [cosa, domanda, re] of [
+    ["uno zip con un'altra chiave", { t: "aggiorna", versione: "1.1.0", zip: zipDi("1.1.0", { chiave: "MIIBaltra" }) }, /non è di PS Assist/],
+    ["uno zip che non è la versione detta", { t: "aggiorna", versione: "1.2.0", zip: zipDi("1.1.0") }, /lo zip è la 1\.1\.0, non la 1\.2\.0/],
+    ["uno zip più vecchio", { t: "aggiorna", versione: "0.9.0", zip: zipDi("0.9.0") }, /non è più nuova/],
+    ["uno zip senza manifest", { t: "aggiorna", versione: "1.1.0", zip: zipDi("1.1.0", { senzaManifest: true }) }, /manca extension/],
+    ["una pagina al posto dello zip", { t: "aggiorna", versione: "1.1.0", zip: Buffer.from("<html>no</html>").toString("base64") }, /non è uno zip/],
+  ]) {
+    r = (await chiedi(domanda)).r;
+    check(r && r.ok === false && re.test(r.why || "") && versioneIn(EST) === "1.0.0" && !existsSync(PRIMA) && agg() === 0,
+      `${cosa}: rifiutato col motivo, la cartella installata intatta, niente di temporaneo (got ${JSON.stringify(r)})`);
+  }
+  const zip = zipDi("1.1.0");
+  const prova = await chiedi({ t: "aggiorna", versione: "1.1.0", zip }, { pezzi: 256 * 1024 });
+  r = prova.r;
+  check(r && r.ok === true && r.versione === "1.1.0" && prova.intero, `aggiorna: lo zip (a pezzi) → ok, la versione nuova (got ${JSON.stringify(r)})`);
+  check(versioneIn(EST) === "1.1.0" && readFileSync(join(EST, "content.js"), "utf8") === "// nuovo 1.1.0\n" && existsSync(join(EST, "pdfjs", "pdf.min.js"))
+    && readFileSync(join(EST, "installata.json"), "utf8") === '{"da":"installa.cmd"}', "estensione: la nuova, con le sue sottocartelle e installata.json");
+  check(versioneIn(PRIMA) === "1.0.0" && readFileSync(join(PRIMA, "content.js"), "utf8") === "// vecchio\n", "estensione.prima: quella di prima, intera");
+  check(readFileSync(join(STAMPA, "host.ps1"), "utf8") === "# host 1.1.0\n" && existsSync(join(STAMPA, "ripristina.cmd")) && /SUMATRA NUOVO/.test(readFileSync(join(STAMPA, "SumatraPDF.exe"), "utf8")),
+    "stampa: host.ps1 e ripristina.cmd nuovi, SumatraPDF nuovo (impronta come nel nuovo installa.ps1)");
+  check(agg() === 0 && !readdirSync(TMP).some((f) => /^psassist-/.test(f)), "in %TEMP% non resta niente (psassist-agg-*)");
+  check(readdirSync(PSA).filter((f) => f !== "stampa.log").sort().join(",") === "estensione,estensione.prima,stampa", `in PSAssist solo estensione, estensione.prima, stampa e il registro (got ${readdirSync(PSA).join(",")})`);
+  // un'altra: estensione.prima è una sola (la 1.1.0), e un SumatraPDF con l'impronta sbagliata non si copia
+  r = (await chiedi({ t: "aggiorna", versione: "1.2.0", zip: zipDi("1.2.0", { sumatra: "#!/bin/sh\n# SUMATRA FALSO\n", impronta: "0".repeat(64) }) })).r;
+  check(r && r.ok && versioneIn(EST) === "1.2.0" && versioneIn(PRIMA) === "1.1.0" && /SUMATRA NUOVO/.test(readFileSync(join(STAMPA, "SumatraPDF.exe"), "utf8")),
+    `di nuovo: una sola versione di prima (la 1.1.0), e SumatraPDF con l'impronta sbagliata resta quello di prima (got ${JSON.stringify(r)})`);
+  // un aggiornamento fermato a metà da Chrome: la cartella temporanea va via al prossimo avvio
+  const resto = join(TMP, "psassist-agg-" + "d".repeat(32));
+  mkdirSync(resto); writeFileSync(join(resto, "x"), "x");
+  const vecchia = new Date(Date.now() - 11 * 60e3);
+  utimesSync(resto, vecchia, vecchia);
+  await chiedi({ t: "ping" });
+  check(!existsSync(resto), "una cartella psassist-agg-* rimasta da più di 10 minuti: via al prossimo avvio");
+  const log = readFileSync(join(PSA, "stampa.log"), "utf8");
+  check(/estensione avviata: 1\.0\.0/.test(log) && /aggiorna -> 1\.1\.0/.test(log) && /aggiorna : fallito - lo zip non è di PS Assist/.test(log), "il registro: avviata, aggiornata, e i rifiuti");
+  rmSync(PSA, { recursive: true, force: true });
+}
+
 // ---- installa.ps1 --------------------------------------------------------
 // Il registro di Windows qui non c'è: le chiavi HKCU stanno in un file (New-Item,
 // Test-Path e Remove-Item finti per quelle sole; il resto è vero), i criteri in
@@ -252,14 +327,14 @@ for (const [cosa, domanda, re] of [
 console.log("\ninstallazione (installa.ps1)");
 const ZIPDIR = join(D, "zip-estratto"), CASA = join(D, "casa"), UTENTE = join(D, "utente");
 for (const d of [ZIPDIR, CASA, UTENTE, join(UTENTE, "Downloads")]) mkdirSync(d, { recursive: true });
-for (const f of ["installa.ps1", "host.ps1", "host.cmd", "disinstalla.cmd"]) copyFileSync(join(root, "stampa", f), join(ZIPDIR, f));
+for (const f of ["installa.ps1", "host.ps1", "host.cmd", "disinstalla.cmd", "ripristina.cmd"]) copyFileSync(join(root, "stampa", f), join(ZIPDIR, f));
 const testo = readFileSync(join(root, "stampa/installa.ps1"), "utf8");
 const ZIP_SHA = /\$ZIP_SHA256 = '([0-9A-F]{64})'/.exec(testo)?.[1], EXE_SHA = /\$EXE_SHA256 = '([0-9A-F]{64})'/.exec(testo)?.[1];
 // l'ID che la chiave del manifest dà all'estensione: lo stesso ovunque
 const chiave = JSON.parse(readFileSync(join(root, "extension/manifest.json"), "utf8")).key || "";
 const ID = [...createHash("sha256").update(Buffer.from(chiave, "base64")).digest("hex").slice(0, 32)].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join("");
 const REG = join(D, "registro.json");
-writeFileSync(join(D, "installa-prova.ps1"), `param([switch]$Togli)
+writeFileSync(join(D, "installa-prova.ps1"), `param([switch]$Togli, [switch]$Ripristina)
 $REG = '${REG}'
 function Leggi-Reg { if (Test-Path -LiteralPath $REG) { Get-Content -LiteralPath $REG -Raw | ConvertFrom-Json -AsHashtable } else { @{} } }
 function Scrivi-Reg($r) { $r | ConvertTo-Json | Set-Content -LiteralPath $REG }
@@ -289,11 +364,11 @@ function Get-FileHash { param($LiteralPath, $Algorithm)
   if ((Microsoft.PowerShell.Management\\Get-Content -LiteralPath $LiteralPath -Raw -ErrorAction SilentlyContinue) -match '^#!/bin/sh\\n# SUMATRA-FINTO-GIUSTO') { return [pscustomobject]@{ Hash = '${EXE_SHA}' } }
   Microsoft.PowerShell.Utility\\Get-FileHash -LiteralPath $LiteralPath -Algorithm SHA256 }
 if ($env:PSA_LIMITATO) { $ExecutionContext.SessionState.LanguageMode = 'ConstrainedLanguage' }
-& (Join-Path '${ZIPDIR}' 'installa.ps1') -Togli:$Togli
+& (Join-Path '${ZIPDIR}' 'installa.ps1') -Togli:$Togli -Ripristina:$Ripristina
 exit $LASTEXITCODE
 `);
-const installa = (env = {}, togli = false) => {
-  const r = spawnSync(PWSH, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", join(D, "installa-prova.ps1"), ...(togli ? ["-Togli"] : [])],
+const installa = (env = {}, togli = false, ripristina = false) => {
+  const r = spawnSync(PWSH, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", join(D, "installa-prova.ps1"), ...(togli ? ["-Togli"] : []), ...(ripristina ? ["-Ripristina"] : [])],
     { encoding: "utf8", env: { ...process.env, LOCALAPPDATA: CASA, USERPROFILE: UTENTE, TMPDIR: TMP, PSA_CRITERI: "{}", ...env } });
   const out = (r.stdout + r.stderr).replace(/\x1b\[[0-9;]*m/g, "");
   if (process.env.PSA_DEBUG) console.log(out);
@@ -313,7 +388,7 @@ spawnSync("zip", ["-q", "-j", ZIP, join(STAGE, "SumatraPDF-3.6.1-64.exe")]);
   const r = installa({ PSA_ZIP_GIUSTI: ZIP });
   const man = existsSync(join(DOVE, "it.psassist.stampa.json")) ? JSON.parse(readFileSync(join(DOVE, "it.psassist.stampa.json"), "utf8")) : null;
   check(r.status === 0 && /Fatto\./.test(r.out), `finisce con «Fatto» (got ${r.out.trim().split("\n").slice(-2).join(" / ")})`);
-  check(["host.cmd", "host.ps1", "installa.ps1", "disinstalla.cmd", "SumatraPDF.exe"].every((f) => existsSync(join(DOVE, f))),
+  check(["host.cmd", "host.ps1", "installa.ps1", "disinstalla.cmd", "ripristina.cmd", "SumatraPDF.exe"].every((f) => existsSync(join(DOVE, f))),
     `copia l'aiutante, sé stesso, disinstalla.cmd e SumatraPDF in %LOCALAPPDATA%\\PSAssist\\stampa: per toglierla non serve lo zip (got ${existsSync(DOVE) ? readdirSync(DOVE).join(", ") : "niente"})`);
   check(/SUMATRA-FINTO-GIUSTO/.test(readFileSync(join(DOVE, "SumatraPDF.exe"), "utf8")) && /Uso .*Downloads.*SumatraPDF-3\.6\.1-64\.zip/.test(r.out) && !traccia().some((x) => /^scarico/.test(x)),
     "SumatraPDF dallo zip in Download (impronta controllata), senza scaricare niente");
@@ -329,6 +404,36 @@ spawnSync("zip", ["-q", "-j", ZIP, join(STAGE, "SumatraPDF-3.6.1-64.exe")]);
   writeFileSync(join(ZIPDIR, "host.ps1"), readFileSync(join(ZIPDIR, "host.ps1"), "utf8") + "\n# versione nuova\n");
   const r = installa();
   check(r.status === 0 && /# versione nuova/.test(readFileSync(join(DOVE, "host.ps1"), "utf8")), "rilanciato, aggiorna la copia (e SumatraPDF, già giusto, resta)");
+}
+{
+  // lo zip estratto ha anche extension/ accanto a stampa/: va in PSAssist\estensione, con installata.json
+  const ZEST = join(D, "extension"), EST = join(CASA, "PSAssist", "estensione"), PRIMA = join(CASA, "PSAssist", "estensione.prima");
+  const manifestDi = (v) => JSON.stringify({ manifest_version: 3, name: "PS Assist", version: v, key: chiave });
+  mkdirSync(join(ZEST, "pdfjs"), { recursive: true });
+  writeFileSync(join(ZEST, "manifest.json"), manifestDi("3.70.0"));
+  writeFileSync(join(ZEST, "pdfjs", "pdf.min.js"), "// pdfjs\n");
+  let r = installa();
+  const v = () => { try { return JSON.parse(readFileSync(join(EST, "manifest.json"), "utf8")).version; } catch { return ""; } };
+  check(r.status === 0 && v() === "3.70.0" && existsSync(join(EST, "pdfjs", "pdf.min.js")) && existsSync(join(EST, "installata.json")),
+    `copia l'estensione dello zip in %LOCALAPPDATA%\\PSAssist\\estensione, con installata.json (got ${v() || "niente"})`);
+  check(/Una volta sola: in chrome:\/\/extensions «Carica estensione non pacchettizzata» → .*PSAssist.estensione/.test(r.out), "e dice, in una riga, di caricarla una volta da lì");
+  writeFileSync(join(ZEST, "manifest.json"), manifestDi("3.60.0"));
+  r = installa();
+  check(r.status === 0 && v() === "3.70.0" && /Lascio l'estensione 3\.70\.0/.test(r.out), "uno zip più vecchio non la riporta indietro");
+  // ripristina.cmd: estensione.prima torna estensione
+  r = installa({}, false, true);
+  check(r.status === 1 && /non c'è una versione di prima/.test(r.out) && v() === "3.70.0", `ripristina senza una versione di prima: lo dice, niente toccato (got ${r.out.trim().split("\n").slice(-1)})`);
+  mkdirSync(PRIMA, { recursive: true });
+  writeFileSync(join(PRIMA, "manifest.json"), manifestDi("3.69.0"));
+  writeFileSync(join(PRIMA, "installata.json"), "{}");
+  r = installa({}, false, true);
+  check(r.status === 0 && v() === "3.69.0" && !existsSync(PRIMA) && /Rimessa la 3\.69\.0/.test(r.out), `ripristina: estensione.prima torna estensione (got ${r.out.trim().split("\n").slice(-1)})`);
+  const rip = readFileSync(join(root, "stampa/ripristina.cmd"), "utf8");
+  check(/installa\.ps1" -Ripristina/.test(rip) && /\r\n/.test(rip), "ripristina.cmd lo fa fare a installa.ps1 -Ripristina (righe di Windows)");
+  writeFileSync(join(ZEST, "manifest.json"), manifestDi("3.70.0"));
+  installa();
+  mkdirSync(PRIMA, { recursive: true });
+  writeFileSync(join(PRIMA, "manifest.json"), manifestDi("3.69.0"));
 }
 // (AppLocker guarda anche i .cmd: all'IT si chiede la cartella intera, host.cmd compreso)
 const CARTELLA = /Da chiedere all'IT: consentire \(AppLocker\/WDAC\) la cartella .*PSAssist.stampa intera: host\.cmd, host\.ps1, installa\.ps1, disinstalla\.cmd, SumatraPDF\.exe/;
@@ -382,7 +487,7 @@ for (const [cosa, env, re] of [
   writeFileSync(join(TMP, "psassist-" + "c".repeat(32) + ".pdf"), "%PDF- etichette");
   const r = installa({}, true);
   check(r.status === 0 && /Fatto\..*tolta/.test(r.out) && Object.keys(registro()).length === 0 && !existsSync(join(CASA, "PSAssist")) && temporanei().length === 0,
-    `disinstalla.cmd: via le due chiavi, %LOCALAPPDATA%\\PSAssist (copia, SumatraPDF, registro) e i fogli temporanei, controllato (got ${r.out.trim().split("\n").slice(-1)})`);
+    `disinstalla.cmd: via le due chiavi, %LOCALAPPDATA%\\PSAssist (copia, SumatraPDF, registro, estensione ed estensione.prima) e i fogli temporanei, controllato (got ${r.out.trim().split("\n").slice(-1)})`);
   const dis = readFileSync(join(root, "stampa/disinstalla.cmd"), "utf8");
   check(/installa\.ps1" -Togli/.test(dis) && !/reg delete/i.test(dis), "disinstalla.cmd lo fa fare a installa.ps1 -Togli (PowerShell, con la verifica), non a reg.exe");
   // (copiato nella cartella che toglie: cmd legge il file una riga alla volta, e

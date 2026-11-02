@@ -4,10 +4,14 @@
 #
 # Il protocollo è quello dei «native messaging host» di Chrome: su stdin 4 byte
 # (la lunghezza, little-endian) e un JSON in UTF-8; la risposta allo stesso modo
-# su stdout. Tre domande, nient'altro:
+# su stdout. Cinque domande, nient'altro:
 #   {t:"ping"}                                  → la versione
 #   {t:"stampanti"}                             → le stampanti installate e la predefinita
 #   {t:"stampa", pdf, stampante, tipo, ruota}   → quel PDF su QUELLA stampante, senza dialogo
+#   {t:"chi", avviata?}                         → che versione c'è in %LOCALAPPDATA%\PSAssist\estensione
+#   {t:"aggiorna", zip, versione}               → «Aggiorna app»: lo zip (scaricato da Chrome)
+#                                                 al posto di quella cartella, la vecchia in
+#                                                 estensione.prima, e i file di questa cartella
 # e per la stampa un esito, detto onestamente:
 #   ok:true,  esito "stampato"     il foglio è uscito dalla coda di Windows
 #   ok:true,  esito "mandato"      è nella coda di Windows, e lì è rimasto
@@ -17,12 +21,14 @@
 # Tutto entro 35 secondi dall'avvio (l'estensione ne aspetta 90). Non usa la
 # rete, non esegue altro che SumatraPDF.exe di questa cartella, e annota solo in
 # %LOCALAPPDATA%\PSAssist\stampa.log (mai il contenuto, mai nomi).
+# Scrive solo in %LOCALAPPDATA%\PSAssist (estensione, estensione.prima, stampa,
+# il registro) e in %TEMP% (psassist-*, tolti sempre, anche quando va storto).
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # stdout è di Chrome: niente barre, niente testo
 $INIZIO = Get-Date
-$VERSIONE = '2'
-$MAX_MESSAGGIO = 40MB    # il PDF in base64 e poco altro
+$VERSIONE = '3'
+$MAX_MESSAGGIO = 40MB    # il PDF (o lo zip di «Aggiorna app») in base64 e poco altro
 $MAX_PDF = 25MB
 $TETTO_S = 35            # tutto il lavoro di una stampa; con l'avvio di PowerShell, sotto i 40
 # dopo SumatraPDF, quanto si guarda la coda di Windows: un'etichettatrice di
@@ -191,6 +197,74 @@ function Stampa($d, [string]$pdf64) {
   [pscustomobject]@{ esito = $esito; stampante = $nome; pagina = (Misura $byte); opzioni = $opzioni }
 }
 
+# ---- «Aggiorna app» -----------------------------------------------------------
+# Lo zip l'ha scaricato l'estensione (la rete di Chrome): qui niente rete. Si
+# apre in %TEMP%, si controlla (extension\manifest.json, stessa chiave della
+# cartella installata, la versione detta, più nuova), la cartella installata
+# diventa estensione.prima (una copia sola: ripristina.cmd la rimette) e la
+# nuova va al suo posto, con installata.json. Poi i file di questa cartella
+# (host.cmd no: cmd.exe lo sta leggendo adesso, una riga alla volta) e
+# SumatraPDF, solo se è un altro e ha l'impronta che il nuovo installa.ps1 aspetta.
+function Versione([string]$v) { $x = $null; if ([version]::TryParse($v, [ref]$x)) { $x } else { [version]'0.0' } }
+function Manifest([string]$dir) { Get-Content -LiteralPath (Join-Path $dir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json }
+$CASA = Split-Path $LOG
+$EST = Join-Path $CASA 'estensione'
+
+function Aggiorna($d, [string]$zip64) {
+  if (-not (Test-Path -LiteralPath (Join-Path $EST 'manifest.json'))) { throw ('l''estensione non è installata in {0}: rilancia installa.cmd' -f $EST) }
+  try { $byte = [Convert]::FromBase64String($zip64) } catch { throw 'lo zip non è leggibile' }
+  if ($byte.Length -lt 4 -or $byte[0] -ne 0x50 -or $byte[1] -ne 0x4B) { throw 'non è uno zip' }
+  $prima = Join-Path $CASA 'estensione.prima'
+  $g = [guid]::NewGuid().ToString('N')
+  $zip = Join-Path $TEMP "psassist-agg-$g.zip"
+  $tmp = Join-Path $TEMP "psassist-agg-$g"
+  try {
+    [IO.File]::WriteAllBytes($zip, $byte)
+    Expand-Archive -LiteralPath $zip -DestinationPath $tmp
+    $nuova = Join-Path $tmp 'extension'
+    if (-not (Test-Path -LiteralPath (Join-Path $nuova 'manifest.json'))) { throw 'nello zip manca extension\manifest.json' }
+    $n = Manifest $nuova
+    $o = Manifest $EST
+    if ([string]$n.key -ne [string]$o.key) { throw 'lo zip non è di PS Assist (la chiave è diversa)' }
+    if ([string]$n.version -ne [string]$d.versione) { throw ('lo zip è la {0}, non la {1}' -f $n.version, $d.versione) }
+    if ((Versione $n.version) -le (Versione $o.version)) { throw ('la {0} non è più nuova della {1}' -f $n.version, $o.version) }
+    if (Test-Path -LiteralPath $prima) { Remove-Item -LiteralPath $prima -Recurse -Force }
+    # una cartella in uso non si rinomina: allora la si copia, e la nuova va sopra
+    $rinominata = $true
+    try { Rename-Item -LiteralPath $EST -NewName 'estensione.prima' }
+    catch { $rinominata = $false; Copy-Item -LiteralPath $EST -Destination $prima -Recurse }
+    try {
+      if ($rinominata) { $null = New-Item -ItemType Directory -Path $EST }
+      Get-ChildItem -LiteralPath $nuova | Copy-Item -Destination $EST -Recurse -Force
+      Copy-Item -LiteralPath (Join-Path $prima 'installata.json') -Destination $EST -Force
+    } catch {
+      # a metà: torna quella di prima
+      if ($rinominata) { Remove-Item -LiteralPath $EST -Recurse -Force -ErrorAction SilentlyContinue; Rename-Item -LiteralPath $prima -NewName 'estensione' }
+      else { Get-ChildItem -LiteralPath $prima | Copy-Item -Destination $EST -Recurse -Force -ErrorAction SilentlyContinue }
+      throw
+    }
+    # l'aiutante stesso: un intoppo qui non disfa l'estensione, già al suo posto
+    try {
+      $dove = Join-Path $CASA 'stampa'
+      $sz = Join-Path $tmp 'stampa'
+      foreach ($f in 'host.ps1', 'installa.ps1', 'disinstalla.cmd', 'ripristina.cmd') {
+        if (Test-Path -LiteralPath (Join-Path $sz $f)) { Copy-Item -LiteralPath (Join-Path $sz $f) -Destination $dove -Force }
+      }
+      $atteso = [regex]::Match([IO.File]::ReadAllText((Join-Path $sz 'installa.ps1')), '\$EXE_SHA256 = ''([0-9A-F]{64})''').Groups[1].Value
+      $exe = Join-Path $sz 'SumatraPDF.exe'
+      $qui = Join-Path $dove 'SumatraPDF.exe'
+      if ($atteso -and (Test-Path -LiteralPath $exe) -and (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -eq $atteso -and
+          -not ((Test-Path -LiteralPath $qui) -and (Get-FileHash -LiteralPath $qui -Algorithm SHA256).Hash -eq $atteso)) {
+        Copy-Item -LiteralPath $exe -Destination $qui -Force
+      }
+    } catch { Annota ('aggiorna: i file della stampa non si rinnovano - {0}' -f $_.Exception.Message) }
+  } finally {
+    Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  [string]$n.version
+}
+
 $d = $null
 try {
   # I fogli di una stampa interrotta (il PC spento a metà, la sessione chiusa)
@@ -198,14 +272,18 @@ try {
   Get-ChildItem -LiteralPath $TEMP -Filter 'psassist-*.pdf' -ErrorAction SilentlyContinue |
     Where-Object { $_.LastWriteTime -lt (Get-Date).AddMinutes(-10) } |
     Remove-Item -Force -ErrorAction SilentlyContinue
+  # (e quelli di un aggiornamento fermato a metà: Chrome chiude l'aiutante, il finally non arriva)
+  Get-ChildItem -LiteralPath $TEMP -Filter 'psassist-agg-*' -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -lt (Get-Date).AddMinutes(-10) } |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
   $in = [Console]::OpenStandardInput()
   $n = [BitConverter]::ToInt32((Leggi $in 4), 0)
   if ($n -le 0 -or $n -gt $MAX_MESSAGGIO) { throw 'messaggio di lunghezza impossibile' }
   $testo = [Text.Encoding]::UTF8.GetString((Leggi $in $n))
-  # Il PDF (base64: mai virgolette dentro) si stacca prima di leggere il JSON:
-  # il resto è piccolo, e ConvertFrom-Json non deve masticare megabyte.
+  # Il PDF, o lo zip (base64: mai virgolette dentro), si stacca prima di leggere
+  # il JSON: il resto è piccolo, e ConvertFrom-Json non deve masticare megabyte.
   $pdf64 = ''
-  $m = [regex]::Match($testo, '"pdf"\s*:\s*"([A-Za-z0-9+/=]*)"')
+  $m = [regex]::Match($testo, '"(?:pdf|zip)"\s*:\s*"([A-Za-z0-9+/=]*)"')
   if ($m.Success) {
     $pdf64 = $m.Groups[1].Value
     $testo = $testo.Remove($m.Groups[1].Index, $m.Groups[1].Length)
@@ -223,6 +301,17 @@ try {
       $mm = if ($r.pagina) { '{0}x{1} mm' -f [math]::Round($r.pagina[0] * 25.4 / 72), [math]::Round($r.pagina[1] * 25.4 / 72) } else { 'misura ?' }
       Annota ('stampa {0} -> {1}: {2} ({3} KB, {4:0.0} s, {5}, {6})' -f $d.tipo, $r.stampante, $r.esito, [math]::Round($pdf64.Length * 3 / 4 / 1KB), ((Get-Date) - $INIZIO).TotalSeconds, $mm, $r.opzioni)
       Rispondi @{ ok = $true; esito = $r.esito; stampante = $r.stampante; pagina = $r.pagina }
+    }
+    'chi' {
+      $v = ''
+      try { $v = [string](Manifest $EST).version } catch { }   # non installata lì
+      if ($d.avviata) { Annota ('estensione avviata: {0}' -f [string]$d.avviata) }
+      Rispondi @{ ok = $true; versione = $VERSIONE; estensione = $v; cartella = $EST }
+    }
+    'aggiorna' {
+      $v = Aggiorna $d $pdf64
+      Annota ('aggiorna -> {0} ({1} KB, {2:0.0} s)' -f $v, [math]::Round($pdf64.Length * 3 / 4 / 1KB), ((Get-Date) - $INIZIO).TotalSeconds)
+      Rispondi @{ ok = $true; versione = $v }
     }
     default { throw 'domanda sconosciuta' }
   }

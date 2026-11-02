@@ -47,14 +47,22 @@ l'intera pagina — nessuna estensione può impedirlo. Il pannello però **si ri
 quesito, esami selezionati, sezioni aperte e posizione tornano come li hai lasciati (per lo
 stesso paziente, nella stessa scheda), quindi in pratica non te ne accorgi.
 
-**Aggiornare a una nuova versione**: sostituisci i file nella STESSA cartella dell'estensione e
-premi **Ricarica estensione** nel menu **⋯** del pannello (o ⟳ in `chrome://extensions`): non c'è
-mentre un giro di esami sta mandando — anche in una scheda di sottofondo, o mentre le sue
-etichette aspettano di essere stampate —, perché lo ucciderebbe a metà.
-Un'estensione non pacchettizzata non può scaricarsi gli aggiornamenti da sola, e PS Assist non
-contatterà mai server esterni per controllare le versioni — sarebbe contro la regola «nessun dato
-lascia l'ospedale» (che ha una sola eccezione, voluta, accesa dal medico e cifrata da un capo
-all'altro: il **Ponte** verso l'iPhone, più sotto). Le nuove versioni arrivano come zip: sostituisci, ricarica, fatto.
+**Aggiornare a una nuova versione: ⋯ → «Aggiorna app».** Con la stampa automatica installata
+(`stampa\installa.cmd`, qui sotto) l'estensione si carica **una volta** da
+`%LOCALAPPDATA%\PSAssist\estensione` (ce la copia `installa.cmd`, e lo dice). Da lì: quando su
+GitHub c'è una versione più nuova, un puntino sul **⋯** e la voce **Aggiorna app** (la versione nel
+suggerimento). Un tocco: Chrome scarica lo zip, l'aiutante di Windows mette la cartella nuova al
+posto della vecchia (che resta in `estensione.prima`) e l'estensione si ricarica, senza riavviare
+Chrome e senza amministratore. Non mentre un ordine, una stampa o un ordine dal telefono è in corso
+(«Dopo l'ordine in corso»). Le schede già aperte mostrano **«Ricarica la pagina»**: un tocco, quando
+vuoi (la pagina non si ricarica mai da sola: lì può esserci un testo non mandato). Se la versione
+nuova non parte, doppio clic su `ripristina.cmd` in `%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in
+`chrome://extensions`. Senza aiutante, o caricata da un'altra cartella, il ⋯ dice come fare; a mano
+resta il modo di sempre: sostituisci i file nella STESSA cartella e **Ricarica estensione** (⋯),
+che non c'è mentre un giro di esami sta mandando.
+Per sapere se c'è una versione nuova PS Assist legge, una volta al giorno e aprendo il ⋯,
+`VERSION.txt` da `raw.githubusercontent.com` (e lo zip, solo al tocco): richieste senza cookie e
+senza dati, l'eccezione dichiarata nella regola 9.
 
 **Stampa automatica** (facoltativa, Windows, niente admin): etichette all'etichettatrice e il resto
 all'A4, senza dialogo. Prima si avvisa l'IT, poi si installa una volta dalla cartella `stampa`
@@ -1654,6 +1662,12 @@ Salva / Registra, e il PDF di **Stampa RE**.
    scadenza, e vale per un telefono solo. Revoca, scadenza a 14 ore, sessione che si
    chiude dopo 20 minuti senza comandi, la spia «iPhone collegato» e il Registro:
    [`ponte/README.md`](ponte/README.md).
+   **E una seconda, per gli aggiornamenti (⋯ → «Aggiorna app»):** il service worker legge
+   `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (una volta al giorno e aprendo il ⋯) e,
+   solo al tocco del medico, `ps-assist-latest.zip` — due GET senza cookie, senza referrer e senza
+   niente dell'ospedale (`aggiorna.js`). Lo zip va all'aiutante su questo PC, che controlla
+   chiave e versione del manifest e scambia la cartella dell'estensione; mai con un ordine, una
+   stampa o un giro in corso.
 10. **Due schede, due pazienti, zero interferenze**: i passaggi di consegna tra pagina e pagina
    (ricevuta e conferma automatica) vivono nella singola scheda (sessionStorage).
    **La scheda dell'ordine.** Con l'estensione il giro lo fa una scheda di sottofondo, e tutti
@@ -1860,7 +1874,9 @@ ps-app/
 │                          extension/ponte-host.js, extension/registra-pdf.js, registra-pill.js e registra-vocabolario.json
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
-├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 e SumatraPDF.exe (ufficiale 3.6.1, GPLv3, nello zip: installa.cmd non scarica più niente)
+├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 e SumatraPDF.exe (ufficiale 3.6.1, GPLv3, nello zip: installa.cmd non scarica più niente); ripristina.cmd
+├── extension/aggiorna*  ← ⋯ → «Aggiorna app»: aggiorna.js (service worker: VERSION.txt, lo zip, l'aiutante, la ricarica),
+│                          aggiornata.js (la pillola «Ricarica la pagina» nelle schede rimaste col pannello vecchio)
 ├── tools/verifica-build.mjs ← al rilascio: la build, lo zip e la versione committati sono quelli di adesso
 ├── esempi-gestionale/   ← pagine vere del gestionale, contenuti inventati (+ come)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
