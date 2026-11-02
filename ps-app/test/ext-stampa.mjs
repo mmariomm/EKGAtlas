@@ -107,7 +107,8 @@ await ctx.addInitScript(() => {
       const visti = new Set(l.map((y) => JSON.stringify(y)));
       let nuovi = false;
       for (const el of r.querySelectorAll(".pjob")) {
-        const v = { n: (el.querySelector(".pjn")?.textContent || "").trim(), x: !!el.querySelector(".pjx"),
+        const pjn = el.querySelector(".pjn");
+        const v = { n: (pjn?.getAttribute("aria-label") || pjn?.textContent || "").trim(), svg: !!pjn?.querySelector("svg"), x: !!el.querySelector(".pjx"),
           ico: el.querySelector(".pjico.pulsa") ? "pulsa" : el.querySelector(".pjico.fatto") ? "fatto" : "",
           ok: el.classList.contains("ok"), err: el.classList.contains("err"), w: el.querySelector(".pjbar i")?.style.width || "",
           att: !!el.querySelector(".pjx.att") };
@@ -1103,8 +1104,8 @@ if (await prova("il pacchetto Dolore toracico con l'RX: confermate da sole, etic
     `due richieste, laboratorio (6) e RX torace 1 proiezione (1), confermate tutte e due da sole (got ${nuove.map((r) => `${[...r.cart.keys()]}:${r.confirmed}`).join(" | ")})`);
   check(conferme(A).length === 2, `una conferma per richiesta (got ${conferme(A).length})`);
   const f = rec ? rec.fogli : [];
-  check(!!rec && JSON.stringify(f.map((x) => x.breve)) === JSON.stringify(["Et POC", "Fg POC", "Fg RX"]) && f.every((x) => x.stato === "stampato"),
-    `tre fogli, una stampa sola: «Et POC», «Fg POC», «Fg RX», tutti stampati (got ${JSON.stringify(f.map((x) => `${x.breve}:${x.stato}`))})`);
+  check(!!rec && JSON.stringify(f.map((x) => x.breve)) === JSON.stringify(["et:POC", "fg:POC", "fg:RX"]) && f.every((x) => x.stato === "stampato"),
+    `tre fogli, una stampa sola: etichette POC, lista POC, prenotazione RX, tutti stampati (got ${JSON.stringify(f.map((x) => `${x.breve}:${x.stato}`))})`);
   check(f.length === 3 && f[1].ts < f[2].ts, "sull'A4 la lista prima, la prenotazione RX per ultima");
   const l = lavori();
   check(l.filter((x) => x.tipo === "etichette" && x.stampante === "Zebra ZD421").length === 1 && l.filter((x) => x.tipo === "a4" && x.stampante === "HP LaserJet A4").length === 2 && l.length === 3,
@@ -1112,10 +1113,10 @@ if (await prova("il pacchetto Dolore toracico con l'RX: confermate da sole, etic
   check((await stampe(doc)).length === 0, "nessun dialogo, nessuna anteprima");
   const viste = await righeViste(doc);
   const nomi = [...new Set(viste.map((r) => r.n))];
-  const ordine = ["Et POC", "Fg POC", "Fg RX"].map((n) => viste.findIndex((r) => r.n === n));
-  check(ordine.every((i) => i >= 0) && ordine[0] < ordine[1] && ordine[1] < ordine[2], `le righe dei fogli, in ordine: Et POC, Fg POC, Fg RX (got ${nomi.join(" | ")})`);
+  const ordine = ["Etichette POC", "Lista esami POC", "Prenotazione RX"].map((n) => viste.findIndex((r) => r.n === n));
+  check(ordine.every((i) => i >= 0) && ordine[0] < ordine[1] && ordine[1] < ordine[2], `le righe dei fogli, in ordine, con la loro icona: Etichette POC, Lista esami POC, Prenotazione RX (got ${nomi.join(" | ")})`);
   const di = (n) => viste.filter((r) => r.n === n);
-  check(di("Fg RX").some((r) => r.x && !r.ico) && di("Fg RX").some((r) => r.ico === "pulsa" && !r.x) && di("Fg RX").some((r) => r.ok && r.ico === "fatto" && r.w === "100%"),
+  check(di("Prenotazione RX").some((r) => r.x && !r.ico && r.svg) && di("Prenotazione RX").some((r) => r.ico === "pulsa" && !r.x) && di("Prenotazione RX").some((r) => r.ok && r.ico === "fatto" && r.w === "100%"),
     "ogni riga: col ✕ finché aspetta, poi la stampantina che respira (niente ✕), poi verde col ✓");
   check(!!vivo, "(la foto delle righe mentre stampa: scratchpad/side/stampa-righe.png)");
   await sospendi(5000);
@@ -1134,11 +1135,11 @@ if (await prova("un ordine in sottofondo: sotto la striscia la riga «Rich Lab �
   await nasce;
   await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli), 90000);
   const viste = await righeViste(doc);
-  const k = viste.filter((r) => /^Rich Lab · \d\/2$/.test(r.n) && !r.ok).map((r) => Number(/(\d)\/2/.exec(r.n)[1]));
-  check(k.length >= 2 && Math.max(...k) > Math.min(...k) && viste.some((r) => /^Rich Lab · \d\/2$/.test(r.n) && r.x),
+  const k = viste.filter((r) => /^Richiesta Lab · \d\/2$/.test(r.n) && !r.ok).map((r) => Number(/(\d)\/2/.exec(r.n)[1]));
+  check(k.length >= 2 && Math.max(...k) > Math.min(...k) && viste.some((r) => /^Richiesta Lab · \d\/2$/.test(r.n) && r.x && !r.svg),
     `la riga della richiesta avanza, col suo ✕ (got ${[...new Set(viste.map((r) => r.n))].join(" | ")})`);
-  check(viste.some((r) => r.n === "Rich Lab · 2/2" && r.ok && r.ico === "fatto"), "confermata: verde, col ✓");
-  check(viste.some((r) => r.n === "Et POC") && viste.some((r) => r.n === "Fg POC"), "poi le righe dei suoi fogli");
+  check(viste.some((r) => r.n === "Richiesta Lab · 2/2" && r.ok && r.ico === "fatto"), "confermata: verde, col ✓");
+  check(viste.some((r) => r.n === "Etichette POC") && viste.some((r) => r.n === "Lista esami POC"), "poi le righe dei suoi fogli");
 }
 
 if (await prova("una riga tolta col ✕: quel foglio solo non esce, gli altri sì; dall'aiutante il ✕ non c'è più")) {
@@ -1149,12 +1150,12 @@ if (await prova("una riga tolta col ✕: quel foglio solo non esce, gli altri s�
   // la prenotazione RX aspetta che l'A4 finisca la lista: lì la si toglie
   const pronta = await finche(async () => doc.evaluate(() => {
     const r = document.getElementById("psassist-host")?.shadowRoot;
-    const riga = (n) => [...(r?.querySelectorAll(".pjob") || [])].find((el) => el.querySelector(".pjn")?.textContent.trim() === n);
-    const rx = riga("Fg RX"), lista = riga("Fg POC");
+    const riga = (n) => [...(r?.querySelectorAll(".pjob") || [])].find((el) => el.querySelector(".pjn")?.getAttribute("aria-label") === n);
+    const rx = riga("Prenotazione RX"), lista = riga("Lista esami POC");
     return !!rx && !!rx.querySelector(".pjx") && !!lista && !!lista.querySelector(".pjico.pulsa") && !lista.querySelector(".pjx");
   }).catch(() => false), 120000);
   check(!!pronta, "la lista è all'A4 (stampantina, niente ✕) e la prenotazione RX aspetta il suo turno, col ✕");
-  await $panel(doc, '.pjob:has(.pjn:text-is("Fg RX")) .pjx').click().catch(() => {});
+  await $panel(doc, '.pjob:has(.pjn[aria-label="Prenotazione RX"]) .pjx').click().catch(() => {});
   const rec = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli && x.fogli.length === 3), 60000);
   const f = rec ? rec.fogli : [];
   check(f.length === 3 && f[0].stato === "stampato" && f[1].stato === "stampato" && f[2].stato === "tolto" && /^Stampato su/.test(rec.pubblico.titolo),
@@ -1191,7 +1192,7 @@ if (await prova("dal telefono il pacchetto con l'RX: due ordini, laboratorio e r
   const nuove = nuoveDi(prima);
   check(nuove.length === 2 && nuove.every((x) => x.confirmed) && nuove.some((x) => x.cart.has("36")),
     `confermate tutte e due da sole, la RX compresa: non resta nel carrello (got ${nuove.map((x) => `${[...x.cart.keys()]}:${x.confirmed}`).join(" | ")})`);
-  check(!!fatti && fatti[1].fogli.length === 1 && fatti[1].fogli[0].breve === "Fg RX" && fatti[1].fogli[0].stato === "stampato",
+  check(!!fatti && fatti[1].fogli.length === 1 && fatti[1].fogli[0].breve === "fg:RX" && fatti[1].fogli[0].stato === "stampato",
     `e la prenotazione RX esce sull'A4 (got ${JSON.stringify(fatti && fatti.map((x) => x.fogli.map((f) => `${f.breve}:${f.stato}`)))})`);
   check(lavori().length === 3 && (await stampe(doc)).length === 0, `tre fogli all'aiutante, nessun dialogo (got ${lavori().length})`);
 }
@@ -1290,9 +1291,9 @@ if (await prova("l'etichetta anagrafica: il bottone accanto al nome, le copie a 
   check((await $panel(doc, ".card").count()) === 1, "il pannello resta aperto: l'etichetta anagrafica non lo riduce alla striscia");
   await azzeraRighe(doc);
   if (await $panel(doc, "#collapse").count()) await $panel(doc, "#collapse").click();
-  const rigaBrac = await finche(async () => (await righeViste(doc)).find((r) => r.n === "Et anag ×3" && r.ico === "pulsa" && !r.x), 8000);
-  check(!!rigaBrac && !(await righeViste(doc)).some((r) => /^Et anag/.test(r.n) && r.n !== "Et anag ×3"),
-    `sotto la pill una riga sola, «Et anag ×3», con la stampantina che respira (got ${JSON.stringify((await righeViste(doc)).map((r) => r.n))})`);
+  const rigaBrac = await finche(async () => (await righeViste(doc)).find((r) => r.n === "Etichetta anagrafica ×3" && r.svg && r.ico === "pulsa" && !r.x), 8000);
+  check(!!rigaBrac && !(await righeViste(doc)).some((r) => /^Etichetta anagrafica/.test(r.n) && r.n !== "Etichetta anagrafica ×3"),
+    `sotto la pill una riga sola, [braccialetto] ×3, con la stampantina che respira (got ${JSON.stringify((await righeViste(doc)).map((r) => r.n))})`);
   // un tocco mentre stampa: niente (il bottone pulsa)
   await finche(() => lavori().length >= 1, 10000);
   await tocca(doc);
@@ -1340,7 +1341,7 @@ if (await prova("l'etichetta anagrafica: il bottone accanto al nome, le copie a 
   check(!!inCoda, `in coda, il bottone tiene «×2», spento, finché non stampa (got ${JSON.stringify(await bottoneBrac(doc))})`);
   await azzeraRighe(doc);
   if (await $panel(doc, "#collapse").count()) await $panel(doc, "#collapse").click();
-  const rigaCoda = await finche(async () => (await righeViste(doc)).find((r) => r.n === "Et anag ×2" && r.att && r.w === "0%"), 4000);
+  const rigaCoda = await finche(async () => (await righeViste(doc)).find((r) => r.n === "Etichetta anagrafica ×2" && r.att && r.w === "0%"), 4000);
   check(!!rigaCoda, `e la sua riga sotto la pill: barra vuota, la clessidra al posto del ✕ (got ${JSON.stringify(await righeViste(doc))})`);
   const finita = await finche(async () => (await ordiniBrac()).find((x) => x.stato === "avviso"), 40000);
   const ll = lavori();
