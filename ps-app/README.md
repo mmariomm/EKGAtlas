@@ -1285,6 +1285,7 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   **rossa** se l'ultimo foglio non è uscito o ha un esito sconosciuto, e lo dice; con accanto
   **«non installata»** se l'aiutante non c'è più (lo si chiede all'aiutante al più ogni mezz'ora,
   aprendo il pannello). Un tocco apre le Stampanti.
+- **L'etichetta anagrafica**: accanto al nome, se la pagina ha il suo «Stampa Bracciale» (per quell'episodio), un braccialetto: ogni tocco entro un secondo è una copia (fino a 5, «×3»), poi una stampa sola all'etichettatrice, col link della pagina preso una volta, dopo le etichette di un ordine che stampa; un tocco mentre esce non fa niente. Senza stampa automatica apre il PDF come il gestionale.
 - **Le etichette dritte**: SumatraPDF gira di 90° le pagine più larghe che alte, e coi driver
   Zebra, ZDesigner, TSC e Citizen l'etichetta uscirebbe di traverso. Nelle Stampanti,
   «Etichette più larghe che alte: non girarle / girale di 90°» (di partenza «non girarle» per
