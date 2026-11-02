@@ -2122,19 +2122,69 @@
   // è avvenuta (memoria piena o bloccata): chi promette al medico «salvato»
   // deve poterlo verificare — e ora vale anche per le consegne fra pagina e
   // pagina, che prima fallivano in silenzio.
-  const magazzino = (dep) => ({
+  // (`scritto`: chi deve sapere che una chiave è cambiata — lo specchio del tabellone)
+  const magazzino = (dep, scritto = null) => ({
     get(key, fallback) {
       try { const v = JSON.parse(dep.getItem(NS + key)); return v ?? fallback; }
       catch { return fallback; }
     },
-    set(key, value) { try { dep.setItem(NS + key, JSON.stringify(value)); return true; } catch { return false; } },
-    del(key) { try { dep.removeItem(NS + key); return true; } catch { return false; } },
+    set(key, value) { try { dep.setItem(NS + key, JSON.stringify(value)); scritto?.(key); return true; } catch { return false; } },
+    del(key) { try { dep.removeItem(NS + key); scritto?.(key); return true; } catch { return false; } },
     keys(prefix) {
-      try { return Object.keys(dep).filter((k) => k.startsWith(NS + prefix)).map((k) => k.slice(NS.length)); }
+      try { return (dep.chiavi ? dep.chiavi() : Object.keys(dep)).filter((k) => k.startsWith(NS + prefix)).map((k) => k.slice(NS.length)); }
       catch { return []; }
     },
   });
-  const store = magazzino(localStorage);
+  // ------------------------------------------------ IL TABELLONE IN UNA SCHEDA
+  // extension/tabellone.html carica questo stesso file: il tabellone dei
+  // Pazienti, lo stesso codice, a tutta pagina. Non legge il gestionale e non
+  // ordina niente: disegna da uno SPECCHIO delle chiavi che il tabellone usa,
+  // che ogni scheda del gestionale tiene in chrome.storage.local a ogni
+  // scrittura (e all'avvio). Là, la memoria è tutta in RAM (niente resta
+  // nell'origine dell'estensione); quello che il medico ci cambia (un letto,
+  // un archiviato, Alta | Bassa) va a una scheda del gestionale, che lo
+  // scrive come sempre: la verità resta nella memoria del gestionale.
+  const TABELLONE = (() => { try { return location.protocol === "chrome-extension:" && /\/tabellone\.html$/.test(location.pathname); } catch { return false; } })();
+  const SPECCHIO = "tabellone.specchio";   // in chrome.storage.local: { kv: { chiave: valore come in localStorage } }
+  const SPECCHIATE = new Set(["patients.v1", "aree.v1", "area.corrente.v1", "smart.sync.v1", "dimessi.v1", "stato.v1", "note.v1", "segni.v1", "dafare.v1"]);
+  const specchiata = (k) => SPECCHIATE.has(k) || /^(stanza|tabellone)\./.test(k);
+  const conEstensione = () => { try { return typeof chrome !== "undefined" && !!chrome.runtime?.id && !!chrome.storage?.local; } catch { return false; } };
+  let specchioAtteso = false;
+  // nel gestionale: dopo le scritture di questo giro, una sola copia (uguale a
+  // quella che c'è già, Chrome non la annuncia: il tabellone non ridisegna per niente)
+  function specchia(k) {
+    if (TABELLONE || (k != null && !specchiata(k)) || specchioAtteso) return;
+    specchioAtteso = true;
+    Promise.resolve().then(() => {
+      specchioAtteso = false;
+      if (!conEstensione()) return;
+      const kv = {};
+      try { for (const c of Object.keys(localStorage)) if (c.startsWith(NS) && specchiata(c.slice(NS.length))) kv[c.slice(NS.length)] = localStorage.getItem(c); } catch { return; }
+      try { chrome.storage.local.set({ [SPECCHIO]: { kv } }).catch(() => {}); } catch { /* estensione ricaricata */ }
+    });
+  }
+  // nel tabellone: la memoria in RAM, e quello che vi si scrive va al gestionale
+  const MEM = (() => {
+    const m = new Map();
+    return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); }, removeItem: (k) => { m.delete(k); }, chiavi: () => [...m.keys()] };
+  })();
+  let specchioKv = {};          // l'ultimo specchio arrivato: quello che il gestionale ha già
+  let inoltroAtteso = null;     // le chiavi scritte qui in questo giro, da mandare
+  function inoltra(k) {
+    if (!specchiata(k)) return;
+    const v = MEM.getItem(NS + k);
+    if (v === (specchioKv[k] ?? null)) return;   // lo stesso che c'è già di là: niente da mandare
+    if (!inoltroAtteso) {
+      inoltroAtteso = new Set();
+      Promise.resolve().then(() => {
+        const chiavi = [...inoltroAtteso];
+        inoltroAtteso = null;
+        tabelloneScrive(chiavi.map((c) => [c, MEM.getItem(NS + c)]));
+      });
+    }
+    inoltroAtteso.add(k);
+  }
+  const store = TABELLONE ? magazzino(MEM, inoltra) : magazzino(localStorage, specchia);
   // il presidio del giro: chi lo tiene, su quale richiesta, e da quando
   const presidioLibero = (rid, token) => {
     const p = store.get(PRESIDIO, null);
@@ -2501,6 +2551,7 @@
   // arrivati (nome e impronta della nascita).
   function apriArea(k, chi, dove = (u) => nav(u)) {
     if (!k) return false;
+    if (TABELLONE) { tabelloneChiede({ cosa: "area", k }); return true; }   // la apre una scheda del gestionale
     const ora = store.get(AREA_ORA, null);
     store.set(AREA_VAI, { k, ...(chi ? { chi } : {}), ts: Date.now() });
     return dove(urlMenu(ora && ora.k === k ? "PsoPazientiAmbulatorio" : "PsoPsoImposta"));
@@ -2860,6 +2911,7 @@
   // Rileggere la smart adesso (⟳) o perché sono passati 10 minuti: lo chiede
   // il service worker, che apre la scheda dietro e ne tiene una sola.
   async function smartSync(forza) {
+    if (TABELLONE) return tabelloneChiede({ cosa: "sync" });   // la rilegge una scheda del gestionale, dal suo link
     if (!hasExt()) return { ok: false, why: "senza estensione" };
     const u = store.get(SMART_URL, null)?.url;
     if (!u) return { ok: false, why: "nessun link" };
@@ -5112,6 +5164,30 @@
     .menu hr { border: 0; border-top: 1px solid #EEF2F6; margin: 5px 4px; }
     .menu button.mrischio { color: #B3261E; font-weight: 700; }
     .menu .mver { padding: 6px 10px 4px; font-size: 12px; color: #5B6B7A; }
+    /* Forma: Finestra · Al passaggio · Colonna, in una riga del menu */
+    .menu .mforma { display: flex; align-items: center; gap: 2px; padding: 4px 4px 4px 10px; font-size: 12px; color: #5B6B7A; white-space: nowrap; }
+    .menu .mforma span { margin-right: 6px; }
+    .menu .mforma button { display: inline-block; width: auto; padding: 5px 8px; font-size: 12px; }
+    .menu .mforma button.on { background: #E8F0FA; color: #0B5CAD; font-weight: 700; }
+    /* la colonna: a tutta altezza sul bordo destro, il gestionale accanto */
+    .wrap.col { top: 0; right: 0; }
+    .wrap.col .card, .wrap.tab .card { border-radius: 0; border-width: 0 0 0 1px; box-shadow: 0 0 18px rgba(9,42,74,.14); }
+    .wrap.col .hd, .wrap.tab .hd { border-radius: 0; cursor: default; }
+    .wrap.col .rz-w { top: 0; bottom: 0; left: -3px; width: 8px; }
+    .wrap.tab .card { border: 0; box-shadow: none; }
+    /* la linguetta: nascosta, la colonna è questo segno sul bordo (F2 o un tocco la riaprono) */
+    .coltab { width: 7px; height: 96px; padding: 0; border: 0; border-radius: 6px 0 0 6px; background: #0B5CAD; cursor: pointer;
+              box-shadow: 0 2px 8px rgba(9,42,74,.25); display: block; }
+    .coltab:hover { width: 10px; }
+    .coltab:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 2px; }
+    .coltab.urg { background: #B3261E; }
+    .coltab.apre { position: absolute; left: -7px; top: calc(50% - 48px); z-index: 8; opacity: .55; }
+    .coltab.apre:hover, .coltab.apre:focus-visible { opacity: 1; left: -10px; }
+    /* Al passaggio: la pill resta, sopra la finestra; fissata ha l'anello */
+    .wrap.ppass { z-index: 2147483647; }
+    .pill.fissa { box-shadow: 0 0 0 3px #fff, 0 0 0 5px #0B5CAD, 0 4px 14px rgba(9,42,74,.22); }
+    .tbspia { font-size: 12px; font-weight: 500; color: #5B6B7A; white-space: nowrap; }
+    .tbspia.no { color: #8A5A00; }
     .pbar { flex: 0 0 auto; height: 3px; background: #E3E8EF; }
     .pbar i { display: block; height: 100%; background: #0B5CAD; transition: width .25s ease; }
     /* compact, always-visible selection strip (plain text, not pills) */
@@ -6246,6 +6322,22 @@
   const FINESTRA_MAX_PX = 1150;
   const AFFIANCA = { x: 0.63, y: 0.02, w: 0.36, h: 0.96 };   // una colonna a destra: il gestionale resta visibile
   const eAffiancata = (w) => !!w && ["x", "y", "w", "h"].every((k) => Math.abs(w[k] - AFFIANCA[k]) < 0.005);
+  // La FORMA del pannello, da provare nei turni (⋯ → Forma): la finestra di
+  // sempre; la stessa che si apre al passaggio del mouse sulla pill e si
+  // richiude uscendo; o una colonna a destra, a tutta altezza, che stringe il
+  // gestionale invece di coprirlo. Un'impostazione: il reset la lascia.
+  const FORMA = "forma.v1";
+  const FORME_PANNELLO = ["finestra", "passaggio", "colonna"];
+  const NOME_FORMA = { finestra: "Finestra", passaggio: "Al passaggio", colonna: "Colonna" };
+  const formaOra = () => { if (TABELLONE) return "finestra"; const f = store.get(FORMA, null); return FORME_PANNELLO.includes(f) ? f : "finestra"; };
+  // la colonna: la sua larghezza (px) e se il medico l'ha nascosta
+  const COLONNA = "colonna.v1";
+  const colonnaStato = () => { const c = store.get(COLONNA, null); return c && typeof c === "object" ? c : {}; };
+  const colonnaW = (w) => {
+    const vw = window.innerWidth || 1000, max = Math.max(420, Math.round(vw * 0.6));
+    return Math.round(Math.min(max, Math.max(420, Number.isFinite(w) ? w : vw * 0.36)));
+  };
+  const PASSAGGIO_APRE_MS = 150, PASSAGGIO_CHIUDE_MS = 500;
   const geometriaPropria = (win) => !!win && [win.x, win.y, win.w, win.h].every(Number.isFinite);
   function geometriaFinestra(win) {
     const vw = window.innerWidth || 1000, vh = window.innerHeight || 800;
@@ -6287,6 +6379,12 @@
       const daPannello = Date.now() - (Number(tabStore.get("navPannello.v1", 0)) || 0) < 30e3;
       tabStore.set("navPannello.v1", 0);
       this.collapsed = !daPannello;
+      // la colonna non copre niente: resta com'era, aperta o nascosta dal medico (F2)
+      if (formaOra() === "colonna") this.collapsed = !!colonnaStato().nascosta;
+      if (TABELLONE) this.collapsed = false;
+      // Al passaggio: aperta dal mouse si richiude uscendo; aperta in ogni
+      // altro modo (un clic, una pagina che l'apre da sola) resta, fissata
+      this.fissata = true;
       this.menuAperto = false;   // il menu «⋯» dell'intestazione
       this.avvisoPill = "";      // una parola sulla pill, per pochi secondi («✓ Copiato · incolla»)
       // Che cosa sta succedendo fuori dalla finestra — conferma, etichette,
@@ -6338,7 +6436,7 @@
     this._visibile = () => {
       if (document.hidden) return;
       this.promTick();
-      if (this.pageType === "patient") this.caricaStorico();
+      if (this.pageType === "patient" && !TABELLONE) this.caricaStorico();
     };
     document.addEventListener("visibilitychange", this._visibile);
     this._unload = (e) => { e.preventDefault(); e.returnValue = ""; };
@@ -6365,12 +6463,41 @@
         const t = via[0];
         if (!dentro && t && t !== document.body && t !== document.documentElement && t !== document) return;
         if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "")) return;
+        if (this.menuAperto) { e.preventDefault(); this.menuAperto = false; this.render(); return; }
+        if (this.stanzaEdit) { e.preventDefault(); this.stanzaEdit = false; this.render(); return; }
+        // la colonna sta accanto al gestionale: la nasconde F2 (o la linguetta), non Esc
+        if (formaOra() === "colonna" || TABELLONE) return;
         e.preventDefault();
-        if (this.menuAperto) { this.menuAperto = false; this.render(); return; }
-        if (this.stanzaEdit) { this.stanzaEdit = false; this.render(); return; }
         this.riduci();
       };
       window.addEventListener("keydown", this._esc, true);
+      // F2 nasconde e riapre la colonna — non mentre si scrive in un campo del gestionale
+      this._f2 = (e) => {
+        if (e.key !== "F2" || e.repeat || formaOra() !== "colonna" || TABELLONE) return;
+        const via = e.composedPath ? e.composedPath() : [];
+        if (!via.includes(this.host) && eCampo(via[0] || document.activeElement)) return;
+        e.preventDefault();
+        if (this.collapsed) this.apri(); else this.riduci();
+      };
+      window.addEventListener("keydown", this._f2, true);
+      // Al passaggio: fuori dal pannello per mezzo secondo, e si richiude
+      this._passaggio = (e) => {
+        if (formaOra() !== "passaggio" || this.collapsed || this.fissata || (e.pointerType && e.pointerType !== "mouse")) return;
+        const via = e.composedPath ? e.composedPath() : [];
+        // (uscendo dalla pagina il browser manda un «out» senza dove: è fuori anche quello)
+        const dentro = e.type === "pointerout" ? false : via.includes(this.host);
+        if (e.type === "pointerout" && e.relatedTarget) return;
+        if (dentro) { clearTimeout(this._tChiude); this._tChiude = 0; return; }
+        if (!this._tChiude) this._tChiude = setTimeout(() => this.passaggioChiude(), PASSAGGIO_CHIUDE_MS);
+      };
+      window.addEventListener("pointermove", this._passaggio, true);
+      document.addEventListener("pointerout", this._passaggio, true);
+      // un gesto cominciato nel pannello (trascinare, ridimensionare, selezionare) lo tiene aperto
+      this._premuto = false;
+      this.root.addEventListener("pointerdown", () => { this._premuto = true; }, true);
+      const lascia = () => { this._premuto = false; };
+      window.addEventListener("pointerup", lascia, true);
+      window.addEventListener("pointercancel", lascia, true);
       // Un clic FUORI dalla finestra (sul gestionale che si vede ai bordi) la
       // riduce alla pill: il clic intanto arriva alla pagina, non si ferma.
       // Dentro la finestra, un clic fuori dal menu «⋯» lo chiude.
@@ -6380,7 +6507,7 @@
           if (this.menuAperto && !via.some((x) => x.classList && x.classList.contains("menuw"))) { this.menuAperto = false; this.render(); }
           return;
         }
-        if (this.collapsed || this.runState === "running") return;
+        if (this.collapsed || this.runState === "running" || formaOra() === "colonna" || TABELLONE) return;
         if (via.some((x) => x.id === "psassist-print" || x.id === "psassist-confirm" || x.id === "psassist-visore")) return;   // le nostre finestre: stampa, conferma, visore
         this.riduci();
       };
@@ -7792,13 +7919,19 @@
       // lasciata tu). Ridotto: la pill, dove l'hai messa (in alto a destra
       // se non l'hai mai spostata).
       const ridotto = this.collapsed;
+      const forma = formaOra();
+      // la colonna nascosta è una linguetta sul bordo (la striscia di un ordine resta com'è)
+      const linguetta = ridotto && forma === "colonna" && !this.striscia && !this.runState;
+      const pp = this.pillPos;
+      const pillStyle = pp && Number.isFinite(pp.left) && Number.isFinite(pp.top)
+        ? `left:${Math.max(0, Math.min(window.innerWidth - 80, pp.left))}px;top:${Math.max(0, Math.min(window.innerHeight - 48, pp.top))}px;right:auto;`
+        : "";
       let posStyle;
-      if (ridotto) {
-        const pp = this.pillPos;
-        posStyle = pp && Number.isFinite(pp.left) && Number.isFinite(pp.top)
-          ? `left:${Math.max(0, Math.min(window.innerWidth - 80, pp.left))}px;top:${Math.max(0, Math.min(window.innerHeight - 48, pp.top))}px;right:auto;`
-          : "";
-      } else {
+      if (TABELLONE) posStyle = "left:0;top:0;width:100%;height:100%;right:auto;";
+      else if (linguetta) posStyle = "top:calc(50% - 48px);right:0;";
+      else if (ridotto) posStyle = pillStyle;
+      else if (forma === "colonna") posStyle = `left:auto;right:0;top:0;width:${colonnaW(colonnaStato().w)}px;height:100%;`;
+      else {
         const g = geometriaFinestra(this.win);
         // di partenza (niente geometria tua) la misura segue lo schermo anche
         // se il browser cambia misura: il tetto è in CSS, non nel conto di adesso
@@ -7810,7 +7943,7 @@
 
       this.root.innerHTML = `
         <style>${COLORS}${PONTE_CSS}</style>
-        <div class="wrap${ridotto ? "" : " win"}" style="${posStyle}">
+        <div class="wrap${ridotto ? "" : " win"}${forma === "colonna" && !ridotto ? " col" : ""}${TABELLONE ? " tab" : ""}" style="${posStyle}">
           ${this.collapsed && !running && this.striscia ? `
             <div class="strip">
               <button class="pill run ${esc(strTono)}" id="expand" title="${esc(strWho)} — ${esc(this.striscia.titolo || (this.striscia.onTap ? "tocca per i comandi" : "tocca per aprire il pannello"))}">
@@ -7839,30 +7972,36 @@
               </button>
               ${running ? `<button class="stopmini" id="stopbtn" title="Interrompi (Esc)">⏹</button>` : ""}
             </div>
+          ` : linguetta ? `
+            <button class="coltab${this.promUrgente() ? " urg" : ""}" id="expand" title="${esc(who)} — ${esc(APP)}: mostra la colonna (F2)" aria-label="Mostra il pannello (F2)"></button>
           ` : this.collapsed ? `
             <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}${this.chipRec()}${this.promUrgente()}</button>
           ` : `
+            ${forma === "colonna" && !TABELLONE ? `<button class="coltab apre" id="colnascondi" title="Nascondi la colonna (F2)" aria-label="Nascondi il pannello (F2)"></button>` : ""}
             <div class="card${inStanza ? " stanza" : ""}" role="dialog" aria-label="${esc(APP)}" tabindex="-1">
-              <div class="hd" id="draghd" title="Trascina per spostare · doppio clic per rimetterla al centro">
+              <div class="hd" id="draghd"${forma === "colonna" || TABELLONE ? "" : ` title="Trascina per spostare · doppio clic per rimetterla al centro"`}>
                 ${indietro ? `<button class="iconbtn" id="back" title="${
                   this.view === "referto" ? "Torna agli esiti"
                   : this.view === "dimtesto" || this.view === "dimimport" ? "Torna ai fogli di dimissione"
                   : this.view === "eotesto" ? "Torna all'esame obiettivo"
-                  : "Tutti i pazienti"}" aria-label="Indietro">${ICO.indietro}</button>` : `<span class="logo">${LOGO_BLU}</span>`}${titolo ? `<b class="who">${esc(titolo)}</b>` : ""}
+                  : "Tutti i pazienti"}" aria-label="Indietro">${ICO.indietro}</button>` : `<span class="logo">${LOGO_BLU}</span>`}${titolo ? `<b class="who">${esc(titolo)}</b>` : TABELLONE ? `<b class="who">Tabellone</b>${this.tabelloneSpia()}` : ""}
                 ${sub ? `<span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>` : ""}
                 ${idp && this.epDiQuesta() ? `<span class="hdpaz">${this.cuoreHtml(this.epDiQuesta())}${this.dfSlot(this.epDiQuesta(), undefined, "testa")}</span>` : ""}
                 <span class="hsp"></span>
-                ${ponteSpia()}
+                ${TABELLONE ? "" : ponteSpia()}
+                ${this.listaPs() && this.inPazienti() && hasExt() && !TABELLONE ? `<button class="iconbtn" id="tabapri" title="Il tabellone in una scheda sua" aria-label="Il tabellone in una scheda sua">↗</button>` : ""}
                 <span id="stautow">${this.chipStampa()}</span>
                 ${this.chipRec()}${this.chipTempo()}
-                <span class="menuw">
+                ${TABELLONE ? "" : `<span class="menuw">
                   <button class="iconbtn" id="menubtn" title="Altro" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
                   ${this.menuAperto ? `<div class="menu" role="menu">
-                    ${this.win ? `<button role="menuitem" id="wincentra" title="La finestra al centro, nella misura di partenza">Al centro</button>` : ""}
-                    ${eAffiancata(this.win) ? "" : `<button role="menuitem" id="winaffianca" title="Una colonna a destra: il gestionale resta visibile a sinistra">Affianca a destra</button>`}
+                    <div class="mforma" role="group" aria-label="Forma"><span>Forma</span>${FORME_PANNELLO.map((f) => `<button role="menuitemradio" data-forma="${f}" aria-checked="${f === forma}"${f === forma ? ' class="on"' : ""}>${NOME_FORMA[f]}</button>`).join("")}</div>
+                    ${this.win && forma !== "colonna" ? `<button role="menuitem" id="wincentra" title="La finestra al centro, nella misura di partenza">Al centro</button>` : ""}
+                    ${eAffiancata(this.win) || forma === "colonna" ? "" : `<button role="menuitem" id="winaffianca" title="Una colonna a destra: il gestionale resta visibile a sinistra">Affianca a destra</button>`}
                     ${inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">Modifica la stanza</button>` : ""}
                     ${inStanza && !this.stanzaEdit && hasExt() ? `<button role="menuitemcheckbox" id="seguesw" aria-checked="${segueAcceso()}" title="Ogni 10 minuti la lista smart del gestionale, letta dietro: chi c'è, l'area, il triage; chi esce è dimesso">${segueAcceso() ? "✓ " : ""}Segue il gestionale</button>` : ""}
                     <hr>
+                    ${hasExt() ? `<button role="menuitem" id="tabmenu" title="Il tabellone dei Pazienti in una scheda sua: da fissare, o sul secondo schermo">Tabellone</button>` : ""}
                     ${hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete"><span class="mico">${ICO_TEL}</span>iPhone</button>` : ""}
                     <button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">Tempi</button>
                     <button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">Riferimenti</button>
@@ -7884,8 +8023,9 @@
                     ${(typeof chrome !== "undefined" && chrome.runtime?.id) && !this.giroInCorso() ? `<button role="menuitem" id="extreload" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">Ricarica estensione</button>` : ""}
                     <div class="mver">${esc(APP)} ${VERSION}</div>
                   </div>` : ""}
-                </span>
-                <button class="iconbtn" id="collapse" title="Riduci alla pill (Esc)" aria-label="Riduci">${ICO.riduci}</button>
+                </span>`}
+                ${TABELLONE ? "" : forma === "colonna" ? `<button class="iconbtn" id="collapse" title="Nascondi la colonna (F2)" aria-label="Nascondi">${ICO.riduci}</button>`
+                  : `<button class="iconbtn" id="collapse" title="Riduci alla pill (Esc)" aria-label="Riduci">${ICO.riduci}</button>`}
               </div>
               ${idp ? this.avvisiPaz(idp.ep || ep) : ""}
               ${running && this.runData?.steps?.length ? `<div class="pbar"><i style="width:${Math.round((this.runData.steps.filter((x) => x.status === "ok").length / this.runData.steps.length) * 100)}%"></i></div>` : ""}
@@ -7893,7 +8033,7 @@
               ${!this.runState && inStanza && this.stanzaEdit ? `
                 <div class="seg modifica" role="toolbar" aria-label="Modifica la stanza">
                   <b class="segtit">Modifica la stanza</b><span class="segdx">${this.stanzaAzioni()}</span>
-                </div>` : !this.runState ? `
+                </div>` : !this.runState && !TABELLONE ? `
                 <div class="seg" role="tablist">
                   ${this.pageType === "patient" && this.view !== "home" ? `
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste" data-t="Richieste">Richieste</button>
@@ -7908,13 +8048,17 @@
               </div>
               <div class="bd"><div class="bdi">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div></div>
               ${this.inPazienti() ? "" : this.stanzaSnack()}
+              ${TABELLONE ? "" : forma === "colonna" ? `<div class="rz rz-w" data-rz="w" title="Trascina per allargare o stringere la colonna"></div>` : `
               ${["n", "s", "e", "w", "ne", "nw", "se", "sw"].map((d) => `<div class="rz rz-${d}" data-rz="${d}"></div>`).join("")}
-              <div class="rsz" id="rsz" data-rz="se" title="Trascina per ridimensionare · doppio click per la misura di partenza"></div>
-
+              <div class="rsz" id="rsz" data-rz="se" title="Trascina per ridimensionare · doppio click per la misura di partenza"></div>`}
             </div>
           `}
-          ${this.collapsed ? ponteSpia() : ""}
-        </div>`;
+          ${this.collapsed && !linguetta ? ponteSpia() : ""}
+        </div>
+        ${forma === "passaggio" && !ridotto && !TABELLONE ? `<div class="wrap ppass" style="${pillStyle}">
+          <button class="pill${this.fissata ? " fissa" : ""}" id="pinpill" aria-pressed="${this.fissata}" title="${this.fissata
+            ? "Fissata: resta aperta. Un tocco la lascia richiudere uscendo col mouse; Esc la chiude" : "Si richiude uscendo col mouse: tocca per fissarla"}">${pillInner}</button></div>` : ""}`;
+      this.colonnaMargine();
       this.bind();
       for (const [sel, top, left] of keepScroll) {
         const el = this.root.querySelector(sel);
@@ -8219,6 +8363,8 @@
     // Aprire un paziente dal pannello: il suo è già qui, un altro si carica
     // (e la sua pagina si apre sulla schermata scelta).
     apriPaziente(ep, go) {
+      // dal tabellone: lo apre una scheda del gestionale, dal SUO indirizzo
+      if (TABELLONE) return void tabelloneChiede({ cosa: "apri", ep, go });
       if (ep && ep === this.epDiQuesta()) return this.setView(this.vistaApertura(go));
       const p = knownPatients().find((x) => x.ep === ep);
       // noto solo dalla lista smart (nessun link suo): la sua area, e dalla lista il link della sua riga
@@ -8230,6 +8376,13 @@
       this.fermaAuto();   // si lascia questo paziente: il caricamento in sottofondo si ferma
       tabStore.set("afterNav.v1", { ep, view: go, ts: Date.now() }); // open there, on their page
       nav(p.url);
+    }
+    // nel tabellone, accanto al titolo: c'è una scheda del gestionale a cui chiedere?
+    tabelloneSpia() {
+      if (!TABELLONE) return "";
+      return TAB_SCHEDE == null ? `<span class="tbspia">…</span>`
+        : TAB_SCHEDE ? `<span class="tbspia" title="Un tocco su un paziente lo apre nella scheda del gestionale; i letti si salvano là">dal gestionale</span>`
+        : `<span class="tbspia no" title="Nessuna scheda del gestionale aperta: qui si guarda soltanto">— gestionale non aperto: solo da guardare</span>`;
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {
@@ -11589,27 +11742,76 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // Ridurre alla pill e riaprire. Ridurre chiude anche il menu e la
     // Modifica della stanza; il fuoco va sulla pill (e al riaprire sul titolo),
     // così la tastiera non finisce nel gestionale coperto.
-    riduci() {
-      if (this.collapsed) return;
+    // (`fuoco: false`: chi chiude o apre non è il medico — il mouse che passa —
+    // e la tastiera resta dov'è: magari in un campo del gestionale)
+    riduci({ fuoco = true } = {}) {
+      if (this.collapsed || TABELLONE) return;
       this.collapsed = true; this.menuAperto = false; this.stanzaEdit = false;
+      this.fissata = true; clearTimeout(this._tChiude); this._tChiude = 0;
       store.set("collapsed", true);
+      if (formaOra() === "colonna") store.set(COLONNA, { ...colonnaStato(), nascosta: true });
       // la striscia di un ordine in sottofondo torna subito, non al prossimo aggiornamento
       if (!LAVORO && this.ordini.length) { this._firmaOrdine = ""; this.stripOrdine(); }
       this.render();
-      this.root.querySelector("#expand")?.focus({ preventScroll: true });
+      if (fuoco) this.root.querySelector("#expand")?.focus({ preventScroll: true });
     }
-    apri() {
+    apri({ passaggio = false } = {}) {
       this.collapsed = false; this.avvisoPill = "";
+      this.fissata = !passaggio;
+      clearTimeout(this._tApre); this._tChiude = 0;
       // aperta la finestra, la striscia ha detto quello che doveva
       if (this.striscia && !this.striscia.onTap) { clearTimeout(this._tStriscia); this.striscia = null; }
       store.set("collapsed", false);
+      if (formaOra() === "colonna") store.set(COLONNA, { ...colonnaStato(), nascosta: false });
       this.render();
-      this.root.querySelector(".card")?.focus({ preventScroll: true });   // la tastiera nel pannello, non nel gestionale coperto
+      if (!passaggio) this.root.querySelector(".card")?.focus({ preventScroll: true });   // la tastiera nel pannello, non nel gestionale coperto
+    }
+    // Al passaggio, il mouse è uscito da mezzo secondo: si richiude — ma non
+    // sotto le dita del medico. Un campo del pannello col cursore dentro o con
+    // del testo non ancora mandato, esami scelti, un ordine in partenza, un
+    // trascinamento: resta aperta, e si riguarda fra poco.
+    tieneAperto() {
+      if (this.fissata || this._premuto || this._stanzaPresa || this.selected.size || this.runState === "running" || this._delegando) return true;
+      if (document.getElementById("psassist-confirm") || document.getElementById("psassist-print") || document.getElementById("psassist-visore")) return true;
+      if ((this.quesitoMio && String(this._q || "").trim()) || String(this.acq || "").trim()) return true;   // un quesito scritto, una ricerca a metà
+      const campo = (el) => !!el && (el.isContentEditable || el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !NON_SCRITTURA.test(el.type || "")));
+      if (campo(this.root.activeElement)) return true;
+      return [...this.root.querySelectorAll("textarea, input")].some((el) => campo(el) && el.value.trim() && el.value !== el.defaultValue);
+    }
+    passaggioChiude() {
+      this._tChiude = 0;
+      if (formaOra() !== "passaggio" || this.collapsed || this.fissata) return;
+      if (this.tieneAperto()) { this._tChiude = setTimeout(() => this.passaggioChiude(), PASSAGGIO_CHIUDE_MS); return; }
+      this.riduci({ fuoco: false });
+    }
+    // La colonna stringe il gestionale invece di coprirlo: la pagina ha un
+    // margine a destra largo quanto lei, finché si vede. Nascosta (o un'altra
+    // forma), il margine torna quello di prima.
+    colonnaMargine() {
+      const html = document.documentElement;
+      const vuole = !TABELLONE && formaOra() === "colonna" && !this.collapsed ? colonnaW(colonnaStato().w) : 0;
+      if (vuole) {
+        if (this._margineDiPrima == null) this._margineDiPrima = [html.style.getPropertyValue("margin-right"), html.style.getPropertyPriority("margin-right")];
+        html.style.setProperty("margin-right", vuole + "px", "important");
+      } else if (this._margineDiPrima != null) {
+        const [v, p] = this._margineDiPrima;
+        if (v) html.style.setProperty("margin-right", v, p); else html.style.removeProperty("margin-right");
+        this._margineDiPrima = null;
+      }
+    }
+    sceglieForma(f) {
+      if (!FORME_PANNELLO.includes(f)) return;
+      store.set(FORMA, f);
+      this.menuAperto = false; this.fissata = true;
+      clearTimeout(this._tChiude); this._tChiude = 0;
+      if (f === "colonna") { store.set(COLONNA, { ...colonnaStato(), nascosta: false }); this.collapsed = false; }
+      this.render();
     }
     // Copiato un testo da incollare nel gestionale (EO, dimissioni, referto):
     // la finestra si toglie di mezzo da sola, la pill dice che è pronto.
+    // (La colonna no: il gestionale è lì accanto, scoperto.)
     dopoCopia(ok) {
-      if (!ok || this.collapsed || this.runState) return;
+      if (!ok || this.collapsed || this.runState || formaOra() === "colonna" || TABELLONE) return;
       setTimeout(() => {
         if (this.collapsed || this.runState) return;
         // di chi è quello che stai per incollare: «✓ Copiato · ROSSI M.»
@@ -11679,6 +11881,26 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const wrap = this.root.querySelector(".wrap");
         const r = wrap.getBoundingClientRect();
         const sx = e.clientX, sy = e.clientY;
+        // la colonna: solo il bordo sinistro, e la pagina accanto si stringe con lei
+        if (formaOra() === "colonna") {
+          let w = r.width;
+          const muovi = (ev) => {
+            if (!ev.buttons) return lascia();
+            w = colonnaW(r.width - (ev.clientX - sx));
+            wrap.style.width = w + "px";
+            document.documentElement.style.setProperty("margin-right", w + "px", "important");
+          };
+          const lascia = () => {
+            window.removeEventListener("pointermove", muovi, true);
+            window.removeEventListener("pointerup", lascia, true);
+            window.removeEventListener("pointercancel", lascia, true);
+            store.set(COLONNA, { ...colonnaStato(), w });
+          };
+          window.addEventListener("pointermove", muovi, true);
+          window.addEventListener("pointerup", lascia, true);
+          window.addEventListener("pointercancel", lascia, true);
+          return;
+        }
         const mm = (ev) => {
           if (!ev.buttons) return up();
           const vw = window.innerWidth, vh = window.innerHeight;
@@ -11740,13 +11962,43 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // doppio clic sull'angolo o sull'intestazione: di nuovo al centro, all'85%
       const alCentro = (e) => { e.stopPropagation(); this.win = null; store.set("win.v1", null); this.render(); };
       $("#rsz")?.addEventListener("dblclick", alCentro);
+      const forma = formaOra();
       const hd = $("#draghd");
-      if (hd) {
+      if (hd && forma !== "colonna" && !TABELLONE) {
         this.attachDrag(hd);
         hd.addEventListener("dblclick", (e) => { if (!e.target.closest("button")) alCentro(e); });
       }
       const pill = $("#expand");
-      if (pill) this.attachDrag(pill);
+      if (pill && !pill.classList.contains("coltab")) this.attachDrag(pill);
+      // la forma, dal menu ⋯
+      this.root.querySelectorAll("[data-forma]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); this.sceglieForma(b.getAttribute("data-forma")); }));
+      $("#colnascondi")?.addEventListener("click", () => this.riduci());
+      // Al passaggio: il mouse fermo sulla pill la apre; la pill resta, e un
+      // tocco la fissa (o la lascia di nuovo richiudere). Col dito: un tocco apre, un tocco chiude.
+      if (forma === "passaggio" && pill && pill.matches(".pill:not(.run)")) {
+        pill.addEventListener("pointerenter", (e) => {
+          if (e.pointerType !== "mouse" || e.buttons) return;
+          clearTimeout(this._tApre);
+          this._sullaPill = true;
+          this._tApre = setTimeout(() => { if (this.collapsed && this._sullaPill && !this._premuto && formaOra() === "passaggio") this.apri({ passaggio: true }); }, PASSAGGIO_APRE_MS);
+        });
+        pill.addEventListener("pointerleave", () => { this._sullaPill = false; clearTimeout(this._tApre); });
+      }
+      const pin = $("#pinpill");
+      if (pin) {
+        let dito = false;
+        pin.addEventListener("pointerdown", (e) => { dito = e.pointerType !== "mouse"; });
+        pin.addEventListener("click", () => {
+          if (dito) return this.riduci();
+          this.fissata = !this.fissata;
+          clearTimeout(this._tChiude); this._tChiude = 0;
+          this.render();
+        });
+      }
+      // il tabellone in una scheda sua (dal menu, e dal ↗ sulla lista)
+      const tabellone = () => { this.menuAperto = false; this.render(); ask({ t: "tabelloneApriPagina" }); };
+      $("#tabmenu")?.addEventListener("click", tabellone);
+      $("#tabapri")?.addEventListener("click", tabellone);
       $("#stopbtn")?.addEventListener("click", () => this.stop());
       $("#reset")?.addEventListener("click", () => {
         this.runState = null; this.runData = null; this.message = null; this.carrelloDaAprire = null; this.render();
@@ -14097,7 +14349,118 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     return el ? el.closest('button, a, [role="tab"], [role="button"], [onclick]') || el : null;
   }
 
+  // ============================================================ TABELLONE
+  // La pagina extension/tabellone.html (vedi «IL TABELLONE IN UNA SCHEDA»).
+  // Dal tabellone non si ordina: si apre un paziente (lo apre una scheda del
+  // gestionale, col SUO indirizzo, che il gestionale stesso ha dato) e si
+  // sposta un letto (lo scrive una scheda del gestionale).
+  let TAB_SCHEDE = null;   // quante schede del gestionale rispondono (null: non si sa ancora)
+  async function tabelloneChiede(m) {
+    const r = await ask({ t: "tabellone", ...m });
+    if (!(r && r.ok) && PANNELLO && m.cosa !== "sync") {
+      PANNELLO.message = `Non fatto: ${(r && r.why) || "il gestionale non ha risposto"}.`;
+      PANNELLO.render();
+    }
+    return r && typeof r === "object" ? r : { ok: false };
+  }
+  // quello che il medico ha cambiato qui va al gestionale; se non ci arriva, torna com'era
+  async function tabelloneScrive(kv) {
+    const r = await tabelloneChiede({ cosa: "scrivi", kv });
+    if (r.ok) return;
+    rimettiSpecchio();
+    PANNELLO?.render();
+  }
+  function rimettiSpecchio() {
+    for (const c of MEM.chiavi()) if (specchiata(c.slice(NS.length))) MEM.removeItem(c);
+    for (const [k, v] of Object.entries(specchioKv)) MEM.setItem(NS + k, v);
+  }
+  function bootTabellone() {
+    document.title = `Tabellone — ${APP}`;
+    const panel = new Panel("patient");
+    PANNELLO = panel;
+    panel.entry = { labUrl: null, radioUrl: null };   // come la lista del PS: nessun paziente «qui»
+    panel.view = "home";
+    const applica = (sp) => {
+      const kv = sp && sp.kv && typeof sp.kv === "object" ? sp.kv : {};
+      specchioKv = Object.fromEntries(Object.entries(kv).filter(([k, v]) => specchiata(k) && typeof v === "string"));
+      rimettiSpecchio();
+    };
+    try {
+      chrome.storage.local.get(SPECCHIO).then((o) => { applica(o[SPECCHIO]); panel.mostraDimessi(true); panel.render(); }).catch(() => {});
+      chrome.storage.onChanged.addListener((ch, area) => {
+        if (area !== "local" || !ch[SPECCHIO]) return;
+        const prima = specchioKv[DIMESSI];
+        applica(ch[SPECCHIO].newValue);
+        if (specchioKv[DIMESSI] !== prima) panel.mostraDimessi();
+        panel.aggiornaDaFuori();
+      });
+    } catch { /* fuori dall'estensione: niente da mostrare */ }
+    // il gestionale c'è? Senza, il tabellone si guarda soltanto
+    const spia = () => ask({ t: "tabellone", cosa: "stato" }).then((r) => {
+      const n = r && r.ok ? r.schede : 0;
+      if (n === TAB_SCHEDE) return;
+      TAB_SCHEDE = n;
+      const el = panel.root.querySelector(".tbspia");
+      if (el) el.outerHTML = panel.tabelloneSpia();
+    });
+    spia();
+    setInterval(spia, 5000);
+    panel.render();
+  }
+  // Nella scheda del gestionale: le domande del tabellone, dal service worker
+  async function tabelloneEsegui(panel, m) {
+    if (classify(document) === "login") return { no: "login" };
+    if (LAVORO || PONTE_VALORI) return { no: "lavoro" };
+    if (m.cosa === "scrivi") {
+      const json = (v) => { try { JSON.parse(v); return true; } catch { return false; } };
+      const kv = Array.isArray(m.kv) ? m.kv : [];
+      if (!kv.length || !kv.every((x) => Array.isArray(x) && typeof x[0] === "string" && specchiata(x[0]) && (x[1] === null || (typeof x[1] === "string" && json(x[1]))))) {
+        return { ok: false, why: "scrittura inattesa" };
+      }
+      try { for (const [k, v] of kv) { if (v === null) localStorage.removeItem(NS + k); else localStorage.setItem(NS + k, v); } }
+      catch { return { ok: false, why: "la memoria del browser è piena o bloccata" }; }
+      specchia(null);
+      if (kv.some(([k]) => k === DIMESSI)) panel.mostraDimessi();
+      panel.aggiornaDaFuori();
+      return { ok: true };
+    }
+    if (m.cosa === "sync") return smartSync(true);
+    if (m.cosa !== "apri" && m.cosa !== "area") return { ok: false, why: "domanda sconosciuta" };
+    // aprire un paziente cambia pagina: mai sotto un ordine che parte, mai sotto le dita di chi scrive
+    if (panel.giroInCorso()) return { ok: false, why: "in quella scheda del gestionale sta partendo un ordine: aspetta che finisca" };
+    const scrive = staScrivendo();
+    if (scrive) return { ok: false, why: `nel gestionale stai scrivendo (${scrive}): finisci lì, poi riprova` };
+    if (m.cosa === "area") return m.prova ? { ok: true } : { ok: !!apriArea(String(m.k || "")) };
+    const ep = String(m.ep || ""), qui = !!ep && ep === panel.epDiQuesta();
+    const p = knownPatients().find((x) => x.ep === ep);
+    if (!qui && !p) return { ok: false, why: "questo paziente non è nell'elenco del gestionale" };
+    if (m.prova) {
+      // la pagina che si apre (o che si ricarica prendendo il fuoco) parte col pannello aperto, sulla schermata giusta
+      tabStore.set("afterNav.v1", { ep, view: m.go, ts: Date.now() });
+      tabStore.set("navPannello.v1", Date.now());
+      return qui ? { ok: true, qui: true } : p.url ? { ok: true, url: p.url } : { ok: true };
+    }
+    if (qui) {
+      tabStore.set("navPannello.v1", 0); tabStore.set("afterNav.v1", null);
+      panel.apri(); panel.setView(panel.vistaApertura(m.go));
+      return { ok: true };
+    }
+    panel.apriPaziente(ep, m.go);
+    return { ok: true };
+  }
+  function tabelloneAscolta(panel) {
+    try {
+      chrome.runtime.onMessage.addListener((m, s, reply) => {
+        if (!m || m.t !== "tabelloneEsegui" || (s && s.tab)) return;   // solo dal service worker
+        tabelloneEsegui(panel, m).then(reply, (e) => reply({ ok: false, why: String(e?.message || e).slice(0, 80) }));
+        return true;
+      });
+    } catch { /* niente estensione */ }
+    specchia(null);   // lo specchio, appena arrivati
+  }
+
   function boot() {
+    if (TABELLONE) { bootTabellone(); return; }
     if (document.getElementById("psassist-host")) return;
     // The portal's multi-day table: here the panel does not order anything and
     // does not ask the server anything. It reads the table already on screen
@@ -14273,6 +14636,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       setInterval(tic, 30e3);
     }
     if (chi) { panel.ordiniOk = true; ascoltaOrdini(panel); }
+    if (hasExt() && !LAVORO && !PONTE_VALORI) tabelloneAscolta(panel);
     if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); }
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);

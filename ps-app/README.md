@@ -105,6 +105,23 @@ hai spostato o ridimensionato, e **Affianca**, restano come le hai messe. **—*
 resta dove la trascini; un tocco sulla pill riapre la finestra dove l'avevi lasciata. Per usare il
 gestionale sotto, si riduce alla pill: la finestra lo copre quasi tutto, apposta.
 
+**Forma (da provare nei turni).** ⋯ → **Forma: Finestra · Al passaggio · Colonna** (si ricorda; il
+reset la lascia). **Finestra**, la forma di partenza, è quella qui sopra. **Al passaggio**: il mouse
+fermo sulla pill (150 ms) apre la finestra senza togliere la tastiera al gestionale, e mezzo secondo
+dopo che è uscito la richiude — non con il cursore o del testo non mandato in un campo del pannello,
+esami scelti, un ordine in partenza o un trascinamento. Un clic sulla pill (che resta) la fissa, un
+altro la libera, Esc la chiude; col dito un tocco apre e un tocco chiude. **Colonna**: a destra, a
+tutta altezza, e il gestionale **si stringe** accanto (un margine destro alla pagina) invece di
+essere coperto; larghezza dal bordo sinistro (420 px – 60% dello schermo), ricordata; **F2** (non
+mentre scrivi nel gestionale), la linguetta o **—** la nascondono: resta una linguetta di 7 px.
+**Tabellone** (⋯, o il **↗** sulla lista) apre la pagina `tabellone.html` dell'estensione: lo stesso
+tabellone a tutta pagina, da fissare o sul secondo schermo. Disegna da uno specchio delle sole
+chiavi del tabellone che le schede del gestionale tengono in `chrome.storage.local` a ogni
+cambiamento; un tocco su un paziente porta davanti la scheda del gestionale (mai quella di un
+ordine) e le fa caricare l'indirizzo **suo**, quello che il gestionale ha dato; un letto spostato lo
+scrive quella scheda, nella memoria di sempre. Dal tabellone non si ordina; senza gestionale aperto
+si guarda soltanto («—»).
+
 **Si apre da solo solo quando serve.** Una pagina raggiunta cliccando nel gestionale mostra la
 pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha aperta il pannello
 (un paziente scelto dall'elenco, Richieste…) o quando ha qualcosa da dirti (un avviso). Un
@@ -1803,6 +1820,7 @@ ps-app/
 ├── extension/pdfjs/     ← pdf.js 3.11.174 di Mozilla (Apache-2.0), preso tale e quale: legge i referti
 ├── extension/ponte-*    ← il Ponte verso l'iPhone: la presa nel service worker, la pagina «iPhone»,
 │                          la prova della rete; qr.js è il codificatore QR di Project Nayuki (MIT)
+├── extension/tabellone.html ← ⋯ → Tabellone: carica content.js, che lì disegna solo il tabellone (dallo specchio)
 ├── ponte/               ← il Ponte: README, host.txt (il suo indirizzo, fissato nella build), il
 │                          ripetitore Node per test e prove (stessa logica di ../worker/ponte-logica.js);
 │                          l'app del telefono sta in ../public/ponte/

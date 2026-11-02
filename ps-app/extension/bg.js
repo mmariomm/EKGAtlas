@@ -144,6 +144,20 @@ const SOTTO_QUIETE = 2500;             // dopo l'ultima consegna, si chiude
 const quiete = new Map();
 const sottoK = (id) => "sotto:" + id;
 const inCorso = (s) => !!s && (s.esito === "attesa" || s.esito === "lettura");
+// Le schede del gestionale a cui il tabellone può chiedere: non quelle di un
+// ordine, della lista smart o dei valori letti in sottofondo; prima quella
+// davanti al medico, poi l'ultima usata.
+async function tabelloneSchede() {
+  const no = new Set((await ordLeggi().catch(() => [])).map((x) => x && x.worker).filter((x) => x != null));
+  const sess = await chrome.storage.session.get(null).catch(() => ({}));
+  for (const [k, s] of Object.entries(sess)) if (k.startsWith("sotto:") && inCorso(s)) no.add(Number(k.slice(6)));
+  for (const id of Object.keys(sess["ponte.valori"] || {})) no.add(Number(id));
+  const tutte = (await chrome.tabs.query({ url: "https://smarthealth.multimedica.it/sa4pso/*" }).catch(() => []))
+    .filter((t) => !no.has(t.id) && !t.discarded && !/MVPG=PsoPazientiSmart/.test(t.url || ""));
+  const win = await chrome.windows.getLastFocused().catch(() => null);
+  const peso = (t) => (t.active ? 2 : 0) + (win && t.windowId === win.id ? 1 : 0);
+  return tutte.sort((a, b) => peso(b) - peso(a) || (b.lastAccessed || 0) - (a.lastAccessed || 0));
+}
 async function sottoGet(id) { if (id == null) return null; return (await chrome.storage.session.get(sottoK(id)))[sottoK(id)] || null; }
 const sottoSet = (id, v) => chrome.storage.session.set({ [sottoK(id)]: v });
 async function sottoFine(id, esito) {
@@ -345,6 +359,85 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       }
       await chrome.tabs.update(t.id, { url: u.href, active: true });
       reply({ ok: true, tabId: t.id });
+    })().catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 80) }));
+    return true;
+  }
+
+  // Il tabellone in una scheda sua (⋯ → Tabellone, o il ↗ sulla lista): se
+  // c'è già la si porta davanti, se no se ne apre una. Nessun «opener».
+  if (msg.t === "tabelloneApriPagina") {
+    (async () => {
+      const url = chrome.runtime.getURL("tabellone.html");
+      // (senza il permesso «tabs» l'indirizzo di una scheda non si vede: le pagine nostre aperte, sì)
+      const [c] = chrome.runtime.getContexts ? await chrome.runtime.getContexts({ contextTypes: ["TAB"], documentUrls: [url] }).catch(() => []) : [];
+      const t = c && c.tabId >= 0 ? await chrome.tabs.get(c.tabId).catch(() => null) : null;
+      if (t) {
+        await chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
+        await chrome.tabs.update(t.id, { active: true });
+      } else {
+        const da = _sender.tab;
+        await chrome.tabs.create(da ? { url, windowId: da.windowId, index: da.index + 1 } : { url });
+      }
+      reply({ ok: true });
+    })().catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 80) }));
+    return true;
+  }
+  // Le domande della pagina del tabellone, girate a una scheda del gestionale
+  // (l'ultima usata; mai quella di un ordine o di una lettura in sottofondo):
+  // «stato» (quante ce ne sono), «scrivi» (un letto, un archiviato: lo scrive
+  // la scheda, nella memoria del gestionale), «sync» (il ⟳), «apri» (un
+  // paziente: la scheda va davanti e carica il SUO indirizzo, quello che il
+  // gestionale le ha dato) e «area» (il titolo di un'area). Mai un ordine.
+  if (msg.t === "tabellone") {
+    if (!_sender || _sender.id !== chrome.runtime.id || !String(_sender.url || "").startsWith(chrome.runtime.getURL("tabellone.html"))) {
+      reply({ ok: false, why: "solo dal tabellone" });
+      return;
+    }
+    (async () => {
+      const schede = await tabelloneSchede();
+      if (msg.cosa === "stato") return reply({ ok: true, schede: schede.length });
+      if (!["scrivi", "sync", "apri", "area"].includes(msg.cosa)) return reply({ ok: false, why: "domanda sconosciuta" });
+      const nessuna = { ok: false, why: "nessuna scheda del gestionale aperta — il tabellone qui si guarda soltanto" };
+      const chiedi = (t, m) => Promise.race([chrome.tabs.sendMessage(t.id, { ...m, t: "tabelloneEsegui" }).catch(() => null),
+        new Promise((r) => setTimeout(() => r(null), 4000))]);
+      const apre = msg.cosa === "apri" || msg.cosa === "area";
+      const m = apre ? { cosa: msg.cosa, ep: String(msg.ep || ""), go: msg.go, k: String(msg.k || ""), prova: true }
+        : msg.cosa === "scrivi" ? { cosa: "scrivi", kv: msg.kv } : { cosa: "sync" };
+      let r = null, t = null;
+      for (const x of schede) {
+        r = await chiedi(x, m);
+        if (r && !r.no) { t = x; break; }
+      }
+      if (!t) return reply(nessuna);
+      if (!apre || !r.ok) return reply(r);
+      // Prima davanti, POI la pagina: le pagine del gestionale si ricaricano da
+      // sole prendendo il fuoco, e la ricarica cancellerebbe la navigazione.
+      let url = "";
+      if (r.url) {
+        try {
+          const u = new URL(String(r.url));
+          const ep = u.searchParams.get("EPISODIO_ID");
+          if (u.origin === "https://smarthealth.multimedica.it" && /^\/sa4pso\/restrict\/menuPso(Episodio)?\.do$/.test(u.pathname)
+              && u.searchParams.get("MVPG") === "PsoEpisodioClinicoAmbulatorio" && (!ep || ep === m.ep)
+              && !/[?&](ccsForm|Insert|Delete|Update)=/i.test(u.search)) url = u.href;
+        } catch { /* niente */ }
+        if (!url) return reply({ ok: false, why: "l'indirizzo di quel paziente non è una sua pagina del gestionale" });
+      }
+      await chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
+      await chrome.tabs.update(t.id, { active: true }).catch(() => {});
+      await new Promise((ok) => setTimeout(ok, 300));
+      if (url) {
+        await chrome.tabs.update(t.id, { url });
+        return reply({ ok: true });
+      }
+      // già sulla sua pagina, o noto solo dalla lista smart: lo fa la scheda
+      // (che intanto può essersi ricaricata: si richiede finché risponde)
+      let fatto = null;
+      for (let i = 0; i < 6 && !(fatto && !fatto.no); i++) {
+        fatto = await chiedi(t, { ...m, prova: false });
+        if (!fatto) await new Promise((ok) => setTimeout(ok, 500));
+      }
+      reply(fatto && !fatto.no ? fatto : { ok: false, why: "la scheda del gestionale non ha risposto" });
     })().catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 80) }));
     return true;
   }

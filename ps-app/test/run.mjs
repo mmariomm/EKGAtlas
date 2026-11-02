@@ -3794,6 +3794,173 @@ async function scenarioFinestra(browser) {
   await context.close();
 }
 
+// ⋯ → Forma: Finestra (di sempre) · Al passaggio · Colonna. Una prova per comportamento.
+async function scenarioForma(browser) {
+  const scen = "forma";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock, { finestra: "centro", pill: true });
+  const ls = (k) => page.evaluate((k) => JSON.parse(localStorage.getItem("psassist:" + k) || "null"), k);
+  const aperta = async () => (await $panel(page, ".card").count()) === 1;
+  const forma = async (f) => {
+    if (!(await aperta())) await $panel(page, "#expand").click();
+    await $panel(page, "#menubtn").click();
+    await $panel(page, `[data-forma="${f}"]`).click();
+  };
+  const centroPill = async (sel = "#expand") => {
+    const b = await $panel(page, sel).boundingBox();
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  };
+  const fuori = async () => { await page.mouse.move(20, 880, { steps: 4 }); };
+  const nellaFinestra = async () => { const b = await $panel(page, ".card").boundingBox(); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 4 }); };
+  // l'apre il mouse fermo sulla pill (non un clic)
+  const passa = async () => { const c = await centroPill(); await page.mouse.move(c.x, c.y, { steps: 3 }); await page.waitForTimeout(400); };
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+
+  // --- l'impostazione: di partenza Finestra, si ricorda, il reset la lascia
+  await $panel(page, "#expand").click();
+  await $panel(page, "#menubtn").click();
+  check(scen, (await $panel(page, '[data-forma="finestra"][aria-checked="true"]').count()) === 1, "di partenza la forma è Finestra (quella di oggi)");
+  await shot(page, "forma-finestra");
+  await page.keyboard.press("Escape");
+  await forma("passaggio");
+  check(scen, (await ls("forma.v1")) === "passaggio", "⋯ → Forma: Al passaggio si ricorda");
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#resetpaz").click();
+  await $panel(page, "#resetpaz").click();
+  check(scen, (await ls("forma.v1")) === "passaggio", "e «Reset dati pazienti» la lascia");
+  await page.reload();
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+
+  // --- Al passaggio: si apre col mouse fermo sulla pill, si richiude uscendo
+  await page.evaluate(() => { const i = document.createElement("input"); i.id = "campogest"; document.body.prepend(i); i.focus(); });
+  await passa();
+  check(scen, await aperta(), "Al passaggio: il mouse fermo sulla pill apre la finestra");
+  check(scen, await page.evaluate(() => document.activeElement?.id === "campogest"), "e la tastiera resta nel campo del gestionale");
+  check(scen, (await $panel(page, "#pinpill[aria-pressed=false]").count()) === 1, "la pill resta, non fissata");
+  await shot(page, "forma-passaggio");
+  await nellaFinestra();
+  await page.waitForTimeout(900);
+  check(scen, await aperta(), "col mouse dentro resta aperta");
+  await fuori();
+  await page.waitForTimeout(900);
+  check(scen, !(await aperta()), "uscito il mouse, mezzo secondo e si richiude");
+  // un campo del pannello col cursore dentro
+  await passa(); await nellaFinestra();
+  await richieste(page);
+  await $panel(page, "#q").focus();
+  await fuori(); await page.waitForTimeout(1100);
+  check(scen, await aperta(), "non si richiude col cursore in un campo del pannello");
+  // del testo scritto e non mandato (il fuoco altrove)
+  await $panel(page, "#q").type("dolore toracico");
+  await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.blur());
+  await page.mouse.move(25, 870, { steps: 2 }); await page.waitForTimeout(1100);
+  check(scen, await aperta(), "né con del testo scritto e non mandato");
+  await nellaFinestra();
+  await $panel(page, "#q").fill("");
+  await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.blur());
+  // esami scelti
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.blur());
+  await fuori(); await page.waitForTimeout(1100);
+  check(scen, await aperta(), "né con degli esami scelti");
+  await nellaFinestra();
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.blur());
+  await fuori(); await page.waitForTimeout(1100);
+  check(scen, !(await aperta()), "tolti gli esami, uscendo si richiude");
+  // un trascinamento cominciato nel pannello (la finestra che si sposta)
+  await passa();
+  const hd = await $panel(page, "#draghd").boundingBox();
+  await page.mouse.move(hd.x + 40, hd.y + hd.height / 2, { steps: 3 });
+  await page.mouse.down();
+  await page.mouse.move(hd.x + 40, 890, { steps: 6 });
+  await page.mouse.move(10, 895, { steps: 6 });
+  await page.waitForTimeout(1000);
+  check(scen, await aperta(), "né durante un trascinamento");
+  await page.mouse.up();
+  await page.evaluate(() => { localStorage.removeItem("psassist:win.v1"); });
+  await page.reload();
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+  // un clic sulla pill la fissa; di nuovo, o Esc, la lasciano
+  await passa();
+  await $panel(page, "#pinpill").click();
+  check(scen, (await $panel(page, "#pinpill[aria-pressed=true]").count()) === 1, "un clic sulla pill la fissa");
+  await fuori(); await page.waitForTimeout(1100);
+  check(scen, await aperta(), "fissata, uscendo resta aperta");
+  await $panel(page, "#pinpill").click();
+  await fuori(); await page.waitForTimeout(1100);
+  check(scen, !(await aperta()), "un secondo clic la lascia: uscendo si richiude");
+  await $panel(page, "#expand").click();
+  check(scen, (await aperta()) && (await $panel(page, "#pinpill[aria-pressed=true]").count()) === 1, "un clic sulla pill ridotta la apre già fissata");
+  await page.keyboard.press("Escape");
+  check(scen, !(await aperta()), "Esc la chiude (e la sfissa)");
+
+  // --- Colonna: la pagina si stringe, niente coperto
+  await forma("colonna");
+  await page.evaluate(() => {
+    const b = document.createElement("button");
+    b.id = "bordodx"; b.textContent = "bordo";
+    b.style.cssText = "position:absolute;right:0;top:300px;width:60px;height:30px";
+    b.onclick = () => { window.__bordo = (window.__bordo || 0) + 1; };
+    document.body.style.position = "relative";
+    document.body.appendChild(b);
+  });
+  const geo = () => page.evaluate(() => {
+    const w = document.getElementById("psassist-host").shadowRoot.querySelector(".wrap").getBoundingClientRect();
+    const b = document.getElementById("bordodx").getBoundingClientRect();
+    const sopra = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+    return { wl: Math.round(w.left), ww: Math.round(w.width), wh: Math.round(w.height), vw: innerWidth, vh: innerHeight, br: Math.round(b.right),
+      visibile: sopra?.id === "bordodx", mr: getComputedStyle(document.documentElement).marginRight };
+  });
+  const g1 = await geo();
+  check(scen, g1.wl + g1.ww === g1.vw && g1.wh === g1.vh && g1.ww >= 420 && g1.ww <= g1.vw * 0.6 + 1, `Colonna: a destra, a tutta altezza (${JSON.stringify(g1)})`);
+  check(scen, g1.mr === g1.ww + "px" && g1.br <= g1.wl && g1.visibile, `il gestionale si stringe: quello sul suo bordo destro resta visibile (${g1.br}px ≤ ${g1.wl}px)`);
+  await page.mouse.click(g1.br - 30, 315);
+  check(scen, (await page.evaluate(() => window.__bordo)) === 1, "e cliccabile");
+  check(scen, await aperta(), "un clic sul gestionale non nasconde la colonna");
+  await shot(page, "forma-colonna");
+  // la larghezza si trascina dal bordo sinistro e si ricorda
+  const rz = await $panel(page, ".rz-w").boundingBox();
+  await page.mouse.move(rz.x + rz.width / 2, 500);
+  await page.mouse.down();
+  await page.mouse.move(rz.x + rz.width / 2 - 120, 500, { steps: 6 });
+  await page.mouse.up();
+  const g2 = await geo();
+  check(scen, Math.abs(g2.ww - g1.ww - 120) <= 2 && g2.mr === g2.ww + "px", `la larghezza si trascina dal bordo sinistro, e la pagina segue (${g1.ww} → ${g2.ww}px)`);
+  await page.reload();
+  await page.waitForSelector("#psassist-host .card", { state: "attached" });
+  await page.evaluate(() => {
+    const b = document.createElement("button"); b.id = "bordodx"; b.style.cssText = "position:absolute;right:0;top:300px;width:60px;height:30px";
+    document.body.style.position = "relative"; document.body.appendChild(b);
+  });
+  const g3 = await geo();
+  check(scen, g3.ww === g2.ww, `e si ricorda (${g3.ww}px)`);
+  // F2 la nasconde (una linguetta sul bordo) e la riapre
+  await page.mouse.click(300, 600);
+  await page.keyboard.press("F2");
+  const g4 = await geo();
+  const tab = await $panel(page, ".coltab").boundingBox().catch(() => null);
+  check(scen, !(await aperta()) && tab && tab.width >= 6 && tab.width <= 8 && g4.mr === "0px" && g4.br >= g4.vw - 10,
+    `F2 la nasconde: resta una linguetta di ${tab && tab.width}px, e il gestionale torna largo (${JSON.stringify(g4)})`);
+  await shot(page, "forma-colonna-nascosta");
+  await page.keyboard.press("F2");
+  check(scen, await aperta(), "F2 la riapre");
+  await page.evaluate(() => { const i = document.createElement("input"); i.id = "campogest"; document.body.prepend(i); });
+  await page.locator("#campogest").click();
+  await page.keyboard.press("F2");
+  check(scen, await aperta(), "F2 scritto in un campo del gestionale non la tocca");
+  await $panel(page, "#colnascondi").click();
+  check(scen, !(await aperta()), "la linguetta sul bordo la nasconde");
+  await $panel(page, ".coltab").click();
+  check(scen, await aperta(), "e la riapre");
+  // tornando a Finestra il margine se ne va
+  await forma("finestra");
+  const g5 = await page.evaluate(() => getComputedStyle(document.documentElement).marginRight);
+  check(scen, g5 === "0px" && (await $panel(page, ".wrap.win:not(.col)").count()) === 1, `Finestra: la finestra di sempre, la pagina senza margine (${g5})`);
+  await context.close();
+}
+
 async function scenarioHomePills(browser) {
   const scen = "home";
   const mock = createMock({});
@@ -6893,6 +7060,7 @@ const scenarios = [
   ["finestra: pill, Esc, clic fuori, affianca, copia", scenarioFinestra],
   ["pill ridotta: il promemoria di un altro paziente dice di chi è", scenarioPillAltroPaziente],
   ["finestra: tetto di 1150 px, schede ferme", scenarioFinestraLarga],
+  ["forma: Finestra · Al passaggio · Colonna", scenarioForma],
   ["esiti: il Lab per primo, un fondo per sezione, bottone grande, unità", scenarioEsitiLayout],
   ["apertura: Esiti o Richieste, Lab in griglia fino a tre prelievi, orologi onesti", scenarioAperturaEGriglia],
   ["richieste compatte: una casella, tre colonne, la barra solo con qualcosa, Ctrl+Invio, Stampa nel ⋯", scenarioRichiesteCompatte],
