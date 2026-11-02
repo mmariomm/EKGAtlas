@@ -138,6 +138,8 @@ await ctx.addInitScript(() => {
 const FOGLIO = /RcsStampaEtichetteLISHMIMU|uploaddownloadservlet|jasperservlet/;
 const pdfVia = { vivi: 0, max: 0, lento: null, rompi: null, rotti: 0 };
 const azzeraPdf = () => Object.assign(pdfVia, { vivi: 0, max: 0, lento: null, rompi: null, rotti: 0 });
+// (una prova può ritoccare una risposta del banco: l'etichetta anagrafica)
+let ritocca = null;
 await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   const req = r.request();
   const u = req.url();
@@ -154,6 +156,7 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   let out = mock.handle({ method: req.method(), url: u, bodyBuffer: req.postDataBuffer() });
   let h = 0;
   while (out.status === 302 && h++ < 5) out = mock.handle({ method: "GET", url: new URL(out.headers.location, u).href });
+  if (ritocca) out = ritocca(u, out) || out;
   try { await r.fulfill({ status: out.status, headers: out.headers, body: out.body }); } catch { /* scheda chiusa intanto */ }
 });
 let sw = ctx.serviceWorkers()[0];
@@ -1207,6 +1210,168 @@ if (await prova("i PDF insieme: uno che si rompe si riprende da solo, una volta,
     `la lista rotta una volta, ripresa dopo le etichette: una volta ciascuno (got ${pdfVia.rotti} rotture · ${JSON.stringify(l.map((x) => x.tipo))})`);
   const err = ((await sw.evaluate(() => chrome.storage.local.get("errori.v1")))["errori.v1"] || []).filter((e) => e.tipo === "stampa-parallela");
   check(err.length === 1 && err[0].dati.tipo === "a4", `e il service worker lo annota: «stampa-parallela» (got ${JSON.stringify(err.map((e) => e.dati))})`);
+}
+
+// ---- 18. l'etichetta anagrafica («Stampa Bracciale» del gestionale) ----------
+// (il link lo mette questa prova sulla pagina del paziente, come nella pagina
+// vera: un jasperservlet REPORT=PsoBraccialettoHMIMU col suo EPISODIO_ID; il
+// PDF ha la misura di un'etichetta, e si conta quante volte lo si chiede)
+const BRAC_PDF = Buffer.from(
+  "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
+  "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 142 71]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n", "latin1");
+const linkBrac = (ep, origine = "") => `${origine}/jasperserverSAN/jasperservlet?PROJECT=sa4pso&REPORT=PsoBraccialettoHMIMU&CONN=jdbc/sa4web&EPISODIO_ID=${ep}`;
+let presiBrac = 0;   // quante volte il PDF del braccialetto è stato chiesto al gestionale
+const conBracciale = (...hrefs) => {
+  ritocca = (u, out) => {
+    const p = new URL(u).searchParams;
+    if (p.get("REPORT") === "PsoBraccialettoHMIMU") { presiBrac++; return { status: 200, headers: { "content-type": "application/pdf" }, body: BRAC_PDF }; }
+    if (p.get("MVPG") !== "PsoEpisodioClinicoAmbulatorio" || !Buffer.isBuffer(out.body)) return null;
+    const a = hrefs.map((h) => `<a class="myButtonList" title="Stampa Bracciale" target="_blank" href="${h.replace(/&/g, "&amp;")}"><img title="Stampa Bracciale" alt=""></a>`).join("&nbsp;");
+    return { ...out, body: Buffer.from(out.body.toString("latin1").replace("</body>", `<p>${a}</p></body>`), "latin1") };
+  };
+};
+const bottoneBrac = (p) => p.evaluate(() => {
+  const b = document.getElementById("psassist-host")?.shadowRoot?.querySelector("#bracciale");
+  return b ? { titolo: b.title, href: b.getAttribute("href"), conto: (b.querySelector(".bracn")?.textContent || "").trim() } : null;
+});
+const ordiniBrac = async () => (await ordini()).filter((x) => /^Etichetta anagrafica/.test(x.stampa?.jobs?.[0]?.name || ""));
+// (partita una stampa il pannello si riduce alla striscia: per toccare di nuovo lo si riapre)
+const tocca = async (p) => {
+  if (!(await $panel(p, ".card").count())) { await $panel(p, "#expand").click(); await p.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  await $panel(p, "#bracciale").click();
+};
+async function intestazione(page) {
+  if (!(await $panel(page, ".card").count())) { await $panel(page, "#expand").click(); await page.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  await $panel(page, '[data-seg="richieste"]').click().catch(() => {});
+  await sospendi(300);
+}
+if (await prova("l'etichetta anagrafica: il bottone accanto al nome, le copie a tocchi, all'etichettatrice")) {
+  // senza link, o con quello di un altro episodio (o di un altro sito): niente bottone
+  installa(true);
+  await scelte(ATTIVA);
+  ritocca = null;
+  await suPagina(doc, A.patientUrl);
+  await intestazione(doc);
+  check(!(await bottoneBrac(doc)), "senza il link «Stampa Bracciale» nella pagina: niente bottone");
+  conBracciale(linkBrac("999002"), linkBrac("999001", "https://altro.example.org"));
+  await suPagina(doc, A.patientUrl);
+  await intestazione(doc);
+  check(!(await bottoneBrac(doc)), "col link di un altro episodio, o di un altro sito: niente bottone");
+  conBracciale(linkBrac("999002"), linkBrac("999001"));
+  await suPagina(doc, A.patientUrl);
+  await intestazione(doc);
+  const b = await bottoneBrac(doc);
+  check(!!b && b.titolo === "Etichetta anagrafica" && b.href === A.ORIGIN + linkBrac("999001"),
+    `col link di questo episodio: il bottone «Etichetta anagrafica», con l'indirizzo della pagina (got ${JSON.stringify(b)})`);
+  if (process.env.BRAC_SHOT) {
+    const box = await $panel(doc, ".hd").boundingBox();
+    if (box) await doc.screenshot({ path: process.env.BRAC_SHOT, clip: { x: box.x, y: box.y, width: box.width, height: box.height } });
+  }
+
+  // tre tocchi di fila (meno di un secondo l'uno dall'altro): «×3», poi UNA stampa con tre copie, il PDF preso una volta
+  comportati({ lento: 1200 });
+  await azzeraStampe(doc);
+  presiBrac = 0;
+  const nasce = nuovaPagina();
+  await tocca(doc); await sospendi(300); await tocca(doc); await sospendi(300); await tocca(doc);
+  const conto = (await bottoneBrac(doc))?.conto;
+  check(conto === "×3" && (await ordiniBrac()).length === 0, `mentre si tocca, il bottone conta le copie e non parte niente (got «${conto}»)`);
+  if (process.env.BRAC_SHOT) {
+    const box = await $panel(doc, ".hd").boundingBox();
+    if (box) await doc.screenshot({ path: process.env.BRAC_SHOT.replace(/\.png$/, "-x3.png"), clip: { x: box.x, y: box.y, width: box.width, height: box.height } });
+  }
+  const dietro = await nasce;
+  await dietro?.waitForURL(/EPISODIO_ID=/, { timeout: 10000 }).catch(() => {});
+  check(!!dietro && dietro.url().includes("EPISODIO_ID=999001") && !/jasperservlet/.test(dietro.url()), "il PDF lo prende una scheda aperta dietro, sulla pagina del paziente");
+  const gira = await finche(async () => (await ordiniBrac()).find((x) => x.stato === "stampo"), 10000);
+  check(!!gira && gira.fogli.length === 3 && /copia \d di 3/.test(gira.pubblico.dettaglio + " " + gira.pubblico.testo), `un ordine, tre copie (got ${JSON.stringify(gira && gira.pubblico)})`);
+  // un tocco di lato: il pannello resta aperto; ridotto, sotto la pill una riga sola, «Et anag ×3»
+  check((await $panel(doc, ".card").count()) === 1, "il pannello resta aperto: l'etichetta anagrafica non lo riduce alla striscia");
+  await azzeraRighe(doc);
+  if (await $panel(doc, "#collapse").count()) await $panel(doc, "#collapse").click();
+  const rigaBrac = await finche(async () => (await righeViste(doc)).find((r) => r.n === "Et anag ×3" && r.ico === "pulsa" && !r.x), 8000);
+  check(!!rigaBrac && !(await righeViste(doc)).some((r) => /^Et anag/.test(r.n) && r.n !== "Et anag ×3"),
+    `sotto la pill una riga sola, «Et anag ×3», con la stampantina che respira (got ${JSON.stringify((await righeViste(doc)).map((r) => r.n))})`);
+  // un tocco mentre stampa: niente (il bottone pulsa)
+  await finche(() => lavori().length >= 1, 10000);
+  await tocca(doc);
+  await sospendi(1400);
+  const rec = await finche(async () => (await ordiniBrac()).find((x) => x.stato === "avviso" && x.fogli), 30000);
+  check(!!rec && rec.pubblico.titolo === "Etichetta stampata su Zebra ZD421" && rec.stampa.jobs.length === 3 && rec.stampa.jobs.every((j) => j.url === A.ORIGIN + linkBrac("999001")),
+    `«Etichetta stampata su Zebra ZD421», col link della pagina (got ${JSON.stringify(rec && [rec.pubblico, rec.stampa.jobs.length])})`);
+  if (await $panel(doc, "#collapse").count()) await $panel(doc, "#collapse").click();
+  const str = await striscia(doc, /Etichetta stampata su/, 8000);
+  check(/Etichetta stampata su Zebra ZD421/.test(str), `la striscia lo dice (got ${str || await striscia(doc, /./, 1000)})`);
+  await sospendi(1500);
+  const l = lavori();
+  check(l.length === 3 && l.every((x) => x.tipo === "etichette" && x.stampante === "Zebra ZD421" && x.ruota === "no" && JSON.stringify(x.pagina) === "[142,71]"),
+    `all'aiutante tre copie, all'etichettatrice, dritte (got ${JSON.stringify(l.map((x) => `${x.tipo}→${x.stampante}`))})`);
+  check(presiBrac === 1, `il PDF chiesto al gestionale una volta sola (got ${presiBrac})`);
+  check((await ordiniBrac()).length === 1 && (await stampe(doc)).length === 0, "il tocco durante la stampa non ha fatto niente: un ordine solo nel giornale, nessuna anteprima");
+  check(!!dietro && await aspettaChiusa(dietro), "la scheda dei PDF, finito, si chiude");
+  // finita: un tocco è una stampa nuova (il PDF chiesto di nuovo)
+  azzeraLavori();
+  await tocca(doc);
+  const nuovo = await finche(async () => (await ordiniBrac()).find((x) => x.id !== rec.id && x.stato === "avviso" && x.fogli), 30000);
+  check(!!nuovo && nuovo.fogli.length === 1 && lavori().length === 1 && presiBrac === 2,
+    `a stampa finita, un tocco: un ordine nuovo, una copia, il PDF chiesto di nuovo (got ${lavori().length} fogli · ${presiBrac} PDF)`);
+
+  // non si infila fra le etichette di un ordine che sta stampando: le aspetta, poi esce
+  azzeraLavori();
+  await nessunOrdine();
+  comportati({ lento: 2500 });
+  const etic = await doc.evaluate(() => new URL(document.querySelector('a[title="Stampa Etichette"]').getAttribute("href"), location.href).href);
+  await sw.evaluate(async (u) => {
+    const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const jobs = [{ name: "Etichette provette", printer: "etichettatrice", url: u }, { name: "Etichette provette — riga 2", printer: "etichettatrice", url: u + "&x=2" }];
+    const l = await ordLeggi();
+    l.push({ id: "ordprova1", ep: "999001", paziente: "ROSSI MARIO", n: 1, url: null, opener: t.id, worker: t.id, stato: "stampo", pronta: true, ts: Date.now(), agg: Date.now(),
+      vista: null, resto: { mancano: [], controllare: [], nel: [] }, stampa: { jobs, tag: "Confermata", fine: null, riassunto: "", quesito: "" }, fogli: fogliNuovi(jobs, await stampaScelte()) });
+    await ordScrivi(l);
+    ordStampaFogli("ordprova1");
+  }, etic);
+  await finche(() => lavori().length === 1, 15000);
+  await tocca(doc);
+  const attesa = await finche(async () => (await ordiniBrac()).find((x) => /dopo le etichette di ROSSI MARIO/.test(x.pubblico?.testo || "")), 15000);
+  check(!!attesa, `mentre l'ordine stampa le sue etichette, l'etichetta anagrafica aspetta, e lo dice (got ${JSON.stringify((await ordini()).map((x) => x.pubblico))})`);
+  const finita = await finche(async () => (await ordiniBrac()).find((x) => x.stato === "avviso"), 40000);
+  const ll = lavori();
+  check(!!finita && ll.length === 3 && ll.every((x) => x.tipo === "etichette") && JSON.stringify(ll.map((x) => JSON.stringify(x.pagina) === "[142,71]")) === "[false,false,true]",
+    `prima le due etichette dell'ordine, poi l'etichetta anagrafica (got ${JSON.stringify(ll.map((x) => x.pagina))})`);
+
+  // un'etichettatrice che non va, due copie: una prova sola all'aiutante, al dialogo una volta («2 copie»), e nel registro degli errori senza nomi
+  azzeraLavori();
+  await nessunOrdine();
+  await sw.evaluate(() => chrome.storage.local.remove("errori.v1"));
+  comportati({ rompi: { "Zebra ZD421": "la stampante (o il suo driver) ha dato errore" } });
+  await tocca(doc); await sospendi(300); await tocca(doc);
+  await aspettaScheda(doc, "s.stato === 'stampo'", 20000);
+  const s = await scheda(doc);
+  check(lavori().length === 1 && !!s && /^Stampa 1 di 1 — Etichetta anagrafica/.test(s.doc) && /2 copie/.test(s.avviso) && /etichettatrice/.test(s.dest),
+    `la copia che non esce: le altre non ci riprovano, il dialogo una volta, con quante copie (got ${lavori().length} · ${JSON.stringify(s)})`);
+  const err = ((await sw.evaluate(() => chrome.storage.local.get("errori.v1")))["errori.v1"] || []).filter((x) => x.tipo === "stampa" && x.dati.bracciale);
+  check(err.length === 1 && err[0].dati.esito === "fallito" && !/ROSSI|MARIO|BIANCHI/.test(JSON.stringify(err)),
+    `nel registro degli errori, senza nomi (got ${JSON.stringify(err)})`);
+  await chiudiStampa(doc);
+
+  // senza la stampa automatica: il link si apre in una scheda, come dal gestionale, e basta
+  installa(false);
+  await scelte(null);
+  azzeraLavori();
+  await nessunOrdine();
+  presiBrac = 0;
+  await suPagina(doc, A.patientUrl);
+  await intestazione(doc);
+  await finche(async () => !(await stampantina(doc)), 5000);
+  await azzeraStampe(doc);
+  const apre = nuovaPagina(8000);
+  await tocca(doc);
+  const t = await apre;
+  await sospendi(1500);
+  check(!!t && t.url() === A.ORIGIN + linkBrac("999001") && presiBrac === 1 && lavori().length === 0 && (await ordini()).length === 0 && (await stampe(doc)).length === 0,
+    `senza stampa automatica: il PDF si apre in una scheda, nient'altro (got ${t ? t.url() : "niente"} · ${presiBrac} PDF · ${lavori().length} fogli · ${JSON.stringify((await ordini()).map((x) => [x.stato, x.pubblico]))} · ${(await stampe(doc)).length} schede)`);
+  if (t) await t.close();
+  ritocca = null;
 }
 
 await ctx.close();

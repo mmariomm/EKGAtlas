@@ -5795,6 +5795,11 @@
     .dfpost b { font-weight: 600; color: #35506B; font-variant-numeric: tabular-nums; }
     /* nell'intestazione, accanto agli identificativi: il cuore e l'icona */
     .hdpaz { flex: none; display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; }
+    .hdpaz .brac { position: relative; width: 28px; height: 28px; }
+    .hdpaz .brac .bracn { position: absolute; right: -6px; top: -4px; background: #0B5CAD; color: #fff; border-radius: 999px; padding: 0 4px;
+                          font-size: 10.5px; font-weight: 700; line-height: 15px; font-variant-numeric: tabular-nums; }
+    .hdpaz .brac.pulsa { animation: bracPulsa .45s ease-out; }
+    @keyframes bracPulsa { 0% { transform: scale(1); } 40% { transform: scale(1.18); background: #E8F0FA; } 100% { transform: scale(1); } }
     /* IL CUORE dei parametri vitali: rosso o ambra, fermo. Un impulso solo, da
        un secondo, quando compare; vuoto («♡ 5h») se la riga ha più di 4 ore. */
     .cuore { flex: none; display: inline-block; font-size: 14px; line-height: 1; font-weight: 700; cursor: default; }
@@ -6400,7 +6405,23 @@
     // «Da fare»: due spunte tonde e le loro righe
     dafare: ico('<circle cx="4" cy="4.5" r="2.2"/><circle cx="4" cy="11.5" r="2.2"/><path d="M8.5 4.5h5.5M8.5 11.5h5.5"/>'),
     stampante: ico('<path d="M4.5 6V2.5h7V6"/><rect x="2" y="6" width="12" height="5.5" rx="1.2"/><path d="M4.5 9.5h7v4h-7z"/>'),
+    // l'etichetta anagrafica: un braccialetto con la sua targhetta
+    bracciale: ico('<path d="M4.5 10.6C2.9 10.3 2 9.6 2 8.6 2 6.6 4.7 5 8 5s6 1.6 6 3.6c0 1-.9 1.7-2.5 2"/><rect x="4.5" y="8.4" width="7" height="4.6" rx="1.1"/><path d="M6.5 10.7h3"/>'),
   };
+
+  // Il «Stampa Bracciale» del gestionale (l'etichetta anagrafica): il link
+  // della pagina, così com'è, e solo se è di QUESTO episodio — mai costruito.
+  function linkBracciale(doc, ep, base) {
+    if (!ep) return "";
+    for (const a of doc.querySelectorAll('a[href*="PsoBraccialettoHMIMU"]')) {
+      try {
+        const u = new URL(a.getAttribute("href"), base);
+        if (u.origin === new URL(base).origin && /\/jasperservlet$/i.test(u.pathname)
+          && u.searchParams.get("REPORT") === "PsoBraccialettoHMIMU" && u.searchParams.get("EPISODIO_ID") === String(ep)) return u.href;
+      } catch { /* un link rotto non è il nostro */ }
+    }
+    return "";
+  }
 
   const RADIO_SET = [RES.RX, RES.ECO, RES.RMN, RES.TAC];
   function rememberQuesito(q) {
@@ -6727,6 +6748,50 @@
       const t = tempoInCorso();
       if (!t) return "";
       return `<span class="tchip on"><button id="tapri" title="${esc(t.titolo)}${t.paz ? " · " + esc(t.paz) : ""} — apri i tempi"><i class="tdot"></i>${esc(mmss(durata(t)))}</button><button id="tstop" title="Ferma il cronometro" aria-label="Ferma il cronometro">${ICO.ferma}</button></span>`;
+    }
+    // L'etichetta anagrafica, accanto agli identificativi: un link vero, quello
+    // della pagina (senza la stampa automatica si apre in una scheda, come dal
+    // gestionale). Con la stampa automatica, all'etichettatrice col motore e il
+    // giornale di sempre, e le copie a tocchi: ogni tocco entro un secondo
+    // dall'ultimo è una copia in più (fino a 5, «×2» sul bottone); un secondo
+    // dopo l'ultimo parte UNA stampa con quelle copie (il PDF preso una volta).
+    // Un tocco mentre quella stampa gira non fa niente: il bottone pulsa.
+    braccialeHtml() {
+      const url = this.pageType === "patient" ? linkBracciale(document, this.epDiQuesta(), location.href) : "";
+      return url ? `<a class="iconbtn brac" id="bracciale" href="${esc(url)}" target="_blank" title="Etichetta anagrafica" aria-label="Etichetta anagrafica">${this.braccialeDentro()}</a>` : "";
+    }
+    braccialeDentro() {
+      const n = (this._brac && this._brac.n) || 0;
+      return ICO.bracciale + (n > 1 ? `<span class="bracn">×${n}</span>` : "");
+    }
+    stampaBracciale(e) {
+      const ep = this.epDiQuesta(), url = linkBracciale(document, ep, location.href);
+      if (!url) { e.preventDefault(); return; }
+      if (!this.stampaPronta() || this.stampaAuto.s.attiva === false) return;   // il link fa da sé
+      e.preventDefault();
+      const t = this._brac, b = e.currentTarget;
+      if (t && t.url === url) {
+        t.n = Math.min(5, t.n + 1);
+        clearTimeout(t.timer);
+        t.timer = setTimeout(() => this.braccialeVia(), 1000);
+      } else if (this._bracInvio || (this.ordini || []).some((x) => x.stato === "stampo" && ((x.stampa && x.stampa.jobs) || []).some((j) => j.url === url))) {
+        b.classList.remove("pulsa"); void b.offsetWidth; b.classList.add("pulsa");
+        return;
+      } else this._brac = { url, ep, n: 1, timer: setTimeout(() => this.braccialeVia(), 1000) };
+      const w = this.root.querySelector("#bracciale");
+      if (w) w.innerHTML = this.braccialeDentro();
+    }
+    async braccialeVia() {
+      const t = this._brac;
+      this._brac = null;
+      const w = this.root.querySelector("#bracciale");
+      if (w) w.innerHTML = this.braccialeDentro();
+      if (!t) return;
+      this._bracInvio = true;
+      const jobs = Array.from({ length: t.n }, (_, k) => ({ name: t.n > 1 ? `Etichetta anagrafica ${k + 1}/${t.n}` : "Etichetta anagrafica", breve: "Et anag", printer: "etichettatrice", url: t.url }));
+      // (un tocco di lato: il pannello resta com'è, sotto la pill compare solo la sua riga)
+      try { await avviaStampa(jobs, { panel: this, ep: t.ep, paziente: this.nomePaziente(), url: location.href, resta: true }); }
+      finally { this._bracInvio = false; }
     }
     // La stampa automatica: le due stampanti scelte (allora si può accendere e spegnere)…
     stampaPronta() {
@@ -7688,7 +7753,29 @@
             righe.push({ k: `r:${o.id}`, nome: `${chi} · ${o.n || 0}/${o.n || 0}`, p: 1, ok: true, ico: "fatto" });
           }
         }
-        (Array.isArray(o.fogli) ? o.fogli : []).forEach((f, i) => {
+        const fogli = Array.isArray(o.fogli) ? o.fogli : [];
+        // l'etichetta anagrafica: N copie dello stesso foglio, una riga sola («Et anag ×3»)
+        const brac = fogli.length && ((o.stampa && o.stampa.jobs) || []).every((j) => /[?&]REPORT=PsoBraccialettoHMIMU(&|$)/.test(String(j.url || "")));
+        if (brac) {
+          const vive = fogli.map((f, i) => ({ f, i })).filter(({ f }) => f.stato !== "tolto");
+          if (!vive.length) continue;
+          const st = (xs) => vive.filter(({ f }) => xs.includes(f.stato));
+          const fatte = st(["stampato", "mandato"]), rotte = st(["fallito", "sconosciuto"]), invio = st(["invio"]), presto = st(["attesa", "prendo"]);
+          const tutte = fatte.length === vive.length;
+          if (tutte) {
+            const resta = Math.max(...fatte.map(({ f }) => f.ts || o.agg || 0)) + RIGA_FATTA - ora;
+            if (resta <= 0) continue;
+            prossima = prossima ? Math.min(prossima, resta) : resta;
+          }
+          righe.push({ k: `${o.id}:b`, nome: `Et anag${vive.length > 1 ? ` ×${vive.length}` : ""}`,
+            p: tutte || rotte.length ? 1 : Math.max(0.04, (fatte.length + (invio.length ? 0.7 : st(["prendo"]).length ? 0.35 : 0)) / vive.length),
+            ok: tutte, err: !!rotte.length && !presto.length && !invio.length,
+            x: !invio.length && presto.length && !fatte.length ? `t:${o.id}:${presto.map(({ i }) => i).join(",")}` : "",
+            ico: invio.length ? "pulsa" : tutte ? "fatto" : "",
+            rist: rotte.length && !presto.length && !invio.length && o.stato !== "stampo" && o.stampa ? o.id : "" });
+          continue;
+        }
+        fogli.forEach((f, i) => {
           if (f.stato === "tolto") return;
           const fatto = f.stato === "stampato" || f.stato === "mandato", rotto = f.stato === "fallito" || f.stato === "sconosciuto";
           if (fatto) {
@@ -7729,7 +7816,8 @@
       const dopo = (r) => { if (r && r.ordini) this.ordiniAggiorna(r.ordini); else ask({ t: "ordineControlla" }).then((y) => y && y.ordini && this.ordiniAggiorna(y.ordini)); };
       if (k === "giro") return this.stop();
       if (k === "f") return ask({ t: "ordineFerma", id }).then(dopo);
-      if (k === "t") return ask({ t: "ordineTogliFoglio", id, i: Number(i) }).then(dopo);
+      // (l'etichetta anagrafica: tutte le sue copie che non sono ancora partite)
+      if (k === "t") return Promise.all(String(i).split(",").map((n) => ask({ t: "ordineTogliFoglio", id, i: Number(n) }))).then((rs) => dopo(rs[rs.length - 1]));
     }
     // L'avviso di un ordine è letto (✕, o il carrello aperto): il segno
     // condiviso «giro rimasto a metà» di quella richiesta lo diceva già lui.
@@ -8245,7 +8333,7 @@
                   : this.view === "eotesto" ? "Torna all'esame obiettivo"
                   : "Tutti i pazienti"}" aria-label="Indietro">${ICO.indietro}</button>` : `<span class="logo">${LOGO_BLU}</span>`}${titolo ? `<b class="who">${esc(titolo)}</b>` : TABELLONE ? `<b class="who">Tabellone</b>${this.tabelloneSpia()}` : ""}
                 ${sub ? `<span class="sub" title="${esc(who)} — episodio ${esc(ep || "?")}">${sub}</span>` : ""}
-                ${idp && this.epDiQuesta() ? `<span class="hdpaz">${this.cuoreHtml(this.epDiQuesta())}${this.dfSlot(this.epDiQuesta(), undefined, "testa")}</span>` : ""}
+                ${idp && this.epDiQuesta() ? `<span class="hdpaz">${this.cuoreHtml(this.epDiQuesta())}${this.dfSlot(this.epDiQuesta(), undefined, "testa")}${this.braccialeHtml()}</span>` : ""}
                 <span class="hsp"></span>
                 ${TABELLONE ? "" : ponteSpia()}
                 ${this.listaPs() && this.inPazienti() && hasExt() && !TABELLONE ? `<button class="iconbtn" id="tabapri" title="Il tabellone in una scheda sua" aria-label="Il tabellone in una scheda sua">↗</button>` : ""}
@@ -12615,6 +12703,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#tempimenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("tempi"); });
       $("#rifmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("riferimenti"); this.root.querySelector("#riffiltro")?.focus(); });
       $("#stampamenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("stampa"); });
+      $("#bracciale")?.addEventListener("click", (e) => this.stampaBracciale(e));
       $("#riffiltro")?.addEventListener("input", (e) => { this.rifFiltro = e.target.value; this.rifFiltra(); });
       const ferma = () => { fermaTempo(); this.render(); };
       $("#tstop")?.addEventListener("click", ferma);
@@ -13789,7 +13878,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // dialogo di stampa; chiuso il dialogo si passa da soli al documento dopo,
   // e la scheda si toglie finché quello non arriva.
   let wizardOpen = false;
-  const cosaStampo = (job) => /^etichett/i.test(job.name) ? "le etichette"
+  const cosaStampo = (job) => /^etichetta anagrafica/i.test(job.name) ? "l'etichetta anagrafica"
+    : /^etichett/i.test(job.name) ? "le etichette"
     : /^lista esami/i.test(job.name) ? "la lista esami"
     : /^prenotazione/i.test(job.name) ? "la prenotazione RX"
     : `«${job.name}»`;
@@ -13844,9 +13934,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     panel?.log(`${now()}  ${jobs.map((j) => j.name).join(", ")}: alla stampa automatica, senza anteprima${r.ok ? "" : " — il service worker non risponde"}`);
     if (!panel) return true;
     // la striscia è della stampa: si vede (anche dal pannello aperto) e il giro finito lascia il posto
-    panel.chiudiGiro();
-    if (panel.striscia && !panel.striscia.daOrdine) panel.segnala(null);
-    panel.collapsed = true;
+    // (l'etichetta anagrafica no: il medico sta lavorando nel pannello, e lì resta)
+    if (!opzioni.resta) {
+      panel.chiudiGiro();
+      if (panel.striscia && !panel.striscia.daOrdine) panel.segnala(null);
+      panel.collapsed = true;
+    }
     if (r.ok) panel.ordiniAggiorna(r.ordini || panel.ordini);
     else panel.segnala({ tag, testo: "Esito della stampa sconosciuto: controlla la stampante", tono: "warn", paziente: job.paziente,
       azione: { label: "Ristampa", titolo: "Stampa di nuovo, dal dialogo", fn: () => openPrintWizard(jobs, opzioni) } });
