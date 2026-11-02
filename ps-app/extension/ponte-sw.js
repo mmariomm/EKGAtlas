@@ -34,7 +34,7 @@
  * Mentre è aperta, ogni scheda del gestionale lo dice nell'intestazione del
  * pannello: «iPhone collegato · Scollega».
  */
-/* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto */
+/* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL */
 
 const PONTE_HOST_PROVA = "ponte.host";      // storage.local: solo per le prove, e solo verso questo PC
 const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, scade, creata, usata, dev, nTel, cambiata?, errori?, blocco?, cambi? }
@@ -399,17 +399,61 @@ async function ponteComando(s, d) {
     if (d.cmd === "ciao") return rispondi({ ok: true, dati: { scade: pt.coppia.scade, inattivoMin: PONTE_INATTIVO / 60e3 } });
     if (d.cmd === "esci") { await rispondi({ ok: true }); return ponteFine("chiusa dall'iPhone"); }
     if (d.cmd === "ordini") return rispondi({ ok: true, dati: await ponteOrdiniTel() });
-    if (d.cmd === "aggiornaValori") return rispondi(await ponteAggiornaValori(ponteArgomenti(d)));
+    if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d); return rispondi(await ponteOffriPdf(s, await ponteAggiornaValori(a), a.ep)); }
     if (d.cmd === "ordina") return rispondi(await ponteOrdina(d));
+    if (d.cmd === "pdf") return rispondi(await ponteDaiPdf(s, d));
     if (["pazienti", "esiti", "richieste", "nota", "promemoria", "fatto"].includes(d.cmd)) {
-      const r = await ponteSuScheda(d.cmd, ponteArgomenti(d));
+      const a = ponteArgomenti(d);
+      const r = await ponteSuScheda(d.cmd, a);
       if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
-      return rispondi(r);
+      return rispondi(d.cmd === "esiti" ? await ponteOffriPdf(s, r, a.ep) : r);
     }
     return rispondi({ ok: false, errore: "Comando sconosciuto" });
   } catch (e) {
     return rispondi({ ok: false, errore: "Errore sul PC: " + corto(e && e.message || e, 80) });
   }
+}
+
+// I PDF dei referti salvati sul PC (la stessa copia che apre il visore del
+// pannello: storage.local «ref:<id>», solo per l'episodio sotto cui è stata
+// salvata). Il telefono li chiede a pezzi, dentro la stessa sessione cifrata:
+// una risposta per pezzo, ognuna sotto il limite del ripetitore. Si offrono
+// solo i referti di cui il pannello ha già letto il testo — la lettura è dove
+// si scopre che il PDF è di un altro paziente, e quella copia non arriva qui
+// (la sua copia viene tolta, e comunque ogni pezzo la rilegge) —, e si danno
+// solo quelli offerti in questa sessione.
+const PONTE_PDF_MAX = 15e6;                  // oltre, «aprilo sul PC»
+const PONTE_PDF_PEZZO = 4 * 130000;          // caratteri base64 per risposta (≈ 390 KB): multiplo di 4
+async function ponteCopia(ep, id) {
+  if (!ep || typeof id !== "string") return null;
+  const hit = (await chrome.storage.local.get(KEY(id)))[KEY(id)];
+  if (!hit || typeof hit.data !== "string" || !/^JVBERi/.test(hit.data) || String(hit.ep || "") !== String(ep)) return null;
+  if (Date.now() - (hit.ts || 0) > REF_TTL) return null;
+  return hit.data;
+}
+const ponteMisura = (b) => Math.floor(b.length * 3 / 4) - (b.endsWith("==") ? 2 : b.endsWith("=") ? 1 : 0);
+async function ponteOffriPdf(s, r, ep) {
+  if (!r || !r.ok || !r.dati || !Array.isArray(r.dati.referti)) return r;
+  s.pdf = s.pdf || new Set();
+  for (const x of r.dati.referti) {
+    if (!x || typeof x.id !== "string" || !(x.testo || x.lungo)) continue;
+    const b = await ponteCopia(ep, x.id).catch(() => null);
+    if (!b) continue;
+    s.pdf.add(ep + "|" + x.id);
+    x.pdf = ponteMisura(b);
+  }
+  return r;
+}
+async function ponteDaiPdf(s, d) {
+  const ep = typeof d.ep === "string" ? d.ep : "", id = typeof d.ref === "string" ? d.ref : "";
+  if (!Number.isSafeInteger(d.i) || d.i < 0 || !s.pdf || !s.pdf.has(ep + "|" + id)) return { ok: false, errore: "Referto non disponibile: riapri gli esiti" };
+  const b = await ponteCopia(ep, id);
+  if (!b) return { ok: false, errore: "Il PDF non è più sul PC" };
+  const size = ponteMisura(b), n = Math.ceil(b.length / PONTE_PDF_PEZZO);
+  if (size > PONTE_PDF_MAX) return { ok: false, errore: "PDF troppo grande: aprilo sul PC" };
+  if (d.i >= n) return { ok: false, errore: "Il PDF non è più sul PC" };
+  if (d.i === 0) { ponteNota("iPhone · un referto PDF aperto sul telefono"); await ponteScriviStato(); }
+  return { ok: true, dati: { size, n, i: d.i, b: b.slice(d.i * PONTE_PDF_PEZZO, (d.i + 1) * PONTE_PDF_PEZZO) } };
 }
 
 // L'ordine. Il numero lo fa il telefono quando arma «Conferma» (oid): la

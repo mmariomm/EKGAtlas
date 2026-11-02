@@ -50,8 +50,17 @@ sessione. Vedi:
   («Letti sul PC alle 08:02 · 4 h fa», in ambra dopo un'ora; una colonna con valori parziali lo dice
   nella testata: «07:28 · parziale»), e i referti, col testo di quelli già letti sul PC. **↻ Aggiorna
   i valori** fa sul PC il «⭳ Carica i valori» di sempre, in una scheda di sottofondo che si chiude da
-  sola, e porta qui il risultato.
-- **Richieste** — il quesito (i tre pacchetti in testa), i profili e gli esami della griglia. Il
+  sola, e porta qui il risultato. Un referto che il PC ha **salvato come PDF** ha un tasto «PDF»: il
+  telefono lo chiede a pezzi (comando `pdf`, ~390 KB l'uno, una risposta per pezzo) dentro la stessa
+  sessione cifrata, li ricompone controllando la misura e il «%PDF», e lo apre nel visore del
+  telefono da un `blob:` in memoria — mai su disco (né localStorage, né Cache, né IndexedDB), mai da
+  un indirizzo di rete, mai nel service worker dell'app; il blob si revoca a finestra chiusa, al PDF
+  dopo, uscendo. Il PC offre solo copie dello stesso episodio, di referti di cui il pannello ha già
+  letto il testo (è lì che si scopre un PDF di un altro paziente, e la copia si toglie), e dà solo
+  quelle offerte nella sessione. Oltre 15 MB: «PDF troppo grande: aprilo sul PC».
+- **Richieste** — il quesito (i tre pacchetti in testa), i profili e gli esami, in pillole che vanno
+  a capo (alte almeno 44 pt; scelto = pieno). Con quesito mancante il bottone resta spento, ma un
+  tocco porta il cursore sul quesito. Il
   bottone chiede conferma **col nome intero, l'età e il posto** («Ordino 2 esami per ROSSI MARIO ·
   77 anni · OBI 2? Tocca di nuovo»; per un omonimo «⚠ Ordino …», col segno); un secondo tocco entro
   800 ms (un doppio tocco per sbaglio) non conta. Poi l'ordine fa sul PC il giro di sempre — la scheda dell'ordine,
