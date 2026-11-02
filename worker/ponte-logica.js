@@ -26,7 +26,7 @@ export const altroRuolo = (r) => (r === "pc" ? "tel" : "pc");
 
 // I file dell'app del telefono, e solo questi: un altro indirizzo sotto
 // /ponte/ è un 404, mai la pagina del sito. (Gli stessi del suo sw.js.)
-export const FILE_APP = new Set(["", "app.js", "app.css", "cripto.js", "sw.js", "manifest.webmanifest",
+export const FILE_APP = new Set(["", "app.js", "app.css", "cripto.js", "jsqr.min.js", "sw.js", "manifest.webmanifest",
   "icona.svg", "icona-180.png", "icona-192.png", "icona-512.png"].map((f) => "/ponte/" + f));
 
 // /ponte/ws?r=<stanza>&ruolo=pc|tel
@@ -109,6 +109,6 @@ export function intestazioniApp(url) {
     "content-security-policy": `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ${presa}; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
-    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "permissions-policy": "camera=(self), microphone=(), geolocation=()",   // la fotocamera: «Scansiona il QR»
   };
 }
