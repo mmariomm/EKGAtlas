@@ -83,6 +83,15 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
 await ctx.addInitScript(() => {
   try { if (!localStorage.getItem("psassist:win.v1")) localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.6, y: 0.01, w: 0.39, h: 0.97 })); } catch { /* niente */ }
 });
+// Qui si prova la stampa: il caricamento da solo all'apertura (che apre lo
+// storico del portale in una scheda dietro) si dà per già fatto, o le «schede
+// nuove» che le prove aspettano sarebbero la sua (lo prova ext-referti).
+await ctx.addInitScript(() => {
+  try {
+    const ids = ["aaaa1111-0000-0000-0000-000000000001", "bbbb2222-0000-0000-0000-000000000002", "cccc3333-0000-0000-0000-000000000003"];
+    localStorage.setItem("psassist:autoCarica.v1", JSON.stringify({ 999001: { ts: Date.now() + 864e5, ids }, 999002: { ts: Date.now() + 864e5, ids } }));
+  } catch { /* niente */ }
+});
 // quante volte si è aperta una stampa, in TUTTE le schede del gestionale
 // (la scheda dell'ordine compresa: localStorage è dell'origine)
 await ctx.addInitScript(() => {
