@@ -823,6 +823,7 @@ const ATTIVI = new Set(["avvio", "corre"]);          // occupano la coda: un mot
 // (e «stampo»: confermata, il service worker stampa i fogli senza dialogo; la
 // scheda dell'ordine dà solo i PDF, e la coda intanto va avanti)
 const AVVIO_MAX = 45e3;       // la scheda non ha detto «parto»: non partirà
+const AVVIO_VUOTA = 6e3;      // la scheda è ancora vuota, mai arrivata sulla pagina: se ne apre un'altra
 const MUTO_MAX = 180e3;       // tre minuti senza una parola: si chiede alla scheda se c'è
 const STAMPA_MAX = 30 * 60e3; // etichette che nessuno è tornato a prendere
 const ORD_TTL = 12 * 3600e3;
@@ -945,6 +946,14 @@ async function ordControlla(l) {
       rec.stato = "errore"; rec.agg = ora;
       rec.vista = { tag: "Non partito", testo: "La scheda dell'ordine non ha risposto: niente inviato", tono: "err" };
       await ordSlega(rec);
+    } else if (rec.stato === "avvio" && t && !rec.riaperta && ora - rec.agg > AVVIO_VUOTA && !sulGestionale(t.url) && !sulGestionale(t.pendingUrl)) {
+      // La scheda nuova non è mai arrivata sulla pagina (il suo processo è
+      // morto appena nata): lì non c'è nessun pannello, niente può essere
+      // partito. Al suo posto un'altra, una volta sola.
+      rec.riaperta = true;
+      const vuota = rec.worker;
+      try { await ordApri(rec, l); } catch { rec.worker = vuota; }
+      if (rec.worker !== vuota) chrome.tabs.remove(vuota).catch(() => {});
     } else if (rec.stato === "corre" && ora - rec.agg > MUTO_MAX) {
       // Zitta da troppo: le si chiede se c'è. Finché la scheda esiste non si
       // dice «non mandati» (potrebbe mandare ancora) e la coda aspetta: mai
