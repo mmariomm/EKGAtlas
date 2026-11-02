@@ -376,18 +376,28 @@ stanno con lo stato degli esami, in `stato.v1`, e se ne vanno con lui.
    sempre, e lascia andare il pacchetto: gli esami restano, ora sono tuoi. Un esame del pacchetto
    che **non c'è nel catalogo di questa macchina** non viene aggiunto e il pannello lo dice, una
    volta, nel banner e nel Registro: non si inventa mai un codice.
-2. Gli esami stanno in **gruppi per laboratorio** — **POC**, **Lab centrale** (le «Urgenze» e il
-   laboratorio centrale: per chi ordina sono lo stesso posto), **RX** — e ogni gruppo ha **in
-   testa i suoi profili rapidi**: Base PS e Coag POC sotto POC, Epatico e Coag sotto Lab
-   centrale. Poi gli **esami singoli** — fra questi
+   **Una casella sola, «Quesito o esame…».** Quello che scrivi è il quesito; se somiglia a degli
+   esami del catalogo (tutti i laboratori), sotto compare una tendina: per prima **«Quesito:
+   …»** (Invio: tieni il testo come quesito), poi gli esami. Scelto un esame, nella casella
+   **torna il quesito di prima**; Esc fa lo stesso senza scegliere niente. «altri esami…» non
+   c'è più (resta solo sulla pagina esami, dove un quesito non c'è).
+2. Gli esami stanno in **tre colonne strette** — **POC · Lab · RX** (Lab = le «Urgenze» e il
+   laboratorio centrale: per chi ordina sono lo stesso posto) —, **parole da accendere**:
+   niente caselle, righe di ~24 px, si tocca la riga intera, scelta è **piena** del colore dei
+   comandi. Le uniche etichette sono le tre teste di colonna. La **prima riga di ogni colonna
+   sono i suoi profili**: Base PS e Coag POC in POC, Epatico e Coag in Lab. Un profilo che
+   raccoglie esami che ci sono anche uno per uno è un espansore — **«Epatico ▸»**: il nome
+   prende tutto il profilo, ▸ apre GPT, GOT, GAMMA GT, BILIRUBINA, LIPASI uno per uno (aperto
+   da solo se uno di loro è scelto). Poi gli **esami singoli** — fra questi
    **EGA VENOSA NEW** / **EGA ARTERIOSA NEW** (il laboratorio ha rifatto gli emogas: sono i
-   codici nuovi, e la vecchia versione resta in elenco solo in «altri esami…»), gli **epatici
-   uno per uno** (GPT, GOT, GAMMA GT, BILIRUBINA, LIPASI: il profilo li ordina insieme, ma
-   quasi sempre se ne vuole uno solo), **PT POC** e **PTT POC** (la coagulazione che i pacchetti
-   mettono: qui si vede e si toglie) e **SARSCOV**
-   (tampone antigenico SARS-CoV-2, laboratorio centrale), griglia compatta a
-   due colonne per laboratorio (POC / Lab centrale / RX). Per tutto il resto: **«altri esami…»**,
-   subito sotto il quesito, con menu a tendina su tutti i laboratori. Lo stesso esame delle
+   codici nuovi, e la vecchia versione si trova solo cercandola), **PT POC** e **PTT POC** (la
+   coagulazione che i pacchetti mettono: qui si vede e si toglie) e **SARSCOV** (tampone
+   antigenico SARS-CoV-2, laboratorio centrale). Il **quesito RX** compare nella colonna RX
+   **solo quando un RX è scelto**. La barra **«Conferma per ROSSI M. · N esami»** (piena, ferma
+   in fondo) c'è **solo quando qualcosa è scelto**; **Ctrl+Invio** la preme, e **solo carrello**
+   le sta accanto, piccolo. La **Stampa** delle richieste confermate non sta più qui: è nel
+   menu **⋯ → Stampa le richieste** (e la «Ristampa» sulla striscia dopo un ordine). Per tutto il
+   resto: la casella in cima, con la tendina su tutti i laboratori. Lo stesso esame delle
    Urgenze e del laboratorio centrale (le Urgenze ne sono un sottomenu) è **una riga sola**,
    quella delle Urgenze — la stessa che usano i pacchetti. I selezionati restano in alto, una
    riga per laboratorio, con la ✕ al passaggio del mouse.
@@ -397,14 +407,15 @@ stanno con lo stato degli esami, in `stato.v1`, e se ne vanno con lui.
    **La seconda sede (OSG)** non ha il laboratorio «Urgenze»: POC e un laboratorio unico. Gli
    esami della colonna Urgenze vanno nella risorsa di questa sede che ha **lo stesso esame** —
    stesso nome o stesso mnemonico LIS — e **mai** in un POC (un altro strumento, un'altra
-   provetta): la PCR del bottone finisce nel laboratorio, non fra i POC. In «altri esami…» si
+   provetta): la PCR del bottone finisce nel laboratorio, non fra i POC. Nella tendina si
    vedono solo le risorse della sede in cui sei (prima ogni esame usciva due volte, una per
    sede), e i nomi di reparto funzionano: **PCR** trova «PROTEINA C REATTIVA» (prima trovava
    solo «PCR POC»), e così PCT, EGA, GGT, AST/ALT, BNP, tropo — il laboratorio prima del POC.
-   Accanto a ogni esame, in grigio, **quando è già stato fatto** in questo episodio (l'ora della
-   richiesta tornata: `TROPONINA US · 11:40, 14:30`) o **da quanto aspetta**
-   (`EMOCROMO POC · in attesa 40′`) — stessa fonte dello stato dei Pazienti, stesso nome del
-   catalogo; niente quando non si sa, e «letto 11:02» se la lettura è vecchia. Un pacchetto
+   Accanto a ogni esame, **a colori**, **quando è già stato fatto** in questo episodio (l'ora
+   della richiesta tornata, in verde: `TROPONINA US ✓ 11:40, 14:30`) o **da quanto aspetta**
+   (`EMOCROMO POC ⏳ 40′`, in ambra; **rosso** oltre la seconda soglia del suo tipo, le stesse
+   dei Pazienti) — stessa fonte dello stato dei Pazienti, stesso nome del catalogo; niente
+   quando non si sa, e in grigio con «letto 11:02» se la lettura è vecchia. Un pacchetto
    come «Dolore toracico» spunta come sempre: il suffisso fa vedere il doppione, non lo toglie.
 3. **Mentre manda, puoi fare altro.** Partito il giro il pannello si fa piccolo: una
    **striscia** in un angolo con il nome del paziente, a che punto è — in esami, «esame 3 di 6»,
@@ -448,7 +459,7 @@ stanno con lo stato degli esami, in `stato.v1`, e se ne vanno con lui.
    quel paziente, o sulla lista, il dialogo parte da solo — ma non mentre scrivi (cursore in un
    campo, un tasto da poco: aspettano); sulla pagina di un **altro** paziente non si apre da
    solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco. Senza una scheda del gestionale
-   davanti aspettano (mezz'ora; poi dalla sua pagina, sezione Stampa); la pagina di accesso non
+   davanti aspettano (mezz'ora; poi dalla sua pagina, ⋯ → Stampa le richieste); la pagina di accesso non
    le butta via.
    **Un secondo ordine mentre uno gira aspetta in coda** — la striscia dice «+1 in coda» — e
    parte quando il primo ha finito o si è fermato (sulla sua striscia, «In coda», ✕ lo toglie).
@@ -573,7 +584,7 @@ stanno con lo stato degli esami, in `stato.v1`, e se ne vanno con lui.
    le costruisce e le porta entrambe a conferma, con **una sola** stampa finale. Questa è
    l'unica che **non** va in sottofondo: le due richieste vivono nella memoria del pannello, e
    a metà non si riprendono — lì il browser avvisa ancora prima di cambiare pagina.
-5. **Stampa**: ogni richiesta con data, ora e la lista compatta degli esami.
+5. **Stampa** (menu **⋯ → Stampa le richieste**, non più in fondo alle Richieste): ogni richiesta con data, ora e la lista compatta degli esami.
 
 ### Esiti
 Il **Workup**, come in Epic: **Lab · ECG · Imaging** in un posto solo, tre sezioni distinte, ognuna
@@ -617,7 +628,10 @@ richiesta da confermare.
   sotto** (un secondo tocco lo richiude), con **⧉ Copia** (ora, esame e paziente in testa, per il
   diario) e **↗ PDF**; **↗ PDF** c'è anche su ogni riga, a un tocco: la copia salvata si apre
   nel **visore** dell'estensione (paziente · esame · data in testa, ✕ o Esc e si torna agli Esiti;
-  mai un referto di un altro paziente), altrimenti il documento del gestionale. Dell'**ECG** si mostra **solo il referto scritto** del
+  mai un referto di un altro paziente), altrimenti il documento del gestionale. Nel visore, un
+  bottone solo, **Stampa**: con la stampa automatica il PDF va **sull'A4** del medico, dalla
+  copia salvata, con lo stesso motore della lista esami (ogni foglio annotato prima di partire,
+  una volta sola: un doppio tocco è una stampa); senza, il dialogo di stampa del browser. Dell'**ECG** si mostra **solo il referto scritto** del
   cardiologo, mai le misure o le frasi della macchina; un tracciato senza referto scritto dice
   «Solo il tracciato della macchina». Gli altri documenti (consulenze…) stanno in **Altri
   documenti**, e si aprono nella loro scheda.
@@ -1106,8 +1120,8 @@ parte da sola (e se un'installazione mostrasse una pagina intermedia, parte lì 
 altrimenti aspetta il ritorno sul paziente). **Solo per le richieste di PS Assist**: quelle in cui
 il pannello ha mandato esami (o che ha aperto lui), confermate dal pannello o col bottone del
 gestionale. Una richiesta fatta tutta a mano nel gestionale, confermata col suo bottone, non
-stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta** (sezione
-**Stampa**: ogni richiesta è elencata con **data e ora** e, sotto, la **lista compatta degli
+stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta** (menu **⋯ →
+Stampa le richieste**: ogni richiesta è elencata con **data e ora** e, sotto, la **lista compatta degli
 esami** che contiene) e, sopra l'elenco, **Stampa l'ultima richiesta**: la più recente, e con
 lei quella di pochi minuti prima (laboratorio e radiologia dello stesso ordine), etichette
 prima. Con la stampa automatica, senza dialogo.
@@ -1160,7 +1174,7 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   Stampo le etichette su Zebra ZD421… · foglio 1 di 2», con ⏹), e alla fine dice **«Stampato su
   Zebra ZD421 e HP LaserJet · 2 esami confermati alle 14:32»** col nome del paziente,
   **Ristampa** (un tocco: si ristampa lì) e ✕; dopo due minuti un «Stampato» se ne va da solo
-  (la Ristampa resta nella sezione **Stampa** del paziente). Una volta sola: ogni foglio parte una volta, e
+  (la Ristampa resta nel menu **⋯ → Stampa le richieste** del paziente). Una volta sola: ogni foglio parte una volta, e
   uno mandato da un service worker che poi è ripartito è «sconosciuto», mai rimandato. Se la
   scheda dell'ordine si ricarica o si chiude a metà, o premi ⏹, i fogli che restano non partono e
   l'ordine finisce **«Stampa interrotta»**, con **Ristampa** (la richiesta è confermata, e lo

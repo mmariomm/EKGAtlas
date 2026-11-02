@@ -182,12 +182,20 @@ async function richieste(page) {
   await q.waitFor({ timeout: 10000 });
 }
 
+// La stampa delle richieste confermate non sta più nelle Richieste: ⋯ → «Stampa le richieste»
+async function stampaRichieste(page) {
+  await page.waitForSelector("#psassist-host .card", { state: "attached", timeout: 10000 });
+  if (await page.locator("#psassist-host [data-print]").count()) return;
+  await page.locator("#psassist-host #menubtn").click();
+  await page.locator("#psassist-host #stampamenu").click();
+  await page.waitForSelector("#psassist-host [data-print]", { timeout: 5000 });
+}
+
 async function selectExams(page, labels) {
   // one-line catalog search + dropdown
   for (const { text } of labels) {
-    await $panel(page, "#acq").fill(text);
+    await $panel(page, "#q").fill(text);
     await $panel(page, `.acitem:has-text("${text}")`).first().click();
-    await $panel(page, "#acq").fill("");
   }
 }
 
@@ -796,9 +804,8 @@ async function scenarioElencoSenzaProg(browser) {
   await richieste(page);
   await $panel(page, "#q").fill("dispnea");
   // l'emogas venosa (codice 3) è la prima riga dell'elenco del POC: entrata, il primo link è il suo «Elimina»
-  await $panel(page, "#acq").fill("EMOGASANALISI VENOSA POC (");
+  await $panel(page, "#q").fill("EMOGASANALISI VENOSA POC (");
   await $panel(page, '.acitem:has-text("EMOGASANALISI VENOSA POC (")').first().click();
-  await $panel(page, "#acq").fill("");
   await $panel(page, ".opt[title*=\"EMOCROMOCITOMETRICO\"]").click();
   await $panel(page, "#go").click();
   await atterraCarrello(page, 30000).catch(() => {});
@@ -871,6 +878,7 @@ async function scenarioRiflesso(browser) {
   await page.goto(mock.patientUrl);
   await richieste(page);
   await $panel(page, "#q").fill("ittero");
+  await $panel(page, '[data-espandi="Epatico"]').click();   // gli epatici stanno dentro «Epatico ▸»
   await $panel(page, '.opt[title*="BILIRUBINA"]').click();
   await $panel(page, "#go").click();
   await atterraCarrello(page);
@@ -948,6 +956,7 @@ async function scenarioRigaCercata(browser) {
   await richieste(page);
   await $panel(page, "#q").fill("febbre");
   await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, '[data-espandi="Epatico"]').click();   // gli epatici stanno dentro «Epatico ▸»
   await $panel(page, '.opt[title*="LIPASI"]').click();
   await $panel(page, "#goconfirm").click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 }).catch(() => {});
@@ -2142,7 +2151,7 @@ async function scenarioSedeOSG(browser) {
   await richieste(page);
 
   // la ricerca: «PCR» trova PROTEINA C REATTIVA, prima del POC, e solo di questa sede
-  await $panel(page, "#acq").fill("PCR");
+  await $panel(page, "#q").fill("PCR");
   await page.waitForSelector("#psassist-host .acitem", { timeout: 5000 });
   const voci = await page.locator("#psassist-host .acitem").allInnerTexts();
   const prima = (voci[0] || "").replace(/\s+/g, " ");
@@ -2152,7 +2161,7 @@ async function scenarioSedeOSG(browser) {
   check(scen, ids.every((r) => r === OSG.POC || r === OSG.LAB),
     `solo esami di questa sede, niente doppioni dell'altra (got ${[...new Set(ids)].join(",")})`);
   check(scen, !voci.some((v) => /0029000|0065000/.test(v)), "e le risorse hanno un nome, non un numero");
-  await $panel(page, "#acq").fill("");
+  await $panel(page, "#q").press("Escape");
 
   // il bottone PCR (colonna Urgenze) a OSG va nel laboratorio unico
   await $panel(page, "#q").fill("febbre");
@@ -2452,6 +2461,7 @@ async function scenarioPrintManual(browser) {
   const { context, page } = await newPage(browser, mock, { ritardo: lentiStampa });
   await page.goto(mock.patientUrl);
   await richieste(page);
+  await stampaRichieste(page);
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   const stampante = () => page.evaluate(() => document.getElementById("psassist-print")?.dataset.printer || "");
@@ -2532,8 +2542,10 @@ async function scenarioPrintRadio(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await richieste(page);
+  await stampaRichieste(page);
   const rowTxt = await page.locator('#psassist-host [data-print="699998"]').first().innerText();
   check(scen, /prenotazione/i.test(rowTxt), `riga radiologia etichettata "prenotazione" (got: ${rowTxt.trim().slice(0, 60)})`);
+  await stampaRichieste(page);
   await page.locator('#psassist-host [data-print="699998"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   const head = `${await docStampa(page)} → ${await page.evaluate(() => document.getElementById("psassist-print")?.dataset.printer || "")}`;
@@ -2626,6 +2638,7 @@ async function scenarioPrintInlineViewer(browser) {
   await page.goto(mock.patientUrl);
   await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
+  await stampaRichieste(page);
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   await page.waitForFunction(() => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= 1, { timeout: 25000 });
@@ -2646,6 +2659,7 @@ async function scenarioPrintUploadViewer(browser) {
   await page.goto(mock.patientUrl);
   await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
+  await stampaRichieste(page);
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   await page.waitForFunction(() => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= 1, { timeout: 25000 });
@@ -2670,6 +2684,7 @@ async function scenarioPrintMetaViewer(browser) {
   await page.goto(mock.patientUrl);
   await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
+  await stampaRichieste(page);
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   await page.waitForFunction(() => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= 1, { timeout: 25000 });
@@ -2697,6 +2712,7 @@ async function scenarioPrintAvanzaDaSolo(browser) {
   await page.goto(mock.patientUrl);
   await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
+  await stampaRichieste(page);
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   const titolo = () => docStampa(page);
@@ -2738,6 +2754,7 @@ async function scenarioPrintAvanzaFuoco(browser) {
   await context.addInitScript(() => { window.__fuoco = true; Document.prototype.hasFocus = function () { return window.__fuoco; }; });
   await page.goto(mock.patientUrl);
   await richieste(page);
+  await stampaRichieste(page);
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   const titolo = () => docStampa(page);
@@ -2770,6 +2787,7 @@ async function scenarioPrintAvanzaFuoco(browser) {
   await b.context.addInitScript(() => { window.__fuoco = false; Document.prototype.hasFocus = function () { return window.__fuoco; }; });
   await b.page.goto(mock2.patientUrl);
   await richieste(b.page);
+  await stampaRichieste(b.page);
   await b.page.locator('#psassist-host [data-print="699999"]').first().click();
   await b.page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   await b.page.waitForFunction(() => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= 1, null, { timeout: 25000 });
@@ -2860,6 +2878,7 @@ async function scenarioPrintViewerVariants(browser) {
     await page.goto(mock.patientUrl);
     await richieste(page);
     await page.waitForSelector("#psassist-host", { state: "attached" });
+    await stampaRichieste(page);
     await page.locator('#psassist-host [data-print="699999"]').first().click();
     await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
     await page.waitForFunction(() => Number(document.getElementById("psassist-print")?.dataset.printAttempts || 0) >= 1, { timeout: 25000 }).catch(() => {});
@@ -2878,6 +2897,7 @@ async function scenarioPrintViewerVariants(browser) {
     await page.goto(mock.patientUrl);
     await richieste(page);
     await page.waitForSelector("#psassist-host", { state: "attached" });
+    await stampaRichieste(page);
     await page.locator('#psassist-host [data-print="699999"]').first().click();
     await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
     await page.waitForSelector("#psassist-print .pwerr", { timeout: 25000 });
@@ -2933,6 +2953,7 @@ async function scenarioStampaUltima(browser) {
     }
   }, o);
   const giro = async () => {
+    await stampaRichieste(page);
     await page.locator("#psassist-host #stultima").click();
     await page.waitForSelector("#psassist-print", { state: "attached", timeout: 15000 });
     const heads = [];
@@ -2940,7 +2961,7 @@ async function scenarioStampaUltima(browser) {
     return heads;
   };
   await page.goto(mock.patientUrl);
-  await richieste(page);
+  await stampaRichieste(page);
   const testo = (await page.locator("#psassist-host #stultima").innerText().catch(() => "")).trim();
   check(scen, testo === "Stampa l'ultima richiesta" && (await page.locator('#psassist-host [data-print]').count()) === 2,
     `nella sezione Stampa, sopra l'elenco che resta (got «${testo}»)`);
@@ -2969,6 +2990,7 @@ async function scenarioPrintHardViewer(browser) {
   await page.goto(mock.patientUrl);
   await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
+  await stampaRichieste(page);
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print iframe", { timeout: 20000 });
   const st = await page.evaluate(() => {
@@ -2998,6 +3020,7 @@ async function scenarioPrintWrapper(browser) {
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await richieste(page);
+  await stampaRichieste(page);
   await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
   await page.waitForTimeout(800);
@@ -3078,19 +3101,12 @@ async function scenarioUiErgonomics(browser) {
   check(scen, (await $panel(page, "#go").innerText()).trim() === "solo carrello" && /\blnk\b/.test(await $panel(page, "#go").getAttribute("class"))
     && (await $panel(page, ".commit .btn").count()) === 1,
     "«solo carrello» è un link scritto, non un secondo bottone");
-  // la ricerca «altri esami…» sta subito sotto il quesito, prima della griglia
-  const ordine = await page.evaluate(() => {
-    const r = document.getElementById("psassist-host").shadowRoot;
-    const qSec = r.querySelector("#q").closest(".sec");
-    const dopo = qSec.nextElementSibling;
-    const griglia = r.querySelector(".grid").closest(".sec");
-    return { subito: !!dopo && !!dopo.querySelector("#acq"),
-      prima: !!(dopo && (dopo.compareDocumentPosition(griglia) & Node.DOCUMENT_POSITION_FOLLOWING)) };
-  });
-  check(scen, ordine.subito && ordine.prima, `«altri esami…» subito sotto il quesito, prima della griglia (got ${JSON.stringify(ordine)})`);
+  // una casella sola, «Quesito o esame…»: niente più «altri esami…» a parte
+  check(scen, (await $panel(page, "#q").getAttribute("placeholder")) === "Quesito o esame…" && (await $panel(page, "#acq").count()) === 0,
+    "una casella sola, «Quesito o esame…»");
   check(scen, (await $panel(page, ".idline").count()) === 0, "niente riga di spiegazione in fondo alle Richieste (il nome sta nella testata)");
   // «PCR»: Urgenze e laboratorio centrale avevano la stessa riga due volte
-  await $panel(page, "#acq").fill("PCR");
+  await $panel(page, "#q").fill("PCR");
   const righe = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".acitem")]
     .map((b) => ({ t: b.querySelector(".acnm").textContent.trim(), res: b.getAttribute("data-res") })));
   const pcr = righe.filter((x) => /^PROTEINA C REATTIVA \(1102\)$/.test(x.t));
@@ -3098,8 +3114,14 @@ async function scenarioUiErgonomics(browser) {
     `«PCR»: una riga sola per la PROTEINA C REATTIVA, quella delle Urgenze (got ${JSON.stringify(pcr)})`);
   check(scen, new Set(righe.map((x) => `${x.t}|${x.res === RES.URGENZE || x.res === RES.CENTRAL ? "lab" : x.res}`)).size === righe.length,
     `e nessun'altra riga doppia (got ${righe.map((x) => x.t).join(" · ")})`);
-  await $panel(page, "#acq").fill("");
+  await $panel(page, "#q").press("Escape");
 
+  // gli epatici stanno dentro «Epatico ▸»: chiuso, non si vedono; un tocco li apre
+  const epatici = () => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".opt")].some((c) => /\bGPT\b/.test(c.textContent)));
+  const chiusoEpatico = !(await epatici());
+  await $panel(page, '[data-espandi="Epatico"]').click();
+  check(scen, chiusoEpatico && await epatici() && (await $panel(page, '[data-espandi="Epatico"]').getAttribute("aria-expanded")) === "true",
+    "«Epatico ▸» chiuso nasconde gli esami che raccoglie; un tocco li apre");
   // no PANNELLO chips anymore; no PCR / old tropo singles; new tropo present
   const optTxt = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".opt")].map((c) => c.textContent).join("|"));
   const preTxt = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".chip.preset")].map((c) => c.textContent).join("|"));
@@ -3110,22 +3132,34 @@ async function scenarioUiErgonomics(browser) {
   check(scen, /\bGPT\b/.test(optTxt) && /\bGOT\b/.test(optTxt) && /GAMMA GT/.test(optTxt) && /BILIRUBINA/.test(optTxt),
     "gli epatici si ordinano anche uno per uno, non solo col profilo");
   check(scen, /Coag POC/.test(preTxt) && /Coag/.test(preTxt), "profili rapidi: Coag POC e Coag");
-  // ogni profilo sta nel gruppo del suo laboratorio; Urgenze e centrale sono un gruppo solo
-  const dove = await page.evaluate(() => {
+  // tre colonne, POC · Lab · RX; ogni profilo in testa alla colonna del suo laboratorio
+  const dove = () => page.evaluate(() => {
     const root = document.getElementById("psassist-host").shadowRoot;
-    const gruppoDi = (el) => { let x = el; while (x && !x.classList?.contains("grouphdr")) x = x.previousElementSibling; return x ? x.textContent.trim() : "?"; };
+    const colDi = (el) => el?.closest(".rcol")?.querySelector(".rch")?.textContent.trim() || null;
+    const cols = [...root.querySelectorAll(".rcols .rcol")];
     return {
-      hdr: [...root.querySelectorAll(".grid .grouphdr")].map((h) => h.textContent.trim()),
-      profili: Object.fromEntries([...root.querySelectorAll(".grid .gchips .chip.preset")].map((c) => [c.textContent.trim(), gruppoDi(c.parentElement)])),
-      qrx: root.querySelector(".grid #qrx") ? gruppoDi(root.querySelector(".grid #qrx")) : null,
+      hdr: cols.map((c) => c.querySelector(".rch").textContent.trim()),
+      affiancate: cols.length === 3 && new Set(cols.map((c) => Math.round(c.getBoundingClientRect().top))).size === 1,
+      profili: Object.fromEntries([...root.querySelectorAll(".rcol .rprofs .chip.preset")].map((c) => [c.textContent.trim(), colDi(c)])),
+      profiliPrima: cols.every((c) => !c.querySelector(".rprofs") || c.querySelector(".rch").nextElementSibling === c.querySelector(".rprofs")),
+      qrx: colDi(root.querySelector("#qrx")),
+      caselle: root.querySelectorAll(".opt .box").length,
     };
   });
-  check(scen, dove.hdr.join("|") === "POC|Lab centrale|RX", `gruppi: POC, Lab centrale, RX (got ${dove.hdr.join("|")})`);
-  check(scen, dove.profili["Epatico"] === "Lab centrale" && dove.profili["Coag"] === "Lab centrale" && dove.profili["Coag POC"] === "POC",
-    `Epatico e Coag sotto Lab centrale, Coag POC sotto POC (got ${JSON.stringify(dove.profili)})`);
-  check(scen, dove.qrx === "RX", `quesito RX nel gruppo RX (got ${dove.qrx})`);
+  const d1 = await dove();
+  check(scen, d1.hdr.join("|") === "POC|Lab|RX" && d1.affiancate, `tre colonne affiancate: POC, Lab, RX (got ${d1.hdr.join("|")})`);
+  check(scen, d1.profili["Epatico"] === "Lab" && d1.profili["Coag"] === "Lab" && d1.profili["Coag POC"] === "POC" && d1.profiliPrima,
+    `i profili sono la prima riga della loro colonna: Epatico e Coag in Lab, Coag POC in POC (got ${JSON.stringify(d1.profili)})`);
+  check(scen, d1.caselle === 0, "parole da accendere, niente caselle da spuntare");
+  check(scen, d1.qrx === null, "il quesito RX non c'è finché non si sceglie un RX");
+  await $panel(page, '.opt[title*="RX TORACE ("]').first().click();
+  check(scen, (await dove()).qrx === "RX", "scelto un RX, il suo quesito compare nella colonna RX");
+  await $panel(page, '.opt[title*="RX TORACE ("]').first().click();
   const optBox = await $panel(page, ".opt").first().boundingBox();
-  check(scen, optBox.height <= 34, `righe esame compatte (${Math.round(optBox.height)}px)`);
+  check(scen, optBox.height <= 26, `righe esame strette, ~24 px (${Math.round(optBox.height)}px)`);
+  // scelta = piena del colore dei comandi
+  const pieno = await $panel(page, ".opt.on").first().evaluate((b) => getComputedStyle(b).backgroundColor);
+  check(scen, pieno === "rgb(11, 92, 173)", `scelta: riga piena del colore dei comandi (got ${pieno})`);
   await context.close();
 }
 
@@ -5028,7 +5062,7 @@ async function scenarioRilancioPaginaEsami(browser) {
   // controllare (mandata, mai vista): nessuno dei due si offre di nuovo
   await $panel(page, "#chiudi").click();
   await page.waitForSelector("#psassist-host #go", { timeout: 8000 });
-  check(scen, (await $panel(page, ".selbar").count()) === 0 && await $panel(page, "#goconfirm").isDisabled(),
+  check(scen, (await $panel(page, ".selbar").count()) === 0 && (await $panel(page, "#goconfirm").count()) === 0,
     "dopo «Chiudi» non resta scelto niente: niente manca davvero");
   // il medico rimette l'emocromo a mano e rilancia da questo carrello
   // (Urgenze) — il motore rilegge quello del POC dal server
@@ -5079,9 +5113,8 @@ async function scenarioEmogasNew(browser) {
   await $panel(page, "#q").fill("dispnea");
   // si parte da quella VECCHIA, presa dall'elenco completo: è il caso di chi
   // ha in memoria il codice di sempre, o di una selezione salvata prima
-  await $panel(page, "#acq").fill("EMOGASANALISI VENOSA POC (");
+  await $panel(page, "#q").fill("EMOGASANALISI VENOSA POC (");
   await $panel(page, '.acitem:has-text("EMOGASANALISI VENOSA POC (")').first().click();
-  await $panel(page, "#acq").fill("");
   await $panel(page, "#go").click();
   await atterraCarrello(page).catch(() => {});
 
@@ -5101,9 +5134,8 @@ async function scenarioEmogasNew(browser) {
   await richieste(p2);
   await p2.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(p2, "#q").fill("dispnea");
-  await $panel(p2, "#acq").fill("EMOGASANALISI VENOSA POC (");
+  await $panel(p2, "#q").fill("EMOGASANALISI VENOSA POC (");
   await $panel(p2, '.acitem:has-text("EMOGASANALISI VENOSA POC (")').first().click();
-  await $panel(p2, "#acq").fill("");
   await $panel(p2, "#go").click();
   await atterraCarrello(p2).catch(() => {});
   const rid2 = Object.keys(m2.state.richieste)[0];
@@ -6010,6 +6042,67 @@ async function scenarioAperturaEGriglia(browser) {
   }
 }
 
+// Le Richieste compatte: una casella «Quesito o esame…», tre colonne di parole,
+// la barra della Conferma solo con qualcosa di scelto, Ctrl+Invio, la Stampa nel ⋯.
+async function scenarioRichiesteCompatte(browser) {
+  const scen = "richieste-compatte";
+  const mock = createMock({ seedConfirmed: true });
+  const { context, page } = await newPage(browser, mock, { finestra: "centro" });
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  const q = $panel(page, "#q");
+  check(scen, (await $panel(page, ".commit").count()) === 0 && (await $panel(page, "#goconfirm").count()) === 0,
+    "niente di scelto: niente barra della Conferma");
+  check(scen, (await $panel(page, "[data-print]").count()) === 0 && (await $panel(page, ".lbl").count()) === 0,
+    "nelle Richieste niente sezione Stampa, niente etichette sopra le sezioni");
+  // il quesito, poi un esame cercato nella stessa casella: torna il quesito
+  await q.fill("dolore toracico");
+  check(scen, (await $panel(page, "#qdrop").count()) === 0, "un quesito che non somiglia a nessun esame: nessuna tendina");
+  await q.fill("PCR");
+  await page.waitForSelector("#psassist-host #qdrop", { timeout: 5000 });
+  const voci = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll("#qdrop > *")].map((b) => b.id || b.className));
+  check(scen, voci[0] === "usaq" && voci.slice(1).every((c) => /acitem/.test(c)) && voci.length > 1,
+    `la tendina: per prima «Quesito: …», poi gli esami (got ${voci.slice(0, 3).join(", ")})`);
+  await $panel(page, '#qdrop .acitem:has-text("PROTEINA C REATTIVA")').first().click();
+  check(scen, (await q.inputValue()) === "dolore toracico" && (await $panel(page, ".opt.on").count()) === 1,
+    `scelto l'esame, nella casella torna il quesito (got «${await q.inputValue()}»)`);
+  // Esc: torna il quesito senza scegliere niente
+  await q.fill("PCR");
+  await page.waitForSelector("#psassist-host #qdrop", { timeout: 5000 });
+  await q.press("Escape");
+  check(scen, (await q.inputValue()) === "dolore toracico" && (await $panel(page, "#qdrop").count()) === 0 && (await $panel(page, ".card").count()) === 1,
+    "Esc chiude la tendina e rimette il quesito (la finestra resta aperta)");
+  // Invio: il testo resta come quesito
+  await q.fill("emocromo");
+  await page.waitForSelector("#psassist-host #qdrop", { timeout: 5000 });
+  await q.press("Enter");
+  check(scen, (await q.inputValue()) === "emocromo" && (await $panel(page, "#qdrop").count()) === 0 && (await $panel(page, ".opt.on").count()) === 1,
+    "Invio sulla prima voce: il testo diventa il quesito, nessun esame aggiunto");
+  await q.fill("dolore toracico");
+  // la barra: piena, ferma in fondo, dice per chi e quanti; «solo carrello» accanto
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
+  const barra = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot, c = r.querySelector(".commit");
+    return c ? { pos: getComputedStyle(c).position, bg: getComputedStyle(c).backgroundColor, cta: r.querySelector("#goconfirm").textContent.trim(), go: !!r.querySelector(".commit #go") } : null;
+  });
+  check(scen, !!barra && barra.pos === "sticky" && barra.bg === "rgb(255, 255, 255)" && barra.cta === "Conferma per ROSSI M. · 2 esami" && barra.go,
+    `scelto qualcosa: la barra «Conferma per … · N esami», ferma in fondo, con «solo carrello» (got ${JSON.stringify(barra)})`);
+  await shotSide(page, "paz-richieste");
+  // la Stampa sta nel menu ⋯
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#stampamenu").click();
+  check(scen, (await $panel(page, '[data-print="699999"]').count()) >= 1, "⋯ → «Stampa le richieste»: le richieste confermate da ristampare");
+  await richieste(page);
+  // Ctrl+Invio: la Conferma
+  await q.click();
+  await page.keyboard.press("Control+Enter");
+  await page.waitForFunction(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run"), null, { timeout: 15000 }).catch(() => {});
+  check(scen, (await $panel(page, ".pill.run").count()) === 1 || Object.keys(mock.state.richieste).length > 1, "Ctrl+Invio preme la Conferma");
+  await context.close();
+}
+const shotSide = async (page, nome) => { if (process.env.PSA_SIDE) await page.screenshot({ path: join(process.env.PSA_SIDE, nome + ".png") }).catch(() => {}); };
+
 async function scenarioEsitiLayout(browser) {
   const scen = "esiti-layout";
   const mock = createMock({ withResults: true });
@@ -6301,23 +6394,26 @@ async function scenarioStatoEsami(browser) {
   await $panel(page, "#expand").click();
   await page.waitForSelector("#psassist-host .card", { timeout: 5000 });
 
-  // 7 · Richieste: accanto all'esame, quando è già stato fatto o da quanto aspetta
+  // 7 · Richieste: accanto all'esame, a colori, quando è già stato fatto o da quanto aspetta
   await richieste(page);
   const suff = await page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot, o = {};
-    for (const b of r.querySelectorAll(".opt")) o[b.querySelector(".nm").textContent.trim()] = b.querySelector(".ult")?.textContent.trim() || "";
+    for (const b of r.querySelectorAll(".opt")) {
+      const u = b.querySelector(".ult");
+      o[b.querySelector(".nm").textContent.trim()] = u ? `${u.textContent.trim()}|${[...u.querySelectorAll("span")].map((s) => s.className).join(",")}` : "";
+    }
     return o;
   });
-  check(scen, somiglia(suff["TROPONINA US"], `in attesa ${tAttesa(130)}`), `troponina: «in attesa 2h10» (got: ${suff["TROPONINA US"]})`);
-  check(scen, suff["EMOCROMO POC"] === oraDi(50) && suff["CREATININA POC"] === oraDi(50),
-    `emocromo e creatinina: l'ora della richiesta già tornata (got: ${suff["EMOCROMO POC"]}, ${suff["CREATININA POC"]})`);
-  check(scen, somiglia(suff["RX ADDOME"], `in attesa ${tAttesa(100)}`) && suff["D-DIMERO POC"] === "" && suff["PCR"] === "",
-    `l'RX aspetta; un esame annullato o mai chiesto non dice niente (got: ${suff["RX ADDOME"]}, «${suff["D-DIMERO POC"]}», «${suff["PCR"]}»)`);
+  check(scen, somiglia(suff["TROPONINA US"], `⏳ ${tAttesa(130)}\\|uros`), `troponina: «⏳ 2h10», rossa oltre la seconda soglia del laboratorio (got: ${suff["TROPONINA US"]})`);
+  check(scen, suff["EMOCROMO POC"] === `✓ ${oraDi(50)}|uok` && suff["CREATININA POC"] === `✓ ${oraDi(50)}|uok`,
+    `emocromo e creatinina: «✓ HH:MM» in verde, l'ora della richiesta già tornata (got: ${suff["EMOCROMO POC"]}, ${suff["CREATININA POC"]})`);
+  check(scen, somiglia(suff["RX ADDOME"], `⏳ ${tAttesa(100)}\\|uatt`) && suff["D-DIMERO POC"] === "" && suff["PCR"] === "",
+    `l'RX aspetta, in ambra; un esame annullato o mai chiesto non dice niente (got: ${suff["RX ADDOME"]}, «${suff["D-DIMERO POC"]}», «${suff["PCR"]}»)`);
   // il pacchetto spunta come sempre: il suffisso mostra il doppione, non lo toglie
   await $panel(page, '.chip.q.pk:has-text("Dolore toracico")').click();
   const tropo = page.locator('#psassist-host .opt:has(.nm:text-is("TROPONINA US"))');
-  check(scen, /\bon\b/.test(await tropo.getAttribute("class")) && somiglia((await tropo.locator(".ult").innerText()).trim(), `in attesa ${tAttesa(130)}`),
-    "«Dolore toracico» spunta la troponina lo stesso, col suo «in attesa» accanto");
+  check(scen, /\bon\b/.test(await tropo.getAttribute("class")) && somiglia((await tropo.locator(".ult").innerText()).trim(), `⏳ ${tAttesa(130)}`),
+    "«Dolore toracico» spunta la troponina lo stesso, col suo «⏳» accanto");
   const cta = (await $panel(page, "#goconfirm").innerText()).trim();
   check(scen, cta === "Conferma per ROSSI M. · 68 M · 6 esami", `il bottone che conferma dice per chi (got: ${cta})`);
   await shot(page, "onda1-richieste");
@@ -6801,6 +6897,7 @@ const scenarios = [
   ["finestra: tetto di 1150 px, schede ferme", scenarioFinestraLarga],
   ["esiti: il Lab per primo, un fondo per sezione, bottone grande, unità", scenarioEsitiLayout],
   ["apertura: Esiti o Richieste, Lab in griglia fino a tre prelievi, orologi onesti", scenarioAperturaEGriglia],
+  ["richieste compatte: una casella, tre colonne, la barra solo con qualcosa, Ctrl+Invio, Stampa nel ⋯", scenarioRichiesteCompatte],
   ["esiti: il workup — fuori range in cima, Lab · ECG · Imaging, attese, ↗ PDF", scenarioWorkup],
   ["menu ⋯: tempi, riferimenti, comandi rari, niente paragrafi, ricarica", scenarioMenuAltro],
   ["no-patient page has no exams", scenarioNoPatientPage],

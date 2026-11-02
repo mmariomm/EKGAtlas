@@ -134,6 +134,9 @@
     { name: "Coag POC", items: [[RES.POC, "220"], [RES.POC, "134"], [RES.POC, "135"]] },          // PT, PTT, fibrinogeno POC
     { name: "Coag",     items: [[RES.URGENZE, "181"], [RES.URGENZE, "54"], [RES.URGENZE, "258"]] }, // PT, PTT, fibrinogeno urgenze
   ];
+  // i profili che raccolgono esami che ci sono anche uno per uno: nelle
+  // Richieste sono un «Epatico ▸» che li apre
+  const ESPANSORI = new Set(["Epatico"]);
   const SINGLES = [ // one-tap single exams (compact grid, grouped by lab)
     [RES.POC, "320"], [RES.POC, "325"], [RES.POC, "326"], [RES.POC, "176"],
     [RES.POC, "101"], [RES.POC, "324"], [RES.POC, "30"],
@@ -4833,6 +4836,35 @@
     .chip.preset.on { background: #EAF2FA; border-color: #0B5CAD; color: #16232E; }
     .gchips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; margin: 1px 0; }
     .qrx { grid-column: 1 / -1; min-width: 0; }
+    /* Richieste: una casella «Quesito o esame…», poi tre colonne strette di
+       parole da accendere — POC · Lab · RX. Niente caselle da spuntare: la
+       riga intera si tocca, scelta è piena del colore dei comandi. */
+    .qac { flex: 1 1 52%; min-width: 0; margin-top: 0; }
+    .acquesito { display: block; width: 100%; text-align: left; border: 0; background: #F4F8FB; border-radius: 6px; padding: 6px 8px;
+                 font: inherit; font-size: 12px; font-weight: 600; color: #0B5CAD; cursor: pointer; margin-bottom: 2px;
+                 overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .acquesito:hover { background: #EAF2FA; }
+    .rcols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; align-items: start; }
+    .rcol { display: flex; flex-direction: column; min-width: 0; }
+    .rch { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #5B6B7A;
+           padding: 0 6px 4px; border-bottom: 1px solid #E3E8EF; margin-bottom: 3px; }
+    .rprofs { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0 5px; }
+    .rprof { display: inline-flex; align-items: center; }
+    .rprof .chip.preset { padding: 2px 9px; min-height: 22px; font-size: 11.5px; }
+    .respandi { border: 0; background: transparent; color: #0B5CAD; font: inherit; font-size: 12px; padding: 0 5px; cursor: pointer; }
+    .rcols .opt { width: 100%; border: 0; border-radius: 6px; background: transparent; min-height: 24px; padding: 3px 6px;
+                  font-size: 12px; line-height: 1.25; gap: 6px; }
+    .rcols .opt:hover { background: #F1F6FB; }
+    .rcols .opt.on { background: #0B5CAD; color: #fff; font-weight: 600; }
+    .rcols .opt.on:hover { background: #094a8c; }
+    .rcols .opt.sotto { padding-left: 16px; }
+    .rcols .opt .nm { flex: 0 1 auto; min-width: 0; }
+    .rcols .opt .ult { font-size: 11px; }
+    .ult .uok { color: #177245; font-weight: 600; }
+    .ult .uatt { color: #A15F00; font-weight: 600; }
+    .ult .uros { color: #B3261E; font-weight: 700; }
+    .rcols .opt.on .ult, .rcols .opt.on .ult span { color: #fff; }
+    .rcol .qrx { margin-top: 6px; font-size: 12px; padding: 6px 8px; }
     .chip.cart { background: #EDF7F0; border-color: #BCE0C9; color: #124F31; cursor: default; }
     .chip.ghosted { background: #F4F8FB; border-color: #E3E8EF; color: #5B6B7A; cursor: default; }
     .chip.nel { background: #EDF7F0; border-color: #BCE0C9; color: #124F31; cursor: default; }
@@ -7338,6 +7370,7 @@
       else if (this.view === "eo") body = this.viewEo();
       else if (this.view === "tempi") body = this.viewTempi();
       else if (this.view === "riferimenti") body = this.viewRiferimenti();
+      else if (this.view === "stampa") body = this.viewStampa();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
       else body = this.viewHome(patientName, ep);
       // i Pazienti (la lista sopra, la stanza sotto) prendono tutta la finestra che resta
@@ -7458,6 +7491,8 @@
                     ${hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete"><span class="mico">${ICO_TEL}</span>iPhone</button>` : ""}
                     <button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">Tempi</button>
                     <button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">Riferimenti</button>
+                    ${this.pageType === "patient" && this.epDiQuesta() && richiesteStampabili(printModel(document, location.href)).length
+                      ? `<button role="menuitem" id="stampamenu" title="Etichette e lista esami delle richieste già confermate">Stampa le richieste</button>` : ""}
                     ${this.view === "dimissioni" ? `<button role="menuitem" id="dimexport" title="Salva i tuoi testi in un file JSON (e negli appunti)">Esporta i fogli (JSON)</button>
                     <button role="menuitem" id="dimimport" title="Rimetti i testi di un JSON esportato">Importa i fogli…</button>` : ""}
                     <button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${this.showLog ? "Nascondi il registro" : "Registro"}</button>
@@ -7586,7 +7621,7 @@
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {
-      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "riferimenti", "richieste"].includes(this.view);
+      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "riferimenti", "richieste", "stampa"].includes(this.view);
     }
     // In fondo alla fila delle schede, solo in Modifica: + Letto, + Sedia,
     // + Area e Fine. Si entra in Modifica dal menu «⋯».
@@ -8610,11 +8645,19 @@
         }
       }
 
+      // Una casella sola, «Quesito o esame…»: quello che scrivi è il quesito;
+      // se somiglia a degli esami del catalogo, sotto compaiono — per primo
+      // «usa come quesito», poi gli esami. Scelto un esame, nella casella
+      // torna il quesito di prima.
+      const qTesto = (this._q || "").trim();
+      const qHits = canOneClick && this._cerca ? this.cercaEsami(qTesto.toUpperCase(), cat) : [];
+      const qDrop = qHits.length ? `<div class="acdrop" id="qdrop">
+          <button type="button" class="acquesito" id="usaq" title="Tieni il testo come quesito (Invio)">Quesito: «${esc(qTesto)}»</button>
+          ${this.vociEsami(qHits, cat)}</div>` : "";
       const quesitoSec = canOneClick ? `
-        <div class="sec">
-          <div class="lbl">Quesito diagnostico</div>
+        <div class="sec rq">
           <div class="qrow">
-            <input id="q" type="text" placeholder="Es. dolore toracico in atto…" value="${esc(this._q || "")}">
+            <div class="ac qac"><input id="q" type="text" autocomplete="off" placeholder="Quesito o esame…" aria-label="Quesito o esame" value="${esc(this._q || "")}">${qDrop}</div>
             <div class="qchips">${quesiti.map((q) => {
               const pk = this.pacchettoDi(q);
               if (!pk) return `<button class="chip q" data-q="${esc(q)}">${esc(q)}</button>`;
@@ -8670,31 +8713,48 @@
         `;
       }
 
-      // Un gruppo per laboratorio, col suo nome corto: dentro, prima i
-      // profili rapidi di quel laboratorio, poi gli esami uno per uno. Nel
-      // gruppo RX c'è il quesito della radiologia, che non è quello del lab.
-      const gruppi = {};
-      const gruppo = (r) => (gruppi[RES_SHORT[r] || r] = gruppi[RES_SHORT[r] || r] || { profili: [], esami: [] });
+      // Tre colonne strette di parole da accendere: POC · Lab · RX. In cima a
+      // ogni colonna i suoi profili; un profilo che raggruppa esami della
+      // colonna (l'epatico) è un «Epatico ▸» che li apre. Nella colonna RX il
+      // quesito della radiologia, solo quando un RX è scelto.
+      const COLONNE = ["POC", "Lab", "RX"];
+      const colDi = (r) => (r === RES.POC ? "POC" : RADIO_SET.includes(r) ? "RX" : "Lab");
+      const colonne = Object.fromEntries(COLONNE.map((k) => [k, { profili: [], esami: [] }]));
+      const dentro = new Map();   // esame → il profilo-espansore che lo raccoglie
+      const aperti = this.profiliAperti || (this.profiliAperti = new Set());
       PRESETS.forEach((p, i) => {
         if (!p.items.every(([r, c]) => cat[r]?.items?.[c])) return;
         const on = p.items.every(([r, c]) => this.isSel(r, c));
-        gruppo(p.items[0][0]).profili.push(`<button class="chip preset ${on ? "on" : ""}" data-preset="${i}">${esc(p.name)}</button>`);
+        const singoli = ESPANSORI.has(p.name) ? p.items.filter(([r, c]) => SINGLES.some(([r2, c2]) => r2 === r && c2 === c)) : [];
+        for (const [r, c] of singoli) dentro.set(this.key(r, c), p.name);
+        const aperto = aperti.has(p.name) || singoli.some(([r, c]) => this.isSel(r, c));
+        colonne[colDi(p.items[0][0])].profili.push(`<span class="rprof"><button class="chip preset ${on ? "on" : ""}" data-preset="${i}">${esc(p.name)}</button>${
+          singoli.length ? `<button type="button" class="respandi" data-espandi="${esc(p.name)}" aria-expanded="${aperto}" title="${aperto ? "Chiudi" : "Gli esami uno per uno"}">${aperto ? "▾" : "▸"}</button>` : ""}</span>`);
       });
-      // accanto al nome, in grigio, quando è già stato fatto (l'ora della
-      // richiesta) o da quanto aspetta: un doppione si vede prima di spuntarlo
+      // accanto al nome, a colori: «✓ 11:40» fatto, «⏳ 40′» in attesa
+      // (rosso oltre la seconda soglia): un doppione si vede prima di sceglierlo
       const ultimi = this.ultimiEsami();
+      const opt = (r, c, sotto) => {
+        const on = this.isSel(r, c), ult = this.suffissoEsame(ultimi, examLabel(r, c), colDi(r) === "RX" ? "img" : "lab");
+        return `<button class="opt${on ? " on" : ""}${sotto ? " sotto" : ""}" data-res="${esc(r)}" data-code="${esc(c)}" aria-pressed="${on}" title="${esc(examLabel(r, c))} — ${esc(RES_SHORT[r] || r)}${ult ? `\n${esc(ult.titolo)}` : ""}"><span class="nm">${esc(displayLabel(r, c))}</span>${ult ? ult.html : ""}</button>`;
+      };
       for (const [r, c] of SINGLES) {
         if (!cat[r]?.items?.[c]) continue;
-        const on = this.isSel(r, c), ult = this.suffissoEsame(ultimi, examLabel(r, c));
-        gruppo(r).esami.push(`<button class="opt ${on ? "on" : ""}" data-res="${esc(r)}" data-code="${esc(c)}" title="${esc(examLabel(r, c))} — ${esc(RES_SHORT[r] || r)}${ult ? `\n${esc(ult.titolo)}` : ""}"><span class="box">✓</span><span class="nm">${esc(displayLabel(r, c))}</span>${ult ? ult.html : ""}</button>`);
+        const p = dentro.get(this.key(r, c));
+        if (p && !(aperti.has(p) || PRESETS.find((x) => x.name === p).items.some(([r2, c2]) => this.isSel(r2, c2)))) continue;
+        colonne[colDi(r)].esami.push({ p, html: opt(r, c, !!p) });
       }
-      const qrxHtml = canOneClick
+      // gli esami raccolti da un profilo stanno subito sotto i profili, poi gli altri
+      for (const k of COLONNE) colonne[k].esami.sort((a, b) => (b.p ? 1 : 0) - (a.p ? 1 : 0));
+      const conRx = [...this.selected.values()].some((i) => RADIO_SET.includes(i.res));
+      const qrxHtml = canOneClick && conRx
         ? `<input id="qrx" class="qrx" type="text" placeholder="Quesito RX — se vuoto, quello sopra" value="${esc(this._qrx || "")}">` : "";
-      const singles = Object.entries(gruppi).map(([nome, g]) => `
-        <div class="grouphdr">${esc(nome)}</div>
-        ${nome === RES_SHORT[RES.RX] ? qrxHtml : ""}
-        ${g.profili.length ? `<div class="gchips">${g.profili.join("")}</div>` : ""}
-        ${g.esami.join("")}`).join("");
+      const singles = COLONNE.map((k) => `<div class="rcol" data-col="${k}">
+          <div class="rch">${k}</div>
+          ${colonne[k].profili.length ? `<div class="rprofs">${colonne[k].profili.join("")}</div>` : ""}
+          ${colonne[k].esami.map((x) => x.html).join("")}
+          ${k === "RX" ? qrxHtml : ""}
+        </div>`).join("");
 
       // Un bottone solo: «Conferma e stampa · N esami». «solo carrello» (che
       // si ferma sul carrello e lascia la Conferma a te) è un link accanto.
@@ -8708,28 +8768,32 @@
       // sulla ricevuta, finché non scegli niente, il bottone resta la Conferma del gestionale
       const bottoni = !n && confermaOra ? confermaOra : `
           <div class="btnrow">
-            <button class="btn primary" id="goconfirm" title="Aggiunge e verifica gli esami, preme Conferma e avvia la stampa" ${n && !problems.confirm.length ? "" : "disabled"}>${esc(confirmLabel)}</button>
+            <button class="btn primary" id="goconfirm" title="Aggiunge e verifica gli esami, preme Conferma e avvia la stampa (Ctrl+Invio)" ${n && !problems.confirm.length ? "" : "disabled"}>${esc(confirmLabel)}</button>
             <button class="lnk" id="go" title="Aggiunge e verifica gli esami e si ferma sul carrello: la Conferma la premi tu nel gestionale" ${n && !problems.go.length ? "" : "disabled"}>solo carrello</button>
           </div>`;
+      // la barra della Conferma c'è solo quando c'è qualcosa da confermare
+      const barra = n || confermaOra;
       return `
         ${pendingSec}
         ${daConfSec}
         ${receiptSec}
+        ${barra ? "" : this.notaHtml()}
         ${quesitoSec}
         ${cartSec}
-        <div class="sec acsec">${this.viewBrowse(cat)}</div>
-        <div class="sec">
-          <div class="lbl">Esami</div>
-          <div class="grid">${singles}</div>
-        </div>
-        ${this.viewPrint()}
-
-        <div class="commit">
+        ${canOneClick ? "" : `<div class="sec acsec">${this.viewBrowse(cat)}</div>`}
+        <div class="sec rsec"><div class="rcols">${singles}</div></div>
+        ${barra ? `<div class="commit">
           ${this.notaHtml()}
           <div id="problems">${problems.go[0] ? `<div class="problem">${esc(problems.go[0])}</div>` : ""}</div>
           ${bottoni}
-        </div>
+        </div>` : ""}
       `;
+    }
+
+    // ⋯ → «Stampa le richieste»: i fogli delle richieste già confermate (non
+    // stanno più nelle Richieste, dove si ordina)
+    viewStampa() {
+      return this.viewPrint() || `<div class="hint">Nessuna richiesta da stampare.</div>`;
     }
 
     // Patient page: reprint any richiesta's PDFs (labels → label printer,
@@ -9281,18 +9345,23 @@
       return m;
     }
     // «· 11:40, 14:30», «· in attesa 40′»; letto da più di mezz'ora: «· letto 11:02»
-    suffissoEsame(m, label) {
+    // «✓ 11:40» fatto, in verde; «⏳ 40′» in attesa, ambra — rosso oltre la
+    // seconda soglia del suo tipo; letto da più di mezz'ora: in grigio, «letto 11:02»
+    suffissoEsame(m, label, tipo = "lab") {
       const x = m.get(chiaveEsame(label));
       if (!x) return null;
       const ora = Date.now(), pezzi = [];
-      if (x.fatti.length) pezzi.push(x.fatti.sort((a, b) => a - b).slice(-3).map(hhmm).join(", "));
-      else if (x.fatto) pezzi.push("fatto");
-      if (x.inAttesa) pezzi.push(x.attesa && !m.vecchio ? `in attesa ${attesaTesto(minDa(x.attesa, ora))}` : "in attesa");
-      if (m.vecchio && m.letto) pezzi.push(`letto ${hhmm(m.letto)}`);
-      const testo = pezzi.join(" · ");
+      const tinta = (cls, t) => `<span class="${m.vecchio ? "" : cls}">${esc(t)}</span>`;
+      if (x.fatti.length) pezzi.push(tinta("uok", `✓ ${x.fatti.sort((a, b) => a - b).slice(-3).map(hhmm).join(", ")}`));
+      else if (x.fatto) pezzi.push(tinta("uok", "✓"));
+      if (x.inAttesa) {
+        const min = x.attesa && !m.vecchio ? minDa(x.attesa, ora) : null;
+        pezzi.push(tinta(min != null && attesaBanda(tipo, min) === "ros" ? "uros" : "uatt", min != null ? `⏳ ${attesaTesto(min)}` : "⏳"));
+      }
+      if (m.vecchio && m.letto) pezzi.push(`<span>letto ${esc(hhmm(m.letto))}</span>`);
       const titolo = `${x.fatti.length ? `Già fatto: richieste delle ${x.fatti.map(hhmm).join(", ")}` : x.fatto ? "Già fatto" : ""}${
         x.inAttesa ? `${x.fatti.length || x.fatto ? " · " : ""}in attesa${x.attesa ? ` dalle ${hhmm(x.attesa)}` : ""}` : ""}${m.letto ? ` · letto alle ${hhmm(m.letto)}` : ""}`;
-      return { html: `<span class="ult${m.vecchio ? " vecchio" : ""}">${esc(testo)}</span>`, titolo };
+      return { html: `<span class="ult${m.vecchio ? " vecchio" : ""}">${pezzi.join(" ")}</span>`, titolo };
     }
     // la riga di stato di un paziente (Pazienti, letto): in testa il cuore dei parametri vitali, poi gli esami
     statoPaz(ep, breve = false) {
@@ -10529,7 +10598,26 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }
       const lib = await pdfjsPronto().catch(() => null);
       if (!lib) return false;
-      return apriVisore(lib, buf, [this.nomePaziente(), shortLabel(e.label), e.when].filter(Boolean).join(" · "));
+      return apriVisore(lib, buf, [this.nomePaziente(), shortLabel(e.label), e.when].filter(Boolean).join(" · "),
+        { stampa: () => this.stampaReferto(e, buf) });
+    }
+
+    // «Stampa» nel visore: sull'A4 del medico con la stampa automatica (lo
+    // stesso motore della lista esami: ogni foglio annotato prima di partire,
+    // una volta sola), dalla copia salvata; senza stampa automatica, il
+    // dialogo del browser. Risponde "auto" o "dialogo".
+    async stampaReferto(e, buf) {
+      const titolo = `${shortLabel(e.label)}${e.when ? " " + e.when : ""}`;
+      const job = { name: `Referto ${shortLabel(e.label)}`.slice(0, 60), printer: "stampante normale",
+        url: `psassist-ref:${e.id}?ep=${this.episodeId || ""}`, diretto: true };
+      if ((this.refCache || {})[e.id] && await stampaAutomatica()
+        && await stampaAltrove([job], { panel: this, ep: this.episodeId, paziente: this.nomePaziente(), title: titolo })) {
+        this.log(`${now()}  ${shortLabel(e.label)}: alla stampa automatica dal visore`);
+        return "auto";
+      }
+      stampaDialogoPdf(buf);
+      this.log(`${now()}  ${shortLabel(e.label)}: stampa dal dialogo del browser`);
+      return "dialogo";
     }
 
     resetArmato() { return Date.now() - (this._resetArmato || 0) < 6000; }
@@ -10696,9 +10784,20 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       return ids;
     }
 
+    // la ricerca nella pagina esami (là non c'è un quesito)
     viewBrowse(cat) {
       const q = (this.acq || "").trim().toUpperCase();
-      let drop = "";
+      const hits = this.cercaEsami(q, cat);
+      const drop = q.length >= 2 ? `<div class="acdrop">${this.vociEsami(hits, cat) || `<div class="acempty">Nessun esame trovato</div>`}</div>` : "";
+      return `<div class="ac"><input id="acq" type="search" autocomplete="off" placeholder="altri esami…" value="${esc(this.acq || "")}">${drop}</div>`;
+    }
+    vociEsami(hits, cat) {
+      return hits.slice(0, 12).map((h) => `<button class="acitem ${this.isSel(h.res, h.code) ? "on" : ""}" data-res="${esc(h.res)}" data-code="${esc(h.code)}" title="${esc(h.label)}">
+            <span class="acnm">${esc(h.label)}</span><span class="actag">${esc(risorsaCorta(h.res, cat))}</span></button>`).join("");
+    }
+    // Gli esami di tutto il catalogo che rispondono a quello che si è scritto
+    cercaEsami(q, cat) {
+      const hits = [];
       if (q.length >= 2) {
         // I nomi che si dicono in reparto non sono quelli del laboratorio:
         // «PCR» è «PROTEINA C REATTIVA», che scrivendo PCR non si trovava —
@@ -10710,7 +10809,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         // tutto: meglio un doppione che una ricerca vuota)
         const noti = [...this.risorseQui()].filter((r) => cat[r]);
         const qui = new Set(noti);
-        const hits = [];
         for (const [res, v] of Object.entries(cat)) {
           if (qui.size && !qui.has(res)) continue;
           for (const [code, label] of Object.entries(v.items || {})) {
@@ -10742,12 +10840,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           || a.label.toUpperCase().indexOf(q) - b.label.toUpperCase().indexOf(q)
           || ordineRisorsa(a.res, cat) - ordineRisorsa(b.res, cat)
           || a.label.localeCompare(b.label));
-        drop = `<div class="acdrop">${
-          hits.slice(0, 12).map((h) => `<button class="acitem ${this.isSel(h.res, h.code) ? "on" : ""}" data-res="${esc(h.res)}" data-code="${esc(h.code)}" title="${esc(h.label)}">
-            <span class="acnm">${esc(h.label)}</span><span class="actag">${esc(risorsaCorta(h.res, cat))}</span></button>`).join("")
-          || `<div class="acempty">Nessun esame trovato</div>`}</div>`;
       }
-      return `<div class="ac"><input id="acq" type="search" autocomplete="off" placeholder="altri esami…" value="${esc(this.acq || "")}">${drop}</div>`;
+      return hits;
     }
 
     viewRunning() {
@@ -11257,6 +11351,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#tapri")?.addEventListener("click", () => this.setView("tempi"));
       $("#tempimenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("tempi"); });
       $("#rifmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("riferimenti"); this.root.querySelector("#riffiltro")?.focus(); });
+      $("#stampamenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("stampa"); });
       $("#riffiltro")?.addEventListener("input", (e) => { this.rifFiltro = e.target.value; this.rifFiltra(); });
       const ferma = () => { fermaTempo(); this.render(); };
       $("#tstop")?.addEventListener("click", ferma);
@@ -11371,8 +11466,49 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         try { chrome.runtime.sendMessage("psassist-reload"); } catch { /* not the extension build */ }
       });
       const qEl = $("#q");
-      // scritto a mano nella casella: è il quesito del medico, e vale anche sopra quello del triage
-      qEl?.addEventListener("input", () => { this._q = qEl.value; this.quesitoMio = true; this.persistUi(); this.refreshCommit(); });
+      // «Quesito o esame…». Scritto a mano nella casella è il quesito del
+      // medico, e vale anche sopra quello del triage. Se somiglia a degli
+      // esami, sotto compaiono: per primo «Quesito: …» (Invio), poi gli esami;
+      // scelto un esame (o con Esc) nella casella torna il quesito di prima.
+      if (qEl) {
+        if (!this._cerca) this._qBase = this._q || "";
+        const chiudi = (testo) => { this._q = testo; qEl.value = testo; this._cerca = false; this.persistUi(); this.render(); };
+        qEl.addEventListener("input", () => {
+          this._q = qEl.value; this.quesitoMio = true; this.persistUi();
+          const ha = this.cercaEsami(this._q.trim().toUpperCase(), fullCatalog()).length > 0;
+          if (!ha) this._qBase = this._q;   // non somiglia a un esame: è il quesito
+          const aperto = !!this.root.querySelector("#qdrop");
+          this._cerca = ha;
+          if (ha || aperto) { this._qFocus = true; this.render(); } else this.refreshCommit();
+        });
+        qEl.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && this.root.querySelector("#qdrop")) { e.preventDefault(); this._qBase = this._q; this._qFocus = true; chiudi(this._q); }
+          else if (e.key === "Escape" && (this.root.querySelector("#qdrop") || qEl.value !== this._qBase)) { e.preventDefault(); e.stopPropagation(); this._qFocus = true; chiudi(this._qBase || ""); }
+        });
+        qEl.addEventListener("blur", () => setTimeout(() => {
+          if (this.root.activeElement?.id === "q") return;
+          this._qFocus = false;
+          if (this._cerca) { this._cerca = false; this._qBase = this._q; if (this.root.querySelector("#qdrop")) this.render(); }
+        }, 200));
+        $("#usaq")?.addEventListener("click", () => { this._qBase = this._q; chiudi(this._q); });
+        if (this._qFocus) { qEl.focus(); qEl.setSelectionRange(qEl.value.length, qEl.value.length); }
+      }
+      this.root.querySelectorAll("[data-espandi]").forEach((b) => b.addEventListener("click", () => {
+        const p = b.getAttribute("data-espandi"), s = this.profiliAperti || (this.profiliAperti = new Set());
+        if (s.has(p)) s.delete(p); else s.add(p);
+        this.render();
+      }));
+      // Ctrl+Invio: la Conferma (quando c'è qualcosa da confermare)
+      if (!this._ctrlInvio) {
+        this._ctrlInvio = true;
+        this.root.addEventListener("keydown", (e) => {
+          if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey) || this.view !== "richieste" || this.runState) return;
+          const b = this.root.querySelector("#goconfirm");
+          if (!b || b.disabled) return;
+          e.preventDefault();
+          b.click();
+        });
+      }
       const qrxEl = $("#qrx");
       qrxEl?.addEventListener("input", () => { this._qrx = qrxEl.value; this.persistUi(); this.refreshCommit(); });
       this.root.querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () => {
@@ -11384,6 +11520,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       this.root.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => this.togglePreset(PRESETS[+b.getAttribute("data-preset")])));
       this.root.querySelectorAll(".chip[data-code], .opt[data-code]").forEach((b) => b.addEventListener("click", () => this.toggle(b.getAttribute("data-res"), b.getAttribute("data-code"))));
       this.root.querySelectorAll(".acitem[data-code]").forEach((b) => b.addEventListener("click", () => {
+        // dalla casella «Quesito o esame…»: scelto l'esame, torna il quesito di prima
+        if (b.closest("#qdrop")) { this._q = this._qBase || ""; this._cerca = false; this._qFocus = false; this.persistUi(); }
         this.toggle(b.getAttribute("data-res"), b.getAttribute("data-code"));
       }));
       this.root.querySelectorAll("[data-unsel]").forEach((b) => b.addEventListener("click", () => { this.selected.delete(b.getAttribute("data-unsel")); this.persistUi(); this.render(); }));
@@ -12052,7 +12190,21 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
 
   // Il visore dei referti salvati: il PDF disegnato da pdf.js sopra la pagina,
   // chi · esame · quando in testa. ✕ (o Esc) e si torna agli Esiti.
-  function apriVisore(lib, buf, titolo) {
+  // Senza stampa automatica: il PDF in una cornice invisibile e il dialogo di
+  // stampa del browser (la stampante la sceglie il medico).
+  function stampaDialogoPdf(buf) {
+    const url = URL.createObjectURL(new Blob([new Uint8Array(buf).slice()], { type: "application/pdf" }));
+    const f = document.createElement("iframe");
+    f.id = "psassist-stampa-referto";
+    f.style.cssText = "position:fixed;right:0;bottom:0;width:2px;height:2px;border:0;opacity:0;pointer-events:none";
+    f.addEventListener("load", () => {
+      try { f.contentWindow.focus(); f.contentWindow.print(); } catch { openTab(url, "_blank"); }
+      setTimeout(() => { f.remove(); URL.revokeObjectURL(url); }, 120e3);
+    }, { once: true });
+    f.src = url;
+    document.documentElement.appendChild(f);
+  }
+  function apriVisore(lib, buf, titolo, { stampa = null } = {}) {
     document.getElementById("psassist-visore")?.remove();
     const host = document.createElement("div");
     host.id = "psassist-visore";
@@ -12067,12 +12219,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       .vtit { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .vx { border: 0; background: #EEF3F8; color: #16232E; border-radius: 8px; width: 34px; height: 34px; font-size: 15px; cursor: pointer; }
       .vx:hover { background: #DCE6F0; }
+      .vst { border: 0; background: #0B5CAD; color: #fff; border-radius: 8px; height: 34px; padding: 0 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+      .vst:hover { background: #094a8c; }
+      .vst:disabled { background: #7FA6CB; cursor: default; }
       .vpag { flex: 1; overflow: auto; background: #E9EEF3; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
       canvas { display: block; max-width: 100%; background: #fff; box-shadow: 0 2px 8px rgba(9,42,74,.18); }
       .verr { color: #B3261E; font-size: 13px; }
     </style>
     <div class="vfondo"><div class="vis" role="dialog" aria-modal="true" aria-label="${esc(titolo)}">
-      <div class="vhd"><b class="vtit" title="${esc(titolo)}">${esc(titolo)}</b><button class="vx" id="vchiudi" title="Chiudi (Esc)" aria-label="Chiudi">✕</button></div>
+      <div class="vhd"><b class="vtit" title="${esc(titolo)}">${esc(titolo)}</b>${
+        stampa ? `<button class="vst" id="vstampa" title="Stampa questo PDF sulla stampante A4">Stampa</button>` : ""}<button class="vx" id="vchiudi" title="Chiudi (Esc)" aria-label="Chiudi">✕</button></div>
       <div class="vpag"></div>
     </div></div>`;
     document.documentElement.appendChild(host);
@@ -12085,6 +12241,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     };
     window.addEventListener("keydown", tasto, true);
     root.getElementById("vchiudi").addEventListener("click", chiudi);
+    // «Stampa»: un tocco, una stampa (la stampa automatica sull'A4, se no il dialogo)
+    root.getElementById("vstampa")?.addEventListener("click", async (ev) => {
+      const b = ev.currentTarget;
+      b.disabled = true;
+      const come = await Promise.resolve(stampa()).catch(() => "");
+      b.textContent = come === "auto" ? "✓ In stampa" : "Stampa";
+      if (come !== "auto") b.disabled = false;
+    });
     root.querySelector(".vfondo").addEventListener("click", (ev) => { if (ev.target === ev.currentTarget) chiudi(); });
     root.getElementById("vchiudi").focus();
     const pag = root.querySelector(".vpag");

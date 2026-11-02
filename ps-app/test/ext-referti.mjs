@@ -268,6 +268,14 @@ check(testaVisore.includes(esamePdf) && testaVisore.includes(quandoPdf) && /ROSS
 if (process.env.PSA_SCREEN) await page.screenshot({ path: process.env.PSA_SCREEN }).catch(() => {});
 check(mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect")).length === before,
   "nessuna richiesta al server all'apertura di un referto salvato");
+// «Stampa» nel visore: senza stampa automatica, il dialogo del browser sul PDF della copia
+{
+  const prima = mock.state.requests.length;
+  await visore.locator("#vstampa").click({ timeout: 3000 }).catch(() => {});
+  const cornice = await page.waitForSelector("#psassist-stampa-referto", { state: "attached", timeout: 5000 }).then(() => true).catch(() => false);
+  check((await visore.locator("#vstampa").count()) === 1 && cornice && mock.state.requests.length === prima,
+    "«Stampa» nel visore: senza stampa automatica il dialogo del browser, dalla copia (nessuna richiesta)");
+}
 await visore.locator("#vchiudi").click({ timeout: 3000 }).catch(() => {});
 await page.waitForTimeout(300);
 check(await visore.count() === 0 && await page.locator('#psassist-host [data-esito][data-kind="referto"]').count() === 4,
