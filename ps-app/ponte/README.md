@@ -30,7 +30,8 @@ telefono è entrato; dopo, «Associa» ne fa uno nuovo (e il telefono di prima e
 aggiungerlo alla schermata Home (Condividi → Aggiungi alla schermata Home): l'icona riapre il pannello.
 
 Il QR si inquadra anche **dall'app**: senza un'associazione buona (nessuna, scaduta, chiusa, revocata,
-o un altro telefono al suo posto) c'è **«Scansiona il QR»**, che apre la fotocamera nella pagina. Serve
+o un altro telefono al suo posto, e anche quando il PC non risponde) c'è **«Scansiona il QR»**, che apre
+la fotocamera nella pagina; e in ⋯ c'è sempre **«Scansiona un QR nuovo»**. Serve
 all'app della schermata Home, che ha una memoria sua: il QR letto con la Fotocamera si apre in Safari,
 e lì la chiave non arriva. Senza fotocamera: «Fotocamera non disponibile: inquadra il QR con la
 Fotocamera dell'iPhone».
