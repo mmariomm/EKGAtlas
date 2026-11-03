@@ -1007,12 +1007,22 @@
       }
       return `<main><div class="carica"><div class="giro"></div></div></main>`;
     }
-    // chi è in lista, poi chi è nella stanza (il posto lo dice), e gli episodi precedenti a parte
+    // per area, nell'ordine del gestionale (il PC li manda già in fila, con
+    // l'area); un PC che non dice l'area: chi è in lista, poi chi è nella
+    // stanza. Gli episodi precedenti a parte.
     const vivi = S.pazienti.filter((p) => !p.prec);
-    const inStanza = vivi.filter((p) => p.posto).sort((a, b) => a.posto.localeCompare(b.posto, "it", { numeric: true }));
     const prec = S.pazienti.filter((p) => p.prec);
     const carta = (l) => (l.length ? `<div class="carta">${l.map(rigaPaz).join("")}</div>` : "");
-    return `<main>${stampaHtml()}${codaDi("")}${S.pazienti.length ? carta([...vivi.filter((p) => !p.posto), ...inStanza]) + (prec.length ? `<div class="lbl">Episodi precedenti</div>${carta(prec)}` : "")
+    let corpo;
+    if (vivi.some((p) => p.area)) {
+      const aree = new Map();
+      for (const p of vivi) { const a = p.area || ""; if (!aree.has(a)) aree.set(a, []); aree.get(a).push(p); }
+      corpo = [...aree].map(([a, l]) => `${a ? `<div class="lbl">${esc(a)}</div>` : aree.size > 1 ? `<div class="lbl">Senza area</div>` : ""}${carta(l)}`).join("");
+    } else {
+      const inStanza = vivi.filter((p) => p.posto).sort((a, b) => a.posto.localeCompare(b.posto, "it", { numeric: true }));
+      corpo = carta([...vivi.filter((p) => !p.posto), ...inStanza]);
+    }
+    return `<main>${stampaHtml()}${codaDi("")}${S.pazienti.length ? corpo + (prec.length ? `<div class="lbl">Episodi precedenti</div>${carta(prec)}` : "")
       : `<div class="vuoto">Nessun paziente nell'elenco del PC.<br>Si riempie aprendo i pazienti nel gestionale.</div>`}
       ${barraOrdini()}</main>`;
   }

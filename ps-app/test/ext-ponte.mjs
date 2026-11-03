@@ -238,6 +238,9 @@ await doc.evaluate(({ CF_B, bUrl }) => {
   l.push({ ep: "999003", name: "VERDI LUCA", url: "", ts: ora - 40 * 60e3, pk: "", triage: "AZZURRO" });
   localStorage.setItem(K, JSON.stringify(l));
   localStorage.setItem("psassist:stanza.ps.posti.v1", JSON.stringify({ 999001: { tipo: "letto", id: "obi2", ts: ora } }));
+  // le aree lette dalle liste del gestionale: in Alta BIANCHI (riga 1) e ROSSI (riga 2), VERDI in Bassa
+  localStorage.setItem("psassist:aree.v1", JSON.stringify({ membri: { 999002: { k: "alta", ts: ora, n: 1 }, 999001: { k: "alta", ts: ora, n: 2 }, 999003: { k: "bassa", ts: ora, n: 1 } },
+    viste: { alta: { label: "AREA ALTA INTENSITA'", ts: ora }, bassa: { label: "AREA BASSA INTENSITA'", ts: ora } } }));
 }, { CF_B, bUrl: B.patientUrl });
 await suPagina(doc, A.worklistUrl);   // il medico lascia il PC sulla lista
 
@@ -292,8 +295,10 @@ const salvato = await tel.evaluate(() => Object.keys(localStorage).map((k) => [k
 const sv = salvato.length === 1 ? JSON.parse(salvato[0][1]) : {};
 check(salvato.length === 1 && salvato[0][0] === "psassist.ponte.v1" && Object.keys(sv).sort().join() === "dev,k,scade" && !/ROSSI|BIANCHI/.test(salvato[0][1]),
   "sul telefono resta solo la chiave, la scadenza e il numero del telefono: nient'altro");
-check(/OBI 2/.test(lista) && JSON.stringify(await tel.locator(".lbl").evaluateAll((l) => l.map((x) => x.textContent))) === '["Episodi precedenti"]',
-  `i pazienti in una carta sola (ROSSI col suo posto, OBI 2), gli episodi precedenti a parte; niente «In lista», «Nella stanza» né conteggi (${lista.replace(/\s+/g, " ").slice(0, 200)})`);
+const titoli = JSON.stringify(await tel.locator(".lbl").evaluateAll((l) => l.map((x) => x.textContent)));
+const fila = (await tel.locator("main > .carta").first().locator(".paz .nome").allInnerTexts()).join(",");
+check(/OBI 2/.test(lista) && titoli === '["Alta intensità","Bassa","Episodi precedenti"]' && /^BIANCHI A\.,ROSSI M\.$/.test(fila),
+  `per area come la Lista del PC (Alta, poi Bassa), dentro nell'ordine del gestionale (BIANCHI, ROSSI col suo posto OBI 2); gli episodi precedenti a parte; niente conteggi (${titoli} · ${fila})`);
 check(await tel.locator(".paz.t-arancione").count() === 1 && await tel.locator(".paz.t-verde").count() >= 1, "la striscia del triage: ROSSI arancione, BIANCHI verde");
 check(/Aggiornato alle \d\d:\d\d/.test(lista) && !/Dal PC del pronto soccorso/.test(lista), "in testa «Aggiornato alle …»; niente piede che ripete la testata");
 const nomi = await tel.locator(".paz .nome").evaluateAll((l) => l.map((x) => { const s = getComputedStyle(x); return { taglia: s.textOverflow === "ellipsis" || s.whiteSpace === "nowrap", pieno: x.scrollWidth <= x.clientWidth + 1 }; }));

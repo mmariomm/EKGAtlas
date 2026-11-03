@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.70.1";
+  const VERSION = "3.70.2";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -14742,7 +14742,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // non ha la lista intera) —; gli episodi precedenti in fondo.
   function pontePazienti() {
     const m = PANNELLO.pazModello();
-    return [...m.info.values()].map((i) => ({
+    // nell'ordine della Lista del pannello: per area (Alta · Bassa · OBI ·
+    // Codici minori, poi le altre), dentro ognuna la riga del gestionale, poi
+    // per ingresso; chi non ha area in fondo. Il telefono mette i titoli.
+    const a = areeLeggi(), k = (i) => a.membri[i.p.ep]?.k || "", n = (i) => a.membri[i.p.ep]?.n;
+    const sa = (i) => Number.isInteger(n(i)), ingresso = (i) => i.p.arrivo || i.p.ts || Infinity;
+    const posizione = (c) => (c ? ordineArea(c) : AREE_ORDINE.length + 1);
+    const info = [...m.info.values()].sort((x, y) => posizione(k(x)) - posizione(k(y)) || k(x).localeCompare(k(y))
+      || (sa(x) && sa(y) ? n(x) - n(y) : sa(y) - sa(x)) || (ingresso(x) - ingresso(y)) || 0);
+    return info.map((i) => ({
+      area: k(i) ? titoloArea(k(i), a.viste[k(i)]?.label) : "",
       // (due con lo stesso nome: il nome porta il segno che li distingue, «· …9001», anche nella conferma)
       ep: i.p.ep, nome: i.lungo + i.coda, breve: i.breve + i.coda, omonimo: !!i.omonimo, triage: i.p.triage || "",
       posto: PANNELLO.nomePosto(m, i), nota: dfNota(i.p.ep, m.df)?.testo || "", prec: !!i.prec, spento: !!i.spento, visto: i.p.ts || 0,
