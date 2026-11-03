@@ -202,6 +202,70 @@ async function sottoFine(id, esito) {
   // se il medico ci è andato sopra, la scheda è sua: non si chiude
   if (t && !t.active) await chrome.tabs.remove(id).catch(() => {});
 }
+// Il portale, avuto il PDF, a volte lo apre da sé in una scheda (o finestra)
+// nuova, che Chrome porta davanti al medico. Nata da una delle nostre schede
+// dietro — un referto, una lettura —, non è per lui: il PDF la scheda dietro
+// l'ha già passato. Si rimette davanti la scheda (e la finestra) di prima, e la
+// nuova si chiude da sola.
+const ATTIVE = new Map();               // finestra → [la scheda attiva prima, quella di adesso]
+const NATE_DIETRO = new Set();
+chrome.tabs.query({ active: true }).then((l) => { for (const t of l) if (!ATTIVE.has(t.windowId)) ATTIVE.set(t.windowId, [null, t.id]); }).catch(() => {});
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  if (NATE_DIETRO.has(tabId)) return;   // (quella nata dietro non conta come «di prima»)
+  const a = ATTIVE.get(windowId) || [];
+  if (a[1] !== tabId) ATTIVE.set(windowId, [a[1], tabId]);
+});
+const nostraDietro = async (id) => {
+  if (id == null) return false;
+  const s = await sottoGet(id).catch(() => null);
+  if (s && (inCorso(s) || Date.now() - (s.fine || 0) < 30e3)) return true;
+  const v = (await chrome.storage.session.get("ponte.valori").catch(() => ({})))["ponte.valori"] || {};
+  return String(id) in v;
+};
+// (la madre la dice Chrome; se non la dice — la scheda dietro si è già chiusa —
+// vale una scheda che nasce già sul portale mentre un nostro referto è in
+// lettura o appena letto: le schede del medico nascono sul gestionale)
+const sulPortale = (u) => /^(blob:)?https?:\/\/10\.11\.0\.151(:\d+)?\/clin-port\//i.test(u || "");
+const refertoRecente = async (medico) => Object.entries(await chrome.storage.session.get(null).catch(() => ({})))
+  .find(([k, s]) => k.startsWith("sotto:") && s && s.cosa === "referto" && (medico == null || s.opener === medico) && (inCorso(s) || Date.now() - (s.fine || 0) < 30e3));
+async function nataDietro(t) {
+  if (NATE_DIETRO.has(t.id) || NATE.get(t.id)?.gestionale || await nostraDietro(t.id)) return;
+  let madre = null, medico = null;   // la scheda dietro, e quella del medico che l'ha chiesta
+  if (t.openerTabId != null && await nostraDietro(t.openerTabId)) {
+    madre = await chrome.tabs.get(t.openerTabId).catch(() => null);
+    medico = (await sottoGet(t.openerTabId).catch(() => null))?.opener ?? null;
+  } else {
+    // (Chrome a volte dà per madre la scheda del medico, da cui è nata quella dietro)
+    const r = sulPortale(t.pendingUrl || t.url) && await refertoRecente(t.openerTabId);
+    if (!r) return;
+    medico = r[1].opener;
+    madre = await chrome.tabs.get(medico).catch(() => null);
+  }
+  if (NATE_DIETRO.has(t.id)) return;
+  NATE_DIETRO.add(t.id);
+  const finestra = madre ? madre.windowId : t.windowId;
+  const a = ATTIVE.get(finestra) || [];
+  const prima = [a[1], a[0]].find((x) => x != null && x !== t.id && !NATE_DIETRO.has(x) && (x !== t.openerTabId || x === medico)) ?? medico;
+  if (prima != null) await chrome.tabs.update(prima, { active: true }).catch(() => {});
+  if (t.windowId !== finestra) await chrome.windows.update(finestra, { focused: true }).catch(() => {});
+  setTimeout(() => { NATE_DIETRO.delete(t.id); chrome.tabs.remove(t.id).catch(() => {}); }, 20e3);
+}
+// Le schede appena nate: il loro indirizzo arriva a volte dopo. Una che passa
+// dal gestionale (il clic del medico su un referto: il link del gestionale,
+// poi il portale) è sua: mai toccata.
+const NATE = new Map();
+const delGestionale = (u) => /^https:\/\/smarthealth\.multimedica\.it\//.test(u || "");
+chrome.tabs.onCreated.addListener((t) => {
+  NATE.set(t.id, { gestionale: delGestionale(t.pendingUrl || t.url) });
+  setTimeout(() => NATE.delete(t.id), 3000);
+  nataDietro(t).catch(() => {});
+});
+chrome.tabs.onUpdated.addListener((id, info, t) => {
+  const n = NATE.get(id);
+  if (!n || !info.url) return;
+  if (delGestionale(info.url)) n.gestionale = true;
+  else nataDietro(t).catch(() => {});
+});
 async function sottoControlla() {
   for (const [k, s] of Object.entries(await chrome.storage.session.get(null))) {
     if (!k.startsWith("sotto:")) continue;

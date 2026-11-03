@@ -439,6 +439,7 @@ const chi = [];
 let senzaPdf = false;   // più sotto: un portale che il PDF non lo mostra
 // …e uno che mostra prima il PDF di un altro paziente (rimasto aperto), poi il nostro — o solo quello
 let altroPrima = "";      // "" | "prima" | "solo"
+let finestra = false;     // un portale che, avuto il PDF, lo apre da sé in una scheda nuova
 const b64Altro = pdfSemplice(RIGHE_ALTRO).toString("base64");
 await ctx.route((u) => eRis(new URL(u)), async (r) => {
   await r.fulfill({ status: 200, headers: { "content-type": "text/html" },
@@ -469,7 +470,10 @@ await ctx.route("http://10.11.0.151:9080/**", async (r) => {
         x.responseType = "arraybuffer";
         // come il portale vero: avuto il PDF, porta la scheda sul blob:
         // (nella barra resta «blob:http://10.11.0.151:9080/…»)
-        x.onload = () => { location.href = URL.createObjectURL(new Blob([x.response], { type: "application/pdf" })); };
+        x.onload = () => {
+          if (${JSON.stringify(finestra)}) { window.open("/clin-port/rest/documenti/1/contenuto?finestra=1", "_blank"); return; }
+          location.href = URL.createObjectURL(new Blob([x.response], { type: "application/pdf" }));
+        };
         x.send();
       }, ${altroPrima ? 1200 : 300});
     </script></body></html>` });
@@ -534,6 +538,41 @@ for (const modo of ["prima", "solo"]) {
   await pA.close();
 }
 altroPrima = "";
+
+// Il portale, avuto il PDF, lo apre da sé in una scheda nuova: non passa
+// davanti al medico (resta davanti la pagina del paziente), e si chiude da sola
+{
+  finestra = true;
+  const pF = await ctx.newPage();
+  await pF.goto(mock.patientUrl);
+  await pF.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
+  await finito(pF);
+  if (await pF.locator("#psassist-host #refreset").count()) { await pF.locator("#psassist-host #refreset").click(); await pF.waitForTimeout(600); }
+  await pF.bringToFront();
+  const [swF] = ctx.serviceWorkers();
+  const davanti = () => swF.evaluate(() => chrome.tabs.query({ active: true }).then((l) => l.map((t) => t.url || t.pendingUrl || "")));
+  const nate = [];
+  const ascolta = (p) => nate.push(p);
+  ctx.on("page", ascolta);
+  await pF.reload();
+  await pF.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
+  const visti = [];
+  for (const t0 = Date.now(); Date.now() - t0 < 20000 && !nate.some((p) => /finestra=1/.test(p.url())); ) { visti.push(...await davanti()); await pF.waitForTimeout(150); }
+  await pF.waitForTimeout(1500);
+  const dopo = await davanti();
+  const aperta = nate.find((p) => /finestra=1/.test(p.url()));
+  const diag = await swF.evaluate(() => Promise.all([chrome.tabs.query({}), chrome.storage.session.get(null)]).then(([l, ss]) => JSON.stringify({
+    schede: l.map((t) => ({ id: t.id, o: t.openerTabId, a: t.active, u: (t.url || "").slice(0, 50) })),
+    sotto: Object.entries(ss).filter(([k]) => k.startsWith("sotto:")).map(([k, v]) => [k, v.cosa, v.esito, v.opener]) })));
+  check(!!aperta && dopo.length === 1 && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(dopo[0]),
+    `il portale apre il PDF in una scheda nuova: davanti resta la pagina del paziente (aperta: ${!!aperta}; davanti: ${dopo.map((u) => u.slice(0, 60)).join(" | ")}${dopo.length === 1 && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(dopo[0]) ? "" : "; " + diag})`);
+  const chiusa = !aperta || await aperta.waitForEvent("close", { timeout: 30000 }).then(() => true).catch(() => aperta.isClosed());
+  check(chiusa, "e la scheda nuova si chiude da sola");
+  ctx.off("page", ascolta);
+  finestra = false;
+  await finito(pF);
+  await pF.close();
+}
 
 // …e se il portale il PDF non lo mostra: pallino rosso, il perché, e com'è
 // fatta la sua pagina (niente del paziente) da copiare nella diagnosi
