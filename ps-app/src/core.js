@@ -1890,7 +1890,7 @@
   }
   // Al massimo due scaricamenti di referti insieme, per tutta la scheda: un
   // tocco su un referto e «Salva» passano dalla stessa fila.
-  const scaricaRef = codaLimitata(2);
+  const scaricaRef = codaLimitata(1);   // uno alla volta
   const PAUSA_REF = [600, 1600];   // ms prima di ogni scaricamento in fila: mai a raffica
   // Il caricamento da solo all'apertura: per paziente, la firma del laboratorio
   // all'ultima lettura e quando si è ricontrollato un laboratorio a metà
@@ -15009,6 +15009,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       try {
         panel.log(`${now()}  ── iPhone: «Aggiorna i valori» per ${panel.nomePaziente()} ──`);
         await panel.caricaValori();
+        // e i referti (RX, ECG, TC…) non ancora salvati, uno alla volta, finché c'è tempo
+        const fine = Date.now() + 90e3;
+        await panel.caricaReferti({ ferma: () => Date.now() > fine }).catch(() => {});
         esito = { ok: true, testo: "letti" };
       } catch (e) { esito = { ok: false, testo: `non letti: ${e?.head || e?.message || e}` }; }
     }
@@ -15536,6 +15539,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // il medico apre il paziente: quello che la pagina mostra e non è ancora qui si carica da sé
       // (mai nella scheda di un ordine, del ponte, di un giro ripreso o con una richiesta da confermare)
       if (!LAVORO && !PONTE_VALORI && !ripresa && !pending) panel.autoCarica({ esiti: panel.view === "esiti" }).catch(() => {});
+      // e finché la pagina resta aperta, ogni 10 minuti, il laboratorio a metà si
+      // ricontrolla (i referti no: salvati, non cambiano più)
+      if (!LAVORO && !PONTE_VALORI && !TABELLONE) setInterval(() => {
+        if (panel.esiti.some((e) => e.kind === "valori" && !e.storico)) panel.autoCarica({ esiti: true }).catch(() => {});
+      }, PARZ_MS + 5e3);
       // (la scheda dei valori del ponte legge e basta: niente conferme né stampe da qui)
       if (PONTE_VALORI) { ponteValoriQui(panel); return; }
       if (ripresa) return;   // il giro ripreso arriva da sé a conferma e stampa

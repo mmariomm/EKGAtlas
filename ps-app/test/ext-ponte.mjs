@@ -613,6 +613,8 @@ check(/Letti sul PC alle \d\d:\d\d · adesso/.test(es1) && await tel.locator(".l
 check(await tel.locator(".val thead th:has(small.parz)").count() >= 1 && /parziale/.test(await tel.locator(".val thead").innerText()),
   "una colonna con valori parziali lo dice nella sua testata: «parziale»");
 check(/Non focolai/.test(es1), "e il testo del referto resta (letto prima che il PC conoscesse il codice fiscale)");
+check(await finche(async () => await tel.locator('.refw:has(.ref:has-text("TC ENCEFALO")) .pdf').count() === 1, 15000),
+  "«Aggiorna i valori» carica anche i referti non salvati: la TC (tolta prima dal PC) torna, col suo PDF");
 check(!schedaValori || await finche(() => schedaValori.isClosed(), 10000), "e la scheda dei valori si chiude da sola");
 const vistoDopo = await doc.evaluate(() => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((p) => p.ep === "999001") || {}).ts);
 check(vistoDopo === vistoPrima, "la scheda dei valori non conta come «visto adesso» dal medico");

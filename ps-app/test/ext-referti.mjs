@@ -32,7 +32,7 @@ const mock = createMock({});
 // e uno di radiologia (RIS): uno dei due LIS si traveste da consulenza (stesso
 // id, un altro sistema), così c'è anche un documento «da aprire» che non è
 // né laboratorio né radiologia; e si aggiungono due radiologie, così i referti
-// da salvare sono quattro (la fila ne scarica al massimo due insieme). Il mock
+// da salvare sono quattro (la fila ne scarica uno alla volta). Il mock
 // non si tocca: si cambia la pagina al volo.
 const rigaRef = (sis, id, quando, nome) => `<tr><td class="AFCDataTD" title="${nome}" valign="top"><a href="#" title="REFERTO" onclick="javascript:window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=*TEST00001&REFERTO_SISTEMA=${sis}&REFERTO_ID=${id}','${sis}')"><img alt="referto"></a>
   ${nome}<input type="hidden" name="DATA_ORD" value="${quando}"><input type="hidden" name="DESCRIZIONE_TITLE" value="${nome}"></td></tr>`;
@@ -114,7 +114,7 @@ check(await page.locator("#psassist-host #reflab").count() === 0 && await page.l
   "negli Esiti restano solo i referti che non sono di laboratorio (4)");
 
 // ---- aperto il paziente, quello che la pagina mostra e non è ancora qui si
-// carica da sé: i valori e i referti (mai il laboratorio), due alla volta, con
+// carica da sé: i valori e i referti (mai il laboratorio), uno alla volta, con
 // la pausa a caso, ognuno una volta sola. Mentre gira, solo «↓ N» accanto a ↻.
 // le righe d'Imaging che mostrano un'anteprima del testo
 const conAnteprima = (p) => p.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".wuimg .rrow")]
@@ -130,7 +130,7 @@ const salvati = (p, n) => p.waitForFunction((k) => document.getElementById("psas
     `mentre carica da solo: «↓ N» accanto a ↻, nient'altro (got: ${JSON.stringify(mentre)})`);
   await salvati(page, 4);
   check(await page.locator("#psassist-host .rdot.saved").count() === 4, "aprendo il paziente, i 4 referti si salvano da soli");
-  check(maxInVolo === 2, `al massimo due scaricamenti insieme (got ${maxInVolo})`);
+  check(maxInVolo === 1, `uno alla volta (got ${maxInVolo})`);
   const scaricatiAuto = mock.state.requests.filter((q) => eDoc(q.url));
   check(scaricatiAuto.length === 4 && voli.length === 4, `ogni referto scaricato una volta sola (got ${scaricatiAuto.length})`);
   check(mock.state.requests.filter((q) => q.url.includes("aaaa1111")).length === 0, "e il referto di laboratorio non viene scaricato");
@@ -316,7 +316,7 @@ await page.waitForFunction(
 ).catch(() => {});
 const saved = await page.locator("#psassist-host .rdot.saved").count();
 check(saved === 4, `4 referti salvati (got ${saved})`);
-check(maxInVolo === 2, `al massimo due scaricamenti insieme, e la fila li usa tutti e due (got ${maxInVolo})`);
+check(maxInVolo === 1, `uno alla volta (got ${maxInVolo})`);
 const scaricati = mock.state.requests.filter((q) => eDoc(q.url)).length - giaChiesti;
 check(scaricati === 4, `ogni referto scaricato una volta sola (got ${scaricati})`);
 // «Salva referti» agisce solo su quelli che si vedono: il referto di
@@ -393,7 +393,7 @@ await page.waitForTimeout(1200);
 check(await page.locator("#psassist-host .rdot.saved").count() === 0, "Resetta svuota i salvataggi");
 
 // «⭳ Carica i valori» prende anche i referti: solo quelli che non sono di
-// laboratorio, due alla volta al massimo, con una pausa prima di ognuno, e
+// laboratorio, uno alla volta, con una pausa prima di ognuno, e
 // mai uno già salvato
 {
   voli = []; maxInVolo = 0;
@@ -406,7 +406,7 @@ check(await page.locator("#psassist-host .rdot.saved").count() === 0, "Resetta s
     `«Carica i valori»: anche i 4 referti, salvati (scaricati ${voli.length})`);
   check(!voli.some((v) => v.id === "aaaa1111") && mock.state.requests.filter((q) => q.url.includes("aaaa1111")).length === 0,
     "mai quello di laboratorio");
-  check(maxInVolo === 2, `al massimo due insieme (got ${maxInVolo})`);
+  check(maxInVolo === 1, `uno alla volta (got ${maxInVolo})`);
   const da = voli.map((v) => v.da).sort((x, y) => x - y), a = voli.map((v) => v.a).sort((x, y) => x - y);
   const pause = [da[2] - a[0], da[3] - a[1]];
   check(pause.every((p) => p >= 450), `una pausa prima del prossimo, non a raffica (ms: ${pause.join(", ")})`);
