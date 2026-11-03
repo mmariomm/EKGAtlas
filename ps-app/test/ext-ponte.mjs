@@ -68,6 +68,8 @@ const quale = (url) => {
 };
 let lento = 0;
 let login = false;   // il gestionale risponde con la pagina d'accesso (sessione scaduta)
+// la pagina di ROSSI passa prima da un'altra: «ponte» (una pagina che porta da sé alla sua), «lista» (la lista dei pazienti)
+const PASSA = { n: 0, tipo: "" };
 // la testata della scheda del paziente, com'è nel gestionale: il triage, il
 // nome e, in corpo 120%, la data di nascita con l'età — di ROSSI 77 anni
 // (non i 66 del suo codice fiscale: conta la testata); quella di BIANCHI non la dice
@@ -122,6 +124,13 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   const u = req.url();
   if (login && /menuPsoEpisodio\.do/.test(u)) { await r.fulfill({ status: 200, headers: { "content-type": "text/html; charset=windows-1252" }, body: LOGIN }); return; }
   if (lento && /Insert=Inserisci/.test(u)) await sospendi(lento);
+  if (PASSA.n > 0 && req.method() === "GET" && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(u) && quale(u) === A) {
+    PASSA.n--;
+    const via = PASSA.tipo === "lista" ? A.worklistUrl : u;   // (la lista: ci si resta)
+    const body = `<html><head><title>ROSSI MARIO</title></head><body><script>setTimeout(() => location.replace(${JSON.stringify(via)}), 800)</script></body></html>`;
+    await r.fulfill({ status: 200, headers: { "content-type": "text/html; charset=windows-1252" }, body: Buffer.from(body, "latin1") });
+    return;
+  }
   // «Conferma» della cartella di ROSSI: il gestionale salva i campi (non quello che ignora) e risponde con la pagina del paziente
   let metodo = req.method();
   if (CART.on && metodo === "POST" && /ccsForm=AmbulatorioPSO(:|%3A)Edit/i.test(u) && quale(u) === A) {
@@ -616,6 +625,21 @@ await aspettaTel(tel, /BIANCHI A\./);
 await tocca(tel, '.paz[data-ep="999001"]');
 const es2 = await aspettaTel(tel, /4 h fa/, 20000);
 check(/Letti sul PC alle \d\d:\d\d · 4 h fa/.test(es2) && await tel.locator(".letti.amb").count() === 1, "letti quattro ore fa: «… · 4 h fa», in ambra (dopo un'ora)");
+// il gestionale passa prima da un'altra pagina, che porta da sé a quella del paziente: si aspetta, e si legge
+Object.assign(PASSA, { n: 1, tipo: "ponte" });
+await tocca(tel, '[data-a="valori"]');
+const es3 = await aspettaTel(tel, /· adesso|niente letto/, 90000);
+check(/Letti sul PC alle \d\d:\d\d · adesso/.test(es3) && !/niente letto/.test(es3) && PASSA.n === 0,
+  `la scheda dei valori passa da un'altra pagina prima di quella del paziente: aspetta, e legge (${(es3.match(/Letti[^\n]*|[^\n]*niente letto[^\n]*/) || [""])[0]})`);
+// …e se resta sulla lista: riapre l'indirizzo una volta, poi dice dov'è finita
+Object.assign(PASSA, { n: 2, tipo: "lista" });
+await tel.waitForSelector(".avviso", { state: "detached", timeout: 8000 }).catch(() => {});
+await tocca(tel, '[data-a="valori"]');
+const av = await tel.waitForSelector(".avviso", { timeout: 90000 }).then((x) => x.innerText()).catch(() => "");
+check(/il gestionale ha aperto «PsoLista» invece della paziente: niente letto/.test(av) && PASSA.n === 0,
+  `finita sulla lista anche riaprendola: lo dice, con la pagina (${av}; aperture rimaste ${PASSA.n})`);
+Object.assign(PASSA, { n: 0, tipo: "" });
+await tel.waitForSelector(".avviso", { state: "detached", timeout: 15000 }).catch(() => {});
 await tel.evaluate(() => window.scrollTo(0, 0));
 
 // ===========================================================================

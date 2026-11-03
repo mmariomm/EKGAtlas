@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.70.2";
+  const VERSION = "3.70.3";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -14995,7 +14995,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const v = PONTE_VALORI;
     let esito;
     if (!panel || panel.pageType !== "patient" || panel.episodeId !== v.ep || !panel.nomePaziente()) {
-      esito = { ok: false, testo: "la scheda ha aperto un'altra pagina: niente letto" };
+      // Non è (ancora) la pagina del paziente: il gestionale a volte passa da
+      // un'altra pagina prima (la lista, un passaggio). Lo si dice al service
+      // worker, che aspetta la pagina dopo, o riapre l'indirizzo una volta.
+      // (all'indirizzo del paziente ma non la sua pagina: una pagina di passaggio, senza nome)
+      const mvpg = param(location.href, "MVPG") || location.pathname.split("/").pop() || "";
+      const pagina = mvpg === "PsoEpisodioClinicoAmbulatorio" ? "" : mvpg;
+      const altro = !!(panel && panel.pageType === "patient" && panel.episodeId && panel.episodeId !== v.ep);
+      segnaErrore("ponte valori", { episodio: v.ep, motivo: altro ? "aperta la pagina di un altro paziente" : `aperta ${pagina || "un'altra pagina"}` });
+      ask({ t: "ponteValoriAltrove", pagina, altro });
+      return;
     } else {
       try {
         panel.log(`${now()}  ── iPhone: «Aggiorna i valori» per ${panel.nomePaziente()} ──`);

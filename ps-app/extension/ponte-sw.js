@@ -50,6 +50,9 @@ const PONTE_BATTITO = 20e3;                 // la presa parla almeno ogni 20 sec
 const PONTE_QR_MAX = 2 * 60e3;              // il QR si rivede solo per poco
 const PONTE_SALUTO_MAX = 2 * 60e3;          // un saluto senza seguito si dimentica
 const PONTE_VALORI_MAX = 150e3;             // «Aggiorna i valori» non aspetta di più
+const PONTE_ALTROVE_MS = 5e3;               // finita su un'altra pagina: tanto si aspetta quella dopo
+const PONTE_PAGINE = { PsoPazienti: "la lista dei pazienti", PsoPazientiAmbulatorio: "la lista dei pazienti", PsoPazientiTriage: "la lista del triage",
+  PsoEpisodioClinicoTriage: "la pagina del triage", PsoPsoImposta: "la scelta dell'area", PsoPazientiSmart: "la lista dell'ospedale" };
 const PONTE_CARTELLA_MAX = 60e3;            // salvare la cartella: aprire, controllare, «Conferma», rileggere
 // i campi della cartella (modulo AmbulatorioPSO) che il telefono può chiedere di scrivere:
 // se lo sono davvero lo dice la pagina, campo per campo (readonly, disabled)
@@ -674,7 +677,7 @@ async function ponteValoriSotto(url, ep) {
     .catch(() => chrome.tabs.create(vuota));
   let risolvi;
   const promessa = new Promise((r) => { risolvi = r; });
-  pt.valori.set(t.id, { ep, risolvi, promessa });
+  pt.valori.set(t.id, { ep, risolvi, promessa, url: u.href, giri: 0 });
   // annotata PRIMA di andare sulla pagina: così la risposta a «chi sono?» c'è già
   await ponteValoriCambia((v) => { v[t.id] = { ep, ts: ponteOra() }; });
   const tempo = setTimeout(() => ponteValoriFine(t.id, { ok: false, testo: "i valori non sono arrivati in tempo" }), PONTE_VALORI_MAX);
@@ -691,6 +694,7 @@ async function ponteValoriSotto(url, ep) {
 // medico non la sta guardando), e la risposta a chi aspetta
 async function ponteValoriFine(id, esito) {
   const w = pt.valori.get(id);
+  if (w) clearTimeout(w.attesa);
   pt.valori.delete(id);
   const c = await ponteValoriCambia((v) => { const c = v[id]; delete v[id]; return c; });
   if (!c && !w) return false;
@@ -966,6 +970,28 @@ function ponteDaPagina(msg, sender, reply) {
       if (w && msg.verificati && typeof msg.verificati === "object") esito.verificati = Object.fromEntries(Object.keys(w.campi).map((n) => [n, msg.verificati[n] === true]));
       if (w && msg.letta && msg.letta.ep === w.ep && Array.isArray(msg.letta.campi)) esito.letta = { ep: w.ep, letto: ponteOra(), campi: msg.letta.campi };
       return { ok: await ponteCartellaFine(id, esito) };
+    });
+  }
+  // La scheda dei valori non è sulla pagina del paziente. Spesso il gestionale
+  // ci passa sopra (una lista, un passaggio) e poi arriva da sé: si aspetta la
+  // pagina dopo. Se non arriva, si riapre l'indirizzo del paziente, una volta;
+  // poi si dice dov'è finita. La pagina di un altro paziente: subito.
+  if (msg.t === "ponteValoriAltrove" && gestionale) {
+    return fai(async () => {
+      const id = sender.tab.id, w = pt.valori.get(id);
+      if (!w) return { ok: false };
+      clearTimeout(w.attesa);
+      w.giri += 1;
+      const dove = PONTE_PAGINE[msg.pagina] || (msg.pagina ? `«${corto(msg.pagina, 60)}»` : "un'altra pagina");
+      const fallita = () => ponteValoriFine(id, { ok: false, testo: msg.altro ? "il gestionale ha aperto un altro paziente: niente letto" : `il gestionale ha aperto ${dove} invece della paziente: niente letto` });
+      if (msg.altro || w.giri > 4) { await fallita(); return { ok: true }; }
+      w.attesa = setTimeout(() => {
+        if (pt.valori.get(id) !== w) return;
+        if (w.riprovato) { fallita().catch(() => {}); return; }
+        w.riprovato = true;
+        chrome.tabs.update(id, { url: w.url }).catch(() => fallita().catch(() => {}));
+      }, PONTE_ALTROVE_MS);
+      return { ok: true };
     });
   }
   if (msg.t === "ponteValoriFatto" && gestionale) {
