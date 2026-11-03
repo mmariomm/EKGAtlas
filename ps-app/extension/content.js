@@ -411,6 +411,7 @@
     if (target.origin !== location.origin) {
       throw new StopError("Richiesta fuori dall'ospedale bloccata", `destinazione inattesa: ${target.origin}`);
     }
+    await cancelloMotore(signal);   // un motore al lavoro altrove: si aspetta che finisca
     // Own timeout composition (AbortSignal.any needs Chrome 116+; hospital
     // Chromes can be older and a hung request must never hang the run).
     const ctl = new AbortController();
@@ -1991,6 +1992,7 @@
     if (target.origin !== location.origin) {
       throw new StopError("Richiesta fuori dall'ospedale bloccata", `destinazione inattesa: ${target.origin}`);
     }
+    if (!hop) await cancelloMotore(signal);   // (vedi fetchDocVero)
     const ctl = new AbortController();
     const tid = setTimeout(() => ctl.abort(new DOMException("Timeout", "TimeoutError")), TIMEOUT_MS);
     const onAbort = () => ctl.abort(new DOMException("Aborted", "AbortError"));
@@ -2329,6 +2331,54 @@
   // to other tabs, so two patients in two tabs can never clobber or clear
   // each other's pending confirm.
   const tabStore = magazzino(sessionStorage);
+
+  // ------------------------------------------------- IL CANCELLO DEL MOTORE
+  // Mentre un motore manda gli esami di un ordine, nient'altro chiede pagine
+  // al gestionale: è una sessione sola, e una pagina qualunque del modulo
+  // richieste aperta in mezzo (la stampa delle etichette di un altro ordine,
+  // la lista smart, un referto, una lettura) cambia sotto di lui la richiesta
+  // «corrente» della sessione — il server risponde all'inserimento dopo con
+  // «ORA-20965: AMB_RICHIESTA: Progressivo richiesta …-1 già utilizzato», e
+  // il carrello riletto è vuoto (3.70.0, ordini di 11 esami su due erogatori).
+  // Quindi ogni lettura dell'estensione (fetchDoc, fetchPdf) aspetta qui,
+  // finché c'è un motore che lavora in un'ALTRA pagina: un ordine in
+  // sottofondo che il service worker dice partito o in corsa, o un motore di
+  // una scheda del medico (il suo battito, MOTORE, in localStorage). Le
+  // richieste della pagina dove gira il motore sono le sue: passano.
+  const MOTORE = "motore.v1";
+  const MOTORE_MS = 15e3;          // un battito più vecchio è di una pagina morta
+  const CANCELLO_MAX = 240e3;      // più di così non si aspetta (un ordine dura meno di un minuto)
+  const PAGINA_ID = Math.random().toString(36).slice(2);
+  let MOTORE_MIO = null;           // il motore che gira in QUESTA pagina
+  let ORDINI_VIVI = [];            // gli ordini del service worker (storage.session)
+  const motoreAttivo = (x) => !!x && (x.stato === "avvio" || x.stato === "corre");
+  try {
+    chrome.storage.session.get("ordini").then((o) => { if (Array.isArray(o && o.ordini)) ORDINI_VIVI = o.ordini; }).catch(() => {});
+    chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && ch.ordini) ORDINI_VIVI = ch.ordini.newValue || []; });
+  } catch { /* senza estensione: solo il battito */ }
+  // il motore è qui: il giro di questa pagina, la sua conferma, o la scheda
+  // dell'ordine in sottofondo che sta lavorando (fra una pagina e l'altra)
+  const motoreQui = () => !!MOTORE_MIO || !!(LAVORO && ORDINI_VIVI.some((x) => x.id === LAVORO.id && motoreAttivo(x)));
+  const battitoAltrui = () => { const m = store.get(MOTORE, null); return !!(m && m.id !== PAGINA_ID && Date.now() - (m.ts || 0) < MOTORE_MS); };
+  const motoreAltrove = () => !motoreQui() && (ORDINI_VIVI.some(motoreAttivo) || battitoAltrui());
+  const motoreOvunque = () => motoreQui() || ORDINI_VIVI.some(motoreAttivo) || battitoAltrui();
+  async function cancelloMotore(signal) {
+    if (!motoreAltrove()) return;
+    const fine = Date.now() + CANCELLO_MAX;
+    while (Date.now() < fine && motoreAltrove()) await sleep(500, signal);
+  }
+  function battitoMotore() {
+    try {
+      // (il battito è solo del motore di questa pagina: la scheda di un ordine
+      // in sottofondo la dice già il service worker, e finito il giro tace subito)
+      if (MOTORE_MIO) store.set(MOTORE, { id: PAGINA_ID, ts: Date.now() });
+      else { const m = store.get(MOTORE, null); if (m && m.id === PAGINA_ID) store.set(MOTORE, null); }
+    } catch { /* memoria piena: resta il service worker */ }
+  }
+  if (!TABELLONE) {
+    setInterval(battitoMotore, 4000);
+    window.addEventListener("pagehide", () => { MOTORE_MIO = null; battitoMotore(); });
+  }
 
   // ------------------------------------------------------- KNOWN PATIENTS
   // I pazienti su cui si è lavorato, per ritrovarli dalla schermata iniziale:
@@ -3056,6 +3106,8 @@
     const s = store.get(SMART_SYNC, null) || {}, ora = Date.now();
     if (!forza && (!segueAcceso() || ora - (s.ts || 0) < SMART_OGNI)) return { ok: false, why: "non ancora" };
     if (s.ts && !s.fine && ora - s.ts < 45e3) return { ok: false, why: "in corso" };
+    // (una pagina della stessa sessione: mai mentre un motore manda esami — il prossimo giro, fra 30 secondi)
+    if (motoreOvunque()) return { ok: false, why: "ordine in corso" };
     store.set(SMART_SYNC, { ts: ora, fine: 0, esito: "", n: s.n || 0 });
     const r = await ask({ t: "smartSotto", url: u });
     if (!r || !r.ok) store.set(SMART_SYNC, { ...(store.get(SMART_SYNC, {}) || {}), fine: Date.now(), esito: (r && r.why) || "estensione" });
@@ -4282,6 +4334,13 @@
   }
 
   async function runPlan(plan, ui) {
+    const mio = Math.random().toString(36).slice(2), prima = MOTORE_MIO;
+    MOTORE_MIO = mio;
+    battitoMotore();
+    try { return await runPlanVero(plan, ui); }
+    finally { if (MOTORE_MIO === mio) MOTORE_MIO = prima; battitoMotore(); }
+  }
+  async function runPlanVero(plan, ui) {
     const ctrl = new AbortController();
     const signal = ctrl.signal;
     // Un giro solo si riprende dopo un cambio pagina; una catena
@@ -4919,6 +4978,17 @@
         ({ doc, url } = await fetchDoc(link.href, { signal }));
         guardSession(doc, `«${nm}» potrebbe essere stato aggiunto o no`);
         assertSameEpisode(doc, plan.episodeId, "conferma inserimento");
+        // Un errore del database nella risposta («ORA-20965: … Progressivo
+        // richiesta già utilizzato»): il gestionale ha rifiutato l'inserimento,
+        // e la sua sessione non è più quella del giro. Si ferma qui — niente
+        // riletture, niente altro mandato — e si dice al medico che cosa ha
+        // risposto, non «non risulta nel carrello» trenta secondi dopo.
+        const allarme = avvisoGestionale(doc);
+        if (/\bORA-\d{3,5}\b/.test(allarme)) {
+          log(`⚠ il gestionale ha risposto all'inserimento di «${nm}»: ${allarme}`);
+          throw new StopError(`Il gestionale ha risposto: ${allarme}`,
+            `«${nm}» non è entrato. Il giro si ferma qui e non rimanda niente: apri il carrello e controlla.`);
+        }
         // Una pagina inattesa QUI non dice che l'esame non sia entrato:
         // l'inserimento è già partito. Invece di fermarsi al buio si rilegge
         // l'elenco pulito — mai un secondo invio — e si guarda il carrello.
@@ -7302,8 +7372,12 @@
         window.addEventListener("pagehide", abbandona);
         if (TRACCIA) TRACCIA.attiva = true;   // le riletture della conferma vanno nella traccia
         const tC = Date.now();
+        const motorePrima = MOTORE_MIO;
+        MOTORE_MIO = MOTORE_MIO || "conferma";   // la conferma è ancora il motore: le altre schede aspettano
+        battitoMotore();
         try { esito = await confermaInCornice(listUrl, { panel: this, episodeId: ep, rid }); }
         catch { esito = "rifiutata"; }
+        finally { MOTORE_MIO = motorePrima; battitoMotore(); }
         window.removeEventListener("pagehide", abbandona);
         this.log(`${now()}  conferma in sottofondo: ${esito}`);
         if (TRACCIA && TRACCIA.passi.length < 120) TRACCIA.passi.push({ t: tC - TRACCIA.t0, ms: Date.now() - tC, m: "cornice", pagina: "Conferma", esito });
