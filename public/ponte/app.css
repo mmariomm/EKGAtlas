@@ -96,6 +96,7 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 /* il nome tutto intero; il posto e il promemoria vanno a capo, sotto */
 .paz .r1 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .paz .nome { font-weight: 650; font-size: 16.5px; overflow-wrap: anywhere; }
+.paz .eta { flex: none; font-size: 14px; color: var(--grigio); font-variant-numeric: tabular-nums; }
 .paz .posto { flex: none; font-size: 12px; font-weight: 650; color: var(--blu); background: var(--blu-chiaro); border-radius: 6px; padding: 1px 7px; }
 .paz .nota { font-size: 13.5px; color: var(--grigio); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .paz.spento .nome { color: var(--grigio); font-weight: 600; }

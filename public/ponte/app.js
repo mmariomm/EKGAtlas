@@ -963,7 +963,7 @@
   }
   function rigaPaz(p) {
     return `<button class="paz t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" data-a="paz" data-ep="${esc(p.ep)}">
-      <span class="tr"></span><span class="cor"><span class="r1"><span class="nome">${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(p.breve || p.nome)}</span>${
+      <span class="tr"></span><span class="cor"><span class="r1"><span class="nome">${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(p.nome || p.breve)}</span>${Number.isInteger(p.eta) ? `<span class="eta">${p.eta} anni</span>` : ""}${
         p.posto ? `<span class="posto">${esc(p.posto)}</span>` : ""}${promPill(p)}</span>${p.nota ? `<span class="nota">${esc(p.nota)}</span>` : ""}</span></button>`;
   }
   // Un ordine, con le parole del PC: il titolo è com'è andata, l'ora una volta.
