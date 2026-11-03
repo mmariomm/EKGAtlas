@@ -491,6 +491,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
           || u.searchParams.get("MVPG") !== "PsoPazientiSmart" || [...u.searchParams.keys()].some((k) => !["MVPG", "PAZIENTI_FILTRO"].includes(k))) {
         return reply({ ok: false, why: "link inatteso" });
       }
+      // (la smart è una pagina della stessa sessione: mai mentre un motore inserisce)
+      if (motoreAlLavoro(await ordLeggi())) return reply({ ok: false, why: "ordine in corso" });
       await sottoControlla();
       const vive = Object.entries(await chrome.storage.session.get(null)).filter(([k, s]) => k.startsWith("sotto:") && inCorso(s));
       if (vive.some(([, s]) => s.cosa === "smart")) return reply({ ok: false, why: "già in corso" });
@@ -537,6 +539,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       const gia = vive.find(([, s]) => s.opener === da.id);
       if (gia) return reply({ ok: true, tabId: Number(gia[0].slice(6)), gia: true });   // doppio clic
       if (vive.length >= 3) return reply({ ok: false, why: "troppe letture in corso" });
+      await dopoIlMotore();   // (mai una pagina del gestionale mentre un motore inserisce)
       // nasce vuota, si annota per chi è, POI parte: così l'annotazione arriva
       // sempre prima dello script del portale
       const vuota = { url: "about:blank", active: false };
@@ -571,6 +574,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       const gia = vive.find(([, s]) => s.opener === da.id && s.cosa === "referto" && s.id === id);
       if (gia) return reply({ ok: true, tabId: Number(gia[0].slice(6)), gia: true });   // doppio clic
       if (vive.length >= 3) return reply({ ok: false, why: "troppe letture in corso" });
+      await dopoIlMotore();   // (mai una pagina del gestionale mentre un motore inserisce)
       const vuota = { url: "about:blank", active: false };
       const t = await chrome.tabs.create({ ...vuota, openerTabId: da.id, index: da.index + 1, windowId: da.windowId })
         .catch(() => chrome.tabs.create(vuota));
@@ -822,6 +826,28 @@ const SA4 = "https://smarthealth.multimedica.it";
 const ATTIVI = new Set(["avvio", "corre"]);          // occupano la coda: un motore alla volta
 // (e «stampo»: confermata, il service worker stampa i fogli senza dialogo; la
 // scheda dell'ordine dà solo i PDF, e la coda intanto va avanti)
+// Un motore alla volta, e intorno a lui NIENTE nella stessa sessione del
+// gestionale: un'altra pagina del gestionale aperta mentre il motore
+// inserisce (la stampa delle etichette di un ordine di prima, la lista smart,
+// una scheda di sottofondo, un altro motore) cambia sotto di lui la richiesta
+// «corrente» della sessione, e il server risponde all'inserimento con
+// «ORA-20965: AMB_RICHIESTA: Progressivo richiesta …-1 già utilizzato» — e il
+// carrello riletto è vuoto. Quindi: il prossimo motore aspetta che i PDF della
+// stampa di prima siano presi (pochi secondi: la stampa vera va avanti da
+// sola), e la stampa, come le schede di sottofondo, aspetta che il motore
+// abbia finito (motoreAlLavoro).
+const PRESA_MAX = 60e3;       // una presa di PDF ferma da così: non tiene più la coda
+const daPrendere = (rec) => rec.stato === "stampo" && !rec.ferma && !rec.interrotta && Date.now() - (rec.agg || 0) < PRESA_MAX
+  && Array.isArray(rec.fogli) && rec.fogli.some((f, i) => (f.stato === "attesa" || f.stato === "prendo") && !((rec.stampa && rec.stampa.jobs && rec.stampa.jobs[i]) || {}).diretto);
+const occupato = (l) => l.some((x) => ATTIVI.has(x.stato) || daPrendere(x));
+const motoreAlLavoro = (l, tranne = null) => l.some((x) => x !== tranne && ATTIVI.has(x.stato));
+// …e chi apre da solo una scheda del gestionale (un referto, lo storico, il
+// telefono) aspetta qui la fine del motore, al più 4 minuti
+const DOPO_MOTORE_MAX = 240e3;
+async function dopoIlMotore() {
+  const fine = Date.now() + DOPO_MOTORE_MAX;
+  while (Date.now() < fine && motoreAlLavoro(await ordLeggi().catch(() => []))) await new Promise((r) => setTimeout(r, 1000));
+}
 const AVVIO_MAX = 45e3;       // la scheda non ha detto «parto»: non partirà
 const AVVIO_VUOTA = 6e3;      // la scheda è ancora vuota, mai arrivata sulla pagina: se ne apre un'altra
 const MUTO_MAX = 180e3;       // tre minuti senza una parola: si chiede alla scheda se c'è
@@ -878,7 +904,7 @@ async function ordApri(rec, l, stato = "avvio") {
 // apre, quell'ordine non parte e lo si dice: niente è stato mandato.
 async function ordAvanti(l) {
   for (;;) {
-    if (l.some((x) => ATTIVI.has(x.stato))) return;
+    if (occupato(l)) return;
     const next = l.find((x) => x.stato === "coda");
     if (!next) return;
     try { await ordApri(next, l); return; }
@@ -946,14 +972,21 @@ async function ordControlla(l) {
       rec.stato = "errore"; rec.agg = ora;
       rec.vista = { tag: "Non partito", testo: "La scheda dell'ordine non ha risposto: niente inviato", tono: "err" };
       await ordSlega(rec);
-    } else if (rec.stato === "avvio" && t && !rec.riaperta && ora - rec.agg > AVVIO_VUOTA && !sulGestionale(t.url) && !sulGestionale(t.pendingUrl)) {
+    } else if (rec.stato === "avvio" && t && !rec.riaperta && rec.consegnata == null && ora - rec.agg > AVVIO_VUOTA && !sulGestionale(t.url) && !sulGestionale(t.pendingUrl)) {
       // La scheda nuova non è mai arrivata sulla pagina (il suo processo è
       // morto appena nata): lì non c'è nessun pannello, niente può essere
-      // partito. Al suo posto un'altra, una volta sola.
+      // partito. Al suo posto un'altra, una volta sola. Mai due motori: il
+      // piano si dà a UNA scheda sola (`consegnata`, in ordineChi) e questa non
+      // l'ha mai avuto; e la vecchia si chiude PRIMA che nasca la nuova.
       rec.riaperta = true;
       const vuota = rec.worker;
-      try { await ordApri(rec, l); } catch { rec.worker = vuota; }
-      if (rec.worker !== vuota) chrome.tabs.remove(vuota).catch(() => {});
+      rec.worker = null;
+      await chrome.tabs.remove(vuota).catch(() => {});
+      try { await ordApri(rec, l); }
+      catch {
+        rec.stato = "errore"; rec.agg = ora; rec.worker = null;
+        rec.vista = { tag: "Non partito", testo: "La scheda per l'ordine non si è aperta: niente inviato", tono: "err" };
+      }
     } else if (rec.stato === "corre" && ora - rec.agg > MUTO_MAX) {
       // Zitta da troppo: le si chiede se c'è. Finché la scheda esiste non si
       // dice «non mandati» (potrebbe mandare ancora) e la coda aspetta: mai
@@ -1209,6 +1242,8 @@ async function ordStampaFogli(id) {
           if (i < 0) return null;
           if (soloBracciale(rec) && etichetteInCorso(l, rec)) { attende = true; return null; }
           const job = rec.stampa.jobs[i] || {};
+          // un motore sta inserendo esami: il PDF (una pagina del gestionale) aspetta che finisca
+          if (!job.diretto && motoreAlLavoro(l, rec)) return { aspetta: true };
           const senza = !job.diretto && rec.worker == null;   // nessuno che dia il PDF
           const s = senza ? null : await stampaScelte();
           if (!s) {
@@ -1221,6 +1256,7 @@ async function ordStampaFogli(id) {
           return { i, url: job.url, diretto: !!job.diretto, worker: rec.worker, tipo, stampante: s[tipo], ruota: ruotaDi(s), bracciale: soloBracciale(rec) };
         });
         if (!passo) return;
+        if (passo.aspetta) { await new Promise((r) => setTimeout(r, 1000)); continue; }
         // 2. il PDF (dalla scheda dell'ordine; un consenso, dall'estensione)
         const insieme = !!altra && !altra.finita && !altra.aspetta;
         const pdf = passo.bracciale && copia && copia.url === passo.url ? copia.pdf : await prendi(passo);
@@ -1255,6 +1291,7 @@ async function ordStampaFogli(id) {
           else Object.assign(f, { stato: "invio", stampante: corto(passo.stampante, 80) });
           rec.agg = Date.now(); f.ts = Date.now();
           await ordScrivi(l);
+          await ordAvanti(l);   // i PDF presi: il prossimo motore può partire
           return f.stato === "invio";
         });
         if (!va) continue;
@@ -1356,7 +1393,7 @@ function ordMessaggio(msg, sender, reply) {
     };
     await chrome.storage.session.set({ [ORD_PIANO(id)]: j.piano, [ORD_VISTI]: [...visti, id].slice(-100) });
     l.push(rec);
-    if (l.some((x) => ATTIVI.has(x.stato))) {
+    if (occupato(l)) {
       await ordScrivi(l);
       return reply({ ok: true, id, coda: true, ordini: l });
     }
@@ -1386,9 +1423,12 @@ function ordMessaggio(msg, sender, reply) {
     // pagina): i fogli che restano non li dà più nessuno
     const ricarica = l.find((x) => x.worker === tab.id && x.stato === "stampo" && !x.interrotta);
     if (ricarica) { ricarica.interrotta = "la scheda dell'ordine si è ricaricata"; await ordScrivi(l); }
-    const mio = l.find((x) => x.worker === tab.id && ATTIVI.has(x.stato));
+    const mio = l.find((x) => x.worker === tab.id && ATTIVI.has(x.stato) && (x.consegnata == null || x.consegnata === tab.id));
     // (o la scheda che il ponte ha aperto per i valori di un paziente: ponte-sw.js)
     if (!mio) return reply({ ok: true, ordini: l, ...(typeof ponteLavoroDi === "function" ? await ponteLavoroDi(tab.id) : {}) });
+    // il piano va a questa scheda e a nessun'altra, per tutta la vita
+    // dell'ordine (le sue pagine dopo — la ripresa, il carrello della conferma — sì)
+    if (mio.consegnata == null) { mio.consegnata = tab.id; await ordScrivi(l); }
     const piano = (await chrome.storage.session.get(ORD_PIANO(mio.id)))[ORD_PIANO(mio.id)] || null;
     reply({ ok: true, ordini: l, lavoro: { ...mio, piano } });
   });

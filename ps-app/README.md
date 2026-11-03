@@ -1822,6 +1822,23 @@ Salva / Registra, e il PDF di **Stampa RE**.
     testo). Nella scheda del portale aperta per un referto non si tiene il primo PDF che passa:
     si raccolgono quelli che la pagina mostra e si tiene quello di questo paziente (e, a parità,
     dell'esame chiesto); se sono tutti di un altro, nessuno.
+19. **Mentre un motore manda esami, nient'altro tocca il gestionale.** La richiesta «corrente»
+    sta nella **sessione** del gestionale, una per tutte le schede: una pagina del modulo
+    richieste aperta a metà ordine (la lista smart riletta dietro, le etichette di un altro
+    ordine, un referto, una lettura dal telefono) la cambia sotto il motore, e l'inserimento
+    dopo risponde «ORA-20965: AMB_RICHIESTA: Progressivo richiesta …-1 già utilizzato» col
+    carrello vuoto (3.70.0). Quindi: ogni lettura dell'estensione (`fetchDoc`, `fetchPdf`)
+    aspetta finché un motore lavora in un'**altra** pagina — un ordine in sottofondo che il
+    service worker dice partito o in corsa, o un motore della scheda del medico (il suo battito
+    `motore.v1` in localStorage); la lista smart non si rilegge (riprova al giro dopo); le schede
+    di sottofondo (referto, storico, telefono) si aprono dopo; i PDF di una stampa aspettano la
+    fine del motore, e il motore dopo aspetta che quei PDF siano presi. **Un ordine, un
+    motore**: il piano lo riceve una scheda sola (`consegnata`), e la scheda vuota che si
+    sostituisce dopo 6 secondi è solo quella che il piano non l'ha mai avuto, chiusa prima che
+    nasca la nuova. Un «ORA-» nella risposta a un inserimento ferma il giro **subito**, senza
+    riletture né altri invii: la striscia dice «Il gestionale ha risposto: …» (l'esame in volo
+    resta «da controllare»), e l'errore va nel registro con la traccia. Prova:
+    `test/ext-sessione.mjs`.
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è

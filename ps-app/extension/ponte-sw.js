@@ -666,6 +666,8 @@ async function ponteValoriSotto(url, ep) {
     return { ok: false, testo: "indirizzo del paziente inatteso" };
   }
   for (const v of pt.valori.values()) if (v.ep === ep) return v.promessa;   // già in lettura
+  // (mai una pagina del gestionale mentre un motore inserisce esami: bg.js)
+  if (typeof dopoIlMotore === "function") await dopoIlMotore();
   const davanti = (await ponteSchede())[0];
   const vuota = { url: "about:blank", active: false };
   const t = await chrome.tabs.create(davanti ? { ...vuota, windowId: davanti.windowId, index: davanti.index + 1 } : vuota)
@@ -816,6 +818,7 @@ async function ponteCartellaSotto(url, ep, campi) {
   let u;
   try { u = new URL(url); } catch { return { ok: false, testo: "indirizzo del paziente non valido" }; }
   if (!leggibileOrd(url) || u.searchParams.get("EPISODIO_ID") !== ep) return { ok: false, testo: "indirizzo del paziente inatteso" };
+  if (typeof dopoIlMotore === "function") await dopoIlMotore();   // (come sopra)
   const davanti = (await ponteSchede())[0];
   const vuota = { url: "about:blank", active: false };
   const t = await chrome.tabs.create(davanti ? { ...vuota, windowId: davanti.windowId, index: davanti.index + 1 } : vuota)
