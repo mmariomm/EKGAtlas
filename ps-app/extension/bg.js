@@ -418,6 +418,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     }).catch(() => reply({ ok: false }));
     return true;
   }
+  // «Questa scheda è una di quelle che apro io in sottofondo?» — un ordine o i
+  // suoi fogli, una lettura (storico, referto, lista smart), il ponte. Una
+  // pagina «altra» del gestionale mostra la pill solo se la risposta è no.
+  // Solo una lettura: a differenza di «ordineChi» non annota niente.
+  if (msg.t === "schedaNostra") {
+    const id = _sender.tab && _sender.tab.id;
+    (async () => {
+      if (id == null) return reply({ ok: false });
+      if (await sottoGet(id)) return reply({ ok: true, nostra: true });
+      if ((await ordLeggi()).some((x) => x.worker === id)) return reply({ ok: true, nostra: true });
+      const p = typeof ponteLavoroDi === "function" ? await ponteLavoroDi(id) : {};
+      reply({ ok: true, nostra: !!(p && (p.ponteValori || p.ponteCartella)) });
+    })().catch(() => reply({ ok: false }));
+    return true;
+  }
 
   // Un clic su una riga della lista smart (una finestra sua): la cartella, o la
   // pagina dell'area, si apre nella scheda del gestionale da cui la finestra è

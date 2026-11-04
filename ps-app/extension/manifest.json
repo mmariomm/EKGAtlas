@@ -16,8 +16,12 @@
   "content_scripts": [
     {
       "matches": [
-        "https://smarthealth.multimedica.it/sa4pso/*",
+        "https://smarthealth.multimedica.it/*",
         "http://10.11.0.151/clin-port/*"
+      ],
+      "exclude_matches": [
+        "https://smarthealth.multimedica.it/jasperserverSAN/*",
+        "https://smarthealth.multimedica.it/UploadDownload/*"
       ],
       "js": [
         "content.js"

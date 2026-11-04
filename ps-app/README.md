@@ -38,6 +38,8 @@ passaggio in più che qui non serve).
    Richiesta ed esami, **intestato col nome del paziente** su cui stai lavorando (anche da
    minimizzato, così sai sempre per chi stai ordinando). Sulla **lista del pronto soccorso**,
    dove non c'è un paziente aperto, il pannello non mostra alcun esame: lì non si può ordinare.
+   La pill c'è su **ogni pagina** del gestionale (la dimissione, le terapie, le stampe, /sa4rcs/…): sulla pagina di un paziente noto apre i suoi Esiti, altrove il tabellone; da lì non si ordina.
+   Fuori da /sa4pso/ è solo la pill (niente letto né scritto della pagina); le schede di sottofondo e i PDF restano senza.
    Si **trascina** dall'intestazione e si **ridimensiona** dall'angolo in basso a sinistra
    (posizione e misura restano memorizzate; doppio click sull'intestazione o sull'angolo per
    tornare a com'era).

@@ -6735,7 +6735,7 @@
     this._visibile = () => {
       if (document.hidden) return;
       this.promTick();
-      if (this.pageType === "patient" && !TABELLONE) this.caricaStorico();
+      if ((this.pageType === "patient" || this.pageType === "vista") && !TABELLONE) this.caricaStorico();
     };
     document.addEventListener("visibilitychange", this._visibile);
     this._unload = (e) => { e.preventDefault(); e.returnValue = ""; };
@@ -6880,7 +6880,7 @@
     // dopo l'ultimo parte UNA stampa con quelle copie (il PDF preso una volta).
     // Un tocco mentre quella stampa gira non fa niente: il bottone pulsa.
     braccialeHtml() {
-      const url = this.pageType === "patient" ? linkBracciale(document, this.epDiQuesta(), location.href) : "";
+      const url = this.pageType === "patient" || this.pageType === "vista" ? linkBracciale(document, this.epDiQuesta(), location.href) : "";
       return url ? `<a class="iconbtn brac" id="bracciale" href="${esc(url)}" target="_blank" title="Etichetta anagrafica" aria-label="Etichetta anagrafica">${this.braccialeDentro()}</a>` : "";
     }
     braccialeDentro() {
@@ -7018,6 +7018,8 @@
     // niente (gli Esiti vuoti non servono a nessuno). Chi arriva da una
     // scheda del pannello sceglie già dove andare.
     defaultView() {
+      // una pagina «altra» del gestionale: gli Esiti del suo paziente, o il tabellone
+      if (this.pageType === "vista") return this.epDiQuesta() ? "esiti" : "home";
       if (this.pageType !== "patient") return "richieste";
       // senza i link per ordinare non è la scheda di un paziente ma la lista
       // del pronto soccorso: lì si mostra l'elenco dei pazienti
@@ -8316,7 +8318,7 @@
     // Compact always-visible selection strip: plain text grouped by resource
     // ("POC: EMOGAS, EMOCROMO · URGENZE: PCT"), an ✕ appears on hover.
     selbarHtml() {
-      if (!this.selected.size) return "";
+      if (!this.selected.size || this.pageType === "vista") return "";
       if (this.pageType === "patient" && !(this.entry && (this.entry.labUrl || this.entry.radioUrl))) return "";
       const byRes = {};   // per nome corto: Urgenze e centrale sono un gruppo solo
       for (const i of this.selected.values()) (byRes[risorsaCorta(i.res)] = byRes[risorsaCorta(i.res)] || []).push(i);
@@ -8330,8 +8332,10 @@
     }
 
     render() {
-      const patientName = nomeInPagina();
-      const ep = findEpisodeId(document, location.href);
+      const patientName = this.pageType === "vista" ? this.nomePaziente() : nomeInPagina();
+      // (su una pagina «altra» l'episodio è quello che il pannello ha
+      // riconosciuto, o nessuno: non il primo link che la pagina porta)
+      const ep = this.pageType === "vista" ? this.episodeId || "" : findEpisodeId(document, location.href);
       // keep every scroll position across re-renders (chip toggles must not
       // bounce the panel back to the top), sideways too: dopo un paziente
       // portato la mappa, la lista e le aree restano dove li hai lasciati
@@ -8529,7 +8533,7 @@
                   <b class="segtit">Modifica la stanza</b><span class="segdx">${this.stanzaAzioni()}</span>
                 </div>` : !this.runState && !TABELLONE ? `
                 <div class="seg" role="tablist">
-                  ${this.pageType === "patient" && this.view !== "home" ? `
+                  ${(this.pageType === "patient" || (this.pageType === "vista" && this.epDiQuesta())) && this.view !== "home" ? `
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste" data-t="Richieste">Richieste</button>
                   <button class="${this.view === "esiti" || this.view === "referto" ? "on" : ""}" data-seg="esiti" data-t="Esiti">Esiti</button>`
                   : `<button class="${inHome || !section ? "on" : ""}" data-seg="home" data-t="Pazienti">Pazienti</button>`}
@@ -9915,6 +9919,7 @@
         (this.pageType === "patient" && !!(this.entry && (this.entry.labUrl || this.entry.radioUrl)));
       if (!canOrder) {
         const extra = this.viewPrint();
+        if (this.pageType === "vista" && this.epDiQuesta()) return `<div class="hint" style="margin:2px 0 0">Da questa pagina non si ordina: le richieste si fanno dalla pagina del paziente.</div>`;
         return `${extra}<div class="hint" style="margin:2px 0 0">Apri un paziente per creare richieste.</div>`;
       }
       // i tre pacchetti sempre in testa, poi gli ultimi quesiti usati
@@ -10317,7 +10322,7 @@
             ${puoiLeggere && !grande ? `<button class="mini" id="risall" ${ra || sotto || au ? "disabled" : ""} title="${esc(titLeggi)}">${esc(etLeggi)}</button>` : ""}
             ${nAuto > 0 ? `<span class="wuauto" role="status" title="Carico da solo i valori e i referti nuovi: ne restano ${nAuto}">↓ ${nAuto}</span>` : ""}
             ${t ? `<button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>` : ""}
-            ${t || prelievi.some((e) => tabStore.get(this.risKey(e.id), null)) ? `<button class="mini" id="valreset" title="Dimentica i valori letti e la scheda in archivio di questo paziente: ⭳ Carica i valori li rilegge da zero">↺ Reset</button>` : ""}
+            ${this.pageType !== "vista" && (t || prelievi.some((e) => tabStore.get(this.risKey(e.id), null))) ? `<button class="mini" id="valreset" title="Dimentica i valori letti e la scheda in archivio di questo paziente: ⭳ Carica i valori li rilegge da zero">↺ Reset</button>` : ""}
             ${infoSenzaData}
           </div>
           ${grande ? `<div class="carica"><button type="button" class="grande" id="risall" ${ra || sotto ? "disabled" : ""} title="${esc(titLeggi)}">${esc(etLeggi)}</button></div>` : ""}
@@ -10695,6 +10700,11 @@
     }
 
     nomePaziente() {
+      // una pagina «altra»: il nome del suo riquadro, o quello che il pannello conosce
+      if (this.pageType === "vista") {
+        const ep = this.epDiQuesta();
+        return ep ? nomeInPagina() || tuttiPazienti().find((p) => p.ep === ep)?.name || "" : "";
+      }
       const puoOrdinare = !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
       return this.pageType === "patient" && puoOrdinare ? nomeInPagina() : "";
     }
@@ -11187,10 +11197,11 @@
         return this.reloadTuttiValori(opts);
       }
     }
-    conPortale() { return hasExt() && !!this.nomePaziente() && !!this.linkStorico(); }
+    conPortale() { return this.pageType !== "vista" && hasExt() && !!this.nomePaziente() && !!this.linkStorico(); }
 
     async caricaStorico() {
-      if (this.pageType !== "patient" || !hasExt()) return;
+      // (anche su una pagina «altra» del suo paziente: la scheda in archivio, da leggere e basta)
+      if (!(this.pageType === "patient" || (this.pageType === "vista" && this.epDiQuesta())) || !hasExt()) return;
       const prima = (this.storico?.letto || 0) + "|" + this.storicoAltri;
       // schedaMia() ha già deciso l'identità: qui non si ricontrolla, o la
       // regola finirebbe scritta in due posti e prima o poi in due modi
@@ -13091,6 +13102,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
 
     launch(autoConfirm) {
+      if (this.pageType === "vista") return;   // da una pagina «altra» non si ordina
       // Belt over the live validation braces: recompute and refuse loudly.
       const problems = this.computeProblems();
       const blocking = autoConfirm ? problems.confirm : problems.go;
@@ -15134,6 +15146,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // its login page carries a password field, and mistaking it for SA4PSO's
   // would wipe the shift's saved documents.
   const SA4PSO = location.hostname === "smarthealth.multimedica.it";
+  // Il pronto soccorso vero e proprio: tutto quello che il pannello legge e
+  // scrive sta sotto /sa4pso/. Sulle altre pagine dello stesso gestionale
+  // (/sa4rcs/, /si4Portal/, /sa4/) c'è solo la pill.
+  const IN_PSO = SA4PSO && /^\/sa4pso\//i.test(location.pathname);
   function voceTabella(doc) {
     const el = [...doc.querySelectorAll('button, a, [role="tab"], [role="button"], li, span')]
       .find((x) => x.childElementCount <= 2 && /^tabella$/i.test((x.textContent || "").trim()));
@@ -15318,6 +15334,13 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }, 1500);
       return;
     }
+    // Fuori da /sa4pso/ (le finestre Risultati, il portale delle applicazioni,
+    // il passaggio verso il visore): la pill e basta. Qui non parte niente di
+    // quello che segue — né ordini, né stampe, né letture della pagina.
+    if (!IN_PSO) {
+      if (classify(document) !== "login" && !/login/i.test(location.pathname)) vistaQui();
+      return;
+    }
     // Con l'estensione, per prima cosa: questa scheda è quella di un ordine
     // in sottofondo? Lo sa il service worker, dal numero della scheda. (Una
     // risposta che non arriva vale «no»: la scheda parte come sempre.)
@@ -15404,7 +15427,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (chi) ascoltaOrdini(null);   // e le etichette di un ordine in sottofondo, se il medico è qui
       if (PONTE_VALORI) ponteValoriQui(null);
       nonConfermateQui();   // le richieste che questa pagina mostra confermate non vanno più sorvegliate
-      if (!maybeAutoPrint(null) && LAVORO && LAVORO.stato !== "avvio") lavoroSenzaSeguito(null);
+      const stampa = maybeAutoPrint(null);
+      if (!stampa && LAVORO && LAVORO.stato !== "avvio") lavoroSenzaSeguito(null);
+      // …e la pill, come su ogni pagina del gestionale (la dimissione, le
+      // terapie, le stampe…): mai nella scheda di un ordine o del ponte, mai
+      // mentre questa pagina stampa, mai nella lista smart.
+      if (!stampa && !LAVORO && !PONTE_VALORI && !eSmart(document, location.href)) vistaQui();
       return;
     }
     // le eccezioni non prese del NOSTRO codice (la pila passa dall'estensione), nel registro degli errori
@@ -15600,6 +15628,57 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // La scheda di un ordine che qui non ha più niente da fare: l'ordine non
     // resta «in corso» per sempre (vedi lavoroSenzaSeguito).
     if (LAVORO && LAVORO.stato !== "avvio" && !ripresa && !segue) lavoroSenzaSeguito(panel);
+  }
+
+  // ------------------------------------------------ la pill su ogni pagina
+  // Le pagine del gestionale che non sono né il paziente, né una richiesta, né
+  // il carrello (la dimissione, le terapie, le stampe, /sa4rcs/…): la pill,
+  // per non perdere il pannello. Da qui non si ordina. Le schede di
+  // sottofondo — un ordine o i suoi fogli, lo storico, un referto, la lista
+  // smart, il ponte — restano senza: lo chiede al service worker, che lo sa
+  // dal numero della scheda (una risposta che non arriva vale «nostra»).
+  function vistaQui() {
+    const via = () => { if (!document.getElementById("psassist-host")) bootVista(); };
+    if (!hasExt()) { via(); return; }
+    ask({ t: "schedaNostra" }).then((r) => { if (r && r.ok && r.nostra === false) via(); });
+  }
+  // Il paziente di una di queste pagine: l'episodio dell'indirizzo o, dove in
+  // testa c'è il riquadro del paziente, quello dei suoi link — e solo se il
+  // pannello lo conosce già. Una lista porta gli episodi di tanti e non ha il
+  // riquadro: lì nessun paziente, il tabellone. Fuori da /sa4pso/ mai.
+  function epVista(doc, url) {
+    if (!IN_PSO) return "";
+    const suo = param(url, "EPISODIO_ID") || "";
+    const riq = riquadroPaziente(doc) ? findEpisodeIdInDoc(doc) || "" : "";
+    if (suo && riq && suo !== riq) return "";   // l'indirizzo e la pagina non dicono lo stesso: nessuno
+    const ep = suo || riq;
+    return ep && tuttiPazienti().some((p) => p.ep === ep) ? ep : "";
+  }
+  function bootVista() {
+    const panel = new Panel("vista");
+    panel.episodeId = epVista(document, location.href) || null;
+    panel.entry = { labUrl: null, radioUrl: null };
+    // (PANNELLO resta vuoto: i comandi del telefono e del tabellone vanno,
+    // come prima, alle schede del paziente e delle richieste)
+    // (come sulle altre pagine: il reset da un'altra scheda, il tabellone che cambia)
+    window.addEventListener("storage", (ev) => {
+      if (ev.key !== NS + "reset.v1" || !ev.newValue || panel.giroInCorso()) return;
+      azzeraScheda();
+      panel.fermaAuto();
+      panel.dimenticaTutto();
+      panel.esiti = [];   // (qui gli esiti non vengono dalla pagina)
+      panel.render();
+    });
+    window.addEventListener("storage", (ev) => {
+      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI].includes(ev.key)) return;
+      if (ev.key === NS + DIMESSI) panel.mostraDimessi();
+      panel.aggiornaDaFuori();
+    });
+    panel.mostraDimessi(true);
+    if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); panel.seguiAggiorna(); }
+    panel.restoreUi();
+    panel.render();
+    panel.caricaStorico();
   }
 
   // ---------------------------------------------------- portale clinico
