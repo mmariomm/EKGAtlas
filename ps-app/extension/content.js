@@ -5840,6 +5840,35 @@
     .tbig { font: 800 20px/1 inherit; color: #124F31; font-variant-numeric: tabular-nums; }
     .tlab { flex: 1 1 auto; font-size: 12px; color: #35506B; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .tpres { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+    .ricetta .lbl { margin-top: 12px; }
+    .ricetta .lbl:first-child { margin-top: 0; }
+    .ricpref, .ricris { display: flex; flex-wrap: wrap; gap: 5px; }
+    .ricchip { border: 1px solid #C4D0DC; background: #fff; color: #16232E; border-radius: 999px; padding: 6px 11px; font: 600 11.5px/1.2 inherit; cursor: pointer; text-align: left; }
+    .ricchip:hover, .ricrisv:hover { border-color: #0B5CAD; color: #0B5CAD; }
+    .ricchip.on, .ricrisv.on { background: #0B5CAD; border-color: #0B5CAD; color: #fff; }
+    .ricris { flex-direction: column; flex-wrap: nowrap; margin-top: 6px; max-height: 210px; overflow: auto; }
+    .ricrisv { border: 1px solid #E3E8EF; background: #fff; color: #16232E; border-radius: 8px; padding: 6px 9px; font: 12px/1.3 inherit; cursor: pointer; text-align: left; }
+    .ricrisv b { font-variant-numeric: tabular-nums; margin-right: 4px; }
+    .riccerca { display: flex; gap: 6px; }
+    .riccerca input, .ricquesito { flex: 1 1 auto; min-width: 0; border: 1px solid #D9E2EC; border-radius: 8px; padding: 7px 9px; font: 12.5px/1.3 inherit; color: #16232E; }
+    .ricquesito { display: block; width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+    .riccerca input:focus, .ricquesito:focus { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .ricbtn { border: 1px solid #0B5CAD; background: #fff; color: #0B5CAD; border-radius: 8px; padding: 6px 12px; font: 700 12px/1 inherit; cursor: pointer; }
+    .ricbtn:disabled, .ricetta .btn:disabled { opacity: .45; cursor: default; }
+    .ricvoci { display: flex; flex-direction: column; gap: 4px; }
+    .ricv { display: flex; align-items: center; gap: 8px; border: 1px solid #EDF1F6; border-radius: 8px; padding: 5px 6px 5px 9px; font-size: 12px; }
+    .ricvd { flex: 1 1 auto; min-width: 0; font-weight: 600; color: #16232E; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ricvd i { font-style: normal; font-weight: 400; color: #8296A9; font-variant-numeric: tabular-nums; }
+    .ricq { display: flex; align-items: center; gap: 4px; color: #5B6B7A; }
+    .ricq input { width: 46px; border: 1px solid #D9E2EC; border-radius: 6px; padding: 3px 5px; font: 12px/1.2 inherit; }
+    .ricns { display: flex; align-items: center; gap: 4px; color: #35506B; white-space: nowrap; }
+    .ricx { border: 0; background: none; color: #8296A9; cursor: pointer; font-size: 13px; padding: 2px 4px; }
+    .ricnota { font-size: 11.5px; color: #5B6B7A; margin-top: 6px; }
+    .ricstato { margin-top: 8px; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; background: #F4F8FB; color: #16232E; border-left: 3px solid #0B5CAD; }
+    .ricstato.ok { background: #EDF7F0; border-left-color: #1E7A46; }
+    .ricstato.warn { background: #FFF6E5; border-left-color: #B26B00; }
+    .ricstato.err { background: #FDECEA; border-left-color: #B3261E; color: #8C1D18; font-weight: 700; }
+    .ricstato .ricbtn { margin-left: 8px; }
     .rif { max-width: 820px; }
     .rifanc { font-size: 12px; color: #35506B; background: #F4F8FB; border-left: 3px solid #0B5CAD;
               border-radius: 0 8px 8px 0; padding: 8px 11px; margin-bottom: 10px; line-height: 1.45; }
@@ -6735,7 +6764,7 @@
     this._visibile = () => {
       if (document.hidden) return;
       this.promTick();
-      if (this.pageType === "patient" && !TABELLONE) this.caricaStorico();
+      if ((this.pageType === "patient" || this.pageType === "vista") && !TABELLONE) this.caricaStorico();
     };
     document.addEventListener("visibilitychange", this._visibile);
     this._unload = (e) => { e.preventDefault(); e.returnValue = ""; };
@@ -6880,7 +6909,7 @@
     // dopo l'ultimo parte UNA stampa con quelle copie (il PDF preso una volta).
     // Un tocco mentre quella stampa gira non fa niente: il bottone pulsa.
     braccialeHtml() {
-      const url = this.pageType === "patient" ? linkBracciale(document, this.epDiQuesta(), location.href) : "";
+      const url = this.pageType === "patient" || this.pageType === "vista" ? linkBracciale(document, this.epDiQuesta(), location.href) : "";
       return url ? `<a class="iconbtn brac" id="bracciale" href="${esc(url)}" target="_blank" title="Etichetta anagrafica" aria-label="Etichetta anagrafica">${this.braccialeDentro()}</a>` : "";
     }
     braccialeDentro() {
@@ -7018,6 +7047,8 @@
     // niente (gli Esiti vuoti non servono a nessuno). Chi arriva da una
     // scheda del pannello sceglie già dove andare.
     defaultView() {
+      // una pagina «altra» del gestionale: gli Esiti del suo paziente, o il tabellone
+      if (this.pageType === "vista") return this.epDiQuesta() ? "esiti" : "home";
       if (this.pageType !== "patient") return "richieste";
       // senza i link per ordinare non è la scheda di un paziente ma la lista
       // del pronto soccorso: lì si mostra l'elenco dei pazienti
@@ -8316,7 +8347,7 @@
     // Compact always-visible selection strip: plain text grouped by resource
     // ("POC: EMOGAS, EMOCROMO · URGENZE: PCT"), an ✕ appears on hover.
     selbarHtml() {
-      if (!this.selected.size) return "";
+      if (!this.selected.size || this.pageType === "vista") return "";
       if (this.pageType === "patient" && !(this.entry && (this.entry.labUrl || this.entry.radioUrl))) return "";
       const byRes = {};   // per nome corto: Urgenze e centrale sono un gruppo solo
       for (const i of this.selected.values()) (byRes[risorsaCorta(i.res)] = byRes[risorsaCorta(i.res)] || []).push(i);
@@ -8330,8 +8361,10 @@
     }
 
     render() {
-      const patientName = nomeInPagina();
-      const ep = findEpisodeId(document, location.href);
+      const patientName = this.pageType === "vista" ? this.nomePaziente() : nomeInPagina();
+      // (su una pagina «altra» l'episodio è quello che il pannello ha
+      // riconosciuto, o nessuno: non il primo link che la pagina porta)
+      const ep = this.pageType === "vista" ? this.episodeId || "" : findEpisodeId(document, location.href);
       // keep every scroll position across re-renders (chip toggles must not
       // bounce the panel back to the top), sideways too: dopo un paziente
       // portato la mappa, la lista e le aree restano dove li hai lasciati
@@ -8360,6 +8393,7 @@
       else if (this.view === "consensi") body = this.viewConsensi();
       else if (this.view === "eo") body = this.viewEo();
       else if (this.view === "tempi") body = this.viewTempi();
+      else if (this.view === "ricetta" && this.ricettaPossibile()) body = this.viewRicetta();
       else if (this.view === "riferimenti") body = this.viewRiferimenti();
       else if (this.view === "stampa") body = this.viewStampa();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
@@ -8391,7 +8425,7 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", riferimenti: "Riferimenti" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", riferimenti: "Riferimenti", ricetta: "Ricetta" }[this.view] || "";
       // (i fogli di dimissione sono modelli, ma chi va a casa è questo paziente:
       // l'intestazione lo dice anche lì)
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
@@ -8495,6 +8529,7 @@
                     <hr>
                     ${hasExt() ? `<button role="menuitem" id="tabmenu" title="Il tabellone dei Pazienti in una scheda sua: da fissare, o sul secondo schermo">Tabellone</button>` : ""}
                     ${hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete"><span class="mico">${ICO_TEL}</span>iPhone</button>` : ""}
+                    ${this.ricettaPossibile() ? `<button role="menuitem" id="ricmenu" title="Farmaci e quesito preparati nel Prescrittivo del SISS, fino all'Anteprima: Registra lo premi tu">Ricetta SISS</button>` : ""}
                     <button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">Tempi</button>
                     <button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">Riferimenti</button>
                     ${this.pageType === "patient" && this.epDiQuesta() && richiesteStampabili(printModel(document, location.href)).length
@@ -8529,7 +8564,7 @@
                   <b class="segtit">Modifica la stanza</b><span class="segdx">${this.stanzaAzioni()}</span>
                 </div>` : !this.runState && !TABELLONE ? `
                 <div class="seg" role="tablist">
-                  ${this.pageType === "patient" && this.view !== "home" ? `
+                  ${(this.pageType === "patient" || (this.pageType === "vista" && this.epDiQuesta())) && this.view !== "home" ? `
                   <button class="${this.view === "richieste" ? "on" : ""}" data-seg="richieste" data-t="Richieste">Richieste</button>
                   <button class="${this.view === "esiti" || this.view === "referto" ? "on" : ""}" data-seg="esiti" data-t="Esiti">Esiti</button>`
                   : `<button class="${inHome || !section ? "on" : ""}" data-seg="home" data-t="Pazienti">Pazienti</button>`}
@@ -8893,7 +8928,7 @@
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {
-      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "riferimenti", "richieste", "stampa"].includes(this.view);
+      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "riferimenti", "richieste", "stampa", "ricetta"].includes(this.view);
     }
     // In fondo alla fila delle schede, solo in Modifica: + Letto, + Sedia,
     // + Area e Fine. Si entra in Modifica dal menu «⋯».
@@ -9915,6 +9950,7 @@
         (this.pageType === "patient" && !!(this.entry && (this.entry.labUrl || this.entry.radioUrl)));
       if (!canOrder) {
         const extra = this.viewPrint();
+        if (this.pageType === "vista" && this.epDiQuesta()) return `<div class="hint" style="margin:2px 0 0">Da questa pagina non si ordina: le richieste si fanno dalla pagina del paziente.</div>`;
         return `${extra}<div class="hint" style="margin:2px 0 0">Apri un paziente per creare richieste.</div>`;
       }
       // i tre pacchetti sempre in testa, poi gli ultimi quesiti usati
@@ -10317,7 +10353,7 @@
             ${puoiLeggere && !grande ? `<button class="mini" id="risall" ${ra || sotto || au ? "disabled" : ""} title="${esc(titLeggi)}">${esc(etLeggi)}</button>` : ""}
             ${nAuto > 0 ? `<span class="wuauto" role="status" title="Carico da solo i valori e i referti nuovi: ne restano ${nAuto}">↓ ${nAuto}</span>` : ""}
             ${t ? `<button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>` : ""}
-            ${t || prelievi.some((e) => tabStore.get(this.risKey(e.id), null)) ? `<button class="mini" id="valreset" title="Dimentica i valori letti e la scheda in archivio di questo paziente: ⭳ Carica i valori li rilegge da zero">↺ Reset</button>` : ""}
+            ${this.pageType !== "vista" && (t || prelievi.some((e) => tabStore.get(this.risKey(e.id), null))) ? `<button class="mini" id="valreset" title="Dimentica i valori letti e la scheda in archivio di questo paziente: ⭳ Carica i valori li rilegge da zero">↺ Reset</button>` : ""}
             ${infoSenzaData}
           </div>
           ${grande ? `<div class="carica"><button type="button" class="grande" id="risall" ${ra || sotto ? "disabled" : ""} title="${esc(titLeggi)}">${esc(etLeggi)}</button></div>` : ""}
@@ -10695,6 +10731,11 @@
     }
 
     nomePaziente() {
+      // una pagina «altra»: il nome del suo riquadro, o quello che il pannello conosce
+      if (this.pageType === "vista") {
+        const ep = this.epDiQuesta();
+        return ep ? nomeInPagina() || tuttiPazienti().find((p) => p.ep === ep)?.name || "" : "";
+      }
       const puoOrdinare = !!(this.entry && (this.entry.labUrl || this.entry.radioUrl));
       return this.pageType === "patient" && puoOrdinare ? nomeInPagina() : "";
     }
@@ -11187,10 +11228,11 @@
         return this.reloadTuttiValori(opts);
       }
     }
-    conPortale() { return hasExt() && !!this.nomePaziente() && !!this.linkStorico(); }
+    conPortale() { return this.pageType !== "vista" && hasExt() && !!this.nomePaziente() && !!this.linkStorico(); }
 
     async caricaStorico() {
-      if (this.pageType !== "patient" || !hasExt()) return;
+      // (anche su una pagina «altra» del suo paziente: la scheda in archivio, da leggere e basta)
+      if (!(this.pageType === "patient" || (this.pageType === "vista" && this.epDiQuesta())) || !hasExt()) return;
       const prima = (this.storico?.letto || 0) + "|" + this.storicoAltri;
       // schedaMia() ha già deciso l'identità: qui non si ricontrolla, o la
       // regola finirebbe scritta in due posti e prima o poi in due modi
@@ -11822,6 +11864,164 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           <div class="lbl" title="Si salva l'istante di inizio, non i secondi passati: ricaricare la pagina o riavviare il browser non cambia il conto. Restano una settimana, su questo computer.">Registrati (${chiusi.length})${chiusi.length ? `<button class="mini" id="texp">⬇ Esporta</button><span class="ttot">totale ${esc(mmss(tot))}</span>` : ""}</div>
           <div class="tlist">${righe}</div>
         </div>`;
+    }
+
+    // ⋯ → Ricetta SISS. Si scelgono i farmaci (i preferiti, che si imparano da
+    // soli dalle Anteprime del SISS, o la ricerca — quella del SISS, scritta
+    // nella sua scheda), quantità e «non sostituibile», un quesito; «Prepara
+    // nel SISS» li fa scrivere nel Prescrittivo (ricetta-sw.js, ricetta-siss.js)
+    // fino all'Anteprima. Registra lo preme il medico, nel SISS. Qui niente del
+    // paziente resta: codice fiscale e nome partono col tocco, e il service
+    // worker li butta appena la ricetta finisce.
+    // (anche sulle altre pagine del paziente, la dimissione per prima: il codice fiscale lo dà la sua testata)
+    ricettaPossibile() { return hasExt() && (this.pageType === "patient" || this.pageType === "vista") && !!this.epDiQuesta() && !TABELLONE; }
+    seguiRicetta() {
+      this.ric = this.ric || { voci: [], q: "", quesito: null };
+      this.ricJob = null; this.ricPref = [];
+      const leggi = () => Promise.all([chrome.storage.session.get("ricetta").catch(() => ({})), chrome.storage.local.get("ricetta.preferiti.v1").catch(() => ({}))]).then(([a, b]) => {
+        const prima = JSON.stringify([this.ricJob, this.ricPref]);
+        this.ricJob = a.ricetta || null;
+        this.ricPref = Array.isArray(b["ricetta.preferiti.v1"]) ? b["ricetta.preferiti.v1"] : [];
+        if (this.view === "ricetta" && JSON.stringify([this.ricJob, this.ricPref]) !== prima) this.ricRidisegna();
+      }).catch(() => {});
+      try {
+        leggi();
+        chrome.storage.onChanged.addListener((ch, area) => { if ((area === "session" && ch.ricetta) || (area === "local" && ch["ricetta.preferiti.v1"])) leggi(); });
+      } catch { /* senza la memoria dell'estensione niente ricetta */ }
+    }
+    // il ridisegno non toglie il campo sotto le dita
+    ricRidisegna() {
+      const a = this.root.activeElement, id = a && a.id, sel = a && typeof a.selectionStart === "number" ? [a.selectionStart, a.selectionEnd] : null;
+      this.render();
+      const el = id && /^ric/.test(id) && this.root.getElementById ? this.root.getElementById(id) : null;
+      if (el) { el.focus({ preventScroll: true }); if (sel) { try { el.setSelectionRange(sel[0], sel[1]); } catch { /* campo numerico */ } } }
+    }
+    ricAttiva(j) { return !!j && ["attesa", "login", "identifico", "pronto", "compilo"].includes(j.stato); }
+    // il codice fiscale del riquadro del paziente, uno solo (le righe separate da <br>: testo per testo)
+    ricCf() {
+      const r = riquadroPaziente(document);
+      if (!r) return "";
+      const parti = [], giro = document.createTreeWalker(r, NodeFilter.SHOW_TEXT);
+      for (let n = giro.nextNode(); n; n = giro.nextNode()) parti.push(n.nodeValue);
+      const tutti = [...new Set(parti.join(" ").toUpperCase().match(new RegExp(CF_UNO.source, "g")) || [])];
+      return tutti.length === 1 ? tutti[0] : "";
+    }
+    // la ricetta di QUESTO paziente (l'episodio), o nessuna
+    ricQui() { const j = this.ricJob; return j && j.ep === this.epDiQuesta() ? j : null; }
+    // un quesito già scritto in un campo «Diagnosi» della pagina, se ce n'è uno solo
+    ricDiagnosi() {
+      const c = [...document.querySelectorAll('textarea[name="DIAGNOSI"], input[name="DIAGNOSI"], textarea[name^="DIAGNOSI_"], input[name^="DIAGNOSI_"]')]
+        .map((x) => String(x.value || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+      return c.length === 1 ? c[0].slice(0, 256) : "";
+    }
+    // (`cerca`: che cosa scrivere nella ricerca del SISS per ritrovarlo — la
+    // ricerca fatta, o la prima parola della descrizione)
+    ricVoce(codice, descr, qta, cerca) {
+      const r = this.ric;
+      if (r.voci.some((v) => v.codice === codice) || r.voci.length >= 10) return;
+      r.voci.push({ codice, descr, qta: Math.max(1, Math.min(99, Number(qta) || 1)), ns: false, cerca: cerca || String(descr || "").split(/[*\s]/)[0] });
+    }
+    viewRicetta() {
+      const r = this.ric || (this.ric = { voci: [], q: "", quesito: null });
+      if (r.quesito == null) r.quesito = this.ricDiagnosi();
+      const j = this.ricQui(), altro = this.ricAttiva(this.ricJob) && !j;
+      const attiva = this.ricAttiva(j);
+      const cf = this.ricCf(), nome = nomeInPagina();
+      const scelti = new Set(r.voci.map((v) => v.codice));
+      const pref = (this.ricPref || []).map((p) => `<button class="ricchip${scelti.has(p.codice) ? " on" : ""}" data-ricpref="${esc(p.codice)}" aria-pressed="${scelti.has(p.codice)}" title="${esc(p.codice)} · quantità ${esc(p.qta || 1)}">${esc(p.descr)}</button>`).join("");
+      const ris = attiva && j.risultati && j.cerca && j.risultati.n === j.cerca.n ? j.risultati : null;
+      const risHtml = !ris ? "" : `<div class="ricris">${ris.voci.map((v) => `<button class="ricrisv${scelti.has(v.codice) ? " on" : ""}" data-ricadd="${esc(v.codice)}" data-descr="${esc(v.descr)}"><b>${esc(v.codice)}</b> ${esc(v.descr)}</button>`).join("")
+        || `<div class="ricnota">Nessun farmaco per «${esc(ris.q)}»${ris.why ? ` (${esc(ris.why)})` : ""}.</div>`}${ris.altri ? `<div class="ricnota">${ris.altri} ${ris.altri === 1 ? "voce" : "voci"} di visite/esami: per ora si fanno a mano nel SISS.</div>` : ""}</div>`;
+      const righe = r.voci.map((v, i) => `
+        <div class="ricv" data-ricriga="${esc(v.codice)}">
+          <span class="ricvd" title="${esc(v.codice)}">${esc(v.descr || v.codice)} <i>${esc(v.codice)}</i></span>
+          <label class="ricq">Qtà <input type="number" min="1" max="99" id="ricqta${i}" data-ricqta="${i}" value="${esc(v.qta)}" aria-label="Quantità di ${esc(v.descr)}"></label>
+          <label class="ricns"><input type="checkbox" id="ricns${i}" data-ricns="${i}"${v.ns ? " checked" : ""}> non sostituibile</label>
+          <button class="ricx" data-ricvia="${i}" title="Togli" aria-label="Togli ${esc(v.descr)}">✕</button>
+        </div>`).join("");
+      const puo = !!cf && !!nome && r.voci.length > 0 && !altro && !(attiva && j.voci);
+      const tono = !j ? "" : j.grave || j.stato === "errore" ? "err" : (j.vista && j.vista.tono) || "";
+      return `
+        <div class="sec ricetta">
+          ${!cf ? `<div class="ricstato warn">Codice fiscale non trovato nella pagina: la ricetta si fa a mano nel SISS.</div>` : ""}
+          ${altro ? `<div class="ricstato warn">C'è una ricetta in preparazione nel SISS per un altro paziente: aspetta che finisca.</div>` : ""}
+          <div class="lbl">Preferiti</div>
+          <div class="ricpref">${pref || `<span class="ricnota">Ancora nessuno: si imparano da soli dalle ricette che arrivano in Anteprima nel SISS.</span>`}</div>
+          <div class="lbl">Cerca nel SISS</div>
+          <div class="riccerca">
+            <input id="ricq" type="search" autocomplete="off" spellcheck="false" value="${esc(r.q)}" placeholder="Farmaco: augmentin, tachipirina…" aria-label="Cerca un farmaco nel SISS">
+            <button class="ricbtn" id="riccerca"${!cf || altro || (attiva && j.voci) ? " disabled" : ""}>Cerca</button>
+          </div>
+          ${attiva && j.cerca && !ris ? `<div class="ricnota">Cerco «${esc(j.cerca.q)}» nel SISS…</div>` : risHtml}
+          <div class="lbl">Nella ricetta${r.voci.length ? ` (${r.voci.length})` : ""}</div>
+          <div class="ricvoci">${righe || `<span class="ricnota">Scegli un preferito o un risultato della ricerca.</span>`}</div>
+          <div class="lbl">Quesito diagnostico</div>
+          <input id="ricquesito" class="ricquesito" maxlength="256" autocomplete="off" value="${esc(r.quesito)}" placeholder="(facoltativo)" aria-label="Quesito diagnostico">
+          <button class="btn primary" id="ricprepara"${puo ? "" : " disabled"}>Prepara nel SISS</button>
+          ${j && j.vista ? `<div class="ricstato ${esc(tono)}" id="ricstato" role="status">${esc(j.vista.testo)}${attiva ? ` <button class="ricbtn" id="ricferma">Ferma</button>` : ""}</div>` : ""}
+          <div class="ricnota">Si ferma sull'Anteprima del SISS: Registra (e la stampa) li premi tu.</div>
+        </div>`;
+    }
+    legaRicetta($) {
+      const r = this.ric;
+      if (!r) return;
+      const ridisegna = () => this.ricRidisegna();
+      $("#ricq")?.addEventListener("input", (e) => { r.q = e.target.value; });
+      $("#ricq")?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); this.ricCerca(); } });
+      $("#riccerca")?.addEventListener("click", () => this.ricCerca());
+      $("#ricquesito")?.addEventListener("input", (e) => { r.quesito = e.target.value; });
+      this.root.querySelectorAll("[data-ricpref]").forEach((b) => b.addEventListener("click", () => {
+        const c = b.getAttribute("data-ricpref"), p = (this.ricPref || []).find((x) => x.codice === c);
+        if (r.voci.some((v) => v.codice === c)) r.voci = r.voci.filter((v) => v.codice !== c);
+        else if (p) this.ricVoce(p.codice, p.descr, p.qta);
+        ridisegna();
+      }));
+      this.root.querySelectorAll("[data-ricadd]").forEach((b) => b.addEventListener("click", () => {
+        const j = this.ricQui(), c = b.getAttribute("data-ricadd");
+        if (r.voci.some((v) => v.codice === c)) r.voci = r.voci.filter((v) => v.codice !== c);
+        else this.ricVoce(c, b.getAttribute("data-descr"), 1, (j && j.cerca && j.cerca.q) || "");
+        ridisegna();
+      }));
+      this.root.querySelectorAll("[data-ricqta]").forEach((x) => x.addEventListener("input", () => {
+        const v = r.voci[Number(x.getAttribute("data-ricqta"))];
+        if (v) v.qta = Math.max(1, Math.min(99, Math.round(Number(x.value) || 1)));
+      }));
+      this.root.querySelectorAll("[data-ricns]").forEach((x) => x.addEventListener("change", () => {
+        const v = r.voci[Number(x.getAttribute("data-ricns"))];
+        if (v) v.ns = !!x.checked;
+      }));
+      this.root.querySelectorAll("[data-ricvia]").forEach((b) => b.addEventListener("click", () => { r.voci.splice(Number(b.getAttribute("data-ricvia")), 1); ridisegna(); }));
+      $("#ricprepara")?.addEventListener("click", () => this.ricPrepara());
+      $("#ricferma")?.addEventListener("click", () => { const j = this.ricQui(); if (j) ask({ t: "ricettaFerma", id: j.id }); });
+    }
+    ricNuovoId() { return "ric-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8); }
+    async ricChiedi(msg) {
+      const x = await ask(msg);
+      if (!(x && x.ok)) { this.message = (x && x.why) || "Il service worker non risponde: ricarica l'estensione e riprova."; this.ricRidisegna(); }
+      return x;
+    }
+    async ricCerca() {
+      const r = this.ric, q = String((r && r.q) || "").trim();
+      if (q.length < 3) { this.message = "Scrivi almeno 3 lettere da cercare nel SISS."; return this.ricRidisegna(); }
+      this.message = null;
+      const j = this.ricQui();
+      if (this.ricAttiva(j) && !j.voci) return this.ricChiedi({ t: "ricettaCerca", id: j.id, q });
+      const cf = this.ricCf(), nome = nomeInPagina();
+      if (!cf || !nome) return;
+      return this.ricChiedi({ t: "ricettaNuova", job: { id: this.ricNuovoId(), ep: this.epDiQuesta(), cf, nome, voci: null, cerca: q } });
+    }
+    async ricPrepara() {
+      const r = this.ric;
+      if (!r || !r.voci.length) return;
+      if (this._ricVia && Date.now() - this._ricVia < 1500) return;   // (un doppio tocco è un tocco)
+      this._ricVia = Date.now();
+      const voci = r.voci.map((v) => ({ codice: v.codice, descr: v.descr, qta: v.qta, ns: v.ns, cerca: v.cerca }));
+      const j = this.ricQui(), quesito = String(r.quesito || "").trim();
+      this.message = null;
+      if (this.ricAttiva(j) && !j.voci) return this.ricChiedi({ t: "ricettaPrepara", id: j.id, voci, quesito });
+      const cf = this.ricCf(), nome = nomeInPagina();
+      if (!cf || !nome) return;
+      return this.ricChiedi({ t: "ricettaNuova", job: { id: this.ricNuovoId(), ep: this.epDiQuesta(), cf, nome, voci, quesito } });
     }
 
     // EO — un tocco copia l'esame obiettivo generale. Sotto, una tendina con
@@ -12847,6 +13047,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       });
       $("#tapri")?.addEventListener("click", () => this.setView("tempi"));
       $("#tempimenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("tempi"); });
+      $("#ricmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("ricetta"); });
+      if (this.view === "ricetta") this.legaRicetta($);
       $("#rifmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("riferimenti"); this.root.querySelector("#riffiltro")?.focus(); });
       $("#stampamenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("stampa"); });
       $("#bracciale")?.addEventListener("click", (e) => this.stampaBracciale(e));
@@ -13091,6 +13293,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
 
     launch(autoConfirm) {
+      if (this.pageType === "vista") return;   // da una pagina «altra» non si ordina
       // Belt over the live validation braces: recompute and refuse loudly.
       const problems = this.computeProblems();
       const blocking = autoConfirm ? problems.confirm : problems.go;
@@ -15134,6 +15337,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // its login page carries a password field, and mistaking it for SA4PSO's
   // would wipe the shift's saved documents.
   const SA4PSO = location.hostname === "smarthealth.multimedica.it";
+  // Il pronto soccorso vero e proprio: tutto quello che il pannello legge e
+  // scrive sta sotto /sa4pso/. Sulle altre pagine dello stesso gestionale
+  // (/sa4rcs/, /si4Portal/, /sa4/) c'è solo la pill.
+  const IN_PSO = SA4PSO && /^\/sa4pso\//i.test(location.pathname);
   function voceTabella(doc) {
     const el = [...doc.querySelectorAll('button, a, [role="tab"], [role="button"], li, span')]
       .find((x) => x.childElementCount <= 2 && /^tabella$/i.test((x.textContent || "").trim()));
@@ -15318,6 +15525,13 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }, 1500);
       return;
     }
+    // Fuori da /sa4pso/ (le finestre Risultati, il portale delle applicazioni,
+    // il passaggio verso il visore): la pill e basta. Qui non parte niente di
+    // quello che segue — né ordini, né stampe, né letture della pagina.
+    if (!IN_PSO) {
+      if (classify(document) !== "login" && !/login/i.test(location.pathname)) vistaQui();
+      return;
+    }
     // Con l'estensione, per prima cosa: questa scheda è quella di un ordine
     // in sottofondo? Lo sa il service worker, dal numero della scheda. (Una
     // risposta che non arriva vale «no»: la scheda parte come sempre.)
@@ -15404,7 +15618,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (chi) ascoltaOrdini(null);   // e le etichette di un ordine in sottofondo, se il medico è qui
       if (PONTE_VALORI) ponteValoriQui(null);
       nonConfermateQui();   // le richieste che questa pagina mostra confermate non vanno più sorvegliate
-      if (!maybeAutoPrint(null) && LAVORO && LAVORO.stato !== "avvio") lavoroSenzaSeguito(null);
+      const stampa = maybeAutoPrint(null);
+      if (!stampa && LAVORO && LAVORO.stato !== "avvio") lavoroSenzaSeguito(null);
+      // …e la pill, come su ogni pagina del gestionale (la dimissione, le
+      // terapie, le stampe…): mai nella scheda di un ordine o del ponte, mai
+      // mentre questa pagina stampa, mai nella lista smart.
+      if (!stampa && !LAVORO && !PONTE_VALORI && !eSmart(document, location.href)) vistaQui();
       return;
     }
     // le eccezioni non prese del NOSTRO codice (la pila passa dall'estensione), nel registro degli errori
@@ -15440,7 +15659,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
     if (chi) { panel.ordiniOk = true; ascoltaOrdini(panel); }
     if (hasExt() && !LAVORO && !PONTE_VALORI) tabelloneAscolta(panel);
-    if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); panel.seguiAggiorna(); }
+    if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); panel.seguiAggiorna(); panel.seguiRicetta(); }
     if (pageType === "patient") {
       panel.entry = patientModel(document, location.href);
       // la lista di un'area ha, riga per riga, i link per ordinare di ognuno:
@@ -15600,6 +15819,57 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // La scheda di un ordine che qui non ha più niente da fare: l'ordine non
     // resta «in corso» per sempre (vedi lavoroSenzaSeguito).
     if (LAVORO && LAVORO.stato !== "avvio" && !ripresa && !segue) lavoroSenzaSeguito(panel);
+  }
+
+  // ------------------------------------------------ la pill su ogni pagina
+  // Le pagine del gestionale che non sono né il paziente, né una richiesta, né
+  // il carrello (la dimissione, le terapie, le stampe, /sa4rcs/…): la pill,
+  // per non perdere il pannello. Da qui non si ordina. Le schede di
+  // sottofondo — un ordine o i suoi fogli, lo storico, un referto, la lista
+  // smart, il ponte — restano senza: lo chiede al service worker, che lo sa
+  // dal numero della scheda (una risposta che non arriva vale «nostra»).
+  function vistaQui() {
+    const via = () => { if (!document.getElementById("psassist-host")) bootVista(); };
+    if (!hasExt()) { via(); return; }
+    ask({ t: "schedaNostra" }).then((r) => { if (r && r.ok && r.nostra === false) via(); });
+  }
+  // Il paziente di una di queste pagine: l'episodio dell'indirizzo o, dove in
+  // testa c'è il riquadro del paziente, quello dei suoi link — e solo se il
+  // pannello lo conosce già. Una lista porta gli episodi di tanti e non ha il
+  // riquadro: lì nessun paziente, il tabellone. Fuori da /sa4pso/ mai.
+  function epVista(doc, url) {
+    if (!IN_PSO) return "";
+    const suo = param(url, "EPISODIO_ID") || "";
+    const riq = riquadroPaziente(doc) ? findEpisodeIdInDoc(doc) || "" : "";
+    if (suo && riq && suo !== riq) return "";   // l'indirizzo e la pagina non dicono lo stesso: nessuno
+    const ep = suo || riq;
+    return ep && tuttiPazienti().some((p) => p.ep === ep) ? ep : "";
+  }
+  function bootVista() {
+    const panel = new Panel("vista");
+    panel.episodeId = epVista(document, location.href) || null;
+    panel.entry = { labUrl: null, radioUrl: null };
+    // (PANNELLO resta vuoto: i comandi del telefono e del tabellone vanno,
+    // come prima, alle schede del paziente e delle richieste)
+    // (come sulle altre pagine: il reset da un'altra scheda, il tabellone che cambia)
+    window.addEventListener("storage", (ev) => {
+      if (ev.key !== NS + "reset.v1" || !ev.newValue || panel.giroInCorso()) return;
+      azzeraScheda();
+      panel.fermaAuto();
+      panel.dimenticaTutto();
+      panel.esiti = [];   // (qui gli esiti non vengono dalla pagina)
+      panel.render();
+    });
+    window.addEventListener("storage", (ev) => {
+      if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI].includes(ev.key)) return;
+      if (ev.key === NS + DIMESSI) panel.mostraDimessi();
+      panel.aggiornaDaFuori();
+    });
+    panel.mostraDimessi(true);
+    if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); panel.seguiAggiorna(); }
+    panel.restoreUi();
+    panel.render();
+    panel.caricaStorico();
   }
 
   // ---------------------------------------------------- portale clinico
