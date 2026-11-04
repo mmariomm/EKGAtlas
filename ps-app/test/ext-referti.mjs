@@ -364,7 +364,8 @@ check(mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect")).
 }
 await visore.locator("#vchiudi").click({ timeout: 3000 }).catch(() => {});
 await page.waitForTimeout(300);
-check(await visore.count() === 0 && await page.locator('#psassist-host [data-esito][data-kind="referto"]').count() === 4,
+// (il laboratorio, raccolto sotto «Laboratorio», c'è quando lo storico non è arrivato: qui il portale non lo dà)
+check(await visore.count() === 0 && await page.locator('#psassist-host [data-esito][data-kind="referto"]').count() - await page.locator('#psassist-host #reflab [data-esito]').count() === 4,
   "✕ chiude il visore e si resta negli Esiti");
 
 // un referto salvato ma di un altro paziente: il visore non lo mostra mai
@@ -439,7 +440,8 @@ const chi = [];
 let senzaPdf = false;   // più sotto: un portale che il PDF non lo mostra
 // …e uno che mostra prima il PDF di un altro paziente (rimasto aperto), poi il nostro — o solo quello
 let altroPrima = "";      // "" | "prima" | "solo"
-let finestra = false;     // un portale che, avuto il PDF, lo apre da sé in una scheda nuova
+let finestra = "";        // un portale che, avuto il PDF, lo apre da sé in una scheda nuova: "open" (window.open) | "link" (un link _blank)
+let ritardo = 0;         // un portale lento: il PDF arriva dopo tanti ms
 const b64Altro = pdfSemplice(RIGHE_ALTRO).toString("base64");
 await ctx.route((u) => eRis(new URL(u)), async (r) => {
   await r.fulfill({ status: 200, headers: { "content-type": "text/html" },
@@ -471,20 +473,25 @@ await ctx.route("http://10.11.0.151:9080/**", async (r) => {
         // come il portale vero: avuto il PDF, porta la scheda sul blob:
         // (nella barra resta «blob:http://10.11.0.151:9080/…»)
         x.onload = () => {
-          if (${JSON.stringify(finestra)}) { window.open("/clin-port/rest/documenti/1/contenuto?finestra=1", "_blank"); return; }
+          if (${JSON.stringify(finestra)} === "open") { window.open("/clin-port/rest/documenti/1/contenuto?finestra=1", "_blank"); return; }
+          if (${JSON.stringify(finestra)} === "link") {
+            const a = document.createElement("a"); a.href = "/clin-port/rest/documenti/1/contenuto?finestra=1"; a.target = "_blank";
+            document.body.appendChild(a); a.click(); return;
+          }
           location.href = URL.createObjectURL(new Blob([x.response], { type: "application/pdf" }));
         };
         x.send();
-      }, ${altroPrima ? 1200 : 300});
+      }, ${ritardo || (altroPrima ? 1200 : 300)});
     </script></body></html>` });
 });
 // Aprendo il paziente i referti non salvati si prendono da soli: la radiografia
 // passa dal portale e il suo testo compare nel pannello.
+// (le schede si contano prima: il caricamento da solo può aprire subito le sue dietro)
+const schedePrima = ctx.pages().filter((p) => !p.isClosed()).length + 1;
 const p2 = await ctx.newPage();
 await p2.goto(mock.patientUrl);
 await p2.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 await p2.waitForSelector('#psassist-host [data-esito]', { timeout: 10000 });
-const schedePrima = ctx.pages().length;
 const rxRiga = (p) => p.evaluate(() => {
   const r = document.getElementById("psassist-host").shadowRoot;
   const it = [...r.querySelectorAll(".wuimg .wuitem")].find((x) => /RX TORACE/.test(x.querySelector(".rlab")?.textContent || ""));
@@ -539,10 +546,13 @@ for (const modo of ["prima", "solo"]) {
 }
 altroPrima = "";
 
-// Il portale, avuto il PDF, lo apre da sé in una scheda nuova: non passa
-// davanti al medico (resta davanti la pagina del paziente), e si chiude da sola
-{
-  finestra = true;
+// Il portale, avuto il PDF, lo apre da sé in una scheda nuova. Con
+// window.open, in una nostra scheda dietro, non parte proprio: la scheda sa da
+// subito di essere nostra. Con un link che sfugge (qui: un <a target=_blank>)
+// non passa davanti al medico (resta davanti la pagina del paziente), e si
+// chiude da sola.
+for (const modo of ["open", "link"]) {
+  finestra = modo;
   const pF = await ctx.newPage();
   await pF.goto(mock.patientUrl);
   await pF.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
@@ -556,22 +566,132 @@ altroPrima = "";
   ctx.on("page", ascolta);
   await pF.reload();
   await pF.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
-  const visti = [];
-  for (const t0 = Date.now(); Date.now() - t0 < 20000 && !nate.some((p) => /finestra=1/.test(p.url())); ) { visti.push(...await davanti()); await pF.waitForTimeout(150); }
-  await pF.waitForTimeout(1500);
-  const dopo = await davanti();
-  const aperta = nate.find((p) => /finestra=1/.test(p.url()));
-  const diag = await swF.evaluate(() => Promise.all([chrome.tabs.query({}), chrome.storage.session.get(null)]).then(([l, ss]) => JSON.stringify({
-    schede: l.map((t) => ({ id: t.id, o: t.openerTabId, a: t.active, u: (t.url || "").slice(0, 50) })),
-    sotto: Object.entries(ss).filter(([k]) => k.startsWith("sotto:")).map(([k, v]) => [k, v.cosa, v.esito, v.opener]) })));
-  check(!!aperta && dopo.length === 1 && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(dopo[0]),
-    `il portale apre il PDF in una scheda nuova: davanti resta la pagina del paziente (aperta: ${!!aperta}; davanti: ${dopo.map((u) => u.slice(0, 60)).join(" | ")}${dopo.length === 1 && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(dopo[0]) ? "" : "; " + diag})`);
-  const chiusa = !aperta || await aperta.waitForEvent("close", { timeout: 30000 }).then(() => true).catch(() => aperta.isClosed());
-  check(chiusa, "e la scheda nuova si chiude da sola");
+  if (modo === "open") {
+    await rxPronta(pF);
+    await finito(pF);
+    const dopo = await davanti();
+    const r = await rxRiga(pF);
+    check(!nate.some((p) => /finestra=1/.test(p.url())) && dopo.length === 1 && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(dopo[0]) && !!r.testo && !r.rosso,
+      `il portale apre il PDF con window.open in una nostra scheda dietro: non si apre niente, il referto arriva (nate: ${nate.map((p) => p.url().slice(0, 50)).join(" | ") || "nessuna"}; davanti: ${dopo.map((u) => u.slice(0, 60)).join(" | ")})`);
+  } else {
+    const visti = [];
+    for (const t0 = Date.now(); Date.now() - t0 < 20000 && !nate.some((p) => /finestra=1/.test(p.url())); ) { visti.push(...await davanti()); await pF.waitForTimeout(150); }
+    await pF.waitForTimeout(1500);
+    const dopo = await davanti();
+    const aperta = nate.find((p) => /finestra=1/.test(p.url()));
+    const diag = await swF.evaluate(() => Promise.all([chrome.tabs.query({}), chrome.storage.session.get(null)]).then(([l, ss]) => JSON.stringify({
+      schede: l.map((t) => ({ id: t.id, o: t.openerTabId, a: t.active, u: (t.url || "").slice(0, 50) })),
+      sotto: Object.entries(ss).filter(([k]) => k.startsWith("sotto:")).map(([k, v]) => [k, v.cosa, v.esito, v.opener]) })));
+    check(!!aperta && dopo.length === 1 && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(dopo[0]),
+      `il portale apre il PDF in una scheda nuova: davanti resta la pagina del paziente (aperta: ${!!aperta}; davanti: ${dopo.map((u) => u.slice(0, 60)).join(" | ")}${dopo.length === 1 && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(dopo[0]) ? "" : "; " + diag})`);
+    const chiusa = !aperta || await aperta.waitForEvent("close", { timeout: 30000 }).then(() => true).catch(() => aperta.isClosed());
+    check(chiusa, "e la scheda nuova si chiude da sola");
+  }
   ctx.off("page", ascolta);
-  finestra = false;
+  finestra = "";
   await finito(pF);
   await pF.close();
+}
+
+// …ma solo quelle: una scheda del portale che il medico apre a mano (senza
+// madre) subito dopo un nostro referto non si tocca, e una nostra scheda
+// dietro aperta dalla scheda del ponte («Aggiorna i valori» dal telefono) non
+// è un PDF da chiudere: resta finché ha finito.
+{
+  const pM = await ctx.newPage();
+  await pM.goto(mock.patientUrl);
+  await pM.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
+  if (await pM.locator("#psassist-host #refreset").count()) { await pM.locator("#psassist-host #refreset").click(); await pM.waitForTimeout(600); }
+  await pM.reload();
+  await pM.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
+  await rxPronta(pM);
+  await finito(pM);   // un nostro referto appena letto, dal portale
+  senzaPdf = true;    // (le due schede qui sotto: una pagina del portale qualunque)
+  const mano = await ctx.newPage();
+  await mano.goto("http://10.11.0.151:9080/clin-port/elenco-documenti");
+  const pPonte = await ctx.newPage();
+  await pPonte.goto("about:blank");
+  const [sw] = ctx.serviceWorkers();
+  const dietro = await sw.evaluate(async () => {
+    const [p] = (await chrome.tabs.query({})).sort((a, b) => b.id - a.id);   // la scheda «del ponte»: l'ultima aperta
+    await chrome.storage.session.set({ "ponte.valori": { [p.id]: { ep: "999001", ts: Date.now() } } });
+    // come apriStoricoSotto: nasce vuota, si annota, poi va al portale
+    const t = await chrome.tabs.create({ url: "about:blank", active: false, openerTabId: p.id, windowId: p.windowId });
+    await chrome.storage.session.set({ ["sotto:" + t.id]: { opener: p.id, cosa: "storico", ep: "999001", nome: "X", ts: Date.now(), esito: "attesa" } });
+    await chrome.tabs.update(t.id, { url: "http://10.11.0.151:9080/clin-port/info-cliniche/dati-clinici?prova=1" });
+    return t.id;
+  });
+  await pM.waitForTimeout(23000);   // (il ripiego chiude dopo 20 secondi)
+  const viva = await sw.evaluate((id) => chrome.tabs.get(id).then(() => true, () => false), dietro);
+  check(viva, "una nostra scheda dietro aperta dalla scheda del ponte non viene chiusa come un PDF del portale");
+  check(!mano.isClosed(), "una scheda del portale aperta a mano dal medico, subito dopo un nostro referto, non si tocca");
+  await sw.evaluate((id) => Promise.all([chrome.storage.session.remove("ponte.valori"), chrome.tabs.remove(id).catch(() => {})]), dietro);
+  senzaPdf = false;
+  if (!mano.isClosed()) await mano.close();
+  await pPonte.close();
+  await pM.close();
+}
+
+// ---- UNA corsia per il portale, per tutto il browser: due schede dello
+// stesso paziente (e lo storico) insieme, e mai due schede del portale che
+// caricano nello stesso momento; ogni referto preso una volta sola, da una
+// scheda sola, e salvato per tutte e due.
+{
+  const [sw] = ctx.serviceWorkers();
+  const pA = await ctx.newPage();
+  await pA.goto(mock.patientUrl);
+  await pA.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
+  await finito(pA);
+  if (await pA.locator("#psassist-host #refreset").count()) { await pA.locator("#psassist-host #refreset").click(); await pA.waitForTimeout(600); }
+  await pA.evaluate(() => { localStorage.removeItem("psassist:autoFalliti.v1"); localStorage.removeItem("psassist:autoCarica.v1"); });   // tutto da leggere
+  const t0 = Date.now();
+  let max = 0, fermo = false;
+  const guarda = (async () => {
+    while (!fermo) {
+      const n = await sw.evaluate(() => chrome.storage.session.get(null).then((s) => Object.entries(s)
+        .filter(([k, v]) => k.startsWith("sotto:") && v && (!v.cosa || v.cosa === "storico" || v.cosa === "referto") && v.esito === "attesa").length)).catch(() => 0);
+      max = Math.max(max, n);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  })();
+  const pB = await ctx.newPage();
+  await Promise.all([pA.reload(), pB.goto(mock.patientUrl)]);
+  await Promise.all([pA.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 }), pB.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 })]);
+  await Promise.all([salvati(pA, 4), salvati(pB, 4)]);
+  await finito(pA); await finito(pB);
+  fermo = true; await guarda;
+  const nA = await pA.locator("#psassist-host .rdot.saved").count(), nB = await pB.locator("#psassist-host .rdot.saved").count();
+  const ids = await sw.evaluate((t0) => chrome.storage.session.get(null).then((s) => Object.entries(s)
+    .filter(([k, v]) => k.startsWith("sotto:") && v && v.cosa === "referto" && v.ts >= t0).map(([, v]) => v.id)), t0);
+  const doppi = ids.filter((id, i) => ids.indexOf(id) !== i);
+  check(max === 1, `due schede e lo storico insieme: al più una scheda del portale che carica alla volta (al massimo ${max})`);
+  check(ids.length === 3 && !doppi.length, `ogni referto del portale in una scheda sola, chiunque l'abbia chiesto (${ids.length} schede, doppi ${doppi.length})`);
+  const nonSalvati = (p) => p.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll('.wu [data-esito][data-kind="referto"]')]
+    .filter((r) => !r.closest("#reflab") && !r.querySelector(".rdot.saved")).map((r) => `${r.getAttribute("data-esito").slice(0, 8)}: ${(r.querySelector(".rrow.err")?.getAttribute("title") || r.querySelector(".rdot")?.className || "").slice(0, 140)}`));
+  check(nA === 4 && nB === 4, `e salvati per tutte e due (${nA} e ${nB}${nA === 4 && nB === 4 ? "" : `; non salvati: ${JSON.stringify([await nonSalvati(pA), await nonSalvati(pB)])}`})`);
+  await pB.close();
+  await pA.close();
+}
+// ---- un PDF che arriva appena dopo lo scadere della scheda si tiene lo
+// stesso (qui la scheda scade dopo 4 secondi, il portale dà il PDF dopo 6)
+{
+  const [sw] = ctx.serviceWorkers();
+  const pT = await ctx.newPage();
+  await pT.goto(mock.patientUrl);
+  await pT.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
+  await finito(pT);
+  if (await pT.locator("#psassist-host #refreset").count()) { await pT.locator("#psassist-host #refreset").click(); await pT.waitForTimeout(600); }
+  ritardo = 6000;
+  await sw.evaluate(() => { SOTTO_MAX = 4000; });
+  await pT.reload();
+  await pT.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
+  await rxPronta(pT);
+  await finito(pT);
+  const r = await rxRiga(pT);
+  await sw.evaluate(() => { SOTTO_MAX = 30000; });
+  ritardo = 0;
+  check(!!r.testo && !r.rosso, `il PDF arriva due secondi dopo lo scadere della scheda: si tiene lo stesso (got: ${String(r.rosso || r.testo || "niente").slice(0, 120)})`);
+  await pT.close();
 }
 
 // …e se il portale il PDF non lo mostra: pallino rosso, il perché, e com'è
@@ -590,6 +710,74 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
 {
   const v = (await errori()).find((x) => x.tipo === "referto" && /non si vede da qui/.test(x.dati?.motivo || ""));
   check(!!v && !/abc123|ROSSI|MARIO/.test(JSON.stringify(v)), `un referto non preso finisce nel registro degli errori, senza token né nomi (got: ${JSON.stringify(v || {}).slice(0, 160)})`);
+}
+
+// Quello che, preso da solo, non è riuscito non si riprova a ogni giro: gli
+// Esiti riaperti non riaprono il portale (un tocco sì); i valori, falliti, si
+// riprovano da soli al più dopo 2 minuti (e poi dopo 10), non a ogni apertura;
+// e finché la tabella non c'è i referti del laboratorio restano in vista.
+{
+  const [sw] = ctx.serviceWorkers();
+  const referti = (t0) => sw.evaluate((t0) => chrome.storage.session.get(null).then((s) => Object.entries(s)
+    .filter(([k, v]) => k.startsWith("sotto:") && v && v.cosa === "referto" && v.ts >= t0).length), t0);
+  await finito(p3);
+  const t0 = Date.now();
+  for (let i = 0; i < 5; i++) {
+    await p3.locator('#psassist-host [data-seg="richieste"]').click();
+    await p3.locator('#psassist-host [data-seg="esiti"]').click();
+    await p3.waitForTimeout(1200);
+    await finito(p3);
+  }
+  const nuove = await referti(t0);
+  check(nuove === 0, `un referto del portale non riuscito: gli Esiti riaperti 5 volte non riaprono il portale (schede nuove: ${nuove})`);
+  const ep = new URL(mock.patientUrl).searchParams.get("EPISODIO_ID");
+  const labFallito = () => p3.evaluate((ep) => (JSON.parse(localStorage.getItem("psassist:autoFalliti.v1") || "{}")[ep] || {}).lab || null, ep);
+  check(!!(await labFallito()), "lo storico non è arrivato: il fallimento dei valori è annotato");
+  const apri = async () => {
+    const p = await ctx.newPage();
+    await p.goto(mock.patientUrl);
+    await p.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
+    await p.waitForTimeout(1500);
+    await finito(p);
+    return p;
+  };
+  const lab = (fn) => p3.evaluate(([ep, fn]) => {   // (il tempo, da qui: si sposta solo il fallimento dei valori)
+    const k = "psassist:autoFalliti.v1", t = JSON.parse(localStorage.getItem(k) || "{}");
+    const r = t[ep] && t[ep].lab;
+    if (r && fn === "ora") Object.assign(r, { ts: Date.now(), n: 1 });
+    if (r && fn === "-3min") r.ts -= 3 * 60e3;
+    localStorage.setItem(k, JSON.stringify(t));
+  }, [ep, fn]);
+  await lab("ora");   // fallito adesso, la prima volta
+  const s0 = storici();
+  const q1 = await apri();
+  check(storici() === s0, `appena fallito, riaprire il paziente non rilegge i valori (storici ${storici() - s0})`);
+  check(await q1.locator("#psassist-host #reflab [data-esito]").count() === 1,
+    "lo storico non è arrivato: i referti del laboratorio restano in vista («Laboratorio»)");
+  await q1.close();
+  await lab("-3min");   // passano 3 minuti
+  const q2 = await apri();
+  await q2.close();
+  const q3 = await apri();
+  await q3.close();
+  check(storici() === s0 + 1, `dopo 2 minuti i valori si riprovano da soli una volta, non a ogni apertura (storici ${storici() - s0})`);
+}
+
+// Le copie dei referti: un turno intero (30 qui) resta, non solo le ultime 25
+{
+  const [sw] = ctx.serviceWorkers();
+  const n = await sw.evaluate(async () => {
+    const o = {};
+    for (let i = 0; i < 30; i++) o["ref:prova-" + i] = { data: "JVBERi0=", ts: Date.now() - i * 1000, size: 1, ep: "prova", pk: "" };
+    await chrome.storage.local.set(o);
+    await chrome.storage.local.remove("refIndice");   // (l'indice si ricostruisce da sé)
+    potatoAlle = 0;
+    await prune();
+    const dopo = Object.keys(await chrome.storage.local.get(null)).filter((k) => k.startsWith("ref:prova-")).length;
+    await chrome.storage.local.remove(Object.keys(o));
+    return dopo;
+  });
+  check(n === 30, `30 referti salvati in un turno: restano tutti (got ${n})`);
 }
 
 // Lo sguardo sul portale tocca solo le richieste ASINCRONE: una sincrona (il
@@ -620,7 +808,7 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   const NS = "psassist:";
   const ep = new URL(mock.patientUrl).searchParams.get("EPISODIO_ID");
   const VIA_LOCALE = ["patients.v1", "stanza.posti.v1", "stanza.ps.posti.v1", "stanza.alta.posti.v1", "aree.v1", "area.vai.v1", "stato.v1", "dafare.v1", "promemoria.v1", "note.v1", "segni.v1",
-    "refVisti.v1", "refPortale", "daConfermare.v1", "quesiti", "quesiti.ts", "lastQ", "corsa.aperta.v1", "corsa.presidio.v1", "autoCarica.v1", "smart.sync.v1", "dimessi.v1"];
+    "refVisti.v1", "refPortale", "daConfermare.v1", "quesiti", "quesiti.ts", "lastQ", "corsa.aperta.v1", "corsa.presidio.v1", "autoCarica.v1", "autoFalliti.v1", "smart.sync.v1", "dimessi.v1"];
   const RESTA_LOCALE = { "win.v1": null, "pillpos.v1": { left: 40, top: 40 }, "collapsed": false, "stanza.ps.v1": null, "stanza.alta.v1": null, "aree.opzioni.v1": { alta: { id: "00010001P", label: "AREA ALTA INTENSITA'" } }, "catalog.v1": null,
     "dimissioni.v1": { prova: { testo: "modello del medico" } }, "eo.v1": { prova: "EO del medico" }, "ordini.stampati": ["o1"], "attesaConferma.ms": 120000 };
   const VIA_SCHEDA = [`ris.${ep}.zz`, `visto.${ep}.zz`, `reftxt.${ep}.zz`, `log.${ep}`, `ui.${ep}`, "receipt.v1", "confirm.v1", "queue.v1",

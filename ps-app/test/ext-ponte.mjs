@@ -67,6 +67,7 @@ const quale = (url) => {
   return A;
 };
 let lento = 0;
+let lentoRef = 0;    // i documenti dei referti arrivano dopo tanti ms
 let login = false;   // il gestionale risponde con la pagina d'accesso (sessione scaduta)
 // la pagina di ROSSI passa prima da un'altra: «ponte» (una pagina che porta da sé alla sua), «lista» (la lista dei pazienti)
 const PASSA = { n: 0, tipo: "" };
@@ -124,6 +125,7 @@ await ctx.route("https://smarthealth.multimedica.it/**", async (r) => {
   const u = req.url();
   if (login && /menuPsoEpisodio\.do/.test(u)) { await r.fulfill({ status: 200, headers: { "content-type": "text/html; charset=windows-1252" }, body: LOGIN }); return; }
   if (lento && /Insert=Inserisci/.test(u)) await sospendi(lento);
+  if (lentoRef && /Sa4ViewerExtRedirect\.do/.test(u) && /REFERTO_ID=/.test(u)) await sospendi(lentoRef);
   if (PASSA.n > 0 && req.method() === "GET" && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(u) && quale(u) === A) {
     PASSA.n--;
     const via = PASSA.tipo === "lista" ? A.worklistUrl : u;   // (la lista: ci si resta)
@@ -603,19 +605,28 @@ sezione("un referto PDF salvato sul PC, sul telefono");
   check(revocato, "chiusa la finestra, il blob si revoca");
   await sw.evaluate((k) => chrome.storage.local.remove(k), "ref:" + idRef);
 }
+lentoRef = 8000;   // la TC, qui sotto, arriva al PC dopo 8 secondi
 const nasceValori = nuovaPagina(20000);
 await tocca(tel, '[data-a="valori"]');
 const schedaValori = await nasceValori;
 check(!!schedaValori, "«Aggiorna i valori»: sul PC si apre una scheda di sottofondo");
+await finche(async () => await tel.locator('[data-a="valori"]:not([disabled])').count() === 1, 90000);   // (la risposta, non gli esiti di prima)
 const es1 = await aspettaTel(tel, /Letti sul PC alle/, 90000);
+check(!!schedaValori && !schedaValori.isClosed() && await tel.locator('.refw:has(.ref:has-text("TC ENCEFALO")) .pdf').count() === 0,
+  "i valori arrivano al telefono appena letti: i referti il PC li prende dopo, nella stessa scheda");
 check(/Hb/.test(es1) && /80↓/.test(es1), `la tabella arriva sul telefono: Hb 80↓ (got: ${(es1.match(/Hb[^\n]*/) || [""])[0]})`);
 check(/Letti sul PC alle \d\d:\d\d · adesso/.test(es1) && await tel.locator(".letti.amb").count() === 0, "con l'ora in cui il PC li ha letti: «Letti sul PC alle … · adesso»");
 check(await tel.locator(".val thead th:has(small.parz)").count() >= 1 && /parziale/.test(await tel.locator(".val thead").innerText()),
   "una colonna con valori parziali lo dice nella sua testata: «parziale»");
 check(/Non focolai/.test(es1), "e il testo del referto resta (letto prima che il PC conoscesse il codice fiscale)");
+check(!schedaValori || await finche(() => schedaValori.isClosed(), 30000), "e la scheda dei valori si chiude da sola");
+lentoRef = 0;
+// (il telefono li trova alla prossima rilettura)
+await tocca(tel, '[data-a="indietro"]');
+await aspettaTel(tel, /BIANCHI ANNA/);
+await tocca(tel, '.paz[data-ep="999001"]');
 check(await finche(async () => await tel.locator('.refw:has(.ref:has-text("TC ENCEFALO")) .pdf').count() === 1, 15000),
   "«Aggiorna i valori» carica anche i referti non salvati: la TC (tolta prima dal PC) torna, col suo PDF");
-check(!schedaValori || await finche(() => schedaValori.isClosed(), 10000), "e la scheda dei valori si chiude da sola");
 const vistoDopo = await doc.evaluate(() => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((p) => p.ep === "999001") || {}).ts);
 check(vistoDopo === vistoPrima, "la scheda dei valori non conta come «visto adesso» dal medico");
 await tel.waitForSelector(".avviso", { state: "detached", timeout: 8000 }).catch(() => {});

@@ -89,16 +89,26 @@
     return manda.apply(this, arguments);
   };
   // 3. in una scheda aperta dal pannello (dietro, non la guarda nessuno) il
-  //    PDF non si apre altrove: né in una finestra nuova, né portando la
-  //    scheda sul blob: — la pagina deve restare finché la copia è partita
+  //    PDF non si apre altrove: né in una scheda o finestra nuova (che Chrome
+  //    porterebbe davanti al medico), né portando la scheda sul blob: — la
+  //    pagina deve restare finché la copia è partita. Che è una di quelle lo
+  //    dice il service worker appena la scheda arriva qui (__psassistSotto,
+  //    in questo mondo), e content.js a pagina pronta.
+  const nostra = () => {
+    if (sotto) return true;
+    try { return window.__psassistSotto === true || window.top.__psassistSotto === true; } catch { return false; }
+  };
+  const delPortale = (u) => {
+    try { const x = new URL(String(u || ""), location.href); return x.protocol === "blob:" || x.origin === ORIGINE; } catch { return false; }
+  };
   const apri = window.open;
   window.open = function (u) {
-    try { if (sotto && /^blob:/i.test(String(u || ""))) return null; } catch { /* niente */ }
+    try { if (nostra() && delPortale(u)) return null; } catch { /* niente */ }
     return apri.apply(this, arguments);
   };
   try {
     window.navigation?.addEventListener("navigate", (e) => {
-      try { if (sotto && e.cancelable && /^blob:/i.test(e.destination.url)) e.preventDefault(); } catch { /* niente */ }
+      try { if (nostra() && e.cancelable && /^blob:/i.test(e.destination.url)) e.preventDefault(); } catch { /* niente */ }
     });
   } catch { /* browser senza Navigation API */ }
 

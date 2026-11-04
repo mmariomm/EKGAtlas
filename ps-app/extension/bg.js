@@ -149,19 +149,45 @@ const REF_TTL = 8 * 3600e3;   // a shift: cached documents die with it
 let codaArch = Promise.resolve();   // le modifiche dell'archivio, una alla volta
 const STORICO_TTL = 24 * 3600e3;
 const STORICO_MAX = 200;         // di fatto nessun limite per un turno
-const REF_MAX = 25;           // and never pile up
-
-async function prune() {
+// Un turno intero di referti (la memoria è senza limite: unlimitedStorage).
+// Chi c'è lo dice un piccolo indice {id: ts}: potare non legge più ogni PDF
+// tenuto, e lo si fa al più una volta al minuto.
+const REF_MAX = 200;
+const REF_INDICE = "refIndice";
+let codaRef = Promise.resolve();
+const inFilaRef = (fn) => (codaRef = codaRef.then(fn, fn));
+async function refIndice() {
+  const i = (await chrome.storage.local.get(REF_INDICE))[REF_INDICE];
+  if (i && typeof i === "object") return i;
+  // (la prima volta, o dopo un azzeramento: si ricostruisce, una volta)
   const all = await chrome.storage.local.get(null);
-  const refs = Object.entries(all).filter(([k]) => k.startsWith("ref:"));
-  const dead = refs.filter(([, v]) => Date.now() - (v.ts || 0) > REF_TTL).map(([k]) => k);
-  const alive = refs.filter(([, v]) => Date.now() - (v.ts || 0) <= REF_TTL)
-    .sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
-  const extra = alive.slice(REF_MAX).map(([k]) => k);
-  if (dead.length || extra.length) await chrome.storage.local.remove([...dead, ...extra]);
+  return Object.fromEntries(Object.entries(all).filter(([k]) => k.startsWith("ref:")).map(([k, v]) => [k.slice(4), (v && v.ts) || 0]));
+}
+let potatoAlle = 0;
+async function prune() {
+  if (Date.now() - potatoAlle < 60e3) return;
+  potatoAlle = Date.now();
+  await inFilaRef(async () => {
+    const i = await refIndice();
+    const vivi = Object.entries(i).filter(([, ts]) => Date.now() - ts <= REF_TTL).sort((a, b) => b[1] - a[1]);
+    const via = [...Object.entries(i).filter(([, ts]) => Date.now() - ts > REF_TTL), ...vivi.slice(REF_MAX)].map(([id]) => id);
+    for (const id of via) delete i[id];
+    if (via.length) await chrome.storage.local.remove(via.map(KEY));
+    await chrome.storage.local.set({ [REF_INDICE]: i });
+  });
+}
+// un referto preso: la copia, la sua riga nell'indice, e (ogni tanto) la potatura
+async function tieniRef(id, rec) {
+  await chrome.storage.local.set({ [KEY(id)]: rec });
+  await inFilaRef(async () => {
+    const i = await refIndice();
+    i[id] = rec.ts;
+    await chrome.storage.local.set({ [REF_INDICE]: i });
+  });
+  await prune();
 }
 chrome.runtime.onStartup?.addListener(() => chrome.storage.local.get(null).then((all) =>
-  chrome.storage.local.remove(Object.keys(all).filter((k) => k.startsWith("ref:")))));
+  chrome.storage.local.remove([...Object.keys(all).filter((k) => k.startsWith("ref:")), REF_INDICE])));
 
 // ---------------------------------------------------------------------------
 // «⭳ Carica i valori» apre anche lo storico del portale, in una scheda di
@@ -173,6 +199,8 @@ chrome.runtime.onStartup?.addListener(() => chrome.storage.local.get(null).then(
 // si perde niente.
 let SOTTO_MAX = 30000;                 // oltre, la tabella non arriverà
 const SOTTO_QUIETE = 2500;             // dopo l'ultima consegna, si chiude
+const LETTURA_MAX = 60e3;              // una tabella che arriva a pezzi: al più un minuto
+const TARDI_MS = 10e3;                 // un PDF che arriva appena dopo il «tempo» si tiene lo stesso
 const quiete = new Map();
 const sottoK = (id) => "sotto:" + id;
 const inCorso = (s) => !!s && (s.esito === "attesa" || s.esito === "lettura");
@@ -197,16 +225,23 @@ async function sottoFine(id, esito) {
   if (!inCorso(s)) return;
   const t = await chrome.tabs.get(id).catch(() => null);
   if (esito === "tempo" && t && !t.url) esito = "altrove";   // l'url si vede solo sui nostri indirizzi
-  await sottoSet(id, { ...s, esito, fine: Date.now() });
+  // (un referto scaduto: la scheda resta ancora un momento, il PDF può essere sul punto di arrivare)
+  const tardi = esito === "tempo" && s.cosa === "referto" && !!t;
+  await sottoSet(id, { ...s, esito, fine: Date.now(), ...(tardi ? { tardi: true } : {}) });
   clearTimeout(quiete.get(id)); quiete.delete(id);
+  if (tardi) { setTimeout(() => sottoControlla().catch(() => {}), TARDI_MS + 500); return; }
   // se il medico ci è andato sopra, la scheda è sua: non si chiude
   if (t && !t.active) await chrome.tabs.remove(id).catch(() => {});
 }
 // Il portale, avuto il PDF, a volte lo apre da sé in una scheda (o finestra)
-// nuova, che Chrome porta davanti al medico. Nata da una delle nostre schede
-// dietro — un referto, una lettura —, non è per lui: il PDF la scheda dietro
-// l'ha già passato. Si rimette davanti la scheda (e la finestra) di prima, e la
-// nuova si chiude da sola.
+// nuova, che Chrome porta davanti al medico. Nelle nostre schede dietro non
+// succede più: portale-pdf.js sa da subito che è una di loro (qui sotto) e
+// quel window.open non parte. Resta questo, stretto, per quello che
+// sfuggisse: una scheda nuova SUL PORTALE, nata da una nostra scheda dietro —
+// o dalla scheda del medico che ha un nostro referto in lettura proprio
+// adesso. Si rimette davanti la scheda di prima, la finestra solo se la nuova
+// le ha preso il fuoco, e la nuova si chiude da sola. Una scheda che il
+// medico apre a mano (scritta, un segnalibro: senza madre) non si tocca.
 const ATTIVE = new Map();               // finestra → [la scheda attiva prima, quella di adesso]
 const NATE_DIETRO = new Set();
 try { Promise.resolve(chrome.tabs.query({ active: true })).then((l) => { for (const t of l || []) if (!ATTIVE.has(t.windowId)) ATTIVE.set(t.windowId, [null, t.id]); }).catch(() => {}); } catch { /* niente */ }
@@ -222,32 +257,42 @@ const nostraDietro = async (id) => {
   const v = (await chrome.storage.session.get("ponte.valori").catch(() => ({})))["ponte.valori"] || {};
   return String(id) in v;
 };
-// (la madre la dice Chrome; se non la dice — la scheda dietro si è già chiusa —
-// vale una scheda che nasce già sul portale mentre un nostro referto è in
-// lettura o appena letto: le schede del medico nascono sul gestionale)
 const sulPortale = (u) => /^(blob:)?https?:\/\/10\.11\.0\.151(:\d+)?\/clin-port\//i.test(u || "");
-const refertoRecente = async (medico) => Object.entries(await chrome.storage.session.get(null).catch(() => ({})))
-  .find(([k, s]) => k.startsWith("sotto:") && s && s.cosa === "referto" && (medico == null || s.opener === medico) && (inCorso(s) || Date.now() - (s.fine || 0) < 30e3));
+const delPortale = (s) => !!s && ((s.cosa || "storico") === "storico" || s.cosa === "referto");
+// una nostra scheda dietro sul portale (una lettura, un referto), viva o appena finita
+const dietroSulPortale = async (id) => {
+  const s = id == null ? null : await sottoGet(id).catch(() => null);
+  return delPortale(s) && (inCorso(s) || Date.now() - (s.fine || 0) < 30e3) ? s : null;
+};
+// (Chrome a volte dà per madre la scheda del medico, da cui è nata quella dietro:
+// vale solo se da quella scheda un nostro referto si sta leggendo adesso)
+const refertoInLettura = async (medico) => medico != null && Object.entries(await chrome.storage.session.get(null).catch(() => ({})))
+  .some(([k, s]) => k.startsWith("sotto:") && s && s.cosa === "referto" && s.opener === medico && inCorso(s));
 async function nataDietro(t) {
   if (NATE_DIETRO.has(t.id) || NATE.get(t.id)?.gestionale || await nostraDietro(t.id)) return;
+  if (t.openerTabId == null || !sulPortale(t.pendingUrl || t.url)) return;
   let madre = null, medico = null;   // la scheda dietro, e quella del medico che l'ha chiesta
-  if (t.openerTabId != null && await nostraDietro(t.openerTabId)) {
+  const s = await dietroSulPortale(t.openerTabId);
+  if (s) {
     madre = await chrome.tabs.get(t.openerTabId).catch(() => null);
-    medico = (await sottoGet(t.openerTabId).catch(() => null))?.opener ?? null;
+    medico = s.opener ?? null;
   } else {
-    // (Chrome a volte dà per madre la scheda del medico, da cui è nata quella dietro)
-    const r = sulPortale(t.pendingUrl || t.url) && await refertoRecente(t.openerTabId);
-    if (!r) return;
-    medico = r[1].opener;
+    if (!(await refertoInLettura(t.openerTabId))) return;
+    medico = t.openerTabId;
     madre = await chrome.tabs.get(medico).catch(() => null);
   }
   if (NATE_DIETRO.has(t.id)) return;
   NATE_DIETRO.add(t.id);
   const finestra = madre ? madre.windowId : t.windowId;
-  const a = ATTIVE.get(finestra) || [];
-  const prima = [a[1], a[0]].find((x) => x != null && x !== t.id && !NATE_DIETRO.has(x) && (x !== t.openerTabId || x === medico)) ?? medico;
-  if (prima != null) await chrome.tabs.update(prima, { active: true }).catch(() => {});
-  if (t.windowId !== finestra) await chrome.windows.update(finestra, { focused: true }).catch(() => {});
+  // nella stessa finestra la nuova ha preso il posto della scheda di prima;
+  // in un'altra, la finestra torna davanti solo se la nuova le ha preso il fuoco
+  if (t.windowId === finestra) {
+    const a = ATTIVE.get(finestra) || [];
+    const prima = [a[1], a[0]].find((x) => x != null && x !== t.id && !NATE_DIETRO.has(x) && (x !== t.openerTabId || x === medico)) ?? medico;
+    if (prima != null) await chrome.tabs.update(prima, { active: true }).catch(() => {});
+  } else if ((await chrome.windows.get(t.windowId).catch(() => null))?.focused) {
+    await chrome.windows.update(finestra, { focused: true }).catch(() => {});
+  }
   setTimeout(() => { NATE_DIETRO.delete(t.id); chrome.tabs.remove(t.id).catch(() => {}); }, 20e3);
 }
 // Le schede appena nate: il loro indirizzo arriva a volte dopo. Una che passa
@@ -266,15 +311,50 @@ chrome.tabs.onUpdated.addListener((id, info, t) => {
   if (delGestionale(info.url)) n.gestionale = true;
   else nataDietro(t).catch(() => {});
 });
+// Una nostra scheda dietro arriva sul portale: lo si dice SUBITO alla pagina,
+// nel suo mondo (portale-pdf.js lo guarda quando la pagina vuole aprire il PDF
+// altrove, secondi dopo). Ogni pagina nuova della scheda lo riceve di nuovo;
+// content.js lo ridice a pagina pronta.
+chrome.tabs.onUpdated.addListener((id, info, t) => {
+  if (!(info.url || info.status) || !sulPortale(t && t.url)) return;
+  sottoGet(id).then((s) => {
+    if (!delPortale(s) || !inCorso(s)) return;
+    return chrome.scripting.executeScript({ target: { tabId: id, allFrames: true }, world: "MAIN", injectImmediately: true,
+      func: () => { try { Object.defineProperty(window, "__psassistSotto", { value: true }); } catch { /* già detto */ } } });
+  }).catch(() => {});
+});
 async function sottoControlla() {
   for (const [k, s] of Object.entries(await chrome.storage.session.get(null))) {
     if (!k.startsWith("sotto:")) continue;
     const id = Number(k.slice(6));
     if (s.esito === "attesa" && Date.now() - s.ts > SOTTO_MAX) await sottoFine(id, "tempo");
-    else if (s.esito === "lettura" && Date.now() - s.ultima > SOTTO_QUIETE) await sottoFine(id, s.suo ? "letto" : "altro");
-    else if (s.fine && Date.now() - s.fine > 10 * 60e3) await chrome.storage.session.remove(k);
+    else if (s.esito === "lettura" && (Date.now() - s.ultima > SOTTO_QUIETE || Date.now() - (s.letta || s.ultima) > LETTURA_MAX)) await sottoFine(id, s.suo ? "letto" : "altro");
+    else if (s.tardi && Date.now() - (s.fine || 0) > TARDI_MS) {
+      // il PDF non è arrivato neanche in ritardo: la scheda si chiude (se non è del medico)
+      await sottoSet(id, { ...s, tardi: false });
+      const t = await chrome.tabs.get(id).catch(() => null);
+      if (t && !t.active) await chrome.tabs.remove(id).catch(() => {});
+    } else if (s.fine && Date.now() - s.fine > 10 * 60e3) await chrome.storage.session.remove(k);
   }
 }
+// UNA CORSIA PER IL PORTALE, per tutto il browser. Ogni scheda del portale è
+// un accesso nuovo (un token nuovo, la sua app da caricare): due insieme si
+// rubano il tempo e a volte la sessione. Quindi una scheda dello storico o di
+// un referto nasce solo quando nessun'altra sta ancora caricando («attesa»):
+// chi arriva aspetta il suo turno, in ordine — non viene rifiutato. La
+// corsia si libera appena i dati sono arrivati (la prima tabella, il PDF) o
+// la scheda ha finito comunque (tempo, login, chiusa).
+let corsia = Promise.resolve();
+const inCorsia = (fn) => { const p = corsia.then(fn); corsia = p.catch(() => {}); return p; };
+async function corsiaLibera() {
+  for (;;) {
+    await sottoControlla();
+    const sess = await chrome.storage.session.get(null);
+    if (!Object.entries(sess).some(([k, s]) => k.startsWith("sotto:") && delPortale(s) && s.esito === "attesa")) return;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+}
+const sottoVive = async () => Object.entries(await chrome.storage.session.get(null)).filter(([k, s]) => k.startsWith("sotto:") && inCorso(s));
 // La scheda ha finito di caricare ma è RIMASTA sul gestionale: il link non ha
 // portato al portale (sessione scaduta, pagina d'errore). Inutile aspettare 30
 // secondi. Ma il rinvio al portale passa spesso da una pagina del gestionale
@@ -318,8 +398,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 
   if (msg.t === "cacheRef") {
     const salva = async (data, size) => {
-      await chrome.storage.local.set({ [KEY(msg.id)]: { data, ts: Date.now(), size, ep: msg.ep || "", pk: msg.pk || "" } });
-      await prune();
+      await tieniRef(msg.id, { data, ts: Date.now(), size, ep: msg.ep || "", pk: msg.pk || "" });
       reply({ ok: true, size });
     };
     // Il pannello può aver già letto il PDF col suo lettore (che sa replicare
@@ -362,18 +441,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   }
 
   if (msg.t === "listRef") {
-    prune().then(() => chrome.storage.local.get(null)).then((all) => {
-      const want = Array.isArray(msg.ids) ? new Set(msg.ids) : null;
+    (async () => {
+      await prune();
+      // si leggono solo quelli chiesti (senza elenco: quelli dell'indice)
+      const ids = Array.isArray(msg.ids) ? msg.ids.map(String).slice(0, 500) : Object.keys(await refIndice());
+      const o = ids.length ? await chrome.storage.local.get(ids.map(KEY)) : {};
       const out = {};
-      for (const k of Object.keys(all)) {
-        if (!k.startsWith("ref:")) continue;
-        const id = k.slice(4), rec = all[k];
-        if (want && !want.has(id)) continue;                    // only what was asked for
+      for (const id of ids) {
+        const rec = o[KEY(id)];
+        if (!rec || Date.now() - (rec.ts || 0) > REF_TTL) continue;
         if (String(msg.ep || "") !== String(rec.ep || "")) continue;   // e solo questo episodio
         out[id] = rec.size || 1;
       }
       reply({ ok: true, cached: out });
-    }).catch(() => reply({ ok: false }));
+    })().catch(() => reply({ ok: false }));
     return true;
   }
 
@@ -613,21 +694,28 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
           || !/\/Sa4ViewerExtRedirect\.do$/i.test(u.pathname) || u.searchParams.get("MODALITA") !== "CLINICA") {
         return reply({ ok: false, why: "link inatteso" });
       }
+      // lo storico di questo paziente già in lettura (un doppio clic, un'altra
+      // scheda, il telefono): ci si aggancia a quello
+      const ep = String(msg.ep || "");
+      const gia = async () => (await sottoVive()).find(([, s]) => (s.cosa || "storico") === "storico" && (s.opener === da.id || (!!ep && s.ep === ep)));
       await sottoControlla();
-      const vive = Object.entries(await chrome.storage.session.get(null)).filter(([k, s]) => k.startsWith("sotto:") && inCorso(s));
-      const gia = vive.find(([, s]) => s.opener === da.id);
-      if (gia) return reply({ ok: true, tabId: Number(gia[0].slice(6)), gia: true });   // doppio clic
-      if (vive.length >= 3) return reply({ ok: false, why: "troppe letture in corso" });
-      await dopoIlMotore();   // (mai una pagina del gestionale mentre un motore inserisce)
-      // nasce vuota, si annota per chi è, POI parte: così l'annotazione arriva
-      // sempre prima dello script del portale
-      const vuota = { url: "about:blank", active: false };
-      const t = await chrome.tabs.create({ ...vuota, openerTabId: da.id, index: da.index + 1, windowId: da.windowId })
-        .catch(() => chrome.tabs.create(vuota));
-      await sottoSet(t.id, { opener: da.id, ep: String(msg.ep || ""), nome: String(msg.nome || "").slice(0, 60), ts: Date.now(), esito: "attesa" });
-      await chrome.tabs.update(t.id, { url: u.href });
-      setTimeout(() => sottoControlla().catch(() => {}), SOTTO_MAX + 500);
-      reply({ ok: true, tabId: t.id });
+      const g0 = await gia();
+      if (g0) return reply({ ok: true, tabId: Number(g0[0].slice(6)), gia: true });
+      await inCorsia(async () => {
+        await corsiaLibera();
+        const g = await gia();
+        if (g) return reply({ ok: true, tabId: Number(g[0].slice(6)), gia: true });
+        await dopoIlMotore();   // (mai una pagina del gestionale mentre un motore inserisce)
+        // nasce vuota, si annota per chi è, POI parte: così l'annotazione arriva
+        // sempre prima dello script del portale
+        const vuota = { url: "about:blank", active: false };
+        const t = await chrome.tabs.create({ ...vuota, openerTabId: da.id, index: da.index + 1, windowId: da.windowId })
+          .catch(() => chrome.tabs.create(vuota));
+        await sottoSet(t.id, { opener: da.id, cosa: "storico", ep, nome: String(msg.nome || "").slice(0, 60), ts: Date.now(), esito: "attesa" });
+        await chrome.tabs.update(t.id, { url: u.href });
+        setTimeout(() => sottoControlla().catch(() => {}), SOTTO_MAX + 500);
+        reply({ ok: true, tabId: t.id });
+      });
     })().catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 80) }));
     return true;
   }
@@ -648,22 +736,35 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       }
       const id = String(msg.id || "").slice(0, 80);
       if (!id) return reply({ ok: false, why: "referto senza id" });
+      // Lo stesso referto, chiunque l'abbia chiesto (un tocco, il caricamento
+      // da solo, un'altra scheda, il telefono): ci si aggancia alla scheda che
+      // lo sta già leggendo, o — se nel frattempo è arrivato — è già salvato.
+      const ep = String(msg.ep || "");
+      const gia = async () => (await sottoVive()).find(([, s]) => s.cosa === "referto" && s.id === id && s.ep === ep);
+      const salvato = async () => {
+        const h = (await chrome.storage.local.get(KEY(id)))[KEY(id)];
+        return !!h && String(h.ep || "") === ep && Date.now() - (h.ts || 0) <= REF_TTL;
+      };
       await sottoControlla();
-      const vive = Object.entries(await chrome.storage.session.get(null)).filter(([k, s]) => k.startsWith("sotto:") && inCorso(s));
-      const gia = vive.find(([, s]) => s.opener === da.id && s.cosa === "referto" && s.id === id);
-      if (gia) return reply({ ok: true, tabId: Number(gia[0].slice(6)), gia: true });   // doppio clic
-      if (vive.length >= 3) return reply({ ok: false, why: "troppe letture in corso" });
-      await dopoIlMotore();   // (mai una pagina del gestionale mentre un motore inserisce)
-      const vuota = { url: "about:blank", active: false };
-      const t = await chrome.tabs.create({ ...vuota, openerTabId: da.id, index: da.index + 1, windowId: da.windowId })
-        .catch(() => chrome.tabs.create(vuota));
-      await sottoSet(t.id, { opener: da.id, cosa: "referto", id, ep: String(msg.ep || ""), pk: String(msg.pk || ""),
-        nome: String(msg.nome || "").slice(0, 60), cfImp: String(msg.cfImp || "").slice(0, 16),
-        nascita: String(msg.nascita || "").slice(0, 10), titolo: String(msg.titolo || "").slice(0, 80),
-        ts: Date.now(), esito: "attesa" });
-      await chrome.tabs.update(t.id, { url: u.href });
-      setTimeout(() => sottoControlla().catch(() => {}), SOTTO_MAX + 500);
-      reply({ ok: true, tabId: t.id });
+      const g0 = await gia();
+      if (g0) return reply({ ok: true, tabId: Number(g0[0].slice(6)), gia: true });
+      await inCorsia(async () => {
+        await corsiaLibera();
+        const g = await gia();
+        if (g) return reply({ ok: true, tabId: Number(g[0].slice(6)), gia: true });
+        if (await salvato()) return reply({ ok: true, salvato: true });
+        await dopoIlMotore();   // (mai una pagina del gestionale mentre un motore inserisce)
+        const vuota = { url: "about:blank", active: false };
+        const t = await chrome.tabs.create({ ...vuota, openerTabId: da.id, index: da.index + 1, windowId: da.windowId })
+          .catch(() => chrome.tabs.create(vuota));
+        await sottoSet(t.id, { opener: da.id, cosa: "referto", id, ep, pk: String(msg.pk || ""),
+          nome: String(msg.nome || "").slice(0, 60), cfImp: String(msg.cfImp || "").slice(0, 16),
+          nascita: String(msg.nascita || "").slice(0, 10), titolo: String(msg.titolo || "").slice(0, 80),
+          ts: Date.now(), esito: "attesa" });
+        await chrome.tabs.update(t.id, { url: u.href });
+        setTimeout(() => sottoControlla().catch(() => {}), SOTTO_MAX + 500);
+        reply({ ok: true, tabId: t.id });
+      });
     })().catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 80) }));
     return true;
   }
@@ -672,12 +773,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg.t === "refertoSotto") {
     const tid = _sender.tab && _sender.tab.id;
     sottoGet(tid).then(async (s) => {
-      if (!inCorso(s) || s.cosa !== "referto") return reply({ ok: false, why: "scheda non nostra" });
+      // (anche appena dopo il «tempo»: la scheda è rimasta apposta)
+      const tardi = !!s && s.tardi && s.esito === "tempo" && Date.now() - (s.fine || 0) <= TARDI_MS;
+      if (!(inCorso(s) || tardi) || s.cosa !== "referto") return reply({ ok: false, why: "scheda non nostra" });
       if (typeof msg.data !== "string" || !/^JVBERi/.test(msg.data)) return reply({ ok: false, why: "non è un PDF" });
-      await chrome.storage.local.set({ [KEY(s.id)]: { data: msg.data, ts: Date.now(), size: msg.size || 1, ep: s.ep, pk: s.pk } });
-      await prune();
-      await sottoSet(tid, { ...s, via: String(msg.via || "").slice(0, 20) });
-      await sottoFine(tid, "letto");
+      await tieniRef(s.id, { data: msg.data, ts: Date.now(), size: msg.size || 1, ep: s.ep, pk: s.pk });
+      const via = String(msg.via || "").slice(0, 20);
+      if (tardi) {
+        await sottoSet(tid, { ...s, via, esito: "letto", tardi: false, fine: Date.now() });
+        const t = await chrome.tabs.get(tid).catch(() => null);
+        if (t && !t.active) await chrome.tabs.remove(tid).catch(() => {});
+      } else {
+        await sottoSet(tid, { ...s, via });
+        await sottoFine(tid, "letto");
+      }
       reply({ ok: true });
     }).catch((e) => reply({ ok: false, why: String((e && e.message) || e).slice(0, 60) }));
     return true;
@@ -696,7 +805,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   }
   if (msg.t === "esitoSotto") {
     sottoControlla().then(() => sottoGet(Number(msg.tabId)))
-      .then((s) => reply(s ? { ok: true, esito: s.esito, esami: s.esami || 0, prelievi: s.prelievi || 0, diag: s.diag || "" } : { ok: false }))
+      .then((s) => reply(s ? { ok: true, esito: s.esito, tardi: !!s.tardi, esami: s.esami || 0, prelievi: s.prelievi || 0, diag: s.diag || "" } : { ok: false }))
       .catch(() => reply({ ok: false }));
     return true;
   }
@@ -730,7 +839,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       const id = _sender.tab && _sender.tab.id;
       const st = id != null ? await sottoGet(id) : null;
       if (inCorso(st) && st.cosa !== "referto") {   // una scheda aperta per un referto aspetta il PDF, non la tabella
-        await sottoSet(id, { ...st, esito: "lettura", ultima: Date.now(), suo: String(msg.dati.ep || "") === st.ep,
+        await sottoSet(id, { ...st, esito: "lettura", ultima: Date.now(), letta: st.letta || Date.now(), suo: String(msg.dati.ep || "") === st.ep,
           esami: (msg.dati.righe || []).length, prelievi: (msg.dati.date || []).length });
         clearTimeout(quiete.get(id));
         quiete.set(id, setTimeout(() => sottoControlla().catch(() => {}), SOTTO_QUIETE + 100));
@@ -841,7 +950,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 
   if (msg.t === "clearRef") {
     chrome.storage.local.get(null).then(async (all) => {
-      await chrome.storage.local.remove(Object.keys(all).filter((k) => k.startsWith("ref:")));
+      await chrome.storage.local.remove([...Object.keys(all).filter((k) => k.startsWith("ref:")), REF_INDICE]);
       // le schede cliniche NON si cancellano al logout: hanno la loro
       // scadenza a 24 ore, ed è quella a decidere
 
@@ -858,7 +967,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     (async () => {
       await inFila(async () => {
         const all = await chrome.storage.local.get(null);
-        await chrome.storage.local.remove(Object.keys(all).filter((k) => k === ARCH || k.startsWith("ref:")));
+        await chrome.storage.local.remove(Object.keys(all).filter((k) => k === ARCH || k === REF_INDICE || k.startsWith("ref:")));
       });
       const s = await chrome.storage.session.get(null);
       await chrome.storage.session.remove(Object.keys(s).filter((k) => k === "apertura" || (k.startsWith("sotto:") && !inCorso(s[k]))));

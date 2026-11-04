@@ -700,7 +700,12 @@ quel paziente, al più **ogni 10 minuti**. **Mentre un ordine lavora** — di qu
 il motore che manda, la scheda dell'ordine, una conferma in sospeso, i fogli che vanno in
 stampa — non parte niente di nuovo: quello che è già in volo finisce, il resto aspetta e
 riprende da solo appena l'ordine ha finito. Si ferma se lasci il paziente (chi era in fila non
-parte). Mentre lavora, accanto a **↻** c'è solo un discreto **«↓ 2»** — quanti ne restano —
+parte). **Quello che da solo non è riuscito** (un referto, i valori) non si ritenta a ogni giro:
+da solo al più **due volte**, dopo 2 e dopo 10 minuti (i valori anche quando la loro firma nella
+pagina cambia); un tocco o un bottone ci provano sempre; un PDF che si è rivelato di un altro
+paziente da solo non si riprende più (↺ fa ripartire i referti da capo). Il laboratorio a metà,
+con la pagina aperta, si ricontrolla ogni 10 minuti **solo mentre la guardi** (tornandoci, se ne
+sono passati 10), e dopo due ricontrolli senza niente di nuovo smette: lo rifà aprire gli Esiti. Mentre lavora, accanto a **↻** c'è solo un discreto **«↓ 2»** — quanti ne restano —
 e nient'altro. Non parte mai nella scheda di un ordine, del Ponte, di un giro ripreso o con una
 richiesta da confermare.
 
@@ -816,8 +821,9 @@ range non cambiano; i referti (ECG, Imaging) stanno sotto il Lab.
   Prima lo diceva su ogni paziente ancora senza scheda, e sembrava uno scambio di pazienti.
 
 **I referti di laboratorio** (LIS) **non ci sono** quando la tabella del Lab li può mostrare — c'è
-una tabella, o c'è da dove leggerla (estensione e portale): lì quello che dicono è già nei valori.
-**Senza tabella e senza portale** (il bookmarklet, per dire) sono l'unico posto dove si vedono i
+una tabella, o c'è da dove leggerla (estensione e portale) e la lettura non è fallita: lì quello
+che dicono è già nei valori. **Senza tabella e senza portale** (il bookmarklet, per dire), o col
+portale che la tabella non l'ha data, sono l'unico posto dove si vedono i
 risultati finali: allora restano, **chiusi** sotto **«Laboratorio (N)»** in fondo agli Esiti — un
 tocco li apre. La scheda **Esiti** non porta nessun numero. Un esito finale non sparisce mai:
 «Nessun esito per questo paziente» compare solo quando non c'è davvero niente, nemmeno un referto
@@ -849,7 +855,12 @@ o una richiesta in attesa.
   stesso link si apre in una scheda dietro; là la pagina mostra il PDF e lo script del portale ne
   passa una copia. Il portale può mostrarne più d'uno (quello rimasto aperto prima, poi il tuo):
   si tiene quello di **questo paziente** e dell'esame chiesto, mai semplicemente il primo; se sono
-  tutti di un altro, nessuno, e il pallino rosso lo dice.
+  tutti di un altro, nessuno, e il pallino rosso lo dice. **Una scheda del portale alla volta, per
+  tutto il browser** (referti e storico, di tutte le schede e del telefono): ognuna è un accesso
+  nuovo al portale, e chi arriva aspetta in fila che quella prima abbia i suoi dati. Lo stesso
+  referto chiesto da due parti si prende una volta sola. Se il portale vuole aprire il PDF in una
+  scheda nuova, in una scheda dietro non lo fa (la scheda sa da subito di essere nostra); una che
+  sfuggisse non ti passa davanti e si chiude da sola — mai una scheda del portale aperta da te.
 
 > Perché i referti restano fuori dalla tabella dei Valori: referto e prelievo sono due cose
 > diverse per il gestionale (un referto per documento, un accesso per prelievo, senza una chiave
@@ -977,7 +988,8 @@ nemmeno una richiesta in più: legge la tabella che hai già davanti.
   faresti tu, e ogni passo aggiunge i prelievi nuovi — così arrivano tutti, non i primi quattro.
   Arrivata la tabella, la scheda **si chiude da sola** — se ci sei andato
   sopra, resta tua. Per chi è lo sa la scheda stessa: la apre il pannello di quel paziente.
-  La scheda del portale che hai aperto tu non si tocca. Se in 30 secondi la tabella non arriva
+  La scheda del portale che hai aperto tu non si tocca. Una tabella che arriva a pezzi si legge
+  al più per un minuto. Se in 30 secondi la tabella non arriva
   (il portale chiede di entrare, si apre altrove, mostra un altro paziente) il pannello **dice
   perché** e il link a mano resta. Nessun permesso nuovo per l'estensione.
 - **La scheda clinica si fonde, non si sovrascrive.** Il portale, le finestre Risultati e i

@@ -687,7 +687,8 @@ async function ponteValoriSotto(url, ep) {
     ponteValoriFine(t.id, { ok: false, testo: "la scheda dei valori non si apre" });
   }
   const esito = await promessa;
-  clearTimeout(tempo);
+  // (la scheda può restare ancora per i referti: allora la chiude il «fatto», o il tempo)
+  if (!pt.valori.has(t.id)) clearTimeout(tempo);
   return esito;
 }
 // finita (letto, tempo scaduto, chiusa): via l'appunto, via la scheda (se il
@@ -991,6 +992,16 @@ function ponteDaPagina(msg, sender, reply) {
         w.riprovato = true;
         chrome.tabs.update(id, { url: w.url }).catch(() => fallita().catch(() => {}));
       }, PONTE_ALTROVE_MS);
+      return { ok: true };
+    });
+  }
+  // i valori sono letti: il telefono ha la risposta subito; la scheda resta
+  // per i referti, e si chiude col «fatto» (o allo scadere)
+  if (msg.t === "ponteValoriLetti" && gestionale) {
+    return fai(async () => {
+      const w = pt.valori.get(sender.tab.id);
+      if (!w) return { ok: false };
+      w.risolvi({ ok: !!msg.ok, testo: corto(msg.testo, 120) || "letti" });
       return { ok: true };
     });
   }

@@ -404,6 +404,51 @@ const testate8 = await p4.evaluate(() => [...document.getElementById("psassist-h
 const reg8 = await p4.evaluate(() => document.getElementById("psassist-host").shadowRoot.textContent.match(/storico del portale[^\n]{0,120}/g) || []);
 check(colonne8 >= 8, `il portale ne disegna 4 alla volta, la scheda di sottofondo li legge tutti (got ${colonne8} prelievi di settembre: ${testate8} · ${reg8.join(" / ")})`);
 
+// ---- lo storico non si aggancia a una scheda dietro che non è uno storico:
+// un referto in lettura dalla stessa pagina non è «la lettura già in corso»
+{
+  const p5 = await ctx.newPage();
+  await p5.goto(mock.patientUrl);
+  await p5.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await p5.locator('#psassist-host [data-seg="esiti"]').click();
+  await p5.waitForSelector("#psassist-host #risall", { timeout: 10000 });
+  const finta = await ctx.newPage();
+  await finta.goto("about:blank");
+  const sw = ctx.serviceWorkers()[0];
+  await sw.evaluate(async () => {
+    const tutte = (await chrome.tabs.query({})).sort((a, b) => b.id - a.id);
+    const paz = tutte.find((t) => /MVPG=PsoEpisodioClinicoAmbulatorio/.test(t.url || ""));   // la pagina del paziente appena aperta
+    // un referto che quella pagina sta leggendo (qui: una scheda vuota), quasi scaduto
+    await chrome.storage.session.set({ ["sotto:" + tutte[0].id]: { opener: paz.id, cosa: "referto", id: "zz", ep: "x", ts: Date.now() - 28e3, esito: "attesa" } });
+  });
+  const t5 = Date.now();
+  const nasce5 = ctx.waitForEvent("page", { timeout: 20000 });
+  await p5.locator("#psassist-host #risall").click();
+  const sotto5 = await nasce5.catch(() => null);
+  check(!!sotto5, "con un referto in lettura dalla stessa pagina, lo storico apre la SUA scheda (non si aggancia a quella del referto)");
+  let esito5 = "";
+  for (const fine = Date.now() + 60000; Date.now() < fine && esito5 !== "letto"; await p5.waitForTimeout(500)) {
+    esito5 = await sw.evaluate((t5) => chrome.storage.session.get(null).then((s) => Object.values(s).filter((v) => v && v.cosa === "storico" && v.ts >= t5).map((v) => v.esito).join(",")), t5);
+  }
+  check(esito5 === "letto", `e lo legge (got ${esito5 || "niente"})`);
+  if (!finta.isClosed()) await finta.close();
+  await p5.close();
+}
+
+// ---- una tabella che arriva a pezzi: la scheda si chiude al più dopo un minuto di lettura
+{
+  const sw = ctx.serviceWorkers()[0];
+  const esito = await sw.evaluate(async () => {
+    const k = "sotto:987654";
+    await chrome.storage.session.set({ [k]: { opener: 1, cosa: "storico", ep: "x", ts: Date.now() - 70e3, esito: "lettura", ultima: Date.now(), letta: Date.now() - 61e3, suo: true } });
+    await sottoControlla();
+    const s = (await chrome.storage.session.get(k))[k];
+    await chrome.storage.session.remove(k);
+    return s && s.esito;
+  });
+  check(esito === "letto", `in lettura da più di un minuto (e ancora a pezzi): finita, quello che è arrivato è arrivato (got ${esito})`);
+}
+
 await ctx.close();
 rmSync(PROFILE, { recursive: true, force: true });
 console.log(fail ? `\nSTORICO-ESTENSIONE: ${fail} CHECK FALLITI\n` : "\nSTORICO-ESTENSIONE: TUTTO OK\n");
