@@ -1136,6 +1136,41 @@ if (await prova("il pacchetto Dolore toracico con l'RX: due ordini in sottofondo
   check(restano === 0, `finito, dopo pochi secondi le righe se ne vanno (got ${restano})`);
 }
 
+// Nelle pagine vere il foglio della radiologia non si chiama sempre «Stampa
+// Prenotazione Esterna»: per l'RX del PS è «Stampa Richiesta Radiologia» (lo
+// stesso indirizzo). Prima la conferma non si vedeva mai — «Non confermata»
+// gialla per ore, e il foglio RX che non usciva.
+if (await prova("il foglio RX che si chiama «Stampa Richiesta Radiologia»: l'RX risulta confermata e il suo foglio esce")) {
+  installa(true);
+  await scelte(ATTIVA);
+  comportati({ lento: 1500 });
+  ritocca = (u, out) => {
+    if (!Buffer.isBuffer(out.body) || !/html/i.test(String(out.headers?.["content-type"] || ""))) return null;
+    const h = out.body.toString("latin1");
+    return /Stampa Prenotazione Esterna/.test(h) ? { ...out, body: Buffer.from(h.replaceAll('title="Stampa Prenotazione Esterna"', 'title="Stampa Richiesta Radiologia"'), "latin1") } : null;
+  };
+  const prima = await pacchettoConRx();
+  const FINITI = new Set(["avviso", "errore", "chiusa", "interrotto"]);
+  // (finito: andato bene coi fogli usciti, o fermo — senza aspettare tre minuti un foglio che non verrà)
+  const fatti = await finche(async () => {
+    const l = await ordini();
+    const rx = l.find((x) => x.kind === "radio" && FINITI.has(x.stato));
+    if (!rx) return null;
+    const ok = rx.pubblico && rx.pubblico.tono === "ok";
+    return !ok || (rx.fogli && rx.fogli.every((f) => f.stato === "stampato")) ? { rx } : null;
+  }, 180000);
+  ritocca = null;
+  const nuove = nuoveDi(prima);
+  const rx = nuove.find((r) => r.cart.has("36"));
+  check(!!rx && rx.confirmed, `l'RX è confermata sul gestionale (got ${rx ? rx.confirmed : "nessuna"})`);
+  const pub = fatti ? fatti.rx.pubblico || {} : {};
+  check(!!fatti && pub.tono === "ok" && !/non confermata|non verificata|sospesa/i.test(`${pub.tag} ${pub.testo}`),
+    `e l'estensione lo sa: niente «Non confermata» (got ${JSON.stringify(pub)})`);
+  const fr = fatti ? fatti.rx.fogli || [] : [];
+  check(fr.length === 1 && fr[0].breve === "fg:RX" && fr[0].stato === "stampato", `il foglio RX esce all'A4 (got ${JSON.stringify(fr.map((x) => `${x.breve}:${x.stato}`))})`);
+  check(lavori().filter((x) => x.tipo === "a4").length === 2, `all'A4 la lista POC e il foglio RX (got ${JSON.stringify(lavori().map((x) => `${x.tipo}→${x.stampante}`))})`);
+}
+
 if (await prova("un ordine in sottofondo: sotto la striscia la riga «Rich Lab · k/n» che avanza, poi verde, poi i suoi fogli")) {
   installa(true);
   await scelte(ATTIVA);

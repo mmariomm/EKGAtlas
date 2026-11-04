@@ -1492,6 +1492,17 @@ async function scenarioChiudi(browser) {
   const promemoria = await striscia(page, /non confermata/, 15000).catch(() => "");
   check(scen, /Richiesta \d\d:\d\d non confermata/.test(promemoria),
     `passato il tempo, il promemoria «non confermata» c'è ancora (got: ${promemoria || "niente"})`);
+  // il medico l'ha fatta a mano, o non gli serve: ✕ e non se ne parla più
+  await $panel(page, "#strstop").click();
+  await page.waitForTimeout(300);
+  const dopo = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
+  check(scen, (await $panel(page, ".pill.run.warn").count()) === 0 && !dopo.some((x) => x.rid === rid),
+    `✕ sul promemoria: sparisce e la richiesta è dimenticata (got ${JSON.stringify(dopo)})`);
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await page.waitForTimeout(9000);
+  check(scen, (await $panel(page, ".daconf").count()) === 0 && (await $panel(page, ".pill.run.warn").count()) === 0,
+    "e riaperta la pagina: niente riga, niente promemoria");
   await context.close();
 }
 

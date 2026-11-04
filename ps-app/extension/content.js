@@ -867,7 +867,10 @@
   // never collapsed.
   function printModel(doc, baseUrl) {
     const map = {}; // richiestaId -> { prog -> row, _meta }
-    const sel = 'a[title="Stampa Etichette"], a[title="Stampa Richiesta"], a[title="Stampa Prenotazione Esterna"]';
+    // (il foglio della radiologia ha più nomi — «Stampa Prenotazione Esterna»,
+    // «Stampa Richiesta Radiologia», altri — ma un indirizzo solo: si
+    // riconosce da quello, come titolo qualunque)
+    const sel = 'a[title="Stampa Etichette"], a[title="Stampa Richiesta"], a[title="Stampa Prenotazione Esterna"], a[title="Stampa Richiesta Radiologia"], a[href*="REPORT=PsoRichiestaAccertamentiRadiografici"]';
     for (const a of doc.querySelectorAll(sel)) {
       const href = absUrl(a, "href", baseUrl);
       const rid = param(href, "RICHIESTA_ID");
@@ -877,8 +880,8 @@
       const row = (rows[prog] = rows[prog] || { prog });
       const t = a.getAttribute("title");
       if (t === "Stampa Etichette") row.etichette = href;
-      else if (t === "Stampa Richiesta") row.lista = href;
-      else row.prenotazione = href;
+      else if (t === "Stampa Richiesta" && !/REPORT=PsoRichiestaAccertamentiRadiografici/i.test(href)) row.lista = href;
+      else { row.prenotazione = href; row.esterna = t === "Stampa Prenotazione Esterna"; }
       // the row this print icon lives in also carries when + what was ordered
       const tr = a.closest("tr");
       if (tr) {
@@ -948,7 +951,7 @@
     const jobs = [];
     for (const r of rows) if (r.etichette) jobs.push({ name: `Etichette provette${tag(r)}`, pre: "Et", res: resRiga(r), printer: "etichettatrice", url: r.etichette });
     for (const r of rows) if (r.lista) jobs.push({ name: `Lista esami${tag(r)}`, pre: "Fg", res: resRiga(r), printer: "stampante normale", url: r.lista });
-    for (const r of rows) if (r.prenotazione) jobs.push({ name: `Prenotazione esterna${tag(r)}`, pre: "Fg", rx: true, printer: "stampante normale", url: r.prenotazione });
+    for (const r of rows) if (r.prenotazione) jobs.push({ name: `${r.esterna ? "Prenotazione esterna" : "Richiesta radiologia"}${tag(r)}`, pre: "Fg", rx: true, printer: "stampante normale", url: r.prenotazione });
     const seen = new Set();
     return nomiCorti(jobs.filter((j) => !seen.has(j.url) && seen.add(j.url)));
   }
@@ -980,7 +983,7 @@
     const put = (n, sing, plur) => { if (n === 1) parts.push(sing); else if (n > 1) parts.push(`${n}× ${plur}`); };
     put(count("etichette"), "etichette", "etichette");
     put(count("lista"), "lista esami", "liste esami");
-    put(count("prenotazione"), "prenotazione", "prenotazioni");
+    put(count("prenotazione"), "foglio RX", "fogli RX");
     return parts.join(" + ");
   }
 
@@ -7427,9 +7430,12 @@
       try { u = new URL(x.listUrl).origin === location.origin && !/[?&](Insert|Delete)=/.test(x.listUrl) ? x.listUrl : ""; } catch { u = ""; }
       this.log(`${now()}  la richiesta ${x.rid} delle ${hhmm(x.ts)} non risulta confermata`);
       if (appenaAperta) this.collapsed = true;   // la pagina appena aperta: l'avviso si vede subito
-      this.segnala({ tag: "Non confermata", tono: "warn", titolo: "tocca per il carrello",
+      // (✕: il medico la ignora — l'ha fatta a mano, o non serve più: dimenticata)
+      this.segnala({ tag: "Non confermata", tono: "warn", titolo: "tocca per il carrello · ✕ per ignorarla",
         testo: `Richiesta ${hhmm(x.ts)} non confermata · tocca per il carrello`,
-        onTap: () => (u ? nav(u) : this.apri()) });
+        onTap: () => (u ? nav(u) : this.apri()),
+        titoloStop: "Ignorala: non la segnalo più",
+        onStop: () => { confermataProvata(x.rid); this.segnala(null); this.render(); this.sorvegliaConferme(); } });
     }
 
     // Ultimo passo: la conferma. Si prova a farla in sottofondo — la pagina
@@ -10124,7 +10130,9 @@
           daConfSec = `<div class="daconf${az ? " az" : ""}"><i class="ddot"></i><span>${qui ? `Questa richiesta${quanti} è ancora da confermare` : `Richiesta delle ${esc(hhmm(x.ts))}${quanti} ancora da confermare`}${
             aperte.length > 1 ? ` · e altre ${aperte.length - 1}` : ""}</span>${
             // (sulla sua pagina ma su una sezione senza la Conferma: il carrello dov'è)
-            az || (u && (!qui || param(u, "RISORSA_ID") !== param(location.href, "RISORSA_ID")) ? `<button class="lnk" id="apridaconf" data-url="${esc(u)}">apri il carrello</button>` : "")}</div>`;
+            az || (u && (!qui || param(u, "RISORSA_ID") !== param(location.href, "RISORSA_ID")) ? `<button class="lnk" id="apridaconf" data-url="${esc(u)}">apri il carrello</button>` : "")}${
+            // (l'ha fatta a mano, o non serve più: la si dimentica, tutte quelle di questo paziente)
+            `<button class="lnk" id="ignoradaconf" title="Non la segnalo più">ignora</button>`}</div>`;
         } else if (this._daconf?.vuoto && this._daconf.rid === sua) {
           // letta vuota dal server e dimenticata: la riga lo dice, poi se ne va
           daConfSec = `<div class="daconf"><i class="ddot"></i><span>${esc(this._daconf.testo)}</span></div>`;
@@ -13325,6 +13333,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#aggiungi")?.addEventListener("click", () => { this.aggiungi = true; this.render(); });
       // la richiesta ancora da confermare: un tocco porta al suo carrello (una lettura)
       $("#apridaconf")?.addEventListener("click", (e) => { const u = e.currentTarget.getAttribute("data-url"); if (u) nav(u); });
+      $("#ignoradaconf")?.addEventListener("click", () => {
+        for (const x of nonConfermateQui()) confermataProvata(x.rid);
+        if (this.striscia && this.striscia.tag === "Non confermata") this.segnala(null);
+        this.render();
+      });
       // …e sul suo carrello, le sue due azioni (a due tocchi)
       $("#dcconferma")?.addEventListener("click", () => this.daConfTocco("conferma"));
       $("#dcsvuota")?.addEventListener("click", () => this.daConfTocco("svuota"));
@@ -14415,6 +14428,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     : /^etichett/i.test(job.name) ? "le etichette"
     : /^lista esami/i.test(job.name) ? "la lista esami"
     : /^prenotazione/i.test(job.name) ? "la prenotazione RX"
+    : /^richiesta radiologia/i.test(job.name) ? "la richiesta RX"
     : `«${job.name}»`;
 
   // «6 esami confermati 14:32»: il resoconto che resta sulla pill
