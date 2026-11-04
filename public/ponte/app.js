@@ -1083,7 +1083,7 @@
     const etichetta = occupato ? (S.coda.has(S.inviati.get(p.ep)) ? "In coda…" : "Mando l'ordine al PC…") : bloccato ? "Controllo gli ordini sul PC…" : armato ? `${p.omonimo ? "⚠ " : ""}Ordino ${nTxt} per ${chi(p)}? Tocca di nuovo`
       : !n ? "Scegli gli esami" : `Conferma e stampa · ${nTxt}`;
     const perche = bloccato ? "Prima di un altro ordine, il PC dice se quello di prima è partito"
-      : n && !s.q.trim() ? "Scrivi il quesito diagnostico" : rx && lab ? "Due richieste, laboratorio e radiologia: il PC le conferma e le stampa tutte e due" : "";
+      : n && !s.q.trim() ? "Scrivi il quesito diagnostico" : rx && lab ? "Laboratorio e radiologia in richieste separate: il PC le conferma e le stampa tutte" : "";
     const nomi = [...s.esami].map((k) => c.nomi[k] || k).join(", ");
     return `<div class="cta">${n ? `<div class="sel">${esc(nomi)}</div>` : ""}<button id="ordina" data-a="ordina" class="${armato ? "arma" : ""}" ${occupato || bloccato ? "disabled" : !n || !s.q.trim() ? "aria-disabled=\"true\"" : ""}>${esc(etichetta)}</button>${
       perche ? `<div class="perche">${esc(perche)}</div>` : ""}</div>`;
