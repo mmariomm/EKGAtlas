@@ -1532,8 +1532,14 @@ vuoto) e **Prepara nel SISS**.
   a metà → si ferma e lo dice, non riparte); i farmaci si scrivono una volta; la stessa richiesta
   due volte è la stessa ricetta. Il codice fiscale e il nome stanno solo in `storage.session` e
   se ne vanno appena la ricetta finisce.
-- **Visite ed esami** (ricetta specialistica): non ancora. La registrazione mostra solo una
-  farmaceutica; la ricerca dice quante voci di visite/esami ha trovato, e quelle si fanno a mano.
+- **Visite ed esami** (ricetta specialistica): si scelgono come i farmaci — dalla ricerca del
+  SISS (segnate «visita/esame») o dai preferiti — e si inseriscono nella stessa casella, presa la
+  voce col codice esatto; si controlla che la tendina si sia chiusa e che il codice compaia nella
+  ricetta. Quantità, priorità e durata non si toccano; il quesito solo se l'hai scritto tu nel
+  pannello. **Con una visita l'Anteprima non si preme**: si ferma con la scheda del SISS davanti e
+  «Visite inserite: aggiungi quesito e durata, poi Anteprima». Farmaci e visite nella stessa
+  ricetta no («Una ricetta alla volta: farmaci o visite»): che il SISS li tenga insieme non è
+  provato. Una visita entra nei preferiti (codice, descrizione, tipo) quando è stata inserita.
 
 ---
 

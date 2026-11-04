@@ -46,17 +46,27 @@ function ricChiudi(j, stato, testo, tono = "warn") {
   j.stato = stato; j.vista = { testo: ricCorto(testo, 240), tono }; j.agg = j.fine = Date.now();
   delete j.cf; delete j.nome;
 }
-// Le voci che il pannello manda: solo farmaci con un codice AIC (9 cifre).
+// Le voci che il pannello manda: farmaci (codice AIC, 9 cifre) o visite ed
+// esami (il codice della prestazione, come lo scrive la tendina del SISS).
+// Mai le due cose insieme: che il SISS le mescoli in una ricetta non è
+// provato, quindi una ricetta alla volta (`misto`).
+const ricTipo = (codice) => (/^\d{9}$/.test(codice) ? "farmaco" : "visita");
+const ricCodiceBuono = (c) => /^\d{9}$/.test(c) || /^[0-9A-Z][0-9A-Z.\-/]{0,15}$/i.test(c);
 function ricVoci(l) {
   if (!Array.isArray(l)) return null;
   const out = [];
   for (const v of l.slice(0, 10)) {
-    const codice = ricCorto(v && v.codice, 12).trim();
-    if (!/^\d{9}$/.test(codice) || out.some((x) => x.codice === codice)) continue;
-    out.push({ codice, descr: ricCorto(v.descr, 90), cerca: ricCorto(v.cerca, 40), qta: Math.max(1, Math.min(99, Math.round(Number(v.qta) || 1))), ns: !!v.ns });
+    const codice = ricCorto(v && v.codice, 16).trim();
+    if (!ricCodiceBuono(codice) || out.some((x) => x.codice === codice)) continue;
+    const tipo = ricTipo(codice);
+    out.push(tipo === "farmaco"
+      ? { codice, tipo, descr: ricCorto(v.descr, 90), cerca: ricCorto(v.cerca, 40), qta: Math.max(1, Math.min(99, Math.round(Number(v.qta) || 1))), ns: !!v.ns }
+      : { codice, tipo, descr: ricCorto(v.descr, 90), cerca: ricCorto(v.cerca, 40) });
   }
+  if (new Set(out.map((x) => x.tipo)).size > 1) out.misto = true;
   return out;
 }
+const RIC_MISTO = "Una ricetta alla volta: farmaci o visite";
 
 // Le schede del Prescrittivo, una per una: entrata? ha già una ricetta? il
 // medico ci sta scrivendo? La prima libera vince.
@@ -101,15 +111,20 @@ async function ricAvvia(j) {
   await ricScrivi(j);
 }
 // I preferiti: il più recente davanti, uno per codice, al più 12.
+// (un farmaco: codice, descrizione, quantità, dall'Anteprima; una visita:
+// codice, descrizione e tipo, quando la ricetta l'ha inserita davvero)
 async function ricImpara(voci) {
   const l = ((await chrome.storage.local.get(RIC_PREF))[RIC_PREF]) || [];
-  let pref = Array.isArray(l) ? l.filter((x) => x && /^\d{9}$/.test(x.codice)) : [];
+  let pref = Array.isArray(l) ? l.filter((x) => x && ricCodiceBuono(String(x.codice || ""))) : [];
   for (const v of voci.slice(0, 10).reverse()) {
-    const codice = ricCorto(v && v.codice, 12).trim();
-    if (!/^\d{9}$/.test(codice)) continue;
+    const codice = ricCorto(v && v.codice, 16).trim();
+    if (!ricCodiceBuono(codice)) continue;
     const descr = ricCorto(v.descr, 90).replace(/\s+/g, " ").trim();
     if (!descr) continue;
-    pref = [{ codice, descr, qta: Math.max(1, Math.min(99, Math.round(Number(v.qta) || 1))), ts: Date.now() }, ...pref.filter((x) => x.codice !== codice)];
+    const voce = ricTipo(codice) === "farmaco"
+      ? { codice, descr, tipo: "farmaco", qta: Math.max(1, Math.min(99, Math.round(Number(v.qta) || 1))), ts: Date.now() }
+      : { codice, descr, tipo: "visita", ts: Date.now() };
+    pref = [voce, ...pref.filter((x) => x.codice !== codice)];
   }
   await chrome.storage.local.set({ [RIC_PREF]: pref.slice(0, RIC_PREF_MAX) });
 }
@@ -135,6 +150,7 @@ function ricMessaggio(msg, sender, reply) {
     if (!id || !RIC_CF.test(cf) || !nome) return reply({ ok: false, why: "manca il codice fiscale o il nome del paziente" });
     const voci = x.voci == null ? null : ricVoci(x.voci);
     if (voci && !voci.length) return reply({ ok: false, why: "nessun farmaco scelto" });
+    if (voci && voci.misto) return reply({ ok: false, why: RIC_MISTO });
     const j = { id, ep: ricCorto(x.ep, 20), opener: tab.id, cf, nome, quesito: ricCorto(x.quesito, 256), voci,
       cerca: x.cerca ? { q: ricCorto(x.cerca, 40), n: 1 } : null, stato: "attesa", ts: Date.now(), agg: Date.now(),
       vista: { testo: "Cerco il SISS…", tono: "run" } };
@@ -165,6 +181,7 @@ function ricMessaggio(msg, sender, reply) {
     if (j.voci) return reply({ ok: true, gia: true });
     const voci = ricVoci(msg.voci);
     if (!voci || !voci.length) return reply({ ok: false, why: "nessun farmaco scelto" });
+    if (voci.misto) return reply({ ok: false, why: RIC_MISTO });
     j.voci = voci; j.quesito = ricCorto(msg.quesito, 256); j.agg = Date.now();
     await ricScrivi(j);
     reply({ ok: true });
@@ -244,7 +261,8 @@ function ricMessaggio(msg, sender, reply) {
     const j = await suo();
     if (!j) return reply({ ok: false });
     const voci = (Array.isArray(msg.voci) ? msg.voci : []).slice(0, 40)
-      .map((v) => ({ codice: ricCorto(v && v.codice, 12), descr: ricCorto(v && v.descr, 90) })).filter((v) => /^\d{9}$/.test(v.codice));
+      .map((v) => ({ codice: ricCorto(v && v.codice, 16), descr: ricCorto(v && v.descr, 90) })).filter((v) => ricCodiceBuono(v.codice))
+      .map((v) => ({ ...v, tipo: ricTipo(v.codice) }));
     j.risultati = { q: ricCorto(msg.q, 40), n: Number(msg.n) || 0, voci, altri: Math.max(0, Math.min(999, Number(msg.altri) || 0)), why: ricCorto(msg.why, 120) };
     j.agg = Date.now();
     j.vista = { testo: "Paziente identificato nel SISS: scegli i farmaci", tono: "ok" };
@@ -255,12 +273,18 @@ function ricMessaggio(msg, sender, reply) {
   if (msg.t === "ricettaFine") return fai(async () => {
     const j = await suo();
     if (!j) return reply({ ok: false });
-    const esito = msg.esito === "anteprima" ? "anteprima" : msg.esito === "errore" ? "errore" : "fermo";
-    const testo = esito === "anteprima" ? "Ricetta pronta in Anteprima nel SISS: controlla e premi tu Registra" : ricCorto(msg.testo, 240) || "Fermato: completa tu nel SISS";
-    ricChiudi(j, esito, testo, esito === "anteprima" ? "ok" : esito === "errore" ? "err" : "warn");
+    // («inserite»: le visite sono nella ricetta del SISS; quesito, durata e
+    // Anteprima li fa il medico — l'Anteprima, con una visita, non si preme)
+    const esito = msg.esito === "anteprima" ? "anteprima" : msg.esito === "inserite" ? "inserite" : msg.esito === "errore" ? "errore" : "fermo";
+    const testo = esito === "anteprima" ? "Ricetta pronta in Anteprima nel SISS: controlla e premi tu Registra"
+      : esito === "inserite" ? "Visite inserite: aggiungi quesito e durata, poi Anteprima"
+      : ricCorto(msg.testo, 240) || "Fermato: completa tu nel SISS";
+    const visite = esito === "inserite" ? (j.voci || []).filter((v) => v.tipo === "visita") : [];
+    ricChiudi(j, esito, testo, esito === "anteprima" || esito === "inserite" ? "ok" : esito === "errore" ? "err" : "warn");
     if (msg.grave) j.grave = true;
     await ricScrivi(j);
     reply({ ok: true });
+    if (visite.length) await ricImpara(visite);
     const d = msg.dati && typeof msg.dati === "object" ? { cf: ricCorto(msg.dati.cf, 10), nome: ricCorto(msg.dati.nome, 10) } : {};
     if (esito !== "anteprima") segnaErrore("ricetta", { esito, passo: ricCorto(msg.passo, 40), motivo: ricCorto(msg.testo, 160), ...(msg.grave ? { grave: true, ...d } : {}) });
     // la scheda del SISS davanti al medico: tocca a lui (un errore grave lo

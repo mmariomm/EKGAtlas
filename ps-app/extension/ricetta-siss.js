@@ -162,9 +162,6 @@
       e.grave = true; e.passo = "paziente"; e.dati = { cf: cfOk ? "uguale" : "diverso", nome: nomeOk ? "uguale" : "diverso" };
       throw e;
     }
-    // Tipo prescrizione: deve poter avere farmaci (di norma «Specialistica/Farmaceutica»)
-    const tipo = testo($("mat-select[formcontrolname=prescriptionType] .mat-select-value"));
-    if (!/farmaceutica/i.test(tipo)) throw new Fermo(`Fermato su «Tipo prescrizione»: è «${tipo || "vuoto"}», non farmaceutica — sceglila tu`);
     if (!ricercaBox()) throw new Fermo("Fermato sulla ricerca: non trovo «Ricerca specialistica/farmaco»");
   }
 
@@ -194,12 +191,42 @@
     cercate = c.n;
     const box = await digita(c.q);
     const tutte = opzioni();
-    const voci = tutte.filter((o) => /^\d{9}$/.test(o.codice)).map((o) => ({ codice: o.codice, descr: o.descr }));
+    // (farmaci e visite/esami: il service worker li distingue dal codice)
+    const voci = tutte.map((o) => ({ codice: o.codice, descr: o.descr }));
     await svuota(box);
-    await ask({ t: "ricettaRisultati", id: lavoro.id, q: c.q, n: c.n, voci, altri: tutte.length - voci.length, why: tutte.length ? "" : "il SISS non ha trovato niente" });
+    await ask({ t: "ricettaRisultati", id: lavoro.id, q: c.q, n: c.n, voci, altri: 0, why: tutte.length ? "" : "il SISS non ha trovato niente" });
+  }
+
+  // Una visita o un esame: la stessa ricerca, la voce col codice esatto. La
+  // tabella delle prestazioni non è nelle registrazioni: si controlla che la
+  // tendina si sia chiusa e che il codice ora compaia nella ricetta (fuori
+  // dalla tendina), dove prima non c'era. Priorità, durata, quantità: no —
+  // li mette il medico.
+  const nelModulo = (codice) => {
+    const f = $("app-prescription-create");
+    return !!f && testo(f).split(/[\s,;:()\[\]|]+/).some((t) => t.replace(/[-.]+$/, "") === codice);
+  };
+  async function aggiungiVisita(v) {
+    if (nelModulo(v.codice)) throw new Fermo(`Fermato su ${v.descr || v.codice}: è già nella ricetta del SISS`);
+    await passo(`Cerco ${v.descr || v.codice} nel SISS…`);
+    const prove = [...new Set([v.cerca, v.codice].map((x) => String(x || "").trim()).filter(Boolean))];
+    let scelta = null, box = null;
+    for (const q of prove) {
+      box = await digita(q);
+      scelta = opzioni().find((o) => o.codice === v.codice);
+      if (scelta) break;
+      await svuota(box);
+    }
+    if (!scelta) throw new Fermo(`Fermato su ${v.descr || v.codice}: la ricerca del SISS non la trova col codice ${v.codice} — aggiungila tu`);
+    clicca(scelta.el);
+    const ok = await finche(() => (dialogo() ? "dialogo" : !opzioni().length && nelModulo(v.codice) ? "si" : null), 15000);
+    if (ok === "dialogo") throw new Fermo(`Fermato su ${v.descr || v.codice}: il SISS mostra un messaggio — leggilo tu`);
+    if (!ok) throw new Fermo(`Fermato su ${v.descr || v.codice}: scelta nella ricerca, ma non compare nella ricetta del SISS`);
+    if (box && box.value) await svuota(box);
   }
 
   async function aggiungi(v) {
+    if (v.tipo === "visita") return aggiungiVisita(v);
     const gia = righeFarmaci().filter((tr) => codiceRiga(tr) === v.codice).length;
     if (gia) throw new Fermo(`Fermato su ${v.descr || v.codice}: è già nella ricetta del SISS`);
     await passo(`Cerco ${v.descr || v.codice} nel SISS…`);
@@ -246,6 +273,11 @@
 
   async function compila(voci, quesito) {
     compilando = true;
+    const visite = voci.some((v) => v.tipo === "visita");
+    // Tipo prescrizione: deve poter avere quello che si mette (di norma «Specialistica/Farmaceutica»)
+    const tipo = testo($("mat-select[formcontrolname=prescriptionType] .mat-select-value"));
+    const serve = visite ? /specialistica/i : /farmaceutica/i;
+    if (!serve.test(tipo)) throw new Fermo(`Fermato su «Tipo prescrizione»: è «${tipo || "vuoto"}», non ${visite ? "specialistica" : "farmaceutica"} — sceglila tu`);
     for (const v of voci) await aggiungi(v);
     if (quesito) {
       const q = quesitoBox();
@@ -254,6 +286,11 @@
       lascia(q);
       await dorme(150);
       if (q.value !== quesito.slice(0, 256)) throw new Fermo("Fermato sul quesito: il SISS non l'ha preso");
+    }
+    // con una visita l'Anteprima NON si preme: quesito e durata li mette il medico
+    if (visite) {
+      if (!voci.every((v) => v.tipo !== "visita" || nelModulo(v.codice))) throw new Fermo("Fermato: nella ricetta del SISS non vedo tutte le visite scelte — controlla tu");
+      return "inserite";
     }
     // la ricetta è quella e basta: i farmaci scelti, nessuno in più
     const codici = righeFarmaci().map(codiceRiga).sort().join(",");
@@ -285,8 +322,8 @@
         const r = await ask({ t: "ricettaPronto", id: lavoro.id });
         if (!r || !r.ok) return;   // fermata, scaduta: il pannello lo dice già
         if (r.voci) {
-          await compila(r.voci, r.quesito);
-          await fine("anteprima");
+          const esito = await compila(r.voci, r.quesito);
+          await fine(esito === "inserite" ? "inserite" : "anteprima");
           return;
         }
         if (r.cerca && r.cerca.n > cercate) { await cerca(r.cerca); continue; }

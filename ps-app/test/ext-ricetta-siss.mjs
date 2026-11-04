@@ -49,7 +49,7 @@ const AIC = "039785098", DESCR = "AUGMENTIN*OS 12BUST875MG+125MG";
 const FARMACI = [
   ["039785086", DESCR], [AIC, DESCR], ["037954106", DESCR], ["052594013", DESCR],
   ["026089464", "AUGMENTIN*OS SOSP FL35ML+SIR"], ["039785050", "AUGMENTIN*12CPR RIV875MG+125MG"],
-  ["034329012", "TACHIPIRINA*30CPR 500MG"], ["89.7", "VISITA GENERALE"],
+  ["034329012", "TACHIPIRINA*30CPR 500MG"], ["89.7", "VISITA GENERALE"], ["89.01", "VISITA SUCCESSIVA ALLA PRIMA"],
 ];
 const srvStato = { paziente: PZ, cercati: [], identificazioni: 0, registraConAnteprima: false, registrazioni: 0 };
 
@@ -77,7 +77,8 @@ app-sticky-bottom-toolbar{display:block;margin-top:16px}fieldset{border:1px soli
 const R = "/prescrittivoRegionale/pages/";
 const C = window.__clic = { registra: 0, salva: 0, stampa: 0, cancella: 0, elimina: 0, nuova: 0, cercaPaziente: 0, anteprima: 0 };
 let paz = null, farmaci = [], quesito = "";
-window.__ricetta = () => ({ vista: location.pathname, paz, farmaci: farmaci.map((f) => ({ ...f })), quesito, ricerca: (document.getElementById("ricerca") || {}).value || "" });
+let visite = [];
+window.__ricetta = () => ({ vista: location.pathname, paz, farmaci: farmaci.map((f) => ({ ...f })), visite: visite.map((v) => ({ ...v })), quesito, ricerca: (document.getElementById("ricerca") || {}).value || "" });
 const vista = document.getElementById("vista"), ov = document.querySelector(".cdk-overlay-container");
 const rotella = (ms) => new Promise((ok) => { document.querySelector("app-loader").innerHTML = '<div class="spinner-container"><mat-spinner role="progressbar"></mat-spinner></div>';
   setTimeout(() => { document.querySelector("app-loader").innerHTML = ""; ok(); }, ms); });
@@ -123,7 +124,7 @@ function disegna() {
   if (/dashboard$/.test(p)) {
     vista.innerHTML = '<app-dashboard><div class="dashboard-container"><div class="function-container"><mat-card class="mat-card" tabindex="0" id="nuova"><mat-card-title></mat-card-title><p>Nuova Prescrizione</p></mat-card></div>'
       + '<div class="function-container"><mat-card class="mat-card" tabindex="0"><p>Ricerca Prescrizioni</p></mat-card></div></div></app-dashboard>';
-    document.getElementById("nuova").onclick = () => { C.nuova++; paz = null; farmaci = []; quesito = ""; va("prescription/patient-identify"); };
+    document.getElementById("nuova").onclick = () => { C.nuova++; paz = null; farmaci = []; visite = []; quesito = ""; va("prescription/patient-identify"); };
   } else if (/patient-identify$/.test(p)) {
     vista.innerHTML = '<app-prescription><app-prescription-patient-identifier><mat-accordion><app-patient-search-filters><form novalidate>'
       + '<input autocomplete="off" formcontrolname="idCard" id="idCard" matinput name="idCard" placeholder="ID Personale (CF/STP/TEAM/Altro)" type="text">'
@@ -148,8 +149,11 @@ function disegna() {
       + '<app-prescription-priority><mat-select formcontrolname="priorityCode" placeholder="Priorità" role="listbox"><div class="mat-select-value"><span class="mat-select-value-text"><span>Programmabile - Da eseguire entro 120gg</span></span></div></mat-select></app-prescription-priority>'
       + '<app-prescription-diagnostic-question><input autocomplete="off" formcontrolname="diagnosticQuestionText" matinput name="diagnosticQuestionText" placeholder="Quesito diagnostico testuale" type="text" maxlength="256" id="quesito"></app-prescription-diagnostic-question>'
       + '<app-prescription-fast-searches><app-prescription-regional-specialties-search><input autocomplete="off" matinput type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" id="ricerca" placeholder="Ricerca specialistica/farmaco"></app-prescription-regional-specialties-search></app-prescription-fast-searches>'
-      + tabellaFarmaci("e") + '</app-prescription-list>'
-      + '<app-sticky-bottom-toolbar><button class="btn-sm mat-raised-button" type="button" id="anteprima"' + (farmaci.length ? "" : " disabled") + '><span class="mat-button-wrapper"> Anteprima </span></button>'
+      + tabellaFarmaci("e")
+      + (visite.length ? '<app-prescription-specialties-home><table class="mat-table"><tbody>' + visite.map((v) => '<tr class="mat-row"><td class="mat-cell"> ' + v.codice + ' </td><td class="mat-cell"> ' + v.descr + ' </td>'
+        + '<td><mat-select formcontrolname="priorityCode" placeholder="Priorità"></mat-select></td><td><input formcontrolname="duration" placeholder="Durata" value=""></td></tr>').join("") + '</tbody></table></app-prescription-specialties-home>' : "")
+      + '</app-prescription-list>'
+      + '<app-sticky-bottom-toolbar><button class="btn-sm mat-raised-button" type="button" id="anteprima"' + (farmaci.length || visite.length ? "" : " disabled") + '><span class="mat-button-wrapper"> Anteprima </span></button>'
       + '<button class="btn-sm mat-raised-button" type="button" id="salva"><span class="mat-button-wrapper"> Salva </span></button>'
       + '<button class="btn-sm mat-raised-button" type="button" id="registra"><span class="mat-button-wrapper"> Registra </span></button></app-sticky-bottom-toolbar>'
       + '</form></app-prescription-create></app-prescription-create-home></app-prescription>';
@@ -173,7 +177,8 @@ function disegna() {
           const x = l[o.dataset.i];
           ov.innerHTML = ""; box.setAttribute("aria-expanded", "false");
           await rotella(300);
-          farmaci.push({ codice: x[0], descr: x[1], qta: 1, ns: false });
+          if (/^\\d{9}$/.test(x[0])) farmaci.push({ codice: x[0], descr: x[1], qta: 1, ns: false });
+          else visite.push({ codice: x[0], descr: x[1] });
           disegna();
         }));
       }, 300);
@@ -222,8 +227,9 @@ const srv = https.createServer({ key: readFileSync(join(CERT, "k.pem")), cert: r
   if (host === PR && u.pathname === "/prescrittivoRegionale/api/search") {
     const q = (u.searchParams.get("q") || "").toUpperCase();
     srvStato.cercati.push(q);
-    const l = FARMACI.filter(([c, d]) => /^\d{9}$/.test(c) && (d.includes(q) || c === q));
-    return json(l.length ? [...l, FARMACI.find(([c]) => c === "89.7")] : []);   // (come il SISS: anche una prestazione)
+    const l = FARMACI.filter(([c, d]) => d.includes(q) || c === q);
+    // (come il SISS: fra i farmaci anche una prestazione)
+    return json(l.length && !l.some(([c]) => c === "89.7") ? [...l, FARMACI.find(([c]) => c === "89.7")] : l);
   }
   res.writeHead(404); res.end();
 });
@@ -294,8 +300,8 @@ const clic = () => siss.evaluate(() => ({ ...window.__clic }));
 check(await finche(async () => (await sissStato()).vista.endsWith("/editing") && (await sissStato()).paz, 25000), "entrato: «Nuova Prescrizione», il codice fiscale nell'identificazione, Cerca → la ricetta del paziente");
 check(await finche(async () => await $p(".ricrisv").count() > 0, 20000), "la ricerca fatta nella casella del SISS: i risultati della sua tendina nel pannello");
 const risultati = await $p(".ricrisv").allInnerTexts();
-check(risultati.some((t) => t.startsWith(AIC) && t.includes(DESCR)) && !risultati.some((t) => /VISITA/.test(t)) && /1 voce di visite\/esami/.test(await $p(".ricris").innerText()),
-  `i risultati sono i farmaci della tendina, col codice (${risultati.length}: ${risultati.slice(0, 3).join(" | ")}); la visita no, contata a parte`);
+check(risultati.some((t) => t.startsWith(AIC) && t.includes(DESCR)) && await $p('.ricrisv[data-ricadd="89.7"][data-tipo="visita"] .rictipo').count() === 1,
+  `i risultati sono le voci della tendina, col codice (${risultati.length}: ${risultati.slice(0, 3).join(" | ")}); la visita c'è, segnata «visita/esame»`);
 check((await sissStato()).ricerca === "" && srvStato.cercati.includes("AUGMENTIN"), "la ricerca l'ha fatta la casella del SISS, poi svuotata");
 
 // ---- 3. il farmaco, quantità 2, non sostituibile, il quesito → Prepara → Anteprima
@@ -323,7 +329,7 @@ if (FOTO) { await doc.bringToFront(); await $p(".card").screenshot({ path: join(
 // ---- 4. i preferiti si imparano dall'Anteprima (codice, descrizione, quantità)
 check(await finche(async () => (await preferiti()).some((p) => p.codice === AIC && p.qta === 2 && p.descr === DESCR), 5000), "il farmaco dell'Anteprima entra nei preferiti: codice, descrizione, quantità");
 const pref = await preferiti();
-check(pref.every((p) => Object.keys(p).every((k) => ["codice", "descr", "qta", "ts"].includes(k))) && !JSON.stringify(pref).includes(PZ.cf) && !JSON.stringify(pref).includes(PZ.cog),
+check(pref.every((p) => Object.keys(p).every((k) => ["codice", "descr", "qta", "tipo", "ts"].includes(k))) && !JSON.stringify(pref).includes(PZ.cf) && !JSON.stringify(pref).includes(PZ.cog),
   "nei preferiti niente del paziente");
 await doc.bringToFront();
 check(await finche(async () => await $p(`.ricchip[data-ricpref="${AIC}"]`).count() === 1, 5000), "il pannello mostra il preferito");
@@ -384,6 +390,33 @@ check(await finche(async () => /il SISS sta registrando la ricetta, e non l'ho c
   `se il SISS chiedesse di registrare durante la compilazione: «${await statoPannello()}», in rosso`);
 check(srvStato.registrazioni === 1 && (await clic()).registra === 0 && await finche(async () => (await errori()).some((e) => e.dati && e.dati.passo === "registrazione" && e.dati.grave), 5000),
   "vista dal flusso delle richieste (solo osservato), nel registro degli errori; Registra mai premuto da noi");
+
+// ---- 9. una visita: dalla ricerca, inserita nella stessa casella, e l'Anteprima NON si preme
+srvStato.registraConAnteprima = false;
+await siss.goto(`https://${PR}/prescrittivoRegionale/pages/dashboard`);
+await siss.waitForLoadState();
+await doc.bringToFront();
+await $p('[data-ricvia="0"]').click();
+await $p("#ricq").fill("visita");
+await sospendi(1600);
+await $p("#riccerca").click();
+check(await finche(async () => await $p('.ricrisv[data-ricadd="89.7"]').count() === 1, 25000), "cercata «visita» nel SISS: le visite fra i risultati, sceglibili");
+await $p('.ricrisv[data-ricadd="89.7"]').click();
+await $p(`.ricchip[data-ricpref="${AIC}"]`).click();
+check(/Una ricetta alla volta: farmaci o visite/.test(await $p(".bdi").innerText()) && await $p(".ricv").count() === 1 && await $p('.ricv[data-ricriga="89.7"] .rictipo').count() === 1
+  && await $p("#ricqta0").count() === 0, "farmaci e visite insieme no: «Una ricetta alla volta: farmaci o visite»; la visita senza quantità né «non sostituibile»");
+const visPrima = await clic();
+await $p("#ricprepara").click();
+check(await finche(async () => /Visite inserite: aggiungi quesito e durata, poi Anteprima/.test(await statoPannello()), 30000), `con una visita si ferma prima dell'Anteprima: «${await statoPannello()}»`);
+const f9 = await sissStato(), c9 = await clic();
+check(f9.vista.endsWith("/editing") && f9.visite.length === 1 && f9.visite[0].codice === "89.7" && f9.farmaci.length === 0 && f9.quesito === "",
+  `nel SISS la visita c'è (scelta col codice esatto fra due visite), il quesito vuoto: lo scrive il medico (${JSON.stringify(f9.visite)})`);
+check(c9.anteprima === 0 && visPrima.anteprima === 0 && c9.registra === 0 && c9.salva === 0 && c9.stampa === 0 && c9.cancella === 0, `Anteprima mai premuta, né Registra, Salva, Stampa (${JSON.stringify(c9)})`);
+check(await finche(async () => (await schedeSiss()).find((t) => /editing$/.test(t.url))?.active, 5000), "la scheda del SISS è davanti: tocca al medico");
+check(await finche(async () => (await preferiti()).some((p) => p.codice === "89.7" && p.tipo === "visita" && p.descr === "VISITA GENERALE" && Object.keys(p).every((k) => ["codice", "descr", "tipo", "ts"].includes(k))), 5000),
+  "la visita inserita entra nei preferiti: codice, descrizione e tipo, nient'altro");
+await doc.bringToFront();
+check(await finche(async () => await $p('.ricchip[data-ricpref="89.7"]').count() === 1, 5000), "il pannello mostra la visita fra i preferiti");
 
 await ctx.close();
 srv.close();
