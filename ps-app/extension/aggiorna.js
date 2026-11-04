@@ -16,7 +16,7 @@
  * corso. In storage.local, `aggiorna` = { ts, nuova, puo, come }: lo legge il
  * pannello.
  */
-/* global SA4, ordLeggi, inFilaOrd, ospite, corto, b64 */
+/* global SA4, ordLeggi, inFilaOrd, ospite, corto, b64, motoreDiScheda */
 
 const AGG_BASE = "https://raw.githubusercontent.com/mmariomm/EKGAtlas/main/ps-app/dist/";
 const AGG_GIORNO = 24 * 3600e3;
@@ -73,7 +73,7 @@ async function aggControlla(ora) {
 // Un ordine, una stampa, un ordine dal telefono, o un giro che gira in una
 // scheda del medico (il suo appunto, o il presidio di chi sta mandando).
 async function aggOccupato() {
-  if ((await ordLeggi()).some((x) => AGG_APERTO.has(x.stato))) return true;
+  if ((await ordLeggi()).some((x) => AGG_APERTO.has(x.stato)) || motoreDiScheda()) return true;   // (anche il motore di una scheda)
   const schede = await chrome.tabs.query({ url: SA4 + "/*" }).catch(() => []);
   for (const t of schede) {
     if (t.discarded) continue;

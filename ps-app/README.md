@@ -546,14 +546,19 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    le butta via.
    **Un secondo ordine mentre uno gira aspetta in coda** — la striscia dice «+1 in coda» — e
    parte quando il primo ha finito o si è fermato (sulla sua striscia, «In coda», ✕ lo toglie).
+   Vale anche, dal PC o dal telefono, mentre una tua scheda manda esami da sé (sotto: «Quando
+   non va in sottofondo»); e quel giro, se intanto gira un ordine in sottofondo, aspetta il suo
+   turno **prima di partire** — «In coda» — mai a metà. Il motore è uno solo in tutto il browser
+   (regola 19).
    **Niente sparisce zitto, anche qui.** Chiusa a metà la scheda dell'ordine, la striscia dice
    «Scheda chiusa · 2 esami non mandati: …» e «Da controllare» per quello che era in volo (mai
    fra i non mandati). Una scheda che non parte entro 45 secondi è un avviso rosso; una che tace
    da tre minuti si interroga: se risponde era lenta, se no «Ordine fermo» — ma finché esiste
-   niente è «non mandato», la coda aspetta e ⏹ la chiude. Col browser caduto la scheda
+   niente è «non mandato», la coda aspetta e ⏹ la chiude (le letture no: referti, lista smart
+   e schede di sottofondo non la aspettano). Col browser caduto la scheda
    ripristinata **non** riprende l'ordine di nascosto: vale il segno di sempre.
    **Quando non va in sottofondo**: col bookmarklet, sulla pagina «Nuova richiesta» (il suo
-   modulo vivo non si porta altrove), per la coppia laboratorio + radiologia, se l'indirizzo del
+   modulo vivo non si porta altrove), se l'indirizzo del
    paziente non si riapre così com'è, o se la scheda non si apre: il giro lo fa la tua pagina,
    come prima — solo su un no esplicito del service worker. Una risposta persa si richiede con
    lo stesso numero, e l'ordine resta uno; se non risponde proprio, la striscia dice di guardare
@@ -620,7 +625,8 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    viaggia con lui, e lì compare «Riprova». Se la richiesta non era ancora nata, «Riprova» è un
    giro normale dalla pagina del paziente. Niente «Riprova» se non manca niente (solo «da
    controllare»), dopo una sessione scaduta, un episodio che non torna, un'altra scheda al
-   lavoro, né per la coppia laboratorio + radiologia. **Una volta lo fa da solo:** un esame
+   lavoro, né per la coppia laboratorio + radiologia fatta dalla tua pagina (col bookmarklet:
+   in sottofondo sono due ordini, ognuno col suo). **Una volta lo fa da solo:** un esame
    rimasto fuori da un elenco venuto male, con niente «da controllare», si riprova subito — la
    striscia dice «Riprovo 1 esame…» — e il resoconto arriva solo se si ferma ancora.
    **…o si svuota il carrello e si ricomincia.** Sul carrello di quella richiesta il resoconto
@@ -663,13 +669,16 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    mnemonico LIS fra parentesi se il nome ne ha uno, se no il nome — una sola lettura. Se la riga
    compare, passa per la strada di sempre (nome vivo controllato, un invio solo); se no, l'esame
    finisce fra i «Mancano» e lo aggiungi a mano. Vedi le regole 3 e 4.
-   Selezionando laboratorio **e** radiologia il bottone diventa **Conferma e stampa · 2 richieste** e il pannello
-   le costruisce e le **conferma tutte e due da solo** — prima il laboratorio, poi la radiologia,
-   con gli stessi controlli (la riga in carrello, una volta sola, la conferma provata) —, con
-   **una sola** stampa finale: etichette → liste → la prenotazione RX. Quello che è entrato lo
-   rivedi tu, sulla ricevuta e sui fogli. Questa è
-   l'unica che **non** va in sottofondo: le due richieste vivono nella memoria del pannello, e
-   a metà non si riprendono — lì il browser avvisa ancora prima di cambiare pagina.
+   Selezionando laboratorio **e** radiologia (il pacchetto «Dolore toracico» porta l'RX) il
+   bottone diventa **Conferma e stampa · 2 richieste**: con l'estensione sono **due ordini in
+   sottofondo**, uno dopo l'altro, come dal telefono — prima il laboratorio, poi la radiologia
+   col suo quesito —, ognuno con i controlli di sempre (la riga in carrello, una volta sola, la
+   conferma provata). La tua scheda non si ferma e non si sposta; la stampa viene in due giri:
+   etichette e liste del laboratorio, poi la prenotazione RX. Col bookmarklet (o se la scheda di
+   sottofondo non si apre) le costruisce e le conferma la tua pagina, una dopo l'altra, con
+   **una sola** stampa finale: etichette → liste → la prenotazione RX; lì le due richieste
+   vivono nella memoria del pannello, a metà non si riprendono, e il browser avvisa prima di
+   cambiare pagina.
 5. **Stampa** (menu **⋯ → Stampa le richieste**, non più in fondo alle Richieste): ogni richiesta con data, ora e la lista compatta degli esami.
 
 ### Esiti
@@ -1872,10 +1881,23 @@ vuoto) e **Prepara nel SISS**.
     dopo risponde «ORA-20965: AMB_RICHIESTA: Progressivo richiesta …-1 già utilizzato» col
     carrello vuoto (3.70.0). Quindi: ogni lettura dell'estensione (`fetchDoc`, `fetchPdf`)
     aspetta finché un motore lavora in un'**altra** pagina — un ordine in sottofondo che il
-    service worker dice partito o in corsa, o un motore della scheda del medico (il suo battito
-    `motore.v1` in localStorage); la lista smart non si rilegge (riprova al giro dopo); le schede
-    di sottofondo (referto, storico, telefono) si aprono dopo; i PDF di una stampa aspettano la
-    fine del motore, e il motore dopo aspetta che quei PDF siano presi. **Un ordine, un
+    service worker dice partito o in corsa, o il motore di una scheda (un giro della scheda del
+    medico, la sua conferma nella cornice, il giro della scheda dell'ordine). **Il motore è uno
+    solo in tutto il browser, e lo tiene il service worker**: chi parte lo chiede (`motore` in
+    `storage.session`: quale scheda, da quando), lo rinnova ogni 4 secondi finché lavora e lo
+    molla alla fine; non rinnovato scade in 15 secondi, e una pagina che se ne va con un giro da
+    riprendere non lo molla — lo riprende la stessa scheda. Chi lo chiede mentre lo tiene un
+    altro aspetta **prima di partire**, mai a metà; un ordine nuovo, dal PC o dal telefono, va
+    in coda. (Col bookmarklet, senza service worker, lo dice il battito `motore.v1` in
+    localStorage.) Un ordine «muto» — «Ordine fermo · ⏹ la chiude» — tiene la coda ma non le
+    letture. La lista smart non si rilegge (riprova al giro dopo); le schede
+    di sottofondo (referto, storico, telefono) si aprono dopo, e così la scheda che dà i PDF di
+    una stampa chiesta dalla scheda del medico; i PDF di una stampa aspettano la fine del motore
+    (al più 4 minuti), e il motore dopo aspetta che quei PDF siano presi. Le etichette non vanno a
+    una scheda mentre lei stessa manda esami. Le domande del service worker alle schede (ci sei?
+    le etichette, il ⏹) non tengono ferma la fila degli ordini: una scheda bloccata non ferma
+    gli altri. Un ordine finito resta in memoria quanto serve a chi lo guarda: andato bene, i
+    due minuti della striscia; se no mezz'ora. **Un ordine, un
     motore**: il piano lo riceve una scheda sola (`consegnata`), e la scheda vuota che si
     sostituisce dopo 6 secondi è solo quella che il piano non l'ha mai avuto, chiusa prima che
     nasca la nuova. Un «ORA-» nella risposta a un inserimento ferma il giro **subito**, senza
