@@ -1895,6 +1895,37 @@
   // Il caricamento da solo all'apertura: per paziente, la firma del laboratorio
   // all'ultima lettura e quando si è ricontrollato un laboratorio a metà
   const AUTO_CARICA = "autoCarica.v1";
+  // …e quello che, caricato da solo, non è riuscito: per episodio, chi (un
+  // referto, o «lab» per i valori), quando, quante volte. Da solo lo si
+  // riprova al più due volte, dopo 2 e dopo 10 minuti (i valori anche quando
+  // la pagina del laboratorio è cambiata); un tocco o un bottone ci prova
+  // sempre. Un PDF che si è rivelato di un altro paziente da solo non si
+  // riprende più.
+  const FALLITI = "autoFalliti.v1";
+  const RIPROVA_MS = [2 * 60e3, 10 * 60e3];
+  const fallito = (ep, id) => ((store.get(FALLITI, {}) || {})[ep] || {})[id] || null;
+  function segnaFallito(ep, id, extra = {}) {
+    if (!ep || !id) return;
+    const t = store.get(FALLITI, {}) || {};
+    for (const k of Object.keys(t)) if (!Object.values(t[k] || {}).some((r) => Date.now() - ((r && r.ts) || 0) < 24 * 3600e3)) delete t[k];
+    const r = (t[ep] || {})[id];
+    t[ep] = { ...(t[ep] || {}), [id]: { ...(r || {}), ts: Date.now(), n: ((r && r.n) || 0) + 1, ...extra } };
+    store.set(FALLITI, t);
+  }
+  function togliFallito(ep, id) {
+    const t = store.get(FALLITI, {}) || {};
+    if (!t[ep] || !t[ep][id]) return;
+    delete t[ep][id];
+    if (!Object.keys(t[ep]).length) delete t[ep];
+    store.set(FALLITI, t);
+  }
+  function riprovaDaSolo(ep, id, firma) {
+    const r = fallito(ep, id);
+    if (!r) return true;
+    if (r.altro) return false;
+    if (firma !== undefined && r.firma !== firma) return true;
+    return r.n <= RIPROVA_MS.length && Date.now() - (r.ts || 0) >= RIPROVA_MS[r.n - 1];
+  }
   // un PDF scelto che si rivela di un altro paziente: un errore del pannello
   const GRAVE_ALTRO = "Errore grave: questo PDF è di un altro paziente — non mostrato";
   // Il registro degli errori (uno solo: lo tiene il service worker, bg.js
@@ -2342,42 +2373,87 @@
   // il carrello riletto è vuoto (3.70.0, ordini di 11 esami su due erogatori).
   // Quindi ogni lettura dell'estensione (fetchDoc, fetchPdf) aspetta qui,
   // finché c'è un motore che lavora in un'ALTRA pagina: un ordine in
-  // sottofondo che il service worker dice partito o in corsa, o un motore di
-  // una scheda del medico (il suo battito, MOTORE, in localStorage). Le
-  // richieste della pagina dove gira il motore sono le sue: passano.
+  // sottofondo che il service worker dice partito o in corsa, o il motore di
+  // una scheda (un giro, la sua conferma), che lo tiene dal service worker
+  // (`motore` in storage.session: { tab, id, scade } — vedi bg.js, MOTORE_K).
+  // Le richieste della pagina dove gira il motore sono le sue: passano. (Senza
+  // estensione, col bookmarklet, il motore di una scheda lo dice il suo
+  // battito, MOTORE, in localStorage.)
   const MOTORE = "motore.v1";
   const MOTORE_MS = 15e3;          // un battito più vecchio è di una pagina morta
   const CANCELLO_MAX = 240e3;      // più di così non si aspetta (un ordine dura meno di un minuto)
   const PAGINA_ID = Math.random().toString(36).slice(2);
   let MOTORE_MIO = null;           // il motore che gira in QUESTA pagina
   let ORDINI_VIVI = [];            // gli ordini del service worker (storage.session)
+  let MOTORE_SW = null;            // il motore che il service worker dice preso, da chi
+  let MIA_SCHEDA = null;           // il numero di questa scheda, detto dal service worker
   const motoreAttivo = (x) => !!x && (x.stato === "avvio" || x.stato === "corre");
   try {
-    chrome.storage.session.get("ordini").then((o) => { if (Array.isArray(o && o.ordini)) ORDINI_VIVI = o.ordini; }).catch(() => {});
-    chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && ch.ordini) ORDINI_VIVI = ch.ordini.newValue || []; });
+    chrome.storage.session.get(["ordini", "motore"]).then((o) => {
+      if (Array.isArray(o && o.ordini)) ORDINI_VIVI = o.ordini;
+      MOTORE_SW = (o && o.motore) || null;
+    }).catch(() => {});
+    chrome.storage.onChanged.addListener((ch, area) => {
+      if (area !== "session") return;
+      if (ch.ordini) ORDINI_VIVI = ch.ordini.newValue || [];
+      if (ch.motore) MOTORE_SW = ch.motore.newValue || null;
+    });
   } catch { /* senza estensione: solo il battito */ }
   // il motore è qui: il giro di questa pagina, la sua conferma, o la scheda
   // dell'ordine in sottofondo che sta lavorando (fra una pagina e l'altra)
   const motoreQui = () => !!MOTORE_MIO || !!(LAVORO && ORDINI_VIVI.some((x) => x.id === LAVORO.id && motoreAttivo(x)));
   const battitoAltrui = () => { const m = store.get(MOTORE, null); return !!(m && m.id !== PAGINA_ID && Date.now() - (m.ts || 0) < MOTORE_MS); };
-  const motoreAltrove = () => !motoreQui() && (ORDINI_VIVI.some(motoreAttivo) || battitoAltrui());
-  const motoreOvunque = () => motoreQui() || ORDINI_VIVI.some(motoreAttivo) || battitoAltrui();
+  // (un ordine «muto» — la sua scheda non risponde più: «⏹ la chiude» — non ferma le letture)
+  const motoreFuori = () => ORDINI_VIVI.some((x) => motoreAttivo(x) && !x.muto)
+    || (hasExt() ? !!(MOTORE_SW && MOTORE_SW.scade > Date.now() && MOTORE_SW.tab !== MIA_SCHEDA) : battitoAltrui());
+  const motoreAltrove = () => !motoreQui() && motoreFuori();
+  const motoreOvunque = () => motoreQui() || motoreFuori();
   async function cancelloMotore(signal) {
     if (!motoreAltrove()) return;
     const fine = Date.now() + CANCELLO_MAX;
     while (Date.now() < fine && motoreAltrove()) await sleep(500, signal);
   }
+  const segnaScheda = (r) => { if (r && r.scheda != null) MIA_SCHEDA = r.scheda; return r; };
   function battitoMotore() {
     try {
+      // con l'estensione: il motore di questa pagina si rinnova dal service worker
+      if (hasExt()) { if (MOTORE_MIO) ask({ t: "ordineMotore", id: MOTORE_MIO }).then(segnaScheda); return; }
       // (il battito è solo del motore di questa pagina: la scheda di un ordine
       // in sottofondo la dice già il service worker, e finito il giro tace subito)
       if (MOTORE_MIO) store.set(MOTORE, { id: PAGINA_ID, ts: Date.now() });
       else { const m = store.get(MOTORE, null); if (m && m.id === PAGINA_ID) store.set(MOTORE, null); }
     } catch { /* memoria piena: resta il service worker */ }
   }
+  // Chi parte (un giro, una conferma) chiede il motore e aspetta il suo turno
+  // PRIMA di mandare qualunque cosa — mai a metà: un ordine in sottofondo che
+  // gira, o il motore di un'altra scheda. Intanto la striscia dice «In coda».
+  // Si aspetta solo un «occupato» detto: un service worker che non risponde, o
+  // non sa del motore, non sa di nessun altro — si parte, come prima. Dopo
+  // cinque minuti si rinuncia (false: non parte niente).
+  const ATTESA_MOTORE_MAX = 5 * 60e3;
+  async function prendiMotore(id, ui) {
+    if (!hasExt()) return true;
+    const fine = Date.now() + ATTESA_MOTORE_MAX;
+    let persi = 0, detto = false;
+    try {
+      for (;;) {
+        const r = segnaScheda(await ask({ t: "ordineMotore", id }));
+        if (r.ok || (!r.occupato && (!r.perso || ++persi >= 3))) return true;
+        if (r.occupato && Date.now() > fine) return false;
+        if (r.occupato && !detto && ui && ui.inCodaMotore) { detto = true; ui.inCodaMotore(true); }
+        await sleep(1000);
+      }
+    } finally { if (detto) ui.inCodaMotore(false); }
+  }
+  const mollaMotore = (id) => { if (hasExt()) ask({ t: "ordineMotore", id, molla: true }); };
   if (!TABELLONE) {
     setInterval(battitoMotore, 4000);
-    window.addEventListener("pagehide", () => { MOTORE_MIO = null; battitoMotore(); });
+    window.addEventListener("pagehide", () => {
+      // (con un giro da riprendere il motore resta di questa scheda: lo
+      // riprende la pagina dopo, o scade da solo)
+      if (MOTORE_MIO && !tabStore.get(CORSA, null)) mollaMotore(MOTORE_MIO);
+      MOTORE_MIO = null; battitoMotore();
+    });
   }
 
   // ------------------------------------------------------- KNOWN PATIENTS
@@ -3194,7 +3270,7 @@
   // (finestra, stanze, le opzioni delle aree, catalogo, stampe già fatte) e i
   // modelli del medico; chi sta in quale area se ne va.
   const RESET_VIA = () => ["patients.v1", ...TUTTI_I_POSTI(), "stanza.posti.v1", AREE, AREA_VAI, SMART_SYNC, DIMESSI, STATO, PROM, PROM_VECCHI, noteKey, segniKey, "refVisti.v1",
-    "refPortale", DA_CONFERMARE, "quesiti", "quesiti.ts", "lastQ", APERTA, PRESIDIO, AUTO_CARICA];
+    "refPortale", DA_CONFERMARE, "quesiti", "quesiti.ts", "lastQ", APERTA, PRESIDIO, AUTO_CARICA, FALLITI];
   function azzeraScheda() {
     try { for (const k of Object.keys(sessionStorage)) if (k.startsWith(NS)) sessionStorage.removeItem(k); } catch { /* niente */ }
   }
@@ -4335,10 +4411,25 @@
 
   async function runPlan(plan, ui) {
     const mio = Math.random().toString(36).slice(2), prima = MOTORE_MIO;
+    // il turno, prima di tutto (e intanto un secondo «Conferma» non parte)
+    ui._motoreAtteso = true;
+    let preso;
+    try { preso = prima ? true : await prendiMotore(mio, ui); } finally { ui._motoreAtteso = false; }
+    if (!preso) {
+      ui.message = "Un altro ordine sta ancora mandando esami: niente inviato da qui. Riprova fra poco.";
+      ui.render();
+      return null;
+    }
     MOTORE_MIO = mio;
     battitoMotore();
     try { return await runPlanVero(plan, ui); }
-    finally { if (MOTORE_MIO === mio) MOTORE_MIO = prima; battitoMotore(); }
+    finally {
+      if (MOTORE_MIO === mio) MOTORE_MIO = prima;
+      // (la conferma automatica che parte dalla pagina dopo è ancora questo
+      // motore: il turno resta alla scheda, e la conferma lo riprende)
+      if (!MOTORE_MIO && (LAVORO || !tabStore.get("confirm.v1", null))) mollaMotore(mio);
+      battitoMotore();
+    }
   }
   async function runPlanVero(plan, ui) {
     const ctrl = new AbortController();
@@ -7405,12 +7496,16 @@
         window.addEventListener("pagehide", abbandona);
         if (TRACCIA) TRACCIA.attiva = true;   // le riletture della conferma vanno nella traccia
         const tC = Date.now();
-        const motorePrima = MOTORE_MIO;
-        MOTORE_MIO = MOTORE_MIO || "conferma";   // la conferma è ancora il motore: le altre schede aspettano
-        battitoMotore();
-        try { esito = await confermaInCornice(listUrl, { panel: this, episodeId: ep, rid }); }
+        // La conferma è ancora il motore: lo chiede (il giro appena finito
+        // l'ha lasciato a questa scheda: subito), e intanto le altre schede
+        // aspettano; senza turno, la conferma resta al medico. (Mai rimettere
+        // il motore di prima: il giro che l'ha chiamata intanto è finito.)
+        const idConferma = "conferma" + Math.random().toString(36).slice(2, 8);
+        const preso = await prendiMotore(idConferma, this);
+        MOTORE_MIO = idConferma;
+        try { esito = preso ? await confermaInCornice(listUrl, { panel: this, episodeId: ep, rid }) : "rifiutata"; }
         catch { esito = "rifiutata"; }
-        finally { MOTORE_MIO = motorePrima; battitoMotore(); }
+        finally { if (MOTORE_MIO === idConferma) { MOTORE_MIO = null; mollaMotore(idConferma); } battitoMotore(); }
         window.removeEventListener("pagehide", abbandona);
         this.log(`${now()}  conferma in sottofondo: ${esito}`);
         if (TRACCIA && TRACCIA.passi.length < 120) TRACCIA.passi.push({ t: tC - TRACCIA.t0, ms: Date.now() - tC, m: "cornice", pagina: "Conferma", esito });
@@ -7747,7 +7842,8 @@
       if (plan.startPage === "carrello") return ok(plan.listUrl);
       return "";
     }
-    async delega(plan, url) {
+    // (true: l'ordine è dato; `ripiego`: che cosa fare qui se nessuna scheda di sottofondo lo prende)
+    async delega(plan, url, ripiego = () => runPlan(plan, this)) {
       const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
       const pulito = (i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label,
         ...(i.chiave ? { chiave: i.chiave } : {}), ...(i.resCat ? { resCat: i.resCat } : {}), ...(i.alPostoDi ? { alPostoDi: i.alPostoDi } : {}),
@@ -7782,18 +7878,40 @@
         if (!plan.episodeId || plan.episodeId === this.episodeId) this.clearOrderUi();
         this.ordiniAggiorna(r.ordini || this.ordini);
         this.render();
-        return;
+        return true;
       }
       if (!r.no) {
         // il service worker non risponde: non si sa, e da qui non si manda niente
         this.segnala({ tag: "Ordine incerto", testo: "Non so se è partito: guarda il carrello prima di rifarlo", tono: "warn", paziente: chi,
           onStop: () => this.segnala(null) });
-        return;
+        return false;
       }
       // niente scheda di sottofondo (non si apre, o la pagina non va): l'ordine lo manda questa pagina, come sempre
       this.log(`${now()}  scheda di sottofondo non disponibile (${r.why || "?"}): mando da questa pagina`);
       if (this.striscia && this.striscia.daOrdine) this.segnala(null);
-      runPlan(plan, this);
+      ripiego();
+      return false;
+    }
+    // Un giro che aspetta il suo turno (prendiMotore): lo dicono la striscia e il Registro.
+    inCodaMotore(on) {
+      if (on) {
+        this.log(`${now()}  un altro motore sta mandando esami: aspetto il turno, poi parto`);
+        this.collapsed = true;
+        this.segnala({ tag: "In coda", testo: "un altro ordine sta mandando esami: parto appena ha finito", tono: "run", paziente: this.runPatient || "", inCoda: true });
+      } else if (this.striscia && this.striscia.inCoda) this.segnala(null);
+    }
+    // Laboratorio e radiologia (il pacchetto «Dolore toracico» porta l'RX):
+    // due ordini in sottofondo, uno dopo l'altro — il laboratorio, poi la
+    // radiologia col suo quesito —, come dal telefono (ponteOrdina). Questa
+    // scheda non si ferma e non si sposta; le etichette escono in due giri.
+    // Se la prima scheda di sottofondo non si apre, la catena di sempre, qui;
+    // se non si apre la seconda, quella gamba qui.
+    async delegaGambe(plan, url) {
+      for (const [i, leg] of plan.legs.entries()) {
+        const gamba = { ...plan, legs: [leg], entryUrl: leg.entryUrl, items: leg.items, legLabel: leg.label,
+          quesito: leg.quesito ?? plan.quesito, quesitoMio: leg.quesitoMio ?? plan.quesitoMio };
+        if (!(await this.delega(gamba, url, i ? () => runPlan(gamba, this) : () => this.runChain(plan)))) return;
+      }
     }
     // Gli ordini dal service worker. La scheda di un ordine guarda solo il
     // suo: finito, si slega; un ⏹ segnato, lo esegue. Le altre mostrano la striscia.
@@ -8219,7 +8337,7 @@
 
     // ---- run starters ----
     startPlan(base) {
-      if (this.runState === "running" || this._delegando) return;
+      if (this.runState === "running" || this._delegando || this._motoreAtteso) return;
       // La scheda di un ordine che gira fa solo quell'ordine: un altro, da
       // qui, si confonderebbe col suo (le etichette, l'esito).
       if (LAVORO && !base.dalLavoro) {
@@ -8248,7 +8366,14 @@
         patientUrl: base.patientUrl || (this.pageType === "patient" ? location.href : ""),
         ...(this.pageType === "patient" && !base.prima ? { prima: fotoRichieste(document, location.href) } : {}) };
       if ((this._q || "").trim()) rememberQuesito((this._q || "").trim());
-      if (plan.legs && plan.legs.length > 1) { this.runChain(plan); return; }
+      // Laboratorio e radiologia: con l'estensione due ordini in sottofondo,
+      // uno dopo l'altro (delegaGambe); senza, la catena qui (runChain).
+      if (plan.legs && plan.legs.length > 1) {
+        const dove = this.urlLavoro(plan);
+        if (dove) this.delegaGambe(plan, dove);
+        else this.runChain(plan);
+        return;
+      }
       // Con l'estensione il giro lo fa una scheda di sottofondo: questa resta
       // libera. Se la scheda non si apre, lo fa questa pagina, come sempre.
       // («Svuota» dalla riga di una richiesta da confermare resta qui: è corto,
@@ -8260,7 +8385,8 @@
 
     // Lab and radiology cannot share a richiesta, so when both are selected we
     // build them one after the other and then walk the doctor through both
-    // confirmations (and one single print flow at the end).
+    // confirmations (and one single print flow at the end). (Col bookmarklet,
+    // o se la scheda di sottofondo non si apre: con l'estensione è delegaGambe.)
     async runChain(plan) {
       const done = [];
       for (let i = 0; i < plan.legs.length; i++) {
@@ -10192,15 +10318,23 @@
       return this.esiti.filter((e) => e.kind === "referto" && refertoTipo(e) !== "lab");
     }
     // …ma solo dove la tabella dei Valori li può mostrare: c'è una tabella, o
-    // c'è da dove leggerla (estensione e portale). Altrimenti — bookmarklet,
-    // niente portale — un referto di laboratorio è l'unico posto dove quei
-    // valori si vedono: resta, raccolto sotto «Laboratorio (N)». Un esito
-    // finale non sparisce mai.
+    // c'è da dove leggerla (estensione e portale) e la lettura non è fallita.
+    // Altrimenti — bookmarklet, niente portale, il portale che non ha dato la
+    // tabella — un referto di laboratorio è l'unico posto dove quei valori si
+    // vedono: resta, raccolto sotto «Laboratorio (N)». Un esito finale non
+    // sparisce mai.
     refertiLab() {
       const tabella = !!(this.storico && this.storico.righe && this.storico.righe.length)
         || this.esiti.some((e) => e.kind === "valori" && ((tabStore.get(this.risKey(e.id), null) || {}).rows || []).length);
-      if (tabella || this.conPortale()) return [];
+      if (tabella || (this.conPortale() && !this.notaPortale && !fallito(this.epDiQuesta(), "lab"))) return [];
       return this.esiti.filter((e) => e.kind === "referto" && refertoTipo(e) === "lab");
+    }
+    // I valori che il pannello ha di questo paziente, in una stringa: cambia
+    // quando arriva un valore nuovo (per il ricontrollo ogni 10 minuti).
+    impValori() {
+      const s = this.storico;
+      return JSON.stringify([s ? [s.date || [], s.righe || []] : null,
+        this.esiti.filter((e) => e.kind === "valori").map((e) => (tabStore.get(this.risKey(e.id), null) || {}).rows || [])]);
     }
     // I referti che «Salva i referti» (nel menu ⋯, solo estensione) può ancora
     // tenere: sulla schermata Esiti, quelli non ancora salvati.
@@ -11187,9 +11321,13 @@
       try {
         const r = await ask({ t: "apriStoricoSotto", url, ep: this.episodeId, nome: this.nomePaziente() });
         if (!r || !r.ok) { s = { esito: "rifiutato", why: r && r.why }; return; }
-        // la tabella si scorre a passi (il portale disegna solo le colonne in
-        // vista): con tanti prelievi ci vuole un po'
-        while (Date.now() - this._sotto.t0 < 60000) {
+        // l'orologio parte adesso: il service worker può aver tenuto la
+        // risposta finché il portale era libero (una lettura alla volta) o il
+        // motore lavorava. Poi la scheda ha 30 secondi per arrivare alla
+        // tabella e uno al più per leggerla: la tabella si scorre a passi (il
+        // portale disegna solo le colonne in vista)
+        this._sotto.t0 = Date.now();
+        while (Date.now() - this._sotto.t0 < 95000) {
           await sleep(800);
           s = await ask({ t: "esitoSotto", tabId: r.tabId });
           if (!s || !s.ok || (s.esito !== "attesa" && s.esito !== "lettura")) break;
@@ -11222,13 +11360,15 @@
     // laboratorio, refertati e no: basta quello, una pagina sola. Le finestre
     // Risultati — una richiesta per prelievo — si leggono solo se il portale
     // non si può leggere: senza estensione, senza link, o se non ha risposto.
+    // Dice se i valori sono arrivati (lo storico, o almeno un prelievo).
     async caricaValori(opts = {}) {
-      if (!this.conPortale()) return this.reloadTuttiValori(opts);
+      if (!this.conPortale()) return !!(await this.reloadTuttiValori(opts));
       const letto = await this.storicoInSottofondo();
       if (!letto && !(opts.ferma && opts.ferma())) {
         this.log(`${now()}  leggo i prelievi dalle finestre Risultati, uno alla volta`);
-        return this.reloadTuttiValori(opts);
+        return !!(await this.reloadTuttiValori(opts));
       }
+      return !!letto;
     }
     conPortale() { return this.pageType !== "vista" && hasExt() && !!this.nomePaziente() && !!this.linkStorico(); }
 
@@ -11312,6 +11452,7 @@
       const id = identitaReferto(righe, this.identitaPaz());
       if (id.esito === "altro") {
         tabStore.set(this.txtKey(e.id), { ts: Date.now(), altro: true });
+        segnaFallito(this.episodeId, e.id, { altro: true });   // (da solo non si riprende più)
         if (hasExt()) {
           await ask({ t: "delRef", id: e.id, ep: this.episodeId }).catch(() => {});
           const c = { ...(this.refCache || {}) };
@@ -11361,7 +11502,9 @@
         this.refCoda.delete(e.id);
         this.refBusy = { ...(this.refBusy || {}), [e.id]: true };
         this.render();
-        return await fn();
+        const r = await fn();
+        if (r && r.salvato) togliFallito(this.episodeId, e.id);   // preso: niente più da riprovare
+        return r;
       }).finally(() => this.refCoda.delete(e.id));
     }
 
@@ -11412,6 +11555,7 @@
     refertoRotto(e, err) {
       const why = `${(err && (err.head || err.message)) || "non letto"}${err && err.body ? ` — ${err.body}` : ""}${err && err.diag ? ` [${err.diag}]` : ""}`;
       this.refBusy = { ...(this.refBusy || {}), [e.id]: why };
+      segnaFallito(this.episodeId, e.id);
       this.diagnosi = { cosa: `referto ${shortLabel(e.label)} (${e.sistema || "?"})`, url: e.url, html: (err && err.html) || "", diag: why, quando: now() };
       this.log(`${now()}  ${shortLabel(e.label)}: referto non letto (${why})`);
       segnaErrore("referto", { episodio: this.episodeId || "", referto: e.id, sistema: e.sistema || "", motivo: why.slice(0, 200) });
@@ -11422,10 +11566,11 @@
     // ognuno, e di ognuno si legge subito il testo (dalla copia appena presa).
     // Il pannello non salva MAI da solo: lo decide il medico, con uno di
     // questi bottoni o con un tocco su un referto.
-    async saveAllReferti({ ferma, aspetta } = {}) {
+    // (da solo — auto — non quelli già falliti di recente: vedi riprovaDaSolo)
+    async saveAllReferti({ ferma, aspetta, auto = false } = {}) {
       if (!hasExt() || this._salva) return;   // due clic non sono due salvataggi
       const todo = this.refertiMostrati().filter((e) => !(this.refCache || {})[e.id]
-        && this.refBusy?.[e.id] !== true && !(this.refCoda && this.refCoda.has(e.id)));
+        && this.refBusy?.[e.id] !== true && !(this.refCoda && this.refCoda.has(e.id)) && (!auto || riprovaDaSolo(this.episodeId, e.id)));
       if (!todo.length) return;
       this._salva = { fatti: 0, totale: todo.length };
       this.refBusy = this.refBusy || {};
@@ -11440,6 +11585,7 @@
         })).then(async (r) => {
           if (!r.salvato) {
             this.refBusy[e.id] = r.perche || "non salvato";
+            segnaFallito(this.episodeId, e.id);
             this.log(`${now()}  referto non salvato (${shortLabel(e.label)}): ${this.refBusy[e.id]}`);
             return;
           }
@@ -11490,11 +11636,14 @@
       const aMeta = this.esiti.some((e) => e.kind === "valori" && !e.storico);   // la finestra Risultati: il laboratorio non ha finito
       const cambiato = labInPagina && firma !== prima.lab;
       const ricontrolla = esiti && aMeta && ora - (prima.parz || 0) >= PARZ_MS;
-      const leggiLab = cambiato || ricontrolla;
-      const daSalvare = this.refertiMostrati().filter((e) => !(this.refCache || {})[e.id]);
+      // (quello che non è riuscito si riprova da solo solo più tardi: riprovaDaSolo)
+      const leggiLab = (cambiato || ricontrolla) && riprovaDaSolo(ep, "lab", firma);
+      const daSalvare = this.refertiMostrati().filter((e) => !(this.refCache || {})[e.id] && riprovaDaSolo(ep, e.id));
       if (!leggiLab && !daSalvare.length) return;
       for (const k of Object.keys(tutti)) if (ora - (tutti[k]?.ts || 0) > 24 * 3600e3) delete tutti[k];
-      tutti[ep] = { ...prima, ts: ora, ...(leggiLab ? { lab: firma, parz: ora } : {}) };
+      // la firma del laboratorio si scrive solo a lettura riuscita (qui sotto):
+      // una lettura fallita non deve sembrare fatta
+      tutti[ep] = { ...prima, ts: ora, ...(leggiLab ? { parz: ora } : {}) };
       store.set(AUTO_CARICA, tutti);
       const au = this._auto = { ep, nLab: leggiLab ? (this.conPortale() ? 1 : this.esiti.filter((e) => e.kind === "valori" && !e.storico).length) : 0,
         nRef: daSalvare.length, labFatto: !leggiLab, stop: false };
@@ -11505,15 +11654,29 @@
       window.addEventListener("pagehide", via, { once: true });
       this.log(`${now()}  apertura: carico da solo ${[leggiLab ? `i valori (${cambiato ? "la pagina è cambiata" : "a metà: gli Esiti aperti"})` : "", daSalvare.length ? `${daSalvare.length} referti` : ""].filter(Boolean).join(" e ")}`);
       this.render();
+      let letto = false;
       try {
-        if (leggiLab) { await aspetta(); if (!ferma()) await this.caricaValori({ ferma, aspetta }).catch(() => {}); }
+        if (leggiLab) {
+          await aspetta();
+          if (!ferma()) letto = await this.caricaValori({ ferma, aspetta }).catch(() => false);
+          if (letto) {
+            const t = store.get(AUTO_CARICA, {}) || {};
+            t[ep] = { ...(t[ep] || {}), ts: Date.now(), lab: firma };
+            store.set(AUTO_CARICA, t);
+            togliFallito(ep, "lab");
+          } else if (!ferma()) {
+            if (fallito(ep, "lab")?.firma !== firma) togliFallito(ep, "lab");   // (una pagina cambiata: si riconta da uno)
+            segnaFallito(ep, "lab", { firma });
+          }
+        }
         au.labFatto = true;
-        if (!ferma()) await this.caricaReferti({ ferma, aspetta });
+        if (!ferma()) await this.caricaReferti({ ferma, aspetta, auto: true });
       } finally {
         window.removeEventListener("pagehide", via);
         if (this._auto === au) this._auto = null;
         this.render();
       }
+      return { lab: leggiLab, letto };
     }
     fermaAuto() { if (this._auto) this._auto.stop = true; }
     // Un ordine al lavoro, di qualunque paziente: il motore che gira (o un giro
@@ -11544,13 +11707,17 @@
       const r = await ask({ t: "apriRefertoSotto", url: e.url, id: e.id, ep: this.episodeId, pk: this.chiavePaz(),
         nome: chi.nome, cfImp: chi.cfImp, nascita: chi.nascita, titolo: shortLabel(e.label || "") });
       if (!r || !r.ok) throw new StopError("Portale non aperto", (r && r.why) || "estensione non raggiungibile");
-      this.log(`${now()}  ${shortLabel(e.label)}: lo apro nel portale, in una scheda dietro`);
-      const fine = Date.now() + 45e3;
-      let s = null;
-      while (Date.now() < fine) {
-        await sleep(900);
-        s = await ask({ t: "esitoSotto", tabId: r.tabId });
-        if (!s || !s.ok || (s.esito !== "attesa" && s.esito !== "lettura")) break;
+      // (intanto l'ha preso un'altra scheda, o il telefono: è già fra i salvati)
+      let s = r.salvato ? { ok: true, esito: "letto" } : null;
+      if (!r.salvato) {
+        this.log(`${now()}  ${shortLabel(e.label)}: lo apro nel portale, in una scheda dietro`);
+        // quanto aspetta il service worker: 30 secondi, e 10 per un PDF in ritardo
+        const fine = Date.now() + 42e3;
+        while (Date.now() < fine) {
+          await sleep(900);
+          s = await ask({ t: "esitoSotto", tabId: r.tabId });
+          if (!s || !s.ok || (s.esito !== "attesa" && s.esito !== "lettura" && !(s.esito === "tempo" && s.tardi))) break;
+        }
       }
       if (!s || !s.ok || s.esito !== "letto") {
         const perche = {
@@ -12244,6 +12411,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       tabStore.set(this.refKey(), []);
       if (hasExt()) await ask({ t: "clearRef" });
       for (const k of tabStore.keys(`reftxt.${this.episodeId || "x"}.`)) tabStore.del(k);   // il testo veniva da quelle copie
+      for (const e of this.refertiMostrati()) togliFallito(this.episodeId, e.id);   // e si riprende tutto, anche quello non riuscito
       this.refCache = {}; this.refBusy = {}; this.espanso = null;
       this.render();
     }
@@ -12334,6 +12502,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const letti = targets.filter((e) => !this.rottiTab.has(e.id)).length;
       this.log(`${now()}  letti ${letti} prelievi su ${targets.length}${cambiati ? `, ${cambiati} con valori nuovi` : ", nessun valore nuovo"}`);
       this.render();
+      return letti > 0;
     }
 
     // Values ready before he asks: the 2-line preview is the point of Esiti.
@@ -14844,6 +15013,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const giaFatti = Array.isArray(fatti) ? fatti : [];
     if (giaFatti.includes(m.id)) return { ok: true, gia: true };
     if (wizardOpen) return { ok: false, why: "occupata" };
+    // (un motore che lavora qui: i PDF sono pagine della stessa sessione — dopo)
+    if (motoreQui()) return { ok: false, why: "motore" };
     if (!m.forza) {
       if (staScrivendo(true)) return { ok: false, why: "scrive" };
       const qui = panel ? panel.epDiQuesta() : findEpisodeId(document, location.href);
@@ -15230,7 +15401,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       try {
         panel.log(`${now()}  ── iPhone: «Aggiorna i valori» per ${panel.nomePaziente()} ──`);
         await panel.caricaValori();
-        // e i referti (RX, ECG, TC…) non ancora salvati, uno alla volta, finché c'è tempo
+        // i valori al telefono subito; i referti (RX, ECG, TC…) non ancora
+        // salvati continuano qui, uno alla volta finché c'è tempo, e il
+        // telefono li trova alla prossima rilettura
+        ask({ t: "ponteValoriLetti", ok: true, testo: "letti" }).catch(() => {});
         const fine = Date.now() + 90e3;
         await panel.caricaReferti({ ferma: () => Date.now() > fine }).catch(() => {});
         esito = { ok: true, testo: "letti" };
@@ -15578,6 +15752,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // la scheda aperta dal service worker solo per dare i PDF di una stampa: niente pannello
     if (chi && chi.fogli) return;
     LAVORO = chi && chi.lavoro ? chi.lavoro : null;
+    segnaScheda(chi);
     PONTE_VALORI = chi && chi.ponteValori ? chi.ponteValori : null;
     PONTE_CARTELLA = chi && chi.ponteCartella ? chi.ponteCartella : null;
     ponteAscolta();
@@ -15771,16 +15946,30 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // è in sospeso si atterra lì, non sugli Esiti.
       if (pending && panel.view === "esiti") panel.view = "richieste";
       panel.render();
-      panel.refreshRefCache();
-      panel.caricaStorico();
       // il medico apre il paziente: quello che la pagina mostra e non è ancora qui si carica da sé
       // (mai nella scheda di un ordine, del ponte, di un giro ripreso o con una richiesta da confermare)
-      if (!LAVORO && !PONTE_VALORI && !ripresa && !pending) panel.autoCarica({ esiti: panel.view === "esiti" }).catch(() => {});
-      // e finché la pagina resta aperta, ogni 10 minuti, il laboratorio a metà si
-      // ricontrolla (i referti no: salvati, non cambiano più)
-      if (!LAVORO && !PONTE_VALORI && !TABELLONE) setInterval(() => {
-        if (panel.esiti.some((e) => e.kind === "valori" && !e.storico)) panel.autoCarica({ esiti: true }).catch(() => {});
-      }, PARZ_MS + 5e3);
+      const daSolo = !LAVORO && !PONTE_VALORI && !ripresa && !pending;
+      // (i salvati li chiede già il caricamento da solo, se parte subito)
+      if (!daSolo || panel.ordineInCorso()) panel.refreshRefCache();
+      panel.caricaStorico();
+      if (daSolo) panel.autoCarica({ esiti: panel.view === "esiti" }).catch(() => {});
+      // e finché la pagina resta aperta ogni 10 minuti il laboratorio a metà si
+      // ricontrolla (i referti no: salvati, non cambiano più) — ma solo mentre
+      // la si guarda (tornandoci, se ne sono passati 10), e dopo due
+      // ricontrolli senza niente di nuovo, basta: lo rifà aprire gli Esiti
+      if (!LAVORO && !PONTE_VALORI && !TABELLONE) {
+        let vuoti = 0, ultimo = Date.now();
+        const ricontrolla = async () => {
+          if (vuoti >= 2 || document.visibilityState !== "visible") return;
+          if (!panel.esiti.some((e) => e.kind === "valori" && !e.storico)) return;
+          ultimo = Date.now();
+          const prima = panel.impValori();
+          const r = await panel.autoCarica({ esiti: true }).catch(() => null);
+          if (r && r.lab) vuoti = panel.impValori() === prima ? vuoti + 1 : 0;
+        };
+        setInterval(ricontrolla, PARZ_MS + 5e3);
+        document.addEventListener("visibilitychange", () => { if (Date.now() - ultimo >= PARZ_MS) ricontrolla(); });
+      }
       // (la scheda dei valori del ponte legge e basta: niente conferme né stampe da qui)
       if (PONTE_VALORI) { ponteValoriQui(panel); return; }
       if (ripresa) return;   // il giro ripreso arriva da sé a conferma e stampa
