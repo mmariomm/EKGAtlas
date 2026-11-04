@@ -106,6 +106,30 @@
     try { if (nostra() && delPortale(u)) return null; } catch { /* niente */ }
     return apri.apply(this, arguments);
   };
+  // …e soprattutto così, come fa il portale vero (la sua pagina dei
+  // documenti): un <a href="blob:…" target="_blank"> aggiunto in fondo alla
+  // pagina e «cliccato». Nelle nostre schede quel clic non apre niente — la
+  // copia del PDF è già partita quando il blob: è nato.
+  const altrove = (a) => {
+    try {
+      const t = String(a.target || "").toLowerCase();
+      return !!t && t !== "_self" && t !== "_top" && t !== "_parent" && delPortale(a.href);
+    } catch { return false; }
+  };
+  try {
+    const clic = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      try { if (nostra() && altrove(this)) return; } catch { /* niente */ }
+      return clic.apply(this, arguments);
+    };
+    window.addEventListener("click", (e) => {
+      try {
+        if (!nostra()) return;
+        const a = e.target && e.target.closest ? e.target.closest("a") : null;
+        if (a && altrove(a)) e.preventDefault();
+      } catch { /* niente */ }
+    }, true);
+  } catch { /* niente */ }
   try {
     window.navigation?.addEventListener("navigate", (e) => {
       try { if (nostra() && e.cancelable && /^blob:/i.test(e.destination.url)) e.preventDefault(); } catch { /* niente */ }

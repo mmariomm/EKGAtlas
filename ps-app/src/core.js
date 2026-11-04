@@ -983,7 +983,7 @@
     const put = (n, sing, plur) => { if (n === 1) parts.push(sing); else if (n > 1) parts.push(`${n}× ${plur}`); };
     put(count("etichette"), "etichette", "etichette");
     put(count("lista"), "lista esami", "liste esami");
-    put(count("prenotazione"), "foglio RX", "fogli RX");
+    put(count("prenotazione"), "prenotazione", "prenotazioni");
     return parts.join(" + ");
   }
 

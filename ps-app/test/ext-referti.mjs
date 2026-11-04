@@ -478,6 +478,12 @@ await ctx.route("http://10.11.0.151:9080/**", async (r) => {
             const a = document.createElement("a"); a.href = "/clin-port/rest/documenti/1/contenuto?finestra=1"; a.target = "_blank";
             document.body.appendChild(a); a.click(); return;
           }
+          // come la pagina vera dei documenti del portale (registrazione):
+          // il PDF in un blob:, un <a target=_blank> in fondo, «cliccato»
+          if (${JSON.stringify(finestra)} === "blob") {
+            const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([x.response], { type: "application/pdf" })); a.target = "_blank";
+            document.body.appendChild(a); a.click(); return;
+          }
           location.href = URL.createObjectURL(new Blob([x.response], { type: "application/pdf" }));
         };
         x.send();
@@ -546,12 +552,12 @@ for (const modo of ["prima", "solo"]) {
 }
 altroPrima = "";
 
-// Il portale, avuto il PDF, lo apre da sé in una scheda nuova. Con
-// window.open, in una nostra scheda dietro, non parte proprio: la scheda sa da
-// subito di essere nostra. Con un link che sfugge (qui: un <a target=_blank>)
-// non passa davanti al medico (resta davanti la pagina del paziente), e si
-// chiude da sola.
-for (const modo of ["open", "link"]) {
+// Il portale, avuto il PDF, lo apre da sé in una scheda nuova: con
+// window.open, con un <a target=_blank> verso il portale, o — come fa la
+// pagina vera — con un <a href="blob:…" target=_blank> «cliccato». In una
+// nostra scheda dietro non parte niente: la scheda sa da subito di essere
+// nostra, e il referto arriva lo stesso.
+for (const modo of ["open", "link", "blob"]) {
   finestra = modo;
   const pF = await ctx.newPage();
   await pF.goto(mock.patientUrl);
@@ -566,26 +572,13 @@ for (const modo of ["open", "link"]) {
   ctx.on("page", ascolta);
   await pF.reload();
   await pF.waitForSelector("#psassist-host .wu", { state: "attached", timeout: 15000 });
-  if (modo === "open") {
+  {
     await rxPronta(pF);
     await finito(pF);
     const dopo = await davanti();
     const r = await rxRiga(pF);
-    check(!nate.some((p) => /finestra=1/.test(p.url())) && dopo.length === 1 && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(dopo[0]) && !!r.testo && !r.rosso,
-      `il portale apre il PDF con window.open in una nostra scheda dietro: non si apre niente, il referto arriva (nate: ${nate.map((p) => p.url().slice(0, 50)).join(" | ") || "nessuna"}; davanti: ${dopo.map((u) => u.slice(0, 60)).join(" | ")})`);
-  } else {
-    const visti = [];
-    for (const t0 = Date.now(); Date.now() - t0 < 20000 && !nate.some((p) => /finestra=1/.test(p.url())); ) { visti.push(...await davanti()); await pF.waitForTimeout(150); }
-    await pF.waitForTimeout(1500);
-    const dopo = await davanti();
-    const aperta = nate.find((p) => /finestra=1/.test(p.url()));
-    const diag = await swF.evaluate(() => Promise.all([chrome.tabs.query({}), chrome.storage.session.get(null)]).then(([l, ss]) => JSON.stringify({
-      schede: l.map((t) => ({ id: t.id, o: t.openerTabId, a: t.active, u: (t.url || "").slice(0, 50) })),
-      sotto: Object.entries(ss).filter(([k]) => k.startsWith("sotto:")).map(([k, v]) => [k, v.cosa, v.esito, v.opener]) })));
-    check(!!aperta && dopo.length === 1 && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(dopo[0]),
-      `il portale apre il PDF in una scheda nuova: davanti resta la pagina del paziente (aperta: ${!!aperta}; davanti: ${dopo.map((u) => u.slice(0, 60)).join(" | ")}${dopo.length === 1 && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(dopo[0]) ? "" : "; " + diag})`);
-    const chiusa = !aperta || await aperta.waitForEvent("close", { timeout: 30000 }).then(() => true).catch(() => aperta.isClosed());
-    check(chiusa, "e la scheda nuova si chiude da sola");
+    check(!nate.some((p) => /finestra=1|^blob:/.test(p.url())) && dopo.length === 1 && /MVPG=PsoEpisodioClinicoAmbulatorio/.test(dopo[0]) && !!r.testo && !r.rosso,
+      `il portale apre il PDF (${modo}) in una nostra scheda dietro: non si apre niente, il referto arriva (nate: ${nate.map((p) => p.url().slice(0, 50)).join(" | ") || "nessuna"}; davanti: ${dopo.map((u) => u.slice(0, 60)).join(" | ")})`);
   }
   ctx.off("page", ascolta);
   finestra = "";
