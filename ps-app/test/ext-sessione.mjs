@@ -8,11 +8,13 @@
  * l'inserimento dopo risponde «ORA-20965: AMB_RICHIESTA: Progressivo richiesta
  * …-1 già utilizzato» — e il carrello riletto è vuoto (PS Assist 3.70.0: due
  * ordini di 11 esami su due erogatori, falliti così, «… non risulta nel
- * carrello» trenta secondi dopo). Qui il simulatore si comporta così: tiene la
+ * carrello» trenta secondi dopo; al primo esame del secondo erogatore è la
+ * richiesta con due erogatori, che il gestionale non vuole: gestionale-vero.mjs,
+ * e il pannello oggi ne fa una per erogatore). Qui il simulatore si comporta così: tiene la
  * richiesta corrente della sessione, e un inserimento su un'altra risponde con
  * l'avviso del database, senza inserire niente.
  *   1. a metà ordine nient'altro chiede pagine al gestionale (la lista smart
- *      aspetta la fine del motore): l'ordine su due erogatori va, senza ORA;
+ *      aspetta la fine del motore): POC e Urgenze, due ordini, vanno senza ORA;
  *   2. una risposta con «ORA-»: il giro si ferma subito, niente altro mandato,
  *      e il medico legge «Il gestionale ha risposto: ORA-20965 …»;
  *   3. una scheda d'ordine che non è arrivata sulla pagina si sostituisce
@@ -20,7 +22,7 @@
  *   node test/ext-sessione.mjs [nome della prova]
  */
 import { chromium } from "playwright";
-import { createMock, RES } from "./sa4pso-mock.mjs";
+import { createMock, RES } from "./gestionale-vero.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, statSync } from "node:fs";
@@ -179,26 +181,28 @@ const prova = (t) => {
   Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null });
   return true;
 };
-const ESAMI = ["EMOCROMOCITOMETRICO", "TROPONINA", "PROCALCITONINA"];   // POC (due) e laboratorio urgenze
+const ESAMI = ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"];   // tre esami POC: un erogatore, una richiesta
+const DUE = ["EMOCROMOCITOMETRICO", "TROPONINA", "PROCALCITONINA"];   // POC (due) e Urgenze: due richieste, due ordini
 
 // ---- 1. a metà ordine, nient'altro nella sessione ------------------------
-if (prova("a metà ordine la lista smart aspetta: l'ordine su due erogatori entra tutto")) {
+if (prova("a metà ordine la lista smart aspetta: POC e Urgenze, due ordini, entrano tutti")) {
   lento = 900;
   await suPagina(doc, A.patientUrl);
   await nienteSmart(doc);
   const nasce = nuovaPagina();
-  await ordina(doc, ESAMI);
+  await ordina(doc, DUE);
   const w = await nasce;
   check(!!w, "l'ordine va in una scheda di sottofondo");
   await finche(() => sess.log.some((x) => x.cosa === "insert"), 20000);
   // il medico va su BIANCHI, e la smart è da rileggere: la sua pagina la chiederebbe dopo 1,5 secondi
   await smartDaRileggere(doc);
   await suPagina(doc, B.patientUrl);
-  await finche(async () => conferme(A).length > 0 || (await ordini()).some((x) => x.stato === "errore"), 60000);
+  await finche(async () => conferme(A).length > 1 || (await ordini()).some((x) => x.stato === "errore"), 90000);
   await striscia(doc, /ROSSI MARIO.*(Confermata|Etichette|Stampa|Errore)/, 30000).catch(() => "");
   const ins = inviati(A).map((q) => q.params.PRESTAZIONE).sort();
   check(sess.ora === 0, `nessun «ORA-20965»: la richiesta della sessione non è cambiata sotto il motore (got ${sess.ora})`);
-  check(ins.length === 3 && conferme(A).length === 1, `tre esami su due erogatori, una conferma (got ${ins.join(",")} · ${conferme(A).length} conferme)`);
+  check(ins.length === 3 && conferme(A).length === 2 && Object.keys(A.state.richieste).length === 2 && !A.state.rifiutati.length,
+    `tre esami su due erogatori: due richieste, due conferme, nessun esame respinto (got ${ins.join(",")} · ${conferme(A).length} conferme)`);
   // dal primo inserimento alla conferma (o all'ultima risposta del motore) il motore lavora
   const primo = sess.log.find((x) => x.cosa === "insert");
   const fine = (sess.log.find((x) => x.cosa === "conferma") || [...sess.log].reverse().find((x) => x.cosa === "insert" || x.cosa === "ORA")).t + lento;

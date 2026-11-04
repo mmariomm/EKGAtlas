@@ -15,7 +15,7 @@
  *   node test/ext-ordine.mjs
  */
 import { chromium } from "playwright";
-import { createMock } from "./sa4pso-mock.mjs";
+import { createMock } from "./gestionale-vero.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rmSync, existsSync, statSync, mkdirSync } from "node:fs";
@@ -193,7 +193,8 @@ async function armaSvuota(p) {
   }, null, { timeout: 15000 });
   return h.jsonValue();
 }
-const rinomina = (u, html) => html.replace(/PROCALCITONINA \(1690\)/g, "ANTITROMBINA III (1450)");
+// (la TROPONINA, l'ultimo dei tre esami POC: un erogatore, una richiesta)
+const rinomina = (u, html) => html.replace(/TROPONINA ULTRASENSIBILE \(POC3001\)/g, "ANTITROMBINA III (1450)");
 // i messaggi del service worker alle schede che «si perdono» (una scheda fra
 // una pagina e l'altra, o che non risponde più): [] li rimette tutti
 const silenzia = (tipi) => sw.evaluate((t) => {
@@ -338,6 +339,57 @@ if (prova("la scheda dell'ordine che stai guardando quando finisce resta — una
   await doc.bringToFront();
 }
 
+// ---- 2c. POC + Urgenze: una richiesta per erogatore, due ordini in fila --
+// Il gestionale vero non vuole due erogatori di laboratorio nella stessa
+// richiesta (il primo esame del secondo: «ORA-20965 … Progressivo richiesta
+// già utilizzato»). Due ordini in sottofondo, uno dopo l'altro; nel secondo,
+// dopo «Crea» (che atterra sul POC), il passaggio a Urgenze è il «Risorsa»
+// della pagina. Tutte e due confermate, le etichette di tutte e due.
+if (prova("POC e Urgenze: una richiesta per erogatore, due ordini in fila")) {
+  nuovi();
+  lento = 0;
+  await suPagina(doc, A.patientUrl);
+  await azzeraStampe(doc);
+  await ordina(doc, ["EMOCROMOCITOMETRICO", "PROCALCITONINA"], { quesito: "febbre" });
+  const fatte = await finche(async () => conferme(A).length === 2 && Object.values(A.state.richieste).every((r) => r.confirmed), 60000);
+  const rich = Object.entries(A.state.richieste);
+  const poc = rich.find(([, r]) => r.cart.has("320")), urg = rich.find(([, r]) => r.cart.has("159"));
+  check(fatte && rich.length === 2 && !!poc && !!urg && poc !== urg && A.state.rifiutati.length === 0,
+    `due richieste, una per erogatore, confermate tutte e due, nessun esame respinto (got ${rich.map(([k, r]) => `${k}:${[...r.cart.keys()]}${r.confirmed ? "✓" : ""}`).join(" · ")} · respinti ${JSON.stringify(A.state.rifiutati)})`);
+  const filtro = A.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("RisorsaFiltro"));
+  check(filtro.length === 1 && urg && filtro[0].params.RICHIESTA_ID === urg[0] && JSON.stringify(filtro[0].form) === JSON.stringify({ RISORSA_ID: "00720001P", s_PRESTAZIONE: "" }),
+    `a Urgenze col «Risorsa» della pagina, il suo corpo (got ${JSON.stringify(filtro.map((q) => [q.params.RICHIESTA_ID, q.form]))})`);
+  check(Object.values(A.state.insertCount).every((n) => n === 1), `ogni esame una volta (${JSON.stringify(A.state.insertCount)})`);
+  await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 }).catch(() => {});
+  await chiudiStampa(doc);
+  await finche(async () => (await stampe(doc)).length >= 2, 30000);
+  await chiudiStampa(doc);
+  check((await stampe(doc)).length === 2, `le etichette di tutte e due, una stampa per ordine (got ${(await stampe(doc)).length})`);
+  await nessunOrdine();
+}
+
+// …e lo stesso dal telefono (ponteOrdina): un ordine per erogatore, «…l» e «…l2»
+if (prova("dal telefono POC e Urgenze: due ordini, una richiesta per erogatore")) {
+  nuovi();
+  lento = 0;
+  await suPagina(doc, A.patientUrl);
+  await doc.bringToFront();
+  await azzeraStampe(doc);
+  const r = await sw.evaluate(async (args) => {
+    const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    return chrome.tabs.sendMessage(t.id, { t: "ponteEsegui", cmd: "ordina", args });
+  }, { ep: "999001", id: "telduelab1", esami: ["00660001P:320", "00720001P:293"], quesito: "febbre" });
+  const o = (r && r.dati && r.dati.ordini) || [];
+  check(r && r.ok && o.length === 2 && o[0].id === "telduelab1l" && o[1].id === "telduelab1l2" && !o[0].rx && !o[1].rx,
+    `due ordini di laboratorio, «…l» e «…l2» (got ${JSON.stringify(r).slice(0, 160)})`);
+  const fatte = await finche(async () => conferme(A).length === 2 && Object.values(A.state.richieste).every((x) => x.confirmed), 90000);
+  const rich = Object.values(A.state.richieste);
+  check(fatte && rich.length === 2 && rich.some((x) => [...x.cart.keys()].join() === "320") && rich.some((x) => [...x.cart.keys()].join() === "293") && !A.state.rifiutati.length,
+    `confermate tutte e due, POC e Urgenze, nessun esame respinto (got ${rich.map((x) => [...x.cart.keys()] + (x.confirmed ? "✓" : "")).join(" · ")})`);
+  await finche(async () => (await ordini()).every((x) => !["coda", "avvio", "corre", "stampo"].includes(x.stato)), 30000);
+  await nessunOrdine();
+}
+
 // ---- 3. errore: il resoconto intero passa alla scheda del medico ---------
 if (prova("l'errore arriva nella tua scheda, col resoconto intero — e «Svuota» da lì")) {
   nuovi();
@@ -346,11 +398,11 @@ if (prova("l'errore arriva nella tua scheda, col resoconto intero — e «Svuota
   await suPagina(doc, A.patientUrl);
   await azzeraStampe(doc);
   const nasce = nuovaPagina();
-  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA", "PROCALCITONINA"], { quesito: "febbre" });
+  await ordina(doc, ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"], { quesito: "febbre" });
   const w1 = await nasce;
   await suPagina(doc, B.patientUrl);
   const rossa = await striscia(doc, /ROSSI MARIO.*Errore/, 40000).catch(() => "");
-  check(/oggi si chiama/.test(rossa) && /Mancano: PROCALCITONINA/.test(rossa) && (await $panel(doc, ".pill.run.err").count()) === 1,
+  check(/oggi si chiama/.test(rossa) && /Mancano: TROPONINA/.test(rossa) && (await $panel(doc, ".pill.run.err").count()) === 1,
     `la striscia del medico è rossa, col motivo corto e cosa manca (got: ${rossa || "niente"})`);
   check((await azione(doc)) === "apri il carrello", `e accanto «apri il carrello» (got: ${await azione(doc) || "niente"})`);
   {
@@ -375,7 +427,7 @@ if (prova("l'errore arriva nella tua scheda, col resoconto intero — e «Svuota
   riscrivi = null;
   const n0 = A.state.requests.length;
   const chiede = await armaSvuota(doc);
-  check(chiede === "Svuoto 2 esami: EMOCROMO POC, TROPONINA US?", `il primo tocco legge il carrello e dice cosa toglie, per nome (got: ${chiede})`);
+  check(chiede === "Svuoto 2 esami: CREATININA POC, EMOCROMO POC?", `il primo tocco legge il carrello e dice cosa toglie, per nome (got: ${chiede})`);
   check(!A.state.requests.slice(n0).some((q) => q.params.Delete || q.params.Insert), "e intanto solo letture");
   await shot(doc, "1-errore-svuota-armato");
   const nasce2 = nuovaPagina();
@@ -393,9 +445,9 @@ if (prova("l'errore arriva nella tua scheda, col resoconto intero — e «Svuota
   const prove = new Set(dopo.slice(iDel + 1, iIns).filter((q) => q.method === "GET" && q.params.MVPG === "RcsRichiestaPrestazioniRicercaErogatore" && !q.params.Delete).map((q) => q.params.RISORSA_ID));
   check(iIns > iDel && prove.size === 3, `provato vuoto, sezione per sezione, prima di rimettere (got ${[...prove].join(", ")})`);
   const rimessi = dopo.filter((q) => q.params.Insert === "Inserisci").map((q) => q.params.PRESTAZIONE).sort();
-  check(JSON.stringify(rimessi) === JSON.stringify(["159", "320", "324"]), `poi tutta la selezione, nella stessa richiesta (got ${rimessi.join(", ")})`);
+  check(JSON.stringify(rimessi) === JSON.stringify(["176", "320", "324"]), `poi tutta la selezione, nella stessa richiesta (got ${rimessi.join(", ")})`);
   check(Object.keys(A.state.richieste).length === 1 && conferme(A).length === 1 && A.state.richieste[rid].confirmed === true
-    && [...A.state.richieste[rid].cart.keys()].sort().join(",") === "159,320,324", "confermata una volta, coi tre esami");
+    && [...A.state.richieste[rid].cart.keys()].sort().join(",") === "176,320,324", "confermata una volta, coi tre esami");
   check((await stampe(doc)).length === 1 && /ROSSI MARIO/.test(await titoloStampa(doc)),
     "e le etichette nella tua scheda, da sole: sei sul carrello di ROSSI");
   if (w2) check(await aspettaChiusa(w2), "la scheda nuova si chiude da sola");
@@ -413,7 +465,7 @@ if (prova("errore mentre guardi la scheda dell'ordine — resta, slegata, e lì 
   await suPagina(doc, A.patientUrl);
   await azzeraStampe(doc);
   const nasce = nuovaPagina();
-  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA", "PROCALCITONINA"], { quesito: "febbre" });
+  await ordina(doc, ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"], { quesito: "febbre" });
   const w = await nasce;
   await w.waitForLoadState().catch(() => {});
   await w.bringToFront();
@@ -478,7 +530,7 @@ if (prova("la scheda dell'ordine chiusa a metà")) {
   await suPagina(doc, A.patientUrl);
   const nasce = nuovaPagina();
   arrivati = 0;
-  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA", "PROCALCITONINA"], { quesito: "febbre" });
+  await ordina(doc, ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"], { quesito: "febbre" });
   const worker = await nasce;
   await suPagina(doc, B.patientUrl);
   // il primo esame è entrato, il secondo è in volo: il medico chiude la scheda
@@ -486,12 +538,13 @@ if (prova("la scheda dell'ordine chiusa a metà")) {
   await doc.waitForTimeout(150);
   await worker.close();
   const rossa = await striscia(doc, /Scheda chiusa/, 20000).catch(() => "");
-  check(/ROSSI MARIO/.test(rossa) && /1 esame non mandato: PROCALCITONINA/.test(rossa),
+  check(/ROSSI MARIO/.test(rossa) && /1 esame non mandato: TROPONINA/.test(rossa),
     `la scheda del medico dice cosa non è partito (got: ${rossa || "niente"})`);
-  check(/Da controllare: TROPONINA/.test(rossa), "e quello che era in volo è «da controllare»: mai fra i non mandati");
+  check(/Da controllare: EMOCROMO/.test(rossa), "e quello che era in volo è «da controllare»: mai fra i non mandati");
   const rid = Object.keys(A.state.richieste)[0];
   const sorv = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
-  check(sorv.some((x) => x.rid === rid), "quello che è entrato resta sorvegliato: la richiesta è da confermare");
+  // «se non parte l'ordine nel carrello, ignoralo»: la striscia lo dice una volta, e basta
+  check(!sorv.some((x) => x.rid === rid), `l'ordine fermato a metà non resta sorvegliato: nessun «non confermata» dopo (got ${JSON.stringify(sorv)})`);
   check(conferme(A).length === 0, "e niente si è confermato da solo");
   await $panel(doc, "#strstop").click().catch(() => {});
   await doc.waitForTimeout(400);
@@ -506,7 +559,7 @@ if (prova("⏹ sulla striscia ferma l'ordine")) {
   await suPagina(doc, A.patientUrl);
   const nasce = nuovaPagina();
   arrivati = 0;
-  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA", "PROCALCITONINA"], { quesito: "febbre" });
+  await ordina(doc, ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"], { quesito: "febbre" });
   const worker = await nasce;
   await suPagina(doc, B.patientUrl);
   await striscia(doc, /esame 1 di 3/, 20000).catch(() => "");
@@ -535,7 +588,7 @@ if (prova("⏹ che non arriva subito — segnato, e la scheda si ferma appena pa
   await suPagina(doc, A.patientUrl);
   const nasce = nuovaPagina();
   arrivati = 0;
-  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA", "PROCALCITONINA"], { quesito: "febbre" });
+  await ordina(doc, ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"], { quesito: "febbre" });
   const worker = await nasce;
   await suPagina(doc, B.patientUrl);
   await striscia(doc, /esame 1 di 3/, 20000).catch(() => "");
@@ -722,7 +775,7 @@ if (prova("dopo che il browser cade, la scheda dell'ordine non finisce l'ordine 
   await suPagina(doc, A.patientUrl);
   arrivati = 0;
   const nasce = nuovaPagina();
-  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA", "PROCALCITONINA"], { quesito: "febbre" });
+  await ordina(doc, ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"], { quesito: "febbre" });
   const w = await nasce;
   await suPagina(doc, B.patientUrl);
   for (let i = 0; i < 150 && arrivati < 2; i++) await doc.waitForTimeout(100);
@@ -828,7 +881,7 @@ if (prova("con solo un avviso aperto nessuna scheda chiede niente, e niente si r
   riscrivi = rinomina;   // un errore: l'avviso rosso, da leggere
   await suPagina(doc, A.patientUrl);
   const nasce = nuovaPagina();
-  await ordina(doc, ["TROPONINA", "PROCALCITONINA"], { quesito: "febbre" });
+  await ordina(doc, ["CREATININEMIA", "TROPONINA"], { quesito: "febbre" });
   const w = await nasce;
   await suPagina(doc, B.patientUrl);
   await striscia(doc, /ROSSI MARIO.*Errore/, 40000).catch(() => "");
@@ -969,6 +1022,12 @@ if (prova("la scheda dell'ordine si ricarica mentre conferma — l'ordine finisc
     `la Conferma persa con la ricarica: l'ordine di ROSSI finisce, «Non confermata» (got: ${r ? `${r.stato} · ${r.vista?.tag} · ${r.vista?.testo}` : "niente"})`);
   check(ok && conferme(A).length === 0, `e la coda va avanti: BIANCHI parte e si conferma (got ${conferme(B).length} conferme di BIANCHI, ${conferme(A).length} di ROSSI · ${(await ordini()).map((x) => `${x.paziente}:${x.stato}:${x.vista?.tag || ""}`).join(", ")})`);
   check(!!r?.consegna && /RICHIESTA_ID=/.test(r.consegna.url || ""), "con «apri il carrello» della sua richiesta");
+  {
+    // la Conferma è stata premuta e non è provata: può essere vera e non ancora in elenco — il promemoria resta
+    const ridA = Object.keys(A.state.richieste)[0];
+    const sorv = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
+    check(sorv.some((x) => x.rid === ridA), `premuta e non provata: resta da sorvegliare (got ${JSON.stringify(sorv)})`);
+  }
   check(await aspettaChiusa(w, 10000), "e la scheda di ROSSI si chiude");
   intercetta = null;
   await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 20000 }).catch(() => {});
@@ -1003,6 +1062,12 @@ if (prova("⏹ su una scheda d'ordine che aspetta — l'ordine finisce, la coda 
   await $panel(doc, "#strstop").click();
   const fermo = await striscia(doc, /ROSSI MARIO.*Interrotto/, 15000).catch(() => "");
   check(!!fermo && conferme(A).length === 0, `⏹: «Interrotto», niente confermato (got: ${fermo || "niente"})`);
+  {
+    // fermato prima della Conferma: «se non parte, ignoralo» — niente «non confermata» dopo
+    const ridA = Object.keys(A.state.richieste)[0];
+    const sorv = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
+    check(!sorv.some((x) => x.rid === ridA), `fermato prima della Conferma: la richiesta non resta da sorvegliare (got ${JSON.stringify(sorv)})`);
+  }
   check(await finche(async () => conferme(B).length === 1, 40000), "e la coda va avanti: BIANCHI si conferma");
   await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 20000 }).catch(() => {});
   await chiudiStampa(doc);
@@ -1038,9 +1103,9 @@ if (prova("se la scheda di sottofondo non si apre, manda la pagina")) {
 
 // ---- un esame mai partito per un elenco venuto male: si riprova da solo --
 // La scheda dell'ordine ritenta UNA volta, lì, prima di dire l'ultima parola:
-// il carrello riletto, l'EMOCROMO già entrato solo ritrovato, parte la PCT, e
+// il carrello riletto, l'EMOCROMO già entrato solo ritrovato, parte la TROPONINA, e
 // conferma come il primo giro. Il medico vede «Riprovo 1 esame…», poi le
-// etichette. (La riga della PCT manca una volta sola, anche alla ricerca.)
+// etichette. (La riga della TROPONINA manca una volta sola, anche alla ricerca.)
 const togliRiga = (codice) => (h) => h.replace(
   new RegExp(`<tr><td><a class="AFCDataLink" href="[^"]*Insert=Inserisci[^"]*[?&]PRESTAZIONE=${codice}&[^"]*">[^<]*</a></td></tr>`, "g"), "");
 if (prova("un esame mai partito per un elenco venuto male — la scheda dell'ordine riprova da sola, una volta")) {
@@ -1050,13 +1115,13 @@ if (prova("un esame mai partito per un elenco venuto male — la scheda dell'ord
   riscrivi = (u, h) => {
     if (!monca) return h;
     if (new URL(u).searchParams.get("s_PRESTAZIONE")) monca = false;   // dopo la ricerca l'elenco torna intero
-    return togliRiga("159")(h);
+    return togliRiga("324")(h);
   };
   await suPagina(doc, A.patientUrl);
   await azzeraStampe(doc);
   const s0 = (await strisce(doc)).length;
   const nasce = nuovaPagina();
-  await ordina(doc, ["EMOCROMOCITOMETRICO", "PROCALCITONINA"], { quesito: "febbre" });
+  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA"], { quesito: "febbre" });
   const w = await nasce;
   await suPagina(doc, B.patientUrl);
   const pronte = await striscia(doc, /Etichette di ROSSI M\. pronte/, 45000).catch(() => "");
@@ -1065,7 +1130,7 @@ if (prova("un esame mai partito per un elenco venuto male — la scheda dell'ord
   check(!!pronte, `alla fine le etichette di ROSSI, pronte (got: ${pronte || "niente"})`);
   check(viste.some((t) => /ROSSI MARIO.*Riprovo 1 esame…/.test(t)) && !viste.some((t) => /Errore/.test(t)),
     `intanto la tua striscia ha detto «Riprovo 1 esame…», e mai un errore (got ${viste.filter((t) => /Riprovo|Errore/.test(t)).join(" | ") || "niente"})`);
-  check(A.state.insertCount[`${rid}:320`] === 1 && A.state.insertCount[`${rid}:159`] === 1 && Object.keys(A.state.insertCount).length === 2,
+  check(A.state.insertCount[`${rid}:320`] === 1 && A.state.insertCount[`${rid}:324`] === 1 && Object.keys(A.state.insertCount).length === 2,
     `ogni esame mandato una volta (${JSON.stringify(A.state.insertCount)})`);
   check(Object.keys(A.state.richieste).length === 1 && conferme(A).length === 1 && A.state.richieste[rid].confirmed === true,
     `stessa richiesta, confermata una volta (got ${conferme(A).length})`);
@@ -1078,22 +1143,22 @@ if (prova("un esame mai partito per un elenco venuto male — la scheda dell'ord
 if (prova("ritentato da solo e fermo di nuovo — il resoconto arriva a te, «Riprova» resta tuo")) {
   nuovi();
   lento = 0;
-  riscrivi = (u, h) => togliRiga("159")(h);
+  riscrivi = (u, h) => togliRiga("324")(h);
   await suPagina(doc, A.patientUrl);
   await azzeraStampe(doc);
   const s0 = (await strisce(doc)).length;
   const nasce = nuovaPagina();
-  await ordina(doc, ["EMOCROMOCITOMETRICO", "PROCALCITONINA"], { quesito: "febbre" });
+  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA"], { quesito: "febbre" });
   const w = await nasce;
   await suPagina(doc, B.patientUrl);
   const rossa = await striscia(doc, /ROSSI MARIO.*Errore/, 45000).catch(() => "");
   const rid = Object.keys(A.state.richieste)[0];
   const cercate = () => A.state.requests.filter((q) => q.params.s_PRESTAZIONE).length;
-  check(/Mancano: PROCALCITONINA/.test(rossa) && (await $panel(doc, ".pill.run.err").count()) === 1,
-    `la striscia rossa di sempre: «Mancano: PROCALCITONINA» (got: ${rossa || "niente"})`);
+  check(/Mancano: TROPONINA/.test(rossa) && (await $panel(doc, ".pill.run.err").count()) === 1,
+    `la striscia rossa di sempre: «Mancano: TROPONINA US» (got: ${rossa || "niente"})`);
   check((await strisce(doc)).slice(s0).some((t) => /ROSSI MARIO.*Riprovo 1 esame…/.test(t)), "prima, «Riprovo 1 esame…»");
-  check(cercate() === 2 && !A.state.insertCount[`${rid}:159`] && A.state.insertCount[`${rid}:320`] === 1 && conferme(A).length === 0,
-    `il giro e il suo unico ritentativo: la PCT mai mandata, l'EMOCROMO una volta, niente confermato (${cercate()} ricerche · ${JSON.stringify(A.state.insertCount)})`);
+  check(cercate() === 2 && !A.state.insertCount[`${rid}:324`] && A.state.insertCount[`${rid}:320`] === 1 && conferme(A).length === 0,
+    `il giro e il suo unico ritentativo: la TROPONINA mai mandata, l'EMOCROMO una volta, niente confermato (${cercate()} ricerche · ${JSON.stringify(A.state.insertCount)})`);
   check(await aspettaChiusa(w), "la scheda dell'ordine si chiude: il resoconto è passato a te");
   const n0 = A.state.requests.length;
   await doc.waitForTimeout(2500);

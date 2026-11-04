@@ -80,7 +80,8 @@ sessione. Vedi:
   finito male resta in fondo alla lista, e in testa alla pagina di ogni altro paziente
   («Ordine non completo · BIANCHI ANNA»: toccalo e sei sul paziente), finché non lo chiudi con ✕.
   Sul PC la striscia dell'ordine dice **«dall'iPhone»**. La radiologia, come
-  dal pannello, si conferma e si stampa da sola: un secondo ordine, dopo quello del laboratorio. Su un episodio precedente
+  dal pannello, si conferma e si stampa da sola: un secondo ordine, dopo quello del laboratorio — e il laboratorio è un
+  ordine per erogatore (POC, Urgenze…), come dal pannello: il gestionale non ne vuole due nella stessa richiesta. Su un episodio precedente
   non si ordina («Episodio precedente: per ordinare apri quello di oggi»); a un paziente dimesso sul
   PC non arriva niente («Dimesso sul PC: niente inviato»).
 - **Se la rete perde la risposta** (ascensore, 5G): il telefono non sa se l'ordine è partito, e lo

@@ -24,7 +24,7 @@
  *   node test/ext-stampa.mjs [parola]
  */
 import { chromium } from "playwright";
-import { createMock } from "./sa4pso-mock.mjs";
+import { createMock } from "./gestionale-vero.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rmSync, existsSync, statSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from "node:fs";
@@ -1189,15 +1189,18 @@ if (await prova("un ordine in sottofondo: sotto la striscia la riga «Rich Lab �
   check(viste.some((r) => r.n === "Etichette POC") && viste.some((r) => r.n === "Lista esami POC"), "poi le righe dei suoi fogli");
 }
 
-// (due laboratori, due liste sull'A4: la seconda aspetta che la prima esca)
+// (due laboratori, due liste sull'A4: la seconda aspetta che la prima esca —
+// una richiesta di prima, POC + Urgenze in una, ristampata: oggi il pannello
+// ne fa una per erogatore)
 if (await prova("una riga tolta col ✕: quel foglio solo non esce, gli altri sì; dall'aiutante il ✕ non c'è più")) {
   installa(true);
   await scelte(ATTIVA);
   comportati({ lento: 5000 });
+  A.state.richieste["699999"].cart.set("159", "00720001P");
   await suPagina(doc, A.patientUrl);
   await azzeraRighe(doc);
   const nasce = nuovaPagina();
-  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA", "PROCALCITONINA"]);
+  await ristampaDallaPagina(doc, false);
   await nasce;
   // la seconda lista aspetta che l'A4 finisca la prima: lì la si toglie
   const nome = await finche(async () => doc.evaluate(() => {
@@ -1208,7 +1211,7 @@ if (await prova("una riga tolta col ✕: quel foglio solo non esce, gli altri s�
   }).catch(() => false), 120000);
   check(!!nome, "la prima lista è all'A4 (stampantina, niente ✕) e la seconda aspetta il suo turno, col ✕");
   await $panel(doc, `.pjob:has(.pjn[aria-label="${nome}"]) .pjx`).click().catch(() => {});
-  const rec = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli && x.fogli.length === 4), 60000);
+  const rec = await finche(async () => (await ordini()).find((x) => x.stampa?.tag === "Stampa" && x.stato !== "stampo" && x.fogli && x.fogli.length === 4), 60000);
   const f = rec ? rec.fogli : [], a4 = f.filter((x) => x.tipo === "a4");
   check(f.length === 4 && a4.length === 2 && a4[0].stato === "stampato" && a4[1].stato === "tolto" && f.filter((x) => x.stato === "stampato").length === 3 && /^Stampato su/.test(rec.pubblico.titolo),
     `tolta solo la seconda lista: le etichette e la prima lista stampate, «Stampato su …» (got ${JSON.stringify(f.map((x) => `${x.breve}:${x.stato}`))} · ${rec && rec.pubblico.titolo})`);

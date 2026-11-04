@@ -16,7 +16,7 @@
  *   node test/ext-ponte.mjs
  */
 import { chromium } from "playwright";
-import { createMock, refertoRxPdf } from "./sa4pso-mock.mjs";
+import { createMock, refertoRxPdf } from "./gestionale-vero.mjs";
 import { avviaRelay } from "../ponte/relay-node.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

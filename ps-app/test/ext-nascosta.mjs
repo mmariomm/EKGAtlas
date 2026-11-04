@@ -23,7 +23,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import { chromium } from "playwright";
-import { createMock } from "./sa4pso-mock.mjs";
+import { createMock } from "./gestionale-vero.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXT = join(root, "extension");
