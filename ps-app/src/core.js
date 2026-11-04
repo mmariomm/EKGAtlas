@@ -2373,42 +2373,87 @@
   // il carrello riletto è vuoto (3.70.0, ordini di 11 esami su due erogatori).
   // Quindi ogni lettura dell'estensione (fetchDoc, fetchPdf) aspetta qui,
   // finché c'è un motore che lavora in un'ALTRA pagina: un ordine in
-  // sottofondo che il service worker dice partito o in corsa, o un motore di
-  // una scheda del medico (il suo battito, MOTORE, in localStorage). Le
-  // richieste della pagina dove gira il motore sono le sue: passano.
+  // sottofondo che il service worker dice partito o in corsa, o il motore di
+  // una scheda (un giro, la sua conferma), che lo tiene dal service worker
+  // (`motore` in storage.session: { tab, id, scade } — vedi bg.js, MOTORE_K).
+  // Le richieste della pagina dove gira il motore sono le sue: passano. (Senza
+  // estensione, col bookmarklet, il motore di una scheda lo dice il suo
+  // battito, MOTORE, in localStorage.)
   const MOTORE = "motore.v1";
   const MOTORE_MS = 15e3;          // un battito più vecchio è di una pagina morta
   const CANCELLO_MAX = 240e3;      // più di così non si aspetta (un ordine dura meno di un minuto)
   const PAGINA_ID = Math.random().toString(36).slice(2);
   let MOTORE_MIO = null;           // il motore che gira in QUESTA pagina
   let ORDINI_VIVI = [];            // gli ordini del service worker (storage.session)
+  let MOTORE_SW = null;            // il motore che il service worker dice preso, da chi
+  let MIA_SCHEDA = null;           // il numero di questa scheda, detto dal service worker
   const motoreAttivo = (x) => !!x && (x.stato === "avvio" || x.stato === "corre");
   try {
-    chrome.storage.session.get("ordini").then((o) => { if (Array.isArray(o && o.ordini)) ORDINI_VIVI = o.ordini; }).catch(() => {});
-    chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && ch.ordini) ORDINI_VIVI = ch.ordini.newValue || []; });
+    chrome.storage.session.get(["ordini", "motore"]).then((o) => {
+      if (Array.isArray(o && o.ordini)) ORDINI_VIVI = o.ordini;
+      MOTORE_SW = (o && o.motore) || null;
+    }).catch(() => {});
+    chrome.storage.onChanged.addListener((ch, area) => {
+      if (area !== "session") return;
+      if (ch.ordini) ORDINI_VIVI = ch.ordini.newValue || [];
+      if (ch.motore) MOTORE_SW = ch.motore.newValue || null;
+    });
   } catch { /* senza estensione: solo il battito */ }
   // il motore è qui: il giro di questa pagina, la sua conferma, o la scheda
   // dell'ordine in sottofondo che sta lavorando (fra una pagina e l'altra)
   const motoreQui = () => !!MOTORE_MIO || !!(LAVORO && ORDINI_VIVI.some((x) => x.id === LAVORO.id && motoreAttivo(x)));
   const battitoAltrui = () => { const m = store.get(MOTORE, null); return !!(m && m.id !== PAGINA_ID && Date.now() - (m.ts || 0) < MOTORE_MS); };
-  const motoreAltrove = () => !motoreQui() && (ORDINI_VIVI.some(motoreAttivo) || battitoAltrui());
-  const motoreOvunque = () => motoreQui() || ORDINI_VIVI.some(motoreAttivo) || battitoAltrui();
+  // (un ordine «muto» — la sua scheda non risponde più: «⏹ la chiude» — non ferma le letture)
+  const motoreFuori = () => ORDINI_VIVI.some((x) => motoreAttivo(x) && !x.muto)
+    || (hasExt() ? !!(MOTORE_SW && MOTORE_SW.scade > Date.now() && MOTORE_SW.tab !== MIA_SCHEDA) : battitoAltrui());
+  const motoreAltrove = () => !motoreQui() && motoreFuori();
+  const motoreOvunque = () => motoreQui() || motoreFuori();
   async function cancelloMotore(signal) {
     if (!motoreAltrove()) return;
     const fine = Date.now() + CANCELLO_MAX;
     while (Date.now() < fine && motoreAltrove()) await sleep(500, signal);
   }
+  const segnaScheda = (r) => { if (r && r.scheda != null) MIA_SCHEDA = r.scheda; return r; };
   function battitoMotore() {
     try {
+      // con l'estensione: il motore di questa pagina si rinnova dal service worker
+      if (hasExt()) { if (MOTORE_MIO) ask({ t: "ordineMotore", id: MOTORE_MIO }).then(segnaScheda); return; }
       // (il battito è solo del motore di questa pagina: la scheda di un ordine
       // in sottofondo la dice già il service worker, e finito il giro tace subito)
       if (MOTORE_MIO) store.set(MOTORE, { id: PAGINA_ID, ts: Date.now() });
       else { const m = store.get(MOTORE, null); if (m && m.id === PAGINA_ID) store.set(MOTORE, null); }
     } catch { /* memoria piena: resta il service worker */ }
   }
+  // Chi parte (un giro, una conferma) chiede il motore e aspetta il suo turno
+  // PRIMA di mandare qualunque cosa — mai a metà: un ordine in sottofondo che
+  // gira, o il motore di un'altra scheda. Intanto la striscia dice «In coda».
+  // Si aspetta solo un «occupato» detto: un service worker che non risponde, o
+  // non sa del motore, non sa di nessun altro — si parte, come prima. Dopo
+  // cinque minuti si rinuncia (false: non parte niente).
+  const ATTESA_MOTORE_MAX = 5 * 60e3;
+  async function prendiMotore(id, ui) {
+    if (!hasExt()) return true;
+    const fine = Date.now() + ATTESA_MOTORE_MAX;
+    let persi = 0, detto = false;
+    try {
+      for (;;) {
+        const r = segnaScheda(await ask({ t: "ordineMotore", id }));
+        if (r.ok || (!r.occupato && (!r.perso || ++persi >= 3))) return true;
+        if (r.occupato && Date.now() > fine) return false;
+        if (r.occupato && !detto && ui && ui.inCodaMotore) { detto = true; ui.inCodaMotore(true); }
+        await sleep(1000);
+      }
+    } finally { if (detto) ui.inCodaMotore(false); }
+  }
+  const mollaMotore = (id) => { if (hasExt()) ask({ t: "ordineMotore", id, molla: true }); };
   if (!TABELLONE) {
     setInterval(battitoMotore, 4000);
-    window.addEventListener("pagehide", () => { MOTORE_MIO = null; battitoMotore(); });
+    window.addEventListener("pagehide", () => {
+      // (con un giro da riprendere il motore resta di questa scheda: lo
+      // riprende la pagina dopo, o scade da solo)
+      if (MOTORE_MIO && !tabStore.get(CORSA, null)) mollaMotore(MOTORE_MIO);
+      MOTORE_MIO = null; battitoMotore();
+    });
   }
 
   // ------------------------------------------------------- KNOWN PATIENTS
@@ -4366,10 +4411,25 @@
 
   async function runPlan(plan, ui) {
     const mio = Math.random().toString(36).slice(2), prima = MOTORE_MIO;
+    // il turno, prima di tutto (e intanto un secondo «Conferma» non parte)
+    ui._motoreAtteso = true;
+    let preso;
+    try { preso = prima ? true : await prendiMotore(mio, ui); } finally { ui._motoreAtteso = false; }
+    if (!preso) {
+      ui.message = "Un altro ordine sta ancora mandando esami: niente inviato da qui. Riprova fra poco.";
+      ui.render();
+      return null;
+    }
     MOTORE_MIO = mio;
     battitoMotore();
     try { return await runPlanVero(plan, ui); }
-    finally { if (MOTORE_MIO === mio) MOTORE_MIO = prima; battitoMotore(); }
+    finally {
+      if (MOTORE_MIO === mio) MOTORE_MIO = prima;
+      // (la conferma automatica che parte dalla pagina dopo è ancora questo
+      // motore: il turno resta alla scheda, e la conferma lo riprende)
+      if (!MOTORE_MIO && (LAVORO || !tabStore.get("confirm.v1", null))) mollaMotore(mio);
+      battitoMotore();
+    }
   }
   async function runPlanVero(plan, ui) {
     const ctrl = new AbortController();
@@ -7436,12 +7496,16 @@
         window.addEventListener("pagehide", abbandona);
         if (TRACCIA) TRACCIA.attiva = true;   // le riletture della conferma vanno nella traccia
         const tC = Date.now();
-        const motorePrima = MOTORE_MIO;
-        MOTORE_MIO = MOTORE_MIO || "conferma";   // la conferma è ancora il motore: le altre schede aspettano
-        battitoMotore();
-        try { esito = await confermaInCornice(listUrl, { panel: this, episodeId: ep, rid }); }
+        // La conferma è ancora il motore: lo chiede (il giro appena finito
+        // l'ha lasciato a questa scheda: subito), e intanto le altre schede
+        // aspettano; senza turno, la conferma resta al medico. (Mai rimettere
+        // il motore di prima: il giro che l'ha chiamata intanto è finito.)
+        const idConferma = "conferma" + Math.random().toString(36).slice(2, 8);
+        const preso = await prendiMotore(idConferma, this);
+        MOTORE_MIO = idConferma;
+        try { esito = preso ? await confermaInCornice(listUrl, { panel: this, episodeId: ep, rid }) : "rifiutata"; }
         catch { esito = "rifiutata"; }
-        finally { MOTORE_MIO = motorePrima; battitoMotore(); }
+        finally { if (MOTORE_MIO === idConferma) { MOTORE_MIO = null; mollaMotore(idConferma); } battitoMotore(); }
         window.removeEventListener("pagehide", abbandona);
         this.log(`${now()}  conferma in sottofondo: ${esito}`);
         if (TRACCIA && TRACCIA.passi.length < 120) TRACCIA.passi.push({ t: tC - TRACCIA.t0, ms: Date.now() - tC, m: "cornice", pagina: "Conferma", esito });
@@ -7778,7 +7842,8 @@
       if (plan.startPage === "carrello") return ok(plan.listUrl);
       return "";
     }
-    async delega(plan, url) {
+    // (true: l'ordine è dato; `ripiego`: che cosa fare qui se nessuna scheda di sottofondo lo prende)
+    async delega(plan, url, ripiego = () => runPlan(plan, this)) {
       const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
       const pulito = (i) => ({ res: i.res, code: i.code, label: i.label, display: i.display || i.label,
         ...(i.chiave ? { chiave: i.chiave } : {}), ...(i.resCat ? { resCat: i.resCat } : {}), ...(i.alPostoDi ? { alPostoDi: i.alPostoDi } : {}),
@@ -7813,18 +7878,40 @@
         if (!plan.episodeId || plan.episodeId === this.episodeId) this.clearOrderUi();
         this.ordiniAggiorna(r.ordini || this.ordini);
         this.render();
-        return;
+        return true;
       }
       if (!r.no) {
         // il service worker non risponde: non si sa, e da qui non si manda niente
         this.segnala({ tag: "Ordine incerto", testo: "Non so se è partito: guarda il carrello prima di rifarlo", tono: "warn", paziente: chi,
           onStop: () => this.segnala(null) });
-        return;
+        return false;
       }
       // niente scheda di sottofondo (non si apre, o la pagina non va): l'ordine lo manda questa pagina, come sempre
       this.log(`${now()}  scheda di sottofondo non disponibile (${r.why || "?"}): mando da questa pagina`);
       if (this.striscia && this.striscia.daOrdine) this.segnala(null);
-      runPlan(plan, this);
+      ripiego();
+      return false;
+    }
+    // Un giro che aspetta il suo turno (prendiMotore): lo dicono la striscia e il Registro.
+    inCodaMotore(on) {
+      if (on) {
+        this.log(`${now()}  un altro motore sta mandando esami: aspetto il turno, poi parto`);
+        this.collapsed = true;
+        this.segnala({ tag: "In coda", testo: "un altro ordine sta mandando esami: parto appena ha finito", tono: "run", paziente: this.runPatient || "", inCoda: true });
+      } else if (this.striscia && this.striscia.inCoda) this.segnala(null);
+    }
+    // Laboratorio e radiologia (il pacchetto «Dolore toracico» porta l'RX):
+    // due ordini in sottofondo, uno dopo l'altro — il laboratorio, poi la
+    // radiologia col suo quesito —, come dal telefono (ponteOrdina). Questa
+    // scheda non si ferma e non si sposta; le etichette escono in due giri.
+    // Se la prima scheda di sottofondo non si apre, la catena di sempre, qui;
+    // se non si apre la seconda, quella gamba qui.
+    async delegaGambe(plan, url) {
+      for (const [i, leg] of plan.legs.entries()) {
+        const gamba = { ...plan, legs: [leg], entryUrl: leg.entryUrl, items: leg.items, legLabel: leg.label,
+          quesito: leg.quesito ?? plan.quesito, quesitoMio: leg.quesitoMio ?? plan.quesitoMio };
+        if (!(await this.delega(gamba, url, i ? () => runPlan(gamba, this) : () => this.runChain(plan)))) return;
+      }
     }
     // Gli ordini dal service worker. La scheda di un ordine guarda solo il
     // suo: finito, si slega; un ⏹ segnato, lo esegue. Le altre mostrano la striscia.
@@ -8250,7 +8337,7 @@
 
     // ---- run starters ----
     startPlan(base) {
-      if (this.runState === "running" || this._delegando) return;
+      if (this.runState === "running" || this._delegando || this._motoreAtteso) return;
       // La scheda di un ordine che gira fa solo quell'ordine: un altro, da
       // qui, si confonderebbe col suo (le etichette, l'esito).
       if (LAVORO && !base.dalLavoro) {
@@ -8279,7 +8366,14 @@
         patientUrl: base.patientUrl || (this.pageType === "patient" ? location.href : ""),
         ...(this.pageType === "patient" && !base.prima ? { prima: fotoRichieste(document, location.href) } : {}) };
       if ((this._q || "").trim()) rememberQuesito((this._q || "").trim());
-      if (plan.legs && plan.legs.length > 1) { this.runChain(plan); return; }
+      // Laboratorio e radiologia: con l'estensione due ordini in sottofondo,
+      // uno dopo l'altro (delegaGambe); senza, la catena qui (runChain).
+      if (plan.legs && plan.legs.length > 1) {
+        const dove = this.urlLavoro(plan);
+        if (dove) this.delegaGambe(plan, dove);
+        else this.runChain(plan);
+        return;
+      }
       // Con l'estensione il giro lo fa una scheda di sottofondo: questa resta
       // libera. Se la scheda non si apre, lo fa questa pagina, come sempre.
       // («Svuota» dalla riga di una richiesta da confermare resta qui: è corto,
@@ -8291,7 +8385,8 @@
 
     // Lab and radiology cannot share a richiesta, so when both are selected we
     // build them one after the other and then walk the doctor through both
-    // confirmations (and one single print flow at the end).
+    // confirmations (and one single print flow at the end). (Col bookmarklet,
+    // o se la scheda di sottofondo non si apre: con l'estensione è delegaGambe.)
     async runChain(plan) {
       const done = [];
       for (let i = 0; i < plan.legs.length; i++) {
@@ -14918,6 +15013,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const giaFatti = Array.isArray(fatti) ? fatti : [];
     if (giaFatti.includes(m.id)) return { ok: true, gia: true };
     if (wizardOpen) return { ok: false, why: "occupata" };
+    // (un motore che lavora qui: i PDF sono pagine della stessa sessione — dopo)
+    if (motoreQui()) return { ok: false, why: "motore" };
     if (!m.forza) {
       if (staScrivendo(true)) return { ok: false, why: "scrive" };
       const qui = panel ? panel.epDiQuesta() : findEpisodeId(document, location.href);
@@ -15655,6 +15752,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // la scheda aperta dal service worker solo per dare i PDF di una stampa: niente pannello
     if (chi && chi.fogli) return;
     LAVORO = chi && chi.lavoro ? chi.lavoro : null;
+    segnaScheda(chi);
     PONTE_VALORI = chi && chi.ponteValori ? chi.ponteValori : null;
     PONTE_CARTELLA = chi && chi.ponteCartella ? chi.ponteCartella : null;
     ponteAscolta();

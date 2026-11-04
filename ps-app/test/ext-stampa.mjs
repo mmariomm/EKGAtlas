@@ -839,7 +839,8 @@ if (await prova("un ordine dal telefono: le etichette aspettano un tocco al PC, 
     const l = (await chrome.storage.session.get("ordini")).ordini || [];
     for (const x of l) if (x.id === "telprova2") x.agg = Date.now() - 31 * 60e3;
     await chrome.storage.session.set({ ordini: l });
-    await new Promise((res) => ordMessaggio({ t: "ordineControlla" }, { tab: { id: 0 }, url: "https://smarthealth.multimedica.it/sa4pso/" }, res));
+    // (il giro di controllo, adesso: le domande delle schede, ogni 4 secondi, lo fanno al più ogni 3)
+    await inFilaOrd(async () => { await ordControlla(await ordLeggi()); });
     return ((await chrome.storage.session.get("ordini")).ordini || []).find((x) => x.id === "telprova2");
   });
   check(!!scade && scade.stato === "avviso" && scade.pubblico.tono === "warn" && scade.pubblico.titolo === "Etichette NON stampate",
@@ -1068,11 +1069,12 @@ if (await prova("un referto salvato: «Stampa» nel visore va sull'A4, una volta
   await visore.locator("#vchiudi").click().catch(() => {});
 }
 
-// ---- il pacchetto «Dolore toracico» con l'RX: due richieste, una stampa ------
-// (laboratorio e radiologia confermate da sole; poi le etichette alla Zebra, la
-// lista e la prenotazione RX all'A4, la RX per ultima; sotto la striscia una riga
-// per la richiesta che gira e una per foglio)
-const pacchettoConRx = async () => {
+// ---- il pacchetto «Dolore toracico» con l'RX: due ordini in sottofondo ------
+// (laboratorio e radiologia, uno dopo l'altro, come dal telefono: confermati da
+// soli; le etichette alla Zebra e la lista all'A4, poi la prenotazione RX
+// all'A4; sotto la striscia una riga per la richiesta che gira e una per
+// foglio — e la scheda del medico resta dov'è: niente catena, niente salti)
+const pacchettoConRx = async (primaDelClic = () => {}) => {
   await suPagina(doc, A.patientUrl);
   await apriPannello(doc);
   await azzeraRighe(doc);
@@ -1081,42 +1083,52 @@ const pacchettoConRx = async () => {
   const cta = (await $panel(doc, "#goconfirm").innerText()).trim();
   check(/· 2 richieste, 7 esami$/.test(cta), `il pacchetto porta anche l'RX: «… · 2 richieste, 7 esami» (got ${cta})`);
   const prima = Object.keys(A.state.richieste);
+  primaDelClic();
   await $panel(doc, "#goconfirm").click();
   return prima;
 };
 const nuoveDi = (prima) => Object.entries(A.state.richieste).filter(([rid]) => !prima.includes(rid)).map(([, r]) => r);
-if (await prova("il pacchetto Dolore toracico con l'RX: confermate da sole, etichette → Zebra, lista poi RX → A4, e le righe sotto la striscia")) {
+if (await prova("il pacchetto Dolore toracico con l'RX: due ordini in sottofondo confermati da soli, etichette → Zebra, lista poi RX → A4, e la scheda del medico resta lì")) {
   installa(true);
   await scelte(ATTIVA);
   comportati({ lento: 2500 });
-  const prima = await pacchettoConRx();
-  // durante: le righe, mentre i fogli sono alla stampante
+  let salti = 0, pagina = "";
+  const salto = (f) => { if (f === doc.mainFrame()) salti++; };
+  const prima = await pacchettoConRx(() => { pagina = doc.url(); doc.on("framenavigated", salto); });
+  // durante: le righe, mentre i fogli del laboratorio sono alla stampante
   const vivo = await finche(async () => (await righeViste(doc)).some((r) => r.ico === "pulsa") && await doc.evaluate(() =>
-    (document.getElementById("psassist-host")?.shadowRoot?.querySelectorAll(".pjob") || []).length >= 3).catch(() => false), 120000);
+    (document.getElementById("psassist-host")?.shadowRoot?.querySelectorAll(".pjob") || []).length >= 2).catch(() => false), 120000);
   if (vivo) {
     mkdirSync("/tmp/claude-0/-home-user-EKGAtlas/489213ea-3621-581d-ba5b-643886b3ad63/scratchpad/side", { recursive: true });
     await doc.screenshot({ path: "/tmp/claude-0/-home-user-EKGAtlas/489213ea-3621-581d-ba5b-643886b3ad63/scratchpad/side/stampa-righe.png" }).catch(() => {});
   }
-  const rec = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli && x.fogli.length === 3), 120000);
+  const fatti = await finche(async () => {
+    const l = await ordini();
+    const lab = l.find((x) => x.kind === "lab" && x.stato === "avviso" && x.fogli), rx = l.find((x) => x.kind === "radio" && x.stato === "avviso" && x.fogli);
+    return lab && rx ? { lab, rx } : null;
+  }, 180000);
+  doc.off("framenavigated", salto);
   const nuove = nuoveDi(prima);
   const lab = nuove.find((r) => r.cart.has("324")), rx = nuove.find((r) => r.cart.has("36"));
   check(nuove.length === 2 && lab && rx && lab.cart.size === 6 && rx.cart.size === 1 && lab.confirmed && rx.confirmed,
     `due richieste, laboratorio (6) e RX torace 1 proiezione (1), confermate tutte e due da sole (got ${nuove.map((r) => `${[...r.cart.keys()]}:${r.confirmed}`).join(" | ")})`);
   check(conferme(A).length === 2, `una conferma per richiesta (got ${conferme(A).length})`);
-  const f = rec ? rec.fogli : [];
-  check(!!rec && JSON.stringify(f.map((x) => x.breve)) === JSON.stringify(["et:POC", "fg:POC", "fg:RX"]) && f.every((x) => x.stato === "stampato"),
-    `tre fogli, una stampa sola: etichette POC, lista POC, prenotazione RX, tutti stampati (got ${JSON.stringify(f.map((x) => `${x.breve}:${x.stato}`))})`);
-  check(f.length === 3 && f[1].ts < f[2].ts, "sull'A4 la lista prima, la prenotazione RX per ultima");
+  const fl = fatti ? fatti.lab.fogli : [], fr = fatti ? fatti.rx.fogli : [];
+  check(!!fatti && JSON.stringify(fl.map((x) => x.breve)) === JSON.stringify(["et:POC", "fg:POC"]) && JSON.stringify(fr.map((x) => x.breve)) === JSON.stringify(["fg:RX"])
+    && [...fl, ...fr].every((x) => x.stato === "stampato"),
+    `due ordini, due stampe: etichette e lista POC, poi la prenotazione RX, tutti stampati (got ${JSON.stringify([fl, fr].map((f) => f.map((x) => `${x.breve}:${x.stato}`)))})`);
+  check(fl.length === 2 && fr.length === 1 && fl[1].ts < fr[0].ts, "sull'A4 la lista prima, la prenotazione RX dopo");
   const l = lavori();
   check(l.filter((x) => x.tipo === "etichette" && x.stampante === "Zebra ZD421").length === 1 && l.filter((x) => x.tipo === "a4" && x.stampante === "HP LaserJet A4").length === 2 && l.length === 3,
     `all'aiutante: 1 etichetta alla Zebra, 2 fogli all'A4, una volta ciascuno (got ${JSON.stringify(l.map((x) => `${x.tipo}→${x.stampante}`))})`);
   check((await stampe(doc)).length === 0, "nessun dialogo, nessuna anteprima");
+  check(salti === 0 && doc.url() === pagina, `la scheda del medico non si è mossa: niente carrello, niente conferma lì (got ${salti} salti · ${doc.url() === pagina ? "stessa pagina" : doc.url()})`);
   const viste = await righeViste(doc);
   const nomi = [...new Set(viste.map((r) => r.n))];
   const ordine = ["Etichette POC", "Lista esami POC", "Prenotazione RX"].map((n) => viste.findIndex((r) => r.n === n));
   check(ordine.every((i) => i >= 0) && ordine[0] < ordine[1] && ordine[1] < ordine[2], `le righe dei fogli, in ordine, con la loro icona: Etichette POC, Lista esami POC, Prenotazione RX (got ${nomi.join(" | ")})`);
   const di = (n) => viste.filter((r) => r.n === n);
-  check(di("Prenotazione RX").some((r) => r.x && !r.ico && r.svg) && di("Prenotazione RX").some((r) => r.ico === "pulsa" && !r.x) && di("Prenotazione RX").some((r) => r.ok && r.ico === "fatto" && r.w === "100%"),
+  check(viste.some((r) => /^(Etichette|Lista esami|Prenotazione)/.test(r.n) && r.x && !r.ico && r.svg) && di("Prenotazione RX").some((r) => r.ico === "pulsa" && !r.x) && di("Prenotazione RX").some((r) => r.ok && r.ico === "fatto" && r.w === "100%"),
     "ogni riga: col ✕ finché aspetta, poi la stampantina che respira (niente ✕), poi verde col ✓");
   check(!!vivo, "(la foto delle righe mentre stampa: scratchpad/side/stampa-righe.png)");
   await sospendi(5000);
@@ -1142,26 +1154,31 @@ if (await prova("un ordine in sottofondo: sotto la striscia la riga «Rich Lab �
   check(viste.some((r) => r.n === "Etichette POC") && viste.some((r) => r.n === "Lista esami POC"), "poi le righe dei suoi fogli");
 }
 
+// (due laboratori, due liste sull'A4: la seconda aspetta che la prima esca)
 if (await prova("una riga tolta col ✕: quel foglio solo non esce, gli altri sì; dall'aiutante il ✕ non c'è più")) {
   installa(true);
   await scelte(ATTIVA);
   comportati({ lento: 5000 });
-  await pacchettoConRx();
-  // la prenotazione RX aspetta che l'A4 finisca la lista: lì la si toglie
-  const pronta = await finche(async () => doc.evaluate(() => {
+  await suPagina(doc, A.patientUrl);
+  await azzeraRighe(doc);
+  const nasce = nuovaPagina();
+  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA", "PROCALCITONINA"]);
+  await nasce;
+  // la seconda lista aspetta che l'A4 finisca la prima: lì la si toglie
+  const nome = await finche(async () => doc.evaluate(() => {
     const r = document.getElementById("psassist-host")?.shadowRoot;
-    const riga = (n) => [...(r?.querySelectorAll(".pjob") || [])].find((el) => el.querySelector(".pjn")?.getAttribute("aria-label") === n);
-    const rx = riga("Prenotazione RX"), lista = riga("Lista esami POC");
-    return !!rx && !!rx.querySelector(".pjx") && !!lista && !!lista.querySelector(".pjico.pulsa") && !lista.querySelector(".pjx");
+    const liste = [...(r?.querySelectorAll(".pjob") || [])].filter((el) => /^Lista esami/.test(el.querySelector(".pjn")?.getAttribute("aria-label") || ""));
+    return liste.length === 2 && !!liste[0].querySelector(".pjico.pulsa") && !liste[0].querySelector(".pjx") && !!liste[1].querySelector(".pjx")
+      ? liste[1].querySelector(".pjn").getAttribute("aria-label") : false;
   }).catch(() => false), 120000);
-  check(!!pronta, "la lista è all'A4 (stampantina, niente ✕) e la prenotazione RX aspetta il suo turno, col ✕");
-  await $panel(doc, '.pjob:has(.pjn[aria-label="Prenotazione RX"]) .pjx').click().catch(() => {});
-  const rec = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli && x.fogli.length === 3), 60000);
-  const f = rec ? rec.fogli : [];
-  check(f.length === 3 && f[0].stato === "stampato" && f[1].stato === "stampato" && f[2].stato === "tolto" && /^Stampato su/.test(rec.pubblico.titolo),
-    `tolta solo la RX: etichette e lista stampate, «Stampato su …» (got ${JSON.stringify(f.map((x) => `${x.breve}:${x.stato}`))} · ${rec && rec.pubblico.titolo})`);
+  check(!!nome, "la prima lista è all'A4 (stampantina, niente ✕) e la seconda aspetta il suo turno, col ✕");
+  await $panel(doc, `.pjob:has(.pjn[aria-label="${nome}"]) .pjx`).click().catch(() => {});
+  const rec = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli && x.fogli.length === 4), 60000);
+  const f = rec ? rec.fogli : [], a4 = f.filter((x) => x.tipo === "a4");
+  check(f.length === 4 && a4.length === 2 && a4[0].stato === "stampato" && a4[1].stato === "tolto" && f.filter((x) => x.stato === "stampato").length === 3 && /^Stampato su/.test(rec.pubblico.titolo),
+    `tolta solo la seconda lista: le etichette e la prima lista stampate, «Stampato su …» (got ${JSON.stringify(f.map((x) => `${x.breve}:${x.stato}`))} · ${rec && rec.pubblico.titolo})`);
   await sospendi(1000);
-  check(lavori().length === 2 && lavori().filter((x) => x.tipo === "a4").length === 1, `all'aiutante due fogli, mai la RX (got ${lavori().length})`);
+  check(lavori().length === 3 && lavori().filter((x) => x.tipo === "a4").length === 1, `all'aiutante tre fogli, mai la lista tolta (got ${lavori().length})`);
 }
 
 if (await prova("dal telefono il pacchetto con l'RX: due ordini, laboratorio e radiologia, confermati e stampati da soli")) {

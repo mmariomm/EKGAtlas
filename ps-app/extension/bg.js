@@ -1027,12 +1027,31 @@ const ATTIVI = new Set(["avvio", "corre"]);          // occupano la coda: un mot
 const PRESA_MAX = 60e3;       // una presa di PDF ferma da così: non tiene più la coda
 const daPrendere = (rec) => rec.stato === "stampo" && !rec.ferma && !rec.interrotta && Date.now() - (rec.agg || 0) < PRESA_MAX
   && Array.isArray(rec.fogli) && rec.fogli.some((f, i) => (f.stato === "attesa" || f.stato === "prendo") && !((rec.stampa && rec.stampa.jobs && rec.stampa.jobs[i]) || {}).diretto);
-const occupato = (l) => l.some((x) => ATTIVI.has(x.stato) || daPrendere(x));
-const motoreAlLavoro = (l, tranne = null) => l.some((x) => x !== tranne && ATTIVI.has(x.stato));
+// IL MOTORE, UNO SOLO IN TUTTO IL BROWSER. Un ordine in sottofondo che gira
+// (`ATTIVI`) è un motore; e lo è un giro nella scheda del medico (senza la
+// scheda di sottofondo, la pagina «Nuova richiesta», una ripresa), la sua
+// conferma nella cornice, e il giro della scheda dell'ordine: quelli lo
+// chiedono qui (ordineMotore) e lo tengono — `motore` in storage.session,
+// { tab, id, scade } —, lo rinnovano ogni 4 secondi finché lavorano e lo
+// mollano alla fine. Non rinnovato, scade da solo in 15 secondi. Una pagina
+// che se ne va con un giro da riprendere NON lo molla: lo riprende la stessa
+// scheda (o scade). Chi lo chiede mentre lo tiene un altro aspetta, prima di
+// partire — mai a metà —; un ordine nuovo, dal PC o dal telefono, va in coda.
+const MOTORE_K = "motore";
+const MOTORE_SCADE = 15e3;
+let MOTORE_ORA = null;   // (lo scrive solo il service worker: qui la copia, ricaricata quando si sveglia)
+let motorePronto = Promise.resolve();
+try { motorePronto = Promise.resolve(chrome.storage.session.get(MOTORE_K)).then((o) => { MOTORE_ORA = (o && o[MOTORE_K]) || null; }).catch(() => {}); } catch { /* niente: nessun motore */ }
+const motoreDiScheda = () => (MOTORE_ORA && MOTORE_ORA.scade > Date.now() ? MOTORE_ORA : null);
+const motoreScrivi = (m) => { MOTORE_ORA = m; return m ? chrome.storage.session.set({ [MOTORE_K]: m }) : chrome.storage.session.remove(MOTORE_K); };
+// (un ordine «muto» — «Ordine fermo · ⏹ la chiude» — tiene la coda, ma non le letture)
+const occupato = (l) => l.some((x) => ATTIVI.has(x.stato) || daPrendere(x)) || !!motoreDiScheda();
+const motoreAlLavoro = (l, tranne = null) => l.some((x) => x !== tranne && ATTIVI.has(x.stato) && !x.muto) || !!motoreDiScheda();
 // …e chi apre da solo una scheda del gestionale (un referto, lo storico, il
 // telefono) aspetta qui la fine del motore, al più 4 minuti
 const DOPO_MOTORE_MAX = 240e3;
 async function dopoIlMotore() {
+  await motorePronto;
   const fine = Date.now() + DOPO_MOTORE_MAX;
   while (Date.now() < fine && motoreAlLavoro(await ordLeggi().catch(() => []))) await new Promise((r) => setTimeout(r, 1000));
 }
@@ -1040,7 +1059,14 @@ const AVVIO_MAX = 45e3;       // la scheda non ha detto «parto»: non partirà
 const AVVIO_VUOTA = 6e3;      // la scheda è ancora vuota, mai arrivata sulla pagina: se ne apre un'altra
 const MUTO_MAX = 180e3;       // tre minuti senza una parola: si chiede alla scheda se c'è
 const STAMPA_MAX = 30 * 60e3; // etichette che nessuno è tornato a prendere
-const ORD_TTL = 12 * 3600e3;
+const ORD_TTL = 12 * 3600e3;  // un ordine aperto (etichette che aspettano) più vecchio di un turno
+// Finito, un ordine resta quanto serve a chi lo guarda: andato bene, quanto
+// la striscia lo mostra (due minuti); se no mezz'ora, per leggerlo.
+const FINE_OK_TTL = 2 * 60e3;
+const FINE_TTL = 30 * 60e3;
+const FINALI = new Set(["avviso", "errore", "chiusa", "interrotto"]);
+const ordTiene = (x, l, ora) => ATTIVI.has(x.stato) || x.stato === "coda"
+  || ora - (x.agg || 0) <= (!FINALI.has(x.stato) ? ORD_TTL : ordPubblico(x, l).tono === "ok" ? FINE_OK_TTL : FINE_TTL);
 let codaOrd = Promise.resolve();
 const inFilaOrd = (fn) => (codaOrd = codaOrd.then(fn, fn));
 // Le schede del gestionale leggono lo stato dell'ordine da sole, e ascoltano
@@ -1055,16 +1081,26 @@ const leggibileOrd = (u) => {
     return x.origin === SA4 && /\/menuPsoEpisodio\.do$/i.test(x.pathname) && !/[?&](ccsForm|Insert|Delete|Update)=/i.test(x.search);
   } catch { return false; }
 };
-// (un avviso più vecchio di un turno non si legge più: chi scrive dopo lo toglie)
+// (un ordine finito da tempo non si legge più: chi scrive dopo lo toglie)
 const ordLeggi = async () => {
   const l = (await chrome.storage.session.get(ORD))[ORD];
-  return (Array.isArray(l) ? l : []).filter((x) => ATTIVI.has(x.stato) || x.stato === "coda" || Date.now() - (x.agg || 0) <= ORD_TTL);
+  const ora = Date.now(), tutti = Array.isArray(l) ? l : [];
+  return tutti.filter((x) => ordTiene(x, tutti, ora));
 };
-// a ogni scrittura, per ogni ordine, che cosa dire a chi guarda
-const ordScrivi = (l) => { for (const r of l) r.pubblico = ordPubblico(r, l); return chrome.storage.session.set({ [ORD]: l }); };
+// a ogni scrittura, per ogni ordine, che cosa dire a chi guarda; e il piano
+// di un ordine che non gira più (lo serviva solo alla sua scheda) se ne va
+const ordScrivi = async (l) => {
+  const ora = Date.now();
+  const via = l.filter((r) => !ATTIVI.has(r.stato) && r.stato !== "coda" && !r.senzaPiano);
+  for (const r of via) r.senzaPiano = true;
+  for (let i = l.length - 1; i >= 0; i--) if (!ordTiene(l[i], l, ora)) l.splice(i, 1);
+  for (const r of l) r.pubblico = ordPubblico(r, l);
+  if (via.length) chrome.storage.session.remove(via.map((r) => ORD_PIANO(r.id))).catch(() => {});
+  return chrome.storage.session.set({ [ORD]: l });
+};
 const corto = (s, n = 160) => String(s == null ? "" : s).slice(0, n);
 const nomi = (a) => (Array.isArray(a) ? a.slice(0, 30).map((x) => corto(x, 60)) : []);
-const togli = async (l, rec) => { l.splice(l.indexOf(rec), 1); await chrome.storage.session.remove(ORD_PIANO(rec.id)); };
+const togli = async (l, rec) => { const i = l.indexOf(rec); if (i >= 0) l.splice(i, 1); await chrome.storage.session.remove(ORD_PIANO(rec.id)); };
 // Il Registro della scheda dell'ordine, con la sua ultima parola: la scheda si
 // chiude, le schede del medico lo aggiungono al loro (le righe di sempre, già
 // dentro il gestionale: qui solo testo corto, e solo finché c'è l'ordine)
@@ -1121,26 +1157,38 @@ async function ordSlega(rec) {
 // se dice di no si riprova dopo. Lo stesso ordine non si stampa mai due
 // volte: va via da `ordini` appena una scheda l'ha preso, e le schede si
 // segnano quelli già stampati. (`jobs`: solo quei fogli — «Ristampa» rifà
-// quelli non usciti.)
-async function ordDai(l, rec, tabId, forza, jobs = null) {
-  const stampa = jobs ? { ...rec.stampa, jobs } : rec.stampa;
-  const r = await allaScheda(tabId, { t: "psassistStampa", id: rec.id, ep: rec.ep, paziente: rec.paziente, stampa, forza: !!forza });
-  if (!(r && r.ok)) return false;
-  await togli(l, rec);
-  await ordScrivi(l);
-  return true;
+// quelli non usciti.) La domanda alla scheda (fino a 5 secondi) si fa FUORI
+// dalla fila degli ordini: una scheda lenta non ferma gli altri. Un ordine si
+// dà a una scheda alla volta (CONSEGNO): mai a due schede insieme.
+const CONSEGNO = new Set();
+async function ordDai(id, tabId, forza, jobs = null) {
+  if (CONSEGNO.has(id)) return false;
+  CONSEGNO.add(id);
+  try {
+    const rec = (await ordLeggi()).find((x) => x.id === id && x.stampa && (x.stato === "stampa" || (forza && x.stato === "avviso")));
+    if (!rec) return false;
+    const stampa = jobs ? { ...rec.stampa, jobs } : rec.stampa;
+    const r = await allaScheda(tabId, { t: "psassistStampa", id: rec.id, ep: rec.ep, paziente: rec.paziente, stampa, forza: !!forza });
+    if (!(r && r.ok)) return false;
+    await inFilaOrd(async () => {
+      const l = await ordLeggi();
+      const x = l.find((y) => y.id === id);
+      if (x) { await togli(l, x); await ordScrivi(l); }
+    });
+    return true;
+  } finally { CONSEGNO.delete(id); }
 }
 // (un ordine dal telefono non apre mai da solo il dialogo di stampa: davanti
 // al PC può non esserci nessuno. Aspetta un tocco su «Stampa», e lo dice.)
 const dalTelefono = (rec) => String(rec.id).startsWith("tel");
-async function ordConsegnaStampa(l) {
-  const pronte = l.filter((x) => x.stato === "stampa" && x.stampa && !dalTelefono(x));
+async function ordConsegnaStampa() {
+  const pronte = (await ordLeggi()).filter((x) => x.stato === "stampa" && x.stampa && !dalTelefono(x) && !CONSEGNO.has(x.id));
   if (!pronte.length) return;
   const cand = [];
   for (const q of [{ active: true, lastFocusedWindow: true }, { active: true }]) {
     for (const t of await chrome.tabs.query(q).catch(() => [])) if (sulGestionale(t.url) && !cand.includes(t.id)) cand.push(t.id);
   }
-  for (const rec of pronte) for (const id of cand) if (await ordDai(l, rec, id, false)) break;
+  for (const rec of pronte) for (const id of cand) if (await ordDai(rec.id, id, false)) break;
 }
 // Il giro di controllo: schede sparite, schede che non partono o non parlano
 // più, etichette che nessuno ha preso. Lo chiedono le schede
@@ -1150,6 +1198,7 @@ async function ordConsegnaStampa(l) {
 async function ordControlla(l) {
   const ora = Date.now();
   const prima = JSON.stringify(l);
+  const sonda = [];   // le schede zitte a cui chiedere se ci sono
   for (const rec of [...l]) {
     const t = rec.worker != null ? await chrome.tabs.get(rec.worker).catch(() => null) : null;
     if (rec.worker != null && (!t || t.discarded)) {
@@ -1176,11 +1225,11 @@ async function ordControlla(l) {
         rec.vista = { tag: "Non partito", testo: "La scheda per l'ordine non si è aperta: niente inviato", tono: "err" };
       }
     } else if (rec.stato === "corre" && ora - rec.agg > MUTO_MAX) {
-      // Zitta da troppo: le si chiede se c'è. Finché la scheda esiste non si
-      // dice «non mandati» (potrebbe mandare ancora) e la coda aspetta: mai
-      // due motori insieme. Se risponde, era solo lenta.
-      const r = await allaScheda(rec.worker, { t: "psassistVivo", id: rec.id });
-      if (r && r.ok) { rec.agg = ora; delete rec.muto; } else rec.muto = true;
+      // Zitta da troppo: le si chiede se c'è (ordSonda, fuori dalla fila).
+      // Finché la scheda esiste non si dice «non mandati» (potrebbe mandare
+      // ancora) e la coda aspetta: mai due motori insieme. Se risponde, era
+      // solo lenta.
+      if (rec.worker != null) sonda.push({ id: rec.id, worker: rec.worker });
     } else if (rec.stato === "stampo" && rec.pronta === false && ora - rec.agg > AVVIO_MAX) {
       // la scheda dei PDF non ha mai detto «ci sono»: i fogli non partono
       rec.interrotta = rec.interrotta || "la scheda dell'ordine non ha dato il foglio";
@@ -1198,11 +1247,33 @@ async function ordControlla(l) {
   // una stampa che questo service worker non sta facendo (si è riavviato): la riprende
   for (const rec of l) if (rec.stato === "stampo" && !STAMPO_VIVI.has(rec.id)) ordStampaFogli(rec.id);
   await ordAvanti(l);
-  await ordConsegnaStampa(l);
+  ordStampaOra();
+  return sonda;
+}
+// «Ci sei?» alle schede zitte — fuori dalla fila: una scheda bloccata non deve
+// fermare gli altri ordini, il ⏹ né le letture —; la risposta si scrive dopo,
+// dentro, solo se l'ordine è ancora quello.
+const SONDO = new Set();
+async function ordSonda(sonda) {
+  for (const { id, worker } of sonda || []) {
+    if (SONDO.has(id)) continue;
+    SONDO.add(id);
+    try {
+      const r = await allaScheda(worker, { t: "psassistVivo", id });
+      await inFilaOrd(async () => {
+        const l = await ordLeggi();
+        const rec = l.find((x) => x.id === id && x.worker === worker && x.stato === "corre");
+        if (!rec || (!(r && r.ok) && rec.muto)) return;
+        if (r && r.ok) { rec.agg = Date.now(); delete rec.muto; } else rec.muto = true;
+        await ordScrivi(l);
+      });
+    } finally { SONDO.delete(id); }
+  }
 }
 
 chrome.tabs.onRemoved.addListener((id) => {
   inFilaOrd(async () => {
+    if (MOTORE_ORA && MOTORE_ORA.tab === id) { await motoreScrivi(null); await ordAvanti(await ordLeggi()); }
     const l = await ordLeggi();
     const rec = l.find((x) => x.worker === id);
     if (!rec) return;
@@ -1250,7 +1321,7 @@ function ordPubblico(rec, l = []) {
   switch (rec.stato) {
     case "coda": {
       const prima = l.find((x) => x !== rec && ATTIVI.has(x.stato));
-      return P("run", "In coda", prima ? `parte dopo l'ordine di ${prima.paziente || "un altro paziente"}` : "parte fra poco");
+      return P("run", "In coda", prima ? `parte dopo l'ordine di ${prima.paziente || "un altro paziente"}` : motoreDiScheda() ? "parte dopo il giro di un'altra scheda" : "parte fra poco");
     }
     case "avvio": return P("run", "Parte", "Apro la scheda dell'ordine…");
     case "corre":
@@ -1420,6 +1491,7 @@ async function ordStampaFogli(id) {
     const corsia = async (tipo) => {
       const io = corsie.get(tipo);
       const altra = ([...corsie].find(([t]) => t !== tipo) || [])[1] || null;
+      let finoA = 0;   // l'attesa del motore, come dopoIlMotore: al più 4 minuti
       for (;;) {
         // 1. il prossimo foglio di questa corsia (o niente: la corsia ha finito)
         const passo = await inFilaOrd(async () => {
@@ -1431,7 +1503,7 @@ async function ordStampaFogli(id) {
           if (soloBracciale(rec) && etichetteInCorso(l, rec)) { attende = true; return null; }
           const job = rec.stampa.jobs[i] || {};
           // un motore sta inserendo esami: il PDF (una pagina del gestionale) aspetta che finisca
-          if (!job.diretto && motoreAlLavoro(l, rec)) return { aspetta: true };
+          if (!job.diretto && motoreAlLavoro(l, rec) && !(finoA && Date.now() > finoA)) return { aspetta: true };
           const senza = !job.diretto && rec.worker == null;   // nessuno che dia il PDF
           const s = senza ? null : await stampaScelte();
           if (!s) {
@@ -1444,7 +1516,7 @@ async function ordStampaFogli(id) {
           return { i, url: job.url, diretto: !!job.diretto, worker: rec.worker, tipo, stampante: s[tipo], ruota: ruotaDi(s), bracciale: soloBracciale(rec) };
         });
         if (!passo) return;
-        if (passo.aspetta) { await new Promise((r) => setTimeout(r, 1000)); continue; }
+        if (passo.aspetta) { finoA = finoA || Date.now() + DOPO_MOTORE_MAX; await new Promise((r) => setTimeout(r, 1000)); continue; }
         // 2. il PDF (dalla scheda dell'ordine; un consenso, dall'estensione)
         const insieme = !!altra && !altra.finita && !altra.aspetta;
         const pdf = passo.bracciale && copia && copia.url === passo.url ? copia.pdf : await prendi(passo);
@@ -1533,12 +1605,14 @@ async function ordStampoFine(l, rec) {
   // un'etichetta anagrafica che aspettava queste etichette: ora tocca a lei
   for (const x of l) if (x !== rec && x.stato === "stampo" && soloBracciale(x) && !STAMPO_VIVI.has(x.id)) ordStampaFogli(x.id);
   await ordAvanti(l);
-  await ordConsegnaStampa(l);
+  ordStampaOra();
 }
 
 // il medico è su un'altra scheda, in un'altra finestra, o su una pagina appena
 // caricata: le etichette in attesa vanno lì
-const ordStampaOra = () => inFilaOrd(async () => { await ordConsegnaStampa(await ordLeggi()); }).catch(() => {});
+const ordStampaOra = () => { ordConsegnaStampa().catch(() => {}); };
+const CONTROLLO_OGNI = 3000;
+const CONTROLLO = { ts: 0, inFila: false };
 chrome.tabs.onActivated.addListener(ordStampaOra);
 chrome.tabs.onUpdated.addListener((id, info, tab) => {
   if (info.status === "complete" && tab && tab.active && sulGestionale(tab.url)) ordStampaOra();
@@ -1552,6 +1626,7 @@ function ordMessaggio(msg, sender, reply) {
   const daGestionale = !!tab && sulGestionale(sender.url);
   if (!daGestionale) return reply({ ok: false, no: true, why: "non dal gestionale" }), true;
   const fai = (fn) => { inFilaOrd(fn).catch((e) => reply({ ok: false, why: corto(e && e.message || e, 80) })); return true; };
+  const faiDopoIlMotore = (fn) => { dopoIlMotore().then(() => fai(fn)); return true; };
   // la scheda di un ordine che gira: solo lei parla per lui
   const suo = (l) => l.find((x) => x.id === msg.id && x.worker === tab.id && ATTIVI.has(x.stato));
 
@@ -1604,7 +1679,7 @@ function ordMessaggio(msg, sender, reply) {
     if (nata) {
       nata.pronta = true; nata.agg = Date.now();
       await ordScrivi(l);
-      reply({ ok: true, ordini: l, fogli: true });
+      reply({ ok: true, ordini: l, fogli: true, scheda: tab.id });
       return void ordStampaFogli(nata.id);
     }
     // la scheda di un ordine che sta stampando è ripartita (ricaricata, un'altra
@@ -1613,12 +1688,12 @@ function ordMessaggio(msg, sender, reply) {
     if (ricarica) { ricarica.interrotta = "la scheda dell'ordine si è ricaricata"; await ordScrivi(l); }
     const mio = l.find((x) => x.worker === tab.id && ATTIVI.has(x.stato) && (x.consegnata == null || x.consegnata === tab.id));
     // (o la scheda che il ponte ha aperto per i valori di un paziente: ponte-sw.js)
-    if (!mio) return reply({ ok: true, ordini: l, ...(typeof ponteLavoroDi === "function" ? await ponteLavoroDi(tab.id) : {}) });
+    if (!mio) return reply({ ok: true, ordini: l, scheda: tab.id, ...(typeof ponteLavoroDi === "function" ? await ponteLavoroDi(tab.id) : {}) });
     // il piano va a questa scheda e a nessun'altra, per tutta la vita
     // dell'ordine (le sue pagine dopo — la ripresa, il carrello della conferma — sì)
     if (mio.consegnata == null) { mio.consegnata = tab.id; await ordScrivi(l); }
     const piano = (await chrome.storage.session.get(ORD_PIANO(mio.id)))[ORD_PIANO(mio.id)] || null;
-    reply({ ok: true, ordini: l, lavoro: { ...mio, piano } });
+    reply({ ok: true, ordini: l, scheda: tab.id, lavoro: { ...mio, piano } });
   });
   // la scheda di sottofondo parte: una volta sola, anche se si ricarica
   if (msg.t === "ordineParto") return fai(async () => {
@@ -1693,7 +1768,7 @@ function ordMessaggio(msg, sender, reply) {
     reply({ ok: true, stampo: !!auto });
     if (auto) ordStampaFogli(rec.id);
     await ordAvanti(l);
-    await ordConsegnaStampa(l);
+    ordStampaOra();
   });
   // Una stampa chiesta dalla scheda del medico — dopo una conferma,
   // «Ristampa», «Stampa l'ultima richiesta», un consenso —, con la stampa
@@ -1704,13 +1779,15 @@ function ordMessaggio(msg, sender, reply) {
   // Non coda: una stampa non aspetta un ordine che gira. La stessa domanda due
   // volte (la risposta persa) è una stampa sola. Spenta, o la scheda che non
   // si apre: no, e la pagina usa il dialogo di sempre.
-  if (msg.t === "ordineFogli") return fai(async () => {
+  // (la scheda dei PDF è una pagina del gestionale: si apre dopo il motore,
+  // aspettato FUORI dalla fila; i fogli nostri non aspettano niente)
+  // un file nostro: un consenso, o la copia di un referto salvato
+  const nostro = (u) => String(u).startsWith(chrome.runtime.getURL("consensi/")) || REF_STAMPA.test(String(u));
+  if (msg.t === "ordineFogli") return ((msg.job && Array.isArray(msg.job.jobs) ? msg.job.jobs : []).every((x) => x && nostro(x.url)) ? fai : faiDopoIlMotore)(async () => {
     const j = msg.job || {};
     const id = corto(j.id, 40);
     const visti = (await chrome.storage.session.get(ORD_VISTI))[ORD_VISTI] || [];
     if (id && visti.includes(id)) return reply({ ok: true, id, ordini: await ordLeggi() });
-    // un file nostro: un consenso, o la copia di un referto salvato
-    const nostro = (u) => String(u).startsWith(chrome.runtime.getURL("consensi/")) || REF_STAMPA.test(String(u));
     const jobs = (Array.isArray(j.jobs) ? j.jobs : []).slice(0, 12)
       .filter((x) => x && typeof x.name === "string" && (sulGestionale(x.url) || nostro(x.url)))
       .map((x) => ({ name: corto(x.name, 60), printer: corto(x.printer, 30), url: String(x.url), ...(x.breve ? { breve: corto(x.breve, 12) } : {}), ...(nostro(x.url) ? { diretto: true } : {}) }));
@@ -1739,15 +1816,18 @@ function ordMessaggio(msg, sender, reply) {
   });
   // «Stampa» sulla striscia: le etichette in attesa, qui e adesso (un tocco del
   // medico); o «Ristampa» di un ordine già stampato dalla stampa automatica
-  if (msg.t === "ordineStampaQui") return fai(async () => {
-    const l = await ordLeggi();
-    const rec = l.find((x) => x.id === msg.id && (x.stato === "stampa" || x.stato === "avviso") && x.stampa);
-    // «Ristampa» dopo la stampa senza dialogo: i fogli non usciti (o non si
-    // sa); se sono usciti tutti, tutti — un'etichetta inceppata
-    const f = rec && rec.stato === "avviso" && Array.isArray(rec.fogli) ? rec.fogli : [];
-    const non = f.length ? rec.stampa.jobs.filter((_, i) => f[i] && !usciti(f[i]) && f[i].stato !== "tolto") : [];
-    reply({ ok: !!rec && await ordDai(l, rec, tab.id, true, non.length ? non : null) });
-  });
+  // (fuori dalla fila, come ogni consegna a una scheda: ordDai)
+  if (msg.t === "ordineStampaQui") {
+    (async () => {
+      const rec = (await ordLeggi()).find((x) => x.id === msg.id && (x.stato === "stampa" || x.stato === "avviso") && x.stampa);
+      // «Ristampa» dopo la stampa senza dialogo: i fogli non usciti (o non si
+      // sa); se sono usciti tutti, tutti — un'etichetta inceppata
+      const f = rec && rec.stato === "avviso" && Array.isArray(rec.fogli) ? rec.fogli : [];
+      const non = f.length ? rec.stampa.jobs.filter((_, i) => f[i] && !usciti(f[i]) && f[i].stato !== "tolto") : [];
+      reply({ ok: !!rec && await ordDai(rec.id, tab.id, true, non.length ? non : null) });
+    })().catch(() => reply({ ok: false }));
+    return true;
+  }
   // ✕ sulla riga di un foglio: quello solo non si stampa, gli altri vanno
   // avanti. Solo finché aspetta o arriva: dato all'aiutante, dalla coda di
   // Windows non si richiama.
@@ -1764,7 +1844,8 @@ function ordMessaggio(msg, sender, reply) {
   // ⏹: un ordine in coda si toglie; uno che parte non parte; uno che gira si
   // ferma, dalla sua scheda — e se adesso non risponde (fra una pagina e
   // l'altra) il fermo resta segnato: lo legge alla prossima parola, e non
-  // riprende né conferma. Una scheda che non risponde più si chiude.
+  // riprende né conferma. Una scheda che non risponde più si chiude. (La
+  // domanda alla scheda, fuori dalla fila: una scheda bloccata non la ferma.)
   if (msg.t === "ordineFerma") return fai(async () => {
     const l = await ordLeggi();
     const rec = l.find((x) => x.id === msg.id);
@@ -1791,12 +1872,20 @@ function ordMessaggio(msg, sender, reply) {
       return;
     }
     if (rec.stato !== "corre") return reply({ ok: false });
-    const r = await allaScheda(rec.worker, { t: "psassistFerma", id: rec.id });
-    if (r && r.ok) return reply({ ok: true });
-    if (rec.muto) { await chrome.tabs.remove(rec.worker).catch(() => {}); return reply({ ok: true }); }
-    rec.ferma = true;
-    await ordScrivi(l);
-    reply({ ok: false, segnato: true });
+    const worker = rec.worker;
+    (async () => {
+      const r = await allaScheda(worker, { t: "psassistFerma", id: msg.id });
+      if (r && r.ok) return reply({ ok: true });
+      await inFilaOrd(async () => {
+        const l = await ordLeggi();
+        const rec = l.find((x) => x.id === msg.id && x.stato === "corre" && x.worker === worker);
+        if (!rec) return reply({ ok: false });
+        if (rec.muto) { await chrome.tabs.remove(worker).catch(() => {}); return reply({ ok: true }); }
+        rec.ferma = true;
+        await ordScrivi(l);
+        reply({ ok: false, segnato: true });
+      });
+    })().catch(() => reply({ ok: false }));
   });
   // il medico ha letto (✕, o il carrello aperto): via
   if (msg.t === "ordineChiudi") return fai(async () => {
@@ -1808,10 +1897,41 @@ function ordMessaggio(msg, sender, reply) {
     reply({ ok: true, ordini: l });
     await ordAvanti(l);
   });
-  if (msg.t === "ordineControlla") return fai(async () => {
+  // Ogni scheda lo chiede ogni 4 secondi: un giro alla volta, e non più di uno
+  // ogni CONTROLLO_OGNI — le altre domande hanno gli ordini come sono.
+  if (msg.t === "ordineControlla") {
+    if (CONTROLLO.inFila || Date.now() - CONTROLLO.ts < CONTROLLO_OGNI) {
+      ordLeggi().then((l) => reply({ ok: true, ordini: l }), () => reply({ ok: false }));
+      return true;
+    }
+    CONTROLLO.inFila = true;
+    return fai(async () => {
+      let sonda = [];
+      try {
+        const l = await ordLeggi();
+        sonda = await ordControlla(l);
+        reply({ ok: true, ordini: l });
+      } finally { CONTROLLO.inFila = false; CONTROLLO.ts = Date.now(); }
+      ordSonda(sonda).catch(() => {});
+    });
+  }
+  // Il motore (vedi MOTORE_K): lo chiede, lo rinnova e lo molla il motore di
+  // una scheda. Lo ha chi lo tiene già (la stessa scheda: anche un giro
+  // ripreso dopo il cambio pagina), o nessuno — e intanto nessun ordine in
+  // sottofondo che gira in un'altra scheda, né i PDF di una stampa da prendere.
+  if (msg.t === "ordineMotore") return fai(async () => {
+    await motorePronto;
+    const id = corto(msg.id, 40), m = motoreDiScheda(), mio = !!m && m.tab === tab.id;
+    if (msg.molla) {
+      if (!mio || m.id !== id) return reply({ ok: true, scheda: tab.id });
+      await motoreScrivi(null);
+      reply({ ok: true, scheda: tab.id });
+      return ordAvanti(await ordLeggi());
+    }
     const l = await ordLeggi();
-    await ordControlla(l);
-    reply({ ok: true, ordini: l });
+    if ((m && !mio) || l.some((x) => x.worker !== tab.id && (ATTIVI.has(x.stato) || daPrendere(x)))) return reply({ ok: false, occupato: true, scheda: tab.id });
+    await motoreScrivi({ tab: tab.id, id, scade: Date.now() + MOTORE_SCADE });
+    reply({ ok: true, scheda: tab.id });
   });
   reply({ ok: false });
 }
