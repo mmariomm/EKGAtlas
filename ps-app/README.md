@@ -448,9 +448,10 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
      troponina US, **RX TORACE 1 PROIEZ.** (una seconda richiesta, di radiologia: il bottone
      diventa «· 2 richieste», vedi sotto).
    - **Dispnea** — base ma con l'**EGA arteriosa NEW** (non la venosa), PT e PTT POC, D-dimero POC,
-     troponina US, NT-proBNP.
+     troponina US, NT-proBNP (Urgenze: una seconda richiesta, vedi «Una richiesta per erogatore»).
    - **Dolore addominale** — base, EGA venosa, epatico e pancreatico (bilirubina, GPT, GOT,
-     GAMMA GT, lipasi), PT e PTT del laboratorio centrale («Fantoli», cioè Urgenze: non il POC).
+     GAMMA GT, lipasi), PT e PTT del laboratorio centrale («Fantoli», cioè Urgenze: non il POC) —
+     due richieste, POC e Urgenze.
 
    Il chip scelto è **acceso**. Toccarne **un altro** cambia pacchetto: se ne vanno solo gli
    esami che aveva messo il pacchetto di prima — **quelli che hai scelto tu restano** (anche uno
@@ -597,18 +598,23 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    po'. Se nemmeno così la richiesta risulta, la striscia è **ambra**, «Non confermata ·
    tocca per il carrello», mai verde. Niente viene riconfermato da solo: un tocco apre il
    carrello, e lì decidi tu.
-   **Nessuna richiesta dimenticata.** Prima della conferma in sottofondo (e alla fine di un giro
-   in revisione, o fermato da un errore) il pannello annota la richiesta — solo numeri:
+   **Nessuna richiesta dimenticata.** Col carrello finito — prima della conferma in sottofondo, e
+   alla fine di un giro in revisione — il pannello annota la richiesta — solo numeri:
    richiesta, episodio, ora, quanti esami; mai un nome — e la tiene d'occhio: se dopo **2
    minuti** la pagina di quel paziente che hai davanti non la mostra fra le confermate, la
    striscia dice «Richiesta 14:32 non confermata · tocca per il carrello». Vale anche se hai
    cambiato pagina mentre diceva «Confermo…»: la conferma automatica muore con la pagina e non
    riparte da sola più tardi. Vista confermata, il segno se ne va (dopo 12 ore comunque). Al
    server non si chiede niente per questo: si guarda la pagina che hai aperto.
+   **Un ordine che non parte si dimentica** («se non parte l'ordine nel carrello, ignoralo»): un
+   giro fermato da un errore o da ⏹, o la scheda dell'ordine fermata prima della Conferma, non
+   lascia promemoria — né «Non confermata» né «ancora da confermare»: lo dice **una volta** la
+   striscia rossa (✕ la chiude). Il promemoria resta solo per un carrello finito e per una
+   Conferma premuta e non ancora provata (può essere confermata e non ancora in elenco).
    **Se qualcosa va storto, si finisce a mano nel gestionale.** La striscia diventa **rossa** —
    «Errore · completa a mano» / «Mancano: PTT POC · Da controllare: Troponina» — e la scheda va
-   sul **carrello** della richiesta, sul laboratorio del **primo esame rimasto fuori**: una
-   semplice lettura dell'elenco, niente inviato, niente confermato. **Mancano** sono gli esami
+   sul **carrello** della richiesta, sull'erogatore dove il gestionale la tiene (l'ultimo elenco
+   che ha dato): una semplice lettura dell'elenco, niente inviato, niente confermato. **Mancano** sono gli esami
    mai partiti: li aggiungi tu. **Da controllare** sono quelli mandati ma non visti in carrello:
    guarda se ci sono prima di aggiungerli — mai due volte. Un tocco sulla striscia: il
    resoconto, corto — il motivo, gli elenchi «Mancano» / «Da controllare» / «Nel carrello», **un'azione
@@ -625,8 +631,8 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    viaggia con lui, e lì compare «Riprova». Se la richiesta non era ancora nata, «Riprova» è un
    giro normale dalla pagina del paziente. Niente «Riprova» se non manca niente (solo «da
    controllare»), dopo una sessione scaduta, un episodio che non torna, un'altra scheda al
-   lavoro, né per la coppia laboratorio + radiologia fatta dalla tua pagina (col bookmarklet:
-   in sottofondo sono due ordini, ognuno col suo). **Una volta lo fa da solo:** un esame
+   lavoro, né per le richieste in fila fatte dalla tua pagina — laboratorio + radiologia, o due
+   erogatori di laboratorio (col bookmarklet: in sottofondo sono ordini separati, ognuno col suo). **Una volta lo fa da solo:** un esame
    rimasto fuori da un elenco venuto male, con niente «da controllare», si riprova subito — la
    striscia dice «Riprovo 1 esame…» — e il resoconto arriva solo se si ferma ancora.
    **…o si svuota il carrello e si ricomincia.** Sul carrello di quella richiesta il resoconto
@@ -644,13 +650,14 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    altro nome) **ferma tutto prima di togliere qualunque cosa**, e il bottone lo dice. Se dopo
    lo svuotamento resta anche una riga: stop, il resoconto dice cosa resta, **niente viene
    rimesso** e niente «Riprova»: si finisce a mano. Il promemoria «non confermata» segue il
-   carrello vero: vuoto si toglie, torna col primo esame rimesso. Vale con e senza estensione
+   carrello vero: vuoto si toglie, torna quando il carrello rimesso è finito. Vale con e senza estensione
    (anche col bookmarklet). «↻ Riprova i mancanti» resta com'era.
    **Chiudi** (era «Annulla», ma non annullava niente) toglie il resoconto — la pill torna
-   quella di sempre — e ti riporta alle Richieste col quesito. La richiesta lasciata a metà è
-   **ancora lì** nel gestionale, da confermare: il promemoria «non confermata» resta, e le
-   Richieste lo dicono in una riga discreta — «Richiesta delle 14:32 (4 esami) ancora da
-   confermare», con «apri il carrello» accanto. Restano scelti **solo gli esami che mancano davvero**:
+   quella di sempre — e ti riporta alle Richieste col quesito. La richiesta lasciata a metà resta
+   nel gestionale, ma il pannello **non la ricorda**: niente «non confermata», niente riga «ancora
+   da confermare». (Una richiesta col carrello finito e non confermata — lasciata in revisione —
+   le Richieste la dicono in una riga discreta — «Richiesta delle 14:32 (4 esami) ancora da
+   confermare», con «apri il carrello» e «ignora» accanto.) Restano scelti **solo gli esami che mancano davvero**:
    quelli già nel suo carrello (e i «da controllare») non si offrono di nuovo, così il conto sul
    bottone è quello vero.
    **Sul suo carrello la riga ha due azioni**, anche riaperto più tardi (un ricarico, un'altra
@@ -669,16 +676,30 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    mnemonico LIS fra parentesi se il nome ne ha uno, se no il nome — una sola lettura. Se la riga
    compare, passa per la strada di sempre (nome vivo controllato, un invio solo); se no, l'esame
    finisce fra i «Mancano» e lo aggiungi a mano. Vedi le regole 3 e 4.
-   Selezionando laboratorio **e** radiologia (il pacchetto «Dolore toracico» porta l'RX) il
-   bottone diventa **Conferma e stampa · 2 richieste**: con l'estensione sono **due ordini in
-   sottofondo**, uno dopo l'altro, come dal telefono — prima il laboratorio, poi la radiologia
-   col suo quesito —, ognuno con i controlli di sempre (la riga in carrello, una volta sola, la
-   conferma provata). La tua scheda non si ferma e non si sposta; la stampa viene in due giri:
-   etichette e liste del laboratorio, poi la prenotazione RX. Col bookmarklet (o se la scheda di
-   sottofondo non si apre) le costruisce e le conferma la tua pagina, una dopo l'altra, con
-   **una sola** stampa finale: etichette → liste → la prenotazione RX; lì le due richieste
-   vivono nella memoria del pannello, a metà non si riprendono, e il browser avvisa prima di
-   cambiare pagina.
+   **Una richiesta per erogatore di laboratorio.** Il gestionale non ne vuole due nella stessa
+   richiesta: il primo esame del secondo risponde «ORA-20965: AMB_RICHIESTA: Progressivo
+   richiesta …-1 già utilizzato» (le due tracce d'errore vere della 3.70.0, POC + Urgenze), e il
+   medico, a mano, ne fa sempre una per erogatore. Così fa il pannello: POC, Urgenze, laboratorio
+   centrale… una richiesta ciascuno, con lo stesso quesito, nell'ordine delle risorse della
+   richiesta (il POC per primo); la radiologia la sua. Il bottone lo dice: **Conferma e stampa ·
+   2 richieste** (POC + Urgenze, o laboratorio + radiologia; «Dispnea» e «Dolore addominale» sono
+   POC + Urgenze), **· 3 richieste** con anche l'RX. Dopo «Crea» il gestionale è sul primo
+   erogatore delle risorse (il POC): per un altro si passa **come fa la pagina**, con la sua
+   tendina «Risorsa» — il modulo RisorsaFiltro, all'indirizzo del modulo, col corpo che manda la
+   pagina, `RISORSA_ID` e `s_PRESTAZIONE` vuoto — e il server risponde con l'elenco di
+   quell'erogatore (se non è di quella richiesta, stop). Un indirizzo con un'altra `RISORSA_ID`
+   si legge solo dove la pagina non ha quel modulo. Da un **carrello** si aggiunge solo nel suo
+   erogatore (a carrello vuoto, in uno): il resto il bottone lo rifiuta e dice di ordinarlo dalla
+   pagina del paziente. Dalla pagina «Nuova richiesta» del gestionale, la prima richiesta è
+   quella, e per gli altri erogatori se ne apre una nuova dallo stesso indirizzo.
+   Con l'estensione sono **ordini in sottofondo**, uno dopo l'altro, come dal telefono — i
+   laboratori, poi la radiologia col suo quesito —, ognuno con i controlli di sempre (la riga in
+   carrello, una volta sola, la conferma provata). La tua scheda non si ferma e non si sposta; la
+   stampa viene a giri: etichette e liste di ogni laboratorio, poi la prenotazione RX. Col
+   bookmarklet (o se la scheda di sottofondo non si apre) le costruisce e le conferma la tua
+   pagina, una dopo l'altra, con **una sola** stampa finale: etichette → liste → la prenotazione
+   RX; lì le richieste vivono nella memoria del pannello, a metà non si riprendono, e il browser
+   avvisa prima di cambiare pagina.
 5. **Stampa** (menu **⋯ → Stampa le richieste**, non più in fondo alle Richieste): ogni richiesta con data, ora e la lista compatta degli esami.
 
 ### Esiti
@@ -1235,7 +1256,7 @@ tocco sulla striscia mostra la scheda anche mentre il PDF arriva; **Esc** o **�
 stampa e fermano davvero la ricerca del PDF.
 
 **Righe multiple**: quando gli esami di una richiesta appartengono a laboratori diversi (POC +
-Urgenze, ecc.) il LIS la divide in **più righe** — stessa `RICHIESTA_ID`, `RICHIESTA_PROG` 1, 2… —
+Urgenze, ecc.: le richieste di prima, oggi il pannello ne fa una per erogatore) il LIS la divide in **più righe** — stessa `RICHIESTA_ID`, `RICHIESTA_PROG` 1, 2… —
 ognuna col suo PDF etichette e il suo foglio. Si stampano **tutte** ("Etichette — riga 1",
 "Etichette — riga 2", poi le liste), mai solo l'ultima.
 **Una richiesta per erogatore.** Il gestionale vero, dopo **una** Conferma di un carrello con POC e
@@ -1608,8 +1629,8 @@ vuoto) e **Prepara nel SISS**.
    E se il server risponde all'inserimento con **una pagina che non è l'elenco**, l'esame è
    entrato lo stesso: si rilegge il carrello (mai un secondo invio) invece di fermarsi al buio.
    **Dopo uno stop si finisce a mano.** La scheda va sul carrello della richiesta — una semplice
-   lettura dell'elenco, quello che il gestionale stesso mostra, sul laboratorio del primo esame
-   rimasto fuori (stessa richiesta, cambia solo `RISORSA_ID`) — senza inviare né confermare
+   lettura dell'elenco, quello che il gestionale stesso mostra, sull'erogatore dove tiene la
+   richiesta (l'ultimo elenco che ha dato: per un altro c'è il «Risorsa» della pagina) — senza inviare né confermare
    niente, e il giro non riparte. La striscia separa **«Mancano»** (mai partiti: da aggiungere)
    da **«Da controllare»** (mandati e non visti in carrello: da guardare, mai da rimandare). Non
    ci va dopo un episodio che non torna, una sessione scaduta o un'altra scheda al lavoro (lì
@@ -1891,7 +1912,9 @@ vuoto) e **Prepara nel SISS**.
     richieste aperta a metà ordine (la lista smart riletta dietro, le etichette di un altro
     ordine, un referto, una lettura dal telefono) la cambia sotto il motore, e l'inserimento
     dopo risponde «ORA-20965: AMB_RICHIESTA: Progressivo richiesta …-1 già utilizzato» col
-    carrello vuoto (3.70.0). Quindi: ogni lettura dell'estensione (`fetchDoc`, `fetchPdf`)
+    carrello vuoto (3.70.0: a metà degli esami POC; al primo esame del secondo erogatore è
+    invece la richiesta con due erogatori, che il pannello non fa più — vedi «Una richiesta per
+    erogatore di laboratorio»). Quindi: ogni lettura dell'estensione (`fetchDoc`, `fetchPdf`)
     aspetta finché un motore lavora in un'**altra** pagina — un ordine in sottofondo che il
     service worker dice partito o in corsa, o il motore di una scheda (un giro della scheda del
     medico, la sua conferma nella cornice, il giro della scheda dell'ordine). **Il motore è uno
@@ -1950,7 +1973,8 @@ prima fase usa **solo** "Crea richiesta e aggiungi" — mai il bottone con confe
 6. **Controllo incrociato in EHR.** Riapri l'episodio: esattamente UNA richiesta nuova, 1 esame,
    quesito/medico/urgenza corretti, nessuna bozza doppia.
 7. **Run multiplo con cambio risorsa.** Profilo con POC + Urgenze (es. Base PS + Epatico):
-   ripeti i punti 3–5 riga per riga.
+   ripeti i punti 3–5 riga per riga — sono **due** richieste, una per erogatore, e nella
+   seconda il passaggio a Urgenze è il «Risorsa» della pagina.
 8. **Esercitazione di interruzione.** Lancia un run e premi il quadratino rosso a metà; tocca la
    striscia, leggi il messaggio e controlla il carrello col bottone "Apri il carrello e
    controlla". Regola permanente: **dopo qualsiasi striscia rossa mai rilanciare da capo a occhi
@@ -2007,7 +2031,9 @@ ps-app/
 ├── tools/verifica-build.mjs ← al rilascio: la build, lo zip e la versione committati sono quelli di adesso
 ├── esempi-gestionale/   ← pagine vere del gestionale, contenuti inventati (+ come)
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
-└── test/                ← simulatore SA4PSO + 108 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo, stampa automatica)
+└── test/                ← simulatore SA4PSO + 108 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo, stampa automatica);
+                            gestionale-vero.mjs lo avvolge con quello che hanno mostrato le registrazioni vere (il «Risorsa» RisorsaFiltro,
+                            l'«ORA-20965» di un secondo erogatore nella stessa richiesta, il foglio «Stampa Richiesta Radiologia»)
 ```
 
 Sviluppo:
@@ -2037,14 +2063,14 @@ del triage tenuto se non lo tocchi — anche dopo un chip — e sostituito dal t
 esami di risorsa sbagliata (CTA disabilitato con motivo), quesito mancante (CTA disabilitato,
 si riattiva scrivendo), apprendimento radiologia end-to-end, STOP, il giro in sottofondo **senza
 mai la finestra** fino alle etichette (col resoconto che resta e il «Ristampa»), l'errore a metà
-(striscia rossa, «Mancano» separati da «Da controllare», carrello del primo esame mancante, zero
+(striscia rossa, «Mancano» separati da «Da controllare», il carrello dell'erogatore della richiesta, zero
 invii dopo), **↻ Riprova i mancanti** (partono solo quelli mai partiti, contando gli
 inserimenti: mai i «da controllare», mai quelli già in carrello o tolti a mano; nello stesso
 modo del primo giro — una conferma sola, alla fine — o in revisione sul carrello; due errori
 di fila, coi «da controllare» ancora in elenco; lontano dal carrello prima «Apri il carrello»;
 senza richiesta nata, un giro normale) e **Chiudi** (il quesito resta, restano scelti solo i
-mancanti e il bottone li conta giusti, la pill torna normale, la richiesta lasciata a metà resta
-sorvegliata e la riga in Richieste lo dice), **Svuota il carrello e ricomincia** (due tocchi, il
+mancanti e il bottone li conta giusti, la pill torna normale, la richiesta lasciata a metà non
+resta sorvegliata né la riga in Richieste la dice), **Svuota il carrello e ricomincia** (due tocchi, il
 primo legge il carrello vero e dice i nomi; quello che c'era già — un «solo carrello» di prima,
 un «+ aggiungi» — rimesso anche lui, e una riga che non si saprebbe rimettere → niente svuotato; il
 «Svuota carrello» del gestionale con la richiesta e l'episodio giusti, l'altra richiesta già
@@ -2120,7 +2146,10 @@ sono **anonimizzate**: nessun dato di pazienti reali in questo repo.
   con fallback a riferimenti numerici HTML per i caratteri non rappresentabili).
 - I `<select>` del server arrivano con **doppio `selected`** (vince l'ultimo): mai leggere gli
   attributi, sempre le proprietà DOM.
-- L'elenco esami è una GET pura: stessa URL con `RISORSA_ID` diverso = cambio risorsa. La URL viene
+- L'elenco esami è una GET pura: stessa URL con `RISORSA_ID` diverso **mostra** l'elenco di un'altra
+  risorsa, ma non sposta la richiesta — il cambio d'erogatore è il modulo `RisorsaFiltro` (POST,
+  302 all'elenco), e un inserimento in un erogatore che non è quello della richiesta, o in un
+  secondo, risponde «ORA-20965». La URL viene
   ricostruita dai parametri dei link `AFCDataLink` (mai da `response.url`).
 - Il link "svuota carrello" ha `Delete=Elimina` **senza** `PRESTAZIONE`: un esame è "nel carrello"
   solo se il suo link ha *entrambi*.

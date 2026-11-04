@@ -584,7 +584,8 @@ function ponteStampaParole(rec) {
 async function ponteOrdina(d) {
   if (typeof d.oid !== "string" || !/^[\w-]{8,24}$/.test(d.oid)) return { ok: false, errore: "Ordine senza numero: ricarica il pannello sul telefono" };
   const a = { ...ponteArgomenti(d), id: "tel" + d.oid };
-  const suoi = (l) => l.filter((m) => m.id === a.id + "l" || m.id === a.id + "r");
+  // (gli ordini di questo tocco: uno per erogatore di laboratorio — …l, …l2 — e …r per la radiologia)
+  const suoi = (l) => l.filter((m) => typeof m.id === "string" && m.id.startsWith(a.id) && /^(l\d*|r)$/.test(m.id.slice(a.id.length)));
   const gia = pt.inVolo.get(a.id);
   if (gia) return { ok: true, dati: { ordini: [gia] } };
   const sp = { id: a.id, ep: a.ep || "", paziente: "", n: (a.esami || []).length, ts: ponteOra(), stato: "invio", tono: "run",

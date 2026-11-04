@@ -8,7 +8,7 @@
  * Screenshots for design review land in TEST_SHOTS_DIR if set.
  */
 import { chromium } from "playwright";
-import { createMock, RES, OSG } from "./sa4pso-mock.mjs";
+import { createMock, RES, OSG } from "./gestionale-vero.mjs";
 import { pdfSemplice, RIGHE_ECG, RIGHE_ALTRO } from "./pdf-difficili.mjs";
 import { readFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -231,16 +231,16 @@ async function scenarioHappyLab(browser, { directRender = false } = {}) {
   await richieste(page);
 
   await $panel(page, "#q").fill("Sospetta colangite acuta — età ≥80");
-  // preset chip: Epatico (5 URGENZE exams) + one POC single via chip
+  // preset chip: Epatico (5 URGENZE exams) — un erogatore, una richiesta
+  // (POC + Urgenze sono due richieste: scenarioLabDueErogatori)
   await $panel(page, '.chip.preset:has-text("Epatico")').click();
-  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await shot(page, scen + "-idle");
   await $panel(page, "#go").click();
   await shot(page, scen + "-running");
 
   // revisione: si atterra sul carrello come striscia, la finestra non si apre da sola
   const arrivo = await atterraCarrello(page, 20000);
-  check(scen, /6 esami in carrello/.test(arrivo) && /Conferma dal gestionale/.test(arrivo),
+  check(scen, /5 esami in carrello/.test(arrivo) && /Conferma dal gestionale/.test(arrivo),
     `sul carrello la striscia dice quanti e cosa fare (got: ${arrivo})`);
   check(scen, (await $panel(page, ".card").count()) === 0, "e la finestra resta chiusa");
 
@@ -258,23 +258,23 @@ async function scenarioHappyLab(browser, { directRender = false } = {}) {
   check(scen, r.urgenza === "2", `URGENZA=2 dal doppio selected (got ${JSON.stringify(r.urgenza)})`);
   check(scen, r.medico === "42", `MEDICO=42 dal doppio selected (got ${JSON.stringify(r.medico)})`);
   const codes = [...r.cart.keys()].sort();
-  check(scen, JSON.stringify(codes) === JSON.stringify(["16", "167", "228", "320", "34", "53"].sort()),
-    `carrello = Epatico+emocromo (got ${codes})`);
+  check(scen, JSON.stringify(codes) === JSON.stringify(["16", "167", "228", "34", "53"].sort()),
+    `carrello = Epatico (got ${codes})`);
   const dup = Object.entries(mock.state.insertCount).filter(([, n]) => n !== 1);
   check(scen, dup.length === 0, `ogni Insert inviato esattamente una volta (${JSON.stringify(mock.state.insertCount)})`);
   check(scen, !r.confirmed, "NON confermata (bottone senza conferma)");
   const insertsInLists = mock.state.requests.filter((q) => q.params.MVPG === "RcsRichiestaPrestazioniRicercaErogatore" && q.params.Insert);
   check(scen, insertsInLists.length === 0, "nessuna GET di lista contiene Insert=");
   // the panel on the landing page shows the cart rows of the CURRENT resource
-  // (the run ends on URGENZE: its 5 exams are visible there, the POC one isn't)
+  // (the run ends on URGENZE: its 5 exams are visible there)
   // — un tocco sulla striscia lo apre, con la ricevuta
   await apriStriscia(page);
   const cartChips = await $panel(page, ".chip.cart").count();
   check(scen, cartChips === 5, `pannello mostra i 5 esami in carrello su questa risorsa (got ${cartChips})`);
   const receipt = await $panel(page, ".banner.ok").innerText().catch(() => "");
-  check(scen, /6 esami in carrello, verificati/.test(receipt), `ricevuta sintetica (got: ${receipt.trim().slice(0, 50)})`);
+  check(scen, /5 esami in carrello, verificati/.test(receipt), `ricevuta sintetica (got: ${receipt.trim().slice(0, 50)})`);
   const ghosted = await $panel(page, ".chip.ghosted").count();
-  check(scen, ghosted === 1, `l'esame POC fuori pagina è mostrato come verificato altrove (got ${ghosted})`);
+  check(scen, ghosted === 0, `una richiesta, un erogatore: nessun esame «verificato altrove» (got ${ghosted})`);
   await shot(page, scen + "-landed");
   await context.close();
 }
@@ -550,8 +550,9 @@ async function scenarioAutoConfirmSenzaRicevuta(browser) {
 
 // La Conferma nativa invia la richiesta INTERA. Se l'avanzo di un tentativo
 // precedente sta sul carrello di un'ALTRA risorsa, questa pagina non lo mostra
-// nemmeno: l'auto-conferma deve guardare il carrello di ogni risorsa che il
-// run ha visitato, non solo quello che ha davanti.
+// nemmeno. Il gestionale vero non lascia arrivare fin lì: in una richiesta
+// che ha già esami in un erogatore il primo esame di un altro risponde
+// «ORA-20965», e il giro si ferma — niente confermato.
 async function scenarioAutoConfirmAltraRisorsa(browser) {
   const scen = "confirm-blocked-altra-risorsa";
   const mock = createMock({ preloadCart: { code: "30", res: RES.POC } });   // avanzo su POC
@@ -559,16 +560,21 @@ async function scenarioAutoConfirmAltraRisorsa(browser) {
   await page.goto(mock.patientUrl);
   await richieste(page);
   await $panel(page, "#q").fill("sepsi");
-  await $panel(page, '.opt[title*="TROPONINA"]').click();              // POC
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();         // URGENZE: si finisce qui
+  // solo Urgenze: «Crea» atterra sul POC, dove c'è l'avanzo, e il passaggio a
+  // Urgenze è il «Risorsa» della pagina. Il gestionale vero non mette un
+  // secondo erogatore in una richiesta che ha già esami in un altro: risponde
+  // «ORA-20965» al primo inserimento, e il giro si ferma lì, con le sue parole.
+  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();         // URGENZE
   await $panel(page, "#goconfirm").click();
-  await sospesa(page);
+  const rossa = await errore(page);
   const rid = Object.keys(mock.state.richieste)[0];
-  check(scen, mock.state.richieste[rid].confirmed === false,
-    "un avanzo su un'altra risorsa impedisce l'auto-conferma");
-  const card = await $panel(page, ".card").innerText();
-  check(scen, /sospesa/i.test(card), "e lo dice");
-  check(scen, /POC/i.test(card), `nominando la risorsa dove sta l'avanzo (got: ${(/sospesa[^.]{0,110}/i.exec(card) || [""])[0]})`);
+  check(scen, mock.state.richieste[rid].confirmed === false && confermePost(mock).length === 0,
+    "un avanzo su un'altra risorsa: niente confermato");
+  check(scen, mock.state.rifiutati.length === 1 && !mock.state.richieste[rid].cart.has("159") && mock.state.insertCount[`${rid}:159`] === 1,
+    `il gestionale rifiuta l'esame del secondo erogatore, mandato una volta (got ${JSON.stringify(mock.state.rifiutati)})`);
+  await apriStriscia(page);
+  const card = (await $panel(page, ".card").innerText()).replace(/\s+/g, " ");
+  check(scen, /ORA-20965/.test(card) && /non rimanda niente/.test(card), `e dice che cosa ha risposto il gestionale (got: ${card.slice(0, 160)} · ${rossa})`);
   await context.close();
 }
 
@@ -680,7 +686,7 @@ async function scenarioAltroPresidio(browser) {
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, "#q").fill("dispnea");
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();   // POC
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();        // URGENZE
+  await $panel(page, '.opt[title*="TROPONINA"]').click();             // POC (un erogatore, una richiesta)
   await $panel(page, "#go").click();
   await atterraCarrello(page, 40000);
   await apriStriscia(page);
@@ -688,7 +694,7 @@ async function scenarioAltroPresidio(browser) {
 
   const rid = Object.keys(mock.state.richieste)[0];
   const cart = [...mock.state.richieste[rid].cart.keys()].sort();
-  check(scen, JSON.stringify(cart) === JSON.stringify(["159", "320"]),
+  check(scen, JSON.stringify(cart) === JSON.stringify(["320", "324"]),
     `i due esami arrivano al LIS giusti (got ${cart})`);
   const dup = Object.entries(mock.state.insertCount).filter(([, n]) => n !== 1);
   check(scen, dup.length === 0, "ogni esame inviato una volta sola");
@@ -838,31 +844,32 @@ async function scenarioLagVerifyLento(browser) {
 
 async function scenarioNeverVisible(browser) {
   const scen = "hard-stop";
-  const mock = createMock({ neverAdd: ["320"] }); // server "loses" the add
+  const mock = createMock({ neverAdd: ["159"] }); // server "loses" the add
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await richieste(page);
   await $panel(page, "#q").fill("controllo");
-  // POC exam (lost by the server) runs first; the URGENZE one must never start
-  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  // solo Urgenze (una richiesta: «Crea» atterra sul POC, poi il «Risorsa»):
+  // la PCT (persa dal server) parte per prima, la PCR non deve partire mai
   await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, '.opt[title*="PROTEINA C REATTIVA"]').click();
   await $panel(page, "#go").click();
   const rossa = await errore(page);
   // mandato e non visto è «da controllare» (mai da rifare); mai partito, «manca»
-  check(scen, /Mancano: PROCALCITONINA/.test(rossa) && /Da controllare: EMOCROMO POC/.test(rossa) && !/Mancano:[^·]*EMOCROMO/.test(rossa),
+  check(scen, /Mancano: PCR/.test(rossa) && /Da controllare: PROCALCITONINA/.test(rossa) && !/Mancano:[^·]*PROCALCITONINA/.test(rossa),
     `la striscia separa «Mancano» da «Da controllare» (got: ${rossa})`);
   check(scen, new URL(page.url()).searchParams.get("RISORSA_ID") === RES.URGENZE,
-    "e si atterra sul carrello del laboratorio del primo esame mancante, non dell'ultimo usato");
+    "e si atterra sul carrello dell'erogatore della richiesta (Urgenze), non sul POC dove l'ha aperta «Crea»");
   await apriStriscia(page);
   const banner = await $panel(page, ".banner.err").innerText();
   check(scen, /non risulta nel carrello/i.test(banner), `messaggio hard-stop chiaro (got: ${banner.slice(0, 80)})`);
   const controlla = await page.locator("#psassist-host .chip.controlla").allInnerTexts();
   const manca = await page.locator("#psassist-host .chip.manca").allInnerTexts();
-  check(scen, controlla.length === 1 && /EMOCROMO/.test(controlla[0]) && manca.length === 1 && /PROCALCITONINA/.test(manca[0]),
-    `nel resoconto: «Da controllare» l'emocromo, «Da aggiungere a mano» la PCT (got ${controlla} / ${manca})`);
+  check(scen, controlla.length === 1 && /PROCALCITONINA/.test(controlla[0]) && manca.length === 1 && /PCR/.test(manca[0]),
+    `nel resoconto: «Da controllare» la PCT, «Da aggiungere a mano» la PCR (got ${controlla} / ${manca})`);
   const rid = Object.keys(mock.state.richieste)[0];
-  check(scen, mock.state.insertCount[`${rid}:320`] === 1, "esame perso inviato UNA volta sola");
-  check(scen, !mock.state.insertCount[`${rid}:159`], "gli esami successivi NON vengono inviati dopo lo stop");
+  check(scen, mock.state.insertCount[`${rid}:159`] === 1, "esame perso inviato UNA volta sola");
+  check(scen, !mock.state.insertCount[`${rid}:293`], "gli esami successivi NON vengono inviati dopo lo stop");
   check(scen, mock.state.richieste[rid].confirmed === false, "nessuna conferma dopo hard-stop");
   await shot(page, scen);
   await context.close();
@@ -977,24 +984,25 @@ async function scenarioRigaCercata(browser) {
   // anche lì niente — si ferma come sempre, e «↻ Riprova» resta al medico.
   const scen2 = "riga-assente";
   const mock2 = createMock({});
-  const b = await newPage(browser, mock2, { riscrivi: (u, h) => togliRiga("159")(h) });
+  const b = await newPage(browser, mock2, { riscrivi: (u, h) => togliRiga("324")(h) });
   await b.page.goto(mock2.patientUrl);
   await richieste(b.page);
   await $panel(b.page, "#q").fill("febbre");
+  // (un erogatore: EMOCROMO e TROPONINA, la sua riga manca)
   await $panel(b.page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
-  await $panel(b.page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(b.page, '.opt[title*="TROPONINA"]').click();
   await $panel(b.page, "#goconfirm").click();
   const rossa = await errore(b.page);
   const rid2 = Object.keys(mock2.state.richieste)[0];
-  check(scen2, /Mancano: PROCALCITONINA/.test(rossa), `striscia rossa: «Mancano: PROCALCITONINA» (got: ${rossa})`);
-  check(scen2, !mock2.state.requests.some((q) => q.params.Insert === "Inserisci" && q.params.PRESTAZIONE === "159"),
-    "nessun indirizzo d'inserimento per la PCT è stato chiesto");
+  check(scen2, /Mancano: TROPONINA/.test(rossa), `striscia rossa: «Mancano: TROPONINA US» (got: ${rossa})`);
+  check(scen2, !mock2.state.requests.some((q) => q.params.Insert === "Inserisci" && q.params.PRESTAZIONE === "324"),
+    "nessun indirizzo d'inserimento per la TROPONINA è stato chiesto");
   const cercate = () => mock2.state.requests.filter((q) => q.params.s_PRESTAZIONE).length;
   check(scen2, cercate() === 2, `cercata una volta per giro: il giro e il suo unico ritentativo da solo (got ${cercate()})`);
   check(scen2, mock2.state.insertCount[`${rid2}:320`] === 1, `l'EMOCROMO già entrato si ritrova, mai rimandato (${JSON.stringify(mock2.state.insertCount)})`);
   check(scen2, mock2.state.richieste[rid2].confirmed === false
     && !mock2.state.requests.some((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni")), "e niente confermato");
-  check(scen2, new URL(b.page.url()).searchParams.get("RISORSA_ID") === RES.URGENZE, "la scheda è sul carrello del laboratorio della PCT");
+  check(scen2, new URL(b.page.url()).searchParams.get("RISORSA_ID") === RES.POC, "la scheda è sul carrello dell'erogatore della richiesta");
   const n2 = mock2.state.requests.length;
   await b.page.waitForTimeout(3000);
   check(scen2, mock2.state.requests.length === n2, "e un terzo giro da solo non parte");
@@ -1010,7 +1018,7 @@ async function scenarioRigaCercata(browser) {
   await ricarica;
   await striscia(b.page, /Errore · completa a mano/, 20000).catch(() => "");
   await b.page.waitForTimeout(3000);
-  check(scen2, cercate() === 3 && !mock2.state.insertCount[`${rid2}:159`],
+  check(scen2, cercate() === 3 && !mock2.state.insertCount[`${rid2}:324`],
     `«↻ Riprova» del medico cerca ancora, una volta, e non ritenta più da solo (got ${cercate()} ricerche)`);
   await b.context.close();
 
@@ -1039,7 +1047,7 @@ const confermePost = (mock) => mock.state.requests.filter((q) => q.method === "P
 // ferma con esami mai partiti — per un elenco venuto male, e con niente «da
 // controllare» — ritenta da solo, UNA volta: è «↻ Riprova i mancanti» com'è
 // (carrello riletto dal server, quelli già entrati solo cercati, partono i mai
-// partiti, la conferma del primo giro). Qui la riga della PCT manca una volta
+// partiti, la conferma del primo giro). Qui la riga della TROPONINA manca una volta
 // sola — anche alla ricerca del gestionale — e poi c'è.
 async function scenarioRiprovaDaSolo(browser) {
   const scen = "riprova-da-solo";
@@ -1048,43 +1056,45 @@ async function scenarioRiprovaDaSolo(browser) {
   const { context, page } = await newPage(browser, mock, { riscrivi: (u, h) => {
     if (!monca) return h;
     if (new URL(u).searchParams.get("s_PRESTAZIONE")) monca = false;   // dopo la ricerca l'elenco torna intero
-    return togliRiga("159")(h);
+    return togliRiga("324")(h);
   } });
   await page.goto(mock.patientUrl);
   await richieste(page);
   await $panel(page, "#q").fill("febbre");
+  // (un erogatore: EMOCROMO e TROPONINA, la riga della TROPONINA manca una volta)
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
   const riprovo = await striscia(page, /Riprovo 1 esame/, 25000).catch(() => "");
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 }).catch(() => {});
   const rid = Object.keys(mock.state.richieste)[0];
   check(scen, /Riprovo 1 esame…/.test(riprovo), `la striscia lo dice, per poco: «Riprovo 1 esame…» (got: ${riprovo || "niente"})`);
-  check(scen, mock.state.insertCount[`${rid}:320`] === 1 && mock.state.insertCount[`${rid}:159`] === 1 && Object.keys(mock.state.insertCount).length === 2,
-    `ogni esame mandato una volta: l'EMOCROMO già entrato si ritrova, parte la PCT (${JSON.stringify(mock.state.insertCount)})`);
+  check(scen, mock.state.insertCount[`${rid}:320`] === 1 && mock.state.insertCount[`${rid}:324`] === 1 && Object.keys(mock.state.insertCount).length === 2,
+    `ogni esame mandato una volta: l'EMOCROMO già entrato si ritrova, parte la TROPONINA (${JSON.stringify(mock.state.insertCount)})`);
   check(scen, Object.keys(mock.state.richieste).length === 1 && confermePost(mock).length === 1 && mock.state.richieste[rid].confirmed === true,
     `stessa richiesta, confermata una volta, come il primo giro (got ${confermePost(mock).length} conferme)`);
-  check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "159,320", "confermati EMOCROMO e PCT");
+  check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "320,324", "confermati EMOCROMO e TROPONINA");
   const reg = await registroDi(page);
-  check(scen, /riprovo da solo, una volta, i mancanti: PROCALCITONINA/.test(reg) && /già presente ✓ EMOCROMO/.test(reg),
+  check(scen, /riprovo da solo, una volta, i mancanti: TROPONINA US/.test(reg) && /già presente ✓ EMOCROMO/.test(reg),
     "il Registro dice che ha ritentato da solo, e che l'EMOCROMO l'ha solo ritrovato");
   await page.keyboard.press("Escape");
   await context.close();
 
   // …ma con un esame «da controllare» (mandato e non visto) niente da solo: il
-  // medico guarda prima — mai il rischio di un doppio. La TROPONINA parte e il
-  // server non la prende; al «↻ Riprova» del medico la riga della PCT arriva
-  // monca (un elenco venuto male), ma la TROPONINA è ancora da controllare.
+  // medico guarda prima — mai il rischio di un doppio. L'EMOCROMO parte e il
+  // server non lo prende; al «↻ Riprova» del medico la riga della TROPONINA arriva
+  // monca (un elenco venuto male), ma l'EMOCROMO è ancora da controllare.
   const scen2 = "riprova-da-solo-da-controllare";
-  const mock2 = createMock({ neverAdd: ["324"] });
+  // (un erogatore: la CREATININA entra, l'EMOCROMO parte e si perde, la TROPONINA manca)
+  const mock2 = createMock({ neverAdd: ["320"] });
   let monca2 = false;
-  const b = await newPage(browser, mock2, { riscrivi: (u, h) => (monca2 ? togliRiga("159")(h) : h) });
+  const b = await newPage(browser, mock2, { riscrivi: (u, h) => (monca2 ? togliRiga("324")(h) : h) });
   await b.page.goto(mock2.patientUrl);
   await richieste(b.page);
   await $panel(b.page, "#q").fill("dolore toracico");
+  await $panel(b.page, '.opt[title*="CREATININEMIA"]').click();
   await $panel(b.page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(b.page, '.opt[title*="TROPONINA"]').click();
-  await $panel(b.page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(b.page, "#goconfirm").click();
   await errore(b.page, { timeout: 40000 });
   const rid2 = Object.keys(mock2.state.richieste)[0];
@@ -1096,12 +1106,12 @@ async function scenarioRiprovaDaSolo(browser) {
   const rossa2 = await striscia(b.page, /Errore · completa a mano/, 20000).catch(() => "");
   const n2 = mock2.state.requests.length;
   await b.page.waitForTimeout(3000);
-  check(scen2, /Mancano: PROCALCITONINA/.test(rossa2) && /Da controllare: TROPONINA/.test(rossa2),
-    `fermo di nuovo: la PCT manca, la TROPONINA è da controllare (got: ${rossa2 || "niente"})`);
+  check(scen2, /Mancano: TROPONINA/.test(rossa2) && /Da controllare: EMOCROMO/.test(rossa2),
+    `fermo di nuovo: la TROPONINA manca, l'EMOCROMO è da controllare (got: ${rossa2 || "niente"})`);
   check(scen2, mock2.state.requests.length === n2 && mock2.state.requests.filter((q) => q.params.s_PRESTAZIONE).length === 1,
     "niente ritentativo da solo: una ricerca sola, e poi più niente");
-  check(scen2, !mock2.state.insertCount[`${rid2}:159`] && mock2.state.insertCount[`${rid2}:324`] === 1 && confermePost(mock2).length === 0,
-    `la PCT mai mandata, la TROPONINA una volta sola, niente confermato (${JSON.stringify(mock2.state.insertCount)})`);
+  check(scen2, !mock2.state.insertCount[`${rid2}:324`] && mock2.state.insertCount[`${rid2}:320`] === 1 && confermePost(mock2).length === 0,
+    `la TROPONINA mai mandata, l'EMOCROMO una volta sola, niente confermato (${JSON.stringify(mock2.state.insertCount)})`);
   check(scen2, !/da solo/.test(await registroDi(b.page)), "e il Registro non parla di ritentativi");
   await b.context.close();
 
@@ -1109,15 +1119,15 @@ async function scenarioRiprovaDaSolo(browser) {
   const scen3 = "riprova-da-solo-sessione";
   const mock3 = createMock({});
   const c = await newPage(browser, mock3, {
-    // la sessione muore proprio sulla ricerca della PCT
+    // la sessione muore proprio sulla ricerca della TROPONINA
     ritardo: (u) => { if (new URL(u).searchParams.get("s_PRESTAZIONE")) mock3.state.expireAfter = mock3.state.requests.length; return 0; },
-    riscrivi: (u, h) => togliRiga("159")(h),
+    riscrivi: (u, h) => togliRiga("324")(h),
   });
   await c.page.goto(mock3.patientUrl);
   await richieste(c.page);
   await $panel(c.page, "#q").fill("febbre");
   await $panel(c.page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
-  await $panel(c.page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(c.page, '.opt[title*="TROPONINA"]').click();
   await $panel(c.page, "#goconfirm").click();
   const rossa3 = await errore(c.page, { su: null });
   const n3 = mock3.state.requests.length;
@@ -1191,7 +1201,7 @@ async function scenarioConfermaInterrotta(browser) {
 async function scenarioNonMangiaLaScrittura(browser) {
   for (const [scen, opz, bottone, attesa] of [
     ["scrive-revisione", {}, "#go", /Conferma dal gestionale · tocca per il carrello/],
-    ["scrive-errore", { mislabel: { 159: "ANTITROMBINA III (1450)" } }, "#goconfirm", /Mancano: PROCALCITONINA · tocca per il carrello/],
+    ["scrive-errore", { mislabel: { 324: "ANTITROMBINA III (1450)" } }, "#goconfirm", /Mancano: TROPONINA US · tocca per il carrello/],
   ]) {
     const mock = createMock(opz);
     const { context, page } = await newPage(browser, mock, { ritardo: (u) => (/Insert=Inserisci/.test(u) ? 600 : 0) });
@@ -1199,7 +1209,7 @@ async function scenarioNonMangiaLaScrittura(browser) {
     await richieste(page);
     await $panel(page, "#q").fill("febbre");
     await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
-    await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+    await $panel(page, '.opt[title*="TROPONINA"]').click();
     await $panel(page, bottone).click();
     await page.waitForSelector("#psassist-host .pill.run", { timeout: 15000 });
     const diario = page.locator('textarea[name="DIARIO"]');
@@ -1227,33 +1237,34 @@ async function scenarioNonMangiaLaScrittura(browser) {
 // aggiungere a mano».
 async function scenarioErroreCompletaAMano(browser) {
   const scen = "errore-a-mano";
-  const mock = createMock({ mislabel: { 159: "ANTITROMBINA III (1450)" } });   // la PCT si ferma prima dell'invio
+  const mock = createMock({ mislabel: { 324: "ANTITROMBINA III (1450)" } });   // la troponina si ferma prima dell'invio
   const { context, page } = await newPage(browser, mock);
   await registraStriscia(context);
   await page.goto(mock.patientUrl);
   await richieste(page);
   await $panel(page, "#q").fill("febbre");
+  // (un erogatore, una richiesta: CREATININA ed EMOCROMO entrano, la TROPONINA si ferma)
+  await $panel(page, '.opt[title*="CREATININEMIA"]').click();
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(page, "#goconfirm").click();
   await azzeraRegistrato(page);
   const rossa = await errore(page);
   const n0 = mock.state.requests.length;
   const rid = Object.keys(mock.state.richieste)[0];
   const qui = new URL(page.url()).searchParams;
-  check(scen, qui.get("RICHIESTA_ID") === rid && qui.get("RISORSA_ID") === RES.URGENZE && !qui.get("Insert") && !qui.get("Delete"),
+  check(scen, qui.get("RICHIESTA_ID") === rid && qui.get("RISORSA_ID") === RES.POC && !qui.get("Insert") && !qui.get("Delete"),
     `atterrato sull'elenco del carrello della richiesta, senza parametri d'invio (got …${page.url().slice(-60)})`);
   const ultima = mock.state.requests[n0 - 1];
   check(scen, ultima && ultima.method === "GET" && ultima.params.MVPG === "RcsRichiestaPrestazioniRicercaErogatore" && !ultima.params.Insert,
     "l'ultima cosa chiesta al server è la lettura del carrello");
-  check(scen, /Errore · completa a mano/.test(rossa) && /Mancano: PROCALCITONINA/.test(rossa),
+  check(scen, /Errore · completa a mano/.test(rossa) && /Mancano: TROPONINA/.test(rossa),
     `striscia: «Errore · completa a mano» / «Mancano: …» (got: ${rossa})`);
   check(scen, (await $panel(page, ".pill.run.err").count()) === 1, "e rossa");
   await page.waitForTimeout(2500);
   check(scen, mock.state.requests.length === n0,
     `dopo, nessuna richiesta al server (got ${mock.state.requests.slice(n0).map((q) => q.params.MVPG || q.url.slice(-40)).join(", ")})`);
-  check(scen, Object.keys(mock.state.insertCount).length === 2 && !mock.state.insertCount[`${rid}:159`],
+  check(scen, Object.keys(mock.state.insertCount).length === 2 && !mock.state.insertCount[`${rid}:324`],
     `inviati solo i due prima dell'errore (${JSON.stringify(mock.state.insertCount)})`);
   check(scen, mock.state.richieste[rid].confirmed === false
     && !mock.state.requests.some((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni")), "niente confermato");
@@ -1280,35 +1291,36 @@ async function scenarioErroreCompletaAMano(browser) {
     `un'azione sola, «↻ Riprova i mancanti», più «Chiudi» (got ${corto.primari.join(",")})`);
   const nel = await page.locator("#psassist-host .chip.nel").allInnerTexts();
   const manca = await page.locator("#psassist-host .chip.manca").allInnerTexts();
-  check(scen, nel.length === 2 && nel.some((t) => /EMOCROMO/.test(t)) && nel.some((t) => /TROPONINA/.test(t)),
+  check(scen, nel.length === 2 && nel.some((t) => /EMOCROMO/.test(t)) && nel.some((t) => /CREATININA/.test(t)),
     `«Nel carrello»: i due entrati (got ${nel.join(", ")})`);
-  check(scen, manca.length === 1 && /PROCALCITONINA/.test(manca[0]), `«Da aggiungere a mano»: la PCT (got ${manca.join(", ")})`);
+  check(scen, manca.length === 1 && /TROPONINA/.test(manca[0]), `«Da aggiungere a mano»: la troponina (got ${manca.join(", ")})`);
   check(scen, (await $panel(page, "#openlist").count()) === 0, "già sul carrello: nessun bottone per andarci");
   await context.close();
 }
 
 // Dopo un errore si riprova SOLO quello che manca, sulla STESSA richiesta e
-// nello stesso modo. Qui la TROPONINA parte e il server non la prende (da
-// controllare: mai rimandata), la PCT non parte mai (manca). Sul carrello un
-// tocco sulla striscia rossa, e «↻ Riprova i mancanti (1)»: l'EMOCROMO già in
-// carrello si ritrova e non si rimanda, la TROPONINA resta fuori, parte solo
-// la PCT. Il primo giro era «+ Conferma 🖨», e lo è anche questo: una conferma
+// nello stesso modo. Qui (tre esami POC: un erogatore, una richiesta)
+// l'EMOCROMO parte e il server non lo prende (da controllare: mai
+// rimandato), la TROPONINA non parte mai (manca). Sul carrello un tocco sulla
+// striscia rossa, e «↻ Riprova i mancanti (1)»: la CREATININA già in carrello
+// si ritrova e non si rimanda, l'EMOCROMO resta fuori, parte solo la
+// TROPONINA. Il primo giro era «+ Conferma 🖨», e lo è anche questo: una conferma
 // sola, alla fine, e la stampa della richiesta intera.
 async function scenarioRiprova(browser) {
   const scen = "riprova";
-  const mock = createMock({ neverAdd: ["324"] });
+  const mock = createMock({ neverAdd: ["320"] });   // (un erogatore: CREATININA entra, l'EMOCROMO si perde, la TROPONINA non parte)
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await richieste(page);
   await $panel(page, "#q").fill("dolore toracico");
+  await $panel(page, '.opt[title*="CREATININEMIA"]').click();
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(page, "#goconfirm").click();
   const rossa = await errore(page, { timeout: 40000 });
   const rid = Object.keys(mock.state.richieste)[0];
-  check(scen, /Mancano: PROCALCITONINA/.test(rossa) && /Da controllare: TROPONINA/.test(rossa),
-    `l'errore: la PCT manca, la TROPONINA è da controllare (got: ${rossa})`);
+  check(scen, /Mancano: TROPONINA/.test(rossa) && /Da controllare: EMOCROMO/.test(rossa),
+    `l'errore: la TROPONINA manca, l'EMOCROMO è da controllare (got: ${rossa})`);
   check(scen, new URL(page.url()).searchParams.get("RICHIESTA_ID") === rid, "e la scheda è sul carrello della richiesta");
   await apriStriscia(page);
   const card = (await $panel(page, ".card").innerText()).replace(/\s+/g, " ");
@@ -1316,24 +1328,24 @@ async function scenarioRiprova(browser) {
   check(scen, bott === "↻ Riprova i mancanti (1)", `sul carrello di quella richiesta: «↻ Riprova i mancanti (1)» (got: ${bott || "niente"})`);
   check(scen, (await $panel(page, "#chiudi").count()) === 1 && (await $panel(page, "#reset").count()) === 0,
     "e «Chiudi» al posto di «Torna al pannello»");
-  check(scen, /guardali nel carrello prima/.test(card), "la TROPONINA resta in elenco: «guardali nel carrello prima»");
+  check(scen, /guardali nel carrello prima/.test(card), "l'EMOCROMO resta in elenco: «guardali nel carrello prima»");
   const n0 = mock.state.requests.length;
   await $panel(page, "#riprova").click();
   // riparte in sottofondo: conferma in una cornice nascosta, poi la stampa
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 });
   const inviati = mock.state.requests.slice(n0).filter((q) => q.params.Insert === "Inserisci").map((q) => q.params.PRESTAZIONE);
-  check(scen, JSON.stringify(inviati) === JSON.stringify(["159"]), `riprovando parte solo la PCT (got ${inviati.join(", ") || "niente"})`);
-  check(scen, mock.state.insertCount[`${rid}:320`] === 1 && mock.state.insertCount[`${rid}:324`] === 1 && mock.state.insertCount[`${rid}:159`] === 1,
+  check(scen, JSON.stringify(inviati) === JSON.stringify(["324"]), `riprovando parte solo la TROPONINA (got ${inviati.join(", ") || "niente"})`);
+  check(scen, mock.state.insertCount[`${rid}:176`] === 1 && mock.state.insertCount[`${rid}:320`] === 1 && mock.state.insertCount[`${rid}:324`] === 1,
     `in tutto, ogni esame mandato una volta sola (${JSON.stringify(mock.state.insertCount)})`);
   check(scen, Object.keys(mock.state.richieste).length === 1, "sulla stessa richiesta: nessuna richiesta nuova");
   check(scen, confermePost(mock).length === 1 && mock.state.richieste[rid].confirmed === true,
     `come il primo giro, conferma da sola — una volta, alla fine (got ${confermePost(mock).length})`);
   const carrello = [...mock.state.richieste[rid].cart.keys()].sort();
-  check(scen, JSON.stringify(carrello) === JSON.stringify(["159", "320"]), `confermati EMOCROMO e PCT (got ${carrello})`);
+  check(scen, JSON.stringify(carrello) === JSON.stringify(["176", "324"]), `confermati CREATININA e TROPONINA (got ${carrello})`);
   check(scen, /Etichette provette/.test(await docStampa(page)), "e la stampa parte, dalle etichette");
   const reg = await registroDi(page);
-  check(scen, /riprovo i mancanti: PROCALCITONINA/.test(reg) && /non rimando quelli da controllare: TROPONINA US/.test(reg)
-    && /già presente ✓ EMOCROMO POC/.test(reg),
+  check(scen, /riprovo i mancanti: TROPONINA US/.test(reg) && /non rimando quelli da controllare: EMOCROMO POC/.test(reg)
+    && /già presente ✓ CREATININA POC/.test(reg),
     "il Registro dice cosa ha rifatto, cosa ha ritrovato in carrello e cosa no");
   await page.keyboard.press("Escape");
   await context.close();
@@ -1341,31 +1353,32 @@ async function scenarioRiprova(browser) {
 
 // In revisione il giro rifatto finisce come sempre: sul carrello, «Conferma
 // dal gestionale», niente confermato da solo. L'errore qui passa (la riga
-// della PCT arriva una volta col nome di un altro esame), così si vede che
-// partono la PCT e l'ESAME URINE. L'EMOCROMO era entrato al primo giro, e
-// intanto qualcuno l'ha tolto a mano: «Riprova» lo cerca, non lo rimette.
+// dell'EMOCROMO arriva una volta col nome di un altro esame), così si vede che
+// partono l'EMOCROMO e la TROPONINA. La CREATININA era entrata al primo giro, e
+// intanto qualcuno l'ha tolta a mano: «Riprova» la cerca, non la rimette.
 async function scenarioRiprovaRevisione(browser) {
   const scen = "riprova-revisione";
   const mock = createMock({});
   let rotta = true;
   const { context, page } = await newPage(browser, mock, {
-    riscrivi: (u, html) => (rotta ? html.replace(/PROCALCITONINA \(1690\)/g, "ANTITROMBINA III (1450)") : html),
+    riscrivi: (u, html) => (rotta ? html.replace(/EMOCROMOCITOMETRICO URGENTE \(POCT1502\)/g, "ANTITROMBINA III (1450)") : html),
   });
   await page.goto(mock.patientUrl);
   await richieste(page);
   await $panel(page, "#q").fill("febbre");
+  // (un erogatore: la CREATININA entra, l'EMOCROMO arriva col nome sbagliato, la TROPONINA non parte)
+  await $panel(page, '.opt[title*="CREATININEMIA"]').click();
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
-  await $panel(page, '.opt[title*="ESAME URINE"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#go").click();
   const rossa = await errore(page);
-  check(scen, /Mancano: PROCALCITONINA, ESAME URINE/.test(rossa), `l'errore: mancano PCT e urine (got: ${rossa})`);
+  check(scen, /Mancano: EMOCROMO POC, TROPONINA US/.test(rossa), `l'errore: mancano emocromo e troponina (got: ${rossa})`);
   rotta = false;
   const rid = Object.keys(mock.state.richieste)[0];
-  // l'EMOCROMO tolto a mano dal carrello (da un'altra scheda: questa resta dov'è)
+  // la CREATININA tolta a mano dal carrello (da un'altra scheda: questa resta dov'è)
   await page.evaluate((u) => fetch(u).then((r) => r.text()),
-    `${mock.ORIGIN}${mock.PATH}?Delete=Elimina&RICHIESTA_ID=${rid}&PRESTAZIONE=320&RISORSA_ID=${RES.POC}&STRUTTURA=1&EPISODIO_ID=999001`);
-  check(scen, mock.state.richieste[rid].cart.has("320") === false, "(l'EMOCROMO non è più in carrello)");
+    `${mock.ORIGIN}${mock.PATH}?Delete=Elimina&RICHIESTA_ID=${rid}&PRESTAZIONE=176&RISORSA_ID=${RES.POC}&STRUTTURA=1&EPISODIO_ID=999001`);
+  check(scen, mock.state.richieste[rid].cart.has("176") === false, "(la CREATININA non è più in carrello)");
   const n0 = mock.state.requests.length;
   await apriStriscia(page);
   const bott = (await $panel(page, "#riprova").innerText().catch(() => "")).replace(/\s+/g, " ").trim();
@@ -1375,9 +1388,9 @@ async function scenarioRiprovaRevisione(browser) {
   check(scen, !!fine && new URL(page.url()).searchParams.get("RICHIESTA_ID") === rid,
     `come il primo giro, atterra sul carrello della richiesta: «Conferma dal gestionale» (got: ${fine || "niente"})`);
   const inviati = mock.state.requests.slice(n0).filter((q) => q.params.Insert === "Inserisci").map((q) => q.params.PRESTAZIONE).sort();
-  check(scen, JSON.stringify(inviati) === JSON.stringify(["159", "317"]), `partono solo i due mancanti (got ${inviati.join(", ") || "niente"})`);
-  check(scen, mock.state.insertCount[`${rid}:320`] === 1 && !mock.state.richieste[rid].cart.has("320"),
-    "l'EMOCROMO del primo giro si cerca soltanto: tolto a mano, non si rimette");
+  check(scen, JSON.stringify(inviati) === JSON.stringify(["320", "324"]), `partono solo i due mancanti (got ${inviati.join(", ") || "niente"})`);
+  check(scen, mock.state.insertCount[`${rid}:176`] === 1 && !mock.state.richieste[rid].cart.has("176"),
+    "la CREATININA del primo giro si cerca soltanto: tolta a mano, non si rimette");
   check(scen, /non è più in carrello/.test(await registroDi(page)) || /non lo rimetto/.test(await registroDi(page)),
     "e il Registro lo dice");
   check(scen, confermePost(mock).length === 0 && mock.state.richieste[rid].confirmed === false, "e niente si conferma da solo");
@@ -1385,44 +1398,44 @@ async function scenarioRiprovaRevisione(browser) {
   await context.close();
 }
 
-// Due errori di fila. Il primo: la TROPONINA è da controllare, la PCT manca.
-// «Riprova» lascia fuori la TROPONINA e la PCT si ferma di nuovo: il secondo
-// resoconto la elenca ancora fra i «da controllare» — non è sparita — e il
-// secondo «Riprova» manda solo la PCT. Niente di già passato riparte.
+// Due errori di fila. Il primo: l'EMOCROMO è da controllare, la TROPONINA manca.
+// «Riprova» lascia fuori l'EMOCROMO e la TROPONINA si ferma di nuovo: il secondo
+// resoconto lo elenca ancora fra i «da controllare» — non è sparito — e il
+// secondo «Riprova» manda solo la TROPONINA. Niente di già passato riparte.
 async function scenarioRiprovaDueVolte(browser) {
   const scen = "riprova-due-volte";
-  const mock = createMock({ neverAdd: ["324"] });
+  const mock = createMock({ neverAdd: ["320"] });   // (un erogatore: CREATININA, EMOCROMO perso, TROPONINA)
   let rotta = false;
   const { context, page } = await newPage(browser, mock, {
-    riscrivi: (u, html) => (rotta ? html.replace(/PROCALCITONINA \(1690\)/g, "ANTITROMBINA III (1450)") : html),
+    riscrivi: (u, html) => (rotta ? html.replace(/TROPONINA ULTRASENSIBILE \(POC3001\)/g, "ANTITROMBINA III (1450)") : html),
   });
   await page.goto(mock.patientUrl);
   await richieste(page);
   await $panel(page, "#q").fill("febbre");
+  await $panel(page, '.opt[title*="CREATININEMIA"]').click();
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(page, "#go").click();
   await errore(page, { timeout: 40000 });
   const rid = Object.keys(mock.state.richieste)[0];
-  rotta = true;   // al primo «Riprova» la riga della PCT arriva sbagliata
+  rotta = true;   // al primo «Riprova» la riga della TROPONINA arriva sbagliata
   await apriStriscia(page);
   const ricarica = page.waitForEvent("load", { timeout: 40000 });
   await $panel(page, "#riprova").click();
   await ricarica;   // il secondo errore riporta sul carrello
   const rossa = await striscia(page, /Errore · completa a mano/, 20000).catch(() => "");
-  check(scen, /Mancano: PROCALCITONINA/.test(rossa) && /Da controllare: TROPONINA US/.test(rossa),
-    `il secondo errore: la PCT manca ancora, e la TROPONINA resta da controllare (got: ${rossa || "niente"})`);
+  check(scen, /Mancano: TROPONINA US/.test(rossa) && /Da controllare: EMOCROMO POC/.test(rossa),
+    `il secondo errore: la TROPONINA manca ancora, e l'EMOCROMO resta da controllare (got: ${rossa || "niente"})`);
   rotta = false;
   await apriStriscia(page);
   const controlla = await page.locator("#psassist-host .chip.controlla").allInnerTexts();
   const bott = (await $panel(page, "#riprova").innerText().catch(() => "")).replace(/\s+/g, " ").trim();
-  check(scen, controlla.some((t) => /TROPONINA/.test(t)) && bott === "↻ Riprova i mancanti (1)",
+  check(scen, controlla.some((t) => /EMOCROMO/.test(t)) && bott === "↻ Riprova i mancanti (1)",
     `in elenco fra i «da controllare», e «↻ Riprova i mancanti (1)» (got: ${controlla.join(", ")} · ${bott || "niente"})`);
   await $panel(page, "#riprova").click();
   await striscia(page, /Conferma dal gestionale/, 40000).catch(() => "");
   const conti = mock.state.insertCount;
-  check(scen, Object.keys(conti).length === 3 && [320, 324, 159].every((c) => conti[`${rid}:${c}`] === 1),
+  check(scen, Object.keys(conti).length === 3 && [176, 320, 324].every((c) => conti[`${rid}:${c}`] === 1),
     `in tutto, ognuno mandato una volta sola (${JSON.stringify(conti)})`);
   check(scen, Object.keys(mock.state.richieste).length === 1 && confermePost(mock).length === 0,
     "sempre la stessa richiesta, e niente confermato da solo");
@@ -1431,21 +1444,22 @@ async function scenarioRiprovaDueVolte(browser) {
 
 // «Chiudi» dopo un errore (era «Annulla», ma non annullava niente): via la
 // striscia rossa e il passaggio di consegne, si torna alle Richieste col
-// quesito. La richiesta lasciata a metà è ancora lì nel gestionale: il
-// promemoria «non confermata» RESTA, e le Richieste lo dicono in una riga.
-// Restano scelti solo gli esami che mancano davvero — quelli già nel suo
+// quesito. La richiesta lasciata a metà è ancora lì nel gestionale, ma «se
+// non parte l'ordine nel carrello, ignoralo»: niente promemoria «non
+// confermata», niente riga nelle Richieste (prima restavano, e si
+// accumulavano in giallo). Restano scelti solo gli esami che mancano davvero — quelli già nel suo
 // carrello non si offrono di nuovo («Aggiungi 3 esami» quando ne manca uno).
 async function scenarioChiudi(browser) {
   const scen = "chiudi";
-  const mock = createMock({ mislabel: { 159: "ANTITROMBINA III (1450)" } });
+  const mock = createMock({ mislabel: { 324: "ANTITROMBINA III (1450)" } });   // (un erogatore: la TROPONINA si ferma)
   const { context, page } = await newPage(browser, mock);
   await context.addInitScript(() => { try { localStorage.setItem("psassist:attesaConferma.ms", "8000"); } catch { /* niente */ } });
   await page.goto(mock.patientUrl);
   await richieste(page);
   await $panel(page, "#q").fill("febbre di origine sconosciuta");
+  await $panel(page, '.opt[title*="CREATININEMIA"]').click();
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(page, "#goconfirm").click();
   await errore(page);
   const rid = Object.keys(mock.state.richieste)[0];
@@ -1456,15 +1470,14 @@ async function scenarioChiudi(browser) {
   await $panel(page, "#chiudi").click();
   await page.waitForSelector("#psassist-host .selbar", { timeout: 5000 });
   const sel = (await $panel(page, ".selbar").innerText()).replace(/\s+/g, " ");
-  check(scen, (await $panel(page, "#chiudi").count()) === 0 && /1 SELEZIONATI/.test(sel) && /PROCALCITONINA/.test(sel) && !/EMOCROMO|TROPONINA/.test(sel),
-    `restano scelti solo quelli che mancano: la PCT, non i due già in carrello (got: ${sel})`);
+  check(scen, (await $panel(page, "#chiudi").count()) === 0 && /1 SELEZIONATI/.test(sel) && /TROPONINA/.test(sel) && !/EMOCROMO|CREATININA/.test(sel),
+    `restano scelti solo quelli che mancano: la TROPONINA, non i due già in carrello (got: ${sel})`);
   const cta = (await $panel(page, "#goconfirm").innerText().catch(() => "")).replace(/\s+/g, " ").trim();
   check(scen, cta === "Conferma per ROSSI M. · 1 esame", `e il conto sul bottone è quello vero (got: ${cta || "niente"})`);
+  // «se non parte l'ordine nel carrello, ignoralo»: la richiesta lasciata a metà non si ricorda
   const riga = (await $panel(page, ".daconf").innerText().catch(() => "")).replace(/\s+/g, " ");
-  check(scen, /ancora da confermare/.test(riga) && /2 esami/.test(riga),
-    `una riga discreta: quella richiesta è ancora da confermare (got: ${riga || "niente"})`);
-  check(scen, (await $panel(page, "#dcconferma").count()) === 1 && (await $panel(page, "#dcsvuota").count()) === 1,
-    "e sul suo carrello, senza più il resoconto, la riga ha «Conferma e stampa» e «Svuota»");
+  check(scen, !riga && (await $panel(page, "#dcconferma").count()) === 0 && (await $panel(page, "#dcsvuota").count()) === 0,
+    `nessuna riga «ancora da confermare» per l'ordine non partito (got: ${riga || "niente"})`);
   const tab = await page.evaluate(() => ({
     avviso: sessionStorage.getItem("psassist:avviso.v1"),
     ui: JSON.parse(sessionStorage.getItem("psassist:ui.999001") || "{}"),
@@ -1472,32 +1485,24 @@ async function scenarioChiudi(browser) {
   }));
   check(scen, tab.ui.q === "febbre di origine sconosciuta" && (tab.ui.sel || []).length === 1, `il quesito resta, la selezione è quella giusta (got ${JSON.stringify(tab.ui).slice(0, 120)})`);
   check(scen, !tab.avviso || tab.avviso === "null", "il passaggio di consegne dell'errore si dimentica");
-  check(scen, tab.sorvegliate.some((x) => x.rid === rid), "ma la richiesta lasciata a metà resta sorvegliata: non è confermata");
+  check(scen, !tab.sorvegliate.some((x) => x.rid === rid), `e la richiesta lasciata a metà non resta sorvegliata (got ${JSON.stringify(tab.sorvegliate)})`);
   check(scen, mock.state.requests.length === n0, "«Chiudi» non chiede niente al server");
   await $panel(page, "#collapse").click();
   await page.waitForTimeout(200);
   check(scen, (await $panel(page, ".pill.run").count()) === 0, "la pill torna quella di sempre, non più rossa");
-  // sulla pagina del paziente: quesito e mancanti pronti, la riga col tocco
-  // per il carrello e — passati i due minuti (qui accorciati) — il promemoria
+  // sulla pagina del paziente: quesito e mancanti pronti — e, passati i due
+  // minuti (qui accorciati), nessun promemoria
   await page.goto(mock.patientUrl);
   await richieste(page);
   const q = await $panel(page, "#q").inputValue();
   const sel2 = (await $panel(page, ".selbar").innerText().catch(() => "")).replace(/\s+/g, " ");
-  check(scen, q === "febbre di origine sconosciuta" && /PROCALCITONINA/.test(sel2) && !/EMOCROMO/.test(sel2),
+  check(scen, q === "febbre di origine sconosciuta" && /TROPONINA/.test(sel2) && !/EMOCROMO/.test(sel2),
     `sulla pagina del paziente: quesito e mancanti pronti (got «${q}» · ${sel2})`);
   const riga2 = (await $panel(page, ".daconf").innerText().catch(() => "")).replace(/\s+/g, " ");
-  check(scen, /Richiesta delle \d\d:\d\d \(2 esami\) ancora da confermare/.test(riga2) && (await $panel(page, "#apridaconf").count()) === 1,
-    `e la riga, con un tocco per il suo carrello (got: ${riga2 || "niente"})`);
+  check(scen, !riga2, `nessuna riga «ancora da confermare» (got: ${riga2 || "niente"})`);
   await $panel(page, "#collapse").click();
-  const promemoria = await striscia(page, /non confermata/, 15000).catch(() => "");
-  check(scen, /Richiesta \d\d:\d\d non confermata/.test(promemoria),
-    `passato il tempo, il promemoria «non confermata» c'è ancora (got: ${promemoria || "niente"})`);
-  // il medico l'ha fatta a mano, o non gli serve: ✕ e non se ne parla più
-  await $panel(page, "#strstop").click();
-  await page.waitForTimeout(300);
-  const dopo = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
-  check(scen, (await $panel(page, ".pill.run.warn").count()) === 0 && !dopo.some((x) => x.rid === rid),
-    `✕ sul promemoria: sparisce e la richiesta è dimenticata (got ${JSON.stringify(dopo)})`);
+  const promemoria = await striscia(page, /non confermata/, 12000).catch(() => "");
+  check(scen, !promemoria, `passato il tempo, nessun promemoria «non confermata» (got: ${promemoria || "niente"})`);
   await page.goto(mock.patientUrl);
   await richieste(page);
   await page.waitForTimeout(9000);
@@ -1520,7 +1525,7 @@ async function scenarioRiprovaSenzaRichiesta(browser) {
   await richieste(page);
   await $panel(page, "#q").fill("febbre");
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#go").click();
   const rossa = await errore(page, { su: null });
   check(scen, Object.keys(mock.state.richieste).length === 0 && /PsoEpisodioClinicoAmbulatorio/.test(page.url()),
@@ -1559,14 +1564,15 @@ async function scenarioSvuota(browser) {
   const mock = createMock({ seedConfirmed: true });
   let rotta = true;
   const { context, page } = await newPage(browser, mock, {
-    riscrivi: (u, html) => (rotta ? html.replace(/PROCALCITONINA \(1690\)/g, "ANTITROMBINA III (1450)") : html),
+    riscrivi: (u, html) => (rotta ? html.replace(/TROPONINA ULTRASENSIBILE \(POC3001\)/g, "ANTITROMBINA III (1450)") : html),
   });
   await page.goto(mock.patientUrl);
   await richieste(page);
   await $panel(page, "#q").fill("febbre");
+  // (un erogatore, una richiesta: CREATININA ed EMOCROMO entrano, la TROPONINA si ferma)
+  await $panel(page, '.opt[title*="CREATININEMIA"]').click();
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(page, "#goconfirm").click();
   await errore(page);
   const rid = Object.keys(mock.state.richieste).find((r) => r !== "699999");
@@ -1578,7 +1584,7 @@ async function scenarioSvuota(browser) {
   check(scen, (await $panel(page, "#riprova").count()) === 1, "e «↻ Riprova i mancanti» resta com'era");
   const n0 = mock.state.requests.length;
   const chiede = await armaSvuota(page);
-  check(scen, chiede === "Svuoto 2 esami: EMOCROMO POC, TROPONINA US?", `il primo tocco legge il carrello e chiede, coi nomi (got: ${chiede})`);
+  check(scen, chiede === "Svuoto 2 esami: CREATININA POC, EMOCROMO POC?", `il primo tocco legge il carrello e chiede, coi nomi (got: ${chiede})`);
   check(scen, !mock.state.requests.slice(n0).some((q) => q.params.Delete || q.params.Insert || q.method !== "GET"), "e non manda niente: solo letture");
   await shot(page, "svuota-armato");
   await b.click();
@@ -1597,13 +1603,13 @@ async function scenarioSvuota(browser) {
   const sezioni = new Set(prove.map((q) => q.params.RISORSA_ID));
   check(scen, iIns > iDel && sezioni.size >= 3, `prima di rimettere, ogni sezione riletta dal server: vuota (got ${[...sezioni].join(", ")})`);
   const rimessi = dopo.filter((q) => q.params.Insert === "Inserisci").map((q) => q.params.PRESTAZIONE).sort();
-  check(scen, JSON.stringify(rimessi) === JSON.stringify(["159", "320", "324"]), `poi rimette tutta la selezione (got ${rimessi.join(", ")})`);
+  check(scen, JSON.stringify(rimessi) === JSON.stringify(["176", "320", "324"]), `poi rimette tutta la selezione (got ${rimessi.join(", ")})`);
   check(scen, Object.keys(mock.state.richieste).length === 2, "nella stessa richiesta: nessuna richiesta nuova");
   const conf = confermePost(mock);
   check(scen, conf.length === 1 && conf[0].params.RICHIESTA_ID === rid && mock.state.richieste[rid].confirmed === true,
     `e come il primo giro, conferma — una volta (got ${conf.length})`);
   const carrello = [...mock.state.richieste[rid].cart.keys()].sort();
-  check(scen, JSON.stringify(carrello) === JSON.stringify(["159", "320", "324"]), `confermati i tre, una volta ciascuno (got ${carrello})`);
+  check(scen, JSON.stringify(carrello) === JSON.stringify(["176", "320", "324"]), `confermati i tre, una volta ciascuno (got ${carrello})`);
   check(scen, /Etichette provette/.test(await docStampa(page)), "e la stampa parte");
   const reg = await registroDi(page);
   check(scen, /col «Svuota carrello» del gestionale/.test(reg) && /carrello vuoto/.test(reg), "il Registro dice come ha svuotato e che l'ha visto vuoto");
@@ -1619,7 +1625,7 @@ async function scenarioSvuota(browser) {
 async function scenarioSvuotaNonVuoto(browser) {
   const scen = "svuota-non-vuoto";
   for (const modo of ["resta", "errore"]) {
-    const mock = createMock({ mislabel: { 159: "ANTITROMBINA III (1450)" } });
+    const mock = createMock({ mislabel: { 324: "ANTITROMBINA III (1450)" } });
     // il «Svuota» arriva al server ma non toglie niente (o risponde HTTP 500)
     let tentativi = 0;
     const h = mock.handle;
@@ -1638,9 +1644,9 @@ async function scenarioSvuotaNonVuoto(browser) {
     await page.goto(mock.patientUrl);
     await richieste(page);
     await $panel(page, "#q").fill("febbre");
+    await $panel(page, '.opt[title*="CREATININEMIA"]').click();
     await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
     await $panel(page, '.opt[title*="TROPONINA"]').click();
-    await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
     await $panel(page, "#go").click();
     await errore(page);
     const rid = Object.keys(mock.state.richieste)[0];
@@ -1652,10 +1658,10 @@ async function scenarioSvuotaNonVuoto(browser) {
     await page.waitForTimeout(800);
     const ins = mock.state.requests.slice(n0).filter((q) => q.params.Insert === "Inserisci");
     check(scen, tentativi >= 1 && ins.length === 0, `${modo}: provato col «Svuota», e niente rimesso (got ${tentativi} svuota, ${ins.length} invii)`);
-    check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "320,324", `${modo}: il carrello è com'era`);
+    check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "176,320", `${modo}: il carrello è com'era`);
     await apriStriscia(page);
     const card = (await $panel(page, ".card").innerText()).replace(/\s+/g, " ");
-    check(scen, modo === "resta" ? /non si è svuotato/.test(card) && /Restano: EMOCROMO/.test(card) && /TROPONINA/.test(card)
+    check(scen, modo === "resta" ? /non si è svuotato/.test(card) && /Restano: CREATININA/.test(card) && /EMOCROMO/.test(card)
       : /HTTP 500/.test(card) && /svuotato in parte/.test(card),
     `${modo}: il resoconto dice cosa resta (got: ${card.slice(0, 160)})`);
     check(scen, (await $panel(page, "#svuota").count()) === 0 && (await $panel(page, "#riprova").count()) === 0,
@@ -1675,14 +1681,14 @@ async function scenarioSvuotaRigaPerRiga(browser) {
   let rotta = true;
   const { context, page } = await newPage(browser, mock, {
     riscrivi: (u, html) => html.replace(/<a [^>]*MVPG=RcsRichiestaCarrelloSvuota[^>]*>Svuota carrello<\/a>/g, "")
-      .replace(/PROCALCITONINA \(1690\)/g, (m) => (rotta ? "ANTITROMBINA III (1450)" : m)),
+      .replace(/TROPONINA ULTRASENSIBILE \(POC3001\)/g, (m) => (rotta ? "ANTITROMBINA III (1450)" : m)),
   });
   await page.goto(mock.patientUrl);
   await richieste(page);
   await $panel(page, "#q").fill("febbre");
+  await $panel(page, '.opt[title*="CREATININEMIA"]').click();
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(page, "#go").click();
   await errore(page);
   rotta = false;
@@ -1694,10 +1700,10 @@ async function scenarioSvuotaRigaPerRiga(browser) {
   const fine = await striscia(page, /Conferma dal gestionale/, 40000).catch(() => "");
   const del = richiesteDelete(mock, n0);
   check(scen, del.length === 2 && del.every((q) => q.params.PRESTAZIONE && q.params.RICHIESTA_ID === rid)
-    && del.map((q) => q.params.PRESTAZIONE).sort().join(",") === "320,324",
+    && del.map((q) => q.params.PRESTAZIONE).sort().join(",") === "176,320",
   `niente «Svuota» in pagina: una riga alla volta, col suo «Elimina» (got ${del.map((q) => q.params.PRESTAZIONE || "SVUOTA").join(", ")})`);
   const rimessi = mock.state.requests.slice(n0).filter((q) => q.params.Insert === "Inserisci").map((q) => q.params.PRESTAZIONE).sort();
-  check(scen, JSON.stringify(rimessi) === JSON.stringify(["159", "320", "324"]), `poi rimette la selezione (got ${rimessi.join(", ")})`);
+  check(scen, JSON.stringify(rimessi) === JSON.stringify(["176", "320", "324"]), `poi rimette la selezione (got ${rimessi.join(", ")})`);
   check(scen, !!fine && confermePost(mock).length === 0 && mock.state.richieste[rid].confirmed === false,
     `«solo carrello» come il primo giro: si atterra sul carrello, niente confermato (got: ${fine || "niente"})`);
   const sorvegliate = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
@@ -1716,7 +1722,7 @@ async function scenarioSvuotaExtra(browser) {
   const mock = createMock({});
   let rotta = false;
   const { context, page } = await newPage(browser, mock, {
-    riscrivi: (u, html) => (rotta ? html.replace(/PROCALCITONINA \(1690\)/g, "ANTITROMBINA III (1450)") : html),
+    riscrivi: (u, html) => (rotta ? html.replace(/TROPONINA ULTRASENSIBILE \(POC3001\)/g, "ANTITROMBINA III (1450)") : html),
   });
   await page.goto(mock.patientUrl);
   await richieste(page);
@@ -1728,24 +1734,25 @@ async function scenarioSvuotaExtra(browser) {
   await apriStriscia(page);
   await $panel(page, "#aggiungi").click();
   rotta = true;
+  // (nel suo erogatore: da un carrello si aggiunge solo lì)
+  await $panel(page, '.opt[title*="CREATININEMIA"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(page, "#go").click();
   await errore(page);
   rotta = false;
-  check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "320,324", "nel carrello: l'EMOCROMO di prima e la TROPONINA");
+  check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "176,320", "nel carrello: l'EMOCROMO di prima e la CREATININA");
   await apriStriscia(page);
   const n0 = mock.state.requests.length;
   const chiede = await armaSvuota(page);
-  check(scen, chiede === "Svuoto 2 esami: EMOCROMO POC, TROPONINA US?",
+  check(scen, chiede === "Svuoto 2 esami: CREATININA POC, EMOCROMO POC?",
     `il primo tocco conta il carrello vero, non solo questo giro, e dice i nomi (got: ${chiede})`);
   check(scen, !mock.state.requests.slice(n0).some((q) => q.params.Delete || q.params.Insert), "e intanto solo letture");
   await $panel(page, "#svuota").click();
   const fine = await striscia(page, /Conferma dal gestionale/, 40000).catch(() => "");
   const carrello = [...mock.state.richieste[rid].cart.keys()].sort().join(",");
-  check(scen, carrello === "159,320,324", `svuotato e rimesso: tutti e tre, niente perso (got ${carrello} · ${fine || "niente"})`);
+  check(scen, carrello === "176,320,324", `svuotato e rimesso: tutti e tre, niente perso (got ${carrello} · ${fine || "niente"})`);
   const rimessi = mock.state.requests.slice(n0).filter((q) => q.params.Insert === "Inserisci").map((q) => q.params.PRESTAZIONE).sort();
-  check(scen, rimessi.join(",") === "159,320,324", `una volta ciascuno (got ${rimessi.join(", ")})`);
+  check(scen, rimessi.join(",") === "176,320,324", `una volta ciascuno (got ${rimessi.join(", ")})`);
   const reg = await registroDi(page);
   check(scen, /c'è anche «EMOCROMO POC», fuori dalla selezione: lo rimetto/.test(reg), "il Registro dice che l'EMOCROMO c'era già, e che torna");
   await context.close();
@@ -1754,13 +1761,13 @@ async function scenarioSvuotaExtra(browser) {
   // questo browser non la conosce): non si svuota niente, e lo si dice.
   const mock2 = createMock({});
   const b = await newPage(browser, mock2, {
-    riscrivi: (u, html) => html.replace(/PROCALCITONINA \(1690\)/g, "ANTITROMBINA III (1450)"),
+    riscrivi: (u, html) => html.replace(/TROPONINA ULTRASENSIBILE \(POC3001\)/g, "ANTITROMBINA III (1450)"),
   });
   await b.page.goto(mock2.patientUrl);
   await richieste(b.page);
   await $panel(b.page, "#q").fill("febbre");
+  await $panel(b.page, '.opt[title*="CREATININEMIA"]').click();
   await $panel(b.page, '.opt[title*="TROPONINA"]').click();
-  await $panel(b.page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(b.page, "#go").click();
   await errore(b.page);
   const rid2 = Object.keys(mock2.state.richieste)[0];
@@ -1924,21 +1931,32 @@ async function scenarioBloccatoConferma(browser) {
   await b.context.close();
 }
 
-// E aggiungere esami lì funziona come sempre: la PCT sulla risorsa senza
-// esami, «Conferma e stampa · 1 esame», e la richiesta si conferma intera.
+// E aggiungere esami lì funziona come sempre, nel suo erogatore (un altro il
+// gestionale lo rifiuta: il bottone non parte e dice perché): la TROPONINA
+// accanto all'EMOCROMO, e la richiesta si conferma intera, una volta.
 async function scenarioBloccatoAggiungi(browser) {
   const scen = "bloccato-aggiungi";
   const { mock, context, rid, listUrl } = await richiestaDaConfermare(browser, ["EMOCROMOCITOMETRICO"]);
-  const p2 = await altraScheda(context, listUrl, RES.URGENZE);
+  const p2 = await altraScheda(context, listUrl, RES.POC);
+  // un altro erogatore no: va in un'altra richiesta, e il bottone lo dice
   await $panel(p2, '.opt[title*="PROCALCITONINA"]').click();
+  const no = (await $panel(p2, "#problems").innerText().catch(() => "")).replace(/\s+/g, " ");
+  check(scen, (await $panel(p2, "#goconfirm").isDisabled()) && /Una richiesta, un erogatore: PROCALCITONINA va in un'altra richiesta/.test(no),
+    `la PCT (Urgenze) su un carrello POC: il bottone non parte e dice perché (got: ${no || "niente"})`);
+  await $panel(p2, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(p2, '.opt[title*="TROPONINA"]').click();
   const cta = (await $panel(p2, "#goconfirm").innerText()).replace(/\s+/g, " ").trim();
   check(scen, cta === "Conferma per ROSSI M. · 1 esame" && !(await $panel(p2, "#goconfirm").isDisabled()), `si sceglie e si manda (got: ${cta})`);
-  await $panel(p2, "#goconfirm").click();
+  // (solo carrello: la Conferma automatica confronta col giro, e nel carrello c'è anche l'EMOCROMO di prima)
+  await $panel(p2, "#go").click();
+  await atterraCarrello(p2, 40000);
+  check(scen, mock.state.richieste[rid].confirmed === false, "si atterra sul carrello, con tutti e due");
+  await p2.locator('form[name="Prestazioni"] input[name="Update"]').click();   // la Conferma del gestionale
   await p2.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 });
-  check(scen, mock.state.insertCount[`${rid}:159`] === 1 && mock.state.insertCount[`${rid}:320`] === 1 && Object.keys(mock.state.richieste).length === 1,
-    `la PCT entra nella stessa richiesta, una volta; l'EMOCROMO non si rimanda (${JSON.stringify(mock.state.insertCount)})`);
+  check(scen, mock.state.insertCount[`${rid}:324`] === 1 && mock.state.insertCount[`${rid}:320`] === 1 && Object.keys(mock.state.richieste).length === 1,
+    `la TROPONINA entra nella stessa richiesta, una volta; l'EMOCROMO non si rimanda (${JSON.stringify(mock.state.insertCount)})`);
   check(scen, confermePost(mock).length === 1 && mock.state.richieste[rid].confirmed === true
-    && [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "159,320", "e la richiesta si conferma, una volta, con tutti e due");
+    && [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "320,324", "e la richiesta si conferma, una volta, con tutti e due");
   check(scen, !(await sorvegliate(p2)).some((x) => x.rid === rid), "niente più da confermare");
   await p2.keyboard.press("Escape");
   await context.close();
@@ -1953,8 +1971,8 @@ async function scenarioSaltoSpento(browser) {
   const mock = createMock({});
   let rotta = false;
   const { context, page } = await newPage(browser, mock, {
-    riscrivi: (u, html) => (rotta ? html.replace(/PROCALCITONINA \(1690\)/g, "ANTITROMBINA III (1450)") : html),
-    ritardo: (u) => (!rotta && /Insert=Inserisci/.test(u) && /PRESTAZIONE=159/.test(u) ? 4000 : 0),
+    riscrivi: (u, html) => (rotta ? html.replace(/TROPONINA ULTRASENSIBILE \(POC3001\)/g, "ANTITROMBINA III (1450)") : html),
+    ritardo: (u) => (!rotta && /Insert=Inserisci/.test(u) && /PRESTAZIONE=324/.test(u) ? 4000 : 0),
   });
   await context.addInitScript(() => {
     const st = window.setTimeout;
@@ -1969,8 +1987,8 @@ async function scenarioSaltoSpento(browser) {
   await apriStriscia(page);
   await $panel(page, "#aggiungi").click();
   rotta = true;
+  await $panel(page, '.opt[title*="CREATININEMIA"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
   await $panel(page, "#go").click();
   await striscia(page, /Errore · completa a mano/, 20000);
   rotta = false;
@@ -1984,8 +2002,8 @@ async function scenarioSaltoSpento(browser) {
   const reg = await registroDi(page);
   check(scen, !/riprendo il giro dopo il cambio pagina/.test(reg) && salti === 1,
     `«Riprova» va fino in fondo senza che il salto di prima gli porti via la pagina (${salti} salti${/riprendo il giro/.test(reg) ? ", ripreso dopo un cambio pagina" : ""})`);
-  check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "159,320,324" && mock.state.insertCount[`${rid}:159`] === 1,
-    "e nel carrello ci sono tutti, la PROCALCITONINA una volta");
+  check(scen, [...mock.state.richieste[rid].cart.keys()].sort().join(",") === "176,320,324" && mock.state.insertCount[`${rid}:324`] === 1,
+    "e nel carrello ci sono tutti, la TROPONINA una volta");
   const ora = (await $panel(page, ".pill.run").innerText().catch(() => "")).replace(/\s+/g, " ");
   check(scen, !/Errore/.test(ora), `e la pagina non torna all'errore di prima (got: ${ora})`);
   await context.close();
@@ -2001,8 +2019,9 @@ async function scenarioRipresa(browser) {
   await page.goto(mock.patientUrl);
   await richieste(page);
   await $panel(page, "#q").fill("febbre");
-  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
+  // (tre esami di Urgenze: un erogatore, una richiesta)
   await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, '.opt[title*="PROTEINA C REATTIVA"]').click();
   await $panel(page, '.opt[title*="ESAME URINE"]').click();
   await $panel(page, "#go").click();
 
@@ -2040,7 +2059,7 @@ async function scenarioRipresa(browser) {
   check(scen, /aprilo quando vuoi/.test(fine), `e il carrello è lì quando vuoi (got: ${fine})`);
   const rid = Object.keys(mock.state.richieste)[0];
   const carrello = [...mock.state.richieste[rid].cart.keys()].sort();
-  check(scen, JSON.stringify(carrello) === JSON.stringify(["159", "317", "320"]),
+  check(scen, JSON.stringify(carrello) === JSON.stringify(["159", "293", "317"]),
     `tutti e tre gli esami sono in carrello (got ${carrello})`);
   const doppi = Object.entries(mock.state.insertCount).filter(([, n]) => n !== 1);
   check(scen, doppi.length === 0, `ogni esame inviato UNA volta sola (${JSON.stringify(mock.state.insertCount)})`);
@@ -2221,7 +2240,7 @@ async function scenarioExpiryOnInsert(browser) {
   await richieste(page);
   await $panel(page, "#q").fill("controllo");
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#go").click();
   // sessione scaduta: solo la striscia rossa, nessun salto di pagina
   const rossa = await errore(page, { su: null });
@@ -2231,7 +2250,7 @@ async function scenarioExpiryOnInsert(browser) {
   check(scen, /potrebbe essere stato aggiunto/i.test(banner), `messaggio di ambiguità presente (got: ${banner.slice(0, 90)})`);
   const rid = Object.keys(mock.state.richieste)[0];
   check(scen, mock.state.insertCount[`${rid}:320`] === 1, "l'Insert ambiguo è stato inviato una sola volta");
-  check(scen, !mock.state.insertCount[`${rid}:159`], "nessun invio successivo dopo la sessione scaduta");
+  check(scen, !mock.state.insertCount[`${rid}:324`], "nessun invio successivo dopo la sessione scaduta");
   await context.close();
 }
 
@@ -2324,15 +2343,20 @@ async function scenarioExamPageManual(browser) {
   await page.click('form[name="RICHIESTACrea"] input[name="Update"]');
   await page.waitForSelector('form[name="Prestazioni"]', { timeout: 20000 });
   await page.waitForSelector("#psassist-host", { state: "attached" });
-  // now use the panel ON the exam page: one POC chip + one URGENZE chip → resource switch
+  // now use the panel ON the exam page (POC, carrello vuoto): POC + Urgenze in
+  // una richiesta il gestionale non li vuole — il bottone lo dice —, solo
+  // Urgenze sì: il cambio d'erogatore col «Risorsa» della pagina
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  const no = (await $panel(page, "#problems").innerText().catch(() => "")).replace(/\s+/g, " ");
+  check(scen, (await $panel(page, "#go").isDisabled()) && /Una richiesta, un erogatore/.test(no), `POC + Urgenze sullo stesso carrello: rifiutato prima di mandare (got: ${no || "niente"})`);
+  await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, "#go").click();
   await atterraCarrello(page);   // la striscia sul carrello: il giro è finito
-  await page.waitForURL(/RISORSA_ID=00720001P/, { timeout: 20000 }); // lands on the last resource used
+  await page.waitForURL(/RISORSA_ID=00720001P/, { timeout: 20000 }); // lands on the resource used
   const r = Object.values(mock.state.richieste)[0];
-  check(scen, r.cart.has("320") && r.cart.has("159"), `carrello con POC+URGENZE (got ${[...r.cart.keys()]})`);
-  check(scen, r.cart.get("159") === RES.URGENZE, "PCT aggiunta sulla risorsa giusta (URGENZE)");
+  check(scen, JSON.stringify([...r.cart.keys()]) === '["159"]', `carrello con la PCT (got ${[...r.cart.keys()]})`);
+  check(scen, r.cart.get("159") === RES.URGENZE && !mock.state.rifiutati.length, "PCT aggiunta sulla risorsa giusta (URGENZE), passandoci col «Risorsa» della pagina");
   // MANUAL native Conferma must also arm the print handoff (server then
   // redirects to the patient page, where the wizard fires)
   await page.click('form[name="Prestazioni"] input[name="Update"]');
@@ -2510,15 +2534,15 @@ async function scenarioPrintMultiLab(browser) {
   const scen = "print-multi-lab";
   // POC + URGENZE in one richiesta → the LIS splits it into two rows
   // (RICHIESTA_PROG 1 and 2): ALL four PDFs must be printed, labels first.
-  const mock = createMock({});
+  // Il pannello oggi fa una richiesta per erogatore: due righe le hanno le
+  // richieste di prima (qui la 699999, POC + Urgenze), e si ristampano così.
+  const mock = createMock({ seedConfirmed: true });
+  mock.state.richieste["699999"].cart.set("159", RES.URGENZE);
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await richieste(page);
-  await $panel(page, "#q").fill("febbre di origine sconosciuta");
-  await $panel(page, '.opt[title*="TROPONINA"]').click();      // POC
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click(); // URGENZE
-  await $panel(page, "#goconfirm").click();
-  // confirm → patient page; the wizard is the signal
+  await stampaRichieste(page);
+  await page.locator('#psassist-host [data-print="699999"]').first().click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 });
 
   const heads = [];
@@ -2549,7 +2573,7 @@ async function scenarioPrintMultiLab(browser) {
 
 async function scenarioPrintRadio(browser) {
   const scen = "print-radio";
-  const mock = createMock({ seedConfirmedRadio: true });
+  const mock = createMock({ seedConfirmedRadio: true, prenotazioneEsterna: true });   // (la prenotazione esterna: l'altro nome del foglio RX)
   const { context, page } = await newPage(browser, mock);
   await page.goto(mock.patientUrl);
   await richieste(page);
@@ -2945,7 +2969,7 @@ async function scenarioPrintMergedFlow(browser) {
   }
   check(scen, /1 di 3 — Etichette/.test(heads[0]), `prima le etichette del laboratorio (got: ${heads[0]})`);
   check(scen, /2 di 3 — Lista esami/.test(heads[1]), `poi la lista esami (got: ${heads[1]})`);
-  check(scen, /3 di 3 — Prenotazione esterna/.test(heads[2]), `infine la RX, nello stesso flusso (got: ${heads[2]})`);
+  check(scen, /3 di 3 — Richiesta radiologia/.test(heads[2]), `infine la RX, nello stesso flusso (got: ${heads[2]})`);
   check(scen, (await page.locator("#psassist-print").count()) === 0, "una sola stampa per entrambe le richieste");
   await context.close();
 }
@@ -2980,7 +3004,7 @@ async function scenarioStampaUltima(browser) {
   await shot(page, "stampa-ultima-richiesta");
   await ore({ 699999: "2026-10-27 14:33:00.0", 699998: "2026-10-27 14:31:00.0" });
   let h = await giro();
-  check(scen, h.length === 3 && /1 di 3 — Etichette/.test(h[0]) && /Lista esami/.test(h[1]) && /3 di 3 — Prenotazione esterna/.test(h[2]),
+  check(scen, h.length === 3 && /1 di 3 — Etichette/.test(h[0]) && /Lista esami/.test(h[1]) && /3 di 3 — Richiesta radiologia/.test(h[2]),
     `due richieste a due minuti l'una dall'altra: tutt'e due, prima le etichette (got ${h.join(" | ")})`);
   await ore({ 699999: "2026-10-27 14:33:00.0", 699998: "2026-10-27 09:05:00.0" });
   h = await giro();
@@ -3111,7 +3135,7 @@ async function scenarioUiErgonomics(browser) {
   check(scen, (await $panel(page, ".btnrow #go").count()) === 1 && (await $panel(page, ".btnrow #goconfirm").count()) === 1,
     "CTA su una sola riga");
   const cta = (await $panel(page, "#goconfirm").innerText()).trim();
-  check(scen, cta === "Conferma per ROSSI M. · 6 esami" && /\bprimary\b/.test(await $panel(page, "#goconfirm").getAttribute("class")),
+  check(scen, cta === "Conferma per ROSSI M. · 2 richieste, 6 esami" && /\bprimary\b/.test(await $panel(page, "#goconfirm").getAttribute("class")),
     `un bottone primario, che dice per chi: «Conferma per ROSSI M. · N esami» (got: ${cta})`);
   check(scen, (await $panel(page, "#go").innerText()).trim() === "solo carrello" && /\blnk\b/.test(await $panel(page, "#go").getAttribute("class"))
     && (await $panel(page, ".commit .btn").count()) === 1,
@@ -3464,15 +3488,15 @@ async function scenarioQuesitoPacchetti(browser) {
   await coag(134).click();
   check(scen, (await selezione()).includes(P(134)), "e si rimette");
   await $panel(page, "#go").click();
-  for (let i = 0; i < 150; i++) {
-    if (Object.values(mock.state.richieste).some((r) => r.cart.size >= 8)) break;
-    await page.waitForTimeout(200);
-  }
-  const r = Object.values(mock.state.richieste)[0];
-  const cart = r ? [...r.cart.keys()].sort() : [];
-  check(scen, r && r.quesito === "Dispnea", `la richiesta parte col quesito del pacchetto (got ${r && JSON.stringify(r.quesito)})`);
-  check(scen, uguali(cart, ["101", "134", "176", "220", "297", "320", "324", "326"].sort()),
-    `in carrello i suoi otto esami, con l'EGA arteriosa e non la venosa (got ${cart})`);
+  // (POC e Urgenze: due richieste, una per erogatore, tutte e due col quesito del pacchetto)
+  const tutti = () => Object.values(mock.state.richieste).reduce((n, r) => n + r.cart.size, 0);
+  for (let i = 0; i < 200 && tutti() < 8; i++) await page.waitForTimeout(200);
+  const rr = Object.values(mock.state.richieste);
+  const cart = rr.flatMap((r) => [...r.cart.keys()]).sort();
+  check(scen, rr.length === 2 && rr.every((r) => r.quesito === "Dispnea"), `le richieste partono col quesito del pacchetto (got ${rr.map((r) => JSON.stringify(r.quesito)).join(", ")})`);
+  check(scen, uguali(cart, ["101", "134", "176", "220", "297", "320", "324", "326"].sort())
+    && rr.some((r) => uguali([...r.cart.keys()], ["297"])),
+    `in carrello i suoi otto esami, con l'EGA arteriosa e non la venosa — l'NT-proBNP (Urgenze) nella sua richiesta (got ${rr.map((r) => [...r.cart.keys()].join(",")).join(" · ")})`);
   await context.close();
 }
 
@@ -3545,9 +3569,98 @@ async function scenarioLabPlusRx(browser) {
     heads.push(await docStampa(page));
     await avanti(page);
   }
-  check(scen, /1 di 3 — Etichette/.test(heads[0]) && /2 di 3 — Lista esami/.test(heads[1]) && /3 di 3 — Prenotazione/.test(heads[2]),
+  check(scen, /1 di 3 — Etichette/.test(heads[0]) && /2 di 3 — Lista esami/.test(heads[1]) && /3 di 3 — Richiesta radiologia/.test(heads[2]),
     `un solo flusso: etichette → lista → RX (got ${heads.join(" | ")})`);
   await context.close();
+}
+
+// Il gestionale vero non vuole due erogatori di laboratorio nella stessa
+// richiesta: il primo esame del secondo risponde «ORA-20965 … Progressivo
+// richiesta già utilizzato» (le due tracce d'errore della 3.70.0). Il medico,
+// a mano, ne fa una per erogatore, e cambia erogatore col «Risorsa» della
+// pagina (il modulo RisorsaFiltro). POC + Urgenze: due richieste, confermate
+// tutte e due, una stampa sola.
+const corpiFiltro = (mock) => mock.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("RisorsaFiltro"));
+async function scenarioLabDueErogatori(browser) {
+  const scen = "lab-due-erogatori";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("dolore addominale");
+  await $panel(page, `.opt[data-res="${RES.POC}"][data-code="320"]`).click();      // POC
+  await $panel(page, `.opt[data-res="${RES.URGENZE}"][data-code="293"]`).click();  // Urgenze
+  await $panel(page, `.opt[data-res="${RES.URGENZE}"][data-code="159"]`).click();
+  const cta = (await $panel(page, "#goconfirm").innerText()).trim();
+  check(scen, /· 2 richieste, 3 esami$/.test(cta), `il bottone annuncia due richieste (got ${cta})`);
+  await $panel(page, "#goconfirm").click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 60000 }).catch(() => {});
+  check(scen, !mock.state.rifiutati.length, `nessun inserimento respinto dal gestionale (got ${JSON.stringify(mock.state.rifiutati)})`);
+  const rich = Object.entries(mock.state.richieste);
+  const poc = rich.find(([, r]) => r.cart.has("320")), urg = rich.find(([, r]) => r.cart.has("293"));
+  check(scen, rich.length === 2 && !!poc && !!urg && poc !== urg, `due richieste, una per erogatore (got ${rich.length})`);
+  check(scen, poc && [...poc[1].cart.values()].every((x) => x === RES.POC) && urg && JSON.stringify([...urg[1].cart.keys()].sort()) === '["159","293"]'
+    && [...urg[1].cart.values()].every((x) => x === RES.URGENZE), "ognuna con gli esami del suo erogatore soltanto");
+  check(scen, poc && poc[1].confirmed && urg && urg[1].confirmed, "confermate tutte e due, da sole");
+  const conf = mock.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni") && q.form && ("Update" in q.form || "Update1" in q.form));
+  check(scen, conf.length === 2, `una conferma per richiesta (got ${conf.length})`);
+  check(scen, Object.values(mock.state.insertCount).every((n) => n === 1), `ogni esame mandato una volta (${JSON.stringify(mock.state.insertCount)})`);
+  // il passaggio a Urgenze: il «Risorsa» della pagina, col corpo che manda la pagina
+  const f = corpiFiltro(mock);
+  check(scen, f.length === 1 && f[0].params.RICHIESTA_ID === (urg && urg[0]) && JSON.stringify(f[0].form) === JSON.stringify({ RISORSA_ID: RES.URGENZE, s_PRESTAZIONE: "" }),
+    `cambio d'erogatore col modulo RisorsaFiltro della pagina: RISORSA_ID e s_PRESTAZIONE, nient'altro (got ${JSON.stringify(f.map((q) => [q.params.RICHIESTA_ID, q.form]))})`);
+  const iFiltro = mock.state.requests.indexOf(f[0]);
+  const letturaPrima = mock.state.requests.slice(0, iFiltro).some((q) => q.method === "GET" && q.params.RICHIESTA_ID === (urg && urg[0]) && q.params.RISORSA_ID === RES.URGENZE);
+  check(scen, !letturaPrima, "nessun indirizzo costruito a mano per passare a Urgenze");
+  const heads = [];
+  for (let k = 0; k < 4; k++) { heads.push(await docStampa(page)); await avanti(page); }
+  check(scen, /1 di 4 — Etichette/.test(heads[0]) && /2 di 4 — Etichette/.test(heads[1]) && /3 di 4 — Lista esami/.test(heads[2]) && /4 di 4 — Lista esami/.test(heads[3]),
+    `una stampa sola: le etichette delle due richieste, poi le due liste (got ${heads.join(" | ")})`);
+  await context.close();
+
+  // …e dalla pagina «Nuova richiesta» del gestionale: la prima è quella, col
+  // suo modulo vivo; per Urgenze se ne apre una nuova dallo stesso indirizzo
+  const scen2 = "lab-due-erogatori-da-crea";
+  const m2 = createMock({ prefilledQuesito: "febbre" });   // (il quesito del triage, nella pagina)
+  const b = await newPage(browser, m2);
+  await b.page.goto(`${m2.ORIGIN}${m2.PATH}?MVPG=PsoRichiestaCreaRcs&EPISODIO_ID=999001&ASSISTITO_ID=*TEST00001&STRUTTURA=1&RISORSA_ID=${RES.POC}&RISORSE=${RES.POC},${RES.CENTRAL},${RES.URGENZE}&PADIGLIONE=&toPage=RcsRichiestaPrestazioniRicercaErogatore&returnPage=PsoEpisodio`);
+  await b.page.waitForSelector("#psassist-host #q", { state: "attached", timeout: 10000 });
+  await $panel(b.page, `.opt[data-res="${RES.POC}"][data-code="320"]`).click();
+  await $panel(b.page, `.opt[data-res="${RES.URGENZE}"][data-code="159"]`).click();
+  const cta2 = (await $panel(b.page, "#goconfirm").innerText()).trim();
+  check(scen2, /· 2 richieste, 2 esami$/.test(cta2), `anche qui il bottone annuncia due richieste (got ${cta2})`);
+  await $panel(b.page, "#goconfirm").click();
+  await b.page.waitForSelector("#psassist-print", { state: "attached", timeout: 60000 }).catch(() => {});
+  const r2 = Object.values(m2.state.richieste);
+  check(scen2, r2.length === 2 && r2.every((r) => r.confirmed && r.quesito === "febbre") && !m2.state.rifiutati.length
+    && r2.some((r) => [...r.cart.keys()].join() === "320") && r2.some((r) => [...r.cart.keys()].join() === "159"),
+    `due richieste, POC e Urgenze, confermate, col quesito del triage (got ${r2.map((r) => `${[...r.cart.keys()]}:${r.quesito}${r.confirmed ? "✓" : ""}`).join(" · ")})`);
+  await b.context.close();
+}
+// Solo esami di Urgenze: dopo «Crea» il gestionale è sul POC (il primo delle
+// RISORSE). Si passa a Urgenze col «Risorsa» della pagina — anche quando il
+// modulo, com'è nella pagina salvata, è vuoto e i controlli gli stanno fuori.
+async function scenarioLabSoloUrgenze(browser) {
+  for (const filtroStaccato of [false, true]) {
+    const scen = filtroStaccato ? "lab-solo-urgenze (modulo staccato)" : "lab-solo-urgenze";
+    const mock = createMock({ filtroStaccato });
+    const { context, page } = await newPage(browser, mock);
+    await page.goto(mock.patientUrl);
+    await richieste(page);
+    await $panel(page, "#q").fill("febbre");
+    await $panel(page, `.opt[data-res="${RES.URGENZE}"][data-code="293"]`).click();
+    await $panel(page, `.opt[data-res="${RES.URGENZE}"][data-code="159"]`).click();
+    await $panel(page, "#goconfirm").click();
+    await page.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 }).catch(() => {});
+    const rich = Object.values(mock.state.richieste);
+    check(scen, !mock.state.rifiutati.length, `nessun inserimento respinto (got ${JSON.stringify(mock.state.rifiutati)})`);
+    check(scen, rich.length === 1 && rich[0].confirmed && JSON.stringify([...rich[0].cart.keys()].sort()) === '["159","293"]',
+      `una richiesta, i due esami, confermata (got ${rich.map((r) => [...r.cart.keys()] + (r.confirmed ? " ✓" : "")).join(" · ")})`);
+    const f = corpiFiltro(mock);
+    check(scen, f.length === 1 && JSON.stringify(f[0].form) === JSON.stringify({ RISORSA_ID: RES.URGENZE, s_PRESTAZIONE: "" }),
+      `da POC a Urgenze col modulo della pagina, il suo corpo (got ${JSON.stringify(f.map((q) => q.form))})`);
+    await context.close();
+  }
 }
 
 async function scenarioPacchettoConRx(browser) {
@@ -3575,34 +3688,28 @@ async function scenarioPacchettoConRx(browser) {
   check(scen, lab && lab.confirmed && rx && rx.confirmed && conf.length === 2, `confermate tutte e due, da sole, una volta ciascuna (got ${conf.length} conferme)`);
   const heads = [];
   for (let k = 0; k < 3; k++) { heads.push(await docStampa(page)); await avanti(page); }
-  check(scen, /1 di 3 — Etichette/.test(heads[0]) && /2 di 3 — Lista esami/.test(heads[1]) && /3 di 3 — Prenotazione esterna/.test(heads[2]),
+  check(scen, /1 di 3 — Etichette/.test(heads[0]) && /2 di 3 — Lista esami/.test(heads[1]) && /3 di 3 — Richiesta radiologia/.test(heads[2]),
     `una stampa sola: etichette → lista → il foglio della RX per ultimo (got ${heads.join(" | ")})`);
   await context.close();
 }
 
-// Il gestionale vero, dopo UNA Conferma di un carrello con POC e laboratorio,
-// fa una richiesta per erogatore: ognuna col suo RICHIESTA_ID (PROG 1). Qui la
-// riga del laboratorio della richiesta confermata diventa una richiesta nuova;
-// con `tardi` la pagina la mostra solo alla seconda lettura.
+// Una richiesta per erogatore, ognuna col suo RICHIESTA_ID (PROG 1): POC e
+// laboratorio sono due richieste, e la stampa finale ha i fogli di tutte e
+// due — mai quelli della richiesta che c'era già. Con `tardi` la pagina
+// mostra la seconda solo alla seconda lettura: si rilegge, e si stampa lo stesso.
 async function scenarioRichiestePerErogatore(browser, { tardi = false } = {}) {
   const scen = tardi ? "per-erogatore-tardi" : "per-erogatore";
   const mock = createMock({ seedConfirmed: true });   // la 699999 c'era già: mai da stampare
   const SEED = "699999";
-  const confermata = () => Object.keys(mock.state.richieste).find((k) => k !== SEED && mock.state.richieste[k].confirmed);
-  const nuova = (r) => String(Number(r) + 50);
+  const confermate = () => Object.keys(mock.state.richieste).filter((k) => k !== SEED && mock.state.richieste[k].confirmed);
   let letture = 0;
-  // i fogli della richiesta nuova sono quelli della riga 2 della confermata
-  const h = mock.handle;
-  mock.handle = (req) => {
-    const r = confermata();
-    return h(r ? { ...req, url: req.url.replace(new RegExp(`RICHIESTA_ID=${nuova(r)}&RICHIESTA_PROG=1`), `RICHIESTA_ID=${r}&RICHIESTA_PROG=2`) } : req);
-  };
+  // (tardi) i fogli della seconda richiesta la pagina li mostra solo alla seconda lettura
   const { context, page } = await newPage(browser, mock, {
     riscrivi: (url, html) => {
-      const r = confermata();
-      if (!r || !html.includes(`RICHIESTA_ID=${r}&RICHIESTA_PROG=2`)) return html;
-      if (tardi && letture++ === 0) return html.replace(new RegExp(`<a title="Stampa (Richiesta|Etichette)" href="[^"]*RICHIESTA_ID=${r}&RICHIESTA_PROG=2[^"]*"><img[^>]*></a>`, "g"), "");
-      return html.split(`RICHIESTA_ID=${r}&RICHIESTA_PROG=2`).join(`RICHIESTA_ID=${nuova(r)}&RICHIESTA_PROG=1`);
+      const c = confermate(), r = c[1];
+      if (!tardi || !r || !html.includes(`RICHIESTA_ID=${r}&RICHIESTA_PROG=1`)) return html;
+      if (letture++ === 0) return html.replace(new RegExp(`<a title="Stampa (Richiesta|Etichette)" href="[^"]*RICHIESTA_ID=${r}&RICHIESTA_PROG=1[^"]*"><img[^>]*></a>`, "g"), "");
+      return html;
     },
   });
   await page.goto(mock.patientUrl);
@@ -3613,15 +3720,15 @@ async function scenarioRichiestePerErogatore(browser, { tardi = false } = {}) {
   const t0 = Date.now();
   await $panel(page, "#goconfirm").click();
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 60000 });
-  const r = confermata();
+  const r = confermate().length === 2;
   const heads = [];
   for (let k = 0; k < 4; k++) { heads.push(await docStampa(page)); await avanti(page); }
   await page.waitForTimeout(500);
   check(scen, !!r && /1 di 4 — Etichette/.test(heads[0]) && /2 di 4 — Etichette/.test(heads[1]) && /3 di 4 — Lista esami/.test(heads[2]) && /4 di 4 — Lista esami/.test(heads[3]),
-    `la richiesta confermata e quella nuova del laboratorio: tutte e due le etichette, poi tutte e due le liste (got ${heads.join(" | ")})`);
+    `le due richieste, POC e laboratorio: tutte e due le etichette, poi tutte e due le liste (got ${heads.join(" | ")})`);
   const stampati = (id) => mock.state.requests.filter((q) => /RcsStampaEtichetteLISHMIMU|jasperservlet/.test(q.url) && new RegExp(`RICHIESTA_ID=${id}(&|$)`).test(q.url));
   check(scen, stampati(SEED).length === 0, `la richiesta che c'era già prima del giro non si stampa (got ${stampati(SEED).length} richieste)`);
-  if (tardi) check(scen, letture >= 2, `la richiesta nuova arriva alla seconda lettura della pagina, e si stampa lo stesso (letture ${letture}, ${Math.round((Date.now() - t0) / 1000)} s)`);
+  if (tardi) check(scen, letture >= 2, `la seconda arriva alla seconda lettura della pagina, e si stampa lo stesso (letture ${letture}, ${Math.round((Date.now() - t0) / 1000)} s)`);
   await context.close();
 }
 
@@ -5270,8 +5377,14 @@ async function scenarioPromemoria(browser) {
 // sarebbe un esame ordinato due volte a un paziente vero.
 async function scenarioRilancioPaginaEsami(browser) {
   const scen = "rilancio-esami";
-  const mock = createMock({ neverAdd: ["159"] });   // la PCT non entra mai: la corsa fallisce
-  const { context, page } = await newPage(browser, mock);
+  const mock = createMock({ neverAdd: ["324"] });   // la TROPONINA non entra mai: la corsa fallisce
+  // la pagina che il medico ha davanti è quella di prima: la riga dell'EMOCROMO
+  // in carrello non la mostra (gli inserimenti sono andati in background)
+  let vecchia = false;
+  const { context, page } = await newPage(browser, mock, {
+    riscrivi: (u, html, req) => (vecchia && req.isNavigationRequest()
+      ? html.replace(/<tr><td><a class="AFCDataLink" href="[^"]*Delete=Elimina[^"]*PRESTAZIONE=320[^"]*">[^<]*<\/a><\/td><\/tr>/g, "") : html),
+  });
   await page.goto(mock.patientUrl);
   await richieste(page);
   await page.click('a[title="Richieste Laboratorio"]');
@@ -5281,10 +5394,11 @@ async function scenarioRilancioPaginaEsami(browser) {
   await page.waitForSelector("#psassist-host", { state: "attached" });
 
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
-  await $panel(page, '.opt[title*="PROCALCITONINA"]').click();
+  await $panel(page, '.opt[title*="TROPONINA"]').click();
+  vecchia = true;
   await $panel(page, "#go").click();
-  // fallisce sulla PCT: si finisce sul carrello di quella risorsa (Urgenze)
-  await errore(page, { su: /RISORSA_ID=00720001P/ });
+  // fallisce sulla TROPONINA: si finisce sul carrello della richiesta (POC)
+  await errore(page, { su: /RISORSA_ID=00660001P/ });
 
   const rid = Object.keys(mock.state.richieste)[0];
   check(scen, mock.state.insertCount[`${rid}:320`] === 1,
@@ -5292,14 +5406,14 @@ async function scenarioRilancioPaginaEsami(browser) {
   await apriStriscia(page);
   check(scen, (await $panel(page, ".banner.err").count()) === 1, "e fallisce sull'esame che non entra");
 
-  // «Chiudi»: niente resta scelto — l'emocromo è in carrello, la PCT è da
+  // «Chiudi»: niente resta scelto — l'emocromo è in carrello, la TROPONINA è da
   // controllare (mandata, mai vista): nessuno dei due si offre di nuovo
   await $panel(page, "#chiudi").click();
   await page.waitForSelector("#psassist-host .rcols", { timeout: 8000 });   // (la barra c'è solo con qualcosa di scelto)
   check(scen, (await $panel(page, ".selbar").count()) === 0 && (await $panel(page, "#goconfirm").count()) === 0,
     "dopo «Chiudi» non resta scelto niente: niente manca davvero");
-  // il medico rimette l'emocromo a mano e rilancia da questo carrello
-  // (Urgenze) — il motore rilegge quello del POC dal server
+  // il medico rimette l'emocromo a mano e rilancia da questo carrello, che
+  // non lo mostra — il motore rilegge il carrello dal server
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await Promise.all([page.waitForEvent("load", { timeout: 30000 }), $panel(page, "#go").click()]);
   await striscia(page, /Conferma dal gestionale|Errore/, 10000);
@@ -6327,7 +6441,7 @@ async function scenarioRichiesteCompatte(browser) {
     const r = document.getElementById("psassist-host").shadowRoot, c = r.querySelector(".commit");
     return c ? { pos: getComputedStyle(c).position, bg: getComputedStyle(c).backgroundColor, cta: r.querySelector("#goconfirm").textContent.trim(), go: !!r.querySelector(".commit #go") } : null;
   });
-  check(scen, !!barra && barra.pos === "sticky" && barra.bg === "rgb(255, 255, 255)" && barra.cta === "Conferma per ROSSI M. · 2 esami" && barra.go,
+  check(scen, !!barra && barra.pos === "sticky" && barra.bg === "rgb(255, 255, 255)" && barra.cta === "Conferma per ROSSI M. · 2 richieste, 2 esami" && barra.go,
     `scelto qualcosa: la barra «Conferma per … · N esami», ferma in fondo, con «solo carrello» (got ${JSON.stringify(barra)})`);
   await shotSide(page, "paz-richieste");
   // la Stampa sta nel menu ⋯
@@ -7062,7 +7176,7 @@ const scenarios = [
   ["errore: «↻ Riprova i mancanti» — solo quelli, una conferma", scenarioRiprova],
   ["errore in revisione: «↻ Riprova» atterra sul carrello", scenarioRiprovaRevisione],
   ["errore due volte: «↻ Riprova» di nuovo, i «da controllare» restano", scenarioRiprovaDueVolte],
-  ["errore: «Chiudi» tiene il promemoria e solo i mancanti", scenarioChiudi],
+  ["errore: «Chiudi» tiene solo i mancanti, e niente promemoria", scenarioChiudi],
   ["errore senza richiesta: «↻ Riprova» è un giro normale", scenarioRiprovaSenzaRichiesta],
   ["errore: «Svuota il carrello e ricomincia» — Svuota del gestionale, provato vuoto, rimesso, confermato", scenarioSvuota],
   ["errore: «Svuota il carrello» non riuscito — stop, niente rimesso", scenarioSvuotaNonVuoto],
@@ -7124,6 +7238,8 @@ const scenarios = [
   ["esiti: referti di laboratorio senza tabella → «Laboratorio (N)»", scenarioSoloLabEsiti],
   ["rx singles (torace/addome)", scenarioRxSingles],
   ["lab + rx: two richieste, one flow", scenarioLabPlusRx],
+  ["lab POC + Urgenze: una richiesta per erogatore (gestionale vero)", scenarioLabDueErogatori],
+  ["lab solo Urgenze: il «Risorsa» della pagina (gestionale vero)", scenarioLabSoloUrgenze],
   ["pacchetto con RX: lab + rx, one flow", scenarioPacchettoConRx],
   ["print: una richiesta per erogatore dopo la Conferma", (b) => scenarioRichiestePerErogatore(b)],
   ["print: una richiesta per erogatore, che compare tardi", (b) => scenarioRichiestePerErogatore(b, { tardi: true })],
