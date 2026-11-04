@@ -209,7 +209,7 @@ async function sottoFine(id, esito) {
 // nuova si chiude da sola.
 const ATTIVE = new Map();               // finestra → [la scheda attiva prima, quella di adesso]
 const NATE_DIETRO = new Set();
-chrome.tabs.query({ active: true }).then((l) => { for (const t of l) if (!ATTIVE.has(t.windowId)) ATTIVE.set(t.windowId, [null, t.id]); }).catch(() => {});
+try { Promise.resolve(chrome.tabs.query({ active: true })).then((l) => { for (const t of l || []) if (!ATTIVE.has(t.windowId)) ATTIVE.set(t.windowId, [null, t.id]); }).catch(() => {}); } catch { /* niente */ }
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
   if (NATE_DIETRO.has(tabId)) return;   // (quella nata dietro non conta come «di prima»)
   const a = ATTIVE.get(windowId) || [];
