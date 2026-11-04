@@ -1870,3 +1870,8 @@ catch (e) { console.error("PS Assist: l'aggiornamento non parte", e); }
 // errore lì dentro spegne il ponte, non il resto: ordini, referti, stampe.
 try { importScripts("ponte-host.js", "ponte-cripto.js", "ponte-sw.js"); }
 catch (e) { console.error("PS Assist: il ponte verso l'iPhone non parte", e); }
+
+// «Ricetta SISS» (ricetta-sw.js): la ricetta del pannello consegnata a una
+// scheda del Prescrittivo, che la compila e si ferma sull'Anteprima.
+try { importScripts("ricetta-sw.js"); }
+catch (e) { console.error("PS Assist: la ricetta SISS non parte", e); }

@@ -1498,6 +1498,41 @@ Salva / Registra, e il PDF di **Stampa RE**.
   i due siti qui sopra. Se le API del Prescrittivo stanno su un altro host, il registratore non le
   vede: il riepilogo ne dice il nome, e si aggiunge.
 
+### Ricetta SISS (fino all'Anteprima, mai oltre)
+
+**⋯ → Ricetta SISS**, sulla pagina del paziente, solo con l'estensione. Scegli i farmaci — i
+**preferiti** (gli ultimi visti davvero in un'Anteprima del SISS: codice, descrizione, quantità,
+in `storage.local`; niente del paziente) o **Cerca nel SISS**, che scrive nella casella «Ricerca
+specialistica/farmaco» del Prescrittivo e ti mostra le voci della sua tendina — poi quantità,
+«non sostituibile», il quesito (preso da un campo «Diagnosi» della pagina se ce n'è uno, se no
+vuoto) e **Prepara nel SISS**.
+
+- **Dove lavora**: in una scheda del Prescrittivo **già aperta e già entrata** (con la carta). Se
+  non c'è, o è sulla pagina d'accesso, si apre il menu del SISS e il pannello dice «Entra nel SISS
+  con la carta, poi riprovo da solo»: appena una scheda del Prescrittivo è dentro, riparte da lì.
+  Carta, PIN, login: mai toccati. Una scheda con una ricetta già aperta (compilazione con
+  qualcosa scritto, o un'Anteprima) non si usa; nemmeno una dove stai scrivendo.
+- **Come**: attraverso l'interfaccia del SISS, come una persona — mai una richiesta fatta da noi.
+  Home → «Nuova Prescrizione» → il codice fiscale del riquadro del paziente in «ID Personale» →
+  Cerca → **l'intestazione del SISS** (Cognome, Nome, Id personale) deve essere il paziente del
+  gestionale, se no **«Errore grave: il SISS mostra un altro paziente»**, nel Registro degli
+  errori, e niente si scrive. Poi ogni farmaco scritto nella ricerca del SISS e scelto **col suo
+  codice AIC esatto** (le confezioni con la stessa descrizione sono tante), Quantità, «Non
+  sostituibile», il quesito, **Anteprima**. Ogni passo si rilegge dalla pagina; una cosa che non
+  torna ferma tutto e il pannello dice dove («Fermato su …: completa tu nel SISS»), lasciando
+  quello che è scritto.
+- **La regola**: si ferma sull'**Anteprima** («STATO: BOZZA») con la scheda del SISS davanti.
+  **Registra, Salva, Stampa, Cancella non li preme mai**: li premi tu, dopo aver controllato.
+  Seconda guardia: se durante la compilazione la scheda del SISS chiedesse al server di
+  *registrare* (lo si vede dal flusso delle richieste, solo osservato), il pannello lo dice in
+  rosso — «il SISS sta registrando la ricetta, e non l'ho chiesto io» — e la compilazione si ferma.
+- **Una volta sola**: una ricetta alla volta; la scheda del SISS la riceve una volta (si ricarica
+  a metà → si ferma e lo dice, non riparte); i farmaci si scrivono una volta; la stessa richiesta
+  due volte è la stessa ricetta. Il codice fiscale e il nome stanno solo in `storage.session` e
+  se ne vanno appena la ricetta finisce.
+- **Visite ed esami** (ricetta specialistica): non ancora. La registrazione mostra solo una
+  farmaceutica; la ricerca dice quante voci di visite/esami ha trovato, e quelle si fanno a mano.
+
 ---
 
 ## Perché è robusto (regole di sicurezza nel codice)
@@ -1923,6 +1958,8 @@ ps-app/
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)
 ├── bookmarklet/         ← piano B per PC bloccati: un preferito, zero installazione (generato)
 ├── stampa/              ← la stampa automatica per Windows: installa.cmd, l'aiutante host.ps1 e SumatraPDF.exe (ufficiale 3.6.1, GPLv3, nello zip: installa.cmd non scarica più niente); ripristina.cmd
+├── extension/ricetta-*  ← ⋯ → Ricetta SISS: ricetta-sw.js (service worker: la ricetta, la scheda, i preferiti),
+│                          ricetta-siss.js (nella scheda del Prescrittivo: compila e si ferma sull'Anteprima)
 ├── extension/aggiorna*  ← ⋯ → «Aggiorna app»: aggiorna.js (service worker: VERSION.txt, lo zip, l'aiutante, la ricarica),
 │                          aggiornata.js (la pillola «Ricarica la pagina» nelle schede rimaste col pannello vecchio)
 ├── tools/verifica-build.mjs ← al rilascio: la build, lo zip e la versione committati sono quelli di adesso

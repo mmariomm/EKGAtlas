@@ -49,6 +49,16 @@
       "run_at": "document_start",
       "all_frames": true,
       "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://operatorisiss.servizirl.it/prescrittivoRegionale/*"
+      ],
+      "js": [
+        "ricetta-siss.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "permissions": [
