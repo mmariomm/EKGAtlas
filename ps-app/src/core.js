@@ -11874,6 +11874,11 @@
       const ritiro = CONSENSI.filter((c) => c.gruppo === "ritiro");
       return `
         ${this.apertiHtml()}
+        ${this.ricettaPossibile() ? `
+        <div class="sec">
+          <div class="lbl">Ricetta SISS</div>
+          <button type="button" class="dnuovo" id="dimricetta" title="Farmaci (e visite) preparati nel Prescrittivo del SISS, fino all'Anteprima: Registra lo premi tu"><span class="dplus" aria-hidden="true">℞</span>Prepara la ricetta nel SISS</button>
+        </div>` : ""}
         ${ritiro.length ? `
         <div class="sec">
           <div class="lbl" title="${esc(this.notaModuli())}">Moduli per il ritiro (${ritiro.length})</div>
@@ -13243,6 +13248,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#tapri")?.addEventListener("click", () => this.setView("tempi"));
       $("#tempimenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("tempi"); });
       $("#ricmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("ricetta"); });
+      $("#dimricetta")?.addEventListener("click", () => this.setView("ricetta"));   // (anche dalle Dimissioni)
       if (this.view === "ricetta") this.legaRicetta($);
       $("#rifmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("riferimenti"); this.root.querySelector("#riffiltro")?.focus(); });
       $("#stampamenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("stampa"); });
