@@ -172,9 +172,12 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 // partita» (lo annota nel suo registro).
 chrome.runtime.onInstalled.addListener((d) => {
   if (d.reason !== "update") return;
-  const pagine = chrome.runtime.getManifest().content_scripts?.[0]?.matches || [SA4 + "/sa4pso/*"];
+  const cs = chrome.runtime.getManifest().content_scripts?.[0] || {};
+  const pagine = cs.matches || [SA4 + "/sa4pso/*"];
+  // (non nelle schede dove il pannello non nasce: i PDF delle stampe)
+  const senza = (cs.exclude_matches || []).map((m) => m.replace(/\*$/, ""));
   chrome.tabs.query({ url: pagine }).then((schede) => {
-    for (const t of schede) if (!t.discarded) chrome.scripting.executeScript({ target: { tabId: t.id }, files: ["aggiornata.js"] }).catch(() => {});
+    for (const t of schede) if (!t.discarded && !senza.some((x) => String(t.url || "").startsWith(x))) chrome.scripting.executeScript({ target: { tabId: t.id }, files: ["aggiornata.js"] }).catch(() => {});
   }).catch(() => {});
   chrome.storage.local.get("aggiorna").then((o) => {
     const { fatto, ...resto } = o.aggiorna || {};
