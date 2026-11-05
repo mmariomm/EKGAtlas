@@ -408,7 +408,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       salva(msg.data, msg.size || 1).catch((e) => reply({ ok: false, why: String(e && e.message || e).slice(0, 60) }));
       return true;
     }
-    grabPdf(msg.url)
+    // (una pagina del gestionale, con la sessione del medico: mai mentre un motore inserisce)
+    dopoIlMotore().then(() => grabPdf(msg.url))
       .then(async (r) => {
         if (!r.ok) return reply(r);
         await salva(b64(r.buf), r.buf.byteLength);

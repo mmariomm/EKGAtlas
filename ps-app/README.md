@@ -1935,10 +1935,18 @@ vuoto) e **Prepara nel SISS**.
     due minuti della striscia; se no mezz'ora. **Un ordine, un
     motore**: il piano lo riceve una scheda sola (`consegnata`), e la scheda vuota che si
     sostituisce dopo 6 secondi è solo quella che il piano non l'ha mai avuto, chiusa prima che
-    nasca la nuova. Un «ORA-» nella risposta a un inserimento ferma il giro **subito**, senza
-    riletture né altri invii: la striscia dice «Il gestionale ha risposto: …» (l'esame in volo
-    resta «da controllare»), e l'errore va nel registro con la traccia. Prova:
-    `test/ext-sessione.mjs`.
+    nasca la nuova. Un «ORA-» nella risposta a un inserimento ferma **subito** quella richiesta,
+    senza riletture né altri invii lì dentro. Il cancello copre solo le nostre letture: la
+    sessione può perdere il carrello anche per altro (3.71.1 e 3.73.0, ordini di soli esami POC:
+    l'«ORA-» a metà, il carrello riletto vuoto) — le pagine del gestionale si ricaricano da sole
+    prendendo il fuoco, e il medico intanto clicca. Così una richiesta **nata nel giro** (dalla
+    pagina del paziente) si lascia com'è — mai confermata, nessun promemoria — e il giro si rifà
+    **da capo una volta**: dopo 2 secondi, «Crea» di nuovo, tutti gli esami di quella richiesta;
+    il Registro e la traccia lo dicono, e la riuscita va nel registro degli errori con la traccia
+    di tutte e due. Un secondo «ORA-» (o uno in un giro partito dal carrello, o ripreso) è
+    l'errore di sempre: la striscia dice «Il gestionale ha risposto: …» (l'esame in volo resta
+    «da controllare»), e l'errore va nel registro con la traccia. Prova: `test/ext-sessione.mjs`,
+    e `opts.carrelloPerso` di `test/gestionale-vero.mjs`.
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
@@ -2033,7 +2041,8 @@ ps-app/
 ├── tools/esempi.mjs     ← genera esempi-gestionale/ dagli originali (che restano fuori)
 └── test/                ← simulatore SA4PSO + 108 scenari e2e in Chromium reale (+ storico, referti, ordine in sottofondo, stampa automatica);
                             gestionale-vero.mjs lo avvolge con quello che hanno mostrato le registrazioni vere (il «Risorsa» RisorsaFiltro,
-                            l'«ORA-20965» di un secondo erogatore nella stessa richiesta, il foglio «Stampa Richiesta Radiologia»)
+                            l'«ORA-20965» di un secondo erogatore nella stessa richiesta, il carrello perso a metà ordine,
+                            il foglio «Stampa Richiesta Radiologia»)
 ```
 
 Sviluppo:
