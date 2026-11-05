@@ -8830,6 +8830,10 @@
       }
       // i valori e la stanza si leggono in larghezza; il resto su una colonna comoda
 
+      // (Chrome manda il «blur» a un campo col fuoco PRIMA di staccarlo, quando
+      // è ancora attaccato: chi ascolta il blur guarda _staccando, non isConnected)
+      this._staccando = true;
+      try {
       this.root.innerHTML = `
         <style>${COLORS}${PONTE_CSS}</style>
         <div class="wrap${ridotto ? "" : " win"}${forma === "colonna" && !ridotto ? " col" : ""}${TABELLONE ? " tab" : ""}" style="${posStyle}">
@@ -8954,6 +8958,7 @@
         ${forma === "passaggio" && !ridotto && !TABELLONE ? `<div class="wrap ppass" style="${pillStyle}">
           <button class="pill${this.fissata ? " fissa" : ""}" id="pinpill" aria-pressed="${this.fissata}" title="${this.fissata
             ? "Fissata: resta aperta. Un tocco la lascia richiudere uscendo col mouse; Esc la chiude" : "Si richiude uscendo col mouse: tocca per fissarla"}">${pillInner}</button></div>` : ""}`;
+      } finally { this._staccando = false; }
       this.colonnaMargine();
       this.bind();
       // Al passaggio la pill resta sopra la finestra: se copre i comandi in fondo all'intestazione (⋯, —), quelli si fanno in là
@@ -9911,7 +9916,7 @@
             if (e.key === "Enter") { e.preventDefault(); this.stanzaChiudiNome(inp, true, true); }
             else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.stanzaChiudiNome(inp, false, true); }
           });
-          inp.addEventListener("blur", () => { if (inp.isConnected) this.stanzaChiudiNome(inp, true); });
+          inp.addEventListener("blur", () => { if (inp.isConnected && !this._staccando) this.stanzaChiudiNome(inp, true); });
         }
       }
       if (this._stanzaFocus) { const f = $(this._stanzaFocus); this._stanzaFocus = null; f?.focus(); }
@@ -13934,7 +13939,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           else if (e.key === "Escape" && (this.root.querySelector("#qdrop") || qEl.value !== this._qBase)) { e.preventDefault(); e.stopPropagation(); this._qFocus = true; chiudi(this._qBase || ""); }
         });
         qEl.addEventListener("blur", () => {
-          if (!qEl.isConnected) return;   // (tolta da un ridisegno: non è il medico che se ne va)
+          if (!qEl.isConnected || this._staccando) return;   // (tolta da un ridisegno: non è il medico che se ne va)
           this._qFocus = false;
           setTimeout(() => {
             if (this.root.activeElement?.id === "q" || !this._cerca) return;

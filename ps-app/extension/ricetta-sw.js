@@ -312,7 +312,9 @@ try {
     if (!RIC_REGISTRA.test(d.url || "")) return;
     ricInFila(async () => {
       const j = await ricLeggi();
-      if (!j || j.worker !== d.tabId || !j.consegnata || !RIC_ATTIVI.has(j.stato) || j.anteprima) return;
+      // (solo mentre la scheda lavora per noi: identifica o compila. Una ricetta
+      // che aspetta le tue scelte nel pannello e tu che fai da te nel SISS: è tua)
+      if (!j || j.worker !== d.tabId || !j.consegnata || !["identifico", "compilo"].includes(j.stato) || j.anteprima) return;
       ricChiudi(j, "errore", "Attenzione: il SISS sta registrando la ricetta, e non l'ho chiesto io. Controlla subito nel SISS.", "err");
       j.grave = true;
       await ricScrivi(j);

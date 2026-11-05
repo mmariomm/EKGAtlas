@@ -6692,6 +6692,24 @@ async function scenarioRichiesteCompatte(browser) {
   await q.press("Enter");
   check(scen, (await q.inputValue()) === "emocromo" && (await $panel(page, "#qdrop").count()) === 0 && (await $panel(page, ".opt.on").count()) === 1,
     "Invio sulla prima voce: il testo diventa il quesito, nessun esame aggiunto");
+  // scritto a tasti, come il medico: «do» somiglia a un esame (la tendina si
+  // apre, il pannello si ridisegna) e la casella NON perde il fuoco — fino
+  // alla 3.75.1 il «blur» del ridisegno la chiudeva e restava «do»
+  await q.fill("");
+  await q.click();
+  await page.keyboard.type("dolore toracico", { delay: 70 });
+  await page.waitForTimeout(400);
+  const fuocoQ = await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id || "");
+  check(scen, (await q.inputValue()) === "dolore toracico" && fuocoQ === "q",
+    `il quesito scritto lettera per lettera resta tutto, col cursore nella casella (got «${await q.inputValue()}», fuoco ${fuocoQ || "perso"})`);
+  await q.fill("");
+  await q.click();
+  await page.keyboard.type("emocro", { delay: 70 });
+  await page.waitForTimeout(400);
+  check(scen, (await q.inputValue()) === "emocro" && (await $panel(page, "#qdrop").count()) === 1
+    && await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id === "q"),
+    "un esame scritto lettera per lettera: la tendina resta aperta e la casella col cursore");
+  await q.press("Escape");
   await q.fill("dolore toracico");
   // la barra: piena, ferma in fondo, dice per chi e quanti; «solo carrello» accanto
   await $panel(page, '.opt[title*="TROPONINA"]').click();

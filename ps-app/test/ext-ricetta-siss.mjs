@@ -454,6 +454,30 @@ check(await finche(async () => (await preferiti()).some((p) => p.codice === "89.
 await doc.bringToFront();
 check(await finche(async () => await $p('.ricchip[data-ricpref="89.7"]').count() === 1, 5000), "il pannello mostra la visita fra i preferiti");
 
+// ---- 10. una ricetta che aspetta le scelte del pannello, e il medico fa da sé
+// nel SISS fino all'Anteprima (il SISS chiama prepare-register-request): la
+// ricetta è sua, nessun allarme — fino alla 3.75.1 era un falso «Errore grave»
+await siss.goto(`https://${PR}/prescrittivoRegionale/pages/dashboard`);
+await siss.waitForLoadState();
+await doc.bringToFront();
+await $p('[data-ricvia="0"]').click();
+await $p("#ricq").fill("augmentin");
+await sospendi(1600);
+await $p("#riccerca").click();
+check(await finche(async () => await $p(`.ricrisv[data-ricadd="${AIC}"]`).count() === 1, 25000), "cercato nel SISS dal pannello: la ricetta aspetta le tue scelte");
+const reg10 = srvStato.registrazioni, err10 = (await errori()).length;
+await siss.bringToFront();
+await siss.locator("#ricerca").click();
+await siss.keyboard.type("AUGMENTIN", { delay: 40 });
+await siss.locator(`mat-option:has-text("${AIC}")`).first().click();
+await siss.waitForFunction(() => !document.getElementById("anteprima").disabled, null, { timeout: 10000 });
+await siss.locator("#anteprima").click();
+check(await finche(async () => /Anteprima nel SISS/.test(await statoPannello()), 15000) && await $p("#ricstato.err").count() === 0,
+  `il medico fa da sé fino all'Anteprima: il pannello lo prende per buono, niente rosso («${await statoPannello()}»)`);
+check(srvStato.registrazioni === reg10 + 1 && (await errori()).length === err10 && (await clic()).registra === 0,
+  "le chiamate del SISS all'Anteprima del medico: nessun errore nel registro");
+check((await ricetta())?.stato === "anteprima" && !(await ricetta())?.cf, "la ricetta finisce lì, e il codice fiscale se ne va");
+
 await ctx.close();
 srv.close();
 rmSync(PROFILE, { recursive: true, force: true });

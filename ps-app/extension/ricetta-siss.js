@@ -384,6 +384,13 @@
   setInterval(() => {
     const v = `${vista()}|${dentro()}`;
     if (v !== ultima) { ultima = v; if (dentro()) { ask({ t: "ricettaQui", vista: vista(), dentro: true, nata }); nata = 0; } }
+    // una ricetta che aspettava le scelte del pannello, e il medico è andato
+    // avanti da sé fino all'Anteprima: la ricetta è sua, questa finisce qui
+    if (lavoro && sveglia && !fermata && vista() === "anteprima") {
+      fermata = true;
+      ask({ t: "ricettaFine", id: lavoro.id, esito: "anteprima" });
+      sveglia();
+    }
     if (vista() === "anteprima" && libero()) {
       const pv = $("app-prescription-previews");
       const voci = pv ? righeFarmaci(pv).map((tr) => ({ codice: codiceRiga(tr), descr: testo($("td.mat-column-description", tr)),

@@ -1601,7 +1601,10 @@ vuoto) e **Prepara nel SISS**.
   chiamate per un Registra e fermava ogni ricetta con un falso «Errore grave». Ora la scheda
   avvisa il service worker prima del clic, e che la ricetta non sia registrata lo rilegge sulla
   pagina: un'Anteprima «STATO: REGISTRATA» (o con un NRE) è detta in rosso — «all'Anteprima il
-  SISS ha registrato la ricetta» — e va nel Registro degli errori.
+  SISS ha registrato la ricetta» — e va nel Registro degli errori. La guardia vale solo mentre la
+  scheda lavora per noi (identifica o compila): una ricetta che aspetta le tue scelte nel
+  pannello, e tu che nel frattempo fai da te nel SISS fino all'Anteprima, non è un allarme — la
+  ricetta è tua e quella del pannello finisce lì (fino alla 3.75.1 era un falso «Errore grave»).
 - **Una volta sola**: una ricetta alla volta; la scheda del SISS la riceve una volta (si ricarica
   a metà → si ferma e lo dice, non riparte); i farmaci si scrivono una volta; la stessa richiesta
   due volte è la stessa ricetta. Il codice fiscale e il nome stanno solo in `storage.session` e
