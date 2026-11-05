@@ -1590,6 +1590,56 @@ vuoto) e **Prepara nel SISS**.
   ricetta no («Una ricetta alla volta: farmaci o visite»): che il SISS li tenga insieme non è
   provato. Una visita entra nei preferiti (codice, descrizione, tipo) quando è stata inserita.
 
+### Terapia (fino a Conferma, mai oltre)
+
+**⋯ → Terapia**, sulla pagina del paziente, solo con l'estensione. Scegli i farmaci — i
+**preferiti** (farmaco e dose come li hai confermati nella pagina Terapia del gestionale, i più
+usati in cima; la casella li cerca) o un farmaco nuovo scritto nella casella («＋ … da scegliere
+nella tendina del gestionale») — poi **Prepara nel gestionale**.
+
+- **Come è fatta la pagina** (PsoEpisodioTerapieImposta, MODALITA=PRESCRIZIONE, dal pulsante
+  «Terapia» del paziente, `a[title="Apri Terapia"]`): il modulo `EpisodioTerapia` è una tabella
+  (`TerapiaTable<episodio>`) con le terapie già confermate (`TERAPIA_PROG_n`, `EPISODIO_ID_n`
+  pieni, l'icona «Duplica») e **una** riga nuova vuota in fondo — la sola con la tendina dei
+  farmaci: `#DESCRIZIONE` (`DESCRIZIONE_n`), autocomplete di jQuery UI che da 3 lettere, dopo
+  mezzo secondo, chiede a `Sa4JsonService.do?FUNZIONE=…&ALT_PARAMS=…&term=…` (una XHR della
+  pagina); scegliere una voce scrive `DESCRIZIONE` e, dall'«id» della voce, `CODICE` e
+  `PRINCIPIO_ATTIVO` (nelle registrazioni l'id è vuoto: il farmaco lo dice la scritta). Poi
+  `QUANTITA_n` (testo, 10 caratteri), `UM_n` e `SOMMINISTRAZIONE_VIA_n` (tendine: una dozzina di
+  voci, valore = scritta), `PRESC_DATA_n` (l'ora), `TERAPIA_DILUIZIONE_ID_n` (tendina, 11 voci
+  numerate), `CONTINUA_n` e `AL_BISOGNO_n` (spunte), `FREQUENZA_n` (4 caratteri; vuota, il server
+  mette 24), `DURATA_n` (1 carattere, «1»), `NOTE_n`; nascosti `EPISODIO_ID_n`, `TERAPIA_PROG_n`,
+  `ORIGINE_n`, `CODICE_n`, `PRINCIPIO_ATTIVO_n` (due). **Conferma** (`Update=Conferma`) manda il
+  modulo — `TERAPIA_SERIALIZED` lo compone la pagina al clic, con tutti i campi della tabella — e
+  il server (302) torna sulla stessa pagina con la riga confermata e una riga nuova (n+1):
+  **una terapia per Conferma**. Una riga «aggiungi» la pagina non la mostra (il codice c'è,
+  l'icona no), e la lista «multipla» dei farmaci (`PsoFarmaciLov.do`) è una finestra a parte che
+  non usiamo.
+- **Come**: attraverso la pagina, come una persona. Si apre col **suo** pulsante «Terapia»; si
+  controlla che sia del paziente — l'episodio dell'indirizzo e del modulo, la tabella, il nome in
+  testa — se no **«Errore grave: questa pagina delle terapie è di un altro paziente»**, nel
+  Registro degli errori, e niente si scrive. Poi il farmaco si scrive nella **tendina della
+  pagina** e si sceglie la sua voce con la **stessa scritta**, una sola (due voci uguali: la
+  scegli tu); dose, unità, via, diluizione, spunte, frequenza e durata nei campi della riga, e
+  ogni campo si rilegge. Note e ora mai. Un farmaco nuovo si scrive nella tendina e la voce la
+  scegli tu. La riga nuova già toccata da te non si tocca; se scrivi nella pagina mentre lavora,
+  si ferma.
+- **La regola**: si ferma con la riga scritta e «**Controlla e premi Conferma**» in fondo alla
+  pagina. **Conferma, Chiudi, i campi nascosti e `TERAPIA_SERIALIZED` non li tocca mai.** Dopo
+  la tua Conferma (la pagina torna con la terapia fra le confermate) scrive il farmaco
+  successivo nella riga nuova, e così via; una pagina ricaricata senza Conferma, o una Conferma
+  che non si vede fra le terapie, ferma il giro e lo dice — niente si riscrive. Chiudi lo chiude;
+  ogni altra pagina del gestionale anche.
+- **Mai sopra un ordine**: la tendina è una richiesta nella stessa sessione del server, quindi
+  l'apertura della pagina e ogni ricerca nella tendina aspettano un ordine che lavora in
+  un'altra scheda («Aspetto che finisca l'ordine in corso…»). E non si parte sopra quello che
+  stai scrivendo nella pagina del paziente («Prima finisci nella pagina…»).
+- **I preferiti** si imparano da soli quando premi Conferma nella pagina Terapia (l'invio si
+  legge e basta): la scritta del farmaco, il codice se c'è, quantità, unità, via, diluizione,
+  spunte, frequenza, durata — in `localStorage` del gestionale (`terapia.preferiti.v1`, 60 al
+  massimo), mai il paziente, le note o l'ora. Il giro in corso (episodio, nome, i farmaci) sta
+  solo nella memoria della scheda e se ne va appena finisce.
+
 ---
 
 ## Perché è robusto (regole di sicurezza nel codice)
@@ -2022,7 +2072,7 @@ ps-app/
 ├── src/core.js          ← unica fonte: motore + pannello (zero dipendenze)
 ├── src/catalog.json     ← catalogo esami verificato (SSG: POC/Urgenze/Centrale/RX · OSG: POC/Centrale)
 ├── src/dimissioni.json  ← gli otto fogli di dimissione (testi rivisti, nessun dato di paziente)
-├── test/fixtures/       ← la tabella dello storico ricostruita dalla sua forma (dati inventati)
+├── test/fixtures/       ← la tabella dello storico e la pagina Terapia, ricostruite dalla loro forma (dati inventati)
 ├── extension/           ← estensione MV3 pronta da caricare (content.js è generato)
 ├── extension/pdfjs/     ← pdf.js 3.11.174 di Mozilla (Apache-2.0), preso tale e quale: legge i referti
 ├── extension/ponte-*    ← il Ponte verso l'iPhone: la presa nel service worker, la pagina «iPhone»,
@@ -2061,7 +2111,7 @@ npm run build      # rigenera extension/content.js + bookmarklet (+ ponte-cripto
 npm run esempi     # rigenera esempi-gestionale/ dagli originali e verifica che sia pulito
 npm run dist       # al rilascio: build, fogli di dimissione, dist/ps-assist-latest.zip (con stampa/ e SumatraPDF)
 npm run verifica-build   # al rilascio, dopo dist e il commit: build fresca = build committata? zip e versioni giusti?
-npm test           # 108 scenari e2e + le prove con l'estensione vera (ordine in sottofondo, scheda nascosta, stampa automatica, ponte, registra, aggiorna, tabellone) + storico + il cancello privacy (+ l'aiutante di Windows, con PowerShell 7: PWSH=…)
+npm test           # 108 scenari e2e + le prove con l'estensione vera (ordine in sottofondo, scheda nascosta, stampa automatica, ponte, registra, aggiorna, tabellone, terapia) + storico + il cancello privacy (+ l'aiutante di Windows, con PowerShell 7: PWSH=…)
                    # + l'ordine in una scheda DAVVERO nascosta: Chrome senza Playwright, CDP grezzo (test/ext-nascosta.mjs; serve openssl)
                    # + il Ponte: 120 controlli senza browser (cifratura, ripetitore, Worker) e 166 dal vivo (test/ext-ponte.mjs)
                    # + le aree, su pagine sintetiche: sezioni, PsoPsoImposta, mappa dell'Alta, lista smart (test/aree.mjs)
