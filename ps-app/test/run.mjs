@@ -552,7 +552,8 @@ async function scenarioAutoConfirmSenzaRicevuta(browser) {
 // precedente sta sul carrello di un'ALTRA risorsa, questa pagina non lo mostra
 // nemmeno. Il gestionale vero non lascia arrivare fin lì: in una richiesta
 // che ha già esami in un erogatore il primo esame di un altro risponde
-// «ORA-20965», e il giro si ferma — niente confermato.
+// «ORA-20965». La richiesta si rifà da capo una volta (e qui l'avanzo c'è
+// anche nella nuova: un secondo «ORA-»), e il giro si ferma — niente confermato.
 async function scenarioAutoConfirmAltraRisorsa(browser) {
   const scen = "confirm-blocked-altra-risorsa";
   const mock = createMock({ preloadCart: { code: "30", res: RES.POC } });   // avanzo su POC
@@ -566,15 +567,101 @@ async function scenarioAutoConfirmAltraRisorsa(browser) {
   // «ORA-20965» al primo inserimento, e il giro si ferma lì, con le sue parole.
   await $panel(page, '.opt[title*="PROCALCITONINA"]').click();         // URGENZE
   await $panel(page, "#goconfirm").click();
-  const rossa = await errore(page);
-  const rid = Object.keys(mock.state.richieste)[0];
-  check(scen, mock.state.richieste[rid].confirmed === false && confermePost(mock).length === 0,
+  const rossa = await errore(page, { timeout: 40000 });
+  const rids = Object.keys(mock.state.richieste);
+  const rid = rids[0];
+  check(scen, rids.every((r) => mock.state.richieste[r].confirmed === false) && confermePost(mock).length === 0,
     "un avanzo su un'altra risorsa: niente confermato");
-  check(scen, mock.state.rifiutati.length === 1 && !mock.state.richieste[rid].cart.has("159") && mock.state.insertCount[`${rid}:159`] === 1,
-    `il gestionale rifiuta l'esame del secondo erogatore, mandato una volta (got ${JSON.stringify(mock.state.rifiutati)})`);
+  check(scen, rids.length === 2 && mock.state.rifiutati.length === 2
+    && rids.every((r) => !mock.state.richieste[r].cart.has("159") && mock.state.insertCount[`${r}:159`] === 1),
+    `il gestionale rifiuta l'esame del secondo erogatore, mandato una volta per richiesta: rifatta da capo una volta, poi stop (got ${rids.length} richieste · ${JSON.stringify(mock.state.rifiutati)})`);
   await apriStriscia(page);
   const card = (await $panel(page, ".card").innerText()).replace(/\s+/g, " ");
   check(scen, /ORA-20965/.test(card) && /non rimanda niente/.test(card), `e dice che cosa ha risposto il gestionale (got: ${card.slice(0, 160)} · ${rossa})`);
+  await context.close();
+}
+
+// Il gestionale che a metà ordine perde il carrello della richiesta (le
+// registrazioni vere della 3.71.1 e della 3.73.0, ordini di soli esami POC):
+// un inserimento risponde «ORA-20965 … Progressivo richiesta …-1 già
+// utilizzato», e da lì il carrello si rilegge vuoto. In quella richiesta non si
+// manda più niente e non la si conferma: dopo un attimo (2 s) il giro si rifà
+// da capo, UNA volta, con «Crea» di nuovo e tutti gli esami, e si conferma
+// quella nuova. Due volte di fila: l'errore di sempre. Nessun promemoria, mai.
+async function scenarioCarrelloPerso(browser) {
+  const ESAMI = ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"];   // tre POC: un erogatore, una richiesta
+  for (const [scen, perso] of [["ora-carrello-perso-rifatta", 2], ["ora-carrello-perso-due-volte", [2, 2]]]) {
+    const mock = createMock({ carrelloPerso: perso });
+    const tempi = [];   // quando partono «Crea» e gli inserimenti
+    const { context, page } = await newPage(browser, mock, { ritardo: (u, req) => {
+      if (/Insert=Inserisci/.test(u)) tempi.push({ t: Date.now(), cosa: "insert", rid: new URL(u).searchParams.get("RICHIESTA_ID") });
+      else if (req.method() === "POST" && /ccsForm=RICHIESTACrea/.test(u)) tempi.push({ t: Date.now(), cosa: "crea" });
+      return 0;
+    } });
+    await page.goto(mock.patientUrl);
+    await richieste(page);
+    await $panel(page, "#q").fill("dolore toracico");
+    for (const e of ESAMI) await $panel(page, `.opt[title*="${e}"]`).click();
+    await $panel(page, "#goconfirm").click();
+    const due = Array.isArray(perso);
+    let rossa = "";
+    if (due) rossa = await errore(page, { timeout: 45000 }).catch(() => "");
+    else for (const t0 = Date.now(); Date.now() - t0 < 45000 && !confermePost(mock).length; ) await page.waitForTimeout(200);
+    await page.waitForTimeout(500);
+    const rids = Object.keys(mock.state.richieste);
+    const [r1, r2] = rids;
+    const ins = (r) => mock.state.requests.filter((q) => q.params.Insert === "Inserisci" && q.params.RICHIESTA_ID === r);
+    const crea = mock.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("RICHIESTACrea"));
+    check(scen, rids.length === 2 && crea.length === 2, `due richieste, due «Crea» — mai una terza (got ${rids.length} richieste, ${crea.length} Crea)`);
+    check(scen, !!r1 && mock.state.perse[0] === r1 && mock.state.richieste[r1].confirmed === false && ins(r1).length === 2,
+      `la prima, col carrello perso: mai confermata, e dopo l'«ORA-» niente più mandato lì dentro (got ${r1 && ins(r1).length} inserimenti)`);
+    const tOra = (tempi.filter((x) => x.cosa === "insert" && x.rid === r1)[1] || {}).t;   // il secondo inserimento: l'«ORA-»
+    const tCrea2 = (tempi.filter((x) => x.cosa === "crea")[1] || {}).t;
+    check(scen, !!tOra && !!tCrea2 && tCrea2 - tOra >= 1900, `la nuova nasce dopo un attimo, non subito (got ${tOra && tCrea2 ? tCrea2 - tOra : "?"} ms)`);
+    if (!due) {
+      const r = mock.state.richieste[r2];
+      const codici = [...(r ? r.cart.keys() : [])].sort();
+      check(scen, !!r && r.confirmed === true && confermePost(mock).length === 1 && confermePost(mock)[0].params.RICHIESTA_ID === r2,
+        `confermata la seconda, una volta sola (got ${confermePost(mock).map((q) => q.params.RICHIESTA_ID).join(",") || "nessuna conferma"})`);
+      check(scen, codici.length === 3 && codici.every((c) => mock.state.insertCount[`${r2}:${c}`] === 1),
+        `con tutti e tre gli esami, ognuno mandato una volta (got ${codici.join(",")})`);
+    } else {
+      check(scen, confermePost(mock).length === 0 && rids.every((r) => !mock.state.richieste[r].confirmed),
+        "la seconda perde il carrello anche lei: niente confermato");
+      check(scen, ins(r2).length === 2 && mock.state.perse[1] === r2, `e dopo il secondo «ORA-» niente più mandato (got ${r2 && ins(r2).length} inserimenti)`);
+      await apriStriscia(page);
+      const card = (await $panel(page, ".card").innerText()).replace(/\s+/g, " ");
+      check(scen, /ORA-20965/.test(card) && /già la richiesta rifatta da capo/.test(card) && /non rimanda niente/.test(card),
+        `l'errore di sempre, con le parole del gestionale (got: ${card.slice(0, 200)} · ${rossa})`);
+    }
+    const sorvegliate = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
+    check(scen, !sorvegliate.some((x) => x.rid === r1 || (due && x.rid === r2)),
+      `nessun promemoria «da confermare» per una richiesta lasciata (got ${JSON.stringify(sorvegliate.map((x) => x.rid))})`);
+    const reg = await registroDi(page);
+    check(scen, (reg.match(/ne creo una nuova/g) || []).length === 1 && new RegExp(`richiesta ${r1} non si usa più`).test(reg),
+      `il Registro dice che la richiesta ${r1} è lasciata e se ne crea una nuova, una volta (got: ${(/[^\n]*non si usa più[^\n]*/.exec(reg) || ["niente"])[0].slice(0, 160)})`);
+    await context.close();
+  }
+  // …e se «Nuova richiesta» riaprisse proprio quella lasciata, lì dentro non si rimanda niente
+  const scen = "ora-carrello-perso-stessa-richiesta";
+  const mock = createMock({ carrelloPerso: 2 });
+  const { context, page } = await newPage(browser, mock, { riscrivi: (u, html) => {
+    const prima = Object.keys(mock.state.richieste)[0];
+    return prima && /MVPG=PsoRichiestaCreaRcs/.test(u) ? html.split(String(mock.state.nextRichiestaId - 1)).join(prima) : html;
+  } });
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await $panel(page, "#q").fill("dolore toracico");
+  for (const e of ESAMI) await $panel(page, `.opt[title*="${e}"]`).click();
+  await $panel(page, "#goconfirm").click();
+  const rossa = await errore(page, { su: null, timeout: 45000 }).catch(() => "");   // (si ferma prima di avere un carrello suo)
+  const [r1] = Object.keys(mock.state.richieste);
+  const ins = mock.state.requests.filter((q) => q.params.Insert === "Inserisci");
+  check(scen, Object.keys(mock.state.richieste).length === 1 && ins.length === 2 && ins.every((q) => q.params.RICHIESTA_ID === r1) && !confermePost(mock).length,
+    `la stessa richiesta riaperta: niente rimandato lì dentro, niente confermato (got ${ins.length} inserimenti, ${confermePost(mock).length} conferme)`);
+  await apriStriscia(page);
+  const card = (await $panel(page, ".card").innerText()).replace(/\s+/g, " ");
+  check(scen, /riaperto la richiesta di prima/.test(card), `e lo dice (got: ${card.slice(0, 160)} · ${rossa})`);
   await context.close();
 }
 
@@ -7197,6 +7284,7 @@ const scenarios = [
   ["auto-confirm bloccata su carrello diverso", scenarioAutoConfirmMismatch],
   ["auto-confirm bloccata senza ricevuta", scenarioAutoConfirmSenzaRicevuta],
   ["auto-confirm bloccata da un avanzo su un'altra risorsa", scenarioAutoConfirmAltraRisorsa],
+  ["ORA- all'inserimento, il carrello perso: la richiesta rifatta da capo una volta", scenarioCarrelloPerso],
   ["conferma fallita sul server: niente stampa", scenarioConfirmPostFails],
   ["delayed cart visibility", scenarioLagVerify],
   ["delayed cart visibility, slow server", scenarioLagVerifyLento],

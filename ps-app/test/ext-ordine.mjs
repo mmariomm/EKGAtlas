@@ -368,6 +368,32 @@ if (prova("POC e Urgenze: una richiesta per erogatore, due ordini in fila")) {
   await nessunOrdine();
 }
 
+// Solo POC, e a metà il gestionale perde il carrello (3.73.0: il terzo
+// inserimento risponde «ORA-20965 …», e l'elenco si rilegge vuoto): quella
+// richiesta resta com'è, mai confermata; la scheda dell'ordine la rifà da capo
+// una volta e conferma la nuova — e nessun promemoria per quella lasciata.
+if (prova("solo POC, il carrello perso a metà: la richiesta rifatta da capo, confermata la nuova")) {
+  nuovi({ carrelloPerso: 3 });
+  lento = 0;
+  await suPagina(doc, A.patientUrl);
+  await azzeraStampe(doc);
+  await ordina(doc, ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"]);
+  const fatte = await finche(async () => conferme(A).length > 0 && Object.keys(A.state.richieste).length === 2, 60000);
+  const [r1, r2] = Object.keys(A.state.richieste);
+  const nella = (r) => A.state.requests.filter((q) => q.params.Insert === "Inserisci" && q.params.RICHIESTA_ID === r).length;
+  check(fatte && A.state.perse[0] === r1 && !A.state.richieste[r1].confirmed && nella(r1) === 3,
+    `la prima perde il carrello al terzo esame: mai confermata, niente più mandato lì (got ${r1}: ${nella(r1)} inserimenti${A.state.richieste[r1]?.confirmed ? ", confermata" : ""})`);
+  check(conferme(A).length === 1 && conferme(A)[0].params.RICHIESTA_ID === r2 && A.state.richieste[r2].cart.size === 3
+    && [...A.state.richieste[r2].cart.keys()].every((c) => A.state.insertCount[`${r2}:${c}`] === 1),
+    `rifatta da capo: confermata la nuova, una volta, con tutti e tre, ognuno mandato una volta (got ${r2}: ${[...(A.state.richieste[r2]?.cart.keys() || [])]})`);
+  await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 }).catch(() => {});
+  await chiudiStampa(doc);
+  check((await stampe(doc)).length === 1, `le etichette di quella nuova, una stampa (got ${(await stampe(doc)).length})`);
+  const sorv = await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
+  check(!sorv.some((x) => x.rid === r1), `nessun promemoria «da confermare» per la richiesta lasciata (got ${JSON.stringify(sorv.map((x) => x.rid))})`);
+  await nessunOrdine();
+}
+
 // …e lo stesso dal telefono (ponteOrdina): un ordine per erogatore, «…l» e «…l2»
 if (prova("dal telefono POC e Urgenze: due ordini, una richiesta per erogatore")) {
   nuovi();

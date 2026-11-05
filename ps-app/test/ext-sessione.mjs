@@ -15,8 +15,11 @@
  * l'avviso del database, senza inserire niente.
  *   1. a metà ordine nient'altro chiede pagine al gestionale (la lista smart
  *      aspetta la fine del motore): POC e Urgenze, due ordini, vanno senza ORA;
- *   2. una risposta con «ORA-»: il giro si ferma subito, niente altro mandato,
- *      e il medico legge «Il gestionale ha risposto: ORA-20965 …»;
+ *   2. una risposta con «ORA-»: in quella richiesta niente altro mandato, mai
+ *      confermata; il giro si rifà da capo una volta, con una richiesta nuova
+ *      (3.71.1 e 3.73.0: ordini di soli esami POC), e si conferma quella; la
+ *      seconda volta si ferma subito e il medico legge «Il gestionale ha
+ *      risposto: ORA-20965 …»;
  *   3. una scheda d'ordine che non è arrivata sulla pagina si sostituisce
  *      solo se il piano non l'ha mai avuto: mai due motori per un ordine.
  *   node test/ext-sessione.mjs [nome della prova]
@@ -215,34 +218,73 @@ if (prova("a metà ordine la lista smart aspetta: POC e Urgenze, due ordini, ent
   lento = 0;
 }
 
-// ---- 2. ORA- nella risposta: ci si ferma subito -------------------------
-if (prova("ORA- nella risposta all'inserimento: il giro si ferma subito e lo dice")) {
+// ---- 2. ORA- nella risposta: la richiesta si rifà da capo, una volta ------
+const errori = async () => (await sw.evaluate(() => chrome.storage.local.get("errori.v1")))["errori.v1"] || [];
+const sorvegliate = (p) => p.evaluate(() => JSON.parse(localStorage.getItem("psassist:daConfermare.v1") || "[]"));
+if (prova("ORA- nella risposta all'inserimento: la richiesta persa si rifà da capo, una volta, e si conferma la nuova")) {
   await daCapo();
   lento = 0;
   await suPagina(doc, A.patientUrl);
   await nienteSmart(doc);
   await sw.evaluate(() => chrome.storage.local.remove("errori.v1"));
-  // il secondo inserimento risponde con l'avviso del database
+  // il secondo inserimento risponde con l'avviso del database, una volta
   let n = 0;
   sess.forzaOra = () => ++n === 2;
+  const nasce = nuovaPagina();
+  await ordina(doc, ESAMI);
+  await nasce;
+  await suPagina(doc, B.patientUrl);
+  await finche(() => conferme(A).length > 0 || sess.log.filter((x) => x.cosa === "ORA").length > 1, 60000);
+  const vista = await striscia(doc, /ROSSI MARIO.*(Confermata|Etichette|Stampa|Errore)/, 30000).catch(() => "");
+  const [r1, r2] = Object.keys(A.state.richieste);
+  const crea = sess.log.filter((x) => x.cosa === "crea");
+  const iOra = sess.log.findIndex((x) => x.cosa === "ORA");
+  check(Object.keys(A.state.richieste).length === 2 && crea.length === 2, `una richiesta nuova, con «Crea» di nuovo (got ${Object.keys(A.state.richieste).length} richieste, ${crea.length} Crea)`);
+  check(iOra >= 0 && sess.log[iOra].rid === r1 && !sess.log.slice(iOra + 1).some((x) => x.cosa === "insert" && x.rid === r1),
+    "nella richiesta che ha risposto «ORA-» niente più mandato");
+  check(conferme(A).length === 1 && conferme(A)[0].params.RICHIESTA_ID === r2 && A.state.richieste[r2].confirmed && !A.state.richieste[r1].confirmed,
+    `confermata la nuova, una volta; quella persa mai (got ${conferme(A).map((q) => q.params.RICHIESTA_ID).join(",") || "nessuna conferma"})`);
+  check(inviati(A).filter((q) => q.params.RICHIESTA_ID === r2).length === ESAMI.length && A.state.richieste[r2].cart.size === ESAMI.length,
+    `con tutti gli esami, ognuno una volta (got ${inviati(A).filter((q) => q.params.RICHIESTA_ID === r2).map((q) => q.params.PRESTAZIONE).join(",")})`);
+  check(!/Errore|Non confermata/.test(vista), `la striscia del medico non dice errore (got: ${vista || "niente"})`);
+  check(!(await sorvegliate(doc)).some((x) => x.rid === r1), "nessun promemoria «da confermare» per la richiesta lasciata");
+  const cerca = async () => (await errori()).find((x) => x.tipo === "ordine" && /rifatta da capo, riuscita/.test(x.dati?.motivo || ""));
+  await finche(cerca, 15000);
+  const e = await cerca();
+  const passi = e?.dati?.traccia?.passi || [];
+  check(!!e && passi.some((p) => /ORA-20965/.test(p.avviso || "")) && passi.some((p) => p.m === "rifaccio"),
+    "nel registro degli errori, con la traccia di tutte e due: l'avviso e la richiesta rifatta");
+  await $panel(doc, "#strstop").click().catch(() => {});
+}
+if (prova("ORA- due volte: la richiesta rifatta perde il carrello anche lei, il giro si ferma e lo dice")) {
+  await daCapo();
+  lento = 0;
+  await suPagina(doc, A.patientUrl);
+  await nienteSmart(doc);
+  await sw.evaluate(() => chrome.storage.local.remove("errori.v1"));
+  // il secondo inserimento di ogni richiesta (il 2° e il 4°) risponde con l'avviso del database
+  let n = 0;
+  sess.forzaOra = () => [2, 4].includes(++n);
   const t0 = Date.now();
   const nasce = nuovaPagina();
   await ordina(doc, ESAMI);
   await nasce;
   await suPagina(doc, B.patientUrl);
-  const rossa = await striscia(doc, /ROSSI MARIO.*Errore/, 40000).catch(() => "");
+  const rossa = await striscia(doc, /ROSSI MARIO.*Errore/, 45000).catch(() => "");
   const dt = Date.now() - t0;
   check(/Il gestionale ha risposto: ORA-20965/.test(rossa), `la striscia del medico dice che cosa ha risposto il gestionale (got: ${rossa || "niente"})`);
-  check(dt < 20000, `subito, senza le riletture di mezzo minuto (got ${Math.round(dt / 1000)} s)`);
+  check(dt < 25000, `subito, senza le riletture di mezzo minuto (got ${Math.round(dt / 1000)} s)`);
   const ins = sess.log.filter((x) => x.cosa === "insert");
-  const iOra = sess.log.findIndex((x) => x.cosa === "ORA");
-  check(ins.length === 2 && iOra >= 0 && !sess.log.slice(iOra + 1).some((x) => x.cosa === "insert"), `dopo l'avviso niente altro mandato (got ${ins.length} inserimenti)`);
+  const ore = sess.log.filter((x) => x.cosa === "ORA");
+  const iUltima = sess.log.lastIndexOf(ore[ore.length - 1]);
+  check(ins.length === 4 && ore.length === 2 && sess.log.filter((x) => x.cosa === "crea").length === 2 && !sess.log.slice(iUltima + 1).some((x) => x.cosa === "insert"),
+    `rifatta una volta sola, e dopo il secondo avviso niente altro mandato (got ${ins.length} inserimenti, ${ore.length} avvisi)`);
   check(conferme(A).length === 0, "e niente confermato");
-  const cerca = async () => ((await sw.evaluate(() => chrome.storage.local.get("errori.v1")))["errori.v1"] || [])
-    .find((x) => x.tipo === "ordine" && /Il gestionale ha risposto: ORA-20965/.test(x.dati?.motivo || ""));
+  check(!(await sorvegliate(doc)).length, "nessun promemoria «da confermare»");
+  const cerca = async () => (await errori()).find((x) => x.tipo === "ordine" && /Il gestionale ha risposto: ORA-20965/.test(x.dati?.motivo || ""));
   await finche(cerca, 15000);
   const e = await cerca();
-  check(!!e && (e.dati.traccia?.passi || []).some((p) => /ORA-20965/.test(p.avviso || "")), "nel registro degli errori, con la traccia e l'avviso");
+  check(!!e && (e.dati.traccia?.passi || []).filter((p) => /ORA-20965/.test(p.avviso || "")).length === 2, "nel registro degli errori, con la traccia e i due avvisi");
   check(!/non risulta nel carrello/.test(JSON.stringify(e || {})), "e non «non risulta nel carrello»");
   await $panel(doc, "#strstop").click().catch(() => {});
 }
@@ -433,6 +475,33 @@ if (prova("una stampa dalla scheda del medico mentre un ordine inserisce: la sch
   }, A.patientUrl);
   check(r.durante === r.prima, `mentre il motore inserisce, nessuna scheda del gestionale nuova (got ${r.prima} → ${r.durante})`);
   check(r.ok && r.dopo === r.prima + 1, `finito il motore, la scheda dei PDF si apre (got ${JSON.stringify(r)})`);
+}
+
+// ---- 7b. un referto preso dal service worker mentre un motore inserisce ----
+// (il ripiego di un tocco su un referto, quando la scheda non l'ha preso: è
+// una pagina del gestionale con la sessione del medico, come le altre)
+if (prova("un referto preso dal service worker mentre un ordine inserisce: aspetta la fine del motore")) {
+  await daCapo();
+  const REF = `${ORIGIN}/sa4/restrict2/refertostream?REFERTO_ID=swattesa1`;
+  const chiesto = () => A.state.requests.some((q) => /refertostream/.test(q.url) && /swattesa1/.test(q.url));
+  await sw.evaluate(() => chrome.storage.session.set({ ordini: [{ id: "gira2", ep: "999002", paziente: "BIANCHI ANNA", n: 1, url: null, opener: null, worker: null,
+    stato: "corre", ts: Date.now(), agg: Date.now(), vista: null, resto: { mancano: [], controllare: [], nel: [] } }] }));
+  const est = await ctx.newPage();
+  await est.goto(`chrome-extension://${new URL(sw.url()).host}/portale.html`);
+  const risposta = est.evaluate((u) => new Promise((res) => chrome.runtime.sendMessage({ t: "cacheRef", id: "swattesa1", url: u, ep: "999001" }, res)), REF);
+  await sospendi(3000);
+  const durante = chiesto();
+  // il motore finisce: il referto si può prendere
+  await sw.evaluate(() => chrome.storage.session.get("ordini").then((o) => {
+    const l = o.ordini || [];
+    for (const x of l) if (x.id === "gira2") { x.stato = "avviso"; x.agg = Date.now(); }
+    return chrome.storage.session.set({ ordini: l });
+  }));
+  const r = await Promise.race([risposta, sospendi(10000).then(() => null)]);
+  check(!durante, "mentre il motore inserisce, il service worker non chiede il referto al gestionale");
+  check(!!(r && r.ok) && chiesto(), `finito il motore, lo prende e lo tiene (got ${JSON.stringify(r)})`);
+  await sw.evaluate(() => Promise.all([chrome.storage.session.set({ ordini: [] }), chrome.storage.local.remove("ref:swattesa1")]));
+  await est.close().catch(() => {});
 }
 
 // ---- 8. gli ordini finiti non restano in memoria --------------------------

@@ -79,6 +79,8 @@
   // anche dopo 5–10 secondi. Rileggere costa una lettura; non c'è mai un secondo invio.
   const VERIFY_WAITS = [1200, 2000, 3000, 5000, 8000];
   const VERIFY_RECHECKS = VERIFY_WAITS.length;
+  // Un «ORA-» all'inserimento in una richiesta nata nel giro: un attimo, poi una richiesta nuova
+  const RIFAI_MS = 2000;
   // Lo stesso, prima di arrendersi alla conferma: un carrello che arriva senza
   // una riga che deve avere si rilegge (mai un secondo clic), e la pagina del
   // paziente che non elenca ancora la richiesta confermata si rilegge prima
@@ -394,7 +396,7 @@
   const riassuntoTraccia = () => {
     const T = TRACCIA;
     return T ? { ordine: T.ordine, esami: T.esami, scheda: T.scheda, visibile: T.visibile, nascostaDopo: T.nascosta || false,
-      durata: Date.now() - T.t0, riprova: T.riprova, passi: T.passi } : null;
+      durata: Date.now() - T.t0, riprova: T.riprova, ...(T.ricreata ? { ricreata: true } : {}), passi: T.passi } : null;
   };
   async function fetchDoc(url, opts = {}) {
     const t0 = Date.now();
@@ -4516,12 +4518,15 @@
     // quale quesito è partito (una ripresa lo porta con sé dall'appunto)
     if (plan.qinfo) state.quesito = plan.qinfo;
     // la traccia di questo giro (vedi TRACCIA): attiva finché il motore lavora
-    TRACCIA = { t0: Date.now(), attiva: true, passi: [], ordine: (LAVORO && LAVORO.id) || "", riprova: !!plan.riprova,
+    // (la richiesta rifatta da capo dopo un «ORA-»: la traccia continua, coi passi di quella persa)
+    const T0 = plan.ricreata && TRACCIA ? TRACCIA : null;
+    TRACCIA = { t0: T0 ? T0.t0 : Date.now(), attiva: true, passi: T0 ? T0.passi : [], ordine: (LAVORO && LAVORO.id) || "", riprova: !!plan.riprova,
       esami: (plan.items || []).map((i) => ({ codice: String(i.code), risorsa: String(i.res) })),
-      scheda: LAVORO ? "ordine in sottofondo" : "scheda del medico", visibile: !document.hidden };
+      scheda: LAVORO ? "ordine in sottofondo" : "scheda del medico", visibile: !document.hidden, ...(plan.ricreata ? { ricreata: true } : {}) };
     const nascosta = () => { if (document.hidden && TRACCIA) TRACCIA.nascosta = true; };
     document.addEventListener("visibilitychange", nascosta);
     ui.beginRun(state, plan);
+    const ereditati = state.steps.length;   // i passi di una richiesta prima di questa (una catena), già sullo schermo
     const log = (msg) => ui.log(`${now()}  ${msg}`);
     // Any fetched page that is a login page means the session died mid-flow.
     const guardSession = (doc, whatMayHaveHappened) => {
@@ -4542,6 +4547,8 @@
     const pace = () => sleep(PACE_MS, signal);
 
     plan.items = applyExclusions(plan.items, log);
+    // gli esami come arrivano, prima che il giro li tocchi: una richiesta rifatta da capo riparte da questi
+    const partenza = plan.items.map((i) => ({ ...i }));
     // La selezione del medico com'era, prima che il motore traduca codici e
     // risorse per la sede (o che un esame a riflesso entri con un altro
     // numero): è quella che «Svuota il carrello e ricomincia» rimette.
@@ -4807,6 +4814,10 @@
       // altro: un elenco di un'altra richiesta non si tocca.
       if (plan.richiestaId && String(model.richiestaId) !== String(plan.richiestaId)) {
         throw new StopError("Non è il carrello della richiesta di prima", "Nessun esame inviato.");
+      }
+      // (la richiesta rifatta da capo è un'altra, sempre: in quella lasciata non si rimanda niente)
+      if (plan.persa && String(model.richiestaId) === String(plan.persa)) {
+        throw new StopError("Il gestionale ha riaperto la richiesta di prima", "Lì dentro non rimando niente: apri il carrello e controlla.");
       }
       state.richiestaId = model.richiestaId;
       segnaNostra(model.richiestaId);   // da qui la sua Conferma nativa arma la stampa
@@ -5140,14 +5151,21 @@
         assertSameEpisode(doc, plan.episodeId, "conferma inserimento");
         // Un errore del database nella risposta («ORA-20965: … Progressivo
         // richiesta già utilizzato»): il gestionale ha rifiutato l'inserimento,
-        // e la sua sessione non è più quella del giro. Si ferma qui — niente
-        // riletture, niente altro mandato — e si dice al medico che cosa ha
-        // risposto, non «non risulta nel carrello» trenta secondi dopo.
+        // e la sua sessione non è più quella del giro. In QUESTA richiesta non
+        // si manda più niente — niente riletture, niente altri invii — e si
+        // dice al medico che cosa ha risposto, non «non risulta nel carrello»
+        // trenta secondi dopo. Una richiesta nata in questo giro, dalla pagina
+        // del paziente, si rifà da capo una volta (sotto, nel catch): la 3.71.1
+        // e la 3.73.0 l'hanno visto su ordini di soli esami POC, a metà, col
+        // carrello riletto vuoto.
         const allarme = avvisoGestionale(doc);
         if (/\bORA-\d{3,5}\b/.test(allarme)) {
           log(`⚠ il gestionale ha risposto all'inserimento di «${nm}»: ${allarme}`);
-          throw new StopError(`Il gestionale ha risposto: ${allarme}`,
-            `«${nm}» non è entrato. Il giro si ferma qui e non rimanda niente: apri il carrello e controlla.`);
+          const e = new StopError(`Il gestionale ha risposto: ${allarme}`, plan.ricreata
+            ? `«${nm}» non è entrato, ed era già la richiesta rifatta da capo. Il giro si ferma qui e non rimanda niente: apri il carrello e controlla.`
+            : `«${nm}» non è entrato. Il giro si ferma qui e non rimanda niente: apri il carrello e controlla.`);
+          if (plan.startPage === "patient" && plan.entryUrl && !plan.ricreata && state.richiestaId) e.ricrea = String(state.richiestaId);
+          throw e;
         }
         // Una pagina inattesa QUI non dice che l'esame non sia entrato:
         // l'inserimento è già partito. Invece di fermarsi al buio si rilegge
@@ -5260,6 +5278,30 @@
       ui.finished(state, plan);
       return state;
     } catch (err) {
+      // «ORA-» all'inserimento in una richiesta nata in questo giro: quella
+      // richiesta è persa — il gestionale ne ha perso il carrello, e non torna.
+      // Resta com'è: mai un altro invio lì dentro, mai confermata, nessun
+      // promemoria (non è un ordine: «se non parte l'ordine nel carrello,
+      // ignoralo»). Dopo un attimo il giro si rifà da capo UNA volta, con una
+      // richiesta nuova — «Crea» di nuovo — e tutti gli esami di partenza; un
+      // secondo «ORA-» è l'errore di sempre. Lo dicono il Registro e la traccia.
+      if (err && err.ricrea && !signal.aborted) {
+        tabStore.set(CORSA, null);
+        store.set(APERTA, null);
+        liberaPresidio(token);
+        window.removeEventListener("pagehide", mollaPresidio);
+        confermataProvata(err.ricrea);   // (non ce n'è, ma per lei un promemoria non deve esserci mai)
+        log(`⚠ la richiesta ${err.ricrea} non si usa più (non la confermo e non ci rimando niente): fra ${RIFAI_MS / 1000} s ne creo una nuova, con ${partenza.length === 1 ? "l'esame" : `tutti i ${partenza.length} esami`}`);
+        if (TRACCIA && TRACCIA.passi.length < 120) TRACCIA.passi.push({ t: Date.now() - TRACCIA.t0, ms: 0, m: "rifaccio", pagina: "RICHIESTACrea", esito: `richiesta ${err.ricrea} lasciata: una nuova da capo` });
+        let fermato = false;
+        try { await sleep(RIFAI_MS, signal); } catch { fermato = true; }
+        if (!fermato && !signal.aborted) {
+          // (in una catena, sullo schermo restano i passi delle richieste di prima, non quelli di questa)
+          if (plan.continuation) ui.runData = { ...state, steps: state.steps.slice(0, ereditati) };
+          return runPlanVero({ ...plan, items: partenza.map((i) => ({ ...i })), ricreata: true, persa: err.ricrea }, ui);
+        }
+        // ⏹ nell'attesa: si dice come sempre, qui sotto
+      }
       // Una decisione — STOP del medico, o un controllo che ha detto no — mette
       // fine al giro: da lì in poi decide lui, con quello che il pannello gli
       // ha appena detto. Un errore non deciso (la rete, o la pagina che muore
@@ -7411,6 +7453,8 @@
       // (la conferma, se c'è, la riaccende; un «Riprova i mancanti» riuscito si annota)
       if (TRACCIA) TRACCIA.attiva = false;
       if (plan && plan.riprova) segnaErrore("ordine", { episodio: plan.episodeId || this.episodeId || "", richiesta: state.richiestaId || "", motivo: "Riprova i mancanti: riuscita", traccia: riassuntoTraccia() });
+      // (la richiesta rifatta da capo dopo un «ORA-»: nel registro degli errori, con la traccia di tutte e due)
+      if (plan && plan.ricreata) segnaErrore("ordine", { episodio: plan.episodeId || this.episodeId || "", richiesta: state.richiestaId || "", motivo: "ORA- all'inserimento: richiesta rifatta da capo, riuscita", traccia: riassuntoTraccia() });
       // quello che è entrato in carrello, per lo stato degli esami (riga dei Pazienti, Dimissioni)
       segnaOrdineNostro((plan && plan.episodeId) || this.episodeId, state.richiestaId, state.added);
       if (plan.hold) { this.runData = state; this.render(); return; } // the chain finishes for us

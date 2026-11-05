@@ -21,6 +21,15 @@
  *  (c) Il foglio della radiologia si chiama «Stampa Richiesta Radiologia»
  *      sulla pagina del paziente vera (il simulatore: «Stampa Prenotazione Esterna»).
  *
+ *  (d) opts.carrelloPerso: n (o [n1, n2, …]) — quello che le registrazioni vere
+ *      della 3.71.1 e della 3.73.0 hanno mostrato su ordini di soli esami POC:
+ *      a metà ordine la sessione perde il carrello della richiesta. L'n-esimo
+ *      inserimento di una richiesta risponde con l'elenco e «ORA-20965 …
+ *      Progressivo richiesta<rid>-1 già utilizzato», niente entra, e da lì il
+ *      carrello di quella richiesta si rilegge vuoto; ogni altro inserimento
+ *      lì dentro risponde lo stesso. Un numero per ogni volta che succede, a
+ *      una richiesta dopo l'altra (n: una volta sola; [2, 2]: due richieste).
+ *
  * opts.prenotazioneEsterna: il foglio RX resta «Stampa Prenotazione Esterna».
  * opts.filtroStaccato: il modulo RisorsaFiltro com'è nella pagina salvata
  * (`esempi-gestionale/esami-centrale.html`): vuoto, coi controlli fuori — lì
@@ -40,6 +49,10 @@ export function createMock(opts = {}) {
   // identificativi come li vede il cliente, anche quelli di un'altra sede)
   const corrente = (st.erogatore = {});
   st.rifiutati = [];   // gli inserimenti respinti con l'ORA: {rid, code, res}
+  // (d) le volte che la sessione perderà il carrello, e le richieste che l'hanno perso
+  const perdite = [].concat(opts.carrelloPerso ?? []).map(Number).filter((n) => n > 0);
+  st.perse = [];
+  const inseriti = {};   // RICHIESTA_ID → quanti inserimenti ha ricevuto
   // l'elenco semplice di quella richiesta, su quella risorsa
   const elenco = (url, res) => {
     const l = new URL(url);
@@ -58,6 +71,17 @@ export function createMock(opts = {}) {
   // (le righe «in ritardo» si consumano solo con gli elenchi veri)
   const senzaLag = (fn) => { const lag = { ...st.lagLeft }; try { return fn(); } finally { Object.assign(st.lagLeft, lag); } };
   const scaduta = () => st.requests.length > st.expireAfter;
+  // la risposta del database a un inserimento: l'elenco, con l'errore, e niente aggiunto
+  const rifiuta = (req, p, rid, code, res) => {
+    st.requests.push({ method: req.method, url: req.url, params: Object.fromEntries(p.entries()) });
+    st.insertCount[`${rid}:${code}`] = (st.insertCount[`${rid}:${code}`] || 0) + 1;
+    st.rifiutati.push({ rid, code, res });
+    const lista = senzaLag(() => base({ method: "GET", url: elenco(req.url, res) }));
+    st.requests.pop();   // (non è una richiesta del cliente)
+    const html = Buffer.from(lista.body).toString("latin1").replace(/<body>/i,
+      `<body><table><tr><td class="AFCErrorDataTD">${ORA_PROGRESSIVO(rid)}</td></tr></table>`);
+    return { ...lista, body: Buffer.from(html, "latin1") };
+  };
 
   mock.handle = (req) => {
     let u;
@@ -92,16 +116,15 @@ export function createMock(opts = {}) {
       const r = st.richieste[rid];
       const mia = canonica(rid, risorse, res);
       const altrove = !!r && [...r.cart.values()].some((x) => x !== mia);
-      if (r && ((rid in corrente && corrente[rid] !== res) || altrove)) {
-        st.requests.push({ method: req.method, url: req.url, params: Object.fromEntries(p.entries()) });
-        st.insertCount[`${rid}:${code}`] = (st.insertCount[`${rid}:${code}`] || 0) + 1;
-        st.rifiutati.push({ rid, code, res });
-        // la pagina dell'elenco, con l'errore del database, e niente aggiunto
-        const lista = senzaLag(() => base({ method: "GET", url: elenco(req.url, res) }));
-        st.requests.pop();   // (non è una richiesta del cliente)
-        const html = Buffer.from(lista.body).toString("latin1").replace(/<body>/i,
-          `<body><table><tr><td class="AFCErrorDataTD">${ORA_PROGRESSIVO(rid)}</td></tr></table>`);
-        return { ...lista, body: Buffer.from(html, "latin1") };
+      if (r && ((rid in corrente && corrente[rid] !== res) || altrove)) return rifiuta(req, p, rid, code, res);
+      // (d) il carrello perso: l'n-esimo inserimento, e tutti quelli dopo nella stessa richiesta
+      if (r && st.perse.includes(rid)) return rifiuta(req, p, rid, code, res);
+      if (r) inseriti[rid] = (inseriti[rid] || 0) + 1;
+      if (r && perdite.length && inseriti[rid] === perdite[0]) {
+        perdite.shift();
+        st.perse.push(rid);
+        r.cart.clear();   // da qui l'elenco di quella richiesta si rilegge vuoto
+        return rifiuta(req, p, rid, code, res);
       }
       return base(req);
     }
