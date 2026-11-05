@@ -14308,13 +14308,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     };
     window.addEventListener("keydown", tasto, true);
     root.getElementById("vchiudi").addEventListener("click", chiudi);
-    // «Stampa»: un tocco, una stampa (la stampa automatica sull'A4, se no il dialogo)
+    // «Stampa»: un tocco, una stampa (la stampa automatica sull'A4, se no il
+    // dialogo, che ha la sua cornice), e il referto si chiude: com'è andata lo
+    // dice la striscia. Se la stampa non parte, il visore resta.
     root.getElementById("vstampa")?.addEventListener("click", async (ev) => {
       const b = ev.currentTarget;
       b.disabled = true;
       const come = await Promise.resolve(stampa()).catch(() => "");
-      b.textContent = come === "auto" ? "✓ In stampa" : "Stampa";
-      if (come !== "auto") b.disabled = false;
+      if (come === "auto" || come === "dialogo") return chiudi();
+      b.disabled = false;
     });
     root.querySelector(".vfondo").addEventListener("click", (ev) => { if (ev.target === ev.currentTarget) chiudi(); });
     root.getElementById("vchiudi").focus();

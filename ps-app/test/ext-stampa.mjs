@@ -1061,12 +1061,11 @@ if (await prova("un referto salvato: «Stampa» nel visore va sull'A4, una volta
   const l = lavori();
   check(l.length === 1 && l[0].tipo === "a4" && l[0].stampante === "HP LaserJet A4" && l[0].byte > 500,
     `«Stampa» nel visore: il PDF salvato all'A4, senza dialogo (got ${JSON.stringify(l.map((x) => `${x.tipo}→${x.stampante} ${x.byte}`))})`);
-  const tasto = (await visore.locator("#vstampa").innerText().catch(() => "")).trim();
-  await visore.locator("#vstampa").click({ timeout: 1000 }).catch(() => {});
+  const chiuso = await doc.waitForSelector("#psassist-visore", { state: "detached", timeout: 5000 }).then(() => true).catch(() => false);
   await sospendi(2500);
-  check(lavori().length === 1 && tasto === "✓ In stampa" && (await stampe(doc)).length === 0,
-    `un foglio solo, nessuna anteprima; il bottone dice «✓ In stampa» (got ${lavori().length} · «${tasto}»)`);
-  await visore.locator("#vchiudi").click().catch(() => {});
+  check(lavori().length === 1 && chiuso && (await stampe(doc)).length === 0,
+    `un foglio solo, nessuna anteprima; e il referto si chiude (got ${lavori().length} · ${chiuso ? "chiuso" : "ancora aperto"})`);
+  await visore.locator("#vchiudi").click({ timeout: 1000 }).catch(() => {});
 }
 
 // ---- il pacchetto «Dolore toracico» con l'RX: due ordini in sottofondo ------

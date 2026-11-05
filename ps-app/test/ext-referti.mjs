@@ -359,10 +359,11 @@ check(mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect")).
   const prima = mock.state.requests.length;
   await visore.locator("#vstampa").click({ timeout: 3000 }).catch(() => {});
   const cornice = await page.waitForSelector("#psassist-stampa-referto", { state: "attached", timeout: 5000 }).then(() => true).catch(() => false);
-  check((await visore.locator("#vstampa").count()) === 1 && cornice && mock.state.requests.length === prima,
-    "«Stampa» nel visore: senza stampa automatica il dialogo del browser, dalla copia (nessuna richiesta)");
+  const chiuso = await page.waitForSelector("#psassist-visore", { state: "detached", timeout: 5000 }).then(() => true).catch(() => false);
+  check(cornice && chiuso && mock.state.requests.length === prima,
+    "«Stampa» nel visore: senza stampa automatica il dialogo del browser, dalla copia (nessuna richiesta), e il referto si chiude");
 }
-await visore.locator("#vchiudi").click({ timeout: 3000 }).catch(() => {});
+await visore.locator("#vchiudi").click({ timeout: 1000 }).catch(() => {});
 await page.waitForTimeout(300);
 // (il laboratorio, raccolto sotto «Laboratorio», c'è quando lo storico non è arrivato: qui il portale non lo dà)
 check(await visore.count() === 0 && await page.locator('#psassist-host [data-esito][data-kind="referto"]').count() - await page.locator('#psassist-host #reflab [data-esito]').count() === 4,
