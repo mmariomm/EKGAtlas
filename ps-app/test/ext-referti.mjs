@@ -364,6 +364,9 @@ check(mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect")).
     "«Stampa» nel visore: senza stampa automatica il dialogo del browser, dalla copia (nessuna richiesta), e il referto si chiude");
 }
 await visore.locator("#vchiudi").click({ timeout: 1000 }).catch(() => {});
+// (il dialogo di stampa del browser tiene occupata la pagina qualche secondo —
+// davanti al medico è un dialogo che si chiude a mano: la prova dopo aspetta)
+await page.waitForTimeout(4000);
 await page.waitForTimeout(300);
 // (il laboratorio, raccolto sotto «Laboratorio», c'è quando lo storico non è arrivato: qui il portale non lo dà)
 check(await visore.count() === 0 && await page.locator('#psassist-host [data-esito][data-kind="referto"]').count() - await page.locator('#psassist-host #reflab [data-esito]').count() === 4,
