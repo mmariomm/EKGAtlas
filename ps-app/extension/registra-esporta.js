@@ -9,6 +9,61 @@
  */
 (async () => {
   const $ = (id) => document.getElementById(id);
+  // «Invia per l'analisi»: lo zip va nel repository GitHub PRIVATO del medico
+  // (un file in registrazioni/), con un token che può scrivere solo lì,
+  // salvato su questo PC (storage.local «registra.invio»). Solo a un tocco,
+  // mai da solo. Il token non va mai in un registro né in un messaggio.
+  const INVIO = "registra.invio";
+  const REPO_RE = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/;
+  const b64 = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+  function invio(zip, nome, avviso) {
+    const imp = $("invioimp"), bott = $("invia"), detto = $("inviato");
+    const dillo = (t, tono = "") => { detto.hidden = false; detto.textContent = t; detto.className = "msg " + tono; };
+    const leggi = async () => ((await chrome.storage.local.get(INVIO))[INVIO]) || {};
+    const mostra = async () => {
+      const c = await leggi();
+      $("invrepo").value = c.repo || "mmariomm/psassist-registrazioni";
+      $("invtoken").value = "";
+      $("invtoken").placeholder = c.token ? "(salvato — incollane uno nuovo per cambiarlo)" : "github_pat_…";
+      bott.hidden = !c.token || !c.repo;
+      imp.hidden = false;
+      if (!c.token) imp.open = true;
+    };
+    $("invsalva").addEventListener("click", async () => {
+      const repo = $("invrepo").value.trim(), token = $("invtoken").value.trim(), c = await leggi();
+      if (!REPO_RE.test(repo)) return dillo("Il repository si scrive utente/nome, per esempio mmariomm/psassist-registrazioni.", "ko");
+      if (!token && !c.token) return dillo("Incolla il token.", "ko");
+      await chrome.storage.local.set({ [INVIO]: { repo, token: token || c.token } });
+      imp.open = false;
+      dillo("Salvato. Ora «Invia per l'analisi».", "ok");
+      mostra();
+    });
+    $("invtogli").addEventListener("click", async () => { await chrome.storage.local.remove(INVIO); dillo("Token tolto da questo PC."); mostra(); });
+    bott.addEventListener("click", async () => {
+      const c = await leggi();
+      if (!c.token || !REPO_RE.test(c.repo || "")) return mostra();
+      bott.disabled = true;
+      dillo(`Invio ${nome}…`);
+      try {
+        const r = await fetch(`https://api.github.com/repos/${c.repo}/contents/registrazioni/${encodeURIComponent(nome)}`, {
+          method: "PUT", cache: "no-store",
+          headers: { Authorization: `Bearer ${c.token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json" },
+          body: JSON.stringify({ message: `Registrazione ${nome}${avviso ? ` (${avviso})` : ""}`, content: b64(zip) }),
+        });
+        if (r.status === 201 || r.status === 200) { dillo(`Inviato: ${nome} è in ${c.repo}, cartella registrazioni.`, "ok"); return; }
+        const perche = r.status === 401 ? "il token non vale più (scaduto o tolto): rifallo e salvalo"
+          : r.status === 403 || r.status === 404 ? `il token non può scrivere in ${c.repo} (repository giusto? permesso Contents: Read and write?)`
+          : r.status === 422 ? "c'è già un file con questo nome nel repository"
+          : `GitHub ha risposto ${r.status}`;
+        dillo(`Non inviato: ${perche}. Lo zip scaricato resta, puoi mandarlo a mano.`, "ko");
+        bott.disabled = false;
+      } catch (e) {
+        dillo(`Non inviato: la rete non arriva a GitHub (${String(e && e.message || e).slice(0, 60)}). Lo zip scaricato resta, puoi mandarlo a mano.`, "ko");
+        bott.disabled = false;
+      }
+    });
+    mostra();
+  }
   const dici = (testo, tono = "") => { const s = $("stato"); s.textContent = testo; s.className = "msg " + tono; };
   // il grezzo sta in IndexedDB (vedi registra.js), lo stato in storage.local
   const db = () => new Promise((ok, no) => {
@@ -92,6 +147,7 @@
     scarica();
     $("ancora").hidden = false;
     $("ancora").addEventListener("click", scarica);
+    invio(zip, nome, r.gate.ok ? "" : `restano ${r.gate.punti} dati da controllare`);
     const fatto = `Scaricato: ${nome} (${Math.max(1, Math.round(zip.length / 1024))} KB) — ${r.riepilogo.pagine} pagine, ${r.riepilogo.richieste} richieste, ${r.riepilogo.pdf} PDF. `
       + "È nella cartella Download: è quello da mandare. Quando l'hai mandato, cancella la registrazione da questo PC.";
     if (r.gate.ok) dici(fatto, "ok");

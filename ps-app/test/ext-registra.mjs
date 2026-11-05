@@ -198,6 +198,35 @@ if (download && process.env.REG_ZIP) await download.saveAs(process.env.REG_ZIP);
 const esitoPagina = await pagina.evaluate(() => window.__registra || null).catch(() => null);
 const testoPagina = await pagina.locator("#stato").innerText().catch(() => "");
 check(esitoPagina && esitoPagina.ok && /Scaricato/.test(testoPagina), `la pagina dice com'è andata (${testoPagina.slice(0, 120)}${esitoPagina && esitoPagina.dove ? " " + JSON.stringify(esitoPagina.dove).slice(0, 600) : ""})`);
+// «Invia per l'analisi»: senza token il bottone non c'è e l'impostazione è aperta;
+// col token, un tocco manda lo zip nel repository privato (qui GitHub finto)
+const arrivati = [];
+await ctx.route("https://api.github.com/**", async (r) => {
+  const q = r.request();
+  if (q.method() === "OPTIONS") return r.fulfill({ status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "PUT",
+    "access-control-allow-headers": "authorization, accept, x-github-api-version, content-type" }, body: "" });
+  arrivati.push({ metodo: q.method(), url: q.url(), auth: q.headers()["authorization"] || "", corpo: q.postData() || "" });
+  await r.fulfill({ status: 201, headers: { "content-type": "application/json", "access-control-allow-origin": "*" }, body: "{}" });
+});
+check(await pagina.locator("#invia").isHidden() && await pagina.locator("#invioimp").evaluate((d) => d.open && !d.hidden),
+  "senza token: niente «Invia per l'analisi», l'impostazione dell'invio aperta");
+await pagina.fill("#invtoken", "github_pat_prova123");
+await pagina.click("#invsalva");
+await pagina.waitForSelector("#invia:not([hidden])", { timeout: 5000 });
+await pagina.click("#invia");
+await finche(() => arrivati.length > 0, 10000);
+await pagina.waitForFunction(() => /Inviato/.test(document.getElementById("inviato").textContent), null, { timeout: 10000 }).catch(() => {});
+const a0 = arrivati[0] || {};
+let corpo0 = {};
+try { corpo0 = JSON.parse(a0.corpo); } catch { /* niente */ }
+const zipInviato = corpo0.content ? Buffer.from(corpo0.content, "base64") : Buffer.alloc(0);
+check(arrivati.length === 1 && a0.metodo === "PUT" && a0.url === `https://api.github.com/repos/mmariomm/psassist-registrazioni/contents/registrazioni/${nomeZip}`
+  && a0.auth === "Bearer github_pat_prova123" && download && zipInviato.equals(readFileSync(zip)),
+  `un tocco: lo zip (lo stesso scaricato) va nel repository privato, cartella registrazioni (${arrivati.length} · ${a0.metodo} ${a0.url} · ${zipInviato.length} byte)`);
+check(/Inviato/.test(await pagina.locator("#inviato").innerText()), "e la pagina dice «Inviato»");
+const salvato = await sw.evaluate(() => chrome.storage.local.get("registra.invio").then((o) => o["registra.invio"] || null));
+check(!!salvato && salvato.repo === "mmariomm/psassist-registrazioni" && !(await pagina.locator("#invtoken").inputValue()), "il token resta su questo PC, mai rimostrato nel campo");
+await ctx.unroute("https://api.github.com/**");
 const dopo = await stato();
 check(dopo && dopo.stato === "fermo" && dopo.esportata, "la registrazione è ferma e segnata come scaricata");
 await doc.bringToFront();

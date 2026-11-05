@@ -1450,6 +1450,13 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
 - **⋯ → Registra** fa partire; la pill e l'intestazione mostrano **● REC**. Lavori come sempre.
   **⋯ → Ferma e scarica** ferma e scarica `psassist-registrazione-AAAAMMGG-HHMM.zip` (dopo
   **60 minuti** si ferma da sola: il menu allora dice **Scarica la registrazione**).
+- **Invia per l'analisi** (nella pagina della registrazione, dopo lo scarico): lo stesso zip va nel
+  tuo repository GitHub **privato** (di base `mmariomm/psassist-registrazioni`, cartella
+  `registrazioni/`), con un token *fine-grained* che può solo scrivere lì (Repository access: solo
+  quel repository; Permissions → Contents: Read and write). Repository e token si impostano una
+  volta in **Imposta l'invio** e restano su questo PC (`storage.local` «registra.invio»); il token
+  non si rimostra e non va in nessun registro. Solo a un tocco, mai da solo. **Mai** un repository
+  pubblico: lo zip è anonimizzato, ma il controllo a volte lascia dati da guardare.
 - **Dove il pannello non c'è** (il SISS, il portale, le finestre del referto) mentre registri
   compare la pill **● Registrando…**: è la stessa pill del pannello ridotto, nello stesso posto in
   alto a destra (solo nella finestra principale, mai nei riquadri). Un clic → **Ferma e scarica**,
