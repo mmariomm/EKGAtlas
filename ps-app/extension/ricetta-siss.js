@@ -114,7 +114,7 @@
 
   // ------------------------------------------------------------ la ricetta
   let lavoro = null, fermata = false, cercate = 0, compilando = false;
-  const passo = (t) => ask({ t: "ricettaPasso", id: lavoro.id, testo: t });
+  const passo = (t, extra = {}) => ask({ t: "ricettaPasso", id: lavoro.id, testo: t, ...extra });
   const fine = (esito, testo, extra = {}) => ask({ t: "ricettaFine", id: lavoro.id, esito, testo, ...extra });
 
   async function aIdentifica() {
@@ -297,9 +297,26 @@
     if (codici !== voci.map((v) => v.codice).sort().join(",")) throw new Fermo("Fermato prima dell'Anteprima: nella ricetta del SISS ci sono farmaci diversi da quelli scelti");
     const ant = await finche(() => $$("app-sticky-bottom-toolbar button").find((b) => testo(b) === "Anteprima" && !b.disabled), 8000);
     if (!ant) throw new Fermo("Fermato su «Anteprima»: il SISS non la lascia premere (manca qualcosa?)");
-    await passo("Anteprima…");
+    // Il SISS vero, all'Anteprima, chiama da sé partition, prepare-register-request
+    // e register-prescriptions-by-client-response (con la carta), e mostra la
+    // ricetta in BOZZA: lo si dice al service worker PRIMA del clic, così la
+    // seconda guardia non le scambia per un Registra. Che non abbia registrato
+    // davvero lo dice la pagina dopo: «STATO: BOZZA», mai «REGISTRATA» né un NRE.
+    const detto = await passo("Anteprima…", { anteprima: true });
+    if (!detto || !detto.ok) throw new Fermo("Fermato prima dell'Anteprima: l'estensione non risponde — premi tu Anteprima");
     clicca(ant);
-    const fatto = await finche(() => (dialogo() ? "dialogo" : vista() === "anteprima" && $("app-prescription-previews") && /STATO:\s*BOZZA/.test(testo($("app-prescription-previews"))) ? "si" : null), 30000);
+    const statoAnt = () => { const pv = $("app-prescription-previews"); return pv ? testo(pv) : ""; };
+    const registrata = (t) => /STATO:\s*REGISTRAT|\bNRE:\s*\S/i.test(t);
+    const fatto = await finche(() => {
+      if (dialogo()) return "dialogo";
+      if (vista() !== "anteprima") return null;
+      const t = statoAnt();
+      return registrata(t) ? "registrata" : /STATO:\s*BOZZA/.test(t) ? "si" : null;
+    }, 30000);
+    if (fatto === "registrata") {
+      const e = new Fermo("Attenzione: all'Anteprima il SISS ha registrato la ricetta (STATO: REGISTRATA). Controlla subito nel SISS.");
+      e.grave = true; e.passo = "anteprima"; throw e;
+    }
     if (fatto !== "si") {
       const d = dialogo();
       if (d && /stampa|nre|registrat/i.test(testo(d))) {

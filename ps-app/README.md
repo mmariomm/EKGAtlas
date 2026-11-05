@@ -1595,6 +1595,13 @@ vuoto) e **Prepara nel SISS**.
   Seconda guardia: se durante la compilazione la scheda del SISS chiedesse al server di
   *registrare* (lo si vede dal flusso delle richieste, solo osservato), il pannello lo dice in
   rosso — «il SISS sta registrando la ricetta, e non l'ho chiesto io» — e la compilazione si ferma.
+  **Dal clic su Anteprima no**: il SISS vero, all'Anteprima, chiama da sé `partition`,
+  `prepare-register-request` e `register-prescriptions-by-client-response` (con la carta) e mostra
+  la ricetta in **BOZZA** (registrazione del medico). Fino alla 3.75.0 la guardia scambiava queste
+  chiamate per un Registra e fermava ogni ricetta con un falso «Errore grave». Ora la scheda
+  avvisa il service worker prima del clic, e che la ricetta non sia registrata lo rilegge sulla
+  pagina: un'Anteprima «STATO: REGISTRATA» (o con un NRE) è detta in rosso — «all'Anteprima il
+  SISS ha registrato la ricetta» — e va nel Registro degli errori.
 - **Una volta sola**: una ricetta alla volta; la scheda del SISS la riceve una volta (si ricarica
   a metà → si ferma e lo dice, non riparte); i farmaci si scrivono una volta; la stessa richiesta
   due volte è la stessa ricetta. Il codice fiscale e il nome stanno solo in `storage.session` e

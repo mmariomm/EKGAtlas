@@ -51,7 +51,11 @@ const FARMACI = [
   ["026089464", "AUGMENTIN*OS SOSP FL35ML+SIR"], ["039785050", "AUGMENTIN*12CPR RIV875MG+125MG"],
   ["034329012", "TACHIPIRINA*30CPR 500MG"], ["89.7", "VISITA GENERALE"], ["89.01", "VISITA SUCCESSIVA ALLA PRIMA"],
 ];
-const srvStato = { paziente: PZ, cercati: [], identificazioni: 0, registraConAnteprima: false, registrazioni: 0 };
+// (`registrazioni`: le prepare-register-request arrivate. Il SISS vero le manda
+// da sé all'Anteprima — registrazione del medico, reg1 — e la ricetta resta in
+// BOZZA; `registraAlFarmaco`: un SISS che registrasse mentre si compila;
+// `anteprimaRegistrata`: un'Anteprima che tornasse REGISTRATA, con l'NRE)
+const srvStato = { paziente: PZ, cercati: [], identificazioni: 0, registraAlFarmaco: false, anteprimaRegistrata: false, registrazioni: 0, perAnteprima: 0 };
 
 // ------------------------------------------------------ il SISS finto
 const menu = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Menu SISS</title></head><body>
@@ -177,6 +181,8 @@ function disegna() {
           const x = l[o.dataset.i];
           ov.innerHTML = ""; box.setAttribute("aria-expanded", "false");
           await rotella(300);
+          // (la prova della seconda guardia: un SISS che registrasse mentre si compila)
+          if (window.__registraAlFarmaco) fetch("/prescrittivoRegionale/prescription/rest/prescriptions/prepare-register-request", { method: "POST", body: "{}" });
           if (/^\\d{9}$/.test(x[0])) farmaci.push({ codice: x[0], descr: x[1], qta: 1, ns: false });
           else visite.push({ codice: x[0], descr: x[1] });
           disegna();
@@ -186,15 +192,20 @@ function disegna() {
     box.addEventListener("keydown", (e) => { if (e.key === "Escape") { ov.innerHTML = ""; box.setAttribute("aria-expanded", "false"); } });
     document.getElementById("anteprima").onclick = async () => {
       C.anteprima++;
-      // (la prova della seconda guardia: un SISS il cui «Anteprima» registrerebbe)
-      if (window.__registraConAnteprima) fetch("/prescrittivoRegionale/prescription/rest/prescriptions/prepare-register-request", { method: "POST", body: "{}" });
-      await rotella(500); va("prescription/editing/preview");
+      // come il SISS vero (reg1): l'Anteprima chiama da sé partition,
+      // prepare-register-request e register-prescriptions-by-client-response,
+      // e la ricetta resta in BOZZA
+      const rest = "/prescrittivoRegionale/prescription/rest/prescriptions/";
+      document.querySelector("app-loader").innerHTML = '<div class="spinner-container"></div>';
+      for (const x of ["partition", "checkIfAlreadyRegisteredWithDifferentPriority", "prepare-register-request", "register-prescriptions-by-client-response", "check-prescription-error", "prepare-print-request"])
+        await fetch(rest + x, { method: "POST", body: "{}" }).catch(() => {});
+      await rotella(300); va("prescription/editing/preview");
     };
   } else if (/preview$/.test(p) && paz) {
     vista.innerHTML = '<app-prescription><app-prescription-previews-home>' + intestazione() + '<app-prescription-previews><form class="form"><div id="prescription-previews-container">'
       + '<p class="float-child">N. prescrizioni specialistiche: 0</p><p class="float-child">N. prescrizioni farmaceutiche: 1</p>'
       + '<app-prescription-preview><app-fieldset><fieldset class="fieldset"><legend>Prescrizione farmaceutica</legend><div class="grid-container">'
-      + '<span class="npri-primary npri-bold"> STATO: BOZZA </span>'
+      + (window.__anteprimaRegistrata ? '<span class="npri-primary npri-bold"> STATO: REGISTRATA </span><span> NRE: 0000E0000000001 </span>' : '<span class="npri-primary npri-bold"> STATO: BOZZA </span>')
       + '<button class="icon-btn-sm mat-icon-button" mattooltip="Cancella prescrizione" type="button">🗑</button><button class="icon-btn-sm mat-icon-button" mattooltip="Salva prescrizione" type="button">💾</button>'
       + '<input formcontrolname="diagnosticQuestionText" name="diagnosticQuestionText" placeholder="Quesito diagnostico testuale" type="text" value="' + quesito.replace(/"/g, "&quot;") + '">'
       + tabellaFarmaci("p") + '</div></fieldset></app-fieldset></app-prescription-preview>'
@@ -221,8 +232,12 @@ const srv = https.createServer({ key: readFileSync(join(CERT, "k.pem")), cert: r
   const html = (b) => { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(b); };
   const json = (o) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
   if (host === MENU && u.pathname.startsWith("/menusiss/")) return html(menu);
-  if (host === PR && u.pathname.startsWith("/prescrittivoRegionale/pages/")) return html(spa.replace("<script>", `<script>window.__registraConAnteprima = ${srvStato.registraConAnteprima};`));
+  if (host === PR && u.pathname.startsWith("/prescrittivoRegionale/pages/")) return html(spa.replace("<script>", `<script>window.__registraAlFarmaco = ${srvStato.registraAlFarmaco}; window.__anteprimaRegistrata = ${srvStato.anteprimaRegistrata};`));
   if (host === PR && /\/prescriptions\/prepare-register-request$/.test(u.pathname)) { srvStato.registrazioni++; req.resume(); return json({}); }
+  if (host === PR && /\/prescriptions\/(?:partition|checkIfAlreadyRegisteredWithDifferentPriority|register-prescriptions-by-client-response|check-prescription-error|prepare-print-request)$/.test(u.pathname)) {
+    if (u.pathname.endsWith("/partition")) srvStato.perAnteprima++;
+    req.resume(); return json({});
+  }
   if (host === PR && u.pathname === "/prescrittivoRegionale/api/patients") { srvStato.identificazioni++; return json(srvStato.paziente); }
   if (host === PR && u.pathname === "/prescrittivoRegionale/api/search") {
     const q = (u.searchParams.get("q") || "").toUpperCase();
@@ -320,6 +335,8 @@ const fin = await sissStato();
 check(fin.farmaci.length === 1 && fin.farmaci[0].codice === AIC && fin.farmaci[0].qta === 2 && fin.farmaci[0].ns === true && fin.quesito === "faringotonsillite",
   `nella ricetta del SISS: ${AIC} (scelto col codice esatto fra le confezioni uguali), quantità 2, non sostituibile, il quesito (${JSON.stringify(fin.farmaci)} · «${fin.quesito}»)`);
 check(await siss.locator("app-prescription-previews").innerText().then((t) => /STATO: BOZZA/.test(t)), "l'Anteprima: «STATO: BOZZA»");
+check(srvStato.perAnteprima === 1 && srvStato.registrazioni === 1 && !(await errori()).some((e) => e.tipo === "ricetta"),
+  `le chiamate che il SISS fa da sé all'Anteprima (prepare-register-request compresa, come nel SISS vero): nessun allarme, nessun errore (${srvStato.registrazioni} · ${JSON.stringify((await errori()).filter((e) => e.tipo === "ricetta"))})`);
 check(await finche(async () => /Anteprima nel SISS: controlla e premi tu Registra/.test(await statoPannello()), 8000), `il pannello: «${await statoPannello()}»`);
 check(await finche(async () => (await schedeSiss()).find((t) => /preview$/.test(t.url))?.active, 5000), "la scheda del SISS è davanti al medico");
 const c1 = await clic();
@@ -383,20 +400,35 @@ check(f7.farmaci.length === 1 && f7.farmaci[0].codice === AIC && f7.farmaci[0].q
 const c7 = await clic();
 check(c7.registra === 0 && c7.salva === 0 && c7.stampa === 0 && c7.cancella === 0 && c7.nuova === 1, `e di nuovo nessun Registra, Salva, Stampa (${JSON.stringify(c7)})`);
 
-// ---- 8. la seconda guardia: un SISS il cui «Anteprima» chiedesse di registrare → detto forte
-srvStato.registraConAnteprima = true;
+// ---- 8. la seconda guardia: un SISS che chiedesse di registrare MENTRE si compila → detto forte
+srvStato.registraAlFarmaco = true;
+await siss.goto(`https://${PR}/prescrittivoRegionale/pages/dashboard`);
+await siss.waitForLoadState();
+await doc.bringToFront();
+await sospendi(1600);
+const reg8 = srvStato.registrazioni;
+await $p("#ricprepara").click();
+check(await finche(async () => /il SISS sta registrando la ricetta, e non l'ho chiesto io/.test(await statoPannello()), 30000) && await $p("#ricstato.err").count() === 1,
+  `se il SISS chiedesse di registrare durante la compilazione: «${await statoPannello()}», in rosso`);
+check(srvStato.registrazioni === reg8 + 1 && (await clic()).registra === 0 && (await clic()).anteprima === 0
+  && await finche(async () => (await errori()).some((e) => e.dati && e.dati.passo === "registrazione" && e.dati.grave), 5000),
+  "vista dal flusso delle richieste (solo osservato), nel registro degli errori; la scheda si ferma: né Anteprima né Registra premuti da noi");
+
+// ---- 8b. un'Anteprima che tornasse REGISTRATA (con l'NRE): detto forte, anche se le chiamate sono quelle di sempre
+srvStato.registraAlFarmaco = false;
+srvStato.anteprimaRegistrata = true;
 await siss.goto(`https://${PR}/prescrittivoRegionale/pages/dashboard`);
 await siss.waitForLoadState();
 await doc.bringToFront();
 await sospendi(1600);
 await $p("#ricprepara").click();
-check(await finche(async () => /il SISS sta registrando la ricetta, e non l'ho chiesto io/.test(await statoPannello()), 30000) && await $p("#ricstato.err").count() === 1,
-  `se il SISS chiedesse di registrare durante la compilazione: «${await statoPannello()}», in rosso`);
-check(srvStato.registrazioni === 1 && (await clic()).registra === 0 && await finche(async () => (await errori()).some((e) => e.dati && e.dati.passo === "registrazione" && e.dati.grave), 5000),
-  "vista dal flusso delle richieste (solo osservato), nel registro degli errori; Registra mai premuto da noi");
+check(await finche(async () => /all'Anteprima il SISS ha registrato la ricetta/.test(await statoPannello()), 30000) && await $p("#ricstato.err").count() === 1,
+  `un'Anteprima «STATO: REGISTRATA»: «${await statoPannello()}», in rosso`);
+check(await finche(async () => (await errori()).some((e) => e.dati && e.dati.passo === "anteprima" && e.dati.grave), 5000) && (await clic()).registra === 0,
+  "nel registro degli errori, grave; Registra mai premuto da noi");
 
 // ---- 9. una visita: dalla ricerca, inserita nella stessa casella, e l'Anteprima NON si preme
-srvStato.registraConAnteprima = false;
+srvStato.anteprimaRegistrata = false;
 await siss.goto(`https://${PR}/prescrittivoRegionale/pages/dashboard`);
 await siss.waitForLoadState();
 await doc.bringToFront();

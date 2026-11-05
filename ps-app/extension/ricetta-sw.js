@@ -236,6 +236,7 @@ function ricMessaggio(msg, sender, reply) {
     if (!j) return reply({ ok: false, fermo: true });
     j.agg = Date.now();
     if (msg.testo) j.vista = { testo: ricCorto(msg.testo, 200), tono: "run" };
+    if (msg.anteprima && j.stato === "compilo") j.anteprima = Date.now();   // (la scheda sta per premere Anteprima: vedi la seconda guardia)
     await ricScrivi(j);
     reply({ ok: true });
   });
@@ -297,17 +298,21 @@ function ricMessaggio(msg, sender, reply) {
 }
 chrome.runtime.onMessage.addListener(ricMessaggio);
 // La seconda guardia. Noi Registra non lo premiamo mai; ma se, mentre la
-// ricetta è nella scheda del SISS, quella scheda chiede al SISS di REGISTRARE
-// (un bottone che fa più di quel che dice, un'app cambiata), lo si vede —
-// webRequest, solo osservare: niente si blocca né si cambia — e lo si dice
-// forte, fermando la scheda. Dopo l'Anteprima la ricetta è del medico: lì no.
+// ricetta si COMPILA nella scheda del SISS, quella scheda chiede al SISS di
+// REGISTRARE (un bottone che fa più di quel che dice, un'app cambiata), lo si
+// vede — webRequest, solo osservare: niente si blocca né si cambia — e lo si
+// dice forte, fermando la scheda. Dal clic su Anteprima no: il SISS vero
+// (registrazione del medico, reg1) all'Anteprima chiama da sé
+// prepare-register-request e register-prescriptions-by-client-response e
+// mostra la ricetta in BOZZA; che non sia REGISTRATA lo rilegge la scheda
+// sulla pagina (ricetta-siss.js). Dopo l'Anteprima la ricetta è del medico.
 const RIC_REGISTRA = /\/prescriptions\/(?:prepare-register-request|register-prescriptions)/;
 try {
   chrome.webRequest.onBeforeRequest.addListener((d) => {
     if (!RIC_REGISTRA.test(d.url || "")) return;
     ricInFila(async () => {
       const j = await ricLeggi();
-      if (!j || j.worker !== d.tabId || !j.consegnata || !RIC_ATTIVI.has(j.stato)) return;
+      if (!j || j.worker !== d.tabId || !j.consegnata || !RIC_ATTIVI.has(j.stato) || j.anteprima) return;
       ricChiudi(j, "errore", "Attenzione: il SISS sta registrando la ricetta, e non l'ho chiesto io. Controlla subito nel SISS.", "err");
       j.grave = true;
       await ricScrivi(j);
