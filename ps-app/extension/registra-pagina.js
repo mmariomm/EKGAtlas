@@ -10,7 +10,8 @@
  *   - dove il pannello non c'è (SISS, portale, le pagine del gestionale senza
  *     pannello), nel riquadro principale, mostra la pill «● Registrando…»: la
  *     stessa pill del pannello ridotto (le sue regole CSS, da registra-pill.js),
- *     nello stesso posto; un clic offre «Ferma e scarica».
+ *     nello stesso posto (si trascina, e resta dove la lasci, sito per sito);
+ *     un clic offre «Ferma e scarica».
  * Sul SISS (menu operatore e Prescrittivo Regionale: un'app Angular che cambia
  * vista senza ricaricare la pagina) in più:
  *   - un'istantanea a ogni cambio di vista (pushState/replaceState visti dalla
@@ -279,6 +280,48 @@
   };
   addEventListener("keydown", (e) => { if (e.key === "Escape") chiudiMenu(); }, true);
   addEventListener("click", (e) => { if (ospite && !e.composedPath().includes(ospite)) chiudiMenu(); }, true);
+  // Trascinata, la pill resta dove la lasci, sito per sito (chrome.storage.local,
+  // «registra.pill»: { origine: {left, top} }), sempre dentro lo schermo; un
+  // clic senza trascinare è quello di sempre.
+  const POSTO = "registra.pill";
+  let posto = null, trascinata = false;
+  try { chrome.storage.local.get(POSTO).then((o) => { const p = o && o[POSTO] && o[POSTO][location.origin]; if (p && Number.isFinite(p.left) && Number.isFinite(p.top)) { posto = p; metti(); } }).catch(() => {}); } catch { /* niente */ }
+  const dentro = (p, w, h) => ({ left: Math.max(0, Math.min(innerWidth - w, p.left)), top: Math.max(0, Math.min(innerHeight - h, p.top)) });
+  function metti() {
+    const wrap = ospite && ospite.shadowRoot && ospite.shadowRoot.querySelector(".wrap");
+    if (!wrap || !posto) return;
+    const b = wrap.getBoundingClientRect(), p = dentro(posto, b.width || 140, b.height || 36);
+    wrap.style.left = p.left + "px"; wrap.style.top = p.top + "px"; wrap.style.right = "auto";
+  }
+  addEventListener("resize", () => metti());
+  function trascina(btn, wrap) {
+    btn.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      try { btn.setPointerCapture(e.pointerId); } catch { /* niente */ }
+      const r = wrap.getBoundingClientRect(), sx = e.clientX, sy = e.clientY;
+      let mosso = false;
+      const mm = (ev) => {
+        if (!mosso && Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 5) return;
+        if (!mosso) { mosso = true; chiudiMenu(); }
+        posto = dentro({ left: r.left + ev.clientX - sx, top: r.top + ev.clientY - sy }, r.width, r.height);
+        metti();
+      };
+      const su = () => {
+        btn.removeEventListener("pointermove", mm);
+        btn.removeEventListener("pointerup", su);
+        btn.removeEventListener("pointercancel", su);
+        if (!mosso) return;
+        trascinata = true;
+        setTimeout(() => { trascinata = false; }, 0);   // il clic che chiude il trascinamento non apre il menu
+        try {
+          chrome.storage.local.get(POSTO).then((o) => chrome.storage.local.set({ [POSTO]: { ...((o && o[POSTO]) || {}), [location.origin]: posto } })).catch(() => {});
+        } catch { /* estensione ricaricata */ }
+      };
+      btn.addEventListener("pointermove", mm);
+      btn.addEventListener("pointerup", su);
+      btn.addEventListener("pointercancel", su);
+    });
+  }
   function pill() {
     if (!inAlto || !pronta) return;
     if (!rec || document.getElementById("psassist-host")) {
@@ -299,9 +342,20 @@
       .menu[hidden] { display: none; }</style>
       <div class="wrap"><button class="pill" id="expand" title="PS Assist sta registrando questa sessione — tocca per fermare" aria-haspopup="menu" aria-expanded="false"><span class="slot"><span class="dot rec"></span></span> <span class="who">Registrando…</span></button>
       <div class="menu" role="menu" hidden><button role="menuitem" id="regferma">Ferma e scarica</button></div></div>`;
-    const btn = root.getElementById("expand"), menu = root.querySelector(".menu");
-    btn.addEventListener("click", (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; btn.setAttribute("aria-expanded", String(!menu.hidden)); });
+    const btn = root.getElementById("expand"), menu = root.querySelector(".menu"), wrap = root.querySelector(".wrap");
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (trascinata) return;
+      menu.hidden = !menu.hidden; btn.setAttribute("aria-expanded", String(!menu.hidden));
+      if (menu.hidden) return;
+      // il menu sta dalla parte dove c'è posto (la pill trascinata in un angolo)
+      const b = wrap.getBoundingClientRect(), m = menu.getBoundingClientRect();
+      Object.assign(menu.style, b.right - m.width < 0 ? { left: "0", right: "auto" } : { left: "", right: "" },
+        b.bottom + m.height + 8 > innerHeight ? { top: "auto", bottom: b.height + 4 + "px" } : { top: "", bottom: "" });
+    });
     root.getElementById("regferma").addEventListener("click", (e) => { e.stopPropagation(); chiudiMenu(); manda({ t: "registraFerma" }); });
+    trascina(btn, wrap);
     document.documentElement.appendChild(ospite);
+    metti();
   }
 })();

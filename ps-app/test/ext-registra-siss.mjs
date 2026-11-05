@@ -246,9 +246,38 @@ check(["caricata", "rotta", "overlay", "quiete"].every((m) => motivi.has(m)), `i
 check(gSiss.every((x) => !/psassist-host|psassist-reg-host/.test(x.html)), "nelle istantanee né pannello né pill");
 check(gSiss.filter((x) => !x.alto).length >= 1, "anche il riquadro è registrato");
 
-// ---- 5. «Ferma e scarica» dalla pill -------------------------------------------
+// ---- 5. la pill si trascina e resta dove la lasci; «Ferma e scarica» dalla pill
+await doc.bringToFront();
+const posPill = async (p = doc) => { const b = await $pill(p, "#expand").boundingBox(); return { x: Math.round(b.x), y: Math.round(b.y), w: b.width, h: b.height }; };
+const p0 = await posPill();
+await doc.mouse.move(p0.x + p0.w / 2, p0.y + p0.h / 2);
+await doc.mouse.down();
+await doc.mouse.move(p0.x + p0.w / 2 - 400, p0.y + p0.h / 2 + 300, { steps: 10 });
+await doc.mouse.up();
+await doc.waitForTimeout(300);
+const p1 = await posPill();
+check(Math.abs(p1.x - (p0.x - 400)) <= 2 && Math.abs(p1.y - (p0.y + 300)) <= 2 && await $pill(doc, ".menu").isHidden(),
+  `la pill «● Registrando…» si trascina, e trascinarla non apre il menu (${p0.x},${p0.y} → ${p1.x},${p1.y})`);
+// tirata fuori dallo schermo resta dentro
+await doc.mouse.move(p1.x + 10, p1.y + 10);
+await doc.mouse.down();
+await doc.mouse.move(-600, 5000, { steps: 10 });
+await doc.mouse.up();
+await doc.waitForTimeout(300);
+const p2 = await posPill(), schermo = await doc.evaluate(() => [innerWidth, innerHeight]);
+check(p2.x === 0 && p2.y + p2.h <= schermo[1] + 1 && p2.y + p2.h >= schermo[1] - 2, `tirata oltre il bordo resta dentro lo schermo (${p2.x},${p2.y} · ${schermo.join("×")})`);
+// …e su un'altra pagina dello stesso sito è lì
+const altra = await ctx.newPage();
+await altra.goto(`https://${PR}/prescrittivoRegionale/pages/prescription/patient-identify`);
+await finche(async () => (await $pill(altra, "#expand").count()) === 1, 8000);
+await altra.waitForTimeout(400);
+const p3 = await posPill(altra).catch(() => ({}));
+check(p3.x === p2.x && Math.abs(p3.y - p2.y) <= 1, `su un'altra pagina dello stesso sito la pill è dove l'hai lasciata (${p3.x},${p3.y})`);
+await altra.close();
 await doc.bringToFront();
 await $pill(doc, "#expand").click();
+check(await $pill(doc, ".menu").isVisible() && await $pill(doc, ".menu").evaluate((m) => { const r = m.getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.bottom <= innerHeight; }),
+  "spostata nell'angolo, un clic apre il menu dentro lo schermo");
 check(/Ferma e scarica/.test(await $pill(doc, ".menu").innerText().catch(() => "")), "un clic sulla pill offre «Ferma e scarica»");
 const [pagina] = await Promise.all([ctx.waitForEvent("page", { timeout: 15000 }), $pill(doc, "#regferma").click()]);
 const download = await pagina.waitForEvent("download", { timeout: 60000 }).catch(() => null);
