@@ -8650,6 +8650,7 @@
       else if (this.view === "eo") body = this.viewEo();
       else if (this.view === "tempi") body = this.viewTempi();
       else if (this.view === "ricetta" && this.ricettaPossibile()) body = this.viewRicetta();
+      else if (this.view === "terapia" && this.terapiaPossibile()) body = this.viewTerapia();
       else if (this.view === "riferimenti") body = this.viewRiferimenti();
       else if (this.view === "stampa") body = this.viewStampa();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
@@ -8681,7 +8682,7 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", riferimenti: "Riferimenti", ricetta: "Ricetta" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", riferimenti: "Riferimenti", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
       // (i fogli di dimissione sono modelli, ma chi va a casa è questo paziente:
       // l'intestazione lo dice anche lì)
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
@@ -8786,6 +8787,7 @@
                     ${hasExt() ? `<button role="menuitem" id="tabmenu" title="Il tabellone dei Pazienti in una scheda sua: da fissare, o sul secondo schermo">Tabellone</button>` : ""}
                     ${hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete"><span class="mico">${ICO_TEL}</span>iPhone</button>` : ""}
                     ${this.ricettaPossibile() ? `<button role="menuitem" id="ricmenu" title="Farmaci e quesito preparati nel Prescrittivo del SISS, fino all'Anteprima: Registra lo premi tu">Ricetta SISS</button>` : ""}
+                    ${this.terapiaPossibile() ? `<button role="menuitem" id="termenu" title="I farmaci nella pagina Terapia del gestionale, una riga per volta: Conferma la premi tu">Terapia</button>` : ""}
                     <button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">Tempi</button>
                     <button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">Riferimenti</button>
                     ${this.pageType === "patient" && this.epDiQuesta() && richiesteStampabili(printModel(document, location.href)).length
@@ -9184,7 +9186,7 @@
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {
-      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "riferimenti", "richieste", "stampa", "ricetta"].includes(this.view);
+      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "riferimenti", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
     }
     // In fondo alla fila delle schede, solo in Modifica: + Letto, + Sedia,
     // + Area e Fine. Si entra in Modifica dal menu «⋯».
@@ -12347,6 +12349,92 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       return this.ricChiedi({ t: "ricettaNuova", job: { id: this.ricNuovoId(), ep: this.epDiQuesta(), cf, nome, voci, quesito } });
     }
 
+    // ⋯ → Terapia. I farmaci da mettere nella pagina Terapia del gestionale
+    // (vedi «la terapia», terapiaQui): i preferiti — farmaco e dose come li
+    // hai confermati in quella pagina, i più usati in cima — o un farmaco
+    // nuovo, da scegliere nella tendina della pagina. «Prepara nel gestionale»
+    // apre la pagina col suo pulsante e riempie la riga nuova, un farmaco per
+    // Conferma; Conferma la premi tu, sempre.
+    terapiaPossibile() { return hasExt() && !TABELLONE && this.pageType === "patient" && !!this.epDiQuesta(); }
+    // il pulsante «Terapia» di QUESTO paziente, uno solo
+    terapiaLink() {
+      const ep = this.epDiQuesta();
+      const l = ep ? [...document.querySelectorAll('a[href*="PsoEpisodioTerapieImposta"]')].filter((a) =>
+        param(a.href, "MVPG") === "PsoEpisodioTerapieImposta" && param(a.href, "MODALITA") === "PRESCRIZIONE" && param(a.href, "EPISODIO_ID") === ep) : [];
+      return l.length && l.every((a) => a.href === l[0].href) ? l[0] : null;
+    }
+    terRidisegna() {
+      const a = this.root.activeElement, id = a && a.id, sel = a && typeof a.selectionStart === "number" ? [a.selectionStart, a.selectionEnd] : null;
+      this.render();
+      const el = id && /^ter/.test(id) && this.root.getElementById ? this.root.getElementById(id) : null;
+      if (el) { el.focus({ preventScroll: true }); if (sel) { try { el.setSelectionRange(sel[0], sel[1]); } catch { /* niente */ } } }
+    }
+    viewTerapia() {
+      const t = this.ter || (this.ter = { voci: [], q: "" });
+      const pref = terapiaPreferiti(), q = normTer(t.q).toUpperCase();
+      const scelte = new Set(t.voci.map(chiaveTer));
+      const dose = (p) => [p.qta && `${p.qta}${p.um ? " " + p.um.t : ""}`, !p.qta && p.um && p.um.t, p.via && p.via.t, p.dil && p.dil.t,
+        p.freq && `freq. ${p.freq}`, p.durata && `durata ${p.durata}`, p.continua && "continua", p.bisogno && "al bisogno"].filter(Boolean).join(" · ");
+      const lista = (q ? pref.filter((p) => normTer(p.descr).toUpperCase().includes(q)) : pref).slice(0, 30);
+      const righe = lista.map((p) => { const k = chiaveTer(p); return `<button class="ricrisv${scelte.has(k) ? " on" : ""}" data-terpref="${esc(k)}" aria-pressed="${scelte.has(k)}" title="${esc(p.descr)} — ${esc(dose(p) || "senza dose")}"><b>${esc(p.descr)}</b> ${esc(dose(p))}</button>`; }).join("");
+      const nuovo = q.length >= 3 && !lista.some((p) => normTer(p.descr).toUpperCase() === q);
+      const voci = t.voci.map((v, i) => `
+        <div class="ricv"><span class="ricvd" title="${esc(v.descr)}">${i + 1}. ${esc(v.descr)} <i>${esc(v.nuovo ? "da scegliere nella tendina" : dose(v))}</i></span>
+          <button class="ricx" data-tervia="${i}" title="Togli" aria-label="Togli ${esc(v.descr)}">✕</button></div>`).join("");
+      const link = this.terapiaLink();
+      return `
+        <div class="sec ricetta">
+          ${link ? "" : `<div class="ricstato warn">Il pulsante «Terapia» del gestionale non c'è in questa pagina: la terapia si scrive a mano.</div>`}
+          <div class="lbl">Preferiti</div>
+          <div class="riccerca"><input id="terq" type="search" autocomplete="off" spellcheck="false" value="${esc(t.q)}" placeholder="Cerca un farmaco…" aria-label="Cerca fra i preferiti, o un farmaco nuovo"></div>
+          <div class="ricris">${righe || `<span class="ricnota">${pref.length ? `Nessun preferito con «${esc(t.q)}».` : "Ancora nessuno: si imparano da soli da quello che confermi nella pagina Terapia del gestionale."}</span>`}
+            ${nuovo ? `<button class="ricrisv" id="ternuovo" title="Lo scrivo nella tendina della pagina Terapia: la voce la scegli tu">＋ «${esc(normTer(t.q))}»: da scegliere nella tendina del gestionale</button>` : ""}</div>
+          <div class="lbl">Da preparare${t.voci.length ? ` (${t.voci.length})` : ""}</div>
+          <div class="ricvoci">${voci || `<span class="ricnota">Scegli un preferito, o cerca un farmaco.</span>`}</div>
+          <button class="btn primary" id="terprepara" style="margin-top:10px"${link && t.voci.length && !this.giroInCorso() ? "" : " disabled"}>Prepara nel gestionale</button>
+          <div class="ricnota">Apro la pagina Terapia del gestionale e scrivo un farmaco nella riga nuova: lo controlli e premi tu Conferma; dopo la Conferma preparo il successivo. Conferma non la premo mai.</div>
+        </div>`;
+    }
+    legaTerapia($) {
+      const t = this.ter;
+      if (!t) return;
+      $("#terq")?.addEventListener("input", (e) => { t.q = e.target.value; this.terRidisegna(); });
+      $("#ternuovo")?.addEventListener("click", () => {
+        const d = normTer(t.q).slice(0, 200);
+        if (d.length >= 3 && t.voci.length < 10) t.voci.push({ descr: d, nuovo: true });
+        t.q = ""; this.terRidisegna();
+      });
+      this.root.querySelectorAll("[data-terpref]").forEach((b) => b.addEventListener("click", () => {
+        const k = b.getAttribute("data-terpref"), p = terapiaPreferiti().find((x) => chiaveTer(x) === k);
+        if (t.voci.some((v) => chiaveTer(v) === k)) t.voci = t.voci.filter((v) => chiaveTer(v) !== k);
+        else if (p && t.voci.length < 10) { const { n, ts, ...v } = p; t.voci.push(v); }
+        this.terRidisegna();
+      }));
+      this.root.querySelectorAll("[data-tervia]").forEach((b) => b.addEventListener("click", () => { t.voci.splice(Number(b.getAttribute("data-tervia")), 1); this.terRidisegna(); }));
+      $("#terprepara")?.addEventListener("click", () => this.terPrepara());
+    }
+    // apre la pagina Terapia col suo pulsante; il resto lo fa terapiaQui, là
+    async terPrepara() {
+      const t = this.ter;
+      if (!t || !t.voci.length || this._terVia || this.giroInCorso()) return;
+      const a = this.terapiaLink(), ep = this.epDiQuesta(), nome = nomeInPagina();
+      if (!a || !ep || !nome) { this.message = "Il pulsante «Terapia» o il nome del paziente non ci sono in questa pagina."; return this.render(); }
+      const perche = staScrivendo();
+      if (perche) { this.message = `Prima finisci nella pagina (${perche}), poi «Prepara nel gestionale».`; return this.render(); }
+      this._terVia = true;
+      try {
+        if (motoreAltrove()) { this.message = "Aspetto che finisca l'ordine in corso in un'altra scheda…"; this.render(); await cancelloMotore(); }
+        if (motoreAltrove()) { this.message = "Un ordine sta ancora lavorando in un'altra scheda: riprova fra poco."; return this.render(); }
+        if (this.terapiaLink() !== a || this.epDiQuesta() !== ep) return;
+        const intanto = staScrivendo();   // (intanto hai cominciato a scrivere nella pagina?)
+        if (intanto) { this.message = `Prima finisci nella pagina (${intanto}), poi «Prepara nel gestionale».`; return this.render(); }
+        tabStore.set(TERAPIA, { id: "ter-" + Date.now().toString(36), ep, nome, voci: t.voci.map((v) => ({ ...v })), i: 0, fase: "apro", ts: Date.now() });
+        this.message = { ok: "Apro la pagina Terapia del gestionale…" };
+        this.render();
+        a.click();
+      } finally { this._terVia = false; }
+    }
+
     // EO — un tocco copia l'esame obiettivo generale. Sotto, una tendina con
     // le aggiunte per caso: sceglierne una la copia subito, e la lascia
     // scritta qui perché si veda cosa è finito negli appunti.
@@ -13375,6 +13463,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#ricmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("ricetta"); });
       $("#dimricetta")?.addEventListener("click", () => this.setView("ricetta"));   // (anche dalle Dimissioni)
       if (this.view === "ricetta") this.legaRicetta($);
+      $("#termenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("terapia"); });
+      if (this.view === "terapia") this.legaTerapia($);
       $("#rifmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("riferimenti"); this.root.querySelector("#riffiltro")?.focus(); });
       $("#stampamenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("stampa"); });
       $("#bracciale")?.addEventListener("click", (e) => this.stampaBracciale(e));
@@ -15922,6 +16012,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (document.getElementById("psassist-host")) return;
     // la scheda aperta dal service worker solo per dare i PDF di una stampa: niente pannello
     if (chi && chi.fogli) return;
+    if (!eTerapie()) tabStore.del(TERAPIA);   // il giro della terapia vive solo di pagina delle terapie in pagina delle terapie
     LAVORO = chi && chi.lavoro ? chi.lavoro : null;
     segnaScheda(chi);
     PONTE_VALORI = chi && chi.ponteValori ? chi.ponteValori : null;
@@ -15988,6 +16079,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // terapie, le stampe…): mai nella scheda di un ordine o del ponte, mai
       // mentre questa pagina stampa, mai nella lista smart.
       if (!stampa && !LAVORO && !PONTE_VALORI && !eSmart(document, location.href)) vistaQui();
+      if (!LAVORO && !PONTE_VALORI) terapiaQui().catch(() => {});   // la pagina delle terapie: impara, e il giro preparato dal pannello
       return;
     }
     // le eccezioni non prese del NOSTRO codice (la pila passa dall'estensione), nel registro degli errori
@@ -16248,6 +16340,243 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     panel.restoreUi();
     panel.render();
     panel.caricaStorico();
+  }
+
+  // ---------------------------------------------------------- la terapia
+  // La pagina delle terapie del gestionale: PsoEpisodioTerapieImposta con
+  // MODALITA=PRESCRIZIONE, dal pulsante «Terapia» (a[title="Apri Terapia"])
+  // della pagina del paziente. Il modulo EpisodioTerapia è una tabella
+  // (TerapiaTable<episodio>): le terapie già confermate, ognuna coi suoi
+  // TERAPIA_PROG_n ed EPISODIO_ID_n, e in fondo UNA riga nuova, vuota — la sola
+  // con la tendina dei farmaci (#DESCRIZIONE, jQuery UI: da 3 lettere, dopo
+  // mezzo secondo, chiede a Sa4JsonService.do; scegliere una voce scrive
+  // DESCRIZIONE, e CODICE e PRINCIPIO_ATTIVO dall'«id» della voce). Poi
+  // QUANTITA (testo, 10), UM e SOMMINISTRAZIONE_VIA (tendine), PRESC_DATA,
+  // TERAPIA_DILUIZIONE_ID (tendina), CONTINUA e AL_BISOGNO (spunte), FREQUENZA
+  // (4), DURATA (1, «1»), NOTE. «Conferma» (Update) manda il modulo — il
+  // TERAPIA_SERIALIZED lo compone la pagina al clic — e il server torna sulla
+  // stessa pagina con la riga confermata e una riga nuova (n+1): una terapia
+  // per Conferma. Una riga «aggiungi» la pagina non la mostra.
+  // Qui: (1) quello che il medico conferma diventa un preferito — farmaco e
+  // dose, mai niente del paziente (né note né ora); (2) un giro preparato dal
+  // pannello riempie la riga nuova attraverso la pagina — la sua tendina, i
+  // suoi campi —, un farmaco per Conferma, e si ferma lì: «Controlla e premi
+  // Conferma». Conferma, Chiudi, TERAPIA_SERIALIZED e i campi nascosti non li
+  // tocchiamo mai.
+  const TERAPIA = "terapia.v1";                  // tabStore: il giro di questa scheda (col nome: muore finito)
+  const TERAPIA_PREF = "terapia.preferiti.v1";   // store: farmaco e dose, niente del paziente
+  const TERAPIA_TTL = 10 * 60e3, TERAPIA_APRO_MS = 60e3, TERAPIA_PREF_MAX = 60;
+  const normTer = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+  const ugualeTer = (a, b) => normTer(a).toUpperCase() === normTer(b).toUpperCase();
+  const eTerapie = (url = location.href) => param(url, "MVPG") === "PsoEpisodioTerapieImposta";
+  function formTerapia(doc = document) {
+    const f = doc.querySelector('form[name="EpisodioTerapia"]');
+    return f && param(new URL(f.getAttribute("action") || "", location.href).href, "MODALITA") === "PRESCRIZIONE" ? f : null;
+  }
+  const campoTer = (form, k, n) => [...form.elements].find((el) => el.name === `${k}_${n}`) || null;
+  function righeTerapia(form) {
+    const out = [];
+    for (const el of form.elements) {
+      const m = /^DESCRIZIONE_(\d+)$/.exec(el.name || "");
+      if (m) out.push({ n: m[1], descr: el, salvata: !!normTer(campoTer(form, "TERAPIA_PROG", m[1])?.value) });
+    }
+    return out;
+  }
+  // una riga com'è scritta: farmaco e dose (le tendine col valore E la scritta)
+  function rigaTerapia(form, n) {
+    const v = (k, max) => normTer(campoTer(form, k, n)?.value).slice(0, max);
+    const sel = (k) => { const o = campoTer(form, k, n)?.selectedOptions?.[0]; return o && o.value ? { v: o.value, t: normTer(o.text) } : null; };
+    return { descr: v("DESCRIZIONE", 200), codice: v("CODICE", 40), qta: v("QUANTITA", 10), um: sel("UM"), via: sel("SOMMINISTRAZIONE_VIA"),
+      dil: sel("TERAPIA_DILUIZIONE_ID"), continua: !!campoTer(form, "CONTINUA", n)?.checked, bisogno: !!campoTer(form, "AL_BISOGNO", n)?.checked,
+      freq: v("FREQUENZA", 4), durata: v("DURATA", 2) };
+  }
+  const chiaveTer = (p) => JSON.stringify([normTer(p.descr).toUpperCase(), p.codice || "", p.qta || "", p.um?.v || "", p.via?.v || "", p.dil?.v || "",
+    !!p.continua, !!p.bisogno, p.freq || "", p.durata || ""]);
+  const terapiaPreferiti = () => { const l = store.get(TERAPIA_PREF, []); return Array.isArray(l) ? l.filter((p) => p && p.descr) : []; };
+  // i preferiti: lo stesso farmaco con la stessa dose è uno solo, i più usati in cima
+  function imparaTerapia(righe) {
+    if (!righe.length) return;
+    const l = terapiaPreferiti();
+    for (const r of righe) {
+      const x = l.find((p) => chiaveTer(p) === chiaveTer(r));
+      if (x) { x.n = (x.n || 0) + 1; x.ts = Date.now(); } else l.push({ ...r, n: 1, ts: Date.now() });
+    }
+    l.sort((a, b) => (b.n || 0) - (a.n || 0) || (b.ts || 0) - (a.ts || 0));
+    store.set(TERAPIA_PREF, l.slice(0, TERAPIA_PREF_MAX));
+  }
+  // la riga in fondo alla pagina, da sola, finché il giro è qui
+  function terapiaDice(tono, testo) {
+    let h = document.getElementById("psassist-terapia");
+    if (!h) {
+      h = document.createElement("div");
+      h.id = "psassist-terapia";
+      h.attachShadow({ mode: "open" });
+      document.documentElement.appendChild(h);
+    }
+    const fondo = { err: "#B3261E", warn: "#8A5300", ok: "#1E6B3A" }[tono] || "#0B5CAD";
+    h.shadowRoot.innerHTML = `<style>.b{position:fixed;left:12px;bottom:12px;z-index:2147483647;max-width:min(560px,92vw);background:${fondo};color:#fff;border-radius:10px;
+      padding:10px 12px;font:13px/1.45 -apple-system,'Segoe UI',Roboto,Arial,sans-serif;box-shadow:0 6px 20px rgba(9,42,74,.35);display:flex;gap:10px;align-items:flex-start}
+      button{border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:7px;padding:2px 8px;font:inherit;cursor:pointer}</style>
+      <div class="b" role="status" data-tono="${esc(tono)}"><span><b>PS Assist · Terapia</b> — ${esc(testo)}</span><button id="via" aria-label="Chiudi">✕</button></div>`;
+    h.shadowRoot.getElementById("via").addEventListener("click", () => h.remove());
+  }
+  // le richieste di questa pagina (la tendina) aspettano un ordine che lavora altrove
+  async function terapiaAspetta() {
+    try {
+      const o = await chrome.storage.session.get(["ordini", "motore"]);
+      if (Array.isArray(o && o.ordini)) ORDINI_VIVI = o.ordini;
+      MOTORE_SW = (o && o.motore) || null;
+    } catch { /* resta quello che si sa */ }
+    if (!motoreAltrove()) return true;
+    terapiaDice("run", "Aspetto che finisca l'ordine in corso in un'altra scheda…");
+    await cancelloMotore();
+    return !motoreAltrove();
+  }
+  const visibileTer = (el) => getComputedStyle(el).display !== "none" && el.getClientRects().length > 0;
+  // Scrive nella tendina della pagina e aspetta la sua risposta (la rotella,
+  // ui-autocomplete-loading, che compare e se ne va): le voci della tendina,
+  // [] se non ne ha, null se non risponde.
+  async function tendinaTerapia(d, q) {
+    let partita = false, finita = false;
+    const giro = () => { if (d.classList.contains("ui-autocomplete-loading")) partita = true; else if (partita) finita = true; };
+    const oss = new MutationObserver((rr) => { if (rr.some((r) => /\bui-autocomplete-loading\b/.test(r.oldValue || ""))) partita = true; giro(); });
+    oss.observe(d, { attributes: true, attributeFilter: ["class"], attributeOldValue: true });
+    try {
+      d.focus();
+      d.value = q;
+      d.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true }));
+      d.dispatchEvent(new Event("input", { bubbles: true }));
+      d.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }));
+      for (const t0 = Date.now(); !finita && Date.now() - t0 < (partita ? 12e3 : 3e3);) await sleep(100);
+    } finally { oss.disconnect(); }
+    if (!finita) return null;
+    await sleep(60);
+    const menu = [...document.querySelectorAll("ul.ui-autocomplete")].filter(visibileTer);
+    return menu.length > 1 ? null : menu.length ? [...menu[0].querySelectorAll("li.ui-menu-item")] : [];
+  }
+  // la voce si sceglie come col mouse: sopra (la tendina la fa sua), poi il clic
+  function sceltaTendina(li) {
+    const t = li.querySelector("a") || li.firstElementChild || li;
+    const m = (tipo, bolle = true) => t.dispatchEvent(new MouseEvent(tipo, { bubbles: bolle, cancelable: true, composed: true, button: 0 }));
+    m("mouseover"); m("mouseenter", false); m("mousemove"); m("mousedown"); m("mouseup"); m("click");
+  }
+  // un campo visibile della riga: testo, tendina ({v, t}: valore e scritta, tutt'e due), spunta
+  function scriviTer(el, val) {
+    const avvisa = () => { el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); };
+    if (el.type === "checkbox") { if (el.checked !== !!val) el.click(); return el.checked === !!val; }
+    if (el.tagName === "SELECT") {
+      const o = [...el.options].find((x) => x.value === val.v && ugualeTer(x.text, val.t));
+      if (!o) return false;
+      if (!o.selected) { o.selected = true; avvisa(); }
+      return o.selected;
+    }
+    const s = String(val ?? "");
+    if (el.maxLength > 0 && s.length > el.maxLength) return false;
+    if (el.value !== s) { el.value = s; avvisa(); }
+    return el.value === s;
+  }
+  // (una tendina senza «selected» parte dalla prima voce)
+  const cambiatoTer = (el) => el.tagName === "SELECT" ? el.selectedIndex !== Math.max(0, [...el.options].map((o) => o.defaultSelected).lastIndexOf(true))
+    : el.type === "checkbox" || el.type === "radio" ? el.checked !== el.defaultChecked : el.value !== el.defaultValue;
+  const NOMI_TER = { QUANTITA: "la quantità", UM: "l'unità", SOMMINISTRAZIONE_VIA: "la via", TERAPIA_DILUIZIONE_ID: "la diluizione",
+    CONTINUA: "«continua»", AL_BISOGNO: "«al bisogno»", FREQUENZA: "la frequenza", DURATA: "la durata" };
+  // Riempie la riga nuova con un farmaco: { ok } fatto, { tocca } a metà e
+  // tocca al medico (la riga resta com'è), { stop } niente da fare qui.
+  async function riempiTerapia(form, v, inizio) {
+    const nuove = righeTerapia(form).filter((r) => !r.salvata);
+    if (nuove.length !== 1) return { stop: "la riga nuova della pagina non c'è" };
+    const n = nuove[0].n, d = nuove[0].descr;
+    if (document.getElementById("DESCRIZIONE") !== d || !d.classList.contains("ui-autocomplete-input")) return { stop: "la tendina dei farmaci della pagina non è pronta" };
+    if ([...form.elements].some((el) => el.name && el.name.endsWith("_" + n) && el.type !== "hidden" && cambiatoTer(el))) return { stop: "nella riga nuova c'è già scritto qualcosa: non la tocco" };
+    const scrive = () => scrittura.tasto > inizio;   // il medico scrive nella pagina: si lascia a lui
+    // 1. il farmaco, dalla tendina della pagina: la voce con la stessa scritta, una sola
+    const cerca = [v.descr, normTer(v.descr).split(/[\s*]/)[0]].filter((x, k, a) => x && x.length >= 3 && a.indexOf(x) === k);
+    for (const q of cerca) {
+      if (!(await terapiaAspetta())) return { stop: "un ordine sta ancora lavorando in un'altra scheda: riprova fra poco" };
+      if (scrive()) return { stop: "stai scrivendo nella pagina: mi fermo" };
+      const voci = await tendinaTerapia(d, q);
+      if (voci === null) return { stop: "la tendina dei farmaci non risponde" };
+      const uguali = voci.filter((li) => ugualeTer(li.textContent, v.descr));
+      if (uguali.length > 1) return { tocca: `nella tendina ci sono più voci «${v.descr}»: scegli tu quella giusta, completa la dose e premi Conferma` };
+      if (!uguali.length) continue;
+      sceltaTendina(uguali[0]);
+      for (let k = 0; k < 20 && !ugualeTer(d.value, v.descr); k++) await sleep(50);
+      if (!ugualeTer(d.value, v.descr) || (v.codice && normTer(campoTer(form, "CODICE", n)?.value) !== v.codice)) {
+        return { tocca: `la voce «${v.descr}» non è entrata nella riga: sceglila tu nella tendina, completa la dose e premi Conferma` };
+      }
+      if (v.nuovo) return { ok: true, testo: "scrivi la dose e la via, poi controlla e premi Conferma" };
+      // 2. la dose, nei campi della riga (niente note, niente ora)
+      const passi = [["QUANTITA", v.qta], ["UM", v.um], ["SOMMINISTRAZIONE_VIA", v.via], ["TERAPIA_DILUIZIONE_ID", v.dil],
+        ["CONTINUA", v.continua], ["AL_BISOGNO", v.bisogno], ["FREQUENZA", v.freq], ["DURATA", v.durata]];
+      for (const [k, val] of passi) {
+        if (val == null || val === false || (k !== "QUANTITA" && k !== "FREQUENZA" && k !== "DURATA" && !val)) continue;
+        const el = campoTer(form, k, n);
+        if (scrive()) return { stop: "stai scrivendo nella pagina: mi fermo" };
+        if (!el || !scriviTer(el, val)) return { tocca: `${NOMI_TER[k]} «${typeof val === "object" ? val.t : val === true ? "sì" : val}» non si lascia scrivere: completa tu e premi Conferma` };
+      }
+      return { ok: true, testo: "controlla e premi Conferma" };
+    }
+    return { tocca: v.nuovo ? `scegli il farmaco nella tendina, scrivi la dose e la via, poi premi Conferma`
+      : `«${v.descr}» non c'è uguale nella tendina: sceglilo tu, completa la dose e premi Conferma` };
+  }
+  // Sulla pagina delle terapie: quello che il medico conferma si impara, e un
+  // giro preparato dal pannello va avanti di una riga per Conferma.
+  async function terapiaQui() {
+    if (!hasExt() || !eTerapie()) return;
+    const form = formTerapia();
+    const j = tabStore.get(TERAPIA, null);
+    if (!form) {
+      if (j) { tabStore.del(TERAPIA); terapiaDice("warn", "questa non è la pagina della prescrizione: non ho scritto niente."); }
+      return;
+    }
+    const ep = param(location.href, "EPISODIO_ID") || "";
+    // Conferma del medico: le righe nuove scritte diventano preferiti (si
+    // legge e basta: l'invio è il suo, mai fermato). Chiudi chiude il giro.
+    window.addEventListener("submit", (ev) => {
+      if (ev.target !== form || ev.defaultPrevented) return;
+      const g = tabStore.get(TERAPIA, null);
+      if (!ev.submitter || ev.submitter.name !== "Update") { if (g) tabStore.del(TERAPIA); return; }
+      const righe = righeTerapia(form), nuove = righe.filter((r) => !r.salvata && normTer(r.descr.value));
+      try { imparaTerapia(nuove.map((r) => rigaTerapia(form, r.n))); } catch { /* memoria piena: nessun preferito */ }
+      if (g && g.ep === ep) tabStore.set(TERAPIA, { ...g, fase: "attesa", ts: Date.now(),
+        confermata: { descr: nuove.length ? normTer(nuove[0].descr.value) : "", salvate: righe.filter((r) => r.salvata).length } });
+    });
+    if (!j) return;
+    if (!Array.isArray(j.voci) || !j.voci.length || Date.now() - (j.ts || 0) > (j.fase === "apro" ? TERAPIA_APRO_MS : TERAPIA_TTL)) { tabStore.del(TERAPIA); return; }
+    // di chi è la pagina: l'episodio dell'indirizzo e del modulo, il nome in testa
+    const epForm = param(new URL(form.getAttribute("action") || "", location.href).href, "EPISODIO_ID") || "";
+    const nome = nomeInPagina();
+    if (ep !== j.ep || epForm !== j.ep || !nome || !ugualeTer(nome, j.nome)) {
+      tabStore.del(TERAPIA);
+      segnaErrore("terapia", { grave: true, perche: ep !== j.ep || epForm !== j.ep ? "episodio diverso" : "nome diverso" });
+      return terapiaDice("err", "Errore grave: questa pagina delle terapie è di un altro paziente — non ho scritto niente.");
+    }
+    const tab = form.querySelector('table[id^="TerapiaTable"]');
+    if (!tab || tab.id !== "TerapiaTable" + j.ep) { tabStore.del(TERAPIA); return terapiaDice("warn", "non riconosco la tabella delle terapie: non ho scritto niente."); }
+    let i = j.i || 0;
+    if (j.fase !== "apro") {
+      const c = j.confermata, resto = j.voci.length - i - 1;
+      const restano = resto > 0 ? ` ${resto === 1 ? "L'ultimo farmaco non l'ho preparato" : `Gli ultimi ${resto} farmaci non li ho preparati`}.` : "";
+      if (!c) { tabStore.del(TERAPIA); return terapiaDice("warn", `la pagina si è ricaricata senza Conferma: non riscrivo niente.${restano}`); }
+      const salvate = righeTerapia(form).filter((r) => r.salvata);
+      if (!(salvate.length > c.salvate && salvate.some((r) => ugualeTer(r.descr.value, c.descr)))) {
+        tabStore.del(TERAPIA);
+        return terapiaDice("warn", `non vedo «${c.descr || "la terapia"}» fra le terapie confermate: controlla la pagina.${restano}`);
+      }
+      i++;
+      if (i >= j.voci.length) { tabStore.del(TERAPIA); return terapiaDice("ok", j.voci.length === 1 ? "confermata." : `fatto: ${j.voci.length} terapie confermate.`); }
+    }
+    const g = { ...j, i, fase: "scrivo", confermata: null, ts: Date.now() };
+    tabStore.set(TERAPIA, g);
+    osservaScrittura();
+    const v = g.voci[i], dove = `${g.voci.length > 1 ? `${i + 1} di ${g.voci.length} · ` : ""}${v.descr}`;
+    terapiaDice("run", `scrivo ${dove}…`);
+    const r = await riempiTerapia(form, v, Date.now()).catch(() => ({ stop: "errore nel riempire la riga" }));
+    const ora = tabStore.get(TERAPIA, null);
+    if (!ora || ora.id !== g.id || ora.fase !== "scrivo") return;   // (Conferma o Chiudi premuti intanto: decide la pagina dopo)
+    if (r.stop) { tabStore.del(TERAPIA); return terapiaDice("warn", `fermato su ${dove}: ${r.stop}.`); }
+    tabStore.set(TERAPIA, { ...ora, fase: "attesa", ts: Date.now() });
+    terapiaDice(r.ok ? "ok" : "warn", `${dove}: ${r.ok ? r.testo : r.tocca}.${g.voci.length - i - 1 > 0 ? " Dopo la Conferma preparo il successivo." : ""}`);
   }
 
   // ---------------------------------------------------- portale clinico
