@@ -270,13 +270,16 @@ await blocco("Il tabellone: Alta | Bassa | Entrambe, le mappe, la lista sotto", 
   const scorre = () => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".stcanvas")].some((c) => c.scrollWidth > c.clientWidth + 1 || c.scrollHeight > c.clientHeight + 1));
   check(!(await scorre()), "le mappe stanno nel loro spazio: niente da scorrere");
   if (SHOTS) await page.screenshot({ path: join(SHOTS, "tab-entrambe.png") });
-  // stretta: una sopra l'altra, sempre in scala
+  // stretta: una sopra l'altra, sempre in scala (col Da fare ridotto alla sua barra:
+  // aperto, sopra le mappe, ne prende un pezzo d'altezza — vedi «Il Da fare del tabellone»)
+  await $p(page, "#tdtog").click();
   await page.setViewportSize({ width: 620, height: 900 });
   await page.waitForTimeout(300);
   const m2 = await rett(page, ".stmap");
   check(m2[0].b <= m2[1].y + 1 && !(await scorre()), "stretta: una sopra l'altra, e niente si scorre di lato");
   if (SHOTS) await page.screenshot({ path: join(SHOTS, "tab-entrambe-stretta.png") });
   await page.setViewportSize({ width: 1280, height: 900 });
+  await $p(page, "#tdtog").click();
   // ROSSI nella Rossa: in Mappa sta sulla mappa e non nella lista; in Lista c'è, col suo posto
   check((await righe(page)).includes("700011") && !(await righe(page)).includes("700001")
     && (await $p(page, '.stmap[data-mappa="alta"] [data-letto="rossa"] .stp[data-stp="700001"]').count()) === 1, "Mappa: la lista ha solo chi non ha un posto (ROSSI è nella Rossa, sulla mappa)");
@@ -478,6 +481,8 @@ await blocco("La scheda al passaggio: sul nome e sul letto", async () => {
   check(/^ECG ✓ \d\d:\d\d «Ritmo sinusale a frequenza 98 bpm/.test(c?.[3] || "") || /^ECG ✓ \d\d:\d\d Ritmo sinusale a frequenza 98 bpm/.test(c?.[3] || ""), `4ª: ECG, l'ora e le prime parole del referto (got: ${c?.[3]})`);
   check(c?.some((x) => /^RX addome ⏳ 40′/.test(x)) && c?.some((x) => /^RX torace ✓ .*Non addensamenti/.test(x)), `RX: in attesa col tempo, refertato con le prime parole (got: ${c?.slice(4).join(" | ")})`);
   check(c?.length === 6, `niente altro (got: ${c?.length} righe)`);
+  const dfCarta = await page.evaluate(() => [...(document.getElementById("psassist-host").shadowRoot.querySelectorAll(".pzcarta .pcd .pcdi") || [])].map((x) => x.textContent.trim()));
+  check(dfCarta.join("|") === "rivalutare dolore", `e sotto, le sue cose da fare aperte (got: ${dfCarta.join(" | ")})`);
   if (SHOTS) await page.screenshot({ path: join(SHOTS, "tab-carta-riga.png") });
   await page.mouse.move(5, 5);
   await page.waitForTimeout(100);
@@ -497,6 +502,117 @@ await blocco("La scheda al passaggio: sul nome e sul letto", async () => {
   await page.mouse.click(letto.x + letto.w / 2, letto.y + letto.h / 2);
   await finoA(page, /EPISODIO_ID=700001/);
   check(true, "il clic sul letto apre il paziente, come prima");
+  await context.close();
+});
+
+// ------------------------------------------- 3b. il Da fare del tabellone
+await blocco("Il Da fare del tabellone: il generale, e quello dei pazienti col cognome", async () => {
+  const srv = server(), ora = Date.now(), seed = semeTabellone();
+  seed["dafare.v1"] = {
+    700001: [{ id: "a", testo: "rivalutare dolore", t: null, fatto: null, ord: 0, ts: ora }],
+    700031: [{ id: "c", testo: "consulenza cardiologica", t: null, fatto: null, ord: 0, ts: ora }],
+    700002: [{ id: "b", testo: "EGA", t: ora + 40 * 60e3, fatto: null, ord: 0, ts: ora }, { id: "b2", testo: "chiamare il figlio", t: null, fatto: null, ord: 1, ts: ora }],
+  };
+  const { context, page } = await contesto(srv, { seed });
+  await page.goto(URL_LISTA);
+  await pannello(page);
+  await page.waitForTimeout(300);
+  const testi = (sel) => page.evaluate((sel) => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(sel)].map((x) => x.textContent.replace(/\s+/g, " ").trim()), sel);
+  const voce = (testo) => $p(page, `.tdcard .tdi:has(.tdtx:text-is("${testo}"))`);
+  const fuoco = () => page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id || "");
+  const separati = (a, b) => !!a && !!b && (a.r <= b.x + 1 || b.r <= a.x + 1 || a.b <= b.y + 1 || b.b <= a.y + 1);
+  // sempre in vista: in Mappa e in Lista, in ogni vista, senza coprire le mappe
+  let ovunque = true;
+  for (const [v, m] of [["alta", "mappa"], ["bassa", "mappa"], ["entrambe", "mappa"], ["entrambe", "lista"], ["alta", "lista"]]) {
+    await $p(page, `[data-vista="${v}"]`).click();
+    await $p(page, `[data-modo="${m}"]`).click();
+    await page.waitForTimeout(150);
+    const td = (await rett(page, ".tdcard"))[0], mappe = await rett(page, ".stmappe"), lista = await rett(page, ".pzcoda");
+    const ok = !!td && td.w > 200 && td.h > 200 && mappe.every((x) => separati(td, x)) && lista.every((x) => separati(td, x));
+    if (!ok) { ovunque = false; console.log("    ", v, m, JSON.stringify({ td, mappe, lista })); }
+  }
+  check(ovunque, "il Da fare c'è in Mappa e in Lista, in ogni vista: accanto, senza coprire le mappe né la lista");
+  await $p(page, '[data-vista="alta"]').click();
+  await $p(page, '[data-modo="mappa"]').click();
+  await page.waitForTimeout(150);
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, "tab-dafare.png") });
+  // i pazienti: col COGNOME in grassetto maiuscolo, nell'ordine del tabellone (l'area, poi l'ingresso)
+  const paz = await testi('.tdcard [data-tdl="paz"] .tdi .dftx');
+  check(paz.join(" | ") === "ROSSI rivalutare dolore | VERDI EGA | VERDI chiamare il figlio | ESPOSITO consulenza cardiologica",
+    `le cose da fare dei pazienti, col cognome davanti, nell'ordine del tabellone (got: ${paz.join(" | ")})`);
+  const chi = await page.evaluate(() => { const b = document.getElementById("psassist-host").shadowRoot.querySelector(".tdcard .tdchi"); return { w: +getComputedStyle(b).fontWeight, t: b.tagName }; });
+  check(chi.w >= 700 && chi.t === "B", `il cognome in grassetto (got: ${JSON.stringify(chi)})`);
+  check(/^\d\d:\d\d$/.test((await voce("EGA").locator(".dft").innerText().catch(() => "")).trim()), "un promemoria porta la sua ora");
+  // il generale: Invio aggiunge, il campo resta pronto
+  await $p(page, "#tdin").fill("chiamare la radiologia");
+  await $p(page, "#tdin").press("Enter");
+  await $p(page, "#tdin").fill("passaggio di consegne");
+  await $p(page, "#tdin").press("Enter");
+  const gen = () => ls(page, "dafare.generale.v1");
+  check((await gen())?.map((x) => x.testo).join("|") === "chiamare la radiologia|passaggio di consegne" && (await testi('.tdcard [data-tdl="gen"] .tdtx')).length === 2
+    && (await fuoco()) === "tdin" && (await $p(page, "#tdin").inputValue()) === "", "il Da fare generale: Invio aggiunge (dafare.generale.v1), il campo resta pronto");
+  check(!JSON.stringify(await gen()).includes("700001"), "di nessun paziente: nessun episodio dentro");
+  // un tocco sul testo lo modifica; ✕ lo cancella; la spunta lo fa
+  await voce("chiamare la radiologia").locator(".tdtx").click();
+  await $p(page, ".tdcard .dfmod").fill("chiamare la radiologia per il box 3");
+  await $p(page, ".tdcard .dfmod").press("Enter");
+  check((await gen())?.[0]?.testo === "chiamare la radiologia per il box 3" && (await voce("chiamare la radiologia per il box 3").count()) === 1, "un tocco sul testo lo modifica (Invio salva)");
+  await voce("passaggio di consegne").locator(".dfck").click();
+  check(Number.isFinite((await gen())?.[1]?.fatto) && (await voce("passaggio di consegne").evaluate((li) => li.classList.contains("fatto"))), "la spunta: fatta, barrata, resta lì (5 minuti)");
+  await voce("chiamare la radiologia per il box 3").hover();
+  await voce("chiamare la radiologia per il box 3").locator(".dfx").click();
+  check((await gen())?.length === 1 && (await voce("chiamare la radiologia per il box 3").count()) === 0, "✕ lo cancella");
+  // le voci dei pazienti: le stesse della loro lista (dafare.v1), e la riga si rifà
+  const df = () => ls(page, "dafare.v1");
+  await voce("chiamare il figlio").locator(".tdtx").click();
+  await $p(page, ".tdcard .dfmod").fill("chiamare il figlio alle 18");
+  await $p(page, ".tdcard .dfmod").press("Enter");
+  check((await df())?.["700002"]?.[1]?.testo === "chiamare il figlio alle 18", "una voce di un paziente si modifica dal tabellone, nella sua lista");
+  await voce("consulenza cardiologica").locator(".dfck").click();
+  check(Number.isFinite((await df())?.["700031"]?.[0]?.fatto), "si spunta");
+  await voce("EGA").hover();
+  await voce("EGA").locator(".dfx").click();
+  check((await df())?.["700002"]?.map((x) => x.testo).join("|") === "chiamare il figlio alle 18", "e si cancella");
+  await $p(page, '[data-modo="lista"]').click();
+  await page.waitForTimeout(150);
+  const icona = await page.evaluate(() => { const b = document.getElementById("psassist-host").shadowRoot.querySelector('.pzrow[data-pz="700002"] .dfic'); return { n: b?.textContent.trim(), t: b?.title }; });
+  check(icona.n === "1" && /chiamare il figlio alle 18/.test(icona.t || ""), `la riga del paziente lo sa: una voce, quella modificata (got: ${JSON.stringify(icona)})`);
+  // e dalla lista del paziente: ✕ e il testo da toccare ci sono anche lì
+  await $p(page, '.pzrow[data-pz="700002"] .dfic').click();
+  await $p(page, ".dfpop").waitFor();
+  check((await $p(page, ".dfpop .dfi .dfx").count()) === 1 && (await $p(page, ".dfpop .dfi [data-dfmod]").count()) === 1, "nella lista del paziente: ✕ e il testo che si tocca per modificarlo");
+  await page.keyboard.press("Escape");
+  // si riduce a una barra sottile, e se lo ricorda
+  await $p(page, "#tdtog").click();
+  await page.waitForTimeout(150);
+  const barra = (await rett(page, ".tdcard"))[0];
+  check(!!barra && barra.w <= 44 && (await $p(page, "#tdin").count()) === 0 && (await ls(page, "tabellone.dafare.v1"))?.chiusa === true, `ridotto: una barra sottile (${barra && Math.round(barra.w)}px), e lo ricorda`);
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, "tab-dafare-ridotto.png") });
+  await page.reload();
+  await pannello(page);
+  check((await $p(page, ".tdcard.chiusa").count()) === 1, "ricaricata la pagina, è ancora ridotto");
+  await $p(page, "#tdtog").click();
+  check((await $p(page, "#tdin").count()) === 1, "un tocco lo riapre");
+  // stretta: sopra le mappe
+  await page.setViewportSize({ width: 620, height: 900 });
+  await $p(page, '[data-modo="mappa"]').click();
+  await page.waitForTimeout(300);
+  const td2 = (await rett(page, ".tdcard"))[0], m2 = (await rett(page, ".stmappe"))[0];
+  check(!!td2 && !!m2 && td2.b <= m2.y + 1 && td2.w > 500 && m2.h > 150, `stretta: sopra le mappe, che restano in vista (Da fare fino a ${Math.round(td2?.b)}, mappe da ${Math.round(m2?.y)}, alte ${Math.round(m2?.h)})`);
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, "tab-dafare-stretta.png") });
+  await $p(page, "#tdtog").click();
+  await page.waitForTimeout(150);
+  const tb = (await rett(page, ".tbbar"))[0], m3 = (await rett(page, ".stmappe"))[0], togb = (await rett(page, ".tbbar .tdtogb"))[0];
+  check(!(await $p(page, ".tdcard").isVisible()) && !!togb && togb.w > 0 && togb.y >= tb.y && togb.b <= tb.b && m3.h > m2.h + 40,
+    `stretta e ridotto: solo un bottone in fondo alla barra del tabellone, l'altezza torna alle mappe (${Math.round(m2.h)} → ${Math.round(m3?.h)}px)`);
+  await $p(page, ".tbbar .tdtogb").click();
+  check(await $p(page, ".tdcard #tdin").isVisible(), "e un tocco lo riapre");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  // «Reset dati pazienti» porta via anche il generale (è roba del turno)
+  await $p(page, "#menubtn").click();
+  await $p(page, "#resetpaz").click();
+  await $p(page, "#resetpaz").click();
+  check((await gen()) === null && (await ls(page, "tabellone.dafare.v1"))?.chiusa === false, "«Reset dati pazienti» porta via il Da fare generale (l'impostazione resta)");
   await context.close();
 });
 

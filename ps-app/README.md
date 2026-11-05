@@ -112,15 +112,20 @@ contenuto, che sta su una colonna comoda da leggere (valori e stanza usano tutta
 La sposti dall'intestazione, la ridimensioni da **qualsiasi bordo o angolo**; **doppio clic**
 sull'intestazione o sull'angolo la rimette al centro, nella misura di partenza. Una finestra che
 hai spostato o ridimensionato, e **Affianca**, restano come le hai messe. **—** la riduce alla **pill**, che
-resta dove la trascini; un tocco sulla pill riapre la finestra dove l'avevi lasciata. Per usare il
-gestionale sotto, si riduce alla pill: la finestra lo copre quasi tutto, apposta.
+resta dove la trascini; il mouse fermo sulla pill (o un tocco) riapre la finestra dove l'avevi lasciata
+(vedi *Forma*). Per usare il gestionale sotto, si riduce alla pill: la finestra lo copre quasi tutto, apposta.
 
-**Forma (da provare nei turni).** ⋯ → **Forma: Finestra · Al passaggio · Colonna** (si ricorda; il
-reset la lascia). **Finestra**, la forma di partenza, è quella qui sopra. **Al passaggio**: il mouse
-fermo sulla pill (150 ms) apre la finestra senza togliere la tastiera al gestionale, e mezzo secondo
-dopo che è uscito la richiude — non con il cursore o del testo non mandato in un campo del pannello,
-esami scelti, un ordine in partenza o un trascinamento. Un clic sulla pill (che resta) la fissa, un
-altro la libera, Esc la chiude; col dito un tocco apre e un tocco chiude. **Colonna**: a destra, a
+**Forma.** ⋯ → **Forma: Finestra · Al passaggio · Colonna** (si ricorda; il reset la lascia). **Al
+passaggio** è la forma di partenza (l'ha chiesta il medico): il mouse fermo sulla pill per un quarto di
+secondo (chi ci passa sopra e basta non la apre) apre la finestra senza togliere la tastiera al
+gestionale, e mezzo secondo dopo che il mouse è uscito la richiude — non con il cursore o del testo non
+mandato in un campo del pannello, esami scelti, un ordine in partenza o in coda, un giro andato storto,
+un trascinamento, il menu ⋯, la lista Da fare o un «Sposta in…» aperti, la Modifica della stanza.
+Ripassando si riapre **dove eri**: la stessa schermata, scorsa allo stesso punto. Un clic sulla pill (che
+resta, sopra la finestra, e si trascina anche lì; se copre ⋯ e — quelli si fanno in là) la fissa, un
+altro la libera, Esc la chiude; la pill che ricompare sotto il mouse fermo non si riapre da sola; col
+dito un tocco apre e un tocco chiude. **Finestra** è quella di sempre, qui sopra: si apre e si chiude
+solo con un tocco. **Colonna**: a destra, a
 tutta altezza, e il gestionale **si stringe** accanto (un margine destro alla pagina) invece di
 essere coperto; larghezza dal bordo sinistro (420 px – 60% dello schermo), ricordata; **F2** (non
 mentre scrivi nel gestionale), la linguetta o **—** la nascondono: resta una linguetta di 7 px.
@@ -176,6 +181,14 @@ un paziente aperto; sulla scheda di un paziente parte dagli **Esiti**.
 delle due mappe) e un piccolo **⟳**. *Entrambe*: le due mappe affiancate se lo spazio è largo, una
 sopra l'altra se no; sempre in scala, **mai da scorrere di lato**. La scelta resta; finché non ne
 fai una, si vede la mappa dell'area in cui lavori. Accanto, **Mappa | Lista** (resta). *Mappa*: sotto le mappe la **lista** ha solo chi **non ha ancora un posto** (gli altri sono sulla mappa).
+Sempre in vista, in Mappa e in Lista, il **Da fare del tabellone**: accanto alle mappe quando c'è posto,
+sopra quando la finestra è stretta; **Da fare ▾** lo riduce a una barra sottile (e lo ricorda). In cima
+il **generale**, di nessun paziente: si scrive e **Invio** aggiunge (`dafare.generale.v1`, in questo
+browser e nello specchio del tabellone, mai al telefono; non scade, una voce spuntata se ne va dopo 5
+minuti; il «Reset dati pazienti» lo porta via). Sotto, le cose da fare di **ogni paziente**, ognuna col
+**COGNOME** davanti in grassetto, nell'ordine del tabellone (l'area, poi l'ordine del gestionale): sono
+le stesse della sua lista. Dappertutto **un tocco sul testo lo modifica** (Invio salva, Esc lascia
+com'era), **✕** cancella, la spunta tonda la fa.
 *Lista*: niente mappe, **tutti** quelli della vista, per area (Alta, Bassa, OBI, Codici minori) e nell'ordine della lista del gestionale (l'ultima letta intera), col posto in una pillola dopo il nome. La lista prende
 quello che le serve, al massimo poco meno di metà, poi scorre dentro. In fondo, chiusi, gli
 **Archiviati** e **Svuota l'elenco**.
@@ -204,7 +217,7 @@ sempre; ▾ e «Sposta in…» restano), non copre mai il suo letto, si chiude u
 hanno qualcosa, in quest'ordine: `▌ROSSI MARIO 79 M · Rossa · 3h40` · `♥ NEWS 8 · SpO2 88 · FC 132`
 (i parametri fuori norma) · i **valori fuori range** dell'ultimo prelievo, `K 5,9↑ Hb 9,1↓` · **ECG**
 (`✓ 10:02 «le prime parole del referto»`, o `⏳ 40′`) · **RX** (`RX addome ⏳ 40′`, `RX torace ✓
-«…»`). Valori e referti scritti vengono dalla scheda clinica del paziente (estensione), solo da
+«…»`) · le sue **cose da fare** aperte, tutte. Valori e referti scritti vengono dalla scheda clinica del paziente (estensione), solo da
 quest'ingresso in PS (o dalle ultime 24 ore), con la stessa regola d'identità degli Esiti. Passando
 su una riga, il suo letto si accende (e viceversa).
 
@@ -374,7 +387,8 @@ dentro — i promemoria. Al posto della nota e dei promemoria di prima: la **not
 prima voce senza ora, i **promemoria** voci con l'ora (la prima apertura dopo l'aggiornamento li porta
 lì da soli). Si apre **lì dov'è**, senza un'altra scheda, dall'icona **Da fare** dell'intestazione
 (accanto agli identificativi) o della riga, o dal menu di chi sta nella stanza (**Da fare…**). In
-fondo, un campo su una riga: si scrive e **Invio** aggiunge, in fondo alla lista. **Un tocco sulla
+fondo, un campo su una riga: si scrive e **Invio** aggiunge, in fondo alla lista. **Un tocco sul
+testo** lo modifica (Invio salva, Esc lascia com'era), **✕** cancella la voce. **Un tocco sulla
 spunta** e la voce è fatta: barrata, resta al suo posto **5 minuti** (un altro tocco la riapre), poi
 se ne va. L'ordine lo decidi tu: si **trascina** dalla maniglia ⋮⋮ (col mouse o col dito), o da
 tastiera **Alt+↑ / Alt+↓** sulla spunta. La **prima voce aperta** è il post-it: si legge nelle aree
@@ -926,7 +940,10 @@ fa scattare il doppio clic del riquadro.
 
 ### Nota sul paziente
 Non c'è più un campo a parte: la nota è la **prima voce di Da fare** (vedi *Pazienti*), il post-it
-che si legge sulla riga. Quelle scritte prima sono diventate voci da sole, sul paziente
+che si legge sulla riga. Sulla pagina di un paziente le sue cose da fare sono **sempre in vista**,
+senza un tocco: ridotto il pannello in un foglietto giallo sotto la pill, aperto in cima alla
+finestra — al più tre righe corte (la prima è la nota), poi «+N»; un tocco apre la lista. Se non ha
+niente da fare, niente. Quelle scritte prima sono diventate voci da sole, sul paziente
 giusto: per codice fiscale, o per nome solo se in elenco non c'è un omonimo — una nota di chi non è
 in elenco aspetta lì finché scade.
 
@@ -1459,7 +1476,8 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   pubblico: lo zip è anonimizzato, ma il controllo a volte lascia dati da guardare.
 - **Dove il pannello non c'è** (il SISS, il portale, le finestre del referto) mentre registri
   compare la pill **● Registrando…**: è la stessa pill del pannello ridotto, nello stesso posto in
-  alto a destra (solo nella finestra principale, mai nei riquadri). Un clic → **Ferma e scarica**,
+  alto a destra (solo nella finestra principale, mai nei riquadri); si **trascina**, e resta dove la
+  lasci, sito per sito (`storage.local` «registra.pill»), sempre dentro lo schermo. Un clic → **Ferma e scarica**,
   come dal menu ⋯. Sul gestionale resta il ● REC del pannello, senza una seconda pill.
 - **Cosa si registra**, solo sul gestionale, sul portale e sul SISS: ogni pagina che apri, in ogni scheda
   e finestra (il DOM com'è dopo il caricamento, senza il pannello); il flusso delle richieste,
