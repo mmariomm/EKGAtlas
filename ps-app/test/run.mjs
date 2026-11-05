@@ -114,9 +114,19 @@ async function armaSvuota(page) {
   }, null, { timeout: 15000 });
   return h.jsonValue();
 }
+// La forma di partenza è «Al passaggio» (il mouse fermo sulla pill apre, uscendo
+// si richiude). Questi scenari provano quello che c'è DENTRO il pannello, con la
+// finestra di sempre (⋯ → Forma: Finestra); la forma di partenza la provano gli
+// scenari della forma (`forma: "partenza"`).
+async function finestraDiSempre(context) {
+  await context.addInitScript(() => {
+    try { if (!localStorage.getItem("psassist:forma.v1")) localStorage.setItem("psassist:forma.v1", JSON.stringify("finestra")); } catch { /* niente */ }
+  });
+}
 async function newPage(browser, mock, opts = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   if (opts.finestra !== "centro") await colonna(context);
+  if (opts.forma !== "partenza") await finestraDiSempre(context);
   if (!opts.pill) await apertoDalPannello(context);
   await context.route("https://smarthealth.multimedica.it/**", async (route) => {
     const req = route.request();
@@ -4074,7 +4084,7 @@ async function scenarioFinestra(browser) {
 async function scenarioForma(browser) {
   const scen = "forma";
   const mock = createMock({});
-  const { context, page } = await newPage(browser, mock, { finestra: "centro", pill: true });
+  const { context, page } = await newPage(browser, mock, { finestra: "centro", pill: true, forma: "partenza" });
   const ls = (k) => page.evaluate((k) => JSON.parse(localStorage.getItem("psassist:" + k) || "null"), k);
   const aperta = async () => (await $panel(page, ".card").count()) === 1;
   const forma = async (f) => {
@@ -4093,12 +4103,15 @@ async function scenarioForma(browser) {
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host #expand", { state: "attached" });
 
-  // --- l'impostazione: di partenza Finestra, si ricorda, il reset la lascia
+  // --- l'impostazione: di partenza Al passaggio (l'ha chiesta il medico), si ricorda, il reset la lascia
   await $panel(page, "#expand").click();
   await $panel(page, "#menubtn").click();
-  check(scen, (await $panel(page, '[data-forma="finestra"][aria-checked="true"]').count()) === 1, "di partenza la forma è Finestra (quella di oggi)");
-  await shot(page, "forma-finestra");
+  check(scen, (await $panel(page, '[data-forma="passaggio"][aria-checked="true"]').count()) === 1 && (await ls("forma.v1")) === null,
+    "di partenza la forma è Al passaggio, senza averla scelta");
   await page.keyboard.press("Escape");
+  await forma("finestra");
+  check(scen, (await ls("forma.v1")) === "finestra" && (await $panel(page, "#pinpill").count()) === 0, "⋯ → Forma: Finestra, la finestra di sempre, si ricorda");
+  await shot(page, "forma-finestra");
   await forma("passaggio");
   check(scen, (await ls("forma.v1")) === "passaggio", "⋯ → Forma: Al passaggio si ricorda");
   await $panel(page, "#menubtn").click();
@@ -4234,6 +4247,116 @@ async function scenarioForma(browser) {
   await forma("finestra");
   const g5 = await page.evaluate(() => getComputedStyle(document.documentElement).marginRight);
   check(scen, g5 === "0px" && (await $panel(page, ".wrap.win:not(.col)").count()) === 1, `Finestra: la finestra di sempre, la pagina senza margine (${g5})`);
+  await context.close();
+}
+
+// Al passaggio, la forma di partenza: un quarto di secondo fermo sulla pill e
+// si apre; uscendo si richiude — mai sotto un menu, una lista, una domanda a
+// due tocchi —; ripassando la schermata è com'era, scorrimento compreso. La
+// pill che resta sopra la finestra si trascina, e non copre ⋯ e —.
+async function scenarioPassaggio(browser) {
+  const scen = "al passaggio";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock, { finestra: "centro", pill: true, forma: "partenza" });
+  const aperta = async () => (await $panel(page, ".card").count()) === 1;
+  const centro = async (sel) => { const b = await $panel(page, sel).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  const fuori = async () => { await page.mouse.move(20, 880, { steps: 4 }); await page.waitForTimeout(1000); };
+  const dentro = async () => { const b = await $panel(page, ".card").boundingBox(); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 4 }); };
+  const passa = async () => { const c = await centro("#expand"); await page.mouse.move(c.x, c.y, { steps: 3 }); await page.waitForTimeout(500); };
+  const sfoca = () => page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.blur());
+  const ls = (k) => page.evaluate((k) => JSON.parse(localStorage.getItem("psassist:" + k) || "null"), k);
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+  await page.waitForTimeout(300);
+
+  // il mouse che passa e basta (meno di un quarto di secondo) non apre niente
+  const c0 = await centro("#expand");
+  await page.mouse.move(c0.x, c0.y, { steps: 2 });
+  await page.waitForTimeout(190);
+  await page.mouse.move(20, 880, { steps: 2 });
+  await page.waitForTimeout(400);
+  check(scen, !(await aperta()), "il mouse che attraversa la pill senza fermarsi non la apre");
+  await passa();
+  check(scen, (await aperta()) && (await $panel(page, "#pinpill[aria-pressed=false]").count()) === 1, "fermo sulla pill, senza averla scelta: si apre, e la pill resta");
+  await fuori();
+  check(scen, !(await aperta()), "uscito il mouse, si richiude");
+
+  // il menu ⋯ aperto la tiene aperta
+  await passa(); await dentro();
+  await $panel(page, "#menubtn").click();
+  await fuori();
+  check(scen, (await aperta()) && (await $panel(page, ".menu").count()) === 1, "non si richiude col menu ⋯ aperto");
+  await dentro(); await $panel(page, "#menubtn").click();
+  await fuori();
+  check(scen, !(await aperta()), "chiuso il menu, uscendo si richiude");
+  // …e la lista «Da fare» aperta (il fuoco altrove)
+  await passa(); await dentro();
+  await $panel(page, ".hd .dfic").click();
+  await $panel(page, ".dfpop").waitFor();
+  await sfoca();
+  await fuori();
+  check(scen, (await aperta()) && (await $panel(page, ".dfpop").count()) === 1, "né con la lista «Da fare» aperta");
+  await dentro();
+  await page.keyboard.press("Escape");
+  await fuori();
+  check(scen, !(await aperta()), "chiusa la lista, si richiude");
+
+  // ripassando: la stessa schermata, allo stesso punto
+  await passa(); await dentro();
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#rifmenu").click();
+  await page.waitForTimeout(200);
+  const giu = await page.evaluate(() => { const bd = document.getElementById("psassist-host").shadowRoot.querySelector(".bd"); bd.scrollTop = 400; return bd.scrollTop; });
+  await sfoca();
+  await fuori();
+  check(scen, !(await aperta()), "(uscita dai Riferimenti scorsi in giù: si richiude)");
+  await passa();
+  const torna = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    return { rif: r.querySelectorAll(".rifg").length, top: r.querySelector(".bd")?.scrollTop };
+  });
+  check(scen, giu > 100 && torna.rif > 0 && Math.abs((torna.top || 0) - giu) <= 2,
+    `ripassando si riapre dove eri: la stessa schermata (i Riferimenti), scorsa allo stesso punto (${giu} → ${torna.top}px)`);
+  await fuori();
+
+  // la pill che ricompare sotto il mouse fermo non si riapre da sola
+  await $panel(page, "#expand").click();   // un clic: aperta e fissata
+  check(scen, (await $panel(page, "#pinpill[aria-pressed=true]").count()) === 1, "(un clic la apre fissata)");
+  const cp = await centro("#pinpill");
+  await page.mouse.move(cp.x, cp.y);
+  await page.keyboard.press("Escape");
+  await page.mouse.move(cp.x + 1, cp.y, { steps: 1 });
+  await page.waitForTimeout(500);
+  check(scen, !(await aperta()), "chiusa con Esc col mouse sulla pill: la pill che ricompare lì sotto non si riapre da sola");
+
+  // aperta, la pill si trascina (e il trascinamento non è un tocco)
+  await page.mouse.move(20, 880); await page.waitForTimeout(300);
+  await passa();
+  const p0 = await centro("#pinpill");
+  await page.mouse.move(p0.x, p0.y);
+  await page.mouse.down();
+  await page.mouse.move(p0.x - 300, p0.y + 200, { steps: 8 });
+  await page.mouse.up();
+  const p1 = await centro("#pinpill"), pos = await ls("pillpos.v1");
+  check(scen, Math.abs(p1.x - (p0.x - 300)) <= 2 && Math.abs(p1.y - (p0.y + 200)) <= 2 && !!pos && (await $panel(page, "#pinpill[aria-pressed=false]").count()) === 1,
+    `aperta, la pill si trascina e resta dove la lasci, senza fissarla (${Math.round(p0.x)},${Math.round(p0.y)} → ${Math.round(p1.x)},${Math.round(p1.y)})`);
+  await fuori();
+  check(scen, !(await aperta()) && Math.abs((await centro("#expand")).x - p1.x) <= 2, "e ridotta è lì");
+
+  // affiancata in alto a destra, la pill sopra la finestra non copre ⋯ e —
+  await page.evaluate(() => { localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.63, y: 0.02, w: 0.36, h: 0.96 })); localStorage.removeItem("psassist:pillpos.v1"); });
+  await page.reload();
+  await page.waitForSelector("#psassist-host #expand", { state: "attached" });
+  await $panel(page, "#expand").click();
+  await page.waitForSelector("#psassist-host .card", { state: "attached" });
+  const scoperti = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot;
+    return ["#menubtn", "#collapse"].map((sel) => { const b = r.querySelector(sel).getBoundingClientRect(); return r.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest(sel) != null; });
+  });
+  check(scen, scoperti.every(Boolean), `affiancata in alto, la pill sopra la finestra lascia scoperti ⋯ e — (${scoperti.join(", ")})`);
+  await shot(page, "passaggio-affiancata");
+  await $panel(page, "#menubtn").click();
+  check(scen, (await $panel(page, ".menu").count()) === 1, "e il menu ⋯ si apre");
   await context.close();
 }
 
@@ -5374,7 +5497,55 @@ async function scenarioPromemoria(browser) {
   await page.clock.fastForward("01:00");
   check(scen, (await voceLi("EGA").count()) === 0 && !(await voci()).includes("EGA") && (await $panel(page, ".dfpop .dfi").count()) === 2,
     `passati i 5 minuti se ne va, dalla lista aperta e dalla memoria (got: ${(await voci()).join(" | ")})`);
+  // un tocco sul testo lo modifica: Invio salva, Esc lascia com'era; ✕ cancella
+  await voceLi("chiamare la figlia").locator(".dftx").click();
+  await $panel(page, ".dfpop .dfmod").fill("chiamare la figlia stasera");
+  await $panel(page, ".dfpop .dfmod").press("Enter");
+  check(scen, (await voci()).join("|") === "chiamare la figlia stasera|tropo" && (await $panel(page, ".dfpop").count()) === 1 && (await $panel(page, ".dfpop .dfmod").count()) === 0,
+    `un tocco sul testo lo modifica, Invio salva, la lista resta aperta (got: ${(await voci()).join(" | ")})`);
+  await voceLi("tropo").locator(".dftx").click();
+  await $panel(page, ".dfpop .dfmod").fill("niente");
+  await $panel(page, ".dfpop .dfmod").press("Escape");
+  check(scen, (await voci()).join("|") === "chiamare la figlia stasera|tropo" && (await $panel(page, ".dfpop").count()) === 1 && (await voceLi("tropo").count()) === 1,
+    "Esc nel campo lascia la voce com'era (e non chiude la lista)");
+  await $panel(page, "#dfin").fill("da togliere");
+  await $panel(page, "#dfin").press("Enter");
+  await voceLi("da togliere").hover();
+  await voceLi("da togliere").locator(".dfx").click();
+  check(scen, (await voci()).join("|") === "chiamare la figlia stasera|tropo" && (await testoIcona(".hd")) === "2", "✕ la cancella, dalla lista e dalla memoria; l'icona si rifà");
   await page.keyboard.press("Escape");
+
+  // Sempre in vista: in cima alla finestra le cose da fare di chi hai davanti,
+  // e ridotto il pannello, sotto la pill (la prima è la nota); un tocco apre la lista
+  const righeNota = async (sel) => ((await $panel(page, `${sel}:not([hidden])`).count()) ? (await $panel(page, `${sel} .dfnr`).allInnerTexts()) : []);
+  check(scen, (await righeNota(".dfnota.inwin")).join("|") === "chiamare la figlia stasera|11:30 tropo", `in cima alla finestra, le cose da fare (got: ${(await righeNota(".dfnota.inwin")).join(" | ")})`);
+  await $panel(page, "#collapse").click();
+  const nr = await righeNota(".dfnota");
+  const posto = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot, p = r.querySelector("#expand").getBoundingClientRect(), n = r.querySelector(".dfnota").getBoundingClientRect();
+    return { sotto: n.top >= p.bottom && n.top - p.bottom < 12, dentro: n.left >= 0 && n.right <= innerWidth, w: Math.round(n.width), h: Math.round(n.height) };
+  });
+  check(scen, nr.join("|") === "chiamare la figlia stasera|11:30 tropo" && posto.sotto && posto.dentro && posto.w <= 250 && posto.h <= 90,
+    `ridotto: sotto la pill, piccole, le cose da fare (got: ${nr.join(" | ")} · ${JSON.stringify(posto)})`);
+  await shot(page, "dafare-nota-pill");
+  await $panel(page, ".dfnota").click();
+  await $panel(page, ".dfpop").waitFor();
+  check(scen, (await $panel(page, ".card").count()) === 0 && (await $panel(page, ".dfpop .dfi").count()) === 2, "un tocco apre la lista lì, senza aprire la finestra");
+  for (const t of ["terza", "quarta"]) { await $panel(page, "#dfin").fill(t); await $panel(page, "#dfin").press("Enter"); }
+  check(scen, (await righeNota(".dfnota")).join("|") === "chiamare la figlia stasera|11:30 tropo|terza" && /^\+1$/.test((await $panel(page, ".dfnota .dfnpiu").innerText().catch(() => "")).trim()),
+    "al più tre righe, poi «+1»: rifatte sul posto mentre scrivi");
+  for (const t of ["quarta", "terza"]) { await voceLi(t).hover(); await voceLi(t).locator(".dfx").click(); }
+  await page.keyboard.press("Escape");
+  check(scen, (await $panel(page, ".dfpop").count()) === 0 && (await righeNota(".dfnota")).length === 2, "Esc la chiude");
+  const finoA = richieste;   // (le due pagine aperte qui non sono del Da fare)
+  await page.goto(mock.patientUrl.replace("999001", "999002"));
+  await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
+  if (await $panel(page, ".card").count()) await $panel(page, "#collapse").click();
+  check(scen, (await $panel(page, "#expand").count()) === 1 && (await $panel(page, ".dfnota:not([hidden])").count()) === 0, "chi non ha niente da fare: sotto la pill niente");
+  await page.goto(mock.patientUrl);
+  await apri();
+  await page.waitForLoadState("load");
+  richieste = finoA;
 
   // la Lista: l'icona col numero e il post-it (la prima voce aperta) sulla riga
   await $panel(page, "#back").click();
@@ -7359,6 +7530,7 @@ const scenarios = [
   ["pill ridotta: il promemoria di un altro paziente dice di chi è", scenarioPillAltroPaziente],
   ["finestra: tetto di 1150 px, schede ferme", scenarioFinestraLarga],
   ["forma: Finestra · Al passaggio · Colonna", scenarioForma],
+  ["forma di partenza: al passaggio, ripassando com'era", scenarioPassaggio],
   ["esiti: il Lab per primo, un fondo per sezione, bottone grande, unità", scenarioEsitiLayout],
   ["apertura: Esiti o Richieste, Lab in griglia fino a tre prelievi, orologi onesti", scenarioAperturaEGriglia],
   ["richieste compatte: una casella, tre colonne, la barra solo con qualcosa, Ctrl+Invio, Stampa nel ⋯", scenarioRichiesteCompatte],

@@ -160,6 +160,14 @@ try {
   check(await finche(async () => (await lsGest(gest, "stanza.alta.posti.v1"))?.["700002"]?.id === "a1", 5000),
     `VERDI nel Letto 1 dal tabellone: finisce nella memoria del gestionale (got ${JSON.stringify(await lsGest(gest, "stanza.alta.posti.v1"))})`);
   check(await finche(async () => /VERDI/.test(await $p(tab, '.stbed[data-letto="a1"]').innerText().catch(() => "")), 5000), "e torna al tabellone dallo specchio");
+
+  // --- il Da fare del tabellone: una voce generale scritta qui la scrive il gestionale, e torna
+  await $p(tab, "#tdin").fill("chiamare il laboratorio");
+  await $p(tab, "#tdin").press("Enter");
+  check(await finche(async () => (await lsGest(gest, "dafare.generale.v1"))?.some((x) => x.testo === "chiamare il laboratorio"), 5000),
+    `il Da fare generale scritto nel tabellone finisce nella memoria del gestionale (got ${JSON.stringify(await lsGest(gest, "dafare.generale.v1"))})`);
+  await sospendi(600);
+  check(/chiamare il laboratorio/.test(await $p(tab, '.tdcard [data-tdl="gen"]').innerText().catch(() => "")), "e resta nel tabellone, dallo specchio");
   await gest.reload();
   await gest.waitForSelector("#psassist-host #expand", { state: "attached", timeout: 15000 });
   await $p(gest, "#expand").click();

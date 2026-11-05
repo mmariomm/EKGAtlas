@@ -2341,7 +2341,7 @@
   // scrive come sempre: la verità resta nella memoria del gestionale.
   const TABELLONE = (() => { try { return location.protocol === "chrome-extension:" && /\/tabellone\.html$/.test(location.pathname); } catch { return false; } })();
   const SPECCHIO = "tabellone.specchio";   // in chrome.storage.local: { kv: { chiave: valore come in localStorage } }
-  const SPECCHIATE = new Set(["patients.v1", "aree.v1", "area.corrente.v1", "smart.sync.v1", "dimessi.v1", "stato.v1", "note.v1", "segni.v1", "dafare.v1"]);
+  const SPECCHIATE = new Set(["patients.v1", "aree.v1", "area.corrente.v1", "smart.sync.v1", "dimessi.v1", "stato.v1", "note.v1", "segni.v1", "dafare.v1", "dafare.generale.v1"]);
   const specchiata = (k) => SPECCHIATE.has(k) || /^(stanza|tabellone)\./.test(k);
   const conEstensione = () => { try { return typeof chrome !== "undefined" && !!chrome.runtime?.id && !!chrome.storage?.local; } catch { return false; } };
   let specchioAtteso = false;
@@ -2990,6 +2990,7 @@
   const NOME_VISTA = { alta: "Alta", bassa: "Bassa", entrambe: "Entrambe" };
   const MODO = "tabellone.modo.v1";            // "mappa" | "lista" — un'impostazione, resta
   const MODI = ["mappa", "lista"];
+  const TD_UI = "tabellone.dafare.v1";         // { chiusa } — il Da fare del tabellone ridotto a una barra: un'impostazione, resta
   const NOME_MODO = { mappa: "Mappa", lista: "Lista" };
   function tabelloniDi(k, triage) {
     if (k === "alta") return ["alta"];
@@ -3301,7 +3302,7 @@
   // turno, qui e nella memoria di questa scheda. Restano le impostazioni
   // (finestra, stanze, le opzioni delle aree, catalogo, stampe già fatte) e i
   // modelli del medico; chi sta in quale area se ne va.
-  const RESET_VIA = () => ["patients.v1", ...TUTTI_I_POSTI(), "stanza.posti.v1", AREE, AREA_VAI, SMART_SYNC, DIMESSI, STATO, PROM, PROM_VECCHI, noteKey, segniKey, "refVisti.v1",
+  const RESET_VIA = () => ["patients.v1", ...TUTTI_I_POSTI(), "stanza.posti.v1", AREE, AREA_VAI, SMART_SYNC, DIMESSI, STATO, PROM, PROM_VECCHI, DF_GEN, noteKey, segniKey, "refVisti.v1",
     "refPortale", DA_CONFERMARE, "quesiti", "quesiti.ts", "lastQ", APERTA, PRESIDIO, AUTO_CARICA, FALLITI];
   function azzeraScheda() {
     try { for (const k of Object.keys(sessionStorage)) if (k.startsWith(NS)) sessionStorage.removeItem(k); } catch { /* niente */ }
@@ -4049,6 +4050,35 @@
   const dfPrima = (ep, tutti) => dfAperte(ep, tutti)[0] || null;
   // La «nota» del telefono è la prima voce aperta SENZA ora (vedi il Ponte)
   const dfNota = (ep, tutti) => dfAperte(ep, tutti).find((x) => x.t == null) || null;
+
+  // Il «Da fare» GENERALE, sul tabellone: una lista sola, di nessun paziente,
+  // con le stesse spunte. Non scade; una voce spuntata resta 5 minuti, poi se
+  // ne va, come quelle dei pazienti. In questo browser (e nello specchio del
+  // tabellone), mai al telefono; il «Reset dati pazienti» la porta via.
+  const DF_GEN = "dafare.generale.v1";        // [{ id, testo, fatto|null, ts }]
+  const DF_GEN_MAX = 40;                      // voci aperte
+  function genTutte(ora = Date.now()) {
+    const raw = store.get(DF_GEN, []), l = Array.isArray(raw) ? raw : [];
+    const vive = l.filter((x) => x && typeof x.id === "string" && typeof x.testo === "string"
+      && (x.fatto == null || Number.isFinite(x.fatto)) && !(x.fatto && ora - x.fatto > DF_FATTO));
+    if (vive.length !== l.length) store.set(DF_GEN, vive);
+    return vive.map((x) => ({ id: x.id, testo: x.testo, t: null, fatto: x.fatto ?? null, ts: x.ts || ora }));
+  }
+  function genAggiungi(testo) {
+    const s = String(testo || "").replace(/\s+/g, " ").trim().slice(0, DF_LUNGO), l = genTutte();
+    if (!s || l.filter((x) => !x.fatto).length >= DF_GEN_MAX) return null;
+    const x = { id: dfId(), testo: s, fatto: null, ts: Date.now() };
+    return store.set(DF_GEN, [...l, x]) ? x : null;
+  }
+  function genCambia(id, fai) {
+    const l = genTutte(), x = l.find((v) => v.id === id);
+    if (!x) return false;
+    fai(x); x.ts = Date.now();
+    return store.set(DF_GEN, l);
+  }
+  const genSpunta = (id, si = true) => genCambia(id, (x) => { x.fatto = si ? Date.now() : null; });
+  const genTesto = (id, testo) => genCambia(id, (x) => { x.testo = String(testo).slice(0, 500); });
+  const genTogli = (id) => store.set(DF_GEN, genTutte().filter((x) => x.id !== id));
 
   // I promemoria sono le voci aperte con un'ora: le stesse funzioni di prima,
   // così la sveglia sulla pill, il +15′ e il telefono restano quelli.
@@ -6182,6 +6212,76 @@
     .dfhint:empty { display: none; }
     .dfhint.ko { color: #B3261E; }
     .dfsr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    /* ✕ cancella; un tocco sul testo lo modifica (la lista di un paziente e il Da fare del tabellone) */
+    .dfx { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 12px; color: #8296A9; opacity: 0; }
+    .dfi:hover .dfx, .dfi:focus-within .dfx { opacity: 1; }
+    .dfx:hover { background: #FDF1F0; color: #B3261E; }
+    .dfx:focus-visible { opacity: 1; outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    @media (hover: none) { .dfx { opacity: 1; } }
+    [data-dfmod], [data-tdmod] { cursor: text; border-radius: 4px; }
+    [data-dfmod]:hover, [data-tdmod]:hover { background: #F2F5F8; }
+    [data-dfmod]:focus-visible, [data-tdmod]:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .dfmod { display: block; width: 100%; min-width: 120px; height: 28px; padding: 0 8px; border: 1px solid #0B5CAD; border-radius: 6px; background: #fff;
+             font: inherit; font-size: 13px; color: #16232E; outline: 0; box-shadow: 0 0 0 3px rgba(11,92,173,.12); }
+    /* le cose da fare di chi hai davanti, sempre in vista: sotto la pill ridotta, e in cima alla finestra */
+    .dfnota { display: flex; flex-direction: column; align-items: stretch; gap: 1px; margin: 0; padding: 5px 9px; border: 1px solid #EBD995; border-radius: 8px;
+              background: #FFF8DE; color: #4A3B00; cursor: pointer; text-align: left; font: inherit; font-size: 12px; font-weight: 500; line-height: 1.35;
+              box-shadow: 0 4px 12px rgba(9,42,74,.14); }
+    .dfnota[hidden] { display: none; }
+    .dfnota:hover { background: #FFF2C4; }
+    .dfnota:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 2px; }
+    .dfnr { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .dfnr b { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .dfnpiu { font-weight: 700; color: #7A6400; }
+    .wrap:not(.win) > .dfnota { position: absolute; top: calc(100% + 6px); right: 0; width: max-content; max-width: 240px; }
+    .wrap:not(.win) > .dfnota.sx { right: auto; left: 0; }
+    .wrap:not(.win) > .dfnota.su { top: auto; bottom: calc(100% + 6px); }
+    .dfnota.inwin { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 2px 16px; width: 100%; margin: 0 0 12px; box-shadow: none; font-size: 12.5px; }
+    .dfnota.inwin .dfnr { max-width: 100%; }
+    /* la scheda al passaggio: le cose da fare */
+    .pzcarta .pcd { margin-top: 3px; padding-top: 3px; border-top: 1px solid #EEF2F6; }
+    .pzcarta .pcdi { display: block; position: relative; padding-left: 14px; }
+    .pzcarta .pcdi::before { content: ""; position: absolute; left: 1px; top: .45em; width: 7px; height: 7px; border: 1.4px solid #8296A9; border-radius: 50%; }
+    .pzcarta .pcdi.piu::before { display: none; }
+    .pzcarta .pcdi b { font-variant-numeric: tabular-nums; }
+    /* IL DA FARE DEL TABELLONE: sopra le mappe (le voci in colonne, se c'è posto); accanto a
+       loro solo quando lo spazio è largo davvero (la pagina del tabellone, uno schermo grande),
+       così la finestra di sempre non toglie larghezza ai letti. Ridotto, non prende spazio. */
+    .tdsec { container: tdsec / inline-size; }
+    .tdriga { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+    .tdriga > .pzunita { min-width: 0; }
+    .tdcard { flex: none; order: -1; display: flex; flex-direction: column; min-height: 0; max-height: 28%; border-bottom: 1px solid #E8EDF2; background: #FBFCFD; }
+    .tdhd { flex: none; display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 8px; }
+    .tdtog { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 0; border-radius: 6px; background: none;
+             cursor: pointer; font: inherit; font-size: 13px; color: #16232E; white-space: nowrap; }
+    .tdtog:hover { background: #EEF2F6; }
+    .tdtog svg { width: 14px; height: 14px; flex: none; }
+    .tdn { font-weight: 700; color: #35506B; font-variant-numeric: tabular-nums; }
+    .tdin { flex: 1 1 auto; min-width: 0; width: auto; height: 30px; }
+    .tdin.ko { border-color: #B3261E; }
+    .tdcorpo { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px 8px 8px; scrollbar-width: thin; }
+    .tdl { max-height: none; overflow: visible; }
+    .tdsez { margin: 8px 0 2px 2px; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #8296A9; }
+    .tdsez[hidden] { display: none; }
+    .tdi { min-height: 32px; padding-left: 2px; background: none; }
+    .tdchi { font-weight: 800; letter-spacing: .02em; color: #16232E; }
+    .tdtogb { display: none; }
+    /* stretta, ridotto: un bottone in fondo alla barra del tabellone, che non prende altezza */
+    @container tdsec (max-width: 1179.98px) {
+      .tdcard.chiusa { display: none; }
+      .tdtogb { display: inline-flex; margin-left: auto; }
+    }
+    @container tdsec (min-width: 640px) and (max-width: 1179.98px) {
+      .tdl { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); column-gap: 18px; }
+      .tdl > .dfi + .dfi { box-shadow: none; }
+    }
+    @container tdsec (min-width: 1180px) {
+      .tdriga { flex-direction: row; }
+      .tdcard { order: 0; width: 300px; max-height: none; border-bottom: 0; border-left: 1px solid #E8EDF2; }
+      .tdcard.chiusa { width: 42px; }
+      .tdcard.chiusa .tdhd { justify-content: center; padding: 8px 4px; }
+      .tdcard.chiusa .tdtog { writing-mode: vertical-rl; width: 32px; height: auto; padding: 10px 0; }
+    }
     /* il menu minuscolo della sveglia sulla pill ridotta: ✓ Fatto, +15′, Apri */
     .prmenu { position: absolute; z-index: 30; width: max-content; min-width: 260px; max-width: min(360px, calc(100vw - 16px)); padding: 4px;
               border: 1px solid #D9E2EC; border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgba(9,42,74,.16); }
@@ -6851,14 +6951,15 @@
   const FINESTRA_MAX_PX = 1150;
   const AFFIANCA = { x: 0.63, y: 0.02, w: 0.36, h: 0.96 };   // una colonna a destra: il gestionale resta visibile
   const eAffiancata = (w) => !!w && ["x", "y", "w", "h"].every((k) => Math.abs(w[k] - AFFIANCA[k]) < 0.005);
-  // La FORMA del pannello, da provare nei turni (⋯ → Forma): la finestra di
-  // sempre; la stessa che si apre al passaggio del mouse sulla pill e si
-  // richiude uscendo; o una colonna a destra, a tutta altezza, che stringe il
-  // gestionale invece di coprirlo. Un'impostazione: il reset la lascia.
+  // La FORMA del pannello (⋯ → Forma): la finestra che si apre al passaggio
+  // del mouse sulla pill e si richiude uscendo — quella di partenza: il medico
+  // l'ha chiesta così —; la finestra di sempre, che apre e chiude solo un
+  // tocco; o una colonna a destra, a tutta altezza, che stringe il gestionale
+  // invece di coprirlo. Un'impostazione: il reset la lascia.
   const FORMA = "forma.v1";
   const FORME_PANNELLO = ["finestra", "passaggio", "colonna"];
   const NOME_FORMA = { finestra: "Finestra", passaggio: "Al passaggio", colonna: "Colonna" };
-  const formaOra = () => { if (TABELLONE) return "finestra"; const f = store.get(FORMA, null); return FORME_PANNELLO.includes(f) ? f : "finestra"; };
+  const formaOra = () => { if (TABELLONE) return "finestra"; const f = store.get(FORMA, null); return FORME_PANNELLO.includes(f) ? f : "passaggio"; };
   // la colonna: la sua larghezza (px) e se il medico l'ha nascosta
   const COLONNA = "colonna.v1";
   const colonnaStato = () => { const c = store.get(COLONNA, null); return c && typeof c === "object" ? c : {}; };
@@ -6866,7 +6967,7 @@
     const vw = window.innerWidth || 1000, max = Math.max(420, Math.round(vw * 0.6));
     return Math.round(Math.min(max, Math.max(420, Number.isFinite(w) ? w : vw * 0.36)));
   };
-  const PASSAGGIO_APRE_MS = 150, PASSAGGIO_CHIUDE_MS = 500;
+  const PASSAGGIO_APRE_MS = 250, PASSAGGIO_CHIUDE_MS = 500;
   const geometriaPropria = (win) => !!win && [win.x, win.y, win.w, win.h].every(Number.isFinite);
   function geometriaFinestra(win) {
     const vw = window.innerWidth || 1000, vh = window.innerHeight || 800;
@@ -6953,7 +7054,7 @@
       if (titleEl) {
         this._titleObs = new MutationObserver(() => {
           // mai ricostruire una schermata in cui si sta scrivendo
-          const scrive = ["dfin", "riffiltro"].includes(this.root.activeElement?.id);
+          const scrive = ["dfin", "riffiltro"].includes(this.root.activeElement?.id) || !!this.root.querySelector(".dfmod");
           if (this.runState !== "running" && !scrive
               && this.view !== "dimtesto" && this.view !== "dimimport" && this.view !== "eotesto") this.render();
         });
@@ -8626,10 +8727,17 @@
       // portato la mappa, la lista e le aree restano dove li hai lasciati
       const scorre = (el) => {
         const a = el.classList.contains("starbody") && el.closest("[data-area]");
-        return a ? `[data-area="${CSS.escape(a.getAttribute("data-area"))}"] .starbody` : "." + ["bd", "list", "rlist", "stcanvas", "pzcoda", "pzpiede"].find((c) => el.classList.contains(c));
+        return a ? `[data-area="${CSS.escape(a.getAttribute("data-area"))}"] .starbody` : "." + ["bd", "list", "rlist", "stcanvas", "pzcoda", "pzpiede", "tdcorpo"].find((c) => el.classList.contains(c));
       };
-      const keepScroll = [...this.root.querySelectorAll(".bd, .list, .rlist, .stcanvas, .pzcoda, .pzpiede, .starbody")]
+      const keepScroll = [...this.root.querySelectorAll(".bd, .list, .rlist, .stcanvas, .pzcoda, .pzpiede, .starbody, .tdcorpo")]
         .filter((el) => el.scrollTop || el.scrollLeft).map((el) => [scorre(el), el.scrollTop, el.scrollLeft]);
+      // ridotta e riaperta (il mouse che passa e ripassa): la schermata torna come l'avevi lasciata, scorrimento compreso
+      const eraAperta = !!this.root.querySelector(".card");
+      if (eraAperta && this.collapsed) this._scorreRidotta = { view: this.view, l: keepScroll };
+      else if (!eraAperta && !this.collapsed && this._scorreRidotta) {
+        if (this._scorreRidotta.view === this.view) keepScroll.push(...this._scorreRidotta.l);
+        this._scorreRidotta = null;
+      }
       // la lista «Da fare» aperta si riapre uguale (dfRiattacca), con quello che
       // si stava scrivendo e il cursore dov'era; il menu della sveglia si chiude
       const din = this.root.querySelector("#dfin");
@@ -8758,6 +8866,7 @@
             <button class="coltab${this.promUrgente() ? " urg" : ""}" id="expand" title="${esc(who)} — ${esc(APP)}: mostra la colonna (F2)" aria-label="Mostra il pannello (F2)"></button>
           ` : this.collapsed ? `
             <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}${this.chipRec()}${this.promUrgente()}</button>
+            ${sulPaziente ? this.dfNotaSlot(this.epDiQuesta(), undefined, `${pp && Number.isFinite(pp.left) && pp.left < window.innerWidth / 2 ? " sx" : ""}${pp && Number.isFinite(pp.top) && pp.top > window.innerHeight - 180 ? " su" : ""}`) : ""}
           ` : `
             ${forma === "colonna" && !TABELLONE ? `<button class="coltab apre" id="colnascondi" title="Nascondi la colonna (F2)" aria-label="Nascondi il pannello (F2)"></button>` : ""}
             <div class="card${inStanza ? " stanza" : ""}" role="dialog" aria-label="${esc(APP)}" tabindex="-1">
@@ -8831,7 +8940,7 @@
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
               </div>
-              <div class="bd"><div class="bdi">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div></div>
+              <div class="bd"><div class="bdi">${idp && !running ? this.dfNotaSlot(this.epDiQuesta(), undefined, " inwin", "notaf") : ""}${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div></div>
               ${this.inPazienti() ? "" : this.stanzaSnack()}
               ${TABELLONE ? "" : forma === "colonna" ? `<div class="rz rz-w" data-rz="w" title="Trascina per allargare o stringere la colonna"></div>` : `
               ${["n", "s", "e", "w", "ne", "nw", "se", "sw"].map((d) => `<div class="rz rz-${d}" data-rz="${d}"></div>`).join("")}
@@ -8845,6 +8954,12 @@
             ? "Fissata: resta aperta. Un tocco la lascia richiudere uscendo col mouse; Esc la chiude" : "Si richiude uscendo col mouse: tocca per fissarla"}">${pillInner}</button></div>` : ""}`;
       this.colonnaMargine();
       this.bind();
+      // Al passaggio la pill resta sopra la finestra: se copre i comandi in fondo all'intestazione (⋯, —), quelli si fanno in là
+      const pin = this.root.querySelector("#pinpill"), hd = this.root.querySelector("#draghd");
+      if (pin && hd) {
+        const a = pin.getBoundingClientRect(), b = hd.getBoundingClientRect();
+        if (a.bottom > b.top && a.top < b.bottom && a.right > b.right - 90 && a.left < b.right) hd.style.paddingRight = `${Math.round(b.right - a.left) + 8}px`;
+      }
       for (const [sel, top, left] of keepScroll) {
         const el = this.root.querySelector(sel);
         if (el) { el.scrollTop = top; el.scrollLeft = left; }
@@ -8894,14 +9009,128 @@
       if (cerca && this.root.activeElement === cerca) { this._filtroFuoco = true; this._filtroSel = [cerca.selectionStart, cerca.selectionEnd]; }
       else if (this._filtro === "") this._filtro = null;
       const lista = this.modoTab() === "lista";
-      return `<div class="sec"><div class="pzunita${edit ? " edit" : ""}${lista ? " lista" : ""}">
+      // il campo del Da fare generale col cursore dentro: dopo il ridisegno è ancora lì
+      const tin = this.root.querySelector("#tdin");
+      this._tdFuoco = tin && this.root.activeElement === tin ? [tin.selectionStart, tin.selectionEnd] : null;
+      return `<div class="sec tdsec"><div class="tdriga"><div class="pzunita${edit ? " edit" : ""}${lista ? " lista" : ""}">
         ${edit ? "" : this.tabelloneBarra()}
         ${lista ? "" : `<div class="stmappe"><div class="stmappei${T.ks.length > 1 ? " due" : ""}">${T.ks.map((k) => this.conMappa(k, () => this.viewStanza(T.per.get(k)))).join("")}</div></div>`}
         ${edit ? "" : this.viewLista(T.lista, patientName)}
         ${edit ? "" : this.pazArchivio(T.lista)}
         ${lista ? "" : `<div class="pzrimetti" data-drop="tray" aria-hidden="true">${ico('<path d="M8 12.5v-9M4 7.5l4-4 4 4"/>')}Togli dal posto</div>`}
         ${this.stanzaSnack()}
-      </div></div>`;
+      </div>${edit ? "" : this.tdHtml(T)}</div></div>`;
+    }
+    // ===================================================== DA FARE · TABELLONE
+    // Sul tabellone, sempre in vista (Mappa e Lista, ogni vista): il «Da fare»
+    // generale — di nessun paziente — e sotto quello di ogni paziente, col
+    // COGNOME davanti, nell'ordine del tabellone (le aree, poi l'ordine del
+    // gestionale). Un tocco sul testo lo modifica, ✕ lo cancella, la spunta lo
+    // fa; le voci dei pazienti sono quelle della loro lista (dafare.v1).
+    // Accanto alle mappe quando c'è posto, sopra quando la finestra è stretta;
+    // si riduce a una barra sottile, e se lo ricorda.
+    tdOrdine(info) {
+      const a = areeLeggi(), k = (i) => a.membri[i.p.ep]?.k || "", n = (i) => a.membri[i.p.ep]?.n, sa = (i) => Number.isInteger(n(i));
+      const ingresso = (i) => i.p.arrivo || i.p.ts || 0, ord = (i) => (k(i) ? ordineArea(k(i)) : 1e3);
+      return [...info.values()].filter((i) => !i.prec)
+        .sort((x, y) => ord(x) - ord(y) || k(x).localeCompare(k(y)) || (sa(x) && sa(y) ? n(x) - n(y) : sa(y) - sa(x)) || ingresso(x) - ingresso(y))
+        .map((i) => ({ ep: i.p.ep, chi: ((i.omonimo ? i.breve : cognomeTitolo(i.p.name)) || "paziente").toUpperCase() + (i.coda || "") }));
+    }
+    tdVoce(x, ora, ep = "", chi = "") {
+      const b = x.t != null && !x.fatto ? promBanda(x.t, ora) : "";
+      return `<li class="dfi tdi${x.fatto ? " fatto" : ""}" data-id="${esc(x.id)}"${ep ? ` data-tdep="${esc(ep)}"` : ""}>
+        <button type="button" class="dfck" role="checkbox" aria-checked="${x.fatto ? "true" : "false"}" aria-label="${esc((chi ? chi + ": " : "") + x.testo)}"
+          title="${x.fatto ? "Fatta: un tocco la riapre (se ne va fra 5 minuti)" : "Un tocco quando è fatta"}"></button>
+        <span class="dftx">${chi ? `<b class="tdchi">${esc(chi)}</b> ` : ""}<span class="tdtx" data-tdmod role="button" tabindex="0" title="Tocca per modificare">${esc(x.testo)}</span></span>
+        ${x.t != null ? `<span class="dft${b ? " " + b : ""}" title="${esc(promRiga(x, ora))}">${esc(promOra(x.t, ora))}</span>` : ""}
+        <button type="button" class="dfx" data-tdvia title="Cancella" aria-label="Cancella ${esc(x.testo)}">✕</button>
+      </li>`;
+    }
+    tdListe(tutti = dfTutti(), ora = Date.now()) {
+      const gen = genTutte(ora), suoi = this._tdOrdine || [];
+      return {
+        gen: gen.map((x) => this.tdVoce(x, ora)).join(""),
+        paz: suoi.flatMap(({ ep, chi }) => dfDi(ep, tutti).map((x) => this.tdVoce(x, ora, ep, chi))).join(""),
+        aperte: gen.filter((x) => !x.fatto).length + suoi.reduce((n, { ep }) => n + dfAperte(ep, tutti).length, 0),
+      };
+    }
+    tdHtml(T) {
+      this._tdOrdine = this.tdOrdine(T.lista.info);
+      const chiusa = !!store.get(TD_UI, null)?.chiusa, { gen, paz, aperte } = this.tdListe(T.lista.df);
+      this._tdFirma = { gen, paz };
+      return `<aside class="tdcard${chiusa ? " chiusa" : ""}" aria-label="Da fare">
+        <div class="tdhd"><button type="button" class="tdtog" id="tdtog" aria-expanded="${!chiusa}" title="${chiusa ? "Mostra il Da fare" : "Riduci il Da fare a una barra"}">${
+          ICO.dafare}<b>Da fare</b><span class="tdn">${aperte || ""}</span></button>${chiusa ? "" : `
+          <input type="text" class="dfin tdin" id="tdin" maxlength="160" autocomplete="off" spellcheck="false" placeholder="Aggiungi…" value="${esc(this._tdTesto || "")}"
+            aria-label="Aggiungi al Da fare generale (di nessun paziente)" title="Una cosa da fare di nessun paziente: Invio la aggiunge">`}</div>
+        ${chiusa ? "" : `<div class="tdcorpo"><ul class="dfl tdl" data-tdl="gen" aria-label="Da fare generale">${gen}</ul>
+          <div class="tdsez"${paz ? "" : " hidden"}>Pazienti</div><ul class="dfl tdl" data-tdl="paz" aria-label="Da fare dei pazienti">${paz}</ul></div>`}
+      </aside>`;
+    }
+    // rifatte SUL POSTO (un gesto, il tempo che passa, un'altra scheda): niente
+    // ridisegno, il campo resta com'è; mai sotto una modifica in corso
+    tdMetti(tutti = dfTutti(), ora = Date.now()) {
+      const c = this.root.querySelector(".tdcard");
+      if (!c || c.querySelector(".dfmod")) return;
+      const { gen, paz, aperte } = this.tdListe(tutti, ora);
+      const f = this.root.activeElement?.closest?.(".tdi"), fid = f && [f.getAttribute("data-id"), f.getAttribute("data-tdep") || ""];
+      for (const [ul, html] of [[c.querySelector('[data-tdl="gen"]'), gen], [c.querySelector('[data-tdl="paz"]'), paz]]) {
+        if (ul && ul._firma !== html) { ul.innerHTML = html; ul._firma = html; }
+      }
+      const sez = c.querySelector(".tdsez"), n = c.querySelector(".tdn");
+      this._tdFirma = { gen, paz };
+      if (sez) sez.hidden = !paz;
+      if (n) n.textContent = aperte || "";
+      if (fid && !this.root.activeElement?.closest?.(".tdi")) {
+        const li = [...c.querySelectorAll(".tdi")].find((x) => x.getAttribute("data-id") === fid[0] && (x.getAttribute("data-tdep") || "") === fid[1]);
+        (li?.querySelector(".dfck") || c.querySelector("#tdin"))?.focus({ preventScroll: true });
+      }
+    }
+    tdLega() {
+      const c = this.root.querySelector(".tdcard");
+      if (!c) return;
+      const g = c.querySelector('[data-tdl="gen"]'), pz = c.querySelector('[data-tdl="paz"]');
+      if (g) g._firma = this._tdFirma?.gen;
+      if (pz) pz._firma = this._tdFirma?.paz;
+      const inp = c.querySelector("#tdin");
+      if (inp && this._tdFuoco) { inp.focus({ preventScroll: true }); inp.setSelectionRange(...this._tdFuoco); }
+      this._tdFuoco = null;
+      inp?.addEventListener("input", () => { this._tdTesto = inp.value; inp.classList.remove("ko"); });
+      inp?.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && inp.value) { e.preventDefault(); e.stopPropagation(); inp.value = this._tdTesto = ""; return; }
+        if (e.key !== "Enter" || !inp.value.trim()) return;
+        e.preventDefault();
+        if (!genAggiungi(inp.value)) { inp.classList.add("ko"); return; }
+        inp.value = this._tdTesto = "";
+        this.tdMetti();
+      });
+      const voce = (el) => { const li = el.closest(".tdi"); return li ? { id: li.getAttribute("data-id"), ep: li.getAttribute("data-tdep") || "" } : null; };
+      // una voce di un paziente cambiata qui: anche la sua icona, il post-it, la sua lista aperta
+      const dopo = (v) => { this.tdMetti(); if (v.ep) { this.dfMetti(v.ep); if (this._df?.ep === v.ep) this.dfLista(); } };
+      const modifica = (mod) => {
+        const v = voce(mod);
+        if (v) this.modificaVoce(mod, (t) => { if (t != null) { if (v.ep) dfCambia(v.ep, v.id, t); else genTesto(v.id, t); } dopo(v); });
+      };
+      const apriChiudi = () => { store.set(TD_UI, { ...(store.get(TD_UI, null) || {}), chiusa: !store.get(TD_UI, null)?.chiusa }); this.render(); };
+      this.root.querySelector(".tdtogb")?.addEventListener("click", apriChiudi);
+      c.addEventListener("click", (e) => {
+        if (e.target.closest("#tdtog")) return apriChiudi();
+        const ck = e.target.closest(".dfck"), via = e.target.closest("[data-tdvia]"), mod = e.target.closest("[data-tdmod]");
+        const v = voce(ck || via || mod || c);
+        if (!v) return;
+        if (ck) {
+          const si = ck.getAttribute("aria-checked") !== "true";
+          if (v.ep) dfSpunta(v.ep, v.id, si); else genSpunta(v.id, si);
+          dopo(v);
+        } else if (via) {
+          if (v.ep) dfTogli(v.ep, v.id); else genTogli(v.id);
+          dopo(v);
+        } else if (mod) modifica(mod);
+      });
+      c.addEventListener("keydown", (e) => {
+        const mod = e.target.closest?.("[data-tdmod]");
+        if (mod && e.target === mod && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); modifica(mod); }
+      });
     }
     // Alta | Bassa | Entrambe, e il ⟳ che rilegge subito la lista smart
     tabelloneBarra() {
@@ -8911,7 +9140,8 @@
       return `<div class="tbbar"><div class="tbseg" role="radiogroup" aria-label="Mappe">${VISTE.map((x) => `<button type="button" role="radio" data-vista="${x}" aria-checked="${x === v}"${
         x === v ? ' class="on"' : ""}>${NOME_VISTA[x]}</button>`).join("")}</div><div class="tbseg" role="radiogroup" aria-label="Mappa o lista">${MODI.map((x) => `<button type="button" role="radio" data-modo="${x}" aria-checked="${x === m}"${
         x === m ? ' class="on"' : ""}>${NOME_MODO[x]}</button>`).join("")}</div>${hasExt() ? `<button type="button" class="tbsync${gira ? " gira" : ""}" id="tbsync" title="Rileggi adesso la lista smart del gestionale${
-        s.fine && s.esito === "ok" ? ` (l'ultima: ${hhmm(s.fine)})` : ""}" aria-label="Aggiorna dal gestionale">⟳</button>` : ""}</div>`;
+        s.fine && s.esito === "ok" ? ` (l'ultima: ${hhmm(s.fine)})` : ""}" aria-label="Aggiorna dal gestionale">⟳</button>` : ""}${
+        store.get(TD_UI, null)?.chiusa ? `<button type="button" class="tdtog tdtogb" aria-expanded="false" title="Mostra il Da fare">${ICO.dafare}<b>Da fare</b></button>` : ""}</div>`;
     }
     // Quale vista: quella scelta dal medico; finché non ne ha scelta una,
     // quella dell'area in cui lavora.
@@ -8987,7 +9217,7 @@
       clearTimeout(this._fuoriT);
       if (this.collapsed || !this.inPazienti()) return;
       const occupato = this._stanzaPresa || this._stanzaMenu?.menu?.isConnected || this._df?.pop?.isConnected || this.stanzaEdit || this.menuAperto || this._carta
-        || this.root.activeElement?.id === "pzcerca";
+        || this.root.activeElement?.id === "pzcerca" || !!this.root.querySelector(".dfmod");   // (il campo del Da fare generale sopravvive al ridisegno: non ferma niente)
       if (occupato) { this._fuoriT = setTimeout(() => this.aggiornaDaFuori(), 3000); return; }
       this.cartaChiudi();
       this.render();
@@ -9109,6 +9339,10 @@
       const out = [riga("pc1", `<i class="pztr${tr}" aria-hidden="true"></i><b>${esc(p.name || "paziente")}</b>${
         [Number.isInteger(p.eta) ? String(p.eta) : "", p.sesso || ""].filter(Boolean).length ? ` ${esc([Number.isInteger(p.eta) ? p.eta : "", p.sesso || ""].filter((x) => x !== "").join(" "))}` : ""}${
         posto ? ` · ${esc(posto)}` : ""}${p.arrivo ? ` · ${attesaTesto(minDa(p.arrivo, ora))}` : ""}`)];
+      // le cose da fare (la prima è la nota), tutte quelle aperte
+      const df = dfAperte(p.ep);
+      if (df.length) out.push(`<div class="pcd" aria-label="Da fare">${df.slice(0, 8).map((x) => `<span class="pcdi">${x.t != null ? `<b>${esc(promOra(x.t, ora))}</b> ` : ""}${esc(x.testo)}</span>`).join("")}${
+        df.length > 8 ? `<span class="pcdi piu">+${df.length - 8}</span>` : ""}</div>`);
       const c = cuoreDi(statoDi(p.ep)?.vit, ora);
       if (c) out.push(riga("pcv", `<span class="cuore ${c.livello}${c.vecchio ? " vecchio" : ""}" aria-hidden="true">${c.vecchio ? "♡" : "♥"}</span> NEWS ${c.punti}${
         c.fuori.length ? " · " + esc(c.fuori.join(" · ")) : ""}${c.vecchio ? ` · ${c.ore}h fa` : ""}`));
@@ -9613,6 +9847,7 @@
       }
       $("#pzcercax")?.addEventListener("click", () => this.filtroChiudi());
       this.filtroApplica();
+      this.tdLega();
       // Alta | Bassa | Entrambe, e ⟳: la lista smart adesso
       this.root.querySelectorAll("[data-vista]").forEach((b) => b.addEventListener("click", () => this.sceglieVista(b.getAttribute("data-vista"))));
       this.root.querySelectorAll("[data-modo]").forEach((b) => b.addEventListener("click", () => this.sceglieModo(b.getAttribute("data-modo"))));
@@ -11056,6 +11291,23 @@
     dfPostSlot(ep, tutti) {
       return `<span class="dfpslot" data-dfp="${esc(ep)}">${this.dfPost(ep, tutti)}</span>`;
     }
+    // Le cose da fare di chi hai davanti, sempre in vista: sotto la pill
+    // ridotta e in cima alla finestra. Al più tre righe corte (la prima è la
+    // nota), poi «+N»; un tocco apre la lista. Niente, se non c'è niente.
+    dfNotaHtml(ep, tutti = dfTutti(), ora = Date.now()) {
+      const l = dfAperte(ep, tutti);
+      return l.slice(0, 3).map((x) => `<span class="dfnr">${x.t != null ? `<b>${esc(hhmm(x.t))}</b> ` : ""}${esc(x.testo)}</span>`).join("")
+        + (l.length > 3 ? `<span class="dfnpiu">+${l.length - 3}</span>` : "");
+    }
+    dfNotaTitolo(ep, tutti = dfTutti(), ora = Date.now()) {
+      const l = dfAperte(ep, tutti);
+      return `Da fare (${l.length}):\n${l.map((x) => (x.t != null ? promRiga(x, ora) : x.testo)).join("\n")}\nUn tocco: la lista`;
+    }
+    dfNotaSlot(ep, tutti = dfTutti(), cls = "", dove = "nota") {
+      const h = ep ? this.dfNotaHtml(ep, tutti) : "";
+      return `<button type="button" class="dfnota${cls}" data-df="${esc(ep)}" data-dove="${dove}" data-dfn="${esc(ep)}" aria-haspopup="dialog" aria-expanded="false"${
+        h ? ` title="${esc(this.dfNotaTitolo(ep, tutti))}"` : " hidden"}>${h}</button>`;
+    }
     // il pallino del letto (esami e «Da fare» insieme): si rifà da solo anche lui (dfMetti)
     segnaleHtml(ep, tutti = dfTutti(), ora = Date.now()) {
       return segnaleLetto(statoEsami(statoDi(ep), ora), dfAperte(ep, tutti), ora);
@@ -11194,9 +11446,11 @@
     // non si ruba il fuoco e non si disturba chi scrive.
     promTick() {
       const ora = Date.now(), tutti = dfTutti(ora);
-      const eps = new Set([...this.root.querySelectorAll("[data-dfslot], [data-dfp], [data-dfseg]")].map((s) => s.getAttribute("data-dfslot") || s.getAttribute("data-dfp") || s.getAttribute("data-dfseg")));
-      for (const ep of eps) this.dfMetti(ep, tutti, ora);
+      const eps = new Set([...this.root.querySelectorAll("[data-dfslot], [data-dfp], [data-dfseg], [data-dfn]")]
+        .map((s) => s.getAttribute("data-dfslot") || s.getAttribute("data-dfp") || s.getAttribute("data-dfseg") || s.getAttribute("data-dfn")));
+      for (const ep of eps) if (ep) this.dfMetti(ep, tutti, ora);
       if (this._df?.pop?.isConnected) this.dfLista(tutti, ora);
+      this.tdMetti(tutti, ora);
       this.promSegno(ora);
     }
     // l'icona e il post-it di un paziente rifatti sul posto, dappertutto
@@ -11214,6 +11468,11 @@
       }
       for (const slot of this.root.querySelectorAll(`[data-dfp="${e}"]`)) slot.innerHTML = this.dfPost(ep, tutti);
       for (const slot of this.root.querySelectorAll(`[data-dfseg="${e}"]`)) slot.innerHTML = this.segnaleHtml(ep, tutti, ora);
+      for (const b of this.root.querySelectorAll(`[data-dfn="${e}"]`)) {
+        const h = this.dfNotaHtml(ep, tutti, ora);
+        b.innerHTML = h; b.hidden = !h;
+        if (h) b.title = this.dfNotaTitolo(ep, tutti, ora); else b.removeAttribute("title");
+      }
     }
     promClic(e) {
       const segno = e.target.closest?.("[data-prurg]");
@@ -11260,8 +11519,18 @@
       // per riaprirla uguale dopo un ridisegno: il fuoco era qui dentro?
       pop.addEventListener("focusin", () => { if (this._df?.pop === pop) this._df.inFuoco = true; });
       pop.addEventListener("focusout", (ev) => { if (this._df?.pop === pop && ev.relatedTarget && !pop.contains(ev.relatedTarget)) this._df.inFuoco = false; });
+      // un tocco sul testo lo modifica; ✕ la cancella
+      const modifica = (mod) => {
+        const id = mod.closest(".dfi").getAttribute("data-id");
+        this.modificaVoce(mod, (v) => {
+          if (v != null) dfCambia(ep, id, v);
+          const ul = pop.querySelector(".dfl");
+          if (ul) ul._firma = "";
+          this.dfDopo(id, v != null ? "Modificata" : "");
+        });
+      };
       pop.addEventListener("click", (ev) => {
-        const ck = ev.target.closest(".dfck"), piu = ev.target.closest("[data-dfpiu]");
+        const ck = ev.target.closest(".dfck"), piu = ev.target.closest("[data-dfpiu]"), via = ev.target.closest("[data-dfvia]"), mod = ev.target.closest("[data-dfmod]");
         if (ck) {
           const li = ck.closest(".dfi"), id = li.getAttribute("data-id"), si = ck.getAttribute("aria-checked") !== "true";
           dfSpunta(ep, id, si);
@@ -11269,10 +11538,16 @@
         } else if (piu) {
           promRinvia(ep, piu.getAttribute("data-dfpiu"));
           this.dfDopo(piu.getAttribute("data-dfpiu"), "Rimandata di 15 minuti");
-        }
+        } else if (via) {
+          dfTogli(ep, via.getAttribute("data-dfvia"));
+          this.dfDopo(null, "Cancellata");
+        } else if (mod) modifica(mod);
       });
       pop.addEventListener("keydown", (ev) => {
         if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); return this.dfChiudi(true); }
+        const mod = ev.target.closest?.("[data-dfmod]");
+        if (mod && ev.target === mod && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); return modifica(mod); }
+        if (ev.target.classList?.contains("dfmod")) return;   // nel campo della modifica le frecce sono sue
         const li = ev.target.closest?.(".dfi");
         if (li && ev.altKey && (ev.key === "ArrowUp" || ev.key === "ArrowDown")) {
           ev.preventDefault();
@@ -11316,14 +11591,15 @@
         <span class="dfgrip" aria-hidden="true" title="Trascina per spostarla (o Alt+↑ / Alt+↓)">⋮⋮</span>
         <button type="button" class="dfck" role="checkbox" aria-checked="${x.fatto ? "true" : "false"}" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           aria-label="${esc(x.testo + (x.t != null ? ", alle " + promOra(x.t, ora) : ""))}" title="${x.fatto ? "Fatta: un tocco la riapre (se ne va fra 5 minuti)" : "Un tocco quando è fatta"}"></button>
-        <span class="dftx">${esc(x.testo)}</span>
+        <span class="dftx" data-dfmod role="button" tabindex="0" title="Tocca per modificare">${esc(x.testo)}</span>
         ${x.t != null ? `<span class="dft${b ? " " + b : ""}" title="${esc(promRiga(x, ora))}">${esc(promOra(x.t, ora))}</span>` : ""}
         ${x.t != null && !x.fatto ? `<button type="button" class="dfpiu" data-dfpiu="${esc(x.id)}" title="Rimanda di 15 minuti" aria-label="Rimanda ${esc(x.testo)} di 15 minuti">+15′</button>` : ""}
+        <button type="button" class="dfx" data-dfvia="${esc(x.id)}" title="Cancella" aria-label="Cancella ${esc(x.testo)}">✕</button>
       </li>`;
     }
     dfLista(tutti = dfTutti(), ora = Date.now()) {
       const d = this._df, ul = d?.pop?.querySelector(".dfl");
-      if (!ul || this._dfPresa) return;
+      if (!ul || this._dfPresa || ul.querySelector(".dfmod")) return;   // non sotto chi trascina o modifica
       const l = dfDi(d.ep, tutti);
       const html = l.length ? l.map((x) => this.dfVoce(x, ora)).join("") : "";
       if (ul._firma === html) return;   // niente di cambiato: il fuoco resta dov'è
@@ -11332,6 +11608,33 @@
       ul.innerHTML = html;
       ul._firma = html;
       if (f) (ul.querySelector(`.dfi[data-id="${CSS.escape(f)}"] ${suCk ? ".dfck" : ".dfpiu"}`) || ul.querySelector(`.dfi[data-id="${CSS.escape(f)}"] .dfck`) || d.pop.querySelector("#dfin"))?.focus({ preventScroll: true });
+    }
+    // Modificare una voce toccandone il testo: il testo diventa un campo;
+    // Invio (o uscirne) salva, Esc la lascia com'era — e così un campo vuoto.
+    // `salva(nuovo)`: il testo nuovo, o null se non è cambiato niente.
+    modificaVoce(el, salva) {
+      if (!el || el.querySelector(".dfmod")) return;
+      const prima = el.textContent;
+      const inp = document.createElement("input");
+      Object.assign(inp, { type: "text", className: "dfmod", value: prima, maxLength: 500, spellcheck: false, autocomplete: "off" });
+      inp.setAttribute("aria-label", "Modifica: " + prima);
+      el.replaceChildren(inp);
+      inp.focus({ preventScroll: true });
+      inp.setSelectionRange(prima.length, prima.length);
+      let finito = false;
+      const fine = (tieni) => {
+        if (finito) return;
+        finito = true;
+        const v = inp.value.replace(/\s+/g, " ").trim(), nuovo = tieni && v && v !== prima ? v : null;
+        el.textContent = nuovo ?? prima;
+        salva(nuovo);
+      };
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); fine(true); }
+        else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); fine(false); }
+      });
+      inp.addEventListener("blur", () => fine(true));
+      inp.addEventListener("click", (e) => e.stopPropagation());   // un clic nel campo non è un altro tocco sul testo
     }
     // dopo un gesto: la lista, l'icona e il post-it rifatti, il fuoco dov'era
     dfDopo(id, detto) {
@@ -11401,7 +11704,7 @@
       window.removeEventListener("pointerdown", d.fuori, true);
       this._df = null;
       const a = this.dfAncora(d.ep, d.dove);
-      if (!a || this.collapsed) return;
+      if (!a || (this.collapsed && d.dove !== "nota")) return;   // ridotta, solo quella aperta dalla nota sotto la pill
       this.dfApri(d.ep, a, { fuoco: scriveva, testo: d.testo || "" });
       const inp = scriveva && d.sel ? this.root.querySelector("#dfin") : null;
       if (inp) inp.setSelectionRange(...d.sel);
@@ -12851,6 +13154,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (this.collapsed || TABELLONE) return;
       this.collapsed = true; this.menuAperto = false; this.stanzaEdit = false;
       this.fissata = true; clearTimeout(this._tChiude); this._tChiude = 0;
+      this._ridottaAlle = fuoco ? Date.now() : 0;   // ridotta da un gesto (—, Esc, un clic fuori): la pill che ricompare sotto il mouse fermo non si riapre da sola
       store.set("collapsed", true);
       if (formaOra() === "colonna") store.set(COLONNA, { ...colonnaStato(), nascosta: true });
       // la striscia di un ordine in sottofondo torna subito, non al prossimo aggiornamento
@@ -12875,6 +13179,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // trascinamento: resta aperta, e si riguarda fra poco.
     tieneAperto() {
       if (this.fissata || this._premuto || this._stanzaPresa || this.selected.size || this.runState === "running" || this._delegando) return true;
+      // un menu o una lista aperti (⋯, «Da fare», «Sposta in…», la sveglia), la Modifica della stanza, una
+      // domanda a due tocchi (il reset, lo svuota carrello), un giro andato storto o fermato, una conferma in coda
+      if (this.menuAperto || this.stanzaEdit || this._dfPresa || this._df?.pop?.isConnected || this._promMenu?.menu?.isConnected || this._stanzaMenu?.menu?.isConnected) return true;
+      if (this.resetArmato() || this._svuota || (this.runState && this.runState !== "done") || this.pending?.next) return true;
+      if (String(this._tdTesto || "").trim() || String(this._filtro || "").trim()) return true;   // il Da fare del tabellone, il filtro a metà
       if (document.getElementById("psassist-confirm") || document.getElementById("psassist-print") || document.getElementById("psassist-visore")) return true;
       if ((this.quesitoMio && String(this._q || "").trim()) || String(this.acq || "").trim()) return true;   // un quesito scritto, una ricerca a metà
       const campo = (el) => !!el && (el.isContentEditable || el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !NON_SCRITTURA.test(el.type || "")));
@@ -12931,9 +13240,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // la finestra al centro.
     attachDrag(el) {
       el.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0 || e.target.closest(".iconbtn, .tchip, .menuw, button:not(#expand), input, a, [data-rz], [data-prurg]")) return;
+        if (e.button !== 0 || e.target.closest(".iconbtn, .tchip, .menuw, button:not(#expand):not(#pinpill), input, a, [data-rz], [data-prurg]")) return;
         try { el.setPointerCapture(e.pointerId); } catch { /* niente */ }
-        const wrap = this.root.querySelector(".wrap");
+        const wrap = el.closest(".wrap") || this.root.querySelector(".wrap");   // (Al passaggio la pill sopra la finestra ha la sua)
         const r = wrap.getBoundingClientRect();
         const sx = e.clientX, sy = e.clientY, ox = r.left, oy = r.top;
         const finestra = wrap.classList.contains("win");
@@ -13079,6 +13388,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }
       const pill = $("#expand");
       if (pill && !pill.classList.contains("coltab")) this.attachDrag(pill);
+      if ($("#pinpill")) this.attachDrag($("#pinpill"));   // Al passaggio, aperta: la pill si trascina lo stesso
       // la forma, dal menu ⋯
       this.root.querySelectorAll("[data-forma]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); this.sceglieForma(b.getAttribute("data-forma")); }));
       $("#colnascondi")?.addEventListener("click", () => this.riduci());
@@ -13086,7 +13396,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // tocco la fissa (o la lascia di nuovo richiudere). Col dito: un tocco apre, un tocco chiude.
       if (forma === "passaggio" && pill && pill.matches(".pill:not(.run)")) {
         pill.addEventListener("pointerenter", (e) => {
-          if (e.pointerType !== "mouse" || e.buttons) return;
+          if (e.pointerType !== "mouse" || e.buttons || Date.now() - (this._ridottaAlle || 0) < 800) return;
           clearTimeout(this._tApre);
           this._sullaPill = true;
           this._tApre = setTimeout(() => { if (this.collapsed && this._sullaPill && !this._premuto && formaOra() === "passaggio") this.apri({ passaggio: true }); }, PASSAGGIO_APRE_MS);
@@ -13098,6 +13408,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         let dito = false;
         pin.addEventListener("pointerdown", (e) => { dito = e.pointerType !== "mouse"; });
         pin.addEventListener("click", () => {
+          if (this._justDragged) return;   // era un trascinamento, non un tocco
           if (dito) return this.riduci();
           this.fissata = !this.fissata;
           clearTimeout(this._tChiude); this._tChiude = 0;
@@ -16011,6 +16322,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // (o un'altra scheda) si vede qui, e chi è uscito porta il suo «Annulla».
     // Ogni 30 secondi si guarda se sono passati 10 minuti dall'ultima lettura.
     window.addEventListener("storage", (ev) => {
+      if (ev.key === NS + PROM || ev.key === NS + DF_GEN) return panel.promTick();   // un «Da fare» scritto in un'altra scheda: rifatto sul posto
       if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI].includes(ev.key)) return;
       if (ev.key === NS + DIMESSI) panel.mostraDimessi();
       panel.aggiornaDaFuori();
@@ -16239,6 +16551,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       panel.render();
     });
     window.addEventListener("storage", (ev) => {
+      if (ev.key === NS + PROM || ev.key === NS + DF_GEN) return panel.promTick();   // un «Da fare» scritto in un'altra scheda: rifatto sul posto
       if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI].includes(ev.key)) return;
       if (ev.key === NS + DIMESSI) panel.mostraDimessi();
       panel.aggiornaDaFuori();
