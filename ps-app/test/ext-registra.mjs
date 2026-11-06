@@ -8,7 +8,7 @@
  * pagina di scarico di prima sullo stesso grezzo. Si apre lo zip e si guarda:
  * le pagine, il flusso con i rinvii e i tempi, il testo del PDF anonimizzato —
  * e da nessuna parte un nome, un codice fiscale o un episodio del simulatore.
- * Poi l'elenco: riepilogo, «Scarica sul PC», «Cancella» a due tocchi; e dopo
+ * Poi l'elenco: riepilogo, «Scarica», «Cancella» a due tocchi; e dopo
  * 60 minuti la registrazione si ferma e si salva da sola.
  *   node test/ext-registra.mjs
  */
@@ -344,7 +344,7 @@ await doc.screenshot({ path: join(process.env.TEST_SHOTS_DIR || OUT, "registrazi
 const [dlPc] = await Promise.all([doc.waitForEvent("download", { timeout: 20000 }).catch(() => null), $panel(doc, `.regrow[data-zip="${z1.id}"] [data-regpc]`).click()]);
 const pcZip = join(OUT, "pc.zip");
 if (dlPc) await dlPc.saveAs(pcZip);
-check(dlPc && dlPc.suggestedFilename() === z1.nome && readFileSync(pcZip).equals(zipBuf) && ctx.pages().length === schede0, `«Scarica sul PC»: lo stesso zip nei Download, senza schede (${dlPc && dlPc.suggestedFilename()})`);
+check(dlPc && dlPc.suggestedFilename() === z1.nome && readFileSync(pcZip).equals(zipBuf) && ctx.pages().length === schede0, `«Scarica»: lo stesso zip nei Download, senza schede (${dlPc && dlPc.suggestedFilename()})`);
 await $panel(doc, `.regrow[data-zip="${z1.id}"] [data-regvia]`).click();
 check(/Cancello\? Tocca di nuovo/.test(await $panel(doc, `.regrow[data-zip="${z1.id}"] [data-regvia]`).innerText().catch(() => "")) && (await elenco()).length === 1,
   "«Cancella»: il primo tocco chiede, e non cancella");

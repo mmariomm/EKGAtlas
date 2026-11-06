@@ -3405,7 +3405,7 @@ async function scenarioReferti(browser) {
   await $panel(page, '[data-seg="esiti"]').click();
   await page.waitForSelector("#psassist-host [data-esito]");
 
-  const refs = page.locator('#psassist-host .sec:not(.reflab) [data-esito][data-kind="referto"]');
+  const refs = page.locator('#psassist-host .sec:not(.reflab):not(.wulab) [data-esito][data-kind="referto"]');
   // In elenco i referti che non sono di laboratorio; il link-archivio senza
   // REFERTO_ID è ignorato come prima. Quelli di laboratorio, qui — niente
   // tabella dei valori, niente portale — non spariscono: stanno raccolti,
@@ -5450,6 +5450,16 @@ async function scenarioNuoviValori(browser) {
   check(scen, (await page.locator("#psassist-host #letto").count()) === 0, "e il «nuovi» sparisce con loro");
   check(scen, (await page.locator("#psassist-host .sttab tbody tr:not(.stsez)").count()) === 5,
     "i valori restano tutti in tabella: si spegne il marchio, non la riga");
+
+  // il pallino rosso del letto è solo dei valori critici (PRIMA_DI_TUTTI): un valore
+  // nuovo fuori range di un altro analita (l'azotemia) conta fra i fuori range ma non fra i critici
+  mock.state.extraRow = { nome: "Urea", valore: "90", um: "mg/dL", range: "10 - 50" };
+  await $panel(page, "#risall").click();
+  await page.waitForFunction(() => /90↑/.test(document.getElementById("psassist-host").shadowRoot.querySelector(".sttab")?.textContent || ""), { timeout: 20000 });
+  await page.waitForTimeout(400);
+  const vs = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["999001"]?.valori || null);
+  check(scen, !!vs && vs.nuovi === 1 && vs.fuori === 0 && vs.fuoriTot === 1,
+    `un valore nuovo fuori range ma non critico non fa «critico» (got: ${JSON.stringify(vs)})`);
   await context.close();
 }
 
@@ -7622,6 +7632,14 @@ async function scenarioStatoEsami(browser) {
   const nega = await testoPanel(a.page, ".idriga");
   check(scen, nega === "Allergie: nega", `«Nega/Non riferisce» spuntato: «Allergie: nega» (got: ${nega})`);
   await a.context.close();
+  // il campo c'è ma è vuoto e «Nega» non è spuntato: «non compilate», diverso da «non lette»
+  const mockVuoto = conScheda(createMock({ noReferti: true }), () => `${RIQUADRO}${ALLERGIE(false, "")}`);
+  const v0 = await newPage(browser, mockVuoto);
+  await v0.page.goto(mockVuoto.patientUrl);
+  await v0.page.waitForSelector("#psassist-host .card", { timeout: 5000 });
+  const vuote = await testoPanel(v0.page, ".idriga");
+  check(scen, vuote === "Allergie: non compilate", `campo vuoto e Nega non spuntato: «Allergie: non compilate», diverso da «non lette» (got: ${vuote})`);
+  await v0.context.close();
   const mockNo = createMock({ noReferti: true });
   const b = await newPage(browser, mockNo);
   await b.page.goto(mockNo.patientUrl);

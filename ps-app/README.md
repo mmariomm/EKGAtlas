@@ -190,7 +190,7 @@ del portale clinico non c'è pannello: solo una striscia che dice cosa ha letto.
 — nome, età e sesso (dal riquadro del paziente, se no dal codice fiscale), episodio, posto nella
 stanza — anche in **Dimissioni**. Sotto, una riga sola, solo quando c'è qualcosa: le **Allergie**
 del gestionale parola per parola, in rosso (`Allergie: nega` se è spuntato «Nega/Non
-riferisce»; `Allergie: non lette` se la pagina non le ha lette — mai «nessuna») e il riquadro
+riferisce»; `Allergie: non lette` se la pagina non le ha lette, `Allergie: non compilate` se il campo c'è ma è vuoto e «Nega» non è spuntato — mai «nessuna») e il riquadro
 **Attenzione**, com'è. Le azioni che escono dal pannello nominano il paziente: «**Conferma per
 ROSSI M. · 68 M · 6 esami**», «✓ Copiato · ROSSI M.», e la stampa («Stampa 1 di 3 — Etichette ·
 ROSSI M. · 68 M»).
@@ -231,8 +231,8 @@ l'altra.
 **La riga** dice poco, sempre nello stesso posto: la striscia del **triage**, **nome ed età**, il
 **posto**, **da quanto è in PS** (l'ingresso, dalla lista dell'area o dalla smart: «3h40»), il
 **cuore** dei parametri vitali e tre segni, **Lab · ECG · RX**, ognuno col suo stato: **grigio** =
-chiesto e in attesa, col tempo dalla richiesta («Lab 50′»); **arancio** = tornato in parte («RX
-1/2»); **blu** = tornato tutto («Lab ✓»); mai chiesto = niente. Poi l'icona **Da fare** col numero
+chiesto e in attesa, col tempo dalla richiesta («Lab 50′»); **ambra** = tornato in parte («RX
+1/2»); **verde** = tornato tutto («Lab ✓»); mai chiesto = niente. Poi l'icona **Da fare** col numero
 delle cose aperte, **▾** per scegliere il posto senza trascinare e, passandoci sopra, la **✕** per
 toglierlo dall'elenco. **Niente valori e niente testo** nella riga (nemmeno il post-it): quelli
 nella scheda che si apre passando sul nome. Ogni cosa ha la sua colonna, uguale per tutte le righe;
@@ -277,8 +277,9 @@ esame per esame.
 
 **Nel letto, solo nome ed età** — niente righe di stato tagliate a metà. In alto a destra, sulla
 riga del letto, il **cuore** (solo l'icona) e **un pallino solo**, se c'è qualcosa: **rosso** per
-un esame oltre la seconda soglia, valori nuovi fuori range o un promemoria passato; **ambra** oltre
-la prima soglia o a 15 minuti da un promemoria; **blu** per un risultato nuovo; un **cerchio
+un esame oltre la seconda soglia, valori nuovi **critici** fuori range (solo gli analiti da guardare
+per primi: K, Na, Hb, Trop, Lac, pH, Glu, Cr…) o un promemoria passato; **ambra** oltre la prima
+soglia, altri valori nuovi fuori range, o a 15 minuti da un promemoria; **blu** per un risultato nuovo; un **cerchio
 grigio** se qualcosa aspetta e basta. Il resto — esame per esame, il cuore, la prima cosa da fare —
 nel passaggio del mouse, e tutto nella riga della lista. Se il letto è piccolo, prima se ne vanno
 il nome del letto e i segni; il nome del paziente mai, e senza puntini.
@@ -424,7 +425,7 @@ se ne va. L'ordine lo decidi tu: si **trascina** dalla maniglia ⋮⋮ (col mous
 tastiera **Alt+↑ / Alt+↓** sulla spunta. La maniglia, **+15′** e ✕ compaiono passandoci sopra (o col
 fuoco; al tocco ci sono sempre). La **prima voce aperta** è il post-it: si legge nelle aree
 della stanza (nella riga del tabellone c'è solo quante sono). L'icona dice **quante** sono aperte (nell'intestazione della finestra, la **prima** e «+N»; ambra o rossa, la voce che scade col tempo che manca, come la pill: «⏰ −6m tropo») e cambia colore quando un promemoria si avvicina:
-**ambra dai 15 minuti prima**, **rossa quando l'ora è passata** (con un bagliore lento, fermo se il
+**ambra dai 15 minuti prima**, **rossa quando l'ora è passata** (con un bagliore lento solo nei primi 10 minuti, poi fermo; fermo anche se il
 sistema chiede meno movimento); il passaggio del mouse le dice tutte. **Esc**, o un clic fuori, la
 chiude: non c'è niente da salvare, ogni gesto è già salvato.
 
@@ -1040,7 +1041,8 @@ Sei moduli da firmare, dentro l'estensione: **Emocolture**, **HIV Dipendente**, 
 Animali**, **Antitetano**, **TAC cmdc**, **Emotrasfusione** (il pacchetto trasfusionale:
 consenso informato, richiesta emocomponenti, dichiarazione del medico in urgenza).
 Le **deleghe per il ritiro** — **Ritiro esami**, **Ritiro referto RX**, **Ritiro cartella e CD**
-— non sono consensi: si danno a chi va a casa, e stanno in cima alla schermata **Dimissioni**.
+— non sono consensi: si danno a chi va a casa, e stanno in fondo alla schermata **Dimissioni**, in una
+riga quieta («Moduli per il ritiro ▸») sotto i fogli.
 Un tocco apre direttamente il dialogo di stampa, come per la lista esami (con la stampa
 automatica va dritto all'A4, senza dialogo); un modulo di più pagine
 dice **quanta carta esce** prima che tu prema Stampa. (Che i moduli stanno dentro l'estensione e che non
@@ -1197,10 +1199,7 @@ quante cose sono ancora in «Da fare», valori segnati da te o nuovi fuori range
 quando è la lettura, e copre quello che il pannello sa (la pagina del paziente e gli ordini partiti
 da qui: «ordinati da qui» se la pagina non è stata letta).
 
-Poi i **moduli per il ritiro** da dare a chi va a casa — Ritiro esami, Ritiro referto RX,
-Ritiro cartella e CD: un tocco e parte la stampa, come per i consensi.
-
-Poi nove **fogli di dimissione** pronti — i **cinque rivisti dal medico** stanno in cima, poi una riga
+Nove **fogli di dimissione** pronti — i **cinque rivisti dal medico** stanno in cima, poi una riga
 (*«non ancora rivisti»*) e sotto gli altri: si vede a colpo d'occhio dove si è già messo mano.
 Sono scritti per il paziente: dosi per esteso, tetto del paracetamolo, e in fondo a ogni
 foglio i motivi per **tornare in Pronto Soccorso**.
@@ -1274,7 +1273,7 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   scheda di sottofondo, e rilegge. Mai sopra un testo cambiato sul PC o non ancora salvato in una
   scheda; la pagina aperta di quel paziente dice «Aggiornato dal telefono · Ricarica».
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
-  Scollega»**, e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
+  Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
   sessione si chiude da sola; tornando sull'app si riapre da sola.
 - **Registrazioni** (⋯ sul telefono): gli zip salvati sul PC (⋯ → Registrazioni), con quando, quanto, a mano o
   automatica e perché, il controllo — niente pazienti. **Scarica** lo porta sul telefono a pezzi, cifrato come
@@ -1567,7 +1566,7 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   resta il ● REC del pannello, senza una seconda pill.
 - **Le registrazioni salvate**, nella stessa vista: quando, quanto, **a mano** o **automatica** (e
   perché), il controllo («controllo superato» o «restano N dati da controllare»); per ognuna
-  **Riepilogo** (`riepilogo.txt`), **Scarica sul PC** (un file nei Download) e **Cancella** (due
+  **Riepilogo** (`riepilogo.txt`), **Scarica** (un file nei Download) e **Cancella** (due
   tocchi). Niente pazienti: solo il nome dello zip e i suoi numeri. Le stesse si vedono, si
   scaricano e si cancellano **dall'iPhone** (⋯ → Registrazioni, nel pannello sul telefono). Al più
   **30 zip e 300 MB**: oltre, se ne vanno i più vecchi, prima gli automatici.
