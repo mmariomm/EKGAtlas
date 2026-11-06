@@ -1410,8 +1410,9 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   sempre (lo stesso link, nella sua finestra: il clic, tenuto 400 ms per vedere se ne arriva un altro, poi
   ridato alla pagina), con **due o tre di fila** (a meno di 400 ms l'uno dall'altro) stampano quel foglio,
   una volta, alla sua stampante, con la sua riga sotto la pill. **«Stampa Bracciale»**: un clic il PDF, due o
-  più l'etichetta anagrafica con tante copie quanti i clic (fino a 10), una stampa e una riga sola «×N», lo
-  stesso conto del braccialetto nel pannello. Solo i link della pagina, così come sono (stessa origine, il
+  più l'etichetta anagrafica con tante copie quanti i clic (fino a 10): mentre clicchi, accanto all'icona,
+  «×2», «×3»… (un segno dell'estensione sopra la pagina, che non la tocca); partita la stampa, una sola, la
+  riga sotto la pill «×N». Lo stesso conto del braccialetto nel pannello. Solo i link della pagina, così come sono (stessa origine, il
   servlet giusto, l'etichetta anagrafica di questo episodio); spenta la stampa automatica, o un link che non
   è uno di questi, il clic passa subito, com'è.
 - **Le etichette dritte**: SumatraPDF gira di 90° le pagine più larghe che alte, e coi driver
