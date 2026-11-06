@@ -24,7 +24,7 @@
  * qualcosa lo zip esce comunque (scelta del medico), ma con l'avviso in cima al
  * riepilogo e nella pagina: quanti, in quale file, di che tipo — mai il valore.
  *
- * Gira nella pagina dell'estensione (registra.html) e in Node per i test: non
+ * Gira nel documento fuori schermo dell'estensione (registra-esporta.html) e in Node per i test: non
  * usa il DOM, solo stringhe.
  */
 (function (globale) {

@@ -1473,6 +1473,82 @@ sezione("«Stampa un PDF» dal telefono, sull'A4 del PC");
 }
 
 // ===========================================================================
+sezione("le registrazioni del PC dal telefono: elenco, scarica a pezzi, cancella");
+{
+  // due zip già salvati sul PC (registra.js): uno automatico di ~1 MB (tre pezzi), uno a mano
+  const SEGNO = "QZWX4417 DENTRO LO ZIP";
+  const zipFinto = (n, seme) => { const b = Buffer.alloc(n); let x = seme; for (let i = 0; i < n; i++) { x = (x * 1103515245 + 12345) >>> 0; b[i] = x >>> 24; } Buffer.from("PK\x03\x04").copy(b, 0); Buffer.from(SEGNO).copy(b, 5000); return b; };
+  const zA = zipFinto(1000000, 7), zM = zipFinto(30000, 11), ora = Date.now();
+  // (gli ordini finiti male qui sopra hanno già salvato i loro zip automatici: si parte da un elenco vuoto)
+  await sw.evaluate(async () => { for (const z of await regElenco()) await regZipVia(z.id); });
+  const metti = (b, meta) => sw.evaluate(async ([b64z, meta]) => {
+    const bin = atob(b64z), u = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
+    await RegistraDb.tx(["zip", "zipdati"], "readwrite", (z, d) => { z.put(meta); d.put(u, meta.id); });
+    await regAvvisaElenco();
+  }, [b.toString("base64"), meta]);
+  await metti(zA, { id: "provazipauto", nome: "psassist-registrazione-20261106-0930-auto.zip", ts: ora - 60e3, quando: ora - 120e3, byte: zA.length, motivo: "auto",
+    errore: "Errore · mancano: TROPONINA", controllo: false, punti: 2, pagine: 6, richieste: 20, pdf: 1, riepilogo: "PS Assist — registrazione anonimizzata" });
+  await metti(zM, { id: "provazipmano", nome: "psassist-registrazione-20261106-0800.zip", ts: ora - 3600e3, quando: ora - 7200e3, byte: zM.length, motivo: "manuale",
+    errore: "", controllo: true, punti: 0, pagine: 3, richieste: 9, pdf: 0, riepilogo: "PS Assist — registrazione anonimizzata" });
+  await tocca(tel, '[data-a="menu"]');
+  await tocca(tel, '[data-a="registrazioni"]');
+  const el = await aspettaTel(tel, /a mano/, 20000);
+  const righe = await tel.locator(".zip").evaluateAll((l) => l.map((x) => x.dataset.zip));
+  check(/Registrazioni/.test(await tel.locator("header").innerText()) && righe.join() === "provazipauto,provazipmano",
+    `⋯ → Registrazioni: l'elenco del PC, la più recente in testa (${righe.join(", ")})`);
+  check(/automatica/.test(el) && /977 KB|1,0 MB|0,9 MB/.test(el) && /Errore · mancano: TROPONINA/.test(el) && /Restano 2 dati da controllare/.test(el) && /Controllo superato/.test(el) && /29 KB/.test(el),
+    `per ognuna: quando, a mano o automatica e perché, la misura, il controllo (${el.replace(/\s+/g, " ").slice(0, 200)})`);
+  check(!/ROSSI|BIANCHI|999001/.test(el) && !(await piccoli(tel)).length, `niente pazienti, e ogni bottone almeno 44 px (${JSON.stringify(await piccoli(tel))})`);
+  check(/iPhone · elenco delle registrazioni \(2\)/.test(await registroPonte()), "il registro del ponte: «iPhone · elenco delle registrazioni»");
+  await shot(tel, "tel-registrazioni");
+  await tel.emulateMedia({ colorScheme: "dark" }); await shot(tel, "tel-registrazioni-buio"); await tel.emulateMedia({ colorScheme: "light" });
+  // «Scarica»: a pezzi; poi «Condividi…» la passa a iOS (qui il foglio di condivisione è finto)
+  await tel.evaluate(() => { window.__condiviso = null; navigator.canShare = (d) => !!(d && d.files && d.files.length); navigator.share = (d) => { window.__condiviso = d.files[0]; return Promise.resolve(); }; });
+  const n0 = inoltrati.length, a0 = rete.alPc.length;
+  await tocca(tel, '.zip[data-zip="provazipauto"] [data-a="zipScarica"]');
+  check(await finche(async () => await tel.locator('.zip[data-zip="provazipauto"] [data-a="zipManda"]').count() === 1, 30000), "«Scarica»: arrivata, e il bottone diventa «Condividi…»");
+  await tocca(tel, '.zip[data-zip="provazipauto"] [data-a="zipManda"]');
+  await finche(() => tel.evaluate(() => !!window.__condiviso), 5000);
+  const cond = await tel.evaluate(async () => { const f = window.__condiviso; if (!f) return null; const u = new Uint8Array(await f.arrayBuffer()); let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return { nome: f.name, tipo: f.type, b: btoa(s) }; });
+  check(cond && cond.nome === "psassist-registrazione-20261106-0930-auto.zip" && cond.tipo === "application/zip" && Buffer.from(cond.b, "base64").equals(zA),
+    `«Condividi…»: a iOS va un file .zip, ricomposto dai pezzi, identico a quello del PC (${cond && cond.nome}, ${cond && Buffer.from(cond.b, "base64").length} byte)`);
+  const chiesti = rete.alPc.length - a0, visti = Buffer.concat(inoltrati.slice(n0));
+  check(chiesti >= 3 && !visti.includes(Buffer.from(SEGNO)) && !visti.includes(Buffer.from(zA.subarray(6000, 6040).toString("base64").slice(4, 36))),
+    `a pezzi (${chiesti} domande), e il ripetitore non vede niente dello zip`);
+  check(/iPhone · registrazione psassist-registrazione-20261106-0930-auto\.zip scaricata sul telefono/.test(await registroPonte()), "il registro del ponte: «registrazione … scaricata sul telefono»");
+  const memTel = await tel.evaluate(async () => JSON.stringify([Object.keys(localStorage), Object.keys(sessionStorage), ((await indexedDB.databases?.()) || []).map((d) => d.name)]));
+  check(memTel === '[["psassist.ponte.v1"],[],[]]', `sul telefono lo zip sta solo in memoria: niente su disco (${memTel})`);
+  // senza la condivisione di iOS: «Salva», un file
+  await tel.evaluate(() => { delete navigator.canShare; delete navigator.share; });
+  await tocca(tel, '.zip[data-zip="provazipmano"] [data-a="zipScarica"]');
+  await finche(async () => await tel.locator('.zip[data-zip="provazipmano"] a.btnmini').count() === 1, 20000);
+  const [dl] = await Promise.all([tel.waitForEvent("download", { timeout: 10000 }).catch(() => null), tel.locator('.zip[data-zip="provazipmano"] a.btnmini').click()]);
+  const dlFile = join("/tmp", `psa-ponte-zip-${process.pid}.zip`);
+  if (dl) await dl.saveAs(dlFile);
+  check(dl && dl.suggestedFilename() === "psassist-registrazione-20261106-0800.zip" && readFileSync(dlFile).equals(zM), `senza la condivisione: «Salva», lo stesso file (${dl && dl.suggestedFilename()})`);
+  rmSync(dlFile, { force: true });
+  // «Cancella»: due tocchi, e sul PC non c'è più
+  await tocca(tel, '.zip[data-zip="provazipauto"] [data-a="zipVia"]');
+  check(/Cancello dal PC\? Tocca di nuovo/.test(await tel.locator('.zip[data-zip="provazipauto"] [data-a="zipVia"]').innerText()) && (await sw.evaluate(() => regElenco())).length === 2,
+    "«Cancella»: il primo tocco chiede «Cancello dal PC? Tocca di nuovo», e non cancella");
+  await tocca(tel, '.zip[data-zip="provazipauto"] [data-a="zipVia"]');
+  check((await sw.evaluate(() => regElenco())).length === 2, "un secondo tocco subito (un doppio tocco per sbaglio) non conta");
+  await sospendi(900);
+  await tocca(tel, '.zip[data-zip="provazipauto"] [data-a="zipVia"]');
+  const via = await finche(async () => (await sw.evaluate(() => regElenco())).map((z) => z.id).join() === "provazipmano", 15000);
+  check(via && await finche(async () => await tel.locator('.zip[data-zip="provazipauto"]').count() === 0, 8000) && await sw.evaluate(() => RegistraDb.tx("zipdati", "readonly", (s) => s.count())) === 1,
+    "il secondo tocco la cancella sul PC (anche i byte), e la riga se ne va");
+  check(/iPhone · registrazione psassist-registrazione-20261106-0930-auto\.zip cancellata dal PC/.test(await registroPonte()), "il registro del ponte: «registrazione … cancellata dal PC»");
+  // una non elencata in questa sessione non si dà e non si cancella
+  const furbo = await sw.evaluate(() => ponteDaiRegistrazione({ zip: new Set() }, { zip: "provazipmano", i: 0 }));
+  check(!furbo.ok && /riapri l'elenco/.test(furbo.errore), `una registrazione non elencata in questa sessione non si dà (${furbo.errore})`);
+  await sw.evaluate(() => regZipVia("provazipmano"));
+  await tocca(tel, '[data-a="indietro"]');
+  await aspettaTel(tel, /BIANCHI ANNA/);
+}
+
+// ===========================================================================
 sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
 {
   // Un telefono con la rete vera di Chromium (non la strada finta di prima), la

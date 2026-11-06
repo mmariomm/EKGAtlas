@@ -1,5 +1,5 @@
 /*
- * PS Assist — il registratore (⋯ → Registra), la parte nel service worker.
+ * PS Assist — il registratore (⋯ → Registrazioni), la parte nel service worker.
  *
  * Il medico registra UNA sessione vera di lavoro, per ricostruire le pagine di
  * esempio, imparare il flusso vero (ordini → carrello → conferma → etichette;
@@ -16,24 +16,52 @@
  *     rilettura dalla cache del browser (cache: "force-cache") dello stesso
  *     indirizzo appena aperto. Dei PDF nello zip va solo il testo anonimizzato.
  * Tutto resta nella memoria dell'estensione, su questo PC, finché il medico non
- * preme «Ferma e scarica»: allora registra.html anonimizza (registra-anonimo.js),
- * controlla, e scarica lo zip. Non parte niente verso nessuno. Dopo 60 minuti
- * la registrazione si ferma da sola; una registrazione mai scaricata si
- * cancella da sola dopo 12 ore.
+ * preme «Ferma e salva»: allora un documento fuori schermo (registra-esporta.html,
+ * chrome.offscreen — nessuna scheda, nessuno scarico) anonimizza
+ * (registra-anonimo.js), controlla e salva lo zip nel database dell'estensione
+ * (registra-db.js), e il grezzo se ne va nella stessa transazione. Gli zip li
+ * guarda, scarica e cancella il pannello (⋯ → Registrazioni) e l'iPhone
+ * (ponte-sw.js); non parte niente verso nessuno. Dopo 60 minuti la
+ * registrazione si ferma e si salva da sola; un grezzo mai salvato si cancella
+ * da solo dopo 12 ore. Al più 30 zip e 300 MB: oltre, vanno via i più vecchi,
+ * prima quelli automatici.
  * Anche il SISS (il menu operatore e il Prescrittivo Regionale, REG_SISS): lì
- * il pannello non c'è — solo registra-pagina.js, e solo mentre si registra —
- * e il flusso è lo stesso, osservato: XHR e fetch delle sue API, rinvii, tempi,
- * il PDF di «Stampa RE». Mai un corpo di risposta; dei moduli inviati mai un
- * campo di credenziali (password, PIN, OTP).
- * Vede le costanti di bg.js (SA4, ALLOWED_ORIGINS): è caricato da lì.
+ * il pannello non c'è — solo registra-pagina.js — e il flusso è lo stesso,
+ * osservato: XHR e fetch delle sue API, rinvii, tempi, il PDF di «Stampa RE».
+ * Mai un corpo di risposta; dei moduli inviati mai un campo di credenziali
+ * (password, PIN, OTP).
+ *
+ * LA REGISTRAZIONE AUTOMATICA (accesa di norma, ⋯ → Registrazioni la spegne):
+ * quando il medico non registra, lo stesso registratore tiene gli ultimi
+ * 3 minuti (REG_FINESTRA) — stesse pagine, stesse esclusioni, nessuna
+ * rilettura dalla cache, nessuna pill — in una tabella sua («scorre»), potata
+ * di continuo (a ogni scrittura e ogni 30 secondi, con chrome.alarms, finché
+ * c'è qualcosa) e svuotata all'avvio del browser: chiuso il browser, sparisce.
+ * Quando un ordine finisce male (arancione o rosso: un errore, esami che
+ * mancano, un ORA-, etichette non stampate — lo dice bg.js, regDopoOrdini e
+ * regDopoErrore), aspetta un minuto per vedere com'è andata a finire (intanto
+ * i 3 minuti prima dell'incidente non si potano) e salva da lì a adesso come
+ * zip «auto», anonimizzato e controllato come gli altri; un incidente, uno
+ * zip. Mentre il medico registra a mano, vince la sua.
+ * Vede le costanti di bg.js (SA4, ALLOWED_ORIGINS, FINALI, corto, b64, segnaErrore): è caricato da lì.
  */
+importScripts("registra-db.js");
 const REG = "registra";                 // lo stato, in storage.local: lo legge anche il pannello (● REC)
+const REG_AUTO = "registra.auto";       // storage.local: false = registrazione automatica spenta (di norma accesa)
+const REG_ELENCO = "registra.elenco";   // storage.local: { n, byte, ts } — cambia quando cambiano gli zip (il pannello si ridisegna)
+const REG_INC = "registra.incidente";   // storage.session: { ts, motivi } — l'incidente che aspetta il suo minuto
+const REG_VIVO = "registra.vivo";       // storage.session: il browser è aperto da allora (gli ultimi minuti sono di questa sessione)
 const REG_DURATA = 60 * 60e3;
 const REG_TTL = 12 * 3600e3;
+const REG_FINESTRA = 3 * 60e3;          // la registrazione automatica: gli ultimi 3 minuti, mai di più
+let REG_DOPO = 60e3;                    // dopo l'incidente si aspetta un minuto, poi si salva (i test lo accorciano)
+const REG_ZIP_N = 30, REG_ZIP_MAX = 300 * 1024 * 1024;
 const REG_PAGINA_MAX = 8e6;             // un DOM più grande di così non è una pagina del gestionale
 const REG_PDF_MAX = 15 * 1024 * 1024;
 const REG_PDF_N = 200;
 const REG_PAGINE_N = 1500;
+const REG_AL_POTA = "registra-pota", REG_AL_INC = "registra-incidente";
+const REG_ST = "grezzi", REG_SC = "scorre";
 
 // il SISS: due origini esatte, solo https (anche in manifest.json)
 const REG_SISS = new Set(["https://dcss.cgi.crs.lombardia.it", "https://operatorisiss.servizirl.it"]);
@@ -45,25 +73,41 @@ const REG_MOTIVI = new Set(["caricata", "uscita", "rotta", "overlay", "quiete"])
 let regStato = null;
 let regCaricato = false;
 let regPortale = "";
+let regAuto = true;
 const regAttiva = (s = regStato) => !!s && s.stato === "rec" && Date.now() < s.scade;
+// si tiene qualcosa: la registrazione a mano, o (se no) gli ultimi minuti
+const regCattura = () => regAttiva() || (regCaricato && regAuto);
 const regNostra = (url) => {
   try { const o = new URL(url).origin; return o === SA4 || ALLOWED_ORIGINS.has(o) || REG_SISS.has(o) || (!!regPortale && o === regPortale); }
   catch { return false; }
 };
+const regOrigini = () => ({ gestionale: SA4, portale: regPortale, altri: [...ALLOWED_ORIGINS].filter((x) => x !== SA4), siss: [...REG_SISS] });
 
 let regScadenza = null;
 async function regLeggi() {
-  const o = await chrome.storage.local.get([REG, "portale"]);
+  // Il browser si è appena aperto (storage.session muore con lui: il segno non
+  // c'è) — o l'estensione è stata ricaricata: gli ultimi minuti di prima via,
+  // prima di tenere qualunque cosa. (Anche runtime.onStartup, qui sotto: questo
+  // vale pure dove quello non arriva.)
+  if (!(await chrome.storage.session.get(REG_VIVO).catch(() => ({})))[REG_VIVO]) {
+    await regScorreVia();
+    await chrome.storage.session.set({ [REG_VIVO]: Date.now() }).catch(() => {});
+  }
+  const o = await chrome.storage.local.get([REG, "portale", REG_AUTO]);
   regStato = o[REG] || null;
   regPortale = o.portale || "";
+  regAuto = o[REG_AUTO] !== false;
   regCaricato = true;
   clearTimeout(regScadenza);
   if (regStato && regStato.stato === "rec") {
-    if (Date.now() >= regStato.scade) await regFerma("dopo 60 minuti");
-    else regScadenza = setTimeout(() => regFerma("dopo 60 minuti").catch(() => {}), regStato.scade - Date.now() + 500);
+    if (Date.now() >= regStato.scade) regFermaESalva("dopo 60 minuti").catch(() => {});
+    else regScadenza = setTimeout(() => regFermaESalva("dopo 60 minuti").catch(() => {}), regStato.scade - Date.now() + 500);
   }
-  // una registrazione mai scaricata non resta sul PC
+  // un grezzo mai salvato non resta sul PC
   if (regStato && regStato.stato !== "rec" && Date.now() - (regStato.fine || regStato.inizio || 0) > REG_TTL) await regCancella();
+  // fermata ma non salvata (il service worker si è fermato a metà): si riprova, al più due volte
+  else if (regStato && regStato.stato === "fermo" && !regStato.errore && !regSalvando(regStato) && (regStato.prove || 0) < 2) regSalvaManuale().catch(() => {});
+  regPota().catch(() => {});
   return regStato;
 }
 let regPronto = regLeggi().catch(() => null);
@@ -71,42 +115,76 @@ chrome.storage.onChanged.addListener((ch, area) => {
   if (area !== "local") return;
   if (ch[REG]) regStato = ch[REG].newValue || null;
   if (ch.portale) regPortale = ch.portale.newValue || "";
+  if (ch[REG_AUTO]) {
+    regAuto = ch[REG_AUTO].newValue !== false;
+    if (!regAuto) regScorreVia().catch(() => {});   // spenta: quello che aveva in memoria se ne va subito
+  }
 });
+const regSalvando = (s) => !!s && !!s.salvo && Date.now() - s.salvo < 5 * 60e3;
 
-// Il grezzo (pagine, flusso, PDF) sta in IndexedDB, non in storage.local: là
-// lo leggerebbe per intero ogni get(null) del resto dell'estensione, e un'ora
-// di pagine pesa decine di MB. Stessa origine dell'estensione: lo legge anche
-// registra.html. Ogni voce: { tipo: "pagina" | "flusso" | "pdf", ... }.
-const REG_DB = "psassist-registra", REG_ST = "grezzi";
-let regDbP = null;
-const regDb = () => (regDbP = regDbP || new Promise((ok, no) => {
-  const r = indexedDB.open(REG_DB, 1);
-  r.onupgradeneeded = () => r.result.createObjectStore(REG_ST, { autoIncrement: true });
-  r.onsuccess = () => ok(r.result);
-  r.onerror = () => { regDbP = null; no(r.error); };
-}));
-const regTx = async (modo, fn) => {
-  const db = await regDb();
-  return new Promise((ok, no) => {
-    const tx = db.transaction(REG_ST, modo);
-    const out = fn(tx.objectStore(REG_ST));
-    tx.oncomplete = () => ok(out && "result" in out ? out.result : undefined);
-    tx.onerror = tx.onabort = () => no(tx.error);
-  });
+// Il grezzo (pagine, flusso, PDF) sta in IndexedDB (registra-db.js), non in
+// storage.local: là lo leggerebbe per intero ogni get(null) del resto
+// dell'estensione, e un'ora di pagine pesa decine di MB. Ogni voce:
+// { tipo: "pagina" | "flusso" | "pdf", ts, ... }; nella registrazione a mano
+// in «grezzi», negli ultimi minuti in «scorre».
+const regTx = (st, modo, fn) => RegistraDb.tx(st, modo, fn);
+const regMetti = (voce) => {
+  const st = regAttiva() ? REG_ST : REG_SC;
+  if (st === REG_SC) regPotaPoi();
+  return regTx(st, "readwrite", (s) => { s.add({ ts: Date.now(), ...voce }); });
 };
-const regMetti = (voce) => regTx("readwrite", (s) => { s.add(voce); });
 // (anche per i test: quanto c'è, e tutto)
-const regConta = () => regTx("readonly", (s) => s.getAll()).then((l) => ({
+const regContaDi = (st) => regTx(st, "readonly", (s) => s.getAll()).then((l) => ({
   pagine: l.filter((x) => x.tipo === "pagina").length, flusso: l.filter((x) => x.tipo === "flusso").reduce((n, x) => n + x.flusso.length, 0),
-  pdf: l.filter((x) => x.tipo === "pdf").map((x) => x.url),
+  pdf: l.filter((x) => x.tipo === "pdf").map((x) => x.url), piuVecchia: l.reduce((m, x) => Math.min(m, x.ts || 0), Infinity),
 }));
-const regTutto = () => regTx("readonly", (s) => s.getAll());
+const regConta = () => regContaDi(REG_ST);
+const regContaScorre = () => regContaDi(REG_SC);
+const regTutto = () => regTx(REG_ST, "readonly", (s) => s.getAll());
 
 async function regCancella() {
-  await regTx("readwrite", (s) => { s.clear(); }).catch(() => {});
+  await regTx([REG_ST, REG_SC], "readwrite", (a, b) => { a.clear(); b.clear(); }).catch(() => {});
   await chrome.storage.local.remove(REG);
   regStato = null;
 }
+
+// ------------------------------------------------- gli ultimi 3 minuti
+// Potati a ogni scrittura (al più ogni 20 secondi) e, finché la tabella non è
+// vuota, ogni 30 secondi con un allarme (che sveglia il service worker anche
+// se il gestionale tace): niente resta più di REG_FINESTRA, salvo quei secondi
+// — e il minuto in cui un incidente aspetta: lì si tengono i suoi 3 minuti prima.
+let regPotaT = 0, regPotaArmata = false;
+function regPotaPoi() {
+  if (Date.now() - regPotaT > 20e3) { regPotaT = Date.now(); regPota().catch(() => {}); }
+  if (regPotaArmata || !chrome.alarms) return;
+  regPotaArmata = true;
+  chrome.alarms.get(REG_AL_POTA).then((a) => a || chrome.alarms.create(REG_AL_POTA, { periodInMinutes: 0.5 })).catch(() => { regPotaArmata = false; });
+}
+async function regPota() {
+  // (con un incidente che aspetta il suo minuto, si tengono i 3 minuti prima dell'incidente)
+  const inc = (await chrome.storage.session.get(REG_INC).catch(() => ({})))[REG_INC];
+  const limite = Math.min(Date.now() - REG_FINESTRA, inc && inc.ts ? inc.ts - REG_FINESTRA : Infinity);
+  const resta = await regTx(REG_SC, "readwrite", (s) => {
+    const ix = s.index("ts");
+    const c = ix.openKeyCursor(IDBKeyRange.upperBound(limite, true));
+    c.onsuccess = () => { const k = c.result; if (k) { s.delete(k.primaryKey); k.continue(); } };
+    return ix.count(IDBKeyRange.lowerBound(limite));
+  });
+  if (!regAttiva()) regPdfVisti.clear();
+  if (!resta && chrome.alarms) { regPotaArmata = false; await chrome.alarms.clear(REG_AL_POTA).catch(() => {}); }
+  return resta;
+}
+async function regScorreVia() {
+  await regTx(REG_SC, "readwrite", (s) => { s.clear(); }).catch(() => {});
+  await chrome.storage.session.remove(REG_INC).catch(() => {});
+  if (chrome.alarms) { regPotaArmata = false; await chrome.alarms.clear(REG_AL_POTA).catch(() => {}); await chrome.alarms.clear(REG_AL_INC).catch(() => {}); }
+}
+// all'avvio del browser gli ultimi minuti di ieri non ci sono più (e regLeggi, col segno in storage.session)
+chrome.runtime.onStartup?.addListener(() => { regScorreVia().catch(() => {}); });
+chrome.alarms?.onAlarm.addListener((a) => {
+  if (a.name === REG_AL_POTA) regPota().catch(() => {});
+  if (a.name === REG_AL_INC) regIncidenteSalva().catch(() => {});
+});
 
 // ------------------------------------------------------------ il flusso
 const regInVolo = new Map();           // requestId → la richiesta, finché non finisce
@@ -129,10 +207,9 @@ async function regScarica() {
 const REG_FILTRO = { urls: ["http://*/*", "https://*/*"] };
 const regQuando = (fn) => (d) => {
   // il service worker può essersi appena svegliato: lo stato arriva un attimo dopo
-  if (regStato && !regAttiva()) { if (regStato.stato === "rec") regFerma("dopo 60 minuti").catch(() => {}); return; }
-  if (regStato) return fn(d);
-  if (regCaricato) return;
-  regPronto.then(() => { if (regAttiva()) fn(d); });
+  if (!regCaricato) { regPronto.then(() => { if (regCattura()) fn(d); }); return; }
+  if (regStato && regStato.stato === "rec" && !regAttiva()) regFermaESalva("dopo 60 minuti").catch(() => {});
+  if (regCattura()) fn(d);
 };
 chrome.webRequest.onBeforeRequest.addListener(regQuando((d) => {
   if (!regNostra(d.url) || regInVolo.has(d.requestId) || /\/favicon\.ico(?:$|\?)/i.test(d.url)) return;
@@ -174,8 +251,9 @@ chrome.webRequest.onCompleted.addListener(regQuando((d) => {
   if (r.url !== d.url) r.finale = d.url;
   regAccoda("flusso", r);
   // un PDF aperto: se nessuno ne ha già i byte, una rilettura dalla cache
+  // (solo nella registrazione a mano: quella automatica non chiede niente)
   if (r.pdf && r.nonInCache) r.nonRiletto = "non in cache";
-  else if (r.pdf && !r.registratore && d.statusCode >= 200 && d.statusCode < 300) {
+  else if (r.pdf && !r.registratore && d.statusCode >= 200 && d.statusCode < 300 && regAttiva()) {
     const u = d.url;
     setTimeout(() => regRileggi(u, r).catch(() => {}), 2500);
   }
@@ -190,7 +268,7 @@ chrome.webRequest.onErrorOccurred.addListener(regQuando((d) => {
 
 // le schede e le finestre nuove: chi ha aperto chi
 chrome.tabs.onCreated.addListener((tab) => {
-  if (!regAttiva()) return;
+  if (!regCattura()) return;
   const s = { id: tab.id, apertaDa: tab.openerTabId ?? null, finestra: tab.windowId, ts: Date.now() };
   chrome.windows.get(tab.windowId).then((w) => { if (w && w.type === "popup") s.popup = true; }).catch(() => {})
     .finally(() => regAccoda("schede", s));
@@ -199,9 +277,10 @@ chrome.tabs.onCreated.addListener((tab) => {
 // ------------------------------------------------------------- i PDF
 const regEPdf = (buf) => buf && buf.byteLength > 4 && String.fromCharCode(...new Uint8Array(buf, 0, 5)) === "%PDF-";
 async function regTieniPdf(url, buf, origine, scheda) {
-  if (!regAttiva() || !regEPdf(buf) || buf.byteLength > REG_PDF_MAX || regPdfN >= REG_PDF_N) return false;
+  const aMano = regAttiva();
+  if (!regCattura() || !regEPdf(buf) || buf.byteLength > REG_PDF_MAX || (aMano && regPdfN >= REG_PDF_N)) return false;
   if (regPdfVisti.has(url)) return true;
-  regPdfVisti.add(url); regPdfN++;
+  regPdfVisti.add(url); if (aMano) regPdfN++;
   await regMetti({ tipo: "pdf", url, ts: Date.now(), scheda: scheda ?? null, origine, byte: new Uint8Array(buf.slice(0)) });
   return true;
 }
@@ -226,7 +305,7 @@ async function regRileggi(url, r) {
 const regFetch0 = self.fetch.bind(self);
 self.fetch = function (input, init) {
   const p = regFetch0(input, init);
-  if (regAttiva()) {
+  if (regCattura()) {
     p.then((res) => {
       const u = res.url || (typeof input === "string" ? input : input && input.url) || "";
       if (!regNostra(u) || regRilettura.has(u)) return;
@@ -237,20 +316,18 @@ self.fetch = function (input, init) {
   return p;
 };
 
-// -------------------------------------------------------------- comandi
+// ------------------------------------------------------- a mano: via e ferma
 async function regAvvia() {
   await regCancella();
   regInVolo.clear(); regRilettura.clear(); regPdfVisti.clear(); regPdfN = 0; regPagineN = 0;
   regBuf = { flusso: [], note: [], schede: [] };
   const o = await chrome.storage.local.get("portale");
+  regPortale = o.portale || "";
   const ora = Date.now();
-  regStato = {
-    stato: "rec", inizio: ora, scade: ora + REG_DURATA, versione: chrome.runtime.getManifest().version,
-    origini: { gestionale: SA4, portale: o.portale || "", altri: [...ALLOWED_ORIGINS].filter((x) => x !== SA4), siss: [...REG_SISS] },
-  };
+  regStato = { stato: "rec", inizio: ora, scade: ora + REG_DURATA, versione: chrome.runtime.getManifest().version, origini: regOrigini() };
   await chrome.storage.local.set({ [REG]: regStato });
   clearTimeout(regScadenza);
-  regScadenza = setTimeout(() => regFerma("dopo 60 minuti").catch(() => {}), REG_DURATA + 500);
+  regScadenza = setTimeout(() => regFermaESalva("dopo 60 minuti").catch(() => {}), REG_DURATA + 500);
   return regStato;
 }
 async function regFerma(come = "fermata a mano") {
@@ -265,8 +342,198 @@ async function regFerma(come = "fermata a mano") {
   await chrome.storage.local.set({ [REG]: regStato });
   return regStato;
 }
-const regApriPagina = () => chrome.tabs.create({ url: chrome.runtime.getURL("registra.html") });
+// «Ferma e salva»: ferma, e salva lo zip (anche dopo 60 minuti, da sola)
+let regFermando = null;
+const regFermaESalva = (come) => regFermando || (regFermando = (async () => {
+  try { await regFerma(come); return await regSalvaManuale(); } finally { regFermando = null; }
+})());
 
+// ------------------------------------------------------------- salvare
+// Uno zip alla volta, in un documento fuori schermo (registra-esporta.html):
+// aperto per lo zip, poi chiuso. Il service worker resta sveglio intanto.
+let regFilaSalva = Promise.resolve();
+const regInFila = (fn) => (regFilaSalva = regFilaSalva.then(fn, fn));
+let REG_PROVA = null;   // (solo i test: opzioni dell'anonimizzazione, p.es. uno sfasamento fisso)
+async function regFuori(m) {
+  const c = chrome.runtime.getContexts ? await chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] }).catch(() => []) : [];
+  if (!c.length) {
+    await chrome.offscreen.createDocument({ url: "registra-esporta.html?fuori=1", reasons: ["DOM_PARSER", "BLOBS"],
+      justification: "Anonimizza la registrazione (il testo dei PDF con pdf.js) e salva lo zip nella memoria dell'estensione, senza aprire schede" });
+  }
+  const sveglio = setInterval(() => { chrome.runtime.getPlatformInfo().catch(() => {}); }, 20e3);
+  try {
+    for (let k = 0; ; k++) {
+      try { const r = await chrome.runtime.sendMessage(m); if (r) return r; }
+      catch (e) { if (!/Receiving end/i.test(String(e && e.message || e))) throw e; }
+      if (k >= 40) throw new Error("il documento che salva non risponde");
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+  } finally {
+    clearInterval(sveglio);
+    await chrome.offscreen.closeDocument().catch(() => {});
+  }
+}
+const regNomeZip = (ts, auto) => {
+  const d = new Date(ts), p2 = (n) => String(n).padStart(2, "0");
+  return `psassist-registrazione-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}${auto ? "-auto" : ""}.zip`;
+};
+async function regSalvaOra({ fonte, st, motivo, errore = "", quando, da = 0 }) {
+  // il registro degli errori: dall'ultima registrazione a mano salvata (le voci restano: si sposta solo il segno);
+  // in uno zip automatico, quelli dei suoi minuti
+  const reg = await chrome.storage.local.get(["errori.v1", "errori.esportati"]);
+  const tutti = (Array.isArray(reg["errori.v1"]) ? reg["errori.v1"] : []).filter(Boolean);
+  const errori = fonte === REG_ST ? tutti.filter((x) => x.ts > (reg["errori.esportati"] || 0)) : tutti.filter((x) => x.ts >= da);
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const r = await regFuori({ t: "regFuoriEsporta", fonte, st, errori, da, opz: REG_PROVA || {},
+    meta: { id, base: regNomeZip(quando || st.inizio, motivo === "auto"), motivo, errore, quando: quando || st.inizio } });
+  if (!r || !r.ok) throw new Error((r && r.why) || "lo zip non è stato salvato");
+  if (fonte === REG_ST && errori.length) await chrome.storage.local.set({ "errori.esportati": Math.max(...errori.map((x) => x.ts)) });
+  await regTetti().catch(() => {});
+  await regAvvisaElenco();
+  return r.meta;
+}
+function regSalvaManuale() {
+  return regInFila(async () => {
+    const s = (await chrome.storage.local.get(REG))[REG];
+    if (!s || s.stato !== "fermo") return { ok: false, why: "nessuna registrazione da salvare" };
+    regStato = { ...s, salvo: Date.now(), errore: "", prove: (s.prove || 0) + 1 };
+    await chrome.storage.local.set({ [REG]: regStato });
+    try {
+      const meta = await regSalvaOra({ fonte: REG_ST, st: s, motivo: "manuale", quando: s.inizio });
+      regStato = null;
+      await chrome.storage.local.remove(REG);
+      return { ok: true, zip: regMetaPubblica(meta) };
+    } catch (e) {
+      const why = corto(e && e.message || e, 140);
+      regStato = { ...regStato, salvo: 0, errore: why };
+      await chrome.storage.local.set({ [REG]: regStato });
+      segnaErrore("registra", { motivo: why });
+      return { ok: false, why };
+    }
+  });
+}
+
+// I tetti: al più 30 zip e 300 MB; oltre, vanno via i più vecchi — prima gli
+// automatici, poi quelli a mano. L'ultimo salvato resta sempre.
+async function regTetti() {
+  const l = (await regTx("zip", "readonly", (s) => s.getAll())).sort((a, b) => a.ts - b.ts);
+  let n = l.length, tot = l.reduce((x, z) => x + (z.byte || 0), 0);
+  const via = [];
+  for (const tipo of ["auto", "manuale"]) {
+    for (const z of l.slice(0, -1)) {
+      if (n <= REG_ZIP_N && tot <= REG_ZIP_MAX) break;
+      if (z.motivo !== tipo) continue;
+      via.push(z.id); n--; tot -= z.byte || 0;
+    }
+  }
+  if (via.length) await regTx(["zip", "zipdati"], "readwrite", (a, b) => { for (const id of via) { a.delete(id); b.delete(id); } });
+}
+async function regAvvisaElenco() {
+  const l = await regTx("zip", "readonly", (s) => s.getAll());
+  await chrome.storage.local.set({ [REG_ELENCO]: { n: l.length, byte: l.reduce((x, z) => x + (z.byte || 0), 0), ts: Date.now() } });
+}
+// quello che si mostra di uno zip (pannello e telefono): niente pazienti, il nome dello zip e i suoi numeri
+const regMetaPubblica = (z, riepilogo = true) => ({
+  id: z.id, nome: z.nome, ts: z.ts, quando: z.quando, byte: z.byte, motivo: z.motivo, errore: z.errore || "",
+  controllo: !!z.controllo, punti: z.punti || 0, pagine: z.pagine || 0, richieste: z.richieste || 0, pdf: z.pdf || 0,
+  ...(riepilogo ? { riepilogo: z.riepilogo || "" } : {}),
+});
+const regElenco = async (riepilogo = true) => (await regTx("zip", "readonly", (s) => s.getAll()))
+  .sort((a, b) => b.ts - a.ts).map((z) => regMetaPubblica(z, riepilogo));
+async function regZipVia(id) {
+  const z = await regTx("zip", "readonly", (s) => s.get(String(id)));
+  if (!z) return null;
+  await regTx(["zip", "zipdati"], "readwrite", (a, b) => { a.delete(z.id); b.delete(z.id); });
+  if (regCopia && regCopia.id === z.id) regCopia = null;
+  await regAvvisaElenco();
+  return z;
+}
+// Uno zip a pezzi (base64), per il pannello e per il telefono: i byte letti
+// una volta e tenuti in memoria per un minuto, finché arrivano i pezzi.
+let regCopia = null, regCopiaT = 0;
+async function regPezzo(id, i, pezzo) {
+  if (!regCopia || regCopia.id !== id) {
+    const z = await regTx("zip", "readonly", (s) => s.get(String(id)));
+    const byte = z && await regTx("zipdati", "readonly", (s) => s.get(z.id));
+    if (!z || !byte) return null;
+    regCopia = { id: z.id, nome: z.nome, byte: new Uint8Array(byte) };
+  }
+  clearTimeout(regCopiaT);
+  regCopiaT = setTimeout(() => { regCopia = null; }, 60e3);
+  const { byte, nome } = regCopia, n = Math.max(1, Math.ceil(byte.length / pezzo));
+  if (!Number.isSafeInteger(i) || i < 0 || i >= n) return null;
+  if (i === n - 1) { clearTimeout(regCopiaT); const c = regCopia; regCopiaT = setTimeout(() => { if (regCopia === c) regCopia = null; }, 5e3); }
+  return { nome, size: byte.length, n, i, b: b64(byte.subarray(i * pezzo, (i + 1) * pezzo)) };
+}
+
+// ------------------------------------------------- la registrazione automatica
+// bg.js, a ogni scrittura degli ordini (ordScrivi, dopo ordPubblico: la sola
+// funzione che dice com'è finito un ordine): quelli finiti in arancione o in
+// rosso — e un ordine fermo —, una volta sola ciascuno (il segno sta
+// nell'ordine). Il motivo è il titolo della striscia e gli esami che mancano:
+// mai il paziente.
+function regDopoOrdini(l) {
+  for (const r of l) {
+    const p = r && r.pubblico;
+    if (!p || r.regVisto || !["warn", "err"].includes(p.tono)) continue;
+    if (!(FINALI.has(r.stato) || r.stato === "stampa" || (r.stato === "corre" && r.muto))) continue;
+    r.regVisto = true;
+    const mancano = (r.resto && Array.isArray(r.resto.mancano)) ? r.resto.mancano : [];
+    regIncidente([p.titolo, mancano.length ? `mancano: ${mancano.join(", ")}` : ""].filter(Boolean).join(" · ")).catch(() => {});
+  }
+}
+// …e il registro degli errori (segnaErrore): un giro del motore fuori dal
+// giornale degli ordini (nella scheda del medico) che fallisce, o un «ORA-»
+// del gestionale anche quando la richiesta rifatta è riuscita. I suoi dati
+// non hanno mai nomi.
+function regDopoErrore(v) {
+  if (!v || v.tipo !== "ordine") return;
+  const m = String((v.dati && v.dati.motivo) || "");
+  if (/riuscita/i.test(m) && !/ORA-/.test(m)) return;   // «Riprova i mancanti: riuscita»
+  regIncidente(m.replace(/,?\s*riuscita$/i, "") || "errore dell'ordine").catch(() => {});
+}
+let regFilaInc = Promise.resolve();
+const regInFilaInc = (fn) => (regFilaInc = regFilaInc.then(fn, fn));
+async function regIncidente(motivo) {
+  await regPronto;
+  if (!regAuto || regAttiva()) return false;   // spenta, o registra il medico: vince la sua
+  return regInFilaInc(async () => {
+    // (niente numeri di richiesta o di episodio: nello zip sono rimappati, qui si tolgono)
+    const m = corto(String(motivo || "ordine finito male").replace(/\d{6,}/g, "…").replace(/\s+/g, " ").trim(), 160);
+    const inc = (await chrome.storage.session.get(REG_INC))[REG_INC];
+    if (inc) {   // lo stesso incidente: un motivo in più, lo stesso zip
+      if (!inc.motivi.includes(m) && inc.motivi.length < 5) { inc.motivi.push(m); await chrome.storage.session.set({ [REG_INC]: inc }); }
+      return true;
+    }
+    const ts = Date.now();
+    await chrome.storage.session.set({ [REG_INC]: { ts, motivi: [m] } });
+    // il minuto si aspetta qui; se intanto il service worker si ferma, lo sveglia l'allarme
+    setTimeout(() => { regIncidenteSalva().catch(() => {}); }, REG_DOPO);
+    chrome.alarms?.create(REG_AL_INC, { when: ts + REG_DOPO + 1000 });
+    return true;
+  });
+}
+async function regIncidenteSalva() {
+  const inc = await regInFilaInc(async () => {
+    const o = (await chrome.storage.session.get(REG_INC))[REG_INC];
+    if (!o || Date.now() - o.ts < REG_DOPO - 1000) return null;
+    await chrome.storage.session.remove(REG_INC);
+    return o;
+  });
+  if (!inc) return null;
+  chrome.alarms?.clear(REG_AL_INC).catch(() => {});
+  await regPronto;
+  if (!regAuto || regAttiva()) return null;
+  await regScarica().catch(() => {});
+  // dai 3 minuti prima dell'incidente a adesso (il minuto dopo, per vedere com'è finita)
+  const fine = Date.now(), da = inc.ts - REG_FINESTRA, motivi = inc.motivi.join(" · ");
+  return regInFila(() => regSalvaOra({ fonte: REG_SC, da, motivo: "auto", errore: motivi, quando: inc.ts,
+    st: { versione: chrome.runtime.getManifest().version, inizio: da, fine, comeFinita: `automatica: dai ${REG_FINESTRA / 60e3} minuti prima di «${motivi}» a ${Math.max(1, Math.round((fine - inc.ts) / 60e3))} dopo`, origini: regOrigini() } })
+    .catch((e) => { segnaErrore("registra", { motivo: corto(e && e.message || e, 140), auto: true }); return null; }));
+}
+
+// -------------------------------------------------------------- comandi
+const REG_PEZZO_PC = 3 * 1024 * 1024;   // byte per pezzo verso il pannello (≈ 4 MB in base64)
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || typeof msg !== "object" || typeof msg.t !== "string" || !/^reg(istra)?[A-Z]/.test(msg.t)) return;
   const daPagina = !!sender && !!sender.tab && regNostra(sender.url || "");
@@ -274,18 +541,33 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!daPagina && !daEstensione) return reply({ ok: false, why: "non dal gestionale" }), true;
   const fai = (fn) => { regPronto.then(fn).then((x) => reply(x || { ok: true }), (e) => reply({ ok: false, why: String(e && e.message || e).slice(0, 120) })); return true; };
 
-  // dal menu ⋯ del pannello
+  // dal pannello (⋯ → Registrazioni) e dalla pill «● Registrando…»
   if (msg.t === "registraVia") return fai(async () => ({ ok: true, stato: await regAvvia() }));
-  if (msg.t === "registraFerma") return fai(async () => { const s = await regFerma(); await regApriPagina(); return { ok: true, stato: s }; });
-  if (msg.t === "registraScarica") return fai(async () => { await regApriPagina(); return { ok: true }; });
+  if (msg.t === "registraFerma") return fai(async () => ({ ...(await regFermaESalva("fermata a mano")), stato: regStato }));
+  if (msg.t === "registraSalva") return fai(async () => ({ ...(await regSalvaManuale()), stato: regStato }));
+  if (msg.t === "registraLista") return fai(async () => ({ ok: true, stato: regStato, auto: regAuto, finestra: REG_FINESTRA, lista: await regElenco() }));
+  if (msg.t === "registraAuto") return fai(async () => {
+    regAuto = msg.acceso !== false;
+    await chrome.storage.local.set({ [REG_AUTO]: regAuto });
+    if (!regAuto) await regScorreVia();
+    return { ok: true, auto: regAuto };
+  });
+  // il grezzo di una registrazione ferma che non si è salvata: via, senza zip
+  if (msg.t === "registraButta") return fai(async () => { if (regAttiva()) return { ok: false, why: "la registrazione è in corso" }; await regCancella(); return { ok: true }; });
+  if (msg.t === "registraCancella") return fai(async () => ({ ok: !!(await regZipVia(String(msg.id || ""))) }));
+  if (msg.t === "registraPezzo") return fai(async () => {
+    const p = await regPezzo(String(msg.id || ""), msg.i, REG_PEZZO_PC);
+    return p ? { ok: true, ...p } : { ok: false, why: "lo zip non c'è più" };
+  });
 
-  // da registra-pagina.js, solo mentre si registra
+  // da registra-pagina.js, mentre si registra (a mano, o gli ultimi minuti)
   if (!daPagina) return reply({ ok: false }), true;
   if (msg.t === "regPagina") return fai(async () => {
-    if (!regAttiva()) return { ok: false };
+    if (!regCattura()) return { ok: false };
+    const aMano = regAttiva();
     const html = String(msg.html || "");
-    if (html.length > REG_PAGINA_MAX || regPagineN >= REG_PAGINE_N) return { ok: false, why: "troppo" };
-    regPagineN++;
+    if (html.length > REG_PAGINA_MAX || (aMano && regPagineN >= REG_PAGINE_N)) return { ok: false, why: "troppo" };
+    if (aMano) regPagineN++;
     const t = sender.tab;
     // un'app a viste (il SISS) cambia indirizzo senza ricaricare: vale quello
     // che dice la pagina, se è della stessa origine
@@ -302,7 +584,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     return { ok: true };
   });
   if (msg.t === "regRichiesta") {
-    if (regAttiva()) regAccoda("note", { metodo: String(msg.metodo || "GET").toUpperCase().slice(0, 10), url: String(msg.url || "").slice(0, 4000), ts: Number(msg.ts) || Date.now(), scheda: sender.tab.id });
+    if (regCattura()) regAccoda("note", { metodo: String(msg.metodo || "GET").toUpperCase().slice(0, 10), url: String(msg.url || "").slice(0, 4000), ts: Number(msg.ts) || Date.now(), scheda: sender.tab.id });
     return reply({ ok: true }), true;
   }
   if (msg.t === "regPdf") return fai(async () => {

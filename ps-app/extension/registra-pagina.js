@@ -1,6 +1,8 @@
 /*
  * PS Assist — il registratore, la parte nella pagina (gestionale, portale e
- * SISS, ogni riquadro). Non fa niente finché il medico non preme ⋯ → Registra; poi:
+ * SISS, ogni riquadro). Fa quello che segue mentre il medico registra (⋯ →
+ * Registrazioni → Registra) e, se no, per la registrazione automatica (gli
+ * ultimi 3 minuti nel service worker; accesa di norma, senza pill né rilettura):
  *   - manda al service worker il DOM della pagina com'è dopo il caricamento (e
  *     com'è quando la si lascia, se nel frattempo è cambiato), senza il pannello;
  *   - segna le richieste che fa il PANNELLO (content.js vive in questo stesso
@@ -11,7 +13,7 @@
  *     pannello), nel riquadro principale, mostra la pill «● Registrando…»: la
  *     stessa pill del pannello ridotto (le sue regole CSS, da registra-pill.js),
  *     nello stesso posto (si trascina, e resta dove la lasci, sito per sito);
- *     un clic offre «Ferma e scarica».
+ *     un clic offre «Ferma e salva» (lo zip resta nell'estensione).
  * Sul SISS (menu operatore e Prescrittivo Regionale: un'app Angular che cambia
  * vista senza ricaricare la pagina) in più:
  *   - un'istantanea a ogni cambio di vista (pushState/replaceState visti dalla
@@ -27,7 +29,7 @@
  *   - gli host fuori dal SISS che la pagina chiama (solo il nome, dalla
  *     Resource Timing): per sapere se manca qualcosa al perimetro.
  * Niente esce dal PC: tutto va al service worker, che lo tiene finché il
- * medico non scarica (o cancella) la registrazione. Nessuno script nel mondo
+ * medico non salva (o cancella) la registrazione, o — gli ultimi minuti — lo pota. Nessuno script nel mondo
  * della pagina, nessuna richiesta in più.
  */
 (() => {
@@ -36,17 +38,24 @@
   const SISS = new Set(["https://dcss.cgi.crs.lombardia.it", "https://operatorisiss.servizirl.it"]);
   const suSiss = SISS.has(location.origin);
   const inAlto = (() => { try { return window.top === window; } catch { return false; } })();
-  let rec = false;
-  const leggi = () => chrome.storage.local.get("registra").then((o) => {
+  // rec: la registrazione a mano (con la pill); attivo: si tiene la pagina —
+  // a mano, o per la registrazione automatica (gli ultimi minuti, senza pill:
+  // accesa di norma, «registra.auto» false la spegne)
+  let rec = false, attivo = false;
+  const leggi = () => chrome.storage.local.get(["registra", "registra.auto"]).then((o) => {
     const r = o && o.registra;
-    const prima = rec;
+    const prima = rec, primaA = attivo;
     rec = !!(r && r.stato === "rec" && Date.now() < r.scade);
-    if (rec && !prima && document.readyState === "complete") setTimeout(() => scatta("caricata"), 300);
-    if (rec !== prima) { pill(); if (suSiss) osserva(); }
+    attivo = rec || (o && o["registra.auto"]) !== false;
+    // (partita a mano: la pagina di adesso si rimanda, anche se gli ultimi minuti l'avevano già)
+    if (rec && !prima) { ultima = ""; visti.clear(); }
+    if (attivo && (!primaA || (rec && !prima)) && document.readyState === "complete") setTimeout(() => scatta("caricata"), 300);
+    if (rec !== prima) pill();
+    if (attivo !== primaA && suSiss) osserva();
   }).catch(() => {});
   try {
     leggi();
-    chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && ch.registra) leggi(); });
+    chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && (ch.registra || ch["registra.auto"])) leggi(); });
   } catch { return; }
   const manda = (m, cb) => { try { chrome.runtime.sendMessage(m, (x) => { void chrome.runtime.lastError; if (cb) cb(x); }); } catch { /* estensione ricaricata */ } };
   const assoluto = (u) => { try { return new URL(String(u), location.href).href; } catch { return String(u || ""); } };
@@ -59,7 +68,7 @@
     return btoa(s);
   };
   const forsePdf = (url, buf) => {
-    if (!rec || !buf || buf.byteLength < 5 || buf.byteLength > 15 * 1024 * 1024) return;
+    if (!attivo || !buf || buf.byteLength < 5 || buf.byteLength > 15 * 1024 * 1024) return;
     if (String.fromCharCode(...new Uint8Array(buf, 0, 5)) !== "%PDF-") return;
     manda({ t: "regPdf", url, b64: b64(buf) });
   };
@@ -67,7 +76,7 @@
   if (typeof f0 === "function") {
     globalThis.fetch = function (input, init) {
       const p = f0.apply(this, arguments);
-      if (rec) {
+      if (attivo) {
         try {
           const url = assoluto(typeof input === "string" || input instanceof URL ? input : input && input.url);
           manda({ t: "regRichiesta", metodo: (init && init.method) || (input && input.method) || "GET", url, ts: Date.now() });
@@ -88,7 +97,7 @@
     };
     X.send = function () {
       const r = this.__psaReg;
-      if (rec && r) {
+      if (attivo && r) {
         manda({ t: "regRichiesta", metodo: r.metodo, url: r.url, ts: Date.now() });
         this.addEventListener("load", () => {
           try { if (this.response instanceof ArrayBuffer) forsePdf(this.responseURL || r.url, this.response); } catch { /* niente */ }
@@ -162,7 +171,7 @@
   const MAX_MINUTO = 15;
   let rinviato = null;
   function scatta(motivo) {
-    if (!rec || !document.documentElement) return;
+    if (!attivo || !document.documentElement) return;
     if (suSiss) {
       const ora = Date.now();
       while (minuto.length && ora - minuto[0] > 60e3) minuto.shift();
@@ -221,7 +230,7 @@
   // un dialogo, un menu a tendina, un elenco di suggerimenti: Angular li mette tutti nel cdk-overlay-container
   const eContenitore = (n) => !!n && n.nodeType === 1 && n.classList.contains("cdk-overlay-container");
   function osserva() {
-    if (!rec) {
+    if (!attivo) {
       if (osservatore) { osservatore.disconnect(); osservatore = null; }
       clearInterval(giro); giro = null;
       if (perf) { perf.disconnect(); perf = null; }
@@ -245,10 +254,10 @@
     if (!ascolta) {
       ascolta = true;
       // i campi compilati non cambiano il DOM: li dice l'evento
-      for (const ev of ["change", "input"]) addEventListener(ev, (e) => { if (rec && !(e.target && e.target.closest && e.target.closest(NOI))) quiete(); }, true);
-      addEventListener("popstate", () => rec && rotta());
-      addEventListener("hashchange", () => rec && rotta());
-      try { if (globalThis.navigation) globalThis.navigation.addEventListener("currententrychange", () => rec && setTimeout(rotta, 0)); } catch { /* niente */ }
+      for (const ev of ["change", "input"]) addEventListener(ev, (e) => { if (attivo && !(e.target && e.target.closest && e.target.closest(NOI))) quiete(); }, true);
+      addEventListener("popstate", () => attivo && rotta());
+      addEventListener("hashchange", () => attivo && rotta());
+      try { if (globalThis.navigation) globalThis.navigation.addEventListener("currententrychange", () => attivo && setTimeout(rotta, 0)); } catch { /* niente */ }
     }
     giro = setInterval(rotta, 500);   // pushState/replaceState, anche senza la Navigation API
     // gli host chiamati fuori dal SISS: solo il nome (non sono registrati)
@@ -322,16 +331,20 @@
       btn.addEventListener("pointercancel", su);
     });
   }
+  // «Ferma e salva»: la pill resta il tempo di dire com'è andata
+  let detto = "", dettoT = 0;
+  const dici = (t, ms = 0) => { detto = t; clearTimeout(dettoT); if (ms) dettoT = setTimeout(() => { detto = ""; pill(); }, ms); pill(); };
   function pill() {
     if (!inAlto || !pronta) return;
-    if (!rec || document.getElementById("psassist-host")) {
+    const vista = rec || !!detto;
+    if (!vista || document.getElementById("psassist-host")) {
       if (ospite) { ospite.remove(); ospite = null; }
       if (rec && !attesaPannello) attesaPannello = setInterval(pill, 1000);
       if (!rec) { clearInterval(attesaPannello); attesaPannello = null; }
       return;
     }
     if (!attesaPannello) attesaPannello = setInterval(pill, 1000);   // il pannello può arrivare dopo (document_idle)
-    if (ospite && ospite.isConnected) return;
+    if (ospite && ospite.isConnected) { scrivi(); return; }
     if (!document.documentElement) return;
     ospite = document.createElement("div");
     ospite.id = "psassist-reg-host";
@@ -341,7 +354,7 @@
       .pill .slot { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; }   /* dove sta il logo */
       .menu[hidden] { display: none; }</style>
       <div class="wrap"><button class="pill" id="expand" title="PS Assist sta registrando questa sessione — tocca per fermare" aria-haspopup="menu" aria-expanded="false"><span class="slot"><span class="dot rec"></span></span> <span class="who">Registrando…</span></button>
-      <div class="menu" role="menu" hidden><button role="menuitem" id="regferma">Ferma e scarica</button></div></div>`;
+      <div class="menu" role="menu" hidden><button role="menuitem" id="regferma">Ferma e salva</button></div></div>`;
     const btn = root.getElementById("expand"), menu = root.querySelector(".menu"), wrap = root.querySelector(".wrap");
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -353,9 +366,23 @@
       Object.assign(menu.style, b.right - m.width < 0 ? { left: "0", right: "auto" } : { left: "", right: "" },
         b.bottom + m.height + 8 > innerHeight ? { top: "auto", bottom: b.height + 4 + "px" } : { top: "", bottom: "" });
     });
-    root.getElementById("regferma").addEventListener("click", (e) => { e.stopPropagation(); chiudiMenu(); manda({ t: "registraFerma" }); });
+    root.getElementById("regferma").addEventListener("click", (e) => {
+      e.stopPropagation(); chiudiMenu();
+      dici("Salvo la registrazione…");
+      // anonimizzata e salvata nell'estensione, senza schede né scarichi: la si trova nel pannello
+      manda({ t: "registraFerma" }, (x) => dici(x && x.ok ? "Salvata: ⋯ → Registrazioni" : "Non salvata: ⋯ → Registrazioni", 5000));
+    });
     trascina(btn, wrap);
     document.documentElement.appendChild(ospite);
+    scrivi();
     metti();
+  }
+  // la pill dice «Registrando…», o com'è andato «Ferma e salva»
+  function scrivi() {
+    const r = ospite && ospite.shadowRoot;
+    if (!r) return;
+    r.querySelector(".who").textContent = detto || "Registrando…";
+    r.querySelector(".dot").hidden = !!detto;
+    r.getElementById("expand").disabled = !!detto;
   }
 })();

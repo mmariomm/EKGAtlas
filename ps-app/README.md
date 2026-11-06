@@ -934,7 +934,8 @@ giorno e centocinquanta pazienti: un turno è di dodici ore.
 nuovo»), poi «Fatto». Via **tutto** quello che sa dei pazienti e del turno — elenco, aree e posti
 nelle stanze, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
 cliniche, ordini finiti, richieste da confermare, quesiti, la memoria di ogni scheda aperta, gli
-ordini che ricorda il Ponte, la registrazione; dei Tempi resta la durata, non il paziente. **Restano**: stampanti e
+ordini che ricorda il Ponte, la registrazione non salvata e gli ultimi minuti di quella automatica (gli zip salvati,
+anonimizzati, restano); dei Tempi resta la durata, non il paziente. **Restano**: stampanti e
 stampa automatica, indirizzo del portale, associazione con l'iPhone, fogli di dimissione ed EO,
 le stanze, le opzioni delle aree, la finestra. Non c'è mentre un ordine è in corso.
 
@@ -1226,6 +1227,10 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
   Scollega»**, e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
   sessione si chiude da sola; tornando sull'app si riapre da sola.
+- **Registrazioni** (⋯ sul telefono): gli zip salvati sul PC (⋯ → Registrazioni), con quando, quanto, a mano o
+  automatica e perché, il controllo — niente pazienti. **Scarica** lo porta sul telefono a pezzi, cifrato come
+  tutto il resto (al più 100 MB), e lo tiene in memoria; poi **Condividi…** lo passa a iOS (all'app di Claude, a
+  File), o, dove non si può, **Salva**. **Cancella** (due tocchi) lo toglie dal PC. Ogni comando nel registro del ponte.
 - **Prova la rete** (⋯ → iPhone): dal PC dell'ospedale, sulla presa vera del ponte, in pochi secondi
   dice se si raggiunge e quanto ci mette; «Tieni aperto 15 minuti» dice se e perché cade; il testo da
   copiare ha un blocco «Per l'IT». Si apre in una scheda sua: un quarto d'ora deve reggere i cambi di
@@ -1481,25 +1486,48 @@ mai attaccati a un referto (niente li collega). Il referto in PDF resta lì acca
 Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costruire una
 «palestra» che si comporti come il gestionale. Solo con l'**estensione**.
 
-- **⋯ → Registra** fa partire; la pill e l'intestazione mostrano **● REC**. Lavori come sempre.
-  **⋯ → Ferma e scarica** ferma e scarica `psassist-registrazione-AAAAMMGG-HHMM.zip` (dopo
-  **60 minuti** si ferma da sola: il menu allora dice **Scarica la registrazione**).
-- **Invia per l'analisi** (nella pagina della registrazione, dopo lo scarico): lo stesso zip va nel
-  tuo repository GitHub **privato** (di base `mmariomm/psassist-registrazioni`, cartella
-  `registrazioni/`), con un token *fine-grained* che può solo scrivere lì (Repository access: solo
-  quel repository; Permissions → Contents: Read and write). Repository e token si impostano una
-  volta in **Imposta l'invio** e restano su questo PC (`storage.local` «registra.invio»); il token
-  non si rimostra e non va in nessun registro. Solo a un tocco, mai da solo. **Mai** un repository
-  pubblico: lo zip è anonimizzato, ma il controllo a volte lascia dati da guardare.
+- **⋯ → Registrazioni** apre la vista del registratore: **● Registra** fa partire; la pill e
+  l'intestazione mostrano **● REC** (un tocco sul ● REC riapre la vista). Lavori come sempre.
+  **Ferma e salva** ferma, anonimizza, controlla e **salva lo zip qui, nella memoria
+  dell'estensione** (`psassist-registrazione-AAAAMMGG-HHMM.zip`): nessuna scheda, nessuna finestra,
+  nessuno scarico — lo fa un documento fuori schermo dell'estensione (`chrome.offscreen`,
+  `registra-esporta.html`). Dopo **60 minuti** si ferma e si salva da sola. Il grezzo si cancella
+  nello stesso momento in cui lo zip è salvato (se il salvataggio non riesce, resta: «Salva di
+  nuovo» o «Cancellala da questo PC»; comunque dopo 12 ore se ne va).
 - **Dove il pannello non c'è** (il SISS, il portale, le finestre del referto) mentre registri
   compare la pill **● Registrando…**: è la stessa pill del pannello ridotto, nello stesso posto in
   alto a destra (solo nella finestra principale, mai nei riquadri); si **trascina**, e resta dove la
-  lasci, sito per sito (`storage.local` «registra.pill»), sempre dentro lo schermo. Un clic → **Ferma e scarica**,
-  come dal menu ⋯. Sul gestionale resta il ● REC del pannello, senza una seconda pill.
+  lasci, sito per sito (`storage.local` «registra.pill»), sempre dentro lo schermo. Un clic →
+  **Ferma e salva** («Salvo la registrazione…», poi «Salvata: ⋯ → Registrazioni»). Sul gestionale
+  resta il ● REC del pannello, senza una seconda pill.
+- **Le registrazioni salvate**, nella stessa vista: quando, quanto, **a mano** o **automatica** (e
+  perché), il controllo («controllo superato» o «restano N dati da controllare»); per ognuna
+  **Riepilogo** (`riepilogo.txt`), **Scarica sul PC** (un file nei Download) e **Cancella** (due
+  tocchi). Niente pazienti: solo il nome dello zip e i suoi numeri. Le stesse si vedono, si
+  scaricano e si cancellano **dall'iPhone** (⋯ → Registrazioni, nel pannello sul telefono). Al più
+  **30 zip e 300 MB**: oltre, se ne vanno i più vecchi, prima gli automatici.
+- **La registrazione automatica** (accesa di norma; l'interruttore è nella vista): quando non
+  registri, l'estensione tiene in memoria **gli ultimi 3 minuti** — stesse pagine, stesse
+  esclusioni (credenziali mai), ma nessuna rilettura dalla cache e nessuna pill —, potati di
+  continuo e **cancellati quando il browser si chiude** (all'avvio non c'è niente). Quando un
+  ordine **finisce male** — la striscia arancione o rossa (un errore, esami che mancano, «Non
+  confermata», etichette non stampate o finite nella coda di Windows, una stampa interrotta), un
+  ordine fermo, o un «ORA-» del gestionale anche se la richiesta rifatta è riuscita — aspetta un
+  minuto per vedere com'è finita (intanto i 3 minuti prima non si potano), poi salva **dai 3
+  minuti prima a un minuto dopo** come zip **automatico**, anonimizzato e controllato come gli
+  altri: un incidente, uno zip. Mentre registri a mano vale la tua. Spenta, quello che aveva in
+  memoria se ne va subito. **Quanto costa**: un'istantanea del DOM a ogni pagina che si apre (sul
+  SISS al più 15 al minuto) e il flusso osservato, come quando registri; nelle registrazioni vere
+  sono 5–20 pagine al minuto di ~45 KB e ~100 KB di flusso al minuto, quindi in memoria, di
+  solito, fra 1 e 3 MB; uno zip automatico ne pesa altrettanto. In più un controllo ogni 30
+  secondi, solo finché c'è qualcosa da potare.
 - **Cosa si registra**, solo sul gestionale, sul portale e sul SISS: ogni pagina che apri, in ogni scheda
   e finestra (il DOM com'è dopo il caricamento, senza il pannello); il flusso delle richieste,
   solo *osservato* (`chrome.webRequest`: metodo, indirizzo, stato, rinvii, tempi, tipo, scheda,
   e quali le ha fatte l'estensione); il **testo** dei PDF (referti, etichette), con pagine e misura.
+  Nessuna richiesta in più al server per le pagine; per un PDF che l'estensione non ha già in
+  mano, nella registrazione a mano, **una** rilettura dalla cache del browser (`force-cache`) dello
+  stesso indirizzo appena aperto — il riepilogo lo dice.
 - **Il registro degli errori** (`errori.json` nello zip, e quanti in `riepilogo.txt`): l'estensione
   annota da sola, in un posto solo (`storage.local`, «errori.v1», al più 500 voci), ogni errore suo
   — un PDF di un altro paziente (impronte di codice fiscale e data di nascita, mai i dati), un
@@ -1507,8 +1535,9 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   referto non preso, un errore del Ponte, un'eccezione del pannello o del service worker. Ogni
   voce: ora, tipo, versione, pagina (solo l'MVPG) e numeri, codici, messaggi del nostro codice —
   **mai nomi, codici fiscali, date di nascita, testo libero**; nello zip passa dall'anonimizzazione
-  e dal controllo come il resto. Vanno nello zip quelle dall'ultima registrazione scaricata (restano
-  sul PC: si sposta solo il segno). «Reset dati pazienti» non lo cancella. Sugli errori d'ordine
+  e dal controllo come il resto. Nello zip a mano vanno quelle dall'ultima registrazione a mano
+  salvata (restano sul PC: si sposta solo il segno); in quello automatico, quelle dei suoi minuti.
+  «Reset dati pazienti» non lo cancella. Sugli errori d'ordine
   più difficili («… non risulta nel carrello», «Conferma non verificata», e il «Riprova i mancanti»
   con com'è finito) la voce porta la **traccia** del giro, quella che il motore ha già sotto gli
   occhi (nessuna richiesta in più): l'ordine, ogni esame col suo codice e la sua risorsa, ogni
@@ -1516,28 +1545,23 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   rilettura del carrello con i codici che mostrava, la pagina di accesso, un messaggio del
   gestionale), la scheda (sottofondo o del medico, visibile o no) e il tempo totale — per dire se
   è stato il server o il pannello.
-  Nessuna richiesta in più al server per le pagine; per un PDF che l'estensione non ha già in
-  mano, **una** rilettura dalla cache del browser (`force-cache`) dello stesso indirizzo appena
-  aperto — il riepilogo lo dice.
-- **Cosa non esce mai**: finché non scarichi, tutto resta nella memoria dell'estensione su questo
-  PC (IndexedDB). Allo scarico la pagina della registrazione **anonimizza qui**, con lo stesso
-  metodo di `tools/esempi.mjs`: ogni testo diventa inventato a meno che sia vocabolario del
-  programma (compare per almeno **due pazienti diversi**, o nelle pagine di esempio, o nel
-  catalogo); nomi → nomi finti sempre uguali per la stessa persona; personale e utenti →
-  `OPERATORE n` / `UTENTEn`; codici fiscali, date di nascita, tessere, telefoni, indirizzi, email
-  tolti; anamnesi, esame obiettivo, diario, note, allergie → testo inventato della stessa
-  lunghezza; episodi, richieste, referti → altri numeri, sempre gli stessi (i collegamenti
-  restano); ospedale e fornitore → `OSPEDALE ESEMPIO`. Dei PDF viaggia solo il testo anonimizzato.
+- **Cosa non esce mai**: il grezzo resta nella memoria dell'estensione su questo PC (IndexedDB),
+  e ne esce solo anonimizzato, nello zip, **qui**, con lo stesso metodo di `tools/esempi.mjs`: ogni
+  testo diventa inventato a meno che sia vocabolario del programma (compare per almeno **due
+  pazienti diversi**, o nelle pagine di esempio, o nel catalogo); nomi → nomi finti sempre uguali
+  per la stessa persona; personale e utenti → `OPERATORE n` / `UTENTEn`; codici fiscali, date di
+  nascita, tessere, telefoni, indirizzi, email tolti; anamnesi, esame obiettivo, diario, note,
+  allergie → testo inventato della stessa lunghezza; episodi, richieste, referti → altri numeri,
+  sempre gli stessi (i collegamenti restano); ospedale e fornitore → `OSPEDALE ESEMPIO`. Dei PDF
+  viaggia solo il testo anonimizzato. Niente parte da solo verso nessuno: lo zip lo mandi tu.
 - **Il controllo**: prima di scrivere lo zip si rilegge tutto cercando quello che è stato visto
-  di vero (codici fiscali, nomi, date di nascita, episodi). Se resta qualcosa lo zip si scarica
-  **lo stesso**, ma la pagina dice «Attenzione: restano N dati da controllare» e lo stesso
-  avviso apre `riepilogo.txt`, con il file e il tipo di dato di ognuno — mai il valore:
-  **controlla quei punti prima di mandarlo**.
-- **Come mandarlo**: lo zip è nella cartella Download, e lo mandi tu: nient’altro parte da solo.
-  Poi **Cancella la registrazione da questo PC** nella stessa pagina (comunque si cancella da sola
-  dopo 12 ore, e a ogni nuova registrazione).
-- Dentro: `pagine/NNN-<tipo>.html`, `flusso.json`, `pdf/NNN.json`, `riepilogo.txt` (cosa è stato
-  registrato, quante sostituzioni per tipo, l'esito del controllo, la versione, le icone usate).
+  di vero (codici fiscali, nomi, date di nascita, episodi). Se resta qualcosa lo zip si salva
+  **lo stesso**, ma la vista dice «restano N dati da controllare» e lo stesso avviso apre
+  `riepilogo.txt`, con il file e il tipo di dato di ognuno — mai il valore: **controlla quei punti
+  prima di mandarlo**.
+- Dentro: `pagine/NNN-<tipo>.html`, `flusso.json`, `pdf/NNN.json`, `errori.json`, `riepilogo.txt`
+  (cosa è stato registrato, quante sostituzioni per tipo, l'esito del controllo, la versione, le
+  icone usate; per uno automatico, dopo che cosa).
 
 ### Registra sul SISS (Prescrittivo Regionale)
 
@@ -1549,8 +1573,8 @@ Salva / Registra, e il PDF di **Stampa RE**.
   (`https://operatorisiss.servizirl.it`, `/prescrittivoRegionale/`). Sono in `host_permissions` e
   nel content script del registratore: **all'aggiornamento Chrome chiede una volta** il permesso
   per questi due siti (accettalo, o il SISS non si registra). Sul SISS **il pannello di PS Assist
-  non c'è**: solo `registra-pagina.js`, che non fa niente finché non registri, e la pill
-  ● Registrando… mentre registri.
+  non c'è**: solo `registra-pagina.js` (che lavora mentre registri, e per gli ultimi 3 minuti della
+  registrazione automatica), e la pill ● Registrando… mentre registri a mano.
 - **Le viste**: il Prescrittivo è un'app che cambia vista senza ricaricare la pagina. Si fotografa
   il DOM al caricamento, a ogni cambio di vista (pushState/replaceState, popstate, hashchange), quando
   si apre o si chiude un dialogo (Anteprima, l'esito di Registra, le tendine) e dopo 800 ms di
@@ -2126,9 +2150,10 @@ ps-app/
 ├── ponte/               ← il Ponte: README, host.txt (il suo indirizzo, fissato nella build), il
 │                          ripetitore Node per test e prove (stessa logica di ../worker/ponte-logica.js);
 │                          l'app del telefono sta in ../public/ponte/
-├── extension/registra*  ← ⋯ → Registra: registra.js (service worker), registra-pagina.js (nella pagina,
+├── extension/registra*  ← ⋯ → Registrazioni: registra.js (service worker), registra-pagina.js (nella pagina,
 │                          anche sul SISS), registra-pill.js (la pill: regole CSS da core.js),
-│                          registra.html/-esporta.js (lo scarico), registra-anonimo.js (anonimizza e controlla)
+│                          registra-db.js (il suo IndexedDB: grezzo, ultimi minuti, zip), registra-esporta.html/.js
+│                          (il documento fuori schermo che salva lo zip), registra-anonimo.js (anonimizza e controlla)
 ├── tools/build.mjs      ← genera extension/content.js, il bookmarklet, extension/ponte-cripto.js,
 │                          extension/ponte-host.js, extension/registra-pdf.js, registra-pill.js e registra-vocabolario.json
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)

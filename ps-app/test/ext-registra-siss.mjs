@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /*
- * Il registratore sul SISS, con l'estensione VERA: ⋯ → Registra sul gestionale,
+ * Il registratore sul SISS, con l'estensione VERA: ⋯ → Registrazioni → Registra sul gestionale,
  * poi una pagina d'accesso, il menu operatore e il Prescrittivo Regionale —
  * un'app finta a viste (pushState), con un dialogo come quelli di Angular
  * Material (cdk-overlay-container), un modulo (con un PIN che non si deve
  * leggere mai), «Registra» e «Stampa RE», che passa da un rinvio a un PDF in
- * una scheda nuova. Ferma e scarica dalla pill «● Registrando…» (la stessa pill
- * del pannello, nello stesso posto), si apre lo zip e si guarda.
+ * una scheda nuova. «Ferma e salva» dalla pill «● Registrando…» (la stessa pill
+ * del pannello, nello stesso posto): nessuna scheda, lo zip nell'estensione; lo si apre e si guarda.
  * Tutto inventato; i nomi del SISS li risolve Chromium su un piccolo server
  * HTTPS qui (--host-resolver-rules), il gestionale è il simulatore di sempre.
  *   node test/ext-registra-siss.mjs
@@ -15,7 +15,7 @@ import { chromium } from "playwright";
 import { createMock, refertoRxPdf } from "./sa4pso-mock.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { rmSync, existsSync, statSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { rmSync, existsSync, statSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import https from "node:https";
 
@@ -175,13 +175,15 @@ const stile = (loc) => loc.evaluate((el) => {
 });
 
 const doc = await ctx.newPage();
-// ---- 1. ⋯ → Registra sul gestionale: lì c'è il pannello, quindi niente pill in più
+// ---- 1. ⋯ → Registrazioni → Registra sul gestionale: lì c'è il pannello, quindi niente pill in più
 await doc.goto(A.worklistUrl);
 await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
 await $panel(doc, "#menubtn").click();
 await $panel(doc, "#regmenu").click();
-check(await finche(async () => (await stato())?.stato === "rec", 8000), "la registrazione parte dal pannello del gestionale");
+await doc.waitForSelector("#psassist-host #regvia", { timeout: 8000 });
+await $panel(doc, "#regvia").click();
+check(await finche(async () => (await stato())?.stato === "rec", 8000), "la registrazione parte dal pannello del gestionale (⋯ → Registrazioni → Registra)");
 await $panel(doc, "#collapse").click();
 await doc.waitForTimeout(2500);
 check(await $panel(doc, "#expand .recchip").count() === 1 && await $pill(doc).count() === 0, "sul gestionale: il «● REC» sulla pill del pannello, nessuna seconda pill");
@@ -246,7 +248,7 @@ check(["caricata", "rotta", "overlay", "quiete"].every((m) => motivi.has(m)), `i
 check(gSiss.every((x) => !/psassist-host|psassist-reg-host/.test(x.html)), "nelle istantanee né pannello né pill");
 check(gSiss.filter((x) => !x.alto).length >= 1, "anche il riquadro è registrato");
 
-// ---- 5. la pill si trascina e resta dove la lasci; «Ferma e scarica» dalla pill
+// ---- 5. la pill si trascina e resta dove la lasci; «Ferma e salva» dalla pill
 await doc.bringToFront();
 const posPill = async (p = doc) => { const b = await $pill(p, "#expand").boundingBox(); return { x: Math.round(b.x), y: Math.round(b.y), w: b.width, h: b.height }; };
 const p0 = await posPill();
@@ -278,17 +280,24 @@ await doc.bringToFront();
 await $pill(doc, "#expand").click();
 check(await $pill(doc, ".menu").isVisible() && await $pill(doc, ".menu").evaluate((m) => { const r = m.getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.bottom <= innerHeight; }),
   "spostata nell'angolo, un clic apre il menu dentro lo schermo");
-check(/Ferma e scarica/.test(await $pill(doc, ".menu").innerText().catch(() => "")), "un clic sulla pill offre «Ferma e scarica»");
-const [pagina] = await Promise.all([ctx.waitForEvent("page", { timeout: 15000 }), $pill(doc, "#regferma").click()]);
-const download = await pagina.waitForEvent("download", { timeout: 60000 }).catch(() => null);
-check(!!download, "«Ferma e scarica» apre la pagina della registrazione e scarica lo zip");
+check(/Ferma e salva/.test(await $pill(doc, ".menu").innerText().catch(() => "")), "un clic sulla pill offre «Ferma e salva»");
+const nuove = [];
+const ascolta = (p) => nuove.push(p.url());
+ctx.on("page", ascolta);
+await $pill(doc, "#regferma").click();
+check(/Salvo la registrazione/.test(await $pill(doc, "#expand").innerText().catch(() => "")), "la pill dice «Salvo la registrazione…»");
+const lista = async () => sw.evaluate(() => regElenco());
+check(await finche(async () => (await lista()).length === 1, 90000), "«Ferma e salva»: lo zip è nella memoria dell'estensione");
+const zz = (await lista())[0] || {};
+check(await finche(async () => /Salvata: ⋯ → Registrazioni/.test(await $pill(doc, "#expand").innerText().catch(() => "")), 8000), "e la pill dice «Salvata: ⋯ → Registrazioni»");
+await doc.waitForTimeout(1000);
+ctx.off("page", ascolta);
+check(!nuove.length, `nessuna scheda nuova, nessuno scarico (${nuove.join(", ") || "—"})`);
 const zip = join(OUT, "r.zip");
-if (download) await download.saveAs(zip);
-if (download && process.env.REG_ZIP) await download.saveAs(process.env.REG_ZIP);
-const esito = await pagina.evaluate(() => window.__registra || null).catch(() => null);
-check(esito && esito.ok && esito.controllo, `lo zip è uscito e il controllo è passato (${esito && JSON.stringify(esito.dove || {}).slice(0, 400)})`);
-await doc.bringToFront();
-check(await finche(async () => (await $pill(doc).count()) === 0, 5000), "fermata la registrazione, la pill sparisce");
+writeFileSync(zip, Buffer.from(await sw.evaluate(async (id) => b64(await RegistraDb.tx("zipdati", "readonly", (s) => s.get(id))), zz.id), "base64"));
+if (process.env.REG_ZIP) writeFileSync(process.env.REG_ZIP, readFileSync(zip));
+check(zz.motivo === "manuale" && zz.controllo, `lo zip è salvato e il controllo è passato (${zz.nome} · punti ${zz.punti})`);
+check(await finche(async () => (await $pill(doc).count()) === 0, 10000), "fermata la registrazione, la pill sparisce");
 
 // ---- 6. dentro lo zip ----------------------------------------------------------
 const dir = join(OUT, "dentro");

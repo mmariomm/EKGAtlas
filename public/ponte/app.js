@@ -76,11 +76,18 @@
     cambio: null,        // «Cancella e riassocia», sulla schermata «associato a un altro telefono»
     camera: "",          // «Scansiona il QR»: perché la fotocamera non c'è
     stampa: null,        // «Stampa un PDF»: { tono, titolo, testo, fine, ts }
+    zip: null, zipErr: "", // ⋯ → Registrazioni: l'elenco del PC (anonimizzate: niente pazienti)
+    zipFile: new Map(),  // id → { url (blob:), file, nome, puo }: scaricata, in memoria
+    zipStato: new Map(), // id → la percentuale, mentre arriva
+    zipArma: null,       // «Cancella»: { id, ts } dopo il primo tocco
   };
   function svuota() {
     S.pazienti = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.bozze.clear(); S.promTesto = ""; S.arma = null;
     S.notaAperta = ""; S.promAperto = ""; S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
+    S.zip = null; S.zipErr = ""; S.zipArma = null; S.zipStato.clear();
+    for (const f of S.zipFile.values()) try { URL.revokeObjectURL(f.url); } catch { /* già via */ }
+    S.zipFile.clear();
     chiudiPdf();
     for (const t of S.fatti.values()) clearTimeout(t);
     S.fatti.clear();
@@ -517,6 +524,7 @@
     aggiornaLista(true);
     if (S.vista.nome === "paziente") caricaEsiti(S.vista.ep, true);
     if (S.vista.nome === "paziente" && S.scheda === "cartella" && !S.occupato.has("csalva" + S.vista.ep)) caricaCartella(S.vista.ep, true);
+    if (S.vista.nome === "registrazioni") caricaZip(true);
   }
   async function aggiornaValori(ep) {
     S.occupato.add("valori" + ep); render();
@@ -619,6 +627,89 @@
     }
   }
   $pdf.addEventListener("change", () => { const f = $pdf.files[0]; $pdf.value = ""; stampaPdf(f); });
+
+  // ------------------------------------------------------ le registrazioni
+  // ⋯ → Registrazioni: gli zip che il PC ha salvato, già anonimizzati e
+  // controllati (niente pazienti: quando, quanto, a mano o automatica e
+  // perché, il controllo). «Scarica» lo porta qui a pezzi, come i PDF dei
+  // referti, dentro la stessa sessione cifrata, e lo tiene in memoria — mai su
+  // disco — finché la sessione è aperta; poi «Condividi…» lo passa a iOS
+  // (all'app di Claude, a File…), o, dove non si può, «Salva» lo scarica come
+  // un file. «Cancella» (due tocchi) lo toglie dal PC.
+  const ZIP_MAX = 100 * 1024 * 1024;
+  function apriRegistrazioni() {
+    S.vista = { nome: "registrazioni", ep: "" };
+    S.menu = false; S.zipArma = null;
+    window.scrollTo(0, 0);
+    render();
+    caricaZip();
+  }
+  async function caricaZip(auto = false) {
+    if (S.occupato.has("zip")) return;
+    S.occupato.add("zip"); render();
+    try { S.zip = await chiedi("registrazioni", {}, TEMPO, auto); S.zipErr = ""; }
+    catch (e) { if (S.zip) { if (!auto) errore(e); } else S.zipErr = e.message; }
+    S.occupato.delete("zip"); render();
+  }
+  async function scaricaZip(id) {
+    const z = (S.zip || []).find((x) => x.id === id);
+    if (!z || S.zipStato.has(id)) return;
+    if (z.troppo || z.byte > ZIP_MAX) { avviso("Troppo grande per il telefono: scaricala sul PC", "err"); return; }
+    S.zipStato.set(id, 0); render();
+    try {
+      const parti = [];
+      let n = 1, size = 0, tot = 0;
+      const entro = Date.now() + 120e3 + perRete(z.byte * 4 / 3);
+      for (let i = 0; i < n; i++) {
+        const d = await pezzo(() => chiedi("registrazione", { zip: id, i }, 40e3 + perRete(PEZZO_B64), false, { grosso: PEZZO_B64 }), entro, "Non arrivata: la rete è troppo lenta, riprova");
+        if (!d || d.i !== i || typeof d.b !== "string" || !Number.isSafeInteger(d.n) || d.n < 1 || !Number.isSafeInteger(d.size) || d.size < 1 || d.size > ZIP_MAX
+          || (i && (d.n !== n || d.size !== size))) throw new Error("Non arrivata bene: riprova");
+        if (!i) { n = d.n; size = d.size; }
+        const bin = atob(d.b), u = new Uint8Array(bin.length);
+        for (let k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
+        tot += u.length; parti.push(u);
+        S.zipStato.set(id, Math.round((i + 1) / n * 100)); render();
+      }
+      if (tot !== size || String.fromCharCode(...parti[0].subarray(0, 4)) !== "PK\x03\x04") throw new Error("Non arrivata bene: riprova");
+      const blob = new Blob(parti, { type: "application/zip" });
+      let file = null;
+      try { file = new File([blob], z.nome, { type: "application/zip" }); } catch { /* un Safari vecchio: «Salva» */ }
+      let puo = false;
+      try { puo = !!(file && navigator.canShare && navigator.canShare({ files: [file] })); } catch { /* «Salva» */ }
+      S.zipFile.set(id, { url: URL.createObjectURL(blob), file, nome: z.nome, puo });
+    } catch (e) { errore(e); }
+    S.zipStato.delete(id); render();
+  }
+  // (dentro il tocco: iOS apre il foglio di condivisione solo così)
+  function condividiZip(id) {
+    const f = S.zipFile.get(id);
+    if (!f || !f.file) return;
+    navigator.share({ files: [f.file] }).catch((e) => {
+      if (e && e.name === "AbortError") return;   // chiuso dal medico
+      f.puo = false;
+      avviso("Condivisione non riuscita: usa «Salva»", "err");
+    });
+  }
+  function cancellaZip(id) {
+    const ora = Date.now();
+    if (!S.zipArma || S.zipArma.id !== id || ora - S.zipArma.ts > 6000) {
+      S.zipArma = { id, ts: ora };
+      setTimeout(() => { if (S.zipArma && S.zipArma.id === id && Date.now() - S.zipArma.ts >= 6000) { S.zipArma = null; render(); } }, 6100);
+      render();
+      return;
+    }
+    if (ora - S.zipArma.ts < 800) return;   // un doppio tocco per sbaglio è un tocco solo
+    S.zipArma = null;
+    const via = () => {
+      S.zip = (S.zip || []).filter((x) => x.id !== id);
+      const f = S.zipFile.get(id);
+      if (f) { try { URL.revokeObjectURL(f.url); } catch { /* già via */ } S.zipFile.delete(id); }
+    };
+    S.occupato.add("zipvia" + id); render();
+    scrivi("registrazioneVia", { zip: id }, TEMPO, via, "Cancellata dal PC")
+      .then(() => { via(); avviso("Cancellata dal PC"); }, (e) => { if (e.inviata) avviso("Non so se è cancellata: aspetto il PC", "err"); else errore(e); })
+      .finally(() => { S.occupato.delete("zipvia" + id); render(); });
+  }
 
   // ------------------------------------------------- il QR, inquadrato qui
   // L'app della schermata Home dell'iPhone ha una memoria sua, separata da
@@ -887,14 +978,15 @@
   };
   function testata() {
     if (S.fase !== "pronta") return "";
-    const suPaz = S.vista.nome === "paziente", p = suPaz ? paziente(S.vista.ep) : null;
-    const sx = suPaz ? `<button class="ico" data-a="indietro" aria-label="Tutti i pazienti">${ICO.indietro}</button>` : "";
+    const suPaz = S.vista.nome === "paziente", p = suPaz ? paziente(S.vista.ep) : null, suZip = S.vista.nome === "registrazioni";
+    const sx = suPaz || suZip ? `<button class="ico" data-a="indietro" aria-label="Tutti i pazienti">${ICO.indietro}</button>` : "";
     const tit = p ? `<b>${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(chi(p))}</b>${p.prec ? "<small>Episodio precedente</small>" : ""}`
-      : suPaz ? "" : S.aggiornato ? `<small>Aggiornato alle ${hhmm(S.aggiornato)}</small>` : "";
+      : suZip ? "<b>Registrazioni</b>" : suPaz ? "" : S.aggiornato ? `<small>Aggiornato alle ${hhmm(S.aggiornato)}</small>` : "";
     return `<header class="top">${sx}<div class="tit">${tit}</div>${statoPc()}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
       ${S.menu ? `<div class="menu" role="menu">
-        ${suPaz ? "" : `<button data-a="aggiornaLista">Aggiorna l'elenco</button>`}
+        ${suPaz || suZip ? "" : `<button data-a="aggiornaLista">Aggiorna l'elenco</button>`}
         <button data-a="stampaPdf">Stampa un PDF</button>
+        <button data-a="registrazioni">Registrazioni</button>
         <button data-a="esci">Chiudi la sessione</button>
         <button class="via" data-a="dimentica">Dimentica questo PC</button>
         <div class="info">Associato fino alle ${hhmm(S.coppia.scade)} · codice ${esc(S.codice)}</div>
@@ -998,6 +1090,29 @@
     const segno = x.tono === "err" || x.tono === "warn" ? "!" : x.tono === "ok" ? "✓" : "";
     return `<div class="ord ${esc(x.tono)} stampa" role="status"><span class="seg-o">${segno}</span><span class="c"><b>${esc(x.titolo)}</b>${x.testo ? `<span>${esc(x.testo)}</span>` : ""}</span>${
       x.fine ? `<button class="x" data-a="stampaVia" aria-label="Chiudi">✕</button>` : ""}</div>`;
+  }
+  // Le registrazioni del PC: una carta, una riga per zip
+  function vistaRegistrazioni() {
+    if (!S.zip) {
+      if (S.zipErr && !S.occupato.has("zip")) {
+        return `<main><div class="piena corta"><div class="tondo amb">${ICO.pc}</div><h1>Elenco non letto</h1><p>${esc(S.zipErr)}.</p>
+          <button class="grande" data-a="zipLista">Riprova</button></div></main>`;
+      }
+      return `<main><div class="carica"><div class="giro"></div></div></main>`;
+    }
+    if (!S.zip.length) return `<main>${stampaHtml()}<div class="vuoto">Nessuna registrazione sul PC.</div></main>`;
+    const kb = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+    const giorno = (ts) => { const d = new Date(ts); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${hhmm(ts)}`; };
+    const righe = S.zip.map((z) => {
+      const st = S.zipStato.get(z.id), f = S.zipFile.get(z.id), armata = S.zipArma && S.zipArma.id === z.id, id = esc(z.id);
+      const prendi = f ? (f.puo ? `<button class="btnmini ok" data-a="zipManda" data-id="${id}">Condividi…</button>` : `<a class="btnmini" href="${esc(f.url)}" download="${esc(f.nome)}">Salva</a>`)
+        : `<button class="btnmini" data-a="zipScarica" data-id="${id}" ${st != null ? "disabled" : ""}>${st != null ? `Scarico… ${st}%` : "Scarica"}</button>`;
+      return `<div class="zip" data-zip="${id}"><div class="z1"><b>${esc(giorno(z.quando || z.ts))}</b><span class="ztag${z.motivo === "auto" ? " auto" : ""}">${z.motivo === "auto" ? "automatica" : "a mano"}</span><span class="zkb">${esc(kb(z.byte))}</span></div>
+        ${z.motivo === "auto" && z.errore ? `<div class="z2">${esc(z.errore)}</div>` : ""}
+        <div class="z3${z.controllo ? "" : " ko"}">${z.controllo ? "Controllo superato" : `Restano ${Number(z.punti) || 0} dati da controllare`}</div>
+        <div class="zbtn">${prendi}<button class="btnmini via${armata ? " arma" : ""}" data-a="zipVia" data-id="${id}" ${S.occupato.has("zipvia" + z.id) ? "disabled" : ""}>${armata ? "Cancello dal PC? Tocca di nuovo" : "Cancella"}</button></div></div>`;
+    }).join("");
+    return `<main>${stampaHtml()}<div class="carta zips">${righe}</div></main>`;
   }
   function vistaLista() {
     if (!S.pazienti) {
@@ -1143,13 +1258,13 @@
   let premuto = 0, rinviato = false, disegno = false;
   // le azioni che senza il PC non vanno
   // (l'ordine no: senza collegamento va in coda)
-  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "prom", "fatto", "nota", "promApri", "csalva", "cricarica", "crileggi"]);
+  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "prom", "fatto", "nota", "promApri", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia"]);
   function render() {
     if (premuto) { rinviato = true; return; }
     // il cursore resta dov'era: un ridisegno non deve rubare il campo a chi scrive
     const att = document.activeElement && document.activeElement.id ? document.activeElement : null;
     const fuoco = att ? { id: att.id, a: att.selectionStart, b: att.selectionEnd } : null;
-    const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : vistaLista()) : schermata();
+    const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : vistaLista()) : schermata();
     disegno = true;   // (un campo tolto dal ridisegno non è un campo lasciato)
     try { $app.innerHTML = testata() + corpo + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}" role="alert">${esc(S.avviso.testo)}</div>` : ""); }
     finally { disegno = false; }
@@ -1207,6 +1322,11 @@
     else if (a === "scansiona") apriScan();
     else if (a === "stampaPdf") { render(); $pdf.click(); }
     else if (a === "stampaVia") { S.stampa = null; render(); }
+    else if (a === "registrazioni") apriRegistrazioni();
+    else if (a === "zipLista") caricaZip();
+    else if (a === "zipScarica") scaricaZip(b.dataset.id);
+    else if (a === "zipManda") condividiZip(b.dataset.id);
+    else if (a === "zipVia") cancellaZip(b.dataset.id);
     else if (a === "paz") apriPaziente(b.dataset.ep);
     else if (a === "indietro") { salvaNota(ep); S.vista = { nome: "lista", ep: "" }; S.arma = null; render(); aggiornaLista(); }
     else if (a === "aggiornaLista") aggiornaLista();
