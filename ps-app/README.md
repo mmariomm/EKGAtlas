@@ -184,7 +184,7 @@ fai una, si vede la mappa dell'area in cui lavori. Accanto, **Mappa | Lista** (r
 Sempre in vista, in Mappa e in Lista, il **Da fare del tabellone**: accanto alle mappe quando c'è posto,
 sopra quando la finestra è stretta — una **colonna sola**, cinque righe al più e poi scorre, così le
 mappe non perdono altezza; **Da fare ▾** lo riduce a una barra sottile (e lo ricorda). Una voce, una
-riga: `○ 11:42 tropo… ✕`. In cima il **generale**, di nessun paziente: si scrive e **Invio** aggiunge
+riga: `○ 11:42 tropo… ✕`. In cima il **generale**, di nessun paziente: nel campo «Da fare generale…» si scrive e **Invio** aggiunge
 (`dafare.generale.v1`, in questo browser e nello specchio del tabellone, mai al telefono; non scade,
 una voce spuntata se ne va dopo 5 minuti; il «Reset dati pazienti» lo porta via). Sotto, le cose da
 fare di **ogni paziente**, nell'ordine del tabellone (l'area, poi l'ordine del gestionale): il
@@ -397,7 +397,7 @@ spunta** e la voce è fatta: barrata, resta al suo posto **5 minuti** (un altro 
 se ne va. L'ordine lo decidi tu: si **trascina** dalla maniglia ⋮⋮ (col mouse o col dito), o da
 tastiera **Alt+↑ / Alt+↓** sulla spunta. La maniglia, **+15′** e ✕ compaiono passandoci sopra (o col
 fuoco; al tocco ci sono sempre). La **prima voce aperta** è il post-it: si legge nelle aree
-della stanza (nella riga del tabellone c'è solo quante sono). L'icona dice **quante** sono aperte (nell'intestazione della finestra, la **prima** e «+N») e cambia colore quando un promemoria si avvicina:
+della stanza (nella riga del tabellone c'è solo quante sono). L'icona dice **quante** sono aperte (nell'intestazione della finestra, la **prima** e «+N»; ambra o rossa, la voce che scade col tempo che manca, come la pill: «⏰ −6m tropo») e cambia colore quando un promemoria si avvicina:
 **ambra dai 15 minuti prima**, **rossa quando l'ora è passata** (con un bagliore lento, fermo se il
 sistema chiede meno movimento); il passaggio del mouse le dice tutte. **Esc**, o un clic fuori, la
 chiude: non c'è niente da salvare, ogni gesto è già salvato.

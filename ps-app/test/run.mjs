@@ -5480,14 +5480,20 @@ async function scenarioPromemoria(browser) {
   // il tempo passa: ambra 15 minuti prima, rossa scaduto — sul posto, stesso elemento
   await page.evaluate(() => { document.getElementById("psassist-host").shadowRoot.querySelector(".hd .dfic").__stessa = 1; });
   await page.clock.fastForward("29:00");   // 10:29: l'EGA è fra 16 minuti
-  const a29 = await colore(".hd");
+  const a29 = await colore(".hd"), t29 = await testoIcona(".hd");
   await page.clock.fastForward("02:00");   // 10:31: fra 14
   const a31 = { colore: await colore(".hd"), stessa: await icona(".hd").evaluate((b) => b.__stessa === 1), tit: await icona(".hd").getAttribute("title") };
   check(scen, a29 === "quieta" && a31.colore === "ambra" && a31.stessa && /EGA · tra 14 min/.test(a31.tit),
     `a 16′ tranquilla, a 14′ ambra, rifatta sul posto, e il passaggio del mouse le dice tutte (got: ${a29} → ${JSON.stringify(a31)})`);
+  // ambra o rossa, l'intestazione dice la voce che scade col tempo che manca (come la pill), non la prima
+  const sveglia = () => icona(".hd").evaluate((b) => /cy="9" r="5.2"/.test(b.innerHTML));
+  const t31 = { t: await testoIcona(".hd"), sveglia: await sveglia() };
+  check(scen, t29 === "chiamare la figlia +2" && t31.t === "14m EGA +2" && t31.sveglia,
+    `ambra: «⏰ 14m EGA +2» al posto della prima voce (got: «${t29}» → ${JSON.stringify(t31)})`);
   await page.clock.fastForward("15:00");   // 10:46: scaduto
-  const scaduto = { colore: await colore(".hd"), anima: await icona(".hd").evaluate((b) => getComputedStyle(b).animationName) };
+  const scaduto = { colore: await colore(".hd"), anima: await icona(".hd").evaluate((b) => getComputedStyle(b).animationName), t: await testoIcona(".hd") };
   check(scen, scaduto.colore === "rossa" && scaduto.anima === "prBagliore", `scaduto: rossa, col bagliore lento di sempre (got: ${JSON.stringify(scaduto)})`);
+  check(scen, scaduto.t === "−1m EGA +2", `e dice «⏰ −1m EGA +2» (got: «${scaduto.t}»)`);
   // la sveglia sulla pill ridotta continua a suonare, sulla voce con l'ora
   await $panel(page, "#collapse").click();
   const segno = (await $panel(page, "#expand .prurg").count()) ? (await $panel(page, "#expand .prurg").innerText()).trim() : "";

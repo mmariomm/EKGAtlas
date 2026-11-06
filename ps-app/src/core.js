@@ -9076,7 +9076,7 @@
       return `<aside class="tdcard${chiusa ? " chiusa" : ""}" aria-label="Da fare">
         <div class="tdhd"><button type="button" class="tdtog" id="tdtog" aria-expanded="${!chiusa}" title="${chiusa ? "Mostra il Da fare" : "Riduci il Da fare a una barra"}">${
           ICO.dafare}<b>Da fare</b><span class="tdn">${aperte || ""}</span></button>${chiusa ? "" : `
-          <input type="text" class="dfin tdin" id="tdin" maxlength="160" autocomplete="off" spellcheck="false" placeholder="Aggiungi…" value="${esc(this._tdTesto || "")}"
+          <input type="text" class="dfin tdin" id="tdin" maxlength="160" autocomplete="off" spellcheck="false" placeholder="Da fare generale…" value="${esc(this._tdTesto || "")}"
             aria-label="Aggiungi al Da fare generale (di nessun paziente)" title="Una cosa da fare di nessun paziente: Invio la aggiunge">`}</div>
         ${chiusa ? "" : `<div class="tdcorpo"><ul class="dfl tdl" data-tdl="gen" aria-label="Da fare generale">${gen}</ul><ul class="dfl tdl" data-tdl="paz" aria-label="Da fare dei pazienti">${paz}</ul></div>`}
       </aside>`;
@@ -11283,18 +11283,22 @@
     // aperte; ambra 15 minuti prima di un promemoria, rossa quando è passato.
     // Un tocco apre la lista lì dov'è. Il passaggio del mouse le dice tutte.
     // Nell'intestazione della finestra, al posto del numero, la prima voce
-    // aperta (poi «+N»): aperta la finestra, è l'unico posto dove stanno.
+    // aperta (poi «+N»): aperta la finestra, è l'unico posto dove stanno. Se
+    // un promemoria si avvicina o è passato (ambra, rossa), dice quello, col
+    // tempo che manca, come la pill: «⏰ −6m tropo +2».
     dfIcona(ep, tutti = dfTutti(), dove = "lista", ora = Date.now()) {
       const aperte = dfAperte(ep, tutti), n = aperte.length, testa = dove === "testa" && n > 0;
       const prossimo = aperte.filter((x) => x.t != null).sort((a, b) => a.t - b.t)[0];
       const b = prossimo ? promBanda(prossimo.t, ora) : "";
       const riga = (x) => (x.t != null ? promRiga(x, ora) : x.testo);
       const tit = n ? `Da fare (${n}):\n${aperte.map(riga).join("\n")}` : "Da fare: niente — un tocco per aggiungere";
-      const det = `${n ? `${n} ${n === 1 ? "aperta" : "aperte"}` : "niente"}${testa ? `: ${riga(aperte[0])}` : ""}${prossimo && !(testa && prossimo === aperte[0]) ? ` · ${promRiga(prossimo, ora)}` : ""}`;
-      const dentro = testa ? `<span class="dfict">${aperte[0].t != null ? `<b>${esc(promOra(aperte[0].t, ora))}</b> ` : ""}${esc(aperte[0].testo)}</span>${n > 1 ? `<b>+${n - 1}</b>` : ""}`
-        : n ? `<b>${n}</b>` : "";
+      const urge = testa && b ? prossimo : null, prima = urge || aperte[0];
+      const det = `${n ? `${n} ${n === 1 ? "aperta" : "aperte"}` : "niente"}${testa ? `: ${riga(prima)}` : ""}${prossimo && !(testa && prossimo === prima) ? ` · ${promRiga(prossimo, ora)}` : ""}`;
+      const quando = urge ? promTempo(urge.t, ora) : prima?.t != null ? promOra(prima.t, ora) : "";
+      const dentro = testa ? `${urge ? ICO.sveglia : ICO.dafare}<span class="dfict">${quando ? `<b>${esc(quando)}</b> ` : ""}${esc(prima.testo)}</span>${n > 1 ? `<b>+${n - 1}</b>` : ""}`
+        : `${ICO.dafare}${n ? `<b>${n}</b>` : ""}`;
       return `<button type="button" class="dfic${b ? " " + b : ""}${n ? "" : " vuota"}${testa ? " dfprima" : ""}" data-df="${esc(ep)}" data-dove="${esc(dove)}" aria-haspopup="dialog" aria-expanded="${
-        this._df?.ep === ep && this._df.dove === dove ? "true" : "false"}" title="${esc(tit)}" aria-label="${esc("Da fare: " + det)}">${ICO.dafare}${dentro}</button>`;
+        this._df?.ep === ep && this._df.dove === dove ? "true" : "false"}" title="${esc(tit)}" aria-label="${esc("Da fare: " + det)}">${dentro}</button>`;
     }
     // Il post-it: la prima voce aperta, nell'ordine scelto dal medico
     dfPost(ep, tutti = dfTutti()) {

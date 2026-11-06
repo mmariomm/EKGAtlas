@@ -554,7 +554,9 @@ await blocco("Il Da fare del tabellone: il generale, e quello dei pazienti col c
   check(chi.w >= 700 && chi.t === "B", `il cognome in grassetto (got: ${JSON.stringify(chi)})`);
   const ega = await voce("EGA").evaluate((li) => ({ t: li.querySelector(".dft")?.textContent.trim(), prima: li.querySelector(".dft")?.getBoundingClientRect().right <= li.querySelector(".dftx").getBoundingClientRect().left }));
   check(/^\d\d:\d\d$/.test(ega.t || "") && ega.prima, `un promemoria porta la sua ora, davanti al testo (got: ${JSON.stringify(ega)})`);
-  // il generale: Invio aggiunge, il campo resta pronto
+  // il generale: Invio aggiunge, il campo resta pronto. Non dice «Aggiungi…» (dove ogni lista mette
+  // la sua ricerca, ci si scriverebbe un nome): dice che cosa è
+  check((await $p(page, "#tdin").getAttribute("placeholder")) === "Da fare generale…", `il campo del generale dice «Da fare generale…» (got: ${await $p(page, "#tdin").getAttribute("placeholder")})`);
   await $p(page, "#tdin").fill("chiamare la radiologia");
   await $p(page, "#tdin").press("Enter");
   await $p(page, "#tdin").fill("passaggio di consegne");
