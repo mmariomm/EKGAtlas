@@ -494,6 +494,11 @@ async function scenarioAutoConfirm(browser) {
     await b.page.keyboard.press("Escape");
     await b.page.waitForTimeout(300);
     check(scen, (await b.page.locator("#psassist-print").count()) === 1, "un Esc mentre il PDF arriva non annulla le etichette");
+    // (ma è un tasto dopo la Conferma: arrivato il PDF, il dialogo non si apre da solo — aspetta il tuo «Stampa»)
+    const pronte = await striscia(b.page, /Etichette .*pronte/, 15000).catch(() => "");
+    check(scen, !!pronte && (await $panel(b.page, AZIONE).innerText().catch(() => "")).trim() === "Stampa",
+      `e siccome è un tasto dopo la Conferma, le etichette aspettano il tuo tocco: «Etichette … pronte · Stampa» (got: ${pronte || "niente"})`);
+    await $panel(b.page, AZIONE).click().catch(() => {});
   }
   // la stampa annullata (Esc a scheda aperta): il resoconto resta, ambra, con «Ristampa»
   await b.page.waitForFunction(() => { const w = document.getElementById("psassist-print"); return !w || !w.shadowRoot.querySelector(".pw").hidden; }, null, { timeout: 30000 });

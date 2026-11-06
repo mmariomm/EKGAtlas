@@ -713,6 +713,7 @@ if (prova("due ordini, il secondo aspetta in coda")) {
   await doc.waitForFunction(() => /ROSSI/.test(document.getElementById("psassist-print")?.shadowRoot?.querySelector(".pw .pwhd")?.textContent || ""), null, { timeout: 30000 }).catch(() => {});
   const t2 = await titoloStampa(doc);
   check(/ROSSI MARIO/.test(t2), `un tocco, e partono quelle di ROSSI (got: ${t2})`);
+  await finche(async () => (await stampe(doc)).length >= 2, 5000);   // (la stampa si conta ogni 25 ms)
   check(conferme(A).length === 1 && conferme(B).length === 1, `una conferma ciascuno (got ${conferme(A).length} + ${conferme(B).length})`);
   check((await stampe(doc)).length === 2, `due stampe, una per ordine (got ${(await stampe(doc)).length})`);
   await chiudiStampa(doc);
