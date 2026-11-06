@@ -339,6 +339,11 @@ check(srvStato.perAnteprima === 1 && srvStato.registrazioni === 1 && !(await err
   `le chiamate che il SISS fa da sé all'Anteprima (prepare-register-request compresa, come nel SISS vero): nessun allarme, nessun errore (${srvStato.registrazioni} · ${JSON.stringify((await errori()).filter((e) => e.tipo === "ricetta"))})`);
 check(await finche(async () => /Anteprima nel SISS: controlla e premi tu Registra/.test(await statoPannello()), 8000), `il pannello: «${await statoPannello()}»`);
 check(await finche(async () => (await schedeSiss()).find((t) => /preview$/.test(t.url))?.active, 5000), "la scheda del SISS è davanti al medico");
+// la ricetta parla anche nella striscia degli ordini (a pannello aperto, il chip in intestazione), non solo in ⋯ → Ricetta
+await doc.bringToFront();
+const rigaRic = () => doc.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector(".gchip, .pill.run")?.dataset?.riga
+  || document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || "");
+check(await finche(async () => /Ricetta.*pronta in Anteprima/.test(await rigaRic()), 5000), `la striscia dice «Ricetta · pronta in Anteprima» (${await rigaRic()})`);
 const c1 = await clic();
 check(c1.registra === 0 && c1.salva === 0 && c1.stampa === 0 && c1.cancella === 0 && c1.elimina === 0, `Registra, Salva, STAMPA RE, Cancella, Elimina: mai premuti (${JSON.stringify(c1)})`);
 check(c1.nuova === 1 && c1.cercaPaziente === 1 && c1.anteprima === 1 && srvStato.identificazioni === 1, "una «Nuova Prescrizione», un'identificazione, un'Anteprima");
@@ -393,7 +398,22 @@ await $p("#ricquesito").fill("");
 const cercatiPrima = srvStato.cercati.length;
 await sospendi(1600);
 await $p("#ricprepara").click();
+// intanto il medico scrive in un campo del gestionale: la scheda del SISS (che ha un «Registra») non gli viene davanti
+await doc.evaluate(() => { if (!document.getElementById("campogest")) { const i = document.createElement("input"); i.id = "campogest"; document.body.prepend(i); } });
+await doc.locator("#campogest").click();
+let scrive = true;
+const tasti = (async () => { while (scrive) { await doc.keyboard.type("a").catch(() => {}); await sospendi(250); } })();
 check(await finche(async () => (await sissStato()).vista.endsWith("/editing/preview"), 30000), "dal preferito: di nuovo fino all'Anteprima");
+await finche(async () => (await ricetta())?.stato === "anteprima", 8000);
+await sospendi(1500);
+scrive = false; await tasti;
+check(!(await schedeSiss()).find((t) => /preview$/.test(t.url))?.active, "mentre scrivi nel gestionale la scheda del SISS non viene davanti da sola");
+const az = await $p("#gchipaz, #strazione").innerText().catch(() => "");
+check(/Ricetta.*pronta in Anteprima/.test(await rigaRic()) && az.trim() === "apri il SISS", `la striscia: «Ricetta · pronta in Anteprima» e «apri il SISS» (${await rigaRic()} · ${az})`);
+await $p("#gchipaz, #strazione").click();
+check(await finche(async () => (await schedeSiss()).find((t) => /preview$/.test(t.url))?.active, 5000), "un tocco su «apri il SISS»: la scheda del SISS davanti");
+await doc.bringToFront();
+await doc.evaluate(() => document.getElementById("campogest")?.blur());
 const f7 = await sissStato();
 check(f7.farmaci.length === 1 && f7.farmaci[0].codice === AIC && f7.farmaci[0].qta === 2 && f7.farmaci[0].ns === false && f7.quesito === "" && srvStato.cercati.slice(cercatiPrima).includes("AUGMENTIN"),
   `il preferito: cercato per nome nella ricerca del SISS, preso col codice esatto, con la sua quantità (${JSON.stringify(f7.farmaci)}; cercato ${srvStato.cercati.slice(cercatiPrima).join(",")})`);

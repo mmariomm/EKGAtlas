@@ -853,9 +853,14 @@ check(/non si vede da qui/.test(rosso) && /portale \/clin-port\/loginPC\.jsp/.te
   const ancora = await pR.evaluate((k) => localStorage.getItem(k), NS + "patients.v1");
   check(/Cancello tutto\? Tocca di nuovo/.test(chiede) && ancora !== null, `un tocco chiede soltanto (got: ${chiede})`);
   await pR.locator("#psassist-host #resetpaz").click({ timeout: 3000 }).catch(() => {});
-  await pR.waitForSelector("#psassist-host .banner.ok", { timeout: 5000 }).catch(() => {});
-  check(/^Fatto/.test(await pR.locator("#psassist-host .banner.ok").innerText().catch(() => "")), "il secondo tocco cancella, e dice «Fatto»");
+  await pR.waitForSelector("#psassist-host .stsnack", { timeout: 5000 }).catch(() => {});
+  check(/Dati dei pazienti cancellati/.test(await pR.locator("#psassist-host .stsnack").innerText().catch(() => "")) && (await pR.locator("#psassist-host .stannulla").count()) === 1,
+    "il secondo tocco cancella, e dice «Dati dei pazienti cancellati · Annulla»");
+  // le altre schede e l'estensione si puliscono finiti gli 8 secondi dell'«Annulla»
   await pR.waitForTimeout(800);
+  check(await pAltra.evaluate((k) => sessionStorage.getItem(k), `${NS}reftxt.${ep}.zz`) !== null, "(negli 8 secondi dell'«Annulla» le altre schede non si toccano ancora)");
+  await pR.waitForSelector("#psassist-host .stsnack", { state: "detached", timeout: 12000 }).catch(() => {});
+  await pR.waitForTimeout(1200);
 
   const loc = await pR.evaluate(([ns, ks]) => Object.fromEntries(ks.map((k) => [k, localStorage.getItem(ns + k)])), [NS, [...VIA_LOCALE, ...Object.keys(RESTA_LOCALE), "tempi.v1"]]);
   // (stato.v1: la pagina aperta lo riscrive subito per il suo paziente — degli altri niente)

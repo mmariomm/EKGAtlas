@@ -1172,7 +1172,7 @@ async function ordDai(id, tabId, forza, jobs = null) {
     const rec = (await ordLeggi()).find((x) => x.id === id && x.stampa && (x.stato === "stampa" || (forza && x.stato === "avviso")));
     if (!rec) return false;
     const stampa = jobs ? { ...rec.stampa, jobs } : rec.stampa;
-    const r = await allaScheda(tabId, { t: "psassistStampa", id: rec.id, ep: rec.ep, paziente: rec.paziente, stampa, forza: !!forza });
+    const r = await allaScheda(tabId, { t: "psassistStampa", id: rec.id, ep: rec.ep, paziente: rec.paziente, stampa, forza: !!forza, conferma: rec.ts || 0 });
     if (!(r && r.ok)) return false;
     await inFilaOrd(async () => {
       const l = await ordLeggi();

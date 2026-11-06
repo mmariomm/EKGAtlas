@@ -41,6 +41,8 @@ function chromiumPath() {
   return undefined;
 }
 const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`);
+// i bottoni della striscia: nella striscia, o nel chip in intestazione a pannello aperto
+const AZIONE = "#strazione, #psassist-host #gchipaz", STOP = "#strstop, #psassist-host #gchipstop";
 let fail = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
 const sospendi = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -138,7 +140,7 @@ const conferme = (m) => m.state.requests.filter((q) => q.method === "POST" && (q
 const inviati = (m) => m.state.requests.filter((q) => q.params.Insert === "Inserisci");
 const striscia = async (page, re, timeout = 30000) => {
   const h = await page.waitForFunction((src) => {
-    const t = (document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || "").replace(/\s+/g, " ").trim();
+    const t = (document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || document.getElementById("psassist-host")?.shadowRoot?.querySelector(".gchip")?.dataset.riga || "").replace(/\s+/g, " ").trim();
     return new RegExp(src).test(t) ? t : false;
   }, re.source, { timeout });
   return h.jsonValue();
@@ -254,7 +256,7 @@ if (prova("ORA- nella risposta all'inserimento: la richiesta persa si rifà da c
   const passi = e?.dati?.traccia?.passi || [];
   check(!!e && passi.some((p) => /ORA-20965/.test(p.avviso || "")) && passi.some((p) => p.m === "rifaccio"),
     "nel registro degli errori, con la traccia di tutte e due: l'avviso e la richiesta rifatta");
-  await $panel(doc, "#strstop").click().catch(() => {});
+  await $panel(doc, STOP).click().catch(() => {});
 }
 if (prova("ORA- due volte: la richiesta rifatta perde il carrello anche lei, il giro si ferma e lo dice")) {
   await daCapo();
@@ -286,7 +288,7 @@ if (prova("ORA- due volte: la richiesta rifatta perde il carrello anche lei, il 
   const e = await cerca();
   check(!!e && (e.dati.traccia?.passi || []).filter((p) => /ORA-20965/.test(p.avviso || "")).length === 2, "nel registro degli errori, con la traccia e i due avvisi");
   check(!/non risulta nel carrello/.test(JSON.stringify(e || {})), "e non «non risulta nel carrello»");
-  await $panel(doc, "#strstop").click().catch(() => {});
+  await $panel(doc, STOP).click().catch(() => {});
 }
 
 // ---- 3. mai due motori per un ordine ------------------------------------

@@ -525,11 +525,13 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    dei Pazienti) — stessa fonte dello stato dei Pazienti, stesso nome del catalogo; niente
    quando non si sa, e in grigio con «letto 11:02» se la lettura è vecchia. Un pacchetto
    come «Dolore toracico» spunta come sempre: il suffisso fa vedere il doppione, non lo toglie.
-3. **Mentre manda, puoi fare altro.** Partito il giro il pannello si fa piccolo: una
-   **striscia** in un angolo con il nome del paziente, a che punto è — in esami, «esame 3 di 6»,
-   non in passi — e che cosa sta
-   facendo in quel momento — *creo la richiesta*, *invio LIPASI*, *controllo il carrello 2/3*,
-   *confermo*. Sotto ci lavori normalmente: il gestionale non è bloccato e non compare più
+3. **Mentre manda, puoi fare altro.** Partito il giro il pannello **resta com'è**: non si
+   nasconde da solo (alla Conferma, a un giro nella pagina, a una pagina che si apre con «Non
+   confermata», a una stampa). Ridotto, è una **striscia** in un angolo con il nome del paziente e
+   a che punto è — in esami, «esame 3 di 6», non in passi — e il ⏹; aperto, la stessa riga è un
+   **chip in intestazione** (chi, «esame 2 di 6», ⏹ o «apri il carrello»). I passi — *creo la
+   richiesta*, *invio LIPASI*, *controllo il carrello 2/3* — stanno solo nel pannello aperto del
+   giro. Sotto ci lavori normalmente: il gestionale non è bloccato e non compare più
    «vuoi lasciare la pagina?».
    **Se navighi, il giro non muore: riprende.** Il motore vive nella pagina e la pagina muore a
    ogni click, quindi il giro è annotato passo per passo e riparte da solo sulla pagina dopo —
@@ -539,8 +541,8 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    è un dettaglio). Finito un giro **ripreso**, la pagina **non** te la porta via: il carrello
    lo apri col bottone, e le etichette partono quando torni sulla scheda di quel paziente.
    Un tocco sulla striscia apre il pannello intero (passi + Registro), il quadratino rosso
-   ferma tutto. **Esc** ferma il giro solo col pannello aperto: da quando gira in sottofondo, un
-   Esc dato al gestionale (una tendina, un campo) non deve fermare gli esami. Se intanto sei sulla scheda di un altro paziente la striscia diventa **ambra** e
+   ferma tutto. **Esc** non ferma mai il giro, nemmeno col pannello aperto (lascerebbe un
+   carrello a metà): riduce il pannello, come ovunque; si ferma col **⏹**. Se intanto sei sulla scheda di un altro paziente la striscia diventa **ambra** e
    lo scrive: gli esami restano quelli di chi li hai ordinati.
    **Con l'estensione il giro va in una scheda di sottofondo.** «Conferma e stampa» (e «solo
    carrello») non mandano gli esami dalla tua scheda: l'estensione apre **una seconda scheda,
@@ -551,7 +553,7 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    nell'indirizzo non c'è niente che il gestionale vedrebbe. È **un esecutore e basta**: non
    diventa mai la tua scheda, nemmeno se ci dai un'occhiata. La tua è libera da subito: cambi
    pagina, apri un altro paziente, e il giro non si ferma. **Ogni scheda del gestionale**
-   mostra la stessa striscia — il paziente, «esame 3 di 6», il passo —; un tocco apre il
+   mostra la stessa striscia — il paziente, «esame 3 di 6» —; un tocco apre il
    **tuo** pannello, ⏹ ferma l'ordine (anche mentre la scheda si apre: allora non parte niente;
    fra una pagina e l'altra il fermo resta segnato, «Fermo chiesto», e vale alla prima parola).
    **Ogni esito arriva a te.** Finito, la scheda dell'ordine si slega e **si chiude da sola** —
@@ -564,7 +566,11 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    «⧉ Copia» lo copia — il perché di una conferma sospesa o non verificata non muore più con lei.
    **Le etichette non ti saltano addosso.** Vanno nella scheda del gestionale che hai davanti
    (la finestra in primo piano), **una volta sola**, e dicono **di chi sono**. Sulla pagina di
-   quel paziente, o sulla lista, il dialogo parte da solo — ma non mentre scrivi (cursore in un
+   quel paziente, o sulla lista, il dialogo parte da solo **solo se dalla Conferma non hai
+   toccato niente** — un clic o un tasto, nel gestionale o nel pannello, in qualunque scheda: allora
+   aspettano un tocco, «Etichette pronte · **Stampa**» (la stampa automatica, senza dialogo, va
+   come sempre; un ordine dal telefono aspetta sempre il tocco). E prima di ogni foglio, non solo
+   del primo, non mentre scrivi — nel gestionale o in un campo del pannello (cursore in un
    campo, un tasto da poco: aspettano); sulla pagina di un **altro** paziente non si apre da
    solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco. Senza una scheda del gestionale
    davanti aspettano (mezz'ora; poi dalla sua pagina, ⋯ → Stampa le richieste); la pagina di accesso non
@@ -636,14 +642,18 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    striscia rossa (✕ la chiude). Il promemoria resta solo per un carrello finito e per una
    Conferma premuta e non ancora provata (può essere confermata e non ancora in elenco).
    **Se qualcosa va storto, si finisce a mano nel gestionale.** La striscia diventa **rossa** —
-   «Errore · completa a mano» / «Mancano: PTT POC · Da controllare: Troponina» — e la scheda va
+   «Errore · completa a mano» / «Mancano: PTT POC · Da controllare: Troponina»; per un ordine in
+   sottofondo comincia da che cosa fare, «TROPONINA US: non mandato · apri il carrello → Riprova»,
+   e il perché sta nel resoconto — e la scheda va
    sul **carrello** della richiesta, sull'erogatore dove il gestionale la tiene (l'ultimo elenco
    che ha dato): una semplice lettura dell'elenco, niente inviato, niente confermato. **Mancano** sono gli esami
    mai partiti: li aggiungi tu. **Da controllare** sono quelli mandati ma non visti in carrello:
    guarda se ci sono prima di aggiungerli — mai due volte. Un tocco sulla striscia: il
    resoconto, corto — il motivo, gli elenchi «Mancano» / «Da controllare» / «Nel carrello», **un'azione
    sola** (↻ Riprova i mancanti, o Apri il carrello) e **Chiudi**; i passi e il Registro stanno
-   insieme sotto **Dettagli**, chiuso. Sessione scaduta, episodio che non torna o un'altra
+   insieme sotto **Dettagli**, chiuso. Il resoconto non si prende il pannello: è il blocco in
+   cima alle **Richieste**, con le schede — si guardano gli Esiti e si torna, «Riprova» è ancora
+   lì. Sessione scaduta, episodio che non torna o un'altra
    scheda al lavoro: solo la striscia rossa, la pagina resta quella.
    **…oppure si riprova, solo quello che manca.** Sul carrello di quella richiesta il resoconto
    ha **↻ Riprova i mancanti (N)**: manda **solo** gli esami mai partiti, sulla **stessa**
@@ -931,13 +941,16 @@ episodio di quella scheda del browser. Chiede conferma una volta e non si torna 
 giorno e centocinquanta pazienti: un turno è di dodici ore.
 
 **⋯ → Reset dati pazienti** (quando il pannello si incastra): due tocchi («Cancello tutto? Tocca di
-nuovo»), poi «Fatto». Via **tutto** quello che sa dei pazienti e del turno — elenco, aree e posti
+nuovo»), poi «Dati dei pazienti cancellati · **Annulla**» per 8 secondi, come per ogni altra cosa
+che si può rimpiangere: Annulla rimette tutto com'era (le altre schede e l'estensione si
+puliscono finiti gli 8 secondi, o subito se cambi pagina). Via **tutto** quello che sa dei pazienti e del turno — elenco, aree e posti
 nelle stanze, stato degli esami, «Da fare», note e segni, valori, referti salvati e il loro testo, schede
 cliniche, ordini finiti, richieste da confermare, quesiti, la memoria di ogni scheda aperta, gli
 ordini che ricorda il Ponte, la registrazione non salvata e gli ultimi minuti di quella automatica (gli zip salvati,
 anonimizzati, restano); dei Tempi resta la durata, non il paziente. **Restano**: stampanti e
 stampa automatica, indirizzo del portale, associazione con l'iPhone, fogli di dimissione ed EO,
-le stanze, le opzioni delle aree, la finestra. Non c'è mentre un ordine è in corso.
+le stanze, le opzioni delle aree, la finestra. Non c'è mentre questa scheda manda un giro (un
+ordine in coda o delle etichette che aspettano non lo tolgono).
 
 **Il nome viene dal riquadro del paziente**, quello colorato in testa alla scheda (episodio, nome,
 nascita, codice fiscale, motivo): la sua riga più grande. **Non dal titolo della scheda del
@@ -1291,8 +1304,11 @@ tranquillo che rifà etichette e lista.
 **I comandi sono quelli di sempre**, nella scheda: 🖨 Stampa · → Avanti · ↗ Scheda · ✕ Chiudi.
 Un documento che non si lascia catturare (un visualizzatore) ha al loro posto un grande
 **↗ Apri e stampa** (poi Ctrl+P), con ⧉ Diagnosi; un PDF che non arriva lo dice in rosso. Un
-tocco sulla striscia mostra la scheda anche mentre il PDF arriva; **Esc** o **✕** annullano la
-stampa e fermano davvero la ricerca del PDF.
+tocco sulla striscia mostra la scheda anche mentre il PDF arriva; **✕** — o **Esc**, a scheda
+aperta — annulla la stampa e ferma davvero la ricerca del PDF (mentre il PDF arriva un Esc è del
+gestionale: una tendina, un campo). Niente velo sulla pagina: il dialogo di stampa del browser è
+già lui davanti. Se non finisce (annullata, saltata) la striscia è **ambra**, «Etichette non
+stampate · Ristampa», non il ✓ di una stampa uscita.
 
 **Righe multiple**: quando gli esami di una richiesta appartengono a laboratori diversi (POC +
 Urgenze, ecc.: le richieste di prima, oggi il pannello ne fa una per erogatore) il LIS la divide in **più righe** — stessa `RICHIESTA_ID`, `RICHIESTA_PROG` 1, 2… —
@@ -1392,7 +1408,10 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
 - **La striscia è una sola**, e dice la cosa più seria, fra due pari la più nuova: un errore, un
   avviso da leggere, le etichette pronte qui, l'ordine che gira, la coda, le etichette di un
   ordine dal telefono (aspettano un tocco, ma non coprono il resto), e per ultimo un «Stampato».
-  Un ordine finito bene non copre mai quello che è venuto dopo.
+  Un ordine finito bene non copre mai quello che è venuto dopo; e mentre un ordine **gira** vince
+  lui: un errore o un avviso di prima, non letti, si piegano in un **«!1»** rosso accanto (un
+  tocco li mostra). Una riga sotto la striscia che è di un **altro** paziente porta il suo
+  cognome («Bianchi · Lab · 1/2»): il suo ✕ ferma il suo ordine.
 - **Si vede che è accesa**: in intestazione, accanto al menu **⋯**, una stampantina; passandoci
   sopra, «Stampa automatica attiva: etichette su Zebra ZD421, A4 su HP LaserJet». Diventa
   **rossa** se l'ultimo foglio non è uscito o ha un esito sconosciuto, e lo dice; con accanto
@@ -1631,7 +1650,11 @@ vuoto) e **Prepara nel SISS**.
   sostituibile», il quesito, **Anteprima**. Ogni passo si rilegge dalla pagina; una cosa che non
   torna ferma tutto e il pannello dice dove («Fermato su …: completa tu nel SISS»), lasciando
   quello che è scritto.
-- **La regola**: si ferma sull'**Anteprima** («STATO: BOZZA») con la scheda del SISS davanti.
+- **La regola**: si ferma sull'**Anteprima** («STATO: BOZZA») con la scheda del SISS davanti —
+  ma non mentre scrivi nella scheda del gestionale che hai davanti (o nel pannello): allora la
+  scheda del SISS resta dietro, e la striscia dice «Ricetta · pronta in Anteprima» con **apri il
+  SISS**. A che punto è la ricetta lo dice la stessa striscia degli ordini (e il chip a pannello
+  aperto), non solo ⋯ → Ricetta; ⏹ la ferma.
   **Registra, Salva, Stampa, Cancella non li preme mai**: li premi tu, dopo aver controllato.
   Seconda guardia: se durante la compilazione la scheda del SISS chiedesse al server di
   *registrare* (lo si vede dal flusso delle richieste, solo osservato), il pannello lo dice in

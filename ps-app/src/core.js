@@ -296,9 +296,32 @@
   const NON_SCRITTURA = /^(button|submit|reset|image|hidden|checkbox|radio|file|range|color)$/i;
   const eCampo = (el) => !!el && el.id !== "psassist-host" && (el.isContentEditable || el.tagName === "TEXTAREA" || el.tagName === "SELECT"
     || (el.tagName === "INPUT" && !NON_SCRITTURA.test(el.type || "")));
+  // L'ultimo clic o tasto del medico — nel gestionale o nel pannello, in
+  // qualunque scheda (la memoria del browser), non nella scheda di stampa:
+  // dopo un ordine il dialogo delle etichette si apre da solo SOLO se dalla
+  // Conferma non ha toccato niente (toccatoDopo). Se no, un tocco su «Stampa».
+  const TOCCO = "tocco.v1";
+  let toccoQui = 0, toccoScritto = 0;
+  const nellaStampa = (e) => (e.composedPath ? e.composedPath() : []).some((x) => x && x.id === "psassist-print");
+  function segnaTocco() {
+    toccoQui = Date.now();
+    if (toccoQui - toccoScritto < 300) return;
+    toccoScritto = toccoQui;
+    try { localStorage.setItem(NS + TOCCO, String(toccoQui)); } catch { /* resta quello di questa scheda */ }
+  }
+  function toccatoDopo(t) {
+    if (!t) return false;
+    let l = 0;
+    try { l = Number(localStorage.getItem(NS + TOCCO)) || 0; } catch { l = 0; }
+    return Math.max(l, toccoQui) > t;
+  }
+  // il momento in cui il medico ha premuto Conferma (il giro, la conferma dal pannello o dal gestionale), in questa scheda
+  const PREMUTO = "premuto.v1";
   function osservaScrittura() {
     if (scrittura.attivo) return;
     scrittura.attivo = true;
+    document.addEventListener("keydown", (e) => { if (e.isTrusted && !nellaStampa(e)) segnaTocco(); }, true);
+    document.addEventListener("pointerdown", (e) => { if (e.isTrusted && !nellaStampa(e)) segnaTocco(); }, true);
     document.addEventListener("keydown", (e) => {
       if (dalGestionale(e)) { scrittura.tasto = Date.now(); scrittura.toccato = true; }
       else if (e.isTrusted && nelPannello(e)) {
@@ -7659,8 +7682,8 @@
     chipGiro() {
       if (TABELLONE || LAVORO) return "";
       const running = this.runState === "running";
-      // (il resoconto a vista nel corpo: è già lui)
-      if (this.runState && !running && (this.view === "richieste" || !this.resoNelleRichieste())) return "";
+      // (il resoconto di un errore o di un ⏹ a vista nel corpo: la sua striscia è già lui)
+      if ((this.runState === "fail" || this.runState === "stopped") && (this.view === "richieste" || !this.resoNelleRichieste())) return "";
       const s = !running ? this.striscia : null;
       if (!s && !running) return "";
       const quiNome = this.epDiQuesta() ? nomeInPagina() : "";
@@ -7673,7 +7696,7 @@
       const titStop = s ? s.titoloStop || (s.ferma ? "Ferma l'ordine" : "Chiudi l'avviso") : "Interrompi";
       const segno = tono === "run" ? `<i class="gdot"></i>` : `<span class="gtick">${tono === "err" || tono === "warn" ? "!" : "✓"}</span>`;
       const testo = `${chi ? `<b>${esc(nomeCorto(chi))}</b>` : ""}${parti.map((p, k) => `${chi || k ? " · " : ""}${esc(p)}`).join("")}`;
-      return `<span class="gchip ${tono}" role="status" title="${esc(tutto)}">${s && s.onTap
+      return `<span class="gchip ${tono}" role="status" title="${esc(tutto)}" data-riga="${esc([chi, ...parti, s && s.quesito].filter(Boolean).join(" "))}">${s && s.onTap
         ? `<button class="gcorpo" id="gchipapri" title="${esc(s.titolo || tutto)}">${segno}<span class="gt">${testo}</span></button>`
         : `<span class="gcorpo">${segno}<span class="gt">${testo}</span></span>`}${
         s && s.azione ? `<button class="gaz" id="gchipaz" title="${esc(s.azione.titolo || "")}">${esc(s.azione.label)}</button>` : ""}${
@@ -8746,6 +8769,7 @@
     // ---- run starters ----
     startPlan(base) {
       if (this.runState === "running" || this._delegando || this._motoreAtteso) return;
+      if (!base.dalLavoro) tabStore.set(PREMUTO, Date.now());
       // La scheda di un ordine che gira fa solo quell'ordine: un altro, da
       // qui, si confonderebbe col suo (le etichette, l'esito).
       if (LAVORO && !base.dalLavoro) {
@@ -15661,22 +15685,23 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const testa = pw.querySelector(".pwhd"), guaio = pw.querySelector(".pwguaio"), corpo = pw.querySelector(".pwbody"), piede = pw.querySelector(".pwft");
 
     const conto = () => (jobs.length > 1 ? `${Math.min(i + 1, jobs.length)}/${jobs.length}` : "");
-    // La scheda si vede o no. Il riquadrino serve solo senza pill, e solo
+    // La scheda si vede o no. Il riquadrino serve solo senza pannello, e solo
     // quando la scheda non c'è.
     const vedi = (si) => {
       pw.hidden = !si;
-      if (!(panel && panel.collapsed)) ps.hidden = si;
+      if (!panel) ps.hidden = si;
     };
     // Un foglio arrivato mentre scrivi aspetta (vedi aspettaChiScrive): un
     // tocco sulla striscia lo stampa subito.
     let subito = null;
     const tocca = () => (subito ? subito() : vedi(true));
-    // A che punto è: nella pill se il pannello è ridotto, altrimenti nel
-    // riquadrino. Un tocco lì mostra la scheda; ✕ (o Esc) annulla.
+    // A che punto è: nella striscia del pannello — ridotto, la striscia;
+    // aperto, il chip in intestazione —, e solo senza pannello nel riquadrino.
+    // Un tocco lì mostra la scheda; ✕ (o Esc, a scheda aperta) annulla.
     // (`azione`: «Stampa», per un foglio che aspetta chi scrive)
     const stato = (testo, tono = "run", azione = null) => {
       wrap.dataset.testo = testo;
-      if (panel && panel.collapsed) {
+      if (panel) {
         ps.hidden = true;
         panel.segnala({ tag, badge: conto(), testo, tono, daStampa: true, onTap: tocca, onStop: () => chiudi(false), ...(azione ? { azione } : {}) });
         return;
@@ -15750,8 +15775,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
             testo: confermatiTesto(fine), tono: tutto ? "ok" : "warn", quesito: quesitoDetto(fine.quesito),
             azione: certo ? null : { label: "Ristampa", titolo: "Stampa di nuovo etichette e lista esami",
               fn: () => avviaStampa(jobs.map(({ motivo, ...j }) => j), opzioni) } });
-        } else if (finito && panel.collapsed) {
-          // una stampa chiesta a mano: la pill lo dice per qualche secondo
+        } else if (finito) {
+          // una stampa chiesta a mano: la striscia (o il chip) lo dice per qualche secondo
           panel.segnala({ tag, testo: certo ? "✓ Stampato" : "✓ Stampa finita", tono: "ok" }, { ms: 4000, poi: () => panel.chiudiGiro() });
         } else if (panel.striscia && panel.striscia.daStampa) panel.segnala(null);
       }
@@ -15812,16 +15837,21 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // e il dialogo aspettano che smetti, e intanto la striscia dice
     // «Etichette pronte · Stampa» (un tocco: subito). Una stampa chiesta da
     // te col suo tocco non aspetta.
+    // (e, dopo un ordine, se dalla sua Conferma hai toccato qualcosa: allora
+    // il foglio aspetta il tuo tocco, come le etichette — vedi toccatoDopo)
+    const toccato = () => !!opzioni.dopo && toccatoDopo(opzioni.dopo);
     const aspettaChiScrive = async (mio, job) => {
-      if (!opzioni.auto || !staScrivendo(true)) return true;
+      const perche = !opzioni.auto ? "" : toccato() ? "hai toccato qualcosa dalla Conferma" : staScrivendo(true);
+      if (!perche) return true;
       let via = () => {};
       const tocco = new Promise((r) => { via = r; });
       subito = () => via(true);
-      wrap.dataset.stato = "aspetta";
-      panel?.log(`${now()}  ${job.name}: arrivato mentre scrivi — aspetto che smetti (o un tocco su «Stampa»)`);
-      stato(/^etichett/i.test(job.name) ? "Etichette pronte" : `Pronto: ${cosaStampo(job)}`, "run",
+      wrap.dataset.stato = "aspetta"; wrap.dataset.perche = perche;
+      panel?.log(`${now()}  ${job.name}: arrivato mentre scrivi (${perche}) — aspetto che smetti (o un tocco su «Stampa»)`);
+      const breve = nomeBreve(opzioni.paziente || "");
+      stato(/^etichett/i.test(job.name) ? (breve ? `Etichette di ${breve} pronte` : "Etichette pronte") : `Pronto: ${cosaStampo(job)}`, "run",
         { label: "Stampa", titolo: "Stampa adesso, senza aspettare", fn: () => subito && subito() });
-      while (!chiuso && mio === gen && staScrivendo(true)) {
+      while (!chiuso && mio === gen && (toccato() || staScrivendo(true))) {
         if (await Promise.race([tocco, sleep(500).then(() => false)])) break;
       }
       subito = null;
@@ -16068,8 +16098,32 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
     if (wizardOpen) return false;   // keep the flag: these jobs must not vanish behind another wizard
     tabStore.set("print.v1", null);
-    avviaStampa(jobs, { panel, tag: "Confermata", fine, title: ids.length > 1 ? `${ids.length} richieste appena confermate.` : "Richiesta appena confermata.",
-      ep: flag.episodeId || here, paziente: panel?.nomePaziente(), url, auto: true });
+    // (la Conferma: quando l'ha premuta lui — il giro, o il bottone del gestionale)
+    const p = Number(tabStore.get(PREMUTO, 0)) || 0;
+    const premuto = p && p <= (flag.ts || 0) + 1000 && (flag.ts || 0) - p < PRINT_FLAG_TTL ? p : flag.ts || 0;
+    const op = { panel, tag: "Confermata", fine, title: ids.length > 1 ? `${ids.length} richieste appena confermate.` : "Richiesta appena confermata.",
+      ep: flag.episodeId || here, paziente: panel?.nomePaziente(), url, auto: true, dopo: premuto };
+    // Il dialogo si apre da solo solo se da quella Conferma non hai toccato
+    // niente (la stampa automatica, senza dialogo, va come sempre). Se no la
+    // striscia dice «Etichette di ROSSI M. pronte · Stampa», e il segno
+    // resta: anche cambiando pagina le etichette aspettano il tuo tocco.
+    (async () => {
+      if (panel && (flag.tocca || (toccatoDopo(premuto) && !(await stampaAutomatica())))) {
+        tabStore.set("print.v1", { ...flag, tocca: true });
+        const nome = nomeBreve(op.paziente || "");
+        panel?.log(`${now()}  etichette pronte: dalla Conferma hai toccato qualcosa, il dialogo aspetta il tuo «Stampa»`);
+        panel?.segnala({ tag: "Confermata", testo: nome ? `Etichette di ${nome} pronte` : "Etichette pronte", tono: "run", daStampa: true, quesito: quesitoDetto(fine.quesito),
+          azione: { label: "Stampa", titolo: "Stampa adesso le etichette", fn: () => {
+            if (wizardOpen || !tabStore.get("print.v1", null)) return;
+            tabStore.set("print.v1", null);
+            panel.segnala(null);
+            avviaStampa(jobs, { ...op, auto: false, dopo: 0 });
+          } },
+          titoloStop: "Non stamparle adesso (⋯ → Stampa le richieste)", onStop: () => { tabStore.set("print.v1", null); panel.segnala(null); } });
+        return;
+      }
+      avviaStampa(jobs, op);
+    })();
     return true;
   }
 
@@ -16159,6 +16213,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (motoreQui()) return { ok: false, why: "motore" };
     if (!m.forza) {
       if (staScrivendo(true)) return { ok: false, why: "scrive" };
+      // il dialogo da solo solo se dalla Conferma non hai toccato niente: se no
+      // le etichette restano al service worker, e la striscia ha «Stampa»
+      if (toccatoDopo(Number(m.conferma) || 0)) return { ok: false, why: "toccato" };
       const qui = panel ? panel.epDiQuesta() : findEpisodeId(document, location.href);
       if (qui && qui !== String(m.ep || "")) return { ok: false, why: "altro paziente" };
     }
@@ -16186,7 +16243,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     panel?.log(`${now()}  etichette dell'ordine per ${nome || "un paziente"}: le stampo qui`);
     // (con la stampa automatica, «Ristampa» non apre niente qui: li rifà il service worker)
     const tag = st.tag || "Confermata";
-    avviaStampa(jobs, { panel: conNome, tag, fine: st.fine || null, ep: m.ep, paziente: nome, auto: !m.forza,
+    avviaStampa(jobs, { panel: conNome, tag, fine: st.fine || null, ep: m.ep, paziente: nome, auto: !m.forza, dopo: m.forza ? 0 : Number(m.conferma) || 0,
       title: `${nome ? nome + " · " : ""}${tag === "Confermata" ? "richiesta appena confermata." : st.riassunto || ""}` });
     return { ok: true };
   }
@@ -17145,6 +17202,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const model = examModel(document, location.href);
       learnFrom(model);
       panel.render(); // pick up anything just learned
+      tabStore.set(PREMUTO, Date.now());   // (la Conferma del gestionale, premuta da lui)
       armPrintOnConfirm(model, findEpisodeId(document, location.href)); // native Conferma → print handoff
       if (!ripresa) {   // prima si finisce di mandare gli esami
         let cliccato = maybeAutoConfirm(panel);
