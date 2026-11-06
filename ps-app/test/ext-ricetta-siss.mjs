@@ -296,6 +296,9 @@ await $p('[data-seg="dimissioni"]').click();
 check(await $p("#dimricetta").count() === 1, "nelle Dimissioni c'è «Prepara la ricetta nel SISS»");
 await $p("#dimricetta").click();
 await doc.waitForSelector("#psassist-host .ricetta", { timeout: 5000 });
+// dove sei: «‹ [℞] Ricetta SISS» al posto delle schede, e il ‹ torna alle Dimissioni da cui si veniva
+check((await $p(".seg.vmenu .segtit").innerText()).trim() === "Ricetta SISS" && (await $p(".seg.vmenu #back").getAttribute("title")) === "Torna a Dimissioni (Esc)",
+  `in testa «‹ Ricetta SISS», e il ‹ torna alle Dimissioni (got ${await $p(".seg").innerText().catch(() => "")})`);
 
 // ---- 1. preferiti e ricerca nel pannello; il SISS non è aperto: il menu, e il messaggio
 check(await $p(".ricpref").innerText().then((t) => /Ancora nessuno/.test(t)) && await $p("#ricq").count() === 1 && await $p("#ricprepara").isDisabled(),
@@ -329,8 +332,9 @@ await $p("#ricqta0").fill("2");
 await $p("#ricns0").check();
 await $p("#ricquesito").fill("faringotonsillite");
 if (FOTO) { await doc.bringToFront(); await $p(".card").screenshot({ path: join(FOTO, "ricetta-pannello.png") }); }
-await $p("#ricprepara").click();
-check(await finche(async () => (await sissStato()).vista.endsWith("/editing/preview"), 30000), "«Prepara nel SISS»: il SISS arriva sull'Anteprima");
+// Ctrl+Invio è «Prepara» (acceso): come nelle Richieste — Registra resta del medico
+await $p("#ricquesito").press("Control+Enter");
+check(await finche(async () => (await sissStato()).vista.endsWith("/editing/preview"), 30000), "Ctrl+Invio (= «Prepara nel SISS»): il SISS arriva sull'Anteprima");
 const fin = await sissStato();
 check(fin.farmaci.length === 1 && fin.farmaci[0].codice === AIC && fin.farmaci[0].qta === 2 && fin.farmaci[0].ns === true && fin.quesito === "faringotonsillite",
   `nella ricetta del SISS: ${AIC} (scelto col codice esatto fra le confezioni uguali), quantità 2, non sostituibile, il quesito (${JSON.stringify(fin.farmaci)} · «${fin.quesito}»)`);

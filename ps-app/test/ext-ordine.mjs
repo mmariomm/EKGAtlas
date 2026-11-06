@@ -206,6 +206,9 @@ const silenzia = (tipi) => sw.evaluate((t) => {
 const doc = await ctx.newPage();   // la scheda del medico
 const SOLO = (process.argv[2] || "").toLowerCase();   // `node test/ext-ordine.mjs caduta`: solo le prove che lo nominano
 const prova = (t) => { if (SOLO && !t.toLowerCase().includes(SOLO)) return false; console.log("\nordine: " + t); nuovi(); return true; };
+// il bottone accanto alla striscia: «⏹» (l'icona ferma, non più il glifo) o il ✕ che annulla
+const tastoStop = (p) => p.evaluate(() => { const b = document.getElementById("psassist-host")?.shadowRoot?.querySelector("#strstop");
+  return !b ? "" : b.querySelector("svg") && !b.textContent.trim() ? "⏹" : b.textContent.trim(); }).catch(() => "");
 
 // ---- 1. il giro in sottofondo, il medico su un altro paziente ------------
 if (prova("la scheda di sottofondo manda, il medico va altrove")) {
@@ -536,7 +539,7 @@ if (prova("⏹ mentre la scheda dell'ordine si apre — non parte niente")) {
   await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA"]);
   const w = await nasce;
   const apre = await striscia(doc, /Apro la scheda dell'ordine/, 5000).catch(() => "");
-  check(!!apre && (await $panel(doc, "#strstop").innerText().catch(() => "")).trim() === "⏹", `«Apro la scheda dell'ordine…» con ⏹ (got: ${apre || "niente"})`);
+  check(!!apre && (await tastoStop(doc)) === "⏹", `«Apro la scheda dell'ordine…» con ⏹ (got: ${apre || "niente"})`);
   await $panel(doc, "#strstop").click();
   const fermo = await striscia(doc, /Interrotto/, 8000).catch(() => "");
   await doc.waitForTimeout(5500);
@@ -589,7 +592,7 @@ if (prova("⏹ sulla striscia ferma l'ordine")) {
   const worker = await nasce;
   await suPagina(doc, B.patientUrl);
   await striscia(doc, /esame 1 di 3/, 20000).catch(() => "");
-  const ferma = (await $panel(doc, "#strstop").innerText().catch(() => "")).trim();
+  const ferma = await tastoStop(doc);
   check(ferma === "⏹", `mentre manda, accanto alla striscia c'è ⏹ (got: ${ferma || "niente"})`);
   await $panel(doc, "#strstop").click();
   const ferma2 = await striscia(doc, /Interrotto/, 15000).catch(() => "");
@@ -1083,7 +1086,7 @@ if (prova("⏹ su una scheda d'ordine che aspetta — l'ordine finisce, la coda 
   await w.keyboard.type("a").catch(() => {});
   const aspetta = await striscia(doc, /ROSSI MARIO.*tocca per il carrello/, 20000).catch(() => "");
   check(!!aspetta && conferme(A).length === 0, `col cursore nel suo campo la scheda dell'ordine non ricarica il carrello: aspetta (got: ${aspetta || "niente"})`);
-  const bottone = (await $panel(doc, "#strstop").innerText().catch(() => "")).trim();
+  const bottone = await tastoStop(doc);
   check(bottone === "⏹", `e ⏹ c'è (got «${bottone}» · ${JSON.stringify((await ordini()).map((x) => [x.paziente, x.stato, x.vista && x.vista.tag]))})`);
   await $panel(doc, "#strstop").click();
   const fermo = await striscia(doc, /ROSSI MARIO.*Interrotto/, 15000).catch(() => "");
