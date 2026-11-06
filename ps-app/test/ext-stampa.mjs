@@ -1296,6 +1296,13 @@ const tocca = async (p) => {
   if (!(await $panel(p, ".card").count())) { await $panel(p, "#expand").click(); await p.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
   await $panel(p, "#bracciale").click();
 };
+// tocchi di fila sul bottone, `gap` ms l'uno dall'altro: dentro i 400 ms (CLIC_FINESTRA) che li fanno copie
+// (col mouse, sul posto: un clic di Playwright, coi suoi controlli, può metterci più della finestra)
+const tocchi = async (p, n, gap = 100) => {
+  if (!(await $panel(p, ".card").count())) { await $panel(p, "#expand").click(); await p.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  const b = await $panel(p, "#bracciale").boundingBox();
+  for (let k = 0; k < n; k++) { if (k) await sospendi(gap); await p.mouse.click(b.x + b.width / 2, b.y + b.height / 2); }
+};
 async function intestazione(page) {
   if (!(await $panel(page, ".card").count())) { await $panel(page, "#expand").click(); await page.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
   await $panel(page, '[data-seg="richieste"]').click().catch(() => {});
@@ -1324,12 +1331,12 @@ if (await prova("l'etichetta anagrafica: il bottone accanto al nome, le copie a 
     if (box) await doc.screenshot({ path: process.env.BRAC_SHOT, clip: { x: box.x, y: box.y, width: box.width, height: box.height } });
   }
 
-  // tre tocchi di fila (meno di un secondo l'uno dall'altro): «×3», poi UNA stampa con tre copie, il PDF preso una volta
+  // tre tocchi di fila (meno di 400 ms l'uno dall'altro, CLIC_FINESTRA): «×3», poi UNA stampa con tre copie, il PDF preso una volta
   comportati({ lento: 1200 });
   await azzeraStampe(doc);
   presiBrac = 0;
   const nasce = nuovaPagina();
-  await tocca(doc); await sospendi(300); await tocca(doc); await sospendi(300); await tocca(doc);
+  await tocchi(doc, 3);
   const conto = (await bottoneBrac(doc))?.conto;
   check(conto === "×3" && (await ordiniBrac()).length === 0, `mentre si tocca, il bottone conta le copie e non parte niente (got «${conto}»)`);
   if (process.env.BRAC_SHOT) {
@@ -1365,12 +1372,16 @@ if (await prova("l'etichetta anagrafica: il bottone accanto al nome, le copie a 
   check(presiBrac === 1, `il PDF chiesto al gestionale una volta sola (got ${presiBrac})`);
   check((await ordiniBrac()).length === 1 && (await stampe(doc)).length === 0, "il tocco durante la stampa non ha fatto niente: un ordine solo nel giornale, nessuna anteprima");
   check(!!dietro && await aspettaChiusa(dietro), "la scheda dei PDF, finito, si chiude");
-  // finita: un tocco è una stampa nuova (il PDF chiesto di nuovo)
+  // finita: un tocco è una stampa nuova (il PDF chiesto di nuovo), e parte ~400 ms dopo il tocco, non un secondo
   azzeraLavori();
-  await tocca(doc);
+  if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
+  await $panel(doc, "#bracciale").waitFor({ timeout: 8000 }).catch(() => {});
+  const t0 = Date.now();
+  await $panel(doc, "#bracciale").click();
   const nuovo = await finche(async () => (await ordiniBrac()).find((x) => x.id !== rec.id && x.stato === "avviso" && x.fogli), 30000);
   check(!!nuovo && nuovo.fogli.length === 1 && lavori().length === 1 && presiBrac === 2,
     `a stampa finita, un tocco: un ordine nuovo, una copia, il PDF chiesto di nuovo (got ${lavori().length} fogli · ${presiBrac} PDF)`);
+  check(!!nuovo && nuovo.ts - t0 >= 350 && nuovo.ts - t0 < 950, `la stampa parte ~400 ms dopo l'ultimo tocco, non dopo un secondo (got ${nuovo ? nuovo.ts - t0 : "?"} ms)`);
 
   // non si infila fra le etichette di un ordine che sta stampando: le aspetta, poi esce
   azzeraLavori();
@@ -1388,7 +1399,7 @@ if (await prova("l'etichetta anagrafica: il bottone accanto al nome, le copie a 
   }, [etic, id]);
   await ordineEtichette("ordprova1");
   await finche(() => lavori().length === 1, 15000);
-  await tocca(doc); await sospendi(300); await tocca(doc);
+  await tocchi(doc, 2);
   const attesa = await finche(async () => (await ordiniBrac()).find((x) => /dopo le etichette di ROSSI MARIO/.test(x.pubblico?.testo || "")), 15000);
   check(!!attesa, `mentre l'ordine stampa le sue etichette, l'etichetta anagrafica aspetta, e lo dice (got ${JSON.stringify((await ordini()).map((x) => x.pubblico))})`);
   const inCoda = await finche(async () => { const b = await bottoneBrac(doc); return b && b.conto === "×2" && b.spento ? b : null; }, 4000);
@@ -1424,7 +1435,7 @@ if (await prova("l'etichetta anagrafica: il bottone accanto al nome, le copie a 
   azzeraLavori();
   await nessunOrdine();
   comportati();
-  for (let k = 0; k < 11; k++) { await tocca(doc); await sospendi(120); }
+  await tocchi(doc, 11, 60);
   const dieci = (await bottoneBrac(doc))?.conto;
   const tutte = await finche(async () => (await ordiniBrac()).find((x) => x.stato === "avviso" && x.fogli.length === 10), 60000);
   await sospendi(1000);
@@ -1435,7 +1446,7 @@ if (await prova("l'etichetta anagrafica: il bottone accanto al nome, le copie a 
   await nessunOrdine();
   await sw.evaluate(() => chrome.storage.local.remove("errori.v1"));
   comportati({ rompi: { "Zebra ZD421": "la stampante (o il suo driver) ha dato errore" } });
-  await tocca(doc); await sospendi(300); await tocca(doc);
+  await tocchi(doc, 2);
   await aspettaScheda(doc, "s.stato === 'stampo'", 20000);
   const s = await scheda(doc);
   check(lavori().length === 1 && !!s && /^Stampa 1 di 1 — Etichetta anagrafica/.test(s.doc) && /2 copie/.test(s.avviso) && /etichettatrice/.test(s.dest),
@@ -1462,6 +1473,201 @@ if (await prova("l'etichetta anagrafica: il bottone accanto al nome, le copie a 
   check(!!t && t.url() === A.ORIGIN + linkBrac("999001") && presiBrac === 1 && lavori().length === 0 && (await ordini()).length === 0 && (await stampe(doc)).length === 0,
     `senza stampa automatica: il PDF si apre in una scheda, nient'altro (got ${t ? t.url() : "niente"} · ${presiBrac} PDF · ${lavori().length} fogli · ${JSON.stringify((await ordini()).map((x) => [x.stato, x.pubblico]))} · ${(await stampe(doc)).length} schede)`);
   if (t) await t.close();
+  ritocca = null;
+}
+
+// ---- 19. le icone di stampa del gestionale: un clic il PDF, due la stampa ---
+// (le icone come nella pagina vera: le etichette nella finestra «SA4RCS», gli
+// altri fogli e l'etichetta anagrafica in una scheda nuova. Una spia nella
+// pagina annota i clic veri appena arrivano, e quelli che arrivano al link —
+// veri, o ridati dall'estensione — col gesto del medico ancora valido o no —,
+// e le pressioni sul link: la seconda di un doppio clic è quella che seleziona.)
+const spia = (p) => p.evaluate(() => {
+  window.__clic = []; window.__link = []; window.__giu = [];
+  window.addEventListener("click", (e) => { if (e.isTrusted) window.__clic.push(Date.now()); }, true);
+  for (const a of document.querySelectorAll('a[title^="Stampa"]')) {
+    a.addEventListener("click", (e) => window.__link.push({ t: Date.now(), vero: e.isTrusted, attiva: navigator.userActivation.isActive, prev: e.defaultPrevented, titolo: a.title }));
+    a.addEventListener("mousedown", (e) => window.__giu.push({ n: e.detail, prev: e.defaultPrevented }));
+  }
+});
+const spiato = (p) => p.evaluate(() => ({ clic: window.__clic, link: window.__link, giu: window.__giu, sel: String(getSelection()) })).catch(() => ({ clic: [], link: [], giu: [], sel: "?" }));
+const azzeraSpia = (p) => p.evaluate(() => { window.__clic = []; window.__link = []; window.__giu = []; getSelection().removeAllRanges(); });
+if (await prova("doppio clic sulle icone di stampa del gestionale: uno apre il PDF, due (o tre) lo stampano alla sua stampante; l'etichetta anagrafica a clic")) {
+  installa(true);
+  await scelte(ATTIVA);
+  A = createMock({ seedConfirmed: true, seedConfirmedRadio: true });   // (anche una richiesta RX confermata)
+  conBracciale(linkBrac("999002"), linkBrac("999001"));
+  const brac = ritocca;
+  ritocca = (u, out) => {
+    const o = brac(u, out) || out;
+    if (new URL(u).searchParams.get("MVPG") !== "PsoEpisodioClinicoAmbulatorio" || !Buffer.isBuffer(o.body)) return o;
+    const h = o.body.toString("latin1").replace(/title="Stampa Etichette"/g, '$& target="SA4RCS"')
+      .replace(/title="Stampa (Richiesta|Richiesta Radiologia|Prenotazione Esterna)"/g, '$& target="_blank"')
+      .replace(/<img title="Stampa Bracciale" alt="">/g, '<img title="Stampa Bracciale" alt="bracciale">');   // (un'icona che si vede, da cliccare)
+    return { ...o, body: Buffer.from(h, "latin1") };
+  };
+  const aperte = [], segna = (p) => aperte.push(p);
+  ctx.on("page", segna);
+  const fogliAperti = () => aperte.filter((p) => !p.isClosed() && /RcsStampaEtichetteLISHMIMU|jasperservlet/.test(p.url())).map((p) => p.url());
+  const chiudiAperte = async () => { for (const p of aperte.splice(0)) if (!p.isClosed()) await p.close().catch(() => {}); };
+  const daCapo = async () => { await nessunOrdine(); azzeraLavori(); await azzeraSpia(doc); await azzeraRighe(doc); await chiudiAperte(); presiBrac = 0; };
+  const finito = () => finche(async () => (await ordini()).find((x) => x.stato !== "stampo" && x.stampa?.jobs?.length), 30000);
+  const ETIC = 'a[title="Stampa Etichette"][href*="RICHIESTA_ID=699999"]', LISTA = 'a[title="Stampa Richiesta"][href*="RICHIESTA_ID=699999"]',
+    RX = 'a[title="Stampa Richiesta Radiologia"]', BRAC = 'a[title="Stampa Bracciale"][href*="EPISODIO_ID=999001"]', BRAC_ALTRO = 'a[title="Stampa Bracciale"][href*="EPISODIO_ID=999002"]';
+  const icona = (sel) => doc.locator(sel).first();
+  await suPagina(doc, A.patientUrl);
+  await intestazione(doc);
+  check(!!(await finche(() => stampantina(doc), 5000)), "la stampa automatica è accesa");
+  if (await $panel(doc, "#collapse").count()) await $panel(doc, "#collapse").click();
+  await spia(doc);
+  await daCapo();
+
+  // un clic sulle etichette: il PDF di sempre, nella sua finestra — quel clic, ridato ~400 ms dopo
+  const apre = nuovaPagina(8000);
+  await icona(ETIC).click();
+  const pdf = await apre;
+  await pdf?.waitForURL(/RcsStampaEtichetteLISHMIMU/, { timeout: 8000 }).catch(() => {});
+  let s = await spiato(doc);
+  const nome = pdf ? await pdf.evaluate(() => window.name).catch(() => "?") : "";
+  check(!!pdf && /RcsStampaEtichetteLISHMIMU\.do\?RICHIESTA_ID=699999&RICHIESTA_PROG=1$/.test(pdf.url()) && nome === "SA4RCS",
+    `un clic sulle etichette: il PDF di sempre, nella finestra «SA4RCS» (got ${pdf ? pdf.url().slice(-60) : "niente"} · «${nome}»)`);
+  const r0 = s.link[0] || {};
+  check(s.link.length === 1 && !r0.vero && r0.attiva === true && r0.t - s.clic[0] >= 350 && r0.t - s.clic[0] < 1500,
+    `è quel clic, ridato ~400 ms dopo (quando un secondo non arriva), col gesto del medico ancora valido (got ${JSON.stringify(s)})`);
+  await sospendi(800);
+  check(lavori().length === 0 && (await ordini()).length === 0, "e non stampa niente");
+
+  // due clic: le etichette all'etichettatrice, una volta; niente PDF, niente testo selezionato, la riga sotto la pill
+  await daCapo();
+  await icona(ETIC).dblclick();
+  const et = await finito();
+  s = await spiato(doc);
+  const l1 = lavori();
+  check(!!et && et.stampa.jobs.length === 1 && et.stampa.jobs[0].name === "Etichette provette" && /RICHIESTA_ID=699999/.test(et.stampa.jobs[0].url)
+    && l1.length === 1 && l1[0].tipo === "etichette" && l1[0].stampante === "Zebra ZD421",
+  `doppio clic sulle etichette: stampate una volta, all'etichettatrice (got ${JSON.stringify(et && et.stampa.jobs.map((j) => j.name))} · ${JSON.stringify(l1.map((x) => `${x.tipo}→${x.stampante}`))})`);
+  check(!!et && et.ts - s.clic[1] >= 350 && et.ts - s.clic[1] < 1500, `la stampa parte ~400 ms dopo l'ultimo clic (got ${et ? et.ts - s.clic[1] : "?"} ms)`);
+  check(s.link.length === 0 && !fogliAperti().length && (await stampe(doc)).length === 0,
+    `nessun PDF aperto, nessuna anteprima (got ${s.link.length} clic al link · ${JSON.stringify(fogliAperti())})`);
+  check(s.sel === "" && s.giu.length === 2 && !s.giu[0].prev && s.giu[1].n === 2 && s.giu[1].prev,
+    `il doppio clic non seleziona il testo: la prima pressione com'è, la seconda senza selezione (got «${s.sel}» · ${JSON.stringify(s.giu)})`);
+  const re = (await righeViste(doc)).map((x) => x.n);
+  check(re.some((n) => /^Etichette/.test(n)), `sotto la pill la sua riga (got ${JSON.stringify(re)})`);
+
+  // tre clic sulla lista esami: all'A4, sempre una volta
+  await daCapo();
+  await icona(LISTA).click({ clickCount: 3 });
+  const li = await finito();
+  await sospendi(1500);
+  s = await spiato(doc);
+  const l2 = lavori();
+  check(!!li && (await ordini()).length === 1 && li.stampa.jobs.length === 1 && li.stampa.jobs[0].name === "Lista esami" && l2.length === 1 && l2[0].tipo === "a4"
+    && l2[0].stampante === "HP LaserJet A4" && !s.link.length && !fogliAperti().length,
+  `tre clic su «Stampa Richiesta»: la lista esami una volta, all'A4, nessun PDF aperto (got ${JSON.stringify(li && li.stampa.jobs.map((j) => j.name))} · ${JSON.stringify(l2.map((x) => `${x.tipo}→${x.stampante}`))} · ${s.link.length})`);
+
+  // due clic sul foglio RX: all'A4
+  await daCapo();
+  await icona(RX).dblclick();
+  const rx = await finito();
+  const l3 = lavori();
+  check(!!rx && rx.stampa.jobs.length === 1 && rx.stampa.jobs[0].name === "Richiesta radiologia" && /RICHIESTA_ID=699998/.test(rx.stampa.jobs[0].url)
+    && l3.length === 1 && l3[0].tipo === "a4" && l3[0].stampante === "HP LaserJet A4" && !fogliAperti().length,
+  `doppio clic sul foglio RX: all'A4, una volta (got ${JSON.stringify(rx && rx.stampa.jobs.map((j) => j.name))} · ${JSON.stringify(l3.map((x) => `${x.tipo}→${x.stampante}`))})`);
+
+  // la finestra dei 400 ms: due clic a ~200 ms sono un doppio clic; a ~700 ms, due clic soli (due volte il PDF)
+  await daCapo();
+  await icona(ETIC).click(); await sospendi(150); await icona(ETIC).click();
+  const vicini = await finito();
+  s = await spiato(doc);
+  check(!!vicini && lavori().length === 1 && !s.link.length && s.clic.length === 2 && s.clic[1] - s.clic[0] < 400,
+    `due clic a ${s.clic[1] - s.clic[0]} ms l'uno dall'altro: una stampa (got ${lavori().length} fogli · ${s.link.length} PDF)`);
+  await daCapo();
+  const apre2 = nuovaPagina(8000);
+  await icona(ETIC).click(); await sospendi(700); await icona(ETIC).click();
+  await apre2;
+  await sospendi(1500);
+  s = await spiato(doc);
+  check(lavori().length === 0 && (await ordini()).length === 0 && s.link.length === 2 && s.link.every((x) => !x.vero && x.attiva === true) && s.clic[1] - s.clic[0] >= 400,
+    `due clic a ${s.clic[1] - s.clic[0]} ms: due volte il PDF, nessuna stampa (got ${lavori().length} fogli · ${JSON.stringify(s.link)})`);
+
+  // l'etichetta anagrafica del gestionale: un clic il PDF, come sempre…
+  await daCapo();
+  const apre3 = nuovaPagina(8000);
+  await icona(BRAC).click();
+  const bp = await apre3;
+  await bp?.waitForURL(/PsoBraccialettoHMIMU/, { timeout: 8000 }).catch(() => {});
+  await sospendi(800);
+  s = await spiato(doc);
+  check(!!bp && bp.url() === A.ORIGIN + linkBrac("999001") && s.link.length === 1 && !s.link[0].vero && s.link[0].attiva === true
+    && lavori().length === 0 && (await ordini()).length === 0,
+  `un clic su «Stampa Bracciale»: il PDF in una scheda, come sempre (got ${bp ? bp.url().slice(-50) : "niente"} · ${JSON.stringify(s.link)} · ${lavori().length} fogli)`);
+  // …due o tre: UNA stampa con quelle copie, il PDF preso una volta, una riga sola «×N»
+  for (const n of [2, 3]) {
+    await daCapo();
+    await icona(BRAC).click({ clickCount: n });
+    const rec = await finche(async () => (await ordiniBrac()).find((x) => x.stato === "avviso" && x.fogli), 30000);
+    await sospendi(1000);
+    s = await spiato(doc);
+    const lb = lavori();
+    check(!!rec && (await ordiniBrac()).length === 1 && rec.fogli.length === n && lb.length === n && lb.every((x) => x.tipo === "etichette" && x.stampante === "Zebra ZD421")
+      && presiBrac === 1 && !s.link.length && !fogliAperti().length,
+    `${n} clic su «Stampa Bracciale»: una stampa con ${n} copie all'etichettatrice, il PDF preso una volta, nessuna scheda (got ${rec ? rec.fogli.length : 0} copie · ${lb.length} fogli · ${presiBrac} PDF · ${s.link.length})`);
+    const rb = (await righeViste(doc)).filter((r) => /^Etichetta anagrafica/.test(r.n)).map((r) => r.n);
+    check(rb.length > 0 && rb.every((x) => x === `Etichetta anagrafica ×${n}`), `sotto la pill una riga sola, «×${n}» (got ${JSON.stringify(rb)})`);
+  }
+  // un doppio clic mentre quella stampa gira: niente (né copie né PDF)
+  await daCapo();
+  comportati({ lento: 2000 });
+  await icona(BRAC).dblclick();
+  await finche(async () => (await ordiniBrac()).find((x) => x.stato === "stampo"), 10000);
+  await sospendi(600);
+  await icona(BRAC).dblclick();
+  await finche(async () => (await ordiniBrac()).find((x) => x.stato === "avviso"), 30000);
+  await sospendi(1000);
+  s = await spiato(doc);
+  check((await ordiniBrac()).length === 1 && lavori().length === 2 && presiBrac === 1 && !s.link.length && !fogliAperti().length,
+    `un doppio clic mentre stampa: niente, né copie né PDF (got ${(await ordiniBrac()).length} ordini · ${lavori().length} fogli · ${s.link.length})`);
+  comportati();
+
+  // i link che non sono suoi passano com'è, subito: l'etichetta anagrafica di un altro episodio, un link di un altro sito
+  await daCapo();
+  const apre4 = nuovaPagina(8000);
+  await icona(BRAC_ALTRO).click();
+  const ap = await apre4;
+  s = await spiato(doc);
+  check(!!ap && s.link.length === 1 && s.link[0].vero && !s.link[0].prev, `«Stampa Bracciale» di un altro episodio: il clic arriva al link com'è (got ${JSON.stringify(s.link)})`);
+  await doc.evaluate(() => {
+    const a = document.createElement("a");
+    a.title = "Stampa Etichette"; a.id = "altrove"; a.textContent = "etichette altrove";
+    a.href = "https://altro.example.org/sa4pso/restrict/RcsStampaEtichetteLISHMIMU.do?RICHIESTA_ID=600001&RICHIESTA_PROG=1";
+    a.addEventListener("click", (e) => { window.__link.push({ vero: e.isTrusted, prev: e.defaultPrevented, titolo: "altrove" }); e.preventDefault(); });
+    document.body.prepend(a);
+  });
+  await azzeraSpia(doc);
+  await doc.locator("#altrove").dblclick();
+  await sospendi(800);
+  s = await spiato(doc);
+  check(s.link.length === 2 && s.link.every((x) => x.vero && !x.prev) && lavori().length === 0,
+    `«Stampa Etichette» di un altro sito: i due clic arrivano al link com'è, niente stampa (got ${JSON.stringify(s.link)})`);
+
+  // la stampa automatica spenta: nessuna attesa, il doppio clic è quello della pagina
+  await scelte({ ...ATTIVA, attiva: false });
+  await finche(async () => !(await stampantina(doc)), 3000);
+  await sospendi(500);
+  await daCapo();
+  const apre5 = nuovaPagina(8000);
+  await icona(LISTA).click();
+  const lp = await apre5;
+  s = await spiato(doc);
+  check(!!lp && s.link.length === 1 && s.link[0].vero && !s.link[0].prev, `spenta: il clic arriva al link com'è, subito, e il PDF si apre (got ${JSON.stringify(s.link)})`);
+  await azzeraSpia(doc);
+  await icona(ETIC).dblclick();
+  await sospendi(1500);
+  s = await spiato(doc);
+  check(s.link.length >= 1 && s.link.length === s.clic.length && s.link.every((x) => x.vero && !x.prev) && s.giu.every((x) => !x.prev) && lavori().length === 0 && (await ordini()).length === 0,
+    `spenta: il doppio clic è quello della pagina — ogni clic che le arriva va al link com'è —, niente stampa (got ${JSON.stringify(s.link)} · ${s.clic.length} clic veri · ${lavori().length})`);
+  ctx.off("page", segna);
+  await chiudiAperte();
   ritocca = null;
 }
 

@@ -124,6 +124,9 @@
     chi: { POC: "POC", Lab: "Lab", RX: "RX" },   // (due laboratori: «Urg» e «Lab», dal nome della risorsa)
   };
   const COPIE_MAX = 10;          // le copie dell'etichetta anagrafica, a tocchi
+  // Clic (e tocchi) di fila: uno a meno di tanto dal precedente è dello stesso
+  // gruppo, e tanto dopo l'ultimo si fa — la stampa, le copie, o il PDF di un clic solo
+  const CLIC_FINESTRA = 400;
 
   // Resources ("Risorsa" dropdown values) — verified in the saved pages.
   const RES = {
@@ -867,13 +870,13 @@
   // each with its own label PDF and its own exam-list PDF. ALL of them must
   // be printed, so rows are grouped per (RICHIESTA_ID, RICHIESTA_PROG) and
   // never collapsed.
+  const SEL_FOGLI = 'a[title="Stampa Etichette"], a[title="Stampa Richiesta"], a[title="Stampa Prenotazione Esterna"], a[title="Stampa Richiesta Radiologia"], a[href*="REPORT=PsoRichiestaAccertamentiRadiografici"]';
   function printModel(doc, baseUrl) {
     const map = {}; // richiestaId -> { prog -> row, _meta }
     // (il foglio della radiologia ha più nomi — «Stampa Prenotazione Esterna»,
     // «Stampa Richiesta Radiologia», altri — ma un indirizzo solo: si
     // riconosce da quello, come titolo qualunque)
-    const sel = 'a[title="Stampa Etichette"], a[title="Stampa Richiesta"], a[title="Stampa Prenotazione Esterna"], a[title="Stampa Richiesta Radiologia"], a[href*="REPORT=PsoRichiestaAccertamentiRadiografici"]';
-    for (const a of doc.querySelectorAll(sel)) {
+    for (const a of doc.querySelectorAll(SEL_FOGLI)) {
       const href = absUrl(a, "href", baseUrl);
       const rid = param(href, "RICHIESTA_ID");
       if (!rid) continue;
@@ -7253,8 +7256,8 @@
     // L'etichetta anagrafica, accanto agli identificativi: un link vero, quello
     // della pagina (senza la stampa automatica si apre in una scheda, come dal
     // gestionale). Con la stampa automatica, all'etichettatrice col motore e il
-    // giornale di sempre, e le copie a tocchi: ogni tocco entro un secondo
-    // dall'ultimo è una copia in più (fino a 10, «×2» sul bottone); un secondo
+    // giornale di sempre, e le copie a tocchi: ogni tocco entro CLIC_FINESTRA
+    // dall'ultimo è una copia in più (fino a 10, «×2» sul bottone); CLIC_FINESTRA
     // dopo l'ultimo parte UNA stampa con quelle copie (il PDF preso una volta).
     // Un tocco mentre quella stampa gira non fa niente: il bottone pulsa.
     braccialeHtml() {
@@ -7278,17 +7281,89 @@
       if (!url) { e.preventDefault(); return; }
       if (!this.stampaPronta() || this.stampaAuto.s.attiva === false) return;   // il link fa da sé
       e.preventDefault();
-      const t = this._brac, b = e.currentTarget;
+      this.braccialeCopie(url, ep, 1);
+    }
+    // n copie in più: un tocco sul bottone, o i clic sull'icona del gestionale
+    // (un conto solo per tutti e due, e una riga sola sotto la pill)
+    braccialeCopie(url, ep, n) {
+      const t = this._brac, b = this.root.querySelector("#bracciale");
       if (t && t.url === url) {
-        t.n = Math.min(COPIE_MAX, t.n + 1);
+        t.n = Math.min(COPIE_MAX, t.n + n);
         clearTimeout(t.timer);
-        t.timer = setTimeout(() => this.braccialeVia(), 1000);
       } else if (this._bracInvio || (this.ordini || []).some((x) => x.stato === "stampo" && ((x.stampa && x.stampa.jobs) || []).some((j) => j.url === url))) {
-        b.classList.remove("pulsa"); void b.offsetWidth; b.classList.add("pulsa");
+        if (b) { b.classList.remove("pulsa"); void b.offsetWidth; b.classList.add("pulsa"); }
         return;
-      } else this._brac = { url, ep, n: 1, timer: setTimeout(() => this.braccialeVia(), 1000) };
-      const w = this.root.querySelector("#bracciale");
-      if (w) w.innerHTML = this.braccialeDentro();
+      } else this._brac = { url, ep, n: Math.min(COPIE_MAX, n) };
+      this._brac.timer = setTimeout(() => this.braccialeVia(), CLIC_FINESTRA);
+      if (b) b.innerHTML = this.braccialeDentro();
+    }
+    // Le icone di stampa del gestionale — le etichette, la lista esami, il
+    // foglio RX, l'etichetta anagrafica —, con la stampa automatica accesa: un
+    // clic apre il PDF come sempre (quel clic, ridato CLIC_FINESTRA dopo,
+    // quando si sa che non ne arriva un altro: il link della pagina, nella sua
+    // finestra); due o più di fila stampano quel foglio alla sua stampante,
+    // una volta; sull'etichetta anagrafica ogni clic è una copia. Spenta, un
+    // link che non è dei suoi, un errore: il clic passa com'è, senza attese.
+    seguiDoppioClic() {
+      if (LAVORO || PONTE_VALORI) return;
+      const icona = (e) => {
+        if (!e.isTrusted || e.button !== 0 || !e.detail || e.ctrlKey || e.shiftKey || e.metaKey || e.altKey) return null;
+        if (!this.stampaPronta() || this.stampaAuto.s.attiva === false) return null;
+        const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+        return a ? this.iconaStampa(a) : null;
+      };
+      // (il doppio clic non seleziona il testo intorno: solo su queste icone)
+      document.addEventListener("mousedown", (e) => { try { if (e.detail > 1 && icona(e)) e.preventDefault(); } catch { /* com'è */ } }, true);
+      document.addEventListener("click", (e) => {
+        let ic = null;
+        try { ic = icona(e); } catch { /* com'è */ }
+        if (!ic) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.clicIcona(ic);
+      }, true);
+    }
+    // Un'icona di stampa del gestionale, se il link è uno dei suoi (stessa
+    // origine, il servlet giusto, e per l'etichetta anagrafica QUESTO episodio):
+    // { a, url, brac, ep } o { a, url, job, rid }. Mai un indirizzo costruito.
+    iconaStampa(a) {
+      const base = location.href, url = absUrl(a, "href", base);
+      if (a.matches('a[href*="PsoBraccialettoHMIMU"]')) {
+        const ep = this.epDiQuesta();
+        const mio = (this.pageType === "patient" || this.pageType === "vista") && linkBracciale(document, ep, base);
+        return mio && mio === url ? { a, url, brac: true, ep } : null;
+      }
+      if (!a.matches(SEL_FOGLI)) return null;
+      const u = new URL(url);
+      const ok = u.origin === location.origin && (a.getAttribute("title") === "Stampa Etichette" ? /\/RcsStampaEtichetteLISHMIMU\.do$/i.test(u.pathname)
+        : /\/jasperservlet$/i.test(u.pathname) && ["RcsRichiesta", "PsoRichiestaAccertamentiRadiografici"].includes(u.searchParams.get("REPORT")));
+      const rid = ok ? u.searchParams.get("RICHIESTA_ID") : "";
+      const job = rid ? printJobsFor(printModel(document, base), rid).find((j) => j.url === url) : null;
+      return job ? { a, url, job, rid } : null;
+    }
+    clicIcona(ic) {
+      let d = this._clic;
+      if (d && d.url === ic.url) { d.n++; clearTimeout(d.timer); }
+      else {
+        if (d) { clearTimeout(d.timer); this.clicFatto(d); }   // (un'altra icona: quella di prima si fa subito)
+        d = this._clic = { ...ic, n: 1 };
+      }
+      // l'etichetta anagrafica: dal secondo clic (o subito, se il bottone sta già contando) le copie
+      if (d.brac && (d.conta || d.n > 1 || (this._brac && this._brac.url === d.url))) {
+        this.braccialeCopie(d.url, d.ep, d.conta ? 1 : d.n);
+        d.conta = true;
+      }
+      d.timer = setTimeout(() => { if (this._clic === d) this._clic = null; this.clicFatto(d); }, CLIC_FINESTRA);
+    }
+    clicFatto(d) {
+      if (d.brac ? d.conta : d.n > 1) {
+        // (le copie partono da braccialeVia; un foglio, una volta, come dalla sezione Stampa)
+        if (!d.brac) avviaStampa([d.job], { panel: this, title: `Richiesta ${d.rid}.`, ep: this.episodeId, paziente: this.nomePaziente(), url: location.href, resta: true });
+        return;
+      }
+      // un clic solo: lo stesso link, dato dalla pagina come sempre (non è un clic
+      // vero: il nostro ascolto lo lascia passare), finché il gesto del medico vale
+      d.a.click();
     }
     async braccialeVia() {
       const t = this._brac;
@@ -7331,6 +7406,7 @@
       try {
         leggi();
         chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && (ch.stampa || ch.stampaEsito)) leggi(); });
+        this.seguiDoppioClic();   // (le icone di stampa del gestionale: doppio clic = stampa)
         // l'aiutante c'è ancora? (al più ogni mezz'ora lo chiede il service worker)
         ask({ t: "stampaVerifica" });
       } catch { /* senza la memoria dell'estensione la stampa automatica non c'è: il pannello sì */ }

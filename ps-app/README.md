@@ -1404,7 +1404,16 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   **rossa** se l'ultimo foglio non è uscito o ha un esito sconosciuto, e lo dice; con accanto
   **«non installata»** se l'aiutante non c'è più (lo si chiede all'aiutante al più ogni mezz'ora,
   aprendo il pannello). Un tocco apre le Stampanti.
-- **L'etichetta anagrafica**: accanto al nome, se la pagina ha il suo «Stampa Bracciale» (per quell'episodio), un braccialetto: ogni tocco entro un secondo è una copia (fino a 10, «×3»), poi una stampa sola all'etichettatrice, col link della pagina preso una volta, dopo le etichette di un ordine che stampa (intanto il bottone tiene «×N», spento, e la sua riga sotto la pill ha la clessidra: al passaggio è il ✕ che la toglie); un tocco mentre esce non fa niente. Senza stampa automatica apre il PDF come il gestionale.
+- **L'etichetta anagrafica**: accanto al nome, se la pagina ha il suo «Stampa Bracciale» (per quell'episodio), un braccialetto: ogni tocco entro 400 ms dall'altro è una copia (fino a 10, «×3»), poi una stampa sola all'etichettatrice, col link della pagina preso una volta, dopo le etichette di un ordine che stampa (intanto il bottone tiene «×N», spento, e la sua riga sotto la pill ha la clessidra: al passaggio è il ✕ che la toglie); un tocco mentre esce non fa niente. Senza stampa automatica apre il PDF come il gestionale.
+- **Doppio clic sulle icone del gestionale**: con la stampa automatica accesa, le icone di stampa della
+  pagina del paziente — le etichette, «Stampa Richiesta», il foglio RX — con **un clic** aprono il PDF come
+  sempre (lo stesso link, nella sua finestra: il clic, tenuto 400 ms per vedere se ne arriva un altro, poi
+  ridato alla pagina), con **due o tre di fila** (a meno di 400 ms l'uno dall'altro) stampano quel foglio,
+  una volta, alla sua stampante, con la sua riga sotto la pill. **«Stampa Bracciale»**: un clic il PDF, due o
+  più l'etichetta anagrafica con tante copie quanti i clic (fino a 10), una stampa e una riga sola «×N», lo
+  stesso conto del braccialetto nel pannello. Solo i link della pagina, così come sono (stessa origine, il
+  servlet giusto, l'etichetta anagrafica di questo episodio); spenta la stampa automatica, o un link che non
+  è uno di questi, il clic passa subito, com'è.
 - **Le etichette dritte**: SumatraPDF gira di 90° le pagine più larghe che alte, e coi driver
   Zebra, ZDesigner, TSC e Citizen l'etichetta uscirebbe di traverso. Nelle Stampanti,
   «Etichette più larghe che alte: non girarle / girale di 90°» (di partenza «non girarle» per
