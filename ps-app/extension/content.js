@@ -7316,7 +7316,7 @@
     }
     // n copie in più: un tocco sul bottone, o i clic sull'icona del gestionale
     // (un conto solo per tutti e due, e una riga sola sotto la pill)
-    braccialeCopie(url, ep, n) {
+    braccialeCopie(url, ep, n, icona) {
       const t = this._brac, b = this.root.querySelector("#bracciale");
       if (t && t.url === url) {
         t.n = Math.min(COPIE_MAX, t.n + n);
@@ -7327,6 +7327,41 @@
       } else this._brac = { url, ep, n: Math.min(COPIE_MAX, n) };
       this._brac.timer = setTimeout(() => this.braccialeVia(), CLIC_FINESTRA);
       if (b) b.innerHTML = this.braccialeDentro();
+      this.contoIcona(icona || (this._conto && this._conto.a));
+    }
+    // Il «×N» accanto all'icona del gestionale, mentre si clicca: un nostro
+    // elemento fisso sopra la pagina (la pagina non si tocca), che segue l'icona
+    // se la pagina scorre, e se ne va quando la stampa parte (`a` vuoto).
+    contoIcona(a) {
+      let w = this._conto;
+      const n = (this._brac && this._brac.n) || 0;
+      if (!a || !a.isConnected || n < 2) {
+        if (w) { w.via(); this._conto = null; }
+        return;
+      }
+      if (!w) {
+        const el = document.createElement("div");
+        el.id = "psassist-conto";
+        const r = el.attachShadow({ mode: "open" });
+        // (com'è il «×N» del bottone del pannello, .bracn)
+        r.innerHTML = `<style>b { position: fixed; z-index: 2147483647; pointer-events: none; transform: translateX(-100%); background: #0B5CAD; color: #fff;
+          border-radius: 999px; padding: 0 4px; font: 700 10.5px/15px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          font-variant-numeric: tabular-nums; }</style><b></b>`;
+        document.documentElement.appendChild(el);
+        const metti = () => {
+          if (!w.a.isConnected) return this.contoIcona(null);
+          const q = w.a.getBoundingClientRect();
+          w.b.style.left = `${q.right + 6}px`;
+          w.b.style.top = `${q.top - 4}px`;
+        };
+        w = this._conto = { a, b: r.querySelector("b"), metti,
+          via: () => { window.removeEventListener("scroll", metti, true); window.removeEventListener("resize", metti); el.remove(); } };
+        window.addEventListener("scroll", metti, true);
+        window.addEventListener("resize", metti);
+      }
+      w.a = a;
+      w.b.textContent = `×${n}`;
+      w.metti();
     }
     // Le icone di stampa del gestionale — le etichette, la lista esami, il
     // foglio RX, l'etichetta anagrafica —, con la stampa automatica accesa: un
@@ -7381,7 +7416,7 @@
       }
       // l'etichetta anagrafica: dal secondo clic (o subito, se il bottone sta già contando) le copie
       if (d.brac && (d.conta || d.n > 1 || (this._brac && this._brac.url === d.url))) {
-        this.braccialeCopie(d.url, d.ep, d.conta ? 1 : d.n);
+        this.braccialeCopie(d.url, d.ep, d.conta ? 1 : d.n, d.a);
         d.conta = true;
       }
       d.timer = setTimeout(() => { if (this._clic === d) this._clic = null; this.clicFatto(d); }, CLIC_FINESTRA);
@@ -7399,6 +7434,7 @@
     async braccialeVia() {
       const t = this._brac;
       this._brac = null;
+      this.contoIcona(null);   // (la stampa parte: il «×N» ora è la riga sotto la pill)
       const w = this.root.querySelector("#bracciale");
       if (w) w.innerHTML = this.braccialeDentro();
       if (!t) return;
