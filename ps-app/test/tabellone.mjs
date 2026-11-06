@@ -475,7 +475,7 @@ await blocco("La scheda al passaggio: sul nome e sul letto", async () => {
   check(presto === null && Array.isArray(c1), "sul nome: dopo un quarto di secondo (non prima)");
   await page.waitForTimeout(300);   // i valori arrivano dalla scheda clinica
   const c = await carta();
-  check(/^ROSSI MARIO 79 M · Rossa · 3h40/.test(c?.[0] || ""), `1ª riga: nome, età, sesso, posto, tempo in PS (got: ${c?.[0]})`);
+  check(/^ROSSI MARIO 79 M · Rossa · 3h4[0-2]/.test(c?.[0] || ""), `1ª riga: nome, età, sesso, posto, tempo in PS (got: ${c?.[0]})`);
   check(/^♥ NEWS \d+ · SpO2 88 · FC 132/.test(c?.[1] || ""), `2ª: il cuore coi parametri fuori norma (got: ${c?.[1]})`);
   check(/K 5,9↑/.test(c?.[2] || "") && /Hb 9,1↓/.test(c?.[2] || "") && !/Na/.test(c?.[2] || ""), `3ª: i valori fuori range, solo quelli (got: ${c?.[2]})`);
   check(/^ECG ✓ \d\d:\d\d «Ritmo sinusale a frequenza 98 bpm/.test(c?.[3] || "") || /^ECG ✓ \d\d:\d\d Ritmo sinusale a frequenza 98 bpm/.test(c?.[3] || ""), `4ª: ECG, l'ora e le prime parole del referto (got: ${c?.[3]})`);

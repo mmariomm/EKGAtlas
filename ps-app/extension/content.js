@@ -5675,7 +5675,7 @@
     .pieg.err { background: #B3261E; }
     /* La striscia a pannello aperto: un chip in intestazione, la sua riga corta */
     #girow { display: contents; }
-    .gchip { flex: 0 1 auto; min-width: 64px; overflow: hidden; display: inline-flex; flex-direction: row-reverse; align-items: center; gap: 4px; height: 30px; padding: 0 3px 0 9px;
+    .gchip { flex: 0 1000 auto; min-width: 64px; overflow: hidden; display: inline-flex; flex-direction: row-reverse; align-items: center; gap: 4px; height: 30px; padding: 0 3px 0 9px;
              border-radius: 999px; background: #EAF2FA; color: #0B2A4A; font-size: 12px; font-weight: 600; white-space: nowrap; }
     .gchip.warn { background: #FFF1D6; color: #6b3d02; }
     .gchip.err { background: #FBEBEA; color: #7c1a14; }
@@ -5718,13 +5718,13 @@
     .hd:active { cursor: grabbing; }
     .hd .logo { display: inline-flex; }
     .hd b { font-size: 16px; font-weight: 600; letter-spacing: .1px; }
-    /* Il nome del paziente non si stringe: cedono prima i valori del cuore
-       (resta il ♥), poi l'episodio. */
-    .hd .who { flex: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 50%; }
+    /* Il nome del paziente cede per ultimo: prima i valori del cuore (resta
+       il ♥), il Da fare, la chip dell'ordine, l'episodio. Mai fuori, sotto la pill. */
+    .hd .who { flex: 0 1 auto; min-width: 3em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 50%; }
     .card:focus { outline: none; }
     .hd .hsp { flex: 1 1 auto; }
     .pill .who { max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .hd .sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .hd .sub { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .iconbtn { display: inline-grid; place-items: center; width: 36px; height: 36px; background: transparent; border: 0; color: #5B6B7A;
                cursor: pointer; border-radius: 8px; padding: 0; }
     .iconbtn:hover { background: #F1F4F7; color: #16232E; }
@@ -6322,9 +6322,10 @@
     .hdpaz > :first-child { margin-left: 10px; }
     .hdpaz > * { flex: none; }
     .hdpaz > .cuore { flex: 0 1000 auto; min-width: 15px; overflow: hidden; white-space: nowrap; }
-    .hdpaz > .dfslot { flex: 0 100000 auto; min-width: 0; display: inline-flex; }
+    /* il «Da fare» cede per primo, ma mai sotto la sua icona: sotto, scavalcherebbe il bottone accanto */
+    .hdpaz > .dfslot { flex: 0 100000 auto; min-width: 28px; display: inline-flex; }
     .hdpaz > .dfslot > * { flex: none; }
-    .hdpaz .dfic.dfprima { flex: 0 1 auto; min-width: 0; max-width: 24em; padding: 0 9px 0 7px; gap: 5px; }
+    .hdpaz .dfic.dfprima { flex: 0 1 auto; min-width: 0; max-width: 24em; padding: 0 9px 0 7px; gap: 5px; overflow: hidden; }
     .dfict { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; white-space: normal; word-break: break-all;
              font-size: 12.5px; font-weight: 500; }
     .dfict b { font-weight: 700; }

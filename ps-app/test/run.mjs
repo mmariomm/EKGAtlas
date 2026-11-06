@@ -3836,7 +3836,8 @@ async function scenarioConsegne(browser) {
   await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
   if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
   await page.waitForTimeout(300);
-  const chiavi = () => page.evaluate(() => Object.keys(localStorage).sort().join());
+  // tocco.v1 è l'ora dell'ultimo clic (per il dialogo delle etichette): non è roba delle Consegne
+  const chiavi = () => page.evaluate(() => Object.keys(localStorage).filter((k) => k !== "psassist:tocco.v1").sort().join());
   const prima = await chiavi();
   await $panel(page, "#menubtn").click();
   await $panel(page, "#consmenu").click();
