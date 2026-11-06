@@ -479,7 +479,8 @@ await blocco("La scheda al passaggio: sul nome e sul letto", async () => {
   check(/^♥ NEWS \d+ · SpO2 88 · FC 132/.test(c?.[1] || ""), `2ª: il cuore coi parametri fuori norma (got: ${c?.[1]})`);
   check(/K 5,9↑/.test(c?.[2] || "") && /Hb 9,1↓/.test(c?.[2] || "") && !/Na/.test(c?.[2] || ""), `3ª: i valori fuori range, solo quelli (got: ${c?.[2]})`);
   check(/^ECG ✓ \d\d:\d\d «Ritmo sinusale a frequenza 98 bpm/.test(c?.[3] || "") || /^ECG ✓ \d\d:\d\d Ritmo sinusale a frequenza 98 bpm/.test(c?.[3] || ""), `4ª: ECG, l'ora e le prime parole del referto (got: ${c?.[3]})`);
-  check(c?.some((x) => /^RX addome ⏳ 40′/.test(x)) && c?.some((x) => /^RX torace ✓ .*Non addensamenti/.test(x)), `RX: in attesa col tempo, refertato con le prime parole (got: ${c?.slice(4).join(" | ")})`);
+  // (in attesa: il tempo in ambra, senza ⏳ — i minuti lo dicono già)
+  check(c?.some((x) => /^RX addome 40′/.test(x)) && !c?.some((x) => /⏳/.test(x)) && c?.some((x) => /^RX torace ✓ .*Non addensamenti/.test(x)), `RX: in attesa col tempo, refertato con le prime parole (got: ${c?.slice(4).join(" | ")})`);
   check(c?.length === 6, `niente altro (got: ${c?.length} righe)`);
   const dfCarta = await page.evaluate(() => [...(document.getElementById("psassist-host").shadowRoot.querySelectorAll(".pzcarta .pcd .dfr") || [])].map((x) => x.textContent.trim()));
   check(dfCarta.join("|") === "rivalutare dolore", `e sotto, le sue cose da fare aperte (got: ${dfCarta.join(" | ")})`);
@@ -678,6 +679,8 @@ await blocco("Segue il gestionale: il link della pagina, ogni 10 minuti, ⟳", a
   check((await ls(page, "segue.v1")) === false, "«segue il gestionale» spento (segue.v1)");
   await page.clock.runFor(25 * 60e3);
   check((await sotto()).length === 2, "spento: niente da solo");
+  // (il ⟳ è l'icona che rilegge, la stessa di tutto il pannello: niente glifo)
+  check((await $p(page, "#tbsync svg").count()) === 1 && !(await $p(page, "#tbsync").innerText()).trim(), "il ⟳ è un'icona del pannello, non il glifo");
   await $p(page, "#tbsync").click();
   await page.clock.runFor(500);
   check((await sotto()).length === 3, "⟳: subito");

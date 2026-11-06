@@ -60,8 +60,8 @@ Chrome e senza amministratore. Non mentre un ordine, una stampa o un ordine dal 
 vuoi (la pagina non si ricarica mai da sola: lì può esserci un testo non mandato). Se la versione
 nuova non parte, doppio clic su `ripristina.cmd` in `%LOCALAPPDATA%\PSAssist\stampa` e ⟳ in
 `chrome://extensions`. Senza aiutante, o caricata da un'altra cartella, il ⋯ dice come fare; a mano
-resta il modo di sempre: sostituisci i file nella STESSA cartella e **Ricarica estensione** (⋯),
-che non c'è mentre un giro di esami sta mandando.
+resta il modo di sempre: sostituisci i file nella STESSA cartella e **Ricarica** (in fondo al ⋯,
+accanto alla versione), che non c'è mentre un giro di esami sta mandando.
 Per sapere se c'è una versione nuova PS Assist legge, una volta al giorno e aprendo il ⋯,
 `VERSION.txt` da `raw.githubusercontent.com` (e lo zip, solo al tocco): richieste senza cookie e
 senza dati, l'eccezione dichiarata nella regola 9.
@@ -126,11 +126,13 @@ Ripassando si riapre **dove eri**: la stessa schermata, scorsa allo stesso punto
 resta, sopra la finestra, e si trascina anche lì; se copre ⋯ e — quelli si fanno in là) la fissa, un
 altro la libera, Esc la chiude; la pill che ricompare sotto il mouse fermo non si riapre da sola; col
 dito un tocco apre e un tocco chiude. **Finestra** è quella di sempre, qui sopra: si apre e si chiude
-solo con un tocco. **Colonna**: a destra, a
+con un tocco. In tutt'e due **F2** (non mentre scrivi nel gestionale) la apre **sui Pazienti, col
+filtro pronto** — F2 · lettere · Invio apre un paziente — e la richiude. **Colonna**: a destra, a
 tutta altezza, e il gestionale **si stringe** accanto (un margine destro alla pagina) invece di
 essere coperto; larghezza dal bordo sinistro (420 px – 60% dello schermo), ricordata; **F2** (non
-mentre scrivi nel gestionale), la linguetta o **—** la nascondono: resta una linguetta di 7 px.
-**Tabellone** (⋯, o il **↗** sulla lista) apre la pagina `tabellone.html` dell'estensione: lo stesso
+mentre scrivi nel gestionale), la linguetta o **—** la nascondono: resta una linguetta di 7 px
+(F2 la riapre dov'era).
+**Tabellone** (⋯, o la sua icona accanto al ⋯ sulla lista) apre la pagina `tabellone.html` dell'estensione: lo stesso
 tabellone a tutta pagina, da fissare o sul secondo schermo. Disegna da uno specchio delle sole
 chiavi del tabellone che le schede del gestionale tengono in `chrome.storage.local` a ogni
 cambiamento; un tocco su un paziente porta davanti la scheda del gestionale (mai quella di un
@@ -144,19 +146,25 @@ pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha a
 **giro di esami** no: dalla spedizione alle etichette parla la striscia nell'angolo, e la
 finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
 «✓ Copiato · incolla». Il menu **⋯** è a sezioni, ognuna col suo titolo piccolo, le voci corte due
-per riga; una sezione che su quella pagina non ha voci non c'è. In cima **Forma** (vedi sopra), con
-**Al centro** e **Affianca a destra** (una colonna, col gestionale accanto). Poi:
+per riga, ognuna con la sua **icona** (grigia, 16 px) accanto alla parola; una sezione che su quella
+pagina non ha voci non c'è. In cima **Forma** (vedi sopra), con **Al centro** e **Affianca a
+destra** (una colonna, col gestionale accanto). Poi:
 - **Paziente** (sulla sua pagina): **Ricetta SISS** e **Terapia** (solo con l'estensione), **Stampa
-  le richieste**; in Dimissioni anche **Esporta i fogli (JSON)** e **Importa i fogli…** (sulla lista,
-  dove un paziente non c'è, la sezione si chiama **Dimissioni**);
-- **Strumenti**: sulla stanza **Modifica la stanza** e **Segue il gestionale**; **Tabellone**,
-  **iPhone** (il Ponte) e **Registra** (solo con l'estensione), **Tempi** (il cronometro),
-  **Riferimenti** (i *can't-miss killers*), **Consegne** (vedi sotto);
-- **Impostazioni**: **Stampanti**, e — scelte le due stampanti — **Stampa automatica: attiva ·
-  Spegni** (vedi «Stampa automatica»), **Indirizzo del portale**, il **Registro**, **Reset dati
-  pazienti**, **Ricarica estensione** e, quando c'è una versione nuova, **Aggiorna app**;
+  le richieste**; in Dimissioni anche **Esporta i fogli** (un JSON) e **Importa i fogli…** (sulla
+  lista, dove un paziente non c'è, la sezione si chiama **Dimissioni**);
+- **Strumenti**, quelli clinici: **Tabellone** e **iPhone** (il Ponte; solo con l'estensione),
+  **Cronometro**, **Riferimenti** (i *can't-miss killers*), **Consegne** (vedi sotto); in fondo, sulla stanza, **Modifica la
+  stanza** e **Segue il gestionale**;
+- **Impostazioni**: **Stampanti**, e — scelte le due stampanti — **Stampa automatica** (vedi
+  «Stampa automatica»), **Registrazioni**, il **Registro**, **Indirizzo del portale** e per ultimo,
+  da solo sulla sua riga e in rosso, **Reset dati pazienti**. Le voci che si accendono e si spengono
+  (Segue il gestionale, Stampa automatica) si spuntano: al posto dell'icona il loro stato (il
+  pallino blu con la spunta, acceso);
 
-e in fondo la versione. Il cronometro compare in intestazione **solo mentre corre**
+e in fondo la versione, con accanto **Ricarica** (l'estensione) e sopra, quando c'è una versione
+nuova, **Aggiorna app**. Le schermate che si aprono dal ⋯ (Riferimenti, Cronometro, Registrazioni,
+iPhone, Ricetta SISS, Terapia) dicono dove sei: al posto delle schede **«‹ [icona] Nome»**, e ‹ (o
+Esc) torna alla scheda da cui eri venuto. Il cronometro compare in intestazione **solo mentre corre**
 (un tocco sul tempo apre la scheda, ⏹ lo ferma).
 
 **Riferimenti** (menu ⋯) è la tabella del medico, i *can't-miss killers*, nel suo inglese: in cima
@@ -236,7 +244,7 @@ letto** apre una scheda da leggere — non prende il clic (sotto, il clic apre i
 sempre; ▾ e «Sposta in…» restano), non copre mai il suo letto, si chiude uscendo. Righe solo se
 hanno qualcosa, in quest'ordine: `▌ROSSI MARIO 79 M · Rossa · 3h40` · `♥ NEWS 8 · SpO2 88 · FC 132`
 (i parametri fuori norma) · i **valori fuori range** dell'ultimo prelievo, `K 5,9↑ Hb 9,1↓` · **ECG**
-(`✓ 10:02 «le prime parole del referto»`, o `⏳ 40′`) · **RX** (`RX addome ⏳ 40′`, `RX torace ✓
+(`✓ 10:02 «le prime parole del referto»`, o `40′` in ambra) · **RX** (`RX addome 40′`, `RX torace ✓
 «…»`) · le sue **cose da fare** aperte, tutte. Valori e referti scritti vengono dalla scheda clinica del paziente (estensione), solo da
 quest'ingresso in PS (o dalle ultime 24 ore), con la stessa regola d'identità degli Esiti. Passando
 su una riga, il suo letto si accende (e viceversa).
@@ -292,8 +300,8 @@ dove ne stanno quanti servono. Nelle aree chi ha qualcosa da fare porta l'icona 
 numero accanto al nome, e la prima cosa da fare sotto: un tocco sull'icona apre la sua lista, come
 nella riga; nel letto c'è il pallino, e la lista si apre dal menu (**Da fare…**).
 
-**Cercare: basta scrivere.** Una lettera, con i Pazienti davanti e il cursore fuori da un campo, apre
-un filtro sopra la lista, già con quella lettera: la lista tiene solo chi torna, nella stanza gli
+**Cercare: basta scrivere.** Una lettera, con i Pazienti davanti e il cursore fuori da un campo (o
+la **lente** accanto al ⟳, o **F2** da un'altra pagina), apre un filtro sopra la lista, già con quella lettera: la lista tiene solo chi torna, nella stanza gli
 altri si spengono. **Invio** apre il paziente se ne torna uno solo; **Esc** (o la ✕) lo toglie.
 
 **La stanza di partenza è quella del PS**, dallo schizzo del medico: da sinistra l'**OBI** (quattro
@@ -522,9 +530,11 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    coagulazione che i pacchetti mettono: qui si vede e si toglie) e **SARSCOV** (tampone
    antigenico SARS-CoV-2, laboratorio centrale). Il **quesito RX** compare nella colonna RX
    **solo quando un RX è scelto**. La barra **«Conferma per ROSSI M. · N esami»** (piena, ferma
-   in fondo) c'è **solo quando qualcosa è scelto**; **Ctrl+Invio** la preme, e **solo carrello**
-   le sta accanto, piccolo. La **Stampa** delle richieste confermate non sta più qui: è nel
-   menu **⋯ → Stampa le richieste** (e la «Ristampa» sulla striscia dopo un ordine). Per tutto il
+   in fondo) c'è **solo quando qualcosa è scelto**; **Ctrl+Invio** la preme (lo dice, piccolo,
+   dentro la barra), e **solo carrello** le sta accanto, piccolo. Un clic sulla scheda Richieste
+   col quesito vuoto mette già il cursore nel quesito. La **Stampa** delle richieste confermate
+   non sta più qui: è nel menu **⋯ → Stampa le richieste** (e la «Ristampa» sulla striscia dopo un
+   ordine); qui, in fondo, resta solo un link quieto, **Stampa l'ultima richiesta**. Per tutto il
    resto: la casella in cima, con la tendina su tutti i laboratori. Lo stesso esame delle
    Urgenze e del laboratorio centrale (le Urgenze ne sono un sottomenu) è **una riga sola**,
    quella delle Urgenze — la stessa che usano i pacchetti. I selezionati restano in alto, una
@@ -541,7 +551,7 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    solo «PCR POC»), e così PCT, EGA, GGT, AST/ALT, BNP, tropo — il laboratorio prima del POC.
    Accanto a ogni esame, **a colori**, **quando è già stato fatto** in questo episodio (l'ora
    della richiesta tornata, in verde: `TROPONINA US ✓ 11:40, 14:30`) o **da quanto aspetta**
-   (`EMOCROMO POC ⏳ 40′`, in ambra; **rosso** oltre la seconda soglia del suo tipo, le stesse
+   (`EMOCROMO POC 40′`, in ambra; **rosso** oltre la seconda soglia del suo tipo, le stesse
    dei Pazienti) — stessa fonte dello stato dei Pazienti, stesso nome del catalogo; niente
    quando non si sa, e in grigio con «letto 11:02» se la lettura è vecchia. Un pacchetto
    come «Dolore toracico» spunta come sempre: il suffisso fa vedere il doppione, non lo toglie.
@@ -791,7 +801,7 @@ richiesta da confermare.
   «Salvo i referti 2/5…».
 - **In attesa**: in ogni sezione, ciò che è stato chiesto e non è ancora refertato — dalle righe
   del diario della pagina senza l'icona del referto — una riga sola ciascuna, con un sottile
-  segno ambra a sinistra (niente fascia gialla) e **da quanto** aspetta (`⏳ 1h20 RX TORACE ·
+  segno ambra a sinistra (niente fascia gialla) e **da quanto** aspetta (`1h20 RX TORACE ·
   richiesto 13:10`). Un esame di laboratorio i cui valori **hanno cominciato ad arrivare** (la
   finestra Risultati c'è) non aspetta più: **«parziale 15:11»**, in grigio, **senza orologio** —
   i valori sono già in tabella. Gli orologi di ECG e immagini restano.
@@ -803,7 +813,7 @@ richiesta da confermare.
   diario) e **↗ PDF**; **↗ PDF** c'è anche su ogni riga, a un tocco: la copia salvata si apre
   nel **visore** dell'estensione (paziente · esame · data in testa, ✕ o Esc e si torna agli Esiti;
   mai un referto di un altro paziente), altrimenti il documento del gestionale. Nel visore, un
-  bottone solo, **Stampa**: con la stampa automatica il PDF va **sull'A4** del medico, dalla
+  bottone solo, **Stampa** (già col fuoco: Invio, P o Ctrl+P): con la stampa automatica il PDF va **sull'A4** del medico, dalla
   copia salvata, con lo stesso motore della lista esami (ogni foglio annotato prima di partire,
   una volta sola: un doppio tocco è una stampa); senza, il dialogo di stampa del browser. Dell'**ECG** si mostra **solo il referto scritto** del
   cardiologo, mai le misure o le frasi della macchina; un tracciato senza referto scritto dice
@@ -1190,7 +1200,7 @@ foglio i motivi per **tornare in Pronto Soccorso**.
   I **fogli tuoi** stanno in cima, col segno *tuo*; si copiano come gli altri, ✎ li riscrive o li
   rinomina, ✕ Elimina li toglie (chiede conferma). Due fogli con lo stesso nome non si possono
   avere: nell'elenco non si distinguerebbero. Come tutti i fogli sono **modelli**, senza dati del
-  paziente, e restano su questo computer (**Esporta i fogli (JSON)**, nel menu **⋯**, per portarli su un altro).
+  paziente, e restano su questo computer (**Esporta i fogli**, nel menu **⋯**, per portarli su un altro).
 - **✎** apre il testo in grande e lo riscrive **per le volte successive**: le modifiche restano su
   quel computer (`localStorage`) — **sopravvivono al logout, alla chiusura del browser e agli
   aggiornamenti del programma**, perché sono tue e non dati di un paziente. Non finiscono nel
@@ -1206,7 +1216,7 @@ foglio i motivi per **tornare in Pronto Soccorso**.
 - **↺ Originale** chiede conferma prima di buttare il tuo testo. Se una nuova versione del
   programma corregge un foglio che tu avevi modificato, quel foglio si marca **⟳** e l'editor te lo
   dice: una correzione di dosaggio non può restare invisibile a chi ha personalizzato il testo.
-- **Esporta i fogli (JSON)** — nel menu **⋯**, solo in Dimissioni — salva i tuoi testi in un file (e negli appunti);
+- **Esporta i fogli** — nel menu **⋯**, solo in Dimissioni — salva i tuoi testi in un file JSON (e negli appunti);
   **Importa i fogli…** li rimette da una
   schermata dove incolli il JSON — entrano **solo i testi diversi dagli originali**, così un
   ripristino non congela per sempre gli altri sette.
@@ -1441,8 +1451,8 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   quei nomi). La pagina di prova delle etichette ha la misura di un'etichetta. **Prima di usarla
   sui pazienti**, ristampa un'etichetta vera e leggi il suo codice a barre col lettore del
   laboratorio.
-- **Si spegne con un tocco**: menu **⋯ → Stampa automatica: attiva · Spegni** (e «spenta ·
-  Accendi»), o l'interruttore nella pagina Stampanti. Spenta, tutto torna esattamente com'era:
+- **Si spegne con un tocco**: menu **⋯ → Stampa automatica** (spuntata: accesa; un tocco la
+  spegne, un altro la riaccende), o l'interruttore nella pagina Stampanti. Spenta, tutto torna esattamente com'era:
   il dialogo, «Stampa finita». Senza aiutante, o col preferito (bookmarklet), lo stesso.
 - **In Windows non resta acceso niente.** Nessun programma che gira, nessuna icona: Chrome avvia
   l'aiutante solo per il secondo in cui stampa un foglio, e l'aiutante esce appena ha risposto.
@@ -1651,7 +1661,7 @@ Salva / Registra, e il PDF di **Stampa RE**.
 in `storage.local`; niente del paziente) o **Cerca nel SISS**, che scrive nella casella «Ricerca
 specialistica/farmaco» del Prescrittivo e ti mostra le voci della sua tendina — poi quantità,
 «non sostituibile», il quesito (preso da un campo «Diagnosi» della pagina se ce n'è uno, se no
-vuoto) e **Prepara nel SISS**.
+vuoto) e **Prepara nel SISS** (o Ctrl+Invio).
 
 - **Dove lavora**: in una scheda del Prescrittivo **già aperta e già entrata** (con la carta). Se
   non c'è, o è sulla pagina d'accesso, si apre il menu del SISS e il pannello dice «Entra nel SISS
@@ -1700,7 +1710,7 @@ vuoto) e **Prepara nel SISS**.
 **⋯ → Terapia**, sulla pagina del paziente, solo con l'estensione. Scegli i farmaci — i
 **preferiti** (farmaco e dose come li hai confermati nella pagina Terapia del gestionale, i più
 usati in cima; la casella li cerca) o un farmaco nuovo scritto nella casella («＋ … da scegliere
-nella tendina del gestionale») — poi **Prepara nel gestionale**.
+nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio).
 
 - **Come è fatta la pagina** (PsoEpisodioTerapieImposta, MODALITA=PRESCRIZIONE, dal pulsante
   «Terapia» del paziente, `a[title="Apri Terapia"]`): il modulo `EpisodioTerapia` è una tabella

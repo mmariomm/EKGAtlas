@@ -268,6 +268,11 @@ await suPagina(doc, A.worklistUrl);   // il medico lascia il PC sulla lista
 // dell'estensione — nessuna scheda nuova. (La cornice e non un disegno del
 // pannello: l'ombra del pannello la pagina del gestionale la legge, una
 // cornice dell'estensione no — e il QR porta la chiave.)
+// una scheda del pannello; dalla vista «iPhone» (una schermata del ⋯, con «‹ iPhone» al posto delle schede) si torna col suo ‹
+const allaScheda = async (p, seg) => {
+  if (await $panel(p, ".seg.vmenu #back").count()) await $panel(p, ".seg.vmenu #back").click();
+  await $panel(p, `[data-seg="${seg}"]`).click();
+};
 const corniceIn = async (p, timeout = 10000) => {
   for (const t0 = Date.now(); Date.now() - t0 < timeout; await sospendi(150)) {
     const f = p.frames().find((x) => x.url().startsWith(EXTURL("ponte.html")));
@@ -279,6 +284,10 @@ await $panel(doc, "#expand").click();
 await doc.waitForSelector("#psassist-host .card", { timeout: 8000 });
 await $panel(doc, "#menubtn").click();
 check(await $panel(doc, '.menu .msez[aria-label="Strumenti"] #pontemenu').count() === 1, "«iPhone» sta nel menu ⋯, fra gli Strumenti");
+// il telefono disegnato come le altre icone: 16 px, tratto 1.6, capi tondi
+const telIco = await doc.evaluate(() => { const s = document.getElementById("psassist-host").shadowRoot.querySelector("#pontemenu .mico svg");
+  return s ? [s.getAttribute("width"), s.getAttribute("stroke-width"), s.getAttribute("stroke-linejoin")].join(" ") : ""; });
+check(telIco === "16 1.6 round", `l'icona dell'iPhone sulla griglia delle altre (got «${telIco}»)`);
 const nasce = nuovaPagina(4000);
 await $panel(doc, "#pontemenu").click();
 let ponte = await corniceIn(doc);
@@ -305,7 +314,7 @@ check(await ponte.locator("input").count() === 0, "l'indirizzo del ponte non si 
 // (per le prove, e solo verso questo PC: il ripetitore locale)
 await sw.evaluate((u) => chrome.storage.local.set({ "ponte.host": u }).then(() => ponteAvvia()), relay.url);
 // via dalla vista, la cornice se ne va; ⋯ → iPhone di nuovo, una cornice nuova (che legge il ripetitore locale)
-await $panel(doc, '[data-seg="eo"]').click();
+await allaScheda(doc, "eo");
 check(await $panel(doc, "#pontecornice").count() === 0 && !doc.frames().some((f) => f.url().includes("/ponte.html")), "lasciata la vista «iPhone», la cornice non c'è più");
 await $panel(doc, "#menubtn").click();
 await $panel(doc, "#pontemenu").click();
@@ -387,7 +396,7 @@ await g.bringToFront();
 // dell'estensione — che una pagina web non può aprire (use_dynamic_url): è
 // bloccata come lo sarebbe su un'origine fuori dal manifest. La pagina
 // dell'iPhone va in una scheda, come prima, e il pannello lo dice.
-await $panel(g, '[data-seg="eo"]').click();
+await allaScheda(g, "eo");
 await g.evaluate((id) => {
   const r = document.getElementById("psassist-host").shadowRoot;
   new MutationObserver(() => {

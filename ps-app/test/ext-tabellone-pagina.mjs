@@ -119,7 +119,11 @@ try {
   await $p(gest, "#expand").click();
   await $p(gest, ".card").waitFor({ timeout: 5000 });
   check((await $p(gest, "#tabapri").count()) === 1, "sulla lista, accanto al ⋯, il ↗ del tabellone");
+  // (col disegno della voce ⋯ → Tabellone, non più il glifo ↗: le due entrate si riconoscono)
   await $p(gest, "#menubtn").click();
+  const disegno = (sel) => gest.evaluate((s) => document.getElementById("psassist-host").shadowRoot.querySelector(s)?.innerHTML.replace(/\s+/g, " ").trim() || "", sel);
+  const dTab = await disegno("#tabapri svg"), dVoce = await disegno("#tabmenu .mico svg");
+  check(!!dTab && dTab === dVoce && !(await $p(gest, "#tabapri").innerText()).trim(), "il ↗ del tabellone ha l'icona della voce «Tabellone» del menu");
   const nuova = ctx.waitForEvent("page", { timeout: 10000 }).catch(() => null);
   await $p(gest, "#tabmenu").click();
   const tab = await nuova;

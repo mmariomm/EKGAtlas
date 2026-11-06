@@ -188,6 +188,8 @@ async function attendiTabella(page, nCol, timeout = 25000) {
 // guardare. Per ordinare si passa da Richieste — un tocco, come fa il medico.
 async function richieste(page) {
   const q = page.locator("#psassist-host #q");
+  // (da una schermata del menu ⋯ le schede tornano col suo ‹)
+  if (!(await q.count()) && (await page.locator("#psassist-host .seg.vmenu #back").count())) await page.locator("#psassist-host .seg.vmenu #back").click();
   if (!(await q.count())) await page.locator('#psassist-host [data-seg="richieste"]').click();
   await q.waitFor({ timeout: 10000 });
 }
@@ -2469,7 +2471,11 @@ async function scenarioExamPageManual(browser) {
     .querySelectorAll(".pwft .pwbtn")].map((b) => ({ id: b.id, txt: b.textContent.replace(/\s+/g, " ").trim() })));
   check(scen, bott.length === 4, `quattro pulsanti, non cinque (got ${bott.map((b) => b.txt).join(" | ")})`);
   check(scen, !bott.some((b) => /salta/i.test(b.txt)), "niente «Salta»: era «Avanti» con un altro nome");
-  check(scen, bott.every((b) => /^[^A-Za-z0-9]/.test(b.txt)), `ognuno ha la sua icona (got ${bott.map((b) => b.txt).join(" | ")})`);
+  // (l'icona: un'icona del pannello — Stampa, Scheda — o il segno davanti alla parola)
+  const conIcona = await page.evaluate(() => [...document.getElementById("psassist-print").shadowRoot.querySelectorAll(".pwft .pwbtn")]
+    .map((b) => !!b.querySelector("svg") || /^[^A-Za-z0-9]/.test(b.textContent.replace(/\s+/g, " ").trim())));
+  check(scen, conIcona.length === 4 && conIcona.every(Boolean), `ognuno ha la sua icona (got ${bott.map((b) => b.txt).join(" | ")})`);
+  check(scen, !bott.some((b) => /🖨|↗/.test(b.txt)), `niente emoji né glifi doppi: 🖨 e ↗ sono le icone del pannello (got ${bott.map((b) => b.txt).join(" | ")})`);
   check(scen, new Set(bott.map((b) => b.id)).size === 4, "e nessun identificativo ripetuto");
   await context.close();
 }
@@ -3371,7 +3377,7 @@ async function scenarioReferti(browser) {
   const consulenza = () => page.locator('#psassist-host .wualtri [data-esito][data-kind="referto"]').first();
   check(scen, /TC ENCEFALO/.test(rows[0]) && /22\/08 07:45/.test(rows[1]) && /EMOGASANALISI/.test(rows[1]),
     `la TC in Imaging, la consulenza negli altri documenti (got: ${rows.map((t) => t.replace(/\s+/g, " ").slice(0, 30)).join(" · ")})`);
-  check(scen, /↗/.test(rows[1]), "il documento senza testo dichiara che si apre in una scheda");
+  check(scen, (await refs.nth(1).locator(".rgo svg").count()) === 1, "il documento senza testo dichiara che si apre in una scheda (l'icona ↗)");
   check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "nessuno ancora aperto");
 
   const [popup] = await Promise.all([
@@ -4508,7 +4514,9 @@ async function scenarioPassaggio(browser) {
 
   // la pill che ricompare sotto il mouse fermo non si riapre da sola
   await $panel(page, "#expand").click();   // un clic: aperta e fissata
-  check(scen, (await $panel(page, "#pinpill[aria-pressed=true]").count()) === 1, "(un clic la apre fissata)");
+  // (riaperta sui Riferimenti: lì Esc torna alla scheda di prima, come il ‹ — si torna prima col ‹)
+  if (await $panel(page, ".seg.vmenu #back").count()) await $panel(page, ".seg.vmenu #back").click();
+  check(scen, (await $panel(page, "#pinpill[aria-pressed=true]").count()) === 1 && !(await $panel(page, ".seg.vmenu").count()), "(un clic la apre fissata)");
   const cp = await centro("#pinpill");
   await page.mouse.move(cp.x, cp.y);
   await page.keyboard.press("Escape");
@@ -5315,8 +5323,8 @@ async function scenarioAggiornaTutti(browser) {
     "prima di leggere niente il bottone invita a caricare");
   await $panel(page, "#risall").click();
   await attendiTabella(page, 2);
-  check(scen, /↻ Aggiorna/.test(await $panel(page, "#risall").innerText()),
-    "letti i prelievi, lo stesso bottone diventa «↻ Aggiorna»");
+  check(scen, (await $panel(page, "#risall").innerText()).trim() === "Aggiorna" && (await $panel(page, "#risall svg").count()) === 1,
+    "letti i prelievi, lo stesso bottone diventa «↻ Aggiorna» (la freccia è l'icona, non il glifo)");
   const prima = hits(mock, "RcsAccessiRisultatiElenco");
   // the lab has updated a value since the prefetch
   mock.state.hbNuova = "92";
@@ -5410,7 +5418,7 @@ async function scenarioRefertoTesto(browser) {
   const rx = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "TC ENCEFALO" });
   check(scen, /▸/.test(await rx.innerText()), "il referto RIS si apre nel pannello, lì sotto");
   const altro = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "EMOGASANALISI" });
-  check(scen, /↗/.test(await altro.innerText()) && !/▸/.test(await altro.innerText()), "gli altri restano documenti da aprire");
+  check(scen, (await altro.locator(".rgo svg").count()) === 1 && !/▸|↗/.test(await altro.innerText()), "gli altri restano documenti da aprire (l'icona ↗, non il glifo)");
   check(scen, !(await page.locator("#psassist-host .sec:not(.reflab) .rrow .rsys").allInnerTexts()).some((t) => /\bLIS\b/.test(t)),
     "nessun referto di laboratorio (LIS) fra gli altri: sta nel suo gruppo");
 
@@ -5836,6 +5844,9 @@ async function scenarioPromemoria(browser) {
   await riga("999002").hover();
   await riga("999002").locator(".pzx").click();
   if (!(await $panel(page, ".pzarch").count())) await $panel(page, "#archtog").click();
+  // (il cestino è un'icona del pannello, non l'emoji 🗑 che cambia faccia da un computer all'altro)
+  check(scen, (await $panel(page, '[data-del="999002"] svg').count()) === 1 && !/🗑/.test(await $panel(page, ".pzhint").innerText().catch(() => "")),
+    "il cestino degli archiviati: l'icona del pannello, niente emoji");
   await $panel(page, '[data-del="999002"]').click();
   await $panel(page, '[data-del="999002"]').click();
   check(scen, !(await archivio())["999002"] && ((await archivio())["999001"] || []).length === 2, "🗑 cancella anche il suo «Da fare» (gli altri restano)");
@@ -6827,7 +6838,8 @@ async function scenarioAperturaEGriglia(browser) {
       const parz = attese.find((a) => /TROPONINA/.test(a.t)), att = attese.find((a) => /PROCALCITONINA/.test(a.t));
       check(scen, !!parz && /^parziale \d\d:\d\d TROPONINA/.test(parz.t) && !/⏳|\dh\d\d/.test(parz.t),
         `lab arrivato in parte: «parziale HH:MM», nessun orologio (got: ${parz && parz.t})`);
-      check(scen, !!att && /⏳/.test(att.t) && /1h2\d/.test(att.t) && /richiesto/.test(att.t), `quello che aspetta ancora tiene il suo orologio (got: ${att && att.t})`);
+      // (da quanto aspetta, in ambra: i minuti lo dicono già, senza l'orologio ⏳)
+      check(scen, !!att && !/⏳/.test(att.t) && /^1h2\d PROCALCITONINA/.test(att.t) && /richiesto/.test(att.t), `quello che aspetta ancora dice da quanto, senza ⏳ (got: ${att && att.t})`);
       check(scen, attese.length === 2 && attese.every((a) => (a.bg === "rgba(0, 0, 0, 0)" || a.bg === "transparent") && parseFloat(a.bordo) > 0 && a.h <= 22),
         `una riga ciascuna, niente fascia gialla, un segno a sinistra (got: ${JSON.stringify(attese.map((a) => [a.bg, a.bordo, a.h]))})`);
     }
@@ -6936,7 +6948,30 @@ async function scenarioRichiesteCompatte(browser) {
   });
   check(scen, !!barra && barra.pos === "sticky" && barra.bg === "rgb(255, 255, 255)" && barra.cta === "Conferma per ROSSI M. · 2 richieste, 2 esami" && barra.go,
     `scelto qualcosa: la barra «Conferma per … · N esami», ferma in fondo, con «solo carrello» (got ${JSON.stringify(barra)})`);
+  // «Ctrl+Invio» scritto piccolo dentro la Conferma (non nel suo nome), solo quando si può premere
+  const tasti = () => page.evaluate(() => { const b = document.getElementById("psassist-host").shadowRoot.querySelector("#goconfirm"), a = getComputedStyle(b, "::after");
+    return { c: a.content, px: parseFloat(a.fontSize), w: Math.round(b.getBoundingClientRect().width), dentro: b.scrollWidth <= b.clientWidth + 1 }; });
+  const t1 = await tasti();
+  check(scen, t1.c === '"Ctrl+Invio"' && t1.px <= 11.5 && t1.dentro, `nella barra, piccolo accanto a «Conferma per …»: «Ctrl+Invio» (got ${JSON.stringify(t1)})`);
+  // la ristampa a un tocco, quieta, in fondo alle Richieste (una richiesta confermata c'è)
+  check(scen, (await $panel(page, ".bd #stultima.rpiede").count()) === 1 && (await testoPanel(page, "#stultima")) === "Stampa l'ultima richiesta",
+    "in fondo alle Richieste, quieta: «Stampa l'ultima richiesta»");
   await shotSide(page, "paz-richieste");
+  // un clic sulla scheda Richieste col quesito vuoto: il cursore è già nel quesito
+  // (scritto, no: il clic non lo tocca)
+  const fuoco = () => page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id || "");
+  await $panel(page, '[data-seg="eo"]').click();
+  await $panel(page, '[data-seg="richieste"]').click();
+  await q.waitFor();
+  const conQ = await fuoco();
+  await q.fill("");
+  await $panel(page, '[data-seg="eo"]').click();
+  await $panel(page, '[data-seg="richieste"]').click();
+  await q.waitFor();
+  await page.waitForTimeout(150);
+  const senzaQ = await fuoco();
+  check(scen, conQ !== "q" && senzaQ === "q", `clic su Richieste: col quesito vuoto il cursore è nel quesito, scritto resta dov'è (got ${conQ || "niente"} · ${senzaQ || "niente"})`);
+  await q.fill("dolore toracico");
   // la Stampa sta nel menu ⋯
   await $panel(page, "#menubtn").click();
   await $panel(page, "#stampamenu").click();
@@ -7053,13 +7088,22 @@ async function scenarioMenuAltro(browser) {
 
   // il cronometro: niente in intestazione finché non corre
   check(scen, (await $panel(page, ".hd .tchip").count()) === 0 && (await $panel(page, ".hd #tapri").count()) === 0, "in intestazione non c'è nessun cronometro fermo");
+  const daQui = await $panel(page, ".seg button.on").getAttribute("data-seg");
   await menu();
-  check(scen, await voce("tempimenu"), "«Tempi» sta nel menu ⋯");
+  check(scen, await voce("tempimenu"), "«Cronometro» sta nel menu ⋯");
   await $panel(page, "#tempimenu").click();
   await $panel(page, ".tpre").first().waitFor();
   check(scen, !/istante di inizio/.test(await $panel(page, ".bd").innerText()), "Tempi senza il paragrafo che spiega come si salva");
+  // dove sei: al posto delle schede «‹ [icona] Cronometro»; il ‹ (uno solo) torna alla scheda di prima
+  const NOMI = { esiti: "Esiti", richieste: "Richieste" };
+  check(scen, (await testoPanel(page, ".seg.vmenu .segtit")) === "Cronometro" && (await $panel(page, ".seg.vmenu .segtit .mico svg").count()) === 1
+    && (await $panel(page, "[data-seg]").count()) === 0 && (await $panel(page, "#back").count()) === 1 && (await $panel(page, ".hd #back").count()) === 0
+    && (await $panel(page, "#back").getAttribute("title")) === `Torna a ${NOMI[daQui]} (Esc)`,
+    `⋯ → Cronometro: in testa «‹ [icona] Cronometro» al posto delle schede, e il ‹ dice dove torna (da ${daQui}; got ${await testoPanel(page, ".seg")} · ${await $panel(page, "#back").getAttribute("title").catch(() => "")})`);
   await $panel(page, '[data-avvia="Visita ed esami"]').click();
   await $panel(page, ".tbig").waitFor();
+  await $panel(page, "#back").click();
+  check(scen, (await $panel(page, `[data-seg="${daQui}"].on`).count()) === 1, `il ‹ del Cronometro torna alla scheda da cui si veniva (${daQui}), non a «Tutti i pazienti»`);
   await $panel(page, '[data-seg="eo"]').click();
   check(scen, (await $panel(page, ".hd .tchip.on").count()) === 1 && /\d+m|\d+s/.test(await $panel(page, ".hd .tchip.on").innerText()), "mentre corre, il tempo si vede in intestazione da ogni schermata");
   await $panel(page, "#tstop").click();
@@ -7114,8 +7158,14 @@ async function scenarioMenuAltro(browser) {
   await page.keyboard.type("zzz");
   check(scen, (await visibili()).length === 0 && await $panel(page, ".rifvuoto").isVisible(), "niente trovato: lo dice");
   await $panel(page, "#riffiltro").fill("");
+  check(scen, (await testoPanel(page, ".seg.vmenu .segtit")) === "Riferimenti" && (await $panel(page, "#back").getAttribute("title")) === "Torna a Esiti (Esc)",
+    `⋯ → Riferimenti: «‹ [icona] Riferimenti», e il ‹ torna agli Esiti da cui si veniva (got ${await testoPanel(page, ".seg")})`);
   await menu();
   await chiudi();
+  // Esc (fuori da un campo) fa come il ‹: torna alla scheda di prima, la finestra resta aperta
+  await page.keyboard.press("Escape");
+  check(scen, (await $panel(page, '[data-seg="esiti"].on').count()) === 1 && (await $panel(page, ".card").count()) === 1,
+    "Esc da Riferimenti torna agli Esiti, la finestra resta aperta");
   await context.close();
 
   // «Ricarica estensione» non si offre mentre un giro sta mandando: recarica l'estensione e lo ucciderebbe a metà
@@ -7140,18 +7190,68 @@ async function scenarioMenuAltro(browser) {
   await b.context.close();
 }
 
+// Trovare un paziente in fretta: la lente accanto a ⟳ apre il filtro dei
+// Pazienti (che si apre anche scrivendo e basta); F2 — in ogni forma, mai
+// mentre si scrive in un campo del gestionale — apre la finestra sui Pazienti
+// col filtro pronto, e la richiude: F2 · lettere · Invio.
+async function scenarioTastieraLente(browser) {
+  const scen = "tastiera e lente";
+  const mock = createMock({ withResults: true });
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.worklistUrl);
+  await page.waitForSelector("#psassist-host .card", { state: "attached" });
+  const fuoco = () => page.evaluate(() => document.getElementById("psassist-host").shadowRoot.activeElement?.id || "");
+  const lente = $panel(page, ".tbbar #tbcerca");
+  check(scen, (await lente.count()) === 1 && (await lente.getAttribute("title")) === "Cerca un paziente — o scrivi e basta" && (await lente.locator("svg").count()) === 1
+    && (await $panel(page, "#pzcerca").count()) === 0, "sui Pazienti, accanto ad Alta/Bassa e Mappa/Lista, la lente: «Cerca un paziente — o scrivi e basta»");
+  await lente.click();
+  check(scen, (await $panel(page, "#pzcerca").count()) === 1 && (await fuoco()) === "pzcerca", `un tocco sulla lente: il filtro, col cursore dentro (fuoco: ${await fuoco() || "niente"})`);
+  await page.keyboard.type("ros");
+  check(scen, (await $panel(page, "#pzcerca").inputValue()) === "ros", "si scrive subito nel filtro");
+  await page.keyboard.press("Escape");
+  check(scen, (await $panel(page, "#pzcerca").count()) === 0 && (await $panel(page, ".card").count()) === 1, "Esc lo toglie, la finestra resta");
+  // F2, dalla pagina di un paziente, in Finestra
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host .card", { state: "attached" });
+  await page.mouse.click(5, 600);   // un clic sul gestionale: la finestra si riduce
+  await page.waitForSelector("#psassist-host .card", { state: "detached", timeout: 5000 }).catch(() => {});
+  await page.keyboard.press("F2");
+  await page.waitForTimeout(200);
+  check(scen, (await $panel(page, ".card").count()) === 1 && (await $panel(page, '[data-seg="home"].on').count()) === 1 && (await fuoco()) === "pzcerca",
+    `F2 apre la finestra sui Pazienti, col cursore nel filtro (fuoco: ${await fuoco() || "niente"}, schede: ${await testoPanel(page, ".seg").catch(() => "")})`);
+  await page.keyboard.type("ross");
+  check(scen, (await $panel(page, "#pzcerca").inputValue()) === "ross", "F2 · lettere: si scrive nel filtro");
+  await page.keyboard.press("F2");
+  check(scen, (await $panel(page, ".card").count()) === 0, "F2 di nuovo la richiude");
+  await page.evaluate(() => { const i = document.createElement("input"); i.id = "campogest"; document.body.prepend(i); });
+  await page.locator("#campogest").click();
+  await page.keyboard.press("F2");
+  check(scen, (await $panel(page, ".card").count()) === 0, "F2 scritto in un campo del gestionale non la tocca");
+  await context.close();
+}
+
 // Il menu ⋯ a sezioni: in cima la Forma (con Al centro · Affianca a destra),
 // poi Paziente · Strumenti · Impostazioni, ognuna col suo titolo piccolo; una
 // sezione che lì non ha voci non c'è; le voci corte due per riga. Ogni voce di
 // prima c'è ancora, col suo id, dove si offriva. Senza estensione (il
 // bookmarklet) e con un'estensione finta (le voci che la chiedono).
+// Un'icona per voce (16 px, tratto 1.6, grigia), la parola accanto; Strumenti
+// sono gli strumenti clinici (quelli della stanza in fondo), Impostazioni il
+// resto, il Reset per ultimo da solo sulla sua riga, in rosso; «Ricarica»
+// accanto alla versione.
 async function scenarioMenuSezioni(browser) {
   const scen = "menu a sezioni";
   const sezioni = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".menu > .msez")].map((s) => ({
     t: s.querySelector(":scope > .mtit")?.textContent || "",
     ids: [...s.querySelectorAll(":scope > button, :scope > .mforma")].map((b) => b.id || b.className),
   })));
-  const sparse = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".menu button")].filter((b) => !b.closest(".msez")).length);
+  // (fuori dalle sezioni c'è solo il piede: la versione, «Ricarica», «Aggiorna app»)
+  const sparse = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".menu button")].filter((b) => !b.closest(".msez") && !b.closest(".mpiede")).length);
+  // ogni voce con la sua icona, sulla griglia delle altre (16 px, tratto 1.6), e la parola
+  const senzaIcona = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".menu .msez > button")].filter((b) => {
+    const s = b.querySelector(":scope > .mico > svg");
+    return !s || s.getAttribute("width") !== "16" || s.getAttribute("stroke-width") !== "1.6" || !b.textContent.trim();
+  }).map((b) => b.id));
   const menu = async (page) => { if (!(await $panel(page, ".menu").count())) await $panel(page, "#menubtn").click(); await $panel(page, ".menu").waitFor(); };
   const chiudi = async (page) => { if (await $panel(page, ".menu").count()) await $panel(page, "#menubtn").click(); };
   const vedi = (s) => s.map((x) => `${x.t || "·"}: ${x.ids.join(" ")}`).join(" | ");
@@ -7168,13 +7268,24 @@ async function scenarioMenuSezioni(browser) {
   check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Paziente","Strumenti","Impostazioni"]' && s[0].ids[0] === "mforma" && !(await sparse(a.page)),
     `paziente: la Forma in cima, poi Paziente · Strumenti · Impostazioni, e nessuna voce fuori da una sezione (got ${vedi(s)})`);
   check(scen, di(s, "Paziente").join() === "stampamenu" && di(s, "Strumenti").join() === "tempimenu,rifmenu,consmenu" && di(s, "Impostazioni").join() === "verbtn,resetpaz"
-    && !EXT.some((id) => s.some((x) => x.ids.includes(id))), `senza estensione: Stampa le richieste · Tempi, Riferimenti, Consegne · Registro, Reset — niente voci dell'estensione (got ${vedi(s)})`);
+    && !EXT.some((id) => s.some((x) => x.ids.includes(id))), `senza estensione: Stampa le richieste · Cronometro, Riferimenti, Consegne · Registro, Reset — niente voci dell'estensione (got ${vedi(s)})`);
+  check(scen, (await $panel(a.page, "#tempimenu").innerText()).trim() === "Cronometro", `«Tempi» si chiama «Cronometro», come dice il suo titolo (got ${await $panel(a.page, "#tempimenu").innerText()})`);
+  check(scen, !(await senzaIcona(a.page)).length, `ogni voce ha la sua icona di 16 px accanto alla parola (senza: ${(await senzaIcona(a.page)).join(", ")})`);
   const tit = await a.page.evaluate(() => { const t = document.getElementById("psassist-host").shadowRoot.querySelector(".menu .mtit"), c = getComputedStyle(t); return { up: c.textTransform, px: parseFloat(c.fontSize) }; });
   check(scen, tit.up === "uppercase" && tit.px < 12, `i titoli delle sezioni: piccoli, maiuscoli (got ${JSON.stringify(tit)})`);
   const riga = async (x, y) => { const p = await $panel(a.page, `#${x}`).boundingBox(), q = await $panel(a.page, `#${y}`).boundingBox(); return !!p && !!q && Math.abs(p.y - q.y) < 1 && q.x > p.x && p.height >= 32; };
   const mb = await $panel(a.page, ".menu").boundingBox();
-  check(scen, (await riga("tempimenu", "rifmenu")) && (await riga("verbtn", "resetpaz")) && mb.y + mb.height <= 900,
-    `le voci corte, due per riga, alte almeno 32 px (Tempi · Riferimenti, Registro · Reset), e il menu sta nello schermo (${Math.round(mb.height)} px)`);
+  check(scen, (await riga("tempimenu", "rifmenu")) && mb.y + mb.height <= 900 && Math.round(mb.width) === 360,
+    `le voci corte, due per riga, alte almeno 32 px (Cronometro · Riferimenti), il menu largo 360 px e nello schermo (${Math.round(mb.width)}×${Math.round(mb.height)} px)`);
+  const reset = await a.page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot, b = r.querySelector("#resetpaz"), sez = b.closest(".msez"), v = r.querySelector("#verbtn");
+    const bb = b.getBoundingClientRect(), sb = sez.getBoundingClientRect();
+    return { ultima: sez.lastElementChild === b && !sez.nextElementSibling?.classList.contains("msez"), largo: bb.width >= sb.width - 2, sotto: bb.top >= v.getBoundingClientRect().bottom - 1, colore: getComputedStyle(b).color };
+  });
+  check(scen, reset.ultima && reset.largo && reset.sotto && reset.colore === "rgb(179, 38, 30)",
+    `«Reset dati pazienti»: l'ultima voce, da sola sulla sua riga, rossa anche a riposo (got ${JSON.stringify(reset)})`);
+  check(scen, /^PS Assist \S+$/.test((await $panel(a.page, ".menu .mpiede .mver").innerText()).trim()) && !(await $panel(a.page, "#extreload").count()),
+    `in fondo la versione; senza estensione niente «Ricarica» (got ${await $panel(a.page, ".menu .mpiede").innerText()})`);
   await shotSide(a.page, "menu-sezioni-bookmarklet");
   await chiudi(a.page);
   // in Dimissioni: Esporta e Importa i fogli, fra le voci del paziente
@@ -7182,14 +7293,16 @@ async function scenarioMenuSezioni(browser) {
   await menu(a.page);
   s = await sezioni(a.page);
   check(scen, di(s, "Paziente").join() === "stampamenu,dimexport,dimimport", `in Dimissioni: Esporta e Importa i fogli, nella sezione del paziente (got ${vedi(s)})`);
+  check(scen, (await $panel(a.page, "#dimexport").innerText()).trim() === "Esporta i fogli" && /JSON/.test(await $panel(a.page, "#dimexport").getAttribute("title")),
+    "«Esporta i fogli», il JSON nel suo titolo");
   await chiudi(a.page);
-  // la lista, sulla stanza: niente sezione del paziente; Modifica la stanza fra gli Strumenti
+  // la lista, sulla stanza: niente sezione del paziente; Modifica la stanza in fondo agli Strumenti
   await a.page.goto(mock.worklistUrl);
   await a.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(a.page);
   s = await sezioni(a.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "stmodmenu,tempimenu,rifmenu,consmenu",
-    `sulla lista (la stanza): niente sezione Paziente, «Modifica la stanza» in testa agli Strumenti (got ${vedi(s)})`);
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "tempimenu,rifmenu,consmenu,stmodmenu",
+    `sulla lista (la stanza): niente sezione Paziente, «Modifica la stanza» in fondo agli Strumenti (got ${vedi(s)})`);
   await chiudi(a.page);
   await $panel(a.page, '[data-seg="dimissioni"]').click();
   await menu(a.page);
@@ -7206,17 +7319,26 @@ async function scenarioMenuSezioni(browser) {
   await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(b.page);
   s = await sezioni(b.page);
-  check(scen, di(s, "Paziente").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,regmenu,tempimenu,rifmenu,consmenu"
-    && di(s, "Impostazioni").join() === "stampanti,portapri,verbtn,resetpaz,extreload" && !(await sparse(b.page)),
-    `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Registra, Tempi, Riferimenti, Consegne · Stampanti, Indirizzo del portale, Registro, Reset, Ricarica (got ${vedi(s)})`);
+  check(scen, di(s, "Paziente").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,tempimenu,rifmenu,consmenu"
+    && di(s, "Impostazioni").join() === "stampanti,regmenu,verbtn,portapri,resetpaz" && !(await sparse(b.page)),
+    `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Cronometro, Riferimenti, Consegne · Stampanti, Registrazioni, Registro, Indirizzo del portale, Reset (got ${vedi(s)})`);
+  check(scen, !(await senzaIcona(b.page)).length, `con l'estensione anche: un'icona per voce (senza: ${(await senzaIcona(b.page)).join(", ")})`);
+  const piede = (await $panel(b.page, ".menu .mpiede .mver").innerText()).replace(/\s+/g, " ").trim();
+  check(scen, /^PS Assist \S+ · Ricarica$/.test(piede) && (await $panel(b.page, ".menu .mpiede .mver #extreload").count()) === 1,
+    `«Ricarica estensione» è un link accanto alla versione: «PS Assist … · Ricarica» (got ${piede})`);
   await shotSide(b.page, "menu-sezioni-paziente");
   await chiudi(b.page);
   await b.page.goto(mock2.worklistUrl);
   await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(b.page);
   s = await sezioni(b.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "stmodmenu,seguesw,tabmenu,pontemenu,regmenu,tempimenu,rifmenu,consmenu",
-    `con l'estensione, sulla stanza: Modifica la stanza e Segue il gestionale fra gli Strumenti (got ${vedi(s)})`);
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "tabmenu,pontemenu,tempimenu,rifmenu,consmenu,stmodmenu,seguesw",
+    `con l'estensione, sulla stanza: Modifica la stanza e Segue il gestionale in fondo agli Strumenti (got ${vedi(s)})`);
+  // l'interruttore: una voce da spuntare, lo stato al posto dell'icona (niente «✓ » davanti)
+  const segue = await b.page.evaluate(() => { const x = document.getElementById("psassist-host").shadowRoot.querySelector("#seguesw");
+    return { role: x.getAttribute("role"), on: x.getAttribute("aria-checked"), t: x.textContent.trim(), blu: getComputedStyle(x.querySelector(".mico")).color }; });
+  check(scen, segue.role === "menuitemcheckbox" && segue.on === "true" && segue.t === "Segue il gestionale" && segue.blu === "rgb(11, 92, 173)",
+    `«Segue il gestionale»: da spuntare, acceso = il pallino blu con la spunta, niente «✓ » nel testo (got ${JSON.stringify(segue)})`);
   await shotSide(b.page, "menu-sezioni-stanza");
   // ⋯ → iPhone senza un'estensione che risponda: la vista lo dice, niente cornice rotta
   await $panel(b.page, "#pontemenu").click();
@@ -7224,6 +7346,8 @@ async function scenarioMenuSezioni(browser) {
   check(scen, /non si apre nel pannello/.test(await $panel(b.page, ".bd").innerText().catch(() => ""))
     && (await $panel(b.page, "#pontecornice").count()) === 0 && (await $panel(b.page, "#ponteapri").count()) === 1,
     "⋯ → iPhone dove l'estensione non risponde: la vista «iPhone» lo dice, con «Aprila in una scheda», senza una cornice vuota");
+  check(scen, (await testoPanel(b.page, ".seg.vmenu .segtit")) === "iPhone" && (await $panel(b.page, ".seg.vmenu .segtit .mico svg").count()) === 1,
+    `e in testa, al posto delle schede, «‹ [icona] iPhone» (got ${await testoPanel(b.page, ".seg").catch(() => "")})`);
   await b.context.close();
 }
 
@@ -7339,16 +7463,16 @@ async function scenarioStatoEsami(browser) {
     }
     return o;
   });
-  check(scen, somiglia(suff["TROPONINA US"], `⏳ ${tAttesa(130)}\\|uros`), `troponina: «⏳ 2h10», rossa oltre la seconda soglia del laboratorio (got: ${suff["TROPONINA US"]})`);
+  check(scen, somiglia(suff["TROPONINA US"], `${tAttesa(130)}\\|uros`), `troponina: «2h10» (senza ⏳: i minuti dicono già che aspetta), rossa oltre la seconda soglia del laboratorio (got: ${suff["TROPONINA US"]})`);
   check(scen, suff["EMOCROMO POC"] === `✓ ${oraDi(50)}|uok` && suff["CREATININA POC"] === `✓ ${oraDi(50)}|uok`,
     `emocromo e creatinina: «✓ HH:MM» in verde, l'ora della richiesta già tornata (got: ${suff["EMOCROMO POC"]}, ${suff["CREATININA POC"]})`);
-  check(scen, somiglia(suff["RX ADDOME"], `⏳ ${tAttesa(100)}\\|uatt`) && suff["D-DIMERO POC"] === "" && suff["PCR"] === "",
+  check(scen, somiglia(suff["RX ADDOME"], `${tAttesa(100)}\\|uatt`) && suff["D-DIMERO POC"] === "" && suff["PCR"] === "",
     `l'RX aspetta, in ambra; un esame annullato o mai chiesto non dice niente (got: ${suff["RX ADDOME"]}, «${suff["D-DIMERO POC"]}», «${suff["PCR"]}»)`);
   // il pacchetto spunta come sempre: il suffisso mostra il doppione, non lo toglie
   await $panel(page, '.chip.q.pk:has-text("Dolore toracico")').click();
   const tropo = page.locator('#psassist-host .opt:has(.nm:text-is("TROPONINA US"))');
-  check(scen, /\bon\b/.test(await tropo.getAttribute("class")) && somiglia((await tropo.locator(".ult").innerText()).trim(), `⏳ ${tAttesa(130)}`),
-    "«Dolore toracico» spunta la troponina lo stesso, col suo «⏳» accanto");
+  check(scen, /\bon\b/.test(await tropo.getAttribute("class")) && somiglia((await tropo.locator(".ult").innerText()).trim(), tAttesa(130)),
+    "«Dolore toracico» spunta la troponina lo stesso, col suo tempo d'attesa accanto");
   const cta = (await $panel(page, "#goconfirm").innerText()).trim();
   check(scen, cta === "Conferma per ROSSI M. · 68 M · 2 richieste, 7 esami", `il bottone che conferma dice per chi (got: ${cta})`);
   await shot(page, "onda1-richieste");
@@ -7418,7 +7542,7 @@ async function scenarioStatoEsami(browser) {
   await page.mouse.move(lb.x + lb.width / 2, lb.y + lb.height / 2);
   await page.waitForSelector("#psassist-host .pzcarta", { timeout: 3000 }).catch(() => {});
   const tit = await testoPanel(page, ".pzcarta").catch(() => "");
-  check(scen, new RegExp(`RX addome[^⏳]*⏳ ${tAttesa(100)}`).test(tit || ""),
+  check(scen, new RegExp(`RX addome[^\\d]* ${tAttesa(100)}`).test(tit || "") && !/⏳/.test(tit || ""),
     `vecchio di 31′: passando sul letto, la scheda dice l'RX in attesa e da quanto (got: ${JSON.stringify(tit)})`);
   await page.mouse.move(2, 2);
   // il paziente nell'intestazione porta anche il suo posto
@@ -7594,7 +7718,7 @@ async function scenarioListaLetti(browser) {
   await page.mouse.move(lb2.x + lb2.width / 2, lb2.y + lb2.height / 2);
   await page.waitForSelector("#psassist-host .pzcarta", { timeout: 3000 }).catch(() => {});
   const tit = (await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".pzcarta")?.textContent || "")).replace(/\s+/g, " ");
-  check(scen, /ESPOSITO LUCIA 91/.test(tit) && /ECG ⏳/.test(tit),
+  check(scen, /ESPOSITO LUCIA 91/.test(tit) && /ECG (in attesa|\d+′|\dh)/.test(tit) && !/⏳/.test(tit),
     `il passaggio del mouse sul letto: la scheda, chi è con l'età, l'ECG in attesa (got: ${JSON.stringify(tit)})`);
   await context.close();
 }
@@ -7861,6 +7985,7 @@ const scenarios = [
   ["esiti: il workup — fuori range in cima, Lab · ECG · Imaging, attese, ↗ PDF", scenarioWorkup],
   ["menu ⋯: tempi, riferimenti, comandi rari, niente paragrafi, ricarica", scenarioMenuAltro],
   ["menu ⋯ a sezioni: Paziente · Strumenti · Impostazioni, due voci per riga", scenarioMenuSezioni],
+  ["tastiera e lente: la lente apre il filtro, F2 sui Pazienti col filtro", scenarioTastieraLente],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],
   ["stop button", scenarioStopButton],

@@ -324,7 +324,27 @@ if (await prova("senza stampa automatica, il dialogo di sempre")) {
   check(!(await stampantina(doc)), "in intestazione niente stampantina");
   await chiudiStampa(doc);
   const voci = await menu(doc);
-  check(/Stampanti/.test(voci) && !/Stampa automatica:/.test(voci), `nel menu ⋯: «Stampanti», non l'interruttore (got: ${voci})`);
+  check(/Stampanti/.test(voci) && !/Stampa automatica/.test(voci) && !(await $panel(doc, "#stautosw").count()), `nel menu ⋯: «Stampanti», non l'interruttore (got: ${voci})`);
+  await $panel(doc, "#menubtn").click();
+}
+
+// ---- 1b. la ristampa a un tocco, in fondo alle Richieste --------------------
+// (la stessa di ⋯ → «Stampa le richieste» → «Stampa l'ultima richiesta», che resta)
+if (await prova("ristampa a un tocco: «Stampa l'ultima richiesta» in fondo alle Richieste")) {
+  installa(false);
+  await scelte(null);
+  await suPagina(doc, A.patientUrl);
+  await apriPannello(doc);
+  const link = $panel(doc, ".bd #stultima.rpiede");
+  check((await link.count()) === 1 && (await link.innerText()).trim() === "Stampa l'ultima richiesta" && /lnk/.test(await link.getAttribute("class")),
+    "in fondo alle Richieste, un link quieto: «Stampa l'ultima richiesta»");
+  await link.click();
+  await aspettaScheda(doc, "s.stato === 'stampo'");
+  const s = await scheda(doc);
+  check(s && s.dialoghi === 1 && /etichettatrice/.test(s.dest), `un tocco, e parte la stampa dell'ultima richiesta, come dal ⋯ (got ${JSON.stringify(s)})`);
+  await chiudiStampa(doc);
+  await menu(doc);
+  check((await $panel(doc, "#stampamenu").count()) === 1, "e ⋯ → «Stampa le richieste» resta, per tutte le altre");
   await $panel(doc, "#menubtn").click();
 }
 
@@ -569,7 +589,10 @@ if (await prova("l'interruttore: spenta → dialogo, accesa → da sola")) {
   await scelte(ATTIVA);
   await suPagina(doc, A.patientUrl);
   let voci = await menu(doc);
-  check(/Stampa automatica: attiva · Spegni/.test(voci), `nel menu ⋯: «Stampa automatica: attiva · Spegni» (got ${voci})`);
+  // (una voce da spuntare: lo stato è nell'icona, non in «: attiva · Spegni»)
+  const interr = async () => ({ on: await $panel(doc, "#stautosw").getAttribute("aria-checked"), role: await $panel(doc, "#stautosw").getAttribute("role"), t: (await $panel(doc, "#stautosw").innerText()).trim() });
+  let x = await interr();
+  check(x.on === "true" && x.role === "menuitemcheckbox" && x.t === "Stampa automatica", `nel menu ⋯: «Stampa automatica», spuntata (got ${JSON.stringify(x)})`);
   await $panel(doc, "#stautosw").click();
   check((await memoria()).stampa?.attiva === false, "un tocco la spegne (e lo ricorda)");
   check(!(await stampantina(doc)), "spenta: la stampantina in intestazione sparisce");
@@ -578,7 +601,8 @@ if (await prova("l'interruttore: spenta → dialogo, accesa → da sola")) {
     check(!!t, "e la pagina delle impostazioni lo mostra: «spenta», interruttore giù");
   }
   voci = await menu(doc);
-  check(/Stampa automatica: spenta · Accendi/.test(voci), `il menu ora dice «spenta · Accendi» (got ${voci})`);
+  x = await interr();
+  check(x.on === "false" && x.t === "Stampa automatica", `il menu ora la mostra spenta: «Stampa automatica», non spuntata (got ${JSON.stringify(x)})`);
   await $panel(doc, "#menubtn").click();
   await ristampaDallaPagina(doc);
   await aspettaScheda(doc, "s.stato === 'stampo'");

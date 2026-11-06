@@ -124,7 +124,9 @@ const salvati = (p, n) => p.waitForFunction((k) => document.getElementById("psas
   const mentre = await page.waitForFunction(() => {
     const r = document.getElementById("psassist-host").shadowRoot;
     const a = r.querySelector(".wuauto");
-    return a ? { t: a.textContent.trim(), prog: !!r.querySelector(".wuprog"), salva: !!r.querySelector("#refsave"), ricarica: r.querySelector("#risall")?.textContent.trim() || "" } : false;
+    // (il ↻ è l'icona che rilegge, sola: nessuna parola accanto)
+    const ri = r.querySelector("#risall");
+    return a ? { t: a.textContent.trim(), prog: !!r.querySelector(".wuprog"), salva: !!r.querySelector("#refsave"), ricarica: ri ? (ri.querySelector("svg") ? "↻" : "") + ri.textContent.trim() : "" } : false;
   }, null, { timeout: 15000 }).then((h) => h.jsonValue()).catch(() => null);
   check(!!mentre && /^↓ \d+$/.test(mentre.t) && !mentre.prog && !mentre.salva && mentre.ricarica === "↻",
     `mentre carica da solo: «↓ N» accanto a ↻, nient'altro (got: ${JSON.stringify(mentre)})`);
@@ -354,14 +356,17 @@ check(testaVisore.includes(esamePdf) && testaVisore.includes(quandoPdf) && /ROSS
 if (process.env.PSA_SCREEN) await page.screenshot({ path: process.env.PSA_SCREEN }).catch(() => {});
 check(mock.state.requests.filter((q) => q.url.includes("Sa4ViewerExtRedirect")).length === before,
   "nessuna richiesta al server all'apertura di un referto salvato");
-// «Stampa» nel visore: senza stampa automatica, il dialogo del browser sul PDF della copia
+// «Stampa» nel visore: senza stampa automatica, il dialogo del browser sul PDF della copia.
+// Il fuoco è già su «Stampa» (Invio stampa), e Ctrl+P è «Stampa» — non la pagina sotto.
 {
   const prima = mock.state.requests.length;
-  await visore.locator("#vstampa").click({ timeout: 3000 }).catch(() => {});
+  const fuoco = await page.evaluate(() => document.getElementById("psassist-visore")?.shadowRoot.activeElement?.id || "");
+  check(fuoco === "vstampa", `aperto il referto, il fuoco è su «Stampa», non sul ✕ (got ${fuoco || "niente"})`);
+  await page.keyboard.press("Control+p");
   const cornice = await page.waitForSelector("#psassist-stampa-referto", { state: "attached", timeout: 5000 }).then(() => true).catch(() => false);
   const chiuso = await page.waitForSelector("#psassist-visore", { state: "detached", timeout: 5000 }).then(() => true).catch(() => false);
   check(cornice && chiuso && mock.state.requests.length === prima,
-    "«Stampa» nel visore: senza stampa automatica il dialogo del browser, dalla copia (nessuna richiesta), e il referto si chiude");
+    "Ctrl+P nel visore è la sua «Stampa»: senza stampa automatica il dialogo del browser, dalla copia (nessuna richiesta), e il referto si chiude");
 }
 await visore.locator("#vchiudi").click({ timeout: 1000 }).catch(() => {});
 // (il dialogo di stampa del browser tiene occupata la pagina qualche secondo —

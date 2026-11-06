@@ -282,8 +282,10 @@ try {
   await $p('[data-terpref]:has-text("KETOROLAC")').click();
   check(await $p(".ricvoci .ricv").count() === 2 && !(await $p("#terprepara").isDisabled()), "scelti due farmaci: «Prepara nel gestionale» acceso");
   const termini0 = srv.termini.length, conf0 = srv.conferme.length, pagine0 = srv.pagineTer.length;
-  await $p("#terprepara").click();
-  check(await sullaTerapia(), "«Prepara nel gestionale»: la pagina Terapia, aperta dal suo pulsante");
+  // in testa «‹ Terapia» al posto delle schede; Ctrl+Invio è «Prepara» (Conferma resta del medico)
+  check((await $p(".seg.vmenu .segtit").innerText()).trim() === "Terapia", `in testa «‹ Terapia» (got ${await $p(".seg").innerText().catch(() => "")})`);
+  await $p("#terq").press("Control+Enter");
+  check(await sullaTerapia(), "Ctrl+Invio (= «Prepara nel gestionale»): la pagina Terapia, aperta dal suo pulsante");
   check(srv.pagineTer.length === pagine0 + 1 && /MVPG=PsoEpisodioTerapieImposta&MODALITA=PRESCRIZIONE&EPISODIO_ID=700001&returnPage=PsoEpisodio$/.test(srv.pagineTer.at(-1)), `…l'indirizzo è quello del pulsante (${srv.pagineTer.at(-1)})`);
   check(await finche(async () => /1 di 2 · PARACETAMOLO 1000 MG CPR: controlla e premi Conferma/.test(await banner())), `la riga: «${await banner()}»`);
   const n3 = await doc.evaluate(() => document.getElementById("DESCRIZIONE").name.split("_")[1]);
