@@ -5439,9 +5439,23 @@ async function scenarioPromemoria(browser) {
     `Invio aggiunge in fondo: una cosa da fare senza ora, due promemoria con l'ora; per episodio, mai il nome (got: ${JSON.stringify(tre.map((x) => [x.testo, x.t]))})`);
   check(scen, (await $panel(page, ".dfpop .dfi").count()) === 3 && (await fuocoId()) === "dfin" && (await $panel(page, "#dfin").inputValue()) === "",
     "le voci compaiono subito, e il campo resta pronto per la prossima");
-  check(scen, (await testoIcona(".hd")) === "3" && (await colore(".hd")) === "quieta", `l'icona conta le voci aperte: «3», tranquilla (got: ${await testoIcona(".hd")})`);
+  check(scen, (await testoIcona(".hd")) === "chiamare la figlia +2" && (await colore(".hd")) === "quieta",
+    `l'icona dice la prima voce aperta e quante altre: «chiamare la figlia +2», tranquilla (got: ${await testoIcona(".hd")})`);
   const ore = await $panel(page, ".dfpop .dft").allInnerTexts();
   check(scen, ore.join(",") === "10:45,11:30", `un promemoria mostra la sua ora (got: ${ore.join(", ")})`);
+  // una riga sola, l'ora DAVANTI al testo; la maniglia, +15′ e ✕ solo passandoci sopra
+  const comeRiga = (testo) => voceLi(testo).evaluate((li) => {
+    const s = (sel) => li.querySelector(sel), op = (el) => (el ? +getComputedStyle(el).opacity : -1), t = s(".dft"), x = s(".dftx");
+    return { prima: !!t && t.getBoundingClientRect().right <= x.getBoundingClientRect().left, h: Math.round(li.getBoundingClientRect().height),
+      grip: op(s(".dfgrip")), piu: op(s(".dfpiu")), via: !!s(".dfx") && s(".dfx").getClientRects().length > 0 && op(s(".dfx")) > 0 };
+  });
+  await page.mouse.move(5, 5);
+  const quieta = await comeRiga("tropo");
+  await voceLi("tropo").hover();
+  const sopra = await comeRiga("tropo");
+  check(scen, quieta.prima && quieta.h <= 30, `una riga sola, l'ora davanti al testo (got: ${JSON.stringify(quieta)})`);
+  check(scen, quieta.grip === 0 && quieta.piu === 0 && !quieta.via && sopra.grip === 1 && sopra.piu === 1 && sopra.via,
+    `la maniglia, «+15′» e ✕ non si vedono finché non ci passi sopra (got: ${JSON.stringify({ quieta, sopra })})`);
   await shot(page, "onda3-dafare-aperta");
 
   // riordinare: trascinando la maniglia, e da tastiera (Alt+↑/↓)
@@ -5487,11 +5501,11 @@ async function scenarioPromemoria(browser) {
   await voceLi("EGA").locator(".dfck").click();
   const spunta = { classe: await voceLi("EGA").evaluate((li) => li.classList.contains("fatto")), aria: await voceLi("EGA").locator(".dfck").getAttribute("aria-checked"),
     barrata: await voceLi("EGA").locator(".dftx").evaluate((t) => getComputedStyle(t).textDecorationLine) };
-  check(scen, spunta.classe && spunta.aria === "true" && spunta.barrata === "line-through" && (await testoIcona(".hd")) === "2" && (await colore(".hd")) === "quieta",
-    `la spunta tonda: barrata, al suo posto; l'icona conta 2 e torna tranquilla (got: ${JSON.stringify(spunta)}, «${await testoIcona(".hd")}»)`);
+  check(scen, spunta.classe && spunta.aria === "true" && spunta.barrata === "line-through" && (await testoIcona(".hd")) === "chiamare la figlia +1" && (await colore(".hd")) === "quieta",
+    `la spunta tonda: barrata, al suo posto; l'icona conta una altra e torna tranquilla (got: ${JSON.stringify(spunta)}, «${await testoIcona(".hd")}»)`);
   await voceLi("tropo").locator(".dfck").click();
   await voceLi("tropo").locator(".dfck").click();
-  check(scen, (await voceLi("tropo").locator(".dfck").getAttribute("aria-checked")) === "false" && (await testoIcona(".hd")) === "2", "un secondo tocco toglie la spunta");
+  check(scen, (await voceLi("tropo").locator(".dfck").getAttribute("aria-checked")) === "false" && (await testoIcona(".hd")) === "chiamare la figlia +1", "un secondo tocco toglie la spunta");
   await page.clock.fastForward("04:30");
   check(scen, (await voceLi("EGA").count()) === 1 && (await voci()).includes("EGA"), "dopo 4 minuti e mezzo la voce fatta c'è ancora");
   await page.clock.fastForward("01:00");
@@ -5512,27 +5526,37 @@ async function scenarioPromemoria(browser) {
   await $panel(page, "#dfin").press("Enter");
   await voceLi("da togliere").hover();
   await voceLi("da togliere").locator(".dfx").click();
-  check(scen, (await voci()).join("|") === "chiamare la figlia stasera|tropo" && (await testoIcona(".hd")) === "2", "✕ la cancella, dalla lista e dalla memoria; l'icona si rifà");
+  check(scen, (await voci()).join("|") === "chiamare la figlia stasera|tropo" && (await testoIcona(".hd")) === "chiamare la figlia stasera +1", "✕ la cancella, dalla lista e dalla memoria; l'icona si rifà");
   await page.keyboard.press("Escape");
 
-  // Sempre in vista: in cima alla finestra le cose da fare di chi hai davanti,
-  // e ridotto il pannello, sotto la pill (la prima è la nota); un tocco apre la lista
-  const righeNota = async (sel) => ((await $panel(page, `${sel}:not([hidden])`).count()) ? (await $panel(page, `${sel} .dfnr`).allInnerTexts()) : []);
-  check(scen, (await righeNota(".dfnota.inwin")).join("|") === "chiamare la figlia stasera|11:30 tropo", `in cima alla finestra, le cose da fare (got: ${(await righeNota(".dfnota.inwin")).join(" | ")})`);
+  // Sempre in vista, in un posto solo: aperta la finestra, l'icona nell'intestazione
+  // (la prima voce, poi «+N»), e niente striscia dentro; ridotto il pannello, sotto la
+  // pill (la prima è la nota); un tocco apre la lista
+  const righeNota = async (sel) => ((await $panel(page, `${sel}:not([hidden])`).count()) ? (await $panel(page, `${sel} .dfr`).allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim()) : []);
+  const testa = { strisce: await $panel(page, ".card .dfnota").count(), t: await testoIcona(".hd"), prima: (await $panel(page, ".hd .dfic .dfict").innerText().catch(() => "")).trim() };
+  check(scen, testa.strisce === 0 && testa.prima === "chiamare la figlia stasera" && testa.t === "chiamare la figlia stasera +1",
+    `aperta la finestra: niente striscia, l'intestazione dice la prima voce e «+1» (got: ${JSON.stringify(testa)})`);
   await $panel(page, "#collapse").click();
   const nr = await righeNota(".dfnota");
   const posto = await page.evaluate(() => {
     const r = document.getElementById("psassist-host").shadowRoot, p = r.querySelector("#expand").getBoundingClientRect(), n = r.querySelector(".dfnota").getBoundingClientRect();
     return { sotto: n.top >= p.bottom && n.top - p.bottom < 12, dentro: n.left >= 0 && n.right <= innerWidth, w: Math.round(n.width), h: Math.round(n.height) };
   });
-  check(scen, nr.join("|") === "chiamare la figlia stasera|11:30 tropo" && posto.sotto && posto.dentro && posto.w <= 250 && posto.h <= 90,
+  check(scen, nr.join("|") === "chiamare la figlia stasera|11:30 tropo" && posto.sotto && posto.dentro && posto.w <= 290 && posto.h <= 90,
     `ridotto: sotto la pill, piccole, le cose da fare (got: ${nr.join(" | ")} · ${JSON.stringify(posto)})`);
   await shot(page, "dafare-nota-pill");
+  const rigaNota = await $panel(page, ".dfnota .dfr").first().evaluate((r) => ({ h: Math.round(r.getBoundingClientRect().height), f: getComputedStyle(r).fontSize, o: !!r.querySelector(".dfo") }));
   await $panel(page, ".dfnota").click();
   await $panel(page, ".dfpop").waitFor();
   check(scen, (await $panel(page, ".card").count()) === 0 && (await $panel(page, ".dfpop .dfi").count()) === 2, "un tocco apre la lista lì, senza aprire la finestra");
+  const sopraNota = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot, n = r.querySelector(".dfnota").getBoundingClientRect(), p = r.querySelector(".dfpop").getBoundingClientRect(), i = r.querySelector(".dfpop .dfi");
+    return { copre: p.top <= n.top + 1 && p.bottom >= n.bottom && p.left <= n.left && p.right >= n.right, h: Math.round(i.getBoundingClientRect().height), f: getComputedStyle(i).fontSize };
+  });
+  check(scen, sopraNota.copre && rigaNota.o && rigaNota.h === sopraNota.h && rigaNota.f === sopraNota.f,
+    `la lista si apre al posto della nota (le stesse righe, una volta sola), righe uguali (got: ${JSON.stringify({ rigaNota, sopraNota })})`);
   for (const t of ["terza", "quarta"]) { await $panel(page, "#dfin").fill(t); await $panel(page, "#dfin").press("Enter"); }
-  check(scen, (await righeNota(".dfnota")).join("|") === "chiamare la figlia stasera|11:30 tropo|terza" && /^\+1$/.test((await $panel(page, ".dfnota .dfnpiu").innerText().catch(() => "")).trim()),
+  check(scen, (await righeNota(".dfnota")).join("|") === "chiamare la figlia stasera|11:30 tropo|terza" && /^\+1$/.test((await $panel(page, ".dfnota .dfpiun").innerText().catch(() => "")).trim()),
     "al più tre righe, poi «+1»: rifatte sul posto mentre scrivi");
   for (const t of ["quarta", "terza"]) { await voceLi(t).hover(); await voceLi(t).locator(".dfx").click(); }
   await page.keyboard.press("Escape");

@@ -6153,8 +6153,15 @@
     /* il post-it: la prima voce aperta, in grigio, che cede per prima */
     .dfpost { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #5B6B7A; }
     .dfpost b { font-weight: 600; color: #35506B; font-variant-numeric: tabular-nums; }
-    /* nell'intestazione, accanto agli identificativi: il cuore e l'icona */
-    .hdpaz { flex: none; display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; }
+    /* nell'intestazione, accanto agli identificativi: il cuore e l'icona, che dice anche la
+       prima cosa da fare (poi «+N»): aperta la finestra è l'unico posto dove stanno. Se manca
+       posto cede prima il testo (fino all'icona e «+N»), poi il nome. */
+    .hdpaz { flex: 0 100000 auto; display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; }
+    .hdpaz > *, .hdpaz > .dfslot > * { flex: none; }
+    .hdpaz .dfic.dfprima { flex: 0 1 auto; max-width: 24em; padding: 0 9px 0 7px; gap: 5px; }
+    .dfict { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; white-space: normal; word-break: break-all;
+             font-size: 12.5px; font-weight: 500; }
+    .dfict b { font-weight: 700; }
     .hdpaz .brac { position: relative; width: 28px; height: 28px; }
     .hdpaz .brac .bracn { position: absolute; right: -6px; top: -4px; background: #0B5CAD; color: #fff; border-radius: 999px; padding: 0 4px;
                           font-size: 10.5px; font-weight: 700; line-height: 15px; font-variant-numeric: tabular-nums; }
@@ -6180,26 +6187,35 @@
     .dfhd b { color: #16232E; }
     .dfl { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; }
     .dfl:empty { display: none; }
-    .dfi { display: flex; align-items: center; gap: 6px; min-height: 38px; padding: 2px 4px 2px 0; border-radius: 6px; background: #fff; }
-    .dfi + .dfi { box-shadow: inset 0 1px 0 #EEF2F6; }
+    /* UNA RIGA, DAPPERTUTTO (la lista del paziente, il tabellone, la nota sotto la pill, la scheda al
+       passaggio): ○ 11:42 testo… ✕ — una riga sola, le stesse misure; l'ora davanti, piccola, in
+       grassetto, ambra e poi rossa come l'icona; ✕, la maniglia e +15′ solo al passaggio o col
+       fuoco (al tocco, sempre). La ✕ non tiene posto finché non c'è: il testo ha la riga. */
+    .dfi, .dfr { display: flex; align-items: center; gap: 7px; min-height: 28px; padding: 0 2px 0 0; border-radius: 6px; font-size: 13px; line-height: 20px; }
+    .dfi { background: #fff; }
     .dfi.presa { position: relative; z-index: 2; box-shadow: 0 6px 18px rgba(9,42,74,.18); }
     .dfl.trascino, .dfl.trascino * { cursor: grabbing !important; }
-    .dfgrip { flex: none; width: 16px; text-align: center; color: #B4C2CF; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
-              font-size: 13px; letter-spacing: -2px; line-height: 30px; }
-    .dfi:hover .dfgrip { color: #5B6B7A; }
-    .dfck { flex: none; position: relative; width: 20px; height: 20px; padding: 0; border: 1.6px solid #8296A9; border-radius: 50%; background: #fff; cursor: pointer; }
-    .dfck::before { content: ""; position: absolute; inset: -9px; }
+    .dfgrip { flex: none; width: 12px; margin-right: -3px; text-align: center; color: #8296A9; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+              font-size: 12px; letter-spacing: -2px; line-height: 28px; }
+    .dfgrip, .dfpiu { opacity: 0; }
+    .dfi:hover :is(.dfgrip, .dfpiu), .dfi:focus-within :is(.dfgrip, .dfpiu) { opacity: 1; }
+    @media (hover: hover) { .dfi:not(:hover):not(:focus-within) .dfx { display: none; } }
+    @media (hover: none) { .dfgrip, .dfpiu { opacity: 1; } }
+    .dfck, .dfo { flex: none; position: relative; box-sizing: border-box; width: 18px; height: 18px; padding: 0; border: 1.6px solid #8296A9; border-radius: 50%; background: #fff; }
+    .dfck { cursor: pointer; }
+    .dfck::before { content: ""; position: absolute; inset: -6px; }
     .dfck:hover { border-color: #177245; }
     .dfck:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 2px; }
     .dfi.fatto .dfck { border-color: #177245; background: #177245; }
-    .dfi.fatto .dfck::after { content: ""; position: absolute; left: 5.5px; top: 2px; width: 5px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
-    .dftx { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.35; color: #16232E; }
+    .dfi.fatto .dfck::after { content: ""; position: absolute; left: 4.6px; top: 1.2px; width: 4.5px; height: 8.5px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+    .dftx { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #16232E; }
+    .dftx:has(.dfmod) { overflow: visible; }
     .dfi.fatto .dftx { text-decoration: line-through; color: #8296A9; }
-    .dft { flex: none; padding: 0 6px; border-radius: 999px; background: #EEF2F6; color: #35506B; font-size: 11.5px; font-weight: 700; line-height: 18px; font-variant-numeric: tabular-nums; }
-    .dft.amb { background: #FFF4DB; color: #8A5A00; }
-    .dft.ros { background: #FDEBEA; color: #B3261E; }
-    .dfi.fatto .dft { background: none; color: #9AA8B5; font-weight: 400; }
-    .dfpiu { flex: none; min-height: 26px; border: 1px solid #D9E2EC; border-radius: 6px; background: #fff; padding: 0 7px; cursor: pointer;
+    .dft { flex: none; color: #35506B; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .dft.amb { color: #8A5A00; }
+    .dft.ros { color: #B3261E; }
+    .dfi.fatto .dft { color: #9AA8B5; font-weight: 400; }
+    .dfpiu { flex: none; height: 22px; border: 1px solid #D9E2EC; border-radius: 6px; background: #fff; padding: 0 6px; cursor: pointer;
              font-size: 11.5px; font-weight: 600; color: #16232E; white-space: nowrap; }
     .dfpiu:hover { border-color: #9DBFDE; }
     .dfpiu:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
@@ -6213,40 +6229,34 @@
     .dfhint.ko { color: #B3261E; }
     .dfsr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     /* ✕ cancella; un tocco sul testo lo modifica (la lista di un paziente e il Da fare del tabellone) */
-    .dfx { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 12px; color: #8296A9; opacity: 0; }
-    .dfi:hover .dfx, .dfi:focus-within .dfx { opacity: 1; }
+    .dfx { flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 12px; color: #8296A9; }
     .dfx:hover { background: #FDF1F0; color: #B3261E; }
-    .dfx:focus-visible { opacity: 1; outline: 2px solid #0B5CAD; outline-offset: 1px; }
-    @media (hover: none) { .dfx { opacity: 1; } }
+    .dfx:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     [data-dfmod], [data-tdmod] { cursor: text; border-radius: 4px; }
     [data-dfmod]:hover, [data-tdmod]:hover { background: #F2F5F8; }
     [data-dfmod]:focus-visible, [data-tdmod]:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     .dfmod { display: block; width: 100%; min-width: 120px; height: 28px; padding: 0 8px; border: 1px solid #0B5CAD; border-radius: 6px; background: #fff;
              font: inherit; font-size: 13px; color: #16232E; outline: 0; box-shadow: 0 0 0 3px rgba(11,92,173,.12); }
-    /* le cose da fare di chi hai davanti, sempre in vista: sotto la pill ridotta, e in cima alla finestra */
-    .dfnota { display: flex; flex-direction: column; align-items: stretch; gap: 1px; margin: 0; padding: 5px 9px; border: 1px solid #EBD995; border-radius: 8px;
-              background: #FFF8DE; color: #4A3B00; cursor: pointer; text-align: left; font: inherit; font-size: 12px; font-weight: 500; line-height: 1.35;
-              box-shadow: 0 4px 12px rgba(9,42,74,.14); }
+    /* le cose da fare di chi hai davanti, sempre in vista sotto la pill ridotta (aperta la
+       finestra, le dice l'icona nell'intestazione): le righe di sempre, tre al più, poi «+N» */
+    .dfnota { display: flex; flex-direction: column; align-items: stretch; margin: 0; padding: 2px 10px 2px 8px; border: 1px solid #EBD995; border-radius: 10px;
+              background: #FFF8DE; color: #16232E; cursor: pointer; text-align: left; font: inherit; box-shadow: 0 4px 12px rgba(9,42,74,.14); }
     .dfnota[hidden] { display: none; }
     .dfnota:hover { background: #FFF2C4; }
     .dfnota:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 2px; }
-    .dfnr { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .dfnr b { font-weight: 700; font-variant-numeric: tabular-nums; }
-    .dfnpiu { font-weight: 700; color: #7A6400; }
-    .wrap:not(.win) > .dfnota { position: absolute; top: calc(100% + 6px); right: 0; width: max-content; max-width: 240px; }
+    .dfnota .dfo { background: none; }
+    .dfpiun { padding: 0 0 4px 25px; font-size: 11.5px; font-weight: 700; line-height: 16px; color: #5B6B7A; }
+    .dfnota .dfpiun { color: #7A6400; }
+    .wrap:not(.win) > .dfnota { position: absolute; top: calc(100% + 6px); right: 0; width: max-content; min-width: 180px; max-width: 280px; }
     .wrap:not(.win) > .dfnota.sx { right: auto; left: 0; }
     .wrap:not(.win) > .dfnota.su { top: auto; bottom: calc(100% + 6px); }
-    .dfnota.inwin { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 2px 16px; width: 100%; margin: 0 0 12px; box-shadow: none; font-size: 12.5px; }
-    .dfnota.inwin .dfnr { max-width: 100%; }
-    /* la scheda al passaggio: le cose da fare */
-    .pzcarta .pcd { margin-top: 3px; padding-top: 3px; border-top: 1px solid #EEF2F6; }
-    .pzcarta .pcdi { display: block; position: relative; padding-left: 14px; }
-    .pzcarta .pcdi::before { content: ""; position: absolute; left: 1px; top: .45em; width: 7px; height: 7px; border: 1.4px solid #8296A9; border-radius: 50%; }
-    .pzcarta .pcdi.piu::before { display: none; }
-    .pzcarta .pcdi b { font-variant-numeric: tabular-nums; }
-    /* IL DA FARE DEL TABELLONE: sopra le mappe (le voci in colonne, se c'è posto); accanto a
-       loro solo quando lo spazio è largo davvero (la pagina del tabellone, uno schermo grande),
-       così la finestra di sempre non toglie larghezza ai letti. Ridotto, non prende spazio. */
+    /* la scheda al passaggio: le cose da fare, le stesse righe */
+    .pzcarta .pcd { margin-top: 4px; padding-top: 2px; border-top: 1px solid #EEF2F6; }
+    /* IL DA FARE DEL TABELLONE: sopra le mappe, una colonna sola di cinque righe al più (poi
+       scorre: le mappe non perdono altezza); accanto a loro solo quando lo spazio è largo davvero
+       (la pagina del tabellone, uno schermo grande), così la finestra di sempre non toglie
+       larghezza ai letti. Ridotto, non prende spazio. Prima le voci generali, poi i pazienti
+       nell'ordine del tabellone: il cognome una volta, a sinistra, e sotto le sue voci. */
     .tdsec { container: tdsec / inline-size; }
     .tdriga { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
     .tdriga > .pzunita { min-width: 0; }
@@ -6259,25 +6269,22 @@
     .tdn { font-weight: 700; color: #35506B; font-variant-numeric: tabular-nums; }
     .tdin { flex: 1 1 auto; min-width: 0; width: auto; height: 30px; }
     .tdin.ko { border-color: #B3261E; }
-    .tdcorpo { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px 8px 8px; scrollbar-width: thin; }
+    .tdcorpo { flex: 1 1 auto; min-height: 0; max-height: calc(5.5 * 28px + 6px); overflow-y: auto; overscroll-behavior: contain; padding: 0 8px 6px; scrollbar-width: thin; }
     .tdl { max-height: none; overflow: visible; }
-    .tdsez { margin: 8px 0 2px 2px; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #8296A9; }
-    .tdsez[hidden] { display: none; }
-    .tdi { min-height: 32px; padding-left: 2px; background: none; }
-    .tdchi { font-weight: 800; letter-spacing: .02em; color: #16232E; }
+    .tdi { background: none; }
+    .tdchi { flex: none; align-self: flex-start; width: 78px; padding-top: 7px; font-size: 11.5px; font-weight: 800; line-height: 14px; letter-spacing: .02em;
+             color: #16232E; overflow-wrap: anywhere; }
+    .tdg:not(:first-child), [data-tdl="gen"]:not(:empty) + .tdl > .tdg:first-child { border-top: 1px solid #EEF2F6; border-radius: 0; }
     .tdtogb { display: none; }
     /* stretta, ridotto: un bottone in fondo alla barra del tabellone, che non prende altezza */
     @container tdsec (max-width: 1179.98px) {
       .tdcard.chiusa { display: none; }
       .tdtogb { display: inline-flex; margin-left: auto; }
     }
-    @container tdsec (min-width: 640px) and (max-width: 1179.98px) {
-      .tdl { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); column-gap: 18px; }
-      .tdl > .dfi + .dfi { box-shadow: none; }
-    }
     @container tdsec (min-width: 1180px) {
       .tdriga { flex-direction: row; }
       .tdcard { order: 0; width: 300px; max-height: none; border-bottom: 0; border-left: 1px solid #E8EDF2; }
+      .tdcorpo { max-height: none; }
       .tdcard.chiusa { width: 42px; }
       .tdcard.chiusa .tdhd { justify-content: center; padding: 8px 4px; }
       .tdcard.chiusa .tdtog { writing-mode: vertical-rl; width: 32px; height: auto; padding: 10px 0; }
@@ -8946,7 +8953,7 @@
                 </div>` : ""}
               ${!this.runState ? this.selbarHtml() : ""}
               </div>
-              <div class="bd"><div class="bdi">${idp && !running ? this.dfNotaSlot(this.epDiQuesta(), undefined, " inwin", "notaf") : ""}${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div></div>
+              <div class="bd"><div class="bdi">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div></div>
               ${this.inPazienti() ? "" : this.stanzaSnack()}
               ${TABELLONE ? "" : forma === "colonna" ? `<div class="rz rz-w" data-rz="w" title="Trascina per allargare o stringere la colonna"></div>` : `
               ${["n", "s", "e", "w", "ne", "nw", "se", "sw"].map((d) => `<div class="rz rz-${d}" data-rz="${d}"></div>`).join("")}
@@ -9031,8 +9038,9 @@
     // ===================================================== DA FARE · TABELLONE
     // Sul tabellone, sempre in vista (Mappa e Lista, ogni vista): il «Da fare»
     // generale — di nessun paziente — e sotto quello di ogni paziente, col
-    // COGNOME davanti, nell'ordine del tabellone (le aree, poi l'ordine del
-    // gestionale). Un tocco sul testo lo modifica, ✕ lo cancella, la spunta lo
+    // COGNOME davanti (una volta, all'inizio delle sue voci), nell'ordine del
+    // tabellone (le aree, poi l'ordine del gestionale). Una colonna sola, una
+    // riga per voce. Un tocco sul testo lo modifica, ✕ lo cancella, la spunta lo
     // fa; le voci dei pazienti sono quelle della loro lista (dafare.v1).
     // Accanto alle mappe quando c'è posto, sopra quando la finestra è stretta;
     // si riduce a una barra sottile, e se lo ricorda.
@@ -9043,13 +9051,13 @@
         .sort((x, y) => ord(x) - ord(y) || k(x).localeCompare(k(y)) || (sa(x) && sa(y) ? n(x) - n(y) : sa(y) - sa(x)) || ingresso(x) - ingresso(y))
         .map((i) => ({ ep: i.p.ep, chi: ((i.omonimo ? i.breve : cognomeTitolo(i.p.name)) || "paziente").toUpperCase() + (i.coda || "") }));
     }
-    tdVoce(x, ora, ep = "", chi = "") {
-      const b = x.t != null && !x.fatto ? promBanda(x.t, ora) : "";
-      return `<li class="dfi tdi${x.fatto ? " fatto" : ""}" data-id="${esc(x.id)}"${ep ? ` data-tdep="${esc(ep)}"` : ""}>
+    // la riga di sempre (dfRiga), col cognome a sinistra: scritto solo sulla prima del paziente
+    tdVoce(x, ora, ep = "", chi = "", primo = false) {
+      return `<li class="dfi tdi${x.fatto ? " fatto" : ""}${primo ? " tdg" : ""}" data-id="${esc(x.id)}"${ep ? ` data-tdep="${esc(ep)}"` : ""}>
+        ${primo ? `<b class="tdchi">${esc(chi)}</b>` : `<span class="tdchi" aria-hidden="true"></span>`}
         <button type="button" class="dfck" role="checkbox" aria-checked="${x.fatto ? "true" : "false"}" aria-label="${esc((chi ? chi + ": " : "") + x.testo)}"
           title="${x.fatto ? "Fatta: un tocco la riapre (se ne va fra 5 minuti)" : "Un tocco quando è fatta"}"></button>
-        <span class="dftx">${chi ? `<b class="tdchi">${esc(chi)}</b> ` : ""}<span class="tdtx" data-tdmod role="button" tabindex="0" title="Tocca per modificare">${esc(x.testo)}</span></span>
-        ${x.t != null ? `<span class="dft${b ? " " + b : ""}" title="${esc(promRiga(x, ora))}">${esc(promOra(x.t, ora))}</span>` : ""}
+        ${this.dfOra(x, ora)}<span class="dftx tdtx" data-tdmod role="button" tabindex="0" title="${esc(x.testo)}&#10;Tocca per modificare">${esc(x.testo)}</span>
         <button type="button" class="dfx" data-tdvia title="Cancella" aria-label="Cancella ${esc(x.testo)}">✕</button>
       </li>`;
     }
@@ -9057,7 +9065,7 @@
       const gen = genTutte(ora), suoi = this._tdOrdine || [];
       return {
         gen: gen.map((x) => this.tdVoce(x, ora)).join(""),
-        paz: suoi.flatMap(({ ep, chi }) => dfDi(ep, tutti).map((x) => this.tdVoce(x, ora, ep, chi))).join(""),
+        paz: suoi.flatMap(({ ep, chi }) => dfDi(ep, tutti).map((x, i) => this.tdVoce(x, ora, ep, chi, i === 0))).join(""),
         aperte: gen.filter((x) => !x.fatto).length + suoi.reduce((n, { ep }) => n + dfAperte(ep, tutti).length, 0),
       };
     }
@@ -9070,8 +9078,7 @@
           ICO.dafare}<b>Da fare</b><span class="tdn">${aperte || ""}</span></button>${chiusa ? "" : `
           <input type="text" class="dfin tdin" id="tdin" maxlength="160" autocomplete="off" spellcheck="false" placeholder="Aggiungi…" value="${esc(this._tdTesto || "")}"
             aria-label="Aggiungi al Da fare generale (di nessun paziente)" title="Una cosa da fare di nessun paziente: Invio la aggiunge">`}</div>
-        ${chiusa ? "" : `<div class="tdcorpo"><ul class="dfl tdl" data-tdl="gen" aria-label="Da fare generale">${gen}</ul>
-          <div class="tdsez"${paz ? "" : " hidden"}>Pazienti</div><ul class="dfl tdl" data-tdl="paz" aria-label="Da fare dei pazienti">${paz}</ul></div>`}
+        ${chiusa ? "" : `<div class="tdcorpo"><ul class="dfl tdl" data-tdl="gen" aria-label="Da fare generale">${gen}</ul><ul class="dfl tdl" data-tdl="paz" aria-label="Da fare dei pazienti">${paz}</ul></div>`}
       </aside>`;
     }
     // rifatte SUL POSTO (un gesto, il tempo che passa, un'altra scheda): niente
@@ -9084,9 +9091,8 @@
       for (const [ul, html] of [[c.querySelector('[data-tdl="gen"]'), gen], [c.querySelector('[data-tdl="paz"]'), paz]]) {
         if (ul && ul._firma !== html) { ul.innerHTML = html; ul._firma = html; }
       }
-      const sez = c.querySelector(".tdsez"), n = c.querySelector(".tdn");
+      const n = c.querySelector(".tdn");
       this._tdFirma = { gen, paz };
-      if (sez) sez.hidden = !paz;
       if (n) n.textContent = aperte || "";
       if (fid && !this.root.activeElement?.closest?.(".tdi")) {
         const li = [...c.querySelectorAll(".tdi")].find((x) => x.getAttribute("data-id") === fid[0] && (x.getAttribute("data-tdep") || "") === fid[1]);
@@ -9348,8 +9354,8 @@
         posto ? ` · ${esc(posto)}` : ""}${p.arrivo ? ` · ${attesaTesto(minDa(p.arrivo, ora))}` : ""}`)];
       // le cose da fare (la prima è la nota), tutte quelle aperte
       const df = dfAperte(p.ep);
-      if (df.length) out.push(`<div class="pcd" aria-label="Da fare">${df.slice(0, 8).map((x) => `<span class="pcdi">${x.t != null ? `<b>${esc(promOra(x.t, ora))}</b> ` : ""}${esc(x.testo)}</span>`).join("")}${
-        df.length > 8 ? `<span class="pcdi piu">+${df.length - 8}</span>` : ""}</div>`);
+      if (df.length) out.push(`<div class="pcd" aria-label="Da fare">${df.slice(0, 8).map((x) => this.dfRiga(x, ora)).join("")}${
+        df.length > 8 ? `<span class="dfpiun">+${df.length - 8}</span>` : ""}</div>`);
       const c = cuoreDi(statoDi(p.ep)?.vit, ora);
       if (c) out.push(riga("pcv", `<span class="cuore ${c.livello}${c.vecchio ? " vecchio" : ""}" aria-hidden="true">${c.vecchio ? "♡" : "♥"}</span> NEWS ${c.punti}${
         c.fuori.length ? " · " + esc(c.fuori.join(" · ")) : ""}${c.vecchio ? ` · ${c.ore}h fa` : ""}`));
@@ -11276,15 +11282,19 @@
     // L'icona «Da fare» di un paziente: le spunte tonde e quante voci sono
     // aperte; ambra 15 minuti prima di un promemoria, rossa quando è passato.
     // Un tocco apre la lista lì dov'è. Il passaggio del mouse le dice tutte.
+    // Nell'intestazione della finestra, al posto del numero, la prima voce
+    // aperta (poi «+N»): aperta la finestra, è l'unico posto dove stanno.
     dfIcona(ep, tutti = dfTutti(), dove = "lista", ora = Date.now()) {
-      const aperte = dfAperte(ep, tutti), n = aperte.length;
+      const aperte = dfAperte(ep, tutti), n = aperte.length, testa = dove === "testa" && n > 0;
       const prossimo = aperte.filter((x) => x.t != null).sort((a, b) => a.t - b.t)[0];
       const b = prossimo ? promBanda(prossimo.t, ora) : "";
       const riga = (x) => (x.t != null ? promRiga(x, ora) : x.testo);
       const tit = n ? `Da fare (${n}):\n${aperte.map(riga).join("\n")}` : "Da fare: niente — un tocco per aggiungere";
-      const det = `${n ? `${n} ${n === 1 ? "aperta" : "aperte"}` : "niente"}${prossimo ? ` · ${promRiga(prossimo, ora)}` : ""}`;
-      return `<button type="button" class="dfic${b ? " " + b : ""}${n ? "" : " vuota"}" data-df="${esc(ep)}" data-dove="${esc(dove)}" aria-haspopup="dialog" aria-expanded="${
-        this._df?.ep === ep && this._df.dove === dove ? "true" : "false"}" title="${esc(tit)}" aria-label="${esc("Da fare: " + det)}">${ICO.dafare}${n ? `<b>${n}</b>` : ""}</button>`;
+      const det = `${n ? `${n} ${n === 1 ? "aperta" : "aperte"}` : "niente"}${testa ? `: ${riga(aperte[0])}` : ""}${prossimo && !(testa && prossimo === aperte[0]) ? ` · ${promRiga(prossimo, ora)}` : ""}`;
+      const dentro = testa ? `<span class="dfict">${aperte[0].t != null ? `<b>${esc(promOra(aperte[0].t, ora))}</b> ` : ""}${esc(aperte[0].testo)}</span>${n > 1 ? `<b>+${n - 1}</b>` : ""}`
+        : n ? `<b>${n}</b>` : "";
+      return `<button type="button" class="dfic${b ? " " + b : ""}${n ? "" : " vuota"}${testa ? " dfprima" : ""}" data-df="${esc(ep)}" data-dove="${esc(dove)}" aria-haspopup="dialog" aria-expanded="${
+        this._df?.ep === ep && this._df.dove === dove ? "true" : "false"}" title="${esc(tit)}" aria-label="${esc("Da fare: " + det)}">${ICO.dafare}${dentro}</button>`;
     }
     // Il post-it: la prima voce aperta, nell'ordine scelto dal medico
     dfPost(ep, tutti = dfTutti()) {
@@ -11298,21 +11308,21 @@
     dfPostSlot(ep, tutti) {
       return `<span class="dfpslot" data-dfp="${esc(ep)}">${this.dfPost(ep, tutti)}</span>`;
     }
-    // Le cose da fare di chi hai davanti, sempre in vista: sotto la pill
-    // ridotta e in cima alla finestra. Al più tre righe corte (la prima è la
-    // nota), poi «+N»; un tocco apre la lista. Niente, se non c'è niente.
+    // Le cose da fare di chi hai davanti, sempre in vista sotto la pill
+    // ridotta (aperta la finestra, le dice l'icona nell'intestazione): al più
+    // tre righe (la prima è la nota), poi «+N»; un tocco apre la lista lì
+    // sopra. Niente, se non c'è niente.
     dfNotaHtml(ep, tutti = dfTutti(), ora = Date.now()) {
       const l = dfAperte(ep, tutti);
-      return l.slice(0, 3).map((x) => `<span class="dfnr">${x.t != null ? `<b>${esc(hhmm(x.t))}</b> ` : ""}${esc(x.testo)}</span>`).join("")
-        + (l.length > 3 ? `<span class="dfnpiu">+${l.length - 3}</span>` : "");
+      return l.slice(0, 3).map((x) => this.dfRiga(x, ora)).join("") + (l.length > 3 ? `<span class="dfpiun">+${l.length - 3}</span>` : "");
     }
     dfNotaTitolo(ep, tutti = dfTutti(), ora = Date.now()) {
       const l = dfAperte(ep, tutti);
       return `Da fare (${l.length}):\n${l.map((x) => (x.t != null ? promRiga(x, ora) : x.testo)).join("\n")}\nUn tocco: la lista`;
     }
-    dfNotaSlot(ep, tutti = dfTutti(), cls = "", dove = "nota") {
+    dfNotaSlot(ep, tutti = dfTutti(), cls = "") {
       const h = ep ? this.dfNotaHtml(ep, tutti) : "";
-      return `<button type="button" class="dfnota${cls}" data-df="${esc(ep)}" data-dove="${dove}" data-dfn="${esc(ep)}" aria-haspopup="dialog" aria-expanded="false"${
+      return `<button type="button" class="dfnota${cls}" data-df="${esc(ep)}" data-dove="nota" data-dfn="${esc(ep)}" aria-haspopup="dialog" aria-expanded="false"${
         h ? ` title="${esc(this.dfNotaTitolo(ep, tutti))}"` : " hidden"}>${h}</button>`;
     }
     // il pallino del letto (esami e «Da fare» insieme): si rifà da solo anche lui (dfMetti)
@@ -11522,6 +11532,11 @@
       anchor.setAttribute("aria-expanded", "true");
       this.dfLista();
       this.promPosiziona(pop, anchor, wrap);
+      // dalla nota sotto la pill la lista si apre al suo posto, sopra di lei: le stesse righe, una volta
+      if (anchor.classList.contains("dfnota")) {
+        const wr = wrap.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+        pop.style.top = (ar.top + pop.offsetHeight <= innerHeight - 8 ? ar.top : Math.max(8, ar.bottom - pop.offsetHeight)) - wr.top + "px";
+      }
       const inp = pop.querySelector("#dfin");
       // per riaprirla uguale dopo un ridisegno: il fuoco era qui dentro?
       pop.addEventListener("focusin", () => { if (this._df?.pop === pop) this._df.inFuoco = true; });
@@ -11592,14 +11607,22 @@
       h.classList.remove("ko");
       h.textContent = p ? `promemoria: ${promRiga({ t: p.t, testo: "" }, Date.now())}` : "";
     }
+    // L'ora di una voce, davanti al testo: piccola, ambra 15 minuti prima, rossa passata
+    dfOra(x, ora) {
+      if (x.t == null) return "";
+      const b = x.fatto ? "" : promBanda(x.t, ora);
+      return `<span class="dft${b ? " " + b : ""}" title="${esc(promRiga(x, ora))}">${esc(promOra(x.t, ora))}</span>`;
+    }
+    // la stessa riga, solo da leggere (sotto la pill, nella scheda al passaggio)
+    dfRiga(x, ora) {
+      return `<span class="dfr"><i class="dfo" aria-hidden="true"></i>${this.dfOra(x, ora)}<span class="dftx">${esc(x.testo)}</span></span>`;
+    }
     dfVoce(x, ora) {
-      const b = x.t != null && !x.fatto ? promBanda(x.t, ora) : "";
       return `<li class="dfi${x.fatto ? " fatto" : ""}" data-id="${esc(x.id)}">
         <span class="dfgrip" aria-hidden="true" title="Trascina per spostarla (o Alt+↑ / Alt+↓)">⋮⋮</span>
         <button type="button" class="dfck" role="checkbox" aria-checked="${x.fatto ? "true" : "false"}" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           aria-label="${esc(x.testo + (x.t != null ? ", alle " + promOra(x.t, ora) : ""))}" title="${x.fatto ? "Fatta: un tocco la riapre (se ne va fra 5 minuti)" : "Un tocco quando è fatta"}"></button>
-        <span class="dftx" data-dfmod role="button" tabindex="0" title="Tocca per modificare">${esc(x.testo)}</span>
-        ${x.t != null ? `<span class="dft${b ? " " + b : ""}" title="${esc(promRiga(x, ora))}">${esc(promOra(x.t, ora))}</span>` : ""}
+        ${this.dfOra(x, ora)}<span class="dftx" data-dfmod role="button" tabindex="0" title="${esc(x.testo)}&#10;Tocca per modificare">${esc(x.testo)}</span>
         ${x.t != null && !x.fatto ? `<button type="button" class="dfpiu" data-dfpiu="${esc(x.id)}" title="Rimanda di 15 minuti" aria-label="Rimanda ${esc(x.testo)} di 15 minuti">+15′</button>` : ""}
         <button type="button" class="dfx" data-dfvia="${esc(x.id)}" title="Cancella" aria-label="Cancella ${esc(x.testo)}">✕</button>
       </li>`;

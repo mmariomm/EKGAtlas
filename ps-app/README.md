@@ -182,13 +182,15 @@ delle due mappe) e un piccolo **⟳**. *Entrambe*: le due mappe affiancate se lo
 sopra l'altra se no; sempre in scala, **mai da scorrere di lato**. La scelta resta; finché non ne
 fai una, si vede la mappa dell'area in cui lavori. Accanto, **Mappa | Lista** (resta). *Mappa*: sotto le mappe la **lista** ha solo chi **non ha ancora un posto** (gli altri sono sulla mappa).
 Sempre in vista, in Mappa e in Lista, il **Da fare del tabellone**: accanto alle mappe quando c'è posto,
-sopra quando la finestra è stretta; **Da fare ▾** lo riduce a una barra sottile (e lo ricorda). In cima
-il **generale**, di nessun paziente: si scrive e **Invio** aggiunge (`dafare.generale.v1`, in questo
-browser e nello specchio del tabellone, mai al telefono; non scade, una voce spuntata se ne va dopo 5
-minuti; il «Reset dati pazienti» lo porta via). Sotto, le cose da fare di **ogni paziente**, ognuna col
-**COGNOME** davanti in grassetto, nell'ordine del tabellone (l'area, poi l'ordine del gestionale): sono
-le stesse della sua lista. Dappertutto **un tocco sul testo lo modifica** (Invio salva, Esc lascia
-com'era), **✕** cancella, la spunta tonda la fa.
+sopra quando la finestra è stretta — una **colonna sola**, cinque righe al più e poi scorre, così le
+mappe non perdono altezza; **Da fare ▾** lo riduce a una barra sottile (e lo ricorda). Una voce, una
+riga: `○ 11:42 tropo… ✕`. In cima il **generale**, di nessun paziente: si scrive e **Invio** aggiunge
+(`dafare.generale.v1`, in questo browser e nello specchio del tabellone, mai al telefono; non scade,
+una voce spuntata se ne va dopo 5 minuti; il «Reset dati pazienti» lo porta via). Sotto, le cose da
+fare di **ogni paziente**, nell'ordine del tabellone (l'area, poi l'ordine del gestionale): il
+**COGNOME** in grassetto una volta, a sinistra, sulla prima delle sue voci, e le altre sotto; sono le
+stesse della sua lista. Dappertutto **un tocco sul testo lo modifica** (Invio salva, Esc lascia
+com'era), **✕** (passandoci sopra; al tocco c'è sempre) cancella, la spunta tonda la fa.
 *Lista*: niente mappe, **tutti** quelli della vista, per area (Alta, Bassa, OBI, Codici minori) e nell'ordine della lista del gestionale (l'ultima letta intera), col posto in una pillola dopo il nome. La lista prende
 quello che le serve, al massimo poco meno di metà, poi scorre dentro. In fondo, chiusi, gli
 **Archiviati** e **Svuota l'elenco**.
@@ -387,12 +389,15 @@ dentro — i promemoria. Al posto della nota e dei promemoria di prima: la **not
 prima voce senza ora, i **promemoria** voci con l'ora (la prima apertura dopo l'aggiornamento li porta
 lì da soli). Si apre **lì dov'è**, senza un'altra scheda, dall'icona **Da fare** dell'intestazione
 (accanto agli identificativi) o della riga, o dal menu di chi sta nella stanza (**Da fare…**). In
-fondo, un campo su una riga: si scrive e **Invio** aggiunge, in fondo alla lista. **Un tocco sul
+fondo, un campo su una riga: si scrive e **Invio** aggiunge, in fondo alla lista. Ogni voce è una
+riga sola, la stessa dappertutto (la lista, il tabellone, il foglietto sotto la pill, la scheda al
+passaggio): `○ 11:42 tropo…` — l'ora, se c'è, davanti, ambra e poi rossa come l'icona. **Un tocco sul
 testo** lo modifica (Invio salva, Esc lascia com'era), **✕** cancella la voce. **Un tocco sulla
 spunta** e la voce è fatta: barrata, resta al suo posto **5 minuti** (un altro tocco la riapre), poi
 se ne va. L'ordine lo decidi tu: si **trascina** dalla maniglia ⋮⋮ (col mouse o col dito), o da
-tastiera **Alt+↑ / Alt+↓** sulla spunta. La **prima voce aperta** è il post-it: si legge nelle aree
-della stanza (nella riga del tabellone c'è solo quante sono). L'icona dice **quante** sono aperte e cambia colore quando un promemoria si avvicina:
+tastiera **Alt+↑ / Alt+↓** sulla spunta. La maniglia, **+15′** e ✕ compaiono passandoci sopra (o col
+fuoco; al tocco ci sono sempre). La **prima voce aperta** è il post-it: si legge nelle aree
+della stanza (nella riga del tabellone c'è solo quante sono). L'icona dice **quante** sono aperte (nell'intestazione della finestra, la **prima** e «+N») e cambia colore quando un promemoria si avvicina:
 **ambra dai 15 minuti prima**, **rossa quando l'ora è passata** (con un bagliore lento, fermo se il
 sistema chiede meno movimento); il passaggio del mouse le dice tutte. **Esc**, o un clic fuori, la
 chiude: non c'è niente da salvare, ogni gesto è già salvato.
@@ -941,9 +946,10 @@ fa scattare il doppio clic del riquadro.
 ### Nota sul paziente
 Non c'è più un campo a parte: la nota è la **prima voce di Da fare** (vedi *Pazienti*), il post-it
 che si legge sulla riga. Sulla pagina di un paziente le sue cose da fare sono **sempre in vista**,
-senza un tocco: ridotto il pannello in un foglietto giallo sotto la pill, aperto in cima alla
-finestra — al più tre righe corte (la prima è la nota), poi «+N»; un tocco apre la lista. Se non ha
-niente da fare, niente. Quelle scritte prima sono diventate voci da sole, sul paziente
+senza un tocco, in un posto solo: ridotto il pannello in un foglietto giallo sotto la pill — al più
+tre righe (la prima è la nota), poi «+N»; un tocco apre la lista al suo posto —, aperta la finestra
+nell'icona **Da fare** dell'intestazione, accanto al nome: la prima voce e «+N». Se non ha niente da
+fare, niente. Quelle scritte prima sono diventate voci da sole, sul paziente
 giusto: per codice fiscale, o per nome solo se in elenco non c'è un omonimo — una nota di chi non è
 in elenco aspetta lì finché scade.
 
