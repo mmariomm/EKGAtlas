@@ -70,7 +70,9 @@
     "unlimitedStorage",
     "scripting",
     "nativeMessaging",
-    "webRequest"
+    "webRequest",
+    "offscreen",
+    "alarms"
   ],
   "options_ui": {
     "page": "portale.html",

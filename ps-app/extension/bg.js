@@ -130,6 +130,7 @@ const pulito = (v, d = 0) => {
 function segnaErrore(tipo, dati = {}, pagina = "") {
   const voce = { ts: Date.now(), tipo: String(tipo || "?").slice(0, 40), versione: chrome.runtime.getManifest().version,
     pagina: String(pagina || "").replace(/[^\w-]/g, "").slice(0, 60), dati: pulito(dati) };
+  if (typeof regDopoErrore === "function") regDopoErrore(voce);   // un ordine fallito: la registrazione automatica (registra.js)
   codaErrori = codaErrori.then(async () => {
     const l = (await chrome.storage.local.get(ERRORI))[ERRORI] || [];
     await chrome.storage.local.set({ [ERRORI]: [...(Array.isArray(l) ? l : []), voce].slice(-ERRORI_MAX) });
@@ -1096,6 +1097,8 @@ const ordScrivi = async (l) => {
   for (const r of via) r.senzaPiano = true;
   for (let i = l.length - 1; i >= 0; i--) if (!ordTiene(l[i], l, ora)) l.splice(i, 1);
   for (const r of l) r.pubblico = ordPubblico(r, l);
+  // finito in arancione o in rosso: la registrazione automatica salva gli ultimi minuti (registra.js)
+  if (typeof regDopoOrdini === "function") regDopoOrdini(l);
   if (via.length) chrome.storage.session.remove(via.map((r) => ORD_PIANO(r.id))).catch(() => {});
   return chrome.storage.session.set({ [ORD]: l });
 };
@@ -2099,8 +2102,9 @@ const riallinea = () => { riallineaPortale().catch(() => {}); };
 chrome.runtime.onStartup?.addListener(riallinea);
 chrome.runtime.onInstalled?.addListener(riallinea);
 
-// Il registratore (⋯ → Registra, registra.js): osserva e basta, e solo mentre
-// il medico registra. Sta in un file suo; un errore lì non tocca il resto.
+// Il registratore (⋯ → Registrazioni, registra.js): osserva e basta — mentre
+// il medico registra, e gli ultimi 3 minuti per la registrazione automatica.
+// Sta in un file suo; un errore lì non tocca il resto.
 try { importScripts("registra.js"); }
 catch (e) { console.error("PS Assist: il registratore non parte", e); }
 

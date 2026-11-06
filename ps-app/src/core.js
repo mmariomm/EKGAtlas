@@ -6064,6 +6064,31 @@
     .tchip.on button { color: #16232E; }
     .recchip { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; background: #B3261E; color: #fff;
                font-size: 10.5px; font-weight: 800; letter-spacing: .04em; white-space: nowrap; margin: 0 4px; }
+    button.recchip { border: 0; cursor: pointer; font-family: inherit; }
+    button.recchip:hover { background: #941e18; }
+    /* ⋯ → Registrazioni */
+    .registrazioni .regnow { margin-bottom: 10px; }
+    .registrazioni .regnow .btn { width: auto; padding: 9px 14px; }
+    .registrazioni .regko { background: #FDF3F2; border: 1px solid #E9BAB6; color: #8A1F19; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; margin-bottom: 8px; }
+    .regauto { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: #16232E; cursor: pointer; }
+    .regauto input { width: 16px; height: 16px; margin: 0; accent-color: #0B5CAD; cursor: pointer; }
+    .registrazioni .lbl { margin-top: 16px; }
+    .reglist { display: flex; flex-direction: column; gap: 6px; }
+    .regrow { border: 1px solid #E3E8EF; border-radius: 9px; background: #fff; padding: 8px 10px; font-size: 12px; color: #35506B; }
+    .regrow .rr1 { display: flex; align-items: center; gap: 8px; color: #16232E; font-size: 12.5px; }
+    .regrow .rkb { margin-left: auto; color: #5B6B7A; font-variant-numeric: tabular-nums; }
+    .regtag { padding: 1px 7px; border-radius: 999px; background: #EEF2F6; color: #35506B; font-size: 10.5px; font-weight: 700; }
+    .regtag.auto { background: #FFF7E6; color: #8a4b03; }
+    .regrow .rr2 { margin-top: 3px; color: #16232E; }
+    .regrow .rr3 { margin-top: 3px; font-size: 11px; color: #5B6B7A; overflow-wrap: anywhere; }
+    .regrow .rok { color: #1E6B43; font-weight: 600; }
+    .regrow .rko { color: #B3261E; font-weight: 700; }
+    .regrow .rr4 { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+    .regrow .rr4 .mini { float: none; margin: 0; }
+    .regrow .rr4 .mini.via { color: #B3261E; }
+    .regrow .rr4 .mini.armato { background: #FBEBEA; border-color: #B3261E; color: #7c1a14; }
+    .regriep { white-space: pre-wrap; font: 11px/1.45 ui-monospace, Menlo, Consolas, monospace; color: #35506B; background: #F4F8FB; border: 1px solid #E3E8EF;
+               border-radius: 8px; padding: 8px 10px; margin: 8px 0 0; max-height: 260px; overflow: auto; }
     .tnow { display: flex; align-items: center; gap: 10px; background: #EDF7F0; border: 1px solid #BCE0C9;
             border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
     .tbig { font: 800 20px/1 inherit; color: #124F31; font-variant-numeric: tabular-nums; }
@@ -7310,19 +7335,30 @@
         ask({ t: "aggiornaControlla" });
       } catch { /* senza la memoria dell'estensione niente aggiornamenti: il pannello sì */ }
     }
-    // ⋯ → Registra (registra.js): finché registra, «● REC» sulla pill e in
-    // intestazione; il menu dice Registra, Ferma e scarica, o Scarica.
-    chipRec() {
+    // ⋯ → Registrazioni (registra.js): finché il medico registra, «● REC» sulla
+    // pill e in intestazione — lì un tocco apre le Registrazioni (Ferma e salva).
+    chipRec(bottone = false) {
       const r = this.reg;
-      return r && r.stato === "rec" && Date.now() < r.scade ? `<span class="recchip" title="Registrazione in corso: ⋯ → Ferma e scarica">● REC</span>` : "";
+      if (!(r && r.stato === "rec" && Date.now() < r.scade)) return "";
+      const t = "Registrazione in corso: ⋯ → Registrazioni → Ferma e salva";
+      return bottone ? `<button class="recchip" id="recchip" title="${t}">● REC</button>` : `<span class="recchip" title="${t}">● REC</span>`;
     }
     seguiRec() {
       const leggi = () => chrome.storage.local.get("registra").then((o) => {
-        const prima = this.chipRec();
+        const prima = JSON.stringify(this.reg || null);
         this.reg = o.registra || null;
-        if (this.chipRec() !== prima) this.render();
+        if (this.view === "registrazioni") this.caricaRegistrazioni();
+        else if (JSON.stringify(this.reg || null) !== prima) this.render();
       }).catch(() => {});
-      try { leggi(); chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && ch.registra) leggi(); }); } catch { /* niente */ }
+      try {
+        leggi();
+        chrome.storage.onChanged.addListener((ch, area) => {
+          if (area !== "local") return;
+          if (ch.registra) leggi();
+          // gli zip salvati, o la registrazione automatica accesa o spenta: la vista si rilegge
+          else if ((ch["registra.elenco"] || ch["registra.auto"]) && this.view === "registrazioni") this.caricaRegistrazioni();
+        });
+      } catch { /* niente */ }
     }
     async apriStampanti() {
       this.menuAperto = false;
@@ -8757,6 +8793,7 @@
       else if (this.view === "consensi") body = this.viewConsensi();
       else if (this.view === "eo") body = this.viewEo();
       else if (this.view === "tempi") body = this.viewTempi();
+      else if (this.view === "registrazioni") body = this.viewRegistrazioni();
       else if (this.view === "ricetta" && this.ricettaPossibile()) body = this.viewRicetta();
       else if (this.view === "terapia" && this.terapiaPossibile()) body = this.viewTerapia();
       else if (this.view === "riferimenti") body = this.viewRiferimenti();
@@ -8790,7 +8827,7 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", riferimenti: "Riferimenti", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", registrazioni: "Registrazioni", riferimenti: "Riferimenti", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
       // (i fogli di dimissione sono modelli, ma chi va a casa è questo paziente:
       // l'intestazione lo dice anche lì)
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
@@ -8887,7 +8924,7 @@
                 ${TABELLONE ? "" : ponteSpia()}
                 ${this.listaPs() && this.inPazienti() && hasExt() && !TABELLONE ? `<button class="iconbtn" id="tabapri" title="Il tabellone in una scheda sua" aria-label="Il tabellone in una scheda sua">↗</button>` : ""}
                 <span id="stautow">${this.chipStampa()}</span>
-                ${this.chipRec()}${this.chipTempo()}
+                ${this.chipRec(true)}${this.chipTempo()}
                 ${TABELLONE ? "" : `<span class="menuw">
                   <button class="iconbtn${this.aggNuova() ? " agg" : ""}" id="menubtn" title="${this.aggNuova() ? `Altro · c'è la versione ${esc(this.agg.nuova)}` : "Altro"}" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
                   ${this.menuAperto ? `<div class="menu" role="menu">
@@ -8909,9 +8946,7 @@
                     <button role="menuitem" id="dimimport" title="Rimetti i testi di un JSON esportato">Importa i fogli…</button>` : ""}
                     <button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${this.showLog ? "Nascondi il registro" : "Registro"}</button>
                     ${hasExt() ? `<button role="menuitem" id="stampanti" title="Quale stampante è l'etichettatrice e quale l'A4, per la stampa automatica">Stampanti</button>` : ""}
-                    ${hasExt() ? `<button role="menuitem" id="regmenu" title="Registra le pagine, le richieste e i PDF di questa sessione, anonimizzati in uno zip che resta su questo PC finché non lo mandi tu">${
-                      this.reg && this.reg.stato === "rec" ? (this.chipRec() ? "Ferma e scarica" : "Scarica la registrazione")
-                      : this.reg && this.reg.stato === "fermo" && !this.reg.esportata ? "Scarica la registrazione" : "Registra"}</button>` : ""}
+                    ${hasExt() ? `<button role="menuitem" id="regmenu" title="Registra una sessione, la registrazione automatica degli ultimi minuti, gli zip salvati su questo PC (anche dall'iPhone)">Registrazioni</button>` : ""}
                     ${hasExt() ? `<button role="menuitem" id="portapri" title="L'indirizzo del portale clinico, se il pannello non compare sulla pagina dello storico">Indirizzo del portale</button>` : ""}
                     ${this.stampaPronta() ? (this.stampaAuto.s.attiva === false
                       ? `<button role="menuitem" id="stautosw" title="Ogni foglio va da solo alla sua stampante, senza dialogo">Stampa automatica: spenta · Accendi</button>`
@@ -9425,7 +9460,7 @@
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {
-      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "riferimenti", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
+      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "registrazioni", "riferimenti", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
     }
     // In fondo alla fila delle schede, solo in Modifica: + Letto, + Sedia,
     // + Area e Fine. Si entra in Modifica dal menu «⋯».
@@ -12483,6 +12518,150 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         </div>`;
     }
 
+    // ⋯ → Registrazioni (registra.js nel service worker). In testa la
+    // registrazione a mano (Registra / Ferma e salva: anonimizzata e salvata
+    // QUI, nell'estensione — nessuna scheda, nessuno scarico), poi la
+    // registrazione automatica (gli ultimi 3 minuti, salvati da soli quando un
+    // ordine finisce male), poi gli zip salvati: quando, quanto, a mano o
+    // automatica e perché, il controllo; per ognuno il riepilogo, «Scarica sul
+    // PC» e «Cancella» (due tocchi). Gli stessi zip li vede e scarica l'iPhone.
+    // Niente pazienti: solo i nomi degli zip e i loro numeri.
+    apriRegistrazioni() { this.setView("registrazioni"); this.caricaRegistrazioni(); }
+    caricaRegistrazioni() {
+      if (this._regCarica) { this._regDiNuovo = true; return; }
+      this._regCarica = ask({ t: "registraLista" }).then((r) => {
+        this._regCarica = null;
+        if (r && r.ok) { this.regLista = r; this.reg = r.stato || null; }
+        else if (!this.regLista) this.regLista = { ok: false };
+        if (this._regDiNuovo) { this._regDiNuovo = false; return this.caricaRegistrazioni(); }
+        if (this.view === "registrazioni" && !this.root.activeElement?.matches?.("input, textarea")) this.render();
+      });
+    }
+    viewRegistrazioni() {
+      const L = this.regLista;
+      if (!L) { this.caricaRegistrazioni(); return `<div class="sec"><div class="hint">Leggo le registrazioni…</div></div>`; }
+      if (!L.ok) return `<div class="sec"><div class="hint">Il registratore non risponde: ricarica l'estensione e riprova.</div></div>`;
+      const r = this.reg, occ = this.regOcc || "";
+      const kb = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+      const giorno = (ts) => { const d = new Date(ts); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; };
+      const min = Math.round((L.finestra || 180000) / 60000);
+      let testa;
+      if (r && r.stato === "rec" && Date.now() < r.scade) {
+        testa = `<div class="tnow regnow"><span class="recchip">● REC</span><span class="tlab">dalle ${esc(hhmm(r.inizio))} · si ferma e si salva da sola alle ${esc(hhmm(r.scade))}</span>
+          <button class="btn primary" id="regferma"${occ ? " disabled" : ""}>${occ === "ferma" ? "Salvo…" : "Ferma e salva"}</button></div>`;
+      } else if ((r && r.salvo && Date.now() - r.salvo < 5 * 60e3) || occ === "ferma" || occ === "salva") {
+        testa = `<div class="tnow regnow"><span class="tlab">Salvo la registrazione: anonimizzo e controllo, qui su questo PC…</span></div>`;
+      } else if (r && r.stato === "fermo") {
+        const armata = this.regArma && this.regArma.id === "grezzo";
+        testa = `<div class="regko" role="alert">Registrazione ferma ma non salvata${r.errore ? `: ${esc(r.errore)}` : ""}.</div>
+          <button class="btn primary" id="regsalva">Salva di nuovo</button><button class="btn ghost${armata ? " armato" : ""}" id="regbutta">${armata ? "La cancello? Tocca di nuovo" : "Cancellala da questo PC"}</button>`;
+      } else {
+        testa = `<button class="btn primary" id="regvia">● Registra</button>
+          <div class="hint">Le pagine, le richieste e i PDF di questa sessione, per al più 60 minuti. «Ferma e salva» la anonimizza e la salva qui, nell'estensione: la vedi qui sotto e dall'iPhone.</div>`;
+      }
+      const auto = L.auto !== false;
+      const righe = (L.lista || []).map((z) => {
+        const armata = this.regArma && this.regArma.id === z.id, aperta = this.regRiep === z.id, scarica = occ === "pc:" + z.id;
+        return `<div class="regrow" data-zip="${esc(z.id)}">
+          <div class="rr1"><b>${esc(giorno(z.quando || z.ts))} ${esc(hhmm(z.quando || z.ts))}</b><span class="regtag${z.motivo === "auto" ? " auto" : ""}">${z.motivo === "auto" ? "automatica" : "a mano"}</span><span class="rkb">${esc(kb(z.byte))}</span></div>
+          ${z.motivo === "auto" && z.errore ? `<div class="rr2">${esc(z.errore)}</div>` : ""}
+          <div class="rr3"><span class="${z.controllo ? "rok" : "rko"}">${z.controllo ? "controllo superato" : `restano ${z.punti} dati da controllare`}</span> · ${esc(z.nome)}</div>
+          <div class="rr4"><button class="mini" data-regriep="${esc(z.id)}" aria-expanded="${aperta}">Riepilogo</button><button class="mini" data-regpc="${esc(z.id)}"${scarica ? " disabled" : ""}>${scarica ? "Scarico…" : "Scarica sul PC"}</button><button class="mini via${armata ? " armato" : ""}" data-regvia="${esc(z.id)}">${armata ? "Cancello? Tocca di nuovo" : "Cancella"}</button></div>
+          ${aperta ? `<pre class="regriep">${esc(z.riepilogo || "")}</pre>` : ""}
+        </div>`;
+      }).join("");
+      const tot = (L.lista || []).reduce((n, z) => n + (z.byte || 0), 0);
+      return `
+        <div class="sec registrazioni">
+          ${testa}
+          <label class="regauto"><input type="checkbox" id="regauto" role="switch"${auto ? " checked" : ""}><span><b>Registrazione automatica</b> · ${auto ? "accesa" : "spenta"}</span></label>
+          <div class="hint">${auto ? `Tiene in memoria gli ultimi ${min} minuti di lavoro (su questo PC; spariscono chiudendo il browser) e, quando un ordine finisce male, li salva da sola, anonimizzati.`
+            : "Spenta: niente in memoria, niente salvato da solo."}${r && r.stato === "rec" ? " Mentre registri a mano, vale la tua." : ""}</div>
+          <div class="lbl">Salvate (${(L.lista || []).length})${tot ? `<span class="ttot">${esc(kb(tot))}</span>` : ""}</div>
+          ${righe ? `<div class="reglist">${righe}</div>` : `<div class="hint">Nessuna registrazione salvata.</div>`}
+          <div class="hint">Al più 30 zip e 300 MB: oltre, se ne vanno i più vecchi, prima gli automatici.</div>
+        </div>`;
+    }
+    legaRegistrazioni($) {
+      const dopo = (x, ok, no) => {
+        this.regOcc = "";
+        this.message = x && x.ok ? ok(x) : (no || ((y) => `Non riuscito: ${(y && y.why) || "il registratore non risponde, ricarica l'estensione"}`))(x);
+        this.caricaRegistrazioni();
+        this.render();
+      };
+      const fatto = (x) => {
+        const z = x.zip || {};
+        const quanto = z.byte >= 1048576 ? `${(z.byte / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round((z.byte || 0) / 1024))} KB`;
+        const cosa = `${z.nome} (${quanto}) — ${z.pagine} pagine, ${z.richieste} richieste, ${z.pdf} PDF`;
+        return z.controllo ? { ok: `Salvata: ${cosa}. Controllo superato.` } : `Salvata, ma restano ${z.punti} dati da controllare: guarda il riepilogo prima di mandarla. ${cosa}.`;
+      };
+      $("#regvia")?.addEventListener("click", async () => {
+        const x = await ask({ t: "registraVia" });
+        dopo(x, () => ({ ok: "Registro questa sessione (al più 60 minuti). Quando hai finito: Ferma e salva." }));
+      });
+      $("#regferma")?.addEventListener("click", async () => {
+        this.regOcc = "ferma"; this.render();
+        dopo(await ask({ t: "registraFerma" }), fatto);
+      });
+      $("#regsalva")?.addEventListener("click", async () => {
+        this.regOcc = "salva"; this.render();
+        dopo(await ask({ t: "registraSalva" }), fatto);
+      });
+      // due tocchi, per il grezzo non salvato e per ogni zip
+      const arma = (id) => {
+        if (this.regArma && this.regArma.id === id && Date.now() - this.regArma.ts < 5000) { this.regArma = null; return true; }
+        this.regArma = { id, ts: Date.now() };
+        clearTimeout(this._regArmaT);
+        this._regArmaT = setTimeout(() => { if (this.regArma && this.regArma.id === id) { this.regArma = null; if (this.view === "registrazioni") this.render(); } }, 5000);
+        this.render();
+        return false;
+      };
+      $("#regbutta")?.addEventListener("click", async () => {
+        if (!arma("grezzo")) return;
+        dopo(await ask({ t: "registraButta" }), () => ({ ok: "Registrazione cancellata da questo PC." }));
+      });
+      $("#regauto")?.addEventListener("change", async (e) => {
+        const x = await ask({ t: "registraAuto", acceso: e.target.checked });
+        dopo(x, (y) => ({ ok: y.auto ? "Registrazione automatica accesa." : "Registrazione automatica spenta: quello che aveva in memoria è cancellato." }));
+      });
+      this.root.querySelectorAll("[data-regriep]").forEach((b) => b.addEventListener("click", () => {
+        const id = b.getAttribute("data-regriep");
+        this.regRiep = this.regRiep === id ? null : id;
+        this.render();
+      }));
+      this.root.querySelectorAll("[data-regvia]").forEach((b) => b.addEventListener("click", async () => {
+        const id = b.getAttribute("data-regvia");
+        if (!arma(id)) return;
+        const nome = ((this.regLista && this.regLista.lista) || []).find((z) => z.id === id)?.nome || "la registrazione";
+        dopo(await ask({ t: "registraCancella", id }), () => ({ ok: `Cancellata: ${nome}.` }));
+      }));
+      this.root.querySelectorAll("[data-regpc]").forEach((b) => b.addEventListener("click", () => this.scaricaRegistrazione(b.getAttribute("data-regpc"))));
+    }
+    // «Scarica sul PC»: lo zip a pezzi dal service worker, un file nei Download
+    async scaricaRegistrazione(id) {
+      if (this.regOcc) return;
+      this.regOcc = "pc:" + id; this.render();
+      const parti = [];
+      let nome = "", n = 1, err = "";
+      for (let i = 0; i < n; i++) {
+        const x = await ask({ t: "registraPezzo", id, i });
+        if (!(x && x.ok && typeof x.b === "string")) { err = (x && x.why) || "il registratore non risponde"; break; }
+        n = x.n; nome = x.nome;
+        const bin = atob(x.b), u = new Uint8Array(bin.length);
+        for (let k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
+        parti.push(u);
+      }
+      this.regOcc = "";
+      if (err) { this.message = `Non scaricata: ${err}.`; this.render(); return; }
+      const url = URL.createObjectURL(new Blob(parti, { type: "application/zip" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = nome;
+      document.documentElement.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      this.message = { ok: `Nei Download: ${nome}.` };
+      this.render();
+    }
+
     // ⋯ → Ricetta SISS. Si scelgono i farmaci (i preferiti, che si imparano da
     // soli dalle Anteprime del SISS, o la ricerca — quella del SISS, scritta
     // nella sua scheda), quantità e «non sostituibile», un quesito; «Prepara
@@ -13881,15 +14060,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // la stampa automatica: le impostazioni (anche dalla stampantina in
       // intestazione, che si ridisegna da sola: l'ascolto sta sul suo posto) e l'interruttore
       $("#stampanti")?.addEventListener("click", () => this.apriStampanti());
-      $("#regmenu")?.addEventListener("click", async () => {
-        this.menuAperto = false;
-        const r = this.reg;
-        const t = r && r.stato === "rec" ? "registraFerma" : r && r.stato === "fermo" && !r.esportata ? "registraScarica" : "registraVia";
-        const x = await ask({ t });
-        this.message = !(x && x.ok) ? "Il registratore non risponde: ricarica l'estensione e riprova."
-          : t === "registraVia" ? { ok: "Registro questa sessione (al più 60 minuti): resta su questo PC. Quando hai finito: ⋯ → Ferma e scarica." } : "";
-        this.render();
-      });
+      $("#regmenu")?.addEventListener("click", () => { this.menuAperto = false; this.apriRegistrazioni(); });
+      $("#recchip")?.addEventListener("click", () => this.apriRegistrazioni());
+      if (this.view === "registrazioni") this.legaRegistrazioni($);
       $("#stautow")?.addEventListener("click", (e) => { if (e.target.closest("#stauto")) this.apriStampanti(); });
       // «Segue il gestionale» (⋯): acceso di norma; spento, la smart si rilegge solo col ⟳
       $("#seguesw")?.addEventListener("click", () => {
