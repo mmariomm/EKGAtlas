@@ -5044,7 +5044,7 @@ async function scenarioStanza(browser) {
   const lungo = await page.evaluate(() => {
     const n = document.getElementById("psassist-host").shadowRoot.querySelector('.stbed .stp[data-stp="999001"] .stpn');
     const b = n.closest(".stp1").getBoundingClientRect();
-    return { t: n.textContent.trim(), tagliato: [...n.getClientRects()].some((x) => x.bottom > b.bottom + 0.5 || x.right > b.right + 0.5), righe: new Set([...n.getClientRects()].map((x) => Math.round(x.top))).size };
+    return { t: n.textContent.replace(/\u00A0/g, " ").trim(), tagliato: [...n.getClientRects()].some((x) => x.bottom > b.bottom + 0.5 || x.right > b.right + 0.5), righe: new Set([...n.getClientRects()].map((x) => Math.round(x.top))).size };
   });
   check(scen, lungo.t === "D'ALESSANDRO M." && !lungo.tagliato,
     `nel letto il nome lungo va a capo, intero, invece di perdere l'iniziale (got: ${JSON.stringify(lungo)})`);
@@ -5230,7 +5230,7 @@ async function scenarioStanza(browser) {
   await $panel(page, '.stmenu [data-dove^="letto:"]').first().click();
   const nelLettoStretto = await page.evaluate(() => {
     const n = document.getElementById("psassist-host").shadowRoot.querySelector('.stbed .stp[data-stp="999001"] .stpn');
-    return { t: n.textContent.trim(), righe: new Set([...n.getClientRects()].map((x) => Math.round(x.top))).size };
+    return { t: n.textContent.replace(/\u00A0/g, " ").trim(), righe: new Set([...n.getClientRects()].map((x) => Math.round(x.top))).size };
   });
   const tagliatiS = await taglio();
   check(scen, nelLettoStretto.t === "DELL'ACQUA A." && !tagliatiS.length && (await sovrapposti()).n === 0,

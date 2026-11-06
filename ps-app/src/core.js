@@ -6922,6 +6922,7 @@
     /* il nome del letto va a capo fra le parole (due righe al massimo) e non finisce mai in «O…»: o ci sta, o sparisce */
     .stbed .stname { white-space: normal; overflow-wrap: normal; text-overflow: clip; max-height: 32px; }
     @container stbed (max-width: 110px) { .stbed.occ:not(.barella) .stname { font-size: 11px; line-height: 14px; } }
+    @container stbed (max-width: 92px) { .stbed .stpn { font-size: 11px; } }
     @container stbed (max-width: 92px) { .stmap:not(.edit) .stbed.occ:not(.barella):has(.stsegni :is(.cuore, .stseg)) .stname { display: none; } }
     @container stbed (max-width: 60px) { .stmap:not(.edit) .stbed:not(.occ):not(.sedia) .stname { display: none; } }
     .stbed.occ .stbedhd { padding-right: 34px; }   /* il posto del cuore e del pallino */
@@ -6966,7 +6967,7 @@
     .starea { display: flex; flex-direction: column; border: 1.5px dashed #C4D0DC; border-radius: 12px; background: rgba(255,255,255,.6);
               transition: border-color .12s, background-color .12s; }
     .starea > .sthd { flex: none; padding: 8px 10px 6px; }
-    .starea .stname { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #5B6B7A; }
+    .starea .stname { white-space: normal; overflow-wrap: normal; text-overflow: clip; line-height: 13px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #5B6B7A; }
     .starea.over { border-color: #0B5CAD; background: #EAF2FA; }
     .starbody { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; padding: 0 8px 8px; }
     .starbody .stp { max-width: 240px; }
