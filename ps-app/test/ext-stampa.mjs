@@ -1481,17 +1481,29 @@ if (await prova("l'etichetta anagrafica: il bottone accanto al nome, le copie a 
 // altri fogli e l'etichetta anagrafica in una scheda nuova. Una spia nella
 // pagina annota i clic veri appena arrivano, e quelli che arrivano al link —
 // veri, o ridati dall'estensione — col gesto del medico ancora valido o no —,
-// e le pressioni sul link: la seconda di un doppio clic è quella che seleziona.)
+// e le pressioni sul link: la seconda di un doppio clic è quella che seleziona.
+// E il «×N» che l'estensione mette accanto all'icona «Stampa Bracciale» mentre
+// si clicca: ogni suo stato, dov'è rispetto all'icona, e se la pagina — il
+// body del gestionale — è rimasta com'era.)
 const spia = (p) => p.evaluate(() => {
-  window.__clic = []; window.__link = []; window.__giu = [];
+  window.__clic = []; window.__link = []; window.__giu = []; window.__conto = []; window.__corpo = document.body.innerHTML;
+  setInterval(() => {
+    const h = document.getElementById("psassist-conto"), b = h && h.shadowRoot && h.shadowRoot.querySelector("b");
+    const v = b ? b.textContent : "", prima = window.__conto[window.__conto.length - 1];
+    if (v === (prima ? prima.v : "")) return;
+    const q = b && b.getBoundingClientRect(), a = document.querySelector('a[title="Stampa Bracciale"][href*="EPISODIO_ID=999001"]').getBoundingClientRect();
+    window.__conto.push({ v, t: Date.now(), b: q ? [Math.round(q.right), Math.round(q.top)] : null, a: [Math.round(a.right), Math.round(a.top)],
+      fuori: !!h && h.parentNode === document.documentElement, uguale: document.body.innerHTML === window.__corpo });
+  }, 15);
   window.addEventListener("click", (e) => { if (e.isTrusted) window.__clic.push(Date.now()); }, true);
   for (const a of document.querySelectorAll('a[title^="Stampa"]')) {
     a.addEventListener("click", (e) => window.__link.push({ t: Date.now(), vero: e.isTrusted, attiva: navigator.userActivation.isActive, prev: e.defaultPrevented, titolo: a.title }));
     a.addEventListener("mousedown", (e) => window.__giu.push({ n: e.detail, prev: e.defaultPrevented }));
   }
 });
-const spiato = (p) => p.evaluate(() => ({ clic: window.__clic, link: window.__link, giu: window.__giu, sel: String(getSelection()) })).catch(() => ({ clic: [], link: [], giu: [], sel: "?" }));
-const azzeraSpia = (p) => p.evaluate(() => { window.__clic = []; window.__link = []; window.__giu = []; getSelection().removeAllRanges(); });
+const spiato = (p) => p.evaluate(() => ({ clic: window.__clic, link: window.__link, giu: window.__giu, conto: window.__conto, sel: String(getSelection()) }))
+  .catch(() => ({ clic: [], link: [], giu: [], conto: [], sel: "?" }));
+const azzeraSpia = (p) => p.evaluate(() => { window.__clic = []; window.__link = []; window.__giu = []; window.__conto = []; getSelection().removeAllRanges(); window.__corpo = document.body.innerHTML; });
 if (await prova("doppio clic sulle icone di stampa del gestionale: uno apre il PDF, due (o tre) lo stampano alla sua stampante; l'etichetta anagrafica a clic")) {
   installa(true);
   await scelte(ATTIVA);
@@ -1601,6 +1613,7 @@ if (await prova("doppio clic sulle icone di stampa del gestionale: uno apre il P
   check(!!bp && bp.url() === A.ORIGIN + linkBrac("999001") && s.link.length === 1 && !s.link[0].vero && s.link[0].attiva === true
     && lavori().length === 0 && (await ordini()).length === 0,
   `un clic su «Stampa Bracciale»: il PDF in una scheda, come sempre (got ${bp ? bp.url().slice(-50) : "niente"} · ${JSON.stringify(s.link)} · ${lavori().length} fogli)`);
+  check(s.conto.length === 0, `e accanto all'icona nessun «×N» (got ${JSON.stringify(s.conto)})`);
   // …due o tre: UNA stampa con quelle copie, il PDF preso una volta, una riga sola «×N»
   for (const n of [2, 3]) {
     await daCapo();
@@ -1614,7 +1627,35 @@ if (await prova("doppio clic sulle icone di stampa del gestionale: uno apre il P
     `${n} clic su «Stampa Bracciale»: una stampa con ${n} copie all'etichettatrice, il PDF preso una volta, nessuna scheda (got ${rec ? rec.fogli.length : 0} copie · ${lb.length} fogli · ${presiBrac} PDF · ${s.link.length})`);
     const rb = (await righeViste(doc)).filter((r) => /^Etichetta anagrafica/.test(r.n)).map((r) => r.n);
     check(rb.length > 0 && rb.every((x) => x === `Etichetta anagrafica ×${n}`), `sotto la pill una riga sola, «×${n}» (got ${JSON.stringify(rb)})`);
+    const vn = s.conto.filter((x) => x.v).map((x) => x.v);
+    check(vn[vn.length - 1] === `×${n}` && s.conto[s.conto.length - 1].v === "" && !(await doc.evaluate(() => !!document.getElementById("psassist-conto"))),
+      `e accanto all'icona, mentre contava, «×${n}», poi più niente (got ${JSON.stringify(s.conto.map((x) => x.v))})`);
   }
+  // mentre si clicca, il «×N» accanto all'icona: «×2» al secondo clic, «×3» al terzo, attaccato all'icona,
+  // senza toccare la pagina; partita la stampa, se ne va (sotto la pill c'è la riga)
+  await daCapo();
+  const bb = await icona(BRAC).boundingBox();
+  const clicca = () => doc.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
+  await clicca();
+  await sospendi(150);
+  const c1 = (await spiato(doc)).conto.map((x) => x.v);
+  await clicca();
+  await sospendi(150);
+  const c2 = (await spiato(doc)).conto.filter((x) => x.v).map((x) => x.v);
+  await clicca();
+  const parte = await finche(async () => (await ordiniBrac())[0], 10000);
+  const sparito = await doc.evaluate(() => !document.getElementById("psassist-conto"));
+  const tre = await finche(async () => (await ordiniBrac()).find((x) => x.stato === "avviso" && x.fogli), 30000);
+  s = await spiato(doc);
+  const visti = s.conto.filter((x) => x.v);
+  check(c1.length === 0 && JSON.stringify(c2) === '["×2"]' && JSON.stringify(visti.map((x) => x.v)) === '["×2","×3"]',
+    `accanto all'icona: niente al primo clic, «×2» al secondo, «×3» al terzo (got ${JSON.stringify(c1)} · ${JSON.stringify(c2)} · ${JSON.stringify(visti.map((x) => x.v))})`);
+  check(visti.length === 2 && visti.every((x) => x.b && Math.abs(x.b[0] - (x.a[0] + 6)) <= 1 && Math.abs(x.b[1] - (x.a[1] - 4)) <= 1),
+    `sull'angolo dell'icona, come sul bottone del pannello (got ${JSON.stringify(visti.map((x) => [x.b, x.a]))})`);
+  check(visti.length === 2 && visti.every((x) => x.fuori && x.uguale), `un elemento nostro, fuori dal body: la pagina del gestionale resta com'era (got ${JSON.stringify(visti)})`);
+  const fine = s.conto[s.conto.length - 1] || {};
+  check(sparito && fine.v === "" && !!parte && fine.t <= parte.ts + 300 && !!tre && tre.fogli.length === 3,
+    `partita la stampa (tre copie) il «×3» se ne va (got ${sparito} · ${JSON.stringify(fine)} · ordine alle ${parte ? parte.ts : "?"} · ${tre ? tre.fogli.length : 0} copie)`);
   // un doppio clic mentre quella stampa gira: niente (né copie né PDF)
   await daCapo();
   comportati({ lento: 2000 });
