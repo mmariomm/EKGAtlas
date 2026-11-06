@@ -481,8 +481,16 @@ await blocco("La scheda al passaggio: sul nome e sul letto", async () => {
   check(/^ECG ✓ \d\d:\d\d «Ritmo sinusale a frequenza 98 bpm/.test(c?.[3] || "") || /^ECG ✓ \d\d:\d\d Ritmo sinusale a frequenza 98 bpm/.test(c?.[3] || ""), `4ª: ECG, l'ora e le prime parole del referto (got: ${c?.[3]})`);
   check(c?.some((x) => /^RX addome ⏳ 40′/.test(x)) && c?.some((x) => /^RX torace ✓ .*Non addensamenti/.test(x)), `RX: in attesa col tempo, refertato con le prime parole (got: ${c?.slice(4).join(" | ")})`);
   check(c?.length === 6, `niente altro (got: ${c?.length} righe)`);
-  const dfCarta = await page.evaluate(() => [...(document.getElementById("psassist-host").shadowRoot.querySelectorAll(".pzcarta .pcd .pcdi") || [])].map((x) => x.textContent.trim()));
+  const dfCarta = await page.evaluate(() => [...(document.getElementById("psassist-host").shadowRoot.querySelectorAll(".pzcarta .pcd .dfr") || [])].map((x) => x.textContent.trim()));
   check(dfCarta.join("|") === "rivalutare dolore", `e sotto, le sue cose da fare aperte (got: ${dfCarta.join(" | ")})`);
+  // le stesse righe del Da fare del tabellone: il tondo, la stessa altezza, la stessa lettera
+  const righeUguali = await page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot, a = r.querySelector(".pzcarta .pcd .dfr"), b = r.querySelector(".tdcard .tdi");
+    const m = (e) => e && { h: Math.round(e.getBoundingClientRect().height), f: getComputedStyle(e).fontSize, o: !!e.querySelector(".dfo, .dfck") };
+    return { carta: m(a), tabellone: m(b) };
+  });
+  check(!!righeUguali.carta && JSON.stringify(righeUguali.carta) === JSON.stringify(righeUguali.tabellone),
+    `nella scheda, la riga di sempre: come nel Da fare del tabellone (got: ${JSON.stringify(righeUguali)})`);
   if (SHOTS) await page.screenshot({ path: join(SHOTS, "tab-carta-riga.png") });
   await page.mouse.move(5, 5);
   await page.waitForTimeout(100);
@@ -536,14 +544,19 @@ await blocco("Il Da fare del tabellone: il generale, e quello dei pazienti col c
   await $p(page, '[data-modo="mappa"]').click();
   await page.waitForTimeout(150);
   if (SHOTS) await page.screenshot({ path: join(SHOTS, "tab-dafare.png") });
-  // i pazienti: col COGNOME in grassetto maiuscolo, nell'ordine del tabellone (l'area, poi l'ingresso)
-  const paz = await testi('.tdcard [data-tdl="paz"] .tdi .dftx');
-  check(paz.join(" | ") === "ROSSI rivalutare dolore | VERDI EGA | VERDI chiamare il figlio | ESPOSITO consulenza cardiologica",
-    `le cose da fare dei pazienti, col cognome davanti, nell'ordine del tabellone (got: ${paz.join(" | ")})`);
+  // i pazienti: col COGNOME in grassetto maiuscolo, nell'ordine del tabellone (l'area, poi l'ingresso),
+  // scritto una volta sola, a sinistra, all'inizio delle sue voci (le altre sotto, rientrate)
+  const paz = await page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll('.tdcard [data-tdl="paz"] .tdi')]
+    .map((li) => `${li.querySelector(".tdchi")?.textContent.trim() || "·"} ${li.querySelector(".dftx")?.textContent.trim()}`));
+  check(paz.join(" | ") === "ROSSI rivalutare dolore | VERDI EGA | · chiamare il figlio | ESPOSITO consulenza cardiologica",
+    `le cose da fare dei pazienti, il cognome una volta per paziente, nell'ordine del tabellone (got: ${paz.join(" | ")})`);
   const chi = await page.evaluate(() => { const b = document.getElementById("psassist-host").shadowRoot.querySelector(".tdcard .tdchi"); return { w: +getComputedStyle(b).fontWeight, t: b.tagName }; });
   check(chi.w >= 700 && chi.t === "B", `il cognome in grassetto (got: ${JSON.stringify(chi)})`);
-  check(/^\d\d:\d\d$/.test((await voce("EGA").locator(".dft").innerText().catch(() => "")).trim()), "un promemoria porta la sua ora");
-  // il generale: Invio aggiunge, il campo resta pronto
+  const ega = await voce("EGA").evaluate((li) => ({ t: li.querySelector(".dft")?.textContent.trim(), prima: li.querySelector(".dft")?.getBoundingClientRect().right <= li.querySelector(".dftx").getBoundingClientRect().left }));
+  check(/^\d\d:\d\d$/.test(ega.t || "") && ega.prima, `un promemoria porta la sua ora, davanti al testo (got: ${JSON.stringify(ega)})`);
+  // il generale: Invio aggiunge, il campo resta pronto. Non dice «Aggiungi…» (dove ogni lista mette
+  // la sua ricerca, ci si scriverebbe un nome): dice che cosa è
+  check((await $p(page, "#tdin").getAttribute("placeholder")) === "Da fare generale…", `il campo del generale dice «Da fare generale…» (got: ${await $p(page, "#tdin").getAttribute("placeholder")})`);
   await $p(page, "#tdin").fill("chiamare la radiologia");
   await $p(page, "#tdin").press("Enter");
   await $p(page, "#tdin").fill("passaggio di consegne");
@@ -607,6 +620,25 @@ await blocco("Il Da fare del tabellone: il generale, e quello dei pazienti col c
     `stretta e ridotto: solo un bottone in fondo alla barra del tabellone, l'altezza torna alle mappe (${Math.round(m2.h)} → ${Math.round(m3?.h)}px)`);
   await $p(page, ".tbbar .tdtogb").click();
   check(await $p(page, ".tdcard #tdin").isVisible(), "e un tocco lo riapre");
+  // stretta ma non troppo: sempre una colonna sola (mai voci sparse in colonne), cinque righe
+  // al più e poi scorre, così le mappe non perdono altezza quante che siano le voci
+  await page.setViewportSize({ width: 900, height: 900 });
+  await page.waitForTimeout(200);
+  const aggiungi = async (n, da) => { for (let i = 0; i < n; i++) { await $p(page, "#tdin").fill(`voce in più ${da + i}`); await $p(page, "#tdin").press("Enter"); } };
+  const banda = () => page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot, c = r.querySelector(".tdcorpo"), m = r.querySelector(".stmappe").getBoundingClientRect();
+    const xs = [...r.querySelectorAll(".tdcard .dfck")].map((b) => Math.round(b.getBoundingClientRect().left));
+    return { righe: xs.length, colonne: new Set(xs).size, vista: c.clientHeight, tutta: c.scrollHeight, riga: Math.round(r.querySelector(".tdcard .tdi").getBoundingClientRect().height), mappe: Math.round(m.height) };
+  });
+  await aggiungi(2, 1);
+  const b6 = await banda();
+  await aggiungi(6, 3);
+  await page.waitForTimeout(150);
+  const b12 = await banda();
+  check(b12.righe >= 12 && b12.colonne === 1, `una colonna sola, anche con ${b12.righe} voci (got: ${b12.colonne} colonne)`);
+  check(b12.vista <= 6 * b12.riga && b12.tutta > b12.vista + 2 * b12.riga && Math.abs(b12.mappe - b6.mappe) <= 2,
+    `cinque righe e poi scorre: le mappe restano alte uguali (${b6.righe} voci: mappe ${b6.mappe}px; ${b12.righe}: ${b12.mappe}px; si vedono ${b12.vista}px di ${b12.tutta})`);
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, "tab-dafare-colonna.png") });
   await page.setViewportSize({ width: 1280, height: 900 });
   // «Reset dati pazienti» porta via anche il generale (è roba del turno)
   await $p(page, "#menubtn").click();
