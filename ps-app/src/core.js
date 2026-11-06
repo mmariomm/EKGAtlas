@@ -12534,7 +12534,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         if (r && r.ok) { this.regLista = r; this.reg = r.stato || null; }
         else if (!this.regLista) this.regLista = { ok: false };
         if (this._regDiNuovo) { this._regDiNuovo = false; return this.caricaRegistrazioni(); }
-        if (this.view === "registrazioni" && !this.root.activeElement?.matches?.("input, textarea")) this.render();
+        if (this.view === "registrazioni" && !this.root.activeElement?.matches?.("textarea, input:not([type=checkbox])")) this.render();
       });
     }
     viewRegistrazioni() {

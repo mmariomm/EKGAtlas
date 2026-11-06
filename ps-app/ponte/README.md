@@ -116,7 +116,6 @@ sessione. Vedi:
   automatica non è impostata»). Mentre va, «Invio… 40%»; poi le parole del PC: «Stampato su HP
   LaserJet A4», «Mandato a …» in ambra, o l'errore. Al massimo 15 MB. Sul PC il registro del ponte
   dice «PDF dall'iPhone stampato su …».
-
 - **Registrazioni** (⋯) — gli zip che il PC ha salvato (⋯ → Registrazioni sul PC: registrate a mano, o
   automatiche dopo un ordine finito male), già anonimizzati e controllati: quando, quanto, a mano o
   automatica e perché, «controllo superato» o «restano N dati da controllare». Niente pazienti.

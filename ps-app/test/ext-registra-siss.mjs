@@ -175,7 +175,7 @@ const stile = (loc) => loc.evaluate((el) => {
 });
 
 const doc = await ctx.newPage();
-// ---- 1. ⋯ → Registra sul gestionale: lì c'è il pannello, quindi niente pill in più
+// ---- 1. ⋯ → Registrazioni → Registra sul gestionale: lì c'è il pannello, quindi niente pill in più
 await doc.goto(A.worklistUrl);
 await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
 if (!(await $panel(doc, ".card").count())) { await $panel(doc, "#expand").click(); await doc.waitForSelector("#psassist-host .card", { timeout: 8000 }); }
@@ -248,7 +248,7 @@ check(["caricata", "rotta", "overlay", "quiete"].every((m) => motivi.has(m)), `i
 check(gSiss.every((x) => !/psassist-host|psassist-reg-host/.test(x.html)), "nelle istantanee né pannello né pill");
 check(gSiss.filter((x) => !x.alto).length >= 1, "anche il riquadro è registrato");
 
-// ---- 5. la pill si trascina e resta dove la lasci; «Ferma e scarica» dalla pill
+// ---- 5. la pill si trascina e resta dove la lasci; «Ferma e salva» dalla pill
 await doc.bringToFront();
 const posPill = async (p = doc) => { const b = await $pill(p, "#expand").boundingBox(); return { x: Math.round(b.x), y: Math.round(b.y), w: b.width, h: b.height }; };
 const p0 = await posPill();

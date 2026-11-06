@@ -2133,7 +2133,7 @@ ps-app/
 ├── ponte/               ← il Ponte: README, host.txt (il suo indirizzo, fissato nella build), il
 │                          ripetitore Node per test e prove (stessa logica di ../worker/ponte-logica.js);
 │                          l'app del telefono sta in ../public/ponte/
-├── extension/registra*  ← ⋯ → Registra: registra.js (service worker), registra-pagina.js (nella pagina,
+├── extension/registra*  ← ⋯ → Registrazioni: registra.js (service worker), registra-pagina.js (nella pagina,
 │                          anche sul SISS), registra-pill.js (la pill: regole CSS da core.js),
 │                          registra-db.js (il suo IndexedDB: grezzo, ultimi minuti, zip), registra-esporta.html/.js
 │                          (il documento fuori schermo che salva lo zip), registra-anonimo.js (anonimizza e controlla)
