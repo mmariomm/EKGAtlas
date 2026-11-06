@@ -129,6 +129,20 @@ async function ricImpara(voci) {
   await chrome.storage.local.set({ [RIC_PREF]: pref.slice(0, RIC_PREF_MAX) });
 }
 
+// La scheda del SISS davanti (e la sua finestra).
+async function ricDavanti(id) {
+  const t = await chrome.tabs.update(id, { active: true }).catch(() => null);
+  if (t && t.windowId != null) chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
+}
+// Il medico sta scrivendo nella scheda del gestionale che ha davanti? (lo
+// dice la scheda: il cursore in un campo, un tasto da poco — nel gestionale o
+// nel pannello). Un'altra scheda davanti, o nessuna risposta: no.
+async function ricScrive() {
+  const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+  if (!t || !sulGestionale(t.url)) return false;
+  const r = await allaScheda(t.id, { t: "psassistScrive" }, 1500);
+  return !!(r && r.scrive);
+}
 // (con un nome: i test lo chiamano due volte con la stessa domanda)
 function ricMessaggio(msg, sender, reply) {
   if (!msg || typeof msg !== "object" || typeof msg.t !== "string" || !msg.t.startsWith("ricetta")) return;
@@ -138,7 +152,14 @@ function ricMessaggio(msg, sender, reply) {
   const daSiss = !!tab && dalPrescrittivo(sender.url);
 
   // ---- dal pannello (la pagina del paziente) ------------------------------
-  if (["ricettaNuova", "ricettaCerca", "ricettaPrepara", "ricettaFerma"].includes(msg.t) && !daGestionale) return reply({ ok: false, why: "non dal gestionale" }), true;
+  if (["ricettaNuova", "ricettaCerca", "ricettaPrepara", "ricettaFerma", "ricettaApri"].includes(msg.t) && !daGestionale) return reply({ ok: false, why: "non dal gestionale" }), true;
+  // «apri il SISS» dalla striscia: la scheda del SISS di questa ricetta, davanti (un tocco del medico)
+  if (msg.t === "ricettaApri") return fai(async () => {
+    const j = await ricLeggi();
+    if (!j || j.id !== msg.id || j.worker == null) return reply({ ok: false });
+    await ricDavanti(j.worker);
+    reply({ ok: true });
+  });
   if (msg.t === "ricettaNuova") return fai(async () => {
     const x = msg.job || {};
     const id = ricCorto(x.id, 40);
@@ -289,10 +310,16 @@ function ricMessaggio(msg, sender, reply) {
     const d = msg.dati && typeof msg.dati === "object" ? { cf: ricCorto(msg.dati.cf, 10), nome: ricCorto(msg.dati.nome, 10) } : {};
     if (esito !== "anteprima") segnaErrore("ricetta", { esito, passo: ricCorto(msg.passo, 40), motivo: ricCorto(msg.testo, 160), ...(msg.grave ? { grave: true, ...d } : {}) });
     // la scheda del SISS davanti al medico: tocca a lui (un errore grave lo
-    // dice il pannello, forte, dove sta lui)
+    // dice il pannello, forte, dove sta lui) — ma non mentre scrive in una
+    // scheda del gestionale (su una pagina che ha un «Registra»): lì la
+    // striscia dice «pronta in Anteprima · apri il SISS», e un tocco la porta
     if (esito === "errore") return;
-    const t = await chrome.tabs.update(tab.id, { active: true }).catch(() => null);
-    if (t && t.windowId != null) chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
+    if (await ricScrive()) {
+      j.dietro = true;
+      await ricScrivi(j);
+      return;
+    }
+    await ricDavanti(tab.id);
   });
   // (lo stato di questa scheda la chiede il service worker, ricTrova: qui niente)
 }
