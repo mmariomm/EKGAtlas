@@ -272,9 +272,12 @@ if (prova("ORA- due volte: la richiesta rifatta perde il carrello anche lei, il 
   await ordina(doc, ESAMI);
   await nasce;
   await suPagina(doc, B.patientUrl);
-  const rossa = await striscia(doc, /ROSSI MARIO.*Errore/, 45000).catch(() => "");
+  const rossa = await striscia(doc, /ROSSI MARIO.*(non mandat|Errore)/, 45000).catch(() => "");
   const dt = Date.now() - t0;
-  check(/Il gestionale ha risposto: ORA-20965/.test(rossa), `la striscia del medico dice che cosa ha risposto il gestionale (got: ${rossa || "niente"})`);
+  // la striscia rossa comincia da che cosa fare; che cosa ha risposto il gestionale sta nel resoconto che «apri il carrello» apre
+  const avviso = (await ordini()).find((x) => x.stato === "errore");
+  check(/non mandat/.test(rossa) && /apri il carrello/.test(rossa) && /Il gestionale ha risposto: ORA-20965/.test(JSON.stringify(avviso?.consegna?.avviso?.testo || "")),
+    `la striscia del medico dice che cosa fare, e il resoconto che cosa ha risposto il gestionale (got: ${rossa || "niente"})`);
   check(dt < 25000, `subito, senza le riletture di mezzo minuto (got ${Math.round(dt / 1000)} s)`);
   const ins = sess.log.filter((x) => x.cosa === "insert");
   const ore = sess.log.filter((x) => x.cosa === "ORA");

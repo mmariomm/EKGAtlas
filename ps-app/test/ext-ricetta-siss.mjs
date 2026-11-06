@@ -341,8 +341,8 @@ check(await finche(async () => /Anteprima nel SISS: controlla e premi tu Registr
 check(await finche(async () => (await schedeSiss()).find((t) => /preview$/.test(t.url))?.active, 5000), "la scheda del SISS è davanti al medico");
 // la ricetta parla anche nella striscia degli ordini (a pannello aperto, il chip in intestazione), non solo in ⋯ → Ricetta
 await doc.bringToFront();
-const rigaRic = () => doc.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector(".gchip, .pill.run")?.dataset?.riga
-  || document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || "");
+const rigaRic = () => doc.evaluate(() => (document.getElementById("psassist-host")?.shadowRoot?.querySelector(".gchip, .pill.run")?.dataset?.riga
+  || document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || "").replace(/\s+/g, " "));
 check(await finche(async () => /Ricetta.*pronta in Anteprima/.test(await rigaRic()), 5000), `la striscia dice «Ricetta · pronta in Anteprima» (${await rigaRic()})`);
 const c1 = await clic();
 check(c1.registra === 0 && c1.salva === 0 && c1.stampa === 0 && c1.cancella === 0 && c1.elimina === 0, `Registra, Salva, STAMPA RE, Cancella, Elimina: mai premuti (${JSON.stringify(c1)})`);
@@ -414,6 +414,8 @@ await $p("#gchipaz, #strazione").click();
 check(await finche(async () => (await schedeSiss()).find((t) => /preview$/.test(t.url))?.active, 5000), "un tocco su «apri il SISS»: la scheda del SISS davanti");
 await doc.bringToFront();
 await doc.evaluate(() => document.getElementById("campogest")?.blur());
+// (il clic nel campo del gestionale ha fatto richiudere il pannello «al passaggio»: lo si riapre)
+if (!(await $p(".card").count())) { await $p("#expand").click(); await doc.waitForSelector("#psassist-host .card #ricprepara", { timeout: 8000 }); }
 const f7 = await sissStato();
 check(f7.farmaci.length === 1 && f7.farmaci[0].codice === AIC && f7.farmaci[0].qta === 2 && f7.farmaci[0].ns === false && f7.quesito === "" && srvStato.cercati.slice(cercatiPrima).includes("AUGMENTIN"),
   `il preferito: cercato per nome nella ricerca del SISS, preso col codice esatto, con la sua quantità (${JSON.stringify(f7.farmaci)}; cercato ${srvStato.cercati.slice(cercatiPrima).join(",")})`);

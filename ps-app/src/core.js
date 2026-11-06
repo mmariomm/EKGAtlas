@@ -5671,12 +5671,12 @@
     .pieg.err { background: #B3261E; }
     /* La striscia a pannello aperto: un chip in intestazione, la sua riga corta */
     #girow { display: contents; }
-    .gchip { flex: 0 1 auto; min-width: 70px; display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 3px 0 9px;
+    .gchip { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 3px 0 9px;
              border-radius: 999px; background: #EAF2FA; color: #0B2A4A; font-size: 12px; font-weight: 600; white-space: nowrap; }
     .gchip.warn { background: #FFF1D6; color: #6b3d02; }
     .gchip.err { background: #FBEBEA; color: #7c1a14; }
     .gchip.ok { background: #E8F5EC; color: #124F31; }
-    .gchip .gcorpo { display: inline-flex; align-items: center; gap: 6px; min-width: 0; border: 0; background: transparent; color: inherit; font: inherit; padding: 0; }
+    .gchip .gcorpo { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; border: 0; background: transparent; color: inherit; font: inherit; padding: 0; }
     .gchip button.gcorpo { cursor: pointer; }
     .gchip .gt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .gchip .gt b { font-size: inherit; font-weight: 700; letter-spacing: 0; }
@@ -5689,6 +5689,8 @@
     .gchip .gstop.ferma { background: #B3261E; color: #fff; }
     .gchip .gstop:hover { background: rgba(9,42,74,.1); }
     .gchip .gstop.ferma:hover { background: #8f1e18; }
+    .gchip { position: relative; }
+    .gchiprighe { position: absolute; top: calc(100% + 2px); right: 0; z-index: 5; cursor: default; }
     /* La finestra: al centro, l'85% dello schermo. Intestazione, schede e
        selezione restano ferme; scorre solo il corpo. Il contenuto sta su una
        colonna comoda da leggere; valori e stanza usano tutta la larghezza. */
@@ -7696,12 +7698,16 @@
       const titStop = s ? s.titoloStop || (s.ferma ? "Ferma l'ordine" : "Chiudi l'avviso") : "Interrompi";
       const segno = tono === "run" ? `<i class="gdot"></i>` : `<span class="gtick">${tono === "err" || tono === "warn" ? "!" : "✓"}</span>`;
       const testo = `${chi ? `<b>${esc(nomeCorto(chi))}</b>` : ""}${parti.map((p, k) => `${chi || k ? " · " : ""}${esc(p)}`).join("")}`;
-      return `<span class="gchip ${tono}" role="status" title="${esc(tutto)}" data-riga="${esc([chi, ...parti, s && s.quesito].filter(Boolean).join(" "))}">${s && s.onTap
+      // (stringendosi cede il testo, mai i bottoni: il minimo è quanto loro, più il segno e un pezzo di nome)
+      const minimo = 44 + (s && s.azione ? 22 + Math.round(6.3 * String(s.azione.label || "").length) : 0) + (s && s.piegati && s.piegati.n ? 30 : 0) + (stop ? 28 : 0);
+      return `<span class="gchip ${tono}" role="status" style="min-width:${minimo}px" title="${esc(tutto)}" data-riga="${esc([chi, ...parti, s && s.quesito].filter(Boolean).join(" "))}">${s && s.onTap
         ? `<button class="gcorpo" id="gchipapri" title="${esc(s.titolo || tutto)}">${segno}<span class="gt">${testo}</span></button>`
         : `<span class="gcorpo">${segno}<span class="gt">${testo}</span></span>`}${
         s && s.azione ? `<button class="gaz" id="gchipaz" title="${esc(s.azione.titolo || "")}">${esc(s.azione.label)}</button>` : ""}${
         s ? this.piegatiHtml("gchippieg") : ""}${
-        stop ? `<button class="gstop${stop === "⏹" ? " ferma" : ""}" id="gchipstop" title="${esc(titStop)}" aria-label="${esc(titStop)}">${stop}</button>` : ""}</span>`;
+        stop ? `<button class="gstop${stop === "⏹" ? " ferma" : ""}" id="gchipstop" title="${esc(titStop)}" aria-label="${esc(titStop)}">${stop}</button>` : ""}${
+        // (le righe dei fogli, come sotto la striscia: ognuna col suo ✕ o «Ristampa»)
+        s && s.righe && s.righe.length ? `<span class="gchiprighe">${this.righeHtml(s.righe)}</span>` : ""}</span>`;
     }
     // gli avvisi di prima (un errore, un ordine da guardare) mentre un altro
     // ordine gira: piegati in un «!1» rosso accanto alla striscia; un tocco li mostra
@@ -14001,7 +14007,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const b = e.target.closest?.("button");
         if (!b) return;
         e.stopPropagation();
-        if (b.id === "gchipstop") { if (this.striscia) this.striscia.onStop?.(); else if (this.runState === "running") this.stop(); }
+        // le righe sotto il chip (cambiano al loro posto: qui, non un ascolto per bottone)
+        if (b.hasAttribute("data-pjx")) { b.disabled = true; this.rigaTocco(b.getAttribute("data-pjx")); return; }
+        if (b.hasAttribute("data-pjrist")) { ask({ t: "ordineStampaQui", id: b.getAttribute("data-pjrist") }); return; }
+        if (b.id === "gchipstop") { if (this.runState === "running") this.stop(); else this.striscia?.onStop?.(); }
         else if (b.id === "gchipaz") { b.blur(); this.striscia?.azione?.fn?.(); }
         else if (b.id === "gchipapri") this.striscia?.onTap?.();
         else if (b.id === "gchippieg") this.mostraPiegati();

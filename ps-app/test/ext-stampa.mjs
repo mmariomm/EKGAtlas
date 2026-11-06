@@ -285,8 +285,12 @@ async function dialogoChiuso(p) {
     return !w || w.dataset.doc !== x;
   }, prima, { timeout: 8000 });
 }
+// Esc annulla la stampa a scheda aperta (mentre il PDF arriva è del gestionale);
+// un foglio che aspetta il tuo tocco si toglie col ✕ della sua striscia
 async function chiudiStampa(p) {
-  await p.keyboard.press("Escape").catch(() => {});
+  await p.waitForFunction(() => { const w = document.getElementById("psassist-print"); return !w || !w.shadowRoot.querySelector(".pw").hidden || w.dataset.stato === "aspetta"; }, null, { timeout: 15000 }).catch(() => {});
+  if (await p.evaluate(() => document.getElementById("psassist-print")?.dataset.stato === "aspetta").catch(() => false)) await $panel(p, STOP).first().click().catch(() => {});
+  else await p.keyboard.press("Escape").catch(() => {});
   await p.waitForSelector("#psassist-print", { state: "detached", timeout: 5000 }).catch(() => {});
 }
 const nuovaPagina = (timeout = 15000) => ctx.waitForEvent("page", { timeout }).catch(() => null);
@@ -878,7 +882,8 @@ if (await prova("il foglio rimasto nella coda di Windows: «Mandato a», non «S
     `ordine in sottofondo: «Mandato a Zebra ZD421 · … alle HH:MM», e la lista «stampato su HP LaserJet A4» (got ${JSON.stringify(rec && rec.pubblico)})`);
   check(!!rec && rec.pubblico.tono === "warn", `«Mandato» in ambra, non col verde di «Stampato» (got ${rec && rec.pubblico.tono})`);
   const str = await striscia(doc, /Mandato a Zebra ZD421/, 8000);
-  const segno = await doc.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.className + " " + document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run .tick")?.textContent);
+  // (la striscia, o a pannello aperto il chip in intestazione)
+  const segno = await doc.evaluate(() => { const r = document.getElementById("psassist-host")?.shadowRoot; const p = r?.querySelector(".pill.run, .gchip"); return p?.className + " " + p?.querySelector(".tick, .gtick")?.textContent; });
   check(/warn/.test(segno) && !/✓/.test(segno), `sulla striscia: ambra, senza ✓ (got ${segno} · ${str})`);
 }
 

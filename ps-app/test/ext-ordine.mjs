@@ -162,8 +162,12 @@ async function aspettaChiusa(p, timeout = 15000) {
   await p.waitForEvent("close", { timeout }).catch(() => {});
   return p.isClosed();
 }
+// Esc annulla la stampa a scheda aperta (mentre il PDF arriva è del gestionale);
+// un foglio che aspetta il tuo tocco si toglie col ✕ della sua striscia
 async function chiudiStampa(p) {
-  await p.keyboard.press("Escape").catch(() => {});
+  await p.waitForFunction(() => { const w = document.getElementById("psassist-print"); return !w || !w.shadowRoot.querySelector(".pw").hidden || w.dataset.stato === "aspetta"; }, null, { timeout: 15000 }).catch(() => {});
+  if (await p.evaluate(() => document.getElementById("psassist-print")?.dataset.stato === "aspetta").catch(() => false)) await $panel(p, STOP).first().click().catch(() => {});
+  else await p.keyboard.press("Escape").catch(() => {});
   await p.waitForSelector("#psassist-print", { state: "detached", timeout: 5000 }).catch(() => {});
 }
 async function suPagina(p, url) {
@@ -691,17 +695,24 @@ if (prova("due ordini, il secondo aspetta in coda")) {
     `il secondo ordine aspetta in coda (got ${l.map((x) => `${x.paziente}:${x.stato}`).join(", ")})`);
   check(/in coda/.test(coda), `e la striscia lo dice (got: ${coda || "niente"})`);
   check(inviati(B).length === 0, "BIANCHI non parte finché ROSSI non ha finito");
-  // sulla lista del pronto soccorso (nessun paziente) le etichette partono da sole
+  // Sulla lista del pronto soccorso (nessun paziente) le etichette partono da
+  // sole — ma solo se dalla loro Conferma non hai toccato niente: dopo quella
+  // di ROSSI hai ordinato BIANCHI, e le sue aspettano un tocco; quelle di
+  // BIANCHI (dalla cui Conferma niente) partono da sole.
   await suPagina(doc, A.worklistUrl);
-  await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 });
+  await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 60000 });
+  await doc.waitForFunction(() => /BIANCHI|ROSSI/.test(document.getElementById("psassist-print")?.shadowRoot?.querySelector(".pw .pwhd")?.textContent || ""), null, { timeout: 30000 }).catch(() => {});
   const t1 = await titoloStampa(doc);
-  check(/ROSSI MARIO/.test(t1), `prima le etichette di ROSSI, da sole sulla lista (got: ${t1})`);
+  check(/BIANCHI ANNA/.test(t1) && (await ordini()).some((x) => x.paziente === "ROSSI MARIO" && x.stato === "stampa"),
+    `da sole partono quelle di BIANCHI; quelle di ROSSI aspettano il tuo tocco: dalla sua Conferma hai ordinato BIANCHI (got: ${t1})`);
   await aspettaChiusa(w1);
   await chiudiStampa(doc);
-  await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 }).catch(() => {});
-  await doc.waitForFunction(() => /BIANCHI/.test(document.getElementById("psassist-print")?.shadowRoot?.querySelector(".pw .pwhd")?.textContent || ""), null, { timeout: 30000 }).catch(() => {});
+  const pronte = await striscia(doc, /ROSSI MARIO.*Etichette pronte/, 15000).catch(() => "");
+  check(!!pronte && (await azione(doc)) === "Stampa", `la striscia: «ROSSI MARIO · Etichette pronte · Stampa» (got: ${pronte || "niente"})`);
+  await $panel(doc, AZIONE).click().catch(() => {});
+  await doc.waitForFunction(() => /ROSSI/.test(document.getElementById("psassist-print")?.shadowRoot?.querySelector(".pw .pwhd")?.textContent || ""), null, { timeout: 30000 }).catch(() => {});
   const t2 = await titoloStampa(doc);
-  check(/BIANCHI ANNA/.test(t2), `poi quelle di BIANCHI (got: ${t2})`);
+  check(/ROSSI MARIO/.test(t2), `un tocco, e partono quelle di ROSSI (got: ${t2})`);
   check(conferme(A).length === 1 && conferme(B).length === 1, `una conferma ciascuno (got ${conferme(A).length} + ${conferme(B).length})`);
   check((await stampe(doc)).length === 2, `due stampe, una per ordine (got ${(await stampe(doc)).length})`);
   await chiudiStampa(doc);
