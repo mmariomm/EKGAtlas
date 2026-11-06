@@ -104,9 +104,17 @@ async function atterraCarrello(page, timeout = 30000) {
 }
 // Errore in sottofondo: striscia rossa «completa a mano», e — se la richiesta
 // c'è — la scheda sul carrello (URL atteso in `su`).
+// (a pannello aperto, dove la pagina non cambia, l'errore è il resoconto stesso, nelle Richieste)
 async function errore(page, { su = /RcsRichiestaPrestazioniRicercaErogatore/, timeout = 30000 } = {}) {
   if (su) await page.waitForURL(su, { timeout });
-  return striscia(page, /Errore · completa a mano|Sessione scaduta/, timeout);
+  const h = await page.waitForFunction(() => {
+    const r = document.getElementById("psassist-host")?.shadowRoot;
+    const t = (r?.querySelector(".pill.run")?.innerText || r?.querySelector(".gchip")?.dataset.riga || "").replace(/\s+/g, " ").trim();
+    if (/Errore · completa a mano|Sessione scaduta/.test(t)) return t;
+    const b = r?.querySelector(".card .banner.err");
+    return b ? `Errore · completa a mano (resoconto) ${r.querySelector(".card .bd").innerText.replace(/\s+/g, " ").trim()}` : false;
+  }, null, { timeout });
+  return h.jsonValue();
 }
 // «Svuota il carrello e ricomincia»: il primo tocco legge il carrello vero
 // (solo letture) e chiede, coi nomi; si aspetta che lo dica
@@ -175,6 +183,15 @@ async function newPage(browser, mock, opts = {}) {
 const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`); // pierces open shadow DOM
 // il bottoncino della striscia («Ristampa», «apri il carrello», «Stampa»): nella striscia, o nel chip a pannello aperto
 const AZIONE = "#strazione, #psassist-host #gchipaz";
+// un tocco sulla striscia («tocca per il carrello»): la striscia, o il chip a pannello aperto
+const TOCCO_STRISCIA = ".pill.run, #psassist-host #gchipapri";
+// …come lo farebbe il medico: ridotto, la striscia; aperto, il chip se ha un tocco suo (se no il pannello è già aperto)
+async function toccaStriscia(page) {
+  if (await $panel(page, ".pill.run").count()) return $panel(page, ".pill.run").click();
+  if (await $panel(page, "#gchipapri").count()) return $panel(page, "#gchipapri").click();
+}
+// la striscia (o il chip) di quel tono
+const TONO = (t) => `.pill.run.${t}, #psassist-host .gchip.${t}`;
 
 // «⭳ Carica i valori» legge OGNI prelievo, uno alla volta: si aspetta che la
 // tabella abbia le sue colonne e che il bottone sia tornato pronto — finché
@@ -722,7 +739,7 @@ async function scenarioConfirmPostFails(browser) {
     const ambra = await striscia(page, /Non confermata/, 30000).catch(() => "");
     const rid = Object.keys(mock.state.richieste)[0];
     check(scen, mock.state.richieste[rid].confirmed === false, "la richiesta resta non confermata");
-    check(scen, /Non confermata/.test(ambra) && /tocca per il carrello/.test(ambra) && (await $panel(page, ".pill.run.warn").count()) === 1,
+    check(scen, /Non confermata/.test(ambra) && /tocca per il carrello/.test(ambra) && (await $panel(page, TONO("warn")).count()) === 1,
       `pill ambra «Non confermata · tocca per il carrello» (got: ${ambra})`);
     const testi = (await registrato(page)).testi;
     check(scen, !testi.some((t) => /Confermata|confermat[ia] \d/.test(t)), `mai verde, mai «Confermata» (got: ${testi.slice(-3).join(" | ")})`);
@@ -735,7 +752,7 @@ async function scenarioConfirmPostFails(browser) {
       "nessun PDF stampato per una conferma mai registrata");
     check(scen, (await page.locator("#psassist-print").count()) === 0, "nessun wizard di stampa");
     check(scen, /PsoEpisodioClinicoAmbulatorio/.test(page.url()), "la pagina non si è mossa da sola");
-    await $panel(page, ".pill.run").click();
+    await toccaStriscia(page);
     await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 10000 });
     check(scen, new URL(page.url()).searchParams.get("RICHIESTA_ID") === rid, "un tocco: il carrello di quella richiesta");
     await page.waitForTimeout(1500);
@@ -1179,10 +1196,14 @@ async function scenarioRiprovaDaSolo(browser) {
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
-  const riprovo = await striscia(page, /Riprovo 1 esame/, 25000).catch(() => "");
+  // (i passi stanno nel pannello aperto del giro: lì si legge il ritentativo)
+  const riprovo = await page.waitForFunction(() => {
+    const t = (document.getElementById("psassist-host")?.shadowRoot?.querySelector(".card .steps")?.innerText || "").replace(/\s+/g, " ");
+    return /Riprovo 1 esame/.test(t) ? t : false;
+  }, null, { timeout: 25000 }).then((h) => h.jsonValue()).catch(() => "");
   await page.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 }).catch(() => {});
   const rid = Object.keys(mock.state.richieste)[0];
-  check(scen, /Riprovo 1 esame…/.test(riprovo), `la striscia lo dice, per poco: «Riprovo 1 esame…» (got: ${riprovo || "niente"})`);
+  check(scen, /Riprovo 1 esame…/.test(riprovo), `il giro lo dice, fra i suoi passi: «Riprovo 1 esame…» (got: ${riprovo.slice(0, 120) || "niente"})`);
   check(scen, mock.state.insertCount[`${rid}:320`] === 1 && mock.state.insertCount[`${rid}:324`] === 1 && Object.keys(mock.state.insertCount).length === 2,
     `ogni esame mandato una volta: l'EMOCROMO già entrato si ritrova, parte la TROPONINA (${JSON.stringify(mock.state.insertCount)})`);
   check(scen, Object.keys(mock.state.richieste).length === 1 && confermePost(mock).length === 1 && mock.state.richieste[rid].confirmed === true,
@@ -1286,7 +1307,7 @@ async function scenarioConfermaInterrotta(browser) {
     `resta il segno, solo numeri (got ${JSON.stringify(segno).slice(0, 140)})`);
   check(scen, !/non confermata/i.test(await $panel(page, "#expand").innerText()), "prima del tempo la pill non dice niente");
   const avviso = await striscia(page, /Richiesta \d\d:\d\d non confermata/, 15000).catch(() => "");
-  check(scen, /tocca per il carrello/.test(avviso) && (await $panel(page, ".pill.run.warn").count()) === 1,
+  check(scen, /tocca per il carrello/.test(avviso) && (await $panel(page, TONO("warn")).count()) === 1,
     `passato il tempo, la pagina dello stesso episodio lo dice, ambra (got: ${avviso})`);
   check(scen, Date.now() - t0 >= 4000, "e non prima");
   check(scen, confermePost(mock).length === 0, "niente si è confermato da solo");
@@ -1325,19 +1346,21 @@ async function scenarioNonMangiaLaScrittura(browser) {
     await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
     await $panel(page, '.opt[title*="TROPONINA"]').click();
     await $panel(page, bottone).click();
-    await page.waitForSelector("#psassist-host .pill.run", { timeout: 15000 });
+    // (il pannello resta aperto: il giro nel corpo, la sua riga nel chip in intestazione)
+    await page.waitForSelector("#psassist-host .card #stopbtn", { timeout: 15000 });
     const diario = page.locator('textarea[name="DIARIO"]');
     await diario.click();
     const testo = "Paziente vigile, orientato. Dolore addominale da ieri sera.";
     await page.keyboard.type(testo, { delay: 20 });
-    const pill = await striscia(page, attesa, 30000).catch(() => "");
+    // (a pannello aperto, dopo un errore, lo dice il resoconto stesso nelle Richieste: «Apri il carrello»)
+    const pill = await striscia(page, attesa, 30000).catch(async () => ((await $panel(page, ".card #openlist").count()) ? "resoconto · Apri il carrello" : ""));
     await page.waitForTimeout(1500);
     check(scen, /PsoEpisodioClinicoAmbulatorio/.test(page.url()) && (await diario.inputValue()) === testo,
       `la scheda resta dov'è, col testo del diario (url …${page.url().slice(-36)})`);
     check(scen, !!pill, `la pill dice di toccare per il carrello (got: ${pill || (await $panel(page, ".pill.run").innerText().catch(() => "—")).replace(/\s+/g, " ")})`);
     const rid = Object.keys(mock.state.richieste)[0];
     check(scen, confermePost(mock).length === 0, "e niente si è confermato");
-    await $panel(page, ".pill.run").click();
+    await $panel(page, `${TOCCO_STRISCIA}, #psassist-host .card #openlist`).first().click();
     await page.waitForURL(/RcsRichiestaPrestazioniRicercaErogatore/, { timeout: 10000 });
     check(scen, new URL(page.url()).searchParams.get("RICHIESTA_ID") === rid, "un tocco: il carrello della richiesta");
     await context.close();
@@ -1362,8 +1385,8 @@ async function scenarioErroreCompletaAMano(browser) {
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(page, '.opt[title*="TROPONINA"]').click();
   await $panel(page, "#goconfirm").click();
-  await azzeraRegistrato(page);
   const rossa = await errore(page);
+  await azzeraRegistrato(page);   // (fino al carrello il pannello resta com'era, aperto; atterrati, la striscia)
   const n0 = mock.state.requests.length;
   const rid = Object.keys(mock.state.richieste)[0];
   const qui = new URL(page.url()).searchParams;
@@ -1374,7 +1397,7 @@ async function scenarioErroreCompletaAMano(browser) {
     "l'ultima cosa chiesta al server è la lettura del carrello");
   check(scen, /Errore · completa a mano/.test(rossa) && /Mancano: TROPONINA/.test(rossa),
     `striscia: «Errore · completa a mano» / «Mancano: …» (got: ${rossa})`);
-  check(scen, (await $panel(page, ".pill.run.err").count()) === 1, "e rossa");
+  check(scen, (await $panel(page, TONO("err")).count()) === 1, "e rossa");
   await page.waitForTimeout(2500);
   check(scen, mock.state.requests.length === n0,
     `dopo, nessuna richiesta al server (got ${mock.state.requests.slice(n0).map((q) => q.params.MVPG || q.url.slice(-40)).join(", ")})`);
@@ -1383,7 +1406,7 @@ async function scenarioErroreCompletaAMano(browser) {
   check(scen, mock.state.richieste[rid].confirmed === false
     && !mock.state.requests.some((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni")), "niente confermato");
   const reg = await registrato(page);
-  check(scen, reg.finestra === 0, `la finestra non si apre mai da sola (vista ${reg.finestra} volte)`);
+  check(scen, reg.finestra === 0, `sul carrello la finestra non si apre da sola (vista ${reg.finestra} volte)`);
   await apriStriscia(page);
   const card = await $panel(page, ".card").innerText();
   check(scen, /oggi si chiama/.test(card), "un tocco: il motivo per intero");
@@ -2139,32 +2162,33 @@ async function scenarioRipresa(browser) {
   await $panel(page, '.opt[title*="ESAME URINE"]').click();
   await $panel(page, "#go").click();
 
-  // mentre gira, il pannello è una striscia: chi, a che punto, che cosa sta facendo
-  await page.waitForSelector("#psassist-host .pill.run", { timeout: 15000 });
-  check(scen, (await page.locator("#psassist-host .card").count()) === 0,
-    "mentre gira il pannello è una striscia, non il pannello intero");
+  // mentre gira il pannello resta com'era (aperto): i passi nel corpo, la riga del giro nel chip in intestazione
+  await page.waitForSelector("#psassist-host .card #stopbtn", { timeout: 15000 });
+  check(scen, (await page.locator("#psassist-host .card").count()) === 1 && (await page.locator("#psassist-host .hd .gchip").count()) === 1,
+    "mentre gira il pannello non si nasconde: il giro nel corpo, la sua riga nel chip in intestazione");
   // si aspetta che stia mandando PROPRIO la PCT (quella lenta): così la
   // navigazione la coglie in volo, sempre, non a caso
   const vivo = await (await page.waitForFunction(() => {
     const r = document.getElementById("psassist-host")?.shadowRoot;
-    const t = (r?.querySelector(".pill.run")?.innerText || "").replace(/\s+/g, " ");
+    const t = `${r?.querySelector(".gchip")?.dataset.riga || ""} | ${r?.querySelector(".card .step.running")?.innerText || ""}`.replace(/\s+/g, " ");
     return /PROCALCITONINA/.test(t) && /invio/i.test(t) ? t : false;
   }, { timeout: 20000 })).jsonValue();
   check(scen, /ROSSI MARIO/.test(vivo) && /esame \d di 3/.test(vivo) && /invio/i.test(vivo),
-    `la striscia dice paziente, passo e che cosa sta facendo (got: ${vivo})`);
+    `il chip dice paziente e «esame N di 3», i passi dicono che cosa sta facendo (got: ${vivo})`);
+  check(scen, !/invio/i.test(vivo.split(" | ")[0]), "(nel chip niente passi: solo chi e a che esame)");
   check(scen, (await page.locator("#psassist-host #stopbtn").count()) === 1, "e si può fermare da lì");
 
   // …e si naviga via, come farebbe un click qualunque del gestionale
   await page.goto(mock.worklistUrl);
-  await page.waitForSelector("#psassist-host .pill.run", { timeout: 15000 });
-  const ripresa = (await $panel(page, ".pill.run").innerText()).replace(/\s+/g, " ");
+  await page.waitForSelector("#psassist-host #stopbtn", { timeout: 15000 });
+  const ripresa = await striscia(page, /ROSSI MARIO/, 10000).catch(() => "");
   check(scen, /ROSSI MARIO/.test(ripresa) && /esame \d di 3|\d esami/.test(ripresa),
     `il giro riprende da solo sulla pagina nuova, e la striscia resta (got: ${ripresa})`);
 
   // e si cambia pagina un'altra volta, mentre manda l'ultimo: si riprende
   // quante volte serve, senza mai rimandare niente
   await page.waitForFunction(() => {
-    const t = document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || "";
+    const t = document.getElementById("psassist-host")?.shadowRoot?.querySelector(".card .step.running")?.innerText || "";
     return /ESAME URINE/.test(t) && /invio/i.test(t);
   }, { timeout: 30000 });
   await page.goto(mock.patientUrl);
@@ -2181,8 +2205,7 @@ async function scenarioRipresa(browser) {
     "tre inserimenti in tutto, quanti sono gli esami");
   check(scen, !/RcsRichiestaPrestazioniRicercaErogatore/.test(page.url()),
     "e il pannello non si riprende la pagina: resti dove sei, il carrello non si apre da solo");
-  await $panel(page, ".pill.run").click();
-  await page.waitForSelector("#psassist-host .card", { timeout: 5000 });
+  await apriStriscia(page);
   // passi e Registro stanno insieme sotto «Dettagli», chiuso
   check(scen, (await $panel(page, "details.dett:not([open])").count()) === 1, "il resoconto tiene passi e Registro sotto «Dettagli», chiuso");
   await $panel(page, "details.dett > summary").click();
@@ -2212,15 +2235,17 @@ async function scenarioRipresaInVoloPerso(browser) {
   await $panel(page, '.opt[title*="ESAME URINE"]').click();
   await $panel(page, "#go").click();
   await page.waitForFunction(() => /invio/.test(document.getElementById("psassist-host")
-    ?.shadowRoot?.querySelector(".pill.run .l2")?.textContent || ""), { timeout: 20000 });
+    ?.shadowRoot?.querySelector(".card .step.running")?.textContent || ""), { timeout: 20000 });
   await page.goto(mock.worklistUrl);
   // ripreso sulla lista del PS: l'errore lo dice la striscia rossa, e la
   // pagina dove sei non te la porta via
   const rossa = await errore(page, { su: null, timeout: 40000 });
   // la PCT era partita (in volo): non «manca», è da controllare — chi la
   // aggiungesse a mano potrebbe ordinarla due volte
-  check(scen, /Mancano: ESAME URINE/.test(rossa) && /Da controllare: PROCALCITONINA/.test(rossa) && !/Mancano:[^·]*PROCALCITONINA/.test(rossa),
-    `la striscia dice cosa manca e cosa è da controllare (got: ${rossa})`);
+  // (la striscia, «Mancano: … · Da controllare: …»; a pannello aperto il resoconto, «MANCANO (1) … DA CONTROLLARE (1) …»)
+  const elenchi = rossa.replace(/MANCANO \(\d+\)/g, "Mancano:").replace(/DA CONTROLLARE \(\d+\)/g, "· Da controllare:");
+  check(scen, /Mancano: ESAME URINE/.test(elenchi) && /Da controllare: PROCALCITONINA/.test(elenchi) && !/Mancano:[^·]*PROCALCITONINA/.test(elenchi),
+    `la striscia (o il resoconto) dice cosa manca e cosa è da controllare (got: ${rossa})`);
   await page.waitForTimeout(800);
   check(scen, !/RcsRichiestaPrestazioniRicercaErogatore/.test(page.url()), "e resti sulla pagina dove eri");
   const rid = Object.keys(mock.state.richieste)[0];
@@ -2263,7 +2288,7 @@ async function scenarioRipresaDueVolteInVolo(browser) {
   await $panel(page, '.opt[title*="ESAME URINE"]').click();
   await $panel(page, "#go").click();
   const inVolo = () => page.waitForFunction(() => {
-    const t = document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || "";
+    const t = document.getElementById("psassist-host")?.shadowRoot?.querySelector(".card .step.running")?.innerText || "";
     return /PROCALCITONINA/.test(t) && /invio|controllo/i.test(t);
   }, { timeout: 25000 });
   await inVolo();
@@ -2618,8 +2643,8 @@ async function scenarioPrintManual(browser) {
   check(scen, /Stampa 1 di 2 — Etichette provette/.test(head) && /etichettatrice/.test(await stampante()), `job 1 = etichette → etichettatrice (got: ${head.slice(0, 70)})`);
   // mentre il PDF arriva, a pannello aperto lo stato sta in un riquadrino: niente davanti
   check(scen, await nienteDavanti(page) && (await $panel(page, ".card").count()) === 1
-    && /Aspetto le etichette/.test(await $wiz(page, ".ps:not([hidden])").innerText().catch(() => "")),
-    "mentre le etichette arrivano: il pannello resta com'era, un riquadrino dice a che punto è");
+    && /Aspetto le etichette/.test(await $panel(page, ".hd .gchip").getAttribute("data-riga").catch(() => "")) && (await $wiz(page, ".ps:not([hidden])").count()) === 0,
+    "mentre le etichette arrivano: il pannello resta com'era, e il chip in intestazione dice a che punto è (niente riquadrino sopra l'intestazione)");
   await attendiAnteprima(page);
   const vista = await anteprima(page);
   check(scen, /Stampa 1 di 2 — Etichette provette/.test(vista) && /→ etichettatrice/.test(vista),
@@ -6943,8 +6968,7 @@ async function scenarioMenuAltro(browser) {
   await $panel(b.page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   await $panel(b.page, '.opt[title*="TROPONINA"]').click();
   await $panel(b.page, "#go").click();
-  await b.page.waitForSelector("#psassist-host .strip #stopbtn", { timeout: 10000 });
-  await $panel(b.page, ".pill.run").click();
+  await b.page.waitForSelector("#psassist-host .card #stopbtn", { timeout: 10000 });   // (il pannello resta aperto, col giro)
   await $panel(b.page, "#menubtn").click();
   check(scen, (await $panel(b.page, "#extreload").count()) === 0, "mentre il giro manda, «Ricarica estensione» non c'è");
   await $panel(b.page, "#menubtn").click();

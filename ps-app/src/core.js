@@ -5679,7 +5679,7 @@
     .gchip .gcorpo { display: inline-flex; align-items: center; gap: 6px; min-width: 0; border: 0; background: transparent; color: inherit; font: inherit; padding: 0; }
     .gchip button.gcorpo { cursor: pointer; }
     .gchip .gt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .gchip .gt b { font-weight: 700; }
+    .gchip .gt b { font-size: inherit; font-weight: 700; letter-spacing: 0; }
     .gchip .gdot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #0B5CAD; animation: psaPulse 1.2s ease-in-out infinite; }
     @media (prefers-reduced-motion: reduce) { .gchip .gdot { animation: none; } }
     .gchip .gtick { flex: none; font-weight: 800; }
@@ -8686,6 +8686,7 @@
       // (la pagina se ne va col modulo; se restasse, la riga torna a capo)
       setTimeout(() => { if (this._daconf === ora) { this._daconf = null; this.render(); } }, 8000);
       this.log(`${now()}  conferma della richiesta rimasta da confermare: ${a.nomi.length} ${a.nomi.length === 1 ? "esame" : "esami"} · ${a.nomi.join(" · ")} · click nativo su Conferma`);
+      tabStore.set(PREMUTO, Date.now());   // (la Conferma è sua)
       q.live.confirmButton.click();
       // quanti esami: qui non c'è ricevuta, lo dice la lettura del primo tocco
       const p = tabStore.get("print.v1", null);
@@ -14423,6 +14424,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#goqueued")?.addEventListener("click", () => { if (this.pending) goToQueued(this.pending); });
       $("#confirmnow")?.addEventListener("click", () => {
         // native click → server confirm → print handoff (armed at boot)
+        tabStore.set(PREMUTO, Date.now());   // (la Conferma è sua)
         const live = examModel(document, location.href);
         live.confirmButton?.click();
       });
@@ -16006,7 +16008,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   }
   function armPrintOnConfirm(model, episodeId) {
     if (!model.form || !model.richiestaId) return;
-    const arm = () => {
+    const arm = (e) => {
+      // (la Conferma del gestionale premuta da lui: da qui contano i suoi tocchi — quella del motore no)
+      if (e && e.isTrusted) tabStore.set(PREMUTO, Date.now());
       if (!richiestaNostra(model.richiestaId)) return;
       const q = tabStore.get("queue.v1", null);
       if (q && q.items) { // this richiesta is done: drop it from the walk
@@ -17202,7 +17206,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const model = examModel(document, location.href);
       learnFrom(model);
       panel.render(); // pick up anything just learned
-      tabStore.set(PREMUTO, Date.now());   // (la Conferma del gestionale, premuta da lui)
       armPrintOnConfirm(model, findEpisodeId(document, location.href)); // native Conferma → print handoff
       if (!ripresa) {   // prima si finisce di mandare gli esami
         let cliccato = maybeAutoConfirm(panel);
