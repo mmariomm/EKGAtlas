@@ -5671,7 +5671,7 @@
     .pieg.err { background: #B3261E; }
     /* La striscia a pannello aperto: un chip in intestazione, la sua riga corta */
     #girow { display: contents; }
-    .gchip { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 3px 0 9px;
+    .gchip { flex: 0 1 auto; min-width: 64px; overflow: hidden; display: inline-flex; flex-direction: row-reverse; align-items: center; gap: 4px; height: 30px; padding: 0 3px 0 9px;
              border-radius: 999px; background: #EAF2FA; color: #0B2A4A; font-size: 12px; font-weight: 600; white-space: nowrap; }
     .gchip.warn { background: #FFF1D6; color: #6b3d02; }
     .gchip.err { background: #FBEBEA; color: #7c1a14; }
@@ -5689,8 +5689,7 @@
     .gchip .gstop.ferma { background: #B3261E; color: #fff; }
     .gchip .gstop:hover { background: rgba(9,42,74,.1); }
     .gchip .gstop.ferma:hover { background: #8f1e18; }
-    .gchip { position: relative; }
-    .gchiprighe { position: absolute; top: calc(100% + 2px); right: 0; z-index: 5; cursor: default; }
+    .gchiprighe { position: absolute; top: calc(100% + 2px); right: 12px; z-index: 5; cursor: default; }
     /* La finestra: al centro, l'85% dello schermo. Intestazione, schede e
        selezione restano ferme; scorre solo il corpo. Il contenuto sta su una
        colonna comoda da leggere; valori e stanza usano tutta la larghezza. */
@@ -7698,16 +7697,17 @@
       const titStop = s ? s.titoloStop || (s.ferma ? "Ferma l'ordine" : "Chiudi l'avviso") : "Interrompi";
       const segno = tono === "run" ? `<i class="gdot"></i>` : `<span class="gtick">${tono === "err" || tono === "warn" ? "!" : "✓"}</span>`;
       const testo = `${chi ? `<b>${esc(nomeCorto(chi))}</b>` : ""}${parti.map((p, k) => `${chi || k ? " · " : ""}${esc(p)}`).join("")}`;
-      // (stringendosi cede il testo, mai i bottoni: il minimo è quanto loro, più il segno e un pezzo di nome)
-      const minimo = 44 + (s && s.azione ? 22 + Math.round(6.3 * String(s.azione.label || "").length) : 0) + (s && s.piegati && s.piegati.n ? 30 : 0) + (stop ? 28 : 0);
-      return `<span class="gchip ${tono}" role="status" style="min-width:${minimo}px" title="${esc(tutto)}" data-riga="${esc([chi, ...parti, s && s.quesito].filter(Boolean).join(" "))}">${s && s.onTap
-        ? `<button class="gcorpo" id="gchipapri" title="${esc(s.titolo || tutto)}">${segno}<span class="gt">${testo}</span></button>`
-        : `<span class="gcorpo">${segno}<span class="gt">${testo}</span></span>`}${
-        s && s.azione ? `<button class="gaz" id="gchipaz" title="${esc(s.azione.titolo || "")}">${esc(s.azione.label)}</button>` : ""}${
-        s ? this.piegatiHtml("gchippieg") : ""}${
+      // (i pezzi al contrario, disegnati da destra: stringendosi cede il testo, e
+      // in un'intestazione strettissima per ultimo il ⏹ / ✕, che resta sempre a vista)
+      return `<span class="gchip ${tono}" role="status" title="${esc(tutto)}" data-riga="${esc([chi, ...parti, s && s.quesito].filter(Boolean).join(" "))}">${
         stop ? `<button class="gstop${stop === "⏹" ? " ferma" : ""}" id="gchipstop" title="${esc(titStop)}" aria-label="${esc(titStop)}">${stop}</button>` : ""}${
+        s ? this.piegatiHtml("gchippieg") : ""}${
+        s && s.azione ? `<button class="gaz" id="gchipaz" title="${esc(s.azione.titolo || "")}">${esc(s.azione.label)}</button>` : ""}${
+        s && s.onTap
+          ? `<button class="gcorpo" id="gchipapri" title="${esc(s.titolo || tutto)}">${segno}<span class="gt">${testo}</span></button>`
+          : `<span class="gcorpo">${segno}<span class="gt">${testo}</span></span>`}</span>${
         // (le righe dei fogli, come sotto la striscia: ognuna col suo ✕ o «Ristampa»)
-        s && s.righe && s.righe.length ? `<span class="gchiprighe">${this.righeHtml(s.righe)}</span>` : ""}</span>`;
+        s && s.righe && s.righe.length ? `<span class="gchiprighe">${this.righeHtml(s.righe)}</span>` : ""}`;
     }
     // gli avvisi di prima (un errore, un ordine da guardare) mentre un altro
     // ordine gira: piegati in un «!1» rosso accanto alla striscia; un tocco li mostra
@@ -8409,7 +8409,7 @@
         // il giro, come lo dice la sua scheda: chi e «esame 3 di 6» — il passo
         // («invio LIPASI», «controllo il carrello 2/3») resta nel pannello della
         // sua scheda: qui sarebbe una scritta che cambia ogni secondo nell'angolo dell'occhio
-        const passo = !!v.badge && (v.tono || "run") === "run";
+        const passo = Array.isArray(v.prog) && (v.tono || "run") === "run";   // (solo il giro che manda: le altre parole della sua scheda restano)
         s = { tag: v.tag || "", badge: v.badge || "", testo: passo ? "" : v.testo || "…", tono: v.tono || "run", quesito: v.quesito || "", ...(v.ferma ? ferma : {}) };
       } else if (fuoco.stato === "corre") s = { ...s, ...(fuoco.muto ? ferma : {}) };
       // la stampa dopo la conferma, senza dialogo: ⏹ ferma i fogli che restano

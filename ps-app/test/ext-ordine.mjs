@@ -1313,8 +1313,9 @@ if (prova("un esame mai partito per un elenco venuto male — la scheda dell'ord
   const rid = Object.keys(A.state.richieste)[0];
   const viste = (await strisce(doc)).slice(s0);
   check(!!pronte, `alla fine le etichette di ROSSI, pronte (got: ${pronte || "niente"})`);
-  check(viste.some((t) => /ROSSI MARIO.*Riprovo 1 esame…/.test(t)) && !viste.some((t) => /Errore/.test(t)),
-    `intanto la tua striscia ha detto «Riprovo 1 esame…», e mai un errore (got ${viste.filter((t) => /Riprovo|Errore/.test(t)).join(" | ") || "niente"})`);
+  // (il ritentativo è un passo della scheda dell'ordine: la striscia dice solo che gira, «esame N di M»)
+  check(viste.some((t) => /ROSSI MARIO.*esame \d di \d/.test(t)) && !viste.some((t) => /Errore|non mandat|Riprovo/.test(t)),
+    `intanto la tua striscia dice solo che l'ordine gira — niente passi —, e mai un errore (got ${viste.filter((t) => /esame|Riprovo|Errore/.test(t)).join(" | ").slice(0, 200) || "niente"})`);
   check(A.state.insertCount[`${rid}:320`] === 1 && A.state.insertCount[`${rid}:324`] === 1 && Object.keys(A.state.insertCount).length === 2,
     `ogni esame mandato una volta (${JSON.stringify(A.state.insertCount)})`);
   check(Object.keys(A.state.richieste).length === 1 && conferme(A).length === 1 && A.state.richieste[rid].confirmed === true,
@@ -1341,7 +1342,7 @@ if (prova("ritentato da solo e fermo di nuovo — il resoconto arriva a te, «Ri
   const cercate = () => A.state.requests.filter((q) => q.params.s_PRESTAZIONE).length;
   check(/TROPONINA US: non mandato/.test(rossa) && (await $panel(doc, ".pill.run.err").count()) === 1,
     `la striscia rossa di sempre: «TROPONINA US: non mandato» (got: ${rossa || "niente"})`);
-  check((await strisce(doc)).slice(s0).some((t) => /ROSSI MARIO.*Riprovo 1 esame…/.test(t)), "prima, «Riprovo 1 esame…»");
+  check(!(await strisce(doc)).slice(s0).some((t) => /Riprovo/.test(t)), "(il ritentativo, un passo della scheda dell'ordine, non si racconta nella striscia)");
   check(cercate() === 2 && !A.state.insertCount[`${rid}:324`] && A.state.insertCount[`${rid}:320`] === 1 && conferme(A).length === 0,
     `il giro e il suo unico ritentativo: la TROPONINA mai mandata, l'EMOCROMO una volta, niente confermato (${cercate()} ricerche · ${JSON.stringify(A.state.insertCount)})`);
   check(await aspettaChiusa(w), "la scheda dell'ordine si chiude: il resoconto è passato a te");
