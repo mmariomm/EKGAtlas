@@ -794,8 +794,8 @@
     if (testo == null || !p || testo === p.nota) { S.bozze.delete(ep); render(); return; }
     S.occupato.add("nota" + ep); render();
     const salvata = (riga) => { aggiornaRiga(riga); if (S.bozze.get(ep) === testo) S.bozze.delete(ep); };
-    try { salvata(await scrivi("nota", { ep, testo }, TEMPO, salvata, "Nota salvata sul PC")); avviso("Nota salvata sul PC"); }
-    catch (e) { if (e.inviata) avviso("Non so se la nota è salvata: aspetto il PC", "err"); else errore(e); }
+    try { salvata(await scrivi("nota", { ep, testo }, TEMPO, salvata, "Da fare salvato sul PC")); avviso("Da fare salvato sul PC"); }
+    catch (e) { if (e.inviata) avviso("Non so se il Da fare è salvato: aspetto il PC", "err"); else errore(e); }
     S.occupato.delete("nota" + ep); render();
   }
   async function aggiungiProm(ep) {
@@ -803,8 +803,8 @@
     if (!testo) return;
     S.occupato.add("prom" + ep); render();
     const salvato = (riga) => { aggiornaRiga(riga); if (S.promTesto.trim() === testo) { S.promTesto = ""; S.promAperto = ""; } };
-    try { salvato(await scrivi("promemoria", { ep, testo }, TEMPO, salvato, "Promemoria salvato sul PC")); }
-    catch (e) { if (e.inviata) avviso("Non so se il promemoria è salvato: aspetto il PC", "err"); else errore(e); }
+    try { salvato(await scrivi("promemoria", { ep, testo }, TEMPO, salvato, "Da fare salvato sul PC")); }
+    catch (e) { if (e.inviata) avviso("Non so se il Da fare è salvato: aspetto il PC", "err"); else errore(e); }
     S.occupato.delete("prom" + ep); render();
   }
   // «✓ Fatto» aspetta 5 secondi, con «Annulla»: un tocco sbagliato non toglie
@@ -813,8 +813,8 @@
     if (S.fatti.has(pid)) return;
     S.fatti.set(pid, setTimeout(async () => {
       S.occupato.add("fatto" + pid); render();
-      try { aggiornaRiga(await scrivi("fatto", { ep, pid }, TEMPO, aggiornaRiga, "Promemoria fatto sul PC")); }
-      catch (e) { if (e.dati) aggiornaRiga(e.dati); if (e.inviata) avviso("Non so se il promemoria è fatto: aspetto il PC", "err"); else errore(e); }
+      try { aggiornaRiga(await scrivi("fatto", { ep, pid }, TEMPO, aggiornaRiga, "Fatto, anche sul PC")); }
+      catch (e) { if (e.dati) aggiornaRiga(e.dati); if (e.inviata) avviso("Non so se è segnato fatto: aspetto il PC", "err"); else errore(e); }
       S.fatti.delete(pid);
       S.occupato.delete("fatto" + pid); render();
     }, 5000));
@@ -1053,10 +1053,22 @@
     if (!l.length) return "";
     return `<span class="prom ${banda(l[0].t)}">${esc(quanto(l[0].t))} ${esc(l[0].testo)}${l.length > 1 ? ` +${l.length - 1}` : ""}</span>`;
   }
+  // Lo stato, come sulla riga del tabellone del PC (che lo manda già fatto):
+  // il cuore, per tipo quello che aspetta col suo tempo — o ✓ se è tornato
+  // tutto — e il pallino del letto. Niente quando il PC non sa; quando l'ha
+  // letto, nel titolo. Grigio se la lettura è vecchia.
+  function statoPaz(x) {
+    if (!x) return "";
+    const cuore = x.cuore ? `<span class="cuore ${esc(x.cuore.livello)}${x.cuore.vecchio ? " vecchio" : ""}">${x.cuore.vecchio ? "♡" : "♥"}</span>` : "";
+    const esami = !Array.isArray(x.esami) ? "" : x.esami.length
+      ? x.esami.map((e) => `<span class="esp"><b>${esc(e.nome)}</b>${e.t ? ` <i class="${esc(e.banda)}">${esc(e.t)}</i>` : ""}</span>`).join("") : `<span class="esp">✓</span>`;
+    const segno = x.segno ? `<i class="segno ${esc(x.segno)}"></i>` : "";
+    return cuore || esami || segno ? `<span class="st${x.vecchio ? " vecchio" : ""}" title="${esc(x.titolo || "")}">${cuore}${esami}${segno}</span>` : "";
+  }
   function rigaPaz(p) {
     return `<button class="paz t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" data-a="paz" data-ep="${esc(p.ep)}">
       <span class="tr"></span><span class="cor"><span class="r1"><span class="nome">${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(p.nome || p.breve)}</span>${Number.isInteger(p.eta) ? `<span class="eta">${p.eta} anni</span>` : ""}${
-        p.posto ? `<span class="posto">${esc(p.posto)}</span>` : ""}${promPill(p)}</span>${p.nota ? `<span class="nota">${esc(p.nota)}</span>` : ""}</span></button>`;
+        p.posto ? `<span class="posto">${esc(p.posto)}</span>` : ""}${statoPaz(p.stato)}${promPill(p)}</span>${p.nota ? `<span class="nota">${esc(p.nota)}</span>` : ""}</span></button>`;
   }
   // Un ordine, con le parole del PC: il titolo è com'è andata, l'ora una volta.
   // In una barra: quello che corre, o uno finito male (finché non lo si chiude
@@ -1203,19 +1215,21 @@
     return `<div class="cta">${n ? `<div class="sel">${esc(nomi)}</div>` : ""}<button id="ordina" data-a="ordina" class="${armato ? "arma" : ""}" ${occupato || bloccato ? "disabled" : !n || !s.q.trim() ? "aria-disabled=\"true\"" : ""}>${esc(etichetta)}</button>${
       perche ? `<div class="perche">${esc(perche)}</div>` : ""}</div>`;
   }
-  // La nota e i promemoria: chiusi finché non servono («+ Nota»).
+  // «Da fare», come sul PC: la nota (la prima voce senza ora) e quelle con l'ora,
+  // chiuse finché non servono («+ Da fare», «+ Con l'ora»). Sotto, il ponte
+  // dice ancora `nota` e `promemoria`.
   function noteHtml(p) {
     const bozza = S.bozze.has(p.ep) ? S.bozze.get(p.ep) : p.nota || "";
     const aperta = S.notaAperta === p.ep, promAperto = S.promAperto === p.ep;
     const proms = [...(p.prom || [])].sort((a, b) => a.t - b.t);
-    const nota = aperta ? `<div class="nota-w"><textarea id="nota" rows="3" placeholder="Nota su questo paziente" aria-label="Nota">${esc(bozza)}</textarea></div>`
-      : bozza ? `<button class="notatxt" data-a="nota" aria-label="Modifica la nota">${esc(bozza)}</button>` : "";
+    const nota = aperta ? `<div class="nota-w"><textarea id="nota" rows="3" placeholder="Da fare per questo paziente" aria-label="Da fare">${esc(bozza)}</textarea></div>`
+      : bozza ? `<button class="notatxt" data-a="nota" aria-label="Modifica il Da fare">${esc(bozza)}</button>` : "";
     const righe = proms.map((x) => `<div class="promr"><span class="quando ${banda(x.t)}">${hhmm(x.t)}</span><span class="cosa">${esc(x.testo)}</span>${
       S.fatti.has(x.id) ? `<span class="fattoin">Fatto</span><button class="btnmini" data-a="annulla" data-pid="${esc(x.id)}" ${S.occupato.has("fatto" + x.id) ? "disabled" : ""}>Annulla</button>`
         : `<button class="btnmini ok" data-a="fatto" data-pid="${esc(x.id)}">✓ Fatto</button>`}</div>`).join("");
     const add = promAperto ? `<div class="addprom"><input id="promin" type="text" enterkeyhint="done" autocomplete="off" placeholder="«11:30 tropo», «tra 2h ECG»" value="${esc(S.promTesto)}">
       <button data-a="prom" ${S.occupato.has("prom" + p.ep) ? "disabled" : ""}>Aggiungi</button></div>` : "";
-    const piu = (!aperta && !bozza ? `<button class="piu" data-a="nota">+ Nota</button>` : "") + (!promAperto && !p.prec ? `<button class="piu" data-a="promApri">+ Promemoria</button>` : "");
+    const piu = (!aperta && !bozza ? `<button class="piu" data-a="nota">+ Da fare</button>` : "") + (!promAperto && !p.prec ? `<button class="piu" data-a="promApri" aria-label="Da fare con l'ora">+ Con l'ora</button>` : "");
     return `<div class="carta note">${nota}${righe ? `<div class="proms">${righe}</div>` : ""}${add}${piu ? `<div class="piurow">${piu}</div>` : ""}</div>`;
   }
   function vistaPaziente() {
@@ -1223,7 +1237,7 @@
     if (!p) return `<main><div class="vuoto">Questo paziente non è più nell'elenco del PC.</div></main>`;
     const ordini = codaDi(p.ep) + ordiniDi(p.ep).map((o) => ordineHtml(o)).join("");
     const tab = (s, t) => `<button class="${S.scheda === s ? "on" : ""}" data-a="scheda" data-s="${s}" role="tab" aria-selected="${S.scheda === s}">${t}</button>`;
-    return `<main>${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("esiti", "Esiti")}${tab("richieste", "Richieste")}${tab("cartella", "Cartella")}</div>
+    return `<main>${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}</div>
       ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : vistaRichieste(p)}</main>${ctaHtml(p)}`;
   }
   // La cartella: i campi della pagina del paziente sul PC, ognuno com'è là.

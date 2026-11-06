@@ -3309,6 +3309,7 @@
   }
   function azzeraPazienti() {
     for (const k of RESET_VIA()) store.del(k);
+    potaImparati();   // (via i quesiti, via i pacchetti che avevano imparato; quelli dell'elenco di partenza restano)
     const t = store.get(tempiKey, null);   // i tempi restano, senza chi
     if (Array.isArray(t)) store.set(tempiKey, t.map(({ paz, ep, ...x }) => x));
     azzeraScheda();
@@ -6165,6 +6166,10 @@
     .trow .to { flex: 0 0 auto; color: #5B6B7A; font-size: 10.5px; font-variant-numeric: tabular-nums; }
     .tdel { border: 0; background: transparent; color: #5B6B7A; cursor: pointer; font-size: 12px; padding: 0 2px; }
     .tdel:hover { color: #B3261E; }
+    /* CONSEGNE: una riga per paziente, il nome in grassetto */
+    .consegne .mini + .mini { margin-right: 6px; }
+    .consr { padding: 6px 2px; border-bottom: 1px solid #EDF1F6; font-size: 12.5px; line-height: 1.45; color: #35506B; overflow-wrap: anywhere; }
+    .consr b { color: #16232E; }
     /* DA FARE. L'icona: le spunte tonde e quante voci sono aperte. Tranquilla;
        ambra 15 minuti prima di un promemoria; rossa quando è passato (solo
        allora un bagliore lento: il movimento vuol dire «è l'ora»). */
@@ -6941,6 +6946,32 @@
     store.set("lastQ", "");
     store.set("quesiti", QUESITI_DEFAULT);
     store.set("quesiti.ts", 0);
+    potaImparati();
+  }
+  // Un quesito normale impara il suo pacchetto. Confermato un ordine il cui
+  // quesito l'ha messo un chip (non scritto a mano, e non uno dei tre
+  // pacchetti), quel chip si ricorda gli esami — solo i codici, mai di chi —
+  // e al tocco dopo li spunta come un pacchetto, col conto sul chip. Il
+  // prossimo ordine confermato con lo stesso chip li sostituisce. Un quesito
+  // scritto dal medico è testo clinico e dura un turno: il suo pacchetto se ne
+  // va con lui; quelli dell'elenco di partenza (Febbre, Trauma…) restano.
+  const IMPARATI = "pacchettiImparati.v1";
+  const ePacchettoFisso = (q) => PACCHETTI.some((p) => p.q.toLowerCase() === String(q || "").trim().toLowerCase());
+  function imparaPacchetto(q, items) {
+    const t = String(q || "").trim().toLowerCase();
+    const esami = (items || []).map((i) => [String(i.res), String(i.code)]);
+    if (t && !ePacchettoFisso(t) && esami.length) potaImparati({ [t]: esami });
+  }
+  function pacchettoImparato(q) {
+    const t = String(q || "").trim();
+    const esami = t && !ePacchettoFisso(t) ? (store.get(IMPARATI, {}) || {})[t.toLowerCase()] : null;
+    return Array.isArray(esami) && esami.length ? { q: t, items: esami, imparato: true } : null;
+  }
+  // restano solo i chip che ci sono ancora: l'elenco di partenza e i quesiti del turno
+  function potaImparati(nuovi = {}) {
+    const vivi = new Set([...QUESITI_DEFAULT, ...store.get("quesiti", QUESITI_DEFAULT)].map((x) => String(x).toLowerCase()));
+    const tutti = { ...(store.get(IMPARATI, {}) || {}), ...nuovi };
+    store.set(IMPARATI, Object.fromEntries(Object.entries(tutti).filter(([k]) => vivi.has(k) || k in nuovi)));
   }
   const hasExt = () => { try { return !!(chrome && chrome.runtime && chrome.runtime.id); } catch { return false; } };
   // (nessuna risposta = `perso`: il service worker non l'ha detta, non ha detto di no)
@@ -7458,7 +7489,7 @@
       this.selected = new Map((s.sel || []).map(([res, code, label]) => [this.key(res, code), { res, code, label, display: displayLabel(res, code) }]));
       // il gestionale ricarica a ogni click: il pacchetto attivo e gli esami
       // che ha messo restano com'erano
-      this.pacchetto = PACCHETTI.some((p) => p.q === s.pk) ? s.pk : "";
+      this.pacchetto = s.pk && this.pacchettoDi(s.pk)?.q === s.pk ? s.pk : "";
       this.pkgDa = new Set(this.pacchetto ? (s.pkDa || []).filter((k) => this.selected.has(k)) : []);
       this.acq = s.acq || "";
       // A page load decides the view, not the stored one: opening a patient
@@ -7512,7 +7543,7 @@
     // esami restano, ora «a mano».
     pacchettoDi(q) {
       const t = String(q || "").trim().toLowerCase();
-      return PACCHETTI.find((p) => p.q.toLowerCase() === t) || null;
+      return PACCHETTI.find((p) => p.q.toLowerCase() === t) || pacchettoImparato(q);
     }
     scegliQuesito(q) {
       const p = this.pacchettoDi(q);
@@ -7531,7 +7562,8 @@
         const nuovo = new Set();
         for (const [r, c] of p.items) {
           const k = this.key(r, c);
-          if (!cat[r]?.items?.[c]) { mancano.push(DISPLAY[k] || `esame ${c} (${RES_SHORT[r] || r})`); continue; }
+          // (uno imparato che il catalogo non ha più si salta e basta)
+          if (!cat[r]?.items?.[c]) { if (!p.imparato) mancano.push(DISPLAY[k] || `esame ${c} (${RES_SHORT[r] || r})`); continue; }
           if (!this.selected.has(k)) {
             this.selected.set(k, { res: r, code: c, label: examLabel(r, c), display: displayLabel(r, c) });
             nuovo.add(k);
@@ -8826,6 +8858,7 @@
       else if (this.view === "ricetta" && this.ricettaPossibile()) body = this.viewRicetta();
       else if (this.view === "terapia" && this.terapiaPossibile()) body = this.viewTerapia();
       else if (this.view === "riferimenti") body = this.viewRiferimenti();
+      else if (this.view === "consegne") body = this.viewConsegne();
       else if (this.view === "iphone" && hasExt()) body = this.viewIphone();
       else if (this.view === "stampa") body = this.viewStampa();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
@@ -8857,7 +8890,7 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", registrazioni: "Registrazioni", riferimenti: "Riferimenti", iphone: "iPhone", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", registrazioni: "Registrazioni", riferimenti: "Riferimenti", consegne: "Consegne", iphone: "iPhone", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
       // (i fogli di dimissione sono modelli, ma chi va a casa è questo paziente:
       // l'intestazione lo dice anche lì)
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
@@ -8977,7 +9010,8 @@
                       hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete"><span class="mico">${ICO_TEL}</span>iPhone</button>` : "",
                       hasExt() ? `<button role="menuitem" id="regmenu" title="Registra una sessione, la registrazione automatica degli ultimi minuti, gli zip salvati su questo PC (anche dall'iPhone)">Registrazioni</button>` : "",
                       `<button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">Tempi</button>`,
-                      `<button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">Riferimenti</button>`])}
+                      `<button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">Riferimenti</button>`,
+                      `<button role="menuitem" id="consmenu" title="Al cambio turno: una riga per paziente — posto, nome, età, da quanto è in PS, cosa aspetta, cosa c'è da fare — da copiare o stampare">Consegne</button>`])}
                     ${this.menuSez("Impostazioni", [
                       hasExt() ? `<button role="menuitem" id="stampanti" title="Quale stampante è l'etichettatrice e quale l'A4, per la stampa automatica">Stampanti</button>` : "",
                       !this.stampaPronta() ? "" : this.stampaAuto.s.attiva === false
@@ -9494,7 +9528,7 @@
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {
-      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "registrazioni", "riferimenti", "iphone", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
+      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "registrazioni", "riferimenti", "consegne", "iphone", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
     }
     // In fondo alla fila delle schede, solo in Modifica: + Letto, + Sedia,
     // + Area e Fine. Si entra in Modifica dal menu «⋯».
@@ -10521,7 +10555,7 @@
         return `${extra}<div class="hint" style="margin:2px 0 0">Apri un paziente per creare richieste.</div>`;
       }
       // i tre pacchetti sempre in testa, poi gli ultimi quesiti usati
-      const quesiti = [...PACCHETTI.map((p) => p.q), ...store.get("quesiti", QUESITI_DEFAULT).filter((q) => !this.pacchettoDi(q))].slice(0, 6);
+      const quesiti = [...PACCHETTI.map((p) => p.q), ...store.get("quesiti", QUESITI_DEFAULT).filter((q) => !ePacchettoFisso(q))].slice(0, 6);
       const canOneClick = this.pageType === "patient" || this.pageType === "crea";
 
       // Receipt banner: the moment of decision on the landing page must show
@@ -10587,11 +10621,11 @@
             <div class="ac qac"><input id="q" type="text" autocomplete="off" placeholder="Quesito o esame…" aria-label="Quesito o esame" value="${esc(this._q || "")}">${qDrop}</div>
             <div class="qchips">${quesiti.map((q) => {
               const pk = this.pacchettoDi(q);
-              if (!pk) return `<button class="chip q" data-q="${esc(q)}">${esc(q)}</button>`;
-              const on = this.pacchetto === pk.q;
               // quanti esami porta: quelli che questo computer ha in catalogo
-              const quanti = pk.items.filter(([r, c]) => cat[r]?.items?.[c]).length;
-              return `<button class="chip q pk ${on ? "on" : ""}" data-q="${esc(q)}" aria-pressed="${on}" title="${on ? "Tocca di nuovo per togliere quesito e pacchetto" : "Scrive il quesito e spunta: "}${esc(on ? "" : pk.items.map(([r, c]) => displayLabel(r, c)).join(", "))}">${esc(q)}<span class="pkn">&nbsp;· ${quanti}</span></button>`;
+              const ci = pk ? pk.items.filter(([r, c]) => cat[r]?.items?.[c]) : [], quanti = ci.length;
+              if (!pk || (pk.imparato && !quanti)) return `<button class="chip q" data-q="${esc(q)}">${esc(q)}</button>`;
+              const on = this.pacchetto === pk.q;
+              return `<button class="chip q pk ${on ? "on" : ""}" data-q="${esc(q)}" aria-pressed="${on}" title="${on ? "Tocca di nuovo per togliere quesito e pacchetto" : pk.imparato ? "Scrive il quesito e spunta gli esami dell'ultima volta: " : "Scrive il quesito e spunta: "}${esc(on ? "" : (pk.imparato ? ci : pk.items).map(([r, c]) => displayLabel(r, c)).join(", "))}">${esc(q)}<span class="pkn">&nbsp;· ${quanti}</span></button>`;
             }).join("")}</div>
           </div>
         </div>` : "";
@@ -12613,6 +12647,35 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (this.view === "iphone") this.render();
     }
 
+    // ⋯ → Consegne: al cambio turno, una riga per paziente nell'ordine del
+    // tabellone — il posto, COGNOME N. ed età, da quanto è in PS, quello che
+    // aspetta (Lab · ECG · RX col tempo, come la riga corta del tabellone), le
+    // cose da fare aperte. Solo quello che il tabellone sa già: niente da
+    // leggere, niente di salvato. «Copia» dà le stesse righe in testo,
+    // «Stampa» le manda al dialogo di stampa: solo al tocco, portano dei nomi.
+    consegne(ora = Date.now()) {
+      const m = this.pazModello();
+      return inOrdineTabellone(m).filter(({ i }) => !i.prec).map(({ i }) => {
+        const { p } = i, st = statoEsami(statoDi(p.ep), ora), aspetta = inAttesa(st, ora);
+        const eta = Number.isInteger(p.eta) ? p.eta : String(p.pk || "").startsWith("cf:") ? etaDaCf(p.pk.slice(3)) : null;
+        const df = dfAperte(p.ep, m.df).map((x) => (x.t != null ? `${hhmm(x.t)} ${x.testo}` : x.testo));
+        // (una lettura vecchia lo dice: l'attesa è contata da allora)
+        const parti = [this.nomePosto(m, i), `${i.breve}${i.coda}${eta != null ? ` ${eta}` : ""}`, p.arrivo ? `in PS ${attesaTesto(minDa(p.arrivo, ora))}` : "",
+          aspetta.length ? `Aperti: ${aspetta.map((x) => `${x.nome}${x.tempo ? " " + x.tempo : ""}`).join(", ")}${st.vecchio ? ` (letto ${hhmm(st.letto)})` : ""}` : "",
+          df.length ? `Da fare: ${df.join("; ")}` : ""];
+        return { parti, chi: 1, testo: parti.filter(Boolean).join(" · ") };
+      });
+    }
+    viewConsegne() {
+      const righe = this.consegne();
+      if (!righe.length) return `<div class="sec"><div class="hint">Nessun paziente nel tabellone.</div></div>`;
+      return `
+        <div class="sec consegne">
+          <div class="lbl">Pazienti (${righe.length})<button class="mini" id="conscopia" title="Le stesse righe, in testo, negli appunti">⧉ Copia</button><button class="mini" id="consstampa" title="Queste righe al dialogo di stampa">Stampa</button></div>
+          <div class="conslist">${righe.map((r) => `<div class="consr">${r.parti.map((x, k) => (!x ? "" : k === r.chi ? `<b>${esc(x)}</b>` : esc(x))).filter(Boolean).join(" · ")}</div>`).join("")}</div>
+        </div>`;
+    }
+
     viewTempi() {
       const t = tempoInCorso();
       const chiusi = tempi().filter((x) => x.fine).sort((a, b) => b.inizio - a.inizio);
@@ -14093,6 +14156,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#termenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("terapia"); });
       if (this.view === "terapia") this.legaTerapia($);
       $("#rifmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("riferimenti"); this.root.querySelector("#riffiltro")?.focus(); });
+      $("#consmenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("consegne"); });
+      $("#conscopia")?.addEventListener("click", async (e) => {
+        const b = e.currentTarget;
+        segnaCopia(b, await copiaTesto(this.consegne().map((r) => r.testo).join("\n")));
+      });
+      $("#consstampa")?.addEventListener("click", () => {
+        const d = new Date();
+        stampaTesto(`Consegne · ${giornoDi(d.getTime())} ${hhmm(d.getTime())}`, this.consegne().map((r) => r.testo),
+          () => { this.message = "Il dialogo di stampa non si è aperto: ⧉ Copia, e incolla dove vuoi."; this.render(); });
+      });
       $("#stampamenu")?.addEventListener("click", () => { this.menuAperto = false; this.setView("stampa"); });
       $("#bracciale")?.addEventListener("click", (e) => this.stampaBracciale(e));
       $("#riffiltro")?.addEventListener("input", (e) => { this.rifFiltro = e.target.value; this.rifFiltra(); });
@@ -14388,6 +14461,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         base.examDoc = document;
         base.examUrl = location.href;
       }
+      // confermato col quesito di un chip: il chip impara questi esami
+      if (autoConfirm && this.pageType !== "exam" && !this.quesitoMio) imparaPacchetto(this._q, items);
       this.startPlan(base);
     }
   }
@@ -16011,25 +16086,69 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // suo posto), il triage, la nota e i promemoria — cioè «Da fare»: la nota è
   // la prima voce aperta senza ora, i promemoria quelle con l'ora (il telefono
   // non ha la lista intera) —; gli episodi precedenti in fondo.
-  function pontePazienti() {
-    const m = PANNELLO.pazModello();
-    // nell'ordine della Lista del pannello: per area (Alta · Bassa · OBI ·
-    // Codici minori, poi le altre), dentro ognuna la riga del gestionale, poi
-    // per ingresso; chi non ha area in fondo. Il telefono mette i titoli.
+  // I pazienti nell'ordine della Lista del pannello: per area (Alta · Bassa ·
+  // OBI · Codici minori, poi le altre), dentro ognuna la riga del gestionale,
+  // poi per ingresso; chi non ha area in fondo. (Il telefono, e le Consegne.)
+  function inOrdineTabellone(m) {
     const a = areeLeggi(), k = (i) => a.membri[i.p.ep]?.k || "", n = (i) => a.membri[i.p.ep]?.n;
     const sa = (i) => Number.isInteger(n(i)), ingresso = (i) => i.p.arrivo || i.p.ts || Infinity;
     const posizione = (c) => (c ? ordineArea(c) : AREE_ORDINE.length + 1);
-    const info = [...m.info.values()].sort((x, y) => posizione(k(x)) - posizione(k(y)) || k(x).localeCompare(k(y))
-      || (sa(x) && sa(y) ? n(x) - n(y) : sa(y) - sa(x)) || (ingresso(x) - ingresso(y)) || 0);
-    return info.map((i) => ({
-      area: k(i) ? titoloArea(k(i), a.viste[k(i)]?.label) : "",
+    return [...m.info.values()].sort((x, y) => posizione(k(x)) - posizione(k(y)) || k(x).localeCompare(k(y))
+      || (sa(x) && sa(y) ? n(x) - n(y) : sa(y) - sa(x)) || (ingresso(x) - ingresso(y)) || 0)
+      .map((i) => ({ i, area: k(i) ? titoloArea(k(i), a.viste[k(i)]?.label) : "" }));
+  }
+  function pontePazienti() {
+    const m = PANNELLO.pazModello();
+    // (il telefono mette i titoli delle aree)
+    return inOrdineTabellone(m).map(({ i, area }) => ({
+      area,
       // (due con lo stesso nome: il nome porta il segno che li distingue, «· …9001», anche nella conferma)
       ep: i.p.ep, nome: i.lungo + i.coda, breve: i.breve + i.coda, omonimo: !!i.omonimo, triage: i.p.triage || "",
       posto: PANNELLO.nomePosto(m, i), nota: dfNota(i.p.ep, m.df)?.testo || "", prec: !!i.prec, spento: !!i.spento, visto: i.p.ts || 0,
       eta: Number.isInteger(i.p.eta) ? i.p.eta : String(i.p.pk || "").startsWith("cf:") ? etaDaCf(i.p.pk.slice(3)) : null,
       prom: promDi(i.p.ep, m.prom).map((x) => ({ id: x.id, t: x.t, testo: x.testo })),
       ordina: !!ponteUrlPaziente(i.p) && !i.prec,
+      stato: i.prec ? null : ponteStato(i.p.ep, m.df),
     }));
+  }
+  // Lo stato della riga del tabellone, in dati, per la riga del telefono: per
+  // tipo solo quello che aspetta, col tempo e la sua banda («Lab 50′»), o ✓ se
+  // è tornato tutto (come nell'area); il pallino del letto (segnaleLetto) e il
+  // cuore. Il titolo è quello del PC, con «letto alle …». Niente se non si sa.
+  function ponteStato(ep, df, ora = Date.now()) {
+    const s = statoDi(ep), st = statoEsami(s, ora), c = cuoreDi(s?.vit, ora);
+    const segno = (/class="stseg (\w+)"/.exec(segnaleLetto(st, dfAperte(ep, df), ora)) || [])[1] || "";
+    if (!st && !c && !segno) return null;
+    return { esami: st ? inAttesa(st, ora).map((x) => ({ nome: x.nome, t: x.tempo, banda: x.banda })) : null, vecchio: !!st?.vecchio,
+      titolo: st ? statoTitolo(st, ora) : "", segno, cuore: c ? { livello: c.livello, vecchio: c.vecchio } : null };
+  }
+  // Quello che aspetta, per tipo (Lab · ECG · RX), col tempo del più vecchio e
+  // la sua banda — com'è nella riga corta del tabellone (l'area).
+  function inAttesa(st, ora = Date.now()) {
+    return !st ? [] : TIPI_ESAME.flatMap(([t, nome]) => {
+      const x = st.tipi[t];
+      if (!x || !x.pendenti) return [];
+      const min = x.attesa ? minDa(x.attesa, ora) : null;
+      return [{ tipo: t, nome, tempo: min == null ? "" : attesaTesto(min), banda: min == null ? "" : attesaBanda(t, min) }];
+    });
+  }
+  // Righe di testo al dialogo di stampa del browser, da una cornice invisibile
+  // (come un referto senza stampa automatica): niente scheda nuova, la
+  // stampante la sceglie il medico. `no`: il dialogo non si è aperto.
+  function stampaTesto(titolo, righe, no = () => {}) {
+    document.getElementById("psassist-stampa-testo")?.remove();
+    const f = document.createElement("iframe");
+    f.id = "psassist-stampa-testo";
+    f.style.cssText = "position:fixed;right:0;bottom:0;width:2px;height:2px;border:0;opacity:0;pointer-events:none";
+    f.srcdoc = `<!doctype html><html lang="it"><head><meta charset="utf-8"><title>${esc(titolo)}</title><style>
+      body{font:11pt/1.45 Arial,Helvetica,sans-serif;color:#000;margin:14mm} h1{font-size:13pt;margin:0 0 6pt}
+      p{margin:0;padding:3pt 0;border-bottom:.5pt solid #bbb;break-inside:avoid}</style></head>
+      <body><h1>${esc(titolo)}</h1>${righe.map((r) => `<p>${esc(r)}</p>`).join("")}</body></html>`;
+    f.addEventListener("load", () => {
+      try { f.contentWindow.focus(); f.contentWindow.print(); } catch { no(); }
+      setTimeout(() => f.remove(), 120e3);
+    }, { once: true });
+    document.documentElement.appendChild(f);
   }
   // Quello che serve al telefono per ordinare: i quesiti (prima i tre
   // pacchetti, con quanti esami portano su questo computer), i profili e gli
@@ -16049,9 +16168,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     };
     for (const p of PRESETS) if (p.items.every(([r, k]) => c(r, k))) gruppo(p.items[0][0]).profili.push({ nome: p.name, esami: p.items.map(([r, k]) => chiave(r, k)) });
     for (const [r, k] of SINGLES) if (c(r, k)) gruppo(r).esami.push(chiave(r, k));
-    const pacchetti = PACCHETTI.map((p) => ({ q: p.q, esami: p.items.filter(([r, k]) => c(r, k)).map(([r, k]) => chiave(r, k)) }));
-    const quesiti = [...PACCHETTI.map((p) => p.q), ...store.get("quesiti", QUESITI_DEFAULT)
-      .filter((q) => !PACCHETTI.some((p) => p.q.toLowerCase() === String(q).toLowerCase()))].slice(0, 6);
+    const quesiti = [...PACCHETTI.map((p) => p.q), ...store.get("quesiti", QUESITI_DEFAULT).filter((q) => !ePacchettoFisso(q))].slice(0, 6);
+    // (e i quesiti che hanno imparato il loro pacchetto: sul telefono sono chip come gli altri)
+    const pacchetti = [...PACCHETTI, ...quesiti.map(pacchettoImparato).filter(Boolean)]
+      .map((p) => ({ q: p.q, esami: p.items.filter(([r, k]) => c(r, k)).map(([r, k]) => chiave(r, k)) }));
     return { quesiti, pacchetti, gruppi, nomi, rx: [...new Set(rx)] };
   }
   // La tabella dei Valori, in dati: colonne (il prelievo più recente a
@@ -16165,6 +16285,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       ordini.push({ id, ep: p.ep, paziente: p.name, n: l.length, rx: kind === "radio" });
     }
     rememberQuesito(quesito);
+    if (!a.mio) imparaPacchetto(quesito, items);   // (un chip del telefono impara come quello del PC)
     const n = items.length;
     return { ok: true, dati: { ordini }, registro: `ordine di ${n} ${n === 1 ? "esame" : "esami"} per ${p.name} (${items.map((i) => i.display).join(", ")})` };
   }
@@ -16188,7 +16309,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (p.arch) return { ok: false, errore: "Dimesso sul PC: niente inviato", dimesso: true };
     // un episodio precedente si legge, ma non si ordina e non si promemora
     if ((cmd === "ordina" || cmd === "promemoria" || cmd === "cartellaSalva") && PANNELLO.pazModello().info.get(p.ep)?.prec) {
-      return { ok: false, errore: `Episodio precedente: ${cmd === "ordina" ? "per ordinare" : cmd === "cartellaSalva" ? "per scrivere in cartella" : "per un promemoria"} apri quello di oggi` };
+      return { ok: false, errore: `Episodio precedente: ${cmd === "ordina" ? "per ordinare" : cmd === "cartellaSalva" ? "per scrivere in cartella" : "per un Da fare con l'ora"} apri quello di oggi` };
     }
     if (cmd === "cartella") return fatto(await ponteCartella(p, a));
     // salvare: qui solo i controlli del paziente e il suo indirizzo; il resto
@@ -16213,19 +16334,19 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const testo = String(a.testo || "").replace(/\s*\n+\s*/g, " · ").replace(/\s+/g, " ").trim().slice(0, 500);
       const n = dfNota(p.ep);
       const ok = n ? (testo ? dfCambia(p.ep, n.id, testo) : dfTogli(p.ep, n.id)) : !testo || !!dfAggiungi(p.ep, testo, { t: null, inCima: true, max: 500 });
-      if (!ok) return { ok: false, errore: n || dfAperte(p.ep).length < PROM_MAX ? "Nota non salvata: la memoria del browser del PC è piena o bloccata" : `Già ${PROM_MAX} cose da fare per questo paziente` };
+      if (!ok) return { ok: false, errore: n || dfAperte(p.ep).length < PROM_MAX ? "Da fare non salvato: la memoria del browser del PC è piena o bloccata" : `Già ${PROM_MAX} cose da fare per questo paziente` };
       return fatto({ ok: true, dati: riga(), registro: `nota di ${p.name}` });
     }
     if (cmd === "promemoria") {
       const x = leggiPromemoria(a.testo, Date.now());
       if (!x) return { ok: false, errore: "Scrivi anche l'ora: «11:30 tropo», «tra 2h ECG»" };
       if (dfAperte(p.ep).length >= PROM_MAX) return { ok: false, errore: `Già ${PROM_MAX} cose da fare per questo paziente` };
-      if (!promAggiungi(p.ep, x)) return { ok: false, errore: "Promemoria non salvato: la memoria del browser del PC è piena o bloccata" };
+      if (!promAggiungi(p.ep, x)) return { ok: false, errore: "Da fare non salvato: la memoria del browser del PC è piena o bloccata" };
       return fatto({ ok: true, dati: riga(), registro: `promemoria per ${p.name}: ${promRiga(x, Date.now())}` });
     }
     if (cmd === "fatto") {
       const via = promTogli(p.ep, String(a.pid || ""));
-      if (!via) return { ok: false, errore: "Promemoria non trovato: forse è già fatto", dati: riga() };
+      if (!via) return { ok: false, errore: "Da fare non trovato: forse è già fatto", dati: riga() };
       return fatto({ ok: true, dati: riga(), registro: `promemoria fatto per ${p.name}: ${via.testo}` });
     }
     if (cmd === "ordina") return fatto(await ponteOrdina(p, a));

@@ -124,7 +124,7 @@ async function finestraDiSempre(context) {
   });
 }
 async function newPage(browser, mock, opts = {}) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: opts.dsf || 1 });
   if (opts.finestra !== "centro") await colonna(context);
   if (opts.forma !== "partenza") await finestraDiSempre(context);
   if (!opts.pill) await apertoDalPannello(context);
@@ -3631,6 +3631,193 @@ async function scenarioPacchettiCatalogo(browser) {
   await context.close();
 }
 
+// Un quesito normale impara il suo pacchetto: confermato un ordine col
+// quesito di un chip (non scritto a mano), al tocco dopo quel chip spunta gli
+// stessi esami e lo dice col conto («Febbre · 3»), come un pacchetto; toccato
+// di nuovo li toglie; il prossimo ordine confermato li sostituisce. I tre
+// pacchetti restano com'erano. In memoria solo codici, sotto il nome del chip.
+async function scenarioPacchettiImparati(browser) {
+  const scen = "pacchetti-imparati";
+  const P = (c) => `${RES.POC}:${c}`;
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock, { dsf: process.env.PSA_SIDE ? 2 : 1 });
+  await context.addInitScript(() => {
+    try {
+      if (!localStorage.getItem("psassist:quesiti")) {
+        localStorage.setItem("psassist:quesiti", JSON.stringify(["Febbre", "Trauma", "Cefalea", "Sincope"]));
+        localStorage.setItem("psassist:quesiti.ts", String(Date.now()));
+      }
+    } catch { /* niente */ }
+  });
+  const chip = (q) => $panel(page, `.chip.q[data-q="${q}"]`);
+  const testo = async (q) => (await chip(q).innerText()).replace(/\s+/g, " ").trim();
+  const pk = async (q) => /\bpk\b/.test(await chip(q).getAttribute("class"));
+  const acceso = async (q) => (await chip(q).getAttribute("aria-pressed")) === "true";
+  const selezione = () => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot
+    .querySelectorAll("[data-unsel]")].map((b) => b.getAttribute("data-unsel")).sort());
+  const opt = (c) => $panel(page, `.opt[data-res="${RES.POC}"][data-code="${c}"]`);
+  const uguali = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const pacchetti = async () => (await $panel(page, ".qchips .chip.q.pk").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim()).slice(0, 3);
+  const memoria = () => page.evaluate(() => JSON.parse(localStorage.getItem("psassist:pacchettiImparati.v1") || "{}"));
+  const ordina = async () => {
+    const prima = Object.keys(mock.state.richieste).length;
+    await $panel(page, "#goconfirm").click();
+    await page.waitForSelector("#psassist-print", { state: "attached", timeout: 90000 });
+    return Object.values(mock.state.richieste).slice(prima);
+  };
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  const tre = await pacchetti();
+  check(scen, (await testo("Febbre")) === "Febbre" && !(await pk("Febbre")), `all'inizio «Febbre» è un quesito normale, senza conto (got ${await testo("Febbre")})`);
+
+  // ---- l'ordine: il chip Febbre, tre esami POC scelti a mano, Conferma
+  await chip("Febbre").click();
+  for (const c of ["320", "176", "30"]) await opt(c).click();
+  let rr = await ordina();
+  check(scen, rr.length === 1 && rr[0].confirmed && rr[0].quesito === "Febbre", `confermato, col quesito del chip (got ${rr.map((r) => JSON.stringify(r.quesito)).join(", ")})`);
+  let mem = await memoria();
+  check(scen, uguali(Object.keys(mem), ["febbre"]) && uguali((mem.febbre || []).map(([r, c]) => `${r}:${c}`).sort(), [P(176), P(30), P(320)].sort())
+    && !/ROSSI|MARIO|999001/.test(JSON.stringify(mem)),
+    `in memoria solo i tre codici, sotto il nome del chip — niente del paziente (got ${JSON.stringify(mem)})`);
+
+  // ---- la volta dopo: il chip è un pacchetto
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  check(scen, (await selezione()).length === 0, "una pagina nuova: niente è scelto");
+  check(scen, (await testo("Febbre")) === "Febbre · 3" && (await pk("Febbre")) && !(await acceso("Febbre")),
+    `il chip dice quanti esami porta, come un pacchetto: «Febbre · 3» (got ${await testo("Febbre")})`);
+  await shotSide(page, "uxC2-chip-imparato");
+  await chip("Febbre").click();
+  check(scen, uguali(await selezione(), [P(176), P(30), P(320)].sort()) && (await $panel(page, "#q").inputValue()) === "Febbre" && (await acceso("Febbre")),
+    `un tocco scrive il quesito e spunta gli stessi tre esami; il chip è acceso (got ${(await selezione()).join(",")})`);
+  check(scen, Object.keys(mock.state.richieste).length === 1 && (await $panel(page, "#goconfirm").innerText()).trim() === "Conferma per ROSSI M. · 3 esami",
+    "niente parte senza Conferma: «Conferma per ROSSI M. · 3 esami»");
+  await shotSide(page, "uxC2-chip-imparato-acceso");
+  await chip("Febbre").click();
+  check(scen, (await selezione()).length === 0 && (await $panel(page, "#q").inputValue()) === "" && !(await acceso("Febbre")),
+    "toccato di nuovo, via il quesito e i suoi esami");
+  check(scen, uguali(await pacchetti(), tre) && uguali(tre, ["Dolore toracico · 7", "Dispnea · 8", "Dolore addominale · 10"]),
+    `i tre pacchetti restano com'erano (got ${(await pacchetti()).join(" | ")})`);
+
+  // ---- il prossimo ordine confermato con quel chip lo sostituisce
+  await chip("Febbre").click();
+  await opt("30").click();    // via il glucosio
+  await opt("324").click();   // la troponina
+  rr = await ordina();
+  check(scen, rr.length === 1 && rr[0].quesito === "Febbre" && uguali([...rr[0].cart.keys()].sort(), ["176", "320", "324"]), "il secondo ordine: creatinina, emocromo, troponina");
+  mem = await memoria();
+  check(scen, uguali(Object.keys(mem), ["febbre"]) && uguali((mem.febbre || []).map(([r, c]) => `${r}:${c}`).sort(), [P(176), P(320), P(324)].sort()),
+    `e il chip ora porta quelli (got ${JSON.stringify(mem)})`);
+
+  // ---- un esame che il catalogo non ha più: non si conta, non si sceglie, non si dice
+  await page.evaluate((poc) => {
+    const m = JSON.parse(localStorage.getItem("psassist:pacchettiImparati.v1") || "{}");
+    m.febbre = [...(m.febbre || []), [poc, "999999"]];
+    localStorage.setItem("psassist:pacchettiImparati.v1", JSON.stringify(m));
+  }, RES.POC);
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  check(scen, (await testo("Febbre")) === "Febbre · 3", `un esame fuori catalogo non conta (got ${await testo("Febbre")})`);
+  await chip("Febbre").click();
+  check(scen, uguali(await selezione(), [P(176), P(320), P(324)].sort()) && !(await $panel(page, ".banner.warn").count()),
+    "e si salta senza avvisi: spunta gli altri tre");
+
+  // ---- un quesito scritto dal medico è testo clinico: il suo pacchetto se ne va coi quesiti; Febbre resta
+  await page.evaluate((poc) => {
+    const m = JSON.parse(localStorage.getItem("psassist:pacchettiImparati.v1") || "{}");
+    m["dolore lombare"] = [[poc, "320"]];
+    localStorage.setItem("psassist:pacchettiImparati.v1", JSON.stringify(m));
+    localStorage.setItem("psassist:quesiti", JSON.stringify(["Dolore lombare", "Febbre", "Trauma"]));
+  }, RES.POC);
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#resetpaz").click();
+  await $panel(page, "#resetpaz").click();
+  await page.waitForTimeout(300);
+  mem = await memoria();
+  check(scen, uguali(Object.keys(mem), ["febbre"]),
+    `«Reset dati pazienti»: via il pacchetto di un quesito scritto a mano, resta quello di Febbre (got ${Object.keys(mem).join(", ")})`);
+  await context.close();
+}
+
+// ⋯ → Consegne: una riga per paziente, nell'ordine del tabellone — posto,
+// COGNOME N. ed età, da quanto è in PS, quello che aspetta, le cose da fare —;
+// «⧉ Copia» le stesse righe in testo, «Stampa» solo al tocco, in una cornice.
+// Niente di nuovo letto o salvato.
+async function scenarioConsegne(browser) {
+  const scen = "consegne";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock, { finestra: "centro", dsf: process.env.PSA_SIDE ? 2 : 1 });
+  await context.addInitScript(() => {
+    window.__copiato = [];
+    try { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__copiato.push(String(t)); } } }); } catch { /* niente */ }
+  });
+  await page.goto(mock.worklistUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  const ora = await page.evaluate(() => {
+    const ora = Date.now(), m = 60e3;
+    localStorage.setItem("psassist:patients.v1", JSON.stringify([
+      { ep: "999001", name: "ROSSI MARIO", url: "", ts: ora - 5 * m, pk: "cf:RSSMRA60A01F205Z", triage: "arancione", eta: 68, arrivo: ora - 220 * m },
+      { ep: "999002", name: "BIANCHI ANNA MARIA", url: "", ts: ora - 10 * m, pk: "", triage: "verde", eta: 82, arrivo: ora - 95 * m },
+      { ep: "999003", name: "VERDI LUCA", url: "", ts: ora - 15 * m, pk: "", triage: "verde", eta: 45, arrivo: ora - 30 * m },
+    ]));
+    const r = (k, min, fatto, esami) => ({ k, rid: k, ts: ora - min * m, fatto, quando: 0, esami });
+    localStorage.setItem("psassist:stato.v1", JSON.stringify({
+      999001: { righe: [r("a", 50, "", [["lab", "TROPONINA"], ["lab", "EMOCROMO"]]), r("b", 100, "", [["img", "RX TORACE"]]), r("c", 60, "referto", [["ecg", "ELETTROCARDIOGRAMMA"]])],
+        agg: ora, letto: ora - 2 * m, esitiVisto: ora - 30 * m },
+      // letto un'ora e mezza fa: l'attesa è di allora, e la riga lo dice
+      999002: { righe: [r("a", 95, "", [["ecg", "ELETTROCARDIOGRAMMA"]]), r("b", 95, "referto", [["lab", "EMOCROMO"]])], agg: ora, letto: ora - 90 * m, esitiVisto: ora - 90 * m },
+    }));
+    const df = (ep, l) => l.map((x, i) => ({ id: ep + i, testo: x[0], t: x[1] == null ? null : ora + x[1] * m, fatto: null, ord: i, ts: ora }));
+    localStorage.setItem("psassist:dafare.v1", JSON.stringify({
+      999001: df("999001", [["tropo di controllo", 30], ["chiamare la figlia", null]]),
+      999003: df("999003", [["RX torace", null]]),
+    }));
+    localStorage.setItem("psassist:stanza.ps.posti.v1", JSON.stringify({ 999001: { tipo: "letto", id: "obi2", ts: ora } }));
+    // le aree: in Alta VERDI (riga 1) e ROSSI (riga 2), BIANCHI in Bassa
+    localStorage.setItem("psassist:aree.v1", JSON.stringify({ membri: { 999003: { k: "alta", ts: ora, n: 1 }, 999001: { k: "alta", ts: ora, n: 2 }, 999002: { k: "bassa", ts: ora, n: 1 } },
+      viste: { alta: { label: "AREA ALTA INTENSITA'", ts: ora }, bassa: { label: "AREA BASSA INTENSITA'", ts: ora } } }));
+    localStorage.removeItem("psassist:win.v1");
+    return ora;
+  });
+  await page.reload();
+  await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
+  if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
+  await page.waitForTimeout(300);
+  const chiavi = () => page.evaluate(() => Object.keys(localStorage).sort().join());
+  const prima = await chiavi();
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#consmenu").click();
+  await $panel(page, ".consegne").waitFor({ timeout: 5000 });
+  const righe = (await $panel(page, ".consr").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+  const hh = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+  const attese = [
+    /^VERDI L\. 45 · in PS 3\d′ · Da fare: RX torace$/,
+    new RegExp(`^OBI 2 · ROSSI M\\. 68 · in PS 3h4\\d · Aperti: Lab 5\\d′, RX 1h4\\d · Da fare: ${hh(ora + 30 * 60e3)} tropo di controllo; chiamare la figlia$`),
+    new RegExp(`^BIANCHI A\\. 82 · in PS 1h3\\d · Aperti: ECG 1h3\\d \\(letto ${hh(ora - 90 * 60e3)}\\)$`),
+  ];
+  check(scen, righe.length === 3 && attese.every((re, i) => re.test(righe[i] || "")),
+    `una riga per paziente, nell'ordine del tabellone (Alta: VERDI, ROSSI; Bassa: BIANCHI): posto · COGNOME N. età · in PS · Aperti · Da fare — e una lettura vecchia dice quando (got ${JSON.stringify(righe)})`);
+  check(scen, (await page.locator("#psassist-stampa-testo").count()) === 0, "la stampa non parte da sola: solo al tocco");
+  await shotSide(page, "uxC2-consegne");
+  await $panel(page, "#conscopia").click();
+  await page.waitForFunction(() => window.__copiato.length > 0, null, { timeout: 3000 }).catch(() => {});
+  const copia = (await page.evaluate(() => window.__copiato[0] || "")).split("\n");
+  check(scen, JSON.stringify(copia) === JSON.stringify(righe), `«⧉ Copia»: le stesse righe, in testo (got ${JSON.stringify(copia)})`);
+  check(scen, !/9990|MARIO|ANNA|LUCA|RSSMRA|arancione|verde|episodio/i.test(copia.join("\n")),
+    "e niente di più: né episodi, né nomi interi, né codice fiscale, né triage");
+  await $panel(page, "#consstampa").click();
+  await page.waitForFunction(() => document.getElementById("psassist-stampa-testo")?.contentDocument?.body?.innerText, null, { timeout: 5000 }).catch(() => {});
+  const stampa = await page.evaluate(() => {
+    const d = document.getElementById("psassist-stampa-testo")?.contentDocument;
+    return d ? { h: d.querySelector("h1")?.textContent || "", p: [...d.querySelectorAll("p")].map((x) => x.textContent) } : null;
+  });
+  check(scen, !!stampa && /^Consegne · \d\d\/\d\d\/\d{4} \d\d:\d\d$/.test(stampa.h) && JSON.stringify(stampa.p) === JSON.stringify(righe),
+    `«Stampa»: le stesse righe in una cornice invisibile, al dialogo di stampa — niente scheda nuova (got ${JSON.stringify(stampa)})`);
+  check(scen, context.pages().length === 1, "nessuna scheda aperta");
+  check(scen, (await chiavi()) === prima, "niente di nuovo salvato");
+  await context.close();
+}
+
 async function scenarioLabPlusRx(browser) {
   const scen = "lab+rx";
   // lab and radiology selected together → two richieste, both confirmed, one print flow
@@ -6980,8 +7167,8 @@ async function scenarioMenuSezioni(browser) {
   let s = await sezioni(a.page);
   check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Paziente","Strumenti","Impostazioni"]' && s[0].ids[0] === "mforma" && !(await sparse(a.page)),
     `paziente: la Forma in cima, poi Paziente · Strumenti · Impostazioni, e nessuna voce fuori da una sezione (got ${vedi(s)})`);
-  check(scen, di(s, "Paziente").join() === "stampamenu" && di(s, "Strumenti").join() === "tempimenu,rifmenu" && di(s, "Impostazioni").join() === "verbtn,resetpaz"
-    && !EXT.some((id) => s.some((x) => x.ids.includes(id))), `senza estensione: Stampa le richieste · Tempi, Riferimenti · Registro, Reset — niente voci dell'estensione (got ${vedi(s)})`);
+  check(scen, di(s, "Paziente").join() === "stampamenu" && di(s, "Strumenti").join() === "tempimenu,rifmenu,consmenu" && di(s, "Impostazioni").join() === "verbtn,resetpaz"
+    && !EXT.some((id) => s.some((x) => x.ids.includes(id))), `senza estensione: Stampa le richieste · Tempi, Riferimenti, Consegne · Registro, Reset — niente voci dell'estensione (got ${vedi(s)})`);
   const tit = await a.page.evaluate(() => { const t = document.getElementById("psassist-host").shadowRoot.querySelector(".menu .mtit"), c = getComputedStyle(t); return { up: c.textTransform, px: parseFloat(c.fontSize) }; });
   check(scen, tit.up === "uppercase" && tit.px < 12, `i titoli delle sezioni: piccoli, maiuscoli (got ${JSON.stringify(tit)})`);
   const riga = async (x, y) => { const p = await $panel(a.page, `#${x}`).boundingBox(), q = await $panel(a.page, `#${y}`).boundingBox(); return !!p && !!q && Math.abs(p.y - q.y) < 1 && q.x > p.x && p.height >= 32; };
@@ -7001,7 +7188,7 @@ async function scenarioMenuSezioni(browser) {
   await a.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(a.page);
   s = await sezioni(a.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "stmodmenu,tempimenu,rifmenu",
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "stmodmenu,tempimenu,rifmenu,consmenu",
     `sulla lista (la stanza): niente sezione Paziente, «Modifica la stanza» in testa agli Strumenti (got ${vedi(s)})`);
   await chiudi(a.page);
   await $panel(a.page, '[data-seg="dimissioni"]').click();
@@ -7019,16 +7206,16 @@ async function scenarioMenuSezioni(browser) {
   await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(b.page);
   s = await sezioni(b.page);
-  check(scen, di(s, "Paziente").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,regmenu,tempimenu,rifmenu"
+  check(scen, di(s, "Paziente").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,regmenu,tempimenu,rifmenu,consmenu"
     && di(s, "Impostazioni").join() === "stampanti,portapri,verbtn,resetpaz,extreload" && !(await sparse(b.page)),
-    `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Registra, Tempi, Riferimenti · Stampanti, Indirizzo del portale, Registro, Reset, Ricarica (got ${vedi(s)})`);
+    `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Registra, Tempi, Riferimenti, Consegne · Stampanti, Indirizzo del portale, Registro, Reset, Ricarica (got ${vedi(s)})`);
   await shotSide(b.page, "menu-sezioni-paziente");
   await chiudi(b.page);
   await b.page.goto(mock2.worklistUrl);
   await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(b.page);
   s = await sezioni(b.page);
-  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "stmodmenu,seguesw,tabmenu,pontemenu,regmenu,tempimenu,rifmenu",
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "stmodmenu,seguesw,tabmenu,pontemenu,regmenu,tempimenu,rifmenu,consmenu",
     `con l'estensione, sulla stanza: Modifica la stanza e Segue il gestionale fra gli Strumenti (got ${vedi(s)})`);
   await shotSide(b.page, "menu-sezioni-stanza");
   // ⋯ → iPhone senza un'estensione che risponda: la vista lo dice, niente cornice rotta
@@ -7610,6 +7797,8 @@ const scenarios = [
   ["quesito RX distinto", scenarioQuesitoRx],
   ["quesito = pacchetto di esami", scenarioQuesitoPacchetti],
   ["pacchetto: esami fuori catalogo si dicono", scenarioPacchettiCatalogo],
+  ["pacchetti imparati: un quesito normale ricorda gli esami dell'ultimo ordine", scenarioPacchettiImparati],
+  ["consegne: una riga per paziente, da copiare o stampare", scenarioConsegne],
   ["radiology learning loop", scenarioRadiologyLearning],
   ["print wizard manual", scenarioPrintManual],
   ["print multi-lab rows (PROG split)", scenarioPrintMultiLab],

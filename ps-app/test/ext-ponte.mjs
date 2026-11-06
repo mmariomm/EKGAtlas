@@ -253,6 +253,14 @@ await doc.evaluate(({ CF_B, bUrl }) => {
   // le aree lette dalle liste del gestionale: in Alta BIANCHI (riga 1) e ROSSI (riga 2), VERDI in Bassa
   localStorage.setItem("psassist:aree.v1", JSON.stringify({ membri: { 999002: { k: "alta", ts: ora, n: 1 }, 999001: { k: "alta", ts: ora, n: 2 }, 999003: { k: "bassa", ts: ora, n: 1 } },
     viste: { alta: { label: "AREA ALTA INTENSITA'", ts: ora }, bassa: { label: "AREA BASSA INTENSITA'", ts: ora } } }));
+  // VERDI (senza la sua pagina: nessuno lo rilegge) ha uno stato noto sul PC: il Lab
+  // chiesto 50′ fa, l'RX 100′ fa (oltre la prima soglia: ambra), il cuore rosso
+  const m = 60e3, S = JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}");
+  S[999003] = { righe: [{ k: "a", rid: "a", ts: ora - 50 * m, fatto: "", quando: 0, esami: [["lab", "EMOCROMO"]] }, { k: "b", rid: "b", ts: ora - 100 * m, fatto: "", quando: 0, esami: [["img", "RX TORACE"]] }],
+    vit: { p: { fr: 26, spo2: 90, fc: 118, pas: 95, t: 38.6 }, ts: ora - 20 * m }, agg: ora, letto: ora - 2 * m, esitiVisto: ora - 30 * m };
+  localStorage.setItem("psassist:stato.v1", JSON.stringify(S));
+  // «Febbre» ha imparato il suo pacchetto da un ordine confermato sul PC: emocromo POC e PCR
+  localStorage.setItem("psassist:pacchettiImparati.v1", JSON.stringify({ febbre: [["00660001P", "320"], ["00720001P", "293"]] }));
 }, { CF_B, bUrl: B.patientUrl });
 await suPagina(doc, A.worklistUrl);   // il medico lascia il PC sulla lista
 
@@ -427,6 +435,27 @@ check(/OBI 2/.test(lista) && titoli === '["Alta intensità","Bassa","Episodi pre
   `per area come la Lista del PC (Alta, poi Bassa), dentro nell'ordine del gestionale (BIANCHI, ROSSI col suo posto OBI 2); gli episodi precedenti a parte; niente conteggi (${titoli} · ${fila})`);
 check(await tel.locator('.paz[data-ep="999001"] .eta').innerText() === "77 anni", "nella riga il nome intero e l'età: ROSSI MARIO 77 anni");
 check(await tel.locator(".paz.t-arancione").count() === 1 && await tel.locator(".paz.t-verde").count() >= 1, "la striscia del triage: ROSSI arancione, BIANCHI verde");
+// lo stato della riga, com'è sul tabellone del PC: il cuore, quello che aspetta col suo tempo, il pallino del letto
+const statoRiga = (ep) => tel.evaluate((e) => {
+  const x = document.querySelector(`.paz[data-ep="${e}"] .st`);
+  return x ? { cuore: x.querySelector(".cuore")?.className || "", esami: [...x.querySelectorAll(".esp")].map((p) => p.textContent.replace(/\s+/g, " ").trim()),
+    bande: [...x.querySelectorAll(".esp i")].map((i) => i.className), segno: x.querySelector(".segno")?.className || "", titolo: x.title } : null;
+}, ep);
+const sVerdi = await statoRiga("999003");
+check(!!sVerdi && /\bros\b/.test(sVerdi.cuore) && sVerdi.esami.length === 2 && /^Lab [5-6]\d′$/.test(sVerdi.esami[0]) && /^RX 1h[4-5]\d$/.test(sVerdi.esami[1])
+  && sVerdi.bande[0] === "" && sVerdi.bande[1] === "amb" && /\bamb\b/.test(sVerdi.segno) && /letto alle \d\d:\d\d/.test(sVerdi.titolo),
+  `nella riga di VERDI lo stato del PC: ♥ rosso, «Lab 50′», «RX 1h40» in ambra, il pallino ambra del letto; «letto alle …» nel titolo (${JSON.stringify(sVerdi)})`);
+check(await statoRiga("998002") === null, "un episodio precedente: niente stato (il PC non lo dice)");
+if (process.env.PSA_SIDE) {
+  // la foto a deviceScaleFactor 2: la stessa pagina, ferma, in un telefono a 2×
+  const html = await tel.evaluate(() => document.documentElement.outerHTML.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
+  const fotoCtx = await telBrowser.newContext({ ...IPHONE, deviceScaleFactor: 2 });
+  const foto = await fotoCtx.newPage();
+  await foto.route("**/*", (r) => (/app\.css$/.test(r.request().url()) ? r.fulfill({ path: join(root, "../public/ponte/app.css"), contentType: "text/css" }) : r.fulfill({ status: 200, contentType: "text/html", body: html })));
+  await foto.goto("https://ponte.invalid/ponte/");
+  await foto.screenshot({ path: join(process.env.PSA_SIDE, "uxC2-telefono-elenco.png") }).catch(() => {});
+  await fotoCtx.close();
+}
 check(/Aggiornato alle \d\d:\d\d/.test(lista) && !/Dal PC del pronto soccorso/.test(lista), "in testa «Aggiornato alle …»; niente piede che ripete la testata");
 const nomi = await tel.locator(".paz .nome").evaluateAll((l) => l.map((x) => { const s = getComputedStyle(x); return { taglia: s.textOverflow === "ellipsis" || s.whiteSpace === "nowrap", pieno: x.scrollWidth <= x.clientWidth + 1 }; }));
 check(nomi.length >= 4 && nomi.every((x) => !x.taglia && x.pieno), `i nomi non si troncano mai (il posto e il promemoria vanno a capo) ${JSON.stringify(nomi)}`);
@@ -610,11 +639,14 @@ const testa = await aspettaTel(tel, /Aggiorna i valori/, 20000);
 check(await tel.locator(".top .tit").innerText() === "ROSSI MARIO · 77 anni · OBI 2", `in testa il nome intero, l'età e il posto, e nient'altro: «ROSSI MARIO · 77 anni · OBI 2» (${(await tel.locator(".top .tit").innerText()).replace(/\n/g, " / ")})`);
 check(await tel.evaluate(() => { const s = document.querySelector(".seg"), n = document.querySelector(".note"); return !!s && !!n && !!(s.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING); }),
   "le schede Esiti/Richieste vengono prima della nota");
-check(await tel.locator("#nota").count() === 0 && await tel.locator('[data-a="nota"]:has-text("+ Nota")').count() === 1, "la nota vuota è chiusa: «+ Nota»");
+check(await tel.locator("#nota").count() === 0 && await tel.locator('[data-a="nota"]:has-text("+ Da fare")').count() === 1
+  && (await tel.locator('[data-a="promApri"]').innerText()).trim() === "+ Con l'ora",
+  "chiusi finché non servono, con le parole del PC: «+ Da fare», «+ Con l'ora»");
+check(!/\bNota\b|Promemoria/.test(await tel.locator(".note").innerText()), "niente «Nota» né «Promemoria» sullo schermo");
 await tocca(tel, '[data-a="nota"]');
 await tel.locator("#nota").fill("dolore dalle 6, allergico a PCN");
 await tocca(tel, '[data-a="promApri"]');   // uscire dal campo salva la nota
-await aspettaTel(tel, /Nota salvata sul PC/, 10000);
+await aspettaTel(tel, /Da fare salvato sul PC/, 10000);
 const noteSuPc = await daFarePc();
 check(noteSuPc.length === 1 && noteSuPc[0].testo === "dolore dalle 6, allergico a PCN" && noteSuPc[0].t === null,
   `la nota arriva sul PC: la prima voce di «Da fare», senza ora (got: ${JSON.stringify(noteSuPc.map((x) => [x.testo, x.t]))})`);
@@ -794,7 +826,7 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
   await suPagina(doc, A.patientUrl);
   await tocca(tel, '[data-a="scheda"][data-s="cartella"]');
   const c0 = await aspettaTel(tel, /Letto sul PC alle/, 20000);
-  check(await tel.locator(".seg button").evaluateAll((l) => l.map((b) => b.textContent).join("|")) === "Esiti|Richieste|Cartella", "una terza scheda, «Cartella», accanto a Esiti e Richieste");
+  check(await tel.locator(".seg button").evaluateAll((l) => l.map((b) => b.textContent).join("|")) === "Richieste|Esiti|Cartella", "le schede nell'ordine del PC: Richieste · Esiti, e «Cartella»");
   check(["Anamnesi", "Anamnesi remota", "Farmaci", "Allergie", "Esame obiettivo"].every((x) => c0.includes(x)) && (c0.match(/Letto sul PC alle \d\d:\d\d · adesso/g) || []).length === 1,
     `i cinque campi, e «Letto sul PC alle … · adesso» una volta (${c0.replace(/\s+/g, " ").slice(0, 160)})`);
   check(await valoreTel("ANAMNESI") === CART.campi.ANAMNESI && await valoreTel("FARMACI_ASSUNTI") === CART.campi.FARMACI_ASSUNTI && await valoreTel("ESAME_OBIETTIVO") === CART.campi.ESAME_OBIETTIVO,
@@ -910,6 +942,15 @@ const compatte = await tel.evaluate(() => {
 });
 check(compatte.alt <= 2 * compatte.vh, `le Richieste (${compatte.n} esami) stanno in due schermi: ${Math.round(compatte.alt)} px su ${compatte.vh} di altezza`);
 check(compatte.minAlt >= 43.9, `ogni tasto è alto almeno 44 px (il più basso: ${compatte.minAlt})`);
+// «Febbre» ha imparato il suo pacchetto sul PC: sul telefono è un chip come gli altri
+const accesi = () => tel.locator("main .esame.on").allInnerTexts();
+check(await tel.locator('[data-a="quesito"][data-q="Febbre"]').count() === 1, "il quesito che ha imparato il suo pacchetto sul PC è un chip anche sul telefono: «Febbre»");
+await tocca(tel, '[data-a="quesito"][data-q="Febbre"]');
+const conFebbre = (await accesi()).sort();
+check(JSON.stringify(conFebbre) === JSON.stringify(["EMOCROMO POC", "PCR"]) && await tel.locator("#quesito").inputValue() === "Febbre",
+  `un tocco scrive «Febbre» e spunta gli esami che ha imparato (${conFebbre.join(", ")})`);
+await tocca(tel, '[data-a="quesito"][data-q="Febbre"]');
+check((await accesi()).length === 0 && await tel.locator("#quesito").inputValue() === "", "toccato di nuovo li toglie");
 await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');
 await tocca(tel, '[data-a="esame"]:has-text("EMOCROMO POC")');
 check(await tel.locator("#ordina").isDisabled(), "senza quesito il bottone non parte");
@@ -1222,7 +1263,7 @@ await aspettaTel(tel, /Aggiorna i valori/, 15000);
 await tocca(tel, '[data-a="nota"]');
 await tel.locator("#nota").fill("nota C");
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
-await aspettaTel(tel, /Nota salvata sul PC/, 10000);
+await aspettaTel(tel, /Da fare salvato sul PC/, 10000);
 await $panel(doc, "#ponteoff").click();
 const scollegata = await aspettaTel(tel, /Sessione chiusa/, 10000);
 check(/Chiusa dal PC con «Scollega»/.test(scollegata), "«Scollega»: il telefono si chiude, «Chiusa dal PC con «Scollega»» (con la maiuscola)");
