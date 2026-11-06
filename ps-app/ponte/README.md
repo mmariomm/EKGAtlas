@@ -46,13 +46,15 @@ esiti (un referto arrivato intanto): riletture che l'app fa da sé, e che non te
 sessione. Vedi:
 
 - **Pazienti** — in una carta sola chi è in lista e chi è nella stanza (col suo posto), gli episodi
-  precedenti a parte; la striscia del triage, la nota, il promemoria più vicino. Il nome non si tronca
+  precedenti a parte; la striscia del triage, la nota, il promemoria più vicino, e lo stato della riga
+  del tabellone del PC (`stato`: il cuore, quello che aspetta per tipo col suo tempo o ✓, il pallino
+  del letto, «letto alle …» nel titolo; niente se il PC non sa). Il nome non si tronca
   mai: il posto e il promemoria vanno a capo.
 - **Il paziente** — in testa il nome intero, l'età e il posto: «ROSSI MARIO · 77 anni · OBI 2» (su
   un episodio precedente lo dice sotto; due pazienti con lo stesso nome hanno il ⚠ e il segno che li
-  distingue, come nell'elenco: «⚠ ROSSI MARIO · …9001 · 77 anni · OBI 2»). Sotto, subito, le schede **Esiti** e **Richieste** (resta
-  quella che hai scelto l'ultima volta); la nota e i promemoria stanno chiusi finché non servono
-  («+ Nota», «+ Promemoria»).
+  distingue, come nell'elenco: «⚠ ROSSI MARIO · …9001 · 77 anni · OBI 2»). Sotto, subito, le schede **Richieste · Esiti · Cartella**, nell'ordine del PC (resta
+  quella che hai scelto l'ultima volta; la prima volta gli Esiti); il «Da fare» — la nota e i
+  promemoria del ponte — sta chiuso finché non serve («+ Da fare», «+ Con l'ora»).
 - **Esiti** — la tabella dei Valori che il PC ha per quel paziente, con l'ora in cui il PC li ha letti
   («Letti sul PC alle 08:02 · 4 h fa», in ambra dopo un'ora; una colonna con valori parziali lo dice
   nella testata: «07:28 · parziale»), e i referti, col testo di quelli già letti sul PC. **↻ Aggiorna
@@ -65,7 +67,7 @@ sessione. Vedi:
   dopo, uscendo. Il PC offre solo copie salvate per lo stesso episodio che il pannello non ha segnato
   come di un altro paziente (è leggendole che lo si scopre, e la copia si toglie) — anche di una TC o di una visita, il cui testo non si legge —, e dà solo
   quelle offerte nella sessione. Oltre 15 MB: «PDF troppo grande: aprilo sul PC».
-- **Richieste** — il quesito (i tre pacchetti in testa), i profili e gli esami, in pillole che vanno
+- **Richieste** — il quesito (i tre pacchetti in testa, e i quesiti che sul PC hanno imparato il loro pacchetto), i profili e gli esami, in pillole che vanno
   a capo (alte almeno 44 pt; scelto = pieno). Con quesito mancante il bottone resta spento, ma un
   tocco porta il cursore sul quesito. Il
   bottone chiede conferma **col nome intero, l'età e il posto** («Ordino 2 esami per ROSSI MARIO ·
@@ -290,7 +292,7 @@ non si apre in 12 secondi si rifà; il «pong» aspetta anche i byte già per st
 come le attese dei pezzi di PDF. Quello che resta senza risposta si rimanda da solo sulla presa nuova:
 le letture si rifanno, le scritture (ordine, nota, promemoria, «Fatto», cartella, i pezzi di «Stampa
 un PDF») portano un numero (`rq`) che il PC ricorda per la sessione, e rimandate non si rifanno: il PC
-risponde com'è andata. Passato il tempo il telefono dice che non sa («Non so se il promemoria è
+risponde com'è andata. Passato il tempo il telefono dice che non sa («Non so se il Da fare è
 salvato: aspetto il PC»), continua a rimandarla per 10 minuti e, quando il PC risponde, lo dice. Un PDF,
 nei due versi, riprende dal pezzo dove era, e si lascia perdere dopo un tempo che cresce con la misura.
 Senza rete la testata dice «Senza rete», quello che il telefono ha in memoria resta e quello che va

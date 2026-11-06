@@ -151,7 +151,7 @@ per riga; una sezione che su quella pagina non ha voci non c'è. In cima **Forma
   dove un paziente non c'è, la sezione si chiama **Dimissioni**);
 - **Strumenti**: sulla stanza **Modifica la stanza** e **Segue il gestionale**; **Tabellone**,
   **iPhone** (il Ponte) e **Registra** (solo con l'estensione), **Tempi** (il cronometro),
-  **Riferimenti** (i *can't-miss killers*);
+  **Riferimenti** (i *can't-miss killers*), **Consegne** (vedi sotto);
 - **Impostazioni**: **Stampanti**, e — scelte le due stampanti — **Stampa automatica: attiva ·
   Spegni** (vedi «Stampa automatica»), **Indirizzo del portale**, il **Registro**, **Reset dati
   pazienti**, **Ricarica estensione** e, quando c'è una versione nuova, **Aggiorna app**;
@@ -164,6 +164,14 @@ e in fondo la versione. Il cronometro compare in intestazione **solo mentre corr
 **etichette benigne che nascondono un killer**; **chi cambia la lista** (gravidanza,
 immunodepresso, anticoagulato, anziano…). Il cursore è già nel filtro: si scrive in inglese o in
 italiano («cefalea», «sincope», «anziano») e restano solo le righe che servono.
+
+**Consegne** (menu ⋯), per il cambio turno: una riga per paziente, nell'ordine del tabellone —
+`OBI 2 · ROSSI M. 68 · in PS 3h40 · Aperti: Lab 50′, RX 1h40 · Da fare: 13:30 tropo; chiamare la figlia`:
+il posto, COGNOME N. ed età, da quanto è in PS, quello che aspetta (per tipo, col tempo, come la
+riga corta del tabellone; «(letto 11:02)» se la lettura è vecchia) e le cose da fare aperte.
+**⧉ Copia** mette le stesse righe negli appunti, in testo; **Stampa** le manda al dialogo di stampa
+del browser da una cornice invisibile (niente scheda nuova), e solo al tocco: portano dei nomi.
+Usa quello che il tabellone sa già: niente da leggere, niente di salvato.
 
 Il pannello ha cinque schermate, in **una fila di schede** sempre in cima e nell'ordine in cui si
 lavora: **Richieste · Esiti · EO · Consensi · Dimissioni** (sulla lista del pronto soccorso, dove
@@ -489,6 +497,13 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    sempre, e lascia andare il pacchetto: gli esami restano, ora sono tuoi. Un esame del pacchetto
    che **non c'è nel catalogo di questa macchina** non viene aggiunto e il pannello lo dice, una
    volta, nel banner e nel Registro: non si inventa mai un codice.
+   **Un quesito normale impara il suo pacchetto.** Confermato un ordine il cui quesito l'ha messo un
+   chip (non scritto a mano), quel chip si ricorda gli esami — solo i codici, mai di chi — e la volta
+   dopo fa come un pacchetto: «Febbre · 5», un tocco scrive il quesito e li spunta, di nuovo li
+   toglie. Il prossimo ordine confermato con quel chip li sostituisce (niente da cancellare a mano);
+   un esame che il catalogo non ha più si salta. Niente parte senza Conferma. I quesiti scritti da
+   te durano un turno, e il loro pacchetto con loro; quelli di partenza (Febbre, Trauma, Sincope,
+   Vertigini, Cefalea) lo tengono. Vale anche dal telefono, dove sono chip come gli altri.
    **Una casella sola, «Quesito o esame…».** Quello che scrivi è il quesito; se somiglia a degli
    esami del catalogo (tutti i laboratori), sotto compare una tendina: per prima **«Quesito:
    …»** (Invio: tieni il testo come quesito), poi gli esami. Scelto un esame, nella casella
@@ -1200,10 +1215,15 @@ foglio i motivi per **tornare in Pronto Soccorso**.
 
 Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con
 **↻ Aggiorna i valori** e l'ora in cui il PC li ha letti), **un ordine** (lo stesso «Conferma e
-stampa», con tutti i suoi controlli), **la nota** e **i promemoria** — sul PC sono **Da fare**: la
-nota del telefono è la prima voce aperta senza ora (scriverla cambia quella, o ne fa una in cima;
-vuota la toglie; un'ora scritta dentro non la fa diventare un promemoria), i promemoria sono le voci
-con l'ora (✓ Fatto le spunta). Tutto succede sul PC, col
+stampa», con tutti i suoi controlli), **Da fare** (**+ Da fare** e **+ Con l'ora**, le parole del
+PC; sotto, il ponte dice ancora `nota` e `promemoria`): quella senza ora è la prima voce aperta
+senza ora del PC (scriverla cambia quella, o ne fa una in cima; vuota la toglie; un'ora scritta
+dentro non la fa diventare un promemoria), quelle con l'ora sono le voci con l'ora (✓ Fatto le
+spunta). Nell'elenco ogni riga ha lo stato della riga del tabellone, se il PC lo sa: il **cuore**,
+per tipo quello che aspetta col suo tempo («Lab 50′ RX 1h40», l'ambra e il rosso delle soglie) o
+**✓** se è tornato tutto, e il **pallino** del letto; «letto alle …» nel titolo, grigio se la
+lettura è vecchia. Le schede del paziente sono nell'ordine del PC: **Richieste · Esiti · Cartella**
+(si apre sugli Esiti, come prima). Tutto succede sul PC, col
 gestionale aperto e il codice di sempre: il telefono manda una domanda, una scheda del gestionale la
 esegue e risponde. Passa da un ripetitore nel Worker di EKG Atlas (sul suo indirizzo `workers.dev`)
 che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun server.

@@ -98,6 +98,16 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .paz .nome { font-weight: 650; font-size: 16.5px; overflow-wrap: anywhere; }
 .paz .eta { flex: none; font-size: 14px; color: var(--grigio); font-variant-numeric: tabular-nums; }
 .paz .posto { flex: none; font-size: 12px; font-weight: 650; color: var(--blu); background: var(--blu-chiaro); border-radius: 6px; padding: 1px 7px; }
+/* lo stato, come sulla riga del tabellone del PC: il cuore, quello che aspetta (o ✓), il pallino del letto */
+.paz .st { flex: none; display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--testo2); font-variant-numeric: tabular-nums; }
+.paz .st .esp b { font-weight: 700; }
+.paz .st .esp i { font-style: normal; } .paz .st .esp i.amb { color: var(--ambra); } .paz .st .esp i.ros { color: var(--rosso); }
+.paz .st.vecchio .esp, .paz .st.vecchio .esp i { color: var(--grigio2); }
+.paz .st .cuore { font-size: 14px; line-height: 1; } .paz .st .cuore.ros { color: var(--rosso); } .paz .st .cuore.amb { color: var(--ambra); }
+.paz .st .cuore.vecchio { color: var(--grigio2); }
+.paz .st .segno { width: 8px; height: 8px; border-radius: 50%; }
+.paz .st .segno.ros { background: var(--rosso); } .paz .st .segno.amb { background: var(--ambra); } .paz .st .segno.nuovo { background: var(--blu); }
+.paz .st .segno.att { box-shadow: inset 0 0 0 1.5px var(--grigio2); }
 .paz .nota { font-size: 13.5px; color: var(--grigio); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .paz.spento .nome { color: var(--grigio); font-weight: 600; }
 .t-rosso { --tr: var(--t-rosso); } .t-arancione { --tr: var(--t-arancione); } .t-azzurro { --tr: var(--t-azzurro); }
