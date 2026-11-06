@@ -1172,7 +1172,7 @@ async function ordDai(id, tabId, forza, jobs = null) {
     const rec = (await ordLeggi()).find((x) => x.id === id && x.stampa && (x.stato === "stampa" || (forza && x.stato === "avviso")));
     if (!rec) return false;
     const stampa = jobs ? { ...rec.stampa, jobs } : rec.stampa;
-    const r = await allaScheda(tabId, { t: "psassistStampa", id: rec.id, ep: rec.ep, paziente: rec.paziente, stampa, forza: !!forza });
+    const r = await allaScheda(tabId, { t: "psassistStampa", id: rec.id, ep: rec.ep, paziente: rec.paziente, stampa, forza: !!forza, conferma: rec.ts || 0 });
     if (!(r && r.ok)) return false;
     await inFilaOrd(async () => {
       const l = await ordLeggi();
@@ -1360,7 +1360,20 @@ function ordPubblico(rec, l = []) {
       if (dalTelefono(rec)) return alTel(P("warn", "Etichette NON stampate", "tocca Stampa", st.riassunto), P("warn", "Etichette NON stampate", "aspettano qualcuno al PC", st.riassunto));
       return P("run", "Confermata", "Etichette pronte", st.riassunto, st.quesito);
     }
-    case "errore": return P("err", v.tag || "Errore", v.testo || "completa a mano", v.quesito || resto);
+    case "errore": {
+      // Prima che cosa fare, poi (nel resoconto) il perché: «TROPONINA US: non
+      // mandato · apri il carrello → Riprova». La causa — «il codice 324 oggi
+      // si chiama…» — la dice il resoconto che il carrello apre.
+      const m = lista("mancano"), c = lista("controllare");
+      if (!v.sessione && (m.length || c.length)) {
+        const cosa = m.length ? `${m.join(", ")}: ${m.length === 1 ? "non mandato" : "non mandati"}` : `${c.join(", ")}: da controllare`;
+        const riprova = !!(rec.consegna && rec.consegna.avviso && rec.consegna.avviso.riprova) && m.length;
+        const fare = rec.consegna ? (riprova ? "apri il carrello → Riprova" : "apri il carrello e completa") : "completa a mano nel gestionale";
+        const poi = m.length && c.length ? `Da controllare: ${c.join(", ")}` : "";
+        return alTel(P("err", cosa, fare, poi), P("err", cosa, "completa al PC", poi));
+      }
+      return P("err", v.tag || "Errore", v.testo || "completa a mano", v.quesito || resto);
+    }
     case "chiusa": {
       const k = lista("mancano").length;
       return P("err", v.tag || "Scheda chiusa", k ? `${k === 1 ? "1 esame non mandato" : `${k} esami non mandati`}: ${lista("mancano").join(", ")}` : v.testo || "controlla il carrello",

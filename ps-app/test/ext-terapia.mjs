@@ -278,9 +278,19 @@ try {
   await $p("#terq").fill("keto");
   check(await $p("[data-terpref]").count() === 1, "la ricerca filtra i preferiti");
   await $p("#terq").fill("");
+  // le etichette di un ordine che aspettano la stampa (un altro paziente) non mandano niente:
+  // non spengono «Prepara», e nel ⋯ il reset resta (la ricarica dell'estensione no: quella le perderebbe)
+  await sw.evaluate(() => chrome.storage.session.set({ ordini: [{ id: "ord-et", stato: "stampa", ep: "700099", paziente: "VERDI GINO", n: 1, ts: Date.now(), agg: Date.now(),
+    pubblico: { tono: "run", titolo: "Confermata", testo: "Etichette pronte" }, stampa: { jobs: [] } }] }));
+  await sospendi(400);
   await $p('[data-terpref]:has-text("PARACETAMOLO")').click();
   await $p('[data-terpref]:has-text("KETOROLAC")').click();
-  check(await $p(".ricvoci .ricv").count() === 2 && !(await $p("#terprepara").isDisabled()), "scelti due farmaci: «Prepara nel gestionale» acceso");
+  check(await $p(".ricvoci .ricv").count() === 2 && !(await $p("#terprepara").isDisabled()), "scelti due farmaci: «Prepara nel gestionale» acceso — anche con le etichette di un altro ordine che aspettano");
+  await $p("#menubtn").click();
+  check(await $p("#resetpaz").count() === 1 && await $p("#extreload").count() === 0, "e nel ⋯ «Reset dati pazienti» c'è; «Ricarica estensione» no, finché quelle etichette aspettano");
+  await $p("#menubtn").click();
+  await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
+  await sospendi(300);
   const termini0 = srv.termini.length, conf0 = srv.conferme.length, pagine0 = srv.pagineTer.length;
   // in testa «‹ Terapia» al posto delle schede; Ctrl+Invio è «Prepara» (Conferma resta del medico)
   check((await $p(".seg.vmenu .segtit").innerText()).trim() === "Terapia", `in testa «‹ Terapia» (got ${await $p(".seg").innerText().catch(() => "")})`);

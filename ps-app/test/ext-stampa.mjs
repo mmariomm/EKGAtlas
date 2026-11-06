@@ -44,6 +44,8 @@ function chromiumPath() {
   return undefined;
 }
 const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`);
+// i bottoni della striscia: nella striscia, o nel chip in intestazione a pannello aperto
+const AZIONE = "#strazione, #psassist-host #gchipaz", STOP = "#strstop, #psassist-host #gchipstop";
 let fail = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
 const shot = async (page, nome) => { if (SHOTS) await page.screenshot({ path: join(SHOTS, nome + ".png") }).catch(() => {}); };
@@ -215,12 +217,12 @@ const aspettaScheda = async (p, cond, timeout = 20000) => {
 };
 const striscia = async (page, re, timeout = 30000) => {
   const h = await page.waitForFunction((src) => {
-    const t = (document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || "").replace(/\s+/g, " ").trim();
+    const t = (document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.innerText || document.getElementById("psassist-host")?.shadowRoot?.querySelector(".gchip")?.dataset.riga || "").replace(/\s+/g, " ").trim();
     return new RegExp(src).test(t) ? t : false;
   }, re.source, { timeout }).catch(() => null);
   return h ? h.jsonValue() : "";
 };
-const azione = (p) => $panel(p, "#strazione").innerText().then((t) => t.trim()).catch(() => "");
+const azione = (p) => $panel(p, AZIONE).innerText().then((t) => t.trim()).catch(() => "");
 const conferme = (m) => m.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni"));
 async function finche(fn, timeout = 30000) {
   for (const t0 = Date.now(); Date.now() - t0 < timeout; await sospendi(150)) { const v = await fn(); if (v) return v; }
@@ -283,8 +285,12 @@ async function dialogoChiuso(p) {
     return !w || w.dataset.doc !== x;
   }, prima, { timeout: 8000 });
 }
+// Esc annulla la stampa a scheda aperta (mentre il PDF arriva è del gestionale);
+// un foglio che aspetta il tuo tocco si toglie col ✕ della sua striscia
 async function chiudiStampa(p) {
-  await p.keyboard.press("Escape").catch(() => {});
+  await p.waitForFunction(() => { const w = document.getElementById("psassist-print"); return !w || !w.shadowRoot.querySelector(".pw").hidden || w.dataset.stato === "aspetta"; }, null, { timeout: 15000 }).catch(() => {});
+  if (await p.evaluate(() => document.getElementById("psassist-print")?.dataset.stato === "aspetta").catch(() => false)) await $panel(p, STOP).first().click().catch(() => {});
+  else await p.keyboard.press("Escape").catch(() => {});
   await p.waitForSelector("#psassist-print", { state: "detached", timeout: 5000 }).catch(() => {});
 }
 const nuovaPagina = (timeout = 15000) => ctx.waitForEvent("page", { timeout }).catch(() => null);
@@ -662,7 +668,7 @@ if (await prova("ordine in sottofondo: stampa la scheda dell'ordine, col medico 
   check((await stampe(doc)).length === 0, "e nessuna finestra di stampa si è mai aperta");
   await shot(doc, "ordine-sottofondo-stampato");
   // «Ristampa»: un tocco; di nuovo da sola, senza niente davanti, e alla fine il resoconto
-  await $panel(doc, "#strazione").click();
+  await $panel(doc, AZIONE).click();
   await finche(() => lavori().length === 2 * n, 40000);
   const ancora = await striscia(doc, /Stampato/, 15000);
   check(lavori().length === 2 * n && (await stampe(doc)).length === 0, `«Ristampa»: gli stessi fogli, una volta, senza anteprima (got ${lavori().length} fogli)`);
@@ -777,7 +783,7 @@ if (await prova("la scheda dell'ordine ricaricata o chiusa mentre stampa: «stam
   const str = await striscia(doc, /Stampa interrotta/, 8000);
   check(/ROSSI MARIO/.test(str) && (await azione(doc)) === "Ristampa", `la striscia: «Stampa interrotta», e «Ristampa» (got ${str})`);
   await shot(doc, "stampa-interrotta");
-  await $panel(doc, "#strazione").click();
+  await $panel(doc, AZIONE).click();
   await finche(() => lavori().length === 1, 20000);
   await doc.waitForSelector("#psassist-print", { state: "detached", timeout: 20000 }).catch(() => {});
   check(lavori().length === 1 && lavori()[0].tipo === "a4", `«Ristampa»: solo la lista, che non era uscita (got ${JSON.stringify(lavori().map((x) => x.tipo))})`);
@@ -808,9 +814,9 @@ if (await prova("⏹ sulla striscia mentre il service worker stampa: il foglio i
   await suPagina(doc, B.patientUrl);
   await finche(async () => (await ordini()).find((x) => x.stato === "stampo" && x.fogli && x.fogli[0].stato === "invio"), 60000);
   const str = await striscia(doc, /Stampo le etichette/, 8000);
-  check(/Confermata/.test(str) && (await $panel(doc, "#strstop").getAttribute("title")) === "Ferma l'ordine", `la striscia ha il ⏹ anche mentre stampa (got ${str})`);
+  check(/Confermata/.test(str) && (await $panel(doc, STOP).getAttribute("title")) === "Ferma l'ordine", `la striscia ha il ⏹ anche mentre stampa (got ${str})`);
   await shot(doc, "stampo-col-fermo");
-  await $panel(doc, "#strstop").click();
+  await $panel(doc, STOP).click();
   const fine = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli), 30000);
   check(!!fine && fine.pubblico.titolo === "Stampa interrotta" && /fermata col ⏹/.test(fine.pubblico.dettaglio) && fine.fogli[1].stato === "attesa",
     `«Stampa interrotta», fermata col ⏹ (got ${JSON.stringify(fine && fine.pubblico)})`);
@@ -841,7 +847,7 @@ if (await prova("un ordine dal telefono: le etichette aspettano un tocco al PC, 
   check((str.match(/dall'iPhone/g) || []).length === 1 && (await azione(doc)) === "Stampa", `la striscia dice che viene dall'iPhone (una volta), e «Stampa» (got ${str})`);
   check(/tocca Stampa/.test(str) && !/aspettano qualcuno|sulla striscia/.test(str), `e sul PC dice la frase del PC, non quella del telefono (got ${str})`);
   await shot(doc, "telefono-aspetta-un-tocco");
-  await $panel(doc, "#strazione").click();
+  await $panel(doc, AZIONE).click();
   await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 15000 }).catch(() => {});
   check(await finche(async () => (await stampe(doc)).length === 1 && !(await ordine("telprova1")), 15000),
     "un tocco: il dialogo, e l'ordine non c'è più fra quelli aperti");
@@ -900,7 +906,8 @@ if (await prova("il foglio rimasto nella coda di Windows: «Mandato a», non «S
     `ordine in sottofondo: «Mandato a Zebra ZD421 · … alle HH:MM», e la lista «stampato su HP LaserJet A4» (got ${JSON.stringify(rec && rec.pubblico)})`);
   check(!!rec && rec.pubblico.tono === "warn", `«Mandato» in ambra, non col verde di «Stampato» (got ${rec && rec.pubblico.tono})`);
   const str = await striscia(doc, /Mandato a Zebra ZD421/, 8000);
-  const segno = await doc.evaluate(() => document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run")?.className + " " + document.getElementById("psassist-host")?.shadowRoot?.querySelector(".pill.run .tick")?.textContent);
+  // (la striscia, o a pannello aperto il chip in intestazione)
+  const segno = await doc.evaluate(() => { const r = document.getElementById("psassist-host")?.shadowRoot; const p = r?.querySelector(".pill.run, .gchip"); return p?.className + " " + p?.querySelector(".tick, .gtick")?.textContent; });
   check(/warn/.test(segno) && !/✓/.test(segno), `sulla striscia: ambra, senza ✓ (got ${segno} · ${str})`);
 }
 

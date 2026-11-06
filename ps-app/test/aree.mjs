@@ -314,15 +314,26 @@ await blocco(async () => {
     && JSON.stringify(await ls(page, "stanza.ps.v1")) === JSON.stringify(vecchia), "Modifica tocca la mappa dell'Alta (con box e barelle), non quella del PS");
   // il reset: via le aree e i posti; le stanze e le opzioni restano
   await page.evaluate(() => localStorage.setItem("psassist:aree.opzioni.v1", JSON.stringify({ alta: { id: "00010001P", label: "AREA ALTA INTENSITA'" } })));
+  const leggiTutto = () => page.evaluate(() => Object.fromEntries(["aree.v1", "stanza.alta.posti.v1", "stanza.ps.posti.v1", "patients.v1", "stanza.alta.v1", "stanza.ps.v1", "aree.opzioni.v1"]
+    .map((k) => [k, localStorage.getItem("psassist:" + k)])));
+  const primaReset = await leggiTutto();
   await $p(page, "#menubtn").click();
   await $p(page, "#resetpaz").click();
   await $p(page, "#resetpaz").click();
   await page.waitForTimeout(500);
-  const dopo = await page.evaluate(() => Object.fromEntries(["aree.v1", "stanza.alta.posti.v1", "stanza.ps.posti.v1", "patients.v1", "stanza.alta.v1", "stanza.ps.v1", "aree.opzioni.v1"]
-    .map((k) => [k, localStorage.getItem("psassist:" + k)])));
+  const dopo = await leggiTutto();
   check(!dopo["aree.v1"] && !dopo["stanza.alta.posti.v1"] && !dopo["stanza.ps.posti.v1"] && !dopo["patients.v1"],
     `«Reset dati pazienti»: via chi sta in quale area e i posti (got: ${JSON.stringify(Object.keys(dopo).filter((k) => dopo[k]))})`);
   check(!!dopo["stanza.alta.v1"] && !!dopo["stanza.ps.v1"] && !!dopo["aree.opzioni.v1"], "restano le stanze e le opzioni delle aree");
+  // «Annulla», 8 secondi, come per ogni altra cosa che si può rimpiangere: tutto com'era
+  check(/Dati dei pazienti cancellati/.test(await $p(page, ".stsnack").innerText().catch(() => "")), "dopo il reset: «Dati dei pazienti cancellati · Annulla»");
+  await $p(page, ".stannulla").click();
+  await page.waitForTimeout(300);
+  const rimesso = await leggiTutto();
+  check(Object.keys(primaReset).every((k) => rimesso[k] === primaReset[k]), `«Annulla»: aree, posti e pazienti tornano com'erano (diversi: ${Object.keys(primaReset).filter((k) => rimesso[k] !== primaReset[k]).join(", ") || "nessuno"})`);
+  await page.waitForTimeout(8500);
+  const ancora = await leggiTutto();
+  check(Object.keys(primaReset).every((k) => ancora[k] === primaReset[k]), "e finiti gli 8 secondi niente si cancella più (il resto del reset non parte)");
   await context.close();
 });
 

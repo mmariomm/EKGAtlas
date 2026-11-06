@@ -180,6 +180,10 @@ try {
 
   // --- un tocco su un paziente: lo apre la scheda del gestionale, dal suo indirizzo
   const nPagine = ctx.pages().length;
+  // (le etichette di un altro ordine che aspettano la stampa non sono «un ordine che parte»: non fermano l'apertura)
+  await sw.evaluate(() => chrome.storage.session.set({ ordini: [{ id: "ord-et", stato: "stampa", ep: "700099", paziente: "BIANCHI ANNA", n: 1, ts: Date.now(), agg: Date.now(),
+    pubblico: { tono: "run", titolo: "Confermata", testo: "Etichette pronte" }, stampa: { jobs: [] } }] }));
+  await sospendi(400);
   await tab.bringToFront();
   await $p(tab, '.pzrow[data-pz="700003"] .pzapri').click();
   check(await finche(async () => gest.url() === URL_PAZ("700003"), 8000), `un tocco su NERI: la scheda del gestionale va sulla sua pagina (got ${gest.url()})`);
@@ -187,6 +191,7 @@ try {
   check((await $p(gest, ".card").count()) === 1, "e ci arriva col pannello aperto");
   check(ctx.pages().length === nPagine && (await attive()).includes(URL_PAZ("700003")), "nella stessa scheda, portata davanti (nessuna scheda nuova)");
   check(richieste.filter((u) => /EPISODIO_ID=700003/.test(u)).every((u) => u === URL_PAZ("700003")), "l'indirizzo è quello noto, tale e quale");
+  await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
 
   // --- senza gestionale: si guarda soltanto
   await gest.close();

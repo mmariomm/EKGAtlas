@@ -168,6 +168,8 @@ let sw = await swDi(ctx);
 const extId = new URL(sw.url()).host;
 const EXTURL = (f) => `chrome-extension://${extId}/${f}`;
 const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`);
+// i bottoni della striscia: nella striscia, o nel chip in intestazione a pannello aperto
+const AZIONE = "#strazione, #psassist-host #gchipaz", STOP = "#strstop, #psassist-host #gchipstop";
 const statoPonte = () => sw.evaluate(() => chrome.storage.session.get("ponte").then((o) => o.ponte || null));
 const coppiaPc = () => sw.evaluate(() => chrome.storage.local.get("ponte.coppia").then((o) => o["ponte.coppia"] || null));
 const registroPonte = async () => ((await statoPonte())?.registro || []).map((x) => x.testo).join("\n");
@@ -996,7 +998,7 @@ check(A.state.richieste[rid]?.confirmed === true && Object.values(A.state.insert
 check(A.state.richieste[rid]?.quesito === "dolore toracico atipico", "col quesito scritto sul telefono");
 await doc.waitForTimeout(2500);
 check((await doc.evaluate(() => JSON.parse(localStorage.getItem("__psaStampe") || "[]"))).length === 0, "sul PC il dialogo di stampa non si apre da solo");
-await doc.locator("#psassist-host #strazione").click();   // «Stampa», sulla striscia del PC
+await doc.locator(`#psassist-host ${AZIONE}`).click();   // «Stampa», sulla striscia del PC
 check(await finche(async () => (await doc.evaluate(() => JSON.parse(localStorage.getItem("__psaStampe") || "[]"))).length === 1, 10000),
   "un tocco su «Stampa» nella striscia del PC: le etichette si stampano lì, come sempre");
 check(/Etichette prese in stampa sul PC/.test(await aspettaTel(tel, /Etichette prese in stampa sul PC/, 15000)),
