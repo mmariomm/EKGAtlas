@@ -5634,12 +5634,20 @@
     .menuw { position: relative; }
     .menu { position: absolute; right: 0; top: 40px; z-index: 20; min-width: 200px; background: #fff; border: 1px solid #E3E8EF;
             border-radius: 10px; box-shadow: 0 12px 32px rgba(9,42,74,.16); padding: 6px; cursor: default; }
+    /* il menu ⋯ del pannello (quello della pill del registratore resta com'è) */
+    .menuw > .menu { width: 320px; max-width: calc(100vw - 16px); box-sizing: border-box; max-height: calc(100vh - 56px);
+                     overflow-y: auto; overscroll-behavior: contain; padding: 2px 6px 4px; }
     .menu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 6px;
                    font-size: 13px; color: #16232E; cursor: pointer; }
     .menu button:hover, .menu button:focus-visible { background: #F1F4F7; outline: none; }
-    .menu hr { border: 0; border-top: 1px solid #EEF2F6; margin: 5px 4px; }
     .menu button.mrischio { color: #B3261E; font-weight: 700; }
     .menu .mver { padding: 6px 10px 4px; font-size: 12px; color: #5B6B7A; }
+    /* le sezioni: un titolo piccolo, le voci due per riga (una lunga si prende la riga) */
+    .menu .msez { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 0; }
+    .menu .msez + .msez { border-top: 1px solid #EEF2F6; }
+    .menu .mtit { flex: 0 0 100%; padding: 3px 10px 1px; font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #5B6B7A; }
+    .menu .msez > button { flex: 1 0 calc(50% - 1px); width: auto; min-height: 34px; white-space: nowrap; }
+    .menu .msez > .mforma, .menu .msez > .mver { flex: 0 0 100%; box-sizing: border-box; }
     /* una versione nuova (⋯ → «Aggiorna app»): un puntino sul ⋯ */
     .iconbtn.agg { position: relative; }
     .iconbtn.agg::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #D93025; }
@@ -6411,6 +6419,13 @@
     .card.stanza .bdi { height: 100%; display: flex; flex-direction: column; padding: 0; }
     .card.stanza .bdi > .sec { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; margin-bottom: 0; }
     .card.stanza .bdi > .banner, .card.stanza .bdi > .reg { flex: none; margin: 10px 14px; }
+    /* ⋯ → iPhone: la cornice prende tutto il corpo che resta (la pagina dentro scorre da sé) */
+    .card.iphone .bdi { height: 100%; display: flex; flex-direction: column; padding: 0; }
+    .card.iphone .bdi > * { flex: none; }
+    .card.iphone .bdi > .banner, .card.iphone .bdi > .reg { margin: 10px 24px 0; }
+    .card.iphone .bdi > .ponteslot { flex: 1 1 auto; min-height: 220px; }
+    .card.iphone .bdi > .ponteno { padding: 14px 24px; max-width: 520px; }
+    .ponteslot iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
     /* I Pazienti: sopra la lista, sotto la stanza. Due grigi per il testo;
        l'azzurro solo per il paziente di questa pagina, per il fuoco e per
        l'azione che conta; il colore solo per il triage, in una striscia. */
@@ -8716,6 +8731,13 @@
       });
       return `<div class="selbar"><span class="selcount">${this.selected.size} SELEZIONATI</span>${groups.map((g) => `<div class="selrow">${g}</div>`).join("")}</div>`;
     }
+    // Il menu ⋯ a sezioni (Paziente · Strumenti · Impostazioni): un titolo
+    // piccolo e sotto le voci, due per riga se corte (una lunga prende la
+    // riga). Una sezione che qui non ha voci non c'è.
+    menuSez(titolo, voci) {
+      const v = voci.filter(Boolean).join("");
+      return v ? `<div class="msez" role="group"${titolo ? ` aria-label="${esc(titolo)}"><div class="mtit" aria-hidden="true">${esc(titolo)}</div>` : ">"}${v}</div>` : "";
+    }
 
     render() {
       const patientName = this.pageType === "vista" ? this.nomePaziente() : nomeInPagina();
@@ -8760,6 +8782,7 @@
       else if (this.view === "ricetta" && this.ricettaPossibile()) body = this.viewRicetta();
       else if (this.view === "terapia" && this.terapiaPossibile()) body = this.viewTerapia();
       else if (this.view === "riferimenti") body = this.viewRiferimenti();
+      else if (this.view === "iphone" && hasExt()) body = this.viewIphone();
       else if (this.view === "stampa") body = this.viewStampa();
       else if (this.view === "richieste") body = this.viewIdle(patientName, ep);
       else body = this.viewHome(patientName, ep);
@@ -8790,7 +8813,7 @@
       // whose data is on screen must be answerable at a glance, always:
       // patient in the title, episode always next to the section name.
       const inHome = !this.runState && this.view === "home";
-      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", riferimenti: "Riferimenti", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
+      const section = this.runState ? "" : { richieste: "Richieste", esiti: "Esiti", referto: "Referto", dimissioni: "Dimissioni", dimtesto: "Dimissioni", dimimport: "Dimissioni", consensi: "Consensi", eo: "EO", eotesto: "EO", tempi: "Tempi", riferimenti: "Riferimenti", iphone: "iPhone", ricetta: "Ricetta", terapia: "Terapia" }[this.view] || "";
       // (i fogli di dimissione sono modelli, ma chi va a casa è questo paziente:
       // l'intestazione lo dice anche lì)
       const inDim = this.view === "dimissioni" || this.view === "dimtesto" || this.view === "dimimport";
@@ -8833,6 +8856,7 @@
       // (Chrome manda il «blur» a un campo col fuoco PRIMA di staccarlo, quando
       // è ancora attaccato: chi ascolta il blur guarda _staccando, non isConnected)
       this._staccando = true;
+      this.ponteParcheggia();   // la cornice dell'iPhone non si ridisegna: si mette da parte, e torna dopo
       try {
       this.root.innerHTML = `
         <style>${COLORS}${PONTE_CSS}</style>
@@ -8874,7 +8898,7 @@
             ${sulPaziente ? this.dfNotaSlot(this.epDiQuesta(), undefined, `${pp && Number.isFinite(pp.left) && pp.left < window.innerWidth / 2 ? " sx" : ""}${pp && Number.isFinite(pp.top) && pp.top > window.innerHeight - 180 ? " su" : ""}`) : ""}
           ` : `
             ${forma === "colonna" && !TABELLONE ? `<button class="coltab apre" id="colnascondi" title="Nascondi la colonna (F2)" aria-label="Nascondi il pannello (F2)"></button>` : ""}
-            <div class="card${inStanza ? " stanza" : ""}" role="dialog" aria-label="${esc(APP)}" tabindex="-1">
+            <div class="card${inStanza ? " stanza" : ""}${this.view === "iphone" && !this.runState ? " iphone" : ""}" role="dialog" aria-label="${esc(APP)}" tabindex="-1">
               <div class="hd" id="draghd"${forma === "colonna" || TABELLONE ? "" : ` title="Trascina per spostare · doppio clic per rimetterla al centro"`}>
                 ${indietro ? `<button class="iconbtn" id="back" title="${
                   this.view === "referto" ? "Torna agli esiti"
@@ -8891,36 +8915,39 @@
                 ${TABELLONE ? "" : `<span class="menuw">
                   <button class="iconbtn${this.aggNuova() ? " agg" : ""}" id="menubtn" title="${this.aggNuova() ? `Altro · c'è la versione ${esc(this.agg.nuova)}` : "Altro"}" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
                   ${this.menuAperto ? `<div class="menu" role="menu">
-                    <div class="mforma" role="group" aria-label="Forma"><span>Forma</span>${FORME_PANNELLO.map((f) => `<button role="menuitemradio" data-forma="${f}" aria-checked="${f === forma}"${f === forma ? ' class="on"' : ""}>${NOME_FORMA[f]}</button>`).join("")}</div>
-                    ${this.win && forma !== "colonna" ? `<button role="menuitem" id="wincentra" title="La finestra al centro, nella misura di partenza">Al centro</button>` : ""}
-                    ${eAffiancata(this.win) || forma === "colonna" ? "" : `<button role="menuitem" id="winaffianca" title="Una colonna a destra: il gestionale resta visibile a sinistra">Affianca a destra</button>`}
-                    ${inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">Modifica la stanza</button>` : ""}
-                    ${inStanza && !this.stanzaEdit && hasExt() ? `<button role="menuitemcheckbox" id="seguesw" aria-checked="${segueAcceso()}" title="Ogni 10 minuti la lista smart del gestionale, letta dietro: chi c'è, l'area, il triage; chi esce è dimesso">${segueAcceso() ? "✓ " : ""}Segue il gestionale</button>` : ""}
-                    <hr>
-                    ${hasExt() ? `<button role="menuitem" id="tabmenu" title="Il tabellone dei Pazienti in una scheda sua: da fissare, o sul secondo schermo">Tabellone</button>` : ""}
-                    ${hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete"><span class="mico">${ICO_TEL}</span>iPhone</button>` : ""}
-                    ${this.ricettaPossibile() ? `<button role="menuitem" id="ricmenu" title="Farmaci e quesito preparati nel Prescrittivo del SISS, fino all'Anteprima: Registra lo premi tu">Ricetta SISS</button>` : ""}
-                    ${this.terapiaPossibile() ? `<button role="menuitem" id="termenu" title="I farmaci nella pagina Terapia del gestionale, una riga per volta: Conferma la premi tu">Terapia</button>` : ""}
-                    <button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">Tempi</button>
-                    <button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">Riferimenti</button>
-                    ${this.pageType === "patient" && this.epDiQuesta() && richiesteStampabili(printModel(document, location.href)).length
-                      ? `<button role="menuitem" id="stampamenu" title="Etichette e lista esami delle richieste già confermate">Stampa le richieste</button>` : ""}
-                    ${this.view === "dimissioni" ? `<button role="menuitem" id="dimexport" title="Salva i tuoi testi in un file JSON (e negli appunti)">Esporta i fogli (JSON)</button>
-                    <button role="menuitem" id="dimimport" title="Rimetti i testi di un JSON esportato">Importa i fogli…</button>` : ""}
-                    <button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${this.showLog ? "Nascondi il registro" : "Registro"}</button>
-                    ${hasExt() ? `<button role="menuitem" id="stampanti" title="Quale stampante è l'etichettatrice e quale l'A4, per la stampa automatica">Stampanti</button>` : ""}
-                    ${hasExt() ? `<button role="menuitem" id="regmenu" title="Registra le pagine, le richieste e i PDF di questa sessione, anonimizzati in uno zip che resta su questo PC finché non lo mandi tu">${
+                    ${this.menuSez("", [
+                      `<div class="mforma" role="group" aria-label="Forma"><span>Forma</span>${FORME_PANNELLO.map((f) => `<button role="menuitemradio" data-forma="${f}" aria-checked="${f === forma}"${f === forma ? ' class="on"' : ""}>${NOME_FORMA[f]}</button>`).join("")}</div>`,
+                      this.win && forma !== "colonna" ? `<button role="menuitem" id="wincentra" title="La finestra al centro, nella misura di partenza">Al centro</button>` : "",
+                      eAffiancata(this.win) || forma === "colonna" ? "" : `<button role="menuitem" id="winaffianca" title="Una colonna a destra: il gestionale resta visibile a sinistra">Affianca a destra</button>`])}
+                    ${this.menuSez(this.epDiQuesta() ? "Paziente" : "Dimissioni", [
+                      this.ricettaPossibile() ? `<button role="menuitem" id="ricmenu" title="Farmaci e quesito preparati nel Prescrittivo del SISS, fino all'Anteprima: Registra lo premi tu">Ricetta SISS</button>` : "",
+                      this.terapiaPossibile() ? `<button role="menuitem" id="termenu" title="I farmaci nella pagina Terapia del gestionale, una riga per volta: Conferma la premi tu">Terapia</button>` : "",
+                      this.pageType === "patient" && this.epDiQuesta() && richiesteStampabili(printModel(document, location.href)).length
+                        ? `<button role="menuitem" id="stampamenu" title="Etichette e lista esami delle richieste già confermate">Stampa le richieste</button>` : "",
+                      this.view === "dimissioni" ? `<button role="menuitem" id="dimexport" title="Salva i tuoi testi in un file JSON (e negli appunti)">Esporta i fogli (JSON)</button>
+                    <button role="menuitem" id="dimimport" title="Rimetti i testi di un JSON esportato">Importa i fogli…</button>` : ""])}
+                    ${this.menuSez("Strumenti", [
+                      inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">Modifica la stanza</button>` : "",
+                      inStanza && !this.stanzaEdit && hasExt() ? `<button role="menuitemcheckbox" id="seguesw" aria-checked="${segueAcceso()}" title="Ogni 10 minuti la lista smart del gestionale, letta dietro: chi c'è, l'area, il triage; chi esce è dimesso">${segueAcceso() ? "✓ " : ""}Segue il gestionale</button>` : "",
+                      hasExt() ? `<button role="menuitem" id="tabmenu" title="Il tabellone dei Pazienti in una scheda sua: da fissare, o sul secondo schermo">Tabellone</button>` : "",
+                      hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete"><span class="mico">${ICO_TEL}</span>iPhone</button>` : "",
+                      hasExt() ? `<button role="menuitem" id="regmenu" title="Registra le pagine, le richieste e i PDF di questa sessione, anonimizzati in uno zip che resta su questo PC finché non lo mandi tu">${
                       this.reg && this.reg.stato === "rec" ? (this.chipRec() ? "Ferma e scarica" : "Scarica la registrazione")
-                      : this.reg && this.reg.stato === "fermo" && !this.reg.esportata ? "Scarica la registrazione" : "Registra"}</button>` : ""}
-                    ${hasExt() ? `<button role="menuitem" id="portapri" title="L'indirizzo del portale clinico, se il pannello non compare sulla pagina dello storico">Indirizzo del portale</button>` : ""}
-                    ${this.stampaPronta() ? (this.stampaAuto.s.attiva === false
-                      ? `<button role="menuitem" id="stautosw" title="Ogni foglio va da solo alla sua stampante, senza dialogo">Stampa automatica: spenta · Accendi</button>`
-                      : `<button role="menuitem" id="stautosw" title="I fogli tornano a passare dal dialogo di stampa">Stampa automatica: attiva · Spegni</button>`) : ""}
-                    ${this.giroInCorso() ? "" : this.resetArmato() ? `<button role="menuitem" id="resetpaz" class="mrischio">Cancello tutto? Tocca di nuovo</button>`
-                      : `<button role="menuitem" id="resetpaz">Reset dati pazienti</button>`}
-                    ${(typeof chrome !== "undefined" && chrome.runtime?.id) && !this.giroInCorso() ? `<button role="menuitem" id="extreload" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">Ricarica estensione</button>` : ""}
-                    ${!this.aggNuova() ? "" : this.agg.puo ? `<button role="menuitem" id="aggapp" title="Aggiorna a ${esc(this.agg.nuova)}: la scarica, la installa e la ricarica">Aggiorna app</button>`
-                      : `<div class="mver">${esc(this.agg.come)}</div>`}
+                      : this.reg && this.reg.stato === "fermo" && !this.reg.esportata ? "Scarica la registrazione" : "Registra"}</button>` : "",
+                      `<button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">Tempi</button>`,
+                      `<button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">Riferimenti</button>`])}
+                    ${this.menuSez("Impostazioni", [
+                      hasExt() ? `<button role="menuitem" id="stampanti" title="Quale stampante è l'etichettatrice e quale l'A4, per la stampa automatica">Stampanti</button>` : "",
+                      !this.stampaPronta() ? "" : this.stampaAuto.s.attiva === false
+                        ? `<button role="menuitem" id="stautosw" title="Ogni foglio va da solo alla sua stampante, senza dialogo">Stampa automatica: spenta · Accendi</button>`
+                        : `<button role="menuitem" id="stautosw" title="I fogli tornano a passare dal dialogo di stampa">Stampa automatica: attiva · Spegni</button>`,
+                      hasExt() ? `<button role="menuitem" id="portapri" title="L'indirizzo del portale clinico, se il pannello non compare sulla pagina dello storico">Indirizzo del portale</button>` : "",
+                      `<button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${this.showLog ? "Nascondi il registro" : "Registro"}</button>`,
+                      this.giroInCorso() ? "" : this.resetArmato() ? `<button role="menuitem" id="resetpaz" class="mrischio">Cancello tutto? Tocca di nuovo</button>`
+                        : `<button role="menuitem" id="resetpaz">Reset dati pazienti</button>`,
+                      (typeof chrome !== "undefined" && chrome.runtime?.id) && !this.giroInCorso() ? `<button role="menuitem" id="extreload" title="Dopo aver sostituito i file nella cartella dell'estensione, questo la ricarica con la nuova versione">Ricarica estensione</button>` : "",
+                      !this.aggNuova() ? "" : this.agg.puo ? `<button role="menuitem" id="aggapp" title="Aggiorna a ${esc(this.agg.nuova)}: la scarica, la installa e la ricarica">Aggiorna app</button>`
+                        : `<div class="mver">${esc(this.agg.come)}</div>`])}
                     <div class="mver">${esc(APP)} ${VERSION}</div>
                   </div>` : ""}
                 </span>`}
@@ -8959,6 +8986,7 @@
           <button class="pill${this.fissata ? " fissa" : ""}" id="pinpill" aria-pressed="${this.fissata}" title="${this.fissata
             ? "Fissata: resta aperta. Un tocco la lascia richiudere uscendo col mouse; Esc la chiude" : "Si richiude uscendo col mouse: tocca per fissarla"}">${pillInner}</button></div>` : ""}`;
       } finally { this._staccando = false; }
+      this.ponteRimetti();
       this.colonnaMargine();
       this.bind();
       // Al passaggio la pill resta sopra la finestra: se copre i comandi in fondo all'intestazione (⋯, —), quelli si fanno in là
@@ -9425,7 +9453,7 @@
     }
     // la schermata dei Pazienti: quella che non è nessun'altra
     inPazienti() {
-      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "riferimenti", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
+      return !this.runState && !["esiti", "referto", "dimissioni", "dimtesto", "dimimport", "consensi", "eo", "eotesto", "tempi", "riferimenti", "iphone", "richieste", "stampa", "ricetta", "terapia"].includes(this.view);
     }
     // In fondo alla fila delle schede, solo in Modifica: + Letto, + Sedia,
     // + Area e Fine. Si entra in Modifica dal menu «⋯».
@@ -12450,6 +12478,79 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (vuoto) { vuoto.hidden = !!quante; vuoto.querySelector("span").textContent = q; }
     }
 
+    // ⋯ → iPhone: la pagina «iPhone» dell'estensione (ponte.html: il QR, il
+    // codice, Associa, Revoca, Prova la rete) dentro il pannello, in una
+    // cornice. Una cornice e non un disegno del pannello: la pagina del
+    // gestionale può leggere l'ombra del pannello (è aperta), non una cornice
+    // dell'estensione — e il QR porta la chiave dell'associazione. Se la
+    // cornice non si apre (una pagina fuori dalle origini del gestionale, un
+    // blocco), la pagina va in una scheda come prima, e il pannello lo dice.
+    viewIphone() {
+      if (!this._ponteNo) return `<div class="ponteslot" id="ponteslot"></div>`;
+      return `<div class="sec ponteno">
+        <div class="banner warn"><b>Qui la pagina dell'iPhone non si apre nel pannello</b>${this._ponteNo === "scheda"
+          ? "L'ho aperta in una scheda sua, accanto a questa." : this._ponteNo === "apro" ? "La apro in una scheda sua…"
+          : "E nemmeno in una scheda: ricarica la pagina (o l'estensione, da chrome://extensions) e riprova."}</div>
+        <button class="btn ghost" id="ponteapri">Aprila in una scheda</button></div>`;
+    }
+    ponteCornice() {
+      if (this._ponte) return this._ponte;
+      const f = document.createElement("iframe");
+      f.id = "pontecornice";
+      f.title = "Il pannello sull'iPhone";
+      const c = this._ponte = { f, pronto: false, timer: 0 };
+      // la pagina dice «pronto» appena parte; caricata senza dirlo (bloccata, una pagina d'errore) o mai caricata: in una scheda
+      const aspetta = (ms) => { clearTimeout(c.timer); c.timer = setTimeout(() => { if (this._ponte === c && !c.pronto) this.ponteInScheda(); }, ms); };
+      f.addEventListener("load", () => { if (!c.pronto) aspetta(1500); });
+      aspetta(8000);
+      if (!this._ponteAscolta) {
+        this._ponteAscolta = true;
+        let mia = "";
+        try { mia = new URL(chrome.runtime.getURL("")).origin; } catch { /* estensione ricaricata */ }
+        // solo la nostra cornice (la pagina non può fingersi lei), e solo due parole: nessun dato passa di qui
+        window.addEventListener("message", (e) => {
+          const p = this._ponte;
+          if (!p || !mia || e.origin !== mia || e.source !== p.f.contentWindow || !e.data) return;
+          if (e.data.psassistPonte === "pronto") { p.pronto = true; clearTimeout(p.timer); }
+          else if (e.data.psassistPonte === "esc" && !this.collapsed && formaOra() !== "colonna") this.riduci();
+        });
+      }
+      try { f.src = chrome.runtime.getURL("ponte.html"); } catch { aspetta(0); }
+      return c;
+    }
+    // Il ridisegno rifà l'ombra da capo: la cornice si mette da parte prima
+    // (nell'host, fuori dall'ombra: c'è ma non si vede) e torna al suo posto
+    // dopo; ridotto il pannello, aspetta lì. moveBefore la sposta senza
+    // ricaricarla (il QR resta davanti); dove non c'è, si ricarica.
+    ponteParcheggia() {
+      const f = this._ponte && this._ponte.f;
+      if (!f || !f.isConnected || f.parentNode === this.host || typeof this.host.moveBefore !== "function") return;
+      try { this.host.moveBefore(f, null); } catch { /* si ricaricherà */ }
+    }
+    ponteRimetti() {
+      const posto = this.root.querySelector("#ponteslot");
+      if (!posto) { if (this.view !== "iphone" || this._ponteNo) this.ponteChiudi(); return; }
+      const f = this.ponteCornice().f;
+      if (f.parentNode === posto) return;
+      if (f.isConnected && typeof posto.moveBefore === "function") { try { posto.moveBefore(f, null); return; } catch { /* sotto */ } }
+      posto.append(f);
+    }
+    ponteChiudi() {
+      const c = this._ponte;
+      if (!c) return;
+      this._ponte = null;
+      clearTimeout(c.timer);
+      c.f.remove();
+    }
+    async ponteInScheda() {
+      this.ponteChiudi();
+      this._ponteNo = "apro";
+      if (this.view === "iphone") this.render();
+      const r = await ask({ t: "ponteApri" });
+      this._ponteNo = r && r.ok ? "scheda" : "no";
+      if (this.view === "iphone") this.render();
+    }
+
     viewTempi() {
       const t = tempoInCorso();
       const chiusi = tempi().filter((x) => x.fine).sort((a, b) => b.inizio - a.inizio);
@@ -13275,6 +13376,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // un menu o una lista aperti (⋯, «Da fare», «Sposta in…», la sveglia), la Modifica della stanza, una
       // domanda a due tocchi (il reset, lo svuota carrello), un giro andato storto o fermato, una conferma in coda
       if (this.menuAperto || this.stanzaEdit || this._dfPresa || this._df?.pop?.isConnected || this._promMenu?.menu?.isConnected || this._stanzaMenu?.menu?.isConnected) return true;
+      // la pagina dell'iPhone: il mouse dentro la cornice non si vede da qui, e
+      // col QR davanti la mano va al telefono — si chiude con un clic fuori, — o Esc
+      if (this.view === "iphone") return true;
       if (this.resetArmato() || this._svuota || (this.runState && this.runState !== "done") || this.pending?.next) return true;
       if (String(this._tdTesto || "").trim() || String(this._filtro || "").trim()) return true;   // il Da fare del tabellone, il filtro a metà
       if (document.getElementById("psassist-confirm") || document.getElementById("psassist-print") || document.getElementById("psassist-visore")) return true;
@@ -13553,8 +13657,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.render();
       }));
       $("#verbtn")?.addEventListener("click", () => { this.showLog = !this.showLog; this.menuAperto = false; this.render(); });
-      // il ponte: la pagina dell'iPhone, e «Scollega» dall'intestazione
-      $("#pontemenu")?.addEventListener("click", () => { this.menuAperto = false; this.render(); ask({ t: "ponteApri" }); });
+      // il ponte: la pagina dell'iPhone (nel pannello, o in una scheda se lì non si apre), e «Scollega» dall'intestazione
+      $("#pontemenu")?.addEventListener("click", () => { this.menuAperto = false; this._ponteNo = ""; this.setView("iphone"); });
+      $("#ponteapri")?.addEventListener("click", () => this.ponteInScheda());
       $("#ponteoff")?.addEventListener("click", (e) => { e.stopPropagation(); ask({ t: "ponteScollega" }); });
       $("#ponterica")?.addEventListener("click", (e) => { e.stopPropagation(); ponteRicarica(); });
       $("#risall")?.addEventListener("click", () => this.caricaValori().catch(() => {}).then(() => this.caricaReferti()));

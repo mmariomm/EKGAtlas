@@ -120,7 +120,8 @@ passaggio** è la forma di partenza (l'ha chiesta il medico): il mouse fermo sul
 secondo (chi ci passa sopra e basta non la apre) apre la finestra senza togliere la tastiera al
 gestionale, e mezzo secondo dopo che il mouse è uscito la richiude — non con il cursore o del testo non
 mandato in un campo del pannello, esami scelti, un ordine in partenza o in coda, un giro andato storto,
-un trascinamento, il menu ⋯, la lista Da fare o un «Sposta in…» aperti, la Modifica della stanza.
+un trascinamento, il menu ⋯, la lista Da fare o un «Sposta in…» aperti, la Modifica della stanza, la
+pagina dell'iPhone (⋯ → iPhone: il mouse dentro non si vede, e col QR la mano va al telefono).
 Ripassando si riapre **dove eri**: la stessa schermata, scorsa allo stesso punto. Un clic sulla pill (che
 resta, sopra la finestra, e si trascina anche lì; se copre ⋯ e — quelli si fanno in là) la fissa, un
 altro la libera, Esc la chiude; la pill che ricompare sotto il mouse fermo non si riapre da sola; col
@@ -142,11 +143,20 @@ pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha a
 (un paziente scelto dall'elenco, Richieste…) o quando ha qualcosa da dirti (un avviso). Un
 **giro di esami** no: dalla spedizione alle etichette parla la striscia nell'angolo, e la
 finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
-«✓ Copiato · incolla». Nel menu **⋯**: **Al centro** e **Affianca a destra** (una colonna, col
-gestionale accanto), **iPhone** (il Ponte, solo con l'estensione), **Tempi** (il cronometro), **Riferimenti** (i *can't-miss killers*), poi — solo dove servono — **Esporta i fogli (JSON)** e
-**Importa i fogli…** (in Dimissioni), il
-Registro, **Stampanti** e — scelte le due stampanti — **Stampa automatica: attiva · Spegni** (vedi
-«Stampa automatica»), **Ricarica estensione** e la versione. Il cronometro compare in intestazione **solo mentre corre**
+«✓ Copiato · incolla». Il menu **⋯** è a sezioni, ognuna col suo titolo piccolo, le voci corte due
+per riga; una sezione che su quella pagina non ha voci non c'è. In cima **Forma** (vedi sopra), con
+**Al centro** e **Affianca a destra** (una colonna, col gestionale accanto). Poi:
+- **Paziente** (sulla sua pagina): **Ricetta SISS** e **Terapia** (solo con l'estensione), **Stampa
+  le richieste**; in Dimissioni anche **Esporta i fogli (JSON)** e **Importa i fogli…** (sulla lista,
+  dove un paziente non c'è, la sezione si chiama **Dimissioni**);
+- **Strumenti**: sulla stanza **Modifica la stanza** e **Segue il gestionale**; **Tabellone**,
+  **iPhone** (il Ponte) e **Registra** (solo con l'estensione), **Tempi** (il cronometro),
+  **Riferimenti** (i *can't-miss killers*);
+- **Impostazioni**: **Stampanti**, e — scelte le due stampanti — **Stampa automatica: attiva ·
+  Spegni** (vedi «Stampa automatica»), **Indirizzo del portale**, il **Registro**, **Reset dati
+  pazienti**, **Ricarica estensione** e, quando c'è una versione nuova, **Aggiorna app**;
+
+e in fondo la versione. Il cronometro compare in intestazione **solo mentre corre**
 (un tocco sul tempo apre la scheda, ⏹ lo ferma).
 
 **Riferimenti** (menu ⋯) è la tabella del medico, i *can't-miss killers*, nel suo inglese: in cima
@@ -1196,6 +1206,12 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   telefono solo, il primo che entra; il QR si rivede solo nei primi due minuti. Regge il browser
   chiuso e riaperto; una scheda del gestionale alla pagina d'accesso chiude la sessione, non
   l'associazione. **Revoca l'iPhone** la chiude prima.
+  La pagina dell'iPhone si apre **dentro il pannello**, al posto del corpo (nessuna scheda nuova): ‹ o
+  una scheda la lasciano, ridotto il pannello resta com'era, col QR davanti. È la pagina
+  dell'estensione in una cornice, non un disegno del pannello: la pagina del gestionale vede la
+  cornice ma non ci legge dentro, e il QR porta la chiave. Dove la cornice non si apre (il pannello su
+  un indirizzo diverso da quelli del gestionale, un blocco), la pagina va in una scheda sua come
+  prima, e il pannello lo dice.
 - **Ordinare dal telefono**: la conferma porta nome intero, età e posto («Ordino 2 esami per ROSSI
   MARIO · 77 anni · OBI 2? Tocca di nuovo»; due pazienti con lo stesso nome: «⚠ Ordino … per ROSSI
   MARIO · …9001 · …», col segno dell'elenco); un doppio tocco non conferma; se la rete perde
@@ -1212,7 +1228,8 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   sessione si chiude da sola; tornando sull'app si riapre da sola.
 - **Prova la rete** (⋯ → iPhone): dal PC dell'ospedale, sulla presa vera del ponte, in pochi secondi
   dice se si raggiunge e quanto ci mette; «Tieni aperto 15 minuti» dice se e perché cade; il testo da
-  copiare ha un blocco «Per l'IT».
+  copiare ha un blocco «Per l'IT». Si apre in una scheda sua: un quarto d'ora deve reggere i cambi di
+  pagina del gestionale.
 
 Come funziona, la messa in servizio (l'indirizzo si fissa una volta in `ponte/host.txt`; il ponte va
 col deploy del sito EKG Atlas), che cosa vede l'IT e che cosa

@@ -3,7 +3,15 @@
 // registro del ponte. La chiave sta nel service worker: questa pagina la vede
 // solo dentro il QR, e il QR solo nei primi due minuti, prima che un telefono
 // entri. L'indirizzo del ponte è fissato nella build (ponte/host.txt).
+// Di solito sta nel pannello (⋯ → iPhone), in una cornice: lì è compatta, e
+// dice al pannello che è partita (se no il pannello la apre in una scheda) e
+// che si è premuto Esc. Solo queste due parole: niente della pagina esce di qui.
 /* global qrcodegen */
+if (window.top !== window) {
+  document.documentElement.classList.add("cornice");
+  parent.postMessage({ psassistPonte: "pronto" }, "*");
+  addEventListener("keydown", (e) => { if (e.key === "Escape") parent.postMessage({ psassistPonte: "esc" }, "*"); });
+}
 const $ = (id) => document.getElementById(id);
 const hhmm = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 const chiedi = (m) => chrome.runtime.sendMessage(m).catch(() => null);

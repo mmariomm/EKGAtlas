@@ -4,7 +4,8 @@
  * gestionale simulato, il ripetitore Node (la stessa logica del Worker del
  * sito) e l'app del telefono in un secondo browser, in formato iPhone, con la
  * sua rete fra lei e il ripetitore (per perdere messaggi, come il 5G).
- * Associazione dal QR (una volta, un telefono solo), elenco, esiti con
+ * ⋯ → iPhone dentro il pannello (una cornice dell'estensione, e la scheda
+ * quando la cornice non si apre), associazione dal QR (una volta, un telefono solo), elenco, esiti con
  * «Aggiorna i valori», un ordine dal telefono fino alle etichette (il doppio
  * tocco, la risposta persa), nota e promemoria, la spia sul PC, i 3 minuti
  * senza comandi, «Scollega», un altro dispositivo, la pagina ricaricata, il
@@ -255,22 +256,52 @@ await doc.evaluate(({ CF_B, bUrl }) => {
 }, { CF_B, bUrl: B.patientUrl });
 await suPagina(doc, A.worklistUrl);   // il medico lascia il PC sulla lista
 
-// ⋯ → iPhone apre la pagina del ponte
+// ⋯ → iPhone: la pagina del ponte DENTRO il pannello, in una cornice
+// dell'estensione — nessuna scheda nuova. (La cornice e non un disegno del
+// pannello: l'ombra del pannello la pagina del gestionale la legge, una
+// cornice dell'estensione no — e il QR porta la chiave.)
+const corniceIn = async (p, timeout = 10000) => {
+  for (const t0 = Date.now(); Date.now() - t0 < timeout; await sospendi(150)) {
+    const f = p.frames().find((x) => x.url().startsWith(EXTURL("ponte.html")));
+    if (f && await f.locator("#stato b").count().catch(() => 0)) return f;
+  }
+  return null;
+};
 await $panel(doc, "#expand").click();
 await doc.waitForSelector("#psassist-host .card", { timeout: 8000 });
 await $panel(doc, "#menubtn").click();
-const nasce = nuovaPagina();
+check(await $panel(doc, '.menu .msez[aria-label="Strumenti"] #pontemenu').count() === 1, "«iPhone» sta nel menu ⋯, fra gli Strumenti");
+const nasce = nuovaPagina(4000);
 await $panel(doc, "#pontemenu").click();
-const ponte = await nasce;
-check(!!ponte && ponte.url() === EXTURL("ponte.html"), `⋯ → iPhone apre la pagina del ponte (got ${ponte && ponte.url()})`);
-await ponte.waitForSelector("#stato b");
+let ponte = await corniceIn(doc);
+const nata = await nasce;
+await sospendi(300);
+// (le schede di sottofondo del gestionale, «Segue il gestionale», possono nascere intanto: conta che non sia la pagina del ponte)
+const schedaPonte = ctx.pages().find((p) => p.url().startsWith("chrome-extension:") && /\/ponte\.html/.test(p.url()));
+check(!schedaPonte && !(nata && /^chrome-extension:/.test(nata.url())), `⋯ → iPhone non apre una scheda nuova (${nata ? "nata: " + nata.url() : "nessuna scheda nata"})`);
+check(!!ponte && await $panel(doc, ".card.iphone #ponteslot > iframe#pontecornice").count() === 1 && await $panel(doc, ".menu").count() === 0,
+  `…apre la vista «iPhone» del pannello: la pagina del ponte in una cornice (got ${ponte && ponte.url()})`);
+const srcCornice = await $panel(doc, "#pontecornice").getAttribute("src");
+check(/^chrome-extension:\/\/[0-9a-f-]{36}\/ponte\.html$/.test(srcCornice) && !srcCornice.includes(extId),
+  `la cornice si apre dall'indirizzo dinamico dell'estensione, non dal suo ID (${srcCornice})`);
+check(await doc.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector("#pontecornice").contentDocument === null),
+  "la pagina del gestionale vede la cornice ma non ci legge dentro (un'altra origine)");
+const altoCornice = await $panel(doc, "#pontecornice").boundingBox(), altoCorpo = await $panel(doc, ".bd").boundingBox();
+check(altoCornice && altoCorpo && Math.abs(altoCornice.y + altoCornice.height - (altoCorpo.y + altoCorpo.height)) <= 2 && altoCornice.height > 300,
+  `la cornice prende tutto il corpo del pannello che resta (${altoCornice && Math.round(altoCornice.height)} px)`);
+check(await ponte.evaluate(() => document.documentElement.classList.contains("cornice") && getComputedStyle(document.querySelector("h1")).display === "none" && getComputedStyle(document.body).paddingTop === "14px"),
+  "dentro il pannello la pagina è compatta: niente testata, niente margini di pagina");
 check(/\(ekg-atlas\.whirly\.workers\.dev\)/.test(await ponte.locator("#dove").innerText()) && !(await ponte.locator("#associa").isDisabled()) && /Nessun iPhone associato/.test(await ponte.locator("#stato").innerText()),
   `l'indirizzo del ponte è quello fissato nella build (ponte/host.txt): ekg-atlas.whirly.workers.dev (${await ponte.locator("#dove").innerText()})`);
 check(await ponte.locator("input").count() === 0, "l'indirizzo del ponte non si scrive in nessuna pagina: niente campo");
 // (per le prove, e solo verso questo PC: il ripetitore locale)
 await sw.evaluate((u) => chrome.storage.local.set({ "ponte.host": u }).then(() => ponteAvvia()), relay.url);
-await ponte.reload();
-await ponte.waitForSelector("#stato b");
+// via dalla vista, la cornice se ne va; ⋯ → iPhone di nuovo, una cornice nuova (che legge il ripetitore locale)
+await $panel(doc, '[data-seg="eo"]').click();
+check(await $panel(doc, "#pontecornice").count() === 0 && !doc.frames().some((f) => f.url().includes("/ponte.html")), "lasciata la vista «iPhone», la cornice non c'è più");
+await $panel(doc, "#menubtn").click();
+await $panel(doc, "#pontemenu").click();
+ponte = await corniceIn(doc);
 await ponte.locator("#associa").click();
 await ponte.waitForSelector("#qr svg", { timeout: 8000 });
 const url1 = await qrUrl();
@@ -292,8 +323,92 @@ check(/Mostra il QR/.test(await ponte.locator("#associa").innerText()), "nascost
 await ponte.locator("#associa").click();
 await ponte.waitForSelector("#qr svg", { timeout: 8000 });
 check(await qrUrl() === url1, "…e mostra lo stesso");
-await ponte.setViewportSize({ width: 1366, height: 768 });
-await shot(ponte, "pc-1-qr-associazione");
+// il pannello si ridisegna (il menu aperto e chiuso), si riduce e si riapre: la cornice è la stessa, col QR davanti
+await ponte.evaluate(() => { window.__stessa = 1; });
+await $panel(doc, "#menubtn").click();
+await $panel(doc, "#menubtn").click();
+await $panel(doc, "#collapse").click();
+check(await $panel(doc, ".card").count() === 0 && await doc.evaluate(() => !!document.querySelector("#psassist-host > iframe#pontecornice")), "ridotto il pannello, la cornice aspetta da parte (non si vede)");
+await $panel(doc, "#expand").click();
+await doc.waitForSelector("#psassist-host .card #pontecornice", { timeout: 5000 });
+ponte = await corniceIn(doc);
+check(await ponte.evaluate(() => window.__stessa) === 1 && await ponte.locator("#qr svg").count() === 1 && (await ponte.locator("#qrcodice").innerText()).trim() === codice1,
+  "ridisegnato, ridotto e riaperto: la stessa pagina, senza ricaricarsi, col QR e il codice ancora lì");
+await shot(doc, "pc-1-qr-associazione");
+
+// ===========================================================================
+sezione("⋯ → iPhone al passaggio, Esc, «Prova la rete» dalla cornice, e la cornice che non si apre");
+const g = await ctx.newPage();
+await suPagina(g, A.worklistUrl);
+await sospendi(400);
+const apertaG = async () => (await $panel(g, ".card").count()) === 1;
+// al passaggio (la forma di partenza): il mouse fermo sulla pill la apre, senza fissarla
+const pillG = await $panel(g, "#expand").boundingBox();
+await g.mouse.move(pillG.x + pillG.width / 2, pillG.y + pillG.height / 2, { steps: 3 });
+await sospendi(700);
+check(await apertaG() && await $panel(g, "#pinpill[aria-pressed=false]").count() === 1, "(al passaggio: aperta dal mouse, non fissata)");
+const menuG = await $panel(g, "#menubtn").boundingBox();
+await g.mouse.move(menuG.x + menuG.width / 2, menuG.y + menuG.height / 2, { steps: 4 });
+await $panel(g, "#menubtn").click();
+await $panel(g, "#pontemenu").click();
+const pg = await corniceIn(g);
+await g.mouse.move(4, 760, { steps: 4 });
+await sospendi(1300);
+check(!!pg && await apertaG() && await $panel(g, "#pontecornice").count() === 1,
+  "al passaggio, uscito il mouse, la vista «iPhone» resta aperta (il mouse nella cornice non si vede, e col QR la mano va al telefono)");
+await pg.locator('a[href="ponte-prova.html"]').focus();
+const fuocoDentro = await pg.evaluate(() => document.hasFocus() && document.activeElement?.tagName === "A");
+await g.keyboard.press("Escape");
+check(fuocoDentro && await finche(async () => !(await apertaG()), 4000), "Esc dentro la cornice (il fuoco è lì) riduce il pannello, come Esc nel pannello");
+// «Prova la rete» dalla cornice: in una scheda sua (la tenuta di 15 minuti deve reggere i cambi di pagina del gestionale)
+await $panel(g, "#expand").click();
+const pg2 = await corniceIn(g);
+const nasceProva = nuovaPagina(8000);
+const inoltrati0 = inoltrati.length;
+await pg2.locator('a[href="ponte-prova.html"]').click();
+const provaDaCornice = await nasceProva;
+check(!!provaDaCornice && provaDaCornice.url() === EXTURL("ponte-prova.html"), `«Prova la rete» dalla cornice apre la prova in una scheda sua (got ${provaDaCornice && provaDaCornice.url()})`);
+// (finita la prova — la sua stanza è buttata — prima di andare avanti col ripetitore)
+await provaDaCornice?.waitForFunction(() => !document.getElementById("ancora").disabled, null, { timeout: 30000 }).catch(() => {});
+await provaDaCornice?.close();
+// (i suoi cinque messaggi — [i, 1, 2, 3], nella stanza di prova — non sono del ponte: fuori dal conto del ripetitore, più sotto)
+const diProva = (b) => b.length === 4 && b[1] === 1 && b[2] === 2 && b[3] === 3;
+inoltrati.push(...inoltrati.splice(inoltrati0).filter((b) => !diProva(b)));
+await g.bringToFront();
+// Una cornice che non si apre. Qui la pagina le rimette l'indirizzo statico
+// dell'estensione — che una pagina web non può aprire (use_dynamic_url): è
+// bloccata come lo sarebbe su un'origine fuori dal manifest. La pagina
+// dell'iPhone va in una scheda, come prima, e il pannello lo dice.
+await $panel(g, '[data-seg="eo"]').click();
+await g.evaluate((id) => {
+  const r = document.getElementById("psassist-host").shadowRoot;
+  new MutationObserver(() => {
+    const f = r.querySelector("#pontecornice");
+    if (f && !f.dataset.rotta) { f.dataset.rotta = "1"; f.src = `chrome-extension://${id}/ponte.html`; }
+  }).observe(r, { childList: true, subtree: true });
+}, extId);
+const nasceScheda = nuovaPagina(15000);
+await $panel(g, "#menubtn").click();
+await $panel(g, "#pontemenu").click();
+const scheda = await nasceScheda;
+check(!!scheda && scheda.url() === EXTURL("ponte.html"), `la cornice non si apre: la pagina dell'iPhone si apre in una scheda, come prima (got ${scheda && scheda.url()})`);
+const detto = await finche(async () => /non si apre nel pannello/.test(await $panel(g, ".bd").innerText().catch(() => "")) && /in una scheda sua/.test(await $panel(g, ".bd").innerText().catch(() => "")), 5000);
+check(detto && await $panel(g, "#pontecornice").count() === 0 && await $panel(g, "#ponteapri").count() === 1,
+  `e il pannello lo dice, con «Aprila in una scheda» (${(await $panel(g, ".bd").innerText().catch(() => "")).replace(/\n+/g, " / ").slice(0, 140)})`);
+await shot(g, "pc-8-iphone-in-una-scheda");
+if (scheda) {
+  await scheda.waitForSelector("#stato b", { timeout: 10000 }).catch(() => {});
+  check(/iPhone|associat/.test(await scheda.locator("#stato").innerText().catch(() => "")) && !(await scheda.evaluate(() => document.documentElement.classList.contains("cornice"))),
+    "nella scheda, la pagina intera di sempre, e il service worker le risponde");
+  await scheda.close();
+}
+const nasceScheda2 = nuovaPagina(8000);
+await $panel(g, "#ponteapri").click();
+const scheda2 = await nasceScheda2;
+check(!!scheda2 && scheda2.url() === EXTURL("ponte.html"), "«Aprila in una scheda» la riapre");
+await scheda2?.close();
+await g.close();
+await doc.bringToFront();
 
 // ===========================================================================
 sezione("l'iPhone: il QR, una volta");
@@ -446,10 +561,13 @@ check(cpC.dev === (await chiaveTel(secondo.p)).dev && cpC.dev !== dev0 && cpC.sc
   "sul PC: il telefono dell'associazione è il nuovo, stessa chiave e stessa scadenza (il cambio non la allunga), i conti dei codici sbagliati azzerati");
 const stC = await statoPonte();
 check(!!stC.sessione && stC.cambiato === cpC.cambiata && /iPhone cambiato alle \d\d:\d\d/.test(await registroPonte()), "e il registro del ponte dice «iPhone cambiato alle HH:MM»");
-await ponte.bringToFront();
-check(await finche(async () => /iPhone cambiato alle \d\d:\d\d/.test(await ponte.locator("#stato").innerText()), 8000), `la pagina ⋯ → iPhone del PC lo mostra: «iPhone cambiato alle HH:MM» (${(await ponte.locator("#stato").innerText()).replace(/\n/g, " / ")})`);
-await shot(ponte, "pc-5-iphone-cambiato");
+// (il pannello del PC è ridotto, sulla vista «iPhone»: riaperto, la cornice è lì)
 await doc.bringToFront();
+await $panel(doc, "#expand").click();
+ponte = await corniceIn(doc);
+check(await finche(async () => /iPhone cambiato alle \d\d:\d\d/.test(await ponte.locator("#stato").innerText()), 8000), `la pagina ⋯ → iPhone del PC lo mostra: «iPhone cambiato alle HH:MM» (${(await ponte.locator("#stato").innerText()).replace(/\n/g, " / ")})`);
+await shot(doc, "pc-5-iphone-cambiato");
+await $panel(doc, "#collapse").click();
 
 let richiesta93 = null;
 for (const f of uscite) { try { if ((await P.apri(CH1.salutoTel, new Uint8Array(f), P.TIPO.SALUTO_TEL)).dati.cambio === "93") richiesta93 = f; } catch { /* altro */ } }
@@ -1138,7 +1256,8 @@ await tocca(tel, '[data-a="indietro"]').catch(() => {});
 // ===========================================================================
 sezione("il service worker si ferma e riparte");
 await aspettaTel(tel, /ROSSI MARIO/, 15000);
-await ponte.close();   // (la pagina del ponte, aperta, lo sveglierebbe lei: devono farlo le schede del gestionale)
+// (la pagina del ponte, aperta, lo sveglierebbe lei: devono farlo le schede del gestionale)
+check(!ctx.pages().some((p) => p.frames().some((f) => f.url().includes("/ponte.html"))), "(nessuna pagina del ponte aperta, né scheda né cornice)");
 await sw.evaluate(() => { self.__vecchio = true; });
 const dalPc0 = rete.dalPc.length;
 // Chrome lo ferma (qui lo si ferma dal protocollo di debug, come farebbe Chrome)
@@ -1733,6 +1852,7 @@ check(/Per l'IT/.test(copiato) && /\/ponte\/ws/.test(copiato) && /TCP 443/.test(
   "nel testo copiato, il blocco «Per l'IT»: la presa, TCP 443, attraverso il proxy, il battito, niente ispezione TLS");
 check(!altriHost.length, `nessun altro sito, nessun UDP: solo la presa del ponte (${altriHost.join(", ") || "niente altro"})`);
 await shot(prova, "pc-4-prova-rete");
+await prova.close();
 
 await telBrowser.close();
 await ctx.close();

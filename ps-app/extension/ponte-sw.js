@@ -936,11 +936,13 @@ function ponteDaPagina(msg, sender, reply) {
   // il ponte non fa niente, e la sessione si chiude. L'associazione resta:
   // rientrati nel gestionale, il telefono riapre con un tocco, senza QR.
   if (msg.t === "ponteLogin" && gestionale) return fai(async () => { await ponteFine("login"); return { ok: true }; });
+  // (la pagina in una scheda: quando nel pannello non si apre. L'indirizzo
+  // dinamico di getURL vale per la cornice nel gestionale, non per una scheda)
   if (msg.t === "ponteApri" && gestionale) {
     return fai(async () => {
-      const t = sender.tab;
-      await chrome.tabs.create({ url: chrome.runtime.getURL("ponte.html"), windowId: t.windowId, index: t.index + 1 })
-        .catch(() => chrome.tabs.create({ url: chrome.runtime.getURL("ponte.html") }));
+      const t = sender.tab, url = new URL("ponte.html", chrome.runtime.getURL("")).href;
+      await chrome.tabs.create({ url, windowId: t.windowId, index: t.index + 1 })
+        .catch(() => chrome.tabs.create({ url }));
       return { ok: true };
     });
   }

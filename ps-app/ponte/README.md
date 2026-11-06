@@ -395,7 +395,10 @@ codice, o chiusa la vista (✕).
   l'iPhone** dal PC (la chiave di quel telefono non apre più niente).
 - **Il QR sullo schermo** vale quanto la chiave, ma per poco e per uno: si rivede solo nei primi due
   minuti, si toglie da solo appena l'iPhone entra, e dopo il primo telefono non apre a nessun altro.
-  Nel dubbio, Revoca.
+  Nel dubbio, Revoca. Nel pannello (⋯ → iPhone) il QR sta nella pagina dell'estensione, in una
+  cornice: la pagina del gestionale vede la cornice ma non ci legge dentro (un'altra origine); si apre
+  solo dalle origini del gestionale (`web_accessible_resources`, solo `ponte.html`) e da un indirizzo
+  che cambia a ogni avvio del browser (`use_dynamic_url`).
 - **«Cancella e riassocia»**: la vera protezione è la chiave del QR, che ha solo chi l'ha inquadrato;
   il 93 evita soltanto un cambio per sbaglio (sono due cifre) e non va preso per una password. Un cambio
   si vede sul PC («iPhone cambiato alle …», nel Registro) e il primo telefono ne esce.

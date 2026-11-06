@@ -6923,6 +6923,93 @@ async function scenarioMenuAltro(browser) {
   await b.context.close();
 }
 
+// Il menu ⋯ a sezioni: in cima la Forma (con Al centro · Affianca a destra),
+// poi Paziente · Strumenti · Impostazioni, ognuna col suo titolo piccolo; una
+// sezione che lì non ha voci non c'è; le voci corte due per riga. Ogni voce di
+// prima c'è ancora, col suo id, dove si offriva. Senza estensione (il
+// bookmarklet) e con un'estensione finta (le voci che la chiedono).
+async function scenarioMenuSezioni(browser) {
+  const scen = "menu a sezioni";
+  const sezioni = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".menu > .msez")].map((s) => ({
+    t: s.querySelector(":scope > .mtit")?.textContent || "",
+    ids: [...s.querySelectorAll(":scope > button, :scope > .mforma")].map((b) => b.id || b.className),
+  })));
+  const sparse = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".menu button")].filter((b) => !b.closest(".msez")).length);
+  const menu = async (page) => { if (!(await $panel(page, ".menu").count())) await $panel(page, "#menubtn").click(); await $panel(page, ".menu").waitFor(); };
+  const chiudi = async (page) => { if (await $panel(page, ".menu").count()) await $panel(page, "#menubtn").click(); };
+  const vedi = (s) => s.map((x) => `${x.t || "·"}: ${x.ids.join(" ")}`).join(" | ");
+  const di = (s, t) => (s.find((x) => x.t === t) || { ids: [] }).ids;
+  const EXT = ["tabmenu", "pontemenu", "regmenu", "stampanti", "portapri", "ricmenu", "termenu"];
+
+  // ---- senza estensione (bookmarklet), sulla pagina di un paziente con richieste confermate
+  const mock = createMock({ seedConfirmed: true, withResults: true });
+  const a = await newPage(browser, mock);
+  await a.page.goto(mock.patientUrl);
+  await a.page.waitForSelector("#psassist-host .card", { state: "attached" });
+  await menu(a.page);
+  let s = await sezioni(a.page);
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Paziente","Strumenti","Impostazioni"]' && s[0].ids[0] === "mforma" && !(await sparse(a.page)),
+    `paziente: la Forma in cima, poi Paziente · Strumenti · Impostazioni, e nessuna voce fuori da una sezione (got ${vedi(s)})`);
+  check(scen, di(s, "Paziente").join() === "stampamenu" && di(s, "Strumenti").join() === "tempimenu,rifmenu" && di(s, "Impostazioni").join() === "verbtn,resetpaz"
+    && !EXT.some((id) => s.some((x) => x.ids.includes(id))), `senza estensione: Stampa le richieste · Tempi, Riferimenti · Registro, Reset — niente voci dell'estensione (got ${vedi(s)})`);
+  const tit = await a.page.evaluate(() => { const t = document.getElementById("psassist-host").shadowRoot.querySelector(".menu .mtit"), c = getComputedStyle(t); return { up: c.textTransform, px: parseFloat(c.fontSize) }; });
+  check(scen, tit.up === "uppercase" && tit.px < 12, `i titoli delle sezioni: piccoli, maiuscoli (got ${JSON.stringify(tit)})`);
+  const riga = async (x, y) => { const p = await $panel(a.page, `#${x}`).boundingBox(), q = await $panel(a.page, `#${y}`).boundingBox(); return !!p && !!q && Math.abs(p.y - q.y) < 1 && q.x > p.x && p.height >= 32; };
+  const mb = await $panel(a.page, ".menu").boundingBox();
+  check(scen, (await riga("tempimenu", "rifmenu")) && (await riga("verbtn", "resetpaz")) && mb.y + mb.height <= 900,
+    `le voci corte, due per riga, alte almeno 32 px (Tempi · Riferimenti, Registro · Reset), e il menu sta nello schermo (${Math.round(mb.height)} px)`);
+  await shotSide(a.page, "menu-sezioni-bookmarklet");
+  await chiudi(a.page);
+  // in Dimissioni: Esporta e Importa i fogli, fra le voci del paziente
+  await $panel(a.page, '[data-seg="dimissioni"]').click();
+  await menu(a.page);
+  s = await sezioni(a.page);
+  check(scen, di(s, "Paziente").join() === "stampamenu,dimexport,dimimport", `in Dimissioni: Esporta e Importa i fogli, nella sezione del paziente (got ${vedi(s)})`);
+  await chiudi(a.page);
+  // la lista, sulla stanza: niente sezione del paziente; Modifica la stanza fra gli Strumenti
+  await a.page.goto(mock.worklistUrl);
+  await a.page.waitForSelector("#psassist-host .card", { state: "attached" });
+  await menu(a.page);
+  s = await sezioni(a.page);
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "stmodmenu,tempimenu,rifmenu",
+    `sulla lista (la stanza): niente sezione Paziente, «Modifica la stanza» in testa agli Strumenti (got ${vedi(s)})`);
+  await chiudi(a.page);
+  await $panel(a.page, '[data-seg="dimissioni"]').click();
+  await menu(a.page);
+  s = await sezioni(a.page);
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Dimissioni","Strumenti","Impostazioni"]' && di(s, "Dimissioni").join() === "dimexport,dimimport",
+    `sulla lista, in Dimissioni: i fogli in una sezione «Dimissioni» (non c'è un paziente) (got ${vedi(s)})`);
+  await a.context.close();
+
+  // ---- con un'estensione (finta: chrome.runtime.id), sulla pagina del paziente e sulla lista
+  const mock2 = createMock({ seedConfirmed: true, withResults: true });
+  const b = await newPage(browser, mock2);
+  await b.context.addInitScript(() => { window.chrome = { runtime: { id: "finta", sendMessage(_m, cb) { if (typeof cb === "function") cb({ ok: false }); } } }; });
+  await b.page.goto(mock2.patientUrl);
+  await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
+  await menu(b.page);
+  s = await sezioni(b.page);
+  check(scen, di(s, "Paziente").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,regmenu,tempimenu,rifmenu"
+    && di(s, "Impostazioni").join() === "stampanti,portapri,verbtn,resetpaz,extreload" && !(await sparse(b.page)),
+    `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Registra, Tempi, Riferimenti · Stampanti, Indirizzo del portale, Registro, Reset, Ricarica (got ${vedi(s)})`);
+  await shotSide(b.page, "menu-sezioni-paziente");
+  await chiudi(b.page);
+  await b.page.goto(mock2.worklistUrl);
+  await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
+  await menu(b.page);
+  s = await sezioni(b.page);
+  check(scen, JSON.stringify(s.map((x) => x.t)) === '["","Strumenti","Impostazioni"]' && di(s, "Strumenti").join() === "stmodmenu,seguesw,tabmenu,pontemenu,regmenu,tempimenu,rifmenu",
+    `con l'estensione, sulla stanza: Modifica la stanza e Segue il gestionale fra gli Strumenti (got ${vedi(s)})`);
+  await shotSide(b.page, "menu-sezioni-stanza");
+  // ⋯ → iPhone senza un'estensione che risponda: la vista lo dice, niente cornice rotta
+  await $panel(b.page, "#pontemenu").click();
+  await b.page.waitForFunction(() => /non si apre nel pannello/.test(document.getElementById("psassist-host")?.shadowRoot?.querySelector(".bd")?.innerText || ""), null, { timeout: 5000 }).catch(() => {});
+  check(scen, /non si apre nel pannello/.test(await $panel(b.page, ".bd").innerText().catch(() => ""))
+    && (await $panel(b.page, "#pontecornice").count()) === 0 && (await $panel(b.page, "#ponteapri").count()) === 1,
+    "⋯ → iPhone dove l'estensione non risponde: la vista «iPhone» lo dice, con «Aprila in una scheda», senza una cornice vuota");
+  await b.context.close();
+}
+
 // ---------------------------------------------------------------- onda 1
 // La pagina vera del paziente elenca ogni richiesta (anche quelle fatte a
 // mano) in una riga con TIPO=RICH: l'icona del tipo col RICHIESTA_ID, l'ora
@@ -7554,6 +7641,7 @@ const scenarios = [
   ["richieste compatte: una casella, tre colonne, la barra solo con qualcosa, Ctrl+Invio, Stampa nel ⋯", scenarioRichiesteCompatte],
   ["esiti: il workup — fuori range in cima, Lab · ECG · Imaging, attese, ↗ PDF", scenarioWorkup],
   ["menu ⋯: tempi, riferimenti, comandi rari, niente paragrafi, ricarica", scenarioMenuAltro],
+  ["menu ⋯ a sezioni: Paziente · Strumenti · Impostazioni, due voci per riga", scenarioMenuSezioni],
   ["no-patient page has no exams", scenarioNoPatientPage],
   ["panel titled by patient", scenarioPatientTitle],
   ["stop button", scenarioStopButton],

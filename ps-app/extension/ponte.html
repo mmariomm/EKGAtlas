@@ -42,6 +42,10 @@
   ol li time { color: var(--grigio); font-variant-numeric: tabular-nums; flex: none; }
   .vuoto { color: var(--grigio); font-size: 12.5px; }
   @media (max-width: 560px) { .qrsec { grid-template-columns: 1fr; justify-items: center; } }
+  /* dentro il pannello (⋯ → iPhone, in una cornice): niente testata né bordi di pagina, scorre da sé */
+  .cornice body { background: #fff; padding: 14px 24px 18px; }
+  .cornice .box { max-width: 720px; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+  .cornice h1, .cornice .sub { display: none; }
 </style></head><body>
 <main class="box">
   <h1><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="4.4" y="1.4" width="7.2" height="13.2" rx="1.7"/><path d="M7 12.1h2"/></svg>Il pannello sull'iPhone</h1>
