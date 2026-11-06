@@ -39,9 +39,10 @@
  * c'è qualcosa) e svuotata all'avvio del browser: chiuso il browser, sparisce.
  * Quando un ordine finisce male (arancione o rosso: un errore, esami che
  * mancano, un ORA-, etichette non stampate — lo dice bg.js, regDopoOrdini e
- * regDopoErrore), dopo un minuto per vedere com'è andata a finire salva quei
- * minuti come zip «auto», anonimizzato e controllato come gli altri; un
- * incidente, uno zip. Mentre il medico registra a mano, vince la sua.
+ * regDopoErrore), aspetta un minuto per vedere com'è andata a finire (intanto
+ * i 3 minuti prima dell'incidente non si potano) e salva da lì a adesso come
+ * zip «auto», anonimizzato e controllato come gli altri; un incidente, uno
+ * zip. Mentre il medico registra a mano, vince la sua.
  * Vede le costanti di bg.js (SA4, ALLOWED_ORIGINS, FINALI, corto, b64, segnaErrore): è caricato da lì.
  */
 importScripts("registra-db.js");
@@ -49,6 +50,7 @@ const REG = "registra";                 // lo stato, in storage.local: lo legge 
 const REG_AUTO = "registra.auto";       // storage.local: false = registrazione automatica spenta (di norma accesa)
 const REG_ELENCO = "registra.elenco";   // storage.local: { n, byte, ts } — cambia quando cambiano gli zip (il pannello si ridisegna)
 const REG_INC = "registra.incidente";   // storage.session: { ts, motivi } — l'incidente che aspetta il suo minuto
+const REG_VIVO = "registra.vivo";       // storage.session: il browser è aperto da allora (gli ultimi minuti sono di questa sessione)
 const REG_DURATA = 60 * 60e3;
 const REG_TTL = 12 * 3600e3;
 const REG_FINESTRA = 3 * 60e3;          // la registrazione automatica: gli ultimi 3 minuti, mai di più
@@ -83,6 +85,14 @@ const regOrigini = () => ({ gestionale: SA4, portale: regPortale, altri: [...ALL
 
 let regScadenza = null;
 async function regLeggi() {
+  // Il browser si è appena aperto (storage.session muore con lui: il segno non
+  // c'è) — o l'estensione è stata ricaricata: gli ultimi minuti di prima via,
+  // prima di tenere qualunque cosa. (Anche runtime.onStartup, qui sotto: questo
+  // vale pure dove quello non arriva.)
+  if (!(await chrome.storage.session.get(REG_VIVO).catch(() => ({})))[REG_VIVO]) {
+    await regScorreVia();
+    await chrome.storage.session.set({ [REG_VIVO]: Date.now() }).catch(() => {});
+  }
   const o = await chrome.storage.local.get([REG, "portale", REG_AUTO]);
   regStato = o[REG] || null;
   regPortale = o.portale || "";
@@ -141,7 +151,8 @@ async function regCancella() {
 // ------------------------------------------------- gli ultimi 3 minuti
 // Potati a ogni scrittura (al più ogni 20 secondi) e, finché la tabella non è
 // vuota, ogni 30 secondi con un allarme (che sveglia il service worker anche
-// se il gestionale tace): niente resta più di REG_FINESTRA, salvo quei secondi.
+// se il gestionale tace): niente resta più di REG_FINESTRA, salvo quei secondi
+// — e il minuto in cui un incidente aspetta: lì si tengono i suoi 3 minuti prima.
 let regPotaT = 0, regPotaArmata = false;
 function regPotaPoi() {
   if (Date.now() - regPotaT > 20e3) { regPotaT = Date.now(); regPota().catch(() => {}); }
@@ -150,7 +161,9 @@ function regPotaPoi() {
   chrome.alarms.get(REG_AL_POTA).then((a) => a || chrome.alarms.create(REG_AL_POTA, { periodInMinutes: 0.5 })).catch(() => { regPotaArmata = false; });
 }
 async function regPota() {
-  const limite = Date.now() - REG_FINESTRA;
+  // (con un incidente che aspetta il suo minuto, si tengono i 3 minuti prima dell'incidente)
+  const inc = (await chrome.storage.session.get(REG_INC).catch(() => ({})))[REG_INC];
+  const limite = Math.min(Date.now() - REG_FINESTRA, inc && inc.ts ? inc.ts - REG_FINESTRA : Infinity);
   const resta = await regTx(REG_SC, "readwrite", (s) => {
     const ix = s.index("ts");
     const c = ix.openKeyCursor(IDBKeyRange.upperBound(limite, true));
@@ -166,7 +179,7 @@ async function regScorreVia() {
   await chrome.storage.session.remove(REG_INC).catch(() => {});
   if (chrome.alarms) { regPotaArmata = false; await chrome.alarms.clear(REG_AL_POTA).catch(() => {}); await chrome.alarms.clear(REG_AL_INC).catch(() => {}); }
 }
-// all'avvio del browser gli ultimi minuti di ieri non ci sono più
+// all'avvio del browser gli ultimi minuti di ieri non ci sono più (e regLeggi, col segno in storage.session)
 chrome.runtime.onStartup?.addListener(() => { regScorreVia().catch(() => {}); });
 chrome.alarms?.onAlarm.addListener((a) => {
   if (a.name === REG_AL_POTA) regPota().catch(() => {});
@@ -485,7 +498,8 @@ async function regIncidente(motivo) {
   await regPronto;
   if (!regAuto || regAttiva()) return false;   // spenta, o registra il medico: vince la sua
   return regInFilaInc(async () => {
-    const m = corto(String(motivo || "ordine finito male").replace(/\s+/g, " ").trim(), 160);
+    // (niente numeri di richiesta o di episodio: nello zip sono rimappati, qui si tolgono)
+    const m = corto(String(motivo || "ordine finito male").replace(/\d{6,}/g, "…").replace(/\s+/g, " ").trim(), 160);
     const inc = (await chrome.storage.session.get(REG_INC))[REG_INC];
     if (inc) {   // lo stesso incidente: un motivo in più, lo stesso zip
       if (!inc.motivi.includes(m) && inc.motivi.length < 5) { inc.motivi.push(m); await chrome.storage.session.set({ [REG_INC]: inc }); }
@@ -511,9 +525,10 @@ async function regIncidenteSalva() {
   await regPronto;
   if (!regAuto || regAttiva()) return null;
   await regScarica().catch(() => {});
-  const fine = Date.now(), da = fine - REG_FINESTRA, motivi = inc.motivi.join(" · ");
+  // dai 3 minuti prima dell'incidente a adesso (il minuto dopo, per vedere com'è finita)
+  const fine = Date.now(), da = inc.ts - REG_FINESTRA, motivi = inc.motivi.join(" · ");
   return regInFila(() => regSalvaOra({ fonte: REG_SC, da, motivo: "auto", errore: motivi, quando: inc.ts,
-    st: { versione: chrome.runtime.getManifest().version, inizio: da, fine, comeFinita: `automatica: gli ultimi ${REG_FINESTRA / 60e3} minuti, dopo «${motivi}»`, origini: regOrigini() } })
+    st: { versione: chrome.runtime.getManifest().version, inizio: da, fine, comeFinita: `automatica: dai ${REG_FINESTRA / 60e3} minuti prima di «${motivi}» a ${Math.max(1, Math.round((fine - inc.ts) / 60e3))} dopo`, origini: regOrigini() } })
     .catch((e) => { segnaErrore("registra", { motivo: corto(e && e.message || e, 140), auto: true }); return null; }));
 }
 

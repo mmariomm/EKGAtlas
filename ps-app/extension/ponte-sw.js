@@ -34,7 +34,7 @@
  * Mentre è aperta, ogni scheda del gestionale lo dice nell'intestazione del
  * pannello: «iPhone collegato · Scollega».
  */
-/* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL, stampaScelte, stampaDalTel, stampaTelVista */
+/* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL, stampaScelte, stampaDalTel, stampaTelVista, regElenco, regPezzo, regZipVia */
 
 const PONTE_HOST_PROVA = "ponte.host";      // storage.local: solo per le prove, e solo verso questo PC
 const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, scade, creata, usata, dev, nTel, cambiata?, errori?, blocco?, cambi? }
@@ -449,6 +449,9 @@ async function ponteRisposta(s, d) {
     }
     if (d.cmd === "pdf") return await ponteDaiPdf(s, d);
     if (d.cmd === "stampa") return await ponteStampa(s, d);
+    if (d.cmd === "registrazioni") return await ponteRegistrazioni(s, d);
+    if (d.cmd === "registrazione") return await ponteDaiRegistrazione(s, d);
+    if (d.cmd === "registrazioneVia") return await ponteViaRegistrazione(s, d);
     if (d.cmd === "cartella") return await ponteCartella(ponteArgomenti(d));
     if (d.cmd === "cartellaSalva") return await ponteCartellaSalva(d);
     if (["pazienti", "esiti", "richieste", "nota", "promemoria", "fatto"].includes(d.cmd)) {
@@ -508,6 +511,40 @@ async function ponteDaiPdf(s, d) {
   if (d.i >= n) return { ok: false, errore: "Il PDF non è più sul PC" };
   if (d.i === 0) { ponteNota("iPhone · un referto PDF aperto sul telefono"); await ponteScriviStato(); }
   return { ok: true, dati: { size, n, i: d.i, b: b.slice(d.i * PONTE_PDF_PEZZO, (d.i + 1) * PONTE_PDF_PEZZO) } };
+}
+
+// Le registrazioni (registra.js, ⋯ → Registrazioni): gli zip salvati su
+// questo PC, già anonimizzati e controllati. Il telefono ne vede l'elenco —
+// niente pazienti: il nome dello zip, quando, quanto, a mano o automatica e
+// perché, il controllo —, li scarica a pezzi come i PDF dei referti (una
+// risposta per pezzo, ~390 KB, dentro la stessa sessione cifrata) e li
+// cancella, sul PC. Si danno e si cancellano solo quelli elencati in questa
+// sessione. Ogni comando va nel registro del ponte.
+const PONTE_ZIP_MAX = 100 * 1024 * 1024;     // oltre, «scaricala sul PC» (un telefono tiene lo zip in memoria)
+async function ponteRegistrazioni(s, d) {
+  if (typeof regElenco !== "function") return { ok: false, errore: "Sul PC il registratore non c'è" };
+  const l = await regElenco(false);
+  s.zip = new Set(l.map((z) => z.id));
+  if (!d.auto) { ponteNota(`iPhone · elenco delle registrazioni (${l.length})`); await ponteScriviStato(); }
+  return { ok: true, dati: l.map((z) => ({ ...z, troppo: z.byte > PONTE_ZIP_MAX })) };
+}
+async function ponteDaiRegistrazione(s, d) {
+  const id = typeof d.zip === "string" ? d.zip : "";   // (non «id»: quello è il numero del messaggio)
+  if (!Number.isSafeInteger(d.i) || d.i < 0 || !s.zip || !s.zip.has(id)) return { ok: false, errore: "Registrazione non disponibile: riapri l'elenco" };
+  const p = await regPezzo(id, d.i, PONTE_PDF_PEZZO / 4 * 3);
+  if (!p) return { ok: false, errore: "La registrazione non è più sul PC" };
+  if (p.size > PONTE_ZIP_MAX) return { ok: false, errore: "Troppo grande per il telefono: scaricala sul PC" };
+  if (d.i === 0) { ponteNota(`iPhone · registrazione ${corto(p.nome, 80)} scaricata sul telefono`); await ponteScriviStato(); }
+  return { ok: true, dati: { size: p.size, n: p.n, i: p.i, b: p.b } };
+}
+async function ponteViaRegistrazione(s, d) {
+  const id = typeof d.zip === "string" ? d.zip : "";
+  if (!s.zip || !s.zip.has(id)) return { ok: false, errore: "Registrazione non disponibile: riapri l'elenco" };
+  const z = await regZipVia(id);
+  s.zip.delete(id);
+  ponteNota(z ? `iPhone · registrazione ${corto(z.nome, 80)} cancellata dal PC` : "iPhone · una registrazione già cancellata");
+  await ponteScriviStato();
+  return { ok: true, dati: { id, gia: !z } };
 }
 
 // Un PDF dall'iPhone da stampare qui, sull'A4 (⋯ → «Stampa un PDF»): arriva a

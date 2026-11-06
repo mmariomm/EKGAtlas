@@ -181,6 +181,23 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
               font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
 .ref .manca { font-size: 13px; color: var(--grigio); margin-top: 6px; }
 
+/* --- le registrazioni (⋯ → Registrazioni) ------------------------------- */
+.zip { padding: 12px 14px; }
+.zip + .zip { border-top: 1px solid var(--linea); }
+.zip .z1 { display: flex; align-items: center; gap: 8px; }
+.zip .z1 b { font-variant-numeric: tabular-nums; }
+.zip .zkb { margin-left: auto; color: var(--grigio); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.ztag { font-size: 12px; font-weight: 650; padding: 1px 8px; border-radius: 999px; background: var(--pill); color: var(--testo2); }
+.ztag.auto { background: var(--ambraf); color: var(--ambra); }
+.zip .z2 { margin-top: 4px; font-size: 14px; overflow-wrap: anywhere; }
+.zip .z3 { margin-top: 3px; font-size: 13px; font-weight: 600; color: var(--verde); }
+.zip .z3.ko { color: var(--rosso); }
+.zip .zbtn { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.zip a.btnmini { display: inline-flex; align-items: center; text-decoration: none; }
+.btnmini.via { color: var(--rosso); }
+.btnmini.arma { background: var(--rossof); border-color: var(--rossob); }
+.btnmini:disabled { color: var(--grigio2); }
+
 /* --- richieste --------------------------------------------------------- */
 .q-w { padding: 12px 14px 14px; }
 .q-w input { width: 100%; min-height: 44px; border: 1px solid var(--campo); border-radius: 12px; padding: 12px 14px; font-size: 16px; background: var(--carta); }

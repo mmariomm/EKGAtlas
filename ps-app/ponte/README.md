@@ -117,6 +117,18 @@ sessione. Vedi:
   LaserJet A4», «Mandato a …» in ambra, o l'errore. Al massimo 15 MB. Sul PC il registro del ponte
   dice «PDF dall'iPhone stampato su …».
 
+- **Registrazioni** (⋯) — gli zip che il PC ha salvato (⋯ → Registrazioni sul PC: registrate a mano, o
+  automatiche dopo un ordine finito male), già anonimizzati e controllati: quando, quanto, a mano o
+  automatica e perché, «controllo superato» o «restano N dati da controllare». Niente pazienti.
+  **Scarica** lo chiede a pezzi (comando `registrazione`, ~390 KB l'uno, come i PDF dei referti) dentro la
+  stessa sessione cifrata, li ricompone controllando la misura e l'intestazione dello zip e lo tiene
+  in memoria (mai su disco) finché la sessione è aperta; poi **Condividi…** apre il foglio di
+  condivisione di iOS (`navigator.share` con il file: per mandarlo all'app di Claude), o, dove non c'è,
+  **Salva** lo scarica come un file. Al più 100 MB («Troppo grande per il telefono: scaricala sul
+  PC»). **Cancella** chiede «Cancello dal PC? Tocca di nuovo» e la toglie dal PC. Il PC dà e
+  cancella solo quelle elencate nella sessione; il registro del ponte annota elenco, scarico e
+  cancellazione.
+
 Di notte l'app è scura, come il telefono. Ogni bottone è grande almeno 44 punti. Sul telefono c'è
 solo quello che serve: niente etichette di sezione, conteggi o testi di contorno (vedi «L'app del
 telefono», più sotto).
