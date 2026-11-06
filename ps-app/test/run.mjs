@@ -7797,6 +7797,24 @@ async function scenarioListaLetti(browser) {
   const tit = (await page.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector(".pzcarta")?.textContent || "")).replace(/\s+/g, " ");
   check(scen, /ESPOSITO LUCIA 91/.test(tit) && /ECG (in attesa|\d+′|\dh)/.test(tit) && !/⏳/.test(tit),
     `il passaggio del mouse sul letto: la scheda, chi è con l'età, l'ECG in attesa (got: ${JSON.stringify(tit)})`);
+  // il rosso dei valori è solo dei critici (PRIMA_DI_TUTTI): un valore nuovo fuori range ma non critico
+  // accende il blu «nuovo»; uno critico, il rosso. COLOMBO (oss3) aspetta da 10′: grigio, finché non arriva un valore
+  const conValori = async (valori) => {
+    await page.evaluate((valori) => {
+      const S = JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}");
+      S["999007"] = { ...S["999007"], valori };
+      localStorage.setItem("psassist:stato.v1", JSON.stringify(S));
+    }, valori);
+    await page.reload();
+    await page.waitForSelector("#psassist-host .card, #psassist-host #expand", { state: "attached" });
+    if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
+    if (await $panel(page, '[data-modo="mappa"]').count()) await $panel(page, '[data-modo="mappa"]').click();
+    await page.waitForSelector('#psassist-host [data-letto="oss3"] .stseg', { timeout: 5000 }).catch(() => {});
+    return pallino("oss3");
+  };
+  const nonCritico = await conValori({ nuovi: 1, fuori: 0, fuoriTot: 1 }), critico = await conValori({ nuovi: 2, fuori: 1, fuoriTot: 2 });
+  check(scen, /\bnuovo\b/.test(nonCritico) && /\bros\b/.test(critico),
+    `un valore nuovo fuori range non critico: pallino blu «nuovo»; uno critico: rosso (got: ${nonCritico} · ${critico})`);
   await context.close();
 }
 

@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.76.0";
+  const VERSION = "3.77.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -3832,8 +3832,8 @@
   // Il letto è piccolo: nome ed età, e al massimo UN segnale — un pallino.
   // Rosso: un esame oltre la seconda soglia, valori nuovi critici (solo gli
   // analiti di PRIMA_DI_TUTTI) fuori range, un promemoria passato. Ambra:
-  // oltre la prima soglia, altri valori nuovi fuori range, o un promemoria fra
-  // meno di 15 minuti. Blu: un risultato nuovo. Grigio: qualcosa aspetta
+  // oltre la prima soglia, o un promemoria fra meno di 15 minuti. Blu: un
+  // risultato nuovo, anche fuori range se non è critico. Grigio: qualcosa aspetta
   // (un esame, una cosa da fare). Il resto lo dice il passaggio del mouse.
   function segnaleLetto(st, aperte, ora = Date.now()) {
     const perche = { ros: [], amb: [], nuovo: [], att: [] };
@@ -3845,7 +3845,7 @@
         perche[b || "att"].push(`${nome} in attesa${min == null ? "" : ` da ${attesaTesto(min)}`}`);
       }
       if (st.rosso) perche.ros.push("valori nuovi critici fuori range");
-      else if (st.valoriFuoriTot) perche.amb.push(st.valoriFuoriTot === 1 ? "un valore nuovo fuori range" : `${st.valoriFuoriTot} valori nuovi fuori range`);
+      else if (st.valoriFuoriTot) perche.nuovo.push(st.valoriFuoriTot === 1 ? "un valore nuovo fuori range" : `${st.valoriFuoriTot} valori nuovi fuori range`);
       else if (st.valoriNuovi) perche.nuovo.push(st.valoriNuovi === 1 ? "un valore nuovo" : `${st.valoriNuovi} valori nuovi`);
       if (st.nuovi.length) perche.nuovo.push(`nuovo: ${st.nuovi.map((e) => frase(e.label)).join(", ")}`);
     }

@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.76.0";
+  const VERSION = "3.77.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -1908,6 +1908,13 @@
   // prelievo di ciascun esame (i più gravi per primi), la troponina con la
   // misura precedente e la sua ora.
   const PRIMA_DI_TUTTI = ["K", "Na", "Hb", "Trop", "Lac", "pH", "Glu", "Cr", "PLT", "INR", "GB", "PCR", "Ca++", "pCO2", "pO2", "HCO3"];
+  // «Critico» per il pallino rosso del letto: un analita fra quelli da guardare
+  // per primi (PRIMA_DI_TUTTI). Non c'è altra soglia clinica nel codice: il
+  // resto fuori range è «da guardare», non allarme.
+  function analitaCritico(nome) {
+    const s = siglaCurata(nome) ? sigla(nome) : String(nome).replace(/\s+/g, " ").trim().split(" ")[0];
+    return PRIMA_DI_TUTTI.includes(s.replace(/^[A-Z]·/, ""));
+  }
   function fuoriRangeUltimi(st) {
     if (!st || !st.righe) return [];
     const oggi = new Date();
@@ -3742,7 +3749,7 @@
     const v = s.valori || {};
     const letto = s.letto || ultimoNostro;
     return {
-      esami, tipi, nuovi, valoriNuovi: v.nuovi || 0, valoriFuori: v.fuori || 0,
+      esami, tipi, nuovi, valoriNuovi: v.nuovi || 0, valoriFuori: v.fuori || 0, valoriFuoriTot: v.fuoriTot ?? (v.fuori || 0),
       nuovo: !!nuovi.length || (v.nuovi || 0) > 0, rosso: (v.fuori || 0) > 0,
       // la pagina del paziente non è mai stata letta: si sa solo quello che è partito da qui
       letto, vecchio: !!letto && ora - letto > STATO_VECCHIO, soloQui: !s.letto,
@@ -3775,7 +3782,7 @@
       ...st.esami.map((e) => `${frase(e.label)}: ${e.fatto ? `${e.fatto === "referto" ? "refertato" : "risultati"}${e.ts ? ` (richiesta ${hhmm(e.ts)})` : ""}`
         : `in attesa${e.ts ? ` da ${attesaTesto(minDa(e.ts, ora))} (richiesta ${hhmm(e.ts)})` : ""}`}${e.qui ? " · ordinato da qui" : ""}`),
       st.nuovi.length ? `● nuovo da quando hai guardato gli Esiti: ${st.nuovi.map((e) => frase(e.label)).join(", ")}` : "",
-      st.valoriNuovi ? `${st.valoriNuovi} ${st.valoriNuovi === 1 ? "valore nuovo" : "valori nuovi"} non ancora letti${st.valoriFuori ? `, ${st.valoriFuori} fuori range` : ""}` : "",
+      st.valoriNuovi ? `${st.valoriNuovi} ${st.valoriNuovi === 1 ? "valore nuovo" : "valori nuovi"} non ancora letti${st.valoriFuoriTot ? `, ${st.valoriFuoriTot} fuori range${st.valoriFuori ? ` (${st.valoriFuori} da guardare subito)` : ""}` : ""}` : "",
       st.soloQui ? "Solo gli esami ordinati da qui: la pagina del paziente non è ancora stata letta" : "",
       st.letto ? `letto alle ${hhmm(st.letto)}` : "",
     ].filter(Boolean).join("\n");
@@ -3807,7 +3814,7 @@
   }
   // I tre segni della riga del tabellone: Lab · ECG · RX, ognuno col suo
   // stato. Grigio: chiesto e ancora in attesa, col tempo dalla richiesta
-  // («Lab 50′»); arancio: tornato in parte; blu: tornato tutto. Mai chiesto:
+  // («Lab 50′»); ambra: tornato in parte; verde: tornato tutto. Mai chiesto:
   // niente. Nessun valore, nessun testo.
   function marchiEsami(st, ora = Date.now()) {
     if (!st) return "";
@@ -3823,9 +3830,10 @@
     }).join("");
   }
   // Il letto è piccolo: nome ed età, e al massimo UN segnale — un pallino.
-  // Rosso: un esame oltre la seconda soglia, valori nuovi fuori range, un
-  // promemoria passato. Ambra: oltre la prima soglia, o un promemoria fra
-  // meno di 15 minuti. Blu: un risultato nuovo. Grigio: qualcosa aspetta
+  // Rosso: un esame oltre la seconda soglia, valori nuovi critici (solo gli
+  // analiti di PRIMA_DI_TUTTI) fuori range, un promemoria passato. Ambra:
+  // oltre la prima soglia, o un promemoria fra meno di 15 minuti. Blu: un
+  // risultato nuovo, anche fuori range se non è critico. Grigio: qualcosa aspetta
   // (un esame, una cosa da fare). Il resto lo dice il passaggio del mouse.
   function segnaleLetto(st, aperte, ora = Date.now()) {
     const perche = { ros: [], amb: [], nuovo: [], att: [] };
@@ -3836,7 +3844,8 @@
         const min = x.attesa ? minDa(x.attesa, ora) : null, b = min == null ? "" : attesaBanda(t, min);
         perche[b || "att"].push(`${nome} in attesa${min == null ? "" : ` da ${attesaTesto(min)}`}`);
       }
-      if (st.rosso) perche.ros.push("valori nuovi fuori range");
+      if (st.rosso) perche.ros.push("valori nuovi critici fuori range");
+      else if (st.valoriFuoriTot) perche.nuovo.push(st.valoriFuoriTot === 1 ? "un valore nuovo fuori range" : `${st.valoriFuoriTot} valori nuovi fuori range`);
       else if (st.valoriNuovi) perche.nuovo.push(st.valoriNuovi === 1 ? "un valore nuovo" : `${st.valoriNuovi} valori nuovi`);
       if (st.nuovi.length) perche.nuovo.push(`nuovo: ${st.nuovi.map((e) => frase(e.label)).join(", ")}`);
     }
@@ -5601,7 +5610,9 @@
   // green = verified in cart, amber = armed/attention, red = abort/error.
 
   const COLORS = `
-    :host { all: initial; }
+    /* un colore, un significato: fatto = verde, in attesa = ambra, errore o critico = rosso, informazione o in corso = blu, il resto = grigio.
+       I colori del triage e quelli del gestionale restano come sono. */
+    :host { all: initial; --ok: #177245; --att: #8A5A00; --err: #B3261E; --info: #0B5CAD; --neutro: #5B6B7A; }
     [hidden] { display: none !important; }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
     .wrap { position: fixed; top: 10px; right: 10px; z-index: 2147483647; color: #16232E; }
@@ -5630,7 +5641,7 @@
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .pill .tick { font-size: 13px; font-weight: 800; }
     /* quale quesito è partito: una riga piccola sotto il resoconto */
-    .pill .l3 { font-size: 10.5px; font-weight: 500; opacity: .8; max-width: 100%;
+    .pill .l3 { font-size: 11px; font-weight: 500; opacity: .8; max-width: 100%;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .stopmini { display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 999px; width: 30px; height: 30px; cursor: pointer; font-size: 12px;
                 background: #B3261E; color: #fff; box-shadow: 0 6px 20px rgba(9,42,74,.35); }
@@ -5655,7 +5666,7 @@
     /* in coda dietro le etichette di un ordine: la clessidra, che al passaggio è il ✕ */
     .pjx.att .pjxx, .pjx.att:hover .pjclx { display: none; }
     .pjx.att:hover .pjxx { display: inline; }
-    .pjx.att .pjclx { font-size: 10px; }
+    .pjx.att .pjclx { font-size: 11px; }
     .pjico { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; color: #0B5CAD; }
     .pjico svg { width: 13px; height: 13px; }
     .pjob.ok { background: #E8F5EC; border-color: #9FD3B3; }
@@ -5664,7 +5675,7 @@
     .pjico.pulsa { animation: psaRespira 1.2s ease-in-out infinite; }
     @keyframes psaRespira { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
     @media (prefers-reduced-motion: reduce) { .pjico.pulsa { animation: none; } }
-    .pjrist { border: 1px solid #B3261E; background: #fff; color: #B3261E; border-radius: 999px; padding: 0 7px; font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; height: 18px; }
+    .pjrist { border: 1px solid #B3261E; background: #fff; color: #B3261E; border-radius: 999px; padding: 0 7px; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; height: 18px; }
     /* un'azione tranquilla accanto al resoconto («Ristampa») */
     .strazione { border: 1px solid #C4D0DC; background: #fff; color: #0B5CAD; border-radius: 999px; padding: 6px 11px;
                  font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(9,42,74,.18); }
@@ -5760,12 +5771,12 @@
     /* le sezioni: un titolo piccolo, le voci due per riga (una lunga si prende la riga) */
     .menu .msez { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 0; }
     .menu .msez + .msez { border-top: 1px solid #EEF2F6; }
-    .menu .mtit { flex: 0 0 100%; padding: 3px 10px 1px; font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #5B6B7A; }
+    .menu .mtit { flex: 0 0 100%; padding: 3px 10px 1px; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #5B6B7A; }
     .menu .msez > button { flex: 1 0 calc(50% - 1px); width: auto; min-height: 34px; white-space: nowrap; }
     .menu .msez > .mforma, .menu .msez > .mver { flex: 0 0 100%; box-sizing: border-box; }
     /* una versione nuova (⋯ → «Aggiorna app»): un puntino sul ⋯ */
     .iconbtn.agg { position: relative; }
-    .iconbtn.agg::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #D93025; }
+    .iconbtn.agg::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--info); }
     /* Forma: Finestra · Al passaggio · Colonna, in una riga del menu */
     .menu .mforma { display: flex; align-items: center; gap: 2px; padding: 4px 4px 4px 10px; font-size: 12px; color: #5B6B7A; white-space: nowrap; }
     .menu .mforma span { margin-right: 6px; }
@@ -5797,11 +5808,11 @@
               padding: 7px 24px; font-size: 12px; line-height: 1.8; color: #16232E; }
     .selbar .selgrp { color: #0B5CAD; font-weight: 800; }
     .selbar .selrow { display: block; }
-    .selbar .selcount { float: right; color: #5B6B7A; font-size: 10.5px; font-weight: 700; letter-spacing: .4px; }
+    .selbar .selcount { float: right; color: #5B6B7A; font-size: 11px; font-weight: 700; letter-spacing: .4px; }
     .selitem { display: inline; white-space: nowrap; border-radius: 4px; padding: 1px 2px; }
     .selitem:hover { background: #EAF2FA; }
     .selitem .selx { display: none; border: 0; background: #B3261E; color: #fff; border-radius: 999px;
-                     width: 15px; height: 15px; line-height: 13px; font-size: 10px; cursor: pointer; padding: 0;
+                     width: 15px; height: 15px; line-height: 13px; font-size: 11px; cursor: pointer; padding: 0;
                      vertical-align: 1px; margin-left: 2px; }
     .selitem:hover .selx { display: inline-block; }
     .bd { padding: 0; }
@@ -5833,7 +5844,7 @@
            min-height: 27px; overflow: hidden; }
     .opt:hover { border-color: #0B5CAD; background: #F4F8FB; }
     .opt .box { flex: 0 0 13px; width: 13px; height: 13px; border: 1.5px solid #9DBFDE; border-radius: 3px;
-                display: inline-grid; place-items: center; font-size: 9px; font-weight: 800; color: transparent; }
+                display: inline-grid; place-items: center; font-size: 11px; font-weight: 800; color: transparent; }
     .opt.on { background: #EAF2FA; border-color: #0B5CAD; color: #16232E; font-weight: 600; }
     .opt.on .box { background: #0B5CAD; border-color: #0B5CAD; color: #fff; }
     .opt .nm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -5877,7 +5888,7 @@
     .chip.manca { background: #FBEBEA; border-color: #E9BAB6; color: #7c1a14; cursor: default; font-weight: 600; }
     .chip.controlla { background: #FFF7E6; border-color: #F0D49A; color: #8a4b03; cursor: default; font-weight: 600; }
     /* l'emogas entrato nella versione di sempre: «al posto di EGA VENOSA NEW» */
-    .chip .alposto { margin-left: 6px; font-size: 10.5px; font-weight: 500; color: #5B6B7A; }
+    .chip .alposto { margin-left: 6px; font-size: 11px; font-weight: 500; color: #5B6B7A; }
     /* un'azione secondaria scritta, non un bottone: «solo carrello», «+ aggiungi» */
     .lnk { border: 0; background: transparent; padding: 2px 4px; font: inherit; font-size: 12.5px; font-weight: 600; color: #0B5CAD;
            cursor: pointer; text-decoration: underline; text-decoration-color: #9DBFDE; text-underline-offset: 3px; white-space: nowrap; }
@@ -5951,7 +5962,7 @@
     .acitem.on { color: #177245; font-weight: 600; }
     .acitem.on::after { content: "✓"; margin-left: auto; }
     .acnm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .actag { flex: 0 0 auto; margin-left: auto; font-size: 9.5px; font-weight: 800; letter-spacing: .4px; color: #5B6B7A;
+    .actag { flex: 0 0 auto; margin-left: auto; font-size: 11px; font-weight: 800; letter-spacing: .4px; color: #5B6B7A;
              background: #F4F8FB; border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
     .acitem.on .actag { margin-left: 0; }
     .acempty { padding: 8px; font-size: 12px; color: #8296A9; }
@@ -5967,6 +5978,13 @@
     details.dett > summary { cursor: pointer; font-size: 11.5px; font-weight: 600; color: #5B6B7A; margin: 2px 0 8px; }
     details.dett .reghd { font-size: 11.5px; color: #5B6B7A; margin: 10px 0 6px; }
     details.reflab > summary { cursor: pointer; }
+    /* Dimissioni: le deleghe per il ritiro, una riga quieta sotto i fogli */
+    details.ritiro { margin-top: 10px; }
+    details.ritiro > summary { cursor: pointer; list-style: none; font-size: 12px; font-weight: 600; color: var(--neutro); padding: 4px 2px; }
+    details.ritiro > summary::-webkit-details-marker { display: none; }
+    details.ritiro > summary::after { content: " ▸"; }
+    details.ritiro[open] > summary::after { content: " ▾"; }
+    details.ritiro > .mlist { margin-top: 4px; }
     /* l'angolo per ridimensionare: in basso a destra, come in ogni finestra, e
        come lì senza disegno (il bordo tondo lo tagliava): lo dice il cursore */
     .rsz { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 7; touch-action: none; }
@@ -5987,20 +6005,19 @@
     .prow:hover { border-color: #0B5CAD; background: #F4F8FB; }
     .prow.hot { border-color: #9DBFDE; background: #EAF2FA; }
     .pline1 { font-size: 12px; font-variant-numeric: tabular-nums; }
-    .pline1 small { color: #5B6B7A; font-size: 10.5px; }
-    .pline2 { font-size: 10.5px; color: #5B6B7A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    .pline1 small { color: #5B6B7A; font-size: 11px; }
+    .pline2 { font-size: 11px; color: #5B6B7A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
     .rdot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #C4D0DC; background: transparent; }
-    .rdot.saved { background: #177245; border-color: #177245; }
+    .rdot.saved { background: #9AA8B5; border-color: #9AA8B5; }   /* salvato sul PC: un fatto di cache, non una notizia */
     .rdot.open { background: #9DBFDE; border-color: #9DBFDE; }
     .rdot.busy { background: #E5A83B; border-color: #E5A83B; animation: psaPulse 1s infinite; }
     .rdot.err { background: #B3261E; border-color: #B3261E; }
-    .rrow.saved { background: #F6FBF8; border-color: #BCE0C9; }
     .mini { float: right; border: 1px solid #C4D0DC; background: #fff; color: #0B5CAD; border-radius: 6px;
-            padding: 1px 7px; font-size: 10.5px; font-weight: 700; cursor: pointer; letter-spacing: 0; text-transform: none; }
+            padding: 2px 8px; font-size: 12px; min-height: 24px; font-weight: 700; cursor: pointer; letter-spacing: 0; text-transform: none; }
     .mini:hover { border-color: #0B5CAD; background: #F4F8FB; }
     .rwhen { flex: 0 0 auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: #35506B; font-variant-numeric: tabular-nums; }
-    .rsys { flex: 0 0 auto; font-size: 9.5px; font-weight: 800; letter-spacing: .5px; color: #5B6B7A; background: #F4F8FB;
+    .rsys { flex: 0 0 auto; font-size: 11px; font-weight: 800; letter-spacing: .5px; color: #5B6B7A; background: #F4F8FB;
             border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
     .rlab { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     /* Le schermate in UNA fila di pillole, nell'ordine in cui si lavora:
@@ -6027,7 +6044,7 @@
     .segtit .mico { display: inline-flex; vertical-align: -3px; margin-right: 7px; color: #5B6B7A; }
     .rgo { flex: 0 0 auto; color: #8296A9; font-size: 12px; }
     .dlist, .mlist { display: flex; flex-direction: column; gap: 4px; }
-    .dsep { display: flex; align-items: center; gap: 8px; margin: 8px 2px 3px; font-size: 10.5px;
+    .dsep { display: flex; align-items: center; gap: 8px; margin: 8px 2px 3px; font-size: 11px;
             color: #5B6B7A; text-transform: uppercase; letter-spacing: .06em; }
     .dsep::after { content: ""; flex: 1 1 auto; height: 1px; background: #E3E8EF; }
     .drow { display: flex; align-items: stretch; gap: 5px; }
@@ -6044,11 +6061,11 @@
     .dcopia.fatto .dico { color: #124F31; }
     .dnome { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; color: #16232E; overflow: hidden;
              white-space: nowrap; text-overflow: ellipsis; }
-    .dmeta { flex: 0 0 auto; font-size: 10.5px; color: #5B6B7A; }
+    .dmeta { flex: 0 0 auto; font-size: 11px; color: #5B6B7A; }
     .dico { flex: 0 0 auto; font-size: 13px; color: #6E8398; }
     .dmod { color: #0B5CAD; font-weight: 800; margin-left: 5px; }
     .dtuo { margin-left: 7px; padding: 1px 7px; border-radius: 999px; background: #EAF2FA; color: #0B5CAD;
-            font-size: 10.5px; font-weight: 600; vertical-align: 1px; }
+            font-size: 11px; font-weight: 600; vertical-align: 1px; }
     /* in fondo all'elenco, un foglio da scrivere: tratteggiato, come un posto libero */
     .dnuovo { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 38px; margin-top: 2px; padding: 8px 11px;
               border: 1px dashed #C4D0DC; border-radius: 9px; background: transparent; cursor: pointer; text-align: left;
@@ -6083,10 +6100,10 @@
     /* un avviso discreto, non un riquadro: una riga piccola sopra la tabella */
     .avvnomi { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #7a4b03; padding: 0 2px; margin-bottom: 5px; }
     .avvnomi .avvi { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%; background: #E5C588;
-                     color: #4d2f02; font-weight: 800; font-size: 10px; text-align: center; line-height: 14px; }
+                     color: #4d2f02; font-weight: 800; font-size: 11px; text-align: center; line-height: 14px; }
     .avvnomi .avvb { border: 0; background: transparent; color: #7a4b03; font: inherit;
                      font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; }
-    .infochip { float: right; margin-right: 6px; font-size: 10.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: #7a4b03;
+    .infochip { float: right; margin-right: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; color: #7a4b03;
                 background: #FFF7E6; border-radius: 999px; padding: 1px 8px; cursor: help; }
     .infochip:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     /* senza valori letti: un solo bottone, grande, al posto della tabella */
@@ -6110,8 +6127,7 @@
       .wu .wucol { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
       .wu .wucol > .wualtri { grid-column: 1 / -1; }
     }
-    .wusum { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 0 14px; padding: 8px 12px;
-             border: 1px solid #E3E8EF; border-radius: 10px; background: #F8FBFE; }
+    .wusum { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 0 14px; padding: 2px 2px 8px; }
     .wusumv { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px;
               font-size: 13.5px; color: #16232E; font-variant-numeric: tabular-nums; }
     .wuv { white-space: nowrap; }
@@ -6151,7 +6167,7 @@
     .wuline .rrow { flex: 1 1 auto; min-width: 0; }
     .rmain { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
     .wuex { font-size: 11.5px; color: #5B6B7A; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .wunew { flex: 0 0 auto; font-size: 10px; font-weight: 700; color: var(--wu-new); background: var(--wu-new-bg); border-radius: 999px; padding: 0 7px; }
+    .wunew { flex: 0 0 auto; font-size: 11px; font-weight: 700; color: var(--wu-new); background: var(--wu-new-bg); border-radius: 999px; padding: 0 7px; }
     .wust { flex: 0 0 auto; font-size: 11px; color: #8397A8; }
     .wupdf { flex: 0 0 auto; border: 1px solid #E3E8EF; border-radius: 8px; background: #fff; color: #0B5CAD; font: inherit;
              font-size: 11px; font-weight: 700; padding: 0 9px; cursor: pointer; white-space: nowrap; }
@@ -6159,7 +6175,7 @@
     .wupdf:focus-visible, .wunuovi:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     .wuitem.aperto .rrow { border-color: var(--wu-c); }
     .wutxt { margin: 4px 0 8px 14px; padding: 7px 11px; border-left: 2px solid var(--wu-c); border-radius: 0 8px 8px 0; background: #FBFCFE; }
-    .wuver { display: inline-block; margin-bottom: 5px; padding: 0 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700;
+    .wuver { display: inline-block; margin-bottom: 5px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 700;
              color: var(--wu-wait); background: var(--wu-wait-bg); }
     .wualtro { font-size: 12.5px; font-weight: 700; color: var(--wu-bad); }
     .wuex.grave { color: var(--wu-bad); font-weight: 700; white-space: normal; }
@@ -6174,14 +6190,14 @@
               border: 1px solid #E3E8EF; border-radius: 9px; background: #F8FBFE; padding: 7px 10px;
               font: 600 12px/1 inherit; color: #5B6B7A; }
     .archhd:hover { border-color: #9DBFDE; color: #16232E; }
-    .archhd .an { background: #E3E8EF; color: #35506B; border-radius: 999px; padding: 1px 7px; font-size: 10.5px; }
+    .archhd .an { background: #E3E8EF; color: #35506B; border-radius: 999px; padding: 1px 7px; font-size: 11px; }
     .archhd .ago { margin-left: auto; color: #8296A9; }
     .alist { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
     .arow { display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 10px;
             border: 1px solid #EDF1F6; border-radius: 8px; background: #fff; }
     .arow .anm { flex: 1 1 auto; font-size: 12px; color: #5B6B7A; overflow: hidden;
                  white-space: nowrap; text-overflow: ellipsis; }
-    .arow .ameta { flex: 0 0 auto; font-size: 10.5px; color: #5B6B7A; }
+    .arow .ameta { flex: 0 0 auto; font-size: 11px; color: #5B6B7A; }
     .abtn { flex: 0 0 auto; border: 1px solid #D9E2EC; background: #F8FBFE; color: #35506B;
             border-radius: 7px; padding: 3px 8px; font: 600 11px/1.4 inherit; cursor: pointer; }
     .abtn:hover { border-color: #9DBFDE; color: #0B5CAD; }
@@ -6191,17 +6207,22 @@
                     font: 600 12px/1 inherit; border-radius: 8px; padding: 0 9px; cursor: pointer; font-variant-numeric: tabular-nums; }
     .tchip.off button { border-color: transparent; width: 36px; justify-content: center; padding: 0; }
     .tchip button:hover { background: #F1F4F7; color: #16232E; }
-    .tchip .tdot { width: 7px; height: 7px; border-radius: 50%; background: #C62828; }
-    .tchip.on button:first-child { border-radius: 7px 0 0 7px; border-right: 0; font-variant-numeric: tabular-nums; }
-    .tchip.on button:last-child { border-radius: 0 7px 7px 0; }
-    .tchip.on button { color: #16232E; }
-    .recchip { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; background: #B3261E; color: #fff;
-               font-size: 10.5px; font-weight: 800; letter-spacing: .04em; white-space: nowrap; margin: 0 4px; }
+    .tchip .tdot { width: 7px; height: 7px; border-radius: 50%; background: var(--info); }
+    /* i chip di stato dell'intestazione (cronometro, REC, iPhone): la stessa forma del .gchip */
+    .tchip.on button { height: 30px; border: 0; background: #EAF2FA; color: #0B2A4A; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .tchip.on button:first-child { border-radius: 999px 0 0 999px; padding: 0 8px 0 11px; }
+    .tchip.on button:last-child { border-radius: 0 999px 999px 0; padding: 0 11px 0 7px; border-left: 1px solid #fff; }
+    .tchip.on button:hover { background: #DCEAF7; color: #0B2A4A; }
+    .recchip { display: inline-flex; align-items: center; height: 30px; padding: 0 11px; border-radius: 999px; background: #FBEBEA; color: var(--err);
+               font-size: 12px; font-weight: 600; white-space: nowrap; margin: 0 4px; }
     button.recchip { border: 0; cursor: pointer; font-family: inherit; }
-    button.recchip:hover { background: #941e18; }
+    button.recchip:hover { background: #F6D9D6; }
     /* ⋯ → Registrazioni */
     .registrazioni .regnow { margin-bottom: 10px; }
     .registrazioni .regnow .btn { width: auto; padding: 9px 14px; }
+    /* Registra è un gesto raro e tranquillo: ghost, a larghezza propria, col pallino rosso del REC */
+    .registrazioni #regvia { display: inline-block; width: auto; padding: 8px 16px; margin-bottom: 4px; }
+    .registrazioni #regvia .recpt { color: var(--err); }
     .registrazioni .regko { background: #FDF3F2; border: 1px solid #E9BAB6; color: #8A1F19; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; margin-bottom: 8px; }
     .regauto { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: #16232E; cursor: pointer; }
     .regauto input { width: 16px; height: 16px; margin: 0; accent-color: #0B5CAD; cursor: pointer; }
@@ -6210,8 +6231,8 @@
     .regrow { border: 1px solid #E3E8EF; border-radius: 9px; background: #fff; padding: 8px 10px; font-size: 12px; color: #35506B; }
     .regrow .rr1 { display: flex; align-items: center; gap: 8px; color: #16232E; font-size: 12.5px; }
     .regrow .rkb { margin-left: auto; color: #5B6B7A; font-variant-numeric: tabular-nums; }
-    .regtag { padding: 1px 7px; border-radius: 999px; background: #EEF2F6; color: #35506B; font-size: 10.5px; font-weight: 700; }
-    .regtag.auto { background: #FFF7E6; color: #8a4b03; }
+    .regtag { padding: 1px 7px; border-radius: 999px; background: #EEF2F6; color: #35506B; font-size: 11px; font-weight: 700; }
+
     .regrow .rr2 { margin-top: 3px; color: #16232E; }
     .regrow .rr3 { margin-top: 3px; font-size: 11px; color: #5B6B7A; overflow-wrap: anywhere; }
     .regrow .rok { color: #1E6B43; font-weight: 600; }
@@ -6236,7 +6257,7 @@
     .ricris { flex-direction: column; flex-wrap: nowrap; margin-top: 6px; max-height: 210px; overflow: auto; }
     .ricrisv { border: 1px solid #E3E8EF; background: #fff; color: #16232E; border-radius: 8px; padding: 6px 9px; font: 12px/1.3 inherit; cursor: pointer; text-align: left; }
     .ricrisv b { font-variant-numeric: tabular-nums; margin-right: 4px; }
-    .rictipo { font-style: normal; font-size: 10.5px; font-weight: 700; color: #6A4C93; background: #F3EEFA; border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+    .rictipo { font-style: normal; font-size: 11px; font-weight: 700; color: #6A4C93; background: #F3EEFA; border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
     .ricrisv.on .rictipo { background: #fff; }
     .riccerca { display: flex; gap: 6px; }
     .riccerca input, .ricquesito { flex: 1 1 auto; min-width: 0; border: 1px solid #D9E2EC; border-radius: 8px; padding: 7px 9px; font: 12.5px/1.3 inherit; color: #16232E; }
@@ -6287,7 +6308,7 @@
     .trow .tt { flex: 1 1 auto; font-weight: 600; color: #16232E; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .trow .tp { flex: 0 1 90px; color: #8296A9; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .trow .td { flex: 0 0 auto; font-weight: 700; color: #0B5CAD; font-variant-numeric: tabular-nums; }
-    .trow .to { flex: 0 0 auto; color: #5B6B7A; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+    .trow .to { flex: 0 0 auto; color: #5B6B7A; font-size: 11px; font-variant-numeric: tabular-nums; }
     .tdel { border: 0; background: transparent; color: #5B6B7A; cursor: pointer; font-size: 12px; padding: 0 2px; }
     .tdel:hover { color: #B3261E; }
     /* CONSEGNE: una riga per paziente, il nome in grassetto */
@@ -6309,7 +6330,8 @@
     .dfic.vuota:hover { background: #EEF2F6; color: #16232E; }
     .dfic.amb { background: #FFF4DB; color: #8A5A00; }
     .dfic.amb:hover { background: #FCEBC4; }
-    .dfic.ros { background: #FDEBEA; color: #B3261E; animation: prBagliore 2.6s ease-in-out infinite; }
+    .dfic.ros { background: #FDEBEA; color: #B3261E; }
+    .dfic.ros.fresco { animation: prBagliore 2.6s ease-in-out infinite; }   /* si muove solo i primi 10 minuti: poi resta rosso, fermo */
     .dfic.ros:hover { background: #FADBD8; }
     @keyframes prBagliore { 0%, 100% { box-shadow: 0 0 0 0 rgba(179,38,30,0); } 50% { box-shadow: 0 0 0 4px rgba(179,38,30,.13); } }
     /* il post-it: la prima voce aperta, in grigio, che cede per prima */
@@ -6331,7 +6353,7 @@
     .dfict b { font-weight: 700; }
     .hdpaz .brac { position: relative; width: 28px; height: 28px; }
     .hdpaz .brac .bracn { position: absolute; right: -6px; top: -4px; background: #0B5CAD; color: #fff; border-radius: 999px; padding: 0 4px;
-                          font-size: 10.5px; font-weight: 700; line-height: 15px; font-variant-numeric: tabular-nums; }
+                          font-size: 11px; font-weight: 700; line-height: 15px; font-variant-numeric: tabular-nums; }
     .hdpaz .brac.pulsa { animation: bracPulsa .45s ease-out; }
     .hdpaz .brac .bracn.spenta { background: #9DB3C9; }
     @keyframes bracPulsa { 0% { transform: scale(1); } 40% { transform: scale(1.18); background: #E8F0FA; } 100% { transform: scale(1); } }
@@ -6346,7 +6368,7 @@
     .cuore.pulsa { animation: cuorePulsa 1s ease-out 1; }
     @keyframes cuorePulsa { 0% { transform: scale(1); } 30% { transform: scale(1.35); } 100% { transform: scale(1); } }
     .pzchi .cuore, .stp2 .cuore { align-self: center; }
-    @media (prefers-reduced-motion: reduce) { .cuore.pulsa, .dfic.ros { animation: none; } }
+    @media (prefers-reduced-motion: reduce) { .cuore.pulsa, .dfic.ros.fresco { animation: none; } }
     /* la lista: una piccola finestra sotto l'icona */
     .dfpop { position: absolute; z-index: 30; width: 340px; max-width: calc(100vw - 16px); padding: 4px 6px 8px; border: 1px solid #D9E2EC;
              border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgba(9,42,74,.16); }
@@ -6488,7 +6510,7 @@
     .crow:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     .cnome { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; color: #16232E; }
     .cgo { flex: 0 0 auto; font-size: 11px; color: #0B5CAD; font-weight: 700; }
-    .cpag { flex: 0 0 auto; font-size: 10px; color: #8a4b03; background: #FFF3DB; border-radius: 999px; padding: 1px 7px; font-weight: 700; }
+    .cpag { flex: 0 0 auto; font-size: 11px; color: var(--neutro); background: #EEF2F6; border-radius: 999px; padding: 1px 7px; font-weight: 700; }
     .linkbtn { border: 0; background: transparent; color: #0B5CAD; font: inherit; font-weight: 700;
                text-decoration: underline; cursor: pointer; padding: 0; }
 
@@ -6505,9 +6527,9 @@
     .stgriglia .sttab tbody.stblk { display: table; width: 100%; border-collapse: separate; border-spacing: 0; background: #fff;
       border: 1px solid #E3E8EF; border-radius: 8px; overflow: hidden; }
     .stgriglia .sttab tbody.stblk tr:last-child > * { border-bottom: 0; }
-    .stgriglia .sttab tr.stsez td { text-transform: none; letter-spacing: 0; font-size: 10.5px; font-weight: 600; color: #5B6B7A; }
+    .stgriglia .sttab tr.stsez td { text-transform: none; letter-spacing: 0; font-size: 11px; font-weight: 600; color: #5B6B7A; }
     .stgriglia .sttab tr.stsez td.ultima { color: #0B5CAD; }
-    .stgriglia .sttab tr.stsez td.ultima::after { content: "ultimo"; display: block; font-size: 8.5px; font-weight: 700;
+    .stgriglia .sttab tr.stsez td.ultima::after { content: "ultimo"; display: block; font-size: 11px; font-weight: 700;
       letter-spacing: .06em; text-transform: uppercase; color: #9DBFDE; }
     .stgriglia .sttab th.stn { position: static; }
     /* La tabella è larga quanto i suoi numeri, non quanto il pannello: se il
@@ -6517,8 +6539,8 @@
     .sttab { border-collapse: collapse; font-size: 11.5px; width: auto; }
     .sttab th, .sttab td { padding: 3px 7px; white-space: nowrap; border-bottom: 1px solid #EDF1F6; }
     .sttab thead th { position: sticky; top: 0; background: #F8FBFE; color: #5B6B7A; font-weight: 600;
-                      font-size: 10.5px; text-align: left; border-bottom: 1px solid #D9E2EC; }
-    .sttab .sth { display: block; font-size: 9.5px; color: #5B6B7A; font-weight: 500; }
+                      font-size: 11px; text-align: left; border-bottom: 1px solid #D9E2EC; }
+    .sttab .sth { display: block; font-size: 11px; color: #5B6B7A; font-weight: 500; }
     .sttab th.stn { position: sticky; left: 0; z-index: 1; background: #fff; text-align: left;
                     font-weight: 600; color: #16232E; max-width: 168px; overflow: hidden; text-overflow: ellipsis; }
     .sttab thead th.stn { background: #F8FBFE; z-index: 2; }
@@ -6544,7 +6566,7 @@
     /* Sezioni: gli esami stanno dove un medico li cerca, e sempre nello stesso
        posto. L'ordine non dipende più da come il laboratorio ha stampato. */
     .sttab tr.stsez th.stn, .sttab tr.stsez td { background: #EEF4FA; border-bottom: 1px solid #D9E4EF;
-      font-size: 9.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #5B6B7A; }
+      font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #5B6B7A; }
     .sttab tr.stsez th.stn { color: #35506B; padding-top: 7px; padding-bottom: 4px; }
     .sttab tr.stsez td { text-align: left; padding-top: 7px; padding-bottom: 4px; }
     .sttab tr.stsez:hover th.stn, .sttab tr.stsez:hover td { background: #EEF4FA; }
@@ -6553,12 +6575,12 @@
     .sttab td.vuoto { color: #AEBECD; }
     /* L'unità sta ACCANTO al nome, fra parentesi: su un rigo suo raddoppiava
        l'altezza di ogni riga e allontanava i numeri dal nome. */
-    .stum { font-size: 9px; color: #5B6B7A; font-weight: 500; letter-spacing: 0; }
+    .stum { font-size: 11px; color: #5B6B7A; font-weight: 500; letter-spacing: 0; }
     .sttab th.ultima { color: #0B5CAD; }
-    .sttab th.ultima::after { content: "ultimo"; display: block; font-size: 8.5px; font-weight: 700;
+    .sttab th.ultima::after { content: "ultimo"; display: block; font-size: 11px; font-weight: 700;
       letter-spacing: .06em; text-transform: uppercase; color: #9DBFDE; }
     /* il segno di provenienza: piccolo, in alto, mai confondibile con un valore */
-    .sttab .prov { font-style: normal; font-size: 9px; vertical-align: super; color: #0B5CAD;
+    .sttab .prov { font-style: normal; font-size: 11px; vertical-align: super; color: #0B5CAD;
                    font-weight: 800; margin-left: 1px; cursor: help; }
     .reftxt { font-size: 12.5px; line-height: 1.5; color: #16232E; }
     .reftxt .rt { padding: 1px 0; }
@@ -6622,7 +6644,7 @@
     .esst .esatt { font-style: normal; }
     .esst .esatt.amb { margin: 0 -3px; padding: 2px 4px; border-radius: 4px; background: #FFEFC7; color: #7A4F00; font-weight: 600; }
     .esst .esatt.ros { margin: 0 -3px; padding: 2px 4px; border-radius: 4px; background: #FBE1DF; color: #9B1C14; font-weight: 700; }
-    .esst .esdot { font-size: 10px; color: #0B5CAD; }
+    .esst .esdot { font-size: 11px; color: #0B5CAD; }
     .esst .esdot.ros { color: #B3261E; }
     .esst.vecchio .esp { --c: #9AA8B5; color: #9AA8B5; }
     .esst.vecchio .esdot { color: #9AA8B5; }
@@ -6636,7 +6658,10 @@
     .idriga > .idall { flex-shrink: 0; max-width: 60%; }
     .idall.ros { color: #B3261E; font-weight: 600; }
     .idall.nl { color: #8A5A00; }
-    .idall.nega { color: #5B6B7A; }
+    .idall.nega, .idall.nc { color: var(--neutro); }
+    /* nome, episodio e allergie sono un solo blocco: la riga di separazione sta sotto le allergie */
+    .hd:has(+ .idriga) { border-bottom: 0; }
+    .hd + .idriga { border-bottom: 1px solid #E6EBF0; padding-bottom: 8px; }
     .idatt { color: #7a4b03; }
     /* Dimissioni: quello che è ancora aperto, una riga */
     .aperti { max-width: 820px; margin: 0 0 12px; font-size: 12.5px; line-height: 1.45; color: #35506B; }
@@ -6703,8 +6728,8 @@
            white-space: nowrap; font-variant-numeric: tabular-nums; border: 1px solid transparent; }
     .esm b { font-weight: 700; }
     .esm.att { background: #EEF2F6; color: #5B6B7A; }
-    .esm.parz { background: #FFF1E0; color: #A85400; border-color: #F6C990; }
-    .esm.ok { background: #E3EEFB; color: #0B5CAD; border-color: #B8D3F0; }
+    .esm.parz { background: #FFF4DB; color: var(--att); border-color: #E5C588; }
+    .esm.ok { background: #EDF7F0; color: var(--ok); border-color: #BCE0C9; }
     .t-ignoto { --tr: #9AA8B5; }
     /* la riga e il letto dello stesso paziente, insieme */
     .pzrow.lega { background: #EEF5FC; }
@@ -6894,11 +6919,17 @@
     .stbed .stname { flex: none; font-size: 12px; font-weight: 400; line-height: 16px; color: #5B6B7A; }
     .stbedhd { flex: none; display: flex; align-items: center; min-width: 0; }
     .stbedhd .stname { flex: 0 1 auto; min-width: 0; }
+    /* il nome del letto va a capo fra le parole (due righe al massimo) e non finisce mai in «O…»: o ci sta, o sparisce */
+    .stbed .stname { white-space: normal; overflow-wrap: normal; text-overflow: clip; max-height: 32px; }
+    @container stbed (max-width: 110px) { .stbed.occ:not(.barella) .stname { font-size: 11px; line-height: 14px; } }
+    @container stbed (max-width: 92px) { .stbed .stpn { font-size: 11px; } }
+    @container stbed (max-width: 92px) { .stmap:not(.edit) .stbed.occ:not(.barella):has(.stsegni :is(.cuore, .stseg)) .stname { display: none; } }
+    @container stbed (max-width: 60px) { .stmap:not(.edit) .stbed:not(.occ):not(.sedia) .stname { display: none; } }
     .stbed.occ .stbedhd { padding-right: 34px; }   /* il posto del cuore e del pallino */
     .stglifo { flex: none; margin: auto; }
     .stbed .stp { position: static; flex: 1 1 auto; min-height: 0; gap: 0; padding: 0; border: 0; border-radius: 0; background: none; }
     /* due righe al massimo, tagliate e basta: mai i puntini (l'età, se non ci sta, resta nel passaggio del mouse) */
-    .stbed .stp1 { display: block; max-height: 36px; overflow: hidden; line-height: 18px; overflow-wrap: anywhere; }
+    .stbed .stp1 { display: block; max-height: 36px; overflow: hidden; line-height: 18px; overflow-wrap: normal; }
     .stbed .stpn { display: inline; overflow: visible; white-space: normal; font-size: 13px; }
     .stbed .steta { font-size: 12px; font-weight: 400; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .stbed .stsegni { position: absolute; top: 0; right: 0; height: 16px; display: flex; align-items: center; gap: 6px; }
@@ -6929,19 +6960,19 @@
     /* la barella dell'attesa: stretta, in piedi; il nome va a capo */
     .stbed.barella { border-radius: 8px; }
     .stbed.barella .stbedin { inset: 5px 5px 5px 10px; }
-    .stbed.barella .stname { white-space: normal; overflow-wrap: anywhere; line-height: 14px; font-size: 11px; }
+    .stbed.barella .stname { white-space: normal; overflow-wrap: normal; line-height: 14px; font-size: 11px; }
     .stfuori { position: absolute; left: 50%; bottom: -12px; z-index: 3; transform: translateX(-50%); padding: 2px 9px; border-radius: 999px;
                background: #16232E; color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none; }
     /* le aree: senza letto, dentro quanti pazienti servono */
     .starea { display: flex; flex-direction: column; border: 1.5px dashed #C4D0DC; border-radius: 12px; background: rgba(255,255,255,.6);
               transition: border-color .12s, background-color .12s; }
     .starea > .sthd { flex: none; padding: 8px 10px 6px; }
-    .starea .stname { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #5B6B7A; }
+    .starea .stname { white-space: normal; overflow-wrap: normal; text-overflow: clip; line-height: 13px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #5B6B7A; }
     .starea.over { border-color: #0B5CAD; background: #EAF2FA; }
     .starbody { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; padding: 0 8px 8px; }
     .starbody .stp { max-width: 240px; }
     /* anche nell'area il nome va a capo invece di perdere le lettere (colonna stretta) */
-    .starbody .stpn { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .starbody .stpn { white-space: normal; overflow-wrap: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     /* Modifica: i pazienti si fermano; l'oggetto scelto (o sotto il mouse) mostra la × e, l'area, l'angolo */
     .stmap.edit .stp { opacity: .4; pointer-events: none; }
     .stmap.edit .stbed, .stmap.edit .starea { cursor: move; touch-action: none; }
@@ -7533,7 +7564,7 @@
         const r = el.attachShadow({ mode: "open" });
         // (com'è il «×N» del bottone del pannello, .bracn)
         r.innerHTML = `<style>b { position: fixed; z-index: 2147483647; pointer-events: none; transform: translateX(-100%); background: #0B5CAD; color: #fff;
-          border-radius: 999px; padding: 0 4px; font: 700 10.5px/15px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          border-radius: 999px; padding: 0 4px; font: 700 11px/15px -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
           font-variant-numeric: tabular-nums; }</style><b></b>`;
         document.documentElement.appendChild(el);
         const metti = () => {
@@ -10119,7 +10150,7 @@
       // prende e si porta su un letto, una sedia o un'area, come nella stanza.
       // La riga dice poco, e sempre nello stesso posto: triage, nome ed età, il
       // posto, da quanto è in PS, il cuore, Lab · ECG · RX (grigio: chiesto e
-      // in attesa, col tempo; arancio: tornato in parte; blu: tornato tutto)
+      // in attesa, col tempo; ambra: tornato in parte; verde: tornato tutto)
       // e quante cose ha da fare. Niente valori, niente testo: quelli li dice
       // la scheda che si apre passando sul nome.
       const ora = Date.now();
@@ -10213,7 +10244,8 @@
       // letto, il cuore (solo l'icona) e un pallino solo, se c'è qualcosa;
       // tutto il resto nel passaggio del mouse e nella riga della lista.
       if (inLetto) {
-        const nome = esc(i.breve).replace(/&#39;/g, "&#39;<wbr>");   // DELL'ACQUA va a capo dopo l'apostrofo
+        // DELL'ACQUA va a capo dopo l'apostrofo; l'iniziale resta attaccata al cognome («ROSSI M.» non si spezza)
+        const nome = esc(i.breve).replace(/&#39;/g, "&#39;<wbr>").replace(/ (\S\.)$/, "\u00A0$1");
         const segni = i.prec ? "" : `<span class="stsegni">${this.cuoreHtml(p.ep, undefined, true)}<span class="stsegslot" data-dfseg="${esc(p.ep)}">${this.segnaleHtml(p.ep, m.df)}</span></span>`;
         return `<div class="${cls}" data-stp="${esc(p.ep)}" data-cerca="${esc(normNome(i.lungo))}" role="button" tabindex="${edit ? -1 : 0}"${i.prec ? "" : ' aria-haspopup="menu"'} aria-label="${etichetta}">
         <span class="stp1">${i.omonimo ? `<b class="stom" aria-hidden="true">⚠</b>` : ""}<b class="stpn">${nome}${i.coda ? `<span class="stcoda">${esc(i.coda)}</span>` : ""}</b>${
@@ -11291,14 +11323,14 @@
     // Gli Esiti sotto gli occhi del medico (la finestra aperta): da qui in poi
     // niente è più «nuovo» nella riga dei Pazienti. I valori nuovi non ancora
     // segnati «Letto» restano, e dicono quanti sono fuori range (il pallino rosso).
-    segnaEsitiVisti(nuovi, fuori) {
+    segnaEsitiVisti(nuovi, fuori, fuoriTot = fuori) {
       const ep = this.epDiQuesta();
       if (!ep) return;
       const guarda = !this.collapsed && !this.runState, ora = Date.now();
       const s = statoDi(ep) || {};
       const v = s.valori || {};
-      if (v.nuovi === nuovi && v.fuori === fuori && (!guarda || ora - (s.esitiVisto || 0) < 15e3)) return;
-      scriviStato(ep, (x) => ({ ...x, valori: { nuovi, fuori }, ...(guarda ? { esitiVisto: ora } : {}) }));
+      if (v.nuovi === nuovi && v.fuori === fuori && (v.fuoriTot ?? v.fuori) === fuoriTot && (!guarda || ora - (s.esitiVisto || 0) < 15e3)) return;
+      scriviStato(ep, (x) => ({ ...x, valori: { nuovi, fuori, fuoriTot }, ...(guarda ? { esitiVisto: ora } : {}) }));
     }
     // Una lettura che aspetta il motore di un ordine (cancelloMotore: una
     // sessione sola, un ordine alla volta) lo dice dove la si aspetta: il suo
@@ -11340,17 +11372,19 @@
       // si parte dalle COLONNE della tabella: ognuna porta l'accesso da cui
       // viene, così due prelievi allo stesso minuto non si rubano i marchi
       const nov = new Map();
-      let nNov = 0, nFuori = 0;
+      let nNov = 0, nFuori = 0, nFuoriTot = 0;
       for (const d of st ? st.date : []) {
         if (!d.id) continue;
         const v = tabStore.get(this.risKey(d.id), null);
         const n = v && v.rows ? this.novita(d.id, v.rows) : null;
         if (n && n.size) {
           nov.set(chiaveCol(d), n); nNov += n.size;
-          nFuori += v.rows.filter((r) => n.has(valKey(r.nome)) && outOfRange(r.valore, r.range)).length;
+          const fr = v.rows.filter((r) => n.has(valKey(r.nome)) && outOfRange(r.valore, r.range));
+          nFuoriTot += fr.length;
+          nFuori += fr.filter((r) => analitaCritico(r.nome)).length;   // solo questi fanno il pallino rosso
         }
       }
-      this.segnaEsitiVisti(nNov, nFuori);
+      this.segnaEsitiVisti(nNov, nFuori, nFuoriTot);
       const vivi = prelievi.filter((e) => !e.storico).length;
       const daLeggere = this.daLeggere().length;
       const rotti = prelievi.filter((e) => this.rottiTab.has(e.id));
@@ -11403,6 +11437,8 @@
             <span class="wuwq">${x.parziale ? "parziale" : "richiesto"}${x.when && attesaDa(x.ts) ? ` ${esc(x.when.slice(-5))}` : ""}</span>
           </div>`;
       };
+      // niente valori, solo referti di laboratorio: la loro lista sta nella scheda Lab, non in fondo
+      const soloReferti = !t && !grande && !attesaLab.length && !prelievi.length && !conPortale;
       const valori = `
         <section class="sec wusec wulab" aria-label="Laboratorio">
           <div class="lbl wuh"><span class="wut"${t ? ` title="Tocca un valore per segnarlo: giallo, poi arancio, poi via"` : ""}>Lab</span>${t ? `<span class="wucnt"> (${righeTabella(st.righe).length} esami · ${t.nCol} prelievi)</span>` : ""}
@@ -11422,7 +11458,7 @@
           ${this.storico && (this.storico.periodo || this.storico.paziente?.idMPI) ? `<div class="hint">Storico del portale di <b>${esc(chi || "—")}</b> · identità confermata <b>${esc(this.storicoVia || "dal nome")}</b>.</div>`
             : this.storicoAltri ? `<div class="hint">Storico del portale di <b>${esc(this.storicoAltri)}</b>, non di questo paziente: non mostrato.</div>`
             : this.storicoDaConfermare ? `<div class="hint" title="Il codice fiscale sta nella finestra Risultati">Storico del portale con questo nome: serve il codice fiscale, <b>⭳ Carica i valori</b>.</div>` : ""}
-          ${!t && !grande && !attesaLab.length && !prelievi.length && !conPortale ? `<div class="wuvuoto">${lab.length ? "Nei referti del laboratorio, in fondo." : "Nessun valore."}</div>` : ""}
+          ${soloReferti ? (lab.length ? "@@LAB@@" : `<div class="wuvuoto">Nessun valore.</div>`) : ""}
         </section>`;
 
       // ---- ECG e Imaging: i referti, uno per riga; il testo si apre lì sotto
@@ -11461,7 +11497,7 @@
               <span class="rmain"><span class="rlab">${esc(shortLabel(e.label))}</span>${anteprima ? `<span class="wuex${testo && testo.stato === "altro" ? " grave" : ""}" ${testo && testo.stato === "altro" ? 'role="alert"' : ""}>${esc(anteprima)}</span>` : ""}</span>
               ${nuovoRef(e) ? `<span class="wunew" title="Non ancora aperto">nuovo</span>` : ""}
               ${stato ? `<span class="wust" ${state === "busy" ? this.dopoOrdine(stato, "") : `>${esc(stato)}`}</span>` : ""}
-              <span class="rgo" aria-hidden="true">${leggibile ? (aperto ? "▾" : "▸") : icoIn("esterno", 12).replace("margin-right:4px;", "")}</span>
+              ${leggibile ? `<span class="rgo" aria-hidden="true">${aperto ? "▾" : "▸"}</span>` : ""}
             </button>
             <button type="button" class="wupdf" data-pdf="${esc(e.id)}" title="${cached[e.id] ? "Apri il PDF salvato su questo computer" : "Apri il PDF dal gestionale"}">${icoIn("esterno", 13)}PDF</button>
           </div>
@@ -11516,7 +11552,8 @@
               nRefNuovi ? `${nRefNuovi} ${nRefNuovi === 1 ? "referto non ancora aperto" : "referti non ancora aperti"}` : ""].filter(Boolean).join(" · "))} — un tocco: visti">${nNuovi} ${nNuovi === 1 ? "nuovo" : "nuovi"}</button>` : ""}</div>
           ${strumenti ? `<div class="wutools">${strumenti}</div>` : ""}
         </div>`;
-      return `<div class="esiti wu">${sommario}<div class="esgrid">${valori}<div class="wucol">${sezione("ecg", "ECG", "wuecg")}${sezione("rx", "Imaging", "wuimg")}${docAltri}</div></div>${docsLab}</div>`;
+      const nellaScheda = soloReferti && lab.length;
+      return `<div class="esiti wu">${sommario}<div class="esgrid">${nellaScheda ? valori.replace("@@LAB@@", () => docsLab) : valori}<div class="wucol">${sezione("ecg", "ECG", "wuecg")}${sezione("rx", "Imaging", "wuimg")}${docAltri}</div></div>${nellaScheda ? "" : docsLab}</div>`;
     }
 
     // The multi-day table: exams down, draws across, newest first. It is read
@@ -11741,6 +11778,7 @@
       const all = a && a.allergie;
       const pezzi = [];
       if (!all) pezzi.push(`<span class="idall nl">Allergie: non lette</span>`);
+      else if (!all.nega && !all.testo) pezzi.push(`<span class="idall nc" title="Il campo Allergie del gestionale è vuoto e «Nega» non è spuntato: nessuno l'ha compilato">Allergie: non compilate</span>`);
       else if (all.nega) pezzi.push(`<span class="idall nega" title="Allergie, dal gestionale: Nega/Non riferisce">Allergie: nega</span>`);
       else if (all.testo) pezzi.push(`<span class="idall ros" title="${esc("Allergie: " + all.testo)}">Allergie: ${esc(all.testo)}</span>`);
       const att = (a && a.attenzione) || [];
@@ -11836,7 +11874,7 @@
       const quando = urge ? promTempo(urge.t, ora) : prima?.t != null ? promOra(prima.t, ora) : "";
       const dentro = testa ? `${urge ? ICO.sveglia : ICO.dafare}<span class="dfict">${quando ? `<b>${esc(quando)}</b> ` : ""}${esc(prima.testo)}</span>${n > 1 ? `<b>+${n - 1}</b>` : ""}`
         : `${ICO.dafare}${n ? `<b>${n}</b>` : ""}`;
-      return `<button type="button" class="dfic${b ? " " + b : ""}${n ? "" : " vuota"}${testa ? " dfprima" : ""}" data-df="${esc(ep)}" data-dove="${esc(dove)}" aria-haspopup="dialog" aria-expanded="${
+      return `<button type="button" class="dfic${b ? " " + b : ""}${b === "ros" && prossimo && ora - prossimo.t < 10 * 60e3 ? " fresco" : ""}${n ? "" : " vuota"}${testa ? " dfprima" : ""}" data-df="${esc(ep)}" data-dove="${esc(dove)}" aria-haspopup="dialog" aria-expanded="${
         this._df?.ep === ep && this._df.dove === dove ? "true" : "false"}" title="${esc(tit)}" aria-label="${esc("Da fare: " + det)}">${dentro}</button>`;
     }
     // Il post-it: la prima voce aperta, nell'ordine scelto dal medico
@@ -12837,7 +12875,7 @@
       if (daFare) voci.push(`Da fare: ${daFare}`);
       const segnati = Object.keys(leggiSegni(this.chiaveNota())).length;
       if (segnati) voci.push(segnati === 1 ? "1 valore segnato" : `${segnati} valori segnati`);
-      if (st && st.valoriFuori) voci.push(`${st.valoriFuori === 1 ? "1 valore nuovo" : `${st.valoriFuori} valori nuovi`} fuori range, non letti`);
+      if (st && st.valoriFuoriTot) voci.push(`${st.valoriFuoriTot === 1 ? "1 valore nuovo" : `${st.valoriFuoriTot} valori nuovi`} fuori range, non letti`);
       if (!voci.length) return "";
       const MAX = 8, vedi = voci.length > MAX ? [...voci.slice(0, MAX - 1), `e altri ${voci.length - MAX + 1}`] : voci;
       const coda = [st && st.soloQui && st.esami.length ? "ordinati da qui" : "", st && st.letto ? `letto alle ${hhmm(st.letto)}` : ""].filter(Boolean);
@@ -12881,17 +12919,17 @@
           <div class="lbl">Ricetta SISS</div>
           <button type="button" class="dnuovo" id="dimricetta" title="Farmaci (e visite) preparati nel Prescrittivo del SISS, fino all'Anteprima: Registra lo premi tu"><span class="dplus" aria-hidden="true">℞</span>Prepara la ricetta nel SISS</button>
         </div>` : ""}
-        ${ritiro.length ? `
-        <div class="sec">
-          <div class="lbl" title="${esc(this.notaModuli())}">Moduli per il ritiro (${ritiro.length})</div>
-          <div class="mlist">${ritiro.map((c) => this.rigaModulo(c)).join("")}</div>
-        </div>` : ""}
         <div class="sec">
           <div class="lbl">Fogli di dimissione (${chiavi.length})</div>
           <div class="dlist">${righe}
             <button type="button" class="dnuovo" id="dimnuovo" title="Scrivi un foglio tuo: resta in cima all'elenco, su questo computer"><span class="dplus" aria-hidden="true">+</span>Nuovo foglio di dimissione</button>
           </div>
-        </div>`;
+        </div>
+        ${ritiro.length ? `
+        <details class="sec ritiro" id="ritiro"${this.ritiroAperto ? " open" : ""}>
+          <summary title="${esc(this.notaModuli())}">Moduli per il ritiro</summary>
+          <div class="mlist">${ritiro.map((c) => this.rigaModulo(c)).join("")}</div>
+        </details>` : ""}`;
     }
 
     // The editor keeps a draft in tabStore at every keystroke: the EHR retitles
@@ -13190,7 +13228,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         testa = `<div class="regko" role="alert">Registrazione ferma ma non salvata${r.errore ? `: ${esc(r.errore)}` : ""}.</div>
           <button class="btn primary" id="regsalva">Salva di nuovo</button><button class="btn ghost${armata ? " armato" : ""}" id="regbutta">${armata ? "La cancello? Tocca di nuovo" : "Cancellala da questo PC"}</button>`;
       } else {
-        testa = `<button class="btn primary" id="regvia">● Registra</button>
+        testa = `<button class="btn ghost" id="regvia"><span class="recpt" aria-hidden="true">●</span> Registra</button>
           <div class="hint">Le pagine, le richieste e i PDF di questa sessione, per al più 60 minuti. «Ferma e salva» la anonimizza e la salva qui, nell'estensione: la vedi qui sotto e dall'iPhone.</div>`;
       }
       const auto = L.auto !== false;
@@ -13200,7 +13238,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           <div class="rr1"><b>${esc(giorno(z.quando || z.ts))} ${esc(hhmm(z.quando || z.ts))}</b><span class="regtag${z.motivo === "auto" ? " auto" : ""}">${z.motivo === "auto" ? "automatica" : "a mano"}</span><span class="rkb">${esc(kb(z.byte))}</span></div>
           ${z.motivo === "auto" && z.errore ? `<div class="rr2">${esc(z.errore)}</div>` : ""}
           <div class="rr3"><span class="${z.controllo ? "rok" : "rko"}">${z.controllo ? "controllo superato" : `restano ${z.punti} dati da controllare`}</span> · ${esc(z.nome)}</div>
-          <div class="rr4"><button class="mini" data-regriep="${esc(z.id)}" aria-expanded="${aperta}">Riepilogo</button><button class="mini" data-regpc="${esc(z.id)}"${scarica ? " disabled" : ""}>${scarica ? "Scarico…" : "Scarica sul PC"}</button><button class="mini via${armata ? " armato" : ""}" data-regvia="${esc(z.id)}">${armata ? "Cancello? Tocca di nuovo" : "Cancella"}</button></div>
+          <div class="rr4"><button class="mini" data-regriep="${esc(z.id)}" aria-expanded="${aperta}">Riepilogo</button><button class="mini" data-regpc="${esc(z.id)}"${scarica ? " disabled" : ""}>${scarica ? "Scarico…" : "Scarica"}</button><button class="mini via${armata ? " armato" : ""}" data-regvia="${esc(z.id)}">${armata ? "Cancello? Tocca di nuovo" : "Cancella"}</button></div>
           ${aperta ? `<pre class="regriep">${esc(z.riepilogo || "")}</pre>` : ""}
         </div>`;
       }).join("");
@@ -13271,7 +13309,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       }));
       this.root.querySelectorAll("[data-regpc]").forEach((b) => b.addEventListener("click", () => this.scaricaRegistrazione(b.getAttribute("data-regpc"))));
     }
-    // «Scarica sul PC»: lo zip a pezzi dal service worker, un file nei Download
+    // «Scarica»: lo zip a pezzi dal service worker, un file nei Download
     async scaricaRegistrazione(id) {
       if (this.regOcc) return;
       this.regOcc = "pc:" + id; this.render();
@@ -14912,6 +14950,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         this.openEsito(b.getAttribute("data-esito"))));
       $("#refreset")?.addEventListener("click", () => this.resetReferti());
       $("#reflab")?.addEventListener("toggle", (e) => { this.labAperto = e.target.open; });
+      $("#ritiro")?.addEventListener("toggle", (e) => { this.ritiroAperto = e.target.open; });
       $("#refsave")?.addEventListener("click", () => this.saveAllReferti());
       $("#copylog")?.addEventListener("click", (e) => { e.preventDefault(); this.copyLog(); });
       this.bindStanza();
@@ -16671,8 +16710,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     .pontespia { display: inline-flex; align-items: center; gap: 7px; margin-top: 6px; padding: 4px 4px 4px 11px; border-radius: 999px;
                  background: #16232E; color: #fff; font-size: 12px; font-weight: 700; white-space: nowrap; box-shadow: 0 4px 14px rgba(9,42,74,.28); }
     .wrap:not(.win) > .pontespia { display: flex; width: max-content; margin-left: auto; }
-    .hd .pontespia { margin: 0; box-shadow: none; }
-    .pontespia .pdot { width: 8px; height: 8px; border-radius: 50%; background: #7FD1A8; animation: psaPulse 1.6s ease-in-out infinite; }
+    .hd .pontespia { margin: 0; box-shadow: none; height: 30px; padding: 0 3px 0 11px; background: #E8F5EC; color: #124F31; font-weight: 600; }
+    .hd .pontespia button { height: 24px; padding: 0 10px; background: #fff; }
+    .pontespia .pdot { width: 8px; height: 8px; border-radius: 50%; background: #7FD1A8; }
+    .hd .pontespia .pdot { background: var(--ok); }   /* ferma: la spia resta, il movimento no */
     .pontespia button { border: 0; border-radius: 999px; background: #fff; color: #16232E; padding: 4px 10px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
     .pontespia button:hover { background: #E3E9F0; }
   `;
@@ -17758,6 +17799,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     store.set(TERAPIA_PREF, l.slice(0, TERAPIA_PREF_MAX));
   }
   // la riga in fondo alla pagina, da sola, finché il giro è qui
+  // Chi è il paziente della pagina, come nell'intestazione del pannello: COGNOME N., l'età,
+  // le allergie (sulla pagina della terapia non c'è il campo: sono quelle lette dal pannello).
+  function terapiaChi(ep, nome) {
+    const p = (store.get("patients.v1", []) || []).find((x) => x && String(x.ep) === String(ep));
+    const eta = p && Number.isInteger(p.eta) ? p.eta : p && String(p.pk || "").startsWith("cf:") ? etaDaCf(p.pk.slice(3)) : null;
+    const all = statoDi(ep)?.anag?.allergie;
+    const a = !all ? "Allergie: non lette" : all.nega ? "Allergie: nega" : all.testo ? `Allergie: ${all.testo}` : "Allergie: non compilate";
+    return `${nomeBreve(nome) || nome}${eta != null ? ` · ${eta}` : ""} · ${a}`;
+  }
   function terapiaDice(tono, testo) {
     let h = document.getElementById("psassist-terapia");
     if (!h) {
@@ -17929,7 +17979,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (!ora || ora.id !== g.id || ora.fase !== "scrivo") return;   // (Conferma o Chiudi premuti intanto: decide la pagina dopo)
     if (r.stop) { tabStore.del(TERAPIA); return terapiaDice("warn", `fermato su ${dove}: ${r.stop}.`); }
     tabStore.set(TERAPIA, { ...ora, fase: "attesa", ts: Date.now() });
-    terapiaDice(r.ok ? "ok" : "warn", `${dove}: ${r.ok ? r.testo : r.tocca}.${g.voci.length - i - 1 > 0 ? " Dopo la Conferma preparo il successivo." : ""}`);
+    terapiaDice(r.ok ? "ok" : "warn", `${terapiaChi(g.ep, g.nome)} — ${dove}: ${r.ok ? r.testo : r.tocca}.${g.voci.length - i - 1 > 0 ? " Dopo la Conferma preparo il successivo." : ""}`);
   }
 
   // ---------------------------------------------------- portale clinico

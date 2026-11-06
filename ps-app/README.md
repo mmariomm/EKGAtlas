@@ -279,7 +279,7 @@ esame per esame.
 riga del letto, il **cuore** (solo l'icona) e **un pallino solo**, se c'è qualcosa: **rosso** per
 un esame oltre la seconda soglia, valori nuovi **critici** fuori range (solo gli analiti da guardare
 per primi: K, Na, Hb, Trop, Lac, pH, Glu, Cr…) o un promemoria passato; **ambra** oltre la prima
-soglia, altri valori nuovi fuori range, o a 15 minuti da un promemoria; **blu** per un risultato nuovo; un **cerchio
+soglia o a 15 minuti da un promemoria; **blu** per un risultato nuovo (anche fuori range, se non è critico); un **cerchio
 grigio** se qualcosa aspetta e basta. Il resto — esame per esame, il cuore, la prima cosa da fare —
 nel passaggio del mouse, e tutto nella riga della lista. Se il letto è piccolo, prima se ne vanno
 il nome del letto e i segni; il nome del paziente mai, e senza puntini.
