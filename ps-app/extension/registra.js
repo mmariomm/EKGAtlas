@@ -485,9 +485,18 @@ function regDopoOrdini(l) {
 // …e il registro degli errori (segnaErrore): un giro del motore fuori dal
 // giornale degli ordini (nella scheda del medico) che fallisce, o un «ORA-»
 // del gestionale anche quando la richiesta rifatta è riuscita. I suoi dati
-// non hanno mai nomi.
+// non hanno mai nomi. Anche la ricetta SISS fermata o in errore (non quella
+// pronta: «inserite» è la fine giusta delle visite) e l'errore grave della
+// Terapia: il motivo è solo il passo, mai il testo della pagina.
 function regDopoErrore(v) {
-  if (!v || v.tipo !== "ordine") return;
+  if (!v) return;
+  const d = v.dati || {};
+  if (v.tipo === "ricetta" && ["errore", "fermo"].includes(d.esito)) {
+    regIncidente(`SISS: ${d.esito}${d.passo ? ` (${String(d.passo).replace(/[^\w\s-]/g, "").slice(0, 30)})` : ""}`).catch(() => {});
+    return;
+  }
+  if (v.tipo === "terapia") { regIncidente(`Terapia: ${d.perche === "nome diverso" || d.perche === "episodio diverso" ? d.perche : "errore"}`).catch(() => {}); return; }
+  if (v.tipo !== "ordine") return;
   const m = String((v.dati && v.dati.motivo) || "");
   if (/riuscita/i.test(m) && !/ORA-/.test(m)) return;   // «Riprova i mancanti: riuscita»
   regIncidente(m.replace(/,?\s*riuscita$/i, "") || "errore dell'ordine").catch(() => {});

@@ -206,6 +206,27 @@ check(/automatica/.test(riga) && riga.includes(z.errore.slice(0, 20)), `nella vi
 if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await doc.screenshot({ path: join(SHOTS, "registrazioni-pc-auto.png") }).catch(() => {}); }
 
 // ===========================================================================
+sezione("anche il SISS fermato e l'errore grave della Terapia fanno un incidente; la ricetta pronta no");
+const incidente = () => sw.evaluate(() => chrome.storage.session.get("registra.incidente").then((o) => o["registra.incidente"] || null));
+const via = () => sw.evaluate(() => chrome.storage.session.remove("registra.incidente"));
+await via();
+await sw.evaluate(() => segnaErrore("ricetta", { esito: "inserite", passo: "fine", motivo: "Visite inserite" }));
+await sospendi(500);
+const pronta = await incidente();
+await sw.evaluate(() => segnaErrore("ricetta", { esito: "fermo", passo: "compilo", motivo: "ROSSI MARIO 999001: fermato" }));
+await finche(incidente, 2000);
+const siss = await incidente();
+await via();
+await sw.evaluate(() => segnaErrore("terapia", { grave: true, perche: "nome diverso" }));
+await finche(incidente, 2000);
+const ter = await incidente();
+await via();
+check(!pronta && siss?.motivi?.[0] === "SISS: fermo (compilo)" && ter?.motivi?.[0] === "Terapia: nome diverso",
+  `SISS fermo e Terapia: l'incidente col passo, senza il testo della pagina; le visite inserite niente (got ${JSON.stringify([pronta, siss?.motivi, ter?.motivi])})`);
+await sospendi(3500);   // (passati i 3 s del test: tolti, nessuno zip in più)
+check((await elenco()).length === 1, "e tolti prima del minuto, nessuno zip in più");
+
+// ===========================================================================
 sezione("la registrazione a mano vince");
 await $panel(doc, "#regvia").click();
 await finche(async () => (await sw.evaluate(() => chrome.storage.local.get("registra").then((o) => o.registra || null)))?.stato === "rec", 8000);

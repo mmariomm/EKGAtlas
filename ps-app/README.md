@@ -1576,7 +1576,9 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   continuo e **cancellati quando il browser si chiude** (all'avvio non c'è niente). Quando un
   ordine **finisce male** — la striscia arancione o rossa (un errore, esami che mancano, «Non
   confermata», etichette non stampate o finite nella coda di Windows, una stampa interrotta), un
-  ordine fermo, o un «ORA-» del gestionale anche se la richiesta rifatta è riuscita — aspetta un
+  ordine fermo, o un «ORA-» del gestionale anche se la richiesta rifatta è riuscita —, quando la
+  ricetta SISS si **ferma** o va in errore (non quando è pronta), o a un errore grave della
+  Terapia (il motivo dice solo il passo, mai il testo della pagina) — aspetta un
   minuto per vedere com'è finita (intanto i 3 minuti prima non si potano), poi salva **dai 3
   minuti prima a un minuto dopo** come zip **automatico**, anonimizzato e controllato come gli
   altri: un incidente, uno zip. Mentre registri a mano vale la tua. Spenta, quello che aveva in
