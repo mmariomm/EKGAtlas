@@ -30,6 +30,13 @@
  *      lì dentro risponde lo stesso. Un numero per ogni volta che succede, a
  *      una richiesta dopo l'altra (n: una volta sola; [2, 2]: due richieste).
  *
+ *  (e) opts.dopoConferma: ms — dopo la Conferma il server vero non torna
+ *      dritto alla pagina del paziente (registrazioni della 3.77.1): risponde
+ *      con la pagina delle etichette LIS (nessun link da stampare: le apre lei
+ *      in una finestra), che va da sé su `MVPG=PsoEpisodio`, che va da sé sulla
+ *      pagina del paziente. Ognuna resta `ms` millisecondi. Le pagine servite
+ *      stanno in `state.passaggi`.
+ *
  * opts.prenotazioneEsterna: il foglio RX resta «Stampa Prenotazione Esterna».
  * opts.filtroStaccato: il modulo RisorsaFiltro com'è nella pagina salvata
  * (`esempi-gestionale/esami-centrale.html`): vuoto, coi controlli fuori — lì
@@ -82,12 +89,32 @@ export function createMock(opts = {}) {
       `<body><table><tr><td class="AFCErrorDataTD">${ORA_PROGRESSIVO(rid)}</td></tr></table>`);
     return { ...lista, body: Buffer.from(html, "latin1") };
   };
+  // (e) una pagina di passaggio: dell'episodio (nei suoi link), niente da stampare, e se ne va da sola
+  st.passaggi = [];
+  const passaggio = (nome, ep, dove) => {
+    st.passaggi.push(nome);
+    const html = `<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><title>${nome}</title></head><body>
+      <a href="?MVPG=PsoEpisodioDiario&EPISODIO_ID=${ep}">Diario</a>
+      <script>setTimeout(function () { location.href = ${JSON.stringify(dove)}; }, ${Number(opts.dopoConferma) || 0});</script></body></html>`;
+    return { status: 200, headers: { "content-type": "text/html; charset=windows-1252" }, body: Buffer.from(html, "latin1") };
+  };
 
   mock.handle = (req) => {
     let u;
     try { u = new URL(req.url); } catch { return base(req); }
     const p = u.searchParams, ccs = p.get("ccsForm") || "", mvpg = p.get("MVPG") || "";
     const risorse = (p.get("RISORSE") || "").split(",").filter(Boolean);
+
+    // (e) dopo la Conferma: le etichette LIS, poi PsoEpisodio, poi il paziente
+    if (opts.dopoConferma != null && req.method === "POST" && ccs.startsWith("Prestazioni")) {
+      const out = base(req), rid = p.get("RICHIESTA_ID"), ep = p.get("EPISODIO_ID") || "";
+      if (out.status >= 400 || !(st.richieste[rid] || {}).confirmed) return out;
+      return passaggio("RcsStampaEtichetteLIS", ep, `?MVPG=PsoEpisodio&&RICHIESTA_ID=${rid}&STRUTTURA=1&EPISODIO_ID=${ep}`);
+    }
+    if (opts.dopoConferma != null && req.method === "GET" && mvpg === "PsoEpisodio") {
+      const ep = p.get("EPISODIO_ID") || "";
+      return passaggio("PsoEpisodio", ep, `?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${ep}`);
+    }
 
     // (a) il modulo RisorsaFiltro del carrello
     if (req.method === "POST" && ccs.startsWith("RisorsaFiltro") && mvpg === "RcsRichiestaPrestazioniRicercaErogatore") {

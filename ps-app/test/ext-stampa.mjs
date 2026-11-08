@@ -818,6 +818,35 @@ if (await prova("la scheda dell'ordine ricaricata o chiusa mentre stampa: «stam
     `chiusa a metà stampa: «Stampa interrotta», non «Scheda chiusa» (got ${JSON.stringify(chiusa && [chiusa.stato, chiusa.pubblico])})`);
 }
 
+// ---- 10b. dopo la Conferma, le pagine che il gestionale lascia da sé ---------
+// Il gestionale vero, dopo la Conferma, porta la scheda dell'ordine dalla
+// pagina delle etichette LIS a PsoEpisodio e poi al paziente, da sé. La
+// stampa non parte da una pagina che se ne va: i suoi PDF morivano con lei
+// («Stampa interrotta», «Fogli NON stampati»). Parte dal paziente.
+if (await prova("dopo la Conferma il gestionale passa da pagine che lascia da sé: la stampa parte dal paziente, e i fogli escono tutti")) {
+  installa(true);
+  await scelte(ATTIVA);
+  A = createMock({ seedConfirmed: true, dopoConferma: 1000 });
+  pdfVia.lento = { re: FOGLIO, ms: 2500 };   // un PDF ci mette più di quanto la pagina resta
+  await sw.evaluate(() => chrome.storage.local.remove("errori.v1"));
+  await suPagina(doc, A.patientUrl);
+  await azzeraStampe(doc);
+  const nasce = nuovaPagina();
+  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA"]);
+  const worker = await nasce;
+  await suPagina(doc, B.patientUrl);
+  const rec = await finche(async () => (await ordini()).find((x) => x.paziente === "ROSSI MARIO" && x.stato === "avviso"), 60000);
+  const n = rec ? rec.stampa.jobs.length : 0, l = lavoriPerStampante();
+  check(A.state.passaggi.join(" → ") === "RcsStampaEtichetteLIS → PsoEpisodio" && conferme(A).length === 1,
+    `la scheda dell'ordine conferma una volta e passa dalle etichette LIS e da PsoEpisodio (got ${A.state.passaggi.join(" → ") || "niente"})`);
+  check(!!rec && rec.pubblico.titolo === "Stampato su Zebra ZD421 e HP LaserJet A4" && n >= 2 && rec.fogli.every((f) => f.stato === "stampato") && l.length === n,
+    `i fogli escono tutti, una volta: «Stampato su Zebra ZD421 e HP LaserJet A4» (got ${JSON.stringify(rec && [rec.pubblico.titolo, rec.pubblico.testo, rec.fogli.map((f) => f.stato)])} · ${l.length} fogli)`);
+  const err = ((await sw.evaluate(() => chrome.storage.local.get("errori.v1")))["errori.v1"] || []).filter((e) => /^stampa/.test(e.tipo));
+  check(err.length === 0, `nessun PDF perso per strada (got ${JSON.stringify(err.map((e) => e.dati))})`);
+  check(await aspettaChiusa(worker), "e la scheda dell'ordine si chiude");
+  pdfVia.lento = null;
+}
+
 // ---- 11. ⏹ mentre stampa ----------------------------------------------------
 if (await prova("⏹ sulla striscia mentre il service worker stampa: il foglio in corso finisce, gli altri no")) {
   installa(true);

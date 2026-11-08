@@ -1380,7 +1380,10 @@ radiologia.
 
 Sul campo, dopo la Conferma il gestionale **torna alla pagina del paziente**: è lì che la stampa
 parte da sola (e se un'installazione mostrasse una pagina intermedia, parte lì se ha i link,
-altrimenti aspetta il ritorno sul paziente). **Solo per le richieste di PS Assist**: quelle in cui
+altrimenti aspetta il ritorno sul paziente). Nella scheda di un ordine in sottofondo il ritorno
+passa da pagine che il gestionale lascia da sé in un attimo (le etichette LIS, `PsoEpisodio`): da
+lì la stampa non parte — i suoi PDF morirebbero con la pagina, «Stampa interrotta» —, parte dal
+paziente; una pagina dove la scheda resta più di 3 secondi vale come sempre. **Solo per le richieste di PS Assist**: quelle in cui
 il pannello ha mandato esami (o che ha aperto lui), confermate dal pannello o col bottone del
 gestionale. Una richiesta fatta tutta a mano nel gestionale, confermata col suo bottone, non
 stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta** (menu **⋯ →
