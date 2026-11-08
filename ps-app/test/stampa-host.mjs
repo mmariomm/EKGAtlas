@@ -23,14 +23,29 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PWSH = process.env.PWSH || "pwsh";
-if (spawnSync(PWSH, ["-NoProfile", "-Command", "exit 0"], { stdio: ["ignore", "ignore", "ignore"] }).status !== 0) {
-  console.log("STAMPA-HOST: PowerShell non trovato (PWSH o pwsh): prova saltata\n");
-  process.exit(0);
-}
-
 let fail = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
+
+// Le copie (l'etichetta anagrafica ×N, dalla versione 4), lette nel testo di
+// host.ps1: si controllano anche dove PowerShell non c'è (qui sotto, con
+// PowerShell, le si prova davvero).
+{
+  const ps = readFileSync(join(root, "stampa/host.ps1"), "utf8");
+  console.log("\naiutante di stampa (host.ps1), senza PowerShell: le copie");
+  check(/^\$VERSIONE = '4'/m.test(ps), "la versione è la 4 (l'estensione manda le copie in un foglio solo dalla 4)");
+  check(/\$copie = 1\r?\n\s*if \(\(\$d\.copie -is \[int\] -or \$d\.copie -is \[long\]\) -and \$d\.copie -ge 1 -and \$d\.copie -le 10\) \{ \$copie = \[int\]\$d\.copie \}/.test(ps),
+    "copie: un intero da 1 a 10, qualunque altra cosa è 1");
+  check(/if \(\$copie -gt 1\) \{ \$opzioni = '\{0\},\{1\}x' -f \$opzioni, \$copie \}/.test(ps) && ps.indexOf("$copie -gt 1") < ps.indexOf("-print-settings"),
+    "più di una: «,Nx» in coda alle opzioni di SumatraPDF (noscale,disable-auto-rotation,3x), prima di chiamarlo");
+  check(/Rispondi @\{ ok = \$true; esito = \$r\.esito; stampante = \$r\.stampante; pagina = \$r\.pagina; copie = \$r\.copie; versione = \$VERSIONE \}/.test(ps),
+    "e la risposta dice le copie mandate e la versione");
+}
+
+const PWSH = process.env.PWSH || "pwsh";
+if (spawnSync(PWSH, ["-NoProfile", "-Command", "exit 0"], { stdio: ["ignore", "ignore", "ignore"] }).status !== 0) {
+  console.log(fail ? `\nSTAMPA-HOST: ${fail} CHECK FALLITI (e PowerShell non trovato: il resto saltato)\n` : "\nSTAMPA-HOST: PowerShell non trovato (PWSH o pwsh): il resto della prova saltato\n");
+  process.exit(fail ? 1 : 0);
+}
 
 // Le opzioni con cui host.cmd avvia PowerShell: le stesse, qui.
 const cmd = readFileSync(join(root, "stampa/host.cmd"), "utf8");
@@ -128,7 +143,7 @@ check(OPZIONI.includes("-InputFormat") && OPZIONI[OPZIONI.indexOf("-InputFormat"
   `host.cmd avvia PowerShell col percorso intero e -InputFormat None (got ${riga.trim()})`);
 {
   const { r, intero, fermato } = await chiedi({ t: "ping" });
-  check(r && r.ok === true && r.versione === "3" && intero && !fermato,
+  check(r && r.ok === true && r.versione === "4" && intero && !fermato,
     `ping → la versione, su stdout solo la risposta, con stdin aperto come lo tiene Chrome (got ${JSON.stringify(r)}${fermato ? ", non ha risposto" : ""})`);
 }
 {
@@ -155,6 +170,21 @@ check(OPZIONI.includes("-InputFormat") && OPZIONI[OPZIONI.indexOf("-InputFormat"
   togliArgomenti();
   const { r } = await chiedi(foglio("Zebra ZD421", { ruota: "auto" }));
   check(r && r.ok && argomenti()[3] === "noscale", `«ruota: auto» → «noscale», e SumatraPDF gira l'etichetta come vuole lui (got ${argomenti()[3]})`);
+}
+{
+  // le copie (l'etichetta anagrafica ×3): un lavoro solo, «3x» nelle opzioni, e la risposta lo ridice
+  togliArgomenti();
+  const { r } = await chiedi(foglio("Zebra ZD421", { ruota: "no", copie: 3 }));
+  check(r && r.ok && r.esito === "stampato" && r.copie === 3 && r.versione === "4" && argomenti()[3] === "noscale,disable-auto-rotation,3x" && argomenti().length === 6,
+    `copie: 3 → SumatraPDF -print-settings "noscale,disable-auto-rotation,3x", un lavoro; risponde copie: 3, versione 4 (got ${JSON.stringify(r)} · ${argomenti()[3]})`);
+  togliArgomenti();
+  const a4 = await chiedi({ t: "stampa", tipo: "a4", stampante: "HP LaserJet A4", copie: 2, pdf: pdf("lista").toString("base64") });
+  check(a4.r && a4.r.ok && a4.r.copie === 2 && argomenti()[3] === "fit,2x", `A4, copie: 2 → «fit,2x» (got ${argomenti()[3]})`);
+  for (const copie of [11, 0, -2, "3", 2.5, true, null]) {
+    togliArgomenti();
+    const x = await chiedi(foglio("Zebra ZD421", { ruota: "auto", copie }));
+    check(x.r && x.r.ok && x.r.copie === 1 && argomenti()[3] === "noscale", `copie: ${JSON.stringify(copie)} → una copia, «noscale» (got ${JSON.stringify(x.r)} · ${argomenti()[3]})`);
+  }
 }
 {
   // un nome di stampante che sembra fatto di opzioni resta UN argomento (fra virgolette)
@@ -238,6 +268,7 @@ for (const [cosa, domanda, re] of [
   const log = join(LOCALE, "PSAssist", "stampa.log");
   const testo = existsSync(log) ? readFileSync(log, "utf8") : "";
   check(/stampa etichette -> Zebra ZD421: stampato \(\d+ KB, [\d.,]+ s, 50x25 mm, noscale,disable-auto-rotation\)/.test(testo) && /stampa etichette: fallito - SumatraPDF non è riuscito/.test(testo)
+    && /stampa etichette -> Zebra ZD421: stampato \(\d+ KB, [\d.,]+ s, 50x25 mm, noscale,disable-auto-rotation,3x\)/.test(testo)
     && /stampa etichette: sconosciuto - SumatraPDF non ha finito/.test(testo),
   `il registro dice cosa è uscito, dove, la misura e le opzioni, e cosa no (got ${testo.split("\n").length - 1} righe)`);
   check(!/PAZIENTE-FINTO|AAAA/.test(testo), "nel registro non c'è niente del contenuto");
@@ -254,7 +285,7 @@ console.log("\naiutante: «Aggiorna app» (chi, aggiorna)");
   const versioneIn = (d) => { try { return JSON.parse(readFileSync(join(d, "manifest.json"), "utf8")).version; } catch { return ""; } };
   const agg = () => readdirSync(TMP).filter((f) => /^psassist-agg-/.test(f)).length;
   let r = (await chiedi({ t: "chi" })).r;
-  check(r && r.ok === true && r.versione === "3" && r.estensione === "" && r.cartella === EST, `chi, senza estensione installata: «estensione» vuota, e la cartella (got ${JSON.stringify(r)})`);
+  check(r && r.ok === true && r.versione === "4" && r.estensione === "" && r.cartella === EST, `chi, senza estensione installata: «estensione» vuota, e la cartella (got ${JSON.stringify(r)})`);
   mkdirSync(EST, { recursive: true }); mkdirSync(STAMPA, { recursive: true });
   writeFileSync(join(EST, "manifest.json"), JSON.stringify({ manifest_version: 3, name: "PS Assist — prova", version: "1.0.0", key: CHIAVE }));
   writeFileSync(join(EST, "content.js"), "// vecchio\n");

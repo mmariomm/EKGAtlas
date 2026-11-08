@@ -510,9 +510,23 @@ async function scenarioAutoConfirm(browser) {
   check(scen, /Etichette non stampate/.test(annullata) && /1 esame confermato \d\d:\d\d/.test(annullata) && (await $panel(b.page, AZIONE).innerText().catch(() => "")) === "Ristampa"
     && (await $panel(b.page, ".gchip.warn, .pill.run.warn").count()) === 1,
     `annullata la stampa: ambra, «Etichette non stampate · 1 esame confermato HH:MM» e «Ristampa» — non il ✓ di una stampa uscita (got: ${annullata})`);
+  const VISTO = "#strstop, #psassist-host #gchipstop";
+  const vx = await $panel(b.page, VISTO).first().getAttribute("title").catch(() => "");
+  check(scen, vx === "Visto: togli", `e accanto il ✕ «Visto: togli» (got «${vx}»)`);
   await $panel(b.page, AZIONE).click();
   check(scen, await b.page.waitForSelector("#psassist-print", { state: "attached", timeout: 8000 }).then(() => true).catch(() => false),
     "«Ristampa» rifà la stampa");
+  // annullata di nuovo: il ✕ toglie l'avviso, in un tocco (il Registro tiene la stampa)
+  // (la scheda a vista: Esc; il foglio che aspetta il tuo «Stampa»: il ✕ della sua striscia)
+  await b.page.waitForFunction(() => { const w = document.getElementById("psassist-print"); return !w || !w.shadowRoot.querySelector(".pw").hidden || w.dataset.stato === "aspetta"; }, null, { timeout: 30000 }).catch(() => {});
+  if (await b.page.evaluate(() => document.getElementById("psassist-print")?.dataset.stato === "aspetta")) await $panel(b.page, VISTO).first().click().catch(() => {});
+  else await b.page.keyboard.press("Escape");
+  await b.page.waitForSelector("#psassist-print", { state: "detached", timeout: 5000 }).catch(() => {});
+  await striscia(b.page, /Etichette non stampate/, 5000).catch(() => "");
+  await $panel(b.page, VISTO).first().click().catch(() => {});
+  await b.page.waitForTimeout(400);
+  const dopoVisto = await striscia(b.page, /Etichette non stampate/, 1000).catch(() => "");
+  check(scen, !dopoVisto, `un tocco sul ✕: «Etichette non stampate» se ne va (got: ${dopoVisto || "niente"})`);
   await b.context.close();
 }
 
@@ -6832,6 +6846,16 @@ async function scenarioWorkup(browser) {
     `un PDF con un altro codice fiscale: «Errore grave: questo PDF è di un altro paziente — non mostrato» (got: ${altro.replace(/\s+/g, " ").slice(0, 120)})`);
   check(scen, (await $panel(page, `.wuimg [data-esito="${ALTRO_ID}"] .wuex`).innerText().catch(() => "")) === "Errore grave: questo PDF è di un altro paziente — non mostrato",
     "e nemmeno l'anteprima sulla riga");
+  // in intestazione il chip rosso lo dice, col ✕ «Visto: togli»: un tocco e se ne va; il Registro lo tiene
+  const chipGrave = await $panel(page, ".gchip.err").getAttribute("data-riga").catch(() => "");
+  const visto = await $panel(page, "#gchipstop").getAttribute("title").catch(() => "");
+  await $panel(page, "#gchipstop").click().catch(() => {});
+  await page.waitForTimeout(300);
+  check(scen, /Errore grave/.test(chipGrave) && visto === "Visto: togli" && !(await $panel(page, ".gchip").count()) && /ERRORE GRAVE: il PDF di/.test(await registroDi(page)),
+    `«Errore grave» in intestazione, col ✕ «Visto: togli»: tolto, e il Registro lo tiene (got «${chipGrave}» · «${visto}» · ${await $panel(page, ".gchip").count()} chip)`);
+  // sotto la riga resta (si vede aprendo quel referto): quello non si toglie
+  check(scen, (await $panel(page, `.wuimg [data-esito="${ALTRO_ID}"] .wuex`).innerText().catch(() => "")) === "Errore grave: questo PDF è di un altro paziente — non mostrato",
+    "e sulla riga del referto resta");
   await $panel(page, `[data-esito="${ECG_ID}"]`).click();
   await page.waitForTimeout(200);
   await shot(page, "workup-chiaro");
