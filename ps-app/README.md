@@ -1284,6 +1284,14 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   cornice ma non ci legge dentro, e il QR porta la chiave. Dove la cornice non si apre (il pannello su
   un indirizzo diverso da quelli del gestionale, un blocco), la pagina va in una scheda sua come
   prima, e il pannello lo dice.
+- **La mappa sul telefono** (sola lettura): in testa all'elenco, **Lista · Mappa** (la scelta resta sul
+  telefono; nessun dato di pazienti) e, in Mappa, **Alta · Bassa** (si parte da quella che guarda il PC).
+  Le stanze sono quelle salvate sul PC (o quelle di partenza), disegnate sulla stessa griglia, larghe quanto
+  il telefono; due dita ingrandiscono dentro la mappa, che scorre di lato nella sua cornice. Un letto
+  occupato porta cognome, età, il colore del triage, il cuore e al più un pallino; i vuoti solo il nome; le
+  sale d'attesa le etichette dei pazienti. Un tocco apre il paziente; chi non ha posto resta sotto, «Senza
+  posto». Il comando `mappa` manda solo la geometria e chi sta dove (episodi): niente nomi, niente nuove
+  letture del gestionale, niente scritture. Un PC che non lo conosce: niente scelta, la lista di sempre.
 - **Ordinare dal telefono**: la conferma porta nome intero, età e posto («Ordino 2 esami per ROSSI
   MARIO · 77 anni · OBI 2? Tocca di nuovo»; due pazienti con lo stesso nome: «⚠ Ordino … per ROSSI
   MARIO · …9001 · …», col segno dell'elenco); un doppio tocco non conferma; se la rete perde
@@ -1295,6 +1303,11 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   la pagina del paziente li lascia scrivere; «Salva» li scrive col «Conferma» della pagina, in una
   scheda di sottofondo, e rilegge. Mai sopra un testo cambiato sul PC o non ancora salvato in una
   scheda; la pagina aperta di quel paziente dice «Aggiornato dal telefono · Ricarica».
+  Sopra l'esame obiettivo (solo lì, e solo dove si può scrivere) una fila di chip: i tuoi EO di base per nome,
+  poi **Altri…** (Casi e Frasi, in un foglio; la ricerca solo se sono più di 15). I testi sono quelli del PC, con
+  le tue modifiche (comando `eo`, niente dal gestionale). Un tocco: campo vuoto, ci va il testo; altrimenti in
+  fondo, a capo, mai al posto di quello che c'è. È una modifica della bozza come un'altra — parte solo con «Salva» —
+  e per 5 secondi **Annulla** toglie esattamente quello inserito. Un PC più vecchio: niente chip.
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
   Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
   sessione si chiude da sola; tornando sull'app si riapre da sola.

@@ -296,3 +296,62 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .vit.vecchio, .vit.vecchio b, .vit.vecchio .ros, .vit.vecchio .amb { color: var(--grigio2); }
 .paz .st .cuorev { font-size: 12.5px; font-weight: 600; margin-left: 2px; }
 .vit span { white-space: nowrap; }
+
+/* --- la mappa (sola lettura) -------------------------------------------- */
+/* --u = la cella: sta nella larghezza (in orizzontale, anche nell'altezza), mai sotto gli 8 px; il pizzico (--zoom) la ingrandisce. */
+.seg.pic { margin: -6px 0 12px; background: none; padding: 0; gap: 8px; }
+.seg.pic button { min-height: 40px; padding: 6px 0; font-size: 14px; background: var(--seg); }
+.seg.pic button.on { background: var(--blu-chiaro); color: var(--blu); box-shadow: none; }
+.mappa { overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; max-width: 100%; margin: 0 0 6px; border: 1px solid var(--bordo); border-radius: 14px; background: var(--carta); }
+.piano { --larg: calc(min(100vw, 760px) - var(--sx) - var(--dx) - 2px); --u0: max(8px, min(calc(var(--larg) / var(--cols)), calc((100vh - 60px) / var(--rows))));
+  --u: calc(var(--u0) * var(--zoom, 1)); position: relative; width: calc(var(--u) * var(--cols)); height: calc(var(--u) * var(--rows)); margin: 0 auto; }
+.letto, .area { position: absolute; box-sizing: border-box; left: calc(var(--u) * var(--x) + 1.5px); top: calc(var(--u) * var(--y) + 1.5px);
+  width: calc(var(--u) * var(--w) - 3px); height: calc(var(--u) * var(--h) - 3px); border-radius: 8px; overflow: hidden; min-width: 0; }
+.letto { container: letto / size; display: flex; flex-direction: column; justify-content: flex-start; gap: 1px; padding: 3px 3px 2px 7px; text-align: left; font: inherit; color: var(--testo); line-height: 1.1;
+  border: 1px solid var(--campo); background: var(--carta); }
+.letto.vuoto { border: 1px dashed var(--bordo); background: transparent; color: var(--grigio2); align-items: center; justify-content: center; padding: 2px; text-align: center; }
+.letto.occ::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--tr, var(--bordo)); }
+.letto.occ:active, .pa:active { background: var(--fondo); }
+.letto.spento .ln, .pa.spento .ln { color: var(--grigio); }
+.letto .ln, .pa .ln { font-weight: 700; overflow-wrap: normal; word-break: keep-all; hyphens: none; min-width: 0;
+  font-size: clamp(6.5px, calc((var(--u) * var(--w) - 17px) / (var(--n) * .68)), 13px); }
+.pa .ln { font-size: clamp(6.5px, calc((var(--u) * var(--w) - 24px) / (var(--n) * .68)), 11px); }
+.letto.vuoto .ln { font-weight: 500; font-size: clamp(6.5px, calc((var(--u) * var(--w) - 10px) / (var(--n) * .6)), 11px); }
+.letto .lb { font-size: clamp(6px, calc(var(--u) * .6), 9px); color: var(--grigio); font-weight: 600; white-space: nowrap; overflow: hidden; }
+.letto .le { font-size: clamp(6.5px, calc(var(--u) * .8), 11px); color: var(--grigio); font-variant-numeric: tabular-nums; }
+.r2 { display: flex; align-items: center; justify-content: space-between; gap: 3px; min-width: 0; }
+.mk { display: flex; align-items: center; gap: 3px; line-height: 1; margin-left: auto; }
+@container letto (max-height: 40px) { .lb { display: none; } }
+.letto.alto .ln { writing-mode: vertical-rl; font-size: clamp(6.5px, calc((var(--u) * var(--h) - 16px) / (var(--n) * .68)), 11px); }
+.letto.alto { align-items: center; }
+.letto.alto .r2 { flex-direction: column; justify-content: flex-start; gap: 2px; }
+.letto.alto .mk { margin: 0; }
+.letto.alto .le { display: none; }  /* la barella è stretta: il cognome in piedi, e basta */
+.mk .cuore { font-size: clamp(7px, calc(var(--u) * .8), 11px); } .mk .cuore.ros { color: var(--rosso); } .mk .cuore.amb { color: var(--ambra); } .mk .cuore.vecchio { color: var(--grigio2); }
+.mk .segno { width: clamp(5px, calc(var(--u) * .6), 8px); height: clamp(5px, calc(var(--u) * .6), 8px); border-radius: 50%; }
+.mk .segno.ros { background: var(--rosso); } .mk .segno.amb { background: var(--ambra); } .mk .segno.nuovo { background: var(--blu); }
+.mk .segno.att { box-shadow: inset 0 0 0 1.5px var(--grigio2); }
+.area { border: 1px dashed var(--campo); background: var(--carta2); padding: 3px; overflow-y: auto; }
+.area h4 { margin: 0 0 3px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--grigio);
+  font-size: clamp(6px, calc(var(--u) * (var(--w) - 1) / (var(--n) * .7)), 9px); }
+.pa { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 3px; width: 100%; margin: 0 0 2px; border: 0; border-left: 3px solid var(--tr, var(--bordo));
+  border-radius: 4px; background: var(--carta); padding: 2px 3px 2px 4px; text-align: left; font: inherit; color: var(--testo); line-height: 1.15; }
+.pa .ln { flex: 1 1 auto; --n: 7; }
+.pa .mk { flex: none; }
+
+/* --- gli EO salvati sopra l'esame obiettivo ----------------------------- */
+.eoc { margin: 0 0 8px; gap: 6px; }
+.eoann { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; padding: 0 2px 0 12px; border-radius: 10px; background: var(--blu-chiaro); color: var(--blu); font-size: 13.5px; font-weight: 600; }
+.eoann button { min-height: 44px; min-width: 44px; border: 0; background: none; color: var(--blu); font-weight: 700; font-size: 14px; padding: 0 12px; }
+.foglio { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.foglio .velo { position: absolute; inset: 0; border: 0; background: rgba(9, 20, 30, .45); }
+.foglio .pannello { position: relative; width: 100%; max-width: 760px; max-height: 78vh; overflow: auto; background: var(--fondo); border-radius: 18px 18px 0 0; box-shadow: 0 -10px 30px var(--ombra);
+  padding: 8px var(--dx) calc(18px + env(safe-area-inset-bottom)) var(--sx); overscroll-behavior: contain; }
+.foglio .capo { display: flex; align-items: center; justify-content: space-between; font-size: 17px; margin: 0 4px 2px; }
+.foglio .capo .chiudi { min-height: 44px; min-width: 44px; border: 0; background: none; color: var(--azione); font-size: 16px; font-weight: 650; padding: 0 4px; }
+.foglio input { display: block; width: 100%; min-height: 44px; margin: 4px 0 2px; border: 1px solid var(--campo); border-radius: 10px; background: var(--carta); padding: 8px 12px; font-size: 16px; }
+.foglio .voce { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; min-height: 52px; text-align: left; border: 0; background: none; padding: 9px 14px; }
+.foglio .voce + .voce { border-top: 1px solid var(--linea); }
+.foglio .voce:active { background: var(--fondo); }
+.foglio .voce b { font-size: 16px; font-weight: 650; }
+.foglio .voce span { max-width: 100%; font-size: 13px; color: var(--grigio); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

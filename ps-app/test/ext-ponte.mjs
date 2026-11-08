@@ -996,6 +996,140 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
 }
 
 // ===========================================================================
+sezione("gli EO salvati, sopra l'esame obiettivo della cartella dal telefono");
+{
+  CART.on = true; CART.eoRo = false;
+  Object.assign(CART.campi, { ANAMNESI: "Dolore toracico", ALLERGIE: "Nessuna", MALATTIE_PREGRESSE: "Ipertensione", FARMACI_ASSUNTI: "Ramipril", ESAME_OBIETTIVO: "" });
+  const eo = JSON.parse(readFileSync(join(root, "src/eo.json"), "utf8"));
+  const solito = eo.basi.find((b) => b.k === "solito"), caso = eo.casi[0];
+  const SUO = "Vigile EOSUO, eupnoico, apiretto";
+  // il medico ha riscritto «Mio solito base» sul PC: il telefono ha il suo testo
+  await doc.evaluate((SUO) => localStorage.setItem("psassist:eo.v1", JSON.stringify({ "base:solito": { testo: SUO, base: "x" } })), SUO);
+  const r = await sw.evaluate(() => ponteSuScheda("eo", {}));
+  const l = r.dati || [];
+  check(r.ok === true && l.length === eo.basi.length + 1 + eo.casi.length + eo.frasi.length && Object.keys(l[0] || {}).sort().join() === "gruppo,k,nome,testo",
+    `«eo»: chiave, nome, gruppo e testo di ognuno (${l.length} voci: ${eo.basi.length + 1} di base, ${eo.casi.length} casi, ${eo.frasi.length} frasi)`);
+  check(l.slice(0, 2).map((x) => x.k + "=" + x.nome).join() === "base:solito=Mio solito base,base=EO generale" && l[0].testo === SUO && l[0].gruppo === "base" && l[1].testo === eo.base.testo
+    && l.find((x) => x.k === "caso:" + caso.k).testo === caso.testo && l.filter((x) => x.gruppo === "casi").length === eo.casi.length && l.filter((x) => x.gruppo === "frasi").length === eo.frasi.length,
+    "i suoi EO di base per primi (con la sua modifica), poi Casi e Frasi, con i testi verbatim");
+
+  await doc.bringToFront();
+  await suPagina(doc, A.patientUrl);
+  await tel.reload();   // (senza le bozze della sezione di prima)
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  await tocca(tel, '.paz[data-ep="999001"]');
+  await tocca(tel, '[data-a="scheda"][data-s="cartella"]');
+  await aspettaTel(tel, /Letto sul PC alle/, 20000);
+  const campoEo = () => tel.locator("#cc-ESAME_OBIETTIVO");
+  const valore = () => campoEo().inputValue();
+  const chipTel = () => tel.evaluate(() => ({
+    sopra: [...document.querySelectorAll(".cc")].map((c) => (c.querySelector("textarea").id.slice(3)) + ":" + [...c.querySelectorAll(".eoc .chip")].map((b) => b.textContent).join("|")).filter((x) => !/:$/.test(x)),
+    n: document.querySelectorAll(".eoc").length, ann: [...(document.querySelector(".eoann")?.children || [])].map((x) => x.textContent.trim()).join(" ") }));
+  const c0 = await chipTel();
+  check(c0.n === 1 && c0.sopra.join() === "ESAME_OBIETTIVO:Mio solito base|EO generale|Altri…" && !c0.ann,
+    `sopra l'esame obiettivo, e solo lì: i suoi EO di base per nome, poi «Altri…» (${c0.sopra.join()})`);
+  check(!(await piccoli(tel)).length, `i chip e i bottoni almeno 44 px (${JSON.stringify(await piccoli(tel))})`);
+  const posti0 = CART.post.length;
+
+  // campo vuoto: il testo ci va; niente parte; il cursore dopo il testo; 5 secondi di «Annulla»
+  await tel.locator('.eoc [data-a="eo"][data-k="base:solito"]').click();
+  const dopo1 = await tel.evaluate(() => { const t = document.getElementById("cc-ESAME_OBIETTIVO"); return { v: t.value, fuoco: document.activeElement === t, cur: t.selectionStart === t.value.length && t.selectionEnd === t.value.length }; });
+  const c1 = await chipTel();
+  check(dopo1.v === SUO && dopo1.fuoco && dopo1.cur && c1.ann === "Inserito: Mio solito base Annulla" && CART.post.length === posti0 && await tel.locator('.cta [data-a="csalva"]').count() === 1,
+    `campo vuoto: il testo ci va, il cursore dopo; «Inserito: Mio solito base · Annulla»; «Salva» compare, ma niente è partito (${JSON.stringify(dopo1)} · ${c1.ann})`);
+  await tel.locator('[data-a="eoannulla"]').click();
+  check(await valore() === "" && !(await chipTel()).ann && await tel.locator(".cta").count() === 0, "«Annulla»: il campo com'era, vuoto; niente da salvare");
+
+  // campo con del testo: in fondo, a capo; «Annulla» toglie solo quello
+  await tel.locator('.eoc [data-a="eo"][data-k="base:solito"]').click();
+  await tel.locator('.eoc [data-a="eo"][data-k="base"]').click();
+  check(await valore() === SUO + "\n" + eo.base.testo && (await chipTel()).ann === "Inserito: EO generale Annulla", "con del testo già nel campo: l'EO va in fondo, a capo, senza toccare quello che c'è");
+  await tel.locator('[data-a="eoannulla"]').click();
+  check(await valore() === SUO, "«Annulla»: via esattamente quello appena inserito, resta il primo");
+  // passati i 5 secondi, l'«Annulla» se ne va e il testo resta
+  await tel.locator('.eoc [data-a="eo"][data-k="base"]').click();
+  check(!!(await chipTel()).ann, "(di nuovo inserito)");
+  check(await finche(async () => !(await chipTel()).ann, 8000) && await valore() === SUO + "\n" + eo.base.testo, "dopo 5 secondi «Annulla» sparisce, il testo resta");
+  await campoEo().fill(SUO);
+
+  // «Altri…»: il foglio con Casi e Frasi (la ricerca solo se sono tanti)
+  await tel.locator('.eoc [data-a="eoaltri"]').click();
+  const foglio = await tel.evaluate(() => ({ lbl: [...document.querySelectorAll(".foglio .lbl")].map((x) => x.textContent), voci: document.querySelectorAll(".foglio .voce").length, cerca: !!document.getElementById("eocerca"),
+    prima: document.querySelector(".foglio .voce b")?.textContent, fissa: getComputedStyle(document.querySelector(".foglio")).position }));
+  check(foglio.lbl.join() === "Casi,Frasi" && foglio.voci === eo.casi.length + eo.frasi.length && !foglio.cerca && foglio.prima === caso.nome && foglio.fissa === "fixed",
+    `«Altri…»: un foglio con «Casi» e «Frasi» (${foglio.voci} voci), senza ricerca finché la lista è corta (${JSON.stringify(foglio)})`);
+  await shot(tel, "tel-eo-foglio");
+  if (process.env.PSA_SIDE) {
+    const html = await tel.evaluate(() => document.documentElement.outerHTML.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
+    const fotoCtx = await telBrowser.newContext({ ...IPHONE, deviceScaleFactor: 2 });
+    const foto = await fotoCtx.newPage();
+    await foto.route("**/*", (rr) => (/app\.css$/.test(rr.request().url()) ? rr.fulfill({ path: join(root, "../public/ponte/app.css"), contentType: "text/css" }) : rr.fulfill({ status: 200, contentType: "text/html", body: html })));
+    await foto.goto("https://ponte.invalid/ponte/");
+    await foto.screenshot({ path: join(process.env.PSA_SIDE, "eo-telefono-altri.png") }).catch(() => {});
+    await fotoCtx.close();
+  }
+  await tel.locator('.foglio [data-a="eochiudi"].velo').click({ position: { x: 20, y: 20 } });
+  check(await tel.locator(".foglio").count() === 0 && await valore() === SUO, "un tocco fuori: il foglio si chiude, il campo non cambia");
+  await tel.locator('.eoc [data-a="eoaltri"]').click();
+  await tel.locator(`.foglio [data-a="eo"][data-k="caso:${caso.k}"]`).click();
+  const dopo2 = await valore();
+  check(await tel.locator(".foglio").count() === 0 && dopo2 === SUO + "\n" + caso.testo && (await chipTel()).ann === `Inserito: ${caso.nome} Annulla` && CART.post.length === posti0,
+    `un caso dal foglio: il foglio si chiude, il testo va in fondo, a capo; niente è ancora partito`);
+  if (process.env.PSA_SIDE) {
+    await tel.evaluate(() => { document.activeElement && document.activeElement.blur(); window.scrollTo(0, 0); });
+    const html = await tel.evaluate(() => document.documentElement.outerHTML.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
+    const fotoCtx = await telBrowser.newContext({ ...IPHONE, deviceScaleFactor: 2 });
+    const foto = await fotoCtx.newPage();
+    await foto.route("**/*", (rr) => (/app\.css$/.test(rr.request().url()) ? rr.fulfill({ path: join(root, "../public/ponte/app.css"), contentType: "text/css" }) : rr.fulfill({ status: 200, contentType: "text/html", body: html })));
+    await foto.goto("https://ponte.invalid/ponte/");
+    await foto.screenshot({ path: join(process.env.PSA_SIDE, "eo-telefono-chip.png"), fullPage: true }).catch(() => {});
+    await fotoCtx.close();
+  }
+
+  // «Salva»: il campo, col testo inserito, per la strada di sempre
+  await tel.evaluate(() => document.activeElement && document.activeElement.blur());
+  await tel.waitForSelector(".avviso", { state: "detached", timeout: 8000 }).catch(() => {});
+  await tocca(tel, '[data-a="csalva"]');
+  check(await finche(async () => (await tel.locator(".avviso").innerText().catch(() => "")) === "Salvato", 60000), "«Salva»: salvato per la strada di sempre");
+  const f = CART.post[CART.post.length - 1] || {};
+  check(CART.post.length === posti0 + 1 && f.Update === "Conferma" && String(f.ESAME_OBIETTIVO).replace(/\r\n/g, "\n") === SUO + "\n" + caso.testo && f.ANAMNESI === "Dolore toracico",
+    `un invio solo, il «Conferma» della pagina, col campo con il testo inserito e gli altri com'erano (${CART.post.length - posti0} invio)`);
+  check(await valore() === SUO + "\n" + caso.testo, "(riletto dal PC: lo stesso testo)");
+
+  // dove la pagina lo dà di sola lettura: niente chip
+  CART.eoRo = true;
+  await suPagina(doc, A.patientUrl);
+  await tocca(tel, '[data-a="crileggi"]');
+  check(await finche(async () => (await tel.locator("#cc-ESAME_OBIETTIVO").evaluate((t) => t.readOnly).catch(() => false)), 20000) && (await chipTel()).n === 0,
+    "esame obiettivo di sola lettura sulla pagina: niente chip");
+  CART.eoRo = false;
+  await tocca(tel, '[data-a="crileggi"]');
+  await finche(async () => !(await tel.locator("#cc-ESAME_OBIETTIVO").evaluate((t) => t.readOnly).catch(() => true)), 20000);
+
+  // un PC più vecchio non conosce il comando: niente chip, nessun errore, la cartella com'è
+  await tel.route(/\/app\.js/, async (rr) => { const t = await (await rr.fetch()).text(); await rr.fulfill({ status: 200, contentType: "text/javascript", body: "window.__eoVecchio = true;" + t.replace('chiedi("eo"', 'chiedi("eo_vecchio"') }); });
+  await tel.evaluate(() => navigator.serviceWorker?.getRegistrations().then((x) => Promise.all(x.map((y) => y.unregister()))));
+  await tel.reload();
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  await tocca(tel, '.paz[data-ep="999001"]');
+  await tocca(tel, '[data-a="scheda"][data-s="cartella"]');
+  await aspettaTel(tel, /Letto sul PC alle/, 20000);
+  const vecchio = await tel.evaluate(() => ({ prova: window.__eoVecchio === true, chip: document.querySelectorAll(".eoc, .eoann, .foglio").length, campo: !!document.getElementById("cc-ESAME_OBIETTIVO"), err: document.querySelectorAll(".avviso, [role=alert]").length }));
+  check(vecchio.prova && !vecchio.chip && vecchio.campo && !vecchio.err, `con un PC che non conosce «eo»: niente chip, nessun errore, la cartella com'è (${JSON.stringify(vecchio)})`);
+  await tel.unroute(/\/app\.js/);
+
+  // via la prova
+  await doc.evaluate(() => localStorage.removeItem("psassist:eo.v1"));
+  CART.on = false;
+  await tel.reload();
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  await tocca(tel, '.paz[data-ep="999001"]');
+  await aspettaTel(tel, /Richieste/, 10000);
+  await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+  await suPagina(doc, A.worklistUrl);
+}
+
+// ===========================================================================
 sezione("un ordine dal telefono, fino alle etichette");
 lento = 900;
 await doc.evaluate(() => localStorage.setItem("__psaStampe", "[]"));
@@ -1267,6 +1401,161 @@ await tocca(tel, '[data-a="indietro"]');
 check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 10000)), "(l'omonimo non c'è più)");
 
 // ===========================================================================
+sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
+{
+  const POSTI_PRIMA = await doc.evaluate(() => localStorage.getItem("psassist:stanza.ps.posti.v1"));
+  const EXTRA = ["999011", "999012", "999013", "999014", "999015", "999016", "999017", "999018", "999019"];
+  // pazienti inventati, sulla mappa: PS (OBI 4, OSS 1, le due sale d'attesa) e Alta (Letto 1, Rossa, Sedia 1, una barella); ROSA ELIO senza posto
+  await doc.evaluate(({ EXTRA }) => {
+    const K = "psassist:patients.v1", ora = Date.now(), min = 60e3;
+    const l = JSON.parse(localStorage.getItem(K) || "[]").filter((p) => !EXTRA.includes(p.ep));
+    const nuovi = [["999011", "NERI SARA", "ROSSO", 61], ["999012", "GALLI PAOLO", "VERDE", 34], ["999013", "DE LUCA ANNA", "AZZURRO", 82], ["999014", "SOLDI MARCO", "BIANCO", 19],
+      ["999015", "MONTI GIORGIO", "ROSSO", 70], ["999016", "DE ANGELIS FRANCESCA", "ARANCIONE", 47], ["999017", "BARBIERI ELENA", "AZZURRO", 55], ["999018", "ROSA ELIO", "VERDE", 28], ["999019", "SERRA LUCIA", "VERDE", 66]];
+    for (const [ep, name, triage, eta] of nuovi) l.push({ ep, name, url: "", ts: ora - 20 * min, pk: "", triage, eta });
+    localStorage.setItem(K, JSON.stringify(l));
+    const ps = JSON.parse(localStorage.getItem("psassist:stanza.ps.posti.v1") || "{}");
+    Object.assign(ps, { 999011: { tipo: "letto", id: "obi4", ts: ora }, 999012: { tipo: "letto", id: "oss1", ts: ora }, 999019: { tipo: "area", id: "attesa", ts: ora - 5 * min },
+      999013: { tipo: "area", id: "attesa", ts: ora - 4 * min }, 999014: { tipo: "area", id: "attesa2", ts: ora - 3 * min } });
+    localStorage.setItem("psassist:stanza.ps.posti.v1", JSON.stringify(ps));
+    localStorage.setItem("psassist:stanza.alta.posti.v1", JSON.stringify({ 999002: { tipo: "letto", id: "a1", ts: ora }, 999015: { tipo: "letto", id: "rossa", ts: ora },
+      999016: { tipo: "letto", id: "as1", ts: ora }, 999017: { tipo: "letto", id: "ab1", ts: ora }, 998002: { tipo: "letto", id: "a2", ts: ora } }));
+  }, { EXTRA });
+
+  // il comando del PC: solo geometria e chi-sta-dove (episodi), niente nomi
+  const r = await sw.evaluate(() => ponteSuScheda("mappa", {}));
+  const d = r.dati || {};
+  const per = (k) => (d.mappe || []).find((m) => m.k === k) || { letti: [], aree: [], posti: [] };
+  const dove = (k) => JSON.stringify(per(k).posti.map((x) => `${x.ep}:${x.tipo}:${x.id}`).sort());
+  check(r.ok === true && Object.keys(d).sort().join() === "cols,mappe,rows,vista" && d.cols === 40 && d.rows === 24 && (d.mappe || []).map((m) => m.k + "=" + m.nome).join() === "alta=Alta,ps=Bassa",
+    `«mappa»: la griglia 40 × 24 e le due mappe, Alta e Bassa, e la vista del PC (${r.ok} · ${Object.keys(d).join()} · ${(d.mappe || []).map((m) => m.k + "=" + m.nome).join()} · ${d.vista})`);
+  check(per("ps").letti.length === 8 && per("ps").aree.length === 2 && per("alta").letti.length === 11 && per("alta").aree.length === 0
+    && JSON.stringify(per("alta").letti.find((l) => l.id === "rossa")) === JSON.stringify({ id: "rossa", c: 26, r: 10, w: 7, h: 7, nome: "Rossa", forma: "box" })
+    && JSON.stringify(per("ps").letti.find((l) => l.id === "obi2")) === JSON.stringify({ id: "obi2", c: 10, r: 0, w: 5, h: 4, nome: "OBI 2" }),
+    "letti e aree come sul PC (quelli di partenza: 8 + 2 al PS, 11 in Alta), ognuno con la sua misura e il suo nome");
+  check(dove("ps") === JSON.stringify(["999001:letto:obi2", "999011:letto:obi4", "999012:letto:oss1", "999013:area:attesa", "999014:area:attesa2", "999019:area:attesa"])
+    && dove("alta") === JSON.stringify(["999002:letto:a1", "999015:letto:rossa", "999016:letto:as1", "999017:letto:ab1"]),
+    `chi sta dove, per episodio: ognuno in un posto solo, l'episodio precedente (998002) non ha posto (PS ${dove("ps")} · Alta ${dove("alta")})`);
+  check(!/ROSSI|BIANCHI|NERI|GALLI|MONTI|SOLDI|BARBIERI/.test(JSON.stringify(d)) && JSON.stringify(Object.keys(per("ps").posti[0]).sort()) === '["ep","id","tipo"]',
+    "e nient'altro: nessun nome di paziente nella risposta (il nome il telefono lo ha dalla riga di «pazienti»)");
+
+  // il telefono: «Lista · Mappa»
+  await tocca(tel, '[data-a="menu"]');
+  await tocca(tel, '[data-a="aggiornaLista"]');
+  await aspettaTel(tel, /NERI SARA/, 15000);
+  const modoTel = () => tel.evaluate(() => ({ seg: [...document.querySelectorAll("main > .seg:not(.pic) button")].map((b) => b.textContent + (b.classList.contains("on") ? "*" : "")).join("|"),
+    pic: [...document.querySelectorAll("main > .seg.pic button")].map((b) => b.textContent + (b.classList.contains("on") ? "*" : "")).join("|"), mappa: !!document.querySelector(".mappa"),
+    chiave: localStorage.getItem("psassist.ponte.modo"), tutte: Object.keys(localStorage).sort().join() }));
+  const m0 = await modoTel();
+  check(m0.seg === "Lista*|Mappa" && !m0.pic && !m0.mappa && m0.chiave === null, `in testa, quieto: «Lista · Mappa», si parte dalla Lista; scelta niente finché non si tocca (${JSON.stringify(m0)})`);
+  await tocca(tel, '[data-a="modo"][data-m="mappa"]');
+  const m1 = await modoTel();
+  check(m1.seg === "Lista|Mappa*" && m1.pic === "Alta|Bassa*" && m1.mappa && m1.chiave === "mappa" && m1.tutte === "psassist.ponte.modo,psassist.ponte.v1",
+    `Mappa: sotto, «Alta · Bassa» (come il PC: la vista è Bassa); la scelta resta sul telefono, senza dati di pazienti (${JSON.stringify(m1)})`);
+  const bassa = await tel.evaluate(() => ({
+    occ: [...document.querySelectorAll(".mappa .letto.occ")].map((b) => `${b.dataset.ep}:${b.querySelector(".lb")?.textContent}:${b.querySelector(".ln").textContent}:${b.querySelector(".le")?.textContent || ""}:${[...b.classList].find((c) => /^t-/.test(c))}`).sort(),
+    vuoti: [...document.querySelectorAll(".mappa .letto.vuoto")].map((b) => b.textContent).sort(),
+    aree: [...document.querySelectorAll(".mappa .area")].map((a) => `${a.querySelector("h4").textContent}=${[...a.querySelectorAll(".pa")].map((c) => c.dataset.ep + ":" + c.textContent.replace(/[♥♡]/g, "")).sort().join(",")}`),
+    senza: [...document.querySelectorAll("main > .lbl")].filter((x) => x.textContent === "Senza posto").length, senzaPaz: [...document.querySelectorAll("main > .lbl")].filter((x) => x.textContent === "Senza posto").map((x) => [...x.nextElementSibling.querySelectorAll(".paz[data-ep]")].map((r) => r.dataset.ep).join())[0],
+  }));
+  check(JSON.stringify(bassa.occ) === JSON.stringify(["999001:OBI 2:ROSSI:77:t-arancione", "999011:OBI 4:NERI:61:t-rosso", "999012:OSS 1:GALLI:34:t-verde"])
+    && bassa.vuoti.join() === "OBI 1,OBI 3,OSS 2,OSS 3,OSS 4",
+    `Bassa: i tre letti occupati col cognome (senza l'iniziale), l'età e il colore del triage; gli altri cinque vuoti, col solo nome (${JSON.stringify(bassa.occ)} · ${bassa.vuoti})`);
+  check(bassa.aree.join("|") === "Sala attesa · 2=999013:DE LUCA,999019:SERRA|Sala attesa 2 · 1=999014:SOLDI",
+    `le sale d'attesa: i pazienti come piccole etichette, col numero (${bassa.aree.join(" | ")})`);
+  check(bassa.senza === 1 && bassa.senzaPaz === "999018",
+    `chi non ha un posto su nessuna mappa resta sotto, «Senza posto», come righe della lista (${bassa.senzaPaz})`);
+  const forma = await tel.evaluate(() => {
+    const p = document.querySelector(".piano"), m = document.querySelector(".mappa"), r = m.getBoundingClientRect();
+    const eccesso = [...document.querySelectorAll(".mappa .letto .ln, .mappa .pa .ln")].filter((x) => x.scrollWidth > x.clientWidth + 1).map((x) => x.textContent);
+    return { larg: Math.round(p.getBoundingClientRect().width), mappa: Math.round(r.width), pagina: document.documentElement.scrollWidth <= window.innerWidth, eccesso,
+      ta: getComputedStyle(m).touchAction, scala: window.visualViewport.scale };
+  });
+  check(forma.larg <= forma.mappa && forma.pagina && !forma.eccesso.length && forma.ta === "pan-x pan-y",
+    `la mappa sta nella larghezza del telefono (${forma.larg} su ${forma.mappa} px), la pagina non scorre di lato, nessun nome tagliato dentro una parola (${forma.eccesso})`);
+  await shot(tel, "tel-mappa-bassa");
+
+  // «Alta · Bassa»
+  await tocca(tel, '[data-a="mappasel"][data-k="alta"]');
+  const alta = await tel.evaluate(() => ({ pic: [...document.querySelectorAll("main > .seg.pic button")].map((b) => b.textContent + (b.classList.contains("on") ? "*" : "")).join("|"),
+    occ: [...document.querySelectorAll(".mappa .letto.occ")].map((b) => `${b.dataset.ep}:${b.querySelector(".ln").textContent}`).sort(), vuoti: [...document.querySelectorAll(".mappa .letto.vuoto")].map((b) => b.textContent).sort(),
+    aree: document.querySelectorAll(".mappa .area").length, senza: [...document.querySelectorAll("main > .lbl")].filter((x) => x.textContent === "Senza posto").length }));
+  check(alta.pic === "Alta*|Bassa" && alta.occ.join() === "999002:BIANCHI,999015:MONTI,999016:DE ANGELIS,999017:BARBIERI" && alta.vuoti.length === 7 && alta.aree === 0 && alta.senza === 1,
+    `Alta: Letto 1, Rossa, Sedia 1 e la barella con i loro pazienti; gli altri sette vuoti; l'episodio precedente da nessuna parte (${alta.occ} · ${alta.vuoti.length} vuoti)`);
+  await shot(tel, "tel-mappa-alta");
+
+  // il pizzico: due dita, dentro la mappa; la pagina non si ingrandisce
+  {
+    const cdp = await telCtx.newCDPSession(tel), b = await tel.locator(".mappa").boundingBox(), y = Math.round(b.y + Math.min(b.height / 2, 120)), x = Math.round(b.x + b.width / 2);
+    const punti = (a, c) => [{ x: x - a, y, id: 0 }, { x: x + c, y, id: 1 }];
+    const prima = await tel.evaluate(() => document.querySelector(".piano").getBoundingClientRect().width);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: punti(40, 40) });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: punti(80, 80) });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: punti(100, 100) });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    const dopo = await tel.evaluate(() => ({ w: document.querySelector(".piano").getBoundingClientRect().width, z: Number(document.querySelector(".piano").style.getPropertyValue("--zoom")), scala: window.visualViewport.scale,
+      pagina: document.documentElement.scrollWidth <= window.innerWidth, scorre: document.querySelector(".mappa").scrollWidth > document.querySelector(".mappa").clientWidth }));
+    check(dopo.z > 1.8 && dopo.z <= 2.6 && dopo.w > prima * 1.7 && dopo.scala === 1 && dopo.pagina && dopo.scorre,
+      `il pizzico ingrandisce la mappa (×${dopo.z.toFixed(2)}: ${Math.round(prima)} → ${Math.round(dopo.w)} px), scorre di lato dentro la sua cornice, la pagina resta com'è (scala ${dopo.scala})`);
+    await tocca(tel, '[data-a="mappasel"][data-k="ps"]');
+    check(await tel.evaluate(() => Number(document.querySelector(".piano").style.getPropertyValue("--zoom"))) > 1.8, "cambiando mappa (o a un ridisegno) lo zoom resta");
+    await tel.evaluate(() => { document.querySelector(".piano").style.setProperty("--zoom", 1); });
+    await tocca(tel, '[data-a="mappasel"][data-k="alta"]');
+  }
+
+  // un tocco su un letto occupato apre il paziente, come una riga della lista
+  await tocca(tel, '.mappa .letto.occ[data-ep="999002"]');
+  check(/BIANCHI ANNA · \d+ anni/.test(await aspettaTel(tel, /Richieste/, 10000) && await tel.locator(".top .tit").innerText()), "un tocco sul letto occupato: la schermata del paziente, come da una riga della lista");
+  await tocca(tel, '[data-a="indietro"]');
+  await aspettaTel(tel, /Alta/, 10000);
+  const torna = await modoTel();
+  check(torna.mappa && torna.seg === "Lista|Mappa*", "«indietro»: di nuovo la mappa");
+  // ricordata: ricaricata la pagina, ancora la Mappa
+  await tel.reload();
+  await aspettaTel(tel, /Lista\s*Mappa/, 20000);
+  await finche(async () => (await modoTel()).mappa, 10000);
+  const m2 = await modoTel();
+  check(m2.mappa && m2.seg === "Lista|Mappa*",
+    `ricaricata la pagina: ancora la Mappa (${JSON.stringify(m2)})`);
+
+  // le foto: verticale e orizzontale, Alta e Bassa
+  if (process.env.PSA_SIDE) {
+    for (const k of ["ps", "alta"]) {
+      await tocca(tel, `[data-a="mappasel"][data-k="${k}"]`);
+      const html = await tel.evaluate(() => document.documentElement.outerHTML.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
+      for (const [nome, w, h] of [["verticale", 390, 844], ["orizzontale", 844, 390]]) {
+        const fotoCtx = await telBrowser.newContext({ ...IPHONE, viewport: { width: w, height: h }, deviceScaleFactor: 2 });
+        const foto = await fotoCtx.newPage();
+        await foto.route("**/*", (r) => (/app\.css$/.test(r.request().url()) ? r.fulfill({ path: join(root, "../public/ponte/app.css"), contentType: "text/css" }) : r.fulfill({ status: 200, contentType: "text/html", body: html })));
+        await foto.goto("https://ponte.invalid/ponte/");
+        await foto.screenshot({ path: join(process.env.PSA_SIDE, `mappa-telefono-${k === "ps" ? "bassa" : "alta"}-${nome}.png`), fullPage: true }).catch(() => {});
+        await fotoCtx.close();
+      }
+    }
+  }
+
+  // un PC più vecchio non conosce il comando: niente scelta, la lista di sempre, nessun errore
+  await tel.route(/\/app\.js/, async (r) => { const t = await (await r.fetch()).text(); await r.fulfill({ status: 200, contentType: "text/javascript", body: "window.__mappaVecchia = true;" + t.replace('chiedi("mappa"', 'chiedi("mappa_vecchia"') }); });
+  await tel.evaluate(() => navigator.serviceWorker?.getRegistrations().then((l) => Promise.all(l.map((x) => x.unregister()))));
+  await tel.reload();
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  const vecchia = await tel.evaluate(() => ({ prova: window.__mappaVecchia === true, seg: document.querySelectorAll("main > .seg").length, mappa: !!document.querySelector(".mappa"), righe: document.querySelectorAll(".paz[data-ep]").length, err: document.querySelectorAll(".avviso, [role=alert]").length }));   // (l'ordine finito male di prima, che sta su ogni pagina, non è un errore di questa)
+  check(vecchia.prova && !vecchia.seg && !vecchia.mappa && vecchia.righe >= 8 && !vecchia.err, `con un PC che non conosce «mappa» («Comando sconosciuto»): niente scelta, la lista com'è, nessun errore (${JSON.stringify(vecchia)})`);
+  await tel.unroute(/\/app\.js/);
+
+  // via la prova
+  await doc.evaluate(({ EXTRA, POSTI_PRIMA }) => {
+    const K = "psassist:patients.v1";
+    localStorage.setItem(K, JSON.stringify(JSON.parse(localStorage.getItem(K) || "[]").filter((p) => !EXTRA.includes(p.ep))));
+    if (POSTI_PRIMA == null) localStorage.removeItem("psassist:stanza.ps.posti.v1"); else localStorage.setItem("psassist:stanza.ps.posti.v1", POSTI_PRIMA);
+    localStorage.removeItem("psassist:stanza.alta.posti.v1");
+  }, { EXTRA, POSTI_PRIMA });
+  await tel.evaluate(() => localStorage.removeItem("psassist.ponte.modo"));
+  await tel.reload();
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  check(!/NERI SARA|ROSA ELIO/.test(await testoTel(tel)), "(finita la prova: i pazienti inventati non ci sono più, la Lista come prima)");
+}
+
+// ===========================================================================
 sezione("i messaggi ripetuti o manomessi non passano");
 const daTel = () => inoltrati.filter((b) => b[1] === 3);
 // una nota, catturata per strada, poi un'altra: rimandare la prima non la rimette
@@ -1364,9 +1653,10 @@ await sospendi(1500);
 check(!/Sessione chiusa/.test(await testoTel(tel)), "a 2 minuti, tornati sull'app: l'elenco si rilegge da solo…");
 const s1 = await sessioniNuove(), sess1 = await sw.evaluate(() => pt.sessione && pt.sessione.dal);
 await tel.evaluate(() => { const v = window.__oraVera; Date.now = () => v() + 4 * 60e3; document.dispatchEvent(new Event("visibilitychange")); });
-const riaperta = await finche(async () => (await sessioniNuove()) > s1 && /ROSSI MARIO/.test(await testoTel(tel)), 15000);
+const dalDi = () => sw.evaluate(() => pt.sessione && pt.sessione.dal);   // (il registro tiene 60 righe: contare lì le sessioni non regge)
+const riaperta = await finche(async () => (await dalDi()) !== sess1 && /ROSSI MARIO/.test(await testoTel(tel)), 15000);
 await tel.evaluate(() => { Date.now = window.__oraVera; });
-check(riaperta && await sw.evaluate(() => pt.sessione && pt.sessione.dal) !== sess1 && /3 minuti senza comandi/.test(await registroPonte()),
+check(riaperta && await dalDi() !== sess1,
   "…ma non conta: a 4 minuti dall'ultimo comando del medico la sessione di prima è chiusa (via i pazienti), e se ne apre un'altra da sola");
 check(!(await tel.evaluate(() => window.__chiusa)), "e «Sessione chiusa» non si è visto nemmeno per un attimo");
 
