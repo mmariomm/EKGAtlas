@@ -5673,6 +5673,7 @@
     .pjob.err { border-color: #B3261E; color: #B3261E; }
     .pjob.err .pjbar i { background: #B3261E; }
     .pjx { border: 0; background: transparent; color: #5B6B7B; cursor: pointer; font-size: 11px; width: 18px; height: 18px; border-radius: 50%; padding: 0; }
+    .pjaz { display: inline-flex; align-items: center; gap: 2px; }
     .pjx:hover { background: #EEF3F8; color: #B3261E; }
     /* in coda dietro le etichette di un ordine: la clessidra, che al passaggio è il ✕ */
     .pjx.att .pjxx, .pjx.att:hover .pjclx { display: none; }
@@ -8002,6 +8003,9 @@
       const t = `${p.n === 1 ? "Un avviso" : `${p.n} avvisi`} di prima: ${p.chi} — tocca per vederl${p.n === 1 ? "o" : "i"}`;
       return `<button class="pieg${p.err ? " err" : ""}" id="${id}" title="${esc(t)}" aria-label="${esc(t)}">!${p.n}</button>`;
     }
+    // ✕ «Visto: togli» su un avviso che resta (un errore, una stampa non uscita):
+    // via dalla striscia; il Registro lo tiene
+    avvisoVisto() { return { titoloStop: "Visto: togli", onStop: () => this.segnala(null) }; }
     // finito tutto (stampato): la pill torna quella di sempre
     chiudiGiro() {
       if (this.runState !== "done") return;
@@ -8656,7 +8660,7 @@
         return t === "err" ? 0 : x.stato === "stampa" ? (tel(x) ? 5 : 2) : t === "warn" ? 1
           : ["avvio", "corre", "stampo"].includes(x.stato) ? 3 : x.stato === "coda" ? 4 : 6;
       };
-      const l = this.ordini.filter((x) => grado(x) < 6 || Date.now() - (x.agg || 0) < OK_STRISCIA);
+      const l = this.ordini.filter((x) => !x.visto && (grado(x) < 6 || Date.now() - (x.agg || 0) < OK_STRISCIA));
       // L'ordine che gira vince la striscia: gli avvisi di ordini finiti
       // (un errore, uno da guardare) intanto si piegano in un «!1» accanto —
       // un tocco li mostra (mostraPiegati), e finito l'ordine tornano loro.
@@ -8705,7 +8709,9 @@
         const altro = !!this.epDiQuesta() && this.epDiQuesta() !== String(fuoco.ep);
         if (altro && s.testo === "Etichette pronte") s.testo = `Etichette di ${nomeCorto(fuoco.paziente)} pronte`;
         if (fuoco.ferma) s.quesito = "⏹ arrivato tardi: era già confermata";
-        s = { ...s, ...stampaQui("Stampa", "Stampa adesso le etichette, in questa scheda") };
+        // (✕: non si stampano — e lo dice anche al telefono, «NON stampate»)
+        s = { ...s, ...stampaQui("Stampa", "Stampa adesso le etichette, in questa scheda"), titoloStop: "Annulla: non stamparle",
+          onStop: () => ask({ t: "ordineChiudi", id }).then((x) => { if (x && x.ordini) this.ordiniAggiorna(x.ordini); }) };
       } else if (fuoco.stato === "avviso") {
         // (stampato senza dialogo: i fogli restano per «Ristampa», qui)
         const ristampa = fuoco.stampa ? stampaQui("Ristampa", "Stampa di nuovo i fogli non usciti (o tutti, se sono usciti), in questa scheda") : {};
@@ -8742,6 +8748,7 @@
       const righe = [], ora = Date.now();
       let prossima = 0;
       for (const o of [...l].sort((a, b) => (a.ts || 0) - (b.ts || 0))) {
+        if (o.visto) continue;   // (✕ «Visto»: il giornale lo tiene, qui non si mostra più)
         const v = o.vista || {};
         const chi = o.kind === "radio" ? "RX" : o.kind === "lab" ? "Lab" : "";
         const suo = !fuoco || String(o.ep || "") === String(fuoco.ep || "") ? "" : cognomeTitolo(o.paziente) || (o.ep ? `ep. ${o.ep}` : "");
@@ -8760,13 +8767,18 @@
           }
         }
         const fogli = Array.isArray(o.fogli) ? o.fogli : [];
+        // (a ordine finito — anche a stampa interrotta — quello che aspettava non
+        // parte più da solo: è «non uscito», con «Ristampa»; e il ✕ «Visto» lo
+        // toglie dalla vista. Il ✕ «togli» solo mentre stampa: dopo non toglie niente)
+        const finito = ["avviso", "errore", "chiusa", "interrotto"].includes(o.stato), visto = finito ? o.id : "";
         // l'etichetta anagrafica: N copie dello stesso foglio, una riga sola («Et anag ×3»)
         const brac = fogli.length && ((o.stampa && o.stampa.jobs) || []).every(braccialeJob);
         if (brac) {
           const vive = fogli.map((f, i) => ({ f, i })).filter(({ f }) => f.stato !== "tolto");
           if (!vive.length) continue;
           const st = (xs) => vive.filter(({ f }) => xs.includes(f.stato));
-          const fatte = st(["stampato", "mandato"]), rotte = st(["fallito", "sconosciuto"]), invio = st(["invio"]), presto = st(["attesa", "prendo"]);
+          const fatte = st(["stampato", "mandato"]), invio = st(["invio"]);
+          const rotte = st(["fallito", "sconosciuto", ...(finito ? ["attesa", "prendo"] : [])]), presto = finito ? [] : st(["attesa", "prendo"]);
           const tutte = fatte.length === vive.length;
           // aspetta che escano le etichette di un ordine che stampa: barra vuota, la clessidra (✕ al passaggio)
           const attende = presto.length === vive.length && !!braccialeAspetta(l, o);
@@ -8776,25 +8788,26 @@
             prossima = prossima ? Math.min(prossima, resta) : resta;
           }
           metti({ k: `${o.id}:b`, ...nomeFoglio("anag", vive.length), attende,
-            p: tutte || rotte.length ? 1 : attende ? 0 : Math.max(0.04, (fatte.length + (invio.length ? 0.7 : st(["prendo"]).length ? 0.35 : 0)) / vive.length),
+            p: tutte || rotte.length ? 1 : attende ? 0 : Math.max(0.04, (fatte.length + 0.7 * invio.length + 0.35 * st(["prendo"]).length) / vive.length),
             ok: tutte, err: !!rotte.length && !presto.length && !invio.length,
             x: !invio.length && presto.length && !fatte.length ? `t:${o.id}:${presto.map(({ i }) => i).join(",")}` : "",
             ico: invio.length ? "pulsa" : tutte ? "fatto" : "",
-            rist: rotte.length && !presto.length && !invio.length && o.stato !== "stampo" && o.stampa ? o.id : "" });
+            rist: rotte.length && !presto.length && !invio.length && o.stato !== "stampo" && o.stampa ? o.id : "", v: rotte.length && !invio.length ? visto : "" });
           continue;
         }
         fogli.forEach((f, i) => {
           if (f.stato === "tolto") return;
-          const fatto = f.stato === "stampato" || f.stato === "mandato", rotto = f.stato === "fallito" || f.stato === "sconosciuto";
+          const fatto = f.stato === "stampato" || f.stato === "mandato";
+          const rotto = f.stato === "fallito" || f.stato === "sconosciuto" || (finito && (f.stato === "attesa" || f.stato === "prendo"));
           if (fatto) {
             const resta = (f.ts || o.agg || 0) + RIGA_FATTA - ora;
             if (resta <= 0) return;
             prossima = prossima ? Math.min(prossima, resta) : resta;
           }
           metti({ k: `${o.id}:${i}`, ...(f.breve ? nomeFoglio(f.breve) : { nome: f.name || "", html: `${ICO[f.tipo === "etichette" ? "etichetta" : "foglio"]}` }),
-            p: { attesa: 0.04, prendo: 0.35, invio: 0.7 }[f.stato] ?? 1, ok: fatto, err: rotto,
-            x: f.stato === "attesa" || f.stato === "prendo" ? `t:${o.id}:${i}` : "", ico: f.stato === "invio" ? "pulsa" : fatto ? "fatto" : "",
-            rist: rotto && o.stato !== "stampo" && o.stampa ? o.id : "" });
+            p: rotto ? 1 : { attesa: 0.04, prendo: 0.35, invio: 0.7 }[f.stato] ?? 1, ok: fatto, err: rotto,
+            x: o.stato === "stampo" && (f.stato === "attesa" || f.stato === "prendo") ? `t:${o.id}:${i}` : "", ico: f.stato === "invio" ? "pulsa" : fatto ? "fatto" : "",
+            rist: rotto && o.stato !== "stampo" && o.stampa ? o.id : "", v: rotto ? visto : "" });
         });
       }
       return { righe: righe.slice(0, 12), prossima };
@@ -8804,7 +8817,8 @@
       return `<div class="pjobs">${righe.map((r) => `
         <div class="pjob${r.ok ? " ok" : ""}${r.err ? " err" : ""}" data-riga="${esc(r.k)}">
           <span class="pjn" aria-label="${esc(r.nome)}" title="${esc(r.nome)}">${r.html != null ? r.html : esc(r.nome)}</span>${
-            r.rist ? `<button class="pjrist" data-pjrist="${esc(r.rist)}">Ristampa</button>`
+            r.rist || r.v ? `<span class="pjaz">${r.rist ? `<button class="pjrist" data-pjrist="${esc(r.rist)}">Ristampa</button>` : ""}${
+              r.v ? `<button class="pjx" data-pjx="v:${esc(r.v)}" title="Visto: togli" aria-label="${esc(`Visto: togli ${r.nome}`)}">✕</button>` : ""}</span>`
             : r.ico === "pulsa" ? `<span class="pjico pulsa" title="Alla stampante">${ICO.stampante}</span>`
             : r.ico === "fatto" ? `<span class="pjico fatto" title="Fatto">✓</span>`
             : r.x ? `<button class="pjx${r.attende ? " att" : ""}" data-pjx="${esc(r.x)}" title="${esc(r.attende ? "Aspetta le etichette in stampa · togli" : r.xt || "Togli solo questo")}" aria-label="${esc(r.xt || `Togli ${r.nome}`)}">${r.attende ? `<span class="pjclx">⌛</span><span class="pjxx">✕</span>` : "✕"}</button>` : ""}
@@ -8832,6 +8846,7 @@
       const dopo = (r) => { if (r && r.ordini) this.ordiniAggiorna(r.ordini); else ask({ t: "ordineControlla" }).then((y) => y && y.ordini && this.ordiniAggiorna(y.ordini)); };
       if (k === "giro") return this.stop();
       if (k === "f") return ask({ t: "ordineFerma", id }).then(dopo);
+      if (k === "v") return ask({ t: "ordineVisto", id }).then(dopo);
       // (l'etichetta anagrafica: tutte le sue copie che non sono ancora partite)
       if (k === "t") return Promise.all(String(i).split(",").map((n) => ask({ t: "ordineTogliFoglio", id, i: Number(n) }))).then((rs) => dopo(rs[rs.length - 1]));
     }
@@ -12539,7 +12554,7 @@
         cfLetti: cfs.map(impronta), cfPaziente: chi.cfImp || "", nascitaLette: date.map(improntaNascita).filter(Boolean), nascitaPaziente: improntaNascita(chi.nascita) };
       segnaErrore("identita", voce);
       this.log(`${now()}  ERRORE GRAVE: il PDF di ${shortLabel(e.label)} (referto ${e.id}) è di un altro paziente (${voce.via}) — non tenuto, non mostrato · impronte CF ${voce.cfLetti.join(",") || "—"} contro ${voce.cfPaziente || "—"} · nascita ${voce.nascitaLette.join(",") || "—"} contro ${voce.nascitaPaziente || "—"}`);
-      this.segnala({ tag: "Errore grave", testo: GRAVE_ALTRO, tono: "err", paziente: this.nomePaziente() || "" });
+      this.segnala({ tag: "Errore grave", testo: GRAVE_ALTRO, tono: "err", paziente: this.nomePaziente() || "", ...this.avvisoVisto() });
     }
     async leggiTesto(e, buf, { soloIdentita = false } = {}) {
       const letto = await testoPdf(buf);
@@ -16046,7 +16061,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
     if (r.ok) panel.ordiniAggiorna(r.ordini || panel.ordini);
     else panel.segnala({ tag, testo: "Esito della stampa sconosciuto: controlla la stampante", tono: "warn", paziente: job.paziente,
-      azione: { label: "Ristampa", titolo: "Stampa di nuovo, dal dialogo", fn: () => openPrintWizard(jobs, opzioni) } });
+      azione: { label: "Ristampa", titolo: "Stampa di nuovo, dal dialogo", fn: () => openPrintWizard(jobs, opzioni) }, ...panel.avvisoVisto() });
     panel.render();
     return true;
   }
@@ -16220,7 +16235,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           panel.segnala({ tag: !tutto ? (etichette ? "Etichette non stampate" : "Fogli non stampati") : certo ? "Stampato" : "Stampa finita",
             testo: confermatiTesto(fine), tono: tutto ? "ok" : "warn", quesito: quesitoDetto(fine.quesito),
             azione: certo ? null : { label: "Ristampa", titolo: "Stampa di nuovo etichette e lista esami",
-              fn: () => avviaStampa(jobs.map(({ motivo, ...j }) => j), opzioni) } });
+              fn: () => avviaStampa(jobs.map(({ motivo, ...j }) => j), opzioni) }, ...(tutto ? {} : panel.avvisoVisto()) });
         } else if (finito) {
           // una stampa chiesta a mano: la striscia (o il chip) lo dice per qualche secondo
           panel.segnala({ tag, testo: certo ? "✓ Stampato" : "✓ Stampa finita", tono: "ok" }, { ms: 4000, poi: () => panel.chiudiGiro() });
@@ -16812,11 +16827,25 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // è tornato tutto (come nell'area); il pallino del letto (segnaleLetto) e il
   // cuore. Il titolo è quello del PC, con «letto alle …». Niente se non si sa.
   function ponteStato(ep, df, ora = Date.now()) {
-    const s = statoDi(ep), st = statoEsami(s, ora), c = cuoreDi(s?.vit, ora);
+    const s = statoDi(ep), st = statoEsami(s, ora), c = cuoreDi(s?.vit, ora), vit = vitPonte(s?.vit);
     const segno = (/class="stseg (\w+)"/.exec(segnaleLetto(st, dfAperte(ep, df), ora)) || [])[1] || "";
-    if (!st && !c && !segno) return null;
-    return { esami: st ? inAttesa(st, ora).map((x) => ({ nome: x.nome, t: x.tempo, banda: x.banda })) : null, vecchio: !!st?.vecchio,
-      titolo: st ? statoTitolo(st, ora) : "", segno, cuore: c ? { livello: c.livello, vecchio: c.vecchio } : null };
+    if (!st && !c && !segno && !vit) return null;
+    return { vit, esami: st ? inAttesa(st, ora).map((x) => ({ nome: x.nome, t: x.tempo, banda: x.banda })) : null, vecchio: !!st?.vecchio,
+      titolo: st ? statoTitolo(st, ora) : "", segno, cuore: c ? { livello: c.livello, vecchio: c.vecchio, fuori: [`NEWS ${c.punti}`, ...c.fuori].join(" · ") } : null };
+  }
+  // I parametri vitali che il PC ha già in memoria, per il telefono: l'ora, il
+  // NEWS2 e le righe (le ultime 6, dalla più recente) come testo già scritto,
+  // ogni valore col suo livello se è fuori norma (3 punti = rosso, altrimenti
+  // ambra). Niente di nuovo dal gestionale.
+  const VIT_ORDINE = ["pas", "fc", "spo2", "fr", "t", "fio2", "acvpu", "gcs"];
+  function vitPonte(vit) {
+    if (!vit || !vit.p || !vit.ts) return null;
+    const riga = (p) => {
+      const testo = vitTesto(p), per = news2(p).per;
+      return VIT_ORDINE.filter((k) => testo[k]).map((k) => ({ t: testo[k], f: per[k] ? (per[k] >= 3 ? "ros" : "amb") : "" }));
+    };
+    const storia = (Array.isArray(vit.storia) && vit.storia.length ? vit.storia : [{ ts: vit.ts, p: vit.p }]).filter((r) => r && r.ts && r.p).slice(0, 6);
+    return { ts: vit.ts, news: news2(vit.p).punti, v: riga(vit.p), storia: storia.map((r) => ({ ts: r.ts, v: riga(r.p) })) };
   }
   // Quello che aspetta, per tipo (Lab · ECG · RX), col tempo del più vecchio e
   // la sua banda — com'è nella riga corta del tabellone (l'area).
