@@ -68,7 +68,7 @@
     fase: "avvio", perche: "", testoFine: "", scaduta: 0,
     pazienti: null, triage: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ordini: new Map(), nascosti: new Set(),
     vista: { nome: "lista", ep: "" }, scheda: "esiti", sel: new Map(), bloccati: new Map(), aperti: new Set(),
-    occupato: new Set(), bozze: new Map(), notaAperta: "", promAperto: "", promTesto: "", fatti: new Map(), menu: false, arma: null, avviso: null,
+    occupato: new Set(), bozze: new Map(), notaAperta: "", vitAperti: "", promAperto: "", promTesto: "", fatti: new Map(), menu: false, arma: null, avviso: null,
     inviati: new Map(),  // ep → oid dell'ordine che sta andando al PC (il bottone aspetta)
     cartelle: new Map(), // ep → la cartella letta sul PC: { ep, letto, campi: [{ nome, v, ro }] }
     cbozze: new Map(),   // ep → Map(nome → { base, testo }): quello che il medico ha scritto, e su che cosa
@@ -465,7 +465,7 @@
   }
   function apriPaziente(ep) {
     S.vista = { nome: "paziente", ep };
-    S.menu = false; S.arma = null; S.promTesto = ""; S.notaAperta = ""; S.promAperto = "";
+    S.menu = false; S.arma = null; S.promTesto = ""; S.notaAperta = ""; S.promAperto = ""; S.vitAperti = "";
     window.scrollTo(0, 0);
     render();
     caricaEsiti(ep);
@@ -1062,11 +1062,25 @@
   // letto, nel titolo. Grigio se la lettura è vecchia.
   function statoPaz(x) {
     if (!x) return "";
-    const cuore = x.cuore ? `<span class="cuore ${esc(x.cuore.livello)}${x.cuore.vecchio ? " vecchio" : ""}">${x.cuore.vecchio ? "♡" : "♥"}</span>` : "";
+    const cuore = x.cuore ? `<span class="cuore ${esc(x.cuore.livello)}${x.cuore.vecchio ? " vecchio" : ""}">${x.cuore.vecchio ? "♡" : "♥"}${typeof x.cuore.fuori === "string" && x.cuore.fuori ? ` <span class="cuorev">${esc(x.cuore.fuori)}</span>` : ""}</span>` : "";
     const esami = !Array.isArray(x.esami) ? "" : x.esami.length
       ? x.esami.map((e) => `<span class="esp"><b>${esc(e.nome)}</b>${e.t ? ` <i class="${esc(e.banda)}">${esc(e.t)}</i>` : ""}</span>`).join("") : `<span class="esp">✓</span>`;
     const segno = x.segno ? `<i class="segno ${esc(x.segno)}"></i>` : "";
     return cuore || esami || segno ? `<span class="st${x.vecchio ? " vecchio" : ""}" title="${esc(x.titolo || "")}">${cuore}${esami}${segno}</span>` : "";
+  }
+  // I parametri vitali che il PC ha già letto: una riga sotto il nome, i valori
+  // fuori norma coloriti; un tocco apre le righe di prima (la più recente in
+  // alto), un altro le chiude. Vecchi di 4 ore: grigi, e l'ora lo dice. Un PC
+  // che non li manda: niente.
+  function vitaliHtml(p) {
+    const v = p.stato && p.stato.vit;
+    if (!v || !Number.isFinite(v.ts) || !Array.isArray(v.v) || !v.v.length) return "";
+    const vals = (l) => (Array.isArray(l) ? l : []).map((x) => `<span class="${esc(x.f || "")}">${esc(x.t)}</span>`).join(" · ");
+    const ore = Math.floor((Date.now() - v.ts) / 3600e3), vecchio = Date.now() - v.ts > 4 * 3600e3;
+    const aperto = S.vitAperti === p.ep, prima = (Array.isArray(v.storia) ? v.storia : []).slice(1).filter((r) => r && Number.isFinite(r.ts));
+    const storia = aperto && prima.length ? `<div class="vitst">${prima.map((r) => `<div><b>${hhmm(r.ts)}</b> ${vals(r.v)}</div>`).join("")}</div>` : "";
+    const news = Number.isFinite(v.news) ? ` · <span>NEWS2 ${v.news}</span>` : "";
+    return `<div class="vit${vecchio ? " vecchio" : ""}"><button data-a="vit" aria-expanded="${aperto}"><b>${vecchio ? `Parametri di ${ore} ore fa` : `Parametri ${hhmm(v.ts)}`}</b> ${vals(v.v)}${news}</button>${storia}</div>`;
   }
   function rigaPaz(p) {
     return `<button class="paz t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" data-a="paz" data-ep="${esc(p.ep)}">
@@ -1256,7 +1270,7 @@
     if (!p) return `<main><div class="vuoto">Questo paziente non è più nell'elenco del PC.</div></main>`;
     const ordini = codaDi(p.ep) + ordiniDi(p.ep).map((o) => ordineHtml(o)).join("");
     const tab = (s, t) => `<button class="${S.scheda === s ? "on" : ""}" data-a="scheda" data-s="${s}" role="tab" aria-selected="${S.scheda === s}">${t}</button>`;
-    return `<main>${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}</div>
+    return `<main>${vitaliHtml(p)}${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}</div>
       ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : vistaRichieste(p)}</main>${ctaHtml(p)}`;
   }
   // La cartella: i campi della pagina del paziente sul PC, ognuno com'è là.
@@ -1369,6 +1383,7 @@
       if (S.canale) chiedi("esci").catch(() => {});
       dimentica("senza");
     }
+    else if (a === "vit") { S.vitAperti = S.vitAperti === ep ? "" : ep; render(); }
     else if (a === "scheda") { S.scheda = b.dataset.s; S.arma = null; render(); if (S.scheda === "cartella") caricaCartella(ep, !!S.cartelle.get(ep)); }
     else if (a === "csalva") salvaCartella(ep);
     else if (a === "cricarica") ricaricaCartella(ep);

@@ -259,7 +259,8 @@ await doc.evaluate(({ CF_B, bUrl }) => {
   // chiesto 50′ fa, l'RX 100′ fa (oltre la prima soglia: ambra), il cuore rosso
   const m = 60e3, S = JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}");
   S[999003] = { righe: [{ k: "a", rid: "a", ts: ora - 50 * m, fatto: "", quando: 0, esami: [["lab", "EMOCROMO"]] }, { k: "b", rid: "b", ts: ora - 100 * m, fatto: "", quando: 0, esami: [["img", "RX TORACE"]] }],
-    vit: { p: { fr: 26, spo2: 90, fc: 118, pas: 95, t: 38.6 }, ts: ora - 20 * m }, agg: ora, letto: ora - 2 * m, esitiVisto: ora - 30 * m };
+    vit: { p: { fr: 26, spo2: 90, fc: 118, pas: 95, t: 38.6 }, ts: ora - 20 * m,
+      storia: [{ ts: ora - 20 * m, p: { fr: 26, spo2: 90, fc: 118, pas: 95, t: 38.6 } }, { ts: ora - 80 * m, p: { fr: 18, spo2: 96, fc: 84, pas: 122, pad: 80, t: 36.8 } }, { ts: ora - 140 * m, p: { fr: 16, spo2: 97, fc: 80, pas: 120, t: 36.6 } }] }, agg: ora, letto: ora - 2 * m, esitiVisto: ora - 30 * m };
   localStorage.setItem("psassist:stato.v1", JSON.stringify(S));
   // «Febbre» ha imparato il suo pacchetto da un ordine confermato sul PC: emocromo POC e PCR
   localStorage.setItem("psassist:pacchettiImparati.v1", JSON.stringify({ febbre: [["00660001P", "320"], ["00720001P", "293"]] }));
@@ -456,6 +457,9 @@ const sVerdi = await statoRiga("999003");
 check(!!sVerdi && /\bros\b/.test(sVerdi.cuore) && sVerdi.esami.length === 2 && /^Lab [5-6]\d′$/.test(sVerdi.esami[0]) && /^RX 1h[4-5]\d$/.test(sVerdi.esami[1])
   && sVerdi.bande[0] === "" && sVerdi.bande[1] === "amb" && /\bamb\b/.test(sVerdi.segno) && /letto alle \d\d:\d\d/.test(sVerdi.titolo),
   `nella riga di VERDI lo stato del PC: ♥ rosso, «Lab 50′», «RX 1h40» in ambra, il pallino ambra del letto; «letto alle …» nel titolo (${JSON.stringify(sVerdi)})`);
+check(await tel.locator('.paz[data-ep="999003"] .st .cuorev').innerText() === "NEWS 11 · FR 26 · SpO2 90",
+  "nella riga, accanto al cuore, come sul PC: «NEWS 11 · FR 26 · SpO2 90» (i due più fuori norma)");
+check(await tel.locator('.paz[data-ep="999001"] .cuorev').count() === 0, "senza cuore: niente testo");
 check(await statoRiga("998002") === null, "un episodio precedente: niente stato (il PC non lo dice)");
 if (process.env.PSA_SIDE) {
   // la foto a deviceScaleFactor 2: la stessa pagina, ferma, in un telefono a 2×
@@ -1174,6 +1178,47 @@ await tocca(tel, '[data-a="indietro"]');
 await tocca(tel, '.paz[data-ep="999003"]');
 await aspettaTel(tel, /VERDI LUCA/, 15000);
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+// i parametri vitali sotto il nome: l'ultima riga, il fuori norma colorito; un tocco apre le righe di prima, un altro le chiude
+const vitTel = () => tel.evaluate(() => {
+  const v = document.querySelector("main > .vit");
+  return v ? { riga: v.querySelector("button").textContent.replace(/\s+/g, " ").trim(), ros: [...v.querySelectorAll("button .ros")].map((x) => x.textContent),
+    amb: [...v.querySelectorAll("button .amb")].map((x) => x.textContent), storia: [...v.querySelectorAll(".vitst > div")].map((x) => x.textContent.replace(/\s+/g, " ").trim()),
+    grigio: v.classList.contains("vecchio"), aperto: v.querySelector("button").getAttribute("aria-expanded") } : null;
+});
+const v1 = await vitTel();
+check(!!v1 && /^Parametri \d\d:\d\d PA 95 · FC 118 · SpO2 90 · FR 26 · T 38,6 · NEWS2 11$/.test(v1.riga) && v1.ros.join() === "SpO2 90,FR 26"
+  && v1.amb.join() === "PA 95,FC 118,T 38,6" && !v1.grigio && v1.storia.length === 0,
+  `sotto il nome una riga: ora, PA FC SpO2 FR T, NEWS2; rosso SpO2 e FR, ambra PA FC T (${JSON.stringify(v1)})`);
+await tocca(tel, '.vit > button');
+const v2 = await vitTel();
+check(!!v2 && v2.aperto === "true" && v2.storia.length === 2 && /^\d\d:\d\d PA 122\/80 · FC 84 · SpO2 96 · FR 18 · T 36,8$/.test(v2.storia[0]) && /^\d\d:\d\d PA 120 · FC 80 · SpO2 97 · FR 16 · T 36,6$/.test(v2.storia[1]),
+  `un tocco: le righe di prima, la più recente in alto, con l'ora (${JSON.stringify(v2 && v2.storia)})`);
+if (process.env.PSA_SIDE) {
+  const html = await tel.evaluate(() => document.documentElement.outerHTML.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
+  const fotoCtx = await telBrowser.newContext({ ...IPHONE, deviceScaleFactor: 2 });
+  const foto = await fotoCtx.newPage();
+  await foto.route("**/*", (r) => (/app\.css$/.test(r.request().url()) ? r.fulfill({ path: join(root, "../public/ponte/app.css"), contentType: "text/css" }) : r.fulfill({ status: 200, contentType: "text/html", body: html })));
+  await foto.goto("https://ponte.invalid/ponte/");
+  await foto.screenshot({ path: join(process.env.PSA_SIDE, "vitali-telefono-paziente.png") }).catch(() => {});
+  await fotoCtx.close();
+}
+await tocca(tel, '.vit > button');
+check((await vitTel()).storia.length === 0, "un altro tocco le chiude");
+// più vecchi di 4 ore: l'ora lo dice, grigi
+await doc.evaluate(() => {
+  const S = JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}"), h = 3600e3;
+  S[999003].vit = { p: { fr: 16, spo2: 97, fc: 80, pas: 120, t: 36.6 }, ts: Date.now() - 5 * h };
+  localStorage.setItem("psassist:stato.v1", JSON.stringify(S));
+});
+await tocca(tel, '[data-a="indietro"]');
+await tocca(tel, '[data-a="menu"]');
+await tocca(tel, '[data-a="aggiornaLista"]');
+await aspettaTel(tel, /VERDI LUCA/, 15000);
+await tocca(tel, '.paz[data-ep="999003"]');
+await aspettaTel(tel, /Parametri di 5 ore fa/, 15000);
+const v3 = await vitTel();
+check(!!v3 && /^Parametri di 5 ore fa PA 120 · FC 80 · SpO2 97 · FR 16 · T 36,6 · NEWS2 0$/.test(v3.riga) && v3.grigio && !v3.ros.length && !v3.amb.length,
+  `vecchio: «Parametri di 5 ore fa», grigio; tutto nella norma: niente colori, NEWS2 0 (${JSON.stringify(v3)})`);
 await doc.evaluate(() => {
   const K = "psassist:patients.v1"; const l = JSON.parse(localStorage.getItem(K) || "[]");
   for (const p of l) if (p.ep === "999003") { p.arch = true; p.archTs = Date.now(); }
@@ -1186,6 +1231,11 @@ check(/Dimesso sul PC: niente inviato/.test(await aspettaTel(tel, /Dimesso sul P
 check(!(await notePc()).some((t) => /dimissione/.test(t)), "e la nota non arriva");
 await tocca(tel, '[data-a="indietro"]');
 check(!/VERDI/.test(await aspettaTel(tel, /ROSSI MARIO/, 10000)), "e dall'elenco del telefono se ne va");
+// un paziente senza parametri letti (o un PC più vecchio, che il campo non lo manda): niente riga, nessun errore
+await tocca(tel, '.paz[data-ep="999001"]');
+await aspettaTel(tel, /Richieste/, 10000);
+check(await tel.locator("main > .vit").count() === 0 && await tel.locator(".seg").count() === 1, "senza parametri letti: sotto il nome niente, la pagina c'è");
+await tocca(tel, '[data-a="indietro"]');
 
 // ===========================================================================
 sezione("due pazienti con lo stesso nome");
