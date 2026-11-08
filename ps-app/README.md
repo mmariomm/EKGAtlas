@@ -1261,7 +1261,11 @@ spunta). Nell'elenco ogni riga ha lo stato della riga del tabellone, se il PC lo
 per tipo quello che aspetta col suo tempo («Lab 50′ RX 1h40», l'ambra e il rosso delle soglie) o
 **✓** se è tornato tutto, e il **pallino** del letto; «letto alle …» nel titolo, grigio se la
 lettura è vecchia. Le schede del paziente sono nell'ordine del PC: **Richieste · Esiti · Cartella**
-(si apre sugli Esiti, come prima). Tutto succede sul PC, col
+(si apre sugli Esiti, come prima). Accanto al cuore, come sul PC, il NEWS2 e i valori fuori norma
+(«♥ NEWS 8 · FR 24 · SpO2 93»). Sotto il nome del paziente una riga **«Parametri 14:10 · PA 120/80 ·
+FC 88 · …· NEWS2 2»** dall'ultima lettura del PC (fuori norma in rosso o ambra; da più di 4 ore
+grigia, «Parametri di 5 ore fa»); un tocco apre le righe di prima (al massimo 6), un altro le chiude;
+niente di nuovo dal gestionale. Tutto succede sul PC, col
 gestionale aperto e il codice di sempre: il telefono manda una domanda, una scheda del gestionale la
 esegue e risponde. Passa da un ripetitore nel Worker di EKG Atlas (sul suo indirizzo `workers.dev`)
 che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun server.

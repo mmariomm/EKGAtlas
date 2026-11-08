@@ -16812,11 +16812,25 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // è tornato tutto (come nell'area); il pallino del letto (segnaleLetto) e il
   // cuore. Il titolo è quello del PC, con «letto alle …». Niente se non si sa.
   function ponteStato(ep, df, ora = Date.now()) {
-    const s = statoDi(ep), st = statoEsami(s, ora), c = cuoreDi(s?.vit, ora);
+    const s = statoDi(ep), st = statoEsami(s, ora), c = cuoreDi(s?.vit, ora), vit = vitPonte(s?.vit);
     const segno = (/class="stseg (\w+)"/.exec(segnaleLetto(st, dfAperte(ep, df), ora)) || [])[1] || "";
-    if (!st && !c && !segno) return null;
-    return { esami: st ? inAttesa(st, ora).map((x) => ({ nome: x.nome, t: x.tempo, banda: x.banda })) : null, vecchio: !!st?.vecchio,
-      titolo: st ? statoTitolo(st, ora) : "", segno, cuore: c ? { livello: c.livello, vecchio: c.vecchio } : null };
+    if (!st && !c && !segno && !vit) return null;
+    return { vit, esami: st ? inAttesa(st, ora).map((x) => ({ nome: x.nome, t: x.tempo, banda: x.banda })) : null, vecchio: !!st?.vecchio,
+      titolo: st ? statoTitolo(st, ora) : "", segno, cuore: c ? { livello: c.livello, vecchio: c.vecchio, fuori: [`NEWS ${c.punti}`, ...c.fuori].join(" · ") } : null };
+  }
+  // I parametri vitali che il PC ha già in memoria, per il telefono: l'ora, il
+  // NEWS2 e le righe (le ultime 6, dalla più recente) come testo già scritto,
+  // ogni valore col suo livello se è fuori norma (3 punti = rosso, altrimenti
+  // ambra). Niente di nuovo dal gestionale.
+  const VIT_ORDINE = ["pas", "fc", "spo2", "fr", "t", "fio2", "acvpu", "gcs"];
+  function vitPonte(vit) {
+    if (!vit || !vit.p || !vit.ts) return null;
+    const riga = (p) => {
+      const testo = vitTesto(p), per = news2(p).per;
+      return VIT_ORDINE.filter((k) => testo[k]).map((k) => ({ t: testo[k], f: per[k] ? (per[k] >= 3 ? "ros" : "amb") : "" }));
+    };
+    const storia = (Array.isArray(vit.storia) && vit.storia.length ? vit.storia : [{ ts: vit.ts, p: vit.p }]).filter((r) => r && r.ts && r.p).slice(0, 6);
+    return { ts: vit.ts, news: news2(vit.p).punti, v: riga(vit.p), storia: storia.map((r) => ({ ts: r.ts, v: riga(r.p) })) };
   }
   // Quello che aspetta, per tipo (Lab · ECG · RX), col tempo del più vecchio e
   // la sua banda — com'è nella riga corta del tabellone (l'area).
