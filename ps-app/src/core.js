@@ -2923,12 +2923,18 @@
   // dell'area (una sola, riconosciuta dal nome — mai indovinata), poi il suo
   // «Conferma». Sulla lista dell'area: la riga cercata, per nome e nascita, e
   // il SUO link; due righe uguali, o nessuna, e si resta sulla lista.
+  // (PsoPsoImposta: la tendina, il suo «Conferma» e le opzioni dell'area k, per nome)
+  function impostaQui(doc, url, k) {
+    const sel = doc.querySelector('select[name="RISORSA_ID"]'), btn = doc.getElementById("AGG_RISORSA");
+    if (!sel || !btn || mvpgDi(doc, url) !== "PsoPsoImposta") return null;
+    return { sel, btn, opz: [...sel.options].filter((o) => o.value && chiaveArea(o.textContent) === k) };
+  }
   function areaVaiQui(doc, url) {
     const vai = store.get(AREA_VAI, null);
     if (!vai || !vai.k || Date.now() - (vai.ts || 0) > AREA_VAI_MS) { if (vai) store.del(AREA_VAI); return false; }
-    const sel = doc.querySelector('select[name="RISORSA_ID"]'), btn = doc.getElementById("AGG_RISORSA");
-    if (sel && btn && mvpgDi(doc, url) === "PsoPsoImposta") {
-      const opz = [...sel.options].filter((o) => o.value && chiaveArea(o.textContent) === vai.k);
+    const im = impostaQui(doc, url, vai.k);
+    if (im) {
+      const { sel, btn, opz } = im;
       if (opz.length !== 1) { store.del(AREA_VAI); return false; }
       if (vai.premuto) {
         // Già premuto, e siamo ancora qui. Se la tendina dice già l'area, il
@@ -2964,6 +2970,64 @@
     if (trovate.length !== 1) return false;
     trovate[0].a.click();   // il suo link, nella pagina
     return true;
+  }
+  // Lo stesso passaggio, nella scheda di un ordine in sottofondo che ha
+  // trovato il gestionale su un'altra area (la pagina del paziente senza le
+  // Richieste, avviaLavoro): PsoPsoImposta, l'opzione dell'area del paziente,
+  // «Conferma», poi di nuovo la pagina del paziente che il service worker ha
+  // aperto (`torna`, mai costruita), dove l'ordine parte come sempre. Tutto
+  // prima di «parto»: fin lì non si manda niente. L'appunto è della scheda
+  // (tabStore), mai quello condiviso (AREA_VAI): una scheda del medico che si
+  // carica intanto non lo vede e non preme niente. Una volta per ordine, due
+  // «Conferma» al più, AREA_VAI_MS in tutto; ogni intoppo, «Non partito» col
+  // perché. Le pagine di mezzo restano senza pannello (true: questa la tiene lui).
+  const LAVORO_AREA = "lavoro.area.v1";   // {id, k, area, torna, ts, premuto?, fatto?}
+  let tLavoroArea = 0;
+  function lavoroAreaQui(doc, url) {
+    const L = LAVORO, v = tabStore.get(LAVORO_AREA, null);
+    if (!L || L.stato !== "avvio" || !v || v.id !== L.id || v.fatto) return false;
+    const no = (testo) => { lavoroNonPartito(testo); return true; };
+    const tardi = `Non sono riuscito a passare il gestionale all'area ${v.area}: niente inviato`;
+    const resta = (v.ts || 0) + AREA_VAI_MS - Date.now();
+    if (resta <= 0) return no(tardi);
+    // passato: l'esito lo dirà («gestionale ora sull'area …»), e si torna dal paziente
+    const fatto = () => {
+      if (!tabStore.set(LAVORO_AREA, { ...v, fatto: Date.now() })) return no(tardi);
+      ask({ t: "ordineAggiorna", id: L.id, area: v.area }).then(() => { if (LAVORO === L) nav(v.torna); });
+      return true;
+    };
+    const im = impostaQui(doc, url, v.k), due = `Il gestionale non è passato all'area ${v.area}, «Conferma» premuto due volte: niente inviato`;
+    if (im) {
+      if (im.opz.length !== 1) return no(im.opz.length ? `In Imposta ci sono ${im.opz.length} aree «${v.area}»: non scelgo, niente inviato` : `In Imposta il gestionale non offre l'area ${v.area}: niente inviato`);
+      // (una pagina appena caricata: la tendina è quella del server)
+      if (v.premuto && im.sel.value === im.opz[0].value) return fatto();
+      if (v.premuto >= 2) return no(due);
+      if (!tabStore.set(LAVORO_AREA, { ...v, premuto: (v.premuto || 0) + 1 })) return no(tardi);
+      im.sel.value = im.opz[0].value;
+      im.btn.click();
+    } else if (v.premuto) {
+      // dopo «Conferma»: la pagina dove il gestionale atterra dice in testa su che area è.
+      // Quella di prima: il «Conferma» si è perso — da PsoPsoImposta, che lo ripreme una volta.
+      // (Senza testa: una pagina di passaggio, si aspetta la prossima.)
+      const testa = areaInTesta(doc);
+      if (testa && testa.k === v.k) return fatto();
+      if (testa && v.premuto >= 2) return no(due);
+      if (testa) nav(urlMenu("PsoPsoImposta"));
+    }
+    clearTimeout(tLavoroArea);
+    tLavoroArea = setTimeout(() => { if (LAVORO === L && !(tabStore.get(LAVORO_AREA, null) || {}).fatto) lavoroNonPartito(tardi); }, resta);
+    return true;
+  }
+  // «Non partito» da una pagina senza pannello: l'ultima parola (col perché
+  // anche nel Registro della scheda), e la scheda si slega
+  function lavoroNonPartito(testo) {
+    const L = LAVORO;
+    if (!L) return;
+    const k = "log." + (L.ep || "x"), prima = tabStore.get(k, null);
+    tabStore.set(k, { ts: Date.now(), lines: [...(Array.isArray(prima?.lines) ? prima.lines : []), `${now()}  ${testo}`].slice(-200) });
+    const m = { t: "ordineAggiorna", id: L.id, stato: "errore", vista: { tag: "Non partito", testo, tono: "err" }, registro: registroLavoro(null) };
+    LAVORO = null;
+    ask(m).then((r) => (r.perso ? ask(m) : r));
   }
 
   // La LISTA SMART (tutto il pronto soccorso, in una finestra sua): le righe
@@ -8522,8 +8586,33 @@
         // (nessuna Richiesta sulla pagina: così la mostra il gestionale messo su
         // un'area che non è quella del paziente — si dice su quale è)
         const area = !entry && this.pageType === "patient" && !this.entry?.labUrl && !this.entry?.radioUrl ? areaInTesta(document) : null;
+        // Il paziente sta in un'altra area, e si sa quale (la lista della sua
+        // area, la smart): questa scheda ci passa il gestionale, come il medico
+        // a mano, e poi riapre la sua pagina (lavoroAreaQui) — una volta per
+        // ordine. Mai un'area indovinata, mai sopra il passaggio d'area di una
+        // scheda del medico. (Cambia l'area anche per le sue schede: lo dicono
+        // la striscia, «passo all'area …», e l'esito.)
+        const giro = tabStore.get(LAVORO_AREA, null), passato = giro && giro.id === L.id ? giro : null;
+        if (area && passato) {
+          return no(passato.fatto && area.k === passato.k ? `Le Richieste non ci sono nemmeno sull'area ${passato.area}: niente inviato`
+            : `Non sono riuscito a passare il gestionale all'area ${passato.area}: niente inviato`);
+        }
+        const kp = area ? areeLeggi().membri[String(p.episodeId)]?.k : "", vai = store.get(AREA_VAI, null);
+        const torna = [L.url, p.patientUrl].find((u) => leggibilePagina(u) && param(u, "EPISODIO_ID") === String(p.episodeId));
+        if (kp && kp !== area.k && torna && !(vai && Date.now() - (vai.ts || 0) <= AREA_VAI_MS)) {
+          const nome = titoloArea(kp, (store.get(AREE_OPZ, {}) || {})[kp]?.label || areeLeggi().viste[kp]?.label);
+          if (tabStore.set(LAVORO_AREA, { id: L.id, k: kp, area: nome, torna, ts: Date.now() })) {
+            this.log(`${now()}  il gestionale è sull'area ${titoloArea(area.k, area.label)}, ${p.patientName || "il paziente"} nell'area ${nome}: passo all'area ${nome} (Imposta → Conferma), poi riapro la sua pagina`);
+            const m = { t: "ordineAggiorna", id: L.id, vista: { tag: "Parte", testo: `passo all'area ${nome}…`, tono: "run" } };
+            let r = await ask(m);
+            if (r.perso) r = await ask(m);
+            if (r.ok && LAVORO === L) nav(urlMenu("PsoPsoImposta"));   // (se no: l'ordine è già finito, ⏹)
+            return;
+          }
+        }
         if (area) return no(`Sulla pagina del paziente il gestionale non mostra le Richieste: è sull'area ${AREE_TITOLO[area.k] || area.label}, è quella del paziente? Niente inviato`);
         if (!entry) return no("Sulla pagina del paziente manca il link della richiesta: niente inviato");
+        if (passato) this.log(`${now()}  gestionale sull'area ${passato.area}: le Richieste ci sono, l'ordine parte`);
         base = { ...p, entryUrl: entry };
       } else {
         const rid = String(p.richiestaId || param(L.url, "RICHIESTA_ID") || "");
@@ -17576,6 +17665,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // (La scheda di un ordine in sottofondo non legge niente di tutto questo.)
     // la scheda che salva la cartella dal telefono: niente pannello, fa quello e basta
     if (PONTE_CARTELLA) { ponteCartellaQui().catch(() => ask({ t: "ponteCartellaFatto", ok: false, testo: "errore nella scheda" })); return; }
+    // la scheda di un ordine che passa il gestionale all'area del paziente: le
+    // pagine di mezzo (PsoPsoImposta, la lista dove atterra) fanno quello e basta
+    if (lavoroAreaQui(document, location.href)) return;
     migraStanza();
     if (!LAVORO && !PONTE_VALORI) {
       smartUrlQui(document, location.href);   // il link della lista smart, quando la pagina lo porta
