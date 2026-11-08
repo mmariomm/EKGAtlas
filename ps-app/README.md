@@ -334,7 +334,10 @@ quando lo si vede: mai un indirizzo inventato; finché non c'è, il ⟳ lo dice)
 aperta dal service worker come quelle dei referti: legge, e si chiude; il medico resta dov'è. Della
 smart contano le schede dei pazienti di cui il medico risponde — **Ambulatorio** (dove stanno anche
 gli OBI) e un'eventuale **OBI** —, non l'attesa del triage né «tutti»: aperta su un'altra, passa
-all'Ambulatorio col link della sua scheda. Le righe non hanno episodio: chi si riconosce (nome e
+all'Ambulatorio col link della sua scheda. Dopo, passa anche alla scheda **Triage** (col suo link):
+le sue righe non entrano fra i pazienti, né nelle aree, né nelle dimissioni — si tengono a parte
+(`triage.lista.v1`: nome, età, colore, area, arrivo; niente nascita) per il telefono, e solo se
+letta non filtrata e con le righe che dice; se la scheda non c'è, resta la lista di prima. Le righe non hanno episodio: chi si riconosce (nome e
 impronta della nascita, uno solo) prende area e triage della riga; chi no **entra lo stesso**, con
 l'impronta per chiave, area e triage — aprirlo passa dalla sua area e dalla sua lista, come un tocco
 sulla smart; quando la lista della sua area (o la sua pagina) dà l'episodio, posto, «Da fare» e area
@@ -1234,6 +1237,11 @@ foglio i motivi per **tornare in Pronto Soccorso**.
   ripristino non congela per sempre gli altri sette.
 
 ### Il pannello sull'iPhone (Ponte)
+
+Sotto le aree, la sezione **«Triage · alle 14:32»**: chi aspetta al triage (le due aree insieme),
+come l'ha letto il PC (comando `triage`), dal colore più urgente e a pari colore da chi aspetta da
+più tempo; età, attesa e, se nota, l'area; le righe non si toccano. Sparisce se è vuota, se è
+stata letta più di 30 minuti fa o se il PC (un'estensione più vecchia) non conosce il comando.
 
 Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con
 **↻ Aggiorna i valori** e l'ora in cui il PC li ha letti), **un ordine** (lo stesso «Conferma e

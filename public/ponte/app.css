@@ -108,6 +108,11 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .paz .st .segno { width: 8px; height: 8px; border-radius: 50%; }
 .paz .st .segno.ros { background: var(--rosso); } .paz .st .segno.amb { background: var(--ambra); } .paz .st .segno.nuovo { background: var(--blu); }
 .paz .st .segno.att { box-shadow: inset 0 0 0 1.5px var(--grigio2); }
+.lbl .ora { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.paz.trg { min-height: 52px; }
+.paz.trg:active { background: none; }
+.paz .att { flex: none; font-size: 14px; font-weight: 600; color: var(--testo2); font-variant-numeric: tabular-nums; }
+.paz .ar { flex: none; font-size: 12.5px; color: var(--grigio); }
 .paz .nota { font-size: 13.5px; color: var(--grigio); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .paz.spento .nome { color: var(--grigio); font-weight: 600; }
 .t-rosso { --tr: var(--t-rosso); } .t-arancione { --tr: var(--t-arancione); } .t-azzurro { --tr: var(--t-azzurro); }

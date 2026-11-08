@@ -3110,7 +3110,8 @@
   // e le altre, coi loro link), le righe, e se è filtrata. Le schede «nostre»
   // sono quelle dei pazienti di cui il medico risponde: Ambulatorio (e OBI,
   // dove c'è); l'attesa del triage e «tutti» no.
-  const SCHEDA_NOSTRA = /^(AMBULATORIO|OBI)\b/i;
+  const SCHEDA_NOSTRA = /^(AMBULATORIO|OBI)\b/i, SCHEDA_TRIAGE = /^TRIAGE\b/i;
+  const TRIAGE_LISTA = "triage.lista.v1";   // { ts, righe: [{ nome, breve, eta, triage, area, arrivo }] } — solo per il telefono
   function leggiSmartPagina(doc, url) {
     if (!eSmart(doc, url) || classify(doc) === "login" || !doc.querySelector(".AFCHeaderTable")) return { ok: false, perche: "non è la lista smart" };
     let origine = "";
@@ -3125,7 +3126,7 @@
         if (x.origin === origine && x.searchParams.get("MVPG") === "PsoPazientiSmart") u = x.href;
       } catch { /* niente */ }
       if (!u || !base) continue;
-      schede.push({ base, n: m ? Number(m[2]) : null, sel: a.classList.contains("shiny-button-selected"), url: u, nostra: SCHEDA_NOSTRA.test(base) });
+      schede.push({ base, n: m ? Number(m[2]) : null, sel: a.classList.contains("shiny-button-selected"), url: u, nostra: SCHEDA_NOSTRA.test(base), triage: SCHEDA_TRIAGE.test(base) });
     }
     let filtrata = [...doc.querySelectorAll('input[name^="s_"]')].some((i) => !/^(hidden|submit|button)$/i.test(i.type || "") && spazi(i.value))
       || [...doc.querySelectorAll('select[name^="s_"]')].some((s) => spazi(s.value));
@@ -3256,7 +3257,12 @@
       giro.letti[L.sel.base] = { n: L.sel.n, filtrata: L.filtrata,
         righe: L.righe.map((r) => ({ nome: r.name, nato: improntaNascita(r.nato), eta: r.eta, triage: r.triage, area: r.area, arrivo: r.arrivo || 0 })) };
     }
-    const prossima = L.schede.find((s) => s.nostra && !giro.letti[s.base]);
+    // l'attesa del triage: letta in fondo, col suo link, e tenuta a parte (solo per il telefono)
+    if (L.sel && L.sel.triage) {
+      giro.triage = { n: L.sel.n, filtrata: L.filtrata,
+        righe: L.righe.map((r) => ({ nome: r.name, breve: nomeCorto(r.name), eta: r.eta, triage: r.triage, area: r.area, arrivo: r.arrivo || 0 })) };
+    }
+    const prossima = L.schede.find((s) => s.nostra && !giro.letti[s.base]) || (giro.triage ? null : L.schede.find((s) => s.triage));
     if (prossima && giro.salti < 4) {
       giro.salti++;
       tabStore.set(SMART_GIRO, giro);
@@ -3265,6 +3271,8 @@
     }
     const lette = Object.values(giro.letti);
     if (!lette.length) return fine("schede");
+    const t = giro.triage;
+    if (t && !t.filtrata && t.n != null && t.n === t.righe.length) store.set(TRIAGE_LISTA, { ts: Date.now(), righe: t.righe });
     const righe = lette.flatMap((x) => x.righe);
     const intera = lette.every((x) => !x.filtrata && x.n != null && x.n === x.righe.length);
     const r = applicaSmart(righe, intera);
@@ -16949,6 +16957,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       return r;
     };
     if (cmd === "pazienti") return fatto({ ok: true, dati: pontePazienti(), registro: "elenco dei pazienti" });
+    if (cmd === "triage") { const t = store.get(TRIAGE_LISTA, null); return { ok: true, dati: { ts: t?.ts || 0, righe: Array.isArray(t?.righe) ? t.righe : [] } }; }
     if (cmd === "richieste") return fatto({ ok: true, dati: ponteCatalogo(), registro: "catalogo degli esami" });
     const p = a.ep ? pontePaziente(a.ep) : null;
     if (!p) return { ok: false, errore: "Questo paziente non è più nell'elenco del PC" };

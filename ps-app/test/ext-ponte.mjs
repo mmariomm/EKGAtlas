@@ -468,6 +468,60 @@ if (process.env.PSA_SIDE) {
   await fotoCtx.close();
 }
 check(/Aggiornato alle \d\d:\d\d/.test(lista) && !/Dal PC del pronto soccorso/.test(lista), "in testa «Aggiornato alle …»; niente piede che ripete la testata");
+// ---- il Triage in fondo alle aree (letto dal PC, a parte: nessun paziente in più)
+{
+  const triagePc = (righe, ts = Date.now()) => doc.evaluate(({ righe, ts }) => (righe
+    ? localStorage.setItem("psassist:triage.lista.v1", JSON.stringify({ ts, righe })) : localStorage.removeItem("psassist:triage.lista.v1")), { righe, ts });
+  const min = (m) => Date.now() - m * 60e3;
+  const titoliTel = async () => JSON.stringify(await tel.locator(".lbl").evaluateAll((l) => l.map((x) => x.textContent.replace(/\s+/g, " ").trim())));
+  const ricarica = async () => { await tel.reload(); await aspettaTel(tel, /ROSSI MARIO/, 20000); };
+  check(!/Triage/.test(titoli), "senza niente letto al Triage, la sezione non c'è");
+  await triagePc([
+    { nome: "GRIGI TINA", breve: "GRIGI T.", eta: 30, triage: "VERDE", area: "", arrivo: min(80) },
+    { nome: "BLU CARLO", breve: "BLU C.", eta: 71, triage: "AZZURRO", area: "AREA BASSA INTENSITA'", arrivo: min(20) },
+    { nome: "ROSA ELIO", breve: "ROSA E.", eta: 44, triage: "ROSSO", area: "", arrivo: min(5) },
+    { nome: "BLU ALDO", breve: "BLU A.", eta: 63, triage: "AZZURRO", area: "", arrivo: min(35) },
+    { nome: "ZERO MARTA", breve: "ZERO M.", eta: null, triage: "", area: "", arrivo: 0 },
+  ]);
+  await ricarica();
+  const lbl = await titoliTel();
+  const righeTr = await tel.locator(".paz.trg").evaluateAll((l) => l.map((x) => ({ nome: x.querySelector(".nome").textContent, eta: x.querySelector(".eta")?.textContent || "", att: x.querySelector(".att")?.textContent || "",
+    ar: x.querySelector(".ar")?.textContent || "", cl: [...x.classList].find((c) => /^t-/.test(c)), tag: x.tagName })));
+  check(/"Triage · alle \d\d:\d\d"/.test(lbl) && lbl.indexOf("Triage") > lbl.indexOf("Bassa") && lbl.indexOf("Triage") < lbl.indexOf("Episodi"),
+    `sotto le aree (prima degli episodi precedenti) una sezione «Triage · alle 14:32» (${lbl})`);
+  check(righeTr.map((x) => x.nome).join() === "ROSA ELIO,BLU ALDO,BLU CARLO,GRIGI TINA,ZERO MARTA" && righeTr.map((x) => x.cl).join() === "t-rosso,t-azzurro,t-azzurro,t-verde,t-nessuno",
+    `per urgenza (rosso, azzurro, verde, senza) e a pari colore da chi aspetta di più (${righeTr.map((x) => x.nome).join()})`);
+  check(/^\d+′$/.test(righeTr[0].att) && righeTr[0].eta === "44 anni" && /^3[5-9]′$/.test(righeTr[1].att) && /^1h(2\d|3\d)$/.test(righeTr[3].att) && righeTr[4].att === "" && righeTr[4].eta === "",
+    `età e attesa («5′», «35′», «1h20»); dove non si sa, niente (${JSON.stringify(righeTr.map((x) => [x.eta, x.att]))})`);
+  check(righeTr[2].ar === "AREA BASSA INTENSITA'" && !righeTr[0].ar && righeTr.every((x) => x.tag === "DIV") && !(await tel.locator("button.paz.t-rosso").count()),
+    "l'area come testo piccolo solo dove si sa; le righe non si toccano (niente bottone)");
+  check(!(await pazPc()).includes("GRIGI") && !(await tel.locator('.paz[data-ep]').evaluateAll((l) => l.map((x) => x.textContent).join())).includes("GRIGI"),
+    "chi è al Triage non entra fra i pazienti");
+  if (process.env.PSA_SIDE) {
+    const html = await tel.evaluate(() => document.documentElement.outerHTML.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
+    const fotoCtx = await telBrowser.newContext({ ...IPHONE, deviceScaleFactor: 2 });
+    const foto = await fotoCtx.newPage();
+    await foto.route("**/*", (r) => (/app\.css$/.test(r.request().url()) ? r.fulfill({ path: join(root, "../public/ponte/app.css"), contentType: "text/css" }) : r.fulfill({ status: 200, contentType: "text/html", body: html })));
+    await foto.goto("https://ponte.invalid/ponte/");
+    await foto.screenshot({ path: join(process.env.PSA_SIDE, "triage-telefono.png") }).catch(() => {});
+    await fotoCtx.close();
+  }
+  // letta più di 30 minuti fa: via
+  await triagePc([{ nome: "ROSA ELIO", breve: "ROSA E.", eta: 44, triage: "ROSSO", area: "", arrivo: min(50) }], Date.now() - 31 * 60e3);
+  await ricarica();
+  check(!/Triage/.test(await titoliTel()), "letta più di 30 minuti fa: la sezione non c'è");
+  // un'estensione vecchia (il comando non lo conosce: «Comando sconosciuto»): niente sezione, niente errore
+  await triagePc([{ nome: "ROSA ELIO", breve: "ROSA E.", eta: 44, triage: "ROSSO", area: "", arrivo: min(5) }]);
+  await tel.route(/\/app\.js/, async (r) => { const t = await (await r.fetch()).text(); await r.fulfill({ status: 200, contentType: "text/javascript", body: "window.__triageVecchio = true;" + t.replace('chiedi("triage"', 'chiedi("triage_vecchio"') }); });
+  await tel.evaluate(() => navigator.serviceWorker?.getRegistrations().then((l) => Promise.all(l.map((x) => x.unregister()))));
+  await ricarica();
+  const vecchia = await tel.evaluate(() => window.__triageVecchio === true);
+  check(vecchia && !/Triage/.test(await titoliTel()) && !(await tel.locator(".avviso, .err, [role=alert]").count()) && /ROSSI MARIO/.test(await testoTel(tel)),
+    `con un comando che il PC non conosce: nessuna sezione, nessun errore, l'elenco c'è (prova attiva: ${vecchia})`);
+  await tel.unroute(/\/app\.js/);
+  await triagePc(null);
+  await ricarica();
+}
 const nomi = await tel.locator(".paz .nome").evaluateAll((l) => l.map((x) => { const s = getComputedStyle(x); return { taglia: s.textOverflow === "ellipsis" || s.whiteSpace === "nowrap", pieno: x.scrollWidth <= x.clientWidth + 1 }; }));
 check(nomi.length >= 4 && nomi.every((x) => !x.taglia && x.pieno), `i nomi non si troncano mai (il posto e il promemoria vanno a capo) ${JSON.stringify(nomi)}`);
 check(!(await piccoli(tel)).length, `ogni bottone almeno 44 px (${JSON.stringify(await piccoli(tel))})`);

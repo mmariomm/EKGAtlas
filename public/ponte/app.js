@@ -66,7 +66,7 @@
     scarto: 0,           // l'orologio del PC meno quello del telefono, misurato al saluto (in memoria)
     coda: new Map(),     // oid → un ordine toccato senza collegamento: { ep, oid, quando, paziente, n, sel, stato: "coda" | "scaduta" }
     fase: "avvio", perche: "", testoFine: "", scaduta: 0,
-    pazienti: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ordini: new Map(), nascosti: new Set(),
+    pazienti: null, triage: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ordini: new Map(), nascosti: new Set(),
     vista: { nome: "lista", ep: "" }, scheda: "esiti", sel: new Map(), bloccati: new Map(), aperti: new Set(),
     occupato: new Set(), bozze: new Map(), notaAperta: "", promAperto: "", promTesto: "", fatti: new Map(), menu: false, arma: null, avviso: null,
     inviati: new Map(),  // ep → oid dell'ordine che sta andando al PC (il bottone aspetta)
@@ -82,7 +82,7 @@
     zipArma: null,       // «Cancella»: { id, ts } dopo il primo tocco
   };
   function svuota() {
-    S.pazienti = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
+    S.pazienti = null; S.triage = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.bozze.clear(); S.promTesto = ""; S.arma = null;
     S.notaAperta = ""; S.promAperto = ""; S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
     S.zip = null; S.zipErr = ""; S.zipArma = null; S.zipStato.clear();
@@ -416,11 +416,14 @@
     avviso(e.message, "err");
     if (e.dimesso) aggiornaLista(true);   // dimesso sul PC: dall'elenco se ne va
   }
+  // Chi aspetta al Triage: un PC più vecchio non conosce il comando, o non c'è
+  // niente — allora la sezione manca, senza errori.
+  const chiediTriage = (auto = true) => chiedi("triage", {}, TEMPO, auto).catch(() => null);
   async function carica() {
     S.occupato.add("lista"); render();
     try {
-      const [pazienti, catalogo, ordini] = await Promise.all([chiedi("pazienti", {}, TEMPO, true), chiedi("richieste", {}, TEMPO, true), chiedi("ordini", {}, TEMPO, true)]);
-      S.pazienti = pazienti; S.catalogo = catalogo; S.aggiornato = Date.now(); S.erroreLista = "";
+      const [pazienti, catalogo, ordini, triage] = await Promise.all([chiedi("pazienti", {}, TEMPO, true), chiedi("richieste", {}, TEMPO, true), chiedi("ordini", {}, TEMPO, true), chiediTriage()]);
+      S.pazienti = pazienti; S.triage = triage; S.catalogo = catalogo; S.aggiornato = Date.now(); S.erroreLista = "";
       for (const o of ordini || []) if (!S.ordini.has(o.id) || !S.ordini.get(o.id).fine) ordineVisto(o);
     } catch (e) { S.erroreLista = e.message; }
     S.occupato.delete("lista"); render();
@@ -428,7 +431,7 @@
   async function aggiornaLista(auto = false) {
     if (!S.catalogo) return carica();
     S.occupato.add("lista"); render();
-    try { S.pazienti = await chiedi("pazienti", {}, TEMPO, auto); S.aggiornato = Date.now(); S.erroreLista = ""; }
+    try { [S.pazienti, S.triage] = await Promise.all([chiedi("pazienti", {}, TEMPO, auto), chiediTriage(auto)]); S.aggiornato = Date.now(); S.erroreLista = ""; }
     catch (e) { if (S.pazienti) { if (!auto) errore(e); } else S.erroreLista = e.message; }
     S.occupato.delete("lista"); render();
   }
@@ -1126,6 +1129,22 @@
     }).join("");
     return `<main>${stampaHtml()}<div class="carta zips">${righe}</div></main>`;
   }
+  // «Triage · alle 14:32»: chi aspetta (le due aree insieme), dal più urgente e,
+  // a pari colore, da chi aspetta da più tempo. Non si tocca. Via se vuoto o
+  // letto più di 30 minuti fa.
+  const TRIAGE_ORDINE = ["ROSSO", "ARANCIONE", "AZZURRO", "VERDE", "BIANCO"];
+  function triageHtml() {
+    const t = S.triage, ora = Date.now() + (S.scarto || 0);
+    if (!t || !Array.isArray(t.righe) || !t.righe.length || !(t.ts > 0) || ora - t.ts > 30 * 60e3) return "";
+    const prio = (r) => { const i = TRIAGE_ORDINE.indexOf(r.triage); return i < 0 ? TRIAGE_ORDINE.length : i; };
+    const att = (r) => (r.arrivo > 0 ? Math.max(0, Math.round((ora - r.arrivo) / 60e3)) : null);
+    const testo = (m) => (m == null ? "" : m < 60 ? `${m}′` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`);
+    const righe = [...t.righe].sort((a, b) => prio(a) - prio(b) || (att(b) ?? -1) - (att(a) ?? -1)).map((r) =>
+      `<div class="paz trg t-${TRIAGE[r.triage] || "nessuno"}"><span class="tr"></span><span class="cor"><span class="r1"><span class="nome">${esc(r.nome || r.breve)}</span>${
+        Number.isInteger(r.eta) ? `<span class="eta">${r.eta} anni</span>` : ""}${att(r) != null ? `<span class="att">${testo(att(r))}</span>` : ""}${
+        r.area ? `<span class="ar">${esc(r.area)}</span>` : ""}</span></span></div>`).join("");
+    return `<div class="lbl">Triage <span class="ora">· alle ${hhmm(t.ts - (S.scarto || 0))}</span></div><div class="carta">${righe}</div>`;
+  }
   function vistaLista() {
     if (!S.pazienti) {
       if (S.erroreLista && !S.occupato.has("lista")) {
@@ -1149,8 +1168,8 @@
       const inStanza = vivi.filter((p) => p.posto).sort((a, b) => a.posto.localeCompare(b.posto, "it", { numeric: true }));
       corpo = carta([...vivi.filter((p) => !p.posto), ...inStanza]);
     }
-    return `<main>${stampaHtml()}${codaDi("")}${S.pazienti.length ? corpo + (prec.length ? `<div class="lbl">Episodi precedenti</div>${carta(prec)}` : "")
-      : `<div class="vuoto">Nessun paziente nell'elenco del PC.<br>Si riempie aprendo i pazienti nel gestionale.</div>`}
+    return `<main>${stampaHtml()}${codaDi("")}${S.pazienti.length ? corpo + triageHtml() + (prec.length ? `<div class="lbl">Episodi precedenti</div>${carta(prec)}` : "")
+      : `<div class="vuoto">Nessun paziente nell'elenco del PC.<br>Si riempie aprendo i pazienti nel gestionale.</div>${triageHtml()}`}
       ${barraOrdini()}</main>`;
   }
   function tabellaHtml(t) {

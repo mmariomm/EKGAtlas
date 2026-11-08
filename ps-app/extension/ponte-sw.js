@@ -454,7 +454,7 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "registrazioneVia") return await ponteViaRegistrazione(s, d);
     if (d.cmd === "cartella") return await ponteCartella(ponteArgomenti(d));
     if (d.cmd === "cartellaSalva") return await ponteCartellaSalva(d);
-    if (["pazienti", "esiti", "richieste", "nota", "promemoria", "fatto"].includes(d.cmd)) {
+    if (["pazienti", "triage", "esiti", "richieste", "nota", "promemoria", "fatto"].includes(d.cmd)) {
       const a = ponteArgomenti(d);
       const r = await ponteSuScheda(d.cmd, a);
       if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }

@@ -701,7 +701,7 @@ async function smartDietro(srv, seed) {
   await page.waitForFunction(() => (window.__chiesti || []).some((m) => m.t === "smartFine"), null, { timeout: 15000 });
   const esito = await page.evaluate(() => window.__chiesti.find((m) => m.t === "smartFine").esito);
   const out = { esito, url: page.url(), pazienti: await ls(page, "patients.v1"), aree: await ls(page, "aree.v1"), dimessi: await ls(page, "dimessi.v1"),
-    sync: await ls(page, "smart.sync.v1"), posti: await ls(page, "stanza.alta.posti.v1"), pannello: await page.locator("#psassist-host").count() };
+    sync: await ls(page, "smart.sync.v1"), triage: await ls(page, "triage.lista.v1"), posti: await ls(page, "stanza.alta.posti.v1"), pannello: await page.locator("#psassist-host").count() };
   await context.close();
   return out;
 }
@@ -714,7 +714,9 @@ await blocco("La smart letta dietro: le schede, chi c'è, chi è dimesso", async
   srv.s.log.length = 0;
   const r = await smartDietro(srv, seed);
   const giro = srv.s.log.filter((l) => /PsoPazientiSmart/.test(l)).map((l) => /PAZIENTI_FILTRO=(\w+)/.exec(l)[1]);
-  check(r.esito === "ok" && giro.join() === "AMB_7,AMB" && /PAZIENTI_FILTRO=AMB$/.test(r.url), `aperta su «Tutti», passa ad «Ambulatorio» col link della sua scheda (got: ${giro.join(" → ")})`);
+  check(r.esito === "ok" && giro.join() === "AMB_7,AMB,TRI" && /PAZIENTI_FILTRO=TRI$/.test(r.url), `aperta su «Tutti», passa ad «Ambulatorio» e poi al «Triage», ognuno col link della sua scheda (got: ${giro.join(" → ")})`);
+  check(r.triage?.righe?.length === 1 && r.triage.righe[0].nome === "MARINI ADA" && r.triage.righe[0].breve === "MARINI A." && r.triage.righe[0].triage === "VERDE" && r.triage.righe[0].eta === 38
+    && r.triage.righe[0].arrivo > 0 && !("nato" in r.triage.righe[0]) && r.triage.ts > 0, `il Triage letto va a parte (triage.lista.v1), senza nascita (got: ${JSON.stringify(r.triage)})`);
   check(r.pannello === 0, "dietro non nasce il pannello");
   const moro = r.pazienti.find((p) => p.name === "MORO DINO"), ferrari = r.pazienti.find((p) => p.ep === "700032");
   check(moro && /^sm/.test(moro.ep) && !moro.url && r.aree.membri[moro.ep]?.k === "obi" && moro.triage === "ARANCIONE" && moro.nato === impronta("09/09/1999") && moro.arrivo > 0,
@@ -740,6 +742,7 @@ await blocco("La smart: quando NON si dimette nessuno", async () => {
     const r = await smartDietro(srv, semeTabellone());
     const arch = (r.pazienti || []).filter((p) => p.arch).map((p) => p.ep);
     check(!arch.length && !r.dimessi, `${nome}: nessuno dimesso (got: ${arch.join() || "nessuno"} · esito ${r.esito})`);
+    if (nome === "filtrata") check(!r.triage, "e la lista del Triage, se la lettura è filtrata, non si tocca");
   }
 });
 
