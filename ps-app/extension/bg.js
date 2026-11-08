@@ -1313,7 +1313,9 @@ function ordPubblico(rec, l = []) {
   const v = rec.vista || {}, r = rec.resto || {}, f = Array.isArray(rec.fogli) ? rec.fogli : [];
   // «Quesito: il tuo» è la frase della scheda dell'ordine: per un ordine dal telefono, si dice quale
   const vero = (s) => (rec.quesito ? s.replace(/Quesito: il tuo(, al posto del triage)?/g, () => `Quesito: «${rec.quesito}»`) : s);
-  const P = (tono, titolo, testo = "", ...dettaglio) => ({ tono, titolo: corto(titolo, 80), testo: corto(testo, 200), dettaglio: corto(vero(dettaglio.filter(Boolean).join(" · ")), 240) });
+  // (la scheda dell'ordine ha passato il gestionale all'area del paziente: l'esito lo dice, una volta)
+  const area = rec.area && !["coda", "avvio", "corre"].includes(rec.stato) ? `gestionale ora sull'area ${rec.area}` : "";
+  const P = (tono, titolo, testo = "", ...dettaglio) => ({ tono, titolo: corto(titolo, 80), testo: corto(testo, 200), dettaglio: corto(vero([...dettaglio, area].filter(Boolean).join(" · ")), 240) });
   const alTel = (pc, telefono) => (dalTelefono(rec) ? { ...pc, tel: telefono } : pc);
   const tono = (t, d) => (["run", "ok", "warn", "err"].includes(t) ? t : d);
   const lista = (k) => (Array.isArray(r[k]) ? r[k] : []);
@@ -1329,7 +1331,7 @@ function ordPubblico(rec, l = []) {
       const prima = l.find((x) => x !== rec && ATTIVI.has(x.stato));
       return P("run", "In coda", prima ? `parte dopo l'ordine di ${prima.paziente || "un altro paziente"}` : motoreDiScheda() ? "parte dopo il giro di un'altra scheda" : "parte fra poco");
     }
-    case "avvio": return P("run", "Parte", "Apro la scheda dell'ordine…");
+    case "avvio": return P("run", "Parte", v.testo || "Apro la scheda dell'ordine…");   // («passo all'area …»)
     case "corre":
       if (rec.muto) return P("err", "Ordine fermo", "La scheda dell'ordine non risponde: ⏹ la chiude", [...lista("mancano"), ...lista("controllare")].length ? `Da controllare: ${[...lista("mancano"), ...lista("controllare")].join(", ")}` : "");
       if (rec.ferma) return P("warn", "Fermo chiesto", "la scheda dell'ordine si ferma appena risponde");
@@ -1763,6 +1765,8 @@ function ordMessaggio(msg, sender, reply) {
       rec.resto = { mancano: nomi(msg.resto.mancano), controllare: nomi(msg.resto.controllare), nel: nomi(msg.resto.nel) };
     }
     if (msg.rid) rec.rid = corto(msg.rid, 20);
+    // l'area su cui la scheda dell'ordine ha passato il gestionale prima di partire: la dice l'esito
+    if (typeof msg.area === "string" && msg.area.trim()) rec.area = corto(msg.area.trim(), 40);
     if (msg.listUrl && leggibileOrd(msg.listUrl)) rec.listUrl = msg.listUrl;
     // il passaggio di consegne per le schede del medico: il carrello da aprire
     // (un indirizzo da leggere, mai un invio) e quello che la pagina deve dire

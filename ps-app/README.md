@@ -614,6 +614,18 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco. Senza una scheda del gestionale
    davanti aspettano (mezz'ora; poi dalla sua pagina, ⋯ → Stampa le richieste); la pagina di accesso non
    le butta via.
+   **Il gestionale su un'altra area.** L'area è un'impostazione della sessione, e su un'area che
+   non è quella del paziente la sua pagina arriva **senza le Richieste**. Se il pannello sa dove
+   sta il paziente (la lista della sua area, o la smart), la scheda dell'ordine fa quello che
+   faresti tu: **Imposta** → l'area del paziente (una sola opzione, riconosciuta dal nome) →
+   **Conferma** → di nuovo la sua pagina (quella che aveva aperto, mai un indirizzo costruito) →
+   l'ordine, come sempre. Prima non parte niente. Una volta per ordine, al più due «Conferma» e
+   45 secondi: area che in Imposta non c'è, «Conferma» che non passa, Richieste che non ci sono
+   nemmeno lì — «Non partito», col perché. Area del paziente che non si sa, o la stessa in testa:
+   «Non partito» come prima, mai un'area indovinata. Il passaggio vale per **tutte** le schede di
+   quella sessione: la striscia lo dice mentre passa («Parte · passo all'area Alta intensità…») e
+   l'esito una volta («… · gestionale ora sull'area Alta intensità»); indietro non si torna da
+   soli. Lo stesso per gli ordini dal telefono.
    **Un secondo ordine mentre uno gira aspetta in coda** — la striscia dice «+1 in coda» — e
    parte quando il primo ha finito o si è fermato (sulla sua striscia, «In coda», ✕ lo toglie).
    Vale anche, dal PC o dal telefono, mentre una tua scheda manda esami da sé (sotto: «Quando
@@ -685,7 +697,8 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    sottofondo comincia da che cosa fare, «TROPONINA US: non mandato · apri il carrello → Riprova»,
    e il perché sta nel resoconto (un ordine che **non è partito** non ha resoconto: il perché lo dice
    la striscia sotto, anche al telefono — «il gestionale non mostra le Richieste: è sull'area Bassa,
-   è quella del paziente?» quando la pagina del paziente arriva senza Richieste) — e la scheda va
+   è quella del paziente?» quando la pagina del paziente arriva senza Richieste e la sua area non
+   si sa) — e la scheda va
    sul **carrello** della richiesta, sull'erogatore dove il gestionale la tiene (l'ultimo elenco
    che ha dato): una semplice lettura dell'elenco, niente inviato, niente confermato. **Mancano** sono gli esami
    mai partiti: li aggiungi tu. **Da controllare** sono quelli mandati ma non visti in carrello:
@@ -2054,7 +2067,11 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    è la scheda dell'ordine lo sa il service worker, per numero di scheda (`storage.session`,
    che muore col browser e non sta su disco), e **solo finché l'ordine gira**: finito, si slega
    — mai l'esito o le etichette di un altro paziente scambiati per i suoi. Parte **una volta
-   sola**, un motore alla volta; la coda non va avanti finché la scheda di prima esiste. La
+   sola**, un motore alla volta; la coda non va avanti finché la scheda di prima esiste.
+   **Sull'area sbagliata** (la pagina del paziente senza Richieste) passa il gestionale a quella
+   del paziente come il medico, Imposta e Conferma, solo se la sa (mai indovinata), prima di
+   «parto» e una volta per ordine; l'appunto è suo, così una scheda del medico che si carica
+   intanto non preme niente. La
    scheda del medico non manda niente: una risposta persa si richiede con lo stesso numero, e
    parte da sé solo su un no esplicito. L'appunto della scheda porta il numero dell'ordine:
    ripristinata dopo un browser caduto, o duplicata, non riprende niente. **Nessun ordine

@@ -797,27 +797,213 @@ if (prova("la sessione scade nella scheda dell'ordine")) {
 // (una registrazione vera della 3.77.1: il gestionale messo sull'area «Media -
 // bassa», il paziente nell'Alta — la sua pagina, lì, non ha né le Richieste né
 // le sezioni. L'ordine non parte, e lo diceva solo «non mandato».)
+// Dove il PC sa che sta ROSSI (come l'avrebbe letto dalla lista della sua
+// area, o dalla smart); "" non lo sa.
+const areaDi = (p, k) => p.evaluate((k) => {
+  const a = JSON.parse(localStorage.getItem("psassist:aree.v1") || "null") || {};
+  const membri = { ...(a.membri || {}) };
+  if (k) membri["999001"] = { k, ts: Date.now() };
+  else delete membri["999001"];
+  localStorage.setItem("psassist:aree.v1", JSON.stringify({ membri, viste: a.viste || {} }));
+}, k);
+const impostaAperta = () => A.state.requests.some((q) => q.params.MVPG === "PsoPsoImposta");
 if (prova("la pagina del paziente senza le Richieste (il gestionale su un'altra area): niente inviato, e si dice perché")) {
-  await suPagina(doc, A.patientUrl);
-  // (la pagina del medico è già aperta: da qui una pagina del paziente aperta è quella della scheda dell'ordine)
+  // L'area del paziente non si sa (nessuna lista l'ha letta), o è proprio
+  // quella in testa: non si indovina, e PsoPsoImposta non si apre.
+  for (const [come, k] of [["l'area del paziente non si sa", ""], ["l'area del paziente è quella in testa", "bassa"]]) {
+    nuovi();
+    await suPagina(doc, A.patientUrl);
+    await areaDi(doc, k);
+    // (la pagina del medico è già aperta: da qui una pagina del paziente aperta è quella della scheda dell'ordine)
+    riscrivi = (u, html, req) => {
+      if (!req.isNavigationRequest() || !/MVPG=PsoEpisodioClinicoAmbulatorio/.test(u)) return html;
+      return html.replace(/<a [^>]*title="Richieste [^"]*"[^>]*>[\s\S]*?<\/a>/g, "")
+        .replace(/<body>/i, `<body><table class="AFCHeaderTable"><tr><td><font style="font-size: 110%; font-weight: bolder; ">AREA MEDIA - BASSA INTENSITA'</font> 00040001P</td></tr></table>`);
+    };
+    const nasce = nuovaPagina();
+    await ordina(doc, ["TROPONINA"]);
+    const w = await nasce;
+    const rossa = await striscia(doc, /non mandat/, 30000).catch(() => "");
+    const o = (await ordini()).find((x) => x.paziente === "ROSSI MARIO");
+    check(A.state.requests.every((q) => q.method === "GET" && !q.params.Insert && q.params.MVPG !== "PsoRichiestaCreaRcs"), `${come}: niente inviato, né la richiesta, né un esame`);
+    check(!impostaAperta(), `${come}: nessun passaggio d'area, PsoPsoImposta mai aperta`);
+    check(/TROPONINA.*non mandato/.test(rossa) && !!o && o.stato === "errore"
+      && /^Sulla pagina del paziente il gestionale non mostra le Richieste: è sull'area Bassa, è quella del paziente\? Niente inviato$/.test(o.pubblico?.dettaglio || ""),
+    `${come}: «non mandato», e il perché: il gestionale è sull'area Bassa (got ${rossa || "niente"} · ${JSON.stringify(o && o.pubblico)})`);
+    check(!w || await aspettaChiusa(w, 8000), `${come}: e la scheda dell'ordine si chiude`);
+    riscrivi = null;
+    await $panel(doc, STOP).click().catch(() => {});
+    await nessunOrdine();
+  }
+  await areaDi(doc, "");
+}
+
+// ---- 9c. …e il PC sa che il paziente sta nell'Alta: la scheda dell'ordine ci passa il gestionale ----
+// Quello che il medico farebbe a mano: Imposta → l'area del paziente →
+// Conferma → di nuovo il paziente → l'ordine. Il banco non ha le aree: qui le
+// si finge come test/aree.mjs. La pagina del paziente porta in testa l'area
+// del gestionale e, finché non è quella giusta (`richieste`), non ha le
+// Richieste; PsoPsoImposta ha la sua tendina e il suo «Conferma», che passa il
+// gestionale all'area scelta (le prime `perde` volte no) e atterra sulla lista.
+const AREE = {
+  alta: { id: "00010001P", label: "AREA ALTA INTENSITA'" },
+  bassa: { id: "00040001P", label: "AREA MEDIA - BASSA INTENSITA'" },
+  obi: { id: "00050001P", label: "AREA OBI" },
+};
+function areeFinte({ opzioni = Object.keys(AREE), richieste = (k) => k === "alta", perde = 0 } = {}) {
+  const s = { area: "bassa", imposta: [], conferme: [], trattieni: 0 };
+  let arriva;
+  s.arrivata = new Promise((r) => { arriva = r; });   // la prima PsoPsoImposta chiesta
+  const testa = () => `<table class="AFCHeaderTable"><tr><td><font style="font-size: 110%; font-weight: bolder; ">${AREE[s.area].label}</font> ${AREE[s.area].id}</td></tr></table>`;
+  const pagina = (corpo) => `<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><title>Pronto Soccorso</title></head><body>${testa()}${corpo}</body></html>`;
   riscrivi = (u, html, req) => {
     if (!req.isNavigationRequest() || !/MVPG=PsoEpisodioClinicoAmbulatorio/.test(u)) return html;
-    return html.replace(/<a [^>]*title="Richieste [^"]*"[^>]*>[\s\S]*?<\/a>/g, "")
-      .replace(/<body>/i, `<body><table class="AFCHeaderTable"><tr><td><font style="font-size: 110%; font-weight: bolder; ">AREA MEDIA - BASSA INTENSITA'</font> 00040001P</td></tr></table>`);
+    const h = richieste(s.area) ? html : html.replace(/<a [^>]*title="Richieste [^"]*"[^>]*>[\s\S]*?<\/a>/g, "");
+    return h.replace(/<body>/i, `<body>${testa()}`);
   };
+  intercetta = async (route, req, u) => {
+    if (new URL(u).searchParams.get("MVPG") !== "PsoPsoImposta") return false;
+    let chi = null;
+    try { chi = req.frame().page(); } catch { /* niente */ }
+    let corpo;
+    if (req.method() === "POST") {
+      const id = new URLSearchParams(req.postData() || "").get("RISORSA_ID");
+      s.conferme.push({ id, chi });
+      const k = Object.keys(AREE).find((x) => AREE[x].id === id);
+      if (k && s.conferme.length > perde) s.area = k;
+      // (il gestionale rinvia alla lista dell'area)
+      corpo = `<form method="post" name="PazientiFiltro" action="menuPso.do?ccsForm=PazientiFiltro:Edit&amp;MVPG=PsoPazientiAmbulatorio"></form><p>la lista</p>`;
+    } else {
+      s.imposta.push(chi);
+      if (s.imposta.length === 1) { arriva(chi); if (s.trattieni) await sospendi(s.trattieni); }
+      corpo = `<form method="post" action="menuPso.do?ccsForm=RisorsaImposta:Edit&amp;MVPG=PsoPsoImposta"><table><tr><td>
+        <select class="AFCSelect" name="RISORSA_ID"><option value="00020001P">TRIAGE</option>
+        ${opzioni.map((k) => `<option value="${AREE[k].id}"${k === s.area ? ' selected=""' : ""}>${AREE[k].label}</option>`).join("")}</select>
+        <input value="" type="hidden" name="PAZIENTIHOME"></td></tr>
+        <tr><td><input id="AGG_RISORSA" class="AFCButton" value="Conferma" type="submit" name="Update"></td></tr></table></form>`;
+    }
+    try { await route.fulfill({ status: 200, headers: { "content-type": "text/html; charset=windows-1252" }, body: Buffer.from(pagina(corpo), "latin1") }); } catch { /* scheda chiusa */ }
+    return true;
+  };
+  return s;
+}
+const areeVere = () => { riscrivi = null; intercetta = null; };
+// che cosa hanno detto gli ordini, passo passo (`pubblico`: la striscia del PC e il telefono)
+const spiaPubblico = () => sw.evaluate(() => {
+  self.__pubblico = [];
+  if (self.__spia) return;
+  self.__spia = true;
+  chrome.storage.onChanged.addListener((ch, a) => {
+    if (a !== "session" || !ch.ordini) return;
+    for (const o of ch.ordini.newValue || []) {
+      const p = { ...(o.pubblico || {}), ...((o.pubblico && o.pubblico.tel) || {}) };
+      self.__pubblico.push(`${o.stato} | ${p.titolo || ""} | ${p.testo || ""} | ${p.dettaglio || ""}`);
+    }
+  });
+});
+const pubblicoVisto = () => sw.evaluate(() => [...new Set(self.__pubblico || [])]);
+const nienteInviato = () => A.state.requests.every((q) => (q.method === "GET" || q.params.MVPG === "PsoPsoImposta") && !q.params.Insert && q.params.MVPG !== "PsoRichiestaCreaRcs");
+
+if (prova("il gestionale sull'area Bassa, il paziente nell'Alta: la scheda dell'ordine passa all'Alta, torna dal paziente e ordina")) {
+  lento = 0;
+  await suPagina(doc, A.patientUrl);
+  await azzeraStampe(doc);
+  await areaDi(doc, "alta");
+  await spiaPubblico();
+  const s = areeFinte();
+  s.trattieni = 2500;   // (PsoPsoImposta arriva lenta: intanto una scheda del medico si carica proprio lì)
+  const qui = doc.url();
+  let navigata = 0;
+  const conta = (f) => { if (f === doc.mainFrame()) navigata++; };
+  doc.on("framenavigated", conta);
   const nasce = nuovaPagina();
-  await ordina(doc, ["TROPONINA"]);
+  await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA"]);
   const w = await nasce;
-  const rossa = await striscia(doc, /non mandat/, 30000).catch(() => "");
-  const o = (await ordini()).find((x) => x.paziente === "ROSSI MARIO");
-  check(A.state.requests.every((q) => q.method === "GET" && !q.params.Insert && q.params.MVPG !== "PsoRichiestaCreaRcs"), "niente inviato: né la richiesta, né un esame");
-  check(/TROPONINA.*non mandato/.test(rossa) && !!o && o.stato === "errore"
-    && /^Sulla pagina del paziente il gestionale non mostra le Richieste: è sull'area Bassa, è quella del paziente\? Niente inviato$/.test(o.pubblico?.dettaglio || ""),
-  `«non mandato», e il perché: il gestionale è sull'area Bassa (got ${rossa || "niente"} · ${JSON.stringify(o && o.pubblico)})`);
+  const primo = await Promise.race([s.arrivata, sospendi(20000).then(() => null)]);
+  check(!!w && primo === w, "la scheda dell'ordine apre PsoPsoImposta (lei, non la scheda del medico)");
+  // un'altra scheda del medico, aperta su PsoPsoImposta mentre si passa: l'appunto del passaggio non è suo, non preme niente
+  const altra = await ctx.newPage();
+  await altra.goto(`${new URL(A.patientUrl).origin}/sa4pso/restrict/menuPso.do?MVPG=PsoPsoImposta`).catch(() => {});
+  await altra.waitForTimeout(2500);
+  check(s.conferme.every((c) => c.chi !== altra) && /MVPG=PsoPsoImposta$/.test(altra.url()),
+    `una scheda del medico caricata su PsoPsoImposta intanto non preme «Conferma» e resta lì (got ${s.conferme.filter((c) => c.chi === altra).length} conferme, ${altra.url().slice(-40)})`);
+  await altra.close();
+  await doc.bringToFront();
+  const fatte = await finche(async () => conferme(A).length === 1 && Object.values(A.state.richieste).every((r) => r.confirmed), 60000);
+  check(fatte && Object.keys(A.state.insertCount).length === 2 && Object.values(A.state.insertCount).every((n) => n === 1),
+    `passato all'Alta, l'ordine va come sempre: ogni esame una volta, una Conferma (got ${JSON.stringify(A.state.insertCount)} · conferme ${conferme(A).length})`);
+  check(s.imposta.filter((c) => c === w).length === 1 && s.conferme.length === 1 && s.conferme[0].id === AREE.alta.id && s.conferme[0].chi === w,
+    `PsoPsoImposta una volta sola, dalla scheda dell'ordine: l'Alta, un «Conferma» (got ${s.imposta.filter((c) => c === w).length} aperture, ${JSON.stringify(s.conferme.map((c) => c.id))})`);
+  await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 30000 }).catch(() => {});
+  await chiudiStampa(doc);
+  check((await stampe(doc)).length === 1, `le etichette come sempre, una stampa nella scheda del medico (got ${(await stampe(doc)).length})`);
+  check(navigata === 0 && doc.url() === qui, `la scheda del medico non si è mai spostata (got ${navigata} navigazioni, ${doc.url().slice(-50)})`);
+  const detto = await pubblicoVisto();
+  check(detto.some((x) => /^avvio \| Parte \| passo all'area Alta[^|]*… \|/.test(x)) && (await strisce(doc)).some((t) => /Parte.*passo all'area Alta/.test(t)),
+    `la striscia del medico lo dice mentre passa: «Parte · passo all'area Alta…» (got ${JSON.stringify(detto.filter((x) => /^avvio/.test(x)))})`);
+  check(detto.some((x) => /^stampa \| Confermata \|.*· gestionale ora sull'area Alta[^|]*$/.test(x)) && !detto.some((x) => /^(avvio|corre) .*gestionale ora/.test(x)),
+    `e l'esito, una volta: «… · gestionale ora sull'area Alta» (got ${JSON.stringify(detto.filter((x) => /^stampa/.test(x)))})`);
   check(!w || await aspettaChiusa(w, 8000), "e la scheda dell'ordine si chiude");
-  riscrivi = null;
-  await $panel(doc, STOP).click().catch(() => {});
+  doc.off("framenavigated", conta);
+  areeVere();
+  await areaDi(doc, "");
   await nessunOrdine();
+}
+
+// passato all'Alta, e le Richieste ancora non ci sono: «Non partito», una prova sola — dal telefono (lo stesso giro)
+if (prova("passato all'Alta e le Richieste non ci sono ancora: «Non partito», una volta sola — anche dal telefono")) {
+  lento = 0;
+  await suPagina(doc, A.patientUrl);
+  await doc.bringToFront();
+  await areaDi(doc, "alta");
+  const s = areeFinte({ richieste: () => false });
+  const nasce = nuovaPagina();
+  const r = await sw.evaluate(async (args) => {
+    const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    return chrome.tabs.sendMessage(t.id, { t: "ponteEsegui", cmd: "ordina", args });
+  }, { ep: "999001", id: "telarea01", esami: ["00660001P:320"], quesito: "febbre" });
+  check(!!(r && r.ok), `l'ordine dal telefono parte come sempre, in una scheda di sottofondo (got ${JSON.stringify(r).slice(0, 120)})`);
+  const w = await nasce;
+  await finche(async () => (await ordini()).some((x) => x.id === "telarea01l" && x.stato === "errore"), 40000);
+  const o = (await ordini()).find((x) => x.id === "telarea01l");
+  const tel = (o && o.pubblico && o.pubblico.tel) || {};
+  check(!!o && o.stato === "errore" && /^Le Richieste non ci sono nemmeno sull'area Alta[^:]*: niente inviato · gestionale ora sull'area Alta[^·]*$/.test(tel.dettaglio || "")
+    && tel.testo === "completa al PC",
+  `sul telefono: «… non mandato · completa al PC», e il perché — le Richieste non ci sono nemmeno sull'Alta, il gestionale ora è lì (got ${JSON.stringify(o && o.pubblico)})`);
+  await sospendi(2000);
+  check(s.imposta.length === 1 && s.conferme.length === 1 && s.area === "alta", `un passaggio solo: PsoPsoImposta una volta, un «Conferma» (got ${s.imposta.length}, ${s.conferme.length})`);
+  check(nienteInviato(), "niente inviato: né la richiesta, né un esame");
+  check(!w || await aspettaChiusa(w, 8000), "e la scheda dell'ordine si chiude");
+  areeVere();
+  await areaDi(doc, "");
+  await nessunOrdine();
+}
+
+// in Imposta l'area del paziente non c'è, o il «Conferma» non arriva due volte: «Non partito», il perché, niente inviato
+if (prova("in Imposta l'area del paziente non c'è, o «Conferma» non passa due volte: «Non partito», e il perché")) {
+  for (const [come, opts, re, nConferme] of [
+    ["l'Alta non c'è fra le aree", { opzioni: ["bassa", "obi"] }, /^In Imposta il gestionale non offre l'area Alta[^:]*: niente inviato$/, 0],
+    ["«Conferma» due volte e niente", { perde: 2 }, /^Il gestionale non è passato all'area Alta[^,]*, «Conferma» premuto due volte: niente inviato$/, 2],
+  ]) {
+    nuovi();
+    lento = 0;
+    await suPagina(doc, A.patientUrl);
+    await areaDi(doc, "alta");
+    const s = areeFinte(opts);
+    const nasce = nuovaPagina();
+    await ordina(doc, ["TROPONINA"]);
+    const w = await nasce;
+    const rossa = await striscia(doc, /non mandat/, 40000).catch(() => "");
+    const o = (await ordini()).find((x) => x.paziente === "ROSSI MARIO");
+    check(/TROPONINA.*non mandato/.test(rossa) && !!o && o.stato === "errore" && re.test(o.pubblico?.dettaglio || ""),
+      `${come}: «non mandato», e il perché (got ${rossa || "niente"} · ${JSON.stringify(o && o.pubblico)})`);
+    check(s.conferme.length === nConferme && nienteInviato(), `${come}: ${nConferme} «Conferma», e niente inviato (got ${s.conferme.length})`);
+    check(!w || await aspettaChiusa(w, 8000), `${come}: la scheda dell'ordine si chiude`);
+    areeVere();
+    await $panel(doc, STOP).click().catch(() => {});
+    await nessunOrdine();
+  }
+  await areaDi(doc, "");
 }
 
 // ---- 10. la pagina di accesso non butta via le etichette in attesa -------
