@@ -6225,8 +6225,10 @@
     .tchip.on button:first-child { border-radius: 999px 0 0 999px; padding: 0 8px 0 11px; }
     .tchip.on button:last-child { border-radius: 0 999px 999px 0; padding: 0 11px 0 7px; border-left: 1px solid #fff; }
     .tchip.on button:hover { background: #DCEAF7; color: #0B2A4A; }
-    .recchip { display: inline-flex; align-items: center; height: 30px; padding: 0 11px; border-radius: 999px; background: #FBEBEA; color: var(--err);
+    .recchip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: #FBEBEA; color: var(--err);
                font-size: 12px; font-weight: 600; white-space: nowrap; margin: 0 4px; }
+    /* nell'intestazione, la forma delle altre chip (.gchip); sulla pill resta piccola: la pill non cresce mentre registri */
+    .hd .recchip { height: 30px; padding: 0 11px; }
     button.recchip { border: 0; cursor: pointer; font-family: inherit; }
     button.recchip:hover { background: #F6D9D6; }
     /* ⋯ → Registrazioni */
