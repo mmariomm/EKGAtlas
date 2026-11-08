@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.79.1";
+  const VERSION = "3.79.2";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -92,6 +92,11 @@
   const AVVISO = "avviso.v1";
   const PRINT_FLAG_TTL = 180e3;  // ms a post-confirm print handoff stays valid
   const RILEGGI_STAMPA = 4000;   // una richiesta nuova che la pagina non elenca ancora: una rilettura, dopo
+  // Nella scheda di un ordine, una pagina che non è il paziente: dopo la
+  // Conferma il gestionale ne attraversa (le etichette LIS, PsoEpisodio) e le
+  // lascia da sé in un attimo. Se dopo questa sosta è ancora qui, è qui che la
+  // scheda è rimasta: allora la stampa, o la prova della conferma.
+  const SOSTA_LAVORO = 3000;
   const QUEUE_TTL = 30 * 60e3;   // ms a still-unconfirmed richiesta keeps reminding
   // Il giro in corso, annotato passo per passo. Il gestionale ricarica la
   // pagina a ogni click e il motore muore con lei: così invece riprende da
@@ -8514,6 +8519,10 @@
       let base;
       if (p.startPage === "patient") {
         const entry = this.pageType === "patient" ? (p.kind === "radio" ? this.entry?.radioUrl : this.entry?.labUrl) : "";
+        // (nessuna Richiesta sulla pagina: così la mostra il gestionale messo su
+        // un'area che non è quella del paziente — si dice su quale è)
+        const area = !entry && this.pageType === "patient" && !this.entry?.labUrl && !this.entry?.radioUrl ? areaInTesta(document) : null;
+        if (area) return no(`Sulla pagina del paziente il gestionale non mostra le Richieste: è sull'area ${AREE_TITOLO[area.k] || area.label}, è quella del paziente? Niente inviato`);
         if (!entry) return no("Sulla pagina del paziente manca il link della richiesta: niente inviato");
         base = { ...p, entryUrl: entry };
       } else {
@@ -17550,8 +17559,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (chi) ascoltaOrdini(null);   // e le etichette di un ordine in sottofondo, se il medico è qui
       if (PONTE_VALORI) ponteValoriQui(null);
       nonConfermateQui();   // le richieste che questa pagina mostra confermate non vanno più sorvegliate
-      const stampa = maybeAutoPrint(null);
-      if (!stampa && LAVORO && LAVORO.stato !== "avvio") lavoroSenzaSeguito(null);
+      // (nella scheda di un ordine, dopo una sosta: una stampa partita da una
+      // pagina che il gestionale sta lasciando chiedeva i PDF a una pagina che
+      // non c'era più — «Stampa interrotta». Lasciata, parte dal paziente.)
+      const stampa = !LAVORO && maybeAutoPrint(null);
+      if (LAVORO) setTimeout(() => { if (LAVORO && !maybeAutoPrint(null) && LAVORO.stato !== "avvio") lavoroSenzaSeguito(null); }, SOSTA_LAVORO);
       // …e la pill, come su ogni pagina del gestionale (la dimissione, le
       // terapie, le stampe…): mai nella scheda di un ordine o del ponte, mai
       // mentre questa pagina stampa, mai nella lista smart.
