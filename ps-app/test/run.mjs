@@ -3403,7 +3403,7 @@ async function scenarioReferti(browser) {
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, '[data-seg="esiti"]').click();
-  await page.waitForSelector("#psassist-host [data-esito]");
+  await page.waitForSelector("#psassist-host [data-esito]", { state: "attached" });   // (il primo è nella lista del Lab, chiusa)
 
   const refs = page.locator('#psassist-host .sec:not(.reflab):not(.wulab) [data-esito][data-kind="referto"]');
   // In elenco i referti che non sono di laboratorio; il link-archivio senza
@@ -3424,7 +3424,8 @@ async function scenarioReferti(browser) {
   const consulenza = () => page.locator('#psassist-host .wualtri [data-esito][data-kind="referto"]').first();
   check(scen, /TC ENCEFALO/.test(rows[0]) && /22\/08 07:45/.test(rows[1]) && /EMOGASANALISI/.test(rows[1]),
     `la TC in Imaging, la consulenza negli altri documenti (got: ${rows.map((t) => t.replace(/\s+/g, " ").slice(0, 30)).join(" · ")})`);
-  check(scen, (await refs.nth(1).locator(".rgo svg").count()) === 1, "il documento senza testo dichiara che si apre in una scheda (l'icona ↗)");
+  check(scen, await refs.nth(1).evaluate((b) => !b.querySelector(".rgo") && !!b.parentElement.querySelector(".wupdf svg")),
+    "il documento senza testo non si apre come un testo (niente ▸): si apre in una scheda, e lo dice il suo «↗ PDF»");
   check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 0, "nessuno ancora aperto");
 
   const [popup] = await Promise.all([
@@ -3441,7 +3442,7 @@ async function scenarioReferti(browser) {
   await page.reload();
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, '[data-seg="esiti"]').click();
-  await page.waitForSelector("#psassist-host [data-esito]");
+  await page.waitForSelector("#psassist-host [data-esito]", { state: "attached" });
   check(scen, (await page.locator("#psassist-host .rdot.open").count()) === 1, "lo stato resiste al refresh");
 
   const before = context.pages().length, reqBefore = hits(mock, "bbbb2222");

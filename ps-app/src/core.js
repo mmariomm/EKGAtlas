@@ -3260,7 +3260,7 @@
     // l'attesa del triage: letta in fondo, col suo link, e tenuta a parte (solo per il telefono)
     if (L.sel && L.sel.triage) {
       giro.triage = { n: L.sel.n, filtrata: L.filtrata,
-        righe: L.righe.map((r) => ({ nome: r.name, breve: nomeCorto(r.name), eta: r.eta, triage: r.triage, area: r.area, arrivo: r.arrivo || 0 })) };
+        righe: L.righe.map((r) => ({ nome: r.name, breve: nomeCorto(r.name), eta: r.eta, triage: r.triage, area: AREE_TITOLO[chiaveArea(r.area)] || "", arrivo: r.arrivo || 0 })) };   // (l'area solo se si riconosce, col nome corto)
     }
     const prossima = L.schede.find((s) => s.nostra && !giro.letti[s.base]) || (giro.triage ? null : L.schede.find((s) => s.triage));
     if (prossima && giro.salti < 4) {
@@ -3272,7 +3272,8 @@
     const lette = Object.values(giro.letti);
     if (!lette.length) return fine("schede");
     const t = giro.triage;
-    if (t && !t.filtrata && t.n != null && t.n === t.righe.length) store.set(TRIAGE_LISTA, { ts: Date.now(), righe: t.righe });
+    // (una scheda senza il conto «(N)» si prende com'è; col conto, le righe devono tornare)
+    if (t && !t.filtrata && (t.n == null || t.n === t.righe.length)) store.set(TRIAGE_LISTA, { ts: Date.now(), righe: t.righe });
     const righe = lette.flatMap((x) => x.righe);
     const intera = lette.every((x) => !x.filtrata && x.n != null && x.n === x.righe.length);
     const r = applicaSmart(righe, intera);
@@ -3376,7 +3377,7 @@
   // (finestra, stanze, le opzioni delle aree, catalogo, stampe già fatte) e i
   // modelli del medico; chi sta in quale area se ne va.
   const RESET_VIA = () => ["patients.v1", ...TUTTI_I_POSTI(), "stanza.posti.v1", AREE, AREA_VAI, SMART_SYNC, DIMESSI, STATO, PROM, PROM_VECCHI, DF_GEN, noteKey, segniKey, "refVisti.v1",
-    "refPortale", DA_CONFERMARE, "quesiti", "quesiti.ts", "lastQ", APERTA, PRESIDIO, AUTO_CARICA, FALLITI];
+    "refPortale", DA_CONFERMARE, "quesiti", "quesiti.ts", "lastQ", APERTA, PRESIDIO, AUTO_CARICA, FALLITI, TRIAGE_LISTA];
   function azzeraScheda() {
     try { for (const k of Object.keys(sessionStorage)) if (k.startsWith(NS)) sessionStorage.removeItem(k); } catch { /* niente */ }
   }

@@ -715,7 +715,7 @@ await blocco("La smart letta dietro: le schede, chi c'è, chi è dimesso", async
   const r = await smartDietro(srv, seed);
   const giro = srv.s.log.filter((l) => /PsoPazientiSmart/.test(l)).map((l) => /PAZIENTI_FILTRO=(\w+)/.exec(l)[1]);
   check(r.esito === "ok" && giro.join() === "AMB_7,AMB,TRI" && /PAZIENTI_FILTRO=TRI$/.test(r.url), `aperta su «Tutti», passa ad «Ambulatorio» e poi al «Triage», ognuno col link della sua scheda (got: ${giro.join(" → ")})`);
-  check(r.triage?.righe?.length === 1 && r.triage.righe[0].nome === "MARINI ADA" && r.triage.righe[0].breve === "MARINI A." && r.triage.righe[0].triage === "VERDE" && r.triage.righe[0].eta === 38
+  check(r.triage?.righe?.length === 1 && r.triage.righe[0].nome === "MARINI ADA" && r.triage.righe[0].breve === "MARINI A." && r.triage.righe[0].triage === "VERDE" && r.triage.righe[0].eta === 38 && r.triage.righe[0].area === "Bassa"
     && r.triage.righe[0].arrivo > 0 && !("nato" in r.triage.righe[0]) && r.triage.ts > 0, `il Triage letto va a parte (triage.lista.v1), senza nascita (got: ${JSON.stringify(r.triage)})`);
   check(r.pannello === 0, "dietro non nasce il pannello");
   const moro = r.pazienti.find((p) => p.name === "MORO DINO"), ferrari = r.pazienti.find((p) => p.ep === "700032");
