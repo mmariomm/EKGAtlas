@@ -3056,6 +3056,7 @@
   const MODO = "tabellone.modo.v1";            // "mappa" | "lista" — un'impostazione, resta
   const MODI = ["mappa", "lista"];
   const TD_UI = "tabellone.dafare.v1";         // { chiusa } — il Da fare del tabellone ridotto a una barra: un'impostazione, resta
+  const TD_PAZ = "paziente.dafare.v1";         // { chiusa } — quello in cima alla scheda del paziente, lo stesso, per conto suo
   const NOME_MODO = { mappa: "Mappa", lista: "Lista" };
   function tabelloniDi(k, triage) {
     if (k === "alta") return ["alta"];
@@ -6475,6 +6476,10 @@
              color: #16232E; overflow-wrap: anywhere; }
     .tdg:not(:first-child), [data-tdl="gen"]:not(:empty) + .tdl > .tdg:first-child { border-top: 1px solid #EEF2F6; border-radius: 0; }
     .tdtogb { display: none; }
+    /* sulla scheda del paziente: sotto le allergie, sopra le schede; le sue voci, senza la colonna del cognome */
+    .tdcard.solo { order: 0; max-height: none; }
+    .tdcard.solo .tdcorpo { max-height: calc(4.5 * 28px + 6px); }
+    .tdcard.solo .tdchi { display: none; }
     /* stretta, ridotto: un bottone in fondo alla barra del tabellone, che non prende altezza */
     @container tdsec (max-width: 1179.98px) {
       .tdcard.chiusa { display: none; }
@@ -9324,6 +9329,8 @@
       // Il ‹ resta sul paziente, e dentro un referto o un foglio di dimissione.
       // (le schermate del menu ⋯ hanno il loro ‹ nel titolo, al posto delle schede: torna alla scheda di prima)
       const vm = this.vistaMenu();
+      // in cima alla scheda del paziente, i SUOI Da fare, come la lista dei Pazienti (tdPazHtml)
+      this._tdSolo = idp && !vm && !inStanza && !TABELLONE && this.view !== "home" && this.schedePaziente() ? this.epDiQuesta() || null : null;
       const indietro = !vm && !!section && (sulPaziente || ["referto", "dimtesto", "dimimport", "eotesto"].includes(this.view));
       const titolo = this.runState || (sulPaziente && !inHome) ? who : "";
       // Aperto: una finestra al centro, l'85% dello schermo (o come l'hai
@@ -9459,6 +9466,7 @@
                   : `<button class="iconbtn" id="collapse" title="Riduci alla pill (Esc)" aria-label="Riduci">${ICO.riduci}</button>`}
               </div>
               ${idp ? this.avvisiPaz(idp.ep || ep) : ""}
+              ${this._tdSolo ? this.tdPazHtml(this._tdSolo) : ""}
               ${running && this.runData?.steps?.length ? `<div class="pbar"><i style="width:${Math.round((this.runData.steps.filter((x) => x.status === "ok").length / this.runData.steps.length) * 100)}%"></i></div>` : ""}
               <div class="cap">
               ${!this.runState && inStanza && this.stanzaEdit ? `
@@ -9590,10 +9598,10 @@
       </li>`;
     }
     tdListe(tutti = dfTutti(), ora = Date.now()) {
-      const gen = genTutte(ora), suoi = this._tdOrdine || [];
+      const solo = this._tdSolo, gen = solo ? [] : genTutte(ora), suoi = solo ? [{ ep: solo, chi: "" }] : this._tdOrdine || [];
       return {
         gen: gen.map((x) => this.tdVoce(x, ora)).join(""),
-        paz: suoi.flatMap(({ ep, chi }) => dfDi(ep, tutti).map((x, i) => this.tdVoce(x, ora, ep, chi, i === 0))).join(""),
+        paz: suoi.flatMap(({ ep, chi }) => dfDi(ep, tutti).map((x, i) => this.tdVoce(x, ora, ep, chi, !solo && i === 0))).join(""),
         aperte: gen.filter((x) => !x.fatto).length + suoi.reduce((n, { ep }) => n + dfAperte(ep, tutti).length, 0),
       };
     }
@@ -9609,10 +9617,33 @@
         ${chiusa ? "" : `<div class="tdcorpo"><ul class="dfl tdl" data-tdl="gen" aria-label="Da fare generale">${gen}</ul><ul class="dfl tdl" data-tdl="paz" aria-label="Da fare dei pazienti">${paz}</ul></div>`}
       </aside>`;
     }
+    // Sulla scheda del paziente, in cima (sotto le allergie, sopra le schede):
+    // i suoi Da fare come nella lista dei Pazienti — la spunta tonda, l'ora,
+    // il testo, ✕ — e il campo per aggiungerne uno a lui. Ridotto, una barra.
+    // Senza voci, niente: basta l'icona nell'intestazione.
+    tdPazHtml(ep) {
+      const { paz, aperte } = this.tdListe();
+      this._tdFirma = { gen: "", paz };
+      if (!paz) return "";
+      const chiusa = !!store.get(TD_PAZ, null)?.chiusa, chi = nomeCorto(this.nomePaziente() || "") || "lui";
+      return `<aside class="tdcard solo${chiusa ? " chiusa" : ""}" aria-label="Da fare di ${esc(chi)}">
+        <div class="tdhd"><button type="button" class="tdtog" id="tdtog" aria-expanded="${!chiusa}" title="${chiusa ? "Mostra il Da fare" : "Riduci il Da fare a una barra"}">${
+          ICO.dafare}<b>Da fare</b><span class="tdn">${aperte || ""}</span></button>${chiusa ? "" : `
+          <input type="text" class="dfin tdin" id="tdin" maxlength="160" autocomplete="off" spellcheck="false" placeholder="Aggiungi per ${esc(chi.replace(/\.$/, ""))}…" value="${esc(this._tdTesto || "")}"
+            aria-label="Aggiungi un Da fare per ${esc(chi)}" title="Una cosa da fare per ${esc(chi)}: Invio la aggiunge (con un'ora, «16:30 …» o «tra 30 min …»)">`}</div>
+        ${chiusa ? "" : `<div class="tdcorpo"><ul class="dfl tdl" data-tdl="paz" aria-label="Da fare di ${esc(chi)}">${paz}</ul></div>`}
+      </aside>`;
+    }
     // rifatte SUL POSTO (un gesto, il tempo che passa, un'altra scheda): niente
     // ridisegno, il campo resta com'è; mai sotto una modifica in corso
     tdMetti(tutti = dfTutti(), ora = Date.now()) {
       const c = this.root.querySelector(".tdcard");
+      // sul paziente il blocco c'è solo con delle voci: la prima arrivata (o l'ultima andata) lo rifà, se nessuno sta scrivendo
+      if (this._tdSolo && !!c !== dfDi(this._tdSolo, tutti).length > 0) {
+        const a = this.root.activeElement, scrive = !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
+        if (!scrive && !this._df?.pop?.isConnected) this.render();
+        return;
+      }
       if (!c || c.querySelector(".dfmod")) return;
       const { gen, paz, aperte } = this.tdListe(tutti, ora);
       const f = this.root.activeElement?.closest?.(".tdi"), fid = f && [f.getAttribute("data-id"), f.getAttribute("data-tdep") || ""];
@@ -9641,9 +9672,11 @@
         if (e.key === "Escape" && inp.value) { e.preventDefault(); e.stopPropagation(); inp.value = this._tdTesto = ""; return; }
         if (e.key !== "Enter" || !inp.value.trim()) return;
         e.preventDefault();
-        if (!genAggiungi(inp.value)) { inp.classList.add("ko"); return; }
+        const solo = this._tdSolo;
+        if (!(solo ? dfAggiungi(solo, inp.value) : genAggiungi(inp.value))) { inp.classList.add("ko"); return; }
         inp.value = this._tdTesto = "";
         this.tdMetti();
+        if (solo) this.dfMetti(solo);
       });
       const voce = (el) => { const li = el.closest(".tdi"); return li ? { id: li.getAttribute("data-id"), ep: li.getAttribute("data-tdep") || "" } : null; };
       // una voce di un paziente cambiata qui: anche la sua icona, il post-it, la sua lista aperta
@@ -9652,7 +9685,8 @@
         const v = voce(mod);
         if (v) this.modificaVoce(mod, (t) => { if (t != null) { if (v.ep) dfCambia(v.ep, v.id, t); else genTesto(v.id, t); } dopo(v); });
       };
-      const apriChiudi = () => { store.set(TD_UI, { ...(store.get(TD_UI, null) || {}), chiusa: !store.get(TD_UI, null)?.chiusa }); this.render(); };
+      const K = this._tdSolo ? TD_PAZ : TD_UI;
+      const apriChiudi = () => { store.set(K, { ...(store.get(K, null) || {}), chiusa: !store.get(K, null)?.chiusa }); this.render(); };
       this.root.querySelector(".tdtogb")?.addEventListener("click", apriChiudi);
       c.addEventListener("click", (e) => {
         if (e.target.closest("#tdtog")) return apriChiudi();
@@ -12075,6 +12109,7 @@
         b.setAttribute("aria-expanded", n.getAttribute("aria-expanded")); b.innerHTML = n.innerHTML;
       }
       for (const slot of this.root.querySelectorAll(`[data-dfp="${e}"]`)) slot.innerHTML = this.dfPost(ep, tutti);
+      if (this._tdSolo === ep) this.tdMetti(tutti, ora);
       for (const slot of this.root.querySelectorAll(`[data-dfseg="${e}"]`)) slot.innerHTML = this.segnaleHtml(ep, tutti, ora);
       for (const b of this.root.querySelectorAll(`[data-dfn="${e}"]`)) {
         const h = this.dfNotaHtml(ep, tutti, ora);
@@ -12316,6 +12351,10 @@
       const a = d.anchor?.isConnected ? d.anchor : this.root.querySelector(`[data-df="${CSS.escape(d.ep)}"][data-dove="${CSS.escape(d.dove)}"]`);
       a?.setAttribute("aria-expanded", "false");
       if (ritorna) a?.focus();
+      if (this._tdSolo === d.ep) {   // (la prima voce aggiunta lì: il blocco in cima compare — e il fuoco torna sull'icona rifatta)
+        this.tdMetti();
+        if (ritorna && !a?.isConnected) this.root.querySelector(`[data-df="${CSS.escape(d.ep)}"][data-dove="${CSS.escape(d.dove)}"]`)?.focus();
+      }
     }
     // il pannello si è ridisegnato con la lista aperta: si riapre, uguale, sotto la sua icona
     dfRiattacca() {

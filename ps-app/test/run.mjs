@@ -5603,6 +5603,71 @@ async function scenarioTempi(browser) {
 // quello della Lista, i colori che cambiano col tempo SENZA ridisegnare (né
 // rubare il fuoco a chi scrive), ✓ Fatto con Annulla, +15 min, la pill
 // ridotta, la Stanza, 🗑 e «Svuota l'elenco». E nessuna richiesta di rete.
+// I Da fare del paziente in cima alla sua scheda, come la lista dei Pazienti:
+// solo i suoi, su ogni scheda; il campo aggiunge a lui; senza voci, niente.
+async function scenarioDaFareInCima(browser) {
+  const scen = "da fare in cima";
+  const mock = createMock({});
+  const { context, page } = await newPage(browser, mock, { finestra: "centro" });
+  await page.goto(mock.patientUrl);
+  await page.waitForSelector("#psassist-host", { state: "attached" });
+  await page.evaluate(() => {
+    const ora = Date.now(), m = 60e3;
+    localStorage.setItem("psassist:dafare.v1", JSON.stringify({
+      999001: [{ id: "a1", testo: "tropo di controllo", t: ora + 30 * m, fatto: null, ord: 0, ts: ora }, { id: "a2", testo: "chiamare la figlia", t: null, fatto: null, ord: 1, ts: ora }],
+      999002: [{ id: "b1", testo: "RX torace", t: null, fatto: null, ord: 0, ts: ora }],
+    }));
+    localStorage.removeItem("psassist:paziente.dafare.v1");
+  });
+  await page.reload();
+  await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
+  if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
+  await $panel(page, ".tdcard.solo").waitFor({ timeout: 5000 }).catch(() => {});
+  const blocco = () => page.evaluate(() => {
+    const r = document.getElementById("psassist-host").shadowRoot, c = r.querySelector(".tdcard.solo");
+    const tabs = r.querySelector('.seg[role="tablist"]'), all = r.querySelector(".idriga");
+    return c ? { voci: [...c.querySelectorAll(".tdi .tdtx")].map((x) => x.textContent), n: c.querySelector(".tdn")?.textContent || "",
+      chi: [...c.querySelectorAll(".tdchi")].filter((x) => x.offsetParent).length, segnaposto: c.querySelector("#tdin")?.placeholder || "",
+      sopraSchede: !!tabs && !!(c.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING),
+      sottoAllergie: !all || !!(all.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING),
+      testa: r.querySelector('.hdpaz .dfic')?.className || "" } : null;
+  });
+  const b1 = await blocco();
+  check(scen, !!b1 && b1.voci.join("|") === "tropo di controllo|chiamare la figlia" && b1.n === "2" && b1.chi === 0 && /^Aggiungi per ROSSI M…$/.test(b1.segnaposto),
+    `in cima alla scheda di ROSSI solo i suoi due Da fare (niente BIANCHI, niente cognome a sinistra), «Aggiungi per ROSSI M…» (got: ${JSON.stringify(b1)})`);
+  check(scen, !!b1 && b1.sopraSchede && b1.sottoAllergie, "sotto le allergie, sopra le schede");
+  await shotSide(page, "dafare-in-cima");
+  // il campo: Invio aggiunge a lui
+  await $panel(page, "#tdin").fill("ecg tra 30 min");
+  await $panel(page, "#tdin").press("Enter");
+  const suoi = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:dafare.v1"))["999001"].map((x) => x.testo + (x.t ? "@" : "")));
+  check(scen, suoi.join("|") === "tropo di controllo@|chiamare la figlia|ecg@" && (await blocco())?.voci.length === 3,
+    `Invio: a lui, con l'ora letta dal testo, e la lista si rifà sul posto (got: ${suoi.join(" | ")})`);
+  // la spunta, sul posto
+  await $panel(page, '.tdcard.solo .tdi[data-id="a2"] .dfck').click();
+  check(scen, (await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:dafare.v1"))["999001"].find((x) => x.id === "a2").fatto)) > 0,
+    "la spunta tonda la fa, come nella lista dei Pazienti");
+  // su ogni scheda del paziente
+  await $panel(page, '[data-seg="esiti"]').click();
+  await page.waitForTimeout(200);
+  check(scen, (await blocco())?.voci.length === 3, "resta in cima anche sugli Esiti");
+  // ridotto a una barra (per conto suo: il Da fare dei Pazienti non cambia)
+  await $panel(page, ".tdcard.solo #tdtog").click();
+  await page.waitForTimeout(150);
+  const ridotto = await page.evaluate(() => { const c = document.getElementById("psassist-host").shadowRoot.querySelector(".tdcard.solo"); return c ? { chiusa: c.classList.contains("chiusa"), voci: c.querySelectorAll(".tdi").length } : null; });
+  check(scen, ridotto?.chiusa && ridotto.voci === 0 && (await page.evaluate(() => localStorage.getItem("psassist:tabellone.dafare.v1"))) === null,
+    `ridotto: una barra «Da fare 2», e il Da fare dei Pazienti resta com'è (got: ${JSON.stringify(ridotto)})`);
+  await $panel(page, ".tdcard.solo #tdtog").click();
+  // senza voci: niente blocco
+  await page.evaluate(() => localStorage.setItem("psassist:dafare.v1", JSON.stringify({})));
+  await page.reload();
+  await page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached" });
+  if (!(await $panel(page, ".card").count())) await $panel(page, "#expand").click();
+  await page.waitForTimeout(300);
+  check(scen, (await $panel(page, ".tdcard").count()) === 0, "senza Da fare, niente blocco: basta l'icona nell'intestazione");
+  await context.close();
+}
+
 async function scenarioPromemoria(browser) {
   const scen = "da fare";
   const leggi = prendi("leggiPromemoria"), tempo = prendi("promTempo");
@@ -8070,6 +8135,7 @@ const scenarios = [
   ["nomi inattesi e righe non lette", scenarioNomiInattesi],
   ["cronometro: parte, sopravvive al cambio pagina, si ferma", scenarioTempi],
   ["da fare: una lista per paziente, i promemoria dentro, il post-it sulla riga", scenarioPromemoria],
+  ["da fare in cima alla scheda del paziente: solo i suoi, su ogni scheda", scenarioDaFareInCima],
   ["fogli di dimissione: copia, modifica, export", scenarioDimissioni],
   ["EO: copia il generale, la tendina copia il caso", scenarioEo],
   ["rilancio su pagina esami: nessun doppio ordine", scenarioRilancioPaginaEsami],

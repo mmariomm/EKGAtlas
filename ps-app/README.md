@@ -419,8 +419,12 @@ rossa quando un promemoria si avvicina.
 dentro — i promemoria. Al posto della nota e dei promemoria di prima: la **nota** è diventata la
 prima voce senza ora, i **promemoria** voci con l'ora (la prima apertura dopo l'aggiornamento li porta
 lì da soli). Si apre **lì dov'è**, senza un'altra scheda, dall'icona **Da fare** dell'intestazione
-(accanto agli identificativi) o della riga, o dal menu di chi sta nella stanza (**Da fare…**). In
-fondo, un campo su una riga: si scrive e **Invio** aggiunge, in fondo alla lista. Ogni voce è una
+(accanto agli identificativi) o della riga, o dal menu di chi sta nella stanza (**Da fare…**). E
+sulla scheda del paziente sono **sempre in vista in cima** — sotto le allergie, sopra le schede, su
+Richieste, Esiti, EO, Consensi e Dimissioni —, come la lista dei Pazienti ma **solo le sue**, con il
+campo «Aggiungi per ROSSI M…» (Invio aggiunge a lui); **Da fare** lo riduce a una barra (per conto
+suo, `paziente.dafare.v1`); senza voci non c'è, e basta l'icona. In
+fondo alla lista dell'icona, un campo su una riga: si scrive e **Invio** aggiunge, in fondo alla lista. Ogni voce è una
 riga sola, la stessa dappertutto (la lista, il tabellone, il foglietto sotto la pill, la scheda al
 passaggio): `○ 11:42 tropo…` — l'ora, se c'è, davanti, ambra e poi rossa come l'icona. **Un tocco sul
 testo** lo modifica (Invio salva, Esc lascia com'era), **✕** cancella la voce. **Un tocco sulla
