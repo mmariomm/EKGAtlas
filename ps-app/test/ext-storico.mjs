@@ -247,10 +247,14 @@ check((await paziente.locator('#psassist-host [data-cons^="ritiro"]').count()) =
   && /9 pagine/.test(await paziente.locator('#psassist-host [data-cons="emotrasfusione"]').innerText()),
   "le deleghe per il ritiro non stanno fra i consensi, e un modulo lungo dice quanta carta esce");
 // …stanno nella schermata Dimissioni, dove si danno a chi va a casa
+// (sotto i fogli, nella riga chiusa «Moduli per il ritiro ▸»: un tocco la apre)
 await paziente.locator('#psassist-host [data-seg="dimissioni"]').click();
+await paziente.waitForSelector('#psassist-host #ritiro summary', { timeout: 8000 });
+const chiusa = (await paziente.locator("#psassist-host #ritiro").getAttribute("open")) === null;
+await paziente.locator("#psassist-host #ritiro summary").click();
 await paziente.waitForSelector('#psassist-host [data-cons^="ritiro"]', { timeout: 8000 });
-check((await paziente.locator('#psassist-host [data-cons^="ritiro"]').count()) === 3,
-  "i tre moduli per il ritiro sono nella schermata Dimissioni");
+check(chiusa && (await paziente.locator('#psassist-host [data-cons^="ritiro"]').count()) === 3,
+  "i tre moduli per il ritiro sono nella schermata Dimissioni, in una riga chiusa che si apre con un tocco");
 await paziente.locator('#psassist-host [data-seg="consensi"]').click();
 await paziente.waitForSelector("#psassist-host [data-cons]", { timeout: 8000 });
 await paziente.locator('#psassist-host [data-cons="antitetano"]').click();

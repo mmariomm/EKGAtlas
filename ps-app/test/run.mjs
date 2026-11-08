@@ -5471,13 +5471,14 @@ async function scenarioRefertoTesto(browser) {
   await page.goto(mock.patientUrl);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   await $panel(page, '[data-seg="esiti"]').click();
-  await page.waitForSelector("#psassist-host [data-esito]", { timeout: 15000 });
+  await page.waitForSelector("#psassist-host [data-esito]", { state: "attached", timeout: 15000 });   // (il primo può stare nella lista del Lab, chiusa)
 
   // the radiology row announces it opens INSIDE the panel, the other one does not
   const rx = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "TC ENCEFALO" });
   check(scen, /▸/.test(await rx.innerText()), "il referto RIS si apre nel pannello, lì sotto");
   const altro = page.locator('#psassist-host [data-esito][data-kind="referto"]', { hasText: "EMOGASANALISI" });
-  check(scen, (await altro.locator(".rgo svg").count()) === 1 && !/▸|↗/.test(await altro.innerText()), "gli altri restano documenti da aprire (l'icona ↗, non il glifo)");
+  check(scen, await altro.evaluate((b) => !b.querySelector(".rgo") && !/▸|↗/.test(b.innerText) && !!b.parentElement.querySelector(".wupdf svg")),
+    "gli altri restano documenti da aprire: niente ▸, lo dice il loro «↗ PDF» (l'icona, non il glifo)");
   check(scen, !(await page.locator("#psassist-host .sec:not(.reflab) .rrow .rsys").allInnerTexts()).some((t) => /\bLIS\b/.test(t)),
     "nessun referto di laboratorio (LIS) fra gli altri: sta nel suo gruppo");
 
