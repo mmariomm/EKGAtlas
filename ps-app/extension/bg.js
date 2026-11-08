@@ -1241,11 +1241,7 @@ async function ordControlla(l) {
       // …dopo qualche secondo zitta (la pagina non si è caricata): la si ricarica, una volta
       rec.ricarico = true;
       chrome.tabs.update(rec.worker, { url: rec.url }).catch(() => {});
-    } else if (rec.stato === "stampa" && ora - rec.agg > STAMPA_MAX) {
-      rec.stato = "avviso"; rec.agg = ora; rec.stampa = null; delete rec.fogli;
-      // (non le ha prese nessuno: non stampate, e lo si dice in ambra — mai un verde)
-      rec.vista = { tag: "Etichette NON stampate", testo: "si stampano dalla sua pagina, sezione Stampa", tono: "warn" };
-    }
+    } else if (rec.stato === "stampa" && ora - rec.agg > STAMPA_MAX) nonStampate(rec, "si stampano dalla sua pagina, sezione Stampa");
   }
   if (JSON.stringify(l) !== prima) await ordScrivi(l);
   // una stampa che questo service worker non sta facendo (si è riavviato): la riprende
@@ -1253,6 +1249,12 @@ async function ordControlla(l) {
   await ordAvanti(l);
   ordStampaOra();
   return sonda;
+}
+// Etichette che aspettavano una scheda e non si stampano più — non le ha prese
+// nessuno, o «Annulla» —: non stampate, e lo si dice in ambra, mai un verde.
+function nonStampate(rec, testo) {
+  rec.stato = "avviso"; rec.agg = Date.now(); rec.stampa = null; delete rec.fogli;
+  rec.vista = { tag: "Etichette NON stampate", testo, tono: "warn" };
 }
 // «Ci sei?» alle schede zitte — fuori dalla fila: una scheda bloccata non deve
 // fermare gli altri ordini, il ⏹ né le letture —; la risposta si scrive dopo,
@@ -1344,8 +1346,9 @@ function ordPubblico(rec, l = []) {
       const bracc = soloBracciale(rec);
       const prima = bracc && !di("invio").length ? etichetteInCorso(l, rec) : null;
       if (prima) return P("run", tag, `L'etichetta anagrafica, dopo le etichette di ${prima.paziente || "un altro ordine"}…`, st.riassunto);
+      // (le copie in un lavoro solo, con l'aiutante dalla 4: «3 copie»; con quello di prima, una a una)
       if (bracc && ora.length) return P("run", tag, `Stampo l'etichetta anagrafica${ora[0].x.stampante ? ` su ${ora[0].x.stampante}` : ""}…`,
-        f.length > 1 ? `copia ${ora[0].i + 1} di ${f.length}` : "", st.riassunto);
+        ora.length > 1 ? `${ora.length} copie` : f.length > 1 ? `copia ${ora[0].i + 1} di ${f.length}` : "", st.riassunto);
       return P("run", tag, ora.length ? `Stampo ${ora.map(cosa).join(" e ")}…` : "Stampo…",
         f.length > 1 && ora.length ? `${ora.length > 1 ? "fogli" : "foglio"} ${ora.map(({ i }) => i + 1).join(" e ")} di ${f.length}` : "", st.riassunto);
     }
@@ -1478,6 +1481,7 @@ async function ordStampaFogli(id) {
   STAMPO_VIVI.add(id);
   let copia = null;      // l'etichetta anagrafica: il PDF della prima copia, per le altre
   let attende = false;   // …che aspetta le etichette di un ordine che stampa: la riprende ordStampoFine
+  let copie = false;     // …×N, e l'aiutante sa farle in un lavoro solo (dalla 4)
   try {
     // 0. com'è rimasto: quello che un service worker di prima stava mandando
     //    non si sa com'è andato (mai rimandato); quello che prendeva, si riprende
@@ -1499,9 +1503,11 @@ async function ordStampaFogli(id) {
         else if (f.stato === "prendo") { f.stato = "attesa"; cambiato = true; }
       }
       if (cambiato) await ordScrivi(l);
+      copie = soloBracciale(rec) && rec.fogli.filter((f) => f.stato === "attesa").length > 1;
       return [...new Set(rec.fogli.filter((f) => f.stato === "attesa").map((f) => f.tipo))];
     });
     if (!tipi) return;
+    if (copie) copie = await aiutanteCopie();
     const corsie = new Map(tipi.map((t) => [t, { finita: false, aspetta: false, fatto: null }]));
     const prendi = (passo) => (passo.diretto ? (REF_STAMPA.test(passo.url) ? pdfSalvato(passo.url) : PDF_TEL_URL.test(passo.url) ? pdfDalTel(passo.url) : pdfNostro(passo.url))
       : allaScheda(passo.worker, { t: "psassistPdf", id, url: passo.url }, 30e3));
@@ -1528,9 +1534,13 @@ async function ordStampaFogli(id) {
             await ordScrivi(l);
             return null;
           }
-          rec.fogli[i].stato = "prendo"; rec.agg = Date.now();
+          // (l'etichetta anagrafica ×N con un aiutante che sa fare le copie: tutte
+          // quelle che aspettano, un foglio all'aiutante con «copie: N»)
+          const is = copie && soloBracciale(rec) ? rec.fogli.map((_, k) => k).filter((k) => rec.fogli[k].stato === "attesa" && (rec.stampa.jobs[k] || {}).url === job.url) : [i];
+          for (const k of is) rec.fogli[k].stato = "prendo";
+          rec.agg = Date.now();
           await ordScrivi(l);
-          return { i, url: job.url, diretto: !!job.diretto, worker: rec.worker, tipo, stampante: s[tipo], ruota: ruotaDi(s), bracciale: soloBracciale(rec) };
+          return { i, is, url: job.url, diretto: !!job.diretto, worker: rec.worker, tipo, stampante: s[tipo], ruota: ruotaDi(s), bracciale: soloBracciale(rec) };
         });
         if (!passo) return;
         if (passo.aspetta) { finoA = finoA || Date.now() + DOPO_MOTORE_MAX; await new Promise((r) => setTimeout(r, 1000)); continue; }
@@ -1545,42 +1555,54 @@ async function ordStampaFogli(id) {
           await inFilaOrd(async () => {
             const l = await ordLeggi();
             const rec = statoOrd(l, id);
-            const f = rec && rec.fogli[passo.i];
-            if (f && f.stato === "prendo") { f.stato = "attesa"; await ordScrivi(l); }
+            const fs = rec ? passo.is.map((k) => rec.fogli[k]).filter((f) => f && f.stato === "prendo") : [];
+            for (const f of fs) f.stato = "attesa";
+            if (fs.length) await ordScrivi(l);
           });
           if (!altra.finita && !altra.aspetta) { io.aspetta = true; await altra.fatto; io.aspetta = false; }
           continue;
         }
-        // 3. il foglio segnato «invio» prima di mandarlo (tolto col suo ✕ intanto: non parte)
+        // 3. il foglio segnato «invio» prima di mandarlo (tolto col suo ✕ intanto: non parte;
+        //    le copie in un lavoro solo, tutte insieme: quelle che restano)
         const va = await inFilaOrd(async () => {
           const l = await ordLeggi();
           const rec = statoOrd(l, id);
-          const f = rec && rec.fogli[passo.i];
-          if (!f || f.stato !== "prendo") return false;
+          const ks = rec ? passo.is.filter((k) => (rec.fogli[k] || {}).stato === "prendo") : [];
+          if (!ks.length) return null;
+          const fs = ks.map((k) => rec.fogli[k]), metti = (o) => { for (const f of fs) Object.assign(f, o); };
           // ⏹ o scheda persa mentre il PDF arrivava: finisce solo il foglio già alla stampante
-          if (rec.ferma || rec.interrotta) { f.stato = "attesa"; await ordScrivi(l); return false; }
-          if (!pdf) { f.stato = "attesa"; rec.interrotta = rec.interrotta || "la scheda dell'ordine non ha dato il foglio"; }
+          if (rec.ferma || rec.interrotta) { metti({ stato: "attesa" }); await ordScrivi(l); return null; }
+          if (!pdf) { metti({ stato: "attesa" }); rec.interrotta = rec.interrotta || "la scheda dell'ordine non ha dato il foglio"; }
           else if (manca) {
-            Object.assign(f, { stato: "fallito", why: `il PDF non è arrivato (${corto(pdf.why, 80)})` });
-            segnaErrore("stampa", { ordine: id, foglio: passo.i, esito: "fallito", motivo: f.why });
+            metti({ stato: "fallito", why: `il PDF non è arrivato (${corto(pdf.why, 80)})` });
+            segnaErrore("stampa", { ordine: id, foglio: passo.i, esito: "fallito", motivo: fs[0].why });
           }
-          else if (pdf.pdf.length > STAMPA_PDF_MAX / 3 * 4 + 4) Object.assign(f, { stato: "fallito", why: "PDF troppo grande" });
-          else Object.assign(f, { stato: "invio", stampante: corto(passo.stampante, 80) });
-          rec.agg = Date.now(); f.ts = Date.now();
+          else if (pdf.pdf.length > STAMPA_PDF_MAX / 3 * 4 + 4) metti({ stato: "fallito", why: "PDF troppo grande" });
+          else metti({ stato: "invio", stampante: corto(passo.stampante, 80), ...(ks.length > 1 ? { copie: ks.length } : {}) });
+          rec.agg = Date.now(); metti({ ts: Date.now() });
           await ordScrivi(l);
           await ordAvanti(l);   // i PDF presi: il prossimo motore può partire
-          return f.stato === "invio";
+          return fs[0].stato === "invio" ? ks : null;
         });
         if (!va) continue;
-        // 4. all'aiutante (fino a 90 secondi: lui finisce in 40), poi com'è andata
-        const r = await stampaPdf(passo.tipo, pdf.pdf, passo.stampante, passo.ruota);
-        if (r.esito !== "stampato" && r.esito !== "mandato") segnaErrore("stampa", { ordine: id, foglio: passo.i, tipo: passo.tipo, esito: r.esito, motivo: r.why || "", ...(passo.bracciale ? { bracciale: true } : {}) });
+        // 4. all'aiutante (fino a 90 secondi: lui finisce in 40), poi com'è andata — un esito per tutte le copie
+        const r = await stampaPdf(passo.tipo, pdf.pdf, passo.stampante, passo.ruota, va.length);
+        if (r.esito !== "stampato" && r.esito !== "mandato") segnaErrore("stampa", { ordine: id, foglio: passo.i, tipo: passo.tipo, esito: r.esito, motivo: r.why || "",
+          ...(passo.bracciale ? { bracciale: true } : {}), ...(va.length > 1 ? { copie: va.length } : {}) });
         await inFilaOrd(async () => {
           const l = await ordLeggi();
           const rec = statoOrd(l, id);
-          const f = rec && rec.fogli[passo.i];
-          if (!f || f.stato !== "invio") return;
-          Object.assign(f, { stato: r.esito, stampante: corto(r.stampante, 80), why: r.why || "", ts: Date.now() });
+          let fs = rec ? va.map((k) => rec.fogli[k]).filter((f) => f && f.stato === "invio") : [];
+          if (!fs.length) return;
+          // (un aiutante di prima, che delle copie non sa niente: ne ha stampata una, e
+          // lo dice non ridicendole. Le altre tornano ad aspettare, e partono una a una)
+          if (fs.length > 1 && r.ok && r.copie !== fs.length) {
+            copie = false;
+            for (const f of fs) delete f.copie;
+            for (const f of fs.slice(1)) f.stato = "attesa";
+            fs = fs.slice(0, 1);
+          }
+          for (const f of fs) Object.assign(f, { stato: r.esito, stampante: corto(r.stampante, 80), why: r.why || "", ts: Date.now() });
           // (una copia dell'etichetta anagrafica non è partita: le altre non ci riprovano, vanno col dialogo)
           if (passo.bracciale && r.esito === "fallito") for (const x of rec.fogli) if (x.stato === "attesa") Object.assign(x, { stato: "fallito", why: r.why || "" });
           rec.agg = Date.now();
@@ -1904,15 +1926,32 @@ function ordMessaggio(msg, sender, reply) {
       });
     })().catch(() => reply({ ok: false }));
   });
-  // il medico ha letto (✕, o il carrello aperto): via
+  // il medico ha letto (✕, o il carrello aperto): via. Le etichette che
+  // aspettano una scheda («Annulla»): non si stampano, e restano nel giornale
+  // per quello che sono — «NON stampate», anche per il telefono —, qui viste.
+  // (Già date a una scheda in questo istante: è lei che le ha, col suo ✕.)
   if (msg.t === "ordineChiudi") return fai(async () => {
     const l = await ordLeggi();
     const rec = l.find((x) => x.id === msg.id);
-    if (!rec || ATTIVI.has(rec.stato) || rec.stato === "stampo") return reply({ ok: false });
-    await togli(l, rec);
+    if (!rec || ATTIVI.has(rec.stato) || rec.stato === "stampo" || CONSEGNO.has(rec.id)) return reply({ ok: false });
+    if (rec.stato === "stampa") {
+      nonStampate(rec, "annullate sul PC: si stampano dalla sua pagina, sezione Stampa");
+      rec.visto = true;
+    } else await togli(l, rec);
     await ordScrivi(l);
     reply({ ok: true, ordini: l });
     await ordAvanti(l);
+  });
+  // ✕ «Visto» sulla riga di un foglio non uscito (o dall'esito sconosciuto), a
+  // stampa finita: l'ordine non si mostra più qui — né le sue righe, né la
+  // striscia —, ma resta nel giornale com'è (e il telefono lo vede com'è).
+  if (msg.t === "ordineVisto") return fai(async () => {
+    const l = await ordLeggi();
+    const rec = l.find((x) => x.id === msg.id && FINALI.has(x.stato));
+    if (!rec) return reply({ ok: false });
+    rec.visto = true;
+    await ordScrivi(l);
+    reply({ ok: true, ordini: l });
   });
   // Ogni scheda lo chiede ogni 4 secondi: un giro alla volta, e non più di uno
   // ogni CONTROLLO_OGNI — le altre domande hanno gli ordini come sono.
@@ -1981,14 +2020,24 @@ function ospiteErrore(e) {
   if (/exited|communicating/i.test(m)) return { why: "l'aiutante di stampa si è chiuso senza rispondere", ignoto: true };
   return { why: m.slice(0, 120), ignoto: true };
 }
+// (la versione dell'aiutante, da ogni risposta che la dice o la tace: ping,
+// «chi», e una stampa riuscita — dalla 4 la dice, prima no)
 async function ospite(msg, ms) {
   let tid;
   try {
     const r = await Promise.race([chrome.runtime.sendNativeMessage(OSPITE, msg),
       new Promise((_, no) => { tid = setTimeout(() => no(new Error("l'aiutante di stampa non ha risposto in tempo")), ms); })]);
+    if (r && r.ok && ["ping", "chi", "stampa"].includes(msg.t)) chrome.storage.local.set({ stampaAiutante: corto(r.versione, 10) }).catch(() => {});
     return r && typeof r === "object" ? r : { ok: false, why: "l'aiutante di stampa non ha risposto", ignoto: true };
   } catch (e) { return { ok: false, ...ospiteErrore(e) }; }
   finally { clearTimeout(tid); }
+}
+// Le copie dell'etichetta anagrafica in un lavoro solo: dalla versione 4
+// dell'aiutante. Quello che ha detto l'ultima volta; mai sentito, glielo si chiede.
+async function aiutanteCopie() {
+  let v = (await chrome.storage.local.get("stampaAiutante")).stampaAiutante;
+  if (v == null) v = (await ospite({ t: "ping" }, 20e3)).versione;
+  return Number(v) >= 4;
 }
 // le scelte del medico, se la stampa automatica è accesa
 async function stampaScelte() {
@@ -2001,15 +2050,16 @@ async function stampaScelte() {
 const ruotaDi = (s, nome = s.etichette) => (s.ruota === "no" || s.ruota === "auto" ? s.ruota : /zebra|zdesigner|tsc|citizen/i.test(nome || "") ? "no" : "auto");
 // Un foglio all'aiutante, e l'esito annotato: l'indicatore del pannello
 // diventa rosso se non è uscito (o non si sa).
-async function stampaPdf(tipo, pdf, stampante, ruota = "auto") {
-  const r = await ospite({ t: "stampa", tipo, stampante, ruota, pdf }, STAMPA_ATTESA);
+async function stampaPdf(tipo, pdf, stampante, ruota = "auto", copie = 1) {
+  const r = await ospite({ t: "stampa", tipo, stampante, ruota, ...(copie > 1 ? { copie } : {}), pdf }, STAMPA_ATTESA);
   const esito = r.ok ? (r.esito === "stampato" ? "stampato" : "mandato")
     : r.esito === "fallito" || r.esito === "sconosciuto" ? r.esito : r.ignoto ? "sconosciuto" : "fallito";
   const e = { ok: !!r.ok, esito, stampante: corto(r.stampante || stampante, 80), ts: Date.now(),
     ...(r.ok ? {} : { why: corto(r.why || "non riuscita", 200) }), ...(r.nonInstallata ? { nonInstallata: true } : {}) };
   const pagina = Array.isArray(r.pagina) && r.pagina.length === 2 && r.pagina.every((x) => Number(x) >= 40 && Number(x) <= 1200) ? r.pagina.map(Number) : null;
   await chrome.storage.local.set({ stampaEsito: e, ...(r.ok && tipo === "etichette" && pagina ? { stampaMisura: pagina } : {}) }).catch(() => {});
-  return e;
+  // (e le copie che l'aiutante dice di aver mandato: una, se non lo dice)
+  return { ...e, copie: Number.isInteger(r.copie) ? r.copie : 1 };
 }
 // La pagina di prova, fatta qui: un PDF minimo con tre righe, nella misura del
 // foglio — per le etichette quella dell'ultima etichetta vera (l'aiutante la

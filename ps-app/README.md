@@ -844,7 +844,8 @@ richiesta da confermare.
   salvare, mostrare nel visore, stampare o mandare al telefono — si rivela di un altro paziente,
   vuol dire che il pannello ha sbagliato: non si tiene, non si mostra, e lo si dice forte, in
   rosso, sulla riga e sulla striscia: **«Errore grave: questo PDF è di un altro paziente — non
-  mostrato»**, e nel registro degli errori (sotto). Nel PDF non c'è niente da confrontare: il testo
+  mostrato»**, e nel registro degli errori (sotto). Dalla striscia lo toglie il suo ✕ «Visto:
+  togli»; la riga, il Registro e il registro degli errori lo tengono. Nel PDF non c'è niente da confrontare: il testo
   si mostra con **«intestazione non verificata»**.
 
 **Lab** è un'unica tabella: gli analiti in riga, raggruppati per sezione fissa (*Emocromo,
@@ -1424,7 +1425,10 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   (arriva → alla stampante → fatto) e un piccolo **✕**: toglie **solo quel foglio**, finché aspetta o
   arriva; dato all'aiutante il ✕ diventa una stampantina che respira (dalla coda di Windows non si
   richiama), poi un ✓ verde, e dopo pochi secondi la riga se ne va. Un foglio non uscito resta
-  rosso, con **Ristampa**. (I nomi stanno tutti in `NOMI_RIGA`, in `src/core.js`.)
+  rosso, con **Ristampa** — anche quello che a stampa interrotta non è mai partito — e, a stampa
+  finita, accanto un ✕ grigio, **«Visto: togli»**: un tocco, e quell'ordine non si mostra più —
+  né le sue righe, né la striscia, né il «!1» —; niente si ristampa, e nel giornale degli ordini
+  (e al telefono) resta com'era. (I nomi stanno tutti in `NOMI_RIGA`, in `src/core.js`.)
 - **Si dice solo quello che si sa.** L'aiutante, dopo aver mandato il foglio, guarda per qualche
   secondo la coda di stampa di Windows:
   - **«Stampato su Zebra ZD421»** (alla fine «Stampato · 6 esami confermati 14:32»): il foglio è
@@ -1458,21 +1462,40 @@ Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
   dice: mai «Scheda chiusa · controlla il carrello»); **Ristampa** rifà i fogli non usciti. Un foglio
   che non è partito per un no detto arriva alla scheda dove sei, come le etichette di prima, col
   motivo sulla striscia; per un ordine dal telefono aspetta un tocco su **Stampa** («Etichette NON
-  stampate · la stampante «Zebra ZD421» risulta spenta o offline»). Uscite, la striscia di un ordine dal telefono aggiunge
-  «avvisa chi preleva».
+  stampate · la stampante «Zebra ZD421» risulta spenta o offline»). Accanto, il ✕ **«Annulla: non
+  stamparle»**: non si stampano, mai un dialogo; il PC non lo ripete, e l'ordine — anche per il
+  telefono — dice «Etichette NON stampate · annullate sul PC» (si stampano dalla sua pagina).
+  Uscite, la striscia di un ordine dal telefono aggiunge «avvisa chi preleva».
 - **La striscia è una sola**, e dice la cosa più seria, fra due pari la più nuova: un errore, un
   avviso da leggere, le etichette pronte qui, l'ordine che gira, la coda, le etichette di un
   ordine dal telefono (aspettano un tocco, ma non coprono il resto), e per ultimo un «Stampato».
   Un ordine finito bene non copre mai quello che è venuto dopo; e mentre un ordine **gira** vince
   lui: un errore o un avviso di prima, non letti, si piegano in un **«!1»** rosso accanto (un
-  tocco li mostra). Una riga sotto la striscia che è di un **altro** paziente porta il suo
+  tocco li mostra, e il loro ✕ li chiude). Una riga sotto la striscia che è di un **altro** paziente porta il suo
   cognome («Bianchi · Lab · 1/2»): il suo ✕ ferma il suo ordine.
+- **Ogni avviso che resta si toglie con un tocco**, e **quello che aspetta ancora si annulla**:
+  un ordine finito in ambra o in rosso ha il ✕ «Chiudi l'avviso»; un foglio che aspetta o arriva,
+  il suo ✕ «Togli solo questo»; l'ordine che stampa, il ⏹; la scheda della stampa, ✕ Chiudi (o
+  Esc); le etichette pronte, «Non stamparle adesso» o «Annulla: non stamparle». Nuovi, dove non
+  c'era niente: il ✕ «Visto: togli» sulle righe dei fogli non usciti, su «Etichette non stampate»
+  (la stampa dal dialogo annullata), su «Esito della stampa sconosciuto» e su «Errore grave» —
+  via dalla striscia; il Registro, e il registro degli errori, lo tengono.
 - **Si vede che è accesa**: in intestazione, accanto al menu **⋯**, una stampantina; passandoci
   sopra, «Stampa automatica attiva: etichette su Zebra ZD421, A4 su HP LaserJet». Diventa
   **rossa** se l'ultimo foglio non è uscito o ha un esito sconosciuto, e lo dice; con accanto
   **«non installata»** se l'aiutante non c'è più (lo si chiede all'aiutante al più ogni mezz'ora,
   aprendo il pannello). Un tocco apre le Stampanti.
 - **L'etichetta anagrafica**: accanto al nome, se la pagina ha il suo «Stampa Bracciale» (per quell'episodio), un braccialetto: ogni tocco entro 400 ms dall'altro è una copia (fino a 10, «×3»), poi una stampa sola all'etichettatrice, col link della pagina preso una volta, dopo le etichette di un ordine che stampa (intanto il bottone tiene «×N», spento, e la sua riga sotto la pill ha la clessidra: al passaggio è il ✕ che la toglie); un tocco mentre esce non fa niente. Senza stampa automatica apre il PDF come il gestionale.
+  **Le copie vanno alla stampante in un foglio solo**: all'aiutante un PDF con «copie: 3», e
+  SumatraPDF le fa tutte in un lavoro (`-print-settings "…,3x"`) — un avvio, un'attesa della coda,
+  invece di tre. L'esito è uno, e vale per tutte: «Etichetta stampata», «Mandata a…», non uscita
+  (al dialogo una volta, «3 copie»), sconosciuto. La striscia dice «3 copie», il giornale
+  dell'ordine `copie: 3` su ogni copia, il registro dell'aiutante le opzioni («…,3x»). Serve
+  l'aiutante dalla **versione 4** (arriva con «Aggiorna app»; l'estensione glielo chiede col
+  «ci sei?», e se lo ricorda): con quello di prima, le copie partono una a una come sempre; e un
+  aiutante che non ridice «copie: 3» ne ha stampata una: le altre partono dopo, una a una — mai
+  «tre» detto per una. La prima volta, tre tocchi e conta che ne escano tre: le copie le fa il
+  driver della stampante.
 - **Doppio clic sulle icone del gestionale**: con la stampa automatica accesa, le icone di stampa della
   pagina del paziente — le etichette, «Stampa Richiesta», il foglio RX — con **un clic** aprono il PDF come
   sempre (lo stesso link, nella sua finestra: il clic, tenuto 400 ms per vedere se ne arriva un altro, poi
@@ -2094,7 +2117,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     un suo passo; una stampa chiesta dalla scheda del medico (dopo una conferma, «Ristampa», un
     consenso) è un ordine che fa solo quello, e la stessa domanda arrivata due volte è una stampa
     sola. Ogni foglio ha il suo esito
-    (`attesa`, `mandato`, `stampato`, `fallito`, `sconosciuto`), scritto **prima** di mandarlo; un
+    (`attesa`, `mandato`, `stampato`, `fallito`, `sconosciuto`), scritto **prima** di mandarlo — le
+    copie dell'etichetta anagrafica, in un lavoro solo, lo hanno insieme, con `copie: N` —; un
     foglio che era in volo quando il service worker è ripartito è «sconosciuto», mai rimandato. La
     scheda dell'ordine dà solo i PDF — per una stampa dalla scheda del medico è una scheda che il
     service worker apre dietro sulla pagina del paziente (un indirizzo da leggere, mai un modulo,

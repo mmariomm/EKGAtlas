@@ -114,7 +114,10 @@ caricala di nuovo con **Carica estensione non pacchettizzata**, scegliendo la ca
   `\`, che romperebbero la riga di comando.
 - Lo scrive in un file temporaneo dal nome casuale e lo manda alla stampante con **SumatraPDF**
   (`-print-to "<stampante>" -silent`: le etichette alla loro misura vera, l'A4 adattato al
-  foglio). Poi guarda la coda di Windows — 10 secondi per un'etichetta (un'etichettatrice di
+  foglio). Le copie dell'etichetta anagrafica (×3), dalla **versione 4**: un PDF, un lavoro solo,
+  `-print-settings "…,3x"` (un intero da 1 a 10, se no una copia), e un esito per tutte; la
+  risposta ridice le copie e la versione. Le fa il driver della stampante: la prima volta, conta
+  che ne escano tante quante. Poi guarda la coda di Windows — 10 secondi per un'etichetta (un'etichettatrice di
   rete è lenta), 4 per l'A4 —, **cancella il file** e dice com'è andata. Tutto entro 35
   secondi; l'estensione ne aspetta al massimo 90.
 - **L'esito, detto per quello che si sa:**
@@ -126,7 +129,11 @@ caricala di nuovo con **Carica estensione non pacchettizzata**, scegliendo la ca
   | Non riuscito | non è partito niente: aiutante non installato o bloccato, stampante sparita, spenta o offline (anche un foglio fermo in errore o in pausa prima di stampare: si toglie dalla coda), PDF non valido, SumatraPDF che dice di no | **quel** foglio passa dal dialogo di stampa, con una riga che dice perché |
   | «Esito della stampa sconosciuto» | nessuna risposta, tempo scaduto, SumatraPDF fermato a metà, la stampante fermata in errore **mentre stampava** (`Printing`, o una pagina già stampata: una parte può essere uscita, o restare nella memoria della stampante e uscire dopo): il foglio **può essere uscito** | **mai** un secondo foglio da solo: controlla la stampante, e se non c'è, **Ristampa** |
 
-- Risponde anche a due domande: «ci sei?» (la versione) e «che stampanti ci sono?».
+- Risponde anche a due domande: «ci sei?» (la versione: la 4 fa le copie in un lavoro solo) e
+  «che stampanti ci sono?». Un aiutante nuovo arriva con **«Aggiorna app»**, che rinnova
+  `host.ps1` insieme all'estensione; chi carica l'estensione dalla cartella dello zip (non da
+  `%LOCALAPPDATA%\PSAssist\estensione`) rilancia `installa.cmd` dello zip nuovo. (Con una regola
+  AppLocker/WDAC **per hash**, il nuovo `host.ps1` va riconsentito; per percorso, niente.)
 - **«Aggiorna app»** (⋯): dice che versione c'è in `%LOCALAPPDATA%\PSAssist\estensione`, e riceve
   lo zip nuovo, che ha scaricato **Chrome** (l'aiutante non usa la rete). Lo apre in
   `%TEMP%\psassist-agg-*`, controlla che sia di PS Assist (la stessa chiave nel manifest) e più

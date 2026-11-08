@@ -7,12 +7,17 @@
 # su stdout. Cinque domande, nient'altro:
 #   {t:"ping"}                                  → la versione
 #   {t:"stampanti"}                             → le stampanti installate e la predefinita
-#   {t:"stampa", pdf, stampante, tipo, ruota}   → quel PDF su QUELLA stampante, senza dialogo
+#   {t:"stampa", pdf, stampante, tipo, ruota, copie?}
+#                                               → quel PDF su QUELLA stampante, senza dialogo;
+#                                                 `copie` (dalla 4: un intero da 1 a 10, se no 1)
+#                                                 in UN lavoro solo — l'etichetta anagrafica ×N
 #   {t:"chi", avviata?}                         → che versione c'è in %LOCALAPPDATA%\PSAssist\estensione
 #   {t:"aggiorna", zip, versione}               → «Aggiorna app»: lo zip (scaricato da Chrome)
 #                                                 al posto di quella cartella, la vecchia in
 #                                                 estensione.prima, e i file di questa cartella
-# e per la stampa un esito, detto onestamente:
+# e per la stampa un esito, detto onestamente — uno per il lavoro, cioè per tutte
+# le sue copie — con la versione e le copie mandate (chi aspetta tre copie e non
+# legge «copie: 3» ha davanti un aiutante di prima, che ne ha stampata una):
 #   ok:true,  esito "stampato"     il foglio è uscito dalla coda di Windows
 #   ok:true,  esito "mandato"      è nella coda di Windows, e lì è rimasto
 #   ok:false, esito "fallito"      non è uscito niente (stampante spenta o sparita, PDF rotto…)
@@ -27,7 +32,7 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # stdout è di Chrome: niente barre, niente testo
 $INIZIO = Get-Date
-$VERSIONE = '3'
+$VERSIONE = '4'          # 4: le copie in un lavoro solo
 $MAX_MESSAGGIO = 40MB    # il PDF (o lo zip di «Aggiorna app») in base64 e poco altro
 $MAX_PDF = 25MB
 $TETTO_S = 35            # tutto il lavoro di una stampa; con l'avvio di PowerShell, sotto i 40
@@ -165,6 +170,11 @@ function Stampa($d, [string]$pdf64) {
   # etichettatrici (Zebra, TSC, Citizen) l'etichetta uscirebbe di traverso, e
   # per loro la rotazione è spenta («ruota: no», dalle impostazioni).
   $opzioni = if ($d.tipo -ne 'etichette') { 'fit' } elseif ($d.ruota -eq 'no') { 'noscale,disable-auto-rotation' } else { 'noscale' }
+  # Le copie (l'etichetta anagrafica ×3): un lavoro solo, e SumatraPDF le fa
+  # tutte («3x»). Un intero da 1 a 10; qualunque altra cosa è una copia.
+  $copie = 1
+  if (($d.copie -is [int] -or $d.copie -is [long]) -and $d.copie -ge 1 -and $d.copie -le 10) { $copie = [int]$d.copie }
+  if ($copie -gt 1) { $opzioni = '{0},{1}x' -f $opzioni, $copie }
   $file = Join-Path $TEMP ('psassist-{0}.pdf' -f [guid]::NewGuid().ToString('N'))
   [IO.File]::WriteAllBytes($file, $byte)
   try {
@@ -194,7 +204,7 @@ function Stampa($d, [string]$pdf64) {
   } finally {
     Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
   }
-  [pscustomobject]@{ esito = $esito; stampante = $nome; pagina = (Misura $byte); opzioni = $opzioni }
+  [pscustomobject]@{ esito = $esito; stampante = $nome; pagina = (Misura $byte); opzioni = $opzioni; copie = $copie }
 }
 
 # ---- «Aggiorna app» -----------------------------------------------------------
@@ -300,7 +310,7 @@ try {
       $r = Stampa $d $pdf64
       $mm = if ($r.pagina) { '{0}x{1} mm' -f [math]::Round($r.pagina[0] * 25.4 / 72), [math]::Round($r.pagina[1] * 25.4 / 72) } else { 'misura ?' }
       Annota ('stampa {0} -> {1}: {2} ({3} KB, {4:0.0} s, {5}, {6})' -f $d.tipo, $r.stampante, $r.esito, [math]::Round($pdf64.Length * 3 / 4 / 1KB), ((Get-Date) - $INIZIO).TotalSeconds, $mm, $r.opzioni)
-      Rispondi @{ ok = $true; esito = $r.esito; stampante = $r.stampante; pagina = $r.pagina }
+      Rispondi @{ ok = $true; esito = $r.esito; stampante = $r.stampante; pagina = $r.pagina; copie = $r.copie; versione = $VERSIONE }
     }
     'chi' {
       $v = ''

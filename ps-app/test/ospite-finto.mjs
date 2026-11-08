@@ -6,7 +6,10 @@
  * annota il lavoro in <PSA_FINTO>/lavori.jsonl. Come si comporta lo dice
  * <PSA_FINTO>/config.json: { stampanti, predefinita, rompi: { "<stampante>":
  * "<motivo>" }, esito: { "<stampante>": "mandato" | "sconosciuto" }, lento: ms,
- * casa: "<la cartella che fa da %LOCALAPPDATA%\PSAssist>", aggiornaNo: "<motivo>" }.
+ * casa: "<la cartella che fa da %LOCALAPPDATA%\PSAssist>", aggiornaNo: "<motivo>",
+ * versione: "3" | "4" }. Dalla 4 (quella di partenza) le copie in un lavoro solo:
+ * `copie`, un intero da 1 a 10 (se no 1), annotato e ridetto con la versione; la 3
+ * non le conosce — stampa una copia e non dice né versione né copie, come host.ps1 di prima.
  * «chi» e «aggiorna» (⋯ → «Aggiorna app») fanno quello che fa host.ps1, con
  * gli stessi controlli, nella cartella `casa`: lo zip aperto in una cartella
  * temporanea psassist-*, extension/manifest.json con la stessa chiave e una
@@ -85,14 +88,15 @@ process.stdin.on("data", async (d) => {
   process.stdin.pause();
   const m = JSON.parse(b.subarray(4, 4 + b.readUInt32LE(0)).toString("utf8"));
   const cfg = JSON.parse(readFileSync(join(DIR, "config.json"), "utf8"));
-  if (m.t === "ping") return rispondi({ ok: true, versione: "3" });
+  const versione = String(cfg.versione || "4"), v4 = Number(versione) >= 4;
+  if (m.t === "ping") return rispondi({ ok: true, versione });
   if (m.t === "stampanti") return rispondi({ ok: true, stampanti: cfg.stampanti, predefinita: cfg.predefinita });
   if (m.t === "chi") {
     const est = cfg.casa ? join(cfg.casa, "estensione") : "";
     let estensione = "";
     try { estensione = String(manifest(est).version || ""); } catch { /* non installata */ }
     annota({ chi: true, ...(m.avviata ? { avviata: String(m.avviata) } : {}) });
-    return rispondi({ ok: true, versione: "3", estensione, cartella: est });
+    return rispondi({ ok: true, versione, estensione, cartella: est });
   }
   if (m.t === "aggiorna") {
     if (cfg.lento) await new Promise((r) => setTimeout(r, cfg.lento));
@@ -114,8 +118,10 @@ process.stdin.on("data", async (d) => {
   if (cfg.lento) await new Promise((r) => setTimeout(r, cfg.lento));
   const rotta = (cfg.rompi || {})[m.stampante];
   const esito = rotta ? "fallito" : (cfg.esito || {})[m.stampante] || "stampato";
-  annota({ tipo: m.tipo, stampante: m.stampante, ruota: m.ruota, byte: pdf.length, pagina, esito, ok: esito === "stampato" || esito === "mandato" });
+  const copie = v4 && Number.isInteger(m.copie) && m.copie >= 1 && m.copie <= 10 ? m.copie : 1;
+  annota({ tipo: m.tipo, stampante: m.stampante, ruota: m.ruota, byte: pdf.length, pagina, esito, ok: esito === "stampato" || esito === "mandato", copie,
+    ...(m.copie !== undefined ? { chieste: m.copie } : {}) });
   if (rotta) return rispondi({ ok: false, esito, why: rotta });
   if (esito === "sconosciuto") return rispondi({ ok: false, esito, why: "SumatraPDF non ha finito in 30 secondi: il foglio può essere uscito lo stesso" });
-  rispondi({ ok: true, esito, stampante: m.stampante, pagina });
+  rispondi({ ok: true, esito, stampante: m.stampante, pagina, ...(v4 ? { copie, versione } : {}) });
 });
