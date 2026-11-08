@@ -192,7 +192,11 @@ async function contesto(srv, { seed, finto, w = 1280, h = 900, focusFinto = fals
         if (m.t === "getStorico") return finto.storico ? (m.chiave ? { ok: true, dati: finto.storico.dati } : { ok: true, indice: [finto.storico.indice] }) : { ok: false };
         return { ok: false };
       };
-      window.chrome = { runtime: { id: "finto", lastError: undefined, sendMessage(m, cb) { const r = risposta(m); Promise.resolve().then(() => cb && cb(r)); } } };
+      // (onMessage: per mandare alla pagina un comando dell'iPhone, come il service worker vero)
+      const ascolta = [];
+      window.__alPc = (m) => new Promise((ok) => { for (const f of ascolta) if (f(m, {}, ok) === true) return; ok(null); });
+      window.chrome = { runtime: { id: "finto", lastError: undefined, sendMessage(m, cb) { const r = risposta(m); Promise.resolve().then(() => cb && cb(r)); },
+        onMessage: { addListener(f) { ascolta.push(f); } } } };
     }
   }, { seed: seed || null, finto: finto || null, focusFinto });
   await context.route(`${ORIGIN}/**`, servi(srv));
@@ -649,8 +653,8 @@ await blocco("Il Da fare del tabellone: il generale, e quello dei pazienti col c
   await context.close();
 });
 
-// --------------------------------------------- 4. segue il gestionale: il link e i 10 minuti
-await blocco("Segue il gestionale: il link della pagina, ogni 10 minuti, ⟳", async () => {
+// --------------------------------------------- 4. segue il gestionale: il link, l'iPhone, il ⟳
+await blocco("Segue il gestionale: il link della pagina; si rilegge aprendo l'iPhone (al più ogni 2 minuti) e col ⟳, mai a tempo", async () => {
   const srv = server();
   const { context, page } = await contesto(srv, { seed: semeTabellone(), finto: {} });
   await page.clock.install();
@@ -668,17 +672,28 @@ await blocco("Segue il gestionale: il link della pagina, ogni 10 minuti, ⟳", a
   await page.goto(URL_LISTA);
   await pannello(page);
   await page.clock.runFor(2000);
-  check((await ls(page, "smart.url.v1"))?.url === URL_SMART_LINK && (await sotto()).join() === URL_SMART_LINK, `il link letto dalla pagina, e la smart chiesta subito con quello (got: ${JSON.stringify(await sotto())})`);
-  await page.clock.runFor(9 * 60e3);
-  check((await sotto()).length === 1, "prima dei 10 minuti, niente");
-  await page.clock.runFor(100e3);   // (si guarda ogni 30 secondi: fra 10′00″ e 10′30″)
-  check((await sotto()).length === 2, `ogni 10 minuti, di nuovo (got: ${(await sotto()).length} · ${JSON.stringify(await ls(page, "smart.sync.v1"))} · ${await page.evaluate(() => Date.now())})`);
-  // spento (⋯ → Segue il gestionale): più niente da solo; il ⟳ sì
+  check((await ls(page, "smart.url.v1"))?.url === URL_SMART_LINK && (await sotto()).length === 0, `il link letto dalla pagina; la smart non si apre da sola (got: ${JSON.stringify(await sotto())})`);
+  await page.clock.runFor(25 * 60e3);
+  check((await sotto()).length === 0, "nemmeno dopo 25 minuti: niente giri a tempo");
+  // l'app aperta sull'iPhone (il comando «triage» con rileggi): la smart, dietro, col link della pagina; il telefono lo sa
+  const iPhone = (rileggi = true) => page.evaluate((rileggi) => window.__alPc({ t: "ponteEsegui", cmd: "triage", args: rileggi ? { rileggi: true } : {} }), rileggi);
+  const t1 = await iPhone();
+  check((await sotto()).join() === URL_SMART_LINK && t1?.ok && t1.dati?.rilegge === true, `aprendo l'app sull'iPhone: la smart, col suo link, e il telefono sa che si sta rileggendo (got: ${JSON.stringify(t1)} · ${JSON.stringify(await sotto())})`);
+  await page.clock.runFor(60e3);
+  const t2 = await iPhone();
+  check((await sotto()).length === 1 && t2?.dati?.rilegge === false, "riaperta dopo un minuto: niente di nuovo (al più ogni 2 minuti)");
+  await iPhone(false);
+  check((await sotto()).length === 1, "una semplice richiesta del telefono (senza «rileggi») non rilegge");
+  await page.clock.runFor(70e3);
+  await iPhone();
+  check((await sotto()).length === 2, "passati i 2 minuti, riaprendo l'app: di nuovo");
+  // spento (⋯ → Segue il gestionale): nemmeno dall'iPhone; il ⟳ sì
   await $p(page, "#menubtn").click();
   await $p(page, "#seguesw").click();
   check((await ls(page, "segue.v1")) === false, "«segue il gestionale» spento (segue.v1)");
   await page.clock.runFor(25 * 60e3);
-  check((await sotto()).length === 2, "spento: niente da solo");
+  await iPhone();
+  check((await sotto()).length === 2, "spento: niente, nemmeno aprendo l'iPhone");
   // (il ⟳ è l'icona che rilegge, la stessa di tutto il pannello: niente glifo)
   check((await $p(page, "#tbsync svg").count()) === 1 && !(await $p(page, "#tbsync").innerText()).trim(), "il ⟳ è un'icona del pannello, non il glifo");
   await $p(page, "#tbsync").click();
@@ -884,6 +899,13 @@ await blocco("Con l'estensione: la smart si apre in una scheda dietro e si chiud
     srv.s.log.length = 0;
     await page.goto(URL_LISTA);
     await page.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+    // (niente giri a tempo: la si rilegge col ⟳, o aprendo l'app sull'iPhone)
+    if (!(await page.locator("#psassist-host .card").count())) await page.locator("#psassist-host #expand").click({ timeout: 10000 }).catch(() => {});
+    await page.waitForSelector("#psassist-host #tbsync", { timeout: 15000 }).catch(async (e) => {
+      console.log("    [⟳]", await page.evaluate(() => document.getElementById("psassist-host")?.shadowRoot.innerHTML.replace(/<svg.*?<\/svg>/gs, "").slice(0, 600)));
+      throw e;
+    });
+    await page.locator("#psassist-host #tbsync").click();
     await page.waitForFunction(() => { const s = JSON.parse(localStorage.getItem("psassist:smart.sync.v1") || "null"); return s && s.fine && s.esito; }, null, { timeout: 20000 });
     const sync = await page.evaluate(() => JSON.parse(localStorage.getItem("psassist:smart.sync.v1")));
     await page.waitForTimeout(800);

@@ -326,8 +326,9 @@ Ognuna si ritocca con **Modifica** (una alla volta: quella della vista; con *Ent
 dell'area). Un paziente ha un posto solo: messo in una mappa, lascia l'altra.
 
 **Segue il gestionale** (⋯, acceso di norma). Ogni lista non filtrata che apri aggiorna chi sta in
-quale area, come sempre. In più, **ogni 10 minuti** (finché una scheda del gestionale è aperta) e
-subito col **⟳**, il pannello rilegge la **lista smart** — tutto il PS, ogni area col suo nome e il
+quale area, come sempre. In più, **quando apri l'app sull'iPhone** (o ci torni sopra, o tocchi
+aggiorna: al più ogni 2 minuti; il telefono richiede l'elenco 25 secondi dopo) e subito col **⟳**
+— mai da solo a tempo —, il pannello rilegge la **lista smart** — tutto il PS, ogni area col suo nome e il
 triage, senza cambiare area. La apre **col suo link**, quello dell'icona `elenco_smart.png` della
 lista dell'area (`window.open('…menuPsoSmart.do?MVPG=PsoPazientiSmart&PAZIENTI_FILTRO=…')`, annotato
 quando lo si vede: mai un indirizzo inventato; finché non c'è, il ⟳ lo dice), in una **scheda dietro**
@@ -337,7 +338,7 @@ gli OBI) e un'eventuale **OBI** —, non l'attesa del triage né «tutti»: aper
 all'Ambulatorio col link della sua scheda. Dopo, passa anche alla scheda **Triage** (col suo link):
 le sue righe non entrano fra i pazienti, né nelle aree, né nelle dimissioni — si tengono a parte
 (`triage.lista.v1`: nome, età, colore, area, arrivo; niente nascita) per il telefono, e solo se
-letta non filtrata e con le righe che dice; se la scheda non c'è, resta la lista di prima. Le righe non hanno episodio: chi si riconosce (nome e
+letta non filtrata e con le righe che dice (una scheda senza il conto si prende com'è); se la scheda non c'è, resta la lista di prima. Le righe non hanno episodio: chi si riconosce (nome e
 impronta della nascita, uno solo) prende area e triage della riga; chi no **entra lo stesso**, con
 l'impronta per chiave, area e triage — aprirlo passa dalla sua area e dalla sua lista, come un tocco
 sulla smart; quando la lista della sua area (o la sua pagina) dà l'episodio, posto, «Da fare» e area
@@ -1242,6 +1243,9 @@ Sotto le aree, la sezione **«Triage · alle 14:32»**: chi aspetta al triage (l
 come l'ha letto il PC (comando `triage`), dal colore più urgente e a pari colore da chi aspetta da
 più tempo; età, attesa e, se nota, l'area; le righe non si toccano. Sparisce se è vuota, se è
 stata letta più di 30 minuti fa o se il PC (un'estensione più vecchia) non conosce il comando.
+Aprendo l'app (o tornandoci, o con aggiorna) il telefono chiede al PC di rileggere la lista smart
+(`triage` con `rileggi`, al più ogni 2 minuti, con «Segue il gestionale» acceso) e richiede
+l'elenco 25 secondi dopo: è l'unico giro della smart che parte da solo.
 
 Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con
 **↻ Aggiorna i valori** e l'ora in cui il PC li ha letti), **un ordine** (lo stesso «Conferma e

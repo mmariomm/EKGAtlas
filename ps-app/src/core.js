@@ -3069,16 +3069,16 @@
 
   // ------------------------------------------------- SEGUE IL GESTIONALE
   // La lista smart (tutto il pronto soccorso, ogni area col suo nome e il
-  // colore del triage) si rilegge da sola ogni 10 minuti, finché una scheda
-  // del gestionale è aperta e «segue il gestionale» è acceso — e subito col
-  // ⟳ del tabellone. Si apre come la apre il medico: col SUO link (l'icona
+  // colore del triage) si rilegge quando il medico apre l'app sull'iPhone (o
+  // ci torna sopra; al più ogni 2 minuti, con «segue il gestionale» acceso) e
+  // subito col ⟳ del tabellone. Niente giri da soli a tempo. Si apre come la apre il medico: col SUO link (l'icona
   // elenco_smart della lista dell'area, annotato quando lo si vede — mai un
   // indirizzo costruito), in una scheda dietro che si chiude appena letta.
   const SEGUE = "segue.v1";                    // false: spento (di norma acceso) — un'impostazione
   const SMART_URL = "smart.url.v1";            // { url, ts } — dalla pagina, mai inventato; un'impostazione
   const SMART_SYNC = "smart.sync.v1";          // { ts: partita, fine, esito, n, intera, dimessi }
   const DIMESSI = "dimessi.v1";                // { id, ts, eps, nomi, posti } — l'ultima uscita, per «Annulla»
-  const SMART_OGNI = 10 * 60e3;
+  const SMART_TEL = 2 * 60e3;                  // dall'iPhone: al più una rilettura ogni 2 minuti
   const SMART_GIRO = "smart.giro.v1";          // (nella scheda dietro) le schede della smart già lette
   const DIMESSI_MS = 8000;
   const DIMESSI_QUOTA = 0.3;                   // oltre il 30% in un colpo solo: non si archivia nessuno
@@ -3279,15 +3279,16 @@
     const r = applicaSmart(righe, intera);
     return fine("ok", { n: r.righe, intera, dimessi: r.dimessi.length });
   }
-  // Rileggere la smart adesso (⟳) o perché sono passati 10 minuti: lo chiede
-  // il service worker, che apre la scheda dietro e ne tiene una sola.
+  // Rileggere la smart adesso (⟳) o perché il medico ha aperto l'app
+  // sull'iPhone: lo chiede il service worker, che apre la scheda dietro e ne
+  // tiene una sola.
   async function smartSync(forza) {
     if (TABELLONE) return tabelloneChiede({ cosa: "sync" });   // la rilegge una scheda del gestionale, dal suo link
     if (!hasExt()) return { ok: false, why: "senza estensione" };
     const u = store.get(SMART_URL, null)?.url;
     if (!u) return { ok: false, why: "nessun link" };
     const s = store.get(SMART_SYNC, null) || {}, ora = Date.now();
-    if (!forza && (!segueAcceso() || ora - (s.ts || 0) < SMART_OGNI)) return { ok: false, why: "non ancora" };
+    if (!forza && (!segueAcceso() || ora - (s.ts || 0) < SMART_TEL)) return { ok: false, why: "non ancora" };
     if (s.ts && !s.fine && ora - s.ts < 45e3) return { ok: false, why: "in corso" };
     // (una pagina della stessa sessione: mai mentre un motore manda esami — il prossimo giro, fra 30 secondi)
     if (motoreOvunque()) return { ok: false, why: "ordine in corso" };
@@ -9434,7 +9435,7 @@
                       `<button role="menuitem" id="consmenu" title="Al cambio turno: una riga per paziente — posto, nome, età, da quanto è in PS, cosa aspetta, cosa c'è da fare — da copiare o stampare">${mico("dafare")}Consegne</button>`,
                       // (quelle della stanza ci sono solo sulla mappa: in fondo, così le altre non cambiano posto)
                       inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">${mico("matita")}Modifica la stanza</button>` : "",
-                      inStanza && !this.stanzaEdit && hasExt() ? `<button role="menuitemcheckbox" id="seguesw" aria-checked="${segueAcceso()}" title="${segueAcceso() ? "Acceso" : "Spento: tocca per accenderlo"} — ogni 10 minuti la lista smart del gestionale, letta dietro: chi c'è, l'area, il triage; chi esce è dimesso">${mico(segueAcceso() ? "acceso" : "spento")}Segue il gestionale</button>` : ""])}
+                      inStanza && !this.stanzaEdit && hasExt() ? `<button role="menuitemcheckbox" id="seguesw" aria-checked="${segueAcceso()}" title="${segueAcceso() ? "Acceso" : "Spento: tocca per accenderlo"} — quando apri l'app sull'iPhone (e col ⟳) la lista smart del gestionale, letta dietro: chi c'è, l'area, il triage; chi esce è dimesso">${mico(segueAcceso() ? "acceso" : "spento")}Segue il gestionale</button>` : ""])}
                     ${this.menuSez("Impostazioni", [
                       hasExt() ? `<button role="menuitem" id="stampanti" title="Quale stampante è l'etichettatrice e quale l'A4, per la stampa automatica">${mico("stampante")}Stampanti</button>` : "",
                       !this.stampaPronta() ? "" : this.stampaAuto.s.attiva === false
@@ -16958,7 +16959,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       return r;
     };
     if (cmd === "pazienti") return fatto({ ok: true, dati: pontePazienti(), registro: "elenco dei pazienti" });
-    if (cmd === "triage") { const t = store.get(TRIAGE_LISTA, null); return { ok: true, dati: { ts: t?.ts || 0, righe: Array.isArray(t?.righe) ? t.righe : [] } }; }
+    // l'app aperta (o tornata davanti) sull'iPhone: la smart si rilegge dietro, e lo si dice al telefono, che richiede fra poco
+    if (cmd === "triage") {
+      const r = a.rileggi ? await smartSync(false).catch(() => null) : null;
+      const t = store.get(TRIAGE_LISTA, null);
+      return { ok: true, dati: { ts: t?.ts || 0, righe: Array.isArray(t?.righe) ? t.righe : [], rilegge: !!(r && r.ok) } };
+    }
     if (cmd === "richieste") return fatto({ ok: true, dati: ponteCatalogo(), registro: "catalogo degli esami" });
     const p = a.ep ? pontePaziente(a.ep) : null;
     if (!p) return { ok: false, errore: "Questo paziente non è più nell'elenco del PC" };
@@ -17502,7 +17508,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     });
     // Il tabellone segue il gestionale: quello che ha letto la scheda dietro
     // (o un'altra scheda) si vede qui, e chi è uscito porta il suo «Annulla».
-    // Ogni 30 secondi si guarda se sono passati 10 minuti dall'ultima lettura.
+    // (la smart non si rilegge più a tempo: quando si apre l'app sull'iPhone, e col ⟳)
     window.addEventListener("storage", (ev) => {
       if (ev.key === NS + PROM || ev.key === NS + DF_GEN) return panel.promTick();   // un «Da fare» scritto in un'altra scheda: rifatto sul posto
       if (![NS + "patients.v1", NS + AREE, NS + SMART_SYNC, NS + DIMESSI].includes(ev.key)) return;
@@ -17510,11 +17516,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       panel.aggiornaDaFuori();
     });
     panel.mostraDimessi(true);
-    if (hasExt() && !LAVORO && !PONTE_VALORI && !eSmart(document, location.href)) {
-      const tic = () => smartSync(false).then((r) => { if (r && r.ok) panel.aggiornaDaFuori(); }).catch(() => {});
-      setTimeout(tic, 1500);
-      setInterval(tic, 30e3);
-    }
     if (chi) { panel.ordiniOk = true; ascoltaOrdini(panel); }
     if (hasExt() && !LAVORO && !PONTE_VALORI) tabelloneAscolta(panel);
     if (hasExt()) { panel.seguiStampa(); panel.seguiRec(); panel.seguiAggiorna(); panel.seguiRicetta(); }

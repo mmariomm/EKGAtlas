@@ -417,21 +417,27 @@
     if (e.dimesso) aggiornaLista(true);   // dimesso sul PC: dall'elenco se ne va
   }
   // Chi aspetta al Triage: un PC più vecchio non conosce il comando, o non c'è
-  // niente — allora la sezione manca, senza errori.
-  const chiediTriage = (auto = true) => chiedi("triage", {}, TEMPO, auto).catch(() => null);
+  // niente — allora la sezione manca, senza errori. Aprendo l'app (o tornandoci,
+  // o con «aggiorna») il PC rilegge la lista smart dietro (`rileggi`): se è
+  // partita, fra poco si richiede l'elenco, una volta.
+  let tRilettura = 0;
+  const chiediTriage = (auto = true, rileggi = false) => chiedi("triage", rileggi ? { rileggi: true } : {}, TEMPO, auto).then((t) => {
+    if (t && t.rilegge && !tRilettura) tRilettura = setTimeout(() => { tRilettura = 0; if (document.visibilityState === "visible" && S.fase === "pronta") aggiornaLista(true); }, 25e3);
+    return t;
+  }, () => null);
   async function carica() {
     S.occupato.add("lista"); render();
     try {
-      const [pazienti, catalogo, ordini, triage] = await Promise.all([chiedi("pazienti", {}, TEMPO, true), chiedi("richieste", {}, TEMPO, true), chiedi("ordini", {}, TEMPO, true), chiediTriage()]);
+      const [pazienti, catalogo, ordini, triage] = await Promise.all([chiedi("pazienti", {}, TEMPO, true), chiedi("richieste", {}, TEMPO, true), chiedi("ordini", {}, TEMPO, true), chiediTriage(true, true)]);
       S.pazienti = pazienti; S.triage = triage; S.catalogo = catalogo; S.aggiornato = Date.now(); S.erroreLista = "";
       for (const o of ordini || []) if (!S.ordini.has(o.id) || !S.ordini.get(o.id).fine) ordineVisto(o);
     } catch (e) { S.erroreLista = e.message; }
     S.occupato.delete("lista"); render();
   }
-  async function aggiornaLista(auto = false) {
+  async function aggiornaLista(auto = false, rileggi = false) {
     if (!S.catalogo) return carica();
     S.occupato.add("lista"); render();
-    try { [S.pazienti, S.triage] = await Promise.all([chiedi("pazienti", {}, TEMPO, auto), chiediTriage(auto)]); S.aggiornato = Date.now(); S.erroreLista = ""; }
+    try { [S.pazienti, S.triage] = await Promise.all([chiedi("pazienti", {}, TEMPO, auto), chiediTriage(auto, rileggi)]); S.aggiornato = Date.now(); S.erroreLista = ""; }
     catch (e) { if (S.pazienti) { if (!auto) errore(e); } else S.erroreLista = e.message; }
     S.occupato.delete("lista"); render();
   }
@@ -524,7 +530,7 @@
   // Tornati sull'app: l'elenco e, sulla pagina di un paziente, i suoi esiti
   // (un referto arrivato intanto). Li chiede l'app da sé: non tengono aperta la sessione.
   function rileggi() {
-    aggiornaLista(true);
+    aggiornaLista(true, true);
     if (S.vista.nome === "paziente") caricaEsiti(S.vista.ep, true);
     if (S.vista.nome === "paziente" && S.scheda === "cartella" && !S.occupato.has("csalva" + S.vista.ep)) caricaCartella(S.vista.ep, true);
     if (S.vista.nome === "registrazioni") caricaZip(true);
@@ -1362,7 +1368,7 @@
     else if (a === "zipVia") cancellaZip(b.dataset.id);
     else if (a === "paz") apriPaziente(b.dataset.ep);
     else if (a === "indietro") { salvaNota(ep); S.vista = { nome: "lista", ep: "" }; S.arma = null; render(); aggiornaLista(); }
-    else if (a === "aggiornaLista") aggiornaLista();
+    else if (a === "aggiornaLista") aggiornaLista(false, true);
     else if (a === "esci") { chiedi("esci").catch(() => {}); chiusa("chiusa dall'iPhone"); }
     else if (a === "dimentica") {
       if (b.dataset.sicuro !== "1") { b.dataset.sicuro = "1"; b.textContent = "Dimentico? Servirà un QR nuovo"; return; }
