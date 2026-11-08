@@ -683,7 +683,9 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    **Se qualcosa va storto, si finisce a mano nel gestionale.** La striscia diventa **rossa** —
    «Errore · completa a mano» / «Mancano: PTT POC · Da controllare: Troponina»; per un ordine in
    sottofondo comincia da che cosa fare, «TROPONINA US: non mandato · apri il carrello → Riprova»,
-   e il perché sta nel resoconto — e la scheda va
+   e il perché sta nel resoconto (un ordine che **non è partito** non ha resoconto: il perché lo dice
+   la striscia sotto, anche al telefono — «il gestionale non mostra le Richieste: è sull'area Bassa,
+   è quella del paziente?» quando la pagina del paziente arriva senza Richieste) — e la scheda va
    sul **carrello** della richiesta, sull'erogatore dove il gestionale la tiene (l'ultimo elenco
    che ha dato): una semplice lettura dell'elenco, niente inviato, niente confermato. **Mancano** sono gli esami
    mai partiti: li aggiungi tu. **Da controllare** sono quelli mandati ma non visti in carrello:

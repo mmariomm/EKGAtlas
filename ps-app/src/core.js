@@ -8517,6 +8517,10 @@
       let base;
       if (p.startPage === "patient") {
         const entry = this.pageType === "patient" ? (p.kind === "radio" ? this.entry?.radioUrl : this.entry?.labUrl) : "";
+        // (nessuna Richiesta sulla pagina: così la mostra il gestionale messo su
+        // un'area che non è quella del paziente — si dice su quale è)
+        const area = !entry && this.pageType === "patient" && !this.entry?.labUrl && !this.entry?.radioUrl ? areaInTesta(document) : null;
+        if (area) return no(`Sulla pagina del paziente il gestionale non mostra le Richieste: è sull'area ${AREE_TITOLO[area.k] || area.label}, è quella del paziente? Niente inviato`);
         if (!entry) return no("Sulla pagina del paziente manca il link della richiesta: niente inviato");
         base = { ...p, entryUrl: entry };
       } else {

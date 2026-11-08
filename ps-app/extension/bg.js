@@ -1372,7 +1372,8 @@ function ordPubblico(rec, l = []) {
         const cosa = m.length ? `${m.join(", ")}: ${m.length === 1 ? "non mandato" : "non mandati"}` : `${c.join(", ")}: da controllare`;
         const riprova = !!(rec.consegna && rec.consegna.avviso && rec.consegna.avviso.riprova) && m.length;
         const fare = rec.consegna ? (riprova ? "apri il carrello → Riprova" : "apri il carrello e completa") : "completa a mano nel gestionale";
-        const poi = m.length && c.length ? `Da controllare: ${c.join(", ")}` : "";
+        // (un ordine che non è partito: il perché, che il resoconto non ha)
+        const poi = [m.length && c.length ? `Da controllare: ${c.join(", ")}` : "", v.tag === "Non partito" ? v.testo : ""].filter(Boolean).join(" · ");
         return alTel(P("err", cosa, fare, poi), P("err", cosa, "completa al PC", poi));
       }
       return P("err", v.tag || "Errore", v.testo || "completa a mano", v.quesito || resto);

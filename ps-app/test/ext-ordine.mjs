@@ -793,6 +793,33 @@ if (prova("la sessione scade nella scheda dell'ordine")) {
   A.state.expireAfter = Infinity;
 }
 
+// ---- 9b. il gestionale su un'altra area: la pagina del paziente senza Richieste ----
+// (una registrazione vera della 3.77.1: il gestionale messo sull'area «Media -
+// bassa», il paziente nell'Alta — la sua pagina, lì, non ha né le Richieste né
+// le sezioni. L'ordine non parte, e lo diceva solo «non mandato».)
+if (prova("la pagina del paziente senza le Richieste (il gestionale su un'altra area): niente inviato, e si dice perché")) {
+  await suPagina(doc, A.patientUrl);
+  // (la pagina del medico è già aperta: da qui una pagina del paziente aperta è quella della scheda dell'ordine)
+  riscrivi = (u, html, req) => {
+    if (!req.isNavigationRequest() || !/MVPG=PsoEpisodioClinicoAmbulatorio/.test(u)) return html;
+    return html.replace(/<a [^>]*title="Richieste [^"]*"[^>]*>[\s\S]*?<\/a>/g, "")
+      .replace(/<body>/i, `<body><table class="AFCHeaderTable"><tr><td><font style="font-size: 110%; font-weight: bolder; ">AREA MEDIA - BASSA INTENSITA'</font> 00040001P</td></tr></table>`);
+  };
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  const w = await nasce;
+  const rossa = await striscia(doc, /non mandat/, 30000).catch(() => "");
+  const o = (await ordini()).find((x) => x.paziente === "ROSSI MARIO");
+  check(A.state.requests.every((q) => q.method === "GET" && !q.params.Insert && q.params.MVPG !== "PsoRichiestaCreaRcs"), "niente inviato: né la richiesta, né un esame");
+  check(/TROPONINA.*non mandato/.test(rossa) && !!o && o.stato === "errore"
+    && /^Sulla pagina del paziente il gestionale non mostra le Richieste: è sull'area Bassa, è quella del paziente\? Niente inviato$/.test(o.pubblico?.dettaglio || ""),
+  `«non mandato», e il perché: il gestionale è sull'area Bassa (got ${rossa || "niente"} · ${JSON.stringify(o && o.pubblico)})`);
+  check(!w || await aspettaChiusa(w, 8000), "e la scheda dell'ordine si chiude");
+  riscrivi = null;
+  await $panel(doc, STOP).click().catch(() => {});
+  await nessunOrdine();
+}
+
 // ---- 10. la pagina di accesso non butta via le etichette in attesa -------
 if (prova("la pagina di accesso tiene le etichette in attesa, e le conta senza nomi")) {
   nuovi();
