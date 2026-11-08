@@ -1301,6 +1301,11 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   la pagina del paziente li lascia scrivere; «Salva» li scrive col «Conferma» della pagina, in una
   scheda di sottofondo, e rilegge. Mai sopra un testo cambiato sul PC o non ancora salvato in una
   scheda; la pagina aperta di quel paziente dice «Aggiornato dal telefono · Ricarica».
+  Sopra l'esame obiettivo (solo lì, e solo dove si può scrivere) una fila di chip: i tuoi EO di base per nome,
+  poi **Altri…** (Casi e Frasi, in un foglio; la ricerca solo se sono più di 15). I testi sono quelli del PC, con
+  le tue modifiche (comando `eo`, niente dal gestionale). Un tocco: campo vuoto, ci va il testo; altrimenti in
+  fondo, a capo, mai al posto di quello che c'è. È una modifica della bozza come un'altra — parte solo con «Salva» —
+  e per 5 secondi **Annulla** toglie esattamente quello inserito. Un PC più vecchio: niente chip.
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
   Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
   sessione si chiude da sola; tornando sull'app si riapre da sola.

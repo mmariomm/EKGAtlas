@@ -84,11 +84,14 @@
     modo: "lista",       // «Lista · Mappa» (si ricorda sul telefono: nessun dato di pazienti)
     mappaSel: "",        // «Alta · Bassa»: la mappa che si guarda (vuoto: quella che il PC guarda)
     zoom: 1,             // il pizzico dentro la mappa
+    eo: null, eoVecchio: false, // gli EO salvati sul PC: [{ k, nome, gruppo: "base" | "casi" | "frasi", testo }]; eoVecchio = un PC che non li dà
+    eoSheet: false, eoQ: "", // «Altri…»: il foglio, e la ricerca (solo se la lista è lunga)
+    eoAnnulla: null,     // l'ultimo EO inserito, per 5 secondi: { ep, nome, prima, ins, t }
   };
   const MODO = "psassist.ponte.modo";
   try { if (localStorage.getItem(MODO) === "mappa") S.modo = "mappa"; } catch { /* solo in memoria */ }
   function svuota() {
-    S.pazienti = null; S.triage = null; S.mappa = null; S.mappaSel = ""; S.zoom = 1; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
+    S.pazienti = null; S.triage = null; S.mappa = null; S.mappaSel = ""; S.zoom = 1; S.eo = null; S.eoVecchio = false; S.eoSheet = false; S.eoQ = ""; if (S.eoAnnulla) clearTimeout(S.eoAnnulla.t); S.eoAnnulla = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.bozze.clear(); S.promTesto = ""; S.arma = null;
     S.notaAperta = ""; S.promAperto = ""; S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
     S.zip = null; S.zipErr = ""; S.zipArma = null; S.zipStato.clear();
@@ -489,9 +492,54 @@
   // La cartella: l'ultima lettura del PC (o, con «↻ Rileggi», la pagina riletta)
   async function caricaCartella(ep, auto = false, rileggi = false) {
     if (S.occupato.has("cartella" + ep)) return;
+    caricaEo();
     S.occupato.add("cartella" + ep); render();
     try { cartellaDalPc(ep, await chiedi("cartella", rileggi ? { ep, rileggi: true } : { ep }, 40e3, auto)); } catch (e) { if (!auto) errore(e); }
     S.occupato.delete("cartella" + ep); render();
+  }
+  // Gli EO salvati sul PC, a ogni apertura della cartella (i suoi cambiano sul PC): un PC più vecchio non conosce il
+  // comando — allora niente chip, senza errori, e non lo si richiede più.
+  async function caricaEo() {
+    if (S.eoVecchio) return;
+    try {
+      const l = await chiedi("eo", {}, TEMPO, true);
+      const v = (Array.isArray(l) ? l : []).filter((x) => x && typeof x.k === "string" && typeof x.nome === "string" && typeof x.testo === "string" && x.testo.trim() && ["base", "casi", "frasi"].includes(x.gruppo));
+      if (v.length) { S.eo = v; render(); }
+    } catch (e) { if (/sconosciuto/i.test(String(e && e.message))) S.eoVecchio = true; }
+  }
+  const CAMPO_EO = "ESAME_OBIETTIVO";
+  // Un EO salvato nel campo: vuoto, ci va il testo; con già del testo, in fondo a capo — mai al posto di quello che c'è.
+  // È una modifica della bozza come un'altra (niente parte finché non si preme «Salva»); per 5 secondi «Annulla»
+  // toglie esattamente quello che è stato messo. Il cursore sta dopo il testo.
+  function inserisciEo(k) {
+    const ep = S.vista.ep, v = (S.eo || []).find((x) => x.k === k), c = S.cartelle.get(ep), x = c && c.campi.find((y) => y.nome === CAMPO_EO), p = paziente(ep);
+    if (!v || !x || x.ro || !p || p.prec || S.occupato.has("csalva" + ep)) return;
+    let b = S.cbozze.get(ep);
+    if (!b) S.cbozze.set(ep, b = new Map());
+    const prima = b.has(CAMPO_EO) ? b.get(CAMPO_EO).testo : x.v;
+    const ins = !prima.trim() ? v.testo : (prima.endsWith("\n") ? "" : "\n") + v.testo;
+    b.set(CAMPO_EO, { base: b.has(CAMPO_EO) ? b.get(CAMPO_EO).base : x.v, testo: !prima.trim() ? v.testo : prima + ins });
+    const st = S.cstato.get(ep);
+    if (st && !st.ricarica) S.cstato.delete(ep);
+    if (S.eoAnnulla) clearTimeout(S.eoAnnulla.t);
+    const a = S.eoAnnulla = { ep, nome: v.nome, prima, ins, t: 0 };
+    a.t = setTimeout(() => { if (S.eoAnnulla === a) { S.eoAnnulla = null; render(); } }, 5000);
+    S.eoSheet = false;
+    render();
+    const t = document.getElementById("cc-" + CAMPO_EO);
+    if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); t.scrollTop = t.scrollHeight; t.scrollIntoView({ block: "nearest" }); }
+  }
+  function annullaEo() {
+    const a = S.eoAnnulla;
+    if (!a) return;
+    clearTimeout(a.t); S.eoAnnulla = null;
+    const b = S.cbozze.get(a.ep), d = b && b.get(CAMPO_EO);
+    if (d) {
+      // com'è subito dopo l'inserimento: torna a com'era; se intanto è stato toccato, si toglie solo quello che si riconosce in fondo
+      const ora = d.testo, nuovo = ora === (a.prima.trim() ? a.prima + a.ins : a.ins) ? a.prima : ora.endsWith(a.ins) ? ora.slice(0, ora.length - a.ins.length) : ora;
+      b.set(CAMPO_EO, { base: d.base, testo: nuovo });
+    }
+    render();
   }
   // una lettura nuova: le bozze restano (con la loro base), tranne quelle che il PC ha già così
   function cartellaDalPc(ep, c) {
@@ -1358,10 +1406,32 @@
     const ordini = codaDi(p.ep) + ordiniDi(p.ep).map((o) => ordineHtml(o)).join("");
     const tab = (s, t) => `<button class="${S.scheda === s ? "on" : ""}" data-a="scheda" data-s="${s}" role="tab" aria-selected="${S.scheda === s}">${t}</button>`;
     return `<main>${vitaliHtml(p)}${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}</div>
-      ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : vistaRichieste(p)}</main>${ctaHtml(p)}`;
+      ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : vistaRichieste(p)}</main>${ctaHtml(p)}${S.eoSheet && S.scheda === "cartella" && S.eo ? foglioEo() : ""}`;
   }
   // La cartella: i campi della pagina del paziente sul PC, ognuno com'è là.
   // Si scrive dove il gestionale lascia scrivere; il resto si legge e basta.
+  // sopra l'esame obiettivo, e solo lì: i suoi EO di base per nome, poi «Altri…» (Casi e Frasi, in un foglio)
+  function eoHtml(p) {
+    if (!S.eo) return "";
+    const basi = S.eo.filter((v) => v.gruppo === "base"), altri = S.eo.some((v) => v.gruppo !== "base");
+    const a = S.eoAnnulla && S.eoAnnulla.ep === p.ep ? S.eoAnnulla : null;
+    return `<div class="chips eoc" role="group" aria-label="Esami obiettivi salvati">${basi.map((v) => `<button type="button" class="chip" data-a="eo" data-k="${esc(v.k)}">${esc(v.nome)}</button>`).join("")}${
+      altri ? `<button type="button" class="chip" data-a="eoaltri">Altri…</button>` : ""}</div>${
+      a ? `<div class="eoann" role="status"><span>Inserito: ${esc(a.nome)}</span><button type="button" data-a="eoannulla">Annulla</button></div>` : ""}`;
+  }
+  // il foglio di «Altri…»: i Casi e le Frasi, ognuno col nome e la prima riga; la ricerca solo se sono tanti
+  function foglioEo() {
+    const altri = (S.eo || []).filter((v) => v.gruppo !== "base"), lungo = altri.length > 15, q = S.eoQ.trim().toLowerCase();
+    const vis = lungo && q ? altri.filter((v) => (v.nome + " " + v.testo).toLowerCase().includes(q)) : altri;
+    const gruppo = (g, titolo) => {
+      const l = vis.filter((v) => v.gruppo === g);
+      return l.length ? `<div class="lbl">${titolo}</div><div class="carta">${l.map((v) => `<button type="button" class="voce" data-a="eo" data-k="${esc(v.k)}"><b>${esc(v.nome)}</b><span>${esc(v.testo.replace(/\s+/g, " ").slice(0, 100))}</span></button>`).join("")}</div>` : "";
+    };
+    return `<div class="foglio" role="dialog" aria-modal="true" aria-label="Altri esami obiettivi"><button type="button" class="velo" data-a="eochiudi" aria-label="Chiudi"></button>
+      <div class="pannello"><div class="capo"><b>Esame obiettivo</b><button type="button" class="chiudi" data-a="eochiudi">Chiudi</button></div>${
+      lungo ? `<input id="eocerca" type="search" enterkeyhint="search" autocomplete="off" placeholder="Cerca" aria-label="Cerca fra i casi e le frasi" value="${esc(S.eoQ)}">` : ""}${
+      gruppo("casi", "Casi")}${gruppo("frasi", "Frasi")}${vis.length ? "" : `<div class="vuoto">Niente trovato.</div>`}</div></div>`;
+  }
   function vistaCartella(p) {
     const c = S.cartelle.get(p.ep);
     const legge = S.occupato.has("cartella" + p.ep), salva = S.occupato.has("csalva" + p.ep);
@@ -1372,7 +1442,7 @@
       const x = c.campi.find((y) => y.nome === nome);
       if (!x) return "";
       const chiuso = x.ro || p.prec;
-      return `<label class="cc${chiuso ? " ro" : ""}"><span>${esc(etichetta)}</span><textarea id="cc-${nome}" rows="1" ${chiuso || salva ? "readonly" : ""} ${chiuso ? 'placeholder="—" tabindex="-1"' : ""} aria-label="${esc(etichetta)}">${
+      return `<label class="cc${chiuso ? " ro" : ""}"><span>${esc(etichetta)}</span>${nome === CAMPO_EO && !chiuso && !salva ? eoHtml(p) : ""}<textarea id="cc-${nome}" rows="1" ${chiuso || salva ? "readonly" : ""} ${chiuso ? 'placeholder="—" tabindex="-1"' : ""} aria-label="${esc(etichetta)}">${
         esc(b.has(nome) ? b.get(nome).testo : x.v)}</textarea></label>`;
     }).join("");
     return `<div class="carta cartella"><div class="sezt"><div class="tv">${letto}</div>
@@ -1497,6 +1567,10 @@
     else if (a === "vit") { S.vitAperti = S.vitAperti === ep ? "" : ep; render(); }
     else if (a === "scheda") { S.scheda = b.dataset.s; S.arma = null; render(); if (S.scheda === "cartella") caricaCartella(ep, !!S.cartelle.get(ep)); }
     else if (a === "csalva") salvaCartella(ep);
+    else if (a === "eo") inserisciEo(b.dataset.k);
+    else if (a === "eoaltri") { S.eoSheet = true; S.eoQ = ""; render(); }
+    else if (a === "eochiudi") { S.eoSheet = false; render(); }
+    else if (a === "eoannulla") annullaEo();
     else if (a === "cricarica") ricaricaCartella(ep);
     else if (a === "crileggi") caricaCartella(ep, false, true);
     else if (a === "valori") aggiornaValori(ep);
@@ -1542,7 +1616,8 @@
       if (st && !st.ricarica) S.cstato.delete(ep);
       alza(t);
       ritoccaCta();
-    } else if (t.id === "promin") S.promTesto = t.value;
+    } else if (t.id === "eocerca") { S.eoQ = t.value; render(); }
+    else if (t.id === "promin") S.promTesto = t.value;
     else if (t.id === "cambio" && S.cambio) S.cambio.testo = t.value;
   });
   $app.addEventListener("focusout", (e) => { if (e.target.id === "nota" && !disegno) salvaNota(S.vista.ep); });

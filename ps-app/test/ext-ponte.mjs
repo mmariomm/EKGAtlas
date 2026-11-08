@@ -996,6 +996,140 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
 }
 
 // ===========================================================================
+sezione("gli EO salvati, sopra l'esame obiettivo della cartella dal telefono");
+{
+  CART.on = true; CART.eoRo = false;
+  Object.assign(CART.campi, { ANAMNESI: "Dolore toracico", ALLERGIE: "Nessuna", MALATTIE_PREGRESSE: "Ipertensione", FARMACI_ASSUNTI: "Ramipril", ESAME_OBIETTIVO: "" });
+  const eo = JSON.parse(readFileSync(join(root, "src/eo.json"), "utf8"));
+  const solito = eo.basi.find((b) => b.k === "solito"), caso = eo.casi[0];
+  const SUO = "Vigile EOSUO, eupnoico, apiretto";
+  // il medico ha riscritto «Mio solito base» sul PC: il telefono ha il suo testo
+  await doc.evaluate((SUO) => localStorage.setItem("psassist:eo.v1", JSON.stringify({ "base:solito": { testo: SUO, base: "x" } })), SUO);
+  const r = await sw.evaluate(() => ponteSuScheda("eo", {}));
+  const l = r.dati || [];
+  check(r.ok === true && l.length === eo.basi.length + 1 + eo.casi.length + eo.frasi.length && Object.keys(l[0] || {}).sort().join() === "gruppo,k,nome,testo",
+    `«eo»: chiave, nome, gruppo e testo di ognuno (${l.length} voci: ${eo.basi.length + 1} di base, ${eo.casi.length} casi, ${eo.frasi.length} frasi)`);
+  check(l.slice(0, 2).map((x) => x.k + "=" + x.nome).join() === "base:solito=Mio solito base,base=EO generale" && l[0].testo === SUO && l[0].gruppo === "base" && l[1].testo === eo.base.testo
+    && l.find((x) => x.k === "caso:" + caso.k).testo === caso.testo && l.filter((x) => x.gruppo === "casi").length === eo.casi.length && l.filter((x) => x.gruppo === "frasi").length === eo.frasi.length,
+    "i suoi EO di base per primi (con la sua modifica), poi Casi e Frasi, con i testi verbatim");
+
+  await doc.bringToFront();
+  await suPagina(doc, A.patientUrl);
+  await tel.reload();   // (senza le bozze della sezione di prima)
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  await tocca(tel, '.paz[data-ep="999001"]');
+  await tocca(tel, '[data-a="scheda"][data-s="cartella"]');
+  await aspettaTel(tel, /Letto sul PC alle/, 20000);
+  const campoEo = () => tel.locator("#cc-ESAME_OBIETTIVO");
+  const valore = () => campoEo().inputValue();
+  const chipTel = () => tel.evaluate(() => ({
+    sopra: [...document.querySelectorAll(".cc")].map((c) => (c.querySelector("textarea").id.slice(3)) + ":" + [...c.querySelectorAll(".eoc .chip")].map((b) => b.textContent).join("|")).filter((x) => !/:$/.test(x)),
+    n: document.querySelectorAll(".eoc").length, ann: [...(document.querySelector(".eoann")?.children || [])].map((x) => x.textContent.trim()).join(" ") }));
+  const c0 = await chipTel();
+  check(c0.n === 1 && c0.sopra.join() === "ESAME_OBIETTIVO:Mio solito base|EO generale|Altri…" && !c0.ann,
+    `sopra l'esame obiettivo, e solo lì: i suoi EO di base per nome, poi «Altri…» (${c0.sopra.join()})`);
+  check(!(await piccoli(tel)).length, `i chip e i bottoni almeno 44 px (${JSON.stringify(await piccoli(tel))})`);
+  const posti0 = CART.post.length;
+
+  // campo vuoto: il testo ci va; niente parte; il cursore dopo il testo; 5 secondi di «Annulla»
+  await tel.locator('.eoc [data-a="eo"][data-k="base:solito"]').click();
+  const dopo1 = await tel.evaluate(() => { const t = document.getElementById("cc-ESAME_OBIETTIVO"); return { v: t.value, fuoco: document.activeElement === t, cur: t.selectionStart === t.value.length && t.selectionEnd === t.value.length }; });
+  const c1 = await chipTel();
+  check(dopo1.v === SUO && dopo1.fuoco && dopo1.cur && c1.ann === "Inserito: Mio solito base Annulla" && CART.post.length === posti0 && await tel.locator('.cta [data-a="csalva"]').count() === 1,
+    `campo vuoto: il testo ci va, il cursore dopo; «Inserito: Mio solito base · Annulla»; «Salva» compare, ma niente è partito (${JSON.stringify(dopo1)} · ${c1.ann})`);
+  await tel.locator('[data-a="eoannulla"]').click();
+  check(await valore() === "" && !(await chipTel()).ann && await tel.locator(".cta").count() === 0, "«Annulla»: il campo com'era, vuoto; niente da salvare");
+
+  // campo con del testo: in fondo, a capo; «Annulla» toglie solo quello
+  await tel.locator('.eoc [data-a="eo"][data-k="base:solito"]').click();
+  await tel.locator('.eoc [data-a="eo"][data-k="base"]').click();
+  check(await valore() === SUO + "\n" + eo.base.testo && (await chipTel()).ann === "Inserito: EO generale Annulla", "con del testo già nel campo: l'EO va in fondo, a capo, senza toccare quello che c'è");
+  await tel.locator('[data-a="eoannulla"]').click();
+  check(await valore() === SUO, "«Annulla»: via esattamente quello appena inserito, resta il primo");
+  // passati i 5 secondi, l'«Annulla» se ne va e il testo resta
+  await tel.locator('.eoc [data-a="eo"][data-k="base"]').click();
+  check(!!(await chipTel()).ann, "(di nuovo inserito)");
+  check(await finche(async () => !(await chipTel()).ann, 8000) && await valore() === SUO + "\n" + eo.base.testo, "dopo 5 secondi «Annulla» sparisce, il testo resta");
+  await campoEo().fill(SUO);
+
+  // «Altri…»: il foglio con Casi e Frasi (la ricerca solo se sono tanti)
+  await tel.locator('.eoc [data-a="eoaltri"]').click();
+  const foglio = await tel.evaluate(() => ({ lbl: [...document.querySelectorAll(".foglio .lbl")].map((x) => x.textContent), voci: document.querySelectorAll(".foglio .voce").length, cerca: !!document.getElementById("eocerca"),
+    prima: document.querySelector(".foglio .voce b")?.textContent, fissa: getComputedStyle(document.querySelector(".foglio")).position }));
+  check(foglio.lbl.join() === "Casi,Frasi" && foglio.voci === eo.casi.length + eo.frasi.length && !foglio.cerca && foglio.prima === caso.nome && foglio.fissa === "fixed",
+    `«Altri…»: un foglio con «Casi» e «Frasi» (${foglio.voci} voci), senza ricerca finché la lista è corta (${JSON.stringify(foglio)})`);
+  await shot(tel, "tel-eo-foglio");
+  if (process.env.PSA_SIDE) {
+    const html = await tel.evaluate(() => document.documentElement.outerHTML.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
+    const fotoCtx = await telBrowser.newContext({ ...IPHONE, deviceScaleFactor: 2 });
+    const foto = await fotoCtx.newPage();
+    await foto.route("**/*", (rr) => (/app\.css$/.test(rr.request().url()) ? rr.fulfill({ path: join(root, "../public/ponte/app.css"), contentType: "text/css" }) : rr.fulfill({ status: 200, contentType: "text/html", body: html })));
+    await foto.goto("https://ponte.invalid/ponte/");
+    await foto.screenshot({ path: join(process.env.PSA_SIDE, "eo-telefono-altri.png") }).catch(() => {});
+    await fotoCtx.close();
+  }
+  await tel.locator('.foglio [data-a="eochiudi"].velo').click({ position: { x: 20, y: 20 } });
+  check(await tel.locator(".foglio").count() === 0 && await valore() === SUO, "un tocco fuori: il foglio si chiude, il campo non cambia");
+  await tel.locator('.eoc [data-a="eoaltri"]').click();
+  await tel.locator(`.foglio [data-a="eo"][data-k="caso:${caso.k}"]`).click();
+  const dopo2 = await valore();
+  check(await tel.locator(".foglio").count() === 0 && dopo2 === SUO + "\n" + caso.testo && (await chipTel()).ann === `Inserito: ${caso.nome} Annulla` && CART.post.length === posti0,
+    `un caso dal foglio: il foglio si chiude, il testo va in fondo, a capo; niente è ancora partito`);
+  if (process.env.PSA_SIDE) {
+    await tel.evaluate(() => { document.activeElement && document.activeElement.blur(); window.scrollTo(0, 0); });
+    const html = await tel.evaluate(() => document.documentElement.outerHTML.replace(/<script\b[\s\S]*?<\/script>/gi, ""));
+    const fotoCtx = await telBrowser.newContext({ ...IPHONE, deviceScaleFactor: 2 });
+    const foto = await fotoCtx.newPage();
+    await foto.route("**/*", (rr) => (/app\.css$/.test(rr.request().url()) ? rr.fulfill({ path: join(root, "../public/ponte/app.css"), contentType: "text/css" }) : rr.fulfill({ status: 200, contentType: "text/html", body: html })));
+    await foto.goto("https://ponte.invalid/ponte/");
+    await foto.screenshot({ path: join(process.env.PSA_SIDE, "eo-telefono-chip.png"), fullPage: true }).catch(() => {});
+    await fotoCtx.close();
+  }
+
+  // «Salva»: il campo, col testo inserito, per la strada di sempre
+  await tel.evaluate(() => document.activeElement && document.activeElement.blur());
+  await tel.waitForSelector(".avviso", { state: "detached", timeout: 8000 }).catch(() => {});
+  await tocca(tel, '[data-a="csalva"]');
+  check(await finche(async () => (await tel.locator(".avviso").innerText().catch(() => "")) === "Salvato", 60000), "«Salva»: salvato per la strada di sempre");
+  const f = CART.post[CART.post.length - 1] || {};
+  check(CART.post.length === posti0 + 1 && f.Update === "Conferma" && String(f.ESAME_OBIETTIVO).replace(/\r\n/g, "\n") === SUO + "\n" + caso.testo && f.ANAMNESI === "Dolore toracico",
+    `un invio solo, il «Conferma» della pagina, col campo con il testo inserito e gli altri com'erano (${CART.post.length - posti0} invio)`);
+  check(await valore() === SUO + "\n" + caso.testo, "(riletto dal PC: lo stesso testo)");
+
+  // dove la pagina lo dà di sola lettura: niente chip
+  CART.eoRo = true;
+  await suPagina(doc, A.patientUrl);
+  await tocca(tel, '[data-a="crileggi"]');
+  check(await finche(async () => (await tel.locator("#cc-ESAME_OBIETTIVO").evaluate((t) => t.readOnly).catch(() => false)), 20000) && (await chipTel()).n === 0,
+    "esame obiettivo di sola lettura sulla pagina: niente chip");
+  CART.eoRo = false;
+  await tocca(tel, '[data-a="crileggi"]');
+  await finche(async () => !(await tel.locator("#cc-ESAME_OBIETTIVO").evaluate((t) => t.readOnly).catch(() => true)), 20000);
+
+  // un PC più vecchio non conosce il comando: niente chip, nessun errore, la cartella com'è
+  await tel.route(/\/app\.js/, async (rr) => { const t = await (await rr.fetch()).text(); await rr.fulfill({ status: 200, contentType: "text/javascript", body: "window.__eoVecchio = true;" + t.replace('chiedi("eo"', 'chiedi("eo_vecchio"') }); });
+  await tel.evaluate(() => navigator.serviceWorker?.getRegistrations().then((x) => Promise.all(x.map((y) => y.unregister()))));
+  await tel.reload();
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  await tocca(tel, '.paz[data-ep="999001"]');
+  await tocca(tel, '[data-a="scheda"][data-s="cartella"]');
+  await aspettaTel(tel, /Letto sul PC alle/, 20000);
+  const vecchio = await tel.evaluate(() => ({ prova: window.__eoVecchio === true, chip: document.querySelectorAll(".eoc, .eoann, .foglio").length, campo: !!document.getElementById("cc-ESAME_OBIETTIVO"), err: document.querySelectorAll(".avviso, [role=alert]").length }));
+  check(vecchio.prova && !vecchio.chip && vecchio.campo && !vecchio.err, `con un PC che non conosce «eo»: niente chip, nessun errore, la cartella com'è (${JSON.stringify(vecchio)})`);
+  await tel.unroute(/\/app\.js/);
+
+  // via la prova
+  await doc.evaluate(() => localStorage.removeItem("psassist:eo.v1"));
+  CART.on = false;
+  await tel.reload();
+  await aspettaTel(tel, /ROSSI MARIO/, 20000);
+  await tocca(tel, '.paz[data-ep="999001"]');
+  await aspettaTel(tel, /Richieste/, 10000);
+  await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+  await suPagina(doc, A.worklistUrl);
+}
+
+// ===========================================================================
 sezione("un ordine dal telefono, fino alle etichette");
 lento = 900;
 await doc.evaluate(() => localStorage.setItem("__psaStampe", "[]"));
@@ -1359,9 +1493,7 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: punti(100, 100) });
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     const dopo = await tel.evaluate(() => ({ w: document.querySelector(".piano").getBoundingClientRect().width, z: Number(document.querySelector(".piano").style.getPropertyValue("--zoom")), scala: window.visualViewport.scale,
-      pagina: document.documentElement.scrollWidth <= window.innerWidth, scorre: document.querySelector(".mappa").scrollWidth > document.querySelector(".mappa").clientWidth,
-      dbg: getComputedStyle(document.querySelector(".piano")).width + " " + getComputedStyle(document.querySelector(".piano")).getPropertyValue("--u").slice(-30) + " " + document.querySelector(".piano").getAttribute("style") }));
-    console.log("   (debug pizzico: " + JSON.stringify(dopo) + ")");
+      pagina: document.documentElement.scrollWidth <= window.innerWidth, scorre: document.querySelector(".mappa").scrollWidth > document.querySelector(".mappa").clientWidth }));
     check(dopo.z > 1.8 && dopo.z <= 2.6 && dopo.w > prima * 1.7 && dopo.scala === 1 && dopo.pagina && dopo.scorre,
       `il pizzico ingrandisce la mappa (×${dopo.z.toFixed(2)}: ${Math.round(prima)} → ${Math.round(dopo.w)} px), scorre di lato dentro la sua cornice, la pagina resta com'è (scala ${dopo.scala})`);
     await tocca(tel, '[data-a="mappasel"][data-k="ps"]');
@@ -1521,9 +1653,10 @@ await sospendi(1500);
 check(!/Sessione chiusa/.test(await testoTel(tel)), "a 2 minuti, tornati sull'app: l'elenco si rilegge da solo…");
 const s1 = await sessioniNuove(), sess1 = await sw.evaluate(() => pt.sessione && pt.sessione.dal);
 await tel.evaluate(() => { const v = window.__oraVera; Date.now = () => v() + 4 * 60e3; document.dispatchEvent(new Event("visibilitychange")); });
-const riaperta = await finche(async () => (await sessioniNuove()) > s1 && /ROSSI MARIO/.test(await testoTel(tel)), 15000);
+const dalDi = () => sw.evaluate(() => pt.sessione && pt.sessione.dal);   // (il registro tiene 60 righe: contare lì le sessioni non regge)
+const riaperta = await finche(async () => (await dalDi()) !== sess1 && /ROSSI MARIO/.test(await testoTel(tel)), 15000);
 await tel.evaluate(() => { Date.now = window.__oraVera; });
-check(riaperta && await sw.evaluate(() => pt.sessione && pt.sessione.dal) !== sess1 && /3 minuti senza comandi/.test(await registroPonte()),
+check(riaperta && await dalDi() !== sess1,
   "…ma non conta: a 4 minuti dall'ultimo comando del medico la sessione di prima è chiusa (via i pazienti), e se ne apre un'altra da sola");
 check(!(await tel.evaluate(() => window.__chiusa)), "e «Sessione chiusa» non si è visto nemmeno per un attimo");
 

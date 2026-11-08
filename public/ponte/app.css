@@ -338,3 +338,20 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
   border-radius: 4px; background: var(--carta); padding: 2px 3px 2px 4px; text-align: left; font: inherit; color: var(--testo); line-height: 1.15; }
 .pa .ln { flex: 1 1 auto; --n: 7; }
 .pa .mk { flex: none; }
+
+/* --- gli EO salvati sopra l'esame obiettivo ----------------------------- */
+.eoc { margin: 0 0 8px; gap: 6px; }
+.eoann { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; padding: 0 2px 0 12px; border-radius: 10px; background: var(--blu-chiaro); color: var(--blu); font-size: 13.5px; font-weight: 600; }
+.eoann button { min-height: 44px; min-width: 44px; border: 0; background: none; color: var(--blu); font-weight: 700; font-size: 14px; padding: 0 12px; }
+.foglio { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.foglio .velo { position: absolute; inset: 0; border: 0; background: rgba(9, 20, 30, .45); }
+.foglio .pannello { position: relative; width: 100%; max-width: 760px; max-height: 78vh; overflow: auto; background: var(--fondo); border-radius: 18px 18px 0 0; box-shadow: 0 -10px 30px var(--ombra);
+  padding: 8px var(--dx) calc(18px + env(safe-area-inset-bottom)) var(--sx); overscroll-behavior: contain; }
+.foglio .capo { display: flex; align-items: center; justify-content: space-between; font-size: 17px; margin: 0 4px 2px; }
+.foglio .capo .chiudi { min-height: 44px; min-width: 44px; border: 0; background: none; color: var(--azione); font-size: 16px; font-weight: 650; padding: 0 4px; }
+.foglio input { display: block; width: 100%; min-height: 44px; margin: 4px 0 2px; border: 1px solid var(--campo); border-radius: 10px; background: var(--carta); padding: 8px 12px; font-size: 16px; }
+.foglio .voce { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; min-height: 52px; text-align: left; border: 0; background: none; padding: 9px 14px; }
+.foglio .voce + .voce { border-top: 1px solid var(--linea); }
+.foglio .voce:active { background: var(--fondo); }
+.foglio .voce b { font-size: 16px; font-weight: 650; }
+.foglio .voce span { max-width: 100%; font-size: 13px; color: var(--grigio); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

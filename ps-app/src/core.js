@@ -16847,6 +16847,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       })),
     };
   }
+  // Gli EO salvati, per la cartella del telefono (sola lettura): chiave, nome, gruppo e testo — i suoi, con le
+  // sue modifiche (eo.v1), come li copia il tab «EO». Niente si legge dal gestionale.
+  function ponteEo() {
+    return Object.entries(eoVoci()).slice(0, 80).map(([k, v]) => ({ k, nome: String(v.nome || k).slice(0, 60), gruppo: v.gruppo, testo: String(v.testo).slice(0, 4000) }));
+  }
   // Lo stato della riga del tabellone, in dati, per la riga del telefono: per
   // tipo solo quello che aspetta, col tempo e la sua banda («Lab 50′»), o ✓ se
   // è tornato tutto (come nell'area); il pallino del letto (segnaleLetto) e il
@@ -17053,6 +17058,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     };
     if (cmd === "pazienti") return fatto({ ok: true, dati: pontePazienti(), registro: "elenco dei pazienti" });
     if (cmd === "mappa") return { ok: true, dati: ponteMappe() };
+    if (cmd === "eo") return { ok: true, dati: ponteEo() };
     // l'app aperta (o tornata davanti) sull'iPhone: la smart si rilegge dietro, e lo si dice al telefono, che richiede fra poco
     if (cmd === "triage") {
       const r = a.rileggi ? await smartSync(false).catch(() => null) : null;
