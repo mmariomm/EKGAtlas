@@ -1601,7 +1601,7 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   `registra-esporta.html`). Dopo **60 minuti** si ferma e si salva da sola. Il grezzo si cancella
   nello stesso momento in cui lo zip è salvato (se il salvataggio non riesce, resta: «Salva di
   nuovo» o «Cancellala da questo PC»; comunque dopo 12 ore se ne va).
-- **Dove il pannello non c'è** (il SISS, il portale, le finestre del referto) mentre registri
+- **Dove il pannello non c'è** (il SISS, il portale, le finestre del referto, l'eViewer) mentre registri
   compare la pill **● Registrando…**: è la stessa pill del pannello ridotto, nello stesso posto in
   alto a destra (solo nella finestra principale, mai nei riquadri); si **trascina**, e resta dove la
   lasci, sito per sito (`storage.local` «registra.pill»), sempre dentro lo schermo. Un clic →
@@ -1630,7 +1630,7 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   sono 5–20 pagine al minuto di ~45 KB e ~100 KB di flusso al minuto, quindi in memoria, di
   solito, fra 1 e 3 MB; uno zip automatico ne pesa altrettanto. In più un controllo ogni 30
   secondi, solo finché c'è qualcosa da potare.
-- **Cosa si registra**, solo sul gestionale, sul portale e sul SISS: ogni pagina che apri, in ogni scheda
+- **Cosa si registra**, solo sul gestionale, sul portale, sul SISS e sul visualizzatore di immagini: ogni pagina che apri, in ogni scheda
   e finestra (il DOM com'è dopo il caricamento, senza il pannello); il flusso delle richieste,
   solo *osservato* (`chrome.webRequest`: metodo, indirizzo, stato, rinvii, tempi, tipo, scheda,
   e quali le ha fatte l'estensione); il **testo** dei PDF (referti, etichette), con pagine e misura.
@@ -1670,7 +1670,24 @@ Per ricostruire le pagine di esempio, imparare il flusso e i tempi veri e costru
   prima di mandarlo**.
 - Dentro: `pagine/NNN-<tipo>.html`, `flusso.json`, `pdf/NNN.json`, `errori.json`, `riepilogo.txt`
   (cosa è stato registrato, quante sostituzioni per tipo, l'esito del controllo, la versione, le
-  icone usate; per uno automatico, dopo che cosa).
+  icone usate; per uno automatico, dopo che cosa), e `eviewer.json` se c'è il visualizzatore.
+- **Il visualizzatore di immagini (eViewer)**, quello che apre la fotocamera «IMMAGINE» del paziente
+  (`http://mmeviewer.multimedica.root.lan:18188`, un host, ogni porta, http e https: in `host_permissions`
+  e nei content script; con «Aggiorna app» Chrome **non chiede niente** — l'estensione non
+  pacchettizzata ricaricata ha subito il permesso —, ma una finestra dell'eViewer già aperta va
+  riaperta). Si registra come il gestionale — istantanee del DOM (a ogni cambiamento, al più 15 al
+  minuto, come sul SISS), il flusso, e in più i **clic** — ma **senza immagini**: le miniature `data:`
+  escono già nella pagina, i canvas non hanno pixel, nessun byte d'immagine viene letto. Una sonda nel
+  mondo della pagina (`registra-sonda.js`, che conta e basta) dice i contesti dei `<canvas>` (2D/WebGL,
+  misura, `preserveDrawingBuffer`), da dove disegnano, i WebSocket e i blob; delle richieste del
+  visualizzatore anche misura, `Cache-Control`, ETag/Last-Modified e chi le ha chieste. Anonimizzato
+  come il resto, più la sovraimpressione DICOM: `COGNOME^NOME` (anche senza nome noto dal gestionale) →
+  nome finto nella stessa forma, nascita spostata (l'età resta), `ID`, accettazione e UID → altri
+  sempre uguali, istituto → `OSPEDALE ESEMPIO`, operatori → `OPERATORE n`; il gettone `account` e ogni
+  gettone dell'indirizzo → vuoto. Il controllo cerca i nomi veri anche con `^` e girati. In
+  `riepilogo.txt` la sezione **Visualizzatore di immagini**: le richieste d'immagine per modello di
+  indirizzo (contenuto, misura, cache), canvas, miniature, riquadri, WebSocket, e che richieste fa
+  ogni tocco su una miniatura — per decidere come mostrare le radiografie sul telefono.
 
 ### Registra sul SISS (Prescrittivo Regionale)
 
@@ -2267,7 +2284,8 @@ ps-app/
 ├── extension/registra*  ← ⋯ → Registrazioni: registra.js (service worker), registra-pagina.js (nella pagina,
 │                          anche sul SISS), registra-pill.js (la pill: regole CSS da core.js),
 │                          registra-db.js (il suo IndexedDB: grezzo, ultimi minuti, zip), registra-esporta.html/.js
-│                          (il documento fuori schermo che salva lo zip), registra-anonimo.js (anonimizza e controlla)
+│                          (il documento fuori schermo che salva lo zip), registra-anonimo.js (anonimizza e controlla),
+│                          registra-sonda.js (nell'eViewer, nel mondo della pagina: canvas, WebSocket, blob — conta e basta)
 ├── tools/build.mjs      ← genera extension/content.js, il bookmarklet, extension/ponte-cripto.js,
 │                          extension/ponte-host.js, extension/registra-pdf.js, registra-pill.js e registra-vocabolario.json
 ├── tools/icons.mjs      ← genera le icone PNG (niente binari a mano)

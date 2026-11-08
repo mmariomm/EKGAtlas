@@ -28,15 +28,29 @@
  *     con un campo così si registra solo nella forma, senza testo;
  *   - gli host fuori dal SISS che la pagina chiama (solo il nome, dalla
  *     Resource Timing): per sapere se manca qualcosa al perimetro.
+ * Sul visualizzatore di immagini del PACS (eViewer, la fotocamera «IMMAGINE»
+ * del gestionale: un'app a canvas) le stesse istantanee a viste, e in più:
+ *   - MAI un'immagine: ogni indirizzo data: (le miniature, gli sfondi) esce
+ *     dall'istantanea prima di lasciare la pagina; i canvas non hanno pixel nel DOM;
+ *   - una descrizione tecnica (canvas e contesto, miniature <img> e che
+ *     indirizzi hanno, riquadri, WebSocket, blob, script, le misure della
+ *     Resource Timing): numeri e tipi, chiesti alla sonda (registra-sonda.js,
+ *     nel mondo della pagina) — mai un pixel, mai un byte;
+ *   - i clic (dove: il tag, la classe, il testo corto, se è una miniatura),
+ *     per sapere che richieste fa un tocco su una miniatura.
  * Niente esce dal PC: tutto va al service worker, che lo tiene finché il
  * medico non salva (o cancella) la registrazione, o — gli ultimi minuti — lo pota. Nessuno script nel mondo
- * della pagina, nessuna richiesta in più.
+ * della pagina (sul visualizzatore solo la sonda, che conta e descrive), nessuna richiesta in più.
  */
 (() => {
   if (globalThis.__psaRegistra) return;
   globalThis.__psaRegistra = true;
   const SISS = new Set(["https://dcss.cgi.crs.lombardia.it", "https://operatorisiss.servizirl.it"]);
   const suSiss = SISS.has(location.origin);
+  // il PACS: un solo host, ogni porta (anche in manifest.json, registra.js, registra-anonimo.js)
+  const VIEWER = "mmeviewer.multimedica.root.lan";
+  const suViewer = location.hostname === VIEWER;
+  const aViste = suSiss || suViewer;   // un'app che cambia senza ricaricare: istantanee a ogni cambiamento
   const inAlto = (() => { try { return window.top === window; } catch { return false; } })();
   // rec: la registrazione a mano (con la pill); attivo: si tiene la pagina —
   // a mano, o per la registrazione automatica (gli ultimi minuti, senza pill:
@@ -51,7 +65,7 @@
     if (rec && !prima) { ultima = ""; visti.clear(); }
     if (attivo && (!primaA || (rec && !prima)) && document.readyState === "complete") setTimeout(() => scatta("caricata"), 300);
     if (rec !== prima) pill();
-    if (attivo !== primaA && suSiss) osserva();
+    if (attivo !== primaA && aViste) osserva();
   }).catch(() => {});
   try {
     leggi();
@@ -172,7 +186,7 @@
   let rinviato = null;
   function scatta(motivo) {
     if (!attivo || !document.documentElement) return;
-    if (suSiss) {
+    if (aViste) {
       const ora = Date.now();
       while (minuto.length && ora - minuto[0] > 60e3) minuto.shift();
       if (minuto.length >= MAX_MINUTO && motivo !== "uscita") {
@@ -196,13 +210,19 @@
         if (fuori.size) extra.fuori = [...fuori].slice(0, 20);
       } else {
         c.querySelectorAll('input[type="password"]').forEach((k) => { k.removeAttribute("value"); k.setAttribute("data-psa-escluso", "credenziale"); });
+        if (suViewer) {
+          try { extra.tecnica = tecnica(); } catch { /* l'istantanea va lo stesso */ }
+          if (fuori.size) extra.fuori = [...fuori].slice(0, 20);
+        }
       }
       c.querySelectorAll(NOI).forEach((n) => n.remove());   // il pannello e la pill non sono la pagina
       const dt = document.doctype;
       html = (dt ? `<!DOCTYPE ${dt.name}${dt.publicId ? ` PUBLIC "${dt.publicId}"` : ""}${dt.systemId ? ` "${dt.systemId}"` : ""}>\n` : "") + c.outerHTML;
+      // il visualizzatore: nessuna immagine esce dalla pagina, nemmeno una miniatura
+      if (suViewer) html = html.replace(DATI_RE, "data:,");
     } catch { return; }
     if (html === ultima) return;
-    if (suSiss) {
+    if (aViste) {
       // mai due uguali: la quiete non rifotografa una vista già vista
       const h = impronta(location.href + "\n" + html);
       if (motivo === "quiete" && visti.has(h)) return;
@@ -260,16 +280,121 @@
       try { if (globalThis.navigation) globalThis.navigation.addEventListener("currententrychange", () => attivo && setTimeout(rotta, 0)); } catch { /* niente */ }
     }
     giro = setInterval(rotta, 500);   // pushState/replaceState, anche senza la Navigation API
-    // gli host chiamati fuori dal SISS: solo il nome (non sono registrati)
+    // gli host chiamati fuori dal SISS (o dal visualizzatore): solo il nome (non sono registrati);
+    // sul visualizzatore anche le misure di ogni risorsa (Resource Timing: solo numeri)
     try {
       perf = new PerformanceObserver((l) => {
         for (const e of l.getEntries()) {
-          if (!/^(xmlhttprequest|fetch|beacon|other)$/.test(e.initiatorType)) continue;
-          try { const o = new URL(e.name).origin; if (!SISS.has(o) && /^https?:/.test(o)) fuori.add(o); } catch { /* niente */ }
+          if (suViewer) risorsa(e);
+          else if (!/^(xmlhttprequest|fetch|beacon|other)$/.test(e.initiatorType)) continue;
+          try {
+            const u = new URL(e.name);
+            if (/^https?:$/.test(u.protocol) && (suViewer ? u.hostname !== VIEWER : !SISS.has(u.origin))) fuori.add(u.origin);
+          } catch { /* niente */ }
         }
       });
       perf.observe({ type: "resource", buffered: true });
     } catch { perf = null; }
+  }
+
+  // ------------------------------------- il visualizzatore (PACS): com'è fatto
+  // Le immagini mai: gli indirizzi data: escono dall'istantanea (le miniature,
+  // gli sfondi), i canvas non hanno pixel nel DOM. Quello che si tiene è la
+  // forma: numeri, tipi, percorsi senza i valori della query (e anche quelli,
+  // all'esportazione, anonimizzati).
+  const DATI_RE = /data:(?:image|application|video|audio|font)\/[^,"'\s<>)]{0,120},[^"'\s<>)]*/gi;
+  const tipoSrc = (s) => {
+    s = String(s || "");
+    if (!s) return "vuoto";
+    if (/^data:/i.test(s)) return "data:" + ((/^data:([\w.+/-]{1,40})/i.exec(s) || [])[1] || "").toLowerCase();
+    if (/^blob:/i.test(s)) return "blob:";
+    return /^(?:https?:|\/|[\w.-]+(?:[/?]|$))/i.test(s) ? "http" : "altro";
+  };
+  // un indirizzo senza i valori della query: origine, percorso, nomi dei parametri
+  const senzaQuery = (s) => {
+    try {
+      const u = new URL(String(s), location.href);
+      if (!/^(?:https?|wss?):$/.test(u.protocol)) return "";
+      return (u.origin + u.pathname).slice(0, 400) + (u.search ? "?" + [...new Set(u.searchParams.keys())].sort().slice(0, 20).join("&") : "");
+    } catch { return ""; }
+  };
+  const risorse = new Map();   // «tipo indirizzo» → misure (Resource Timing)
+  function risorsa(e) {
+    const k = `${String(e.initiatorType || "altro").slice(0, 20)} ${senzaQuery(e.name)}`;
+    let x = risorse.get(k);
+    if (!x) {
+      if (risorse.size >= 300) return;
+      x = { n: 0, trasferiti: 0, corpo: 0, decodificati: 0, max: 0, ms: 0, cache: 0 };
+      risorse.set(k, x);
+    }
+    x.n++; x.trasferiti += e.transferSize || 0; x.corpo += e.encodedBodySize || 0; x.decodificati += e.decodedBodySize || 0;
+    x.max = Math.max(x.max, e.encodedBodySize || 0); x.ms += Math.round(e.duration || 0);
+    if (e.deliveryType === "cache" || (!e.transferSize && e.decodedBodySize)) x.cache++;
+  }
+  // la sonda nel mondo della pagina (registra-sonda.js): risponde subito, a un evento
+  function sonda() {
+    let r = null;
+    const h = (e) => { if (typeof e.detail === "string" && e.detail.length < 300000) r = e.detail; };
+    document.addEventListener("psa-sonda", h);
+    try { document.dispatchEvent(new CustomEvent("psa-sonda-chiedi")); } finally { document.removeEventListener("psa-sonda", h); }
+    try { return r ? JSON.parse(r) : null; } catch { return null; }
+  }
+  const schermo = (el) => { const b = el.getBoundingClientRect(); return [Math.round(b.width), Math.round(b.height)]; };
+  const aGruppi = (lista, chiave, fai, max) => {
+    const m = new Map();
+    for (const el of lista) {
+      const k = chiave(el);
+      if (!m.has(k)) { if (m.size >= max) continue; m.set(k, fai(el)); }
+      m.get(k).n++;
+    }
+    return [...m.values()];
+  };
+  const srcDi = (im) => im.currentSrc || im.getAttribute("src") || "";
+  const sfondoDi = (el) => (/url\(\s*['"]?([^'")]*)/i.exec(el.getAttribute("style") || "") || [])[1] || "";
+  function tecnica() {
+    const s = sonda();
+    const canvas = [...document.querySelectorAll("canvas")].slice(0, 60).map((c, i) => {
+      const x = s && Array.isArray(s.canvas) ? s.canvas[i] : null;
+      return { larghezza: c.width, altezza: c.height, schermo: schermo(c), contesto: x ? x.tipo : null, preserveDrawingBuffer: x ? x.pdb : null, ...(x && x.wrf ? { willReadFrequently: true } : {}) };
+    });
+    const immagini = aGruppi([...document.images].slice(0, 3000), (im) => { const t = tipoSrc(srcDi(im)); return `${t} ${t === "http" ? senzaQuery(srcDi(im)) : ""}`; }, (im) => {
+      const src = srcDi(im), tipo = tipoSrc(src);
+      return { tipo, ...(tipo === "http" ? { indirizzo: senzaQuery(src) } : {}), ...(tipo.startsWith("data:") ? { caratteri: src.length } : {}),
+        naturale: [im.naturalWidth, im.naturalHeight], schermo: schermo(im), n: 0 };
+    }, 100);
+    const sfondi = aGruppi([...document.querySelectorAll('[style*="url("]')].slice(0, 3000), (el) => tipoSrc(sfondoDi(el)), (el) => ({ tipo: tipoSrc(sfondoDi(el)), n: 0 }), 20);
+    const riquadri = [...document.querySelectorAll("iframe, frame")].slice(0, 20).map((f) => ({ tipo: tipoSrc(f.getAttribute("src") || ""), indirizzo: senzaQuery(f.src || ""), schermo: schermo(f) }));
+    return {
+      sonda: !!s, elementi: document.getElementsByTagName("*").length, canvas, immagini, sfondi, riquadri,
+      video: document.querySelectorAll("video").length, svg: document.querySelectorAll("svg").length, oggetti: document.querySelectorAll("object, embed").length,
+      script: [...document.scripts].map((x) => x.src && senzaQuery(x.src)).filter(Boolean).slice(0, 60), scriptNellaPagina: [...document.scripts].filter((x) => !x.src).length,
+      risorse: [...risorse].map(([chiave, x]) => ({ chiave, ...x })),
+      ...(s ? { contesti: s.perTipo || {}, disegni: s.disegni || {}, websocket: Array.isArray(s.prese) ? s.prese.slice(0, 20) : [], blob: s.blob || {} } : {}),
+    };
+  }
+  // i clic: dove (tag, classe, un testo corto, se è una miniatura), mai altro
+  function descrivi(el) {
+    const strada = [];
+    for (let n = el; n && n.nodeType === 1 && n !== document.body && strada.length < 5; n = n.parentElement) {
+      strada.push({ tag: n.tagName.toLowerCase(), ...(n.id ? { id: n.id.slice(0, 80) } : {}),
+        ...(typeof n.className === "string" && n.className.trim() ? { classe: n.className.trim().slice(0, 120) } : {}),
+        ...(n.getAttribute("role") ? { ruolo: n.getAttribute("role").slice(0, 30) } : {}) });
+    }
+    const img = el.tagName === "IMG" ? el : el.querySelector && el.querySelector("img");
+    const src = img ? srcDi(img) : "";
+    return { strada, testo: String(el.innerText || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80), schermo: schermo(el),
+      ...(img ? { img: { tipo: tipoSrc(src), ...(tipoSrc(src) === "http" ? { indirizzo: senzaQuery(src) } : {}), naturale: [img.naturalWidth, img.naturalHeight] } } : {}),
+      ...(el.tagName === "CANVAS" || (el.querySelector && el.querySelector("canvas")) ? { canvas: true } : {}) };
+  }
+  if (suViewer) {
+    for (const ev of ["click", "dblclick"]) {
+      addEventListener(ev, (e) => {
+        if (!attivo || !e.isTrusted) return;
+        const el = e.target && e.target.nodeType === 1 ? e.target : e.target && e.target.parentElement;
+        if (!el || (el.closest && el.closest(NOI))) return;
+        try { manda({ t: "regClic", tipo: ev, ts: Date.now(), url: location.href, bersaglio: descrivi(el) }); } catch { /* niente */ }
+      }, true);
+    }
   }
 
   // ----------------------------------------- la pill «● Registrando…»

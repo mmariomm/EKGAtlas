@@ -296,6 +296,119 @@ check(!/RSSMRA80A01H501U|VERDONE/.test(riep3), "e senza i valori");
   check(!/VASSALLO|NINO|ZUCCHI|ANGELO|CORSINI|DARIO|FABBRI|ORNELLA|09\/09\/1940/i.test(tuttoN), `un nome non diventa «etichetta»: linguetta senza episodio, intestazione di una pagina sola, link con parametri, utente (${tuttoN.match(/VASSALLO|ZUCCHI|CORSINI|FABBRI/gi)})`);
 }
 
+// ------------------------------------- il visualizzatore di immagini (PACS)
+// La fotocamera del paziente apre l'eViewer (un altro host, http, porta 18188)
+// dopo un rinvio del gestionale, con un gettone «account» nell'indirizzo. La
+// sovraimpressione DICOM ha il paziente in forma COGNOME^NOME, nascita, ID,
+// accettazione, data dello studio, istituto, operatore; uno script ha le
+// stesse chiavi DICOM in JSON; la forma tecnica (canvas, miniature, WebSocket)
+// e un clic su una miniatura arrivano da registra-pagina.js. Tutto inventato.
+check(!nomi.includes("eviewer.json") && !/Visualizzatore di immagini/.test(riep), "senza il visualizzatore: niente eviewer.json, niente sezione nel riepilogo");
+{
+  const V = "http://mmeviewer.multimedica.root.lan:18188";
+  const TOK = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822c";
+  const TOK2 = "eyJhbGciOiJIUzI1NiJ9xQk3Lm9Pq2Rt8Zw4Vb7Nc1";
+  const ACC = "16146285-1", PID = "4455667", UID1 = "1.2.392.200036.9125.4.0.1234.5678.9", UIDS = "1.2.392.200036.9125.2.1234567.20261029";
+  const vurl = `${V}/e4cure/eviewer/viewer?requestType=STUDY&accessionNumber=${ACC}&account=${TOK}`;
+  const camera = `<a title="IMMAGINE" onclick="window.open('../../sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=7001234&amp;REFERTO_SISTEMA=HL7RIS&amp;REFERTO_ID=99887766','HL7RIS')"><img src="../Themes/AFC/images/foto.png"></a>`;
+  const viewer = `<!DOCTYPE html><html><head><title>eViewer</title><script>var studio = {"PatientName":"VERDONE^CARLO","PatientID":"${PID}","PatientBirthDate":"19500312",
+    "AccessionNumber":"${ACC}","StudyInstanceUID":"${UIDS}","00100010":{"vr":"PN","Value":[{"Alphabetic":"VERDONE^CARLO"}]}}; var sess = "${TOK2}";</script></head><body>
+    <div class="studi"><div class="serie" data-uid="${UID1}"><img class="thumb" src="data:,"><span>1 DX - T Piede DP</span></div>
+    <div class="serie"><img class="thumb" src="/e4cure/eviewer/thumb?uid=${UID1}&amp;account=${TOK}"><span>4 DX - W Torace PA</span></div><div>All images</div></div>
+    <canvas id="vista" width="512" height="512"></canvas>
+    <div class="ov"><div>VERDONE^CARLO</div><div>Birth: 12/03/1950 (76Y)</div><div>Sex: M</div><div>ID: ${PID}</div><div>Acc: ${ACC}</div>
+    <div>Study Date: 29/10/2026 10:15:00</div><div>Age At Study: 076Y</div><div>KVP: 70</div><div>MULTIMEDICA S.p.A.</div><div>Operator: GALBIATI^LUCIO</div>
+    <div>Referring Physician:</div><div>VERDI^GINO</div><div>Institution: Ospedale San Felice</div><div>W: 4095 L: 2047</div><div>Carlo Verdone</div></div></body></html>`;
+  const tecnica = { sonda: true, elementi: 40, canvas: [{ larghezza: 512, altezza: 512, schermo: [512, 512], contesto: "webgl2", preserveDrawingBuffer: false }],
+    immagini: [{ tipo: "data:image/png", caratteri: 1400, naturale: [64, 64], schermo: [64, 64], n: 1 }, { tipo: "http", indirizzo: `${V}/e4cure/eviewer/thumb?account&uid`, naturale: [64, 64], schermo: [64, 64], n: 1 }],
+    sfondi: [], riquadri: [], video: 0, svg: 0, oggetti: 0, script: [`${V}/e4cure/eviewer/js/viewer.js`], scriptNellaPagina: 1,
+    risorse: [{ chiave: `img ${V}/e4cure/eviewer/render/${UID1}.jpg`, n: 2, trasferiti: 61000, corpo: 60000, decodificati: 60000, max: 30000, ms: 80, cache: 0 }],
+    contesti: { webgl2: { n: 1, pdb: 0 }, "2d": { n: 2, pdb: 0 } }, disegni: { "webgl texImage2D pixel-Uint16Array": 2, "2d drawImage img-stessa-origine": 3 },
+    websocket: [{ percorso: `ws://mmeviewer.multimedica.root.lan:18188/e4cure/ws`, parametri: ["account"], ricevuti: 3, binari: 3, byteRicevuti: 1200, mandati: 1, byteMandati: 4, chiusa: false }],
+    blob: { "image/jpeg": { n: 1, byte: 12000, max: 12000 } } };
+  const T2 = T0 + 60e3;
+  const rv = anonimizza({ versione: "9.9.9", inizio: T0, fine: T0 + 10 * 60e3, origini: { gestionale: G, viewer: ["mmeviewer.multimedica.root.lan"] },
+    pagine: [
+      { url: `${G}/sa4pso/restrict/menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${P1.ep}`, titolo: P1.nome, html: paziente(P1, camera), ts: T0 + 1000, scheda: 11, alto: true },
+      { url: vurl, titolo: "VERDONE^CARLO - eViewer", html: viewer, ts: T2, scheda: 21, alto: true, apertaDa: 11, motivo: "caricata", tecnica },
+    ],
+    flusso: [
+      { metodo: "GET", url: `${G}/sa4/restrict2/Sa4ViewerExtRedirect.do?ASSISTITO_ID=7001234&REFERTO_SISTEMA=HL7RIS&REFERTO_ID=99887766`, tipo: "main_frame", scheda: 21, inizio: T2 - 900, fine: T2 - 200, stato: 200,
+        contenuto: "text/html", rinvii: [{ stato: 302, a: vurl, t: T2 - 600 }] },
+      { metodo: "GET", url: `${V}/e4cure/eviewer/render/${UID1}.jpg?account=${TOK}`, tipo: "image", scheda: 21, inizio: T2 + 5100, fine: T2 + 5300, stato: 200, contenuto: "image/jpeg", viewer: true,
+        iniziatore: V, intestazioni: { tipo: "image/jpeg", lunghezza: 30000, cache: "private, max-age=3600", etag: true } },
+      { metodo: "GET", url: `${V}/e4cure/eviewer/wado?requestType=WADO&studyUID=${UIDS}&objectUID=${UID1}&contentType=application/dicom&account=${TOK}`, tipo: "xmlhttprequest", scheda: 21,
+        inizio: T2 + 5200, fine: T2 + 5600, stato: 200, contenuto: "application/dicom", viewer: true, intestazioni: { tipo: "application/dicom", lunghezza: 520000, cache: "no-cache" } },
+      { metodo: "POST", url: `${V}/e4cure/eviewer/api/log`, tipo: "xmlhttprequest", scheda: 21, inizio: T2 + 9000, fine: T2 + 9100, stato: 200, viewer: true,
+        corpo: { account: [TOK], patientName: ["VERDONE^CARLO"], accessionNumber: [ACC] } },
+    ],
+    clic: [{ tipo: "click", ts: T2 + 5000, scheda: 21, frame: 0, url: vurl, bersaglio: { strada: [{ tag: "img", classe: "thumb" }, { tag: "div", classe: "serie", id: `s-${UID1}` }],
+      testo: "4 DX - W Torace PA", schermo: [64, 64], img: { tipo: "http", indirizzo: `${V}/e4cure/eviewer/thumb?account&uid`, naturale: [64, 64] } } }],
+    schede: [{ id: 21, apertaDa: 11, finestra: 3, popup: true, ts: T2 - 1000 }],
+  }, { vocabolario, sfasamento: 30 });
+  const fv = rv.files, tv = Object.values(fv).join("\n");
+  const pv = fv[Object.keys(fv).find((n) => /^pagine\/\d{3}-eviewer-viewer\.html$/.test(n))] || "";
+  check(!!pv && !!fv["eviewer.json"], `visualizzatore: la pagina pagine/NNN-eviewer-viewer.html e eviewer.json (${Object.keys(fv).join(", ")})`);
+  const viaV = { "il cognome": "VERDONE", "il nome": "CARLO", "il medico che chiede (solo nel visualizzatore)": "VERDI", "e il suo nome": "GINO", "l'operatore": "GALBIATI",
+    "il gettone account": TOK, "un pezzo del gettone": TOK.slice(0, 16), "il gettone nello script": TOK2, "l'accettazione": "16146285", "l'ID paziente": PID,
+    "la data di nascita": "12/03/1950", "la nascita DICOM": "19500312", "l'UID dell'istanza": "200036.9125", "l'istituto": "San Felice", "l'ospedale": "multimedica", "l'host": "mmeviewer" };
+  for (const [cosa, v] of Object.entries(viaV)) {
+    const dove = Object.entries(fv).filter(([, c]) => c.toUpperCase().includes(v.toUpperCase())).map(([f]) => f);
+    check(!dove.length, `visualizzatore: nessun ${cosa} (${dove.length ? "ANCORA in " + dove.join(", ") : "tolto"})`);
+  }
+  check(!/data:image\/[\w+.-]+;base64/i.test(tv) && !/iVBORw0KGgo|\/9j\/4/.test(tv), "visualizzatore: nessun byte d'immagine (né data: né base64)");
+  const fintoDicom = (/<div>([A-Z]+\^[A-Z]+)<\/div>/.exec(pv) || [])[1];
+  check(fintoDicom && pv.includes(`<title>${fintoDicom} - eViewer</title>`) === false && (pv.match(/[A-Z]+\^[A-Z]+/g) || []).every((x) => x === fintoDicom),
+    `visualizzatore: il paziente resta in forma DICOM, finto e sempre lo stesso (${fintoDicom})`);
+  check(/Birth: \d{2}\/\d{2}\/1950 \(76Y\)/.test(pv) && /Sex: M/.test(pv) && /KVP: 70/.test(pv) && /W: 4095 L: 2047/.test(pv) && /Age At Study: 076Y/.test(pv)
+    && /Study Date: \d{2}\/\d{2}\/2026 10:15:00/.test(pv) && !/29\/10\/2026/.test(pv), "visualizzatore: la sovraimpressione resta leggibile (nascita spostata, sesso, KVP, finestra, età, data dello studio spostata)");
+  check(/ID: 9\d{6}</.test(pv) && /Acc: \d{8}-1</.test(pv) && !pv.includes(`Acc: ${ACC}`) && /Operator: OPERATORE \d+/.test(pv) && /Institution: OSPEDALE ESEMPIO/.test(pv) && /<div>OPERATORE \d+<\/div>/.test(pv),
+    `visualizzatore: ID e accettazione finti, operatore e medico OPERATORE n, l'istituto OSPEDALE ESEMPIO (${(/ID: [^<]*/.exec(pv) || [""])[0]} · ${(/Acc: [^<]*/.exec(pv) || [""])[0]})`);
+  check(pv.includes("1 DX - T Piede DP") && pv.includes("4 DX - W Torace PA") && pv.includes("All images"), "visualizzatore: le serie («1 DX - T Piede DP») e «All images» restano");
+  const uidF = (/data-uid="([\d.]+)"/.exec(pv) || [])[1];
+  check(uidF && uidF !== UID1 && /^[0-2](?:\.\d+){4,}$/.test(uidF) && pv.includes(`/e4cure/eviewer/thumb?uid=${uidF}&amp;account=`) && !/account=[0-9a-f]/i.test(pv),
+    `visualizzatore: l'UID diventa un altro UID, lo stesso nella miniatura; il gettone «account» è vuoto (${uidF})`);
+  const fl = JSON.parse(fv["flusso.json"]);
+  const rvq = fl.richieste.filter((x) => x.viewer);
+  const jpg = rvq.find((x) => /render/.test(x.url)), wado = rvq.find((x) => /wado/.test(x.url)), log = rvq.find((x) => x.metodo === "POST");
+  check(jpg && jpg.url === `http://eviewer.esempio:18188/e4cure/eviewer/render/${uidF}.jpg?account=` && jpg.misura === 30000 && jpg.intestazioni.cache === "private, max-age=3600"
+    && jpg.intestazioni.etag && jpg.iniziatore === "http://eviewer.esempio:18188", `visualizzatore, flusso: l'immagine con misura, cache, ETag, chi l'ha chiesta (${jpg && jpg.url})`);
+  check(wado && /requestType=WADO/.test(wado.url) && /contentType=application\/dicom/.test(wado.url) && new RegExp(`objectUID=${uidF.replace(/\./g, "\\.")}`).test(wado.url) && /account=$/.test(wado.url)
+    && wado.intestazioni.tipo === "application/dicom", `visualizzatore, flusso: il WADO con i parametri tecnici, l'UID finto, senza gettone (${wado && wado.url})`);
+  check(log && log.corpo.account[0] === "" && /^[A-Z]+\^[A-Z]+$/.test(log.corpo.patientName[0]) && log.corpo.accessionNumber[0] !== ACC, "visualizzatore, flusso: nel modulo inviato il gettone sparisce, il nome e l'accettazione sono finti");
+  const rin = fl.richieste.find((x) => /Sa4ViewerExtRedirect/.test(x.url));
+  check(rin && /^http:\/\/eviewer\.esempio:18188\/e4cure\/eviewer\/viewer\?requestType=STUDY&accessionNumber=\d{8}-1&account=$/.test(rin.rinvii[0].a) && !rin.rinvii[0].a.includes(ACC),
+    `visualizzatore: il rinvio della fotocamera porta all'indirizzo finto, senza gettone (${rin && rin.rinvii[0].a})`);
+  const ev = JSON.parse(fv["eviewer.json"]);
+  const tf = ev.pagine[0] && ev.pagine[0].tecnica;
+  check(tf && tf.canvas[0].contesto === "webgl2" && tf.canvas[0].preserveDrawingBuffer === false && tf.websocket[0].percorso === "ws://eviewer.esempio:18188/e4cure/ws"
+    && tf.immagini[1].indirizzo === "http://eviewer.esempio:18188/e4cure/eviewer/thumb?account&uid" && tf.risorse[0].indirizzo === `http://eviewer.esempio:18188/e4cure/eviewer/render/${uidF}.jpg`,
+    "visualizzatore, eviewer.json: canvas e contesto, WebSocket, miniature, Resource Timing — su indirizzi finti");
+  const c0 = ev.clic[0] || {};
+  check(c0.tipo === "click" && c0.t === 65 && c0.bersaglio.strada[0].classe === "thumb" && c0.bersaglio.img.tipo === "http" && c0.bersaglio.testo === "4 DX - W Torace PA"
+    && c0.bersaglio.strada[1].id === `s-${uidF}`, `visualizzatore, eviewer.json: il clic sulla miniatura (${JSON.stringify(c0).slice(0, 160)})`);
+  const rvr = fv["riepilogo.txt"];
+  const sez = (rvr.split("Visualizzatore di immagini")[1] || "").split("\n\n")[0];
+  check(/Controllo prima dell'esportazione: superato/.test(rvr) && rv.gate.ok, `visualizzatore: il cancello passa (${rv.gate.punti} punti${rv.gate.ok ? "" : ": " + JSON.stringify(rv.gate.dove)})`);
+  check(/GET http:\/\/eviewer\.esempio:18188\/e4cure\/eviewer\/render\/\{uid\}\.jpg\?account — 1× image\/jpeg \[image\]; 29 KB/.test(sez)
+    && /GET http:\/\/eviewer\.esempio:18188\/e4cure\/eviewer\/wado\?account&contentType=application\/dicom&objectUID&requestType=WADO&studyUID — 1× application\/dicom/.test(sez)
+    && /Cache-Control «private, max-age=3600»; ETag 1\/1/.test(sez), "riepilogo, visualizzatore: le richieste d'immagine per modello, con contenuto, misura e cache");
+  check(/Canvas: 1 — webgl2 512×512 \(sullo schermo 512×512, preserveDrawingBuffer no\)/.test(sez) && /webgl texImage2D pixel-Uint16Array 2/.test(sez)
+    && /Miniature e immagini <img>: 2 — data:image\/png ×1/.test(sez) && /WebSocket: ws:\/\/eviewer\.esempio:18188\/e4cure\/ws \(parametri account\): ricevuti 3 \(binari 3/.test(sez)
+    && /Blob diventati indirizzi \(URL\.createObjectURL\): image\/jpeg ×1/.test(sez), "riepilogo, visualizzatore: canvas, disegno, miniature, WebSocket, blob");
+  check(/Clic: 1/.test(sez) && /\+65 s click su img\.thumb \(immagine http 64×64[^)]*\) → nei 3 s dopo 2 richieste: 1× GET [^;]*render\/\{uid\}\.jpg\?account image\/jpeg 29 KB; 1× GET [^;]*wado/.test(sez),
+    "riepilogo, visualizzatore: il clic sulla miniatura e le richieste che seguono");
+  if (process.env.MOSTRA_VIEWER) console.log(sez + "\n" + pv);
+  // il cancello: un nome vero piantato in forma DICOM (o girato) fa scattare il controllo
+  const sporco = anonimizza({ versione: "9.9.9", inizio: T0, origini: { gestionale: G }, pagine: [
+    { url: vurl, titolo: "eViewer", html: viewer, ts: T2, scheda: 21, alto: true },
+  ] }, { vocabolario, sfasamento: 30, aggiungi: { "pagine/098-piantata.html": "<p>VERDONE^CARLO^^^</p>", "pagine/099-piantata.html": "<p>Ref: VERDI^GINO, Carlo Verdone</p>" } });
+  check(!sporco.gate.ok && sporco.gate.dove["pagine/098-piantata.html"] && sporco.gate.dove["pagine/098-piantata.html"].nome >= 1
+    && sporco.gate.dove["pagine/099-piantata.html"] && sporco.gate.dove["pagine/099-piantata.html"].nome >= 1 && sporco.gate.dove["pagine/099-piantata.html"].personale >= 1,
+    `visualizzatore: un nome vero piantato in forma DICOM (o girato) fa scattare il controllo (${JSON.stringify(sporco.gate.dove)})`);
+  check(!cancello({ a: "<td>Rossi^Mario^^</td>" }, { nomi: ["ROSSI MARIO"] }).ok && !cancello({ a: "id=16146285-1" }, { id: [ACC] }).ok, "il cancello vede «^» e l'accettazione con il trattino");
+}
+
 // --------------------------------------------------------------- lo zip
 const zip = creaZip({ "a.txt": "ciao", "pagine/001-x.html": "<p>è</p>" });
 const dir = mkdtempSync(join(tmpdir(), "psa-zip-"));

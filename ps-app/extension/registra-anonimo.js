@@ -110,6 +110,101 @@
   const SISS_ETI_SOLA = new RegExp(`^(${SISS_ETICHETTE.map(([e]) => escReS(e)).join("|")})\\s*:$`, "i");
   const catEtichetta = (e) => { const k = MAIUSCm(e); const x = SISS_ETICHETTE.find(([l]) => MAIUSCm(l) === k); return x ? x[1] : null; };
   function MAIUSCm(s) { return String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim(); }
+
+  // ------------------------------------------------ il visualizzatore (PACS)
+  // L'eViewer dell'ospedale, dove si guardano le radiografie (anche in
+  // manifest.json, registra.js, registra-pagina.js): un host, ogni porta; nello
+  // zip un nome finto. L\u00ec i dati del paziente stanno nella sovraimpressione
+  // DICOM: \u00abROSSI^MARIO\u00bb, \u00abBirth: 05/07/1947 (79Y)\u00bb, \u00abID: \u2026\u00bb, \u00abAcc: \u2026\u00bb.
+  const VIEWER_HOST = "mmeviewer.multimedica.root.lan";
+  const VIEWER_FINTO = "eviewer.esempio";
+  // le etichette della sovraimpressione, e che dato portano dopo i \u00ab:\u00bb
+  const VIEWER_ETICHETTE = [
+    ["nome", ["Patient's Name", "Patient Name", "Pat. Name", "Patient", "Paziente", "Nominativo", "Name", "Nome"]],
+    ["personale", ["Referring Physician's Name", "Referring Physician", "Performing Physician's Name", "Performing Physician", "Reading Physician",
+      "Requesting Physician", "Physician", "Operators' Name", "Operator's Name", "Operator Name", "Operator", "Operatore", "Radiologist", "Radiologo",
+      "Technologist", "Tecnico", "Medico refertante", "Medico richiedente", "Refertante", "Richiedente", "Medico"]],
+    ["nascita", ["Patient's Birth Date", "Patient Birth Date", "Birth Date", "Date of Birth", "Birthdate", "Birth", "DOB", "Data di nascita", "Data nascita",
+      "Nato il", "Nata il", "Nascita"]],
+    ["eta", ["Patient's Age", "Patient Age", "Age At Study", "Age", "Et\u00e0", "Eta"]],
+    ["sesso", ["Patient's Sex", "Patient Sex", "Sex", "Sesso", "Gender"]],
+    ["id", ["Other Patient IDs", "Patient ID", "Pat. ID", "Pat ID", "PID", "MRN", "ID paziente", "Codice paziente", "ID"]],
+    ["accesso", ["Accession Number", "Accession No.", "Accession No", "Accession #", "Accession", "Acc. No.", "Acc. No", "Acc No", "Acc. #", "Acc.", "Acc",
+      "Numero accettazione", "N. accettazione", "Accettazione"]],
+    ["data", ["Study Date", "Series Date", "Acquisition Date", "Content Date", "Exam Date", "Data esame", "Data studio", "Date", "Data"]],
+    ["ora", ["Study Time", "Series Time", "Acquisition Time", "Content Time", "Time", "Ora"]],
+    ["istituto", ["Institution Name", "Institution", "Inst.", "Hospital", "Ospedale", "Struttura", "Station Name", "Station", "Department", "Reparto"]],
+    ["descrizione", ["Study Description", "Series Description", "Protocol Name", "Body Part Examined", "Body Part", "Description", "Descrizione", "Protocol", "Protocollo"]],
+    ["tecnico", ["Exposure Time", "Pixel Spacing", "Slice Thickness", "KVP", "kV", "mAs", "mA", "ms", "Exposure", "Exp", "Ex", "Series", "Serie", "Se", "Ser",
+      "Images", "Image", "Img", "Im", "Ima", "Frame", "Fr", "Thickness", "Thk", "Slice", "Sl", "Location", "Loc", "Pos", "WW", "WL", "WC", "W", "L", "C",
+      "Window", "Level", "Zoom", "Z", "Rot", "Angle", "Mag", "Scale", "Matrix", "Rows", "Columns", "Cols", "Bits", "Lossy", "Modality", "Mod", "Modalit\u00e0",
+      "View", "Laterality", "Lat", "Distance", "SID", "SOD", "Spacing", "FOV", "Grid", "Filter", "DAP", "Dose", "EI", "DI", "Val", "X", "Y", "HU"]],
+  ];
+  const VIEWER_ETI = VIEWER_ETICHETTE.flatMap(([c, l]) => l.map((e) => [e, c])).sort((a, b) => b[0].length - a[0].length);
+  const VIEWER_ETI_ALT = VIEWER_ETI.map(([e]) => escReS(e)).join("|");
+  const VIEWER_ETI_RE = new RegExp(`(?<![A-Za-z\u00c0-\u00ff0-9'\u2019.])(${VIEWER_ETI_ALT})\\s*:(?!\\/\\/)`, "gi");
+  const VIEWER_ETI_SOLA = new RegExp(`^(${VIEWER_ETI_ALT})\\s*:$`, "i");
+  const VIEWER_CAT = new Map(VIEWER_ETI.map(([e, c]) => [MAIUSCm(e), c]));
+  const VIEWER_PAROLE_ETI = new Set(VIEWER_ETI.flatMap(([e]) => MAIUSCm(e).split(/[^A-Z0-9']+/)).filter((w) => w.length >= 2));
+  // le parole dell'app (qualche voce dell'interfaccia) e delle descrizioni di serie (\u00abT Piede DP\u00bb, \u00abW Torace PA\u00bb)
+  const VIEWER_TESTI = new Set(["All images", "All Images", "ALL IMAGES", "Tutte le immagini", "Series", "Serie", "Studies", "Study", "Studi", "Studio",
+    "Images", "Immagini", "Thumbnails", "Miniature", "Loading...", "Loading\u2026", "Caricamento...", "Caricamento\u2026"]);
+  const VIEWER_PAROLE = new Set(("ALL IMAGES IMAGE TUTTE LE IMMAGINI IMMAGINE SERIE SERIES STUDIO STUDY TORACE PIEDE MANO POLSO GOMITO SPALLA OMERO "
+    + "AVAMBRACCIO BRACCIO GINOCCHIO CAVIGLIA ANCA ANCHE BACINO FEMORE TIBIA GAMBA COSCIA CRANIO COLONNA RACHIDE CERVICALE DORSALE LOMBARE "
+    + "LOMBOSACRALE SACRO COCCIGE COSTE STERNO CLAVICOLA SCAPOLA ADDOME DITO DITA ALLUCE CALCAGNO EMITORACE SENI PARANASALI ORTOPANORAMICA "
+    + "MANDIBOLA ORBITE CHEST FOOT HAND WRIST ELBOW SHOULDER KNEE ANKLE HIP PELVIS SKULL SPINE ABDOMEN PA AP LL LAT LATERALE LATERAL DP OBL "
+    + "OBLIQUA OBLIQUE ASSIALE AXIAL DX SX BIL BILATERALE DESTRO DESTRA SINISTRO SINISTRA IN PIEDI CLINO SUPINO SOTTO CARICO PROIEZIONE "
+    + "PROIEZIONI DUE TRE T W").split(" "));
+  // \u00ab4 DX - W Torace PA\u00bb: il numero della serie, la modalit\u00e0 DICOM, la descrizione
+  const SERIE_RE = /^(\d{1,4})(\s+)([A-Z]{2,4})(\s+-\s+)(.+)$/;
+  const MODALITA = new Set("CR DX CT MR US MG XA RF NM PT OT SC DR IO PX RG ES SR KO PR SEG DOC AU ECG XC GM BMD OP OPT IVUS".split(" "));
+  // un nome DICOM: COGNOME^NOME^\u2026 (parole in maiuscolo, o con l'iniziale grande)
+  const PAROLA_MAI = "[A-Z\u00c0-\u00d9][A-Z\u00c0-\u00d9'\u2019-]*";
+  const COMP_DICOM = `(?:${PAROLA_MAI}(?: ${PAROLA_MAI})*|[A-Z\u00c0-\u00d9][a-z\u00e0-\u00ff'\u2019-]+)`;
+  const NOME_DICOM_RE = new RegExp(`(?<![A-Za-z\u00c0-\u00ff0-9^])(?:${COMP_DICOM})\\^(?:${COMP_DICOM})(?:\\^(?:${COMP_DICOM})?){0,3}(?![A-Za-z\u00c0-\u00ff0-9^])`, "g");
+  // un UID DICOM (studio, serie, istanza): cifre a punti; quelli dello standard (1.2.840.10008.\u2026) restano
+  const UID_RE = /(?<![\w.])[0-2](?:\.(?:0|[1-9]\d*)){4,}(?!\w|\.\d)/g;
+  const UID_STANDARD = /^1\.2\.840\.10008\./;
+  // una data DICOM: AAAAMMGG
+  const DA_RE = /(?<![\d.])((?:19|20)\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?!\d|\.\d)/g;
+  // un gettone (l'\u00abaccount\u00bb dell'indirizzo, una sessione): esadecimale lungo, base64, JWT
+  const tokenLike = (v) => {
+    v = String(v || "");
+    return (/^[0-9a-f]{16,}$/i.test(v) && /\d/.test(v) && /[a-f]/i.test(v))
+      || (/^[A-Za-z0-9+/_-]{24,}={0,2}$/.test(v) && (v.match(/\d/g) || []).length >= 3 && /[a-z]/.test(v) && /[A-Z]/.test(v))
+      || /^[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}$/.test(v);
+  };
+  // i parametri degli indirizzi del visualizzatore: segreti (il valore via), identificativi, tecnici (restano)
+  const VIEWER_SEGRETO = /account|token|session|^sid$|auth|key|ticket|jwt|sig(?:nature)?$|hash|nonce|secret|cred|pass|pwd|otp|^code$/i;
+  const VIEWER_NOME = /name$|^(?:nome|cognome|paziente)$/i;
+  const VIEWER_ID = /accession|uid$|^(?:study|series|object|instance|sop|image|exam|order|req(?:uest)?|patient|pat)_?(?:id|uid|number|num|nr|no)?$|^(?:pid|mrn|id)$/i;
+  const VIEWER_TECNICO = /^(?:requestType|contentType|transferSyntax|frameNumber|frame|rows|columns|cols|imageQuality|quality|region|windowCenter|windowWidth|annotation|charset|anonymize|format|layer|level|zoom|scale|size|width|height|w|h|x|y|mode|type|view|lang|language|locale|theme|layout|tool|tab|page|thumb|thumbnail|preview|version|v)$/i;
+  const VIEWER_CACHEBUSTER = /^(?:_|ts|t|cb|cache|nocache|rnd|rand|random|time|timestamp)$/i;
+  // le chiavi DICOM in un JSON o in uno script della pagina (per nome o per numero di tag)
+  const CHIAVI_DICOM = [
+    [/^(?:patient_?s?_?name|00100010)$/i, "nome"], [/^(?:patient_?id|other_?patient_?ids|00100020|00101000|study_?id|00200010)$/i, "id"],
+    [/^(?:patient_?s?_?birth_?date|birth_?date|dob|00100030)$/i, "nascita"], [/^(?:accession_?number|00080050)$/i, "accesso"],
+    [/^(?:referring_?physician_?s?_?name|performing_?physician_?s?_?name|operators?_?s?_?name|name_?of_?physicians?_?reading_?study|00080090|00081050|00081070|00081060)$/i, "personale"],
+  ];
+  const CHIAVE_VALORE_RE = /["']?([A-Za-z_]{3,40}|\d{8})["']?\s*[:=]\s*(?:\{[^{}]{0,80}?["']Value["']\s*:\s*\[\s*(?:\{\s*["']Alphabetic["']\s*:\s*)?)?["']([^"'\\]{1,80})["']/g;
+  const catChiave = (k) => { for (const [re, c] of CHIAVI_DICOM) if (re.test(k)) return c; return null; };
+  // dei nomi DICOM trovati in un testo: dove stanno e le loro parti (senza le parole d'etichetta prese per sbaglio)
+  function nomiDicom(t) {
+    const out = [];
+    for (const m of String(t).matchAll(NOME_DICOM_RE)) {
+      let inizio = m.index, fine = m.index + m[0].length;
+      const comps = m[0].split("^");
+      let w = comps[0].split(" ");
+      while (w.length > 1 && VIEWER_PAROLE_ETI.has(MAIUSCm(w[0]))) { inizio += w[0].length + 1; w = w.slice(1); }
+      comps[0] = w.join(" ");
+      const u = comps.length - 1;
+      w = comps[u].split(" ");
+      while (w.length > 1 && VIEWER_PAROLE_ETI.has(MAIUSCm(w[w.length - 1]))) { fine -= w[w.length - 1].length + 1; w = w.slice(0, -1); }
+      comps[u] = w.join(" ");
+      if (comps[0].length >= 2 && comps[1].length >= 2) out.push({ inizio, fine, comps });
+    }
+    return out;
+  }
   // i campi dei moduli del SISS (formcontrolname, name o id), e che dato portano
   const SISS_CAMPI = [
     [/^(patientLastName|lastName|cognome\w*|surname|familyName)$/i, "cognome"], [/^(patientFirstName|firstName|nome|givenName)$/i, "nome"],
@@ -323,6 +418,18 @@
     const catalogoSiss = new Set();        // la descrizione accanto a un codice (farmaco, prestazione)
     const parolePersona = new Map();       // MAIUSC(parola) → { pieno, i, cognome }: dal banner del paziente e dai campi
     const SISS_STATICO = new Set(SISS_TESTI);
+
+    // il visualizzatore del PACS: le sue pagine, le sue richieste e i suoi clic hanno regole loro
+    const viewerHosts = new Set([VIEWER_HOST, ...(origini.viewer || [])].map((h) => String(h).toLowerCase()));
+    const viewerDi = (o) => {   // l'origine finta del visualizzatore (con la sua porta), o null
+      try {
+        const u = new URL(String(o));
+        if (!viewerHosts.has(u.hostname.toLowerCase()) || !/^(?:https?|wss?):$/.test(u.protocol)) return null;
+        return `${u.protocol}//${VIEWER_FINTO}${u.port ? ":" + u.port : ""}`;
+      } catch { return null; }
+    };
+    const isViewer = (u) => !!viewerDi((/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i.exec(String(u || "")) || [""])[0]);
+    let viewerOra = false;                 // si sta trattando una pagina (o un clic) del visualizzatore
 
     // ------------------------------------------------ chi è chi (unità)
     const paramDi = (u, k) => { const m = new RegExp(`[?&;]${k}=([^&#"'\\s]*)`, "i").exec(u || ""); return m ? decodeURIComponent(m[1]).trim() : ""; };
@@ -673,12 +780,164 @@
       return null;
     };
 
+    // ------------------------------------------------ il visualizzatore (PACS)
+    // gli UID (sempre gli stessi finti), le date AAAAMMGG, le cifre già viste
+    const remapUid = (s) => String(s).replace(UID_RE, (u) => {
+      if (u.length < 12 || UID_STANDARD.test(u)) return u;
+      idOriginali.add(u); conta.id++; visto.id.add(u);
+      return fintoId(u);
+    });
+    const dateDicom = (s) => String(s).replace(DA_RE, (all, y, m, d) => { const [gg, mm, aa] = dataFinta(d, m, y, "", 4); return `${aa}${p2(mm)}${p2(gg)}`; });
+    const cifreViewer = (s) => remapCifre(dateDicom(remapUid(s)));
+    const dateViewer = (s) => dateDicom(date(s));
+    // un identificativo del paziente o dell'esame: sempre lo stesso finto (corto: cifre a zero)
+    const idViewer = (v) => {
+      const t = String(v).trim();
+      if (!t) return v;
+      if (!/\d/.test(t)) return trattaStringa(t);
+      registraSegreto(t);
+      conta.id++;
+      if (idOriginali.has(t)) { visto.id.add(t); return fintoId(t); }
+      return t.replace(/\d/g, "0");
+    };
+    // una persona dal suo nome DICOM: il nome intero e le sue parole (come sul SISS)
+    const personaDicom = (comps, cat = "nomi") => {
+      const nom = comps.slice(1).filter(Boolean).join(" ");
+      if (cat === "personale") registraNome(`${comps[0]} ${nom}`.trim(), "personale");
+      else personaSiss(comps[0], nom);
+    };
+    // il nome finto nella stessa forma: COGNOME^NOME^… (il personale: OPERATORE n)
+    const nomeDicomFinto = (comps, cat = "nomi") => {
+      const pieno = comps.filter(Boolean).join(" ");
+      const v = nomiVisti.get(norma(pieno));
+      if (((v && v.cat) || cat) === "personale") return nomeFinto(pieno, "personale");
+      const f = nomeFinto(pieno, "nomi").split(" ");
+      return [f[0], f.slice(1).join(" "), ...comps.slice(2).map(() => "")].join("^");
+    };
+    const valoriViewer = (t) => {
+      const ms = [...t.matchAll(VIEWER_ETI_RE)];
+      return { pre: ms.length ? t.slice(0, ms[0].index) : t, parti: ms.map((m, i) => {
+        const da = m.index + m[0].length, a = i + 1 < ms.length ? ms[i + 1].index : t.length;
+        return { cat: VIEWER_CAT.get(MAIUSCm(m[1])), inizio: m.index, fineEt: da, fine: a, valore: t.slice(da, a).trim() };
+      }) };
+    };
+    // una descrizione (di serie, di studio): resta se è fatta solo di parole dell'anatomia e delle proiezioni
+    const descrizioneViewer = (d) => {
+      const w = MAIUSC(d).split(/[^A-Z0-9]+/).filter(Boolean);
+      const persona = nomiVisti.has(norma(d)) || w.some((x) => parolePersona.has(x) || paroleDiNomi.has(x));
+      if (w.length && !persona && w.every((x) => VIEWER_PAROLE.has(x) || PAROLE_STATICHE.has(x) || /^\d{1,3}$/.test(x))) { conta.tenute++; return d; }
+      return trattaStringa(d);
+    };
+    // il valore dopo un'etichetta della sovraimpressione, secondo che dato porta
+    function valoreViewer(cat, v) {
+      if (!v) return v;
+      if (cat === "nome" || cat === "personale") {
+        if (nomiDicom(v).length) return trattaViewer(v);
+        return nomeFinto(v.replace(/\s*,\s*/g, " ").replace(/\s+/g, " ").trim(), cat === "personale" ? "personale" : "nomi");
+      }
+      if (cat === "nascita") { const d = dateViewer(v); return d !== v ? d : v.replace(/\d/g, "0"); }
+      if (cat === "data") { const d = dateViewer(v); return /^[\d\s/.:,-]*(?:AM|PM)?$/i.test(d) ? d : trattaStringa(v); }
+      if (cat === "eta") return /^\(?\s*\d{1,3}\s*(?:[YMWD]|anni|mesi|giorni|years?|months?|days?)?\s*\)?$/i.test(v) ? v : (conta.testo++, "");
+      if (cat === "sesso") return /^(?:[MFOU]|Male|Female|Other|Maschio|Femmina)$/i.test(v) ? v : "";
+      if (cat === "id" || cat === "accesso") return idViewer(v);
+      if (cat === "ora") return /^[\d:.,\s]{1,20}$/.test(v) ? v : "";
+      if (cat === "istituto") { conta.testo++; return "OSPEDALE ESEMPIO"; }
+      if (cat === "tecnico") return v.length <= 40 && /\d/.test(v) && /^[\s\d.,:/%x×+()-]*[A-Za-zµ°%²/]{0,6}[\s\d.,:/%x×+()-]*$/.test(v) ? v : trattaStringa(v);
+      if (cat === "descrizione") return descrizioneViewer(v);
+      return trattaStringa(v);
+    }
+    const pezzoViewer = (s) => { const q = s.trim(); return !q || soloPunteggiatura(q) ? s : s.replace(q, trattaStringa(q)); };
+    // un testo di una pagina del visualizzatore: null se non è niente di suo (allora la regola di sempre)
+    function trattaViewer(t) {
+      if (VIEWER_TESTI.has(t)) { conta.tenute++; return t; }
+      if (VIEWER_ETI_SOLA.test(t)) return t;                       // un'etichetta da sola: il valore è nel nodo dopo
+      if (/^[0-2](?:\.\d+){4,}$/.test(t)) return remapUid(t);      // un UID
+      if (tokenLike(t)) { idOriginali.add(t); conta.id++; visto.id.add(t); return fintoId(t); }
+      const nn = nomiDicom(t);
+      if (nn.length) {
+        let out = "", da = 0;
+        for (const n of nn) { out += pezzoViewer(t.slice(da, n.inizio)) + nomeDicomFinto(n.comps); da = n.fine; }
+        return out + pezzoViewer(t.slice(da));
+      }
+      const { pre, parti } = valoriViewer(t);
+      if (parti.length) {
+        let out = pezzoViewer(pre);
+        for (const x of parti) {
+          const pezzo = t.slice(x.fineEt, x.fine);
+          const lead = /^\s*/.exec(pezzo)[0], trail = /\s*$/.exec(pezzo)[0];
+          out += t.slice(x.inizio, x.fineEt) + (x.valore ? lead + valoreViewer(x.cat, x.valore) + trail : pezzo);
+        }
+        return out;
+      }
+      const s = SERIE_RE.exec(t);
+      if (s && MODALITA.has(s[3])) return s[1] + s[2] + s[3] + s[4] + descrizioneViewer(s[5]);
+      return null;
+    }
+    // le scoperte, su un testo del visualizzatore: le persone, gli identificativi, le date di nascita
+    function scopriValoreViewer(cat, v) {
+      v = String(v || "").trim();
+      if (!v) return;
+      if (cat === "nome" || cat === "personale") {
+        const nn = nomiDicom(v);
+        if (nn.length) { for (const n of nn) personaDicom(n.comps, cat === "personale" ? "personale" : "nomi"); return; }
+        const nome = v.replace(/\s*,\s*/g, " ").replace(/\s+/g, " ").trim();
+        if (!/^[A-Za-zÀ-ÿ'’ .-]{4,60}$/.test(nome) || !/\s/.test(nome)) return;
+        if (cat === "personale") registraNome(nome, "personale");
+        else if (v.includes(",")) personaSiss(v.split(",")[0], v.split(",").slice(1).join(" "));
+        else registraNome(nome, "nomi");
+      } else if (cat === "nascita") {
+        for (const m of v.matchAll(DATA_RE)) visto.nascita.add(m[0]);
+        for (const m of v.matchAll(ISO_RE)) visto.nascita.add(m[0]);
+        for (const m of v.matchAll(DA_RE)) { visto.nascita.add(m[0]); visto.nascita.add(`${m[3]}/${m[2]}/${m[1]}`); }
+      } else if (cat === "id" || cat === "accesso") {
+        registraSegreto(v);
+        const b = /^(\d{5,})[-/.]\w{1,4}$/.exec(v);
+        if (b) registraId(b[1]);
+      }
+    }
+    function scopriViewer(raw) {
+      const t = pulisci(String(raw)).replace(/\s+/g, " ").trim();
+      if (!t || t.length > 4000) return;
+      for (const x of valoriViewer(t).parti) scopriValoreViewer(x.cat, x.valore);
+      for (const n of nomiDicom(t)) { const v = nomiVisti.get(norma(n.comps.filter(Boolean).join(" "))); if (!v || v.cat !== "personale") personaDicom(n.comps); }
+      for (const m of t.matchAll(UID_RE)) if (m[0].length >= 12 && !UID_STANDARD.test(m[0])) registraId(m[0]);
+      if (tokenLike(t)) registraId(t);
+    }
+    // le chiavi DICOM in uno script o in un JSON («PatientID": "…», "00100010": {"vr":"PN","Value":[…]})
+    const scopriChiavi = (s) => { for (const m of String(s).matchAll(CHIAVE_VALORE_RE)) { const c = catChiave(m[1]); if (c) scopriValoreViewer(c, m[2]); } };
+    // un parametro di un indirizzo del visualizzatore
+    const valoreParamViewer = (k, v) => {
+      if (!v) return v;
+      if (credenziale(k) || VIEWER_SEGRETO.test(k) || tokenLike(v)) { conta.url++; return ""; }   // il gettone: via, del tutto
+      if (/^[0-2](?:\.\d+){4,}$/.test(v)) return remapUid(v);
+      if (VIEWER_NOME.test(k)) { const nn = nomiDicom(v); conta.url++; return nn.length ? nomeDicomFinto(nn[0].comps) : "ESEMPIO"; }
+      if (VIEWER_ID.test(k)) return idViewer(v);
+      if (VIEWER_CACHEBUSTER.test(k) && /^\d{1,16}$/.test(v)) return v.replace(/\d/g, "0");
+      if (VIEWER_TECNICO.test(k) && /^[A-Za-z0-9./+:,_ -]{1,80}$/.test(v) && !/(?<!\d)\d{5,}(?!\d)/.test(v)) return v;
+      return valoreParam(k, v);
+    };
+    // gli identificativi di un indirizzo del visualizzatore (prima passata): gettoni, persone, esami, UID
+    const idDaUrlViewer = (u) => {
+      const q = /\?([^#]*)/.exec(String(u || ""));
+      if (q) for (const pp of q[1].split(/&amp;|&/)) {
+        const i = pp.indexOf("=");
+        if (i < 0) continue;
+        const k = pp.slice(0, i), v = decURI(pp.slice(i + 1).split(/['"\s<>()]/)[0]);
+        if (!v) continue;
+        if (VIEWER_SEGRETO.test(k) || tokenLike(v)) registraId(v);
+        else if (VIEWER_NOME.test(k)) { for (const n of nomiDicom(v)) personaDicom(n.comps); }
+        else if (VIEWER_ID.test(k) && !UID_STANDARD.test(v)) scopriValoreViewer("id", v);   // (una classe SOP dello standard non è un caso)
+      }
+      for (const m of String(u || "").split("#")[0].matchAll(UID_RE)) if (m[0].length >= 12 && !UID_STANDARD.test(m[0])) registraId(m[0]);
+    };
+
     // --------------------------------------- un testo: il cuore della regola
     function trattaStringa(core, ctx = {}) {
       const t = pulisci(core).trim();
       if (!t) return core;
       if (soloPunteggiatura(t)) return core;
       if (sissOra) { const b = trattaSiss(t); if (b != null) return b; }
+      if (viewerOra) { const b = trattaViewer(t); if (b != null) return b; }
       if (idOriginali.has(t)) return remapId(t);
       if (MARCHI.some((re) => re.test(t))) { conta.testo++; return neutro(t); }
       const nv = nomiVisti.get(norma(t));
@@ -744,6 +1003,8 @@
       if (SISS_ORIGINI[o]) return SISS_ORIGINI[o];
       if (sissOrig.has(o)) return "https://siss.esempio";
       if (portali.has(o)) return "http://portale.esempio";
+      const vw = viewerDi(o);
+      if (vw) return vw;
       if (/^https?:\/\/(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/.test(o)) return "http://127.0.0.1";
       return null;
     };
@@ -768,7 +1029,7 @@
       if (/^\/\//.test(s)) s = "https:" + s;
       if (/^#/.test(s)) return /^#\/?[\w-]{0,40}(?:\/[\w-]{1,40}){0,6}$/.test(s) ? s : "#";
       if (/^javascript:/i.test(s)) return "javascript:" + anonJs(s.slice(11));
-      if (/^data:/i.test(s)) return /^data:image\//i.test(s) && s.length <= IMG_DATA_MAX ? s : (conta.immagini++, "data:,");
+      if (/^data:/i.test(s)) return !viewerOra && /^data:image\//i.test(s) && s.length <= IMG_DATA_MAX ? s : (conta.immagini++, "data:,");
       if (/^(mailto|tel):/i.test(s)) return /^mailto/i.test(s) ? "mailto:utente@esempio.it" : "tel:000";
       if (/^blob:/i.test(s)) {
         const inner = s.slice(5);
@@ -779,15 +1040,18 @@
       const m = /^([a-z][a-z0-9+.-]*:\/\/[^/?#]*)?([^?#]*)(\?[^#]*)?(#.*)?$/i.exec(s);
       if (!m) { conta.url++; return "#"; }
       let [, pre = "", percorso = "", query = "", frag = ""] = m;
+      let vw = viewerOra;   // il visualizzatore: i suoi indirizzi, e quelli relativi delle sue pagine
       if (pre) {
         const o = pre.replace(/\/+$/, "").toLowerCase().replace(/:(80|443)$/, "");
         const f = origineFinta(o, modo) ?? origineFinta(pre.replace(/\/+$/, ""), modo);
         if (f == null) { conta.url++; return modo === "flusso" ? "https://altro.esempio/" : "#"; }
+        vw = !!viewerDi(o);
         pre = f;
       }
       percorso = percorso.split("/").map((seg) => {
         const sj = /^([^;]*)(;jsessionid=.*)?$/i.exec(seg);
         let base = sj[1];
+        if (vw) { base = remapUid(base); if (MARCHI.some((re) => re.test(base))) base = "esempio"; }
         if (/^\d{4,}$/.test(base) || /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(base) || (/\d/.test(base) && /^[\w-]{16,}$/.test(base))) { registraId(base); base = remapId(base); }
         else base = remapCifre(base);
         return base;
@@ -800,7 +1064,7 @@
           const k = p.slice(0, i), raw = p.slice(i + 1);
           if (STRUTTURA.has(k.toUpperCase())) return p;
           const v = decURI(raw);
-          const nv = valoreParam(k, v);
+          const nv = vw ? valoreParamViewer(k, v) : valoreParam(k, v);
           return nv === v ? p : `${k}=${encURI(nv)}`;
         }).join("&");
       }
@@ -812,7 +1076,9 @@
     function letterale(s) {
       if (!s) return s;
       const d = s.replace(/\\(["'\\/])/g, "$1");
-      if (/^[\w$.#:[\]-]{0,40}$/.test(d) && !(d.length >= 4 && /^[A-ZÀ-Ù']+$/.test(d) && !vocabolo(d))) return remapCifre(s);
+      // il visualizzatore: un gettone in uno script diventa un altro della stessa forma (e il cancello lo cerca)
+      if (viewerOra && tokenLike(d)) { idOriginali.add(d); conta.id++; visto.id.add(d); return fintoId(d); }
+      if (/^[\w$.#:[\]-]{0,40}$/.test(d) && !(d.length >= 4 && /^[A-ZÀ-Ù']+$/.test(d) && !vocabolo(d))) return viewerOra ? cifreViewer(s) : remapCifre(s);
       if (/^(?:[a-z]+:\/\/|\.{0,2}\/|[\w.-]+\.(?:do|jsp|html?|rra2|pdf)\b)/i.test(d) || /^[^\s]*[?&][\w]+=/.test(d)) {
         return anonUrl(d, "pagina").replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "\\\"");
       }
@@ -821,7 +1087,7 @@
     const anonJs = (js) => remapCifre(pezziJs(String(js), letterale));
     const anonCss = (css) => String(css).replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (m, q, u) => {
-        if (/^data:image\//i.test(u)) return u.length <= IMG_DATA_MAX ? m : (conta.immagini++, "none");
+        if (/^data:image\//i.test(u)) return !viewerOra && u.length <= IMG_DATA_MAX ? m : (conta.immagini++, "none");
         const name = u.split(/[/\\?#]/).filter(Boolean).pop() || "";
         if (LOGHI.test(name)) return "none";
         return `url("${anonUrl(u, "pagina")}")`;
@@ -864,13 +1130,13 @@
       return trattaStringa(t);
     }
     const icone = new Set(), iconeNuove = new Set();
-    function trattaPagina(html, unitaPagina, siss = false) {
-      sissOra = siss;
-      try { return trattaPagina0(html, unitaPagina, siss); } finally { sissOra = false; }
+    function trattaPagina(html, unitaPagina, siss = false, viewer = false) {
+      sissOra = siss; viewerOra = viewer;
+      try { return trattaPagina0(html, unitaPagina, siss); } finally { sissOra = false; viewerOra = false; }
     }
     function trattaPagina0(html, unitaPagina, siss) {
       const out = [];
-      let select = null, inputNome = null, etiSiss = null, credArea = false, contesto = false;
+      let select = null, inputNome = null, etiSiss = null, etiViewer = null, credArea = false, contesto = false;
       for (const p of pezzi(String(html))) {
         if (p.k === "doctype") { out.push(p.s); continue; }
         if (p.k === "testo") {
@@ -881,6 +1147,12 @@
             if (d && SISS_ETI_SOLA.test(d)) { etiSiss = catEtichetta(d.replace(/\s*:$/, "")); out.push(testoConSpazi(p.s)); }
             else if (d && etiSiss && valoreAtteso(etiSiss, d)) { out.push(escTesto(t.replace(t.trim(), valoreFinto(etiSiss, t.trim())))); etiSiss = null; }
             else { if (d) etiSiss = null; out.push(testoConSpazi(p.s)); }
+          } else if (viewerOra) {
+            // anche nella sovraimpressione: «Birth:» in un nodo, la data nel successivo
+            const t = decodifica(p.s), d = pulisci(t).replace(/\s+/g, " ").trim(), e = d && VIEWER_ETI_SOLA.exec(d);
+            if (e) { etiViewer = VIEWER_CAT.get(MAIUSCm(e[1])); out.push(testoConSpazi(p.s)); }
+            else if (d && etiViewer) { out.push(escTesto(t.replace(t.trim(), valoreViewer(etiViewer, t.trim())))); etiViewer = null; }
+            else out.push(testoConSpazi(p.s));
           }
           else out.push(testoConSpazi(p.s));
           continue;
@@ -910,8 +1182,10 @@
           let nv;
           if (p.nome === "img" && K === "src") {
             const name = decURI(v.split(/[?#]/)[0].split(/[/\\]/).pop() || "").replace(/^icona:/, "");
-            if (/^data:/i.test(v)) nv = /^data:image\//i.test(v) && v.length <= IMG_DATA_MAX ? v : (conta.immagini++, "");
+            if (/^data:/i.test(v)) nv = !viewerOra && /^data:image\//i.test(v) && v.length <= IMG_DATA_MAX ? v : (conta.immagini++, "");
             else if (LOGHI.test(name)) { togli = true; nv = ""; }
+            // il visualizzatore: della miniatura resta l'indirizzo anonimizzato (mai i byte)
+            else if (viewerOra) nv = /^(?:blob:|https?:|\/|[\w.-]+(?:[/?]|$))/i.test(v) ? anonUrl(v, "pagina") : (conta.immagini++, "");
             else if (ICONE.has(name)) { icone.add(name); nv = `icona:${name}`; }
             else if (/^[\w.-]{1,60}\.(gif|png|jpe?g|svg|ico|bmp)$/i.test(name) && !/[?]/.test(v)) { iconeNuove.add(name); nv = `icona:${name}`; }
             else { conta.immagini++; nv = ""; }
@@ -921,7 +1195,7 @@
           else if (K === "content" && p.nome === "meta") {
             const r = /^(\s*\d+\s*;\s*url\s*=\s*)(.*)$/i.exec(v);
             nv = r ? r[1] + anonUrl(r[2].replace(/^['"]|['"]$/g, ""), "pagina") : /charset|text\/html/i.test(v) ? v : trattaStringa(v);
-          } else if (ATTR_STRUTTURA.has(K)) nv = remapCifre(v);
+          } else if (ATTR_STRUTTURA.has(K)) nv = viewerOra ? cifreViewer(v) : remapCifre(v);
           else if (K === "value") {
             const N = (inputNome || "").toUpperCase();
             if (cred) nv = "";
@@ -970,7 +1244,8 @@
     const visteSchede = new Set();
     for (const p of pagine) {
       p.siss = isSiss(p.url);
-      let u = paramDi(p.url, "EPISODIO_ID") || (richiestaEp.get(paramDi(p.url, "RICHIESTA_ID")) || "") || (paramDi(p.url, "ASSISTITO_ID") ? "A:" + paramDi(p.url, "ASSISTITO_ID") : "");
+      p.viewer = !p.siss && isViewer(p.url);
+      let u =paramDi(p.url, "EPISODIO_ID") || (richiestaEp.get(paramDi(p.url, "RICHIESTA_ID")) || "") || (paramDi(p.url, "ASSISTITO_ID") ? "A:" + paramDi(p.url, "ASSISTITO_ID") : "");
       // sul SISS il paziente è quello del suo banner (o del campo dell'identificazione)
       if (!u && p.siss) { const m = new RegExp(CF_RE.source).exec(decodifica(String(p.html))); if (m) u = "S:" + m[0]; }
       const eps = episodiIn(p.html);
@@ -981,8 +1256,9 @@
       if (p.alto !== false) { ultimaAlta.set(p.scheda, u); visteSchede.add(p.scheda); }
       p.unita = u;
     }
-    // gli identificativi: dagli indirizzi, dai campi, dalle pagine
-    const idDaUrl = (u) => {
+    // gli identificativi: dagli indirizzi, dai campi, dalle pagine (quelli del visualizzatore: anche i gettoni e gli UID)
+    const idDaUrl = (u, vw = isViewer(u)) => {
+      if (vw) idDaUrlViewer(u);
       const q = /\?([^#]*)/.exec(String(u || ""));
       if (q) for (const pp of q[1].split(/&amp;|&/)) {
         const i = pp.indexOf("=");
@@ -1016,8 +1292,8 @@
             if (a.v == null) continue;
             const K = a.k.toLowerCase(), v = decodifica(a.v);
             if (ATTR_URL.has(K) || K.startsWith("on") || K === "content") {
-              if (!K.startsWith("on") && !/^javascript:/i.test(v)) idDaUrl(v);
-              for (const m of v.matchAll(/['"]([^'"]*\?[^'"]*)['"]/g)) idDaUrl(m[1]);
+              if (!K.startsWith("on") && !/^javascript:/i.test(v)) idDaUrl(v, p.viewer || isViewer(v));
+              for (const m of v.matchAll(/['"]([^'"]*\?[^'"]*)['"]/g)) idDaUrl(m[1], p.viewer || isViewer(m[1]));
               const e = paramDi(v, "EPISODIO_ID");
               if (p.multi && riga >= 0 && e && !unitaRighe[riga]) unitaRighe[riga] = e;
             }
@@ -1096,10 +1372,19 @@
     // le parole: chi le dice, e cosa c'è dentro
     for (const p of pagine) {
       sissOra = p.siss;
-      let eti = null, dopoCodice = false, cog = "", nom = "";
+      let eti = null, etiV = null, dopoCodice = false, cog = "", nom = "";
       const persona = (c, v) => { if (c === "cognome") cog = v; else nom = v; };
       for (const pz of p.pezzi) {
         const unita = p.multi ? (pz.riga >= 0 ? p.unitaRighe[pz.riga] : "") : p.unita;
+        // il visualizzatore: i nomi DICOM, la sovraimpressione (anche su due nodi), le chiavi DICOM negli script, gli UID, i gettoni
+        if (p.viewer) {
+          if (pz.k === "testo" || (pz.k === "corpo" && pz.nome === "title")) {
+            const d = pulisci(decodifica(pz.s)).replace(/\s+/g, " ").trim(), e = d && VIEWER_ETI_SOLA.exec(d);
+            if (e) etiV = VIEWER_CAT.get(MAIUSCm(e[1]));
+            else if (d) { if (etiV) scopriValoreViewer(etiV, d); etiV = null; scopriViewer(d); }
+          } else if (pz.k === "corpo" && pz.nome === "script") { scopriChiavi(pz.s); pezziJs(pz.s, (s) => { scopriViewer(s); return s; }); }
+          else if (pz.k === "tag") for (const a of pz.attrs) if (a.v != null) { const v = decodifica(a.v); scopriViewer(v); scopriChiavi(v); }
+        }
         if (p.siss && pz.k === "testo") {
           const t = decodifica(pz.s), d = pulisci(t).replace(/\s+/g, " ").trim();
           scopriSiss(t);
@@ -1144,6 +1429,9 @@
       sissOra = false;
     }
     for (const r of flusso) { scopri(decURI(r.url || "")); for (const v of Object.values(r.corpo || {})) scopri(String(v)); }
+    // i clic sul visualizzatore: il loro indirizzo e il testo corto del bersaglio
+    const clic = (Array.isArray(raccolta.clic) ? raccolta.clic : []).slice().sort((a, b) => a.ts - b.ts);
+    for (const c of clic) { idDaUrl(c.url, true); const t = c.bersaglio && c.bersaglio.testo; if (t) { scopri(String(t)); scopriViewer(t); } }
 
     // --------------------------------------- seconda passata: trasformare
     const files = {};
@@ -1178,33 +1466,49 @@
     const elencoPagine = [];
     pagine.forEach((p, i) => {
       const nnn = String(i + 1).padStart(3, "0");
-      const tipo = p.siss ? vistaSiss(p) : tipoDi(p.url);
+      const tipo = p.siss ? vistaSiss(p) : p.viewer ? "eviewer-" + tipoDi(p.url) : tipoDi(p.url);
       const nome = `pagine/${nnn}-${tipo}.html`;
-      const corpo = trattaPagina(p.html, p.unita, p.siss);
+      const corpo = trattaPagina(p.html, p.unita, p.siss, p.viewer);
       const url = anonUrl(p.url, "flusso");
       const testa = `<!-- PS Assist, registrazione anonimizzata: pagina ${nnn} · ${url.replace(/--/g, "- -")} · +${sec(p.ts - inizio)} s · scheda ${scheda(p.scheda) ?? "?"}${p.alto === false ? " · riquadro" : ""} · ${p.motivo || "caricata"} -->\n`;
       files[nome] = testa + corpo;
-      sissOra = p.siss;
+      sissOra = p.siss; viewerOra = p.viewer;
       const titolo = trattaStringa(p.titolo || "");
-      sissOra = false;
+      sissOra = false; viewerOra = false;
+      if (p.viewer) p.tecnicaFinta = tecnicaFinta(p.tecnica);
       elencoPagine.push({ file: nome, tipo, url, t: sec(p.ts - inizio), scheda: scheda(p.scheda), riquadro: p.alto === false, motivo: p.motivo || "caricata", titolo,
-        ...(p.siss ? { siss: true, ...(p.forma ? { forma: true } : {}), ...(p.credenziali ? { credenziali: p.credenziali } : {}) } : {}) });
+        ...(p.siss ? { siss: true, ...(p.forma ? { forma: true } : {}), ...(p.credenziali ? { credenziali: p.credenziali } : {}) } : {}),
+        ...(p.viewer ? { viewer: true } : {}) });
     });
     const da = (r) => (r.registratore ? "registratore" : r.estensione ? "estensione" : "pagina");
-    const corpoFinto = (c) => {
+    const corpoFinto = (c, vw = false) => {
       if (!c) return undefined;
-      const o = {};
-      for (const [k, v] of Object.entries(c)) o[k] = credenziale(k) ? ["(credenziale: non registrata)"] : Array.isArray(v) ? v.map((x) => valoreParam(k, String(x))) : valoreParam(k, String(v));
+      const o = {}, vp = vw ? valoreParamViewer : valoreParam;
+      for (const [k, v] of Object.entries(c)) o[k] = credenziale(k) ? ["(credenziale: non registrata)"] : Array.isArray(v) ? v.map((x) => vp(k, String(x))) : vp(k, String(v));
       return o;
     };
-    const richieste = flusso.map((r) => ({
-      metodo: r.metodo, url: anonUrl(r.url, "flusso"), tipo: r.tipo, scheda: scheda(r.scheda), riquadro: r.frame > 0 || undefined,
-      da: da(r), inizio: sec(r.inizio - inizio), fine: r.fine != null ? sec(r.fine - inizio) : null,
-      durata: r.fine != null ? sec(r.fine - r.inizio) : null, stato: r.stato ?? null, contenuto: r.contenuto || undefined,
-      daCache: r.daCache || undefined, errore: r.errore || undefined, corpo: corpoFinto(r.corpo),
-      rinvii: (r.rinvii || []).map((x) => ({ stato: x.stato, a: anonUrl(x.a, "flusso"), t: sec(x.t - inizio) })),
-      pdf: r.pdf || undefined, siss: r.siss || isSiss(r.url) || undefined, nonRiletto: r.nonRiletto || undefined,
-    }));
+    // il visualizzatore: delle sue risposte la misura e come si tengono in cache (solo forme note)
+    const intestazioniFinte = (h) => {
+      if (!h || typeof h !== "object") return {};
+      const o = {};
+      if (typeof h.tipo === "string" && /^[\w.+/-]+(?:;\s*[\w.-]+=(?:"[\w.+/ -]*"|[\w.+/-]*))*$/.test(h.tipo)) o.tipo = h.tipo;
+      if (typeof h.cache === "string") o.cache = /^[\w\s=,"-]{1,120}$/.test(h.cache) ? h.cache : "(altro)";
+      for (const k of ["etag", "ultimaModifica", "scade"]) if (h[k] === true) o[k] = true;
+      for (const [k, re] of [["codifica", /^[\w,\s-]{1,30}$/], ["intervalli", /^[\w-]{1,20}$/], ["vary", /^[\w\s,-]{1,80}$/], ["pragma", /^[\w-]{1,30}$/]]) if (typeof h[k] === "string" && re.test(h[k])) o[k] = h[k];
+      return { ...(Number.isFinite(h.lunghezza) ? { misura: h.lunghezza } : {}), intestazioni: o };
+    };
+    const richieste = flusso.map((r) => {
+      const vw = !!r.viewer || isViewer(r.url);
+      return {
+        metodo: r.metodo, url: anonUrl(r.url, "flusso"), tipo: r.tipo, scheda: scheda(r.scheda), riquadro: r.frame > 0 || undefined,
+        da: da(r), inizio: sec(r.inizio - inizio), fine: r.fine != null ? sec(r.fine - inizio) : null,
+        durata: r.fine != null ? sec(r.fine - r.inizio) : null, stato: r.stato ?? null, contenuto: r.contenuto || undefined,
+        daCache: r.daCache || undefined, errore: r.errore || undefined, corpo: corpoFinto(r.corpo, vw),
+        rinvii: (r.rinvii || []).map((x) => ({ stato: x.stato, a: anonUrl(x.a, "flusso"), t: sec(x.t - inizio) })),
+        pdf: r.pdf || undefined, siss: r.siss || isSiss(r.url) || undefined, nonRiletto: r.nonRiletto || undefined,
+        ...(vw ? { viewer: true, ...intestazioniFinte(r.intestazioni), ...(r.iniziatore ? { iniziatore: anonUrl(r.iniziatore, "flusso") } : {}) } : {}),
+      };
+    });
     const schede = (raccolta.schede || []).map((s) => ({ scheda: scheda(s.id), apertaDa: scheda(s.apertaDa), finestra: s.finestra, popup: !!s.popup || undefined, t: sec(s.ts - inizio) }));
     const elencoPdf = [];
     pdf.forEach((d, i) => {
@@ -1218,6 +1522,71 @@
       elencoPdf.push({ file: `pdf/${nnn}.json`, url: o.url, t: o.t, pagine: o.pagine, righe: o.righe.length, da: o.da });
     });
     files["flusso.json"] = JSON.stringify({ inizio: 0, unita: "secondi dall'inizio", schede, pagine: elencoPagine, pdf: elencoPdf, richieste }, null, 1);
+
+    // il visualizzatore: la sua forma tecnica (numeri, tipi, indirizzi anonimizzati) e i clic
+    function tecnicaFinta(t) {
+      if (!t || typeof t !== "object") return null;
+      viewerOra = true;
+      try {
+        const num = (x) => (Number.isFinite(x) ? x : null);
+        const numeri = (a) => (Array.isArray(a) && a.length <= 4 && a.every((x) => Number.isFinite(x)) ? a : null);
+        const tipo = (x) => (typeof x === "string" && /^(?:data:[\w.+/-]{0,40}|blob:|http|vuoto|altro)$/.test(x) ? x : "altro");
+        const ind = (u) => (typeof u === "string" && u ? anonUrl(u, "flusso") : undefined);
+        const conti = (o, re) => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).filter(([k]) => re.test(k)).slice(0, 60)
+          .map(([k, v]) => [k, Number.isFinite(v) ? v : Object.fromEntries(Object.entries(v && typeof v === "object" ? v : {}).filter(([, x]) => Number.isFinite(x)).slice(0, 10))]));
+        const lista = (l, n) => (Array.isArray(l) ? l.slice(0, n).filter((x) => x && typeof x === "object") : []);
+        return {
+          sonda: !!t.sonda, elementi: num(t.elementi),
+          canvas: lista(t.canvas, 60).map((c) => ({ larghezza: num(c.larghezza), altezza: num(c.altezza), schermo: numeri(c.schermo),
+            contesto: /^[\w-]{1,24}$/.test(c.contesto || "") ? c.contesto : null, preserveDrawingBuffer: typeof c.preserveDrawingBuffer === "boolean" ? c.preserveDrawingBuffer : null,
+            ...(c.willReadFrequently === true ? { willReadFrequently: true } : {}) })),
+          immagini: lista(t.immagini, 100).map((x) => ({ tipo: tipo(x.tipo), ...(x.indirizzo ? { indirizzo: ind(x.indirizzo) } : {}),
+            ...(Number.isFinite(x.caratteri) ? { caratteri: x.caratteri } : {}), naturale: numeri(x.naturale), schermo: numeri(x.schermo), n: num(x.n) })),
+          sfondi: lista(t.sfondi, 20).map((x) => ({ tipo: tipo(x.tipo), n: num(x.n) })),
+          riquadri: lista(t.riquadri, 20).map((x) => ({ tipo: tipo(x.tipo), ...(x.indirizzo ? { indirizzo: ind(x.indirizzo) } : {}), schermo: numeri(x.schermo) })),
+          video: num(t.video), svg: num(t.svg), oggetti: num(t.oggetti),
+          script: (Array.isArray(t.script) ? t.script : []).slice(0, 60).map(ind).filter(Boolean), scriptNellaPagina: num(t.scriptNellaPagina),
+          risorse: lista(t.risorse, 300).map((x) => {
+            const m = /^([A-Za-z-]{1,20}) (.*)$/.exec(String(x.chiave || "")) || [];
+            return { tipo: (m[1] || "altro").toLowerCase(), indirizzo: ind(m[2] || "") || "", n: num(x.n), trasferiti: num(x.trasferiti), corpo: num(x.corpo),
+              decodificati: num(x.decodificati), max: num(x.max), ms: num(x.ms), cache: num(x.cache) };
+          }),
+          ...(t.contesti ? { contesti: conti(t.contesti, /^[\w-]{1,24}$/) } : {}),
+          ...(t.disegni ? { disegni: conti(t.disegni, /^[\w -]{1,60}$/) } : {}),
+          ...(t.blob ? { blob: conti(t.blob, /^[\w.+/ -]{1,60}$/) } : {}),
+          ...(t.websocket ? { websocket: lista(t.websocket, 20).map((w) => ({ percorso: ind(w.percorso) || "", parametri: (Array.isArray(w.parametri) ? w.parametri : []).filter((k) => /^[\w.-]{1,40}$/.test(k)).slice(0, 20),
+            ricevuti: num(w.ricevuti), binari: num(w.binari), byteRicevuti: num(w.byteRicevuti), mandati: num(w.mandati), byteMandati: num(w.byteMandati), chiusa: w.chiusa === true })) } : {}),
+        };
+      } finally { viewerOra = false; }
+    }
+    const clicFinti = clic.map((c) => {
+      viewerOra = true;
+      try {
+        const b = c.bersaglio && typeof c.bersaglio === "object" ? c.bersaglio : {};
+        const numeri = (a) => (Array.isArray(a) && a.length <= 4 && a.every((x) => Number.isFinite(x)) ? a : undefined);
+        const img = b.img && typeof b.img === "object" ? b.img : null;
+        return {
+          t: sec(c.ts - inizio), tipo: c.tipo === "dblclick" ? "dblclick" : "click", scheda: scheda(c.scheda), ...(c.frame > 0 ? { riquadro: true } : {}),
+          pagina: anonUrl(c.url, "flusso"),
+          bersaglio: {
+            strada: (Array.isArray(b.strada) ? b.strada : []).slice(0, 5).filter((n) => n && typeof n === "object").map((n) => ({
+              tag: /^[a-z][a-z0-9-]{0,30}$/.test(n.tag || "") ? n.tag : "?", ...(n.id ? { id: cifreViewer(String(n.id).slice(0, 80)) } : {}),
+              ...(n.classe ? { classe: cifreViewer(String(n.classe).slice(0, 120)) } : {}), ...(/^[\w-]{1,30}$/.test(n.ruolo || "") ? { ruolo: n.ruolo } : {}) })),
+            ...(b.testo ? { testo: trattaStringa(String(b.testo).slice(0, 80)) } : {}), ...(numeri(b.schermo) ? { schermo: numeri(b.schermo) } : {}),
+            ...(img ? { img: { tipo: /^(?:data:[\w.+/-]{0,40}|blob:|http|vuoto|altro)$/.test(img.tipo || "") ? img.tipo : "altro",
+              ...(img.indirizzo ? { indirizzo: anonUrl(String(img.indirizzo), "flusso") } : {}), ...(numeri(img.naturale) ? { naturale: numeri(img.naturale) } : {}) } } : {}),
+            ...(b.canvas === true ? { canvas: true } : {}),
+          },
+        };
+      } finally { viewerOra = false; }
+    });
+    const pagViewer = pagine.filter((p) => p.viewer), rqViewer = richieste.filter((r) => r.viewer);
+    if (pagViewer.length || rqViewer.length || clicFinti.length) {
+      files["eviewer.json"] = JSON.stringify({ unita: "secondi dall'inizio; nessuna immagine, nessun dato: la forma tecnica del visualizzatore",
+        pagine: pagine.map((p, i) => (p.viewer ? { file: elencoPagine[i].file, t: elencoPagine[i].t, scheda: elencoPagine[i].scheda, riquadro: elencoPagine[i].riquadro,
+          motivo: elencoPagine[i].motivo, tecnica: p.tecnicaFinta || null } : null)).filter(Boolean),
+        clic: clicFinti }, null, 1);
+    }
     // il registro degli errori dell'estensione (dall'ultima registrazione
     // esportata): i tempi come il flusso, il resto passa dalla ripulitura e dal cancello
     const errori = (Array.isArray(raccolta.errori) ? raccolta.errori : []).map(({ ts, ...x }) => ({ t: Math.round(((ts || 0) - (raccolta.inizio || 0)) / 1000), ...x }));
@@ -1235,7 +1604,7 @@
     for (const v of visto.cf) letterali.set(v, () => cfFinto(v));
     for (const v of visto.email) letterali.set(v, () => "utente@esempio.it");
     for (const v of [...visto.telefoni, ...visto.tessere]) if (v.length >= 6) letterali.set(v, () => v.replace(/\d/g, "0"));
-    for (const v of visto.nascita) letterali.set(v, () => date(v));
+    for (const v of visto.nascita) letterali.set(v, () => (/^\d{8}$/.test(v) ? dateDicom(v) : date(v)));
     const idAlfa = [...idOriginali].filter((v) => !/^\d+$/.test(v)).sort((a, b) => b.length - a.length);
     const reIdAlfa = idAlfa.length ? new RegExp(`(?<![A-Za-z0-9])(?:${idAlfa.map(escRe).join("|")})(?![A-Za-z0-9])`, "g") : null;
     const parolePers = [...parolePersona.keys()].filter((w) => w.length >= 3).sort((a, b) => b.length - a.length);
@@ -1286,6 +1655,115 @@
         "",
       ];
     };
+    // Il visualizzatore, a parte: com'è fatto (per decidere come mostrare le
+    // immagini), da quello che è già anonimizzato — nessun dato, nessuna immagine.
+    // Un indirizzo diventa un modello: {uid}, {n}, {id} al posto dei numeri, della query solo i nomi
+    // (e i valori dei parametri tecnici: requestType, contentType…).
+    const modello = (u) => {
+      const m = /^([a-z][a-z0-9+.-]*:\/\/[^/?#]*)?([^?#]*)(\?[^#]*)?/i.exec(String(u || "")) || [];
+      const seg = (s) => {
+        const est = (/\.[A-Za-z]\w{0,4}$/.exec(s) || [""])[0], b = est ? s.slice(0, -est.length) : s;
+        if (/^[0-2](?:\.\d+){3,}$/.test(b)) return "{uid}" + est;
+        if (/^\d+$/.test(b)) return "{n}" + est;
+        if (/\d/.test(b) && /^[\w.-]{8,}$/.test(b)) return "{id}" + est;
+        return s;
+      };
+      const q = m[3] ? [...new Set(m[3].slice(1).split("&").filter(Boolean).map((p) => {
+        const i = p.indexOf("="), k = i < 0 ? p : p.slice(0, i), v = i < 0 ? "" : decURI(p.slice(i + 1));
+        return VIEWER_TECNICO.test(k) && /^[A-Za-z][\w./+-]{0,40}$/.test(v) ? `${k}=${v}` : k;
+      }))].sort() : [];
+      return (m[1] || "") + (m[2] || "").split("/").map(seg).join("/") + (q.length ? "?" + q.join("&") : "");
+    };
+    const misuraDi = (b) => (b == null ? "?" : b < 1024 ? `${b} B` : b < 1048576 ? `${Math.round(b / 1024)} KB` : `${(b / 1048576).toFixed(1)} MB`);
+    const sezioneViewer = () => {
+      if (!pagViewer.length && !rqViewer.length && !clicFinti.length) return [];
+      const conta1 = (l) => { const o = {}; for (const x of l) o[x] = (o[x] || 0) + 1; return Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(", ") || "nessuna"; };
+      const forma = (a) => (Array.isArray(a) ? a.join("×") : "?");
+      const sino = (x) => (x === true ? "sì" : x === false ? "no" : "?");
+      // le richieste per modello di indirizzo: quante, che contenuto, quanto pesano, come stanno in cache
+      const gruppi = new Map();
+      for (const r of rqViewer) {
+        const k = `${r.metodo} ${modello(r.url)}`;
+        if (!gruppi.has(k)) gruppi.set(k, []);
+        gruppi.get(k).push(r);
+      }
+      const immagine = (r) => r.tipo === "image" || /^image\/|dicom|octet-stream|multipart/.test(r.contenuto || "");
+      const riga = (k, l) => {
+        const mis = l.map((r) => r.misura).filter(Number.isFinite).sort((a, b) => a - b);
+        const cc = [...new Set(l.map((r) => (r.intestazioni && r.intestazioni.cache) || "nessuno"))];
+        return `    ${k} — ${l.length}× ${[...new Set(l.map((r) => (r.intestazioni && r.intestazioni.tipo) || r.contenuto || "?"))].join(" / ")} [${[...new Set(l.map((r) => r.tipo))].join(", ")}]`
+          + `; ${mis.length ? `${misuraDi(mis[0])}–${misuraDi(mis[mis.length - 1])} (mediana ${misuraDi(mis[Math.floor(mis.length / 2)])})` : "misura non detta (niente Content-Length)"}`
+          + `; Cache-Control «${cc.join("» «")}»; ETag ${l.filter((r) => r.intestazioni && r.intestazioni.etag).length}/${l.length}`
+          + `; Last-Modified ${l.filter((r) => r.intestazioni && r.intestazioni.ultimaModifica).length}/${l.length}; dalla cache ${l.filter((r) => r.daCache).length}/${l.length}`
+          + `; stato ${[...new Set(l.map((r) => r.errore ? "errore" : r.stato))].join(", ")}`;
+      };
+      const tutti = [...gruppi].sort((a, b) => b[1].length - a[1].length);
+      const img = tutti.filter(([, l]) => l.some(immagine)), altre = tutti.filter(([, l]) => !l.some(immagine));
+      // l'ultima descrizione tecnica di ogni documento del visualizzatore (scheda, riquadro, indirizzo)
+      const ultime = new Map();
+      pagine.forEach((p, i) => { if (p.viewer && p.tecnicaFinta) ultime.set(`${elencoPagine[i].scheda}|${elencoPagine[i].riquadro}|${modello(elencoPagine[i].url)}`, { p: elencoPagine[i], t: p.tecnicaFinta }); });
+      const doc = [];
+      for (const { p, t } of ultime.values()) {
+        const canvas = t.canvas || [];
+        const contesti = Object.entries(t.contesti || {}).map(([k, v]) => `${k} ${v.n || 0} (preserveDrawingBuffer ${v.pdb || 0})`).join(", ");
+        const ws = t.websocket || [];
+        const blob = Object.entries(t.blob || {}).map(([k, v]) => `${k} ×${v.n || 0} (${misuraDi(v.byte || 0)})`).join(", ");
+        // (le risorse, raccolte per modello: due UID diversi sono lo stesso modello)
+        const perModello = new Map();
+        for (const x of t.risorse || []) {
+          const k = `${x.tipo} ${modello(x.indirizzo)}`, y = perModello.get(k) || { tipo: x.tipo, modello: modello(x.indirizzo), n: 0, corpo: 0, max: 0, decodificati: 0, trasferiti: 0, cache: 0, ms: 0 };
+          for (const c of ["n", "corpo", "decodificati", "trasferiti", "cache", "ms"]) y[c] += x[c] || 0;
+          y.max = Math.max(y.max, x.max || 0);
+          perModello.set(k, y);
+        }
+        const ris = [...perModello.values()].sort((a, b) => b.n - a.n).slice(0, 15);
+        doc.push(`  Documento ${modello(p.url)} (scheda ${p.scheda ?? "?"}${p.riquadro ? ", riquadro" : ""}; sonda ${t.sonda ? "sì" : "no"}; ${t.elementi ?? "?"} elementi):`,
+          `    Canvas: ${canvas.length}${canvas.length ? " — " + canvas.slice(0, 12).map((c) => `${c.contesto || "senza contesto"} ${c.larghezza}×${c.altezza} (sullo schermo ${forma(c.schermo)}, preserveDrawingBuffer ${sino(c.preserveDrawingBuffer)}${c.willReadFrequently ? ", willReadFrequently" : ""})`).join("; ") : ""}`,
+          `    Contesti creati (anche fuori dal documento): ${contesti || "nessuno"}`,
+          `    Disegno sui canvas (da dove): ${Object.entries(t.disegni || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(", ") || "niente visto"}`,
+          `    Miniature e immagini <img>: ${(t.immagini || []).reduce((n, x) => n + (x.n || 0), 0)}${(t.immagini || []).length ? " — " + t.immagini.slice(0, 10).map((x) => `${x.tipo} ×${x.n}${x.indirizzo ? " " + modello(x.indirizzo) : ""} (${forma(x.naturale)}${Number.isFinite(x.caratteri) ? `, ~${misuraDi(Math.round(x.caratteri * 0.75))} in base64` : ""})`).join("; ") : ""}`,
+          `    Sfondi CSS con url(): ${(t.sfondi || []).map((x) => `${x.tipo} ×${x.n}`).join(", ") || "nessuno"}`,
+          `    Riquadri (iframe): ${(t.riquadri || []).length}${(t.riquadri || []).length ? " — " + t.riquadri.map((x) => `${x.tipo}${x.indirizzo ? " " + modello(x.indirizzo) : ""} (${forma(x.schermo)})`).join("; ") : ""}`,
+          `    WebSocket: ${ws.length ? ws.map((w) => `${modello(w.percorso)}${w.parametri.length ? " (parametri " + w.parametri.join(", ") + ")" : ""}: ricevuti ${w.ricevuti} (binari ${w.binari}, ${misuraDi(w.byteRicevuti)}), mandati ${w.mandati} (${misuraDi(w.byteMandati)})${w.chiusa ? ", chiuso" : ""}`).join("; ") : t.sonda ? "nessuno" : "? (senza sonda)"}`,
+          `    Blob diventati indirizzi (URL.createObjectURL): ${blob || (t.sonda ? "nessuno" : "?")}`,
+          `    Video ${t.video ?? "?"}, SVG ${t.svg ?? "?"}, object/embed ${t.oggetti ?? "?"}; script nella pagina ${t.scriptNellaPagina ?? "?"}`,
+          `    Script: ${(t.script || []).map(modello).join(", ") || "nessuno"}`,
+          `    Resource Timing (le misure del browser), per modello: ${ris.length ? "" : "nessuna"}`,
+          ...ris.map((x) => `      ${x.tipo} ${x.modello} — ${x.n}×, corpo ${misuraDi(x.corpo)} (max ${misuraDi(x.max)}), decodificati ${misuraDi(x.decodificati)}, trasferiti ${misuraDi(x.trasferiti)}, dalla cache ${x.cache}, ${Math.round((x.ms || 0) / Math.max(1, x.n || 1))} ms in media`));
+      }
+      // i clic: che richieste seguono, nei 3 secondi dopo (o fino al clic dopo)
+      const clicRighe = clicFinti.slice(0, 30).map((c, i) => {
+        const b = c.bersaglio || {}, n0 = (b.strada || [])[0] || {};
+        const dove = `${n0.tag || "?"}${n0.classe ? "." + n0.classe.split(/\s+/).join(".") : ""}${n0.id ? "#" + n0.id : ""}`;
+        const fino = Math.min(c.t + 3, i + 1 < clicFinti.length ? clicFinti[i + 1].t - 0.05 : Infinity);
+        const dopo = rqViewer.filter((r) => r.inizio >= c.t - 0.05 && r.inizio <= fino);
+        const per = new Map();
+        for (const r of dopo) { const k = `${r.metodo} ${modello(r.url)} ${(r.intestazioni && r.intestazioni.tipo) || r.contenuto || "?"}`; per.set(k, [...(per.get(k) || []), r]); }
+        return `    +${c.t} s ${c.tipo} su ${dove}${b.img ? ` (immagine ${b.img.tipo} ${forma(b.img.naturale)}${b.img.indirizzo ? " " + modello(b.img.indirizzo) : ""})` : ""}${b.canvas ? " (canvas)" : ""}`
+          + ` → nei 3 s dopo ${dopo.length ? `${dopo.length} richieste: ${[...per].map(([k, l]) => `${l.length}× ${k}${l.some((r) => Number.isFinite(r.misura)) ? " " + misuraDi(Math.max(...l.map((r) => r.misura || 0))) : ""}`).join("; ")}` : "nessuna richiesta"}`;
+      });
+      const fuori = new Set();
+      for (const p of pagViewer) for (const o of p.fuori || []) {
+        if (!/^https?:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(o)) continue;
+        const f = origineFinta(o.toLowerCase(), "flusso");
+        fuori.add(f != null ? f : MARCHI.some((re) => re.test(o)) ? "un host dell'ospedale" : o.toLowerCase());
+      }
+      return [
+        "Visualizzatore di immagini (eViewer: solo la forma tecnica — nessuna immagine, nessun dato):",
+        `  Istantanee: ${pagViewer.length} (${conta1(pagViewer.map((p) => p.motivo || "caricata"))}); indirizzi: ${[...new Set(elencoPagine.filter((x) => x.viewer).map((x) => modello(x.url)))].join(", ") || "nessuno"}`,
+        `  Richieste al visualizzatore: ${rqViewer.length} (${conta1(rqViewer.map((r) => r.tipo || "?"))}), errori ${rqViewer.filter((r) => r.errore).length}, dalla cache ${rqViewer.filter((r) => r.daCache).length}; rinvii che portano lì: ${richieste.reduce((n, r) => n + r.rinvii.filter((x) => x.a.includes(VIEWER_FINTO)).length, 0)}`,
+        `  Tipi di contenuto: ${conta1(rqViewer.map((r) => (r.intestazioni && r.intestazioni.tipo) || r.contenuto || "?"))}`,
+        "  Immagini e dati, per modello di indirizzo (quante, contenuto [tipo di richiesta], misura, cache):",
+        ...(img.length ? img.slice(0, 20).map(([k, l]) => riga(k, l)) : ["    nessuna"]),
+        "  Le altre richieste, per modello:",
+        ...(altre.length ? altre.slice(0, 20).map(([k, l]) => riga(k, l)) : ["    nessuna"]),
+        ...doc,
+        `  Clic: ${clicFinti.length}${clicFinti.length ? "" : " (nessuno)"}`,
+        ...clicRighe,
+        `  Host fuori dal visualizzatore chiamati dalle sue pagine (non registrati): ${[...fuori].sort().join(", ") || "nessuno"}`,
+        "",
+      ];
+    };
     const riepilogoDati = {
       versione: raccolta.versione || "?", durata: Math.round((Number(raccolta.fine || Date.now()) - inizio) / 60000),
       comeFinita: raccolta.comeFinita || "fermata a mano", pagine: elencoPagine.length, perTipo,
@@ -1314,6 +1792,7 @@
       `Errori dell'estensione: ${errori.length} (errori.json)`,
       "",
       ...sezioneSiss(),
+      ...sezioneViewer(),
       "Sostituzioni:",
       ...Object.entries(conteggi).map(([k, v]) => `  ${k}: ${v}`),
       "",
@@ -1332,10 +1811,13 @@
     ].join("\n");
 
     // -------------------------------------------------- il cancello
-    const sensibili = { nomi: [], personale: [], cf: [...visto.cf], nascita: [...visto.nascita].filter((v) => date(v) !== v), id: [...idOriginali].filter((v) => v.length >= 5),
+    const sensibili = { nomi: [], personale: [], cf: [...visto.cf], nascita: [...visto.nascita].filter((v) => date(v) !== v || /^\d{8}$/.test(v)), id: [...idOriginali].filter((v) => v.length >= 5),
       email: [...visto.email], telefoni: [...visto.telefoni], tessere: [...visto.tessere] };
     for (const { cat, orig } of nomiVisti.values()) {
       sensibili[cat].push(orig);
+      // un paziente di due parole anche girato («MARIO ROSSI»); con ^ o una virgola il cancello lo vede già (norma)
+      const w = orig.trim().split(/\s+/);
+      if (cat === "nomi" && w.length === 2 && w.every((x) => x.length >= 3)) sensibili.nomi.push(`${w[1]} ${w[0]}`);
     }
     for (const [w, e] of parolePersona) if (e.cognome && w.length >= 4) sensibili.nomi.push(w);
     // (opz.aggiungi: file messi fra quelli in uscita prima del controllo — solo per i test)

@@ -16,11 +16,11 @@
   // Il grezzo di una fonte («grezzi»: la registrazione a mano; «scorre»: gli
   // ultimi 10 minuti), da `da` in poi, già anonimizzato e chiuso in uno zip.
   async function esporta({ fonte = "grezzi", st, errori = [], da = 0, opz = {} }) {
-    const pagine = [], flusso = [], note = [], schede = [], grezzi = [];
+    const pagine = [], flusso = [], note = [], schede = [], clic = [], grezzi = [];
     for (const v of await RegistraDb.tx(fonte, "readonly", (s) => s.getAll())) {
       if (da && !((v.ts || 0) >= da)) continue;
       if (v.tipo === "pagina") pagine.push(v);
-      else if (v.tipo === "flusso") { flusso.push(...(v.flusso || [])); note.push(...(v.note || [])); schede.push(...(v.schede || [])); }
+      else if (v.tipo === "flusso") { flusso.push(...(v.flusso || [])); note.push(...(v.note || [])); schede.push(...(v.schede || [])); clic.push(...(v.clic || [])); }
       else if (v.tipo === "pdf") grezzi.push(v);
     }
     // le richieste del pannello (content.js): stesso indirizzo e metodo, un
@@ -49,7 +49,7 @@
       pdf.push(o);
     }
     const vocabolario = await (await fetch(chrome.runtime.getURL("registra-vocabolario.json"))).json();
-    const raccolta = { versione: st.versione, inizio: st.inizio, fine: st.fine, comeFinita: st.comeFinita, origini: st.origini, pagine, flusso, pdf, schede, errori };
+    const raccolta = { versione: st.versione, inizio: st.inizio, fine: st.fine, comeFinita: st.comeFinita, origini: st.origini, pagine, flusso, pdf, schede, clic, errori };
     const r = RegistraAnonimo.anonimizza(raccolta, { vocabolario, ...opz });
     const zip = RegistraAnonimo.creaZip(r.files, new Date(st.inizio));
     return { zip, r };

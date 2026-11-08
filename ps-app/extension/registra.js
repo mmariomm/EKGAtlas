@@ -30,6 +30,12 @@
  * osservato: XHR e fetch delle sue API, rinvii, tempi, il PDF di «Stampa RE».
  * Mai un corpo di risposta; dei moduli inviati mai un campo di credenziali
  * (password, PIN, OTP).
+ * Anche il visualizzatore di immagini del PACS (eViewer: un host, ogni porta,
+ * http o https), per vedere com'è fatto prima di decidere come mostrare le
+ * radiografie sul telefono: le sue istantanee (senza immagini), la sua forma
+ * tecnica (registra-sonda.js e registra-pagina.js), i clic, e delle sue
+ * richieste in più la misura, le intestazioni della cache e chi le ha
+ * chieste. Mai un pixel, mai un byte d'immagine.
  *
  * LA REGISTRAZIONE AUTOMATICA (accesa di norma, ⋯ → Registrazioni la spegne):
  * quando il medico non registra, lo stesso registratore tiene gli ultimi
@@ -66,6 +72,9 @@ const REG_ST = "grezzi", REG_SC = "scorre";
 // il SISS: due origini esatte, solo https (anche in manifest.json)
 const REG_SISS = new Set(["https://dcss.cgi.crs.lombardia.it", "https://operatorisiss.servizirl.it"]);
 const regSiss = (url) => { try { return REG_SISS.has(new URL(url).origin); } catch { return false; } };
+// il visualizzatore del PACS: un host, ogni porta, http o https (anche in manifest.json)
+const REG_VIEWER = "mmeviewer.multimedica.root.lan";
+const regViewer = (url) => { try { const u = new URL(url); return u.hostname === REG_VIEWER && /^https?:$/.test(u.protocol); } catch { return false; } };
 // i campi che non si registrano mai, neanche nel grezzo
 const REG_CRED = /(?:^|[^a-z])(?:pin|otp|password|passwd|pwd|passcode|puk|sblocco)(?:[^a-z]|$)|one[\s_-]?time|j_password/i;
 const REG_MOTIVI = new Set(["caricata", "uscita", "rotta", "overlay", "quiete"]);
@@ -78,10 +87,10 @@ const regAttiva = (s = regStato) => !!s && s.stato === "rec" && Date.now() < s.s
 // si tiene qualcosa: la registrazione a mano, o (se no) gli ultimi minuti
 const regCattura = () => regAttiva() || (regCaricato && regAuto);
 const regNostra = (url) => {
-  try { const o = new URL(url).origin; return o === SA4 || ALLOWED_ORIGINS.has(o) || REG_SISS.has(o) || (!!regPortale && o === regPortale); }
+  try { const o = new URL(url).origin; return o === SA4 || ALLOWED_ORIGINS.has(o) || REG_SISS.has(o) || (!!regPortale && o === regPortale) || regViewer(url); }
   catch { return false; }
 };
-const regOrigini = () => ({ gestionale: SA4, portale: regPortale, altri: [...ALLOWED_ORIGINS].filter((x) => x !== SA4), siss: [...REG_SISS] });
+const regOrigini = () => ({ gestionale: SA4, portale: regPortale, altri: [...ALLOWED_ORIGINS].filter((x) => x !== SA4), siss: [...REG_SISS], viewer: [REG_VIEWER] });
 
 let regScadenza = null;
 async function regLeggi() {
@@ -191,7 +200,7 @@ const regInVolo = new Map();           // requestId → la richiesta, finché no
 const regRilettura = new Set();        // indirizzi che il registratore sta rileggendo
 const regPdfVisti = new Set();         // indirizzi di cui ha già i byte
 let regPdfN = 0, regPagineN = 0;
-let regBuf = { flusso: [], note: [], schede: [] };
+let regBuf = { flusso: [], note: [], schede: [], clic: [] };
 let regBufT = null;
 function regAccoda(tipo, x) {
   regBuf[tipo].push(x);
@@ -200,8 +209,8 @@ function regAccoda(tipo, x) {
 async function regScarica() {
   clearTimeout(regBufT); regBufT = null;
   const b = regBuf;
-  if (!b.flusso.length && !b.note.length && !b.schede.length) return;
-  regBuf = { flusso: [], note: [], schede: [] };
+  if (!b.flusso.length && !b.note.length && !b.schede.length && !b.clic.length) return;
+  regBuf = { flusso: [], note: [], schede: [], clic: [] };
   await regMetti({ tipo: "flusso", ...b });
 }
 const REG_FILTRO = { urls: ["http://*/*", "https://*/*"] };
@@ -225,6 +234,7 @@ chrome.webRequest.onBeforeRequest.addListener(regQuando((d) => {
     for (const [k, v] of Object.entries(fd).slice(0, 200)) r.corpo[k] = REG_CRED.test(k.replace(/([a-z0-9])([A-Z])/g, "$1 $2")) ? ["(credenziale: non registrata)"] : (Array.isArray(v) ? v : [v]).slice(0, 20).map((x) => String(x).slice(0, 2000));
   }
   if (regSiss(d.url)) r.siss = true;
+  if (regViewer(d.url)) { r.viewer = true; if (iniziatore) r.iniziatore = iniziatore.slice(0, 200); }
   regInVolo.set(d.requestId, r);
 }), REG_FILTRO, ["requestBody"]);
 chrome.webRequest.onBeforeRedirect.addListener(regQuando((d) => {
@@ -242,6 +252,19 @@ chrome.webRequest.onHeadersReceived.addListener(regQuando((d) => {
   // dire chiederlo di nuovo al server regionale (una stampa in più) — no
   const cc = ((d.responseHeaders || []).find((h) => /^cache-control$/i.test(h.name)) || {}).value || "";
   if (r.siss && /no-store/i.test(cc)) r.nonInCache = true;
+  // il visualizzatore: quanto pesa e come si tiene in cache (per sapere se le immagini si possono rileggere)
+  if (r.viewer) {
+    const h = (n) => String(((d.responseHeaders || []).find((x) => x.name.toLowerCase() === n) || {}).value || "");
+    const lung = Number(h("content-length"));
+    r.intestazioni = {
+      ...(ct ? { tipo: ct.replace(/;\s*boundary=(?:"[^"]*"|[^;]*)/i, "").trim().toLowerCase().slice(0, 120) } : {}),
+      ...(Number.isFinite(lung) && h("content-length") ? { lunghezza: lung } : {}),
+      ...(cc ? { cache: cc.slice(0, 120) } : {}),
+      ...(h("etag") ? { etag: true } : {}), ...(h("last-modified") ? { ultimaModifica: true } : {}), ...(h("expires") ? { scade: true } : {}),
+      ...(h("content-encoding") ? { codifica: h("content-encoding").slice(0, 30) } : {}), ...(h("accept-ranges") ? { intervalli: h("accept-ranges").slice(0, 20) } : {}),
+      ...(h("vary") ? { vary: h("vary").slice(0, 80) } : {}), ...(h("pragma") ? { pragma: h("pragma").slice(0, 30) } : {}),
+    };
+  }
 }), REG_FILTRO, ["responseHeaders"]);
 chrome.webRequest.onCompleted.addListener(regQuando((d) => {
   const r = regInVolo.get(d.requestId);
@@ -320,7 +343,7 @@ self.fetch = function (input, init) {
 async function regAvvia() {
   await regCancella();
   regInVolo.clear(); regRilettura.clear(); regPdfVisti.clear(); regPdfN = 0; regPagineN = 0;
-  regBuf = { flusso: [], note: [], schede: [] };
+  regBuf = { flusso: [], note: [], schede: [], clic: [] };
   const o = await chrome.storage.local.get("portale");
   regPortale = o.portale || "";
   const ora = Date.now();
@@ -583,15 +606,26 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     let url = String(sender.url || msg.url || "");
     try { if (msg.url && new URL(String(msg.url)).origin === new URL(url).origin) url = String(msg.url); } catch { /* resta quello del mittente */ }
     const fuori = Array.isArray(msg.fuori) ? msg.fuori.map(String).filter((x) => /^https?:\/\/[\w.-]+(?::\d+)?$/.test(x)).slice(0, 20) : [];
+    // il visualizzatore: la sua forma tecnica (numeri, tipi, percorsi senza query), se non è troppa
+    const tecnica = regViewer(url) && msg.tecnica && typeof msg.tecnica === "object" && JSON.stringify(msg.tecnica).length <= 400e3 ? msg.tecnica : null;
     await regMetti({ tipo: "pagina",
       url, titolo: String(msg.titolo || "").slice(0, 300), html, ts: Number(msg.ts) || Date.now(),
       scheda: t.id, frame: sender.frameId || 0, alto: !sender.frameId, motivo: REG_MOTIVI.has(msg.motivo) ? msg.motivo : "caricata",
       finestra: t.windowId, apertaDa: t.openerTabId ?? null,
       ...(msg.forma ? { forma: true } : {}), ...(Number(msg.credenziali) > 0 ? { credenziali: Math.min(99, Number(msg.credenziali)) } : {}),
-      ...(fuori.length ? { fuori } : {}),
+      ...(fuori.length ? { fuori } : {}), ...(tecnica ? { tecnica } : {}),
     });
     return { ok: true };
   });
+  // un clic sul visualizzatore: dove, e quando (le richieste che seguono le dice il flusso)
+  if (msg.t === "regClic") {
+    const b = msg.bersaglio && typeof msg.bersaglio === "object" && JSON.stringify(msg.bersaglio).length <= 6000 ? msg.bersaglio : null;
+    if (regCattura() && regViewer(sender.url || "")) {
+      regAccoda("clic", { tipo: msg.tipo === "dblclick" ? "dblclick" : "click", ts: Number(msg.ts) || Date.now(), scheda: sender.tab.id, frame: sender.frameId || 0,
+        url: String(sender.url || "").slice(0, 4000), bersaglio: b });
+    }
+    return reply({ ok: true }), true;
+  }
   if (msg.t === "regRichiesta") {
     if (regCattura()) regAccoda("note", { metodo: String(msg.metodo || "GET").toUpperCase().slice(0, 10), url: String(msg.url || "").slice(0, 4000), ts: Number(msg.ts) || Date.now(), scheda: sender.tab.id });
     return reply({ ok: true }), true;

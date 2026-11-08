@@ -34,7 +34,9 @@
         "https://smarthealth.multimedica.it/*",
         "http://10.11.0.151/*",
         "https://dcss.cgi.crs.lombardia.it/*",
-        "https://operatorisiss.servizirl.it/*"
+        "https://operatorisiss.servizirl.it/*",
+        "http://mmeviewer.multimedica.root.lan/*",
+        "https://mmeviewer.multimedica.root.lan/*"
       ],
       "js": [
         "registra-pill.js",
@@ -42,6 +44,18 @@
       ],
       "run_at": "document_start",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "http://mmeviewer.multimedica.root.lan/*",
+        "https://mmeviewer.multimedica.root.lan/*"
+      ],
+      "js": [
+        "registra-sonda.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
     },
     {
       "matches": [
@@ -86,7 +100,9 @@
     "https://smarthealth.multimedica.it/*",
     "http://10.11.0.151/*",
     "https://dcss.cgi.crs.lombardia.it/*",
-    "https://operatorisiss.servizirl.it/*"
+    "https://operatorisiss.servizirl.it/*",
+    "http://mmeviewer.multimedica.root.lan/*",
+    "https://mmeviewer.multimedica.root.lan/*"
   ],
   "web_accessible_resources": [
     {
