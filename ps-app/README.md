@@ -683,7 +683,9 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    **Se qualcosa va storto, si finisce a mano nel gestionale.** La striscia diventa **rossa** —
    «Errore · completa a mano» / «Mancano: PTT POC · Da controllare: Troponina»; per un ordine in
    sottofondo comincia da che cosa fare, «TROPONINA US: non mandato · apri il carrello → Riprova»,
-   e il perché sta nel resoconto — e la scheda va
+   e il perché sta nel resoconto (un ordine che **non è partito** non ha resoconto: il perché lo dice
+   la striscia sotto, anche al telefono — «il gestionale non mostra le Richieste: è sull'area Bassa,
+   è quella del paziente?» quando la pagina del paziente arriva senza Richieste) — e la scheda va
    sul **carrello** della richiesta, sull'erogatore dove il gestionale la tiene (l'ultimo elenco
    che ha dato): una semplice lettura dell'elenco, niente inviato, niente confermato. **Mancano** sono gli esami
    mai partiti: li aggiungi tu. **Da controllare** sono quelli mandati ma non visti in carrello:
@@ -1380,7 +1382,10 @@ radiologia.
 
 Sul campo, dopo la Conferma il gestionale **torna alla pagina del paziente**: è lì che la stampa
 parte da sola (e se un'installazione mostrasse una pagina intermedia, parte lì se ha i link,
-altrimenti aspetta il ritorno sul paziente). **Solo per le richieste di PS Assist**: quelle in cui
+altrimenti aspetta il ritorno sul paziente). Nella scheda di un ordine in sottofondo il ritorno
+passa da pagine che il gestionale lascia da sé in un attimo (le etichette LIS, `PsoEpisodio`): da
+lì la stampa non parte — i suoi PDF morirebbero con la pagina, «Stampa interrotta» —, parte dal
+paziente; una pagina dove la scheda resta più di 3 secondi vale come sempre. **Solo per le richieste di PS Assist**: quelle in cui
 il pannello ha mandato esami (o che ha aperto lui), confermate dal pannello o col bottone del
 gestionale. Una richiesta fatta tutta a mano nel gestionale, confermata col suo bottone, non
 stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta** (menu **⋯ →
