@@ -16824,6 +16824,29 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       stato: i.prec ? null : ponteStato(i.p.ep, m.df),
     }));
   }
+  // Le mappe, per il telefono (sola lettura): per ciascuna il nome, la griglia, i letti e
+  // le aree com'è salvata sul PC (o quella di partenza), e chi sta dove — solo l'episodio:
+  // il resto del paziente il telefono lo ha già dalla riga di `pazienti`. Un paziente sta
+  // in un posto solo (se due mappe lo dicono vale l'ultimo, come nel tabellone); gli
+  // episodi precedenti non hanno posto. `vista` è quella che il PC sta guardando.
+  function ponteMappe() {
+    const ks = ["alta", "ps"].filter((k) => MAPPE[k]), per = new Map(ks.map((k) => [k, PANNELLO.conMappa(k, () => PANNELLO.pazModello())]));
+    const dove = new Map();
+    for (const [k, m] of per) for (const [ep, v] of Object.entries(m.posti)) {
+      if (m.info.get(ep)?.prec) continue;
+      const x = dove.get(ep);
+      if (!x || (v.ts || 0) > (x.v.ts || 0)) dove.set(ep, { k, v });
+    }
+    return {
+      vista: PANNELLO.vistaTab(), cols: PIANTA.cols, rows: PIANTA.rows,
+      mappe: ks.map((k) => ({
+        k, nome: NOME_VISTA[MAPPE[k].vista],
+        letti: per.get(k).sala.letti.map((l) => ({ id: l.id, c: l.c, r: l.r, ...misuraLetto(l), nome: l.nome, ...(l.forma && { forma: l.forma }) })),
+        aree: per.get(k).sala.aree.map((a) => ({ id: a.id, c: a.c, r: a.r, w: a.w, h: a.h, nome: a.nome })),
+        posti: [...dove].filter(([, x]) => x.k === k).map(([ep, x]) => ({ ep, tipo: x.v.tipo, id: x.v.id })),
+      })),
+    };
+  }
   // Lo stato della riga del tabellone, in dati, per la riga del telefono: per
   // tipo solo quello che aspetta, col tempo e la sua banda («Lab 50′»), o ✓ se
   // è tornato tutto (come nell'area); il pallino del letto (segnaleLetto) e il
@@ -17029,6 +17052,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       return r;
     };
     if (cmd === "pazienti") return fatto({ ok: true, dati: pontePazienti(), registro: "elenco dei pazienti" });
+    if (cmd === "mappa") return { ok: true, dati: ponteMappe() };
     // l'app aperta (o tornata davanti) sull'iPhone: la smart si rilegge dietro, e lo si dice al telefono, che richiede fra poco
     if (cmd === "triage") {
       const r = a.rileggi ? await smartSync(false).catch(() => null) : null;
