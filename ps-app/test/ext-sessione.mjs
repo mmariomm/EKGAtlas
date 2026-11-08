@@ -171,6 +171,8 @@ const smartDaRileggere = (p) => p.evaluate((u) => {
   localStorage.setItem("psassist:smart.sync.v1", JSON.stringify({ ts: Date.now() - 11 * 60e3, fine: Date.now() - 11 * 60e3, esito: "ok", n: 0 }));
 }, SMART);
 const nienteSmart = (p) => p.evaluate(() => { localStorage.removeItem("psassist:smart.url.v1"); });
+// l'app aperta sull'iPhone: il PC rilegge la smart (non più a tempo) — il comando come lo manda il ponte
+const telApre = () => sw.evaluate(() => ponteSuScheda("triage", { rileggi: true }));
 
 let doc = await ctx.newPage();
 // una prova dopo l'altra: niente ordini aperti, e la scheda del medico nuova
@@ -199,9 +201,11 @@ if (prova("a metà ordine la lista smart aspetta: POC e Urgenze, due ordini, ent
   const w = await nasce;
   check(!!w, "l'ordine va in una scheda di sottofondo");
   await finche(() => sess.log.some((x) => x.cosa === "insert"), 20000);
-  // il medico va su BIANCHI, e la smart è da rileggere: la sua pagina la chiederebbe dopo 1,5 secondi
+  // il medico va su BIANCHI, la smart è da rileggere, e intanto apre l'app sull'iPhone: niente, l'ordine lavora
   await smartDaRileggere(doc);
   await suPagina(doc, B.patientUrl);
+  const durante = await telApre();
+  check(durante?.ok && durante.dati?.rilegge === false, `l'iPhone aperto mentre il motore lavora: la smart non si rilegge (got ${JSON.stringify(durante && durante.dati && { rilegge: durante.dati.rilegge })})`);
   await finche(async () => conferme(A).length > 1 || (await ordini()).some((x) => x.stato === "errore"), 90000);
   await striscia(doc, /ROSSI MARIO.*(Confermata|Etichette|Stampa|Errore)/, 30000).catch(() => "");
   const ins = inviati(A).map((q) => q.params.PRESTAZIONE).sort();
@@ -213,9 +217,11 @@ if (prova("a metà ordine la lista smart aspetta: POC e Urgenze, due ordini, ent
   const fine = (sess.log.find((x) => x.cosa === "conferma") || [...sess.log].reverse().find((x) => x.cosa === "insert" || x.cosa === "ORA")).t + lento;
   const smart = sess.log.filter((x) => x.cosa === "smart");
   check(!smart.some((x) => x.t >= primo.t && x.t <= fine), `la lista smart non si legge mentre il motore inserisce e conferma (smart: ${smart.map((x) => x.t - primo.t).join(", ") || "nessuna"} ms dal primo inserimento)`);
-  // …e dopo, a ordine finito, sì (non è persa: aspettava)
-  await finche(() => sess.log.some((x) => x.cosa === "smart"), 45000);
-  check(sess.log.some((x) => x.cosa === "smart"), "finito l'ordine, la lista smart si rilegge lo stesso");
+  // …e dopo, a ordine finito, riaprendo l'app sì
+  await finche(async () => !(await ordini()).some((x) => ["corre", "coda"].includes(x.stato)), 30000);
+  await telApre();
+  await finche(() => sess.log.some((x) => x.cosa === "smart"), 30000);
+  check(sess.log.some((x) => x.cosa === "smart"), "finito l'ordine, riaprendo l'iPhone la lista smart si rilegge");
   await nienteSmart(doc);
   lento = 0;
 }
@@ -441,10 +447,11 @@ if (prova("una scheda d'ordine bloccata: il ⏹ e le letture restano svelte")) {
   });
   check(t.ferma < 2000, `il ⏹ su un ordine in coda risponde subito (got ${t.ferma} ms)`);
   check(t.lettura < 1500, `una lettura in sottofondo (un referto) non aspetta l'ordine muto (got ${t.lettura} ms)`);
-  // …e nella pagina: la lista smart da rileggere si rilegge
+  // …e aprendo l'iPhone: la lista smart da rileggere si rilegge
   await smartDaRileggere(doc);
   await suPagina(doc, A.patientUrl);
-  check(await finche(() => sess.log.some((x) => x.cosa === "smart"), 15000), "e la lista smart si rilegge (la pagina non aspetta l'ordine muto)");
+  await telApre();
+  check(await finche(() => sess.log.some((x) => x.cosa === "smart"), 15000), "e la lista smart si rilegge (l'iPhone aperto non aspetta l'ordine muto)");
   await nienteSmart(doc);
   await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
   await bloccata.close().catch(() => {});
