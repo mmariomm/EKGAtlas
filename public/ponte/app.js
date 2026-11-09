@@ -951,7 +951,7 @@
       : `<p class="stdesc">Collegala al PC: gli ordini che mandi lì escono dalle stampanti di ${esc(st.nome)}, etichette e A4.</p>
         <button type="button" class="grande" data-a="stacollega" ${st.fase === "invio" || S.fase !== "pronta" ? "disabled" : ""}>${st.fase === "invio" ? "Collego…" : S.fase !== "pronta" ? "Mi collego al PC…" : "Collega"}</button>`;
     return `<div class="foglio" role="dialog" aria-modal="true" aria-label="Stazione di stampa"><button type="button" class="velo" data-a="stachiudi" aria-label="Chiudi"></button>
-      <div class="pannello"><div class="capo"><b>Stazione di stampa</b><button type="button" class="chiudi" data-a="stachiudi">${st.fase === "fatto" ? "Fatto" : "Chiudi"}</button></div>
+      <div class="pannello"><div class="capo"><b>🖨️ Stazione di stampa</b><button type="button" class="chiudi" data-a="stachiudi">${st.fase === "fatto" ? "Fatto" : "Chiudi"}</button></div>
       <div class="carta stcarta"><div class="stnome">${esc(st.nome)}</div><div class="stcod">${esc(st.codice)}</div><div class="stpiano">lo stesso codice è sotto il QR della stazione</div>${corpo}</div></div></div>`;
   }
   const decodificatore = () => (window.jsQR ? Promise.resolve() : new Promise((ok, no) => {
@@ -1188,6 +1188,8 @@
     const t = !inLinea() ? "Senza rete" : !S.ws || S.ws.readyState !== 1 ? "Ricollego…" : S.pari === false ? "PC assente" : "";
     return t ? `<span class="statopc" role="status"><i></i>${t}</span>` : "";
   };
+  // il menu ⋯: un'emoji e poche parole, che si leggono a colpo d'occhio
+  const em = (e) => `<span class="em" aria-hidden="true">${e}</span> `;
   function testata() {
     if (S.fase !== "pronta") return "";
     const suPaz = S.vista.nome === "paziente", p = suPaz ? paziente(S.vista.ep) : null, suZip = S.vista.nome === "registrazioni";
@@ -1197,12 +1199,12 @@
     const nome = suPaz ? `<button type="button" class="tit" data-a="indietro" aria-label="Torna alla ${S.modo === "mappa" && S.mappa ? "mappa" : "lista"}">${tit}</button>` : `<div class="tit">${tit}</div>`;
     return `<header class="top">${sx}${nome}${statoPc()}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
       ${S.menu ? `<div class="menu" role="menu">
-        ${suPaz || suZip ? "" : `<button data-a="aggiornaLista">Aggiorna l'elenco</button>`}
-        <button data-a="stampaPdf">Stampa un PDF</button>
-        <button data-a="scansiona">Collega una stazione</button>
-        <button data-a="registrazioni">Registrazioni</button>
-        <button data-a="esci">Chiudi la sessione</button>
-        <button class="via" data-a="dimentica">Dimentica questo PC</button>
+        ${suPaz || suZip ? "" : `<button data-a="aggiornaLista">${em("🔄")}Aggiorna elenco</button>`}
+        <button data-a="stampaPdf">${em("📄")}Stampa PDF</button>
+        <button data-a="scansiona">${em("🖨️")}Scansiona QR PC stampante</button>
+        <button data-a="registrazioni">${em("🎙️")}Registrazioni</button>
+        <button data-a="esci">${em("🚪")}Chiudi sessione</button>
+        <button class="via" data-a="dimentica">${em("🗑️")}Dimentica PC</button>
         <div class="info">Associato fino alle ${hhmm(S.coppia.scade)} · codice ${esc(S.codice)}</div>
       </div>` : ""}</header>`;
   }

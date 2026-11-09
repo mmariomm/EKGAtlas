@@ -1480,7 +1480,7 @@ const pdfSalvato = async (u) => {
   if (!hit || String(hit.ep || "") !== m[2] || Date.now() - (hit.ts || 0) > REF_TTL || typeof hit.data !== "string") return { ok: false, why: "la copia non è più su questo computer" };
   return { ok: true, pdf: hit.data };
 };
-// Un PDF dall'iPhone (ponte-sw.js, ⋯ → «Stampa un PDF»): sull'A4, con questo
+// Un PDF dall'iPhone (ponte-sw.js, ⋯ → «Stampa PDF»): sull'A4, con questo
 // motore e questo giornale — una richiesta, una stampa: rimandata, non si
 // ristampa. Il PDF sta solo qui in memoria finché il foglio non è partito,
 // poi via (dopo un riavvio del service worker non c'è più: il foglio non

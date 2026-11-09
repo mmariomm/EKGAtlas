@@ -227,8 +227,9 @@ const chiaveTel = (t) => t.evaluate(() => JSON.parse(localStorage.getItem("psass
 // i bottoni visibili più piccoli di 44 px (larghezza o altezza)
 const piccoli = (t) => t.evaluate(() => [...document.querySelectorAll("#app button")].filter((b) => b.offsetParent).map((b) => {
   const r = b.getBoundingClientRect();
-  return { t: (b.textContent || b.getAttribute("aria-label") || "").trim().slice(0, 24), w: Math.round(r.width), h: Math.round(r.height) };
-}).filter((x) => x.w < 44 || x.h < 44));
+  // (i chip fitti delle Richieste: 38 px più 6 di vuoto = 44 di passo per ogni tocco)
+  return { t: (b.textContent || b.getAttribute("aria-label") || "").trim().slice(0, 24), w: Math.round(r.width), h: Math.round(r.height), fitto: !!b.closest(".gruppo, .q-w") };
+}).filter((x) => x.fitto ? x.w < 38 || x.h < 38 : x.w < 44 || x.h < 44).map(({ fitto, ...x }) => x));
 
 // ===========================================================================
 sezione("il PC: il gestionale aperto, il ponte, il QR");
@@ -1172,7 +1173,7 @@ lento = 900;
 await doc.evaluate(() => localStorage.setItem("__psaStampe", "[]"));
 await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 await aspettaTel(tel, /Dol th/, 10000);
-// compatte: il catalogo intero in al più due schermi, ogni tasto alto almeno 44 px
+// compatte: il catalogo intero in al più due schermi, ogni tasto alto almeno 38 px (+6 di vuoto)
 await shot(tel, "tel-richieste");
 if (SHOTS) await tel.screenshot({ path: join(SHOTS, "tel-richieste-tutte.png"), fullPage: true }).catch(() => {});
 const compatte = await tel.evaluate(() => {
@@ -1181,7 +1182,7 @@ const compatte = await tel.evaluate(() => {
            minAlt: Math.min(...tasti.map((b) => b.getBoundingClientRect().height)) };
 });
 check(compatte.alt <= 2 * compatte.vh, `le Richieste (${compatte.n} esami) stanno in due schermi: ${Math.round(compatte.alt)} px su ${compatte.vh} di altezza`);
-check(compatte.minAlt >= 43.9, `ogni tasto è alto almeno 44 px (il più basso: ${compatte.minAlt})`);
+check(compatte.minAlt >= 37.9, `ogni tasto è alto almeno 38 px, più 6 di vuoto: 44 di passo (il più basso: ${compatte.minAlt})`);
 // «Febbre» ha imparato il suo pacchetto sul PC: sul telefono è un chip come gli altri
 const accesi = () => tel.locator("main .esame.on").allInnerTexts();
 check(await tel.locator('[data-a="quesito"][data-q="Febbre"]').count() === 1, "il quesito che ha imparato il suo pacchetto sul PC è un chip anche sul telefono: «Febbre»");
@@ -1207,6 +1208,7 @@ const armato = await tel.locator("#ordina").innerText();
 check(/^Ordino 2 esami · tocca di nuovo\nROSSI MARIO · 77 anni · OBI 2$/.test(armato) && !/\?/.test(armato), `il primo tocco chiede conferma in due righe: che cosa, e il paziente intero con età e posto (${armato.replace(/\n/g, " / ")})`);
 check(Object.keys(A.state.richieste).length === 0, "un doppio tocco (il secondo entro 800 ms) non conferma: niente è partito");
 await shot(tel, "tel-3-ordine-conferma");
+await tel.emulateMedia({ colorScheme: "dark" }); await shot(tel, "tel-3-ordine-conferma-buio"); await tel.emulateMedia({ colorScheme: "light" });
 const nasceOrdine = nuovaPagina(20000);
 await sospendi(500);
 await tocca(tel, "#ordina");

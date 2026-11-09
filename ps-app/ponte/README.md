@@ -113,10 +113,10 @@ sessione. Vedi:
   la prima voce aperta senza ora (scritta cambia quella, o ne fa una in cima; vuota la toglie), i
   promemoria le voci aperte con l'ora. **✓ Fatto** aspetta 5 secondi, con **Annulla**, prima di
   spuntarlo sul PC.
-- **Collega una stazione** (⋯) — inquadra il QR di una [stazione di stampa](#la-stazione-di-stampa):
+- **Scansiona QR PC stampante** (⋯) — inquadra il QR di una [stazione di stampa](#la-stazione-di-stampa):
   una carta con il suo nome e il codice, **Collega**, «Collegata al PC». Sopra «Conferma e stampa»,
   poi, «Stampa: PC · Infermeria» (la scelta del PC, cambiabile per un ordine).
-- **Stampa un PDF** (⋯) — un PDF del telefono esce dalla stampante A4 del PC, con la stampa
+- **Stampa PDF** (⋯) — un PDF del telefono esce dalla stampante A4 del PC, con la stampa
   automatica (mai un dialogo: davanti al PC può non esserci nessuno; senza, «Sul PC la stampa
   automatica non è impostata»). Mentre va, «Invio… 40%»; poi le parole del PC: «Stampato su HP
   LaserJet A4», «Mandato a …» in ambra, o l'errore. Al massimo 15 MB. Sul PC il registro del ponte

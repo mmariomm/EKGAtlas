@@ -172,8 +172,8 @@ let pSta = await staCtx.newPage();
 await pSta.goto(EXTURL("stazione.html"));
 await pSta.waitForSelector("#qr svg", { timeout: 10000 });
 const testoSta = () => pSta.locator(".box").innerText().catch(() => "");
-check(/PS Assist · Stazione di stampa/.test(await pSta.title()) && /Non collegata/.test(await testoSta()) && /⋯ → Collega una stazione/.test(await testoSta()),
-  "«PS Assist · Stazione di stampa»: non collegata, il QR, e come si inquadra (⋯ → Collega una stazione)");
+check(/PS Assist · Stazione di stampa/.test(await pSta.title()) && /Non collegata/.test(await testoSta()) && /⋯ → Scansiona QR PC stampante/.test(await testoSta()),
+  "«PS Assist · Stazione di stampa»: non collegata, il QR, e come si inquadra (⋯ → Scansiona QR PC stampante)");
 const codiceQr = (await pSta.locator("#qrcodice").innerText()).trim();
 check(/^\d{3} \d{3}$/.test(codiceQr), `sotto il QR un codice di sei cifre (got «${codiceQr}»)`);
 const offerta = (await statoSta()).offerta;
@@ -262,7 +262,8 @@ await nudoCtx.close();
 // ===========================================================================
 sezione("il QR della stazione, inquadrato dal telefono: «Collega»");
 await tocca('[data-a="menu"]');
-check(await tel.locator('.menu [data-a="scansiona"]').innerText() === "Collega una stazione", "⋯ sul telefono: «Collega una stazione»");
+await shot(tel, "tel-menu");
+check(await tel.locator('.menu [data-a="scansiona"]').innerText() === "🖨️ Scansiona QR PC stampante", "⋯ sul telefono: «🖨️ Scansiona QR PC stampante»");
 await tocca('.menu [data-a="scansiona"]');
 const carta = await aspettaTel(/Collegala al PC/, 15000);
 check(/Stazione di stampa/.test(carta) && /Infermeria/.test(carta) && carta.includes(codiceQr) && await tel.locator('[data-a="stacollega"]').count() === 1,

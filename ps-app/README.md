@@ -1316,7 +1316,7 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   dimesso sul PC. Un ordine finito male si vede da ogni pagina del telefono, finché non lo chiudi.
   Sul PC la striscia dice «dall'iPhone». Con una [stazione di stampa](#stazione-di-stampa-le-stampanti-dellinfermeria)
   collegata, sopra il bottone «Stampa: PC · Infermeria» (quella del PC, cambiabile per l'ordine); la
-  stazione si collega da qui, **⋯ → Collega una stazione**, inquadrando il suo QR.
+  stazione si collega da qui, **⋯ → Scansiona QR PC stampante**, inquadrando il suo QR.
 - **Cartella dal telefono**: anamnesi, remota, farmaci, allergie ed esame obiettivo, scrivibili dove
   la pagina del paziente li lascia scrivere; «Salva» li scrive col «Conferma» della pagina, in una
   scheda di sottofondo, e rilegge. Mai sopra un testo cambiato sul PC o non ancora salvato in una
@@ -1615,7 +1615,7 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   («Infermeria»: lo vede il medico). Il gestionale lì non serve; basta Chrome aperto (la pagina può
   restare chiusa).
 - **Collegarla, col telefono.** La pagina mostra un **QR** e sotto un codice di sei cifre.
-  Sull'iPhone, nell'app: **⋯ → Collega una stazione**, e si inquadra il QR: una carta «Stazione di
+  Sull'iPhone, nell'app: **⋯ → Scansiona QR PC stampante**, e si inquadra il QR: una carta «Stazione di
   stampa · Infermeria», con lo stesso codice, e **Collega**. Il telefono passa l'offerta al PC,
   dentro il ponte; il PC e la stazione fanno la loro chiave fra loro. Poi lo dicono tutti e tre: il
   telefono «Collegata al PC», la stazione «Collegata al PC del medico», il PC in **⋯ → Stampanti**
