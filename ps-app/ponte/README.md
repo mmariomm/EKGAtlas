@@ -52,11 +52,14 @@ sessione. Vedi:
   mai: il posto e il promemoria vanno a capo.
 - **Il paziente** — in testa il nome intero, l'età e il posto: «ROSSI MARIO · 77 anni · OBI 2» (su
   un episodio precedente lo dice sotto; due pazienti con lo stesso nome hanno il ⚠ e il segno che li
-  distingue, come nell'elenco: «⚠ ROSSI MARIO · …9001 · 77 anni · OBI 2»). Sotto, subito, le schede **Richieste · Esiti · Cartella**, nell'ordine del PC (resta
-  quella che hai scelto l'ultima volta; la prima volta gli Esiti); il «Da fare» — la nota e i
-  promemoria del ponte — sta chiuso finché non serve («+ Da fare», «+ Con l'ora»).
+  distingue, come nell'elenco: «⚠ ROSSI MARIO · …9001 · 77 anni · OBI 2»). Sotto il nome, su ogni scheda, le **allergie** con le parole del PC («Allergie: nega», «non compilate»,
+  «non lette», o il testo, in rosso; anche nel riepilogo della Terapia) e il **Da fare** in una riga —
+  «○ 11:30 ecg di controllo · +2» (senza voci, «○ + nota»): un tocco apre la lista del paziente con
+  il campo «+ nota». Poi le schede **Richieste · Esiti · Cartella**, nell'ordine del PC (resta
+  quella che hai scelto l'ultima volta; la prima volta gli Esiti), ognuna col suo colore: Richieste blu,
+  Esiti verde-acqua, le altre neutre.
 - **Esiti** — la tabella dei Valori che il PC ha per quel paziente, con l'ora in cui il PC li ha letti
-  («Letti sul PC alle 08:02 · 4 h fa», in ambra dopo un'ora; una colonna con valori parziali lo dice
+  («Letti sul PC alle 08:02», in ambra dopo un'ora; «● 3 nuovi» = i valori nuovi dall'ultima volta che il medico li ha guardati sul PC, e «nuovo» sui referti non ancora aperti; una colonna con valori parziali lo dice
   nella testata: «07:28 · parziale»), e i referti, col testo di quelli già letti sul PC — e di un ECG o
   di una radiografia che il PC ha salvato ma la cui pagina se n'era già andata, letto lì dalla copia
   salvata —; quelli del laboratorio (emogas, emocromo…) a parte, in fondo, sotto «Laboratorio» (con la
@@ -117,7 +120,7 @@ sessione. Vedi:
   la prima voce aperta senza ora (scritta cambia quella, o ne fa una in cima; vuota la toglie), i
   promemoria le voci aperte con l'ora. **✓ Fatto** aspetta 5 secondi, con **Annulla**, prima di
   spuntarlo sul PC.
-- **Scansiona QR PC stampante** (⋯) — inquadra il QR di una [stazione di stampa](#la-stazione-di-stampa):
+- **Collega stampante** (⋯) — inquadra il QR di una [stazione di stampa](#la-stazione-di-stampa):
   una carta con il suo nome e il codice, **Collega**, «Collegata al PC». Sopra «Conferma e stampa»,
   poi, «Stampa: PC · Infermeria» (la scelta del PC, cambiabile per un ordine).
 - **Stampa PDF** (⋯) — un PDF del telefono esce dalla stampante A4 del PC, con la stampa
@@ -154,7 +157,9 @@ alla pagina d'accesso** (senza il gestionale il ponte non fa niente). Il telefon
 chiusa · 3 minuti senza comandi», «Il gestionale sul PC è tornato alla pagina d'accesso») e cancella
 dalla sua memoria tutto quello che sapeva dei pazienti, avvisi compresi; **Riapri** ne apre un'altra
 con un tocco, senza QR. Chiusa per i 3 minuti, tornando sull'app (o se lo era già in sottofondo) se ne
-apre un'altra da sola, senza passare da «Sessione chiusa»: ricollegarsi è questione di un attimo. L'associazione resta: rientrato nel gestionale, o riaperto il browser del PC,
+apre un'altra da sola, senza passare da «Sessione chiusa»: ricollegarsi è questione di un attimo. Se eri su un
+paziente, si riapre lì, sulla stessa scheda: del paziente resta in memoria (mai su disco) solo quale era e la
+scheda, e si riapre solo dopo che il PC ha risposto e se è ancora nel suo elenco. L'associazione resta: rientrato nel gestionale, o riaperto il browser del PC,
 il telefono riprende con la stessa chiave. **Revoca l'iPhone** (sulla pagina ⋯ → iPhone, due tocchi)
 e la chiave di quel telefono non apre più niente: per rientrare serve un QR nuovo.
 

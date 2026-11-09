@@ -17125,7 +17125,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       df: dfDi(i.p.ep, m.df).map((x) => ({ id: x.id, testo: x.testo, t: x.t, fatto: x.fatto })),
       ordina: !!ponteUrlPaziente(i.p) && !i.prec,
       stato: i.prec ? null : ponteStato(i.p.ep, m.df),
+      allergie: i.prec ? null : ponteAllergie(i.p.ep),
     }));
+  }
+  // Le allergie, con le parole di sotto il nome sul pannello («Allergie: nega», «non compilate», «non lette», o il testo):
+  // `k` è com'è colorata (ros = c'è un testo). Per il telefono, sotto il nome e nel riepilogo della Terapia.
+  function ponteAllergie(ep) {
+    const all = statoDi(ep)?.anag?.allergie;
+    return !all ? { k: "nl", t: "Allergie: non lette" } : all.nega ? { k: "nega", t: "Allergie: nega" }
+      : all.testo ? { k: "ros", t: `Allergie: ${String(all.testo).slice(0, 400)}` } : { k: "nc", t: "Allergie: non compilate" };
   }
   // Le mappe, per il telefono (sola lettura): per ciascuna il nome, la griglia, i letti e
   // le aree com'è salvata sul PC (o quella di partenza), e chi sta dove — solo l'episodio:
@@ -17325,16 +17333,19 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         }).catch(() => {});
       }
     }
+    const visti = refertiVisti(p.ep);
     const lista = referti.filter((e) => refertoTipo(e) !== "lab" || !tabella).map((e) => {
       const t = testi.get(e.id) || "";
       const sta = !!t && t.length <= resta;
       if (sta) resta -= t.length;
       return { id: e.id, quando: e.when, sistema: e.sistema, titolo: shortLabel(e.label), tipo: refertoTipo(e), testo: sta ? t : "", lungo: !!t && !sta,
-        ...(salvati[e.id] && !diAltro(e) ? { pdf: true } : {}) };
+        ...(visti.has(e.id) ? {} : { nuovo: true }), ...(salvati[e.id] && !diAltro(e) ? { pdf: true } : {}) };
     });
     // quando il PC li ha letti: sul telefono si vede quanto sono vecchi
     // (`mai`: il PC non ha mai aperto la sua pagina — niente di salvato, e niente da rileggere)
-    return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, letto: tabella ? Number(st.letto) || 0 : 0, referti: lista, nota, ...(url ? {} : { mai: true }) }, registro: `esiti di ${p.name}` };
+    // (come sul PC: i valori nuovi dall'ultima volta che il medico li ha guardati, e i referti non ancora aperti)
+    const nuoviVal = tabella ? Number(statoDi(p.ep)?.valori?.nuovi) || 0 : 0;
+    return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, letto: tabella ? Number(st.letto) || 0 : 0, referti: lista, nota, ...(nuoviVal ? { valoriNuovi: nuoviVal } : {}), ...(url ? {} : { mai: true }) }, registro: `esiti di ${p.name}` };
   }
   // L'ordine: lo stesso giro di «Conferma e stampa», dato alla scheda di
   // sottofondo dalla pagina del paziente — tutti i controlli di sempre. Il

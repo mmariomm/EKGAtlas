@@ -1274,7 +1274,7 @@ l'elenco 25 secondi dopo: è l'unico giro della smart che parte da solo.
 
 Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con
 **↻ Rileggi** e l'ora in cui il PC li ha letti), **un ordine** (lo stesso «Conferma e
-stampa», con tutti i suoi controlli), **Da fare** (la stessa lista del PC, sulle Richieste del paziente: ogni voce ha la sua
+stampa», con tutti i suoi controlli), **Da fare** (la stessa lista del PC: sotto il nome, su ogni scheda, una riga «○ 11:30 ecg di controllo · +2»; un tocco apre la lista del paziente: ogni voce ha la sua
 spunta tonda, l'ora davanti se c'è, il testo; un solo campo **+ nota**, e con un'ora dentro —
 «11:30 tropo», «tra 2h ECG» — è un promemoria, se no una cosa da fare. Spuntata, resta barrata fino
 a 5 minuti come sul PC; il **cestino** grigio la toglie subito; la spunta di nuovo la riapre. Il
@@ -1324,7 +1324,7 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   dimesso sul PC. Un ordine finito male si vede da ogni pagina del telefono, finché non lo chiudi.
   Sul PC la striscia dice «dall'iPhone». Con una [stazione di stampa](#stazione-di-stampa-le-stampanti-dellinfermeria)
   collegata, sopra il bottone «Stampa: PC · Infermeria» (quella del PC, cambiabile per l'ordine); la
-  stazione si collega da qui, **⋯ → Scansiona QR PC stampante**, inquadrando il suo QR.
+  stazione si collega da qui, **⋯ → Collega stampante**, inquadrando il suo QR.
 - **Cartella dal telefono**: anamnesi, remota, farmaci, allergie ed esame obiettivo, scrivibili dove
   la pagina del paziente li lascia scrivere; «Salva» li scrive col «Conferma» della pagina, in una
   scheda di sottofondo, e rilegge. Mai sopra un testo cambiato sul PC o non ancora salvato in una
@@ -1341,7 +1341,8 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   PC». Tutto in [Terapia](#terapia-dal-pannello-fino-a-conferma-dal-telefono-conferma-col-tuo-tocco).
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
   Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
-  sessione si chiude da sola; tornando sull'app si riapre da sola.
+  sessione si chiude da sola; tornando sull'app si riapre da sola, sul paziente e sulla scheda dov'eri
+  (in memoria, mai su disco, dopo che il PC ha risposto).
 - **Registrazioni** (⋯ sul telefono): gli zip salvati sul PC (⋯ → Registrazioni), con quando, quanto, a mano o
   automatica e perché, il controllo — niente pazienti. **Scarica** lo porta sul telefono a pezzi, cifrato come
   tutto il resto (al più 100 MB), e lo tiene in memoria; poi **Condividi…** lo passa a iOS (all'app di Claude, a
@@ -1623,7 +1624,7 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   («Infermeria»: lo vede il medico). Il gestionale lì non serve; basta Chrome aperto (la pagina può
   restare chiusa).
 - **Collegarla, col telefono.** La pagina mostra un **QR** e sotto un codice di sei cifre.
-  Sull'iPhone, nell'app: **⋯ → Scansiona QR PC stampante**, e si inquadra il QR: una carta «Stazione di
+  Sull'iPhone, nell'app: **⋯ → Collega stampante**, e si inquadra il QR: una carta «Stazione di
   stampa · Infermeria», con lo stesso codice, e **Collega**. Il telefono passa l'offerta al PC,
   dentro il ponte; il PC e la stazione fanno la loro chiave fra loro. Poi lo dicono tutti e tre: il
   telefono «Collegata al PC», la stazione «Collegata al PC del medico», il PC in **⋯ → Stampanti**
