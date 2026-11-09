@@ -34,7 +34,7 @@ const srcTutto = [
   "const hasExt = () => false; const ask = async () => ({ ok: false }); let pdfjsInArrivo = null;",
   src, grab("pdfjsPronto"), grab("righeDaPezzi"), grab("righeDritte"), "async " + grab("testoPdfjs"), "async " + grab("testoPdf"), grab("pdfDiag"),
   // di chi è un referto, il referto scritto di un ECG, quale PDF tenere, la fila degli scaricamenti
-  grab("impronta"), grab("identitaReferto"), grab("refertoScrittoEcg"), grab("scegliPdfReferto"), grab("codaLimitata"),
+  grab("impronta"), grab("identitaReferto"), grab("refertoScrittoEcg"), grab("refertoScrittoRx"), grab("scegliPdfReferto"), grab("codaLimitata"),
 ].join("\n");
 
 function chromiumPath() {
@@ -174,6 +174,29 @@ check(!scritto.soloMacchina && scritto.righe.length === 2, "un documento scritto
 const conclusioni = await prova((r) => refertoScrittoEcg(r), ["PR 160 ms", "Conclusioni: fibrillazione atriale a 110 bpm", "Dott. Esempio"]);
 check(conclusioni.righe.length === 1 && /fibrillazione atriale a 110 bpm/.test(conclusioni.righe[0]),
   `«Conclusioni:» sulla stessa riga, fino alla firma (got: ${JSON.stringify(conclusioni.righe)})`);
+
+console.log("\nRX: la riga dell'esame e il referto, non l'anagrafica");
+const SEP = "_____________________________________";
+const TESTA = ["OSPEDALE DI PROVA", "Reparto di prova", "Paziente: ROSSI MARIO", "Nato il 01/01/1980", "Codice fiscale SMPRSS80A01F205X"];
+const RX1 = [...TESTA, "69-35 RX TORACE (6979) 01/10/2026 10:51", "Modalità Paziente in barella", "OPERATORE 10", SEP,
+  "Quadro polmonare nei limiti.", "Seni costofrenici liberi.", SEP, "Firma di prova"];
+const rx1 = await prova((r) => refertoScrittoRx(r), RX1);
+check(rx1.tagliato && rx1.righe.length === 3 && /^69-35 RX TORACE .* 01\/10\/2026 10:51$/.test(rx1.righe[0]) && rx1.righe[2] === "Seni costofrenici liberi.",
+  `un esame: riga dell'esame + corpo, niente anagrafica, modalità, operatore, trattini, firma (got: ${JSON.stringify(rx1.righe)})`);
+const RX2 = [...TESTA, "69-35 RX TORACE (6979) 01/10/2026 10:51", "69-40 RX BACINO (6990) 01/10/2026 10:52", "OPERATORE 10", SEP,
+  "Torace: nulla di rilevante.", SEP, SEP, "Bacino: nessuna frattura.", SEP];
+const rx2 = await prova((r) => refertoScrittoRx(r), RX2);
+check(rx2.righe.length === 4 && /RX TORACE/.test(rx2.righe[0]) && /^Torace/.test(rx2.righe[1]) && /RX BACINO/.test(rx2.righe[2]) && /^Bacino/.test(rx2.righe[3]),
+  `due esami nello stesso PDF: ognuno col suo corpo (got: ${JSON.stringify(rx2.righe)})`);
+const RX2B = [...TESTA, "69-35 RX TORACE (6979) 01/10/2026 10:51", SEP, "Torace: nulla di rilevante.", SEP, "69-40 RX BACINO (6990) 01/10/2026 10:52", SEP, "Bacino: nessuna frattura.", SEP];
+const rx2b = await prova((r) => refertoScrittoRx(r), RX2B);
+check(rx2b.righe.length === 4 && /RX BACINO/.test(rx2b.righe[2]) && !rx2b.righe.some((r) => /OSPEDALE|ROSSI/.test(r)), "due esami, ognuno con i suoi trattini: lo stesso");
+for (const [nome, r] of [["senza trattini (laboratorio)", [...TESTA, "0-16 BILIRUBINA (450008) 28/09/26 10.06 28/09/26 10:06", "OPERATORE 10"]],
+  ["senza riga d'esame", [...TESTA, SEP, "Testo", SEP]], ["trattini dispari", [...TESTA, "69-35 RX TORACE (6979) 01/10/2026 10:51", SEP, "Testo"]],
+  ["esami e corpi che non tornano", [...TESTA, "69-35 RX TORACE (6979) 01/10/2026 10:51", "69-40 RX BACINO (6990) 01/10/2026 10:52", SEP, "Testo", SEP]]]) {
+  const x = await prova((q) => refertoScrittoRx(q), r);
+  check(!x.tagliato && x.righe.length === r.length, `struttura non riconosciuta (${nome}): si mostra tutto, come prima`);
+}
 
 console.log("\nil referto è di questo paziente?");
 const ROSSI = { cf: "SMPRSS80A01F205X", nome: "ROSSI MARIO", nascita: "01/01/1980" };

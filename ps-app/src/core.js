@@ -12786,7 +12786,7 @@
       }
       tabStore.set(this.txtKey(e.id), { ts: Date.now(), righe });
       // nella scheda del paziente va quello che si mostra: di un ECG, il referto scritto
-      const mostra = refertoTipo(e) === "ecg" ? refertoScrittoEcg(righe).righe : righe;
+      const mostra = refertoMostrato(e, righe);
       if (mostra.length) this.archiviaReferto(e, mostra);
       this.log(`${now()}  ${shortLabel(e.label)}: testo letto (${righe.length} righe, ${letto.lettore}${letto.motivo ? `; ${letto.motivo}` : ""}${id.esito === "ok" ? `; intestazione verificata: ${id.via}` : "; intestazione non verificata"})`);
       return { righe, letto };
@@ -12806,7 +12806,7 @@
         const s = refertoScrittoEcg(righe);
         return s.righe.length ? { stato: "testo", righe: s.righe, verificato } : { stato: "macchina", verificato };
       }
-      return { stato: "testo", righe, verificato };
+      return { stato: "testo", righe: refertoScrittoRx(righe).righe, verificato };
     }
 
     // In fila per scaricare: al massimo due insieme (un tocco e «Salva» stanno
@@ -16163,6 +16163,32 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     return { righe: tutte, soloMacchina: false };
   }
 
+  // Radiologia (RX…): si mostra la riga dell'esame (titolo, data e ora) e il
+  // referto che sta tra le due righe di trattini, MAI l'anagrafica in testa
+  // (ospedale, reparto, dati del paziente, modalità, operatore), i trattini
+  // né il piè di pagina. Ogni esame del PDF ha la sua riga e il suo corpo.
+  // Prudente: se la struttura non è quella (righe d'esame e coppie di trattini
+  // non tornano, o non ci sono) si mostra tutto, come prima: mai perdere testo.
+  function refertoScrittoRx(righe) {
+    const tutte = (righe || []).map((r) => String(r || "").trim()).filter(Boolean);
+    const sep = (r) => /^[_\-=–—]{5,}$/.test(r);
+    const esame = (r) => /^\d+-\d+\s+\S.*\(\s*[A-Z0-9]+\s*\)\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}[:.]\d{2}$/i.test(r);
+    const idx = [], esami = [];
+    tutte.forEach((r, i) => { if (sep(r)) idx.push(i); else if (esame(r)) esami.push(i); });
+    const n = idx.length / 2;
+    if (!esami.length || !Number.isInteger(n) || n !== esami.length) return { righe: tutte, tagliato: false };
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      if (esami[k] > idx[2 * k]) return { righe: tutte, tagliato: false };   // l'esame viene prima del suo corpo
+      out.push(tutte[esami[k]], ...tutte.slice(idx[2 * k] + 1, idx[2 * k + 1]));
+    }
+    return { righe: out, tagliato: true };
+  }
+  // Quello che di un referto letto si mostra, archivia e manda al telefono.
+  function refertoMostrato(e, righe) {
+    return refertoTipo(e) === "ecg" ? refertoScrittoEcg(righe).righe : refertoScrittoRx(righe).righe;
+  }
+
   // Il portale può mostrare più di un PDF (quello rimasto aperto prima, poi il
   // nostro): non si tiene il primo che passa, ma quello che è di QUESTO
   // paziente e, a parità, quello che nomina l'esame chiesto; a parità ancora,
@@ -17286,7 +17312,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // fiscale fosse noto sta nella scheda col suo nome.
       const perNome = "nome:" + normNome(p.name);
       const altra = perNome !== "nome:" && (!scelta || scelta.chiave !== perNome) && indice.some((v) => v.chiave === perNome) ? await leggi(perNome) : null;
-      for (const s of [altra, st]) for (const x of (s && s.referti) || []) if (x && x.id && x.testo) testi.set(x.id, x.testo);
+      // (un testo salvato prima del taglio, con l'intestazione dentro, si taglia anche qui)
+      for (const s of [altra, st]) for (const x of (s && s.referti) || []) if (x && x.id && x.testo) {
+        const rif = referti.find((e) => e.id === x.id);
+        testi.set(x.id, rif && refertoTipo(rif) !== "ecg" ? refertoScrittoRx(String(x.testo).split("\n")).righe.join("\n") : x.testo);
+      }
     }
     const dati = st && st.righe && st.righe.length ? normalizzaStorico(st) : null;
     const tabella = dati && dati.righe.length ? ponteTabella(dati) : null;
@@ -17313,7 +17343,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const righe = g && g.ok && g.data ? ((await testoPdf(bufDaB64(g.data)).catch(() => null)) || {}).righe || [] : [];
       if (!righe.length) continue;
       if (identitaReferto(righe, { cf: chi.cf, cfImp, nome: p.name || "", nascita: chi.nascita }).esito === "altro") { altri.add(e.id); continue; }
-      const mostra = refertoTipo(e) === "ecg" ? refertoScrittoEcg(righe).righe : righe;
+      const mostra = refertoMostrato(e, righe);
       if (!mostra.length) continue;
       const testo = mostra.slice(0, 200).join("\n").slice(0, 20000);
       testi.set(e.id, testo);
