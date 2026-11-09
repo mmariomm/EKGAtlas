@@ -39,6 +39,9 @@ button { cursor: pointer; touch-action: manipulation; }
        padding: env(safe-area-inset-top) var(--dx) 0 var(--sx); background: var(--vetro); -webkit-backdrop-filter: saturate(180%) blur(14px);
        backdrop-filter: saturate(180%) blur(14px); border-bottom: 1px solid var(--bordo); }
 .top .tit { flex: 1 1 auto; min-width: 0; padding: 6px 0; }
+/* il titolo del paziente è un bottone: come «‹», torna a Lista o Mappa (senza altro che il tocco) */
+.top button.tit { background: none; border: 0; font: inherit; color: inherit; text-align: left; min-height: 44px; -webkit-tap-highlight-color: transparent; }
+.top button.tit:active { opacity: .6; }
 /* il nome non si taglia mai: va a capo */
 .top .tit b { display: block; font-size: 17px; font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; }
 .top .tit small { display: block; font-size: 12px; color: var(--grigio); margin-top: 1px; }

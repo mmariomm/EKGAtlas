@@ -706,6 +706,13 @@ const notePc = () => doc.evaluate(() => Object.values(JSON.parse(localStorage.ge
 await tocca(tel, '.paz[data-ep="999001"]');
 const testa = await aspettaTel(tel, /Rileggi/, 20000);
 check(await tel.locator(".note").count() === 0, "i Da fare non sono sulla scheda Esiti: stanno sulle Richieste");
+// il titolo del paziente è un bottone «Torna alla lista» (≥ 44 px), come «‹»
+const titolo = tel.locator(".top button.tit");
+check(await titolo.getAttribute("aria-label") === "Torna alla lista" && (await titolo.boundingBox()).height >= 44, "il titolo è un bottone «Torna alla lista», alto almeno 44 px");
+await titolo.click();
+check(/BIANCHI ANNA/.test(await aspettaTel(tel, /BIANCHI ANNA/, 10000)) && await tel.locator(".top button.tit").count() === 0, "toccato, torna all'elenco come «‹»");
+await tocca(tel, '.paz[data-ep="999001"]');
+await aspettaTel(tel, /Rileggi/, 20000);
 await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 check(await tel.locator(".top .tit").innerText() === "ROSSI MARIO · 77 anni · OBI 2", `in testa il nome intero, l'età e il posto, e nient'altro: «ROSSI MARIO · 77 anni · OBI 2» (${(await tel.locator(".top .tit").innerText()).replace(/\n/g, " / ")})`);
 check(await tel.evaluate(() => { const s = document.querySelector(".seg"), n = document.querySelector(".note"); return !!s && !!n && !!(s.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING); }),
