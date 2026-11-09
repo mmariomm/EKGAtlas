@@ -1404,11 +1404,13 @@
     const c0 = Math.min(...tutti.map((x) => x.c)), r0 = Math.min(...tutti.map((x) => x.r));
     const cols = Math.max(...tutti.map((x) => x.c + x.w)) - c0, rows = Math.max(...tutti.map((x) => x.r + x.h)) - r0;
     const dove = new Map();   // "letto|id" → paziente; "area|id" → [pazienti]
-    for (const x of m.posti || []) {
-      const p = per.get(x.ep);
+    // chi è al Triage (non fra i pazienti): il PC dice dove sta per chiave — di partenza la Sala attesa —, il nome è nella riga di `triage`
+    const tri = new Map(((S.triage && S.triage.righe) || []).filter((r) => r && r.k).map((r) => [r.k, { ep: r.k, nome: r.nome, breve: r.breve, triage: r.triage, eta: r.eta, ospite: true }]));
+    for (const [l, da] of [[m.posti || [], per], [m.ospiti || [], tri]]) for (const x of l) {
+      const p = da.get(x.ep);
       if (!p) continue;
       const k = x.tipo + "|" + x.id;
-      if (x.tipo === "area") dove.set(k, [...(dove.get(k) || []), p]); else dove.set(k, p);
+      if (x.tipo === "area") dove.set(k, [...(dove.get(k) || []), p]); else if (!dove.has(k)) dove.set(k, p);
     }
     const geo = (o, n) => `data-mg="${o.c - c0},${o.r - r0},${o.w},${o.h},${n}"`;
     // (un PC che la sa modificare: ogni letto e ogni area è un bersaglio per «tieni premuto e trascina»)
@@ -1421,13 +1423,13 @@
     for (const a of aree) {
       const l = dove.get("area|" + a.id) || [];
       html.push(`<div class="area" ${geo(a, Math.max(parolaLunga(a.nome), 8))}${bers("area", a)} aria-label="${esc(a.nome)}"><h4>${esc(a.nome)}${l.length ? ` · ${l.length}` : ""}</h4>${l.map((p) =>
-        `<button class="pa t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" data-a="paz" data-ep="${esc(p.ep)}" title="${esc(chi(p))}"><span class="ln">${esc(cognome(p))}</span>${segni(p)}</button>`).join("")}</div>`);
+        `<button class="pa t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" data-a="${p.ospite ? "ospite" : "paz"}" data-ep="${esc(p.ep)}" title="${esc(chi(p))}"><span class="ln">${esc(cognome(p))}</span>${segni(p)}</button>`).join("")}</div>`);
     }
     for (const l of letti) {
       const p = dove.get("letto|" + l.id);
       if (!p) { html.push(`<div class="letto vuoto" ${geo(l, parolaLunga(l.nome))}${bers("letto", l)}><span class="ln">${esc(l.nome)}</span></div>`); continue; }
       const nome = cognome(p);
-      html.push(`<button class="letto occ${l.forma === "barella" ? " alto" : ""} t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" ${geo(l, parolaLunga(nome))}${bers("letto", l)} data-a="paz" data-ep="${esc(p.ep)}" title="${esc(chi(p))}">${
+      html.push(`<button class="letto occ${l.forma === "barella" ? " alto" : ""} t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" ${geo(l, parolaLunga(nome))}${bers("letto", l)} data-a="${p.ospite ? "ospite" : "paz"}" data-ep="${esc(p.ep)}" title="${esc(chi(p))}">${
         l.w >= 5 && l.h >= 4 ? `<span class="lb">${esc(l.nome)}</span>` : ""}<span class="ln">${p.omonimo ? "⚠ " : ""}${esc(nome)}</span><span class="r2">${
         Number.isInteger(p.eta) ? `<span class="le">${p.eta}</span>` : ""}${segni(p)}</span></button>`);
     }

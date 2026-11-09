@@ -885,6 +885,42 @@ await blocco("La smart cliccata: il passaggio d'area da PsoPazienti, e la pagina
   }
 });
 
+// ------------------------------- chi è al Triage, sulla mappa della Bassa
+await blocco("Chi è al Triage: di partenza nella Sala attesa della Bassa, finché il medico non lo porta altrove", async () => {
+  const srv = server(), seed = semeTabellone(), ora = Date.now();
+  // al Triage (la lista letta dalla smart): ZANNI, mai visto; BIANCHI LUCA è già fra i pazienti, nel suo letto
+  seed["triage.lista.v1"] = { ts: ora, righe: [
+    { nome: "ZANNI ADA", breve: "ZANNI A.", eta: 38, triage: "VERDE", area: "Bassa", arrivo: ora - 20 * 60e3 },
+    { nome: "BIANCHI LUCA", breve: "BIANCHI L.", eta: 46, triage: "VERDE", area: "Bassa", arrivo: ora - 50 * 60e3 }] };
+  seed["stanza.ps.posti.v1"] = { 700011: { tipo: "letto", id: "obi1", ts: ora - 3600e3 } };
+  seed["tabellone.vista.v1"] = "bassa";
+  const { context, page } = await contesto(srv, { seed });
+  await page.goto(URL_LISTA);
+  await pannello(page);
+  await page.waitForTimeout(300);
+  const dove = () => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll('.stmap[data-mappa="ps"] .stp.ospite')]
+    .map((x) => `${x.closest("[data-area]")?.getAttribute("data-area") || "letto:" + x.closest("[data-letto]")?.getAttribute("data-letto")}:${x.querySelector(".stpn").textContent}`).join(","));
+  const d0 = await dove(), scritto0 = Object.keys(await ls(page, "stanza.ps.posti.v1")).join();
+  const bianchi = await $p(page, '[data-letto="obi1"] .stp[data-stp="700011"]').count();
+  // il medico lo porta su OBI 3, trascinandolo
+  const da = await $p(page, ".stp.ospite").boundingBox(), a = await $p(page, '[data-letto="obi3"]').boundingBox();
+  await page.mouse.move(da.x + da.width / 2, da.y + da.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(da.x + da.width / 2 - 30, da.y + 10, { steps: 4 });
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  const d1 = await dove(), posti = await ls(page, "stanza.ps.posti.v1");
+  await page.reload();
+  await pannello(page);
+  await page.waitForTimeout(300);
+  const d2 = await dove();
+  check(d0 === "attesa:ZANNI A." && scritto0 === "700011" && bianchi === 1 && d1 === "letto:obi3:ZANNI A." && Object.entries(posti).some(([k, v]) => /^tr/.test(k) && v.id === "obi3") && d2 === d1,
+    `chi è al Triage sta di partenza nella Sala attesa della Bassa (un posto mai scritto); chi è già fra i pazienti resta al suo letto; portato su OBI 3, ci resta (got: ${d0} → ${d1} → ${d2}; BIANCHI in OBI 1: ${bianchi})`);
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, "tab-triage-attesa.png") });
+  await context.close();
+});
+
 await browser.close();
 
 // ------------------------------- 8. con l'estensione vera: la scheda dietro

@@ -3181,7 +3181,33 @@
   // sono quelle dei pazienti di cui il medico risponde: Ambulatorio (e OBI,
   // dove c'è); l'attesa del triage e «tutti» no.
   const SCHEDA_NOSTRA = /^(AMBULATORIO|OBI)\b/i, SCHEDA_TRIAGE = /^TRIAGE\b/i;
-  const TRIAGE_LISTA = "triage.lista.v1";   // { ts, righe: [{ nome, breve, eta, triage, area, arrivo }] } — solo per il telefono
+  const TRIAGE_LISTA = "triage.lista.v1";   // { ts, righe: [{ nome, breve, eta, triage, area, arrivo }] } — per il telefono e la mappa
+  // Chi aspetta al Triage, sulla mappa (PC e telefono): non è fra i pazienti,
+  // ma di partenza sta nella Sala attesa della Bassa — un posto di partenza,
+  // mai scritto. Il medico lo porta dove vuole (trascinandolo): quel posto si
+  // scrive, sotto la sua chiave — nome e ora d'arrivo; la nascita qui non si
+  // tiene —, e vince. Letta più di 30 minuti fa, la lista non conta (come sul telefono).
+  const TRIAGE_ATTESA = { k: "ps", tipo: "area", id: "attesa" };
+  function chiaveTriage(r) {
+    let h = 0x811c9dc5;
+    for (const c of `${normNome(r?.nome)}|${Number(r?.arrivo) || 0}`) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0;
+    return "tr" + h.toString(36);
+  }
+  // chi è al Triage adesso e non è già fra i pazienti (lui ha il suo posto, o la lista: mai spostato da qui)
+  function triageOspiti(pazienti) {
+    const t = store.get(TRIAGE_LISTA, null);
+    if (!t || !Array.isArray(t.righe) || Date.now() - (t.ts || 0) > 30 * 60e3) return [];
+    const noti = new Set((pazienti || []).map((p) => normNome(p.name)));
+    return t.righe.filter((r) => r && r.nome && !noti.has(normNome(r.nome))).map((r) => ({ ...r, k: chiaveTriage(r) }));
+  }
+  // dove sta: il posto che gli ha dato il medico, in una delle mappe; se no la Sala attesa della Bassa (se c'è)
+  function postoOspite(key, sala) {
+    for (const k of Object.keys(MAPPE)) {
+      const raw = store.get(MAPPE[k].posti, {}), v = raw && typeof raw === "object" ? raw[key] : null, s = v && sala(k);
+      if (s && (v.tipo === "letto" ? s.letti : v.tipo === "area" ? s.aree : []).some((o) => o.id === v.id)) return { k, tipo: v.tipo, id: v.id, ts: +v.ts || 0 };
+    }
+    return sala(TRIAGE_ATTESA.k)?.aree.some((a) => a.id === TRIAGE_ATTESA.id) ? { ...TRIAGE_ATTESA, ts: 0 } : null;
+  }
   function leggiSmartPagina(doc, url) {
     if (!eSmart(doc, url) || classify(doc) === "login" || !doc.querySelector(".AFCHeaderTable")) return { ok: false, perche: "non è la lista smart" };
     let origine = "";
@@ -9978,6 +10004,7 @@
       const bersaglio = (e) => {
         if (this.stanzaEdit || this._stanzaPresa) return null;
         const letto = e.target.closest?.(".stbed.occ, .starbody .stp[data-stp]");
+        if (letto?.matches(".ospite, .stbed:has(.ospite)")) return null;   // (chi è al triage: niente scheda, ha solo il nome)
         if (letto) { const ep = letto.getAttribute("data-occep") || letto.getAttribute("data-stp"); return ep ? { ep, el: letto, carta: true } : null; }
         const riga = e.target.closest?.(".pzrow[data-pz]");
         if (!riga) return null;
@@ -10498,10 +10525,25 @@
       const del = `<button type="button" class="stctl stx" data-stdel="${tipo}:${esc(o.id)}" title="Elimina ${tipo === "area" ? "l'area" : o.forma === "sedia" ? "la sedia" : "il letto"} «${esc(o.nome)}»: chi c'era torna in lista. Si può annullare." aria-label="Elimina ${esc(o.nome)}">×</button>`;
       return tipo === "letto" ? del : `${del}<span class="strsz" data-strsz="1" title="Trascina per ridimensionare l'area"></span>`;
     }
+    // Chi aspetta al Triage, nella mappa `k`: { r (la riga della lista), posto }
+    ospitiIn(k, pazienti) {
+      const sala = (kk) => this.conMappa(kk, () => this.stanzaSala());
+      return triageOspiti(pazienti).map((r) => ({ r, posto: postoOspite(r.k, sala) })).filter((x) => x.posto && x.posto.k === k);
+    }
+    // la sua etichetta: il nome corto e il colore del triage; si trascina, non si apre (non ha una pagina nostra)
+    stanzaOspite({ r }, inLetto) {
+      const tr = TRIAGE_COLORI.includes(r.triage) ? ` tri t-${r.triage.toLowerCase()}` : "";
+      const eta = Number.isInteger(r.eta) ? r.eta : null;
+      return `<div class="stp ospite${inLetto ? "" : tr}" data-stp="${esc(r.k)}" data-ospite="1" data-cerca="${esc(normNome(r.nome))}" role="button" tabindex="${this.stanzaEdit ? -1 : 0}"
+        aria-label="${esc(r.nome)}${eta != null ? `, ${eta} anni` : ""}${r.triage ? `, triage ${esc(r.triage)}` : ""}, al triage" title="${esc(r.nome)} — al triage: trascinalo dove sta">
+        <span class="stp1"><b class="stpn">${esc(r.breve || r.nome)}</b>${eta != null ? ` <span class="steta">${eta}</span>` : ""}</span>${inLetto ? "" : `<span class="stp2"><span class="sttag">al triage</span></span>`}</div>`;
+    }
     viewStanza(m) {
       const { sala, pazienti, info, perLetto, posti } = m;
       const edit = !!this.stanzaEdit;
       const chip = (p) => this.stanzaChip(m, info.get(p.ep));
+      const ospiti = edit ? [] : this.ospitiIn(this.mappa().k, pazienti);
+      const ospiteIn = (tipo, id) => ospiti.filter((o) => o.posto.tipo === tipo && o.posto.id === id);
       // In Modifica la pianta intera, coi puntini: sotto il mouse niente cambia
       // misura. Fuori, solo il pezzo disegnato con una cella di margine: anche
       // una stanza piccola riempie la mappa.
@@ -10517,12 +10559,16 @@
       // la sedia è un letto più piccolo: stesse regole, un paziente
       const letto = (l) => {
         const i = perLetto[l.id] ? info.get(perLetto[l.id]) : null, sedia = l.forma === "sedia", { w, h } = misuraLetto(l);
-        const cls = ["stbed", l.forma, i && "occ", i?.qui && "qui", i?.p.triage && "tri t-" + i.p.triage.toLowerCase(),
+        const o = i ? null : ospiteIn("letto", l.id)[0];   // (un letto preso da un paziente non ha ospiti)
+        const tr = i ? i.p.triage : o && TRIAGE_COLORI.includes(o.r.triage) ? o.r.triage : "";
+        const cls = ["stbed", l.forma, (i || o) && "occ", i?.qui && "qui", tr && "tri t-" + tr.toLowerCase(),
           edit && this._stanzaSel === "letto:" + l.id && "sel"].filter(Boolean).join(" ");
-        return `<div class="${cls}" data-letto="${esc(l.id)}" data-drop="letto:${esc(l.id)}"${i ? ` data-occ="${esc(i.breve + i.coda)}" data-occep="${esc(i.p.ep)}" data-cerca="${esc(normNome(i.lungo))}"` : ""} role="group"
-          aria-label="${esc(l.nome)}: ${i ? esc(i.lungo + i.coda) : "vuoto"}"${edit || i ? "" : ` title="${esc(l.nome)} — trascina qui un paziente"`}
+        const occ = i ? { nome: i.breve + i.coda, ep: i.p.ep, lungo: i.lungo } : o ? { nome: o.r.breve || o.r.nome, ep: o.r.k, lungo: o.r.nome } : null;
+        return `<div class="${cls}" data-letto="${esc(l.id)}" data-drop="letto:${esc(l.id)}"${occ ? ` data-occ="${esc(occ.nome)}" data-occep="${esc(occ.ep)}" data-cerca="${esc(normNome(occ.lungo))}"` : ""} role="group"
+          aria-label="${esc(l.nome)}: ${occ ? esc(i ? i.lungo + i.coda : occ.lungo) : "vuoto"}"${edit || occ ? "" : ` title="${esc(l.nome)} — trascina qui un paziente"`}
           style="${celle(l.c, l.r, w, h)}">
           <div class="stbedin">${i ? `<div class="stbedhd">${this.stanzaNome("letto", l)}</div>${this.stanzaChip(m, i, true)}`
+            : o ? `<div class="stbedhd">${this.stanzaNome("letto", l)}</div>${this.stanzaOspite(o, true)}`
             : this.stanzaNome("letto", l) + this.stanzaGlifo(sedia ? 24 : l.forma === "barella" ? 14 : 28, "stglifo", sedia, l.forma === "barella")}</div>
           ${edit ? this.stanzaCtl("letto", l) : ""}
         </div>`;
@@ -10530,10 +10576,11 @@
       const area = (a) => {
         const dentro = pazienti.filter((p) => posti[p.ep]?.tipo === "area" && posti[p.ep].id === a.id)
           .sort((x, y) => posti[x.ep].ts - posti[y.ep].ts);   // in ordine di arrivo: chi c'è non si sposta
-        return `<div class="starea${edit && this._stanzaSel === "area:" + a.id ? " sel" : ""}" data-area="${esc(a.id)}" data-drop="area:${esc(a.id)}" role="group" aria-label="${esc(a.nome)}: ${dentro.length} ${dentro.length === 1 ? "paziente" : "pazienti"}"${edit ? "" : ` title="${esc(a.nome)} — trascina qui i pazienti"`}
+        const osp = ospiteIn("area", a.id), n = dentro.length + osp.length;   // (chi è al triage dopo i pazienti)
+        return `<div class="starea${edit && this._stanzaSel === "area:" + a.id ? " sel" : ""}" data-area="${esc(a.id)}" data-drop="area:${esc(a.id)}" role="group" aria-label="${esc(a.nome)}: ${n} ${n === 1 ? "paziente" : "pazienti"}"${edit ? "" : ` title="${esc(a.nome)} — trascina qui i pazienti"`}
           style="${celle(a.c, a.r, a.w, a.h)}">
-          <div class="sthd">${this.stanzaNome("area", a)}${dentro.length ? `<span class="stn">${dentro.length}</span>` : ""}</div>
-          <div class="starbody">${dentro.map(chip).join("")}</div>
+          <div class="sthd">${this.stanzaNome("area", a)}${n ? `<span class="stn">${n}</span>` : ""}</div>
+          <div class="starbody">${dentro.map(chip).join("")}${osp.map((o) => this.stanzaOspite(o)).join("")}</div>
           ${edit ? this.stanzaCtl("area", a) : ""}
         </div>`;
       };
@@ -10642,7 +10689,7 @@
         // da tastiera: Invio apre il paziente (o rinomina, in Modifica); Maiusc+F10 o il tasto menu: Sposta in…
         box.addEventListener("keydown", (e) => {
           const riga = e.target.closest?.(".pzapri")?.closest(".pzrow[data-riga]");
-          const chip = e.target.closest?.(".stp[data-stp]"), nome = e.target.closest?.("[data-stnome]");
+          const chip = e.target.closest?.(".stp[data-stp]:not(.ospite)"), nome = e.target.closest?.("[data-stnome]");
           const menu = e.key === "ContextMenu" || (e.shiftKey && e.key === "F10");
           if (riga && menu) { e.preventDefault(); this.stanzaMenu(riga.getAttribute("data-riga"), riga.querySelector("[data-posto]") || riga); }
           else if (chip && !this.stanzaEdit && menu) {
@@ -10658,7 +10705,7 @@
           const riga = e.target.closest(".pzrow[data-riga]");
           if (riga) { e.preventDefault(); return this.stanzaMenu(riga.getAttribute("data-riga"), riga.querySelector("[data-posto]") || riga); }
           const chip = e.target.closest(".stp[data-stp]") || e.target.closest(".stbed.occ")?.querySelector(".stp[data-stp]");
-          if (!chip) return;
+          if (!chip || chip.classList.contains("ospite")) return;
           e.preventDefault();
           if (!chip.classList.contains("prec")) this.stanzaMenu(chip.getAttribute("data-stp"), chip);
         });
@@ -10832,7 +10879,7 @@
     // letto torna vuoto. Preso dalla lista (daLista: la sua riga), va solo
     // nella stanza.
     stanzaTrascinaPaziente(e, box, chip, daLista) {
-      const ep = chip.getAttribute(daLista ? "data-riga" : "data-stp");
+      const ep = chip.getAttribute(daLista ? "data-riga" : "data-stp"), ospite = !daLista && chip.hasAttribute("data-ospite");
       let copia = null, sopra = null;
       const bersaglio = (x, y) => { const t = this.stanzaBersaglio(x, y); return daLista && t?.getAttribute("data-drop") === "tray" ? null : t; };
       const segna = (el) => {
@@ -10881,8 +10928,9 @@
           if (t) { const k = t.closest(".stmap")?.getAttribute("data-mappa"); this.stanzaSposta(ep, t.getAttribute("data-drop") + (k ? "@" + k : "")); }
         },
         // la riga si apre col suo clic (anche da tastiera); il paziente nella stanza qui
-        tocco: daLista ? null : () => this.apriPaziente(ep, "esiti"),
-        lungo: () => {
+        // (chi è al triage non ha una pagina nostra: si trascina e basta)
+        tocco: daLista || ospite ? null : () => this.apriPaziente(ep, "esiti"),
+        lungo: ospite ? null : () => {
           if (daLista) this._rigaMossa = true;
           this.stanzaMenu(ep, daLista ? chip.querySelector("[data-posto]") || chip : chip);
         },
@@ -10899,14 +10947,17 @@
       const [tipo, id] = luogo.split(":");
       const k = MAPPE[mk] ? mk : this.mappa().k;
       if (!["tray", "area", "letto"].includes(tipo)) return;
-      const T = this.pazTabellone(), j = T.lista.info.get(ep);
-      const m = T.per.get(k) || this.conMappa(k, () => this.pazModello()), i = m.info.get(ep);
+      const T = this.pazTabellone(), m = T.per.get(k) || this.conMappa(k, () => this.pazModello());
+      // chi è al triage: il posto di partenza (la Sala attesa) non è scritto — scritto è solo quello che gli dai tu
+      const o = m.info.get(ep) ? null : triageOspiti(m.pazienti).find((r) => r.k === ep);
+      const po = o ? postoOspite(ep, (kk) => this.conMappa(kk, () => this.stanzaSala())) : null;
+      const j = o ? { posto: po && (po.ts || tipo !== "tray") ? po : null, mk: po?.k } : T.lista.info.get(ep), i = o ? { breve: o.breve || o.nome, coda: "" } : m.info.get(ep);
       if (!i || !j || i.prec) return;
       const da = j.posto, daQui = da && j.mk === k;
       if (tipo === "tray" ? !da : daQui && da.tipo === tipo && da.id === id) return;   // è già lì
       const foto = this.stanzaFoto("posti"), nm = (x) => x.breve + x.coda;
       const nomeDi = (t, x) => (t === "letto" ? m.sala.letti : m.sala.aree).find((o) => o.id === x)?.nome || "";
-      let testo = tipo === "tray" ? `${nm(i)} senza posto` : `${nm(i)} in ${nomeDi(tipo, id)}`;
+      let testo = tipo === "tray" ? `${nm(i)} ${o ? "di nuovo in Sala attesa" : "senza posto"}` : `${nm(i)} in ${nomeDi(tipo, id)}`;
       const tutti = {};
       for (const kk of Object.keys(MAPPE)) {
         const raw = store.get(MAPPE[kk].posti, {});
@@ -17096,6 +17147,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         letti: per.get(k).sala.letti.map((l) => ({ id: l.id, c: l.c, r: l.r, ...misuraLetto(l), nome: l.nome, ...(l.forma && { forma: l.forma }) })),
         aree: per.get(k).sala.aree.map((a) => ({ id: a.id, c: a.c, r: a.r, w: a.w, h: a.h, nome: a.nome })),
         posti: [...dove].filter(([, x]) => x.k === k).map(([ep, x]) => ({ ep, tipo: x.v.tipo, id: x.v.id })),
+        // chi è al Triage (la sua chiave: il nome il telefono lo ha dalla riga di `triage`), di partenza in Sala attesa
+        ospiti: PANNELLO.conMappa(k, () => PANNELLO.ospitiIn(k, per.get(k).pazienti))
+          .filter((o) => o.posto.tipo === "area" || !per.get(k).perLetto[o.posto.id]).map((o) => ({ ep: o.r.k, tipo: o.posto.tipo, id: o.posto.id })),
       })),
     };
   }
@@ -17344,9 +17398,18 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (cmd === "triage") {
       const r = a.rileggi ? await smartSync(false).catch(() => null) : null;
       const t = store.get(TRIAGE_LISTA, null);
-      return { ok: true, dati: { ts: t?.ts || 0, righe: Array.isArray(t?.righe) ? t.righe : [], rilegge: !!(r && r.ok) } };
+      // (con la chiave di ognuno: sulla mappa i posti dicono solo quella)
+      return { ok: true, dati: { ts: t?.ts || 0, righe: Array.isArray(t?.righe) ? t.righe.map((x) => ({ ...x, k: chiaveTriage(x) })) : [], rilegge: !!(r && r.ok) } };
     }
     if (cmd === "richieste") return fatto({ ok: true, dati: ponteCatalogo(), registro: "catalogo degli esami" });
+    // chi è al Triage, portato sulla mappa dal telefono: lo stesso gesto del PC (non è fra i pazienti)
+    if (cmd === "posto" && /^tr[0-9a-z]{1,10}$/.test(String(a.ep || "")) && !pontePaziente(a.ep)) {
+      const o = triageOspiti(PANNELLO.pazModello().pazienti).find((r) => r.k === a.ep);
+      if (!o) return { ok: false, errore: "Non è più al triage, sul PC" };
+      if (!/^(tray|(letto|area):[\w.-]{1,40})(@\w{1,8})?$/.test(String(a.dove || ""))) return { ok: false, errore: "Posto non valido" };
+      PANNELLO.stanzaSposta(a.ep, a.dove);
+      return fatto({ ok: true, dati: ponteMappe(), registro: `posto di ${o.breve || o.nome} (al triage)` });
+    }
     const p = a.ep ? pontePaziente(a.ep) : null;
     if (!p) return { ok: false, errore: "Questo paziente non è più nell'elenco del PC" };
     // dimesso sul PC (archiviato): dal telefono non si tocca più

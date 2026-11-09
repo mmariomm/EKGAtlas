@@ -1577,7 +1577,8 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     await tel.locator(".letto.vuoto").first().click();
     const z1 = await zoom();
     await tel.locator(".letto.vuoto").first().click();
-    check(z1 > 2 && await zoom() === 1, `tocco su un posto vuoto: la mappa si ingrandisce (${z1}), un altro la riporta intera`);
+    const fz = await forma();
+    check(z1 > 2 && await zoom() === 1 && intera(fz), `tocco su un posto vuoto: la mappa si ingrandisce (${z1}), un altro la riporta intera — larga quanto lo schermo, senza scorrere (${dimmi(fz)})`);
     const minimo = await tel.evaluate(() => Math.min(...[...document.querySelectorAll(".letto.occ .ln")].map((e) => parseFloat(getComputedStyle(e).fontSize))));
     check(minimo >= 9, `i cognomi sui letti sono leggibili anche in verticale: almeno 9 px (${minimo})`);
   }
@@ -1612,6 +1613,34 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     await trascina({ x: sul.x, y: sul.y }, { x: sul.x, y: Math.min(sul.fuori, 800) });
     check(await finche(async () => !(await postiPc())["999018"], 15000) && await finche(async () => await tel.locator('.paz[data-ep="999018"]').count() === 1, 15000), "lasciato fuori dalla mappa: torna fra «Senza posto», sul PC e sul telefono");
     check(await tel.locator(".fantasma").count() === 0, "il nome trascinato non resta in giro");
+    // Chi è al Triage (la lista letta dal PC; non fra i pazienti): di partenza nella Sala attesa della
+    // Bassa, senza che niente si scriva; DE LUCA, che è fra i pazienti col suo posto, non si sposta né si
+    // ripete. Portato su un letto dal telefono, il PC lo scrive e lì resta.
+    await doc.evaluate(() => localStorage.setItem("psassist:triage.lista.v1", JSON.stringify({ ts: Date.now(), righe: [
+      { nome: "GRIGI TINA", breve: "GRIGI T.", eta: 30, triage: "VERDE", area: "", arrivo: Date.now() - 80 * 60e3 },
+      { nome: "DE LUCA ANNA", breve: "DE LUCA A.", eta: 82, triage: "AZZURRO", area: "", arrivo: Date.now() - 30 * 60e3 }] })));
+    await tocca(tel, '[data-a="menu"]'); await tocca(tel, '[data-a="aggiornaLista"]');
+    await tocca(tel, '[data-a="mappasel"][data-k="ps"]');
+    await finche(async () => await tel.locator('.mappa .area .pa[data-a="ospite"]').count() === 1, 15000);
+    const attesa = await tel.evaluate(() => [...document.querySelectorAll(".mappa .area")].map((a) => `${a.querySelector("h4").textContent}=${[...a.querySelectorAll(".pa")].map((p) => `${p.dataset.a}:${p.textContent}`).join(",")}`).join(" | "));
+    const scrittoPrima = Object.keys(await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:stanza.ps.posti.v1") || "{}"))).filter((k) => /^tr/.test(k)).length;
+    const ospite = await tel.evaluate(() => { const b = document.querySelector('.mappa .pa[data-a="ospite"]').getBoundingClientRect(); return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) }; });
+    const libero = await tel.evaluate(() => { const e = document.querySelector('.letto.vuoto[data-lid^="letto:obi1"]'), b = e.getBoundingClientRect(); return { lid: e.dataset.lid, x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) }; });
+    await trascina(ospite, libero);
+    const scritto = async () => Object.entries(await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:stanza.ps.posti.v1") || "{}"))).filter(([k]) => /^tr/.test(k)).map(([, v]) => v.id).join();
+    const sulLetto = await finche(async () => await scritto() === "obi1" && await tel.locator('.letto.occ[data-a="ospite"]').count() === 1, 15000);
+    check(/^Sala attesa · 3=paz:DE LUCA,paz:SERRA,ospite:GRIGI \| Sala attesa 2 · 1=paz:SOLDI$/.test(attesa) && scrittoPrima === 0 && sulLetto
+      && (await tel.locator('.letto.occ[data-a="ospite"] .ln').innerText()) === "GRIGI",
+      `chi è al Triage: di partenza nella Sala attesa della Bassa (mai scritto), chi ha già un posto non si sposta; portato su OBI 1 dal telefono, il PC lo scrive e lì resta (${attesa} · scritto: ${await scritto()})`);
+    await shot(tel, "mappa-triage-attesa");
+    await doc.evaluate(() => {
+      localStorage.removeItem("psassist:triage.lista.v1");
+      const p = JSON.parse(localStorage.getItem("psassist:stanza.ps.posti.v1") || "{}");
+      for (const k of Object.keys(p)) if (/^tr/.test(k)) delete p[k];
+      localStorage.setItem("psassist:stanza.ps.posti.v1", JSON.stringify(p));
+    });
+    await tocca(tel, '[data-a="menu"]'); await tocca(tel, '[data-a="aggiornaLista"]');
+    await finche(async () => await tel.locator(".mappa").count() === 1 && await tel.locator('[data-a="ospite"]').count() === 0, 15000);
   }
 
   // il pizzico: due dita, dentro la mappa; la pagina non si ingrandisce

@@ -324,6 +324,11 @@ nella sua cornice), sopra le **sedie** (tre in fila, la quarta sopra la Rossa), 
 due barelle di **Attesa barellati** —, e la **Bassa**, quella del PS (OBI, OSS, sale d'attesa).
 Ognuna si ritocca con **Modifica** (una alla volta: quella della vista; con *Entrambe*, quella
 dell'area). Un paziente ha un posto solo: messo in una mappa, lascia l'altra.
+**Chi aspetta al Triage** (la scheda «Triage» della lista smart, quella del telefono) e non è fra i
+pazienti sta, di partenza, nella **Sala attesa** della Bassa, col nome corto e «al triage»: un posto di
+partenza, mai scritto. Si trascina come gli altri (un tocco non apre niente: non ha una pagina nostra);
+portato su un letto o in un'area, quel posto si scrive e vince. Chi è già fra i pazienti ha il suo posto
+(o la lista) e non si sposta mai da qui. La lista del Triage letta più di 30 minuti fa non conta.
 
 **Segue il gestionale** (⋯, acceso di norma). Ogni lista non filtrata che apri aggiorna chi sta in
 quale area, come sempre. In più, **quando apri l'app sull'iPhone** (o ci torni sopra, o tocchi
@@ -1305,9 +1310,10 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   due dita la ingrandiscono (o un tocco su un posto vuoto, un altro la riporta intera), e solo allora scorre
   nella sua cornice. Resta in cima mentre la lista sotto scorre. Un letto
   occupato porta cognome, età, il colore del triage, il cuore e al più un pallino; i vuoti solo il nome; le
-  sale d'attesa le etichette dei pazienti. Un tocco apre il paziente; chi non ha posto resta sotto, «Senza
-  posto». Il comando `mappa` manda solo la geometria e chi sta dove (episodi): niente nomi, niente nuove
-  letture del gestionale. **Si modifica**: un nome tenuto premuto (mezzo secondo) si trascina su un letto
+  sale d'attesa le etichette dei pazienti — e, di partenza nella Sala attesa della Bassa, chi aspetta al
+  Triage (come sul PC; un tocco non lo apre, si trascina). Un tocco apre il paziente; chi non ha posto resta sotto, «Senza
+  posto». Il comando `mappa` manda solo la geometria e chi sta dove (episodi; chi è al Triage, per chiave: il
+  nome il telefono lo ha dalla riga di `triage`): niente nomi, niente nuove letture del gestionale. **Si modifica**: un nome tenuto premuto (mezzo secondo) si trascina su un letto
   o su un'area, o fuori dalla mappa per tornare fra «Senza posto»; lo fa il PC (`posto`, lo stesso gesto del
   trascinamento sulla sua mappa: un posto per paziente, un letto uno solo, le aree molti) e il telefono
   ridisegna dalla sua risposta. Un PC che non lo conosce: mappa in sola lettura, o niente scelta, senza errori.
