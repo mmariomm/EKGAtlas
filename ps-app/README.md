@@ -856,7 +856,10 @@ richiesta da confermare.
   copia salvata, con lo stesso motore della lista esami (ogni foglio annotato prima di partire,
   una volta sola: un doppio tocco è una stampa); senza, il dialogo di stampa del browser. Dell'**ECG** si mostra **solo il referto scritto** del
   cardiologo, mai le misure o le frasi della macchina; un tracciato senza referto scritto dice
-  «Solo il tracciato della macchina». Gli altri documenti (consulenze…) stanno in **Altri
+  «Solo il tracciato della macchina». Di una **radiografia** si mostrano la riga dell'esame (titolo,
+  data e ora) e il referto fra le due righe di trattini, mai l'anagrafica in testa, la modalità,
+  l'operatore o il piè di pagina (stesso taglio sul PC, sul telefono e nella copia); se la struttura
+  del PDF non è riconosciuta si mostra tutto, com'era. Gli altri documenti (consulenze…) stanno in **Altri
   documenti**, e si aprono nella loro scheda.
 - **Di chi è il referto**: prima di mostrare un testo, il codice fiscale scritto nel PDF (o nome e
   data di nascita) si confronta col paziente. Fra i PDF che il portale mostra, quello rimasto

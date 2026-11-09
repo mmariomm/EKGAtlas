@@ -835,6 +835,24 @@ check(/Non focolai a carattere broncopneumonico/.test(await aspettaTel(tel, /Non
   "e il testo della radiografia salvata sul PC, anche se nessuna pagina l'aveva letto: dalla copia, senza ↻ Rileggi");
 check(Object.values(await archivio()).some((r) => (r.referti || []).some((x) => x.id === ID_RX && /Non focolai/.test(x.testo))),
   "letto una volta, va nella scheda del paziente: la prossima volta è già lì");
+{
+  // Un PDF come quelli del RIS: anagrafica in testa, riga dell'esame, corpo fra due righe di trattini. Il telefono
+  // riceve la riga dell'esame e il corpo, non l'anagrafica né l'operatore.
+  const TR = "_".repeat(37);
+  const pdfRis = refertoRxPdf(["OSPEDALE ZQINTESTA", "Reparto ZQREPARTO", "69-140 RX TORACE (A6900) 22/08/2026 03:10", "Modalita ZQMODALITA", "OPERATORE ZQOPER", TR, "Torace ZQCORPO nei limiti.", TR, "Firma ZQPIEDE"]);
+  await sw.evaluate(([k, ep, data]) => chrome.storage.local.set({ [k]: { ep, data, ts: Date.now() } }), ["ref:" + ID_RX, "999001", pdfRis.toString("base64")]);
+  await sw.evaluate(() => chrome.storage.local.get("storicoArch").then((o) => { for (const r of Object.values(o.storicoArch || {})) r.referti = []; return chrome.storage.local.set(o); }));
+  await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);
+  const n1 = inoltrati.length;
+  await tocca(tel, '.paz[data-ep="999001"]'); await aspettaTel(tel, /RX TORACE/, 20000);
+  await finche(() => inoltrati.length >= n1 + 2, 15000); await sospendi(500);   // (la risposta nuova, non quella di prima)
+  await tocca(tel, '.ref:has-text("RX TORACE")');
+  // (se la riga era rimasta aperta dal controllo di prima, il tocco l'ha chiusa: un secondo la riapre)
+  if (!(await aspettaTel(tel, /ZQCORPO/, 4000))) { await tocca(tel, '.ref:has-text("RX TORACE")'); await aspettaTel(tel, /ZQCORPO/, 8000); }
+  const tx = await tel.evaluate(() => document.body.innerText);
+  check(/ZQCORPO/.test(tx) && /RX TORACE[^\n]*22\/08\/2026/.test(tx) && !/ZQINTESTA|ZQREPARTO|ZQMODALITA|ZQOPER|ZQPIEDE/.test(tx),
+    `il telefono mostra della radiografia la riga dell'esame e il corpo, non l'anagrafica né l'operatore né il piè di pagina (${tx.match(/ZQ\w+/g)} // ${tx.replace(/\s+/g, " ").slice(0, 700)})`);
+}
 
 // ===========================================================================
 sezione("un referto PDF salvato sul PC, sul telefono");
