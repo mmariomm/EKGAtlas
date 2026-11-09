@@ -54,6 +54,10 @@ const PONTE_ALTROVE_MS = 5e3;               // finita su un'altra pagina: tanto 
 const PONTE_PAGINE = { PsoPazienti: "la lista dei pazienti", PsoPazientiAmbulatorio: "la lista dei pazienti", PsoPazientiTriage: "la lista del triage",
   PsoEpisodioClinicoTriage: "la pagina del triage", PsoPsoImposta: "la scelta dell'area", PsoPazientiSmart: "la lista dell'ospedale" };
 const PONTE_CARTELLA_MAX = 60e3;            // salvare la cartella: aprire, controllare, «Conferma», rileggere
+const PONTE_TERAPIE = "ponte.terapie";      // storage.session: le schede aperte per la pagina Terapia (solo { ep, ts })
+const PONTE_TERAPIA = "ponte.terapia";      // storage.session: l'ultima lettura delle terapie di ogni paziente (memoria, mai disco)
+const PONTE_TERAPIA_RQ = "ponte.terapia.rq"; // storage.session: le terapie mandate dal telefono, per numero: { fase, esito }
+const PONTE_TERAPIA_MAX = 90e3;             // la pagina Terapia: il paziente, il pulsante, la tendina, «Conferma», rileggere
 // i campi della cartella (modulo AmbulatorioPSO) che il telefono può chiedere di scrivere:
 // se lo sono davvero lo dice la pagina, campo per campo (readonly, disabled)
 const PONTE_CARTELLA_CAMPI = { ANAMNESI: "Anamnesi", MALATTIE_PREGRESSE: "Anamnesi remota", FARMACI_ASSUNTI: "Farmaci", ALLERGIE: "Allergie", ESAME_OBIETTIVO: "Esame obiettivo" };
@@ -85,6 +89,8 @@ const pt = {
   ripartito: 0, rifiuto: 0, fine: null, registro: [],
   valori: new Map(),   // scheda → { ep, risolvi, promessa }: chi aspetta «Aggiorna i valori», qui
   cartelle: new Map(), // scheda → { ep, fase, campi, risolvi }: una cartella da salvare (i testi solo qui, in memoria)
+  terapie: new Map(),  // scheda → { ep, nome, fase, job, prima, risolvi }: la pagina Terapia (leggere, cercare, aggiungere)
+  terapiaRq: new Map(), // rq → la terapia dal telefono che sta andando (la stessa risposta a chi la rimanda)
   inVolo: new Map(),   // "tel"+oid → l'ordine che una scheda sta ancora preparando
   fila: Promise.resolve(),
 };
@@ -237,6 +243,9 @@ async function ponteControlla() {
   for (const [id, v] of Object.entries(await ponteCartelleTutte())) {
     if (ora - v.ts > PONTE_CARTELLA_MAX + 5e3) await ponteCartellaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
   }
+  for (const [id, v] of Object.entries(await ponteTerapieTutte())) {
+    if (ora - v.ts > PONTE_TERAPIA_MAX + 5e3) await ponteTerapiaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
+  }
   if (pt.coppia && ora >= pt.coppia.scade) {
     const scade = pt.coppia.scade;
     await ponteFine("scaduta");
@@ -376,7 +385,7 @@ async function ponteFine(perche) {
   pt.attesa = null;
   if (!s) return;
   pt.sessione = null;
-  await chrome.storage.session.remove(PONTE_CARTELLA).catch(() => {});   // le cartelle lette per il telefono: via con la sessione
+  await chrome.storage.session.remove([PONTE_CARTELLA, PONTE_TERAPIA]).catch(() => {});   // le cartelle e le terapie lette per il telefono: via con la sessione
   pt.fine = { perche, testo: ponteFrase(perche), ts: ponteOra() };
   ponteNota(`Sessione con l'iPhone chiusa — ${pt.fine.testo}`);
   try { ponteManda(await s.canale.cifra({ evento: "fine", perche, testo: pt.fine.testo })); } catch { /* la presa è giù: lo saprà dal «riparti» */ }
@@ -454,6 +463,9 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "registrazioneVia") return await ponteViaRegistrazione(s, d);
     if (d.cmd === "cartella") return await ponteCartella(ponteArgomenti(d));
     if (d.cmd === "cartellaSalva") return await ponteCartellaSalva(d);
+    if (d.cmd === "terapie") return await ponteTerapie(ponteArgomenti(d));
+    if (d.cmd === "terapiaCerca") return await ponteTerapiaCerca(d);
+    if (d.cmd === "terapiaAggiungi") return await ponteTerapiaAggiungi(d);
     if (["pazienti", "mappa", "eo", "triage", "esiti", "richieste", "nota", "promemoria", "fatto"].includes(d.cmd)) {
       const a = ponteArgomenti(d);
       const r = await ponteSuScheda(d.cmd, a);
@@ -646,6 +658,7 @@ async function ponteSchede() {
   const lavoro = new Set((await ordLeggi()).filter((x) => x.worker != null).map((x) => x.worker));
   for (const id of Object.keys(await ponteValoriTutti())) lavoro.add(Number(id));
   for (const id of Object.keys(await ponteCartelleTutte())) lavoro.add(Number(id));
+  for (const id of Object.keys(await ponteTerapieTutte())) lavoro.add(Number(id));
   const tutte = (await chrome.tabs.query({}).catch(() => [])).filter((t) => sulGestionale(t.url) && !t.discarded && !lavoro.has(t.id));
   const win = await chrome.windows.getLastFocused().catch(() => null);
   const peso = (t) => (t.active ? 2 : 0) + (win && t.windowId === win.id ? 1 : 0);
@@ -750,10 +763,16 @@ async function ponteLavoroDi(tabId) {
   const c = pt.cartelle.get(tabId);
   if (c) return { ponteCartella: { ep: c.ep, fase: c.fase, campi: c.campi } };
   const a = (await ponteCartelleTutte())[tabId];
-  return a ? { ponteCartella: { ep: a.ep, fase: "perso" } } : {};
+  if (a) return { ponteCartella: { ep: a.ep, fase: "perso" } };
+  // la scheda della Terapia: che cosa fare, e a che punto (dopo «Conferma» si guarda e basta)
+  const w = pt.terapie.get(tabId);
+  if (w) return { ponteTerapia: { ep: w.ep, nome: w.nome, fase: w.fase, cosa: w.job.cosa, q: w.job.q, voce: w.job.voce, visti: w.job.visti, prima: w.prima } };
+  const b = (await ponteTerapieTutte())[tabId];
+  return b ? { ponteTerapia: { ep: b.ep, fase: "perso" } } : {};
 }
 chrome.tabs.onRemoved.addListener((id) => { ponteValoriFine(id, { ok: false, testo: "la scheda dei valori è stata chiusa" }).catch(() => {}); });
 chrome.tabs.onRemoved.addListener((id) => { ponteCartellaFine(id, { ok: false, incerto: pt.cartelle.get(id)?.fase === "inviato", testo: "la scheda è stata chiusa" }).catch(() => {}); });
+chrome.tabs.onRemoved.addListener((id) => { ponteTerapiaFine(id, { ok: false, incerto: pt.terapie.get(id)?.fase === "inviato", testo: "la scheda è stata chiusa" }).catch(() => {}); });
 
 // ------------------------------------------------- la cartella dal telefono
 // Leggere: l'ultima lettura della pagina del paziente — annotata a ogni sua
@@ -891,6 +910,207 @@ async function ponteCartellaFine(id, esito) {
   return true;
 }
 
+// ------------------------------------------------- la Terapia dal telefono
+// La pagina Terapia del gestionale (PsoEpisodioTerapieImposta): leggerla,
+// cercare nella sua tendina dei farmaci, e aggiungere un farmaco col SUO
+// «Conferma» — l'ha scelto il medico: rivede sul telefono e tocca «Conferma».
+// Ogni volta una scheda di sottofondo sulla pagina del paziente, che apre la
+// Terapia col pulsante del paziente e fa quella cosa sola (ponteTerapiaQui,
+// core.js); una alla volta, e si chiude. Leggere: l'ultima lettura (di una
+// scheda così, o della pagina aperta dal medico; solo con un iPhone
+// associato, in memoria) o la pagina riletta. Aggiungere: una volta sola per
+// numero (rq), anche dopo un riavvio del service worker o una scheda che si
+// ricarica — il numero e la sua fase stanno in storage.session, e «inviato»
+// si annota PRIMA del clic. Dopo «Conferma» si guarda e basta: vista fra le
+// confermate è «Confermata»; se no «Incerto: controlla sul PC», mai di nuovo.
+const ponteTerapieMemo = async () => (await chrome.storage.session.get(PONTE_TERAPIA))[PONTE_TERAPIA] || {};
+const ponteTerapieTutte = async () => (await chrome.storage.session.get(PONTE_TERAPIE))[PONTE_TERAPIE] || {};
+const ponteTerapiaRqTutti = async () => (await chrome.storage.session.get(PONTE_TERAPIA_RQ))[PONTE_TERAPIA_RQ] || {};
+const ponteTerapiaOpz = (o) => (o && typeof o.v === "string" && o.v && o.v.length <= 40 && typeof o.t === "string" && o.t.length <= 80 ? { v: o.v, t: o.t } : null);
+// una lettura della pagina: le righe confermate (quello che la pagina ne mostra) e le voci delle tendine, niente altro
+function ponteTerapiaPulita(l) {
+  if (!l || typeof l !== "object" || !Array.isArray(l.righe)) return null;
+  const t = (x, n) => (typeof x === "string" ? x.slice(0, n) : "");
+  const opz = (a) => (Array.isArray(a) ? a.map(ponteTerapiaOpz).filter(Boolean).slice(0, 60) : []);
+  return {
+    ep: t(l.ep, 40), letto: Number(l.letto) || ponteOra(),
+    righe: l.righe.slice(-200).filter((r) => r && typeof r.descr === "string").map((r) => ({ prog: t(r.prog, 20), descr: t(r.descr, 200), qta: t(r.qta, 10),
+      um: t(r.um, 80), via: t(r.via, 80), dil: t(r.dil, 80), continua: r.continua === true, bisogno: r.bisogno === true, freq: t(r.freq, 4), ora: t(r.ora, 11) })),
+    opz: { um: opz(l.opz && l.opz.um), via: opz(l.opz && l.opz.via), dil: opz(l.opz && l.opz.dil) },
+  };
+}
+// un farmaco (dal telefono, o un preferito): la scritta della voce e la dose; niente note, niente ora. Un campo storto: null
+function ponteTerapiaVoce(x) {
+  if (!x || typeof x !== "object" || typeof x.descr !== "string") return null;
+  const testo = (k, n) => (x[k] == null || x[k] === "" ? "" : typeof x[k] === "string" && x[k].length <= n ? x[k].trim() : false);
+  const opz = (k) => (x[k] == null ? null : ponteTerapiaOpz(x[k]) || false);
+  const descr = x.descr.replace(/\s+/g, " ").trim(), freq = testo("freq", 4), durata = testo("durata", 2);
+  const v = { descr, codice: testo("codice", 40), qta: testo("qta", 10), um: opz("um"), via: opz("via"), dil: opz("dil"), continua: x.continua === true, bisogno: x.bisogno === true };
+  if (descr.length < 3 || descr.length > 200 || [v.codice, v.qta, v.um, v.via, v.dil, freq, durata].includes(false)) return null;
+  if (freq) v.freq = freq;
+  if (durata) v.durata = durata;
+  return v;
+}
+let ponteFilaTerapiaMemo = Promise.resolve();
+const ponteTerapiaMemoScrivi = (ep, l) => (ponteFilaTerapiaMemo = ponteFilaTerapiaMemo.then(async () => {
+  const x = ponteTerapiaPulita(l);
+  if (!pt.coppia || !x || x.ep !== ep) return;
+  const m = await ponteTerapieMemo();
+  m[ep] = x;
+  const tieni = Object.values(m).filter((y) => ponteOra() - y.letto < PONTE_DURATA).sort((a, b) => b.letto - a.letto).slice(0, 40);
+  await chrome.storage.session.set({ [PONTE_TERAPIA]: Object.fromEntries(tieni.map((y) => [y.ep, y])) });
+}).catch(() => {}));
+// (questa può fallire: chi annota «inviato» non deve credere di averlo fatto)
+let ponteFilaTerapiaRq = Promise.resolve();
+function ponteTerapiaRqScrivi(rq, x) {
+  const p = ponteFilaTerapiaRq.then(async () => {
+    const m = await ponteTerapiaRqTutti();
+    m[rq] = { ...(m[rq] || {}), ...x, ts: ponteOra() };
+    const tieni = Object.entries(m).filter(([, y]) => ponteOra() - y.ts < PONTE_DURATA).sort((a, b) => b[1].ts - a[1].ts).slice(0, 60);
+    await chrome.storage.session.set({ [PONTE_TERAPIA_RQ]: Object.fromEntries(tieni) });
+  });
+  ponteFilaTerapiaRq = p.catch(() => {});
+  return p;
+}
+// nel registro degli errori (e la registrazione automatica: registra.js): il perché, mai un nome
+function ponteTerapiaErrore(perche, grave = false) {
+  if (typeof segnaErrore === "function") segnaErrore("terapia telefono", { perche: corto(perche, 60) || "?", ...(grave ? { grave: true } : {}) });
+}
+const PONTE_TERAPIA_GRAVE = "Errore grave: la pagina delle terapie sul PC è di un altro paziente";
+// una lettura o una ricerca non riuscite, in parole
+function ponteTerapiaNo(e, cosa) {
+  if (e.grave) { ponteTerapiaErrore(e.grave, true); return { ok: false, errore: `${PONTE_TERAPIA_GRAVE} — non mostrata` }; }
+  return { ok: false, errore: `${cosa}: ${e.testo || "la pagina Terapia sul PC non risponde"}` };
+}
+// Leggere. Senza paziente il telefono chiede solo se il PC conosce il comando.
+async function ponteTerapie(a) {
+  if (!a.ep) return { ok: true, dati: null };
+  const r = await ponteSuScheda("terapie", { ep: a.ep });
+  if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
+  if (!r.ok) return r;
+  const pref = (Array.isArray(r.dati.pref) ? r.dati.pref : []).map(ponteTerapiaVoce).filter(Boolean);
+  const memo = a.rileggi ? null : (await ponteTerapieMemo())[a.ep];
+  if (memo) return { ok: true, dati: { ...memo, pref } };
+  const e = await ponteTerapiaSotto(r.dati.url, a.ep, r.dati.paziente, { cosa: "leggi" });
+  if (!e.ok) return ponteTerapiaNo(e, "Terapie non lette");
+  await ponteTerapiaMemoScrivi(a.ep, e.lettura);
+  return { ok: true, dati: { ...e.lettura, pref } };
+}
+// Cercare: la scheda scrive nella tendina della pagina come una persona, e torna con le scritte delle voci
+async function ponteTerapiaCerca(d) {
+  const a = ponteArgomenti(d), q = typeof d.q === "string" ? d.q.replace(/\s+/g, " ").trim() : "";
+  if (!a.ep || q.length < 3 || q.length > 60) return { ok: false, errore: "Scrivi almeno 3 lettere" };
+  const r = await ponteSuScheda("terapiaCerca", { ep: a.ep });
+  if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
+  if (!r.ok) return r;
+  const e = await ponteTerapiaSotto(r.dati.url, a.ep, r.dati.paziente, { cosa: "cerca", q });
+  if (e.lettura) await ponteTerapiaMemoScrivi(a.ep, e.lettura);
+  if (!e.ok) return ponteTerapiaNo(e, "Tendina non letta");
+  return { ok: true, dati: { q, voci: e.voci || [] } };
+}
+// Aggiungere: un farmaco per volta, una volta sola per numero.
+function ponteTerapiaAggiungi(d) {
+  const a = ponteArgomenti(d), v = ponteTerapiaVoce(d.voce);
+  const rq = typeof d.rq === "string" && /^[\w-]{8,40}$/.test(d.rq) ? d.rq : "";
+  const visti = Array.isArray(d.visti) && d.visti.length <= 200 && d.visti.every((x) => typeof x === "string" && x.length <= 20) ? d.visti : null;
+  if (!a.ep || !rq || !v || !visti) return Promise.resolve({ ok: false, errore: "Terapia non valida: niente confermato" });
+  // lo stesso numero che sta andando: la sua risposta (annotato prima di qualunque attesa)
+  if (pt.terapiaRq.has(rq)) return pt.terapiaRq.get(rq);
+  const p = (async () => {
+    const prima = (await ponteTerapiaRqTutti())[rq];
+    if (prima && prima.esito) return prima.esito;   // com'è andata
+    // (il service worker è ripartito dopo «Conferma»: non si sa, e non si rifà)
+    if (prima && prima.fase === "inviato") return { ok: false, incerto: true, errore: "Incerto: controlla sul PC" };
+    return ponteTerapiaAggiungiOra(a.ep, rq, v, visti);
+  })();
+  pt.terapiaRq.set(rq, p);
+  p.finally(() => pt.terapiaRq.delete(rq)).catch(() => {});
+  return p;
+}
+async function ponteTerapiaAggiungiOra(ep, rq, v, visti) {
+  // il paziente (in elenco, non dimesso, non un episodio precedente) e la sua pagina
+  const r = await ponteSuScheda("terapiaAggiungi", { ep });
+  if (!r.ok) return r;
+  const paz = corto(r.dati.paziente, 40) || "un paziente";
+  const fatto = async (esito, perche = "", grave = false) => {
+    if (perche) ponteTerapiaErrore(perche, grave);
+    ponteNota(`Terapia di ${paz} dal telefono: ${esito.ok ? `confermata ${corto(v.descr, 60)}` : esito.errore}`);
+    await ponteScriviStato();
+    // (il numero ricorda com'è andata, senza la lettura: chi lo rimanda ha la stessa risposta)
+    await ponteTerapiaRqScrivi(rq, { ep, fase: "fatto", esito: esito.ok ? { ok: true, dati: { riga: esito.dati.riga } } : { ...esito, dati: undefined } }).catch(() => {});
+    return esito;
+  };
+  // la Terapia di questo paziente è del medico, in una scheda del PC (il suo giro, la sua riga scritta): no
+  if (await ponteTerapiaSporche(ep)) return fatto({ ok: false, errore: "Non confermata: sul PC la Terapia di questo paziente è aperta e già toccata" }, "pagina del medico");
+  await ponteTerapiaRqScrivi(rq, { ep, fase: "corso" });
+  const e = await ponteTerapiaSotto(r.dati.url, ep, r.dati.paziente, { cosa: "aggiungi", voce: v, visti, rq });
+  if (e.lettura) await ponteTerapiaMemoScrivi(ep, e.lettura);
+  const dati = e.lettura ? { dati: e.lettura } : {};
+  if (e.ok && e.riga) {
+    // le pagine delle terapie di quel paziente aperte sul PC: sono di prima
+    for (const t of await ponteSchede()) chrome.tabs.sendMessage(t.id, { t: "ponteTerapiaAggiornata", ep, descr: v.descr }).catch(() => {});
+    return fatto({ ok: true, dati: { ...(e.lettura || {}), riga: e.riga } });
+  }
+  if (e.incerto || e.ok) return fatto({ ok: false, incerto: true, errore: e.grave ? `${PONTE_TERAPIA_GRAVE}: controlla sul PC` : "Incerto: controlla sul PC", ...dati }, e.grave || "conferma non vista", !!e.grave);
+  if (e.grave) return fatto({ ok: false, errore: `${PONTE_TERAPIA_GRAVE} — niente confermato`, ...dati }, e.grave, true);
+  return fatto({ ok: false, errore: `Non confermata: ${e.testo || "la pagina Terapia sul PC non risponde"}`, ...dati }, e.gia ? "già confermata" : e.perche || e.testo);
+}
+// Ogni scheda del gestionale (non quelle di sottofondo) dice se la Terapia di
+// quel paziente è del medico adesso. Chi non risponde in 3 secondi non ha una pagina viva.
+async function ponteTerapiaSporche(ep) {
+  const lavoro = new Set(Object.keys(await ponteTerapieTutte()).map(Number));
+  const schede = (await chrome.tabs.query({}).catch(() => [])).filter((t) => sulGestionale(t.url) && !t.discarded && !lavoro.has(t.id));
+  const r = await Promise.all(schede.map((t) => Promise.race([chrome.tabs.sendMessage(t.id, { t: "ponteTerapiaSporca", ep }).catch(() => null), attendi(3000, null)])));
+  return r.some((x) => x && x.sporca === true);
+}
+let ponteFilaTerapie = Promise.resolve();
+const ponteTerapieCambia = (fn) => (ponteFilaTerapie = ponteFilaTerapie.then(async () => {
+  const v = await ponteTerapieTutte();
+  const r = fn(v);
+  await chrome.storage.session.set({ [PONTE_TERAPIE]: v });
+  return r;
+}).catch(() => null));
+// la scheda di sottofondo, come quella della cartella — una alla volta
+let ponteFilaTerapia = Promise.resolve();
+function ponteTerapiaSotto(url, ep, nome, job) {
+  const p = ponteFilaTerapia.then(() => ponteTerapiaSottoOra(url, ep, nome, job));
+  ponteFilaTerapia = p.catch(() => {});
+  return p;
+}
+async function ponteTerapiaSottoOra(url, ep, nome, job) {
+  let u;
+  try { u = new URL(url); } catch { return { ok: false, testo: "indirizzo del paziente non valido" }; }
+  if (!leggibileOrd(url) || u.searchParams.get("EPISODIO_ID") !== ep) return { ok: false, testo: "indirizzo del paziente inatteso" };
+  if (typeof dopoIlMotore === "function") await dopoIlMotore();   // (mai una pagina del gestionale mentre un motore inserisce: bg.js)
+  const davanti = (await ponteSchede())[0];
+  const vuota = { url: "about:blank", active: false };
+  const t = await chrome.tabs.create(davanti ? { ...vuota, windowId: davanti.windowId, index: davanti.index + 1 } : vuota)
+    .catch(() => chrome.tabs.create(vuota));
+  let risolvi;
+  const promessa = new Promise((r) => { risolvi = r; });
+  pt.terapie.set(t.id, { ep, nome, fase: "apro", job, prima: [], risolvi });
+  await ponteTerapieCambia((v) => { v[t.id] = { ep, ts: ponteOra() }; });
+  const tempo = setTimeout(() => ponteTerapiaFine(t.id, { ok: false, incerto: pt.terapie.get(t.id)?.fase === "inviato", testo: "la scheda non ha finito in tempo" }), PONTE_TERAPIA_MAX);
+  try {
+    await chrome.tabs.update(t.id, { url: u.href, autoDiscardable: false });
+  } catch {
+    ponteTerapiaFine(t.id, { ok: false, testo: "la pagina del paziente sul PC non si apre" });
+  }
+  const esito = await promessa;
+  clearTimeout(tempo);
+  return esito;
+}
+async function ponteTerapiaFine(id, esito) {
+  const w = pt.terapie.get(id);
+  pt.terapie.delete(id);
+  const c = await ponteTerapieCambia((v) => { const c = v[id]; delete v[id]; return c; });
+  if (!c && !w) return false;
+  const t = await chrome.tabs.get(id).catch(() => null);
+  if (t && !t.active) await chrome.tabs.remove(id).catch(() => {});
+  if (w) w.risolvi(esito);
+  return true;
+}
+
 // ------------------------------------------- gli ordini partiti dal telefono
 // L'ordine fa il giro di sempre (scheda di sottofondo, controlli, conferma,
 // etichette): qui lo si guarda passare in `ordini` e si racconta al telefono
@@ -1011,6 +1231,50 @@ function ponteDaPagina(msg, sender, reply) {
       if (w && msg.verificati && typeof msg.verificati === "object") esito.verificati = Object.fromEntries(Object.keys(w.campi).map((n) => [n, msg.verificati[n] === true]));
       if (w && msg.letta && msg.letta.ep === w.ep && Array.isArray(msg.letta.campi)) esito.letta = { ep: w.ep, letto: ponteOra(), campi: msg.letta.campi };
       return { ok: await ponteCartellaFine(id, esito) };
+    });
+  }
+  // la pagina delle terapie aperta dal medico: quello che mostra, per il telefono (solo con un iPhone associato)
+  if (msg.t === "ponteTerapieLette" && gestionale) {
+    return fai(async () => {
+      if (!pt.coppia || typeof msg.ep !== "string" || !/^[\w.-]{1,40}$/.test(msg.ep) || !msg.lettura || msg.lettura.ep !== msg.ep || pt.terapie.has(sender.tab.id)) return { ok: false };
+      await ponteTerapiaMemoScrivi(msg.ep, { ...msg.lettura, letto: ponteOra() });
+      return { ok: true };
+    });
+  }
+  // la scheda della Terapia sta per premere il pulsante «Terapia» del paziente
+  if (msg.t === "ponteTerapiaPagina" && gestionale) {
+    return fai(async () => {
+      const w = pt.terapie.get(sender.tab.id);
+      if (!w || w.fase !== "apro") return { ok: false };
+      w.fase = "pagina";
+      return { ok: true };
+    });
+  }
+  // …e il «Conferma» della pagina: annotato PRIMA (il numero in storage.session):
+  // da qui in poi la pagina che torna si guarda e basta, anche dopo un riavvio
+  if (msg.t === "ponteTerapiaInvio" && gestionale) {
+    return fai(async () => {
+      const w = pt.terapie.get(sender.tab.id);
+      if (!w || w.fase !== "pagina" || w.job.cosa !== "aggiungi" || !w.job.rq) return { ok: false };
+      w.fase = "inviato";
+      w.prima = Array.isArray(msg.prima) ? msg.prima.filter((x) => typeof x === "string").slice(0, 400) : [];
+      try { await ponteTerapiaRqScrivi(w.job.rq, { ep: w.ep, fase: "inviato" }); }
+      catch { await ponteTerapiaFine(sender.tab.id, { ok: false, testo: "il PC non riesce ad annotarlo: niente premuto" }); return { ok: false }; }
+      return { ok: true };
+    });
+  }
+  if (msg.t === "ponteTerapiaFatto" && gestionale) {
+    return fai(async () => {
+      const id = sender.tab.id, w = pt.terapie.get(id), cosa = w ? w.job.cosa : "";
+      // «Confermata» solo dopo il clic annotato; leggere e cercare solo dalla pagina delle terapie
+      const ok = !!msg.ok && !!w && w.fase === (cosa === "aggiungi" ? "inviato" : "pagina");
+      const esito = { ok, testo: corto(msg.testo, 160), incerto: !!msg.incerto || (!!w && w.fase === "inviato" && !ok), gia: msg.gia === true, perche: corto(msg.perche, 40) };
+      if (typeof msg.grave === "string" && msg.grave) esito.grave = corto(msg.grave, 40);
+      const l = w ? ponteTerapiaPulita(msg.lettura) : null;
+      if (l && l.ep === w.ep) esito.lettura = l;
+      if (ok && cosa === "cerca") esito.voci = (Array.isArray(msg.voci) ? msg.voci : []).filter((x) => typeof x === "string").map((x) => x.slice(0, 200)).slice(0, 40);
+      if (ok && cosa === "aggiungi") esito.riga = (ponteTerapiaPulita({ righe: [msg.riga] }) || { righe: [] }).righe[0] || null;
+      return { ok: await ponteTerapiaFine(id, esito) };
     });
   }
   // La scheda dei valori non è sulla pagina del paziente. Spesso il gestionale

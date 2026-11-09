@@ -33,6 +33,8 @@
   const TARDI_MAX = 10 * 60e3;       // una scrittura di cui non si sa: la si rimanda a ogni ritorno della rete, per 10 minuti
   const ATTESA_VALORI = 200e3;       // «Aggiorna i valori»: il PC, al peggio, ci mette 10 + 150 + 30 secondi
   const ATTESA_CARTELLA = 110e3;     // salvare la cartella: il PC, al peggio, 10 + 3 + 60 secondi (e la rete)
+  const ATTESA_TERAPIE = 110e3;      // leggere la Terapia, o cercare nella sua tendina: una scheda del PC, al peggio 10 + 90 secondi
+  const ATTESA_TERAPIA = 130e3;      // aggiungere un farmaco: 10 + 3 + 90 secondi (e la rete); oltre, «incerto» finché il PC non risponde
   // la cartella del paziente, coi nomi del modulo del gestionale
   const CARTELLA = [["ANAMNESI", "Anamnesi"], ["MALATTIE_PREGRESSE", "Anamnesi remota"], ["FARMACI_ASSUNTI", "Farmaci"], ["ALLERGIE", "Allergie"], ["ESAME_OBIETTIVO", "Esame obiettivo"]];
   const uguale = (a, b) => String(a ?? "").replace(/\s+/g, " ").trim() === String(b ?? "").replace(/\s+/g, " ").trim();
@@ -87,6 +89,9 @@
     eo: null, eoVecchio: false, // gli EO salvati sul PC: [{ k, nome, gruppo: "base" | "casi" | "frasi", testo }]; eoVecchio = un PC che non li dà
     eoSheet: false, eoQ: "", // «Altri…»: il foglio, e la ricerca (solo se la lista è lunga)
     eoAnnulla: null,     // l'ultimo EO inserito, per 5 secondi: { ep, nome, prima, ins, t }
+    terapiaSi: null,     // il PC conosce la Terapia? (null: non si sa ancora; false: un PC più vecchio — niente scheda)
+    terapie: new Map(),  // ep → le terapie lette sul PC: { ep, letto, righe: [{ prog, descr, qta, um, via, dil, … }], opz: { um, via, dil }, pref }
+    tf: null,            // «＋ Farmaco», il foglio: { ep, passo: "scegli" | "dose", q, voci, qVoci, cerca, errVoci, v, altro, rq, stato, esito }
   };
   const MODO = "psassist.ponte.modo";
   try { if (localStorage.getItem(MODO) === "mappa") S.modo = "mappa"; } catch { /* solo in memoria */ }
@@ -94,6 +99,7 @@
     S.pazienti = null; S.triage = null; S.mappa = null; S.mappaSel = ""; S.zoom = 1; S.eo = null; S.eoVecchio = false; S.eoSheet = false; S.eoQ = ""; if (S.eoAnnulla) clearTimeout(S.eoAnnulla.t); S.eoAnnulla = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.bozze.clear(); S.promTesto = ""; S.arma = null;
     S.notaAperta = ""; S.promAperto = ""; S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
+    S.terapiaSi = null; S.terapie.clear(); S.tf = null;
     S.zip = null; S.zipErr = ""; S.zipArma = null; S.zipStato.clear();
     for (const f of S.zipFile.values()) try { URL.revokeObjectURL(f.url); } catch { /* già via */ }
     S.zipFile.clear();
@@ -437,10 +443,14 @@
   // La mappa: un PC più vecchio non conosce il comando — allora niente scelta «Lista · Mappa», senza errori.
   // Se la richiesta fallisce (rete), resta quella di prima.
   const chiediMappa = (auto = true) => chiedi("mappa", {}, TEMPO, auto).then((m) => { if (m && Array.isArray(m.mappe) && m.mappe.length) S.mappa = m; }, () => {});
+  // La Terapia: un PC più vecchio non conosce il comando — allora niente scheda «Terapia», senza errori.
+  // (senza paziente il PC non legge niente: dice solo che c'è)
+  const chiediTerapia = () => (S.terapiaSi !== null ? Promise.resolve() : chiedi("terapie", {}, TEMPO, true).then(() => { S.terapiaSi = true; },
+    (e) => { if (/sconosciuto/i.test(String(e && e.message))) S.terapiaSi = false; }));
   async function carica() {
     S.occupato.add("lista"); render();
     try {
-      const [pazienti, catalogo, ordini, triage] = await Promise.all([chiedi("pazienti", {}, TEMPO, true), chiedi("richieste", {}, TEMPO, true), chiedi("ordini", {}, TEMPO, true), chiediTriage(true, true), chiediMappa()]);
+      const [pazienti, catalogo, ordini, triage] = await Promise.all([chiedi("pazienti", {}, TEMPO, true), chiedi("richieste", {}, TEMPO, true), chiedi("ordini", {}, TEMPO, true), chiediTriage(true, true), chiediMappa(), chiediTerapia()]);
       S.pazienti = pazienti; S.triage = triage; S.catalogo = catalogo; S.aggiornato = Date.now(); S.erroreLista = "";
       for (const o of ordini || []) if (!S.ordini.has(o.id) || !S.ordini.get(o.id).fine) ordineVisto(o);
     } catch (e) { S.erroreLista = e.message; }
@@ -449,7 +459,7 @@
   async function aggiornaLista(auto = false, rileggi = false) {
     if (!S.catalogo) return carica();
     S.occupato.add("lista"); render();
-    try { [S.pazienti, S.triage] = await Promise.all([chiedi("pazienti", {}, TEMPO, auto), chiediTriage(auto, rileggi), chiediMappa(auto)]); S.aggiornato = Date.now(); S.erroreLista = ""; }
+    try { [S.pazienti, S.triage] = await Promise.all([chiedi("pazienti", {}, TEMPO, auto), chiediTriage(auto, rileggi), chiediMappa(auto), chiediTerapia()]); S.aggiornato = Date.now(); S.erroreLista = ""; }
     catch (e) { if (S.pazienti) { if (!auto) errore(e); } else S.erroreLista = e.message; }
     S.occupato.delete("lista"); render();
   }
@@ -487,7 +497,9 @@
     window.scrollTo(0, 0);
     render();
     caricaEsiti(ep);
+    if (S.scheda === "terapia" && !S.terapiaSi) S.scheda = "esiti";
     if (S.scheda === "cartella") caricaCartella(ep);
+    if (S.scheda === "terapia") caricaTerapie(ep);
   }
   // La cartella: l'ultima lettura del PC (o, con «↻ Rileggi», la pagina riletta)
   async function caricaCartella(ep, auto = false, rileggi = false) {
@@ -580,6 +592,87 @@
     S.cstato.delete(ep);
     caricaCartella(ep, false, true);
   }
+  // La Terapia: la pagina Terapia del gestionale, come l'ha letta il PC (l'ultima lettura, o con «↻ Rileggi» la pagina riletta)
+  async function caricaTerapie(ep, auto = false, rileggi = false) {
+    if (S.occupato.has("terapie" + ep)) return;
+    S.occupato.add("terapie" + ep); render();
+    try { terapieDalPc(ep, await chiedi("terapie", rileggi ? { ep, rileggi: true } : { ep }, ATTESA_TERAPIE, auto)); } catch (e) { if (!auto) errore(e); }
+    S.occupato.delete("terapie" + ep); render();
+  }
+  // (una lettura senza i preferiti — quella che torna da un'aggiunta — tiene quelli di prima)
+  function terapieDalPc(ep, l) {
+    if (!l || !Array.isArray(l.righe) || !l.opz) return;
+    S.terapie.set(ep, { ...l, pref: Array.isArray(l.pref) ? l.pref : (S.terapie.get(ep) || {}).pref || [] });
+  }
+  // la dose in una riga, come sul PC: «1 cpr · os · al bisogno»
+  const testoOpz = (x) => (x && typeof x === "object" ? x.t : x) || "";
+  const doseTer = (v) => [v.qta && `${v.qta}${testoOpz(v.um) ? " " + testoOpz(v.um) : ""}`, !v.qta && testoOpz(v.um), testoOpz(v.via), testoOpz(v.dil),
+    v.freq && `freq. ${v.freq}`, v.durata && `durata ${v.durata}`, v.continua && "continua", v.bisogno && "al bisogno"].filter(Boolean).join(" · ");
+  // «＋ Farmaco»: il foglio, sul paziente aperto
+  function apriFarmaco(ep) {
+    const p = paziente(ep);
+    if (!p || p.prec || !S.terapie.get(ep)) return;
+    S.tf = { ep, passo: "scegli", q: "", voci: null, qVoci: "", cerca: "", errVoci: "", v: null, altro: false, rq: "", stato: "", esito: null };
+    render();
+  }
+  // un preferito (com'è stato confermato) o una voce della tendina (solo la scritta): poi la dose
+  function scegliFarmaco(v) {
+    const f = S.tf;
+    if (!f || !v) return;
+    f.v = { descr: v.descr, codice: v.codice || "", qta: v.qta || "", um: v.um || null, via: v.via || null, dil: v.dil || null,
+      continua: !!v.continua, bisogno: !!v.bisogno, freq: v.freq || "", durata: v.durata || "" };
+    f.altro = !!(f.v.dil || f.v.freq || f.v.durata || f.v.continua || f.v.bisogno);
+    f.passo = "dose"; f.rq = ""; f.esito = null;
+    render();
+  }
+  // Cercare nella tendina della pagina Terapia: la cerca il PC (una scheda scrive nel campo, come una persona).
+  // Da 3 lettere, quando il medico smette di scrivere; una alla volta, e alla fine l'ultima scritta.
+  let tCerca = 0;
+  const cercaPresto = () => { clearTimeout(tCerca); tCerca = setTimeout(cercaFarmaco, 700); };
+  async function cercaFarmaco() {
+    clearTimeout(tCerca);
+    const f = S.tf, q = f ? f.q.replace(/\s+/g, " ").trim() : "";
+    if (!f || f.passo !== "scegli" || q.length < 3 || q.toLowerCase() === f.qVoci.toLowerCase()) return;
+    if (f.cerca) { f.ancora = true; return; }
+    f.cerca = q; f.errVoci = ""; render();
+    try { const d = await chiedi("terapiaCerca", { ep: f.ep, q }, ATTESA_TERAPIE); f.voci = Array.isArray(d && d.voci) ? d.voci : []; f.qVoci = q; }
+    catch (e) { f.errVoci = e.offline ? "Senza collegamento col PC" : e.message; }
+    f.cerca = "";
+    if (S.tf !== f) return;
+    render();
+    if (f.ancora) { f.ancora = false; cercaFarmaco(); }
+  }
+  // «Conferma per ROSSI M.»: una terapia, una volta. Il numero (rq) resta finché non si sa com'è andata:
+  // rimandato (la rete, un tocco di nuovo) il PC risponde com'è andata e non la rifà.
+  async function confermaFarmaco(ep) {
+    const f = S.tf, l = S.terapie.get(ep), p = paziente(ep);
+    if (!f || f.ep !== ep || !f.v || !l || !p || p.prec || f.stato || (f.esito && f.esito.tono !== "err")) return;
+    if (!f.rq) f.rq = nuovoRq();
+    const v = f.v, voce = { descr: v.descr, codice: v.codice, qta: v.qta.trim(), um: v.um, via: v.via, dil: v.dil, continua: v.continua, bisogno: v.bisogno,
+      ...(v.freq.trim() ? { freq: v.freq.trim() } : {}), ...(v.durata.trim() ? { durata: v.durata.trim() } : {}) };
+    f.stato = "invio"; f.esito = null; render();
+    const si = (d) => {
+      terapieDalPc(ep, d);
+      if (!d || !Array.isArray(d.righe)) caricaTerapie(ep, true);
+      f.stato = ""; f.esito = { tono: "ok", testo: "Confermata" };
+    };
+    const no = (e) => {
+      if (e.dati) terapieDalPc(ep, e.dati);
+      f.stato = ""; f.esito = { tono: e.incerto ? "warn" : "err", testo: e.message };
+      if (!e.incerto) f.rq = "";   // non è partita: un nuovo tocco è una richiesta nuova
+    };
+    // (il foglio chiuso intanto: com'è andata lo dice un avviso)
+    const detto = (e) => { if (S.tf !== f) avviso(e ? e.message : `Confermata: ${v.descr}`, e && !e.incerto ? "err" : ""); render(); };
+    try {
+      si(await chiedi("terapiaAggiungi", { ep, voce, visti: l.righe.map((r) => r.prog).filter(Boolean) }, ATTESA_TERAPIA, false,
+        { rq: f.rq, scade: Date.now() + 30e3, tardi: (d) => { if (d.ok) { si(d.dati); detto(null); } else { const e = errDa(d); no(e); detto(e); } } }));
+      detto(null);
+    } catch (e) {
+      const x = e.inviata ? Object.assign(new Error("Incerto: il PC non ha ancora risposto — controlla sul PC"), { incerto: true }) : e;
+      no(x);
+      detto(x);
+    }
+  }
   async function caricaEsiti(ep, auto = false) {
     if (S.occupato.has("esiti" + ep)) return;
     S.occupato.add("esiti" + ep); render();
@@ -592,6 +685,7 @@
     aggiornaLista(true, true);
     if (S.vista.nome === "paziente") caricaEsiti(S.vista.ep, true);
     if (S.vista.nome === "paziente" && S.scheda === "cartella" && !S.occupato.has("csalva" + S.vista.ep)) caricaCartella(S.vista.ep, true);
+    if (S.vista.nome === "paziente" && S.scheda === "terapia" && !S.tf) caricaTerapie(S.vista.ep, true);
     if (S.vista.nome === "registrazioni") caricaZip(true);
   }
   async function aggiornaValori(ep) {
@@ -1370,6 +1464,7 @@
   }
   function ctaHtml(p) {
     if (S.scheda === "cartella") return ctaCartella(p);
+    if (S.scheda === "terapia") return S.terapiaSi ? ctaTerapia(p) : "";
     if (S.scheda !== "richieste" || !S.catalogo || !p.ordina || p.prec) return "";
     const s = selDi(p.ep), n = s.esami.size, c = S.catalogo;
     const rx = [...s.esami].some((k) => c.rx.includes(k)), lab = [...s.esami].some((k) => !c.rx.includes(k));
@@ -1407,8 +1502,10 @@
     if (!p) return `<main><div class="vuoto">Questo paziente non è più nell'elenco del PC.</div></main>`;
     const ordini = codaDi(p.ep) + ordiniDi(p.ep).map((o) => ordineHtml(o)).join("");
     const tab = (s, t) => `<button class="${S.scheda === s ? "on" : ""}" data-a="scheda" data-s="${s}" role="tab" aria-selected="${S.scheda === s}">${t}</button>`;
-    return `<main>${vitaliHtml(p)}${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}</div>
-      ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : vistaRichieste(p)}</main>${ctaHtml(p)}${S.eoSheet && S.scheda === "cartella" && S.eo ? foglioEo() : ""}`;
+    const ter = S.terapiaSi && S.scheda === "terapia";
+    return `<main>${vitaliHtml(p)}${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}${S.terapiaSi ? tab("terapia", "Terapia") : ""}</div>
+      ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : ter ? vistaTerapia(p) : vistaRichieste(p)}</main>${ctaHtml(p)}${
+      S.eoSheet && S.scheda === "cartella" && S.eo ? foglioEo() : ""}${ter ? foglioTerapia(p) : ""}`;
   }
   // La cartella: i campi della pagina del paziente sul PC, ognuno com'è là.
   // Si scrive dove il gestionale lascia scrivere; il resto si legge e basta.
@@ -1458,19 +1555,98 @@
     if (!n && !salva) return st ? `<div class="cta">${perche}</div>` : "";
     return `<div class="cta"><button data-a="csalva" ${salva ? "disabled" : ""}>${salva ? "Salvo sul PC…" : "Salva"}</button>${perche}</div>`;
   }
+  // La Terapia: le terapie confermate nella pagina Terapia del gestionale, le più recenti in cima, una riga
+  // ciascuna (il TERAPIA_PROG cresce; senza, l'ordine della pagina). Si legge e basta: si aggiunge con «＋ Farmaco».
+  function vistaTerapia(p) {
+    const l = S.terapie.get(p.ep), legge = S.occupato.has("terapie" + p.ep);
+    if (!l) return legge ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto">Terapia non letta.</div>`;
+    const letto = `<small class="letti${Date.now() - l.letto > 60 * 60e3 ? " amb" : ""}">Letto sul PC alle ${hhmm(l.letto)} · ${fa(l.letto)}</small>`;
+    const righe = l.righe.map((r, i) => ({ r, i })).sort((a, b) => (Number(b.r.prog) || 0) - (Number(a.r.prog) || 0) || b.i - a.i).map(({ r }) =>
+      `<div class="ter"><span class="tt"><b>${esc(r.descr)}</b>${doseTer(r) ? ` <span>${esc(doseTer(r))}</span>` : ""}</span>${r.ora ? `<span class="to">${esc(r.ora)}</span>` : ""}</div>`).join("");
+    return `<div class="carta"><div class="sezt"><div class="tv">${letto}</div>
+      <button class="agg" data-a="trileggi" ${legge ? "disabled" : ""}>${legge ? "Leggo sul PC…" : "↻ Rileggi"}</button></div>
+      ${righe || `<div class="vuoto stretto">Nessuna terapia confermata.</div>`}</div>${p.prec ? `<p class="piede">Episodio precedente: per prescrivere apri quello di oggi.</p>` : ""}`;
+  }
+  function ctaTerapia(p) {
+    return S.terapie.get(p.ep) && !p.prec && !S.tf ? `<div class="cta"><button data-a="tnuovo">＋ Farmaco</button></div>` : "";
+  }
+  // «＋ Farmaco»: prima il farmaco (i preferiti, poi la tendina del gestionale), poi la dose e il riepilogo
+  function foglioTerapia(p) {
+    const f = S.tf, l = S.terapie.get(p.ep);
+    if (!f || f.ep !== p.ep || !l) return "";
+    return `<div class="foglio" role="dialog" aria-modal="true" aria-label="Aggiungi un farmaco"><button type="button" class="velo" data-a="tchiudi" aria-label="Chiudi"></button>
+      <div class="pannello" data-k="${f.passo}">${f.passo === "dose" && f.v ? doseHtml(p, f, l) : sceltaHtml(f, l)}</div></div>`;
+  }
+  function sceltaHtml(f, l) {
+    const q = f.q.replace(/\s+/g, " ").trim().toLowerCase();
+    const pref = l.pref.map((v, i) => ({ v, i })).filter(({ v }) => !q || v.descr.toLowerCase().includes(q)).slice(0, 30);
+    const voce = (dati, b, s) => `<button type="button" class="voce" ${dati}><b>${esc(b)}</b>${s ? `<span>${esc(s)}</span>` : ""}</button>`;
+    // due voci con la stessa scritta: dal telefono non si sceglie (sul PC sì)
+    const conta = new Map();
+    for (const t of f.voci || []) conta.set(t.toLowerCase(), (conta.get(t.toLowerCase()) || 0) + 1);
+    const voci = [...new Set(f.voci || [])].map((t) => conta.get(t.toLowerCase()) > 1
+      ? `<div class="voce no"><b>${esc(t)}</b><span>Più voci uguali nella tendina: si sceglie sul PC</span></div>`
+      : voce(`data-a="tvoce" data-t="${esc(t)}"`, t, "")).join("");
+    const tendina = f.cerca ? `<div class="carica"><div class="giro"></div></div>`
+      : f.errVoci ? `<div class="vuoto stretto">${esc(f.errVoci)}</div>`
+      : f.voci && f.qVoci ? (voci ? `<div class="carta">${voci}</div>` : `<div class="vuoto stretto">Niente nella tendina per «${esc(f.qVoci)}».</div>`)
+      : `<div class="vuoto stretto">Da 3 lettere cerco nella tendina della pagina Terapia sul PC.</div>`;
+    return `<div class="capo"><b>Farmaco</b><button type="button" class="chiudi" data-a="tchiudi">Chiudi</button></div>
+      <input id="tq" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Cerca un farmaco" aria-label="Cerca un farmaco" value="${esc(f.q)}">
+      ${pref.length ? `<div class="lbl">Preferiti</div><div class="carta">${pref.map(({ v, i }) => voce(`data-a="tpref" data-i="${i}"`, v.descr, doseTer(v) || "senza dose")).join("")}</div>` : ""}
+      ${q.length >= 3 || f.voci || f.cerca ? `<div class="lbl">Tendina del gestionale</div>${tendina}` : !pref.length ? tendina : ""}`;
+  }
+  const opzioni = (l, x, vuota) => `<option value="">${vuota}</option>` + l.map((o, i) => `<option value="${i}"${x && x.v === o.v ? " selected" : ""}>${esc(o.t)}</option>`).join("");
+  function doseHtml(p, f, l) {
+    const v = f.v, chiuso = !!f.stato || (f.esito && f.esito.tono !== "err");
+    const dis = chiuso ? " disabled" : "";
+    const altro = f.altro ? `<label class="tc"><span>Diluizione</span><select id="tdil"${dis}>${opzioni(l.opz.dil, v.dil, "—")}</select></label>
+      <label class="tc"><span>Frequenza</span><input id="tfreq" inputmode="numeric" maxlength="4" autocomplete="off" value="${esc(v.freq)}"${dis}></label>
+      <label class="tc"><span>Durata</span><input id="tdur" inputmode="numeric" maxlength="1" autocomplete="off" value="${esc(v.durata)}"${dis}></label>
+      <label class="tc sp"><span>Continua</span><input id="tcont" type="checkbox"${v.continua ? " checked" : ""}${dis}></label>
+      <label class="tc sp"><span>Al bisogno</span><input id="tbis" type="checkbox"${v.bisogno ? " checked" : ""}${dis}></label>`
+      : chiuso ? "" : `<button type="button" class="piu" data-a="taltro">Altro: diluizione, frequenza, durata…</button>`;
+    // (mentre il PC lavora, e dopo, niente da cambiare: né «‹ Farmaco» né «Altro»)
+    return `<div class="capo">${chiuso ? "<span></span>" : `<button type="button" class="chiudi" data-a="tscegli">‹ Farmaco</button>`}<button type="button" class="chiudi" data-a="tchiudi">Chiudi</button></div>
+      <div class="tnome">${esc(v.descr)}</div>
+      <div class="carta tdose"><label class="tc"><span>Dose</span><input id="tqta" inputmode="decimal" maxlength="10" autocomplete="off" value="${esc(v.qta)}"${dis}></label>
+        <label class="tc"><span>Unità</span><select id="tum"${dis}>${opzioni(l.opz.um, v.um, "—")}</select></label>
+        <label class="tc"><span>Via</span><select id="tvia"${dis}>${opzioni(l.opz.via, v.via, "—")}</select></label>${altro}</div>
+      <div class="lbl">Riepilogo</div>${riepilogoHtml(p, f)}`;
+  }
+  // il riepilogo e il bottone (rifatti da soli mentre si scrive la dose: un ridisegno chiuderebbe la tastiera)
+  function riepilogoHtml(p, f) {
+    const v = f.v, e = f.esito;
+    const stato = e ? `<div class="tesito ${e.tono}" role="${e.tono === "ok" ? "status" : "alert"}">${e.tono === "ok" ? "✓ " : ""}${esc(e.testo)}</div>` : "";
+    const bottoni = f.stato ? `<button type="button" class="grande" disabled>Confermo sul PC…</button>`
+      : e && e.tono === "ok" ? `<button type="button" class="grande" data-a="tchiudi">Fatto</button>`
+      : e && e.tono === "warn" ? `<button type="button" class="grande quiet" data-a="trileggi">↻ Rileggi la Terapia</button>`
+      : `<button type="button" class="grande" data-a="tconferma">Conferma per ${p.omonimo ? "⚠ " : ""}${esc(p.breve || p.nome)}</button>`;
+    return `<div class="triep"><div class="carta"><div class="tchi">${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(chi(p))}</div><b>${esc(v.descr)}</b><div>${esc(doseTer(v) || "senza dose")}</div></div>
+      ${stato}${bottoni}${e && e.tono !== "err" ? "" : `<p class="piede">Il PC preme «Conferma» nella pagina Terapia del gestionale.</p>`}</div>`;
+  }
+  function ritoccaRiep() {
+    const p = paziente(S.vista.ep), el = document.querySelector(".triep");
+    if (!p || !el || !S.tf || !S.tf.v) return;
+    const t = document.createElement("div");
+    t.innerHTML = riepilogoHtml(p, S.tf);
+    el.replaceWith(t.firstElementChild);
+  }
 
   // Un ridisegno sotto il dito ruberebbe il tocco (il bottone sparisce fra
   // pressione e rilascio): mentre si preme, aspetta.
   let premuto = 0, rinviato = false, disegno = false;
   // le azioni che senza il PC non vanno
   // (l'ordine no: senza collegamento va in coda)
-  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "prom", "fatto", "nota", "promApri", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia"]);
+  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "prom", "fatto", "nota", "promApri", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
+    "trileggi", "tconferma"]);
   function render() {
     if (premuto) { rinviato = true; return; }
     // il cursore resta dov'era: un ridisegno non deve rubare il campo a chi scrive
     const att = document.activeElement && document.activeElement.id ? document.activeElement : null;
     const fuoco = att ? { id: att.id, a: att.selectionStart, b: att.selectionEnd } : null;
     const mp = $app.querySelector(".mappa"), scorri = mp ? { x: mp.scrollLeft, y: mp.scrollTop } : null;
+    const fg = $app.querySelector(".foglio .pannello"), fgy = fg ? { k: fg.dataset.k, y: fg.scrollTop } : null;   // (un foglio aperto resta dov'era)
     const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : vistaLista()) : schermata();
     disegno = true;   // (un campo tolto dal ridisegno non è un campo lasciato)
     try { $app.innerHTML = testata() + corpo + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}" role="alert">${esc(S.avviso.testo)}</div>` : ""); }
@@ -1479,6 +1655,8 @@
     misureMappa();
     const mp2 = scorri && $app.querySelector(".mappa");
     if (mp2) { mp2.scrollLeft = scorri.x; mp2.scrollTop = scorri.y; }
+    const fg2 = fgy && $app.querySelector(".foglio .pannello");
+    if (fg2 && fg2.dataset.k === fgy.k) fg2.scrollTop = fgy.y;
     // Senza rete, o senza PC: in grigio quello che va chiesto al PC, e i
     // pazienti che il telefono non ha in memoria; il resto si guarda come prima.
     // Tornato il collegamento, tornano da soli.
@@ -1567,7 +1745,19 @@
       dimentica("senza");
     }
     else if (a === "vit") { S.vitAperti = S.vitAperti === ep ? "" : ep; render(); }
-    else if (a === "scheda") { S.scheda = b.dataset.s; S.arma = null; render(); if (S.scheda === "cartella") caricaCartella(ep, !!S.cartelle.get(ep)); }
+    else if (a === "scheda") {
+      S.scheda = b.dataset.s; S.arma = null; render();
+      if (S.scheda === "cartella") caricaCartella(ep, !!S.cartelle.get(ep));
+      if (S.scheda === "terapia") caricaTerapie(ep, !!S.terapie.get(ep));
+    }
+    else if (a === "trileggi") { if (S.tf && !S.tf.stato) S.tf = null; caricaTerapie(ep, false, true); }
+    else if (a === "tnuovo") apriFarmaco(ep);
+    else if (a === "tchiudi") { S.tf = null; render(); }
+    else if (a === "tpref") scegliFarmaco((S.terapie.get(ep)?.pref || [])[Number(b.dataset.i)]);
+    else if (a === "tvoce") scegliFarmaco({ descr: b.dataset.t });
+    else if (a === "tscegli") { if (S.tf && !S.tf.stato) { S.tf.passo = "scegli"; S.tf.esito = null; render(); } }
+    else if (a === "taltro") { if (S.tf) { S.tf.altro = true; render(); } }
+    else if (a === "tconferma") confermaFarmaco(ep);
     else if (a === "csalva") salvaCartella(ep);
     else if (a === "eo") inserisciEo(b.dataset.k);
     else if (a === "eoaltri") { S.eoSheet = true; S.eoQ = ""; render(); }
@@ -1619,6 +1809,20 @@
       alza(t);
       ritoccaCta();
     } else if (t.id === "eocerca") { S.eoQ = t.value; render(); }
+    else if (t.id === "tq" && S.tf) {
+      S.tf.q = t.value;
+      if (t.value.trim().length < 3) Object.assign(S.tf, { voci: null, qVoci: "", errVoci: "" });   // (le voci di prima non sono di queste lettere)
+      render(); cercaPresto();
+    }
+    else if (S.tf && S.tf.v && /^t(qta|freq|dur|um|via|dil|cont|bis)$/.test(t.id)) {
+      // la dose: si scrive nel foglio, e si rifà solo il riepilogo (un ridisegno chiuderebbe la tastiera)
+      const v = S.tf.v, l = S.terapie.get(ep), k = { tqta: "qta", tfreq: "freq", tdur: "durata", tum: "um", tvia: "via", tdil: "dil", tcont: "continua", tbis: "bisogno" }[t.id];
+      if (t.type === "checkbox") v[k] = t.checked;
+      else if (t.tagName === "SELECT") v[k] = (l && t.value !== "" && l.opz[k][Number(t.value)]) || null;
+      else v[k] = t.value;
+      if (S.tf.esito && S.tf.esito.tono === "err") S.tf.esito = null;
+      ritoccaRiep();
+    }
     else if (t.id === "promin") S.promTesto = t.value;
     else if (t.id === "cambio" && S.cambio) S.cambio.testo = t.value;
   });
@@ -1628,6 +1832,7 @@
     if (e.target.id === "promin") { e.preventDefault(); aggiungiProm(S.vista.ep); }
     else if (e.target.id === "quesito") { e.preventDefault(); e.target.blur(); }
     else if (e.target.id === "cambio") { e.preventDefault(); cambia(); }
+    else if (e.target.id === "tq") { e.preventDefault(); e.target.blur(); cercaFarmaco(); }
   });
   // Tornati sull'app (iOS chiude le prese delle pagine in sottofondo): ci si
   // ricollega subito, si prova la presa, e l'elenco si rilegge da solo.

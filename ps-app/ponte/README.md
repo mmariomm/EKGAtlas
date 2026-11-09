@@ -320,7 +320,7 @@ ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un si
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
 `aggiornaValori(ep)`, `richieste` (il catalogo), `ordina(ep, oid, esami, quesito, mio, nato)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
-{prima, dopo}})`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`,
+{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`,
 più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
 `ordineNuovo` come «Conferma e stampa», col numero `"tel" + oid` (l'`oid` lo fa il telefono quando
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),
@@ -349,6 +349,21 @@ i testi e clicca il **«Conferma»** della pagina (`name="Update"`): il modulo l
 un invio costruito a mano. Ricaricata, la scheda rilegge e verifica campo per campo, e si chiude.
 Rimandato dopo una risposta persa, lo stesso salvataggio trova `prima` cambiato e non parte due
 volte. Nel registro degli errori (`segnaErrore`) solo il perché e i nomi dei campi, mai un testo.
+
+**La Terapia.** La pagina Terapia del gestionale (`PsoEpisodioTerapieImposta`), sempre da una scheda
+di sottofondo (`ponte.terapie`, una alla volta) aperta sulla pagina del paziente, che preme il suo
+pulsante «Terapia» e fa una cosa sola (`ponteTerapiaQui` in `core.js`). `terapie` dà l'ultima
+lettura (`ponte.terapia`: le righe confermate e le voci delle tendine, niente note né nascosti; dalla
+pagina aperta dal medico o da una scheda così, con un iPhone associato, via a fine sessione) o, con
+`rileggi`, la pagina riletta, più i preferiti del PC; senza `ep` dice solo che il comando c'è (un PC
+più vecchio: «Comando sconosciuto», e il telefono non mostra la scheda). `terapiaCerca` scrive `q`
+nella tendina della pagina e torna con le scritte delle voci. `terapiaAggiungi` porta il suo numero
+`rq` (`ponte.terapia.rq`: la fase e com'è andata, anche dopo un riavvio del service worker), il
+farmaco (la scritta della voce e la dose, mai note né ora) e i `TERAPIA_PROG` che il telefono ha
+visto: prima ogni scheda del gestionale dice se la Terapia di quel paziente è del medico (il suo
+giro, una riga scritta: se sì, no); la scheda scrive la riga come il giro del PC, la rilegge, il
+service worker annota «inviato» e solo allora la scheda clicca il **«Conferma»** della pagina; la
+pagina che torna si guarda e basta («Confermata», o «incerto»). Lo stesso `rq` non si rifà mai.
 
 **Un PDF da stampare.** `stampa` è `pdf` al contrario: il telefono manda il file a pezzi (~390 KB,
 una risposta per pezzo) con un numero suo, `rid`. Il primo pezzo dice già di no se il file non comincia

@@ -512,7 +512,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       if (await sottoGet(id)) return reply({ ok: true, nostra: true });
       if ((await ordLeggi()).some((x) => x.worker === id)) return reply({ ok: true, nostra: true });
       const p = typeof ponteLavoroDi === "function" ? await ponteLavoroDi(id) : {};
-      reply({ ok: true, nostra: !!(p && (p.ponteValori || p.ponteCartella)) });
+      reply({ ok: true, nostra: !!(p && (p.ponteValori || p.ponteCartella || p.ponteTerapia)) });
     })().catch(() => reply({ ok: false }));
     return true;
   }

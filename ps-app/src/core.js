@@ -13709,12 +13709,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // Conferma; Conferma la premi tu, sempre.
     terapiaPossibile() { return hasExt() && !TABELLONE && this.pageType === "patient" && !!this.epDiQuesta(); }
     // il pulsante «Terapia» di QUESTO paziente, uno solo
-    terapiaLink() {
-      const ep = this.epDiQuesta();
-      const l = ep ? [...document.querySelectorAll('a[href*="PsoEpisodioTerapieImposta"]')].filter((a) =>
-        param(a.href, "MVPG") === "PsoEpisodioTerapieImposta" && param(a.href, "MODALITA") === "PRESCRIZIONE" && param(a.href, "EPISODIO_ID") === ep) : [];
-      return l.length && l.every((a) => a.href === l[0].href) ? l[0] : null;
-    }
+    terapiaLink() { return linkTerapia(this.epDiQuesta()); }
     terRidisegna() {
       const a = this.root.activeElement, id = a && a.id, sel = a && typeof a.selectionStart === "number" ? [a.selectionStart, a.selectionEnd] : null;
       this.render();
@@ -16868,6 +16863,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   let PONTE_STATO = null;    // lo stato del ponte (storage.session), per l'intestazione
   let PONTE_VALORI = null;   // questa scheda l'ha aperta il ponte per «Aggiorna i valori» di { ep }
   let PONTE_CARTELLA = null; // questa scheda l'ha aperta il ponte per salvare la cartella: { ep, fase, campi }
+  let PONTE_TERAPIA = null;  // …o per la pagina Terapia: { ep, nome, fase, cosa, q | voce, visti, prima }
   let PONTE_AGG = "";        // l'episodio di questa pagina che il telefono ha appena salvato («Ricarica»)
   const ICO_TEL = ICO.tel;   // (sulla griglia delle altre: 16 px, tratto 1.6)
   const PONTE_CSS = `
@@ -17146,7 +17142,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // service worker prova la prossima).
   async function ponteEsegui(m) {
     if (classify(document) === "login") return { no: "login" };
-    if (LAVORO || PONTE_VALORI || PONTE_CARTELLA) return { no: "lavoro" };
+    if (LAVORO || PONTE_VALORI || PONTE_CARTELLA || PONTE_TERAPIA) return { no: "lavoro" };
     if (!PANNELLO) return { no: "pannello" };
     const a = m.args || {}, cmd = m.cmd;
     const fatto = (r) => {
@@ -17169,8 +17165,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // dimesso sul PC (archiviato): dal telefono non si tocca più
     if (p.arch) return { ok: false, errore: "Dimesso sul PC: niente inviato", dimesso: true };
     // un episodio precedente si legge, ma non si ordina e non si promemora
-    if ((cmd === "ordina" || cmd === "promemoria" || cmd === "cartellaSalva") && PANNELLO.pazModello().info.get(p.ep)?.prec) {
-      return { ok: false, errore: `Episodio precedente: ${cmd === "ordina" ? "per ordinare" : cmd === "cartellaSalva" ? "per scrivere in cartella" : "per un Da fare con l'ora"} apri quello di oggi` };
+    if (["ordina", "promemoria", "cartellaSalva", "terapiaAggiungi"].includes(cmd) && PANNELLO.pazModello().info.get(p.ep)?.prec) {
+      return { ok: false, errore: `Episodio precedente: ${{ ordina: "per ordinare", cartellaSalva: "per scrivere in cartella", terapiaAggiungi: "per prescrivere" }[cmd] || "per un Da fare con l'ora"} apri quello di oggi` };
+    }
+    // la pagina Terapia: qui i controlli del paziente, il suo indirizzo (e,
+    // per leggere, i preferiti); il resto lo fa la scheda di sottofondo
+    if (cmd === "terapie" || cmd === "terapiaCerca" || cmd === "terapiaAggiungi") {
+      const url = ponteUrlPaziente(p);
+      if (!url) return { ok: false, errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+      const pref = cmd === "terapie" ? { pref: terapiaPreferiti().slice(0, 30).map(({ n, ts, ...v }) => v) } : {};
+      return fatto({ ok: true, dati: { url, paziente: p.name, ...pref }, ...(cmd === "terapiaAggiungi" ? {} : { registro: `${cmd === "terapie" ? "terapie" : "tendina dei farmaci"} di ${p.name}` }) });
     }
     if (cmd === "cartella") return fatto(await ponteCartella(p, a));
     // salvare: qui solo i controlli del paziente e il suo indirizzo; il resto
@@ -17224,6 +17228,18 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         if (!m) return;
         // prima di salvare dal telefono: un testo non salvato, qui, in quei campi?
         if (m.t === "ponteCartellaSporca") { reply({ sporchi: cartellaSporca(m.ep, m.nomi) }); return; }
+        // prima di una terapia dal telefono: la Terapia di quel paziente è del medico, qui?
+        if (m.t === "ponteTerapiaSporca") { reply({ sporca: terapiaSporca(m.ep) }); return; }
+        // confermata dal telefono: una pagina delle terapie di quel paziente aperta qui è di prima (non si ricarica da sola)
+        if (m.t === "ponteTerapiaAggiornata") {
+          if (!LAVORO && !PONTE_TERAPIA && typeof m.ep === "string" && eTerapie() && param(location.href, "EPISODIO_ID") === m.ep && formTerapia()) {
+            const a = linkTerapia(m.ep);
+            terapiaDice("warn", `confermata dall'iPhone: «${normTer(m.descr).slice(0, 120)}». Questa pagina è di prima: riaprila prima di premere Conferma.`,
+              a ? { testo: "Riapri", fai: () => a.click() } : null);
+          }
+          reply({ ok: true });
+          return;
+        }
         // salvato dal telefono: se questa è la sua pagina, lo dice (non si ricarica da sola)
         if (m.t === "ponteCartellaAggiornata") {
           if (!LAVORO && !PONTE_VALORI && !PONTE_CARTELLA && PANNELLO && typeof m.ep === "string" && formCartella(document, m.ep)) {
@@ -17328,7 +17344,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // In una scheda del medico: c'è, per questo paziente, un testo cambiato e
   // non salvato in uno di quei campi? (rispetto a come la pagina l'ha caricato)
   function cartellaSporca(ep, nomi) {
-    if (LAVORO || PONTE_VALORI || PONTE_CARTELLA) return [];
+    if (LAVORO || PONTE_VALORI || PONTE_CARTELLA || PONTE_TERAPIA) return [];
     const f = formCartella(document, ep);
     if (!f) return [];
     return (Array.isArray(nomi) ? nomi : []).filter((n) => {
@@ -17386,6 +17402,75 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       ta.dispatchEvent(new Event("change", { bubbles: true }));
     }
     btn.click();   // il «Conferma» della pagina: il modulo lo manda il browser, come sempre
+  }
+
+  // ---- la pagina Terapia dal telefono: leggere, cercare nella tendina, aggiungere ----
+  // Una scheda di sottofondo, aperta dal service worker sulla pagina del
+  // paziente (l'indirizzo del gestionale); da lì il SUO pulsante «Terapia».
+  // Sulla pagina delle terapie i controlli del giro del PC — l'episodio
+  // dell'indirizzo e del modulo, il nome, la tabella: se no Errore grave — e
+  // una cosa sola: leggere, cercare nella tendina, o aggiungere un farmaco.
+  // Aggiungere è il giro del PC fino alla riga scritta e riletta (un dubbio
+  // qualunque: stop, niente confermato), poi il «Conferma» della pagina, una
+  // volta: il service worker lo annota prima del clic, e la pagina che torna
+  // (o si ricarica) si guarda e basta.
+  async function ponteTerapiaQui() {
+    const c = PONTE_TERAPIA;
+    const fine = (esito) => ask({ t: "ponteTerapiaFatto", ...esito });
+    if (!c || c.fase === "perso") return fine({ ok: false, testo: "la scheda non sa più che cosa fare" });
+    const dopo = c.fase === "inviato", ordine = "un ordine sta ancora lavorando sul PC: riprova fra poco";
+    if (!eTerapie()) {
+      if (dopo) return fine({ ok: false, incerto: true, testo: "dopo «Conferma» il gestionale non ha mostrato la pagina delle terapie" });
+      if (c.fase !== "apro" || classify(document) !== "patient" || findEpisodeId(document, location.href) !== c.ep) return fine({ ok: false, testo: "la scheda ha aperto un'altra pagina" });
+      const nome = nomeInPagina();
+      if (!nome || !ugualeTer(nome, c.nome)) return fine({ ok: false, grave: "nome diverso" });
+      const a = linkTerapia(c.ep);
+      if (!a) return fine({ ok: false, testo: "nella pagina del paziente sul PC non c'è il pulsante «Terapia»" });
+      if (!(await terapiaAspetta())) return fine({ ok: false, testo: ordine });
+      const via = await ask({ t: "ponteTerapiaPagina" });
+      if (via && via.ok) a.click();   // il SUO pulsante: mai un indirizzo fatto qui
+      return;
+    }
+    const form = formTerapia();
+    if (!form) return fine({ ok: false, incerto: dopo, testo: "non è la pagina della prescrizione" });
+    const altro = terapiaDiChi(form, c.ep, c.nome);
+    if (altro) return fine({ ok: false, incerto: dopo, grave: altro });
+    if (form.querySelector('table[id^="TerapiaTable"]')?.id !== "TerapiaTable" + c.ep) return fine({ ok: false, incerto: dopo, testo: "non riconosco la tabella delle terapie" });
+    const lettura = terapieLette(form, c.ep), v = c.voce;
+    // dopo «Conferma»: la terapia è fra le confermate, con un TERAPIA_PROG che prima non c'era?
+    if (dopo) {
+      const prima = new Set(c.prima || []);
+      const riga = lettura.righe.find((r) => r.prog && !prima.has(r.prog) && ugualeTer(r.descr, v.descr) && r.qta === normTer(v.qta)
+        && ugualeTer(r.um, v.um ? v.um.t : "") && ugualeTer(r.via, v.via ? v.via.t : ""));
+      return fine(riga ? { ok: true, riga, lettura } : { ok: false, incerto: true, testo: "dopo «Conferma» la terapia non si vede fra le confermate", lettura });
+    }
+    if (c.cosa === "leggi") return fine({ ok: true, lettura });
+    const nuove = righeTerapia(form).filter((r) => !r.salvata), d = document.getElementById("DESCRIZIONE");
+    if (nuove.length !== 1 || nuove[0].descr !== d || !d.classList.contains("ui-autocomplete-input")) return fine({ ok: false, testo: "la tendina dei farmaci della pagina non è pronta", lettura });
+    if (c.cosa === "cerca") {
+      if (!(await terapiaAspetta())) return fine({ ok: false, testo: ordine, lettura });
+      const voci = await tendinaTerapia(d, c.q);
+      if (voci === null) return fine({ ok: false, testo: "la tendina dei farmaci non risponde", lettura });
+      return fine({ ok: true, voci: voci.map((li) => normTer(li.textContent)).filter(Boolean), lettura });
+    }
+    // aggiungere: già confermata dopo la lettura del telefono? Forse è la sua
+    // (una risposta persa): mai una seconda alla cieca
+    const visti = new Set(c.visti || []);
+    if (lettura.righe.some((r) => r.prog && !visti.has(r.prog) && ugualeTer(r.descr, v.descr))) {
+      return fine({ ok: false, gia: true, testo: `«${v.descr}» c'è già fra le terapie confermate, dopo la tua lettura: rileggi e controlla`, lettura });
+    }
+    const btn = form.querySelector('input[type="submit"][name="Update"]');
+    if (!btn) return fine({ ok: false, testo: "nella pagina non c'è «Conferma»", lettura });
+    const r = await riempiTerapia(form, v, Date.now()).catch(() => ({ stop: "errore nel riempire la riga" }));
+    if (!r.ok) return fine({ ok: false, testo: r.stop || r.breve || r.tocca, perche: r.perche || "riga non scritta", lettura });
+    const diverso = rilettaTer(form, nuove[0].n, v);
+    if (diverso) return fine({ ok: false, testo: `riletta la riga, ${diverso} non è quella scelta`, perche: "rilettura diversa", lettura });
+    if (!(await terapiaAspetta())) return fine({ ok: false, testo: ordine, lettura });
+    // il service worker lo annota PRIMA del clic: la pagina che torna si guarda, non si riscrive
+    const via = await ask({ t: "ponteTerapiaInvio", prima: lettura.righe.map((x) => x.prog) });
+    if (!via || !via.ok) return;
+    try { imparaTerapia([rigaTerapia(form, nuove[0].n)]); } catch { /* memoria piena: nessun preferito */ }
+    btn.click();   // il «Conferma» della pagina: TERAPIA_SERIALIZED lo compone lei, il modulo lo manda il browser
   }
 
   // ==================================================================== BOOT
@@ -17622,6 +17707,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     segnaScheda(chi);
     PONTE_VALORI = chi && chi.ponteValori ? chi.ponteValori : null;
     PONTE_CARTELLA = chi && chi.ponteCartella ? chi.ponteCartella : null;
+    PONTE_TERAPIA = chi && chi.ponteTerapia ? chi.ponteTerapia : null;
     ponteAscolta();
     scadenzaQuesiti();
     const pageType = classify(document);
@@ -17644,6 +17730,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (LAVORO) ask({ t: "ordineAggiorna", id: LAVORO.id, stato: "errore", vista: { tag: "Sessione scaduta", testo: "Rifai l'accesso, poi controlla il carrello", tono: "err", sessione: true } });
       if (PONTE_VALORI) ask({ t: "ponteValoriFatto", ok: false, testo: "il gestionale chiede di rifare l'accesso" });
       if (PONTE_CARTELLA) ask({ t: "ponteCartellaFatto", ok: false, incerto: PONTE_CARTELLA.fase === "inviato", testo: "il gestionale chiede di rifare l'accesso" });
+      if (PONTE_TERAPIA) ask({ t: "ponteTerapiaFatto", ok: false, incerto: PONTE_TERAPIA.fase === "inviato", testo: "il gestionale chiede di rifare l'accesso" });
       // e la sessione del ponte verso l'iPhone si chiude (l'associazione resta: rientrati, il telefono riapre)
       if (hasExt()) ask({ t: "ponteLogin" });
       forgetAll();
@@ -17665,6 +17752,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // (La scheda di un ordine in sottofondo non legge niente di tutto questo.)
     // la scheda che salva la cartella dal telefono: niente pannello, fa quello e basta
     if (PONTE_CARTELLA) { ponteCartellaQui().catch(() => ask({ t: "ponteCartellaFatto", ok: false, testo: "errore nella scheda" })); return; }
+    // …e quella della pagina Terapia dal telefono (un errore dopo «Conferma» resta un dubbio)
+    if (PONTE_TERAPIA) { ponteTerapiaQui().catch(() => ask({ t: "ponteTerapiaFatto", ok: false, incerto: PONTE_TERAPIA.fase === "inviato", testo: "errore nella scheda" })); return; }
     // la scheda di un ordine che passa il gestionale all'area del paziente: le
     // pagine di mezzo (PsoPsoImposta, la lista dove atterra) fanno quello e basta
     if (lavoroAreaQui(document, location.href)) return;
@@ -17978,6 +18067,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   const normTer = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
   const ugualeTer = (a, b) => normTer(a).toUpperCase() === normTer(b).toUpperCase();
   const eTerapie = (url = location.href) => param(url, "MVPG") === "PsoEpisodioTerapieImposta";
+  // il pulsante «Terapia» (la prescrizione) di QUESTO episodio, uno solo — o i suoi uguali
+  function linkTerapia(ep) {
+    const l = ep ? [...document.querySelectorAll('a[href*="PsoEpisodioTerapieImposta"]')].filter((a) =>
+      param(a.href, "MVPG") === "PsoEpisodioTerapieImposta" && param(a.href, "MODALITA") === "PRESCRIZIONE" && param(a.href, "EPISODIO_ID") === ep) : [];
+    return l.length && l.every((a) => a.href === l[0].href) ? l[0] : null;
+  }
   function formTerapia(doc = document) {
     const f = doc.querySelector('form[name="EpisodioTerapia"]');
     return f && param(new URL(f.getAttribute("action") || "", location.href).href, "MODALITA") === "PRESCRIZIONE" ? f : null;
@@ -17998,6 +18093,30 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     return { descr: v("DESCRIZIONE", 200), codice: v("CODICE", 40), qta: v("QUANTITA", 10), um: sel("UM"), via: sel("SOMMINISTRAZIONE_VIA"),
       dil: sel("TERAPIA_DILUIZIONE_ID"), continua: !!campoTer(form, "CONTINUA", n)?.checked, bisogno: !!campoTer(form, "AL_BISOGNO", n)?.checked,
       freq: v("FREQUENZA", 4), durata: v("DURATA", 2) };
+  }
+  // Di chi è la pagina delle terapie: l'episodio dell'indirizzo e del modulo, il
+  // nome in testa. "" se è di `ep` e `nome`, se no il perché (Errore grave).
+  function terapiaDiChi(form, ep, nome) {
+    const epForm = param(new URL(form.getAttribute("action") || "", location.href).href, "EPISODIO_ID") || "";
+    if ((param(location.href, "EPISODIO_ID") || "") !== ep || epForm !== ep) return "episodio diverso";
+    const n = nomeInPagina();
+    return n && ugualeTer(n, nome) ? "" : "nome diverso";
+  }
+  // Le terapie confermate e le voci delle tendine, per il telefono: solo
+  // quello che la pagina mostra di ogni riga (mai le note, mai i nascosti), e
+  // il TERAPIA_PROG che la distingue.
+  function terapieLette(form, ep) {
+    const righe = righeTerapia(form), nuova = righe.find((r) => !r.salvata);
+    const opz = (k) => (nuova ? [...(campoTer(form, k, nuova.n)?.options || [])] : []).filter((o) => o.value).slice(0, 60).map((o) => ({ v: o.value.slice(0, 40), t: normTer(o.text).slice(0, 60) }));
+    return {
+      ep, letto: Date.now(),
+      righe: righe.filter((r) => r.salvata).slice(-200).map((r) => {
+        const x = rigaTerapia(form, r.n);
+        return { prog: normTer(campoTer(form, "TERAPIA_PROG", r.n)?.value).slice(0, 20), descr: x.descr, qta: x.qta, um: x.um?.t || "", via: x.via?.t || "", dil: x.dil?.t || "",
+          continua: x.continua, bisogno: x.bisogno, freq: x.freq, ora: normTer(campoTer(form, "PRESC_DATA", r.n)?.value).slice(0, 11) };
+      }),
+      opz: { um: opz("UM"), via: opz("SOMMINISTRAZIONE_VIA"), dil: opz("TERAPIA_DILUIZIONE_ID") },
+    };
   }
   const chiaveTer = (p) => JSON.stringify([normTer(p.descr).toUpperCase(), p.codice || "", p.qta || "", p.um?.v || "", p.via?.v || "", p.dil?.v || "",
     !!p.continua, !!p.bisogno, p.freq || "", p.durata || ""]);
@@ -18023,7 +18142,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const a = !all ? "Allergie: non lette" : all.nega ? "Allergie: nega" : all.testo ? `Allergie: ${all.testo}` : "Allergie: non compilate";
     return `${nomeBreve(nome) || nome}${eta != null ? ` · ${eta}` : ""} · ${a}`;
   }
-  function terapiaDice(tono, testo) {
+  // (`azione`: un bottone in più, { testo, fai })
+  function terapiaDice(tono, testo, azione = null) {
     let h = document.getElementById("psassist-terapia");
     if (!h) {
       h = document.createElement("div");
@@ -18035,8 +18155,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     h.shadowRoot.innerHTML = `<style>.b{position:fixed;left:12px;bottom:12px;z-index:2147483647;max-width:min(560px,92vw);background:${fondo};color:#fff;border-radius:10px;
       padding:10px 12px;font:13px/1.45 -apple-system,'Segoe UI',Roboto,Arial,sans-serif;box-shadow:0 6px 20px rgba(9,42,74,.35);display:flex;gap:10px;align-items:flex-start}
       button{border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:7px;padding:2px 8px;font:inherit;cursor:pointer}</style>
-      <div class="b" role="status" data-tono="${esc(tono)}"><span><b>PS Assist · Terapia</b> — ${esc(testo)}</span><button id="via" aria-label="Chiudi">✕</button></div>`;
+      <div class="b" role="status" data-tono="${esc(tono)}"><span><b>PS Assist · Terapia</b> — ${esc(testo)}</span>${azione ? `<button id="fai">${esc(azione.testo)}</button>` : ""}<button id="via" aria-label="Chiudi">✕</button></div>`;
     h.shadowRoot.getElementById("via").addEventListener("click", () => h.remove());
+    if (azione) h.shadowRoot.getElementById("fai").addEventListener("click", () => { h.remove(); azione.fai(); });
   }
   // le richieste di questa pagina (la tendina) aspettano un ordine che lavora altrove
   async function terapiaAspetta() {
@@ -18115,12 +18236,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const voci = await tendinaTerapia(d, q);
       if (voci === null) return { stop: "la tendina dei farmaci non risponde" };
       const uguali = voci.filter((li) => ugualeTer(li.textContent, v.descr));
-      if (uguali.length > 1) return { tocca: `nella tendina ci sono più voci «${v.descr}»: scegli tu quella giusta, completa la dose e premi Conferma` };
+      if (uguali.length > 1) return { tocca: `nella tendina ci sono più voci «${v.descr}»: scegli tu quella giusta, completa la dose e premi Conferma`, breve: `nella tendina ci sono più voci «${v.descr}»: va scelta sul PC`, perche: "voci uguali" };
       if (!uguali.length) continue;
       sceltaTendina(uguali[0]);
       for (let k = 0; k < 20 && !ugualeTer(d.value, v.descr); k++) await sleep(50);
       if (!ugualeTer(d.value, v.descr) || (v.codice && normTer(campoTer(form, "CODICE", n)?.value) !== v.codice)) {
-        return { tocca: `la voce «${v.descr}» non è entrata nella riga: sceglila tu nella tendina, completa la dose e premi Conferma` };
+        return { tocca: `la voce «${v.descr}» non è entrata nella riga: sceglila tu nella tendina, completa la dose e premi Conferma`, breve: `la voce «${v.descr}» non è entrata nella riga`, perche: "voce non entrata" };
       }
       if (v.nuovo) return { ok: true, testo: "scrivi la dose e la via, poi controlla e premi Conferma" };
       // 2. la dose, nei campi della riga (niente note, niente ora)
@@ -18130,12 +18251,40 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         if (val == null || val === false || (k !== "QUANTITA" && k !== "FREQUENZA" && k !== "DURATA" && !val)) continue;
         const el = campoTer(form, k, n);
         if (scrive()) return { stop: "stai scrivendo nella pagina: mi fermo" };
-        if (!el || !scriviTer(el, val)) return { tocca: `${NOMI_TER[k]} «${typeof val === "object" ? val.t : val === true ? "sì" : val}» non si lascia scrivere: completa tu e premi Conferma` };
+        const scritta = `${NOMI_TER[k]} «${typeof val === "object" ? val.t : val === true ? "sì" : val}» non si lascia scrivere`;
+        if (!el || !scriviTer(el, val)) return { tocca: `${scritta}: completa tu e premi Conferma`, breve: scritta, perche: "campo non scritto" };
       }
       return { ok: true, testo: "controlla e premi Conferma" };
     }
     return { tocca: v.nuovo ? `scegli il farmaco nella tendina, scrivi la dose e la via, poi premi Conferma`
-      : `«${v.descr}» non c'è uguale nella tendina: sceglilo tu, completa la dose e premi Conferma` };
+      : `«${v.descr}» non c'è uguale nella tendina: sceglilo tu, completa la dose e premi Conferma`, breve: `«${v.descr}» non c'è uguale nella tendina del gestionale`, perche: "voce non trovata" };
+  }
+  // La riga nuova riletta campo per campo contro il farmaco scelto (dal
+  // telefono): "" se è quella, se no che cosa non torna. Quello che non si
+  // scriveva dev'essere com'era (le note e l'ora sempre).
+  function rilettaTer(form, n, v) {
+    const x = rigaTerapia(form, n);
+    if (!ugualeTer(x.descr, v.descr) || (v.codice && x.codice !== v.codice)) return "il farmaco";
+    const passi = [["QUANTITA", v.qta], ["UM", v.um], ["SOMMINISTRAZIONE_VIA", v.via], ["TERAPIA_DILUIZIONE_ID", v.dil],
+      ["CONTINUA", v.continua], ["AL_BISOGNO", v.bisogno], ["FREQUENZA", v.freq], ["DURATA", v.durata], ["NOTE", null], ["PRESC_DATA", null]];
+    for (const [k, val] of passi) {
+      const el = campoTer(form, k, n);
+      // (come riempiTerapia: i testi si scrivono anche vuoti, tendine e spunte solo se ci sono)
+      const scritto = !(val == null || val === false || (k !== "QUANTITA" && k !== "FREQUENZA" && k !== "DURATA" && !val));
+      const ok = !!el && (!scritto ? !cambiatoTer(el) : el.type === "checkbox" ? el.checked
+        : el.tagName === "SELECT" ? el.value === val.v && ugualeTer(el.selectedOptions[0]?.text, val.t) : el.value === String(val));
+      if (!ok) return NOMI_TER[k] || (k === "NOTE" ? "le note" : "l'ora");
+    }
+    return "";
+  }
+  // In una scheda del medico: la Terapia di quel paziente è sua adesso? Il
+  // giro del pannello, o la pagina delle terapie con qualcosa di cambiato.
+  function terapiaSporca(ep) {
+    if (LAVORO || PONTE_VALORI || PONTE_CARTELLA || PONTE_TERAPIA || typeof ep !== "string" || !ep) return false;
+    const j = tabStore.get(TERAPIA, null);
+    if (j && j.ep === ep) return true;
+    const f = eTerapie() && param(location.href, "EPISODIO_ID") === ep ? formTerapia() : null;
+    return !!f && [...f.elements].some((el) => el.name && el.type !== "hidden" && cambiatoTer(el));
   }
   // Sulla pagina delle terapie: quello che il medico conferma si impara, e un
   // giro preparato dal pannello va avanti di una riga per Conferma.
@@ -18148,6 +18297,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       return;
     }
     const ep = param(location.href, "EPISODIO_ID") || "";
+    // quello che la pagina mostra, per il telefono (il service worker lo tiene solo con un iPhone associato)
+    if (ep && form.querySelector('table[id^="TerapiaTable"]')?.id === "TerapiaTable" + ep
+      && param(new URL(form.getAttribute("action") || "", location.href).href, "EPISODIO_ID") === ep) ask({ t: "ponteTerapieLette", ep, lettura: terapieLette(form, ep) });
     // Conferma del medico: le righe nuove scritte diventano preferiti (si
     // legge e basta: l'invio è il suo, mai fermato). Chiudi chiude il giro.
     window.addEventListener("submit", (ev) => {
@@ -18162,11 +18314,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (!j) return;
     if (!Array.isArray(j.voci) || !j.voci.length || Date.now() - (j.ts || 0) > (j.fase === "apro" ? TERAPIA_APRO_MS : TERAPIA_TTL)) { tabStore.del(TERAPIA); return; }
     // di chi è la pagina: l'episodio dell'indirizzo e del modulo, il nome in testa
-    const epForm = param(new URL(form.getAttribute("action") || "", location.href).href, "EPISODIO_ID") || "";
-    const nome = nomeInPagina();
-    if (ep !== j.ep || epForm !== j.ep || !nome || !ugualeTer(nome, j.nome)) {
+    const altro = terapiaDiChi(form, j.ep, j.nome);
+    if (altro) {
       tabStore.del(TERAPIA);
-      segnaErrore("terapia", { grave: true, perche: ep !== j.ep || epForm !== j.ep ? "episodio diverso" : "nome diverso" });
+      segnaErrore("terapia", { grave: true, perche: altro });
       return terapiaDice("err", "Errore grave: questa pagina delle terapie è di un altro paziente — non ho scritto niente.");
     }
     const tab = form.querySelector('table[id^="TerapiaTable"]');

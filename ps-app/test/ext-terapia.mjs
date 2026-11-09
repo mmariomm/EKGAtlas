@@ -13,17 +13,28 @@
  * la pagina di un altro paziente è un «Errore grave» e niente si scrive; un
  * ordine al lavoro in un'altra scheda si aspetta (niente pagina, niente
  * tendina finché non finisce). Tutto inventato.
- *   node test/ext-terapia.mjs
+ * E dal telefono (il ponte vero, l'app in formato iPhone): la Terapia letta
+ * da una scheda di sottofondo (il pulsante del paziente, i controlli, solo le
+ * righe e le voci delle tendine), la ricerca nella tendina della pagina, un
+ * farmaco aggiunto da un preferito e da una voce cercata — il «Conferma»
+ * della pagina premuto una volta e la riga verificata —, e ogni no: un altro
+ * paziente, voci uguali o sparite, una rilettura diversa, la Conferma che non
+ * si vede (incerto, mai di nuovo), la scheda ricaricata dopo Conferma, lo
+ * stesso numero rimandato, un ordine che lavora, il medico sulla pagina.
+ *   node test/ext-terapia.mjs   (TEST_SHOTS_DIR=… per le foto del telefono)
  */
 import { chromium } from "playwright";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { rmSync, existsSync, statSync } from "node:fs";
+import { rmSync, existsSync, statSync, mkdirSync } from "node:fs";
 import { paginaTerapie } from "./fixtures/terapie.mjs";
+import { avviaRelay } from "../ponte/relay-node.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXT = join(root, "extension");
 const PROFILE = join("/tmp", "psa-terapia-" + process.pid);
+const SHOTS = process.env.TEST_SHOTS_DIR || "";
+if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 function chromiumPath() {
   for (const p of ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome", "/opt/pw-browsers/chromium"]) {
     if (existsSync(p) && statSync(p).isFile()) return p;
@@ -53,7 +64,15 @@ const FARMACI = [
   { id: "801", label: "SODIO CLORURO 0,9% 100 ML", value: "SODIO CLORURO 0,9% 100 ML" },
   { id: "802", label: "SODIO CLORURO 0,9% 100 ML", value: "SODIO CLORURO 0,9% 100 ML" },
 ];
-const srv = { salvate: { [PZ.ep]: [], [ALTRO.ep]: [] }, conferme: [], termini: [], pagineTer: [], nomeAltro: false, epAltro: false, occupaSuTerapie: false };
+// (per il telefono: `pazienti` le pagine del paziente chieste; `ignora` una Conferma che il server non salva;
+// `ricarica` la scheda ricaricata mentre il server risponde alla Conferma; `ritocca` la pagina che cambia la
+// quantità quando si scrive la frequenza; `senza` un farmaco sparito dalla tendina)
+const srv = { salvate: { [PZ.ep]: [], [ALTRO.ep]: [] }, conferme: [], termini: [], pagineTer: [], nomeAltro: false, epAltro: false, occupaSuTerapie: false,
+  pazienti: 0, ignora: false, ricarica: false, ritocca: false, senza: "" };
+const RITOCCA = `<script>document.addEventListener("change", function (e) {
+  var m = /^FREQUENZA_(\\d+)$/.exec(e.target.name || "");
+  if (m) document.querySelector('[name="QUANTITA_' + m[1] + '"]').value = "2";
+}, true);</script>`;
 const pagina = (titolo, corpo) => `<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><title>${titolo}</title></head><body>
   <table class="AFCHeaderTable" width="100%"><tbody><tr><td width="70%" align="center"><font style="font-size: 130%; font-weight: bolder; ">OSPEDALE ESEMPIO</font><br><font style="font-size: 110%; font-weight: bolder; ">AREA ALTA INTENSITA'</font><br><b>Salve!</b></td></tr></tbody></table>${corpo}</body></html>`;
 const riquadro = (p) => `<table><tr><td title="${p.triage}"><font style="font-size: 120%">Box 3</font><br><font style="font-size: 150%">${p.name}</font><br><font style="font-size: 120%">01/01/1950 (76) M<br>${p.cf || ""}</font></td></tr></table>`;
@@ -157,17 +176,18 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
   const html = (b) => r.fulfill({ status: 200, headers: { "content-type": "text/html; charset=windows-1252" }, body: Buffer.from(b, "latin1") }).catch(() => {});
   // (il 302 del server dopo un invio: la pagina dove porta, servita qui — un
   // rinvio dato a Chromium dall'instradamento non ripassa di qui)
-  const terapie = (e) => { const p = e === ALTRO.ep || srv.nomeAltro ? ALTRO : PZ; return html(paginaTerapie({ ep: e, nome: p.name, triage: p.triage, salvate: srv.salvate[e] || [], coda: TENDINA })); };
+  const terapie = (e) => { const p = e === ALTRO.ep || srv.nomeAltro ? ALTRO : PZ; return html(paginaTerapie({ ep: e, nome: p.name, triage: p.triage, salvate: srv.salvate[e] || [], coda: TENDINA + (srv.ritocca ? RITOCCA : "") })); };
   if (/Sa4JsonService\.do$/.test(u.pathname)) {
     srv.termini.push({ url: u.href, tipo: req.resourceType(), term: u.searchParams.get("term") || "" });
     const q = (u.searchParams.get("term") || "").toUpperCase();
-    return r.fulfill({ status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(FARMACI.filter((f) => f.label.includes(q)).slice(0, 20)) }).catch(() => {});
+    return r.fulfill({ status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(FARMACI.filter((f) => f.label.includes(q) && !(srv.senza && f.label.includes(srv.senza))).slice(0, 20)) }).catch(() => {});
   }
   if (mvpg === "PsoEpisodioTerapieImposta" && req.method() === "POST") {
     const b = new URLSearchParams(req.postDataBuffer()?.toString("latin1") || "");
     const tasto = b.has("Update") ? "Conferma" : b.has("Chiudi") ? "Chiudi" : "?";
-    srv.conferme.push({ ep, tasto, serializzata: !!b.get("TERAPIA_SERIALIZED") });
+    srv.conferme.push({ ep, tasto, serializzata: !!b.get("TERAPIA_SERIALIZED"), note: [...b].filter(([k, v]) => /^NOTE_/.test(k) && v).length });
     if (tasto === "Chiudi") return html(pazientePage(ep));
+    if (srv.ignora) return terapie(ep);
     for (const [k, descr] of b) {
       const m = /^DESCRIZIONE_(\d+)$/.exec(k);
       if (!m || !descr || b.get(`TERAPIA_PROG_${m[1]}`)) continue;
@@ -176,6 +196,8 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
       l.push({ descr, qta: g("QUANTITA"), um: g("UM"), via: g("SOMMINISTRAZIONE_VIA"), dil: g("TERAPIA_DILUIZIONE_ID"), continua: !!g("CONTINUA"), bisogno: !!g("AL_BISOGNO"),
         freq: g("FREQUENZA") || "24", durata: g("DURATA"), codice: g("CODICE"), prog: String(l.length + 1) });
     }
+    // salvata; la risposta tarda, e intanto la scheda si ricarica (la pagina di prima, di nuovo: una GET)
+    if (srv.ricarica) { srv.ricarica = false; const pg = req.frame().page(); setTimeout(() => pg.reload().catch(() => {}), 300); await sospendi(4000); }
     return terapie(ep);
   }
   if (mvpg === "PsoEpisodioTerapieImposta") {
@@ -184,7 +206,7 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
     // (epAltro: all'indirizzo di questo episodio il server dà la pagina di un altro)
     return terapie(srv.epAltro && ep === PZ.ep ? ALTRO.ep : ep);
   }
-  if (mvpg === "PsoEpisodioClinicoAmbulatorio") return html(pazientePage(ep));
+  if (mvpg === "PsoEpisodioClinicoAmbulatorio") { srv.pazienti++; return html(pazientePage(ep)); }
   return html(pagina("Pronto Soccorso", "<p>altro</p>"));
 });
 
@@ -231,6 +253,7 @@ async function premi(tasto) {
 }
 
 console.log("terapia: dal pannello alla riga nuova della pagina Terapia del gestionale, mai oltre Conferma");
+let telBrowser = null, relay = null;
 try {
   // ---- 1. la sezione: nel menu ⋯ della pagina del paziente; senza preferiti, niente da preparare
   await doc.goto(URL_PAZ(PZ.ep));
@@ -420,10 +443,255 @@ try {
   await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
   check(await giro() === null, "tornati sulla pagina del paziente, nessun giro resta in memoria (il nome del paziente se ne va)");
   check(srv.conferme.filter((x) => x.tasto === "Conferma").length === 4 && srv.conferme.filter((x) => x.tasto === "Chiudi").length === 1, `in tutto, 4 Conferme e 1 Chiudi: tutti del medico (${srv.conferme.length} invii)`);
+
+  // =========================================================================
+  console.log("\nterapia dal telefono: leggere, cercare nella tendina, aggiungere col «Conferma» della pagina");
+  // ---- 10. il ponte (il ripetitore locale), l'associazione, l'app in formato iPhone (a 2×, per le foto)
+  relay = await avviaRelay();
+  await sw.evaluate((u) => chrome.storage.local.set({ "ponte.host": u }).then(() => ponteAvvia()), relay.url);
+  const extId = new URL(sw.url()).host;
+  const pp = await ctx.newPage();
+  await pp.goto(`chrome-extension://${extId}/ponte.html`);
+  await pp.locator("#associa").click();
+  await pp.waitForSelector("#qr svg", { timeout: 8000 });
+  const qr = await sw.evaluate(() => ponteQr());
+  await pp.close();
+  telBrowser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath() });
+  const telCtx = await telBrowser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "it-IT",
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
+  const tel = await telCtx.newPage();
+  const testoTel = () => tel.locator("#app").innerText().catch(() => "");
+  const aspettaTel = async (re, t = 30000) => ((await finche(async () => re.test(await testoTel()), t)) ? testoTel() : "");
+  const foto = async (nome) => { if (SHOTS) await tel.screenshot({ path: join(SHOTS, `terapia-telefono-${nome}.png`) }).catch(() => {}); };
+  const esito = () => tel.locator(".tesito").innerText().catch(() => "");
+  const aspettaEsito = async (re, t = 60000) => (await finche(async () => re.test(await esito()), t)) ? esito() : `(${await esito()})`;
+  const schede = () => ctx.pages().filter((p) => !p.isClosed() && /smarthealth/.test(p.url()));
+  const memo = () => sw.evaluate(() => chrome.storage.session.get("ponte.terapia").then((o) => (o["ponte.terapia"] || {})["700001"] || null));
+  const erroriTel = () => sw.evaluate(() => chrome.storage.local.get("errori.v1").then((o) => (o["errori.v1"] || []).filter((x) => x.tipo === "terapia telefono")));
+  const conferme = () => srv.conferme.filter((x) => x.tasto === "Conferma").length;
+  const daTelefono = srv.conferme.length;   // (da qui, gli invii sono quelli del telefono)
+  // il medico ha una seconda scheda, sulla pagina del paziente (col pannello: risponde ai comandi del telefono)
+  await doc.goto(URL_PAZ(PZ.ep));
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  await tel.goto(qr);
+  check(!!(await aspettaTel(/ROSSI MARIO/)), "inquadrato il QR: il telefono ha l'elenco del PC, con ROSSI");
+  await tel.locator('.paz[data-ep="700001"]').first().click();
+  check(await finche(async () => (await tel.locator(".seg button").allInnerTexts()).join("|") === "Richieste|Esiti|Cartella|Terapia", 15000),
+    `sul paziente, una quarta scheda «Terapia» (${(await tel.locator(".seg button").allInnerTexts()).join("|")})`);
+
+  // ---- 11. leggere: una scheda di sottofondo apre la Terapia col pulsante del paziente, legge, si chiude
+  const n0 = schede().length, p0 = srv.pagineTer.length, c0 = conferme();
+  await tel.locator('[data-a="scheda"][data-s="terapia"]').click();
+  const t11 = await aspettaTel(/Letto sul PC alle \d\d:\d\d/);
+  const righeTel = () => tel.locator(".ter .tt b").allInnerTexts();
+  check(!!t11 && (await righeTel()).length === 4 && (await righeTel())[0] === "KETOROLAC 30 MG/ML FL" && /Letto sul PC alle \d\d:\d\d · adesso/.test(t11),
+    `le terapie confermate, la più recente in cima, e «Letto sul PC alle … · adesso» (${(await righeTel()).join(" | ")})`);
+  check(/1 cpr · os · freq\. 8 · al bisogno/.test(t11) && /10:53/.test(t11), "una riga ciascuna: la dose, la via, la frequenza, al bisogno, e l'ora");
+  check(srv.pagineTer.length === p0 + 1 && /MVPG=PsoEpisodioTerapieImposta&MODALITA=PRESCRIZIONE&EPISODIO_ID=700001&returnPage=PsoEpisodio$/.test(srv.pagineTer.at(-1)),
+    `la pagina Terapia aperta dal pulsante del paziente, col suo indirizzo (${srv.pagineTer.at(-1)})`);
+  check(await finche(async () => schede().length === n0, 8000) && conferme() === c0, "la scheda di sottofondo si è chiusa; niente premuto");
+  const m11 = await memo();
+  const chiavi = m11 && [Object.keys(m11).sort().join(), Object.keys(m11.righe[0] || {}).sort().join(), Object.keys(m11.opz || {}).sort().join()];
+  check(!!m11 && chiavi[0] === "ep,letto,opz,righe" && chiavi[1] === "bisogno,continua,descr,dil,freq,ora,prog,qta,um,via" && chiavi[2] === "dil,um,via"
+    && m11.opz.um.length === 11 && m11.opz.via.some((o) => o.v === "ev lenta") && m11.opz.dil.length === 11,
+    `la lettura: le righe (solo quello che la pagina ne mostra) e le voci delle tendine, nient'altro (${JSON.stringify(chiavi)})`);
+  check(!/febbre|ROSSI|MARIO|RSSMRA|SMPRSS|TERAPIA_SERIALIZED|OPERATORE/.test(JSON.stringify(m11)), "…niente note, niente nome, niente codice fiscale, niente nascosti");
+  await foto("1-terapia");
+
+  // ---- 12. «＋ Farmaco»: i preferiti e la tendina della pagina, cercata dal PC
+  await tel.locator('[data-a="tnuovo"]').click();
+  await tel.waitForSelector(".foglio", { timeout: 5000 });
+  const prefTel = await tel.locator('.foglio [data-a="tpref"] b').allInnerTexts();
+  check(prefTel.slice(0, 2).sort().join(" | ") === "KETOROLAC 30 MG/ML FL | PARACETAMOLO 1000 MG CPR" && prefTel[2] === "SODIO CLORURO 0,9% 100 ML",
+    `il foglio: i preferiti del PC, i più usati in cima (${prefTel.join(" | ")})`);
+  check(/1 cpr · os · freq\. 8 · durata 3 · al bisogno/.test(await tel.locator('.foglio [data-a="tpref"]', { hasText: "PARACETAMOLO" }).innerText()), "…ognuno con la dose com'è stata confermata");
+  await foto("2-farmaco");
+  const q0 = srv.termini.length, p12 = srv.pagineTer.length;
+  await tel.locator("#tq").fill("metoc");
+  check(await finche(async () => await tel.locator('[data-a="tvoce"]').count() === 1, 30000) && await tel.locator('[data-a="tvoce"]').innerText() === "METOCLOPRAMIDE 10 MG/2 ML FL",
+    "scritto «metoc»: le voci della tendina della pagina, cercate dal PC");
+  check(srv.termini.slice(q0).some((t) => t.term === "metoc" && t.tipo === "xhr") && srv.pagineTer.length === p12 + 1 && conferme() === c0,
+    `…la ricerca è la XHR della pagina, da una scheda aperta col pulsante del paziente (${srv.termini.slice(q0).map((t) => t.term).join(" | ")})`);
+  check(await finche(async () => schede().length === n0, 8000), "…che si richiude");
+  await tel.locator('[data-a="tvoce"]').click();
+  await tel.waitForSelector("#tqta", { timeout: 5000 });
+  check(await tel.locator(".tnome").innerText() === "METOCLOPRAMIDE 10 MG/2 ML FL" && await tel.locator("#tqta").inputValue() === "" && await tel.locator("#tdil").count() === 0
+    && await tel.locator('[data-a="taltro"]').count() === 1 && await tel.locator('[name^="NOTE"], #tnote, #tora').count() === 0,
+    "la voce scelta: la dose, l'unità e la via in vista; diluizione, frequenza e durata dietro «Altro»; mai le note, mai l'ora");
+  await tel.locator("#tqta").fill("1");
+  await tel.locator("#tum").selectOption({ label: "fl" });
+  await tel.locator("#tvia").selectOption({ label: "ev" });
+  const riep = await tel.locator(".triep").innerText();
+  check(/ROSSI MARIO/.test(riep) && /METOCLOPRAMIDE 10 MG\/2 ML FL/.test(riep) && /1 fl · ev/.test(riep) && await tel.locator('[data-a="tconferma"]').innerText() === "Conferma per ROSSI M.",
+    `il riepilogo, e «Conferma per ROSSI M.» (${riep.replace(/\n+/g, " / ")})`);
+  await foto("3-riepilogo");
+
+  // ---- 13. Conferma: la pagina del PC fa il resto — un Conferma, la riga verificata
+  const s0 = srv.salvate[PZ.ep].length;
+  await tel.locator('[data-a="tconferma"]').click();
+  check(/Confermo sul PC/.test(await tel.locator(".triep").innerText()), "mentre il PC lavora: «Confermo sul PC…»");
+  check(/Confermata/.test(await aspettaEsito(/Confermata/)), "poi «✓ Confermata»");
+  await foto("4-confermata");
+  const nuova = srv.salvate[PZ.ep].at(-1);
+  check(conferme() === c0 + 1 && srv.salvate[PZ.ep].length === s0 + 1 && nuova.descr === "METOCLOPRAMIDE 10 MG/2 ML FL" && nuova.qta === "1" && nuova.um === "fl" && nuova.via === "ev"
+    && nuova.durata === "1" && srv.conferme.at(-1).serializzata && srv.conferme.at(-1).note === 0,
+    `un solo «Conferma» (Update), TERAPIA_SERIALIZED composto dalla pagina, niente note: la riga è fra le terapie del server (${JSON.stringify(nuova)})`);
+  check(await finche(async () => schede().length === n0, 8000), "la scheda di sottofondo si è chiusa");
+  await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
+  check((await righeTel())[0] === "METOCLOPRAMIDE 10 MG/2 ML FL" && !(await tel.locator(".foglio").count()), "chiuso il foglio, la nuova terapia in cima alla lista (riletta dopo Conferma)");
+  check(/Terapia di ROSSI MARIO dal telefono: confermata METOCLOPRAMIDE/.test(JSON.stringify(await sw.evaluate(() => chrome.storage.session.get("ponte").then((o) => o.ponte?.registro || []))) ),
+    "nel registro del ponte: confermata, col farmaco");
+
+  // ---- 14. da un preferito; la pagina Terapia aperta (ferma) dal medico lo viene a sapere
+  const pc2 = await ctx.newPage();
+  await pc2.goto(URL_PAZ(PZ.ep));
+  await pc2.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
+  const nav14 = doc.waitForNavigation({ waitUntil: "load", timeout: 15000 });
+  await doc.click('a[title="Apri Terapia"]');
+  await nav14;
+  await sullaTerapia();
+  const n14 = schede().length;
+  await tel.locator('[data-a="tnuovo"]').click();
+  await tel.locator('.foglio [data-a="tpref"]', { hasText: "PARACETAMOLO" }).click();
+  await tel.waitForSelector("#tqta", { timeout: 5000 });
+  check(await tel.locator("#tqta").inputValue() === "1" && await tel.locator("#tum option:checked").innerText() === "cpr" && await tel.locator("#tvia option:checked").innerText() === "os"
+    && await tel.locator("#tbis").isChecked() && await tel.locator("#tfreq").inputValue() === "8" && await tel.locator("#tdur").inputValue() === "3",
+    "un preferito: il foglio già pieno, com'era confermato (dose, unità, via; e «Altro» aperto: frequenza, durata, al bisogno)");
+  await tel.locator('[data-a="tconferma"]').click();
+  check(/Confermata/.test(await aspettaEsito(/Confermata/)), "«Confermata»");
+  const parT = srv.salvate[PZ.ep].at(-1);
+  check(conferme() === c0 + 2 && parT.descr === "PARACETAMOLO 1000 MG CPR" && parT.qta === "1" && parT.um === "cpr" && parT.via === "os" && parT.bisogno && parT.freq === "8" && parT.durata === "3",
+    `…un Conferma in più, la riga come il preferito (${JSON.stringify(parT)})`);
+  check(await finche(async () => /confermata dall'iPhone: «PARACETAMOLO 1000 MG CPR»\. Questa pagina è di prima/.test(await banner()), 8000),
+    `sul PC, la pagina Terapia di ROSSI aperta e ferma: «${await banner()}»`);
+  const navR = doc.waitForNavigation({ waitUntil: "load", timeout: 15000 }).catch(() => null);
+  await doc.locator("#psassist-terapia #fai").click();
+  await navR;
+  await sullaTerapia();
+  check(await doc.evaluate(() => document.getElementById("DESCRIZIONE").name) === `DESCRIZIONE_${srv.salvate[PZ.ep].length + 1}` && conferme() === c0 + 2,
+    "«Riapri» (il pulsante «Prescrizione» della pagina): la pagina di adesso, con la terapia del telefono; niente inviato");
+  await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
+  await finche(async () => schede().length === n14, 8000);
+
+  // ---- 15. il medico scrive nella pagina Terapia di ROSSI: dal telefono no, e lo dice
+  await doc.fill(`[name="QUANTITA_${await doc.evaluate(() => document.getElementById("DESCRIZIONE").name.split("_")[1])}"]`, "2");
+  const p15 = srv.pagineTer.length, z15 = srv.pazienti;
+  await tel.locator('[data-a="tnuovo"]').click();
+  await tel.locator('.foglio [data-a="tpref"]', { hasText: "KETOROLAC" }).click();
+  await tel.locator('[data-a="tconferma"]').click();
+  check(/Non confermata: sul PC la Terapia di questo paziente è aperta e già toccata/.test(await aspettaEsito(/Non confermata/)) && srv.pagineTer.length === p15 && srv.pazienti === z15 && conferme() === c0 + 2,
+    `«Non confermata: sul PC la Terapia di questo paziente è aperta e già toccata» — nessuna scheda, niente premuto (${await esito()})`);
+  await doc.goto(URL_PAZ(PZ.ep));   // (il medico lascia stare)
+  await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
+
+  // un farmaco dal telefono, fino all'esito: il preferito (o una voce cercata), il «Conferma per …»
+  async function dalTelefono(pref, prima = null) {
+    await tel.locator('[data-a="tnuovo"]').click();
+    await tel.locator('.foglio [data-a="tpref"]', { hasText: pref }).first().click();
+    await tel.waitForSelector("#tqta", { timeout: 5000 });
+    if (prima) await prima();
+    await tel.locator('[data-a="tconferma"]').click();
+    return aspettaEsito(/Confermata|Non confermata|Incerto|Errore grave/);
+  }
+  const chiudiFoglio = async () => { await tel.locator('.foglio .capo [data-a="tchiudi"]').click().catch(() => {}); await finche(async () => schede().length === n0, 8000); };
+
+  // ---- 16. due voci con la stessa scritta, o nessuna: stop, niente premuto
+  const c16 = conferme();
+  check(/Non confermata: nella tendina ci sono più voci «SODIO CLORURO 0,9% 100 ML»: va scelta sul PC/.test(await dalTelefono("SODIO CLORURO")) && conferme() === c16,
+    `due voci uguali nella tendina: «${await esito()}», niente premuto`);
+  await chiudiFoglio();
+  await tel.locator('[data-a="tnuovo"]').click();
+  await tel.locator("#tq").fill("sodio clor");
+  check(await finche(async () => await tel.locator(".foglio .voce.no").count() === 1, 30000) && await tel.locator('[data-a="tvoce"]').count() === 0
+    && /Più voci uguali nella tendina: si sceglie sul PC/.test(await tel.locator(".foglio .voce.no").innerText()), "e cercate dal telefono, le voci uguali non si scelgono: «si sceglie sul PC»");
+  await tel.locator("#tq").fill("panto");
+  await finche(async () => await tel.locator('[data-a="tvoce"]').count() === 1, 30000);
+  await tel.locator('[data-a="tvoce"]').click();
+  await tel.locator("#tqta").fill("1");
+  srv.senza = "PANTOPRAZOLO";   // (sparito dalla tendina, intanto)
+  await tel.locator('[data-a="tconferma"]').click();
+  check(/Non confermata: «PANTOPRAZOLO 40 MG FL EV» non c'è uguale nella tendina del gestionale/.test(await aspettaEsito(/Non confermata/)) && conferme() === c16,
+    `una voce che la tendina non dà più: «${await esito()}», niente premuto`);
+  srv.senza = "";
+  await chiudiFoglio();
+
+  // ---- 17. la pagina Terapia di un altro paziente: Errore grave, niente scritto, niente cercato
+  for (const [come, prepara] of [["il nome in testa", () => { srv.nomeAltro = true; }], ["l'episodio", () => { srv.epAltro = true; }]]) {
+    const t17 = srv.termini.length, c17 = conferme();
+    prepara();
+    check(/Errore grave: la pagina delle terapie sul PC è di un altro paziente — niente confermato/.test(await dalTelefono("KETOROLAC")) && srv.termini.length === t17 && conferme() === c17,
+      `${come} di un altro paziente: «${await esito()}» — nessuna ricerca nella tendina, niente premuto`);
+    srv.nomeAltro = false; srv.epAltro = false;
+    await chiudiFoglio();
+  }
+  const et = await erroriTel();
+  check(et.filter((x) => x.dati && x.dati.grave).length >= 2 && !/ROSSI|VERDI|700001/.test(JSON.stringify(et)), `nel registro degli errori («terapia telefono»), senza nomi (${et.map((x) => x.dati?.perche).join(", ")})`);
+
+  // ---- 18. riletta la riga, un campo non è più quello scritto: stop, niente premuto
+  srv.ritocca = true;
+  const c18 = conferme();
+  check(/Non confermata: riletta la riga, la quantità non è quella scelta/.test(await dalTelefono("PARACETAMOLO")) && conferme() === c18, `la pagina cambia la quantità dopo: «${await esito()}», niente premuto`);
+  srv.ritocca = false;
+  await chiudiFoglio();
+
+  // ---- 19. Conferma premuta ma la terapia non si vede: «Incerto», mai di nuovo
+  srv.ignora = true;
+  const c19 = conferme();
+  check(/Incerto: controlla sul PC/.test(await dalTelefono("KETOROLAC")) && conferme() === c19 + 1, `la Conferma che non si vede fra le confermate: «${await esito()}», un Conferma solo`);
+  await sospendi(2500);
+  check(conferme() === c19 + 1 && await tel.locator('[data-a="tconferma"]').count() === 0 && await tel.locator('.triep [data-a="trileggi"]').count() === 1,
+    "…e non si ripreme: sul telefono niente «Conferma», solo «Rileggi la Terapia»");
+  srv.ignora = false;
+  check((await erroriTel()).some((x) => x.dati?.perche === "conferma non vista"), "(nel registro degli errori: «conferma non vista»)");
+  await chiudiFoglio();
+
+  // ---- 20. la scheda si ricarica mentre il server risponde alla Conferma: si guarda, non si ripreme
+  srv.ricarica = true;
+  const c20 = conferme(), p20 = srv.pagineTer.length;
+  check(/Confermata/.test(await dalTelefono("KETOROLAC")) && conferme() === c20 + 1 && srv.pagineTer.length >= p20 + 2,
+    `ricaricata dopo «Conferma» (una GET della pagina): «${await esito()}», un Conferma solo (${conferme() - c20})`);
+  await chiudiFoglio();
+
+  // ---- 21. lo stesso numero rimandato (due volte insieme, e dopo): la stessa risposta, un Conferma solo
+  const c21 = conferme();
+  const voceK = { descr: "KETOROLAC 30 MG/ML FL", codice: "4471", qta: "1", um: { v: "fl", t: "fl" }, via: { v: "ev lenta", t: "ev lenta" }, dil: { v: "1", t: "fisiologica 100 ml" } };
+  const due = await sw.evaluate(async (voce) => {
+    const m = (await chrome.storage.session.get("ponte.terapia"))["ponte.terapia"]["700001"];
+    const d = { ep: "700001", rq: "rq-due-volte-0001", voce, visti: m.righe.map((r) => r.prog) };
+    return Promise.all([ponteTerapiaAggiungi(d), ponteTerapiaAggiungi(d)]);
+  }, voceK);
+  check(due[0].ok && due[1].ok && conferme() === c21 + 1, `lo stesso numero due volte insieme: tutt'e due «Confermata», un Conferma solo (${conferme() - c21})`);
+  const dopo = await sw.evaluate((voce) => ponteTerapiaAggiungi({ ep: "700001", rq: "rq-due-volte-0001", voce, visti: [] }), voceK);
+  check(dopo.ok && conferme() === c21 + 1, "…e rimandato più tardi: com'è andata, senza rifarla");
+  const inc = await sw.evaluate(() => chrome.storage.session.get("ponte.terapia.rq").then((o) => Object.values(o["ponte.terapia.rq"] || {}).filter((x) => x.esito && x.esito.incerto).length));
+  check(inc >= 1, "(e quello incerto resta incerto, per il suo numero)");
+
+  // ---- 22. un ordine al lavoro (la stessa sessione del server): si aspetta — niente pagina, niente tendina
+  const motoreTutto = (on) => sw.evaluate((on) => {
+    const m = on ? { tab: 999999, id: "ordine-altrove", scade: Date.now() + 120e3 } : null;
+    return motoreScrivi(m);
+  }, on);
+  await motoreTutto(true);
+  const z22 = srv.pazienti, p22 = srv.pagineTer.length, q22 = srv.termini.length, c22 = conferme();
+  await tel.locator('[data-a="tnuovo"]').click();
+  await tel.locator('.foglio [data-a="tpref"]', { hasText: "PARACETAMOLO" }).first().click();
+  await tel.locator('[data-a="tconferma"]').click();
+  await sospendi(3500);
+  check(srv.pazienti === z22 && srv.pagineTer.length === p22 && srv.termini.length === q22 && conferme() === c22 && /Confermo sul PC/.test(await tel.locator(".triep").innerText()),
+    "un ordine lavora: il PC aspetta — nessuna pagina del paziente, né Terapia, né tendina; il telefono «Confermo sul PC…»");
+  await motoreTutto(false);
+  check(/Confermata/.test(await aspettaEsito(/Confermata|Non confermata|Incerto/)) && conferme() === c22 + 1, `finito l'ordine: «${await esito()}»`);
+  await chiudiFoglio();
+  const dalTel = srv.conferme.slice(daTelefono);
+  check(dalTel.length === 6 && dalTel.every((x) => x.tasto === "Conferma" && x.serializzata && !x.note),
+    `dal telefono 6 Conferme in tutto, ognuna col TERAPIA_SERIALIZED composto dalla pagina, mai note né Chiudi (${dalTel.map((x) => x.tasto).join(",")})`);
+  await pc2.close();
 } catch (e) {
   console.error(e);
   fail++;
 } finally {
+  await telBrowser?.close().catch(() => {});
+  relay?.chiudi?.();
   await ctx.close().catch(() => {});
   try { rmSync(PROFILE, { recursive: true, force: true }); } catch { /* niente */ }
 }
