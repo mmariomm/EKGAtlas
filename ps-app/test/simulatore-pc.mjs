@@ -7,13 +7,15 @@
  * Resta acceso finché non lo si ferma (Ctrl+C). Niente di vero: nomi, codici
  * fiscali ed esami sono finti.
  *   node test/simulatore-pc.mjs            (prima: npm run build)
- *   SIM_DIR=<cartella>  dove scrive qr.txt, stato.json e le foto (foto.txt: «adesso»)
+ *   SIM_DIR=<cartella>  dove scrive qr.txt + qr.svg, stato.json, le foto; in comando.txt:
+ *                       «qr» = un'associazione nuova (QR nuovo), «foto» = le schermate del PC
  */
 import { chromium } from "playwright";
 import { createMock } from "./gestionale-vero.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, statSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import vm from "node:vm";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXT = join(root, "extension");
@@ -24,6 +26,14 @@ const chromiumPath = () => ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 const log = (m) => console.log(`${new Date().toTimeString().slice(0, 8)}  ${m}`);
 const sospendi = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// il QR come immagine, col codificatore dell'estensione (qr.js, Project Nayuki)
+const QRG = (() => { const c = {}; vm.runInNewContext(readFileSync(join(EXT, "qr.js"), "utf8"), c); return c.qrcodegen; })();
+function qrSvg(testo) {
+  const q = QRG.QrCode.encodeText(testo, QRG.QrCode.Ecc.MEDIUM), n = q.size, m = 4, lato = n + 2 * m;
+  let d = "";
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (q.getModule(x, y)) d += `M${x + m},${y + m}h1v1h-1z`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${lato} ${lato}" width="${lato * 10}" height="${lato * 10}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
 const CF_A = "RSSMRA60A01F205Z", CF_B = "BNCNNA75C41F205K";
 const A = createMock({ withResults: true, cf: CF_A });
 const B = createMock({ name: "BIANCHI ANNA", episodeId: "999002", cf: CF_B });
@@ -69,25 +79,30 @@ for (const u of [B.patientUrl, A.patientUrl]) {
 }
 log("gestionale finto aperto: ROSSI MARIO e BIANCHI ANNA");
 
-// il ponte verso il ripetitore vero, e il QR
+// il ponte verso il ripetitore vero, e il QR (di nuovo con «qr» in comando.txt)
 await sw.evaluate(() => ponteAvvia());
-let qr = "";
-for (let i = 0; i < 40 && !qr; i++) {
-  // (come «Associa l'iPhone» della pagina del ponte: una coppia nuova, poi il QR; il link vale finché non entra un telefono)
-  qr = await sw.evaluate(async () => {
-    if (!pt.host) return "";
-    await ponteFine("nuova associazione");
-    const ora = ponteOra();
-    await ponteScriviCoppia({ k: PonteCripto.b64u(PonteCripto.casuale(32)), scade: ora + PONTE_DURATA, creata: ora, usata: false, dev: "", nTel: "" });
-    ponteNota(`Nuovo QR (PC simulato): vale fino alle ${hhmmPonte(ora + PONTE_DURATA)}`);
-    await ponteAvvia();
-    return ponteQr();
-  }).catch((e) => { log(`associa: ${String(e.message).split("\n")[0]}`); return ""; });
-  if (!qr) await sospendi(500);
+async function nuovoQr() {
+  let qr = "";
+  for (let i = 0; i < 40 && !qr; i++) {
+    // (come «Associa l'iPhone» della pagina del ponte: una coppia nuova, poi il QR; il link vale finché non entra un telefono)
+    qr = await sw.evaluate(async () => {
+      if (!pt.host) return "";
+      await ponteFine("nuova associazione");
+      const ora = ponteOra();
+      await ponteScriviCoppia({ k: PonteCripto.b64u(PonteCripto.casuale(32)), scade: ora + PONTE_DURATA, creata: ora, usata: false, dev: "", nTel: "" });
+      ponteNota(`Nuovo QR (PC simulato): vale fino alle ${hhmmPonte(ora + PONTE_DURATA)}`);
+      await ponteAvvia();
+      return ponteQr();
+    }).catch((e) => { log(`associa: ${String(e.message).split("\n")[0]}`); return ""; });
+    if (!qr) await sospendi(500);
+  }
+  if (!qr) { log("niente QR: il ponte non si è avviato"); return ""; }
+  writeFileSync(join(DIR, "qr.txt"), qr + "\n");
+  writeFileSync(join(DIR, "qr.svg"), qrSvg(qr));
+  log(`QR: ${qr}`);
+  return qr;
 }
-if (!qr) { log("niente QR: il ponte non si è avviato"); process.exit(1); }
-writeFileSync(join(DIR, "qr.txt"), qr + "\n");
-log(`QR: ${qr}`);
+if (!(await nuovoQr())) process.exit(1);
 
 // lo stato, ogni 3 s: il ponte e il suo registro (per chi guarda da fuori)
 let ultimo = "";
@@ -98,10 +113,11 @@ setInterval(async () => {
     writeFileSync(join(DIR, "stato.json"), JSON.stringify({ relay: s?.relay, tel: s?.tel, registro: reg.slice(-40) }, null, 1));
     const nuovo = reg.slice(-1)[0] || "";
     if (nuovo && nuovo !== ultimo) { ultimo = nuovo; log(`ponte: ${nuovo}`); }
-    // una foto del PC a richiesta: scrivi «adesso» in foto.txt
-    const f = join(DIR, "foto.txt");
-    if (existsSync(f) && readFileSync(f, "utf8").trim() === "adesso") {
-      writeFileSync(f, "");
+    // i comandi da fuori: «qr» (un QR nuovo), «foto» (le schermate del PC)
+    const f = join(DIR, "comando.txt"), c = existsSync(f) ? readFileSync(f, "utf8").trim() : "";
+    if (c) writeFileSync(f, "");
+    if (c === "qr") await nuovoQr();
+    if (c === "foto") {
       for (const [i, p] of ctx.pages().entries()) await p.screenshot({ path: join(DIR, `pc-${i}.png`) }).catch(() => {});
       log("foto del PC salvate");
     }
