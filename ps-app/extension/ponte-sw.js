@@ -91,6 +91,8 @@ const pt = {
   cartelle: new Map(), // scheda → { ep, fase, campi, risolvi }: una cartella da salvare (i testi solo qui, in memoria)
   terapie: new Map(),  // scheda → { ep, nome, fase, job, prima, risolvi }: la pagina Terapia (leggere, cercare, aggiungere)
   terapiaRq: new Map(), // rq → la terapia dal telefono che sta andando (la stessa risposta a chi la rimanda)
+  accette: new Map(),  // scheda → { ep, k, nome, area, rq, fase, risolvi }: «Accetta in ambulatorio» (la lista del triage, la freccia)
+  accettaRq: new Map(), // rq → l'accettazione dal telefono che sta andando
   inVolo: new Map(),   // "tel"+oid → l'ordine che una scheda sta ancora preparando
   fila: Promise.resolve(),
 };
@@ -245,6 +247,9 @@ async function ponteControlla() {
   }
   for (const [id, v] of Object.entries(await ponteTerapieTutte())) {
     if (ora - v.ts > PONTE_TERAPIA_MAX + 5e3) await ponteTerapiaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
+  }
+  for (const [id, v] of Object.entries(await ponteAccetteTutte())) {
+    if (ora - v.ts > PONTE_ACCETTA_MAX + 5e3) await ponteAccettaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
   }
   if (pt.coppia && ora >= pt.coppia.scade) {
     const scade = pt.coppia.scade;
@@ -470,6 +475,7 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "terapie") return await ponteTerapie(ponteArgomenti(d));
     if (d.cmd === "terapiaCerca") return await ponteTerapiaCerca(d);
     if (d.cmd === "terapiaAggiungi") return await ponteTerapiaAggiungi(d);
+    if (d.cmd === "accetta") return await ponteAccetta(d);
     // il QR di una stazione di stampa, inquadrato dal telefono: il PC la collega (stazione-sw.js)
     if (d.cmd === "stazioneCollega" && typeof stazioneCollega === "function") {
       const r = await stazioneCollega(d);
@@ -689,6 +695,7 @@ async function ponteSchede() {
   for (const id of Object.keys(await ponteValoriTutti())) lavoro.add(Number(id));
   for (const id of Object.keys(await ponteCartelleTutte())) lavoro.add(Number(id));
   for (const id of Object.keys(await ponteTerapieTutte())) lavoro.add(Number(id));
+  for (const id of Object.keys(await ponteAccetteTutte())) lavoro.add(Number(id));
   const tutte = (await chrome.tabs.query({}).catch(() => [])).filter((t) => sulGestionale(t.url) && !t.discarded && !lavoro.has(t.id));
   const win = await chrome.windows.getLastFocused().catch(() => null);
   const peso = (t) => (t.active ? 2 : 0) + (win && t.windowId === win.id ? 1 : 0);
@@ -798,11 +805,16 @@ async function ponteLavoroDi(tabId) {
   const w = pt.terapie.get(tabId);
   if (w) return { ponteTerapia: { ep: w.ep, nome: w.nome, fase: w.fase, cosa: w.job.cosa, q: w.job.q, voce: w.job.voce, visti: w.job.visti, prima: w.prima } };
   const b = (await ponteTerapieTutte())[tabId];
-  return b ? { ponteTerapia: { ep: b.ep, fase: "perso" } } : {};
+  if (b) return { ponteTerapia: { ep: b.ep, fase: "perso" } };
+  // la scheda di «Accetta in ambulatorio»: chi, e a che punto (dopo il clic si guarda e basta)
+  const x = pt.accette.get(tabId);
+  if (x) { x.visto = true; return { ponteAccetta: { ep: x.ep, k: x.k, nome: x.nome, area: x.area, fase: x.fase } }; }
+  return (await ponteAccetteTutte())[tabId] ? { ponteAccetta: { fase: "perso" } } : {};
 }
 chrome.tabs.onRemoved.addListener((id) => { ponteValoriFine(id, { ok: false, testo: "la scheda dei valori è stata chiusa" }).catch(() => {}); });
 chrome.tabs.onRemoved.addListener((id) => { ponteCartellaFine(id, { ok: false, incerto: pt.cartelle.get(id)?.fase === "inviato", testo: "la scheda è stata chiusa" }).catch(() => {}); });
 chrome.tabs.onRemoved.addListener((id) => { ponteTerapiaFine(id, { ok: false, incerto: pt.terapie.get(id)?.fase === "inviato", testo: "la scheda è stata chiusa" }).catch(() => {}); });
+chrome.tabs.onRemoved.addListener((id) => { ponteAccettaFine(id, { ok: false, incerto: ponteAccettaDopo(id), testo: "la scheda è stata chiusa" }).catch(() => {}); });
 
 // ------------------------------------------------- la cartella dal telefono
 // Leggere: l'ultima lettura della pagina del paziente — annotata a ogni sua
@@ -1141,6 +1153,144 @@ async function ponteTerapiaFine(id, esito) {
   return true;
 }
 
+// ------------------------------------- «Accetta in ambulatorio» dal telefono
+// Un paziente al triage — una riga del Triage del telefono (la chiave di nome
+// e nascita della lista smart) o un paziente noto al PC ancora al triage —
+// passa in ambulatorio con la FRECCIA della sua riga nella lista del triage
+// del gestionale (PsoPazientiTriage, «Accetta in ambulatorio»), come il
+// medico: l'ha scelto lui. Una scheda di sottofondo apre la lista (il suo
+// link, o la stessa pagina del menu), trova la riga — episodio e nome, una
+// sola — e il service worker annota «inviato» (il numero rq, in
+// storage.session) PRIMA che la scheda clicchi la freccia. Dopo si guarda e
+// basta (ponteAccettaQui, core.js): «In ambulatorio» solo con la pagina del
+// paziente in ambulatorio, o la lista dell'ambulatorio che lo mostra; se no
+// «Incerto: controlla sul PC». Lo stesso rq non si rifà mai; un nome diverso
+// è «Errore grave», e niente si clicca.
+const PONTE_ACCETTE = "ponte.accette";       // storage.session: le schede aperte per accettare (solo { ts })
+const PONTE_ACCETTA_RQ = "ponte.accetta.rq"; // storage.session: le accettazioni dal telefono, per numero: { fase, esito }
+const PONTE_ACCETTA_MAX = 60e3;              // la lista, il clic, le pagine di passaggio, la verifica
+const PONTE_ACCETTA_RIPROVA = 8e3;           // una scheda che in tanto non ha ancora chiesto chi è: si riapre sulla lista, una volta
+const PONTE_ACCETTA_GRAVE = "Errore grave: la riga del triage sul PC è di un altro paziente";
+const ponteAccetteTutte = async () => (await chrome.storage.session.get(PONTE_ACCETTE))[PONTE_ACCETTE] || {};
+const ponteAccettaRqTutti = async () => (await chrome.storage.session.get(PONTE_ACCETTA_RQ))[PONTE_ACCETTA_RQ] || {};
+const ponteAccettaDopo = (id) => ["inviato", "verifica"].includes(pt.accette.get(id)?.fase);
+// (questa può fallire: chi annota «inviato» non deve credere di averlo fatto)
+let ponteFilaAccettaRq = Promise.resolve();
+function ponteAccettaRqScrivi(rq, x) {
+  const p = ponteFilaAccettaRq.then(async () => {
+    const m = await ponteAccettaRqTutti();
+    m[rq] = { ...(m[rq] || {}), ...x, ts: ponteOra() };
+    const tieni = Object.entries(m).filter(([, y]) => ponteOra() - y.ts < PONTE_DURATA).sort((a, b) => b[1].ts - a[1].ts).slice(0, 60);
+    await chrome.storage.session.set({ [PONTE_ACCETTA_RQ]: Object.fromEntries(tieni) });
+  });
+  ponteFilaAccettaRq = p.catch(() => {});
+  return p;
+}
+let ponteFilaAccette = Promise.resolve();
+const ponteAccetteCambia = (fn) => (ponteFilaAccette = ponteFilaAccette.then(async () => {
+  const v = await ponteAccetteTutte();
+  const r = fn(v);
+  await chrome.storage.session.set({ [PONTE_ACCETTE]: v });
+  return r;
+}).catch(() => null));
+// la lista del triage: solo la pagina del menu, senza altro (mai un modulo, mai un parametro in più)
+const ponteUrlTriage = (url) => {
+  try {
+    const u = new URL(url);
+    return sulGestionale(url) && /\/menuPso\.do$/i.test(u.pathname) && [...u.searchParams.keys()].join() === "MVPG" && u.searchParams.get("MVPG") === "PsoPazientiTriage" ? u.href : "";
+  } catch { return ""; }
+};
+function ponteAccetta(d) {
+  const a = ponteArgomenti(d), k = typeof d.k === "string" && /^sm[0-9a-z]{1,8}$/.test(d.k) ? d.k : "";
+  const rq = typeof d.rq === "string" && /^[\w-]{8,40}$/.test(d.rq) ? d.rq : "";
+  if (!rq || (!a.ep && !k)) return Promise.resolve({ ok: false, errore: "Richiesta non valida: niente fatto" });
+  // lo stesso numero che sta andando: la sua risposta (annotato prima di qualunque attesa)
+  if (pt.accettaRq.has(rq)) return pt.accettaRq.get(rq);
+  const p = (async () => {
+    const prima = (await ponteAccettaRqTutti())[rq];
+    if (prima && prima.esito) return prima.esito;   // com'è andata
+    // (il service worker è ripartito dopo il clic: non si sa, e non si rifà)
+    if (prima && prima.fase === "inviato") return { ok: false, incerto: true, errore: "Incerto: controlla sul PC" };
+    return ponteAccettaOra(a.ep ? { ep: a.ep } : { k }, rq);
+  })();
+  pt.accettaRq.set(rq, p);
+  p.finally(() => pt.accettaRq.delete(rq)).catch(() => {});
+  return p;
+}
+async function ponteAccettaOra(chi, rq) {
+  // chi è (in elenco, non dimesso; o la riga del Triage) e la lista del triage, da una scheda del medico
+  const r = await ponteSuScheda("accetta", chi);
+  if (!r.ok) { const { incerto, ...no } = r; return no; }   // (qui niente si clicca: una scheda lenta non fa un dubbio)
+  const paz = corto(r.dati.nome, 40) || "un paziente";
+  const fatto = async (esito, perche = "", grave = false) => {
+    if (perche && typeof segnaErrore === "function") segnaErrore("accetta telefono", { perche: corto(perche, 60), ...(grave ? { grave: true } : {}) });
+    ponteNota(`«Accetta in ambulatorio» di ${paz} dal telefono: ${esito.ok ? `in ambulatorio${esito.dati.area ? ` (${corto(esito.dati.area, 30)})` : ""}` : esito.errore}`);
+    await ponteScriviStato();
+    // (il numero ricorda com'è andata: chi lo rimanda ha la stessa risposta)
+    await ponteAccettaRqScrivi(rq, { fase: "fatto", esito }).catch(() => {});
+    return esito;
+  };
+  await ponteAccettaRqScrivi(rq, { fase: "corso" }).catch(() => {});
+  const e = await ponteAccettaSotto(r.dati.url, { ep: r.dati.ep || "", k: r.dati.k || "", nome: r.dati.nome, area: r.dati.area || "", rq });
+  if (e.ok) {
+    // le pagine di quel paziente aperte sul PC sono di prima: «Aggiornato dal telefono · Ricarica»
+    for (const t of await ponteSchede()) chrome.tabs.sendMessage(t.id, { t: "ponteCartellaAggiornata", ep: e.ep }).catch(() => {});
+    return fatto({ ok: true, dati: { ep: e.ep, nome: r.dati.nome, area: e.area } });
+  }
+  if (e.incerto) {
+    return fatto({ ok: false, incerto: true, errore: e.grave ? `${PONTE_ACCETTA_GRAVE}: controlla sul PC` : `Incerto: controlla sul PC${e.testo ? ` — ${e.testo}` : ""}` },
+      e.grave || e.testo || "non visto", !!e.grave);
+  }
+  if (e.grave) return fatto({ ok: false, errore: `${PONTE_ACCETTA_GRAVE} — niente fatto` }, e.grave, true);
+  return fatto({ ok: false, errore: `Non accettato: ${e.testo || "la lista del triage sul PC non risponde"}` }, e.testo || "?");
+}
+// la scheda di sottofondo, come quella della Terapia — una alla volta
+let ponteFilaAccetta = Promise.resolve();
+function ponteAccettaSotto(url, chi) {
+  const p = ponteFilaAccetta.then(() => ponteAccettaSottoOra(url, chi));
+  ponteFilaAccetta = p.catch(() => {});
+  return p;
+}
+async function ponteAccettaSottoOra(url, chi) {
+  const u = ponteUrlTriage(url);
+  if (!u) return { ok: false, testo: "indirizzo della lista del triage inatteso" };
+  if (typeof dopoIlMotore === "function") await dopoIlMotore();   // (mai una pagina del gestionale mentre un motore inserisce: bg.js)
+  const davanti = (await ponteSchede())[0];
+  const vuota = { url: "about:blank", active: false };
+  const t = await chrome.tabs.create(davanti ? { ...vuota, windowId: davanti.windowId, index: davanti.index + 1 } : vuota)
+    .catch(() => chrome.tabs.create(vuota));
+  let risolvi;
+  const promessa = new Promise((r) => { risolvi = r; });
+  pt.accette.set(t.id, { ...chi, fase: "lista", risolvi });
+  await ponteAccetteCambia((v) => { v[t.id] = { ts: ponteOra() }; });
+  const tempo = setTimeout(() => ponteAccettaFine(t.id, { ok: false, incerto: ponteAccettaDopo(t.id), testo: "la scheda non ha finito in tempo" }), PONTE_ACCETTA_MAX);
+  // (una scheda di sottofondo che il browser lascia scarica — «unloaded» — non chiede mai chi è:
+  // prima del clic si riapre la lista, una volta; è solo una lettura)
+  const riprova = setTimeout(() => {
+    const w = pt.accette.get(t.id);
+    if (w && w.fase === "lista" && !w.visto) chrome.tabs.update(t.id, { url: u }).catch(() => {});
+  }, PONTE_ACCETTA_RIPROVA);
+  try {
+    await chrome.tabs.update(t.id, { url: u, autoDiscardable: false });
+  } catch {
+    ponteAccettaFine(t.id, { ok: false, testo: "la lista del triage sul PC non si apre" });
+  }
+  const esito = await promessa;
+  clearTimeout(tempo);
+  clearTimeout(riprova);
+  return esito;
+}
+async function ponteAccettaFine(id, esito) {
+  const w = pt.accette.get(id);
+  pt.accette.delete(id);
+  const c = await ponteAccetteCambia((v) => { const c = v[id]; delete v[id]; return c; });
+  if (!c && !w) return false;
+  const t = await chrome.tabs.get(id).catch(() => null);
+  if (t && !t.active) await chrome.tabs.remove(id).catch(() => {});
+  if (w) w.risolvi({ ...esito, ep: w.ep || "" });
+  return true;
+}
+
 // ------------------------------------------- gli ordini partiti dal telefono
 // L'ordine fa il giro di sempre (scheda di sottofondo, controlli, conferma,
 // etichette): qui lo si guarda passare in `ordini` e si racconta al telefono
@@ -1305,6 +1455,38 @@ function ponteDaPagina(msg, sender, reply) {
       if (ok && cosa === "cerca") esito.voci = (Array.isArray(msg.voci) ? msg.voci : []).filter((x) => typeof x === "string").map((x) => x.slice(0, 200)).slice(0, 40);
       if (ok && cosa === "aggiungi") esito.riga = (ponteTerapiaPulita({ righe: [msg.riga] }) || { righe: [] }).righe[0] || null;
       return { ok: await ponteTerapiaFine(id, esito) };
+    });
+  }
+  // la scheda di «Accetta in ambulatorio» ha la riga, e sta per cliccare la sua freccia:
+  // annotato PRIMA (il numero in storage.session) — da qui in poi si guarda e basta
+  if (msg.t === "ponteAccettaInvio" && gestionale) {
+    return fai(async () => {
+      const w = pt.accette.get(sender.tab.id), ep = typeof msg.ep === "string" && /^[\w.-]{1,40}$/.test(msg.ep) ? msg.ep : "";
+      if (!w || w.fase !== "lista" || !ep || (w.ep && w.ep !== ep)) return { ok: false };
+      w.fase = "inviato";
+      w.ep = ep;
+      try { await ponteAccettaRqScrivi(w.rq, { ep, fase: "inviato" }); }
+      catch { await ponteAccettaFine(sender.tab.id, { ok: false, testo: "il PC non riesce ad annotarlo: niente cliccato" }); return { ok: false }; }
+      return { ok: true };
+    });
+  }
+  // …tornata sulla lista del triage, e lui non c'è più: va a guardare la lista dell'ambulatorio, una volta
+  if (msg.t === "ponteAccettaVerifica" && gestionale) {
+    return fai(async () => {
+      const w = pt.accette.get(sender.tab.id);
+      if (!w || w.fase !== "inviato") return { ok: false };
+      w.fase = "verifica";
+      return { ok: true };
+    });
+  }
+  if (msg.t === "ponteAccettaFatto" && gestionale) {
+    return fai(async () => {
+      const id = sender.tab.id, w = pt.accette.get(id), dopo = ponteAccettaDopo(id);
+      // «In ambulatorio» solo dopo il clic annotato
+      const ok = !!msg.ok && dopo;
+      const esito = { ok, testo: corto(msg.testo, 160), incerto: !!msg.incerto || (dopo && !ok), area: corto(msg.area, 40) };
+      if (typeof msg.grave === "string" && msg.grave) esito.grave = corto(msg.grave, 40);
+      return { ok: !!w && await ponteAccettaFine(id, esito) };
     });
   }
   // La scheda dei valori non è sulla pagina del paziente. Spesso il gestionale
