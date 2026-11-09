@@ -667,7 +667,7 @@
       if (!e.incerto) f.rq = "";   // non è partita: un nuovo tocco è una richiesta nuova
     };
     // (il foglio chiuso intanto: com'è andata lo dice un avviso)
-    const detto = (e) => { if (S.tf !== f) avviso(e ? e.message : `Confermata: ${v.descr}`, e && !e.incerto ? "err" : ""); render(); };
+    const detto = (e) => { if (S.tf !== f) avviso(e ? e.message : `Confermata: ${v.descr}`, e && !e.incerto ? "err" : "", !!(e && e.incerto)); render(); };
     try {
       si(await chiedi("terapiaAggiungi", { ep, voce, visti: l.righe.map((r) => r.prog).filter(Boolean) }, ATTESA_TERAPIA, false,
         { rq: f.rq, scade: Date.now() + 30e3, tardi: (d) => { if (d.ok) { si(d.dati); detto(null); } else { const e = errDa(d); no(e); detto(e); } } }));
@@ -874,8 +874,29 @@
     };
     S.occupato.add("zipvia" + id); render();
     scrivi("registrazioneVia", { zip: id }, TEMPO, via, "Cancellata dal PC")
-      .then(() => { via(); avviso("Cancellata dal PC"); }, (e) => { if (e.inviata) avviso("Non so se è cancellata: aspetto il PC", "err"); else errore(e); })
+      .then(() => { via(); avviso("Cancellata dal PC"); }, (e) => { if (e.inviata) avviso("Non so se è cancellata: aspetto il PC", "err", true); else errore(e); })
       .finally(() => { S.occupato.delete("zipvia" + id); render(); });
+  }
+
+  // «Cancella tutto»: tutte le registrazioni dell'elenco, due tocchi come per una sola
+  function cancellaTutte() {
+    const ora = Date.now();
+    if (!S.zipArma || S.zipArma.id !== "*" || ora - S.zipArma.ts > 6000) {
+      S.zipArma = { id: "*", ts: ora };
+      setTimeout(() => { if (S.zipArma && S.zipArma.id === "*" && Date.now() - S.zipArma.ts >= 6000) { S.zipArma = null; render(); } }, 6100);
+      render();
+      return;
+    }
+    if (ora - S.zipArma.ts < 800) return;
+    S.zipArma = null;
+    const via = () => {
+      for (const f of S.zipFile.values()) try { URL.revokeObjectURL(f.url); } catch { /* già via */ }
+      S.zipFile.clear(); S.zip = [];
+    };
+    S.occupato.add("zipvia*"); render();
+    scrivi("registrazioneVia", { zip: "*" }, TEMPO, via, "Cancellate dal PC")
+      .then(() => { via(); avviso("Cancellate dal PC"); }, (e) => { if (e.inviata) avviso("Non so se sono cancellate: aspetto il PC", "err", true); else errore(e); })
+      .finally(() => { S.occupato.delete("zipvia*"); render(); });
   }
 
   // ------------------------------------------------- il QR, inquadrato qui
@@ -962,7 +983,7 @@
     S.occupato.add("nota" + ep); render();
     const salvata = (riga) => { aggiornaRiga(riga); if (S.bozze.get(ep) === testo) S.bozze.delete(ep); };
     try { salvata(await scrivi("nota", { ep, testo }, TEMPO, salvata, "Da fare salvato sul PC")); avviso("Da fare salvato sul PC"); }
-    catch (e) { if (e.inviata) avviso("Non so se il Da fare è salvato: aspetto il PC", "err"); else errore(e); }
+    catch (e) { if (e.inviata) avviso("Non so se il Da fare è salvato: aspetto il PC", "err", true); else errore(e); }
     S.occupato.delete("nota" + ep); render();
   }
   async function aggiungiProm(ep) {
@@ -971,7 +992,7 @@
     S.occupato.add("prom" + ep); render();
     const salvato = (riga) => { aggiornaRiga(riga); if (S.promTesto.trim() === testo) { S.promTesto = ""; S.promAperto = ""; } };
     try { salvato(await scrivi("promemoria", { ep, testo }, TEMPO, salvato, "Da fare salvato sul PC")); }
-    catch (e) { if (e.inviata) avviso("Non so se il Da fare è salvato: aspetto il PC", "err"); else errore(e); }
+    catch (e) { if (e.inviata) avviso("Non so se il Da fare è salvato: aspetto il PC", "err", true); else errore(e); }
     S.occupato.delete("prom" + ep); render();
   }
   // «✓ Fatto» aspetta 5 secondi, con «Annulla»: un tocco sbagliato non toglie
@@ -981,7 +1002,7 @@
     S.fatti.set(pid, setTimeout(async () => {
       S.occupato.add("fatto" + pid); render();
       try { aggiornaRiga(await scrivi("fatto", { ep, pid }, TEMPO, aggiornaRiga, "Fatto, anche sul PC")); }
-      catch (e) { if (e.dati) aggiornaRiga(e.dati); if (e.inviata) avviso("Non so se è segnato fatto: aspetto il PC", "err"); else errore(e); }
+      catch (e) { if (e.dati) aggiornaRiga(e.dati); if (e.inviata) avviso("Non so se è segnato fatto: aspetto il PC", "err", true); else errore(e); }
       S.fatti.delete(pid);
       S.occupato.delete("fatto" + pid); render();
     }, 5000));
@@ -1090,7 +1111,7 @@
         // la lista degli ordini dal PC. Mai un secondo ordine alla cieca.
         S.sel.delete(ep);
         S.bloccati.set(ep, oid);
-        avviso("Non so se l'ordine è partito: controlla qui sopra prima di rifarlo", "err");
+        avviso("Non so se l'ordine è partito: controlla qui sopra prima di rifarlo", "err", true);
         window.scrollTo(0, 0);
         aggiornaOrdini();
       } else errore(e);
@@ -1131,8 +1152,9 @@
 
   // --------------------------------------------------------------- disegno
   let tAvviso = 0;
-  function avviso(testo, tono = "") {
-    S.avviso = { testo, tono };
+  // `alto`: «non so se…» — in cima, sotto la testata: in fondo coprirebbe gli esami che chiede di controllare
+  function avviso(testo, tono = "", alto = false) {
+    S.avviso = { testo, tono, alto };
     clearTimeout(tAvviso);
     tAvviso = setTimeout(() => { S.avviso = null; render(); }, tono === "err" ? 6500 : 3500);
     render();
@@ -1298,14 +1320,16 @@
     const giorno = (ts) => { const d = new Date(ts); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${hhmm(ts)}`; };
     const righe = S.zip.map((z) => {
       const st = S.zipStato.get(z.id), f = S.zipFile.get(z.id), armata = S.zipArma && S.zipArma.id === z.id, id = esc(z.id);
-      const prendi = f ? (f.puo ? `<button class="btnmini ok" data-a="zipManda" data-id="${id}">Condividi…</button>` : `<a class="btnmini" href="${esc(f.url)}" download="${esc(f.nome)}">Salva</a>`)
-        : `<button class="btnmini" data-a="zipScarica" data-id="${id}" ${st != null ? "disabled" : ""}>${st != null ? `Scarico… ${st}%` : "Scarica"}</button>`;
+      const prendi = f ? (f.puo ? `<button class="btnmini ok" data-a="zipManda" data-id="${id}">Condividi…</button>` : `<a class="btnmini pri" href="${esc(f.url)}" download="${esc(f.nome)}">Salva</a>`)
+        : `<button class="btnmini pri" data-a="zipScarica" data-id="${id}" ${st != null ? "disabled" : ""}>${st != null ? `Scarico… ${st}%` : "Scarica"}</button>`;
       return `<div class="zip" data-zip="${id}"><div class="z1"><b>${esc(giorno(z.quando || z.ts))}</b><span class="ztag${z.motivo === "auto" ? " auto" : ""}">${z.motivo === "auto" ? "automatica" : "a mano"}</span><span class="zkb">${esc(kb(z.byte))}</span></div>
         ${z.motivo === "auto" && z.errore ? `<div class="z2">${esc(z.errore)}</div>` : ""}
         <div class="z3${z.controllo ? "" : " ko"}">${z.controllo ? "Controllo superato" : `Restano ${Number(z.punti) || 0} dati da controllare`}</div>
         <div class="zbtn">${prendi}<button class="btnmini via${armata ? " arma" : ""}" data-a="zipVia" data-id="${id}" ${S.occupato.has("zipvia" + z.id) ? "disabled" : ""}>${armata ? "Cancello dal PC? Tocca di nuovo" : "Cancella"}</button></div></div>`;
     }).join("");
-    return `<main>${stampaHtml()}<div class="carta zips">${righe}</div></main>`;
+    const tutte = S.zip.length > 1 ? `<button class="btnmini via tutte${S.zipArma && S.zipArma.id === "*" ? " arma" : ""}" data-a="zipTutte" ${S.occupato.has("zipvia*") ? "disabled" : ""}>${
+      S.zipArma && S.zipArma.id === "*" ? `Cancello tutte le ${S.zip.length} dal PC? Tocca di nuovo` : "Cancella tutto"}</button>` : "";
+    return `<main>${stampaHtml()}<div class="carta zips">${righe}</div>${tutte}</main>`;
   }
   // «Triage · alle 14:32»: chi aspetta (le due aree insieme), dal più urgente e,
   // a pari colore, da chi aspetta da più tempo. Non si tocca. Via se vuoto o
@@ -1438,7 +1462,7 @@
     // quando li ha letti il PC: dopo un'ora, in ambra
     const letti = e.tabella && e.letto ? `<small class="letti${Date.now() - e.letto > 60 * 60e3 ? " amb" : ""}">Letti sul PC alle ${hhmm(e.letto)} · ${fa(e.letto)}</small>` : "";
     const valori = `<div class="carta"><div class="sezt"><div class="tv">${letti}</div>
-        <button class="agg" data-a="valori" ${legge ? "disabled" : ""}>${legge ? "Leggo sul PC…" : "↻ Aggiorna i valori"}</button></div>
+        <button class="agg" data-a="valori" ${legge ? "disabled" : ""}>${legge ? "Leggo sul PC…" : "↻ Rileggi"}</button></div>
       ${e.tabella ? tabellaHtml(e.tabella) : legge ? "" : `<div class="vuoto stretto">Il PC non ha ancora letto valori per questo paziente.</div>`}</div>`;
     const referti = e.referti.length ? `<div class="carta">${e.referti.map((r) => {
       const aperto = S.aperti.has(r.id);
@@ -1477,12 +1501,14 @@
     const occupato = S.inviati.has(p.ep), bloccato = S.bloccati.has(p.ep);
     const armato = S.arma && S.arma.ep === p.ep;
     // (due pazienti con lo stesso cognome: il ⚠ anche qui, e il nome col suo segno)
-    const etichetta = occupato ? (S.coda.has(S.inviati.get(p.ep)) ? "In coda…" : "Mando l'ordine al PC…") : bloccato ? "Controllo gli ordini sul PC…" : armato ? `${p.omonimo ? "⚠ " : ""}Ordino ${nTxt} per ${chi(p)}? Tocca di nuovo`
-      : !n ? "Scegli gli esami" : `Conferma e stampa · ${nTxt}`;
+    // (armato: due righe — che cosa, e per chi: il nome intero, l'età e il posto, che guardano dal paziente sbagliato)
+    const etichetta = armato ? `<span class="l1">Ordino ${nTxt} · tocca di nuovo</span><span class="l2">${p.omonimo ? "⚠ " : ""}${esc(chi(p))}</span>`
+      : esc(occupato ? (S.coda.has(S.inviati.get(p.ep)) ? "In coda…" : "Mando l'ordine al PC…") : bloccato ? "Controllo gli ordini sul PC…"
+        : !n ? "Scegli gli esami" : `Conferma e stampa · ${nTxt}`);
     const perche = bloccato ? "Prima di un altro ordine, il PC dice se quello di prima è partito"
       : n && !s.q.trim() ? "Scrivi il quesito diagnostico" : rx && lab ? "Laboratorio e radiologia in richieste separate: il PC le conferma e le stampa tutte" : "";
     const nomi = [...s.esami].map((k) => c.nomi[k] || k).join(", ");
-    return `<div class="cta">${n ? `<div class="sel">${esc(nomi)}</div>` : ""}<button id="ordina" data-a="ordina" class="${armato ? "arma" : ""}" ${occupato || bloccato ? "disabled" : !n || !s.q.trim() ? "aria-disabled=\"true\"" : ""}>${esc(etichetta)}</button>${
+    return `<div class="cta">${n ? `<div class="sel">${esc(nomi)}</div>` : ""}<button id="ordina" data-a="ordina" class="${armato ? "arma" : ""}" ${occupato || bloccato ? "disabled" : !n || !s.q.trim() ? "aria-disabled=\"true\"" : ""}>${etichetta}</button>${
       perche ? `<div class="perche">${esc(perche)}</div>` : ""}</div>`;
   }
   // «Da fare», come sul PC: la nota (la prima voce senza ora) e quelle con l'ora,
@@ -1509,7 +1535,7 @@
     const tab = (s, t) => `<button class="${S.scheda === s ? "on" : ""}" data-a="scheda" data-s="${s}" role="tab" aria-selected="${S.scheda === s}">${t}</button>`;
     const ter = S.terapiaSi && S.scheda === "terapia";
     return `<main>${vitaliHtml(p)}${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}${S.terapiaSi ? tab("terapia", "Terapia") : ""}</div>
-      ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : ter ? vistaTerapia(p) : vistaRichieste(p)}</main>${ctaHtml(p)}${
+      ${ordini}${S.scheda === "richieste" ? noteHtml(p) : ""}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : ter ? vistaTerapia(p) : vistaRichieste(p)}</main>${ctaHtml(p)}${
       S.eoSheet && S.scheda === "cartella" && S.eo ? foglioEo() : ""}${ter ? foglioTerapia(p) : ""}`;
   }
   // La cartella: i campi della pagina del paziente sul PC, ognuno com'è là.
@@ -1654,7 +1680,7 @@
     const fg = $app.querySelector(".foglio .pannello"), fgy = fg ? { k: fg.dataset.k, y: fg.scrollTop } : null;   // (un foglio aperto resta dov'era)
     const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : vistaLista()) : schermata();
     disegno = true;   // (un campo tolto dal ridisegno non è un campo lasciato)
-    try { $app.innerHTML = testata() + corpo + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}" role="alert">${esc(S.avviso.testo)}</div>` : ""); }
+    try { $app.innerHTML = testata() + corpo + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}${S.avviso.alto ? " alto" : ""}" role="alert">${esc(S.avviso.testo)}</div>` : ""); }
     finally { disegno = false; }
     for (const t of $app.querySelectorAll(".cc textarea")) alza(t);
     misureMappa();
@@ -1694,6 +1720,16 @@
       mp.scrollLeft = (mp.scrollLeft + cx) * S.zoom / prima - cx; mp.scrollTop = (mp.scrollTop + cy) * S.zoom / prima - cy;
     }, { passive: false });
     $app.addEventListener("touchend", (e) => { if (e.touches.length < 2) d0 = 0; }, { passive: true });
+    // Un tocco su un posto vuoto della mappa (non su un paziente) la ingrandisce lì; un altro la riporta intera.
+    $app.addEventListener("click", (e) => {
+      const mp = e.target.closest && e.target.closest(".mappa");
+      if (!mp || e.target.closest("[data-a]")) return;
+      const piano = mp.firstElementChild, prima = S.zoom;
+      S.zoom = prima > 1.05 ? 1 : 2.2;
+      piano.style.setProperty("--zoom", S.zoom);
+      const r = mp.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top;
+      mp.scrollLeft = (mp.scrollLeft + cx) * S.zoom / prima - cx; mp.scrollTop = (mp.scrollTop + cy) * S.zoom / prima - cy;
+    });
   }
   const lascia = () => { clearTimeout(premuto); premuto = 0; if (rinviato) { rinviato = false; render(); } };
   $app.addEventListener("pointerdown", () => { clearTimeout(premuto); premuto = setTimeout(lascia, 700); }, true);
@@ -1738,6 +1774,7 @@
     else if (a === "zipScarica") scaricaZip(b.dataset.id);
     else if (a === "zipManda") condividiZip(b.dataset.id);
     else if (a === "zipVia") cancellaZip(b.dataset.id);
+    else if (a === "zipTutte") cancellaTutte();
     else if (a === "paz") apriPaziente(b.dataset.ep);
     else if (a === "modo") { S.modo = b.dataset.m === "mappa" ? "mappa" : "lista"; try { localStorage.setItem(MODO, S.modo); } catch { /* solo in memoria */ } render(); }
     else if (a === "mappasel") { S.mappaSel = b.dataset.k; render(); }

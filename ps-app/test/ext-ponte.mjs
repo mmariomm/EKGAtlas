@@ -704,7 +704,9 @@ sezione("nota e promemoria dal telefono");
 const daFarePc = (ep = "999001") => doc.evaluate((e) => (JSON.parse(localStorage.getItem("psassist:dafare.v1") || "{}")[e] || []).filter((x) => !x.fatto), ep);
 const notePc = () => doc.evaluate(() => Object.values(JSON.parse(localStorage.getItem("psassist:dafare.v1") || "{}")).flat().filter((x) => x.t == null && !x.fatto).map((x) => x.testo));
 await tocca(tel, '.paz[data-ep="999001"]');
-const testa = await aspettaTel(tel, /Aggiorna i valori/, 20000);
+const testa = await aspettaTel(tel, /Rileggi/, 20000);
+check(await tel.locator(".note").count() === 0, "i Da fare non sono sulla scheda Esiti: stanno sulle Richieste");
+await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 check(await tel.locator(".top .tit").innerText() === "ROSSI MARIO · 77 anni · OBI 2", `in testa il nome intero, l'età e il posto, e nient'altro: «ROSSI MARIO · 77 anni · OBI 2» (${(await tel.locator(".top .tit").innerText()).replace(/\n/g, " / ")})`);
 check(await tel.evaluate(() => { const s = document.querySelector(".seg"), n = document.querySelector(".note"); return !!s && !!n && !!(s.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING); }),
   "le schede Esiti/Richieste vengono prima della nota");
@@ -760,6 +762,7 @@ await doc.waitForSelector('#psassist-host [data-esito="dddd4444-0000-0000-0000-0
 await $panel(doc, "#collapse").click();
 await suPagina(doc, A.worklistUrl);
 const vistoPrima = await doc.evaluate(() => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((p) => p.ep === "999001") || {}).ts);
+await tocca(tel, '[data-a="scheda"][data-s="esiti"]');   // (la scheda si ricorda: riaperto, il paziente comincia dagli Esiti)
 await tocca(tel, '[data-a="indietro"]');
 await aspettaTel(tel, /BIANCHI ANNA/);
 await tocca(tel, '.paz[data-ep="999001"]');
@@ -1169,7 +1172,7 @@ await tocca(tel, "#ordina");
 await tocca(tel, "#ordina");   // il secondo tocco di un doppio tocco, subito dopo
 await sospendi(400);
 const armato = await tel.locator("#ordina").innerText();
-check(/Ordino 2 esami per ROSSI MARIO · 77 anni · OBI 2\? Tocca di nuovo/.test(armato), `il primo tocco chiede conferma, col nome intero, l'età e il posto (${armato})`);
+check(/^Ordino 2 esami · tocca di nuovo\nROSSI MARIO · 77 anni · OBI 2$/.test(armato) && !/\?/.test(armato), `il primo tocco chiede conferma in due righe: che cosa, e il paziente intero con età e posto (${armato.replace(/\n/g, " / ")})`);
 check(Object.keys(A.state.richieste).length === 0, "un doppio tocco (il secondo entro 800 ms) non conferma: niente è partito");
 await shot(tel, "tel-3-ordine-conferma");
 const nasceOrdine = nuovaPagina(20000);
@@ -1229,6 +1232,9 @@ await tel.locator("#quesito").fill("controllo");
 await tocca(tel, "#ordina"); await sospendi(900); await tocca(tel, "#ordina");
 const incerto = await aspettaTel(tel, /Non so se l'ordine è partito/, 20000);
 check(/Non so se l'ordine è partito: controlla qui sopra prima di rifarlo/.test(incerto), "la scheda tarda: «Non so se l'ordine è partito: controlla qui sopra prima di rifarlo»");
+check(await tel.evaluate(() => { const a = document.querySelector(".avviso.alto"); if (!a) return false; const r = a.getBoundingClientRect();
+  return [...document.querySelectorAll(".esame")].every((e) => { const q = e.getBoundingClientRect(); return q.bottom <= r.top || q.top >= r.bottom; }); }),
+  "il «non so se» sta in cima: non copre nemmeno un esame della griglia che chiede di guardare");
 check(await tel.locator(".esame.on").count() === 0, "la selezione se ne va: un secondo tocco non rifà l'ordine");
 check(await finche(async () => (await tel.locator(".ord").count()) >= 1 && Object.keys(B.state.richieste).length === 1, 30000), "e l'ordine, nato lo stesso, compare sul telefono");
 await sw.evaluate(() => { PONTE_ATTESA.ordina = 25e3; });
@@ -1360,6 +1366,7 @@ await doc.evaluate(() => {
   for (const p of l) if (p.ep === "999003") { p.arch = true; p.archTs = Date.now(); }
   localStorage.setItem(K, JSON.stringify(l));
 });
+await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 await tocca(tel, '[data-a="nota"]');
 await tel.locator("#nota").fill("nota dopo la dimissione");
 await tocca(tel, '[data-a="promApri"]');
@@ -1396,7 +1403,7 @@ await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');
 await tel.locator("#quesito").fill("omonimo");
 await tocca(tel, "#ordina");
 const armOm = await tel.locator("#ordina").innerText();
-check(/^⚠ Ordino 1 esame per ROSSI MARIO · …9001 · 77 anni · OBI 2\? Tocca di nuovo$/.test(armOm), `e la conferma comincia col ⚠, col segno anche lì (${armOm})`);
+check(/^Ordino 1 esame · tocca di nuovo\n⚠ ROSSI MARIO · …9001 · 77 anni · OBI 2$/.test(armOm), `e la conferma ha il ⚠ davanti al paziente, col segno anche lì (${armOm.replace(/\n/g, " / ")})`);
 await tocca(tel, '[data-a="esame"]:has-text("TROPONINA US")');   // non si conferma: via la scelta
 await omonimo(false);
 await tocca(tel, '[data-a="indietro"]');
@@ -1472,8 +1479,8 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     return { larg: Math.round(p.getBoundingClientRect().width), mappa: Math.round(r.width), pagina: document.documentElement.scrollWidth <= window.innerWidth, eccesso,
       ta: getComputedStyle(m).touchAction, scala: window.visualViewport.scale };
   });
-  check(forma.larg <= forma.mappa && forma.pagina && !forma.eccesso.length && forma.ta === "pan-x pan-y",
-    `la mappa sta nella larghezza del telefono (${forma.larg} su ${forma.mappa} px), la pagina non scorre di lato, nessun nome tagliato dentro una parola (${forma.eccesso})`);
+  check(forma.larg >= forma.mappa && forma.pagina && !forma.eccesso.length && forma.ta === "pan-x pan-y",
+    `la mappa, grande abbastanza per leggere i cognomi, scorre dentro la sua cornice (${forma.larg} in ${forma.mappa} px); la pagina non scorre di lato, nessun nome tagliato dentro una parola (${forma.eccesso})`);
   await shot(tel, "tel-mappa-bassa");
 
   // «Alta · Bassa»
@@ -1485,6 +1492,16 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     `Alta: Letto 1, Rossa, Sedia 1 e la barella con i loro pazienti; gli altri sette vuoti; l'episodio precedente da nessuna parte (${alta.occ} · ${alta.vuoti.length} vuoti)`);
   await shot(tel, "tel-mappa-alta");
 
+  // un tocco su un posto vuoto la ingrandisce lì; un altro la riporta intera
+  {
+    const zoom = () => tel.evaluate(() => Number(document.querySelector(".piano").style.getPropertyValue("--zoom")));
+    await tel.locator(".letto.vuoto").first().click();
+    const z1 = await zoom();
+    await tel.locator(".letto.vuoto").first().click();
+    check(z1 > 2 && await zoom() === 1, `tocco su un posto vuoto: la mappa si ingrandisce (${z1}), un altro la riporta intera`);
+    const minimo = await tel.evaluate(() => Math.min(...[...document.querySelectorAll(".letto.occ .ln")].map((e) => parseFloat(getComputedStyle(e).fontSize))));
+    check(minimo >= 9, `i cognomi sui letti sono leggibili anche in verticale: almeno 9 px (${minimo})`);
+  }
   // il pizzico: due dita, dentro la mappa; la pagina non si ingrandisce
   {
     const cdp = await telCtx.newCDPSession(tel), b = await tel.locator(".mappa").boundingBox(), y = Math.round(b.y + Math.min(b.height / 2, 120)), x = Math.round(b.x + b.width / 2);
@@ -1562,14 +1579,16 @@ sezione("i messaggi ripetuti o manomessi non passano");
 const daTel = () => inoltrati.filter((b) => b[1] === 3);
 // una nota, catturata per strada, poi un'altra: rimandare la prima non la rimette
 await tocca(tel, '.paz[data-ep="999001"]');
-await aspettaTel(tel, /Aggiorna i valori/, 15000);
+await aspettaTel(tel, /Rileggi/, 15000);
 const noteSulPc = () => notePc();
 const prima = daTel().length;
+await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 await tocca(tel, '[data-a="nota"]');
 await tel.locator("#nota").fill("nota A");
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
 await finche(async () => (await noteSulPc()).includes("nota A"), 10000);
 const fNotaA = daTel().slice(prima).at(-1);
+await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 await tocca(tel, '[data-a="nota"]');
 await tel.locator("#nota").fill("nota B");
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
@@ -1614,7 +1633,7 @@ check(await finche(async () => ((await registroPc(doc)).match(/iPhone · elenco 
   "tornati sull'app, l'elenco si rilegge da solo");
 // …e sulla pagina di un paziente, i suoi esiti (un referto arrivato intanto), senza contare come un comando del medico
 await tocca(tel, '.paz[data-ep="999001"]');
-await aspettaTel(tel, /Aggiorna i valori/, 15000);
+await aspettaTel(tel, /Rileggi/, 15000);
 await sospendi(800);
 const esitiLetti = async () => ((await registroPc(doc)).match(/iPhone · esiti di ROSSI MARIO/g) || []).length;
 const esiti0 = await esitiLetti(), ultimo0 = await sw.evaluate(() => pt.sessione && pt.sessione.ultimo);
@@ -1666,7 +1685,8 @@ check(!(await tel.evaluate(() => window.__chiusa)), "e «Sessione chiusa» non s
 sezione("«Scollega» sul PC");
 await finche(async () => (await $panel(doc, "#ponteoff").count()) === 1, 8000);
 await tocca(tel, '.paz[data-ep="999001"]');
-await aspettaTel(tel, /Aggiorna i valori/, 15000);
+await aspettaTel(tel, /Rileggi/, 15000);
+await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 await tocca(tel, '[data-a="nota"]');
 await tel.locator("#nota").fill("nota C");
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
@@ -1991,7 +2011,22 @@ sezione("le registrazioni del PC dal telefono: elenco, scarica a pezzi, cancella
   // una non elencata in questa sessione non si dà e non si cancella
   const furbo = await sw.evaluate(() => ponteDaiRegistrazione({ zip: new Set() }, { zip: "provazipmano", i: 0 }));
   check(!furbo.ok && /riapri l'elenco/.test(furbo.errore), `una registrazione non elencata in questa sessione non si dà (${furbo.errore})`);
-  await sw.evaluate(() => regZipVia("provazipmano"));
+  // «Cancella» pesa meno di «Scarica»; «Cancella tutto» (due tocchi) toglie dal PC tutte quelle in elenco
+  await metti(zA, { id: "provazipauto", nome: "psassist-registrazione-20261106-0930-auto.zip", ts: ora - 60e3, quando: ora - 120e3, byte: zA.length, motivo: "auto",
+    errore: "", controllo: true, punti: 0, pagine: 6, richieste: 20, pdf: 1, riepilogo: "PS Assist — registrazione anonimizzata" });
+  await tocca(tel, '[data-a="indietro"]'); await tocca(tel, '[data-a="menu"]'); await tocca(tel, '[data-a="registrazioni"]');
+  check(await finche(async () => await tel.locator(".zip").count() === 2, 15000), "di nuovo due registrazioni in elenco");
+  const peso = await tel.evaluate(() => { const f = (s) => getComputedStyle(document.querySelector(s)).backgroundColor;
+    return { via: f('[data-a="zipVia"]'), scarica: f('[data-a="zipScarica"]') }; });
+  check(peso.via === "rgba(0, 0, 0, 0)" && peso.scarica !== "rgba(0, 0, 0, 0)", `«Cancella» senza fondo, «Scarica» pieno (${JSON.stringify(peso)})`);
+  await tocca(tel, '[data-a="zipTutte"]');
+  check(/Cancello tutte le 2 dal PC\? Tocca di nuovo/.test(await tel.locator('[data-a="zipTutte"]').innerText()) && (await sw.evaluate(() => regElenco())).length === 2,
+    "«Cancella tutto»: il primo tocco chiede («Cancello tutte le 2 dal PC? Tocca di nuovo»), e non cancella");
+  await sospendi(900);
+  await tocca(tel, '[data-a="zipTutte"]');
+  check(await finche(async () => (await sw.evaluate(() => regElenco())).length === 0, 15000) && await finche(async () => await tel.locator(".zip").count() === 0, 8000),
+    "il secondo tocco le cancella tutte dal PC, e l'elenco sul telefono si svuota");
+  check(/iPhone · 2 registrazioni cancellate dal PC/.test(await registroPonte()), "il registro del ponte: «2 registrazioni cancellate dal PC»");
   await tocca(tel, '[data-a="indietro"]');
   await aspettaTel(tel, /BIANCHI ANNA/);
 }
@@ -2029,7 +2064,7 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   await reteV({ offline: true });
   await finche(async () => /Senza rete/.test(await pill()), 5000);
   const offline = await v.evaluate(() => ({ valori: document.querySelector('[data-a="valori"]')?.classList.contains("nopc"), testo: document.getElementById("app").innerText }));
-  check(offline.valori && await grigi() >= 2 && /RX TORACE/.test(offline.testo) && /Senza rete/.test(await pill()),
+  check(offline.valori && await grigi() >= 1 && /RX TORACE/.test(offline.testo) && /Senza rete/.test(await pill()),
     `senza rete: in testa «Senza rete», gli esiti in memoria restano, e quello che va chiesto al PC è in grigio (${await grigi()} in grigio)`);
   // la presa di prima è morta senza dirlo: il battito se ne accorge, e i tentativi si diradano
   await sospendi(40000);
@@ -2069,6 +2104,7 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
     globalThis.ponteDaiPdf = async (s, d) => { self.__pezzi.push(d.i); if (d.i === 1 && self.__pezzi.length === 2) await attendi(2000); return self.__vere.pdf(s, d); };
   });
   const emogas = () => doc3.evaluate(() => (JSON.parse(localStorage.getItem("psassist:dafare.v1") || "{}")["999001"] || []).filter((x) => !x.fatto && /emogas/.test(x.testo)).length);
+  await tocca(v, '[data-a="scheda"][data-s="richieste"]');
   await tocca(v, '[data-a="promApri"]');
   await v.locator("#promin").fill("tra 3h emogas");
   await tocca(v, '[data-a="prom"]');
@@ -2083,6 +2119,7 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
     `la presa cade mentre il PC scrive un promemoria: il telefono lo rimanda col suo numero (${arrivi.length} arrivi), sul PC ce n'è uno solo, e il telefono lo mostra`);
 
   // 5. un PDF tagliato a metà strada riprende da dove era, non da capo
+  await tocca(v, '[data-a="scheda"][data-s="esiti"]');
   const idRef = await v.locator('.ref:has-text("TC ENCEFALO")').first().getAttribute("data-id");
   const pdf = Buffer.concat([refertoRxPdf(["RADIOLOGIA - ripresa"]), Buffer.alloc(1200000, 0x43)]);
   await sw.evaluate(([k, data]) => chrome.storage.local.set({ [k]: { ep: "999001", data, ts: Date.now() } }), ["ref:" + idRef, pdf.toString("base64")]);
@@ -2131,7 +2168,7 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   await tocca(v, '[data-a="indietro"]');
   const elenco = await finche(async () => (await elenchi()) > el0 && /GIALLI/.test(await testoTel(v)), 30000);
   await tocca(v, '.paz[data-ep="999002"]');
-  const esitiB = /Aggiorna i valori/.test(await aspettaTel(v, /Aggiorna i valori/, 40000));
+  const esitiB = /Rileggi/.test(await aspettaTel(v, /Rileggi/, 40000));
   await tocca(v, '[data-a="scheda"][data-s="richieste"]');
   await aspettaTel(v, /Dol th/, 10000);
   await tocca(v, '[data-a="esame"]:has-text("TROPONINA US")');
@@ -2184,7 +2221,7 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
     "senza rete oltre 30 secondi: «Scaduta: non inviata», e tornata la rete non parte (il PC non lo vede mai)");
   await tocca(v, '.coda[data-a="riarma"]');
   const riarmato = await v.locator("#ordina").innerText();
-  check(/Ordino 1 esame per BIANCHI ANNA.*Tocca di nuovo/.test(riarmato) && !(await v.locator(".coda").count()),
+  check(/Ordino 1 esame · tocca di nuovo\n.*BIANCHI ANNA/.test(riarmato) && !(await v.locator(".coda").count()),
     `toccata la carta scaduta, la scelta torna e il bottone chiede di nuovo conferma (${riarmato})`);
   await tocca(v, '[data-a="esame"]:has-text("TROPONINA US")');   // (non lo conferma: via la scelta)
 
@@ -2195,7 +2232,7 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
     await v.reload();
     await aspettaTel(v, /BIANCHI ANNA/, 20000);
     await tocca(v, '.paz[data-ep="999002"]');
-    await aspettaTel(v, /Aggiorna i valori/, 20000);
+    await aspettaTel(v, /Rileggi/, 20000);
     await tocca(v, '[data-a="scheda"][data-s="richieste"]');
     await aspettaTel(v, /Dol th/, 10000);
     await reteV({ offline: true });
@@ -2223,7 +2260,7 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   await tel.reload();
   await aspettaTel(tel, /BIANCHI ANNA/, 20000);
   await tocca(tel, '.paz[data-ep="999002"]');
-  await aspettaTel(tel, /Aggiorna i valori/, 20000);
+  await aspettaTel(tel, /Rileggi/, 20000);
   await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
   await aspettaTel(tel, /Dol th/, 10000);
   const r3 = Object.keys(B.state.richieste).length;

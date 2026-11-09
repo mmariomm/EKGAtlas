@@ -3,3 +3,4 @@
   display: flex; align-items: center; justify-content: center; background: #B45309; color: #fff; font: 600 12px/1 -apple-system, system-ui, sans-serif; letter-spacing: .02em; }
 /* la testata dell'app si ferma sotto la striscia (e la striscia già copre l'area sicura del telefono) */
 body.prova .top { top: calc(24px + env(safe-area-inset-top)); padding-top: 0; min-height: 56px; }
+body.prova .avviso.alto { top: calc(88px + env(safe-area-inset-top)); }

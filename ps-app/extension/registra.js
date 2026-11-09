@@ -471,6 +471,12 @@ async function regZipVia(id) {
   await regAvvisaElenco();
   return z;
 }
+// «Cancella tutto»: tutti gli zip salvati (il grezzo di una registrazione in corso non si tocca)
+async function regZipTutti() {
+  const l = await regTx("zip", "readonly", (s) => s.getAll());
+  for (const z of l) await regZipVia(z.id);
+  return l.length;
+}
 // Uno zip a pezzi (base64), per il pannello e per il telefono: i byte letti
 // una volta e tenuti in memoria per un minuto, finché arrivano i pezzi.
 let regCopia = null, regCopiaT = 0;
@@ -590,6 +596,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   });
   // il grezzo di una registrazione ferma che non si è salvata: via, senza zip
   if (msg.t === "registraButta") return fai(async () => { if (regAttiva()) return { ok: false, why: "la registrazione è in corso" }; await regCancella(); return { ok: true }; });
+  if (msg.t === "registraCancellaTutte") return fai(async () => ({ ok: true, n: await regZipTutti() }));
   if (msg.t === "registraCancella") return fai(async () => ({ ok: !!(await regZipVia(String(msg.id || ""))) }));
   if (msg.t === "registraPezzo") return fai(async () => {
     const p = await regPezzo(String(msg.id || ""), msg.i, REG_PEZZO_PC);

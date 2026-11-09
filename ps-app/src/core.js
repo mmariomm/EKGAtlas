@@ -13421,6 +13421,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
             : "Spenta: niente in memoria, niente salvato da solo."}${r && r.stato === "rec" ? " Mentre registri a mano, vale la tua." : ""}</div>
           <div class="lbl">Salvate (${(L.lista || []).length})${tot ? `<span class="ttot">${esc(kb(tot))}</span>` : ""}</div>
           ${righe ? `<div class="reglist">${righe}</div>` : `<div class="hint">Nessuna registrazione salvata.</div>`}
+          ${(L.lista || []).length > 1 ? `<button class="mini via${this.regArma && this.regArma.id === "*" ? " armato" : ""}" id="regtutte">${this.regArma && this.regArma.id === "*"
+            ? `Cancello tutte le ${(L.lista || []).length} registrazioni? Tocca di nuovo` : "Cancella tutto"}</button>` : ""}
           <div class="hint">Al più 30 zip e 300 MB: oltre, se ne vanno i più vecchi, prima gli automatici.</div>
         </div>`;
     }
@@ -13477,6 +13479,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const nome = ((this.regLista && this.regLista.lista) || []).find((z) => z.id === id)?.nome || "la registrazione";
         dopo(await ask({ t: "registraCancella", id }), () => ({ ok: `Cancellata: ${nome}.` }));
       }));
+      $("#regtutte")?.addEventListener("click", async () => {
+        if (!arma("*")) return;
+        dopo(await ask({ t: "registraCancellaTutte" }), (y) => ({ ok: `Cancellate ${y.n} registrazioni.` }));
+      });
       this.root.querySelectorAll("[data-regpc]").forEach((b) => b.addEventListener("click", () => this.scaricaRegistrazione(b.getAttribute("data-regpc"))));
     }
     // «Scarica»: lo zip a pezzi dal service worker, un file nei Download

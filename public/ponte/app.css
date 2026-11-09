@@ -209,7 +209,9 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .zip .z3.ko { color: var(--rosso); }
 .zip .zbtn { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .zip a.btnmini { display: inline-flex; align-items: center; text-decoration: none; }
-.btnmini.via { color: var(--rosso); }
+.btnmini.pri { background: var(--azione); border-color: var(--azione); color: #fff; }
+.btnmini.via { color: var(--rosso); border-color: transparent; background: transparent; font-weight: 500; }
+.btnmini.tutte { display: block; margin: 8px auto 0; }
 .btnmini.arma { background: var(--rossof); border-color: var(--rossob); }
 .btnmini:disabled { color: var(--grigio2); }
 
@@ -236,6 +238,9 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .cta button { width: 100%; min-height: 54px; border: 0; border-radius: 14px; background: var(--azione); color: #fff; font-weight: 700; font-size: 17px; padding: 14px; overflow-wrap: anywhere; }
 .cta button:disabled, .cta button[aria-disabled="true"] { background: var(--spento); }
 .cta button.arma { background: var(--ambrap); }
+.cta button .l1, .cta button .l2 { display: block; }
+.cta button .l1 { font-size: 15px; }
+.cta button .l2 { font-size: 13.5px; font-weight: 600; opacity: .95; margin-top: 2px; }
 .cta .perche { font-size: 12.5px; color: var(--grigio); text-align: center; margin-top: 6px; }
 .cta .perche.err { color: var(--rosso); font-weight: 650; font-size: 14px; }
 .cta .perche.err:first-child { margin-top: 0; }
@@ -272,6 +277,8 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .avviso { position: fixed; left: var(--sx); right: var(--dx); bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 30; background: var(--scuro); color: #fff;
           border-radius: 12px; padding: 12px 14px; font-size: 14.5px; box-shadow: 0 12px 30px var(--ombra); }
 .avviso.err { background: var(--rossop); }
+/* «non so se…»: in cima, sotto la testata — in fondo coprirebbe gli esami da controllare */
+.avviso.alto { bottom: auto; top: calc(64px + env(safe-area-inset-top)); }
 .carica { display: flex; justify-content: center; padding: 26px; }
 .carica .giro { margin: 0; width: 26px; height: 26px; }
 @media (prefers-reduced-motion: reduce) { .giro, .ord.run .seg-o { animation-duration: 3s; } }
@@ -306,7 +313,7 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .seg.pic button { min-height: 40px; padding: 6px 0; font-size: 14px; background: var(--seg); }
 .seg.pic button.on { background: var(--blu-chiaro); color: var(--blu); box-shadow: none; }
 .mappa { overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; max-width: 100%; margin: 0 0 6px; border: 1px solid var(--bordo); border-radius: 14px; background: var(--carta); }
-.piano { --larg: calc(min(100vw, 760px) - var(--sx) - var(--dx) - 2px); --u0: max(8px, min(calc(var(--larg) / var(--cols)), calc((100vh - 60px) / var(--rows))));
+.piano { --larg: calc(min(100vw, 760px) - var(--sx) - var(--dx) - 2px); --u0: max(14px, min(calc(var(--larg) / var(--cols)), calc((100vh - 60px) / var(--rows))));
   --u: calc(var(--u0) * var(--zoom, 1)); position: relative; width: calc(var(--u) * var(--cols)); height: calc(var(--u) * var(--rows)); margin: 0 auto; }
 .letto, .area { position: absolute; box-sizing: border-box; left: calc(var(--u) * var(--x) + 1.5px); top: calc(var(--u) * var(--y) + 1.5px);
   width: calc(var(--u) * var(--w) - 3px); height: calc(var(--u) * var(--h) - 3px); border-radius: 8px; overflow: hidden; min-width: 0; }
@@ -317,15 +324,15 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .letto.occ:active, .pa:active { background: var(--fondo); }
 .letto.spento .ln, .pa.spento .ln { color: var(--grigio); }
 .letto .ln, .pa .ln { font-weight: 700; overflow-wrap: normal; word-break: keep-all; hyphens: none; min-width: 0;
-  font-size: clamp(6.5px, calc((var(--u) * var(--w) - 17px) / (var(--n) * .68)), 13px); }
-.pa .ln { font-size: clamp(6.5px, calc((var(--u) * var(--w) - 24px) / (var(--n) * .68)), 11px); }
+  font-size: clamp(9px, calc((var(--u) * var(--w) - 17px) / (var(--n) * .68)), 14px); }
+.pa .ln { font-size: clamp(9px, calc((var(--u) * var(--w) - 24px) / (var(--n) * .68)), 12px); }
 .letto.vuoto .ln { font-weight: 500; font-size: clamp(6.5px, calc((var(--u) * var(--w) - 10px) / (var(--n) * .6)), 11px); }
 .letto .lb { font-size: clamp(6px, calc(var(--u) * .6), 9px); color: var(--grigio); font-weight: 600; white-space: nowrap; overflow: hidden; }
-.letto .le { font-size: clamp(6.5px, calc(var(--u) * .8), 11px); color: var(--grigio); font-variant-numeric: tabular-nums; }
+.letto .le { font-size: clamp(8px, calc(var(--u) * .8), 11px); color: var(--grigio); font-variant-numeric: tabular-nums; }
 .r2 { display: flex; align-items: center; justify-content: space-between; gap: 3px; min-width: 0; }
 .mk { display: flex; align-items: center; gap: 3px; line-height: 1; margin-left: auto; }
 @container letto (max-height: 40px) { .lb { display: none; } }
-.letto.alto .ln { writing-mode: vertical-rl; font-size: clamp(6.5px, calc((var(--u) * var(--h) - 16px) / (var(--n) * .68)), 11px); }
+.letto.alto .ln { writing-mode: vertical-rl; font-size: clamp(9px, calc((var(--u) * var(--h) - 16px) / (var(--n) * .68)), 11px); }
 .letto.alto { align-items: center; }
 .letto.alto .r2 { flex-direction: column; justify-content: flex-start; gap: 2px; }
 .letto.alto .mk { margin: 0; }

@@ -551,6 +551,15 @@ async function ponteDaiRegistrazione(s, d) {
 }
 async function ponteViaRegistrazione(s, d) {
   const id = typeof d.zip === "string" ? d.zip : "";
+  // «Cancella tutto»: quelle che il telefono ha in elenco (una nata intanto resta), una per una
+  if (id === "*") {
+    if (!s.zip) return { ok: false, errore: "Registrazione non disponibile: riapri l'elenco" };
+    let n = 0;
+    for (const x of [...s.zip]) { if (await regZipVia(x)) n++; s.zip.delete(x); }
+    ponteNota(`iPhone · ${n} registrazioni cancellate dal PC`);
+    await ponteScriviStato();
+    return { ok: true, dati: { id, n } };
+  }
   if (!s.zip || !s.zip.has(id)) return { ok: false, errore: "Registrazione non disponibile: riapri l'elenco" };
   const z = await regZipVia(id);
   s.zip.delete(id);
