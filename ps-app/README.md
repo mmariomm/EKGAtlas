@@ -1337,6 +1337,11 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   dice se si raggiunge e quanto ci mette; «Tieni aperto 15 minuti» dice se e perché cade; il testo da
   copiare ha un blocco «Per l'IT». Si apre in una scheda sua: un quarto d'ora deve reggere i cambi di
   pagina del gestionale.
+- **«Prova»** (`<indirizzo del ponte>/ponte/?prova`): l'app del telefono con un PC finto (`public/ponte/prova.js`,
+  dati inventati in `prova-dati.js`), per provarla da casa. Non apre la presa, non legge né scrive la
+  chiave dell'associazione vera (la sua memoria ha un nome suo), una striscia dice «Prova · dati finti · niente va al PC».
+  Gli ordini corrono fino alle etichette (quello per NERI GIULIA finisce «Non partito»), la cartella si salva, la
+  Terapia si conferma (il KETOROLAC resta «Incerto»), i Da fare restano in memoria; ricaricando, si riparte da capo.
 
 Come funziona, la messa in servizio (l'indirizzo si fissa una volta in `ponte/host.txt`; il ponte va
 col deploy del sito EKG Atlas), che cosa vede l'IT e che cosa
