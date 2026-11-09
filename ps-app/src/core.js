@@ -3122,11 +3122,11 @@
   const VISTE = ["alta", "bassa", "entrambe"];
   const MAPPA_DI_VISTA = { alta: "alta", bassa: "ps" };
   const NOME_VISTA = { alta: "Alta", bassa: "Bassa", entrambe: "Entrambe" };
-  const MODO = "tabellone.modo.v1";            // "mappa" | "lista" — un'impostazione, resta
-  const MODI = ["mappa", "lista"];
+  const MODO = "tabellone.modo.v1";            // "mappa" | "lista" | "dafare" — un'impostazione, resta
+  const MODI = ["mappa", "lista", "dafare"];
   const TD_UI = "tabellone.dafare.v1";         // { chiusa } — il Da fare del tabellone ridotto a una barra: un'impostazione, resta
   const TD_PAZ = "paziente.dafare.v1";         // { chiusa } — quello in cima alla scheda del paziente, lo stesso, per conto suo
-  const NOME_MODO = { mappa: "Mappa", lista: "Lista" };
+  const NOME_MODO = { mappa: "Mappa", lista: "Lista", dafare: "Da fare" };
   function tabelloniDi(k, triage) {
     if (k === "alta") return ["alta"];
     if (k === "bassa" || k === "minori") return ["bassa"];
@@ -6471,7 +6471,7 @@
               font-size: 12px; letter-spacing: -2px; line-height: 28px; }
     .dfgrip, .dfpiu { opacity: 0; }
     .dfi:hover :is(.dfgrip, .dfpiu), .dfi:focus-within :is(.dfgrip, .dfpiu) { opacity: 1; }
-    @media (hover: hover) { .dfi:not(:hover):not(:focus-within) .dfx { display: none; } }
+    @media (hover: hover) { .dfi:not(.fatto):not(:hover):not(:focus-within) .dfx { display: none; } }
     @media (hover: none) { .dfgrip, .dfpiu { opacity: 1; } }
     .dfck, .dfo { flex: none; position: relative; box-sizing: border-box; width: 18px; height: 18px; padding: 0; border: 1.6px solid #8296A9; border-radius: 50%; background: #fff; }
     .dfck { cursor: pointer; }
@@ -6501,7 +6501,7 @@
     .dfhint.ko { color: #B3261E; }
     .dfsr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     /* ✕ cancella; un tocco sul testo lo modifica (la lista di un paziente e il Da fare del tabellone) */
-    .dfx { flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 12px; color: #8296A9; }
+    .dfx { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 12px; color: #8296A9; }
     .dfx:hover { background: #FDF1F0; color: #B3261E; }
     .dfx:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
     [data-dfmod], [data-tdmod] { cursor: text; border-radius: 4px; }
@@ -6550,6 +6550,16 @@
     .tdtogb { display: none; }
     /* sulla scheda del paziente: sotto le allergie, sopra le schede; le sue voci, senza la colonna del cognome */
     .tdcard.solo { order: 0; max-height: none; }
+    .tdriga.tdtutto { flex-direction: column; overflow-y: auto; }
+    .tdriga.tdtutto > .pzunita { flex: none; }
+    .tdriga.tdtutto .tdcard { order: 0; flex: 1 1 auto; width: auto; max-height: none; border: 0; }
+    .tdriga.tdtutto .tdcorpo { max-height: none; overflow: visible; }
+    .tdtesta { display: flex; align-items: center; gap: 4px; width: auto; min-width: 78px; padding-top: 3px; }
+    .tdapri { border: 0; background: none; padding: 4px 6px; border-radius: 6px; font: inherit; font-size: 11.5px; font-weight: 800; letter-spacing: .02em; color: inherit; cursor: pointer; text-align: left; }
+    .tdapri:hover { background: #EEF2F6; }
+    .tdposto { margin-left: 6px; font-size: 10.5px; font-weight: 700; color: #0B5CAD; background: #E8F1FB; border-radius: 5px; padding: 1px 6px; }
+    .tdpiu { border: 0; background: none; color: #8296A9; font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 6px; cursor: pointer; opacity: 0; }
+    .tdg:hover .tdpiu, .tdpiu:focus-visible { opacity: 1; }
     .tdcard.solo .tdcorpo { max-height: calc(4.5 * 28px + 6px); }
     .tdcard.solo .tdchi { display: none; }
     /* stretta, ridotto: un bottone in fondo alla barra del tabellone, che non prende altezza */
@@ -7127,6 +7137,7 @@
   // Icone a tratto, 16px, colore del testo: le emoji cambiano faccia da un
   // computer all'altro (il ▶ diventava un quadratino nero).
   const ico = (d) => `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const CESTINO = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
   const ICO = {
     // le righe di stampa: l'etichetta (un cartellino) e il foglio A4
     etichetta: ico('<path d="M2.5 4.5h6.8l4.2 3.5-4.2 3.5H2.5z"/><circle cx="5.3" cy="8" r=".9"/>'),
@@ -9679,10 +9690,13 @@
       const cerca = this.root.querySelector("#pzcerca");
       if (cerca && this.root.activeElement === cerca) { this._filtroFuoco = true; this._filtroSel = [cerca.selectionStart, cerca.selectionEnd]; }
       else if (this._filtro === "" && !this._filtroFuoco) this._filtro = null;   // (aperto adesso, dalla lente o da F2: il cursore ci sta per andare)
-      const lista = this.modoTab() === "lista";
+      const lista = this.modoTab() === "lista", daf = this.modoTab() === "dafare";
+      this._tdTutto = daf;
       // il campo del Da fare generale col cursore dentro: dopo il ridisegno è ancora lì
       const tin = this.root.querySelector("#tdin");
       this._tdFuoco = tin && this.root.activeElement === tin ? [tin.selectionStart, tin.selectionEnd] : null;
+      // «Da fare»: la barra e, sotto, lo stesso Da fare di sempre (generale e per paziente), tutto largo
+      if (daf) return `<div class="sec tdsec"><div class="tdriga tdtutto"><div class="pzunita lista">${this.tabelloneBarra()}</div>${this.tdHtml(T)}</div></div>`;
       return `<div class="sec tdsec"><div class="tdriga"><div class="pzunita${edit ? " edit" : ""}${lista ? " lista" : ""}">
         ${edit ? "" : this.tabelloneBarra()}
         ${lista ? "" : `<div class="stmappe"><div class="stmappei${T.ks.length > 1 ? " due" : ""}">${T.ks.map((k) => this.conMappa(k, () => this.viewStanza(T.per.get(k)))).join("")}</div></div>`}
@@ -9711,11 +9725,13 @@
     // la riga di sempre (dfRiga), col cognome a sinistra: scritto solo sulla prima del paziente
     tdVoce(x, ora, ep = "", chi = "", primo = false) {
       return `<li class="dfi tdi${x.fatto ? " fatto" : ""}${primo ? " tdg" : ""}" data-id="${esc(x.id)}"${ep ? ` data-tdep="${esc(ep)}"` : ""}>
-        ${primo ? `<b class="tdchi">${esc(chi)}</b>` : `<span class="tdchi" aria-hidden="true"></span>`}
+        ${primo ? (this._tdTutto
+          ? `<span class="tdchi tdtesta"><button type="button" class="tdapri" data-tdapri="${esc(ep)}" title="Apri ${esc(chi)}">${esc(chi)}${this._tdPosti?.get(ep) ? `<span class="tdposto">${esc(this._tdPosti.get(ep))}</span>` : ""}</button><button type="button" class="tdpiu" data-tdpiu="${esc(ep)}" data-chi="${esc(chi)}" title="+ nota per ${esc(chi)}" aria-label="+ nota per ${esc(chi)}">+</button></span>`
+          : `<b class="tdchi">${esc(chi)}</b>`) : `<span class="tdchi" aria-hidden="true"></span>`}
         <button type="button" class="dfck" role="checkbox" aria-checked="${x.fatto ? "true" : "false"}" aria-label="${esc((chi ? chi + ": " : "") + x.testo)}"
           title="${x.fatto ? "Fatta: un tocco la riapre (se ne va fra 5 minuti)" : "Un tocco quando è fatta"}"></button>
         ${this.dfOra(x, ora)}<span class="dftx tdtx" data-tdmod role="button" tabindex="0" title="${esc(x.testo)}&#10;Tocca per modificare">${esc(x.testo)}</span>
-        <button type="button" class="dfx" data-tdvia title="Cancella" aria-label="Cancella ${esc(x.testo)}">✕</button>
+        <button type="button" class="dfx" data-tdvia title="Cancella" aria-label="Cancella ${esc(x.testo)}">${CESTINO}</button>
       </li>`;
     }
     tdListe(tutti = dfTutti(), ora = Date.now()) {
@@ -9728,6 +9744,7 @@
     }
     tdHtml(T) {
       this._tdOrdine = this.tdOrdine(T.lista.info);
+      this._tdPosti = new Map([...T.lista.info].map(([ep, i]) => [ep, this.nomePosto(T.lista, i) || ""]));
       const chiusa = !!store.get(TD_UI, null)?.chiusa, { gen, paz, aperte } = this.tdListe(T.lista.df);
       this._tdFirma = { gen, paz };
       return `<aside class="tdcard${chiusa ? " chiusa" : ""}" aria-label="Da fare">
@@ -9750,8 +9767,8 @@
       return `<aside class="tdcard solo${chiusa ? " chiusa" : ""}" aria-label="Da fare di ${esc(chi)}">
         <div class="tdhd"><button type="button" class="tdtog" id="tdtog" aria-expanded="${!chiusa}" title="${chiusa ? "Mostra il Da fare" : "Riduci il Da fare a una barra"}">${
           ICO.dafare}<b>Da fare</b><span class="tdn">${aperte || ""}</span></button>${chiusa ? "" : `
-          <input type="text" class="dfin tdin" id="tdin" maxlength="160" autocomplete="off" spellcheck="false" placeholder="Aggiungi per ${esc(chi.replace(/\.$/, ""))}…" value="${esc(this._tdTesto || "")}"
-            aria-label="Aggiungi un Da fare per ${esc(chi)}" title="Una cosa da fare per ${esc(chi)}: Invio la aggiunge (con un'ora, «16:30 …» o «tra 30 min …»)">`}</div>
+          <input type="text" class="dfin tdin" id="tdin" maxlength="160" autocomplete="off" spellcheck="false" placeholder="+ nota per ${esc(chi.replace(/\.$/, ""))}…" value="${esc(this._tdTesto || "")}"
+            aria-label="Nuova nota per ${esc(chi)}" title="Una cosa da fare per ${esc(chi)}: Invio la aggiunge (con un'ora, «16:30 …» o «tra 30 min …»)">`}</div>
         ${chiusa ? "" : `<div class="tdcorpo"><ul class="dfl tdl" data-tdl="paz" aria-label="Da fare di ${esc(chi)}">${paz}</ul></div>`}
       </aside>`;
     }
@@ -9793,9 +9810,10 @@
         if (e.key === "Escape" && inp.value) { e.preventDefault(); e.stopPropagation(); inp.value = this._tdTesto = ""; return; }
         if (e.key !== "Enter" || !inp.value.trim()) return;
         e.preventDefault();
-        const solo = this._tdSolo;
+        const solo = this._tdSolo || this._tdPer;
         if (!(solo ? dfAggiungi(solo, inp.value) : genAggiungi(inp.value))) { inp.classList.add("ko"); return; }
         inp.value = this._tdTesto = "";
+        if (this._tdPer) { this._tdPer = null; inp.placeholder = "Da fare generale…"; }
         this.tdMetti();
         if (solo) this.dfMetti(solo);
       });
@@ -9811,6 +9829,10 @@
       this.root.querySelector(".tdtogb")?.addEventListener("click", apriChiudi);
       c.addEventListener("click", (e) => {
         if (e.target.closest("#tdtog")) return apriChiudi();
+        // («Da fare»: il cognome apre il paziente; «+» scrive la prossima nota per lui, nello stesso campo)
+        const apri = e.target.closest("[data-tdapri]"), piu = e.target.closest("[data-tdpiu]");
+        if (apri) return this.apriPaziente(apri.getAttribute("data-tdapri"));
+        if (piu && inp) { this._tdPer = piu.getAttribute("data-tdpiu"); inp.placeholder = `+ nota per ${piu.getAttribute("data-chi")}…`; inp.focus(); return; }
         const ck = e.target.closest(".dfck"), via = e.target.closest("[data-tdvia]"), mod = e.target.closest("[data-tdmod]");
         const v = voce(ck || via || mod || c);
         if (!v) return;
@@ -9849,7 +9871,8 @@
     // Mappa (le mappe, e sotto chi non ha un posto) o Lista (tutti, senza mappe).
     // In Modifica la mappa serve: si vede, e finito si torna a com'era.
     modoTab() {
-      return !this.stanzaEdit && store.get(MODO, null) === "lista" ? "lista" : "mappa";
+      const m = store.get(MODO, null);
+      return !this.stanzaEdit && (m === "lista" || m === "dafare") ? m : "mappa";
     }
     // le mappe che si vedono (in Modifica, una sola: quella che si ritocca)
     mappeVisibili() {
@@ -12268,7 +12291,7 @@
         <div class="dfhd"><b>Da fare</b>${nome ? `<span> · ${esc(nome)}</span>` : ""}</div>
         <ul class="dfl" aria-label="Voci: Alt+↑ e Alt+↓ le spostano"></ul>
         <div class="dfadd"><input type="text" class="dfin" id="dfin" maxlength="160" autocomplete="off" spellcheck="false" value="${esc(testo)}"
-          placeholder="Aggiungi…" title="Con un'ora (11:30 tropo, tra 2h ECG) è un promemoria" aria-label="Aggiungi: una cosa da fare; con un'ora (11:30 tropo, tra 2h ECG) è un promemoria" aria-describedby="dfhint">
+          placeholder="+ nota" title="Con un'ora (11:30 tropo, tra 2h ECG) è un promemoria" aria-label="Nuova nota: una cosa da fare; con un'ora (11:30 tropo, tra 2h ECG) è un promemoria" aria-describedby="dfhint">
           <span class="dfhint" id="dfhint" aria-live="polite"></span></div>
         <span class="dfsr" aria-live="polite"></span>
       </div>`);
@@ -12371,7 +12394,7 @@
           aria-label="${esc(x.testo + (x.t != null ? ", alle " + promOra(x.t, ora) : ""))}" title="${x.fatto ? "Fatta: un tocco la riapre (se ne va fra 5 minuti)" : "Un tocco quando è fatta"}"></button>
         ${this.dfOra(x, ora)}<span class="dftx" data-dfmod role="button" tabindex="0" title="${esc(x.testo)}&#10;Tocca per modificare">${esc(x.testo)}</span>
         ${x.t != null && !x.fatto ? `<button type="button" class="dfpiu" data-dfpiu="${esc(x.id)}" title="Rimanda di 15 minuti" aria-label="Rimanda ${esc(x.testo)} di 15 minuti">+15′</button>` : ""}
-        <button type="button" class="dfx" data-dfvia="${esc(x.id)}" title="Cancella" aria-label="Cancella ${esc(x.testo)}">✕</button>
+        <button type="button" class="dfx" data-dfvia="${esc(x.id)}" title="Cancella" aria-label="Cancella ${esc(x.testo)}">${CESTINO}</button>
       </li>`;
     }
     dfLista(tutti = dfTutti(), ora = Date.now()) {
@@ -16999,6 +17022,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       posto: PANNELLO.nomePosto(m, i), nota: dfNota(i.p.ep, m.df)?.testo || "", prec: !!i.prec, spento: !!i.spento, visto: i.p.ts || 0,
       eta: Number.isInteger(i.p.eta) ? i.p.eta : String(i.p.pk || "").startsWith("cf:") ? etaDaCf(i.p.pk.slice(3)) : null,
       prom: promDi(i.p.ep, m.prom).map((x) => ({ id: x.id, t: x.t, testo: x.testo })),
+      df: dfDi(i.p.ep, m.df).map((x) => ({ id: x.id, testo: x.testo, t: x.t, fatto: x.fatto })),
       ordina: !!ponteUrlPaziente(i.p) && !i.prec,
       stato: i.prec ? null : ponteStato(i.p.ep, m.df),
     }));
@@ -17017,7 +17041,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (!x || (v.ts || 0) > (x.v.ts || 0)) dove.set(ep, { k, v });
     }
     return {
-      vista: PANNELLO.vistaTab(), cols: PIANTA.cols, rows: PIANTA.rows,
+      vista: PANNELLO.vistaTab(), cols: PIANTA.cols, rows: PIANTA.rows, modifica: true,
       mappe: ks.map((k) => ({
         k, nome: NOME_VISTA[MAPPE[k].vista],
         letti: per.get(k).sala.letti.map((l) => ({ id: l.id, c: l.c, r: l.r, ...misuraLetto(l), nome: l.nome, ...(l.forma && { forma: l.forma }) })),
@@ -17232,7 +17256,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const a = m.args || {}, cmd = m.cmd;
     const fatto = (r) => {
       if (r && r.registro) PANNELLO.log(`${now()}  iPhone · ${r.registro}`);
-      if (r && r.ok && ["nota", "promemoria", "fatto"].includes(cmd) && !PANNELLO.root.activeElement) PANNELLO.render();
+      if (r && r.ok && ["nota", "promemoria", "fatto", "dfAggiungi", "dfSpunta", "dfTogli"].includes(cmd) && !PANNELLO.root.activeElement) PANNELLO.render();
       return r;
     };
     if (cmd === "pazienti") return fatto({ ok: true, dati: pontePazienti(), registro: "elenco dei pazienti" });
@@ -17298,6 +17322,26 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const via = promTogli(p.ep, String(a.pid || ""));
       if (!via) return { ok: false, errore: "Da fare non trovato: forse è già fatto", dati: riga() };
       return fatto({ ok: true, dati: riga(), registro: `promemoria fatto per ${p.name}: ${via.testo}` });
+    }
+    // Da fare: la stessa lista del PC. Una voce con l'ora dentro è un promemoria, se no una cosa da fare.
+    if (cmd === "dfAggiungi") {
+      if (p.arch || PANNELLO.pazModello().info.get(p.ep)?.prec) return { ok: false, errore: "Episodio precedente: per un Da fare apri quello di oggi" };
+      if (!dfAggiungi(p.ep, a.testo)) return { ok: false, errore: dfAperte(p.ep).length >= PROM_MAX ? `Già ${PROM_MAX} cose da fare per questo paziente` : "Da fare non salvato: scrivi qualcosa, o la memoria del browser del PC è piena" };
+      return fatto({ ok: true, dati: riga(), registro: `Da fare per ${p.name}: nuova voce` });
+    }
+    if (cmd === "dfSpunta") {
+      if (!dfSpunta(p.ep, String(a.pid || ""), a.si !== false)) return { ok: false, errore: "Da fare non trovato: forse se n'è già andato", dati: riga() };
+      return fatto({ ok: true, dati: riga(), registro: `Da fare di ${p.name}: ${a.si === false ? "di nuovo da fare" : "fatto"}` });
+    }
+    if (cmd === "dfTogli") {
+      dfTogli(p.ep, String(a.pid || ""));
+      return fatto({ ok: true, dati: riga(), registro: `Da fare di ${p.name}: cancellato` });
+    }
+    // La mappa: lo stesso gesto del trascinamento sul PC (un posto per paziente, un letto uno solo, le aree molti)
+    if (cmd === "posto") {
+      if (!/^(tray|(letto|area):[\w.-]{1,40})(@\w{1,8})?$/.test(String(a.dove || ""))) return { ok: false, errore: "Posto non valido" };
+      PANNELLO.stanzaSposta(p.ep, a.dove);
+      return fatto({ ok: true, dati: ponteMappe(), registro: `posto di ${p.name}` });
     }
     if (cmd === "ordina") return fatto(await ponteOrdina(p, a));
     return { ok: false, errore: "Comando sconosciuto" };

@@ -717,45 +717,70 @@ await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
 check(await tel.locator(".top .tit").innerText() === "ROSSI MARIO · 77 anni · OBI 2", `in testa il nome intero, l'età e il posto, e nient'altro: «ROSSI MARIO · 77 anni · OBI 2» (${(await tel.locator(".top .tit").innerText()).replace(/\n/g, " / ")})`);
 check(await tel.evaluate(() => { const s = document.querySelector(".seg"), n = document.querySelector(".note"); return !!s && !!n && !!(s.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING); }),
   "le schede Esiti/Richieste vengono prima della nota");
-check(await tel.locator("#nota").count() === 0 && await tel.locator('[data-a="nota"]:has-text("+ Da fare")').count() === 1
-  && (await tel.locator('[data-a="promApri"]').innerText()).trim() === "+ Con l'ora",
-  "chiusi finché non servono, con le parole del PC: «+ Da fare», «+ Con l'ora»");
+// «Da fare»: la lista del PC, una voce per riga, e un solo campo «+ nota»
+const tuttiPc = (ep = "999001") => doc.evaluate((e) => JSON.parse(localStorage.getItem("psassist:dafare.v1") || "{}")[e] || [], ep);
+const aggiungiNota = async (t, testo) => { await t.locator("#promin").fill(testo); await t.locator("#promin").press("Enter"); };
+check(await tel.locator("#promin").getAttribute("placeholder") === "+ nota" && await tel.locator('#nota, [data-a="nota"], [data-a="promApri"]').count() === 0,
+  "un solo campo, «+ nota»: niente «+ Da fare» né «+ Con l'ora»");
 check(!/\bNota\b|Promemoria/.test(await tel.locator(".note").innerText()), "niente «Nota» né «Promemoria» sullo schermo");
-await tocca(tel, '[data-a="nota"]');
-await tel.locator("#nota").fill("dolore dalle 6, allergico a PCN");
-await tocca(tel, '[data-a="promApri"]');   // uscire dal campo salva la nota
+await aggiungiNota(tel, "dolore dalle 6, allergico a PCN");
 await aspettaTel(tel, /Da fare salvato sul PC/, 10000);
 const noteSuPc = await daFarePc();
 check(noteSuPc.length === 1 && noteSuPc[0].testo === "dolore dalle 6, allergico a PCN" && noteSuPc[0].t === null,
-  `la nota arriva sul PC: la prima voce di «Da fare», senza ora (got: ${JSON.stringify(noteSuPc.map((x) => [x.testo, x.t]))})`);
-await tel.locator("#promin").fill("tra 2h tropo");
-await tocca(tel, '[data-a="prom"]');
-await finche(async () => (await tel.locator(".promr").count()) === 1, 10000);
+  `senza un'ora è una cosa da fare: la prima voce di «Da fare» del PC, senza ora (got: ${JSON.stringify(noteSuPc.map((x) => [x.testo, x.t]))})`);
+await aggiungiNota(tel, "tra 2h tropo");
+await finche(async () => (await tel.locator(".dfr").count()) === 2, 10000);
 const prom = (await daFarePc()).filter((x) => x.t != null);
-check(prom.length === 1 && prom[0].testo === "tropo" && Math.abs(prom[0].t - Date.now() - 2 * 3600e3) < 120e3, "il promemoria «tra 2h tropo» è sul PC, per quel paziente");
-await tocca(tel, '[data-a="promApri"]');
-await tel.locator("#promin").fill("ECG");
-await tocca(tel, '[data-a="prom"]');
-check(/Scrivi anche l'ora/.test(await aspettaTel(tel, /Scrivi anche l'ora/, 8000)), "senza un orario non salva, e lo dice");
-await tel.locator("#promin").fill("11:30 ecg di controllo");
-await tocca(tel, '[data-a="prom"]');
-await finche(async () => (await tel.locator(".promr").count()) === 2, 10000);
-const promPc = async () => (await daFarePc()).filter((x) => x.t != null);
-const pid = await tel.locator(".promr").nth(0).locator("[data-pid]").getAttribute("data-pid");
-await tel.locator(`[data-a="fatto"][data-pid="${pid}"]`).click();
-check(/Fatto\s*Annulla/.test(await tel.locator(".promr").nth(0).innerText()), "«✓ Fatto»: per 5 secondi «Fatto · Annulla»");
-await tel.locator(`[data-a="annulla"][data-pid="${pid}"]`).click();
-await sospendi(5600);
-check((await promPc()).length === 2 && await tel.locator(".promr").count() === 2, "«Annulla»: niente mandato, il promemoria resta anche sul PC");
-await tel.locator(`[data-a="fatto"][data-pid="${pid}"]`).click();
-check((await promPc()).length === 2, "(e prima dei 5 secondi resta)");
-await finche(async () => (await tel.locator(".promr").count()) === 1, 12000);
-const prom2 = await promPc();
-check(prom2.length === 1 && !prom2.some((x) => x.id === pid), "passati i 5 secondi, «✓ Fatto» lo toglie anche dal PC");
+check(prom.length === 1 && prom[0].testo === "tropo" && Math.abs(prom[0].t - Date.now() - 2 * 3600e3) < 120e3, "con un'ora dentro, «tra 2h tropo», è un promemoria: sul PC, per quel paziente");
+await aggiungiNota(tel, "ECG");
+await finche(async () => (await tel.locator(".dfr").count()) === 3, 10000);
+check((await notePc()).includes("ECG"), "«ECG», senza ora: una cosa da fare (non più un errore)");
+await aggiungiNota(tel, "11:30 ecg di controllo");
+await finche(async () => (await tel.locator(".dfr").count()) === 4, 10000);
+const promPc = async () => (await daFarePc()).filter((x) => x.t != null && !x.fatto);
+check((await promPc()).length === 2 && await tel.locator(".dfr .quando").count() === 2, "l'ora sta davanti al testo solo sui promemoria");
+// la spunta: barrata, resta; un altro tocco la riapre; il cestino grigio la toglie subito
+const rigaT = tel.locator('.dfr:has-text("tropo")');
+check(await rigaT.locator(".dfck").evaluate((b) => b.getBoundingClientRect().height >= 44 && b.getBoundingClientRect().width >= 44), "la spunta tonda si tocca bene (≥ 44 px)");
+await rigaT.locator(".dfck").click();
+await finche(async () => (await rigaT.getAttribute("class")).includes("fatta"), 8000);
+const tolto = (await tuttiPc()).find((x) => x.testo === "tropo");
+check(Number.isFinite(tolto && tolto.fatto) && await rigaT.locator(".cosa").evaluate((e) => getComputedStyle(e).textDecorationLine) === "line-through" && await rigaT.locator(".dfx").count() === 1,
+  `spuntata: barrata, resta al suo posto, segnata fatta anche sul PC; compare il cestino (${JSON.stringify(tolto)})`);
+await rigaT.locator(".dfck").click();
+await finche(async () => !(await rigaT.getAttribute("class")).includes("fatta"), 8000);
+check(!(await tuttiPc()).find((x) => x.testo === "tropo").fatto && await rigaT.locator(".dfx").count() === 0, "un altro tocco sulla spunta la riapre (e il cestino se ne va)");
+await rigaT.locator(".dfck").click();
+await finche(async () => (await rigaT.getAttribute("class")).includes("fatta"), 8000);
+await rigaT.locator(".dfx").click();
+await finche(async () => (await tel.locator('.dfr:has-text("tropo")').count()) === 0, 8000);
+check(!(await tuttiPc()).some((x) => x.testo === "tropo") && (await promPc()).length === 1, `il cestino la toglie subito, anche dal PC (${JSON.stringify((await tuttiPc()).map((x) => [x.testo, x.fatto]))})`);
 const reg = await registroPc(doc);
-check(/iPhone · nota di ROSSI MARIO/.test(reg) && /iPhone · promemoria per ROSSI MARIO/.test(reg) && /iPhone · promemoria fatto/.test(reg),
+check(/iPhone · Da fare per ROSSI MARIO/.test(reg) && /iPhone · Da fare di ROSSI MARIO: fatto/.test(reg) && /iPhone · Da fare di ROSSI MARIO: cancellato/.test(reg),
   "ogni comando dal telefono è nel Registro del PC");
 check(!(await piccoli(tel)).length, `anche qui ogni bottone almeno 44 px (${JSON.stringify(await piccoli(tel))})`);
+await shot(tel, "dafare-paziente");
+// «Da fare» sulla schermata principale: le voci di tutti, per paziente
+await tocca(tel, '[data-a="indietro"]');
+await aspettaTel(tel, /BIANCHI ANNA/);
+await tocca(tel, '[data-a="modo"][data-m="dafare"]');
+const dfg = await tel.evaluate(() => ({ seg: [...document.querySelectorAll("main > .seg button")].map((b) => b.textContent + (b.classList.contains("on") ? "*" : "")).join("|"),
+  gruppi: [...document.querySelectorAll(".dfg .dfhd b")].map((b) => b.textContent), righe: [...document.querySelectorAll(".dfg .dfr .cosa")].map((e) => e.textContent), chiave: localStorage.getItem("psassist.ponte.modo") }));
+check(/Da fare\*$/.test(dfg.seg) && dfg.gruppi.join() === "ROSSI" && dfg.righe.join("|") === "ecg di controllo|dolore dalle 6, allergico a PCN|ECG" && dfg.chiave === "dafare",
+  `Lista · Mappa · Da fare: chi ha qualcosa da fare, col cognome; i promemoria prima, poi le altre; la scelta si ricorda (${JSON.stringify(dfg)})`);
+await shot(tel, "dafare-generale");
+await tel.locator('.dfg .dfr:has(.cosa:text-is("ECG")) .dfck').first().click();
+check(await finche(async () => (await tel.locator('.dfg .dfr.fatta').count()) === 1, 8000), "la stessa spunta e lo stesso cestino anche qui");
+await tel.locator('.dfg .dfr.fatta .dfx').click();
+check(await finche(async () => (await tel.locator('.dfg .dfr').count()) === 2, 8000) && !(await notePc()).includes("ECG"), "il cestino la toglie, anche dal PC");
+await tocca(tel, ".dfg .dfhd");
+check(await finche(async () => (await tel.locator(".top button.tit").count()) === 1, 8000), "un tocco sul paziente apre la sua schermata");
+await tocca(tel, '[data-a="indietro"]');
+await aspettaTel(tel, /ROSSI/);
+check(await tel.locator(".dfg").count() === 1, "e tornando si è ancora nel Da fare");
+await tocca(tel, '[data-a="modo"][data-m="lista"]');
+await tel.evaluate(() => localStorage.removeItem("psassist.ponte.modo"));
+await tocca(tel, '.paz[data-ep="999001"]');   // (le prove dopo cominciano dal paziente)
 
 // ===========================================================================
 sezione("esiti, e «Aggiorna i valori»");
@@ -1374,9 +1399,7 @@ await doc.evaluate(() => {
   localStorage.setItem(K, JSON.stringify(l));
 });
 await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
-await tocca(tel, '[data-a="nota"]');
-await tel.locator("#nota").fill("nota dopo la dimissione");
-await tocca(tel, '[data-a="promApri"]');
+await aggiungiNota(tel, "nota dopo la dimissione");
 check(/Dimesso sul PC: niente inviato/.test(await aspettaTel(tel, /Dimesso sul PC/, 10000)), "dimesso sul PC: «Dimesso sul PC: niente inviato»");
 check(!(await notePc()).some((t) => /dimissione/.test(t)), "e la nota non arriva");
 await tocca(tel, '[data-a="indietro"]');
@@ -1442,7 +1465,7 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
   const d = r.dati || {};
   const per = (k) => (d.mappe || []).find((m) => m.k === k) || { letti: [], aree: [], posti: [] };
   const dove = (k) => JSON.stringify(per(k).posti.map((x) => `${x.ep}:${x.tipo}:${x.id}`).sort());
-  check(r.ok === true && Object.keys(d).sort().join() === "cols,mappe,rows,vista" && d.cols === 40 && d.rows === 24 && (d.mappe || []).map((m) => m.k + "=" + m.nome).join() === "alta=Alta,ps=Bassa",
+  check(r.ok === true && Object.keys(d).sort().join() === "cols,mappe,modifica,rows,vista" && d.cols === 40 && d.rows === 24 && (d.mappe || []).map((m) => m.k + "=" + m.nome).join() === "alta=Alta,ps=Bassa",
     `«mappa»: la griglia 40 × 24 e le due mappe, Alta e Bassa, e la vista del PC (${r.ok} · ${Object.keys(d).join()} · ${(d.mappe || []).map((m) => m.k + "=" + m.nome).join()} · ${d.vista})`);
   check(per("ps").letti.length === 8 && per("ps").aree.length === 2 && per("alta").letti.length === 11 && per("alta").aree.length === 0
     && JSON.stringify(per("alta").letti.find((l) => l.id === "rossa")) === JSON.stringify({ id: "rossa", c: 26, r: 10, w: 7, h: 7, nome: "Rossa", forma: "box" })
@@ -1462,10 +1485,10 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     pic: [...document.querySelectorAll("main > .seg.pic button")].map((b) => b.textContent + (b.classList.contains("on") ? "*" : "")).join("|"), mappa: !!document.querySelector(".mappa"),
     chiave: localStorage.getItem("psassist.ponte.modo"), tutte: Object.keys(localStorage).sort().join() }));
   const m0 = await modoTel();
-  check(m0.seg === "Lista*|Mappa" && !m0.pic && !m0.mappa && m0.chiave === null, `in testa, quieto: «Lista · Mappa», si parte dalla Lista; scelta niente finché non si tocca (${JSON.stringify(m0)})`);
+  check(m0.seg === "Lista*|Mappa|Da fare" && !m0.pic && !m0.mappa && m0.chiave === null, `in testa, quieto: «Lista · Mappa», si parte dalla Lista; scelta niente finché non si tocca (${JSON.stringify(m0)})`);
   await tocca(tel, '[data-a="modo"][data-m="mappa"]');
   const m1 = await modoTel();
-  check(m1.seg === "Lista|Mappa*" && m1.pic === "Alta|Bassa*" && m1.mappa && m1.chiave === "mappa" && m1.tutte === "psassist.ponte.modo,psassist.ponte.v1",
+  check(m1.seg === "Lista|Mappa*|Da fare" && m1.pic === "Alta|Bassa*" && m1.mappa && m1.chiave === "mappa" && m1.tutte === "psassist.ponte.modo,psassist.ponte.v1",
     `Mappa: sotto, «Alta · Bassa» (come il PC: la vista è Bassa); la scelta resta sul telefono, senza dati di pazienti (${JSON.stringify(m1)})`);
   const bassa = await tel.evaluate(() => ({
     occ: [...document.querySelectorAll(".mappa .letto.occ")].map((b) => `${b.dataset.ep}:${b.querySelector(".lb")?.textContent}:${b.querySelector(".ln").textContent}:${b.querySelector(".le")?.textContent || ""}:${[...b.classList].find((c) => /^t-/.test(c))}`).sort(),
@@ -1509,6 +1532,39 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     const minimo = await tel.evaluate(() => Math.min(...[...document.querySelectorAll(".letto.occ .ln")].map((e) => parseFloat(getComputedStyle(e).fontSize))));
     check(minimo >= 9, `i cognomi sui letti sono leggibili anche in verticale: almeno 9 px (${minimo})`);
   }
+  // si modifica: un nome tenuto premuto si trascina su un letto; fuori dalla mappa torna fra «Senza posto»; la mappa resta in cima
+  {
+    const cdp = await telCtx.newCDPSession(tel);
+    let mk = "ps";   // (la mappa che si vede: Alta o Bassa, «ps»)
+    const postiPc = () => doc.evaluate((k) => JSON.parse(localStorage.getItem(`psassist:stanza.${k}.posti.v1`) || "{}"), mk);
+    const trascina = async (da, a) => {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [da] });
+      await sospendi(700);
+      for (let k = 1; k <= 6; k++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: Math.round(da.x + (a.x - da.x) * k / 6), y: Math.round(da.y + (a.y - da.y) * k / 6) }] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    };
+    // la riga di chi è «Senza posto», portata nella metà bassa dello schermo (sotto la mappa che resta in cima)
+    const riga = await tel.evaluate(() => { const r = document.querySelector('.paz[data-ep="999018"]'); window.scrollBy(0, r.getBoundingClientRect().top - innerHeight * 0.85);
+      const m = document.querySelector(".mappa").getBoundingClientRect(), b = r.getBoundingClientRect(); return { x: Math.round(b.x + 60), y: Math.round(b.y + b.height / 2), mappaFondo: Math.round(m.bottom), mappaCima: Math.round(m.top) }; });
+    check(await tel.locator(".mappa").evaluate((m) => getComputedStyle(m).position === "sticky") && riga.y > riga.mappaFondo, `la mappa è «sticky» (in cima mentre la lista scorre): mappa ${riga.mappaCima}–${riga.mappaFondo}, riga a ${riga.y}`);
+    // un letto vuoto che si vede per intero nella cornice
+    const letto = await tel.evaluate(() => { const m = document.querySelector(".mappa").getBoundingClientRect();
+      for (const e of document.querySelectorAll(".letto.vuoto[data-lid]")) { const b = e.getBoundingClientRect(); const x = b.x + b.width / 2, y = b.y + b.height / 2;
+        if (x > m.left + 8 && x < m.right - 8 && y > m.top + 8 && y < m.bottom - 8) return { lid: e.dataset.lid, x: Math.round(x), y: Math.round(y) }; } return null; });
+    check(!!letto, "un letto vuoto c'è, e si vede");
+    await trascina({ x: riga.x, y: riga.y }, { x: letto.x, y: letto.y });
+    const idLetto = letto.lid.split(":")[1].split("@")[0];
+    mk = letto.lid.split("@")[1];
+    check(await finche(async () => (await postiPc())["999018"]?.id === idLetto, 15000), `trascinato su un letto: il PC lo mette lì (${idLetto}), con lo stesso gesto della sua mappa`);
+    await shot(tel, "mappa-modificabile");
+    check(await finche(async () => await tel.locator(`.letto.occ[data-ep="999018"]`).count() === 1 && await tel.locator('.paz[data-ep="999018"]').count() === 0, 15000), "e il telefono lo ridisegna dalla risposta del PC: sul letto, non più «Senza posto»");
+    // fuori dalla mappa: di nuovo senza posto
+    const sul = await tel.evaluate(() => { const b = document.querySelector('.letto.occ[data-ep="999018"]').getBoundingClientRect(); return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2), fuori: Math.round(document.querySelector(".mappa").getBoundingClientRect().bottom + 40) }; });
+    await trascina({ x: sul.x, y: sul.y }, { x: sul.x, y: Math.min(sul.fuori, 800) });
+    check(await finche(async () => !(await postiPc())["999018"], 15000) && await finche(async () => await tel.locator('.paz[data-ep="999018"]').count() === 1, 15000), "lasciato fuori dalla mappa: torna fra «Senza posto», sul PC e sul telefono");
+    check(await tel.locator(".fantasma").count() === 0, "il nome trascinato non resta in giro");
+  }
+
   // il pizzico: due dita, dentro la mappa; la pagina non si ingrandisce
   {
     const cdp = await telCtx.newCDPSession(tel), b = await tel.locator(".mappa").boundingBox(), y = Math.round(b.y + Math.min(b.height / 2, 120)), x = Math.round(b.x + b.width / 2);
@@ -1534,13 +1590,13 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
   await tocca(tel, '[data-a="indietro"]');
   await aspettaTel(tel, /Alta/, 10000);
   const torna = await modoTel();
-  check(torna.mappa && torna.seg === "Lista|Mappa*", "«indietro»: di nuovo la mappa");
+  check(torna.mappa && torna.seg === "Lista|Mappa*|Da fare", "«indietro»: di nuovo la mappa");
   // ricordata: ricaricata la pagina, ancora la Mappa
   await tel.reload();
   await aspettaTel(tel, /Lista\s*Mappa/, 20000);
   await finche(async () => (await modoTel()).mappa, 10000);
   const m2 = await modoTel();
-  check(m2.mappa && m2.seg === "Lista|Mappa*",
+  check(m2.mappa && m2.seg === "Lista|Mappa*|Da fare",
     `ricaricata la pagina: ancora la Mappa (${JSON.stringify(m2)})`);
 
   // le foto: verticale e orizzontale, Alta e Bassa
@@ -1564,8 +1620,8 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
   await tel.evaluate(() => navigator.serviceWorker?.getRegistrations().then((l) => Promise.all(l.map((x) => x.unregister()))));
   await tel.reload();
   await aspettaTel(tel, /ROSSI MARIO/, 20000);
-  const vecchia = await tel.evaluate(() => ({ prova: window.__mappaVecchia === true, seg: document.querySelectorAll("main > .seg").length, mappa: !!document.querySelector(".mappa"), righe: document.querySelectorAll(".paz[data-ep]").length, err: document.querySelectorAll(".avviso, [role=alert]").length }));   // (l'ordine finito male di prima, che sta su ogni pagina, non è un errore di questa)
-  check(vecchia.prova && !vecchia.seg && !vecchia.mappa && vecchia.righe >= 8 && !vecchia.err, `con un PC che non conosce «mappa» («Comando sconosciuto»): niente scelta, la lista com'è, nessun errore (${JSON.stringify(vecchia)})`);
+  const vecchia = await tel.evaluate(() => ({ prova: window.__mappaVecchia === true, seg: [...document.querySelectorAll("main > .seg button")].map((b) => b.textContent).join("|"), mappa: !!document.querySelector(".mappa"), righe: document.querySelectorAll(".paz[data-ep]").length, err: document.querySelectorAll(".avviso, [role=alert]").length }));   // (l'ordine finito male di prima, che sta su ogni pagina, non è un errore di questa)
+  check(vecchia.prova && vecchia.seg === "Lista|Da fare" && !vecchia.mappa && vecchia.righe >= 8 && !vecchia.err, `con un PC che non conosce «mappa» («Comando sconosciuto»): niente «Mappa» nella scelta, la lista com'è, nessun errore (${JSON.stringify(vecchia)})`);
   await tel.unroute(/\/app\.js/);
 
   // via la prova
@@ -1590,24 +1646,22 @@ await aspettaTel(tel, /Rileggi/, 15000);
 const noteSulPc = () => notePc();
 const prima = daTel().length;
 await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
-await tocca(tel, '[data-a="nota"]');
-await tel.locator("#nota").fill("nota A");
+await aggiungiNota(tel, "nota A");
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
 await finche(async () => (await noteSulPc()).includes("nota A"), 10000);
 const fNotaA = daTel().slice(prima).at(-1);
 await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
-await tocca(tel, '[data-a="nota"]');
-await tel.locator("#nota").fill("nota B");
+await aggiungiNota(tel, "nota B");
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
 await finche(async () => (await noteSulPc()).includes("nota B"), 10000);
 const senzaOra = (await daFarePc()).filter((x) => x.t == null).map((x) => x.testo);
-check(senzaOra.join("|") === "nota B", `la nota riscritta dal telefono cambia la stessa voce di «Da fare», non ne aggiunge un'altra (got: ${senzaOra.join(" | ")})`);
+check(senzaOra.join("|") === "dolore dalle 6, allergico a PCN|nota A|nota B", `ogni «+ nota» è una voce nuova di «Da fare», in fondo (got: ${senzaOra.join(" | ")})`);
 // qualcuno sulla strada (fra il telefono e il ripetitore) che rimanda quello che vuole
 const versoPc = (frames) => { const p = rete.prese.get(rete.ultima); for (const f of frames) p.server.send(Buffer.from(f)); };
 const manomesso = Buffer.from(fNotaA); manomesso[9] ^= 0x7f; manomesso[manomesso.length - 2] ^= 1;
 versoPc([fNotaA, manomesso]);
 await sospendi(1200);
-check((await noteSulPc()).includes("nota B") && !(await noteSulPc()).includes("nota A"), "una nota ripetuta per strada non torna, e una manomessa nemmeno: scartate");
+check((await noteSulPc()).filter((x) => x === "nota A").length === 1 && (await noteSulPc()).filter((x) => x === "nota B").length === 1 && (await noteSulPc()).length === 3, "una nota ripetuta per strada non torna, e una manomessa nemmeno: scartate");
 versoPc([0, 1, 2, 3, 4, 5].map((i) => { const g = Buffer.from(manomesso); g[g.length - 3 - i] ^= 0x55; return g; }));
 await sospendi(1500);
 check(!!(await statoPonte())?.sessione, "sei messaggi non validi di fila: ignorati, la sessione resta (chi non ha le chiavi non chiude niente)");
@@ -1673,7 +1727,8 @@ const guardaChiusa = () => tel.evaluate(() => {
 const sessioniNuove = async () => ((await registroPonte()).match(/iPhone ricollegato: sessione nuova|iPhone collegato/g) || []).length;
 const s0 = await sessioniNuove();
 await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));   // tornati sull'app
-check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 15000)) && (await sessioniNuove()) > s0, "tornati sull'app dopo la chiusura: si riapre da sola, senza QR e senza un tocco");
+const riaperta0 = await aspettaTel(tel, /ROSSI MARIO/, 15000);
+check(/ROSSI MARIO/.test(riaperta0) && !!(await statoPonte())?.sessione, `tornati sull'app dopo la chiusura: si riapre da sola, senza QR e senza un tocco (${s0} → ${await sessioniNuove()}; ${riaperta0.replace(/\s+/g, " ").slice(0, 100)})`);
 // l'app lasciata in sottofondo: le riletture da sola non contano come comandi
 await guardaChiusa();
 await tel.evaluate(() => { const v = Date.now; window.__oraVera = v; Date.now = () => v() + 2 * 60e3; document.dispatchEvent(new Event("visibilitychange")); });
@@ -1694,8 +1749,7 @@ await finche(async () => (await $panel(doc, "#ponteoff").count()) === 1, 8000);
 await tocca(tel, '.paz[data-ep="999001"]');
 await aspettaTel(tel, /Rileggi/, 15000);
 await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
-await tocca(tel, '[data-a="nota"]');
-await tel.locator("#nota").fill("nota C");
+await aggiungiNota(tel, "nota C");
 await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
 await aspettaTel(tel, /Da fare salvato sul PC/, 10000);
 await $panel(doc, "#ponteoff").click();
@@ -2101,10 +2155,10 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
     self.__eseguiti = [];
     globalThis.ponteOrdina = (d) => { self.__eseguiti.push(d.quesito); return self.__vere.ordina(d); };
     self.__arrivi = []; self.__pezzi = [];
-    globalThis.ponteSuScheda = async (cmd, a) => { if (cmd === "promemoria") await attendi(3000); return self.__vere.scheda(cmd, a); };
+    globalThis.ponteSuScheda = async (cmd, a) => { if (cmd === "dfAggiungi") await attendi(3000); return self.__vere.scheda(cmd, a); };
     self.__ordini = [];
     globalThis.ponteComando = (s, d) => {
-      if (d && d.cmd === "promemoria") self.__arrivi.push(d.rq);
+      if (d && d.cmd === "dfAggiungi") self.__arrivi.push(d.rq);
       if (d && d.cmd === "ordina") self.__ordini.push(d.quesito);
       return self.__vere.comando(s, d);
     };
@@ -2112,15 +2166,14 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   });
   const emogas = () => doc3.evaluate(() => (JSON.parse(localStorage.getItem("psassist:dafare.v1") || "{}")["999001"] || []).filter((x) => !x.fatto && /emogas/.test(x.testo)).length);
   await tocca(v, '[data-a="scheda"][data-s="richieste"]');
-  await tocca(v, '[data-a="promApri"]');
   await v.locator("#promin").fill("tra 3h emogas");
-  await tocca(v, '[data-a="prom"]');
+  await v.locator("#promin").press("Enter");
   await finche(() => sw.evaluate(() => self.__arrivi.length === 1), 10000);
   await reteV({ offline: true });
   relay.taglia("tel");
   await sospendi(5000);   // intanto il PC l'ha scritto, e la sua risposta non trova il telefono
   await reteV();
-  const visto = await finche(async () => (await v.locator('.promr:has-text("emogas")').count()) === 1, 20000);
+  const visto = await finche(async () => (await v.locator('.dfr:has-text("emogas")').count()) === 1, 20000);
   const arrivi = await sw.evaluate(() => self.__arrivi);
   check(visto && arrivi.length >= 2 && new Set(arrivi).size === 1 && await emogas() === 1,
     `la presa cade mentre il PC scrive un promemoria: il telefono lo rimanda col suo numero (${arrivi.length} arrivi), sul PC ce n'è uno solo, e il telefono lo mostra`);

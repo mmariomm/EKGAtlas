@@ -413,6 +413,8 @@ function ponteArgomenti(d) {
   if ("quesito" in d) a.quesito = ponteTesto(d.quesito, 300);
   if ("mio" in d) a.mio = !!d.mio;
   if (d.rileggi) a.rileggi = true;
+  if ("si" in d) a.si = !!d.si;
+  if (typeof d.dove === "string" && /^(tray|(letto|area):[\w.-]{1,40})(@\w{1,8})?$/.test(d.dove)) a.dove = d.dove;
   return a;
 }
 // quelli che l'app manda da sé: non sono il medico, non tengono aperta la sessione
@@ -466,7 +468,7 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "terapie") return await ponteTerapie(ponteArgomenti(d));
     if (d.cmd === "terapiaCerca") return await ponteTerapiaCerca(d);
     if (d.cmd === "terapiaAggiungi") return await ponteTerapiaAggiungi(d);
-    if (["pazienti", "mappa", "eo", "triage", "esiti", "richieste", "nota", "promemoria", "fatto"].includes(d.cmd)) {
+    if (["pazienti", "mappa", "eo", "triage", "esiti", "richieste", "nota", "promemoria", "fatto", "dfAggiungi", "dfSpunta", "dfTogli", "posto"].includes(d.cmd)) {
       const a = ponteArgomenti(d);
       const r = await ponteSuScheda(d.cmd, a);
       if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
@@ -677,7 +679,7 @@ async function ponteSchede() {
 // è «incerto» (per un ordine: non si sa se è partito), mai un no. Un ordine o
 // un promemoria non si rimanda alla scheda dopo: quella di prima può averlo
 // fatto, e sarebbero due.
-const PONTE_UNA_VOLTA = new Set(["ordina", "promemoria"]);
+const PONTE_UNA_VOLTA = new Set(["ordina", "promemoria", "dfAggiungi"]);
 async function ponteSuScheda(cmd, args) {
   const tempo = PONTE_ATTESA[cmd] || PONTE_ATTESA.altro;
   const schede = await ponteSchede();
@@ -690,7 +692,7 @@ async function ponteSuScheda(cmd, args) {
     if (no.has("tempo") && PONTE_UNA_VOLTA.has(cmd)) break;
   }
   const incerto = no.has("tempo") ? { incerto: true } : {};
-  if (incerto.incerto && cmd === "promemoria") return { ok: false, errore: "Il gestionale sul PC tarda: guarda i promemoria prima di rifarlo", incerto: true };
+  if (incerto.incerto && (cmd === "promemoria" || cmd === "dfAggiungi")) return { ok: false, errore: "Il gestionale sul PC tarda: guarda i promemoria prima di rifarlo", incerto: true };
   if (no.has("login")) return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true, ...incerto };
   if (no.has("pannello") && !incerto.incerto) return { ok: false, errore: "Sul PC apri la lista del pronto soccorso o un paziente, nel gestionale" };
   return { ok: false, errore: "Il gestionale sul PC non risponde: ricarica la sua pagina", ...incerto };

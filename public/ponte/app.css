@@ -398,3 +398,24 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .tesito.ok { background: var(--verdef); color: var(--verde); border-color: var(--verdeb); }
 .tesito.warn { background: var(--ambraf); color: var(--ambra); border-color: var(--ambrab); }
 .tesito.err { background: var(--rossof); color: var(--rosso); border-color: var(--rossob); }
+
+/* Da fare: una lista, la spunta tonda (44 px da toccare), il cestino grigio sulle spuntate */
+.promr.dfr { gap: 2px; padding: 0 8px 0 0; min-height: 48px; }
+.dfr .dfck { flex: none; position: relative; width: 44px; height: 44px; border: 0; background: none; padding: 0; }
+.dfr .dfck::before { content: ""; position: absolute; left: 10px; top: 10px; width: 20px; height: 20px; box-sizing: border-box; border: 2px solid var(--grigio2); border-radius: 50%; background: var(--carta); }
+.dfr.fatta .dfck::before { background: var(--verde); border-color: var(--verde); }
+.dfr.fatta .dfck::after { content: ""; position: absolute; left: 17px; top: 14px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.dfr .quando { min-width: 0; margin-right: 8px; }
+.dfr .cosa { padding: 8px 0; overflow-wrap: anywhere; }
+.dfr.fatta .cosa, .dfr.fatta .quando { text-decoration: line-through; color: var(--grigio); }
+.dfr .dfx { flex: none; width: 44px; height: 44px; border: 0; background: none; color: var(--grigio2); display: inline-flex; align-items: center; justify-content: center; }
+.dfr .dfx:active { color: var(--rosso); }
+.carta.note > .proms { padding-left: 0; }
+.dfg + .dfg { margin-top: 10px; }
+.dfhd { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; border: 0; border-bottom: 1px solid var(--linea); background: none; text-align: left; padding: 0 14px; font-size: 15.5px; }
+.dfhd .posto { font-size: 12px; font-weight: 650; color: var(--blu); background: var(--blu-chiaro); border-radius: 6px; padding: 1px 7px; }
+/* Mappa che si modifica: sempre in alto mentre la lista sotto scorre; il nome trascinato, il bersaglio acceso */
+.mappa { position: sticky; top: calc(56px + env(safe-area-inset-top)); z-index: 6; max-height: 56vh; }
+.letto.occ, .pa, .paz[data-ep] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.fantasma { position: fixed; z-index: 70; transform: translate(-50%, -130%); pointer-events: none; padding: 8px 12px; border-radius: 10px; background: var(--scuro); color: #fff; font-weight: 700; font-size: 15px; box-shadow: 0 8px 24px var(--ombra); }
+.bers { outline: 3px solid var(--blu); outline-offset: -3px; }
