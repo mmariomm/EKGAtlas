@@ -645,8 +645,8 @@ await blocco(async () => {
     `…e sul telefono: «Etichette forse stampate: guarda Zebra ZD421 prima di ristamparle dal PC», senza gergo (${ignoto.tel && tutto(ignoto.tel)})`);
   const aspetta = pub(rec("telabc12345l", "stampa", fogli(["etichette", "attesa", ""])));
   check(aspetta.titolo === "Etichette NON stampate" && aspetta.testo === "tocca Stampa" && !/aspettano qualcuno/.test(tutto(aspetta))
-    && aspetta.tel && aspetta.tel.testo === "aspettano qualcuno al PC" && !/tocca Stampa|striscia/.test(tutto(aspetta.tel)),
-  `le etichette di un ordine dal telefono: il PC dice «tocca Stampa», il telefono «aspettano qualcuno al PC» — ognuno la sua (${tutto(aspetta)} // ${aspetta.tel && tutto(aspetta.tel)})`);
+    && aspetta.tel && aspetta.tel.titolo === "Confermato · etichette al PC" && !/NON stampate|tocca Stampa|striscia|aspettano/.test(tutto(aspetta.tel)),
+  `le etichette di un ordine dal telefono: il PC dice «tocca Stampa», il telefono «Confermato · etichette al PC» (non un allarme) — ognuno la sua (${tutto(aspetta)} // ${aspetta.tel && tutto(aspetta.tel)})`);
   const rotta = pub(rec("telabc12345l", "stampa", fogli(["etichette", "fallito", "Zebra ZD421", "la stampante (o il suo driver) ha dato errore"], ["a4", "stampato", "HP LaserJet A4"])));
   check((tutto(rotta).match(/ha dato errore/g) || []).length === 1 && !/aspettano qualcuno/.test(tutto(rotta)) && /aspettano qualcuno al PC/.test(tutto(rotta.tel)),
     `un'etichetta che non esce: il perché una volta sola, non «Zebra ZD421 ha dato errore · la stampante ha dato errore» (${tutto(rotta)})`);

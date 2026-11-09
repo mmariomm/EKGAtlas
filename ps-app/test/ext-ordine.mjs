@@ -34,7 +34,7 @@ function chromiumPath() {
 }
 const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`);
 // i bottoni della striscia: nella striscia, o nel chip in intestazione a pannello aperto
-const AZIONE = "#strazione, #psassist-host #gchipaz", STOP = "#strstop, #psassist-host #gchipstop";
+const AZIONE = "#strazione, #psassist-host #gchipaz", STOP = "#strstop, #psassist-host #gchipstop, #psassist-host #stopbtn";
 let fail = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
 const shot = async (page, nome) => { if (SHOTS) await page.screenshot({ path: join(SHOTS, nome + ".png") }).catch(() => {}); };
@@ -213,8 +213,8 @@ const doc = await ctx.newPage();   // la scheda del medico
 const SOLO = (process.argv[2] || "").toLowerCase();   // `node test/ext-ordine.mjs caduta`: solo le prove che lo nominano
 const prova = (t) => { if (SOLO && !t.toLowerCase().includes(SOLO)) return false; console.log("\nordine: " + t); nuovi(); return true; };
 // il bottone accanto alla striscia: «⏹» (l'icona ferma, non più il glifo) o il ✕ che annulla
-const tastoStop = (p) => p.evaluate(() => { const b = document.getElementById("psassist-host")?.shadowRoot?.querySelector("#strstop, #gchipstop");
-  return !b ? "" : b.querySelector("svg") && !b.textContent.trim() ? "⏹" : b.textContent.trim(); }).catch(() => "");
+const tastoStop = (p) => p.evaluate(() => { const b = document.getElementById("psassist-host")?.shadowRoot?.querySelector("#strstop, #gchipstop, #stopbtn");
+  return !b ? "" : b.id === "stopbtn" ? "⏹" : b.querySelector("svg") && !b.textContent.trim() ? "⏹" : b.textContent.trim(); }).catch(() => "");
 
 // ---- 1. il giro in sottofondo, il medico su un altro paziente ------------
 if (prova("la scheda di sottofondo manda, il medico va altrove")) {
@@ -1285,7 +1285,7 @@ if (prova("a pannello aperto l'ordine si vede nel chip, e le letture dicono che 
   const riga = await striscia(doc, /ROSSI MARIO.*esame \d di 2/, 20000).catch(() => "");
   const vede = await $panel(doc, ".hd .gchip").innerText().catch(() => "");
   check((await $panel(doc, ".card").count()) === 1 && /ROSSI M\. · esame \d di 2/.test(vede.replace(/\s+/g, " ")) && (await $panel(doc, ".gchip #gchipstop.ferma").count()) === 1,
-    `Conferma: il pannello resta aperto, e in intestazione il chip «ROSSI M. · esame N di 2» col ⏹ (got: ${vede.replace(/\s+/g, " ") || "niente"})`);
+    `Conferma: il pannello resta aperto, e in intestazione il chip «ROSSI M. · esame N di 2» col ⏹ (l'ordine gira in un'altra scheda: il suo ⏹ è questo) (got: ${vede.replace(/\s+/g, " ") || "niente"})`);
   check(!/invio|creo|controllo|confermo/i.test(riga), `mentre gira, solo chi e a che esame: niente passi nella riga (got: ${riga})`);
   await shot(doc, "15a-chip");
   await suPagina(doc, B.patientUrl);

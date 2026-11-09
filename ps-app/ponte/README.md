@@ -18,8 +18,9 @@ cifrato.
 ## Per il medico
 
 **Una volta per turno.** Sul PC, nel pannello: **⋯ → iPhone → Associa l'iPhone**. Compare un QR,
-con accanto un **codice di sei cifre** («482 913»): lo inquadri con la **fotocamera** dell'iPhone e
-tocchi il link. Si apre il pannello, già collegato; lo stesso codice è nel suo menu ⋯. L'associazione
+con accanto un **codice di sei cifre** («482 913»): lo inquadri dall'app PS Assist (**⋯ → Scansiona il QR**; con la Fotocamera
+solo se l'app non è sulla Home) e
+si apre il pannello, già collegato; lo stesso codice è nel suo menu ⋯. L'associazione
 vale **14 ore** (l'ora di fine è scritta sul PC e sul telefono) e vale per **quel telefono solo**: il
 primo che entra. Un altro telefono che inquadra lo stesso QR si sente dire «Il PC è associato a un
 altro telefono», con **«Cancella e riassocia»**: scrive il codice **93** e quel telefono diventa
@@ -75,7 +76,7 @@ sessione. Vedi:
   800 ms (un doppio tocco per sbaglio) non conta. Poi l'ordine fa sul PC il giro di sempre — la scheda dell'ordine,
   tutti i controlli, la conferma provata. Il telefono dice a che punto è («esame 2 di 6») e come
   finisce, con le parole che `bg.js` scrive per la striscia del PC (`pubblico`) — tranne dove al
-  telefono serve un'altra frase: «aspettano qualcuno al PC» invece di «tocca Stampa», «Etichette
+  telefono serve un'altra frase: «Confermato · etichette al PC» invece di «Etichette NON stampate · tocca Stampa», «Etichette
   forse stampate: guarda Zebra ZD421 prima di ristamparle dal PC» invece del perché tecnico. Il
   titolo della carta è com'è andata («Stampato su Zebra ZD421», «Mandato a Zebra ZD421» in ambra),
   l'ora c'è una volta, e una carta finita bene se ne va da sola dopo due minuti. Un ordine

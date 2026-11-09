@@ -42,7 +42,7 @@ function chromiumPath() {
 }
 const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`);
 // i bottoni della striscia: nella striscia, o nel chip in intestazione a pannello aperto
-const AZIONE = "#strazione, #psassist-host #gchipaz", STOP = "#strstop, #psassist-host #gchipstop";
+const AZIONE = "#strazione, #psassist-host #gchipaz", STOP = "#strstop, #psassist-host #gchipstop, #psassist-host #stopbtn";
 let fail = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
 const sospendi = (ms) => new Promise((res) => setTimeout(res, ms));

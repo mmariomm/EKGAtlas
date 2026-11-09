@@ -45,7 +45,7 @@ function chromiumPath() {
 }
 const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`);
 // i bottoni della striscia: nella striscia, o nel chip in intestazione a pannello aperto
-const AZIONE = "#strazione, #psassist-host #gchipaz", STOP = "#strstop, #psassist-host #gchipstop";
+const AZIONE = "#strazione, #psassist-host #gchipaz", STOP = "#strstop, #psassist-host #gchipstop, #psassist-host #stopbtn";
 let fail = 0;
 const check = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
 const shot = async (page, nome) => { if (SHOTS) await page.screenshot({ path: join(SHOTS, nome + ".png") }).catch(() => {}); };
@@ -335,7 +335,7 @@ if (await prova("senza stampa automatica, il dialogo di sempre")) {
   check(!(await stampantina(doc)), "in intestazione niente stampantina");
   await chiudiStampa(doc);
   const voci = await menu(doc);
-  check(/Stampanti/.test(voci) && !/Stampa automatica/.test(voci) && !(await $panel(doc, "#stautosw").count()), `nel menu ⋯: «Stampanti», non l'interruttore (got: ${voci})`);
+  check(/Impostazioni/.test(await $panel(doc, "#stampanti").innerText()) && !/Stampa automatica/.test(voci) && !(await $panel(doc, "#stautosw").count()), `nel menu ⋯: «Impostazioni» (una voce sola, anche per il portale), non l'interruttore (got: ${voci})`);
   await $panel(doc, "#menubtn").click();
 }
 
@@ -369,7 +369,7 @@ if (await prova("le impostazioni: aiutante non installato, poi le due stampanti 
   const apre = nuovaPagina(8000);
   await $panel(doc, "#stampanti").click();
   impostazioni = await apre;
-  check(!!impostazioni && /portale\.html$/.test(impostazioni.url()), `«Stampanti» nel menu ⋯ apre le impostazioni (got ${impostazioni ? impostazioni.url().slice(-30) : "niente"})`);
+  check(!!impostazioni && /portale\.html$/.test(impostazioni.url()), `«Impostazioni» nel menu ⋯ apre le impostazioni (got ${impostazioni ? impostazioni.url().slice(-30) : "niente"})`);
   if (!impostazioni) { impostazioni = await ctx.newPage(); await impostazioni.goto(`chrome-extension://${ID}/portale.html`); }
   await impostazioni.setViewportSize({ width: 1366, height: 768 });
   const stato = () => impostazioni.locator("#sst").innerText().then((t) => t.trim());
@@ -925,8 +925,8 @@ if (await prova("un ordine dal telefono: le etichette aspettano un tocco al PC, 
   await nasce;
   if (process.env.PSA_DEBUG) setTimeout(async () => console.log(JSON.stringify(await ordini())), 20000);
   const rec = await finche(async () => (await ordini()).find((x) => x.id === "telprova1" && x.stato === "stampa"), 60000);
-  check(!!rec && rec.pubblico.tono === "warn" && rec.pubblico.titolo === "Etichette NON stampate" && rec.pubblico.tel?.testo === "aspettano qualcuno al PC",
-    `confermata: «Etichette NON stampate», e al telefono «aspettano qualcuno al PC» (got ${JSON.stringify(rec && rec.pubblico)})`);
+  check(!!rec && rec.pubblico.tono === "warn" && rec.pubblico.titolo === "Etichette NON stampate" && rec.pubblico.tel?.titolo === "Confermato · etichette al PC",
+    `confermata: «Etichette NON stampate» sul PC, e al telefono «Confermato · etichette al PC» (got ${JSON.stringify(rec && rec.pubblico)})`);
   await sospendi(4000);
   check((await stampe(doc)).length === 0 && (await ordine("telprova1"))?.stato === "stampa",
     "sulla pagina di quel paziente, davanti: il dialogo NON si apre da solo");

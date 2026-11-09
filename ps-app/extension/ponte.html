@@ -13,8 +13,8 @@
   h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--grigio); margin: 26px 0 8px; }
   .sub { color: var(--grigio); font-size: 13px; margin: 0 0 18px; }
   .stato { border-radius: 12px; padding: 14px 16px; background: var(--fondo); border: 1px solid var(--bordo); }
-  .stato.ok { background: var(--verdef); border-color: #BCE0C9; }
-  .stato.vivo { background: #16232E; border-color: #16232E; color: #fff; }
+  .stato.ok, .stato.vivo { background: var(--verdef); border-color: #BCE0C9; }   /* collegato: lo stesso verde della testata del pannello */
+  .stato.vivo { color: #124F31; }
   .stato.warn { background: var(--ambraf); border-color: #F0D9A8; }
   .stato b { font-size: 15px; }
   .stato .riga { display: block; margin-top: 3px; font-size: 13px; opacity: .85; }
@@ -46,6 +46,7 @@
   .cornice body { background: #fff; padding: 14px 24px 18px; }
   .cornice .box { max-width: 720px; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
   .cornice h1, .cornice .sub { display: none; }
+  .cornice #scollega { display: none; }   /* nel pannello, «Scollega» sta già nella testata */
 </style></head><body>
 <main class="box">
   <h1><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="4.4" y="1.4" width="7.2" height="13.2" rx="1.7"/><path d="M7 12.1h2"/></svg>Il pannello sull'iPhone</h1>
@@ -56,10 +57,8 @@
   <section id="qrsec" class="qrsec" hidden>
     <div id="qr" role="img" aria-label="Codice QR per associare l'iPhone"></div>
     <div>
-      <p><b>Inquadralo con la fotocamera dell'iPhone</b> e tocca il link: si apre il pannello, già collegato.</p>
-      <p>Codice <span class="codice" id="qrcodice"></span> — lo stesso compare sul telefono.</p>
-      <p>Vale fino alle <b id="qrscade"></b>, e solo per il primo telefono che entra. Basta una volta: poi, durante il turno, apri il pannello dall'iPhone e basta.</p>
-      <p class="hint">Il QR si può rivedere solo nei primi due minuti, prima che un telefono entri: dopo, «Associa» ne fa uno nuovo.</p>
+      <p><b>Dall'app PS Assist: ⋯ → Scansiona il QR</b> (o la Fotocamera, se non hai l'app sulla Home).</p>
+      <p>Codice <span class="codice" id="qrcodice"></span> — lo stesso compare sul telefono. Vale fino alle <b id="qrscade"></b>, per il primo telefono che entra.</p>
       <button class="quiet" id="qrvia" type="button">Nascondi il QR</button>
     </div>
   </section>

@@ -169,7 +169,7 @@ const extId = new URL(sw.url()).host;
 const EXTURL = (f) => `chrome-extension://${extId}/${f}`;
 const $panel = (page, sel) => page.locator(`#psassist-host ${sel}`);
 // i bottoni della striscia: nella striscia, o nel chip in intestazione a pannello aperto
-const AZIONE = "#strazione, #psassist-host #gchipaz", STOP = "#strstop, #psassist-host #gchipstop";
+const AZIONE = "#strazione, #psassist-host #gchipaz", STOP = "#strstop, #psassist-host #gchipstop, #psassist-host #stopbtn";
 const statoPonte = () => sw.evaluate(() => chrome.storage.session.get("ponte").then((o) => o.ponte || null));
 const coppiaPc = () => sw.evaluate(() => chrome.storage.local.get("ponte.coppia").then((o) => o["ponte.coppia"] || null));
 const registroPonte = async () => ((await statoPonte())?.registro || []).map((x) => x.testo).join("\n");
@@ -288,10 +288,9 @@ await $panel(doc, "#expand").click();
 await doc.waitForSelector("#psassist-host .card", { timeout: 8000 });
 await $panel(doc, "#menubtn").click();
 check(await $panel(doc, '.menu .msez[aria-label="Strumenti"] #pontemenu').count() === 1, "«iPhone» sta nel menu ⋯, fra gli Strumenti");
-// il telefono disegnato come le altre icone: 16 px, tratto 1.6, capi tondi
-const telIco = await doc.evaluate(() => { const s = document.getElementById("psassist-host").shadowRoot.querySelector("#pontemenu .mico svg");
-  return s ? [s.getAttribute("width"), s.getAttribute("stroke-width"), s.getAttribute("stroke-linejoin")].join(" ") : ""; });
-check(telIco === "16 1.6 round", `l'icona dell'iPhone sulla griglia delle altre (got «${telIco}»)`);
+// la stessa emoji del menu ⋯ del telefono: 📱
+const telIco = await doc.evaluate(() => document.getElementById("psassist-host").shadowRoot.querySelector("#pontemenu .mico")?.textContent.trim() || "");
+check(telIco === "📱", `l'icona dell'iPhone è la stessa del telefono (got «${telIco}»)`);
 const nasce = nuovaPagina(4000);
 await $panel(doc, "#pontemenu").click();
 let ponte = await corniceIn(doc);
@@ -1220,9 +1219,9 @@ check(await finche(async () => /dall'iPhone/.test(await $panel(doc, ".strip").in
 await tel.evaluate(() => window.scrollTo(0, 0));
 await shot(tel, "tel-4-ordine-in-corso");
 // (un ordine dal telefono non apre da solo il dialogo sul PC: davanti può non esserci nessuno)
-const fatto = await aspettaTel(tel, /aspettano qualcuno al PC/, 60000);
-check(/Etichette NON stampate/.test(fatto) && /aspettano qualcuno al PC/.test(fatto) && !/tocca Stampa|sulla striscia/.test(fatto),
-  "e alla fine «Etichette NON stampate · aspettano qualcuno al PC» (la frase del telefono, non quella del PC)");
+const fatto = await aspettaTel(tel, /Confermato · etichette al PC/, 60000);
+check(/Confermato · etichette al PC/.test(fatto) && !/NON stampate|aspettano qualcuno|tocca Stampa|sulla striscia/.test(fatto),
+  "e alla fine «Confermato · etichette al PC» (la frase del telefono, non un allarme e non quella del PC)");
 const rid = Object.keys(A.state.richieste)[0];
 check(A.state.richieste[rid]?.confirmed === true && Object.values(A.state.insertCount).every((n) => n === 1) && Object.keys(A.state.insertCount).length === 2,
   `confermata, ogni esame mandato una volta (${JSON.stringify(A.state.insertCount)})`);

@@ -43,8 +43,7 @@ function righeStato(s, codice, qr) {
   if (s.sessione) {
     return { cls: "vivo", testa: "iPhone collegato", righe: [
       cam,
-      `Dalle ${hhmm(s.sessione.dal)} · ultimo comando alle ${hhmm(s.sessione.ultimo)} · si chiude da sola dopo 3 minuti senza comandi.`,
-      `Associato fino alle ${hhmm(s.scade)}${cod}. Ogni comando finisce nel Registro.`] };
+      `Dalle ${hhmm(s.sessione.dal)} · fino alle ${hhmm(s.scade)}${cod}`] };
   }
   return { cls: s.relay === "su" ? "ok" : "warn", testa: qr ? "iPhone associato" : `iPhone associato fino alle ${hhmm(s.scade)}${cod}`, righe: [cam, ponte, fine] };
 }
@@ -68,15 +67,25 @@ async function aggiorna() {
   $("associa").disabled = !s.host;
   $("associa").hidden = qrVisibile;   // col QR davanti, lo nasconde il suo bottone
   // il QR di prima si rivede solo se si può ancora; se no, uno nuovo (e l'iPhone di prima esce)
-  $("associa").textContent = !s.accoppiato ? "Associa l'iPhone" : r.qr ? "Mostra il QR" : "Nuovo QR (l'iPhone di prima esce)";
+  // «Nuovo QR» butta fuori l'iPhone di prima: quieto e a due tocchi, come «Revoca»
+  const nuovo = s.accoppiato && !r.qr;
+  $("associa").className = nuovo ? "quiet" : "";
+  $("associa").textContent = !s.accoppiato ? "Associa l'iPhone" : r.qr ? "Mostra il QR" : armata === "nuovo" ? "Butto fuori l'iPhone? Tocca di nuovo" : "Nuovo QR";
   $("scollega").hidden = !s.sessione;
   $("revoca").hidden = !s.accoppiato;
   $("revoca").textContent = armata === "revoca" ? "Revoco? L'iPhone non entrerà più" : "Revoca l'iPhone";
   $("dove").textContent = s.host ? `(${new URL(s.host).host})` : "";
-  const reg = [...(s.registro || [])].reverse();
+  // solo i comandi del medico: le letture automatiche (l'elenco, il catalogo) restano nel Registro
+  // del pannello; le righe uguali di fila diventano una, «×3»
+  const reg = [];
+  for (const x of [...(s.registro || [])].reverse()) {
+    if (/^(iPhone · )?(elenco dei pazienti|catalogo degli esami)$/.test(x.testo)) continue;
+    const su = reg[reg.length - 1];
+    if (su && su.testo === x.testo) su.n++; else reg.push({ ts: x.ts, testo: x.testo, n: 1 });
+  }
   $("registro").replaceChildren(...(reg.length ? reg.map((x) => {
     const li = document.createElement("li");
-    li.append(Object.assign(document.createElement("time"), { textContent: hhmm(x.ts) }), Object.assign(document.createElement("span"), { textContent: x.testo }));
+    li.append(Object.assign(document.createElement("time"), { textContent: hhmm(x.ts) }), Object.assign(document.createElement("span"), { textContent: x.n > 1 ? `${x.testo} ×${x.n}` : x.testo }));
     return li;
   }) : [Object.assign(document.createElement("li"), { className: "vuoto", textContent: "Ancora niente." })]));
 }
@@ -85,6 +94,13 @@ $("associa").addEventListener("click", async () => {
   dice("");
   const r0 = await chiedi({ t: "ponteStato" });
   if (r0 && r0.ok && r0.stato.accoppiato && r0.qr) { qrVisibile = true; return aggiorna(); }
+  // un QR nuovo butta fuori l'iPhone di prima: due tocchi
+  if (r0 && r0.ok && r0.stato.accoppiato && armata !== "nuovo") {
+    armata = "nuovo"; clearTimeout(tArmata);
+    tArmata = setTimeout(() => { armata = ""; aggiorna(); }, 5000);
+    return aggiorna();
+  }
+  armata = ""; clearTimeout(tArmata);
   const r = await chiedi({ t: "ponteAssocia" });
   if (!r || !r.ok) return dice((r && r.why) || "Non riuscito: l'estensione non risponde.", false);
   qrVisibile = true;

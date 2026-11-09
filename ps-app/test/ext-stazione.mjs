@@ -306,7 +306,7 @@ await doc.bringToFront();
 await apriPannello(doc);
 await $panel(doc, "#menubtn").dispatchEvent("click");
 check(await $panel(doc, '.menu [data-stdove="stazione"]').innerText() === "Infermeria" && await $panel(doc, '.menu [data-stdove="qui"]').getAttribute("aria-checked") === "true",
-  "nel menu ⋯ del pannello: «Stampa: Qui · Infermeria» (con una stazione collegata), su «Qui»");
+  "nel menu ⋯ del pannello: «Stampa: PC · Infermeria» (con una stazione collegata), su «PC»");
 await $panel(doc, '.menu [data-stdove="stazione"]').dispatchEvent("click");
 await finche(async () => (await sw.evaluate(() => chrome.storage.local.get("stampa"))).stampa?.dove === "stazione", 5000);
 await shot(doc, "stazione-3-pc-scelta");
