@@ -682,6 +682,43 @@ if (await prova("ordine in sottofondo: stampa la scheda dell'ordine, col medico 
   check(!(await ordine(rec.id)), "l'ordine di prima non c'è più: la ristampa è la sua");
 }
 
+// ---- 7b. stampati i fogli, la pagina del paziente si ricarica ---------------
+// L'ordine in sottofondo, il medico resta sulla pagina del paziente: è quella
+// di prima della Conferma. Quando la stampa automatica ha preso e dato
+// all'aiutante tutti i fogli — mai prima — si ricarica dal suo «Aggiorna»,
+// una volta, e la striscia resta.
+if (await prova("ordine in sottofondo col medico sulla pagina del paziente: stampati i fogli, la pagina si ricarica una volta")) {
+  installa(true);
+  await scelte(ATTIVA);
+  comportati({ lento: 800 });
+  ritocca = (u, out) => {
+    if (!/MVPG=PsoEpisodioClinicoAmbulatorio/.test(u) || !/EPISODIO_ID=999001/.test(u)) return null;
+    const html = Buffer.from(out.body).toString("latin1");
+    return { ...out, body: Buffer.from(html.replace(/<body>/i, `<body><a title="Aggiorna" onclick="javascript:window.location.reload( false )" href="${A.PATH}?MVPG=PsoEpisodioClinicoAmbulatorio&amp;EPISODIO_ID=999001&amp;AGG=1">Refresh</a>`), "latin1") };
+  };
+  const navi = [];
+  const guarda = (f) => { if (f === doc.mainFrame() && /AGG=1/.test(f.url())) navi.push({ fogli: lavori().length }); };
+  doc.on("framenavigated", guarda);
+  await suPagina(doc, A.patientUrl);
+  await azzeraStampe(doc);
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  const rec = await finche(async () => (await ordini()).find((x) => x.stato === "avviso" && x.fogli && x.confermata), 60000);
+  const n = rec ? rec.stampa.jobs.length : 0;
+  await finche(async () => navi.length > 0, 10000);
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 }).catch(() => {});
+  check(!!rec && n >= 2 && navi.length === 1 && navi[0].fogli === n,
+    `la pagina si ricarica dal suo «Aggiorna» una volta, quando l'aiutante ha già tutti i ${n} fogli (got ${JSON.stringify(navi)})`);
+  const fine = await striscia(doc, /Stampato su/, 10000);
+  check(/ROSSI MARIO/.test(fine) && /1 esame confermato/.test(fine) && (await azione(doc)) === "Ristampa",
+    `e la striscia resta: «Stampato su … · 1 esame confermato», con «Ristampa» (got ${fine || "niente"})`);
+  await sospendi(4000);
+  check(navi.length === 1 && lavori().length === n && (await stampe(doc)).length === 0, `una volta sola, e niente si stampa di nuovo (got ${navi.length} · ${lavori().length} fogli)`);
+  doc.off("framenavigated", guarda);
+  ritocca = null;
+}
+
 // ---- 8. l'ordine in sottofondo, un foglio che non esce ---------------------
 if (await prova("ordine in sottofondo con un foglio che non esce: arriva al medico col motivo, gli altri no")) {
   installa(true);

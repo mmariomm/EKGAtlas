@@ -265,12 +265,15 @@ if (prova("la scheda di sottofondo manda, il medico va altrove")) {
   check(!sorv.some((x) => x.rid === rid), "confermata con la prova: il promemoria «non confermata» se ne va");
   // il dialogo che si chiude, documento dopo documento: andati avanti da
   // soli non si sa se ha stampato o annullato — «Stampa finita», e «Ristampa»
+  await doc.evaluate(() => { window.__qui = 1; });
   await dialogoChiuso(doc);
   await dialogoChiuso(doc);
   await doc.waitForSelector("#psassist-print", { state: "detached", timeout: 8000 }).catch(() => {});
   const fine = await striscia(doc, /Stampa finita/, 5000).catch(() => "");
   check(/ROSSI MARIO/.test(fine) && /2 esami confermati/.test(fine) && !/Stampato/.test(fine) && (await azione(doc)) === "Ristampa",
     `alla fine «Stampa finita · 2 esami confermati», di ROSSI, mai «Stampato», e «Ristampa» (got: ${fine || "niente"} · ${await azione(doc)})`);
+  await doc.waitForTimeout(2000);
+  check(await doc.evaluate(() => window.__qui === 1).catch(() => false), "e la pagina di BIANCHI non si ricarica: non è di quel paziente");
   await shot(doc, "3-stampa-finita");
 }
 
@@ -1121,6 +1124,71 @@ if (prova("il dialogo di stampa non salta sopra chi scrive")) {
   await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 }).catch(() => {});
   check((await stampe(doc)).length === 1, "dalla Conferma non hai toccato niente: il dialogo delle etichette parte da solo, come sempre");
   await chiudiStampa(doc);
+}
+
+// ---- 12b. dopo le etichette la pagina del paziente si ricarica ----------
+// La pagina davanti al medico è quella di prima della Conferma: gli esami
+// nuovi non ci sono. Stampate le etichette (qui, col dialogo) si ricarica dal
+// suo «Aggiorna» — una GET, una volta —, mai mentre i PDF arrivano, e la
+// striscia resta. Mentre scrivi no: la striscia offre «Aggiorna».
+if (prova("dopo le etichette la pagina del paziente si ricarica dal suo «Aggiorna», una volta — mai prima, mai sotto chi scrive")) {
+  nuovi();
+  lento = 300;
+  // la pagina vera ha in testa «Aggiorna», il link a se stessa: qui con un segno, per riconoscerlo
+  riscrivi = (u, html) => (/MVPG=PsoEpisodioClinicoAmbulatorio/.test(u) && /EPISODIO_ID=999001/.test(u) && !/AGG=1/.test(html)
+    ? html.replace(/<body>/i, `<body><a class="SA4HeaderBarLink" title="Aggiorna" onclick="javascript:window.location.reload( false )" href="${A.PATH}?MVPG=PsoEpisodioClinicoAmbulatorio&amp;EPISODIO_ID=999001&amp;AGG=1">Refresh</a>`) : html);
+  const navi = [];
+  const guarda = (f) => { if (f === doc.mainFrame()) navi.push({ url: f.url() }); };
+  doc.on("framenavigated", guarda);
+  const ricaricate = () => navi.filter((x) => /AGG=1/.test(x.url)).length;
+  await suPagina(doc, A.patientUrl);
+  await azzeraStampe(doc);
+  const nasce = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce;
+  await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 40000 }).catch(() => {});
+  check((await stampe(doc)).length === 1 && ricaricate() === 0, `le etichette arrivano qui, col dialogo — e intanto la pagina non si ricarica (got ${ricaricate()} ricariche)`);
+  for (let k = 0; k < 4 && (await doc.locator("#psassist-print").count()); k++) await dialogoChiuso(doc).catch(() => {});
+  await finche(async () => ricaricate() > 0, 10000);
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 }).catch(() => {});
+  const fine = await striscia(doc, /Stampa finita/, 8000).catch(() => "");
+  const post = A.state.requests.filter((q) => q.method === "POST" && q.params.MVPG === "PsoEpisodioClinicoAmbulatorio");
+  check(ricaricate() === 1 && /AGG=1/.test(doc.url()) && A.state.requests.some((q) => q.method === "GET" && /AGG=1/.test(q.url)) && !post.length,
+    `stampato, la pagina si ricarica una volta dal suo «Aggiorna» (una GET, nessun modulo rimandato) (got ${ricaricate()} · ${doc.url().slice(-40)} · ${post.length} POST)`);
+  check(/ROSSI MARIO/.test(fine) && /1 esame confermato/.test(fine) && (await azione(doc)) === "Ristampa",
+    `la striscia resta: «Stampa finita · 1 esame confermato», con «Ristampa» (got: ${fine || "niente"} · ${await azione(doc)})`);
+  await doc.waitForTimeout(5000);
+  check(ricaricate() === 1, `una volta sola per ordine (got ${ricaricate()})`);
+  // mentre scrivi: le etichette aspettano il tuo tocco, poi la pagina NON si ricarica — «Aggiorna» sulla striscia
+  await nessunOrdine();
+  nuovi();
+  await suPagina(doc, A.patientUrl);
+  navi.length = 0;
+  await azzeraStampe(doc);
+  const nasce2 = nuovaPagina();
+  await ordina(doc, ["TROPONINA"]);
+  await nasce2;
+  await doc.locator('textarea[name="DIARIO"]').click();
+  await doc.keyboard.type("Paziente vigile", { delay: 40 });
+  check(await finche(async () => (await ordini()).some((x) => x.stato === "stampa"), 40000), "(confermata: le etichette aspettano il tuo tocco)");
+  await doc.waitForTimeout(3000);
+  check(ricaricate() === 0, `etichette non ancora stampate: la pagina non si ricarica (got ${ricaricate()})`);
+  await $panel(doc, AZIONE).click();
+  await doc.waitForSelector("#psassist-print", { state: "attached", timeout: 15000 }).catch(() => {});
+  for (let k = 0; k < 4 && (await doc.locator("#psassist-print").count()); k++) await dialogoChiuso(doc).catch(() => {});
+  await doc.waitForTimeout(3000);
+  const offerta = await $panel(doc, "#straggiorna, #psassist-host #gchipagg").count();
+  const testo = await doc.locator('textarea[name="DIARIO"]').inputValue().catch(() => "");
+  check(ricaricate() === 0 && offerta === 1 && testo === "Paziente vigile",
+    `col testo non salvato la pagina non si ricarica: la striscia offre «Aggiorna», e il testo resta (got ${ricaricate()} ricariche · ${offerta} bottoni · «${testo}»)`);
+  await $panel(doc, "#straggiorna, #psassist-host #gchipagg").first().click();
+  await finche(async () => ricaricate() > 0, 10000);
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 }).catch(() => {});
+  const dopo = await striscia(doc, /Stampa finita/, 8000).catch(() => "");
+  check(ricaricate() === 1 && /Stampa finita/.test(dopo), `«Aggiorna»: un tocco la ricarica, e la striscia resta (got ${ricaricate()} · ${dopo || "niente"})`);
+  doc.off("framenavigated", guarda);
+  riscrivi = null;
+  await nessunOrdine();
 }
 
 // ---- 13. le etichette vanno nella finestra in primo piano ---------------

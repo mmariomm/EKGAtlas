@@ -1405,6 +1405,25 @@ e dopo la Conferma stampa quella confermata **e tutte quelle nuove** della pagin
 c'era già. Se le righe sono meno degli erogatori del giro (una richiesta che compare in ritardo), la
 pagina si rilegge **una volta**, dopo 4 secondi, e si stampa quello che c'è. Vale anche per la
 radiologia.
+**Le etichette sono per provetta, non per esame**: 6 esami POC possono dare 5 etichette (una
+registrazione vera), e il numero delle etichette da solo non dice se manca qualcosa — lo dice la
+lista esami. Una volta (registrazione dell'8 novembre) il gestionale, dopo la Conferma di 5 esami
+tutti in carrello, ha messo nella sua riga della pagina del paziente, nella lista esami e nelle
+etichette solo i primi 3 inseriti, e così sono rimasti per tutti i cento secondi in cui la pagina è
+stata riletta, mentre la stessa richiesta aperta dal modulo Richieste ne aveva 5; un'altra riga non
+è mai comparsa. Il pannello stampa quello che il gestionale elenca, e non lo corregge.
+
+**Poi la pagina del paziente si aggiorna.** Con l'ordine in sottofondo la pagina del paziente che hai
+davanti è quella di prima della Conferma: gli esami nuovi non ci sono. Quando la stampa dei fogli di
+quell'ordine è **finita** — l'aiutante li ha avuti tutti (stampa automatica), o li hai stampati qui
+col dialogo — la pagina si ricarica da sola dal suo **«Aggiorna»** (il link della pagina a se
+stessa: una lettura, mai un modulo rimandato), una volta per ordine, e la striscia resta. Mai prima:
+il PDF lo scarica una pagina (la scheda dell'ordine, o questa col dialogo), e una pagina che se ne va
+perde il suo. Solo sulla pagina di **quel** paziente, nella scheda che si vede, se è stata caricata
+prima della Conferma; durante un dialogo di stampa o un giro aspetta che finisca; e mai mentre scrivi:
+allora accanto alla striscia c'è un **Aggiorna** tranquillo, e lo tocchi tu. Etichette che aspettano
+il tuo tocco (un ordine dal telefono, o hai toccato qualcosa dopo la Conferma): si ricarica dopo che
+le hai stampate.
 
 Sul campo, dopo la Conferma il gestionale **torna alla pagina del paziente**: è lì che la stampa
 parte da sola (e se un'installazione mostrasse una pagina intermedia, parte lì se ha i link,
@@ -1968,8 +1987,10 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    negli ultimi 15 secondi → non si va, la striscia dice «… · tocca per il carrello» e un tocco
    ci porta. Un salto deciso da un giro si spegne quando ne parte un altro (non porta via la
    pagina a «Riprova» o a «Svuota» toccati subito), e la scheda di un ordine dopo un errore non
-   salta affatto: il resoconto viaggia con la striscia. Dopo una conferma non si ricarica niente:
-   la prova si legge in sottofondo (regola 5).
+   salta affatto: il resoconto viaggia con la striscia. Dopo una conferma non si ricarica niente
+   per cercarne la prova: la prova si legge in sottofondo (regola 5). La pagina del paziente si
+   ricarica solo a stampa finita, dal suo «Aggiorna», con questo stesso controllo (vedi «Stampa
+   etichette e lista esami»).
 2. **Mai il paziente sbagliato**: l'EPISODIO_ID viene fissato all'avvio e ogni pagina ricevuta è
    verificata **dal contenuto che il server dichiara** (non dall'URL richiesto); se manca o non
    corrisponde, stop prima di qualunque invio.
