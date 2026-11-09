@@ -46,9 +46,15 @@
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const hhmm = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
-  const minuti = (min) => (min >= 60 ? `${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, "0") : ""}` : `${min}m`);
-  const quanto = (t) => { const ora = Date.now(); if (t > ora) return minuti(Math.ceil((t - ora) / 60e3)); const r = Math.floor((ora - t) / 60e3); return r < 1 ? "ora" : "−" + minuti(r); };
-  const fa = (t) => { const m = Math.floor((Date.now() - t) / 60e3); return m < 1 ? "adesso" : m < 60 ? `${m} min fa` : `${Math.floor(m / 60)} h fa`; };
+  // I tempi si scrivono in un modo solo: una durata «50′», «1h40»; un'ora «11:30» (con «domani» o «ieri» se non è oggi)
+  const durata = (min) => (min >= 60 ? `${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, "0") : ""}` : `${min}′`);
+  const giorno = (t) => {
+    const d = new Date(t), o = new Date(), g = (x) => Math.round(new Date(x.getFullYear(), x.getMonth(), x.getDate()) / 864e5);
+    const n = g(d) - g(o);
+    return n === 0 ? "" : n === 1 ? "domani " : n === -1 ? "ieri " : `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} `;
+  };
+  const oraProm = (t) => giorno(t) + hhmm(t);
+  const alle = (t) => `${giorno(t)}alle ${hhmm(t)}`;
   const banda = (t) => { const m = Math.ceil((t - Date.now()) / 60e3); return m > 30 ? "" : m > 10 ? "amb" : "ros"; };
   // chi è, senza troncare niente: nome, età, posto — «ROSSI MARIO · 77 anni · OBI 2»
   const chi = (p) => [p.nome, Number.isInteger(p.eta) ? (p.eta === 1 ? "1 anno" : `${p.eta} anni`) : "", p.posto].filter(Boolean).join(" · ");
@@ -69,7 +75,9 @@
     coda: new Map(),     // oid → un ordine toccato senza collegamento: { ep, oid, quando, paziente, n, sel, stato: "coda" | "scaduta" }
     fase: "avvio", perche: "", testoFine: "", scaduta: 0,
     pazienti: null, triage: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ordini: new Map(), nascosti: new Set(),
-    vista: { nome: "lista", ep: "" }, scheda: "esiti", sel: new Map(), bloccati: new Map(), aperti: new Set(),
+    vista: { nome: "lista", ep: "" }, scheda: "esiti", dfFoglio: false, precAperti: false,
+    sel: new Map(), bloccati: new Map(), aperti: new Set(),
+    riprendi: null,      // dopo i 3 minuti: { ep, scheda } dell'ultimo paziente — solo in memoria, mai su disco, e solo finché il PC non risponde
     occupato: new Set(), vitAperti: "", promTesto: "", menu: false, arma: null, avviso: null,
     inviati: new Map(),  // ep → oid dell'ordine che sta andando al PC (il bottone aspetta)
     cartelle: new Map(), // ep → la cartella letta sul PC: { ep, letto, campi: [{ nome, v, ro }] }
@@ -99,6 +107,7 @@
   function svuota() {
     S.pazienti = null; S.triage = null; S.mappa = null; S.mappaSel = ""; S.zoom = 1; S.eo = null; S.eoVecchio = false; S.eoSheet = false; S.eoQ = ""; if (S.eoAnnulla) clearTimeout(S.eoAnnulla.t); S.eoAnnulla = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.promTesto = ""; S.arma = null;
+    S.dfFoglio = false; S.precAperti = false; S.riprendi = null;
     S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
     S.terapiaSi = null; S.terapie.clear(); S.tf = null;
     S.zip = null; S.zipErr = ""; S.zipArma = null; S.zipStato.clear();
@@ -362,7 +371,11 @@
     S.canale = null; S.saluto = null; S.nSessione = "";
     for (const a of S.attese.values()) { clearTimeout(a.t); a.no(new Error("Sessione chiusa")); }
     S.attese.clear();
+    // i 3 minuti senza comandi: del paziente dov'eri resta solo quale era e su che scheda (in memoria); lo si riapre
+    // quando il PC risponde, se è ancora nel suo elenco — dei suoi dati non resta niente
+    const rip = perche === "inattivo" && S.vista.nome === "paziente" ? { ep: S.vista.ep, scheda: S.scheda } : null;
     svuota();
+    S.riprendi = rip;
     S.perche = perche || "";
     S.testoFine = testo || PERCHE[perche] || "La sessione è finita";
     if (FINITE.has(perche)) return dimentica("finita");   // la chiave non vale più
@@ -454,6 +467,11 @@
       for (const o of ordini || []) if (!S.ordini.has(o.id) || !S.ordini.get(o.id).fine) ordineVisto(o);
     } catch (e) { S.erroreLista = e.message; }
     S.occupato.delete("lista"); render();
+    // (chiusa per i 3 minuti: il PC ha risposto — se il paziente c'è ancora e non si è già andati altrove, ci si riapre)
+    if (S.riprendi && S.pazienti) {
+      const r = S.riprendi; S.riprendi = null;
+      if (S.vista.nome === "lista" && paziente(r.ep)) { S.scheda = r.scheda; apriPaziente(r.ep); }
+    }
   }
   async function aggiornaLista(auto = false, rileggi = false) {
     if (!S.catalogo) return carica();
@@ -492,7 +510,7 @@
   }
   function apriPaziente(ep) {
     S.vista = { nome: "paziente", ep };
-    S.menu = false; S.arma = null; S.promTesto = ""; S.vitAperti = "";
+    S.menu = false; S.arma = null; S.promTesto = ""; S.vitAperti = ""; S.dfFoglio = false;
     window.scrollTo(0, 0);
     render();
     caricaEsiti(ep);
@@ -519,8 +537,6 @@
     } catch (e) { if (/sconosciuto/i.test(String(e && e.message))) S.eoVecchio = true; }
   }
   const CAMPO_EO = "ESAME_OBIETTIVO";
-  // (i campi dove si scrive tanto: già alti quando sono vuoti; gli altri tre righe)
-  const CAMPI_LUNGHI = new Set(["ANAMNESI", CAMPO_EO]);
   // Un EO salvato nel campo: vuoto, ci va il testo; con già del testo, in fondo a capo — mai al posto di quello che c'è.
   // È una modifica della bozza come un'altra (niente parte finché non si preme «Salva»); per 5 secondi «Annulla»
   // toglie esattamente quello che è stato messo. Il cursore sta dopo il testo.
@@ -1176,10 +1192,11 @@
   // --------------------------------------------------------------- disegno
   let tAvviso = 0;
   // `alto`: «non so se…» — in cima, sotto la testata: in fondo coprirebbe gli esami che chiede di controllare
-  function avviso(testo, tono = "", alto = false) {
-    S.avviso = { testo, tono, alto };
+  // `azione` ({ testo, fai }): un bottone sull'avviso, per 5 secondi («Annulla»)
+  function avviso(testo, tono = "", alto = false, azione = null) {
+    S.avviso = { testo, tono, alto, azione };
     clearTimeout(tAvviso);
-    tAvviso = setTimeout(() => { S.avviso = null; render(); }, tono === "err" ? 6500 : 3500);
+    tAvviso = setTimeout(() => { S.avviso = null; render(); }, azione ? 5000 : tono === "err" ? 6500 : 3500);
     render();
   }
   function zitto() { clearTimeout(tAvviso); S.avviso = null; }
@@ -1201,8 +1218,8 @@
       ${S.menu ? `<div class="menu" role="menu">
         ${suPaz || suZip ? "" : `<button data-a="aggiornaLista">${em("🔄")}Aggiorna elenco</button>`}
         <button data-a="stampaPdf">${em("📄")}Stampa PDF</button>
-        <button data-a="scansiona">${em("🖨️")}Scansiona QR PC stampante</button>
-        <button data-a="registrazioni">${em("🎙️")}Registrazioni</button>
+        <button data-a="scansiona">${em("🖨️")}Collega stampante</button>
+        <button data-a="registrazioni">${em("📦")}Registrazioni</button>
         <button data-a="esci">${em("🚪")}Chiudi sessione</button>
         <button class="via" data-a="dimentica">${em("🗑️")}Dimentica PC</button>
         <div class="info">Associato fino alle ${hhmm(S.coppia.scade)} · codice ${esc(S.codice)}</div>
@@ -1267,7 +1284,7 @@
   function promPill(p) {
     const l = [...(p.prom || [])].sort((a, b) => a.t - b.t);
     if (!l.length) return "";
-    return `<span class="prom ${banda(l[0].t)}">${esc(quanto(l[0].t))} ${esc(l[0].testo)}${l.length > 1 ? ` +${l.length - 1}` : ""}</span>`;
+    return `<span class="prom ${banda(l[0].t)}">${esc(oraProm(l[0].t))} ${esc(l[0].testo)}${l.length > 1 ? ` +${l.length - 1}` : ""}</span>`;
   }
   // Lo stato, come sulla riga del tabellone del PC (che lo manda già fatto):
   // il cuore, per tipo quello che aspetta col suo tempo — o ✓ se è tornato
@@ -1275,11 +1292,15 @@
   // letto, nel titolo. Grigio se la lettura è vecchia.
   function statoPaz(x) {
     if (!x) return "";
-    const cuore = x.cuore ? `<span class="cuore ${esc(x.cuore.livello)}${x.cuore.vecchio ? " vecchio" : ""}">${x.cuore.vecchio ? "♡" : "♥"}${typeof x.cuore.fuori === "string" && x.cuore.fuori ? ` <span class="cuorev">${esc(x.cuore.fuori)}</span>` : ""}</span>` : "";
+    const ora = x.vit && Number.isFinite(x.vit.ts) ? hhmm(x.vit.ts) : "";
+    const cuore = x.cuore ? `<span class="cuore ${esc(x.cuore.livello)}${x.cuore.vecchio ? " vecchio" : ""}">${x.cuore.vecchio ? "♡" : "♥"}${x.cuore.vecchio && ora ? ` <span class="cuorev">${ora}</span>`
+      : typeof x.cuore.fuori === "string" && x.cuore.fuori ? ` <span class="cuorev">${esc(x.cuore.fuori)}</span>` : ""}</span>` : "";
+    const KTIPO = { Lab: "k-lab", ECG: "k-ecg", RX: "k-img" };
     const esami = !Array.isArray(x.esami) ? "" : x.esami.length
-      ? x.esami.map((e) => `<span class="esp"><b>${esc(e.nome)}</b>${e.t ? ` <i class="${esc(e.banda)}">${esc(e.t)}</i>` : ""}</span>`).join("") : `<span class="esp">✓</span>`;
+      ? x.esami.map((e) => `<span class="esp ${KTIPO[e.nome] || ""}"><b>${esc(e.nome)}</b>${e.t ? ` <i class="${esc(e.banda)}">${esc(e.t)}</i>` : ""}</span>`).join("") : `<span class="esp">✓</span>`;
+    const letto = x.vecchio ? (/letto alle (\d{1,2}:\d{2})/.exec(x.titolo || "") || [])[1] : "";
     const segno = x.segno ? `<i class="segno ${esc(x.segno)}"></i>` : "";
-    return cuore || esami || segno ? `<span class="st${x.vecchio ? " vecchio" : ""}" title="${esc(x.titolo || "")}">${cuore}${esami}${segno}</span>` : "";
+    return cuore || esami || segno ? `<span class="st${x.vecchio ? " vecchio" : ""}" title="${esc(x.titolo || "")}">${cuore}${esami}${letto ? `<span class="letto">letto ${letto}</span>` : ""}${segno}</span>` : "";
   }
   // I parametri vitali che il PC ha già letto: una riga sotto il nome, i valori
   // fuori norma coloriti; un tocco apre le righe di prima (la più recente in
@@ -1303,15 +1324,15 @@
   // Un ordine, con le parole del PC: il titolo è com'è andata, l'ora una volta.
   // In una barra: quello che corre, o uno finito male (finché non lo si chiude
   // con ✕); «Ordine non completo» se non è stato confermato tutto.
-  function ordineHtml(o, barra = false) {
+  function ordineHtml(o, barra = false, sopra = false) {
     const segno = o.tono === "err" || o.tono === "warn" ? "!" : o.tono === "ok" ? "✓" : "";
     const male = o.fine && (o.tono === "err" || o.tono === "warn"), monco = male && (o.tono === "err" || o.stato !== "avviso");
     const titolo = barra ? `${monco ? "Ordine non completo" : o.titolo || ""} · ${o.paziente || ""}` : o.titolo || "";
     const testo = barra && monco ? [o.titolo, o.testo].filter(Boolean).join(" · ") : o.testo || "";
     const meta = barra || /\balle \d/.test(`${o.titolo} ${o.testo}`) ? "" : hhmm(o.ts || Date.now());
-    return `<div class="ord ${esc(o.tono || "run")}${barra ? " ordbar" : ""}" role="status"${barra ? ` data-a="paz" data-ep="${esc(o.ep)}"` : ""}>
+    return `<div class="ord ${esc(o.tono || "run")}${barra ? " ordbar" : ""}${sopra ? " sopra" : ""}" role="status"${barra ? ` data-a="paz" data-ep="${esc(o.ep)}"` : ""}>
       <span class="seg-o">${segno}</span>
-      <span class="c"><b>${esc(titolo)}</b>${testo ? `<span>${esc(testo)}</span>` : ""}${!barra && o.dettaglio ? `<small>${esc(o.dettaglio)}</small>` : ""}${meta ? `<small>${esc(meta)}</small>` : ""}</span>
+      <span class="c"><b><span>${esc(titolo)}</span>${meta ? `<time>${esc(meta)}</time>` : ""}</b>${testo ? `<span>${esc(testo)}</span>` : ""}${!barra && o.dettaglio && !`${titolo} ${testo}`.includes(o.dettaglio) ? `<small>${esc(o.dettaglio)}</small>` : ""}</span>
       ${o.fine ? `<button class="x" data-a="nascondi" data-id="${esc(o.id)}" aria-label="Chiudi">✕</button>` : ""}</div>`;
   }
   // (un ordine finito bene se ne va da solo dopo due minuti: le carte non si ammucchiano)
@@ -1323,7 +1344,7 @@
     const l = [...S.ordini.values()].filter((o) => !S.nascosti.has(o.id) && o.ep !== qui && (!o.fine || o.tono === "err" || o.tono === "warn"))
       .sort((a, b) => (b.ts || 0) - (a.ts || 0));
     const b = l.find((o) => o.fine) || (qui ? null : l[0]);
-    return b ? ordineHtml(b, true) : "";
+    return b ? ordineHtml(b, true, !!qui) : "";
   }
   // «Stampa un PDF»: a che punto è, poi com'è andata (finita bene, se ne va da sola come un ordine)
   function stampaHtml() {
@@ -1367,7 +1388,7 @@
     if (!t || !Array.isArray(t.righe) || !t.righe.length || !(t.ts > 0) || ora - t.ts > 30 * 60e3) return "";
     const prio = (r) => { const i = TRIAGE_ORDINE.indexOf(r.triage); return i < 0 ? TRIAGE_ORDINE.length : i; };
     const att = (r) => (r.arrivo > 0 ? Math.max(0, Math.round((ora - r.arrivo) / 60e3)) : null);
-    const testo = (m) => (m == null ? "" : m < 60 ? `${m}′` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`);
+    const testo = (m) => (m == null ? "" : durata(m));
     const righe = [...t.righe].sort((a, b) => prio(a) - prio(b) || (att(b) ?? -1) - (att(a) ?? -1)).map((r) =>
       `<div class="paz trg t-${TRIAGE[r.triage] || "nessuno"}"><span class="tr"></span><span class="cor"><span class="r1"><span class="nome">${esc(r.nome || r.breve)}</span>${
         Number.isInteger(r.eta) ? `<span class="eta">${r.eta} anni</span>` : ""}${att(r) != null ? `<span class="att">${testo(att(r))}</span>` : ""}${
@@ -1483,10 +1504,10 @@
       const senza = vivi.filter((p) => !postoSuMappa(p.ep));
       corpo = mappaHtml(vivi) + (senza.length ? `<div class="lbl">Senza posto</div>${carta(senza)}` : "");
     }
-    if (S.modo === "dafare") return `<main>${stampaHtml()}${codaDi("")}${commutatore()}${corpo}${barraOrdini()}</main>`;
-    return `<main>${stampaHtml()}${codaDi("")}${commutatore()}${S.pazienti.length ? corpo + triageHtml() + (prec.length ? `<div class="lbl">Episodi precedenti</div>${carta(prec)}` : "")
+    if (S.modo === "dafare") return `<main>${stampaHtml()}${codaDi("")}${commutatore()}${corpo}${S.avviso && !S.avviso.alto ? "" : barraOrdini()}</main>`;
+    return `<main>${stampaHtml()}${codaDi("")}${commutatore()}${S.pazienti.length ? corpo + triageHtml() + (prec.length ? `<button class="prec" data-a="precapri" aria-expanded="${S.precAperti}">Episodi precedenti (${prec.length})</button>${S.precAperti ? carta(prec) : ""}` : "")
       : `<div class="vuoto">Nessun paziente nell'elenco del PC.<br>Si riempie aprendo i pazienti nel gestionale.</div>${triageHtml()}`}
-      ${barraOrdini()}</main>`;
+      ${S.avviso && !S.avviso.alto ? "" : barraOrdini()}</main>`;
   }
   function tabellaHtml(t) {
     const col = t.colonne;
@@ -1504,16 +1525,18 @@
     // mai aperto sul PC: niente di salvato, e niente da rileggere (serve la sua pagina) — una riga
     if (e.mai && !e.tabella) return `<div class="vuoto stretto">Mai aperto sul PC: niente di salvato.</div>`;
     // quando li ha letti il PC: dopo un'ora, in ambra
-    const letti = e.tabella && e.letto ? `<small class="letti${Date.now() - e.letto > 60 * 60e3 ? " amb" : ""}">Letti sul PC alle ${hhmm(e.letto)} · ${fa(e.letto)}</small>` : "";
-    const valori = `<div class="carta"><div class="sezt"><div class="tv">${letti}</div>
-        <button class="agg" data-a="valori" ${legge ? "disabled" : ""}>${legge ? "Leggo sul PC…" : "↻ Rileggi"}</button></div>
+    const letti = e.tabella && e.letto ? `<small class="letti${Date.now() - e.letto > 60 * 60e3 ? " amb" : ""}">Letti sul PC ${alle(e.letto)}</small>` : "";
+    // (come sul PC: quanti valori sono nuovi dall'ultima volta che il medico li ha guardati)
+    const nuovi = e.tabella && Number(e.valoriNuovi) > 0 ? `<small class="nuovo">● ${e.valoriNuovi === 1 ? "1 nuovo" : `${Number(e.valoriNuovi)} nuovi`}</small>` : "";
+    const valori = `<div class="carta val-lab"><div class="sezt"><div class="tv">${letti}${nuovi}</div>
+        <button class="agg lab" data-a="valori" ${legge ? "disabled" : ""}>${legge ? "Leggo sul PC…" : "↻ Rileggi"}</button></div>
       ${e.tabella ? tabellaHtml(e.tabella) : legge ? "" : `<div class="vuoto stretto">Il PC non ha ancora letto valori per questo paziente.</div>`}</div>`;
     // i referti del laboratorio (emogas, emocromo…) non fra ECG, immagini e visite: a parte, in fondo
     // (con la tabella dei valori il PC non li manda: lì quello che dicono c'è già)
     const lab = e.referti.filter((r) => r.tipo === "lab"), altri = e.referti.filter((r) => r.tipo !== "lab");
     const carta = (l) => (l.length ? `<div class="carta">${l.map((r) => {
       const aperto = S.aperti.has(r.id);
-      return `<div class="refw"><button class="ref${r.pdf ? " conpdf" : ""}" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span></span>${
+      return `<div class="refw${["lab", "ecg", "img"].includes(r.tipo) ? " k-" + r.tipo : ""}"><button class="ref${r.pdf ? " conpdf" : ""}" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span>${r.nuovo ? `<span class="nuovo">nuovo</span>` : ""}</span>${
         aperto ? (r.testo ? `<div class="testo">${esc(r.testo)}</div>` : `<div class="manca">${r.lungo ? "Testo troppo lungo per il telefono: leggilo sul PC." : "Testo non ancora letto sul PC: aprilo una volta dal pannello (Esiti), poi è qui."}</div>`) : ""}</button>${
         r.pdf ? `<button class="pdf" data-a="pdf" data-id="${esc(r.id)}" data-n="${Number(r.pdf) || 0}" ${S.occupato.has("pdf" + r.id) ? "disabled" : ""}>PDF</button>` : ""}</div>`;
     }).join("")}</div>` : "");
@@ -1557,11 +1580,12 @@
     const nTxt = n === 1 ? "1 esame" : `${n} esami`;
     const occupato = S.inviati.has(p.ep), bloccato = S.bloccati.has(p.ep);
     const armato = S.arma && S.arma.ep === p.ep;
+    if (!n && !occupato && !bloccato && !armato) return "";   // niente da confermare: niente barra (compare scegliendo un esame)
     // (due pazienti con lo stesso cognome: il ⚠ anche qui, e il nome col suo segno)
     // (armato: due righe — che cosa, e per chi: il nome intero, l'età e il posto, che guardano dal paziente sbagliato)
     const etichetta = armato ? `<span class="l1">Ordino ${nTxt} · tocca di nuovo</span><span class="l2">${p.omonimo ? "⚠ " : ""}${esc(chi(p))}</span>`
       : esc(occupato ? (S.coda.has(S.inviati.get(p.ep)) ? "In coda…" : "Mando l'ordine al PC…") : bloccato ? "Controllo gli ordini sul PC…"
-        : !n ? "Scegli gli esami" : `Conferma e stampa · ${nTxt}${staDi() && doveDi(p.ep) === "stazione" ? ` → ${staDi()}` : ""}`);
+        : `Conferma e stampa · ${nTxt}${staDi() && doveDi(p.ep) === "stazione" ? ` → ${staDi()}` : ""}`);
     const perche = bloccato ? "Prima di un altro ordine, il PC dice se quello di prima è partito"
       : n && !s.q.trim() ? "Scrivi il quesito diagnostico" : rx && lab ? "Laboratorio e radiologia in richieste separate: il PC le conferma e le stampa tutte" : "";
     const nomi = [...s.esami].map((k) => c.nomi[k] || k).join(", ");
@@ -1580,14 +1604,28 @@
   function rigaDf(x, ep) {
     const id = esc(x.id), e = esc(ep), occ = S.occupato.has("df" + x.id) ? " disabled" : "";
     return `<div class="promr dfr${x.fatto ? " fatta" : ""}"><button type="button" class="dfck" role="checkbox" aria-checked="${x.fatto ? "true" : "false"}" data-a="dfck" data-ep="${e}" data-pid="${id}" aria-label="${esc(x.testo)}"${occ}></button>${
-      x.t != null ? `<span class="quando ${x.fatto ? "" : banda(x.t)}">${hhmm(x.t)}</span>` : ""}<span class="cosa">${esc(x.testo)}</span>${
+      x.t != null ? `<span class="quando ${x.fatto ? "" : banda(x.t)}">${esc(oraProm(x.t))}</span>` : ""}<span class="cosa">${esc(x.testo)}</span>${
       x.fatto ? `<button type="button" class="dfx" data-a="dftogli" data-ep="${e}" data-pid="${id}" aria-label="Cancella ${esc(x.testo)}"${occ}>${CESTINO}</button>` : ""}</div>`;
   }
-  function noteHtml(p) {
+  // La riga sotto il nome: la voce aperta più vicina (prima i promemoria, per ora) e quante altre — «○ 11:30 ecg di controllo · +2»;
+  // senza voci, «○ + nota» (da un episodio precedente, niente). Un tocco apre la lista col campo «+ nota».
+  function dfRiga(p) {
+    const l = vociDf(p).filter((x) => !x.fatto).sort((a, b) => (a.t != null ? 0 : 1) - (b.t != null ? 0 : 1) || (a.t || 0) - (b.t || 0));
+    if (!l.length && p.prec) return "";
+    const x = l[0];
+    return `<button type="button" class="dfriga${x ? "" : " vuota"}" data-a="dfapri" aria-label="Da fare"><span class="t">○ ${x ? `${x.t != null ? `<span class="q ${banda(x.t)}">${esc(oraProm(x.t))}</span> ` : ""}${esc(x.testo)}` : "+ nota"}</span>${
+      l.length > 1 ? `<span class="pi">· +${l.length - 1}</span>` : ""}</button>`;
+  }
+  // il foglio: la lista del paziente con le sue spunte, e il campo «+ nota»
+  function foglioDf(p) {
     const righe = vociDf(p).map((x) => rigaDf(x, p.ep)).join("");
     const add = p.prec ? "" : `<div class="addprom"><input id="promin" type="text" enterkeyhint="done" autocomplete="off" placeholder="+ nota" value="${esc(S.promTesto)}" aria-label="Nuova nota: con un'ora («11:30 tropo», «tra 2h ECG») è un promemoria" ${S.occupato.has("prom" + p.ep) ? "disabled" : ""}></div>`;
-    return `<div class="carta note">${righe ? `<div class="proms">${righe}</div>` : ""}${add}</div>`;
+    return `<div class="foglio" role="dialog" aria-modal="true" aria-label="Da fare"><button type="button" class="velo" data-a="dfchiudi" aria-label="Chiudi"></button>
+      <div class="pannello" data-k="df"><div class="capo"><b>Da fare · ${esc(p.breve || p.nome)}</b><button type="button" class="chiudi" data-a="dfchiudi">Chiudi</button></div>
+      <div class="carta note">${righe ? `<div class="proms">${righe}</div>` : ""}${add}</div></div></div>`;
   }
+  // Le allergie, con le parole del PC («Allergie: nega», «non compilate», «non lette», o il testo): sotto il nome, in rosso se c'è un testo
+  const allergieHtml = (p, cl = "alle") => (p && p.allergie && typeof p.allergie.t === "string" && p.allergie.t ? `<div class="${cl}${p.allergie.k === "ros" ? " ros" : ""}">${esc(p.allergie.t)}</div>` : "");
   // «Da fare» sulla schermata principale: le voci di tutti i pazienti, per paziente (cognome e posto: un tocco apre il
   // paziente), prima i promemoria per ora, poi le cose da fare, poi quelle appena spuntate. Niente pazienti vuoti.
   function dafareHtml(vivi) {
@@ -1601,9 +1639,9 @@
     const ordini = codaDi(p.ep) + ordiniDi(p.ep).map((o) => ordineHtml(o)).join("");
     const tab = (s, t) => `<button class="${S.scheda === s ? "on" : ""}" data-a="scheda" data-s="${s}" role="tab" aria-selected="${S.scheda === s}">${t}</button>`;
     const ter = S.terapiaSi && S.scheda === "terapia";
-    return `<main>${vitaliHtml(p)}${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}${S.terapiaSi ? tab("terapia", "Terapia") : ""}</div>
-      ${ordini}${S.scheda === "richieste" ? noteHtml(p) : ""}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : ter ? vistaTerapia(p) : vistaRichieste(p)}</main>${ctaHtml(p)}${
-      S.eoSheet && S.scheda === "cartella" && S.eo ? foglioEo() : ""}${ter ? foglioTerapia(p) : ""}`;
+    return `<main>${allergieHtml(p)}${dfRiga(p)}${vitaliHtml(p)}${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}${S.terapiaSi ? tab("terapia", "Terapia") : ""}</div>
+      ${ordini}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : ter ? vistaTerapia(p) : vistaRichieste(p)}</main>${ctaHtml(p)}${
+      S.eoSheet && S.scheda === "cartella" && S.eo ? foglioEo() : ""}${ter ? foglioTerapia(p) : ""}${S.dfFoglio ? foglioDf(p) : ""}`;
   }
   // La cartella: i campi della pagina del paziente sul PC, ognuno com'è là.
   // Si scrive dove il gestionale lascia scrivere; il resto si legge e basta.
@@ -1634,12 +1672,12 @@
     const legge = S.occupato.has("cartella" + p.ep), salva = S.occupato.has("csalva" + p.ep);
     if (!c) return legge ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto">Cartella non letta.</div>`;
     const b = S.cbozze.get(p.ep) || new Map();
-    const letto = c.letto ? `<small class="letti${Date.now() - c.letto > 60 * 60e3 ? " amb" : ""}">Letto sul PC alle ${hhmm(c.letto)} · ${fa(c.letto)}</small>` : "";
+    const letto = c.letto ? `<small class="letti${Date.now() - c.letto > 60 * 60e3 ? " amb" : ""}">Letto sul PC ${alle(c.letto)}</small>` : "";
     const campi = CARTELLA.map(([nome, etichetta]) => {
       const x = c.campi.find((y) => y.nome === nome);
       if (!x) return "";
       const chiuso = x.ro || p.prec;
-      return `<label class="cc${CAMPI_LUNGHI.has(nome) ? " lungo" : ""}${chiuso ? " ro" : ""}"><span>${esc(etichetta)}</span>${nome === CAMPO_EO && !chiuso && !salva ? eoHtml(p) : ""}<textarea id="cc-${nome}" rows="1" ${chiuso || salva ? "readonly" : ""} ${chiuso ? 'placeholder="—" tabindex="-1"' : ""} aria-label="${esc(etichetta)}">${
+      return `<label class="cc${chiuso ? " ro" : ""}"><span>${esc(etichetta)}</span>${nome === CAMPO_EO && !chiuso && !salva ? eoHtml(p) : ""}<textarea id="cc-${nome}" rows="1" ${chiuso || salva ? "readonly" : ""} ${chiuso ? 'placeholder="—" tabindex="-1"' : ""} aria-label="${esc(etichetta)}">${
         esc(b.has(nome) ? b.get(nome).testo : x.v)}</textarea></label>`;
     }).join("");
     return `<div class="carta cartella"><div class="sezt"><div class="tv">${letto}</div>
@@ -1658,7 +1696,7 @@
   function vistaTerapia(p) {
     const l = S.terapie.get(p.ep), legge = S.occupato.has("terapie" + p.ep);
     if (!l) return legge ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto">Terapia non letta.</div>`;
-    const letto = `<small class="letti${Date.now() - l.letto > 60 * 60e3 ? " amb" : ""}">Letto sul PC alle ${hhmm(l.letto)} · ${fa(l.letto)}</small>`;
+    const letto = `<small class="letti${Date.now() - l.letto > 60 * 60e3 ? " amb" : ""}">Letto sul PC ${alle(l.letto)}</small>`;
     const righe = l.righe.map((r, i) => ({ r, i })).sort((a, b) => (Number(b.r.prog) || 0) - (Number(a.r.prog) || 0) || b.i - a.i).map(({ r }) =>
       `<div class="ter"><span class="tt"><b>${esc(r.descr)}</b>${doseTer(r) ? ` <span>${esc(doseTer(r))}</span>` : ""}</span>${r.ora ? `<span class="to">${esc(r.ora)}</span>` : ""}</div>`).join("");
     return `<div class="carta"><div class="sezt"><div class="tv">${letto}</div>
@@ -1720,7 +1758,7 @@
       : e && e.tono === "ok" ? `<button type="button" class="grande" data-a="tchiudi">Fatto</button>`
       : e && e.tono === "warn" ? `<button type="button" class="grande quiet" data-a="trileggi">↻ Rileggi la Terapia</button>`
       : `<button type="button" class="grande" data-a="tconferma">Conferma per ${p.omonimo ? "⚠ " : ""}${esc(p.breve || p.nome)}</button>`;
-    return `<div class="triep"><div class="carta"><div class="tchi">${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(chi(p))}</div><b>${esc(v.descr)}</b><div>${esc(doseTer(v) || "senza dose")}</div></div>
+    return `<div class="triep"><div class="carta"><div class="tchi">${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(chi(p))}</div><b>${esc(v.descr)}</b><div>${esc(doseTer(v) || "senza dose")}</div>${allergieHtml(p, "tall")}</div>
       ${stato}${bottoni}${e && e.tono !== "err" ? "" : `<p class="piede">Il PC preme «Conferma» nella pagina Terapia del gestionale.</p>`}</div>`;
   }
   function ritoccaRiep() {
@@ -1747,7 +1785,7 @@
     const fg = $app.querySelector(".foglio .pannello"), fgy = fg ? { k: fg.dataset.k, y: fg.scrollTop } : null;   // (un foglio aperto resta dov'era)
     const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : vistaLista()) : schermata();
     disegno = true;   // (un campo tolto dal ridisegno non è un campo lasciato)
-    try { $app.innerHTML = testata() + corpo + foglioStazione() + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}${S.avviso.alto ? " alto" : ""}" role="alert">${esc(S.avviso.testo)}</div>` : ""); }
+    try { $app.innerHTML = testata() + corpo + foglioStazione() + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}${S.avviso.alto ? " alto" : ""}" role="alert"><span>${esc(S.avviso.testo)}</span>${S.avviso.azione ? `<button type="button" data-a="avvisoAz">${esc(S.avviso.azione.testo)}</button>` : ""}</div>` : ""); }
     finally { disegno = false; }
     for (const t of $app.querySelectorAll(".cc textarea")) alza(t);
     misureMappa();
@@ -1806,11 +1844,26 @@
     const fine = () => { if (!g) return; clearTimeout(g.timer); if (g.fant) g.fant.remove(); if (g.su) g.su.classList.remove("bers"); g = null;
       trascino = false; if (rinviato && !premuto) { rinviato = false; render(); } };
     const sotto = (x, y) => { const el = document.elementFromPoint(x, y); return { b: el && el.closest("[data-lid]"), mappa: !!(el && el.closest(".mappa")) }; };
-    async function metti(ep, dove) {
+    // dov'è adesso: «letto:id@mappa», «area:id@mappa», o «tray» (senza posto) — è quello che «Annulla» rimette
+    const postoDi = (ep) => {
+      for (const m of (S.mappa && S.mappa.mappe) || []) for (const x of [...(m.posti || []), ...(m.ospiti || [])]) if (x.ep === ep) return `${x.tipo}:${x.id}@${m.k}`;
+      return "tray";
+    };
+    const nomeDi = (ep) => { const p = paziente(ep) || ((S.triage && S.triage.righe) || []).find((r) => r && r.k === ep); return p ? cognome(p) : "Il paziente"; };
+    const nomeDove = (dove) => {
+      const [, tipo, id, k] = /^(letto|area):(.+?)(?:@(\w+))?$/.exec(dove) || [];
+      const m = ((S.mappa && S.mappa.mappe) || []).find((x) => x.k === k), o = m && (tipo === "letto" ? m.letti || [] : m.aree || []).find((x) => String(x.id) === id);
+      return o && o.nome ? o.nome : "";
+    };
+    async function metti(ep, dove, annulla = false) {
+      const prima = annulla ? "" : postoDi(ep);
+      let fatto = false;
       S.occupato.add("posto"); render();
-      try { const d = await chiedi("posto", { ep, dove }, TEMPO); if (d && Array.isArray(d.mappe) && d.mappe.length) S.mappa = d; }
+      try { const d = await chiedi("posto", { ep, dove }, TEMPO); if (d && Array.isArray(d.mappe) && d.mappe.length) S.mappa = d; fatto = true; }
       catch (e) { errore(e); }
       S.occupato.delete("posto"); render(); aggiornaLista(true);
+      // 5 secondi per tornare com'era: «ROSSI in OBI 2 · Annulla»
+      if (fatto && !annulla && prima !== dove) avviso(`${nomeDi(ep)} ${dove === "tray" ? "tolto dalla mappa" : `in ${nomeDove(dove)}`}`.trim(), "", false, { testo: "Annulla", fai: () => metti(ep, prima, true) });
     }
     $app.addEventListener("touchstart", (e) => {
       if (!puo() || e.touches.length !== 1) return;
@@ -1868,7 +1921,10 @@
     else if (nuovo) $app.appendChild(nuovo);
   }
   // i campi della cartella crescono col testo
-  const alza = (t) => { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; };
+  // (una riga in più solo col cursore dentro, dove si scrive)
+  const alza = (t) => { t.style.height = "auto"; t.style.height = t.scrollHeight + (!t.readOnly && document.activeElement === t ? Math.round(parseFloat(getComputedStyle(t).lineHeight) || 23) : 0) + "px"; };
+  $app.addEventListener("focusin", (e) => { if (e.target.matches && e.target.matches(".cc textarea")) alza(e.target); });
+  $app.addEventListener("focusout", (e) => { if (e.target.matches && e.target.matches(".cc textarea")) alza(e.target); });
   const fuocoSu = (id) => { const el = document.getElementById(id); if (el) el.focus(); };
 
   // --------------------------------------------------------------- i gesti
@@ -1900,6 +1956,10 @@
     else if (a === "zipVia") cancellaZip(b.dataset.id);
     else if (a === "zipTutte") cancellaTutte();
     else if (a === "paz") apriPaziente(b.dataset.ep);
+    else if (a === "dfapri") { S.dfFoglio = true; render(); }
+    else if (a === "dfchiudi") { S.dfFoglio = false; render(); }
+    else if (a === "precapri") { S.precAperti = !S.precAperti; render(); }
+    else if (a === "avvisoAz") { const az = S.avviso && S.avviso.azione; zitto(); render(); if (az) az.fai(); }
     else if (a === "modo") { S.modo = b.dataset.m === "mappa" ? "mappa" : b.dataset.m === "dafare" ? "dafare" : "lista"; try { localStorage.setItem(MODO, S.modo); } catch { /* solo in memoria */ } render(); }
     else if (a === "mappasel") { S.mappaSel = b.dataset.k; render(); }
     else if (a === "indietro") { S.vista = { nome: "lista", ep: "" }; S.arma = null; render(); aggiornaLista(); }

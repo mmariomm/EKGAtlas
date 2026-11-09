@@ -3181,7 +3181,33 @@
   // sono quelle dei pazienti di cui il medico risponde: Ambulatorio (e OBI,
   // dove c'è); l'attesa del triage e «tutti» no.
   const SCHEDA_NOSTRA = /^(AMBULATORIO|OBI)\b/i, SCHEDA_TRIAGE = /^TRIAGE\b/i;
-  const TRIAGE_LISTA = "triage.lista.v1";   // { ts, righe: [{ nome, breve, eta, triage, area, arrivo }] } — solo per il telefono
+  const TRIAGE_LISTA = "triage.lista.v1";   // { ts, righe: [{ nome, breve, eta, triage, area, arrivo }] } — per il telefono e la mappa
+  // Chi aspetta al Triage, sulla mappa (PC e telefono): non è fra i pazienti,
+  // ma di partenza sta nella Sala attesa della Bassa — un posto di partenza,
+  // mai scritto. Il medico lo porta dove vuole (trascinandolo): quel posto si
+  // scrive, sotto la sua chiave — nome e ora d'arrivo; la nascita qui non si
+  // tiene —, e vince. Letta più di 30 minuti fa, la lista non conta (come sul telefono).
+  const TRIAGE_ATTESA = { k: "ps", tipo: "area", id: "attesa" };
+  function chiaveTriage(r) {
+    let h = 0x811c9dc5;
+    for (const c of `${normNome(r?.nome)}|${Number(r?.arrivo) || 0}`) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0;
+    return "tr" + h.toString(36);
+  }
+  // chi è al Triage adesso e non è già fra i pazienti (lui ha il suo posto, o la lista: mai spostato da qui)
+  function triageOspiti(pazienti) {
+    const t = store.get(TRIAGE_LISTA, null);
+    if (!t || !Array.isArray(t.righe) || Date.now() - (t.ts || 0) > 30 * 60e3) return [];
+    const noti = new Set((pazienti || []).map((p) => normNome(p.name)));
+    return t.righe.filter((r) => r && r.nome && !noti.has(normNome(r.nome))).map((r) => ({ ...r, k: chiaveTriage(r) }));
+  }
+  // dove sta: il posto che gli ha dato il medico, in una delle mappe; se no la Sala attesa della Bassa (se c'è)
+  function postoOspite(key, sala) {
+    for (const k of Object.keys(MAPPE)) {
+      const raw = store.get(MAPPE[k].posti, {}), v = raw && typeof raw === "object" ? raw[key] : null, s = v && sala(k);
+      if (s && (v.tipo === "letto" ? s.letti : v.tipo === "area" ? s.aree : []).some((o) => o.id === v.id)) return { k, tipo: v.tipo, id: v.id, ts: +v.ts || 0 };
+    }
+    return sala(TRIAGE_ATTESA.k)?.aree.some((a) => a.id === TRIAGE_ATTESA.id) ? { ...TRIAGE_ATTESA, ts: 0 } : null;
+  }
   function leggiSmartPagina(doc, url) {
     if (!eSmart(doc, url) || classify(doc) === "login" || !doc.querySelector(".AFCHeaderTable")) return { ok: false, perche: "non è la lista smart" };
     let origine = "";
@@ -5692,26 +5718,32 @@
   const COLORS = `
     /* un colore, un significato: fatto = verde, in attesa = ambra, errore o critico = rosso, informazione o in corso = blu, il resto = grigio.
        I colori del triage e quelli del gestionale restano come sono. */
-    :host { all: initial; --ok: #177245; --att: #8A5A00; --err: #B3261E; --info: #0B5CAD; --neutro: #5B6B7A; }
+        /* IL SISTEMA DEI COLORI, dichiarato qui una volta sola (gli stessi nomi del telefono). Stati: fatto = ok,
+       tocca a te = att, errore = err, nuovo/in corso = info, il resto = neutro; ognuno col suo fondo (-f).
+       «Scelto» = pieno --azione col testo bianco. Il triage (#C62828 #EF6C00 #1E88E5 #2E7D32 #B0BEC5) sta solo
+       nella sua striscia (--tr). */
+    :host { all: initial; --ok: #177245; --ok-f: #EDF7F0; --att: #8A5A00; --att-f: #FFF4DB; --err: #B3261E; --err-f: #FDEBEA;
+            --info: #0B5CAD; --info-f: #EAF2FA; --neutro: #5B6B7A; --azione: #0B5CAD; --testo: #16232E; }
     [hidden] { display: none !important; }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-    .wrap { position: fixed; top: 10px; right: 10px; z-index: 2147483647; color: #16232E; }
-    .pill { display: flex; align-items: center; gap: 8px; background: #0B5CAD; color: #fff; border: 0; border-radius: 999px;
+    .wrap { position: fixed; top: 10px; right: 10px; z-index: 2147483647; color: var(--testo); }
+    .pill { display: flex; align-items: center; gap: 8px; background: var(--azione); color: #fff; border: 0; border-radius: 999px;
             padding: 9px 15px 9px 11px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 14px rgba(9,42,74,.22);
             touch-action: none; }
     .pill:active { cursor: grabbing; }
     .pill:hover { background: #094a8c; }
-    .pill .badge { background: #fff; color: #0B5CAD; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 800; }
+    .pill .badge { background: #fff; color: var(--azione); border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 800; }
     .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #7FD1A8; animation: psaPulse 1.2s ease-in-out infinite; }
+    .pill.run .dot { animation: none; }   /* durante un ordine si muove solo il pallino della striscia: il resto sta fermo */
     /* La striscia del giro in corso: due righe in un angolo, e sotto ci lavori
        come se il pannello non ci fosse. */
     .strip { display: flex; align-items: center; gap: 6px; }
     .pill.run { border-radius: 12px; padding: 7px 13px 7px 11px; max-width: min(380px, 82vw); text-align: left; }
-    .pill.run.alt, .pill.run.warn { background: #8A5A00; }
+    .pill.run.alt, .pill.run.warn { background: var(--att); }
     .pill.run.alt:hover, .pill.run.warn:hover { background: #764d00; }
     /* errore: si completa a mano, nel gestionale */
-    .pill.run.err { background: #B3261E; }
-    .pill.run.err:hover { background: #8f1e18; }
+    .pill.run.err { background: var(--err); }
+    .pill.run.err:hover { background: var(--err); }
     .pill .col { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.3; }
     .pill .l1 { display: flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; }
     /* il nome non cede mai per primo: prima l'etichetta, poi il resto */
@@ -5724,8 +5756,8 @@
     .pill .l3 { font-size: 11px; font-weight: 500; opacity: .8; max-width: 100%;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .stopmini { display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 999px; width: 30px; height: 30px; cursor: pointer; font-size: 12px;
-                background: #B3261E; color: #fff; box-shadow: 0 6px 20px rgba(9,42,74,.35); }
-    .stopmini:hover { background: #8f1e18; }
+                background: var(--err); color: #fff; box-shadow: 0 6px 20px rgba(9,42,74,.35); }
+    .stopmini:hover { background: var(--err); }
     /* Sotto la striscia, una riga per foglio (e per la richiesta che gira):
        il nome corto, una barretta, il ✕ — o la stampantina, se è già dell'aiutante. */
     .pjobs { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; width: 168px; }
@@ -5735,56 +5767,53 @@
     .pjob .pjn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 18px; line-height: 18px;
                  display: inline-flex; align-items: center; gap: 4px; }
     .pjob .pjn svg { width: 13px; height: 13px; flex: none; }
-    .pjob .pjn .pjchi { font-weight: 800; color: #6b3d02; }
+    .pjob .pjn .pjchi { font-weight: 800; color: var(--att); }
     .pjob .pjbar { grid-column: 1 / -1; height: 3px; background: #E3EAF1; border-radius: 2px; overflow: hidden; }
-    .pjob .pjbar i { display: block; height: 100%; background: #0B5CAD; transition: width .4s ease; }
-    .pjob.ok .pjbar i { background: #1E8A4C; }
-    .pjob.err { border-color: #B3261E; color: #B3261E; }
-    .pjob.err .pjbar i { background: #B3261E; }
+    .pjob .pjbar i { display: block; height: 100%; background: var(--azione); transition: width .4s ease; }
+    .pjob.ok .pjbar i { background: var(--ok); }
+    .pjob.err { border-color: var(--err); color: var(--err); }
+    .pjob.err .pjbar i { background: var(--err); }
     .pjx { border: 0; background: transparent; color: #5B6B7B; cursor: pointer; font-size: 11px; width: 18px; height: 18px; border-radius: 50%; padding: 0; }
     .pjaz { display: inline-flex; align-items: center; gap: 2px; }
-    .pjx:hover { background: #EEF3F8; color: #B3261E; }
+    .pjx:hover { background: #EEF3F8; color: var(--err); }
     /* in coda dietro le etichette di un ordine: la clessidra, che al passaggio è il ✕ */
     .pjx.att .pjxx, .pjx.att:hover .pjclx { display: none; }
     .pjx.att:hover .pjxx { display: inline; }
     .pjx.att .pjclx { font-size: 11px; }
-    .pjico { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; color: #0B5CAD; }
+    .pjico { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; color: var(--azione); }
     .pjico svg { width: 13px; height: 13px; }
-    .pjob.ok { background: #E8F5EC; border-color: #9FD3B3; }
-    .pjico.fatto { color: #1E8A4C; font-size: 13px; font-weight: 800; }
-    /* dall'aiutante, finché stampa: la stampantina respira piano */
-    .pjico.pulsa { animation: psaRespira 1.2s ease-in-out infinite; }
-    @keyframes psaRespira { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-    @media (prefers-reduced-motion: reduce) { .pjico.pulsa { animation: none; } }
-    .pjrist { border: 1px solid #B3261E; background: #fff; color: #B3261E; border-radius: 999px; padding: 0 7px; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; height: 18px; }
+    .pjob.ok { background: var(--ok-f); border-color: #9FD3B3; }
+    .pjico.fatto { color: var(--ok); font-size: 13px; font-weight: 800; }
+    /* dall'aiutante, finché stampa: la stampantina sta ferma (si muove solo il pallino della striscia) */
+    .pjrist { border: 1px solid var(--err); background: #fff; color: var(--err); border-radius: 999px; padding: 0 7px; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; height: 18px; }
     /* un'azione tranquilla accanto al resoconto («Ristampa») */
-    .strazione { border: 1px solid #C4D0DC; background: #fff; color: #0B5CAD; border-radius: 999px; padding: 6px 11px;
+    .strazione { border: 1px solid #C4D0DC; background: #fff; color: var(--azione); border-radius: 999px; padding: 6px 11px;
                  font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(9,42,74,.18); }
     .strazione:hover { background: #F4F8FB; }
     /* gli avvisi di prima, piegati: «!1» accanto alla striscia dell'ordine che gira */
     .pieg { flex: none; border: 0; border-radius: 999px; min-width: 26px; height: 26px; padding: 0 7px; cursor: pointer; font: inherit;
-            font-size: 12px; font-weight: 800; background: #8A5A00; color: #fff; box-shadow: 0 4px 14px rgba(9,42,74,.22); }
-    .pieg.err { background: #B3261E; }
+            font-size: 12px; font-weight: 800; background: var(--att); color: #fff; box-shadow: 0 4px 14px rgba(9,42,74,.22); }
+    .pieg.err { background: var(--err); }
     /* La striscia a pannello aperto: un chip in intestazione, la sua riga corta */
     #girow { display: contents; }
     .gchip { flex: 0 1000 auto; min-width: 64px; overflow: hidden; display: inline-flex; flex-direction: row-reverse; align-items: center; gap: 4px; height: 30px; padding: 0 3px 0 9px;
-             border-radius: 999px; background: #EAF2FA; color: #0B2A4A; font-size: 12px; font-weight: 600; white-space: nowrap; }
-    .gchip.warn { background: #FFF1D6; color: #6b3d02; }
-    .gchip.err { background: #FBEBEA; color: #7c1a14; }
-    .gchip.ok { background: #E8F5EC; color: #124F31; }
+             border-radius: 999px; background: var(--info-f); color: #0B2A4A; font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .gchip.warn { background: #FFF1D6; color: var(--att); }
+    .gchip.err { background: var(--err-f); color: var(--err); }
+    .gchip.ok { background: var(--ok-f); color: var(--ok); }
     .gchip .gcorpo { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; border: 0; background: transparent; color: inherit; font: inherit; padding: 0; }
     .gchip button.gcorpo { cursor: pointer; }
     .gchip .gt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .gchip .gt b { font-size: inherit; font-weight: 700; letter-spacing: 0; }
-    .gchip .gdot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #0B5CAD; animation: psaPulse 1.2s ease-in-out infinite; }
+    .gchip .gdot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--azione); animation: psaPulse 1.2s ease-in-out infinite; }
     @media (prefers-reduced-motion: reduce) { .gchip .gdot { animation: none; } }
     .gchip .gtick { flex: none; font-weight: 800; }
-    .gchip .gaz { flex: none; border: 1px solid #C4D0DC; background: #fff; color: #0B5CAD; border-radius: 999px; padding: 2px 9px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+    .gchip .gaz { flex: none; border: 1px solid #C4D0DC; background: #fff; color: var(--azione); border-radius: 999px; padding: 2px 9px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
     .gchip .pieg { min-width: 22px; height: 22px; padding: 0 6px; font-size: 11px; box-shadow: none; }
     .gchip .gstop { flex: none; border: 0; width: 24px; height: 24px; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; font-size: 11px; padding: 0; }
-    .gchip .gstop.ferma { background: #B3261E; color: #fff; }
+    .gchip .gstop.ferma { background: var(--err); color: #fff; }
     .gchip .gstop:hover { background: rgba(9,42,74,.1); }
-    .gchip .gstop.ferma:hover { background: #8f1e18; }
+    .gchip .gstop.ferma:hover { background: var(--err); }
     .gchiprighe { position: absolute; top: calc(100% + 2px); right: 12px; z-index: 5; cursor: default; }
     /* La finestra: al centro, l'85% dello schermo. Intestazione, schede e
        selezione restano ferme; scorre solo il corpo. Il contenuto sta su una
@@ -5805,7 +5834,7 @@
     .rz-ne, .rz-nw, .rz-se, .rz-sw { width: 14px; height: 14px; }
     .rz-ne { top: 0; right: 0; cursor: nesw-resize; } .rz-sw { bottom: 0; left: 0; cursor: nesw-resize; }
     .rz-nw { top: 0; left: 0; cursor: nwse-resize; } .rz-se { bottom: 0; right: 0; cursor: nwse-resize; }
-    .hd { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 12px 0 20px; background: #fff; color: #16232E;
+    .hd { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 12px 0 20px; background: #fff; color: var(--testo);
           border-bottom: 1px solid #E6EBF0; border-radius: 13px 13px 0 0; position: relative; z-index: 3; cursor: grab; user-select: none; touch-action: none; }
     .hd:active { cursor: grabbing; }
     .hd .logo { display: inline-flex; }
@@ -5816,15 +5845,15 @@
     .card:focus { outline: none; }
     .hd .hsp { flex: 1 1 auto; }
     .pill .who { max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .hd .sub { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .iconbtn { display: inline-grid; place-items: center; width: 36px; height: 36px; background: transparent; border: 0; color: #5B6B7A;
+    .hd .sub { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--neutro); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .iconbtn { display: inline-grid; place-items: center; width: 36px; height: 36px; background: transparent; border: 0; color: var(--neutro);
                cursor: pointer; border-radius: 8px; padding: 0; }
-    .iconbtn:hover { background: #F1F4F7; color: #16232E; }
-    .iconbtn:focus-visible { outline: 2px solid #0B5CAD; outline-offset: -2px; }
+    .iconbtn:hover { background: #F1F4F7; color: var(--testo); }
+    .iconbtn:focus-visible { outline: 2px solid var(--azione); outline-offset: -2px; }
     #stautow { display: contents; }
-    .stauto.ko { color: #B3261E; background: #FBEBEA; }
+    .stauto.ko { color: var(--err); background: var(--err-f); }
     .stauto.no, .stauto.sta { display: inline-flex; align-items: center; gap: 4px; width: auto; padding: 0 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
-    .stauto.sta:not(.ko) { color: #0B5CAD; background: #E8F0FA; }
+    .stauto.sta:not(.ko) { color: var(--azione); background: #E8F0FA; }
     .menuw { position: relative; }
     .menu { position: absolute; right: 0; top: 40px; z-index: 20; min-width: 200px; background: #fff; border: 1px solid #E3E8EF;
             border-radius: 10px; box-shadow: 0 12px 32px rgba(9,42,74,.16); padding: 6px; cursor: default; }
@@ -5832,147 +5861,134 @@
     .menuw > .menu { width: 360px; max-width: calc(100vw - 16px); box-sizing: border-box; max-height: calc(100vh - 56px);
                      overflow-y: auto; overscroll-behavior: contain; padding: 2px 6px 4px; }
     .menu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 6px;
-                   font-size: 13px; color: #16232E; cursor: pointer; }
+                   font-size: 13px; color: var(--testo); cursor: pointer; }
     .menu button:hover, .menu button:focus-visible { background: #F1F4F7; outline: none; }
-    .menu button.mrischio { color: #B3261E; font-weight: 700; }
-    .menu .mver { padding: 6px 10px 4px; font-size: 12px; color: #5B6B7A; }
+    .menu button.mrischio { color: var(--err); font-weight: 700; }
+    .menu .mver { padding: 6px 10px 4px; font-size: 12px; color: var(--neutro); }
     /* un'icona per voce, grigia, la parola accanto; le voci che si accendono
        dicono il loro stato al posto dell'icona (acceso: il pallino blu con la spunta) */
     .menu .msez > button, .menu .mpiede > button { display: flex; align-items: center; gap: 8px; }
-    .menu .mico { flex: none; display: inline-flex; color: #5B6B7A; }
-    .menu button:hover .mico { color: #16232E; }
-    .menu button[aria-checked="true"] .mico { color: #0B5CAD; }
+    .menu .mico { flex: none; display: inline-flex; color: var(--neutro); }
+    .menu .mico.mem { width: 16px; justify-content: center; font-size: 14px; line-height: 16px; }
+    .menu button:hover .mico { color: var(--testo); }
+    .menu button[aria-checked="true"] .mico { color: var(--azione); }
     /* il reset: in fondo, da solo sulla sua riga, rosso anche a riposo */
-    .menu .msez > button.mreset { flex: 0 0 100%; color: #B3261E; }
-    .menu button.mreset .mico { color: #B3261E; }
+    .menu .msez > button.mreset { flex: 0 0 100%; color: var(--err); }
+    .menu button.mreset .mico { color: var(--err); }
     /* in fondo la versione, con «Ricarica» accanto; «Aggiorna app», quando c'è, sopra di lei in blu */
     .menu .mpiede { border-top: 1px solid #EEF2F6; padding-top: 2px; }
-    .menu .mpiede > .magg { color: #0B5CAD; font-weight: 700; }
-    .menu .mpiede > .magg .mico { color: #0B5CAD; }
-    .menu .mver .mlink { display: inline; width: auto; padding: 0 2px; font: inherit; color: #0B5CAD; text-decoration: underline; text-underline-offset: 2px; }
+    .menu .mpiede > .magg { color: var(--azione); font-weight: 700; }
+    .menu .mpiede > .magg .mico { color: var(--azione); }
+    .menu .mver .mlink { display: inline; width: auto; padding: 0 2px; font: inherit; color: var(--azione); text-decoration: underline; text-underline-offset: 2px; }
     /* le sezioni: un titolo piccolo, le voci due per riga (una lunga si prende la riga) */
     .menu .msez { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 0; }
     .menu .msez + .msez { border-top: 1px solid #EEF2F6; }
-    .menu .mtit { flex: 0 0 100%; padding: 3px 10px 1px; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #5B6B7A; }
+    .menu .mtit { flex: 0 0 100%; padding: 3px 10px 1px; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--neutro); }
     .menu .msez > button { flex: 1 0 calc(50% - 1px); width: auto; min-height: 34px; white-space: nowrap; }
     .menu .msez > .mforma, .menu .msez > .mver { flex: 0 0 100%; box-sizing: border-box; }
     /* una versione nuova (⋯ → «Aggiorna app»): un puntino sul ⋯ */
     .iconbtn.agg { position: relative; }
     .iconbtn.agg::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--info); }
-    /* Forma: Finestra · Al passaggio · Colonna, in una riga del menu */
-    .menu .mforma { display: flex; align-items: center; gap: 2px; padding: 4px 4px 4px 10px; font-size: 12px; color: #5B6B7A; white-space: nowrap; }
+    /* Forma: Finestra · Al passaggio · Affianca, in una riga del menu */
+    .menu .mforma { display: flex; align-items: center; gap: 2px; padding: 4px 4px 4px 10px; font-size: 12px; color: var(--neutro); white-space: nowrap; }
     .menu .mforma span { margin-right: 6px; }
     .menu .mforma button { display: inline-block; width: auto; padding: 5px 8px; font-size: 12px; }
-    .menu .mforma button.on { background: #E8F0FA; color: #0B5CAD; font-weight: 700; }
-    /* la colonna: a tutta altezza sul bordo destro, il gestionale accanto */
-    .wrap.col { top: 0; right: 0; }
-    .wrap.col .card, .wrap.tab .card { border-radius: 0; border-width: 0 0 0 1px; box-shadow: 0 0 18px rgba(9,42,74,.14); }
-    .wrap.col .hd, .wrap.tab .hd { border-radius: 0; cursor: default; }
-    .wrap.col .rz-w { top: 0; bottom: 0; left: -3px; width: 8px; }
+    .menu .mforma button.on { background: #E8F0FA; color: var(--azione); font-weight: 700; }
+    /* il tabellone: a tutta pagina */
+    .wrap.tab .card { border-radius: 0; border-width: 0 0 0 1px; box-shadow: 0 0 18px rgba(9,42,74,.14); }
+    .wrap.tab .hd { border-radius: 0; cursor: default; }
     .wrap.tab .card { border: 0; box-shadow: none; }
-    /* la linguetta: nascosta, la colonna è questo segno sul bordo (F2 o un tocco la riaprono) */
-    .coltab { width: 7px; height: 96px; padding: 0; border: 0; border-radius: 6px 0 0 6px; background: #0B5CAD; cursor: pointer;
-              box-shadow: 0 2px 8px rgba(9,42,74,.25); display: block; }
-    .coltab:hover { width: 10px; }
-    .coltab:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 2px; }
-    .coltab.urg { background: #B3261E; }
-    .coltab.apre { position: absolute; left: -7px; top: calc(50% - 48px); z-index: 8; opacity: .55; }
-    .coltab.apre:hover, .coltab.apre:focus-visible { opacity: 1; left: -10px; }
     /* Al passaggio: la pill resta, sopra la finestra; fissata ha l'anello */
     .wrap.ppass { z-index: 2147483647; }
-    .pill.fissa { box-shadow: 0 0 0 3px #fff, 0 0 0 5px #0B5CAD, 0 4px 14px rgba(9,42,74,.22); }
-    .tbspia { font-size: 12px; font-weight: 500; color: #5B6B7A; white-space: nowrap; }
-    .tbspia.no { color: #8A5A00; }
+    .pill.fissa { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--azione), 0 4px 14px rgba(9,42,74,.22); }
+    .tbspia { font-size: 12px; font-weight: 500; color: var(--neutro); white-space: nowrap; }
+    .tbspia.no { color: var(--att); }
     .pbar { flex: 0 0 auto; height: 3px; background: #E3E8EF; }
-    .pbar i { display: block; height: 100%; background: #0B5CAD; transition: width .25s ease; }
+    .pbar i { display: block; height: 100%; background: var(--azione); transition: width .25s ease; }
     /* compact, always-visible selection strip (plain text, not pills) */
     .selbar { background: #F8FBFE; border-bottom: 1px solid #D9E2EC;
-              padding: 7px 24px; font-size: 12px; line-height: 1.8; color: #16232E; }
-    .selbar .selgrp { color: #0B5CAD; font-weight: 800; }
+              padding: 7px 24px; font-size: 12px; line-height: 1.8; color: var(--testo); }
+    .selbar .selgrp { color: var(--azione); font-weight: 800; }
     .selbar .selrow { display: block; }
-    .selbar .selcount { float: right; color: #5B6B7A; font-size: 11px; font-weight: 700; letter-spacing: .4px; }
     .selitem { display: inline; white-space: nowrap; border-radius: 4px; padding: 1px 2px; }
-    .selitem:hover { background: #EAF2FA; }
-    .selitem .selx { display: none; border: 0; background: #B3261E; color: #fff; border-radius: 999px;
+    .selitem:hover { background: var(--info-f); }
+    .selitem .selx { display: none; border: 0; background: var(--err); color: #fff; border-radius: 999px;
                      width: 15px; height: 15px; line-height: 13px; font-size: 11px; cursor: pointer; padding: 0;
                      vertical-align: 1px; margin-left: 2px; }
     .selitem:hover .selx { display: inline-block; }
     .bd { padding: 0; }
     .sec { margin-bottom: 14px; }
-    .lbl { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: #5B6B7A; margin-bottom: 6px; }
-    textarea, input[type="text"], input[type="search"] { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 8px 10px; font-size: 13px; color: #16232E; background: #fff; }
-    textarea:focus-visible, input:focus-visible, .chip:focus-visible, .pbtn:focus-visible, .seg button:focus-visible, .btn:focus-visible, select.res:focus-visible, summary:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .lbl { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--neutro); margin-bottom: 6px; }
+    textarea, input[type="text"], input[type="search"] { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 8px 10px; font-size: 13px; color: var(--testo); background: #fff; }
+    textarea:focus-visible, input:focus-visible, .chip:focus-visible, .pbtn:focus-visible, .seg button:focus-visible, .btn:focus-visible, select.res:focus-visible, summary:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-    .chip { display: inline-flex; align-items: center; border: 1px solid #C4D0DC; background: #F4F8FB; color: #16232E; border-radius: 999px;
+    .chip { display: inline-flex; align-items: center; border: 1px solid #C4D0DC; background: #F4F8FB; color: var(--testo); border-radius: 999px;
             padding: 6px 12px; font-size: 12.5px; min-height: 28px; cursor: pointer; }
-    .chip:hover { border-color: #0B5CAD; }
-    .chip.on { background: #EAF2FA; border-color: #0B5CAD; color: #16232E; }
+    .chip:hover { border-color: var(--azione); }
+    .chip.on { background: var(--azione); border-color: var(--azione); color: #fff; }
     .chip.on::before { content: "✓ "; font-weight: 800; white-space: pre; }
     .chip.q { background: transparent; border-style: dashed; color: #35506B; }
-    .chip.q:hover { border-color: #0B5CAD; color: #0B5CAD; }
+    .chip.q:hover { border-color: var(--azione); color: var(--azione); }
     .chip.q { padding: 3px 8px; font-size: 11px; min-height: 22px; }
     /* il quesito che porta un pacchetto di esami: bordo pieno; acceso, come un profilo */
-    .chip.q.pk { border-style: solid; border-color: #9DBFDE; color: #16232E; font-weight: 600; }
-    .chip.q.pk.on { background: #EAF2FA; border-color: #0B5CAD; color: #16232E; }
-    .chip.q.pk .pkn { font-weight: 500; color: #5B6B7A; }
+    .chip.q.pk { border-style: solid; border-color: #9DBFDE; color: var(--testo); font-weight: 600; }
+    .chip.q.pk.on { background: var(--azione); border-color: var(--azione); color: #fff; }
+    .chip.q.pk .pkn { font-weight: 500; color: var(--neutro); }
+    .chip.q.pk.on .pkn { color: #fff; }
     .qrow { display: flex; gap: 8px; align-items: flex-start; }
     .qrow input { flex: 1 1 52%; min-width: 0; }
     .qchips { flex: 1 1 48%; display: flex; flex-wrap: wrap; gap: 4px; align-content: flex-start; }
-    .chip.preset { background: #EAF2FA; border-color: #9DBFDE; font-weight: 600; padding: 5px 11px; font-size: 11.5px; min-height: 26px; }
+    .chip.preset { background: #fff; border-color: #9DBFDE; font-weight: 600; padding: 5px 11px; font-size: 11.5px; min-height: 26px; }
     /* dense two-column exam grid: many exams, little space, still tappable */
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 5px; }
-    .opt { display: flex; align-items: center; gap: 6px; border: 1px solid #E3E8EF; background: #fff; color: #16232E;
+    .opt { display: flex; align-items: center; gap: 6px; border: 1px solid #E3E8EF; background: #fff; color: var(--testo);
            border-radius: 7px; padding: 5px 7px; font-size: 11.5px; line-height: 1.2; cursor: pointer; text-align: left;
            min-height: 27px; overflow: hidden; }
-    .opt:hover { border-color: #0B5CAD; background: #F4F8FB; }
+    .opt:hover { border-color: var(--azione); background: #F4F8FB; }
     .opt .box { flex: 0 0 13px; width: 13px; height: 13px; border: 1.5px solid #9DBFDE; border-radius: 3px;
                 display: inline-grid; place-items: center; font-size: 11px; font-weight: 800; color: transparent; }
-    .opt.on { background: #EAF2FA; border-color: #0B5CAD; color: #16232E; font-weight: 600; }
-    .opt.on .box { background: #0B5CAD; border-color: #0B5CAD; color: #fff; }
+    .opt.on { background: var(--azione); border-color: var(--azione); color: #fff; font-weight: 600; }
+    .opt.on .box { background: #fff; border-color: #fff; color: var(--azione); }
     .opt .nm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .grouphdr { grid-column: 1 / -1; font-size: 11px; font-weight: 600; letter-spacing: .06em; color: #5B6B7A;
-                margin: 5px 0 0; text-transform: uppercase; }
-    .chip.preset.on { background: #EAF2FA; border-color: #0B5CAD; color: #16232E; }
-    .gchips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; margin: 1px 0; }
+    .chip.preset.on { background: var(--azione); border-color: var(--azione); color: #fff; }
     .qrx { grid-column: 1 / -1; min-width: 0; }
     /* Richieste: una casella «Quesito o esame…», poi tre colonne strette di
        parole da accendere — POC · Lab · RX. Niente caselle da spuntare: la
        riga intera si tocca, scelta è piena del colore dei comandi. */
     .qac { flex: 1 1 52%; min-width: 0; margin-top: 0; }
     .acquesito { display: block; width: 100%; text-align: left; border: 0; background: #F4F8FB; border-radius: 6px; padding: 6px 8px;
-                 font: inherit; font-size: 12px; font-weight: 600; color: #0B5CAD; cursor: pointer; margin-bottom: 2px;
+                 font: inherit; font-size: 12px; font-weight: 600; color: var(--azione); cursor: pointer; margin-bottom: 2px;
                  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .acquesito:hover { background: #EAF2FA; }
+    .acquesito:hover { background: var(--info-f); }
     .rcols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; align-items: start; }
     .rcol { display: flex; flex-direction: column; min-width: 0; }
-    .rch { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #5B6B7A;
+    .rch { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--neutro);
            padding: 0 6px 4px; border-bottom: 1px solid #E3E8EF; margin-bottom: 3px; }
     .rprofs { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0 5px; }
     .rprof { display: inline-flex; align-items: center; }
     .rprof .chip.preset { padding: 2px 9px; min-height: 22px; font-size: 11.5px; }
-    .respandi { border: 0; background: transparent; color: #0B5CAD; font: inherit; font-size: 12px; padding: 0 5px; cursor: pointer; }
+    .respandi { border: 0; background: transparent; color: var(--azione); font: inherit; font-size: 12px; padding: 0 5px; cursor: pointer; }
     .rcols .opt { width: 100%; border: 0; border-radius: 6px; background: transparent; min-height: 24px; padding: 3px 6px;
                   font-size: 12px; line-height: 1.25; gap: 6px; }
     .rcols .opt:hover { background: #F1F6FB; }
-    .rcols .opt.on { background: #0B5CAD; color: #fff; font-weight: 600; }
+    .rcols .opt.on { background: var(--azione); color: #fff; font-weight: 600; }
     .rcols .opt.on:hover { background: #094a8c; }
     .rcols .opt.sotto { padding-left: 16px; }
     .rcols .opt .nm { flex: 0 1 auto; min-width: 0; }
     .rcols .opt .ult { font-size: 11px; margin-left: 0; padding-left: 0; }
-    .ult .uok { color: #177245; font-weight: 600; }
-    .ult .uatt { color: #A15F00; font-weight: 600; }
-    .ult .uros { color: #B3261E; font-weight: 700; }
+    .ult .uok { color: var(--ok); font-weight: 600; }
+    .ult .uatt { color: var(--att); font-weight: 600; }
+    .ult .uros { color: var(--err); font-weight: 700; }
     .rcols .opt.on .ult, .rcols .opt.on .ult span { color: #fff; }
     .rcol .qrx { margin-top: 6px; font-size: 12px; padding: 6px 8px; }
-    .chip.cart { background: #EDF7F0; border-color: #BCE0C9; color: #124F31; cursor: default; }
-    .chip.ghosted { background: #F4F8FB; border-color: #E3E8EF; color: #5B6B7A; cursor: default; }
-    .chip.nel { background: #EDF7F0; border-color: #BCE0C9; color: #124F31; cursor: default; }
-    .chip.manca { background: #FBEBEA; border-color: #E9BAB6; color: #7c1a14; cursor: default; font-weight: 600; }
-    .chip.controlla { background: #FFF7E6; border-color: #F0D49A; color: #8a4b03; cursor: default; font-weight: 600; }
+    .chip.cart { background: var(--ok-f); border-color: #BCE0C9; color: var(--ok); cursor: default; }
+    .chip.ghosted { background: #F4F8FB; border-color: #E3E8EF; color: var(--neutro); cursor: default; }
+    .chip.nel { background: var(--ok-f); border-color: #BCE0C9; color: var(--ok); cursor: default; }
+    .chip.manca { background: var(--err-f); border-color: #E9BAB6; color: var(--err); cursor: default; font-weight: 600; }
+    .chip.controlla { background: var(--att-f); border-color: #F0D49A; color: var(--att); cursor: default; font-weight: 600; }
     /* l'emogas entrato nella versione di sempre: «al posto di EGA VENOSA NEW» */
-    .chip .alposto { margin-left: 6px; font-size: 11px; font-weight: 500; color: #5B6B7A; }
+    .chip .alposto { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--neutro); }
     /* un'azione secondaria scritta, non un bottone: «solo carrello», «+ aggiungi» */
-    .lnk { border: 0; background: transparent; padding: 2px 4px; font: inherit; font-size: 12.5px; font-weight: 600; color: #0B5CAD;
+    .lnk { border: 0; background: transparent; padding: 2px 4px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--azione);
            cursor: pointer; text-decoration: underline; text-decoration-color: #9DBFDE; text-underline-offset: 3px; white-space: nowrap; }
     .lnk:hover:enabled { color: #094a8c; text-decoration-color: currentColor; }
     .lnk:disabled { color: #93A3B3; text-decoration: none; cursor: default; }
@@ -5981,7 +5997,7 @@
     .lnk.ultima { display: block; margin: -2px 0 6px; padding-left: 0; }
     .lnk.ultima.rpiede { margin: 12px 0 4px; }
     /* una richiesta ancora da confermare: una riga, non un allarme */
-    .daconf { display: flex; align-items: center; gap: 8px; max-width: 820px; margin: 0 0 12px; font-size: 12px; color: #7a4b03; }
+    .daconf { display: flex; align-items: center; gap: 8px; max-width: 820px; margin: 0 0 12px; font-size: 12px; color: var(--att); }
     .daconf .ddot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: #E5A83B; }
     .daconf .lnk { font-size: 12px; padding: 0; margin-left: auto; }
     /* sul suo carrello: «Conferma e stampa» · «Svuota», a due tocchi */
@@ -5989,7 +6005,7 @@
     .daconf .dcaz { margin-left: auto; display: flex; gap: 12px; }
     .daconf .dcaz .lnk { margin-left: 0; }
     .daconf .lnk.chiede { white-space: normal; text-align: right; }
-    .daconf .lnk.chiede.via:enabled { color: #9B1C14; text-decoration-color: #E2A6A0; }
+    .daconf .lnk.chiede.via:enabled { color: var(--err); text-decoration-color: #E2A6A0; }
     .acsec .ac { margin-top: 0; }
     .btn { display: block; width: 100%; border: 0; border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; }
     .btn + .btn { margin-top: 7px; }
@@ -6003,35 +6019,35 @@
     #goconfirm .ctxt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #goconfirm:not(:disabled)::after { content: "Ctrl+Invio"; flex: 0 1000 auto; min-width: 0; overflow: hidden; white-space: nowrap;
                                        padding-left: 10px; font-size: 11px; font-weight: 500; opacity: .75; }
-    .btn.primary { background: #0B5CAD; color: #fff; }
+    .btn.primary { background: var(--azione); color: #fff; }
     .btn.primary:hover { background: #094a8c; }
-    .btn.confirm { background: #FFF7E6; color: #8a4b03; border: 1px solid #E5C588; }
+    .btn.confirm { background: var(--att-f); color: var(--att); border: 1px solid #E5C588; }
     .btn.confirm:hover { background: #ffefd0; }
-    .btn.ghost { background: #F4F8FB; color: #16232E; border: 1px solid #C4D0DC; }
-    .btn.ghost:hover { border-color: #0B5CAD; }
+    .btn.ghost { background: #F4F8FB; color: var(--testo); border: 1px solid #C4D0DC; }
+    .btn.ghost:hover { border-color: var(--azione); }
     /* «Svuoto 4 esami?»: il secondo tocco svuota davvero */
-    .btn.ghost.armato { background: #FBEBEA; color: #7c1a14; border-color: #B3261E; }
-    .btn.stop { background: #B3261E; color: #fff; }
+    .btn.ghost.armato { background: var(--err-f); color: var(--err); border-color: var(--err); }
+    .btn.stop { background: var(--err); color: #fff; }
     .btn.stop:hover { background: #941e18; }
     .btn:disabled { background: #EDF1F5; color: #93A3B3; border: 1px solid #E3E8EF; cursor: default; opacity: 1; }
-    .idline { font-size: 11.5px; color: #5B6B7A; margin: 0 0 7px; text-align: center; }
-    .idline b { color: #16232E; }
-    .problem { font-size: 11.5px; color: #7a4b03; background: #FFF7E6; border: 1px solid #E5C588; border-radius: 8px; padding: 7px 9px; margin-bottom: 7px; }
-    .hint { font-size: 11.5px; color: #5B6B7A; margin-top: 7px; }
+    .idline { font-size: 11.5px; color: var(--neutro); margin: 0 0 7px; text-align: center; }
+    .idline b { color: var(--testo); }
+    .problem { font-size: 11.5px; color: var(--att); background: var(--att-f); border: 1px solid #E5C588; border-radius: 8px; padding: 7px 9px; margin-bottom: 7px; }
+    .hint { font-size: 11.5px; color: var(--neutro); margin-top: 7px; }
     .steps { display: flex; flex-direction: column; gap: 6px; }
     .step { display: flex; align-items: baseline; gap: 8px; padding: 8px 9px; border-radius: 8px; background: #F4F8FB; }
     .step .ic { flex: 0 0 16px; text-align: center; font-size: 12px; display: inline-block; }
-    .step.ok { background: #EDF7F0; } .step.ok .ic { color: #177245; }
-    .step.running { background: #EAF2FA; outline: 1px solid #9DBFDE; }
+    .step.ok { background: var(--ok-f); } .step.ok .ic { color: var(--ok); }
+    .step.running { background: var(--info-f); outline: 1px solid #9DBFDE; }
     .step.running .ic { animation: psaSpin 1.1s linear infinite; }
-    .step.fail { background: #FBEBEA; } .step.fail .ic { color: #B3261E; font-weight: 800; }
+    .step.fail { background: var(--err-f); } .step.fail .ic { color: var(--err); font-weight: 800; }
     .step.skipped { opacity: .55; }
-    .step small { color: #5B6B7A; margin-left: auto; text-align: right; }
+    .step small { color: var(--neutro); margin-left: auto; text-align: right; }
     .banner { border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; font-size: 12.5px; }
     .banner b { display: block; font-size: 13px; margin-bottom: 3px; }
-    .banner.err { background: #FBEBEA; color: #7c1a14; border: 1px solid #E9BAB6; }
-    .banner.ok { background: #EDF7F0; color: #124F31; border: 1px solid #BCE0C9; }
-    .banner.warn { background: #FFF7E6; color: #7a4b03; border: 1px solid #E5C588; }
+    .banner.err { background: var(--err-f); color: var(--err); border: 1px solid #E9BAB6; }
+    .banner.ok { background: var(--ok-f); color: var(--ok); border: 1px solid #BCE0C9; }
+    .banner.warn { background: var(--att-f); color: var(--att); border: 1px solid #E5C588; }
     .banner .qline { display: block; margin-top: 3px; font-size: 11.5px; opacity: .85; }
     .ac { position: relative; margin-top: 8px; }
     .ac input { width: 100%; }
@@ -6039,26 +6055,26 @@
               border: 1px solid #C4D0DC; border-radius: 10px; box-shadow: 0 10px 24px rgba(9,42,74,.18);
               max-height: 260px; overflow: auto; padding: 4px; }
     .acitem { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent;
-              border-radius: 6px; padding: 6px 8px; font-size: 12px; cursor: pointer; color: #16232E; }
-    .acitem:hover { background: #EAF2FA; }
-    .acitem.on { color: #177245; font-weight: 600; }
+              border-radius: 6px; padding: 6px 8px; font-size: 12px; cursor: pointer; color: var(--testo); }
+    .acitem:hover { background: var(--info-f); }
+    .acitem.on { color: var(--ok); font-weight: 600; }
     .acitem.on::after { content: "✓"; margin-left: auto; }
     .acnm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .actag { flex: 0 0 auto; margin-left: auto; font-size: 11px; font-weight: 800; letter-spacing: .4px; color: #5B6B7A;
+    .actag { flex: 0 0 auto; margin-left: auto; font-size: 11px; font-weight: 800; letter-spacing: .4px; color: var(--neutro);
              background: #F4F8FB; border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
     .acitem.on .actag { margin-left: 0; }
-    .acempty { padding: 8px; font-size: 12px; color: #8296A9; }
+    .acempty { padding: 8px; font-size: 12px; color: var(--neutro); }
     .list { border: 1px solid #D9E2EC; border-radius: 10px; max-height: 320px; overflow: auto; margin-top: 6px; }
     .list label { display: flex; gap: 8px; padding: 9px 10px; font-size: 12px; cursor: pointer; align-items: baseline; border-bottom: 1px solid #EEF2F6; }
     .list label:hover { background: #F4F8FB; }
-    .list input[type="checkbox"] { accent-color: #0B5CAD; }
+    .list input[type="checkbox"] { accent-color: var(--azione); }
     .log { font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; color: #35506B; background: #F8FAFC;
            border: 1px solid #E3E8EF; border-radius: 8px; padding: 8px; max-height: 130px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-    details.reg summary { cursor: pointer; font-size: 11.5px; color: #5B6B7A; margin: 8px 0 6px; }
+    details.reg summary { cursor: pointer; font-size: 11.5px; color: var(--neutro); margin: 8px 0 6px; }
     /* il resoconto: passi e Registro insieme, chiusi sotto «Dettagli» */
     details.dett { max-width: 820px; margin-bottom: 8px; }
-    details.dett > summary { cursor: pointer; font-size: 11.5px; font-weight: 600; color: #5B6B7A; margin: 2px 0 8px; }
-    details.dett .reghd { font-size: 11.5px; color: #5B6B7A; margin: 10px 0 6px; }
+    details.dett > summary { cursor: pointer; font-size: 11.5px; font-weight: 600; color: var(--neutro); margin: 2px 0 8px; }
+    details.dett .reghd { font-size: 11.5px; color: var(--neutro); margin: 10px 0 6px; }
     details.reflab > summary { cursor: pointer; }
     /* Dimissioni: le deleghe per il ritiro, una riga quieta sotto i fogli */
     details.ritiro { margin-top: 10px; }
@@ -6080,26 +6096,26 @@
     .commit > .btn { max-width: 820px; }
     .rlist { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
     .rrow { display: flex; align-items: center; gap: 8px; border: 1px solid #E3E8EF; background: #fff; border-radius: 8px;
-            padding: 7px 9px; font-size: 12px; cursor: pointer; text-align: left; width: 100%; color: #16232E; }
-    .rrow:hover { border-color: #0B5CAD; background: #F4F8FB; }
+            padding: 7px 9px; font-size: 12px; cursor: pointer; text-align: left; width: 100%; color: var(--testo); }
+    .rrow:hover { border-color: var(--azione); background: #F4F8FB; }
     .prow { display: flex; flex-direction: column; gap: 1px; align-items: flex-start; width: 100%; text-align: left;
-            border: 1px solid #E3E8EF; background: #fff; border-radius: 8px; padding: 6px 9px; cursor: pointer; color: #16232E; }
-    .prow:hover { border-color: #0B5CAD; background: #F4F8FB; }
-    .prow.hot { border-color: #9DBFDE; background: #EAF2FA; }
+            border: 1px solid #E3E8EF; background: #fff; border-radius: 8px; padding: 6px 9px; cursor: pointer; color: var(--testo); }
+    .prow:hover { border-color: var(--azione); background: #F4F8FB; }
+    .prow.hot { border-color: #9DBFDE; background: var(--info-f); }
     .pline1 { font-size: 12px; font-variant-numeric: tabular-nums; }
-    .pline1 small { color: #5B6B7A; font-size: 11px; }
-    .pline2 { font-size: 11px; color: #5B6B7A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    .pline1 small { color: var(--neutro); font-size: 11px; }
+    .pline2 { font-size: 11px; color: var(--neutro); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
     .rdot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #C4D0DC; background: transparent; }
     .rdot.saved { background: #9AA8B5; border-color: #9AA8B5; }   /* salvato sul PC: un fatto di cache, non una notizia */
     .rdot.open { background: #9DBFDE; border-color: #9DBFDE; }
     .rdot.busy { background: #E5A83B; border-color: #E5A83B; animation: psaPulse 1s infinite; }
-    .rdot.err { background: #B3261E; border-color: #B3261E; }
-    .mini { float: right; border: 1px solid #C4D0DC; background: #fff; color: #0B5CAD; border-radius: 6px;
+    .rdot.err { background: var(--err); border-color: var(--err); }
+    .mini { float: right; border: 1px solid #C4D0DC; background: #fff; color: var(--azione); border-radius: 6px;
             padding: 2px 8px; font-size: 12px; min-height: 24px; font-weight: 700; cursor: pointer; letter-spacing: 0; text-transform: none; }
-    .mini:hover { border-color: #0B5CAD; background: #F4F8FB; }
+    .mini:hover { border-color: var(--azione); background: #F4F8FB; }
     .rwhen { flex: 0 0 auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: #35506B; font-variant-numeric: tabular-nums; }
-    .rsys { flex: 0 0 auto; font-size: 11px; font-weight: 800; letter-spacing: .5px; color: #5B6B7A; background: #F4F8FB;
+    .rsys { flex: 0 0 auto; font-size: 11px; font-weight: 800; letter-spacing: .5px; color: var(--neutro); background: #F4F8FB;
             border: 1px solid #E3E8EF; border-radius: 5px; padding: 1px 5px; }
     .rlab { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     /* Le schermate in UNA fila di pillole, nell'ordine in cui si lavora:
@@ -6108,9 +6124,9 @@
     .seg { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 2px; margin: 0; padding: 0 24px;
            border-bottom: 1px solid #EEF2F6; min-height: 42px; }
     .seg > button { border: 0; border-bottom: 2px solid transparent; background: none; border-radius: 0; margin-bottom: -1px;
-                    padding: 12px 10px 10px; font-size: 13px; font-weight: 400; color: #5B6B7A; cursor: pointer; }
-    .seg > button:hover { color: #16232E; }
-    .seg > button.on { color: #16232E; font-weight: 600; border-bottom-color: #0B5CAD; }
+                    padding: 12px 10px 10px; font-size: 13px; font-weight: 400; color: var(--neutro); cursor: pointer; }
+    .seg > button:hover { color: var(--testo); }
+    .seg > button.on { color: var(--testo); font-weight: 600; border-bottom-color: var(--azione); }
     /* la scheda accesa è in grassetto, ma occupa già la larghezza del grassetto:
        cambiando schermata le altre non si spostano di lato */
     .seg > button[data-t] { display: inline-flex; flex-direction: column; align-items: center; }
@@ -6119,15 +6135,15 @@
     /* in Modifica la fila resta com'è (stessa altezza, stesse righe di testo) ma non va mai a capo */
     .seg.modifica { flex-wrap: nowrap; }
     .segtit { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 12px 0 10px;
-              border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 13px; font-weight: 600; line-height: normal; color: #16232E; }
+              border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 13px; font-weight: 600; line-height: normal; color: var(--testo); }
     /* una schermata del menu ⋯: «‹ [icona] Nome» al posto delle schede (‹ ed Esc tornano alla scheda di prima) */
     .seg.vmenu { align-items: center; gap: 2px; }
     .seg .vback { flex: none; width: 30px; height: 30px; margin: 0 0 0 -8px; padding: 0; border: 0; border-radius: 8px; }
-    .segtit .mico { display: inline-flex; vertical-align: -3px; margin-right: 7px; color: #5B6B7A; }
-    .rgo { flex: 0 0 auto; color: #8296A9; font-size: 12px; }
+    .segtit .mico { display: inline-flex; vertical-align: -3px; margin-right: 7px; color: var(--neutro); }
+    .rgo { flex: 0 0 auto; color: var(--neutro); font-size: 12px; }
     .dlist, .mlist { display: flex; flex-direction: column; gap: 4px; }
     .dsep { display: flex; align-items: center; gap: 8px; margin: 8px 2px 3px; font-size: 11px;
-            color: #5B6B7A; text-transform: uppercase; letter-spacing: .06em; }
+            color: var(--neutro); text-transform: uppercase; letter-spacing: .06em; }
     .dsep::after { content: ""; flex: 1 1 auto; height: 1px; background: #E3E8EF; }
     .drow { display: flex; align-items: stretch; gap: 5px; }
     .sec > .drow + .drow { margin-top: 6px; }
@@ -6138,59 +6154,59 @@
               border: 1px solid #E3E8EF; border-radius: 9px; background: #fff; cursor: pointer;
               padding: 8px 10px 8px 11px; font: inherit; }
     .dcopia:hover { border-color: #9DBFDE; background: #F4F9FD; }
-    .dcopia:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
-    .dcopia.fatto { border-color: #BCE0C9; background: #EDF7F0; }
-    .dcopia.fatto .dico { color: #124F31; }
-    .dnome { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; color: #16232E; overflow: hidden;
+    .dcopia:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
+    .dcopia.fatto { border-color: #BCE0C9; background: var(--ok-f); }
+    .dcopia.fatto .dico { color: var(--ok); }
+    .dnome { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; color: var(--testo); overflow: hidden;
              white-space: nowrap; text-overflow: ellipsis; }
-    .dmeta { flex: 0 0 auto; font-size: 11px; color: #5B6B7A; }
+    .dmeta { flex: 0 0 auto; font-size: 11px; color: var(--neutro); }
     .dico { flex: 0 0 auto; font-size: 13px; color: #6E8398; }
-    .dmod { color: #0B5CAD; font-weight: 800; margin-left: 5px; }
-    .dtuo { margin-left: 7px; padding: 1px 7px; border-radius: 999px; background: #EAF2FA; color: #0B5CAD;
+    .dmod { color: var(--azione); font-weight: 800; margin-left: 5px; }
+    .dtuo { margin-left: 7px; padding: 1px 7px; border-radius: 999px; background: var(--info-f); color: var(--azione);
             font-size: 11px; font-weight: 600; vertical-align: 1px; }
     /* in fondo all'elenco, un foglio da scrivere: tratteggiato, come un posto libero */
     .dnuovo { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 38px; margin-top: 2px; padding: 8px 11px;
               border: 1px dashed #C4D0DC; border-radius: 9px; background: transparent; cursor: pointer; text-align: left;
-              font: inherit; font-size: 12.5px; font-weight: 600; color: #5B6B7A; transition: border-color .12s, color .12s, background-color .12s; }
-    .dnuovo:hover { border-color: #0B5CAD; color: #0B5CAD; background: #F4F9FD; }
-    .dnuovo:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+              font: inherit; font-size: 12.5px; font-weight: 600; color: var(--neutro); transition: border-color .12s, color .12s, background-color .12s; }
+    .dnuovo:hover { border-color: var(--azione); color: var(--azione); background: #F4F9FD; }
+    .dnuovo:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
     .dplus { font-size: 17px; font-weight: 400; line-height: 1; }
     /* il nome del foglio tuo: un titolo che si scrive, non un modulo */
     .dhd { display: flex; align-items: center; gap: 6px; max-width: 820px; margin-bottom: 10px; }
     .dhd .mini { float: none; flex: none; white-space: nowrap; }
     .dhd input.dtit { flex: 1 1 auto; width: auto; min-width: 0; border: 0; border-bottom: 1px solid #D9E2EC; border-radius: 0;
-                      background: transparent; padding: 6px 2px; font: inherit; font-size: 16px; font-weight: 600; color: #16232E; }
-    .dhd input.dtit:focus, .dhd input.dtit:focus-visible { outline: none; border-bottom-color: #0B5CAD; }
+                      background: transparent; padding: 6px 2px; font: inherit; font-size: 16px; font-weight: 600; color: var(--testo); }
+    .dhd input.dtit:focus, .dhd input.dtit:focus-visible { outline: none; border-bottom-color: var(--azione); }
     .dhd input.dtit::placeholder { color: #A3B2C2; font-weight: 400; }
-    .dmod.agg { color: #A2600A; }
+    .dmod.agg { color: var(--att); }
     .dbtn { flex: 0 0 auto; min-width: 38px; border: 1px solid #E3E8EF; border-radius: 9px;
             background: #F8FBFE; color: #35506B; font-size: 13px; cursor: pointer; }
-    .dbtn:hover { background: #EAF2FA; border-color: #9DBFDE; color: #0B5CAD; }
-    .dbtn:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .dbtn:hover { background: var(--info-f); border-color: #9DBFDE; color: var(--azione); }
+    .dbtn:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
     /* il testo scelto nella tendina: si vede cosa è finito negli appunti */
-    .eotxt { margin-top: 8px; border: 1px solid #E3E8EF; border-left: 3px solid #0B5CAD; border-radius: 8px;
+    .eotxt { margin-top: 8px; border: 1px solid #E3E8EF; border-left: 3px solid var(--azione); border-radius: 8px;
              background: #F8FBFE; padding: 9px 11px; font-size: 12.5px; line-height: 1.55; color: #35506B;
              max-height: 34vh; overflow: auto; white-space: pre-wrap; }
     .eoazione { margin-top: 8px; }
     .dedit { width: 100%; min-height: 46vh; resize: vertical; border: 1px solid #D9E2EC; border-radius: 9px;
              padding: 9px 10px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
-             color: #16232E; background: #fff; }
-    .dedit:focus { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+             color: var(--testo); background: #fff; }
+    .dedit:focus { outline: 2px solid var(--azione); outline-offset: 1px; }
     /* a name we were never taught: shown in full, and underlined so it can
        never be mistaken for one of the curated sigle */
     .sttab th.stn.grezza { text-decoration: underline dotted #C08A2E; text-underline-offset: 2px; }
     /* un avviso discreto, non un riquadro: una riga piccola sopra la tabella */
-    .avvnomi { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #7a4b03; padding: 0 2px; margin-bottom: 5px; }
+    .avvnomi { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--att); padding: 0 2px; margin-bottom: 5px; }
     .avvnomi .avvi { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%; background: #E5C588;
                      color: #4d2f02; font-weight: 800; font-size: 11px; text-align: center; line-height: 14px; }
-    .avvnomi .avvb { border: 0; background: transparent; color: #7a4b03; font: inherit;
+    .avvnomi .avvb { border: 0; background: transparent; color: var(--att); font: inherit;
                      font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; }
-    .infochip { float: right; margin-right: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; color: #7a4b03;
-                background: #FFF7E6; border-radius: 999px; padding: 1px 8px; cursor: help; }
-    .infochip:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .infochip { float: right; margin-right: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--att);
+                background: var(--att-f); border-radius: 999px; padding: 1px 8px; cursor: help; }
+    .infochip:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
     /* senza valori letti: un solo bottone, grande, al posto della tabella */
     .carica { display: flex; justify-content: center; padding: 22px 0 14px; }
-    .grande { border: 0; border-radius: 12px; background: #0B5CAD; color: #fff; font: inherit; font-size: 16px; font-weight: 700;
+    .grande { border: 0; border-radius: 12px; background: var(--azione); color: #fff; font: inherit; font-size: 16px; font-weight: 700;
               padding: 15px 38px; min-width: 240px; cursor: pointer; box-shadow: 0 6px 18px rgba(11,92,173,.28); }
     .grande:hover { background: #094a8c; }
     .grande:disabled { background: #7FA6CB; box-shadow: none; cursor: default; }
@@ -6200,8 +6216,8 @@
     /* WORKUP (gli Esiti): Lab · ECG · Imaging, ognuno col suo colore sul bordo
        e nel titolo. Il rosso è SOLO dei valori fuori range; l'ambra di ciò che
        aspetta; il blu (l'accento) dei comandi e di «nuovo». */
-    :host, .wu { --wu-lab: #0E7468; --wu-ecg: #5B50B8; --wu-img: #8A4A8F; --wu-altri: #5B6B7A;
-          --wu-wait: #8A5A00; --wu-wait-bg: #FFF6E0; --wu-new: #0B5CAD; --wu-new-bg: #EAF2FA; --wu-bad: #B3261E; }
+    :host, .wu { --wu-lab: #0E7468; --wu-ecg: #5B50B8; --wu-img: #8A4A8F; --wu-altri: var(--neutro);
+          --wu-wait: var(--att); --wu-wait-bg: var(--att-f); --wu-new: var(--azione); --wu-new-bg: var(--info-f); --wu-bad: var(--err); }
     /* Il Lab sempre per primo, a tutta larghezza; sotto ECG e Imaging, affiancati se c'è posto */
     .wu .esgrid { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
     .wu .wucol { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; min-width: 0; }
@@ -6211,91 +6227,91 @@
     }
     .wusum { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 0 14px; padding: 2px 2px 8px; }
     .wusumv { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px;
-              font-size: 13.5px; color: #16232E; font-variant-numeric: tabular-nums; }
+              font-size: 13.5px; color: var(--testo); font-variant-numeric: tabular-nums; }
     .wuv { white-space: nowrap; }
     .wuv b { font-weight: 600; color: #35506B; }
     .wuval { color: var(--wu-bad); font-weight: 700; }
-    .wuprima { color: #5B6B7A; font-size: 12px; }
-    .wusep, .wupiu { color: #8397A8; }
-    .wuok { color: #5B6B7A; }
+    .wuprima { color: var(--neutro); font-size: 12px; }
+    .wusep, .wupiu { color: var(--neutro); }
+    .wuok { color: var(--neutro); }
     .wunuovi { border: 0; border-radius: 999px; background: var(--wu-new-bg); color: var(--wu-new); font: inherit; font-size: 12px;
                font-weight: 700; padding: 1px 10px; cursor: pointer; }
     .wunuovi:hover { background: #DCEAF7; }
     .wutools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
     .wutools .mini { float: none; }
     .wuprog { font-size: 11.5px; font-weight: 600; color: #35506B; }
-    .wuauto { float: right; margin-right: 6px; font-size: 11px; font-weight: 600; color: #8397A8; font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
+    .wuauto { float: right; margin-right: 6px; font-size: 11px; font-weight: 600; color: var(--neutro); font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
     /* ogni sezione: il suo colore sul bordo e, appena accennato, sul fondo */
-    .wusec { --wu-c: #5B6B7A; border-left: 3px solid var(--wu-c); border-radius: 0 10px 10px 0; padding: 9px 12px 10px;
+    .wusec { --wu-c: var(--neutro); border-left: 3px solid var(--wu-c); border-radius: 0 10px 10px 0; padding: 9px 12px 10px;
              margin: 0; min-width: 0; background: color-mix(in srgb, var(--wu-c) 5%, #fff); }
     .wulab .stwrap { width: fit-content; max-width: 100%; background: #fff; }
     .wulab { --wu-c: var(--wu-lab); } .wuecg { --wu-c: var(--wu-ecg); } .wuimg { --wu-c: var(--wu-img); } .wualtri { --wu-c: var(--wu-altri); }
     .wuh { display: flow-root; }   /* i bottoni a destra restano nella riga del titolo */
     .wuh .wut { color: var(--wu-c); font-weight: 800; }
-    .wucnt { color: #8397A8; font-weight: 600; letter-spacing: 0; }
-    .wuvuoto { font-size: 12px; color: #8397A8; }
+    .wucnt { color: var(--neutro); font-weight: 600; letter-spacing: 0; }
+    .wuvuoto { font-size: 12px; color: var(--neutro); }
     .wuwaits { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
     /* una riga per attesa: niente fascia gialla, un segno ambra a sinistra */
     .wuwait { display: flex; align-items: baseline; gap: 7px; min-width: 0; font-size: 12px; color: #35506B;
               border-left: 2px solid var(--wu-wait); padding: 1px 0 1px 8px; }
     .wuwait b { flex: none; white-space: nowrap; color: var(--wu-wait); font-variant-numeric: tabular-nums; }
     /* parziale: i valori arrivano già, niente ambra e niente orologio */
-    .wuwait.parz { border-left-color: #C9D3DD; color: #5B6B7A; }
-    .wuwait.parz b { color: #5B6B7A; font-weight: 600; }
+    .wuwait.parz { border-left-color: #C9D3DD; color: var(--neutro); }
+    .wuwait.parz b { color: var(--neutro); font-weight: 600; }
     .wuwlab { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .wuwq { flex: 0 0 auto; color: #8397A8; font-size: 11px; }
+    .wuwq { flex: 0 0 auto; color: var(--neutro); font-size: 11px; }
     .wu .rlist { max-height: none; overflow: visible; }
     .wuline { display: flex; align-items: stretch; gap: 4px; }
     .wuline .rrow { flex: 1 1 auto; min-width: 0; }
     .rmain { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-    .wuex { font-size: 11.5px; color: #5B6B7A; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .wuex { font-size: 11.5px; color: var(--neutro); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .wunew { flex: 0 0 auto; font-size: 11px; font-weight: 700; color: var(--wu-new); background: var(--wu-new-bg); border-radius: 999px; padding: 0 7px; }
-    .wust { flex: 0 0 auto; font-size: 11px; color: #8397A8; }
-    .wupdf { flex: 0 0 auto; border: 1px solid #E3E8EF; border-radius: 8px; background: #fff; color: #0B5CAD; font: inherit;
+    .wust { flex: 0 0 auto; font-size: 11px; color: var(--neutro); }
+    .wupdf { flex: 0 0 auto; border: 1px solid #E3E8EF; border-radius: 8px; background: #fff; color: var(--azione); font: inherit;
              font-size: 11px; font-weight: 700; padding: 0 9px; cursor: pointer; white-space: nowrap; }
-    .wupdf:hover { border-color: #0B5CAD; background: #F4F8FB; }
-    .wupdf:focus-visible, .wunuovi:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .wupdf:hover { border-color: var(--azione); background: #F4F8FB; }
+    .wupdf:focus-visible, .wunuovi:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
     .wuitem.aperto .rrow { border-color: var(--wu-c); }
     .wutxt { margin: 4px 0 8px 14px; padding: 7px 11px; border-left: 2px solid var(--wu-c); border-radius: 0 8px 8px 0; background: #FBFCFE; }
     .wuver { display: inline-block; margin-bottom: 5px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 700;
              color: var(--wu-wait); background: var(--wu-wait-bg); }
     .wualtro { font-size: 12.5px; font-weight: 700; color: var(--wu-bad); }
     .wuex.grave { color: var(--wu-bad); font-weight: 700; white-space: normal; }
-    .wunote { font-size: 12px; color: #5B6B7A; }
+    .wunote { font-size: 12px; color: var(--neutro); }
     .wuact { display: flex; gap: 6px; margin-top: 7px; }
     .wuact .mini { float: none; }
     .rdot.coda { border-style: dashed; border-color: #8397A8; }
-    .rrow.altro .rlab { color: #8397A8; }
-    .avvlista { white-space: pre-wrap; font-size: 11px; line-height: 1.45; color: #5B6B7A;
+    .rrow.altro .rlab { color: var(--neutro); }
+    .avvlista { white-space: pre-wrap; font-size: 11px; line-height: 1.45; color: var(--neutro);
                 background: #FFFDF7; border: 1px solid #EEDFC0; border-radius: 8px; padding: 6px 9px; margin-bottom: 6px; }
     .archhd { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 8px; cursor: pointer;
               border: 1px solid #E3E8EF; border-radius: 9px; background: #F8FBFE; padding: 7px 10px;
-              font: 600 12px/1 inherit; color: #5B6B7A; }
-    .archhd:hover { border-color: #9DBFDE; color: #16232E; }
+              font: 600 12px/1 inherit; color: var(--neutro); }
+    .archhd:hover { border-color: #9DBFDE; color: var(--testo); }
     .archhd .an { background: #E3E8EF; color: #35506B; border-radius: 999px; padding: 1px 7px; font-size: 11px; }
-    .archhd .ago { margin-left: auto; color: #8296A9; }
+    .archhd .ago { margin-left: auto; color: var(--neutro); }
     .alist { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
     .arow { display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 10px;
             border: 1px solid #EDF1F6; border-radius: 8px; background: #fff; }
-    .arow .anm { flex: 1 1 auto; font-size: 12px; color: #5B6B7A; overflow: hidden;
+    .arow .anm { flex: 1 1 auto; font-size: 12px; color: var(--neutro); overflow: hidden;
                  white-space: nowrap; text-overflow: ellipsis; }
-    .arow .ameta { flex: 0 0 auto; font-size: 11px; color: #5B6B7A; }
+    .arow .ameta { flex: 0 0 auto; font-size: 11px; color: var(--neutro); }
     .abtn { flex: 0 0 auto; border: 1px solid #D9E2EC; background: #F8FBFE; color: #35506B;
             border-radius: 7px; padding: 3px 8px; font: 600 11px/1.4 inherit; cursor: pointer; }
-    .abtn:hover { border-color: #9DBFDE; color: #0B5CAD; }
-    .abtn.del:hover { border-color: #E9BAB6; background: #FBEBEA; color: #B3261E; }
+    .abtn:hover { border-color: #9DBFDE; color: var(--azione); }
+    .abtn.del:hover { border-color: #E9BAB6; background: var(--err-f); color: var(--err); }
     .tchip { display: flex; align-items: center; }
-    .tchip button { display: inline-flex; align-items: center; gap: 6px; height: 32px; border: 1px solid #E3E8EF; background: #fff; color: #5B6B7A;
+    .tchip button { display: inline-flex; align-items: center; gap: 6px; height: 32px; border: 1px solid #E3E8EF; background: #fff; color: var(--neutro);
                     font: 600 12px/1 inherit; border-radius: 8px; padding: 0 9px; cursor: pointer; font-variant-numeric: tabular-nums; }
     .tchip.off button { border-color: transparent; width: 36px; justify-content: center; padding: 0; }
-    .tchip button:hover { background: #F1F4F7; color: #16232E; }
+    .tchip button:hover { background: #F1F4F7; color: var(--testo); }
     .tchip .tdot { width: 7px; height: 7px; border-radius: 50%; background: var(--info); }
     /* i chip di stato dell'intestazione (cronometro, REC, iPhone): la stessa forma del .gchip */
-    .tchip.on button { height: 30px; border: 0; background: #EAF2FA; color: #0B2A4A; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .tchip.on button { height: 30px; border: 0; background: var(--info-f); color: #0B2A4A; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .tchip.on button:first-child { border-radius: 999px 0 0 999px; padding: 0 8px 0 11px; }
     .tchip.on button:last-child { border-radius: 0 999px 999px 0; padding: 0 11px 0 7px; border-left: 1px solid #fff; }
     .tchip.on button:hover { background: #DCEAF7; color: #0B2A4A; }
-    .recchip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: #FBEBEA; color: var(--err);
+    .recchip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--err-f); color: var(--err);
                font-size: 12px; font-weight: 600; white-space: nowrap; margin: 0 4px; }
     /* nell'intestazione, la forma delle altre chip (.gchip); sulla pill resta piccola: la pill non cresce mentre registri */
     .hd .recchip { height: 30px; padding: 0 11px; }
@@ -6307,98 +6323,98 @@
     /* Registra è un gesto raro e tranquillo: ghost, a larghezza propria, col pallino rosso del REC */
     .registrazioni #regvia { display: inline-block; width: auto; padding: 8px 16px; margin-bottom: 4px; }
     .registrazioni #regvia .recpt { color: var(--err); }
-    .registrazioni .regko { background: #FDF3F2; border: 1px solid #E9BAB6; color: #8A1F19; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; margin-bottom: 8px; }
-    .regauto { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: #16232E; cursor: pointer; }
-    .regauto input { width: 16px; height: 16px; margin: 0; accent-color: #0B5CAD; cursor: pointer; }
+    .registrazioni .regko { background: var(--err-f); border: 1px solid #E9BAB6; color: #8A1F19; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; margin-bottom: 8px; }
+    .regauto { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: var(--testo); cursor: pointer; }
+    .regauto input { width: 16px; height: 16px; margin: 0; accent-color: var(--azione); cursor: pointer; }
     .registrazioni .lbl { margin-top: 16px; }
     .reglist { display: flex; flex-direction: column; gap: 6px; }
     .regrow { border: 1px solid #E3E8EF; border-radius: 9px; background: #fff; padding: 8px 10px; font-size: 12px; color: #35506B; }
-    .regrow .rr1 { display: flex; align-items: center; gap: 8px; color: #16232E; font-size: 12.5px; }
-    .regrow .rkb { margin-left: auto; color: #5B6B7A; font-variant-numeric: tabular-nums; }
+    .regrow .rr1 { display: flex; align-items: center; gap: 8px; color: var(--testo); font-size: 12.5px; }
+    .regrow .rkb { margin-left: auto; color: var(--neutro); font-variant-numeric: tabular-nums; }
     .regtag { padding: 1px 7px; border-radius: 999px; background: #EEF2F6; color: #35506B; font-size: 11px; font-weight: 700; }
 
-    .regrow .rr2 { margin-top: 3px; color: #16232E; }
-    .regrow .rr3 { margin-top: 3px; font-size: 11px; color: #5B6B7A; overflow-wrap: anywhere; }
+    .regrow .rr2 { margin-top: 3px; color: var(--testo); }
+    .regrow .rr3 { margin-top: 3px; font-size: 11px; color: var(--neutro); overflow-wrap: anywhere; }
     .regrow .rok { color: #1E6B43; font-weight: 600; }
-    .regrow .rko { color: #B3261E; font-weight: 700; }
+    .regrow .rko { color: var(--err); font-weight: 700; }
     .regrow .rr4 { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
     .regrow .rr4 .mini { float: none; margin: 0; }
-    .regrow .rr4 .mini.via { color: #B3261E; }
-    .regrow .rr4 .mini.armato { background: #FBEBEA; border-color: #B3261E; color: #7c1a14; }
+    .regrow .rr4 .mini.via { color: var(--err); }
+    .regrow .rr4 .mini.armato { background: var(--err-f); border-color: var(--err); color: var(--err); }
     .regriep { white-space: pre-wrap; font: 11px/1.45 ui-monospace, Menlo, Consolas, monospace; color: #35506B; background: #F4F8FB; border: 1px solid #E3E8EF;
                border-radius: 8px; padding: 8px 10px; margin: 8px 0 0; max-height: 260px; overflow: auto; }
-    .tnow { display: flex; align-items: center; gap: 10px; background: #EDF7F0; border: 1px solid #BCE0C9;
+    .tnow { display: flex; align-items: center; gap: 10px; background: var(--ok-f); border: 1px solid #BCE0C9;
             border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
-    .tbig { font: 800 20px/1 inherit; color: #124F31; font-variant-numeric: tabular-nums; }
+    .tbig { font: 800 20px/1 inherit; color: var(--ok); font-variant-numeric: tabular-nums; }
     .tlab { flex: 1 1 auto; font-size: 12px; color: #35506B; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .tpres { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
     .ricetta .lbl { margin-top: 12px; }
     .ricetta .lbl:first-child { margin-top: 0; }
     .ricpref, .ricris { display: flex; flex-wrap: wrap; gap: 5px; }
-    .ricchip { border: 1px solid #C4D0DC; background: #fff; color: #16232E; border-radius: 999px; padding: 6px 11px; font: 600 11.5px/1.2 inherit; cursor: pointer; text-align: left; }
-    .ricchip:hover, .ricrisv:hover { border-color: #0B5CAD; color: #0B5CAD; }
-    .ricchip.on, .ricrisv.on { background: #0B5CAD; border-color: #0B5CAD; color: #fff; }
+    .ricchip { border: 1px solid #C4D0DC; background: #fff; color: var(--testo); border-radius: 999px; padding: 6px 11px; font: 600 11.5px/1.2 inherit; cursor: pointer; text-align: left; }
+    .ricchip:hover, .ricrisv:hover { border-color: var(--azione); color: var(--azione); }
+    .ricchip.on, .ricrisv.on { background: var(--azione); border-color: var(--azione); color: #fff; }
     .ricris { flex-direction: column; flex-wrap: nowrap; margin-top: 6px; max-height: 210px; overflow: auto; }
-    .ricrisv { border: 1px solid #E3E8EF; background: #fff; color: #16232E; border-radius: 8px; padding: 6px 9px; font: 12px/1.3 inherit; cursor: pointer; text-align: left; }
+    .ricrisv { border: 1px solid #E3E8EF; background: #fff; color: var(--testo); border-radius: 8px; padding: 6px 9px; font: 12px/1.3 inherit; cursor: pointer; text-align: left; }
     .ricrisv b { font-variant-numeric: tabular-nums; margin-right: 4px; }
     .rictipo { font-style: normal; font-size: 11px; font-weight: 700; color: #6A4C93; background: #F3EEFA; border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
     .ricrisv.on .rictipo { background: #fff; }
     .riccerca { display: flex; gap: 6px; }
-    .riccerca input, .ricquesito { flex: 1 1 auto; min-width: 0; border: 1px solid #D9E2EC; border-radius: 8px; padding: 7px 9px; font: 12.5px/1.3 inherit; color: #16232E; }
+    .riccerca input, .ricquesito { flex: 1 1 auto; min-width: 0; border: 1px solid #D9E2EC; border-radius: 8px; padding: 7px 9px; font: 12.5px/1.3 inherit; color: var(--testo); }
     .ricquesito { display: block; width: 100%; box-sizing: border-box; margin-bottom: 10px; }
-    .riccerca input:focus, .ricquesito:focus { outline: 2px solid #0B5CAD; outline-offset: 1px; }
-    .ricbtn { border: 1px solid #0B5CAD; background: #fff; color: #0B5CAD; border-radius: 8px; padding: 6px 12px; font: 700 12px/1 inherit; cursor: pointer; }
+    .riccerca input:focus, .ricquesito:focus { outline: 2px solid var(--azione); outline-offset: 1px; }
+    .ricbtn { border: 1px solid var(--azione); background: #fff; color: var(--azione); border-radius: 8px; padding: 6px 12px; font: 700 12px/1 inherit; cursor: pointer; }
     .ricbtn:disabled, .ricetta .btn:disabled { opacity: .45; cursor: default; }
     .ricvoci { display: flex; flex-direction: column; gap: 4px; }
     .ricv { display: flex; align-items: center; gap: 8px; border: 1px solid #EDF1F6; border-radius: 8px; padding: 5px 6px 5px 9px; font-size: 12px; }
-    .ricvd { flex: 1 1 auto; min-width: 0; font-weight: 600; color: #16232E; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ricvd i { font-style: normal; font-weight: 400; color: #8296A9; font-variant-numeric: tabular-nums; }
-    .ricq { display: flex; align-items: center; gap: 4px; color: #5B6B7A; }
+    .ricvd { flex: 1 1 auto; min-width: 0; font-weight: 600; color: var(--testo); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ricvd i { font-style: normal; font-weight: 400; color: var(--neutro); font-variant-numeric: tabular-nums; }
+    .ricq { display: flex; align-items: center; gap: 4px; color: var(--neutro); }
     .ricq input { width: 46px; border: 1px solid #D9E2EC; border-radius: 6px; padding: 3px 5px; font: 12px/1.2 inherit; }
     .ricns { display: flex; align-items: center; gap: 4px; color: #35506B; white-space: nowrap; }
-    .ricx { border: 0; background: none; color: #8296A9; cursor: pointer; font-size: 13px; padding: 2px 4px; }
-    .ricnota { font-size: 11.5px; color: #5B6B7A; margin-top: 6px; }
-    .ricstato { margin-top: 8px; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; background: #F4F8FB; color: #16232E; border-left: 3px solid #0B5CAD; }
-    .ricstato.ok { background: #EDF7F0; border-left-color: #1E7A46; }
-    .ricstato.warn { background: #FFF6E5; border-left-color: #B26B00; }
-    .ricstato.err { background: #FDECEA; border-left-color: #B3261E; color: #8C1D18; font-weight: 700; }
+    .ricx { border: 0; background: none; color: var(--neutro); cursor: pointer; font-size: 13px; padding: 2px 4px; }
+    .ricnota { font-size: 11.5px; color: var(--neutro); margin-top: 6px; }
+    .ricstato { margin-top: 8px; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; background: #F4F8FB; color: var(--testo); border-left: 3px solid var(--azione); }
+    .ricstato.ok { background: var(--ok-f); border-left-color: #1E7A46; }
+    .ricstato.warn { background: var(--att-f); border-left-color: #B26B00; }
+    .ricstato.err { background: var(--err-f); border-left-color: var(--err); color: #8C1D18; font-weight: 700; }
     .ricstato .ricbtn { margin-left: 8px; }
     .rif { max-width: 820px; }
-    .rifanc { font-size: 12px; color: #35506B; background: #F4F8FB; border-left: 3px solid #0B5CAD;
+    .rifanc { font-size: 12px; color: #35506B; background: #F4F8FB; border-left: 3px solid var(--azione);
               border-radius: 0 8px 8px 0; padding: 8px 11px; margin-bottom: 10px; line-height: 1.45; }
     #riffiltro { width: 100%; box-sizing: border-box; border: 1px solid #D9E2EC; border-radius: 8px; padding: 8px 10px;
-                 font: 13px/1.3 inherit; color: #16232E; margin-bottom: 4px; }
-    #riffiltro:focus { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+                 font: 13px/1.3 inherit; color: var(--testo); margin-bottom: 4px; }
+    #riffiltro:focus { outline: 2px solid var(--azione); outline-offset: 1px; }
     .rifg { margin-top: 12px; }
     .rift { border-top: 1px solid #EDF1F6; }
     .rifr { display: grid; grid-template-columns: minmax(120px, 170px) 1fr; gap: 12px; padding: 6px 2px;
             border-bottom: 1px solid #EDF1F6; font-size: 12.5px; line-height: 1.45; }
-    .rifr b { color: #16232E; font-weight: 700; }
+    .rifr b { color: var(--testo); font-weight: 700; }
     .rifr span { color: #35506B; }
     .rifr i { font-style: normal; color: #9AAABB; }
-    .rifvuoto { font-size: 12px; color: #8296A9; padding: 10px 2px; }
-    .rifpiede { font-size: 11.5px; color: #5B6B7A; font-style: italic; margin-top: 12px; }
-    .tpre { border: 1px solid #C4D0DC; background: #fff; color: #16232E; border-radius: 999px;
+    .rifvuoto { font-size: 12px; color: var(--neutro); padding: 10px 2px; }
+    .rifpiede { font-size: 11.5px; color: var(--neutro); font-style: italic; margin-top: 12px; }
+    .tpre { border: 1px solid #C4D0DC; background: #fff; color: var(--testo); border-radius: 999px;
             padding: 7px 12px; font: 600 12px/1 inherit; cursor: pointer; }
-    .tpre:hover { border-color: #0B5CAD; color: #0B5CAD; background: #F4F8FB; }
+    .tpre:hover { border-color: var(--azione); color: var(--azione); background: #F4F8FB; }
     .tlibero { display: flex; gap: 6px; }
     .tlibero input { flex: 1 1 auto; border: 1px solid #D9E2EC; border-radius: 8px; padding: 7px 9px;
-                     font: 12.5px/1.3 inherit; color: #16232E; }
-    .tlibero input:focus { outline: 2px solid #0B5CAD; outline-offset: 1px; }
-    .ttot { float: right; font-size: 11px; color: #5B6B7A; font-weight: 600; }
+                     font: 12.5px/1.3 inherit; color: var(--testo); }
+    .tlibero input:focus { outline: 2px solid var(--azione); outline-offset: 1px; }
+    .ttot { float: right; font-size: 11px; color: var(--neutro); font-weight: 600; }
     .tlist { display: flex; flex-direction: column; gap: 3px; }
     .trow { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 9px; font-size: 11.5px;
             border: 1px solid #EDF1F6; border-radius: 8px; background: #fff; }
-    .trow .tt { flex: 1 1 auto; font-weight: 600; color: #16232E; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .trow .tp { flex: 0 1 90px; color: #8296A9; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .trow .td { flex: 0 0 auto; font-weight: 700; color: #0B5CAD; font-variant-numeric: tabular-nums; }
-    .trow .to { flex: 0 0 auto; color: #5B6B7A; font-size: 11px; font-variant-numeric: tabular-nums; }
-    .tdel { border: 0; background: transparent; color: #5B6B7A; cursor: pointer; font-size: 12px; padding: 0 2px; }
-    .tdel:hover { color: #B3261E; }
+    .trow .tt { flex: 1 1 auto; font-weight: 600; color: var(--testo); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .trow .tp { flex: 0 1 90px; color: var(--neutro); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .trow .td { flex: 0 0 auto; font-weight: 700; color: var(--azione); font-variant-numeric: tabular-nums; }
+    .trow .to { flex: 0 0 auto; color: var(--neutro); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .tdel { border: 0; background: transparent; color: var(--neutro); cursor: pointer; font-size: 12px; padding: 0 2px; }
+    .tdel:hover { color: var(--err); }
     /* CONSEGNE: una riga per paziente, il nome in grassetto */
     .consegne .mini + .mini { margin-right: 6px; }
     .consr { padding: 6px 2px; border-bottom: 1px solid #EDF1F6; font-size: 12.5px; line-height: 1.45; color: #35506B; overflow-wrap: anywhere; }
-    .consr b { color: #16232E; }
+    .consr b { color: var(--testo); }
     /* DA FARE. L'icona: le spunte tonde e quante voci sono aperte. Tranquilla;
        ambra 15 minuti prima di un promemoria; rossa quando è passato (solo
        allora un bagliore lento: il movimento vuol dire «è l'ora»). */
@@ -6408,18 +6424,18 @@
             font: inherit; font-size: 12px; font-weight: 700; line-height: 24px; white-space: nowrap; font-variant-numeric: tabular-nums; align-self: center; }
     .dfic svg { width: 14px; height: 14px; flex: none; }
     .dfic b { font: inherit; letter-spacing: 0; }   /* (anche nell'intestazione, dove i <b> sono grandi) */
-    .dfic:hover { background: #E3E9F0; color: #16232E; }
-    .dfic:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
-    .dfic.vuota { justify-content: center; padding: 0; width: 28px; background: none; color: #8296A9; }
-    .dfic.vuota:hover { background: #EEF2F6; color: #16232E; }
-    .dfic.amb { background: #FFF4DB; color: #8A5A00; }
+    .dfic:hover { background: #E3E9F0; color: var(--testo); }
+    .dfic:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
+    .dfic.vuota { justify-content: center; padding: 0; width: 28px; background: none; color: var(--neutro); }
+    .dfic.vuota:hover { background: #EEF2F6; color: var(--testo); }
+    .dfic.amb { background: var(--att-f); color: var(--att); }
     .dfic.amb:hover { background: #FCEBC4; }
-    .dfic.ros { background: #FDEBEA; color: #B3261E; }
+    .dfic.ros { background: var(--err-f); color: var(--err); }
     .dfic.ros.fresco { animation: prBagliore 2.6s ease-in-out infinite; }   /* si muove solo i primi 10 minuti: poi resta rosso, fermo */
     .dfic.ros:hover { background: #FADBD8; }
     @keyframes prBagliore { 0%, 100% { box-shadow: 0 0 0 0 rgba(179,38,30,0); } 50% { box-shadow: 0 0 0 4px rgba(179,38,30,.13); } }
     /* il post-it: la prima voce aperta, in grigio, che cede per prima */
-    .dfpost { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #5B6B7A; }
+    .dfpost { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: var(--neutro); }
     .dfpost b { font-weight: 600; color: #35506B; font-variant-numeric: tabular-nums; }
     /* nell'intestazione, accanto agli identificativi: il cuore e l'icona del Da fare, che dice
        anche la prima cosa da fare (poi «+N»). I pezzi stanno nella fila dell'intestazione: cede per
@@ -6432,11 +6448,13 @@
     .hdpaz > .dfslot { flex: 0 100000 auto; min-width: 28px; display: inline-flex; }
     .hdpaz > .dfslot > * { flex: none; }
     .hdpaz .dfic.dfprima { flex: 0 1 auto; min-width: 0; max-width: 24em; padding: 0 9px 0 7px; gap: 5px; overflow: hidden; }
-    .dfict { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; white-space: normal; word-break: break-all;
+    .dfict { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; white-space: normal; min-width: 0;
              font-size: 12.5px; font-weight: 500; }
+    /* se nemmeno la prima parola sta intera, niente parole mozzate: restano l'icona e il numero (dfAdatta) */
+    .dfic.solo .dfict { display: none; }
     .dfict b { font-weight: 700; }
     .hdpaz .brac { position: relative; width: 28px; height: 28px; }
-    .hdpaz .brac .bracn { position: absolute; right: -6px; top: -4px; background: #0B5CAD; color: #fff; border-radius: 999px; padding: 0 4px;
+    .hdpaz .brac .bracn { position: absolute; right: -6px; top: -4px; background: var(--azione); color: #fff; border-radius: 999px; padding: 0 4px;
                           font-size: 11px; font-weight: 700; line-height: 15px; font-variant-numeric: tabular-nums; }
     .hdpaz .brac.pulsa { animation: bracPulsa .45s ease-out; }
     .hdpaz .brac .bracn.spenta { background: #9DB3C9; }
@@ -6444,11 +6462,11 @@
     /* IL CUORE dei parametri vitali: rosso o ambra, fermo. Un impulso solo, da
        un secondo, quando compare; vuoto («♡ 5h») se la riga ha più di 4 ore. */
     .cuore { flex: none; display: inline-block; font-size: 14px; line-height: 1; font-weight: 700; cursor: default; }
-    .cuore.ros { color: #C62828; }
-    .cuore.amb { color: #B26A00; }
+    .cuore.ros { color: var(--err); }
+    .cuore.amb { color: var(--att); }
     .cuore.vecchio { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .cuorev { margin-left: 4px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .cuore.vecchio .cuorev { color: #5B6B78; }
+    .cuore.vecchio .cuorev { color: var(--neutro); }
     .cuore.pulsa { animation: cuorePulsa 1s ease-out 1; }
     @keyframes cuorePulsa { 0% { transform: scale(1); } 30% { transform: scale(1.35); } 100% { transform: scale(1); } }
     .pzchi .cuore, .stp2 .cuore { align-self: center; }
@@ -6456,8 +6474,8 @@
     /* la lista: una piccola finestra sotto l'icona */
     .dfpop { position: absolute; z-index: 30; width: 340px; max-width: calc(100vw - 16px); padding: 4px 6px 8px; border: 1px solid #D9E2EC;
              border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgba(9,42,74,.16); }
-    .dfhd { padding: 6px 6px 4px; font-size: 12px; color: #5B6B7A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .dfhd b { color: #16232E; }
+    .dfhd { padding: 6px 6px 4px; font-size: 12px; color: var(--neutro); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dfhd b { color: var(--testo); }
     .dfl { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; }
     .dfl:empty { display: none; }
     /* UNA RIGA, DAPPERTUTTO (la lista del paziente, il tabellone, la nota sotto la pill, la scheda al
@@ -6468,7 +6486,7 @@
     .dfi { background: #fff; }
     .dfi.presa { position: relative; z-index: 2; box-shadow: 0 6px 18px rgba(9,42,74,.18); }
     .dfl.trascino, .dfl.trascino * { cursor: grabbing !important; }
-    .dfgrip { flex: none; width: 12px; margin-right: -3px; text-align: center; color: #8296A9; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+    .dfgrip { flex: none; width: 12px; margin-right: -3px; text-align: center; color: var(--neutro); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
               font-size: 12px; letter-spacing: -2px; line-height: 28px; }
     .dfgrip, .dfpiu { opacity: 0; }
     .dfi:hover :is(.dfgrip, .dfpiu), .dfi:focus-within :is(.dfgrip, .dfpiu) { opacity: 1; }
@@ -6477,48 +6495,48 @@
     .dfck, .dfo { flex: none; position: relative; box-sizing: border-box; width: 18px; height: 18px; padding: 0; border: 1.6px solid #8296A9; border-radius: 50%; background: #fff; }
     .dfck { cursor: pointer; }
     .dfck::before { content: ""; position: absolute; inset: -6px; }
-    .dfck:hover { border-color: #177245; }
-    .dfck:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 2px; }
-    .dfi.fatto .dfck { border-color: #177245; background: #177245; }
+    .dfck:hover { border-color: var(--ok); }
+    .dfck:focus-visible { outline: 2px solid var(--azione); outline-offset: 2px; }
+    .dfi.fatto .dfck { border-color: var(--ok); background: var(--ok); }
     .dfi.fatto .dfck::after { content: ""; position: absolute; left: 4.6px; top: 1.2px; width: 4.5px; height: 8.5px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
-    .dftx { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #16232E; }
+    .dftx { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--testo); }
     .dftx:has(.dfmod) { overflow: visible; }
-    .dfi.fatto .dftx { text-decoration: line-through; color: #8296A9; }
+    .dfi.fatto .dftx { text-decoration: line-through; color: var(--neutro); }
     .dft { flex: none; color: #35506B; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .dft.amb { color: #8A5A00; }
-    .dft.ros { color: #B3261E; }
-    .dfi.fatto .dft { color: #9AA8B5; font-weight: 400; }
+    .dft.amb { color: var(--att); }
+    .dft.ros { color: var(--err); }
+    .dfi.fatto .dft { color: var(--neutro); font-weight: 400; }
     .dfpiu { flex: none; height: 22px; border: 1px solid #D9E2EC; border-radius: 6px; background: #fff; padding: 0 6px; cursor: pointer;
-             font-size: 11.5px; font-weight: 600; color: #16232E; white-space: nowrap; }
+             font-size: 11.5px; font-weight: 600; color: var(--testo); white-space: nowrap; }
     .dfpiu:hover { border-color: #9DBFDE; }
-    .dfpiu:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .dfpiu:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
     .dfadd { position: relative; margin-top: 6px; }
     .dfin { display: block; width: 100%; height: 32px; padding: 0 10px; border: 1px solid #D9E2EC; border-radius: 8px; background: #F8FBFE;
-            font-size: 13px; color: #16232E; }
-    .dfin::placeholder { color: #8296A9; }
-    .dfin:focus { outline: 0; border-color: #0B5CAD; background: #fff; box-shadow: 0 0 0 3px rgba(11,92,173,.12); }
+            font-size: 13px; color: var(--testo); }
+    .dfin::placeholder { color: var(--neutro); }
+    .dfin:focus { outline: 0; border-color: var(--azione); background: #fff; box-shadow: 0 0 0 3px rgba(11,92,173,.12); }
     .dfhint { display: block; padding: 4px 4px 0; font-size: 11.5px; line-height: 16px; color: #35506B; font-variant-numeric: tabular-nums; }
     .dfhint:empty { display: none; }
-    .dfhint.ko { color: #B3261E; }
+    .dfhint.ko { color: var(--err); }
     .dfsr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     /* ✕ cancella; un tocco sul testo lo modifica (la lista di un paziente e il Da fare del tabellone) */
-    .dfx { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 12px; color: #8296A9; }
-    .dfx:hover { background: #FDF1F0; color: #B3261E; }
-    .dfx:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .dfx { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 12px; color: var(--neutro); }
+    .dfx:hover { background: var(--err-f); color: var(--err); }
+    .dfx:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
     [data-dfmod], [data-tdmod] { cursor: text; border-radius: 4px; }
     [data-dfmod]:hover, [data-tdmod]:hover { background: #F2F5F8; }
-    [data-dfmod]:focus-visible, [data-tdmod]:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
-    .dfmod { display: block; width: 100%; min-width: 120px; height: 28px; padding: 0 8px; border: 1px solid #0B5CAD; border-radius: 6px; background: #fff;
-             font: inherit; font-size: 13px; color: #16232E; outline: 0; box-shadow: 0 0 0 3px rgba(11,92,173,.12); }
+    [data-dfmod]:focus-visible, [data-tdmod]:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
+    .dfmod { display: block; width: 100%; min-width: 120px; height: 28px; padding: 0 8px; border: 1px solid var(--azione); border-radius: 6px; background: #fff;
+             font: inherit; font-size: 13px; color: var(--testo); outline: 0; box-shadow: 0 0 0 3px rgba(11,92,173,.12); }
     /* le cose da fare di chi hai davanti, sempre in vista sotto la pill ridotta (aperta la
        finestra, le dice l'icona nell'intestazione): le righe di sempre, tre al più, poi «+N» */
     .dfnota { display: flex; flex-direction: column; align-items: stretch; margin: 0; padding: 2px 10px 2px 8px; border: 1px solid #EBD995; border-radius: 10px;
-              background: #FFF8DE; color: #16232E; cursor: pointer; text-align: left; font: inherit; box-shadow: 0 4px 12px rgba(9,42,74,.14); }
+              background: #FFF8DE; color: var(--testo); cursor: pointer; text-align: left; font: inherit; box-shadow: 0 4px 12px rgba(9,42,74,.14); }
     .dfnota[hidden] { display: none; }
     .dfnota:hover { background: #FFF2C4; }
-    .dfnota:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 2px; }
+    .dfnota:focus-visible { outline: 2px solid var(--azione); outline-offset: 2px; }
     .dfnota .dfo { background: none; }
-    .dfpiun { padding: 0 0 4px 25px; font-size: 11.5px; font-weight: 700; line-height: 16px; color: #5B6B7A; }
+    .dfpiun { padding: 0 0 4px 25px; font-size: 11.5px; font-weight: 700; line-height: 16px; color: var(--neutro); }
     .dfnota .dfpiun { color: #7A6400; }
     .wrap:not(.win) > .dfnota { position: absolute; top: calc(100% + 6px); right: 0; width: max-content; min-width: 180px; max-width: 280px; }
     .wrap:not(.win) > .dfnota.sx { right: auto; left: 0; }
@@ -6536,17 +6554,17 @@
     .tdcard { flex: none; order: -1; display: flex; flex-direction: column; min-height: 0; max-height: 28%; border-bottom: 1px solid #E8EDF2; background: #FBFCFD; }
     .tdhd { flex: none; display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 8px; }
     .tdtog { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 0; border-radius: 6px; background: none;
-             cursor: pointer; font: inherit; font-size: 13px; color: #16232E; white-space: nowrap; }
+             cursor: pointer; font: inherit; font-size: 13px; color: var(--testo); white-space: nowrap; }
     .tdtog:hover { background: #EEF2F6; }
     .tdtog svg { width: 14px; height: 14px; flex: none; }
     .tdn { font-weight: 700; color: #35506B; font-variant-numeric: tabular-nums; }
     .tdin { flex: 1 1 auto; min-width: 0; width: auto; height: 30px; }
-    .tdin.ko { border-color: #B3261E; }
+    .tdin.ko { border-color: var(--err); }
     .tdcorpo { flex: 1 1 auto; min-height: 0; max-height: calc(5.5 * 28px + 6px); overflow-y: auto; overscroll-behavior: contain; padding: 0 8px 6px; scrollbar-width: thin; }
     .tdl { max-height: none; overflow: visible; }
     .tdi { background: none; }
     .tdchi { flex: none; align-self: flex-start; width: 78px; padding-top: 7px; font-size: 11.5px; font-weight: 800; line-height: 14px; letter-spacing: .02em;
-             color: #16232E; overflow-wrap: anywhere; }
+             color: var(--testo); overflow-wrap: anywhere; }
     .tdg:not(:first-child), [data-tdl="gen"]:not(:empty) + .tdl > .tdg:first-child { border-top: 1px solid #EEF2F6; border-radius: 0; }
     .tdtogb { display: none; }
     /* sulla scheda del paziente: sotto le allergie, sopra le schede; le sue voci, senza la colonna del cognome */
@@ -6558,8 +6576,8 @@
     .tdtesta { display: flex; align-items: center; gap: 4px; width: auto; min-width: 78px; padding-top: 3px; }
     .tdapri { border: 0; background: none; padding: 4px 6px; border-radius: 6px; font: inherit; font-size: 11.5px; font-weight: 800; letter-spacing: .02em; color: inherit; cursor: pointer; text-align: left; }
     .tdapri:hover { background: #EEF2F6; }
-    .tdposto { margin-left: 6px; font-size: 10.5px; font-weight: 700; color: #0B5CAD; background: #E8F1FB; border-radius: 5px; padding: 1px 6px; }
-    .tdpiu { border: 0; background: none; color: #8296A9; font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 6px; cursor: pointer; opacity: 0; }
+    .tdposto { margin-left: 6px; font-size: 10.5px; font-weight: 700; color: var(--azione); background: #E8F1FB; border-radius: 5px; padding: 1px 6px; }
+    .tdpiu { border: 0; background: none; color: var(--neutro); font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 6px; cursor: pointer; opacity: 0; }
     .tdg:hover .tdpiu, .tdpiu:focus-visible { opacity: 1; }
     .tdcard.solo .tdcorpo { max-height: calc(4.5 * 28px + 6px); }
     .tdcard.solo .tdchi { display: none; }
@@ -6579,37 +6597,37 @@
     /* il menu minuscolo della sveglia sulla pill ridotta: ✓ Fatto, +15′, Apri */
     .prmenu { position: absolute; z-index: 30; width: max-content; min-width: 260px; max-width: min(360px, calc(100vw - 16px)); padding: 4px;
               border: 1px solid #D9E2EC; border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgba(9,42,74,.16); }
-    .prmhd { padding: 6px 8px 4px; font-size: 12px; color: #5B6B7A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .prmhd { padding: 6px 8px 4px; font-size: 12px; color: var(--neutro); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .prmrow { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 3px 4px 3px 8px; }
     .prmrow + .prmrow { border-top: 1px solid #EEF2F6; }
-    .prmq { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #16232E; }
+    .prmq { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: var(--testo); }
     .prmq b { font-weight: 600; font-variant-numeric: tabular-nums; }
     .prmb { flex: none; min-height: 28px; border: 1px solid #D9E2EC; border-radius: 6px; background: #fff; padding: 2px 9px; cursor: pointer;
-            font-size: 12px; font-weight: 600; color: #16232E; white-space: nowrap; }
+            font-size: 12px; font-weight: 600; color: var(--testo); white-space: nowrap; }
     .prmb:hover { border-color: #9DBFDE; }
-    .prmb.ok:hover { border-color: #BCE0C9; background: #EDF7F0; color: #177245; }
-    .prmb:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .prmb.ok:hover { border-color: #BCE0C9; background: var(--ok-f); color: var(--ok); }
+    .prmb:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
     /* sulla pill ridotta, solo quando tocca */
-    .pill .prurg { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px 1px 5px; border-radius: 999px; background: #B3261E;
+    .pill .prurg { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px 1px 5px; border-radius: 999px; background: var(--err);
                    color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 1.5px #fff; }
     .pill .prurg svg { width: 12px; height: 12px; flex: none; }
     .pill .prurg { cursor: pointer; max-width: 260px; }
-    .pill .prurg:hover { background: #8f1e18; }
+    .pill .prurg:hover { background: var(--err); }
     .pill .prurg:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
     .pill .prurgt { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .pill .prurgp { opacity: .85; }
     .prmini { min-width: 0; width: max-content; }
-    .prmini .prmhd { padding: 6px 8px 2px; color: #16232E; }
+    .prmini .prmhd { padding: 6px 8px 2px; color: var(--testo); }
     .prmini .prmrow { min-height: 36px; padding: 2px 4px 4px 4px; gap: 6px; }
     .prmini .prmq { font-size: 12.5px; color: #35506B; }
     .crow { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; cursor: pointer;
             border: 1px solid #E3E8EF; border-radius: 9px; background: #fff; padding: 10px 11px; font: inherit; }
     .crow:hover { border-color: #9DBFDE; background: #F4F9FD; }
-    .crow:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
-    .cnome { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; color: #16232E; }
-    .cgo { flex: 0 0 auto; font-size: 11px; color: #0B5CAD; font-weight: 700; }
+    .crow:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
+    .cnome { flex: 1 1 auto; font-size: 12.5px; font-weight: 600; color: var(--testo); }
+    .cgo { flex: 0 0 auto; font-size: 11px; color: var(--azione); font-weight: 700; }
     .cpag { flex: 0 0 auto; font-size: 11px; color: var(--neutro); background: #EEF2F6; border-radius: 999px; padding: 1px 7px; font-weight: 700; }
-    .linkbtn { border: 0; background: transparent; color: #0B5CAD; font: inherit; font-weight: 700;
+    .linkbtn { border: 0; background: transparent; color: var(--azione); font: inherit; font-weight: 700;
                text-decoration: underline; cursor: pointer; padding: 0; }
 
     /* La tabella scorre dentro la sua cornice, non col pannello: solo così
@@ -6625,8 +6643,8 @@
     .stgriglia .sttab tbody.stblk { display: table; width: 100%; border-collapse: separate; border-spacing: 0; background: #fff;
       border: 1px solid #E3E8EF; border-radius: 8px; overflow: hidden; }
     .stgriglia .sttab tbody.stblk tr:last-child > * { border-bottom: 0; }
-    .stgriglia .sttab tr.stsez td { text-transform: none; letter-spacing: 0; font-size: 11px; font-weight: 600; color: #5B6B7A; }
-    .stgriglia .sttab tr.stsez td.ultima { color: #0B5CAD; }
+    .stgriglia .sttab tr.stsez td { text-transform: none; letter-spacing: 0; font-size: 11px; font-weight: 600; color: var(--neutro); }
+    .stgriglia .sttab tr.stsez td.ultima { color: var(--azione); }
     .stgriglia .sttab tr.stsez td.ultima::after { content: "ultimo"; display: block; font-size: 11px; font-weight: 700;
       letter-spacing: .06em; text-transform: uppercase; color: #9DBFDE; }
     .stgriglia .sttab th.stn { position: static; }
@@ -6636,19 +6654,19 @@
        sinistra, incolonnati dalle cifre tabulari. */
     .sttab { border-collapse: collapse; font-size: 11.5px; width: auto; }
     .sttab th, .sttab td { padding: 3px 7px; white-space: nowrap; border-bottom: 1px solid #EDF1F6; }
-    .sttab thead th { position: sticky; top: 0; background: #F8FBFE; color: #5B6B7A; font-weight: 600;
+    .sttab thead th { position: sticky; top: 0; background: #F8FBFE; color: var(--neutro); font-weight: 600;
                       font-size: 11px; text-align: left; border-bottom: 1px solid #D9E2EC; }
-    .sttab .sth { display: block; font-size: 11px; color: #5B6B7A; font-weight: 500; }
+    .sttab .sth { display: block; font-size: 11px; color: var(--neutro); font-weight: 500; }
     .sttab th.stn { position: sticky; left: 0; z-index: 1; background: #fff; text-align: left;
-                    font-weight: 600; color: #16232E; max-width: 168px; overflow: hidden; text-overflow: ellipsis; }
+                    font-weight: 600; color: var(--testo); max-width: 168px; overflow: hidden; text-overflow: ellipsis; }
     .sttab thead th.stn { background: #F8FBFE; z-index: 2; }
     .sttab td { text-align: left; color: #35506B; font-variant-numeric: tabular-nums; }
-    .sttab td.fuori { color: #B3261E; font-weight: 800; }
+    .sttab td.fuori { color: var(--err); font-weight: 800; }
     .sttab td.parz { font-style: italic; }   /* parziale: in corsivo, niente puntini */
     /* Novelty rides a different channel: a tint behind the number. Text
        colour is untouched, so red keeps meaning "out of range". */
     .sttab td.nuovo, .sttab td.agg, .sttab tbody tr:hover td.nuovo, .sttab tbody tr:hover td.agg {
-      background: #DCEAF9; box-shadow: inset 0 -2px 0 #0B5CAD; }
+      background: #DCEAF9; box-shadow: inset 0 -2px 0 var(--azione); }
     /* I segni del medico: un tocco giallo, due arancio, tre via. Stanno DOPO
        la novità perché il segno vince sullo sfondo azzurro; la riga blu sotto
        il numero (box-shadow) resta e continua a dire «nuovo». */
@@ -6657,14 +6675,14 @@
        compresi), non tutta la cella: il margine negativo compensa il padding,
        così il numero non si sposta quando la pastiglia compare. */
     .sttab td .val { display: inline-block; border-radius: 999px; padding: 0 5px; margin: 0 -5px; }
-    .sttab td .pct { font-weight: 500; color: #5B6B7A; font-style: normal; }
+    .sttab td .pct { font-weight: 500; color: var(--neutro); font-style: normal; }
     .sttab td.marca1 .val { background: #FFE58A; }
     .sttab td.marca2 .val { background: #FFC46B; }
     .sttab tbody tr:hover td, .sttab tbody tr:hover th.stn { background: #F4F9FD; }
     /* Sezioni: gli esami stanno dove un medico li cerca, e sempre nello stesso
        posto. L'ordine non dipende più da come il laboratorio ha stampato. */
     .sttab tr.stsez th.stn, .sttab tr.stsez td { background: #EEF4FA; border-bottom: 1px solid #D9E4EF;
-      font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #5B6B7A; }
+      font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--neutro); }
     .sttab tr.stsez th.stn { color: #35506B; padding-top: 7px; padding-bottom: 4px; }
     .sttab tr.stsez td { text-align: left; padding-top: 7px; padding-bottom: 4px; }
     .sttab tr.stsez:hover th.stn, .sttab tr.stsez:hover td { background: #EEF4FA; }
@@ -6673,21 +6691,21 @@
     .sttab td.vuoto { color: #AEBECD; }
     /* L'unità sta ACCANTO al nome, fra parentesi: su un rigo suo raddoppiava
        l'altezza di ogni riga e allontanava i numeri dal nome. */
-    .stum { font-size: 11px; color: #5B6B7A; font-weight: 500; letter-spacing: 0; }
-    .sttab th.ultima { color: #0B5CAD; }
+    .stum { font-size: 11px; color: var(--neutro); font-weight: 500; letter-spacing: 0; }
+    .sttab th.ultima { color: var(--azione); }
     .sttab th.ultima::after { content: "ultimo"; display: block; font-size: 11px; font-weight: 700;
       letter-spacing: .06em; text-transform: uppercase; color: #9DBFDE; }
     /* il segno di provenienza: piccolo, in alto, mai confondibile con un valore */
-    .sttab .prov { font-style: normal; font-size: 11px; vertical-align: super; color: #0B5CAD;
+    .sttab .prov { font-style: normal; font-size: 11px; vertical-align: super; color: var(--azione);
                    font-weight: 800; margin-left: 1px; cursor: help; }
-    .reftxt { font-size: 12.5px; line-height: 1.5; color: #16232E; }
+    .reftxt { font-size: 12.5px; line-height: 1.5; color: var(--testo); }
     .reftxt .rt { padding: 1px 0; }
     .reftxt .rt:empty { display: none; }
-    .newbar { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #0B5CAD;
-              background: #EAF2FA; border: 1px solid #9DBFDE; border-radius: 8px; padding: 5px 9px; margin-bottom: 6px; }
-    .newbar button { margin-left: auto; border: 0; background: transparent; color: #0B5CAD; font: inherit; font-weight: 700; cursor: pointer; }
-    .foot { flex: 0 0 auto; padding: 8px 14px 10px; border-top: 1px solid #EEF2F6; display: flex; justify-content: space-between; align-items: center; color: #5B6B7A; font-size: 11px; }
-    .footlink { border: 0; background: transparent; color: #0B5CAD; font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
+    .newbar { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--azione);
+              background: var(--info-f); border: 1px solid #9DBFDE; border-radius: 8px; padding: 5px 9px; margin-bottom: 6px; }
+    .newbar button { margin-left: auto; border: 0; background: transparent; color: var(--azione); font: inherit; font-weight: 700; cursor: pointer; }
+    .foot { flex: 0 0 auto; padding: 8px 14px 10px; border-top: 1px solid #EEF2F6; display: flex; justify-content: space-between; align-items: center; color: var(--neutro); font-size: 11px; }
+    .footlink { border: 0; background: transparent; color: var(--azione); font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
     select.res { width: 100%; border: 1px solid #C4D0DC; border-radius: 8px; padding: 7px 8px; font-size: 12.5px; background: #fff; }
     @keyframes psaSpin { to { transform: rotate(360deg); } }
     @keyframes psaPulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
@@ -6697,10 +6715,10 @@
     /* ---- Stanza ---- */
     /* stanza svuotata apposta: due parole e il modo di ridisegnarla */
     .stvuota { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
-               pointer-events: none; color: #5B6B7A; font-size: 13px; }
-    .stvuota b { font-size: 14px; font-weight: 600; color: #16232E; }
+               pointer-events: none; color: var(--neutro); font-size: 13px; }
+    .stvuota b { font-size: 14px; font-weight: 600; color: var(--testo); }
     .stvuota button { pointer-events: auto; }
-    .stlink { border: 0; background: none; padding: 0; cursor: pointer; font-size: 12px; color: #5B6B7A; text-decoration: underline; }
+    .stlink { border: 0; background: none; padding: 0; cursor: pointer; font-size: 12px; color: var(--neutro); text-decoration: underline; }
     /* nella finestra i Pazienti riempiono tutto il corpo che resta, da bordo a bordo */
     .card.stanza .bdi { height: 100%; display: flex; flex-direction: column; padding: 0; }
     .card.stanza .bdi > .sec { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; margin-bottom: 0; }
@@ -6722,30 +6740,30 @@
     .stazioni { display: inline-flex; flex: none; flex-wrap: nowrap; align-items: center; gap: 6px; height: 32px; margin-left: auto; white-space: nowrap; }
     .seg > .segdx:empty { min-height: 44px; }
     .stbtn, .stazioni .stbtn { border: 1px solid #D9E2EC; border-radius: 8px; background: #fff; padding: 3px 12px; cursor: pointer;
-             font-size: 13px; font-weight: 600; line-height: 20px; color: #16232E; white-space: nowrap; }
-    .stbtn:hover, .stazioni .stbtn:hover { border-color: #9DBFDE; background: #fff; color: #16232E; }
-    .stbtn.pri, .stazioni .stbtn.pri { background: #0B5CAD; border-color: #0B5CAD; color: #fff; }
+             font-size: 13px; font-weight: 600; line-height: 20px; color: var(--testo); white-space: nowrap; }
+    .stbtn:hover, .stazioni .stbtn:hover { border-color: #9DBFDE; background: #fff; color: var(--testo); }
+    .stbtn.pri, .stazioni .stbtn.pri { background: var(--azione); border-color: var(--azione); color: #fff; }
     .stbtn.pri:hover, .stazioni .stbtn.pri:hover { background: #094a8c; border-color: #094a8c; color: #fff; }
     .stazioni button:focus-visible, .stbtn:focus-visible, .stctl:focus-visible, .stp:focus-visible, .stname:focus-visible,
     .pzrow:has(.pzapri:focus-visible), .pzmetti:focus-visible, .pzx:focus-visible, .pzarchhd:focus-visible,
-    .pzsvuota:focus-visible, .pzabtn:focus-visible, .pzfx:focus-visible, .stannulla:focus-visible { outline: 2px solid #0B5CAD; outline-offset: 1px; }
+    .pzsvuota:focus-visible, .pzabtn:focus-visible, .pzfx:focus-visible, .stannulla:focus-visible { outline: 2px solid var(--azione); outline-offset: 1px; }
     /* quello che dicono tutti e due: da quanto non lo apri, «questa pagina», i segni */
-    .stvisto { flex: none; font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .stvisto.amb { padding: 0 7px; border-radius: 999px; background: #FFF4DB; color: #8A5A00; }
+    .stvisto { flex: none; font-size: 12px; color: var(--neutro); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .stvisto.amb { padding: 0 7px; border-radius: 999px; background: var(--att-f); color: var(--att); }
     /* lo stato degli esami: un pezzetto per tipo, Lab · ECG · RX, tinto col colore
        della sua sezione negli Esiti. L'ambra e il rosso solo sul tempo che aspetta. */
     .esst { flex: none; font-size: 12px; color: #35506B; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .esp { --c: #5B6B7A; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border-radius: 6px;
+    .esp { --c: var(--neutro); display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border-radius: 6px;
            background: color-mix(in srgb, var(--c) 9%, #fff); line-height: 1; white-space: nowrap; }
     .es-lab { --c: var(--wu-lab); } .es-ecg { --c: var(--wu-ecg); } .es-img { --c: var(--wu-img); }
     .esp .esn { font-weight: 700; color: var(--c); }
     .esst .esatt { font-style: normal; }
-    .esst .esatt.amb { margin: 0 -3px; padding: 2px 4px; border-radius: 4px; background: #FFEFC7; color: #7A4F00; font-weight: 600; }
-    .esst .esatt.ros { margin: 0 -3px; padding: 2px 4px; border-radius: 4px; background: #FBE1DF; color: #9B1C14; font-weight: 700; }
-    .esst .esdot { font-size: 11px; color: #0B5CAD; }
-    .esst .esdot.ros { color: #B3261E; }
-    .esst.vecchio .esp { --c: #9AA8B5; color: #9AA8B5; }
-    .esst.vecchio .esdot { color: #9AA8B5; }
+    .esst .esatt.amb { margin: 0 -3px; padding: 2px 4px; border-radius: 4px; background: #FFEFC7; color: var(--att); font-weight: 600; }
+    .esst .esatt.ros { margin: 0 -3px; padding: 2px 4px; border-radius: 4px; background: #FBE1DF; color: var(--err); font-weight: 700; }
+    .esst .esdot { font-size: 11px; color: var(--azione); }
+    .esst .esdot.ros { color: var(--err); }
+    .esst.vecchio .esp { --c: var(--neutro); color: var(--neutro); }
+    .esst.vecchio .esdot { color: var(--neutro); }
     .esst.vecchio .esatt.amb, .esst.vecchio .esatt.ros { background: none; color: inherit; font-weight: 400; }
     .stp2 .esst { display: inline-flex; flex: 0 1 auto; flex-wrap: wrap; gap: 3px; font-size: 11.5px; min-width: 0; }
     .stp2 .esp { height: 18px; padding: 0 5px; }
@@ -6754,25 +6772,25 @@
     .idriga { flex: none; display: flex; gap: 14px; padding: 0 20px 8px; background: #fff; font-size: 12.5px; line-height: 1.35; min-width: 0; }
     .idriga > span { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .idriga > .idall { flex-shrink: 0; max-width: 60%; }
-    .idall.ros { color: #B3261E; font-weight: 600; }
-    .idall.nl { color: #8A5A00; }
+    .idall.ros { color: var(--err); font-weight: 600; }
+    .idall.nl { color: var(--att); }
     .idall.nega, .idall.nc { color: var(--neutro); }
     /* nome, episodio e allergie sono un solo blocco: la riga di separazione sta sotto le allergie */
     .hd:has(+ .idriga) { border-bottom: 0; }
     .hd + .idriga { border-bottom: 1px solid #E6EBF0; padding-bottom: 8px; }
-    .idatt { color: #7a4b03; }
+    .idatt { color: var(--att); }
     /* Dimissioni: quello che è ancora aperto, una riga */
     .aperti { max-width: 820px; margin: 0 0 12px; font-size: 12.5px; line-height: 1.45; color: #35506B; }
-    .aperti b { font-weight: 600; color: #16232E; }
+    .aperti b { font-weight: 600; color: var(--testo); }
     .aperti .apl { color: #8494A3; }
     /* Richieste: quando è già stato fatto, in grigio accanto al nome */
     .opt .ult { flex: none; margin-left: auto; padding-left: 4px; font-size: 11px; font-weight: 400; color: #8494A3; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .opt .ult.vecchio { color: #A9B5C1; }
-    .stqui { flex: none; font-size: 12px; font-weight: 600; color: #0B5CAD; white-space: nowrap; }
-    .sttag { flex: none; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #5B6B7A; white-space: nowrap; }
-    .stom { flex: none; margin-right: 5px; font-weight: 400; color: #8A5A00; }
-    .stcoda { font-weight: 400; color: #5B6B7A; white-space: nowrap; }
-    .stn { margin-left: 6px; font-size: 12px; font-weight: 400; color: #5B6B7A; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .stqui { flex: none; font-size: 12px; font-weight: 600; color: var(--azione); white-space: nowrap; }
+    .sttag { flex: none; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--neutro); white-space: nowrap; }
+    .stom { flex: none; margin-right: 5px; font-weight: 400; color: var(--att); }
+    .stcoda { font-weight: 400; color: var(--neutro); white-space: nowrap; }
+    .stn { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--neutro); font-variant-numeric: tabular-nums; letter-spacing: 0; }
     .stsr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }   /* solo per chi legge con la voce */
 
     /* PAZIENTI, una vista sola: sopra la lista di chi non ha ancora un posto,
@@ -6794,15 +6812,15 @@
     /* le aree: un filo e il titolo; un tocco apre la sua lista */
     .pzcoda > .pzsez { grid-column: 1 / -1; padding: 8px 0 2px; border-top: 1px solid #D9E2EC; }
     .pzcoda > .pzfnone + .pzsez { border-top: 0; }
-    .pzsezt { border: 0; background: none; padding: 2px 0; font: inherit; font-size: 12px; font-weight: 600; color: #5B6B7A; cursor: pointer; }
-    .pzsezt:hover { color: #0B5CAD; }
+    .pzsezt { border: 0; background: none; padding: 2px 0; font: inherit; font-size: 12px; font-weight: 600; color: var(--neutro); cursor: pointer; }
+    .pzsezt:hover { color: var(--azione); }
     .pzunita.filtra .pzsez { display: none; }
     .pzcoda.over { background: #F1F6FC; }
     /* LISTA: righe da 44px separate da un filo, niente riquadri. Il nome non si
        taglia mai per primo: prima cede la nota */
     .pzarch { max-width: 1040px; }
     .pzrow { position: relative; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 6px 0 10px;
-             border-bottom: 1px solid #EEF2F6; color: #16232E; }
+             border-bottom: 1px solid #EEF2F6; color: var(--testo); }
     .pzcoda > .pzrow { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; gap: 0; justify-items: start; }
     .pzcoda > .pzrow > *, .pzcoda .pzchi > *, .pzcoda .pzchi > .esst > * { grid-row: 1; }
     .pzcoda .pzchi, .pzcoda .pzchi > .esst { display: contents; }
@@ -6813,31 +6831,31 @@
     /* Lista: niente mappe, la lista prende tutto lo spazio */
     .pzunita.lista > .pzcoda { flex: 1 1 0; max-height: none; border-top: 0; }
     .pzunita.lista:not(.edit) .pzrow[data-riga], .pzunita.lista:not(.edit) .pzrow[data-riga] .pzapri { cursor: pointer; }
-    .pzcoda .pzinps { grid-column: inps; margin-left: 10px; font-size: 12px; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .pzcoda .pzinps { grid-column: inps; margin-left: 10px; font-size: 12px; color: var(--neutro); white-space: nowrap; font-variant-numeric: tabular-nums; }
     .pzcoda .pzchi > .cuore { grid-column: cuore; margin-left: 10px; }
     .pzcoda .pzchi > .sttag { grid-column: cuore / post; margin-left: 10px; }
     .pzcoda .esm.es-lab { grid-column: lab; margin-left: 10px; }
     .pzcoda .esm.es-ecg { grid-column: ecg; margin-left: 4px; }
     .pzcoda .esm.es-img { grid-column: img; margin-left: 4px; }
     .pzcoda .dfslot { display: block; grid-column: df; margin-left: 10px; }
-    .pzeta { font-weight: 400; color: #5B6B7A; font-variant-numeric: tabular-nums; }
+    .pzeta { font-weight: 400; color: var(--neutro); font-variant-numeric: tabular-nums; }
     /* Lab · ECG · RX: grigio in attesa (col tempo), arancio in parte, blu tutto tornato */
     .esm { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border-radius: 6px; font-size: 12px;
            white-space: nowrap; font-variant-numeric: tabular-nums; border: 1px solid transparent; }
     .esm b { font-weight: 700; }
-    .esm.att { background: #EEF2F6; color: #5B6B7A; }
-    .esm.parz { background: #FFF4DB; color: var(--att); border-color: #E5C588; }
-    .esm.ok { background: #EDF7F0; color: var(--ok); border-color: #BCE0C9; }
+    .esm.att { background: #EEF2F6; color: var(--neutro); }
+    .esm.parz { background: var(--att-f); color: var(--att); border-color: #E5C588; }
+    .esm.ok { background: var(--ok-f); color: var(--ok); border-color: #BCE0C9; }
     .t-ignoto { --tr: #9AA8B5; }
     /* la riga e il letto dello stesso paziente, insieme */
     .pzrow.lega { background: #EEF5FC; }
     .stbed.lega, .starbody .stp.lega { box-shadow: 0 0 0 2px #6F9FD0; }
     /* la scheda al passaggio: solo da leggere, il mouse passa attraverso */
     .pzcarta { position: absolute; z-index: 28; max-width: 340px; padding: 8px 12px; border: 1px solid #D9E2EC; border-radius: 10px; background: #fff;
-               box-shadow: 0 10px 28px rgba(9,42,74,.16); font-size: 12.5px; line-height: 1.45; color: #16232E; pointer-events: none; }
+               box-shadow: 0 10px 28px rgba(9,42,74,.16); font-size: 12.5px; line-height: 1.45; color: var(--testo); pointer-events: none; }
     .pzcarta .pc { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; }
     .pzcarta .pc1 { align-items: center; gap: 6px; font-size: 13px; }
-    .pzcarta .pcatt { color: #A15F00; font-weight: 600; }
+    .pzcarta .pcatt { color: var(--att); font-weight: 600; }
     .pzcarta .pc1 .pztr { height: 16px; }
     .pzcarta .pcl span { margin-right: 6px; white-space: nowrap; }
     .pzcarta q { quotes: "«" "»"; color: #35506B; }
@@ -6856,7 +6874,7 @@
     .pzapri:focus-visible { outline: none; }
     .pzrow:has(.pzapri:focus-visible) { outline-offset: -2px; }
     .pzrow:hover { background: #F7F9FB; }
-    .pzrow.qui { background: #F4F8FC; box-shadow: inset 3px 0 0 #0B5CAD; }
+    .pzrow.qui { background: #F4F8FC; box-shadow: inset 3px 0 0 var(--azione); }
     .pzrow.prec { opacity: .55; }
     .pztr { flex: none; width: 4px; height: 22px; border-radius: 2px; background: var(--tr, transparent); }
     .pznm { flex: none; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
@@ -6866,13 +6884,13 @@
     /* ▾: metterlo nella stanza senza trascinare. Sempre lì, quieto; il bordo
        sulla riga sotto il mouse */
     .pzmetti { position: relative; z-index: 1; flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0;
-               border: 1px solid transparent; border-radius: 6px; background: none; cursor: pointer; color: #8296A9; }
+               border: 1px solid transparent; border-radius: 6px; background: none; cursor: pointer; color: var(--neutro); }
     .pzrow:hover .pzmetti, .pzrow:focus-within .pzmetti { border-color: #E3E8EF; background: #fff; color: #35506B; }
-    .pzrow .pzmetti:hover { border-color: #9DBFDE; color: #0B5CAD; }
+    .pzrow .pzmetti:hover { border-color: #9DBFDE; color: var(--azione); }
     .pzx { position: relative; z-index: 1; flex: none; width: 28px; height: 28px; border: 0; border-radius: 6px; background: none; cursor: pointer;
-           font-size: 13px; color: #5B6B7A; opacity: 0; }
+           font-size: 13px; color: var(--neutro); opacity: 0; }
     .pzrow:hover .pzx, .pzrow:focus-within .pzx { opacity: 1; }
-    .pzx:hover { background: #FDF1F0; color: #B3261E; }
+    .pzx:hover { background: var(--err-f); color: var(--err); }
     /* colonna stretta: il nome da solo sulla prima riga, sotto il promemoria e
        la nota; «visto…» e «questa pagina» li dice solo la voce (la riga di
        questa pagina è già azzurra) */
@@ -6891,59 +6909,59 @@
       .pzcoda .pztr, .pzcoda .pzmetti, .pzcoda .pzx { grid-row: 1 / 3; }
       .pzrow .stvisto, .pzrow .stqui { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     }
-    .pzvuoto { padding: 14px 24px; font-size: 13px; color: #5B6B7A; }
+    .pzvuoto { padding: 14px 24px; font-size: 13px; color: var(--neutro); }
     .pzcoda > .pzvuoto { padding: 12px 10px; }
     /* il filtro: compare scrivendo una lettera, Esc lo toglie */
     .pzfiltro { flex: none; display: flex; align-items: center; gap: 8px; height: 36px; margin: 8px 14px 2px; padding: 0 4px 0 10px;
-                border: 1px solid transparent; border-radius: 8px; background: #F2F5F8; color: #5B6B7A; max-width: 1040px; }
-    .pzfiltro:focus-within { border-color: #0B5CAD; background: #fff; box-shadow: 0 0 0 3px rgba(11,92,173,.12); }
+                border: 1px solid transparent; border-radius: 8px; background: #F2F5F8; color: var(--neutro); max-width: 1040px; }
+    .pzfiltro:focus-within { border-color: var(--azione); background: #fff; box-shadow: 0 0 0 3px rgba(11,92,173,.12); }
     .pzfiltro svg { flex: none; }
-    .pzfiltro input { flex: 1 1 auto; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none; font-size: 14px; color: #16232E; }
-    .pzfiltro input::placeholder { color: #8296A9; }
+    .pzfiltro input { flex: 1 1 auto; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none; font-size: 14px; color: var(--testo); }
+    .pzfiltro input::placeholder { color: var(--neutro); }
     .pzfx { position: relative; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer;
-            font-size: 12px; color: #5B6B7A; }
-    .pzfx:hover { background: #E3E9F0; color: #16232E; }
+            font-size: 12px; color: var(--neutro); }
+    .pzfx:hover { background: #E3E9F0; color: var(--testo); }
     .pzunita.filtra .pzrow.nofiltro { display: none; }
     .pzunita.filtra .starbody .stp.nofiltro, .pzunita.filtra .stbed.nofiltro { opacity: .25; }
     /* portando un paziente dalla stanza: in cima, «Rimetti in lista» (anche a lista vuota) */
     .pzrimetti { position: absolute; left: 12px; right: 12px; bottom: 6px; z-index: 6; display: flex; align-items: center; justify-content: center; gap: 8px;
-                 height: 44px; border: 1.5px dashed #6F9FD0; border-radius: 10px; background: rgba(241,246,252,.97); color: #0B5CAD;
+                 height: 44px; border: 1.5px dashed #6F9FD0; border-radius: 10px; background: rgba(241,246,252,.97); color: var(--azione);
                  font-size: 13px; font-weight: 600; box-shadow: 0 6px 18px rgba(9,42,74,.10); visibility: hidden; opacity: 0; transition: opacity .12s; }
     .pzunita.dastanza .pzrimetti { visibility: visible; opacity: 1; }
     /* senza lista la striscia starebbe sopra i letti in cima: la stanza tiene sempre
        libera quella fascia, così mentre si trascina niente si sposta e niente si copre */
     .pzunita:not(.edit):not(:has(> .pzcoda)) > .stmappe > .stmappei { bottom: 50px; }
-    .pzrimetti.over { border: 1.5px solid #0B5CAD; background: #E2EEFA; }
+    .pzrimetti.over { border: 1.5px solid var(--azione); background: #E2EEFA; }
     /* in fondo, chiusi: gli archiviati e «Svuota l'elenco», sul grigio della stanza */
     .pzpiede { flex: 0 1 auto; max-height: 40%; overflow-y: auto; padding: 0 14px 4px; background: #F7F9FB; scrollbar-width: thin; }
     .pzarchhd { display: inline-flex; align-items: center; gap: 6px; padding: 6px 4px; border: 0; background: none; cursor: pointer;
-                font-size: 13px; font-weight: 600; color: #5B6B7A; }
-    .pzarchhd:hover { color: #16232E; }
+                font-size: 13px; font-weight: 600; color: var(--neutro); }
+    .pzarchhd:hover { color: var(--testo); }
     .pzarchhd .stn { margin-left: 0; }
     .pzarch { padding-bottom: 8px; }
     .pzarow { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 6px 0 10px; border-bottom: 1px solid #EEF2F6; }
-    .pzanm { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: #5B6B7A; }
-    .pzameta { flex: none; font-size: 12px; color: #5B6B7A; }
+    .pzanm { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: var(--neutro); }
+    .pzameta { flex: none; font-size: 12px; color: var(--neutro); }
     .pzabtn { position: relative; flex: none; min-height: 28px; border: 1px solid #D9E2EC; border-radius: 6px; background: #fff; padding: 2px 8px;
-              cursor: pointer; font-size: 12px; color: #16232E; }
+              cursor: pointer; font-size: 12px; color: var(--testo); }
     .pzabtn:hover { border-color: #9DBFDE; }
-    .pzabtn.del:hover { border-color: #E9BAB6; background: #FDF1F0; color: #B3261E; }
+    .pzabtn.del:hover { border-color: #E9BAB6; background: var(--err-f); color: var(--err); }
     .pzabtn.del:not([data-sicuro="1"]) { display: inline-grid; place-items: center; }
-    .pzhint { padding: 8px 10px 0; font-size: 12px; color: #5B6B7A; }
-    .pzsvuota { margin: 8px 0 0 6px; padding: 6px 4px; border: 0; background: none; cursor: pointer; font-size: 13px; color: #5B6B7A; text-decoration: underline; }
-    .pzsvuota:hover { color: #16232E; }
+    .pzhint { padding: 8px 10px 0; font-size: 12px; color: var(--neutro); }
+    .pzsvuota { margin: 8px 0 0 6px; padding: 6px 4px; border: 0; background: none; cursor: pointer; font-size: 13px; color: var(--neutro); text-decoration: underline; }
+    .pzsvuota:hover { color: var(--testo); }
 
     /* STANZA: tutto lo spazio che la lista lascia */
     /* TABELLONE: Alta | Bassa | Entrambe, e ⟳ */
     .tbbar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 14px; border-bottom: 1px solid #E8EDF2; }
     .tbseg { display: inline-flex; padding: 2px; border-radius: 8px; background: #EEF2F6; }
-    .tbseg button { min-height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 13px; font-weight: 600; color: #5B6B7A; }
-    .tbseg button:hover { color: #16232E; }
-    .tbseg button.on { background: #fff; color: #0B5CAD; box-shadow: 0 1px 2px rgba(9,42,74,.12); }
-    .tbsync { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 16px; color: #5B6B7A; }
-    .tbsync[aria-pressed="true"] { color: #0B5CAD; }
-    .tbsync:hover { background: #EEF2F6; color: #0B5CAD; }
-    .tbsync.gira { animation: tbGira 1s linear infinite; color: #0B5CAD; }
+    .tbseg button { min-height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--neutro); }
+    .tbseg button:hover { color: var(--testo); }
+    .tbseg button.on { background: #fff; color: var(--azione); box-shadow: 0 1px 2px rgba(9,42,74,.12); }
+    .tbsync { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; font-size: 16px; color: var(--neutro); }
+    .tbsync[aria-pressed="true"] { color: var(--azione); }
+    .tbsync:hover { background: #EEF2F6; color: var(--azione); }
+    .tbsync.gira { animation: tbGira 1s linear infinite; color: var(--azione); }
     @keyframes tbGira { to { transform: rotate(360deg); } }
     /* le mappe: una, o due — affiancate se lo spazio è largo, se no una sopra l'altra */
     .stmappe { position: relative; flex: 1 1 0; min-height: 120px; container: stmappe / size; }
@@ -6978,16 +6996,16 @@
     .sthd { display: flex; align-items: baseline; min-width: 0; }
     .stname { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .stmap.edit .stname { cursor: text; border-radius: 4px; }
-    .stmap.edit .stname:hover { background: #EEF2F6; box-shadow: 0 0 0 3px #EEF2F6; color: #16232E; }
+    .stmap.edit .stname:hover { background: #EEF2F6; box-shadow: 0 0 0 3px #EEF2F6; color: var(--testo); }
     /* il paziente: il nome; sotto, «questa pagina» e la nota */
     .stp { position: relative; display: flex; flex-direction: column; gap: 1px; min-width: 0; max-width: 100%; padding: 6px 10px 6px 14px;
            border: 1px solid #D9E2EC; border-radius: 8px; background: #fff; cursor: grab; touch-action: none; transition: border-color .12s; }
     /* il triage: la stessa striscia dappertutto, dentro il bordo (nel letto la porta il letto) */
     .stp.tri::before, .stbed.tri::before { content: ""; position: absolute; left: 4px; top: 8px; bottom: 8px; width: 4px; border-radius: 2px; background: var(--tr); }
     .stp:hover { border-color: #9DBFDE; }
-    .stp.qui { border-color: #0B5CAD; }
+    .stp.qui { border-color: var(--azione); }
     .stp1 { display: flex; align-items: baseline; min-width: 0; }
-    .stpn { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: 600; line-height: 18px; color: #16232E; }
+    .stpn { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: 600; line-height: 18px; color: var(--testo); }
     .stp2 { display: flex; align-items: baseline; gap: 6px; min-width: 0; line-height: 16px; }
     .stp2 .dfpost { flex: 0 1 auto; }
     /* nel letto e nell'area l'icona c'è solo con qualcosa da fare (il menu ha «Da fare…») */
@@ -7001,7 +7019,7 @@
     .stp.via { opacity: .3; }
     /* quello che si porta: il nome e basta, accanto al puntatore, mai sopra quello che si mira */
     .stghost { position: absolute; left: 0; top: 0; z-index: 20; max-width: 220px; padding: 3px 10px; border: 1px solid #9DBFDE; border-radius: 6px;
-               background: #fff; box-shadow: 0 8px 20px rgba(9,42,74,.18); font-size: 13px; font-weight: 600; line-height: 18px; color: #16232E;
+               background: #fff; box-shadow: 0 8px 20px rgba(9,42,74,.18); font-size: 13px; font-weight: 600; line-height: 18px; color: var(--testo);
                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
     .pzunita.trascino, .pzunita.trascino *, .stmap.trascino, .stmap.trascino * { cursor: grabbing !important; }
     /* il letto: il suo nome, poi il paziente — il nome e l'età, e basta. Il
@@ -7010,11 +7028,11 @@
        (e con lui i segni), mai quello del paziente. Vuoto, è più quieto. */
     .stbed { z-index: 1; container: stbed / size; border: 1px solid #E3E8EF; border-radius: 10px; background: transparent; transition: border-color .12s; }
     .stbed.occ { border-color: #C4D0DC; background: #fff; }
-    .stbed.qui { border-color: #0B5CAD; box-shadow: 0 0 0 1px #0B5CAD; }
-    .stbed.over { z-index: 4; outline: 2px dashed #0B5CAD; outline-offset: 3px; }
+    .stbed.qui { border-color: var(--azione); box-shadow: 0 0 0 1px var(--azione); }
+    .stbed.over { z-index: 4; outline: 2px dashed var(--azione); outline-offset: 3px; }
     .stmap:not(.edit) .stbed.occ { cursor: grab; touch-action: none; }
     .stbedin { position: absolute; inset: 6px 8px 6px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow: hidden; }
-    .stbed .stname { flex: none; font-size: 12px; font-weight: 400; line-height: 16px; color: #5B6B7A; }
+    .stbed .stname { flex: none; font-size: 12px; font-weight: 400; line-height: 16px; color: var(--neutro); }
     .stbedhd { flex: none; display: flex; align-items: center; min-width: 0; }
     .stbedhd .stname { flex: 0 1 auto; min-width: 0; }
     /* il nome del letto va a capo fra le parole (due righe al massimo) e non finisce mai in «O…»: o ci sta, o sparisce */
@@ -7029,13 +7047,13 @@
     /* due righe al massimo, tagliate e basta: mai i puntini (l'età, se non ci sta, resta nel passaggio del mouse) */
     .stbed .stp1 { display: block; max-height: 36px; overflow: hidden; line-height: 18px; overflow-wrap: normal; }
     .stbed .stpn { display: inline; overflow: visible; white-space: normal; font-size: 13px; }
-    .stbed .steta { font-size: 12px; font-weight: 400; color: #5B6B7A; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .stbed .steta { font-size: 12px; font-weight: 400; color: var(--neutro); white-space: nowrap; font-variant-numeric: tabular-nums; }
     .stbed .stsegni { position: absolute; top: 0; right: 0; height: 16px; display: flex; align-items: center; gap: 6px; }
     .stbed .stsegni .cuore { font-size: 13px; }
     .stsegslot { display: inline-flex; }
     /* il pallino: rosso, ambra, blu (nuovo), un cerchio grigio (qualcosa aspetta) */
     .stseg { display: block; width: 8px; height: 8px; border-radius: 50%; }
-    .stseg.ros { background: #B3261E; } .stseg.amb { background: #D08A00; } .stseg.nuovo { background: #0B5CAD; }
+    .stseg.ros { background: var(--err); } .stseg.amb { background: #D08A00; } .stseg.nuovo { background: var(--azione); }
     .stseg.att { box-shadow: inset 0 0 0 1.5px #8296A9; }
     .stbed.occ:not(:has(.stsegni :is(.cuore, .stseg))) .stbedhd { padding-right: 0; }
     /* piccolo (le mappe stanno sempre nel loro spazio): via il nome del letto, il cuore e il pallino restano */
@@ -7060,13 +7078,13 @@
     .stbed.barella .stbedin { inset: 5px 5px 5px 10px; }
     .stbed.barella .stname { white-space: normal; overflow-wrap: normal; line-height: 14px; font-size: 11px; }
     .stfuori { position: absolute; left: 50%; bottom: -12px; z-index: 3; transform: translateX(-50%); padding: 2px 9px; border-radius: 999px;
-               background: #16232E; color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none; }
+               background: var(--testo); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none; }
     /* le aree: senza letto, dentro quanti pazienti servono */
     .starea { display: flex; flex-direction: column; border: 1.5px dashed #C4D0DC; border-radius: 12px; background: rgba(255,255,255,.6);
               transition: border-color .12s, background-color .12s; }
     .starea > .sthd { flex: none; padding: 8px 10px 6px; }
-    .starea .stname { white-space: normal; overflow-wrap: normal; text-overflow: clip; line-height: 13px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #5B6B7A; }
-    .starea.over { border-color: #0B5CAD; background: #EAF2FA; }
+    .starea .stname { white-space: normal; overflow-wrap: normal; text-overflow: clip; line-height: 13px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--neutro); }
+    .starea.over { border-color: var(--azione); background: var(--info-f); }
     .starbody { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; padding: 0 8px 8px; }
     .starbody .stp { max-width: 240px; }
     /* anche nell'area il nome va a capo invece di perdere le lettere (colonna stretta) */
@@ -7079,9 +7097,9 @@
     .stbed.sel, .starea.sel { outline: 2px solid #9DBFDE; outline-offset: 3px; }
     .stbed.drag, .starea.drag { z-index: 5; background: #fff; box-shadow: 0 10px 24px rgba(9,42,74,.16); }
     /* sopra un altro non ci sta: rosso, e lasciato lì torna dov'era */
-    .stbed.bad, .starea.bad { outline: 2px solid #B3261E; outline-offset: 2px; }
+    .stbed.bad, .starea.bad { outline: 2px solid var(--err); outline-offset: 2px; }
     .stctl { position: absolute; z-index: 4; width: 24px; height: 24px; padding: 0; border: 1px solid #D9E2EC; border-radius: 50%;
-             background: #fff; cursor: pointer; font-size: 13px; line-height: 22px; text-align: center; color: #16232E;
+             background: #fff; cursor: pointer; font-size: 13px; line-height: 22px; text-align: center; color: var(--testo);
              opacity: 0; pointer-events: none; transition: opacity .12s; }
     .stctl::before, .pzmetti::before, .pzx::before, .pzabtn::before, .stannulla::before { content: ""; position: absolute; inset: -4px; }
     .strsz::before { content: ""; position: absolute; inset: -8px; }
@@ -7089,33 +7107,33 @@
     .starea:hover > .strsz, .starea.sel > .strsz { opacity: 1; pointer-events: auto; }
     .stctl:hover { border-color: #9DBFDE; }
     .stx { top: -12px; right: -12px; }
-    .stx:hover { border-color: #E9BAB6; background: #FDF1F0; color: #B3261E; }
+    .stx:hover { border-color: #E9BAB6; background: var(--err-f); color: var(--err); }
     .strsz { position: absolute; right: 3px; bottom: 3px; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none; opacity: 0;
              pointer-events: none; transition: opacity .12s;
              background: linear-gradient(135deg, transparent 48%, #C4D0DC 48% 56%, transparent 56% 68%, #C4D0DC 68% 76%, transparent 76%); }
-    .strsz:hover { background: linear-gradient(135deg, transparent 48%, #0B5CAD 48% 56%, transparent 56% 68%, #0B5CAD 68% 76%, transparent 76%); }
+    .strsz:hover { background: linear-gradient(135deg, transparent 48%, var(--azione) 48% 56%, transparent 56% 68%, var(--azione) 68% 76%, transparent 76%); }
     .stmap .stnomein { width: 100%; min-width: 56px; height: 24px; padding: 1px 6px; border: 1px solid #9DBFDE; border-radius: 6px;
-                       background: #fff; font-size: 13px; color: #16232E; user-select: text; -webkit-user-select: text; }
+                       background: #fff; font-size: 13px; color: var(--testo); user-select: text; -webkit-user-select: text; }
     /* «Sposta in…» */
     .stmenu { position: absolute; z-index: 30; min-width: 220px; max-width: 300px; max-height: min(72vh, 540px); overflow-y: auto; padding: 4px;
               border: 1px solid #D9E2EC; border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgba(9,42,74,.16); }
-    .stmenuhd { padding: 6px 10px 4px; font-size: 12px; color: #5B6B7A; }
+    .stmenuhd { padding: 6px 10px 4px; font-size: 12px; color: var(--neutro); }
     .stmi { display: flex; align-items: baseline; gap: 12px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 6px;
-            background: none; cursor: pointer; text-align: left; font-size: 13px; color: #16232E; }
+            background: none; cursor: pointer; text-align: left; font-size: 13px; color: var(--testo); }
     .stmi span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .stmi small { flex: none; margin-left: auto; font-size: 12px; color: #5B6B7A; }
+    .stmi small { flex: none; margin-left: auto; font-size: 12px; color: var(--neutro); }
     .stmi:hover, .stmi:focus { outline: none; background: #EEF2F6; }
-    .stmi:focus-visible { outline: 2px solid #0B5CAD; outline-offset: -2px; }
-    .stmi.cur { cursor: default; color: #5B6B7A; }
+    .stmi:focus-visible { outline: 2px solid var(--azione); outline-offset: -2px; }
+    .stmi.cur { cursor: default; color: var(--neutro); }
     .stmsep { height: 1px; margin: 4px 6px; background: #EEF2F6; }
     /* «Annulla», per 8 secondi */
     .stsnack { position: absolute; left: 50%; bottom: 16px; z-index: 25; transform: translateX(-50%); display: flex; align-items: center; gap: 12px;
                max-width: calc(100% - 32px); padding: 6px 6px 6px 14px; border: 1px solid #D9E2EC; border-radius: 10px; background: #fff;
-               box-shadow: 0 6px 18px rgba(9,42,74,.12); font-size: 13px; color: #16232E; pointer-events: none; }
+               box-shadow: 0 6px 18px rgba(9,42,74,.12); font-size: 13px; color: var(--testo); pointer-events: none; }
     .stsnack span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .stannulla { position: relative; flex: none; min-height: 28px; border: 0; border-radius: 6px; background: none; padding: 2px 10px; cursor: pointer; pointer-events: auto;
-                 font-size: 13px; font-weight: 600; color: #0B5CAD; }
-    .stannulla:hover { background: #EAF2FA; }
+                 font-size: 13px; font-weight: 600; color: var(--azione); }
+    .stannulla:hover { background: var(--info-f); }
     @media (pointer: coarse) {
       .stazioni { height: 40px; }
       .stbtn, .stazioni .stbtn { min-height: 36px; }
@@ -7183,6 +7201,8 @@
   const icoIn = (k, px = 14) => ICO[k].replace('<svg width="16" height="16"', `<svg width="${px}" height="${px}" style="vertical-align:-.2em;margin-right:4px;flex:none"`);
   // …e nel menu ⋯, davanti a ogni voce
   const mico = (k) => `<span class="mico">${ICO[k]}</span>`;
+  // le voci che esistono anche sul telefono hanno la sua stessa emoji (📱 iPhone, 🖨️ stampa, 📦 registrazioni)
+  const memo = (e) => `<span class="mico mem" aria-hidden="true">${e}</span>`;
   // Le schermate che si aprono dal menu ⋯: il nome e l'icona della loro voce,
   // in testa al posto delle schede. E il nome delle schede, per il ‹ che ci torna.
   const VISTE_MENU = { riferimenti: ["Riferimenti", "libro"], tempi: ["Cronometro", "crono"], registrazioni: ["Registrazioni", "rec"],
@@ -7327,19 +7347,14 @@
   // La FORMA del pannello (⋯ → Forma): la finestra che si apre al passaggio
   // del mouse sulla pill e si richiude uscendo — quella di partenza: il medico
   // l'ha chiesta così —; la finestra di sempre, che apre e chiude solo un
-  // tocco; o una colonna a destra, a tutta altezza, che stringe il gestionale
-  // invece di coprirlo. Un'impostazione: il reset la lascia.
+  // tocco; o «Affianca»: la finestra in una colonna a destra, il gestionale
+  // visibile a sinistra. Un'impostazione: il reset la lascia.
   const FORMA = "forma.v1";
-  const FORME_PANNELLO = ["finestra", "passaggio", "colonna"];
-  const NOME_FORMA = { finestra: "Finestra", passaggio: "Al passaggio", colonna: "Colonna" };
+  const FORME_PANNELLO = ["finestra", "passaggio"];
+  const NOME_FORMA = { finestra: "Finestra", passaggio: "Al passaggio" };
   const formaOra = () => { if (TABELLONE) return "finestra"; const f = store.get(FORMA, null); return FORME_PANNELLO.includes(f) ? f : "passaggio"; };
-  // la colonna: la sua larghezza (px) e se il medico l'ha nascosta
-  const COLONNA = "colonna.v1";
-  const colonnaStato = () => { const c = store.get(COLONNA, null); return c && typeof c === "object" ? c : {}; };
-  const colonnaW = (w) => {
-    const vw = window.innerWidth || 1000, max = Math.max(420, Math.round(vw * 0.6));
-    return Math.round(Math.min(max, Math.max(420, Number.isFinite(w) ? w : vw * 0.36)));
-  };
+  // (la «Colonna» di prima è «Affianca»: la sua preferenza passa lì, una volta)
+  try { if (store.get(FORMA, null) === "colonna") { store.set(FORMA, "finestra"); store.set("win.v1", { ...AFFIANCA }); } } catch { /* niente */ }
   const PASSAGGIO_APRE_MS = 250, PASSAGGIO_CHIUDE_MS = 500;
   const geometriaPropria = (win) => !!win && [win.x, win.y, win.w, win.h].every(Number.isFinite);
   function geometriaFinestra(win) {
@@ -7382,8 +7397,6 @@
       const daPannello = Date.now() - (Number(tabStore.get("navPannello.v1", 0)) || 0) < 30e3;
       tabStore.set("navPannello.v1", 0);
       this.collapsed = !daPannello;
-      // la colonna non copre niente: resta com'era, aperta o nascosta dal medico (F2)
-      if (formaOra() === "colonna") this.collapsed = !!colonnaStato().nascosta;
       if (TABELLONE) this.collapsed = false;
       // Al passaggio: aperta dal mouse si richiude uscendo; aperta in ogni
       // altro modo (un clic, una pagina che l'apre da sola) resta, fissata
@@ -7468,14 +7481,13 @@
         if (this.stanzaEdit) { e.preventDefault(); this.stanzaEdit = false; this.render(); return; }
         // una schermata del menu ⋯: Esc torna alla scheda di prima, come il suo ‹
         if (this.vistaMenu()) { e.preventDefault(); this.tornaDaVista(); this.root.querySelector(".card")?.focus({ preventScroll: true }); return; }
-        // la colonna sta accanto al gestionale: la nasconde F2 (o la linguetta), non Esc
-        if (formaOra() === "colonna" || TABELLONE) return;
+        if (TABELLONE) return;
         e.preventDefault();
         this.riduci();
       };
       window.addEventListener("keydown", this._esc, true);
       // F2 apre e chiude il pannello, in ogni forma — non mentre si scrive in un
-      // campo del gestionale. La colonna si riapre dov'era; la finestra (e Al
+      // campo del gestionale. La finestra (e Al
       // passaggio) si apre sui Pazienti col filtro pronto: F2 · lettere · Invio.
       this._f2 = (e) => {
         if (e.key !== "F2" || e.repeat || TABELLONE) return;
@@ -7484,7 +7496,7 @@
         e.preventDefault();
         if (!this.collapsed) return this.riduci();
         this.apri();
-        if (formaOra() === "colonna" || this.runState) return;
+        if (this.runState) return;
         if (this._filtro == null) this._filtro = "";
         this._filtroFuoco = true; this._filtroSel = null;
         this.setView("home");
@@ -7517,7 +7529,7 @@
           if (this.menuAperto && !via.some((x) => x.classList && x.classList.contains("menuw"))) { this.menuAperto = false; this.render(); }
           return;
         }
-        if (this.collapsed || this.runState === "running" || formaOra() === "colonna" || TABELLONE) return;
+        if (this.collapsed || this.runState === "running" || TABELLONE) return;
         if (via.some((x) => x.id === "psassist-print" || x.id === "psassist-confirm" || x.id === "psassist-visore")) return;   // le nostre finestre: stampa, conferma, visore
         this.riduci();
       };
@@ -7763,7 +7775,7 @@
       finally { this._bracInvio = false; }
     }
     // La stazione di stampa (le stampanti dell'infermeria, su un altro PC):
-    // collegata, e scelta — «Stampa: Qui · Infermeria» —, i fogli degli ordini
+    // collegata, e scelta — «Stampa: PC · Infermeria» —, i fogli degli ordini
     // e l'etichetta anagrafica vanno lì. `nomeStazione`: «Infermeria».
     stampaDove() {
       const a = this.stampaAuto;
@@ -8080,7 +8092,7 @@
       const badge = s ? s.badge : this.statoGiro().badgeEsami;
       const parti = [s && s.tag, badge, s && s.testo].filter(Boolean);
       const tutto = [chi, ...parti, s && s.quesito].filter(Boolean).join(" · ");
-      const stop = s ? (s.onStop ? (s.ferma ? "⏹" : "✕") : "") : "⏹";
+      const stop = s ? (s.onStop ? (s.ferma ? "⏹" : "✕") : "") : "";   // (mentre gira, il ⏹ è uno solo: il bottone grande del corpo)
       const titStop = s ? s.titoloStop || (s.ferma ? "Ferma l'ordine" : "Chiudi l'avviso") : "Interrompi";
       const segno = tono === "run" ? `<i class="gdot"></i>` : `<span class="gtick">${tono === "err" || tono === "warn" ? "!" : "✓"}</span>`;
       const testo = `${chi ? `<b>${esc(nomeCorto(chi))}</b>` : ""}${parti.map((p, k) => `${chi || k ? " · " : ""}${esc(p)}`).join("")}`;
@@ -9378,7 +9390,7 @@
         ).join(", ");
         return `<span class="selgrp">${esc(r.toUpperCase())}:</span> ${items}`;
       });
-      return `<div class="selbar"><span class="selcount">${this.selected.size} SELEZIONATI</span>${groups.map((g) => `<div class="selrow">${g}</div>`).join("")}</div>`;
+      return `<div class="selbar">${groups.map((g) => `<div class="selrow">${g}</div>`).join("")}</div>`;
     }
     // Il menu ⋯ a sezioni (Paziente · Strumenti · Impostazioni): un titolo
     // piccolo e sotto le voci, due per riga se corte (una lunga prende la
@@ -9492,17 +9504,13 @@
       // se non l'hai mai spostata).
       const ridotto = this.collapsed;
       const forma = formaOra();
-      // la colonna nascosta è una linguetta sul bordo (la striscia di un ordine resta com'è)
-      const linguetta = ridotto && forma === "colonna" && !this.striscia && !this.runState;
       const pp = this.pillPos;
       const pillStyle = pp && Number.isFinite(pp.left) && Number.isFinite(pp.top)
         ? `left:${Math.max(0, Math.min(window.innerWidth - 80, pp.left))}px;top:${Math.max(0, Math.min(window.innerHeight - 48, pp.top))}px;right:auto;`
         : "";
       let posStyle;
       if (TABELLONE) posStyle = "left:0;top:0;width:100%;height:100%;right:auto;";
-      else if (linguetta) posStyle = "top:calc(50% - 48px);right:0;";
       else if (ridotto) posStyle = pillStyle;
-      else if (forma === "colonna") posStyle = `left:auto;right:0;top:0;width:${colonnaW(colonnaStato().w)}px;height:100%;`;
       else {
         const g = geometriaFinestra(this.win);
         // di partenza (niente geometria tua) la misura segue lo schermo anche
@@ -9520,7 +9528,7 @@
       try {
       this.root.innerHTML = `
         <style>${COLORS}${PONTE_CSS}</style>
-        <div class="wrap${ridotto ? "" : " win"}${forma === "colonna" && !ridotto ? " col" : ""}${TABELLONE ? " tab" : ""}" style="${posStyle}">
+        <div class="wrap${ridotto ? "" : " win"}${TABELLONE ? " tab" : ""}" style="${posStyle}">
           ${this.collapsed && !running && this.striscia ? `
             <div class="strip">
               <button class="pill run ${esc(strTono)}" id="expand" title="${esc(strWho)} — ${esc(this.striscia.titolo || (this.striscia.onTap ? "tocca per i comandi" : "tocca per aprire il pannello"))}">
@@ -9553,15 +9561,12 @@
               ${running ? `<button class="stopmini" id="stopbtn" title="Interrompi" aria-label="Interrompi">${ICO.ferma}</button>` : ""}
             </div>
             ${running ? this.righeHtml([this.rigaGiro()]) : ""}
-          ` : linguetta ? `
-            <button class="coltab${this.promUrgente() ? " urg" : ""}" id="expand" title="${esc(who)} — ${esc(APP)}: mostra la colonna (F2)" aria-label="Mostra il pannello (F2)"></button>
           ` : this.collapsed ? `
             <button class="pill" id="expand" title="${esc(who)}${ep ? " · episodio " + esc(ep) : ""} — ${esc(APP)}, trascina per spostare">${pillInner}${this.chipRec()}${this.promUrgente()}</button>
             ${sulPaziente ? this.dfNotaSlot(this.epDiQuesta(), undefined, `${pp && Number.isFinite(pp.left) && pp.left < window.innerWidth / 2 ? " sx" : ""}${pp && Number.isFinite(pp.top) && pp.top > window.innerHeight - 180 ? " su" : ""}`) : ""}
           ` : `
-            ${forma === "colonna" && !TABELLONE ? `<button class="coltab apre" id="colnascondi" title="Nascondi la colonna (F2)" aria-label="Nascondi il pannello (F2)"></button>` : ""}
             <div class="card${inStanza ? " stanza" : ""}${this.view === "iphone" && !this.runState ? " iphone" : ""}" role="dialog" aria-label="${esc(APP)}" tabindex="-1">
-              <div class="hd" id="draghd"${forma === "colonna" || TABELLONE ? "" : ` title="Trascina per spostare · doppio clic per rimetterla al centro"`}>
+              <div class="hd" id="draghd"${TABELLONE ? "" : ` title="Trascina per spostare · doppio clic per rimetterla al centro"`}>
                 ${indietro ? `<button class="iconbtn" id="back" title="${
                   this.view === "referto" ? "Torna agli esiti"
                   : this.view === "dimtesto" || this.view === "dimimport" ? "Torna ai fogli di dimissione"
@@ -9579,10 +9584,12 @@
                   <button class="iconbtn${this.aggNuova() ? " agg" : ""}" id="menubtn" title="${this.aggNuova() ? `Altro · c'è la versione ${esc(this.agg.nuova)}` : "Altro"}" aria-label="Altro" aria-haspopup="true" aria-expanded="${this.menuAperto ? "true" : "false"}">${ICO.altro}</button>
                   ${this.menuAperto ? `<div class="menu" role="menu">
                     ${this.menuSez("", [
-                      `<div class="mforma" role="group" aria-label="Forma"><span>Forma</span>${FORME_PANNELLO.map((f) => `<button role="menuitemradio" data-forma="${f}" aria-checked="${f === forma}"${f === forma ? ' class="on"' : ""}>${NOME_FORMA[f]}</button>`).join("")}</div>`,
-                      this.win && forma !== "colonna" ? `<button role="menuitem" id="wincentra" title="La finestra al centro, nella misura di partenza">${mico("centro")}Al centro</button>` : "",
-                      eAffiancata(this.win) || forma === "colonna" ? "" : `<button role="menuitem" id="winaffianca" title="Una colonna a destra: il gestionale resta visibile a sinistra">${mico("affianca")}Affianca a destra</button>`])}
+                      `<div class="mforma" role="group" aria-label="Forma"><span>Forma</span>${FORME_PANNELLO.map((f) => { const su = f === forma && !(f === "finestra" && eAffiancata(this.win)); return `<button role="menuitemradio" data-forma="${f}" aria-checked="${su}"${su ? ' class="on"' : ""}>${NOME_FORMA[f]}</button>`; }).join("")}<button role="menuitemradio" id="winaffianca" aria-checked="${forma === "finestra" && eAffiancata(this.win)}"${forma === "finestra" && eAffiancata(this.win) ? ' class="on"' : ""} title="Una colonna a destra: il gestionale resta visibile a sinistra">Affianca</button></div>`,
+                      this.win ? `<button role="menuitem" id="wincentra" title="La finestra al centro, nella misura di partenza">${mico("centro")}Al centro</button>` : ""])}
                     ${this.menuSez(this.epDiQuesta() ? "Paziente" : "Dimissioni", [
+                      // (rara e distruttiva: non nella testata degli Esiti, accanto ad «Aggiorna»; due tocchi)
+                      this.valoriDimenticabili() ? (this.valArmato() ? `<button role="menuitem" id="valreset" class="mreset mrischio" title="Dimentica i valori letti e la scheda in archivio di questo paziente">${mico("cestino")}Dimentico? Tocca di nuovo</button>`
+                        : `<button role="menuitem" id="valreset" class="mreset" title="Dimentica i valori letti e la scheda in archivio di questo paziente: ⭳ Carica i valori li rilegge da zero">${mico("cestino")}Dimentica i valori letti</button>`) : "",
                       this.ricettaPossibile() ? `<button role="menuitem" id="ricmenu" title="Farmaci e quesito preparati nel Prescrittivo del SISS, fino all'Anteprima: Registra lo premi tu">${mico("ricetta")}Ricetta SISS</button>` : "",
                       this.terapiaPossibile() ? `<button role="menuitem" id="termenu" title="I farmaci nella pagina Terapia del gestionale, una riga per volta: Conferma la premi tu">${mico("terapia")}Terapia</button>` : "",
                       this.pageType === "patient" && this.epDiQuesta() && richiesteStampabili(printModel(document, location.href)).length
@@ -9591,7 +9598,7 @@
                     <button role="menuitem" id="dimimport" title="Rimetti i testi di un JSON esportato">${mico("importa")}Importa i fogli…</button>` : ""])}
                     ${this.menuSez("Strumenti", [
                       hasExt() ? `<button role="menuitem" id="tabmenu" title="Il tabellone dei Pazienti in una scheda sua: da fissare, o sul secondo schermo">${mico("tabellone")}Tabellone</button>` : "",
-                      hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete">${mico("tel")}iPhone</button>` : "",
+                      hasExt() ? `<button role="menuitem" id="pontemenu" title="Il pannello sull'iPhone: associa il telefono, prova la rete">${memo("📱")}iPhone</button>` : "",
                       `<button role="menuitem" id="tempimenu" title="Il cronometro: misura quanto ti prende un'attività">${mico("crono")}Cronometro</button>`,
                       `<button role="menuitem" id="rifmenu" title="Can't-miss killers: per sintomo, cosa escludere per primo">${mico("libro")}Riferimenti</button>`,
                       `<button role="menuitem" id="consmenu" title="Al cambio turno: una riga per paziente — posto, nome, età, da quanto è in PS, cosa aspetta, cosa c'è da fare — da copiare o stampare">${mico("dafare")}Consegne</button>`,
@@ -9599,15 +9606,14 @@
                       inStanza && !this.stanzaEdit ? `<button role="menuitem" id="stmodmenu" title="Ritocca la stanza: aggiungi, sposta e rinomina letti, sedie e aree">${mico("matita")}Modifica la stanza</button>` : "",
                       inStanza && !this.stanzaEdit && hasExt() ? `<button role="menuitemcheckbox" id="seguesw" aria-checked="${segueAcceso()}" title="${segueAcceso() ? "Acceso" : "Spento: tocca per accenderlo"} — quando apri l'app sull'iPhone (e col ⟳) la lista smart del gestionale, letta dietro: chi c'è, l'area, il triage; chi esce è dimesso">${mico(segueAcceso() ? "acceso" : "spento")}Segue il gestionale</button>` : ""])}
                     ${this.menuSez("Impostazioni", [
-                      hasExt() ? `<button role="menuitem" id="stampanti" title="Quale stampante è l'etichettatrice e quale l'A4, per la stampa automatica; la stazione di stampa">${mico("stampante")}Stampanti</button>` : "",
-                      this.stampaAuto && this.stampaAuto.sta ? `<div class="mforma" role="group" aria-label="Dove stampano gli ordini"><span>Stampa</span>${[["qui", "Qui"], ["stazione", this.nomeStazione()]].map(([d, t]) =>
+                      hasExt() ? `<button role="menuitem" id="stampanti" title="Stampanti (etichettatrice e A4), stazione di stampa, indirizzo del portale, iPhone">${memo("🖨️")}Impostazioni</button>` : "",
+                      this.stampaAuto && this.stampaAuto.sta ? `<div class="mforma" role="group" aria-label="Dove stampano gli ordini"><span>Stampa</span>${[["qui", "PC"], ["stazione", this.nomeStazione()]].map(([d, t]) =>
                         `<button role="menuitemradio" data-stdove="${d}" aria-checked="${this.stampaDove() === d}"${this.stampaDove() === d ? ' class="on"' : ""} title="${d === "qui" ? "I fogli degli ordini su questo PC" : `I fogli degli ordini e l'etichetta anagrafica in ${esc(this.nomeStazione())}, la stazione di stampa`}">${esc(t)}</button>`).join("")}</div>` : "",
                       !this.stampaPronta() ? "" : this.stampaAuto.s.attiva === false
                         ? `<button role="menuitemcheckbox" id="stautosw" aria-checked="false" title="Spenta: i fogli passano dal dialogo di stampa. Tocca per accenderla: ogni foglio va da solo alla sua stampante, senza dialogo">${mico("spento")}Stampa automatica</button>`
                         : `<button role="menuitemcheckbox" id="stautosw" aria-checked="true" title="Attiva: ogni foglio va da solo alla sua stampante. Tocca per spegnerla: i fogli tornano a passare dal dialogo di stampa">${mico("acceso")}Stampa automatica</button>`,
-                      hasExt() ? `<button role="menuitem" id="regmenu" title="Registra una sessione, la registrazione automatica degli ultimi minuti, gli zip salvati su questo PC (anche dall'iPhone)">${mico("rec")}Registrazioni</button>` : "",
+                      hasExt() ? `<button role="menuitem" id="regmenu" title="Registra una sessione, la registrazione automatica degli ultimi minuti, gli zip salvati su questo PC (anche dall'iPhone)">${memo("📦")}Registrazioni</button>` : "",
                       `<button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${mico("registro")}${this.showLog ? "Nascondi il registro" : "Registro"}</button>`,
-                      hasExt() ? `<button role="menuitem" id="portapri" title="L'indirizzo del portale clinico, se il pannello non compare sulla pagina dello storico">${mico("link")}Indirizzo del portale</button>` : "",
                       // l'ultima, da sola sulla sua riga, in rosso: non sta accanto a niente di innocuo
                       this.giroQui() ? "" : this.resetArmato() ? `<button role="menuitem" id="resetpaz" class="mreset mrischio">${mico("cestino")}Cancello tutto? Tocca di nuovo</button>`
                         : `<button role="menuitem" id="resetpaz" class="mreset">${mico("cestino")}Reset dati pazienti</button>`])}
@@ -9619,8 +9625,7 @@
                     </div>
                   </div>` : ""}
                 </span>`}
-                ${TABELLONE ? "" : forma === "colonna" ? `<button class="iconbtn" id="collapse" title="Nascondi la colonna (F2)" aria-label="Nascondi">${ICO.riduci}</button>`
-                  : `<button class="iconbtn" id="collapse" title="Riduci alla pill (Esc)" aria-label="Riduci">${ICO.riduci}</button>`}
+                ${TABELLONE ? "" : `<button class="iconbtn" id="collapse" title="Riduci alla pill (Esc)" aria-label="Riduci">${ICO.riduci}</button>`}
               </div>
               ${idp ? this.avvisiPaz(idp.ep || ep) : ""}
               ${this._tdSolo ? this.tdPazHtml(this._tdSolo) : ""}
@@ -9647,20 +9652,20 @@
               </div>
               <div class="bd"><div class="bdi">${this.view === "richieste" ? "" : this.notaHtml()}${this.registroHtml()}${body}</div></div>
               ${this.inPazienti() ? "" : this.stanzaSnack()}
-              ${TABELLONE ? "" : forma === "colonna" ? `<div class="rz rz-w" data-rz="w" title="Trascina per allargare o stringere la colonna"></div>` : `
+              ${TABELLONE ? "" : `
               ${["n", "s", "e", "w", "ne", "nw", "se", "sw"].map((d) => `<div class="rz rz-${d}" data-rz="${d}"></div>`).join("")}
               <div class="rsz" id="rsz" data-rz="se" title="Trascina per ridimensionare · doppio click per la misura di partenza"></div>`}
             </div>
           `}
-          ${this.collapsed && !linguetta ? ponteSpia() : ""}
+          ${this.collapsed ? ponteSpia() : ""}
         </div>
         ${forma === "passaggio" && !ridotto && !TABELLONE ? `<div class="wrap ppass" style="${pillStyle}">
           <button class="pill${this.fissata ? " fissa" : ""}" id="pinpill" aria-pressed="${this.fissata}" title="${this.fissata
             ? "Fissata: resta aperta. Un tocco la lascia richiudere uscendo col mouse; Esc la chiude" : "Si richiude uscendo col mouse: tocca per fissarla"}">${pillInner}</button></div>` : ""}`;
       } finally { this._staccando = false; }
       this.ponteRimetti();
-      this.colonnaMargine();
       this.bind();
+      this.dfAdatta();
       // Al passaggio la pill resta sopra la finestra: se copre i comandi in fondo all'intestazione (⋯, —), quelli si fanno in là
       const pin = this.root.querySelector("#pinpill"), hd = this.root.querySelector("#draghd");
       if (pin && hd) {
@@ -9978,6 +9983,7 @@
       const bersaglio = (e) => {
         if (this.stanzaEdit || this._stanzaPresa) return null;
         const letto = e.target.closest?.(".stbed.occ, .starbody .stp[data-stp]");
+        if (letto?.matches(".ospite, .stbed:has(.ospite)")) return null;   // (chi è al triage: niente scheda, ha solo il nome)
         if (letto) { const ep = letto.getAttribute("data-occep") || letto.getAttribute("data-stp"); return ep ? { ep, el: letto, carta: true } : null; }
         const riga = e.target.closest?.(".pzrow[data-pz]");
         if (!riga) return null;
@@ -10498,10 +10504,25 @@
       const del = `<button type="button" class="stctl stx" data-stdel="${tipo}:${esc(o.id)}" title="Elimina ${tipo === "area" ? "l'area" : o.forma === "sedia" ? "la sedia" : "il letto"} «${esc(o.nome)}»: chi c'era torna in lista. Si può annullare." aria-label="Elimina ${esc(o.nome)}">×</button>`;
       return tipo === "letto" ? del : `${del}<span class="strsz" data-strsz="1" title="Trascina per ridimensionare l'area"></span>`;
     }
+    // Chi aspetta al Triage, nella mappa `k`: { r (la riga della lista), posto }
+    ospitiIn(k, pazienti) {
+      const sala = (kk) => this.conMappa(kk, () => this.stanzaSala());
+      return triageOspiti(pazienti).map((r) => ({ r, posto: postoOspite(r.k, sala) })).filter((x) => x.posto && x.posto.k === k);
+    }
+    // la sua etichetta: il nome corto e il colore del triage; si trascina, non si apre (non ha una pagina nostra)
+    stanzaOspite({ r }, inLetto) {
+      const tr = TRIAGE_COLORI.includes(r.triage) ? ` tri t-${r.triage.toLowerCase()}` : "";
+      const eta = Number.isInteger(r.eta) ? r.eta : null;
+      return `<div class="stp ospite${inLetto ? "" : tr}" data-stp="${esc(r.k)}" data-ospite="1" data-cerca="${esc(normNome(r.nome))}" role="button" tabindex="${this.stanzaEdit ? -1 : 0}"
+        aria-label="${esc(r.nome)}${eta != null ? `, ${eta} anni` : ""}${r.triage ? `, triage ${esc(r.triage)}` : ""}, al triage" title="${esc(r.nome)} — al triage: trascinalo dove sta">
+        <span class="stp1"><b class="stpn">${esc(r.breve || r.nome)}</b>${eta != null ? ` <span class="steta">${eta}</span>` : ""}</span>${inLetto ? "" : `<span class="stp2"><span class="sttag">al triage</span></span>`}</div>`;
+    }
     viewStanza(m) {
       const { sala, pazienti, info, perLetto, posti } = m;
       const edit = !!this.stanzaEdit;
       const chip = (p) => this.stanzaChip(m, info.get(p.ep));
+      const ospiti = edit ? [] : this.ospitiIn(this.mappa().k, pazienti);
+      const ospiteIn = (tipo, id) => ospiti.filter((o) => o.posto.tipo === tipo && o.posto.id === id);
       // In Modifica la pianta intera, coi puntini: sotto il mouse niente cambia
       // misura. Fuori, solo il pezzo disegnato con una cella di margine: anche
       // una stanza piccola riempie la mappa.
@@ -10517,12 +10538,16 @@
       // la sedia è un letto più piccolo: stesse regole, un paziente
       const letto = (l) => {
         const i = perLetto[l.id] ? info.get(perLetto[l.id]) : null, sedia = l.forma === "sedia", { w, h } = misuraLetto(l);
-        const cls = ["stbed", l.forma, i && "occ", i?.qui && "qui", i?.p.triage && "tri t-" + i.p.triage.toLowerCase(),
+        const o = i ? null : ospiteIn("letto", l.id)[0];   // (un letto preso da un paziente non ha ospiti)
+        const tr = i ? i.p.triage : o && TRIAGE_COLORI.includes(o.r.triage) ? o.r.triage : "";
+        const cls = ["stbed", l.forma, (i || o) && "occ", i?.qui && "qui", tr && "tri t-" + tr.toLowerCase(),
           edit && this._stanzaSel === "letto:" + l.id && "sel"].filter(Boolean).join(" ");
-        return `<div class="${cls}" data-letto="${esc(l.id)}" data-drop="letto:${esc(l.id)}"${i ? ` data-occ="${esc(i.breve + i.coda)}" data-occep="${esc(i.p.ep)}" data-cerca="${esc(normNome(i.lungo))}"` : ""} role="group"
-          aria-label="${esc(l.nome)}: ${i ? esc(i.lungo + i.coda) : "vuoto"}"${edit || i ? "" : ` title="${esc(l.nome)} — trascina qui un paziente"`}
+        const occ = i ? { nome: i.breve + i.coda, ep: i.p.ep, lungo: i.lungo } : o ? { nome: o.r.breve || o.r.nome, ep: o.r.k, lungo: o.r.nome } : null;
+        return `<div class="${cls}" data-letto="${esc(l.id)}" data-drop="letto:${esc(l.id)}"${occ ? ` data-occ="${esc(occ.nome)}" data-occep="${esc(occ.ep)}" data-cerca="${esc(normNome(occ.lungo))}"` : ""} role="group"
+          aria-label="${esc(l.nome)}: ${occ ? esc(i ? i.lungo + i.coda : occ.lungo) : "vuoto"}"${edit || occ ? "" : ` title="${esc(l.nome)} — trascina qui un paziente"`}
           style="${celle(l.c, l.r, w, h)}">
           <div class="stbedin">${i ? `<div class="stbedhd">${this.stanzaNome("letto", l)}</div>${this.stanzaChip(m, i, true)}`
+            : o ? `<div class="stbedhd">${this.stanzaNome("letto", l)}</div>${this.stanzaOspite(o, true)}`
             : this.stanzaNome("letto", l) + this.stanzaGlifo(sedia ? 24 : l.forma === "barella" ? 14 : 28, "stglifo", sedia, l.forma === "barella")}</div>
           ${edit ? this.stanzaCtl("letto", l) : ""}
         </div>`;
@@ -10530,10 +10555,11 @@
       const area = (a) => {
         const dentro = pazienti.filter((p) => posti[p.ep]?.tipo === "area" && posti[p.ep].id === a.id)
           .sort((x, y) => posti[x.ep].ts - posti[y.ep].ts);   // in ordine di arrivo: chi c'è non si sposta
-        return `<div class="starea${edit && this._stanzaSel === "area:" + a.id ? " sel" : ""}" data-area="${esc(a.id)}" data-drop="area:${esc(a.id)}" role="group" aria-label="${esc(a.nome)}: ${dentro.length} ${dentro.length === 1 ? "paziente" : "pazienti"}"${edit ? "" : ` title="${esc(a.nome)} — trascina qui i pazienti"`}
+        const osp = ospiteIn("area", a.id), n = dentro.length + osp.length;   // (chi è al triage dopo i pazienti)
+        return `<div class="starea${edit && this._stanzaSel === "area:" + a.id ? " sel" : ""}" data-area="${esc(a.id)}" data-drop="area:${esc(a.id)}" role="group" aria-label="${esc(a.nome)}: ${n} ${n === 1 ? "paziente" : "pazienti"}"${edit ? "" : ` title="${esc(a.nome)} — trascina qui i pazienti"`}
           style="${celle(a.c, a.r, a.w, a.h)}">
-          <div class="sthd">${this.stanzaNome("area", a)}${dentro.length ? `<span class="stn">${dentro.length}</span>` : ""}</div>
-          <div class="starbody">${dentro.map(chip).join("")}</div>
+          <div class="sthd">${this.stanzaNome("area", a)}${n ? `<span class="stn">${n}</span>` : ""}</div>
+          <div class="starbody">${dentro.map(chip).join("")}${osp.map((o) => this.stanzaOspite(o)).join("")}</div>
           ${edit ? this.stanzaCtl("area", a) : ""}
         </div>`;
       };
@@ -10642,7 +10668,7 @@
         // da tastiera: Invio apre il paziente (o rinomina, in Modifica); Maiusc+F10 o il tasto menu: Sposta in…
         box.addEventListener("keydown", (e) => {
           const riga = e.target.closest?.(".pzapri")?.closest(".pzrow[data-riga]");
-          const chip = e.target.closest?.(".stp[data-stp]"), nome = e.target.closest?.("[data-stnome]");
+          const chip = e.target.closest?.(".stp[data-stp]:not(.ospite)"), nome = e.target.closest?.("[data-stnome]");
           const menu = e.key === "ContextMenu" || (e.shiftKey && e.key === "F10");
           if (riga && menu) { e.preventDefault(); this.stanzaMenu(riga.getAttribute("data-riga"), riga.querySelector("[data-posto]") || riga); }
           else if (chip && !this.stanzaEdit && menu) {
@@ -10658,7 +10684,7 @@
           const riga = e.target.closest(".pzrow[data-riga]");
           if (riga) { e.preventDefault(); return this.stanzaMenu(riga.getAttribute("data-riga"), riga.querySelector("[data-posto]") || riga); }
           const chip = e.target.closest(".stp[data-stp]") || e.target.closest(".stbed.occ")?.querySelector(".stp[data-stp]");
-          if (!chip) return;
+          if (!chip || chip.classList.contains("ospite")) return;
           e.preventDefault();
           if (!chip.classList.contains("prec")) this.stanzaMenu(chip.getAttribute("data-stp"), chip);
         });
@@ -10832,7 +10858,7 @@
     // letto torna vuoto. Preso dalla lista (daLista: la sua riga), va solo
     // nella stanza.
     stanzaTrascinaPaziente(e, box, chip, daLista) {
-      const ep = chip.getAttribute(daLista ? "data-riga" : "data-stp");
+      const ep = chip.getAttribute(daLista ? "data-riga" : "data-stp"), ospite = !daLista && chip.hasAttribute("data-ospite");
       let copia = null, sopra = null;
       const bersaglio = (x, y) => { const t = this.stanzaBersaglio(x, y); return daLista && t?.getAttribute("data-drop") === "tray" ? null : t; };
       const segna = (el) => {
@@ -10881,8 +10907,9 @@
           if (t) { const k = t.closest(".stmap")?.getAttribute("data-mappa"); this.stanzaSposta(ep, t.getAttribute("data-drop") + (k ? "@" + k : "")); }
         },
         // la riga si apre col suo clic (anche da tastiera); il paziente nella stanza qui
-        tocco: daLista ? null : () => this.apriPaziente(ep, "esiti"),
-        lungo: () => {
+        // (chi è al triage non ha una pagina nostra: si trascina e basta)
+        tocco: daLista || ospite ? null : () => this.apriPaziente(ep, "esiti"),
+        lungo: ospite ? null : () => {
           if (daLista) this._rigaMossa = true;
           this.stanzaMenu(ep, daLista ? chip.querySelector("[data-posto]") || chip : chip);
         },
@@ -10899,14 +10926,17 @@
       const [tipo, id] = luogo.split(":");
       const k = MAPPE[mk] ? mk : this.mappa().k;
       if (!["tray", "area", "letto"].includes(tipo)) return;
-      const T = this.pazTabellone(), j = T.lista.info.get(ep);
-      const m = T.per.get(k) || this.conMappa(k, () => this.pazModello()), i = m.info.get(ep);
+      const T = this.pazTabellone(), m = T.per.get(k) || this.conMappa(k, () => this.pazModello());
+      // chi è al triage: il posto di partenza (la Sala attesa) non è scritto — scritto è solo quello che gli dai tu
+      const o = m.info.get(ep) ? null : triageOspiti(m.pazienti).find((r) => r.k === ep);
+      const po = o ? postoOspite(ep, (kk) => this.conMappa(kk, () => this.stanzaSala())) : null;
+      const j = o ? { posto: po && (po.ts || tipo !== "tray") ? po : null, mk: po?.k } : T.lista.info.get(ep), i = o ? { breve: o.breve || o.nome, coda: "" } : m.info.get(ep);
       if (!i || !j || i.prec) return;
       const da = j.posto, daQui = da && j.mk === k;
       if (tipo === "tray" ? !da : daQui && da.tipo === tipo && da.id === id) return;   // è già lì
       const foto = this.stanzaFoto("posti"), nm = (x) => x.breve + x.coda;
       const nomeDi = (t, x) => (t === "letto" ? m.sala.letti : m.sala.aree).find((o) => o.id === x)?.nome || "";
-      let testo = tipo === "tray" ? `${nm(i)} senza posto` : `${nm(i)} in ${nomeDi(tipo, id)}`;
+      let testo = tipo === "tray" ? `${nm(i)} ${o ? "di nuovo in Sala attesa" : "senza posto"}` : `${nm(i)} in ${nomeDi(tipo, id)}`;
       const tutti = {};
       for (const kk of Object.keys(MAPPE)) {
         const raw = store.get(MAPPE[kk].posti, {});
@@ -11297,11 +11327,11 @@
         const elsewhere = receipt ? receipt.items.filter((i) => i.res !== live.res && !here.has(i.code)) : [];
         const alPosto = (res, code) => (receipt ? receipt.items.find((i) => String(i.res) === String(res) && String(i.code) === String(code)) : null)?.alPostoDi || "";
         const nota = (al) => (al ? `<small class="alposto">al posto di ${esc(al)}</small>` : "");
-        cartSec = `
+        cartSec = !inCart.length && !elsewhere.length ? "" : `
           <div class="sec">
             <div class="lbl">Già nel carrello — ${esc(live.res ? risorsaCorta(live.res) : "?")} (${inCart.length})</div>
             <div class="chips">
-              ${inCart.map((e) => `<span class="chip cart">${esc(shortLabel(e.label))}${nota(alPosto(live.res, e.code))}</span>`).join("") || `<span class="hint">Ancora nessun esame su questa risorsa.</span>`}
+              ${inCart.map((e) => `<span class="chip cart">${esc(shortLabel(e.label))}${nota(alPosto(live.res, e.code))}</span>`).join("")}
               ${elsewhere.map((i) => `<span class="chip ghosted" title="verificato su ${esc(risorsaCorta(i.res))}">${esc(i.display || shortLabel(i.label))} · ${esc(risorsaCorta(i.res))} ✓${nota(i.alPostoDi)}</span>`).join("")}
             </div>
           </div>`;
@@ -11659,7 +11689,6 @@
             ${puoiLeggere && !grande ? `<button class="mini" id="risall" ${ra || sotto || au ? `disabled ${this.dopoOrdine(etLeggi, titLeggi, true)}` : `title="${esc(titLeggi)}">${etLeggi}`}</button>` : ""}
             ${nAuto > 0 ? `<span class="wuauto" role="status" title="Carico da solo i valori e i referti nuovi: ne restano ${nAuto}">↓ ${nAuto}</span>` : ""}
             ${t ? `<button class="mini" id="storfiltro">${this.soloAlterati ? "tutti" : "solo alterati"}</button>` : ""}
-            ${this.pageType !== "vista" && (t || prelievi.some((e) => tabStore.get(this.risKey(e.id), null))) ? `<button class="mini" id="valreset" title="Dimentica i valori letti e la scheda in archivio di questo paziente: ⭳ Carica i valori li rilegge da zero">↺ Reset</button>` : ""}
             ${infoSenzaData}
           </div>
           ${grande ? `<div class="carica"><button type="button" class="grande" id="risall" ${ra || sotto ? `disabled ${this.dopoOrdine(etLeggi, titLeggi, true)}` : `title="${esc(titLeggi)}">${etLeggi}`}</button></div>` : ""}
@@ -12265,6 +12294,20 @@
       this.tdMetti(tutti, ora);
       this.promSegno(ora);
     }
+    // Il Da fare della testata: se nemmeno la prima parola sta intera, solo icona e numero
+    dfAdatta() {
+      const fai = () => {
+        for (const b of this.root.querySelectorAll(".dfic.dfprima")) {
+          b.classList.remove("solo");
+          const t = b.querySelector(".dfict");
+          if (t && t.scrollWidth > t.clientWidth + 1) b.classList.add("solo");
+        }
+      };
+      fai();
+      const hd = this.root.querySelector("#draghd");
+      this._dfRO?.disconnect();
+      if (hd && typeof ResizeObserver !== "undefined") { this._dfRO = new ResizeObserver(fai); this._dfRO.observe(hd); }
+    }
     // l'icona e il post-it di un paziente rifatti sul posto, dappertutto
     dfMetti(ep, tutti = dfTutti(), ora = Date.now()) {
       const e = CSS.escape(ep);
@@ -12286,6 +12329,7 @@
         b.innerHTML = h; b.hidden = !h;
         if (h) b.title = this.dfNotaTitolo(ep, tutti, ora); else b.removeAttribute("title");
       }
+      this.dfAdatta();
     }
     promClic(e) {
       const segno = e.target.closest?.("[data-prurg]");
@@ -12735,7 +12779,7 @@
       }
       tabStore.set(this.txtKey(e.id), { ts: Date.now(), righe });
       // nella scheda del paziente va quello che si mostra: di un ECG, il referto scritto
-      const mostra = refertoTipo(e) === "ecg" ? refertoScrittoEcg(righe).righe : righe;
+      const mostra = refertoMostrato(e, righe);
       if (mostra.length) this.archiviaReferto(e, mostra);
       this.log(`${now()}  ${shortLabel(e.label)}: testo letto (${righe.length} righe, ${letto.lettore}${letto.motivo ? `; ${letto.motivo}` : ""}${id.esito === "ok" ? `; intestazione verificata: ${id.via}` : "; intestazione non verificata"})`);
       return { righe, letto };
@@ -12755,7 +12799,7 @@
         const s = refertoScrittoEcg(righe);
         return s.righe.length ? { stato: "testo", righe: s.righe, verificato } : { stato: "macchina", verificato };
       }
-      return { stato: "testo", righe, verificato };
+      return { stato: "testo", righe: refertoScrittoRx(righe).righe, verificato };
     }
 
     // In fila per scaricare: al massimo due insieme (un tocco e «Salva» stanno
@@ -13308,7 +13352,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
           const p = this._ponte;
           if (!p || !mia || e.origin !== mia || e.source !== p.f.contentWindow || !e.data) return;
           if (e.data.psassistPonte === "pronto") { p.pronto = true; clearTimeout(p.timer); }
-          else if (e.data.psassistPonte === "esc" && !this.collapsed && formaOra() !== "colonna") this.riduci();
+          else if (e.data.psassistPonte === "esc" && !this.collapsed) this.riduci();
         });
       }
       try { f.src = chrome.runtime.getURL("ponte.html"); } catch { aspetta(0); }
@@ -14021,6 +14065,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
 
     resetArmato() { return Date.now() - (this._resetArmato || 0) < 6000; }
+    valArmato() { return Date.now() - (this._valArmato || 0) < 6000; }
+    // «Dimentica i valori letti» (⋯, negli Esiti): solo se c'è qualcosa da dimenticare
+    valoriDimenticabili() {
+      return this.view === "esiti" && this.pageType !== "vista" && !!(this.storico || tabStore.keys(`ris.${this.episodeId || "x"}.`).length);
+    }
     // Cancella subito qui (la memoria del browser e di questa scheda), con
     // «Annulla» per 8 secondi come ogni altra cosa che si può rimpiangere: la
     // fotografia di prima torna com'era. Le altre schede e l'estensione
@@ -14295,7 +14344,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         </div>`).join("");
       const qui = nomeInPagina();
       return `
-        ${this.runPatient ? `<div class="idline" style="margin-top:0">Operazione per <b>${esc(this.runPatient)}</b></div>` : ""}
         ${this.runPatient && qui && qui !== this.runPatient ? `<div class="banner warn">Stai guardando <b>${esc(qui)}</b>: questi esami sono di <b>${esc(this.runPatient)}</b> e vanno alla sua richiesta.</div>` : ""}
         <div class="sec"><div class="lbl">In corso — passo ${Math.min(doneN + 1, total)} di ${total}</div><div class="steps">${stepHtml}</div></div>
         <details class="reg" open><summary>Registro <button class="mini" id="copylog" title="Copia il registro negli appunti (il quesito viene omesso)">⧉ Copia</button></summary><div class="log" aria-live="polite">${esc(this.logLines.join("\n"))}</div></details>
@@ -14377,7 +14425,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       this.fissata = true; clearTimeout(this._tChiude); this._tChiude = 0;
       this._ridottaAlle = fuoco ? Date.now() : 0;   // ridotta da un gesto (—, Esc, un clic fuori): la pill che ricompare sotto il mouse fermo non si riapre da sola
       store.set("collapsed", true);
-      if (formaOra() === "colonna") store.set(COLONNA, { ...colonnaStato(), nascosta: true });
       // la striscia di un ordine in sottofondo torna subito, non al prossimo aggiornamento
       if (!LAVORO && this.ordini.length) { this._firmaOrdine = ""; this.stripOrdine(); }
       this.render();
@@ -14391,7 +14438,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // un ordine o di una ricetta no: resta, come chip in intestazione)
       if (this.striscia && !this.striscia.onTap && !this.striscia.daOrdine && !this.striscia.daRicetta) { clearTimeout(this._tStriscia); this.striscia = null; }
       store.set("collapsed", false);
-      if (formaOra() === "colonna") store.set(COLONNA, { ...colonnaStato(), nascosta: false });
       this.render();
       if (!passaggio) this.root.querySelector(".card")?.focus({ preventScroll: true });   // la tastiera nel pannello, non nel gestionale coperto
     }
@@ -14407,7 +14453,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // la pagina dell'iPhone: il mouse dentro la cornice non si vede da qui, e
       // col QR davanti la mano va al telefono — si chiude con un clic fuori, — o Esc
       if (this.view === "iphone") return true;
-      if (this.resetArmato() || this._svuota || (this.runState && this.runState !== "done") || this.pending?.next) return true;
+      if (this.resetArmato() || this.valArmato() || this._svuota || (this.runState && this.runState !== "done") || this.pending?.next) return true;
       if (String(this._tdTesto || "").trim() || String(this._filtro || "").trim()) return true;   // il Da fare del tabellone, il filtro a metà
       if (document.getElementById("psassist-confirm") || document.getElementById("psassist-print") || document.getElementById("psassist-visore")) return true;
       if ((this.quesitoMio && String(this._q || "").trim()) || String(this.acq || "").trim()) return true;   // un quesito scritto, una ricerca a metà
@@ -14421,34 +14467,17 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (this.tieneAperto()) { this._tChiude = setTimeout(() => this.passaggioChiude(), PASSAGGIO_CHIUDE_MS); return; }
       this.riduci({ fuoco: false });
     }
-    // La colonna stringe il gestionale invece di coprirlo: la pagina ha un
-    // margine a destra largo quanto lei, finché si vede. Nascosta (o un'altra
-    // forma), il margine torna quello di prima.
-    colonnaMargine() {
-      const html = document.documentElement;
-      const vuole = !TABELLONE && formaOra() === "colonna" && !this.collapsed ? colonnaW(colonnaStato().w) : 0;
-      if (vuole) {
-        if (this._margineDiPrima == null) this._margineDiPrima = [html.style.getPropertyValue("margin-right"), html.style.getPropertyPriority("margin-right")];
-        html.style.setProperty("margin-right", vuole + "px", "important");
-      } else if (this._margineDiPrima != null) {
-        const [v, p] = this._margineDiPrima;
-        if (v) html.style.setProperty("margin-right", v, p); else html.style.removeProperty("margin-right");
-        this._margineDiPrima = null;
-      }
-    }
     sceglieForma(f) {
       if (!FORME_PANNELLO.includes(f)) return;
       store.set(FORMA, f);
       this.menuAperto = false; this.fissata = true;
       clearTimeout(this._tChiude); this._tChiude = 0;
-      if (f === "colonna") { store.set(COLONNA, { ...colonnaStato(), nascosta: false }); this.collapsed = false; }
       this.render();
     }
     // Copiato un testo da incollare nel gestionale (EO, dimissioni, referto):
     // la finestra si toglie di mezzo da sola, la pill dice che è pronto.
-    // (La colonna no: il gestionale è lì accanto, scoperto.)
     dopoCopia(ok) {
-      if (!ok || this.collapsed || this.runState || formaOra() === "colonna" || TABELLONE) return;
+      if (!ok || this.collapsed || this.runState || TABELLONE) return;
       setTimeout(() => {
         if (this.collapsed || this.runState) return;
         // di chi è quello che stai per incollare: «✓ Copiato · ROSSI M.»
@@ -14518,26 +14547,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         const wrap = this.root.querySelector(".wrap");
         const r = wrap.getBoundingClientRect();
         const sx = e.clientX, sy = e.clientY;
-        // la colonna: solo il bordo sinistro, e la pagina accanto si stringe con lei
-        if (formaOra() === "colonna") {
-          let w = r.width;
-          const muovi = (ev) => {
-            if (!ev.buttons) return lascia();
-            w = colonnaW(r.width - (ev.clientX - sx));
-            wrap.style.width = w + "px";
-            document.documentElement.style.setProperty("margin-right", w + "px", "important");
-          };
-          const lascia = () => {
-            window.removeEventListener("pointermove", muovi, true);
-            window.removeEventListener("pointerup", lascia, true);
-            window.removeEventListener("pointercancel", lascia, true);
-            store.set(COLONNA, { ...colonnaStato(), w });
-          };
-          window.addEventListener("pointermove", muovi, true);
-          window.addEventListener("pointerup", lascia, true);
-          window.addEventListener("pointercancel", lascia, true);
-          return;
-        }
         const mm = (ev) => {
           if (!ev.buttons) return up();
           const vw = window.innerWidth, vh = window.innerHeight;
@@ -14603,7 +14612,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       $("#straggiorna")?.addEventListener("click", (e) => { e.currentTarget.blur(); this.aggiornaOfferta()?.fn(); });
       $("#collapse")?.addEventListener("click", () => this.riduci());
       $("#menubtn")?.addEventListener("click", (e) => {
-        e.stopPropagation(); this.menuAperto = !this.menuAperto; this._resetArmato = 0; this.render();
+        e.stopPropagation(); this.menuAperto = !this.menuAperto; this._resetArmato = 0; this._valArmato = 0; this.render();
         if (this.menuAperto && hasExt()) ask({ t: "aggiornaControlla", ora: true });   // c'è una versione nuova?
       });
       // due tocchi: il primo chiede, il secondo (entro pochi secondi) cancella
@@ -14616,23 +14625,23 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // due posizioni pronte: al centro (85%), o in colonna a destra col gestionale visibile
       const metti = (g) => { this.win = g; store.set("win.v1", g); this.menuAperto = false; this.render(); };
       $("#wincentra")?.addEventListener("click", () => metti(null));
-      $("#winaffianca")?.addEventListener("click", () => metti({ ...AFFIANCA }));
+      $("#winaffianca")?.addEventListener("click", () => { store.set(FORMA, "finestra"); metti({ ...AFFIANCA }); });
       this.root.querySelectorAll("[data-rz]").forEach((el) => this.attachResize(el));
       // doppio clic sull'angolo o sull'intestazione: di nuovo al centro, all'85%
       const alCentro = (e) => { e.stopPropagation(); this.win = null; store.set("win.v1", null); this.render(); };
       $("#rsz")?.addEventListener("dblclick", alCentro);
       const forma = formaOra();
       const hd = $("#draghd");
-      if (hd && forma !== "colonna" && !TABELLONE) {
+      if (hd && !TABELLONE) {
         this.attachDrag(hd);
         hd.addEventListener("dblclick", (e) => { if (!e.target.closest("button")) alCentro(e); });
       }
       const pill = $("#expand");
-      if (pill && !pill.classList.contains("coltab")) this.attachDrag(pill);
+      if (pill) this.attachDrag(pill);
       if ($("#pinpill")) this.attachDrag($("#pinpill"));   // Al passaggio, aperta: la pill si trascina lo stesso
       // la forma, dal menu ⋯
       this.root.querySelectorAll("[data-forma]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); this.sceglieForma(b.getAttribute("data-forma")); }));
-      // «Stampa: Qui · Infermeria» (si ricorda: vale anche per le altre schede, e il telefono la propone)
+      // «Stampa: PC · Infermeria» (si ricorda: vale anche per le altre schede, e il telefono la propone)
       this.root.querySelectorAll("[data-stdove]").forEach((b) => b.addEventListener("click", (e) => {
         e.stopPropagation();
         const dove = b.getAttribute("data-stdove") === "stazione" ? "stazione" : "qui";
@@ -14640,7 +14649,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         chrome.storage.local.get("stampa").then((o) => chrome.storage.local.set({ stampa: { ...(o.stampa || {}), dove } })).catch(() => {});
         this.render();
       }));
-      $("#colnascondi")?.addEventListener("click", () => this.riduci());
       // Al passaggio: il mouse fermo sulla pill la apre; la pill resta, e un
       // tocco la fissa (o la lascia di nuovo richiudere). Col dito: un tocco apre, un tocco chiude.
       if (forma === "passaggio" && pill && pill.matches(".pill:not(.run)")) {
@@ -14729,14 +14737,6 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       });
       $("#apripdf")?.addEventListener("click", () => { const id = this.espanso ?? this._autoAperto; if (id) this.openReferto(id); });
       this.root.querySelectorAll("[data-pdf]").forEach((b) => b.addEventListener("click", () => this.openReferto(b.getAttribute("data-pdf"))));
-      $("#portapri")?.addEventListener("click", async () => {
-        this.menuAperto = false;
-        const r = await ask({ t: "apriImpostazioni" }).catch(() => null);
-        this.message = r && r.ok
-          ? { ok: "Incolla l'indirizzo del portale nella pagina che si è aperta." }
-          : "Non riesco ad aprire le impostazioni: aprile da chrome://extensions → PS Assist → Dettagli → Opzioni.";
-        this.render();
-      });
       // un tocco su un valore lo segna (giallo → arancio → niente): si cambia
       // la cella sul posto, senza ridisegnare, così la tabella non scatta
       const tabella = this.root.querySelector(".sttab");
@@ -14757,7 +14757,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       const filtra = () => { this.soloAlterati = !this.soloAlterati; this.render(); };
       $("#storfiltro")?.addEventListener("click", filtra);
       $("#avvnomi")?.addEventListener("click", () => { this.mostraNomi = !this.mostraNomi; this.render(); });
-      $("#valreset")?.addEventListener("click", () => this.resetValori());
+      $("#valreset")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!this.valArmato()) { this._valArmato = Date.now(); this.render(); return; }
+        this._valArmato = 0; this.menuAperto = false;
+        this.resetValori();
+      });
       $("#refdiag")?.addEventListener("click", async () => {
         const b = this.root.querySelector("#refdiag");
         segnaCopia(b, await copiaTesto(diagnosiTesto(this.diagnosi)));
@@ -16112,6 +16117,32 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     return { righe: tutte, soloMacchina: false };
   }
 
+  // Radiologia (RX…): si mostra la riga dell'esame (titolo, data e ora) e il
+  // referto che sta tra le due righe di trattini, MAI l'anagrafica in testa
+  // (ospedale, reparto, dati del paziente, modalità, operatore), i trattini
+  // né il piè di pagina. Ogni esame del PDF ha la sua riga e il suo corpo.
+  // Prudente: se la struttura non è quella (righe d'esame e coppie di trattini
+  // non tornano, o non ci sono) si mostra tutto, come prima: mai perdere testo.
+  function refertoScrittoRx(righe) {
+    const tutte = (righe || []).map((r) => String(r || "").trim()).filter(Boolean);
+    const sep = (r) => /^[_\-=–—]{5,}$/.test(r);
+    const esame = (r) => /^\d+-\d+\s+\S.*\(\s*[A-Z0-9]+\s*\)\s+\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}[:.]\d{2}$/i.test(r);
+    const idx = [], esami = [];
+    tutte.forEach((r, i) => { if (sep(r)) idx.push(i); else if (esame(r)) esami.push(i); });
+    const n = idx.length / 2;
+    if (!esami.length || !Number.isInteger(n) || n !== esami.length) return { righe: tutte, tagliato: false };
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      if (esami[k] > idx[2 * k]) return { righe: tutte, tagliato: false };   // l'esame viene prima del suo corpo
+      out.push(tutte[esami[k]], ...tutte.slice(idx[2 * k] + 1, idx[2 * k + 1]));
+    }
+    return { righe: out, tagliato: true };
+  }
+  // Quello che di un referto letto si mostra, archivia e manda al telefono.
+  function refertoMostrato(e, righe) {
+    return refertoTipo(e) === "ecg" ? refertoScrittoEcg(righe).righe : refertoScrittoRx(righe).righe;
+  }
+
   // Il portale può mostrare più di un PDF (quello rimasto aperto prima, poi il
   // nostro): non si tiene il primo che passa, ma quello che è di QUESTO
   // paziente e, a parità, quello che nomina l'esame chiesto; a parità ancora,
@@ -16207,7 +16238,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (!motivo && await stampaAutomatica() && await stampaAltrove(jobs, { ...opzioni, dest: "qui" })) return;
     openPrintWizard(jobs, opzioni);
   }
-  // la stazione di stampa collegata, e scelta («Stampa: Qui · Infermeria»)
+  // la stazione di stampa collegata, e scelta («Stampa: PC · Infermeria»)
   async function allaStazione() {
     if (!hasExt()) return false;
     try {
@@ -17074,7 +17105,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       df: dfDi(i.p.ep, m.df).map((x) => ({ id: x.id, testo: x.testo, t: x.t, fatto: x.fatto })),
       ordina: !!ponteUrlPaziente(i.p) && !i.prec,
       stato: i.prec ? null : ponteStato(i.p.ep, m.df),
+      allergie: i.prec ? null : ponteAllergie(i.p.ep),
     }));
+  }
+  // Le allergie, con le parole di sotto il nome sul pannello («Allergie: nega», «non compilate», «non lette», o il testo):
+  // `k` è com'è colorata (ros = c'è un testo). Per il telefono, sotto il nome e nel riepilogo della Terapia.
+  function ponteAllergie(ep) {
+    const all = statoDi(ep)?.anag?.allergie;
+    return !all ? { k: "nl", t: "Allergie: non lette" } : all.nega ? { k: "nega", t: "Allergie: nega" }
+      : all.testo ? { k: "ros", t: `Allergie: ${String(all.testo).slice(0, 400)}` } : { k: "nc", t: "Allergie: non compilate" };
   }
   // Le mappe, per il telefono (sola lettura): per ciascuna il nome, la griglia, i letti e
   // le aree com'è salvata sul PC (o quella di partenza), e chi sta dove — solo l'episodio:
@@ -17096,6 +17135,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         letti: per.get(k).sala.letti.map((l) => ({ id: l.id, c: l.c, r: l.r, ...misuraLetto(l), nome: l.nome, ...(l.forma && { forma: l.forma }) })),
         aree: per.get(k).sala.aree.map((a) => ({ id: a.id, c: a.c, r: a.r, w: a.w, h: a.h, nome: a.nome })),
         posti: [...dove].filter(([, x]) => x.k === k).map(([ep, x]) => ({ ep, tipo: x.v.tipo, id: x.v.id })),
+        // chi è al Triage (la sua chiave: il nome il telefono lo ha dalla riga di `triage`), di partenza in Sala attesa
+        ospiti: PANNELLO.conMappa(k, () => PANNELLO.ospitiIn(k, per.get(k).pazienti))
+          .filter((o) => o.posto.tipo === "area" || !per.get(k).perLetto[o.posto.id]).map((o) => ({ ep: o.r.k, tipo: o.posto.tipo, id: o.posto.id })),
       })),
     };
   }
@@ -17208,14 +17250,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   async function ponteEsiti(p) {
     const url = ponteUrlPaziente(p);
     let referti = [], nota = "";
+    const chi = { cf: "", nascita: "" };   // dal riquadro della sua pagina: di chi è un referto
     if (url) {
       try {
         const { doc, url: fin } = await fetchDoc(url, {});
         if (classify(doc) === "login") return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true };
         if (findEpisodeId(doc, fin) !== p.ep) return { ok: false, errore: "La pagina del paziente sul PC è di un altro episodio: non mostro niente" };
         referti = esitiModel(doc, fin).filter((e) => e.kind === "referto");
+        Object.assign(chi, { cf: cfInRiquadro(doc), nascita: nascitaInPagina(doc) });
       } catch (e) { nota = `Referti non letti: ${e?.head || e?.message || e}`; }
-    } else nota = "Per i referti, apri una volta il paziente sul PC";
+    }
     let st = null;
     const testi = new Map();
     if (hasExt()) {
@@ -17230,7 +17274,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // fiscale fosse noto sta nella scheda col suo nome.
       const perNome = "nome:" + normNome(p.name);
       const altra = perNome !== "nome:" && (!scelta || scelta.chiave !== perNome) && indice.some((v) => v.chiave === perNome) ? await leggi(perNome) : null;
-      for (const s of [altra, st]) for (const x of (s && s.referti) || []) if (x && x.id && x.testo) testi.set(x.id, x.testo);
+      // (un testo salvato prima del taglio, con l'intestazione dentro, si taglia anche qui)
+      for (const s of [altra, st]) for (const x of (s && s.referti) || []) if (x && x.id && x.testo) {
+        const rif = referti.find((e) => e.id === x.id);
+        testi.set(x.id, rif && refertoTipo(rif) !== "ecg" ? refertoScrittoRx(String(x.testo).split("\n")).righe.join("\n") : x.testo);
+      }
     }
     const dati = st && st.righe && st.righe.length ? normalizzaStorico(st) : null;
     const tabella = dati && dati.righe.length ? ponteTabella(dati) : null;
@@ -17239,19 +17287,49 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // e non è segnata come di un altro paziente (anche senza testo: TC, visite)
     const salvati = hasExt() && referti.length ? ((await ask({ t: "listRef", ep: p.ep, ids: referti.map((e) => e.id) }).catch(() => null)) || {}).cached || {} : {};
     const cfImp = String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "";
+    const altri = new Set();
     const diAltro = (e) => {
       const t = tabStore.get(`reftxt.${p.ep}.${e.id}`, null);
-      return !!t && (!!t.altro || (Array.isArray(t.righe) && identitaReferto(t.righe, { cf: "", cfImp, nome: p.name || "", nascita: "" }).esito === "altro"));
+      return altri.has(e.id) || (!!t && (!!t.altro || (Array.isArray(t.righe) && identitaReferto(t.righe, { cf: "", cfImp, nome: p.name || "", nascita: "" }).esito === "altro")));
     };
+    // Un ECG o una radiografia salvati su questo PC ma col testo mai letto: il
+    // PDF lo salva la scheda del portale (il service worker), il testo lo legge
+    // la pagina che l'ha chiesto — e se il medico è già passato a un'altra
+    // pagina, non lo legge nessuno. Lo si legge qui, dalla copia (nessuna
+    // richiesta), con lo stesso controllo di chi è del pannello, e va nella
+    // scheda del paziente: la prossima volta è già lì.
+    const chiave = p.pk || (normNome(p.name) ? "nome:" + normNome(p.name) : "");
+    for (const e of referti) {
+      if (testi.has(e.id) || !testoAuto(e) || !salvati[e.id] || diAltro(e)) continue;
+      const g = await ask({ t: "getRef", id: e.id, ep: p.ep }).catch(() => null);
+      const righe = g && g.ok && g.data ? ((await testoPdf(bufDaB64(g.data)).catch(() => null)) || {}).righe || [] : [];
+      if (!righe.length) continue;
+      if (identitaReferto(righe, { cf: chi.cf, cfImp, nome: p.name || "", nascita: chi.nascita }).esito === "altro") { altri.add(e.id); continue; }
+      const mostra = refertoMostrato(e, righe);
+      if (!mostra.length) continue;
+      const testo = mostra.slice(0, 200).join("\n").slice(0, 20000);
+      testi.set(e.id, testo);
+      if (chiave) {
+        await mettiInScheda(chiave, null, (vecchio) => {
+          const base = vecchio || { paziente: { idMPI: "", cognome: "", nome: p.name || "" }, cf: cfImp, periodo: "", date: [], righe: [], scartate: [], letto: Date.now() };
+          const ref = [{ id: e.id, quando: e.when || "", titolo: shortLabel(e.label || ""), sistema: e.sistema || "", testo }, ...(base.referti || []).filter((r) => r.id !== e.id)];
+          return { ...base, referti: ref.slice(0, 40) };   // (l'ora dei valori resta la loro)
+        }).catch(() => {});
+      }
+    }
+    const visti = refertiVisti(p.ep);
     const lista = referti.filter((e) => refertoTipo(e) !== "lab" || !tabella).map((e) => {
       const t = testi.get(e.id) || "";
       const sta = !!t && t.length <= resta;
       if (sta) resta -= t.length;
       return { id: e.id, quando: e.when, sistema: e.sistema, titolo: shortLabel(e.label), tipo: refertoTipo(e), testo: sta ? t : "", lungo: !!t && !sta,
-        ...(salvati[e.id] && !diAltro(e) ? { pdf: true } : {}) };
+        ...(visti.has(e.id) ? {} : { nuovo: true }), ...(salvati[e.id] && !diAltro(e) ? { pdf: true } : {}) };
     });
     // quando il PC li ha letti: sul telefono si vede quanto sono vecchi
-    return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, letto: tabella ? Number(st.letto) || 0 : 0, referti: lista, nota }, registro: `esiti di ${p.name}` };
+    // (`mai`: il PC non ha mai aperto la sua pagina — niente di salvato, e niente da rileggere)
+    // (come sul PC: i valori nuovi dall'ultima volta che il medico li ha guardati, e i referti non ancora aperti)
+    const nuoviVal = tabella ? Number(statoDi(p.ep)?.valori?.nuovi) || 0 : 0;
+    return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, letto: tabella ? Number(st.letto) || 0 : 0, referti: lista, nota, ...(nuoviVal ? { valoriNuovi: nuoviVal } : {}), ...(url ? {} : { mai: true }) }, registro: `esiti di ${p.name}` };
   }
   // L'ordine: lo stesso giro di «Conferma e stampa», dato alla scheda di
   // sottofondo dalla pagina del paziente — tutti i controlli di sempre. Il
@@ -17315,9 +17393,18 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (cmd === "triage") {
       const r = a.rileggi ? await smartSync(false).catch(() => null) : null;
       const t = store.get(TRIAGE_LISTA, null);
-      return { ok: true, dati: { ts: t?.ts || 0, righe: Array.isArray(t?.righe) ? t.righe : [], rilegge: !!(r && r.ok) } };
+      // (con la chiave di ognuno: sulla mappa i posti dicono solo quella)
+      return { ok: true, dati: { ts: t?.ts || 0, righe: Array.isArray(t?.righe) ? t.righe.map((x) => ({ ...x, k: chiaveTriage(x) })) : [], rilegge: !!(r && r.ok) } };
     }
     if (cmd === "richieste") return fatto({ ok: true, dati: ponteCatalogo(), registro: "catalogo degli esami" });
+    // chi è al Triage, portato sulla mappa dal telefono: lo stesso gesto del PC (non è fra i pazienti)
+    if (cmd === "posto" && /^tr[0-9a-z]{1,10}$/.test(String(a.ep || "")) && !pontePaziente(a.ep)) {
+      const o = triageOspiti(PANNELLO.pazModello().pazienti).find((r) => r.k === a.ep);
+      if (!o) return { ok: false, errore: "Non è più al triage, sul PC" };
+      if (!/^(tray|(letto|area):[\w.-]{1,40})(@\w{1,8})?$/.test(String(a.dove || ""))) return { ok: false, errore: "Posto non valido" };
+      PANNELLO.stanzaSposta(a.ep, a.dove);
+      return fatto({ ok: true, dati: ponteMappe(), registro: `posto di ${o.breve || o.nome} (al triage)` });
+    }
     const p = a.ep ? pontePaziente(a.ep) : null;
     if (!p) return { ok: false, errore: "Questo paziente non è più nell'elenco del PC" };
     // dimesso sul PC (archiviato): dal telefono non si tocca più
@@ -17461,9 +17548,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       try {
         panel.log(`${now()}  ── iPhone: «Aggiorna i valori» per ${panel.nomePaziente()} ──`);
         await panel.caricaValori();
-        // i valori al telefono subito; i referti (RX, ECG, TC…) non ancora
-        // salvati continuano qui, uno alla volta finché c'è tempo, e il
-        // telefono li trova alla prossima rilettura
+        // i valori ci sono (lo si dice: allo scadere, il telefono ha almeno
+        // quelli); poi i referti (RX, ECG, TC…) non ancora salvati, uno alla
+        // volta finché c'è tempo — e il telefono ha tutto con una risposta sola
         ask({ t: "ponteValoriLetti", ok: true, testo: "letti" }).catch(() => {});
         const fine = Date.now() + 90e3;
         await panel.caricaReferti({ ferma: () => Date.now() > fine }).catch(() => {});
