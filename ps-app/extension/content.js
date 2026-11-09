@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.82.0";
+  const VERSION = "3.83.0";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -8060,6 +8060,7 @@
         stop ? `<button class="gstop${stop === "⏹" ? " ferma" : ""}" id="gchipstop" title="${esc(titStop)}" aria-label="${esc(titStop)}">${stop}</button>` : ""}${
         s ? this.piegatiHtml("gchippieg") : ""}${
         s && s.azione ? `<button class="gaz" id="gchipaz" title="${esc(s.azione.titolo || "")}">${esc(s.azione.label)}</button>` : ""}${
+        s && this.aggiornaOfferta() ? `<button class="gaz" id="gchipagg" title="${esc(AGGIORNA_TITOLO)}">Aggiorna</button>` : ""}${
         s && s.onTap
           ? `<button class="gcorpo" id="gchipapri" title="${esc(s.titolo || tutto)}">${segno}<span class="gt">${testo}</span></button>`
           : `<span class="gcorpo">${segno}<span class="gt">${testo}</span></span>`}</span>${
@@ -8077,6 +8078,8 @@
     // ✕ «Visto: togli» su un avviso che resta (un errore, una stampa non uscita):
     // via dalla striscia; il Registro lo tiene
     avvisoVisto() { return { titoloStop: "Visto: togli", onStop: () => this.segnala(null) }; }
+    // «Aggiorna» accanto alla striscia: la pagina non si è ricaricata da sola dopo un ordine (aggiornaDopoOrdine)
+    aggiornaOfferta() { return this._aggiorna && this._aggiorna.ep === this.epDiQuesta() ? this._aggiorna : null; }
     // finito tutto (stampato): la pill torna quella di sempre
     chiudiGiro() {
       if (this.runState !== "done") return;
@@ -8727,6 +8730,8 @@
       this.stripOrdine();
       const w = this.root.querySelector("#bracciale");
       if (w) w.innerHTML = this.braccialeDentro();
+      // confermata, e la stampa automatica ha finito (ogni PDF preso e dato all'aiutante): la pagina si ricarica (aggiornaDopoOrdine)
+      for (const o of this.ordini) if (o.confermata && o.stato === "avviso" && Array.isArray(o.fogli)) aggiornaDopoOrdine(this, o);
     }
     // Il Registro della scheda di un ordine arriva con la sua ultima parola (la
     // scheda si chiude): si aggiunge, una volta, al Registro di quel paziente
@@ -9494,6 +9499,7 @@
                 </span>
               </button>
               ${this.striscia.azione ? `<button class="strazione" id="strazione" title="${esc(this.striscia.azione.titolo || "")}">${esc(this.striscia.azione.label)}</button>` : ""}
+              ${this.aggiornaOfferta() ? `<button class="strazione" id="straggiorna" title="${esc(AGGIORNA_TITOLO)}">Aggiorna</button>` : ""}
               ${this.piegatiHtml("strpieg")}
               ${this.striscia.onStop ? (this.striscia.ferma
                 ? `<button class="stopmini" id="strstop" title="${esc(this.striscia.titoloStop || "Ferma l'ordine")}" aria-label="${esc(this.striscia.titoloStop || "Ferma l'ordine")}">${ICO.ferma}</button>`
@@ -14528,6 +14534,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         if (b.hasAttribute("data-pjrist")) { ask({ t: "ordineStampaQui", id: b.getAttribute("data-pjrist") }); return; }
         if (b.id === "gchipstop") { if (this.runState === "running") this.stop(); else this.striscia?.onStop?.(); }
         else if (b.id === "gchipaz") { b.blur(); this.striscia?.azione?.fn?.(); }
+        else if (b.id === "gchipagg") { b.blur(); this.aggiornaOfferta()?.fn(); }
         else if (b.id === "gchipapri") this.striscia?.onTap?.();
         else if (b.id === "gchippieg") this.mostraPiegati();
       });
@@ -14538,6 +14545,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       // (il bottone non tiene il fuoco, e il pannello non glielo ridà: col fuoco
       // nel pannello certi aggiornamenti aspettano — la spia del Ponte, per esempio)
       $("#strazione")?.addEventListener("click", (e) => { this._fuocoId = null; e.currentTarget.blur(); this.striscia?.azione?.fn?.(); });
+      $("#straggiorna")?.addEventListener("click", (e) => { e.currentTarget.blur(); this.aggiornaOfferta()?.fn(); });
       $("#collapse")?.addEventListener("click", () => this.riduci());
       $("#menubtn")?.addEventListener("click", (e) => {
         e.stopPropagation(); this.menuAperto = !this.menuAperto; this._resetArmato = 0; this.render();
@@ -16754,6 +16762,61 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       { tag: "Da controllare", testo: "Controlla il carrello e premi tu Conferma", tono: "warn" });
   }
 
+  // Dopo un ordine in sottofondo (dal PC o dal telefono) la pagina del
+  // paziente davanti al medico è quella di prima: gli esami nuovi non ci sono
+  // finché non la ricarica. Una regola sola: la pagina si ricarica dal suo
+  // «Aggiorna» (il link della pagina a se stessa: una GET, mai un modulo
+  // rimandato) quando la stampa dei suoi fogli è finita — quella automatica
+  // (ordiniAggiorna: ogni PDF preso e dato all'aiutante), o quella col dialogo
+  // qui (stampaOrdine) —, mai prima: nessuna pagina si muove mentre i PDF
+  // arrivano (il PDF lo scarica una pagina, la scheda dell'ordine o questa
+  // col dialogo, e una pagina che se ne va perde il suo: «Stampa interrotta»). Una volta per ordine, solo sulla pagina di
+  // QUEL paziente caricata prima della Conferma provata, nella scheda che si
+  // vede. Mai sotto chi scrive (la striscia offre «Aggiorna»); durante una
+  // stampa col dialogo o un giro, fra poco (due minuti al più). La striscia
+  // resta: quella dell'ordine la ridisegna la pagina nuova, quella della
+  // stampa fatta qui la porta AGGIORNA_STRISCIA.
+  const AGGIORNATI = "aggiornati.v1";
+  const AGGIORNA_STRISCIA = "aggiornaStriscia.v1";
+  const AGGIORNA_TITOLO = "Ricarica la pagina del paziente: compaiono gli esami appena confermati";
+  function aggiornaDopoOrdine(panel, o, t0 = Date.now(), ora = false) {
+    const id = String(o.id || ""), ep = String(o.ep || ""), confermata = Number(o.confermata) || 0;
+    if (!panel || LAVORO || TABELLONE || window.top !== window || !id || !confermata) return;
+    if ((tabStore.get(AGGIORNATI, []) || []).includes(id) || panel.pageType !== "patient" || !ep || ep !== panel.epDiQuesta()) return;
+    // una ricarica sola mostra tutti gli ordini confermati di questo paziente
+    const segna = () => tabStore.set(AGGIORNATI, [...new Set([...(tabStore.get(AGGIORNATI, []) || []), id,
+      ...(panel.ordini || []).filter((x) => x.confermata && String(x.ep) === ep).map((x) => String(x.id))])].slice(-30));
+    if (performance.timeOrigin >= confermata) return segna();   // caricata dopo la prova: la elenca già
+    if (document.visibilityState !== "visible") return;
+    // (una stampa col dialogo qui, i PDF di un altro ordine che arrivano, un giro qui o altrove:
+    // si riprova fra poco; se no, un attimo e si va)
+    const occupata = wizardOpen || panel.giroQui() || motoreOvunque() || (panel.ordini || []).some((x) => x.stato === "stampo");
+    if (occupata || (!ora && !staScrivendo())) {
+      clearTimeout(panel._tAggiorna);
+      if (Date.now() - t0 < 120e3) panel._tAggiorna = setTimeout(() => aggiornaDopoOrdine(panel, o, t0, !occupata), occupata ? 2000 : 400);
+      return;
+    }
+    const a = document.querySelector('a[title="Aggiorna"]');
+    const url = urlPaziente(ep, a ? a.href : "");
+    if (!url) return segna();
+    const vai = () => {
+      segna();
+      panel._aggiorna = null;
+      const s = o.stampaQui && panel.striscia;
+      if (s) tabStore.set(AGGIORNA_STRISCIA, { ts: Date.now(), ep, ristampa: s.azione ? o.stampaQui : null, visto: !!s.onStop,
+        s: { tag: s.tag || "", badge: s.badge || "", testo: s.testo || "", tono: s.tono || "ok", quesito: s.quesito || "", paziente: s.paziente || "" } });
+      if (!panel.collapsed) tabStore.set("navPannello.v1", Date.now());   // (aperto resta aperto)
+      panel.log(`${now()}  ordine confermato: ricarico la pagina dal suo «Aggiorna», per gli esami nuovi`);
+      location.href = url;
+    };
+    const scrive = staScrivendo();
+    if (!scrive) return vai();
+    segna();
+    panel.log(`${now()}  ordine confermato: non ricarico la pagina mentre scrivi (${scrive}) — «Aggiorna» sulla striscia`);
+    panel._aggiorna = { ep, fn: vai };
+    if (panel.collapsed) panel.render(); else panel.rifaiChipGiro();
+  }
+
   // Le etichette di un ordine fatto in sottofondo arrivano qui, dalla scheda
   // dell'ordine attraverso il service worker: i link sono quelli che quella
   // scheda ha letto dalla pagina del gestionale (mai costruiti), e la stampa è
@@ -16801,8 +16864,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     panel?.log(`${now()}  etichette dell'ordine per ${nome || "un paziente"}: le stampo qui`);
     // (con la stampa automatica, «Ristampa» non apre niente qui: li rifà il service worker)
     const tag = st.tag || "Confermata";
-    avviaStampa(jobs, { panel: conNome, tag, fine: st.fine || null, ep: m.ep, paziente: nome, auto: !m.forza, dopo: m.forza ? 0 : Number(m.conferma) || 0,
-      title: `${nome ? nome + " · " : ""}${tag === "Confermata" ? "richiesta appena confermata." : st.riassunto || ""}` });
+    const opz = { tag, fine: st.fine || null, ep: m.ep, paziente: nome, title: `${nome ? nome + " · " : ""}${tag === "Confermata" ? "richiesta appena confermata." : st.riassunto || ""}` };
+    // stampato qui col dialogo: finito, la pagina del paziente si ricarica (e «Ristampa» con lei)
+    const stampaQui = { jobs: jobs.map(({ motivo, ...j }) => j), opz };
+    avviaStampa(jobs, { ...opz, panel: conNome, auto: !m.forza, dopo: m.forza ? 0 : Number(m.conferma) || 0,
+      onClose: () => aggiornaDopoOrdine(panel, { id: m.id, ep: m.ep, confermata: m.confermata, stampaQui }) });
     return { ok: true };
   }
   // Un foglio che il service worker sta stampando: il PDF, preso da qui come
@@ -17856,6 +17922,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         }
         if (av.striscia) { panel.collapsed = true; panel.striscia = av.striscia; }
         else panel.collapsed = false;
+      }
+    }
+    // la striscia della stampa fatta qui, prima che la pagina si ricaricasse dopo l'ordine (aggiornaDopoOrdine)
+    const ag = tabStore.get(AGGIORNA_STRISCIA, null);
+    if (ag) {
+      tabStore.set(AGGIORNA_STRISCIA, null);
+      if (Date.now() - (ag.ts || 0) < 60e3 && ag.s && ag.ep === panel.epDiQuesta()) {
+        const r = ag.ristampa;
+        panel.striscia = { ...ag.s, ...(ag.visto ? panel.avvisoVisto() : {}),
+          ...(r && Array.isArray(r.jobs) ? { azione: { label: "Ristampa", titolo: "Stampa di nuovo etichette e lista esami", fn: () => avviaStampa(r.jobs, { ...r.opz, panel }) } } : {}) };
       }
     }
     panel.render();
