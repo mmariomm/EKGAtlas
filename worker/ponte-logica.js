@@ -27,7 +27,7 @@ export const altroRuolo = (r) => (r === "pc" ? "tel" : "pc");
 // I file dell'app del telefono, e solo questi: un altro indirizzo sotto
 // /ponte/ è un 404, mai la pagina del sito. (Gli stessi del suo sw.js.)
 export const FILE_APP = new Set(["", "app.js", "app.css", "cripto.js", "jsqr.min.js", "sw.js", "manifest.webmanifest",
-  "icona.svg", "icona-180.png", "icona-192.png", "icona-512.png", "prova.js", "prova-dati.js", "prova.css"].map((f) => "/ponte/" + f));
+  "icona.svg", "icona-180.png", "icona-192.png", "icona-512.png"].map((f) => "/ponte/" + f));
 
 // /ponte/ws?r=<stanza>&ruolo=pc|tel
 export function leggiStanza(url) {

@@ -1,6 +1,0 @@
-/* «Prova» (/ponte/?prova): la striscia che dice che i dati sono finti. Sempre in cima, sopra la testata dell'app. */
-.prova-banda { position: sticky; top: 0; z-index: 60; box-sizing: border-box; height: calc(24px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 12px 0;
-  display: flex; align-items: center; justify-content: center; background: #B45309; color: #fff; font: 600 12px/1 -apple-system, system-ui, sans-serif; letter-spacing: .02em; }
-/* la testata dell'app si ferma sotto la striscia (e la striscia già copre l'area sicura del telefono) */
-body.prova .top { top: calc(24px + env(safe-area-inset-top)); padding-top: 0; min-height: 56px; }
-body.prova .avviso.alto { top: calc(88px + env(safe-area-inset-top)); }
