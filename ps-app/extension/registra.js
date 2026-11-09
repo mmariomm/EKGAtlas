@@ -519,6 +519,8 @@ function regDopoErrore(v) {
     return;
   }
   if (v.tipo === "terapia") { regIncidente(`Terapia: ${d.perche === "nome diverso" || d.perche === "episodio diverso" ? d.perche : "errore"}`).catch(() => {}); return; }
+  // (la Terapia dal telefono: ogni no, e ogni dubbio dopo «Conferma» — il motivo è un passo, mai un testo della pagina)
+  if (v.tipo === "terapia telefono") { regIncidente(`Terapia telefono: ${String(d.perche || "errore").replace(/[^\p{L}\s'-]/gu, "").trim().slice(0, 40) || "errore"}`).catch(() => {}); return; }
   if (v.tipo !== "ordine") return;
   const m = String((v.dati && v.dati.motivo) || "");
   if (/riuscita/i.test(m) && !/ORA-/.test(m)) return;   // «Riprova i mancanti: riuscita»

@@ -358,3 +358,33 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .foglio .voce:active { background: var(--fondo); }
 .foglio .voce b { font-size: 16px; font-weight: 650; }
 .foglio .voce span { max-width: 100%; font-size: 13px; color: var(--grigio); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* --- la Terapia: le terapie confermate, una riga ciascuna; «＋ Farmaco» in un foglio --- */
+.ter { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--linea); }
+.ter .tt { flex: 1; min-width: 0; font-size: 14.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.ter .tt b { font-weight: 650; }
+.ter .tt span { color: var(--testo2); }
+.ter .to { flex: none; font-size: 13px; color: var(--grigio); font-variant-numeric: tabular-nums; }
+.foglio .voce.no { opacity: .55; }
+.foglio .voce.no span { white-space: normal; }
+.tnome { font-size: 17px; font-weight: 700; margin: 4px 4px 10px; overflow-wrap: anywhere; }
+.tc { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 4px 14px; }
+.tc + .tc, .tdose .piu { border-top: 1px solid var(--linea); }
+.tc > span { flex: 0 0 92px; font-size: 14px; font-weight: 600; color: var(--grigio); }
+.tc input:not([type="checkbox"]), .tc select { flex: 1; min-width: 0; min-height: 44px; margin: 0; border: 1px solid var(--campo); border-radius: 10px;
+  background: var(--carta); color: var(--testo); padding: 8px 12px; font-size: 16px; }
+.tc input:focus, .tc select:focus { outline: 2px solid var(--blu); outline-offset: -1px; border-color: transparent; }
+.tc.sp input { flex: none; display: inline-block; width: 26px; height: 26px; min-height: 0; margin: 0 0 0 auto; padding: 0; accent-color: var(--azione); }
+.tdose .piu { display: block; width: 100%; text-align: left; padding: 0 14px; border-radius: 0; }
+.tc input:disabled, .tc select:disabled { color: var(--testo2); background: var(--fondo); }
+.triep > .carta { padding: 12px 14px; }
+.triep .tchi { font-size: 13px; font-weight: 600; color: var(--grigio); margin-bottom: 4px; }
+.triep > .carta b { display: block; font-size: 16px; overflow-wrap: anywhere; }
+.triep > .carta div:last-child { margin-top: 2px; font-size: 14.5px; color: var(--testo2); }
+.triep .grande { display: block; width: 100%; min-width: 0; margin-top: 14px; overflow-wrap: anywhere; }
+.triep .grande:disabled { background: var(--spento); box-shadow: none; }
+.triep .piede { margin-top: 10px; }
+.tesito { margin-top: 12px; padding: 12px 14px; border-radius: 12px; font-size: 15px; font-weight: 650; border: 1px solid; }
+.tesito.ok { background: var(--verdef); color: var(--verde); border-color: var(--verdeb); }
+.tesito.warn { background: var(--ambraf); color: var(--ambra); border-color: var(--ambrab); }
+.tesito.err { background: var(--rossof); color: var(--rosso); border-color: var(--rossob); }

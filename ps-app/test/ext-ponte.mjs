@@ -895,7 +895,7 @@ sezione("la cartella dal telefono: leggere, scrivere col «Conferma» della pagi
   await suPagina(doc, A.patientUrl);
   await tocca(tel, '[data-a="scheda"][data-s="cartella"]');
   const c0 = await aspettaTel(tel, /Letto sul PC alle/, 20000);
-  check(await tel.locator(".seg button").evaluateAll((l) => l.map((b) => b.textContent).join("|")) === "Richieste|Esiti|Cartella", "le schede nell'ordine del PC: Richieste · Esiti, e «Cartella»");
+  check(await tel.locator(".seg button").evaluateAll((l) => l.map((b) => b.textContent).join("|")) === "Richieste|Esiti|Cartella|Terapia", "le schede nell'ordine del PC: Richieste · Esiti, «Cartella» e «Terapia» (il PC conosce la Terapia)");
   check(["Anamnesi", "Anamnesi remota", "Farmaci", "Allergie", "Esame obiettivo"].every((x) => c0.includes(x)) && (c0.match(/Letto sul PC alle \d\d:\d\d · adesso/g) || []).length === 1,
     `i cinque campi, e «Letto sul PC alle … · adesso» una volta (${c0.replace(/\s+/g, " ").slice(0, 160)})`);
   check(await valoreTel("ANAMNESI") === CART.campi.ANAMNESI && await valoreTel("FARMACI_ASSUNTI") === CART.campi.FARMACI_ASSUNTI && await valoreTel("ESAME_OBIETTIVO") === CART.campi.ESAME_OBIETTIVO,
@@ -1106,8 +1106,8 @@ sezione("gli EO salvati, sopra l'esame obiettivo della cartella dal telefono");
   await tocca(tel, '[data-a="crileggi"]');
   await finche(async () => !(await tel.locator("#cc-ESAME_OBIETTIVO").evaluate((t) => t.readOnly).catch(() => true)), 20000);
 
-  // un PC più vecchio non conosce il comando: niente chip, nessun errore, la cartella com'è
-  await tel.route(/\/app\.js/, async (rr) => { const t = await (await rr.fetch()).text(); await rr.fulfill({ status: 200, contentType: "text/javascript", body: "window.__eoVecchio = true;" + t.replace('chiedi("eo"', 'chiedi("eo_vecchio"') }); });
+  // un PC più vecchio non conosce i comandi («Comando sconosciuto»): niente chip, niente scheda «Terapia», nessun errore, la cartella com'è
+  await tel.route(/\/app\.js/, async (rr) => { const t = await (await rr.fetch()).text(); await rr.fulfill({ status: 200, contentType: "text/javascript", body: "window.__eoVecchio = true;" + t.replace('chiedi("eo"', 'chiedi("eo_vecchio"').replace('chiedi("terapie", {}', 'chiedi("terapie_vecchio", {}') }); });
   await tel.evaluate(() => navigator.serviceWorker?.getRegistrations().then((x) => Promise.all(x.map((y) => y.unregister()))));
   await tel.reload();
   await aspettaTel(tel, /ROSSI MARIO/, 20000);
@@ -1116,6 +1116,8 @@ sezione("gli EO salvati, sopra l'esame obiettivo della cartella dal telefono");
   await aspettaTel(tel, /Letto sul PC alle/, 20000);
   const vecchio = await tel.evaluate(() => ({ prova: window.__eoVecchio === true, chip: document.querySelectorAll(".eoc, .eoann, .foglio").length, campo: !!document.getElementById("cc-ESAME_OBIETTIVO"), err: document.querySelectorAll(".avviso, [role=alert]").length }));
   check(vecchio.prova && !vecchio.chip && vecchio.campo && !vecchio.err, `con un PC che non conosce «eo»: niente chip, nessun errore, la cartella com'è (${JSON.stringify(vecchio)})`);
+  const schedeV = await tel.locator(".seg button").evaluateAll((l) => l.map((b) => b.textContent).join("|"));
+  check(schedeV === "Richieste|Esiti|Cartella" && !vecchio.err, `con un PC che non conosce «terapie»: niente scheda «Terapia», nessun errore (${schedeV})`);
   await tel.unroute(/\/app\.js/);
 
   // via la prova

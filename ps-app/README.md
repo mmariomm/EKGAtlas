@@ -1276,8 +1276,8 @@ dentro non la fa diventare un promemoria), quelle con l'ora sono le voci con l'o
 spunta). Nell'elenco ogni riga ha lo stato della riga del tabellone, se il PC lo sa: il **cuore**,
 per tipo quello che aspetta col suo tempo («Lab 50′ RX 1h40», l'ambra e il rosso delle soglie) o
 **✓** se è tornato tutto, e il **pallino** del letto; «letto alle …» nel titolo, grigio se la
-lettura è vecchia. Le schede del paziente sono nell'ordine del PC: **Richieste · Esiti · Cartella**
-(si apre sugli Esiti, come prima). Accanto al cuore, come sul PC, il NEWS2 e i valori fuori norma
+lettura è vecchia. Le schede del paziente sono nell'ordine del PC: **Richieste · Esiti · Cartella ·
+Terapia** (si apre sugli Esiti, come prima; «Terapia» solo se il PC la conosce). Accanto al cuore, come sul PC, il NEWS2 e i valori fuori norma
 («♥ NEWS 8 · FR 24 · SpO2 93»). Sotto il nome del paziente una riga **«Parametri 14:10 · PA 120/80 ·
 FC 88 · …· NEWS2 2»** dall'ultima lettura del PC (fuori norma in rosso o ambra; da più di 4 ore
 grigia, «Parametri di 5 ore fa»); un tocco apre le righe di prima (al massimo 6), un altro le chiude;
@@ -1321,6 +1321,11 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   le tue modifiche (comando `eo`, niente dal gestionale). Un tocco: campo vuoto, ci va il testo; altrimenti in
   fondo, a capo, mai al posto di quello che c'è. È una modifica della bozza come un'altra — parte solo con «Salva» —
   e per 5 secondi **Annulla** toglie esattamente quello inserito. Un PC più vecchio: niente chip.
+- **Terapia dal telefono**: le terapie confermate nella pagina Terapia del gestionale, e
+  **＋ Farmaco** (i preferiti, o la tendina della pagina cercata dal PC) fino al riepilogo e a
+  **«Conferma per ROSSI M.»**: il PC preme il «Conferma» della pagina, in una scheda di sottofondo,
+  una volta, e lo verifica — «Confermata», «Non confermata» col perché, o «Incerto: controlla sul
+  PC». Tutto in [Terapia](#terapia-dal-pannello-fino-a-conferma-dal-telefono-conferma-col-tuo-tocco).
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
   Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
   sessione si chiude da sola; tornando sull'app si riapre da sola.
@@ -1820,7 +1825,7 @@ vuoto) e **Prepara nel SISS** (o Ctrl+Invio).
   ricetta no («Una ricetta alla volta: farmaci o visite»): che il SISS li tenga insieme non è
   provato. Una visita entra nei preferiti (codice, descrizione, tipo) quando è stata inserita.
 
-### Terapia (fino a Conferma, mai oltre)
+### Terapia (dal pannello fino a Conferma; dal telefono, Conferma col tuo tocco)
 
 **⋯ → Terapia**, sulla pagina del paziente, solo con l'estensione. Scegli i farmaci — i
 **preferiti** (farmaco e dose come li hai confermati nella pagina Terapia del gestionale, i più
@@ -1854,7 +1859,7 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
   ogni campo si rilegge. Note e ora mai. Un farmaco nuovo si scrive nella tendina e la voce la
   scegli tu. La riga nuova già toccata da te non si tocca; se scrivi nella pagina mentre lavora,
   si ferma.
-- **La regola**: si ferma con la riga scritta e «**Controlla e premi Conferma**» in fondo alla
+- **La regola** (dal pannello): si ferma con la riga scritta e «**Controlla e premi Conferma**» in fondo alla
   pagina. **Conferma, Chiudi, i campi nascosti e `TERAPIA_SERIALIZED` non li tocca mai.** Dopo
   la tua Conferma (la pagina torna con la terapia fra le confermate) scrive il farmaco
   successivo nella riga nuova, e così via; una pagina ricaricata senza Conferma, o una Conferma
@@ -1869,6 +1874,34 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
   spunte, frequenza, durata — in `localStorage` del gestionale (`terapia.preferiti.v1`, 60 al
   massimo), mai il paziente, le note o l'ora. Il giro in corso (episodio, nome, i farmaci) sta
   solo nella memoria della scheda e se ne va appena finisce.
+- **Dal telefono, Conferma la premi tu, col tocco** (scelto dal medico: rivede il riepilogo sul
+  telefono e tocca «Conferma»; il PC preme il «Conferma» della pagina). Sul paziente la scheda
+  **Terapia**: le terapie confermate, le più recenti in cima, una riga ciascuna (farmaco, dose e
+  unità, via, diluizione, continua/al bisogno, frequenza, l'ora), «Letto sul PC alle … · Rileggi».
+  **＋ Farmaco**: i preferiti (un tocco: già pieno, com'era confermato) e una casella che cerca
+  nella tendina della pagina (da 3 lettere: una scheda del PC scrive nel campo come una persona e
+  riporta solo le scritte delle voci; due voci uguali dal telefono non si scelgono). Dose, unità e
+  via in vista; diluizione, frequenza, durata, continua e al bisogno dietro «Altro»; mai le note,
+  mai l'ora. Un riepilogo col nome, e **«Conferma per ROSSI M.»**: un farmaco per Conferma.
+  Il PC fa il giro di sempre in una **scheda di sottofondo** (comandi `terapie`, `terapiaCerca`,
+  `terapiaAggiungi`): la pagina del paziente, il **suo** pulsante «Terapia» (mai un indirizzo fatto
+  da noi), gli stessi controlli (un altro paziente: «Errore grave», niente scritto), la voce con la
+  stessa scritta (una sola, se no si ferma), ogni campo scritto e **riletto** — qualunque cosa non
+  torni: si ferma, niente confermato. Poi **preme il «Conferma» della pagina**
+  (`TERAPIA_SERIALIZED` lo compone lei; i nascosti non si toccano) e guarda la pagina che torna:
+  la terapia fra le confermate, con un `TERAPIA_PROG` nuovo, farmaco, dose e via uguali, è
+  **«Confermata»**; se non si vede, **«Incerto: controlla sul PC»**, e non si ripreme **mai**.
+  **Una volta sola**: la richiesta porta un numero, che il service worker ricorda (in
+  `storage.session`) anche dopo un suo riavvio o una scheda che si ricarica — «inviato» si annota
+  prima del clic —; lo stesso numero rimandato ha la stessa risposta. Lo stesso farmaco confermato
+  dopo l'ultima lettura del telefono ferma tutto («rileggi»). Aspetta un ordine al lavoro (la
+  stessa sessione del server); mai sopra il tuo giro del pannello o una pagina Terapia di quel
+  paziente toccata sul PC («Non confermata: sul PC la Terapia di questo paziente è aperta e già
+  toccata»); una pagina Terapia aperta e ferma lo viene a sapere («confermata dall'iPhone… · Riapri»).
+  Ogni no nel Registro degli errori e nella registrazione automatica («Terapia telefono: …»); la
+  conferma riuscita impara il preferito, come la tua. L'ultima lettura sta in memoria
+  (`storage.session`), solo con un iPhone associato, e se ne va con la sessione del telefono.
+  Un PC più vecchio: niente scheda.
 
 ---
 
@@ -2239,6 +2272,17 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     l'errore di sempre: la striscia dice «Il gestionale ha risposto: …» (l'esame in volo resta
     «da controllare»), e l'errore va nel registro con la traccia. Prova: `test/ext-sessione.mjs`,
     e `opts.carrelloPerso` di `test/gestionale-vero.mjs`.
+20. **Una terapia dal telefono: un «Conferma», una volta, e visto.** È l'unica Conferma che il
+    programma preme nella pagina Terapia, perché il medico l'ha scelto: il suo tocco su
+    «Conferma per …» dopo il riepilogo. Prima del clic: la pagina aperta col pulsante del
+    paziente, l'episodio (indirizzo e modulo), il nome e la tabella — se no «Errore grave» —; la
+    voce della tendina con la stessa scritta, una sola; ogni campo riletto (quello non scritto
+    com'era, le note e l'ora sempre vuote); nessuna terapia con quel farmaco confermata dopo la
+    lettura del telefono; nessun ordine al lavoro; la Terapia di quel paziente non toccata in una
+    scheda del medico. Il service worker annota «inviato» (col numero della richiesta, in
+    `storage.session`) **prima** di dire alla scheda di cliccare: dopo, la pagina che torna — o
+    che si ricarica, o un service worker ripartito — si guarda e basta, e una Conferma che non si
+    vede è «Incerto: controlla sul PC», mai rifatta. Prova: `test/ext-terapia.mjs`.
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
