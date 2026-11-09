@@ -17,7 +17,10 @@
   "use strict";
   const P = globalThis.PonteCripto;
   const $app = document.getElementById("app");
-  const CHIAVE = "psassist.ponte.v1";
+  // «Prova»: /ponte/?prova — l'app con un PC finto e dati inventati (prova.js): niente presa, niente chiave del vero
+  // PC (nemmeno quella con un nome suo), e il telefono torna com'era all'indirizzo di sempre.
+  const PROVA = location.search === "?prova";
+  const CHIAVE = PROVA ? "psassist.ponte.prova.v1" : "psassist.ponte.v1";
   const TEMPO = 30e3;
   let pdfAperto = null;              // il PDF di un referto aperto sul telefono: { url (blob:), w, t }
   const INATTIVO = 3 * 60e3;        // come sul PC: 3 minuti senza comandi del medico e la sessione è finita
@@ -93,7 +96,7 @@
     terapie: new Map(),  // ep → le terapie lette sul PC: { ep, letto, righe: [{ prog, descr, qta, um, via, dil, … }], opz: { um, via, dil }, pref }
     tf: null,            // «＋ Farmaco», il foglio: { ep, passo: "scegli" | "dose", q, voci, qVoci, cerca, errVoci, v, altro, rq, stato, esito }
   };
-  const MODO = "psassist.ponte.modo";
+  const MODO = PROVA ? "psassist.ponte.prova.modo" : "psassist.ponte.modo";
   try { if (localStorage.getItem(MODO) === "mappa") S.modo = "mappa"; } catch { /* solo in memoria */ }
   function svuota() {
     S.pazienti = null; S.triage = null; S.mappa = null; S.mappaSel = ""; S.zoom = 1; S.eo = null; S.eoVecchio = false; S.eoSheet = false; S.eoQ = ""; if (S.eoAnnulla) clearTimeout(S.eoAnnulla.t); S.eoAnnulla = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
@@ -155,7 +158,7 @@
   // rado (fino a 15 secondi, con un po' di caso: tanti telefoni non tornano
   // tutti insieme); subito quando la rete torna o l'app torna davanti.
   const inLinea = () => navigator.onLine !== false;
-  const pronto = () => !!S.canale && !!S.ws && S.ws.readyState === 1 && S.pari === true && inLinea();
+  const pronto = () => PROVA || !!S.canale && !!S.ws && S.ws.readyState === 1 && S.pari === true && inLinea();
   function collega() {
     if (!S.chiavi || (S.ws && S.ws.readyState <= 1)) return;
     clearTimeout(S.tRiprova);
@@ -195,6 +198,7 @@
   // Su una rete lenta il «pong» arriva dopo quello che è già per strada (un
   // pezzo di PDF): lo si aspetta anche per quello.
   function batti() {
+    if (PROVA) return;
     const ws = S.ws;
     if (!ws || ws.readyState !== 1 || S.tPong) return;
     ws.send("ping");
@@ -300,6 +304,7 @@
   //   o.scade  (un ordine) l'ora oltre la quale, se non è ancora partita, non parte più
   //   o.partita quando parte davvero (la prima volta)
   function chiedi(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
+    if (PROVA) return window.PROVA.chiedi(cmd, args, o);
     return new Promise((si, no) => {
       if (!S.canale) { no(new Error("Sessione chiusa")); return; }
       if (!o.rq && !pronto()) {
@@ -1867,6 +1872,7 @@
   // regola dei 3 minuti vale anche qui: un'app lasciata in sottofondo non
   // tiene in memoria i pazienti finché il PC non glielo dice.
   function scadenze() {
+    if (PROVA) return false;
     if (S.coppia && S.coppia.scade <= Date.now()) { S.scaduta = S.coppia.scade; if (S.canale) chiusa("scaduta"); else { S.perche = "scaduta"; dimentica("finita"); } return true; }
     if (S.canale && Date.now() - S.ultimo >= INATTIVO) { chiedi("esci", {}, TEMPO, true).catch(() => {}); chiusa("inattivo"); return true; }
     return false;
@@ -1883,7 +1889,20 @@
   });
   if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("sw.js", { scope: "./" }).catch(() => {});
 
+  // «Prova»: il PC finto (prova.js, caricato solo qui) e la sua striscia; poi si parte come con un PC vero.
+  function avviaProva() {
+    const attendi = (el) => new Promise((si) => { el.onload = el.onerror = si; document.head.appendChild(el); });
+    Promise.all([attendi(Object.assign(document.createElement("link"), { rel: "stylesheet", href: "prova.css" })),
+      attendi(Object.assign(document.createElement("script"), { src: "prova-dati.js" })),
+      attendi(Object.assign(document.createElement("script"), { src: "prova.js" }))]).then(() => {
+      if (!window.PROVA) { S.fase = "senza"; render(); return; }
+      window.PROVA.avvia({ S, render, ordineVisto, avviso });
+      S.fase = "pronta"; render(); carica();
+    });
+  }
+
   (async function avvia() {
+    if (PROVA) return avviaProva();
     const link = location.hash ? dalLink(location.hash) : null;
     // il frammento non resta nella barra degli indirizzi né nella cronologia
     if (location.hash) history.replaceState(null, "", location.pathname + location.search);
