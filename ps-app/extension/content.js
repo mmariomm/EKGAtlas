@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.83.0";
+  const VERSION = "3.83.1";
   const NS = "psassist:"; // storage namespace
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -16607,6 +16607,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     vai(next.listUrl);
   }
 
+  const PARZIALI = new Set();   // (le richieste già segnalate «meno esami in pagina», una volta per pagina)
   function maybeAutoPrint(panel, doc = document, url = location.href) {
     const flag = tabStore.get("print.v1", null);
     if (!flag) return false;
@@ -16648,6 +16649,18 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const conti = ids.map((id) => (flag.n || {})[id]);
     const fine = { n: conti.every((x) => x > 0) ? conti.reduce((a, b) => a + b, 0) : 0, ts: flag.ts || Date.now(),
       quesito: ids.map((id) => (flag.q || {})[id]).find(Boolean) || null };
+    // Meno esami in pagina di quanti ne sono stati confermati: il gestionale ne
+    // ha perso una parte dopo la Conferma (visto una volta: nel modulo Richieste
+    // c'erano tutti, la pagina, la lista e le etichette ne avevano meno, e
+    // aspettare non li riportava). Il medico lo vede da sé: niente da dire — una
+    // registrazione automatica, in silenzio, per capire perché. (Le etichette
+    // sono per provetta: si contano gli esami delle righe, non le etichette.)
+    if (prima && fine.n) try {   // (una lettura e basta: un intoppo qui non tocca la stampa)
+      const suoi = new Set(ids.map(String));
+      const visti = richiestePagina(doc).filter((r) => suoi.has(String(r.rid))).reduce((k, r) => k + r.esami.length, 0);
+      const chiave = [...suoi].sort().join(",");
+      if (visti > 0 && visti < fine.n && !PARZIALI.has(chiave)) { PARZIALI.add(chiave); segnaErrore("parziale", { confermati: fine.n, visti }); }
+    } catch { /* niente */ }
     // La scheda di un ordine non apre il dialogo di stampa: lì non c'è
     // nessuno. Le etichette si stampano dove sta il medico — le consegna il
     // service worker, a una scheda sola (gli indirizzi sono quelli letti da
