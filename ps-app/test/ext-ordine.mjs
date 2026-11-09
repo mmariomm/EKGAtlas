@@ -1170,6 +1170,7 @@ if (prova("dopo le etichette la pagina del paziente si ricarica dal suo «Aggior
   await nasce2;
   await doc.locator('textarea[name="DIARIO"]').click();
   await doc.keyboard.type("Paziente vigile", { delay: 40 });
+  const scritto = await doc.locator('textarea[name="DIARIO"]').inputValue().catch(() => "");
   check(await finche(async () => (await ordini()).some((x) => x.stato === "stampa"), 40000), "(confermata: le etichette aspettano il tuo tocco)");
   await doc.waitForTimeout(3000);
   check(ricaricate() === 0, `etichette non ancora stampate: la pagina non si ricarica (got ${ricaricate()})`);
@@ -1179,7 +1180,7 @@ if (prova("dopo le etichette la pagina del paziente si ricarica dal suo «Aggior
   await doc.waitForTimeout(3000);
   const offerta = await $panel(doc, "#straggiorna, #psassist-host #gchipagg").count();
   const testo = await doc.locator('textarea[name="DIARIO"]').inputValue().catch(() => "");
-  check(ricaricate() === 0 && offerta === 1 && testo === "Paziente vigile",
+  check(ricaricate() === 0 && offerta === 1 && !!scritto && testo === scritto,
     `col testo non salvato la pagina non si ricarica: la striscia offre «Aggiorna», e il testo resta (got ${ricaricate()} ricariche · ${offerta} bottoni · «${testo}»)`);
   await $panel(doc, "#straggiorna, #psassist-host #gchipagg").first().click();
   await finche(async () => ricaricate() > 0, 10000);

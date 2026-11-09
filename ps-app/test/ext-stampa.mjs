@@ -1224,8 +1224,14 @@ if (await prova("il pacchetto Dolore toracico con l'RX: due ordini in sottofondo
   installa(true);
   await scelte(ATTIVA);
   comportati({ lento: 2500 });
-  let salti = 0, pagina = "";
-  const salto = (f) => { if (f === doc.mainFrame()) salti++; };
+  // (a stampa finita la sua pagina si ricarica, una volta: è l'unico salto ammesso, sulla stessa pagina)
+  let salti = 0, pagina = "", altrove = 0, presto = 0;
+  const salto = (f) => {
+    if (f !== doc.mainFrame()) return;
+    salti++;
+    if (f.url() !== pagina) altrove++;
+    ordini().then((l) => { if (l.some((x) => x.stato !== "avviso")) presto++; }).catch(() => {});
+  };
   const prima = await pacchettoConRx(() => { pagina = doc.url(); doc.on("framenavigated", salto); });
   // durante: le righe, mentre i fogli del laboratorio sono alla stampante
   const vivo = await finche(async () => (await righeViste(doc)).some((r) => r.ico === "pulsa") && await doc.evaluate(() =>
@@ -1239,6 +1245,9 @@ if (await prova("il pacchetto Dolore toracico con l'RX: due ordini in sottofondo
     const lab = l.find((x) => x.kind === "lab" && x.stato === "avviso" && x.fogli), rx = l.find((x) => x.kind === "radio" && x.stato === "avviso" && x.fogli);
     return lab && rx ? { lab, rx } : null;
   }, 180000);
+  await finche(async () => salti > 0, 8000);
+  await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 }).catch(() => {});
+  await sospendi(1500);
   doc.off("framenavigated", salto);
   const nuove = nuoveDi(prima);
   const lab = nuove.find((r) => r.cart.has("324")), rx = nuove.find((r) => r.cart.has("36"));
@@ -1254,7 +1263,8 @@ if (await prova("il pacchetto Dolore toracico con l'RX: due ordini in sottofondo
   check(l.filter((x) => x.tipo === "etichette" && x.stampante === "Zebra ZD421").length === 1 && l.filter((x) => x.tipo === "a4" && x.stampante === "HP LaserJet A4").length === 2 && l.length === 3,
     `all'aiutante: 1 etichetta alla Zebra, 2 fogli all'A4, una volta ciascuno (got ${JSON.stringify(l.map((x) => `${x.tipo}→${x.stampante}`))})`);
   check((await stampe(doc)).length === 0, "nessun dialogo, nessuna anteprima");
-  check(salti === 0 && doc.url() === pagina, `la scheda del medico non si è mossa: niente carrello, niente conferma lì (got ${salti} salti · ${doc.url() === pagina ? "stessa pagina" : doc.url()})`);
+  check(salti === 1 && !altrove && !presto && doc.url() === pagina,
+    `la scheda del medico non si è mossa: niente carrello, niente conferma lì — solo la sua pagina ricaricata una volta, a stampe finite (got ${salti} salti · ${altrove} altrove · ${presto} prima · ${doc.url() === pagina ? "stessa pagina" : doc.url()})`);
   const viste = await righeViste(doc);
   const nomi = [...new Set(viste.map((r) => r.n))];
   const ordine = ["Etichette POC", "Lista esami POC", "Prenotazione RX"].map((n) => viste.findIndex((r) => r.n === n));

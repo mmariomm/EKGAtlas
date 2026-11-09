@@ -16793,8 +16793,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       ...(panel.ordini || []).filter((x) => x.confermata && String(x.ep) === ep).map((x) => String(x.id))])].slice(-30));
     if (performance.timeOrigin >= confermata) return segna();   // caricata dopo la prova: la elenca già
     if (document.visibilityState !== "visible") return;
-    // (una stampa col dialogo qui, un giro qui o altrove: si riprova fra poco; se no, un attimo e si va)
-    const occupata = wizardOpen || panel.giroQui() || motoreOvunque();
+    // (una stampa col dialogo qui, i PDF di un altro ordine che arrivano, un giro qui o altrove:
+    // si riprova fra poco; se no, un attimo e si va)
+    const occupata = wizardOpen || panel.giroQui() || motoreOvunque() || (panel.ordini || []).some((x) => x.stato === "stampo");
     if (occupata || (!ora && !staScrivendo())) {
       clearTimeout(panel._tAggiorna);
       if (Date.now() - t0 < 120e3) panel._tAggiorna = setTimeout(() => aggiornaDopoOrdine(panel, o, t0, !occupata), occupata ? 2000 : 400);
