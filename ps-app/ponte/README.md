@@ -113,6 +113,9 @@ sessione. Vedi:
   la prima voce aperta senza ora (scritta cambia quella, o ne fa una in cima; vuota la toglie), i
   promemoria le voci aperte con l'ora. **✓ Fatto** aspetta 5 secondi, con **Annulla**, prima di
   spuntarlo sul PC.
+- **Collega una stazione** (⋯) — inquadra il QR di una [stazione di stampa](#la-stazione-di-stampa):
+  una carta con il suo nome e il codice, **Collega**, «Collegata al PC». Sopra «Conferma e stampa»,
+  poi, «Stampa: PC · Infermeria» (la scelta del PC, cambiabile per un ordine).
 - **Stampa un PDF** (⋯) — un PDF del telefono esce dalla stampante A4 del PC, con la stampa
   automatica (mai un dialogo: davanti al PC può non esserci nessuno; senza, «Sul PC la stampa
   automatica non è impostata»). Mentre va, «Invio… 40%»; poi le parole del PC: «Stampato su HP
@@ -193,7 +196,7 @@ risposta di prima). Un file che l'app del telefono non ha, sotto `/ponte/`, è u
 del sito. Nell'app pubblica c'è **solo codice**: nessun dato di nessun paziente passa o resta sul sito.
 
 **Contro gli abusi.** Il Worker rifiuta una stanza malformata (non 32 cifre esadecimali, o un ruolo
-che non è `pc`/`tel`) prima di svegliare un Durable Object, e il ripetitore chiude una presa che
+che non è `pc`/`tel` o, per la [stazione di stampa](#la-stazione-di-stampa), `medico`/`stazione`) prima di svegliare un Durable Object, e il ripetitore chiude una presa che
 manda più di 1200 messaggi al minuto o oltre 1 MB. (Uno script che apre prese a raffica consuma la
 quota giornaliera del piano gratuito, la stessa di `/api/metrics`; una regola di limitazione della
 frequenza di Cloudflare vorrebbe un dominio proprio: su `workers.dev` non c'è.)
@@ -213,7 +216,7 @@ blocco **«Per l'IT»**, da mandare così com'è.
 
 ## Che cosa vede l'IT
 
-Dal Chrome del PC esce **una** connessione: una WebSocket su HTTPS, `wss://ekg-atlas.whirly.workers.dev/ponte/ws`,
+Dal Chrome del PC esce **una** connessione (due con una [stazione di stampa](#la-stazione-di-stampa) collegata, e una dal PC della stazione, uguali): una WebSocket su HTTPS, `wss://ekg-atlas.whirly.workers.dev/ponte/ws`,
 **TCP 443**, solo in uscita, che deve passare il proxy (l'upgrade a WebSocket). È un indirizzo
 `*.workers.dev` (Cloudflare): molti filtri web lo bloccano per categoria, e va consentito questo nome. È lunga — fino a 14
 ore — con un battito ogni **20 secondi** (un piccolo «ping»): non va chiusa per inattività né per
@@ -318,9 +321,9 @@ un ordine la risposta è «non si sa», mai un no, e l'ordine che nasce lo stess
 ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un silenzio.
 
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
-`aggiornaValori(ep)`, `richieste` (il catalogo), `ordina(ep, oid, esami, quesito, mio, nato)`, `nota(ep,
+`aggiornaValori(ep)`, `richieste` (il catalogo; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
-{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`,
+{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stazioneCollega(sta, nome)`,
 più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
 `ordineNuovo` come «Conferma e stampa», col numero `"tel" + oid` (l'`oid` lo fa il telefono quando
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),
@@ -385,7 +388,8 @@ telefono com'era l'ultima volta, finché non lo si chiude; sparito prima della c
 controllare».
 
 **Il ripetitore** (`worker/ponte-logica.js`): al massimo due prese per stanza, una del PC e una del
-telefono (una nuova dello stesso ruolo chiude la vecchia, 4001); inoltra solo il binario, così com'è;
+telefono — o, nella stanza di una stazione di stampa, una del PC del medico e una della stazione (`medico`,
+`stazione`): ognuno parla solo col suo pari — (una nuova dello stesso ruolo chiude la vecchia, 4001); inoltra solo il binario, così com'è;
 messaggi oltre 1 MB o più di 1200 al minuto chiudono la presa; una presa muta da 15 minuti si chiude.
 Serve dell'app del telefono solo i suoi file (`FILE_APP`). Niente su disco (solo la sveglia di quella
 pulizia), niente nei log: il Durable Object usa l'ibernazione delle WebSocket e il battito lo risponde
@@ -409,6 +413,59 @@ fotogrammi con **jsQR 1.4.0** (Apache 2.0, `jsqr.min.js`, caricato solo lì). Va
 questo stesso sito su `/ponte/#k=…&scade=…` (un QR di un altro sito si ignora), e fa la strada di un
 link aperto: le stesse regole, «Usa il codice …» compreso. La fotocamera si spegne appena letto il
 codice, o chiusa la vista (✕).
+
+## La stazione di stampa
+
+Le stampanti dell'infermeria (etichettatrice e A4, col cavo sul **suo** PC) per i fogli degli ordini
+del medico: per il medico, [README di PS Assist](../README.md#stazione-di-stampa-le-stampanti-dellinfermeria).
+Il PC dell'infermeria ha la stessa estensione e lo stesso aiutante di stampa; la sua pagina
+«Stazione di stampa» (`extension/stazione.html`) lo fa stazione. Il codice è uno,
+`extension/stazione-sw.js`, nel service worker: la parte del PC del medico (`stm`) e quella della
+stazione (`stz`). Lo stesso ripetitore e la stessa cifratura del ponte (`ponte-cripto.js`), in
+un'altra stanza, coi ruoli `medico` e `stazione`.
+
+**Collegarle (una volta), col telefono.** La stazione fa un'**offerta**, per cinque minuti e per un
+PC solo: una chiave ECDH P-256 nuova e un numero casuale `s` di 16 byte. Il QR è un link dell'app del
+telefono: `https://…/ponte/#sta=<chiave pubblica>.<s>.<scadenza>&nome=Infermeria` (mai una chiave del
+telefono: l'app lo riconosce, e non tocca la sua associazione). Sotto il QR e sulla carta del telefono,
+lo stesso codice di sei cifre (da `s` e dalla chiave pubblica). **Collega** manda l'offerta al PC
+(comando `stazioneCollega`, una scrittura col suo `rq`). Il PC fa la sua chiave ECDH ed entra nella
+stanza dell'abbinamento (`HKDF(s, "abbina stazione")`), dove la stazione aspetta; le manda la sua
+chiave pubblica cifrata con `HKDF(s, "abbina medico>stazione")`, e la stazione risponde (`"abbina
+stazione>medico"`) col suo nome. Il primo PC vince; lo stesso che rimanda ha la stessa risposta, un
+altro «già usata». La chiave della coppia: `K = HKDF(ECDH, sale ps-ponte/1 ‖ s ‖ chiave del medico ‖
+chiave della stazione, "stazione")`, nata dalle due parti. Il primo saluto con K la conferma (sulla
+stazione, prima, è «mi collego»; scaduta l'offerta senza saluto, non vale); poi tutti e tre dicono lo
+stesso codice, da K. Il telefono e il ripetitore vedono l'offerta (o i byte), mai K. (L'app del
+telefono, servita dal sito, potrebbe in quei cinque minuti prendere il posto del PC: la stessa fiducia
+che le si dà già, «Che cosa protegge».)
+
+**Dopo: il ponte al contrario.** Il PC del medico fa il telefono (saluta con `salutoTel`, chiede con
+`canaleTel`), la stazione fa il PC (risponde). Comandi, solo due: `stampa(rq, tipo, copie, i, n,
+size, b)` — un foglio a pezzi da ~390 KB, una risposta per pezzo — e `esito(rq)`. La stazione stampa
+col suo aiutante solo all'ultimo pezzo, una volta per `rq` (annotato in `stazione.rq`,
+`storage.local`, prima di stampare: solo il numero e com'è andata, 200 al più, un giorno), e risponde
+con l'esito del suo aiutante (`stampato`, `mandato`, `fallito`, `sconosciuto`). Il PC: nessun pezzo
+arrivato (la stazione assente, nessuna risposta al saluto o a un pezzo) → «non risponde», niente
+stampato; l'ultimo pezzo senza risposta → `esito` su una sessione nuova; non si sa → «forse
+stampato». La stazione non manda mai niente per prima, se non i saluti e «scollegata»: tutto il resto,
+sul PC, si scarta (`stm.ignorati`). Un service worker ripartito sulla stazione dice «riparti», e il PC
+risaluta. Le due prese restano aperte (battito ogni 20 secondi; una sveglia di Chrome ogni minuto le
+riapre: la stazione non ha schede del gestionale che la svegliano).
+
+**Scollegare**: da tutte e due le parti, due tocchi. Chi scollega non usa più K da subito; l'altro lo
+sa adesso (un saluto «revoca» con K), o appena si ricollega: per dirglielo chi ha scollegato tiene K,
+solo per quello, al più una settimana.
+
+**Che cosa vede l'IT**: lo stesso host, la stessa presa (`/ponte/ws`, TCP 443): una in più sul PC del
+medico e una sul PC dell'infermeria, finché sono collegati. I **fogli degli ordini** — PDF con i nomi dei
+pazienti — passano dal ripetitore di Cloudflare, cioè escono dall'ospedale e ci tornano, cifrati da
+un capo all'altro (AES-256-GCM): il ripetitore non li legge né li tiene. Con «Stampa: Qui» non passa niente.
+
+**Che cosa resta**: K in `storage.local` sui due PC, finché non si scollega (un PC fisso: niente
+scadenza). Sulla stazione, del foglio, il numero e com'è andata, e per la sua pagina («Ultimi fogli»,
+30) l'ora, il tipo, le pagine, le copie, la stampante — mai un nome; il PDF solo in memoria finché il
+suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
 
 ## Che cosa protegge, e che cosa no
 
@@ -440,6 +497,9 @@ codice, o chiusa la vista (✕).
   quel giorno (dal PC o dal telefono) potrebbe decifrarlo. K vive al massimo 14 ore; uno scambio
   ECDH per sessione lo eviterebbe, al prezzo di altro codice.
 - **Per scelta del medico non c'è Face ID dentro l'app**: possedere la chiave basta.
+- **La stazione di stampa** riceve i fogli degli ordini e risponde; non comanda e non legge niente.
+  Chi ha il telefono sbloccato e associato può collegare una stazione al PC, ma solo inquadrando il suo
+  QR (sullo schermo della stazione, cinque minuti): il PC lo dice (⋯ → Stampanti, il Registro del ponte).
 - **Un PDF da stampare** passa cifrato come tutto il resto, e chi ha il telefono sbloccato può far
   uscire fogli dalla stampante A4 del PC (uno per richiesta, al massimo 15 MB): il registro del ponte
   lo dice.

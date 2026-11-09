@@ -28,7 +28,7 @@ export async function avviaRelay({ porta = 0, osserva = null } = {}) {
   const stanze = new Map();          // stanza → Set di prese
   const stati = new WeakMap();       // presa → stato (come serializeAttachment)
   const battiti = new WeakMap();     // presa → ultimo «ping»
-  const entrate = { pc: 0, tel: 0 };
+  const entrate = { pc: 0, tel: 0, medico: 0, stazione: 0 };
   const aperte = (nome) => [...(stanze.get(nome) || [])].filter((w) => w.readyState === w.OPEN);
   const logica = (nome) => new Stanza({
     socket: (ruolo, escluso) => aperte(nome).find((w) => w !== escluso && stati.get(w)?.ruolo === ruolo) || null,

@@ -34,7 +34,7 @@
  * Mentre è aperta, ogni scheda del gestionale lo dice nell'intestazione del
  * pannello: «iPhone collegato · Scollega».
  */
-/* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL, stampaScelte, stampaDalTel, stampaTelVista, regElenco, regPezzo, regZipVia */
+/* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL, stampaScelte, stampaDalTel, stampaTelVista, regElenco, regPezzo, regZipVia, stazioneCollega */
 
 const PONTE_HOST_PROVA = "ponte.host";      // storage.local: solo per le prove, e solo verso questo PC
 const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, scade, creata, usata, dev, nTel, cambiata?, errori?, blocco?, cambi? }
@@ -413,6 +413,8 @@ function ponteArgomenti(d) {
   if ("quesito" in d) a.quesito = ponteTesto(d.quesito, 300);
   if ("mio" in d) a.mio = !!d.mio;
   if (d.rileggi) a.rileggi = true;
+  // (dove stampare i fogli di un ordine: «qui», sul PC, o alla stazione di stampa)
+  if (d.dest === "qui" || d.dest === "stazione") a.dest = d.dest;
   return a;
 }
 // quelli che l'app manda da sé: non sono il medico, non tengono aperta la sessione
@@ -466,10 +468,18 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "terapie") return await ponteTerapie(ponteArgomenti(d));
     if (d.cmd === "terapiaCerca") return await ponteTerapiaCerca(d);
     if (d.cmd === "terapiaAggiungi") return await ponteTerapiaAggiungi(d);
+    // il QR di una stazione di stampa, inquadrato dal telefono: il PC la collega (stazione-sw.js)
+    if (d.cmd === "stazioneCollega" && typeof stazioneCollega === "function") {
+      const r = await stazioneCollega(d);
+      ponteNota(r.ok ? `iPhone · stazione di stampa collegata: ${corto(r.dati.nome, 40)}` : `iPhone · stazione di stampa non collegata: ${corto(r.errore, 100)}`);
+      await ponteScriviStato();
+      return r;
+    }
     if (["pazienti", "mappa", "eo", "triage", "esiti", "richieste", "nota", "promemoria", "fatto"].includes(d.cmd)) {
       const a = ponteArgomenti(d);
       const r = await ponteSuScheda(d.cmd, a);
       if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
+      if (d.cmd === "richieste" && r.ok && r.dati) r.dati.stampa = await ponteStampaDove();
       return d.cmd === "esiti" ? await ponteOffriPdf(s, r, a.ep) : r;
     }
     return { ok: false, errore: "Comando sconosciuto" };
@@ -623,6 +633,15 @@ function ponteStampaParole(rec) {
   if (f.stato === "sconosciuto") return { fine: true, tono: "warn", titolo: p.titolo, testo, nota: `PDF dall'iPhone: esito della stampa sconosciuto (${dove})` };
   const why = corto(f.why || rec.interrotta || p.testo, 200);
   return { fine: true, tono: "err", titolo: "PDF NON stampato", testo: why, nota: `PDF dall'iPhone NON stampato: ${why}` };
+}
+
+// Con il catalogo, dove vanno i fogli: la stazione collegata (il suo nome) e
+// la scelta del PC, che il telefono propone e si può cambiare per un ordine.
+async function ponteStampaDove() {
+  const o = await chrome.storage.local.get(["stampa", "stazione.coppia"]);
+  const c = o["stazione.coppia"];
+  if (!c || c.revoca) return { stazione: "" };
+  return { stazione: corto(c.nome || "Infermeria", 40), dove: (o.stampa || {}).dove === "stazione" ? "stazione" : "qui" };
 }
 
 // L'ordine. Il numero lo fa il telefono quando arma «Conferma» (oid): la

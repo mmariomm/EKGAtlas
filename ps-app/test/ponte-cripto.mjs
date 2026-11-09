@@ -133,6 +133,21 @@ const finto = () => {
   st.esce(tel2);
   check(io.inviati.some(([n, d]) => n === "pc" && d === '{"pari":false}'), "il telefono esce: il PC lo sa");
 }
+// la stazione di stampa: la stessa logica, i ruoli `medico` e `stazione` (fra loro, mai col telefono)
+{
+  check(leggiStanza("https://x/ponte/ws?r=" + a.stanza + "&ruolo=medico").ok && leggiStanza("https://x/ponte/ws?r=" + a.stanza + "&ruolo=stazione").ok,
+    "la stanza della stazione di stampa: i ruoli «medico» e «stazione»");
+  const { io, nuova, st } = finto();
+  const med = nuova("medico"), sta = nuova("stazione"), tel = nuova("tel");
+  st.entra(med, "medico", 0);
+  st.entra(tel, "tel", 0);
+  check(io.inviati.every(([, d]) => d === '{"pari":false}'), "un telefono nella stanza del medico non è «l'altra parte»");
+  st.entra(sta, "stazione", 0);
+  io.inviati.length = 0;
+  const dati = new Uint8Array([4, 5, 6]);
+  st.messaggio(sta, dati, 1);
+  check(io.inviati.length === 1 && io.inviati[0][0] === "medico" && io.inviati[0][1] === dati, "il binario della stazione va al PC del medico, e a nessun altro");
+}
 {
   const { io, nuova, st } = finto();
   const pc = nuova("pc");

@@ -5,6 +5,7 @@
 // Windows; scelte tutte e due, la stampa automatica è accesa (l'interruttore
 // la spegne). `ruota`: se SumatraPDF può girare un'etichetta più larga che
 // alta — di partenza no per Zebra, ZDesigner, TSC e Citizen, sì per le altre.
+// In fondo, la stazione di stampa collegata a questo PC (`dove`: «Qui · Infermeria»).
 // (Un modulo: i nomi qui non toccano quelli di portale.js.)
 const $ = (id) => document.getElementById(id);
 const sel = { etichette: $("setic"), a4: $("sa4") };
@@ -76,5 +77,34 @@ for (const b of document.querySelectorAll("[data-prova]")) {
 }
 $("sric").addEventListener("click", controlla);
 // le scelte cambiano anche dal menu ⋯ del pannello, e a ogni stampa (l'esito)
-chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && (ch.stampa || ch.stampaEsito)) mostra(); });
+chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && (ch.stampa || ch.stampaEsito)) { mostra(); mostraStazione(); } });
 controlla();
+
+// La stazione di stampa collegata (stazione-sw.js: la collega l'iPhone, col QR
+// della stazione): com'è, «Stampa: Qui · Infermeria» (la scelta, `stampa.dove`),
+// «Scollega» (due tocchi).
+const hhmm = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+let staArmata = false;
+async function mostraStazione() {
+  const sta = (await chrome.storage.session.get("stazione").catch(() => ({}))).stazione || null;
+  const s = await leggi();
+  $("stasi").hidden = !sta;
+  $("stano").hidden = !!sta;
+  if (!sta) return;
+  const dove = s.dove === "stazione" ? "stazione" : "qui";
+  $("stast").textContent = `${sta.nome} · collegata ${sta.via === "telefono" ? "dal telefono " : ""}alle ${hhmm(sta.dal)}`;
+  $("stast").className = "stato " + (sta.presente ? "ok" : "warn");
+  $("stariga").textContent = `${sta.presente ? "Risponde adesso" : "Adesso non risponde (Chrome chiuso su quel PC, o la rete)"} · codice ${sta.codice}, lo stesso sulla stazione.`;
+  $("stanome").textContent = sta.nome;
+  for (const b of document.querySelectorAll("[data-dove]")) b.setAttribute("aria-pressed", String(b.dataset.dove === dove));
+  $("stavia").textContent = staArmata ? `Scollego? Gli ordini non stamperanno più in ${sta.nome}` : "Scollega";
+}
+for (const b of document.querySelectorAll("[data-dove]")) b.addEventListener("click", () => salva({ dove: b.dataset.dove === "stazione" ? "stazione" : "qui" }));
+$("stavia").addEventListener("click", async () => {
+  if (!staArmata) { staArmata = true; setTimeout(() => { staArmata = false; mostraStazione(); }, 5000); return mostraStazione(); }
+  staArmata = false;
+  await chrome.runtime.sendMessage({ t: "stazioneScollega", ruolo: "medico" }).catch(() => null);
+  mostraStazione();
+});
+chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && ch.stazione) mostraStazione(); });
+mostraStazione();
