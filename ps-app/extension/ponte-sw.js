@@ -580,7 +580,7 @@ async function ponteViaRegistrazione(s, d) {
   return { ok: true, dati: { id, gia: !z } };
 }
 
-// Un PDF dall'iPhone da stampare qui, sull'A4 (⋯ → «Stampa un PDF»): arriva a
+// Un PDF dall'iPhone da stampare qui, sull'A4 (⋯ → «Stampa PDF»): arriva a
 // pezzi dentro la sessione cifrata, come i referti ma al contrario (`stampa`:
 // rid, i, n, size, b). Si ricompone in memoria — solo qui, solo per questa
 // sessione —, si controlla (la misura, «%PDF», 15 MB al massimo) e va al
