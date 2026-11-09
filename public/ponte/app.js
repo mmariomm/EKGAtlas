@@ -508,6 +508,8 @@
     } catch (e) { if (/sconosciuto/i.test(String(e && e.message))) S.eoVecchio = true; }
   }
   const CAMPO_EO = "ESAME_OBIETTIVO";
+  // (i campi dove si scrive tanto: già alti quando sono vuoti; gli altri tre righe)
+  const CAMPI_LUNGHI = new Set(["ANAMNESI", CAMPO_EO]);
   // Un EO salvato nel campo: vuoto, ci va il testo; con già del testo, in fondo a capo — mai al posto di quello che c'è.
   // È una modifica della bozza come un'altra (niente parte finché non si preme «Salva»); per 5 secondi «Annulla»
   // toglie esattamente quello che è stato messo. Il cursore sta dopo il testo.
@@ -1442,7 +1444,7 @@
       const x = c.campi.find((y) => y.nome === nome);
       if (!x) return "";
       const chiuso = x.ro || p.prec;
-      return `<label class="cc${chiuso ? " ro" : ""}"><span>${esc(etichetta)}</span>${nome === CAMPO_EO && !chiuso && !salva ? eoHtml(p) : ""}<textarea id="cc-${nome}" rows="1" ${chiuso || salva ? "readonly" : ""} ${chiuso ? 'placeholder="—" tabindex="-1"' : ""} aria-label="${esc(etichetta)}">${
+      return `<label class="cc${CAMPI_LUNGHI.has(nome) ? " lungo" : ""}${chiuso ? " ro" : ""}"><span>${esc(etichetta)}</span>${nome === CAMPO_EO && !chiuso && !salva ? eoHtml(p) : ""}<textarea id="cc-${nome}" rows="1" ${chiuso || salva ? "readonly" : ""} ${chiuso ? 'placeholder="—" tabindex="-1"' : ""} aria-label="${esc(etichetta)}">${
         esc(b.has(nome) ? b.get(nome).testo : x.v)}</textarea></label>`;
     }).join("");
     return `<div class="carta cartella"><div class="sezt"><div class="tv">${letto}</div>

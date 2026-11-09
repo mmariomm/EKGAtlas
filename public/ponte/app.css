@@ -246,6 +246,9 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .cc textarea { display: block; width: 100%; min-height: 44px; resize: none; overflow: hidden; border: 1px solid var(--campo); border-radius: 10px; background: var(--carta);
                font-size: 16px; line-height: 1.45; padding: 9px 11px; outline: none; }
 .cc textarea:focus { border-color: var(--blu); }
+/* più righe anche vuoti (tre; l'anamnesi e l'esame obiettivo sei): poi crescono col testo */
+.cc:not(.ro) textarea { min-height: calc(3 * 1.45em + 20px); }
+.cc.lungo:not(.ro) textarea { min-height: calc(6 * 1.45em + 20px); }
 /* di sola lettura: niente bordo, fondo grigio — si legge, non si scrive */
 .cc.ro textarea { border-color: transparent; background: var(--fondo); color: var(--testo2); }
 
