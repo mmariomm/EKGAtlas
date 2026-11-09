@@ -1624,7 +1624,9 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     await finche(async () => await tel.locator('.mappa .area .pa[data-a="ospite"]').count() === 1, 15000);
     const attesa = await tel.evaluate(() => [...document.querySelectorAll(".mappa .area")].map((a) => `${a.querySelector("h4").textContent}=${[...a.querySelectorAll(".pa")].map((p) => `${p.dataset.a}:${p.textContent}`).join(",")}`).join(" | "));
     const scrittoPrima = Object.keys(await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:stanza.ps.posti.v1") || "{}"))).filter((k) => /^tr/.test(k)).length;
-    const ospite = await tel.evaluate(() => { const b = document.querySelector('.mappa .pa[data-a="ospite"]').getBoundingClientRect(); return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) }; });
+    // (la parte che si vede: l'area scorre per conto suo, e il terzo nome può esserne mezzo fuori)
+    const ospite = await tel.evaluate(() => { const e = document.querySelector('.mappa .pa[data-a="ospite"]'), b = e.getBoundingClientRect(), a = e.closest(".area").getBoundingClientRect();
+      return { x: Math.round(b.x + b.width / 2), y: Math.round((Math.max(b.top, a.top) + Math.min(b.bottom, a.bottom - 2)) / 2) }; });
     const libero = await tel.evaluate(() => { const e = document.querySelector('.letto.vuoto[data-lid^="letto:obi1"]'), b = e.getBoundingClientRect(); return { lid: e.dataset.lid, x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) }; });
     await trascina(ospite, libero);
     const scritto = async () => Object.entries(await doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:stanza.ps.posti.v1") || "{}"))).filter(([k]) => /^tr/.test(k)).map(([, v]) => v.id).join();

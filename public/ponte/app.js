@@ -1730,14 +1730,14 @@
   }
 
   // Un ridisegno sotto il dito ruberebbe il tocco (il bottone sparisce fra
-  // pressione e rilascio): mentre si preme, aspetta.
-  let premuto = 0, rinviato = false, disegno = false;
+  // pressione e rilascio): mentre si preme, aspetta — e, sulla mappa, finché il dito porta un nome.
+  let premuto = 0, rinviato = false, disegno = false, trascino = false;
   // le azioni che senza il PC non vanno
   // (l'ordine no: senza collegamento va in coda)
   const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
     "trileggi", "tconferma"]);
   function render() {
-    if (premuto) { rinviato = true; return; }
+    if (premuto || trascino) { rinviato = true; return; }
     // il cursore resta dov'era: un ridisegno non deve rubare il campo a chi scrive
     const att = document.activeElement && document.activeElement.id ? document.activeElement : null;
     const fuoco = att ? { id: att.id, a: att.selectionStart, b: att.selectionEnd } : null;
@@ -1801,7 +1801,8 @@
   {
     let g = null;   // { ep, nome, x, y, timer, attivo, fant, su }
     const puo = () => S.modo === "mappa" && S.mappa && S.mappa.modifica && !S.occupato.has("posto");
-    const fine = () => { if (!g) return; clearTimeout(g.timer); if (g.fant) g.fant.remove(); if (g.su) g.su.classList.remove("bers"); g = null; };
+    const fine = () => { if (!g) return; clearTimeout(g.timer); if (g.fant) g.fant.remove(); if (g.su) g.su.classList.remove("bers"); g = null;
+      trascino = false; if (rinviato && !premuto) { rinviato = false; render(); } };
     const sotto = (x, y) => { const el = document.elementFromPoint(x, y); return { b: el && el.closest("[data-lid]"), mappa: !!(el && el.closest(".mappa")) }; };
     async function metti(ep, dove) {
       S.occupato.add("posto"); render();
@@ -1815,6 +1816,7 @@
       if (!el || !el.dataset.ep) return;
       const t = e.touches[0];
       fine();
+      trascino = true;   // (un ridisegno a metà gesto toglierebbe il nome di sotto al dito)
       g = { ep: el.dataset.ep, nome: (el.querySelector(".ln, .nome") || el).textContent.replace(/\s+/g, " ").trim(), x: t.clientX, y: t.clientY, attivo: false, fant: null, su: null };
       g.timer = setTimeout(() => {
         if (!g) return;
