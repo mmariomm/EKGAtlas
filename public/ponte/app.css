@@ -318,13 +318,13 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .vit span { white-space: nowrap; }
 
 /* --- la mappa (sola lettura) -------------------------------------------- */
-/* --u = la cella: sta nella larghezza (in orizzontale, anche nell'altezza), mai sotto gli 8 px; il pizzico (--zoom) la ingrandisce. */
+/* --u = la cella: --u0 la misura app.js (misureMappa) perché la mappa intera stia nella cornice, larga quanto lo schermo
+   (in orizzontale anche nell'altezza): niente da scorrere; il tocco o il pizzico (--zoom) la ingrandiscono. */
 .seg.pic { margin: -6px 0 12px; background: none; padding: 0; gap: 8px; }
 .seg.pic button { min-height: 44px; padding: 6px 0; font-size: 14px; background: var(--seg); }
 .seg.pic button.on { background: var(--blu-chiaro); color: var(--blu); box-shadow: none; }
 .mappa { overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; max-width: 100%; margin: 0 0 6px; border: 1px solid var(--bordo); border-radius: 14px; background: var(--carta); }
-.piano { --larg: calc(min(100vw, 760px) - var(--sx) - var(--dx) - 2px); --u0: max(14px, min(calc(var(--larg) / var(--cols)), calc((100vh - 60px) / var(--rows))));
-  --u: calc(var(--u0) * var(--zoom, 1)); position: relative; width: calc(var(--u) * var(--cols)); height: calc(var(--u) * var(--rows)); margin: 0 auto; }
+.piano { --u: calc(var(--u0, 14px) * var(--zoom, 1)); position: relative; width: calc(var(--u) * var(--cols)); height: calc(var(--u) * var(--rows)); margin: 0 auto; }
 .letto, .area { position: absolute; box-sizing: border-box; left: calc(var(--u) * var(--x) + 1.5px); top: calc(var(--u) * var(--y) + 1.5px);
   width: calc(var(--u) * var(--w) - 3px); height: calc(var(--u) * var(--h) - 3px); border-radius: 8px; overflow: hidden; min-width: 0; }
 .letto { container: letto / size; display: flex; flex-direction: column; justify-content: flex-start; gap: 1px; padding: 3px 3px 2px 7px; text-align: left; font: inherit; color: var(--testo); line-height: 1.1;

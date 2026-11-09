@@ -1406,11 +1406,13 @@
     const c0 = Math.min(...tutti.map((x) => x.c)), r0 = Math.min(...tutti.map((x) => x.r));
     const cols = Math.max(...tutti.map((x) => x.c + x.w)) - c0, rows = Math.max(...tutti.map((x) => x.r + x.h)) - r0;
     const dove = new Map();   // "letto|id" → paziente; "area|id" → [pazienti]
-    for (const x of m.posti || []) {
-      const p = per.get(x.ep);
+    // chi è al Triage (non fra i pazienti): il PC dice dove sta per chiave — di partenza la Sala attesa —, il nome è nella riga di `triage`
+    const tri = new Map(((S.triage && S.triage.righe) || []).filter((r) => r && r.k).map((r) => [r.k, { ep: r.k, nome: r.nome, breve: r.breve, triage: r.triage, eta: r.eta, ospite: true }]));
+    for (const [l, da] of [[m.posti || [], per], [m.ospiti || [], tri]]) for (const x of l) {
+      const p = da.get(x.ep);
       if (!p) continue;
       const k = x.tipo + "|" + x.id;
-      if (x.tipo === "area") dove.set(k, [...(dove.get(k) || []), p]); else dove.set(k, p);
+      if (x.tipo === "area") dove.set(k, [...(dove.get(k) || []), p]); else if (!dove.has(k)) dove.set(k, p);
     }
     const geo = (o, n) => `data-mg="${o.c - c0},${o.r - r0},${o.w},${o.h},${n}"`;
     // (un PC che la sa modificare: ogni letto e ogni area è un bersaglio per «tieni premuto e trascina»)
@@ -1423,13 +1425,13 @@
     for (const a of aree) {
       const l = dove.get("area|" + a.id) || [];
       html.push(`<div class="area" ${geo(a, Math.max(parolaLunga(a.nome), 8))}${bers("area", a)} aria-label="${esc(a.nome)}"><h4>${esc(a.nome)}${l.length ? ` · ${l.length}` : ""}</h4>${l.map((p) =>
-        `<button class="pa t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" data-a="paz" data-ep="${esc(p.ep)}" title="${esc(chi(p))}"><span class="ln">${esc(cognome(p))}</span>${segni(p)}</button>`).join("")}</div>`);
+        `<button class="pa t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" data-a="${p.ospite ? "ospite" : "paz"}" data-ep="${esc(p.ep)}" title="${esc(chi(p))}"><span class="ln">${esc(cognome(p))}</span>${segni(p)}</button>`).join("")}</div>`);
     }
     for (const l of letti) {
       const p = dove.get("letto|" + l.id);
       if (!p) { html.push(`<div class="letto vuoto" ${geo(l, parolaLunga(l.nome))}${bers("letto", l)}><span class="ln">${esc(l.nome)}</span></div>`); continue; }
       const nome = cognome(p);
-      html.push(`<button class="letto occ${l.forma === "barella" ? " alto" : ""} t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" ${geo(l, parolaLunga(nome))}${bers("letto", l)} data-a="paz" data-ep="${esc(p.ep)}" title="${esc(chi(p))}">${
+      html.push(`<button class="letto occ${l.forma === "barella" ? " alto" : ""} t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" ${geo(l, parolaLunga(nome))}${bers("letto", l)} data-a="${p.ospite ? "ospite" : "paz"}" data-ep="${esc(p.ep)}" title="${esc(chi(p))}">${
         l.w >= 5 && l.h >= 4 ? `<span class="lb">${esc(l.nome)}</span>` : ""}<span class="ln">${p.omonimo ? "⚠ " : ""}${esc(nome)}</span><span class="r2">${
         Number.isInteger(p.eta) ? `<span class="le">${p.eta}</span>` : ""}${segni(p)}</span></button>`);
     }
@@ -1442,8 +1444,17 @@
       for (const [k, v] of Object.entries({ x, y, w, h, n })) el.style.setProperty("--" + k, v);
     }
     const p = $app.querySelector(".piano");
-    if (p) { const [c, r] = p.dataset.mp.split(","); p.style.setProperty("--cols", c); p.style.setProperty("--rows", r); p.style.setProperty("--zoom", S.zoom); }
+    if (!p) return;
+    const [c, r] = p.dataset.mp.split(",").map(Number), mp = p.parentElement;
+    // Intera (zoom 1) sta tutta nella sua cornice: larga quanto lo schermo, mai più alta della cornice
+    // (in orizzontale decide l'altezza) — niente da scorrere, né di lato né dentro. Il tocco o le due
+    // dita la ingrandiscono (--zoom): solo allora scorre.
+    const h = (parseFloat(getComputedStyle(mp).maxHeight) || innerHeight * 0.56) - (mp.offsetHeight - mp.clientHeight);
+    const u = Math.floor(Math.min(mp.clientWidth / c, h / r) * 100) / 100;
+    for (const [k, v] of Object.entries({ cols: c, rows: r, zoom: S.zoom, u0: u + "px" })) p.style.setProperty("--" + k, v);
   }
+  // (girato il telefono, o cambiata la finestra: la mappa intera di nuovo nella larghezza)
+  addEventListener("resize", () => { if ($app.querySelector(".piano")) misureMappa(); });
   function vistaLista() {
     if (!S.pazienti) {
       if (S.erroreLista && !S.occupato.has("lista")) {
@@ -1490,18 +1501,23 @@
     const e = S.esiti.get(p.ep);
     const carica = S.occupato.has("esiti" + p.ep), legge = S.occupato.has("valori" + p.ep);
     if (!e) return carica ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto">Esiti non caricati.</div>`;
+    // mai aperto sul PC: niente di salvato, e niente da rileggere (serve la sua pagina) — una riga
+    if (e.mai && !e.tabella) return `<div class="vuoto stretto">Mai aperto sul PC: niente di salvato.</div>`;
     // quando li ha letti il PC: dopo un'ora, in ambra
     const letti = e.tabella && e.letto ? `<small class="letti${Date.now() - e.letto > 60 * 60e3 ? " amb" : ""}">Letti sul PC alle ${hhmm(e.letto)} · ${fa(e.letto)}</small>` : "";
     const valori = `<div class="carta"><div class="sezt"><div class="tv">${letti}</div>
         <button class="agg" data-a="valori" ${legge ? "disabled" : ""}>${legge ? "Leggo sul PC…" : "↻ Rileggi"}</button></div>
       ${e.tabella ? tabellaHtml(e.tabella) : legge ? "" : `<div class="vuoto stretto">Il PC non ha ancora letto valori per questo paziente.</div>`}</div>`;
-    const referti = e.referti.length ? `<div class="carta">${e.referti.map((r) => {
+    // i referti del laboratorio (emogas, emocromo…) non fra ECG, immagini e visite: a parte, in fondo
+    // (con la tabella dei valori il PC non li manda: lì quello che dicono c'è già)
+    const lab = e.referti.filter((r) => r.tipo === "lab"), altri = e.referti.filter((r) => r.tipo !== "lab");
+    const carta = (l) => (l.length ? `<div class="carta">${l.map((r) => {
       const aperto = S.aperti.has(r.id);
       return `<div class="refw"><button class="ref${r.pdf ? " conpdf" : ""}" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span></span>${
         aperto ? (r.testo ? `<div class="testo">${esc(r.testo)}</div>` : `<div class="manca">${r.lungo ? "Testo troppo lungo per il telefono: leggilo sul PC." : "Testo non ancora letto sul PC: aprilo una volta dal pannello (Esiti), poi è qui."}</div>`) : ""}</button>${
         r.pdf ? `<button class="pdf" data-a="pdf" data-id="${esc(r.id)}" data-n="${Number(r.pdf) || 0}" ${S.occupato.has("pdf" + r.id) ? "disabled" : ""}>PDF</button>` : ""}</div>`;
-    }).join("")}</div>` : "";
-    return `${valori}${referti}${e.nota ? `<p class="piede">${esc(e.nota)}</p>` : ""}`;
+    }).join("")}</div>` : "");
+    return `${valori}${carta(altri)}${lab.length ? `<div class="lbl">Laboratorio</div>${carta(lab)}` : ""}${e.nota ? `<p class="piede">${esc(e.nota)}</p>` : ""}`;
   }
   function vistaRichieste(p) {
     const c = S.catalogo;
@@ -1716,14 +1732,14 @@
   }
 
   // Un ridisegno sotto il dito ruberebbe il tocco (il bottone sparisce fra
-  // pressione e rilascio): mentre si preme, aspetta.
-  let premuto = 0, rinviato = false, disegno = false;
+  // pressione e rilascio): mentre si preme, aspetta — e, sulla mappa, finché il dito porta un nome.
+  let premuto = 0, rinviato = false, disegno = false, trascino = false;
   // le azioni che senza il PC non vanno
   // (l'ordine no: senza collegamento va in coda)
   const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
     "trileggi", "tconferma"]);
   function render() {
-    if (premuto) { rinviato = true; return; }
+    if (premuto || trascino) { rinviato = true; return; }
     // il cursore resta dov'era: un ridisegno non deve rubare il campo a chi scrive
     const att = document.activeElement && document.activeElement.id ? document.activeElement : null;
     const fuoco = att ? { id: att.id, a: att.selectionStart, b: att.selectionEnd } : null;
@@ -1787,7 +1803,8 @@
   {
     let g = null;   // { ep, nome, x, y, timer, attivo, fant, su }
     const puo = () => S.modo === "mappa" && S.mappa && S.mappa.modifica && !S.occupato.has("posto");
-    const fine = () => { if (!g) return; clearTimeout(g.timer); if (g.fant) g.fant.remove(); if (g.su) g.su.classList.remove("bers"); g = null; };
+    const fine = () => { if (!g) return; clearTimeout(g.timer); if (g.fant) g.fant.remove(); if (g.su) g.su.classList.remove("bers"); g = null;
+      trascino = false; if (rinviato && !premuto) { rinviato = false; render(); } };
     const sotto = (x, y) => { const el = document.elementFromPoint(x, y); return { b: el && el.closest("[data-lid]"), mappa: !!(el && el.closest(".mappa")) }; };
     async function metti(ep, dove) {
       S.occupato.add("posto"); render();
@@ -1801,6 +1818,7 @@
       if (!el || !el.dataset.ep) return;
       const t = e.touches[0];
       fine();
+      trascino = true;   // (un ridisegno a metà gesto toglierebbe il nome di sotto al dito)
       g = { ep: el.dataset.ep, nome: (el.querySelector(".ln, .nome") || el).textContent.replace(/\s+/g, " ").trim(), x: t.clientX, y: t.clientY, attivo: false, fant: null, su: null };
       g.timer = setTimeout(() => {
         if (!g) return;

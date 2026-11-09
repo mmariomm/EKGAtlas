@@ -57,9 +57,13 @@ sessione. Vedi:
   promemoria del ponte — sta chiuso finché non serve («+ Da fare», «+ Con l'ora»).
 - **Esiti** — la tabella dei Valori che il PC ha per quel paziente, con l'ora in cui il PC li ha letti
   («Letti sul PC alle 08:02 · 4 h fa», in ambra dopo un'ora; una colonna con valori parziali lo dice
-  nella testata: «07:28 · parziale»), e i referti, col testo di quelli già letti sul PC. **↻ Aggiorna
-  i valori** fa sul PC il «⭳ Carica i valori» di sempre, in una scheda di sottofondo che si chiude da
-  sola, e porta qui il risultato. Un referto che il PC ha **salvato come PDF** ha un tasto «PDF»: il
+  nella testata: «07:28 · parziale»), e i referti, col testo di quelli già letti sul PC — e di un ECG o
+  di una radiografia che il PC ha salvato ma la cui pagina se n'era già andata, letto lì dalla copia
+  salvata —; quelli del laboratorio (emogas, emocromo…) a parte, in fondo, sotto «Laboratorio» (con la
+  tabella dei valori non ci sono: quello che dicono è già lì). Mai aperto sul PC: una riga, «Mai aperto
+  sul PC: niente di salvato.». **↻ Rileggi** fa sul PC il «⭳ Carica i valori» di sempre, in una scheda
+  di sottofondo che si chiude da sola — i valori e poi i referti non ancora caricati — e porta qui il
+  risultato, tutto con una risposta. Un referto che il PC ha **salvato come PDF** ha un tasto «PDF»: il
   telefono lo chiede a pezzi (comando `pdf`, ~390 KB l'uno, una risposta per pezzo) dentro la stessa
   sessione cifrata, li ricompone controllando la misura e il «%PDF», e lo apre nel visore del
   telefono da un `blob:` in memoria — mai su disco (né localStorage, né Cache, né IndexedDB), mai da
@@ -334,7 +338,11 @@ del paziente (`patients.v1`, `eta`): dalla testata della scheda («17/05/1949 (7
 codice fiscale; il numero, mai la data. Gli esiti leggono una volta la pagina del paziente (solo
 lettura, e solo se è del suo episodio) e la sua scheda clinica scelta con la stessa regola d'identità del pannello,
 con l'ora in cui il PC l'ha letta; i testi dei referti si prendono per numero di referto, quello della
-pagina di quel paziente. «Aggiorna i valori» annota la sua scheda di sottofondo in `storage.session`
+pagina di quel paziente. Un ECG o una radiografia salvati (la copia la tiene il service worker) ma col
+testo mai letto — la pagina che l'aveva chiesto se n'era già andata — si leggono lì, dalla copia, con
+lo stesso controllo di chi è del pannello (di un altro paziente: niente testo, niente PDF), e il testo
+va nella scheda del paziente. «Aggiorna i valori» risponde quando la sua scheda ha finito — valori e
+referti —, o allo scadere con i valori letti. «Aggiorna i valori» annota la sua scheda di sottofondo in `storage.session`
 (`ponte.valori`): anche se il service worker si ferma a metà, la si riconosce, scade e si chiude; il
 telefono aspetta 200 secondi, più del caso peggiore del PC.
 
