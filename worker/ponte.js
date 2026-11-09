@@ -1,7 +1,7 @@
 /**
  * PS Assist · Ponte — il ripetitore, su Cloudflare (stesso Worker del sito).
  *
- *   /ponte/ws?r=<stanza>&ruolo=pc|tel   la presa: un Durable Object per stanza
+ *   /ponte/ws?r=<stanza>&ruolo=pc|tel|medico|stazione   la presa: un Durable Object per stanza
  *   /ponte/…                            l'app del telefono, i suoi file da dist/ponte/
  *                                       (solo quelli: un altro indirizzo è un 404)
  *

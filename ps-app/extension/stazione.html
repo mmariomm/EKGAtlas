@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>PS Assist · Stazione di stampa</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --blu: #0B5CAD; --testo: #16232E; --grigio: #5B6B7A; --bordo: #D9E2EC; --fondo: #F4F8FB;
+          --verde: #177245; --verdef: #EDF7F0; --ambra: #8A5A00; --ambraf: #FFF4DB; --rosso: #B3261E; --rossof: #FDF3F2; }
+  * { box-sizing: border-box; }
+  body { font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: var(--testo); background: var(--fondo); margin: 0; padding: 32px 24px; }
+  .box { max-width: 640px; margin: 0 auto; background: #fff; border: 1px solid var(--bordo); border-radius: 14px; padding: 24px 26px 26px;
+         box-shadow: 0 8px 26px rgba(9,42,74,.12); }
+  h1 { font-size: 19px; margin: 0 0 18px; display: flex; align-items: center; gap: 9px; }
+  h1 svg { color: var(--blu); flex: none; }
+  h1 small { font-weight: 600; color: var(--grigio); font-size: 15px; }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--grigio); margin: 26px 0 8px; }
+  .stato { border-radius: 12px; padding: 14px 16px; background: var(--fondo); border: 1px solid var(--bordo); }
+  .stato.ok { background: var(--verdef); border-color: #BCE0C9; }
+  .stato.warn { background: var(--ambraf); border-color: #F0D9A8; }
+  .stato b { font-size: 15px; }
+  .stato .riga { display: block; margin-top: 3px; font-size: 13px; opacity: .85; }
+  .qrsec { margin-top: 16px; display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: center; border: 1px solid var(--bordo); border-radius: 12px; padding: 16px; }
+  .qrsec[hidden] { display: none; }
+  #qr { width: 220px; height: 220px; }
+  #qr svg { width: 100%; height: 100%; display: block; }
+  .qrsec p { margin: 0 0 8px; }
+  .qrsec .grande { font-size: 15px; font-weight: 700; }
+  .codice { font: 700 26px/1.1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .06em; margin: 10px 0 2px; }
+  .piano { color: var(--grigio); font-size: 12.5px; }
+  .campo { display: flex; gap: 10px; align-items: end; }
+  label { display: block; font-size: 12px; font-weight: 700; color: #35506B; margin-bottom: 6px; }
+  input, select { width: 100%; border: 1px solid #C4D0DC; border-radius: 9px; padding: 10px 12px; font: inherit; background: #fff; color: inherit; }
+  .riga2 { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-top: 12px; }
+  button { border: 0; border-radius: 10px; background: var(--blu); color: #fff; padding: 10px 16px; font: inherit; font-weight: 700; cursor: pointer; }
+  button:hover { background: #094a8c; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.quiet { background: #fff; color: var(--testo); border: 1px solid #C4D0DC; font-weight: 600; }
+  button.quiet:hover:enabled { border-color: var(--blu); background: #fff; }
+  button.via { background: transparent; color: var(--rosso); border: 1px solid #E9BAB6; }
+  button.via:hover { background: var(--rossof); }
+  .msg { margin-top: 12px; border-radius: 9px; padding: 9px 12px; font-size: 13px; display: none; }
+  .msg.ok { background: var(--verdef); border: 1px solid #BCE0C9; color: #124F31; display: block; }
+  .msg.ko { background: var(--rossof); border: 1px solid #E9BAB6; color: #8A1F19; display: block; }
+  ul { list-style: none; padding: 0; margin: 0; border: 1px solid var(--bordo); border-radius: 12px; overflow: hidden; }
+  li { display: grid; grid-template-columns: 48px 1fr; gap: 10px; padding: 9px 14px; border-top: 1px solid #EEF2F6; font-size: 13px; }
+  li:first-child { border-top: 0; }
+  li time { color: var(--grigio); font-variant-numeric: tabular-nums; }
+  li.ko span { color: var(--rosso); } li.warn span { color: var(--ambra); }
+  li.vuoto { display: block; color: var(--grigio); }
+  .piede { margin-top: 22px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  @media (max-width: 560px) { body { padding: 16px; } .box { padding: 18px 16px 22px; } .qrsec { grid-template-columns: 1fr; justify-items: center; text-align: center; } .riga2 { grid-template-columns: 1fr; } }
+</style></head><body>
+<div class="box">
+  <h1><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg>PS Assist <small>· Stazione di stampa</small></h1>
+  <div id="stato" class="stato"><b>…</b></div>
+  <div id="qrsec" class="qrsec" hidden>
+    <div id="qr" role="img" aria-label="Il QR della stazione"></div>
+    <div>
+      <p class="grande">Collegala al PC del medico</p>
+      <p>Sull'iPhone, nell'app PS Assist: <b>⋯ → Collega una stazione</b>, e inquadra questo QR.</p>
+      <div class="codice" id="qrcodice"></div>
+      <p class="piano">Lo stesso codice compare sul telefono. <span id="qrscade"></span></p>
+    </div>
+  </div>
+
+  <h2>Nome</h2>
+  <div class="campo"><div style="flex:1"><label for="nome">Il PC del medico la chiama così</label><input id="nome" maxlength="40" autocomplete="off" spellcheck="false"></div></div>
+
+  <h2>Stampanti</h2>
+  <div id="sst" class="stato" hidden></div>
+  <div class="riga2">
+    <div><label for="setic">Etichette</label><select id="setic" disabled></select></div>
+    <button class="quiet" data-prova="etichette" disabled>Prova</button>
+  </div>
+  <div class="riga2">
+    <div><label for="sa4">A4</label><select id="sa4" disabled></select></div>
+    <button class="quiet" data-prova="a4" disabled>Prova</button>
+  </div>
+  <div id="sm" class="msg"></div>
+
+  <h2>Ultimi fogli</h2>
+  <ul id="lavori"></ul>
+
+  <div class="piede">
+    <span class="piano">Tieni Chrome aperto su questo PC: la pagina può restare chiusa.</span>
+    <button class="via" id="scollega" hidden>Scollega</button>
+  </div>
+</div>
+<script src="qr.js"></script>
+<script src="stazione.js"></script>
+</body></html>

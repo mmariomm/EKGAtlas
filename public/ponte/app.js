@@ -81,6 +81,7 @@
     cambio: null,        // «Cancella e riassocia», sulla schermata «associato a un altro telefono»
     camera: "",          // «Scansiona il QR»: perché la fotocamera non c'è
     stampa: null,        // «Stampa un PDF»: { tono, titolo, testo, fine, ts }
+    stazione: null,      // il QR di una stazione di stampa, inquadrato: { sta, nome, codice, scade, fase, testo }
     zip: null, zipErr: "", // ⋯ → Registrazioni: l'elenco del PC (anonimizzate: niente pazienti)
     zipFile: new Map(),  // id → { url (blob:), file, nome, puo }: scaricata, in memoria
     zipStato: new Map(), // id → la percentuale, mentre arriva
@@ -893,6 +894,52 @@
       return u.origin === location.origin && u.pathname === "/ponte/" && !u.search && P.leggiFrammento(u.hash) ? u : null;
     } catch { return null; }
   }
+  // Il QR di una STAZIONE DI STAMPA (la pagina «Stazione di stampa» di PS
+  // Assist sul PC dell'infermeria): un link di questo sito con «#sta=…», mai
+  // una chiave del telefono. Non tocca l'associazione: mostra una carta
+  // («Collegala al PC?»), e «Collega» passa l'offerta al PC, nel ponte
+  // cifrato. Il PC e la stazione fanno la loro chiave fra loro: il telefono
+  // non può stampare né leggere niente là.
+  function linkStazione(testo) {
+    try {
+      const u = new URL(testo);
+      const q = new URLSearchParams(u.hash.replace(/^#/, ""));
+      const sta = q.get("sta") || "";
+      const m = /^([A-Za-z0-9_-]{87})\.([A-Za-z0-9_-]{22})\.(\d{10,15})$/.exec(sta);
+      if (u.origin !== location.origin || u.pathname !== "/ponte/" || u.search || !m) return null;
+      return { sta, pub: P.daB64u(m[1]), s: P.daB64u(m[2]), scade: Number(m[3]), nome: String(q.get("nome") || "").replace(/\s+/g, " ").trim().slice(0, 40) || "Stazione di stampa" };
+    } catch { return null; }
+  }
+  async function offertaStazione(st) {
+    const k = new Uint8Array(st.s.length + st.pub.length);
+    k.set(st.s); k.set(st.pub, st.s.length);
+    // (l'orologio della stazione non è questo: un minuto di margine; lo decide il PC)
+    const scaduta = st.scade + 60e3 < Date.now();
+    S.stazione = { sta: st.sta, nome: st.nome, codice: await P.codice(k), fase: !S.coppia ? "senza" : scaduta ? "errore" : "chiedi",
+      testo: scaduta ? "QR scaduto: sulla stazione ne compare uno nuovo, inquadra quello" : "" };
+    S.menu = false;
+    render();
+  }
+  async function collegaStazione() {
+    const st = S.stazione;
+    if (!st || st.fase !== "chiedi" || S.fase !== "pronta") return;
+    st.fase = "invio"; render();
+    const fatto = (d) => { if (S.stazione === st) { st.fase = "fatto"; st.nome = d.nome || st.nome; st.codiceK = d.codice || ""; render(); } };
+    try { fatto(await scrivi("stazioneCollega", { sta: st.sta, nome: st.nome }, 60e3, fatto, "")); }
+    catch (e) { if (S.stazione === st) { st.fase = "errore"; st.testo = e.inviata ? "Non so se è collegata: guarda sul PC, ⋯ → Stampanti" : e.message; render(); } }
+  }
+  function foglioStazione() {
+    const st = S.stazione;
+    if (!st) return "";
+    const corpo = st.fase === "senza" ? `<p class="stdesc">Prima associa l'iPhone al PC: sul PC <b>⋯ → iPhone → Associa l'iPhone</b>, e inquadra quel QR.</p>`
+      : st.fase === "fatto" ? `<div class="stok" role="status">Collegata al PC</div><p class="stdesc">Gli ordini con «${esc(st.nome)}» stampano lì: etichette e A4.${st.codiceK ? ` Codice ${esc(st.codiceK)}, lo stesso sulla stazione e sul PC.` : ""}</p>`
+      : st.fase === "errore" ? `<p class="stdesc err" role="alert">${esc(st.testo)}</p>`
+      : `<p class="stdesc">Collegala al PC: gli ordini che mandi lì escono dalle stampanti di ${esc(st.nome)}, etichette e A4.</p>
+        <button type="button" class="grande" data-a="stacollega" ${st.fase === "invio" || S.fase !== "pronta" ? "disabled" : ""}>${st.fase === "invio" ? "Collego…" : S.fase !== "pronta" ? "Mi collego al PC…" : "Collega"}</button>`;
+    return `<div class="foglio" role="dialog" aria-modal="true" aria-label="Stazione di stampa"><button type="button" class="velo" data-a="stachiudi" aria-label="Chiudi"></button>
+      <div class="pannello"><div class="capo"><b>Stazione di stampa</b><button type="button" class="chiudi" data-a="stachiudi">${st.fase === "fatto" ? "Fatto" : "Chiudi"}</button></div>
+      <div class="carta stcarta"><div class="stnome">${esc(st.nome)}</div><div class="stcod">${esc(st.codice)}</div><div class="stpiano">lo stesso codice è sotto il QR della stazione</div>${corpo}</div></div></div>`;
+  }
   const decodificatore = () => (window.jsQR ? Promise.resolve() : new Promise((ok, no) => {
     const s = document.createElement("script");
     s.src = "jsqr.min.js"; s.onload = ok; s.onerror = no;
@@ -932,6 +979,8 @@
         const img = g.getImageData(0, 0, tela.width, tela.height);
         const c = window.jsQR(img.data, img.width, img.height);
         const u = c && linkDelPonte(c.data);   // (un QR di un altro sito, o non del ponte: si ignora)
+        const st = c && !u && linkStazione(c.data);
+        if (st) { chiudiScan(); offertaStazione(st); return; }
         if (u) {
           chiudiScan();
           history.replaceState(null, "", u.pathname + u.hash);
@@ -1070,7 +1119,7 @@
     };
     try {
       // (persa la risposta, quella che arriva dopo dice com'è andata: il bottone smette di aspettare)
-      const d = await chiedi("ordina", { ep, oid, esami: [...s.esami], quesito: s.q.trim(), mio: s.mio, nato: Math.round(quando + S.scarto) }, 60e3, false, {
+      const d = await chiedi("ordina", { ep, oid, esami: [...s.esami], quesito: s.q.trim(), mio: s.mio, nato: Math.round(quando + S.scarto), ...(staDi() ? { dest: doveDi(ep) } : {}) }, 60e3, false, {
         rq: nuovoRq(), scade: quando + CODA_MAX,
         partita: () => { if (S.coda.delete(oid)) render(); },
         tardi: (r) => {
@@ -1153,6 +1202,7 @@
       ${S.menu ? `<div class="menu" role="menu">
         ${suPaz || suZip ? "" : `<button data-a="aggiornaLista">Aggiorna l'elenco</button>`}
         <button data-a="stampaPdf">Stampa un PDF</button>
+        <button data-a="scansiona">Collega una stazione</button>
         <button data-a="registrazioni">Registrazioni</button>
         <button data-a="esci">Chiudi la sessione</button>
         <button class="via" data-a="dimentica">Dimentica questo PC</button>
@@ -1467,6 +1517,16 @@
     return `<div class="carta q-w"><input id="quesito" type="text" enterkeyhint="done" autocomplete="off" placeholder="Quesito diagnostico" value="${esc(s.q)}"><div class="chips">${quesiti}</div></div>
       <div class="carta">${gruppi}</div>`;
   }
+  // La stazione di stampa collegata al PC (il suo nome) e dove vanno i fogli:
+  // la scelta del PC, o quella toccata qui per questo ordine.
+  const staDi = () => (S.catalogo && S.catalogo.stampa && S.catalogo.stampa.stazione) || "";
+  const doveDi = (ep) => { const x = selDi(ep).dove; return x || (S.catalogo && S.catalogo.stampa && S.catalogo.stampa.dove) || "qui"; };
+  function doveHtml(p) {
+    const nome = staDi();
+    if (!nome) return "";
+    const d = doveDi(p.ep), b = (k, t) => `<button type="button" data-a="dove" data-d="${k}" class="${d === k ? "on" : ""}" aria-pressed="${d === k}">${esc(t)}</button>`;
+    return `<div class="dove" role="group" aria-label="Dove stampano i fogli"><span>Stampa</span>${b("qui", "PC")}${b("stazione", nome)}</div>`;
+  }
   function ctaHtml(p) {
     if (S.scheda === "cartella") return ctaCartella(p);
     if (S.scheda === "terapia") return S.terapiaSi ? ctaTerapia(p) : "";
@@ -1478,11 +1538,11 @@
     const armato = S.arma && S.arma.ep === p.ep;
     // (due pazienti con lo stesso cognome: il ⚠ anche qui, e il nome col suo segno)
     const etichetta = occupato ? (S.coda.has(S.inviati.get(p.ep)) ? "In coda…" : "Mando l'ordine al PC…") : bloccato ? "Controllo gli ordini sul PC…" : armato ? `${p.omonimo ? "⚠ " : ""}Ordino ${nTxt} per ${chi(p)}? Tocca di nuovo`
-      : !n ? "Scegli gli esami" : `Conferma e stampa · ${nTxt}`;
+      : !n ? "Scegli gli esami" : `Conferma e stampa · ${nTxt}${staDi() && doveDi(p.ep) === "stazione" ? ` → ${staDi()}` : ""}`;
     const perche = bloccato ? "Prima di un altro ordine, il PC dice se quello di prima è partito"
       : n && !s.q.trim() ? "Scrivi il quesito diagnostico" : rx && lab ? "Laboratorio e radiologia in richieste separate: il PC le conferma e le stampa tutte" : "";
     const nomi = [...s.esami].map((k) => c.nomi[k] || k).join(", ");
-    return `<div class="cta">${n ? `<div class="sel">${esc(nomi)}</div>` : ""}<button id="ordina" data-a="ordina" class="${armato ? "arma" : ""}" ${occupato || bloccato ? "disabled" : !n || !s.q.trim() ? "aria-disabled=\"true\"" : ""}>${esc(etichetta)}</button>${
+    return `<div class="cta">${n ? `<div class="sel">${esc(nomi)}</div>${doveHtml(p)}` : ""}<button id="ordina" data-a="ordina" class="${armato ? "arma" : ""}" ${occupato || bloccato ? "disabled" : !n || !s.q.trim() ? "aria-disabled=\"true\"" : ""}>${esc(etichetta)}</button>${
       perche ? `<div class="perche">${esc(perche)}</div>` : ""}</div>`;
   }
   // «Da fare», come sul PC: la nota (la prima voce senza ora) e quelle con l'ora,
@@ -1654,7 +1714,7 @@
     const fg = $app.querySelector(".foglio .pannello"), fgy = fg ? { k: fg.dataset.k, y: fg.scrollTop } : null;   // (un foglio aperto resta dov'era)
     const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : vistaLista()) : schermata();
     disegno = true;   // (un campo tolto dal ridisegno non è un campo lasciato)
-    try { $app.innerHTML = testata() + corpo + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}" role="alert">${esc(S.avviso.testo)}</div>` : ""); }
+    try { $app.innerHTML = testata() + corpo + foglioStazione() + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}" role="alert">${esc(S.avviso.testo)}</div>` : ""); }
     finally { disegno = false; }
     for (const t of $app.querySelectorAll(".cc textarea")) alza(t);
     misureMappa();
@@ -1731,6 +1791,9 @@
     else if (a === "tieni") parti(S.coppia);
     else if (a === "cambia") cambia();
     else if (a === "scansiona") apriScan();
+    else if (a === "stacollega") collegaStazione();
+    else if (a === "stachiudi") { S.stazione = null; render(); }
+    else if (a === "dove") { const x = selDi(ep); x.dove = b.dataset.d === "stazione" ? "stazione" : "qui"; x.oid = ""; S.arma = null; render(); }
     else if (a === "stampaPdf") { render(); $pdf.click(); }
     else if (a === "stampaVia") { S.stampa = null; render(); }
     else if (a === "registrazioni") apriRegistrazioni();
@@ -1884,8 +1947,10 @@
   // Un QR nuovo inquadrato con l'app già aperta cambia solo il frammento: si
   // riparte da capo, e la partenza decide (anche se chiedere prima).
   window.addEventListener("hashchange", () => {
-    if (P.leggiFrammento(location.hash)) location.reload();
-    else history.replaceState(null, "", location.pathname + location.search);
+    if (P.leggiFrammento(location.hash)) { location.reload(); return; }
+    const st = linkStazione(location.href);
+    history.replaceState(null, "", location.pathname + location.search);
+    if (st) offertaStazione(st);
   });
   if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("sw.js", { scope: "./" }).catch(() => {});
 
@@ -1904,8 +1969,10 @@
   (async function avvia() {
     if (PROVA) return avviaProva();
     const link = location.hash ? dalLink(location.hash) : null;
+    const sta = location.hash ? linkStazione(location.href) : null;   // (il QR di una stazione: una carta, dopo)
     // il frammento non resta nella barra degli indirizzi né nella cronologia
     if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+    if (sta) setTimeout(() => offertaStazione(sta), 0);
     const prima = salvata();
     if (link && link.scade <= Date.now()) { S.scaduta = link.scade; S.perche = "scaduta"; S.fase = "finita"; render(); return; }
     // Un link che toglierebbe un'associazione ancora buona chiede prima: un

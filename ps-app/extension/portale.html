@@ -33,6 +33,13 @@
   .riga button { margin-top: 0; }
   details { margin-top: 18px; font-size: 13px; } summary { cursor: pointer; font-weight: 700; color: #35506B; }
   details ol { padding-left: 20px; margin: 8px 0 0; } details li { margin: 4px 0; }
+  /* la stazione di stampa */
+  .passi { padding-left: 20px; margin: 0; font-size: 13.5px; } .passi li { margin: 6px 0; }
+  .dove { display: inline-flex; align-items: center; gap: 2px; margin-top: 16px; padding: 3px; border: 1px solid #C4D0DC; border-radius: 11px; background: #F4F8FB; }
+  .dove span { font-size: 12px; font-weight: 700; color: #35506B; padding: 0 10px 0 8px; }
+  .dove button { margin: 0; background: transparent; color: #16232E; padding: 8px 16px; font-weight: 600; border-radius: 8px; }
+  .dove button:hover { background: #E8F0FA; }
+  .dove button[aria-pressed="true"] { background: #0B5CAD; color: #fff; font-weight: 700; }
   @media (max-width: 520px) { body { padding: 16px; } .box { padding: 18px 16px 22px; } .riga { grid-template-columns: 1fr; } }
 </style></head><body>
 <div class="box" id="stampa">
@@ -65,6 +72,24 @@
     <p class="hint">In Windows non resta acceso niente: l'aiutante parte solo per il secondo in cui stampa. Per toglierla: l'interruttore qui sopra, o <code>disinstalla.cmd</code>.</p>
   </details>
   <button class="sec" id="sric">Ricontrolla</button>
+</div>
+<div class="box" id="stazione">
+  <h1>Stazione di stampa</h1>
+  <p class="sub">Le stampanti dell'infermeria, attaccate al suo PC: i fogli degli ordini escono lì.</p>
+  <div id="stasi" hidden>
+    <span id="stast" class="stato ok"></span>
+    <p id="stariga" class="hint" style="margin-top:8px"></p>
+    <div class="dove" role="group" aria-label="Dove stampano gli ordini"><span>Stampa</span><button data-dove="qui">Qui</button><button data-dove="stazione" id="stanome"></button></div>
+    <p class="hint">Vale per i fogli degli ordini (anche dall'iPhone, che può cambiarla per un ordine) e per l'etichetta anagrafica. Se la stazione non risponde, la striscia lo dice, con «Stampa qui».</p>
+    <button class="via" id="stavia" style="margin-left:0">Scollega</button>
+  </div>
+  <div id="stano">
+    <ol class="passi">
+      <li>Sul PC dell'infermeria, con PS Assist installato come qui (e la stampa automatica): apri la sua pagina <b>Stazione di stampa</b>. Compare un QR.</li>
+      <li>Sull'iPhone, nell'app PS Assist: <b>⋯ → Collega una stazione</b>, e inquadra quel QR. Fatto: qui compare la stazione.</li>
+    </ol>
+  </div>
+  <p class="hint"><a href="stazione.html" id="stapagina">Questo PC fa da stazione di stampa →</a></p>
 </div>
 <div class="box">
   <h1>Indirizzo del portale clinico</h1>

@@ -1311,7 +1311,9 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   la risposta il telefono dice «Non so se l'ordine è partito» e non lo rifà alla cieca (lo stesso
   ordine rimandato parte una volta sola), a meno che non lo veda già nato sul PC. Niente ordini su un episodio precedente o per un paziente
   dimesso sul PC. Un ordine finito male si vede da ogni pagina del telefono, finché non lo chiudi.
-  Sul PC la striscia dice «dall'iPhone».
+  Sul PC la striscia dice «dall'iPhone». Con una [stazione di stampa](#stazione-di-stampa-le-stampanti-dellinfermeria)
+  collegata, sopra il bottone «Stampa: PC · Infermeria» (quella del PC, cambiabile per l'ordine); la
+  stazione si collega da qui, **⋯ → Collega una stazione**, inquadrando il suo QR.
 - **Cartella dal telefono**: anamnesi, remota, farmaci, allergie ed esame obiettivo, scrivibili dove
   la pagina del paziente li lascia scrivere; «Salva» li scrive col «Conferma» della pagina, in una
   scheda di sottofondo, e rilegge. Mai sopra un testo cambiato sul PC o non ancora salvato in una
@@ -1599,6 +1601,52 @@ quello che si può fare senza essere amministratori:
   stamperesti da una finestra normale. Fragile: è il ripiego se l'IT blocca l'aiutante.
 - Se le liste su carta non ti servono, annulla il secondo dialogo: resta **un solo**
   dialogo per paziente.
+
+### Stazione di stampa: le stampanti dell'infermeria
+
+L'etichettatrice e l'A4 dell'infermiera sono attaccate al **suo** PC, con un cavo: dal PC del
+medico non si vedono. Su quel PC c'è la stessa PS Assist, installata come sempre, che fa da
+**stazione di stampa**: riceve i fogli degli ordini dal PC del medico (anche quelli partiti dal
+telefono), li stampa sulle sue stampanti e dice com'è andata.
+
+- **Una volta, sul PC dell'infermeria** (il medico entra col suo account di Windows): l'estensione
+  e la stampa automatica come in [Installazione](#installazione-chrome--edge-pc-ospedale)
+  (`stampa\installa.cmd`). Poi le Opzioni dell'estensione (`chrome://extensions` → PS Assist →
+  Dettagli → Opzioni) → **«Questo PC fa da stazione di stampa →»**: la pagina **«PS Assist ·
+  Stazione di stampa»**. Lì le due stampanti, **Etichette** e **A4**, con **Prova**, e il nome
+  («Infermeria»: lo vede il medico). Il gestionale lì non serve; basta Chrome aperto (la pagina può
+  restare chiusa).
+- **Collegarla, col telefono.** La pagina mostra un **QR** e sotto un codice di sei cifre.
+  Sull'iPhone, nell'app: **⋯ → Collega una stazione**, e si inquadra il QR: una carta «Stazione di
+  stampa · Infermeria», con lo stesso codice, e **Collega**. Il telefono passa l'offerta al PC,
+  dentro il ponte; il PC e la stazione fanno la loro chiave fra loro. Poi lo dicono tutti e tre: il
+  telefono «Collegata al PC», la stazione «Collegata al PC del medico», il PC in **⋯ → Stampanti**
+  «Infermeria · collegata dal telefono alle 14:32», con **Scollega** — e la stazione e il PC lo
+  stesso codice. Il QR vale cinque minuti e per un PC solo (poi ne compare un altro); un QR
+  scaduto, o di una stazione che non risponde, lo dice e non collega niente; un telefono non
+  associato: «Prima associa l'iPhone al PC». Resta collegata finché uno dei due non **scollega** (due
+  tocchi, sul PC o sulla stazione): l'altro lo sa subito, o appena si riaccende.
+- **Scegliere: «Stampa: Qui · Infermeria»**, nel menu ⋯ del pannello e nella pagina Stampanti, con
+  una stazione collegata; si ricorda. Su Infermeria il bottone dell'ordine lo dice («Conferma e
+  stampa · 2 esami → Infermeria») e la stampantina in intestazione è «→ Infermeria» (rossa quando
+  non risponde). Vale per le etichette e i fogli A4 di un ordine (e per la loro **Ristampa**) e per
+  l'etichetta anagrafica; il resto (consensi, «Stampa le richieste», un PDF dal telefono) resta qui.
+  Sul telefono, sopra «Conferma e stampa», la stessa scelta, **«Stampa: PC · Infermeria»**: parte
+  da quella del PC, e si cambia per quell'ordine.
+- **Com'è andata, per quello che è.** «Stampo le etichette in Infermeria…», poi **«Stampato in
+  Infermeria»** solo quando la stazione l'ha detto («Mandato in Infermeria» in ambra, o il suo
+  errore). La stazione spenta o che non risponde: **«Infermeria non risponde»**, con **Stampa qui**:
+  un tocco, e quei fogli escono qui (la stampa automatica di questo PC, o il dialogo), una volta.
+  Mai stampati qui da soli, nemmeno per un ordine dal telefono. Il foglio arrivato e la risposta no:
+  «Infermeria non risponde · forse stampate: guarda lì prima di stamparle qui» — mai rimandato da
+  solo, mai due volte.
+- **La stazione riceve fogli e risponde, nient'altro**: non può mandare un comando al PC del medico
+  né leggerci niente, e dopo la stampa non tiene niente del foglio. Nella sua pagina, «Ultimi
+  fogli»: l'ora, etichette o A4, le pagine, com'è andata — mai un nome.
+
+I fogli viaggiano cifrati da un capo all'altro, come i messaggi del ponte, attraverso lo stesso
+ripetitore (fuori dall'ospedale e ritorno: lo dice la regola 9). Come è fatto, la chiave, che cosa
+vede l'IT: [`ponte/README.md`](ponte/README.md#la-stazione-di-stampa).
 
 ---
 
@@ -2128,7 +2176,11 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    restano quelle di sempre, fatte dalle sue schede. La chiave sta in `storage.local` fino alla
    scadenza, e vale per un telefono solo. Revoca, scadenza a 14 ore, sessione che si
    chiude dopo 3 minuti senza comandi, la spia «iPhone collegato» e il Registro:
-   [`ponte/README.md`](ponte/README.md).
+   [`ponte/README.md`](ponte/README.md). Lo stesso host e la stessa cifratura per la **stazione
+   di stampa** (un'altra stanza del ripetitore, regola 21): i fogli di un ordine, PDF con nomi di
+   pazienti, vanno dal PC del medico a quello dell'infermeria passando dal ripetitore — escono
+   dall'ospedale e ci tornano, cifrati da un capo all'altro; il ripetitore non li legge né li
+   tiene. Solo con una stazione collegata e scelta («Stampa: Infermeria»).
    **E una seconda, per gli aggiornamenti (⋯ → «Aggiorna app»):** il service worker legge
    `ps-app/dist/VERSION.txt` da `raw.githubusercontent.com` (una volta al giorno e aprendo il ⋯) e,
    solo al tocco del medico, `ps-assist-latest.zip` — due GET senza cookie, senza referrer e senza
@@ -2314,6 +2366,22 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     `storage.session`) **prima** di dire alla scheda di cliccare: dopo, la pagina che torna — o
     che si ricarica, o un service worker ripartito — si guarda e basta, e una Conferma che non si
     vede è «Incerto: controlla sul PC», mai rifatta. Prova: `test/ext-terapia.mjs`.
+21. **La stazione di stampa: fogli in un verso, esiti nell'altro; mai altrove da soli, mai due
+    volte.** Dove stampa un ordine si decide quando nasce (`dest`, `stampaDove` in `bg.js`) e non
+    cambia: un ordine per la stazione che non la trova dice «Infermeria non risponde», non stampa
+    qui. Il motore è lo stesso (`ordStampaFogli`: il foglio «invio» scritto prima di partire, il
+    PDF preso dalla pagina coi controlli di sempre); al posto dell'aiutante c'è `stazioneStampa`
+    (`stazione-sw.js`): il PDF va a pezzi cifrati alla stazione, che lo stampa col suo aiutante
+    solo all'ultimo pezzo, una volta per numero (`rq`, annotato prima di stampare: rimandato,
+    risponde com'è andata; dopo un riavvio a metà, «sconosciuto»), e dice il suo esito. Nessun
+    pezzo arrivato: «non risponde» (non stampato); l'ultimo arrivato e la risposta no: si chiede
+    l'esito su una sessione nuova, e se non si sa, «forse stampato». Un foglio che la stazione non
+    ha stampato non va mai da solo all'aiutante di qui né al dialogo (`ordConsegnaStampa` lo
+    salta): aspetta **Stampa qui**, un tocco. Dal canale della stazione il PC accetta solo le
+    risposte alle sue domande, i saluti e la revoca: un comando, un evento, una risposta a una
+    domanda mai fatta si scartano. La chiave nasce fra il PC e la stazione (ECDH): il telefono
+    che passa il QR non la conosce. Sulla stazione, del foglio resta solo il numero e com'è andata
+    (e, per la sua pagina, l'ora, il tipo, le pagine). Prova: `test/ext-stazione.mjs`.
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è
@@ -2387,6 +2455,8 @@ ps-app/
 ├── extension/pdfjs/     ← pdf.js 3.11.174 di Mozilla (Apache-2.0), preso tale e quale: legge i referti
 ├── extension/ponte-*    ← il Ponte verso l'iPhone: la presa nel service worker, la pagina «iPhone»,
 │                          la prova della rete; qr.js è il codificatore QR di Project Nayuki (MIT)
+├── extension/stazione*  ← la stazione di stampa: stazione-sw.js (service worker: il PC del medico che manda i fogli,
+│                          e la stazione che li stampa), stazione.html/.js (la pagina «Stazione di stampa»)
 ├── extension/tabellone.html ← ⋯ → Tabellone: carica content.js, che lì disegna solo il tabellone (dallo specchio)
 ├── ponte/               ← il Ponte: README, host.txt (il suo indirizzo, fissato nella build), il
 │                          ripetitore Node per test e prove (stessa logica di ../worker/ponte-logica.js);
@@ -2426,6 +2496,7 @@ npm run verifica-build   # al rilascio, dopo dist e il commit: build fresca = bu
 npm test           # 108 scenari e2e + le prove con l'estensione vera (ordine in sottofondo, scheda nascosta, stampa automatica, ponte, registra, aggiorna, tabellone, terapia) + storico + il cancello privacy (+ l'aiutante di Windows, con PowerShell 7: PWSH=…)
                    # + l'ordine in una scheda DAVVERO nascosta: Chrome senza Playwright, CDP grezzo (test/ext-nascosta.mjs; serve openssl)
                    # + il Ponte: 120 controlli senza browser (cifratura, ripetitore, Worker) e 166 dal vivo (test/ext-ponte.mjs)
+                   # + la stazione di stampa: due PC veri, il telefono che inquadra il suo QR, gli ordini (test/ext-stazione.mjs)
                    # + le aree, su pagine sintetiche: sezioni, PsoPsoImposta, mappa dell'Alta, lista smart (test/aree.mjs)
                    # (Chromium che va in crash aprendo un PDF, in un contenitore Linux: PSA_CHROMIUM_ARGS=--disable-features=PdfOopif)
 ```
