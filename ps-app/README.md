@@ -1287,11 +1287,12 @@ gestionale aperto e il codice di sempre: il telefono manda una domanda, una sche
 esegue e risponde. Passa da un ripetitore nel Worker di EKG Atlas (sul suo indirizzo `workers.dev`)
 che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun server.
 
-- **Una volta per turno**: ⋯ → **iPhone** → **Associa l'iPhone**, e si inquadra il QR con la
-  fotocamera (accanto, un codice di sei cifre: lo stesso compare sul telefono). Vale 14 ore e per un
-  telefono solo, il primo che entra; il QR si rivede solo nei primi due minuti. Regge il browser
-  chiuso e riaperto; una scheda del gestionale alla pagina d'accesso chiude la sessione, non
-  l'associazione. **Revoca l'iPhone** la chiude prima.
+- **Una volta**: ⋯ → **iPhone** → **Associa l'iPhone**, e si inquadra il QR con la
+  fotocamera (accanto, un codice di sei cifre: lo stesso compare sul telefono). **Non scade**: dura
+  finché non la togli (**Revoca l'iPhone** sul PC, «Dimentica PC» sul telefono); vale per un
+  telefono solo, il primo che entra; il QR si rivede solo nei primi due minuti e il suo link vale
+  pochi minuti, una volta sola. Regge il browser chiuso e riaperto, il logout e il rientro; una scheda del gestionale alla pagina d'accesso chiude la sessione, non
+  l'associazione. Telefono perso sbloccato: **Revoca l'iPhone** sul PC.
   La pagina dell'iPhone si apre **dentro il pannello**, al posto del corpo (nessuna scheda nuova): ‹ o
   una scheda la lasciano, ridotto il pannello resta com'era, col QR davanti. È la pagina
   dell'estensione in una cornice, non un disegno del pannello: la pagina del gestionale vede la
@@ -2171,8 +2172,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    tiene **una** presa (WSS, 443) verso **un** host, il Worker di EKG Atlas, e ci passano solo messaggi
    cifrati da un capo all'altro (AES-256-GCM, chiavi da HKDF, la chiave del QR mai a un server):
    il sito li inoltra al telefono e non li può leggere né li tiene. Le richieste al gestionale
-   restano quelle di sempre, fatte dalle sue schede. La chiave sta in `storage.local` fino alla
-   scadenza, e vale per un telefono solo. Revoca, scadenza a 14 ore, sessione che si
+   restano quelle di sempre, fatte dalle sue schede. La chiave sta in `storage.local` finché
+   non la revochi (nessuna scadenza), e vale per un telefono solo. Revoca, sessione che si
    chiude dopo 3 minuti senza comandi, la spia «iPhone collegato» e il Registro:
    [`ponte/README.md`](ponte/README.md). Lo stesso host e la stessa cifratura per la **stazione
    di stampa** (un'altra stanza del ripetitore, regola 21): i fogli di un ordine, PDF con nomi di

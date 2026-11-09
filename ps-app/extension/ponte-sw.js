@@ -14,9 +14,10 @@
  * un nome, un esame, un valore. Il suo indirizzo è fissato nella build
  * (ponte-host.js, da ponte/host.txt): nessuna pagina lo cambia.
  *
- * La chiave sta in storage.local fino alla sua scadenza (14 ore): un turno,
- * anche se il browser si chiude e si riapre. Il QR si rivede solo nei primi
- * due minuti e solo finché nessun telefono è entrato; il primo che entra è
+ * La chiave sta in storage.local finché non la si revoca (Revoca, Nuovo QR, o
+ * «Dimentica PC» sul telefono): nessuna scadenza, anche se il browser si chiude
+ * e si riapre. Il QR si rivede solo nei primi due minuti, il suo link vale per
+ * il primo scambio solo pochi minuti, e solo finché nessun telefono è entrato; il primo che entra è
  * quello dell'associazione, e un altro telefono con lo stesso QR non entra.
  *
  * Perché la presa sta nel service worker: da Chrome 116 una WebSocket che
@@ -28,7 +29,7 @@
  * chiede (ponteSveglia).
  *
  * La sessione finisce dopo 3 minuti senza comandi del medico, con «Scollega»
- * sul PC, con la revoca, alla scadenza dell'associazione (14 ore), col riavvio
+ * sul PC, con la revoca, col riavvio
  * dell'estensione, o quando una scheda del gestionale torna alla pagina
  * d'accesso (l'associazione no: rientrati nel gestionale, il telefono riapre).
  * Mentre è aperta, ogni scheda del gestionale lo dice nell'intestazione del
@@ -37,17 +38,18 @@
 /* global PonteCripto, PONTE_HOST_FISSO, ordLeggi, sulGestionale, leggibileOrd, corto, KEY, REF_TTL, stampaScelte, stampaDalTel, stampaTelVista, regElenco, regPezzo, regZipVia, stazioneCollega */
 
 const PONTE_HOST_PROVA = "ponte.host";      // storage.local: solo per le prove, e solo verso questo PC
-const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, scade, creata, usata, dev, nTel, cambiata?, errori?, blocco?, cambi? }
+const PONTE_COPPIA = "ponte.coppia";        // storage.local: { k, creata, usata, dev, nTel, cambiata?, errori?, blocco?, cambi? }
 const PONTE_STATO = "ponte";                // storage.session: quello che le pagine mostrano
 const PONTE_ORDINI = "ponte.ordini";        // storage.session: gli ordini partiti dal telefono
 const PONTE_VALORI = "ponte.valori";        // storage.session: le schede aperte per «Aggiorna i valori»
 const PONTE_CARTELLE = "ponte.cartelle";    // storage.session: le schede aperte per salvare la cartella (solo { ep, ts })
 const PONTE_CARTELLA = "ponte.cartella";    // storage.session: l'ultima lettura della cartella di ogni paziente (memoria, mai disco)
-const PONTE_DURATA = 14 * 3600e3;           // un'associazione dura un turno lungo
+const PONTE_REGISTRO = 14 * 3600e3;         // quanto restano gli appunti e il registro dei referti (NON la durata dell'associazione: quella non scade)
 const PONTE_INATTIVO = 3 * 60e3;            // senza comandi del medico, la sessione si chiude (il telefono si ricollega in un attimo)
 const PONTE_ORDINE_MAX = 30e3;              // un ordine vale 30 secondi dal tocco sul telefono: arrivato dopo, non si fa
 const PONTE_BATTITO = 20e3;                 // la presa parla almeno ogni 20 secondi
 const PONTE_QR_MAX = 2 * 60e3;              // il QR si rivede solo per poco
+const PONTE_QR_PRIMO = 5 * 60e3;            // e il suo link vale per il primo scambio solo per poco (e una volta sola)
 const PONTE_SALUTO_MAX = 2 * 60e3;          // un saluto senza seguito si dimentica
 const PONTE_VALORI_MAX = 150e3;             // «Aggiorna i valori» non aspetta di più
 const PONTE_ALTROVE_MS = 5e3;               // finita su un'altra pagina: tanto si aspetta quella dopo
@@ -107,7 +109,7 @@ function ponteNota(testo) {
 function pontePubblico() {
   const s = pt.sessione;
   return {
-    host: pt.host, accoppiato: !!pt.coppia, scade: pt.coppia ? pt.coppia.scade : 0, relay: pt.relay, telefono: pt.pari,
+    host: pt.host, accoppiato: !!pt.coppia, qrFino: pt.coppia && !pt.coppia.usata ? pt.coppia.creata + PONTE_QR_MAX : 0, relay: pt.relay, telefono: pt.pari,
     sessione: s ? { dal: s.dal, ultimo: s.ultimo, n: s.n } : null, fine: pt.fine, registro: pt.registro.slice(-60),
     cambiato: (pt.coppia && pt.coppia.cambiata) || 0,   // quando un altro iPhone ha preso il posto del primo
   };
@@ -135,7 +137,7 @@ async function ponteIndirizzo() {
 // Il QR si rivede solo nei primi due minuti, e solo finché nessun telefono è
 // entrato: dopo, «Associa» fa una chiave nuova.
 const ponteQr = () => (pt.host && pt.coppia && !pt.coppia.usata && ponteOra() - pt.coppia.creata < PONTE_QR_MAX
-  ? `${pt.host}/ponte/#${PonteCripto.frammento(pt.k, pt.coppia.scade)}` : "");
+  ? `${pt.host}/ponte/#${PonteCripto.frammento(pt.k, pt.coppia.creata + PONTE_QR_PRIMO)}` : "");
 
 // ---------------------------------------------------------------- la presa
 // Una alla volta: le schede che svegliano, un QR nuovo e un nuovo tentativo
@@ -145,11 +147,6 @@ const ponteAvvia = () => (ponteFilaAvvio = ponteFilaAvvio.then(ponteAvviaOra, po
 async function ponteAvviaOra() {
   pt.host = await ponteIndirizzo();
   let c = (await chrome.storage.local.get(PONTE_COPPIA))[PONTE_COPPIA] || null;
-  if (c && ponteOra() >= c.scade) {
-    await chrome.storage.local.remove(PONTE_COPPIA);
-    ponteNota(`Associazione con l'iPhone scaduta alle ${hhmmPonte(c.scade)}`);
-    c = null;
-  }
   if (c && pt.chiaviDi !== c.k) {
     try {
       pt.k = PonteCripto.daB64u(c.k);
@@ -246,14 +243,6 @@ async function ponteControlla() {
   for (const [id, v] of Object.entries(await ponteTerapieTutte())) {
     if (ora - v.ts > PONTE_TERAPIA_MAX + 5e3) await ponteTerapiaFine(Number(id), { ok: false, incerto: true, testo: "la scheda non ha finito in tempo" });
   }
-  if (pt.coppia && ora >= pt.coppia.scade) {
-    const scade = pt.coppia.scade;
-    await ponteFine("scaduta");
-    await chrome.storage.local.remove(PONTE_COPPIA);
-    ponteNota(`Associazione con l'iPhone scaduta alle ${hhmmPonte(scade)}`);
-    await ponteAvvia();
-    return;
-  }
   if (pt.sessione && ora - pt.sessione.ultimo >= PONTE_INATTIVO) await ponteFine("inattivo");
   if (pt.attesa && ora - pt.attesa.ts > PONTE_SALUTO_MAX) pt.attesa = null;
 }
@@ -284,6 +273,8 @@ async function ponteSaluto(b) {
     nTel = PonteCripto.daB64u(m.n);
   } catch { return; }
   if (m.v !== 1 || nTel.length !== 16 || typeof m.dev !== "string" || !/^[\w-]{16,32}$/.test(m.dev)) return;
+  // il link del QR vale per il primo scambio solo pochi minuti: poi non entra più nessuno
+  if (!pt.coppia.dev && ponteOra() - pt.coppia.creata >= PONTE_QR_PRIMO + 60e3) return;
   // L'associazione è del primo telefono che è entrato: un altro, anche con lo
   // stesso QR, si sente dire di no (e il registro lo dice, una volta al minuto)
   // — a meno che chieda «Cancella e riassocia» col codice giusto: allora è lui.
@@ -303,12 +294,12 @@ async function ponteSaluto(b) {
   pt.attesa = { canale: PonteCripto.canalePc(await PonteCripto.chiaviSessione(pt.k, nTel, nPc)), ts: ponteOra(), dev: m.dev, nTel: m.n };
   // (con l'ora del PC: il telefono ne tiene lo scarto, e un ordine porta l'ora del tocco sull'orologio del PC)
   ponteManda(await PonteCripto.sigilla(pt.chiavi.salutoPc, PonteCripto.TIPO.SALUTO_PC, 0,
-    { v: 1, n: PonteCripto.b64u(nPc), eco: m.n, scade: pt.coppia.scade, ora: ponteOra() }));
+    { v: 1, n: PonteCripto.b64u(nPc), eco: m.n, ora: ponteOra() }));
 }
 // «Cancella e riassocia»: la richiesta è un saluto (cifrato con la chiave del QR:
 // senza, non si apre e non arriva qui) che porta il codice. Il codice si controlla
 // QUI, sul PC. Giusto: il telefono di prima esce come con «Revoca» e un'associazione
-// nuova — la scadenza resta la stessa — e questo è il telefono dell'associazione.
+// nuova — senza scadenza, come l'altra — e questo è il telefono dell'associazione.
 // Sbagliato: niente cambia; 5 sbagli e per 10 minuti non si cambia più.
 // Ritorna null se il cambio è fatto, se no la risposta da dare.
 async function ponteCambio(m) {
@@ -445,7 +436,7 @@ async function ponteComando(s, d) {
 }
 async function ponteRisposta(s, d) {
   try {
-    if (d.cmd === "ciao") return { ok: true, dati: { scade: pt.coppia.scade, inattivoMin: PONTE_INATTIVO / 60e3 } };
+    if (d.cmd === "ciao") return { ok: true, dati: { inattivoMin: PONTE_INATTIVO / 60e3 } };
     if (d.cmd === "ordini") return { ok: true, dati: await ponteOrdiniTel() };
     if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d); return await ponteOffriPdf(s, await ponteAggiornaValori(a), a.ep); }
     if (d.cmd === "ordina") {
@@ -820,7 +811,7 @@ const ponteCartellaMemoScrivi = (ep, c) => (ponteFilaCartella = ponteFilaCartell
   m[ep] = { ep, letto: Number(c.letto) || ponteOra(), campi: c.campi.filter((x) => x && PONTE_CARTELLA_CAMPI[x.nome] && typeof x.v === "string")
     .map((x) => ({ nome: x.nome, v: x.v.slice(0, 20000), ro: !!x.ro })) };
   // al massimo 40 pazienti, e niente più vecchio di un turno
-  const tieni = Object.values(m).filter((x) => ponteOra() - x.letto < PONTE_DURATA).sort((a, b) => b.letto - a.letto).slice(0, 40);
+  const tieni = Object.values(m).filter((x) => ponteOra() - x.letto < PONTE_REGISTRO).sort((a, b) => b.letto - a.letto).slice(0, 40);
   await chrome.storage.session.set({ [PONTE_CARTELLA]: Object.fromEntries(tieni.map((x) => [x.ep, x])) });
 }).catch(() => {}));
 async function ponteCartella(a) {
@@ -987,7 +978,7 @@ const ponteTerapiaMemoScrivi = (ep, l) => (ponteFilaTerapiaMemo = ponteFilaTerap
   if (!pt.coppia || !x || x.ep !== ep) return;
   const m = await ponteTerapieMemo();
   m[ep] = x;
-  const tieni = Object.values(m).filter((y) => ponteOra() - y.letto < PONTE_DURATA).sort((a, b) => b.letto - a.letto).slice(0, 40);
+  const tieni = Object.values(m).filter((y) => ponteOra() - y.letto < PONTE_REGISTRO).sort((a, b) => b.letto - a.letto).slice(0, 40);
   await chrome.storage.session.set({ [PONTE_TERAPIA]: Object.fromEntries(tieni.map((y) => [y.ep, y])) });
 }).catch(() => {}));
 // (questa può fallire: chi annota «inviato» non deve credere di averlo fatto)
@@ -996,7 +987,7 @@ function ponteTerapiaRqScrivi(rq, x) {
   const p = ponteFilaTerapiaRq.then(async () => {
     const m = await ponteTerapiaRqTutti();
     m[rq] = { ...(m[rq] || {}), ...x, ts: ponteOra() };
-    const tieni = Object.entries(m).filter(([, y]) => ponteOra() - y.ts < PONTE_DURATA).sort((a, b) => b[1].ts - a[1].ts).slice(0, 60);
+    const tieni = Object.entries(m).filter(([, y]) => ponteOra() - y.ts < PONTE_REGISTRO).sort((a, b) => b[1].ts - a[1].ts).slice(0, 60);
     await chrome.storage.session.set({ [PONTE_TERAPIA_RQ]: Object.fromEntries(tieni) });
   });
   ponteFilaTerapiaRq = p.catch(() => {});
@@ -1351,8 +1342,8 @@ function ponteDaPagina(msg, sender, reply) {
       await ponteFine("nuova associazione");
       const k = PonteCripto.casuale(32);
       const ora = ponteOra();
-      await ponteScriviCoppia({ k: PonteCripto.b64u(k), scade: ora + PONTE_DURATA, creata: ora, usata: false, dev: "", nTel: "" });
-      ponteNota(`Nuovo QR: vale fino alle ${hhmmPonte(ora + PONTE_DURATA)}`);
+      await ponteScriviCoppia({ k: PonteCripto.b64u(k), creata: ora, usata: false, dev: "", nTel: "" });
+      ponteNota(`Nuovo QR: vale per il primo scambio fino alle ${hhmmPonte(ora + PONTE_QR_PRIMO)}`);
       await ponteAvvia();
       return { ok: true, qr: ponteQr(), codice: pt.codice, stato: pontePubblico() };
     });

@@ -17,19 +17,19 @@ cifrato.
 
 ## Per il medico
 
-**Una volta per turno.** Sul PC, nel pannello: **⋯ → iPhone → Associa l'iPhone**. Compare un QR,
+**Una volta sola.** Sul PC, nel pannello: **⋯ → iPhone → Associa l'iPhone**. Compare un QR,
 con accanto un **codice di sei cifre** («482 913»): lo inquadri con la **fotocamera** dell'iPhone e
 tocchi il link. Si apre il pannello, già collegato; lo stesso codice è nel suo menu ⋯. L'associazione
-vale **14 ore** (l'ora di fine è scritta sul PC e sul telefono) e vale per **quel telefono solo**: il
+**non scade**: dura finché non la togli (**Revoca** sul PC, **«Dimentica PC»** sul telefono, o un QR nuovo), e vale per **quel telefono solo**: il
 primo che entra. Un altro telefono che inquadra lo stesso QR si sente dire «Il PC è associato a un
 altro telefono», con **«Cancella e riassocia»**: scrive il codice **93** e quel telefono diventa
-l'associato (il primo esce, come con «Revoca» e un'associazione nuova; la scadenza non si allunga). Il
+l'associato (il primo esce, come con «Revoca» e un'associazione nuova; resta senza scadenza). Il
 codice sbagliato dice «Codice sbagliato» e non cambia niente. Sul PC la pagina ⋯ → iPhone dice
 «iPhone cambiato alle 14:32». Il QR si rivede con «Mostra il QR» solo nei primi due minuti e solo finché nessun
 telefono è entrato; dopo, «Associa» ne fa uno nuovo (e il telefono di prima esce). Conviene
 aggiungerlo alla schermata Home (Condividi → Aggiungi alla schermata Home): l'icona riapre il pannello.
 
-Il QR si inquadra anche **dall'app**: senza un'associazione buona (nessuna, scaduta, chiusa, revocata,
+Il QR si inquadra anche **dall'app**: senza un'associazione buona (nessuna, QR scaduto, chiusa, revocata,
 o un altro telefono al suo posto, e accanto a «Riprova» quando il PC non risponde) c'è **«Scansiona il
 QR»**, che apre la fotocamera nella pagina. Serve
 all'app della schermata Home, che ha una memoria sua: il QR letto con la Fotocamera si apre in Safari,
@@ -38,9 +38,9 @@ Fotocamera dell'iPhone».
 
 Un link del ponte che toglierebbe un'associazione ancora buona **chiede prima**, coi due codici
 («Usa il codice 482 913» o «Tieni quella di adesso»): il codice giusto è quello accanto al QR, sul PC.
-E nessun link vale più di 14 ore, qualunque scadenza porti.
+Il link del QR, invece, vale per il primo scambio solo pochi minuti (5) e una volta sola: dopo, serve un QR nuovo.
 
-**Durante il turno.** Apri il pannello dall'iPhone: si collega da solo, niente QR. L'elenco si rilegge
+**Poi.** Apri il pannello dall'iPhone: si collega da solo, niente QR. L'elenco si rilegge
 da solo ogni volta che torni sull'app («Aggiornato alle 14:32»), e se eri su un paziente anche i suoi
 esiti (un referto arrivato intanto): riletture che l'app fa da sé, e che non tengono aperta la
 sessione. Vedi:
@@ -144,7 +144,7 @@ esami per ROSSI MARIO…»), e la pagina ⋯ → iPhone ha il registro del ponte
 chiuse, comandi, un altro telefono rifiutato).
 
 **La sessione finisce** dopo **3 minuti senza comandi del medico** (quello che l'app chiede da sé —
-rileggere l'elenco, gli ordini — non conta), con «Scollega» sul PC, alla scadenza dell'associazione,
+rileggere l'elenco, gli ordini — non conta), con «Scollega» sul PC,
 con la revoca, se l'estensione o il browser si riavviano, o se **una scheda del gestionale torna
 alla pagina d'accesso** (senza il gestionale il ponte non fa niente). Il telefono lo dice («Sessione
 chiusa · 3 minuti senza comandi», «Il gestionale sul PC è tornato alla pagina d'accesso») e cancella
@@ -229,12 +229,12 @@ il medico usa il pannello.
 ## Come è fatto
 
 **La chiave.** `K`, 32 byte casuali, nasce nel service worker del PC a ogni «Associa l'iPhone». Va
-al telefono **solo nel frammento** del QR: `https://ekg-atlas.whirly.workers.dev/ponte/#k=<base64url>&scade=<ms>` — il
+al telefono **solo nel frammento** del QR: `https://ekg-atlas.whirly.workers.dev/ponte/#k=<base64url>&scade=<ms>` (la fine del link, pochi minuti: non dell'associazione) — il
 frammento non viaggia mai verso un server. L'app lo legge, lo toglie dalla barra e dalla
-cronologia, e tiene `K`, la scadenza (al massimo 14 ore da quando l'ha letto) e un numero casuale suo
+cronologia, e tiene `K` e un numero casuale suo
 (`dev`) nel `localStorage` di Safari: è l'unica cosa che resta sul telefono. Sul PC `K` sta in
-`chrome.storage.local` (`ponte.coppia`) fino alla scadenza o alla revoca: regge il browser chiuso e
-riaperto, come dura il turno; la pagina d'accesso del gestionale chiude la sessione, non
+`chrome.storage.local` (`ponte.coppia`) fino alla revoca, senza scadenza: regge il browser chiuso e
+riaperto, il logout e il rientro; la pagina d'accesso del gestionale chiude la sessione, non
 l'associazione. Il QR si rivede solo nei primi due minuti e prima che
 un telefono entri; il primo che entra lega l'associazione al suo `dev` (`ponte.coppia.dev`), e il PC
 risponde «no» al saluto di ogni altro — salvo `cambio`, qui sotto.
@@ -243,8 +243,7 @@ risponde «no» al saluto di ogni altro — salvo `cambio`, qui sotto.
 un campo in più, `cambio`: il codice scritto dal medico (stesso messaggio cifrato di ogni saluto, con
 `salutoTel`: senza la chiave non si apre e il PC non risponde nemmeno). Il codice si controlla **sul PC**
 (`PONTE_CODICE_CAMBIO` in `ponte-sw.js`, l'unico posto). Giusto: la sessione di prima finisce
-(«Un altro iPhone ha preso il posto di questo»), `ponte.coppia.dev` passa al nuovo telefono, la
-scadenza resta quella, e la risposta è quella di ogni saluto. Sbagliato: `{no: "codice"}`, niente cambia.
+(«Un altro iPhone ha preso il posto di questo»), `ponte.coppia.dev` passa al nuovo telefono, e la risposta è quella di ogni saluto. Sbagliato: `{no: "codice"}`, niente cambia.
 Cinque sbagli di fila: `{no: "bloccato", fino}` per 10 minuti, anche col codice giusto. Un saluto di
 cambio già visto non vale due volte. Il vecchio telefono, se rientra, trova «associato a un altro
 telefono» e può riprendersi il posto allo stesso modo.
@@ -404,7 +403,7 @@ framework; solo il suo codice (CSP `default-src
 in `localStorage`, IndexedDB o nelle cache; il suo service worker tiene solo i file dell'app. Il
 manifest ha `display: "standalone"`: l'icona della schermata Home apre l'app a tutto schermo, con una
 memoria sua, separata da Safari. Per questo il QR si inquadra **dentro l'app** («Scansiona il QR»):
-la chiave resta lì, e l'icona si ricollega da sola fino alla scadenza. Un QR nuovo inquadrato con l'app già aperta riparte da
+la chiave resta lì, e l'icona si ricollega da sola, senza scadenza. Un QR nuovo inquadrato con l'app già aperta riparte da
 capo (e, se c'è un'associazione ancora buona con un'altra chiave, chiede prima).
 
 **«Scansiona il QR»** apre la fotocamera nella pagina (`getUserMedia`, la fotocamera posteriore; la
@@ -474,10 +473,12 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
   telefono), gli orari, le misure dei messaggi, il numero della stanza e il ruolo. I log del Worker
   non hanno una riga per richiesta (`invocation_logs: false`): l'indirizzo della presa, con la
   stanza, non finisce nella dashboard di Cloudflare.
-- **Telefono perso o rubato sbloccato**, durante le 14 ore: chi lo ha in mano può usare il pannello.
-  Lo limitano lo sblocco del telefono stesso, la scadenza, la sessione che si chiude dopo 3 minuti
+- **Telefono perso o rubato sbloccato**: l'associazione **non scade** (scelta del medico: un telefono
+  solo suo, e nessun Face ID nell'app), quindi chi lo ha in mano e sbloccato può usare il pannello finché
+  non lo si revoca. Lo limitano lo sblocco del telefono stesso, la sessione che si chiude dopo 3 minuti
   senza comandi (l'app da sola non la tiene aperta), la spia sul PC, il Registro, e **Revoca
-  l'iPhone** dal PC (la chiave di quel telefono non apre più niente).
+  l'iPhone** dal PC (la chiave di quel telefono non apre più niente): se il telefono si perde sbloccato,
+  la prima cosa è **Revoca** sul PC.
 - **Il QR sullo schermo** vale quanto la chiave, ma per poco e per uno: si rivede solo nei primi due
   minuti, si toglie da solo appena l'iPhone entra, e dopo il primo telefono non apre a nessun altro.
   Nel dubbio, Revoca. Nel pannello (⋯ → iPhone) il QR sta nella pagina dell'estensione, in una
@@ -488,13 +489,13 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
   il 93 evita soltanto un cambio per sbaglio (sono due cifre) e non va preso per una password. Un cambio
   si vede sul PC («iPhone cambiato alle …», nel Registro) e il primo telefono ne esce.
 - **PC sbloccato e incustodito**: dà già tutto il gestionale a chi si siede. Il ponte aggiunge che una
-  sessione aperta si vede e si chiude con un tocco; il QR di prima non si rivede. La chiave vale fino
-  alla scadenza, anche col browser chiuso e riaperto: se nel gestionale rientra un altro medico, il
-  telefono associato lavora col suo accesso. A fine turno, **Revoca l'iPhone**.
+  sessione aperta si vede e si chiude con un tocco; il QR di prima non si rivede. La chiave vale
+  finché non la si revoca, anche col browser chiuso e riaperto: se nel gestionale rientra un altro medico, il
+  telefono associato lavora col suo accesso. Se il PC cambia mano, **Revoca l'iPhone**.
 - **L'app del telefono divide l'origine con EKG Atlas**: chi può cambiare il sito (l'account Cloudflare, il repository, una sua dipendenza) può leggere la chiave e i dati decifrati; il medico lo accetta.
 - **Niente segretezza «in avanti»**: le chiavi di sessione vengono da K e da numeri che viaggiano
   cifrati con chiavi derivate da K. Chi registrasse il traffico di un giorno *e* poi rubasse K di
-  quel giorno (dal PC o dal telefono) potrebbe decifrarlo. K vive al massimo 14 ore; uno scambio
+  quel giorno (dal PC o dal telefono) potrebbe decifrarlo. K vive finché non la si revoca; uno scambio
   ECDH per sessione lo eviterebbe, al prezzo di altro codice.
 - **Per scelta del medico non c'è Face ID dentro l'app**: possedere la chiave basta.
 - **La stazione di stampa** riceve i fogli degli ordini e risponde; non comanda e non legge niente.
