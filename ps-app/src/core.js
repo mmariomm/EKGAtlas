@@ -3181,7 +3181,7 @@
   // sono quelle dei pazienti di cui il medico risponde: Ambulatorio (e OBI,
   // dove c'è); l'attesa del triage e «tutti» no.
   const SCHEDA_NOSTRA = /^(AMBULATORIO|OBI)\b/i, SCHEDA_TRIAGE = /^TRIAGE\b/i;
-  const TRIAGE_LISTA = "triage.lista.v1";   // { ts, righe: [{ nome, breve, eta, triage, area, arrivo }] } — solo per il telefono
+  const TRIAGE_LISTA = "triage.lista.v1";   // { ts, righe: [{ nome, breve, eta, triage, area, arrivo, k? }] } — solo per il telefono
   function leggiSmartPagina(doc, url) {
     if (!eSmart(doc, url) || classify(doc) === "login" || !doc.querySelector(".AFCHeaderTable")) return { ok: false, perche: "non è la lista smart" };
     let origine = "";
@@ -3330,7 +3330,9 @@
     // l'attesa del triage: letta in fondo, col suo link, e tenuta a parte (solo per il telefono)
     if (L.sel && L.sel.triage) {
       giro.triage = { n: L.sel.n, filtrata: L.filtrata,
-        righe: L.righe.map((r) => ({ nome: r.name, breve: nomeCorto(r.name), eta: r.eta, triage: r.triage, area: AREE_TITOLO[chiaveArea(r.area)] || "", arrivo: r.arrivo || 0 })) };   // (l'area solo se si riconosce, col nome corto)
+        righe: L.righe.map((r) => ({ nome: r.name, breve: nomeCorto(r.name), eta: r.eta, triage: r.triage, area: AREE_TITOLO[chiaveArea(r.area)] || "", arrivo: r.arrivo || 0,
+          // (la chiave di nome e nascita, come per chi è noto solo dalla smart: «Accetta in ambulatorio» dal telefono)
+          ...(r.nato ? { k: chiaveSmart(r.name, improntaNascita(r.nato)) } : {}) })) };   // (l'area solo se si riconosce, col nome corto)
     }
     const prossima = L.schede.find((s) => s.nostra && !giro.letti[s.base]) || (giro.triage ? null : L.schede.find((s) => s.triage));
     if (prossima && giro.salti < 4) {
@@ -17021,6 +17023,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   let PONTE_VALORI = null;   // questa scheda l'ha aperta il ponte per «Aggiorna i valori» di { ep }
   let PONTE_CARTELLA = null; // questa scheda l'ha aperta il ponte per salvare la cartella: { ep, fase, campi }
   let PONTE_TERAPIA = null;  // …o per la pagina Terapia: { ep, nome, fase, cosa, q | voce, visti, prima }
+  let PONTE_ACCETTA = null;  // …o per «Accetta in ambulatorio»: { ep?, k?, nome, area, fase }
   let PONTE_AGG = "";        // l'episodio di questa pagina che il telefono ha appena salvato («Ricarica»)
   const ICO_TEL = ICO.tel;   // (sulla griglia delle altre: 16 px, tratto 1.6)
   const PONTE_CSS = `
@@ -17046,6 +17049,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // l'indirizzo della sua pagina, come il gestionale l'ha dato: solo da leggere, e di quell'episodio
   const ponteUrlPaziente = (p) => (p && leggibilePagina(p.url) && param(p.url, "EPISODIO_ID") === p.ep
     && /\/menuPsoEpisodio\.do$/i.test(new URL(p.url).pathname) ? p.url : "");
+  // Al triage, per quello che il PC ne sa: la sua pagina è quella del triage e nessuna lista
+  // dell'ambulatorio l'ha visto dopo. (Il telefono offre «Accetta in ambulatorio»; lo dice la lista del triage.)
+  const ponteInTriage = (p) => { const u = ponteUrlPaziente(p); return !!u && param(u, "MVPG") === "PsoEpisodioClinicoTriage" && !((p.lista || 0) > (p.ts || 0)); };
   // L'elenco, come la vista Pazienti: chi è in lista e chi è nella stanza (col
   // suo posto), il triage, la nota e i promemoria — cioè «Da fare»: la nota è
   // la prima voce aperta senza ora, i promemoria quelle con l'ora (il telefono
@@ -17073,6 +17079,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       prom: promDi(i.p.ep, m.prom).map((x) => ({ id: x.id, t: x.t, testo: x.testo })),
       df: dfDi(i.p.ep, m.df).map((x) => ({ id: x.id, testo: x.testo, t: x.t, fatto: x.fatto })),
       ordina: !!ponteUrlPaziente(i.p) && !i.prec,
+      ...(!i.prec && ponteInTriage(i.p) ? { accetta: true } : {}),
       stato: i.prec ? null : ponteStato(i.p.ep, m.df),
     }));
   }
@@ -17300,7 +17307,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // service worker prova la prossima).
   async function ponteEsegui(m) {
     if (classify(document) === "login") return { no: "login" };
-    if (LAVORO || PONTE_VALORI || PONTE_CARTELLA || PONTE_TERAPIA) return { no: "lavoro" };
+    if (LAVORO || PONTE_VALORI || PONTE_CARTELLA || PONTE_TERAPIA || PONTE_ACCETTA) return { no: "lavoro" };
     if (!PANNELLO) return { no: "pannello" };
     const a = m.args || {}, cmd = m.cmd;
     const fatto = (r) => {
@@ -17318,6 +17325,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       return { ok: true, dati: { ts: t?.ts || 0, righe: Array.isArray(t?.righe) ? t.righe : [], rilegge: !!(r && r.ok) } };
     }
     if (cmd === "richieste") return fatto({ ok: true, dati: ponteCatalogo(), registro: "catalogo degli esami" });
+    // «Accetta in ambulatorio»: qui solo chi è e la lista del triage da aprire; il resto la scheda di sottofondo
+    if (cmd === "accetta") return ponteAccetta(a);
     const p = a.ep ? pontePaziente(a.ep) : null;
     if (!p) return { ok: false, errore: "Questo paziente non è più nell'elenco del PC" };
     // dimesso sul PC (archiviato): dal telefono non si tocca più
@@ -17651,6 +17660,137 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     btn.click();   // il «Conferma» della pagina: TERAPIA_SERIALIZED lo compone lei, il modulo lo manda il browser
   }
 
+  // ---- «Accetta in ambulatorio» dal telefono: la freccia della riga nella lista del triage ----
+  // Chi: una riga del Triage del telefono (la chiave di nome e nascita della
+  // lista smart) o un paziente noto al PC ancora al triage (l'episodio). Qui,
+  // in una scheda del medico, solo chi è e l'indirizzo della lista del triage
+  // (il link della pagina, o la stessa pagina del menu); il resto lo fa una
+  // scheda di sottofondo (ponteAccettaQui).
+  function ponteAccetta(a) {
+    let chi = null;
+    if (a.ep) {
+      const p = pontePaziente(a.ep);
+      if (!p) return { ok: false, errore: "Questo paziente non è più nell'elenco del PC" };
+      if (p.arch) return { ok: false, errore: "Dimesso sul PC: niente fatto", dimesso: true };
+      if (PANNELLO.pazModello().info.get(p.ep)?.prec) return { ok: false, errore: "Episodio precedente: niente fatto" };
+      if (!ponteInTriage(p)) return { ok: false, errore: "Non è più al triage sul PC: niente fatto" };
+      chi = { ep: p.ep, nome: p.name, ...(p.nato ? { k: chiaveSmart(p.name, p.nato) } : {}) };
+    } else if (a.k) {
+      const t = store.get(TRIAGE_LISTA, null), r = (Array.isArray(t?.righe) ? t.righe : []).filter((x) => x && x.k === a.k);
+      if (r.length !== 1) return { ok: false, errore: r.length ? "Due righe uguali al Triage: accettalo sul PC" : "Non è più al Triage sul PC: niente fatto" };
+      chi = { k: a.k, nome: r[0].nome, area: Object.keys(AREE_TITOLO).find((k) => AREE_TITOLO[k] === r[0].area) || "" };
+    }
+    if (!chi || !chi.nome) return { ok: false, errore: "Paziente non valido: niente fatto" };
+    return { ok: true, dati: { url: urlMenu("PsoPazientiTriage"), ...chi } };
+  }
+  // Le righe della lista del triage (PsoPazientiTriage: una per area, chi è al
+  // triage per l'area in testa): il link «Apri Episodio» con la linguetta
+  // (nome e nascita) e le frecce «Accetta in ambulatorio» della stessa riga.
+  function righeTriage(doc, base) {
+    const out = [];
+    for (const a of doc.querySelectorAll('a[href*="MVPG=PsoEpisodioClinicoTriage"]')) {
+      const div = a.querySelector(".myLinguetta"), tr = a.closest("tr"), l = div && linguettaDi(div);
+      if (!l || !tr) continue;
+      let ep = "";
+      try { ep = new URL(a.getAttribute("href") || "", base).searchParams.get("EPISODIO_ID") || ""; } catch { continue; }
+      out.push({ ep, ...l, frecce: [...tr.querySelectorAll('a[name="AccettaAMBU"]')] });
+    }
+    return out;
+  }
+  // La scheda di sottofondo. Sulla lista del triage: la riga di QUEL paziente
+  // — per episodio, o per nome e nascita; una sola —, col suo nome (diverso:
+  // Errore grave), e la SUA freccia, dello stesso episodio. Ogni dubbio:
+  // niente cliccato. Il service worker annota «inviato» PRIMA del clic, una
+  // volta. Dopo si guarda e basta: «In ambulatorio» solo con la pagina del
+  // paziente in ambulatorio (il modulo dell'ambulatorio, quell'episodio, quel
+  // nome) o con la lista dell'ambulatorio che lo mostra — tornati sulla lista
+  // del triage senza di lui, si apre quella col suo link —; se no, incerto.
+  const ACCETTA_PASSAGGIO_MS = 10e3;   // le pagine di passaggio se ne vanno da sole in un attimo
+  async function ponteAccettaQui() {
+    const c = PONTE_ACCETTA;
+    const fine = (esito) => ask({ t: "ponteAccettaFatto", ...esito });
+    if (!c || c.fase === "perso" || !c.nome) return fine({ ok: false, incerto: !!c && c.fase !== "lista", testo: "la scheda non sa più che cosa fare" });
+    const mvpg = mvpgDi(document, location.href), testa = areaInTesta(document), area = testa ? titoloArea(testa.k, testa.label) : "";
+    if (c.fase === "lista") {
+      if (mvpg !== "PsoPazientiTriage" || !testa) return fine({ ok: false, testo: "la scheda non ha aperto la lista del triage" });
+      const sue = righeTriage(document, location.href).filter((r) => (c.ep ? r.ep === c.ep : chiaveSmart(r.name, improntaNascita(r.nato)) === c.k));
+      if (!sue.length) {
+        return fine({ ok: false, testo: c.area && c.area !== testa.k ? `è al triage per ${titoloArea(c.area)}, il gestionale sul PC è su ${area}`
+          : `non è nella lista del triage di ${area}, sul PC` });
+      }
+      if (sue.length > 1) return fine({ ok: false, testo: "due righe uguali nella lista del triage" });
+      const r = sue[0];
+      if (normNome(r.name) !== normNome(c.nome)) return fine({ ok: false, grave: "nome diverso" });
+      if (r.frecce.length !== 1) return fine({ ok: false, testo: "nella sua riga non c'è la freccia «Accetta in ambulatorio»" });
+      const f = r.frecce[0];
+      let u = null;
+      try { u = new URL(f.getAttribute("href") || "", location.href); } catch { /* sotto */ }
+      if (!u || u.origin !== location.origin || !/\/menuPsoEpisodio\.do$/i.test(u.pathname) || u.searchParams.get("MVPG") !== "PsoEpisodioTriageToAmbulatorio") {
+        return fine({ ok: false, testo: "la freccia della sua riga non è quella che conosco" });
+      }
+      if (!/^[\w.-]{1,40}$/.test(r.ep) || u.searchParams.get("EPISODIO_ID") !== r.ep) return fine({ ok: false, grave: "episodio diverso" });
+      // (la freccia porta la risorsa dell'area in testa: se il PC la conosce, dev'essere quella)
+      const ris = (store.get(AREE_OPZ, {}) || {})[testa.k]?.id, risF = u.searchParams.get("RISORSA_ID");
+      if (ris && risF && ris !== risF) return fine({ ok: false, testo: "la freccia porta a un'altra area" });
+      if (!(await accettaAspetta())) return fine({ ok: false, testo: "un ordine sta ancora lavorando sul PC: riprova fra poco" });
+      // il service worker lo annota PRIMA del clic: da qui in poi si guarda e basta
+      const via = await ask({ t: "ponteAccettaInvio", ep: r.ep });
+      if (via && via.ok) f.click();   // la SUA freccia: l'indirizzo è quello della pagina, mai fatto qui
+      return;
+    }
+    // dopo il clic (ep: quello della riga cliccata)
+    const ep = c.ep;
+    if (!ep) return fine({ ok: false, incerto: true, testo: "la scheda non sa più quale episodio" });
+    const qui = param(location.href, "EPISODIO_ID") === ep;
+    const f = qui ? formCartella(document, ep) : null;
+    if (f && param(f.getAttribute("action") || "", "MVPG") === "PsoEpisodioClinicoAmbulatorio") {
+      if (normNome(nomeInPagina()) !== normNome(c.nome)) return fine({ ok: false, incerto: true, grave: "nome diverso dopo il clic" });
+      accettatoQui(c, ep, true);
+      return fine({ ok: true, area });
+    }
+    // le pagine di passaggio (PsoEpisodioTriageToAmbulatorio col suo script, PsoEpisodio e PsoPazienti col loro refresh)
+    if ((qui && (mvpg === "PsoEpisodioTriageToAmbulatorio" || mvpg === "PsoEpisodio")) || mvpg === "PsoPazienti") {
+      setTimeout(() => fine({ ok: false, incerto: true, testo: "dopo il clic il gestionale si è fermato a metà" }), ACCETTA_PASSAGGIO_MS);
+      return;
+    }
+    // tornati sulla lista del triage: lui c'è ancora? Se no, la lista dell'ambulatorio (il suo link) lo dice
+    if (mvpg === "PsoPazientiTriage" && c.fase === "inviato") {
+      if (righeTriage(document, location.href).some((r) => r.ep === ep)) return fine({ ok: false, incerto: true, testo: "dopo il clic è ancora nella lista del triage" });
+      const via = await ask({ t: "ponteAccettaVerifica" });
+      if (via && via.ok) location.assign(urlMenu("PsoPazientiAmbulatorio"));
+      return;
+    }
+    if (eListaArea(document, location.href)) {
+      const r = righeLista(document, location.href).filter((x) => x.ep === ep);
+      if (r.length !== 1) return fine({ ok: false, incerto: true, testo: "non lo vedo nella lista dell'ambulatorio" });
+      if (normNome(r[0].name) !== normNome(c.nome)) return fine({ ok: false, incerto: true, grave: "nome diverso dopo il clic" });
+      accettatoQui(c, ep, false);
+      return fine({ ok: true, area });
+    }
+    return fine({ ok: false, incerto: true, testo: "dopo il clic il gestionale ha aperto un'altra pagina" });
+  }
+  // (un ordine al lavoro in un'altra scheda: la stessa sessione del server — si aspetta, prima del clic)
+  async function accettaAspetta() {
+    try {
+      const o = await chrome.storage.session.get(["ordini", "motore"]);
+      if (Array.isArray(o && o.ordini)) ORDINI_VIVI = o.ordini;
+      MOTORE_SW = (o && o.motore) || null;
+    } catch { /* resta quello che si sa */ }
+    await cancelloMotore();
+    return !motoreAltrove();
+  }
+  // Accettato: il PC lo conosce come lo conoscerebbe aprendolo (la sua pagina,
+  // o la sua riga della lista dell'area) e dal Triage del telefono se ne va.
+  function accettatoQui(c, ep, pagina) {
+    leggiAreaPagina(document, location.href);
+    if (pagina) {
+      const an = anagraficaPagina(document);
+      rememberPatient(ep, nomeInPagina(), location.href, triageDi(document), an.eta, an.sesso, improntaNascita(nascitaInPagina(document)));
+    }
+    const t = store.get(TRIAGE_LISTA, null);
+    if (c.k && Array.isArray(t?.righe)) store.set(TRIAGE_LISTA, { ...t, righe: t.righe.filter((r) => r && r.k !== c.k) });
+  }
+
   // ==================================================================== BOOT
   // The extension runs on two applications: SA4PSO, and the clinical portal
   // where the multi-day table lives. Everything below the storico reader is
@@ -17886,6 +18026,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     PONTE_VALORI = chi && chi.ponteValori ? chi.ponteValori : null;
     PONTE_CARTELLA = chi && chi.ponteCartella ? chi.ponteCartella : null;
     PONTE_TERAPIA = chi && chi.ponteTerapia ? chi.ponteTerapia : null;
+    PONTE_ACCETTA = chi && chi.ponteAccetta ? chi.ponteAccetta : null;
     ponteAscolta();
     scadenzaQuesiti();
     const pageType = classify(document);
@@ -17909,6 +18050,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (PONTE_VALORI) ask({ t: "ponteValoriFatto", ok: false, testo: "il gestionale chiede di rifare l'accesso" });
       if (PONTE_CARTELLA) ask({ t: "ponteCartellaFatto", ok: false, incerto: PONTE_CARTELLA.fase === "inviato", testo: "il gestionale chiede di rifare l'accesso" });
       if (PONTE_TERAPIA) ask({ t: "ponteTerapiaFatto", ok: false, incerto: PONTE_TERAPIA.fase === "inviato", testo: "il gestionale chiede di rifare l'accesso" });
+      if (PONTE_ACCETTA) ask({ t: "ponteAccettaFatto", ok: false, incerto: PONTE_ACCETTA.fase !== "lista", testo: "il gestionale chiede di rifare l'accesso" });
       // e la sessione del ponte verso l'iPhone si chiude (l'associazione resta: rientrati, il telefono riapre)
       if (hasExt()) ask({ t: "ponteLogin" });
       forgetAll();
@@ -17932,6 +18074,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (PONTE_CARTELLA) { ponteCartellaQui().catch(() => ask({ t: "ponteCartellaFatto", ok: false, testo: "errore nella scheda" })); return; }
     // …e quella della pagina Terapia dal telefono (un errore dopo «Conferma» resta un dubbio)
     if (PONTE_TERAPIA) { ponteTerapiaQui().catch(() => ask({ t: "ponteTerapiaFatto", ok: false, incerto: PONTE_TERAPIA.fase === "inviato", testo: "errore nella scheda" })); return; }
+    // …e quella di «Accetta in ambulatorio» (dopo il clic, un errore resta un dubbio)
+    if (PONTE_ACCETTA) { ponteAccettaQui().catch(() => ask({ t: "ponteAccettaFatto", ok: false, incerto: PONTE_ACCETTA.fase !== "lista", testo: "errore nella scheda" })); return; }
     // la scheda di un ordine che passa il gestionale all'area del paziente: le
     // pagine di mezzo (PsoPsoImposta, la lista dove atterra) fanno quello e basta
     if (lavoroAreaQui(document, location.href)) return;

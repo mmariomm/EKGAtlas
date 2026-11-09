@@ -748,6 +748,7 @@ await blocco("La smart letta dietro: le schede, chi c'è, chi è dimesso", async
   check(r.esito === "ok" && giro.join() === "AMB_7,AMB,TRI" && /PAZIENTI_FILTRO=TRI$/.test(r.url), `aperta su «Tutti», passa ad «Ambulatorio» e poi al «Triage», ognuno col link della sua scheda (got: ${giro.join(" → ")})`);
   check(r.triage?.righe?.length === 1 && r.triage.righe[0].nome === "MARINI ADA" && r.triage.righe[0].breve === "MARINI A." && r.triage.righe[0].triage === "VERDE" && r.triage.righe[0].eta === 38 && r.triage.righe[0].area === "Bassa"
     && r.triage.righe[0].arrivo > 0 && !("nato" in r.triage.righe[0]) && r.triage.ts > 0, `il Triage letto va a parte (triage.lista.v1), senza nascita (got: ${JSON.stringify(r.triage)})`);
+  check(r.triage?.righe?.[0]?.k === "sm" + impronta(`MARINI ADA|${impronta("08/08/1988")}`), `…con la chiave di nome e nascita, per «Accetta in ambulatorio» dal telefono (got: ${r.triage?.righe?.[0]?.k})`);
   check(r.pannello === 0, "dietro non nasce il pannello");
   const moro = r.pazienti.find((p) => p.name === "MORO DINO"), ferrari = r.pazienti.find((p) => p.ep === "700032");
   check(moro && /^sm/.test(moro.ep) && !moro.url && r.aree.membri[moro.ep]?.k === "obi" && moro.triage === "ARANCIONE" && moro.nato === impronta("09/09/1999") && moro.arrivo > 0,

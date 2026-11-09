@@ -1261,7 +1261,8 @@ foglio i motivi per **tornare in Pronto Soccorso**.
 
 Sotto le aree, la sezione **«Triage · alle 14:32»**: chi aspetta al triage (le due aree insieme),
 come l'ha letto il PC (comando `triage`), dal colore più urgente e a pari colore da chi aspetta da
-più tempo; età, attesa e, se nota, l'area; le righe non si toccano. Sparisce se è vuota, se è
+più tempo; età, attesa e, se nota, l'area; la riga si tocca solo nel suo **«Accetta»** (sotto,
+«Accettare in ambulatorio»). Sparisce se è vuota, se è
 stata letta più di 30 minuti fa o se il PC (un'estensione più vecchia) non conosce il comando.
 Aprendo l'app (o tornandoci, o con aggiorna) il telefono chiede al PC di rileggere la lista smart
 (`triage` con `rileggi`, al più ogni 2 minuti, con «Segue il gestionale» acceso) e richiede
@@ -1331,6 +1332,21 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   **«Conferma per ROSSI M.»**: il PC preme il «Conferma» della pagina, in una scheda di sottofondo,
   una volta, e lo verifica — «Confermata», «Non confermata» col perché, o «Incerto: controlla sul
   PC». Tutto in [Terapia](#terapia-dal-pannello-fino-a-conferma-dal-telefono-conferma-col-tuo-tocco).
+- **Accettare in ambulatorio dal telefono** (chi aspetta al triage, per prenderlo in carico): su ogni
+  riga del Triage, e sulla pagina di un paziente che il PC sa ancora al triage («Al triage»),
+  **«Accetta»**. Il primo tocco arma, col nome — «Accetto ROSSI M. in ambulatorio? Tocca di nuovo» —, il
+  secondo (entro 6 secondi; un doppio tocco per sbaglio non vale) lo manda. Il PC fa quello che fa il
+  medico a mano, in una scheda di sottofondo: la **lista del triage** del gestionale
+  (PsoPazientiTriage, quella dell'area in testa: ognuno sta nella lista della sua area), la riga di
+  **quel** paziente e la **freccia** della sua riga, «Accetta in ambulatorio» — una volta. Poi
+  guarda: la pagina del paziente in ambulatorio (o, tornato sulla lista del triage, la lista
+  dell'ambulatorio che lo mostra) è **«In ambulatorio»**, e il telefono lo apre sulla **Cartella**
+  (anamnesi, esame obiettivo, Richieste: come ogni altro paziente). Se no: «Non accettato» col
+  perché (non è nella lista del triage di quell'area; è al triage per l'altra area, e il gestionale
+  è su questa — si passa all'area sul PC e si riprova; nella riga non c'è la freccia), «Errore
+  grave» (la riga o la freccia di un altro episodio o di un altro nome: niente cliccato), o
+  «Incerto: controlla sul PC» (dopo il clic la pagina non l'ha mostrato): allora niente bottone, e
+  non si ripreme. Le regole: [Perché è robusto](#perché-è-robusto-regole-di-sicurezza-nel-codice), 22.
 - **Si vede sul PC**: finché il telefono è collegato, ogni scheda mostra **«iPhone collegato ·
   Scollega»** (la spia è ferma), e ogni comando va nel **Registro**. Dopo **3 minuti senza comandi** del medico la
   sessione si chiude da sola; tornando sull'app si riapre da sola.
@@ -2380,6 +2396,27 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     domanda mai fatta si scartano. La chiave nasce fra il PC e la stazione (ECDH): il telefono
     che passa il QR non la conosce. Sulla stazione, del foglio resta solo il numero e com'è andata
     (e, per la sua pagina, l'ora, il tipo, le pagine). Prova: `test/ext-stazione.mjs`.
+22. **«Accetta in ambulatorio» dal telefono: la freccia della lista del triage, una volta, e vista.**
+    Cambia lo stato del paziente nel gestionale (il medico lo prende in carico): parte solo dal
+    secondo tocco col nome, e solo dalla pagina del gestionale. La scheda di sottofondo apre la
+    lista del triage (il link della pagina, o la stessa pagina del menu: mai un parametro in più) e
+    cerca la riga del paziente — per episodio, o per nome e nascita come la lista smart; una sola —:
+    il nome della riga dev'essere il suo, e la freccia (`a[name="AccettaAMBU"]`,
+    `MVPG=PsoEpisodioTriageToAmbulatorio`) quella della sua riga, dello stesso episodio e, se il PC
+    conosce le aree di Imposta, della risorsa dell'area in testa. Un nome o un episodio che non
+    tornano: **«Errore grave»**, nel Registro degli errori senza nomi («accetta telefono»), e niente
+    si clicca; ogni altro dubbio, o un ordine al lavoro (la stessa sessione del server), lo stesso:
+    niente. L'indirizzo della freccia non si costruisce e non si chiede mai: lo **clicca** la scheda,
+    come il medico (è una GET che accetta: una seconda la rifarebbe). Il service worker annota
+    «inviato» (col numero della richiesta, `ponte.accetta.rq` in `storage.session`) **prima** del
+    clic; dopo, le pagine si guardano e basta — la pagina di passaggio e PsoEpisodio vanno da sole
+    (nella registrazione, dal pulsante della pagina del triage, che apre lo stesso indirizzo senza
+    la risorsa — una registrazione della freccia non c'è ancora: PsoEpisodioTriageToAmbulatorio →
+    PsoEpisodio → la pagina in ambulatorio); «In ambulatorio» solo con la pagina del paziente col modulo dell'ambulatorio, di
+    quell'episodio e quel nome, o con la lista dell'ambulatorio che lo mostra; ogni altra cosa è
+    «Incerto: controlla sul PC», e lo stesso numero rimandato ha la stessa risposta, mai un secondo
+    clic. Prima del clic soltanto, una scheda che il browser lascia scarica si riapre sulla lista,
+    una volta (è una lettura). Prova: `test/ext-accetta.mjs`.
 
 > **Postazione condivisa**: `localStorage` e la memoria dell'estensione sono legati al **profilo
 > Chrome**, non al login dell'ospedale. Usa l'estensione in un profilo tuo. Se il profilo è

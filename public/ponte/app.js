@@ -35,6 +35,7 @@
   const ATTESA_CARTELLA = 110e3;     // salvare la cartella: il PC, al peggio, 10 + 3 + 60 secondi (e la rete)
   const ATTESA_TERAPIE = 110e3;      // leggere la Terapia, o cercare nella sua tendina: una scheda del PC, al peggio 10 + 90 secondi
   const ATTESA_TERAPIA = 130e3;      // aggiungere un farmaco: 10 + 3 + 90 secondi (e la rete); oltre, «incerto» finché il PC non risponde
+  const ATTESA_ACCETTA = 90e3;       // «Accetta in ambulatorio»: 10 + 60 secondi (e la rete); oltre, «incerto» finché il PC non risponde
   // la cartella del paziente, coi nomi del modulo del gestionale
   const CARTELLA = [["ANAMNESI", "Anamnesi"], ["MALATTIE_PREGRESSE", "Anamnesi remota"], ["FARMACI_ASSUNTI", "Farmaci"], ["ALLERGIE", "Allergie"], ["ESAME_OBIETTIVO", "Esame obiettivo"]];
   const uguale = (a, b) => String(a ?? "").replace(/\s+/g, " ").trim() === String(b ?? "").replace(/\s+/g, " ").trim();
@@ -93,6 +94,8 @@
     terapiaSi: null,     // il PC conosce la Terapia? (null: non si sa ancora; false: un PC più vecchio — niente scheda)
     terapie: new Map(),  // ep → le terapie lette sul PC: { ep, letto, righe: [{ prog, descr, qta, um, via, dil, … }], opz: { um, via, dil }, pref }
     tf: null,            // «＋ Farmaco», il foglio: { ep, passo: "scegli" | "dose", q, voci, qVoci, cerca, errVoci, v, altro, rq, stato, esito }
+    acc: new Map(),      // «Accetta in ambulatorio»: chiave della riga del Triage (o episodio) → { rq, stato, esito }
+    accArma: null,       // …dopo il primo tocco: { id, ts }
   };
   const MODO = "psassist.ponte.modo";
   try { const m = localStorage.getItem(MODO); if (m === "mappa" || m === "dafare") S.modo = m; } catch { /* solo in memoria */ }
@@ -100,7 +103,7 @@
     S.pazienti = null; S.triage = null; S.mappa = null; S.mappaSel = ""; S.zoom = 1; S.eo = null; S.eoVecchio = false; S.eoSheet = false; S.eoQ = ""; if (S.eoAnnulla) clearTimeout(S.eoAnnulla.t); S.eoAnnulla = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.promTesto = ""; S.arma = null;
     S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
-    S.terapiaSi = null; S.terapie.clear(); S.tf = null;
+    S.terapiaSi = null; S.terapie.clear(); S.tf = null; S.acc.clear(); S.accArma = null;
     S.zip = null; S.zipErr = ""; S.zipArma = null; S.zipStato.clear();
     for (const f of S.zipFile.values()) try { URL.revokeObjectURL(f.url); } catch { /* già via */ }
     S.zipFile.clear();
@@ -1369,10 +1372,68 @@
     const att = (r) => (r.arrivo > 0 ? Math.max(0, Math.round((ora - r.arrivo) / 60e3)) : null);
     const testo = (m) => (m == null ? "" : m < 60 ? `${m}′` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`);
     const righe = [...t.righe].sort((a, b) => prio(a) - prio(b) || (att(b) ?? -1) - (att(a) ?? -1)).map((r) =>
-      `<div class="paz trg t-${TRIAGE[r.triage] || "nessuno"}"><span class="tr"></span><span class="cor"><span class="r1"><span class="nome">${esc(r.nome || r.breve)}</span>${
+      `<div class="paz trg t-${TRIAGE[r.triage] || "nessuno"}${r.k && S.accArma && S.accArma.id === r.k ? " armata" : ""}"><span class="tr"></span><span class="cor"><span class="r1"><span class="nome">${esc(r.nome || r.breve)}</span>${
         Number.isInteger(r.eta) ? `<span class="eta">${r.eta} anni</span>` : ""}${att(r) != null ? `<span class="att">${testo(att(r))}</span>` : ""}${
-        r.area ? `<span class="ar">${esc(r.area)}</span>` : ""}</span></span></div>`).join("");
+        r.area ? `<span class="ar">${esc(r.area)}</span>` : ""}</span>${r.k ? accEsito(r.k) : ""}</span>${r.k ? accBtn(r.k, r.breve || r.nome, "Accetta") : ""}</div>`).join("");
     return `<div class="lbl">Triage <span class="ora">· alle ${hhmm(t.ts - (S.scarto || 0))}</span></div><div class="carta">${righe}</div>`;
+  }
+  // «Accetta in ambulatorio», su una riga del Triage (con la chiave del PC: un PC più vecchio non la dà, e
+  // niente bottone) o su un paziente che il PC sa ancora al triage. Due tocchi col nome, come l'ordine;
+  // poi il PC — una scheda di sottofondo, la lista del triage del gestionale, la freccia della sua riga,
+  // una volta — e l'esito com'è: «In ambulatorio» (e il paziente si apre, sulla Cartella), «Non
+  // accettato: …», o «Incerto: controlla sul PC» (allora niente bottone: non si ripreme).
+  function accBtn(id, breve, etichetta) {
+    const x = S.acc.get(id), armata = S.accArma && S.accArma.id === id;
+    if (x && x.esito && x.esito.tono !== "err") return "";   // (accettato, o incerto: non si ripreme)
+    const t = x && x.stato ? "Accetto…" : armata ? `Accetto ${breve} in ambulatorio? Tocca di nuovo` : etichetta;
+    return `<button type="button" class="btnmini acc${armata ? " arma" : ""}" data-a="accetta" data-id="${esc(id)}" ${x && x.stato ? "disabled" : ""}>${esc(t)}</button>`;
+  }
+  const accEsito = (id) => { const x = S.acc.get(id); return x && x.esito && x.esito.tono !== "ok" ? `<span class="accesito ${x.esito.tono}">${esc(x.esito.testo)}</span>` : ""; };
+  const accPazHtml = (p) => (p.accetta && !p.prec ? `<div class="accpaz"><span class="cor"><b>Al triage</b>${accEsito(p.ep)}</span>${accBtn(p.ep, p.breve || p.nome, "Accetta in ambulatorio")}</div>` : "");
+  function accChi(id) {
+    const r = ((S.triage && S.triage.righe) || []).find((x) => x.k === id);
+    if (r) return { args: { k: id }, nome: r.nome || r.breve || "" };
+    const p = paziente(id);
+    return p && p.accetta ? { args: { ep: id }, nome: p.nome || p.breve || "" } : null;
+  }
+  function accetta(id) {
+    const x = S.acc.get(id), c = accChi(id);
+    if (!c || (x && (x.stato || (x.esito && x.esito.tono !== "err")))) return;
+    const ora = Date.now();
+    if (!S.accArma || S.accArma.id !== id || ora - S.accArma.ts > 6000) {
+      S.accArma = { id, ts: ora };
+      render();
+      setTimeout(() => { if (S.accArma && S.accArma.id === id && Date.now() - S.accArma.ts >= 6000) { S.accArma = null; render(); } }, 6100);
+      return;
+    }
+    if (ora - S.accArma.ts < 800) return;   // un doppio tocco per sbaglio è un tocco solo
+    S.accArma = null;
+    accettaOra(id, c);
+  }
+  // Il numero (rq) resta finché non si sa com'è andata: rimandato (la rete), il PC risponde com'è andata e non rifà.
+  async function accettaOra(id, c) {
+    const x = S.acc.get(id) || { rq: "" };
+    if (!x.rq) x.rq = nuovoRq();
+    x.stato = "invio"; x.esito = null; S.acc.set(id, x); render();
+    const si = (d) => {
+      x.stato = ""; x.rq = ""; x.esito = { tono: "ok", testo: "In ambulatorio" };
+      avviso(`In ambulatorio: ${c.nome}${d && d.area ? ` · ${d.area}` : ""}`);
+      // adesso è fra i pazienti, e si apre come gli altri (sulla Cartella), se il medico è ancora sull'elenco
+      const ep = d && d.ep, sullElenco = S.vista.nome === "lista";
+      aggiornaLista(true).then(() => { if (ep && sullElenco && S.vista.nome === "lista" && paziente(ep)) { S.scheda = "cartella"; apriPaziente(ep); } });
+    };
+    const no = (e) => {
+      x.stato = ""; x.esito = { tono: e.incerto ? "warn" : "err", testo: e.message };
+      if (!e.incerto) x.rq = "";   // il PC ha detto di no (niente cliccato): un tocco nuovo è una richiesta nuova
+      avviso(e.message, e.incerto ? "" : "err", !!e.incerto);
+    };
+    try {
+      si(await chiedi("accetta", c.args, ATTESA_ACCETTA, false, { rq: x.rq, scade: Date.now() + 30e3,
+        tardi: (d) => { if (d.ok) si(d.dati); else no(errDa(d)); render(); } }));
+    } catch (e) {
+      no(e.inviata ? Object.assign(new Error("Incerto: il PC non ha ancora risposto — controlla sul PC"), { incerto: true }) : e);
+    }
+    render();
   }
   // ------------------------------------------------------------ la mappa
   // Sola lettura: la stanza com'è sul PC (letti, sedie, aree), con chi sta dove.
@@ -1585,7 +1646,7 @@
     const ordini = codaDi(p.ep) + ordiniDi(p.ep).map((o) => ordineHtml(o)).join("");
     const tab = (s, t) => `<button class="${S.scheda === s ? "on" : ""}" data-a="scheda" data-s="${s}" role="tab" aria-selected="${S.scheda === s}">${t}</button>`;
     const ter = S.terapiaSi && S.scheda === "terapia";
-    return `<main>${vitaliHtml(p)}${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}${S.terapiaSi ? tab("terapia", "Terapia") : ""}</div>
+    return `<main>${vitaliHtml(p)}${accPazHtml(p)}${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}${S.terapiaSi ? tab("terapia", "Terapia") : ""}</div>
       ${ordini}${S.scheda === "richieste" ? noteHtml(p) : ""}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : ter ? vistaTerapia(p) : vistaRichieste(p)}</main>${ctaHtml(p)}${
       S.eoSheet && S.scheda === "cartella" && S.eo ? foglioEo() : ""}${ter ? foglioTerapia(p) : ""}`;
   }
@@ -1721,7 +1782,7 @@
   // le azioni che senza il PC non vanno
   // (l'ordine no: senza collegamento va in coda)
   const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
-    "trileggi", "tconferma"]);
+    "trileggi", "tconferma", "accetta"]);
   function render() {
     if (premuto) { rinviato = true; return; }
     // il cursore resta dov'era: un ridisegno non deve rubare il campo a chi scrive
@@ -1882,6 +1943,7 @@
     else if (a === "zipVia") cancellaZip(b.dataset.id);
     else if (a === "zipTutte") cancellaTutte();
     else if (a === "paz") apriPaziente(b.dataset.ep);
+    else if (a === "accetta") accetta(b.dataset.id);
     else if (a === "modo") { S.modo = b.dataset.m === "mappa" ? "mappa" : b.dataset.m === "dafare" ? "dafare" : "lista"; try { localStorage.setItem(MODO, S.modo); } catch { /* solo in memoria */ } render(); }
     else if (a === "mappasel") { S.mappaSel = b.dataset.k; render(); }
     else if (a === "indietro") { S.vista = { nome: "lista", ep: "" }; S.arma = null; render(); aggiornaLista(); }

@@ -323,7 +323,7 @@ ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un si
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
 `aggiornaValori(ep)`, `richieste` (il catalogo; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
-{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stazioneCollega(sta, nome)`,
+{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `accetta(k | ep, rq)`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stazioneCollega(sta, nome)`,
 più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
 `ordineNuovo` come «Conferma e stampa», col numero `"tel" + oid` (l'`oid` lo fa il telefono quando
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),
@@ -367,6 +367,22 @@ visto: prima ogni scheda del gestionale dice se la Terapia di quel paziente è d
 giro, una riga scritta: se sì, no); la scheda scrive la riga come il giro del PC, la rilegge, il
 service worker annota «inviato» e solo allora la scheda clicca il **«Conferma»** della pagina; la
 pagina che torna si guarda e basta («Confermata», o «incerto»). Lo stesso `rq` non si rifà mai.
+
+**Accetta in ambulatorio.** `accetta` porta il paziente — `k`, la chiave di nome e nascita di una
+riga del Triage (`triage` la dà a ogni riga che ha la nascita; un PC più vecchio no, e il telefono
+non mostra il bottone), o `ep`, un paziente noto al PC ancora al triage (`pazienti` lo segna
+`accetta`: la sua pagina è quella del triage e nessuna lista dell'ambulatorio l'ha visto dopo) — e
+il suo numero `rq` (`ponte.accetta.rq`: la fase e com'è andata). Una scheda del medico dice chi è
+e dà l'indirizzo della lista del triage; una scheda di sottofondo (`ponte.accette`, una alla volta;
+`ponteAccettaQui` in `core.js`) apre la lista, trova la riga — una sola, il suo nome, la sua
+freccia dello stesso episodio — e chiede `ponteAccettaInvio`: il service worker annota «inviato»
+**prima**, e solo allora la scheda clicca la freccia (`a[name="AccettaAMBU"]`). Dopo si guarda e
+basta: la pagina del paziente in ambulatorio, o — tornata sulla lista del triage senza di lui —
+la lista dell'ambulatorio aperta col suo link (`ponteAccettaVerifica`); se no «incerto». Il PC lo
+ricorda come se l'avesse aperto (la sua pagina) e lo toglie dal Triage del telefono; le pagine di
+quel paziente aperte sul PC dicono «Aggiornato dal telefono · Ricarica». Lo stesso `rq` non si
+rifà mai. Nel registro del ponte il nome e com'è andata, come per la Terapia; nel registro degli
+errori («accetta telefono») solo il perché.
 
 **Un PDF da stampare.** `stampa` è `pdf` al contrario: il telefono manda il file a pezzi (~390 KB,
 una risposta per pezzo) con un numero suo, `rid`. Il primo pezzo dice già di no se il file non comincia
