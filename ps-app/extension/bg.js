@@ -1375,7 +1375,7 @@ function ordPubblico(rec, l = []) {
         return alTel(P("warn", cosa(rotti), rotti[0].why || `${dove(rotti)} ha dato errore`, st.riassunto),
           P("warn", cosa(rotti), "aspettano qualcuno al PC", rotti[0].why, st.riassunto));
       }
-      if (dalTelefono(rec)) return alTel(P("warn", "Etichette NON stampate", "tocca Stampa", st.riassunto), P("warn", "Etichette NON stampate", "aspettano qualcuno al PC", st.riassunto));
+      if (dalTelefono(rec)) return alTel(P("warn", "Etichette NON stampate", "tocca Stampa", st.riassunto), P("warn", "Confermato · etichette al PC", "", st.riassunto));
       return P("run", "Confermata", "Etichette pronte", st.riassunto, st.quesito);
     }
     case "errore": {
@@ -1451,7 +1451,7 @@ const fogliNuovi = (jobs, s) => jobs.map((j) => {
 // stampanti dell'infermeria, attaccate a un altro PC. Si decide quando
 // l'ordine nasce e non cambia più: un ordine per la stazione che non la trova
 // dice «Infermeria non risponde», mai stampato qui da solo. `ricordata`: la
-// scelta del medico («Stampa: Qui · Infermeria», `stampa.dove`), che vale solo
+// scelta del medico («Stampa: PC · Infermeria», `stampa.dove`), che vale solo
 // con una stazione collegata.
 async function stampaDove(d) {
   const o = await chrome.storage.local.get(["stampa", "stazione.coppia"]);

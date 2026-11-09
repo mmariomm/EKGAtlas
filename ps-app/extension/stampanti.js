@@ -5,7 +5,7 @@
 // Windows; scelte tutte e due, la stampa automatica è accesa (l'interruttore
 // la spegne). `ruota`: se SumatraPDF può girare un'etichetta più larga che
 // alta — di partenza no per Zebra, ZDesigner, TSC e Citizen, sì per le altre.
-// In fondo, la stazione di stampa collegata a questo PC (`dove`: «Qui · Infermeria»).
+// In fondo, la stazione di stampa collegata a questo PC (`dove`: «PC · Infermeria»).
 // (Un modulo: i nomi qui non toccano quelli di portale.js.)
 const $ = (id) => document.getElementById(id);
 const sel = { etichette: $("setic"), a4: $("sa4") };
@@ -81,7 +81,7 @@ chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && (ch
 controlla();
 
 // La stazione di stampa collegata (stazione-sw.js: la collega l'iPhone, col QR
-// della stazione): com'è, «Stampa: Qui · Infermeria» (la scelta, `stampa.dove`),
+// della stazione): com'è, «Stampa: PC · Infermeria» (la scelta, `stampa.dove`),
 // «Scollega» (due tocchi).
 const hhmm = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 let staArmata = false;

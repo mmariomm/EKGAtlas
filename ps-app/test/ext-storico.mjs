@@ -279,15 +279,15 @@ await paziente.waitForTimeout(300);
 await paziente.locator('#psassist-host [data-seg="esiti"]').click();
 await paziente.waitForTimeout(400);
 // un'impostazione rara: sta nel menu ⋯, non negli Esiti di tutti i giorni
-check((await paziente.locator("#psassist-host #portapri").count()) === 0, "negli Esiti nessuna riga sull'indirizzo del portale");
+check((await paziente.locator("#psassist-host #stampanti").count()) === 0, "negli Esiti nessuna riga sull'indirizzo del portale");
 await paziente.locator("#psassist-host #menubtn").click();
-check((await paziente.locator("#psassist-host .menu #portapri").count()) === 1,
-  "l'indirizzo del portale si aggiunge dal menu ⋯");
+check((await paziente.locator("#psassist-host .menu #stampanti").count()) === 1,
+  "le impostazioni (e con loro l'indirizzo del portale) stanno nel menu ⋯: una voce sola");
 // Il permesso NON si può chiedere da qui: chrome.permissions.request vuole un
 // gesto dell'utente, e un gesto non sopravvive al salto verso il service
 // worker. Il pulsante apre la pagina delle impostazioni, dove il gesto è vero.
 const apre = paziente.context().waitForEvent("page", { timeout: 8000 }).catch(() => null);
-await paziente.locator("#psassist-host #portapri").click();
+await paziente.locator("#psassist-host #stampanti").click();
 const impostazioni = await apre;
 check(!!impostazioni && /portale\.html$/.test(impostazioni.url()),
   `il pulsante apre la pagina delle impostazioni (got ${impostazioni ? impostazioni.url().slice(-30) : "niente"})`);

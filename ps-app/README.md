@@ -69,7 +69,7 @@ senza dati, l'eccezione dichiarata nella regola 9.
 **Stampa automatica** (facoltativa, Windows, niente admin): etichette all'etichettatrice e il resto
 all'A4, senza dialogo. Prima si avvisa l'IT, poi si installa una volta dalla cartella `stampa`
 dello zip estratto — i passi in [`stampa/README.md`](stampa/README.md) — e si sceglie dal
-pannello, menu **⋯ → Stampanti**.
+pannello, menu **⋯ → Impostazioni**.
 
 **L'ID dell'estensione è fisso**: `jhhlgabilanhhnncahahclcjbefaofij`, in Chrome e in Edge, da
 qualunque cartella (viene dalla `"key"` del manifest). Spostare la cartella non rompe niente.
@@ -115,7 +115,7 @@ hai spostato o ridimensionato, e **Affianca**, restano come le hai messe. **—*
 resta dove la trascini; il mouse fermo sulla pill (o un tocco) riapre la finestra dove l'avevi lasciata
 (vedi *Forma*). Per usare il gestionale sotto, si riduce alla pill: la finestra lo copre quasi tutto, apposta.
 
-**Forma.** ⋯ → **Forma: Finestra · Al passaggio · Colonna** (si ricorda; il reset la lascia). **Al
+**Forma.** ⋯ → **Forma: Finestra · Al passaggio · Affianca** (si ricorda; il reset la lascia). **Al
 passaggio** è la forma di partenza (l'ha chiesta il medico): il mouse fermo sulla pill per un quarto di
 secondo (chi ci passa sopra e basta non la apre) apre la finestra senza togliere la tastiera al
 gestionale, e mezzo secondo dopo che il mouse è uscito la richiude — non con il cursore o del testo non
@@ -127,11 +127,8 @@ resta, sopra la finestra, e si trascina anche lì; se copre ⋯ e — quelli si 
 altro la libera, Esc la chiude; la pill che ricompare sotto il mouse fermo non si riapre da sola; col
 dito un tocco apre e un tocco chiude. **Finestra** è quella di sempre, qui sopra: si apre e si chiude
 con un tocco. In tutt'e due **F2** (non mentre scrivi nel gestionale) la apre **sui Pazienti, col
-filtro pronto** — F2 · lettere · Invio apre un paziente — e la richiude. **Colonna**: a destra, a
-tutta altezza, e il gestionale **si stringe** accanto (un margine destro alla pagina) invece di
-essere coperto; larghezza dal bordo sinistro (420 px – 60% dello schermo), ricordata; **F2** (non
-mentre scrivi nel gestionale), la linguetta o **—** la nascondono: resta una linguetta di 7 px
-(F2 la riapre dov'era).
+filtro pronto** — F2 · lettere · Invio apre un paziente — e la richiude. **Affianca**: la finestra in una colonna a destra (il 36% dello schermo), col gestionale visibile
+a sinistra; si sposta e si ridimensiona come la Finestra. (Chi aveva scelto «Colonna» la ritrova come Affianca.)
 **Tabellone** (⋯, o la sua icona accanto al ⋯ sulla lista) apre la pagina `tabellone.html` dell'estensione: lo stesso
 tabellone a tutta pagina, da fissare o sul secondo schermo. Disegna da uno specchio delle sole
 chiavi del tabellone che le schede del gestionale tengono in `chrome.storage.local` a ogni
@@ -146,17 +143,17 @@ pill: lì stai lavorando tu. La finestra si apre da sola quando la pagina l'ha a
 **giro di esami** no: dalla spedizione alle etichette parla la striscia nell'angolo, e la
 finestra la apri tu con un tocco. **Esc** o un clic fuori la riducono; dopo **Copia** si riduce da sola e la pill dice
 «✓ Copiato · incolla». Il menu **⋯** è a sezioni, ognuna col suo titolo piccolo, le voci corte due
-per riga, ognuna con la sua **icona** (grigia, 16 px) accanto alla parola; una sezione che su quella
-pagina non ha voci non c'è. In cima **Forma** (vedi sopra), con **Al centro** e **Affianca a
-destra** (una colonna, col gestionale accanto). Poi:
+per riga, ognuna con la sua **icona** (grigia, 16 px) accanto alla parola — salvo iPhone 📱, Impostazioni 🖨️ e Registrazioni 📦, che hanno la stessa emoji del menu del telefono; una sezione che su quella
+pagina non ha voci non c'è. In cima **Forma** (vedi sopra), con **Al centro**. Poi:
 - **Paziente** (sulla sua pagina): **Ricetta SISS** e **Terapia** (solo con l'estensione), **Stampa
   le richieste**; in Dimissioni anche **Esporta i fogli** (un JSON) e **Importa i fogli…** (sulla
   lista, dove un paziente non c'è, la sezione si chiama **Dimissioni**);
 - **Strumenti**, quelli clinici: **Tabellone** e **iPhone** (il Ponte; solo con l'estensione),
   **Cronometro**, **Riferimenti** (i *can't-miss killers*), **Consegne** (vedi sotto); in fondo, sulla stanza, **Modifica la
   stanza** e **Segue il gestionale**;
-- **Impostazioni**: **Stampanti**, e — scelte le due stampanti — **Stampa automatica** (vedi
-  «Stampa automatica»), **Registrazioni**, il **Registro**, **Indirizzo del portale** e per ultimo,
+- **Impostazioni**: **Impostazioni** (una pagina sola: stampanti, stazione di stampa, indirizzo del
+  portale, iPhone), e — scelte le due stampanti — **Stampa automatica** (vedi
+  «Stampa automatica»), **Registrazioni**, il **Registro** e per ultimo,
   da solo sulla sua riga e in rosso, **Reset dati pazienti**. Le voci che si accendono e si spengono
   (Segue il gestionale, Stampa automatica) si spuntano: al posto dell'icona il loro stato (il
   pallino blu con la spunta, acceso);
@@ -916,7 +913,7 @@ range non cambiano; i referti (ECG, Imaging) stanno sotto il Lab.
   risposto: il pannello dice perché). Poi, con l'estensione, salva i **referti** non ancora salvati
   (ECG, immagini, visite: mai il laboratorio — vedi *Salvare i referti*). Con l'estensione lo fa
   già da solo all'apertura del paziente (vedi sopra): il bottone resta per rifarlo subito.
-  **solo alterati** / **tutti** filtra le righe; **↺ Reset** dimentica i valori letti e la scheda
+  **solo alterati** / **tutti** filtra le righe; **⋯ → Dimentica i valori letti** (due tocchi) dimentica i valori letti e la scheda
   in archivio di questo paziente, e **⭳ Carica i valori** li rilegge da zero (i tuoi segni
   restano).
 - Di un prelievo il gestionale può **non dare data e ora** (né nel campo nascosto della riga, né
@@ -1376,7 +1373,7 @@ sono i fogli. Mai mentre scrivi; e sulla pagina di un **altro** paziente il dial
 solo: «Etichette di ROSSI M. pronte · **Stampa**», un tocco. **Un ordine partito dall'iPhone non
 apre mai da solo il dialogo**: davanti al PC può non esserci nessuno, e un dialogo aperto su uno
 schermo che nessuno guarda è un'etichetta non stampata che sembra stampata. La striscia lo dice
-(«Etichette NON stampate · dall'iPhone · tocca Stampa»), il telefono pure («aspettano qualcuno al
+(«Etichette NON stampate · dall'iPhone · tocca Stampa»), il telefono non la fa suonare come un allarme («Confermato · etichette al
 PC»), e un tocco su **Stampa** nella striscia del PC le stampa. Così è senza la **stampa automatica**; con lei
 non c'è né la scheda né il dialogo: tutti i fogli li stampa il service worker, e la striscia
 dice a che punto è (vedi «Stampa automatica», più sotto).
@@ -1474,7 +1471,7 @@ sequenza: tutte le etichette → tutte le liste → la prenotazione RX.
 Una pagina web non può scegliere la stampante né saltare il dialogo: è una barriera del
 browser. Per questo c'è un piccolo **aiutante per Windows**, la cartella `stampa/` dello zip:
 si installa **una volta, senza amministratore** (doppio clic su `installa.cmd`, tre passi in
-[`stampa/README.md`](stampa/README.md)), e poi nel pannello, menu **⋯ → Stampanti**, si sceglie
+[`stampa/README.md`](stampa/README.md)), e poi nel pannello, menu **⋯ → Impostazioni**, si sceglie
 quale stampante è l'**Etichettatrice** e quale l'**A4** (di partenza, la predefinita di
 Windows), con **Stampa una pagina di prova** per ciascuna. Da lì:
 
@@ -1629,13 +1626,13 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   Sull'iPhone, nell'app: **⋯ → Scansiona QR PC stampante**, e si inquadra il QR: una carta «Stazione di
   stampa · Infermeria», con lo stesso codice, e **Collega**. Il telefono passa l'offerta al PC,
   dentro il ponte; il PC e la stazione fanno la loro chiave fra loro. Poi lo dicono tutti e tre: il
-  telefono «Collegata al PC», la stazione «Collegata al PC del medico», il PC in **⋯ → Stampanti**
+  telefono «Collegata al PC», la stazione «Collegata al PC del medico», il PC in **⋯ → Impostazioni**
   «Infermeria · collegata dal telefono alle 14:32», con **Scollega** — e la stazione e il PC lo
   stesso codice. Il QR vale cinque minuti e per un PC solo (poi ne compare un altro); un QR
   scaduto, o di una stazione che non risponde, lo dice e non collega niente; un telefono non
   associato: «Prima associa l'iPhone al PC». Resta collegata finché uno dei due non **scollega** (due
   tocchi, sul PC o sulla stazione): l'altro lo sa subito, o appena si riaccende.
-- **Scegliere: «Stampa: Qui · Infermeria»**, nel menu ⋯ del pannello e nella pagina Stampanti, con
+- **Scegliere: «Stampa: PC · Infermeria»**, nel menu ⋯ del pannello e nelle Impostazioni, con
   una stazione collegata; si ricorda. Su Infermeria il bottone dell'ordine lo dice («Conferma e
   stampa · 2 esami → Infermeria») e la stampantina in intestazione è «→ Infermeria» (rossa quando
   non risponde). Vale per le etichette e i fogli A4 di un ordine (e per la loro **Ristampa**) e per
@@ -2312,7 +2309,7 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     sempre, col motivo scritto; e mai da solo per un ordine dal telefono, che aspetta un tocco al
     PC. Le parole le scrive una funzione sola nel service worker (`ordPubblico`, a ogni
     scrittura dell'ordine): la striscia del PC e il telefono dicono le stesse, salvo dove il
-    telefono ha la sua (`tel`: «aspettano qualcuno al PC», non «tocca Stampa»). Spenta
+    telefono ha la sua (`tel`: «Confermato · etichette al PC», non «Etichette NON stampate · tocca Stampa»). Spenta
     (l'interruttore), non configurata, o col preferito, il percorso è quello di prima, identico.
 18. **Il testo di un referto si mostra solo se è di questo paziente.** Ogni testo letto da un PDF
     passa da `identitaReferto`: il codice fiscale scritto nel PDF contro quello del paziente (il

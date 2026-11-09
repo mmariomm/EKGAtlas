@@ -45,12 +45,11 @@
 <div class="box" id="stampa">
   <h1>Stampa automatica</h1>
   <p class="sub">Etichette all'etichettatrice, liste esami e moduli all'A4: ogni foglio va da solo alla sua stampante, senza il dialogo di stampa.</p>
-  <span id="sst" class="stato">Stampa automatica: controllo…</span>
+  <label class="interr"><input type="checkbox" id="sauto" disabled><span id="sst" class="stato">Stampa automatica: controllo…</span></label>
   <p id="sperche" class="perche" hidden></p>
-  <label class="interr"><input type="checkbox" id="sauto" disabled> Stampa automatica</label>
   <div class="riga">
     <div><label for="setic">Etichettatrice</label><select id="setic" disabled></select></div>
-    <button class="sec" id="sprovaetic" data-prova="etichette" disabled>Stampa una pagina di prova</button>
+    <button class="sec" id="sprovaetic" data-prova="etichette" disabled>Prova</button>
   </div>
   <div class="riga">
     <div><label for="sruota">Etichette più larghe che alte</label><select id="sruota" disabled>
@@ -59,7 +58,7 @@
   </div>
   <div class="riga">
     <div><label for="sa4">A4</label><select id="sa4" disabled></select></div>
-    <button class="sec" id="sprovaa4" data-prova="a4" disabled>Stampa una pagina di prova</button>
+    <button class="sec" id="sprovaa4" data-prova="a4" disabled>Prova</button>
   </div>
   <div id="sm" class="msg"></div>
   <details id="sinst">
@@ -79,7 +78,7 @@
   <div id="stasi" hidden>
     <span id="stast" class="stato ok"></span>
     <p id="stariga" class="hint" style="margin-top:8px"></p>
-    <div class="dove" role="group" aria-label="Dove stampano gli ordini"><span>Stampa</span><button data-dove="qui">Qui</button><button data-dove="stazione" id="stanome"></button></div>
+    <div class="dove" role="group" aria-label="Dove stampano gli ordini"><span>Stampa</span><button data-dove="qui">PC</button><button data-dove="stazione" id="stanome"></button></div>
     <p class="hint">Vale per i fogli degli ordini (anche dall'iPhone, che può cambiarla per un ordine) e per l'etichetta anagrafica. Se la stazione non risponde, la striscia lo dice, con «Stampa qui».</p>
     <button class="via" id="stavia" style="margin-left:0">Scollega</button>
   </div>

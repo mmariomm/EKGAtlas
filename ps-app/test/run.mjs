@@ -510,7 +510,7 @@ async function scenarioAutoConfirm(browser) {
   check(scen, /Etichette non stampate/.test(annullata) && /1 esame confermato \d\d:\d\d/.test(annullata) && (await $panel(b.page, AZIONE).innerText().catch(() => "")) === "Ristampa"
     && (await $panel(b.page, ".gchip.warn, .pill.run.warn").count()) === 1,
     `annullata la stampa: ambra, «Etichette non stampate · 1 esame confermato HH:MM» e «Ristampa» — non il ✓ di una stampa uscita (got: ${annullata})`);
-  const VISTO = "#strstop, #psassist-host #gchipstop";
+  const VISTO = "#strstop, #psassist-host #gchipstop, #psassist-host #stopbtn";
   const vx = await $panel(b.page, VISTO).first().getAttribute("title").catch(() => "");
   check(scen, vx === "Visto: togli", `e accanto il ✕ «Visto: togli» (got «${vx}»)`);
   await $panel(b.page, AZIONE).click();
@@ -1628,7 +1628,7 @@ async function scenarioChiudi(browser) {
   await $panel(page, "#chiudi").click();
   await page.waitForSelector("#psassist-host .selbar", { timeout: 5000 });
   const sel = (await $panel(page, ".selbar").innerText()).replace(/\s+/g, " ");
-  check(scen, (await $panel(page, "#chiudi").count()) === 0 && /1 SELEZIONATI/.test(sel) && /TROPONINA/.test(sel) && !/EMOCROMO|CREATININA/.test(sel),
+  check(scen, (await $panel(page, "#chiudi").count()) === 0 && !/SELEZIONATI/.test(sel) && (await $panel(page, ".selbar .selitem").count()) === 1 && /TROPONINA/.test(sel) && !/EMOCROMO|CREATININA/.test(sel),
     `restano scelti solo quelli che mancano: la TROPONINA, non i due già in carrello (got: ${sel})`);
   const cta = (await $panel(page, "#goconfirm").innerText().catch(() => "")).replace(/\s+/g, " ").trim();
   check(scen, cta === "Conferma per ROSSI M. · 1 esame", `e il conto sul bottone è quello vero (got: ${cta || "niente"})`);
@@ -1996,8 +1996,8 @@ async function scenarioBloccatoSvuota(browser) {
   const p2 = await altraScheda(context, listUrl, RES.CENTRAL);
   const riga = (await $panel(p2, ".daconf").innerText()).replace(/\s+/g, " ");
   const sezioni = (await $panel(p2, ".sec .lbl").allInnerTexts()).join(" | ");
-  check(scen, /Questa richiesta \(1 esame\) è ancora da confermare/.test(riga) && /Già nel carrello — Lab centrale \(0\)/i.test(sezioni),
-    `riaperta da un'altra scheda, sulla risorsa senza esami: la riga c'è (got: ${riga} · ${sezioni})`);
+  check(scen, /Questa richiesta \(1 esame\) è ancora da confermare/.test(riga) && !/Già nel carrello/i.test(sezioni),
+    `riaperta da un'altra scheda, sulla risorsa senza esami: la riga c'è, il carrello vuoto no (got: ${riga} · ${sezioni})`);
   check(scen, (await $panel(p2, "#dcconferma").count()) === 1 && (await $panel(p2, "#dcsvuota").count()) === 1,
     "e non è un vicolo cieco: sulla riga, «Conferma e stampa» e «Svuota»");
   await shot(p2, "bloccato-riga");
@@ -2028,7 +2028,7 @@ async function scenarioBloccatoSvuota(browser) {
     "e la pagina è il carrello, riletto (una lettura): vuoto anche lì");
   await apriStriscia(p2);
   check(scen, (await $panel(p2, ".daconf").count()) === 0, "la riga se ne va");
-  check(scen, /Già nel carrello — Lab centrale \(0\)/i.test((await $panel(p2, ".sec .lbl").allInnerTexts()).join(" | ")), "e il pannello mostra il carrello vero");
+  check(scen, !/Già nel carrello/i.test((await $panel(p2, ".sec .lbl").allInnerTexts()).join(" | ")), "e il carrello vuoto non ha una sezione sua");
   await context.close();
 }
 
@@ -3243,14 +3243,14 @@ async function scenarioUiErgonomics(browser) {
   await $panel(page, '.chip.preset:has-text("Epatico")').click();
   await $panel(page, '.opt[title*="EMOCROMOCITOMETRICO"]').click();
   const bar = await $panel(page, ".selbar").innerText();
-  check(scen, /POC:/.test(bar) && /LAB CENTRALE:/.test(bar) && /6 SELEZIONATI/.test(bar),
+  check(scen, /POC:/.test(bar) && /LAB CENTRALE:/.test(bar) && !/SELEZIONATI/.test(bar) && (await $panel(page, ".selbar .selitem").count()) === 6,
     `selbar compatta con gruppi e conteggio (got: ${bar.replace(/\s+/g, " ").slice(0, 80)})`);
   check(scen, (await $panel(page, ".selbar .chip").count()) === 0, "selbar è testo, non pill");
 
   // hover ✕ removes one exam
   await $panel(page, ".selbar .selitem").first().hover();
   await $panel(page, ".selbar .selx").first().click();
-  check(scen, /5 SELEZIONATI/.test(await $panel(page, ".selbar").innerText()), "✕ al passaggio rimuove il singolo esame");
+  check(scen, (await $panel(page, ".selbar .selitem").count()) === 5, "✕ al passaggio rimuove il singolo esame");
 
   // selecting must NOT bounce the scroll back to the top (le Richieste compatte
   // stanno in una finestra normale: la si abbassa perché ci sia da scorrere)
@@ -3378,7 +3378,7 @@ async function scenarioContinuity(browser) {
   await richieste(page);
   await page.waitForSelector("#psassist-host", { state: "attached" });
   check(scen, (await $panel(page, "#q").inputValue()) === "dolore toracico irradiato", "quesito ripristinato dopo il refresh");
-  check(scen, /2 SELEZIONATI/.test(await $panel(page, ".selbar").innerText()), "selezione ripristinata dopo il refresh");
+  check(scen, (await $panel(page, ".selbar .selitem").count()) === 2, "selezione ripristinata dopo il refresh");
 
   // run WITHOUT auto-confirm → land with the receipt → the panel's own
   // CONFERMA button presses the native one → wizard on the patient page
@@ -4200,12 +4200,16 @@ async function scenarioRisultati(browser) {
     `e la schermata lo dice, in piccolo: «${ignota.chip}», col perché nel passaggio del mouse (got ${ignota.avviso.slice(0, 90)})`);
   await b4.context.close();
 
-  // «↺ Reset» dimentica i valori letti: la tabella sparisce, il bottone torna
-  // a «⭳ Carica i valori», e una nuova lettura la ricostruisce da zero
+  // «Dimentica i valori letti» (⋯, a due tocchi; non nella testata degli Esiti): la tabella sparisce,
+  // il bottone torna a «⭳ Carica i valori», e una nuova lettura la ricostruisce da zero
+  check(scen, (await $panel(page, ".wuh #valreset").count()) === 0, "«Reset» non sta più nella testata degli Esiti, accanto ad «Aggiorna»");
+  await $panel(page, "#menubtn").click();
+  await $panel(page, "#valreset").click();
+  check(scen, /Tocca di nuovo/.test(await $panel(page, "#valreset").innerText()) && (await page.locator("#psassist-host .sttab").count()) > 0, "il primo tocco chiede soltanto (la tabella resta)");
   await $panel(page, "#valreset").click();
   await page.waitForTimeout(300);
   check(scen, (await page.locator("#psassist-host .sttab").count()) === 0 && /Carica i valori/.test(await $panel(page, "#risall").innerText()),
-    "«↺ Reset» dimentica i valori letti: niente tabella, si ricomincia da «Carica i valori»");
+    "il secondo dimentica i valori letti: niente tabella, si ricomincia da «Carica i valori»");
   await $panel(page, "#risall").click();
   await attendiTabella(page, 2);
   check(scen, (await page.locator("#psassist-host .sttab thead th").count()) === 3, "e una nuova lettura ricostruisce le due colonne");
@@ -4336,7 +4340,7 @@ async function scenarioFinestra(browser) {
   await context.close();
 }
 
-// ⋯ → Forma: Finestra (di sempre) · Al passaggio · Colonna. Una prova per comportamento.
+// ⋯ → Forma: Finestra (di sempre) · Al passaggio · Affianca. Una prova per comportamento.
 async function scenarioForma(browser) {
   const scen = "forma";
   const mock = createMock({});
@@ -4441,68 +4445,31 @@ async function scenarioForma(browser) {
   await page.keyboard.press("Escape");
   check(scen, !(await aperta()), "Esc la chiude (e la sfissa)");
 
-  // --- Colonna: la pagina si stringe, niente coperto
-  await forma("colonna");
-  await page.evaluate(() => {
-    const b = document.createElement("button");
-    b.id = "bordodx"; b.textContent = "bordo";
-    b.style.cssText = "position:absolute;right:0;top:300px;width:60px;height:30px";
-    b.onclick = () => { window.__bordo = (window.__bordo || 0) + 1; };
-    document.body.style.position = "relative";
-    document.body.appendChild(b);
-  });
+  // --- Affianca: la finestra in una colonna a destra, il gestionale visibile a sinistra (non c'è più «Colonna»)
+  if (!(await aperta())) await $panel(page, "#expand").click();
+  if (!(await $panel(page, ".menu").count())) await $panel(page, "#menubtn").click();
+  check(scen, (await $panel(page, '[data-forma="colonna"]').count()) === 0 && (await $panel(page, ".menu .mforma button").allInnerTexts()).join("|") === "Finestra|Al passaggio|Affianca",
+    "Forma: Finestra · Al passaggio · Affianca (Colonna non c'è più, e «Affianca a destra» non è una voce a parte)");
+  await $panel(page, "#winaffianca").click();
   const geo = () => page.evaluate(() => {
     const w = document.getElementById("psassist-host").shadowRoot.querySelector(".wrap").getBoundingClientRect();
-    const b = document.getElementById("bordodx").getBoundingClientRect();
-    const sopra = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
-    return { wl: Math.round(w.left), ww: Math.round(w.width), wh: Math.round(w.height), vw: innerWidth, vh: innerHeight, br: Math.round(b.right),
-      visibile: sopra?.id === "bordodx", mr: getComputedStyle(document.documentElement).marginRight };
+    return { l: Math.round(w.left), w: Math.round(w.width), vw: innerWidth };
   });
   const g1 = await geo();
-  check(scen, g1.wl + g1.ww === g1.vw && g1.wh === g1.vh && g1.ww >= 420 && g1.ww <= g1.vw * 0.6 + 1, `Colonna: a destra, a tutta altezza (${JSON.stringify(g1)})`);
-  check(scen, g1.mr === g1.ww + "px" && g1.br <= g1.wl && g1.visibile, `il gestionale si stringe: quello sul suo bordo destro resta visibile (${g1.br}px ≤ ${g1.wl}px)`);
-  await page.mouse.click(g1.br - 30, 315);
-  check(scen, (await page.evaluate(() => window.__bordo)) === 1, "e cliccabile");
-  check(scen, await aperta(), "un clic sul gestionale non nasconde la colonna");
-  await shot(page, "forma-colonna");
-  // la larghezza si trascina dal bordo sinistro e si ricorda
-  const rz = await $panel(page, ".rz-w").boundingBox();
-  await page.mouse.move(rz.x + rz.width / 2, 500);
-  await page.mouse.down();
-  await page.mouse.move(rz.x + rz.width / 2 - 120, 500, { steps: 6 });
-  await page.mouse.up();
-  const g2 = await geo();
-  check(scen, Math.abs(g2.ww - g1.ww - 120) <= 2 && g2.mr === g2.ww + "px", `la larghezza si trascina dal bordo sinistro, e la pagina segue (${g1.ww} → ${g2.ww}px)`);
+  check(scen, g1.l > g1.vw * 0.6 && g1.w < g1.vw * 0.4 && (await ls("forma.v1")) === "finestra", `Affianca: una colonna a destra, il gestionale resta visibile (${JSON.stringify(g1)})`);
+  await $panel(page, "#menubtn").click();
+  check(scen, (await $panel(page, '#winaffianca[aria-checked="true"]').count()) === 1 && (await $panel(page, '[data-forma="finestra"][aria-checked="true"]').count()) === 0, "e la riga Forma dice «Affianca»");
+  await page.keyboard.press("Escape");
+  await shot(page, "forma-affianca");
+  // chi aveva scelto «Colonna» ritrova «Affianca»
+  await page.evaluate(() => { localStorage.setItem("psassist:forma.v1", JSON.stringify("colonna")); localStorage.removeItem("psassist:win.v1"); });
   await page.reload();
-  await page.waitForSelector("#psassist-host .card", { state: "attached" });
-  await page.evaluate(() => {
-    const b = document.createElement("button"); b.id = "bordodx"; b.style.cssText = "position:absolute;right:0;top:300px;width:60px;height:30px";
-    document.body.style.position = "relative"; document.body.appendChild(b);
-  });
-  const g3 = await geo();
-  check(scen, g3.ww === g2.ww, `e si ricorda (${g3.ww}px)`);
-  // F2 la nasconde (una linguetta sul bordo) e la riapre
-  await page.mouse.click(300, 600);
-  await page.keyboard.press("F2");
-  const g4 = await geo();
-  const tab = await $panel(page, ".coltab").boundingBox().catch(() => null);
-  check(scen, !(await aperta()) && tab && tab.width >= 6 && tab.width <= 8 && g4.mr === "0px" && g4.br >= g4.vw - 10,
-    `F2 la nasconde: resta una linguetta di ${tab && tab.width}px, e il gestionale torna largo (${JSON.stringify(g4)})`);
-  await shot(page, "forma-colonna-nascosta");
-  await page.keyboard.press("F2");
-  check(scen, await aperta(), "F2 la riapre");
-  await page.evaluate(() => { const i = document.createElement("input"); i.id = "campogest"; document.body.prepend(i); });
-  await page.locator("#campogest").click();
-  await page.keyboard.press("F2");
-  check(scen, await aperta(), "F2 scritto in un campo del gestionale non la tocca");
-  await $panel(page, "#colnascondi").click();
-  check(scen, !(await aperta()), "la linguetta sul bordo la nasconde");
-  await $panel(page, ".coltab").click();
-  check(scen, await aperta(), "e la riapre");
-  // tornando a Finestra il margine se ne va
+  await page.waitForSelector("#psassist-host .wrap", { state: "attached" });
+  if (!(await aperta())) await $panel(page, "#expand").click();
+  const g2 = await geo();
+  check(scen, (await ls("forma.v1")) === "finestra" && g2.l > g2.vw * 0.6 && g2.w < g2.vw * 0.4, `la preferenza «Colonna» di prima passa ad «Affianca» (${JSON.stringify(g2)})`);
   await forma("finestra");
-  const g5 = await page.evaluate(() => getComputedStyle(document.documentElement).marginRight);
-  check(scen, g5 === "0px" && (await $panel(page, ".wrap.win:not(.col)").count()) === 1, `Finestra: la finestra di sempre, la pagina senza margine (${g5})`);
+  check(scen, (await $panel(page, ".wrap.win").count()) === 1, "Finestra: la finestra di sempre");
   await context.close();
 }
 
@@ -5169,7 +5136,7 @@ async function scenarioStanza(browser) {
   const quieto = [await stile(".pzrow .pzmetti", "color"), await stile(".pzrow .pzmetti", "borderTopColor")];
   await riga("999002").hover();
   const acceso = await stile(".pzrow .pzmetti", "borderTopColor");
-  check(scen, quieto.join() === "rgb(130, 150, 169),rgba(0, 0, 0, 0)" && acceso !== "rgba(0, 0, 0, 0)",
+  check(scen, quieto.join() === "rgb(91, 107, 122),rgba(0, 0, 0, 0)" && acceso !== "rgba(0, 0, 0, 0)",
     `il ▾ della riga è quieto, col bordo sulla riga sotto il mouse (got: ${quieto.join(" ")} → ${acceso})`);
   await riga("999002").locator("[data-posto]").click();
   await $panel(page, `.stmenu [data-dove="letto:${box2}"]`).click();
@@ -7409,6 +7376,7 @@ async function scenarioMenuSezioni(browser) {
   const sparse = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".menu button")].filter((b) => !b.closest(".msez") && !b.closest(".mpiede")).length);
   // ogni voce con la sua icona, sulla griglia delle altre (16 px, tratto 1.6), e la parola
   const senzaIcona = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".menu .msez > button")].filter((b) => {
+    if (b.querySelector(":scope > .mico.mem")) return !b.textContent.trim();   // l'emoji del telefono (iPhone, stampa, registrazioni)
     const s = b.querySelector(":scope > .mico > svg");
     return !s || s.getAttribute("width") !== "16" || s.getAttribute("stroke-width") !== "1.6" || !b.textContent.trim();
   }).map((b) => b.id));
@@ -7416,7 +7384,7 @@ async function scenarioMenuSezioni(browser) {
   const chiudi = async (page) => { if (await $panel(page, ".menu").count()) await $panel(page, "#menubtn").click(); };
   const vedi = (s) => s.map((x) => `${x.t || "·"}: ${x.ids.join(" ")}`).join(" | ");
   const di = (s, t) => (s.find((x) => x.t === t) || { ids: [] }).ids;
-  const EXT = ["tabmenu", "pontemenu", "regmenu", "stampanti", "portapri", "ricmenu", "termenu"];
+  const EXT = ["tabmenu", "pontemenu", "regmenu", "stampanti", "ricmenu", "termenu"];
 
   // ---- senza estensione (bookmarklet), sulla pagina di un paziente con richieste confermate
   const mock = createMock({ seedConfirmed: true, withResults: true });
@@ -7479,9 +7447,9 @@ async function scenarioMenuSezioni(browser) {
   await b.page.waitForSelector("#psassist-host .card", { state: "attached" });
   await menu(b.page);
   s = await sezioni(b.page);
-  check(scen, di(s, "Paziente").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,tempimenu,rifmenu,consmenu"
-    && di(s, "Impostazioni").join() === "stampanti,regmenu,verbtn,portapri,resetpaz" && !(await sparse(b.page)),
-    `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Cronometro, Riferimenti, Consegne · Stampanti, Registrazioni, Registro, Indirizzo del portale, Reset (got ${vedi(s)})`);
+  check(scen, di(s, "Paziente").filter((x) => x !== "valreset").join() === "ricmenu,termenu,stampamenu" && di(s, "Strumenti").join() === "tabmenu,pontemenu,tempimenu,rifmenu,consmenu"
+    && di(s, "Impostazioni").join() === "stampanti,regmenu,verbtn,resetpaz" && !(await sparse(b.page)),
+    `con l'estensione, sul paziente: Ricetta SISS, Terapia, Stampa · Tabellone, iPhone, Cronometro, Riferimenti, Consegne · Impostazioni, Registrazioni, Registro, Reset (got ${vedi(s)})`);
   check(scen, !(await senzaIcona(b.page)).length, `con l'estensione anche: un'icona per voce (senza: ${(await senzaIcona(b.page)).join(", ")})`);
   const piede = (await $panel(b.page, ".menu .mpiede .mver").innerText()).replace(/\s+/g, " ").trim();
   check(scen, /^PS Assist \S+ · Ricarica$/.test(piede) && (await $panel(b.page, ".menu .mpiede .mver #extreload").count()) === 1,
@@ -7962,21 +7930,23 @@ async function scenarioVitali(browser) {
         `il passaggio del mouse: il NEWS2, poi tutte le righe con l'ora, l'ultima in alto (got: ${JSON.stringify(righeT)})`);
       const acc = await $panel(s.page, ".hd .cuore .cuorev").textContent();
       check(scen, acc === "NEWS 4 · T 32,9 · SpO2 94", `accanto al cuore i parametri fuori norma, il più lontano prima (got: «${acc}»)`);
-      // In Colonna, stretta, col ♥ e una cosa da fare: il nome non si stringe mai —
+      // In Affianca, stretta, col ♥ e una cosa da fare: il nome non si stringe mai —
       // cedono prima i valori del cuore (resta il ♥), poi l'episodio
       await s.page.evaluate(() => {
-        localStorage.setItem("psassist:forma.v1", JSON.stringify("colonna"));
-        localStorage.setItem("psassist:colonna.v1", JSON.stringify({ w: 420 }));
+        localStorage.setItem("psassist:forma.v1", JSON.stringify("finestra"));
+        localStorage.setItem("psassist:win.v1", JSON.stringify({ x: 0.63, y: 0.02, w: 0.36, h: 0.96 }));
         localStorage.setItem("psassist:dafare.v1", JSON.stringify({ 999001: [{ id: "d1", testo: "richiamare il cardiologo", t: null, fatto: null, ord: 0, ts: Date.now() }] }));
       });
       await s.page.reload();
-      await s.page.waitForSelector("#psassist-host .wrap.col .hd .cuore", { timeout: 8000 });
+      await s.page.waitForSelector("#psassist-host #expand, #psassist-host .card", { state: "attached", timeout: 8000 });
+      if (await $panel(s.page, "#expand").count()) await $panel(s.page, "#expand").click();
+      await s.page.waitForSelector("#psassist-host .wrap.win .hd .cuore", { timeout: 8000 });
       const m = await s.page.evaluate(() => {
         const r = document.getElementById("psassist-host").shadowRoot, w = r.querySelector(".hd .who"), c = r.querySelector(".hd .cuore");
         return { testo: w.textContent, larga: Math.round(w.getBoundingClientRect().width), piena: w.scrollWidth, vista: w.clientWidth, cuore: Math.round(c.getBoundingClientRect().width), hd: Math.round(r.querySelector(".hd").getBoundingClientRect().width) };
       });
       check(scen, m.testo === "ROSSI MARIO" && m.larga > 60 && m.piena <= m.vista + 1 && m.cuore >= 12,
-        `in Colonna (${m.hd} px) col ♥ e il Da fare il nome resta intero (${m.larga} px, ${m.piena} di ${m.vista}); il cuore cede, fino al ♥ (${m.cuore} px)`);
+        `in Affianca (${m.hd} px) col ♥ e il Da fare il nome resta intero (${m.larga} px, ${m.piena} di ${m.vista}); il cuore cede, fino al ♥ (${m.cuore} px)`);
     }
     await s.context.close();
   }
@@ -8179,7 +8149,7 @@ const scenarios = [
   ["finestra: pill, Esc, clic fuori, affianca, copia", scenarioFinestra],
   ["pill ridotta: il promemoria di un altro paziente dice di chi è", scenarioPillAltroPaziente],
   ["finestra: tetto di 1150 px, schede ferme", scenarioFinestraLarga],
-  ["forma: Finestra · Al passaggio · Colonna", scenarioForma],
+  ["forma: Finestra · Al passaggio · Affianca", scenarioForma],
   ["forma di partenza: al passaggio, ripassando com'era", scenarioPassaggio],
   ["esiti: il Lab per primo, un fondo per sezione, bottone grande, unità", scenarioEsitiLayout],
   ["apertura: Esiti o Richieste, Lab in griglia fino a tre prelievi, orologi onesti", scenarioAperturaEGriglia],
