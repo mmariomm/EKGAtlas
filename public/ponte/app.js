@@ -1440,8 +1440,17 @@
       for (const [k, v] of Object.entries({ x, y, w, h, n })) el.style.setProperty("--" + k, v);
     }
     const p = $app.querySelector(".piano");
-    if (p) { const [c, r] = p.dataset.mp.split(","); p.style.setProperty("--cols", c); p.style.setProperty("--rows", r); p.style.setProperty("--zoom", S.zoom); }
+    if (!p) return;
+    const [c, r] = p.dataset.mp.split(",").map(Number), mp = p.parentElement;
+    // Intera (zoom 1) sta tutta nella sua cornice: larga quanto lo schermo, mai più alta della cornice
+    // (in orizzontale decide l'altezza) — niente da scorrere, né di lato né dentro. Il tocco o le due
+    // dita la ingrandiscono (--zoom): solo allora scorre.
+    const h = (parseFloat(getComputedStyle(mp).maxHeight) || innerHeight * 0.56) - (mp.offsetHeight - mp.clientHeight);
+    const u = Math.floor(Math.min(mp.clientWidth / c, h / r) * 100) / 100;
+    for (const [k, v] of Object.entries({ cols: c, rows: r, zoom: S.zoom, u0: u + "px" })) p.style.setProperty("--" + k, v);
   }
+  // (girato il telefono, o cambiata la finestra: la mappa intera di nuovo nella larghezza)
+  addEventListener("resize", () => { if ($app.querySelector(".piano")) misureMappa(); });
   function vistaLista() {
     if (!S.pazienti) {
       if (S.erroreLista && !S.occupato.has("lista")) {
@@ -1488,18 +1497,23 @@
     const e = S.esiti.get(p.ep);
     const carica = S.occupato.has("esiti" + p.ep), legge = S.occupato.has("valori" + p.ep);
     if (!e) return carica ? `<div class="carica"><div class="giro"></div></div>` : `<div class="vuoto">Esiti non caricati.</div>`;
+    // mai aperto sul PC: niente di salvato, e niente da rileggere (serve la sua pagina) — una riga
+    if (e.mai && !e.tabella) return `<div class="vuoto stretto">Mai aperto sul PC: niente di salvato.</div>`;
     // quando li ha letti il PC: dopo un'ora, in ambra
     const letti = e.tabella && e.letto ? `<small class="letti${Date.now() - e.letto > 60 * 60e3 ? " amb" : ""}">Letti sul PC alle ${hhmm(e.letto)} · ${fa(e.letto)}</small>` : "";
     const valori = `<div class="carta"><div class="sezt"><div class="tv">${letti}</div>
         <button class="agg" data-a="valori" ${legge ? "disabled" : ""}>${legge ? "Leggo sul PC…" : "↻ Rileggi"}</button></div>
       ${e.tabella ? tabellaHtml(e.tabella) : legge ? "" : `<div class="vuoto stretto">Il PC non ha ancora letto valori per questo paziente.</div>`}</div>`;
-    const referti = e.referti.length ? `<div class="carta">${e.referti.map((r) => {
+    // i referti del laboratorio (emogas, emocromo…) non fra ECG, immagini e visite: a parte, in fondo
+    // (con la tabella dei valori il PC non li manda: lì quello che dicono c'è già)
+    const lab = e.referti.filter((r) => r.tipo === "lab"), altri = e.referti.filter((r) => r.tipo !== "lab");
+    const carta = (l) => (l.length ? `<div class="carta">${l.map((r) => {
       const aperto = S.aperti.has(r.id);
       return `<div class="refw"><button class="ref${r.pdf ? " conpdf" : ""}" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span></span>${
         aperto ? (r.testo ? `<div class="testo">${esc(r.testo)}</div>` : `<div class="manca">${r.lungo ? "Testo troppo lungo per il telefono: leggilo sul PC." : "Testo non ancora letto sul PC: aprilo una volta dal pannello (Esiti), poi è qui."}</div>`) : ""}</button>${
         r.pdf ? `<button class="pdf" data-a="pdf" data-id="${esc(r.id)}" data-n="${Number(r.pdf) || 0}" ${S.occupato.has("pdf" + r.id) ? "disabled" : ""}>PDF</button>` : ""}</div>`;
-    }).join("")}</div>` : "";
-    return `${valori}${referti}${e.nota ? `<p class="piede">${esc(e.nota)}</p>` : ""}`;
+    }).join("")}</div>` : "");
+    return `${valori}${carta(altri)}${lab.length ? `<div class="lbl">Laboratorio</div>${carta(lab)}` : ""}${e.nota ? `<p class="piede">${esc(e.nota)}</p>` : ""}`;
   }
   function vistaRichieste(p) {
     const c = S.catalogo;

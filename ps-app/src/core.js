@@ -17208,14 +17208,16 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   async function ponteEsiti(p) {
     const url = ponteUrlPaziente(p);
     let referti = [], nota = "";
+    const chi = { cf: "", nascita: "" };   // dal riquadro della sua pagina: di chi è un referto
     if (url) {
       try {
         const { doc, url: fin } = await fetchDoc(url, {});
         if (classify(doc) === "login") return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true };
         if (findEpisodeId(doc, fin) !== p.ep) return { ok: false, errore: "La pagina del paziente sul PC è di un altro episodio: non mostro niente" };
         referti = esitiModel(doc, fin).filter((e) => e.kind === "referto");
+        Object.assign(chi, { cf: cfInRiquadro(doc), nascita: nascitaInPagina(doc) });
       } catch (e) { nota = `Referti non letti: ${e?.head || e?.message || e}`; }
-    } else nota = "Per i referti, apri una volta il paziente sul PC";
+    }
     let st = null;
     const testi = new Map();
     if (hasExt()) {
@@ -17239,10 +17241,36 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // e non è segnata come di un altro paziente (anche senza testo: TC, visite)
     const salvati = hasExt() && referti.length ? ((await ask({ t: "listRef", ep: p.ep, ids: referti.map((e) => e.id) }).catch(() => null)) || {}).cached || {} : {};
     const cfImp = String(p.pk || "").startsWith("cf:") ? p.pk.slice(3) : "";
+    const altri = new Set();
     const diAltro = (e) => {
       const t = tabStore.get(`reftxt.${p.ep}.${e.id}`, null);
-      return !!t && (!!t.altro || (Array.isArray(t.righe) && identitaReferto(t.righe, { cf: "", cfImp, nome: p.name || "", nascita: "" }).esito === "altro"));
+      return altri.has(e.id) || (!!t && (!!t.altro || (Array.isArray(t.righe) && identitaReferto(t.righe, { cf: "", cfImp, nome: p.name || "", nascita: "" }).esito === "altro")));
     };
+    // Un ECG o una radiografia salvati su questo PC ma col testo mai letto: il
+    // PDF lo salva la scheda del portale (il service worker), il testo lo legge
+    // la pagina che l'ha chiesto — e se il medico è già passato a un'altra
+    // pagina, non lo legge nessuno. Lo si legge qui, dalla copia (nessuna
+    // richiesta), con lo stesso controllo di chi è del pannello, e va nella
+    // scheda del paziente: la prossima volta è già lì.
+    const chiave = p.pk || (normNome(p.name) ? "nome:" + normNome(p.name) : "");
+    for (const e of referti) {
+      if (testi.has(e.id) || !testoAuto(e) || !salvati[e.id] || diAltro(e)) continue;
+      const g = await ask({ t: "getRef", id: e.id, ep: p.ep }).catch(() => null);
+      const righe = g && g.ok && g.data ? ((await testoPdf(bufDaB64(g.data)).catch(() => null)) || {}).righe || [] : [];
+      if (!righe.length) continue;
+      if (identitaReferto(righe, { cf: chi.cf, cfImp, nome: p.name || "", nascita: chi.nascita }).esito === "altro") { altri.add(e.id); continue; }
+      const mostra = refertoTipo(e) === "ecg" ? refertoScrittoEcg(righe).righe : righe;
+      if (!mostra.length) continue;
+      const testo = mostra.slice(0, 200).join("\n").slice(0, 20000);
+      testi.set(e.id, testo);
+      if (chiave) {
+        await mettiInScheda(chiave, null, (vecchio) => {
+          const base = vecchio || { paziente: { idMPI: "", cognome: "", nome: p.name || "" }, cf: cfImp, periodo: "", date: [], righe: [], scartate: [], letto: Date.now() };
+          const ref = [{ id: e.id, quando: e.when || "", titolo: shortLabel(e.label || ""), sistema: e.sistema || "", testo }, ...(base.referti || []).filter((r) => r.id !== e.id)];
+          return { ...base, referti: ref.slice(0, 40) };   // (l'ora dei valori resta la loro)
+        }).catch(() => {});
+      }
+    }
     const lista = referti.filter((e) => refertoTipo(e) !== "lab" || !tabella).map((e) => {
       const t = testi.get(e.id) || "";
       const sta = !!t && t.length <= resta;
@@ -17251,7 +17279,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
         ...(salvati[e.id] && !diAltro(e) ? { pdf: true } : {}) };
     });
     // quando il PC li ha letti: sul telefono si vede quanto sono vecchi
-    return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, letto: tabella ? Number(st.letto) || 0 : 0, referti: lista, nota }, registro: `esiti di ${p.name}` };
+    // (`mai`: il PC non ha mai aperto la sua pagina — niente di salvato, e niente da rileggere)
+    return { ok: true, dati: { ep: p.ep, paziente: p.name, tabella, letto: tabella ? Number(st.letto) || 0 : 0, referti: lista, nota, ...(url ? {} : { mai: true }) }, registro: `esiti di ${p.name}` };
   }
   // L'ordine: lo stesso giro di «Conferma e stampa», dato alla scheda di
   // sottofondo dalla pagina del paziente — tutti i controlli di sempre. Il
@@ -17461,9 +17490,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       try {
         panel.log(`${now()}  ── iPhone: «Aggiorna i valori» per ${panel.nomePaziente()} ──`);
         await panel.caricaValori();
-        // i valori al telefono subito; i referti (RX, ECG, TC…) non ancora
-        // salvati continuano qui, uno alla volta finché c'è tempo, e il
-        // telefono li trova alla prossima rilettura
+        // i valori ci sono (lo si dice: allo scadere, il telefono ha almeno
+        // quelli); poi i referti (RX, ECG, TC…) non ancora salvati, uno alla
+        // volta finché c'è tempo — e il telefono ha tutto con una risposta sola
         ask({ t: "ponteValoriLetti", ok: true, testo: "letti" }).catch(() => {});
         const fine = Date.now() + 90e3;
         await panel.caricaReferti({ ferma: () => Date.now() > fine }).catch(() => {});

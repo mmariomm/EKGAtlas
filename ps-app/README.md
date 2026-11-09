@@ -1300,8 +1300,10 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   prima, e il pannello lo dice.
 - **La mappa sul telefono**: in testa all'elenco, **Lista · Mappa · Da fare** (la scelta resta sul
   telefono; nessun dato di pazienti) e, in Mappa, **Alta · Bassa** (si parte da quella che guarda il PC).
-  Le stanze sono quelle salvate sul PC (o quelle di partenza), disegnate sulla stessa griglia, larghe quanto
-  il telefono; due dita ingrandiscono dentro la mappa (o un tocco su un posto vuoto, un altro la riporta intera), che scorre di lato nella sua cornice e resta in cima mentre la lista sotto scorre. Un letto
+  Le stanze sono quelle salvate sul PC (o quelle di partenza), disegnate sulla stessa griglia: intera, la mappa
+  sta nella larghezza del telefono (girato, anche nell'altezza della sua cornice), senza niente da scorrere;
+  due dita la ingrandiscono (o un tocco su un posto vuoto, un altro la riporta intera), e solo allora scorre
+  nella sua cornice. Resta in cima mentre la lista sotto scorre. Un letto
   occupato porta cognome, età, il colore del triage, il cuore e al più un pallino; i vuoti solo il nome; le
   sale d'attesa le etichette dei pazienti. Un tocco apre il paziente; chi non ha posto resta sotto, «Senza
   posto». Il comando `mappa` manda solo la geometria e chi sta dove (episodi): niente nomi, niente nuove

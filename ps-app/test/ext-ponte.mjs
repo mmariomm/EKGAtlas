@@ -784,6 +784,31 @@ await tocca(tel, '.paz[data-ep="999001"]');   // (le prove dopo cominciano dal p
 
 // ===========================================================================
 sezione("esiti, e «Aggiorna i valori»");
+// (la risposta nuova, non gli esiti di prima che restano sullo schermo intanto)
+const esitiDi = async (ep, re = /./) => {
+  await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);
+  const n = inoltrati.length;
+  await tocca(tel, `.paz[data-ep="${ep}"]`);
+  await finche(() => inoltrati.length >= n + 2, 20000); await sospendi(400);
+  return aspettaTel(tel, re, 20000);
+};
+// ROSSI, aperto sul PC solo un attimo (all'inizio): niente salvato. Una riga e ↻ Rileggi; i referti del
+// laboratorio (emogas, emocromo) non stanno fra la radiografia e la TC, ma a parte, in fondo
+{
+  await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+  const es = await esitiDi("999001", /RX TORACE/);
+  const ordine = await tel.evaluate(() => [...document.querySelectorAll("main > .carta, main > .lbl")].map((x) => (x.classList.contains("lbl") ? "#" + x.textContent
+    : [...x.querySelectorAll(".ref .t")].map((t) => t.textContent).join("+") || (x.querySelector(".vuoto") ? "vuoto" : "?"))).join(" | "));
+  check(/non ha ancora letto valori/.test(es) && await tel.locator('[data-a="valori"]').count() === 1,
+    "niente salvato sul PC per lui: «Il PC non ha ancora letto valori», e ↻ Rileggi");
+  check(/^vuoto \| RX TORACE\+TC ENCEFALO \| #Laboratorio \| EMOGASANALISI VENOSA POC\+EMOCROMOCITOMETRICO URGENTE$/.test(ordine),
+    `i referti del laboratorio a parte, in fondo, sotto «Laboratorio»: prima la radiografia e la TC (${ordine})`);
+  await shot(tel, "esiti-laboratorio");
+  // VERDI, mai aperto sul PC: una riga, niente da rileggere
+  const v = await esitiDi("999003", /Mai aperto/);
+  check(/Mai aperto sul PC: niente di salvato\./.test(v) && await tel.locator('[data-a="valori"]').count() === 0 && !/Per i referti/.test(v),
+    `mai aperto sul PC: una riga sola, «Mai aperto sul PC: niente di salvato.», senza ↻ Rileggi (${v.replace(/\n+/g, " / ").slice(0, 120)})`);
+}
 await doc.bringToFront();
 // sul PC il referto della radiografia si è letto da solo, aprendo il paziente: il suo testo ora viaggia anche verso il telefono
 await suPagina(doc, A.patientUrl);
@@ -794,15 +819,21 @@ await doc.waitForSelector('#psassist-host [data-esito="dddd4444-0000-0000-0000-0
 await $panel(doc, "#collapse").click();
 await suPagina(doc, A.worklistUrl);
 const vistoPrima = await doc.evaluate(() => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((p) => p.ep === "999001") || {}).ts);
-await tocca(tel, '[data-a="scheda"][data-s="esiti"]');   // (la scheda si ricorda: riaperto, il paziente comincia dagli Esiti)
-await tocca(tel, '[data-a="indietro"]');
-await aspettaTel(tel, /BIANCHI ANNA/);
-await tocca(tel, '.paz[data-ep="999001"]');
-const es0 = await aspettaTel(tel, /RX TORACE/, 20000);
-check(/non ha ancora letto valori/.test(es0), "prima di leggerli: «Il PC non ha ancora letto valori»");
-check(/RX TORACE/.test(es0), "i referti della pagina del paziente, letti sul PC");
+// Il PDF della radiografia l'ha salvato il PC; il suo testo lo legge la pagina che l'ha chiesto, e il
+// medico può essere già passato oltre: lì il testo non arrivava mai al telefono. Qui il testo letto si
+// toglie dalla scheda del paziente (resta la copia del PDF): com'è quando il medico se ne va subito.
+const archivio = () => sw.evaluate(() => chrome.storage.local.get("storicoArch").then((o) => o.storicoArch || {}));
+const ID_RX = "dddd4444-0000-0000-0000-000000000004";
+const salvatoRx = await sw.evaluate((k) => chrome.storage.local.get(k).then((o) => !!o[k]), "ref:" + ID_RX);
+await sw.evaluate(() => chrome.storage.local.get("storicoArch").then((o) => { for (const r of Object.values(o.storicoArch || {})) r.referti = []; return chrome.storage.local.set(o); }));
+const es0 = await esitiDi("999001", /RX TORACE/);
+check(salvatoRx && /Hb/.test(es0) && /Letti sul PC alle \d\d:\d\d/.test(es0) && !/non ha ancora letto valori/.test(es0),
+  `il PC ha aperto ROSSI (da solo, nessun tocco): sul telefono i valori che ha salvato, senza ↻ Rileggi (${(es0.match(/Letti[^\n]*/) || ["niente"])[0]})`);
 await tocca(tel, '.ref:has-text("RX TORACE")');
-check(/Non focolai a carattere broncopneumonico/.test(await aspettaTel(tel, /Non focolai/, 8000)), "il referto già letto sul PC si legge sul telefono, col suo testo");
+check(/Non focolai a carattere broncopneumonico/.test(await aspettaTel(tel, /Non focolai/, 8000)),
+  "e il testo della radiografia salvata sul PC, anche se nessuna pagina l'aveva letto: dalla copia, senza ↻ Rileggi");
+check(Object.values(await archivio()).some((r) => (r.referti || []).some((x) => x.id === ID_RX && /Non focolai/.test(x.testo))),
+  "letto una volta, va nella scheda del paziente: la prossima volta è già lì");
 
 // ===========================================================================
 sezione("un referto PDF salvato sul PC, sul telefono");
@@ -860,27 +891,22 @@ sezione("un referto PDF salvato sul PC, sul telefono");
   await sw.evaluate((k) => chrome.storage.local.remove(k), "ref:" + idRef);
 }
 lentoRef = 8000;   // la TC, qui sotto, arriva al PC dopo 8 secondi
+// anche la radiografia non è più sul PC (né la copia né il testo): «↻ Rileggi» la riprende
+await sw.evaluate((k) => chrome.storage.local.remove(k), "ref:" + ID_RX);
+await sw.evaluate(() => chrome.storage.local.get("storicoArch").then((o) => { for (const r of Object.values(o.storicoArch || {})) r.referti = []; return chrome.storage.local.set(o); }));
 const nasceValori = nuovaPagina(20000);
 await tocca(tel, '[data-a="valori"]');
 const schedaValori = await nasceValori;
 check(!!schedaValori, "«Aggiorna i valori»: sul PC si apre una scheda di sottofondo");
-await finche(async () => await tel.locator('[data-a="valori"]:not([disabled])').count() === 1, 90000);   // (la risposta, non gli esiti di prima)
+await finche(async () => await tel.locator('[data-a="valori"]:not([disabled])').count() === 1, 200000);   // (la risposta, non gli esiti di prima)
 const es1 = await aspettaTel(tel, /Letti sul PC alle/, 90000);
-check(!!schedaValori && !schedaValori.isClosed() && await tel.locator('.refw:has(.ref:has-text("TC ENCEFALO")) .pdf').count() === 0,
-  "i valori arrivano al telefono appena letti: i referti il PC li prende dopo, nella stessa scheda");
+check(await tel.locator('.refw:has(.ref:has-text("TC ENCEFALO")) .pdf').count() === 1 && /Non focolai/.test(es1) && (!schedaValori || schedaValori.isClosed()),
+  "«↻ Rileggi» carica anche i referti non ancora caricati, e il telefono li ha con la stessa risposta: la TC col suo PDF, il testo della radiografia; la scheda dei valori è già chiusa");
 check(/Hb/.test(es1) && /80↓/.test(es1), `la tabella arriva sul telefono: Hb 80↓ (got: ${(es1.match(/Hb[^\n]*/) || [""])[0]})`);
 check(/Letti sul PC alle \d\d:\d\d · adesso/.test(es1) && await tel.locator(".letti.amb").count() === 0, "con l'ora in cui il PC li ha letti: «Letti sul PC alle … · adesso»");
 check(await tel.locator(".val thead th:has(small.parz)").count() >= 1 && /parziale/.test(await tel.locator(".val thead").innerText()),
   "una colonna con valori parziali lo dice nella sua testata: «parziale»");
-check(/Non focolai/.test(es1), "e il testo del referto resta (letto prima che il PC conoscesse il codice fiscale)");
-check(!schedaValori || await finche(() => schedaValori.isClosed(), 30000), "e la scheda dei valori si chiude da sola");
 lentoRef = 0;
-// (il telefono li trova alla prossima rilettura)
-await tocca(tel, '[data-a="indietro"]');
-await aspettaTel(tel, /BIANCHI ANNA/);
-await tocca(tel, '.paz[data-ep="999001"]');
-check(await finche(async () => await tel.locator('.refw:has(.ref:has-text("TC ENCEFALO")) .pdf').count() === 1, 15000),
-  "«Aggiorna i valori» carica anche i referti non salvati: la TC (tolta prima dal PC) torna, col suo PDF");
 const vistoDopo = await doc.evaluate(() => (JSON.parse(localStorage.getItem("psassist:patients.v1") || "[]").find((p) => p.ep === "999001") || {}).ts);
 check(vistoDopo === vistoPrima, "la scheda dei valori non conta come «visto adesso» dal medico");
 await tel.waitForSelector(".avviso", { state: "detached", timeout: 8000 }).catch(() => {});
@@ -1503,15 +1529,23 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
     `le sale d'attesa: i pazienti come piccole etichette, col numero (${bassa.aree.join(" | ")})`);
   check(bassa.senza === 1 && bassa.senzaPaz === "999018",
     `chi non ha un posto su nessuna mappa resta sotto, «Senza posto», come righe della lista (${bassa.senzaPaz})`);
-  const forma = await tel.evaluate(() => {
+  // intera: larga quanto lo schermo, niente da scorrere (né di lato né dentro), i cognomi leggibili
+  const forma = () => tel.evaluate(() => {
     const p = document.querySelector(".piano"), m = document.querySelector(".mappa"), r = m.getBoundingClientRect();
-    const eccesso = [...document.querySelectorAll(".mappa .letto .ln, .mappa .pa .ln")].filter((x) => x.scrollWidth > x.clientWidth + 1).map((x) => x.textContent);
-    return { larg: Math.round(p.getBoundingClientRect().width), mappa: Math.round(r.width), pagina: document.documentElement.scrollWidth <= window.innerWidth, eccesso,
-      ta: getComputedStyle(m).touchAction, scala: window.visualViewport.scale };
+    // (un cognome lungo su una sedia — 4 celle — intera nella larghezza non ci sta: lo mostra il tocco che ingrandisce)
+    const eccesso = [...document.querySelectorAll(".mappa .letto .ln, .mappa .pa .ln")].filter((x) => x.scrollWidth > x.clientWidth + 1
+      && !(Number((x.closest("[data-mg]")?.dataset.mg || "").split(",")[2]) < 5 && x.closest(".letto"))).map((x) => x.textContent);
+    const corpo = Math.min(...[...document.querySelectorAll(".mappa .letto.occ .ln, .mappa .pa .ln")].map((e) => parseFloat(getComputedStyle(e).fontSize)));
+    return { larg: Math.round(p.getBoundingClientRect().width), mappa: Math.round(r.width), schermo: window.innerWidth, pagina: document.documentElement.scrollWidth <= window.innerWidth,
+      scorre: m.scrollWidth > m.clientWidth || m.scrollHeight > m.clientHeight, eccesso, corpo, ta: getComputedStyle(m).touchAction, scala: window.visualViewport.scale };
   });
-  check(forma.larg >= forma.mappa && forma.pagina && !forma.eccesso.length && forma.ta === "pan-x pan-y",
-    `la mappa, grande abbastanza per leggere i cognomi, scorre dentro la sua cornice (${forma.larg} in ${forma.mappa} px); la pagina non scorre di lato, nessun nome tagliato dentro una parola (${forma.eccesso})`);
+  const intera = (f) => f.larg <= f.mappa && f.mappa <= f.schermo && f.pagina && !f.scorre && !f.eccesso.length && f.corpo >= 8;
+  const dimmi = (f) => `${f.larg} px in ${f.mappa}, schermo ${f.schermo}, scorre ${f.scorre}, cognomi ≥ ${f.corpo} px${f.eccesso.length ? `, tagliati: ${f.eccesso}` : ""}`;
+  const f0 = await forma();
+  check(intera(f0) && f0.ta === "pan-x pan-y",
+    `la mappa intera sta nella larghezza dello schermo: niente da scorrere, né di lato né dentro; la pagina non scorre di lato; i cognomi interi e leggibili (${dimmi(f0)})`);
   await shot(tel, "tel-mappa-bassa");
+  await shot(tel, "mappa-verticale-bassa");
 
   // «Alta · Bassa»
   await tocca(tel, '[data-a="mappasel"][data-k="alta"]');
@@ -1521,6 +1555,21 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
   check(alta.pic === "Alta*|Bassa" && alta.occ.join() === "999002:BIANCHI,999015:MONTI,999016:DE ANGELIS,999017:BARBIERI" && alta.vuoti.length === 7 && alta.aree === 0 && alta.senza === 1,
     `Alta: Letto 1, Rossa, Sedia 1 e la barella con i loro pazienti; gli altri sette vuoti; l'episodio precedente da nessuna parte (${alta.occ} · ${alta.vuoti.length} vuoti)`);
   await shot(tel, "tel-mappa-alta");
+  const f1 = await forma();
+  check(intera(f1), `anche l'Alta, intera nella larghezza, senza scorrere (${dimmi(f1)})`);
+  // in orizzontale (il telefono girato): tutte e due intere, senza scorrere — decide l'altezza della cornice
+  await tel.setViewportSize({ width: 844, height: 390 });
+  await sospendi(300);
+  const fA = await forma();
+  await shot(tel, "mappa-orizzontale-alta");
+  await tocca(tel, '[data-a="mappasel"][data-k="ps"]');
+  const fB = await forma();
+  await shot(tel, "mappa-orizzontale-bassa");
+  check(intera(fA) && intera(fB), `girato in orizzontale: Alta e Bassa intere, senza scorrere (Alta ${dimmi(fA)} · Bassa ${dimmi(fB)})`);
+  await tel.setViewportSize(IPHONE.viewport);
+  await sospendi(300);
+  await tocca(tel, '[data-a="mappasel"][data-k="alta"]');
+  await shot(tel, "mappa-verticale-alta");
 
   // un tocco su un posto vuoto la ingrandisce lì; un altro la riporta intera
   {

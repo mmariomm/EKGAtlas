@@ -761,15 +761,15 @@ async function ponteValoriSotto(url, ep) {
   pt.valori.set(t.id, { ep, risolvi, promessa, url: u.href, giri: 0 });
   // annotata PRIMA di andare sulla pagina: così la risposta a «chi sono?» c'è già
   await ponteValoriCambia((v) => { v[t.id] = { ep, ts: ponteOra() }; });
-  const tempo = setTimeout(() => ponteValoriFine(t.id, { ok: false, testo: "i valori non sono arrivati in tempo" }), PONTE_VALORI_MAX);
+  // (allo scadere coi valori già letti e i referti ancora a metà: i valori, e la scheda si chiude)
+  const tempo = setTimeout(() => ponteValoriFine(t.id, pt.valori.get(t.id)?.letti || { ok: false, testo: "i valori non sono arrivati in tempo" }), PONTE_VALORI_MAX);
   try {
     await chrome.tabs.update(t.id, { url: u.href, autoDiscardable: false });
   } catch {
     ponteValoriFine(t.id, { ok: false, testo: "la scheda dei valori non si apre" });
   }
   const esito = await promessa;
-  // (la scheda può restare ancora per i referti: allora la chiude il «fatto», o il tempo)
-  if (!pt.valori.has(t.id)) clearTimeout(tempo);
+  clearTimeout(tempo);   // (finita: col «fatto», chiusa, altrove — o è stato lui)
   return esito;
 }
 // finita (letto, tempo scaduto, chiusa): via l'appunto, via la scheda (se il
@@ -1329,13 +1329,14 @@ function ponteDaPagina(msg, sender, reply) {
       return { ok: true };
     });
   }
-  // i valori sono letti: il telefono ha la risposta subito; la scheda resta
-  // per i referti, e si chiude col «fatto» (o allo scadere)
+  // i valori sono letti: la scheda resta per i referti non ancora caricati, e
+  // il telefono ha la risposta col «fatto» — valori e referti, un tocco solo.
+  // Allo scadere, quello che c'è: i valori letti (ponteValoriSotto).
   if (msg.t === "ponteValoriLetti" && gestionale) {
     return fai(async () => {
       const w = pt.valori.get(sender.tab.id);
       if (!w) return { ok: false };
-      w.risolvi({ ok: !!msg.ok, testo: corto(msg.testo, 120) || "letti" });
+      w.letti = { ok: !!msg.ok, testo: corto(msg.testo, 120) || "letti" };
       return { ok: true };
     });
   }
