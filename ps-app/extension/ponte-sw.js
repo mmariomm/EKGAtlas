@@ -415,6 +415,8 @@ function ponteArgomenti(d) {
   if (d.rileggi) a.rileggi = true;
   // (dove stampare i fogli di un ordine: «qui», sul PC, o alla stazione di stampa)
   if (d.dest === "qui" || d.dest === "stazione") a.dest = d.dest;
+  if ("si" in d) a.si = !!d.si;
+  if (typeof d.dove === "string" && /^(tray|(letto|area):[\w.-]{1,40})(@\w{1,8})?$/.test(d.dove)) a.dove = d.dove;
   return a;
 }
 // quelli che l'app manda da sé: non sono il medico, non tengono aperta la sessione
@@ -475,7 +477,7 @@ async function ponteRisposta(s, d) {
       await ponteScriviStato();
       return r;
     }
-    if (["pazienti", "mappa", "eo", "triage", "esiti", "richieste", "nota", "promemoria", "fatto"].includes(d.cmd)) {
+    if (["pazienti", "mappa", "eo", "triage", "esiti", "richieste", "nota", "promemoria", "fatto", "dfAggiungi", "dfSpunta", "dfTogli", "posto"].includes(d.cmd)) {
       const a = ponteArgomenti(d);
       const r = await ponteSuScheda(d.cmd, a);
       if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
@@ -561,6 +563,15 @@ async function ponteDaiRegistrazione(s, d) {
 }
 async function ponteViaRegistrazione(s, d) {
   const id = typeof d.zip === "string" ? d.zip : "";
+  // «Cancella tutto»: quelle che il telefono ha in elenco (una nata intanto resta), una per una
+  if (id === "*") {
+    if (!s.zip) return { ok: false, errore: "Registrazione non disponibile: riapri l'elenco" };
+    let n = 0;
+    for (const x of [...s.zip]) { if (await regZipVia(x)) n++; s.zip.delete(x); }
+    ponteNota(`iPhone · ${n} registrazioni cancellate dal PC`);
+    await ponteScriviStato();
+    return { ok: true, dati: { id, n } };
+  }
   if (!s.zip || !s.zip.has(id)) return { ok: false, errore: "Registrazione non disponibile: riapri l'elenco" };
   const z = await regZipVia(id);
   s.zip.delete(id);
@@ -687,7 +698,7 @@ async function ponteSchede() {
 // è «incerto» (per un ordine: non si sa se è partito), mai un no. Un ordine o
 // un promemoria non si rimanda alla scheda dopo: quella di prima può averlo
 // fatto, e sarebbero due.
-const PONTE_UNA_VOLTA = new Set(["ordina", "promemoria"]);
+const PONTE_UNA_VOLTA = new Set(["ordina", "promemoria", "dfAggiungi"]);
 async function ponteSuScheda(cmd, args) {
   const tempo = PONTE_ATTESA[cmd] || PONTE_ATTESA.altro;
   const schede = await ponteSchede();
@@ -700,7 +711,7 @@ async function ponteSuScheda(cmd, args) {
     if (no.has("tempo") && PONTE_UNA_VOLTA.has(cmd)) break;
   }
   const incerto = no.has("tempo") ? { incerto: true } : {};
-  if (incerto.incerto && cmd === "promemoria") return { ok: false, errore: "Il gestionale sul PC tarda: guarda i promemoria prima di rifarlo", incerto: true };
+  if (incerto.incerto && (cmd === "promemoria" || cmd === "dfAggiungi")) return { ok: false, errore: "Il gestionale sul PC tarda: guarda i promemoria prima di rifarlo", incerto: true };
   if (no.has("login")) return { ok: false, errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true, ...incerto };
   if (no.has("pannello") && !incerto.incerto) return { ok: false, errore: "Sul PC apri la lista del pronto soccorso o un paziente, nel gestionale" };
   return { ok: false, errore: "Il gestionale sul PC non risponde: ricarica la sua pagina", ...incerto };

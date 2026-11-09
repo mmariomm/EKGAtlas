@@ -5647,8 +5647,8 @@ async function scenarioDaFareInCima(browser) {
       testa: r.querySelector('.hdpaz .dfic')?.className || "" } : null;
   });
   const b1 = await blocco();
-  check(scen, !!b1 && b1.voci.join("|") === "tropo di controllo|chiamare la figlia" && b1.n === "2" && b1.chi === 0 && /^Aggiungi per ROSSI M…$/.test(b1.segnaposto),
-    `in cima alla scheda di ROSSI solo i suoi due Da fare (niente BIANCHI, niente cognome a sinistra), «Aggiungi per ROSSI M…» (got: ${JSON.stringify(b1)})`);
+  check(scen, !!b1 && b1.voci.join("|") === "tropo di controllo|chiamare la figlia" && b1.n === "2" && b1.chi === 0 && /^\+ nota per ROSSI M…$/.test(b1.segnaposto),
+    `in cima alla scheda di ROSSI solo i suoi due Da fare (niente BIANCHI, niente cognome a sinistra), «+ nota per ROSSI M…» (got: ${JSON.stringify(b1)})`);
   check(scen, !!b1 && b1.sopraSchede && b1.sottoAllergie, "sotto le allergie, sopra le schede");
   await shotSide(page, "dafare-in-cima");
   // il campo: Invio aggiunge a lui
@@ -5754,8 +5754,8 @@ async function scenarioPromemoria(browser) {
   await $panel(page, ".dfpop").waitFor();
   check(scen, (await fuocoId()) === "dfin" && /Da fare · ROSSI MARIO/.test(await $panel(page, ".dfhd").innerText()),
     "un tocco apre la lista sotto l'icona, col nome del paziente e il cursore nel campo");
-  check(scen, (await $panel(page, "#dfin").getAttribute("placeholder")) === "Aggiungi…" && (await $panel(page, ".dfl li").count()) === 0,
-    "vuota: solo il campo su una riga, «Aggiungi…», senza frasi");
+  check(scen, (await $panel(page, "#dfin").getAttribute("placeholder")) === "+ nota" && (await $panel(page, ".dfl li").count()) === 0,
+    "vuota: solo il campo su una riga, «+ nota», senza frasi");
   await $panel(page, "#dfin").fill("chiamare la figlia");
   await $panel(page, "#dfin").press("Enter");
   // un valore clinico col punto non è un'ora: nessun promemoria, nemmeno nel suggerimento

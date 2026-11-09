@@ -353,6 +353,20 @@ check(await finche(async () => (await elenco()).length === 0, 8000) && await fin
   "il secondo tocco la cancella da questo PC, e la riga se ne va");
 check(await sw.evaluate(() => RegistraDb.tx("zipdati", "readonly", (s) => s.count())) === 0, "via anche i byte");
 
+// «Cancella tutto»: due zip, due tocchi
+await sw.evaluate(async () => {
+  for (const id of ["provatutta1", "provatutta2"]) {
+    await RegistraDb.tx(["zip", "zipdati"], "readwrite", (z, d) => { z.put({ id, nome: id + ".zip", ts: Date.now(), quando: Date.now(), byte: 3, motivo: "manuale", errore: "", controllo: true, punti: 0, pagine: 1, richieste: 1, pdf: 0, riepilogo: "" }); d.put(new Uint8Array([80, 75, 3]), id); });
+  }
+  await regAvvisaElenco();
+});
+check(await finche(async () => await $panel(doc, ".regrow").count() === 2, 10000) && await $panel(doc, "#regtutte").count() === 1, "con due registrazioni, in fondo all'elenco c'è «Cancella tutto»");
+await $panel(doc, "#regtutte").click();
+check(/Cancello tutte le 2 registrazioni\? Tocca di nuovo/.test(await $panel(doc, "#regtutte").innerText().catch(() => "")) && (await elenco()).length === 2, "il primo tocco chiede («Cancello tutte le 2 registrazioni? Tocca di nuovo»), e non cancella");
+await $panel(doc, "#regtutte").click();
+check(await finche(async () => (await elenco()).length === 0, 8000) && await finche(async () => await $panel(doc, ".regrow").count() === 0, 8000)
+  && await sw.evaluate(() => RegistraDb.tx("zipdati", "readonly", (s) => s.count())) === 0, "il secondo tocco le cancella tutte da questo PC (anche i byte), e l'elenco si svuota");
+
 // ---- 7. dopo 60 minuti si ferma e si salva da sola -------------------------------
 await $panel(doc, "#regvia").click();
 await finche(async () => (await stato())?.stato === "rec", 8000);

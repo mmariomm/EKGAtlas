@@ -206,7 +206,7 @@ un paziente aperto; sulla scheda di un paziente parte dagli **Esiti**.
 **Il tabellone: in alto le mappe, sotto la lista.** In cima **Alta | Bassa | Entrambe** (i nomi
 delle due mappe) e un piccolo **⟳**. *Entrambe*: le due mappe affiancate se lo spazio è largo, una
 sopra l'altra se no; sempre in scala, **mai da scorrere di lato**. La scelta resta; finché non ne
-fai una, si vede la mappa dell'area in cui lavori. Accanto, **Mappa | Lista** (resta). *Mappa*: sotto le mappe la **lista** ha solo chi **non ha ancora un posto** (gli altri sono sulla mappa).
+fai una, si vede la mappa dell'area in cui lavori. Accanto, **Mappa | Lista | Da fare** (resta). *Da fare*: al posto di mappe e lista, il Da fare di tutti, largo — il generale in cima e poi ogni paziente col suo cognome e il posto (un clic lo apre; passandoci sopra, **+** scrive la prossima nota per lui nello stesso campo). *Mappa*: sotto le mappe la **lista** ha solo chi **non ha ancora un posto** (gli altri sono sulla mappa).
 Sempre in vista, in Mappa e in Lista, il **Da fare del tabellone**: accanto alle mappe quando c'è posto,
 sopra quando la finestra è stretta — una **colonna sola**, cinque righe al più e poi scorre, così le
 mappe non perdono altezza; **Da fare ▾** lo riduce a una barra sottile (e lo ricorda). Una voce, una
@@ -427,9 +427,9 @@ suo, `paziente.dafare.v1`); senza voci non c'è, e basta l'icona. In
 fondo alla lista dell'icona, un campo su una riga: si scrive e **Invio** aggiunge, in fondo alla lista. Ogni voce è una
 riga sola, la stessa dappertutto (la lista, il tabellone, il foglietto sotto la pill, la scheda al
 passaggio): `○ 11:42 tropo…` — l'ora, se c'è, davanti, ambra e poi rossa come l'icona. **Un tocco sul
-testo** lo modifica (Invio salva, Esc lascia com'era), **✕** cancella la voce. **Un tocco sulla
+testo** lo modifica (Invio salva, Esc lascia com'era), il **cestino** grigio cancella la voce (su una fatta c'è sempre; su una aperta passandoci sopra). **Un tocco sulla
 spunta** e la voce è fatta: barrata, resta al suo posto **5 minuti** (un altro tocco la riapre), poi
-se ne va. L'ordine lo decidi tu: si **trascina** dalla maniglia ⋮⋮ (col mouse o col dito), o da
+se ne va (o subito, col cestino). L'ordine lo decidi tu: si **trascina** dalla maniglia ⋮⋮ (col mouse o col dito), o da
 tastiera **Alt+↑ / Alt+↓** sulla spunta. La maniglia, **+15′** e ✕ compaiono passandoci sopra (o col
 fuoco; al tocco ci sono sempre). La **prima voce aperta** è il post-it: si legge nelle aree
 della stanza (nella riga del tabellone c'è solo quante sono). L'icona dice **quante** sono aperte (nell'intestazione della finestra, la **prima** e «+N»; ambra o rossa, la voce che scade col tempo che manca, come la pill: «⏰ −6m tropo») e cambia colore quando un promemoria si avvicina:
@@ -1268,12 +1268,13 @@ Aprendo l'app (o tornandoci, o con aggiorna) il telefono chiede al PC di rilegge
 l'elenco 25 secondi dopo: è l'unico giro della smart che parte da solo.
 
 Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con
-**↻ Aggiorna i valori** e l'ora in cui il PC li ha letti), **un ordine** (lo stesso «Conferma e
-stampa», con tutti i suoi controlli), **Da fare** (**+ Da fare** e **+ Con l'ora**, le parole del
-PC; sotto, il ponte dice ancora `nota` e `promemoria`): quella senza ora è la prima voce aperta
-senza ora del PC (scriverla cambia quella, o ne fa una in cima; vuota la toglie; un'ora scritta
-dentro non la fa diventare un promemoria), quelle con l'ora sono le voci con l'ora (✓ Fatto le
-spunta). Nell'elenco ogni riga ha lo stato della riga del tabellone, se il PC lo sa: il **cuore**,
+**↻ Rileggi** e l'ora in cui il PC li ha letti), **un ordine** (lo stesso «Conferma e
+stampa», con tutti i suoi controlli), **Da fare** (la stessa lista del PC, sulle Richieste del paziente: ogni voce ha la sua
+spunta tonda, l'ora davanti se c'è, il testo; un solo campo **+ nota**, e con un'ora dentro —
+«11:30 tropo», «tra 2h ECG» — è un promemoria, se no una cosa da fare. Spuntata, resta barrata fino
+a 5 minuti come sul PC; il **cestino** grigio la toglie subito; la spunta di nuovo la riapre. Il
+ponte dice `dfAggiungi`, `dfSpunta`, `dfTogli` e, nelle righe dei pazienti, `df`). In **Lista · Mappa ·
+Da fare** l'ultima scheda è il Da fare di tutti, per paziente (cognome e posto: un tocco apre il paziente). Nell'elenco ogni riga ha lo stato della riga del tabellone, se il PC lo sa: il **cuore**,
 per tipo quello che aspetta col suo tempo («Lab 50′ RX 1h40», l'ambra e il rosso delle soglie) o
 **✓** se è tornato tutto, e il **pallino** del letto; «letto alle …» nel titolo, grigio se la
 lettura è vecchia. Le schede del paziente sono nell'ordine del PC: **Richieste · Esiti · Cartella ·
@@ -1297,17 +1298,19 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   cornice ma non ci legge dentro, e il QR porta la chiave. Dove la cornice non si apre (il pannello su
   un indirizzo diverso da quelli del gestionale, un blocco), la pagina va in una scheda sua come
   prima, e il pannello lo dice.
-- **La mappa sul telefono** (sola lettura): in testa all'elenco, **Lista · Mappa** (la scelta resta sul
+- **La mappa sul telefono**: in testa all'elenco, **Lista · Mappa · Da fare** (la scelta resta sul
   telefono; nessun dato di pazienti) e, in Mappa, **Alta · Bassa** (si parte da quella che guarda il PC).
   Le stanze sono quelle salvate sul PC (o quelle di partenza), disegnate sulla stessa griglia, larghe quanto
-  il telefono; due dita ingrandiscono dentro la mappa, che scorre di lato nella sua cornice. Un letto
+  il telefono; due dita ingrandiscono dentro la mappa (o un tocco su un posto vuoto, un altro la riporta intera), che scorre di lato nella sua cornice e resta in cima mentre la lista sotto scorre. Un letto
   occupato porta cognome, età, il colore del triage, il cuore e al più un pallino; i vuoti solo il nome; le
   sale d'attesa le etichette dei pazienti. Un tocco apre il paziente; chi non ha posto resta sotto, «Senza
   posto». Il comando `mappa` manda solo la geometria e chi sta dove (episodi): niente nomi, niente nuove
-  letture del gestionale, niente scritture. Un PC che non lo conosce: niente scelta, la lista di sempre.
-- **Ordinare dal telefono**: la conferma porta nome intero, età e posto («Ordino 2 esami per ROSSI
-  MARIO · 77 anni · OBI 2? Tocca di nuovo»; due pazienti con lo stesso nome: «⚠ Ordino … per ROSSI
-  MARIO · …9001 · …», col segno dell'elenco); un doppio tocco non conferma; se la rete perde
+  letture del gestionale. **Si modifica**: un nome tenuto premuto (mezzo secondo) si trascina su un letto
+  o su un'area, o fuori dalla mappa per tornare fra «Senza posto»; lo fa il PC (`posto`, lo stesso gesto del
+  trascinamento sulla sua mappa: un posto per paziente, un letto uno solo, le aree molti) e il telefono
+  ridisegna dalla sua risposta. Un PC che non lo conosce: mappa in sola lettura, o niente scelta, senza errori.
+- **Ordinare dal telefono**: la conferma porta nome intero, età e posto (due righe: «Ordino 2 esami · tocca di nuovo» e, sotto,
+  «ROSSI MARIO · 77 anni · OBI 2»; due pazienti con lo stesso nome: «⚠ ROSSI MARIO · …9001 · …», col segno dell'elenco); un doppio tocco non conferma; se la rete perde
   la risposta il telefono dice «Non so se l'ordine è partito» e non lo rifà alla cieca (lo stesso
   ordine rimandato parte una volta sola), a meno che non lo veda già nato sul PC. Niente ordini su un episodio precedente o per un paziente
   dimesso sul PC. Un ordine finito male si vede da ogni pagina del telefono, finché non lo chiudi.
@@ -1339,11 +1342,6 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   dice se si raggiunge e quanto ci mette; «Tieni aperto 15 minuti» dice se e perché cade; il testo da
   copiare ha un blocco «Per l'IT». Si apre in una scheda sua: un quarto d'ora deve reggere i cambi di
   pagina del gestionale.
-- **«Prova»** (`<indirizzo del ponte>/ponte/?prova`): l'app del telefono con un PC finto (`public/ponte/prova.js`,
-  dati inventati in `prova-dati.js`), per provarla da casa. Non apre la presa, non legge né scrive la
-  chiave dell'associazione vera (la sua memoria ha un nome suo), una striscia dice «Prova · dati finti · niente va al PC».
-  Gli ordini corrono fino alle etichette (quello per NERI GIULIA finisce «Non partito»), la cartella si salva, la
-  Terapia si conferma (il KETOROLAC resta «Incerto»), i Da fare restano in memoria; ricaricando, si riparte da capo.
 
 Come funziona, la messa in servizio (l'indirizzo si fissa una volta in `ponte/host.txt`; il ponte va
 col deploy del sito EKG Atlas), che cosa vede l'IT e che cosa

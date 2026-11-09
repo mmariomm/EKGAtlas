@@ -39,6 +39,9 @@ button { cursor: pointer; touch-action: manipulation; }
        padding: env(safe-area-inset-top) var(--dx) 0 var(--sx); background: var(--vetro); -webkit-backdrop-filter: saturate(180%) blur(14px);
        backdrop-filter: saturate(180%) blur(14px); border-bottom: 1px solid var(--bordo); }
 .top .tit { flex: 1 1 auto; min-width: 0; padding: 6px 0; }
+/* il titolo del paziente è un bottone: come «‹», torna a Lista o Mappa (senza altro che il tocco) */
+.top button.tit { background: none; border: 0; font: inherit; color: inherit; text-align: left; min-height: 44px; -webkit-tap-highlight-color: transparent; }
+.top button.tit:active { opacity: .6; }
 /* il nome non si taglia mai: va a capo */
 .top .tit b { display: block; font-size: 17px; font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; }
 .top .tit small { display: block; font-size: 12px; color: var(--grigio); margin-top: 1px; }
@@ -210,7 +213,9 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .zip .z3.ko { color: var(--rosso); }
 .zip .zbtn { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .zip a.btnmini { display: inline-flex; align-items: center; text-decoration: none; }
-.btnmini.via { color: var(--rosso); }
+.btnmini.pri { background: var(--azione); border-color: var(--azione); color: #fff; }
+.btnmini.via { color: var(--rosso); border-color: transparent; background: transparent; font-weight: 500; }
+.btnmini.tutte { display: block; margin: 8px auto 0; }
 .btnmini.arma { background: var(--rossof); border-color: var(--rossob); }
 .btnmini:disabled { color: var(--grigio2); }
 
@@ -237,6 +242,9 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .cta button { width: 100%; min-height: 54px; border: 0; border-radius: 14px; background: var(--azione); color: #fff; font-weight: 700; font-size: 17px; padding: 14px; overflow-wrap: anywhere; }
 .cta button:disabled, .cta button[aria-disabled="true"] { background: var(--spento); }
 .cta button.arma { background: var(--ambrap); }
+.cta button .l1, .cta button .l2 { display: block; }
+.cta button .l1 { font-size: 15px; }
+.cta button .l2 { font-size: 13.5px; font-weight: 600; opacity: .95; margin-top: 2px; }
 .cta .perche { font-size: 12.5px; color: var(--grigio); text-align: center; margin-top: 6px; }
 .cta .perche.err { color: var(--rosso); font-weight: 650; font-size: 14px; }
 .cta .perche.err:first-child { margin-top: 0; }
@@ -273,6 +281,8 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .avviso { position: fixed; left: var(--sx); right: var(--dx); bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 30; background: var(--scuro); color: #fff;
           border-radius: 12px; padding: 12px 14px; font-size: 14.5px; box-shadow: 0 12px 30px var(--ombra); }
 .avviso.err { background: var(--rossop); }
+/* «non so se…»: in cima, sotto la testata — in fondo coprirebbe gli esami da controllare */
+.avviso.alto { bottom: auto; top: calc(64px + env(safe-area-inset-top)); }
 .carica { display: flex; justify-content: center; padding: 26px; }
 .carica .giro { margin: 0; width: 26px; height: 26px; }
 @media (prefers-reduced-motion: reduce) { .giro, .ord.run .seg-o { animation-duration: 3s; } }
@@ -307,7 +317,7 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .seg.pic button { min-height: 44px; padding: 6px 0; font-size: 14px; background: var(--seg); }
 .seg.pic button.on { background: var(--blu-chiaro); color: var(--blu); box-shadow: none; }
 .mappa { overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; max-width: 100%; margin: 0 0 6px; border: 1px solid var(--bordo); border-radius: 14px; background: var(--carta); }
-.piano { --larg: calc(min(100vw, 760px) - var(--sx) - var(--dx) - 2px); --u0: max(8px, min(calc(var(--larg) / var(--cols)), calc((100vh - 60px) / var(--rows))));
+.piano { --larg: calc(min(100vw, 760px) - var(--sx) - var(--dx) - 2px); --u0: max(14px, min(calc(var(--larg) / var(--cols)), calc((100vh - 60px) / var(--rows))));
   --u: calc(var(--u0) * var(--zoom, 1)); position: relative; width: calc(var(--u) * var(--cols)); height: calc(var(--u) * var(--rows)); margin: 0 auto; }
 .letto, .area { position: absolute; box-sizing: border-box; left: calc(var(--u) * var(--x) + 1.5px); top: calc(var(--u) * var(--y) + 1.5px);
   width: calc(var(--u) * var(--w) - 3px); height: calc(var(--u) * var(--h) - 3px); border-radius: 8px; overflow: hidden; min-width: 0; }
@@ -318,15 +328,15 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .letto.occ:active, .pa:active { background: var(--fondo); }
 .letto.spento .ln, .pa.spento .ln { color: var(--grigio); }
 .letto .ln, .pa .ln { font-weight: 700; overflow-wrap: normal; word-break: keep-all; hyphens: none; min-width: 0;
-  font-size: clamp(6.5px, calc((var(--u) * var(--w) - 17px) / (var(--n) * .68)), 13px); }
-.pa .ln { font-size: clamp(6.5px, calc((var(--u) * var(--w) - 24px) / (var(--n) * .68)), 11px); }
+  font-size: clamp(9px, calc((var(--u) * var(--w) - 17px) / (var(--n) * .68)), 14px); }
+.pa .ln { font-size: clamp(9px, calc((var(--u) * var(--w) - 24px) / (var(--n) * .68)), 12px); }
 .letto.vuoto .ln { font-weight: 500; font-size: clamp(6.5px, calc((var(--u) * var(--w) - 10px) / (var(--n) * .6)), 11px); }
 .letto .lb { font-size: clamp(6px, calc(var(--u) * .6), 9px); color: var(--grigio); font-weight: 600; white-space: nowrap; overflow: hidden; }
-.letto .le { font-size: clamp(6.5px, calc(var(--u) * .8), 11px); color: var(--grigio); font-variant-numeric: tabular-nums; }
+.letto .le { font-size: clamp(8px, calc(var(--u) * .8), 11px); color: var(--grigio); font-variant-numeric: tabular-nums; }
 .r2 { display: flex; align-items: center; justify-content: space-between; gap: 3px; min-width: 0; }
 .mk { display: flex; align-items: center; gap: 3px; line-height: 1; margin-left: auto; }
 @container letto (max-height: 40px) { .lb { display: none; } }
-.letto.alto .ln { writing-mode: vertical-rl; font-size: clamp(6.5px, calc((var(--u) * var(--h) - 16px) / (var(--n) * .68)), 11px); }
+.letto.alto .ln { writing-mode: vertical-rl; font-size: clamp(9px, calc((var(--u) * var(--h) - 16px) / (var(--n) * .68)), 11px); }
 .letto.alto { align-items: center; }
 .letto.alto .r2 { flex-direction: column; justify-content: flex-start; gap: 2px; }
 .letto.alto .mk { margin: 0; }
@@ -404,3 +414,23 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .cta .dove button { flex: 1; width: auto; min-height: 44px; background: none; color: var(--grigio); font-size: 15px; font-weight: 650; padding: 8px 6px; border-radius: 9px; }
 .cta .dove button.on { background: var(--carta); color: var(--testo); box-shadow: 0 1px 4px var(--ombra); }
 @media (prefers-color-scheme: dark) { .cta .dove button.on { background: var(--scuro); } }
+/* Da fare: una lista, la spunta tonda (44 px da toccare), il cestino grigio sulle spuntate */
+.promr.dfr { gap: 2px; padding: 0 8px 0 0; min-height: 48px; }
+.dfr .dfck { flex: none; position: relative; width: 44px; height: 44px; border: 0; background: none; padding: 0; }
+.dfr .dfck::before { content: ""; position: absolute; left: 10px; top: 10px; width: 20px; height: 20px; box-sizing: border-box; border: 2px solid var(--grigio2); border-radius: 50%; background: var(--carta); }
+.dfr.fatta .dfck::before { background: var(--verde); border-color: var(--verde); }
+.dfr.fatta .dfck::after { content: ""; position: absolute; left: 17px; top: 14px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.dfr .quando { min-width: 0; margin-right: 8px; }
+.dfr .cosa { padding: 8px 0; overflow-wrap: anywhere; }
+.dfr.fatta .cosa, .dfr.fatta .quando { text-decoration: line-through; color: var(--grigio); }
+.dfr .dfx { flex: none; width: 44px; height: 44px; border: 0; background: none; color: var(--grigio2); display: inline-flex; align-items: center; justify-content: center; }
+.dfr .dfx:active { color: var(--rosso); }
+.carta.note > .proms { padding-left: 0; }
+.dfg + .dfg { margin-top: 10px; }
+.dfhd { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; border: 0; border-bottom: 1px solid var(--linea); background: none; text-align: left; padding: 0 14px; font-size: 15.5px; }
+.dfhd .posto { font-size: 12px; font-weight: 650; color: var(--blu); background: var(--blu-chiaro); border-radius: 6px; padding: 1px 7px; }
+/* Mappa che si modifica: sempre in alto mentre la lista sotto scorre; il nome trascinato, il bersaglio acceso */
+.mappa { position: sticky; top: calc(56px + env(safe-area-inset-top)); z-index: 6; max-height: 56vh; }
+.letto.occ, .pa, .paz[data-ep] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.fantasma { position: fixed; z-index: 70; transform: translate(-50%, -130%); pointer-events: none; padding: 8px 12px; border-radius: 10px; background: var(--scuro); color: #fff; font-weight: 700; font-size: 15px; box-shadow: 0 8px 24px var(--ombra); }
+.bers { outline: 3px solid var(--blu); outline-offset: -3px; }

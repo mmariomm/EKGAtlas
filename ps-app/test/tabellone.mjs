@@ -336,7 +336,7 @@ await blocco("Mappa | Lista: la lista senza mappe, nell'ordine del gestionale", 
   const sequenza = (page) => page.evaluate(() => [...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".pzcoda > .pzsez, .pzcoda > .pzrow")]
     .map((e) => (e.classList.contains("pzsez") ? "T:" + e.textContent.trim() : e.getAttribute("data-pz"))).join(","));
   // Mappa (di partenza): le mappe, e la lista ha solo chi non ha un posto
-  check((await modo(page)) === "mappa* lista", `il controllo Mappa | Lista, di partenza Mappa (got: ${await modo(page)})`);
+  check((await modo(page)) === "mappa* lista dafare", `il controllo Mappa | Lista | Da fare, di partenza Mappa (got: ${await modo(page)})`);
   const inMappa = await righe(page);
   check((await $p(page, ".stmap").count()) === 2 && inMappa.length === 8 && !inMappa.includes("700001") && !inMappa.includes("700011"),
     `Mappa: le mappe, e la lista senza chi è già su un letto (got: ${inMappa.join(",")})`);
@@ -346,7 +346,7 @@ await blocco("Mappa | Lista: la lista senza mappe, nell'ordine del gestionale", 
   // Lista: niente mappe, tutti, nell'ordine del gestionale dentro ogni area; le aree Alta, Bassa, OBI, Codici minori; chi non ha un'area, in fondo
   await $p(page, '[data-modo="lista"]').click();
   await page.waitForTimeout(150);
-  check((await modo(page)) === "mappa lista*" && (await $p(page, ".stmap").count()) === 0 && (await $p(page, ".pzrimetti").count()) === 0, "Lista: niente mappe");
+  check((await modo(page)) === "mappa lista* dafare" && (await $p(page, ".stmap").count()) === 0 && (await $p(page, ".pzrimetti").count()) === 0, "Lista: niente mappe");
   const atteso = "T:Alta intensità,700003,700001,700002,T:Bassa,700012,700011,T:OBI,700033,700032,700031,T:Codici minori,700021,700051";
   check((await sequenza(page)) === atteso, `Lista: tutti, aree Alta · Bassa · OBI · Codici minori, nell'ordine del gestionale; chi non è mai stato in una lista dopo, per ingresso; senza area in fondo\n      got: ${await sequenza(page)}`);
   const pill = await page.evaluate(() => Object.fromEntries([...document.getElementById("psassist-host").shadowRoot.querySelectorAll(".pzcoda .pzrow")].map((r) => {
@@ -374,7 +374,7 @@ await blocco("Mappa | Lista: la lista senza mappe, nell'ordine del gestionale", 
   await page.goto(URL_LISTA);
   await pannello(page);
   await page.waitForTimeout(300);
-  check((await modo(page)) === "mappa lista*" && (await $p(page, ".stmap").count()) === 0, "ricaricata la pagina, è ancora Lista");
+  check((await modo(page)) === "mappa lista* dafare" && (await $p(page, ".stmap").count()) === 0, "ricaricata la pagina, è ancora Lista");
   // Alta | Bassa | Entrambe vale anche in Lista: Bassa = Bassa, Codici minori e l'OBI azzurro, verde o bianco (più chi non ha ancora un'area)
   await $p(page, '[data-vista="bassa"]').click();
   await page.waitForTimeout(150);
@@ -591,6 +591,22 @@ await blocco("Il Da fare del tabellone: il generale, e quello dei pazienti col c
   await voce("EGA").hover();
   await voce("EGA").locator(".dfx").click();
   check((await df())?.["700002"]?.map((x) => x.testo).join("|") === "chiamare il figlio alle 18", "e si cancella");
+  // «Mappa | Lista | Da fare»: il Da fare di tutti, largo, al posto delle mappe e della lista (e la scelta resta)
+  await $p(page, '[data-modo="dafare"]').click();
+  await page.waitForTimeout(200);
+  check((await $p(page, ".tdtutto .tdcard").count()) === 1 && (await $p(page, ".stmappe").count()) === 0 && (await $p(page, ".pzrow").count()) === 0 && (await ls(page, "tabellone.modo.v1")) === "dafare",
+    "«Da fare»: il Da fare di tutti al posto di mappe e lista; la scelta resta");
+  check((await $p(page, '.tdapri[data-tdapri="700002"]').count()) === 1 && /ROSSI|BIANCHI|\w/.test(await $p(page, '.tdapri[data-tdapri="700002"]').innerText()), "ogni paziente ha l'intestazione col cognome (un clic lo apre)");
+  await $p(page, '.tdpiu[data-tdpiu="700002"]').click({ force: true });
+  check(/^\+ nota per /.test((await $p(page, "#tdin").getAttribute("placeholder")) || ""), "il «+» dell'intestazione scrive la prossima nota per quel paziente, nello stesso campo");
+  await $p(page, "#tdin").fill("richiamare la famiglia");
+  await $p(page, "#tdin").press("Enter");
+  check((await df())?.["700002"]?.some((x) => x.testo === "richiamare la famiglia") && (await $p(page, "#tdin").getAttribute("placeholder")) === "Da fare generale…", "Invio la aggiunge a lui, e il campo torna «generale»");
+  await voce("richiamare la famiglia").locator(".dfck").click();
+  check(await voce("richiamare la famiglia").locator(".dfx").evaluate((b) => getComputedStyle(b).display !== "none" && b.querySelector("svg") !== null), "una voce fatta: il cestino grigio è sempre lì (senza passarci sopra)");
+  await voce("richiamare la famiglia").locator(".dfx").click();
+  check(!(await df())?.["700002"]?.some((x) => x.testo === "richiamare la famiglia"), "e la toglie subito");
+  if (SHOTS) await page.screenshot({ path: join(SHOTS, "desktop-dafare.png") });
   await $p(page, '[data-modo="lista"]').click();
   await page.waitForTimeout(150);
   const icona = await page.evaluate(() => { const b = document.getElementById("psassist-host").shadowRoot.querySelector('.pzrow[data-pz="700002"] .dfic'); return { n: b?.textContent.trim(), t: b?.title }; });

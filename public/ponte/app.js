@@ -17,10 +17,7 @@
   "use strict";
   const P = globalThis.PonteCripto;
   const $app = document.getElementById("app");
-  // «Prova»: /ponte/?prova — l'app con un PC finto e dati inventati (prova.js): niente presa, niente chiave del vero
-  // PC (nemmeno quella con un nome suo), e il telefono torna com'era all'indirizzo di sempre.
-  const PROVA = location.search === "?prova";
-  const CHIAVE = PROVA ? "psassist.ponte.prova.v1" : "psassist.ponte.v1";
+  const CHIAVE = "psassist.ponte.v1";
   const TEMPO = 30e3;
   let pdfAperto = null;              // il PDF di un referto aperto sul telefono: { url (blob:), w, t }
   const INATTIVO = 3 * 60e3;        // come sul PC: 3 minuti senza comandi del medico e la sessione è finita
@@ -73,7 +70,7 @@
     fase: "avvio", perche: "", testoFine: "", scaduta: 0,
     pazienti: null, triage: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ordini: new Map(), nascosti: new Set(),
     vista: { nome: "lista", ep: "" }, scheda: "esiti", sel: new Map(), bloccati: new Map(), aperti: new Set(),
-    occupato: new Set(), bozze: new Map(), notaAperta: "", vitAperti: "", promAperto: "", promTesto: "", fatti: new Map(), menu: false, arma: null, avviso: null,
+    occupato: new Set(), vitAperti: "", promTesto: "", menu: false, arma: null, avviso: null,
     inviati: new Map(),  // ep → oid dell'ordine che sta andando al PC (il bottone aspetta)
     cartelle: new Map(), // ep → la cartella letta sul PC: { ep, letto, campi: [{ nome, v, ro }] }
     cbozze: new Map(),   // ep → Map(nome → { base, testo }): quello che il medico ha scritto, e su che cosa
@@ -87,7 +84,7 @@
     zipStato: new Map(), // id → la percentuale, mentre arriva
     zipArma: null,       // «Cancella»: { id, ts } dopo il primo tocco
     mappa: null,         // la mappa del PC (sola lettura): { vista, mappe: [{ k, nome, letti, aree, posti }] }; null = un PC che non la dà
-    modo: "lista",       // «Lista · Mappa» (si ricorda sul telefono: nessun dato di pazienti)
+    modo: "lista",       // «Lista · Mappa · Da fare» (si ricorda sul telefono: nessun dato di pazienti)
     mappaSel: "",        // «Alta · Bassa»: la mappa che si guarda (vuoto: quella che il PC guarda)
     zoom: 1,             // il pizzico dentro la mappa
     eo: null, eoVecchio: false, // gli EO salvati sul PC: [{ k, nome, gruppo: "base" | "casi" | "frasi", testo }]; eoVecchio = un PC che non li dà
@@ -97,19 +94,17 @@
     terapie: new Map(),  // ep → le terapie lette sul PC: { ep, letto, righe: [{ prog, descr, qta, um, via, dil, … }], opz: { um, via, dil }, pref }
     tf: null,            // «＋ Farmaco», il foglio: { ep, passo: "scegli" | "dose", q, voci, qVoci, cerca, errVoci, v, altro, rq, stato, esito }
   };
-  const MODO = PROVA ? "psassist.ponte.prova.modo" : "psassist.ponte.modo";
-  try { if (localStorage.getItem(MODO) === "mappa") S.modo = "mappa"; } catch { /* solo in memoria */ }
+  const MODO = "psassist.ponte.modo";
+  try { const m = localStorage.getItem(MODO); if (m === "mappa" || m === "dafare") S.modo = m; } catch { /* solo in memoria */ }
   function svuota() {
     S.pazienti = null; S.triage = null; S.mappa = null; S.mappaSel = ""; S.zoom = 1; S.eo = null; S.eoVecchio = false; S.eoSheet = false; S.eoQ = ""; if (S.eoAnnulla) clearTimeout(S.eoAnnulla.t); S.eoAnnulla = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
-    S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.bozze.clear(); S.promTesto = ""; S.arma = null;
-    S.notaAperta = ""; S.promAperto = ""; S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
+    S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.promTesto = ""; S.arma = null;
+    S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
     S.terapiaSi = null; S.terapie.clear(); S.tf = null;
     S.zip = null; S.zipErr = ""; S.zipArma = null; S.zipStato.clear();
     for (const f of S.zipFile.values()) try { URL.revokeObjectURL(f.url); } catch { /* già via */ }
     S.zipFile.clear();
     chiudiPdf();
-    for (const t of S.fatti.values()) clearTimeout(t);
-    S.fatti.clear();
     S.vista = { nome: "lista", ep: "" };
   }
 
@@ -159,7 +154,7 @@
   // rado (fino a 15 secondi, con un po' di caso: tanti telefoni non tornano
   // tutti insieme); subito quando la rete torna o l'app torna davanti.
   const inLinea = () => navigator.onLine !== false;
-  const pronto = () => PROVA || !!S.canale && !!S.ws && S.ws.readyState === 1 && S.pari === true && inLinea();
+  const pronto = () => !!S.canale && !!S.ws && S.ws.readyState === 1 && S.pari === true && inLinea();
   function collega() {
     if (!S.chiavi || (S.ws && S.ws.readyState <= 1)) return;
     clearTimeout(S.tRiprova);
@@ -199,7 +194,6 @@
   // Su una rete lenta il «pong» arriva dopo quello che è già per strada (un
   // pezzo di PDF): lo si aspetta anche per quello.
   function batti() {
-    if (PROVA) return;
     const ws = S.ws;
     if (!ws || ws.readyState !== 1 || S.tPong) return;
     ws.send("ping");
@@ -305,7 +299,6 @@
   //   o.scade  (un ordine) l'ora oltre la quale, se non è ancora partita, non parte più
   //   o.partita quando parte davvero (la prima volta)
   function chiedi(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
-    if (PROVA) return window.PROVA.chiedi(cmd, args, o);
     return new Promise((si, no) => {
       if (!S.canale) { no(new Error("Sessione chiusa")); return; }
       if (!o.rq && !pronto()) {
@@ -499,7 +492,7 @@
   }
   function apriPaziente(ep) {
     S.vista = { nome: "paziente", ep };
-    S.menu = false; S.arma = null; S.promTesto = ""; S.notaAperta = ""; S.promAperto = ""; S.vitAperti = "";
+    S.menu = false; S.arma = null; S.promTesto = ""; S.vitAperti = "";
     window.scrollTo(0, 0);
     render();
     caricaEsiti(ep);
@@ -668,7 +661,7 @@
       if (!e.incerto) f.rq = "";   // non è partita: un nuovo tocco è una richiesta nuova
     };
     // (il foglio chiuso intanto: com'è andata lo dice un avviso)
-    const detto = (e) => { if (S.tf !== f) avviso(e ? e.message : `Confermata: ${v.descr}`, e && !e.incerto ? "err" : ""); render(); };
+    const detto = (e) => { if (S.tf !== f) avviso(e ? e.message : `Confermata: ${v.descr}`, e && !e.incerto ? "err" : "", !!(e && e.incerto)); render(); };
     try {
       si(await chiedi("terapiaAggiungi", { ep, voce, visti: l.righe.map((r) => r.prog).filter(Boolean) }, ATTESA_TERAPIA, false,
         { rq: f.rq, scade: Date.now() + 30e3, tardi: (d) => { if (d.ok) { si(d.dati); detto(null); } else { const e = errDa(d); no(e); detto(e); } } }));
@@ -875,8 +868,29 @@
     };
     S.occupato.add("zipvia" + id); render();
     scrivi("registrazioneVia", { zip: id }, TEMPO, via, "Cancellata dal PC")
-      .then(() => { via(); avviso("Cancellata dal PC"); }, (e) => { if (e.inviata) avviso("Non so se è cancellata: aspetto il PC", "err"); else errore(e); })
+      .then(() => { via(); avviso("Cancellata dal PC"); }, (e) => { if (e.inviata) avviso("Non so se è cancellata: aspetto il PC", "err", true); else errore(e); })
       .finally(() => { S.occupato.delete("zipvia" + id); render(); });
+  }
+
+  // «Cancella tutto»: tutte le registrazioni dell'elenco, due tocchi come per una sola
+  function cancellaTutte() {
+    const ora = Date.now();
+    if (!S.zipArma || S.zipArma.id !== "*" || ora - S.zipArma.ts > 6000) {
+      S.zipArma = { id: "*", ts: ora };
+      setTimeout(() => { if (S.zipArma && S.zipArma.id === "*" && Date.now() - S.zipArma.ts >= 6000) { S.zipArma = null; render(); } }, 6100);
+      render();
+      return;
+    }
+    if (ora - S.zipArma.ts < 800) return;
+    S.zipArma = null;
+    const via = () => {
+      for (const f of S.zipFile.values()) try { URL.revokeObjectURL(f.url); } catch { /* già via */ }
+      S.zipFile.clear(); S.zip = [];
+    };
+    S.occupato.add("zipvia*"); render();
+    scrivi("registrazioneVia", { zip: "*" }, TEMPO, via, "Cancellate dal PC")
+      .then(() => { via(); avviso("Cancellate dal PC"); }, (e) => { if (e.inviata) avviso("Non so se sono cancellate: aspetto il PC", "err", true); else errore(e); })
+      .finally(() => { S.occupato.delete("zipvia*"); render(); });
   }
 
   // ------------------------------------------------- il QR, inquadrato qui
@@ -1003,44 +1017,25 @@
   }
   window.addEventListener("pagehide", chiudiScan);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") chiudiScan(); });
-  async function salvaNota(ep) {
-    const testo = S.bozze.get(ep);
-    const p = paziente(ep);
-    if (S.notaAperta === ep) S.notaAperta = "";
-    if (testo == null || !p || testo === p.nota) { S.bozze.delete(ep); render(); return; }
-    S.occupato.add("nota" + ep); render();
-    const salvata = (riga) => { aggiornaRiga(riga); if (S.bozze.get(ep) === testo) S.bozze.delete(ep); };
-    try { salvata(await scrivi("nota", { ep, testo }, TEMPO, salvata, "Da fare salvato sul PC")); avviso("Da fare salvato sul PC"); }
-    catch (e) { if (e.inviata) avviso("Non so se il Da fare è salvato: aspetto il PC", "err"); else errore(e); }
-    S.occupato.delete("nota" + ep); render();
-  }
+  // «+ nota»: con un'ora dentro («11:30 tropo», «tra 2h ECG») è un promemoria, se no una cosa da fare (lo decide il PC)
   async function aggiungiProm(ep) {
     const testo = S.promTesto.trim();
     if (!testo) return;
     S.occupato.add("prom" + ep); render();
-    const salvato = (riga) => { aggiornaRiga(riga); if (S.promTesto.trim() === testo) { S.promTesto = ""; S.promAperto = ""; } };
-    try { salvato(await scrivi("promemoria", { ep, testo }, TEMPO, salvato, "Da fare salvato sul PC")); }
-    catch (e) { if (e.inviata) avviso("Non so se il Da fare è salvato: aspetto il PC", "err"); else errore(e); }
+    const salvato = (riga) => { aggiornaRiga(riga); if (S.promTesto.trim() === testo) S.promTesto = ""; };
+    try { salvato(await scrivi("dfAggiungi", { ep, testo }, TEMPO, salvato, "Da fare salvato sul PC")); }
+    catch (e) { if (e.inviata) avviso("Non so se il Da fare è salvato: aspetto il PC", "err", true); else errore(e); }
     S.occupato.delete("prom" + ep); render();
+    fuocoSu("promin");
   }
-  // «✓ Fatto» aspetta 5 secondi, con «Annulla»: un tocco sbagliato non toglie
-  // un promemoria dal PC.
-  function fattoProm(ep, pid) {
-    if (S.fatti.has(pid)) return;
-    S.fatti.set(pid, setTimeout(async () => {
-      S.occupato.add("fatto" + pid); render();
-      try { aggiornaRiga(await scrivi("fatto", { ep, pid }, TEMPO, aggiornaRiga, "Fatto, anche sul PC")); }
-      catch (e) { if (e.dati) aggiornaRiga(e.dati); if (e.inviata) avviso("Non so se è segnato fatto: aspetto il PC", "err"); else errore(e); }
-      S.fatti.delete(pid);
-      S.occupato.delete("fatto" + pid); render();
-    }, 5000));
-    render();
-  }
-  function annullaFatto(pid) {
-    if (S.occupato.has("fatto" + pid)) return;
-    clearTimeout(S.fatti.get(pid));
-    S.fatti.delete(pid);
-    render();
+  // la spunta (o, di nuovo, la riapre) e il cestino: sempre il PC, e la riga si rifà dalla sua risposta
+  async function dfComando(ep, pid, cmd, args = {}) {
+    const k = "df" + pid;
+    if (S.occupato.has(k)) return;
+    S.occupato.add(k); render();
+    try { aggiornaRiga(await scrivi(cmd, { ep, pid, ...args }, TEMPO, aggiornaRiga)); }
+    catch (e) { if (e.dati) aggiornaRiga(e.dati); if (e.inviata) avviso("Non so se è salvato: aspetto il PC", "err", true); else errore(e); }
+    S.occupato.delete(k); render();
   }
 
   // ------------------------------------------------- la scelta degli esami
@@ -1139,7 +1134,7 @@
         // la lista degli ordini dal PC. Mai un secondo ordine alla cieca.
         S.sel.delete(ep);
         S.bloccati.set(ep, oid);
-        avviso("Non so se l'ordine è partito: controlla qui sopra prima di rifarlo", "err");
+        avviso("Non so se l'ordine è partito: controlla qui sopra prima di rifarlo", "err", true);
         window.scrollTo(0, 0);
         aggiornaOrdini();
       } else errore(e);
@@ -1180,8 +1175,9 @@
 
   // --------------------------------------------------------------- disegno
   let tAvviso = 0;
-  function avviso(testo, tono = "") {
-    S.avviso = { testo, tono };
+  // `alto`: «non so se…» — in cima, sotto la testata: in fondo coprirebbe gli esami che chiede di controllare
+  function avviso(testo, tono = "", alto = false) {
+    S.avviso = { testo, tono, alto };
     clearTimeout(tAvviso);
     tAvviso = setTimeout(() => { S.avviso = null; render(); }, tono === "err" ? 6500 : 3500);
     render();
@@ -1198,7 +1194,8 @@
     const sx = suPaz || suZip ? `<button class="ico" data-a="indietro" aria-label="Tutti i pazienti">${ICO.indietro}</button>` : "";
     const tit = p ? `<b>${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(chi(p))}</b>${p.prec ? "<small>Episodio precedente</small>" : ""}`
       : suZip ? "<b>Registrazioni</b>" : suPaz ? "" : S.aggiornato ? `<small>Aggiornato alle ${hhmm(S.aggiornato)}</small>` : "";
-    return `<header class="top">${sx}<div class="tit">${tit}</div>${statoPc()}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
+    const nome = suPaz ? `<button type="button" class="tit" data-a="indietro" aria-label="Torna alla ${S.modo === "mappa" && S.mappa ? "mappa" : "lista"}">${tit}</button>` : `<div class="tit">${tit}</div>`;
+    return `<header class="top">${sx}${nome}${statoPc()}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
       ${S.menu ? `<div class="menu" role="menu">
         ${suPaz || suZip ? "" : `<button data-a="aggiornaLista">Aggiorna l'elenco</button>`}
         <button data-a="stampaPdf">Stampa un PDF</button>
@@ -1348,14 +1345,16 @@
     const giorno = (ts) => { const d = new Date(ts); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${hhmm(ts)}`; };
     const righe = S.zip.map((z) => {
       const st = S.zipStato.get(z.id), f = S.zipFile.get(z.id), armata = S.zipArma && S.zipArma.id === z.id, id = esc(z.id);
-      const prendi = f ? (f.puo ? `<button class="btnmini ok" data-a="zipManda" data-id="${id}">Condividi…</button>` : `<a class="btnmini" href="${esc(f.url)}" download="${esc(f.nome)}">Salva</a>`)
-        : `<button class="btnmini" data-a="zipScarica" data-id="${id}" ${st != null ? "disabled" : ""}>${st != null ? `Scarico… ${st}%` : "Scarica"}</button>`;
+      const prendi = f ? (f.puo ? `<button class="btnmini ok" data-a="zipManda" data-id="${id}">Condividi…</button>` : `<a class="btnmini pri" href="${esc(f.url)}" download="${esc(f.nome)}">Salva</a>`)
+        : `<button class="btnmini pri" data-a="zipScarica" data-id="${id}" ${st != null ? "disabled" : ""}>${st != null ? `Scarico… ${st}%` : "Scarica"}</button>`;
       return `<div class="zip" data-zip="${id}"><div class="z1"><b>${esc(giorno(z.quando || z.ts))}</b><span class="ztag${z.motivo === "auto" ? " auto" : ""}">${z.motivo === "auto" ? "automatica" : "a mano"}</span><span class="zkb">${esc(kb(z.byte))}</span></div>
         ${z.motivo === "auto" && z.errore ? `<div class="z2">${esc(z.errore)}</div>` : ""}
         <div class="z3${z.controllo ? "" : " ko"}">${z.controllo ? "Controllo superato" : `Restano ${Number(z.punti) || 0} dati da controllare`}</div>
         <div class="zbtn">${prendi}<button class="btnmini via${armata ? " arma" : ""}" data-a="zipVia" data-id="${id}" ${S.occupato.has("zipvia" + z.id) ? "disabled" : ""}>${armata ? "Cancello dal PC? Tocca di nuovo" : "Cancella"}</button></div></div>`;
     }).join("");
-    return `<main>${stampaHtml()}<div class="carta zips">${righe}</div></main>`;
+    const tutte = S.zip.length > 1 ? `<button class="btnmini via tutte${S.zipArma && S.zipArma.id === "*" ? " arma" : ""}" data-a="zipTutte" ${S.occupato.has("zipvia*") ? "disabled" : ""}>${
+      S.zipArma && S.zipArma.id === "*" ? `Cancello tutte le ${S.zip.length} dal PC? Tocca di nuovo` : "Cancella tutto"}</button>` : "";
+    return `<main>${stampaHtml()}<div class="carta zips">${righe}</div>${tutte}</main>`;
   }
   // «Triage · alle 14:32»: chi aspetta (le due aree insieme), dal più urgente e,
   // a pari colore, da chi aspetta da più tempo. Non si tocca. Via se vuoto o
@@ -1386,10 +1385,10 @@
     return l.find((m) => m.k === S.mappaSel) || l.find((m) => m.k === per) || l.find((m) => (m.posti || []).some((x) => eps.has(x.ep))) || l[0];
   }
   function commutatore() {
-    if (!S.mappa || !S.pazienti) return "";
+    if (!S.pazienti) return "";
     const b = (m, t) => `<button class="${S.modo === m ? "on" : ""}" data-a="modo" data-m="${m}" role="tab" aria-selected="${S.modo === m}">${t}</button>`;
-    const cur = S.modo === "mappa" ? mappaScelta() : null;
-    return `<div class="seg" role="tablist">${b("lista", "Lista")}${b("mappa", "Mappa")}</div>${cur && S.mappa.mappe.length > 1
+    const cur = S.modo === "mappa" && S.mappa ? mappaScelta() : null;
+    return `<div class="seg" role="tablist">${b("lista", "Lista")}${S.mappa ? b("mappa", "Mappa") : ""}${b("dafare", "Da fare")}</div>${cur && S.mappa.mappe.length > 1
       ? `<div class="seg pic" role="tablist" aria-label="Mappa">${S.mappa.mappe.map((m) => `<button class="${m === cur ? "on" : ""}" data-a="mappasel" data-k="${esc(m.k)}" role="tab" aria-selected="${m === cur}">${esc(m.nome)}</button>`).join("")}</div>` : ""}`;
   }
   // il cognome (il «breve» del PC: «ROSSI M.»): la parola più lunga decide la misura del carattere, a capo solo fra le parole
@@ -1412,6 +1411,8 @@
       if (x.tipo === "area") dove.set(k, [...(dove.get(k) || []), p]); else dove.set(k, p);
     }
     const geo = (o, n) => `data-mg="${o.c - c0},${o.r - r0},${o.w},${o.h},${n}"`;
+    // (un PC che la sa modificare: ogni letto e ogni area è un bersaglio per «tieni premuto e trascina»)
+    const bers = (tipo, o) => (S.mappa.modifica ? ` data-lid="${tipo}:${esc(o.id)}@${esc(m.k)}"` : "");
     const segni = (p) => {
       const s = p.stato || {}, cuore = s.cuore ? `<span class="cuore ${esc(s.cuore.livello)}${s.cuore.vecchio ? " vecchio" : ""}">${s.cuore.vecchio ? "♡" : "♥"}</span>` : "";
       return cuore || s.segno ? `<span class="mk">${cuore}${s.segno ? `<i class="segno ${esc(s.segno)}"></i>` : ""}</span>` : "";
@@ -1419,14 +1420,14 @@
     const html = [];
     for (const a of aree) {
       const l = dove.get("area|" + a.id) || [];
-      html.push(`<div class="area" ${geo(a, Math.max(parolaLunga(a.nome), 8))} aria-label="${esc(a.nome)}"><h4>${esc(a.nome)}${l.length ? ` · ${l.length}` : ""}</h4>${l.map((p) =>
+      html.push(`<div class="area" ${geo(a, Math.max(parolaLunga(a.nome), 8))}${bers("area", a)} aria-label="${esc(a.nome)}"><h4>${esc(a.nome)}${l.length ? ` · ${l.length}` : ""}</h4>${l.map((p) =>
         `<button class="pa t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" data-a="paz" data-ep="${esc(p.ep)}" title="${esc(chi(p))}"><span class="ln">${esc(cognome(p))}</span>${segni(p)}</button>`).join("")}</div>`);
     }
     for (const l of letti) {
       const p = dove.get("letto|" + l.id);
-      if (!p) { html.push(`<div class="letto vuoto" ${geo(l, parolaLunga(l.nome))}><span class="ln">${esc(l.nome)}</span></div>`); continue; }
+      if (!p) { html.push(`<div class="letto vuoto" ${geo(l, parolaLunga(l.nome))}${bers("letto", l)}><span class="ln">${esc(l.nome)}</span></div>`); continue; }
       const nome = cognome(p);
-      html.push(`<button class="letto occ${l.forma === "barella" ? " alto" : ""} t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" ${geo(l, parolaLunga(nome))} data-a="paz" data-ep="${esc(p.ep)}" title="${esc(chi(p))}">${
+      html.push(`<button class="letto occ${l.forma === "barella" ? " alto" : ""} t-${TRIAGE[p.triage] || "nessuno"}${p.spento ? " spento" : ""}" ${geo(l, parolaLunga(nome))}${bers("letto", l)} data-a="paz" data-ep="${esc(p.ep)}" title="${esc(chi(p))}">${
         l.w >= 5 && l.h >= 4 ? `<span class="lb">${esc(l.nome)}</span>` : ""}<span class="ln">${p.omonimo ? "⚠ " : ""}${esc(nome)}</span><span class="r2">${
         Number.isInteger(p.eta) ? `<span class="le">${p.eta}</span>` : ""}${segni(p)}</span></button>`);
     }
@@ -1464,10 +1465,12 @@
       const inStanza = vivi.filter((p) => p.posto).sort((a, b) => a.posto.localeCompare(b.posto, "it", { numeric: true }));
       corpo = carta([...vivi.filter((p) => !p.posto), ...inStanza]);
     }
-    if (S.mappa && S.modo === "mappa" && S.pazienti.length) {
+    if (S.modo === "dafare") corpo = dafareHtml(vivi);
+    else if (S.mappa && S.modo === "mappa" && S.pazienti.length) {
       const senza = vivi.filter((p) => !postoSuMappa(p.ep));
       corpo = mappaHtml(vivi) + (senza.length ? `<div class="lbl">Senza posto</div>${carta(senza)}` : "");
     }
+    if (S.modo === "dafare") return `<main>${stampaHtml()}${codaDi("")}${commutatore()}${corpo}${barraOrdini()}</main>`;
     return `<main>${stampaHtml()}${codaDi("")}${commutatore()}${S.pazienti.length ? corpo + triageHtml() + (prec.length ? `<div class="lbl">Episodi precedenti</div>${carta(prec)}` : "")
       : `<div class="vuoto">Nessun paziente nell'elenco del PC.<br>Si riempie aprendo i pazienti nel gestionale.</div>${triageHtml()}`}
       ${barraOrdini()}</main>`;
@@ -1488,7 +1491,7 @@
     // quando li ha letti il PC: dopo un'ora, in ambra
     const letti = e.tabella && e.letto ? `<small class="letti${Date.now() - e.letto > 60 * 60e3 ? " amb" : ""}">Letti sul PC alle ${hhmm(e.letto)} · ${fa(e.letto)}</small>` : "";
     const valori = `<div class="carta"><div class="sezt"><div class="tv">${letti}</div>
-        <button class="agg" data-a="valori" ${legge ? "disabled" : ""}>${legge ? "Leggo sul PC…" : "↻ Aggiorna i valori"}</button></div>
+        <button class="agg" data-a="valori" ${legge ? "disabled" : ""}>${legge ? "Leggo sul PC…" : "↻ Rileggi"}</button></div>
       ${e.tabella ? tabellaHtml(e.tabella) : legge ? "" : `<div class="vuoto stretto">Il PC non ha ancora letto valori per questo paziente.</div>`}</div>`;
     const referti = e.referti.length ? `<div class="carta">${e.referti.map((r) => {
       const aperto = S.aperti.has(r.id);
@@ -1537,30 +1540,42 @@
     const occupato = S.inviati.has(p.ep), bloccato = S.bloccati.has(p.ep);
     const armato = S.arma && S.arma.ep === p.ep;
     // (due pazienti con lo stesso cognome: il ⚠ anche qui, e il nome col suo segno)
-    const etichetta = occupato ? (S.coda.has(S.inviati.get(p.ep)) ? "In coda…" : "Mando l'ordine al PC…") : bloccato ? "Controllo gli ordini sul PC…" : armato ? `${p.omonimo ? "⚠ " : ""}Ordino ${nTxt} per ${chi(p)}? Tocca di nuovo`
-      : !n ? "Scegli gli esami" : `Conferma e stampa · ${nTxt}${staDi() && doveDi(p.ep) === "stazione" ? ` → ${staDi()}` : ""}`;
+    // (armato: due righe — che cosa, e per chi: il nome intero, l'età e il posto, che guardano dal paziente sbagliato)
+    const etichetta = armato ? `<span class="l1">Ordino ${nTxt} · tocca di nuovo</span><span class="l2">${p.omonimo ? "⚠ " : ""}${esc(chi(p))}</span>`
+      : esc(occupato ? (S.coda.has(S.inviati.get(p.ep)) ? "In coda…" : "Mando l'ordine al PC…") : bloccato ? "Controllo gli ordini sul PC…"
+        : !n ? "Scegli gli esami" : `Conferma e stampa · ${nTxt}${staDi() && doveDi(p.ep) === "stazione" ? ` → ${staDi()}` : ""}`);
     const perche = bloccato ? "Prima di un altro ordine, il PC dice se quello di prima è partito"
       : n && !s.q.trim() ? "Scrivi il quesito diagnostico" : rx && lab ? "Laboratorio e radiologia in richieste separate: il PC le conferma e le stampa tutte" : "";
     const nomi = [...s.esami].map((k) => c.nomi[k] || k).join(", ");
-    return `<div class="cta">${n ? `<div class="sel">${esc(nomi)}</div>${doveHtml(p)}` : ""}<button id="ordina" data-a="ordina" class="${armato ? "arma" : ""}" ${occupato || bloccato ? "disabled" : !n || !s.q.trim() ? "aria-disabled=\"true\"" : ""}>${esc(etichetta)}</button>${
+    return `<div class="cta">${n ? `<div class="sel">${esc(nomi)}</div>${doveHtml(p)}` : ""}<button id="ordina" data-a="ordina" class="${armato ? "arma" : ""}" ${occupato || bloccato ? "disabled" : !n || !s.q.trim() ? "aria-disabled=\"true\"" : ""}>${etichetta}</button>${
       perche ? `<div class="perche">${esc(perche)}</div>` : ""}</div>`;
   }
-  // «Da fare», come sul PC: la nota (la prima voce senza ora) e quelle con l'ora,
-  // chiuse finché non servono («+ Da fare», «+ Con l'ora»). Sotto, il ponte
-  // dice ancora `nota` e `promemoria`.
+  // «Da fare», come sul PC: una lista sola, ogni voce con la sua spunta tonda, l'ora (se c'è) davanti e il testo;
+  // spuntata resta lì, barrata, finché il PC non la toglie (5 minuti) o non si preme il suo cestino. Un solo campo, «+ nota».
+  const CESTINO = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+  const FATTO_MS = 5 * 60e3;   // come sul PC: una voce spuntata resta 5 minuti
+  // (un PC che non manda `df`: la nota e i promemoria di prima, in lettura)
+  function vociDf(p) {
+    const l = Array.isArray(p.df) ? p.df : [...(p.nota ? [{ id: "nota", testo: p.nota, t: null, fatto: null }] : []), ...(p.prom || []).map((x) => ({ id: x.id, testo: x.testo, t: x.t, fatto: null }))];
+    return l.filter((x) => !x.fatto || Date.now() + S.scarto - x.fatto <= FATTO_MS);
+  }
+  function rigaDf(x, ep) {
+    const id = esc(x.id), e = esc(ep), occ = S.occupato.has("df" + x.id) ? " disabled" : "";
+    return `<div class="promr dfr${x.fatto ? " fatta" : ""}"><button type="button" class="dfck" role="checkbox" aria-checked="${x.fatto ? "true" : "false"}" data-a="dfck" data-ep="${e}" data-pid="${id}" aria-label="${esc(x.testo)}"${occ}></button>${
+      x.t != null ? `<span class="quando ${x.fatto ? "" : banda(x.t)}">${hhmm(x.t)}</span>` : ""}<span class="cosa">${esc(x.testo)}</span>${
+      x.fatto ? `<button type="button" class="dfx" data-a="dftogli" data-ep="${e}" data-pid="${id}" aria-label="Cancella ${esc(x.testo)}"${occ}>${CESTINO}</button>` : ""}</div>`;
+  }
   function noteHtml(p) {
-    const bozza = S.bozze.has(p.ep) ? S.bozze.get(p.ep) : p.nota || "";
-    const aperta = S.notaAperta === p.ep, promAperto = S.promAperto === p.ep;
-    const proms = [...(p.prom || [])].sort((a, b) => a.t - b.t);
-    const nota = aperta ? `<div class="nota-w"><textarea id="nota" rows="3" placeholder="Da fare per questo paziente" aria-label="Da fare">${esc(bozza)}</textarea></div>`
-      : bozza ? `<button class="notatxt" data-a="nota" aria-label="Modifica il Da fare">${esc(bozza)}</button>` : "";
-    const righe = proms.map((x) => `<div class="promr"><span class="quando ${banda(x.t)}">${hhmm(x.t)}</span><span class="cosa">${esc(x.testo)}</span>${
-      S.fatti.has(x.id) ? `<span class="fattoin">Fatto</span><button class="btnmini" data-a="annulla" data-pid="${esc(x.id)}" ${S.occupato.has("fatto" + x.id) ? "disabled" : ""}>Annulla</button>`
-        : `<button class="btnmini ok" data-a="fatto" data-pid="${esc(x.id)}">✓ Fatto</button>`}</div>`).join("");
-    const add = promAperto ? `<div class="addprom"><input id="promin" type="text" enterkeyhint="done" autocomplete="off" placeholder="«11:30 tropo», «tra 2h ECG»" value="${esc(S.promTesto)}">
-      <button data-a="prom" ${S.occupato.has("prom" + p.ep) ? "disabled" : ""}>Aggiungi</button></div>` : "";
-    const piu = (!aperta && !bozza ? `<button class="piu" data-a="nota">+ Da fare</button>` : "") + (!promAperto && !p.prec ? `<button class="piu" data-a="promApri" aria-label="Da fare con l'ora">+ Con l'ora</button>` : "");
-    return `<div class="carta note">${nota}${righe ? `<div class="proms">${righe}</div>` : ""}${add}${piu ? `<div class="piurow">${piu}</div>` : ""}</div>`;
+    const righe = vociDf(p).map((x) => rigaDf(x, p.ep)).join("");
+    const add = p.prec ? "" : `<div class="addprom"><input id="promin" type="text" enterkeyhint="done" autocomplete="off" placeholder="+ nota" value="${esc(S.promTesto)}" aria-label="Nuova nota: con un'ora («11:30 tropo», «tra 2h ECG») è un promemoria" ${S.occupato.has("prom" + p.ep) ? "disabled" : ""}></div>`;
+    return `<div class="carta note">${righe ? `<div class="proms">${righe}</div>` : ""}${add}</div>`;
+  }
+  // «Da fare» sulla schermata principale: le voci di tutti i pazienti, per paziente (cognome e posto: un tocco apre il
+  // paziente), prima i promemoria per ora, poi le cose da fare, poi quelle appena spuntate. Niente pazienti vuoti.
+  function dafareHtml(vivi) {
+    const gruppi = vivi.map((p) => ({ p, l: vociDf(p).sort((a, b) => (a.fatto ? 1 : 0) - (b.fatto ? 1 : 0) || (a.t != null ? 0 : 1) - (b.t != null ? 0 : 1) || (a.t || 0) - (b.t || 0)) })).filter((g) => g.l.length);
+    if (!gruppi.length) return `<div class="vuoto">Niente da fare.</div>`;
+    return gruppi.map(({ p, l }) => `<div class="carta dfg"><button class="dfhd" data-a="paz" data-ep="${esc(p.ep)}"><b>${p.omonimo ? "⚠ " : ""}${esc(cognome(p))}</b>${p.posto ? `<span class="posto">${esc(p.posto)}</span>` : ""}</button><div class="proms">${l.map((x) => rigaDf(x, p.ep)).join("")}</div></div>`).join("");
   }
   function vistaPaziente() {
     const p = paziente(S.vista.ep);
@@ -1569,7 +1584,7 @@
     const tab = (s, t) => `<button class="${S.scheda === s ? "on" : ""}" data-a="scheda" data-s="${s}" role="tab" aria-selected="${S.scheda === s}">${t}</button>`;
     const ter = S.terapiaSi && S.scheda === "terapia";
     return `<main>${vitaliHtml(p)}${barraOrdini(p.ep)}${stampaHtml()}<div class="seg" role="tablist">${tab("richieste", "Richieste")}${tab("esiti", "Esiti")}${tab("cartella", "Cartella")}${S.terapiaSi ? tab("terapia", "Terapia") : ""}</div>
-      ${ordini}${noteHtml(p)}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : ter ? vistaTerapia(p) : vistaRichieste(p)}</main>${ctaHtml(p)}${
+      ${ordini}${S.scheda === "richieste" ? noteHtml(p) : ""}${S.scheda === "esiti" ? vistaEsiti(p) : S.scheda === "cartella" ? vistaCartella(p) : ter ? vistaTerapia(p) : vistaRichieste(p)}</main>${ctaHtml(p)}${
       S.eoSheet && S.scheda === "cartella" && S.eo ? foglioEo() : ""}${ter ? foglioTerapia(p) : ""}`;
   }
   // La cartella: i campi della pagina del paziente sul PC, ognuno com'è là.
@@ -1703,7 +1718,7 @@
   let premuto = 0, rinviato = false, disegno = false;
   // le azioni che senza il PC non vanno
   // (l'ordine no: senza collegamento va in coda)
-  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "prom", "fatto", "nota", "promApri", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
+  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
     "trileggi", "tconferma"]);
   function render() {
     if (premuto) { rinviato = true; return; }
@@ -1714,7 +1729,7 @@
     const fg = $app.querySelector(".foglio .pannello"), fgy = fg ? { k: fg.dataset.k, y: fg.scrollTop } : null;   // (un foglio aperto resta dov'era)
     const corpo = S.fase === "pronta" ? (S.vista.nome === "paziente" ? vistaPaziente() : S.vista.nome === "registrazioni" ? vistaRegistrazioni() : vistaLista()) : schermata();
     disegno = true;   // (un campo tolto dal ridisegno non è un campo lasciato)
-    try { $app.innerHTML = testata() + corpo + foglioStazione() + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}" role="alert">${esc(S.avviso.testo)}</div>` : ""); }
+    try { $app.innerHTML = testata() + corpo + foglioStazione() + (S.avviso ? `<div class="avviso ${esc(S.avviso.tono)}${S.avviso.alto ? " alto" : ""}" role="alert">${esc(S.avviso.testo)}</div>` : ""); }
     finally { disegno = false; }
     for (const t of $app.querySelectorAll(".cc textarea")) alza(t);
     misureMappa();
@@ -1754,6 +1769,68 @@
       mp.scrollLeft = (mp.scrollLeft + cx) * S.zoom / prima - cx; mp.scrollTop = (mp.scrollTop + cy) * S.zoom / prima - cy;
     }, { passive: false });
     $app.addEventListener("touchend", (e) => { if (e.touches.length < 2) d0 = 0; }, { passive: true });
+    // Un tocco su un posto vuoto della mappa (non su un paziente) la ingrandisce lì; un altro la riporta intera.
+    $app.addEventListener("click", (e) => {
+      const mp = e.target.closest && e.target.closest(".mappa");
+      if (!mp || e.target.closest("[data-a]")) return;
+      const piano = mp.firstElementChild, prima = S.zoom;
+      S.zoom = prima > 1.05 ? 1 : 2.2;
+      piano.style.setProperty("--zoom", S.zoom);
+      const r = mp.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top;
+      mp.scrollLeft = (mp.scrollLeft + cx) * S.zoom / prima - cx; mp.scrollTop = (mp.scrollTop + cy) * S.zoom / prima - cy;
+    });
+  }
+  // Mappa modificabile: un nome tenuto premuto (mezzo secondo) si porta su un letto o un'area; lasciato fuori dalla
+  // mappa torna fra «Senza posto». Lo fa il PC, con lo stesso gesto della sua mappa; il telefono ridisegna dalla sua risposta.
+  {
+    let g = null;   // { ep, nome, x, y, timer, attivo, fant, su }
+    const puo = () => S.modo === "mappa" && S.mappa && S.mappa.modifica && !S.occupato.has("posto");
+    const fine = () => { if (!g) return; clearTimeout(g.timer); if (g.fant) g.fant.remove(); if (g.su) g.su.classList.remove("bers"); g = null; };
+    const sotto = (x, y) => { const el = document.elementFromPoint(x, y); return { b: el && el.closest("[data-lid]"), mappa: !!(el && el.closest(".mappa")) }; };
+    async function metti(ep, dove) {
+      S.occupato.add("posto"); render();
+      try { const d = await chiedi("posto", { ep, dove }, TEMPO); if (d && Array.isArray(d.mappe) && d.mappe.length) S.mappa = d; }
+      catch (e) { errore(e); }
+      S.occupato.delete("posto"); render(); aggiornaLista(true);
+    }
+    $app.addEventListener("touchstart", (e) => {
+      if (!puo() || e.touches.length !== 1) return;
+      const el = e.target.closest && e.target.closest(".letto.occ, .pa, .paz[data-ep]");
+      if (!el || !el.dataset.ep) return;
+      const t = e.touches[0];
+      fine();
+      g = { ep: el.dataset.ep, nome: (el.querySelector(".ln, .nome") || el).textContent.replace(/\s+/g, " ").trim(), x: t.clientX, y: t.clientY, attivo: false, fant: null, su: null };
+      g.timer = setTimeout(() => {
+        if (!g) return;
+        g.attivo = true;
+        g.fant = document.createElement("div");
+        g.fant.className = "fantasma"; g.fant.textContent = g.nome;
+        g.fant.style.left = g.x + "px"; g.fant.style.top = g.y + "px";
+        document.body.appendChild(g.fant);
+        try { navigator.vibrate && navigator.vibrate(15); } catch { /* niente */ }
+      }, 450);
+    }, { passive: true });
+    $app.addEventListener("touchmove", (e) => {
+      if (!g) return;
+      const t = e.touches[0];
+      if (!g.attivo) { if (Math.hypot(t.clientX - g.x, t.clientY - g.y) > 10) fine(); return; }
+      e.preventDefault();   // dal «tenuto premuto» in poi il dito porta il nome, la pagina non scorre
+      g.fant.style.left = t.clientX + "px"; g.fant.style.top = t.clientY + "px";
+      const b = sotto(t.clientX, t.clientY).b;
+      if (b !== g.su) { if (g.su) g.su.classList.remove("bers"); g.su = b; if (b) b.classList.add("bers"); }
+    }, { passive: false });
+    const lascia1 = (e) => {
+      if (!g) return;
+      const a = g, t = e.changedTouches && e.changedTouches[0];
+      fine();
+      if (!a.attivo) return;
+      e.preventDefault();   // niente tocco finto: il paziente non si apre
+      if (e.type === "touchcancel" || !t) return;
+      const r = sotto(t.clientX, t.clientY);
+      if (r.b) metti(a.ep, r.b.dataset.lid); else if (!r.mappa) metti(a.ep, "tray");
+    };
+    $app.addEventListener("touchend", lascia1);
+    $app.addEventListener("touchcancel", lascia1);
   }
   const lascia = () => { clearTimeout(premuto); premuto = 0; if (rinviato) { rinviato = false; render(); } };
   $app.addEventListener("pointerdown", () => { clearTimeout(premuto); premuto = setTimeout(lascia, 700); }, true);
@@ -1801,10 +1878,11 @@
     else if (a === "zipScarica") scaricaZip(b.dataset.id);
     else if (a === "zipManda") condividiZip(b.dataset.id);
     else if (a === "zipVia") cancellaZip(b.dataset.id);
+    else if (a === "zipTutte") cancellaTutte();
     else if (a === "paz") apriPaziente(b.dataset.ep);
-    else if (a === "modo") { S.modo = b.dataset.m === "mappa" ? "mappa" : "lista"; try { localStorage.setItem(MODO, S.modo); } catch { /* solo in memoria */ } render(); }
+    else if (a === "modo") { S.modo = b.dataset.m === "mappa" ? "mappa" : b.dataset.m === "dafare" ? "dafare" : "lista"; try { localStorage.setItem(MODO, S.modo); } catch { /* solo in memoria */ } render(); }
     else if (a === "mappasel") { S.mappaSel = b.dataset.k; render(); }
-    else if (a === "indietro") { salvaNota(ep); S.vista = { nome: "lista", ep: "" }; S.arma = null; render(); aggiornaLista(); }
+    else if (a === "indietro") { S.vista = { nome: "lista", ep: "" }; S.arma = null; render(); aggiornaLista(); }
     else if (a === "aggiornaLista") aggiornaLista(false, true);
     else if (a === "esci") { chiedi("esci").catch(() => {}); chiusa("chiusa dall'iPhone"); }
     else if (a === "dimentica") {
@@ -1846,11 +1924,8 @@
     else if (a === "ordina") ordina(ep);
     else if (a === "riarma") riarma(b.dataset.oid);
     else if (a === "codaVia") { S.coda.delete(b.dataset.oid); render(); }
-    else if (a === "nota") { S.notaAperta = ep; render(); fuocoSu("nota"); }
-    else if (a === "promApri") { S.promAperto = ep; render(); fuocoSu("promin"); }
-    else if (a === "prom") aggiungiProm(ep);
-    else if (a === "fatto") fattoProm(ep, b.dataset.pid);
-    else if (a === "annulla") annullaFatto(b.dataset.pid);
+    else if (a === "dfck") dfComando(b.dataset.ep || ep, b.dataset.pid, "dfSpunta", { si: b.getAttribute("aria-checked") !== "true" });
+    else if (a === "dftogli") dfComando(b.dataset.ep || ep, b.dataset.pid, "dfTogli");
     else if (a === "nascondi") { S.nascosti.add(b.dataset.id); render(); }
     else render();
   });
@@ -1862,9 +1937,6 @@
       if (s.pacchetto && t.value.trim().toLowerCase() !== s.pacchetto.toLowerCase()) { s.pacchetto = ""; s.pkgDa = new Set(); }
       S.arma = null;
       ritoccaCta();
-    } else if (t.id === "nota") {
-      S.bozze.set(ep, t.value);
-      t.style.height = "auto"; t.style.height = t.scrollHeight + "px";
     } else if (t.id.startsWith("cc-") && !t.readOnly) {
       // una bozza ricorda da che testo è partita: è quello che il PC deve avere ancora, per salvarla
       const nome = t.id.slice(3), c = S.cartelle.get(ep), x = c && c.campi.find((y) => y.nome === nome);
@@ -1894,7 +1966,6 @@
     else if (t.id === "promin") S.promTesto = t.value;
     else if (t.id === "cambio" && S.cambio) S.cambio.testo = t.value;
   });
-  $app.addEventListener("focusout", (e) => { if (e.target.id === "nota" && !disegno) salvaNota(S.vista.ep); });
   $app.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     if (e.target.id === "promin") { e.preventDefault(); aggiungiProm(S.vista.ep); }
@@ -1935,7 +2006,6 @@
   // regola dei 3 minuti vale anche qui: un'app lasciata in sottofondo non
   // tiene in memoria i pazienti finché il PC non glielo dice.
   function scadenze() {
-    if (PROVA) return false;
     if (S.coppia && S.coppia.scade <= Date.now()) { S.scaduta = S.coppia.scade; if (S.canale) chiusa("scaduta"); else { S.perche = "scaduta"; dimentica("finita"); } return true; }
     if (S.canale && Date.now() - S.ultimo >= INATTIVO) { chiedi("esci", {}, TEMPO, true).catch(() => {}); chiusa("inattivo"); return true; }
     return false;
@@ -1954,20 +2024,7 @@
   });
   if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("sw.js", { scope: "./" }).catch(() => {});
 
-  // «Prova»: il PC finto (prova.js, caricato solo qui) e la sua striscia; poi si parte come con un PC vero.
-  function avviaProva() {
-    const attendi = (el) => new Promise((si) => { el.onload = el.onerror = si; document.head.appendChild(el); });
-    Promise.all([attendi(Object.assign(document.createElement("link"), { rel: "stylesheet", href: "prova.css" })),
-      attendi(Object.assign(document.createElement("script"), { src: "prova-dati.js" })),
-      attendi(Object.assign(document.createElement("script"), { src: "prova.js" }))]).then(() => {
-      if (!window.PROVA) { S.fase = "senza"; render(); return; }
-      window.PROVA.avvia({ S, render, ordineVisto, avviso });
-      S.fase = "pronta"; render(); carica();
-    });
-  }
-
   (async function avvia() {
-    if (PROVA) return avviaProva();
     const link = location.hash ? dalLink(location.hash) : null;
     const sta = location.hash ? linkStazione(location.href) : null;   // (il QR di una stazione: una carta, dopo)
     // il frammento non resta nella barra degli indirizzi né nella cronologia
