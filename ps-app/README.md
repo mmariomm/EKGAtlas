@@ -1417,6 +1417,11 @@ tutti in carrello, ha messo nella sua riga della pagina del paziente, nella list
 etichette solo i primi 3 inseriti, e così sono rimasti per tutti i cento secondi in cui la pagina è
 stata riletta, mentre la stessa richiesta aperta dal modulo Richieste ne aveva 5; un'altra riga non
 è mai comparsa. Il pannello stampa quello che il gestionale elenca, e non lo corregge.
+Ma se ne accorge, **in silenzio**: quando arrivano i fogli confronta gli esami confermati con quelli
+che le righe della pagina elencano per quelle richieste (`DESCRIZIONE_TITLE`, «A;B;C»; le etichette no:
+sono per provetta), e se in pagina ce ne sono meno lascia nel registro degli errori una voce
+«parziale» (solo i due numeri) che fa partire la **registrazione automatica** — nessun messaggio a te,
+la striscia è quella di sempre. Una pagina che non elenca gli esami delle righe non conta.
 
 **Poi la pagina del paziente si aggiorna.** Con l'ordine in sottofondo la pagina del paziente che hai
 davanti è quella di prima della Conferma: gli esami nuovi non ci sono. Quando la stampa dei fogli di

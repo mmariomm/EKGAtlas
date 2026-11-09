@@ -1464,6 +1464,48 @@ if (prova("dopo la Conferma la pagina del paziente la elenca in ritardo — si r
   await nessunOrdine();
 }
 
+// ---- 18b. il gestionale mostra meno esami di quelli confermati ----------
+// (visto dal vivo: la richiesta li ha tutti, la pagina, la lista e le
+// etichette meno.) Niente da dire al medico: una voce «parziale» nel registro
+// degli errori, che fa partire la registrazione automatica. Tutti in pagina: niente.
+if (prova("dopo la Conferma la pagina mostra meno esami di quelli confermati: registrato in silenzio, nient'altro")) {
+  nuovi();
+  lento = 0;
+  await sw.evaluate(() => chrome.storage.local.remove("errori.v1"));
+  const parziali = async () => ((await sw.evaluate(() => chrome.storage.local.get("errori.v1")))["errori.v1"] || []).filter((x) => x.tipo === "parziale");
+  let meno = 0, vecchie = new Set();   // (le richieste del giro di prima: restano intere)
+  // la riga della richiesta come quella vera: l'icona del Laboratorio, e gli esami «A;B» in DESCRIZIONE_TITLE
+  riscrivi = (u, html) => {
+    if (!/EPISODIO_ID=999001/.test(u)) return html;
+    let tolto = false;
+    return html.replace(/<tr><td>Richiesta (\d+)<\/td><td>/g, (m, rid) => {
+      const r = A.state.richieste[rid];
+      if (!r || !r.confirmed) return m;
+      let n = r.cart.size;
+      if (meno && !tolto && n > 0 && !vecchie.has(rid)) { n--; tolto = true; }   // (anche una richiesta intera: un erogatore per richiesta)
+      const nomi = Array.from({ length: n }, (_, i) => `0-${i + 1} ESAME DI PROVA ${i + 1}`).join(";");
+      return `<tr><td><a title="Laboratorio" href="#RICHIESTA_ID=${rid}"><img title="Laboratorio"></a> Richiesta ${rid}</td><td title="esami"><input type="hidden" name="TIPO" value="RICH"><input type="hidden" name="DESCRIZIONE_TITLE" value="${nomi}"></td><td>`;
+    });
+  };
+  for (const giro of [0, 1]) {
+    meno = giro; vecchie = new Set(Object.keys(A.state.richieste));
+    await suPagina(doc, A.patientUrl);
+    const nasce = nuovaPagina();
+    await ordina(doc, ["EMOCROMOCITOMETRICO", "TROPONINA"]);
+    const w = await nasce;
+    await suPagina(doc, B.patientUrl);   // (davanti un altro paziente: le etichette aspettano un tocco, nessun dialogo)
+    const fine = await striscia(doc, /Etichette di ROSSI M\. pronte|Non confermata/, 60000).catch(() => "");
+    await aspettaChiusa(w);
+    await new Promise((ok) => setTimeout(ok, 800));
+    const p = await parziali();
+    if (!giro) check(!p.length && !/Non confermata/.test(fine), `tutti in pagina: niente nel registro (got ${JSON.stringify(p)} · ${fine || "niente"})`);
+    else check(p.length === 1 && p[0].dati.confermati === 2 && p[0].dati.visti === 1 && !/Non confermata|perso|manca/i.test(fine),
+      `uno in meno: una voce «parziale» {confermati: 2, visti: 1}, e la striscia di sempre (got ${JSON.stringify(p.map((x) => x.dati))} · ${fine || "niente"})`);
+    await nessunOrdine();
+  }
+  riscrivi = null;
+}
+
 // ---- 19. la scheda dell'ordine si ricarica mentre conferma --------------
 // (il gestionale lo fa da sé, o un clic del medico su quella scheda). La
 // Conferma premuta non è arrivata al server, il giro è finito: l'ordine non
