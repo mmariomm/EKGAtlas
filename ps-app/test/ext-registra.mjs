@@ -149,7 +149,7 @@ async function voce(p) {
 }
 // ⋯ → Registrazioni: la vista del registratore
 async function vista(p) {
-  if (await voce(p) !== "Registrazioni") return false;
+  if (!(await voce(p)).includes("Registrazioni")) return false;   // la voce ha l'emoji «📦 Registrazioni» (menu less-is-more)
   await $panel(p, "#regmenu").click();
   return !!(await p.waitForSelector("#psassist-host .registrazioni", { timeout: 8000 }).catch(() => null));
 }
