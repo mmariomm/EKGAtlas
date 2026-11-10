@@ -17,9 +17,12 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $QUI = $PSScriptRoot
 $NOME = 'it.psassist.stampa'
-# L'unica estensione che può chiamare l'aiutante: PS Assist. L'ID viene dalla
-# chiave nel suo manifest, ed è lo stesso su ogni PC, in Chrome e in Edge.
-$ID = 'jhhlgabilanhhnncahahclcjbefaofij'
+# Le estensioni che possono chiamare l'aiutante: PS Assist, nelle sue due build.
+# L'ID viene dalla chiave nel manifest, ed è lo stesso su ogni PC, in Chrome e in
+# Edge. Un PC ha una build sola, ma autorizzare tutte e due non fa male e tiene
+# un unico installa.cmd: la completa e la «Lettura e stampa» (sola lettura).
+$ID = 'jhhlgabilanhhnncahahclcjbefaofij'           # PS Assist (completa)
+$ID_LETTURA = 'afheakecoidbgjomgfnjmnkblgfhehbl'   # PS Assist · Lettura e stampa (sola lettura)
 $CASA = Join-Path $env:LOCALAPPDATA 'PSAssist'
 $DOVE = Join-Path $CASA 'stampa'
 $EST = Join-Path $CASA 'estensione'
@@ -184,7 +187,7 @@ if (Giusto $exe $EXE_SHA256) {
     description = 'PS Assist: stampa automatica'
     path = 'host.cmd'
     type = 'stdio'
-    allowed_origins = @("chrome-extension://$ID/")
+    allowed_origins = @("chrome-extension://$ID/", "chrome-extension://$ID_LETTURA/")
   }
   [IO.File]::WriteAllText($json, ($manifest | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
   foreach ($k in $CHIAVI) { $null = New-Item -Path $k -Value $json -Force }

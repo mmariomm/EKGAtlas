@@ -17,7 +17,8 @@
   "use strict";
   const P = globalThis.PonteCripto;
   const $app = document.getElementById("app");
-  const CHIAVE = "psassist.ponte.v1";
+  const CHIAVE = "psassist.ponte.v1";       // (vecchia: un solo PC; si migra nella lista)
+  const PCS = "psassist.ponte.pcs.v1";      // la lista delle associazioni: uno o più PC
   const TEMPO = 30e3;
   let pdfAperto = null;              // il PDF di un referto aperto sul telefono: { url (blob:), w, t }
   const INATTIVO = 3 * 60e3;        // come sul PC: 3 minuti senza comandi del medico e la sessione è finita
@@ -69,6 +70,10 @@
   // --------------------------------------------------------------- lo stato
   // Tutto qui è in memoria. Sul telefono si scrivono solo la chiave e la scelta «Lista · Mappa».
   const S = {
+    pcs: [],             // le associazioni (uno o più PC): [{ k, dev, kind: "completo"|"lettura"|"", nome, id }]
+    attivo: "",          // l'id dell'associazione attiva (si ricorda l'ultima)
+    classifica: false,   // una scansione nuova in corso: il saluto deciderà dove va
+    pcOperatore: "",     // chi è loggato nel gestionale del PC di sola lettura (testata, informativa)
     coppia: null, chiavi: null, codice: "", nuova: null, ws: null, pari: null, tentativi: 0, tRiprova: 0, tPong: 0,
     saluto: null, canale: null, nSessione: "", attese: new Map(), id: 0, ultimo: 0,
     scarto: 0,           // l'orologio del PC meno quello del telefono, misurato al saluto (in memoria)
@@ -122,28 +127,107 @@
   // ---------------------------------------------------- la chiave del QR
   const stessa = (a, b) => P.b64u(a) === P.b64u(b);
   const nuovoDev = () => P.b64u(P.casuale(16));
+  // Il PC attivo è di sola lettura? (la build mini: si vede ma non si scrive)
+  const solaLettura = () => !!(S.coppia && S.coppia.kind === "lettura");
   // da un link: la chiave (l'associazione non scade: finisce con «Dimentica PC» o con la revoca sul PC),
   // fin quando il link vale per il primo scambio, e un numero nuovo per questo telefono
   function dalLink(hash) {
     const c = P.leggiFrammento(hash);
     return c ? { k: c.k, qrScade: c.scade, dev: nuovoDev() } : null;
   }
-  function salva(c) {
-    try { localStorage.setItem(CHIAVE, JSON.stringify({ k: P.b64u(c.k), dev: c.dev })); } catch { /* solo in memoria */ }
+  const nuovoId = () => P.b64u(P.casuale(8));
+  // La lista delle associazioni. In memoria `k` è Uint8Array; su disco è
+  // base64url, con il tipo e il nome brevi che il PC ha detto al saluto, e l'id
+  // dell'ultimo attivo. Ogni PC ha la SUA chiave: una non apre gli altri.
+  function salvaPcs() {
+    try {
+      const v = S.pcs.map((p) => ({ k: P.b64u(p.k), dev: p.dev, kind: p.kind || "", nome: p.nome || "", id: p.id }));
+      localStorage.setItem(PCS, JSON.stringify({ v, attivo: S.attivo }));
+    } catch { /* solo in memoria */ }
   }
-  function salvata() {
+  function leggiPcs() {
+    let out = { v: [], attivo: "" };
+    try {
+      const o = JSON.parse(localStorage.getItem(PCS) || "null");
+      if (o && Array.isArray(o.v)) {
+        out.v = o.v.map((x) => {
+          try {
+            const k = P.daB64u(x.k);
+            if (k.length !== 32) return null;
+            return { k, dev: /^[\w-]{16,32}$/.test(x.dev || "") ? x.dev : nuovoDev(),
+              kind: x.kind === "lettura" || x.kind === "completo" ? x.kind : "",
+              nome: typeof x.nome === "string" ? x.nome.slice(0, 40) : "",
+              id: typeof x.id === "string" && x.id ? x.id : nuovoId() };
+          } catch { return null; }
+        }).filter(Boolean);
+        out.attivo = typeof o.attivo === "string" ? o.attivo : "";
+      }
+    } catch { /* niente */ }
+    // migrazione dalla vecchia chiave singola (un solo PC)
+    if (!out.v.length) {
+      const vecchia = salvataLegacy();
+      if (vecchia) { const id = nuovoId(); out.v = [{ ...vecchia, kind: "", nome: "", id }]; out.attivo = id; }
+    }
+    return out;
+  }
+  function salvataLegacy() {
     try {
       const o = JSON.parse(localStorage.getItem(CHIAVE) || "null");
       if (!o) return null;
       const k = P.daB64u(o.k);
       if (k.length !== 32) return null;
-      const c = { k, dev: /^[\w-]{16,32}$/.test(o.dev || "") ? o.dev : nuovoDev() };
-      if (c.dev !== o.dev) salva(c);
-      return c;
+      return { k, dev: /^[\w-]{16,32}$/.test(o.dev || "") ? o.dev : nuovoDev() };
     } catch { return null; }
   }
+  // Dopo il saluto `ciao`: il PC ha detto chi è (tipo e nome breve). Si aggiorna
+  // l'associazione attiva; se era una scansione nuova (S.classifica), si decide
+  // dove metterla: un PC completo prende l'unico posto del «completo»; un PC di
+  // sola lettura si aggiunge, o sostituisce quello con lo stesso nome o chiave.
+  function classificaCiao(d) {
+    S.pcOperatore = d && typeof d.operatore === "string" ? d.operatore.replace(/\s+/g, " ").trim().slice(0, 60) : "";
+    if (!S.coppia) return;
+    const kind = d && (d.kind === "lettura" || d.kind === "completo") ? d.kind : (S.coppia.kind || "completo");
+    const nome = d && typeof d.nome === "string" && d.nome.trim() ? d.nome.trim().slice(0, 40) : (S.coppia.nome || "");
+    S.coppia.kind = kind; S.coppia.nome = nome;
+    const altri = S.pcs.filter((p) => p.id !== S.coppia.id);
+    if (S.classifica) {
+      S.classifica = false;
+      const tolti = kind === "completo"
+        ? altri.filter((p) => p.kind === "completo")                                            // un solo PC completo: il nuovo prende il posto
+        : altri.filter((p) => p.kind === "lettura" && (stessa(p.k, S.coppia.k) || (p.nome && p.nome === nome)));  // lo stesso PC di sola lettura
+      S.pcs = [S.coppia, ...altri.filter((p) => !tolti.includes(p))];
+    } else {
+      S.pcs = S.pcs.map((p) => (p.id === S.coppia.id ? S.coppia : p));
+    }
+    S.attivo = S.coppia.id;
+    salvaPcs();
+  }
+  // Passa a un altro PC della lista (dal menu): chiude la presa di adesso e si
+  // collega a quello. Si ricorda l'ultimo attivo.
+  async function attivaPc(id) {
+    const p = S.pcs.find((x) => x.id === id);
+    if (!p || p.id === (S.coppia && S.coppia.id)) { S.menu = false; return render(); }
+    const ws = S.ws; S.ws = null; S.canale = null; S.saluto = null; S.nSessione = "";
+    if (ws) try { ws.close(); } catch { /* già chiusa */ }
+    svuota(); zitto();
+    S.attivo = id; S.menu = false; S.classifica = false; salvaPcs();
+    await parti(p);
+  }
+  // «Dimentica» un PC della lista. L'attivo: via quello e si passa a un altro
+  // (o, se era l'ultimo, si resta senza associazione).
+  function dimenticaPcId(id) {
+    if (!S.coppia || id === S.coppia.id) return dimentica("senza");
+    S.pcs = S.pcs.filter((p) => p.id !== id);
+    salvaPcs(); render();
+  }
   function dimentica(fase) {
-    try { localStorage.removeItem(CHIAVE); } catch { /* niente */ }
+    // via l'associazione ATTIVA; se ne restano altre, si passa alla prima
+    if (S.coppia) {
+      const resto = S.pcs.filter((p) => p.id !== S.coppia.id);
+      if (resto.length) { S.pcs = resto; S.attivo = resto[0].id; salvaPcs(); return attivaPc(resto[0].id); }
+    }
+    S.pcs = []; S.attivo = "";
+    try { localStorage.removeItem(PCS); localStorage.removeItem(CHIAVE); } catch { /* niente */ }
     S.coppia = null; S.chiavi = null; S.canale = null; S.saluto = null; S.nSessione = "";
     svuota();
     zitto();
@@ -153,6 +237,8 @@
   }
   async function parti(c) {
     S.coppia = c; S.nuova = null;
+    if (c.id) S.attivo = c.id;
+    if (c.id && !S.pcs.some((p) => p.id === c.id)) S.pcs = [c, ...S.pcs];
     S.chiavi = await P.chiaviCoppia(c.k);
     S.codice = await P.codice(c.k);
     S.fase = "collego";
@@ -272,7 +358,8 @@
       // avanti o indietro non cambia quando un ordine scade
       if (Number.isFinite(m.ora)) S.scarto = Math.round(m.ora - (mio.t0 + Date.now()) / 2);
       // (senza aspettare qui: la risposta passa da questa stessa fila)
-      chiedi("ciao", {}, TEMPO, true).then(() => {
+      chiedi("ciao", {}, TEMPO, true).then((d) => {
+        classificaCiao(d);   // il PC ha detto chi è: tipo, nome, operatore (per il menu e la testata)
         S.fase = "pronta"; render(); carica();
       }, (e) => avviso(e.message, "err"));
       return;
@@ -308,8 +395,13 @@
   //   o.grosso quanti byte porta la risposta (per il battito, su una rete lenta)
   //   o.scade  (un ordine) l'ora oltre la quale, se non è ancora partita, non parte più
   //   o.partita quando parte davvero (la prima volta)
+  // i comandi che SCRIVONO nel gestionale: su un PC di sola lettura non partono
+  // nemmeno dal telefono (il PC li rifiuterebbe comunque: «Questo PC è in sola
+  // lettura»). «stampa»/«ristampa» no: stampano, non scrivono.
+  const SCRITTURE_TEL = new Set(["ordina", "cartellaSalva", "terapiaAggiungi", "accetta", "nota", "promemoria", "fatto", "dfAggiungi", "dfSpunta", "dfTogli", "posto", "stazioneCollega"]);
   function chiedi(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
     return new Promise((si, no) => {
+      if (solaLettura() && SCRITTURE_TEL.has(cmd)) { no(Object.assign(new Error("Sola lettura: su questo PC non si scrive"), { solaLettura: true })); return; }
       if (!S.canale) { no(new Error("Sessione chiusa")); return; }
       if (!o.rq && !pronto()) {
         S.rinfresca = true;
@@ -1262,16 +1354,32 @@
     const tit = p ? `<b>${p.omonimo ? '<span class="om">⚠ </span>' : ""}${esc(chi(p))}</b>${p.prec ? "<small>Episodio precedente</small>" : ""}`
       : suZip ? "<b>Registrazioni</b>" : suPaz ? "" : S.aggiornato ? `<small>Aggiornato alle ${hhmm(S.aggiornato)}</small>` : "";
     const nome = suPaz ? `<button type="button" class="tit" data-a="indietro" aria-label="Torna alla ${S.modo === "mappa" && S.mappa ? "mappa" : "lista"}">${tit}</button>` : `<div class="tit">${tit}</div>`;
+    // più PC in lista (un completo + le porte di sola lettura): si scelgono dal
+    // menu. Con un PC solo niente lista: meno è meglio. L'attivo in cima.
+    const ordinati = S.pcs.slice().sort((a, b) => (a.id === S.attivo ? -1 : b.id === S.attivo ? 1 : 0));
+    const listaPc = S.pcs.length >= 2 ? `${ordinati.map((p) => {
+      const att = p.id === (S.coppia && S.coppia.id);
+      const vivo = att && S.fase === "pronta" && !!S.canale;
+      const etich = p.kind === "lettura" ? "sola lettura" : "completo";
+      return `<div class="pcrow${att ? " qui" : ""}"><button class="pcbtn" data-a="pc" data-id="${esc(p.id)}">${p.kind === "lettura" ? em("👁️") : em("💻")}${esc(p.nome || (p.kind === "lettura" ? "Sola lettura" : "PC"))} <small>${etich}${vivo ? " · attivo adesso" : att ? " · attivo" : ""}</small></button><button class="pcvia" data-a="pcvia" data-id="${esc(p.id)}" aria-label="Dimentica questo PC">${em("🗑️")}</button></div>`;
+    }).join("")}<div class="sep"></div>` : "";
     return `<header class="top">${sx}${nome}${statoPc()}<button class="ico" data-a="menu" aria-label="Altro" aria-expanded="${S.menu}">${ICO.altro}</button>
       ${S.menu ? `<div class="menu" role="menu">
+        ${listaPc}
         ${suPaz || suZip ? "" : `<button data-a="aggiornaLista">${em("🔄")}Aggiorna elenco</button>`}
         <button data-a="stampaPdf">${em("📄")}Stampa PDF</button>
-        <button data-a="scansiona">${em("🖨️")}Collega stampante</button>
-        <button data-a="registrazioni">${em("📦")}Registrazioni</button>
+        ${solaLettura() ? "" : `<button data-a="scansiona">${em("🖨️")}Collega stampante</button>`}
+        ${solaLettura() ? "" : `<button data-a="registrazioni">${em("📦")}Registrazioni</button>`}
         <button data-a="esci">${em("🚪")}Chiudi sessione</button>
-        <button class="via" data-a="dimentica">${em("🗑️")}Dimentica PC</button>
-        <div class="info">Associato · finché non lo scolleghi · codice ${esc(S.codice)}</div>
-      </div>` : ""}</header>`;
+        <button class="via" data-a="dimentica">${em("🗑️")}Dimentica ${S.pcs.length >= 2 ? "questo PC" : "PC"}</button>
+        <div class="info">${solaLettura() ? "Sola lettura · " : ""}Associato · finché non lo scolleghi · codice ${esc(S.codice)}</div>
+      </div>` : ""}</header>${solaLettura() ? solaBar() : ""}`;
+  }
+  // La testata quieta di un PC di sola lettura: informazione, mai un blocco. Se
+  // il gestionale mostra chi è loggato, lo dice; se no, solo «Sola lettura».
+  function solaBar() {
+    const op = S.pcOperatore ? ` · gestionale di <b>${esc(S.pcOperatore)}</b>` : "";
+    return `<div class="solabar" role="status">👁️ <span>Sola lettura${op}</span></div>`;
   }
   function piena(icona, titolo, testo, extra = "", amb = false) {
     return `<main><div class="piena"><div class="tondo${amb ? " amb" : ""}">${icona}</div><h1>${esc(titolo)}</h1>${testo}${extra}</div></main>`;
@@ -1300,12 +1408,6 @@
            <button class="grande" data-a="cambia"${c.occupato ? " disabled" : ""}>Cancella e riassocia</button>
            ${c.errore ? `<p class="errcod" role="alert">${esc(c.errore)}</p>` : ""}</div>${scansiona(true)}`, true);
       }
-      case "conferma":
-        return piena(ICO.lucchetto, "Un'altra associazione?",
-          `<p>Questo link associa il telefono al PC con il codice <b class="codice">${esc(S.nuova.codice)}</b>.</p>
-           <p>Adesso è associato al PC con il codice <b class="codice">${esc(S.codice)}</b>, finché non lo scolleghi.</p>
-           <p>Il codice giusto è quello accanto al QR, sul PC.</p>`,
-          `<button class="grande" data-a="sostituisci">Usa il codice ${esc(S.nuova.codice)}</button><button class="grande quiet" data-a="tieni">Tieni quella di adesso</button>`, true);
       case "avvio":
       case "collego":
         return `<main><div class="piena"><div class="giro"></div><h1>Mi collego al PC…</h1>${S.coppia ? `<button class="grande quiet" data-a="scansiona">Annulla e scansiona il QR</button>` : ""}</div></main>`;
@@ -1449,6 +1551,7 @@
   // una volta — e l'esito com'è: «In ambulatorio» (e il paziente si apre, sulla Cartella), «Non
   // accettato: …», o «Incerto: controlla sul PC» (allora niente bottone: non si ripreme).
   function accBtn(id, breve, etichetta) {
+    if (solaLettura()) return "";   // sola lettura: non si accetta (cambia lo stato del paziente)
     const x = S.acc.get(id), armata = S.accArma && S.accArma.id === id;
     if (x && x.esito && x.esito.tono !== "err") return "";   // (accettato, o incerto: non si ripreme)
     const t = x && x.stato ? "Accetto…" : armata ? `Accetto ${breve} in ambulatorio? Tocca di nuovo` : etichetta;
@@ -1682,6 +1785,8 @@
     if (S.scheda === "terapia") return S.terapiaSi ? ctaTerapia(p) : "";
     if (S.scheda !== "richieste" || !S.catalogo || !p.ordina || p.prec) return "";
     const s = selDi(p.ep), n = s.esami.size, c = S.catalogo;
+    // sola lettura: il catalogo si guarda, ma da questo PC non si ordina
+    if (solaLettura()) return n ? `<div class="cta"><div class="perche">${em("👁️")}Sola lettura · su questo PC non si ordina</div></div>` : "";
     const rx = [...s.esami].some((k) => c.rx.includes(k)), lab = [...s.esami].some((k) => !c.rx.includes(k));
     const nTxt = n === 1 ? "1 esame" : `${n} esami`;
     const occupato = S.inviati.has(p.ep), bloccato = S.bloccati.has(p.ep);
@@ -1708,7 +1813,7 @@
     return l.filter((x) => !x.fatto || Date.now() + S.scarto - x.fatto <= FATTO_MS);
   }
   function rigaDf(x, ep) {
-    const id = esc(x.id), e = esc(ep), occ = S.occupato.has("df" + x.id) ? " disabled" : "";
+    const id = esc(x.id), e = esc(ep), occ = (S.occupato.has("df" + x.id) || solaLettura()) ? " disabled" : "";   // sola lettura: si vede, non si spunta né si cancella
     return `<div class="promr dfr${x.fatto ? " fatta" : ""}"><button type="button" class="dfck" role="checkbox" aria-checked="${x.fatto ? "true" : "false"}" data-a="dfck" data-ep="${e}" data-pid="${id}" aria-label="${esc(x.testo)}"${occ}></button>${
       x.t != null ? `<span class="quando ${x.fatto ? "" : banda(x.t)}">${esc(oraProm(x.t))}</span>` : ""}<span class="cosa">${esc(x.testo)}</span>${
       x.fatto ? `<button type="button" class="dfx" data-a="dftogli" data-ep="${e}" data-pid="${id}" aria-label="Cancella ${esc(x.testo)}"${occ}>${CESTINO}</button>` : ""}</div>`;
@@ -1725,7 +1830,8 @@
   // il foglio: la lista del paziente con le sue spunte, e il campo «+ nota»
   function foglioDf(p) {
     const righe = vociDf(p).map((x) => rigaDf(x, p.ep)).join("");
-    const add = p.prec ? "" : `<div class="addprom"><input id="promin" type="text" enterkeyhint="done" autocomplete="off" placeholder="+ nota" value="${esc(S.promTesto)}" aria-label="Nuova nota: con un'ora («11:30 tropo», «tra 2h ECG») è un promemoria" ${S.occupato.has("prom" + p.ep) ? "disabled" : ""}></div>`;
+    const add = p.prec ? "" : solaLettura() ? `<div class="sola-nota">${em("👁️")}Sola lettura · i Da fare di questo PC non si cambiano da qui.</div>`
+      : `<div class="addprom"><input id="promin" type="text" enterkeyhint="done" autocomplete="off" placeholder="+ nota" value="${esc(S.promTesto)}" aria-label="Nuova nota: con un'ora («11:30 tropo», «tra 2h ECG») è un promemoria" ${S.occupato.has("prom" + p.ep) ? "disabled" : ""}></div>`;
     return `<div class="foglio" role="dialog" aria-modal="true" aria-label="Da fare"><button type="button" class="velo" data-a="dfchiudi" aria-label="Chiudi"></button>
       <div class="pannello" data-k="df"><div class="capo"><b>Da fare · ${esc(p.breve || p.nome)}</b><button type="button" class="chiudi" data-a="dfchiudi">Chiudi</button></div>
       <div class="carta note">${righe ? `<div class="proms">${righe}</div>` : ""}${add}</div></div></div>`;
@@ -1782,7 +1888,7 @@
     const campi = CARTELLA.map(([nome, etichetta]) => {
       const x = c.campi.find((y) => y.nome === nome);
       if (!x) return "";
-      const chiuso = x.ro || p.prec;
+      const chiuso = x.ro || p.prec || solaLettura();   // sola lettura: la cartella si legge, non si scrive
       return `<label class="cc${chiuso ? " ro" : ""}"><span>${esc(etichetta)}</span>${nome === CAMPO_EO && !chiuso && !salva ? eoHtml(p) : ""}<textarea id="cc-${nome}" rows="1" ${chiuso || salva ? "readonly" : ""} ${chiuso ? 'placeholder="—" tabindex="-1"' : ""} aria-label="${esc(etichetta)}">${
         esc(b.has(nome) ? b.get(nome).testo : x.v)}</textarea></label>`;
     }).join("");
@@ -1791,6 +1897,7 @@
   }
   // il «Salva» della cartella, in fondo: c'è solo quando c'è qualcosa da salvare (o da dire)
   function ctaCartella(p) {
+    if (solaLettura()) return "";   // sola lettura: la cartella si legge, non si salva (i campi sono di sola lettura)
     const st = S.cstato.get(p.ep), salva = S.occupato.has("csalva" + p.ep), n = cambiatiDi(p.ep).length;
     const perche = st ? `<div class="perche err" role="alert">${esc(st.testo)}</div>` : "";
     if (st && st.ricarica) return `<div class="cta"><button data-a="cricarica">Ricarica</button>${perche}</div>`;
@@ -1810,6 +1917,7 @@
       ${righe || `<div class="vuoto stretto">Nessuna terapia confermata.</div>`}</div>${p.prec ? `<p class="piede">Episodio precedente: per prescrivere apri quello di oggi.</p>` : ""}`;
   }
   function ctaTerapia(p) {
+    if (solaLettura()) return "";   // sola lettura: la terapia si legge, non si prescrive
     return S.terapie.get(p.ep) && !p.prec && !S.tf ? `<div class="cta"><button data-a="tnuovo">＋ Farmaco</button></div>` : "";
   }
   // «＋ Farmaco»: prima il farmaco (i preferiti, poi la tendina del gestionale), poi la dose e il riepilogo
@@ -2046,8 +2154,8 @@
     if (a !== "menu" && S.menu) S.menu = false;
     if (a === "menu") { S.menu = !S.menu; render(); }
     else if (a === "riapri") riapri();
-    else if (a === "sostituisci") { salva(S.nuova); parti(S.nuova); }
-    else if (a === "tieni") parti(S.coppia);
+    else if (a === "pc") attivaPc(b.dataset.id);                 // passa a un altro PC della lista
+    else if (a === "pcvia") dimenticaPcId(b.dataset.id);          // «Dimentica» un PC della lista
     else if (a === "cambia") cambia();
     else if (a === "scansiona") apriScan();
     else if (a === "stacollega") collegaStazione();
@@ -2217,20 +2325,25 @@
     // il frammento non resta nella barra degli indirizzi né nella cronologia
     if (location.hash) history.replaceState(null, "", location.pathname + location.search);
     if (sta) setTimeout(() => offertaStazione(sta), 0);
-    const prima = salvata();
+    const { v, attivo } = leggiPcs();
+    S.pcs = v; S.attivo = attivo;
     if (link && link.qrScade <= Date.now()) { S.scaduta = link.qrScade; S.perche = "scaduta"; S.fase = "finita"; render(); return; }
-    // Un link che toglierebbe un'associazione ancora buona chiede prima: un
-    // link qualunque non porta il telefono su un altro «PC».
-    if (link && prima && !stessa(link.k, prima.k)) {
-      S.coppia = prima; S.codice = await P.codice(prima.k);
-      S.nuova = { ...link, codice: await P.codice(link.k) };
-      S.fase = "conferma"; render();
+    if (link) {
+      // lo STESSO QR già in lista: lo stesso PC, ci si ricollega (stesso dev)
+      const gia = S.pcs.find((p) => stessa(p.k, link.k));
+      if (gia) { S.attivo = gia.id; salvaPcs(); await parti(gia); return; }
+      // un PC nuovo: entry provvisoria, si collega e il saluto decide dove va
+      // (aggiunge un PC di sola lettura, sostituisce il PC completo). Non tocca
+      // le altre associazioni: ognuna ha la sua chiave.
+      const nuova = { k: link.k, dev: link.dev, kind: "", nome: "", id: nuovoId() };
+      S.pcs = [nuova, ...S.pcs]; S.attivo = nuova.id; S.classifica = true; salvaPcs();
+      await parti(nuova);
       return;
     }
-    // lo stesso QR inquadrato di nuovo: lo stesso telefono, per il PC
-    const c = link ? { ...link, dev: prima ? prima.dev : link.dev } : prima;
-    if (link) salva(c);
+    // senza QR: l'ultimo attivo (o il primo della lista), o niente
+    const c = S.pcs.find((p) => p.id === S.attivo) || S.pcs[0] || null;
     if (!c) { S.perche = S.scaduta ? "scaduta" : ""; S.fase = S.scaduta ? "finita" : "senza"; render(); return; }
+    S.attivo = c.id;
     await parti(c);
   })();
 })();

@@ -37,9 +37,20 @@ all'app della schermata Home, che ha una memoria sua: il QR letto con la Fotocam
 e lì la chiave non arriva. Senza fotocamera: «Fotocamera non disponibile: inquadra il QR con la
 Fotocamera dell'iPhone».
 
-Un link del ponte che toglierebbe un'associazione ancora buona **chiede prima**, coi due codici
-(«Usa il codice 482 913» o «Tieni quella di adesso»): il codice giusto è quello accanto al QR, sul PC.
-Il link del QR, invece, vale per il primo scambio solo pochi minuti (5) e una volta sola: dopo, serve un QR nuovo.
+Il link del QR vale per il primo scambio solo pochi minuti (5) e una volta sola: dopo, serve un QR nuovo.
+
+**Più PC: uno completo e le porte di sola lettura.** Il telefono tiene una **lista** di PC
+associati, non solo uno: il PC completo (💻, dove si ordina, si prescrive, si scrive in cartella) e
+un numero qualsiasi di **PC «di sola lettura»** (👁️, la [build mini](../README.md#ps-assist--lettura-e-stampa-la-build-mini-di-sola-lettura): si vede
+tutto — pazienti, esiti, cartella, referti — e si stampa, ma non si scrive). Ognuno ha la **sua
+chiave**: una non apre gli altri, e un PC in mano a un altro non espone i tuoi. Si scansiona ogni PC
+**una volta sola**: il suo QR **aggiunge** quel PC alla lista (lo stesso PC riscansionato, o un altro
+dello stesso nome, lo sostituisce; il QR del PC completo sostituisce il completo). Da lì si passa
+dall'uno all'altro da un **menu** (⋯ sul telefono: l'attivo in cima, gli altri sotto col loro nome e
+tipo, «attivo adesso» quando la sessione è viva; un tocco cambia, «Dimentica» per riga). Con un PC
+solo il menu non c'è: meno è meglio. Su un PC di sola lettura la testata lo dice in una riga quieta
+(«Sola lettura · gestionale di …», il collega loggato lì, solo per saperlo) e i controlli di scrittura
+non ci sono: si legge, si ristampa, si stampa un PDF.
 
 **Poi.** Apri il pannello dall'iPhone: si collega da solo, niente QR. L'elenco si rilegge
 da solo ogni volta che torni sull'app («Aggiornato alle 14:32»), e se eri su un paziente anche i suoi
@@ -439,8 +450,9 @@ framework; solo il suo codice (CSP `default-src
 in `localStorage`, IndexedDB o nelle cache; il suo service worker tiene solo i file dell'app. Il
 manifest ha `display: "standalone"`: l'icona della schermata Home apre l'app a tutto schermo, con una
 memoria sua, separata da Safari. Per questo il QR si inquadra **dentro l'app** («Scansiona il QR»):
-la chiave resta lì, e l'icona si ricollega da sola, senza scadenza. Un QR nuovo inquadrato con l'app già aperta riparte da
-capo (e, se c'è un'associazione ancora buona con un'altra chiave, chiede prima).
+la chiave resta lì, e l'icona si ricollega da sola, senza scadenza. La chiave di ogni PC sta nella
+**lista** (`psassist.ponte.pcs.v1`): un QR nuovo **aggiunge** quel PC e ci passa (non tocca gli altri),
+e si cambia PC dal menu; lo stesso PC riscansionato aggiorna la sua riga, non ne fa una nuova.
 
 **«Scansiona il QR»** apre la fotocamera nella pagina (`getUserMedia`, la fotocamera posteriore; la
 `Permissions-Policy` la permette solo a quest'app, il microfono e la posizione a nessuno) e legge i
@@ -534,6 +546,26 @@ suo aiutante non l'ha stampato (e il suo file temporaneo, come per ogni foglio).
   quel giorno (dal PC o dal telefono) potrebbe decifrarlo. K vive finché non la si revoca; uno scambio
   ECDH per sessione lo eviterebbe, al prezzo di altro codice.
 - **Per scelta del medico non c'è Face ID dentro l'app**: possedere la chiave basta.
+- **Più PC, chiavi separate.** Ogni PC associato (il completo e ogni porta di sola lettura) ha la
+  **sua** chiave e la sua stanza: una non apre gli altri, e il telefono parla con uno alla volta.
+  Compromettere un PC — o la sua chiave sul telefono — espone *quel* PC, non gli altri. Scansionare un
+  QR nuovo **aggiunge** quel PC (o aggiorna il suo, o sostituisce il completo): non toglie di nascosto
+  un'associazione che c'è già; quelle restano in lista, e si dimenticano una per una dal menu.
+- **Un PC di sola lettura** (la build mini) è una **porta d'ingresso**: dal telefono si vede tutto
+  quello che la sessione del gestionale aperta lì espone — i pazienti che il collega loggato sta già
+  gestendo — e si stampa, ma **non si scrive**. Ogni comando di scrittura del gestionale (ordine,
+  terapia, cartella, accettazione, Da fare, mappa) è rifiutato **sul PC** («Questo PC è in sola
+  lettura»), nel service worker prima di toccare una scheda, e il codice di scrittura è anche **escluso
+  dalla build** (niente pannello degli ordini, niente ricetta SISS). La testata del telefono dice chi è
+  loggato nel gestionale su quel PC: informazione, non un blocco — l'accesso resta attribuito, dal
+  gestionale, al collega loggato lì, come quando è lui a guardare la pagina. Un PC di sola lettura non
+  può mandare comandi né al telefono né al PC completo.
+- **L'aggiornamento della build mini è senza mani** (non c'è un pannello da cui premere): all'avvio e
+  ogni sei ore si guarda GitHub e, se c'è una versione nuova e il PC è libero, si applica da sé — con
+  **ogni** controllo di sempre (versione == `VERSION.txt`, **stessa chiave** della build mini,
+  cartella installata, aiutante confermato, **host fisso** `raw.githubusercontent.com/mmariomm/EKGAtlas`,
+  **mai a metà di una stampa**). Scambia solo la sua cartella, con la sua chiave: non può diventare
+  un'altra estensione.
 - **La stazione di stampa** riceve i fogli degli ordini e risponde; non comanda e non legge niente.
   Chi ha il telefono sbloccato e associato può collegare una stazione al PC, ma solo inquadrando il suo
   QR (sullo schermo della stazione, cinque minuti): il PC lo dice (⋯ → Stampanti, il Registro del ponte).

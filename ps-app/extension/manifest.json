@@ -24,6 +24,7 @@
         "https://smarthealth.multimedica.it/UploadDownload/*"
       ],
       "js": [
+        "sola-lettura.js",
         "content.js"
       ],
       "run_at": "document_idle",

@@ -223,7 +223,14 @@ async function aspettaTel(t, re, timeout = 20000) {
 }
 const tocca = (t, sel) => t.locator(sel).first().click();
 const qrUrl = () => sw.evaluate(() => ponteQr());
-const chiaveTel = (t) => t.evaluate(() => JSON.parse(localStorage.getItem("psassist.ponte.v1") || "null"));
+// la chiave del telefono: ora la lista dei PC (pcs.v1) — l'associazione attiva
+const chiaveTel = (t) => t.evaluate(() => {
+  try {
+    const o = JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1") || "null");
+    if (!o || !Array.isArray(o.v) || !o.v.length) return null;
+    return o.v.find((p) => p.id === o.attivo) || o.v[0];
+  } catch { return null; }
+});
 // i bottoni visibili più piccoli di 44 px (larghezza o altezza)
 const piccoli = (t) => t.evaluate(() => [...document.querySelectorAll("#app button")].filter((b) => b.offsetParent).map((b) => {
   const r = b.getBoundingClientRect();
@@ -440,8 +447,9 @@ check(/ROSSI MARIO/.test(lista) && /BIANCHI ANNA/.test(lista), "inquadrato il QR
 check(!(await tel.evaluate(() => location.hash)), "il frammento con la chiave non resta nell'indirizzo");
 const salvato = await tel.evaluate(() => Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)]));
 const sv = salvato.length === 1 ? JSON.parse(salvato[0][1]) : {};
-check(salvato.length === 1 && salvato[0][0] === "psassist.ponte.v1" && Object.keys(sv).sort().join() === "dev,k" && !/ROSSI|BIANCHI/.test(salvato[0][1]),
-  "sul telefono resta solo la chiave e il numero del telefono (nessuna scadenza): nient'altro");
+const pc0 = sv && Array.isArray(sv.v) && sv.v.length === 1 ? sv.v[0] : null;
+check(salvato.length === 1 && salvato[0][0] === "psassist.ponte.pcs.v1" && pc0 && Object.keys(pc0).sort().join() === "dev,id,k,kind,nome" && !/ROSSI|BIANCHI/.test(salvato[0][1]),
+  "sul telefono resta solo la lista dei PC (chiave, numero del telefono, tipo e nome): nessun paziente, nessuna scadenza");
 const titoli = JSON.stringify(await tel.locator(".lbl").evaluateAll((l) => l.map((x) => x.textContent)));
 const fila = (await tel.locator("main > .carta").first().locator(".paz .nome").allInnerTexts()).join(",");
 check(/OBI 2/.test(lista) && titoli === '["Alta intensità","Bassa"]' && /^BIANCHI ANNA,ROSSI MARIO$/.test(fila),
@@ -1609,7 +1617,7 @@ sezione("la mappa sul telefono: sola lettura, Lista · Mappa, Alta · Bassa");
   check(m0.seg === "Lista*|Mappa|Da fare" && !m0.pic && !m0.mappa && m0.chiave === null, `in testa, quieto: «Lista · Mappa», si parte dalla Lista; scelta niente finché non si tocca (${JSON.stringify(m0)})`);
   await tocca(tel, '[data-a="modo"][data-m="mappa"]');
   const m1 = await modoTel();
-  check(m1.seg === "Lista|Mappa*|Da fare" && m1.pic === "Alta|Bassa*" && m1.mappa && m1.chiave === "mappa" && m1.tutte === "psassist.ponte.modo,psassist.ponte.v1",
+  check(m1.seg === "Lista|Mappa*|Da fare" && m1.pic === "Alta|Bassa*" && m1.mappa && m1.chiave === "mappa" && m1.tutte === "psassist.ponte.modo,psassist.ponte.pcs.v1",
     `Mappa: sotto, «Alta · Bassa» (come il PC: la vista è Bassa); la scelta resta sul telefono, senza dati di pazienti (${JSON.stringify(m1)})`);
   const bassa = await tel.evaluate(() => ({
     occ: [...document.querySelectorAll(".mappa .letto.occ")].map((b) => `${b.dataset.ep}:${b.querySelector(".lb")?.textContent}:${b.querySelector(".ln").textContent}:${b.querySelector(".le")?.textContent || ""}:${[...b.classList].find((c) => /^t-/.test(c))}`).sort(),
@@ -1915,8 +1923,8 @@ await tel.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 const riaperta0 = await aspettaTel(tel, /ROSSI MARIO/, 15000);
 check(/ROSSI MARIO/.test(riaperta0) && !!(await statoPonte())?.sessione, `tornati sull'app dopo la chiusura: si riapre da sola, senza QR e senza un tocco (${s0} → ${await sessioniNuove()}; ${riaperta0.replace(/\s+/g, " ").slice(0, 100)})`);
 check(await finche(async () => await tel.locator(".top button.tit").count() === 1 && await tel.locator('.seg [data-s="esiti"].on').count() === 1, 10000)
-  && (await tel.evaluate(() => Object.keys(localStorage))).every((k) => /^psassist\.ponte\.(v1|modo)$/.test(k)) && !/ROSSI/.test(await tel.evaluate(() => JSON.stringify(Object.entries(localStorage)))),
-  "(12) dopo i 3 minuti si riapre sul paziente dov'eri e sulla stessa scheda (Esiti); su disco niente più della chiave");
+  && (await tel.evaluate(() => Object.keys(localStorage))).every((k) => /^psassist\.ponte\.(pcs\.v1|modo)$/.test(k)) && !/ROSSI/.test(await tel.evaluate(() => JSON.stringify(Object.entries(localStorage)))),
+  "(12) dopo i 3 minuti si riapre sul paziente dov'eri e sulla stessa scheda (Esiti); su disco niente più della lista dei PC");
 await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/, 10000);
 // l'app lasciata in sottofondo: le riletture da sola non contano come comandi
 await guardaChiusa();
@@ -2029,28 +2037,25 @@ const url2 = await qrUrl();
 check(url2 !== url1, "un QR nuovo, con una chiave nuova");
 await tel.goto(url2);   // con l'app già aperta: cambia solo il frammento
 check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 15000)), "il QR nuovo inquadrato con l'app aperta: chiave nuova, e di nuovo l'elenco");
-// un link qualunque non porta via un'associazione buona (un telefono a parte)
+// Un QR nuovo AGGIUNGE un PC alla lista e ci passa (ognuno la sua chiave: una
+// non apre gli altri; l'associazione non scade). Non toglie quelli di prima —
+// un PC completo che risponde prende il posto del completo; questi PC finti non
+// rispondono, quindi restano in lista come «da collegare».
 const linkCtx = await telBrowser.newContext(IPHONE);
 const lnk = await linkCtx.newPage();
 const finta = (k) => `${relay.url}/ponte/#k=${P.b64u(k)}&scade=${Date.now() + 100 * 365 * 86400e3}`;
+const listaK = () => lnk.evaluate(() => { const o = JSON.parse(localStorage.getItem("psassist.ponte.pcs.v1") || "null"); return o ? o.v.map((p) => p.k) : []; });
 const KX = P.casuale(32), KY = P.casuale(32);
 await lnk.goto(finta(KX));
 await aspettaTel(lnk, /Mi collego|non risponde/, 10000);
 const cx = await chiaveTel(lnk);
 check(cx && cx.k === P.b64u(KX) && !("scade" in cx), "un link con la sua scadenza lunga: sul telefono resta solo la chiave (l'associazione non scade)");
 await lnk.goto(finta(KY));
-const chiede = await aspettaTel(lnk, /Un'altra associazione\?/, 10000);
-check(/Un'altra associazione\?/.test(chiede) && chiede.includes(await P.codice(KY)) && chiede.includes(await P.codice(KX)),
-  "un link che sostituirebbe un'associazione ancora buona chiede prima, coi due codici");
-await shot(lnk, "tel-9-altra-associazione");
-await tocca(lnk, '[data-a="tieni"]');
-await sospendi(500);
-check((await chiaveTel(lnk)).k === P.b64u(KX), "«Tieni quella di adesso»: la chiave resta");
-await lnk.goto(finta(KY));
-await aspettaTel(lnk, /Un'altra associazione\?/, 10000);
-await tocca(lnk, '[data-a="sostituisci"]');
-await sospendi(500);
-check((await chiaveTel(lnk)).k === P.b64u(KY), "«Usa il codice …»: la chiave nuova");
+await aspettaTel(lnk, /Mi collego|non risponde/, 10000);
+const cy = await chiaveTel(lnk);
+check(cy && cy.k === P.b64u(KY), "un QR nuovo aggiunge un PC e ci passa: il suo è l'attivo");
+const ks = await listaK();
+check(ks.length === 2 && ks.includes(P.b64u(KX)) && ks.includes(P.b64u(KY)), "…e non toglie quello di prima: la lista tiene i due PC, ognuno la sua chiave");
 await linkCtx.close();
 // l'associazione non scade: passate le 14 ore (e il PC controlla), la chiave c'è ancora, sul PC e sul telefono, e il telefono riapre
 const K2 = P.b64u(P.leggiFrammento(new URL(url2).hash).k);
@@ -2262,7 +2267,7 @@ sezione("le registrazioni del PC dal telefono: elenco, scarica a pezzi, cancella
     `a pezzi (${chiesti} domande), e il ripetitore non vede niente dello zip`);
   check(/iPhone · registrazione psassist-registrazione-20261106-0930-auto\.zip scaricata sul telefono/.test(await registroPonte()), "il registro del ponte: «registrazione … scaricata sul telefono»");
   const memTel = await tel.evaluate(async () => JSON.stringify([Object.keys(localStorage), Object.keys(sessionStorage), ((await indexedDB.databases?.()) || []).map((d) => d.name)]));
-  check(memTel === '[["psassist.ponte.v1"],[],[]]', `sul telefono lo zip sta solo in memoria: niente su disco (${memTel})`);
+  check(memTel === '[["psassist.ponte.pcs.v1"],[],[]]', `sul telefono lo zip sta solo in memoria: niente su disco (${memTel})`);
   // senza la condivisione di iOS: «Salva», un file
   await tel.evaluate(() => { delete navigator.canShare; delete navigator.share; });
   await tocca(tel, '.zip[data-zip="provazipmano"] [data-a="zipScarica"]');
@@ -2324,7 +2329,7 @@ sezione("la rete del telefono: ascensore, 5G, presa tagliata, rete lenta");
   });
   const v = await vCtx.newPage();
   await v.goto(relay.url + "/ponte/");
-  await v.evaluate((c) => localStorage.setItem("psassist.ponte.v1", c), JSON.stringify(chiave));
+  await v.evaluate((c) => localStorage.setItem("psassist.ponte.pcs.v1", JSON.stringify({ v: [c], attivo: c.id })), chiave);
   await v.reload();
   await aspettaTel(v, /ROSSI MARIO/, 20000);
   const cdp = await vCtx.newCDPSession(v);

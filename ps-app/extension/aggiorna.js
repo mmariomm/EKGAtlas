@@ -26,6 +26,11 @@ const AGG_ATTESA = 180e3;                // l'aiutante apre lo zip e scambia la 
 const AGG_APERTO = new Set(["coda", "avvio", "corre", "stampo", "stampa"]);   // come ORDINE_APERTO nel pannello
 const AGG_CARTELLA = "%LOCALAPPDATA%\\PSAssist\\estensione";
 const AGG_OCCUPATO = "Dopo l'ordine in corso";
+// La build è di sola lettura? Allora scarica il SUO zip (quello mini) e si
+// aggiorna da sé (vedi in fondo). La versione (VERSION.txt) è unica per le due
+// build, che escono insieme dallo stesso `npm run dist`.
+const aggSolaLettura = () => typeof self !== "undefined" && self.PSA_SOLA_LETTURA === true;
+const aggZipNome = () => (aggSolaLettura() ? "ps-assist-lettura.zip" : "ps-assist-latest.zip");
 const aggMia = () => chrome.runtime.getManifest().version;
 const aggVer = (v) => /^\d+(\.\d+){1,3}$/.test(String(v || "").trim());
 function aggPiuNuova(a, b) {
@@ -130,7 +135,7 @@ async function aggiorna() {
   if (!i.puo) return { ok: false, why: `Non si aggiorna da qui: ${i.come}.` };
   let buf, man;
   try {
-    const r = await aggPrendi("ps-assist-latest.zip");
+    const r = await aggPrendi(aggZipNome());
     if (!r.ok) throw new Error(`GitHub non risponde (${r.status})`);
     buf = await r.arrayBuffer();
     if (buf.byteLength > AGG_ZIP_MAX) throw new Error("lo zip è troppo grande");
@@ -144,7 +149,7 @@ async function aggiorna() {
     if (await aggOccupato()) return { ok: false, why: AGG_OCCUPATO };
     const h = await ospite({ t: "aggiorna", versione: v, zip: b64(buf) }, AGG_ATTESA);
     if (!h.ok && !h.ignoto) return { ok: false, why: `Aggiornamento non riuscito: ${corto(h.why || "l'aiutante ha detto di no", 160)}` };
-    await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v } });
+    await chrome.storage.local.set({ aggiorna: { ts: 0, nuova: "", puo: false, come: "", fatto: v, quando: Date.now() } });
     // (nessuna risposta: la cartella può essere già quella nuova, e una
     // ricarica è più sicura di un'estensione mezza vecchia e mezza nuova)
     return { ok: true, versione: v, ricarica: true, ...(h.ok ? {} : { incerto: true }) };
@@ -172,17 +177,49 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 // partita» (lo annota nel suo registro).
 chrome.runtime.onInstalled.addListener((d) => {
   if (d.reason !== "update") return;
-  const cs = chrome.runtime.getManifest().content_scripts?.[0] || {};
-  const pagine = cs.matches || [SA4 + "/sa4pso/*"];
-  // (non nelle schede dove il pannello non nasce: i PDF delle stampe)
-  const senza = (cs.exclude_matches || []).map((m) => m.replace(/\*$/, ""));
-  chrome.tabs.query({ url: pagine }).then((schede) => {
-    for (const t of schede) if (!t.discarded && !senza.some((x) => String(t.url || "").startsWith(x))) chrome.scripting.executeScript({ target: { tabId: t.id }, files: ["aggiornata.js"] }).catch(() => {});
-  }).catch(() => {});
+  // La build mini non ha pannello: niente pillola «aggiornata» nelle schede
+  // (non c'è una finestra da ricaricare, e niente di non mandato). Il resto —
+  // la pulizia di `fatto` e l'avviso all'aiutante — vale lo stesso.
+  if (!aggSolaLettura()) {
+    const cs = chrome.runtime.getManifest().content_scripts?.[0] || {};
+    const pagine = cs.matches || [SA4 + "/sa4pso/*"];
+    // (non nelle schede dove il pannello non nasce: i PDF delle stampe)
+    const senza = (cs.exclude_matches || []).map((m) => m.replace(/\*$/, ""));
+    chrome.tabs.query({ url: pagine }).then((schede) => {
+      for (const t of schede) if (!t.discarded && !senza.some((x) => String(t.url || "").startsWith(x))) chrome.scripting.executeScript({ target: { tabId: t.id }, files: ["aggiornata.js"] }).catch(() => {});
+    }).catch(() => {});
+  }
   chrome.storage.local.get("aggiorna").then((o) => {
-    const { fatto, ...resto } = o.aggiorna || {};
+    const { fatto, quando, ...resto } = o.aggiorna || {};
     if (fatto !== aggMia()) return;
     chrome.storage.local.set({ aggiorna: resto }).catch(() => {});
+    // La riga della pagina della build mini: «Aggiornato alla versione X · data».
+    // Si tiene a parte, così resta anche dopo la pulizia qui sopra.
+    chrome.storage.local.set({ aggiornaUltima: { v: aggMia(), quando: quando || Date.now() } }).catch(() => {});
     ospite({ t: "chi", avviata: aggMia() }, 30e3).catch(() => {});
   }).catch(() => {});
 });
+
+// --------------------------------------------- la build mini: senza mani
+// La build «Lettura e stampa» non ha pannello: non c'è un ⋯ da cui controllare,
+// né un tocco per applicare. Quindi guarda da sé — all'avvio del service worker
+// e ogni sei ore (chrome.alarms) — e, se c'è una versione nuova e il PC è libero
+// (la stessa guardia «stampa in corso»; non ci sono ordini qui), si aggiorna da
+// sola: `aggiorna()` tiene OGNI controllo (versione == VERSION.txt, stessa
+// chiave della build mini, cartella installata, aiutante confermato, host fisso,
+// mai a metà di una stampa). Dopo lo scambio, la ricarica — nessun avviso: sola
+// lettura, niente di non mandato.
+const AGG_MINI_ALLARME = "psassist-aggiorna-mini";
+const AGG_MINI_ORE = 6 * 60;   // minuti
+async function aggMiniAuto() {
+  if (!aggSolaLettura()) return;
+  const rec = await aggControlla(true).catch(() => null);
+  if (!rec || !rec.nuova || !rec.puo) return;   // niente di nuovo, o non si aggiorna da qui
+  const r = await aggiorna().catch(() => null);
+  if (r && r.ricarica) setTimeout(() => chrome.runtime.reload(), 400);
+}
+chrome.runtime.onStartup?.addListener(() => { aggMiniAuto().catch(() => {}); });
+if (aggSolaLettura() && chrome.alarms) {
+  chrome.alarms.create(AGG_MINI_ALLARME, { periodInMinutes: AGG_MINI_ORE, delayInMinutes: 3 });
+  chrome.alarms.onAlarm.addListener((a) => { if (a && a.name === AGG_MINI_ALLARME) aggMiniAuto().catch(() => {}); });
+}

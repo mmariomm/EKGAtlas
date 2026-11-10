@@ -71,6 +71,18 @@
   const APP = "PS Assist";
   const VERSION = "3.84.0";
   const NS = "psassist:"; // storage namespace
+  // La build «mini» (PS Assist · Lettura e stampa): sola lettura. La bandiera
+  // la mette sola-lettura.js, caricato prima di content.js (vedi manifest). Qui
+  // niente pannello degli ordini — solo un distintivo e le letture per il
+  // telefono — e ogni comando di SCRITTURA del ponte è rifiutato sul PC.
+  const SOLA_LETTURA = (() => { try { return typeof self !== "undefined" && self.PSA_SOLA_LETTURA === true; } catch { return false; } })();
+  // I comandi del ponte che una scheda in sola lettura esegue: letture e
+  // ristampa (legge la pagina aperta e stampa, non scrive). Tutto il resto è
+  // già fermato nel service worker; questo è il secondo muro, nella scheda.
+  const PONTE_LETTURA_SCHEDA = new Set([
+    "pazienti", "mappa", "eo", "triage", "esiti", "aggiornaValori",
+    "richieste", "cartella", "terapie", "ristampe", "ristampa",
+  ]);
 
   const TIMEOUT_MS = 20000;      // per-request timeout
   const PACE_MS = 250;           // gentle pause between consecutive requests
@@ -9404,7 +9416,33 @@
       return v ? `<div class="msez" role="group"${titolo ? ` aria-label="${esc(titolo)}"><div class="mtit" aria-hidden="true">${esc(titolo)}</div>` : ">"}${v}</div>` : "";
     }
 
+    // Il distintivo della build mini (sola lettura): niente pannello, solo una
+    // riga discreta in basso a sinistra. Dice che il PC è in sola lettura e,
+    // quando il telefono è collegato, lo mostra con «Scollega» — come la spia
+    // del pannello pieno, perché chi è davanti al PC lo veda e la possa chiudere.
+    renderBadge() {
+      const viva = !!(PONTE_STATO && PONTE_STATO.sessione);
+      this.root.innerHTML = `<style>:host{all:initial}
+        .b{position:fixed;left:12px;bottom:12px;z-index:2147483646;display:inline-flex;align-items:center;gap:8px;
+           font:12px/1.3 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#0B2C50;
+           background:#EAF0F6;border:1px solid #C6D4E4;border-radius:999px;padding:5px 11px;box-shadow:0 2px 8px rgba(11,44,80,.12);opacity:.85}
+        .b.viva{background:#E6F5EE;border-color:#A6D8BF;color:#0A5A33}
+        .dot{width:7px;height:7px;border-radius:50%;background:#6B8CAE;flex:none}
+        .b.viva .dot{background:#17A05B;animation:psaPulse 1.6s ease-in-out infinite}
+        @keyframes psaPulse{0%,100%{opacity:1}50%{opacity:.35}}
+        button{border:0;background:transparent;color:inherit;font:inherit;font-weight:700;cursor:pointer;text-decoration:underline;padding:0 0 0 4px}</style>
+        <div class="b${viva ? " viva" : ""}" role="status" title="PS Assist · questo PC è una porta d'ingresso in sola lettura per l'iPhone del medico">
+          <span class="dot"></span><span>${viva ? "👁️ iPhone collegato · sola lettura" : "👁️ PS Assist · sola lettura"}</span>${
+          viva ? `<button id="solaoff" title="Chiude la sessione dell'iPhone">Scollega</button>` : ""}</div>`;
+      const off = this.root.getElementById("solaoff");
+      if (off) off.addEventListener("click", (e) => { e.stopPropagation(); ask({ t: "ponteScollega" }); });
+    }
     render() {
+      // La build mini non ha il pannello degli ordini: solo un distintivo
+      // discreto «sola lettura», che diventa «iPhone collegato · Scollega»
+      // quando una sessione del telefono è aperta (chi passa davanti al PC lo
+      // sa e la può chiudere). Ogni chiamata a render() finisce qui.
+      if (SOLA_LETTURA) return this.renderBadge();
       const patientName = this.pageType === "vista" ? this.nomePaziente() : nomeInPagina();
       // (su una pagina «altra» l'episodio è quello che il pannello ha
       // riconosciuto, o nessuno: non il primo link che la pagina porta)
@@ -17432,6 +17470,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (LAVORO || PONTE_VALORI || PONTE_CARTELLA || PONTE_TERAPIA || PONTE_ACCETTA) return { no: "lavoro" };
     if (!PANNELLO) return { no: "pannello" };
     const a = m.args || {}, cmd = m.cmd;
+    // Secondo muro della build mini (il primo è nel service worker): qui, nella
+    // scheda, solo le letture e la ristampa. Una scrittura che per qualunque
+    // ragione arrivasse fin qui non tocca il gestionale.
+    if (SOLA_LETTURA && !PONTE_LETTURA_SCHEDA.has(cmd)) return { ok: false, errore: "Questo PC è in sola lettura", solaLettura: true };
     const fatto = (r) => {
       if (r && r.registro) PANNELLO.log(`${now()}  iPhone · ${r.registro}`);
       if (r && r.ok && ["nota", "promemoria", "fatto", "dfAggiungi", "dfSpunta", "dfTogli"].includes(cmd) && !PANNELLO.root.activeElement) PANNELLO.render();
@@ -18142,7 +18184,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // il passaggio verso il visore): la pill e basta. Qui non parte niente di
     // quello che segue — né ordini, né stampe, né letture della pagina.
     if (!IN_PSO) {
-      if (classify(document) !== "login" && !/login/i.test(location.pathname)) vistaQui();
+      // La build mini non ha pill né registratore fuori dal gestionale: niente.
+      if (!SOLA_LETTURA && classify(document) !== "login" && !/login/i.test(location.pathname)) vistaQui();
       return;
     }
     // Con l'estensione, per prima cosa: questa scheda è quella di un ordine
@@ -18166,6 +18209,76 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       return;
     }
     bootGestionale(null);
+  }
+
+  // Chi è loggato nel gestionale su questo PC, dalla testata della pagina
+  // («Salve! Sei connesso come Utente Medico: NOME»): lo si dice al service
+  // worker per la testata «Sola lettura · gestionale di …» del telefono. Solo
+  // il nome, e solo se si legge: non blocca mai una lettura.
+  function reportOperatore() {
+    if (!hasExt()) return;
+    try {
+      const testo = document.body ? document.body.textContent.slice(0, 20000) : "";
+      const m = /connesso come[^:]*:\s*([^<\n]{1,60})/i.exec(testo);
+      const nome = m ? m[1].replace(/\s+/g, " ").trim() : "";
+      if (nome) ask({ t: "ponteOperatore", nome }).catch(() => {});
+    } catch { /* niente: la testata è solo informativa */ }
+  }
+
+  // La scheda del gestionale nella build mini: nessun pannello degli ordini,
+  // solo il distintivo e le LETTURE che servono al telefono (le stesse della
+  // build piena). Niente ascolto degli ordini, niente conferme sorvegliate,
+  // niente stampa automatica: questo PC non scrive nel gestionale. Il pannello
+  // si costruisce lo stesso, perché i comandi di lettura del ponte (ponteEsegui)
+  // leggono dal suo modello (PANNELLO.pazModello()).
+  function bootSolaLettura(chi, pageType) {
+    const panel = new Panel(pageType);
+    PANNELLO = panel;
+    reportOperatore();
+    if (pageType !== "patient") {
+      panel.render();                       // il distintivo
+      if (PONTE_VALORI) ponteValoriQui(panel);
+      return;
+    }
+    panel.entry = patientModel(document, location.href);
+    if (eListaArea(document, location.href)) panel.entry = { labUrl: null, radioUrl: null };
+    panel.esiti = esitiModel(document, location.href);
+    if (panel.episodeId && (panel.entry.labUrl || panel.entry.radioUrl)) leggiStatoPagina(panel.episodeId, document);
+    panel.render();                         // il distintivo
+    // il collega apre il paziente sul PC: le letture per il telefono, identiche
+    // alla build piena (nome, età, cartella, portale clinico, valori e referti)
+    if (panel.entry && (panel.entry.labUrl || panel.entry.radioUrl) && !PONTE_VALORI) {
+      const an = anagraficaPagina(document);
+      rememberPatient(panel.episodeId, nomeInPagina(), location.href, triageDi(document), an.eta, an.sesso, improntaNascita(nascitaInPagina(document)));
+      cartellaLettaQui(panel.episodeId);
+      iconaCf(document);
+      document.addEventListener("click", (ev) => {
+        const a = ev.target?.closest?.('a[href*="MODALITA=CLINICA"]');
+        if (!a || !hasExt()) return;
+        ask({ t: "apreStorico", ep: panel.episodeId || "", nome: panel.nomePaziente() || "" }).catch(() => {});
+      }, true);
+    }
+    if (hasExt()) ask({ t: "portale" }).then((r) => { if (r && r.ok && r.origine) panel.portale = r.origine; }).catch(() => {});
+    const daSolo = !PONTE_VALORI;
+    if (!daSolo || panel.ordineInCorso()) panel.refreshRefCache();
+    panel.caricaStorico();
+    if (daSolo) panel.autoCarica({ esiti: panel.view === "esiti" }).catch(() => {});
+    // finché la pagina resta aperta, un laboratorio a metà si ricontrolla (solo
+    // mentre la si guarda, e dopo due giri a vuoto basta) — come la build piena
+    if (!PONTE_VALORI && !TABELLONE) {
+      let vuoti = 0, ultimo = Date.now();
+      const ricontrolla = async () => {
+        if (vuoti >= 2 || document.visibilityState !== "visible") return;
+        if (!panel.esiti.some((e) => e.kind === "valori" && !e.storico)) return;
+        ultimo = Date.now();
+        const prima = panel.impValori();
+        const r = await panel.autoCarica({ esiti: true }).catch(() => null);
+        if (r && r.lab) vuoti = panel.impValori() === prima ? vuoti + 1 : 0;
+      };
+      setInterval(ricontrolla, PARZ_MS + 5e3);
+      document.addEventListener("visibilitychange", () => { if (Date.now() - ultimo >= PARZ_MS) ricontrolla(); });
+    }
+    if (PONTE_VALORI) { ponteValoriQui(panel); return; }
   }
 
   function bootGestionale(chi) {
@@ -18238,6 +18351,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (areaVaiQui(document, location.href)) return;
       smartQui(document, location.href);
     }
+    // La build mini (sola lettura): da qui niente pannello degli ordini, niente
+    // sorveglianza delle conferme, niente stampa automatica — solo le letture
+    // per il telefono e il distintivo. Le schede di sottofondo di sola lettura
+    // (PONTE_VALORI, e PONTE_TERAPIA del «rileggi») sono già passate sopra.
+    if (SOLA_LETTURA) return bootSolaLettura(chi, pageType);
     if (pageType === "other") {
       // e.g. the post-confirm label page: no panel, but a pending print
       // handoff starts here when the page lists the richiesta's print links.

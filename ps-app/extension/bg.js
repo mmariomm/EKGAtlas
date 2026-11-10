@@ -15,6 +15,11 @@
  * the bytes. Everything stays on this machine, in the extension's own storage.
  */
 
+// La bandiera della build (self.PSA_SOLA_LETTURA): per prima, così la vedono
+// bg.js e tutto quello che importa dopo (ponte-sw.js, aggiorna.js). La build
+// mini (sola lettura) la mette a `true`; la normale a `false`.
+try { importScripts("sola-lettura.js"); } catch (e) { self.PSA_SOLA_LETTURA = false; }
+
 const PDF_SMELL = /uploaddownloadservlet|mimetype=application\/pdf|get_pdf|jasperservlet|refertostream|report|\.pdf(?:[?&"']|$)/i;
 
 // The chain may only walk hosts this extension is FOR (host_permissions):
@@ -2248,6 +2253,10 @@ try { importScripts("stazione-sw.js"); }
 catch (e) { console.error("PS Assist: la stazione di stampa non parte", e); }
 
 // «Ricetta SISS» (ricetta-sw.js): la ricetta del pannello consegnata a una
-// scheda del Prescrittivo, che la compila e si ferma sull'Anteprima.
-try { importScripts("ricetta-sw.js"); }
-catch (e) { console.error("PS Assist: la ricetta SISS non parte", e); }
+// scheda del Prescrittivo, che la compila e si ferma sull'Anteprima. È una
+// SCRITTURA: nella build mini (sola lettura) non si carica nemmeno (niente
+// pannello e niente content script sul Prescrittivo: non avrebbe come partire).
+if (self.PSA_SOLA_LETTURA !== true) {
+  try { importScripts("ricetta-sw.js"); }
+  catch (e) { console.error("PS Assist: la ricetta SISS non parte", e); }
+}
