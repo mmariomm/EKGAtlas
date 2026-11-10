@@ -1369,7 +1369,7 @@
         ${suPaz || suZip ? "" : `<button data-a="aggiornaLista">${em("🔄")}Aggiorna elenco</button>`}
         <button data-a="stampaPdf">${em("📄")}Stampa PDF</button>
         ${solaLettura() ? "" : `<button data-a="scansiona">${em("🖨️")}Collega stampante</button>`}
-        ${solaLettura() ? "" : `<button data-a="registrazioni">${em("📦")}Registrazioni</button>`}
+        ${solaLettura() ? "" : `<button data-a="registrazioni"><span class="em rec" aria-hidden="true">●</span> Registrazioni</button>`}
         <button data-a="esci">${em("🚪")}Chiudi sessione</button>
         <button class="via" data-a="dimentica">${em("🗑️")}Dimentica ${S.pcs.length >= 2 ? "questo PC" : "PC"}</button>
         <div class="info">${solaLettura() ? "Sola lettura · " : ""}Associato · finché non lo scolleghi · codice ${esc(S.codice)}</div>

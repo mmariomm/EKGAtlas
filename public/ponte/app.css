@@ -57,6 +57,7 @@ button { cursor: pointer; touch-action: manipulation; }
         border: 1px solid var(--bordo); border-radius: 14px; box-shadow: 0 16px 40px var(--ombra); padding: 6px; }
 .menu button { display: block; width: 100%; min-height: 44px; text-align: left; border: 0; background: none; padding: 10px 12px; border-radius: 9px; font-size: 15px; font-weight: 600; white-space: nowrap; }
 .menu .em { display: inline-block; width: 1.7em; text-align: center; margin-right: 4px; }
+.menu .em.rec { color: var(--rosso); }   /* Registrazioni: il puntino rosso del «● REC», non una scatola */
 .menu button:active { background: var(--fondo); }
 .menu .via { color: var(--rosso); }
 .menu .info { padding: 8px 12px 6px; font-size: 12.5px; color: var(--grigio); }

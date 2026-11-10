@@ -5899,6 +5899,7 @@
     /* il reset: in fondo, da solo sulla sua riga, rosso anche a riposo */
     .menu .msez > button.mreset { flex: 0 0 100%; color: var(--err); }
     .menu button.mreset .mico { color: var(--err); }
+    .menu #regmenu .mico { color: var(--err); }   /* Registrazioni: il puntino rosso del «● REC», non una scatola (resta rosso anche in hover) */
     /* in fondo la versione, con «Ricarica» accanto; «Aggiorna app», quando c'è, sopra di lei in blu */
     .menu .mpiede { border-top: 1px solid #EEF2F6; padding-top: 2px; }
     .menu .mpiede > .magg { color: var(--azione); font-weight: 700; }
@@ -7227,7 +7228,7 @@
   const icoIn = (k, px = 14) => ICO[k].replace('<svg width="16" height="16"', `<svg width="${px}" height="${px}" style="vertical-align:-.2em;margin-right:4px;flex:none"`);
   // …e nel menu ⋯, davanti a ogni voce
   const mico = (k) => `<span class="mico">${ICO[k]}</span>`;
-  // le voci che esistono anche sul telefono hanno la sua stessa emoji (📱 iPhone, 🖨️ stampa, 📦 registrazioni)
+  // le voci che esistono anche sul telefono hanno la sua stessa emoji (📱 iPhone, 🖨️ stampa, ● registrazioni in rosso)
   const memo = (e) => `<span class="mico mem" aria-hidden="true">${e}</span>`;
   // Le schermate che si aprono dal menu ⋯: il nome e l'icona della loro voce,
   // in testa al posto delle schede. E il nome delle schede, per il ‹ che ci torna.
@@ -9664,7 +9665,7 @@
                       !this.stampaPronta() ? "" : this.stampaAuto.s.attiva === false
                         ? `<button role="menuitemcheckbox" id="stautosw" aria-checked="false" title="Spenta: i fogli passano dal dialogo di stampa. Tocca per accenderla: ogni foglio va da solo alla sua stampante, senza dialogo">${mico("spento")}Stampa automatica</button>`
                         : `<button role="menuitemcheckbox" id="stautosw" aria-checked="true" title="Attiva: ogni foglio va da solo alla sua stampante. Tocca per spegnerla: i fogli tornano a passare dal dialogo di stampa">${mico("acceso")}Stampa automatica</button>`,
-                      hasExt() ? `<button role="menuitem" id="regmenu" title="Registra una sessione, la registrazione automatica degli ultimi minuti, gli zip salvati su questo PC (anche dall'iPhone)">${memo("📦")}Registrazioni</button>` : "",
+                      hasExt() ? `<button role="menuitem" id="regmenu" title="Registra una sessione, la registrazione automatica degli ultimi minuti, gli zip salvati su questo PC (anche dall'iPhone)">${memo("●")}Registrazioni</button>` : "",
                       `<button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${mico("registro")}${this.showLog ? "Nascondi il registro" : "Registro"}</button>`,
                       // l'ultima, da sola sulla sua riga, in rosso: non sta accanto a niente di innocuo
                       this.giroQui() ? "" : this.resetArmato() ? `<button role="menuitem" id="resetpaz" class="mreset mrischio">${mico("cestino")}Cancello tutto? Tocca di nuovo</button>`
