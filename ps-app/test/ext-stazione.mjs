@@ -284,6 +284,14 @@ const statoS = await finche(async () => { const t = await testoSta(); return /Co
 check(!!statoS && statoS.includes(qSta.codice) && /Il PC del medico è collegato adesso/.test(statoS) && await pSta.locator("#qrsec").isHidden(),
   "la stazione: «Collegata al PC del medico», dalle …, lo stesso codice, il PC collegato adesso; il QR non c'è più");
 await tocca('[data-a="stachiudi"]');
+// subito, SENZA ricaricare la pagina del telefono: il telefono sa già la stazione
+// (dopo «Collega» rilegge il catalogo del PC) — prima la scelta compariva solo
+// riaprendo l'app, e dal telefono non si poteva scegliere l'Infermeria
+await tocca('[data-a="menu"]');
+const menuSta = await finche(async () => { const t = await tel.locator(".menu").innerText().catch(() => ""); return /Stampa PDF in Infermeria/.test(t) ? t : ""; }, 10000) || "";
+check(/Stampa PDF sul PC/.test(menuSta) && /Stampa PDF in Infermeria/.test(menuSta),
+  `collegata, senza ricaricare: nel ⋯ del telefono «💻 Stampa PDF sul PC» e «🖨️ Stampa PDF in Infermeria» (got «${menuSta.replace(/\n+/g, " · ")}»)`);
+await tocca('[data-a="menu"]');   // (lo richiude)
 const imp = await ctx.newPage();
 await imp.goto(EXTURL("portale.html"));
 await imp.waitForSelector("#stasi:not([hidden])", { timeout: 8000 });
@@ -342,6 +350,23 @@ const righeSta = await pSta.locator("#lavori").innerText();
 check(/Etichette/.test(righeSta) && /A4/.test(righeSta) && /Stampato su Zebra Infermeria/.test(righeSta) && /\d\d:\d\d/.test(righeSta),
   "la stazione, «Ultimi fogli»: l'ora, il tipo, com'è andata");
 await shot(pSta, "stazione-4-pagina-collegata");
+
+// ===========================================================================
+sezione("«Stampa PDF» dal telefono in Infermeria: alla stazione, non al PC");
+await tel.reload();
+await aspettaTel(/ROSSI MARIO/, 30000);
+await tocca('[data-a="menu"]');
+await finche(async () => (await tel.locator('.menu [data-a="stampaPdfSta"]').count()) > 0, 10000);
+const staP = lavori("sta").length, pcP = lavori("pc").length;
+const pdfSta = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n");
+const [fcSta] = await Promise.all([tel.waitForEvent("filechooser", { timeout: 8000 }), tocca('.menu [data-a="stampaPdfSta"]')]);
+await fcSta.setFiles({ name: "foglio.pdf", mimeType: "application/pdf", buffer: pdfSta });
+const cartaPdf = await finche(async () => { const t = await tel.locator(".stampa").innerText().catch(() => ""); return /Stampato in Infermeria|NON stampato|Non so se/.test(t) ? t : ""; }, 60000) || "";
+await finche(() => lavori("sta").length > staP, 10000);
+const nuoviSta = lavori("sta").slice(staP);
+check(/Stampato in Infermeria/.test(cartaPdf) && nuoviSta.length === 1 && nuoviSta[0].tipo === "a4" && nuoviSta[0].stampante === "HP Infermeria A4" && lavori("pc").length === pcP,
+  `«🖨️ Stampa PDF in Infermeria»: un foglio sull'A4 dell'infermeria, niente sulle stampanti del PC, e il telefono lo dice (got «${cartaPdf.replace(/\n+/g, " · ")}»; ${JSON.stringify(nuoviSta.map((x) => `${x.tipo}→${x.stampante}`))})`);
+await tocca('[data-a="stampaVia"]').catch(() => {});
 
 // ===========================================================================
 sezione("un ordine dal telefono: la scelta del PC, e per un ordine «PC»");

@@ -635,9 +635,12 @@ async function ponteStampa(s, d) {
     let testa = "";
     try { testa = atob(b.slice(0, 8)); } catch { /* sotto */ }
     if (!testa.startsWith("%PDF")) return no("Non è un PDF: niente stampato");
-    if (!(await stampaScelte())) return no("Sul PC la stampa automatica non è impostata");
+    // dove: questo PC (la sua stampa automatica) o la stazione di stampa collegata (Infermeria)
+    const dest = d.dest === "stazione" ? "stazione" : "qui";
+    if (dest === "stazione") { if (!(await ponteStampaDove()).stazione) return no("Nessuna stazione di stampa collegata a questo PC"); }
+    else if (!(await stampaScelte())) return no("Sul PC la stampa automatica non è impostata");
     s.stampe.clear();   // una alla volta
-    s.stampe.set(rid, { n, size, parti: [], lun: 0 });
+    s.stampe.set(rid, { n, size, parti: [], lun: 0, dest });
   }
   const c = s.stampe.get(rid);
   if (!c || c.n !== n || c.size !== size || c.parti.length !== i || b.length > PONTE_PDF_PEZZO || (i < n - 1 && b.length % 4)
@@ -648,7 +651,7 @@ async function ponteStampa(s, d) {
   const pdf = c.parti.join("");
   c.parti = null;
   if (ponteMisura(pdf) !== size) return male;
-  const r = await stampaDalTel(rid, pdf);
+  const r = await stampaDalTel(rid, pdf, c.dest);
   if (!r.ok) return no(corto(r.why, 120));
   const rec = await ponteStampaEsito(rid, PONTE_STAMPA_ATTESA);
   const { nota, ...p } = ponteStampaParole(rec);
@@ -670,7 +673,7 @@ function ponteStampaParole(rec) {
   const dove = corto(f.stampante, 80) || "la stampante";
   const testo = [p.testo, p.dettaglio].filter(Boolean).join(" · ");
   if (!rec) return { fine: true, tono: "warn", titolo: "Già mandato al PC", testo: "guarda la stampante prima di rifarlo", nota: "" };
-  if (rec.stato === "stampo") return { fine: true, tono: "run", titolo: "Stampo sul PC…", testo: `guarda ${dove}`, nota: "PDF dall'iPhone: la stampa tarda" };
+  if (rec.stato === "stampo") return { fine: true, tono: "run", titolo: rec.dest === "stazione" ? `Stampo in ${dove}…` : "Stampo sul PC…", testo: `guarda ${dove}`, nota: "PDF dall'iPhone: la stampa tarda" };
   if (f.stato === "stampato") return { fine: true, tono: "ok", titolo: p.titolo, testo, nota: `PDF dall'iPhone stampato su ${dove}` };
   if (f.stato === "mandato") return { fine: true, tono: "warn", titolo: p.titolo, testo, nota: `PDF dall'iPhone mandato a ${dove}` };
   if (f.stato === "sconosciuto") return { fine: true, tono: "warn", titolo: p.titolo, testo, nota: `PDF dall'iPhone: esito della stampa sconosciuto (${dove})` };

@@ -916,6 +916,8 @@
   const b64 = (u) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
   async function stampaPdf(file) {
     if (!file || (S.stampa && !S.stampa.fine) || !S.canale) return;
+    // dove: il PC, o la stazione di stampa collegata (scelta dal menu ⋯)
+    const dove = S.pdfDove === "stazione" && staDi() ? "stazione" : "qui", sta = staDi() || "Infermeria";
     const fine = (tono, titolo, testo = "") => { S.stampa = { tono, titolo, testo, fine: true, ts: Date.now() }; render(); };
     if (file.size > PDF_MAX) return fine("err", "PDF troppo grande: oltre 15 MB");
     S.stampa = { tono: "run", titolo: "Invio…", testo: "", fine: false, ts: Date.now() };
@@ -930,15 +932,15 @@
       let d = null;
       for (let i = 0; i < n && !(d && d.fine); i++) {
         ultimo = i === n - 1;
-        S.stampa.titolo = i === n - 1 ? "Stampo sul PC…" : `Invio… ${Math.round(i / n * 100)}%`; render();
+        S.stampa.titolo = i === n - 1 ? (dove === "stazione" ? `Stampo in ${sta}…` : "Stampo sul PC…") : `Invio… ${Math.round(i / n * 100)}%`; render();
         const b = b64(u.subarray(i * PEZZO, (i + 1) * PEZZO));
-        d = await pezzo(() => chiedi("stampa", { rid, i, n, size: u.length, b }, (i === n - 1 ? ATTESA_STAMPA : 40e3) + perRete(b.length), false, { rq: `${rid}-${i}` }),
+        d = await pezzo(() => chiedi("stampa", { rid, i, n, size: u.length, b, ...(dove === "stazione" ? { dest: "stazione" } : {}) }, (i === n - 1 ? ATTESA_STAMPA : 40e3) + perRete(b.length), false, { rq: `${rid}-${i}` }),
           entro, "Il PC non ha risposto in tempo");
       }
       fine(d.tono || "warn", d.titolo || "Mandato al PC", d.testo);
     } catch (e) {
       if (!S.canale) { S.stampa = null; return; }
-      if (e.tempo && ultimo) fine("warn", "Non so se è stampato", "guarda la stampante del PC prima di rifarlo");
+      if (e.tempo && ultimo) fine("warn", "Non so se è stampato", `guarda la stampante ${dove === "stazione" ? "in " + sta : "del PC"} prima di rifarlo`);
       else if (e.tempo || e.nonInviata) fine("err", "PDF NON stampato", "la rete non ha retto: riprova");
       else fine("err", e.message);
     }
@@ -1094,7 +1096,14 @@
     const st = S.stazione;
     if (!st || st.fase !== "chiedi" || S.fase !== "pronta") return;
     st.fase = "invio"; render();
-    const fatto = (d) => { if (S.stazione === st) { st.fase = "fatto"; st.nome = d.nome || st.nome; st.codiceK = d.codice || ""; render(); } };
+    const fatto = (d) => {
+      if (S.stazione !== st) return;
+      const prima = st.fase === "fatto";
+      st.fase = "fatto"; st.nome = d.nome || st.nome; st.codiceK = d.codice || ""; render();
+      // collegata: il catalogo del PC ora dice la stazione — «Stampa: PC · Infermeria»
+      // compare subito (Richieste, Ristampa, Stampa PDF), senza riaprire
+      if (!prima) chiedi("richieste", {}, TEMPO, true).then((c) => { if (c) { S.catalogo = c; render(); } }, () => {});
+    };
     try { fatto(await scrivi("stazioneCollega", { sta: st.sta, nome: st.nome }, 60e3, fatto, "")); }
     catch (e) { if (S.stazione === st) { st.fase = "errore"; st.testo = e.inviata ? "Non so se è collegata: guarda sul PC, ⋯ → Stampanti" : e.message; render(); } }
   }
@@ -1367,7 +1376,8 @@
       ${S.menu ? `<div class="menu" role="menu">
         ${listaPc}
         ${suPaz || suZip ? "" : `<button data-a="aggiornaLista">${em("🔄")}Aggiorna elenco</button>`}
-        <button data-a="stampaPdf">${em("📄")}Stampa PDF</button>
+        ${staDi() ? `<button data-a="stampaPdf">${em("💻")}Stampa PDF sul PC</button><button data-a="stampaPdfSta">${em("🖨️")}Stampa PDF in ${esc(staDi())}</button>`
+          : `<button data-a="stampaPdf">${em("📄")}Stampa PDF</button>`}
         ${solaLettura() ? "" : `<button data-a="scansiona">${em("🖨️")}Collega stampante</button>`}
         ${solaLettura() ? "" : `<button data-a="registrazioni"><span class="em rec" aria-hidden="true">●</span> Registrazioni</button>`}
         <button data-a="esci">${em("🚪")}Chiudi sessione</button>
@@ -1989,7 +1999,7 @@
   let premuto = 0, rinviato = false, disegno = false, trascino = false;
   // le azioni che senza il PC non vanno
   // (l'ordine no: senza collegamento va in coda)
-  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
+  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "stampaPdfSta", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
     "trileggi", "tconferma", "accetta"]);
   function render() {
     if (premuto || trascino) { rinviato = true; return; }
@@ -2162,7 +2172,7 @@
     else if (a === "stacollega") collegaStazione();
     else if (a === "stachiudi") { S.stazione = null; render(); }
     else if (a === "dove") { const x = selDi(ep); x.dove = b.dataset.d === "stazione" ? "stazione" : "qui"; x.oid = ""; S.arma = null; render(); }
-    else if (a === "stampaPdf") { render(); $pdf.click(); }
+    else if (a === "stampaPdf" || a === "stampaPdfSta") { S.pdfDove = a === "stampaPdfSta" ? "stazione" : "qui"; render(); $pdf.click(); }
     else if (a === "stampaVia") { S.stampa = null; render(); }
     else if (a === "registrazioni") apriRegistrazioni();
     else if (a === "zipLista") caricaZip();
