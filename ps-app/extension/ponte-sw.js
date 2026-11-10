@@ -412,6 +412,8 @@ function ponteArgomenti(d) {
   if (d.rileggi) a.rileggi = true;
   // (dove stampare i fogli di un ordine: «qui», sul PC, o alla stazione di stampa)
   if (d.dest === "qui" || d.dest === "stazione") a.dest = d.dest;
+  // (la ristampa: solo le etichette, solo il foglio, o tutto)
+  if (d.quali === "etichette" || d.quali === "foglio" || d.quali === "tutto") a.quali = d.quali;
   if ("si" in d) a.si = !!d.si;
   if (typeof d.dove === "string" && /^(tray|(letto|area):[\w.-]{1,40})(@\w{1,8})?$/.test(d.dove)) a.dove = d.dove;
   return a;
@@ -430,6 +432,7 @@ const PONTE_LETTURA = new Set([
   "pazienti", "triage", "mappa", "eo",
   "esiti", "aggiornaValori", "richieste", "cartella", "terapie",
   "pdf", "ristampe", "ristampa", "stampa",   // «stampa»: un PDF del telefono sull'A4 di QUESTO PC (non scrive nel gestionale)
+  "stampaReferto",                            // un referto già salvato su questo PC, stampato (non scrive nel gestionale)
 ]);
 const ponteSolaLettura = () => typeof self !== "undefined" && self.PSA_SOLA_LETTURA === true;
 // Chi è questo PC, per il menu del telefono (nel saluto `ciao`): il tipo
@@ -493,6 +496,7 @@ async function ponteRisposta(s, d) {
     if (d.cmd === "ristampa") return await ponteRistampa(d);
     if (d.cmd === "pdf") return await ponteDaiPdf(s, d);
     if (d.cmd === "stampa") return await ponteStampa(s, d);
+    if (d.cmd === "stampaReferto") return await ponteStampaReferto(s, d);
     if (d.cmd === "registrazioni") return await ponteRegistrazioni(s, d);
     if (d.cmd === "registrazione") return await ponteDaiRegistrazione(s, d);
     if (d.cmd === "registrazioneVia") return await ponteViaRegistrazione(s, d);
@@ -658,6 +662,33 @@ async function ponteStampa(s, d) {
   if (!r.gia && nota) { ponteNota(nota); await ponteScriviStato(); }
   return { ok: true, dati: p };
 }
+// «🖨️» accanto a un referto PDF (Esiti): il PC stampa la SUA copia salvata, la
+// stessa che il telefono può aprire — solo un referto offerto in questa sessione
+// (cioè di quel paziente: `s.pdf`), mai un file mandato dal telefono. Stesse
+// regole di `stampa` per la destinazione, stesso motore e giornale (una
+// richiesta, una stampa: rimandata, dice com'è andata e non rifà). Il registro
+// non porta testo del paziente.
+async function ponteStampaReferto(s, d) {
+  const rid = typeof d.rid === "string" && /^[\w-]{8,24}$/.test(d.rid) ? d.rid : "";
+  const ep = typeof d.ep === "string" && /^[\w.-]{1,40}$/.test(d.ep) ? d.ep : "", ref = typeof d.ref === "string" && /^[\w-]{1,80}$/.test(d.ref) ? d.ref : "";
+  const no = (errore) => { ponteNota(`iPhone · un referto non stampato: ${errore}`); ponteScriviStato(); return { ok: false, errore }; };
+  if (!rid || !ep || !ref) return { ok: false, errore: "Referto non disponibile: riapri gli esiti" };
+  // già chiesta (la risposta si era persa): com'è andata, e niente seconda stampa
+  if (await stampaTelVista(rid)) { const { nota, ...p } = ponteStampaParole(await ponteStampaEsito(rid, 0)); return { ok: true, dati: p }; }
+  if (!s.pdf || !s.pdf.has(ep + "|" + ref)) return no("Referto non disponibile: riapri gli esiti");
+  const dest = d.dest === "stazione" ? "stazione" : "qui";
+  if (dest === "stazione") { if (!(await ponteStampaDove()).stazione) return no("Nessuna stazione di stampa collegata a questo PC"); }
+  else if (!(await stampaScelte())) return no("Sul PC la stampa automatica non è impostata");
+  const b = await ponteCopia(ep, ref);
+  if (!b) return no("Il PDF non è più sul PC");
+  if (ponteMisura(b) > PONTE_PDF_MAX) return no("PDF troppo grande: oltre 15 MB");
+  const r = await stampaDalTel(rid, b, dest, "Referto dall'iPhone");
+  if (!r.ok) return no(corto(r.why, 120));
+  const rec = await ponteStampaEsito(rid, PONTE_STAMPA_ATTESA);
+  const { nota, ...p } = ponteStampaParole(rec);
+  if (!r.gia && nota) { ponteNota(nota); await ponteScriviStato(); }
+  return { ok: true, dati: p };
+}
 // il foglio nel giornale delle stampe (bg.js), appena non si stampa più — o dopo `attesa`
 async function ponteStampaEsito(rid, attesa) {
   const id = "pdftel" + rid, t0 = ponteOra();
@@ -673,12 +704,14 @@ function ponteStampaParole(rec) {
   const dove = corto(f.stampante, 80) || "la stampante";
   const testo = [p.testo, p.dettaglio].filter(Boolean).join(" · ");
   if (!rec) return { fine: true, tono: "warn", titolo: "Già mandato al PC", testo: "guarda la stampante prima di rifarlo", nota: "" };
-  if (rec.stato === "stampo") return { fine: true, tono: "run", titolo: rec.dest === "stazione" ? `Stampo in ${dove}…` : "Stampo sul PC…", testo: `guarda ${dove}`, nota: "PDF dall'iPhone: la stampa tarda" };
-  if (f.stato === "stampato") return { fine: true, tono: "ok", titolo: p.titolo, testo, nota: `PDF dall'iPhone stampato su ${dove}` };
-  if (f.stato === "mandato") return { fine: true, tono: "warn", titolo: p.titolo, testo, nota: `PDF dall'iPhone mandato a ${dove}` };
-  if (f.stato === "sconosciuto") return { fine: true, tono: "warn", titolo: p.titolo, testo, nota: `PDF dall'iPhone: esito della stampa sconosciuto (${dove})` };
+  // (un referto: il registro dice «un referto», mai il paziente)
+  const rf = rec.paziente === "Referto dall'iPhone", chi = rf ? "iPhone · un referto" : "PDF dall'iPhone";
+  if (rec.stato === "stampo") return { fine: true, tono: "run", titolo: rec.dest === "stazione" ? `Stampo in ${dove}…` : "Stampo sul PC…", testo: `guarda ${dove}`, nota: `${chi}: la stampa tarda` };
+  if (f.stato === "stampato") return { fine: true, tono: "ok", titolo: p.titolo, testo, nota: `${chi} stampato su ${dove}` };
+  if (f.stato === "mandato") return { fine: true, tono: "warn", titolo: p.titolo, testo, nota: `${chi} mandato a ${dove}` };
+  if (f.stato === "sconosciuto") return { fine: true, tono: "warn", titolo: p.titolo, testo, nota: `${chi}: esito della stampa sconosciuto (${dove})` };
   const why = corto(f.why || rec.interrotta || p.testo, 200);
-  return { fine: true, tono: "err", titolo: "PDF NON stampato", testo: why, nota: `PDF dall'iPhone NON stampato: ${why}` };
+  return { fine: true, tono: "err", titolo: rf ? "Referto NON stampato" : "PDF NON stampato", testo: why, nota: `${chi} NON stampato: ${why}` };
 }
 
 // Con il catalogo, dove vanno i fogli: la stazione collegata (il suo nome) e

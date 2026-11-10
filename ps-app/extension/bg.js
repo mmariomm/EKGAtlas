@@ -1496,7 +1496,7 @@ const pdfTelId = (rid) => "pdftel" + rid;
 const daTelPdf = (rec) => String(rec.id).startsWith("pdftel");
 const pdfDalTel = (u) => { const b = PDF_TEL.get(PDF_TEL_URL.exec(u)[1]); return b ? { ok: true, pdf: b } : { ok: false, why: "non è più in memoria" }; };
 const stampaTelVista = async (rid) => ((await chrome.storage.session.get(ORD_VISTI))[ORD_VISTI] || []).includes(pdfTelId(rid));
-function stampaDalTel(rid, pdf, dest = "qui") {
+function stampaDalTel(rid, pdf, dest = "qui", nome = "PDF dall'iPhone") {
   return inFilaOrd(async () => {
     const id = pdfTelId(rid);
     const visti = (await chrome.storage.session.get(ORD_VISTI))[ORD_VISTI] || [];
@@ -1508,9 +1508,9 @@ function stampaDalTel(rid, pdf, dest = "qui") {
     if (!auto) return { ok: false, why: "Sul PC la stampa automatica non è impostata" };
     // (vista PRIMA di esistere: se qui qualcosa muore, rimandata non stampa)
     await chrome.storage.session.set({ [ORD_VISTI]: [...visti, id].slice(-100) });
-    const jobs = [{ name: "PDF dall'iPhone", printer: "a4", url: "psassist-tel:" + id, diretto: true }];
+    const jobs = [{ name: nome, printer: "a4", url: "psassist-tel:" + id, diretto: true }];
     const l = await ordLeggi();
-    l.push({ id, ep: "", paziente: "PDF dall'iPhone", n: 0, url: null, opener: null, worker: null, stato: "stampo", pronta: true, ts: Date.now(), agg: Date.now(),
+    l.push({ id, ep: "", paziente: nome, n: 0, url: null, opener: null, worker: null, stato: "stampo", pronta: true, ts: Date.now(), agg: Date.now(),
       ...(verso.dest === "stazione" ? { dest: "stazione", destNome: verso.destNome } : {}),
       vista: null, resto: { mancano: [], controllare: [], nel: [] }, stampa: { jobs, tag: "Stampa", fine: null, riassunto: "", quesito: "" }, fogli: fogliNuovi(jobs, auto) });
     PDF_TEL.set(id, pdf);
