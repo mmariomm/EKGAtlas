@@ -103,6 +103,49 @@ Assist e caricala di nuovo («Carica estensione non pacchettizzata»).
 
 ---
 
+## PS Assist · Lettura e stampa: la build mini di sola lettura
+
+Oltre all'estensione completa c'è una **seconda build**, «**PS Assist · Lettura e stampa**», per un
+altro PC: una **porta d'ingresso in sola lettura** per l'iPhone del medico, e una stazione di stampa.
+Dal telefono, su un PC così, si **vede tutto** (pazienti, esiti, valori e referti, cartella, terapie)
+e si **stampa** (un PDF, la ristampa di una richiesta), ma **non si scrive**: niente ordini, niente
+terapie, niente cartella salvata, niente «Accetta». Serve dove il medico vuole poter guardare e
+stampare da un secondo computer — per esempio quello dell'infermeria — senza portarci l'estensione
+intera.
+
+**Com'è fatta.** Stesse sorgenti della build completa, con una **bandiera** (`extension/sola-lettura.js`
+a `true`) e un **manifest a parte** (`tools/lettura.mjs`): un nome suo, una **chiave fissa diversa**
+(quindi un'estensione separata, con il suo id e la sua associazione dell'iPhone), e la ricetta SISS
+(una scrittura) tolta. Sulle pagine del gestionale non compare il pannello degli ordini, solo un
+piccolo distintivo **«👁️ PS Assist · sola lettura»** (diventa «iPhone collegato · Scollega» quando una
+sessione del telefono è aperta, così chi è al PC lo vede e la può chiudere). Le letture per il telefono
+si fanno lo stesso. Ogni comando di scrittura è rifiutato **sul PC**, «Questo PC è in sola lettura».
+
+**Si prepara con `npm run dist`**, che accanto a `dist/ps-assist-latest.zip` scrive anche
+`dist/ps-assist-lettura.zip` (stessa versione: le due build escono insieme).
+
+**Installarla sull'altro PC** (una volta): come l'estensione normale (vedi «Installazione» qui sopra),
+ma con lo zip **`ps-assist-lettura.zip`**:
+
+1. Scarica e scompatta `ps-assist-lettura.zip`; esegui `stampa\installa.cmd` (mette l'estensione in
+   `%LOCALAPPDATA%\PSAssist\estensione`, l'aiutante di stampa e il suo manifest, e autorizza **l'id di
+   questa build** per il native messaging — l'id è diverso da quello della build completa).
+2. In `chrome://extensions` (Modalità sviluppatore) → «Carica estensione non pacchettizzata» → la
+   cartella `%LOCALAPPDATA%\PSAssist\estensione`.
+3. Apri la sua pagina (⋮ → Opzioni, cioè `ponte.html`): dice che il PC è di sola lettura, con un
+   **QR**. Dall'iPhone, nell'app PS Assist, **⋯ → Scansiona il QR**: il PC si aggiunge alla lista dei
+   PC del telefono (💻 completo / 👁️ sola lettura), e si sceglie dal menu. Si scansiona **una volta
+   sola**: l'associazione non scade e regge riavvii, logout e aggiornamenti.
+4. Per farlo anche stazione di stampa dell'infermeria, la sua pagina «Stazione di stampa»
+   (`stazione.html`): come per la build completa (vedi «Stazione di stampa»).
+
+**Si aggiorna da sola.** Non avendo un pannello, la build mini controlla GitHub all'avvio e ogni sei
+ore e applica da sé la versione nuova quando il PC è libero — scaricando il **suo** zip e con tutti i
+controlli di sicurezza (versione, **stessa chiave**, cartella installata, host fisso, mai a metà di
+una stampa). La sua pagina mostra «Aggiornato alla versione X · data».
+
+---
+
 ## Uso quotidiano
 
 **Due forme, un tocco per passare dall'una all'altra.** Aperto, il pannello è una **finestra al

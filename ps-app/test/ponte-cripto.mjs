@@ -234,7 +234,7 @@ const GEST = "https://smarthealth.multimedica.it/sa4pso/";
 // schede del gestionale che rispondono come dice `scheda`. `sessione` è
 // storage.session: lo stesso oggetto dato a un secondo PC finto è il service
 // worker che riparte.
-async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null } = {}) {
+async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null, solaLettura = false } = {}) {
   const prese = [], comandi = [], schede = [], tolte = [], ascolta = { msg: [], cambi: [], via: [] };
   class Presa {
     constructor(url) { this.url = url; this.readyState = 0; this.inviati = []; prese.push(this); setTimeout(() => { if (this.readyState === 0) { this.readyState = 1; this.onopen?.(); } }, 0); }
@@ -267,6 +267,7 @@ async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null 
   };
   const ctx = vm.createContext({
     chrome, WebSocket: Presa, crypto: webcrypto, TextEncoder, TextDecoder, btoa, atob, URL, URLSearchParams, console, structuredClone,
+    self: { PSA_SOLA_LETTURA: !!solaLettura },   // la build mini (sola lettura): il ponte rifiuta le scritture
     setTimeout, clearTimeout, setInterval: () => 0, __salto: 0,
     ordLeggi: async () => sessione.ordini || [], sulGestionale: (u) => String(u || "").startsWith(GEST), leggibileOrd: () => true,
     corto: (s, n = 160) => String(s == null ? "" : s).slice(0, n),
@@ -673,6 +674,62 @@ await blocco(async () => {
   const pcMax = n(/PONTE_VALORI_MAX = ([\d.e]+);/, sw) + n(/esiti: ([\d.e]+)/, sw) + n(/altro: ([\d.e]+)/, sw);
   const tel = n(/ATTESA_VALORI = ([\d.e]+);/, app);
   check(tel >= pcMax && tel <= pcMax + 30e3, `«Aggiorna i valori»: il telefono aspetta ${tel / 1000} s, il PC al peggio ${pcMax / 1000} s`);
+});
+
+// La build mini (sola lettura): il ponte risponde alle letture e alla ristampa,
+// e rifiuta OGNI scrittura del gestionale — «Questo PC è in sola lettura» —,
+// mandata grezza nel canale (non solo dai bottoni nascosti del telefono).
+await blocco(async () => {
+  const pc = await pcFinto({ solaLettura: true });
+  const r1 = await pc.pagina({ t: "ponteAssocia" });
+  await sospendi(30);
+  const k = kDalQr(r1.qr);
+  const t = await telFinto(pc, k, DEV);
+  const c = await t.manda({ id: 1, cmd: "ciao" });
+  const ciao = c.find((x) => x.re === 1);
+  check(ciao && ciao.ok && ciao.dati && ciao.dati.kind === "lettura", `il saluto dice al telefono che il PC è di sola lettura (kind: ${ciao && ciao.dati && ciao.dati.kind})`);
+  // una lettura passa e arriva alla scheda del gestionale
+  pc.comandi.length = 0;
+  const letto = await t.manda({ id: 2, cmd: "pazienti" });
+  check(letto.some((x) => x.re === 2 && x.ok) && pc.comandi.some((m) => m.cmd === "pazienti"), "una lettura (pazienti) passa e arriva alla scheda");
+  check((await t.manda({ id: 3, cmd: "ristampe", ep: "1" })).some((x) => x.re === 3 && x.ok), "anche la ristampa (ristampe) passa: legge la pagina e stampa, non scrive");
+  // ogni scrittura del gestionale è rifiutata sul PC, e non raggiunge nessuna scheda
+  const scritture = [
+    { cmd: "ordina", ep: "1", oid: "abcDEF12_-", esami: ["lab:A1"], quesito: "q" },
+    { cmd: "cartellaSalva", ep: "1", campi: { ANAMNESI: { prima: "a", dopo: "b" } } },
+    { cmd: "terapiaAggiungi", ep: "1", voce: "x", visti: [] },
+    { cmd: "accetta", ep: "1" },
+    { cmd: "nota", ep: "1", testo: "x" },
+    { cmd: "promemoria", ep: "1", testo: "11:30 x" },
+    { cmd: "fatto", ep: "1", pid: "p1" },
+    { cmd: "dfAggiungi", ep: "1", testo: "x" },
+    { cmd: "dfSpunta", ep: "1", pid: "p1" },
+    { cmd: "dfTogli", ep: "1", pid: "p1" },
+    { cmd: "posto", ep: "1", dove: "letto:obi2" },
+    { cmd: "stazioneCollega", sta: "x", nome: "Inf" },
+  ];
+  pc.comandi.length = 0;
+  let tutte = true, id = 10;
+  for (const s of scritture) {
+    const mio = id++;
+    const out = await t.manda({ id: mio, ...s });
+    const re = out.find((x) => x.re === mio);
+    const ok = re && re.ok === false && re.solaLettura === true && /sola lettura/i.test(re.errore || "");
+    if (!ok) { tutte = false; console.log(`    (${s.cmd}: ${JSON.stringify(re)})`); }
+  }
+  check(tutte, "ogni scrittura del gestionale è rifiutata, grezza nel canale: «Questo PC è in sola lettura»");
+  check(!pc.comandi.some((m) => scritture.some((s) => s.cmd === m.cmd)), "…e nessuna scrittura raggiunge una scheda del gestionale");
+});
+// Un PC NORMALE (non sola lettura): le scritture passano come sempre (controprova)
+await blocco(async () => {
+  const pc = await pcFinto();   // build normale
+  const r1 = await pc.pagina({ t: "ponteAssocia" });
+  await sospendi(30);
+  const t = await telFinto(pc, kDalQr(r1.qr), DEV);
+  await t.manda({ id: 1, cmd: "ciao" });
+  pc.comandi.length = 0;
+  const nota = await t.manda({ id: 2, cmd: "nota", ep: "1", testo: "x", rq: "rqnota01" });
+  check(!nota.some((x) => x.re === 2 && x.solaLettura), "sul PC normale una scrittura (nota) non è bloccata da «sola lettura»");
 });
 
 console.log(fail ? `\nPONTE-CRIPTO: ${fail} CHECK FALLITI\n` : "\nPONTE-CRIPTO: TUTTO OK\n");

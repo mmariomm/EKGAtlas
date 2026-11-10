@@ -418,6 +418,34 @@ function ponteArgomenti(d) {
 }
 // quelli che l'app manda da sé: non sono il medico, non tengono aperta la sessione
 const PONTE_DA_SE = new Set(["ciao", "ordini"]);
+// La build mini (PS Assist · Lettura e stampa) è di SOLA LETTURA: il ponte
+// risponde solo ai comandi di lettura e alla ristampa (legge la pagina aperta e
+// stampa, non scrive niente nel gestionale). Elenco a consenso esplicito: tutto
+// quello che non è qui dentro è rifiutato sul PC. Ogni comando di scrittura del
+// gestionale (ordina, cartellaSalva, terapiaAggiungi, accetta, i Da fare, la
+// nota, posto, stazioneCollega…) cade quindi nel «Questo PC è in sola lettura».
+// È il primo muro, davanti alla scheda; il secondo è in content.js (ponteEsegui).
+const PONTE_LETTURA = new Set([
+  "ciao", "esci", "ordini",
+  "pazienti", "triage", "mappa", "eo",
+  "esiti", "aggiornaValori", "richieste", "cartella", "terapie",
+  "pdf", "ristampe", "ristampa", "stampa",   // «stampa»: un PDF del telefono sull'A4 di QUESTO PC (non scrive nel gestionale)
+]);
+const ponteSolaLettura = () => typeof self !== "undefined" && self.PSA_SOLA_LETTURA === true;
+// Chi è questo PC, per il menu del telefono (nel saluto `ciao`): il tipo
+// (completo 💻 o sola lettura 👁️), un nome breve configurabile (ponte.nomePc) e,
+// se il gestionale lo mostra, chi è loggato adesso sul PC — informazione, mai un
+// blocco: se non si legge, semplicemente non c'è.
+const PONTE_NOME_PC = "ponte.nomePc";       // storage.local: il nome breve del PC
+const PONTE_OPERATORE = "ponte.operatore";  // storage.session: chi è loggato nel gestionale (solo il nome, un'ora)
+async function ponteChiSono() {
+  const o = await chrome.storage.local.get(PONTE_NOME_PC).catch(() => ({}));
+  const n = o[PONTE_NOME_PC];
+  const nome = typeof n === "string" && n.trim() ? n.trim().slice(0, 40) : (ponteSolaLettura() ? "Sola lettura" : "PC completo");
+  const s = (await chrome.storage.session.get(PONTE_OPERATORE).catch(() => ({})))[PONTE_OPERATORE];
+  const operatore = s && typeof s.nome === "string" && Date.now() - (s.ts || 0) < 36e5 ? s.nome.slice(0, 60) : "";
+  return { kind: ponteSolaLettura() ? "lettura" : "completo", nome, ...(operatore ? { operatore } : {}) };
+}
 const PONTE_RQ_MAX = 40;   // le scritture ricordate per sessione (in memoria, solo qui)
 async function ponteComando(s, d) {
   if (!d || typeof d !== "object" || !Number.isSafeInteger(d.id) || typeof d.cmd !== "string") return;
@@ -442,7 +470,12 @@ async function ponteComando(s, d) {
 }
 async function ponteRisposta(s, d) {
   try {
-    if (d.cmd === "ciao") return { ok: true, dati: { inattivoMin: PONTE_INATTIVO / 60e3 } };
+    // La build mini: solo lettura e ristampa. Qualunque altro comando (le
+    // scritture del gestionale, ma anche un comando che non conosciamo) cade
+    // qui, prima di toccare una scheda. Il telefono lo sa (`solaLettura`) e
+    // nasconde quei controlli, ma lo stesso comando mandato grezzo è rifiutato.
+    if (ponteSolaLettura() && !PONTE_LETTURA.has(d.cmd)) return { ok: false, errore: "Questo PC è in sola lettura", solaLettura: true };
+    if (d.cmd === "ciao") return { ok: true, dati: { inattivoMin: PONTE_INATTIVO / 60e3, ...(await ponteChiSono()) } };
     if (d.cmd === "ordini") return { ok: true, dati: await ponteOrdiniTel() };
     if (d.cmd === "aggiornaValori") { const a = ponteArgomenti(d); return await ponteOffriPdf(s, await ponteAggiornaValori(a), a.ep); }
     if (d.cmd === "ordina") {
@@ -1390,6 +1423,16 @@ function ponteDaPagina(msg, sender, reply) {
   // il ponte non fa niente, e la sessione si chiude. L'associazione resta:
   // rientrati nel gestionale, il telefono riapre con un tocco, senza QR.
   if (msg.t === "ponteLogin" && gestionale) return fai(async () => { await ponteFine("login"); return { ok: true }; });
+  // Chi è loggato nel gestionale su questo PC, letto dalla pagina dal content
+  // script: solo il nome, per la testata «Sola lettura · gestionale di …» del
+  // telefono. Informazione, mai un blocco: non lega niente e non apre sessioni.
+  if (msg.t === "ponteOperatore" && gestionale) {
+    return fai(async () => {
+      const nome = typeof msg.nome === "string" ? msg.nome.replace(/\s+/g, " ").trim().slice(0, 60) : "";
+      if (nome) await chrome.storage.session.set({ [PONTE_OPERATORE]: { nome, ts: ponteOra() } });
+      return { ok: true };
+    });
+  }
   // (la pagina in una scheda: quando nel pannello non si apre. L'indirizzo
   // dinamico di getURL vale per la cornice nel gestionale, non per una scheda)
   if (msg.t === "ponteApri" && gestionale) {

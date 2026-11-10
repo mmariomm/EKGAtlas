@@ -128,3 +128,26 @@ $("revoca").addEventListener("click", async () => {
 chrome.storage.onChanged.addListener((ch, area) => { if (area === "session" && ch.ponte) aggiorna(); });
 setInterval(aggiorna, 15000);
 aggiorna();
+
+// La build mini (PS Assist · Lettura e stampa): questa è la SUA pagina
+// (options_ui). Lo dice — sola lettura — e mostra la versione con la data
+// dell'ultimo aggiornamento automatico («Aggiornato alla versione X · data»).
+// Nella build normale, dentro il pannello, niente di tutto questo.
+(async () => {
+  try {
+    const man = chrome.runtime.getManifest();
+    if (!/lettura/i.test(man.name || "")) return;
+    document.title = "PS Assist — sola lettura";
+    const h1 = $("stato") && document.querySelector("h1");
+    if (h1 && h1.lastChild) h1.lastChild.textContent = "L'iPhone del medico · sola lettura";
+    const sub = document.querySelector(".sub");
+    if (sub) sub.textContent = "Questo PC è una porta d'ingresso in SOLA LETTURA: dal telefono si vedono pazienti, esiti, cartella e referti, e si ristampa. Non si ordina, non si prescrive, non si scrive in cartella. Tutto cifrato da un capo all'altro.";
+    const o = await chrome.storage.local.get("aggiornaUltima").catch(() => ({}));
+    const u = o.aggiornaUltima, row = $("aggrow");
+    if (row) {
+      const data = u && u.quando ? new Date(u.quando).toLocaleDateString("it-IT") : "";
+      row.textContent = u && u.v ? `Aggiornato alla versione ${u.v}${data ? " · " + data : ""}. Si aggiorna da solo.` : `Versione ${man.version}. Si aggiorna da solo.`;
+      row.hidden = false;
+    }
+  } catch { /* la pagina resta com'è */ }
+})();
