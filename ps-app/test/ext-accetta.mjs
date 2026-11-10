@@ -57,9 +57,17 @@ const ROSA = P("710004", "ROSA LINA", "21/02/1988", 38, "VERDE", "bassa");
 const BIANCO = P("710005", "BIANCO PIO", "30/09/1944", 82, "AZZURRO", "bassa");
 const TUTTI = [MEDICO, NERI, GIALLI, VIOLA, ROSA, BIANCO];
 const chi = (ep) => TUTTI.find((p) => p.ep === ep) || null;
-// la chiave di nome e nascita, come la fa il PC (FNV-1a dell'impronta della nascita col nome)
+// La chiave di una riga del Triage è la STESSA che il comando «triage» del PC calcola e manda al
+// telefono: chiaveTriage = FNV-1a di «NOME NORMALIZZATO|ora d'arrivo (ms)». NON è la chiave di nome
+// e nascita (chiaveSmart): quella sta nella mappa/smart, questa è l'id del triage sul telefono.
 const fnv = (d) => { let h = 0x811c9dc5; for (const c of d) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193) >>> 0; return h.toString(36); };
-const chiave = (p) => "sm" + fnv(`${p.name}|${fnv(p.nato)}`);
+const norm = (t) => String(t || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9 ]+/g, " ").trim().replace(/\s+/g, " ");
+// un'ora d'arrivo stabile, nel passato e arrotondata al minuto per ogni paziente (come la mostra la lista)
+const BASE_ARRIVO = Math.floor((Date.now() - 20 * 60e3) / 60e3) * 60e3;
+const arrivoDi = (p) => BASE_ARRIVO - TUTTI.indexOf(p) * 60e3;
+const hhmm = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+const trKey = (nome, arrivo) => "tr" + fnv(`${norm(nome)}|${Number(arrivo) || 0}`);
+const chiave = (p) => trKey(p.name, arrivoDi(p));
 // (dopo: dove porta la pagina di passaggio — "episodio" come nella registrazione, "lista" la lista del
 // triage, "ferma" da nessuna parte; nomeRiga / frecciaEp: la riga di un episodio con un altro nome, o la
 // sua freccia per un altro episodio; accetti: le GET della freccia)
@@ -81,7 +89,7 @@ const listaTriage = () => pagina("Pronto Soccorso", `${JQ}${schede("tri")}
   <table class="AFCFormTABLE"><tbody>${alTriage().map((p) => `<tr><td class="AFCDataTD">voce<br></td>
     <td class="AFCDataTD"><a style="text-decoration: none" href="menuPsoEpisodio.do?MVPG=PsoEpisodioClinicoTriage&amp;EPISODIO_ID=${p.ep}" title="Apri Episodio">${linguetta(p, srv.nomeRiga[p.ep])}</a></td>
     <td class="AFCDataTD" align="center"><a name="" href="menuPsoEpisodio.do?MVPG=PsoEpisodioDiario&amp;EPISODIO_ID=${p.ep}" title="Apri Diario Clinico" class="myButtonList">D</a>&nbsp;<a name="AccettaAMBU" href="menuPsoEpisodio.do?MVPG=PsoEpisodioTriageToAmbulatorio&amp;EPISODIO_ID=${srv.frecciaEp[p.ep] || p.ep}&amp;RISORSA_ID=${RIS[srv.area]}&amp;returnPage=PsoPazientiTriage" title="Accetta in ambulatorio" class="myButtonList" target="_self" style="color:white" onclick="$(document).ready(function(){$(&quot;controllo&quot;).hide();}); window.location.href; "><img title="Accetta in ambulatorio" width="22"></a></td>
-    <td class="AFCDataTD" valign="top">10:15<br>reparto</td><td class="AFCDataTD" valign="top" nowrap>INFERMIERE ESEMPIO<br>${AREA[p.area]} </td></tr>`).join("")}</tbody></table>`,
+    <td class="AFCDataTD" valign="top">${hhmm(arrivoDi(p))}<br>reparto</td><td class="AFCDataTD" valign="top" nowrap>INFERMIERE ESEMPIO<br>${AREA[p.area]} </td></tr>`).join("")}</tbody></table>`,
   `<meta http-equiv="refresh" content="10;URL=?MVPG=PsoPazientiTriage&amp;s_ASSISTITO=&amp;s_PERCORSO=&amp;s_LINEA_ATTIVITA=">`);
 const listaAmb = () => pagina("Pronto Soccorso", `${schede("amb")}
   <form method="post" name="PazientiFiltro" action="menuPso.do?ccsForm=PazientiFiltro:Edit&amp;MVPG=PsoPazientiAmbulatorio"></form>
@@ -135,7 +143,10 @@ const schedeGest = () => ctx.pages().filter((p) => !p.isClosed() && /smarthealth
 const errori = () => sw.evaluate(() => chrome.storage.local.get("errori.v1").then((o) => (o["errori.v1"] || []).filter((x) => x.tipo === "accetta telefono")));
 const registro = () => sw.evaluate(() => chrome.storage.session.get("ponte").then((o) => (o.ponte?.registro || []).map((x) => x.testo)));
 const ls = (k) => doc.evaluate((k) => JSON.parse(localStorage.getItem("psassist:" + k) || "null"), k);
-const rigaTriage = (p) => ({ nome: p.name, breve: `${p.name.split(" ")[0]} ${p.name.split(" ")[1][0]}.`, eta: p.eta, triage: p.triage, area: p.area === "alta" ? "Alta intensità" : "Bassa", arrivo: Date.now() - 20 * 60e3, k: chiave(p) });
+// la riga come la salva il PC (TRIAGE_LISTA): nome, arrivo, area… e NIENTE `.k` — il comando «triage»
+// la ricalcola (chiaveTriage) a ogni invio al telefono, come nel codice vero. (Fallisce su 7199f21: lì
+// l'accettazione dalla LISTA cercava la riga con la chiaveSmart `x.k`, che qui non c'è → «Non è più al Triage».)
+const rigaTriage = (p) => ({ nome: p.name, breve: `${p.name.split(" ")[0]} ${p.name.split(" ")[1][0]}.`, eta: p.eta, triage: p.triage, area: p.area === "alta" ? "Alta intensità" : "Bassa", arrivo: arrivoDi(p) });
 
 console.log("accetta in ambulatorio dal telefono: la freccia della riga nella lista del triage, una volta, verificata");
 let telBrowser = null, relay = null;
@@ -143,7 +154,7 @@ try {
   // ---- il medico ha una scheda sulla pagina di un paziente in ambulatorio (col pannello: risponde al telefono)
   await doc.goto(URL_PAZ(MEDICO));
   await doc.waitForSelector("#psassist-host", { state: "attached", timeout: 15000 });
-  // il Triage letto dal PC (la lista smart: cinque righe, con la chiave di nome e nascita) e le aree di Imposta
+  // il Triage letto dal PC (la lista smart: cinque righe, senza `.k`: la chiave la fa il comando «triage») e le aree di Imposta
   await doc.evaluate(({ righe, opz }) => {
     localStorage.setItem("psassist:triage.lista.v1", JSON.stringify({ ts: Date.now(), righe }));
     localStorage.setItem("psassist:aree.opzioni.v1", JSON.stringify(opz));
@@ -214,7 +225,7 @@ try {
   await foto("3-cartella");
   const paz = (await ls("patients.v1")).find((p) => p.ep === NERI.ep);
   check(paz && /MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=710001$/.test(paz.url) && paz.name === "NERI PAOLA", `il PC lo conosce, con la sua pagina in ambulatorio (${paz && paz.url})`);
-  check(!(await ls("triage.lista.v1")).righe.some((r) => r.k === chiave(NERI)), "…e dal Triage del telefono se n'è andato");
+  check(!(await ls("triage.lista.v1")).righe.some((r) => trKey(r.nome, r.arrivo) === chiave(NERI)), "…e dal Triage del telefono se n'è andato");
   await tornaAllElenco();
   check(await bottone(NERI).count() === 0 && /NERI PAOLA/.test(await testoTel()), "sull'elenco del telefono: NERI non è più al Triage, è fra i pazienti");
   check((await registro()).some((t) => /«Accetta in ambulatorio» di NERI PAOLA dal telefono: in ambulatorio \(Bassa\)/.test(t)), "nel registro del ponte: in ambulatorio, e l'area");
@@ -257,7 +268,7 @@ try {
   check(await finche(async () => /Incerto: controlla sul PC/.test(await esitoRiga(ROSA)), 45000), `la pagina di passaggio ferma: «${await esitoRiga(ROSA)}»`);
   check(accetti(ROSA.ep).length === 1 && accetti().length === r6 + 1 && await bottone(ROSA).count() === 0, "…una freccia sola, e sul telefono niente bottone: non si ripreme");
   const rqInc = await sw.evaluate(() => chrome.storage.session.get("ponte.accetta.rq").then((o) => Object.entries(o["ponte.accetta.rq"] || {}).filter(([, x]) => x.esito && x.esito.incerto).map(([k]) => k)));
-  const ri = await sw.evaluate((rq) => ponteAccetta({ k: "sm0", rq }), rqInc[0]);
+  const ri = await sw.evaluate(({ k, rq }) => ponteAccetta({ k, rq }), { k: chiave(ROSA), rq: rqInc[0] });
   check(rqInc.length === 1 && ri.incerto && accetti(ROSA.ep).length === 1, "lo stesso numero rimandato: ancora «incerto», nessun clic");
   srv.dopo = "episodio";
 

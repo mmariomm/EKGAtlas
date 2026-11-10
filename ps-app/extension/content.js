@@ -17763,16 +17763,31 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (!ponteInTriage(p)) return { ok: false, errore: "Non è più al triage sul PC: niente fatto" };
       chi = { ep: p.ep, nome: p.name, ...(p.nato ? { k: chiaveSmart(p.name, p.nato) } : {}) };
     } else if (a.k) {
-      const t = store.get(TRIAGE_LISTA, null), r = (Array.isArray(t?.righe) ? t.righe : []).filter((x) => x && x.k === a.k);
+      // la riga si ritrova con la STESSA chiave che il comando «triage» manda al
+      // telefono — chiaveTriage (nome e ora d'arrivo) —, non con la chiaveSmart
+      // (nome e nascita) che la riga salvata porta con sé: sono due chiavi diverse.
+      const t = store.get(TRIAGE_LISTA, null), r = (Array.isArray(t?.righe) ? t.righe : []).filter((x) => x && x.nome && chiaveTriage(x) === a.k);
       if (r.length !== 1) return { ok: false, errore: r.length ? "Due righe uguali al Triage: accettalo sul PC" : "Non è più al Triage sul PC: niente fatto" };
-      chi = { k: a.k, nome: r[0].nome, area: Object.keys(AREE_TITOLO).find((k) => AREE_TITOLO[k] === r[0].area) || "" };
+      // nome e area per i controlli e il messaggio; l'episodio solo se la riga ce l'ha (un ospite no)
+      chi = { k: a.k, nome: r[0].nome, area: Object.keys(AREE_TITOLO).find((k) => AREE_TITOLO[k] === r[0].area) || "", ...(r[0].ep ? { ep: r[0].ep } : {}) };
     }
     if (!chi || !chi.nome) return { ok: false, errore: "Paziente non valido: niente fatto" };
     return { ok: true, dati: { url: urlMenu("PsoPazientiTriage"), ...chi } };
   }
+  // l'ora d'arrivo della riga del triage (la colonna dell'ingresso, come la
+  // smart): serve a riconoscere un ospite per chiaveTriage (nome e arrivo) — la
+  // stessa chiave del telefono — quando la riga non ha un episodio nostro.
+  function arrivoTriageRiga(tr) {
+    const ing = tr.querySelector('td[name="INGRESSO"]');
+    for (const td of ing ? [ing] : [...tr.children].filter((c) => c.tagName === "TD")) {
+      const m = /\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}|\d{1,2}:\d{2}/.exec(spazi(td.textContent));
+      if (m) { const v = arrivoDa(m[0]); if (v) return v; }
+    }
+    return 0;
+  }
   // Le righe della lista del triage (PsoPazientiTriage: una per area, chi è al
   // triage per l'area in testa): il link «Apri Episodio» con la linguetta
-  // (nome e nascita) e le frecce «Accetta in ambulatorio» della stessa riga.
+  // (nome e nascita), l'ora d'arrivo e le frecce «Accetta in ambulatorio» della stessa riga.
   function righeTriage(doc, base) {
     const out = [];
     for (const a of doc.querySelectorAll('a[href*="MVPG=PsoEpisodioClinicoTriage"]')) {
@@ -17780,12 +17795,12 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (!l || !tr) continue;
       let ep = "";
       try { ep = new URL(a.getAttribute("href") || "", base).searchParams.get("EPISODIO_ID") || ""; } catch { continue; }
-      out.push({ ep, ...l, frecce: [...tr.querySelectorAll('a[name="AccettaAMBU"]')] });
+      out.push({ ep, ...l, arrivo: arrivoTriageRiga(tr), frecce: [...tr.querySelectorAll('a[name="AccettaAMBU"]')] });
     }
     return out;
   }
   // La scheda di sottofondo. Sulla lista del triage: la riga di QUEL paziente
-  // — per episodio, o per nome e nascita; una sola —, col suo nome (diverso:
+  // — per episodio, o per nome e ora d'arrivo (chiaveTriage); una sola —, col suo nome (diverso:
   // Errore grave), e la SUA freccia, dello stesso episodio. Ogni dubbio:
   // niente cliccato. Il service worker annota «inviato» PRIMA del clic, una
   // volta. Dopo si guarda e basta: «In ambulatorio» solo con la pagina del
@@ -17800,7 +17815,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const mvpg = mvpgDi(document, location.href), testa = areaInTesta(document), area = testa ? titoloArea(testa.k, testa.label) : "";
     if (c.fase === "lista") {
       if (mvpg !== "PsoPazientiTriage" || !testa) return fine({ ok: false, testo: "la scheda non ha aperto la lista del triage" });
-      const sue = righeTriage(document, location.href).filter((r) => (c.ep ? r.ep === c.ep : chiaveSmart(r.name, improntaNascita(r.nato)) === c.k));
+      // per episodio quando il PC lo conosce (il più sicuro), se no per la stessa
+      // chiaveTriage (nome e arrivo) che il telefono porta — mai la chiaveSmart
+      const sue = righeTriage(document, location.href).filter((r) => (c.ep ? r.ep === c.ep : chiaveTriage({ nome: r.name, arrivo: r.arrivo }) === c.k));
       if (!sue.length) {
         return fine({ ok: false, testo: c.area && c.area !== testa.k ? `è al triage per ${titoloArea(c.area)}, il gestionale sul PC è su ${area}`
           : `non è nella lista del triage di ${area}, sul PC` });
@@ -17875,7 +17892,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       rememberPatient(ep, nomeInPagina(), location.href, triageDi(document), an.eta, an.sesso, improntaNascita(nascitaInPagina(document)));
     }
     const t = store.get(TRIAGE_LISTA, null);
-    if (c.k && Array.isArray(t?.righe)) store.set(TRIAGE_LISTA, { ...t, righe: t.righe.filter((r) => r && r.k !== c.k) });
+    // via dal Triage del telefono: per chiaveSmart salvata nella riga (un paziente
+    // noto) o per chiaveTriage ricalcolata (un ospite, la cui riga non ha `.k`)
+    if (c.k && Array.isArray(t?.righe)) store.set(TRIAGE_LISTA, { ...t, righe: t.righe.filter((r) => r && r.k !== c.k && chiaveTriage(r) !== c.k) });
   }
 
   // ==================================================================== BOOT

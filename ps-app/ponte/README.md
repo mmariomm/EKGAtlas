@@ -381,13 +381,15 @@ giro, una riga scritta: se sì, no); la scheda scrive la riga come il giro del P
 service worker annota «inviato» e solo allora la scheda clicca il **«Conferma»** della pagina; la
 pagina che torna si guarda e basta («Confermata», o «incerto»). Lo stesso `rq` non si rifà mai.
 
-**Accetta in ambulatorio.** `accetta` porta il paziente — `k`, la chiave di nome e nascita di una
-riga del Triage (`triage` la dà a ogni riga che ha la nascita; un PC più vecchio no, e il telefono
-non mostra il bottone), o `ep`, un paziente noto al PC ancora al triage (`pazienti` lo segna
+**Accetta in ambulatorio.** `accetta` porta il paziente — `k`, la chiave di nome e ora d'arrivo di
+una riga del Triage (`chiaveTriage`, la stessa che il comando `triage` manda a ogni riga e che usa
+la mappa — non la chiave di nome e nascita; un PC più vecchio non la dà, e il telefono non mostra il
+bottone), o `ep`, un paziente noto al PC ancora al triage (`pazienti` lo segna
 `accetta`: la sua pagina è quella del triage e nessuna lista dell'ambulatorio l'ha visto dopo) — e
 il suo numero `rq` (`ponte.accetta.rq`: la fase e com'è andata). Una scheda del medico dice chi è
 e dà l'indirizzo della lista del triage; una scheda di sottofondo (`ponte.accette`, una alla volta;
-`ponteAccettaQui` in `core.js`) apre la lista, trova la riga — una sola, il suo nome, la sua
+`ponteAccettaQui` in `core.js`) apre la lista, trova la riga — una sola: per episodio se il PC lo
+conosce, se no per la stessa `chiaveTriage` (nome e arrivo); il suo nome, la sua
 freccia dello stesso episodio — e chiede `ponteAccettaInvio`: il service worker annota «inviato»
 **prima**, e solo allora la scheda clicca la freccia (`a[name="AccettaAMBU"]`). Dopo si guarda e
 basta: la pagina del paziente in ambulatorio, o — tornata sulla lista del triage senza di lui —
