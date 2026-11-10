@@ -2694,6 +2694,37 @@ async function scenarioPrintManual(browser) {
   await context.close();
 }
 
+// ⋯ → «Stampa le richieste»: TUTTE le richieste che la pagina sa stampare, anche
+// quelle non fatte dall'estensione (qui: tutte messe lì dal gestionale prima che
+// il pannello arrivasse), ognuna con «Ristampa» — e Ristampa stampa quelle.
+async function scenarioPrintAllRichieste(browser) {
+  const scen = "print-all-richieste";
+  const mock = createMock({ seedConfirmed: true, seedConfirmedRadio: true });
+  for (let i = 1; i <= 7; i++) {   // (più di sei: nessuna in meno)
+    mock.state.allocated[700000 + i] = { tipo: "lab", risorse: mock.state.allocated[699999].risorse };
+    mock.state.richieste[700000 + i] = { quesito: "gia fatta", urgenza: "2", cart: new Map([["320", mock.state.richieste[699999].cart.get("320")]]), confirmed: true };
+  }
+  const { context, page } = await newPage(browser, mock);
+  await page.goto(mock.patientUrl);
+  await richieste(page);
+  await stampaRichieste(page);
+  const ids = await page.locator("#psassist-host [data-print]").evaluateAll((l) => l.map((b) => b.getAttribute("data-print")));
+  check(scen, ids.length === 9 && ["699999", "699998", "700001", "700007"].every((x) => ids.includes(x)),
+    `la lista mostra tutte le richieste della pagina, anche quelle che non ha fatto il pannello (got ${ids.join(",")})`);
+  check(scen, (await page.locator("#psassist-host [data-print] .prist").count()) === 9
+    && (await page.locator("#psassist-host [data-print]").first().innerText()).includes("Ristampa"), "ognuna con «Ristampa»");
+  await page.locator('#psassist-host [data-print="700003"]').click();
+  await page.waitForSelector("#psassist-print", { state: "attached", timeout: 10000 });
+  check(scen, /Stampa 1 di 2 — Etichette provette/.test(await docStampa(page)), "«Ristampa»: parte la stampa di etichette e lista");
+  await attendiAnteprima(page);
+  await avanti(page);
+  await attendiAnteprima(page);
+  const dei = (re) => mock.state.requests.filter((q) => re.test(q.url)).map((q) => q.params.RICHIESTA_ID);
+  check(scen, dei(/RcsStampaEtichetteLISHMIMU/).join() === "700003" && dei(/REPORT=RcsRichiesta&/).join() === "700003",
+    `i fogli sono quelli di quella richiesta, e solo quelli (etichette ${dei(/RcsStampaEtichetteLISHMIMU/)}, lista ${dei(/REPORT=RcsRichiesta&/)})`);
+  await context.close();
+}
+
 async function scenarioPrintMultiLab(browser) {
   const scen = "print-multi-lab";
   // POC + URGENZE in one richiesta → the LIS splits it into two rows
@@ -8096,6 +8127,7 @@ const scenarios = [
   ["consegne: una riga per paziente, da copiare o stampare", scenarioConsegne],
   ["radiology learning loop", scenarioRadiologyLearning],
   ["print wizard manual", scenarioPrintManual],
+  ["print all richieste, Ristampa", scenarioPrintAllRichieste],
   ["print multi-lab rows (PROG split)", scenarioPrintMultiLab],
   ["print radiology prenotazione", scenarioPrintRadio],
   ["print merged lab+RX flow", scenarioPrintMergedFlow],

@@ -790,7 +790,7 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    pagina, una dopo l'altra, con **una sola** stampa finale: etichette → liste → la prenotazione
    RX; lì le richieste vivono nella memoria del pannello, a metà non si riprendono, e il browser
    avvisa prima di cambiare pagina.
-5. **Stampa** (menu **⋯ → Stampa le richieste**, non più in fondo alle Richieste): ogni richiesta con data, ora e la lista compatta degli esami.
+5. **Stampa** (menu **⋯ → Stampa le richieste**, non più in fondo alle Richieste): ogni richiesta con data, ora e la lista compatta degli esami, e «Ristampa». Sull'iPhone la stessa lista è **«Richieste fatte»**, in fondo alle Richieste, con il suo «Ristampa» (comandi `ristampe` e `ristampa`, solo stampa: mai Conferma né Registra).
 
 ### Esiti
 Il **Workup**, come in Epic: **Lab · ECG · Imaging** in un posto solo, tre sezioni distinte, ognuna
@@ -1475,8 +1475,9 @@ paziente; una pagina dove la scheda resta più di 3 secondi vale come sempre. **
 il pannello ha mandato esami (o che ha aperto lui), confermate dal pannello o col bottone del
 gestionale. Una richiesta fatta tutta a mano nel gestionale, confermata col suo bottone, non
 stampa niente da sola. Dalla pagina paziente puoi **ristampare qualsiasi richiesta** (menu **⋯ →
-Stampa le richieste**: ogni richiesta è elencata con **data e ora** e, sotto, la **lista compatta degli
-esami** che contiene) e, sopra l'elenco, **Stampa l'ultima richiesta**: la più recente, e con
+Stampa le richieste**: ogni richiesta della pagina — **anche quelle non fatte dall'estensione** — è
+elencata con **data e ora**, la **lista compatta degli esami** che contiene e il suo **«Ristampa»**:
+etichette e foglio di quella richiesta) e, sopra l'elenco, **Stampa l'ultima richiesta**: la più recente, e con
 lei quella di pochi minuti prima (laboratorio e radiologia dello stesso ordine), etichette
 prima. Con la stampa automatica, senza dialogo.
 

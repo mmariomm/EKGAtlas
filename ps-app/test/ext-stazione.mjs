@@ -378,6 +378,43 @@ check(!!qui2 && /^Stampato su /.test(qui2.pubblico.titolo) && lavori("pc").lengt
 check((await sw.evaluate(() => chrome.storage.local.get("stampa"))).stampa?.dove === "stazione", "la scelta del PC resta «Infermeria»: il telefono l'ha cambiata per un ordine solo");
 
 // ===========================================================================
+sezione("«Richieste fatte» sul telefono: «Ristampa» sul PC e in Infermeria, una volta");
+await tocca('[data-a="scheda"][data-s="esiti"]');
+await tocca('[data-a="scheda"][data-s="richieste"]');
+const confermate = () => Object.keys(A.state.richieste).filter((r) => A.state.richieste[r].confirmed).sort();
+const righeRis = () => tel.locator('[data-a="ristampa"]').evaluateAll((l) => l.map((b) => b.dataset.id).sort());
+check(!!(await finche(async () => (await righeRis()).join() === confermate().join(), 15000)) && confermate().includes("699999") && confermate().length >= 3,
+  `una riga per ogni richiesta della pagina, anche la 699999 che c'era già (non l'ha fatta il pannello): ${(await righeRis()).join(", ")}`);
+await shot(tel, "stazione-5b-richieste-fatte");
+const ristampati = (pre) => ordini().then((l) => l.filter((x) => String(x.id).startsWith("ris") && !pre.has(x.id)));
+const deiRid = (x, rid) => !!x.stampa && x.stampa.jobs.length >= 2 && x.stampa.jobs.every((j) => new RegExp(`RICHIESTA_ID=${rid}(&|$)`).test(j.url));
+// sul PC (la richiesta che non è del pannello), con un doppio tocco: una ristampa sola
+await tocca('.dove [data-d="qui"]');
+prima = await idsOra();
+const pcR = lavori("pc").length, staR = lavori("sta").length;
+await tel.locator('[data-a="ristampa"][data-id="699999"]').dblclick();
+const risQui = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || "")), 60000);
+await sospendi(2500);
+check(!!risQui && /^Stampato su /.test(risQui.pubblico.titolo) && (await ristampati(prima)).length === 1 && risQui.dest === "qui" && deiRid(risQui, 699999),
+  `«Ristampa» → PC: etichette e foglio della 699999, una ristampa sola nonostante il doppio tocco (got ${JSON.stringify(risQui && risQui.pubblico)})`);
+check(lavori("pc").length === pcR + risQui.stampa.jobs.length && lavori("sta").length === staR && tipi(lavori("pc").slice(pcR)) === "a4,etichette" && (await stampe(doc)).length === 0,
+  "sulle stampanti del PC del medico, una volta: le etichette sull'etichettatrice e la lista sull'A4; niente in Infermeria, nessun dialogo");
+check(/Stampato su/.test(await aspettaTel(/Stampato su/, 15000)), "e il telefono dice «Stampato su …»");
+// in Infermeria (un'altra richiesta, quella di un ordine)
+const altra = confermate().find((r) => r !== "699999");
+await tocca('.dove [data-d="stazione"]');
+prima = await idsOra();
+const pcR2 = lavori("pc").length, staR2 = lavori("sta").length;
+await tel.locator(`[data-a="ristampa"][data-id="${altra}"]`).click();
+const risSta = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || "")), 60000);
+await sospendi(2500);
+check(!!risSta && risSta.pubblico.titolo === "Stampato in Infermeria" && risSta.dest === "stazione" && deiRid(risSta, altra),
+  `«Ristampa» → Infermeria: i fogli della richiesta ${altra} (got ${JSON.stringify(risSta && risSta.pubblico)})`);
+check(lavori("sta").length === staR2 + risSta.stampa.jobs.length && lavori("pc").length === pcR2 && (await ristampati(prima)).length === 1,
+  "sulle stampanti della stazione, una volta; niente sul PC del medico");
+check(/Stampato in Infermeria/.test(await aspettaTel(/Stampato in Infermeria/, 15000)), "e il telefono dice «Stampato in Infermeria»");
+
+// ===========================================================================
 sezione("la risposta della stazione che non arriva: «forse stampate», mai due volte");
 comportati("sta", { lento: 5000 });
 await sw.evaluate(() => { STA_ATTESA.ultimo = 2000; STA_ATTESA.esito = 1500; });
@@ -426,6 +463,23 @@ check(quiOra.length === locali.length && tipi(quiOra) === tipi(locali) && quiOra
   `«Stampa qui», un tocco: gli stessi fogli sulle stampanti del PC del medico, una volta (got ${JSON.stringify(quiOra.map((x) => `${x.tipo}→${x.stampante}`))})`);
 const dopoQui = await striscia(doc, /Stampato su/, 15000);
 check(/Stampato su Zebra Medico/.test(dopoQui) && !(await ordini()).some((x) => x.id === muta.id), `poi «Stampato su Zebra Medico…», e l'ordine di prima non aspetta più (got «${dopoQui}»)`);
+
+// ===========================================================================
+sezione("«Ristampa» dal telefono con la stazione spenta: «Infermeria non risponde», niente qui da solo");
+await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
+await tocca('[data-a="scheda"][data-s="esiti"]');
+await tocca('[data-a="scheda"][data-s="richieste"]');
+await tocca('.dove [data-d="stazione"]');
+prima = await idsOra();
+const pcR3 = lavori("pc").length;
+await tel.locator('[data-a="ristampa"][data-id="699999"]').click();
+const risMuta = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "stampa"), 60000);
+check(!!risMuta && risMuta.pubblico.titolo === "Infermeria non risponde" && risMuta.dest === "stazione" && risMuta.fogli.every((f) => f.stato === "fallito" && f.nonRisponde),
+  `la stazione spenta: «Infermeria non risponde», nessun foglio arrivato (got ${JSON.stringify(risMuta && risMuta.pubblico)})`);
+check(/Infermeria non risponde/.test(await aspettaTel(/Infermeria non risponde/, 15000)), "e il telefono lo dice");
+await sospendi(2500);
+check(lavori("pc").length === pcR3 && (await stampe(doc)).length === 0, "niente stampato qui da solo");
+await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));
 
 // ===========================================================================
 sezione("la stazione riaperta: si ricollega da sola; non può mandare comandi");

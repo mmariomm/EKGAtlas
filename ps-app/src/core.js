@@ -6106,6 +6106,8 @@
     .prow.hot { border-color: #9DBFDE; background: var(--info-f); }
     .pline1 { font-size: 12px; font-variant-numeric: tabular-nums; }
     .pline1 small { color: var(--neutro); font-size: 11px; }
+    .pline1 .prist { margin-left: auto; color: var(--azione); font-weight: 600; font-size: 11px; }
+    .pline1 { display: flex; align-items: center; gap: 4px; width: 100%; }
     .pline2 { font-size: 11px; color: var(--neutro); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
     .rdot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #C4D0DC; background: transparent; }
@@ -11469,11 +11471,11 @@
       const ultime = rids.length > 1 ? ultimeRichieste(map) : [];
       const receipt = freshReceipt(null);
       const hot = receipt && map[receipt.richiestaId] ? receipt.richiestaId : null;
-      const rows = rids.slice(0, 6).map((rid) => {
+      const rows = rids.slice(0, 30).map((rid) => {
         const m = printMeta(map, rid);
         const exams = m.exams.join(", ");
         return `<button class="prow ${rid === hot ? "hot" : ""}" data-print="${esc(rid)}" title="Richiesta ${esc(rid)} — ${esc(printLabelFor(map, rid))}">
-          <span class="pline1">${icoIn("stampante", 13)}<b>${esc(m.when || "richiesta " + rid)}</b> <small>${esc(printLabelFor(map, rid))}</small></span>
+          <span class="pline1">${icoIn("stampante", 13)}<b>${esc(m.when || "richiesta " + rid)}</b> <small>${esc(printLabelFor(map, rid))}</small><span class="prist">Ristampa</span></span>
           ${exams ? `<span class="pline2">${esc(exams)}</span>` : ""}
         </button>`;
       }).join("");
@@ -17381,6 +17383,48 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     const n = items.length;
     return { ok: true, dati: { ordini }, registro: `ordine di ${n} ${n === 1 ? "esame" : "esami"} per ${p.name} (${items.map((i) => i.display).join(", ")})` };
   }
+  // «Richieste fatte» (Richieste, sul telefono) e «Ristampa»: le richieste che
+  // la pagina del paziente sa stampare — anche quelle che non ha fatto
+  // l'estensione —, lette dalla sua pagina com'è adesso (solo lettura, il suo
+  // indirizzo, la regola d'identità degli esiti). I link dei fogli sono quelli
+  // della pagina, mai costruiti. Si stampa soltanto: niente Conferma, niente
+  // Registra.
+  async function ponteMappaStampe(p) {
+    const url = ponteUrlPaziente(p);
+    if (!url) return { errore: `Apri una volta ${p.name || "il paziente"} sul PC: serve la sua pagina` };
+    try {
+      const { doc, url: fin } = await fetchDoc(url, {});
+      if (classify(doc) === "login") return { errore: "Gestionale da riaprire: sul PC la sessione è scaduta", sessione: true };
+      if (findEpisodeId(doc, fin) !== p.ep) return { errore: "La pagina del paziente sul PC è di un altro episodio: niente stampato" };
+      return { map: printModel(doc, fin), url };
+    } catch (e) { return { errore: `Richieste non lette: ${e?.head || e?.message || e}` }; }
+  }
+  async function ponteRistampe(p) {
+    const { map, errore, sessione } = await ponteMappaStampe(p);
+    if (!map) return { ok: false, errore, ...(sessione ? { sessione } : {}) };
+    return { ok: true, dati: { ep: p.ep, richieste: richiesteStampabili(map).slice(0, 12).map((id) => {
+      const m = printMeta(map, id);
+      return { id, quando: m.when || "", esami: m.exams.slice(0, 8).join(", "), cosa: printLabelFor(map, id) };
+    }) } };
+  }
+  // Le etichette e il foglio di una richiesta, di nuovo, dove dice `dest`: lo
+  // stesso giro di quelli di un ordine (ordineFogli: il giornale delle stampe,
+  // «Infermeria non risponde», un foglio una volta sola). Il numero (`id`) lo
+  // fa il telefono: la stessa ristampa rimandata è la stessa.
+  async function ponteRistampa(p, a) {
+    const { map, url, errore, sessione } = await ponteMappaStampe(p);
+    if (!map) return { ok: false, errore, ...(sessione ? { sessione } : {}) };
+    const rid = String(a.rid || ""), jobs = map[rid] ? printJobsFor(map, rid) : [];
+    if (!jobs.length) return { ok: false, errore: "Questa richiesta non è più sulla pagina del paziente: riapri l'elenco" };
+    const job = { id: a.id, ep: p.ep, tag: "Stampa", paziente: p.name, url, fine: null, dest: a.dest === "stazione" ? "stazione" : "qui",
+      riassunto: `Ristampa ${printMeta(map, rid).when || "richiesta"}`.slice(0, 80), quesito: "",
+      jobs: jobs.map(({ name, printer, url, breve }) => ({ name, printer, url, ...(breve ? { breve } : {}) })) };
+    let r = { ok: false };
+    for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineFogli", job });
+    if (r.no) return { ok: false, errore: "Ristampa non partita: la stampa automatica non è impostata sul PC" };
+    if (!r.ok) return { ok: false, incerto: true, errore: "Non so se la stampa è partita: guarda la stampante prima di rifarla" };
+    return { ok: true, dati: { ordini: [{ id: r.id || a.id, ep: p.ep, paziente: p.name, n: jobs.length }] }, registro: "ristampa di una richiesta di " + p.name };
+  }
   // Un comando del telefono, eseguito qui. `no`: questa scheda non può (il
   // service worker prova la prossima).
   async function ponteEsegui(m) {
@@ -17489,6 +17533,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       return fatto({ ok: true, dati: ponteMappe(), registro: `posto di ${p.name}` });
     }
     if (cmd === "ordina") return fatto(await ponteOrdina(p, a));
+    if (cmd === "ristampe") return ponteRistampe(p);
+    if (cmd === "ristampa") return fatto(await ponteRistampa(p, a));
     return { ok: false, errore: "Comando sconosciuto" };
   }
   // In ogni scheda del gestionale: i comandi, e lo stato per l'intestazione.

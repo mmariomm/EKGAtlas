@@ -74,7 +74,7 @@
     scarto: 0,           // l'orologio del PC meno quello del telefono, misurato al saluto (in memoria)
     coda: new Map(),     // oid → un ordine toccato senza collegamento: { ep, oid, quando, paziente, n, sel, stato: "coda" | "scaduta" }
     fase: "avvio", perche: "", testoFine: "", scaduta: 0,
-    pazienti: null, triage: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ordini: new Map(), nascosti: new Set(),
+    pazienti: null, triage: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ristampe: new Map(), ordini: new Map(), nascosti: new Set(),
     vista: { nome: "lista", ep: "" }, scheda: "esiti", dfFoglio: false, precAperti: false,
     sel: new Map(), bloccati: new Map(), aperti: new Set(),
     riprendi: null,      // dopo i 3 minuti: { ep, scheda } dell'ultimo paziente — solo in memoria, mai su disco, e solo finché il PC non risponde
@@ -107,7 +107,7 @@
   const MODO = "psassist.ponte.modo";
   try { const m = localStorage.getItem(MODO); if (m === "mappa" || m === "dafare") S.modo = m; } catch { /* solo in memoria */ }
   function svuota() {
-    S.pazienti = null; S.triage = null; S.mappa = null; S.mappaSel = ""; S.zoom = 1; S.eo = null; S.eoVecchio = false; S.eoSheet = false; S.eoQ = ""; if (S.eoAnnulla) clearTimeout(S.eoAnnulla.t); S.eoAnnulla = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ordini.clear(); S.nascosti.clear();
+    S.pazienti = null; S.triage = null; S.mappa = null; S.mappaSel = ""; S.zoom = 1; S.eo = null; S.eoVecchio = false; S.eoSheet = false; S.eoQ = ""; if (S.eoAnnulla) clearTimeout(S.eoAnnulla.t); S.eoAnnulla = null; S.aggiornato = 0; S.erroreLista = ""; S.catalogo = null; S.esiti.clear(); S.ristampe.clear(); S.ordini.clear(); S.nascosti.clear();
     S.sel.clear(); S.bloccati.clear(); S.aperti.clear(); S.occupato.clear(); S.inviati.clear(); S.promTesto = ""; S.arma = null;
     S.dfFoglio = false; S.precAperti = false; S.riprendi = null;
     S.stampa = null; S.cartelle.clear(); S.cbozze.clear(); S.cstato.clear(); S.coda.clear();
@@ -502,6 +502,8 @@
     for (const [ep, s] of S.sel) if (s.oid && o.id.startsWith("tel" + s.oid)) { S.sel.delete(ep); if (S.arma && S.arma.ep === ep) S.arma = null; }
     for (const [ep, oid] of S.bloccati) if (o.id.startsWith("tel" + oid)) S.bloccati.delete(ep);
     for (const [ep, oid] of S.inviati) if (nato(o, oid)) S.inviati.delete(ep);
+    // un ordine appena finito: la sua richiesta è nuova, fra le «Richieste fatte»
+    if (o.fine && !(prima && prima.fine) && o.id.startsWith("tel") && S.vista.nome === "paziente" && S.vista.ep === o.ep && S.scheda === "richieste") caricaRistampe(o.ep);
   }
   const paziente = (ep) => (S.pazienti || []).find((p) => p.ep === ep) || null;
   function aggiornaRiga(riga) {
@@ -518,6 +520,7 @@
     if (S.scheda === "terapia" && !S.terapiaSi) S.scheda = "esiti";
     if (S.scheda === "cartella") caricaCartella(ep);
     if (S.scheda === "terapia") caricaTerapie(ep);
+    if (S.scheda === "richieste") caricaRistampe(ep);
   }
   // La cartella: l'ultima lettura del PC (o, con «↻ Rileggi», la pagina riletta)
   async function caricaCartella(ep, auto = false, rileggi = false) {
@@ -694,6 +697,50 @@
     S.occupato.add("esiti" + ep); render();
     try { S.esiti.set(ep, await chiedi("esiti", { ep }, 40e3, auto)); } catch (e) { if (!auto) errore(e); }
     S.occupato.delete("esiti" + ep); render();
+  }
+  // «Richieste fatte»: quelle che la pagina del paziente sul PC sa stampare (anche
+  // non fatte dall'estensione), ognuna con «Ristampa». Un PC più vecchio non
+  // conosce il comando: la sezione manca, senza errori.
+  async function caricaRistampe(ep) {
+    if (S.occupato.has("ristampe" + ep)) return;
+    S.occupato.add("ristampe" + ep);
+    const prima = JSON.stringify(S.ristampe.get(ep) || null);
+    try { S.ristampe.set(ep, (await chiedi("ristampe", { ep }, 40e3, true)).richieste || []); } catch (e) { S.ristampe.set(ep, /sconosciuto/i.test(e.message) || e.offline ? null : e.message); }
+    S.occupato.delete("ristampe" + ep);
+    if (JSON.stringify(S.ristampe.get(ep) || null) !== prima) render();   // (uguale a prima: niente da ridisegnare)
+  }
+  // «Ristampa»: le etichette e il foglio di quella richiesta, sulle stampanti scelte
+  // (PC o stazione, come per un ordine). Una alla volta: un doppio tocco è un tocco
+  // solo; il numero (`oid`) è della ristampa, rimandata il PC la fa una volta sola.
+  // Com'è andata la dice la carta che compare sopra, con le parole del PC.
+  async function ristampa(ep, rid) {
+    const k = "ris" + ep + "." + rid;
+    if (S.occupato.has(k)) return;
+    S.occupato.add(k); render();
+    const nuovi = (d) => {
+      for (const o of (d && d.ordini) || []) {
+        if (!S.ordini.has(o.id)) ordineVisto(o.titolo ? o : { ...o, stato: "stampo", tono: "run", titolo: "Ristampo", testo: "Mando le etichette e il foglio al PC…", fine: false, ts: Date.now() });
+      }
+    };
+    try {
+      const quando = Date.now();   // (come un ordine: oltre 30 secondi dal tocco non parte più)
+      nuovi(await chiedi("ristampa", { ep, rid, oid: P.b64u(P.casuale(12)), nato: Math.round(quando + S.scarto), ...(staDi() ? { dest: doveDi(ep) } : {}) }, 60e3, false, {
+        rq: nuovoRq(), scade: quando + CODA_MAX,
+        tardi: (r) => { if (r.ok) nuovi(r.dati); else avviso(r.errore || "Ristampa non partita", "err"); render(); } }));
+      window.scrollTo(0, 0);
+    } catch (e) {
+      if (e.tempo || e.incerto) avviso("Non so se la ristampa è partita: guarda la stampante prima di rifarla", "err", true);
+      else errore(e);
+    }
+    S.occupato.delete(k); render();
+  }
+  function ristampeHtml(p) {
+    const l = S.ristampe.get(p.ep);
+    if (typeof l === "string") return `<p class="piede">${esc(l)}</p>`;
+    if (!Array.isArray(l) || !l.length) return "";
+    return `<div class="lbl">Richieste fatte</div>${doveHtml(p)}<div class="carta ristampe">${l.map((r) => `<div class="rist"><span class="c"><b>${esc(r.quando || "Richiesta")}</b>${
+      r.esami ? `<span>${esc(r.esami)}</span>` : ""}<small>${esc(r.cosa || "")}</small></span><button class="btnmini pri" data-a="ristampa" data-id="${esc(r.id)}" ${
+      S.occupato.has("ris" + p.ep + "." + r.id) ? "disabled" : ""}>Ristampa</button></div>`).join("")}</div>`;
   }
   // Tornati sull'app: l'elenco e, sulla pagina di un paziente, i suoi esiti
   // (un referto arrivato intanto). Li chiede l'app da sé: non tengono aperta la sessione.
@@ -1618,7 +1665,7 @@
       return `<button class="chip prof${on ? " on" : ""}" data-a="profilo" data-g="${esc(g.nome)}" data-i="${i}">${ICO_PROFILO}${esc(pr.nome)}</button>`;
     }).join("")}</div>` : ""}<div class="griglia">${g.esami.map((k) => `<button class="esame${s.esami.has(k) ? " on" : ""}" data-a="esame" data-k="${esc(k)}">${esc(c.nomi[k] || k)}</button>`).join("")}</div></div>`).join("");
     return `<div class="carta q-w"><input id="quesito" type="text" enterkeyhint="done" autocomplete="off" placeholder="Quesito diagnostico" value="${esc(s.q)}"><div class="chips">${quesiti}</div></div>
-      <div class="carta">${gruppi}</div>`;
+      <div class="carta">${gruppi}</div>${ristampeHtml(p)}`;
   }
   // La stazione di stampa collegata al PC (il suo nome) e dove vanno i fogli:
   // la scelta del PC, o quella toccata qui per questo ordine.
@@ -2035,7 +2082,9 @@
       S.scheda = b.dataset.s; S.arma = null; render();
       if (S.scheda === "cartella") caricaCartella(ep, !!S.cartelle.get(ep));
       if (S.scheda === "terapia") caricaTerapie(ep, !!S.terapie.get(ep));
+      if (S.scheda === "richieste") caricaRistampe(ep);
     }
+    else if (a === "ristampa") ristampa(ep, b.dataset.id);
     else if (a === "trileggi") { if (S.tf && !S.tf.stato) S.tf = null; caricaTerapie(ep, false, true); }
     else if (a === "tnuovo") apriFarmaco(ep);
     else if (a === "tchiudi") { S.tf = null; render(); }
