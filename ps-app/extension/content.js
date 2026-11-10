@@ -69,8 +69,20 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.84.0";
+  const VERSION = "3.85.0";
   const NS = "psassist:"; // storage namespace
+  // La build «mini» (PS Assist · Lettura e stampa): sola lettura. La bandiera
+  // la mette sola-lettura.js, caricato prima di content.js (vedi manifest). Qui
+  // niente pannello degli ordini — solo un distintivo e le letture per il
+  // telefono — e ogni comando di SCRITTURA del ponte è rifiutato sul PC.
+  const SOLA_LETTURA = (() => { try { return typeof self !== "undefined" && self.PSA_SOLA_LETTURA === true; } catch { return false; } })();
+  // I comandi del ponte che una scheda in sola lettura esegue: letture e
+  // ristampa (legge la pagina aperta e stampa, non scrive). Tutto il resto è
+  // già fermato nel service worker; questo è il secondo muro, nella scheda.
+  const PONTE_LETTURA_SCHEDA = new Set([
+    "pazienti", "mappa", "eo", "triage", "esiti", "aggiornaValori",
+    "richieste", "cartella", "terapie", "ristampe", "ristampa",
+  ]);
 
   const TIMEOUT_MS = 20000;      // per-request timeout
   const PACE_MS = 250;           // gentle pause between consecutive requests
@@ -2031,10 +2043,13 @@
     const l = String(e.label || "").toUpperCase();
     const sis = String(e.sistema || "").toUpperCase();
     if (/ELETTROCARDIOGRAMM|\bECG\b/.test(l)) return "ecg";
+    // il sistema che emette il referto dice il tipo meglio del nome: un referto
+    // di laboratorio (LIS) con una «TC» nel nome è colesterolo totale o tempo di
+    // coagulazione, non un torace — quindi LIS=laboratorio prima del regex imaging
+    if (sis.includes("LIS")) return "lab";
     // the whole of radiology reads as text, not just plain films: the system
     // that issued the document says it better than the exam's name does
     if (sis.includes("RIS") || /\bRX\b|RADIOGRAF|\bTC\b|\bTAC\b|ECOGRAF|RISONANZA|\bRMN\b/.test(l)) return "rx";
-    if (sis.includes("LIS")) return "lab";
     return "altro";
   }
 
@@ -3206,7 +3221,13 @@
       const raw = store.get(MAPPE[k].posti, {}), v = raw && typeof raw === "object" ? raw[key] : null, s = v && sala(k);
       if (s && (v.tipo === "letto" ? s.letti : v.tipo === "area" ? s.aree : []).some((o) => o.id === v.id)) return { k, tipo: v.tipo, id: v.id, ts: +v.ts || 0 };
     }
-    return sala(TRIAGE_ATTESA.k)?.aree.some((a) => a.id === TRIAGE_ATTESA.id) ? { ...TRIAGE_ATTESA, ts: 0 } : null;
+    // la Sala attesa di partenza: l'area «attesa» della mappa «ps»; se il medico
+    // l'ha rinominata o rifatta, una che si chiama «attesa», se no la prima area
+    // (così un paziente del triage non sparisce mai dalla mappa personalizzata).
+    const ps = sala(TRIAGE_ATTESA.k);
+    if (!ps || !Array.isArray(ps.aree) || !ps.aree.length) return null;
+    const a = ps.aree.find((x) => x.id === TRIAGE_ATTESA.id) || ps.aree.find((x) => /attes/i.test(x.nome || "")) || ps.aree[0];
+    return a ? { k: TRIAGE_ATTESA.k, tipo: "area", id: a.id, ts: 0 } : null;
   }
   function leggiSmartPagina(doc, url) {
     if (!eSmart(doc, url) || classify(doc) === "login" || !doc.querySelector(".AFCHeaderTable")) return { ok: false, perche: "non è la lista smart" };
@@ -3357,7 +3378,8 @@
     if (L.sel && L.sel.triage) {
       giro.triage = { n: L.sel.n, filtrata: L.filtrata,
         righe: L.righe.map((r) => ({ nome: r.name, breve: nomeCorto(r.name), eta: r.eta, triage: r.triage, area: AREE_TITOLO[chiaveArea(r.area)] || "", arrivo: r.arrivo || 0,
-          // (la chiave di nome e nascita, come per chi è noto solo dalla smart: «Accetta in ambulatorio» dal telefono)
+          // (chiave di nome e nascita: identifica la riga della lista smart sul telefono. NB «Accetta
+          // in ambulatorio» combacia per episodio o chiaveTriage «tr…», non con questa chiaveSmart «sm…»)
           ...(r.nato ? { k: chiaveSmart(r.name, improntaNascita(r.nato)) } : {}) })) };   // (l'area solo se si riconosce, col nome corto)
     }
     const prossima = L.schede.find((s) => s.nostra && !giro.letti[s.base]) || (giro.triage ? null : L.schede.find((s) => s.triage));
@@ -9404,7 +9426,33 @@
       return v ? `<div class="msez" role="group"${titolo ? ` aria-label="${esc(titolo)}"><div class="mtit" aria-hidden="true">${esc(titolo)}</div>` : ">"}${v}</div>` : "";
     }
 
+    // Il distintivo della build mini (sola lettura): niente pannello, solo una
+    // riga discreta in basso a sinistra. Dice che il PC è in sola lettura e,
+    // quando il telefono è collegato, lo mostra con «Scollega» — come la spia
+    // del pannello pieno, perché chi è davanti al PC lo veda e la possa chiudere.
+    renderBadge() {
+      const viva = !!(PONTE_STATO && PONTE_STATO.sessione);
+      this.root.innerHTML = `<style>:host{all:initial}
+        .b{position:fixed;left:12px;bottom:12px;z-index:2147483646;display:inline-flex;align-items:center;gap:8px;
+           font:12px/1.3 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#0B2C50;
+           background:#EAF0F6;border:1px solid #C6D4E4;border-radius:999px;padding:5px 11px;box-shadow:0 2px 8px rgba(11,44,80,.12);opacity:.85}
+        .b.viva{background:#E6F5EE;border-color:#A6D8BF;color:#0A5A33}
+        .dot{width:7px;height:7px;border-radius:50%;background:#6B8CAE;flex:none}
+        .b.viva .dot{background:#17A05B;animation:psaPulse 1.6s ease-in-out infinite}
+        @keyframes psaPulse{0%,100%{opacity:1}50%{opacity:.35}}
+        button{border:0;background:transparent;color:inherit;font:inherit;font-weight:700;cursor:pointer;text-decoration:underline;padding:0 0 0 4px}</style>
+        <div class="b${viva ? " viva" : ""}" role="status" title="PS Assist · questo PC è una porta d'ingresso in sola lettura per l'iPhone del medico">
+          <span class="dot"></span><span>${viva ? "👁️ iPhone collegato · sola lettura" : "👁️ PS Assist · sola lettura"}</span>${
+          viva ? `<button id="solaoff" title="Chiude la sessione dell'iPhone">Scollega</button>` : ""}</div>`;
+      const off = this.root.getElementById("solaoff");
+      if (off) off.addEventListener("click", (e) => { e.stopPropagation(); ask({ t: "ponteScollega" }); });
+    }
     render() {
+      // La build mini non ha il pannello degli ordini: solo un distintivo
+      // discreto «sola lettura», che diventa «iPhone collegato · Scollega»
+      // quando una sessione del telefono è aperta (chi passa davanti al PC lo
+      // sa e la può chiudere). Ogni chiamata a render() finisce qui.
+      if (SOLA_LETTURA) return this.renderBadge();
       const patientName = this.pageType === "vista" ? this.nomePaziente() : nomeInPagina();
       // (su una pagina «altra» l'episodio è quello che il pannello ha
       // riconosciuto, o nessuno: non il primo link che la pagina porta)
@@ -15177,13 +15225,17 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       this.root.querySelectorAll("[data-print]").forEach((b) => b.addEventListener("click", () => {
         const rid = b.getAttribute("data-print");
         const jobs = printJobsFor(printModel(document, location.href), rid);
-        avviaStampa(jobs, { panel: this, title: `Richiesta ${rid}.`, ep: this.episodeId, paziente: this.nomePaziente(), url: location.href });
+        // doppio click (su stampa automatica partirebbe due volte): due tocchi nella stessa
+        // finestra di 2 s hanno lo stesso id e il service worker ne stampa uno solo; una
+        // ristampa voluta più tardi cade in un'altra finestra e riparte
+        avviaStampa(jobs, { panel: this, title: `Richiesta ${rid}.`, ep: this.episodeId, paziente: this.nomePaziente(), url: location.href,
+          jobId: `rist-${rid}-${Math.floor(Date.now() / 2000)}` });
       }));
       $("#stultima")?.addEventListener("click", () => {
         const map = printModel(document, location.href);
         const ids = ultimeRichieste(map);
         avviaStampa(fogliDi(map, ids), { panel: this, title: `${ids.length > 1 ? "Richieste" : "Richiesta"} ${ids.join(" e ")}.`,
-          ep: this.episodeId, paziente: this.nomePaziente(), url: location.href });
+          ep: this.episodeId, paziente: this.nomePaziente(), url: location.href, jobId: `rist-${ids.join("-")}-${Math.floor(Date.now() / 2000)}` });
       });
       this.root.querySelectorAll("[data-esito]").forEach((b) => b.addEventListener("click", () =>
         this.openEsito(b.getAttribute("data-esito"))));
@@ -16257,7 +16309,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   async function stampaAltrove(jobs, opzioni) {
     const { panel = null, tag = "Stampa", fine = null, title = "" } = opzioni;
     const ep = String(opzioni.ep || "");
-    const job = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, ep, tag,
+    const job = { id: opzioni.jobId || `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, ep, tag,
       paziente: opzioni.paziente || (tuttiPazienti().find((p) => p.ep === ep) || {}).name || "",
       url: urlPaziente(ep, opzioni.url), fine, riassunto: fine ? confermati(fine) : title.replace(/\.$/, ""), dest: opzioni.dest || "qui",
       quesito: fine ? quesitoDetto(fine.quesito) || "" : "",
@@ -17432,6 +17484,10 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (LAVORO || PONTE_VALORI || PONTE_CARTELLA || PONTE_TERAPIA || PONTE_ACCETTA) return { no: "lavoro" };
     if (!PANNELLO) return { no: "pannello" };
     const a = m.args || {}, cmd = m.cmd;
+    // Secondo muro della build mini (il primo è nel service worker): qui, nella
+    // scheda, solo le letture e la ristampa. Una scrittura che per qualunque
+    // ragione arrivasse fin qui non tocca il gestionale.
+    if (SOLA_LETTURA && !PONTE_LETTURA_SCHEDA.has(cmd)) return { ok: false, errore: "Questo PC è in sola lettura", solaLettura: true };
     const fatto = (r) => {
       if (r && r.registro) PANNELLO.log(`${now()}  iPhone · ${r.registro}`);
       if (r && r.ok && ["nota", "promemoria", "fatto", "dfAggiungi", "dfSpunta", "dfTogli"].includes(cmd) && !PANNELLO.root.activeElement) PANNELLO.render();
@@ -17686,6 +17742,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   async function ponteCartellaQui() {
     const c = PONTE_CARTELLA;
     const fine = (esito) => ask({ t: "ponteCartellaFatto", ...esito });
+    if (SOLA_LETTURA) return fine({ ok: false, testo: "questo PC è in sola lettura" });   // secondo muro: la scheda non scrive mai sul mini
     if (!c || c.fase === "perso" || !c.campi) return fine({ ok: false, testo: "la scheda non sa più che cosa salvare" });
     const dopo = c.fase === "inviato";
     if (classify(document) !== "patient" || findEpisodeId(document, location.href) !== c.ep || !formCartella(document, c.ep)) {
@@ -17775,6 +17832,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
     // aggiungere: già confermata dopo la lettura del telefono? Forse è la sua
     // (una risposta persa): mai una seconda alla cieca
+    if (SOLA_LETTURA) return fine({ ok: false, testo: "questo PC è in sola lettura" });   // secondo muro: il mini legge e cerca i farmaci, ma non conferma
     const visti = new Set(c.visti || []);
     if (lettura.righe.some((r) => r.prog && !visti.has(r.prog) && ugualeTer(r.descr, v.descr))) {
       return fine({ ok: false, gia: true, testo: `«${v.descr}» c'è già fra le terapie confermate, dopo la tua lettura: rileggi e controlla`, lettura });
@@ -17857,6 +17915,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   async function ponteAccettaQui() {
     const c = PONTE_ACCETTA;
     const fine = (esito) => ask({ t: "ponteAccettaFatto", ...esito });
+    if (SOLA_LETTURA) return fine({ ok: false, testo: "questo PC è in sola lettura" });   // secondo muro: niente «Accetta» dal mini
     if (!c || c.fase === "perso" || !c.nome) return fine({ ok: false, incerto: !!c && c.fase !== "lista", testo: "la scheda non sa più che cosa fare" });
     const mvpg = mvpgDi(document, location.href), testa = areaInTesta(document), area = testa ? titoloArea(testa.k, testa.label) : "";
     if (c.fase === "lista") {
@@ -18142,7 +18201,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     // il passaggio verso il visore): la pill e basta. Qui non parte niente di
     // quello che segue — né ordini, né stampe, né letture della pagina.
     if (!IN_PSO) {
-      if (classify(document) !== "login" && !/login/i.test(location.pathname)) vistaQui();
+      // La build mini non ha pill né registratore fuori dal gestionale: niente.
+      if (!SOLA_LETTURA && classify(document) !== "login" && !/login/i.test(location.pathname)) vistaQui();
       return;
     }
     // Con l'estensione, per prima cosa: questa scheda è quella di un ordine
@@ -18166,6 +18226,76 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       return;
     }
     bootGestionale(null);
+  }
+
+  // Chi è loggato nel gestionale su questo PC, dalla testata della pagina
+  // («Salve! Sei connesso come Utente Medico: NOME»): lo si dice al service
+  // worker per la testata «Sola lettura · gestionale di …» del telefono. Solo
+  // il nome, e solo se si legge: non blocca mai una lettura.
+  function reportOperatore() {
+    if (!hasExt()) return;
+    try {
+      const testo = document.body ? document.body.textContent.slice(0, 20000) : "";
+      const m = /connesso come[^:]*:\s*([^<\n]{1,60})/i.exec(testo);
+      const nome = m ? m[1].replace(/\s+/g, " ").trim() : "";
+      if (nome) ask({ t: "ponteOperatore", nome }).catch(() => {});
+    } catch { /* niente: la testata è solo informativa */ }
+  }
+
+  // La scheda del gestionale nella build mini: nessun pannello degli ordini,
+  // solo il distintivo e le LETTURE che servono al telefono (le stesse della
+  // build piena). Niente ascolto degli ordini, niente conferme sorvegliate,
+  // niente stampa automatica: questo PC non scrive nel gestionale. Il pannello
+  // si costruisce lo stesso, perché i comandi di lettura del ponte (ponteEsegui)
+  // leggono dal suo modello (PANNELLO.pazModello()).
+  function bootSolaLettura(chi, pageType) {
+    const panel = new Panel(pageType);
+    PANNELLO = panel;
+    reportOperatore();
+    if (pageType !== "patient") {
+      panel.render();                       // il distintivo
+      if (PONTE_VALORI) ponteValoriQui(panel);
+      return;
+    }
+    panel.entry = patientModel(document, location.href);
+    if (eListaArea(document, location.href)) panel.entry = { labUrl: null, radioUrl: null };
+    panel.esiti = esitiModel(document, location.href);
+    if (panel.episodeId && (panel.entry.labUrl || panel.entry.radioUrl)) leggiStatoPagina(panel.episodeId, document);
+    panel.render();                         // il distintivo
+    // il collega apre il paziente sul PC: le letture per il telefono, identiche
+    // alla build piena (nome, età, cartella, portale clinico, valori e referti)
+    if (panel.entry && (panel.entry.labUrl || panel.entry.radioUrl) && !PONTE_VALORI) {
+      const an = anagraficaPagina(document);
+      rememberPatient(panel.episodeId, nomeInPagina(), location.href, triageDi(document), an.eta, an.sesso, improntaNascita(nascitaInPagina(document)));
+      cartellaLettaQui(panel.episodeId);
+      iconaCf(document);
+      document.addEventListener("click", (ev) => {
+        const a = ev.target?.closest?.('a[href*="MODALITA=CLINICA"]');
+        if (!a || !hasExt()) return;
+        ask({ t: "apreStorico", ep: panel.episodeId || "", nome: panel.nomePaziente() || "" }).catch(() => {});
+      }, true);
+    }
+    if (hasExt()) ask({ t: "portale" }).then((r) => { if (r && r.ok && r.origine) panel.portale = r.origine; }).catch(() => {});
+    const daSolo = !PONTE_VALORI;
+    if (!daSolo || panel.ordineInCorso()) panel.refreshRefCache();
+    panel.caricaStorico();
+    if (daSolo) panel.autoCarica({ esiti: panel.view === "esiti" }).catch(() => {});
+    // finché la pagina resta aperta, un laboratorio a metà si ricontrolla (solo
+    // mentre la si guarda, e dopo due giri a vuoto basta) — come la build piena
+    if (!PONTE_VALORI && !TABELLONE) {
+      let vuoti = 0, ultimo = Date.now();
+      const ricontrolla = async () => {
+        if (vuoti >= 2 || document.visibilityState !== "visible") return;
+        if (!panel.esiti.some((e) => e.kind === "valori" && !e.storico)) return;
+        ultimo = Date.now();
+        const prima = panel.impValori();
+        const r = await panel.autoCarica({ esiti: true }).catch(() => null);
+        if (r && r.lab) vuoti = panel.impValori() === prima ? vuoti + 1 : 0;
+      };
+      setInterval(ricontrolla, PARZ_MS + 5e3);
+      document.addEventListener("visibilitychange", () => { if (Date.now() - ultimo >= PARZ_MS) ricontrolla(); });
+    }
+    if (PONTE_VALORI) { ponteValoriQui(panel); return; }
   }
 
   function bootGestionale(chi) {
@@ -18238,6 +18368,11 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (areaVaiQui(document, location.href)) return;
       smartQui(document, location.href);
     }
+    // La build mini (sola lettura): da qui niente pannello degli ordini, niente
+    // sorveglianza delle conferme, niente stampa automatica — solo le letture
+    // per il telefono e il distintivo. Le schede di sottofondo di sola lettura
+    // (PONTE_VALORI, e PONTE_TERAPIA del «rileggi») sono già passate sopra.
+    if (SOLA_LETTURA) return bootSolaLettura(chi, pageType);
     if (pageType === "other") {
       // e.g. the post-confirm label page: no panel, but a pending print
       // handoff starts here when the page lists the richiesta's print links.
