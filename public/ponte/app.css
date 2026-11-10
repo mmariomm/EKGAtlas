@@ -68,6 +68,10 @@ button { cursor: pointer; touch-action: manipulation; }
 .menu .pcrow.qui .pcbtn { color: var(--blu); }
 .menu .pcrow .pcbtn small { color: var(--grigio); font-weight: 600; }
 .menu .pcvia { flex: none; width: 42px; text-align: center; color: var(--grigio); }
+.menu .stdove { display: flex; align-items: center; gap: 4px; padding: 4px; margin: 2px 0 4px; background: var(--seg); border-radius: 12px; }
+.menu .stdove span { font-size: 13px; color: var(--grigio); font-weight: 650; padding: 0 6px; white-space: nowrap; }
+.menu .stdove button { flex: 1; width: auto; min-height: 44px; text-align: center; color: var(--grigio); font-weight: 650; padding: 8px 8px; }
+.menu .stdove button.on { background: var(--azione); color: #fff; }
 .menu .sep { height: 1px; background: var(--linea); margin: 6px 6px; }
 /* la testata di sola lettura (informativa): niente scrittura da questo PC */
 .solabar { display: flex; align-items: center; gap: 6px; padding: 5px var(--dx) 5px var(--sx); font-size: 12.5px;
@@ -219,10 +223,13 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .nuovo { flex: none; font-size: 11px; font-weight: 700; color: var(--blu); background: var(--blu-chiaro); border-radius: 999px; padding: 0 7px; }
 .sezt small.nuovo { display: inline-block; margin-left: 6px; }
 .ref { display: block; width: 100%; min-height: 44px; text-align: left; border: 0; background: none; padding: 12px 14px; }
-.ref.conpdf { padding-right: 72px; }
+.ref.conpdf { padding-right: 118px; }
 .pdf { position: absolute; right: 10px; top: 0; min-width: 52px; min-height: 44px; border: 0; background: none; color: var(--blu); font-weight: 700; font-size: 13.5px; border-radius: 9px; }
 .pdf:active { background: var(--fondo); }
 .pdf:disabled { color: var(--grigio); }
+.prn { position: absolute; right: 62px; top: 0; width: 44px; min-height: 44px; border: 0; background: none; font-size: 18px; border-radius: 9px; }
+.prn:active { background: var(--fondo); }
+.prn:disabled { opacity: .4; }
 .ref .r1 { display: flex; gap: 10px; align-items: baseline; }
 .ref .q { flex: none; font-size: 13px; color: var(--grigio); font-variant-numeric: tabular-nums; min-width: 82px; }
 .ref .t { flex: 1; font-weight: 600; min-width: 0; }
@@ -447,11 +454,11 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .stdesc.err { color: var(--rosso); font-weight: 650; }
 .stok { display: inline-block; margin-top: 14px; padding: 6px 14px; border-radius: 999px; background: var(--verdef); color: var(--verde); font-weight: 700; }
 .stcarta .grande { width: 100%; min-width: 0; }
-.cta .dove { display: flex; align-items: center; gap: 4px; padding: 4px; background: var(--seg); border-radius: 12px; margin: 0 0 8px; }
-.cta .dove span { font-size: 13px; color: var(--grigio); font-weight: 650; padding: 0 8px 0 6px; }
-.cta .dove button { flex: 1; width: auto; min-height: 44px; background: none; color: var(--grigio); font-size: 15px; font-weight: 650; padding: 8px 6px; border-radius: 9px; }
-.cta .dove button.on { background: var(--carta); color: var(--testo); box-shadow: 0 1px 4px var(--ombra); }
-@media (prefers-color-scheme: dark) { .cta .dove button.on { background: var(--scuro); } }
+/* «Stampa [PC] [Infermeria]»: lo stesso controllo segmentato sopra «Conferma e stampa», sopra «Richieste fatte» (non solo nella barra dell'ordine) */
+.dove { display: flex; align-items: center; gap: 4px; padding: 4px; background: var(--seg); border-radius: 12px; margin: 0 0 8px; }
+.dove span { font-size: 13px; color: var(--grigio); font-weight: 650; padding: 0 8px 0 6px; }
+.dove button { flex: 1; width: auto; min-width: 0; min-height: 44px; border: 0; background: none; color: var(--grigio); font-size: 15px; font-weight: 650; padding: 8px 6px; border-radius: 9px; overflow-wrap: anywhere; }
+.dove button.on { background: var(--azione); color: #fff; }
 /* Da fare: una lista, la spunta tonda (44 px da toccare), il cestino grigio sulle spuntate */
 .promr.dfr { gap: 2px; padding: 0 8px 0 0; min-height: 48px; }
 .dfr .dfck { flex: none; position: relative; width: 44px; height: 44px; border: 0; background: none; padding: 0; }
@@ -502,3 +509,6 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .rist .c b { display: block; font-variant-numeric: tabular-nums; }
 .rist .c span { display: block; font-size: 14px; color: var(--testo2); margin-top: 1px; }
 .rist .c small { display: block; font-size: 12.5px; color: var(--grigio); margin-top: 2px; }
+.rist.apri { flex-wrap: wrap; }
+.rist .quali { flex: 1 1 100%; display: flex; gap: 6px; }
+.rist .quali .btnmini { flex: 1; min-height: 44px; }

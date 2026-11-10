@@ -17457,7 +17457,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (!map) return { ok: false, errore, ...(sessione ? { sessione } : {}) };
     return { ok: true, dati: { ep: p.ep, richieste: richiesteStampabili(map).slice(0, 12).map((id) => {
       const m = printMeta(map, id);
-      return { id, quando: m.when || "", esami: m.exams.slice(0, 8).join(", "), cosa: printLabelFor(map, id) };
+      const j = printJobsFor(map, id), et = j.filter((x) => x.printer === "etichettatrice").length;   // (quante etichette e quanti fogli: il telefono offre la scelta)
+      return { id, quando: m.when || "", esami: m.exams.slice(0, 8).join(", "), cosa: printLabelFor(map, id), et, fo: j.length - et };
     }) } };
   }
   // Le etichette e il foglio di una richiesta, di nuovo, dove dice `dest`: lo
@@ -17467,10 +17468,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   async function ponteRistampa(p, a) {
     const { map, url, errore, sessione } = await ponteMappaStampe(p);
     if (!map) return { ok: false, errore, ...(sessione ? { sessione } : {}) };
-    const rid = String(a.rid || ""), jobs = map[rid] ? printJobsFor(map, rid) : [];
-    if (!jobs.length) return { ok: false, errore: "Questa richiesta non è più sulla pagina del paziente: riapri l'elenco" };
+    const rid = String(a.rid || ""), tutti = map[rid] ? printJobsFor(map, rid) : [];
+    if (!tutti.length) return { ok: false, errore: "Questa richiesta non è più sulla pagina del paziente: riapri l'elenco" };
+    // «🏷️ Etichette · 📄 Foglio · Entrambi»: le etichette sono i lavori dell'etichettatrice, il foglio tutto il resto
+    const quali = a.quali === "etichette" || a.quali === "foglio" ? a.quali : "tutto";
+    const jobs = quali === "tutto" ? tutti : tutti.filter((j) => (j.printer === "etichettatrice") === (quali === "etichette"));
+    if (!jobs.length) return { ok: false, errore: `Questa richiesta non ha ${quali === "etichette" ? "etichette" : "foglio"} da ristampare` };
     const job = { id: a.id, ep: p.ep, tag: "Stampa", paziente: p.name, url, fine: null, dest: a.dest === "stazione" ? "stazione" : "qui",
-      riassunto: `Ristampa ${printMeta(map, rid).when || "richiesta"}`.slice(0, 80), quesito: "",
+      riassunto: `Ristampa ${quali === "tutto" ? "" : quali + " "}${printMeta(map, rid).when || "richiesta"}`.slice(0, 80), quesito: "",
       jobs: jobs.map(({ name, printer, url, breve }) => ({ name, printer, url, ...(breve ? { breve } : {}) })) };
     let r = { ok: false };
     for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineFogli", job });

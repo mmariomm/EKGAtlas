@@ -1370,6 +1370,11 @@ che non può leggere niente: cifrato da un capo all'altro, nessun dato su nessun
   Sul PC la striscia dice «dall'iPhone». Con una [stazione di stampa](#stazione-di-stampa-le-stampanti-dellinfermeria)
   collegata, sopra il bottone «Stampa: PC · Infermeria» (quella del PC, cambiabile per l'ordine); la
   stazione si collega da qui, **⋯ → Collega stampante**, inquadrando il suo QR.
+  **Stampante predefinita del telefono**: **⋯ → «Stampa su» [💻 PC] [🖨️ Infermeria]** (si ricorda sul
+  telefono, per PC; non scelta, segue il PC) per «Stampa PDF» e per il **🖨️ accanto a un referto
+  PDF** negli Esiti (stampa la copia salvata sul PC, una volta sola per tocco; comando
+  `stampaReferto`, solo stampa). Nelle «Richieste fatte», **Ristampa** su una richiesta con etichette
+  e foglio apre **🏷️ Etichette · 📄 Foglio · Entrambi**.
 - **Cartella dal telefono**: anamnesi, remota, farmaci, allergie ed esame obiettivo, scrivibili dove
   la pagina del paziente li lascia scrivere; «Salva» li scrive col «Conferma» della pagina, in una
   scheda di sottofondo, e rilegge. Mai sopra un testo cambiato sul PC o non ancora salvato in una
@@ -1698,7 +1703,8 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   una stazione collegata; si ricorda. Su Infermeria il bottone dell'ordine lo dice («Conferma e
   stampa · 2 esami → Infermeria») e la stampantina in intestazione è «→ Infermeria» (rossa quando
   non risponde). Vale per le etichette e i fogli A4 di un ordine (e per la loro **Ristampa**) e per
-  l'etichetta anagrafica; il resto (consensi, «Stampa le richieste», un PDF dal telefono) resta qui.
+  l'etichetta anagrafica; il resto (consensi, «Stampa le richieste») resta qui. Un PDF dal telefono e un
+  referto stampato dal telefono vanno dove dice il suo «Stampa su».
   Sul telefono, sopra «Conferma e stampa», la stessa scelta, **«Stampa: PC · Infermeria»**: parte
   da quella del PC, e si cambia per quell'ordine.
 - **Com'è andata, per quello che è.** «Stampo le etichette in Infermeria…», poi **«Stampato in

@@ -79,7 +79,7 @@
     scarto: 0,           // l'orologio del PC meno quello del telefono, misurato al saluto (in memoria)
     coda: new Map(),     // oid → un ordine toccato senza collegamento: { ep, oid, quando, paziente, n, sel, stato: "coda" | "scaduta" }
     fase: "avvio", perche: "", testoFine: "", scaduta: 0,
-    pazienti: null, triage: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ristampe: new Map(), ordini: new Map(), nascosti: new Set(),
+    pazienti: null, triage: null, aggiornato: 0, erroreLista: "", rinfresca: false, catalogo: null, esiti: new Map(), ristampe: new Map(), ristApri: null, ordini: new Map(), nascosti: new Set(),
     vista: { nome: "lista", ep: "" }, scheda: "esiti", dfFoglio: false, precAperti: false,
     sel: new Map(), bloccati: new Map(), aperti: new Set(),
     riprendi: null,      // dopo i 3 minuti: { ep, scheda } dell'ultimo paziente — solo in memoria, mai su disco, e solo finché il PC non risponde
@@ -805,18 +805,19 @@
   // (PC o stazione, come per un ordine). Una alla volta: un doppio tocco è un tocco
   // solo; il numero (`oid`) è della ristampa, rimandata il PC la fa una volta sola.
   // Com'è andata la dice la carta che compare sopra, con le parole del PC.
-  async function ristampa(ep, rid) {
+  async function ristampa(ep, rid, quali = "tutto") {
     const k = "ris" + ep + "." + rid;
     if (S.occupato.has(k)) return;
+    S.ristApri = null;
     S.occupato.add(k); render();
     const nuovi = (d) => {
       for (const o of (d && d.ordini) || []) {
-        if (!S.ordini.has(o.id)) ordineVisto(o.titolo ? o : { ...o, stato: "stampo", tono: "run", titolo: "Ristampo", testo: "Mando le etichette e il foglio al PC…", fine: false, ts: Date.now() });
+        if (!S.ordini.has(o.id)) ordineVisto(o.titolo ? o : { ...o, stato: "stampo", tono: "run", titolo: "Ristampo", testo: quali === "etichette" ? "Mando le etichette al PC…" : quali === "foglio" ? "Mando il foglio al PC…" : "Mando le etichette e il foglio al PC…", fine: false, ts: Date.now() });
       }
     };
     try {
       const quando = Date.now();   // (come un ordine: oltre 30 secondi dal tocco non parte più)
-      nuovi(await chiedi("ristampa", { ep, rid, oid: P.b64u(P.casuale(12)), nato: Math.round(quando + S.scarto), ...(staDi() ? { dest: doveDi(ep) } : {}) }, 60e3, false, {
+      nuovi(await chiedi("ristampa", { ep, rid, oid: P.b64u(P.casuale(12)), nato: Math.round(quando + S.scarto), quali, ...(staDi() ? { dest: doveDi(ep) } : {}) }, 60e3, false, {
         rq: nuovoRq(), scade: quando + CODA_MAX,
         tardi: (r) => { if (r.ok) nuovi(r.dati); else avviso(r.errore || "Ristampa non partita", "err"); render(); } }));
       window.scrollTo(0, 0);
@@ -830,9 +831,14 @@
     const l = S.ristampe.get(p.ep);
     if (typeof l === "string") return `<p class="piede">${esc(l)}</p>`;
     if (!Array.isArray(l) || !l.length) return "";
-    return `<div class="lbl">Richieste fatte</div>${doveHtml(p)}<div class="carta ristampe">${l.map((r) => `<div class="rist"><span class="c"><b>${esc(r.quando || "Richiesta")}</b>${
-      r.esami ? `<span>${esc(r.esami)}</span>` : ""}<small>${esc(r.cosa || "")}</small></span><button class="btnmini pri" data-a="ristampa" data-id="${esc(r.id)}" ${
-      S.occupato.has("ris" + p.ep + "." + r.id) ? "disabled" : ""}>Ristampa</button></div>`).join("")}</div>`;
+    // «Ristampa»: con etichette E foglio il tocco apre la scelta (🏷️ Etichette · 📄 Foglio · Entrambi),
+    // il secondo tocco stampa; con un genere solo (o un PC che non dice quali) stampa subito
+    const apri = S.ristApri && S.ristApri.ep === p.ep ? S.ristApri.id : "";
+    const q = (r, k, t) => `<button class="btnmini" data-a="ristampaQ" data-id="${esc(r.id)}" data-q="${k}">${t}</button>`;
+    return `<div class="lbl">Richieste fatte</div>${doveHtml(p)}<div class="carta ristampe">${l.map((r) => `<div class="rist${apri === r.id ? " apri" : ""}"><span class="c"><b>${esc(r.quando || "Richiesta")}</b>${
+      r.esami ? `<span>${esc(r.esami)}</span>` : ""}<small>${esc(r.cosa || "")}</small></span><button class="btnmini pri" data-a="ristampa" data-id="${esc(r.id)}" aria-expanded="${apri === r.id}" ${
+      S.occupato.has("ris" + p.ep + "." + r.id) ? "disabled" : ""}>Ristampa</button>${
+      apri === r.id ? `<div class="quali" role="group" aria-label="Che cosa ristampare">${q(r, "etichette", "🏷️ Etichette")}${q(r, "foglio", "📄 Foglio")}${q(r, "tutto", "Entrambi")}</div>` : ""}</div>`).join("")}</div>`;
   }
   // Tornati sull'app: l'elenco e, sulla pagina di un paziente, i suoi esiti
   // (un referto arrivato intanto). Li chiede l'app da sé: non tengono aperta la sessione.
@@ -916,8 +922,8 @@
   const b64 = (u) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
   async function stampaPdf(file) {
     if (!file || (S.stampa && !S.stampa.fine) || !S.canale) return;
-    // dove: il PC, o la stazione di stampa collegata (scelta dal menu ⋯)
-    const dove = S.pdfDove === "stazione" && staDi() ? "stazione" : "qui", sta = staDi() || "Infermeria";
+    // dove: la stampante predefinita del telefono (⋯ → «Stampa su»): il PC, o la stazione di stampa collegata
+    const dove = doveTel(), sta = staDi() || "Infermeria";
     const fine = (tono, titolo, testo = "") => { S.stampa = { tono, titolo, testo, fine: true, ts: Date.now() }; render(); };
     if (file.size > PDF_MAX) return fine("err", "PDF troppo grande: oltre 15 MB");
     S.stampa = { tono: "run", titolo: "Invio…", testo: "", fine: false, ts: Date.now() };
@@ -946,6 +952,28 @@
     }
   }
   $pdf.addEventListener("change", () => { const f = $pdf.files[0]; $pdf.value = ""; stampaPdf(f); });
+  // «🖨️» accanto a un referto PDF (Esiti): lo stampa il PC, dalla SUA copia salvata
+  // (niente passa dal telefono), sulla stampante predefinita del telefono. Una carta
+  // sola con «Stampa PDF»: una stampa alla volta. Il numero (`rid`) è della stampa:
+  // rimandato dopo una presa caduta, il PC la fa una volta sola.
+  async function stampaReferto(ep, ref) {
+    if (!ref || (S.stampa && !S.stampa.fine) || !S.canale) return;
+    const dove = doveTel(), sta = staDi() || "Infermeria";
+    const fine = (tono, titolo, testo = "") => { S.stampa = { tono, titolo, testo, fine: true, ts: Date.now() }; render(); };
+    S.stampa = { tono: "run", titolo: "Stampo il referto…", testo: "", fine: false, ts: Date.now() };
+    render();
+    const rid = P.b64u(P.casuale(12));
+    try {
+      const d = await pezzo(() => chiedi("stampaReferto", { ep, ref, rid, dest: dove }, ATTESA_STAMPA, false, { rq: rid }),
+        Date.now() + ATTESA_STAMPA + 120e3, "Il PC non ha risposto in tempo");
+      fine(d.tono || "warn", d.titolo || "Mandato al PC", d.testo);
+    } catch (e) {
+      if (!S.canale) { S.stampa = null; return; }
+      if (e.tempo) fine("warn", "Non so se è stampato", `guarda la stampante ${dove === "stazione" ? "in " + sta : "del PC"} prima di rifarlo`);
+      else if (e.nonInviata) fine("err", "Referto NON stampato", "la rete non ha retto: riprova");
+      else fine("err", e.message);
+    }
+  }
 
   // ------------------------------------------------------ le registrazioni
   // ⋯ → Registrazioni: gli zip che il PC ha salvato, già anonimizzati e
@@ -1376,8 +1404,9 @@
       ${S.menu ? `<div class="menu" role="menu">
         ${listaPc}
         ${suPaz || suZip ? "" : `<button data-a="aggiornaLista">${em("🔄")}Aggiorna elenco</button>`}
-        ${staDi() ? `<button data-a="stampaPdf">${em("💻")}Stampa PDF sul PC</button><button data-a="stampaPdfSta">${em("🖨️")}Stampa PDF in ${esc(staDi())}</button>`
-          : `<button data-a="stampaPdf">${em("📄")}Stampa PDF</button>`}
+        ${staDi() ? `<div class="stdove" role="group" aria-label="Stampa su"><span>Stampa su</span>${[["qui", "💻 PC"], ["stazione", "🖨️ " + staDi()]].map(([k, t]) =>
+          `<button type="button" data-a="doveTel" data-d="${k}" class="${doveTel() === k ? "on" : ""}" aria-pressed="${doveTel() === k}">${esc(t)}</button>`).join("")}</div>` : ""}
+        <button data-a="stampaPdf">${em("📄")}Stampa PDF${staDi() ? ` · ${esc(doveTel() === "stazione" ? staDi() : "PC")}` : ""}</button>
         ${solaLettura() ? "" : `<button data-a="scansiona">${em("🖨️")}Collega stampante</button>`}
         ${solaLettura() ? "" : `<button data-a="registrazioni"><span class="em rec" aria-hidden="true">●</span> Registrazioni</button>`}
         <button data-a="esci">${em("🚪")}Chiudi sessione</button>
@@ -1758,7 +1787,7 @@
       const aperto = S.aperti.has(r.id);
       return `<div class="refw${["lab", "ecg", "img"].includes(r.tipo) ? " k-" + r.tipo : ""}"><button class="ref${r.pdf ? " conpdf" : ""}" data-a="referto" data-id="${esc(r.id)}" aria-expanded="${aperto}"><span class="r1"><span class="q">${esc(r.quando)}</span><span class="t">${esc(r.titolo)}</span>${r.nuovo ? `<span class="nuovo">nuovo</span>` : ""}</span>${
         aperto ? (r.testo ? `<div class="testo">${esc(r.testo)}</div>` : `<div class="manca">${r.lungo ? "Testo troppo lungo per il telefono: leggilo sul PC." : "Testo non ancora letto sul PC: aprilo una volta dal pannello (Esiti), poi è qui."}</div>`) : ""}</button>${
-        r.pdf ? `<button class="pdf" data-a="pdf" data-id="${esc(r.id)}" data-n="${Number(r.pdf) || 0}" ${S.occupato.has("pdf" + r.id) ? "disabled" : ""}>PDF</button>` : ""}</div>`;
+        r.pdf ? `<button class="prn" data-a="stampaRef" data-id="${esc(r.id)}" aria-label="Stampa il referto" ${S.stampa && !S.stampa.fine ? "disabled" : ""}>🖨️</button><button class="pdf" data-a="pdf" data-id="${esc(r.id)}" data-n="${Number(r.pdf) || 0}" ${S.occupato.has("pdf" + r.id) ? "disabled" : ""}>PDF</button>` : ""}</div>`;
     }).join("")}</div>` : "");
     return `${valori}${carta(altri)}${lab.length ? `<div class="lbl">Laboratorio</div>${carta(lab)}` : ""}${e.nota ? `<p class="piede">${esc(e.nota)}</p>` : ""}`;
   }
@@ -1784,7 +1813,24 @@
   // La stazione di stampa collegata al PC (il suo nome) e dove vanno i fogli:
   // la scelta del PC, o quella toccata qui per questo ordine.
   const staDi = () => (S.catalogo && S.catalogo.stampa && S.catalogo.stampa.stazione) || "";
-  const doveDi = (ep) => { const x = selDi(ep).dove; return x || (S.catalogo && S.catalogo.stampa && S.catalogo.stampa.dove) || "qui"; };
+  // La stampante predefinita DEL TELEFONO (⋯ → «Stampa su»), per PC associato: il PC o la
+  // stazione. Non scelta: quella del PC (il catalogo). Senza stazione: sempre il PC.
+  const DOVE = "psassist.ponte.dove.v1", doveMem = {};   // (doveMem: se la memoria del telefono non c'è, vale finché l'app è aperta)
+  function doveTel() {
+    if (!staDi()) return "qui";
+    const id = S.coppia && S.coppia.id;
+    let x = doveMem[id] || "";
+    try { x = x || (JSON.parse(localStorage.getItem(DOVE) || "null") || {})[id] || ""; } catch { /* solo quella del PC */ }
+    if (x === "qui" || x === "stazione") return x;
+    return S.catalogo && S.catalogo.stampa && S.catalogo.stampa.dove === "stazione" ? "stazione" : "qui";
+  }
+  function scegliDoveTel(d) {
+    const id = S.coppia && S.coppia.id, v = d === "stazione" ? "stazione" : "qui";
+    doveMem[id] = v;
+    try { const o = JSON.parse(localStorage.getItem(DOVE) || "null") || {}; o[id] = v; localStorage.setItem(DOVE, JSON.stringify(o)); } catch { /* solo in memoria */ }
+    render();
+  }
+  const doveDi = (ep) => selDi(ep).dove || doveTel();
   function doveHtml(p) {
     const nome = staDi();
     if (!nome) return "";
@@ -1999,7 +2045,7 @@
   let premuto = 0, rinviato = false, disegno = false, trascino = false;
   // le azioni che senza il PC non vanno
   // (l'ordine no: senza collegamento va in coda)
-  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "stampaPdfSta", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
+  const SERVE_PC = new Set(["valori", "pdf", "aggiornaLista", "stampaPdf", "stampaRef", "dfck", "dftogli", "csalva", "cricarica", "crileggi", "registrazioni", "zipLista", "zipScarica", "zipVia",
     "trileggi", "tconferma", "accetta"]);
   function render() {
     if (premuto || trascino) { rinviato = true; return; }
@@ -2162,7 +2208,7 @@
     // (aria-disabled e non disabled: un bottone disabled non riceve il tocco)
     if (b.getAttribute("aria-disabled") === "true") { if (b.id === "ordina" && selDi(S.vista.ep).esami.size && !selDi(S.vista.ep).q.trim()) fuocoSu("quesito"); return; }
     const a = b.dataset.a, ep = S.vista.ep;
-    if (a !== "menu" && S.menu) S.menu = false;
+    if (a !== "menu" && a !== "doveTel" && S.menu) S.menu = false;   // («Stampa su»: il menu resta aperto)
     if (a === "menu") { S.menu = !S.menu; render(); }
     else if (a === "riapri") riapri();
     else if (a === "pc") attivaPc(b.dataset.id);                 // passa a un altro PC della lista
@@ -2172,7 +2218,9 @@
     else if (a === "stacollega") collegaStazione();
     else if (a === "stachiudi") { S.stazione = null; render(); }
     else if (a === "dove") { const x = selDi(ep); x.dove = b.dataset.d === "stazione" ? "stazione" : "qui"; x.oid = ""; S.arma = null; render(); }
-    else if (a === "stampaPdf" || a === "stampaPdfSta") { S.pdfDove = a === "stampaPdfSta" ? "stazione" : "qui"; render(); $pdf.click(); }
+    else if (a === "doveTel") scegliDoveTel(b.dataset.d);
+    else if (a === "stampaPdf") { render(); $pdf.click(); }
+    else if (a === "stampaRef") stampaReferto(ep, b.dataset.id);
     else if (a === "stampaVia") { S.stampa = null; render(); }
     else if (a === "registrazioni") apriRegistrazioni();
     else if (a === "zipLista") caricaZip();
@@ -2203,7 +2251,12 @@
       if (S.scheda === "terapia") caricaTerapie(ep, !!S.terapie.get(ep));
       if (S.scheda === "richieste") caricaRistampe(ep);
     }
-    else if (a === "ristampa") ristampa(ep, b.dataset.id);
+    else if (a === "ristampa") {
+      const l = S.ristampe.get(ep), r = Array.isArray(l) ? l.find((x) => x.id === b.dataset.id) : null;
+      if (r && r.et > 0 && r.fo > 0) { S.ristApri = S.ristApri && S.ristApri.ep === ep && S.ristApri.id === r.id ? null : { ep, id: r.id }; render(); }
+      else ristampa(ep, b.dataset.id);
+    }
+    else if (a === "ristampaQ") ristampa(ep, b.dataset.id, ["etichette", "foglio"].includes(b.dataset.q) ? b.dataset.q : "tutto");
     else if (a === "trileggi") { if (S.tf && !S.tf.stato) S.tf = null; caricaTerapie(ep, false, true); }
     else if (a === "tnuovo") apriFarmaco(ep);
     else if (a === "tchiudi") { S.tf = null; render(); }

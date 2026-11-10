@@ -288,9 +288,10 @@ await tocca('[data-a="stachiudi"]');
 // (dopo «Collega» rilegge il catalogo del PC) — prima la scelta compariva solo
 // riaprendo l'app, e dal telefono non si poteva scegliere l'Infermeria
 await tocca('[data-a="menu"]');
-const menuSta = await finche(async () => { const t = await tel.locator(".menu").innerText().catch(() => ""); return /Stampa PDF in Infermeria/.test(t) ? t : ""; }, 10000) || "";
-check(/Stampa PDF sul PC/.test(menuSta) && /Stampa PDF in Infermeria/.test(menuSta),
-  `collegata, senza ricaricare: nel ⋯ del telefono «💻 Stampa PDF sul PC» e «🖨️ Stampa PDF in Infermeria» (got «${menuSta.replace(/\n+/g, " · ")}»)`);
+const menuSta = await finche(async () => { const t = await tel.locator(".menu .stdove").innerText().catch(() => ""); return /Infermeria/.test(t) ? t : ""; }, 10000) || "";
+check(/Stampa su/.test(menuSta) && /💻 PC/.test(menuSta) && /🖨️ Infermeria/.test(menuSta) && await tel.locator('.menu .stdove [data-d="qui"]').getAttribute("aria-pressed") === "true"
+  && await tel.locator('.menu [data-a="stampaPdf"]').count() === 1 && await tel.locator('.menu [data-a="stampaPdfSta"]').count() === 0,
+  `collegata, senza ricaricare: nel ⋯ del telefono «Stampa su [💻 PC] [🖨️ Infermeria]» (il PC, com'è sul PC) e una sola «📄 Stampa PDF» (got «${menuSta.replace(/\n+/g, " · ")}»)`);
 await tocca('[data-a="menu"]');   // (lo richiude)
 const imp = await ctx.newPage();
 await imp.goto(EXTURL("portale.html"));
@@ -352,20 +353,25 @@ check(/Etichette/.test(righeSta) && /A4/.test(righeSta) && /Stampato su Zebra In
 await shot(pSta, "stazione-4-pagina-collegata");
 
 // ===========================================================================
-sezione("«Stampa PDF» dal telefono in Infermeria: alla stazione, non al PC");
+sezione("⋯ → «Stampa su» Infermeria, poi «Stampa PDF» dal telefono: alla stazione, non al PC");
 await tel.reload();
 await aspettaTel(/ROSSI MARIO/, 30000);
 await tocca('[data-a="menu"]');
-await finche(async () => (await tel.locator('.menu [data-a="stampaPdfSta"]').count()) > 0, 10000);
+await finche(async () => (await tel.locator('.menu .stdove [data-d="stazione"]').count()) > 0, 10000);
+await tocca('.menu .stdove [data-d="stazione"]');
+const memDove = await tel.evaluate(() => JSON.parse(localStorage.getItem("psassist.ponte.dove.v1") || "null"));
+check(await tel.locator('.menu .stdove [data-d="stazione"]').getAttribute("aria-pressed") === "true" && /Stampa PDF · Infermeria/.test(await tel.locator('.menu [data-a="stampaPdf"]').innerText())
+  && !!memDove && Object.values(memDove).join() === "stazione",
+  `«Stampa su» → «🖨️ Infermeria»: il menu resta aperto, la voce dice «Stampa PDF · Infermeria», e la scelta sta sul telefono per questo PC (got ${JSON.stringify(memDove)})`);
 const staP = lavori("sta").length, pcP = lavori("pc").length;
 const pdfSta = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n");
-const [fcSta] = await Promise.all([tel.waitForEvent("filechooser", { timeout: 8000 }), tocca('.menu [data-a="stampaPdfSta"]')]);
+const [fcSta] = await Promise.all([tel.waitForEvent("filechooser", { timeout: 8000 }), tocca('.menu [data-a="stampaPdf"]')]);
 await fcSta.setFiles({ name: "foglio.pdf", mimeType: "application/pdf", buffer: pdfSta });
 const cartaPdf = await finche(async () => { const t = await tel.locator(".stampa").innerText().catch(() => ""); return /Stampato in Infermeria|NON stampato|Non so se/.test(t) ? t : ""; }, 60000) || "";
 await finche(() => lavori("sta").length > staP, 10000);
 const nuoviSta = lavori("sta").slice(staP);
 check(/Stampato in Infermeria/.test(cartaPdf) && nuoviSta.length === 1 && nuoviSta[0].tipo === "a4" && nuoviSta[0].stampante === "HP Infermeria A4" && lavori("pc").length === pcP,
-  `«🖨️ Stampa PDF in Infermeria»: un foglio sull'A4 dell'infermeria, niente sulle stampanti del PC, e il telefono lo dice (got «${cartaPdf.replace(/\n+/g, " · ")}»; ${JSON.stringify(nuoviSta.map((x) => `${x.tipo}→${x.stampante}`))})`);
+  `«📄 Stampa PDF» con «Stampa su» Infermeria: un foglio sull'A4 dell'infermeria, niente sulle stampanti del PC, e il telefono lo dice (got «${cartaPdf.replace(/\n+/g, " · ")}»; ${JSON.stringify(nuoviSta.map((x) => `${x.tipo}→${x.stampante}`))})`);
 await tocca('[data-a="stampaVia"]').catch(() => {});
 
 // ===========================================================================
@@ -413,11 +419,18 @@ check(!!(await finche(async () => (await righeRis()).join() === confermate().joi
 await shot(tel, "stazione-5b-richieste-fatte");
 const ristampati = (pre) => ordini().then((l) => l.filter((x) => String(x.id).startsWith("ris") && !pre.has(x.id)));
 const deiRid = (x, rid) => !!x.stampa && x.stampa.jobs.length >= 2 && x.stampa.jobs.every((j) => new RegExp(`RICHIESTA_ID=${rid}(&|$)`).test(j.url));
+// la scelta «Stampa [PC] [Infermeria]» sopra «Richieste fatte» (fuori dalla barra dell'ordine): si vede quale è scelta
+const sceltaStile = () => tel.locator(".lbl + .dove button").evaluateAll((l) => l.map((b) => ({ d: b.dataset.d, on: b.classList.contains("on"), bg: getComputedStyle(b).backgroundColor, h: b.getBoundingClientRect().height })));
+const stile = (st, d) => st.length === 2 && st.filter((x) => x.on).length === 1 && st.find((x) => x.on).d === d && st.find((x) => x.on).bg !== st.find((x) => !x.on).bg && st.every((x) => x.h >= 44);
+const st0 = await sceltaStile();
+check(stile(st0, "stazione"), `«Stampa PC · Infermeria» sopra «Richieste fatte»: uno solo scelto (come il PC: Infermeria), con uno stile suo, diverso dall'altro, da 44 px (got ${JSON.stringify(st0)})`);
 // sul PC (la richiesta che non è del pannello), con un doppio tocco: una ristampa sola
 await tocca('.dove [data-d="qui"]');
+check(stile(await sceltaStile(), "qui"), "toccato «PC»: la scelta si sposta lì, e si vede");
 prima = await idsOra();
 const pcR = lavori("pc").length, staR = lavori("sta").length;
-await tel.locator('[data-a="ristampa"][data-id="699999"]').dblclick();
+await tocca('[data-a="ristampa"][data-id="699999"]');
+await tel.locator('[data-a="ristampaQ"][data-id="699999"][data-q="tutto"]').dblclick();
 const risQui = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || "")), 60000);
 await sospendi(2500);
 check(!!risQui && /^Stampato su /.test(risQui.pubblico.titolo) && (await ristampati(prima)).length === 1 && risQui.dest === "qui" && deiRid(risQui, 699999),
@@ -428,9 +441,11 @@ check(/Stampato su/.test(await aspettaTel(/Stampato su/, 15000)), "e il telefono
 // in Infermeria (un'altra richiesta, quella di un ordine)
 const altra = confermate().find((r) => r !== "699999");
 await tocca('.dove [data-d="stazione"]');
+check(stile(await sceltaStile(), "stazione"), "toccato «Infermeria»: la scelta torna lì, e si vede");
 prima = await idsOra();
 const pcR2 = lavori("pc").length, staR2 = lavori("sta").length;
-await tel.locator(`[data-a="ristampa"][data-id="${altra}"]`).click();
+await tocca(`[data-a="ristampa"][data-id="${altra}"]`);
+await tocca(`[data-a="ristampaQ"][data-id="${altra}"][data-q="tutto"]`);
 const risSta = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || "")), 60000);
 await sospendi(2500);
 check(!!risSta && risSta.pubblico.titolo === "Stampato in Infermeria" && risSta.dest === "stazione" && deiRid(risSta, altra),
@@ -438,6 +453,50 @@ check(!!risSta && risSta.pubblico.titolo === "Stampato in Infermeria" && risSta.
 check(lavori("sta").length === staR2 + risSta.stampa.jobs.length && lavori("pc").length === pcR2 && (await ristampati(prima)).length === 1,
   "sulle stampanti della stazione, una volta; niente sul PC del medico");
 check(/Stampato in Infermeria/.test(await aspettaTel(/Stampato in Infermeria/, 15000)), "e il telefono dice «Stampato in Infermeria»");
+
+
+// ===========================================================================
+sezione("dal telefono, in Infermeria: un referto con 🖨️, e «Ristampa» solo le etichette");
+{
+  // un referto PDF salvato sul PC per ROSSI: la TC (il suo id è quello del gestionale simulato)
+  const ID_TC = "cccc3333-0000-0000-0000-000000000003";
+  const pdfRef = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n");
+  await sw.evaluate(([k, data]) => chrome.storage.local.set({ [k]: { ep: "999001", data, ts: Date.now() } }), ["ref:" + ID_TC, pdfRef.toString("base64")]);
+  await tel.reload();
+  await aspettaTel(/ROSSI MARIO/, 30000);
+  await tocca('[data-a="paz"]:has-text("ROSSI MARIO")');
+  await aspettaTel(/Richieste/, 10000);
+  await tocca('[data-a="scheda"][data-s="esiti"]');
+  await aspettaTel(/TC ENCEFALO/, 20000);
+  const prn = tel.locator('.refw:has-text("TC ENCEFALO") .prn');
+  await finche(async () => (await prn.count()) === 1, 15000);
+  const staA = lavori("sta").length, pcA = lavori("pc").length;
+  await prn.click();
+  const cartaRef = await finche(async () => { const t = await tel.locator(".stampa").innerText().catch(() => ""); return /Stampato in Infermeria|NON stampato|Non so se/.test(t) ? t : ""; }, 60000) || "";
+  await finche(() => lavori("sta").length > staA, 10000);
+  await sospendi(1500);
+  const nuoviRef = lavori("sta").slice(staA);
+  check(/Stampato in Infermeria/.test(cartaRef) && nuoviRef.length === 1 && nuoviRef[0].tipo === "a4" && nuoviRef[0].stampante === "HP Infermeria A4" && nuoviRef[0].byte === pdfRef.length && lavori("pc").length === pcA,
+    `🖨️ sul referto, con «Stampa su» Infermeria: un foglio sull'A4 dell'infermeria (la copia del PC, intera), niente sulle stampanti del PC (got «${cartaRef.replace(/\n+/g, " · ")}»; ${JSON.stringify(nuoviRef.map((x) => `${x.tipo}→${x.stampante}`))})`);
+  await tocca('[data-a="stampaVia"]').catch(() => {});
+  await sw.evaluate((k) => chrome.storage.local.remove(k), "ref:" + ID_TC);
+
+  // «Ristampa» → «🏷️ Etichette»: solo i lavori dell'etichettatrice, in Infermeria
+  await tocca('[data-a="scheda"][data-s="richieste"]');
+  const altra2 = confermate().find((r) => r !== "699999");
+  await finche(async () => (await tel.locator(`[data-a="ristampa"][data-id="${altra2}"]`).count()) === 1, 15000);
+  prima = await idsOra();
+  const staE = lavori("sta").length, pcE = lavori("pc").length;
+  await tocca(`[data-a="ristampa"][data-id="${altra2}"]`);
+  await tocca(`[data-a="ristampaQ"][data-id="${altra2}"][data-q="etichette"]`);
+  const risEt = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "avviso" && /^Stampato/.test(x.pubblico?.titolo || "")), 60000);
+  await sospendi(2500);
+  const nuoviEt = lavori("sta").slice(staE);
+  check(!!risEt && risEt.dest === "stazione" && risEt.stampa.jobs.length === nuoviEt.length && nuoviEt.length >= 1 && tipi(nuoviEt) === "etichette" && lavori("pc").length === pcE && (await ristampati(prima)).length === 1,
+    `«Ristampa» → «🏷️ Etichette» in Infermeria: solo lavori dell'etichettatrice, nessun foglio A4, niente sul PC (got ${JSON.stringify(nuoviEt.map((x) => `${x.tipo}→${x.stampante}`))})`);
+  check(/Stampato in Infermeria/.test(await aspettaTel(/Stampato in Infermeria/, 15000)), "e il telefono dice «Stampato in Infermeria»");
+  await tocca('[data-a="stampaVia"]').catch(() => {});
+}
 
 // ===========================================================================
 sezione("la risposta della stazione che non arriva: «forse stampate», mai due volte");
@@ -497,7 +556,8 @@ await tocca('[data-a="scheda"][data-s="richieste"]');
 await tocca('.dove [data-d="stazione"]');
 prima = await idsOra();
 const pcR3 = lavori("pc").length;
-await tel.locator('[data-a="ristampa"][data-id="699999"]').click();
+await tocca('[data-a="ristampa"][data-id="699999"]');
+await tocca('[data-a="ristampaQ"][data-id="699999"][data-q="tutto"]');
 const risMuta = await finche(async () => (await ristampati(prima)).find((x) => x.stato === "stampa"), 60000);
 check(!!risMuta && risMuta.pubblico.titolo === "Infermeria non risponde" && risMuta.dest === "stazione" && risMuta.fogli.every((f) => f.stato === "fallito" && f.nonRisponde),
   `la stazione spenta: «Infermeria non risponde», nessun foglio arrivato (got ${JSON.stringify(risMuta && risMuta.pubblico)})`);

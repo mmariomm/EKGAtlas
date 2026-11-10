@@ -250,6 +250,8 @@ async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null,
     },
     remove: async (k) => { for (const x of [].concat(k)) delete obj[x]; },
   });
+  // (il motore della stampa di bg.js, finto: quello che gli arriva, e che l'id è già stato visto)
+  const stampate = new Map();
   const davanti = { id: 7, url: GEST + "menuPsoEpisodio.do?EPISODIO_ID=1", active: true, windowId: 1, index: 0 };
   const chrome = {
     storage: { local: area(locale, "local"), session: area(sessione, "session"), onChanged: { addListener: (f) => ascolta.cambi.push(f) } },
@@ -271,6 +273,16 @@ async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null,
     setTimeout, clearTimeout, setInterval: () => 0, __salto: 0,
     ordLeggi: async () => sessione.ordini || [], sulGestionale: (u) => String(u || "").startsWith(GEST), leggibileOrd: () => true,
     corto: (s, n = 160) => String(s == null ? "" : s).slice(0, n),
+    KEY: (id) => "ref:" + id, REF_TTL: 6e5,
+    stampaScelte: async () => ({ attiva: true }),
+    stampaTelVista: async (rid) => stampate.has(rid),
+    stampaDalTel: async (rid, pdf, dest, nome) => {
+      if (stampate.has(rid)) return { ok: true, gia: true };
+      stampate.set(rid, { pdf, dest, nome });
+      (sessione.ordini = sessione.ordini || []).push({ id: "pdftel" + rid, paziente: nome, stato: "avviso", pubblico: { titolo: "Stampato su HP A4", testo: "" },
+        fogli: [{ stato: "stampato", stampante: "HP A4" }] });
+      return { ok: true, id: "pdftel" + rid };
+    },
   });
   vm.runInContext('const PONTE_HOST_FISSO = "https://ponte.example.org";' + "\nDate.now = ((v) => () => v() + globalThis.__salto)(Date.now);", ctx);
   vm.runInContext(EXT("ponte-cripto.js"), ctx);
@@ -280,7 +292,7 @@ async function pcFinto({ sessione = {}, locale = {}, scheda = null, gest = null,
   await sospendi(20);
   const presa = () => prese.at(-1);
   const pc = {
-    ctx, ev, prese, presa, comandi, schede, tolte, sessione, locale,
+    ctx, ev, prese, presa, comandi, schede, tolte, sessione, locale, stampate,
     pt: () => ev("pt"),
     chiudiScheda: (id) => { for (const f of ascolta.via) f(id); },
     salta: (ms) => { ctx.__salto += ms; },
@@ -720,6 +732,43 @@ await blocco(async () => {
   }
   check(tutte, "ogni scrittura del gestionale è rifiutata, grezza nel canale: «Questo PC è in sola lettura»");
   check(!pc.comandi.some((m) => scritture.some((s) => s.cmd === m.cmd)), "…e nessuna scrittura raggiunge una scheda del gestionale");
+});
+// «🖨️» su un referto (stampaReferto): STAMPA, non scrive: passa anche dal muro del mini; ma solo
+// un referto offerto al telefono in questa sessione (la stessa lista di quando lo apre), e una stampa per numero
+await blocco(async () => {
+  const pdf64 = Buffer.from("%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n").toString("base64");
+  const pc = await pcFinto({ solaLettura: true, locale: { "ref:r1": { ep: "1", data: pdf64, ts: Date.now() }, "ref:altro": { ep: "1", data: pdf64, ts: Date.now() } },
+    scheda: (m) => (m.cmd === "esiti" ? { ok: true, dati: { referti: [{ id: "r1", pdf: true }] } } : { ok: true, dati: [] }) });
+  const r1 = await pc.pagina({ t: "ponteAssocia" });
+  await sospendi(30);
+  const t = await telFinto(pc, kDalQr(r1.qr), DEV);
+  await t.manda({ id: 1, cmd: "ciao" });
+  const rispo = async (id, o) => (await t.manda({ id, cmd: "stampaReferto", ...o })).find((x) => x.re === id);
+  // senza che gli esiti l'abbiano offerto: no
+  const prima = await rispo(2, { ep: "1", ref: "r1", rid: "ridRef0001", dest: "qui" });
+  check(prima && prima.ok === false && !prima.solaLettura && !pc.stampate.size, `un referto non ancora offerto al telefono: rifiutato, niente stampato (${prima && prima.errore})`);
+  const esiti = await t.manda({ id: 3, cmd: "esiti", ep: "1" });
+  check(esiti.some((x) => x.re === 3 && x.ok && x.dati.referti[0].pdf > 0), "gli esiti offrono il referto r1");
+  // uno non elencato (c'è la copia sul PC, ma non è fra quelli offerti): no
+  const fuori = await rispo(4, { ep: "1", ref: "altro", rid: "ridRef0002", dest: "qui" });
+  check(fuori && fuori.ok === false && !fuori.solaLettura && !pc.stampate.size, `un referto non elencato in questa sessione: rifiutato (${fuori && fuori.errore})`);
+  // di un altro episodio: no
+  const altroEp = await rispo(5, { ep: "2", ref: "r1", rid: "ridRef0003", dest: "qui" });
+  check(altroEp && altroEp.ok === false && !pc.stampate.size, "lo stesso referto con un altro episodio: rifiutato");
+  // l'elencato: passa il muro del mini, un foglio, i byte sono la copia salvata sul PC
+  const bene = await rispo(6, { ep: "1", ref: "r1", rid: "ridRef0004", dest: "qui" });
+  check(bene && bene.ok === true && !bene.solaLettura && bene.dati.tono === "ok" && pc.stampate.size === 1, `elencato: passa dal muro del mini e stampa (${JSON.stringify(bene)})`);
+  const st = pc.stampate.get("ridRef0004");
+  check(st && st.pdf === pdf64 && st.dest === "qui" && st.nome === "Referto dall'iPhone", "i byte sono quelli della copia sul PC (non del telefono), col nome «Referto dall'iPhone»");
+  // lo stesso numero rimandato: com'è andata, nessuna seconda stampa
+  const ancora = await rispo(7, { ep: "1", ref: "r1", rid: "ridRef0004", dest: "qui" });
+  check(ancora && ancora.ok === true && pc.stampate.size === 1, "lo stesso numero rimandato: nessuna seconda stampa");
+  // un numero storto, una destinazione che non c'è: niente
+  const storto = await rispo(8, { ep: "1", ref: "r1", rid: "x", dest: "qui" });
+  const senzaSta = await rispo(9, { ep: "1", ref: "r1", rid: "ridRef0005", dest: "stazione" });
+  check(storto && storto.ok === false && senzaSta && senzaSta.ok === false && /stazione/i.test(senzaSta.errore) && pc.stampate.size === 1, "un numero storto, o la stazione che non è collegata: rifiutato, niente stampato");
+  const reg = pc.pt().registro.map((x) => x.testo).join(" | ");
+  check(/iPhone · un referto stampato su HP A4/.test(reg) && !/ROSSI|ENCEFALO|r1|altro/.test(reg), `il registro dice «un referto stampato», senza testo del paziente (${reg})`);
 });
 // Un PC NORMALE (non sola lettura): le scritture passano come sempre (controprova)
 await blocco(async () => {

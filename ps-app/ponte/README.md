@@ -138,7 +138,15 @@ sessione. Vedi:
 - **Richieste fatte** (in fondo alle Richieste) — tutte le richieste che la pagina del paziente sa
   stampare, anche quelle non fatte da PS Assist, ognuna con **Ristampa**: etichette e foglio, dove
   dice «Stampa: PC · Infermeria», con le parole di un ordine («Stampato su …», «Infermeria non
-  risponde»). Un doppio tocco è una ristampa sola. Solo stampa: niente Conferma, niente Registra.
+  risponde»). Se la richiesta ha etichette **e** foglio, il tocco apre la scelta **🏷️ Etichette ·
+  📄 Foglio · Entrambi** (`quali`); con un genere solo stampa subito. Un doppio tocco è una ristampa
+  sola. Solo stampa: niente Conferma, niente Registra.
+- **Stampa su** (⋯, con una stazione collegata) — la stampante predefinita **del telefono**,
+  **[💻 PC] [🖨️ Infermeria]**, per ogni PC associato (sul telefono, `psassist.ponte.dove.v1`); non
+  scelta, segue quella del PC. Vale per «Stampa PDF» e per il 🖨️ dei referti; un ordine o una
+  ristampa la prendono come partenza (si cambia per quello). Senza stazione la riga non c'è.
+- **🖨️ su un referto PDF** (Esiti) — stampa quel referto, dalla copia salvata sul PC, dove dice
+  «Stampa su» (comando `stampaReferto`). Una stampa alla volta, nella stessa carta di «Stampa PDF».
 - **Stampa PDF** (⋯) — un PDF del telefono esce dalla stampante A4 del PC, con la stampa
   automatica (mai un dialogo: davanti al PC può non esserci nessuno; senza, «Sul PC la stampa
   automatica non è impostata»). Mentre va, «Invio… 40%»; poi le parole del PC: «Stampato su HP
@@ -347,7 +355,7 @@ ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un si
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
 `aggiornaValori(ep)`, `richieste` (il catalogo; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
-{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `accetta(k | ep, rq)`, `ristampe(ep)`, `ristampa(ep, rid, oid, dest?)`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stazioneCollega(sta, nome)`,
+{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `accetta(k | ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
 più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
 `ordineNuovo` come «Conferma e stampa», col numero `"tel" + oid` (l'`oid` lo fa il telefono quando
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),
@@ -424,6 +432,13 @@ del service worker finché il foglio non è partito (sul disco va solo il file t
 di stampa, come per ogni foglio); un riavvio a metà lo perde, e il foglio non parte. Finito, nel
 giornale resta «PDF dall'iPhone» con l'esito, senza «Ristampa». La risposta all'ultimo pezzo arriva
 a foglio stampato (fino a 110 secondi): le parole sono quelle di `pubblico`.
+
+**Un referto da stampare.** `stampaReferto` `{ep, ref, rid, dest}` stampa un referto già offerto al
+telefono in questa sessione (la stessa lista di `pdf`: `s.pdf`), dalla **copia salvata sul PC**, mai da
+byte mandati dal telefono. Stesse regole di `stampa` per la destinazione (la stazione collegata, o la
+stampa automatica di questo PC), stesso motore (`stampaDalTel`, nome «Referto dall'iPhone») e stesso
+giornale: lo stesso `rid` rimandato risponde com'è andata e non stampa di nuovo. È ammesso anche dalla
+build mini (stampa, non scrive). Il registro dice «iPhone · un referto stampato su …», senza testo del paziente.
 
 **Gli ordini, raccontati.** Il service worker guarda passare gli ordini del telefono in `ordini`
 (`storage.session`) e li racconta con le parole che `bg.js` scrive in ogni record (`pubblico:

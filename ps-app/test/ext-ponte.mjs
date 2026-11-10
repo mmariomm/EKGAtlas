@@ -1368,14 +1368,108 @@ check(/etichette/.test(rigaTxt) && /lista esami/.test(rigaTxt) && /Ristampa/.tes
 await shot(tel, "tel-richieste-fatte");
 // «Ristampa»: un doppio tocco è una ristampa sola (al PC arriva un comando solo)
 await sw.evaluate(() => { self.__ris = []; self.__risVera = ponteRistampa; globalThis.ponteRistampa = (d) => { self.__ris.push(d.rid); return self.__risVera(d); }; });
-await tel.locator('[data-a="ristampa"][data-id="699999"]').dblclick();
+await tocca(tel, '[data-a="ristampa"][data-id="699999"]');
+check(await tel.locator('.rist:has([data-id="699999"]) .quali [data-a="ristampaQ"]').allInnerTexts().then((l) => l.join("|")) === "🏷️ Etichette|📄 Foglio|Entrambi" && !(await sw.evaluate(() => self.__ris)).length,
+  "«Ristampa» su una richiesta con etichette E foglio: il primo tocco non stampa, apre «🏷️ Etichette · 📄 Foglio · Entrambi»");
+await tel.locator('[data-a="ristampaQ"][data-id="699999"][data-q="tutto"]').dblclick();
 await finche(async () => (await sw.evaluate(() => self.__ris)).length >= 1, 10000);
 await sospendi(800);
-check((await sw.evaluate(() => self.__ris)).join() === "699999", "«Ristampa», doppio tocco: al PC arriva un comando solo, per quella richiesta");
+check((await sw.evaluate(() => self.__ris)).join() === "699999", "«Ristampa» → «Entrambi», doppio tocco: al PC arriva un comando solo, per quella richiesta");
 // (qui la stampa automatica non è impostata: lo dice, niente di stampato, niente dialogo)
 check(/La stampa automatica non è impostata|stampa automatica non è impostata/.test(await aspettaTel(tel, /stampa automatica non è impostata/, 15000)) && !(await sw.evaluate(() => chrome.storage.session.get("ordini").then((o) => (o.ordini || []).some((x) => String(x.id).startsWith("ris"))))),
   "senza la stampa automatica sul PC: il telefono lo dice com'è («Ristampa non partita»), e sul PC nessuna stampa nata");
 await sw.evaluate(() => { globalThis.ponteRistampa = self.__risVera; });
+
+// ===========================================================================
+sezione("stampare dal telefono: un referto con 🖨️, e «Ristampa» solo etichette, solo foglio, o entrambi");
+{
+  // il finto aiutante di stampa (come più sotto): annota i fogli invece di stamparli
+  const FINTO = join("/tmp", "psa-ponte-finto-ref-" + process.pid);
+  mkdirSync(FINTO, { recursive: true });
+  writeFileSync(join(FINTO, "config.json"), JSON.stringify({ stampanti: ["Zebra ZD421", "HP LaserJet A4"], predefinita: "HP LaserJet A4" }));
+  const lavori = () => (existsSync(join(FINTO, "lavori.jsonl")) ? readFileSync(join(FINTO, "lavori.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []).filter((x) => x.tipo);
+  const lanciatore = join(FINTO, "ospite.sh");
+  writeFileSync(lanciatore, `#!/bin/sh\nPSA_FINTO='${FINTO}' exec '${process.execPath}' '${join(root, "test/ospite-finto.mjs")}' "$@"\n`);
+  chmodSync(lanciatore, 0o755);
+  mkdirSync(join(PROFILE, "NativeMessagingHosts"), { recursive: true });
+  const manifesto = join(PROFILE, "NativeMessagingHosts", "it.psassist.stampa.json");
+  writeFileSync(manifesto, JSON.stringify({ name: "it.psassist.stampa", description: "finto", path: lanciatore, type: "stdio", allowed_origins: [`chrome-extension://${extId}/`] }));
+  await sw.evaluate(() => chrome.storage.local.set({ stampa: { attiva: true, etichette: "Zebra ZD421", a4: "HP LaserJet A4" } }));
+  const tipi = (l) => [...new Set(l.map((x) => x.tipo))].sort().join();
+
+  // il menu ⋯, senza una stazione di stampa: una voce «Stampa PDF», niente «Stampa su»
+  await tocca(tel, '[data-a="menu"]');
+  check(await tel.locator('.menu [data-a="stampaPdf"]').count() === 1 && /📄 Stampa PDF$/.test((await tel.locator('.menu [data-a="stampaPdf"]').innerText()).trim())
+    && await tel.locator(".menu .stdove").count() === 0 && !/Stampa su/.test(await tel.locator(".menu").innerText()),
+    "senza una stazione: il ⋯ ha una sola voce «📄 Stampa PDF» e nessuna riga «Stampa su»");
+  await tocca(tel, '[data-a="menu"]');
+
+  // un referto PDF salvato sul PC, e il 🖨️ accanto
+  await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+  await aspettaTel(tel, /TC ENCEFALO/, 20000);
+  const idRef = await tel.locator('.ref:has-text("TC ENCEFALO")').first().getAttribute("data-id");
+  const pdf = refertoRxPdf(["RADIOLOGIA - prova", "XKJW2290 REFERTO DA STAMPARE"]);
+  await sw.evaluate(([k, ep, data]) => chrome.storage.local.set({ [k]: { ep, data, ts: Date.now() } }), ["ref:" + idRef, "999001", pdf.toString("base64")]);
+  await tocca(tel, '[data-a="indietro"]'); await aspettaTel(tel, /BIANCHI ANNA/);
+  { const n = inoltrati.length; await tocca(tel, '.paz[data-ep="999001"]'); await aspettaTel(tel, /TC ENCEFALO/, 20000); await finche(() => inoltrati.length >= n + 2, 15000); await sospendi(500); }
+  await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+  const prn = tel.locator('.refw:has-text("TC ENCEFALO") .prn');
+  const box = await prn.boundingBox().catch(() => null);
+  check(await prn.count() === 1 && await prn.getAttribute("aria-label") === "Stampa il referto" && box && box.width >= 44 && box.height >= 44, `accanto al referto col PDF, un 🖨️ «Stampa il referto» da 44 px (${box && Math.round(box.width)}×${box && Math.round(box.height)})`);
+  const l0 = lavori().length;
+  await prn.dblclick();
+  const carta = async (re, ms = 40000) => (await finche(async () => re.test(await tel.locator(".stampa").innerText().catch(() => "")), ms)) ? tel.locator(".stampa").innerText() : "";
+  const fatto = await carta(/Stampato su/);
+  await sospendi(1500);
+  const l1 = lavori().slice(l0);
+  check(/Stampato su HP LaserJet A4/.test(fatto) && l1.length === 1 && l1[0].tipo === "a4" && l1[0].stampante === "HP LaserJet A4" && l1[0].byte === pdf.length,
+    `🖨️ sul referto, con un doppio tocco: UN foglio sull'A4 del PC, intero, e la carta dice «Stampato su HP LaserJet A4» (${JSON.stringify(l1.map((x) => [x.tipo, x.stampante, x.byte]))} · ${fatto.replace(/\s+/g, " ")})`);
+  const reg = (await registroPonte()).split("\n").filter((x) => /referto (non )?stampato/.test(x));   // (le altre note del registro sono di altre prove)
+  check(reg.length === 1 && /^iPhone · un referto stampato su HP LaserJet A4$/.test(reg[0]), `il registro del ponte dice «un referto stampato su …», senza testo del paziente (${JSON.stringify(reg)})`);
+  const rec = (await sw.evaluate(() => chrome.storage.session.get("ordini").then((o) => o.ordini || []))).find((x) => /^pdftel/.test(x.id));
+  check(!!rec && rec.paziente === "Referto dall'iPhone", "nel giornale delle stampe del PC: «Referto dall'iPhone»");
+  // un referto che il PC non ha più: la carta lo dice, niente stampato
+  await tocca(tel, '[data-a="stampaVia"]');
+  await sw.evaluate((k) => chrome.storage.local.remove(k), "ref:" + idRef);
+  await prn.click();
+  const perso = await carta(/NON stampato|non è più|non disponibile/i, 15000);
+  check(/Il PDF non è più sul PC|NON stampato/.test(perso) && lavori().length === l0 + 1, `senza più la copia sul PC: la carta lo dice, niente stampato (${perso.replace(/\s+/g, " ")})`);
+  await tocca(tel, '[data-a="stampaVia"]');
+
+  // «Ristampa»: solo foglio, solo etichette, entrambi
+  await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
+  await finche(async () => (await tel.locator('.rist [data-a="ristampa"]').count()) >= 2, 15000);
+  const ids = await tel.locator('.rist [data-a="ristampa"]').evaluateAll((l) => l.map((b) => b.dataset.id));
+  await tocca(tel, `[data-a="ristampa"][data-id="${ids[0]}"]`);
+  await tocca(tel, `[data-a="ristampa"][data-id="${ids[1]}"]`);
+  check(await tel.locator(".quali").count() === 1 && await tel.locator(`.rist:has([data-id="${ids[1]}"]) .quali`).count() === 1, "toccando un'altra riga, la scelta della prima si chiude: ne resta una sola aperta");
+  const stampa = async (q, re) => {
+    const n = lavori().length;
+    await tocca(tel, `[data-a="ristampaQ"][data-id="${ids[1]}"][data-q="${q}"]`);
+    await finche(async () => lavori().length > n, 60000);
+    await sospendi(1500);
+    const nuovi = lavori().slice(n);
+    await tocca(tel, '[data-a="stampaVia"]').catch(() => {});
+    await tocca(tel, `[data-a="ristampa"][data-id="${ids[1]}"]`).catch(() => {});
+    return nuovi;
+  };
+  const f = await stampa("foglio", /foglio/);
+  check(f.length >= 1 && tipi(f) === "a4", `«📄 Foglio»: solo fogli A4, nessuna etichetta (${JSON.stringify(f.map((x) => [x.tipo, x.stampante]))})`);
+  const e = await stampa("etichette", /etichette/);
+  check(e.length >= 1 && tipi(e) === "etichette", `«🏷️ Etichette»: solo etichette, nessun foglio A4 (${JSON.stringify(e.map((x) => [x.tipo, x.stampante]))})`);
+  const t = await stampa("tutto", /tutto/);
+  check(t.length === f.length + e.length && tipi(t) === "a4,etichette", `«Entrambi»: le une e gli altri (${t.length} = ${f.length} + ${e.length})`);
+  // (sul PC il contatore delle richieste dice quanti di ognuno: un telefono vecchio non lo sa e stampa tutto)
+  const ris = (await sw.evaluate(() => chrome.storage.session.get("ordini").then((o) => o.ordini || []))).filter((x) => String(x.id).startsWith("ris"));
+  const riass = ris.map((x) => (x.stampa && x.stampa.riassunto) || "");
+  check(ris.length === 3 && riass.some((x) => /^Ristampa foglio /.test(x)) && riass.some((x) => /^Ristampa etichette /.test(x)) && riass.some((x) => /^Ristampa (?!foglio|etichette)/.test(x)),
+    `tre ristampe nel giornale, ognuna dice che cosa: «Ristampa foglio …», «Ristampa etichette …», «Ristampa …» (${JSON.stringify(riass)})`);
+
+  // ripulito: la stampa automatica com'era, nessun foglio vecchio
+  await sw.evaluate(() => Promise.all([chrome.storage.local.remove(["stampa", "stampaEsito"]), chrome.storage.session.set({ ordini: [] })]));
+  rmSync(manifesto, { force: true });
+  rmSync(FINTO, { recursive: true, force: true });
+}
 delete A.state.richieste[699999]; delete A.state.allocated[699999];
 
 // ===========================================================================
