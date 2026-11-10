@@ -762,6 +762,8 @@ async function scenarioConfirmPostFails(browser) {
     check(scen, mock.state.richieste[rid].confirmed === false, "la richiesta resta non confermata");
     check(scen, /Non confermata/.test(ambra) && /tocca per il carrello/.test(ambra) && (await $panel(page, TONO("warn")).count()) === 1,
       `pill ambra «Non confermata · tocca per il carrello» (got: ${ambra})`);
+    // la Conferma è partita: prima di rifarla, le sue richieste — non «premi tu Conferma» come se niente fosse
+    check(scen, /guarda le sue richieste/.test(ambra), `e prima del carrello, le sue richieste (got: ${ambra})`);
     const testi = (await registrato(page)).testi;
     check(scen, !testi.some((t) => /Confermata|confermat[ia] \d/.test(t)), `mai verde, mai «Confermata» (got: ${testi.slice(-3).join(" | ")})`);
     const conferme = mock.state.requests.filter((q) => q.method === "POST" && (q.params.ccsForm || "").startsWith("Prestazioni"));

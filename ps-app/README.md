@@ -722,8 +722,9 @@ lette stanno in `sessionStorage` (`smart.giro.v1`) e muoiono con lei.
    il carrello, niente — il pannello legge la pagina del paziente (solo letture, mai un invio),
    e se non la elenca ancora la rilegge dopo 2, 4 e 8 secondi: il gestionale può metterci un
    po'. Se nemmeno così la richiesta risulta, la striscia è **ambra**, «Non confermata ·
-   tocca per il carrello», mai verde. Niente viene riconfermato da solo: un tocco apre il
-   carrello, e lì decidi tu.
+   guarda le sue richieste; se non c'è, tocca per il carrello», mai verde: la Conferma è
+   partita, quindi prima di rifarla guarda le sue richieste (**⋯ → Stampa le richieste**) — se
+   c'è, **Ristampa**. Niente viene riconfermato da solo: un tocco apre il carrello, e lì decidi tu.
    **Nessuna richiesta dimenticata.** Col carrello finito — prima della conferma in sottofondo, e
    alla fine di un giro in revisione — il pannello annota la richiesta — solo numeri:
    richiesta, episodio, ora, quanti esami; mai un nome — e la tiene d'occhio: se dopo **2
@@ -2213,8 +2214,11 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
    500, il carrello che ricompare, il tempo scaduto, la cornice sparita: «incerta». Allora si
    legge la pagina del paziente (GET, mai un invio) e, se non la elenca ancora, la si rilegge
    dopo 2, 4 e 8 secondi — il LIS può metterci un po' a registrarla: se la elenca, è
-   confermata e i fogli si prendono da lì; se no la striscia è ambra, «Non confermata · tocca
-   per il carrello», e nessuna seconda conferma parte da sola.
+   confermata e i fogli si prendono da lì; se no la striscia è ambra, «Non confermata · guarda
+   le sue richieste; se non c'è, tocca per il carrello» (la Conferma è partita: se c'è,
+   Ristampa), e nessuna seconda conferma parte da sola. La pagina delle etichette LIS che il
+   gestionale mostra subito dopo il clic non è una prova: è arrivata identica anche dopo una
+   Conferma che non aveva registrato.
    **Ogni no dice perché.** Ogni controllo che ferma la conferma automatica scrive nel
    Registro quale è stato. Un carrello a cui manca una riga che deve avere (l'ultimo esame, o
    meno righe di quelle aggiunte su quella risorsa: l'elenco monco che la verifica

@@ -8380,14 +8380,15 @@
       if (esito === "incerta") {
         // Né la cornice né la pagina del paziente la dicono confermata: per
         // il pannello NON lo è. Mai verde, e mai una seconda conferma da sola:
-        // un tocco apre il carrello, e lì decide il medico.
+        // un tocco apre il carrello, e lì decide il medico — ma la Conferma è
+        // partita: prima di rifarla, le sue richieste (RIFARLA).
         tabStore.set("confirm.v1", null);
         if (TRACCIA) TRACCIA.attiva = false;
         segnaErrore("ordine", { episodio: ep, richiesta: rid, motivo: "Conferma non verificata", traccia: riassuntoTraccia() });
-        const str = { tag: "Non confermata", testo: "Controlla il carrello e premi tu Conferma", tono: "warn" };
-        this.message = { head: "Conferma non verificata", body: "Il gestionale non mostra questa richiesta fra le confermate: apri il carrello, controlla e premi tu Conferma." };
-        this.segnala({ tag: "Non confermata", testo: "tocca per il carrello", titolo: "tocca per il carrello", tono: "warn", paziente: chi,
-          onTap: () => { consegna(str); nav(listUrl); } });
+        const str = { tag: "Non confermata", testo: RIFARLA, tono: "warn" };
+        this.message = { head: "Conferma non verificata", body: RIFARLA_PERCHE };
+        this.segnala({ tag: "Non confermata", testo: "guarda le sue richieste; se non c'è, tocca per il carrello", titolo: "tocca per il carrello", tono: "warn", paziente: chi,
+          onTap: () => { consegna(str, RIFARLA_PERCHE); nav(listUrl); } });
         this.render();
         return;
       }
@@ -15368,6 +15369,18 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   // confermate coi loro fogli da stampare. Solo letture, mai un invio, mai un
   // secondo clic. Il gestionale può metterci qualche secondo a elencarla:
   // prima di dire «non confermata» la si rilegge (CONFIRM_WAITS).
+  // La pagina delle etichette LIS che il gestionale mostra subito dopo il clic
+  // (RcsStampaEtichetteLIS, coi fogli in un window.open) NON è una prova: è
+  // arrivata identica anche dopo una Conferma che il gestionale non aveva
+  // registrato (registrazioni vere della 3.85.0: la POST in 0,4–0,7 s invece
+  // dei soliti 3–14, e la richiesta mai elencata finché il medico non l'ha
+  // riconfermata). Un'altra area intanto (l'ha cambiata un'altra scheda) non
+  // guasta la prova: lì la pagina perde le Richieste, non l'elenco coi fogli.
+  // Una Conferma partita e non provata, detta al medico: per il pannello non
+  // è confermata (mai verde, mai una seconda Conferma da sola), ma non è
+  // nemmeno «come se niente fosse» — prima di rifarla, le sue richieste.
+  const RIFARLA = "Se c'è già fra le sue richieste: Ristampa. Se no: premi tu Conferma";
+  const RIFARLA_PERCHE = "La Conferma è partita, ma la pagina del paziente non mostra questa richiesta. Prima di rifarla guarda le sue richieste (⋯ → Stampa le richieste): se c'è, Ristampa; se no, controlla il carrello e premi tu Conferma.";
   async function provaConferma(rid, ep, { patientUrl = "", panel = null } = {}) {
     // solo l'indirizzo di una pagina da leggere: mai quello di un modulo inviato
     const leggibile = (x) => { try { return !!x && new URL(x).origin === location.origin && !/[?&](ccsForm|Insert|Delete|Update)=/i.test(x); } catch { return false; } };
@@ -16916,8 +16929,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (!LAVORO || (panel && panel._lavoroChiuso)) return;
     const L = LAVORO, ep = String(L.ep || ""), rid = ridLavoro();
     const listUrl = [(daConfermare().find((x) => x.rid === rid) || {}).listUrl, L.listUrl].find(leggibilePagina) || "";
-    const fine = (vista, striscia = null) => {
-      const consegna = listUrl && striscia ? { url: listUrl, avviso: { striscia: { paziente: L.paziente || "", ...striscia } }, receipt: tabStore.get("receipt.v1", null) } : null;
+    const fine = (vista, striscia = null, testo = "") => {
+      const consegna = listUrl && striscia ? { url: listUrl, avviso: { striscia: { paziente: L.paziente || "", ...striscia }, ...(testo ? { testo } : {}) }, receipt: tabStore.get("receipt.v1", null) } : null;
       if (panel) return panel.consegnaLavoro(vista, consegna);
       // (una pagina senza pannello: l'ultima parola la dice da qui)
       const m = { t: "ordineAggiorna", id: L.id, stato: "avviso", vista, ...(consegna ? { consegna } : {}), registro: registroLavoro(null) };
@@ -16929,8 +16942,9 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       if (LAVORO !== L || (panel && panel._lavoroChiuso)) return;
       if (prova && maybeAutoPrint(panel, prova.doc, prova.url)) return;
       if (prova) return fine({ tag: "Confermata", testo: "etichette dalla sua pagina, Stampa", tono: "ok" });
-      return fine({ tag: "Non confermata", testo: "controlla il carrello e premi tu Conferma", tono: "warn" },
-        { tag: "Non confermata", testo: "Controlla il carrello e premi tu Conferma", tono: "warn" });
+      // la Conferma è partita e non si vede: prima di rifarla, le sue richieste (RIFARLA)
+      return fine({ tag: "Non confermata", testo: "guarda le sue richieste: se c'è, Ristampa; se no, apri il carrello", tono: "warn" },
+        { tag: "Non confermata", testo: RIFARLA, tono: "warn" }, RIFARLA_PERCHE);
     }
     panel?.log(`${now()}  la scheda dell'ordine è ripartita a giro finito: niente da riprendere, la conferma non è partita`);
     // la Conferma non è partita: lo dice questa striscia, una volta, e poi

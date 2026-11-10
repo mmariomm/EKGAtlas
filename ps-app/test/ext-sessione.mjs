@@ -22,6 +22,9 @@
  *      risposto: ORA-20965 …»;
  *   3. una scheda d'ordine che non è arrivata sulla pagina si sostituisce
  *      solo se il piano non l'ha mai avuto: mai due motori per un ordine.
+ * Anche l'AREA sta nella sessione (Imposta → Conferma, da una scheda
+ * qualunque): sull'area che non è del paziente, la sua pagina perde le
+ * Richieste ma tiene l'elenco delle richieste coi loro fogli (pagina vera).
  *   node test/ext-sessione.mjs [nome della prova]
  */
 import { chromium } from "playwright";
@@ -64,7 +67,12 @@ const quale = (url) => {
 // Ogni pagina del modulo richieste con un RICHIESTA_ID la fa sua; la lista
 // smart la perde; le etichette di una richiesta la spostano su quella. Un
 // inserimento su una richiesta che non è la corrente: ORA-20965.
-const sess = { corrente: null, log: [], ora: 0, forzaOra: null };
+const sess = { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null };
+// L'area della sessione: null, quella dei pazienti; un'altra (RISORSA_ID di
+// Imposta), e la pagina di ROSSI arriva come sull'area sbagliata.
+const imposta = (id) => { sess.area = id || null; sess.log.push({ t: Date.now(), cosa: "area", area: sess.area }); };
+const altraArea = (html) => html.replace(/<a [^>]*title="Richieste [^"]*"[^>]*>[\s\S]*?<\/a>/g, "")
+  .replace(/<body>/i, `<body><table class="AFCHeaderTable"><tr><td><font style="font-size: 110%; font-weight: bolder; ">AREA MEDIA - BASSA INTENSITA'</font> ${sess.area}</td></tr></table>`);
 function sessioneVede(u) {
   const x = new URL(u), p = x.searchParams, mvpg = p.get("MVPG") || "", rid = p.get("RICHIESTA_ID");
   if (/menuPsoSmart\.do$/.test(x.pathname)) { sess.corrente = null; sess.log.push({ t: Date.now(), cosa: "smart" }); return; }
@@ -107,6 +115,11 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
     return r.fulfill({ status: 200, headers: { "content-type": "text/html" },
       body: "<html><body><p>Bloccata</p><script>setTimeout(() => { const t = Date.now(); while (Date.now() - t < 45000); }, 1000);</script></body></html>" }).catch(() => {});
   }
+  // Imposta → Conferma: l'area cambia per tutta la sessione
+  if (req.method() === "POST" && /\/menuPso\.do\?/.test(u) && /ccsForm=RisorsaImposta/.test(u)) {
+    imposta(new URLSearchParams(req.postData() || "").get("RISORSA_ID"));
+    return r.fulfill({ status: 200, headers: { "content-type": "text/html" }, body: "<html><body><p>Pazienti</p></body></html>" }).catch(() => {});
+  }
   const mock = quale(u);
   const p = new URL(u).searchParams;
   if (p.get("Insert") === "Inserisci") {
@@ -129,6 +142,11 @@ await ctx.route(`${ORIGIN}/**`, async (r) => {
     const dove = new URL(out.headers.location, u).href;
     sessioneVede(dove);
     out = mock.handle({ method: "GET", url: dove });
+  }
+  if (req.method() === "POST" && /^Prestazioni/.test(p.get("ccsForm") || "") && sess.dopoConferma) sess.dopoConferma(mock, p);
+  if (sess.area && mock === A && req.method() === "GET" && p.get("MVPG") === "PsoEpisodioClinicoAmbulatorio" && /html/.test((out.headers || {})["content-type"] || "")) {
+    sess.log.push({ t: Date.now(), cosa: "paziente", area: sess.area });
+    out = { ...out, body: Buffer.from(altraArea(Buffer.from(out.body).toString("latin1")), "latin1") };
   }
   try { await r.fulfill({ status: out.status, headers: out.headers, body: out.body }); } catch { /* scheda chiusa intanto */ }
 });
@@ -185,7 +203,7 @@ const SOLO = (process.argv[2] || "").toLowerCase();
 const prova = (t) => {
   if (SOLO && !t.toLowerCase().includes(SOLO)) return false;
   console.log("\nsessione: " + t); nuovi();
-  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null });
+  Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null, dopoConferma: null });
   return true;
 };
 const ESAMI = ["CREATININEMIA", "EMOCROMOCITOMETRICO", "TROPONINA"];   // tre esami POC: un erogatore, una richiesta
@@ -298,6 +316,66 @@ if (prova("ORA- due volte: la richiesta rifatta perde il carrello anche lei, il 
   check(!!e && (e.dati.traccia?.passi || []).filter((p) => /ORA-20965/.test(p.avviso || "")).length === 2, "nel registro degli errori, con la traccia e i due avvisi");
   check(!/non risulta nel carrello/.test(JSON.stringify(e || {})), "e non «non risulta nel carrello»");
   await $panel(doc, STOP).click().catch(() => {});
+}
+
+// ---- 2b. dopo la Conferma il medico cambia area -------------------------
+// (registrazione vera, 3.85.0: la scheda dell'ordine preme Conferma, il
+// gestionale risponde con la sua pagina delle etichette LIS, poi PsoEpisodio,
+// poi il paziente; intanto il medico, nella sua scheda, passa a un'altra area
+// — Imposta → Conferma, per tutta la sessione.) La prova è la pagina del
+// paziente che elenca i fogli della richiesta: sull'altra area perde le
+// Richieste, non quell'elenco, e la prova regge. La pagina delle etichette
+// NON è una prova: il gestionale la mostra uguale anche dopo una Conferma che
+// non ha registrato (lì la POST durava 0,7 s invece di 3–14, e la richiesta
+// è comparsa solo dopo la Conferma del medico). Allora «Non confermata»,
+// niente stampato, nessuna seconda Conferma — e prima di rifarla si guardano
+// le sue richieste, non «premi tu Conferma» come se niente fosse.
+const chiesti = (m, re) => m.state.requests.filter((q) => re.test(q.url)).length;
+const param = (u, k) => { try { return new URL(u, ORIGIN).searchParams.get(k); } catch { return null; } };
+if (prova("dopo la Conferma il medico cambia area: provata lo stesso; se il gestionale non l'ha registrata, prima di rifarla le sue richieste")) {
+  for (const registrata of [true, false]) {
+    const come = registrata ? "registrata" : "non registrata (le etichette LIS arrivano lo stesso)";
+    await daCapo();
+    A = createMock({ dopoConferma: 600 });
+    Object.assign(sess, { corrente: null, log: [], ora: 0, forzaOra: null, area: null });
+    await suPagina(doc, A.patientUrl);
+    await nienteSmart(doc);
+    // la Conferma arriva al gestionale; subito dopo un'altra scheda cambia l'area
+    sess.dopoConferma = (mock, p) => {
+      if (mock !== A || sess.area) return;
+      if (!registrata) mock.state.richieste[p.get("RICHIESTA_ID")].confirmed = false;
+      imposta("00040001P");
+    };
+    const nasce = nuovaPagina();
+    await ordina(doc, ["TROPONINA"]);
+    const w = await nasce;
+    await suPagina(doc, B.patientUrl);
+    const ultima = () => ordini().then((l) => l.find((x) => x.paziente === "ROSSI MARIO" && !["coda", "avvio", "corre"].includes(x.stato)));
+    await finche(ultima, 60000);
+    const rec = await ultima();
+    const rid = Object.keys(A.state.richieste)[0];
+    const iArea = sess.log.findIndex((x) => x.cosa === "area"), iPaz = sess.log.findIndex((x) => x.cosa === "paziente");
+    check(conferme(A).length === 1 && A.state.passaggi.join(" → ") === "RcsStampaEtichetteLIS → PsoEpisodio" && iArea >= 0 && iPaz > iArea,
+      `${come}: una Conferma, le etichette LIS e PsoEpisodio, poi la pagina del paziente letta sull'altra area (got ${conferme(A).length} conferme · ${A.state.passaggi.join(" → ") || "niente"} · area ${iArea} paziente ${iPaz})`);
+    if (registrata) {
+      const et = (rec?.stampa?.jobs || []).filter((j) => /RcsStampaEtichetteLISHMIMU\.do\?RICHIESTA_ID=/.test(j.url || "") && param(j.url, "RICHIESTA_ID") === rid);
+      check(rec?.stato === "stampa" && rec.pubblico?.titolo === "Confermata" && et.length === 1,
+        `registrata: «Confermata», le etichette di quella richiesta pronte una volta (got ${JSON.stringify(rec && [rec.stato, rec.pubblico?.titolo, rec.pubblico?.testo, (rec.stampa?.jobs || []).length])})`);
+    } else {
+      const v = rec?.vista || {}, s = rec?.consegna?.avviso?.striscia || {};
+      check(rec?.stato === "avviso" && v.tag === "Non confermata" && v.tono === "warn" && !rec.stampa,
+        `non registrata: «Non confermata», ambra, niente da stampare (got ${JSON.stringify(rec && [rec.stato, v.tag, v.tono, !!rec.stampa])})`);
+      check(/guarda le sue richieste/.test(v.testo || "") && /Ristampa/.test(v.testo || "") && !/premi tu Conferma/.test(v.testo || "") && /Ristampa/.test(s.testo || "") && /Se no/.test(s.testo || ""),
+        `…e prima di rifarla le sue richieste: se c'è, Ristampa; se no, il carrello (got «${v.testo}» · sul carrello «${s.testo}»)`);
+      check(/RICHIESTA_ID=/.test(rec?.consegna?.url || "") && param(rec.consegna.url, "RICHIESTA_ID") === rid, "con «apri il carrello» della sua richiesta");
+      await sospendi(3000);
+      check(conferme(A).length === 1 && !A.state.richieste[rid].confirmed && chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/) === 0,
+        `nessuna seconda Conferma, nessun foglio chiesto al gestionale (got ${conferme(A).length} conferme · ${chiesti(A, /RcsStampaEtichetteLISHMIMU|jasperservlet/)} fogli)`);
+      check((await sorvegliate(doc)).some((x) => x.rid === rid), "e la richiesta resta sorvegliata: se compare, il promemoria se ne va da sé");
+    }
+    await w.close().catch(() => {});
+    sess.dopoConferma = null;
+  }
 }
 
 // ---- 3. mai due motori per un ordine ------------------------------------
