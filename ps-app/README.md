@@ -1713,7 +1713,9 @@ telefono), li stampa sulle sue stampanti e dice com'è andata.
   un tocco, e quei fogli escono qui (la stampa automatica di questo PC, o il dialogo), una volta.
   Mai stampati qui da soli, nemmeno per un ordine dal telefono. Il foglio arrivato e la risposta no:
   «Infermeria non risponde · forse stampate: guarda lì prima di stamparle qui» — mai rimandato da
-  solo, mai due volte.
+  solo, mai due volte. Una stazione che non risponde si dice **in pochi secondi**, «niente mandato»,
+  non dopo due minuti di «forse»: se non si sente da un po', il PC la mette alla prova (in sola
+  lettura) prima di mandare il foglio, e la stazione tiene sveglio da sé il suo service worker.
 - **La stazione riceve fogli e risponde, nient'altro**: non può mandare un comando al PC del medico
   né leggerci niente, e dopo la stampa non tiene niente del foglio. Nella sua pagina, «Ultimi
   fogli»: l'ora, etichette o A4, le pagine, com'è andata — mai un nome.

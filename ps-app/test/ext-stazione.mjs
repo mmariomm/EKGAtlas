@@ -519,6 +519,56 @@ await sw.evaluate(() => { STA_ATTESA.ultimo = 120e3; STA_ATTESA.esito = 15e3; })
 comportati("sta");
 
 // ===========================================================================
+sezione("la stazione fantasma: il ripetitore ha la presa, la stazione non riceve più niente");
+await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));   // (l'avviso di prima, letto)
+// un foglio piccolo, mandato dritto al motore della stazione (com'è per bg.js): stesso numero = stesso foglio
+const foglioProva = (rq) => sw.evaluate((r) => stazioneStampa("a4", btoa("%PDF-1.4\n1 0 obj << /Type /Page >> endobj\n%%EOF\n"), 1, r), rq);
+{
+  // «fresco» corto: dopo un paio di secondi di silenzio la sessione è «vecchia», e prima di un foglio va messa alla prova
+  await sw.evaluate(() => { STA_ATTESA.fresco = 1500; });
+  const rqA = "fantasma-" + Date.now().toString(36);
+  const sta0 = lavori("sta").length;
+  const a1 = await foglioProva(rqA);
+  await finche(() => lavori("sta").length > sta0, 10000);
+  check(a1.esito === "stampato" && a1.stazione && lavori("sta").length === sta0 + 1, `la via normale non cambia: un foglio, la stazione lo stampa una volta (got ${a1.esito})`);
+  await sospendi(2200);
+  const a2 = await foglioProva(rqA);
+  await sospendi(1500);
+  check(a2.esito === "stampato" && !a2.nonRisponde && lavori("sta").length === sta0 + 1,
+    `lo stesso foglio rimandato su una sessione vecchia: com'è andata («${a2.esito}»), niente seconda stampa (${lavori("sta").length - sta0} sulla stazione)`);
+  const sta1b = lavori("sta").length;
+  await sospendi(2200);
+  const a3 = await foglioProva("fantasma-b-" + Date.now().toString(36));
+  await finche(() => lavori("sta").length > sta1b, 10000);
+  check(a3.esito === "stampato" && lavori("sta").length === sta1b + 1, `un foglio nuovo su una sessione vecchia ma viva: la prova risponde «niente», il foglio parte, una volta (got ${a3.esito})`);
+
+  // ora la stazione resta lì, con la presa, ma non riceve più niente
+  await sospendi(2200);
+  check(await sw.evaluate(() => !!stm.sessione && stm.presa.pari), "prima del guasto: il PC ha una sessione, e il ripetitore dice che la stazione c'è");
+  await staSw.evaluate(() => { globalThis.__daiDati = stz.presa.ascolta.dati; stz.presa.ascolta.dati = () => {}; });
+  await suPagina(doc, A.patientUrl);
+  prima = await idsOra();
+  const staG = lavori("sta").length, pcG = lavori("pc").length;
+  const t0 = Date.now();
+  await ordina(doc, ["TROPONINA"]);
+  const fant = await finito(prima, (x) => x.stato === "stampa" || x.stato === "avviso", 60000);
+  const durata = (Date.now() - t0) / 1000;
+  check(!!fant && fant.pubblico.titolo === "Infermeria non risponde" && fant.dest === "stazione" && fant.fogli.every((f) => f.stato === "fallito" && f.nonRisponde),
+    `«Infermeria non risponde», non «forse»: nessun foglio è partito (got ${JSON.stringify(fant && fant.pubblico)})`);
+  check(durata < 25, `detto in secondi, non in minuti: ${durata.toFixed(0)} s dal tocco (prima: più di 120 s)`);
+  const sfant = await striscia(doc, /Infermeria non risponde/, 10000);
+  check(!/forse/.test(sfant) && (await azione(doc)) === "Stampa qui", `la striscia: «Infermeria non risponde», con «Stampa qui» (got «${sfant}» · ${await azione(doc)})`);
+  await sospendi(1500);
+  check(lavori("sta").length === staG && lavori("pc").length === pcG && (await stampe(doc)).length === 0, "niente sulla stazione, niente qui da solo");
+  // la stazione torna a ricevere: un foglio esce, una volta
+  await staSw.evaluate(() => { stz.presa.ascolta.dati = globalThis.__daiDati; });
+  await sw.evaluate(() => { STA_ATTESA.fresco = 20e3; return chrome.storage.session.set({ ordini: [] }); });
+  const a4 = await foglioProva("fantasma-c-" + Date.now().toString(36));
+  await finche(() => lavori("sta").length > staG, 10000);
+  check(a4.esito === "stampato" && lavori("sta").length === staG + 1, `la stazione di nuovo in ascolto: un foglio, stampato, una volta (got ${a4.esito})`);
+}
+
+// ===========================================================================
 sezione("la stazione spenta: «Infermeria non risponde» e «Stampa qui»");
 await sw.evaluate(() => chrome.storage.session.set({ ordini: [] }));   // (l'avviso di prima, letto)
 await pSta.close();

@@ -52,8 +52,10 @@ const STA_OFFERTA_MAX = 5 * 60e3;            // il QR vale cinque minuti, per un
 const STA_REVOCA_MAX = 7 * 24 * 3600e3;      // «scollegata» detto all'altro, appena c'è: al più per una settimana
 const STA_PEZZO = 4 * 130000;                // caratteri base64 per pezzo (≈ 390 KB), come i PDF del ponte
 const STA_BATTITO = 20e3;
-// quanto si aspetta (i test li accorciano): il saluto, un pezzo, l'ultimo (l'aiutante ha 90 s), l'esito, l'abbinamento
-const STA_ATTESA = { saluto: 8e3, pari: 1500, pezzo: 20e3, ultimo: 120e3, esito: 15e3, abbina: 20e3, pong: 10e3 };
+// quanto si aspetta (i test li accorciano): il saluto, un pezzo, l'ultimo (l'aiutante ha 90 s), l'esito, l'abbinamento;
+// `fresco`: da quanto la stazione non si è fatta sentire perché una sessione vecchia vada prima messa alla prova (con un
+// «esito», in lettura, dentro `vivo`) — la presa può dire «c'è» mentre dall'altra parte non arriva più niente
+const STA_ATTESA = { saluto: 8e3, pari: 1500, pezzo: 20e3, ultimo: 120e3, esito: 15e3, abbina: 20e3, pong: 10e3, fresco: 20e3, vivo: 5e3 };
 const STA_SALE = new TextEncoder().encode("ps-ponte/1");
 const staOra = () => Date.now();
 const staHhmm = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
@@ -172,6 +174,7 @@ const stm = {
   saluto: null,        // { n, risolvi }: il saluto che aspetta la risposta
   attese: new Map(),   // id → { risolvi, t }: le domande che aspettano la risposta
   id: 0, ignorati: 0, registro: [],
+  sentito: 0,          // quando la stazione si è fatta sentire l'ultima volta (la risposta al saluto, o una risposta)
   fila: Promise.resolve(),
 };
 stm.presa = new StaPresa({
@@ -235,6 +238,7 @@ async function stmRicevi(b) {
     const sa = stm.saluto;
     if (!sa || m.eco !== sa.n || !stmAttiva()) return;
     stm.saluto = null;
+    stm.sentito = staOra();
     if (m.no) return sa.risolvi(null);
     try {
       const canale = PonteCripto.canaleTel(await PonteCripto.chiaviSessione(stm.k, PonteCripto.daB64u(sa.n), PonteCripto.daB64u(m.n)));
@@ -249,6 +253,7 @@ async function stmRicevi(b) {
   if (h && h.tipo === PonteCripto.TIPO.DATI_PC && stm.sessione) {
     let d;
     try { d = await stm.sessione.canale.decifra(b); } catch { return; }
+    stm.sentito = staOra();
     const a = d && Number.isSafeInteger(d.re) ? stm.attese.get(d.re) : null;
     if (!a) { stm.ignorati++; stmNota("La stazione ha mandato qualcosa che non era una risposta: ignorato"); return; }
     stm.attese.delete(d.re);
@@ -299,6 +304,20 @@ async function stazioneStampa(tipo, pdf, copie, rq) {
     why: d.why ? corto(d.why, 200) : "", copie: Number.isInteger(d.copie) ? d.copie : 1, dove: corto(d.stampante, 80) });
   const size = staMisura(pdf), n = Math.max(1, Math.ceil(pdf.length / STA_PEZZO));
   const pezzo = (i) => ({ cmd: "stampa", rq, tipo, copie, i, n, size, b: pdf.slice(i * STA_PEZZO, (i + 1) * STA_PEZZO) });
+  // Una sessione che non si sente da un po' può essere un fantasma (il ripetitore ha la presa, la
+  // stazione non riceve più): prima di mandare un foglio la si mette alla prova, in sola lettura.
+  // Niente risposta: una sessione nuova; niente nemmeno da quella: non è partito niente, «non risponde» e basta.
+  let s0 = await stmSessione();
+  if (!s0) return nonRisponde();
+  if (staOra() - stm.sentito > STA_ATTESA.fresco) {
+    const e = await stmChiedi(s0, { cmd: "esito", rq }, STA_ATTESA.vivo);
+    if (e && e.ok && e.dati && e.dati.esito) return esitoDa(e.dati);   // questo foglio è già andato: com'è andata, niente seconda stampa
+    if (!e) {
+      stmFineSessione();
+      s0 = await stmSessione();
+      if (!s0) return nonRisponde();
+    }
+  }
   // i pezzi prima dell'ultimo: finché non arriva l'ultimo la stazione non stampa
   // niente, e si può ripartire (una volta, su una sessione nuova)
   for (let giro = 0; ; giro++) {
@@ -665,6 +684,9 @@ chrome.alarms?.onAlarm.addListener((a) => { if (a && a.name === "stazione") { st
 setInterval(() => {
   stm.presa.battito(); stz.presa.battito(); stz.abbina.battito();
   if (stz.offerta && stz.offerta.scade <= staOra()) stzAvvia().catch(() => {});
+  // una chiamata qualunque all'API dell'estensione azzera il riposo del service worker (da Chrome 110: il solo
+  // ping della presa conta da Chrome 116): senza, una stazione dormiente ha la presa aperta e non riceve niente
+  if (stm.coppia || stzAttiva()) try { chrome.runtime.getPlatformInfo().catch(() => {}); } catch { /* niente */ }
 }, STA_BATTITO);
 
 // Le pagine dell'estensione (la stazione, le impostazioni del PC). Le chiavi non escono mai di qui.
