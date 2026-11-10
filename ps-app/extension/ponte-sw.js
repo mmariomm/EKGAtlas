@@ -1201,7 +1201,9 @@ const ponteUrlTriage = (url) => {
   } catch { return ""; }
 };
 function ponteAccetta(d) {
-  const a = ponteArgomenti(d), k = typeof d.k === "string" && /^sm[0-9a-z]{1,8}$/.test(d.k) ? d.k : "";
+  // la chiave di una riga del Triage è la chiaveTriage (nome e arrivo), come la manda il
+  // comando «triage» e come la usa la mappa (`tr…`) — non più la chiaveSmart di nome e nascita
+  const a = ponteArgomenti(d), k = typeof d.k === "string" && /^tr[0-9a-z]{1,10}$/.test(d.k) ? d.k : "";
   const rq = typeof d.rq === "string" && /^[\w-]{8,40}$/.test(d.rq) ? d.rq : "";
   if (!rq || (!a.ep && !k)) return Promise.resolve({ ok: false, errore: "Richiesta non valida: niente fatto" });
   // lo stesso numero che sta andando: la sua risposta (annotato prima di qualunque attesa)

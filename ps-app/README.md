@@ -2409,7 +2409,8 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
     Cambia lo stato del paziente nel gestionale (il medico lo prende in carico): parte solo dal
     secondo tocco col nome, e solo dalla pagina del gestionale. La scheda di sottofondo apre la
     lista del triage (il link della pagina, o la stessa pagina del menu: mai un parametro in più) e
-    cerca la riga del paziente — per episodio, o per nome e nascita come la lista smart; una sola —:
+    cerca la riga del paziente — per episodio quando il PC lo conosce, se no per la stessa chiave
+    (nome e ora d'arrivo) che il telefono porta e che usa la mappa; una sola —:
     il nome della riga dev'essere il suo, e la freccia (`a[name="AccettaAMBU"]`,
     `MVPG=PsoEpisodioTriageToAmbulatorio`) quella della sua riga, dello stesso episodio e, se il PC
     conosce le aree di Imposta, della risorsa dell'area in testa. Un nome o un episodio che non
