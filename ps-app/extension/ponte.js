@@ -37,15 +37,15 @@ function righeStato(s, codice, qr) {
     return { cls: "warn", testa: "Ponte da configurare", righe: [
       "In questa versione di PS Assist manca l'indirizzo del ponte: si scrive una volta in ponte/host.txt, prima di preparare lo zip (ponte/README.md)."] };
   }
-  if (!s.accoppiato) return { cls: "", testa: "Nessun iPhone associato", righe: ["«Associa l'iPhone» mostra un QR: lo inquadri col telefono e sei dentro fino a fine turno.", fine] };
+  if (!s.accoppiato) return { cls: "", testa: "Nessun iPhone associato", righe: ["«Associa l'iPhone» mostra un QR: lo inquadri col telefono e il telefono resta associato finché non lo scolleghi.", fine] };
   const cod = codice ? ` · codice ${codice}` : "";
   const cam = s.cambiato ? `iPhone cambiato alle ${hhmm(s.cambiato)}.` : "";   // un altro telefono ha preso il posto del primo
   if (s.sessione) {
     return { cls: "vivo", testa: "iPhone collegato", righe: [
       cam,
-      `Dalle ${hhmm(s.sessione.dal)} · fino alle ${hhmm(s.scade)}${cod}`] };
+      `Dalle ${hhmm(s.sessione.dal)} · associato finché non lo scolleghi${cod}`] };
   }
-  return { cls: s.relay === "su" ? "ok" : "warn", testa: qr ? "iPhone associato" : `iPhone associato fino alle ${hhmm(s.scade)}${cod}`, righe: [cam, ponte, fine] };
+  return { cls: s.relay === "su" ? "ok" : "warn", testa: qr ? "iPhone associato" : `iPhone associato · finché non lo scolleghi${cod}`, righe: [cam, ponte, fine] };
 }
 
 async function aggiorna() {
@@ -63,7 +63,7 @@ async function aggiorna() {
   $("stato").replaceChildren(Object.assign(document.createElement("b"), { textContent: v.testa }),
     ...v.righe.filter(Boolean).map((t) => Object.assign(document.createElement("span"), { className: "riga", textContent: t })));
   $("qrsec").hidden = !qrVisibile;
-  if (qrVisibile) { disegnaQr(r.qr); $("qrscade").textContent = hhmm(s.scade); $("qrcodice").textContent = r.codice || ""; }
+  if (qrVisibile) { disegnaQr(r.qr); $("qrscade").textContent = hhmm(s.qrFino); $("qrcodice").textContent = r.codice || ""; }
   $("associa").disabled = !s.host;
   $("associa").hidden = qrVisibile;   // col QR davanti, lo nasconde il suo bottone
   // il QR di prima si rivede solo se si può ancora; se no, uno nuovo (e l'iPhone di prima esce)

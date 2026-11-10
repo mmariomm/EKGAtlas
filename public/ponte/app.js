@@ -21,7 +21,6 @@
   const TEMPO = 30e3;
   let pdfAperto = null;              // il PDF di un referto aperto sul telefono: { url (blob:), w, t }
   const INATTIVO = 3 * 60e3;        // come sul PC: 3 minuti senza comandi del medico e la sessione è finita
-  const DURATA_MAX = 14 * 3600e3;    // un link non vale più di un turno, qualunque ora porti
   const VERDE_MAX = 2 * 60e3;        // un ordine finito bene se ne va da solo, come sulla striscia del PC
   const BATTITO = 20e3, PONG = 10e3; // la presa parla ogni 20 secondi; senza «pong» in 10 è morta
   // La rete del telefono (ascensore, 5G, wifi↔5G): ogni attesa conta anche i
@@ -123,22 +122,22 @@
   // ---------------------------------------------------- la chiave del QR
   const stessa = (a, b) => P.b64u(a) === P.b64u(b);
   const nuovoDev = () => P.b64u(P.casuale(16));
-  // da un link: la scadenza non oltre un turno da adesso, e un numero nuovo per questo telefono
+  // da un link: la chiave (l'associazione non scade: finisce con «Dimentica PC» o con la revoca sul PC),
+  // fin quando il link vale per il primo scambio, e un numero nuovo per questo telefono
   function dalLink(hash) {
     const c = P.leggiFrammento(hash);
-    return c ? { k: c.k, scade: Math.min(c.scade, Date.now() + DURATA_MAX), dev: nuovoDev() } : null;
+    return c ? { k: c.k, qrScade: c.scade, dev: nuovoDev() } : null;
   }
   function salva(c) {
-    try { localStorage.setItem(CHIAVE, JSON.stringify({ k: P.b64u(c.k), scade: c.scade, dev: c.dev })); } catch { /* solo in memoria */ }
+    try { localStorage.setItem(CHIAVE, JSON.stringify({ k: P.b64u(c.k), dev: c.dev })); } catch { /* solo in memoria */ }
   }
   function salvata() {
     try {
       const o = JSON.parse(localStorage.getItem(CHIAVE) || "null");
       if (!o) return null;
-      if (!(o.scade > Date.now())) { S.scaduta = o.scade || 0; localStorage.removeItem(CHIAVE); return null; }
       const k = P.daB64u(o.k);
       if (k.length !== 32) return null;
-      const c = { k, scade: Math.min(o.scade, Date.now() + DURATA_MAX), dev: /^[\w-]{16,32}$/.test(o.dev || "") ? o.dev : nuovoDev() };
+      const c = { k, dev: /^[\w-]{16,32}$/.test(o.dev || "") ? o.dev : nuovoDev() };
       if (c.dev !== o.dev) salva(c);
       return c;
     } catch { return null; }
@@ -273,8 +272,7 @@
       // avanti o indietro non cambia quando un ordine scade
       if (Number.isFinite(m.ora)) S.scarto = Math.round(m.ora - (mio.t0 + Date.now()) / 2);
       // (senza aspettare qui: la risposta passa da questa stessa fila)
-      chiedi("ciao", {}, TEMPO, true).then((d) => {
-        if (d && d.scade > 0 && d.scade < S.coppia.scade) { S.coppia.scade = d.scade; salva(S.coppia); }
+      chiedi("ciao", {}, TEMPO, true).then(() => {
         S.fase = "pronta"; render(); carica();
       }, (e) => avviso(e.message, "err"));
       return;
@@ -1225,7 +1223,7 @@
         <button data-a="registrazioni">${em("📦")}Registrazioni</button>
         <button data-a="esci">${em("🚪")}Chiudi sessione</button>
         <button class="via" data-a="dimentica">${em("🗑️")}Dimentica PC</button>
-        <div class="info">Associato fino alle ${hhmm(S.coppia.scade)} · codice ${esc(S.codice)}</div>
+        <div class="info">Associato · finché non lo scolleghi · codice ${esc(S.codice)}</div>
       </div>` : ""}</header>`;
   }
   function piena(icona, titolo, testo, extra = "", amb = false) {
@@ -1238,14 +1236,14 @@
   const scansiona = (quiet = false) => `<button class="grande${quiet ? " quiet" : ""}" data-a="scansiona">Scansiona il QR</button>${
     S.camera ? `<p class="errcod" role="alert">${esc(S.camera)}</p>` : ""}`;
   function schermata() {
-    const scade = S.coppia ? `<div class="piccolo">Associato fino alle ${hhmm(S.coppia.scade)} · codice ${esc(S.codice)}</div>` : "";
+    const scade = S.coppia ? `<div class="piccolo">Associato · finché non lo scolleghi · codice ${esc(S.codice)}</div>` : "";
     switch (S.fase) {
       case "senza":
         return piena(ICO.croce, "PS Assist sull'iPhone", PASSI, scansiona());
       case "finita": {
         const sc = S.perche === "scaduta";
-        return piena(ICO.lucchetto, sc ? "Associazione scaduta" : "Associazione chiusa",
-          `<p>${esc(sc ? `L'associazione con il PC è finita${S.scaduta ? ` alle ${hhmm(S.scaduta)}` : ""}.` : `${S.testoFine}.`)}</p>
+        return piena(ICO.lucchetto, sc ? "QR scaduto" : "Associazione chiusa",
+          `<p>${esc(sc ? "Questo QR non vale più: dura pochi minuti." : `${S.testoFine}.`)}</p>
            <p>Per rientrare serve un QR nuovo: sul PC <b>⋯ → iPhone → Associa l'iPhone</b>.</p>`, scansiona(), true);
       }
       case "rifiutato": {
@@ -1258,7 +1256,7 @@
       case "conferma":
         return piena(ICO.lucchetto, "Un'altra associazione?",
           `<p>Questo link associa il telefono al PC con il codice <b class="codice">${esc(S.nuova.codice)}</b>.</p>
-           <p>Adesso è associato al PC con il codice <b class="codice">${esc(S.codice)}</b>, fino alle ${hhmm(S.coppia.scade)}.</p>
+           <p>Adesso è associato al PC con il codice <b class="codice">${esc(S.codice)}</b>, finché non lo scolleghi.</p>
            <p>Il codice giusto è quello accanto al QR, sul PC.</p>`,
           `<button class="grande" data-a="sostituisci">Usa il codice ${esc(S.nuova.codice)}</button><button class="grande quiet" data-a="tieni">Tieni quella di adesso</button>`, true);
       case "avvio":
@@ -2144,11 +2142,9 @@
     render();
   });
   window.addEventListener("offline", () => { batti(); render(); });   // la presa di prima regge? il battito lo dice
-  // L'associazione ha un'ora: passata, la chiave se ne va da sola. E la
-  // regola dei 3 minuti vale anche qui: un'app lasciata in sottofondo non
+  // L'associazione non scade. La regola dei 3 minuti vale anche qui: un'app lasciata in sottofondo non
   // tiene in memoria i pazienti finché il PC non glielo dice.
   function scadenze() {
-    if (S.coppia && S.coppia.scade <= Date.now()) { S.scaduta = S.coppia.scade; if (S.canale) chiusa("scaduta"); else { S.perche = "scaduta"; dimentica("finita"); } return true; }
     if (S.canale && Date.now() - S.ultimo >= INATTIVO) { chiedi("esci", {}, TEMPO, true).catch(() => {}); chiusa("inattivo"); return true; }
     return false;
   }
@@ -2173,7 +2169,7 @@
     if (location.hash) history.replaceState(null, "", location.pathname + location.search);
     if (sta) setTimeout(() => offertaStazione(sta), 0);
     const prima = salvata();
-    if (link && link.scade <= Date.now()) { S.scaduta = link.scade; S.perche = "scaduta"; S.fase = "finita"; render(); return; }
+    if (link && link.qrScade <= Date.now()) { S.scaduta = link.qrScade; S.perche = "scaduta"; S.fase = "finita"; render(); return; }
     // Un link che toglierebbe un'associazione ancora buona chiede prima: un
     // link qualunque non porta il telefono su un altro «PC».
     if (link && prima && !stessa(link.k, prima.k)) {

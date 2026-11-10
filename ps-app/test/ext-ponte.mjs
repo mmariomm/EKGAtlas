@@ -328,14 +328,14 @@ const url1 = await qrUrl();
 check(url1.startsWith(relay.url + "/ponte/#k=") && /&scade=\d+$/.test(url1), `il QR porta all'app, con la chiave nel frammento (${url1.slice(0, 40)}…)`);
 const K1 = P.leggiFrammento(new URL(url1).hash).k, CH1 = await P.chiaviCoppia(K1);
 const scade1 = Number(/scade=(\d+)/.exec(url1)[1]);
-check(Math.abs(scade1 - Date.now() - 14 * 3600e3) < 60e3, "l'associazione vale 14 ore");
+check(Math.abs(scade1 - Date.now() - 5 * 60e3) < 60e3, "il link del QR vale pochi minuti (5), non un turno: la scadenza nel frammento è quella del primo scambio");
 const codice1 = (await ponte.locator("#qrcodice").innerText()).trim();
 check(codice1 === await P.codice(K1), `accanto al QR, il codice dell'associazione: ${codice1}`);
 const pagina = `${await ponte.locator("#stato").innerText()}\n${await ponte.locator("#qrsec").innerText()}`;
 check(pagina.split(codice1).length === 2 && (pagina.match(/fino alle \d\d:\d\d/g) || []).length === 1 && /^\d\d:\d\d$/.test(await ponte.locator("#qrscade").innerText()),
   `il codice e l'ora di fine una volta sola, accanto al QR (${(await ponte.locator("#stato").innerText()).replace(/\n/g, " / ")})`);
 const cp = await coppiaPc();
-check(cp && cp.k === P.b64u(K1) && cp.scade === scade1, "sul PC la chiave sta in storage.local, con la sua scadenza (regge il browser chiuso: più sotto)");
+check(cp && cp.k === P.b64u(K1) && !("scade" in cp) && cp.creata + 5 * 60e3 === scade1, "sul PC la chiave sta in storage.local, senza scadenza dell'associazione (regge il browser chiuso: più sotto)");
 check(await finche(async () => (await statoPonte())?.relay === "su", 10000), "il PC è collegato al ponte");
 check(relay.prese().pc === 1, "sul ripetitore: una presa del PC");
 await ponte.locator("#qrvia").click();
@@ -440,8 +440,8 @@ check(/ROSSI MARIO/.test(lista) && /BIANCHI ANNA/.test(lista), "inquadrato il QR
 check(!(await tel.evaluate(() => location.hash)), "il frammento con la chiave non resta nell'indirizzo");
 const salvato = await tel.evaluate(() => Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)]));
 const sv = salvato.length === 1 ? JSON.parse(salvato[0][1]) : {};
-check(salvato.length === 1 && salvato[0][0] === "psassist.ponte.v1" && Object.keys(sv).sort().join() === "dev,k,scade" && !/ROSSI|BIANCHI/.test(salvato[0][1]),
-  "sul telefono resta solo la chiave, la scadenza e il numero del telefono: nient'altro");
+check(salvato.length === 1 && salvato[0][0] === "psassist.ponte.v1" && Object.keys(sv).sort().join() === "dev,k" && !/ROSSI|BIANCHI/.test(salvato[0][1]),
+  "sul telefono resta solo la chiave e il numero del telefono (nessuna scadenza): nient'altro");
 const titoli = JSON.stringify(await tel.locator(".lbl").evaluateAll((l) => l.map((x) => x.textContent)));
 const fila = (await tel.locator("main > .carta").first().locator(".paz .nome").allInnerTexts()).join(",");
 check(/OBI 2/.test(lista) && titoli === '["Alta intensità","Bassa"]' && /^BIANCHI ANNA,ROSSI MARIO$/.test(fila),
@@ -1992,8 +1992,8 @@ check(/revocat/.test(await aspettaTel(tel, /revocat/, 10000)), "revocata: il tel
 check(await tel.evaluate(() => localStorage.length) === 0, "e dimentica la chiave");
 const vecchio = await telCtx.newPage();
 await vecchio.goto(url1);
-const nonRisponde = await aspettaTel(vecchio, /Il PC non risponde/, 15000);
-check(/Il PC non risponde/.test(nonRisponde) && /QR nuovo/.test(nonRisponde), "il vecchio QR non apre più niente: «Il PC non risponde», e se c'è un QR nuovo, inquadra quello");
+const nonRisponde = await aspettaTel(vecchio, /Il PC non risponde|QR scaduto/, 15000);
+check(/Il PC non risponde/.test(nonRisponde) ? /QR nuovo/.test(nonRisponde) : /QR scaduto/.test(nonRisponde), "il vecchio QR non apre più niente: «Il PC non risponde» (e se c'è un QR nuovo, inquadra quello), o «QR scaduto» se i pochi minuti sono passati");
 await vecchio.close();
 await tel.evaluate(() => localStorage.clear());
 await ponte2.locator("#associa").click();
@@ -2010,7 +2010,7 @@ const KX = P.casuale(32), KY = P.casuale(32);
 await lnk.goto(finta(KX));
 await aspettaTel(lnk, /Mi collego|non risponde/, 10000);
 const cx = await chiaveTel(lnk);
-check(cx && cx.k === P.b64u(KX) && cx.scade <= Date.now() + 14 * 3600e3 + 60e3, "un link che dice «vale cent'anni» vale al massimo 14 ore");
+check(cx && cx.k === P.b64u(KX) && !("scade" in cx), "un link con la sua scadenza lunga: sul telefono resta solo la chiave (l'associazione non scade)");
 await lnk.goto(finta(KY));
 const chiede = await aspettaTel(lnk, /Un'altra associazione\?/, 10000);
 check(/Un'altra associazione\?/.test(chiede) && chiede.includes(await P.codice(KY)) && chiede.includes(await P.codice(KX)),
@@ -2025,12 +2025,38 @@ await tocca(lnk, '[data-a="sostituisci"]');
 await sospendi(500);
 check((await chiaveTel(lnk)).k === P.b64u(KY), "«Usa il codice …»: la chiave nuova");
 await linkCtx.close();
+// l'associazione non scade: passate le 14 ore (e il PC controlla), la chiave c'è ancora, sul PC e sul telefono, e il telefono riapre
+const K2 = P.b64u(P.leggiFrammento(new URL(url2).hash).k);
 await avanti(14 * 3600e3 + 60e3);
+await sw.evaluate(() => ponteAvvia());   // (come al risveglio del service worker: rilegge la chiave da disco)
+check((await coppiaPc())?.k === K2 && (await statoPonte())?.accoppiato && (await chiaveTel(tel))?.k === K2, "passate le 14 ore: l'associazione c'è ancora, sul PC (anche su disco) e sul telefono");
+await aspettaTel(tel, /Riapri|Sessione chiusa|ROSSI MARIO/, 15000);
+if (await tel.locator('[data-a="riapri"]').count()) await tocca(tel, '[data-a="riapri"]');
+check(/ROSSI MARIO/.test(await aspettaTel(tel, /ROSSI MARIO/, 20000)), "…e il telefono riapre da solo, senza QR nuovo, dopo le 14 ore");
+await shot(tel, "tel-10-oltre-14-ore");
 await orologio();
-check(/scaduta/.test(await aspettaTel(tel, /scaduta/, 10000)), "passate le 14 ore: «Associazione scaduta» sul telefono");
-const cpScad = await coppiaPc();
-check(!cpScad && !(await statoPonte())?.accoppiato, "e sul PC la chiave non c'è più, nemmeno su disco");
-await shot(tel, "tel-10-scaduta");
+// il link del QR, invece, vale solo per il primo scambio, e poco: un QR nuovo, e passati 7 minuti non apre più
+await ponte2.reload();
+await ponte2.waitForSelector("#stato b");
+await ponte2.locator("#associa").click();
+await ponte2.waitForSelector("#qr svg", { timeout: 8000 });
+const urlE = await qrUrl();
+await avanti(7 * 60e3);
+{
+  const lateCtx = await telBrowser.newContext(IPHONE);
+  const late = await lateCtx.newPage();
+  await late.goto(urlE);
+  check(/Il PC non risponde/.test(await aspettaTel(late, /Il PC non risponde/, 15000)) && (await coppiaPc())?.dev === "",
+    "il link del QR dopo il suo tempo: il PC non lo accetta, nessun telefono entra");
+  await lateCtx.close();
+  const vecCtx = await telBrowser.newContext(IPHONE);
+  const vec = await vecCtx.newPage();
+  await vec.goto(`${relay.url}/ponte/#k=${P.b64u(P.casuale(32))}&scade=${Date.now() - 1000}`);
+  check(/QR scaduto/.test(await aspettaTel(vec, /QR scaduto/, 10000)) && await vec.evaluate(() => localStorage.length) === 0, "un link con la scadenza passata: «QR scaduto» sul telefono, niente salvato");
+  await vecCtx.close();
+}
+await orologio();
+await tel.evaluate(() => localStorage.clear());
 // una scheda del gestionale torna alla pagina d'accesso: la sessione si chiude, l'associazione resta
 await ponte2.reload();
 await ponte2.waitForSelector("#stato b");
@@ -2059,7 +2085,7 @@ sezione("il browser del PC si chiude e si riapre");
 await ctx.close();
 ctx = await apriBrowser();
 sw = await swDi(ctx);
-check((await coppiaPc())?.k === K3, "riaperto il browser, l'associazione c'è ancora: sta su disco (storage.local) fino alla scadenza");
+check((await coppiaPc())?.k === K3, "riaperto il browser, l'associazione c'è ancora: sta su disco (storage.local) fino alla revoca");
 check(/estensione sul PC si è riavviata/.test(await aspettaTel(tel, /Sessione chiusa/, 30000)), "il telefono sa che la sessione di prima è finita: «L'estensione sul PC si è riavviata»");
 const doc3 = await ctx.newPage();
 await suPagina(doc3, A.worklistUrl);
@@ -2519,17 +2545,13 @@ sezione("«Scansiona il QR» dentro l'app");
     writeFileSync(file, Buffer.concat([Buffer.from(`YUV4MPEG2 W${W} H${H} F10:1 Ip A1:1 C420jpeg\n`), fot, fot]));
     return file;
   };
-  // un telefono con la fotocamera finta, e una chiave scaduta (o niente)
+  // un telefono con la fotocamera finta, senza associazione
   const VID = join("/tmp", `psa-ponte-qr-${process.pid}.y4m`);
   const conCamera = async (testo) => {
     const b = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || chromiumPath(),
       args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-video-capture=${video(testo, VID)}`] });
     const c = await b.newContext({ ...IPHONE, permissions: ["camera"] });
     await c.addInitScript((k) => {
-      if (!sessionStorage.getItem("__giaScaduta")) {
-        sessionStorage.setItem("__giaScaduta", "1");
-        localStorage.setItem("psassist.ponte.v1", JSON.stringify({ k, scade: Date.now() - 3600e3, dev: "telefonoscaduto0001" }));
-      }
       // (la fotocamera, vista da fuori: le sue tracce, e quante volte si spegne)
       const gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
       window.__tracce = [];
@@ -2569,13 +2591,13 @@ sezione("«Scansiona il QR» dentro l'app");
 
   // 2. il QR di un altro sito (con una chiave e tutto): si ignora; ✕ spegne la fotocamera
   const fuori = await conCamera(url4.replace(relay.url, "https://altro.example.org"));
-  check(/Associazione scaduta/.test(await aspettaTel(fuori.p, /Associazione scaduta/, 10000)) && await fuori.p.locator('.grande[data-a="scansiona"]').count() === 1,
-    "un telefono con l'associazione scaduta: «Scansiona il QR»");
+  check(/Scansiona il QR/.test(await aspettaTel(fuori.p, /Scansiona il QR/, 10000)) && await fuori.p.locator('.grande[data-a="scansiona"]').count() === 1,
+    "un telefono senza associazione: «Scansiona il QR»");
   await shot(fuori.p, "tel-qr-2-scaduta");
   await tocca(fuori.p, '[data-a="scansiona"]');
   const vivo = await finche(() => fuori.p.evaluate(() => { const v = document.querySelector(".scan video"); return !!v && v.readyState >= 2 && !v.paused; }), 10000);
   await sospendi(2500);
-  check(vivo && await fuori.p.locator(".scan .guida").count() === 1 && await fuori.p.evaluate(() => localStorage.length) === 0 && /Associazione scaduta/.test(await testoTel(fuori.p)),
+  check(vivo && await fuori.p.locator(".scan .guida").count() === 1 && await fuori.p.evaluate(() => localStorage.length) === 0 && /Scansiona il QR/.test(await testoTel(fuori.p)),
     "la fotocamera nella pagina, col quadrato: un QR di un altro sito si ignora (nessuna chiave, si resta lì)");
   await shot(fuori.p, "tel-qr-3-fotocamera");
   await tocca(fuori.p, ".scan .x");
@@ -2585,7 +2607,7 @@ sezione("«Scansiona il QR» dentro l'app");
 
   // 3. il QR nuovo del PC, inquadrato dentro l'app: l'elenco
   const dentro = await conCamera(url4);
-  await aspettaTel(dentro.p, /Associazione scaduta/, 10000);
+  await aspettaTel(dentro.p, /Scansiona il QR/, 10000);
   await tocca(dentro.p, '[data-a="scansiona"]');
   const elenco = await aspettaTel(dentro.p, /ROSSI MARIO/, 25000);
   check(/ROSSI MARIO/.test(elenco) && (await chiaveTel(dentro.p))?.k === K4 && !(await dentro.p.evaluate(() => location.hash)),
