@@ -5899,6 +5899,7 @@
     /* il reset: in fondo, da solo sulla sua riga, rosso anche a riposo */
     .menu .msez > button.mreset { flex: 0 0 100%; color: var(--err); }
     .menu button.mreset .mico { color: var(--err); }
+    .menu #regmenu .mico { color: var(--err); }   /* Registrazioni: il puntino rosso del «● REC», non una scatola (resta rosso anche in hover) */
     /* in fondo la versione, con «Ricarica» accanto; «Aggiorna app», quando c'è, sopra di lei in blu */
     .menu .mpiede { border-top: 1px solid #EEF2F6; padding-top: 2px; }
     .menu .mpiede > .magg { color: var(--azione); font-weight: 700; }
@@ -7227,7 +7228,7 @@
   const icoIn = (k, px = 14) => ICO[k].replace('<svg width="16" height="16"', `<svg width="${px}" height="${px}" style="vertical-align:-.2em;margin-right:4px;flex:none"`);
   // …e nel menu ⋯, davanti a ogni voce
   const mico = (k) => `<span class="mico">${ICO[k]}</span>`;
-  // le voci che esistono anche sul telefono hanno la sua stessa emoji (📱 iPhone, 🖨️ stampa, 📦 registrazioni)
+  // le voci che esistono anche sul telefono hanno la sua stessa emoji (📱 iPhone, 🖨️ stampa, ● registrazioni in rosso)
   const memo = (e) => `<span class="mico mem" aria-hidden="true">${e}</span>`;
   // Le schermate che si aprono dal menu ⋯: il nome e l'icona della loro voce,
   // in testa al posto delle schede. E il nome delle schede, per il ‹ che ci torna.
@@ -9664,7 +9665,7 @@
                       !this.stampaPronta() ? "" : this.stampaAuto.s.attiva === false
                         ? `<button role="menuitemcheckbox" id="stautosw" aria-checked="false" title="Spenta: i fogli passano dal dialogo di stampa. Tocca per accenderla: ogni foglio va da solo alla sua stampante, senza dialogo">${mico("spento")}Stampa automatica</button>`
                         : `<button role="menuitemcheckbox" id="stautosw" aria-checked="true" title="Attiva: ogni foglio va da solo alla sua stampante. Tocca per spegnerla: i fogli tornano a passare dal dialogo di stampa">${mico("acceso")}Stampa automatica</button>`,
-                      hasExt() ? `<button role="menuitem" id="regmenu" title="Registra una sessione, la registrazione automatica degli ultimi minuti, gli zip salvati su questo PC (anche dall'iPhone)">${memo("📦")}Registrazioni</button>` : "",
+                      hasExt() ? `<button role="menuitem" id="regmenu" title="Registra una sessione, la registrazione automatica degli ultimi minuti, gli zip salvati su questo PC (anche dall'iPhone)">${memo("●")}Registrazioni</button>` : "",
                       `<button role="menuitem" id="verbtn" title="Il Registro delle operazioni">${mico("registro")}${this.showLog ? "Nascondi il registro" : "Registro"}</button>`,
                       // l'ultima, da sola sulla sua riga, in rosso: non sta accanto a niente di innocuo
                       this.giroQui() ? "" : this.resetArmato() ? `<button role="menuitem" id="resetpaz" class="mreset mrischio">${mico("cestino")}Cancello tutto? Tocca di nuovo</button>`
@@ -17456,7 +17457,8 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (!map) return { ok: false, errore, ...(sessione ? { sessione } : {}) };
     return { ok: true, dati: { ep: p.ep, richieste: richiesteStampabili(map).slice(0, 12).map((id) => {
       const m = printMeta(map, id);
-      return { id, quando: m.when || "", esami: m.exams.slice(0, 8).join(", "), cosa: printLabelFor(map, id) };
+      const j = printJobsFor(map, id), et = j.filter((x) => x.printer === "etichettatrice").length;   // (quante etichette e quanti fogli: il telefono offre la scelta)
+      return { id, quando: m.when || "", esami: m.exams.slice(0, 8).join(", "), cosa: printLabelFor(map, id), et, fo: j.length - et };
     }) } };
   }
   // Le etichette e il foglio di una richiesta, di nuovo, dove dice `dest`: lo
@@ -17466,10 +17468,14 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   async function ponteRistampa(p, a) {
     const { map, url, errore, sessione } = await ponteMappaStampe(p);
     if (!map) return { ok: false, errore, ...(sessione ? { sessione } : {}) };
-    const rid = String(a.rid || ""), jobs = map[rid] ? printJobsFor(map, rid) : [];
-    if (!jobs.length) return { ok: false, errore: "Questa richiesta non è più sulla pagina del paziente: riapri l'elenco" };
+    const rid = String(a.rid || ""), tutti = map[rid] ? printJobsFor(map, rid) : [];
+    if (!tutti.length) return { ok: false, errore: "Questa richiesta non è più sulla pagina del paziente: riapri l'elenco" };
+    // «🏷️ Etichette · 📄 Foglio · Entrambi»: le etichette sono i lavori dell'etichettatrice, il foglio tutto il resto
+    const quali = a.quali === "etichette" || a.quali === "foglio" ? a.quali : "tutto";
+    const jobs = quali === "tutto" ? tutti : tutti.filter((j) => (j.printer === "etichettatrice") === (quali === "etichette"));
+    if (!jobs.length) return { ok: false, errore: `Questa richiesta non ha ${quali === "etichette" ? "etichette" : "foglio"} da ristampare` };
     const job = { id: a.id, ep: p.ep, tag: "Stampa", paziente: p.name, url, fine: null, dest: a.dest === "stazione" ? "stazione" : "qui",
-      riassunto: `Ristampa ${printMeta(map, rid).when || "richiesta"}`.slice(0, 80), quesito: "",
+      riassunto: `Ristampa ${quali === "tutto" ? "" : quali + " "}${printMeta(map, rid).when || "richiesta"}`.slice(0, 80), quesito: "",
       jobs: jobs.map(({ name, printer, url, breve }) => ({ name, printer, url, ...(breve ? { breve } : {}) })) };
     let r = { ok: false };
     for (let k = 0; k < 3 && !r.ok && !r.no; k++) r = await ask({ t: "ordineFogli", job });
@@ -18847,8 +18853,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (document.getElementById("DESCRIZIONE") !== d || !d.classList.contains("ui-autocomplete-input")) return { stop: "la tendina dei farmaci della pagina non è pronta" };
     if ([...form.elements].some((el) => el.name && el.name.endsWith("_" + n) && el.type !== "hidden" && cambiatoTer(el))) return { stop: "nella riga nuova c'è già scritto qualcosa: non la tocco" };
     const scrive = () => scrittura.tasto > inizio;   // il medico scrive nella pagina: si lascia a lui
-    // 1. il farmaco, dalla tendina della pagina: la voce con la stessa scritta, una sola
-    const cerca = [v.descr, normTer(v.descr).split(/[\s*]/)[0]].filter((x, k, a) => x && x.length >= 3 && a.indexOf(x) === k);
+    // 1. il farmaco, dalla tendina della pagina: la voce con la stessa scritta, una sola.
+    // Le ricerche, dalla più stretta alla più larga: il nome intero; il nome fino alla
+    // prima minuscola (il gestionale porta il termine in maiuscolo: «SF 500cc» cerca
+    // «SF 500CC» e non trova la sua voce, «SF 500» sì); poi il nome accorciato parola per
+    // parola. Una ricerca più larga non cambia la regola: si sceglie SOLO la voce con la
+    // stessa scritta, e due uguali le sceglie il medico.
+    const nome = normTer(v.descr), minus = nome.search(/[a-zà-ÿ]/), parole = nome.split(/[\s*]+/);
+    const cerca = [nome, minus > 0 ? nome.slice(0, minus).trim() : "", ...parole.map((_, i) => parole.slice(0, parole.length - i).join(" "))]
+      .filter((x, k, a) => x && x.length >= 3 && a.indexOf(x) === k).slice(0, 4);
     for (const q of cerca) {
       if (!(await terapiaAspetta())) return { stop: "un ordine sta ancora lavorando in un'altra scheda: riprova fra poco" };
       if (scrive()) return { stop: "stai scrivendo nella pagina: mi fermo" };
