@@ -63,6 +63,9 @@ const FARMACI = [
   // due voci con la stessa scritta (codici diversi): non se ne sceglie nessuna da soli
   { id: "801", label: "SODIO CLORURO 0,9% 100 ML", value: "SODIO CLORURO 0,9% 100 ML" },
   { id: "802", label: "SODIO CLORURO 0,9% 100 ML", value: "SODIO CLORURO 0,9% 100 ML" },
+  // una voce con le minuscole, come nel gestionale vero: la ricerca porta il termine
+  // in maiuscolo, quindi «SF 500cc» intero non la trova, «SF 500» sì
+  { id: "905", label: "SF 500cc", value: "SF 500cc" },
 ];
 // (per il telefono: `pazienti` le pagine del paziente chieste; `ignora` una Conferma che il server non salva;
 // `ricarica` la scheda ricaricata mentre il server risponde alla Conferma; `ritocca` la pagina che cambia la
@@ -390,6 +393,26 @@ try {
   await sullaTerapia();
   check(await finche(async () => /più voci «SODIO CLORURO 0,9% 100 ML»: scegli tu/.test(await banner())), `voci uguali: «${await banner()}»`);
   check((await contatori()).scelte.length === 0 && await val("QUANTITA_5") === "", "…nessuna scelta, nessuna dose scritta");
+
+  // ---- 6b. una voce con le minuscole («SF 500cc», dal vero): il nome intero non la
+  // trova (il gestionale cerca «SF 500CC»), il nome fino alla prima minuscola sì — e
+  // si sceglie lo stesso SOLO la voce con la stessa scritta
+  await doc.evaluate(() => {
+    const l = JSON.parse(localStorage.getItem("psassist:terapia.preferiti.v1") || "[]");
+    l.push({ descr: "SF 500cc", codice: "", qta: "1", um: { v: "fl", t: "fl" }, via: { v: "ev", t: "ev" }, dil: null, continua: false, bisogno: false, freq: "", durata: "1", n: 1, ts: 1 });
+    localStorage.setItem("psassist:terapia.preferiti.v1", JSON.stringify(l));
+  });
+  await doc.goto(URL_PAZ(PZ.ep));
+  await apriTerapiaPannello();
+  await $p('[data-terpref]:has-text("SF 500cc")').click();
+  const tSf = srv.termini.length;
+  await $p("#terprepara").click();
+  await sullaTerapia();
+  check(await finche(async () => /SF 500cc: controlla e premi Conferma/.test(await banner())), `una voce con le minuscole: «${await banner()}»`);
+  const nSf = await doc.evaluate(() => document.getElementById("DESCRIZIONE").name);
+  const termSf = srv.termini.slice(tSf).map((t) => t.term);
+  check(await val(nSf) === "SF 500cc" && termSf.length === 2 && termSf[0] === "SF 500cc" && termSf[1] === "SF 500",
+    `…trovata cercando «SF 500» dopo il nome intero, e scelta la voce con la stessa scritta (ricerche: ${termSf.join(" | ")})`);
 
   // ---- 7. la pagina di un altro paziente: Errore grave, niente scritto
   for (const [come, prepara] of [["il nome in testa", () => { srv.nomeAltro = true; }], ["l'episodio", () => { srv.epAltro = true; }]]) {

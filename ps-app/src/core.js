@@ -18853,8 +18853,15 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     if (document.getElementById("DESCRIZIONE") !== d || !d.classList.contains("ui-autocomplete-input")) return { stop: "la tendina dei farmaci della pagina non è pronta" };
     if ([...form.elements].some((el) => el.name && el.name.endsWith("_" + n) && el.type !== "hidden" && cambiatoTer(el))) return { stop: "nella riga nuova c'è già scritto qualcosa: non la tocco" };
     const scrive = () => scrittura.tasto > inizio;   // il medico scrive nella pagina: si lascia a lui
-    // 1. il farmaco, dalla tendina della pagina: la voce con la stessa scritta, una sola
-    const cerca = [v.descr, normTer(v.descr).split(/[\s*]/)[0]].filter((x, k, a) => x && x.length >= 3 && a.indexOf(x) === k);
+    // 1. il farmaco, dalla tendina della pagina: la voce con la stessa scritta, una sola.
+    // Le ricerche, dalla più stretta alla più larga: il nome intero; il nome fino alla
+    // prima minuscola (il gestionale porta il termine in maiuscolo: «SF 500cc» cerca
+    // «SF 500CC» e non trova la sua voce, «SF 500» sì); poi il nome accorciato parola per
+    // parola. Una ricerca più larga non cambia la regola: si sceglie SOLO la voce con la
+    // stessa scritta, e due uguali le sceglie il medico.
+    const nome = normTer(v.descr), minus = nome.search(/[a-zà-ÿ]/), parole = nome.split(/[\s*]+/);
+    const cerca = [nome, minus > 0 ? nome.slice(0, minus).trim() : "", ...parole.map((_, i) => parole.slice(0, parole.length - i).join(" "))]
+      .filter((x, k, a) => x && x.length >= 3 && a.indexOf(x) === k).slice(0, 4);
     for (const q of cerca) {
       if (!(await terapiaAspetta())) return { stop: "un ordine sta ancora lavorando in un'altra scheda: riprova fra poco" };
       if (scrive()) return { stop: "stai scrivendo nella pagina: mi fermo" };
