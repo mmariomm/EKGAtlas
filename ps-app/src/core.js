@@ -69,7 +69,7 @@
 
   // ================================================================ CONFIG
   const APP = "PS Assist";
-  const VERSION = "3.85.0";
+  const VERSION = "3.85.1";
   const NS = "psassist:"; // storage namespace
   // La build «mini» (PS Assist · Lettura e stampa): sola lettura. La bandiera
   // la mette sola-lettura.js, caricato prima di content.js (vedi manifest). Qui
