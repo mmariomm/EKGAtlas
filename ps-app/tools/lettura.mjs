@@ -37,6 +37,9 @@ export function manifestLettura(base) {
   }
   // la sua pagina: stato dell'associazione (QR, Scollega) e riga aggiornamento
   m.options_ui = { page: "ponte.html", open_in_tab: true };
+  // il mini non ha il pannello ⋯: l'icona nella barra apre un popup «menu» con
+  // «Mostra QR — Stazione di stampa» e «Associa l'iPhone» (azione.html)
+  m.action = { default_popup: "azione.html", default_title: LETTURA_NOME };
   return m;
 }
 
