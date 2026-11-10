@@ -193,7 +193,7 @@
     if (S.classifica) {
       S.classifica = false;
       const tolti = kind === "completo"
-        ? altri.filter((p) => p.kind === "completo")                                            // un solo PC completo: il nuovo prende il posto
+        ? altri.filter((p) => p.kind !== "lettura")                                             // un solo PC completo: il nuovo prende il posto (anche una riga migrata o non ancora classificata)
         : altri.filter((p) => p.kind === "lettura" && (stessa(p.k, S.coppia.k) || (p.nome && p.nome === nome)));  // lo stesso PC di sola lettura
       S.pcs = [S.coppia, ...altri.filter((p) => !tolti.includes(p))];
     } else {
@@ -398,7 +398,7 @@
   // i comandi che SCRIVONO nel gestionale: su un PC di sola lettura non partono
   // nemmeno dal telefono (il PC li rifiuterebbe comunque: «Questo PC è in sola
   // lettura»). «stampa»/«ristampa» no: stampano, non scrivono.
-  const SCRITTURE_TEL = new Set(["ordina", "cartellaSalva", "terapiaAggiungi", "accetta", "nota", "promemoria", "fatto", "dfAggiungi", "dfSpunta", "dfTogli", "posto", "stazioneCollega"]);
+  const SCRITTURE_TEL = new Set(["ordina", "cartellaSalva", "terapiaAggiungi", "accetta", "registrazioneVia", "dfAggiungi", "dfSpunta", "dfTogli", "posto", "stazioneCollega"]);
   function chiedi(cmd, args = {}, tempo = TEMPO, auto = false, o = {}) {
     return new Promise((si, no) => {
       if (solaLettura() && SCRITTURE_TEL.has(cmd)) { no(Object.assign(new Error("Sola lettura: su questo PC non si scrive"), { solaLettura: true })); return; }
@@ -1475,12 +1475,13 @@
   // In una barra: quello che corre, o uno finito male (finché non lo si chiude
   // con ✕); «Ordine non completo» se non è stato confermato tutto.
   function ordineHtml(o, barra = false, sopra = false) {
-    const segno = o.tono === "err" || o.tono === "warn" ? "!" : o.tono === "ok" ? "✓" : "";
-    const male = o.fine && (o.tono === "err" || o.tono === "warn"), monco = male && (o.tono === "err" || o.stato !== "avviso");
+    const quieto = !!o.quieto;   // esito calmo (ordine confermato dal telefono, etichette al PC): niente allarme, ambra solo nel pallino
+    const segno = quieto ? "" : o.tono === "err" || o.tono === "warn" ? "!" : o.tono === "ok" ? "✓" : "";
+    const male = !quieto && o.fine && (o.tono === "err" || o.tono === "warn"), monco = male && (o.tono === "err" || o.stato !== "avviso");
     const titolo = barra ? `${monco ? "Ordine non completo" : o.titolo || ""} · ${o.paziente || ""}` : o.titolo || "";
     const testo = barra && monco ? [o.titolo, o.testo].filter(Boolean).join(" · ") : o.testo || "";
     const meta = barra || /\balle \d/.test(`${o.titolo} ${o.testo}`) ? "" : hhmm(o.ts || Date.now());
-    return `<div class="ord ${esc(o.tono || "run")}${barra ? " ordbar" : ""}${sopra ? " sopra" : ""}" role="status"${barra ? ` data-a="paz" data-ep="${esc(o.ep)}"` : ""}>
+    return `<div class="ord ${esc(o.tono || "run")}${quieto ? " quieto" : ""}${barra ? " ordbar" : ""}${sopra ? " sopra" : ""}" role="status"${barra ? ` data-a="paz" data-ep="${esc(o.ep)}"` : ""}>
       <span class="seg-o">${segno}</span>
       <span class="c"><b><span>${esc(titolo)}</span>${meta ? `<time>${esc(meta)}</time>` : ""}</b>${testo ? `<span>${esc(testo)}</span>` : ""}${!barra && o.dettaglio && !`${titolo} ${testo}`.includes(o.dettaglio) ? `<small>${esc(o.dettaglio)}</small>` : ""}</span>
       ${o.fine ? `<button class="x" data-a="nascondi" data-id="${esc(o.id)}" aria-label="Chiudi">✕</button>` : ""}</div>`;
@@ -2054,7 +2055,7 @@
   // mappa torna fra «Senza posto». Lo fa il PC, con lo stesso gesto della sua mappa; il telefono ridisegna dalla sua risposta.
   {
     let g = null;   // { ep, nome, x, y, timer, attivo, fant, su }
-    const puo = () => S.modo === "mappa" && S.mappa && S.mappa.modifica && !S.occupato.has("posto");
+    const puo = () => !solaLettura() && S.modo === "mappa" && S.mappa && S.mappa.modifica && !S.occupato.has("posto");
     const fine = () => { if (!g) return; clearTimeout(g.timer); if (g.fant) g.fant.remove(); if (g.su) g.su.classList.remove("bers"); g = null;
       trascino = false; if (rinviato && !premuto) { rinviato = false; render(); } };
     const sotto = (x, y) => { const el = document.elementFromPoint(x, y); return { b: el && el.closest("[data-lid]"), mappa: !!(el && el.closest(".mappa")) }; };

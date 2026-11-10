@@ -374,7 +374,8 @@ await blocco(async () => {
   check(!(await telFinto(pcR, k, DEV2)).canale, "un altro telefono no, nemmeno dopo");
   pcR.salta(14 * 3600e3);
   await pcR.ev("ponteControlla()");
-  check(!pcR.pt().coppia && !("ponte.coppia" in pcR.locale) && pcR.presa().readyState === 3, "alla scadenza delle 14 ore la chiave se ne va anche dal disco, e la presa si chiude");
+  check(!!pcR.pt().coppia && ("ponte.coppia" in pcR.locale), "dopo 14 ore l'associazione non scade più: la chiave resta (in RAM e sul disco)");
+  check(!pcR.pt().sessione && pcR.presa().readyState === 1, "la sessione ferma da oltre 3 minuti si chiude (inattività), ma il PC resta nella stanza, raggiungibile");
 
   // la pagina del telefono si ricarica mentre la sessione vecchia è viva
   for (let i = 2; i <= 6; i++) await t1.manda({ id: i, cmd: "pazienti" });

@@ -265,6 +265,9 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 /* gli esami: chip fitti larghi quanto il nome, che vanno a capo da soli */
 .griglia { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .esame { min-height: 38px; min-width: 38px; max-width: 100%; border: 1px solid var(--bordo); background: var(--carta2); border-radius: 8px; padding: 4px 10px; font-size: 13.5px; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; }
+/* chip compatti (38 px di aspetto) ma area toccabile 44 px: il tocco veloce non manca l'esame — il margine riempie il gap di 6 px, niente sovrapposizione */
+.q-w .chip, .gruppo .chip, .esame { position: relative; }
+.q-w .chip::before, .gruppo .chip::before, .esame::before { content: ""; position: absolute; left: 0; right: 0; top: -3px; bottom: -3px; }
 .esame.on { background: var(--azione); border-color: var(--azione); color: #fff; }
 
 .cta { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; padding: 8px var(--dx) calc(8px + env(safe-area-inset-bottom)) var(--sx);
@@ -297,6 +300,9 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .ord.ok { background: var(--verdef); border-color: var(--verdeb); } .ord.ok .seg-o { background: var(--verdep); }
 .ord.warn { background: var(--ambraf); border-color: var(--ambrab); } .ord.warn .seg-o { background: var(--ambrap); }
 .ord.err { background: var(--rossof); border-color: var(--rossob); } .ord.err .seg-o { background: var(--rossop); }
+/* esito calmo: «Confermato · etichette al PC» — scheda neutra, ambra solo in un pallino piccolo (così l'ambra vera si nota) */
+.ord.ok.quieto { background: var(--carta); border-color: var(--bordo); }
+.ord.ok.quieto .seg-o { width: 12px; height: 12px; margin-top: 6px; background: var(--ambra); animation: none; }
 .ord .c { flex: 1; min-width: 0; }
 .ord .c b { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 15px; }
 .ord .c b time { flex: none; font-size: 12.5px; font-weight: 500; color: var(--grigio); font-variant-numeric: tabular-nums; }

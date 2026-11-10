@@ -1362,7 +1362,7 @@ function ponteStatoOrdine(m, rec) {
   }
   const p = { ...rec.pubblico, ...(rec.pubblico && rec.pubblico.tel) };
   return { ...base, stato: rec.stato, tono: p.tono || "run", titolo: corto(p.titolo, 80), testo: corto(p.testo, 200),
-    dettaglio: corto(p.dettaglio, 240), fine: PONTE_FINALI.has(rec.stato) };
+    dettaglio: corto(p.dettaglio, 240), quieto: !!p.quieto, fine: PONTE_FINALI.has(rec.stato) };
 }
 async function ponteOrdiniMemo() {
   const l = (await chrome.storage.session.get(PONTE_ORDINI))[PONTE_ORDINI];

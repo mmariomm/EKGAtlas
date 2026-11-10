@@ -1380,7 +1380,7 @@ function ordPubblico(rec, l = []) {
         return alTel(P("warn", cosa(rotti), rotti[0].why || `${dove(rotti)} ha dato errore`, st.riassunto),
           P("warn", cosa(rotti), "aspettano qualcuno al PC", rotti[0].why, st.riassunto));
       }
-      if (dalTelefono(rec)) return alTel(P("warn", "Etichette NON stampate", "tocca Stampa", st.riassunto), P("warn", "Confermato · etichette al PC", "", st.riassunto));
+      if (dalTelefono(rec)) return alTel(P("warn", "Etichette NON stampate", "tocca Stampa", st.riassunto), { ...P("ok", "Confermato · etichette al PC", "", st.riassunto), quieto: true });
       return P("run", "Confermata", "Etichette pronte", st.riassunto, st.quesito);
     }
     case "errore": {

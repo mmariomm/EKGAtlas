@@ -211,12 +211,18 @@ chrome.runtime.onInstalled.addListener((d) => {
 // lettura, niente di non mandato.
 const AGG_MINI_ALLARME = "psassist-aggiorna-mini";
 const AGG_MINI_ORE = 6 * 60;   // minuti
+let aggMiniInCorso = false;   // avvio + allarme possono scattare insieme: una sola volta
 async function aggMiniAuto() {
-  if (!aggSolaLettura()) return;
-  const rec = await aggControlla(true).catch(() => null);
-  if (!rec || !rec.nuova || !rec.puo) return;   // niente di nuovo, o non si aggiorna da qui
-  const r = await aggiorna().catch(() => null);
-  if (r && r.ricarica) setTimeout(() => chrome.runtime.reload(), 400);
+  if (!aggSolaLettura() || aggMiniInCorso) return;
+  aggMiniInCorso = true;
+  try {
+    const rec = await aggControlla(true).catch(() => null);
+    if (!rec || !rec.nuova || !rec.puo) return;   // niente di nuovo, o non si aggiorna da qui
+    const r = await aggiorna().catch(() => null);
+    if (r && r.ricarica) setTimeout(() => chrome.runtime.reload(), 400);
+  } finally {
+    aggMiniInCorso = false;
+  }
 }
 chrome.runtime.onStartup?.addListener(() => { aggMiniAuto().catch(() => {}); });
 if (aggSolaLettura() && chrome.alarms) {

@@ -2043,10 +2043,13 @@
     const l = String(e.label || "").toUpperCase();
     const sis = String(e.sistema || "").toUpperCase();
     if (/ELETTROCARDIOGRAMM|\bECG\b/.test(l)) return "ecg";
+    // il sistema che emette il referto dice il tipo meglio del nome: un referto
+    // di laboratorio (LIS) con una «TC» nel nome è colesterolo totale o tempo di
+    // coagulazione, non un torace — quindi LIS=laboratorio prima del regex imaging
+    if (sis.includes("LIS")) return "lab";
     // the whole of radiology reads as text, not just plain films: the system
     // that issued the document says it better than the exam's name does
     if (sis.includes("RIS") || /\bRX\b|RADIOGRAF|\bTC\b|\bTAC\b|ECOGRAF|RISONANZA|\bRMN\b/.test(l)) return "rx";
-    if (sis.includes("LIS")) return "lab";
     return "altro";
   }
 
@@ -3218,7 +3221,13 @@
       const raw = store.get(MAPPE[k].posti, {}), v = raw && typeof raw === "object" ? raw[key] : null, s = v && sala(k);
       if (s && (v.tipo === "letto" ? s.letti : v.tipo === "area" ? s.aree : []).some((o) => o.id === v.id)) return { k, tipo: v.tipo, id: v.id, ts: +v.ts || 0 };
     }
-    return sala(TRIAGE_ATTESA.k)?.aree.some((a) => a.id === TRIAGE_ATTESA.id) ? { ...TRIAGE_ATTESA, ts: 0 } : null;
+    // la Sala attesa di partenza: l'area «attesa» della mappa «ps»; se il medico
+    // l'ha rinominata o rifatta, una che si chiama «attesa», se no la prima area
+    // (così un paziente del triage non sparisce mai dalla mappa personalizzata).
+    const ps = sala(TRIAGE_ATTESA.k);
+    if (!ps || !Array.isArray(ps.aree) || !ps.aree.length) return null;
+    const a = ps.aree.find((x) => x.id === TRIAGE_ATTESA.id) || ps.aree.find((x) => /attes/i.test(x.nome || "")) || ps.aree[0];
+    return a ? { k: TRIAGE_ATTESA.k, tipo: "area", id: a.id, ts: 0 } : null;
   }
   function leggiSmartPagina(doc, url) {
     if (!eSmart(doc, url) || classify(doc) === "login" || !doc.querySelector(".AFCHeaderTable")) return { ok: false, perche: "non è la lista smart" };
@@ -3369,7 +3378,8 @@
     if (L.sel && L.sel.triage) {
       giro.triage = { n: L.sel.n, filtrata: L.filtrata,
         righe: L.righe.map((r) => ({ nome: r.name, breve: nomeCorto(r.name), eta: r.eta, triage: r.triage, area: AREE_TITOLO[chiaveArea(r.area)] || "", arrivo: r.arrivo || 0,
-          // (la chiave di nome e nascita, come per chi è noto solo dalla smart: «Accetta in ambulatorio» dal telefono)
+          // (chiave di nome e nascita: identifica la riga della lista smart sul telefono. NB «Accetta
+          // in ambulatorio» combacia per episodio o chiaveTriage «tr…», non con questa chiaveSmart «sm…»)
           ...(r.nato ? { k: chiaveSmart(r.name, improntaNascita(r.nato)) } : {}) })) };   // (l'area solo se si riconosce, col nome corto)
     }
     const prossima = L.schede.find((s) => s.nostra && !giro.letti[s.base]) || (giro.triage ? null : L.schede.find((s) => s.triage));
@@ -15215,13 +15225,17 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
       this.root.querySelectorAll("[data-print]").forEach((b) => b.addEventListener("click", () => {
         const rid = b.getAttribute("data-print");
         const jobs = printJobsFor(printModel(document, location.href), rid);
-        avviaStampa(jobs, { panel: this, title: `Richiesta ${rid}.`, ep: this.episodeId, paziente: this.nomePaziente(), url: location.href });
+        // doppio click (su stampa automatica partirebbe due volte): due tocchi nella stessa
+        // finestra di 2 s hanno lo stesso id e il service worker ne stampa uno solo; una
+        // ristampa voluta più tardi cade in un'altra finestra e riparte
+        avviaStampa(jobs, { panel: this, title: `Richiesta ${rid}.`, ep: this.episodeId, paziente: this.nomePaziente(), url: location.href,
+          jobId: `rist-${rid}-${Math.floor(Date.now() / 2000)}` });
       }));
       $("#stultima")?.addEventListener("click", () => {
         const map = printModel(document, location.href);
         const ids = ultimeRichieste(map);
         avviaStampa(fogliDi(map, ids), { panel: this, title: `${ids.length > 1 ? "Richieste" : "Richiesta"} ${ids.join(" e ")}.`,
-          ep: this.episodeId, paziente: this.nomePaziente(), url: location.href });
+          ep: this.episodeId, paziente: this.nomePaziente(), url: location.href, jobId: `rist-${ids.join("-")}-${Math.floor(Date.now() / 2000)}` });
       });
       this.root.querySelectorAll("[data-esito]").forEach((b) => b.addEventListener("click", () =>
         this.openEsito(b.getAttribute("data-esito"))));
@@ -16295,7 +16309,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   async function stampaAltrove(jobs, opzioni) {
     const { panel = null, tag = "Stampa", fine = null, title = "" } = opzioni;
     const ep = String(opzioni.ep || "");
-    const job = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, ep, tag,
+    const job = { id: opzioni.jobId || `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`, ep, tag,
       paziente: opzioni.paziente || (tuttiPazienti().find((p) => p.ep === ep) || {}).name || "",
       url: urlPaziente(ep, opzioni.url), fine, riassunto: fine ? confermati(fine) : title.replace(/\.$/, ""), dest: opzioni.dest || "qui",
       quesito: fine ? quesitoDetto(fine.quesito) || "" : "",
@@ -17728,6 +17742,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   async function ponteCartellaQui() {
     const c = PONTE_CARTELLA;
     const fine = (esito) => ask({ t: "ponteCartellaFatto", ...esito });
+    if (SOLA_LETTURA) return fine({ ok: false, testo: "questo PC è in sola lettura" });   // secondo muro: la scheda non scrive mai sul mini
     if (!c || c.fase === "perso" || !c.campi) return fine({ ok: false, testo: "la scheda non sa più che cosa salvare" });
     const dopo = c.fase === "inviato";
     if (classify(document) !== "patient" || findEpisodeId(document, location.href) !== c.ep || !formCartella(document, c.ep)) {
@@ -17817,6 +17832,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
     // aggiungere: già confermata dopo la lettura del telefono? Forse è la sua
     // (una risposta persa): mai una seconda alla cieca
+    if (SOLA_LETTURA) return fine({ ok: false, testo: "questo PC è in sola lettura" });   // secondo muro: il mini legge e cerca i farmaci, ma non conferma
     const visti = new Set(c.visti || []);
     if (lettura.righe.some((r) => r.prog && !visti.has(r.prog) && ugualeTer(r.descr, v.descr))) {
       return fine({ ok: false, gia: true, testo: `«${v.descr}» c'è già fra le terapie confermate, dopo la tua lettura: rileggi e controlla`, lettura });
@@ -17899,6 +17915,7 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
   async function ponteAccettaQui() {
     const c = PONTE_ACCETTA;
     const fine = (esito) => ask({ t: "ponteAccettaFatto", ...esito });
+    if (SOLA_LETTURA) return fine({ ok: false, testo: "questo PC è in sola lettura" });   // secondo muro: niente «Accetta» dal mini
     if (!c || c.fase === "perso" || !c.nome) return fine({ ok: false, incerto: !!c && c.fase !== "lista", testo: "la scheda non sa più che cosa fare" });
     const mvpg = mvpgDi(document, location.href), testa = areaInTesta(document), area = testa ? titoloArea(testa.k, testa.label) : "";
     if (c.fase === "lista") {
