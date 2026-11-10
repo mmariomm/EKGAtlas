@@ -1344,6 +1344,33 @@ const ordiniFiniti = () => sw.evaluate(() => chrome.storage.session.get("ordini"
 await finche(ordiniFiniti, 30000);
 
 // ===========================================================================
+sezione("«Richieste fatte» e «Ristampa»: anche le richieste non fatte dall'estensione");
+// una richiesta già sulla pagina del paziente, che il pannello non ha fatto (il gestionale la dà con i suoi link)
+const rid0 = Object.keys(A.state.richieste)[0];
+A.state.allocated[699999] = { ...A.state.allocated[rid0] };
+A.state.richieste[699999] = { ...A.state.richieste[rid0], cart: new Map(A.state.richieste[rid0].cart), confirmed: true };
+await tocca(tel, '[data-a="scheda"][data-s="esiti"]');
+await tocca(tel, '[data-a="scheda"][data-s="richieste"]');
+const attese = Object.keys(A.state.richieste).filter((r) => A.state.richieste[r].confirmed).sort();
+const righeRis = async () => tel.locator(".rist [data-a=\"ristampa\"]").evaluateAll((l) => l.map((b) => b.dataset.id).sort());
+check(await finche(async () => (await righeRis()).length === attese.length, 15000) && (await righeRis()).join() === attese.join() && /Richieste fatte/i.test(await testoTel(tel)),
+  `Richieste: «Richieste fatte», una riga per ogni richiesta della pagina — anche la 699999, che il pannello non ha fatto (telefono: ${(await righeRis()).join(", ")}; gestionale: ${attese.join(", ")})`);
+const rigaTxt = await tel.locator('.rist:has([data-id="699999"])').innerText();
+check(/etichette/.test(rigaTxt) && /lista esami/.test(rigaTxt) && /Ristampa/.test(rigaTxt), `ognuna con che cosa stampa e «Ristampa» (${rigaTxt.replace(/\s+/g, " ")})`);
+await shot(tel, "tel-richieste-fatte");
+// «Ristampa»: un doppio tocco è una ristampa sola (al PC arriva un comando solo)
+await sw.evaluate(() => { self.__ris = []; self.__risVera = ponteRistampa; globalThis.ponteRistampa = (d) => { self.__ris.push(d.rid); return self.__risVera(d); }; });
+await tel.locator('[data-a="ristampa"][data-id="699999"]').dblclick();
+await finche(async () => (await sw.evaluate(() => self.__ris)).length >= 1, 10000);
+await sospendi(800);
+check((await sw.evaluate(() => self.__ris)).join() === "699999", "«Ristampa», doppio tocco: al PC arriva un comando solo, per quella richiesta");
+// (qui la stampa automatica non è impostata: lo dice, niente di stampato, niente dialogo)
+check(/La stampa automatica non è impostata|stampa automatica non è impostata/.test(await aspettaTel(tel, /stampa automatica non è impostata/, 15000)) && !(await sw.evaluate(() => chrome.storage.session.get("ordini").then((o) => (o.ordini || []).some((x) => String(x.id).startsWith("ris"))))),
+  "senza la stampa automatica sul PC: il telefono lo dice com'è («Ristampa non partita»), e sul PC nessuna stampa nata");
+await sw.evaluate(() => { globalThis.ponteRistampa = self.__risVera; });
+delete A.state.richieste[699999]; delete A.state.allocated[699999];
+
+// ===========================================================================
 sezione("l'ordine di cui non si sa: la scheda che tarda, la risposta persa");
 // la scheda del gestionale risponde dopo l'attesa: il PC non sa, l'ordine nasce lo stesso
 await sw.evaluate(() => { PONTE_ATTESA.ordina = 1; });

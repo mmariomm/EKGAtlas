@@ -475,3 +475,10 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .accesito { font-size: 13px; margin-top: 2px; } .accesito.err { color: var(--rosso); } .accesito.warn { color: var(--ambra); }
 .accpaz { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0; padding: 8px 12px; border-radius: 12px; background: var(--carta); }
 .accpaz .cor { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
+/* «Richieste fatte»: una riga per richiesta, con la sua «Ristampa» */
+.rist { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+.rist + .rist { border-top: 1px solid var(--linea); }
+.rist .c { flex: 1; min-width: 0; }
+.rist .c b { display: block; font-variant-numeric: tabular-nums; }
+.rist .c span { display: block; font-size: 14px; color: var(--testo2); margin-top: 1px; }
+.rist .c small { display: block; font-size: 12.5px; color: var(--grigio); margin-top: 2px; }

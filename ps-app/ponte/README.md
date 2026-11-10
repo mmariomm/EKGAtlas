@@ -124,6 +124,10 @@ sessione. Vedi:
 - **Collega stampante** (⋯) — inquadra il QR di una [stazione di stampa](#la-stazione-di-stampa):
   una carta con il suo nome e il codice, **Collega**, «Collegata al PC». Sopra «Conferma e stampa»,
   poi, «Stampa: PC · Infermeria» (la scelta del PC, cambiabile per un ordine).
+- **Richieste fatte** (in fondo alle Richieste) — tutte le richieste che la pagina del paziente sa
+  stampare, anche quelle non fatte da PS Assist, ognuna con **Ristampa**: etichette e foglio, dove
+  dice «Stampa: PC · Infermeria», con le parole di un ordine («Stampato su …», «Infermeria non
+  risponde»). Un doppio tocco è una ristampa sola. Solo stampa: niente Conferma, niente Registra.
 - **Stampa PDF** (⋯) — un PDF del telefono esce dalla stampante A4 del PC, con la stampa
   automatica (mai un dialogo: davanti al PC può non esserci nessuno; senza, «Sul PC la stampa
   automatica non è impostata»). Mentre va, «Invio… 40%»; poi le parole del PC: «Stampato su HP
@@ -332,7 +336,7 @@ ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un si
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`,
 `aggiornaValori(ep)`, `richieste` (il catalogo; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
-{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `accetta(k | ep, rq)`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stazioneCollega(sta, nome)`,
+{prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `accetta(k | ep, rq)`, `ristampe(ep)`, `ristampa(ep, rid, oid, dest?)`, `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stazioneCollega(sta, nome)`,
 più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per
 `ordineNuovo` come «Conferma e stampa», col numero `"tel" + oid` (l'`oid` lo fa il telefono quando
 arma «Conferma», `^[\w-]{8,24}$`: chiesto due volte, è un ordine solo — `ordiniVisti` in `bg.js`),

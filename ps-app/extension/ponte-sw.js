@@ -72,7 +72,7 @@ const PONTE_CODICE_CAMBIO = "93";
 const PONTE_CAMBIO_ERRORI = 5;
 const PONTE_CAMBIO_BLOCCO = 10 * 60e3;
 // quanto si aspetta una scheda del gestionale, e il «pong» (i test li accorciano)
-const PONTE_ATTESA = { ordina: 25e3, esiti: 30e3, cartella: 30e3, altro: 10e3, pong: 10e3 };
+const PONTE_ATTESA = { ordina: 25e3, ristampa: 25e3, ristampe: 30e3, esiti: 30e3, cartella: 30e3, altro: 10e3, pong: 10e3 };
 // Perché una sessione finisce: la frase, la stessa qui, sulla pagina iPhone e sul telefono.
 const PONTE_PERCHE = {
   inattivo: "3 minuti senza comandi", "scollegata dal PC": "Chiusa dal PC con «Scollega»",
@@ -408,6 +408,7 @@ function ponteArgomenti(d) {
   if (Array.isArray(d.esami)) a.esami = d.esami.filter((x) => typeof x === "string" && /^[\w]{1,16}:[\w]{1,16}$/.test(x)).slice(0, 40);
   if ("quesito" in d) a.quesito = ponteTesto(d.quesito, 300);
   if ("mio" in d) a.mio = !!d.mio;
+  if (typeof d.rid === "string" && /^[\w-]{1,30}$/.test(d.rid)) a.rid = d.rid;   // (la richiesta da ristampare)
   if (d.rileggi) a.rileggi = true;
   // (dove stampare i fogli di un ordine: «qui», sul PC, o alla stazione di stampa)
   if (d.dest === "qui" || d.dest === "stazione") a.dest = d.dest;
@@ -456,6 +457,7 @@ async function ponteRisposta(s, d) {
       }
       return await ponteOrdina(d);
     }
+    if (d.cmd === "ristampa") return await ponteRistampa(d);
     if (d.cmd === "pdf") return await ponteDaiPdf(s, d);
     if (d.cmd === "stampa") return await ponteStampa(s, d);
     if (d.cmd === "registrazioni") return await ponteRegistrazioni(s, d);
@@ -474,7 +476,7 @@ async function ponteRisposta(s, d) {
       await ponteScriviStato();
       return r;
     }
-    if (["pazienti", "mappa", "eo", "triage", "esiti", "richieste", "nota", "promemoria", "fatto", "dfAggiungi", "dfSpunta", "dfTogli", "posto"].includes(d.cmd)) {
+    if (["pazienti", "mappa", "eo", "triage", "esiti", "richieste", "ristampe", "nota", "promemoria", "fatto", "dfAggiungi", "dfSpunta", "dfTogli", "posto"].includes(d.cmd)) {
       const a = ponteArgomenti(d);
       const r = await ponteSuScheda(d.cmd, a);
       if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
@@ -679,6 +681,28 @@ async function ponteOrdina(d) {
   return r;
 }
 
+// «Ristampa» di una richiesta già sulla pagina del paziente (Richieste fatte):
+// le sue etichette e il suo foglio, dove dice il telefono (`dest`), col giro
+// dei fogli di un ordine — stesso giornale, stesse parole, «Infermeria non
+// risponde». Il numero lo fa il telefono (`oid`): rimandata, è la stessa; una
+// scheda che tace non si rifà (PONTE_UNA_VOLTA). Si guarda passare come un
+// ordine (ponteSegnaOrdini), ma l'id non è «tel…»: non ha né un quesito né esami.
+async function ponteRistampa(d) {
+  if (typeof d.oid !== "string" || !/^[\w-]{8,24}$/.test(d.oid)) return { ok: false, errore: "Ristampa senza numero: ricarica il pannello sul telefono" };
+  // (come un ordine: arrivata più di 30 secondi dopo il tocco — una presa morta, un ritardo — non si fa)
+  const eta = ponteOra() - d.nato;
+  if (!Number.isFinite(d.nato) || eta > PONTE_ORDINE_MAX || eta < -PONTE_ORDINE_MAX) return { ok: false, scaduto: true, errore: "Scaduta: non inviata" };
+  const a = { ...ponteArgomenti(d), id: "ris" + d.oid + "x" };   // (la x: un id che finisce per «r» sarebbe una radiologia)
+  if (!a.ep || !a.rid) return { ok: false, errore: "Ristampa senza richiesta: riapri l'elenco" };
+  const r = await ponteSuScheda("ristampa", a);
+  if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
+  if (!r.ok) return r;
+  await ponteSegnaOrdini(r.dati.ordini || []);
+  const ids = new Set(r.dati.ordini.map((o) => o.id));
+  const nati = (await ponteOrdiniMemo()).filter((m) => ids.has(m.id));
+  return { ok: true, dati: { ordini: nati.length ? nati : r.dati.ordini } };
+}
+
 // Le schede del gestionale che possono eseguire: non quelle di un ordine o
 // dei valori in sottofondo; prima quella davanti al medico.
 async function ponteSchede() {
@@ -696,7 +720,7 @@ async function ponteSchede() {
 // è «incerto» (per un ordine: non si sa se è partito), mai un no. Un ordine o
 // un promemoria non si rimanda alla scheda dopo: quella di prima può averlo
 // fatto, e sarebbero due.
-const PONTE_UNA_VOLTA = new Set(["ordina", "promemoria", "dfAggiungi"]);
+const PONTE_UNA_VOLTA = new Set(["ordina", "ristampa", "promemoria", "dfAggiungi"]);
 async function ponteSuScheda(cmd, args) {
   const tempo = PONTE_ATTESA[cmd] || PONTE_ATTESA.altro;
   const schede = await ponteSchede();
