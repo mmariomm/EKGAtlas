@@ -255,6 +255,58 @@
   // per confrontare: maiuscolo, senza accenti, ogni separatore uno spazio
   const norma = (s) => " " + MAIUSC(s).replace(/[^A-Z0-9]+/g, " ").trim() + " ";
 
+  // Un testo come lo legge il cancello: entità (&#210;, &Ograve;, &amp;) e %XX
+  // (UTF-8, o latin1 se non lo è: %C3%92 e %D2 sono la stessa «Ò») decodificati,
+  // poi le parole — maiuscole, senza accenti, ogni altro segno un separatore.
+  // Con `conPosti` ogni parola porta anche dove sta nel testo ORIGINALE: la
+  // ripulitura finale cerca e sostituisce con la stessa lettura, e quello che il
+  // cancello vede, lei lo trova (stesso punto di vista, non due regex diverse).
+  const ENT_PERC_RE = /&(?:#x[0-9a-f]+|#\d+|[a-z]+);|(?:%[0-9A-F]{2})+/gi;
+  function lettura(src, conPosti = false) {
+    const s = String(src);
+    let d = s, a = null, b = null;
+    if (/&(?:#|[a-z])|%[0-9A-F]{2}/i.test(s)) {
+      d = ""; a = []; b = [];
+      const metti = (t, i, j) => { for (let k = 0; k < t.length; k++) { d += t[k]; if (conPosti) { a.push(i); b.push(j); } } };
+      let ultimo = 0, m;
+      ENT_PERC_RE.lastIndex = 0;
+      const letterali = (da, fino) => { if (fino > da) { if (conPosti) for (let i = da; i < fino; i++) metti(s[i], i, i + 1); else d += s.slice(da, fino); } };
+      while ((m = ENT_PERC_RE.exec(s))) {
+        letterali(ultimo, m.index);
+        ultimo = ENT_PERC_RE.lastIndex;
+        if (m[0][0] === "&") { metti(decodifica(m[0]), m.index, ultimo); continue; }
+        const by = m[0].split("%").slice(1).map((x) => parseInt(x, 16));
+        let k = 0, pos = m.index;
+        while (k < by.length) {
+          let n = 1, ch = String.fromCharCode(by[k]);
+          const len = by[k] >= 0xF5 ? 1 : by[k] >= 0xF0 ? 4 : by[k] >= 0xE0 ? 3 : by[k] >= 0xC2 ? 2 : 1;
+          if (len > 1 && k + len <= by.length && by.slice(k + 1, k + len).every((x) => (x & 0xC0) === 0x80)) {
+            const cp = len === 2 ? ((by[k] & 0x1F) << 6) | (by[k + 1] & 0x3F)
+              : len === 3 ? ((by[k] & 0x0F) << 12) | ((by[k + 1] & 0x3F) << 6) | (by[k + 2] & 0x3F)
+              : ((by[k] & 0x07) << 18) | ((by[k + 1] & 0x3F) << 12) | ((by[k + 2] & 0x3F) << 6) | (by[k + 3] & 0x3F);
+            if (cp >= 0x80 && cp <= 0x10FFFF && !(cp >= 0xD800 && cp <= 0xDFFF)) { ch = String.fromCodePoint(cp); n = len; }
+          }
+          metti(ch, pos, pos + 3 * n);
+          pos += 3 * n; k += n;
+        }
+      }
+      letterali(ultimo, s.length);
+    }
+    const parole = [];
+    let cur = null;
+    for (let i = 0; i < d.length; i++) {
+      const c = d.charCodeAt(i);
+      let g;
+      if (c < 128) g = c >= 97 && c <= 122 ? String.fromCharCode(c - 32) : (c >= 65 && c <= 90) || (c >= 48 && c <= 57) ? d[i] : null;
+      else { g = MAIUSC(d[i]); if (g === "") continue; if (!/^[A-Z0-9]+$/.test(g)) g = null; }     // (un segno combinante non spezza la parola)
+      if (g == null) { cur = null; continue; }
+      if (!cur) { cur = { w: "", da: a ? a[i] : i, a: 0 }; parole.push(cur); }
+      cur.w += g;
+      cur.a = b ? b[i] : i + 1;
+    }
+    return { d, parole };
+  }
+
   const CF_RE = /(?<![A-Za-z0-9])[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z](?![A-Za-z0-9])/g;
   const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
   const TEL_RE = [
@@ -1610,9 +1662,73 @@
     const parolePers = [...parolePersona.keys()].filter((w) => w.length >= 3).sort((a, b) => b.length - a.length);
     const rePers = parolePers.length ? new RegExp(`(?<![A-Za-zÀ-ÿ])(?:${parolePers.map(escRe).join("|")})(?![A-Za-zÀ-ÿ])`, "gi") : null;
     const reLett = letterali.size ? new RegExp([...letterali.keys()].sort((a, b) => b.length - a.length).map(escRe).join("|"), "g") : null;
+    // I dati da cercare, come li cerca il cancello: ogni nome visto (un paziente di
+    // due parole anche girato, «MARIO ROSSI»; i cognomi del SISS da soli), e ogni
+    // identificativo, data di nascita, telefono, tessera, email visti.
+    const daCercare = [];
+    for (const { cat, orig } of nomiVisti.values()) {
+      daCercare.push({ cat, testo: orig, orig });
+      const w = orig.trim().split(/\s+/);
+      if (cat === "nomi" && w.length === 2 && w.every((x) => x.length >= 3)) daCercare.push({ cat, testo: `${w[1]} ${w[0]}`, orig, girato: true });
+    }
+    for (const [w, e] of parolePersona) if (e.cognome && w.length >= 4) daCercare.push({ cat: "nomi", testo: w, orig: w, parola: true });
+    for (const v of idOriginali) if (v.length >= 5) daCercare.push({ cat: "id", testo: v, fn: () => fintoId(v) });
+    for (const v of visto.nascita) if (date(v) !== v || /^\d{8}$/.test(v)) daCercare.push({ cat: "nascita", testo: v, fn: letterali.get(v) });
+    for (const v of visto.telefoni) daCercare.push({ cat: "telefoni", testo: v, fn: () => v.replace(/\d/g, "0") });
+    for (const v of visto.tessere) daCercare.push({ cat: "tessere", testo: v, fn: () => v.replace(/\d/g, "0") });
+    for (const v of visto.email) daCercare.push({ cat: "email", testo: v, fn: () => "utente@esempio.it" });
+    const indiceNomi = new Map();
+    for (const x of daCercare) {
+      const n = norma(x.testo);
+      if (n.trim().length < 4) continue;
+      x.parole = n.trim().split(" ");
+      if (!indiceNomi.has(x.parole[0])) indiceNomi.set(x.parole[0], []);
+      indiceNomi.get(x.parole[0]).push(x);
+    }
+    // La stessa lettura del cancello (entità, %XX UTF-8 o latin1, accenti e apostrofi
+    // che non contano, ogni segno un separatore): quello che il cancello conta, qui
+    // si trova e si sostituisce — anche in una frase tenuta come vocabolario, in uno
+    // script, in un indirizzo, con un altro separatore o un'altra forma. Il separatore
+    // del posto (%20, _, -, &nbsp;) resta; il nome finto ha le stesse maiuscole del vero.
+    const nomiComeIlCancello = (t) => {
+      if (!indiceNomi.size) return t;
+      const L = lettura(t, true), w = L.parole;
+      if (!w.length) return t;
+      const fintiN = new Set([...finti.values()].map(norma));
+      let out = "", fine = 0;
+      for (let i = 0; i < w.length; i++) {
+        const l = indiceNomi.get(w[i].w);
+        if (!l) continue;
+        let meglio = null;
+        for (const e of l) {
+          if (i + e.parole.length > w.length || fintiN.has(norma(e.testo))) continue;
+          let ok = true;
+          for (let j = 1; j < e.parole.length; j++) if (w[i + j].w !== e.parole[j]) { ok = false; break; }
+          if (ok && (!meglio || e.parole.length > meglio.parole.length || (e.parole.length === meglio.parole.length && meglio.girato && !e.girato))) meglio = e;
+        }
+        if (!meglio) continue;
+        const j = i + meglio.parole.length - 1, da = w[i].da, a = w[j].a;
+        if (da < fine) continue;
+        if (meglio.fn) {
+          // il dato finto con i separatori che il posto aveva («12-03-1950» resta con i trattini)
+          let f = meglio.fn();
+          const pezzi = f.match(/[A-Za-z0-9]+/g) || [];
+          if (j > i && pezzi.length === j - i + 1 && !/@/.test(f)) f = pezzi.map((x, k) => (k ? t.slice(w[i + k - 1].a, w[i + k].da) : "") + x).join("");
+          out += t.slice(fine, da) + f; fine = a; i = j; continue;
+        }
+        let f = meglio.parola ? parolaFinta(meglio.orig) : meglio.girato ? nomeFinto(meglio.orig, "nomi").split(" ").reverse().join(" ") : nomeFinto(meglio.orig, meglio.cat);
+        f = /[a-zà-ÿ]/.test(t.slice(da, a).replace(/%[0-9A-F]{2}|&#?\w+;/gi, " ")) ? f.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()) : f.toUpperCase();
+        const sep = j > i ? t.slice(w[i].a, w[i + 1].da) : " ";
+        const sepFinto = /^%20$/i.test(sep) ? "%20" : /^&nbsp;$/i.test(sep) ? "&nbsp;" : /^[_+.-]$/.test(sep) ? sep : " ";
+        out += t.slice(fine, da) + f.replace(/ /g, sepFinto);
+        fine = a; i = j;
+      }
+      return fine ? out + t.slice(fine) : t;
+    };
     const ripulisci = (s) => {
       let t = s;
       if (reNomi) t = t.replace(reNomi, (m) => nomeFinto(m.replace(/&nbsp;|%[0-9A-Fa-f]{2}|[^A-Za-z0-9À-ÿ]+/g, " ").trim(), (nomiVisti.get(norma(m.replace(/&nbsp;|%[0-9A-Fa-f]{2}/g, " "))) || {}).cat));
+      t = nomiComeIlCancello(t);
       if (rePers) t = t.replace(rePers, (m) => (parolePersona.has(MAIUSC(m)) ? parolaFinta(m) : m));
       if (reLett) t = t.replace(reLett, (m) => letterali.get(m)());
       if (reIdAlfa) t = t.replace(reIdAlfa, (m) => fintoId(m));
@@ -1811,15 +1927,9 @@
     ].join("\n");
 
     // -------------------------------------------------- il cancello
-    const sensibili = { nomi: [], personale: [], cf: [...visto.cf], nascita: [...visto.nascita].filter((v) => date(v) !== v || /^\d{8}$/.test(v)), id: [...idOriginali].filter((v) => v.length >= 5),
-      email: [...visto.email], telefoni: [...visto.telefoni], tessere: [...visto.tessere] };
-    for (const { cat, orig } of nomiVisti.values()) {
-      sensibili[cat].push(orig);
-      // un paziente di due parole anche girato («MARIO ROSSI»); con ^ o una virgola il cancello lo vede già (norma)
-      const w = orig.trim().split(/\s+/);
-      if (cat === "nomi" && w.length === 2 && w.every((x) => x.length >= 3)) sensibili.nomi.push(`${w[1]} ${w[0]}`);
-    }
-    for (const [w, e] of parolePersona) if (e.cognome && w.length >= 4) sensibili.nomi.push(w);
+    const sensibili = { nomi: [], personale: [], cf: [...visto.cf], nascita: [], id: [], email: [], telefoni: [], tessere: [] };
+    // (le stesse persone che la ripulitura ha cercato: `daCercare`)
+    for (const x of daCercare) sensibili[x.cat].push(x.testo);
     // (opz.aggiungi: file messi fra quelli in uscita prima del controllo — solo per i test)
     Object.assign(files, opz.aggiungi || {});
     const prova = { ...files, "riepilogo.txt": riepilogo({ ok: true, punti: 0 }) };
@@ -1860,10 +1970,10 @@
       }
     }
     for (const [file, contenuto] of Object.entries(files)) {
-      const raw = decodifica(String(contenuto)).replace(/%([0-9A-F]{2})/gi, (m, h) => String.fromCharCode(parseInt(h, 16)));
+      const L = lettura(contenuto), raw = L.d;
       for (const m of raw.matchAll(CF_RE)) if (!FINTO_CF.test(m[0])) segna(file, "codice fiscale");
       if (!indice.size) continue;
-      const w = norma(raw).trim().split(" ");
+      const w = L.parole.map((x) => x.w);
       for (let i = 0; i < w.length; i++) {
         const l = indice.get(w[i]);
         if (!l) continue;

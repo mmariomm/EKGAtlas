@@ -409,6 +409,48 @@ check(!nomi.includes("eviewer.json") && !/Visualizzatore di immagini/.test(riep)
   check(!cancello({ a: "<td>Rossi^Mario^^</td>" }, { nomi: ["ROSSI MARIO"] }).ok && !cancello({ a: "id=16146285-1" }, { id: [ACC] }).ok, "il cancello vede «^» e l'accettazione con il trattino");
 }
 
+// --------------------------- un nome vero scritto in un'altra forma, in una frase che resta
+// Una frase che compare per due pazienti diversi («Cartella di … aperta») è vocabolario e
+// resta com'è: se dentro c'è il nome di un paziente scritto in un altro modo — girato
+// («MARIO ROSSI»), con l'accento o l'apostrofo («NICOLO'»), con &amp; o %20 in mezzo, o
+// con le lettere come entità — il cancello lo vede e la ripulitura finale deve vederlo
+// allo stesso modo. Prima: «restano N dati da controllare» sulle liste, e il nome fuori.
+{
+  const T3 = Date.UTC(2026, 9, 30, 11, 0, 0);
+  const forme = ["Cartella di MARIO ROSSI aperta", "Cartella di ROSSI &amp; MARIO aperta", "Cartella di Rossi%20Mario aperta", "Cartella di NICOLO' GIUSEPPE aperta",
+    "Cartella di NICOL&Ograve; GIUSEPPE aperta", "Cartella di NICOL&#210; GIUSEPPE aperta", "Cartella di D&#39;ANGELO LUCIA aperta", "Cartella di ROSSI_MARIO aperta",
+    "Cartella di NICOL%C3%92 GIUSEPPE aperta", "Cartella di NICOL%D2 GIUSEPPE aperta"];
+  const pagA = (ep, nome, i) => ({ url: `${G}/sa4pso/restrict/menuPso.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=${ep}`, ts: T3 + 1000 * i, scheda: 1, alto: true,
+    html: `<html><body><h1>${nome}</h1><p>Assistito</p><b>${nome}</b>${forme.map((f) => `<span title="${f}">${f}</span>`).join("")}<a href="x.do?MVPG=PsoPazientiSmart&amp;s_ASSISTITO=${encodeURIComponent(nome)}&amp;NOME=${encodeURIComponent(nome).replace(/%20/g, "+")}">v</a></body></html>` });
+  const rf = anonimizza({ inizio: T3, origini: { gestionale: G }, pagine: [pagA("150101", "ROSSI MARIO", 1), pagA("150102", "D'ANGELO LUCIA", 2),
+    pagA("150103", "NICOLÒ GIUSEPPE", 3), pagA("150104", "ALTRO PAZIENTE", 4)] }, { vocabolario, sfasamento: 30, diagnosi: true });
+  const tf = Object.entries(rf.files).filter(([n]) => n.startsWith("pagine/")).map(([, c]) => c).join("\n");
+  check(rf.gate.ok && rf.gate.punti === 0, `forme diverse dello stesso nome in frasi tenute: il cancello trova 0 punti (${rf.gate.punti}: ${JSON.stringify(rf.gate.dove)})`);
+  check(!/ROSSI|NICOL|D&#39;ANGELO|D'ANGELO|DANGELO|GIUSEPPE|LUCIA|MARIO/i.test(tf.replace(/PAZIENTE ALTRO/g, "")), "…e nessun nome vero è rimasto, in nessuna forma");
+  check(/Cartella di [A-Z]+ [A-Z]+ aperta/.test(tf) && tf.includes("Cartella di"), "la frase resta, col nome finto al posto di quello vero");
+  // lo stesso paziente, lo stesso nome finto, anche girato o scritto con l'entità
+  const fintoRossi = (/<h1>([^<]+)<\/h1>/.exec(rf.files["pagine/001-PsoEpisodioClinicoAmbulatorio.html"]) || [])[1];
+  check(fintoRossi && rf.files["pagine/001-PsoEpisodioClinicoAmbulatorio.html"].includes(`Cartella di ${fintoRossi.split(" ").reverse().join(" ")} aperta`),
+    `il nome girato diventa il nome finto girato (${fintoRossi})`);
+  check(/s_ASSISTITO=ESEMPIO&amp;NOME=ESEMPIO/.test(tf), "e nell'indirizzo il nome vero non c'è più");
+}
+
+// -------------- date, numeri, telefoni e email scritti in un altro modo, in attributi e script
+// Il cancello li legge con altri separatori («12-03-1950», «347-1234567»), dentro un id o un
+// nome di campo (che la pagina non passa per il testo), in uno script con %XX o &#NN;.
+{
+  const T4 = Date.UTC(2026, 9, 30, 12, 0, 0);
+  const pagB = { url: `${G}/sa4pso/restrict/menuPso.do?MVPG=PsoEpisodioClinicoAmbulatorio&EPISODIO_ID=150101`, ts: T4 + 1000, scheda: 1, alto: true,
+    html: `<html><body><table><tr id="riga_12-03-1950_x" class="n_12.03.1950"><td>${P1.nome}</td><td>nato il 12/03/1950</td><td>Tel. 347 1234567</td><td>carlo.verdone@posta.it</td></tr></table>
+    <a name="t_347-1234567" id="p_carlo-verdone-posta-it" class="ep_2026-881001 r_2026/881001"></a><span id="e_150101_x" data-ep="x150101y"></span>
+    <script>var k = "12%2D03%2D1950"; var t = "347&#45;1234567"; var q = "1950-03-12";</script></body></html>` };
+  const rb = anonimizza({ inizio: T4, origini: { gestionale: G }, pagine: [pagB, { ...pagB, ts: T4 + 2000, html: pagB.html.replace("Tel. 347 1234567", "Tel. 347 1234567 / 2026/881001") }] }, { vocabolario, sfasamento: 30, diagnosi: true });
+  const tb = Object.entries(rb.files).filter(([n]) => n.startsWith("pagine/")).map(([, c]) => c).join("\n");
+  check(rb.gate.ok && rb.gate.punti === 0, `date, telefoni, email e numeri in un'altra forma: il cancello trova 0 punti (${rb.gate.punti}: ${JSON.stringify(rb.gate.dove)})`);
+  check(!/12[-.]03[-.]1950|12%2D03|347[-&]|1234567|verdone|150101|881001/i.test(tb), "…e nessuno di quei dati veri è rimasto");
+  check(/id="riga_\d\d-\d\d-1950_x"/.test(tb) && /class="n_\d\d\.\d\d\.1950"/.test(tb), "la data di nascita resta una data dello stesso anno, con i separatori che aveva");
+}
+
 // --------------------------------------------------------------- lo zip
 const zip = creaZip({ "a.txt": "ciao", "pagine/001-x.html": "<p>è</p>" });
 const dir = mkdtempSync(join(tmpdir(), "psa-zip-"));
