@@ -233,7 +233,7 @@ main { padding: 12px var(--dx) calc(112px + env(safe-area-inset-bottom)) var(--s
 .prn:disabled { opacity: .4; }
 .ref .r1 { display: flex; gap: 10px; align-items: baseline; }
 .ref .q { flex: none; font-size: 13px; color: var(--grigio); font-variant-numeric: tabular-nums; min-width: 82px; }
-.ref .t { flex: 1; font-weight: 600; min-width: 0; }
+.ref .t { flex: 1; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }   /* (un nome lungo, EMOCROMOCITOMETRICO, va a capo: mai sotto «nuovo») */
 .ref .testo { white-space: pre-wrap; line-height: 1.5; margin-top: 10px; padding: 10px 0 0; border-top: 1px solid var(--linea); font-size: 15px; overflow-wrap: anywhere; }
 .ref .manca { font-size: 13px; color: var(--grigio); margin-top: 6px; }
 

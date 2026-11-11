@@ -799,6 +799,7 @@
   function esitiArrivati(ep, e) {
     S.esiti.set(ep, e);
     if (e && e.riga) aggiornaRiga(e.riga);
+    guardaEsiti(ep);
   }
   // Quello che il PC legge da sé, perché il medico ha aperto il paziente qui (il suo tocco è il gesto):
   // gli esiti dicono `leggi` — «apri»: in questo turno il PC non l'ha ancora aperto, e apre la sua
@@ -814,6 +815,29 @@
     if (e.leggi !== "apri" && (S.scheda !== "esiti" || S.vista.nome !== "paziente" || S.vista.ep !== ep)) return;
     S.daSolo.set(ep, Date.now());
     aggiornaValori(ep, e.leggi === "apri" ? "apri" : "auto");
+  }
+  // Visto qui = visto sul PC: gli Esiti con qualcosa di nuovo (i valori, il pallino del tabellone),
+  // davanti per qualche secondo, lo dicono al PC — come la sua finestra aperta sugli Esiti. Una volta
+  // per risposta del PC. (Un referto aperto lo dice da sé: «referto».)
+  const VISTO_DOPO = 3000;
+  function guardaEsiti(ep) {
+    const e = S.esiti.get(ep);
+    if (!e || !(Number(e.valoriNuovi) > 0 || e.nuovo)) return;
+    setTimeout(() => {
+      if (S.esiti.get(ep) !== e || S.vista.nome !== "paziente" || S.vista.ep !== ep || S.scheda !== "esiti" || document.visibilityState !== "visible" || S.fase !== "pronta") return;
+      chiedi("visto", { ep, valori: true, ...(e.tabella && e.letto ? { fino: e.letto } : {}) }, TEMPO, true).then(() => {   // (da sé: non tiene aperta la sessione)
+        if (S.esiti.get(ep) !== e) return;
+        e.valoriNuovi = 0; e.nuovo = false;
+        render();
+      }, () => {});
+    }, VISTO_DOPO);
+  }
+  // Un referto aperto qui: non più «nuovo», qui e sul PC
+  function refertoVisto(ep, id) {
+    const e = S.esiti.get(ep), r = e && (e.referti || []).find((x) => x.id === id);
+    if (!r || !r.nuovo) return;
+    r.nuovo = false;
+    chiedi("visto", { ep, ids: [id] }).catch(() => { r.nuovo = true; render(); });
   }
   // «Richieste fatte»: quelle che la pagina del paziente sul PC sa stampare (anche
   // non fatte dall'estensione), ognuna con «Ristampa». Un PC più vecchio non
@@ -2311,7 +2335,7 @@
     else if (a === "cricarica") ricaricaCartella(ep);
     else if (a === "crileggi") caricaCartella(ep, false, true);
     else if (a === "valori") aggiornaValori(ep);
-    else if (a === "referto") { if (S.aperti.has(b.dataset.id)) S.aperti.delete(b.dataset.id); else S.aperti.add(b.dataset.id); render(); }
+    else if (a === "referto") { if (S.aperti.has(b.dataset.id)) S.aperti.delete(b.dataset.id); else { S.aperti.add(b.dataset.id); refertoVisto(ep, b.dataset.id); } render(); }
     else if (a === "pdf") apriPdf(ep, b.dataset.id, Number(b.dataset.n));
     else if (a === "quesito") { scegliQuesito(ep, b.dataset.q); S.arma = null; render(); }
     else if (a === "esame") { togglaEsame(ep, b.dataset.k); S.arma = null; render(); }

@@ -354,7 +354,8 @@ ordine o un promemoria non passa poi alla scheda dopo (sarebbero due). Mai un si
 
 **I comandi** (e solo questi, con argomenti controllati uno per uno): `pazienti`, `esiti(ep)`
 (con `leggi`: «apri» o «nuovi», quando il PC ha da leggere da sé), `aggiornaValori(ep, modo?)`
-(`modo`: «auto», «apri» — partito da sé dopo un `leggi`), `richieste` (il catalogo; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
+(`modo`: «auto», «apri» — partito da sé dopo un `leggi`), `visto(ep, ids?, valori?, fino?)` (referti
+aperti ed esiti guardati sul telefono: solo la memoria dell'estensione, anche sul PC di sola lettura), `richieste` (il catalogo; con una stazione di stampa collegata, `stampa: {stazione, dove}`), `ordina(ep, oid, esami, quesito, mio, nato, dest?)`, `nota(ep,
 testo)`, `promemoria(ep, testo)`, `fatto(ep, id)`, `cartella(ep, rileggi?)`, `cartellaSalva(ep, campi: {NOME:
 {prima, dopo}})`, `terapie(ep, rileggi?)`, `terapiaCerca(ep, q)`, `terapiaAggiungi(ep, rq, voce, visti)`, `accetta(k | ep, rq)`, `ristampe(ep)` (per richiesta anche `et` e `fo`: quante etichette e quanti fogli), `ristampa(ep, rid, oid, dest?, quali?)` (`quali`: `etichette` | `foglio` | `tutto`), `pdf(ep, ref, i)`, `stampa(rid, i, n, size, b)`, `stampaReferto(ep, ref, rid, dest?)`, `stazioneCollega(sta, nome)`,
 più `ciao`/`esci`/`ordini` per la sessione e lo stato degli ordini. Niente navigazione libera, niente script, niente appunti. L'ordine passa per

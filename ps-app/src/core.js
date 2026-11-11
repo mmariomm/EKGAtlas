@@ -82,6 +82,7 @@
   const PONTE_LETTURA_SCHEDA = new Set([
     "pazienti", "mappa", "eo", "triage", "esiti", "aggiornaValori",
     "richieste", "cartella", "terapie", "ristampe", "ristampa",
+    "visto",   // (visto sul telefono: solo la memoria dell'estensione, niente nel gestionale)
   ]);
 
   const TIMEOUT_MS = 20000;      // per-request timeout
@@ -7621,6 +7622,11 @@
       const out = new Map();
       const seen = tabStore.get(this.vistoKey(id), null);
       if (!seen || !seen.vals) return out;
+      // guardati sul telefono dopo l'ultimo sguardo qui: quello che questa scheda aveva già letto
+      // allora è visto. Riletti qui dopo, si conta ancora dal suo ultimo sguardo: mai un valore
+      // nuovo spento senza che qualcuno l'abbia avuto davanti.
+      const tel = Number(statoDi(this.episodeId)?.valoriVisti) || 0, held = tabStore.get(this.risKey(id), null);
+      if (tel > (seen.ts || 0) && held && (held.ts || 0) <= tel) { this.segnaVisto(id, rows); return out; }
       for (const r of rows || []) {
         const k = valKey(r.nome);
         if (!k) continue;
@@ -17614,6 +17620,21 @@ ${[...perPaz.entries()].map(([paz, l]) => `<h2><span>${esc(paz)}</span><span cla
     }
     const riga = () => pontePazienti().find((x) => x.ep === p.ep) || null;
     if (cmd === "esiti") return fatto(await ponteEsiti(p));
+    // Visto sul telefono: un referto aperto (non più «nuovo», come aprendolo qui: segnaVisti), o gli
+    // Esiti coi valori nuovi guardati (come la finestra aperta sugli Esiti: il pallino del tabellone e
+    // «N nuovi» si spengono; i valori che le schede avevano già letti quando la tabella mostrata sul
+    // telefono è stata scritta — `fino`, l'ora della sua lettura — contano visti: novita()).
+    // Solo la memoria dell'estensione: niente nel gestionale.
+    if (cmd === "visto") {
+      const ids = Array.isArray(a.ids) ? a.ids : [];
+      if (ids.length) segnaVisti(p.ep, ids);
+      if (a.valori) {
+        const ora = Date.now(), fino = Math.min(ora, Number(a.fino) || 0);
+        scriviStato(p.ep, (s) => ({ ...s, valori: { nuovi: 0, fuori: 0, fuoriTot: 0 }, esitiVisto: ora, ...(fino > (s.valoriVisti || 0) ? { valoriVisti: fino } : {}) }));
+      }
+      if (!PANNELLO.root.activeElement) PANNELLO.render();
+      return fatto({ ok: true, registro: `visti sul telefono: ${[ids.length ? (ids.length === 1 ? "un referto" : `${ids.length} referti`) : "", a.valori ? "gli esiti" : ""].filter(Boolean).join(" e ") || "niente"} di ${p.name}` });
+    }
     if (cmd === "aggiornaValori") {
       const url = ponteUrlPaziente(p);
       if (!url) return { ok: false, errore: senzaPagina(p) };

@@ -873,6 +873,12 @@ const esitiDi = async (ep, re = /./) => {
     `aperti gli Esiti, il laboratorio della sua pagina il PC non l'ha mai letto: lo legge da solo — «Leggo i valori nuovi sul PC… · 14:32», nessun tocco, ↻ aspetta (${(es.match(/Leggo[^\n]*/) || [""])[0]})`);
   check(/^\? \| RX TORACE\+TC ENCEFALO \| #Laboratorio \| EMOGASANALISI VENOSA POC\+EMOCROMOCITOMETRICO URGENTE$/.test(ordine),
     `finché la tabella non c'è, i referti del laboratorio a parte, in fondo, sotto «Laboratorio»: prima la radiografia e la TC (${ordine})`);
+  // un titolo lungo (EMOCROMOCITOMETRICO) va a capo: mai sotto il «nuovo»
+  const sotto = await tel.evaluate(() => [...document.querySelectorAll(".ref .r1")].filter((r) => r.querySelector(".nuovo")).map((r) => {
+    const t = r.querySelector(".t"), n = r.querySelector(".nuovo");
+    return { t: t.textContent.slice(0, 20), fuori: t.scrollWidth > t.clientWidth + 1, sopra: t.getBoundingClientRect().right > n.getBoundingClientRect().left + 1 };
+  }).filter((x) => x.fuori || x.sopra));
+  check(!sotto.length, `un titolo lungo va a capo, mai sotto «nuovo» (${JSON.stringify(sotto)})`);
   await shot(tel, "esiti-laboratorio");
   await finche(() => TRATTENUTE.length > 0, 30000);   // (la scheda dietro nasce quando tocca a lei: una alla volta, dopo quello che il PC sta già facendo)
   const chieste = TRATTENUTE.slice(), pagR = new Set(chieste.map((x) => x.pg).filter(Boolean)), dietroR = await dietroSu("999001");
@@ -938,11 +944,17 @@ await sw.evaluate(() => chrome.storage.local.get("storicoArch").then((o) => { fo
 const es0 = await esitiDi("999001", /RX TORACE/);
 check(salvatoRx && /Hb/.test(es0) && /Letti sul PC alle \d\d:\d\d/.test(es0) && !/non ha ancora letto valori/.test(es0),
   `il PC ha aperto ROSSI (da solo, nessun tocco): sul telefono i valori che ha salvato, senza ↻ Rileggi (${(es0.match(/Letti[^\n]*/) || ["niente"])[0]})`);
+const visteRx = () => doc.evaluate((id) => ((JSON.parse(localStorage.getItem("psassist:refVisti.v1") || "{}")["999001"] || {}).ids || []).includes(id), ID_RX);
+const nuovoRx = async () => await tel.locator('.ref:has-text("RX TORACE") .nuovo').count() === 1;
+const rxNuovoPrima = await nuovoRx() && !(await visteRx());
 await tocca(tel, '.ref:has-text("RX TORACE")');
 check(/Non focolai a carattere broncopneumonico/.test(await aspettaTel(tel, /Non focolai/, 8000)),
   "e il testo della radiografia salvata sul PC, anche se nessuna pagina l'aveva letto: dalla copia, senza ↻ Rileggi");
 check(Object.values(await archivio()).some((r) => (r.referti || []).some((x) => x.id === ID_RX && /Non focolai/.test(x.testo))),
   "letto una volta, va nella scheda del paziente: la prossima volta è già lì");
+// visto sul telefono = visto sul PC: aperto qui, il referto non è più «nuovo» nemmeno nel pannello (segnaVisti)
+check(rxNuovoPrima && await finche(visteRx, 8000) && !(await nuovoRx()),
+  "aperto sul telefono, il referto è visto anche sul PC: «nuovo» se ne va, qui e nel pannello (refVisti)");
 {
   // Un PDF come quelli del RIS: anagrafica in testa, riga dell'esame, corpo fra due righe di trattini. Il telefono
   // riceve la riga dell'esame e il corpo, non l'anagrafica né l'operatore.
@@ -960,6 +972,17 @@ check(Object.values(await archivio()).some((r) => (r.referti || []).some((x) => 
   const tx = await tel.evaluate(() => document.body.innerText);
   check(/ZQCORPO/.test(tx) && /RX TORACE[^\n]*22\/08\/2026/.test(tx) && !/ZQINTESTA|ZQREPARTO|ZQMODALITA|ZQOPER|ZQPIEDE/.test(tx),
     `il telefono mostra della radiografia la riga dell'esame e il corpo, non l'anagrafica né l'operatore né il piè di pagina (${tx.match(/ZQ\w+/g)} // ${tx.replace(/\s+/g, " ").slice(0, 700)})`);
+}
+{
+  // «● 2 nuovi» davanti sul telefono per qualche secondo vale come la finestra del PC aperta sugli Esiti:
+  // il pallino del tabellone e «N nuovi» si spengono anche sul PC (la memoria dell'estensione, niente nel gestionale)
+  const statoR = () => doc.evaluate(() => JSON.parse(localStorage.getItem("psassist:stato.v1") || "{}")["999001"] || {});
+  await doc.evaluate(() => { const K = "psassist:stato.v1", S = JSON.parse(localStorage.getItem(K) || "{}"); S["999001"] = { ...(S["999001"] || {}), valori: { nuovi: 2, fuori: 1, fuoriTot: 1 }, esitiVisto: 0 }; localStorage.setItem(K, JSON.stringify(S)); });
+  const t0 = Date.now();
+  const es = await esitiDi("999001", /● 2 nuovi/);
+  const visti = await finche(async () => { const s = await statoR(); return s.valori?.nuovi === 0 && s.valori?.fuori === 0 && s.esitiVisto >= t0 && s.valoriVisti > 0; }, 15000);
+  check(/● 2 nuovi/.test(es) && visti && await finche(async () => !/● 2 nuovi/.test(await testoTel(tel)), 5000) && /visti sul telefono: gli esiti di ROSSI MARIO/.test(await registroPonte()),
+    `«● 2 nuovi» guardati sul telefono: visti anche sul PC — il pallino e «N nuovi» si spengono, qui e là; nel Registro (${JSON.stringify((await statoR()).valori)})`);
 }
 
 // ===========================================================================

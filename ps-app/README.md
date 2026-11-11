@@ -1352,6 +1352,13 @@ solo non è riuscito il PC lo riprova solo più tardi (dopo 2 e 10 minuti, poi b
 non cambia), e il telefono lo dice in una riga piccola. **↻ Rileggi** resta, per forzarlo. Dei TC,
 ecografie e visite c'è il PDF, non il testo, e il telefono lo dice.
 
+**Visto qui = visto sul PC.** Aprire un referto sul telefono lo segna visto (`visto` con i suoi
+numeri: non è più «nuovo», né qui né nel pannello); gli Esiti con qualcosa di nuovo davanti per 3
+secondi (i valori «● N nuovi», o il pallino del tabellone) valgono come la finestra del PC aperta
+sugli Esiti: il pallino si spegne, «N nuovi» anche — i valori che il PC aveva già letto quando è
+stata scritta la tabella mostrata (`fino`); uno letto dopo resta nuovo. Solo la memoria
+dell'estensione, niente nel gestionale: si può anche dal PC di sola lettura.
+
 Lontano dal PC per qualche minuto, dal telefono: **i pazienti**, **gli esiti** di uno (con
 **↻ Rileggi** e l'ora in cui il PC li ha letti), **un ordine** (lo stesso «Conferma e
 stampa», con tutti i suoi controlli), **Da fare** (la stessa lista del PC: sotto il nome, su ogni scheda, una riga «○ 11:30 ecg di controllo · +2»; un tocco apre la lista del paziente: ogni voce ha la sua

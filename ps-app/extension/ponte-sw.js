@@ -420,6 +420,10 @@ function ponteArgomenti(d) {
   if (typeof d.dove === "string" && /^(tray|(letto|area):[\w.-]{1,40})(@\w{1,8})?$/.test(d.dove)) a.dove = d.dove;
   // (i valori letti da sé: «auto», o «apri» — un paziente che il PC non ha ancora aperto in questo turno)
   if (d.modo === "auto" || d.modo === "apri") a.modo = d.modo;
+  // («visto»: i referti aperti sul telefono, e gli esiti guardati — `fino`: l'ora della tabella mostrata)
+  if (Array.isArray(d.ids)) a.ids = d.ids.filter((x) => typeof x === "string" && /^[\w.-]{1,80}$/.test(x)).slice(0, 40);
+  if (d.valori === true) a.valori = true;
+  if (Number.isSafeInteger(d.fino) && d.fino > 0) a.fino = d.fino;
   return a;
 }
 // quelli che l'app manda da sé: non sono il medico, non tengono aperta la sessione
@@ -437,6 +441,7 @@ const PONTE_LETTURA = new Set([
   "esiti", "aggiornaValori", "richieste", "cartella", "terapie",
   "pdf", "ristampe", "ristampa", "stampa",   // «stampa»: un PDF del telefono sull'A4 di QUESTO PC (non scrive nel gestionale)
   "stampaReferto",                            // un referto già salvato su questo PC, stampato (non scrive nel gestionale)
+  "visto",                                    // referti ed esiti visti sul telefono: solo la memoria dell'estensione
 ]);
 const ponteSolaLettura = () => typeof self !== "undefined" && self.PSA_SOLA_LETTURA === true;
 // Chi è questo PC, per il menu del telefono (nel saluto `ciao`): il tipo
@@ -517,7 +522,7 @@ async function ponteRisposta(s, d) {
       await ponteScriviStato();
       return r;
     }
-    if (["pazienti", "mappa", "eo", "triage", "esiti", "richieste", "ristampe", "nota", "promemoria", "fatto", "dfAggiungi", "dfSpunta", "dfTogli", "posto"].includes(d.cmd)) {
+    if (["pazienti", "mappa", "eo", "triage", "esiti", "richieste", "ristampe", "nota", "promemoria", "fatto", "dfAggiungi", "dfSpunta", "dfTogli", "posto", "visto"].includes(d.cmd)) {
       const a = ponteArgomenti(d);
       const r = await ponteSuScheda(d.cmd, a);
       if (r.registro) { ponteNota(r.registro); delete r.registro; await ponteScriviStato(); }
