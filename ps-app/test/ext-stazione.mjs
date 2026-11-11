@@ -723,7 +723,12 @@ await imp.locator("#stavia").click();
 check(!!(await finche(async () => !(await pubblicoPc()), 8000)), "la stazione spenta: «Scollega» sul PC vale subito (niente più «Infermeria» sul PC)");
 staCtx = await lancia("sta");
 staSw = await swDi(staCtx);
-check(!!(await finche(async () => !(await quiSta()) && !(await coppiaPc()), 30000)), "riaccesa, la stazione sa di essere scollegata; il PC ha dimenticato tutto");
+// (senza la sua pagina né il gestionale la stazione non sta sul ponte: lo saprà quando c'è)
+await sospendi(3000);
+check(!!(await quiSta()) && !!(await coppiaPc())?.revoca, "riaccesa senza la sua pagina né il gestionale: non sta sul ponte, e non lo sa ancora (il PC tiene la chiave solo per dirglielo)");
+pSta = await staCtx.newPage();
+await pSta.goto(EXTURL("stazione.html"));
+check(!!(await finche(async () => !(await quiSta()) && !(await coppiaPc()), 30000)), "aperta la sua pagina: la stazione sa di essere scollegata; il PC ha dimenticato tutto");
 
 await staCtx.close();
 await telBrowser.close();

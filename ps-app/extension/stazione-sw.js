@@ -734,9 +734,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   // (la pagina della stazione aperta: la stazione sta sul ponte)
   if (msg.t === "stazioneStato") {
     return fai(async () => {
-      const prima = staOra() - stzUso.pagina >= 60e3;
       stzUso.pagina = staOra();
-      if (prima && stz.qui && !stz.presa.ws) await stzAvvia();
+      if (stz.qui && !stz.presa.ws) await stzAvvia();
       return { ok: true, stazione: await stzScriviStato(), lavori: (await chrome.storage.local.get(STA.lavori))[STA.lavori] || [] };
     });
   }

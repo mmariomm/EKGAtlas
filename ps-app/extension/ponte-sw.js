@@ -1684,9 +1684,8 @@ function ponteDaPagina(msg, sender, reply) {
   // la pagina del ponte aperta (chiede lo stato ogni 15 secondi): il PC sta sul ponte finché c'è
   if (msg.t === "ponteStato") {
     return fai(async () => {
-      const prima = ponteOra() - ponteUso.pagina >= 60e3;
       ponteUso.pagina = ponteOra();
-      if (prima && pt.coppia && !pt.ws) await ponteAvvia();
+      if (pt.coppia && !pt.ws && !pt.tRiprova) await ponteAvvia();
       return { ok: true, stato: pontePubblico(), qr: ponteQr(), codice: pt.codice };
     });
   }
