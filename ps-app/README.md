@@ -2085,7 +2085,9 @@ nella tendina del gestionale») — poi **Prepara nel gestionale** (o Ctrl+Invio
   pulsante «Terapia» (mai un indirizzo fatto da noi), e lì resta, ferma, finché serve — le ricerche nella
   sua tendina, senza ricaricare; prima di aggiungere la pagina si rilegge col suo pulsante
   «Prescrizione», e il controllo di quello che il telefono ha visto si fa su quella. Si chiude dopo
-  l'aggiunta, a ogni dubbio, col foglio chiuso sul telefono, o dopo 2 minuti senza lavoro. Gli stessi controlli (un altro paziente: «Errore grave», niente scritto), la voce con la
+  l'aggiunta, a ogni dubbio, col foglio chiuso sul telefono, o dopo 2 minuti senza lavoro. Se ci entri
+  (anche perché Chrome te la mostra chiudendo la tua) è tua: una pagina come le altre, mai riusata né
+  chiusa dal telefono, e quello che ci scrivi ferma le sue aggiunte. Gli stessi controlli (un altro paziente: «Errore grave», niente scritto), la voce con la
   stessa scritta (una sola, se no si ferma), ogni campo scritto e **riletto** — qualunque cosa non
   torni: si ferma, niente confermato. Poi **preme il «Conferma» della pagina**
   (`TERAPIA_SERIALIZED` lo compone lei; i nascosti non si toccano) e guarda la pagina che torna:

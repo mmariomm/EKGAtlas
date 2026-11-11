@@ -429,8 +429,11 @@ una ricerca, la scheda resta ferma sulla pagina Terapia (`fermo`) e il lavoro do
 (`ponteTerapiaLavoro`): una ricerca lì dov'è, nella tendina della pagina; una lettura o un'aggiunta
 prima rileggono la pagina col suo pulsante «Prescrizione» (una GET: lo stato di adesso, subito prima
 di scrivere). Si chiude dopo un'aggiunta, a ogni dubbio, quando il foglio «＋ Farmaco» si chiude sul
-telefono (`terapiaFine`), a fine sessione, per un altro paziente, dopo 2 minuti senza lavoro; una
-scheda in cui il medico è entrato non si riusa. `terapie` dà l'ultima
+telefono (`terapiaFine`), a fine sessione, per un altro paziente, dopo 2 minuti senza lavoro. Una
+scheda in cui il medico entra (la sceglie lui, o Chrome gliela dà chiudendo la sua: `tabs.onActivated`,
+il fuoco della finestra) da lì è sua: mai riusata né chiusa dal ponte, e torna una pagina come le altre
+(`ponteTerapiaLasciata`: la pill e i controlli, senza ricaricarla — niente di scritto si perde); una
+che lavorava finisce il suo lavoro, poi lo stesso. `terapie` dà l'ultima
 lettura (`ponte.terapia`: le righe confermate e le voci delle tendine, niente note né nascosti; dalla
 pagina aperta dal medico o da una scheda così, con un iPhone associato, via a fine sessione) o, con
 `rileggi`, la pagina riletta, più i preferiti del PC; senza `ep` dice solo che il comando c'è (un PC

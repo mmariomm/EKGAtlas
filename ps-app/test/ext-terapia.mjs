@@ -724,6 +724,37 @@ try {
   const dalTel = srv.conferme.slice(daTelefono);
   check(dalTel.length === 6 && dalTel.every((x) => x.tasto === "Conferma" && x.serializzata && !x.note),
     `dal telefono 6 Conferme in tutto, ognuna col TERAPIA_SERIALIZED composto dalla pagina, mai note né Chiudi (${dalTel.map((x) => x.tasto).join(",")})`);
+
+  // ---- 23. la scheda tenuta in cui il medico entra (la sceglie lui, o Chrome gliela dà chiudendo la sua): da lì è sua
+  const nate23 = [];
+  const conta23 = (p) => nate23.push(p);
+  ctx.on("page", conta23);
+  await tel.locator('[data-a="tnuovo"]').click();
+  await tel.locator("#tq").fill("panto");
+  await finche(async () => await tel.locator('[data-a="tvoce"]').count() === 1, 30000);
+  const tenuta = nate23.find((p) => !p.isClosed() && /PsoEpisodioTerapieImposta/.test(p.url()));
+  check(!!tenuta, "(cercato «panto»: la scheda di sottofondo resta, ferma sulla pagina Terapia)");
+  await tenuta.bringToFront();
+  check(await finche(async () => await tenuta.locator("#psassist-host").count() === 1, 8000),
+    "il medico entra nella scheda tenuta: diventa una pagina come le altre, col pannello (la pill)");
+  const nT = await tenuta.evaluate(() => document.getElementById("DESCRIZIONE").name.split("_")[1]);
+  await tenuta.fill(`[name="QUANTITA_${nT}"]`, "2");
+  await doc.bringToFront();   // (scrive e se ne va: la scheda torna dietro)
+  const quantita = () => tenuta.inputValue(`[name="QUANTITA_${nT}"]`).catch(() => "chiusa");
+  await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
+  await sw.evaluate(() => { const v = Date.now; Date.now = () => v() + 2 * 60e3 + 30e3; return ponteControlla().finally(() => { Date.now = v; }); });
+  await sospendi(1500);
+  check(!tenuta.isClosed() && await quantita() === "2", "…e resta sua: né il foglio chiuso sul telefono né 2 minuti senza lavoro la chiudono, e quello che ha scritto c'è");
+  const c23 = conferme(), pT = srv.pagineTer.length;
+  check(/Non confermata: sul PC la Terapia di questo paziente è aperta e già toccata/.test(await dalTelefono("PARACETAMOLO")) && conferme() === c23 && srv.pagineTer.length === pT && await quantita() === "2",
+    `un farmaco dal telefono per lo stesso paziente: la sua pagina scritta lo ferma — mai riusata, niente premuto, il suo testo resta (${await esito()})`);
+  await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
+  await tenuta.close();   // (il medico la chiude)
+  const giaNate = nate23.length;
+  check(/Confermata/.test(await dalTelefono("PARACETAMOLO")) && conferme() === c23 + 1 && nate23.length > giaNate,
+    `chiusa la sua pagina, il farmaco passa da una scheda di sottofondo nuova (${await esito()})`);
+  await tel.locator('.foglio .capo [data-a="tchiudi"]').click();
+  ctx.off("page", conta23);
   await pc2.close();
 } catch (e) {
   console.error(e);

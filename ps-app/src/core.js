@@ -17434,6 +17434,16 @@
           if (ok) { PONTE_TERAPIA = m.lavoro; ponteTerapiaQui().catch(() => ask({ t: "ponteTerapiaFatto", ok: false, incerto: PONTE_TERAPIA.fase === "inviato", testo: "errore nella scheda" })); }
           return;
         }
+        // …in cui il medico è entrato: da adesso è sua — una pagina come le altre, la pill e i suoi controlli (una
+        // riga scritta qui ferma il telefono), così com'è: niente ricaricato, niente di quello che c'è scritto perso
+        if (m.t === "ponteTerapiaLasciata") {
+          reply({ ok: true });
+          if (PONTE_TERAPIA && PONTE_TERAPIA.fase === "fermo") {
+            PONTE_TERAPIA = null;
+            ask({ t: "ordineChi" }).then((r) => bootGestionale(r && r.ok ? r : null));
+          }
+          return;
+        }
         if (m.t !== "ponteEsegui") return;
         ponteEsegui(m).then(reply, (e) => reply({ ok: false, errore: `Errore sul PC: ${e?.head || e?.message || e}` }));
         return true;
