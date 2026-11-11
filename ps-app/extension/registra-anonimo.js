@@ -1540,8 +1540,9 @@
     const nomiTesti = new Map();          // NORMA → { cat, orig }: le persone trovate solo nei testi
     // Un numero di 5 o più cifre in un testo («la richiesta 880777», «(referto 4567890)») è un
     // identificativo anche se nessuna pagina registrata lo mostra: rimappato come lo stesso altrove.
-    // Non un decimale, una misura in byte, un numero del vocabolario (i codici negli esami del catalogo).
-    const ID_TESTO_RE = /(?<![\dA-Za-z]|\d[.,])\d{5,}(?![\dA-Za-z]|[.,]\d|\s?(?:B|byte|bytes|KB|kB|MB)\b)/g;
+    // Non un decimale, una misura in byte, un codice d'errore («ORA-20965»), un numero del vocabolario
+    // (i codici negli esami del catalogo).
+    const ID_TESTO_RE = /(?<![\dA-Za-z]|\d[.,]|[A-Za-z]-)\d{5,}(?![\dA-Za-z]|[.,]\d|\s?(?:B|byte|bytes|KB|kB|MB)\b)/g;
     const numeriVoc = new Set();
     if (testiLiberi.length) {
       for (const s of STATICO) for (const m of s.matchAll(/\d{5,}/g)) numeriVoc.add(m[0]);

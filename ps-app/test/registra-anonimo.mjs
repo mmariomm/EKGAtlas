@@ -544,14 +544,15 @@ check(!nomi.includes("eviewer.json") && !/Visualizzatore di immagini/.test(riep)
     "08:04  il referto 4567890 non si riprende da solo", `08:05  aggiunto ✓ ${ESAME}`, "08:05  PS Assist 3.85.2 · 08:05:12 · 1282229 byte · PLT 250.000 · 123456.7",
     `08:06  iPhone · promemoria per ${P1.nome}: 10:30 · chiamare la figlia Lucia, dolore toracico dopo morfina · tra 25 min`,
     "08:07  iPhone · promemoria fatto per Greco Ottavio: richiamare il fratello al 3471112223",
-    `08:08  pagina inattesa dopo Crea: "Gruppo MULTIMEDICA IRCCS PRONTO SOCCORSO — Smarthealth"`].join("\n");
+    `08:08  pagina inattesa dopo Crea: "Gruppo MULTIMEDICA IRCCS PRONTO SOCCORSO — Smarthealth"`,
+    "08:09  Il gestionale ha risposto: ORA-20965: AMB_RICHIESTA: Progressivo richiesta già utilizzato"].join("\n");
   const r6 = anonimizza({ inizio: T6, origini: { gestionale: G }, pagine: [pag], nomi: ["GRECO OTTAVIO"], testi: [{ nome: "registro.txt", testo: registro }] }, { vocabolario, sfasamento: 30, diagnosi: true });
   const t6 = r6.files["testi/registro.txt"] || "", p6 = r6.files["pagine/001-RcsRichiestaPrestazioniRicercaErogatore.html"] || "";
   const ric = (/RICHIESTA_ID=(\d+)/.exec(p6) || [])[1], ref = (/\(referto (\d+)\)/.exec(t6) || [])[1];
   check(ric && ric !== "880777" && t6.includes(`la richiesta ${ric} delle 08:01`), `una richiesta vista nelle pagine: lo stesso numero finto nel Registro (${ric})`);
   check(ref && ref !== "4567890" && ref.length === 7 && t6.includes(`il referto ${ref} non si riprende`), `un referto che nessuna pagina mostra: un numero finto, lo stesso ogni volta (${ref})`);
-  check(t6.includes(`aggiunto ✓ ${ESAME}`) && p6.includes(ESAME) && t6.includes("PS Assist 3.85.2 · 08:05:12 · 1282229 byte · PLT 250.000 · 123456.7"),
-    "i codici del catalogo, la versione, le ore, i byte e i decimali restano");
+  check(t6.includes(`aggiunto ✓ ${ESAME}`) && p6.includes(ESAME) && t6.includes("PS Assist 3.85.2 · 08:05:12 · 1282229 byte · PLT 250.000 · 123456.7") && t6.includes("ORA-20965: AMB_RICHIESTA"),
+    "i codici del catalogo, la versione, le ore, i byte, i decimali e i codici d'errore («ORA-20965») restano");
   check(/promemoria per [A-Z]+ [A-Z]+: 10:30 · [^·]+ · tra 25 min$/m.test(t6) && /promemoria fatto per [A-Z][a-z]+ [A-Z][a-z]+: \S/.test(t6) && !/Lucia|figlia|morfina|fratello|3471112223|Greco|VERDONE/.test(t6),
     `il testo dei promemoria è inventato, l'ora e il «tra …» restano (${t6.split("\n").filter((x) => /promemoria/.test(x)).join(" | ")})`);
   check(!/MULTIMEDICA|IRCCS|Smarthealth/i.test(t6) && /OSPEDALE ESEMPIO/.test(t6), `l'ospedale e il fornitore in una pagina citata: quelli d'esempio (${t6.split("\n").pop()})`);
